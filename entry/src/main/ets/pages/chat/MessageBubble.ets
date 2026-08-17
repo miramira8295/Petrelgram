@@ -1384,26 +1384,33 @@ export struct MessageBubble {
     };
   }
 
-  // Shared by both the LiveThumbImage placeholder (hasFile === true, only
-  // reached once this cell has a fileId) and the no-fileId fallback
-  // (hasFile === false) so the two never drift apart.
+  // Shared by both the LiveThumbImage placeholder (hasFile reflects the real
+  // fileId, since that branch can now also be entered via a bare path — see
+  // albumCellBody) and the no-fileId-no-path fallback (hasFile === false) so
+  // the two never drift apart.
+  // Wrapped in its own Stack: LiveThumbImage.build() mounts this as its own
+  // component root when path is empty, and without the wrapper the Column +
+  // mediaLoadState would be two sibling root nodes instead of one stacked on
+  // the other — the progress ring would stop sitting on top of the tint.
   @Builder
   albumMediaPlaceholder(cellIdx: number, width: number, height: number, hasFile: boolean) {
-    Column().width(width).height(height).borderRadius(6)
-      .backgroundColor(this.albumIsVideoAt(cellIdx) ? '#AEB6C0' : '#D7DCE2');
-    if (hasFile && !(this.albumFailed[cellIdx] ?? false)) {
-      this.mediaLoadState(
-        Math.min(34, Math.min(width, height) * 0.4),
-        this.albumProgress[cellIdx] ?? 0,
-        false
-      );
-    } else if (!this.albumIsVideoAt(cellIdx)) {
-      this.mediaLoadState(
-        Math.min(34, Math.min(width, height) * 0.4),
-        0,
-        true
-      );
-    }
+    Stack() {
+      Column().width(width).height(height).borderRadius(6)
+        .backgroundColor(this.albumIsVideoAt(cellIdx) ? '#AEB6C0' : '#D7DCE2');
+      if (hasFile && !(this.albumFailed[cellIdx] ?? false)) {
+        this.mediaLoadState(
+          Math.min(34, Math.min(width, height) * 0.4),
+          this.albumProgress[cellIdx] ?? 0,
+          false
+        );
+      } else if (!this.albumIsVideoAt(cellIdx)) {
+        this.mediaLoadState(
+          Math.min(34, Math.min(width, height) * 0.4),
+          0,
+          true
+        );
+      }
+    }.width(width).height(height);
   }
 
   // Body shared by both attribute variants below, so the only difference
@@ -1430,7 +1437,7 @@ export struct MessageBubble {
         .borderRadius(6)
         // 同理：交给格子自己的 onClick 打开全屏查看器。
         .hitTestBehavior(HitTestMode.None);
-    } else if ((this.albumFileIds[cell.idx] ?? 0) !== 0) {
+    } else if ((this.albumFileIds[cell.idx] ?? 0) !== 0 || this.albumPathAt(cell.idx) !== '') {
       // No appear transition, for the same reason as the single-media
       // thumbnail: a row rebuild re-creates this node and would
       // replay the fade every time.
@@ -1438,6 +1445,10 @@ export struct MessageBubble {
       // wide while the file behind it is the conversation-wide size.
       // Self-subscribing: the row key no longer carries the path, so
       // this node must react to the thumbnail landing on its own.
+      // The condition can't be fileId-only: MessageStore backfills
+      // photoPath from the full-size download while fileId can still be 0
+      // for that entry, and losing the path there would regress an already
+      // downloaded photo to a dead "retry" tile.
       LiveThumbImage({
         fileId: this.albumFileIds[cell.idx] ?? 0,
         initialPath: this.albumPathAt(cell.idx),
@@ -1446,7 +1457,7 @@ export struct MessageBubble {
         radius: 6,
         fit: ImageFit.Cover,
         placeholder: (): void => {
-          this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, true);
+          this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, (this.albumFileIds[cell.idx] ?? 0) !== 0);
         }
       });
     } else {
@@ -1875,7 +1886,7 @@ export struct MessageBubble {
             // Native texture components can otherwise consume the tap before
             // the media wrapper gets a chance to toggle GIF pause/play.
             .hitTestBehavior(HitTestMode.None);
-        } else if (this.msg.photoFileId !== 0) {
+        } else if (this.msg.photoFileId !== 0 || this.msg.photoPath !== '') {
           // Keep the thumbnail mounted while fullscreen preview is open. ArkUI's
           // geometry transition can re-parent this Image node; with LazyForEach
           // recycling that occasionally restored only the placeholder/background
@@ -1891,6 +1902,10 @@ export struct MessageBubble {
           // downsamples during the decode rather than after it.
           // Self-subscribing: the row key no longer carries the path, so this
           // node must react to the thumbnail landing on its own.
+          // The condition can't be fileId-only: MessageStore backfills
+          // photoPath from the full-size download while photoFileId can still
+          // be 0, and losing the path there would regress an already
+          // downloaded photo to a dead "retry" tile.
           LiveThumbImage({
             fileId: this.msg.photoFileId,
             initialPath: this.msg.photoPath,
@@ -1899,7 +1914,7 @@ export struct MessageBubble {
             radius: 8,
             fit: ImageFit.Cover,
             placeholder: (): void => {
-              this.singleMediaPlaceholder(true);
+              this.singleMediaPlaceholder(this.msg.photoFileId !== 0);
             }
           });
         } else {
