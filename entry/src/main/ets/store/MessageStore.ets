@@ -4,6 +4,7 @@ import { UserStore } from './UserStore';
 import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteraction, CommentInfo, reactionsFromInteraction, ReactionInfo, parseInlineKeyboard, refreshSystemUserLabel } from './MessageEntry';
 import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
 import { publishSenderAvatar } from '../util/senderAvatarChannel';
+import { publishThumbPath } from '../util/mediaThumbChannel';
 import { formatUserStatus } from '../util/formatUserStatus';
 import { formatPreview } from '../util/formatPreview';
 import { formatMemberCount } from '../util/formatMemberCount';
@@ -1373,6 +1374,7 @@ export class MessageStore {
       hydrated.mediaDownloadActive = false;
       if (hydrated.videoFileId > 0) {
         this.completedFilePaths.set(hydrated.videoFileId, item.path);
+        publishThumbPath(hydrated.videoFileId, item.path);
       }
     } else {
       hydrated.photoPath = item.path;
@@ -1381,9 +1383,11 @@ export class MessageStore {
       hydrated.photoFullPath = item.path;
       if (hydrated.photoFileId > 0) {
         this.completedFilePaths.set(hydrated.photoFileId, item.path);
+        publishThumbPath(hydrated.photoFileId, item.path);
       }
       if (hydrated.photoFullFileId > 0) {
         this.completedFilePaths.set(hydrated.photoFullFileId, item.path);
+        publishThumbPath(hydrated.photoFullFileId, item.path);
       }
     }
     return hydrated;
@@ -2443,9 +2447,11 @@ export class MessageStore {
       const thumbLocalPath = this.completedPathOf(thumbFile);
       if (sourceLocalPath !== '' && srcId !== 0) {
         this.completedFilePaths.set(srcId, sourceLocalPath);
+        publishThumbPath(srcId, sourceLocalPath);
       }
       if (thumbLocalPath !== '' && thumbId !== 0) {
         this.completedFilePaths.set(thumbId, thumbLocalPath);
+        publishThumbPath(thumbId, thumbLocalPath);
       }
 
       // Mixed text needs a raster source. Animated TGS/WEBM uses its thumbnail;
@@ -3008,6 +3014,7 @@ export class MessageStore {
     const path = (local['path'] as string | undefined) ?? '';
     if (done && path !== '') {
       this.completedFilePaths.set(id, path);
+      publishThumbPath(id, path);
       this.applyDiceLayerPath(id, path);
       const customEmojiId = this.inlineCustomEmojiFileToId.get(id);
       if (customEmojiId !== undefined) {
@@ -4135,12 +4142,15 @@ export class MessageStore {
     // flashing an indefinite loading ring or downloading the same file again.
     if (entry.videoFileId !== 0 && entry.videoPath !== '') {
       this.completedFilePaths.set(entry.videoFileId, entry.videoPath);
+      publishThumbPath(entry.videoFileId, entry.videoPath);
     }
     if (entry.photoFileId !== 0 && entry.photoPath !== '') {
       this.completedFilePaths.set(entry.photoFileId, entry.photoPath);
+      publishThumbPath(entry.photoFileId, entry.photoPath);
     }
     if (entry.stickerFileId !== 0 && entry.stickerPath !== '') {
       this.completedFilePaths.set(entry.stickerFileId, entry.stickerPath);
+      publishThumbPath(entry.stickerFileId, entry.stickerPath);
     }
     const cachedPhotoPath = entry.photoFileId !== 0
       ? (this.completedFilePaths.get(entry.photoFileId) ?? '') : '';
