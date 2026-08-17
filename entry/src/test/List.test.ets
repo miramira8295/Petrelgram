@@ -67,6 +67,7 @@ import backgroundBlurTest from './BackgroundBlur.test';
 import themeTest from './Theme.test';
 import patternTileGridTest from './PatternTileGrid.test';
 import mediaThumbChannelTest from './MediaThumbChannel.test';
+import collapseAlbumsKeyTest from './CollapseAlbumsKey.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -138,4 +139,5 @@ export default function testsuite() {
   themeTest();
   patternTileGridTest();
   mediaThumbChannelTest();
+  collapseAlbumsKeyTest();
 }

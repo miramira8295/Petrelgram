@@ -204,7 +204,11 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
       groups.push({
         // videoFileIds 进 key：视频文件 id 迟到（TDLib 异步补上）时这一格
         // 得跟着重建，否则播放位选中它也挂不上播放器（videoFileId 还是 0）。
-        key: `a_${m.albumId}_${m.id}_${memberIds.join(',')}_${photoFileIds.join(',')}_${photoPaths.join('|')}_${photoProgress.map(progressBucket).join(',')}_${photoFailed.join(',')}_${videoFileIds.join(',')}_${albumMembers.map((item: MessageEntry): string => item.sendState).join(',')}_${caption}_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}_${dateLabel}_${mutableSig(displayHead)}`,
+        // photoPaths 刻意不进 key：缩略图路径经 mediaThumbChannel 旁路直达
+        // LiveThumbImage，进 key 意味着相册里任一张缩略图落地都会拖着整行重建。
+        // photoFileIds 仍然留着——fileId 变了说明换了另一份媒体（编辑替换、
+        // 相册成员变动），那时确实该重建，LiveThumbImage 也需要重建才能订阅新的 fileId。
+        key: `a_${m.albumId}_${m.id}_${memberIds.join(',')}_${photoFileIds.join(',')}_${photoProgress.map(progressBucket).join(',')}_${photoFailed.join(',')}_${videoFileIds.join(',')}_${albumMembers.map((item: MessageEntry): string => item.sendState).join(',')}_${caption}_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}_${dateLabel}_${mutableSig(displayHead)}`,
         head: displayHead,
         memberIds,
         photoPaths,
@@ -227,8 +231,9 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
       groups.push({
         // senderAvatarPath 刻意不进 key：头像路径经 senderAvatarChannel 旁路
         // 直达气泡里的头像组件，进 key 意味着整群头像解析完的那一刻全页行
-        // 重建（实测 change×31 + 掉帧）。
-        key: `${m.id}_${m.sendState}_${m.photoPath}_${progressBucket(m.photoProgress)}_${m.photoFailed}_${m.text}_${m.replyText}_${dateLabel}_${mutableSig(m)}`,
+        // 重建（实测 change×31 + 掉帧）。photoPath 同理：经 mediaThumbChannel
+        // 旁路直达 LiveThumbImage，进 key 会让缩略图落地拖着整行重建。
+        key: `${m.id}_${m.sendState}_${progressBucket(m.photoProgress)}_${m.photoFailed}_${m.text}_${m.replyText}_${dateLabel}_${mutableSig(m)}`,
         head: m,
         memberIds: [m.id],
         photoPaths: [],
