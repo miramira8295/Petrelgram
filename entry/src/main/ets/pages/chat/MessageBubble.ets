@@ -15,7 +15,7 @@ import {
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
-import { CachedImage } from '../common/CachedImage';
+import { LiveThumbImage } from './LiveThumbImage';
 import {
   bubbleMaxWidth, MediaBox, MEDIA_MAX_HEIGHT_RATIO, MEDIA_MAX_WIDTH, mediaBoxFor, mediaThumbWidth
 } from '../../util/mediaBox';
@@ -1182,6 +1182,26 @@ export struct MessageBubble {
     }
   }
 
+  // Shared by both the LiveThumbImage placeholder (hasFile === true, only
+  // reached once this message has a photoFileId) and the no-fileId fallback
+  // (hasFile === false) so the two never drift apart.
+  @Builder
+  singleMediaPlaceholder(hasFile: boolean) {
+    Stack() {
+      Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(8)
+        .backgroundColor(this.msg.contentType === 'video' ? '#AEB6C0' : '#D7DCE2');
+      if (this.msg.contentType === 'video') {
+        // Wait only when a real thumbnail file exists. Videos without a
+        // cover remain playable and get the normal play control below.
+        if (hasFile && !this.msg.photoFailed) {
+          this.mediaLoadState(36, this.msg.photoProgress, false);
+        }
+      } else {
+        this.mediaLoadState(36, this.msg.photoProgress, this.msg.photoFailed || !hasFile);
+      }
+    }.width(this.mediaBox().width).height(this.mediaBox().height);
+  }
+
   @Builder
   stickerStatusBadge(failed: boolean, percent: number) {
     Stack() {
@@ -1364,105 +1384,146 @@ export struct MessageBubble {
     };
   }
 
+  // Shared by both the LiveThumbImage placeholder (hasFile === true, only
+  // reached once this cell has a fileId) and the no-fileId fallback
+  // (hasFile === false) so the two never drift apart.
+  @Builder
+  albumMediaPlaceholder(cellIdx: number, width: number, height: number, hasFile: boolean) {
+    Column().width(width).height(height).borderRadius(6)
+      .backgroundColor(this.albumIsVideoAt(cellIdx) ? '#AEB6C0' : '#D7DCE2');
+    if (hasFile && !(this.albumFailed[cellIdx] ?? false)) {
+      this.mediaLoadState(
+        Math.min(34, Math.min(width, height) * 0.4),
+        this.albumProgress[cellIdx] ?? 0,
+        false
+      );
+    } else if (!this.albumIsVideoAt(cellIdx)) {
+      this.mediaLoadState(
+        Math.min(34, Math.min(width, height) * 0.4),
+        0,
+        true
+      );
+    }
+  }
+
+  // Body shared by both attribute variants below, so the only difference
+  // between them stays confined to whether onAreaChange is attached.
+  @Builder
+  albumCellBody(cell: AlbumCell) {
+    if (this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) {
+      // 播放位选中这一格：挂播放器而不是静态封面。
+      VideoBubbleSurface({
+        fileId: this.albumVideoFileIdAt(cell.idx),
+        fileSize: this.albumVideoFileSizeAt(cell.idx),
+        mimeType: this.albumVideoMimeTypeAt(cell.idx),
+        posterPath: this.albumPathAt(cell.idx),
+        muted: this.autoplayMuted,
+        startPositionMs: this.playSlotStartMs,
+        onPositionChanged: (positionMs: number): void => {
+          this.onPlaySlotPositionChanged(this.albumMemberIdAt(cell.idx), cell.idx, positionMs);
+        },
+        onEnded: (): void => {
+          this.onPlaySlotEnded(this.albumMemberIdAt(cell.idx), cell.idx);
+        }
+      })
+        .width(cell.width).height(cell.height).clip(true)
+        .borderRadius(6)
+        // 同理：交给格子自己的 onClick 打开全屏查看器。
+        .hitTestBehavior(HitTestMode.None);
+    } else if ((this.albumFileIds[cell.idx] ?? 0) !== 0) {
+      // No appear transition, for the same reason as the single-media
+      // thumbnail: a row rebuild re-creates this node and would
+      // replay the fade every time.
+      // desiredSize matters most here: a cell is a few tens of vp
+      // wide while the file behind it is the conversation-wide size.
+      // Self-subscribing: the row key no longer carries the path, so
+      // this node must react to the thumbnail landing on its own.
+      LiveThumbImage({
+        fileId: this.albumFileIds[cell.idx] ?? 0,
+        initialPath: this.albumPathAt(cell.idx),
+        boxWidth: cell.width,
+        boxHeight: cell.height,
+        radius: 6,
+        fit: ImageFit.Cover,
+        placeholder: (): void => {
+          this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, true);
+        }
+      });
+    } else {
+      // A video without a downloadable thumbnail remains playable;
+      // don't leave an endless 0% spinner over that intentional state.
+      this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, false);
+    }
+    if (this.albumIsVideoAt(cell.idx) &&
+      !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) &&
+      (this.albumPathAt(cell.idx) !== '' ||
+        (this.albumFileIds[cell.idx] ?? 0) === 0 ||
+        (this.albumFailed[cell.idx] ?? false))) {
+      this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
+    }
+  }
+
   @Builder
   albumGrid() {
     Column({ space: 2 }) {
       ForEach(packAlbumRows(this.albumRatios, this.albumW()), (row: AlbumCell[], rowIdx: number) => {
         Row({ space: 2 }) {
           ForEach(row, (cell: AlbumCell) => {
-            Stack() {
-              if (this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) {
-                // 播放位选中这一格：挂播放器而不是静态封面。
-                VideoBubbleSurface({
-                  fileId: this.albumVideoFileIdAt(cell.idx),
-                  fileSize: this.albumVideoFileSizeAt(cell.idx),
-                  mimeType: this.albumVideoMimeTypeAt(cell.idx),
-                  posterPath: this.albumPathAt(cell.idx),
-                  muted: this.autoplayMuted,
-                  startPositionMs: this.playSlotStartMs,
-                  onPositionChanged: (positionMs: number): void => {
-                    this.onPlaySlotPositionChanged(this.albumMemberIdAt(cell.idx), cell.idx, positionMs);
-                  },
-                  onEnded: (): void => {
-                    this.onPlaySlotEnded(this.albumMemberIdAt(cell.idx), cell.idx);
+            if (this.albumIsVideoAt(cell.idx)) {
+              // Video cells alone feed the play-slot center-y election, so
+              // onAreaChange is only mounted here — profiling showed every
+              // cell reporting geometry at 2100-2300/s when it was unconditional,
+              // and pure image cells never consumed that data.
+              Stack() {
+                this.albumCellBody(cell);
+              }
+              .width(cell.width).height(cell.height)
+              .accessibilityText(str('mb_album_item_video', cell.idx + 1))
+              .onVisibleAreaApproximateChange(
+                { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
+                  expectedUpdateInterval: 200 },
+                (_visible: boolean, ratio: number): void => {
+                  const memberId = this.albumMemberIdAt(cell.idx);
+                  if (ratio <= 0) {
+                    this.onMediaGone(memberId, cell.idx);
+                  } else {
+                    this.onMediaRatio(memberId, cell.idx, ratio, this.albumCellCenterY.get(cell.idx) ?? 0);
                   }
                 })
-                  .width(cell.width).height(cell.height).clip(true)
-                  .borderRadius(6)
-                  // 同理：交给格子自己的 onClick 打开全屏查看器。
-                  .hitTestBehavior(HitTestMode.None);
-              } else if (this.albumPathAt(cell.idx) !== '') {
-                // No appear transition, for the same reason as the single-media
-                // thumbnail: a row rebuild re-creates this node and would
-                // replay the fade every time.
-                // desiredSize matters most here: a cell is a few tens of vp
-                // wide while the file behind it is the conversation-wide size.
-                CachedImage({
-                  path: this.albumPathAt(cell.idx),
-                  boxWidth: cell.width,
-                  boxHeight: cell.height,
-                  radius: 6,
-                  fit: ImageFit.Cover
-                });
-              } else {
-                Column().width(cell.width).height(cell.height).borderRadius(6)
-                  .backgroundColor(this.albumIsVideoAt(cell.idx) ? '#AEB6C0' : '#D7DCE2');
-                // A video without a downloadable thumbnail remains playable;
-                // don't leave an endless 0% spinner over that intentional state.
-                if ((this.albumFileIds[cell.idx] ?? 0) !== 0 &&
-                  !(this.albumFailed[cell.idx] ?? false)) {
-                  this.mediaLoadState(
-                    Math.min(34, Math.min(cell.width, cell.height) * 0.4),
-                    this.albumProgress[cell.idx] ?? 0,
-                    false
-                  );
-                } else if (!this.albumIsVideoAt(cell.idx)) {
-                  this.mediaLoadState(
-                    Math.min(34, Math.min(cell.width, cell.height) * 0.4),
-                    0,
-                    true
-                  );
-                }
-              }
-              if (this.albumIsVideoAt(cell.idx) &&
-                !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) &&
-                (this.albumPathAt(cell.idx) !== '' ||
-                  (this.albumFileIds[cell.idx] ?? 0) === 0 ||
-                  (this.albumFailed[cell.idx] ?? false))) {
-                this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
-              }
-            }
-            .width(cell.width).height(cell.height)
-            .accessibilityText(this.albumIsVideoAt(cell.idx)
-              ? str('mb_album_item_video', cell.idx + 1)
-              : ((this.albumFailed[cell.idx] ?? false)
-                ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1)))
-            .onVisibleAreaApproximateChange(
-              { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
-                expectedUpdateInterval: 200 },
-              (_visible: boolean, ratio: number): void => {
-                if (!this.albumIsVideoAt(cell.idx)) {
-                  return; // 相册竞选只看这一格是不是视频，图片格不上报
-                }
-                const memberId = this.albumMemberIdAt(cell.idx);
-                if (ratio <= 0) {
-                  this.onMediaGone(memberId, cell.idx);
-                } else {
-                  this.onMediaRatio(memberId, cell.idx, ratio, this.albumCellCenterY.get(cell.idx) ?? 0);
-                }
+              .onAreaChange((_old: Area, area: Area): void => {
+                this.albumCellCenterY.set(cell.idx,
+                  (area.globalPosition.y as number) + (area.height as number) / 2);
               })
-            .onAreaChange((_old: Area, area: Area): void => {
-              this.albumCellCenterY.set(cell.idx,
-                (area.globalPosition.y as number) + (area.height as number) / 2);
-            })
-            .onClick((e: ClickEvent) => {
-              // Same as the single-media case: a failed cell offers retry.
-              if (this.albumCellRetryable(cell.idx)) {
-                this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
-                return;
+              .onClick((e: ClickEvent) => {
+                // Same as the single-media case: a failed cell offers retry.
+                if (this.albumCellRetryable(cell.idx)) {
+                  this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
+                  return;
+                }
+                this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
+              });
+            } else {
+              Stack() {
+                this.albumCellBody(cell);
               }
-              this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
-            });
+              .width(cell.width).height(cell.height)
+              .accessibilityText((this.albumFailed[cell.idx] ?? false)
+                ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1))
+              .onVisibleAreaApproximateChange(
+                { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
+                  expectedUpdateInterval: 200 },
+                (_visible: boolean, _ratio: number): void => {
+                  // 相册竞选只看这一格是不是视频，图片格不上报
+                })
+              .onClick((e: ClickEvent) => {
+                // Same as the single-media case: a failed cell offers retry.
+                if (this.albumCellRetryable(cell.idx)) {
+                  this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
+                  return;
+                }
+                this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
+              });
+            }
           }, (cell: AlbumCell) => `cell_${cell.idx}`);
         }
       }, (_row: AlbumCell[], rowIdx: number) => `row_${rowIdx}`);
@@ -1814,7 +1875,7 @@ export struct MessageBubble {
             // Native texture components can otherwise consume the tap before
             // the media wrapper gets a chance to toggle GIF pause/play.
             .hitTestBehavior(HitTestMode.None);
-        } else if (this.msg.photoPath !== '') {
+        } else if (this.msg.photoFileId !== 0) {
           // Keep the thumbnail mounted while fullscreen preview is open. ArkUI's
           // geometry transition can re-parent this Image node; with LazyForEach
           // recycling that occasionally restored only the placeholder/background
@@ -1828,28 +1889,21 @@ export struct MessageBubble {
           // Decoded through the PixelMap cache: DMA memory so the first draw
           // costs no texture upload on the render thread, and desiredSize
           // downsamples during the decode rather than after it.
-          CachedImage({
-            path: this.msg.photoPath,
+          // Self-subscribing: the row key no longer carries the path, so this
+          // node must react to the thumbnail landing on its own.
+          LiveThumbImage({
+            fileId: this.msg.photoFileId,
+            initialPath: this.msg.photoPath,
             boxWidth: this.mediaBox().width,
             boxHeight: this.mediaBox().height,
             radius: 8,
-            fit: ImageFit.Cover
+            fit: ImageFit.Cover,
+            placeholder: (): void => {
+              this.singleMediaPlaceholder(true);
+            }
           });
         } else {
-          Stack() {
-            Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(8)
-              .backgroundColor(this.msg.contentType === 'video' ? '#AEB6C0' : '#D7DCE2');
-            if (this.msg.contentType === 'video') {
-              // Wait only when a real thumbnail file exists. Videos without a
-              // cover remain playable and get the normal play control below.
-              if (this.msg.photoFileId !== 0 && !this.msg.photoFailed) {
-                this.mediaLoadState(36, this.msg.photoProgress, false);
-              }
-            } else {
-              this.mediaLoadState(36, this.msg.photoProgress,
-                this.msg.photoFailed || this.msg.photoFileId === 0);
-            }
-          }.width(this.mediaBox().width).height(this.mediaBox().height);
+          this.singleMediaPlaceholder(false);
         }
         if (this.msg.contentType === 'video' && !this.autoplayInlineVideo() &&
           !(this.isPlaySlot(-1) && this.msg.videoFileId !== 0)) {
