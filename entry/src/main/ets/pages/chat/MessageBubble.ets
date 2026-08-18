@@ -44,6 +44,7 @@ import {
 } from '../../util/senderAvatarChannel';
 import { plural, str } from '../../util/strings';
 import { LiveProgressRing } from './LiveProgressRing';
+import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -122,6 +123,8 @@ export struct MessageBubble {
   // check inside onMsgPropChanged is cheap and only fires onMediaGone on an
   // actual video→non-video flip (see onMsgPropChanged for why this matters).
   @Prop @Watch('onMsgPropChanged') msg: MessageEntry;
+  @State private liveSendState: string = '';
+  private unsubSendState: (() => void) | null = null;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
   @Prop themeBubbleOut: string = '';
   @Prop nowSec: number;
@@ -314,6 +317,14 @@ export struct MessageBubble {
   }
 
   aboutToAppear(): void {
+    // 发送状态不在行 key 里，行不会因为它重建——图标得自己订阅自己更新。
+    // 与 LiveThumbImage / LiveProgressRing 同一套办法；先读通道现值，没有
+    // 才用 @Prop 带来的初值（滚回历史消息时不会有新的发布）。
+    const known: string = sendStateFor(this.msg.rowId);
+    this.liveSendState = known !== '' ? known : this.msg.sendState;
+    this.unsubSendState = subscribeSendState(this.msg.rowId, (state: string): void => {
+      this.liveSendState = state;
+    });
     this.requestAutoplayDownload();
     // 只记录初始状态，不在这里上报——上报的语义是「不再参与竞选」，首次挂载时
     // 谈不上「不再」。真正的上报发生在 aboutToDisappear（组件销毁）和
@@ -325,6 +336,10 @@ export struct MessageBubble {
   }
 
   aboutToDisappear(): void {
+    if (this.unsubSendState !== null) {
+      this.unsubSendState();
+      this.unsubSendState = null;
+    }
     // LazyForEach 回收组件时若不上报，候选表里会留下永远不消失的幽灵条目。
     if (this.isCompetingVideo()) {
       this.onMediaGone(this.msg.id, -1);
@@ -343,6 +358,9 @@ export struct MessageBubble {
   // 状态变化、替换媒体等，不是每帧）比较一次「参与竞选」状态，只在从 true 翻到
   // false 的那一次补发 onMediaGone，翻转之外什么也不做。
   private onMsgPropChanged(): void {
+    // 同一个组件原地换了 msg：rowId 不变，订阅仍然有效，但初值要跟上。
+    const known: string = sendStateFor(this.msg.rowId);
+    this.liveSendState = known !== '' ? known : this.msg.sendState;
     const competing = this.isCompetingVideo();
     if (this.wasCompetingVideo && !competing) {
       this.onMediaGone(this.msg.id, -1);
@@ -751,18 +769,18 @@ export struct MessageBubble {
 
   @Builder
   statusIcon() {
-    if (this.msg.sendState === 'sending') {
+    if (this.liveSendState === 'sending') {
       SymbolGlyph($r('sys.symbol.clock')).fontSize(12).fontColor([COLOR_TEXT_SECONDARY]);
-    } else if (this.msg.sendState === 'sent') {
+    } else if (this.liveSendState === 'sent') {
       SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_TEXT_SECONDARY]);
-    } else if (this.msg.sendState === 'read') {
+    } else if (this.liveSendState === 'read') {
       // Double check: two overlapped checkmarks.
       Row() {
         SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_PRIMARY]);
         SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_PRIMARY])
           .margin({ left: -8 });
       }
-    } else if (this.msg.sendState === 'failed') {
+    } else if (this.liveSendState === 'failed') {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(12).fontColor([Color.Red]);
     }
   }

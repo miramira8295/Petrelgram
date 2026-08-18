@@ -74,11 +74,11 @@ function sameRowSlot(a: AlbumGroup, b: AlbumGroup): boolean {
 // the same item only if these match; anything else is a different row wearing
 // the same index.
 function sameIdentity(a: AlbumGroup, b: AlbumGroup): boolean {
-  if (a.head.id !== b.head.id || a.memberIds.length !== b.memberIds.length) {
+  if (a.head.rowId !== b.head.rowId || a.rowMemberIds.length !== b.rowMemberIds.length) {
     return false;
   }
-  for (let i = 0; i < a.memberIds.length; i++) {
-    if (a.memberIds[i] !== b.memberIds[i]) {
+  for (let i = 0; i < a.rowMemberIds.length; i++) {
+    if (a.rowMemberIds[i] !== b.rowMemberIds[i]) {
       return false;
     }
   }
@@ -100,8 +100,10 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
   // repeat key for index: 18" while that key was still registered at 48, always
   // after a prepend, always at an index inside the shifted region. Spelling the
   // keys out in the operation leaves nothing to infer.
+  // rowId / rowMemberIds 而不是 id / memberIds：发送成功时 TDLib 把临时 id
+  // 换成真实 id，用 id 拼 key 会让那一行被当成新 item 销毁重建。
   private keyOf: GroupKeyBuilder = (g: AlbumGroup): string =>
-    `message_group_${g.head.id}_${g.memberIds.join('_')}_${contentFingerprint(g.key)}`;
+    `message_group_${g.head.rowId}_${g.rowMemberIds.join('_')}_${contentFingerprint(g.key)}`;
 
   // ChatPage supplies the real builder (its key also carries the language
   // epoch) and MUST use the same one for the LazyForEach key generator — two
@@ -255,6 +257,22 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       // wrong row. Identity shifts have to be a reload.
       for (let i = 0; i < oldMid; i++) {
         if (!sameIdentity(prev[p + i], next[p + i])) {
+          // 中段只有一行时不必整表重建。发送成功就是这个形状：TDLib 的
+          // updateMessageSendSucceeded 让 store 删掉临时 id 那条、插入真实 id
+          // 那条（MessageStore.onSendSucceeded），位置没动、其余行的 key 和
+          // 下标也都没动，只是这一格换了身份。
+          //
+          // 上面那段注释担心的是"删一条又追加一条，长度不变但每个下标坐着的
+          // 都是别人"——那种情况中段会是一大片，不是一行。而只有一行变化时，
+          // 它的新 key 不可能已经注册在别的下标上（同一快照内 key 唯一，
+          // assertNoDuplicateKeys 刚查过），把新 key 交给这一格正是
+          // DataChangeOperation.key 的用途。
+          //
+          // 整表 RELOAD 会让所有行销毁重建，表现为发消息时列表"闪一下"、
+          // 入场动画播第二遍。
+          if (oldMid === 1) {
+            break;
+          }
           this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
           return 'reload';
         }

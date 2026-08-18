@@ -17,6 +17,7 @@ import { PollOptionInfo } from '../util/formatMsgContent';
 import { reactionTypeOf } from '../util/reactions';
 import { str } from '../util/strings';
 import { publishProgress } from '../util/mediaProgressChannel';
+import { publishSendState } from '../util/sendStateChannel';
 
 const PAGE: number = 30;
 // Visible bubble/header thumbnails should outrank silent video prefetch. The
@@ -1814,8 +1815,17 @@ export class MessageStore {
     if (this.outsideTopicScope(m)) {
       return;
     }
+    // 行身份必须跨过这次替换：临时 id 那条的 rowId 传给真实 id 那条，
+    // 列表才不会把它当成新行销毁重建（发完消息"闪一下"的来源）。
+    const previous = this.messages.find((e: MessageEntry): boolean => e.id === oldId);
+    const carriedRowId: number = previous !== undefined ? previous.rowId : 0;
     this.messages = this.messages.filter((e: MessageEntry) => e.id !== oldId);
-    this.upsert(buildMessageEntry(m, this.users));
+    const arrived = buildMessageEntry(m, this.users);
+    if (carriedRowId !== 0) {
+      arrived.rowId = carriedRowId;
+    }
+    publishSendState(arrived.rowId, arrived.sendState);
+    this.upsert(arrived);
     this.resolveReplies();
     this.requestPhotos();
     this.notifySoon();
@@ -2125,6 +2135,7 @@ export class MessageStore {
       if (e.isOutgoing && e.sendState === 'sent' && e.id <= this.lastReadOutboxId) {
         const c = cloneMessage(e);
         c.sendState = 'read';
+        publishSendState(c.rowId, c.sendState);
         changed = true;
         return c;
       }
@@ -4206,6 +4217,10 @@ export class MessageStore {
     }
     const c = cloneMessage(this.messages[idx]);
     fn(c);
+    // 发送状态走旁路直达气泡的状态图标（见 sendStateChannel）：它不在行 key
+    // 里，不这样发布就没人知道它变了。通道在状态未变时早退，所以这里不必
+    // 挑调用点。
+    publishSendState(c.rowId, c.sendState);
     const next = this.messages.slice();
     next[idx] = c;
     this.messages = next;
