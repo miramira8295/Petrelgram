@@ -19,6 +19,7 @@ import { publicLink } from '../../util/telegramLink';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -31,7 +32,10 @@ const PROFILE_LOAD_TIMEOUT_MS: number = 8000;
 // birthday) and the 动态 posts section. Mirrors ProfileStore snapshot into
 // @State so every card re-renders on updates.
 @Preview
-@Component
+// 组件冻结：这四个页签由 MainScreen 的 Tabs 保活，同一时刻只有一个在屏上，
+// 其余三棵树却照样响应各自 store 的状态更新、照样重跑 build。冻结之后非
+// 激活的页签不再刷新，切回来时框架补上延后的那次更新。
+@Component({ freezeWhenInactive: true })
 export struct MyProfilePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @Prop active: boolean = false;
@@ -1923,6 +1927,8 @@ export struct MyProfilePage {
     }
     .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
+    // 见 ContactsPage：背景色要靠 expandSafeArea 才延伸到状态栏底下。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .align(Alignment.Top)
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off);
@@ -1948,6 +1954,7 @@ struct StickerAvatarDialog {
     .width('100%').height(400)
     .backgroundColor($r('app.color.surface'))
     .borderRadius({ topLeft: 16, topRight: 16 })
-    .clip(true);
+    .clip(true)
+    .systemMaterial(overlayMaterial('dialog'));
   }
 }

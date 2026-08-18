@@ -11,7 +11,9 @@ import {
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToChat } from '../../util/chatNav';
 
 const CARD_RADIUS: number = 14;
 const COLOR_MISSED: string = '#E64646';
@@ -114,11 +116,7 @@ struct CallsPage {
     if (this.actionKey !== '' || this.navigationLocked || call.chatId === 0) { return; }
     this.navigationLocked = true;
     const params: Record<string, Object> = { 'chatId': call.chatId };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params }).catch((error: Error): void => {
-      this.navigationLocked = false;
-      console.error(`CallsPage.openChat failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.open_chat_failed'), duration: 1700 });
-    });
+    navigateToChat(params);
     this.navigationTimer = setTimeout((): void => {
       this.navigationLocked = false;
       this.navigationTimer = -1;
@@ -309,7 +307,7 @@ struct CallsPage {
         Row() { SymbolGlyph($r('sys.symbol.more')).fontSize(23).fontColor([COLOR_TEXT_PRIMARY]); }
           .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
           .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-          .bindMenu(this.topMenu());
+          .bindMenu(this.topMenu(), { systemMaterial: overlayMaterial('menu') });
       }
     }.width('100%').height(56).padding({ left: 8, right: 8 }).alignItems(VerticalAlign.Center);
   }
@@ -494,7 +492,8 @@ struct CallsPage {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
+        backgroundBlurStyle: overlayBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
         mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
         modalMode: ModalMode.TARGET_WINDOW,
         hapticFeedbackMode: HapticFeedbackMode.AUTO,

@@ -9,10 +9,14 @@ import {
 import { LoginHero } from './LoginHero';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 @Preview
 @Component
 export struct PhoneNumberPage {
+  // 窗口是全屏沉浸的（EntryAbility.setWindowLayoutFullScreen），页面自己让出
+  // 状态栏高度，否则标题会压在时钟和信号图标底下。
+  @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageChanged') langEpoch: number = 0;
   @State phoneDigits: string = '';
   @State errorText: string = '';
@@ -305,7 +309,7 @@ export struct PhoneNumberPage {
       }
       .width('100%')
       .constraintSize({ maxWidth: 430 })
-      .padding({ left: 24, right: 24, top: 28, bottom: 28 });
+      .padding({ left: 24, right: 24, top: this.topSafe + 28, bottom: 28 });
     }
     .width('100%').height('100%')
     .align(Alignment.Top)
@@ -314,7 +318,8 @@ export struct PhoneNumberPage {
     .bindSheet($$this.pickerOpen, this.countryPickerSheet(), {
       height: '82%',
       backgroundColor: $r('app.color.surface'),
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

@@ -9,6 +9,8 @@ import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { navigateToChat } from '../../util/chatNav';
 
 interface TabSpec {
   key: string;
@@ -28,7 +30,10 @@ const FOLDER_INDICATOR_HEIGHT: number = 32;
 const FOLDER_SWITCH_DURATION: number = 250;
 
 @Preview
-@Component
+// 组件冻结：这四个页签由 MainScreen 的 Tabs 保活，同一时刻只有一个在屏上，
+// 其余三棵树却照样响应各自 store 的状态更新、照样重跑 build。冻结之后非
+// 激活的页签不再刷新，切回来时框架补上延后的那次更新。
+@Component({ freezeWhenInactive: true })
 export struct ChatListPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @State folders: FolderInfo[] = [];
@@ -295,7 +300,7 @@ export struct ChatListPage {
         return Promise.reject(new Error(str('cl_saved_unavailable')));
       }
       const params: Record<string, Object> = { 'chatId': chatId };
-      return router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      return navigateToChat(params);
     }).then((): void => {
       // pushUrl resolves once the route request is accepted, while this
       // keep-alive home component can stay mounted behind the new page.
@@ -466,7 +471,7 @@ export struct ChatListPage {
         pressed: this.actionPressedStyle
       })
       .accessibilityText($r('app.string.cl_more_actions'))
-      .bindMenu(this.moreMenu());
+      .bindMenu(this.moreMenu(), { systemMaterial: overlayMaterial('menu') });
     }
     .width('100%').height(TOP_BAR_HEIGHT)
     .padding({ left: this.horizontalPadding() + 4, right: this.horizontalPadding() })
@@ -561,11 +566,12 @@ export struct ChatListPage {
     // Frosted material: translucent tint + backdrop blur, same recipe as the
     // bottom dock. The list scrolls underneath and shows through.
     .backgroundColor($r('app.color.dock_glass'))
-    .backdropBlur(22)
+    .backdropBlur(overlayBackdropBlur('bar'))
     .borderRadius(FOLDER_BAR_HEIGHT / 2)
     .clip(true)
     .border({ width: 0.5, color: $r('app.color.divider') })
     .shadow({ radius: 12, color: '#1F000000', offsetX: 0, offsetY: 4 })
+    .systemMaterial(overlayMaterial('bar'))
     .margin({ left: 8, right: 8, top: 2 })
     .transition(
       TransitionEffect.OPACITY
@@ -645,6 +651,12 @@ export struct ChatListPage {
       .layoutWeight(1).width('100%');
     }
     .width('100%').height('100%')
+    // 背景色是 expandSafeArea 真正延伸出去的东西——只写 expandSafeArea 而不画
+    // 背景，延伸的是"什么都没有"，状态栏底下露的就是窗口底色（实测深色模式
+    // 下那是一条纯黑）。官方把这称作"组件安全区方案"：布局仍在安全区内，
+    // 绘制延伸到状态栏和导航区。
+    // 取 surface 是因为顶栏和列表行用的就是它，延伸出去才连成一片。
+    .backgroundColor($r('app.color.surface'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe });
   }

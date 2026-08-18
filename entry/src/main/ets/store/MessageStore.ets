@@ -4,6 +4,7 @@ import { UserStore } from './UserStore';
 import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteraction, CommentInfo, reactionsFromInteraction, ReactionInfo, parseInlineKeyboard, refreshSystemUserLabel } from './MessageEntry';
 import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
 import { publishSenderAvatar } from '../util/senderAvatarChannel';
+import { publishThumbPath } from '../util/mediaThumbChannel';
 import { formatUserStatus } from '../util/formatUserStatus';
 import { formatPreview } from '../util/formatPreview';
 import { formatMemberCount } from '../util/formatMemberCount';
@@ -15,6 +16,8 @@ import { decideMedia, subjectOfEntry, MediaContext, MediaIntent } from './MediaP
 import { PollOptionInfo } from '../util/formatMsgContent';
 import { reactionTypeOf } from '../util/reactions';
 import { str } from '../util/strings';
+import { publishProgress } from '../util/mediaProgressChannel';
+import { publishSendState } from '../util/sendStateChannel';
 
 const PAGE: number = 30;
 // Visible bubble/header thumbnails should outrank silent video prefetch. The
@@ -886,9 +889,14 @@ export class MessageStore {
     });
   }
 
-  sendAsync(text: string, replyToId: number = 0): Promise<void> {
+  // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
+  // 其余实体仍由服务器扫文本自行识别，这里不接管。
+  sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = []): Promise<void> {
     const ft: TdObject = { '@type': 'formattedText' };
     ft['text'] = text;
+    if (entities.length > 0) {
+      ft['entities'] = entities;
+    }
     const content: TdObject = { '@type': 'inputMessageText' };
     content['text'] = ft;
     const req: TdRequest = { '@type': 'sendMessage' };
@@ -1373,6 +1381,7 @@ export class MessageStore {
       hydrated.mediaDownloadActive = false;
       if (hydrated.videoFileId > 0) {
         this.completedFilePaths.set(hydrated.videoFileId, item.path);
+        publishThumbPath(hydrated.videoFileId, item.path);
       }
     } else {
       hydrated.photoPath = item.path;
@@ -1381,9 +1390,11 @@ export class MessageStore {
       hydrated.photoFullPath = item.path;
       if (hydrated.photoFileId > 0) {
         this.completedFilePaths.set(hydrated.photoFileId, item.path);
+        publishThumbPath(hydrated.photoFileId, item.path);
       }
       if (hydrated.photoFullFileId > 0) {
         this.completedFilePaths.set(hydrated.photoFullFileId, item.path);
+        publishThumbPath(hydrated.photoFullFileId, item.path);
       }
     }
     return hydrated;
@@ -1809,8 +1820,17 @@ export class MessageStore {
     if (this.outsideTopicScope(m)) {
       return;
     }
+    // 行身份必须跨过这次替换：临时 id 那条的 rowId 传给真实 id 那条，
+    // 列表才不会把它当成新行销毁重建（发完消息"闪一下"的来源）。
+    const previous = this.messages.find((e: MessageEntry): boolean => e.id === oldId);
+    const carriedRowId: number = previous !== undefined ? previous.rowId : 0;
     this.messages = this.messages.filter((e: MessageEntry) => e.id !== oldId);
-    this.upsert(buildMessageEntry(m, this.users));
+    const arrived = buildMessageEntry(m, this.users);
+    if (carriedRowId !== 0) {
+      arrived.rowId = carriedRowId;
+    }
+    publishSendState(arrived.rowId, arrived.sendState);
+    this.upsert(arrived);
     this.resolveReplies();
     this.requestPhotos();
     this.notifySoon();
@@ -2120,6 +2140,7 @@ export class MessageStore {
       if (e.isOutgoing && e.sendState === 'sent' && e.id <= this.lastReadOutboxId) {
         const c = cloneMessage(e);
         c.sendState = 'read';
+        publishSendState(c.rowId, c.sendState);
         changed = true;
         return c;
       }
@@ -2443,9 +2464,11 @@ export class MessageStore {
       const thumbLocalPath = this.completedPathOf(thumbFile);
       if (sourceLocalPath !== '' && srcId !== 0) {
         this.completedFilePaths.set(srcId, sourceLocalPath);
+        publishThumbPath(srcId, sourceLocalPath);
       }
       if (thumbLocalPath !== '' && thumbId !== 0) {
         this.completedFilePaths.set(thumbId, thumbLocalPath);
+        publishThumbPath(thumbId, thumbLocalPath);
       }
 
       // Mixed text needs a raster source. Animated TGS/WEBM uses its thumbnail;
@@ -3008,6 +3031,7 @@ export class MessageStore {
     const path = (local['path'] as string | undefined) ?? '';
     if (done && path !== '') {
       this.completedFilePaths.set(id, path);
+      publishThumbPath(id, path);
       this.applyDiceLayerPath(id, path);
       const customEmojiId = this.inlineCustomEmojiFileToId.get(id);
       if (customEmojiId !== undefined) {
@@ -3114,6 +3138,9 @@ export class MessageStore {
         c.photoProgress = percent;
         return c;
       });
+      // 进度同时走旁路通道：它已经不在行 key 里了（见 collapseAlbums），
+      // 等待中的进度环靠 LiveProgressRing 自订阅刷新。
+      publishProgress(id, percent);
       if (done && path !== '') {
         this.thumbAttempts.delete(id);
         this.thumbLastKick.delete(id);
@@ -4135,12 +4162,15 @@ export class MessageStore {
     // flashing an indefinite loading ring or downloading the same file again.
     if (entry.videoFileId !== 0 && entry.videoPath !== '') {
       this.completedFilePaths.set(entry.videoFileId, entry.videoPath);
+      publishThumbPath(entry.videoFileId, entry.videoPath);
     }
     if (entry.photoFileId !== 0 && entry.photoPath !== '') {
       this.completedFilePaths.set(entry.photoFileId, entry.photoPath);
+      publishThumbPath(entry.photoFileId, entry.photoPath);
     }
     if (entry.stickerFileId !== 0 && entry.stickerPath !== '') {
       this.completedFilePaths.set(entry.stickerFileId, entry.stickerPath);
+      publishThumbPath(entry.stickerFileId, entry.stickerPath);
     }
     const cachedPhotoPath = entry.photoFileId !== 0
       ? (this.completedFilePaths.get(entry.photoFileId) ?? '') : '';
@@ -4192,6 +4222,10 @@ export class MessageStore {
     }
     const c = cloneMessage(this.messages[idx]);
     fn(c);
+    // 发送状态走旁路直达气泡的状态图标（见 sendStateChannel）：它不在行 key
+    // 里，不这样发布就没人知道它变了。通道在状态未变时早退，所以这里不必
+    // 挑调用点。
+    publishSendState(c.rowId, c.sendState);
     const next = this.messages.slice();
     next[idx] = c;
     this.messages = next;

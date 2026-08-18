@@ -198,6 +198,35 @@ class AccountRegistry {
     return current.previousSlotId;
   }
 
+  // 冷启动自愈：一个没完成的「加账号」不该在重启后还占着 active 槽位。
+  //
+  // 用户在登录页杀掉进程后，那个空槽位仍是 active，重开 app 只会回到登录页，
+  // 而唯一的出口「返回原账号」是**页面上的一个按钮**——它依赖 UI 走到那一步。
+  // 一旦没走到，原账号就再也进不去了。这里在建运行时之前把它清掉。
+  //
+  // userId === 0 是硬保险：只有从没拿到过用户身份的槽位才丢。真正登录成功过
+  // 的账号即便 pendingLogin 标志因故没清干净，也绝不会被删。
+  //
+  // 返回接手的槽位 id，没有可回退的目标时返回 ''（例如首次登录本身就是
+  // pending，那时不该动任何东西）。
+  abandonStalePending(): string {
+    const current = this.active();
+    if (!current.pendingLogin || current.userId !== 0) {
+      return '';
+    }
+    const previous = current.previousSlotId;
+    if (previous === '' || !this.hasSlot(previous)) {
+      return '';
+    }
+    this.activeSlot = previous;
+    this.accounts = this.accounts.filter(
+      (item: TdAccountSummary): boolean => item.slotId !== current.slotId
+    );
+    this.persist();
+    this.bumpRegistryEpoch();
+    return previous;
+  }
+
   discardPending(slotId: string): void {
     const account = this.accounts.find(
       (item: TdAccountSummary): boolean => item.slotId === slotId

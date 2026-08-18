@@ -7,7 +7,9 @@ import { promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToChat } from '../../util/chatNav';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -22,7 +24,10 @@ const SKELETON_ROWS: number[] = [0, 1, 2, 3, 4];
 // The contacts tab: search box, recent-calls shortcut, and the contact
 // list sorted by last-seen. Title shows 正在刷新... until getContacts resolves.
 @Preview
-@Component
+// 组件冻结：这四个页签由 MainScreen 的 Tabs 保活，同一时刻只有一个在屏上，
+// 其余三棵树却照样响应各自 store 的状态更新、照样重跑 build。冻结之后非
+// 激活的页签不再刷新，切回来时框架补上延后的那次更新。
+@Component({ freezeWhenInactive: true })
 export struct ContactsPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -382,10 +387,7 @@ export struct ContactsPage {
       const id = chat['id'] as number | undefined;
       if (id !== undefined) {
         const params: Record<string, Object> = { 'chatId': id };
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params }).catch((error: Error): void => {
-          console.error(`ContactsPage.openChat failed: ${error.message}`);
-          promptAction.showToast({ message: $r('app.string.open_chat_failed'), duration: 1800 });
-        });
+        navigateToChat(params);
       }
     }).catch((e: TdError): void => {
       if (sequence !== this.chatOpenSequence) {
@@ -562,7 +564,7 @@ export struct ContactsPage {
         pressed: this.topActionPressedStyle
       })
       .accessibilityText($r('app.string.ct_more_actions'))
-      .bindMenu(this.topMenu());
+      .bindMenu(this.topMenu(), { systemMaterial: overlayMaterial('menu') });
     }
     .width('100%').height(TOP_BAR_HEIGHT)
     .padding({ left: 16, right: 12 })
@@ -840,7 +842,8 @@ export struct ContactsPage {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
+        backgroundBlurStyle: overlayBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
         transition: TransitionEffect.OPACITY
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
           .animation({
@@ -1334,11 +1337,16 @@ export struct ContactsPage {
     }
     .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
+    // 背景色靠 expandSafeArea 才会延伸到状态栏和导航区底下（官方的
+    // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。只写
+    // backgroundColor 而不延伸，状态栏那条露的是窗口底色。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe })
     .bindSheet($$this.addContactSheetOpen, this.addContactSheet(), {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: CARD_BG,
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

@@ -8,6 +8,14 @@ import { monthDayTime } from '../util/intlFormat';
 
 export interface MessageEntry {
   id: number;
+  // 列表行身份，只给行 key 用，其余一切（回复、菜单、选择、已读）仍然用 id。
+  //
+  // 发送成功时 TDLib 会把临时 id 换成真实 id（updateMessageSendSucceeded），
+  // 而 id 直接进行 key，于是那一行被当成新 item 销毁重建——界面上就是发完
+  // 消息"闪一下"。rowId 在这次替换中由新条目继承旧条目的值（见
+  // MessageStore.onSendSucceeded），行因此保持同一个身份，只有状态图标从
+  // 时钟换成对号。新建条目时 rowId 就等于 id。
+  rowId: number;
   isOutgoing: boolean;
   senderName: string;
   senderId: number;
@@ -225,7 +233,7 @@ export function parseInlineKeyboard(replyMarkup: TdObject | undefined): InlineBt
 
 export function cloneMessage(m: MessageEntry): MessageEntry {
   return {
-    id: m.id, isOutgoing: m.isOutgoing, senderName: m.senderName,
+    id: m.id, rowId: m.rowId, isOutgoing: m.isOutgoing, senderName: m.senderName,
     senderId: m.senderId, senderIsUser: m.senderIsUser,
     senderInitials: m.senderInitials, senderAvatarPath: m.senderAvatarPath, date: m.date,
     editDate: m.editDate,
@@ -968,6 +976,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
   }
   return {
     id: (message['id'] as number | undefined) ?? 0,
+    rowId: (message['id'] as number | undefined) ?? 0,
     isOutgoing,
     senderName: name,
     senderId: senderIdOf(message),

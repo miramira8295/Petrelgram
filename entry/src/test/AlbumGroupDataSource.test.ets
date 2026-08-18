@@ -139,6 +139,29 @@ export default function albumGroupDataSourceTest() {
     // items were the same, and their LazyForEach keys then collided with the
     // ones still registered elsewhere ("Use repeat key" in the device log,
     // rows rendering someone else's content).
+    // 发送成功：TDLib 的 updateMessageSendSucceeded 让 store 删掉临时 id 那条、
+    // 插入真实 id 那条，位置不变、其余行的 key 和下标都不动，只有这一格换了
+    // 身份。整表 RELOAD 会让所有行销毁重建，界面上就是发消息时“闪一下”、
+    // 入场动画播第二遍。中段只有一行时按 CHANGE + 新 key 处理即可。
+    it('single_row_identity_swap_changes_instead_of_reloading', 0, () => {
+      const users = usersOf();
+      const ds = new AlbumGroupDataSource();
+      ds.update(groupsOf([[10, 100], [20, 5000], [30, 90000]], users));
+
+      const listener: RecordingListener = new RecordingListener();
+      ds.registerDataChangeListener(listener);
+
+      // 末行 30（临时 id）换成 31（真实 id），其余两行原样。
+      expect(ds.update(groupsOf([[10, 100], [20, 5000], [31, 90000]], users)))
+        .assertEqual('incremental');
+      expect(listener.batches.join('|')).assertEqual('change');
+      expect(listener.changeKeys.length).assertEqual(1);
+      // 交出去的必须是新身份的 key，不是那个已经注册过的旧 key。
+      expect(listener.changeKeys[0].startsWith('message_group_31_')).assertTrue();
+    });
+
+    // 与上一条的分界：中段不止一行时仍然整表重建。删一条又追加一条会让每个
+    // 下标都坐着别人，那时报 CHANGE 就是在骗框架说身份没变。
     it('identity_shift_at_same_length_reloads', 0, () => {
       const users = usersOf();
       const ds = new AlbumGroupDataSource();

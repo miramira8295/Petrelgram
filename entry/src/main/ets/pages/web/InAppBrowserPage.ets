@@ -10,6 +10,7 @@ import { openTelegramLink } from '../../util/openTelegramLink';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 interface BrowserParams {
   url?: string;
@@ -119,7 +120,7 @@ struct InAppBrowserPage {
       Button() {
         SymbolGlyph($r('sys.symbol.dot_grid_2x2')).fontSize(20).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .bindMenu(this.moreMenu());
+      .bindMenu(this.moreMenu(), { systemMaterial: overlayMaterial('menu') });
     }.width('100%').height(50).padding({ left: 6, right: 6 }).alignItems(VerticalAlign.Center)
     .backgroundColor(COLOR_SURFACE);
   }

@@ -1,6 +1,8 @@
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry } from '../../store/ChatEntry';
 import { ChatRow } from './ChatRow';
+import { ChatListDataSource } from './ChatListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -8,7 +10,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 
 @Component
 export struct ChatListView {
-  @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
   @Prop listKey: string;
   // Folder tabs sit behind MainScreen's floating dock; ArchivePage does not.
   @Prop reserveDockSpace: boolean = true;
@@ -24,8 +26,16 @@ export struct ChatListView {
   @State paging: boolean = false;
   @State pagingFailed: boolean = false;
   private updateGate: ChatListFreeze = new ChatListFreeze();
+  private chatsData: ChatListDataSource = new ChatListDataSource();
   private unsubscribe: (() => void) | null = null;
   private active: boolean = false;
+
+  // 行 key 里带着 langEpoch。ForEach 时它一变就等于所有行改名、整表重建；
+  // 换成 LazyForEach 之后没人会替我们做这件事，得显式告诉数据源。
+  // 与 MainTabBody.onLanguageEpochChanged 同理。
+  private onLanguageEpochChanged(): void {
+    this.chatsData.reload();
+  }
 
   @Styles
   actionNormalStyle() {
@@ -74,10 +84,17 @@ export struct ChatListView {
       animateTo({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
         curve: Curve.EaseOut
-      }, (): void => { this.chats = next; });
+      }, (): void => { this.publishChats(next); });
     } else {
-      this.chats = next;
+      this.publishChats(next);
     }
+  }
+
+  // this.chats 仍然留着：空态判断和上面的 structureChanged 比较都要读它。
+  // 真正驱动列表的是 chatsData。
+  private publishChats(next: ChatEntry[]): void {
+    this.chats = next;
+    this.chatsData.update(next, next.map((item: ChatEntry): string => this.rowKey(item)));
   }
 
   // langEpoch in the key: see MainTabBody.rowKey.
@@ -202,7 +219,11 @@ export struct ChatListView {
             .onClick((): void => this.loadInitial());
           }
         }
-        ForEach(this.chats, (item: ChatEntry) => {
+        // LazyForEach 而不是 ForEach：ForEach 会把每一行都提前建出来，
+        // 归档和文件夹页签在会话多的账号上一样长（主列表 MainTabBody 早就
+        // 迁过去了，:128 的注释记着当时实测 Ids.size[424]）。
+        // 上面那个 .cachedCount(8) 配 ForEach 本来是空转的，现在才真正生效。
+        LazyForEach(this.chatsData, (item: ChatEntry) => {
           ListItem() {
             ChatRow({ chat: item, listKey: this.listKey });
           }
@@ -212,7 +233,8 @@ export struct ChatListView {
               curve: Curve.EaseOut
             })
           )
-        }, (item: ChatEntry) => this.rowKey(item));
+        }, (item: ChatEntry, index: number) =>
+          guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));
         if (this.paging) {
           ListItem() {
             Row() {

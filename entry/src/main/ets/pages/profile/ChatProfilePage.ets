@@ -23,6 +23,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToChat } from '../../util/chatNav';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -252,13 +253,13 @@ struct ChatProfilePage {
       params['joinedNoticeIsChannel'] = this.isChannel;
       this.justJoined = false;
     }
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+    navigateToChat(params);
   }
 
   private openSearchInChat(): void {
     if (this.chatId === 0) { return; }
     const params: Record<string, Object> = { 'chatId': this.chatId, 'startSearch': true };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params });
+    navigateToChat(params);
   }
 
 
@@ -610,7 +611,7 @@ struct ChatProfilePage {
       'chatId': this.chatId,
       'jumpTo': messageId
     };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+    navigateToChat(params);
   }
 
   private currentTabLabel(): string {

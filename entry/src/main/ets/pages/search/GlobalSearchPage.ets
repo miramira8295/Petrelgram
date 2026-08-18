@@ -27,6 +27,8 @@ import {
 } from '../../store/DownloadApi';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
+import { navigateToChat } from '../../util/chatNav';
 
 interface FoundItem {
   chatId: number;
@@ -720,10 +722,7 @@ struct GlobalSearchPage {
       return;
     }
     const params: Record<string, Object> = { 'chatId': it.chatId, 'jumpTo': it.messageId };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params }).catch((e: Error): void => {
-      console.error(`GlobalSearchPage.locateDownloadMessage failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.gs_cannot_open_source'), duration: 1500 });
-    });
+    navigateToChat(params);
   }
 
   // Rows the current tab actually shows: the 频道 tab keeps only messages from
@@ -1213,10 +1212,7 @@ struct GlobalSearchPage {
       this.store.rememberFoundChat(chatId);
     }
     const params: Record<string, Object> = { 'chatId': chatId };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params }).catch((e: Error) => {
-      this.resetResultOpening();
-      console.error(`GlobalSearchPage.openChat failed: ${e.message}`);
-    });
+    navigateToChat(params);
   }
 
   // App (mini-app bot) rows open the bot's chat — running the web app itself
@@ -1233,10 +1229,7 @@ struct GlobalSearchPage {
       const id = (chat['id'] as number | undefined) ?? 0;
       if (id !== 0) {
         const params: Record<string, Object> = { 'chatId': id };
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params }).catch((e: Error) => {
-          this.resetResultOpening();
-          console.error(`GlobalSearchPage.openApp route failed: ${e.message}`);
-        });
+        navigateToChat(params);
       } else {
         this.resetResultOpening();
       }
@@ -1259,10 +1252,7 @@ struct GlobalSearchPage {
     if (q !== '') {
       params['searchQuery'] = q;
     }
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params }).catch((e: Error) => {
-      this.resetResultOpening();
-      console.error(`GlobalSearchPage.openResult failed: ${e.message}`);
-    });
+    navigateToChat(params);
   }
 
   private resolvedTopUsers(): SearchRow[] {
@@ -2212,7 +2202,7 @@ struct GlobalSearchPage {
         this.previewTapY = event.windowY;
         this.openDownloadItem(it);
       })
-      .bindContextMenu(this.downloadRowMenu(it), ResponseType.LongPress);
+      .bindContextMenu(this.downloadRowMenu(it), ResponseType.LongPress, { systemMaterial: overlayMaterial('menu') });
     }
   }
 
@@ -2361,7 +2351,8 @@ struct GlobalSearchPage {
     .bindSheet($$this.removeSheetShown, this.removeDownloadSheet(), {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: $r('app.color.surface'),
-      onDisappear: () => { this.pendingRemoval = null; }
+      onDisappear: () => { this.pendingRemoval = null; },
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 

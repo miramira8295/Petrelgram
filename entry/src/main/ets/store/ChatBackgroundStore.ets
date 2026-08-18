@@ -5,6 +5,7 @@ import { ChatStore } from './ChatStore';
 import { ChatThemeStore } from './ChatThemeStore';
 import { fillColorsOf, objectOrNull } from '../util/backgroundPresentation';
 import { gunzipTgs } from '../util/gunzipTgs';
+import { KEY_CHAT_BG_SNAP_DARK, KEY_CHAT_BG_SNAP_LIGHT, setString } from './AppSettings';
 
 // Everything the chat surface needs to paint its background. One immutable
 // snapshot instead of the nine separate page state variables this replaces.
@@ -60,6 +61,59 @@ function rememberDefaultSnapshot(state: ChatBackgroundState, forDark: boolean): 
   }
   lastDefaultSnapshot = state;
   lastDefaultIsDark = forDark;
+  // 同时落盘：进程内的这一份只在本次启动内有效，而白屏恰恰发生在冷启动后
+  // 的第一次进入——那时内存里还什么都没有。
+  setString(forDark ? KEY_CHAT_BG_SNAP_DARK : KEY_CHAT_BG_SNAP_LIGHT,
+    serialiseSnapshot(state));
+}
+
+// 手写序列化而不是 JSON：字段就这几个，且 colors 是字符串数组，用制表符分隔
+// 比 JSON.parse 后逐字段做类型断言更直白，也不依赖 ArkTS 对 parse 结果的
+// 类型处理。颜色值本身是 '#RRGGBB' 形式，不含分隔符。
+function serialiseSnapshot(s: ChatBackgroundState): string {
+  return [
+    s.colors.join(','), `${s.angle}`, s.path, `${s.imageOpacity}`,
+    `${s.dimming}`, s.blurred ? '1' : '0', s.bubbleOutColor,
+    s.isPattern ? '1' : '0', s.custom ? '1' : '0'
+  ].join('\t');
+}
+
+function parseSnapshot(raw: string): ChatBackgroundState | null {
+  if (raw === '') {
+    return null;
+  }
+  const f: string[] = raw.split('\t');
+  if (f.length < 9) {
+    return null;
+  }
+  const colors: string[] = f[0] === '' ? [] : f[0].split(',');
+  // 空快照没有意义——它正是这套机制要避免的东西。
+  if (colors.length === 0 && f[2] === '') {
+    return null;
+  }
+  return {
+    custom: f[8] === '1',
+    colors,
+    angle: Number.parseFloat(f[1]),
+    path: f[2],
+    imageOpacity: Number.parseFloat(f[3]),
+    dimming: Number.parseFloat(f[4]),
+    blurred: f[5] === '1',
+    bubbleOutColor: f[6],
+    isPattern: f[7] === '1'
+  };
+}
+
+// 账号默认背景被改动时作废快照。设置页直接调 TDLib、不经过本 store，所以
+// 改完背景不会触发 patch()/rememberDefaultSnapshot——盘上那份会一直是旧的。
+// 不在这里"算出新快照"是因为设置页手里只有用户的选择，真正的 colors/path
+// 要等 TDLib 解析回来；作废之后最坏退化成一次空种子（白一下），比拿旧快照
+// 画出**错误的背景**要好。下一次打开会话时 patch() 会重新落一份正确的。
+export function invalidateDefaultSnapshot(forDark: boolean): void {
+  if (lastDefaultSnapshot !== null && lastDefaultIsDark === forDark) {
+    lastDefaultSnapshot = null;
+  }
+  setString(forDark ? KEY_CHAT_BG_SNAP_DARK : KEY_CHAT_BG_SNAP_LIGHT, '');
 }
 
 // Returns the last known account-default snapshot for the given mode, or an
@@ -68,6 +122,15 @@ function rememberDefaultSnapshot(state: ChatBackgroundState, forDark: boolean): 
 export function defaultChatBackgroundSnapshot(forDark: boolean): ChatBackgroundState {
   if (lastDefaultSnapshot !== null && lastDefaultIsDark === forDark) {
     return lastDefaultSnapshot;
+  }
+  // 冷启动：内存里还没有，回读上次落盘的那一份。命中后提到内存，后续
+  // 每个会话都走上面那条快路径。
+  const key: string = forDark ? KEY_CHAT_BG_SNAP_DARK : KEY_CHAT_BG_SNAP_LIGHT;
+  const stored = parseSnapshot(AppStorage.get<string>(key) ?? '');
+  if (stored !== null) {
+    lastDefaultSnapshot = stored;
+    lastDefaultIsDark = forDark;
+    return stored;
   }
   return emptyChatBackground();
 }

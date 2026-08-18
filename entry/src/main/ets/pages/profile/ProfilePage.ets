@@ -24,6 +24,7 @@ import { publicLink } from '../../util/telegramLink';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToChat } from '../../util/chatNav';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -323,7 +324,7 @@ struct ProfilePage {
     if (this.pendingJumpTo > 0) {
       params['jumpTo'] = this.pendingJumpTo;
     }
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+    navigateToChat(params);
   }
 
   private startCall(isVideo: boolean): void {
@@ -386,8 +387,10 @@ struct ProfilePage {
           });
         return;
       }
+      // 手机号和姓名是对方的个人信息，不进日志——userId 已经足够把这条
+      // 失败对上号了。
       console.error(`ProfilePage.addContact failed(code=${e.code}): ${e.message} ` +
-        `userId=${this.userId} phone='${this.phone}' name='${this.name}'`);
+        `userId=${this.userId} hasPhone=${this.phone !== ''}`);
       promptAction.showToast({
         message: e.code === 400 ? $r('app.string.pp_add_incomplete') : $r('app.string.pp_add_failed'),
         duration: 1700
@@ -754,9 +757,7 @@ struct ProfilePage {
         return;
       }
       const params: Record<string, Object> = { 'chatId': chatId };
-      router.pushUrl({ url: 'pages/chat/ChatPage', params }).catch((error: Error): void => {
-        console.error(`ProfilePage.startSecretChat navigation failed: ${error.message}`);
-      });
+      navigateToChat(params);
     }).catch((e: TdError): void => {
       this.creatingSecretChat = false;
       console.error(`ProfilePage.createNewSecretChat failed: ${e.message}`);

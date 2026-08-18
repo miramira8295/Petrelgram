@@ -15,7 +15,7 @@ import {
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
-import { CachedImage } from '../common/CachedImage';
+import { LiveThumbImage } from './LiveThumbImage';
 import {
   bubbleMaxWidth, MediaBox, MEDIA_MAX_HEIGHT_RATIO, MEDIA_MAX_WIDTH, mediaBoxFor, mediaThumbWidth
 } from '../../util/mediaBox';
@@ -43,6 +43,13 @@ import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
 import { plural, str } from '../../util/strings';
+import { LiveProgressRing } from './LiveProgressRing';
+import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
+import {
+  TranslationStatus, subscribeTranslationStatus, translationStatusFor
+} from '../../util/translationChannel';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -121,6 +128,8 @@ export struct MessageBubble {
   // check inside onMsgPropChanged is cheap and only fires onMediaGone on an
   // actual video→non-video flip (see onMsgPropChanged for why this matters).
   @Prop @Watch('onMsgPropChanged') msg: MessageEntry;
+  @State private liveSendState: string = '';
+  private unsubSendState: (() => void) | null = null;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
   @Prop themeBubbleOut: string = '';
   @Prop nowSec: number;
@@ -149,6 +158,9 @@ export struct MessageBubble {
   @Prop albumCaption: string;
   albumCaptionEntities: TdObject[] = [];
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 正在解析中的链接 url（linkTapGuard 广播）。只在渲染链接段时读，因此
+  // 不含链接的气泡不会因为它变化而重建。
+  @StorageProp(LINK_NAV_BUSY_KEY) linkNavBusyUrl: string = '';
   // Measured width of the bubble (it shrinks to fit content) — the inline
   // keyboard below matches it exactly instead of the theoretical max width.
   @State bubbleW: number = 0;
@@ -258,6 +270,9 @@ export struct MessageBubble {
   onVideoNoteDownload: (messageId: number) => void = (): void => {};
   // 整聊天翻译：点「隐藏译文/显示译文」的单条折叠开关，状态存在条目上。
   onToggleTranslation: (messageId: number, hidden: boolean) => void = (): void => {};
+  onRetryTranslation: (messageId: number) => void = (): void => {};
+  @State private translationStatus: TranslationStatus | null = null;
+  private unsubTranslation: (() => void) | null = null;
   // 圆形视频原地播放的开关，逐条独立。
   @State private videoNotePlaying: boolean = false;
   // Chat's currently active video chat, if any (0 = none live) — lets a
@@ -313,6 +328,19 @@ export struct MessageBubble {
   }
 
   aboutToAppear(): void {
+    // 发送状态不在行 key 里，行不会因为它重建——图标得自己订阅自己更新。
+    // 与 LiveThumbImage / LiveProgressRing 同一套办法；先读通道现值，没有
+    // 才用 @Prop 带来的初值（滚回历史消息时不会有新的发布）。
+    const known: string = sendStateFor(this.msg.rowId);
+    this.liveSendState = known !== '' ? known : this.msg.sendState;
+    this.unsubSendState = subscribeSendState(this.msg.rowId, (state: string): void => {
+      this.liveSendState = state;
+    });
+    // 「翻译中 / 翻译失败」是瞬时态，不进行 key（见 translationChannel），
+    // 所以行不会因为它们重建——这里自己订阅自己更新。
+    this.translationStatus = translationStatusFor(this.msg.id);
+    this.unsubTranslation = subscribeTranslationStatus(this.msg.id,
+      (next: TranslationStatus | null): void => { this.translationStatus = next; });
     this.requestAutoplayDownload();
     // 只记录初始状态，不在这里上报——上报的语义是「不再参与竞选」，首次挂载时
     // 谈不上「不再」。真正的上报发生在 aboutToDisappear（组件销毁）和
@@ -324,6 +352,14 @@ export struct MessageBubble {
   }
 
   aboutToDisappear(): void {
+    if (this.unsubSendState !== null) {
+      this.unsubSendState();
+      this.unsubSendState = null;
+    }
+    if (this.unsubTranslation !== null) {
+      this.unsubTranslation();
+      this.unsubTranslation = null;
+    }
     // LazyForEach 回收组件时若不上报，候选表里会留下永远不消失的幽灵条目。
     if (this.isCompetingVideo()) {
       this.onMediaGone(this.msg.id, -1);
@@ -342,6 +378,9 @@ export struct MessageBubble {
   // 状态变化、替换媒体等，不是每帧）比较一次「参与竞选」状态，只在从 true 翻到
   // false 的那一次补发 onMediaGone，翻转之外什么也不做。
   private onMsgPropChanged(): void {
+    // 同一个组件原地换了 msg：rowId 不变，订阅仍然有效，但初值要跟上。
+    const known: string = sendStateFor(this.msg.rowId);
+    this.liveSendState = known !== '' ? known : this.msg.sendState;
     const competing = this.isCompetingVideo();
     if (this.wasCompetingVideo && !competing) {
       this.onMediaGone(this.msg.id, -1);
@@ -512,6 +551,16 @@ export struct MessageBubble {
   linkCardPressedStyle() {
     .opacity(0.8)
     .scale({ x: 0.986, y: 0.986 })
+  }
+
+  // 链接底色。忙碌时换成 select_highlight——一层带透明度的主色调，浅色深色
+  // 两套资源都已经定好，也不会被自定义强调色带跑。代码体的链接本来就有底色，
+  // 忙碌时同样切到高亮色，才看得出变化。
+  private linkRunBackground(run: RichRun): ResourceColor {
+    if (this.linkNavBusyUrl === run.url) {
+      return $r('app.color.select_highlight');
+    }
+    return run.code ? $r('app.color.surface_alt') : Color.Transparent;
   }
 
   @Styles
@@ -750,18 +799,18 @@ export struct MessageBubble {
 
   @Builder
   statusIcon() {
-    if (this.msg.sendState === 'sending') {
+    if (this.liveSendState === 'sending') {
       SymbolGlyph($r('sys.symbol.clock')).fontSize(12).fontColor([COLOR_TEXT_SECONDARY]);
-    } else if (this.msg.sendState === 'sent') {
+    } else if (this.liveSendState === 'sent') {
       SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_TEXT_SECONDARY]);
-    } else if (this.msg.sendState === 'read') {
+    } else if (this.liveSendState === 'read') {
       // Double check: two overlapped checkmarks.
       Row() {
         SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_PRIMARY]);
         SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_PRIMARY])
           .margin({ left: -8 });
       }
-    } else if (this.msg.sendState === 'failed') {
+    } else if (this.liveSendState === 'failed') {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(12).fontColor([Color.Red]);
     }
   }
@@ -895,6 +944,12 @@ export struct MessageBubble {
         .verticalAlign(ImageSpanAlignment.CENTER)
         .objectFit(ImageFit.Contain);
     } else if (run.url !== '') {
+      // 这一段被点中、正在向服务器问"这个链接该开哪一页"的时候，文字自己
+      // 呼吸起来。链接是 Span，挂不了子组件也没有 opacity，能动的只有它自己
+      // 的颜色和底色，所以加载态就画成一颗一明一暗的药丸。
+      //
+      // this.linkNavBusyUrl 只在这条分支里读：不含链接的气泡从头到尾不碰
+      // 这个变量，也就不会因为别人点了链接而重建。
       Span(run.text)
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
         .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
@@ -902,8 +957,17 @@ export struct MessageBubble {
         .fontColor(COLOR_PRIMARY)
         .decoration({ type: this.richRunDecoration(run), color: COLOR_PRIMARY })
         .textBackgroundStyle({
-          color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
-          radius: run.code ? 3 : 0
+          color: this.linkRunBackground(run),
+          radius: run.code || this.linkNavBusyUrl === run.url ? 3 : 0
+        })
+        // iterations: -1 + Alternate —— 一次状态变化就能永远来回，不需要
+        // 定时器逐帧改状态（那会把整个气泡按帧重建）。省电模式下
+        // effectDuration 归零，退化成一个静止的暗色药丸，仍然看得出在忙。
+        .animation({
+          duration: this.effectDuration(620),
+          curve: Curve.EaseInOut,
+          iterations: this.linkNavBusyUrl === run.url ? -1 : 1,
+          playMode: PlayMode.Alternate
         })
         .stateStyles({
           normal: this.linkRunNormalStyle,
@@ -1044,6 +1108,30 @@ export struct MessageBubble {
   // 「显示译文」。存在译文时时间戳的占位挪到脚注行（见 timeReserveInText）。
   @Builder
   translationBlock() {
+    // 译文还没到：显示瞬时态。分隔线沿用译文那条，让三种状态占同一个位置。
+    if (this.msg.translatedText === '' && this.translationStatus !== null) {
+      Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
+        .margin({ top: 6, bottom: 5 });
+      if (this.translationStatus?.phase === 'loading') {
+        Row({ space: 5 }) {
+          LoadingProgress().width(12).height(12).color(COLOR_TEXT_SECONDARY);
+          Text($r('app.string.mb_translating')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+        }.constraintSize({ maxWidth: this.inlineMaxW() });
+      } else {
+        // 原始报错原样展示（按要求）。失败行整体可点，点一下立刻重发，
+        // 绕过 TranslationService 的 60 秒失败冷却。
+        Row({ space: 4 }) {
+          Text(str('mb_translate_failed', this.translationStatus?.error ?? ''))
+            .fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          Text($r('app.string.settings_retry'))
+            .fontSize(11).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+        }
+        .constraintSize({ maxWidth: this.inlineMaxW() })
+        .onClick((): void => { this.onRetryTranslation(this.msg.id); });
+      }
+    }
     if (this.msg.translatedText !== '') {
       Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
         .margin({ top: 6, bottom: 5 });
@@ -1152,23 +1240,7 @@ export struct MessageBubble {
   // Loading ring shown centered on a media placeholder while its thumbnail
   // downloads — same style as the fullscreen viewer's (percent inside the ring).
   @Builder
-  loadingRing(size: number, percent: number) {
-    Stack() {
-      if (percent > 0) {
-        Progress({ value: percent, total: 100, type: ProgressType.Ring })
-          .width(size).height(size).color(Color.White);
-        Text(`${percent}%`).fontSize(Math.max(9, size * 0.24)).fontColor(Color.White);
-      } else {
-        LoadingProgress().width(size * 0.72).height(size * 0.72).color(Color.White);
-      }
-    }
-    .padding(6)
-    .backgroundColor('#00000066')
-    .borderRadius(size);
-  }
-
-  @Builder
-  mediaLoadState(size: number, percent: number, failed: boolean) {
+  mediaLoadState(size: number, fileId: number, initialPercent: number, failed: boolean) {
     if (failed) {
       Column({ space: 3 }) {
         SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(Math.max(17, size * 0.5))
@@ -1178,8 +1250,30 @@ export struct MessageBubble {
       .padding({ left: 10, right: 10, top: 7, bottom: 7 })
       .backgroundColor('#80000000').borderRadius(18);
     } else {
-      this.loadingRing(size, percent);
+      // 进度不进 key，环自己订阅自己更新（见 LiveProgressRing / collapseAlbums）。
+      LiveProgressRing({ fileId: fileId, initialPercent: initialPercent, ringSize: size });
     }
+  }
+
+  // Shared by both the LiveThumbImage placeholder (hasFile === true, only
+  // reached once this message has a photoFileId) and the no-fileId fallback
+  // (hasFile === false) so the two never drift apart.
+  @Builder
+  singleMediaPlaceholder(hasFile: boolean) {
+    Stack() {
+      Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(8)
+        .backgroundColor(this.msg.contentType === 'video' ? '#AEB6C0' : '#D7DCE2');
+      if (this.msg.contentType === 'video') {
+        // Wait only when a real thumbnail file exists. Videos without a
+        // cover remain playable and get the normal play control below.
+        if (hasFile && !this.msg.photoFailed) {
+          this.mediaLoadState(36, this.msg.photoFileId, this.msg.photoProgress, false);
+        }
+      } else {
+        this.mediaLoadState(36, this.msg.photoFileId, this.msg.photoProgress,
+          this.msg.photoFailed || !hasFile);
+      }
+    }.width(this.mediaBox().width).height(this.mediaBox().height);
   }
 
   @Builder
@@ -1364,105 +1458,161 @@ export struct MessageBubble {
     };
   }
 
+  // Shared by both the LiveThumbImage placeholder (hasFile reflects the real
+  // fileId, since that branch can now also be entered via a bare path — see
+  // albumCellBody) and the no-fileId-no-path fallback (hasFile === false) so
+  // the two never drift apart.
+  // Wrapped in its own Stack: LiveThumbImage.build() mounts this as its own
+  // component root when path is empty, and without the wrapper the Column +
+  // mediaLoadState would be two sibling root nodes instead of one stacked on
+  // the other — the progress ring would stop sitting on top of the tint.
+  @Builder
+  albumMediaPlaceholder(cellIdx: number, width: number, height: number, hasFile: boolean) {
+    Stack() {
+      Column().width(width).height(height).borderRadius(6)
+        .backgroundColor(this.albumIsVideoAt(cellIdx) ? '#AEB6C0' : '#D7DCE2');
+      if (hasFile && !(this.albumFailed[cellIdx] ?? false)) {
+        this.mediaLoadState(
+          Math.min(34, Math.min(width, height) * 0.4),
+          this.albumFileIds[cellIdx] ?? 0,
+          this.albumProgress[cellIdx] ?? 0,
+          false
+        );
+      } else if (!this.albumIsVideoAt(cellIdx)) {
+        this.mediaLoadState(
+          Math.min(34, Math.min(width, height) * 0.4),
+          0,
+          0,
+          true
+        );
+      }
+    }.width(width).height(height);
+  }
+
+  // Body shared by both attribute variants below, so the only difference
+  // between them stays confined to whether onAreaChange is attached.
+  @Builder
+  albumCellBody(cell: AlbumCell) {
+    if (this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) {
+      // 播放位选中这一格：挂播放器而不是静态封面。
+      VideoBubbleSurface({
+        fileId: this.albumVideoFileIdAt(cell.idx),
+        fileSize: this.albumVideoFileSizeAt(cell.idx),
+        mimeType: this.albumVideoMimeTypeAt(cell.idx),
+        posterPath: this.albumPathAt(cell.idx),
+        muted: this.autoplayMuted,
+        startPositionMs: this.playSlotStartMs,
+        onPositionChanged: (positionMs: number): void => {
+          this.onPlaySlotPositionChanged(this.albumMemberIdAt(cell.idx), cell.idx, positionMs);
+        },
+        onEnded: (): void => {
+          this.onPlaySlotEnded(this.albumMemberIdAt(cell.idx), cell.idx);
+        }
+      })
+        .width(cell.width).height(cell.height).clip(true)
+        .borderRadius(6)
+        // 同理：交给格子自己的 onClick 打开全屏查看器。
+        .hitTestBehavior(HitTestMode.None);
+    } else if ((this.albumFileIds[cell.idx] ?? 0) !== 0 || this.albumPathAt(cell.idx) !== '') {
+      // No appear transition, for the same reason as the single-media
+      // thumbnail: a row rebuild re-creates this node and would
+      // replay the fade every time.
+      // desiredSize matters most here: a cell is a few tens of vp
+      // wide while the file behind it is the conversation-wide size.
+      // Self-subscribing: the row key no longer carries the path, so
+      // this node must react to the thumbnail landing on its own.
+      // The condition can't be fileId-only: MessageStore backfills
+      // photoPath from the full-size download while fileId can still be 0
+      // for that entry, and losing the path there would regress an already
+      // downloaded photo to a dead "retry" tile.
+      LiveThumbImage({
+        fileId: this.albumFileIds[cell.idx] ?? 0,
+        initialPath: this.albumPathAt(cell.idx),
+        boxWidth: cell.width,
+        boxHeight: cell.height,
+        radius: 6,
+        fit: ImageFit.Cover,
+        placeholder: (): void => {
+          this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, (this.albumFileIds[cell.idx] ?? 0) !== 0);
+        }
+      });
+    } else {
+      // A video without a downloadable thumbnail remains playable;
+      // don't leave an endless 0% spinner over that intentional state.
+      this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, false);
+    }
+    if (this.albumIsVideoAt(cell.idx) &&
+      !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) &&
+      (this.albumPathAt(cell.idx) !== '' ||
+        (this.albumFileIds[cell.idx] ?? 0) === 0 ||
+        (this.albumFailed[cell.idx] ?? false))) {
+      this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
+    }
+  }
+
   @Builder
   albumGrid() {
     Column({ space: 2 }) {
       ForEach(packAlbumRows(this.albumRatios, this.albumW()), (row: AlbumCell[], rowIdx: number) => {
         Row({ space: 2 }) {
           ForEach(row, (cell: AlbumCell) => {
-            Stack() {
-              if (this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) {
-                // 播放位选中这一格：挂播放器而不是静态封面。
-                VideoBubbleSurface({
-                  fileId: this.albumVideoFileIdAt(cell.idx),
-                  fileSize: this.albumVideoFileSizeAt(cell.idx),
-                  mimeType: this.albumVideoMimeTypeAt(cell.idx),
-                  posterPath: this.albumPathAt(cell.idx),
-                  muted: this.autoplayMuted,
-                  startPositionMs: this.playSlotStartMs,
-                  onPositionChanged: (positionMs: number): void => {
-                    this.onPlaySlotPositionChanged(this.albumMemberIdAt(cell.idx), cell.idx, positionMs);
-                  },
-                  onEnded: (): void => {
-                    this.onPlaySlotEnded(this.albumMemberIdAt(cell.idx), cell.idx);
+            if (this.albumIsVideoAt(cell.idx)) {
+              // Video cells alone feed the play-slot center-y election, so
+              // onAreaChange is only mounted here — profiling showed every
+              // cell reporting geometry at 2100-2300/s when it was unconditional,
+              // and pure image cells never consumed that data.
+              Stack() {
+                this.albumCellBody(cell);
+              }
+              .width(cell.width).height(cell.height)
+              .accessibilityText(str('mb_album_item_video', cell.idx + 1))
+              .onVisibleAreaApproximateChange(
+                { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
+                  expectedUpdateInterval: 200 },
+                (_visible: boolean, ratio: number): void => {
+                  const memberId = this.albumMemberIdAt(cell.idx);
+                  if (ratio <= 0) {
+                    this.onMediaGone(memberId, cell.idx);
+                  } else {
+                    this.onMediaRatio(memberId, cell.idx, ratio, this.albumCellCenterY.get(cell.idx) ?? 0);
                   }
                 })
-                  .width(cell.width).height(cell.height).clip(true)
-                  .borderRadius(6)
-                  // 同理：交给格子自己的 onClick 打开全屏查看器。
-                  .hitTestBehavior(HitTestMode.None);
-              } else if (this.albumPathAt(cell.idx) !== '') {
-                // No appear transition, for the same reason as the single-media
-                // thumbnail: a row rebuild re-creates this node and would
-                // replay the fade every time.
-                // desiredSize matters most here: a cell is a few tens of vp
-                // wide while the file behind it is the conversation-wide size.
-                CachedImage({
-                  path: this.albumPathAt(cell.idx),
-                  boxWidth: cell.width,
-                  boxHeight: cell.height,
-                  radius: 6,
-                  fit: ImageFit.Cover
-                });
-              } else {
-                Column().width(cell.width).height(cell.height).borderRadius(6)
-                  .backgroundColor(this.albumIsVideoAt(cell.idx) ? '#AEB6C0' : '#D7DCE2');
-                // A video without a downloadable thumbnail remains playable;
-                // don't leave an endless 0% spinner over that intentional state.
-                if ((this.albumFileIds[cell.idx] ?? 0) !== 0 &&
-                  !(this.albumFailed[cell.idx] ?? false)) {
-                  this.mediaLoadState(
-                    Math.min(34, Math.min(cell.width, cell.height) * 0.4),
-                    this.albumProgress[cell.idx] ?? 0,
-                    false
-                  );
-                } else if (!this.albumIsVideoAt(cell.idx)) {
-                  this.mediaLoadState(
-                    Math.min(34, Math.min(cell.width, cell.height) * 0.4),
-                    0,
-                    true
-                  );
-                }
-              }
-              if (this.albumIsVideoAt(cell.idx) &&
-                !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) &&
-                (this.albumPathAt(cell.idx) !== '' ||
-                  (this.albumFileIds[cell.idx] ?? 0) === 0 ||
-                  (this.albumFailed[cell.idx] ?? false))) {
-                this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
-              }
-            }
-            .width(cell.width).height(cell.height)
-            .accessibilityText(this.albumIsVideoAt(cell.idx)
-              ? str('mb_album_item_video', cell.idx + 1)
-              : ((this.albumFailed[cell.idx] ?? false)
-                ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1)))
-            .onVisibleAreaApproximateChange(
-              { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
-                expectedUpdateInterval: 200 },
-              (_visible: boolean, ratio: number): void => {
-                if (!this.albumIsVideoAt(cell.idx)) {
-                  return; // 相册竞选只看这一格是不是视频，图片格不上报
-                }
-                const memberId = this.albumMemberIdAt(cell.idx);
-                if (ratio <= 0) {
-                  this.onMediaGone(memberId, cell.idx);
-                } else {
-                  this.onMediaRatio(memberId, cell.idx, ratio, this.albumCellCenterY.get(cell.idx) ?? 0);
-                }
+              .onAreaChange((_old: Area, area: Area): void => {
+                this.albumCellCenterY.set(cell.idx,
+                  (area.globalPosition.y as number) + (area.height as number) / 2);
               })
-            .onAreaChange((_old: Area, area: Area): void => {
-              this.albumCellCenterY.set(cell.idx,
-                (area.globalPosition.y as number) + (area.height as number) / 2);
-            })
-            .onClick((e: ClickEvent) => {
-              // Same as the single-media case: a failed cell offers retry.
-              if (this.albumCellRetryable(cell.idx)) {
-                this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
-                return;
+              .onClick((e: ClickEvent) => {
+                // Same as the single-media case: a failed cell offers retry.
+                if (this.albumCellRetryable(cell.idx)) {
+                  this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
+                  return;
+                }
+                this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
+              });
+            } else {
+              Stack() {
+                this.albumCellBody(cell);
               }
-              this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
-            });
+              .width(cell.width).height(cell.height)
+              // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
+              .geometryTransition(`media_${this.albumMemberIdAt(cell.idx)}`)
+              .accessibilityText((this.albumFailed[cell.idx] ?? false)
+                ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1))
+              .onVisibleAreaApproximateChange(
+                { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
+                  expectedUpdateInterval: 200 },
+                (_visible: boolean, _ratio: number): void => {
+                  // 相册竞选只看这一格是不是视频，图片格不上报
+                })
+              .onClick((e: ClickEvent) => {
+                // Same as the single-media case: a failed cell offers retry.
+                if (this.albumCellRetryable(cell.idx)) {
+                  this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
+                  return;
+                }
+                this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
+              });
+            }
           }, (cell: AlbumCell) => `cell_${cell.idx}`);
         }
       }, (_row: AlbumCell[], rowIdx: number) => `row_${rowIdx}`);
@@ -1814,7 +1964,7 @@ export struct MessageBubble {
             // Native texture components can otherwise consume the tap before
             // the media wrapper gets a chance to toggle GIF pause/play.
             .hitTestBehavior(HitTestMode.None);
-        } else if (this.msg.photoPath !== '') {
+        } else if (this.msg.photoFileId !== 0 || this.msg.photoPath !== '') {
           // Keep the thumbnail mounted while fullscreen preview is open. ArkUI's
           // geometry transition can re-parent this Image node; with LazyForEach
           // recycling that occasionally restored only the placeholder/background
@@ -1828,28 +1978,25 @@ export struct MessageBubble {
           // Decoded through the PixelMap cache: DMA memory so the first draw
           // costs no texture upload on the render thread, and desiredSize
           // downsamples during the decode rather than after it.
-          CachedImage({
-            path: this.msg.photoPath,
+          // Self-subscribing: the row key no longer carries the path, so this
+          // node must react to the thumbnail landing on its own.
+          // The condition can't be fileId-only: MessageStore backfills
+          // photoPath from the full-size download while photoFileId can still
+          // be 0, and losing the path there would regress an already
+          // downloaded photo to a dead "retry" tile.
+          LiveThumbImage({
+            fileId: this.msg.photoFileId,
+            initialPath: this.msg.photoPath,
             boxWidth: this.mediaBox().width,
             boxHeight: this.mediaBox().height,
             radius: 8,
-            fit: ImageFit.Cover
+            fit: ImageFit.Cover,
+            placeholder: (): void => {
+              this.singleMediaPlaceholder(this.msg.photoFileId !== 0);
+            }
           });
         } else {
-          Stack() {
-            Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(8)
-              .backgroundColor(this.msg.contentType === 'video' ? '#AEB6C0' : '#D7DCE2');
-            if (this.msg.contentType === 'video') {
-              // Wait only when a real thumbnail file exists. Videos without a
-              // cover remain playable and get the normal play control below.
-              if (this.msg.photoFileId !== 0 && !this.msg.photoFailed) {
-                this.mediaLoadState(36, this.msg.photoProgress, false);
-              }
-            } else {
-              this.mediaLoadState(36, this.msg.photoProgress,
-                this.msg.photoFailed || this.msg.photoFileId === 0);
-            }
-          }.width(this.mediaBox().width).height(this.mediaBox().height);
+          this.singleMediaPlaceholder(false);
         }
         if (this.msg.contentType === 'video' && !this.autoplayInlineVideo() &&
           !(this.isPlaySlot(-1) && this.msg.videoFileId !== 0)) {
@@ -1867,6 +2014,10 @@ export struct MessageBubble {
         }
       }
       .width(this.mediaBox().width).height(this.mediaBox().height)
+      // 一镜到底：和全屏查看器里同一条消息的图绑同一个 id，打开/关闭时由系统
+      // 把两者的宽高与位置对齐过渡（见 MediaViewerOverlay）。气泡在查看器打开
+      // 期间仍然挂在列表里，所以出场节点一直存在，动画不会半路断掉。
+      .geometryTransition(`media_${this.msg.id}`)
       .accessibilityText(this.msg.contentType === 'video'
         ? this.videoAccessibilityText()
         : (this.msg.photoFailed ? str('mb_photo_failed') : str('mb_open_photo')))
@@ -1919,6 +2070,10 @@ export struct MessageBubble {
         Column() {
           this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
             this.timeReserveInText());
+          // 配文也要能翻译。translationCandidates 一直把带配文的媒体收进去，
+          // 译文也存下来了，只是原来 translationBlock() 只挂在 text 分支上，
+          // 结果"请求发了、译文有了、没地方显示"。
+          this.translationBlock();
         }.margin({ top: 6 });
       }
     } else if (this.msg.contentType === 'videoNote') {
@@ -2022,6 +2177,8 @@ export struct MessageBubble {
         Column() {
           this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
             this.timeReserveInText());
+          // 见上：配文的译文原来无处可显示。
+          this.translationBlock();
         }.margin({ top: 5 });
       }
     } else if (this.msg.contentType === 'file') {
@@ -2042,6 +2199,8 @@ export struct MessageBubble {
         Column() {
           this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
             this.timeReserveInText());
+          // 见上：配文的译文原来无处可显示。
+          this.translationBlock();
         }.margin({ top: 5 });
       }
     } else if (this.msg.contentType === 'contact') {
@@ -2686,7 +2845,8 @@ export struct MessageBubble {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
+        backgroundBlurStyle: overlayBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
         transition: TransitionEffect.OPACITY
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
           .animation({

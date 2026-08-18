@@ -5,7 +5,8 @@ import { UserStore } from '../main/ets/store/UserStore';
 import { ChatStore } from '../main/ets/store/ChatStore';
 import { ChatThemeStore } from '../main/ets/store/ChatThemeStore';
 import {
-  ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot, emptyChatBackground
+  ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot, emptyChatBackground,
+  invalidateDefaultSnapshot
 } from '../main/ets/store/ChatBackgroundStore';
 import { gradientStops } from '../main/ets/util/backgroundPresentation';
 
@@ -290,17 +291,37 @@ export default function chatBackgroundStoreTest() {
       expect(seeded.store.current().colors[0]).assertEqual('#ABCDEF');
     });
 
-    it('the snapshot tracks only the most recently resolved mode', 0, () => {
+    // 原来这条叫「快照只记住最近解析的那个模式」，断言被取代的模式回落到空。
+    // 那测的是旧实现的单槽位限制，不是需求：快照落盘之后深/浅色各有一个独立
+    // 的 key，两个模式可以同时记住。
+    //
+    // 真正要守的不变量没变，也正是原注释写的那条——**绝不把另一个模式的颜色
+    // 交出去**，因为那会闪出错误的配色。下面四条断言把它钉死：问哪个模式，
+    // 拿到的必须是那个模式自己的颜色。
+    it('深浅色各记一份快照，互不串色', 0, () => {
       const light = harness(false);
       light.store.applyKnownBackground(solidFillBackground(0x111111));
       expect(defaultChatBackgroundSnapshot(false).colors[0]).assertEqual('#111111');
       const dark = harness(true);
       dark.store.applyKnownBackground(solidFillBackground(0x222222));
       expect(defaultChatBackgroundSnapshot(true).colors[0]).assertEqual('#222222');
-      // The now-superseded mode falls back to empty instead of serving the
-      // stale light snapshot — a wrong-mode snapshot would itself flash the
-      // wrong colors, which is exactly what this cache exists to avoid.
+      // 解析过深色之后再问浅色，拿到的仍是浅色那份，不是深色的。
+      expect(defaultChatBackgroundSnapshot(false).colors[0]).assertEqual('#111111');
+      expect(defaultChatBackgroundSnapshot(true).colors[0]).assertEqual('#222222');
+    });
+
+    // 设置页直接调 TDLib、不经过本 store，所以改完背景不会触发 patch()，盘上
+    // 那份会一直是旧的——冷启动后第一个会话将画出**错误的**背景。作废之后最坏
+    // 退化成一次空种子，下次打开会话时 patch() 会重新落一份正确的。
+    it('作废只清掉指定模式那一份', 0, () => {
+      const light = harness(false);
+      light.store.applyKnownBackground(solidFillBackground(0x333333));
+      const dark = harness(true);
+      dark.store.applyKnownBackground(solidFillBackground(0x444444));
+      invalidateDefaultSnapshot(false);
       expect(defaultChatBackgroundSnapshot(false).colors.length).assertEqual(0);
+      // 另一个模式不受牵连。
+      expect(defaultChatBackgroundSnapshot(true).colors[0]).assertEqual('#444444');
     });
 
     it('seedFromDefault falls back to empty when nothing has resolved for that mode', 0, () => {

@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "कोड गलत है या समाप्त हो गया है। नया कोड प्राप्त करें।"
+    },
+    {
+      "name": "mb_translating",
+      "value": "अनुवाद हो रहा है…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "अनुवाद विफल: %1$s"
     }
   ]
 }

@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "الرمز غير صحيح أو منتهي الصلاحية. اطلب رمزًا جديدًا."
+    },
+    {
+      "name": "mb_translating",
+      "value": "جارٍ الترجمة…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "فشلت الترجمة: %1$s"
     }
   ]
 }

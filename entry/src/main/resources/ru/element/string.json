@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "Код неверен или истёк. Запросите новый."
+    },
+    {
+      "name": "mb_translating",
+      "value": "Перевод…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "Ошибка перевода: %1$s"
     }
   ]
 }

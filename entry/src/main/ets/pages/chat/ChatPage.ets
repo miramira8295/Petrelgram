@@ -97,11 +97,16 @@ import {
   searchMentions, mentionOfUser, loadBotCommands, MentionItem, CommandItem
 } from '../../store/InputSuggestions';
 import { appendMention, mentionToken } from '../../util/mentionDraft';
+import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { floatingLiveWindow } from './LiveFloatingWindow';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { audioQueueApplies } from '../../util/audioQueueGate';
+import { overlayMaterial } from '../../util/overlayMaterial';
+import { navigateToChat } from '../../util/chatNav';
+import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -1489,6 +1494,8 @@ struct ChatPage {
   }
 
   onPageHide(): void {
+    // 跳走了就是解析成功了：闸门开，加载态收掉，免得退回来还亮着。
+    endLinkNav();
     console.info(`[ChatDiag] hide msgs=${this.messages.length} groups=${this.groups.length} ds=${this.groupsData.totalCount()}`);
     this.pageVisible = false;
     // 页面不可见时停表，回来时补一次即时值再续上。
@@ -1501,6 +1508,9 @@ struct ChatPage {
 
   onPageShow(): void {
     this.pageVisible = true;
+    // 回到这一页说明上一次链接解析已经有了结局（开了页又退回来，或者只弹了
+    // 个提示），闸门必须开——否则那个链接会一直卡在加载态直到看门狗到点。
+    endLinkNav();
     // onPageHide 只 suspend() 了播放位：候选表还在，被清掉的是当前播放位和
     // 驻留计时。回到这个页面时几何没变、onVisibleAreaApproximateChange 不会
     // 再触发，候选表也就不会被重新灌满——保留候选正是为了这一刻还能选得出
@@ -2907,6 +2917,12 @@ struct ChatPage {
       }
       return;
     }
+    // 从这里往下每一条分支都要往返一次服务器才知道该开哪一页。网络一慢，
+    // 用户看不到反馈就会再点，同一个群于是被开出好几层。闸门放行一次、
+    // 挡住其余，并把这个 url 广播出去让那段文字自己表现成加载中。
+    if (!beginLinkNav(url)) {
+      return;
+    }
     const folderInvite = chatFolderInviteLinkOf(url);
     if (folderInvite !== '') {
       openChatFolderInviteLink(folderInvite);
@@ -2971,13 +2987,15 @@ struct ChatPage {
             }
           }
         }
+        endLinkNavIf(url);
         return;
       }
       const params: Record<string, Object> = { 'chatId': chatId };
       if (msgId !== undefined && msgId > 0) {
         params['jumpTo'] = msgId;
       }
-      router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      navigateToChat(params);
+      endLinkNavIf(url);
     }).catch((e: TdError) => {
       console.error(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
       openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
@@ -3003,7 +3021,7 @@ struct ChatPage {
       }
       if (chatId !== 0) {
         const params: Record<string, Object> = { 'chatId': chatId };
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+        navigateToChat(params);
         return;
       }
       openWebUrl(getContext(this) as common.UIAbilityContext, original);
@@ -3209,7 +3227,7 @@ struct ChatPage {
       if (originMsgId !== 0) {
         params['jumpTo'] = originMsgId;
       }
-      router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      navigateToChat(params);
       return;
     }
     if (originUserId === 0) {
@@ -3222,7 +3240,7 @@ struct ChatPage {
       const id = (chat['id'] as number | undefined) ?? 0;
       if (id !== 0) {
         const params: Record<string, Object> = { 'chatId': id };
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+        navigateToChat(params);
       }
     }).catch((e: TdError) => {
       console.error(`ChatPage.onForwardTap createPrivateChat failed: ${e.message}`);
@@ -3246,7 +3264,7 @@ struct ChatPage {
         // not the whole discussion group's history.
         params['threadRootId'] = threadId;
       }
-      router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      navigateToChat(params);
     }).catch((e: TdError) => {
       console.error(`ChatPage.getMessageThread failed: ${e.message}`);
     });
@@ -3285,7 +3303,15 @@ struct ChatPage {
     // Position the viewer Swiper on the tapped album member.
     const sib = this.siblingIdsFor(messageId);
     this.viewerInitIdx = Math.max(0, sib.indexOf(messageId));
-    this.viewerMsgId = messageId;
+    // 挂载查看器必须在 animateTo 闭包里：geometryTransition 只在动画闭包中
+    // 改变绑定节点的存在性时才会做几何过渡，直接赋值就是瞬间出现（关闭那侧
+    // 早就这么写了，见 closeViewer）。
+    animateTo({
+      duration: this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 300),
+      curve: Curve.Friction
+    }, (): void => {
+      this.viewerMsgId = messageId;
+    });
     this.chromeVisible = true;
     this.viewerVideoLandscape = false;
     this.viewerClosing = false;
@@ -3539,7 +3565,7 @@ struct ChatPage {
       'chatId': chatId,
       'jumpTo': messageId
     };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params });
+    navigateToChat(params);
   }
 
   // Header avatar/title tap → detail page: users/bots get the personal
@@ -3893,11 +3919,29 @@ struct ChatPage {
     });
   }
 
+  // 本次草稿里"按名字"提及过的成员。没有用户名的人，@ 出去只是一串普通
+  // 文字，服务器识别不了、对方收不到提及通知——发送时要靠这份记录补上
+  // textEntityTypeMentionName 实体（见 mentionEntities）。
+  private pendingNameMentions: NameMention[] = [];
+
+  // 记下一次"按名字"的提及。有用户名的走 @username，服务器自己认得，不必记。
+  private rememberNameMention(item: MentionItem, name: string): void {
+    if (item.username !== '' || name === '' || item.userId <= 0) {
+      return;
+    }
+    const known: boolean = this.pendingNameMentions.some(
+      (m: NameMention): boolean => m.userId === item.userId && m.name === name);
+    if (!known) {
+      this.pendingNameMentions = [...this.pendingNameMentions, { name, userId: item.userId }];
+    }
+  }
+
   // Replace the trailing '@token' with the chosen member.
   private pickMention(item: MentionItem): void {
     const idx = this.draft.lastIndexOf('@');
     const head = idx >= 0 ? this.draft.substring(0, idx) : this.draft;
     this.draft = `${head}${mentionToken(item.name, item.username)} `;
+    this.rememberNameMention(item, item.name.trim());
     this.mentionItems = [];
     setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
   }
@@ -3913,6 +3957,7 @@ struct ChatPage {
         return;
       }
       this.draft = appendMention(this.draft, token);
+      this.rememberNameMention(item, name.trim());
       this.mentionItems = [];
       setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
     });
@@ -4316,6 +4361,8 @@ struct ChatPage {
   // Measured bot-keyboard height; with the input bar it makes up the bottom
   // chrome the scroll-to-bottom FAB has to clear.
   @State replyKbH: number = 0;
+  // 输入框的真实宽度，composerEditorHeight() 拿它做排版约束。
+  @State composerEditorW: number = 0;
   // "Fake" animation: the open/close transition flies an empty white shell;
   // the real panel content (hundreds of emoji + sticker players) mounts only
   // after the animation lands, so frames stay cheap.
@@ -4336,15 +4383,39 @@ struct ChatPage {
   // the TextArea has to scroll internally, which it can only do if nothing
   // truncates the layout (see the removed maxLines at the call site).
   private composerEditorHeight(): number {
-    const chunks: string[] = this.draft.split('\n');
-    let lines: number = 0;
-    for (let i: number = 0; i < chunks.length; i++) {
-      // Rough wrap estimate: the exact break depends on the glyphs, and
-      // over-counting only grows the box a line early.
-      lines += Math.max(1, Math.ceil(chunks[i].length / 18));
+    const oneLine: number = COMPOSER_LINE_H + COMPOSER_EDITOR_PAD * 2;
+    const cap: number = COMPOSER_LINE_H * COMPOSER_MAX_LINES + COMPOSER_EDITOR_PAD * 2;
+    if (this.draft === '' || this.composerEditorW <= 0) {
+      return oneLine;
     }
-    return COMPOSER_LINE_H * Math.max(1, Math.min(COMPOSER_MAX_LINES, lines))
-      + COMPOSER_EDITOR_PAD * 2;
+    // 真实测量，不再按"每行 18 个字"硬估。
+    //
+    // 那个 18 是拍的：一行能装多少字取决于屏宽、字号缩放和中英文混排，在宽屏
+    // 上实际只装得下约 15 个，于是第 16 个字文本已经换行、而 ceil(16/18) 仍是
+    // 1，盒子要等到第 19 个字才长高——表现为"输到第二行第 4 个字才展开"
+    // （Mate 80 Pro Max 稳定复现）。
+    //
+    // TextArea 本身是自适应内容高度的（不设 height 时），这里之所以还锁着
+    // 高度，是因为它的固有最小高度在某些机型/字号下比一行还高，空输入框会
+    // 变胖（见下方 .height 调用点的原注释）。所以保留显式高度，只把估算换成
+    // measureTextSize —— 它按给定的约束宽度做真实排版，返回的高度已经算好了
+    // 换行。
+    let measured: number = oneLine;
+    try {
+      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
+        textContent: this.draft,
+        fontSize: 15,
+        lineHeight: COMPOSER_LINE_H,
+        // 左右各 3 的内边距要从可用宽度里扣掉，否则会少算一行。
+        constraintWidth: Math.max(1, this.composerEditorW - 6)
+      });
+      // measureTextSize 返回的是 px。
+      measured = px2vp(size.height as number) + COMPOSER_EDITOR_PAD * 2;
+    } catch (e) {
+      // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
+      console.error(`composerEditorHeight measure failed: ${(e as Error).message}`);
+    }
+    return Math.max(oneLine, Math.min(cap, Math.ceil(measured)));
   }
 
   // 渐变模糊：只在顶部 chrome 那一条区域内从"全糊"过渡到"清晰"。
@@ -4974,11 +5045,17 @@ struct ChatPage {
     this.commandMenuOpen = false;
     this.atBottom = true;
     this.stayAtUnread = false;
-    store.sendAsync(text, replyId).then((): void => {
+    // 按名字提及的实体在这里生成：偏移必须相对**实际发出去的那串文本**，
+    // 所以用 trim 之后的 text，不是原始草稿。
+    const entities: TdObject[] = buildMentionEntities(text, this.pendingNameMentions);
+    store.sendAsync(text, replyId, entities).then((): void => {
       // The user may already have started the next message while TDLib was
       // accepting this one. Never erase newer input or a newly selected reply.
       if (this.draft === draftSnapshot) {
         this.draft = '';
+        // 草稿清空了，提及记录也跟着作废；草稿被新输入接管时则留着，
+        // 用户可能还在续写同一条消息。
+        this.pendingNameMentions = [];
       }
       if (this.replyToId === replyId) {
         this.clearReply();
@@ -5391,6 +5468,33 @@ struct ChatPage {
     }
   }
 
+  // 就地翻译一条消息：长按菜单的「翻译」和失败行上的「重试」共用。
+  //
+  // 先调 service.retry() 清掉失败冷却：TranslationService 失败后有 60 秒静默
+  // 期，不清掉的话紧接着的 request() 会被直接挡下、界面上什么都不会发生。
+  // 对从没失败过的消息，这一步是无副作用的空操作。
+  private translateInline(messageId: number): void {
+    const store = this.store;
+    if (store === null) {
+      return;
+    }
+    const target: MessageEntry | undefined =
+      store.getMessages().find((e: MessageEntry): boolean => e.id === messageId);
+    if (target === undefined) {
+      return;
+    }
+    const lang: string = resolveTranslateTarget();
+    const service = getTranslationService(getTdClient());
+    service.retry(this.chatId, messageId, target.editDate, lang);
+    const originalText: string = target.text;
+    service.request(this.chatId, messageId, target.editDate, lang,
+      (text: string | null): void => {
+        if (text !== null && text !== '' && text !== originalText && this.store === store) {
+          store.applyTranslation(messageId, lang, text);
+        }
+      });
+  }
+
   private toggleTranslationHidden(messageId: number, hidden: boolean): void {
     this.store?.setTranslationHidden(messageId, hidden);
   }
@@ -5736,6 +5840,10 @@ struct ChatPage {
   private translateSheetEditDate: number = 0;
   private translateSheetSeq: number = 0;
 
+  // 长按菜单里的「翻译」。原来会弹一个 sheet 单独展示译文，现在改成就地
+  // 翻译：进行中/失败/译文都长在气泡里（见 translationChannel 与
+  // MessageBubble.translationBlock），和整聊天翻译是同一条路径、同一套缓存。
+  // sheet 相关状态与 runSheetTranslation 暂时保留，翻译面板的入口还在用。
   private translateMessage(messageId: number): void {
     const entry: MessageEntry | undefined =
       this.messages.find((m: MessageEntry): boolean => m.id === messageId);
@@ -5743,11 +5851,7 @@ struct ChatPage {
       promptAction.showToast({ message: $r('app.string.cp_nothing_to_translate'), duration: 1600 });
       return;
     }
-    this.translateSheetMsgId = messageId;
-    this.translateSheetEditDate = entry.editDate;
-    this.translateSheetOriginal = entry.text;
-    this.translateSheetOpen = true;
-    this.runSheetTranslation(resolveTranslateTarget());
+    this.translateInline(messageId);
   }
 
   private runSheetTranslation(lang: string): void {
@@ -6137,6 +6241,9 @@ struct ChatPage {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
       curve: Curve.EaseOut
     })
+    // 见 header()：顶栏胶囊统一走 'bar' 档材质，低于 API 26 时返回 undefined，
+    // 保持原来的 stateStyles 背景。
+    .systemMaterial(overlayMaterial('bar'))
     .onClick(onTap);
   }
 
@@ -6164,6 +6271,8 @@ struct ChatPage {
         normal: this.headerActionNormalStyle,
         pressed: this.headerActionPressedStyle
       })
+      // 见上：顶栏胶囊统一走 'bar' 档材质。
+      .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
         curve: Curve.EaseOut
@@ -6340,6 +6449,14 @@ struct ChatPage {
         normal: this.headerIdentityNormalStyle,
         pressed: this.headerIdentityPressedStyle
       })
+      // 聊天页顶栏的三个胶囊（返回 / 头像+名称 / ⋮）都浮在消息列表之上，
+      // 正对 ULTRA_THIN 那档「浮动工具栏」。材质生效时会把 stateStyles 的
+      // 背景色清成透明并接管边框，按压反馈仍由 stateStyles 的缩放/透明度
+      // 体现；'bar' 档的 applyShadow:false 让这里手调的阴影继续生效。
+      //
+      // 注意：它悬浮在滚动列表上，官方明确提醒材质要逐帧重采样背后内容，
+      // 这一处的滑动开销必须实测，不能想当然。
+      .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
         curve: Curve.EaseOut
@@ -6397,6 +6514,7 @@ struct ChatPage {
         curve: Curve.EaseOut
       })
       .bindMenu(this.headerMenuShow, this.headerMenu(), {
+        systemMaterial: overlayMaterial('menu'),
         onDisappear: (): void => { this.headerMenuShow = false; }
       })
       .enabled(!this.pageClosing && this.chatId !== 0)
@@ -6810,7 +6928,32 @@ struct ChatPage {
 
   @Builder
   inputBar() {
-    Row() {
+    Row({ space: 6 }) {
+      // 附件按钮在输入框**外面**：它是一个独立动作，不属于正在编辑的这段
+      // 文本。放在胶囊里时它会跟着输入框一起长高（胶囊随文本涨到四行），
+      // 位置飘忽；移出来之后固定贴着左边，和右侧的发送键左右呼应。
+      //
+      // 录音态不显示：那时整条输入区被"红点 + 计时 + 取消 + 发送"接管，
+      // 再挂一个附件入口没有意义。
+      if (!this.isRecording) {
+        // 和胶囊同一块底色、同一种材质，读起来是"输入框旁边的一个键"，
+        // 而不是浮在聊天背景上的一个裸图标。
+        Stack() {
+          SymbolGlyph($r('sys.symbol.paperclip'))
+            .fontSize(23)
+            .fontColor([COLOR_TEXT_SECONDARY]);
+        }
+        .width(46)
+        .height(46)
+        .borderRadius(23)
+        // 46 + 1 的底边距，圆盘顶到胶囊上沿差 1px——比 48 的满格轻一点，
+        // 又不至于像 40 那样在胶囊旁边缩成一颗小扣子。
+        .alignSelf(ItemAlign.End)
+        .margin({ bottom: 1 })
+        .backgroundColor($r('app.color.surface'))
+        .systemMaterial(overlayMaterial('card'))
+        .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
+      }
       Column() {
         if (this.editingId !== 0) {
           this.editPreview();
@@ -6891,6 +7034,12 @@ struct ChatPage {
             .barState(BarState.Auto)
             .backgroundColor(Color.Transparent)
             .key('chat_composer')
+            .onAreaChange((_old: Area, area: Area): void => {
+              const next: number = area.width as number;
+              if (Math.abs(next - this.composerEditorW) > 0.5) {
+                this.composerEditorW = next;
+              }
+            })
             .onChange((v: string) => {
               this.draft = v;
               this.updateSuggestions(v);
@@ -6948,10 +7097,6 @@ struct ChatPage {
               .accessibilityText($r('app.string.cp_open_miniapp'))
               .onClick((): void => { this.openBotMiniApp(); });
           }
-          SymbolGlyph($r('sys.symbol.paperclip'))
-            .fontSize(22)
-            .fontColor([COLOR_TEXT_SECONDARY])
-            .bindMenu(this.attachMenuItems());
           // Mic ↔ send swap: outgoing icon shrinks/fades while the incoming one
           // scales in (the send button adds a small un-rotate flourish).
           Stack() {
@@ -6979,7 +7124,10 @@ struct ChatPage {
                 if (this.composerSending) {
                   LoadingProgress().width(18).height(18).color(Color.White);
                 } else {
-                  SymbolGlyph($r('sys.symbol.paperplane')).fontSize(20).fontColor([Color.White]);
+                  // 草稿从空变非空时这个按钮才挂载，isActive=true 让它出现即弹
+                  // 一下，和外层已有的 opacity+scale 转场叠在一起。
+                  SymbolGlyph($r('sys.symbol.paperplane')).fontSize(20).fontColor([Color.White])
+                    .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP), true);
                 }
               }
               .width(40).height(40).borderRadius(20)
@@ -7005,9 +7153,12 @@ struct ChatPage {
         .padding({ left: 12, right: 4, top: 4, bottom: 4 })
         .alignItems(VerticalAlign.Center);
       }
-      .width('100%')
+      .layoutWeight(1)
       .backgroundColor($r('app.color.surface'))
-      .borderRadius(24);
+      .borderRadius(24)
+      // Once the material takes effect it clears the fill above to transparent
+      // and supplies its own; below API 26 it is undefined and the fill stands.
+      .systemMaterial(overlayMaterial('card'));
     }.width('100%')
     .padding({
       left: 14,
@@ -7035,7 +7186,9 @@ struct ChatPage {
         .opacity(this.searchIdx + 1 < this.searchTotal ? 1 : 0.4)
         .onClick(() => { this.searchOlder(); });
         Row() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+          // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         }
         .width(42).height(42).justifyContent(FlexAlign.Center)
         .opacity(this.searchIdx > 0 ? 1 : 0.4)
@@ -7299,7 +7452,9 @@ struct ChatPage {
         if (this.scrollToBottomBusy) {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
         } else {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+          // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         }
       }
       .width(46).height(46).borderRadius(23)
@@ -7654,7 +7809,7 @@ struct ChatPage {
   private syncBackgroundRaster(): void {
     const params = this.backgroundRasterParams();
     const sig = rasterSignature(params);
-    const hit = cachedRaster(sig);
+    const hit = cachedRaster(sig, (getContext(this) as common.UIAbilityContext).cacheDir);
     if (hit !== '') {
       this.bgRasterPath = hit;
       return;
@@ -7674,7 +7829,8 @@ struct ChatPage {
       this.bgRasterTimer = -1;
       const settled = this.backgroundRasterParams();
       const settledSig = rasterSignature(settled);
-      const settledHit = cachedRaster(settledSig);
+      const settledHit = cachedRaster(settledSig,
+        (getContext(this) as common.UIAbilityContext).cacheDir);
       if (settledHit !== '') {
         this.bgRasterPath = settledHit;
         return;
@@ -7873,6 +8029,7 @@ struct ChatPage {
                 onToggleTranslation: (id: number, hidden: boolean): void => {
                   this.toggleTranslationHidden(id, hidden);
                 },
+                onRetryTranslation: (id: number): void => { this.translateInline(id); },
                 onPinMsg: (id: number, unpin: boolean): void => { this.togglePinMessage(id, unpin); },
                 onStopPoll: (id: number): void => { this.stopPoll(id); },
                 onReplaceMedia: (id: number): void => { this.replaceMedia(id); },
@@ -7923,10 +8080,22 @@ struct ChatPage {
                 onVoicePlaybackStarted: (id: number): void => {
                   this.onVoicePlaybackStarted(id);
                 },
-                audioQueuePosition: this.musicQueue.queuePosition(this.messages, g.head.id),
-                audioQueueLength: this.musicQueue.queueLength(this.messages),
-                audioHasPrevious: this.musicQueue.hasPrevious(this.messages, g.head.id),
-                audioHasNext: this.musicQueue.hasNext(this.messages, g.head.id),
+                // 三元短路是必需的，不是风格问题：这四个值要读整个 messages 数组，而
+                // ArkUI 按"build 期实际读取"记录状态依赖。无条件地算它们，等于让每一
+                // 条消息行的 build 都依赖整个 messages @State —— store 每 notify 一次
+                // （哪怕只是某张图的下载进度动了一下），所有可见行都会重跑 build、拿到
+                // 新的 MessageEntry、整行重建。实测 notify≈10/秒时 rebuild≈140/秒，
+                // 比值就是可见行数；notify 为 0 的那些秒 rebuild 恰好也是 0。
+                // 这四个 prop 只在 MessageBubble 的 contentType === 'audio' 分支里被
+                // 消费，非音频行传常量完全等价。不要"化简"掉三元。
+                audioQueuePosition: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.queuePosition(this.messages, g.head.id) : 0,
+                audioQueueLength: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.queueLength(this.messages) : 0,
+                audioHasPrevious: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.hasPrevious(this.messages, g.head.id) : false,
+                audioHasNext: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.hasNext(this.messages, g.head.id) : false,
                 onAudioTap: (id: number): void => { this.musicQueue.play(this.messages, id, false); },
                 onAudioPrevious: (id: number): void => { this.musicQueue.previous(this.messages, id); },
                 onAudioNext: (id: number): void => { this.musicQueue.next(this.messages, id); },
@@ -8450,7 +8619,8 @@ struct ChatPage {
     .bindSheet($$this.translateSheetOpen, this.translateSheet(), {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       backgroundColor: $r('app.color.surface'),
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

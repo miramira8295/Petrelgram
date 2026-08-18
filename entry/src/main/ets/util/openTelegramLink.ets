@@ -9,6 +9,7 @@ import {
 } from './linkNav';
 import { openWebUrl } from './webBrowserNav';
 import { getMainMiniApp, getMiniAppLinkUrl } from '../store/BotApi';
+import { navigateToChat } from './chatNav';
 
 function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     joinedNoticeIsChannel: boolean = false): void {
@@ -17,7 +18,7 @@ function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     params['showJoinedNotice'] = true;
     params['joinedNoticeIsChannel'] = joinedNoticeIsChannel;
   }
-  router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+  navigateToChat(params);
 }
 
 function isTelegramInternalUrl(url: string): boolean {
@@ -61,10 +62,11 @@ function openProfileForChat(chat: TdObject, draftText: string = '', openProfile:
   if (draftText !== '') {
     params['draftText'] = draftText;
   }
-  router.pushUrl({
-    url: openProfile ? 'pages/profile/ChatProfilePage' : 'pages/chat/ChatPage',
-    params: params
-  });
+  if (openProfile) {
+    router.pushUrl({ url: 'pages/profile/ChatProfilePage', params: params });
+    return;
+  }
+  navigateToChat(params);
 }
 
 function resolvePublicChat(context: common.UIAbilityContext, username: string, draftText: string,
@@ -103,7 +105,7 @@ function openMessageLink(context: common.UIAbilityContext, link: string, origina
     if (msgId > 0) {
       params['jumpTo'] = msgId;
     }
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+    navigateToChat(params);
   }).catch((error: TdError): void => {
     console.error(`openTelegramLink.getMessageLinkInfo failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
@@ -228,7 +230,7 @@ function openPhoneNumberUser(context: common.UIAbilityContext, type: TdObject, o
         if (draftText !== '') {
           params['draftText'] = draftText;
         }
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+        navigateToChat(params);
       }
     }).catch((error: TdError): void => {
       console.error(`openTelegramLink.createPhoneChat failed: ${error.message}`);
@@ -626,7 +628,7 @@ export function openChatLinkAction(context: common.UIAbilityContext, action: Cha
     if (action.draftText !== '') {
       params['draftText'] = action.draftText;
     }
-    router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+    navigateToChat(params);
     if (action.startParam === '') {
       return;
     }

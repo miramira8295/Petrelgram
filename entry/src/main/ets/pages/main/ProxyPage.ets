@@ -1,11 +1,11 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
-import { getTdClient } from '../../tdkit/Globals';
+import { getConnectionState, getTdClient } from '../../tdkit/Globals';
 import {
   ProxyEntry, PROXY_SOCKS5, PROXY_MTPROTO, PROXY_HTTP,
   proxyTypeLabel, listProxies, addProxy, editProxy, enableProxy, disableProxy,
-  removeProxy, pingProxy, testProxy, getProxyShareLink, getProxyConnectionState
+  removeProxy, pingProxy, testProxy, getProxyShareLink
 } from '../../store/ProxyApi';
 import {
   parseProxyPort, proxyActionErrorText, proxyConnectionText,
@@ -20,6 +20,7 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 const TOP_ACTION_SIZE: number = 44;
@@ -185,11 +186,12 @@ struct ProxyPage {
         }
       );
     }
-    getProxyConnectionState().then((state: string): void => {
-      if (this.active) { this.connectionState = state; }
-    }).catch((error: TdError): void => {
-      console.warn(`ProxyPage.getConnectionState failed: ${error.message}`);
-    });
+    // 读进程内缓存，不要向 TDLib 现问：这个构建没有 getConnectionState 方法
+    // （实测 "Unknown class \"getConnectionState\""，每次进页面必失败，
+    // connectionState 停在 '' 于是顶部一直显示"读取代理状态…"）。
+    // Globals 在建 client 时就订阅了 updateConnectionState 并缓存，正是为了
+    // 解决"订阅晚了就收不到当前值"——页面按需读它即可。
+    this.connectionState = getConnectionState();
   }
 
   private consumeRouteParams(): void {
@@ -340,6 +342,10 @@ struct ProxyPage {
           this.finishPing(entry.id, token, seconds, true);
         }
       } catch (caught) {
+        // 原来这里把错误整个吞掉，行上只剩一句"无法连接"，分不清是代理真的
+        // 不通还是请求本身没发对——testProxy 就栽在后者上（这个 TDLib 构建
+        // 的 proxy 系列 API 收的是 proxy 对象，不是标准的平铺字段）。
+        console.error(`[proxy] ping ${entry.id} failed, raw: ${(caught as Error).message}`);
         if (generation === this.pingGeneration) {
           this.finishPing(entry.id, token, 0, false);
         }
@@ -931,7 +937,8 @@ struct ProxyPage {
       .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
       .margin({ right: 6 }).enabled(this.actionKey === '')
       .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .accessibilityText($r('app.string.px_more_actions')).bindMenu(this.proxyMenu(entry));
+      .accessibilityText($r('app.string.px_more_actions'))
+      .bindMenu(this.proxyMenu(entry), { systemMaterial: overlayMaterial('menu') });
     }
     .width('100%').alignItems(VerticalAlign.Center)
     .transition(TransitionEffect.OPACITY.combine(
@@ -1250,7 +1257,7 @@ struct ProxyPage {
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe })
     .bindSheet($$this.sheetOpen, this.proxyFormSheet(), {
-      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving
+      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, systemMaterial: overlayMaterial('dialog')
     });
   }
 }

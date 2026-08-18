@@ -8,6 +8,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const PAGE_LIMIT: number = 40;
 const CARD_RADIUS: number = 16;
@@ -453,7 +454,8 @@ struct BlockedUsersPage {
     .bindSheet($$this.pickerOpen, this.pickerSheet(), {
       height: SheetSize.LARGE,
       backgroundColor: COLOR_SURFACE,
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

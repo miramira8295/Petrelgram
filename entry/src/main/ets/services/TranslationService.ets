@@ -2,6 +2,9 @@ import { i18n } from '@kit.LocalizationKit';
 import { KEY_TRANSLATE_TARGET } from '../store/AppSettings';
 import { TdClient } from '../tdkit/TdClient';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
+import {
+  clearTranslationStatus, publishTranslating, publishTranslationFailed
+} from '../util/translationChannel';
 
 // Whole-chat translation engine.
 //
@@ -161,7 +164,13 @@ interface Job {
   resolvers: Array<(text: string | null) => void>;
 }
 
-const MAX_ACTIVE: number = 2;
+// 并发上限是自适应的：平时跑 MAX_ACTIVE_FAST，一旦撞上 flood-wait 就降到
+// MAX_ACTIVE_SAFE 冷静一阵再爬回去。TDLib 的 "Too Many Requests: retry
+// after N" 会把**整个队列**停住（同一个限流桶），所以一味开大反而更慢。
+const MAX_ACTIVE_FAST: number = 6;
+const MAX_ACTIVE_SAFE: number = 2;
+// 撞限流后维持保守并发的时长，之后恢复。
+const THROTTLE_COOLDOWN_MS: number = 30_000;
 // A failed message is retried on a later request, but not in a tight loop.
 const FAILURE_HOLD_MS: number = 60_000;
 
@@ -175,6 +184,15 @@ export class TranslationService {
   private queued: Set<string> = new Set();
   private active: number = 0;
   private backoffUntil: number = 0;
+  // 上次撞上 flood-wait 的时刻，0 表示从没撞过。
+  private throttledAt: number = 0;
+
+  private maxActive(): number {
+    if (this.throttledAt === 0 || Date.now() - this.throttledAt > THROTTLE_COOLDOWN_MS) {
+      return MAX_ACTIVE_FAST;
+    }
+    return MAX_ACTIVE_SAFE;
+  }
 
   constructor(client: TdClient) {
     this.client = client;
@@ -219,8 +237,15 @@ export class TranslationService {
     this.pump();
   }
 
+  // 失败行上的「重试」。清掉 60 秒冷却和瞬时态，调用方随后照常 request()
+  // 即可——否则那次请求会被 FAILURE_HOLD_MS 静默挡掉。
+  retry(chatId: number, messageId: number, editDate: number, lang: string): void {
+    this.failedAt.delete(keyOf(chatId, messageId, editDate, lang));
+    clearTranslationStatus(messageId);
+  }
+
   private pump(): void {
-    if (this.active >= MAX_ACTIVE || this.queue.length === 0) {
+    if (this.active >= this.maxActive() || this.queue.length === 0) {
       return;
     }
     const wait = this.backoffUntil - Date.now();
@@ -230,6 +255,7 @@ export class TranslationService {
     }
     const job = this.queue.shift() as Job;
     this.active++;
+    publishTranslating(job.messageId);
     const req: TdRequest = { '@type': 'translateMessageText' };
     req['chat_id'] = job.chatId;
     req['message_id'] = job.messageId;
@@ -243,8 +269,14 @@ export class TranslationService {
       const match = /retry after (\d+)/.exec(e.message);
       if (match !== null) {
         this.backoffUntil = Date.now() + (parseInt(match[1], 10) + 1) * 1000;
+        this.throttledAt = Date.now();
       } else {
         this.failedAt.set(job.key, Date.now());
+      }
+      // 原始报错原样交给界面（用户要求）。限流是"稍后自动重来"，不是失败，
+      // 所以那种情况保持「翻译中」，不弹错误。
+      if (match === null) {
+        publishTranslationFailed(job.messageId, e.message);
       }
       console.error(`TranslationService: ${job.messageId} failed: ${e.message}`);
       this.finish(job, null, match !== null);
@@ -256,6 +288,7 @@ export class TranslationService {
     this.queued.delete(job.key);
     if (text !== null) {
       this.cache.set(job.key, text);
+      clearTranslationStatus(job.messageId);
     }
     if (requeue) {
       // Flood-waited, not failed: put it back so it retries after the backoff.

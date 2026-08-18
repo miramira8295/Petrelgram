@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "驗證碼錯誤或已過期，請重新取得"
+    },
+    {
+      "name": "mb_translating",
+      "value": "翻譯中…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "翻譯失敗：%1$s"
     }
   ]
 }

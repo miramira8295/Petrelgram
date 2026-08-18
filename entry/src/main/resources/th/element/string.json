@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "รหัสไม่ถูกต้องหรือหมดอายุแล้ว โปรดขอรหัสใหม่"
+    },
+    {
+      "name": "mb_translating",
+      "value": "กำลังแปล…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "แปลไม่สำเร็จ: %1$s"
     }
   ]
 }

@@ -13,6 +13,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { plural, str } from '../../util/strings';
 import { clockTime, fullDate, monthDayTime } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 16;
 const DANGER: string = '#EF5B5B';
@@ -1203,7 +1204,8 @@ struct ActiveSessionsPage {
     .bindSheet($$this.detailOpen, this.sessionDetailSheet(), {
       height: '78%',
       backgroundColor: $r('app.color.surface'),
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "کد اشتباه است یا منقضی شده است. کد جدیدی درخواست کنید."
+    },
+    {
+      "name": "mb_translating",
+      "value": "در حال ترجمه…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "ترجمه ناموفق بود: %1$s"
     }
   ]
 }

@@ -20,6 +20,7 @@ import {
 import { HuaweiPushResult, registerHuaweiPush } from '../../services/HuaweiPushRegistration';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 
@@ -605,7 +606,8 @@ struct WebPushPage {
     .backgroundColor(COLOR_PAGE_BG)
     .bindSheet($$this.consentShown, this.consentSheet(), {
       height: SheetSize.FIT_CONTENT,
-      backgroundColor: COLOR_SURFACE
+      backgroundColor: COLOR_SURFACE,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

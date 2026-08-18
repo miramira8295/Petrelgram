@@ -66,6 +66,14 @@ import playSlotRegistryTest from './PlaySlotRegistry.test';
 import backgroundBlurTest from './BackgroundBlur.test';
 import themeTest from './Theme.test';
 import patternTileGridTest from './PatternTileGrid.test';
+import mediaThumbChannelTest from './MediaThumbChannel.test';
+import collapseAlbumsKeyTest from './CollapseAlbumsKey.test';
+import audioQueueGateTest from './AudioQueueGate.test';
+import mentionEntitiesTest from './MentionEntities.test';
+import chatListDataSourceTest from './ChatListDataSource.test';
+import overlayMaterialTest from './OverlayMaterial.test';
+import chatNavTest from './ChatNav.test';
+import linkTapGuardTest from './LinkTapGuard.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -136,4 +144,12 @@ export default function testsuite() {
   backgroundBlurTest();
   themeTest();
   patternTileGridTest();
+  mediaThumbChannelTest();
+  collapseAlbumsKeyTest();
+  audioQueueGateTest();
+  mentionEntitiesTest();
+  chatListDataSourceTest();
+  overlayMaterialTest();
+  chatNavTest();
+  linkTapGuardTest();
 }
