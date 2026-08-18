@@ -8,6 +8,7 @@ import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { EMOJI_CONTENT_HEIGHT } from '../../util/drawerMetrics';
+import { probeHit } from '../../util/panelProbe';
 
 export interface GifItem {
   fileId: number;    // the animation file (what gets sent)
@@ -51,6 +52,11 @@ export struct GifPicker {
       clearTimeout(this.sendGuardTimer);
       this.sendGuardTimer = -1;
     }
+  }
+
+  private playbackProbed(): boolean {
+    probeHit('gif.cell');
+    return this.playbackEnabled();
   }
 
   private playbackEnabled(): boolean {
@@ -250,10 +256,12 @@ export struct GifPicker {
           str('gif_none_saved_sub'), false);
       } else {
         Grid() {
+          // 探针：这里是 ForEach 不是 LazyForEach——网格不虚拟化，拿回多少
+          // 条就一次性建多少格。计一下实际规模。
           ForEach(this.gifs, (g: GifItem) => {
             GridItem() {
               Stack() {
-                if (this.playbackEnabled() && g.srcPath !== '') {
+                if (this.playbackProbed() && g.srcPath !== '') {
                   SmartLoopVideo({
                     videoPath: g.srcPath, thumbPath: g.thumbPath,
                     boxWidth: 112, boxHeight: 112, powerCategory: 'gif'

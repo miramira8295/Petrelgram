@@ -4,6 +4,7 @@ import {
   KEY_POWER_EMOJI_CHAT, KEY_POWER_EMOJI_REACTIONS, KEY_POWER_EMOJI_STATUS,
   KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP, KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
+import { probeHit } from '../../util/panelProbe';
 
 let nextWebmStickerId: number = 1;
 // Pre-EOF rewind: poll the position and seek to 0 this far before the end.
@@ -106,7 +107,12 @@ export struct WebmStickerView {
     return `webm_sticker_${this.instanceId}`;
   }
 
+  aboutToAppear(): void {
+    probeHit('webm.mount');
+  }
+
   aboutToDisappear(): void {
+    probeHit('webm.unmount');
     this.release();
   }
 
