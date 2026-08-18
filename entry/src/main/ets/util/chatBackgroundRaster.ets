@@ -190,8 +190,38 @@ export function rasterSignature(p: BackgroundRasterParams): string {
     `_blur${radius}_${Math.round(p.width)}x${Math.round(p.height)}`;
 }
 
-export function cachedRaster(sig: string): string {
-  return rasterCache.get(sig) ?? '';
+// 光栅图的文件名完全由签名决定（见 rasterizeBackground 里的 dest），所以上一次
+// 启动写下的那张图，这一次启动本来就能直接用——但原来只查进程内的 Map，冷启动
+// 必然未命中，于是首次进入聊天会用整整一秒渲染实时图层（渐变 + 一大堆平铺图块
+// + 蒙层），真机 Profiler 上表现为 Render Service 单帧 46–65ms 的掉帧，而第二次
+// 进入命中内存缓存、只画一张 JPEG 就完全不卡。
+//
+// 传入 cacheDir 时顺带查一次磁盘。命中就提到内存里，后续调用还是走 Map。
+// accessSync 只是一次 stat，而调用点是背景状态变化（每次进聊天几次），不在每帧
+// 路径上。只缓存命中结果：未命中不写进 Map，否则一张刚写好的图会被负缓存挡住。
+export function cachedRaster(sig: string, cacheDir: string = ''): string {
+  const known = rasterCache.get(sig);
+  if (known !== undefined) {
+    return known;
+  }
+  if (cacheDir === '') {
+    return '';
+  }
+  const dest = rasterPathFor(sig, cacheDir);
+  try {
+    if (fileIo.accessSync(dest)) {
+      rasterCache.set(sig, dest);
+      return dest;
+    }
+  } catch (e) {
+    // 盘上没有或不可读都当作未命中，重新合成即可。
+  }
+  return '';
+}
+
+// 文件名的唯一定义，写入与查找共用，避免两处拼法漂移。
+function rasterPathFor(sig: string, cacheDir: string): string {
+  return `${cacheDir}/chatbg_${sig.replace(/[^A-Za-z0-9_-]/g, '')}.jpg`;
 }
 
 @Builder
@@ -278,7 +308,7 @@ export async function rasterizeBackground(
     pixelMap = await ui.getComponentSnapshot()
       .createFromComponent(node, SNAPSHOT_DELAY_MS, true,
         { scale: 1, waitUntilRenderFinished: true });
-    const dest = `${cacheDir}/chatbg_${sig.replace(/[^A-Za-z0-9_-]/g, '')}.jpg`;
+    const dest = rasterPathFor(sig, cacheDir);
     packer = image.createImagePacker();
     const file = await fileIo.open(dest,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);

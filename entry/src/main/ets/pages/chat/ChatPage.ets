@@ -7655,7 +7655,7 @@ struct ChatPage {
   private syncBackgroundRaster(): void {
     const params = this.backgroundRasterParams();
     const sig = rasterSignature(params);
-    const hit = cachedRaster(sig);
+    const hit = cachedRaster(sig, (getContext(this) as common.UIAbilityContext).cacheDir);
     if (hit !== '') {
       this.bgRasterPath = hit;
       return;
@@ -7675,7 +7675,8 @@ struct ChatPage {
       this.bgRasterTimer = -1;
       const settled = this.backgroundRasterParams();
       const settledSig = rasterSignature(settled);
-      const settledHit = cachedRaster(settledSig);
+      const settledHit = cachedRaster(settledSig,
+        (getContext(this) as common.UIAbilityContext).cacheDir);
       if (settledHit !== '') {
         this.bgRasterPath = settledHit;
         return;

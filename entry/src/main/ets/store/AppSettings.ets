@@ -147,7 +147,16 @@ export const KEY_TRANSLATE_CHATS: string = 'translateEntireChats';
 // 新群都要手动点一次。纯本地设置，不占服务端的 is_translatable 字段。
 export const KEY_TRANSLATE_OPT_OUT: string = 'translateOptOutChats';
 
+// 账号默认聊天背景的快照，按深/浅色各存一份。仅为消除冷启动后第一次进入
+// 聊天的白屏：进程内快照（ChatBackgroundStore）在同一次启动内够用，但跨启动
+// 失效——那一次没有种子可用，背景要等 TDLib 往返（实测 +266ms），而转场动画
+// 只有约 300ms，整个滑入过程就是兜底纯色。
+export const KEY_CHAT_BG_SNAP_DARK: string = 'chatBgSnapshotDark';
+export const KEY_CHAT_BG_SNAP_LIGHT: string = 'chatBgSnapshotLight';
+
 const DATA_STRING_KEYS: string[] = [
+  KEY_CHAT_BG_SNAP_DARK,
+  KEY_CHAT_BG_SNAP_LIGHT,
   KEY_WEBPUSH_ENDPOINT,
   KEY_WEBPUSH_P256DH,
   KEY_WEBPUSH_AUTH,

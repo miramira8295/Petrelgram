@@ -7,6 +7,7 @@ import {
 import {
   BackgroundPreview, backgroundPreviewOf, backgroundThumbnailFile
 } from '../../util/backgroundPresentation';
+import { invalidateDefaultSnapshot } from '../../store/ChatBackgroundStore';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
@@ -103,9 +104,17 @@ struct ChatBackgroundPage {
     this.load();
   }
 
+  // 账号默认背景变了：作废持久化快照，否则冷启动后第一个会话会先画出旧背景。
+  private invalidateSnapshotIfDefault(): void {
+    if (this.chatId === 0) {
+      invalidateDefaultSnapshot(this.forDark);
+    }
+  }
+
   private apply(row: GalleryRow): void {
     if (this.applyingId !== '') { return; }
     this.applyingId = row.preview.backgroundId;
+    this.invalidateSnapshotIfDefault();
     const task: Promise<void> = this.chatId !== 0
       ? applyChatBackground(this.chatId, row.raw, true)
       : applyRemoteBackground(row.raw, this.forDark);
@@ -141,6 +150,7 @@ struct ChatBackgroundPage {
   private reset(): void {
     if (this.applyingId !== '') { return; }
     this.applyingId = 'reset';
+    this.invalidateSnapshotIfDefault();
     const task: Promise<void> = this.chatId !== 0
       ? clearChatBackground(this.chatId)
       : resetDefaultBackground(this.forDark);
