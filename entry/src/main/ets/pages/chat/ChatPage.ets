@@ -102,6 +102,7 @@ import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { audioQueueApplies } from '../../util/audioQueueGate';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -7923,10 +7924,22 @@ struct ChatPage {
                 onVoicePlaybackStarted: (id: number): void => {
                   this.onVoicePlaybackStarted(id);
                 },
-                audioQueuePosition: this.musicQueue.queuePosition(this.messages, g.head.id),
-                audioQueueLength: this.musicQueue.queueLength(this.messages),
-                audioHasPrevious: this.musicQueue.hasPrevious(this.messages, g.head.id),
-                audioHasNext: this.musicQueue.hasNext(this.messages, g.head.id),
+                // 三元短路是必需的，不是风格问题：这四个值要读整个 messages 数组，而
+                // ArkUI 按"build 期实际读取"记录状态依赖。无条件地算它们，等于让每一
+                // 条消息行的 build 都依赖整个 messages @State —— store 每 notify 一次
+                // （哪怕只是某张图的下载进度动了一下），所有可见行都会重跑 build、拿到
+                // 新的 MessageEntry、整行重建。实测 notify≈10/秒时 rebuild≈140/秒，
+                // 比值就是可见行数；notify 为 0 的那些秒 rebuild 恰好也是 0。
+                // 这四个 prop 只在 MessageBubble 的 contentType === 'audio' 分支里被
+                // 消费，非音频行传常量完全等价。不要"化简"掉三元。
+                audioQueuePosition: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.queuePosition(this.messages, g.head.id) : 0,
+                audioQueueLength: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.queueLength(this.messages) : 0,
+                audioHasPrevious: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.hasPrevious(this.messages, g.head.id) : false,
+                audioHasNext: audioQueueApplies(g.head.contentType)
+                  ? this.musicQueue.hasNext(this.messages, g.head.id) : false,
                 onAudioTap: (id: number): void => { this.musicQueue.play(this.messages, id, false); },
                 onAudioPrevious: (id: number): void => { this.musicQueue.previous(this.messages, id); },
                 onAudioNext: (id: number): void => { this.musicQueue.next(this.messages, id); },

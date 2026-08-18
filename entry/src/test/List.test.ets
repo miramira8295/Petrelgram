@@ -68,6 +68,7 @@ import themeTest from './Theme.test';
 import patternTileGridTest from './PatternTileGrid.test';
 import mediaThumbChannelTest from './MediaThumbChannel.test';
 import collapseAlbumsKeyTest from './CollapseAlbumsKey.test';
+import audioQueueGateTest from './AudioQueueGate.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -140,4 +141,5 @@ export default function testsuite() {
   patternTileGridTest();
   mediaThumbChannelTest();
   collapseAlbumsKeyTest();
+  audioQueueGateTest();
 }
