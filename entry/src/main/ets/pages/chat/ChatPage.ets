@@ -107,6 +107,8 @@ import { audioQueueApplies } from '../../util/audioQueueGate';
 import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
+import { attachActions } from '../../util/attachActions';
+import { AttachPanel, ATTACH_PANEL_HEIGHT } from './AttachPanel';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -6940,46 +6942,57 @@ struct ChatPage {
     .onAreaChange((_old: Area, area: Area) => { this.inputBarH = area.height as number; });
   }
 
-  // ===== SPIKE（用完即删）=====
-  @Builder
-  spikeKeyboard() {
-    Column({ space: 10 }) {
-      Row() {
-        Text('SPIKE · customKeyboard 260vp').fontSize(15).fontColor(Color.White).layoutWeight(1);
-        SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(20).fontColor([Color.White])
-          .onClick((): void => { this.closeSpikePanel(); });
-      }
-      .width('100%').padding({ left: 16, right: 16, top: 12 });
-
-      // 横滑 + 点击：验"拦截手势"到底给不给用
-      Scroll() {
-        Row({ space: 10 }) {
-          ForEach([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], (i: number): void => {
-            Column() {
-              Text(`${i}`).fontSize(20).fontColor(Color.White);
-            }
-            .width(64).height(64).borderRadius(14)
-            .backgroundColor('#4A5A6A')
-            .justifyContent(FlexAlign.Center)
-            .onClick((): void => { this.draft = `${this.draft}[${i}]`; });
-          }, (i: number): string => `spike_${i}`)
-        }.padding({ left: 16, right: 16 });
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .width('100%');
-
-      Text('tap a number -> inserts into draft | swipe me | tap the list above')
-        .fontSize(12).fontColor('#AAB4BE')
-        .padding({ left: 16, right: 16 });
+  // 附件面板的分发。attachActions 只说"有哪些格子"，这里说"点了做什么"——
+  // 两边靠 key 对上（AttachActions.test 钉住了不会出现表外的 key）。
+  private runAttachAction(key: string): void {
+    this.setBottomPanelClosed();
+    if (key === 'media') {
+      this.pickAndSendMedia();
+    } else if (key === 'file') {
+      this.pickAndSendFile();
+    } else if (key === 'audio') {
+      this.pickAndSendAudio();
+    } else if (key === 'videoNote') {
+      this.openVideoNoteRecorder();
+    } else if (key === 'location') {
+      this.chooseLocationKind();
+    } else if (key === 'contact') {
+      this.openContactPicker();
+    } else if (key === 'poll') {
+      this.openPollComposer();
+    } else if (key === 'dice') {
+      this.showDiceMenu();
     }
-    .width('100%').height(260)
-    .backgroundColor('#2B3A4C')
-    .alignItems(HorizontalAlign.Start);
+  }
+
+  // 目前只有 spike 面板；正式挂载后这里会收编 setEmojiPanel 那套。
+  private setBottomPanelClosed(): void {
+    this.closeSpikePanel();
   }
 
   // ===== SPIKE（用完即删）=====
+  @Builder
+  spikeKeyboard() {
+    Column() {
+      Row() {
+        Text('SPIKE · customKeyboard').fontSize(13).fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(20).fontColor([COLOR_TEXT_SECONDARY])
+          .onClick((): void => { this.closeSpikePanel(); });
+      }
+      .width('100%').padding({ left: 20, right: 20, top: 10 });
+
+      AttachPanel({
+        actions: attachActions(this.isGroup, this.isChannel),
+        onPick: (key: string): void => { this.runAttachAction(key); },
+        effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
+      })
+    }
+    .width('100%')
+    .height(ATTACH_PANEL_HEIGHT + 40)
+    .backgroundColor($r('app.color.surface'));
+  }
+
   private toggleSpikePanel(): void {
     if (this.spikePanelOn) {
       this.closeSpikePanel();
