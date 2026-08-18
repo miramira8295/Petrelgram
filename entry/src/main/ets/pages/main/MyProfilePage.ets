@@ -1923,6 +1923,8 @@ export struct MyProfilePage {
     }
     .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
+    // 见 ContactsPage：背景色要靠 expandSafeArea 才延伸到状态栏底下。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .align(Alignment.Top)
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off);

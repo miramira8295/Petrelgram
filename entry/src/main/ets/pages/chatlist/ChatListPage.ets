@@ -645,6 +645,12 @@ export struct ChatListPage {
       .layoutWeight(1).width('100%');
     }
     .width('100%').height('100%')
+    // 背景色是 expandSafeArea 真正延伸出去的东西——只写 expandSafeArea 而不画
+    // 背景，延伸的是"什么都没有"，状态栏底下露的就是窗口底色（实测深色模式
+    // 下那是一条纯黑）。官方把这称作"组件安全区方案"：布局仍在安全区内，
+    // 绘制延伸到状态栏和导航区。
+    // 取 surface 是因为顶栏和列表行用的就是它，延伸出去才连成一片。
+    .backgroundColor($r('app.color.surface'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe });
   }

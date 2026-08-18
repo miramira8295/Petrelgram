@@ -1213,6 +1213,10 @@ export struct SettingsPage {
     }
     .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
+    // 背景色靠 expandSafeArea 才会延伸到状态栏和导航区底下（官方的
+    // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。只写
+    // backgroundColor 而不延伸，状态栏那条露的是窗口底色。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe })
     ;
   }

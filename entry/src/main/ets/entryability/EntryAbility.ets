@@ -2,6 +2,7 @@ import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit
 import { notificationManager } from '@kit.NotificationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, KeyboardAvoidMode } from '@kit.ArkUI';
+import { darkResourceMode } from '../util/theme';
 import { initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
 import { installStringsFromContext } from '../util/strings';
 import { refreshLocale } from '../util/intlFormat';
@@ -24,6 +25,7 @@ const DOMAIN = 0x0000;
 export default class EntryAbility extends UIAbility {
   // 上一次见到的系统语言，用来判断配置变更里语言到底变没变。
   private lastLanguage: string = '';
+  private windowStageRef: window.WindowStage | null = null;
   // 上一次跑缓存收缩的时间戳；配合 CACHE_TRIM_MIN_INTERVAL_MS 防止频繁切前台反复触发重操作。
   private lastCacheTrimAt: number = 0;
 
@@ -74,6 +76,44 @@ export default class EntryAbility extends UIAbility {
       this.lastLanguage = language;
       bumpLanguageEpoch();
     }
+    // 深浅色切换时状态栏的图标要跟着反色，否则白图标留在浅色页面上会看不见。
+    this.applyImmersiveStatusBar();
+  }
+
+  // 状态栏沉浸。
+  //
+  // setWindowLayoutFullScreen(true) 只让**布局**铺满，状态栏自己仍然画一层
+  // 不透明底色——深色模式下是纯黑，压在应用的深蓝灰之上就是一条明显的分界，
+  // 浅色模式下则是浅灰压在白色 chrome 上。底色要单独设成透明才真正沉浸。
+  //
+  // 内容色（时钟和图标）必须跟着深浅色走：深色模式下应用背景是暗的，图标要
+  // 白的才看得见；浅色反之。系统不会替我们判断，因为它不知道页面底下画了什么。
+  private applyImmersiveStatusBar(): void {
+    if (this.windowStageRef === null) {
+      return;
+    }
+    const win = this.windowStageRef.getMainWindowSync();
+    const dark: boolean = darkResourceMode(this.context);
+    // 窗口底色。状态栏透明之后，它下面露出来的就是这一层；悬浮的文件夹条
+    // 背后也是它。从没设过，所以一直是系统默认的黑——深色模式下 app 是
+    // #17212B 的深蓝灰，顶上压着一条纯黑，就是"状态栏不沉浸"的真相。
+    //
+    // 这两个值必须与 resources/{base,dark}/element/color.json 的 page_bg 一致。
+    // 不用 getColorSync 从资源里取：那条路在本项目实测会在深色模式下仍然
+    // 返回浅色值（theme.ets:31 的注释记着这个坑）。
+    try {
+      win.setWindowBackgroundColor(dark ? '#17212B' : '#EFEFF4');
+    } catch (e) {
+      console.error(`setWindowBackgroundColor failed: ${(e as Error).message}`);
+    }
+    win.setWindowSystemBarProperties({
+      statusBarColor: '#00000000',
+      statusBarContentColor: dark ? '#FFFFFF' : '#000000',
+      navigationBarColor: '#00000000',
+      navigationBarContentColor: dark ? '#FFFFFF' : '#000000'
+    }).catch((e: Error): void => {
+      console.error(`setWindowSystemBarProperties failed: ${e.message}`);
+    });
   }
 
   // Publish the launch URI for the UI layer. Cleared to '' first so re-opening
@@ -122,8 +162,10 @@ export default class EntryAbility extends UIAbility {
     });
 
     try {
+      this.windowStageRef = windowStage;
       const win = windowStage.getMainWindowSync();
       win.setWindowLayoutFullScreen(true);
+      this.applyImmersiveStatusBar();
       const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       AppStorage.setOrCreate('topSafeHeight', px2vp(avoid.topRect.height));
       // Bottom inset (gesture navigation bar) — pages pad their bottom bars by this.
