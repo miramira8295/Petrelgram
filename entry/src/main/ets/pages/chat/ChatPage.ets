@@ -6925,16 +6925,16 @@ struct ChatPage {
         // 而不是浮在聊天背景上的一个裸图标。
         Stack() {
           SymbolGlyph($r('sys.symbol.paperclip'))
-            .fontSize(22)
+            .fontSize(23)
             .fontColor([COLOR_TEXT_SECONDARY]);
         }
-        .width(40)
-        .height(40)
-        .borderRadius(20)
-        // 40 + 4 的底边距 = 胶囊里那颗麦克风/发送键的尺寸和位置，
-        // 两颗键左右对称；48 的圆盘在 48 高的胶囊旁边显得压过了输入框本身。
+        .width(46)
+        .height(46)
+        .borderRadius(23)
+        // 46 + 1 的底边距，圆盘顶到胶囊上沿差 1px——比 48 的满格轻一点，
+        // 又不至于像 40 那样在胶囊旁边缩成一颗小扣子。
         .alignSelf(ItemAlign.End)
-        .margin({ bottom: 4 })
+        .margin({ bottom: 1 })
         .backgroundColor($r('app.color.surface'))
         .systemMaterial(overlayMaterial('card'))
         .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
