@@ -55,6 +55,12 @@ export function initTdKit(context: common.Context): void {
   baseFilesDir = context.filesDir;
   appBundleName = context.applicationInfo.name;
   accountRegistry.init(context);
+  // 上次在登录页被杀掉的「加账号」流程会留下一个空的 active 槽位，重开 app
+  // 就只剩登录页、原账号再也进不去。建运行时之前先把它交还给来源账号。
+  const recovered: string = accountRegistry.abandonStalePending();
+  if (recovered !== '') {
+    console.error(`Globals: abandoned a stale pending login, back to slot ${recovered}`);
+  }
   createRuntime(accountRegistry.activeSlotId());
 }
 
