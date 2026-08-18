@@ -74,6 +74,8 @@ import chatListDataSourceTest from './ChatListDataSource.test';
 import overlayMaterialTest from './OverlayMaterial.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
+import attachActionsTest from './AttachActions.test';
+import mediaBoxTest from './MediaBox.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -152,4 +154,6 @@ export default function testsuite() {
   overlayMaterialTest();
   chatNavTest();
   linkTapGuardTest();
+  attachActionsTest();
+  mediaBoxTest();
 }

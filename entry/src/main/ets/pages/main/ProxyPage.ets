@@ -20,7 +20,7 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 const TOP_ACTION_SIZE: number = 44;
@@ -1257,7 +1257,7 @@ struct ProxyPage {
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe })
     .bindSheet($$this.sheetOpen, this.proxyFormSheet(), {
-      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, systemMaterial: overlayMaterial('dialog')
+      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

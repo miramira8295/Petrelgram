@@ -1,6 +1,6 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 
 // 删除消息的确认弹窗。用 CustomDialog 而不是 promptAction.showDialog：后者
 // 只能排按钮，挂不了复选框，而"是否同时为对方删除"是一个开关而非第三个按钮
@@ -61,8 +61,9 @@ export struct DeleteMessagesDialog {
     .width('86%')
     .constraintSize({ maxWidth: 400 })
     .padding({ left: 20, right: 20, top: 22, bottom: 18 })
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
     .borderRadius(18)
+    .backdropBlur(overlayBackdropBlur('dialog'))
     .systemMaterial(overlayMaterial('dialog'));
   }
 }

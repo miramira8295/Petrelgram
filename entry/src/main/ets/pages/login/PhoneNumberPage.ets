@@ -9,7 +9,7 @@ import {
 import { LoginHero } from './LoginHero';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 @Preview
 @Component
@@ -319,7 +319,7 @@ export struct PhoneNumberPage {
       height: '82%',
       backgroundColor: $r('app.color.surface'),
       dragBar: true,
-      systemMaterial: overlayMaterial('dialog')
+      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

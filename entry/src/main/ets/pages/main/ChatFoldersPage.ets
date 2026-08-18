@@ -20,7 +20,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -605,7 +605,7 @@ struct ChatFoldersPage {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe })
       .bindSheet($$this.deleteSheetOpen, this.leaveSheet(), {
-        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, systemMaterial: overlayMaterial('dialog')
+        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       });
   }
 }

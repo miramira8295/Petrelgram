@@ -7,7 +7,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { str } from '../../util/strings';
 import { monthDay } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -777,9 +777,10 @@ struct UsernameDialog {
       }.width('100%');
     }
     .padding(22)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
     .borderRadius(16)
     .width('86%')
+    .backdropBlur(overlayBackdropBlur('dialog'))
     .systemMaterial(overlayMaterial('dialog'));
   }
 }

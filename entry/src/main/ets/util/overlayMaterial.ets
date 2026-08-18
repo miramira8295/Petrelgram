@@ -105,23 +105,51 @@ function usesColorInvert(surface: OverlaySurface): boolean {
   return surface === 'bar';
 }
 
-// The blur a framework-managed menu container used before the material. Only
-// 'menu' ever had one; returning it solely while the material is unavailable is
-// what keeps the two from stacking.
+// 低于 API 26 时这些面自己画毛玻璃。沉浸光感要 API 26，但毛玻璃本身要得低
+// 得多——backdropBlur 从 API 7 起、backgroundBlurStyle 从 9 起、
+// COMPONENT_ULTRA_THICK 从 11 起，所以 6.0（API 20）设备一样画得出来。
+// 这里区分的不是"能不能"，而是"这个面该由框架画还是自己画"。
+//
+// "由框架画还是自己画"是**调用点**的属性，不是面的属性：同一个 'dialog' 面，
+// bindSheet 是框架容器，而 CustomDialog 里那个自己写的 Column 是自绘。所以
+// 下面分成两套，由调用点挑一套用，别混：
+//
+//   框架容器（bindMenu / bindSheet）  → overlayBlur()
+//   自绘（自己写的 Column / 胶囊）    → overlayBackdropBlur() + overlayGlassFill()
+//
+// 自绘面绝不能吃 BlurStyle：COMPONENT_* 自带一层不透明底板，会把自绘面渲染
+// 成一块死灰——这正是 dock 和文件夹条一直用 backdropBlur 的原因
+// （MainScreen.ets:292）。
+
+// 能吃 BlurStyle 的框架容器面。'bar' 和 'card' 永远是自绘的。
+function frameworkContainer(surface: OverlaySurface): boolean {
+  return surface === 'menu' || surface === 'dialog';
+}
+
+// The blur a framework-managed container used before the material. Returning it
+// solely while the material is unavailable is what keeps the two from stacking.
 export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
-  if (materialAvailable || surface !== 'menu') {
+  if (materialAvailable || !frameworkContainer(surface)) {
     return undefined;
   }
+  // 菜单要把背后压实，模态更甚；两者都取最厚的一档。
   return BlurStyle.COMPONENT_ULTRA_THICK;
 }
 
-// The backdrop-blur radius a self-drawn glass bar used before the material.
+// The backdrop-blur radius a self-drawn glass surface uses before the material.
 // Zero means no blur, so this is safe to apply unconditionally at the call site.
 export function overlayBackdropBlur(surface: OverlaySurface): number {
-  if (materialAvailable || surface !== 'bar') {
-    return 0;
-  }
-  return BAR_BACKDROP_BLUR;
+  return materialAvailable ? 0 : BAR_BACKDROP_BLUR;
+}
+
+// 自绘面的底色。**不透明底色会把 backdropBlur 完全盖住**——白色胶囊上加模糊
+// 一点变化都没有，因为模糊的是它身后的东西，而它自己不透光。所以自己画玻璃
+// 的时候，底色必须同时换成半透明的那一版（dock_glass，两个模式都已定好）。
+//
+// 材质接管时反过来：材质自带填充，底色交回调用方原来的实心色，由材质把它
+// 清成透明玻璃。
+export function overlayGlassFill(_surface: OverlaySurface, solid: ResourceColor): ResourceColor {
+  return materialAvailable ? solid : $r('app.color.dock_glass');
 }
 
 // Materials are built once per surface and reused. Rebuilding one per frame

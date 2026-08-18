@@ -1,22 +1,80 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#000000" },
-    { "name": "primary", "value": "#3390EC" },
-    { "name": "page_bg", "value": "#17212B" },
-    { "name": "chat_bg", "value": "#0E1621" },
-    { "name": "surface", "value": "#232E3C" },
-    { "name": "dock_glass", "value": "#8C2F3F52" },
-    { "name": "surface_alt", "value": "#2B3A4C" },
-    { "name": "selected_pill", "value": "#2B5278" },
-    { "name": "tab_pill_bg", "value": "#2B5278" },
-    { "name": "text_primary", "value": "#FFFFFF" },
-    { "name": "text_secondary", "value": "#7D8B99" },
-    { "name": "divider", "value": "#101921" },
-    { "name": "bubble_in", "value": "#182533" },
-    { "name": "bubble_out", "value": "#2B5278" },
-    { "name": "bubble_text", "value": "#F0F2F5" },
-    { "name": "system_pill", "value": "#1E2A36" },
-    { "name": "badge_bg", "value": "#3E4A58" },
-    { "name": "select_highlight", "value": "#333390EC" }
+    {
+      "name": "start_window_background",
+      "value": "#000000"
+    },
+    {
+      "name": "primary",
+      "value": "#3390EC"
+    },
+    {
+      "name": "page_bg",
+      "value": "#17212B"
+    },
+    {
+      "name": "chat_bg",
+      "value": "#0E1621"
+    },
+    {
+      "name": "surface",
+      "value": "#232E3C"
+    },
+    {
+      "name": "dock_glass",
+      "value": "#8C2F3F52"
+    },
+    {
+      "name": "surface_alt",
+      "value": "#2B3A4C"
+    },
+    {
+      "name": "selected_pill",
+      "value": "#2B5278"
+    },
+    {
+      "name": "tab_pill_bg",
+      "value": "#2B5278"
+    },
+    {
+      "name": "tab_pill_glass",
+      "value": "#B32B5278"
+    },
+    {
+      "name": "text_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#7D8B99"
+    },
+    {
+      "name": "divider",
+      "value": "#101921"
+    },
+    {
+      "name": "bubble_in",
+      "value": "#182533"
+    },
+    {
+      "name": "bubble_out",
+      "value": "#2B5278"
+    },
+    {
+      "name": "bubble_text",
+      "value": "#F0F2F5"
+    },
+    {
+      "name": "system_pill",
+      "value": "#1E2A36"
+    },
+    {
+      "name": "badge_bg",
+      "value": "#3E4A58"
+    },
+    {
+      "name": "select_highlight",
+      "value": "#333390EC"
+    }
   ]
 }

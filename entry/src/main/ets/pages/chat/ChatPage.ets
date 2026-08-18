@@ -104,7 +104,7 @@ import { liveLocation, LiveLocationState } from '../../services/LiveLocationServ
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 
@@ -6061,28 +6061,32 @@ struct ChatPage {
 
   @Styles
   headerActionNormalStyle() {
-    .backgroundColor($r('app.color.surface'))
+    // 低于 API 26 自己画玻璃时这里换成半透明底，否则 backdropBlur 被盖死。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
   headerActionPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    // 按下时也留在玻璃上：换成不透明的 surface_alt 会让玻璃"闪一下变实心"。
+    // 按压反馈由下面的 opacity + scale 表达，不靠底色。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
     .opacity(0.72)
     .scale({ x: 0.9, y: 0.9 })
   }
 
   @Styles
   headerIdentityNormalStyle() {
-    .backgroundColor($r('app.color.surface'))
+    // 同 headerActionNormalStyle：自绘玻璃时底色必须半透明。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
   headerIdentityPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
     .opacity(0.78)
     .scale({ x: 0.985, y: 0.96 })
   }
@@ -6241,8 +6245,9 @@ struct ChatPage {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
       curve: Curve.EaseOut
     })
-    // 见 header()：顶栏胶囊统一走 'bar' 档材质，低于 API 26 时返回 undefined，
-    // 保持原来的 stateStyles 背景。
+    // 见 header()：顶栏胶囊统一走 'bar' 档材质。低于 API 26 材质返回 undefined，
+    // 改由 backdropBlur + 半透明底色自己画玻璃（overlayGlassFill 已换底色）。
+    .backdropBlur(overlayBackdropBlur('bar'))
     .systemMaterial(overlayMaterial('bar'))
     .onClick(onTap);
   }
@@ -6272,6 +6277,7 @@ struct ChatPage {
         pressed: this.headerActionPressedStyle
       })
       // 见上：顶栏胶囊统一走 'bar' 档材质。
+      .backdropBlur(overlayBackdropBlur('bar'))
       .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
@@ -6456,6 +6462,7 @@ struct ChatPage {
       //
       // 注意：它悬浮在滚动列表上，官方明确提醒材质要逐帧重采样背后内容，
       // 这一处的滑动开销必须实测，不能想当然。
+      .backdropBlur(overlayBackdropBlur('bar'))
       .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
@@ -6950,7 +6957,8 @@ struct ChatPage {
         // 又不至于像 40 那样在胶囊旁边缩成一颗小扣子。
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        .backgroundColor($r('app.color.surface'))
+        .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+        .backdropBlur(overlayBackdropBlur('card'))
         .systemMaterial(overlayMaterial('card'))
         .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
       }
@@ -7154,10 +7162,11 @@ struct ChatPage {
         .alignItems(VerticalAlign.Center);
       }
       .layoutWeight(1)
-      .backgroundColor($r('app.color.surface'))
+      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
       .borderRadius(24)
-      // Once the material takes effect it clears the fill above to transparent
-      // and supplies its own; below API 26 it is undefined and the fill stands.
+      // 材质接管时它自带填充，把上面的实心色清成透明玻璃；低于 API 26 材质
+      // 是 undefined，改由 backdropBlur + 半透明底色自己画。
+      .backdropBlur(overlayBackdropBlur('card'))
       .systemMaterial(overlayMaterial('card'));
     }.width('100%')
     .padding({
@@ -7428,11 +7437,17 @@ struct ChatPage {
       }
     }
     .width('calc(100% - 24vp)')
-    .backgroundColor($r('app.color.surface'))
+    // 置顶消息条和直播状态条共用这一张卡，它浮在消息列表之上、消息从下面
+    // 滚过去——和顶栏胶囊、dock 是同一种角色，所以走同一档 'bar' 玻璃。
+    // 自绘玻璃的两半要一起上：半透明底 + backdropBlur（不透明底会把模糊盖死）。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('bar'))
     .borderRadius(14)
     .margin({ left: 12, right: 12, bottom: 2 })
+    // 'bar' 档自带阴影关闭，这条浮卡的阴影保持自己的。
     .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 1 })
     .clip(true)
+    .systemMaterial(overlayMaterial('bar'))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240), curve: Curve.EaseOut }));
@@ -8620,7 +8635,7 @@ struct ChatPage {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       backgroundColor: $r('app.color.surface'),
       dragBar: true,
-      systemMaterial: overlayMaterial('dialog')
+      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

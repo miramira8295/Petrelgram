@@ -1346,7 +1346,7 @@ export struct ContactsPage {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: CARD_BG,
       dragBar: true,
-      systemMaterial: overlayMaterial('dialog')
+      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

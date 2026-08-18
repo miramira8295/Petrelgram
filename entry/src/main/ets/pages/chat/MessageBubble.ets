@@ -50,6 +50,7 @@ import {
 } from '../../util/translationChannel';
 import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
+import { ThumbReadyGate } from './ThumbReadyGate';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -94,6 +95,8 @@ struct LiveSenderAvatar {
   senderIsUser: boolean = true;
   initialPath: string = '';
   initials: string = '?';
+  // 评论行的头像栈比发送者头像小一圈。
+  avatarSize: number = 32;
   @State private path: string = '';
   private unsubAvatar: (() => void) | null = null;
 
@@ -116,7 +119,7 @@ struct LiveSenderAvatar {
   build() {
     AvatarView({
       avatarPath: this.path, initials: this.initials,
-      colorSeed: this.senderId, avatarSize: 32
+      colorSeed: this.senderId, avatarSize: this.avatarSize
     });
   }
 }
@@ -1170,10 +1173,19 @@ export struct MessageBubble {
       if (this.msg.commentReplierIds.length > 0) {
         Row() {
           ForEach(this.msg.commentReplierIds, (uid: number, idx: number) => {
-            AvatarView({
-              avatarPath: idx < this.msg.commentReplierAvatarPaths.length ? this.msg.commentReplierAvatarPaths[idx] : '',
-              initials: '?', colorSeed: uid, avatarSize: 22
-            }).margin({ left: idx === 0 ? 0 : -8 }).border({ width: 1.5, color: Color.White });
+            LiveSenderAvatar({
+              senderId: uid,
+              senderIsUser: true,
+              initialPath: idx < this.msg.commentReplierAvatarPaths.length
+                ? this.msg.commentReplierAvatarPaths[idx] : '',
+              initials: '?',
+              avatarSize: 22
+            })
+              .margin({ left: idx === 0 ? 0 : -8 })
+              // borderRadius 必须和 border 一起给：只给 border 描的是组件的
+              // **方形外框**，三个圆头像会被框进一个白方块里（用户截图）。
+              .borderRadius(11)
+              .border({ width: 1.5, color: Color.White });
           }, (uid: number, idx: number) => `replier_${idx}_${uid}`);
         }
       }
@@ -1542,11 +1554,16 @@ export struct MessageBubble {
       this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, false);
     }
     if (this.albumIsVideoAt(cell.idx) &&
-      !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) &&
-      (this.albumPathAt(cell.idx) !== '' ||
-        (this.albumFileIds[cell.idx] ?? 0) === 0 ||
-        (this.albumFailed[cell.idx] ?? false))) {
-      this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
+      !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0)) {
+      // 同单图那处：缩略图到没到要问通道，albumPathAt 在旁路化之后不再回填。
+      ThumbReadyGate({
+        fileId: this.albumFileIds[cell.idx] ?? 0,
+        initialPath: this.albumPathAt(cell.idx),
+        ready: (this.albumFileIds[cell.idx] ?? 0) === 0 || (this.albumFailed[cell.idx] ?? false),
+        content: (): void => {
+          this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
+        }
+      })
     }
   }
 
@@ -2000,11 +2017,18 @@ export struct MessageBubble {
         }
         if (this.msg.contentType === 'video' && !this.autoplayInlineVideo() &&
           !(this.isPlaySlot(-1) && this.msg.videoFileId !== 0)) {
-          // Don't cover the thumbnail's loader with a second center control.
-          if (this.msg.photoPath !== '' || this.msg.photoFileId === 0 || this.msg.photoFailed) {
-            this.videoActionBadge(
-              Math.min(56, Math.min(this.mediaBox().width, this.mediaBox().height) * 0.34));
-          }
+          // 不要和缩略图自己的加载圈叠成两个中心控件——所以要等缩略图到位。
+          // 这个"到没到"必须问通道：路径旁路化之后 msg.photoPath 不再回填，
+          // 直接读它会永远是空，播放钮就再也不出现（用户报的正是这个）。
+          ThumbReadyGate({
+            fileId: this.msg.photoFileId,
+            initialPath: this.msg.photoPath,
+            ready: this.msg.photoFileId === 0 || this.msg.photoFailed,
+            content: (): void => {
+              this.videoActionBadge(
+                Math.min(56, Math.min(this.mediaBox().width, this.mediaBox().height) * 0.34));
+            }
+          })
         }
         if (this.msg.contentType === 'video' && this.videoMetaText() !== '') {
           Text(this.videoMetaText())

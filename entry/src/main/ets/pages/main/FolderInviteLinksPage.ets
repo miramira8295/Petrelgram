@@ -14,7 +14,7 @@ import {
 import { AvatarView } from '../chatlist/AvatarView';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 interface FolderInviteParams {
   folderId: number;
@@ -382,10 +382,10 @@ struct FolderInviteLinksPage {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe })
       .bindSheet($$this.editorOpen, this.linkEditorSheet(), {
-        height: '82%', backgroundColor: COLOR_SURFACE, dragBar: true, systemMaterial: overlayMaterial('dialog')
+        height: '82%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       })
       .bindSheet($$this.newChatsOpen, this.newChatsSheet(), {
-        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, systemMaterial: overlayMaterial('dialog')
+        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       });
   }
 }

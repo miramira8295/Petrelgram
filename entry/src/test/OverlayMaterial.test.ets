@@ -5,6 +5,7 @@ import {
   materialWinsAt,
   overlayBackdropBlur,
   overlayBlur,
+  overlayGlassFill,
   overlayMaterial
 } from '../main/ets/util/overlayMaterial';
 
@@ -43,6 +44,8 @@ export default function overlayMaterialTest() {
         }
         expect(overlayBlur(surface)).assertUndefined();
         expect(overlayBackdropBlur(surface)).assertEqual(0);
+        // 底色也不能再被换成半透明：材质会自己把填充清成玻璃。
+        expect(overlayGlassFill(surface, $r('app.color.surface'))).assertDeepEquals($r('app.color.surface'));
       }
     });
 
@@ -53,28 +56,47 @@ export default function overlayMaterialTest() {
       }
     });
 
-    it('gives the fallback blur only to the framework menu container', 0, () => {
+    // BlurStyle.COMPONENT_* carries an opaque backplate: right for a framework
+    // container, and wrong for every self-drawn surface, where it renders as
+    // solid grey (MainScreen.ets:292). That is why only the framework surfaces
+    // may ever be handed one — this is the invariant, not the list of surfaces.
+    it('offers BlurStyle only to the framework containers', 0, () => {
       if (immersiveMaterialAvailable()) {
         return;
       }
-      // BlurStyle.COMPONENT_* carries an opaque backplate. It is right for the
-      // framework's own menu container and wrong for every self-drawn surface,
-      // where it renders as solid grey (MainScreen.ets:292).
       expect(overlayBlur('menu')).assertEqual(BlurStyle.COMPONENT_ULTRA_THICK);
-      expect(overlayBlur('dialog')).assertUndefined();
+      expect(overlayBlur('dialog')).assertEqual(BlurStyle.COMPONENT_ULTRA_THICK);
+      // 自绘面永远不给 BlurStyle，给了就是一块死灰。
       expect(overlayBlur('bar')).assertUndefined();
       expect(overlayBlur('card')).assertUndefined();
     });
 
-    it('gives the backdrop blur only to the self-drawn glass bars', 0, () => {
+    // 毛玻璃本身要的 API 远低于沉浸光感：backdropBlur 从 7 起，
+    // backgroundBlurStyle 从 9 起。所以低版本上每个自绘面都画得出玻璃，
+    // 由调用点决定用不用——这个 getter 只管"材质没接管时给多少半径"。
+    it('offers a backdrop-blur radius on every surface below the material', 0, () => {
       if (immersiveMaterialAvailable()) {
         return;
       }
       // The radius the dock and the folder bar already used.
-      expect(overlayBackdropBlur('bar')).assertEqual(22);
-      expect(overlayBackdropBlur('menu')).assertEqual(0);
-      expect(overlayBackdropBlur('dialog')).assertEqual(0);
-      expect(overlayBackdropBlur('card')).assertEqual(0);
+      for (const surface of ALL_SURFACES) {
+        expect(overlayBackdropBlur(surface)).assertEqual(22);
+      }
+    });
+
+    // 不透明底色会把 backdropBlur 完全盖住——模糊的是身后的东西，而它自己
+    // 不透光。所以自绘玻璃的两半必须一起出现：换半透明底 + 加模糊。
+    it('swaps the solid fill for a translucent one wherever it self-draws glass', 0, () => {
+      const solid: ResourceColor = $r('app.color.surface');
+      for (const surface of ALL_SURFACES) {
+        const fill = overlayGlassFill(surface, solid);
+        if (immersiveMaterialAvailable()) {
+          // 材质自带填充，底色原样交回，由材质清成透明玻璃。
+          expect(fill === solid).assertTrue();
+        } else {
+          expect(fill === solid).assertFalse();
+        }
+      }
     });
 
     it('reuses one material object per surface', 0, () => {
