@@ -107,8 +107,6 @@ import { audioQueueApplies } from '../../util/audioQueueGate';
 import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
-import { attachActions } from '../../util/attachActions';
-import { AttachPanel, ATTACH_PANEL_HEIGHT } from './AttachPanel';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -561,17 +559,6 @@ struct ChatPage {
   @State botMenuAvailable: boolean = false;
   // Emoji panel above the input bar.
   @State showEmojiPanel: boolean = false;
-  // ===== SPIKE（用完即删）=====
-  // 验 customKeyboard 这条路：面板即键盘，切换由系统接管。要回答四件事——
-  // (1) 输入框和聊天内容会不会被系统自动顶起
-  // (2) system 键盘 <-> 面板切换有没有闪烁或两段动画
-  // (3) 面板里的点击和横滑能不能用（文档说"无法获取焦点，但会拦截手势"）
-  // (4) 点面板外面会不会自动收起
-  @State spikePanelOn: boolean = false;
-  // 面板占据的高度。supportAvoidance 只保证输入框不被挡，列表内容它不管——
-  // 官方文档明说这一段要开发者自己做（监听面板根节点 onAreaChange 拿高度，
-  // 再设置布局避让）。
-  @State spikePanelH: number = 0;
   @State emojiPanelTab: number = 0;
   @State emojiPanelClosing: boolean = false;
   // Bot custom reply keyboard (null = this chat has none). Always docked when
@@ -6946,114 +6933,6 @@ struct ChatPage {
     .onAreaChange((_old: Area, area: Area) => { this.inputBarH = area.height as number; });
   }
 
-  // 附件面板的分发。attachActions 只说"有哪些格子"，这里说"点了做什么"——
-  // 两边靠 key 对上（AttachActions.test 钉住了不会出现表外的 key）。
-  private runAttachAction(key: string): void {
-    this.setBottomPanelClosed();
-    if (key === 'media') {
-      this.pickAndSendMedia();
-    } else if (key === 'file') {
-      this.pickAndSendFile();
-    } else if (key === 'audio') {
-      this.pickAndSendAudio();
-    } else if (key === 'videoNote') {
-      this.openVideoNoteRecorder();
-    } else if (key === 'location') {
-      this.chooseLocationKind();
-    } else if (key === 'contact') {
-      this.openContactPicker();
-    } else if (key === 'poll') {
-      this.openPollComposer();
-    } else if (key === 'dice') {
-      this.showDiceMenu();
-    }
-  }
-
-  // 目前只有 spike 面板；正式挂载后这里会收编 setEmojiPanel 那套。
-  private setBottomPanelClosed(): void {
-    this.closeSpikePanel();
-  }
-
-  // ===== SPIKE（用完即删）=====
-  @Builder
-  spikeKeyboard() {
-    Column() {
-      Row() {
-        Text('SPIKE · customKeyboard').fontSize(13).fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
-        SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(20).fontColor([COLOR_TEXT_SECONDARY])
-          .onClick((): void => { this.closeSpikePanel(); });
-      }
-      .width('100%').padding({ left: 20, right: 20, top: 10 });
-
-      AttachPanel({
-        actions: attachActions(this.isGroup, this.isChannel),
-        onPick: (key: string): void => { this.runAttachAction(key); },
-        effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
-      })
-    }
-    .width('100%')
-    .height(ATTACH_PANEL_HEIGHT + 40)
-    .backgroundColor($r('app.color.surface'))
-    .onAreaChange((_old: Area, area: Area): void => {
-      this.notePanelHeight(area.height as number);
-    });
-  }
-
-  private toggleSpikePanel(): void {
-    if (this.spikePanelOn) {
-      this.closeSpikePanel();
-      return;
-    }
-    this.spikePanelOn = true;
-    // customKeyboard 只在输入框获焦时出现。已经聚焦（系统键盘开着）时，
-    // 换绑之后要重新获焦一次才会切过去。
-    this.composerController.stopEditing();
-    this.raiseSystemKeyboard();
-  }
-
-  // ===== SPIKE（用完即删）=====
-  private closeSpikePanel(): void {
-    if (!this.spikePanelOn) {
-      return;
-    }
-    this.spikePanelOn = false;
-    // 面板卸载时 onAreaChange 不会再报一个 0 回来，避让高度得自己归零，
-    // 否则列表底部会永久留一段空白。
-    this.notePanelHeight(0);
-    this.composerController.stopEditing();
-  }
-
-  // ===== SPIKE（用完即删）=====
-  // 和 updateBottomChromeHeight 同一套：高度变了就更新避让，并且原来贴着底的
-  // 用户要重新贴回底——否则面板顶出来之后最后几条消息被压在下面。
-  private notePanelHeight(height: number): void {
-    const next: number = height > 0 ? height : 0;
-    if (Math.abs(next - this.spikePanelH) < 0.5) {
-      return;
-    }
-    const keepTailVisible: boolean = this.atBottom && this.viewerMsgId === 0;
-    this.spikePanelH = next;
-    if (!keepTailVisible) {
-      return;
-    }
-    const seq: number = ++this.bottomChromeLayoutSeq;
-    setTimeout((): void => {
-      if (seq === this.bottomChromeLayoutSeq && this.atBottom) {
-        this.scroller.scrollEdge(Edge.Bottom);
-      }
-    }, 0);
-  }
-
-  // ===== SPIKE（用完即删）=====
-  // 解绑和重新获焦必须分帧：同一帧里 customKeyboard 还没换成 null，重新获焦
-  // 只会把面板再弹一次。
-  private raiseSystemKeyboard(): void {
-    setTimeout((): void => {
-      this.getUIContext().getFocusController().requestFocus('chat_composer');
-    }, 30);
-  }
-
   @Builder
   inputBar() {
     Row({ space: 6 }) {
@@ -7081,8 +6960,7 @@ struct ChatPage {
         .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
         .backdropBlur(overlayBackdropBlur('card'))
         .systemMaterial(overlayMaterial('card'))
-        // ===== SPIKE（用完即删）：原本是 bindMenu(this.attachMenuItems(), ...)
-        .onClick((): void => { this.toggleSpikePanel(); });
+        .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
       }
       Column() {
         if (this.editingId !== 0) {
@@ -7164,11 +7042,6 @@ struct ChatPage {
             .barState(BarState.Auto)
             .backgroundColor(Color.Transparent)
             .key('chat_composer')
-            // ===== SPIKE（用完即删）=====
-            // null 而不是 undefined：ArkUI 里 undefined 往往是"保持上次的值"，
-            // 只有显式 null 才解绑。官方示例用的就是 null。
-            .customKeyboard(this.spikePanelOn ? this.spikeKeyboard() : null,
-              { supportAvoidance: true })
             .onAreaChange((_old: Area, area: Area): void => {
               const next: number = area.width as number;
               if (Math.abs(next - this.composerEditorW) > 0.5) {
@@ -7188,14 +7061,6 @@ struct ChatPage {
             .onSubmit(() => {
               if (this.sendByEnter) {
                 this.doSend();
-              }
-            })
-            // 面板开着时输入框本就是聚焦态，再点它不产生焦点变化，框架不会做
-            // 任何事。想要"点输入框收面板、弹系统键盘"，得自己解绑再重新获焦。
-            .onClick((): void => {
-              if (this.spikePanelOn) {
-                this.closeSpikePanel();
-                this.raiseSystemKeyboard();
               }
             })
             .onFocus(() => {
@@ -8359,7 +8224,7 @@ struct ChatPage {
           fractionStops: this.headerBlurStops(),
           direction: GradientDirection.Bottom
         })
-        .contentEndOffset(this.bottomChromeH + 8 + this.spikePanelH)
+        .contentEndOffset(this.bottomChromeH + 8)
         // Pre-build a few offscreen rows so a fling doesn't pay the full
         // MessageBubble construction cost inside the visible frame.
         // Starts small and grows once the chat is on screen.
@@ -8393,9 +8258,6 @@ struct ChatPage {
             this.cancelFlash();
             // Tapping outside the emoji/sticker panel dismisses it.
             this.setEmojiPanel(false);
-            // 附件面板同理。它是 customKeyboard，输入框始终聚焦，所以系统
-            // 不会因为点了别处就收起它——这一下必须自己发。
-            this.closeSpikePanel();
           } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
             this.listTouchActive = false;
           }
