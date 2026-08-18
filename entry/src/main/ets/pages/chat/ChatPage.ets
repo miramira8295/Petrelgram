@@ -7080,7 +7080,10 @@ struct ChatPage {
                 if (this.composerSending) {
                   LoadingProgress().width(18).height(18).color(Color.White);
                 } else {
-                  SymbolGlyph($r('sys.symbol.paperplane')).fontSize(20).fontColor([Color.White]);
+                  // 草稿从空变非空时这个按钮才挂载，isActive=true 让它出现即弹
+                  // 一下，和外层已有的 opacity+scale 转场叠在一起。
+                  SymbolGlyph($r('sys.symbol.paperplane')).fontSize(20).fontColor([Color.White])
+                    .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP), true);
                 }
               }
               .width(40).height(40).borderRadius(20)
@@ -7139,7 +7142,9 @@ struct ChatPage {
         .opacity(this.searchIdx + 1 < this.searchTotal ? 1 : 0.4)
         .onClick(() => { this.searchOlder(); });
         Row() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+          // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         }
         .width(42).height(42).justifyContent(FlexAlign.Center)
         .opacity(this.searchIdx > 0 ? 1 : 0.4)
@@ -7403,7 +7408,9 @@ struct ChatPage {
         if (this.scrollToBottomBusy) {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
         } else {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+          // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         }
       }
       .width(46).height(46).borderRadius(23)
