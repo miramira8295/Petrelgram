@@ -6921,10 +6921,22 @@ struct ChatPage {
       // 录音态不显示：那时整条输入区被"红点 + 计时 + 取消 + 发送"接管，
       // 再挂一个附件入口没有意义。
       if (!this.isRecording) {
-        SymbolGlyph($r('sys.symbol.paperclip'))
-          .fontSize(24)
-          .fontColor([COLOR_TEXT_SECONDARY])
-          .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
+        // 和胶囊同一块底色、同一种材质，读起来是"输入框旁边的一个键"，
+        // 而不是浮在聊天背景上的一个裸图标。48 = 胶囊的 minHeight，
+        // 静止时两者上下齐平；胶囊随文本长高后按钮贴着底边（alignSelf），
+        // 跟右侧发送键保持同一条基线。
+        Stack() {
+          SymbolGlyph($r('sys.symbol.paperclip'))
+            .fontSize(24)
+            .fontColor([COLOR_TEXT_SECONDARY]);
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(24)
+        .alignSelf(ItemAlign.End)
+        .backgroundColor($r('app.color.surface'))
+        .systemMaterial(overlayMaterial('card'))
+        .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
       }
       Column() {
         if (this.editingId !== 0) {
