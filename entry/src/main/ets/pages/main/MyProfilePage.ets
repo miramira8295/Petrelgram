@@ -19,6 +19,7 @@ import { publicLink } from '../../util/telegramLink';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -1950,6 +1951,7 @@ struct StickerAvatarDialog {
     .width('100%').height(400)
     .backgroundColor($r('app.color.surface'))
     .borderRadius({ topLeft: 16, topRight: 16 })
-    .clip(true);
+    .clip(true)
+    .systemMaterial(overlayMaterial('dialog'));
   }
 }

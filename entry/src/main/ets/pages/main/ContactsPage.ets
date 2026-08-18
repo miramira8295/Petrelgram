@@ -563,7 +563,7 @@ export struct ContactsPage {
         pressed: this.topActionPressedStyle
       })
       .accessibilityText($r('app.string.ct_more_actions'))
-      .bindMenu(this.topMenu());
+      .bindMenu(this.topMenu(), { systemMaterial: overlayMaterial('menu') });
     }
     .width('100%').height(TOP_BAR_HEIGHT)
     .padding({ left: 16, right: 12 })
@@ -1344,7 +1344,8 @@ export struct ContactsPage {
     .bindSheet($$this.addContactSheetOpen, this.addContactSheet(), {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: CARD_BG,
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

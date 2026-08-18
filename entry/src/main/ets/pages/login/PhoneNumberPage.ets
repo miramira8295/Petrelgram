@@ -9,6 +9,7 @@ import {
 import { LoginHero } from './LoginHero';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 @Preview
 @Component
@@ -317,7 +318,8 @@ export struct PhoneNumberPage {
     .bindSheet($$this.pickerOpen, this.countryPickerSheet(), {
       height: '82%',
       backgroundColor: $r('app.color.surface'),
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

@@ -20,6 +20,7 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 const TOP_ACTION_SIZE: number = 44;
@@ -936,7 +937,8 @@ struct ProxyPage {
       .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
       .margin({ right: 6 }).enabled(this.actionKey === '')
       .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .accessibilityText($r('app.string.px_more_actions')).bindMenu(this.proxyMenu(entry));
+      .accessibilityText($r('app.string.px_more_actions'))
+      .bindMenu(this.proxyMenu(entry), { systemMaterial: overlayMaterial('menu') });
     }
     .width('100%').alignItems(VerticalAlign.Center)
     .transition(TransitionEffect.OPACITY.combine(
@@ -1255,7 +1257,7 @@ struct ProxyPage {
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe })
     .bindSheet($$this.sheetOpen, this.proxyFormSheet(), {
-      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving
+      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, systemMaterial: overlayMaterial('dialog')
     });
   }
 }

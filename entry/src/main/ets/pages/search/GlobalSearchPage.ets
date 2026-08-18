@@ -27,6 +27,7 @@ import {
 } from '../../store/DownloadApi';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 interface FoundItem {
   chatId: number;
@@ -2212,7 +2213,7 @@ struct GlobalSearchPage {
         this.previewTapY = event.windowY;
         this.openDownloadItem(it);
       })
-      .bindContextMenu(this.downloadRowMenu(it), ResponseType.LongPress);
+      .bindContextMenu(this.downloadRowMenu(it), ResponseType.LongPress, { systemMaterial: overlayMaterial('menu') });
     }
   }
 
@@ -2361,7 +2362,8 @@ struct GlobalSearchPage {
     .bindSheet($$this.removeSheetShown, this.removeDownloadSheet(), {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: $r('app.color.surface'),
-      onDisappear: () => { this.pendingRemoval = null; }
+      onDisappear: () => { this.pendingRemoval = null; },
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 

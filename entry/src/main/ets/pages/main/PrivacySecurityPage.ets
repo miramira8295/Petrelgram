@@ -16,6 +16,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 16;
 const COLOR_WARNING: string = '#D98914';
@@ -536,7 +537,7 @@ struct PrivacySecurityPage {
             }
             .width('100%').constraintSize({ minHeight: 58 }).padding({ left: 16, right: 14 })
             .borderRadius(12).stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-            .bindMenu(this.autoDeleteMenu());
+            .bindMenu(this.autoDeleteMenu(), { systemMaterial: overlayMaterial('menu') });
           }
         }
         .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).padding({ bottom: 5 });
@@ -589,7 +590,7 @@ struct PrivacySecurityPage {
             }
             .width('100%').constraintSize({ minHeight: 60 }).padding({ left: 16, right: 14 })
             .borderRadius(12).stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-            .bindMenu(this.accountTtlMenu());
+            .bindMenu(this.accountTtlMenu(), { systemMaterial: overlayMaterial('menu') });
           }
         }
         .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).padding({ bottom: 5 });

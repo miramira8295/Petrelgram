@@ -14,6 +14,7 @@ import {
 import { AvatarView } from '../chatlist/AvatarView';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 interface FolderInviteParams {
   folderId: number;
@@ -250,7 +251,8 @@ struct FolderInviteLinksPage {
       }.layoutWeight(1).alignItems(HorizontalAlign.Start).onClick((): void => this.copy(link.inviteLink));
       Row() { SymbolGlyph($r('sys.symbol.more')).fontSize(19).fontColor([COLOR_TEXT_SECONDARY]); }
         .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
-        .stateStyles({ normal: this.pressNormal, pressed: this.pressDown }).bindMenu(this.linkMenu(link));
+        .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
+        .bindMenu(this.linkMenu(link), { systemMaterial: overlayMaterial('menu') });
     }.width('100%').padding(14).backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
@@ -380,10 +382,10 @@ struct FolderInviteLinksPage {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe })
       .bindSheet($$this.editorOpen, this.linkEditorSheet(), {
-        height: '82%', backgroundColor: COLOR_SURFACE, dragBar: true
+        height: '82%', backgroundColor: COLOR_SURFACE, dragBar: true, systemMaterial: overlayMaterial('dialog')
       })
       .bindSheet($$this.newChatsOpen, this.newChatsSheet(), {
-        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true
+        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, systemMaterial: overlayMaterial('dialog')
       });
   }
 }

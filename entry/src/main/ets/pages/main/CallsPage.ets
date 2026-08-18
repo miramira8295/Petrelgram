@@ -310,7 +310,7 @@ struct CallsPage {
         Row() { SymbolGlyph($r('sys.symbol.more')).fontSize(23).fontColor([COLOR_TEXT_PRIMARY]); }
           .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
           .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-          .bindMenu(this.topMenu());
+          .bindMenu(this.topMenu(), { systemMaterial: overlayMaterial('menu') });
       }
     }.width('100%').height(56).padding({ left: 8, right: 8 }).alignItems(VerticalAlign.Center);
   }

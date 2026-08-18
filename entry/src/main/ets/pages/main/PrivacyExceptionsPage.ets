@@ -10,6 +10,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 16;
 
@@ -377,7 +378,8 @@ struct PrivacyExceptionsPage {
     .bindSheet($$this.sheetOpen, this.pickerSheet(), {
       height: SheetSize.LARGE,
       backgroundColor: COLOR_SURFACE,
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

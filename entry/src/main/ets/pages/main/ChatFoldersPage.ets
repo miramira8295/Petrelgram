@@ -20,6 +20,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -419,7 +420,7 @@ struct ChatFoldersPage {
       Row() { SymbolGlyph($r('sys.symbol.line_3_horizontal')).fontSize(19).fontColor([COLOR_TEXT_SECONDARY]); }
         .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-        .bindMenu(this.folderMenu(folder, index));
+        .bindMenu(this.folderMenu(folder, index), { systemMaterial: overlayMaterial('menu') });
     }.width('100%').height(ROW_HEIGHT).padding({ left: 16, right: 8 })
       .alignItems(VerticalAlign.Center)
       .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: -5 }))
@@ -604,7 +605,7 @@ struct ChatFoldersPage {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe })
       .bindSheet($$this.deleteSheetOpen, this.leaveSheet(), {
-        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true
+        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, systemMaterial: overlayMaterial('dialog')
       });
   }
 }
