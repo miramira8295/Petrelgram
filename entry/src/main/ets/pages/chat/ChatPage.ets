@@ -6913,7 +6913,19 @@ struct ChatPage {
 
   @Builder
   inputBar() {
-    Row() {
+    Row({ space: 6 }) {
+      // 附件按钮在输入框**外面**：它是一个独立动作，不属于正在编辑的这段
+      // 文本。放在胶囊里时它会跟着输入框一起长高（胶囊随文本涨到四行），
+      // 位置飘忽；移出来之后固定贴着左边，和右侧的发送键左右呼应。
+      //
+      // 录音态不显示：那时整条输入区被"红点 + 计时 + 取消 + 发送"接管，
+      // 再挂一个附件入口没有意义。
+      if (!this.isRecording) {
+        SymbolGlyph($r('sys.symbol.paperclip'))
+          .fontSize(24)
+          .fontColor([COLOR_TEXT_SECONDARY])
+          .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
+      }
       Column() {
         if (this.editingId !== 0) {
           this.editPreview();
@@ -7057,10 +7069,6 @@ struct ChatPage {
               .accessibilityText($r('app.string.cp_open_miniapp'))
               .onClick((): void => { this.openBotMiniApp(); });
           }
-          SymbolGlyph($r('sys.symbol.paperclip'))
-            .fontSize(22)
-            .fontColor([COLOR_TEXT_SECONDARY])
-            .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
           // Mic ↔ send swap: outgoing icon shrinks/fades while the incoming one
           // scales in (the send button adds a small un-rotate flourish).
           Stack() {
@@ -7117,7 +7125,7 @@ struct ChatPage {
         .padding({ left: 12, right: 4, top: 4, bottom: 4 })
         .alignItems(VerticalAlign.Center);
       }
-      .width('100%')
+      .layoutWeight(1)
       .backgroundColor($r('app.color.surface'))
       .borderRadius(24)
       // Once the material takes effect it clears the fill above to transparent
