@@ -340,6 +340,10 @@ struct ProxyPage {
           this.finishPing(entry.id, token, seconds, true);
         }
       } catch (caught) {
+        // 原来这里把错误整个吞掉，行上只剩一句"无法连接"，分不清是代理真的
+        // 不通还是请求本身没发对——testProxy 就栽在后者上（这个 TDLib 构建
+        // 的 proxy 系列 API 收的是 proxy 对象，不是标准的平铺字段）。
+        console.error(`[proxy] ping ${entry.id} failed, raw: ${(caught as Error).message}`);
         if (generation === this.pingGeneration) {
           this.finishPing(entry.id, token, 0, false);
         }
