@@ -326,14 +326,6 @@ struct ChatPage {
   @State nowSec: number = 0;
   private nowSecTimer: number = -1;
   @State @Watch('onViewerTargetChanged') viewerMsgId: number = 0;
-  // 几何过渡专用的 id。**不能直接用 viewerMsgId**：关闭时它在 animateTo 里被
-  // 清零，而同一个值又驱动着查看器的卸载（`if (viewerMsgId !== 0)`）。于是
-  // 退场节点的绑定可能在被移除之前先翻成 idle，往回飞的目标凭空消失，图就
-  // 冻在半空——背景走的是独立的 opacity 过渡，照常淡出，所以现象是"没有
-  // 背景、图悬在中间"。
-  //
-  // 这个 id 在关闭动画**结束之后**才清零，退场节点全程带着真 id，配对不断。
-  @State viewerGeoId: number = 0;
   @State chromeVisible: boolean = true;
   @State viewerVideoLandscape: boolean = false;
   @State viewerClosing: boolean = false;
@@ -2206,11 +2198,6 @@ struct ChatPage {
   // 关闭那一次的清零不会吃掉正确的值。
   private onViewerTargetChanged(): void {
     this.viewerPositionMs = 0;
-    // 用户左右翻页时 viewerMsgId 会变，几何 id 要跟上，否则绑的还是上一页。
-    // 清零不在这里做：那是关闭动画的收尾，见 closeViewer。
-    if (this.viewerMsgId !== 0) {
-      this.viewerGeoId = this.viewerMsgId;
-    }
   }
 
   private closeViewer(): void {
@@ -2240,11 +2227,7 @@ struct ChatPage {
     // 一次，不会永久卡住。pin() 记的目标在候选表补上之前一样选不出来，
     // 是同一个幂等收敛，不需要额外处理。
     this.armPlaySlotSettle();
-    setTimeout((): void => {
-      this.viewerClosing = false;
-      // 动画跑完了才松开几何 id，中途松开就是上面注释里那个冻住的 bug。
-      this.viewerGeoId = 0;
-    }, Math.max(80, duration));
+    setTimeout((): void => { this.viewerClosing = false; }, Math.max(80, duration));
   }
 
   // Leaving the viewer in landscape would strand the chat page sideways.
@@ -8766,7 +8749,6 @@ struct ChatPage {
       if (this.viewerMsgId !== 0) {
         MediaViewerOverlay({
           viewerMsgId: this.viewerMsgId,
-          geoId: this.viewerGeoId,
           chromeVisible: this.chromeVisible,
           videoLandscape: this.viewerVideoLandscape,
           messages: this.messages,

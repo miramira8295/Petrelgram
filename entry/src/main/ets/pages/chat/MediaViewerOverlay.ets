@@ -36,9 +36,6 @@ export struct MediaViewerOverlay {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   // Two-way with the page: tapping close clears the id from in here.
   @Link viewerMsgId: number;
-  // 几何过渡绑哪一页。和 viewerMsgId 分开是有意的：关闭动画期间前者被清零，
-  // 这个还留着，退场节点才不会中途丢掉配对（见 ChatPage.viewerGeoId）。
-  @Prop geoId: number;
   @Link chromeVisible: boolean;
   // @Link (not @Prop) for both arrays: @Prop deep-copies its source, which for
   // the whole loaded message list would run on every download-progress tick.
@@ -665,8 +662,17 @@ export struct MediaViewerOverlay {
             // 若也绑上，系统就不知道该跟谁配对了。内层 Image 身上挂着捏合缩放
             // 与拖动的 scale/translate，所以绑在外层这个不带变换的 Stack 上，
             // 两套变换才不会打架（官方要求绑定节点的宽高动画不能有跳变）。
-            .geometryTransition(id === this.geoId
-              ? `media_${id}` : `media_idle_${id}`)
+            // 每一页永久绑自己的 id，**绝不在活节点上改 id**。
+            //
+            // 原来是「只有当前页绑真 id，其余绑 media_idle_<id>」，翻页时同一个
+            // 活节点的 id 会来回改。日志证实这一侧的取值全程正确（当前页总是
+            // 真 id，关闭时也对得上），可退出动画的落点仍然错——说明框架的配对
+            // 登记不跟着活节点的 id 走，退场时按最初登记的那一页去找落点，
+            // 于是翻过页就落在第一张的位置上。不翻页正好没暴露。
+            //
+            // 静态之后每个 id 恰好一对节点：相册里的那一格 + 查看器里的那一页，
+            // 正是 geometryTransition 要求的形状，动画仍由节点的出现/消失驱动。
+            .geometryTransition(`media_${id}`)
             // Parallel, not Exclusive. Exclusive has to hold the single tap
             // back until the double-tap window expires, and since a single tap
             // at 1x now closes the viewer, that wait showed up as a stall
