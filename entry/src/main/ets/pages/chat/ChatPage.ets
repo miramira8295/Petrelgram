@@ -121,6 +121,10 @@ const PINNED_SEG_MAX: number = 5;
 // 表情抽屉的高度。沿用它当浮卡时的 300——那个数是按三个 picker 的内容量
 // 调出来的，换成抽屉之后内容没变。
 const EMOJI_PANEL_HEIGHT: number = 300;
+// 抽屉卡片距键盘区三边的留白。沿用表情面板当浮卡时的 calc(100% - 16vp)——
+// 左右各 8；底部同样留 8，让卡片浮起来而不是糊在屏幕下沿。顶部不留：卡片
+// 上沿贴着输入框，两者读起来是连着的。
+const DRAWER_INSET: number = 8;
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
 const JUMP_RELOAD_THRESHOLD: number = 40;
@@ -6034,6 +6038,18 @@ struct ChatPage {
     this.forwardMessageIds = [];
   }
 
+  // 抽屉卡片：表情面板当浮卡时的那身衣服，一字未改地搬过来——上边框 0.7、
+  // 圆角 18、向上的浅阴影。两个抽屉共用，观感和顶栏胶囊、置顶消息条是同一
+  // 套语言。
+  @Styles
+  drawerCard() {
+    .backgroundColor($r('app.color.surface'))
+    .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
+    .borderRadius(18)
+    .clip(true)
+    .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
+  }
+
   @Styles
   headerActionNormalStyle() {
     // 低于 API 26 自己画玻璃时这里换成半透明底，否则 backdropBlur 被盖死。
@@ -6913,15 +6929,21 @@ struct ChatPage {
   @Builder
   attachDrawer() {
     Column() {
-      AttachPanel({
-        actions: attachActions(this.isGroup, this.isChannel),
-        onPick: (key: string): void => { this.runAttachAction(key); },
-        effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
-      })
+      Column() {
+        AttachPanel({
+          actions: attachActions(this.isGroup, this.isChannel),
+          onPick: (key: string): void => { this.runAttachAction(key); },
+          effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
+        })
+      }
+      .width('100%')
+      .height(ATTACH_PANEL_HEIGHT)
+      .drawerCard();
     }
     .width('100%')
-    .height(ATTACH_PANEL_HEIGHT)
-    .backgroundColor($r('app.color.surface'))
+    .height(ATTACH_PANEL_HEIGHT + DRAWER_INSET)
+    .padding({ left: DRAWER_INSET, right: DRAWER_INSET, bottom: DRAWER_INSET })
+    .backgroundColor($r('app.color.chat_bg'))
     .onAreaChange((_old: Area, area: Area): void => {
       this.noteBottomPanelHeight(area.height as number);
     });
@@ -7033,6 +7055,7 @@ struct ChatPage {
   @Builder
   emojiDrawer() {
     Column() {
+      Column() {
             if (this.panelContentReady) {
               EmojiPanel({
                 tab: $emojiPanelTab,
@@ -7068,11 +7091,14 @@ struct ChatPage {
               .justifyContent(FlexAlign.Center);
             }
     }
+      .width('100%')
+      .height(EMOJI_PANEL_HEIGHT)
+      .drawerCard();
+    }
     .width('100%')
-    .height(EMOJI_PANEL_HEIGHT)
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
-    .clip(true)
+    .height(EMOJI_PANEL_HEIGHT + DRAWER_INSET)
+    .padding({ left: DRAWER_INSET, right: DRAWER_INSET, bottom: DRAWER_INSET })
+    .backgroundColor($r('app.color.chat_bg'))
     .onAreaChange((_old: Area, area: Area): void => {
       this.noteBottomPanelHeight(area.height as number);
     });
