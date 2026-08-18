@@ -51,6 +51,25 @@ export function contentFingerprint(s: string): string {
   return h.toString(36);
 }
 
+// 同一个列表位置，内容可以不同。
+//
+// 对齐检查问的不是"是不是同一个 LazyForEach item"（那是 sameIdentity），而是
+// "旧的这一行在新快照里还在不在"。相册跨页边界被截断时两者会分叉：旧页只加载
+// 到相册的一部分成员，新页补齐后它们合并成一行，而相册头是第一条消息，于是
+// head.id 变成了更早的那条。按 head.id 对齐必然判定失败，整表 RELOAD ——
+// 真机实测媒体多的频道每翻一页都命中（[DS] misaligned 诊断，47 次）。
+//
+// 一份快照里一个 albumId 只可能对应一行（collapseAlbums 把连续的同 albumId
+// 成员合成一行），所以用它对齐不会把两行错配到一起。行的 key 确实变了，由
+// 随后的 CHANGE 带上新 key 通知框架——这正是 DataChangeOperation.key 的用途。
+function sameRowSlot(a: AlbumGroup, b: AlbumGroup): boolean {
+  if (a.head.id === b.head.id) {
+    return true;
+  }
+  const album: string = a.head.albumId;
+  return album !== '' && album === b.head.albumId;
+}
+
 // What the list's LazyForEach key is built from (see ChatPage). Two rows are
 // the same item only if these match; anything else is a different row wearing
 // the same index.
@@ -178,14 +197,24 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
     return this.updateInner(next);
   }
 
-  private updateInner(next: AlbumGroup[]): DataSourceUpdateKind {
-    // Authoritative on its own: this looks at ONE snapshot, so a hit here means
-    // two rows in the same dataset carry the same LazyForEach key — a data bug,
-    // no notification timing involved. Silence means the data is clean and any
-    // "Use repeat key" the framework reports is about its table, not ours.
-    // NOTE: not group.key — that is the content signature used for diffing,
-    // while the LazyForEach key is identity only. keyOf is the one the list
-    // actually uses.
+  // Authoritative on its own: this looks at ONE snapshot, so a hit here means
+  // two rows in the same dataset carry the same LazyForEach key — a data bug,
+  // no notification timing involved. Silence means the data is clean and any
+  // "Use repeat key" the framework reports is about its table, not ours.
+  // NOTE: not group.key — that is the content signature used for diffing,
+  // while the LazyForEach key is identity only. keyOf is the one the list
+  // actually uses.
+  //
+  // Only called for a snapshot that actually differs from the last one (see
+  // updateInner). keyOf runs contentFingerprint over each row's full content
+  // signature — hundreds of characters per row — so at 494 rows this scan cost
+  // 13-15ms, and running it on every notification burned 130-265ms per second
+  // while media was loading, most of it re-checking a dataset whose keys had
+  // not moved. A key sequence identical to the previous one was already checked
+  // when that one arrived, so skipping it there loses no coverage: a duplicate
+  // that survives into an unchanged snapshot was present in its predecessor and
+  // gets reported one round earlier, not never.
+  private assertNoDuplicateKeys(next: AlbumGroup[]): void {
     const keysSeen: Map<string, number> = new Map();
     for (let i = 0; i < next.length; i++) {
       const rowKey = this.keyOf(next[i]);
@@ -196,6 +225,9 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
         keysSeen.set(rowKey, i);
       }
     }
+  }
+
+  private updateInner(next: AlbumGroup[]): DataSourceUpdateKind {
     const prev = this.groups;
     this.groups = next;
     const minLen = Math.min(prev.length, next.length);
@@ -212,6 +244,8 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
     if (oldMid === 0 && newMid === 0) {
       return 'none'; // keys identical — nothing to tell the list
     }
+    // 数据集确实变了才查，且仍在任何 notify 之前。
+    this.assertNoDuplicateKeys(next);
     if (oldMid === newMid) {
       // CHANGE means "this same item's content changed". If the row at an
       // index is a DIFFERENT message — a delete plus an append leaves the
@@ -281,7 +315,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       // Append case: surviving old rows pair with the FRONT of the new middle.
       let frontAligned = true;
       for (let i = 0; i < oldMid; i++) {
-        if (next[p + i].head.id !== prev[p + i].head.id) {
+        if (!sameRowSlot(prev[p + i], next[p + i])) {
           frontAligned = false;
           break;
         }
@@ -290,7 +324,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       let backAligned = !frontAligned;
       if (backAligned) {
         for (let i = 0; i < oldMid; i++) {
-          if (next[p + added + i].head.id !== prev[p + i].head.id) {
+          if (!sameRowSlot(prev[p + i], next[p + added + i])) {
             backAligned = false;
             break;
           }
