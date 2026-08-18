@@ -104,6 +104,7 @@ import { liveLocation, LiveLocationState } from '../../services/LiveLocationServ
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
+import { overlayMaterial } from '../../util/overlayMaterial';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -6477,6 +6478,7 @@ struct ChatPage {
         curve: Curve.EaseOut
       })
       .bindMenu(this.headerMenuShow, this.headerMenu(), {
+        systemMaterial: overlayMaterial('menu'),
         onDisappear: (): void => { this.headerMenuShow = false; }
       })
       .enabled(!this.pageClosing && this.chatId !== 0)
@@ -7037,7 +7039,7 @@ struct ChatPage {
           SymbolGlyph($r('sys.symbol.paperclip'))
             .fontSize(22)
             .fontColor([COLOR_TEXT_SECONDARY])
-            .bindMenu(this.attachMenuItems());
+            .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
           // Mic ↔ send swap: outgoing icon shrinks/fades while the incoming one
           // scales in (the send button adds a small un-rotate flourish).
           Stack() {
@@ -7093,7 +7095,10 @@ struct ChatPage {
       }
       .width('100%')
       .backgroundColor($r('app.color.surface'))
-      .borderRadius(24);
+      .borderRadius(24)
+      // Once the material takes effect it clears the fill above to transparent
+      // and supplies its own; below API 26 it is undefined and the fill stands.
+      .systemMaterial(overlayMaterial('card'));
     }.width('100%')
     .padding({
       left: 14,
@@ -8550,7 +8555,8 @@ struct ChatPage {
     .bindSheet($$this.translateSheetOpen, this.translateSheet(), {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       backgroundColor: $r('app.color.surface'),
-      dragBar: true
+      dragBar: true,
+      systemMaterial: overlayMaterial('dialog')
     });
   }
 }

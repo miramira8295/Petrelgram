@@ -44,9 +44,13 @@ export type OverlaySurface =
   | 'bar'
   // Self-drawn opaque card: the composer.
   | 'card'
-  // Small round pressable — the only surface that gets touch light feedback.
-  | 'control'
   ;
+
+// There is deliberately no 'control' surface for the material's press
+// deformation and touch-following sheen. Every pressable in this app is a solid
+// COLOR_PRIMARY shape with its own hand-written press animation — the material
+// would clear that fill to transparent glass, and `interactive` would run a
+// second deformation on top of the existing one.
 
 // Whether the material wins over the fallback on a system at this API level.
 // Split out from the device lookup so the single rule every getter below
@@ -79,27 +83,26 @@ function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
     // Bars sit over live content and have to stay see-through enough that a
     // list scrolling under them still reads as continuous.
     case 'bar':
-    // A small control is mostly edge, and a thin material is what makes the
-    // refraction along that edge visible at all.
-    case 'control':
     default:
       return uiMaterial.ImmersiveStyle.ULTRA_THIN;
   }
 }
 
-// The material draws its own shadow, and for the framework containers that is
-// what we want. The self-drawn surfaces carry hand-tuned shadows that the
-// material would silently replace, so they keep theirs and switch the
-// material's off — the documented way to run a custom shadow under a material.
+// The material draws its own shadow, and it is tuned to go with the material,
+// so almost every surface takes it — an existing `.shadow()` is overridden
+// rather than drawn twice. The exception is the glass bars, whose shadow is
+// part of a floating look deliberately tuned against a translucent fill
+// (MainScreen.ets:296); those keep theirs and switch the material's off, which
+// is the documented way to run a custom shadow under a material.
 function usesOwnShadow(surface: OverlaySurface): boolean {
-  return surface === 'bar' || surface === 'card' || surface === 'control';
+  return surface === 'bar';
 }
 
 // Auto-invert only takes effect on THIN and ULTRA_THIN materials, and it costs
 // a colour computation per resource-set colour in the subtree — so it is scoped
-// to the thin surfaces whose contrast is genuinely at risk.
+// to the one surface thin enough for it to apply and whose contrast is at risk.
 function usesColorInvert(surface: OverlaySurface): boolean {
-  return surface === 'bar' || surface === 'control';
+  return surface === 'bar';
 }
 
 // The blur a framework-managed menu container used before the material. Only
@@ -127,16 +130,10 @@ export function overlayBackdropBlur(surface: OverlaySurface): number {
 const cache: Map<OverlaySurface, uiMaterial.Material> = new Map<OverlaySurface, uiMaterial.Material>();
 
 function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
-  // Press deformation and the touch-following sheen are per-touch effects that
-  // only mean anything on something pressed as a whole. A menu highlights its
-  // own rows instead, and a bar is not pressable at all.
-  const pressable: boolean = surface === 'control';
   return new uiMaterial.ImmersiveMaterial({
     style: styleOf(surface),
     colorInvert: usesColorInvert(surface),
-    applyShadow: !usesOwnShadow(surface),
-    interactive: pressable,
-    lightEffect: pressable ? { color: undefined } : undefined
+    applyShadow: !usesOwnShadow(surface)
   });
 }
 

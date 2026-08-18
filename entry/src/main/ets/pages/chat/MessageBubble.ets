@@ -48,6 +48,7 @@ import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -2809,7 +2810,8 @@ export struct MessageBubble {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
+        backgroundBlurStyle: overlayBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
         transition: TransitionEffect.OPACITY
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
           .animation({

@@ -11,6 +11,7 @@ import {
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 
 const CARD_RADIUS: number = 14;
@@ -494,7 +495,8 @@ struct CallsPage {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
+        backgroundBlurStyle: overlayBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
         mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
         modalMode: ModalMode.TARGET_WINDOW,
         hapticFeedbackMode: HapticFeedbackMode.AUTO,

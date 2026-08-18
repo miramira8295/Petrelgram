@@ -21,6 +21,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/ChatBackgroundStore';
 import { rasterizeBackground } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
+import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
 const DOCK_BG: ResourceColor = $r('app.color.dock_glass');
@@ -291,12 +292,14 @@ export struct MainScreen {
       .backgroundColor(DOCK_BG)
       // backdropBlur over a light tint: COMPONENT_* material styles carry an
       // opaque built-in backboard that reads as solid gray, so blur the
-      // backdrop directly instead.
-      .backdropBlur(22)
+      // backdrop directly instead. The immersive material has no such backboard
+      // and supersedes this — overlayBackdropBlur() drops to 0 where it applies.
+      .backdropBlur(overlayBackdropBlur('bar'))
       .borderRadius(DOCK_H / 2)
       .clip(true)
       .border({ width: 0.5, color: COLOR_DIVIDER })
       .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 })
+      .systemMaterial(overlayMaterial('bar'))
       .onAreaChange((_old: Area, area: Area) => {
         this.dockWidth = area.width as number;
       });

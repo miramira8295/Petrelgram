@@ -16,7 +16,7 @@ import {
 // The API-version tests are pure. The rest run against whatever device the
 // suite is on, so they assert the invariant rather than one side of it.
 
-const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control'];
+const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card'];
 
 export default function overlayMaterialTest() {
   describe('overlayMaterial', () => {
@@ -64,7 +64,6 @@ export default function overlayMaterialTest() {
       expect(overlayBlur('dialog')).assertUndefined();
       expect(overlayBlur('bar')).assertUndefined();
       expect(overlayBlur('card')).assertUndefined();
-      expect(overlayBlur('control')).assertUndefined();
     });
 
     it('gives the backdrop blur only to the self-drawn glass bars', 0, () => {
@@ -76,7 +75,6 @@ export default function overlayMaterialTest() {
       expect(overlayBackdropBlur('menu')).assertEqual(0);
       expect(overlayBackdropBlur('dialog')).assertEqual(0);
       expect(overlayBackdropBlur('card')).assertEqual(0);
-      expect(overlayBackdropBlur('control')).assertEqual(0);
     });
 
     it('reuses one material object per surface', 0, () => {
@@ -96,7 +94,6 @@ export default function overlayMaterialTest() {
       }
       expect(overlayMaterial('menu') === overlayMaterial('dialog')).assertFalse();
       expect(overlayMaterial('bar') === overlayMaterial('card')).assertFalse();
-      expect(overlayMaterial('card') === overlayMaterial('control')).assertFalse();
     });
   });
 }

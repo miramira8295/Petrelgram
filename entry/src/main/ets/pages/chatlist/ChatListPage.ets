@@ -9,6 +9,7 @@ import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 interface TabSpec {
   key: string;
@@ -466,7 +467,7 @@ export struct ChatListPage {
         pressed: this.actionPressedStyle
       })
       .accessibilityText($r('app.string.cl_more_actions'))
-      .bindMenu(this.moreMenu());
+      .bindMenu(this.moreMenu(), { systemMaterial: overlayMaterial('menu') });
     }
     .width('100%').height(TOP_BAR_HEIGHT)
     .padding({ left: this.horizontalPadding() + 4, right: this.horizontalPadding() })
@@ -561,11 +562,12 @@ export struct ChatListPage {
     // Frosted material: translucent tint + backdrop blur, same recipe as the
     // bottom dock. The list scrolls underneath and shows through.
     .backgroundColor($r('app.color.dock_glass'))
-    .backdropBlur(22)
+    .backdropBlur(overlayBackdropBlur('bar'))
     .borderRadius(FOLDER_BAR_HEIGHT / 2)
     .clip(true)
     .border({ width: 0.5, color: $r('app.color.divider') })
     .shadow({ radius: 12, color: '#1F000000', offsetX: 0, offsetY: 4 })
+    .systemMaterial(overlayMaterial('bar'))
     .margin({ left: 8, right: 8, top: 2 })
     .transition(
       TransitionEffect.OPACITY
