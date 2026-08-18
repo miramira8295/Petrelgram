@@ -105,6 +105,8 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
 import { overlayMaterial } from '../../util/overlayMaterial';
+import { navigateToChat } from '../../util/chatNav';
+import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -1492,6 +1494,8 @@ struct ChatPage {
   }
 
   onPageHide(): void {
+    // 跳走了就是解析成功了：闸门开，加载态收掉，免得退回来还亮着。
+    endLinkNav();
     console.info(`[ChatDiag] hide msgs=${this.messages.length} groups=${this.groups.length} ds=${this.groupsData.totalCount()}`);
     this.pageVisible = false;
     // 页面不可见时停表，回来时补一次即时值再续上。
@@ -1504,6 +1508,9 @@ struct ChatPage {
 
   onPageShow(): void {
     this.pageVisible = true;
+    // 回到这一页说明上一次链接解析已经有了结局（开了页又退回来，或者只弹了
+    // 个提示），闸门必须开——否则那个链接会一直卡在加载态直到看门狗到点。
+    endLinkNav();
     // onPageHide 只 suspend() 了播放位：候选表还在，被清掉的是当前播放位和
     // 驻留计时。回到这个页面时几何没变、onVisibleAreaApproximateChange 不会
     // 再触发，候选表也就不会被重新灌满——保留候选正是为了这一刻还能选得出
@@ -2910,6 +2917,12 @@ struct ChatPage {
       }
       return;
     }
+    // 从这里往下每一条分支都要往返一次服务器才知道该开哪一页。网络一慢，
+    // 用户看不到反馈就会再点，同一个群于是被开出好几层。闸门放行一次、
+    // 挡住其余，并把这个 url 广播出去让那段文字自己表现成加载中。
+    if (!beginLinkNav(url)) {
+      return;
+    }
     const folderInvite = chatFolderInviteLinkOf(url);
     if (folderInvite !== '') {
       openChatFolderInviteLink(folderInvite);
@@ -2974,13 +2987,15 @@ struct ChatPage {
             }
           }
         }
+        endLinkNavIf(url);
         return;
       }
       const params: Record<string, Object> = { 'chatId': chatId };
       if (msgId !== undefined && msgId > 0) {
         params['jumpTo'] = msgId;
       }
-      router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      navigateToChat(params);
+      endLinkNavIf(url);
     }).catch((e: TdError) => {
       console.error(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
       openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
@@ -3006,7 +3021,7 @@ struct ChatPage {
       }
       if (chatId !== 0) {
         const params: Record<string, Object> = { 'chatId': chatId };
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+        navigateToChat(params);
         return;
       }
       openWebUrl(getContext(this) as common.UIAbilityContext, original);
@@ -3212,7 +3227,7 @@ struct ChatPage {
       if (originMsgId !== 0) {
         params['jumpTo'] = originMsgId;
       }
-      router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      navigateToChat(params);
       return;
     }
     if (originUserId === 0) {
@@ -3225,7 +3240,7 @@ struct ChatPage {
       const id = (chat['id'] as number | undefined) ?? 0;
       if (id !== 0) {
         const params: Record<string, Object> = { 'chatId': id };
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+        navigateToChat(params);
       }
     }).catch((e: TdError) => {
       console.error(`ChatPage.onForwardTap createPrivateChat failed: ${e.message}`);
@@ -3249,7 +3264,7 @@ struct ChatPage {
         // not the whole discussion group's history.
         params['threadRootId'] = threadId;
       }
-      router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      navigateToChat(params);
     }).catch((e: TdError) => {
       console.error(`ChatPage.getMessageThread failed: ${e.message}`);
     });
@@ -3550,7 +3565,7 @@ struct ChatPage {
       'chatId': chatId,
       'jumpTo': messageId
     };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params });
+    navigateToChat(params);
   }
 
   // Header avatar/title tap → detail page: users/bots get the personal

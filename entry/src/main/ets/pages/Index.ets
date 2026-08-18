@@ -13,6 +13,7 @@ import { MainScreen } from './main/MainScreen';
 import { handleIncomingLink } from '../util/deepLink';
 import { COLOR_TEXT_PRIMARY } from '../util/theme';
 import { refreshNetworkState } from '../services/NetworkStateService';
+import { navigateToChat } from '../util/chatNav';
 
 @Entry
 @Preview
@@ -78,9 +79,7 @@ struct Index {
     const chatId: number = this.pendingNotifyChatId;
     this.pendingNotifyChatId = 0;
     const params: Record<string, Object> = { 'chatId': chatId };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params }).catch((error: Error): void => {
-      console.error(`Index.consumeNotifyChat failed: ${error.message}`);
-    });
+    navigateToChat(params);
   }
 
   // Route the pending link only once signed in; otherwise leave it queued for

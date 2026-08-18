@@ -13,6 +13,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToChat } from '../../util/chatNav';
 
 const CARD_RADIUS: number = 14;
 const COLOR_MISSED: string = '#E64646';
@@ -115,11 +116,7 @@ struct CallsPage {
     if (this.actionKey !== '' || this.navigationLocked || call.chatId === 0) { return; }
     this.navigationLocked = true;
     const params: Record<string, Object> = { 'chatId': call.chatId };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params }).catch((error: Error): void => {
-      this.navigationLocked = false;
-      console.error(`CallsPage.openChat failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.open_chat_failed'), duration: 1700 });
-    });
+    navigateToChat(params);
     this.navigationTimer = setTimeout((): void => {
       this.navigationLocked = false;
       this.navigationTimer = -1;

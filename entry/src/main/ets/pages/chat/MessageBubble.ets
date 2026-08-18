@@ -49,6 +49,7 @@ import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
 import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -157,6 +158,9 @@ export struct MessageBubble {
   @Prop albumCaption: string;
   albumCaptionEntities: TdObject[] = [];
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 正在解析中的链接 url（linkTapGuard 广播）。只在渲染链接段时读，因此
+  // 不含链接的气泡不会因为它变化而重建。
+  @StorageProp(LINK_NAV_BUSY_KEY) linkNavBusyUrl: string = '';
   // Measured width of the bubble (it shrinks to fit content) — the inline
   // keyboard below matches it exactly instead of the theoretical max width.
   @State bubbleW: number = 0;
@@ -549,6 +553,16 @@ export struct MessageBubble {
     .scale({ x: 0.986, y: 0.986 })
   }
 
+  // 链接底色。忙碌时换成 select_highlight——一层带透明度的主色调，浅色深色
+  // 两套资源都已经定好，也不会被自定义强调色带跑。代码体的链接本来就有底色，
+  // 忙碌时同样切到高亮色，才看得出变化。
+  private linkRunBackground(run: RichRun): ResourceColor {
+    if (this.linkNavBusyUrl === run.url) {
+      return $r('app.color.select_highlight');
+    }
+    return run.code ? $r('app.color.surface_alt') : Color.Transparent;
+  }
+
   @Styles
   linkRunNormalStyle() {
     .opacity(1)
@@ -930,6 +944,12 @@ export struct MessageBubble {
         .verticalAlign(ImageSpanAlignment.CENTER)
         .objectFit(ImageFit.Contain);
     } else if (run.url !== '') {
+      // 这一段被点中、正在向服务器问"这个链接该开哪一页"的时候，文字自己
+      // 呼吸起来。链接是 Span，挂不了子组件也没有 opacity，能动的只有它自己
+      // 的颜色和底色，所以加载态就画成一颗一明一暗的药丸。
+      //
+      // this.linkNavBusyUrl 只在这条分支里读：不含链接的气泡从头到尾不碰
+      // 这个变量，也就不会因为别人点了链接而重建。
       Span(run.text)
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
         .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
@@ -937,8 +957,17 @@ export struct MessageBubble {
         .fontColor(COLOR_PRIMARY)
         .decoration({ type: this.richRunDecoration(run), color: COLOR_PRIMARY })
         .textBackgroundStyle({
-          color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
-          radius: run.code ? 3 : 0
+          color: this.linkRunBackground(run),
+          radius: run.code || this.linkNavBusyUrl === run.url ? 3 : 0
+        })
+        // iterations: -1 + Alternate —— 一次状态变化就能永远来回，不需要
+        // 定时器逐帧改状态（那会把整个气泡按帧重建）。省电模式下
+        // effectDuration 归零，退化成一个静止的暗色药丸，仍然看得出在忙。
+        .animation({
+          duration: this.effectDuration(620),
+          curve: Curve.EaseInOut,
+          iterations: this.linkNavBusyUrl === run.url ? -1 : 1,
+          playMode: PlayMode.Alternate
         })
         .stateStyles({
           normal: this.linkRunNormalStyle,

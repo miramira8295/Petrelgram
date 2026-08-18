@@ -7,6 +7,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToChat } from '../../util/chatNav';
 
 const CARD_RADIUS: number = 14;
 // forumTopicIcon.color 的取值集合（TDLib 固定的六色）。
@@ -280,9 +281,7 @@ struct ForumTopicsPage {
       'forumTopicId': row.threadId,
       'topicName': row.name
     };
-    router.pushUrl({ url: 'pages/chat/ChatPage', params }).catch((error: Error): void => {
-      console.error(`ForumTopicsPage.openTopic failed: ${error.message}`);
-    });
+    navigateToChat(params);
   }
 
   private createTopic(name: string): void {

@@ -18,6 +18,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_MUTED_BA
 import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { navigateToChat } from '../../util/chatNav';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
@@ -458,7 +459,7 @@ export struct ChatRow {
         return;
       }
       const params: Record<string, Object> = { 'chatId': this.chat.id };
-      router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      navigateToChat(params);
     })
     .onTouch((event: TouchEvent): void => {
       if (event.type === TouchType.Down) {

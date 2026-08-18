@@ -10,6 +10,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { navigateToChat } from '../../util/chatNav';
 
 interface TabSpec {
   key: string;
@@ -299,7 +300,7 @@ export struct ChatListPage {
         return Promise.reject(new Error(str('cl_saved_unavailable')));
       }
       const params: Record<string, Object> = { 'chatId': chatId };
-      return router.pushUrl({ url: 'pages/chat/ChatPage', params: params });
+      return navigateToChat(params);
     }).then((): void => {
       // pushUrl resolves once the route request is accepted, while this
       // keep-alive home component can stay mounted behind the new page.

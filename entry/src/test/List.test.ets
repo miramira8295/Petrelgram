@@ -72,6 +72,8 @@ import audioQueueGateTest from './AudioQueueGate.test';
 import mentionEntitiesTest from './MentionEntities.test';
 import chatListDataSourceTest from './ChatListDataSource.test';
 import overlayMaterialTest from './OverlayMaterial.test';
+import chatNavTest from './ChatNav.test';
+import linkTapGuardTest from './LinkTapGuard.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -148,4 +150,6 @@ export default function testsuite() {
   mentionEntitiesTest();
   chatListDataSourceTest();
   overlayMaterialTest();
+  chatNavTest();
+  linkTapGuardTest();
 }

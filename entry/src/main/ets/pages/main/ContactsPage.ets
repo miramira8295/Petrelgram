@@ -9,6 +9,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToChat } from '../../util/chatNav';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -386,10 +387,7 @@ export struct ContactsPage {
       const id = chat['id'] as number | undefined;
       if (id !== undefined) {
         const params: Record<string, Object> = { 'chatId': id };
-        router.pushUrl({ url: 'pages/chat/ChatPage', params: params }).catch((error: Error): void => {
-          console.error(`ContactsPage.openChat failed: ${error.message}`);
-          promptAction.showToast({ message: $r('app.string.open_chat_failed'), duration: 1800 });
-        });
+        navigateToChat(params);
       }
     }).catch((e: TdError): void => {
       if (sequence !== this.chatOpenSequence) {
