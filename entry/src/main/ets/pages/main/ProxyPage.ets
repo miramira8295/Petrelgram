@@ -1,11 +1,11 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
-import { getTdClient } from '../../tdkit/Globals';
+import { getConnectionState, getTdClient } from '../../tdkit/Globals';
 import {
   ProxyEntry, PROXY_SOCKS5, PROXY_MTPROTO, PROXY_HTTP,
   proxyTypeLabel, listProxies, addProxy, editProxy, enableProxy, disableProxy,
-  removeProxy, pingProxy, testProxy, getProxyShareLink, getProxyConnectionState
+  removeProxy, pingProxy, testProxy, getProxyShareLink
 } from '../../store/ProxyApi';
 import {
   parseProxyPort, proxyActionErrorText, proxyConnectionText,
@@ -185,11 +185,12 @@ struct ProxyPage {
         }
       );
     }
-    getProxyConnectionState().then((state: string): void => {
-      if (this.active) { this.connectionState = state; }
-    }).catch((error: TdError): void => {
-      console.warn(`ProxyPage.getConnectionState failed: ${error.message}`);
-    });
+    // 读进程内缓存，不要向 TDLib 现问：这个构建没有 getConnectionState 方法
+    // （实测 "Unknown class \"getConnectionState\""，每次进页面必失败，
+    // connectionState 停在 '' 于是顶部一直显示"读取代理状态…"）。
+    // Globals 在建 client 时就订阅了 updateConnectionState 并缓存，正是为了
+    // 解决"订阅晚了就收不到当前值"——页面按需读它即可。
+    this.connectionState = getConnectionState();
   }
 
   private consumeRouteParams(): void {

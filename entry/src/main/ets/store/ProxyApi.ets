@@ -139,7 +139,3 @@ export async function getProxyShareLink(id: number): Promise<string> {
   return (result['url'] as string | undefined) ?? '';
 }
 
-export async function getProxyConnectionState(): Promise<string> {
-  const result = await getTdClient().send({ '@type': 'getConnectionState' } as TdRequest, 6000);
-  return (result['@type'] as string | undefined) ?? '';
-}
