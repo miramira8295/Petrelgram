@@ -118,6 +118,9 @@ interface StickerSuggestion {
 }
 
 const PINNED_SEG_MAX: number = 5;
+// 表情抽屉的高度。沿用它当浮卡时的 300——那个数是按三个 picker 的内容量
+// 调出来的，换成抽屉之后内容没变。
+const EMOJI_PANEL_HEIGHT: number = 300;
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
 const JUMP_RELOAD_THRESHOLD: number = 40;
@@ -567,10 +570,10 @@ struct ChatPage {
   // spike 验过的四件事：内容能顶起（但避让要自己做）、切换不闪、面板内点击
   // 与横滑可用、点面板外**不会**自动收起（输入框始终聚焦，系统没有理由收）。
   @State attachPanelOpen: boolean = false;
-  // 面板占据的高度。supportAvoidance 只保证输入框不被挡，列表内容它不管——
-  // 官方《自定义键盘》文档明说这一段要开发者自己做：监听面板根节点
-  // onAreaChange 拿高度，再设置布局避让。
-  @State attachPanelH: number = 0;
+  // 当前打开的底部抽屉占据的高度（附件或表情，两者互斥）。supportAvoidance
+  // 只保证输入框不被挡，列表内容它不管——官方《自定义键盘》文档明说这一段
+  // 要开发者自己做：监听面板根节点 onAreaChange 拿高度，再设置布局避让。
+  @State bottomPanelH: number = 0;
   @State emojiPanelTab: number = 0;
   @State emojiPanelClosing: boolean = false;
   // Bot custom reply keyboard (null = this chat has none). Always docked when
@@ -4528,45 +4531,41 @@ struct ChatPage {
       this.closeAttachPanel();
     }
     const seq = ++this.panelReadySeq;
-    const duration: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 220);
+    // 出入场动画交给系统：抽屉现在是 customKeyboard，滑入滑出由键盘负责，
+    // 这里不再需要 animateTo，也不需要那套 translate+opacity 的 transition。
+    const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 220);
     if (show) {
       this.emojiPanelClosing = false;
-      this.composerController.stopEditing();
       this.composerFocused = false;
       this.replyKbCollapsed = true;
-      animateTo({
-        duration, curve: Curve.EaseOut
-      }, () => {
-        this.showEmojiPanel = true;
-      });
-      if (duration === 0) {
+      this.showEmojiPanel = true;
+      // 换绑之后要重新获焦一次键盘才会切过去；解绑/换绑和获焦必须分帧。
+      this.composerController.stopEditing();
+      this.raiseSystemKeyboard();
+      if (settle === 0) {
         this.panelContentReady = true;
         return;
       }
+      // 先让壳落地，内容下一拍再进来。三个 picker 一次性挂上实测 ~51ms，
+      // 和键盘的滑入挤在一起就是开场即掉帧。
       setTimeout(() => {
         if (seq === this.panelReadySeq && this.showEmojiPanel) {
-          this.panelContentReady = true; // content pops in after the shell lands
+          this.panelContentReady = true;
         }
-      }, duration + 20);
+      }, settle + 20);
     } else {
       this.emojiPanelClosing = true;
-      // 卸载重内容和启动收起动画必须分帧。面板里同时挂着三个 picker（自定义
-      // 表情常驻，贴纸/GIF 访问过就常驻），一次性卸掉实测 ~51ms；和 animateTo
-      // 挤在同一个同步块里，动画一开场就已经掉帧。
-      //
-      // 先在没有动画运行时卸载 —— 这一下花在静止状态下，观感是内容一闪而空；
-      // 下一帧再对着一个空面板启动收起动画，动画本身就是廉价的。
+      // 卸载重内容和解绑键盘同样要分帧，理由同上：卸掉三个 picker 是 ~51ms，
+      // 和键盘的滑出撞在一帧里，动画一开场就掉。先在静止状态下卸掉内容
+      // （观感是内容一闪而空），下一帧再对着一个空壳解绑。
       this.panelContentReady = false;
       setTimeout((): void => {
         if (seq !== this.panelReadySeq) {
           return;
         }
-        animateTo({
-          duration, curve: Curve.EaseOut
-        }, () => {
-          this.showEmojiPanel = false;
-          this.emojiPanelClosing = false;
-        });
+        this.showEmojiPanel = false;
+        this.emojiPanelClosing = false;
+        this.noteBottomPanelHeight(0);
       }, 0);
     }
   }
@@ -6924,8 +6923,25 @@ struct ChatPage {
     .height(ATTACH_PANEL_HEIGHT)
     .backgroundColor($r('app.color.surface'))
     .onAreaChange((_old: Area, area: Area): void => {
-      this.noteAttachPanelHeight(area.height as number);
+      this.noteBottomPanelHeight(area.height as number);
     });
+  }
+
+  // 当前该把哪个抽屉当键盘挂上去。两者互斥，所以这里最多返回一个；
+  // 都没开时返回 null 解绑——**不能返回 undefined**，ArkUI 里 undefined 往往
+  // 是"保持上次的值"，写成 undefined 时面板关掉后再点输入框还会把它弹回来。
+  @Builder
+  bottomDrawer() {
+    if (this.attachPanelOpen) {
+      this.attachDrawer();
+    } else if (this.showEmojiPanel && this.membershipState === 'writable') {
+      this.emojiDrawer();
+    }
+  }
+
+  private closeBottomPanels(): void {
+    this.closeAttachPanel();
+    this.setEmojiPanel(false);
   }
 
   private toggleAttachPanel(): void {
@@ -6951,7 +6967,7 @@ struct ChatPage {
     this.attachPanelOpen = false;
     // 面板卸载时 onAreaChange 不会再报一个 0 回来，避让高度得自己归零，
     // 否则列表底部会永久留一段空白。
-    this.noteAttachPanelHeight(0);
+    this.noteBottomPanelHeight(0);
     this.composerController.stopEditing();
   }
 
@@ -6964,13 +6980,13 @@ struct ChatPage {
 
   // 和 updateBottomChromeHeight 同一套：高度变了就更新列表的底部避让，并且
   // 原来贴着底的用户要重新贴回底——否则面板顶出来之后最后几条消息被压在下面。
-  private noteAttachPanelHeight(height: number): void {
+  private noteBottomPanelHeight(height: number): void {
     const next: number = height > 0 ? height : 0;
-    if (Math.abs(next - this.attachPanelH) < 0.5) {
+    if (Math.abs(next - this.bottomPanelH) < 0.5) {
       return;
     }
     const keepTailVisible: boolean = this.atBottom && this.viewerMsgId === 0;
-    this.attachPanelH = next;
+    this.bottomPanelH = next;
     if (!keepTailVisible) {
       return;
     }
@@ -7003,6 +7019,63 @@ struct ChatPage {
     } else if (key === 'dice') {
       this.showDiceMenu();
     }
+  }
+
+  // 表情/贴纸抽屉。和附件抽屉同一套机制（customKeyboard），所以两者在同一块
+  // 高度上、互斥、观感一致，都会把输入框和聊天内容顶起来。
+  //
+  // 外观从"浮在列表上的圆角卡片"改成齐边抽屉：不再有左右留白、圆角和阴影，
+  // 也不用自己写出入场 transition——键盘的滑入滑出由系统负责。
+  //
+  // panelContentReady 那套延迟挂载保留：面板里同时挂着三个 picker（自定义表情
+  // 常驻，贴纸/GIF 访问过就常驻），一次性挂/卸实测 ~51ms，和挂载位置无关。
+  // 先让壳落地，内容下一拍再进来。
+  @Builder
+  emojiDrawer() {
+    Column() {
+            if (this.panelContentReady) {
+              EmojiPanel({
+                tab: $emojiPanelTab,
+                onPick: (e: string): void => { this.insertEmoji(e); },
+                onPickCustomEmoji: (e: string, ceId: string): void => {
+                  if (this.store !== null) {
+                    this.atBottom = true;
+                    this.store.sendCustomEmoji(e, ceId);
+                    this.finishStickerSend('', 0, 0);
+                  }
+                },
+                onPickSticker: (s: StickerItem, x: number, y: number): void => {
+                  if (this.store !== null) {
+                    this.atBottom = true;
+                    this.store.sendSticker(s.fileId, s.width, s.height);
+                    this.finishStickerSend(s.thumbPath, x, y);
+                  }
+                },
+                onPickGif: (g: GifItem): void => {
+                  if (this.store !== null) {
+                    this.atBottom = true;
+                    this.store.sendAnimation(g.fileId, g.width, g.height, g.duration);
+                    this.finishStickerSend('', 0, 0);
+                  }
+                }
+              });
+            } else if (!this.emojiPanelClosing) {
+              Column({ space: 8 }) {
+                LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
+                Text($r('app.string.cp_opening_panel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+              }
+              .width('100%').height('100%')
+              .justifyContent(FlexAlign.Center);
+            }
+    }
+    .width('100%')
+    .height(EMOJI_PANEL_HEIGHT)
+    .backgroundColor($r('app.color.surface'))
+    .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
+    .clip(true)
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.noteBottomPanelHeight(area.height as number);
+    });
   }
 
   @Builder
@@ -7134,13 +7207,12 @@ struct ChatPage {
             // null 而不是 undefined：ArkUI 里 undefined 往往是"保持上次的值"，
             // 只有显式 null 才解绑（官方示例用的也是 null）。写成 undefined 时
             // 面板关掉后再点输入框还会把它弹回来。
-            .customKeyboard(this.attachPanelOpen ? this.attachDrawer() : null,
-              { supportAvoidance: true })
+            .customKeyboard(this.bottomDrawer(), { supportAvoidance: true })
             // 面板开着时输入框本就是聚焦态，再点它不产生焦点变化，框架不会做
             // 任何事。想要"点输入框收面板、弹系统键盘"，得自己解绑再重新获焦。
             .onClick((): void => {
-              if (this.attachPanelOpen) {
-                this.closeAttachPanel();
+              if (this.attachPanelOpen || this.showEmojiPanel) {
+                this.closeBottomPanels();
                 this.raiseSystemKeyboard();
               }
             })
@@ -8326,7 +8398,7 @@ struct ChatPage {
           fractionStops: this.headerBlurStops(),
           direction: GradientDirection.Bottom
         })
-        .contentEndOffset(this.bottomChromeH + 8 + this.attachPanelH)
+        .contentEndOffset(this.bottomChromeH + 8 + this.bottomPanelH)
         // Pre-build a few offscreen rows so a fling doesn't pay the full
         // MessageBubble construction cost inside the visible frame.
         // Starts small and grows once the chat is on screen.
@@ -8358,11 +8430,9 @@ struct ChatPage {
             // The highlight overlay is viewport-anchored — drop it as soon as
             // the user starts interacting, before it can detach from its row.
             this.cancelFlash();
-            // Tapping outside the emoji/sticker panel dismisses it.
-            this.setEmojiPanel(false);
-            // 附件抽屉同理，但它必须自己发：它是 customKeyboard，输入框始终
-            // 聚焦，系统不会因为点了别处就收起它。
-            this.closeAttachPanel();
+            // 点面板外面收起。两个抽屉都是 customKeyboard，输入框始终聚焦，
+            // 系统不会因为点了别处就收——这一下必须自己发。
+            this.closeBottomPanels();
           } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
             this.listTouchActive = false;
           }
@@ -8554,71 +8624,6 @@ struct ChatPage {
           .hitTestBehavior(HitTestMode.None);
       }
 
-      // Emoji/sticker panel OVERLAYS the chat (not in the layout flow): the
-      // message list keeps its height, so its scrollbar/FAB stay put, and the
-      // open/close animation doesn't relayout the LazyForEach every frame.
-      if (this.showEmojiPanel && this.membershipState === 'writable') {
-        // Full-height wrapper only positions the panel above the input bar;
-        // Transparent hit-testing lets taps outside the panel reach the list.
-        Column() {
-          Column() {
-            if (this.panelContentReady) {
-              EmojiPanel({
-                tab: $emojiPanelTab,
-                onPick: (e: string): void => { this.insertEmoji(e); },
-                onPickCustomEmoji: (e: string, ceId: string): void => {
-                  if (this.store !== null) {
-                    this.atBottom = true;
-                    this.store.sendCustomEmoji(e, ceId);
-                    this.finishStickerSend('', 0, 0);
-                  }
-                },
-                onPickSticker: (s: StickerItem, x: number, y: number): void => {
-                  if (this.store !== null) {
-                    this.atBottom = true;
-                    this.store.sendSticker(s.fileId, s.width, s.height);
-                    this.finishStickerSend(s.thumbPath, x, y);
-                  }
-                },
-                onPickGif: (g: GifItem): void => {
-                  if (this.store !== null) {
-                    this.atBottom = true;
-                    this.store.sendAnimation(g.fileId, g.width, g.height, g.duration);
-                    this.finishStickerSend('', 0, 0);
-                  }
-                }
-              });
-            } else if (!this.emojiPanelClosing) {
-              Column({ space: 8 }) {
-                LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
-                Text($r('app.string.cp_opening_panel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-              }
-              .width('100%').height('100%')
-              .justifyContent(FlexAlign.Center);
-            }
-          }
-          .width('calc(100% - 16vp)').height(300)
-          .backgroundColor($r('app.color.surface'))
-          .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
-          .borderRadius(18)
-          .clip(true)
-          .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
-          // 只做位移 + 淡出，不做 scale。缩放一个 300px 高、带 clip 和阴影的
-          // 复杂子树，每帧都要重新栅格化 —— 系统 jank 事件实测这一下 80ms，
-          // 而卸载内容本身是 0ms。位移和透明度是纯合成操作，不触发重栅格化。
-          .transition(TransitionEffect.translate({ y: 18 })
-            .combine(TransitionEffect.OPACITY)
-            .animation({ duration: this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 220), curve: Curve.EaseOut }));
-        }
-        .width('100%').height('100%')
-        .justifyContent(FlexAlign.End).alignItems(HorizontalAlign.Center)
-        .padding({ bottom: this.bottomChromeH + 6 })
-        // None (not Transparent): the wrapper itself never hit-tests, so the
-        // panel child blocks touches over its own area (Transparent leaked
-        // panel taps through to the list, whose onTouch dismissed the panel),
-        // while the area outside the panel still reaches the list/input bar.
-        .hitTestBehavior(HitTestMode.None);
-      }
       if (this.showReactionSheet) {
         ReactionSheet({
           show: this.showReactionSheet,
