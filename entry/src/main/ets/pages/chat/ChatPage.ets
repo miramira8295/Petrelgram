@@ -97,6 +97,7 @@ import {
   searchMentions, mentionOfUser, loadBotCommands, MentionItem, CommandItem
 } from '../../store/InputSuggestions';
 import { appendMention, mentionToken } from '../../util/mentionDraft';
+import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { floatingLiveWindow } from './LiveFloatingWindow';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
@@ -3894,11 +3895,29 @@ struct ChatPage {
     });
   }
 
+  // 本次草稿里"按名字"提及过的成员。没有用户名的人，@ 出去只是一串普通
+  // 文字，服务器识别不了、对方收不到提及通知——发送时要靠这份记录补上
+  // textEntityTypeMentionName 实体（见 mentionEntities）。
+  private pendingNameMentions: NameMention[] = [];
+
+  // 记下一次"按名字"的提及。有用户名的走 @username，服务器自己认得，不必记。
+  private rememberNameMention(item: MentionItem, name: string): void {
+    if (item.username !== '' || name === '' || item.userId <= 0) {
+      return;
+    }
+    const known: boolean = this.pendingNameMentions.some(
+      (m: NameMention): boolean => m.userId === item.userId && m.name === name);
+    if (!known) {
+      this.pendingNameMentions = [...this.pendingNameMentions, { name, userId: item.userId }];
+    }
+  }
+
   // Replace the trailing '@token' with the chosen member.
   private pickMention(item: MentionItem): void {
     const idx = this.draft.lastIndexOf('@');
     const head = idx >= 0 ? this.draft.substring(0, idx) : this.draft;
     this.draft = `${head}${mentionToken(item.name, item.username)} `;
+    this.rememberNameMention(item, item.name.trim());
     this.mentionItems = [];
     setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
   }
@@ -3914,6 +3933,7 @@ struct ChatPage {
         return;
       }
       this.draft = appendMention(this.draft, token);
+      this.rememberNameMention(item, name.trim());
       this.mentionItems = [];
       setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
     });
@@ -4317,6 +4337,8 @@ struct ChatPage {
   // Measured bot-keyboard height; with the input bar it makes up the bottom
   // chrome the scroll-to-bottom FAB has to clear.
   @State replyKbH: number = 0;
+  // 输入框的真实宽度，composerEditorHeight() 拿它做排版约束。
+  @State composerEditorW: number = 0;
   // "Fake" animation: the open/close transition flies an empty white shell;
   // the real panel content (hundreds of emoji + sticker players) mounts only
   // after the animation lands, so frames stay cheap.
@@ -4337,15 +4359,39 @@ struct ChatPage {
   // the TextArea has to scroll internally, which it can only do if nothing
   // truncates the layout (see the removed maxLines at the call site).
   private composerEditorHeight(): number {
-    const chunks: string[] = this.draft.split('\n');
-    let lines: number = 0;
-    for (let i: number = 0; i < chunks.length; i++) {
-      // Rough wrap estimate: the exact break depends on the glyphs, and
-      // over-counting only grows the box a line early.
-      lines += Math.max(1, Math.ceil(chunks[i].length / 18));
+    const oneLine: number = COMPOSER_LINE_H + COMPOSER_EDITOR_PAD * 2;
+    const cap: number = COMPOSER_LINE_H * COMPOSER_MAX_LINES + COMPOSER_EDITOR_PAD * 2;
+    if (this.draft === '' || this.composerEditorW <= 0) {
+      return oneLine;
     }
-    return COMPOSER_LINE_H * Math.max(1, Math.min(COMPOSER_MAX_LINES, lines))
-      + COMPOSER_EDITOR_PAD * 2;
+    // 真实测量，不再按"每行 18 个字"硬估。
+    //
+    // 那个 18 是拍的：一行能装多少字取决于屏宽、字号缩放和中英文混排，在宽屏
+    // 上实际只装得下约 15 个，于是第 16 个字文本已经换行、而 ceil(16/18) 仍是
+    // 1，盒子要等到第 19 个字才长高——表现为"输到第二行第 4 个字才展开"
+    // （Mate 80 Pro Max 稳定复现）。
+    //
+    // TextArea 本身是自适应内容高度的（不设 height 时），这里之所以还锁着
+    // 高度，是因为它的固有最小高度在某些机型/字号下比一行还高，空输入框会
+    // 变胖（见下方 .height 调用点的原注释）。所以保留显式高度，只把估算换成
+    // measureTextSize —— 它按给定的约束宽度做真实排版，返回的高度已经算好了
+    // 换行。
+    let measured: number = oneLine;
+    try {
+      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
+        textContent: this.draft,
+        fontSize: 15,
+        lineHeight: COMPOSER_LINE_H,
+        // 左右各 3 的内边距要从可用宽度里扣掉，否则会少算一行。
+        constraintWidth: Math.max(1, this.composerEditorW - 6)
+      });
+      // measureTextSize 返回的是 px。
+      measured = px2vp(size.height as number) + COMPOSER_EDITOR_PAD * 2;
+    } catch (e) {
+      // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
+      console.error(`composerEditorHeight measure failed: ${(e as Error).message}`);
+    }
+    return Math.max(oneLine, Math.min(cap, Math.ceil(measured)));
   }
 
   // 渐变模糊：只在顶部 chrome 那一条区域内从"全糊"过渡到"清晰"。
@@ -4975,11 +5021,17 @@ struct ChatPage {
     this.commandMenuOpen = false;
     this.atBottom = true;
     this.stayAtUnread = false;
-    store.sendAsync(text, replyId).then((): void => {
+    // 按名字提及的实体在这里生成：偏移必须相对**实际发出去的那串文本**，
+    // 所以用 trim 之后的 text，不是原始草稿。
+    const entities: TdObject[] = buildMentionEntities(text, this.pendingNameMentions);
+    store.sendAsync(text, replyId, entities).then((): void => {
       // The user may already have started the next message while TDLib was
       // accepting this one. Never erase newer input or a newly selected reply.
       if (this.draft === draftSnapshot) {
         this.draft = '';
+        // 草稿清空了，提及记录也跟着作废；草稿被新输入接管时则留着，
+        // 用户可能还在续写同一条消息。
+        this.pendingNameMentions = [];
       }
       if (this.replyToId === replyId) {
         this.clearReply();
@@ -6919,6 +6971,12 @@ struct ChatPage {
             .barState(BarState.Auto)
             .backgroundColor(Color.Transparent)
             .key('chat_composer')
+            .onAreaChange((_old: Area, area: Area): void => {
+              const next: number = area.width as number;
+              if (Math.abs(next - this.composerEditorW) > 0.5) {
+                this.composerEditorW = next;
+              }
+            })
             .onChange((v: string) => {
               this.draft = v;
               this.updateSuggestions(v);
