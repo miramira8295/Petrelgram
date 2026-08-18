@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "Tap a message for the menu; long press goes straight to multi-select. Taps on photos, links and buttons are unaffected"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "Dark overlay"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "Dark mode only: lays black over the chat background. Higher means darker. Bubbles and text are unaffected"
     }
   ]
 }

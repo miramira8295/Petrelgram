@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "Menü için dokunun, uzun basış doğrudan çoklu seçime geçer. Fotoğraf, bağlantı ve düğmelere dokunma etkilenmez"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "Koyu örtü"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "Yalnızca koyu modda: sohbet arka planını karartır. Değer arttıkça koyulaşır. Balonlar ve metin etkilenmez"
     }
   ]
 }

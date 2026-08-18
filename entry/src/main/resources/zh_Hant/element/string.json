@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "點一下訊息開啟選單，長按直接進入多選。圖片、連結、按鈕的點擊不受影響"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "深色遮罩"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "僅深色模式生效：在聊天背景上壓一層黑色，數值越大越暗。訊息氣泡與文字不受影響"
     }
   ]
 }

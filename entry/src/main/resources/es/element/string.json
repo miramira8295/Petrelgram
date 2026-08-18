@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "Tocar abre el menú y la pulsación larga entra en selección múltiple. Los toques en fotos, enlaces y botones no cambian"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "Capa oscura"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "Solo en modo oscuro: superpone negro al fondo del chat. Cuanto mayor, más oscuro. Los globos y el texto no cambian"
     }
   ]
 }

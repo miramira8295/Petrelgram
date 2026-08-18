@@ -107,6 +107,8 @@ import { audioQueueApplies } from '../../util/audioQueueGate';
 import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
+import { KEY_APP_DARK } from '../../util/theme';
+import { CHAT_DIM_MAX, KEY_CHAT_DIM } from '../../store/AppSettings';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -291,6 +293,10 @@ struct ChatPage {
   // Resolution (chat background → theme → account default → installed default)
   // and its four TDLib subscriptions live in ChatBackgroundStore.
   @State chatBg: ChatBackgroundState = emptyChatBackground();
+  // 深色下压在聊天背景上的黑色遮罩（用户可调）。两个都读：浅色模式一律不画，
+  // 所以模式一变遮罩就跟着出现/消失，不需要重进页面。
+  @StorageProp(KEY_APP_DARK) appDark: boolean = false;
+  @StorageProp(KEY_CHAT_DIM) chatDim: number = 0;
   private bgStore: ChatBackgroundStore | null = null;
   private unsubBg: (() => void) | null = null;
   private unsubTranslatable: (() => void) | null = null;
@@ -7934,6 +7940,20 @@ struct ChatPage {
     }
   }
 
+  // 深色下的黑色遮罩。放在这一层的末尾而不是 chatBackgroundLayer 里面，是为了
+  // 一处覆盖三种情况：光栅缓存路径、实时绘制路径、以及上面那两颗氛围光斑。
+  // 气泡和文字画在这整层之上，所以只压暗背景，不影响可读性。
+  //
+  // 也没有并进 chatBg.dimming：那个值是服务端按会话下发的（dark_theme_dimming），
+  // 且已经烘进了光栅缓存的签名。把用户的这一份混进去会让每次调滑杆都作废整张
+  // 缓存图，而单独一层是纯合成，不触发任何重新栅格化。
+  private darkMaskOpacity(): number {
+    if (!this.appDark) {
+      return 0;
+    }
+    return Math.max(0, Math.min(CHAT_DIM_MAX, this.chatDim));
+  }
+
   @Builder
   chatPowerBackground() {
     Stack() {
@@ -7967,6 +7987,12 @@ struct ChatPage {
             .opacity(this.powerBackgroundPhase ? 0.2 + (id % 3) * 0.12 : 0.48 - (id % 3) * 0.08)
             .animation({ duration: powerAnimationDuration(KEY_POWER_PARTICLES, 4200), curve: Curve.EaseInOut });
         }, (id: number): string => `power_particle_${id}`);
+      }
+      if (this.darkMaskOpacity() > 0) {
+        Column().width('100%').height('100%')
+          .backgroundColor(Color.Black)
+          .opacity(this.darkMaskOpacity())
+          .hitTestBehavior(HitTestMode.None);
       }
     }
     .width('100%').height('100%')

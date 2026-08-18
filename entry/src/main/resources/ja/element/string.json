@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "タップでメニュー、長押しで複数選択に直行。写真・リンク・ボタンのタップは変わりません"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "暗さの調整"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "ダークモードのみ：チャット背景に黒を重ねます。値が大きいほど暗くなります。吹き出しと文字は変わりません"
     }
   ]
 }

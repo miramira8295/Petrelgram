@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "Tippen öffnet das Menü, langes Drücken startet direkt die Mehrfachauswahl. Tippen auf Fotos, Links und Schaltflächen bleibt unverändert"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "Abdunklung"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "Nur im Dunkelmodus: legt Schwarz über den Chat-Hintergrund. Höher ist dunkler. Sprechblasen und Text bleiben unverändert"
     }
   ]
 }

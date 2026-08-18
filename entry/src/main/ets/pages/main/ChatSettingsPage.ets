@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI';
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_THREE_LINES, KEY_NIGHT_MODE, KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER,
-  KEY_POWER_SMOOTH_TRANSITIONS,
+  KEY_POWER_SMOOTH_TRANSITIONS, KEY_CHAT_DIM, CHAT_DIM_MAX,
   TEXT_SIZE_MIN, TEXT_SIZE_MAX, RADIUS_MIN, RADIUS_MAX,
   NIGHT_SYSTEM, NIGHT_DARK, NIGHT_LIGHT,
   powerAnimationDuration, setNumber, setBoolean, setNightMode
@@ -42,6 +42,8 @@ struct ChatSettingsPage {
   @StorageLink(KEY_NIGHT_MODE) nightMode: string = NIGHT_SYSTEM;
   @StorageLink(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
   @StorageLink(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
+  // 深色遮罩强度（0..CHAT_DIM_MAX）。滑杆按百分比显示，存的是 0..1 的小数。
+  @StorageLink(KEY_CHAT_DIM) chatDim: number = 0;
   @State leavingPage: boolean = false;
   private leaveTimer: number = -1;
 
@@ -166,6 +168,36 @@ struct ChatSettingsPage {
           .fontSize(15).fontColor(COLOR_PRIMARY).width(28).textAlign(TextAlign.End);
       }.width('100%').padding({ left: 16, right: 16, bottom: 6 });
     }.width('100%');
+  }
+
+  // 深色遮罩。反馈是"深色背景太亮"——尤其配了浅色壁纸的会话，夜里刺眼。
+  // 它只压背景那一层，气泡和文字画在上面，所以调到最深也不会影响可读性。
+  @Builder
+  darkDimCard() {
+    Column() {
+      this.cardTitle(str('chat_settings_dark_dim'));
+      Text($r('app.string.chat_settings_dark_dim_sub'))
+        .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+        .width('100%').padding({ left: 16, right: 16, bottom: 6 });
+      Row({ space: 12 }) {
+        Slider({
+          value: Math.round(this.chatDim * 100),
+          min: 0,
+          max: Math.round(CHAT_DIM_MAX * 100),
+          step: 5
+        })
+          .layoutWeight(1)
+          .trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+          .onChange((value: number): void => {
+            const next: number = Math.round(value) / 100;
+            this.chatDim = next;
+            setNumber(KEY_CHAT_DIM, next);
+          });
+        Text(`${Math.round(this.chatDim * 100)}%`)
+          .fontSize(15).fontColor(COLOR_PRIMARY).width(44).textAlign(TextAlign.End);
+      }.width('100%').padding({ left: 16, right: 16, bottom: 6 });
+    }
+    .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
   }
 
   @Builder
@@ -315,6 +347,8 @@ struct ChatSettingsPage {
           Column() {
             this.nightModeCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+
+          this.darkDimCard();
 
           Column() {
             this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);

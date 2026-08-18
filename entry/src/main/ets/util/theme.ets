@@ -34,6 +34,11 @@ export function isDarkColorMode(colorMode: number): boolean {
 // pinned this down. This replaces five copies of the old luminance probe
 // that used to live in ChatPage, MainScreen, ChatThemePage, AccentColorPage
 // and accentTheme.
+// 当前是否深色模式，供界面用 @StorageProp 订阅。darkResourceMode() 要拿
+// context、只能算一次，做不到"模式一变界面就跟着变"；这个键由 EntryAbility
+// 在窗口创建和 onConfigurationUpdate 时写，读的人自然会重建。
+export const KEY_APP_DARK: string = 'appIsDark';
+
 export function darkResourceMode(context: common.UIAbilityContext): boolean {
   try {
     return isDarkColorMode(context.resourceManager.getConfigurationSync().colorMode);

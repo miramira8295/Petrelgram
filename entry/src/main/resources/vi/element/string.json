@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "Chạm để mở menu, nhấn giữ vào thẳng chế độ chọn nhiều. Chạm ảnh, liên kết, nút không đổi"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "Lớp phủ tối"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "Chỉ ở chế độ tối: phủ đen lên nền trò chuyện. Số càng lớn càng tối. Bong bóng và chữ không đổi"
     }
   ]
 }

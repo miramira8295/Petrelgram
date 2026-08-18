@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "Ketik untuk menu, tekan lama terus ke pilihan berbilang. Ketikan pada foto, pautan dan butang tidak terjejas"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "Lapisan gelap"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "Mod gelap sahaja: melapis latar sembang dengan hitam. Lebih besar lebih gelap. Belon dan teks tidak terjejas"
     }
   ]
 }

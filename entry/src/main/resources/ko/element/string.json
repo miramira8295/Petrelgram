@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "탭하면 메뉴, 길게 누르면 바로 다중 선택. 사진·링크·버튼 탭은 그대로입니다"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "어둡게 덮기"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "다크 모드에서만: 채팅 배경 위에 검정을 덮습니다. 값이 클수록 어둡습니다. 말풍선과 글자는 그대로입니다"
     }
   ]
 }

@@ -11007,6 +11007,14 @@
     {
       "name": "ix_tap_first_sub",
       "value": "Un appui ouvre le menu, un appui long lance la multi-sélection. Les appuis sur photos, liens et boutons sont inchangés"
+    },
+    {
+      "name": "chat_settings_dark_dim",
+      "value": "Voile sombre"
+    },
+    {
+      "name": "chat_settings_dark_dim_sub",
+      "value": "Mode sombre uniquement : assombrit le fond de la discussion. Plus la valeur est élevée, plus c'est sombre. Bulles et texte inchangés"
     }
   ]
 }

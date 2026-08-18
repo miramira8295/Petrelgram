@@ -23,6 +23,10 @@ export const KEY_SEND_BY_ENTER: string = 'sendByEnter';    // Enter sends instea
 // 聊天详情页的手势方案：'classic'（长按出菜单）或 'tapFirst'（单击出菜单、
 // 长按进多选）。取值与解释见 util/messageGestures——不认识的值一律当 classic。
 export const KEY_MSG_GESTURE: string = 'msgGestureScheme';
+// 深色模式下压在聊天背景上的黑色遮罩，0..1。默认 0（不改变任何人现有的
+// 观感），由设置里的滑杆调。只在深色模式生效，浅色模式读到也不画。
+export const KEY_CHAT_DIM: string = 'chatDarkDim';
+export const CHAT_DIM_MAX: number = 0.8;
 // 'default' (follow system) or a BCP-47 tag. The language actually in force is
 // the platform's — setAppPreferredLanguage() persists on its own and this is
 // never read back to apply it. It exists because the platform can report the
@@ -282,6 +286,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_APP_LANGUAGE, await s.get(KEY_APP_LANGUAGE, 'default') as string);
     // 默认老交互：升级上来的人不该被换掉肌肉记忆，新方案由设置里主动开。
     AppStorage.setOrCreate(KEY_MSG_GESTURE, await s.get(KEY_MSG_GESTURE, GESTURE_CLASSIC) as string);
+    AppStorage.setOrCreate(KEY_CHAT_DIM, await s.get(KEY_CHAT_DIM, 0) as number);
     AppStorage.setOrCreate(
       KEY_POWER_THRESHOLD,
       await s.get(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT) as number
