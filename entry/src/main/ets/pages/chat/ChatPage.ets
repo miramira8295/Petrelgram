@@ -326,6 +326,14 @@ struct ChatPage {
   @State nowSec: number = 0;
   private nowSecTimer: number = -1;
   @State @Watch('onViewerTargetChanged') viewerMsgId: number = 0;
+  // 几何过渡专用的 id。**不能直接用 viewerMsgId**：关闭时它在 animateTo 里被
+  // 清零，而同一个值又驱动着查看器的卸载（`if (viewerMsgId !== 0)`）。于是
+  // 退场节点的绑定可能在被移除之前先翻成 idle，往回飞的目标凭空消失，图就
+  // 冻在半空——背景走的是独立的 opacity 过渡，照常淡出，所以现象是"没有
+  // 背景、图悬在中间"。
+  //
+  // 这个 id 在关闭动画**结束之后**才清零，退场节点全程带着真 id，配对不断。
+  @State viewerGeoId: number = 0;
   @State chromeVisible: boolean = true;
   @State viewerVideoLandscape: boolean = false;
   @State viewerClosing: boolean = false;
@@ -568,6 +576,10 @@ struct ChatPage {
   // (3) 面板里的点击和横滑能不能用（文档说"无法获取焦点，但会拦截手势"）
   // (4) 点面板外面会不会自动收起
   @State spikePanelOn: boolean = false;
+  // 面板占据的高度。supportAvoidance 只保证输入框不被挡，列表内容它不管——
+  // 官方文档明说这一段要开发者自己做（监听面板根节点 onAreaChange 拿高度，
+  // 再设置布局避让）。
+  @State spikePanelH: number = 0;
   @State emojiPanelTab: number = 0;
   @State emojiPanelClosing: boolean = false;
   // Bot custom reply keyboard (null = this chat has none). Always docked when
@@ -2194,6 +2206,11 @@ struct ChatPage {
   // 关闭那一次的清零不会吃掉正确的值。
   private onViewerTargetChanged(): void {
     this.viewerPositionMs = 0;
+    // 用户左右翻页时 viewerMsgId 会变，几何 id 要跟上，否则绑的还是上一页。
+    // 清零不在这里做：那是关闭动画的收尾，见 closeViewer。
+    if (this.viewerMsgId !== 0) {
+      this.viewerGeoId = this.viewerMsgId;
+    }
   }
 
   private closeViewer(): void {
@@ -2223,7 +2240,11 @@ struct ChatPage {
     // 一次，不会永久卡住。pin() 记的目标在候选表补上之前一样选不出来，
     // 是同一个幂等收敛，不需要额外处理。
     this.armPlaySlotSettle();
-    setTimeout((): void => { this.viewerClosing = false; }, Math.max(80, duration));
+    setTimeout((): void => {
+      this.viewerClosing = false;
+      // 动画跑完了才松开几何 id，中途松开就是上面注释里那个冻住的 bug。
+      this.viewerGeoId = 0;
+    }, Math.max(80, duration));
   }
 
   // Leaving the viewer in landscape would strand the chat page sideways.
@@ -6990,7 +7011,10 @@ struct ChatPage {
     }
     .width('100%')
     .height(ATTACH_PANEL_HEIGHT + 40)
-    .backgroundColor($r('app.color.surface'));
+    .backgroundColor($r('app.color.surface'))
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.notePanelHeight(area.height as number);
+    });
   }
 
   private toggleSpikePanel(): void {
@@ -7002,15 +7026,49 @@ struct ChatPage {
     // customKeyboard 只在输入框获焦时出现。已经聚焦（系统键盘开着）时，
     // 换绑之后要重新获焦一次才会切过去。
     this.composerController.stopEditing();
-    setTimeout((): void => {
-      this.getUIContext().getFocusController().requestFocus('chat_composer');
-    }, 30);
+    this.raiseSystemKeyboard();
   }
 
   // ===== SPIKE（用完即删）=====
   private closeSpikePanel(): void {
+    if (!this.spikePanelOn) {
+      return;
+    }
     this.spikePanelOn = false;
+    // 面板卸载时 onAreaChange 不会再报一个 0 回来，避让高度得自己归零，
+    // 否则列表底部会永久留一段空白。
+    this.notePanelHeight(0);
     this.composerController.stopEditing();
+  }
+
+  // ===== SPIKE（用完即删）=====
+  // 和 updateBottomChromeHeight 同一套：高度变了就更新避让，并且原来贴着底的
+  // 用户要重新贴回底——否则面板顶出来之后最后几条消息被压在下面。
+  private notePanelHeight(height: number): void {
+    const next: number = height > 0 ? height : 0;
+    if (Math.abs(next - this.spikePanelH) < 0.5) {
+      return;
+    }
+    const keepTailVisible: boolean = this.atBottom && this.viewerMsgId === 0;
+    this.spikePanelH = next;
+    if (!keepTailVisible) {
+      return;
+    }
+    const seq: number = ++this.bottomChromeLayoutSeq;
+    setTimeout((): void => {
+      if (seq === this.bottomChromeLayoutSeq && this.atBottom) {
+        this.scroller.scrollEdge(Edge.Bottom);
+      }
+    }, 0);
+  }
+
+  // ===== SPIKE（用完即删）=====
+  // 解绑和重新获焦必须分帧：同一帧里 customKeyboard 还没换成 null，重新获焦
+  // 只会把面板再弹一次。
+  private raiseSystemKeyboard(): void {
+    setTimeout((): void => {
+      this.getUIContext().getFocusController().requestFocus('chat_composer');
+    }, 30);
   }
 
   @Builder
@@ -7124,7 +7182,9 @@ struct ChatPage {
             .backgroundColor(Color.Transparent)
             .key('chat_composer')
             // ===== SPIKE（用完即删）=====
-            .customKeyboard(this.spikePanelOn ? this.spikeKeyboard() : undefined,
+            // null 而不是 undefined：ArkUI 里 undefined 往往是"保持上次的值"，
+            // 只有显式 null 才解绑。官方示例用的就是 null。
+            .customKeyboard(this.spikePanelOn ? this.spikeKeyboard() : null,
               { supportAvoidance: true })
             .onAreaChange((_old: Area, area: Area): void => {
               const next: number = area.width as number;
@@ -7145,6 +7205,14 @@ struct ChatPage {
             .onSubmit(() => {
               if (this.sendByEnter) {
                 this.doSend();
+              }
+            })
+            // 面板开着时输入框本就是聚焦态，再点它不产生焦点变化，框架不会做
+            // 任何事。想要"点输入框收面板、弹系统键盘"，得自己解绑再重新获焦。
+            .onClick((): void => {
+              if (this.spikePanelOn) {
+                this.closeSpikePanel();
+                this.raiseSystemKeyboard();
               }
             })
             .onFocus(() => {
@@ -8308,7 +8376,7 @@ struct ChatPage {
           fractionStops: this.headerBlurStops(),
           direction: GradientDirection.Bottom
         })
-        .contentEndOffset(this.bottomChromeH + 8)
+        .contentEndOffset(this.bottomChromeH + 8 + this.spikePanelH)
         // Pre-build a few offscreen rows so a fling doesn't pay the full
         // MessageBubble construction cost inside the visible frame.
         // Starts small and grows once the chat is on screen.
@@ -8342,6 +8410,9 @@ struct ChatPage {
             this.cancelFlash();
             // Tapping outside the emoji/sticker panel dismisses it.
             this.setEmojiPanel(false);
+            // 附件面板同理。它是 customKeyboard，输入框始终聚焦，所以系统
+            // 不会因为点了别处就收起它——这一下必须自己发。
+            this.closeSpikePanel();
           } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
             this.listTouchActive = false;
           }
@@ -8695,6 +8766,7 @@ struct ChatPage {
       if (this.viewerMsgId !== 0) {
         MediaViewerOverlay({
           viewerMsgId: this.viewerMsgId,
+          geoId: this.viewerGeoId,
           chromeVisible: this.chromeVisible,
           videoLandscape: this.viewerVideoLandscape,
           messages: this.messages,
