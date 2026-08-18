@@ -71,6 +71,7 @@ import collapseAlbumsKeyTest from './CollapseAlbumsKey.test';
 import audioQueueGateTest from './AudioQueueGate.test';
 import mentionEntitiesTest from './MentionEntities.test';
 import chatListDataSourceTest from './ChatListDataSource.test';
+import overlayMaterialTest from './OverlayMaterial.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -146,4 +147,5 @@ export default function testsuite() {
   audioQueueGateTest();
   mentionEntitiesTest();
   chatListDataSourceTest();
+  overlayMaterialTest();
 }
