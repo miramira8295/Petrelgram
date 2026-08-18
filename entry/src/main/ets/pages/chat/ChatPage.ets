@@ -6218,6 +6218,9 @@ struct ChatPage {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
       curve: Curve.EaseOut
     })
+    // 见 header()：顶栏胶囊统一走 'bar' 档材质，低于 API 26 时返回 undefined，
+    // 保持原来的 stateStyles 背景。
+    .systemMaterial(overlayMaterial('bar'))
     .onClick(onTap);
   }
 
@@ -6245,6 +6248,8 @@ struct ChatPage {
         normal: this.headerActionNormalStyle,
         pressed: this.headerActionPressedStyle
       })
+      // 见上：顶栏胶囊统一走 'bar' 档材质。
+      .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
         curve: Curve.EaseOut
@@ -6421,6 +6426,14 @@ struct ChatPage {
         normal: this.headerIdentityNormalStyle,
         pressed: this.headerIdentityPressedStyle
       })
+      // 聊天页顶栏的三个胶囊（返回 / 头像+名称 / ⋮）都浮在消息列表之上，
+      // 正对 ULTRA_THIN 那档「浮动工具栏」。材质生效时会把 stateStyles 的
+      // 背景色清成透明并接管边框，按压反馈仍由 stateStyles 的缩放/透明度
+      // 体现；'bar' 档的 applyShadow:false 让这里手调的阴影继续生效。
+      //
+      // 注意：它悬浮在滚动列表上，官方明确提醒材质要逐帧重采样背后内容，
+      // 这一处的滑动开销必须实测，不能想当然。
+      .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
         curve: Curve.EaseOut
