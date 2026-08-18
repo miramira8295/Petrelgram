@@ -5392,6 +5392,33 @@ struct ChatPage {
     }
   }
 
+  // 就地翻译一条消息：长按菜单的「翻译」和失败行上的「重试」共用。
+  //
+  // 先调 service.retry() 清掉失败冷却：TranslationService 失败后有 60 秒静默
+  // 期，不清掉的话紧接着的 request() 会被直接挡下、界面上什么都不会发生。
+  // 对从没失败过的消息，这一步是无副作用的空操作。
+  private translateInline(messageId: number): void {
+    const store = this.store;
+    if (store === null) {
+      return;
+    }
+    const target: MessageEntry | undefined =
+      store.getMessages().find((e: MessageEntry): boolean => e.id === messageId);
+    if (target === undefined) {
+      return;
+    }
+    const lang: string = resolveTranslateTarget();
+    const service = getTranslationService(getTdClient());
+    service.retry(this.chatId, messageId, target.editDate, lang);
+    const originalText: string = target.text;
+    service.request(this.chatId, messageId, target.editDate, lang,
+      (text: string | null): void => {
+        if (text !== null && text !== '' && text !== originalText && this.store === store) {
+          store.applyTranslation(messageId, lang, text);
+        }
+      });
+  }
+
   private toggleTranslationHidden(messageId: number, hidden: boolean): void {
     this.store?.setTranslationHidden(messageId, hidden);
   }
@@ -5737,6 +5764,10 @@ struct ChatPage {
   private translateSheetEditDate: number = 0;
   private translateSheetSeq: number = 0;
 
+  // 长按菜单里的「翻译」。原来会弹一个 sheet 单独展示译文，现在改成就地
+  // 翻译：进行中/失败/译文都长在气泡里（见 translationChannel 与
+  // MessageBubble.translationBlock），和整聊天翻译是同一条路径、同一套缓存。
+  // sheet 相关状态与 runSheetTranslation 暂时保留，翻译面板的入口还在用。
   private translateMessage(messageId: number): void {
     const entry: MessageEntry | undefined =
       this.messages.find((m: MessageEntry): boolean => m.id === messageId);
@@ -5744,11 +5775,7 @@ struct ChatPage {
       promptAction.showToast({ message: $r('app.string.cp_nothing_to_translate'), duration: 1600 });
       return;
     }
-    this.translateSheetMsgId = messageId;
-    this.translateSheetEditDate = entry.editDate;
-    this.translateSheetOriginal = entry.text;
-    this.translateSheetOpen = true;
-    this.runSheetTranslation(resolveTranslateTarget());
+    this.translateInline(messageId);
   }
 
   private runSheetTranslation(lang: string): void {
@@ -7875,6 +7902,7 @@ struct ChatPage {
                 onToggleTranslation: (id: number, hidden: boolean): void => {
                   this.toggleTranslationHidden(id, hidden);
                 },
+                onRetryTranslation: (id: number): void => { this.translateInline(id); },
                 onPinMsg: (id: number, unpin: boolean): void => { this.togglePinMessage(id, unpin); },
                 onStopPoll: (id: number): void => { this.stopPoll(id); },
                 onReplaceMedia: (id: number): void => { this.replaceMedia(id); },

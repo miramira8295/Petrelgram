@@ -45,6 +45,9 @@ import {
 import { plural, str } from '../../util/strings';
 import { LiveProgressRing } from './LiveProgressRing';
 import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
+import {
+  TranslationStatus, subscribeTranslationStatus, translationStatusFor
+} from '../../util/translationChannel';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -262,6 +265,9 @@ export struct MessageBubble {
   onVideoNoteDownload: (messageId: number) => void = (): void => {};
   // 整聊天翻译：点「隐藏译文/显示译文」的单条折叠开关，状态存在条目上。
   onToggleTranslation: (messageId: number, hidden: boolean) => void = (): void => {};
+  onRetryTranslation: (messageId: number) => void = (): void => {};
+  @State private translationStatus: TranslationStatus | null = null;
+  private unsubTranslation: (() => void) | null = null;
   // 圆形视频原地播放的开关，逐条独立。
   @State private videoNotePlaying: boolean = false;
   // Chat's currently active video chat, if any (0 = none live) — lets a
@@ -325,6 +331,11 @@ export struct MessageBubble {
     this.unsubSendState = subscribeSendState(this.msg.rowId, (state: string): void => {
       this.liveSendState = state;
     });
+    // 「翻译中 / 翻译失败」是瞬时态，不进行 key（见 translationChannel），
+    // 所以行不会因为它们重建——这里自己订阅自己更新。
+    this.translationStatus = translationStatusFor(this.msg.id);
+    this.unsubTranslation = subscribeTranslationStatus(this.msg.id,
+      (next: TranslationStatus | null): void => { this.translationStatus = next; });
     this.requestAutoplayDownload();
     // 只记录初始状态，不在这里上报——上报的语义是「不再参与竞选」，首次挂载时
     // 谈不上「不再」。真正的上报发生在 aboutToDisappear（组件销毁）和
@@ -339,6 +350,10 @@ export struct MessageBubble {
     if (this.unsubSendState !== null) {
       this.unsubSendState();
       this.unsubSendState = null;
+    }
+    if (this.unsubTranslation !== null) {
+      this.unsubTranslation();
+      this.unsubTranslation = null;
     }
     // LazyForEach 回收组件时若不上报，候选表里会留下永远不消失的幽灵条目。
     if (this.isCompetingVideo()) {
@@ -1063,6 +1078,30 @@ export struct MessageBubble {
   // 「显示译文」。存在译文时时间戳的占位挪到脚注行（见 timeReserveInText）。
   @Builder
   translationBlock() {
+    // 译文还没到：显示瞬时态。分隔线沿用译文那条，让三种状态占同一个位置。
+    if (this.msg.translatedText === '' && this.translationStatus !== null) {
+      Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
+        .margin({ top: 6, bottom: 5 });
+      if (this.translationStatus?.phase === 'loading') {
+        Row({ space: 5 }) {
+          LoadingProgress().width(12).height(12).color(COLOR_TEXT_SECONDARY);
+          Text($r('app.string.mb_translating')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+        }.constraintSize({ maxWidth: this.inlineMaxW() });
+      } else {
+        // 原始报错原样展示（按要求）。失败行整体可点，点一下立刻重发，
+        // 绕过 TranslationService 的 60 秒失败冷却。
+        Row({ space: 4 }) {
+          Text(str('mb_translate_failed', this.translationStatus?.error ?? ''))
+            .fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          Text($r('app.string.settings_retry'))
+            .fontSize(11).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+        }
+        .constraintSize({ maxWidth: this.inlineMaxW() })
+        .onClick((): void => { this.onRetryTranslation(this.msg.id); });
+      }
+    }
     if (this.msg.translatedText !== '') {
       Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
         .margin({ top: 6, bottom: 5 });
@@ -1995,6 +2034,10 @@ export struct MessageBubble {
         Column() {
           this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
             this.timeReserveInText());
+          // 配文也要能翻译。translationCandidates 一直把带配文的媒体收进去，
+          // 译文也存下来了，只是原来 translationBlock() 只挂在 text 分支上，
+          // 结果"请求发了、译文有了、没地方显示"。
+          this.translationBlock();
         }.margin({ top: 6 });
       }
     } else if (this.msg.contentType === 'videoNote') {
@@ -2098,6 +2141,8 @@ export struct MessageBubble {
         Column() {
           this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
             this.timeReserveInText());
+          // 见上：配文的译文原来无处可显示。
+          this.translationBlock();
         }.margin({ top: 5 });
       }
     } else if (this.msg.contentType === 'file') {
@@ -2118,6 +2163,8 @@ export struct MessageBubble {
         Column() {
           this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
             this.timeReserveInText());
+          // 见上：配文的译文原来无处可显示。
+          this.translationBlock();
         }.margin({ top: 5 });
       }
     } else if (this.msg.contentType === 'contact') {

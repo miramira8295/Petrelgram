@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "Kod yanlış veya süresi doldu. Yeni bir kod isteyin."
+    },
+    {
+      "name": "mb_translating",
+      "value": "Çevriliyor…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "Çeviri başarısız: %1$s"
     }
   ]
 }

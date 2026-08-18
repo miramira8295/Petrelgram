@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "Kode salah atau sudah kedaluwarsa. Minta kode baru."
+    },
+    {
+      "name": "mb_translating",
+      "value": "Menerjemahkan…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "Terjemahan gagal: %1$s"
     }
   ]
 }

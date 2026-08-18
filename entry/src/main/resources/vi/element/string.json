@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "Mã sai hoặc đã hết hạn. Hãy yêu cầu mã mới."
+    },
+    {
+      "name": "mb_translating",
+      "value": "Đang dịch…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "Dịch thất bại: %1$s"
     }
   ]
 }

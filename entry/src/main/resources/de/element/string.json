@@ -10971,6 +10971,14 @@
     {
       "name": "meow_code_invalid",
       "value": "Der Code ist falsch oder abgelaufen. Fordere einen neuen an."
+    },
+    {
+      "name": "mb_translating",
+      "value": "Übersetzen…"
+    },
+    {
+      "name": "mb_translate_failed",
+      "value": "Übersetzung fehlgeschlagen: %1$s"
     }
   ]
 }
