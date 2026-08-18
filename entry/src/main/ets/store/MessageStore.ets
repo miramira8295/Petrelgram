@@ -3,7 +3,7 @@ import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteraction, CommentInfo, reactionsFromInteraction, ReactionInfo, parseInlineKeyboard, refreshSystemUserLabel } from './MessageEntry';
 import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
-import { publishSenderAvatar } from '../util/senderAvatarChannel';
+import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChannel';
 import { publishThumbPath } from '../util/mediaThumbChannel';
 import { formatUserStatus } from '../util/formatUserStatus';
 import { formatPreview } from '../util/formatPreview';
@@ -3440,6 +3440,11 @@ export class MessageStore {
   }
 
   private applyReplierAvatar(userId: number, path: string): void {
+    // 先发通道。评论者头像原来只写进 MessageEntry，而这个字段**不在行 key 里**
+    // （key 精简后只留真正决定行内容的字段），LazyForEach 不会重建这一行，
+    // 头像就永远到不了界面——用户看到的三个「?」正是这个。
+    // 下面仍然写回 entry：新进场的行拿它当初值，省一次闪烁。
+    publishSenderAvatar(senderChannelKey(userId, true), path);
     let changed = false;
     const next = this.messages.map((e: MessageEntry) => {
       const idx = e.commentReplierIds.indexOf(userId);

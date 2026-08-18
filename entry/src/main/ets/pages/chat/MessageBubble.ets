@@ -95,6 +95,8 @@ struct LiveSenderAvatar {
   senderIsUser: boolean = true;
   initialPath: string = '';
   initials: string = '?';
+  // 评论行的头像栈比发送者头像小一圈。
+  avatarSize: number = 32;
   @State private path: string = '';
   private unsubAvatar: (() => void) | null = null;
 
@@ -117,7 +119,7 @@ struct LiveSenderAvatar {
   build() {
     AvatarView({
       avatarPath: this.path, initials: this.initials,
-      colorSeed: this.senderId, avatarSize: 32
+      colorSeed: this.senderId, avatarSize: this.avatarSize
     });
   }
 }
@@ -1171,10 +1173,19 @@ export struct MessageBubble {
       if (this.msg.commentReplierIds.length > 0) {
         Row() {
           ForEach(this.msg.commentReplierIds, (uid: number, idx: number) => {
-            AvatarView({
-              avatarPath: idx < this.msg.commentReplierAvatarPaths.length ? this.msg.commentReplierAvatarPaths[idx] : '',
-              initials: '?', colorSeed: uid, avatarSize: 22
-            }).margin({ left: idx === 0 ? 0 : -8 }).border({ width: 1.5, color: Color.White });
+            LiveSenderAvatar({
+              senderId: uid,
+              senderIsUser: true,
+              initialPath: idx < this.msg.commentReplierAvatarPaths.length
+                ? this.msg.commentReplierAvatarPaths[idx] : '',
+              initials: '?',
+              avatarSize: 22
+            })
+              .margin({ left: idx === 0 ? 0 : -8 })
+              // borderRadius 必须和 border 一起给：只给 border 描的是组件的
+              // **方形外框**，三个圆头像会被框进一个白方块里（用户截图）。
+              .borderRadius(11)
+              .border({ width: 1.5, color: Color.White });
           }, (uid: number, idx: number) => `replier_${idx}_${uid}`);
         }
       }
