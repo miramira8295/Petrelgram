@@ -11,6 +11,7 @@
     "pages/main/CallsPage",
     "pages/main/AccountEditPage",
     "pages/main/ChatSettingsPage",
+    "pages/main/InteractionSettingsPage",
     "pages/main/LanguagePage",
     "pages/main/PrivacySecurityPage",
     "pages/main/PrivacyRulePage",

@@ -51,6 +51,8 @@ import {
 import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
+import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
+import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -161,6 +163,8 @@ export struct MessageBubble {
   @Prop albumCaption: string;
   albumCaptionEntities: TdObject[] = [];
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 手势方案（老交互 / 新交互），设置里改完立即生效，不用重进页面。
+  @StorageProp(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
   // 正在解析中的链接 url（linkTapGuard 广播）。只在渲染链接段时读，因此
   // 不含链接的气泡不会因为它变化而重建。
   @StorageProp(LINK_NAV_BUSY_KEY) linkNavBusyUrl: string = '';
@@ -495,6 +499,19 @@ export struct MessageBubble {
   // under 省电模式/减少动效, matching the rest of the bubble's motion gating.
   private swipeReplyDuration(duration: number): number {
     return this.powerSaving || this.reduceAnim ? 0 : duration;
+  }
+
+  // 长按干什么由方案决定：老交互出菜单，新交互直接进多选并选中这一条。
+  // 两者互斥（messageGesturePolicy 的测试钉着这一点），不会同时发生。
+  private onLongPress(): void {
+    const policy: MessageGesturePolicy = messageGesturePolicy(this.gestureScheme);
+    if (policy.longPressOpensMenu) {
+      this.msgContextMenuShown = true;
+      return;
+    }
+    if (policy.longPressSelects) {
+      this.onSelectMsg(this.msg.id);
+    }
   }
 
   private swipeReplyEligible(): boolean {
@@ -2830,9 +2847,6 @@ export struct MessageBubble {
       })
       .animation({ duration: this.effectDuration(110), curve: Curve.EaseOut })
       .onAreaChange((_old: Area, area: Area) => { this.bubbleW = area.width as number; })
-      // Swipe-to-reply follows the finger while dragging; onSwipeReplyEnd
-      // snaps it back (and fires onReplyTo past the trigger threshold).
-      .translate({ x: this.swipeReplyX })
       // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
       // LongPressGesture in parallelGesture keeps the chat List's pan
       // recognizer alive while held (movement still cancels the long press),
@@ -2843,15 +2857,19 @@ export struct MessageBubble {
       // is untouched — PanDirection.Horizontal means a vertical drag simply
       // never satisfies this recognizer and falls through to the List.
       .parallelGesture(
-        GestureGroup(GestureMode.Exclusive,
-          LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-            .onAction((): void => { this.msgContextMenuShown = true; }),
-          PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
-            .onActionUpdate((event: GestureEvent): void => { this.onSwipeReplyUpdate(event.offsetX); })
-            .onActionEnd((): void => { this.onSwipeReplyEnd(); })
-            .onActionCancel((): void => { this.onSwipeReplyEnd(); })
-        )
+        LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+          .onAction((): void => { this.onLongPress(); })
       )
+      // 单击出菜单只在新交互下挂。用 .onClick 而不是塞进上面那个
+      // parallelGesture：官方文档明写父子都绑点击手势时**子组件优先、父组件
+      // 不触发**，正是我们要的——点链接、点图片、点内联按钮各归各，只有落在
+      // 气泡空白处的点击才轮到菜单。而 parallelGesture 是例外，它父子都会触发，
+      // 用它就会出现"点链接同时开链接和菜单"。
+      .onClick((): void => {
+        if (messageGesturePolicy(this.gestureScheme).tapOpensMenu) {
+          this.msgContextMenuShown = true;
+        }
+      })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
         // A play-slot bubble hosts a XComponentType.SURFACE video surface that
         // componentSnapshot cannot capture (see hasLiveVideoSurface()) — fall
@@ -2901,7 +2919,18 @@ export struct MessageBubble {
         top: this.rowTopPadding(), bottom: this.rowBottomPadding()
       })
       .justifyContent(this.msg.isOutgoing ? FlexAlign.End : FlexAlign.Start)
-      .alignItems(VerticalAlign.Bottom);
+      .alignItems(VerticalAlign.Bottom)
+      // 左滑回复作用在**整行**上：头像和气泡一起走。挂在气泡上时只有气泡
+      // 滑动，头像钉在原地，看着像两个东西。
+      .translate({ x: this.swipeReplyX })
+      // 仍然是 parallelGesture：与祖先 List 的 pan 识别器并行，纵向拖动不满足
+      // PanDirection.Horizontal，直接落到 List 去滚动，不受影响。
+      .parallelGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
+          .onActionUpdate((event: GestureEvent): void => { this.onSwipeReplyUpdate(event.offsetX); })
+          .onActionEnd((): void => { this.onSwipeReplyEnd(); })
+          .onActionCancel((): void => { this.onSwipeReplyEnd(); })
+      );
       if (this.msg.inlineButtons.length > 0) {
         this.inlineKeyboard();
       }

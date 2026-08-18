@@ -10979,6 +10979,34 @@
     {
       "name": "mb_translate_failed",
       "value": "Falha na tradução: %1$s"
+    },
+    {
+      "name": "settings_interaction",
+      "value": "Interação"
+    },
+    {
+      "name": "settings_interaction_sub",
+      "value": "Gestos e controles"
+    },
+    {
+      "name": "ix_chat_group",
+      "value": "Tela do chat"
+    },
+    {
+      "name": "ix_classic",
+      "value": "Menu com toque longo"
+    },
+    {
+      "name": "ix_classic_sub",
+      "value": "Esquema original: toque longo para o menu e depois Selecionar para seleção múltipla"
+    },
+    {
+      "name": "ix_tap_first",
+      "value": "Menu ao tocar"
+    },
+    {
+      "name": "ix_tap_first_sub",
+      "value": "Tocar abre o menu e o toque longo entra na seleção múltipla. Toques em fotos, links e botões não mudam"
     }
   ]
 }

@@ -10979,6 +10979,34 @@
     {
       "name": "mb_translate_failed",
       "value": "Translation failed: %1$s"
+    },
+    {
+      "name": "settings_interaction",
+      "value": "Interaction"
+    },
+    {
+      "name": "settings_interaction_sub",
+      "value": "Gestures and controls"
+    },
+    {
+      "name": "ix_chat_group",
+      "value": "Chat screen"
+    },
+    {
+      "name": "ix_classic",
+      "value": "Long press for menu"
+    },
+    {
+      "name": "ix_classic_sub",
+      "value": "The original scheme: long press a message for the menu, then tap Select for multi-select"
+    },
+    {
+      "name": "ix_tap_first",
+      "value": "Tap for menu"
+    },
+    {
+      "name": "ix_tap_first_sub",
+      "value": "Tap a message for the menu; long press goes straight to multi-select. Taps on photos, links and buttons are unaffected"
     }
   ]
 }

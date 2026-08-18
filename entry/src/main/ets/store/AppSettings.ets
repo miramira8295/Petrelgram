@@ -2,6 +2,7 @@ import { preferences } from '@kit.ArkData';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
 import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
+import { GESTURE_CLASSIC } from '../util/messageGestures';
 
 // User settings that outlive the process. Each one is mirrored into AppStorage
 // so any component can bind it with @StorageProp and re-render on change, while
@@ -19,6 +20,9 @@ export const KEY_THREE_LINES: string = 'chatListThreeLines'; // chat list row sh
 export const KEY_NIGHT_MODE: string = 'nightMode';         // 'system' | 'dark' | 'light'
 export const KEY_REDUCE_ANIM: string = 'reduceAnimations'; // stop autoplaying animated stickers
 export const KEY_SEND_BY_ENTER: string = 'sendByEnter';    // Enter sends instead of newline
+// 聊天详情页的手势方案：'classic'（长按出菜单）或 'tapFirst'（单击出菜单、
+// 长按进多选）。取值与解释见 util/messageGestures——不认识的值一律当 classic。
+export const KEY_MSG_GESTURE: string = 'msgGestureScheme';
 // 'default' (follow system) or a BCP-47 tag. The language actually in force is
 // the platform's — setAppPreferredLanguage() persists on its own and this is
 // never read back to apply it. It exists because the platform can report the
@@ -276,6 +280,8 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_REDUCE_ANIM, await s.get(KEY_REDUCE_ANIM, false) as boolean);
     AppStorage.setOrCreate(KEY_SEND_BY_ENTER, await s.get(KEY_SEND_BY_ENTER, false) as boolean);
     AppStorage.setOrCreate(KEY_APP_LANGUAGE, await s.get(KEY_APP_LANGUAGE, 'default') as string);
+    // 默认老交互：升级上来的人不该被换掉肌肉记忆，新方案由设置里主动开。
+    AppStorage.setOrCreate(KEY_MSG_GESTURE, await s.get(KEY_MSG_GESTURE, GESTURE_CLASSIC) as string);
     AppStorage.setOrCreate(
       KEY_POWER_THRESHOLD,
       await s.get(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT) as number

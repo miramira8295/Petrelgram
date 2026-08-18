@@ -10979,6 +10979,34 @@
     {
       "name": "mb_translate_failed",
       "value": "Terjemahan gagal: %1$s"
+    },
+    {
+      "name": "settings_interaction",
+      "value": "Interaksi"
+    },
+    {
+      "name": "settings_interaction_sub",
+      "value": "Gerak isyarat dan kawalan"
+    },
+    {
+      "name": "ix_chat_group",
+      "value": "Skrin sembang"
+    },
+    {
+      "name": "ix_classic",
+      "value": "Tekan lama untuk menu"
+    },
+    {
+      "name": "ix_classic_sub",
+      "value": "Skema asal: tekan lama untuk menu, kemudian Pilih untuk pilihan berbilang"
+    },
+    {
+      "name": "ix_tap_first",
+      "value": "Ketik untuk menu"
+    },
+    {
+      "name": "ix_tap_first_sub",
+      "value": "Ketik untuk menu, tekan lama terus ke pilihan berbilang. Ketikan pada foto, pautan dan butang tidak terjejas"
     }
   ]
 }

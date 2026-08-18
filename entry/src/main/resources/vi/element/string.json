@@ -10979,6 +10979,34 @@
     {
       "name": "mb_translate_failed",
       "value": "Dịch thất bại: %1$s"
+    },
+    {
+      "name": "settings_interaction",
+      "value": "Tương tác"
+    },
+    {
+      "name": "settings_interaction_sub",
+      "value": "Cử chỉ và điều khiển"
+    },
+    {
+      "name": "ix_chat_group",
+      "value": "Màn hình trò chuyện"
+    },
+    {
+      "name": "ix_classic",
+      "value": "Nhấn giữ để mở menu"
+    },
+    {
+      "name": "ix_classic_sub",
+      "value": "Cách cũ: nhấn giữ để mở menu, rồi chọn Chọn để chọn nhiều"
+    },
+    {
+      "name": "ix_tap_first",
+      "value": "Chạm để mở menu"
+    },
+    {
+      "name": "ix_tap_first_sub",
+      "value": "Chạm để mở menu, nhấn giữ vào thẳng chế độ chọn nhiều. Chạm ảnh, liên kết, nút không đổi"
     }
   ]
 }

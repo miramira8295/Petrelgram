@@ -10979,6 +10979,34 @@
     {
       "name": "mb_translate_failed",
       "value": "अनुवाद विफल: %1$s"
+    },
+    {
+      "name": "settings_interaction",
+      "value": "इंटरैक्शन"
+    },
+    {
+      "name": "settings_interaction_sub",
+      "value": "जेस्चर और नियंत्रण"
+    },
+    {
+      "name": "ix_chat_group",
+      "value": "चैट स्क्रीन"
+    },
+    {
+      "name": "ix_classic",
+      "value": "मेन्यू के लिए देर तक दबाएँ"
+    },
+    {
+      "name": "ix_classic_sub",
+      "value": "मूल तरीका: मेन्यू के लिए देर तक दबाएँ, फिर बहु-चयन के लिए चुनें"
+    },
+    {
+      "name": "ix_tap_first",
+      "value": "मेन्यू के लिए टैप करें"
+    },
+    {
+      "name": "ix_tap_first_sub",
+      "value": "मेन्यू के लिए टैप करें, देर तक दबाने पर सीधे बहु-चयन। फ़ोटो, लिंक और बटन पर टैप अप्रभावित"
     }
   ]
 }

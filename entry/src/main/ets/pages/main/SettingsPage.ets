@@ -55,6 +55,8 @@ function settingGroups(): SettingGroup[] {
         page: 'pages/main/AccountEditPage' },
       { icon: 'sys.symbol.message_fill', bg: '#FF9500', title: str('settings_chat'),
         subtitle: str('settings_chat_sub'), page: 'pages/main/ChatSettingsPage' },
+      { icon: 'sys.symbol.hand_thumbsup', bg: '#5856D6', title: str('settings_interaction'),
+        subtitle: str('settings_interaction_sub'), page: 'pages/main/InteractionSettingsPage' },
       { icon: 'sys.symbol.paintpalette', bg: '#FF2D55', title: str('settings_accent'),
         subtitle: str('settings_accent_sub'), page: 'pages/main/AccentColorPage' },
       { icon: 'sys.symbol.face_smiling', bg: '#AF52DE', title: str('settings_stickers'),

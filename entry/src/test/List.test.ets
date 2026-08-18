@@ -76,6 +76,7 @@ import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest from './AttachActions.test';
 import mediaBoxTest from './MediaBox.test';
+import messageGesturesTest from './MessageGestures.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -156,4 +157,5 @@ export default function testsuite() {
   linkTapGuardTest();
   attachActionsTest();
   mediaBoxTest();
+  messageGesturesTest();
 }
