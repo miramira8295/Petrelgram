@@ -69,6 +69,7 @@ import patternTileGridTest from './PatternTileGrid.test';
 import mediaThumbChannelTest from './MediaThumbChannel.test';
 import collapseAlbumsKeyTest from './CollapseAlbumsKey.test';
 import audioQueueGateTest from './AudioQueueGate.test';
+import mentionEntitiesTest from './MentionEntities.test';
 import chatListDataSourceTest from './ChatListDataSource.test';
 
 export default function testsuite() {
@@ -143,5 +144,6 @@ export default function testsuite() {
   mediaThumbChannelTest();
   collapseAlbumsKeyTest();
   audioQueueGateTest();
+  mentionEntitiesTest();
   chatListDataSourceTest();
 }

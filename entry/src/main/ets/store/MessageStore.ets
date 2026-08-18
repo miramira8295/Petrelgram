@@ -889,9 +889,14 @@ export class MessageStore {
     });
   }
 
-  sendAsync(text: string, replyToId: number = 0): Promise<void> {
+  // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
+  // 其余实体仍由服务器扫文本自行识别，这里不接管。
+  sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = []): Promise<void> {
     const ft: TdObject = { '@type': 'formattedText' };
     ft['text'] = text;
+    if (entities.length > 0) {
+      ft['entities'] = entities;
+    }
     const content: TdObject = { '@type': 'inputMessageText' };
     content['text'] = ft;
     const req: TdRequest = { '@type': 'sendMessage' };
