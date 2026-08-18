@@ -108,7 +108,8 @@ import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } f
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
-import { AttachPanel, ATTACH_PANEL_HEIGHT } from './AttachPanel';
+import { AttachPanel } from './AttachPanel';
+import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -118,13 +119,6 @@ interface StickerSuggestion {
 }
 
 const PINNED_SEG_MAX: number = 5;
-// 表情抽屉的高度。沿用它当浮卡时的 300——那个数是按三个 picker 的内容量
-// 调出来的，换成抽屉之后内容没变。
-const EMOJI_PANEL_HEIGHT: number = 300;
-// 抽屉卡片距键盘区三边的留白。沿用表情面板当浮卡时的 calc(100% - 16vp)——
-// 左右各 8；底部同样留 8，让卡片浮起来而不是糊在屏幕下沿。顶部不留：卡片
-// 上沿贴着输入框，两者读起来是连着的。
-const DRAWER_INSET: number = 8;
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
 const JUMP_RELOAD_THRESHOLD: number = 40;
@@ -6937,11 +6931,11 @@ struct ChatPage {
         })
       }
       .width('100%')
-      .height(ATTACH_PANEL_HEIGHT)
+      .height(BOTTOM_DRAWER_HEIGHT)
       .drawerCard();
     }
     .width('100%')
-    .height(ATTACH_PANEL_HEIGHT + DRAWER_INSET)
+    .height(BOTTOM_DRAWER_HEIGHT + DRAWER_INSET)
     .padding({ left: DRAWER_INSET, right: DRAWER_INSET, bottom: DRAWER_INSET })
     .backgroundColor($r('app.color.chat_bg'))
     .onAreaChange((_old: Area, area: Area): void => {
@@ -7092,11 +7086,11 @@ struct ChatPage {
             }
     }
       .width('100%')
-      .height(EMOJI_PANEL_HEIGHT)
+      .height(BOTTOM_DRAWER_HEIGHT)
       .drawerCard();
     }
     .width('100%')
-    .height(EMOJI_PANEL_HEIGHT + DRAWER_INSET)
+    .height(BOTTOM_DRAWER_HEIGHT + DRAWER_INSET)
     .padding({ left: DRAWER_INSET, right: DRAWER_INSET, bottom: DRAWER_INSET })
     .backgroundColor($r('app.color.chat_bg'))
     .onAreaChange((_old: Area, area: Area): void => {

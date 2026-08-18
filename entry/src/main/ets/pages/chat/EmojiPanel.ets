@@ -7,6 +7,7 @@ import { StickerPicker, StickerItem, ClassicPack } from './StickerPicker';
 import { GifPicker, GifItem } from './GifPicker';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { BOTTOM_DRAWER_HEIGHT, EMOJI_CONTENT_HEIGHT, EMOJI_TAB_BAR_HEIGHT } from '../../util/drawerMetrics';
 
 interface EmojiSection {
   title: string;
@@ -173,18 +174,18 @@ export struct EmojiPanel {
       // Keep the content viewport explicit. A layoutWeight chain inside the
       // empty-GIF state could otherwise propagate through Stack and make the
       // overlay consume the whole chat page after switching tabs.
-      .width('100%').height(241);
+      .width('100%').height(EMOJI_CONTENT_HEIGHT);
       Row({ space: 5 }) {
         this.bottomTab($r('sys.symbol.face_smiling'), str('emoji_tab'), 0);
         this.bottomTab($r('sys.symbol.gift'), str('sticker_tab'), 1);
         this.bottomTab($r('sys.symbol.video'), 'GIF', 2);
       }
-      .width('100%').height(59)
+      .width('100%').height(EMOJI_TAB_BAR_HEIGHT)
       .padding({ left: 12, right: 12, top: 5, bottom: 6 })
       .border({ width: { top: 0.7 }, color: $r('app.color.divider') });
     }
-    .width('100%').height(300)
-    .constraintSize({ minHeight: 300, maxHeight: 300 })
+    .width('100%').height(BOTTOM_DRAWER_HEIGHT)
+    .constraintSize({ minHeight: BOTTOM_DRAWER_HEIGHT, maxHeight: BOTTOM_DRAWER_HEIGHT })
     .backgroundColor($r('app.color.surface'))
     .accessibilityText($r('app.string.emoji_panel_a11y'));
   }

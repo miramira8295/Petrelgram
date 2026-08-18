@@ -7,6 +7,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { EMOJI_CONTENT_HEIGHT } from '../../util/drawerMetrics';
 
 export interface GifItem {
   fileId: number;    // the animation file (what gets sent)
@@ -289,7 +290,9 @@ export struct GifPicker {
         .width('100%').height('100%');
       }
     }
-    .width('100%').height(241)
-    .constraintSize({ minHeight: 241, maxHeight: 241 });
+    // 高度跟着抽屉的内容区走（见 util/drawerMetrics）。写死过一次 241，
+    // 抽屉从 300 压到 260 之后就会溢出。
+    .width('100%').height(EMOJI_CONTENT_HEIGHT)
+    .constraintSize({ minHeight: EMOJI_CONTENT_HEIGHT, maxHeight: EMOJI_CONTENT_HEIGHT });
   }
 }
