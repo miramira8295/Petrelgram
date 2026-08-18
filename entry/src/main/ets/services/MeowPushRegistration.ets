@@ -111,6 +111,16 @@ function stringField(source: Record<string, Object>, key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+// 诊断用：只记**有哪些键**，绝不记值。secret / auth / p256dh 就是推送的
+// 解密密钥，一旦进了 hilog，任何能连上设备的人都读得到。
+function logShape(step: string, root: Record<string, Object> | null, text: string): void {
+  if (root === null) {
+    console.error(`[meow] ${step}: body is not a JSON object, len=${text.length}`);
+    return;
+  }
+  console.error(`[meow] ${step}: keys=${Object.keys(root).join(',')}`);
+}
+
 function parseJsonObject(text: string): Record<string, Object> | null {
   let root: Object;
   try {
@@ -124,6 +134,23 @@ function parseJsonObject(text: string): Record<string, Object> | null {
   return root as Record<string, Object>;
 }
 
+// 服务端自己的错误说明。它在「这个昵称已经注册过」这类情况下仍然回 200，
+// body 里既没有 pendingId 也没有那套 Web Push 字段，带的是这么一句话。
+// 原来一律归成"数据不完整，请稍后重试"，等于把服务端说的话丢掉——用户照着
+// 提示重试多少次都是同一个结果。
+//
+// 三个键名都认：不同版本的中转服务端用法不一。
+function serverMessage(source: Record<string, Object>): string {
+  const keys: string[] = ['error', 'message', 'msg'];
+  for (const key of keys) {
+    const text = stringField(source, key);
+    if (text !== '') {
+      return text;
+    }
+  }
+  return '';
+}
+
 export interface MeowStartResult {
   pendingId: string;
   error: string; // 空串表示解析成功
@@ -134,11 +161,14 @@ export interface MeowStartResult {
 export function parseMeowStartResponse(text: string): MeowStartResult {
   const root = parseJsonObject(text);
   if (root === null) {
+    logShape('register', null, text);
     return { pendingId: '', error: str('meow_bad_response') };
   }
   const pendingId = stringField(root, 'pendingId');
   if (pendingId === '') {
-    return { pendingId: '', error: str('meow_bad_response') };
+    logShape('register', root, text);
+    const said = serverMessage(root);
+    return { pendingId: '', error: said !== '' ? said : str('meow_bad_response') };
   }
   return { pendingId, error: '' };
 }
@@ -156,6 +186,7 @@ export function parseMeowConfirmResponse(text: string): MeowConfirmResult {
   const empty: WebPushConfig = { endpoint: '', p256dh: '', auth: '' };
   const root = parseJsonObject(text);
   if (root === null) {
+    logShape('confirm', null, text);
     return { config: empty, secret: '', error: str('meow_bad_response') };
   }
   const config: WebPushConfig = {
@@ -165,7 +196,9 @@ export function parseMeowConfirmResponse(text: string): MeowConfirmResult {
   };
   const secret = stringField(root, 'secret');
   if (config.endpoint === '' || config.p256dh === '' || config.auth === '' || secret === '') {
-    return { config, secret, error: str('meow_bad_response') };
+    logShape('confirm', root, text);
+    const said = serverMessage(root);
+    return { config, secret, error: said !== '' ? said : str('meow_bad_response') };
   }
   return { config, secret, error: '' };
 }

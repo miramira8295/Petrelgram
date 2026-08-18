@@ -133,5 +133,38 @@ export default function meowPushRegistrationTest() {
       expect(resolveWebPushMode(true, WEBPUSH_MODE_CUSTOM)).assertEqual(WEBPUSH_MODE_CUSTOM);
       expect(resolveWebPushMode(true, WEBPUSH_MODE_MEOW)).assertEqual(WEBPUSH_MODE_MEOW);
     });
+
+    // 服务端在「这个昵称已经注册过」这类情况下仍然回 200，但 body 里既没有
+    // pendingId，也不是我们要的那套字段——它带的是自己的错误说明。原来一律
+    // 归成"数据不完整，请稍后重试"，等于把服务端说的话丢掉，用户按提示"稍后
+    // 重试"重试多少次都一样。
+    it('surfaces_the_server_message_when_the_start_response_has_one', 0, () => {
+      const r = parseMeowStartResponse('{"error":"already registered"}');
+      expect(r.pendingId).assertEqual('');
+      expect(r.error).assertEqual('already registered');
+    });
+
+    it('accepts_message_and_msg_as_the_server_error_field', 0, () => {
+      expect(parseMeowStartResponse('{"message":"nickname taken"}').error).assertEqual('nickname taken');
+      expect(parseMeowStartResponse('{"msg":"duplicated"}').error).assertEqual('duplicated');
+    });
+
+    it('surfaces_the_server_message_on_confirm_too', 0, () => {
+      const r = parseMeowConfirmResponse('{"error":"already registered"}');
+      expect(r.error).assertEqual('already registered');
+    });
+
+    // 服务端什么也没说时才回到那句通用提示。
+    it('falls_back_to_the_generic_message_without_a_server_message', 0, () => {
+      expect(parseMeowStartResponse('{}').error.length > 0).assertTrue();
+      expect(parseMeowStartResponse('{}').error).assertEqual(parseMeowStartResponse('not json').error);
+    });
+
+    // 成功路径不受影响：字段齐全时不去看有没有 error 字段。
+    it('still_succeeds_when_every_field_is_present', 0, () => {
+      const ok = parseMeowStartResponse(`{"pendingId":"${GOOD_PENDING_ID}"}`);
+      expect(ok.pendingId).assertEqual(GOOD_PENDING_ID);
+      expect(ok.error).assertEqual('');
+    });
   });
 }
