@@ -1,7 +1,7 @@
 import { generateBarcode, scanCore } from '@kit.ScanKit';
 import { image } from '@kit.ImageKit';
 import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 
 // Shared QR dialog: renders a t.me link as a scannable code (ScanKit).
 @CustomDialog
@@ -51,9 +51,10 @@ export struct QrDialog {
         .textAlign(TextAlign.Center);
     }
     .padding(24)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
     .borderRadius(16)
     .alignItems(HorizontalAlign.Center)
+    .backdropBlur(overlayBackdropBlur('dialog'))
     .systemMaterial(overlayMaterial('dialog'));
   }
 }

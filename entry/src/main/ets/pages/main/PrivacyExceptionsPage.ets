@@ -10,7 +10,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 16;
 
@@ -379,7 +379,7 @@ struct PrivacyExceptionsPage {
       height: SheetSize.LARGE,
       backgroundColor: COLOR_SURFACE,
       dragBar: true,
-      systemMaterial: overlayMaterial('dialog')
+      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

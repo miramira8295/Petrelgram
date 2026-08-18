@@ -27,7 +27,7 @@ import {
 } from '../../store/DownloadApi';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 
 interface FoundItem {
@@ -2352,7 +2352,7 @@ struct GlobalSearchPage {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: $r('app.color.surface'),
       onDisappear: () => { this.pendingRemoval = null; },
-      systemMaterial: overlayMaterial('dialog')
+      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 

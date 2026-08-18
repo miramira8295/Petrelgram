@@ -104,7 +104,7 @@ import { liveLocation, LiveLocationState } from '../../services/LiveLocationServ
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 
@@ -6068,7 +6068,8 @@ struct ChatPage {
 
   @Styles
   headerActionNormalStyle() {
-    .backgroundColor($r('app.color.surface'))
+    // 低于 API 26 自己画玻璃时这里换成半透明底，否则 backdropBlur 被盖死。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
@@ -6248,8 +6249,9 @@ struct ChatPage {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
       curve: Curve.EaseOut
     })
-    // 见 header()：顶栏胶囊统一走 'bar' 档材质，低于 API 26 时返回 undefined，
-    // 保持原来的 stateStyles 背景。
+    // 见 header()：顶栏胶囊统一走 'bar' 档材质。低于 API 26 材质返回 undefined，
+    // 改由 backdropBlur + 半透明底色自己画玻璃（overlayGlassFill 已换底色）。
+    .backdropBlur(overlayBackdropBlur('bar'))
     .systemMaterial(overlayMaterial('bar'))
     .onClick(onTap);
   }
@@ -6279,6 +6281,7 @@ struct ChatPage {
         pressed: this.headerActionPressedStyle
       })
       // 见上：顶栏胶囊统一走 'bar' 档材质。
+      .backdropBlur(overlayBackdropBlur('bar'))
       .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
@@ -6463,6 +6466,7 @@ struct ChatPage {
       //
       // 注意：它悬浮在滚动列表上，官方明确提醒材质要逐帧重采样背后内容，
       // 这一处的滑动开销必须实测，不能想当然。
+      .backdropBlur(overlayBackdropBlur('bar'))
       .systemMaterial(overlayMaterial('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
@@ -6963,7 +6967,7 @@ struct ChatPage {
       .scrollBar(BarState.Off)
       .width('100%');
 
-      Text('点数字应插入草稿 · 应能横滑 · 点上方消息列表应收起')
+      Text('tap a number -> inserts into draft | swipe me | tap the list above')
         .fontSize(12).fontColor('#AAB4BE')
         .padding({ left: 16, right: 16 });
     }
@@ -7017,7 +7021,8 @@ struct ChatPage {
         // 又不至于像 40 那样在胶囊旁边缩成一颗小扣子。
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        .backgroundColor($r('app.color.surface'))
+        .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+        .backdropBlur(overlayBackdropBlur('card'))
         .systemMaterial(overlayMaterial('card'))
         // ===== SPIKE（用完即删）：原本是 bindMenu(this.attachMenuItems(), ...)
         .onClick((): void => { this.toggleSpikePanel(); });
@@ -7225,10 +7230,11 @@ struct ChatPage {
         .alignItems(VerticalAlign.Center);
       }
       .layoutWeight(1)
-      .backgroundColor($r('app.color.surface'))
+      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
       .borderRadius(24)
-      // Once the material takes effect it clears the fill above to transparent
-      // and supplies its own; below API 26 it is undefined and the fill stands.
+      // 材质接管时它自带填充，把上面的实心色清成透明玻璃；低于 API 26 材质
+      // 是 undefined，改由 backdropBlur + 半透明底色自己画。
+      .backdropBlur(overlayBackdropBlur('card'))
       .systemMaterial(overlayMaterial('card'));
     }.width('100%')
     .padding({
@@ -8691,7 +8697,7 @@ struct ChatPage {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       backgroundColor: $r('app.color.surface'),
       dragBar: true,
-      systemMaterial: overlayMaterial('dialog')
+      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

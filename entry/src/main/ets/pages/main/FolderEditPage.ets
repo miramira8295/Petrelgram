@@ -19,7 +19,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 const PICK_INCLUDE: string = 'include';
@@ -812,7 +812,7 @@ struct FolderEditPage {
         // The sheet's own top-right 完成 button replaces the system close icon,
         // which would otherwise overlap it.
         height: '82%', backgroundColor: COLOR_SURFACE, dragBar: true, showClose: false,
-        systemMaterial: overlayMaterial('dialog')
+        blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       });
   }
 }
