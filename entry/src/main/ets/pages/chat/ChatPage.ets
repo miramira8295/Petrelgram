@@ -559,6 +559,13 @@ struct ChatPage {
   @State botMenuAvailable: boolean = false;
   // Emoji panel above the input bar.
   @State showEmojiPanel: boolean = false;
+  // ===== SPIKE（用完即删）=====
+  // 验 customKeyboard 这条路：面板即键盘，切换由系统接管。要回答四件事——
+  // (1) 输入框和聊天内容会不会被系统自动顶起
+  // (2) system 键盘 <-> 面板切换有没有闪烁或两段动画
+  // (3) 面板里的点击和横滑能不能用（文档说"无法获取焦点，但会拦截手势"）
+  // (4) 点面板外面会不会自动收起
+  @State spikePanelOn: boolean = false;
   @State emojiPanelTab: number = 0;
   @State emojiPanelClosing: boolean = false;
   // Bot custom reply keyboard (null = this chat has none). Always docked when
@@ -6926,6 +6933,66 @@ struct ChatPage {
     .onAreaChange((_old: Area, area: Area) => { this.inputBarH = area.height as number; });
   }
 
+  // ===== SPIKE（用完即删）=====
+  @Builder
+  spikeKeyboard() {
+    Column({ space: 10 }) {
+      Row() {
+        Text('SPIKE · customKeyboard 260vp').fontSize(15).fontColor(Color.White).layoutWeight(1);
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(20).fontColor([Color.White])
+          .onClick((): void => { this.closeSpikePanel(); });
+      }
+      .width('100%').padding({ left: 16, right: 16, top: 12 });
+
+      // 横滑 + 点击：验"拦截手势"到底给不给用
+      Scroll() {
+        Row({ space: 10 }) {
+          ForEach([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], (i: number): void => {
+            Column() {
+              Text(`${i}`).fontSize(20).fontColor(Color.White);
+            }
+            .width(64).height(64).borderRadius(14)
+            .backgroundColor('#4A5A6A')
+            .justifyContent(FlexAlign.Center)
+            .onClick((): void => { this.draft = `${this.draft}[${i}]`; });
+          }, (i: number): string => `spike_${i}`)
+        }.padding({ left: 16, right: 16 });
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%');
+
+      Text('点数字应插入草稿 · 应能横滑 · 点上方消息列表应收起')
+        .fontSize(12).fontColor('#AAB4BE')
+        .padding({ left: 16, right: 16 });
+    }
+    .width('100%').height(260)
+    .backgroundColor('#2B3A4C')
+    .alignItems(HorizontalAlign.Start);
+  }
+
+  // ===== SPIKE（用完即删）=====
+  private toggleSpikePanel(): void {
+    if (this.spikePanelOn) {
+      this.closeSpikePanel();
+      return;
+    }
+    this.spikePanelOn = true;
+    // customKeyboard 只在输入框获焦时出现。已经聚焦（系统键盘开着）时，
+    // 换绑之后要重新获焦一次才会切过去。
+    this.composerController.stopEditing();
+    setTimeout((): void => {
+      this.getUIContext().getFocusController().requestFocus('chat_composer');
+    }, 30);
+  }
+
+  // ===== SPIKE（用完即删）=====
+  private closeSpikePanel(): void {
+    this.spikePanelOn = false;
+    this.composerController.stopEditing();
+  }
+
   @Builder
   inputBar() {
     Row({ space: 6 }) {
@@ -6952,7 +7019,8 @@ struct ChatPage {
         .margin({ bottom: 1 })
         .backgroundColor($r('app.color.surface'))
         .systemMaterial(overlayMaterial('card'))
-        .bindMenu(this.attachMenuItems(), { systemMaterial: overlayMaterial('menu') });
+        // ===== SPIKE（用完即删）：原本是 bindMenu(this.attachMenuItems(), ...)
+        .onClick((): void => { this.toggleSpikePanel(); });
       }
       Column() {
         if (this.editingId !== 0) {
@@ -7034,6 +7102,9 @@ struct ChatPage {
             .barState(BarState.Auto)
             .backgroundColor(Color.Transparent)
             .key('chat_composer')
+            // ===== SPIKE（用完即删）=====
+            .customKeyboard(this.spikePanelOn ? this.spikeKeyboard() : undefined,
+              { supportAvoidance: true })
             .onAreaChange((_old: Area, area: Area): void => {
               const next: number = area.width as number;
               if (Math.abs(next - this.composerEditorW) > 0.5) {
