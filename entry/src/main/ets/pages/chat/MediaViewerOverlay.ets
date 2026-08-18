@@ -532,7 +532,13 @@ export struct MediaViewerOverlay {
   private photoFailed(): boolean {
     const e: MessageEntry | null = this.entry();
     if (e === null) {
-      return true;
+      // 条目还没解析出来 ≠ 加载失败。打开的第一帧查看器可能还查不到这条
+      // 消息，之前赋值是同步的、这一帧挤不出来；改用 animateTo 挂载做一镜
+      // 到底之后，它就露出来了——表现为放大瞬间闪一下"图片加载失败"。
+      //
+      // 未知一律按加载中处理：条目通常一两帧内就位；真的消息没了，ChatPage
+      // 会直接关掉查看器（见它对 viewerMsgId 的守卫），轮不到这里报错。
+      return false;
     }
     if (e.photoFullFailed) {
       return true;
