@@ -387,8 +387,10 @@ struct ProfilePage {
           });
         return;
       }
+      // 手机号和姓名是对方的个人信息，不进日志——userId 已经足够把这条
+      // 失败对上号了。
       console.error(`ProfilePage.addContact failed(code=${e.code}): ${e.message} ` +
-        `userId=${this.userId} phone='${this.phone}' name='${this.name}'`);
+        `userId=${this.userId} hasPhone=${this.phone !== ''}`);
       promptAction.showToast({
         message: e.code === 400 ? $r('app.string.pp_add_incomplete') : $r('app.string.pp_add_failed'),
         duration: 1700

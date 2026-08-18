@@ -126,7 +126,9 @@ export async function testProxy(entry: ProxyEntry): Promise<number> {
   request['proxy'] = proxyObjectOf(entry);
   request['dc_id'] = 2;
   request['timeout'] = 10;
-  console.error(`[proxy] testProxy request: ${JSON.stringify(request)}`);
+  // 这里**不要**打印 request：proxyObjectOf 里带 username / password，
+  // MTProto 还带 secret，一旦 JSON.stringify 进 hilog，任何能连上设备的人
+  // 都读得到。当初排查形状问题时加过这行，问题已经定位，日志必须撤掉。
   const startedAt = Date.now();
   await getTdClient().send(request, 12000);
   return (Date.now() - startedAt) / 1000;
