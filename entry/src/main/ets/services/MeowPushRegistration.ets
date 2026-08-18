@@ -179,10 +179,17 @@ export interface MeowConfirmResult {
   error: string; // 空串表示解析成功且三个字段与 secret 齐全
 }
 
-// 解析 {base}/register/confirm 的响应体。三个 Web Push 字段与 secret 任一
-// 缺失都视为服务端返回不完整 —— 一个残缺的配置注册进 TDLib 只会静默收不到
-// 推送，不去猜测默认值。
-export function parseMeowConfirmResponse(text: string): MeowConfirmResult {
+// 解析 {base}/register/confirm 的响应体。三个 Web Push 字段缺任一都视为服务端
+// 返回不完整 —— 一个残缺的配置注册进 TDLib 只会静默收不到推送，不去猜测默认值。
+//
+// secret 是个例外。已经注册过再注册一次时，服务端仍然回 200、三个字段齐全，
+// 但**不再下发 secret**（它认为这个 subKey 的 secret 早发过了）。secret 只用于
+// 注销（DELETE 带 secret，403 表示不对），本地本来就存着上一次那份——传进来
+// 接上即可，不该让用户卡在"数据不完整，请稍后重试"上，那句提示还会误导他
+// 一遍遍重试。
+//
+// 两边都没有才是真的走不下去：那样注册得上也注销不掉。
+export function parseMeowConfirmResponse(text: string, knownSecret: string = ''): MeowConfirmResult {
   const empty: WebPushConfig = { endpoint: '', p256dh: '', auth: '' };
   const root = parseJsonObject(text);
   if (root === null) {
@@ -194,7 +201,9 @@ export function parseMeowConfirmResponse(text: string): MeowConfirmResult {
     p256dh: stringField(root, 'p256dh'),
     auth: stringField(root, 'auth')
   };
-  const secret = stringField(root, 'secret');
+  // 服务端给了以服务端为准，没给才回落到本地那份。
+  const fromServer = stringField(root, 'secret');
+  const secret = fromServer !== '' ? fromServer : knownSecret;
   if (config.endpoint === '' || config.p256dh === '' || config.auth === '' || secret === '') {
     logShape('confirm', root, text);
     const said = serverMessage(root);
@@ -287,7 +296,9 @@ export interface MeowRegisterOutcome {
 // 第二步：把用户填回来的验证码交给中转服务器确认，拿到 Web Push 三元组后复用
 // 已验证过的 registerWebPush 路径。
 export async function confirmMeowRegistration(
-  client: TdClient, pendingId: string, code: string, meow: string
+  client: TdClient, pendingId: string, code: string, meow: string,
+  // 重复注册时服务端不再下发 secret，本地那份接上去（见 parseMeowConfirmResponse）。
+  knownSecret: string = ''
 ): Promise<MeowRegisterOutcome> {
   if (!meowRelayEnabled()) {
     throw new Error(str('meow_relay_unconfigured'));
@@ -319,7 +330,7 @@ export async function confirmMeowRegistration(
   } finally {
     request.destroy();
   }
-  const parsed = parseMeowConfirmResponse(responseText);
+  const parsed = parseMeowConfirmResponse(responseText, knownSecret);
   if (parsed.error !== '') {
     throw new Error(parsed.error);
   }

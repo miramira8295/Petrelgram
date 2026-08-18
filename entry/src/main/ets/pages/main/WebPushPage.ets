@@ -309,7 +309,8 @@ struct WebPushPage {
     }
     this.meowBusy = true;
     this.meowStatusText = str('wp_registering');
-    confirmMeowRegistration(getTdClient(), this.meowPendingId, this.meowCode, this.meowNickname)
+    confirmMeowRegistration(getTdClient(), this.meowPendingId, this.meowCode, this.meowNickname,
+      this.storedMeowSecret)
       .then((outcome: MeowRegisterOutcome): void => {
         setBoolean(KEY_WEBPUSH_ENABLED, true);
         this.meowPendingId = '';

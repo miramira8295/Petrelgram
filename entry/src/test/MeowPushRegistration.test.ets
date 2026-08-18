@@ -166,5 +166,34 @@ export default function meowPushRegistrationTest() {
       expect(ok.pendingId).assertEqual(GOOD_PENDING_ID);
       expect(ok.error).assertEqual('');
     });
+
+    // 已经注册过再注册一次：服务端仍然回 200 且三个 Web Push 字段齐全，
+    // 但**不再下发 secret**（它认为这个 subKey 的 secret 早发过了）。
+    // secret 只用于注销（DELETE 带 secret，403 表示不对），本地本来就存着
+    // 上一次那份——拿它接上即可，不该让用户卡在"数据不完整"。
+    it('reuses_the_known_secret_when_the_server_omits_it', 0, () => {
+      const body = `{"endpoint":"${GOOD_ENDPOINT}","p256dh":"${GOOD_P256DH}","auth":"${GOOD_AUTH}"}`;
+      const r = parseMeowConfirmResponse(body, GOOD_SECRET);
+      expect(r.error).assertEqual('');
+      expect(r.secret).assertEqual(GOOD_SECRET);
+      expect(r.config.endpoint).assertEqual(GOOD_ENDPOINT);
+    });
+
+    // 服务端给了就以服务端的为准，不被本地旧值顶掉。
+    it('prefers_the_server_secret_over_the_known_one', 0, () => {
+      const body = `{"endpoint":"${GOOD_ENDPOINT}","p256dh":"${GOOD_P256DH}","auth":"${GOOD_AUTH}","secret":"fresh"}`;
+      expect(parseMeowConfirmResponse(body, GOOD_SECRET).secret).assertEqual('fresh');
+    });
+
+    // 两边都没有才是真的走不下去：注册上了也注销不掉。
+    it('still_fails_when_neither_side_has_a_secret', 0, () => {
+      const body = `{"endpoint":"${GOOD_ENDPOINT}","p256dh":"${GOOD_P256DH}","auth":"${GOOD_AUTH}"}`;
+      expect(parseMeowConfirmResponse(body, '').error.length > 0).assertTrue();
+    });
+
+    // 本地有 secret 也救不了缺 Web Push 字段的响应。
+    it('known_secret_does_not_paper_over_missing_push_fields', 0, () => {
+      expect(parseMeowConfirmResponse('{"endpoint":"x"}', GOOD_SECRET).error.length > 0).assertTrue();
+    });
   });
 }
