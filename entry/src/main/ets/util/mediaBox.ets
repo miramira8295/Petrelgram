@@ -44,11 +44,12 @@ export function mediaBoxFor(
   const maxW = mediaThumbWidth(screenW);
   const maxH = maxW * MEDIA_MAX_HEIGHT_RATIO;
   const ratio = mediaRatio(photoW, photoH, isVideo);
-  let width = maxW;
-  let height = width / ratio;
-  if (height > maxH) {
-    height = maxH;
-    width = height * ratio;
-  }
+  // 宽度钉死在气泡宽度，横竖一视同仁。
+  //
+  // 原来超高时是「压高度 + 按比例缩宽度」，结果竖图只占气泡宽度的 67%，
+  // 同一屏里比横图窄一截。多出来的高度交给 ImageFit.Cover 裁掉——这也是
+  // 官方客户端的做法，点开就是完整图。
+  const width = maxW;
+  const height = Math.min(width / ratio, maxH);
   return { width, height };
 }
