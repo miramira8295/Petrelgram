@@ -53,6 +53,12 @@ function media(id: number, albumId: string, fileId: number, path: string,
   return e;
 }
 
+function withProgress(e: MessageEntry, percent: number): MessageEntry {
+  const c: MessageEntry = cloneMessage(e);
+  c.photoProgress = percent;
+  return c;
+}
+
 export default function collapseAlbumsKeyTest() {
   describe('collapseAlbumsKey', () => {
     it('相册行：只有缩略图路径变化时 key 不变', 0, () => {
@@ -89,6 +95,48 @@ export default function collapseAlbumsKeyTest() {
       const u = usersOf();
       const before: AlbumGroup[] = collapseAlbums([media(5, '', 201, '/data/5.jpg', u)]);
       const after: AlbumGroup[] = collapseAlbums([media(5, '', 202, '/data/5.jpg', u)]);
+      expect(after[0].key === before[0].key).assertFalse();
+    });
+
+    // 进度和路径在同一个事件里一起变（缩略图很小，只在完成那一刻 0→100）。
+    // 只把路径摘出 key、把进度留下，整行重建照旧发生，只是触发字段换了个
+    // 名字——真机实测净效果为零。这几条钉住"两个都不在 key 里"。
+    it('单条媒体行：只有进度变化时 key 不变', 0, () => {
+      const u = usersOf();
+      const before: AlbumGroup[] = collapseAlbums([withProgress(media(5, '', 201, '', u), 0)]);
+      const after: AlbumGroup[] = collapseAlbums([withProgress(media(5, '', 201, '', u), 100)]);
+      expect(after[0].key).assertEqual(before[0].key);
+    });
+
+    it('单条媒体行：进度与路径同时到达时 key 仍然不变', 0, () => {
+      const u = usersOf();
+      const before: AlbumGroup[] = collapseAlbums([withProgress(media(5, '', 201, '', u), 0)]);
+      const after: AlbumGroup[] =
+        collapseAlbums([withProgress(media(5, '', 201, '/data/5.jpg', u), 100)]);
+      expect(after[0].key).assertEqual(before[0].key);
+    });
+
+    it('相册行：只有某一格进度变化时 key 不变', 0, () => {
+      const u = usersOf();
+      const before: AlbumGroup[] = collapseAlbums([
+        withProgress(media(1, 'alb1', 101, '', u), 0),
+        withProgress(media(2, 'alb1', 102, '', u), 0)
+      ]);
+      const after: AlbumGroup[] = collapseAlbums([
+        withProgress(media(1, 'alb1', 101, '', u), 0),
+        withProgress(media(2, 'alb1', 102, '', u), 100)
+      ]);
+      expect(after[0].key).assertEqual(before[0].key);
+    });
+
+    // 失败态仍然要进 key：它把占位整个换成重试 UI，而且很少发生。
+    it('单条媒体行：photoFailed 变化时 key 必须变', 0, () => {
+      const u = usersOf();
+      const a: MessageEntry = media(5, '', 201, '', u);
+      const b: MessageEntry = cloneMessage(a);
+      b.photoFailed = true;
+      const before: AlbumGroup[] = collapseAlbums([a]);
+      const after: AlbumGroup[] = collapseAlbums([b]);
       expect(after[0].key === before[0].key).assertFalse();
     });
   });

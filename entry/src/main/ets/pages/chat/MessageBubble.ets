@@ -43,6 +43,7 @@ import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
 import { plural, str } from '../../util/strings';
+import { LiveProgressRing } from './LiveProgressRing';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -1152,23 +1153,7 @@ export struct MessageBubble {
   // Loading ring shown centered on a media placeholder while its thumbnail
   // downloads — same style as the fullscreen viewer's (percent inside the ring).
   @Builder
-  loadingRing(size: number, percent: number) {
-    Stack() {
-      if (percent > 0) {
-        Progress({ value: percent, total: 100, type: ProgressType.Ring })
-          .width(size).height(size).color(Color.White);
-        Text(`${percent}%`).fontSize(Math.max(9, size * 0.24)).fontColor(Color.White);
-      } else {
-        LoadingProgress().width(size * 0.72).height(size * 0.72).color(Color.White);
-      }
-    }
-    .padding(6)
-    .backgroundColor('#00000066')
-    .borderRadius(size);
-  }
-
-  @Builder
-  mediaLoadState(size: number, percent: number, failed: boolean) {
+  mediaLoadState(size: number, fileId: number, initialPercent: number, failed: boolean) {
     if (failed) {
       Column({ space: 3 }) {
         SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(Math.max(17, size * 0.5))
@@ -1178,7 +1163,8 @@ export struct MessageBubble {
       .padding({ left: 10, right: 10, top: 7, bottom: 7 })
       .backgroundColor('#80000000').borderRadius(18);
     } else {
-      this.loadingRing(size, percent);
+      // 进度不进 key，环自己订阅自己更新（见 LiveProgressRing / collapseAlbums）。
+      LiveProgressRing({ fileId: fileId, initialPercent: initialPercent, ringSize: size });
     }
   }
 
@@ -1194,10 +1180,11 @@ export struct MessageBubble {
         // Wait only when a real thumbnail file exists. Videos without a
         // cover remain playable and get the normal play control below.
         if (hasFile && !this.msg.photoFailed) {
-          this.mediaLoadState(36, this.msg.photoProgress, false);
+          this.mediaLoadState(36, this.msg.photoFileId, this.msg.photoProgress, false);
         }
       } else {
-        this.mediaLoadState(36, this.msg.photoProgress, this.msg.photoFailed || !hasFile);
+        this.mediaLoadState(36, this.msg.photoFileId, this.msg.photoProgress,
+          this.msg.photoFailed || !hasFile);
       }
     }.width(this.mediaBox().width).height(this.mediaBox().height);
   }
@@ -1400,12 +1387,14 @@ export struct MessageBubble {
       if (hasFile && !(this.albumFailed[cellIdx] ?? false)) {
         this.mediaLoadState(
           Math.min(34, Math.min(width, height) * 0.4),
+          this.albumFileIds[cellIdx] ?? 0,
           this.albumProgress[cellIdx] ?? 0,
           false
         );
       } else if (!this.albumIsVideoAt(cellIdx)) {
         this.mediaLoadState(
           Math.min(34, Math.min(width, height) * 0.4),
+          0,
           0,
           true
         );

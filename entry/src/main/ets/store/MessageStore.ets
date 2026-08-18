@@ -16,6 +16,7 @@ import { decideMedia, subjectOfEntry, MediaContext, MediaIntent } from './MediaP
 import { PollOptionInfo } from '../util/formatMsgContent';
 import { reactionTypeOf } from '../util/reactions';
 import { str } from '../util/strings';
+import { publishProgress } from '../util/mediaProgressChannel';
 
 const PAGE: number = 30;
 // Visible bubble/header thumbnails should outrank silent video prefetch. The
@@ -3121,6 +3122,9 @@ export class MessageStore {
         c.photoProgress = percent;
         return c;
       });
+      // 进度同时走旁路通道：它已经不在行 key 里了（见 collapseAlbums），
+      // 等待中的进度环靠 LiveProgressRing 自订阅刷新。
+      publishProgress(id, percent);
       if (done && path !== '') {
         this.thumbAttempts.delete(id);
         this.thumbLastKick.delete(id);
