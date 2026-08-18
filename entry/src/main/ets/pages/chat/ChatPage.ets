@@ -3288,7 +3288,15 @@ struct ChatPage {
     // Position the viewer Swiper on the tapped album member.
     const sib = this.siblingIdsFor(messageId);
     this.viewerInitIdx = Math.max(0, sib.indexOf(messageId));
-    this.viewerMsgId = messageId;
+    // 挂载查看器必须在 animateTo 闭包里：geometryTransition 只在动画闭包中
+    // 改变绑定节点的存在性时才会做几何过渡，直接赋值就是瞬间出现（关闭那侧
+    // 早就这么写了，见 closeViewer）。
+    animateTo({
+      duration: this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 300),
+      curve: Curve.Friction
+    }, (): void => {
+      this.viewerMsgId = messageId;
+    });
     this.chromeVisible = true;
     this.viewerVideoLandscape = false;
     this.viewerClosing = false;

@@ -1565,6 +1565,8 @@ export struct MessageBubble {
                 this.albumCellBody(cell);
               }
               .width(cell.width).height(cell.height)
+              // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
+              .geometryTransition(`media_${this.albumMemberIdAt(cell.idx)}`)
               .accessibilityText((this.albumFailed[cell.idx] ?? false)
                 ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1))
               .onVisibleAreaApproximateChange(
@@ -1983,6 +1985,10 @@ export struct MessageBubble {
         }
       }
       .width(this.mediaBox().width).height(this.mediaBox().height)
+      // 一镜到底：和全屏查看器里同一条消息的图绑同一个 id，打开/关闭时由系统
+      // 把两者的宽高与位置对齐过渡（见 MediaViewerOverlay）。气泡在查看器打开
+      // 期间仍然挂在列表里，所以出场节点一直存在，动画不会半路断掉。
+      .geometryTransition(`media_${this.msg.id}`)
       .accessibilityText(this.msg.contentType === 'video'
         ? this.videoAccessibilityText()
         : (this.msg.photoFailed ? str('mb_photo_failed') : str('mb_open_photo')))

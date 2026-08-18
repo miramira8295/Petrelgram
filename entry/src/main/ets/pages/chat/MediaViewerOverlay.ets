@@ -649,6 +649,15 @@ export struct MediaViewerOverlay {
               }
             }
             .width('100%').height('100%')
+            // 一镜到底的落点：与气泡里同一条消息的媒体框绑同一个 id，系统负责
+            // 把宽高和位置从缩略图过渡到全屏。
+            //
+            // 只有当前页绑真实 id——同一时刻一个 id 只能有一对节点，左右邻页
+            // 若也绑上，系统就不知道该跟谁配对了。内层 Image 身上挂着捏合缩放
+            // 与拖动的 scale/translate，所以绑在外层这个不带变换的 Stack 上，
+            // 两套变换才不会打架（官方要求绑定节点的宽高动画不能有跳变）。
+            .geometryTransition(id === this.viewerMsgId
+              ? `media_${id}` : `media_idle_${id}`)
             // Parallel, not Exclusive. Exclusive has to hold the single tap
             // back until the double-tap window expires, and since a single tap
             // at 1x now closes the viewer, that wait showed up as a stall
@@ -870,9 +879,11 @@ export struct MediaViewerOverlay {
     // The fullscreen surface owns its transition. The chat thumbnail stays
     // mounted and decoded underneath, so closing can never leave that cell
     // as a grey/background placeholder or an empty Image node.
+    // 只留不透明度：几何过渡已经交给 geometryTransition（气泡 ↔ 全屏图），
+    // 这里再叠一套"从点击点缩放"就是两套几何动画抢同一个节点。tapX/tapY
+    // 仍然保留着，回退到这套转场时不用重新接线。
     .transition(
-      TransitionEffect.scale({ x: 0.25, y: 0.25, centerX: this.tapX, centerY: this.tapY })
-        .combine(TransitionEffect.OPACITY)
+      TransitionEffect.OPACITY
         .animation({ duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 300), curve: Curve.Friction })
     );
   }
