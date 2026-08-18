@@ -6076,21 +6076,24 @@ struct ChatPage {
 
   @Styles
   headerActionPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    // 按下时也留在玻璃上：换成不透明的 surface_alt 会让玻璃"闪一下变实心"。
+    // 按压反馈由下面的 opacity + scale 表达，不靠底色。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
     .opacity(0.72)
     .scale({ x: 0.9, y: 0.9 })
   }
 
   @Styles
   headerIdentityNormalStyle() {
-    .backgroundColor($r('app.color.surface'))
+    // 同 headerActionNormalStyle：自绘玻璃时底色必须半透明。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
   headerIdentityPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
     .opacity(0.78)
     .scale({ x: 0.985, y: 0.96 })
   }
