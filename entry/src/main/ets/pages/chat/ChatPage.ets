@@ -7508,11 +7508,17 @@ struct ChatPage {
       }
     }
     .width('calc(100% - 24vp)')
-    .backgroundColor($r('app.color.surface'))
+    // 置顶消息条和直播状态条共用这一张卡，它浮在消息列表之上、消息从下面
+    // 滚过去——和顶栏胶囊、dock 是同一种角色，所以走同一档 'bar' 玻璃。
+    // 自绘玻璃的两半要一起上：半透明底 + backdropBlur（不透明底会把模糊盖死）。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('bar'))
     .borderRadius(14)
     .margin({ left: 12, right: 12, bottom: 2 })
+    // 'bar' 档自带阴影关闭，这条浮卡的阴影保持自己的。
     .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 1 })
     .clip(true)
+    .systemMaterial(overlayMaterial('bar'))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240), curve: Curve.EaseOut }));
