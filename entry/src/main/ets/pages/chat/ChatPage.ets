@@ -21,7 +21,7 @@ import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { fileOpenMimeType } from '../../util/fileMessage';
 import { resolveEmojiStatus } from '../../util/emojiStatus';
 import { TgsStickerView } from './TgsStickerView';
-import { WebmStickerView } from './WebmStickerView';
+import { WebmStickerView, holdPlayerJobs } from './WebmStickerView';
 import { EmojiPanel } from './EmojiPanel';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
@@ -102,6 +102,10 @@ import { floatingLiveWindow } from './LiveFloatingWindow';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
+import {
+  ReturnState, ReturnTarget, RETURN_JUMP, RETURN_NONE, RETURN_READ,
+  advanceRead, emptyReturnState, nextReturnTarget, popJump, pushJump, reachedLatest
+} from '../../util/readingReturn';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
 import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
@@ -150,6 +154,26 @@ const TOP_CARD_ACTION_GUARD_MS: number = 650;
 // Composer geometry. These three have to agree with the TextArea's own
 // lineHeight/padding: the editor height is computed from them, and a mismatch
 // clips the last line instead of scrolling to it.
+// 系统键盘从请求到落定的大致时间。摁住播放器销毁队列用这个数——量到的
+// 键盘弹出被拖到 1859ms，其中绝大部分是销毁占的主线程。
+const KEYBOARD_SETTLE_MS: number = 700;
+// 跳转落地后多久才允许"用户自己滚回最新"的判定重新生效。
+const JUMP_LANDING_GRACE_MS: number = 900;
+
+interface DiceChoice {
+  emoji: string;
+  label: ResourceStr;
+}
+
+// 六个骰子表情。原先是 showActionMenu 的按钮上限刚好装得下，现在是 3×2 的格子。
+const DICE_CHOICES: DiceChoice[] = [
+  { emoji: '🎲', label: $r('app.string.cp_dice_die') },
+  { emoji: '🎯', label: $r('app.string.cp_dice_darts') },
+  { emoji: '🏀', label: $r('app.string.cp_dice_basketball') },
+  { emoji: '⚽', label: $r('app.string.cp_dice_football') },
+  { emoji: '🎳', label: $r('app.string.cp_dice_bowling') },
+  { emoji: '🎰', label: $r('app.string.cp_dice_slots') }
+];
 const COMPOSER_LINE_H: number = 22;
 const COMPOSER_EDITOR_PAD: number = 9;
 const COMPOSER_MAX_LINES: number = 4;
@@ -465,6 +489,15 @@ struct ChatPage {
   private stayAtUnread: boolean = false;
   private curStartIdx: number = -1; // topmost visible row index (from onScrollIndex)
   private curEndIdx: number = -1;   // bottom visible row index (from onScrollIndex)
+  // 右下角「↓」的去向状态。它不是"回到底部"，而是"回到该继续看的地方"：
+  // 引用返回 > 阅读进度 > 最新消息。规则在 util/readingReturn（有单测），
+  // 这里只负责喂状态和执行结果。
+  @State returnState: ReturnState = emptyReturnState();
+  // 视口最底下那条真实消息的 id。既是"当前位置"，也是跳走时要记下的返回点。
+  private curBottomId: number = 0;
+  // 跳转落地的宽限期。跳到贴近尾部的引用时视口会短暂判为"在最新"，若不设防
+  // 就会把返回栈当成"用户自己滚回来了"清掉，一步都退不回去。
+  private jumpLandingUntil: number = 0;
   private pendingScrollBottom: boolean = false; // snap to the end once jumpToLatest's page arrives
   @State scrollToBottomBusy: boolean = false;
   private scrollActionSeq: number = 0;
@@ -568,18 +601,17 @@ struct ChatPage {
   @State botMenuAvailable: boolean = false;
   // Emoji panel above the input bar.
   @State showEmojiPanel: boolean = false;
-  // 附件抽屉。走 customKeyboard：面板即键盘，系统键盘与面板的切换由系统接管，
-  // 不会出现"两个高度打架"的中间帧，输入框还能保持聚焦、光标不丢。
-  //
-  // spike 验过的四件事：内容能顶起（但避让要自己做）、切换不闪、面板内点击
-  // 与横滑可用、点面板外**不会**自动收起（输入框始终聚焦，系统没有理由收）。
+  // 附件抽屉是否打开。它是 dock 里的一段布局，不是自定义键盘——后者虽然让
+  // 系统接管了顶起动画，但自定义键盘**无法获取焦点**（官方明写），面板里的
+  // 搜索框永远输不进字；而且它在另一个图层，背后没有页面背景，得自己画一份
+  // 副本去对齐，那条路走了很久也接不上。
   @State attachPanelOpen: boolean = false;
-  // 这一次获焦是我们为了打开抽屉发起的，onFocus 不该把它当成"用户要键盘"。
-  private focusKeepsPanel: boolean = false;
+  @State diceSheetOpen: boolean = false;
+
+
   // 当前打开的底部抽屉占据的高度（附件或表情，两者互斥）。supportAvoidance
   // 只保证输入框不被挡，列表内容它不管——官方《自定义键盘》文档明说这一段
   // 要开发者自己做：监听面板根节点 onAreaChange 拿高度，再设置布局避让。
-  @State bottomPanelH: number = 0;
   @State emojiPanelTab: number = 0;
   @State emojiPanelClosing: boolean = false;
   // Bot custom reply keyboard (null = this chat has none). Always docked when
@@ -2864,6 +2896,51 @@ struct ChatPage {
   // Mark read up to the bottom-most visible message, so only what the user has
   // actually scrolled past gets marked read (entering without scrolling leaves
   // the rest unread).
+  // 视口最底下那条真实消息的 id。系统行没有 member id，往回走到最近的真消息。
+  private bottomVisibleId(end: number): number {
+    if (end < 0 || end >= this.groups.length) {
+      return this.curBottomId;
+    }
+    for (let i: number = end; i >= 0; i--) {
+      const id: number = this.groups[i].head.id;
+      if (id > 0) {
+        return id;
+      }
+    }
+    return this.curBottomId;
+  }
+
+  // 每次视口变化后更新返回状态。两件事：读到哪了（只前进），以及用户是不是
+  // 自己滚回了最新——后者意味着这趟"返回"他已经自己完成，整套关系作废。
+  private syncReturnState(): void {
+    if (this.atBottom) {
+      if (Date.now() >= this.jumpLandingUntil) {
+        this.returnState = reachedLatest();
+      }
+      return;
+    }
+    this.returnState = advanceRead(this.returnState, this.curBottomId);
+  }
+
+  // 「↓」这一下该去哪。显隐也读它：没有可返回的位置就不该出现。
+  private returnTarget(): ReturnTarget {
+    return nextReturnTarget(this.returnState, this.curBottomId, this.atBottom);
+  }
+
+  private onScrollFabTap(): void {
+    const target: ReturnTarget = this.returnTarget();
+    if (target.kind === RETURN_JUMP) {
+      this.returnState = popJump(this.returnState);
+      this.jumpToMessageId(target.messageId);
+      return;
+    }
+    if (target.kind === RETURN_READ) {
+      this.jumpToMessageId(target.messageId);
+      return;
+    }
+    this.scrollToLatest();
+  }
+
   private markVisibleRead(end: number): void {
     if (this.store === null || end < 0 || end >= this.groups.length) {
       return;
@@ -3158,10 +3235,15 @@ struct ChatPage {
     }
   }
 
-  private onReplyTap(messageId: number): void {
+  // 点引用块：先把"跳走之前在哪"压进返回栈，再跳。
+  // 返回点取**被点的那条消息**，不是视口底部那条：引用块可能在屏幕靠上，
+  // 跨屏的长消息里两者能差一整屏。fromId 为 0（拿不到）时退回视口底部。
+  private onReplyTap(messageId: number, fromId: number = 0): void {
     if (messageId <= 0) {
       return;
     }
+    this.returnState = pushJump(this.returnState, fromId > 0 ? fromId : this.curBottomId);
+    this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
     this.prepareUserJump();
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
@@ -4542,17 +4624,16 @@ struct ChatPage {
       this.closeAttachPanel();
     }
     const seq = ++this.panelReadySeq;
-    // 出入场动画交给系统：抽屉现在是 customKeyboard，滑入滑出由键盘负责，
-    // 这里不再需要 animateTo，也不需要那套 translate+opacity 的 transition。
+    // 抽屉是 dock 里的一段布局，出现/消失由 dock 的高度变化带动，这里只管
+    // 内容的分帧挂载。
     const settle: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 220);
     if (show) {
       this.emojiPanelClosing = false;
       this.composerFocused = false;
       this.replyKbCollapsed = true;
       this.showEmojiPanel = true;
-      // 换绑之后要重新获焦一次键盘才会切过去；解绑/换绑和获焦必须分帧。
+      // 收起系统键盘，把这块高度让给抽屉。
       this.composerController.stopEditing();
-      this.raiseSystemKeyboard(true);
       if (settle === 0) {
         this.panelContentReady = true;
         return;
@@ -4576,7 +4657,6 @@ struct ChatPage {
         }
         this.showEmojiPanel = false;
         this.emojiPanelClosing = false;
-        this.noteBottomPanelHeight(0);
       }, 0);
     }
   }
@@ -4970,24 +5050,51 @@ struct ChatPage {
       });
   }
 
-  // 骰子：系统动作菜单六选一（正好是 showActionMenu 的按钮上限）。
+  // 骰子六选一。原来走 promptAction.showActionMenu，那是系统弹窗，外观完全
+  // 由系统定——ActionMenuOptions 里没有模糊或材质字段，套不上玻璃。改成自绘
+  // 的 sheet，和翻译面板同一套 blurStyle + systemMaterial。
   // 🎰 老虎机由 DiceBubble 叠 5 层 TGS 渲染。
   private showDiceMenu(): void {
-    const emojis: string[] = ['🎲', '🎯', '🏀', '⚽', '🎳', '🎰'];
-    promptAction.showActionMenu({
-      title: $r('app.string.cp_roll_a'),
-      buttons: [
-        { text: $r('app.string.cp_dice_die'), color: '#007AFF' }, { text: $r('app.string.cp_dice_darts'), color: '#007AFF' },
-        { text: $r('app.string.cp_dice_basketball'), color: '#007AFF' }, { text: $r('app.string.cp_dice_football'), color: '#007AFF' },
-        { text: $r('app.string.cp_dice_bowling'), color: '#007AFF' }, { text: $r('app.string.cp_dice_slots'), color: '#007AFF' }
-      ]
-    }).then((result): void => {
-      const index: number = result.index;
-      if (index >= 0 && index < emojis.length && this.store !== null) {
-        this.atBottom = true;
-        this.store.sendDice(emojis[index]);
+    this.diceSheetOpen = true;
+  }
+
+  private sendDiceEmoji(emoji: string): void {
+    this.diceSheetOpen = false;
+    if (this.store !== null) {
+      this.atBottom = true;
+      this.store.sendDice(emoji);
+    }
+  }
+
+  @Builder
+  diceSheet() {
+    Column() {
+      Text($r('app.string.cp_roll_a'))
+        .fontSize(15).fontColor(COLOR_TEXT_SECONDARY)
+        .margin({ top: 6, bottom: 10 });
+      Grid() {
+        ForEach(DICE_CHOICES, (d: DiceChoice) => {
+          GridItem() {
+            Column({ space: 6 }) {
+              Text(d.emoji).fontSize(34);
+              Text(d.label).fontSize(13).fontColor(COLOR_TEXT_PRIMARY).maxLines(1);
+            }
+            .width('100%').height(88)
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(14)
+            .backgroundColor($r('app.color.surface_alt'))
+            .onClick((): void => { this.sendDiceEmoji(d.emoji); });
+          }
+        }, (d: DiceChoice) => d.emoji);
       }
-    }).catch((): void => {});
+      .columnsTemplate('1fr 1fr 1fr')
+      .rowsGap(10).columnsGap(10)
+      .width('100%').height(186);
+    }
+    .width('100%')
+    // 顶部这 44 是给 bindSheet 自带的关闭按钮让位——它浮在右上角，内容从
+    // 顶端开始排就会压在它下面。
+    .padding({ left: 16, right: 16, top: 44, bottom: 16 });
   }
 
   // Paperclip: pick a document, copy it into the app sandbox (TDLib can't read
@@ -5380,7 +5487,10 @@ struct ChatPage {
   }
 
   // 跳到指定消息：已在当前页就直接滚动并高亮，否则围绕它重新拉一页。
+  // 高亮就是那两下蓝色闪烁（flashAtIndex），「↓」的返回也走这里，所以返回
+  // 落点同样会闪一下，和点引用跳过去的观感一致。
   private jumpToMessageId(targetId: number): void {
+    this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
     const gidx: number = groupIndexOf(this.groups, targetId);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
@@ -6058,8 +6168,8 @@ struct ChatPage {
     .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
     .backdropBlur(overlayBackdropBlur('card'))
     .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
-    // 齐边铺满，只留上圆角——左右和底部都贴着屏幕，那三个角没有落脚处。
-    .borderRadius({ topLeft: 18, topRight: 18 })
+    // 四角都圆：卡片四周都有空当，浮在壁纸上。
+    .borderRadius(18)
     .clip(true)
     .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
     .systemMaterial(overlayMaterial('card'))
@@ -6953,23 +7063,7 @@ struct ChatPage {
   // 那个高度得在内容挂上来之前就确定，否则第一帧会先塌一下再弹开。
   @Builder
   attachDrawer() {
-    Stack({ alignContent: Alignment.Bottom }) {
-      // 抽屉后面自己铺一份聊天背景。
-      //
-      // 不是为了填空当（卡片已经齐边铺满，没有空当），而是**给玻璃提供可透
-      // 的内容**：卡片是材质玻璃，它模糊的是身后的东西；身后空着的话透出来
-      // 的是系统底板，看着就是一块死材质。
-      //
-      // 页面那张铺不进来：RESIZE 下窗口被压缩，壁纸只铺到压缩后的底边，而
-      // expandSafeArea 对向下扩展无效（官方《安全区域》写死），三种写法实测
-      // 都只到一半。
-      //
-      // **整屏高度 + 底端对齐 + 外层 clip**：缩进这 260 的框里会把图案重新铺
-      // 一遍、和上面接不上；底端对齐之后露出的正好是壁纸最底下那一截。
-      Column() {
-        this.chatBackgroundLayer();
-      }
-      .width('100%').height(this.screenH);
+    Stack() {
       Column() {
         AttachPanel({
           actions: attachActions(this.isGroup, this.isChannel),
@@ -6979,10 +7073,11 @@ struct ChatPage {
       }
       // calc 而不是 width('100%') + margin：后者是"满宽再往外推"，多出来的
       // 部分被 Stack 裁掉，看着仍然齐边——实测取色，左边缘 60px 全是卡片底色。
-      // 齐边铺满：两侧和底部都不留空当。留过空当，露出的要么是接不上的背景
-      // 副本，要么是页面底色，两种都比不留难看。
-      .width('100%')
-      .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
+      // 两侧留白。抽屉现在在页面里，空当露出的就是这张壁纸本身——当它还是
+      // 自定义键盘时做不到这一点（另一个图层，背后没有页面背景），才被迫齐边。
+      .width('calc(100% - 16vp)')
+      .height(BOTTOM_DRAWER_HEIGHT)
+      .margin({ bottom: DRAWER_INSET })
       .drawerCard();
     }
     .width('100%')
@@ -6998,9 +7093,7 @@ struct ChatPage {
     // expandSafeArea([SafeAreaType.KEYBOARD]) 之后不再被键盘压缩，一直铺满
     // 整屏，所以这里透出来的和上面是**同一张图的同一处**，不可能对不齐。
     .backgroundColor(Color.Transparent)
-    .onAreaChange((_old: Area, area: Area): void => {
-      this.noteBottomPanelHeight(area.height as number);
-    });
+    ;
   }
 
   // 当前该把哪个抽屉当键盘挂上去。两者互斥，所以这里最多返回一个；
@@ -7035,66 +7128,16 @@ struct ChatPage {
   private toggleAttachPanel(): void {
     if (this.attachPanelOpen) {
       this.closeAttachPanel();
-      this.raiseSystemKeyboard();
       return;
     }
-    // 两个底部面板互斥：同一块高度不能有两个主人。
+    // 两个面板互斥；打开时收起系统键盘，让出这块高度。
     this.setEmojiPanel(false);
-    this.attachPanelOpen = true;
-    // customKeyboard 只在输入框获焦时出现。已经聚焦（系统键盘开着）时，
-    // 换绑之后要重新获焦一次才会切过去；解绑/换绑和获焦必须分帧，同一帧里
-    // 属性还没落地，重新获焦只会把上一种键盘再弹一次。
     this.composerController.stopEditing();
-    this.raiseSystemKeyboard(true);
+    this.attachPanelOpen = true;
   }
 
   private closeAttachPanel(): void {
-    if (!this.attachPanelOpen) {
-      return;
-    }
     this.attachPanelOpen = false;
-    // 面板卸载时 onAreaChange 不会再报一个 0 回来，避让高度得自己归零，
-    // 否则列表底部会永久留一段空白。
-    this.noteBottomPanelHeight(0);
-    this.composerController.stopEditing();
-  }
-
-  // 把焦点还给输入框。两种用途：解绑之后让系统键盘顶上来，以及换绑之后让
-  // 抽屉顶上来——customKeyboard 只在输入框获焦时出现，两种都得走这一步。
-  //
-  // keepPanel 区分这两者。输入框的 onFocus 里有一句"聚焦就关面板"，那是给
-  // 旧世界写的：那时聚焦 = 用户要键盘不要面板。现在面板**就是**键盘，是我们
-  // 自己去聚焦的，那一句会立刻把刚打开的面板关掉——表情抽屉打不开正是这个。
-  private raiseSystemKeyboard(keepPanel: boolean = false): void {
-    this.focusKeepsPanel = keepPanel;
-    setTimeout((): void => {
-      this.getUIContext().getFocusController().requestFocus('chat_composer');
-    }, 30);
-  }
-
-  // 和 updateBottomChromeHeight 同一套：高度变了就更新列表的底部避让，并且
-  // 原来贴着底的用户要重新贴回底——否则面板顶出来之后最后几条消息被压在下面。
-  private noteBottomPanelHeight(height: number): void {
-    const next: number = height > 0 ? height : 0;
-    if (Math.abs(next - this.bottomPanelH) < 0.5) {
-      return;
-    }
-    const keepTailVisible: boolean = this.atBottom && this.viewerMsgId === 0;
-    // ===== 诊断（用完即删）=====
-    // 想分清"推上去的高度不一致"是双份避让（系统 RESIZE 已经缩过一次，我们
-    // 又加了一次）还是上报晚了一拍。keyboardH 是系统报的键盘占位高度。
-    console.error(`[panel] h=${this.bottomPanelH}->${next} keyboardH=${this.keyboardH}` +
-      ` chrome=${this.bottomChromeH} attach=${this.attachPanelOpen} emoji=${this.showEmojiPanel}`);
-    this.bottomPanelH = next;
-    if (!keepTailVisible) {
-      return;
-    }
-    const seq: number = ++this.bottomChromeLayoutSeq;
-    setTimeout((): void => {
-      if (seq === this.bottomChromeLayoutSeq && this.atBottom) {
-        this.scroller.scrollEdge(Edge.Bottom);
-      }
-    }, 0);
   }
 
   // 面板只说"点了哪一格"，这里说"那一格做什么"。两边靠 key 对上，
@@ -7120,8 +7163,8 @@ struct ChatPage {
     }
   }
 
-  // 表情/贴纸抽屉。和附件抽屉同一套机制（customKeyboard），所以两者在同一块
-  // 高度上、互斥、观感一致，都会把输入框和聊天内容顶起来。
+  // 表情/贴纸抽屉。和附件抽屉同一套机制（dock 里的一段布局），两者在同一块
+  // 高度上、互斥，都会把输入框和聊天内容顶起来。
   //
   // 外观从"浮在列表上的圆角卡片"改成齐边抽屉：不再有左右留白、圆角和阴影，
   // 也不用自己写出入场 transition——键盘的滑入滑出由系统负责。
@@ -7131,12 +7174,7 @@ struct ChatPage {
   // 先让壳落地，内容下一拍再进来。
   @Builder
   emojiDrawer() {
-    Stack({ alignContent: Alignment.Bottom }) {
-      // 同 attachDrawer：给玻璃提供可透的内容。
-      Column() {
-        this.chatBackgroundLayer();
-      }
-      .width('100%').height(this.screenH);
+    Stack() {
       Column() {
             if (this.panelContentReady) {
               EmojiPanel({
@@ -7175,10 +7213,11 @@ struct ChatPage {
     }
       // calc 而不是 width('100%') + margin：后者是"满宽再往外推"，多出来的
       // 部分被 Stack 裁掉，看着仍然齐边——实测取色，左边缘 60px 全是卡片底色。
-      // 齐边铺满：两侧和底部都不留空当。留过空当，露出的要么是接不上的背景
-      // 副本，要么是页面底色，两种都比不留难看。
-      .width('100%')
-      .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
+      // 两侧留白。抽屉现在在页面里，空当露出的就是这张壁纸本身——当它还是
+      // 自定义键盘时做不到这一点（另一个图层，背后没有页面背景），才被迫齐边。
+      .width('calc(100% - 16vp)')
+      .height(BOTTOM_DRAWER_HEIGHT)
+      .margin({ bottom: DRAWER_INSET })
       .drawerCard();
     }
     .width('100%')
@@ -7194,9 +7233,7 @@ struct ChatPage {
     // expandSafeArea([SafeAreaType.KEYBOARD]) 之后不再被键盘压缩，一直铺满
     // 整屏，所以这里透出来的和上面是**同一张图的同一处**，不可能对不齐。
     .backgroundColor(Color.Transparent)
-    .onAreaChange((_old: Area, area: Area): void => {
-      this.noteBottomPanelHeight(area.height as number);
-    });
+    ;
   }
 
   @Builder
@@ -7328,19 +7365,6 @@ struct ChatPage {
             // null 而不是 undefined：ArkUI 里 undefined 往往是"保持上次的值"，
             // 只有显式 null 才解绑（官方示例用的也是 null）。写成 undefined 时
             // 面板关掉后再点输入框还会把它弹回来。
-            // **必须在没有面板时传 null**。@Builder 什么都不渲染 ≠ 没有绑定：
-            // 传 this.bottomDrawer() 时框架看到的是"绑了一个内容为空的自定义
-            // 键盘"，于是系统键盘永远不弹——重构成统一入口时踩的正是这个。
-            .customKeyboard(this.bottomPanelOpen() ? this.bottomDrawer() : null,
-              { supportAvoidance: true })
-            // 面板开着时输入框本就是聚焦态，再点它不产生焦点变化，框架不会做
-            // 任何事。想要"点输入框收面板、弹系统键盘"，得自己解绑再重新获焦。
-            .onClick((): void => {
-              if (this.attachPanelOpen || this.showEmojiPanel) {
-                this.closeBottomPanels();
-                this.raiseSystemKeyboard();
-              }
-            })
             .onAreaChange((_old: Area, area: Area): void => {
               const next: number = area.width as number;
               if (Math.abs(next - this.composerEditorW) > 0.5) {
@@ -7369,35 +7393,18 @@ struct ChatPage {
               this.imeTailPinned = this.atBottom && this.viewerMsgId === 0 &&
                 !this.stayAtUnread;
               this.composerFocused = true;
-              // 我们自己为了挂抽屉去请求的焦点，不要把抽屉关掉；用户真的点了
-              // 输入框那一路，面板早在 TextArea 的 onClick 里就关过了。
-              if (this.focusKeepsPanel) {
-                this.focusKeepsPanel = false;
-              } else {
-                this.setEmojiPanel(false);
-                this.closeAttachPanel();
-              }
+              // 键盘要来了：把贴纸播放器的销毁摁到它落定之后再做。
+              holdPlayerJobs(KEYBOARD_SETTLE_MS);
+              // 点输入框 = 要打字，收起抽屉把高度让给系统键盘。
+              this.setEmojiPanel(false);
+              this.closeAttachPanel();
               this.replyKbCollapsed = true;
               this.commandMenuOpen = false;
               if (this.keyboardH > 0) {
                 this.syncTailOnImeFrame();
               }
             })
-            .onBlur(() => {
-              this.composerFocused = false;
-              // 两个抽屉都是 customKeyboard，只在输入框聚焦时存在。系统把焦点
-              // 收走时不会通知我们，状态就会卡住——现象是回形针停在 ✕ 上、
-              // 抽屉却已经没了。这里兜底收一次。
-              //
-              // focusKeepsPanel 为真说明是我们自己为了换绑抽屉才主动
-              // stopEditing 的，那次失焦不能当成"用户离开了"。
-              if (this.focusKeepsPanel) {
-                return;
-              }
-              this.attachPanelOpen = false;
-              this.showEmojiPanel = false;
-              this.noteBottomPanelHeight(0);
-            });
+            .onBlur(() => { this.composerFocused = false; });
           if (this.replyKeyboard !== null) {
             // Bot-keyboard toggle: tinted while the keyboard is up, gray when
             // collapsed — tapping flips between the two.
@@ -7548,6 +7555,16 @@ struct ChatPage {
           if (this.replyKbVisible()) {
             this.replyKeyboardPanel();
           }
+          // 抽屉是 dock 的一部分，不是自定义键盘。这样它和聊天内容共享同一个
+          // 页面背景——壁纸就在它后面，不需要再画副本去对齐（那条路走了很久，
+          // 副本永远接不上）。输入框被它自然顶高，列表的避让也自动跟上：
+          // dock 的 onAreaChange → bottomChromeH → List.contentEndOffset 这条
+          // 链路本来就在为回复预览条服务。
+          // 试过"关面板只隐藏、不卸载"：Grid 的虚拟化会因为容器尺寸变 0 把
+          // 所有格子当成划出视口回收掉，节点根本留不住，白搭一层复杂度。
+          if (this.bottomPanelOpen()) {
+            this.bottomDrawer();
+          }
         }
         .width('100%');
       }
@@ -7555,6 +7572,14 @@ struct ChatPage {
     .width('100%')
     .onAreaChange((_old: Area, area: Area) => {
       this.updateBottomChromeHeight(area.height as number);
+    })
+    // 骰子面板挂在 dock 上，不挂页面根节点：同一个节点上串两个 bindSheet
+    // 只有最后一个生效（根节点上已经有翻译面板了，骰子那个就永远弹不出来）。
+    .bindSheet($$this.diceSheetOpen, this.diceSheet(), {
+      height: 320,
+      backgroundColor: Color.Transparent,
+      dragBar: false,
+      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 
@@ -7801,7 +7826,7 @@ struct ChatPage {
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
       .enabled(!this.scrollToBottomBusy)
       .accessibilityText(this.scrollToBottomBusy ? $r('app.string.cp_returning_latest') : $r('app.string.cp_return_latest'))
-      .onClick(() => { this.scrollToLatest(); })
+      .onClick(() => { this.onScrollFabTap(); })
       .position({ x: 6, y: 10 });
       if (this.unreadBadge > 0) {
         Row() {
@@ -7826,7 +7851,7 @@ struct ChatPage {
             curve: Curve.EaseOut
           }))
         .enabled(!this.scrollToBottomBusy)
-        .onClick((): void => { this.scrollToLatest(); })
+        .onClick((): void => { this.onScrollFabTap(); })
         .accessibilityText(plural('cp_unread_a11y', this.unreadBadge, this.unreadBadge));
       }
     }
@@ -8382,7 +8407,7 @@ struct ChatPage {
                 onAvatarLongPress: (uid: number, name: string): void => {
                   this.mentionSender(uid, name);
                 },
-                onReplyTap: (id: number): void => { this.onReplyTap(id); },
+                onReplyTap: (id: number, fromId: number): void => { this.onReplyTap(id, fromId); },
                 onEditMsg: (id: number): void => { this.startEdit(id); },
                 onShowReactors: (id: number, emoji: string): void => {
                   this.showReactors(id, emoji);
@@ -8536,7 +8561,14 @@ struct ChatPage {
                 playSlotStartMs: this.playSlotStartMs,
                 animateIn: this.freshSinceId !== 0 && g.head.id > this.freshSinceId });
               }
-              .layoutWeight(1);
+              .layoutWeight(1)
+              // 多选态下消息本体整体不响应触摸：BLOCK_DESCENDANTS 只封住自己和
+              // 后代，**不影响祖先**（官方原话），所以外层 List 的滑动照常。
+              // 原来用的是 Block，它连兄弟一起封，实测多选时列表滑不动。
+              // 点击判定放在外面那层，那层保持 Default。
+              .hitTestBehavior(this.selecting && g.head.contentType !== 'system' &&
+                g.head.contentType !== 'hidden'
+                ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
               }
               .width('100%')
               .alignItems(VerticalAlign.Center)
@@ -8545,10 +8577,6 @@ struct ChatPage {
                 duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
                 curve: Curve.EaseOut
               })
-              // Selection mode: the row itself takes every tap (children are
-              // excluded from hit-testing), so any tap toggles selection.
-              .hitTestBehavior(this.selecting && g.head.contentType !== 'system' && g.head.contentType !== 'hidden'
-                ? HitTestMode.Block : HitTestMode.Default)
               .onClick(() => {
                 if (this.selecting) {
                   this.toggleSelectRow(g);
@@ -8603,8 +8631,7 @@ struct ChatPage {
             // The highlight overlay is viewport-anchored — drop it as soon as
             // the user starts interacting, before it can detach from its row.
             this.cancelFlash();
-            // 点面板外面收起。两个抽屉都是 customKeyboard，输入框始终聚焦，
-            // 系统不会因为点了别处就收——这一下必须自己发。
+            // 点面板外面收起。
             this.closeBottomPanels();
           } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
             this.listTouchActive = false;
@@ -8620,6 +8647,8 @@ struct ChatPage {
           this.refreshAtBottom();
           this.curStartIdx = start;
           this.curEndIdx = end;
+          this.curBottomId = this.bottomVisibleId(end);
+          this.syncReturnState();
           this.markVisibleRead(end);
           this.updatePinnedFromScroll(start);
           this.growCachedCount();
@@ -8878,7 +8907,9 @@ struct ChatPage {
       }
       // The latest-message FAB belongs to the chat layer. Keeping it visible
       // while the media panel is open puts it above (and blocks) the GIF tab.
-      if (!this.atBottom && !this.searchMode && !this.showEmojiPanel) {
+      // 显隐跟着"有没有可返回的位置"走，而不是"在不在底部"：站在最新消息上
+      // 但引用链还没退完时，箭头仍然该在。
+      if (this.returnTarget().kind !== RETURN_NONE && !this.searchMode && !this.showEmojiPanel) {
         Column() {
           this.scrollFab();
         }

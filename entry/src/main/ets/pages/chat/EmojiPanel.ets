@@ -9,6 +9,11 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { BOTTOM_DRAWER_HEIGHT, EMOJI_CONTENT_HEIGHT, EMOJI_TAB_BAR_HEIGHT } from '../../util/drawerMetrics';
 
+// 内容区顶部这条带子归包切换条（贴纸/表情两页都有），横滑要留给它自己滚，
+// 不能被"切换表情/贴纸/GIF"抢走。切页手势是 parallelGesture 挂在面板根上的
+// ——它和子组件不争，谁都会触发，所以拦不住只能按落点划线。
+const PACK_ROW_BAND: number = 44;
+
 interface EmojiSection {
   title: string;
   emoji: string[];
@@ -104,6 +109,9 @@ export struct EmojiPanel {
     return powerGroupAnimationDuration(KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MENU, duration);
   }
 
+  // 按下点的 y（相对面板根），用来判断这一划是不是起于包切换条。
+  private panDownY: number = 0;
+
   private switchTab(idx: number): void {
     // 越界就什么也不做——滑到第一页再往右滑不该跳到 GIF。
     if (idx < 0 || idx > 2 || idx === this.tab) {
@@ -132,7 +140,7 @@ export struct EmojiPanel {
         .width(18).height(2).borderRadius(1)
         .backgroundColor(this.tab === idx ? COLOR_PRIMARY : Color.Transparent);
     }
-    .layoutWeight(1).height(EMOJI_TAB_BAR_HEIGHT - 4)
+    .layoutWeight(1).height(EMOJI_TAB_BAR_HEIGHT - 8)
     .justifyContent(FlexAlign.Center)
     // 不画任何框：选中态靠图标和文字变主色 + 下面那条 18×2 的指示条表示。
     // 原来还压一块 selected_pill 的圆角底，在玻璃面板上像给按钮描了个边。
@@ -164,7 +172,9 @@ export struct EmojiPanel {
         .visibility(this.tab === 0 ? Visibility.Visible : Visibility.Hidden);
         if (this.stickerMounted) {
           Column() {
-            StickerPicker({ onPick: (s: StickerItem, x: number, y: number): void => { this.onPickSticker(s, x, y); } });
+            StickerPicker({
+                onPick: (s: StickerItem, x: number, y: number): void => { this.onPickSticker(s, x, y); }
+            });
           }
           .width('100%').height('100%')
           .visibility(this.tab === 1 ? Visibility.Visible : Visibility.Hidden);
@@ -181,6 +191,12 @@ export struct EmojiPanel {
       // empty-GIF state could otherwise propagate through Stack and make the
       // overlay consume the whole chat page after switching tabs.
       .width('100%').height(EMOJI_CONTENT_HEIGHT)
+      // 记落点。PanGesture 的 event 只给位移，给不了起点在哪一条带子上。
+      .onTouch((event: TouchEvent): void => {
+        if (event.type === TouchType.Down && event.touches.length > 0) {
+          this.panDownY = event.touches[0].y;
+        }
+      })
       // 左右滑动切页。只认横向：里面的网格是纵向滚动的，PanDirection.Horizontal
       // 让纵向拖动压根不满足这个识别器，直接落到网格自己身上。
       // parallelGesture 而不是 gesture：不抢子组件的点击（点表情要照常发出去）。
@@ -201,7 +217,7 @@ export struct EmojiPanel {
         this.bottomTab($r('sys.symbol.video'), 'GIF', 2);
       }
       .width('100%').height(EMOJI_TAB_BAR_HEIGHT)
-      .padding({ left: 12, right: 12, top: 5, bottom: 6 });
+      .padding({ left: 12, right: 12, top: 2, bottom: 6 });
     }
     .width('100%').height(BOTTOM_DRAWER_HEIGHT)
     .constraintSize({ minHeight: BOTTOM_DRAWER_HEIGHT, maxHeight: BOTTOM_DRAWER_HEIGHT })

@@ -11,10 +11,11 @@ import {
   addFavoriteSticker, getFavoriteStickers, getRecentStickers, rememberRecentSticker,
   removeFavoriteSticker
 } from '../../store/StickerApi';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, LengthMetrics } from '@kit.ArkUI';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { probeEvent, probeHit } from '../../util/panelProbe';
+import { overlayMaterial, overlayGlassFill, overlayBackdropBlur } from '../../util/overlayMaterial';
 
 export interface StickerItem {
   fileId: number;   // the sticker's own file (what gets sent)
@@ -108,6 +109,10 @@ export struct StickerPicker {
   // 正在被按住的格子（setIdx_pos）。空串表示没有。
   @State private pressedCell: string = '';
   onPick: (s: StickerItem, x: number, y: number) => void = (): void => {};
+  // 能不能显示搜索框。挂在自定义键盘（聊天页的表情抽屉）里时必须关掉：
+  // 官方《自定义键盘》写明"自定义键盘无法获取焦点，但是会拦截手势事件"，
+  // 里面的 TextInput 点得到却永远输不进字。头像编辑器那种普通页面不受限。
+  allowSearch: boolean = true;
   stickerType: string = 'regular'; // 'regular' | 'custom_emoji'
   includeTrending: boolean = false;
   classicPacks: ClassicPack[] = []; // built-in unicode sections, shown first
@@ -412,10 +417,27 @@ export struct StickerPicker {
   }
 
   // --- search (searchStickers over public packs) ---
+  // 搜索条不再常占一行：折进包条右端那颗按钮里，点开才展开成输入框。
+  @State searchOpen: boolean = false;
   @State searchQuery: string = '';
   @State searchItems: StickerItem[] = [];
   private searchTimer: number = -1;
   private searchSeq: number = 0;
+
+  // 关搜索时把结果和请求一起丢掉，回到当前包——否则再点开会闪一下旧结果。
+  private toggleSearch(): void {
+    if (this.searchOpen) {
+      this.searchSeq++;
+      this.searchOpen = false;
+      this.searchQuery = '';
+      this.searchItems = [];
+      this.searchLoading = false;
+      this.searchError = '';
+      this.refreshGrid();
+      return;
+    }
+    this.searchOpen = true;
+  }
 
   private onSearchChanged(v: string): void {
     this.searchQuery = v;
@@ -925,69 +947,95 @@ export struct StickerPicker {
           false
         );
       } else {
-        // Pack tabs: cover thumbnails (official-style), title initial fallback.
-        Scroll(this.tabScroller) {
-          Row({ space: 6 }) {
-            ForEach(this.sets, (t: StickerSetTab, idx: number) => {
-              Column() {
-                if (t.iconPath !== '') {
-                  Image(`file://${t.iconPath}`).draggable(false)
-                    .width(30).height(30).objectFit(ImageFit.Contain);
-                } else if (t.iconText !== '') {
-                  Text(t.iconText).fontSize(22);
-                } else {
-                  Text(t.title.length > 0 ? t.title.substring(0, 1) : '?')
-                    .fontSize(15).fontWeight(FontWeight.Medium)
-                    .fontColor(this.curSet === idx ? COLOR_PRIMARY : COLOR_TEXT_PRIMARY);
-                }
+        // 顶部这一行身兼两职：平时是包切换条，点右端的放大镜就整行变成搜索框。
+        // 原先搜索独占一行 30 高，在 260 的抽屉里和包条、标签条一起吃掉 108，
+        // 留给表情网格的还不到一半。
+        Stack({ alignContent: Alignment.End }) {
+          if (!this.searchOpen) {
+            // Pack tabs: cover thumbnails (official-style), title initial fallback.
+            Scroll(this.tabScroller) {
+              Row({ space: 6 }) {
+                ForEach(this.sets, (t: StickerSetTab, idx: number) => {
+                  Column() {
+                    if (t.iconPath !== '') {
+                      Image(`file://${t.iconPath}`).draggable(false)
+                        .width(30).height(30).objectFit(ImageFit.Contain);
+                    } else if (t.iconText !== '') {
+                      Text(t.iconText).fontSize(22);
+                    } else {
+                      Text(t.title.length > 0 ? t.title.substring(0, 1) : '?')
+                        .fontSize(15).fontWeight(FontWeight.Medium)
+                        .fontColor(this.curSet === idx ? COLOR_PRIMARY : COLOR_TEXT_PRIMARY);
+                    }
+                  }
+                  .width(38).height(38)
+                  .justifyContent(FlexAlign.Center)
+                  // 不画框：选中态用透明度区分。原来压一块 selected_pill 的圆角底，
+                  // 在玻璃面板上看着就是给这个表情描了个边。
+                  .backgroundColor(Color.Transparent)
+                  .opacity(this.curSet === idx && this.searchQuery.trim() === '' ? 1 : 0.45)
+                  .borderRadius(10)
+                  .onClick(() => {
+                    this.searchQuery = '';
+                    this.searchItems = [];
+                    this.selectSet(idx);
+                  });
+                }, (t: StickerSetTab) => `${t.id}_${t.iconPath}`);
               }
-              .width(38).height(38)
+              // 右边留出按钮的位置，否则最后一个包永远压在按钮底下点不着。
+              .padding({ left: 16, right: 52 });
+            }
+            .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
+            // 让内容自己在右端淡出，而不是拿一块底色去挡。垫底色那版试过，
+            // 玻璃面板上就是一块突兀的白，比露半个包还难看。
+            .fadingEdge(true, { fadingEdgeLength: LengthMetrics.vp(28) })
+            .width('100%').height(44);
+          } else if (this.allowSearch) {
+            Row({ space: 6 }) {
+              SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+              TextInput({
+                text: this.searchQuery,
+                placeholder: this.stickerType === 'custom_emoji' ? $r('app.string.sp_search_emoji') : $r('app.string.sp_search_stickers')
+              })
+                .fontSize(14).layoutWeight(1).height(30)
+                .backgroundColor(Color.Transparent).padding(0)
+                .placeholderColor(COLOR_TEXT_SECONDARY)
+                .defaultFocus(true)
+                .onChange((v: string) => { this.onSearchChanged(v); });
+            }
+            // 宽度得把两边的外边距一起扣掉。写 100% 再挂 margin，父容器是
+            // Stack 且右对齐，多出来的 32 全从左边溢出去了。
+            .width('calc(100% - 64vp)').height(32)
+            .padding({ left: 12, right: 12 })
+            .backgroundColor($r('app.color.surface_alt')).borderRadius(16)
+            .alignItems(VerticalAlign.Center)
+            // 右边 48 是给常驻按钮留的位置。
+            .margin({ left: 16, right: 48 });
+          }
+
+          // 常驻按钮。自己是一块独立的玻璃（'control' 档：带按压光感），
+          // 所以不用垫底色去挡——包滑到它下面时，两层玻璃叠着反而分得清。
+          if (this.allowSearch) {
+            Row() {
+              Column() {
+                SymbolGlyph(this.searchOpen ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
+                  .fontSize(17)
+                  .fontColor([this.searchOpen ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+              }
+              .width(32).height(32).borderRadius(16).clip(true)
               .justifyContent(FlexAlign.Center)
-              // 不画框：选中态用透明度区分。原来压一块 selected_pill 的圆角底，
-              // 在玻璃面板上看着就是给这个表情描了个边。
-              .backgroundColor(Color.Transparent)
-              .opacity(this.curSet === idx && this.searchQuery.trim() === '' ? 1 : 0.45)
-              .borderRadius(10)
-              .onClick(() => {
-                this.searchQuery = '';
-                this.searchItems = [];
-                this.selectSet(idx);
-              });
-            }, (t: StickerSetTab) => `${t.id}_${t.iconPath}`);
-          }.padding({ left: 16, right: 16 });
-        }
-        .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
-        .width('100%').height(44);
-        // Search bar (searches public packs by emoji/keyword).
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
-          TextInput({
-            text: this.searchQuery,
-            placeholder: this.stickerType === 'custom_emoji' ? $r('app.string.sp_search_emoji') : $r('app.string.sp_search_stickers')
-          })
-            .fontSize(14).layoutWeight(1).height(28)
-            .backgroundColor(Color.Transparent).padding(0)
-            .placeholderColor(COLOR_TEXT_SECONDARY)
-            .onChange((v: string) => { this.onSearchChanged(v); });
-          if (this.searchQuery !== '') {
-            SymbolGlyph($r('sys.symbol.xmark')).fontSize(14).fontColor([COLOR_TEXT_SECONDARY])
-              .onClick(() => {
-                this.searchSeq++;
-                this.searchQuery = '';
-                this.searchItems = [];
-                this.searchLoading = false;
-                this.searchError = '';
-                this.refreshGrid();
-              });
+              .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+              .backdropBlur(overlayBackdropBlur('control'))
+              .systemMaterial(overlayMaterial('control'))
+              .onClick(() => { this.toggleSearch(); });
+            }
+            .width(48).height(44)
+            .justifyContent(FlexAlign.Center)
+            .padding({ right: 12 })
+            .hitTestBehavior(HitTestMode.Transparent);
           }
         }
-        // 抽屉里高度紧张（260 总高，包条 44 + 标签条 44 已经吃掉 88），
-        // 搜索框压到 30 并收紧外边距，省下的都给表情网格。
-        .width('92%').height(30)
-        .padding({ left: 12, right: 12 })
-        .backgroundColor($r('app.color.surface_alt')).borderRadius(15)
-        .alignItems(VerticalAlign.Center)
-        .margin({ top: 2, bottom: 2 });
+        .width('100%').height(44);
         if (this.contentError !== '' && this.searchQuery.trim() === '') {
           Row({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
