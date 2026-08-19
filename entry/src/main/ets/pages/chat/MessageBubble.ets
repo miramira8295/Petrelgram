@@ -1220,10 +1220,17 @@ export struct MessageBubble {
               avatarSize: 22
             })
               .margin({ left: idx === 0 ? 0 : -8 })
-              // borderRadius 必须和 border 一起给：只给 border 描的是组件的
-              // **方形外框**，三个圆头像会被框进一个白方块里（用户截图）。
+              // 白圈是用来在互相叠压时分开相邻两个头像的。border 画在组件
+              // **边框盒**上，而头像图片本身还带自己的圆角，两者之间会露出
+              // 一圈底色——看着就是"白框和图片有段距离"。改用 outline：它画在
+              // 边框盒之外、紧贴组件边缘，不占布局也不会和内容之间留缝。
               .borderRadius(11)
-              .border({ width: 1.5, color: Color.White });
+              .outline({
+                width: 1.5,
+                color: Color.White,
+                radius: 11,
+                style: OutlineStyle.SOLID
+              });
           }, (uid: number, idx: number) => `replier_${idx}_${uid}`);
         }
       }
