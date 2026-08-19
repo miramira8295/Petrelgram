@@ -706,6 +706,13 @@ struct ChatPage {
     this.firstUnreadId = 0;
     this.stayAtUnread = false;
     this.curStartIdx = -1;
+    // curEndIdx 和 indexGroupsLen 也要一起清。它们是上一个会话的可见行号，
+    // 换会话后 groups 从 0 重新长起来，长度一旦碰巧和旧值相等，refreshAtBottom
+    // 的新鲜度检查就会认下这批陈旧行号，据此否决"在底部"，于是刚进会话就
+    // 挂出「↓」。清成 -1 后 indexFresh 恒为假，判定退回宽松侧，等第一次
+    // onScrollIndex 落地再收紧。
+    this.curEndIdx = -1;
+    this.indexGroupsLen = -1;
     this.pendingScrollBottom = false;
     this.scrollToBottomBusy = false;
     this.pendingJumpId = 0;
