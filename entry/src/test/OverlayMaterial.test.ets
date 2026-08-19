@@ -6,7 +6,8 @@ import {
   overlayBackdropBlur,
   overlayBlur,
   overlayGlassFill,
-  overlayMaterial
+  overlayMaterial,
+  pressAnimationWins
 } from '../main/ets/util/overlayMaterial';
 
 // The immersive system material arrived in API 26. Below it every overlay keeps
@@ -17,7 +18,7 @@ import {
 // The API-version tests are pure. The rest run against whatever device the
 // suite is on, so they assert the invariant rather than one side of it.
 
-const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card'];
+const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control'];
 
 export default function overlayMaterialTest() {
   describe('overlayMaterial', () => {
@@ -45,7 +46,8 @@ export default function overlayMaterialTest() {
         expect(overlayBlur(surface)).assertUndefined();
         expect(overlayBackdropBlur(surface)).assertEqual(0);
         // 底色也不能再被换成半透明：材质会自己把填充清成玻璃。
-        expect(overlayGlassFill(surface, $r('app.color.surface'))).assertDeepEquals($r('app.color.surface'));
+        // 材质在时底色必须透明，否则材质被盖住。
+        expect(overlayGlassFill(surface, $r('app.color.surface')) === Color.Transparent).assertTrue();
       }
     });
 
@@ -90,12 +92,10 @@ export default function overlayMaterialTest() {
       const solid: ResourceColor = $r('app.color.surface');
       for (const surface of ALL_SURFACES) {
         const fill = overlayGlassFill(surface, solid);
-        if (immersiveMaterialAvailable()) {
-          // 材质自带填充，底色原样交回，由材质清成透明玻璃。
-          expect(fill === solid).assertTrue();
-        } else {
-          expect(fill === solid).assertFalse();
-        }
+        // 两种情况都不能是原来那个不透明实色，理由不同：材质在时它会盖住
+        // 材质层（官方 FAQ 明写材质层级在 backgroundColor 之下）；材质不在
+        // 时它会盖住 backdropBlur。
+        expect(fill === solid).assertFalse();
       }
     });
 
@@ -116,6 +116,37 @@ export default function overlayMaterialTest() {
       }
       expect(overlayMaterial('menu') === overlayMaterial('dialog')).assertFalse();
       expect(overlayMaterial('bar') === overlayMaterial('card')).assertFalse();
+    });
+
+    // 手写按压动画和材质的 interactive 不能同时存在——两层形变叠加是官方
+    // 明确点名的坑。这条钉的是"恰好一个负责按压"，不是某一边的具体写法。
+    it('never runs a hand-written press animation alongside the material one', 0, () => {
+      // 只有 'control' 开 interactive，所以只有它会把手写动画让出去。
+      expect(pressAnimationWins('control')).assertEqual(!immersiveMaterialAvailable());
+    });
+
+    // 其余几档是背景板，不该在触摸时变形，手写动画永远说了算。
+    it('leaves the press animation to the caller on every non-control surface', 0, () => {
+      for (const surface of ALL_SURFACES) {
+        if (surface === 'control') {
+          continue;
+        }
+        expect(pressAnimationWins(surface)).assertTrue();
+      }
+    });
+
+    // 形变和光晕是两件事，故意不同范围：形变只给可按压的控件（'control'），
+    // 光晕还给面板和浮条——摸上去发光不改变任何几何，叠在大面积背景上没有
+    // 副作用，而整块面板跟着手指变形会很怪。
+    //
+    // 这条钉的是"形变的范围不能宽于光晕"：反过来就意味着某个面会变形却不发光。
+    it('never deforms a surface it does not also light up', 0, () => {
+      for (const surface of ALL_SURFACES) {
+        if (!pressAnimationWins(surface)) {
+          // 材质接管了按压 = 这个面开了 interactive，那它必须也在光晕范围内。
+          expect(immersiveMaterialAvailable()).assertTrue();
+        }
+      }
     });
   });
 }

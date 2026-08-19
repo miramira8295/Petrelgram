@@ -44,13 +44,16 @@ export type OverlaySurface =
   | 'bar'
   // Self-drawn opaque card: the composer.
   | 'card'
+  // 可按压的控件：附件抽屉的格子这类。只有这一档开 interactive + lightEffect
+  // ——按压形变和触点光晕由材质负责，调用方必须把自己那套按压动画让出来，
+  // 否则两层形变叠加（官方明确点名的坑）。
+  | 'control'
   ;
 
-// There is deliberately no 'control' surface for the material's press
-// deformation and touch-following sheen. Every pressable in this app is a solid
-// COLOR_PRIMARY shape with its own hand-written press animation — the material
-// would clear that fill to transparent glass, and `interactive` would run a
-// second deformation on top of the existing one.
+// 'control' 这一档来得晚：一开始刻意没有，因为本应用每个可按压元素都是实色
+// + 手写按压动画，材质会把填充清成玻璃、interactive 还会再叠一层形变。现在
+// 它存在了，前提是调用方按 pressAnimationWins() 把自己那套让出来——材质在的
+// 时候手写动画归零，材质不在的时候手写动画照旧。
 
 // Whether the material wins over the fallback on a system at this API level.
 // Split out from the device lookup so the single rule every getter below
@@ -67,6 +70,24 @@ export function immersiveMaterialAvailable(): boolean {
   return materialAvailable;
 }
 
+// 按压形变。只给 'control'：整块面板跟着手指变形会很怪，背景板不该动。
+function usesInteraction(surface: OverlaySurface): boolean {
+  return surface === 'control';
+}
+
+// 触点光晕。比形变宽一档：面板自己被摸到时也该有光感反馈，那正是"沉浸光感"
+// 里"光感"的部分，而且它不改变任何几何，叠在大面积背景上没有副作用。
+// 菜单和弹窗不给：它们是一次性出现、点一下就走的东西，摸上去发光没有意义。
+function usesLightEffect(surface: OverlaySurface): boolean {
+  return surface === 'control' || surface === 'card' || surface === 'bar';
+}
+
+// 材质接管按压时，调用方手写的按压动画必须让位——两层形变叠加是官方点名的坑。
+// 调用点写成 `pressAnimationWins('control') ? 0.9 : 1` 这种形式。
+export function pressAnimationWins(surface: OverlaySurface): boolean {
+  return !(materialAvailable && usesInteraction(surface));
+}
+
 function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
   switch (surface) {
     // Menus want what is behind them pushed firmly back but still legible —
@@ -76,10 +97,16 @@ function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
     // A modal covers what it interrupts; nothing behind it should read.
     case 'dialog':
       return uiMaterial.ImmersiveStyle.ULTRA_THICK;
-    // The composer sits over the chat background and should read as a distinct
-    // surface without hiding the wallpaper it floats on.
+    // 输入框胶囊和底部抽屉。THIN 而不是 REGULAR：REGULAR 糊得太狠，壁纸的
+    // 花纹被抹平成一片纯渐变，抽屉看着像贴上去的另一块东西（真机截图为证）。
+    // 薄一档能透出花纹，才读得出"同一张壁纸上蒙了层玻璃"。官方对浮动工具栏
+    // 的建议也是 THIN。
     case 'card':
-      return uiMaterial.ImmersiveStyle.REGULAR;
+      return uiMaterial.ImmersiveStyle.THIN;
+    // 控件比它所在的面板更靠前，用薄一档让它从面板里"浮"出来。官方建议
+    // 浮动工具栏用 THIN。
+    case 'control':
+      return uiMaterial.ImmersiveStyle.THIN;
     // Bars sit over live content and have to stay see-through enough that a
     // list scrolling under them still reads as continuous.
     case 'bar':
@@ -142,14 +169,17 @@ export function overlayBackdropBlur(surface: OverlaySurface): number {
   return materialAvailable ? 0 : BAR_BACKDROP_BLUR;
 }
 
-// 自绘面的底色。**不透明底色会把 backdropBlur 完全盖住**——白色胶囊上加模糊
-// 一点变化都没有，因为模糊的是它身后的东西，而它自己不透光。所以自己画玻璃
-// 的时候，底色必须同时换成半透明的那一版（dock_glass，两个模式都已定好）。
+// 自绘面的底色。两种情况都不能是原来那个不透明实色，但理由不同：
 //
-// 材质接管时反过来：材质自带填充，底色交回调用方原来的实心色，由材质把它
-// 清成透明玻璃。
-export function overlayGlassFill(_surface: OverlaySurface, solid: ResourceColor): ResourceColor {
-  return materialAvailable ? solid : $r('app.color.dock_glass');
+// 材质可用时必须**透明**。官方《沉浸光感常见问题》写死：材质的视觉层级在
+// backgroundColor **之下**，不透明底色会盖在材质层之上，"导致材质效果被遮挡
+// 不可见"。这里原来返回的正是实色——当初以为"材质会把填充清成玻璃"，方向
+// 反了，结果是顶栏胶囊、输入框、抽屉卡片上的材质一直被自己的底色盖着。
+//
+// 材质不可用时必须**半透明**。那时靠 backdropBlur 自己画玻璃，而不透明底色
+// 会把模糊完全盖住——模糊的是身后的东西，它自己不透光。
+export function overlayGlassFill(_surface: OverlaySurface, _solid: ResourceColor): ResourceColor {
+  return materialAvailable ? Color.Transparent : $r('app.color.dock_glass');
 }
 
 // Materials are built once per surface and reused. Rebuilding one per frame
@@ -161,7 +191,11 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
   return new uiMaterial.ImmersiveMaterial({
     style: styleOf(surface),
     colorInvert: usesColorInvert(surface),
-    applyShadow: !usesOwnShadow(surface)
+    applyShadow: !usesOwnShadow(surface),
+    // 这两个和材质本体不同：官方注明它们「takes effect for devices with all
+    // levels of computing power」，低算力设备上不会被降级掉。
+    interactive: usesInteraction(surface),
+    lightEffect: usesLightEffect(surface) ? { color: Color.White } : null
   });
 }
 
