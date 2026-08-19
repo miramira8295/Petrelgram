@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Dark mode only: lays black over the chat background. Higher means darker. Bubbles and text are unaffected"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Message unavailable"
     }
   ]
 }

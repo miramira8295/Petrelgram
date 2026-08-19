@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "ダークモードのみ：チャット背景に黒を重ねます。値が大きいほど暗くなります。吹き出しと文字は変わりません"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "メッセージを表示できません"
     }
   ]
 }

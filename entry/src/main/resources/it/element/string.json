@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Solo in modalità scura: stende del nero sullo sfondo della chat. Più alto, più scuro. Fumetti e testo non cambiano"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Messaggio non disponibile"
     }
   ]
 }

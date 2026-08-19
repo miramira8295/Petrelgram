@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Solo en modo oscuro: superpone negro al fondo del chat. Cuanto mayor, más oscuro. Los globos y el texto no cambian"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Mensaje no disponible"
     }
   ]
 }

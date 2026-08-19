@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Chỉ ở chế độ tối: phủ đen lên nền trò chuyện. Số càng lớn càng tối. Bong bóng và chữ không đổi"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Tin nhắn không khả dụng"
     }
   ]
 }

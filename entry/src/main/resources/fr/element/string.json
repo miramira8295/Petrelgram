@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Mode sombre uniquement : assombrit le fond de la discussion. Plus la valeur est élevée, plus c'est sombre. Bulles et texte inchangés"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Message indisponible"
     }
   ]
 }

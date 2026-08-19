@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Nur im Dunkelmodus: legt Schwarz über den Chat-Hintergrund. Höher ist dunkler. Sprechblasen und Text bleiben unverändert"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Nachricht nicht verfügbar"
     }
   ]
 }

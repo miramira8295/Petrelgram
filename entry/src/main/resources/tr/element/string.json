@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Yalnızca koyu modda: sohbet arka planını karartır. Değer arttıkça koyulaşır. Balonlar ve metin etkilenmez"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Mesaj kullanılamıyor"
     }
   ]
 }

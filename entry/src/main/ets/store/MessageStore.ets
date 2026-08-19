@@ -4087,6 +4087,7 @@ export class MessageStore {
         ? entry.text
         : (entry.placeholderLabel !== '' ? entry.placeholderLabel : str('ms_photo_bracket'));
       if (preview === '' && entry.senderName === '') {
+        this.markReplyUnavailable(messageId);
         return;
       }
       // Remember it: the window can be replaced (loadAround) any number of
@@ -4104,7 +4105,24 @@ export class MessageStore {
       this.notifySoon();
     }).catch((e: TdError): void => {
       console.error(`MessageStore.getMessage(reply ${messageId}) failed: ${e.message}`);
+      this.markReplyUnavailable(messageId);
     });
+  }
+
+  // 拉不到原消息（已删除、无权限）时也得落一个结果。气泡现在只要
+  // replyToMessageId 非 0 就画引用块——不落结果的话那块会永远空着。
+  private markReplyUnavailable(messageId: number): void {
+    const label: string = str('mb_reply_unavailable');
+    this.repliedPreview.set(messageId, { senderName: '', text: label });
+    this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
+      if (e.replyToMessageId !== messageId || e.replyText !== '') {
+        return e;
+      }
+      const c = cloneMessage(e);
+      c.replyText = label;
+      return c;
+    });
+    this.notifySoon();
   }
 
   private indexOf(id: number): number {

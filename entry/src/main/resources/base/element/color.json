@@ -74,7 +74,11 @@
     },
     {
       "name": "select_highlight",
-      "value": "#1F3390EC"
+      "value": "#453390EC"
+    },
+    {
+      "name": "reaction_chip",
+      "value": "#1F000000"
     }
   ]
 }

@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "僅深色模式生效：在聊天背景上壓一層黑色，數值越大越暗。訊息氣泡與文字不受影響"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "訊息無法顯示"
     }
   ]
 }

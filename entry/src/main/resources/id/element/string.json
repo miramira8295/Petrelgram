@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Hanya mode gelap: melapisi latar obrolan dengan hitam. Makin besar makin gelap. Balon dan teks tidak terpengaruh"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Pesan tidak tersedia"
     }
   ]
 }

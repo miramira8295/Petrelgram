@@ -11015,6 +11015,10 @@
     {
       "name": "chat_settings_dark_dim_sub",
       "value": "Mod gelap sahaja: melapis latar sembang dengan hitam. Lebih besar lebih gelap. Belon dan teks tidak terjejas"
+    },
+    {
+      "name": "mb_reply_unavailable",
+      "value": "Mesej tidak tersedia"
     }
   ]
 }
