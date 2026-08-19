@@ -82,6 +82,7 @@ import richMessageTest from './RichMessage.test';
 import richBlocksTest from './RichBlocks.test';
 import memberRoleTest from './MemberRole.test';
 import searchPagingTest from './SearchPaging.test';
+import composerModeTest from './ComposerMode.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -168,4 +169,5 @@ export default function testsuite() {
   richBlocksTest();
   memberRoleTest();
   searchPagingTest();
+  composerModeTest();
 }

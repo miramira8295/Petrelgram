@@ -56,6 +56,9 @@ import { BasicPrefetcher } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
 import {
+  ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
+} from '../../util/composerMode';
+import {
   SEARCH_FETCH, SEARCH_JUMP, SearchStep, searchCounterText, stepNewer, stepOlder
 } from '../../util/searchPaging';
 import { CachedImage } from '../common/CachedImage';
@@ -642,6 +645,9 @@ struct ChatPage {
   private headerNavigationTimer: number = -1;
   private headerEntranceTimer: number = -1;
   // In-chat message search (search-mode header + result navigation).
+  // 输入框上方那一条的当前状态。字段仍在（读取处很多），但**只由
+  // applyComposerMode 写**，转换逻辑在 util/composerMode。
+  @State composerMode: ComposerMode = idleComposer();
   @State searchMode: boolean = false;
   // Multi-select mode (entered via the long-press menu's 选择 item).
   @State selecting: boolean = false;
@@ -2872,9 +2878,7 @@ struct ChatPage {
     this.mentionItems = [];
     this.commandItems = [];
     this.commandMenuOpen = false;
-    this.replyToId = 0;
-    this.replyToName = '';
-    this.replyToText = '';
+    this.applyComposerMode(idleComposer());
     if (this.isRecording) {
       this.cancelRecording();
     }
@@ -5252,10 +5256,23 @@ struct ChatPage {
     return null;
   }
 
+  // 输入框上方那一条的状态机在 util/composerMode（有单测）。所有写入都经过
+  // 这里：转换函数算出新状态，这里摊到字段上。**不要再单独改那七个字段**——
+  // 回复和编辑共用同一条，分开改必然出现"编辑条盖住回复条、回复却仍生效"
+  // 那类互相不知道的状态。
+  private applyComposerMode(next: ComposerMode): void {
+    this.composerMode = next;
+    this.replyToId = next.replyToId;
+    this.replyToName = next.replyName;
+    this.replyToText = next.replyText;
+    this.editingId = next.editingId;
+    this.editingKind = next.editingKind;
+    this.editingPreview = next.editingPreview;
+    this.draftBeforeEdit = next.draftBeforeEdit;
+  }
+
   private clearReply(): void {
-    this.replyToId = 0;
-    this.replyToName = '';
-    this.replyToText = '';
+    this.applyComposerMode(clearReply(this.composerMode));
   }
 
   private replySnippet(m: MessageEntry): string {
@@ -5292,9 +5309,8 @@ struct ChatPage {
     }
     ContextMenu.close();
     this.closeReactionSheet();
-    this.replyToId = messageId;
-    this.replyToName = m.senderName !== '' ? m.senderName : this.title;
-    this.replyToText = this.replySnippet(m);
+    this.applyComposerMode(enterReply(this.composerMode, messageId,
+      m.senderName !== '' ? m.senderName : this.title, this.replySnippet(m)));
     this.setEmojiPanel(false);
     this.replyKbCollapsed = true;
     setTimeout((): void => {
@@ -6854,22 +6870,19 @@ struct ChatPage {
       (msg.contentType !== 'text' && captionTypes.indexOf(msg.contentType) < 0)) {
       return;
     }
-    if (this.editingId === 0) {
-      this.draftBeforeEdit = this.draft;
-    }
-    this.editingId = messageId;
-    this.editingKind = msg.contentType === 'text' ? 'text' : 'caption';
-    this.editingPreview = msg.text !== '' ? msg.text
-      : (this.editingKind === 'caption' ? str('cp_no_caption') : '');
+    const editKind: string = msg.contentType === 'text' ? 'text' : 'caption';
+    const preview: string = msg.text !== '' ? msg.text
+      : (editKind === 'caption' ? str('cp_no_caption') : '');
+    this.applyComposerMode(
+      enterEdit(this.composerMode, messageId, editKind, preview, this.draft));
     this.draft = msg.text;
   }
 
   private cancelEdit(): void {
     if (this.editingId === 0) { return; }
-    this.editingId = 0;
-    this.editingPreview = '';
-    this.draft = this.draftBeforeEdit;
-    this.draftBeforeEdit = '';
+    const restored: string = draftToRestore(this.composerMode);
+    this.applyComposerMode(cancelEdit(this.composerMode));
+    this.draft = restored;
   }
 
   private commitEdit(): void {
@@ -6887,10 +6900,9 @@ struct ChatPage {
     task.then((): void => {
       this.composerSending = false;
       if (this.editingId === editId) {
-        this.editingId = 0;
-        this.editingPreview = '';
-        this.draft = this.draftBeforeEdit;
-        this.draftBeforeEdit = '';
+        const restored: string = draftToRestore(this.composerMode);
+        this.applyComposerMode(cancelEdit(this.composerMode));
+        this.draft = restored;
       }
     }).catch((e: TdError): void => {
       this.composerSending = false;
