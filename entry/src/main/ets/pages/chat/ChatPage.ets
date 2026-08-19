@@ -56,6 +56,7 @@ import { BasicPrefetcher } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
+import { SuggestionPanel, commandLabel } from './SuggestionPanel';
 import {
   ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
 } from '../../util/composerMode';
@@ -4032,10 +4033,6 @@ struct ChatPage {
     });
   }
 
-  private commandText(item: CommandItem): string {
-    return `/${item.command}${item.botUsername !== '' ? `@${item.botUsername}` : ''}`;
-  }
-
   private commandPanelActive(): boolean {
     return this.commandMenuOpen ||
       this.draft.match(/^\/([a-zA-Z0-9_]*)(?:@([a-zA-Z0-9_]*))?$/) !== null;
@@ -4119,7 +4116,7 @@ struct ChatPage {
   }
 
   private pickCommand(item: CommandItem): void {
-    this.draft = this.commandText(item);
+    this.draft = commandLabel(item);
     this.commandItems = [];
     this.commandMenuOpen = false;
     this.doSend();
@@ -6543,131 +6540,6 @@ struct ChatPage {
 
   // Suggestion panel above the input bar: group members for a trailing '@',
   // bot commands for a leading '/'.
-  @Builder
-  suggestionPanel() {
-    Column() {
-      if (this.commandPanelActive()) {
-        Row({ space: 7 }) {
-          Text('/').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_PRIMARY);
-          Text($r('app.string.cp_bot_commands')).fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
-          Blank().layoutWeight(1);
-          if (this.commandLoadState === 'ready' && this.allCommands.length > 0) {
-            Text(`${this.allCommands.length}`)
-              .fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
-              .padding({ left: 7, right: 7, top: 2, bottom: 2 })
-              .backgroundColor($r('app.color.surface_alt')).borderRadius(9);
-          }
-        }
-        .width('100%').height(34).padding({ left: 14, right: 14 })
-        .border({ width: { bottom: 0.7 }, color: $r('app.color.divider') });
-        if (this.commandLoadState === 'loading' || this.commandLoadState === 'idle') {
-          Row({ space: 9 }) {
-            LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-            Text($r('app.string.cp_loading_commands')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-          }
-          .width('100%').height(72).justifyContent(FlexAlign.Center);
-        } else if (this.commandLoadState === 'error') {
-          Column({ space: 7 }) {
-            Text(this.commandLoadError !== '' ? this.commandLoadError : $r('app.string.cp_commands_failed'))
-              .fontSize(13).fontColor(COLOR_TEXT_PRIMARY);
-            Text($r('app.string.settings_reload'))
-              .fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
-              .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-              .backgroundColor($r('app.color.selected_pill')).borderRadius(14)
-              .onClick(() => { this.ensureCommandsLoaded(true); });
-          }
-          .width('100%').height(86).justifyContent(FlexAlign.Center);
-        } else if (this.commandItems.length === 0) {
-          Column({ space: 5 }) {
-            Text(this.allCommands.length === 0 ? $r('app.string.cp_no_bot_commands') : $r('app.string.cp_no_matching_commands'))
-              .fontSize(13).fontColor(COLOR_TEXT_PRIMARY);
-            Text(this.allCommands.length === 0 ? $r('app.string.cp_chat_no_commands') : $r('app.string.cp_keep_typing'))
-              .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-          }
-          .width('100%').height(82).justifyContent(FlexAlign.Center);
-        } else {
-          List() {
-            ForEach(this.commandItems, (it: CommandItem) => {
-              ListItem() {
-                Row({ space: 10 }) {
-                  Row() {
-                    Text('/').fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_PRIMARY);
-                  }
-                  .width(32).height(32).borderRadius(10)
-                  .justifyContent(FlexAlign.Center)
-                  .backgroundColor($r('app.color.selected_pill'));
-                  Column({ space: 2 }) {
-                    Text(this.commandText(it))
-                      .fontSize(14).fontColor(COLOR_TEXT_PRIMARY).fontWeight(FontWeight.Medium)
-                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                    if (it.description !== '') {
-                      Text(it.description).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-                        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                    }
-                  }
-                  .alignItems(HorizontalAlign.Start).layoutWeight(1);
-                  SymbolGlyph($r('sys.symbol.paperplane'))
-                    .fontSize(14).fontColor([COLOR_TEXT_SECONDARY]);
-                }
-                .width('100%').padding({ left: 12, right: 12, top: 7, bottom: 7 })
-                .alignItems(VerticalAlign.Center)
-                .stateStyles({
-                  normal: this.suggestionRowNormalStyle,
-                  pressed: this.suggestionRowPressedStyle
-                })
-                .animation({
-                  duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-                  curve: Curve.EaseOut
-                })
-                .onClick(() => { this.pickCommand(it); });
-              }
-            }, (it: CommandItem) => `c_${it.command}_${it.botUserId}_${it.botUsername}`);
-          }
-          .width('100%').constraintSize({ maxHeight: 206 })
-          .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 54, endMargin: 12 });
-        }
-      } else {
-        List() {
-          ForEach(this.mentionItems, (it: MentionItem) => {
-            ListItem() {
-              Row({ space: 10 }) {
-                AvatarView({ avatarPath: '', initials: it.name.substring(0, 1).toUpperCase(),
-                  colorSeed: it.userId, avatarSize: 32 });
-                Text(it.name).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis });
-                if (it.username !== '') {
-                  Text(`@${it.username}`).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis });
-                }
-              }
-              .width('100%').padding({ left: 12, right: 12, top: 7, bottom: 7 })
-              .alignItems(VerticalAlign.Center)
-              .stateStyles({
-                normal: this.suggestionRowNormalStyle,
-                pressed: this.suggestionRowPressedStyle
-              })
-              .animation({
-                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-                curve: Curve.EaseOut
-              })
-              .onClick(() => { this.pickMention(it); });
-            }
-          }, (it: MentionItem) => `m${it.userId}`);
-        }
-        .width('100%').constraintSize({ maxHeight: 240 })
-        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 54, endMargin: 12 });
-      }
-    }
-    .width('calc(100% - 28vp)')
-    .backgroundColor($r('app.color.surface'))
-    .borderRadius(16).clip(true)
-    .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: 2 })
-    .margin({ left: 14, right: 14, bottom: 2 })
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: 8 }))
-      .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180), curve: Curve.EaseOut }));
-  }
-
   private startEdit(messageId: number): void {
     const msg = this.store?.getMessages().find(
       (m: MessageEntry): boolean => m.id === messageId);
@@ -8420,7 +8292,17 @@ struct ChatPage {
         Column() {
           if (this.membershipState === 'writable' && !this.showEmojiPanel && !this.replyKbVisible() &&
             (this.mentionItems.length > 0 || this.commandPanelActive())) {
-            this.suggestionPanel();
+            SuggestionPanel({
+              commandMode: this.commandPanelActive(),
+              commands: this.commandItems,
+              mentions: this.mentionItems,
+              loadState: this.commandLoadState,
+              loadError: this.commandLoadError,
+              catalogSize: this.allCommands.length,
+              onPickCommand: (it: CommandItem): void => { this.pickCommand(it); },
+              onPickMention: (it: MentionItem): void => { this.pickMention(it); },
+              onRetryCommands: (): void => { this.ensureCommandsLoaded(true); }
+            });
           }
           if (this.membershipState === 'writable' && !this.showEmojiPanel &&
             this.mentionItems.length === 0 && !this.commandPanelActive() &&
