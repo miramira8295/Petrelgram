@@ -165,7 +165,9 @@ export class ChatStore {
     let count = 0;
     bucket.forEach((_pos: PositionInfo, id: number) => {
       const e = this.chats.get(id);
-      if (e !== undefined && (e.unreadCount > 0 || e.isMarkedUnread) && !e.isMuted) {
+      // 只数有未读消息的会话，"手动标记为未读"不计入——与「全部」角标读的
+      // unread_unmuted_count 同一个口径（见 UnreadCountStore）。
+      if (e !== undefined && e.unreadCount > 0 && !e.isMuted) {
         count += 1;
       }
     });

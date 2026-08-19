@@ -50,17 +50,17 @@ export default function unreadCountStoreTest() {
       expect(fires).assertEqual(2);
     });
 
-    // 「全部」和文件夹的角标必须是同一个口径，否则同一批会话在两个标签上
-    // 显示不同的数字。文件夹侧数的是 `未读 > 0 或被标记为未读`，所以这边
-    // 也必须把 marked_as_unread_unmuted_count 加上——TDLib 把"手动标记为
-    // 未读"单独放在这个字段里，不含在 unread_unmuted_count 中。
-    it('counts_marked_as_unread_chats_too', 0, () => {
+    // 只数有未读消息的会话。TDLib 另有一个 marked_as_unread_unmuted_count
+    // 装"手动标记为未读"的，刻意不加——文件夹角标那边也只数有未读消息的
+    // （ChatStore.unreadChatCount），两边必须同一个口径，否则同一批会话在两
+    // 个标签上显示不同的数字。
+    it('ignores_chats_that_are_only_marked_as_unread', 0, () => {
       const bridge = new FakeBridge();
       const client = new TdClient(bridge);
       const store = new UnreadCountStore(client);
       client.start();
       pushUnread(bridge, 'chatListMain', 3, 2);
-      expect(store.getUnread('main')).assertEqual(5);
+      expect(store.getUnread('main')).assertEqual(3);
     });
 
     it('handles_a_missing_marked_field', 0, () => {

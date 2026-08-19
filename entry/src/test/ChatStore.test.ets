@@ -331,7 +331,14 @@ export default function chatStoreTest() {
       expect(store.unreadChatCount('folder:5')).assertEqual(1);
       expect(store.unreadChatCount('main')).assertEqual(0);
     });
-    it('unread_chat_count_includes_manually_marked_unread', 0, () => {
+    // 文件夹角标只数**有未读消息**的会话，"手动标记为未读"不计入。
+    //
+    // 这一条以前是反过来的（marked 也算），但「全部」那个角标读的是 TDLib 的
+    // unread_unmuted_count，而 TDLib 把手动标记单独放在
+    // marked_as_unread_unmuted_count 里、不含在前者中。两边口径不同的后果很
+    // 具体：把一个会话标记成未读，文件夹的数字 +1、全部的数字不动。钉的是
+    // "两个角标同一个口径"，不是某一边的具体数值。
+    it('unread_chat_count_ignores_manually_marked_unread', 0, () => {
       const store = make();
       const b = bridgeOf(store);
       pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], null, 0);
@@ -339,6 +346,14 @@ export default function chatStoreTest() {
       u['chat_id'] = 1;
       u['is_marked_as_unread'] = true;
       b.onReceive(JSON.stringify(u));
+      expect(store.unreadChatCount('folder:5')).assertEqual(0);
+    });
+
+    // 真有未读消息时照常计入——上面那条不能把整个计数关掉。
+    it('unread_chat_count_still_counts_real_unread', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], null, 3);
       expect(store.unreadChatCount('folder:5')).assertEqual(1);
     });
     it('position_update_adds_to_folder', 0, () => {
