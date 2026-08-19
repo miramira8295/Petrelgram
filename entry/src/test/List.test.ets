@@ -78,6 +78,9 @@ import attachActionsTest from './AttachActions.test';
 import mediaBoxTest from './MediaBox.test';
 import messageGesturesTest from './MessageGestures.test';
 import readingReturnTest from './ReadingReturn.test';
+import richMessageTest from './RichMessage.test';
+import richBlocksTest from './RichBlocks.test';
+import memberRoleTest from './MemberRole.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -160,4 +163,7 @@ export default function testsuite() {
   mediaBoxTest();
   messageGesturesTest();
   readingReturnTest();
+  richMessageTest();
+  richBlocksTest();
+  memberRoleTest();
 }

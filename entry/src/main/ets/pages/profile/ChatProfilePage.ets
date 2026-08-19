@@ -1,4 +1,7 @@
 import { router, promptAction } from '@kit.ArkUI';
+import { pasteboard } from '@kit.BasicServicesKit';
+import { MEMBER_ROLE_CREATOR, MEMBER_ROLE_NONE } from '../../util/memberRole';
+import { removeMember } from '../../store/ChatAdminApi';
 import { getTdClient } from '../../tdkit/Globals';
 import {
   ChatProfileStore, MemberItem, ProfileContentItem,
@@ -6,6 +9,11 @@ import {
   PROFILE_TAB_MUSIC, PROFILE_TAB_POLLS, PROFILE_TAB_VOICE,
   PROFILE_TAB_VIDEO_NOTES, PROFILE_TAB_GIFS, PROFILE_TAB_GIFTS
 } from '../../store/ChatProfileStore';
+import {
+  GLASS_GAP, GLASS_PAGE_PAD, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
+  GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
+} from './ProfileGlass';
+import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { AvatarView } from '../chatlist/AvatarView';
 import { QrDialog } from '../common/QrDialog';
 import { AvatarViewer } from '../common/AvatarViewer';
@@ -116,13 +124,15 @@ struct ChatProfilePage {
   }
 
   @Styles
+  // 行的常态必须透明：刷成 CARD_BG 会把底下整块卡片的玻璃盖住，列表看起来
+  // 就是一块实心板。按压态用半透明高光，压在玻璃上仍然看得见。
   contentRowNormalStyle() {
-    .backgroundColor(CARD_BG)
+    .backgroundColor(Color.Transparent)
   }
 
   @Styles
   contentRowPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor($r('app.color.press_overlay'))
   }
 
   aboutToAppear(): void {
@@ -761,44 +771,72 @@ struct ChatProfilePage {
     }
   }
 
+  // 玻璃面。三档只差圆角，其余一致——材质在 backgroundColor 之下渲染，所以
+  // 底色必须交给 overlayGlassFill（材质可用时透明，否则退回可见的降级色）。
+  @Styles
+  glassCard() {
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
+    .borderRadius(GLASS_RADIUS_CARD)
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
+  }
+
+  @Styles
+  glassTile() {
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
+    .borderRadius(GLASS_RADIUS_TILE)
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
+  }
+
   @Builder
   circleButton(symbol: string, onTap: () => void) {
     Row() {
       SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
     }
-    .width(40).height(40).borderRadius(20).backgroundColor($r('app.color.surface'))
+    .width(44).height(44).borderRadius(22)
     .justifyContent(FlexAlign.Center)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
     .onClick(onTap);
   }
 
   @Builder
   actionButton(symbol: string, label: string, onTap: () => void) {
-    Column({ space: 5 }) {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_PRIMARY]);
-      Text(label).fontSize(12).fontColor(COLOR_PRIMARY);
+    Column({ space: 7 }) {
+      SymbolGlyph($r(symbol)).fontSize(24).fontColor([COLOR_PRIMARY]);
+      Text(label).fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .layoutWeight(1).height(62)
+    .layoutWeight(1).height(86)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+    .glassTile()
     .onClick(onTap);
   }
 
   @Builder
   primaryActionButton() {
-    Column({ space: 5 }) {
+    Column({ space: 7 }) {
       if (this.joinRequestSent) {
-        SymbolGlyph($r('sys.symbol.checkmark_circle')).fontSize(22).fontColor([COLOR_PRIMARY]);
+        SymbolGlyph($r('sys.symbol.checkmark_circle')).fontSize(24).fontColor([COLOR_PRIMARY]);
       } else if (this.membershipState === 'joinable') {
-        SymbolGlyph($r('sys.symbol.person_badge_plus')).fontSize(22).fontColor([COLOR_PRIMARY]);
+        SymbolGlyph($r('sys.symbol.person_badge_plus')).fontSize(24).fontColor([COLOR_PRIMARY]);
       } else {
-        SymbolGlyph($r('sys.symbol.message')).fontSize(22).fontColor([COLOR_PRIMARY]);
+        SymbolGlyph($r('sys.symbol.message')).fontSize(24).fontColor([COLOR_PRIMARY]);
       }
-      Text(this.primaryActionLabel()).fontSize(12).fontColor(COLOR_PRIMARY);
+      Text(this.primaryActionLabel()).fontSize(13).fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_PRIMARY).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .layoutWeight(1).height(62)
+    .layoutWeight(1).height(86)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+    .glassTile()
     .opacity(this.membershipState === 'blocked' || this.membershipState === 'checking' ? 0.55 : 1)
     .enabled(this.membershipState === 'writable' ||
       (this.membershipState === 'joinable' && !this.joining && !this.joinRequestSent))
@@ -815,42 +853,45 @@ struct ChatProfilePage {
   // params don't re-evaluate on @State change, so the icon/label would stick.
   @Builder
   muteButton() {
-    Column({ space: 5 }) {
+    Column({ space: 7 }) {
       Stack() {
         if (this.isMuted) {
-          SymbolGlyph($r('sys.symbol.bell')).fontSize(22).fontColor([COLOR_PRIMARY])
+          SymbolGlyph($r('sys.symbol.bell')).fontSize(24).fontColor([COLOR_PRIMARY])
             .transition(TransitionEffect.OPACITY
               .combine(TransitionEffect.scale({ x: 0.4, y: 0.4 }))
               .animation({
                 duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220), curve: Curve.EaseOut
               }));
         } else {
-          SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(22).fontColor([COLOR_PRIMARY])
+          SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(24).fontColor([COLOR_PRIMARY])
             .transition(TransitionEffect.OPACITY
               .combine(TransitionEffect.scale({ x: 0.4, y: 0.4 }))
               .animation({
                 duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220), curve: Curve.EaseOut
               }));
         }
-      }.height(24);
-      Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute')).fontSize(12).fontColor(COLOR_PRIMARY);
+      }.height(26);
+      Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'))
+        .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .layoutWeight(1).height(62)
+    .layoutWeight(1).height(86)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+    .glassTile()
     .onClick(() => { this.toggleMute(); });
   }
 
   @Builder
   liveButton() {
-    Column({ space: 5 }) {
-      SymbolGlyph($r('sys.symbol.camera')).fontSize(22).fontColor([COLOR_PRIMARY]);
+    Column({ space: 7 }) {
+      SymbolGlyph($r('sys.symbol.camera')).fontSize(24).fontColor([COLOR_PRIMARY]);
       Text(this.creatingLive ? $r('app.string.processing_short') : $r('app.string.lv_stream'))
-        .fontSize(12).fontColor(COLOR_PRIMARY);
+        .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .layoutWeight(1).height(62)
+    .layoutWeight(1).height(86)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+    .glassTile()
     .enabled(!this.creatingLive)
     .opacity(this.creatingLive ? 0.62 : 1)
     .onClick((): void => { this.createLiveMenu(); });
@@ -863,7 +904,7 @@ struct ChatProfilePage {
 
   @Builder
   header() {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Row() {
         this.circleButton('sys.symbol.chevron_left', () => { router.back(); });
         Blank().layoutWeight(1);
@@ -872,12 +913,23 @@ struct ChatProfilePage {
         this.circleButton('sys.symbol.arrow_right_and_square', () => {
           if (this.chatId !== 0) { this.leaveCurrentChat(); }
         });
-      }.width('100%').padding({ left: 12, right: 12 });
-      AvatarView({
-        avatarPath: this.avatarPath, initials: this.initials,
-        colorSeed: this.chatId, avatarSize: 100,
-        animPath: this.avatarAnimPath
-      })
+      }.width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
+      // 头像外面套一圈玻璃：设计里 130 的外径、7 的内缩，环本身就是一块
+      // 毛玻璃，头像浮在它中间。
+      Column() {
+        AvatarView({
+          avatarPath: this.avatarPath, initials: this.initials,
+          colorSeed: this.chatId, avatarSize: 116,
+          animPath: this.avatarAnimPath
+        });
+      }
+      .width(130).height(130).padding(7).borderRadius(65)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+      .backdropBlur(overlayBackdropBlur('card'))
+      .border({ width: 0.7, color: $r('app.color.divider') })
+      .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+      .systemMaterial(overlayMaterial('card'))
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
           if (this.avatarPath !== '') {
@@ -887,11 +939,11 @@ struct ChatProfilePage {
           }
         });
       Text(this.title)
-        .fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
+        .fontSize(24).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: '86%' });
       if (this.subtitle !== '') {
-        Text(this.subtitle).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+        Text(this.subtitle).fontSize(15).fontColor(COLOR_TEXT_SECONDARY);
       }
     }
     .width('100%')
@@ -902,8 +954,8 @@ struct ChatProfilePage {
   // Two fixed rows of at most four buttons each: primary actions on top,
   // secondary/administrative ones below. Seven buttons never fit one row.
   actionsRow() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
+    Column({ space: 10 }) {
+      Row({ space: 10 }) {
         // 发消息 is redundant — tapping back returns to the chat. The primary
         // button only appears while joining is still the pending action.
         if (this.membershipState !== 'writable') {
@@ -918,7 +970,7 @@ struct ChatProfilePage {
         }
       }.width('100%');
       if (this.chatId !== 0) {
-        Row({ space: 8 }) {
+        Row({ space: 10 }) {
           if (!this.isChannel) {
             this.actionButton('sys.symbol.paintpalette', str('chat_theme_title'), () => {
               const params: Record<string, Object> = { 'chatId': this.chatId };
@@ -943,7 +995,7 @@ struct ChatProfilePage {
         }.width('100%');
       }
     }
-    .width('100%').padding({ left: 12, right: 12, top: 14 });
+    .width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
   }
 
   @Builder
@@ -973,7 +1025,7 @@ struct ChatProfilePage {
       }
     }
     .width('100%').padding({ top: 28, bottom: 28, left: 16, right: 16 })
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+    .glassCard()
     .margin({ left: 12, right: 12, top: 16 });
   }
 
@@ -993,13 +1045,32 @@ struct ChatProfilePage {
           if (this.description !== '') {
             this.sectionDivider();
           }
-          Row() {
+          Row({ space: 12 }) {
+            Row() {
+              SymbolGlyph($r('sys.symbol.link')).fontSize(21).fontColor([COLOR_PRIMARY]);
+            }
+            .width(42).height(42).borderRadius(GLASS_RADIUS_CHIP)
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor($r('app.color.selected_pill'))
+            .flexShrink(0);
             Column({ space: 2 }) {
-              Text(`@${this.chatUsername}`).fontSize(15).fontColor(COLOR_PRIMARY).copyOption(CopyOptions.LocalDevice);
-              Text($r('app.string.cpp_links')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-            }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-            SymbolGlyph($r('sys.symbol.qrcode')).fontSize(22).fontColor([COLOR_TEXT_SECONDARY])
-              .onClick(() => { this.openQr(); });
+              // 点整块复制链接。长按选中（copyOption）留着，但那是次要路径——
+              // 这里是分享入口，一下就拿到可粘贴的完整地址才顺手。
+              Text(this.publicChatLink()).fontSize(15).fontWeight(FontWeight.Medium)
+                .fontColor(COLOR_PRIMARY).maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .copyOption(CopyOptions.LocalDevice);
+              Text($r('app.string.cpp_links')).fontSize(12.5).fontColor(COLOR_TEXT_SECONDARY);
+            }
+            .alignItems(HorizontalAlign.Start).layoutWeight(1)
+            .onClick((): void => { this.copyPublicLink(); });
+            Row() {
+              SymbolGlyph($r('sys.symbol.qrcode')).fontSize(21).fontColor([COLOR_PRIMARY]);
+            }
+            .width(42).height(42).borderRadius(GLASS_RADIUS_CHIP)
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor($r('app.color.selected_pill'))
+            .onClick(() => { this.openQr(); });
           }
           .width('100%').padding({ top: 8, bottom: 8 })
           .alignItems(VerticalAlign.Center);
@@ -1010,10 +1081,69 @@ struct ChatProfilePage {
         }
       }
       .width('100%').padding({ left: 12, right: 12, top: 4, bottom: 4 })
-      .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+      .glassCard()
       .alignItems(HorizontalAlign.Start);
     }
-    .margin({ left: 12, right: 12, top: 12 });
+    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
+  }
+
+  // 管理员把成员移出群组。
+  //
+  // 用 setChatMemberStatus → left，不是 banChatMember：后者是永久封禁，人进
+  // 黑名单再也加不回来。日常要的是"请出去"，不是"拉黑"。
+  //
+  // 创建者和管理员不给移：对他们动手需要更高权限，失败提示不如不给入口。
+  private confirmRemoveMember(m: MemberItem): void {
+    if (!this.canManageChat || this.chatId === 0 || m.userId <= 0 ||
+      m.role !== MEMBER_ROLE_NONE) {
+      return;
+    }
+    promptAction.showDialog({
+      title: str('ga_remove_member'),
+      message: m.name,
+      buttons: [
+        { text: $r('app.string.cancel'), color: '#8E8E93' },
+        { text: $r('app.string.ga_remove_member'), color: '#E5484D' }
+      ]
+    }).then((result: promptAction.ShowDialogSuccessResponse): void => {
+      if (result.index !== 1) {
+        return;
+      }
+      removeMember(this.chatId, m.userId).then((): void => {
+        promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
+        this.store?.reloadMembers();
+      }).catch((caught: TdError): void => {
+        console.error(`ChatProfilePage.removeMember failed: ${caught.message}`);
+        promptAction.showToast({ message: str('ga_failed'), duration: 1600 });
+      });
+    }).catch((): void => {});
+  }
+
+  // 标签文案：有自定义头衔就用它，否则按身份给默认词。
+  private memberRoleLabel(m: MemberItem): string {
+    if (m.roleTitle !== '') {
+      return m.roleTitle;
+    }
+    return m.role === MEMBER_ROLE_CREATOR ? str('ga_creator') : str('ga_admin');
+  }
+
+  // 公开链接的完整形式。展示和复制用同一个值，免得看到的和粘出来的不一致。
+  private publicChatLink(): string {
+    return `t.me/${this.chatUsername}`;
+  }
+
+  private copyPublicLink(): void {
+    if (this.chatUsername === '') {
+      return;
+    }
+    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN,
+      `https://${this.publicChatLink()}`);
+    pasteboard.getSystemPasteboard().setData(data).then((): void => {
+      promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1200 });
+    }).catch((e: Object): void => {
+      console.error(`ChatProfilePage.copyPublicLink failed: ${JSON.stringify(e)}`);
+      promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1500 });
+    });
   }
 
   @Builder
@@ -1034,7 +1164,7 @@ struct ChatProfilePage {
             ForEach(this.visibleTabs(), (tab: ProfileTabItem, index: number) => {
               Row() {
                 Text(tab.label)
-                  .fontSize(14)
+                  .fontSize(14.5)
                   .fontWeight(index === this.selectedTab ? FontWeight.Medium : FontWeight.Normal)
                   .fontColor(index === this.selectedTab
                     ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED)
@@ -1071,11 +1201,16 @@ struct ChatProfilePage {
     }
     .height(DETAIL_TAB_BAR_HEIGHT)
     .width(this.detailTabBarWidth())
-    .backgroundColor(CARD_BG)
+    // 药丸形的玻璃条。clip 必须在圆角之后，否则里面的指示器会溢出圆角。
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
     .borderRadius(DETAIL_TAB_BAR_HEIGHT / 2)
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
     .clip(true)
     .alignSelf(ItemAlign.Center)
-    .margin({ left: 8, right: 8, bottom: 6 });
+    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, bottom: 6 });
   }
 
   @Builder
@@ -1087,7 +1222,7 @@ struct ChatProfilePage {
     .width('calc(100% - 24vp)').height(52)
     .margin({ left: 12, right: 12, top: 12, bottom: 20 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+    .glassCard();
   }
 
   @Builder
@@ -1098,21 +1233,38 @@ struct ChatProfilePage {
           Column() {
             Row({ space: 10 }) {
               AvatarView({ avatarPath: m.avatarPath, initials: m.initials,
-                colorSeed: m.userId, avatarSize: 42 });
+                colorSeed: m.userId, avatarSize: 46 });
               Column({ space: 2 }) {
-                Text(m.name).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
+                Text(m.name).fontSize(15.5).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
                   .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                Text(m.status).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+                Text(m.status).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
               }.alignItems(HorizontalAlign.Start).layoutWeight(1);
+              // 身份标签。普通成员不挂，避免整列都是标签反而看不出谁特殊。
+              if (m.role !== MEMBER_ROLE_NONE) {
+                Text(this.memberRoleLabel(m))
+                  .fontSize(11.5).fontColor(COLOR_PRIMARY)
+                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .constraintSize({ maxWidth: 96 })
+                  .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                  .backgroundColor($r('app.color.selected_pill'))
+                  .borderRadius(9)
+                  .flexShrink(0);
+              }
               SymbolGlyph($r('sys.symbol.chevron_right'))
                 .fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
             }
-            .width('100%').padding({ left: 12, right: 10, top: 8, bottom: 8 })
+            .width('100%').padding({ left: 15, right: 13, top: 11, bottom: 11 })
             .alignItems(VerticalAlign.Center)
             .stateStyles({ normal: this.contentRowNormalStyle, pressed: this.contentRowPressedStyle })
-            .onClick((): void => { this.openMemberProfile(m.userId); });
+            .onClick((): void => { this.openMemberProfile(m.userId); })
+            // 管理员长按成员 → 移出群组。非管理员长按什么都不会发生。
+            .gesture(LongPressGesture().onAction((): void => {
+              this.confirmRemoveMember(m);
+            }));
             if (idx < this.members.length - 1) {
-              Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 64 });
+              // 玻璃上的分隔线要更淡：0.7 的实线在半透明底上显得很硬。
+              Divider().color($r('app.color.divider')).opacity(0.5).strokeWidth(0.5)
+                .margin({ left: 67 });
             }
           }.width('100%');
         }, (m: MemberItem) => `${m.userId}_${m.avatarPath}`);
@@ -1134,9 +1286,9 @@ struct ChatProfilePage {
         this.inlineState('empty', str('cpp_no_members'));
       }
     }
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 10, bottom: 24 })
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).clip(true);
+    .width('calc(100% - 28vp)')
+    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP, bottom: 24 })
+    .glassCard().clip(true);
   }
 
   @Builder
@@ -1194,7 +1346,7 @@ struct ChatProfilePage {
     .margin({ left: 12, right: 12, top: 10, bottom: 24 })
     .padding({ left: 24, right: 24 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+    .glassCard();
   }
 
   private mediaCellSize(): number {
@@ -1237,7 +1389,7 @@ struct ChatProfilePage {
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 10 })
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).clip(true);
+    .glassCard().clip(true);
     this.paginationFooter();
   }
 
@@ -1310,7 +1462,7 @@ struct ChatProfilePage {
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 10 })
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).clip(true);
+    .glassCard().clip(true);
     this.paginationFooter();
   }
 

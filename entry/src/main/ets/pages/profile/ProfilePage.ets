@@ -7,6 +7,11 @@ import {
   PROFILE_TAB_MUSIC, PROFILE_TAB_POLLS, PROFILE_TAB_VOICE,
   PROFILE_TAB_VIDEO_NOTES, PROFILE_TAB_GIFS, PROFILE_TAB_GIFTS
 } from '../../store/ChatProfileStore';
+import {
+  GLASS_GAP, GLASS_PAGE_PAD, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
+  GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
+} from './ProfileGlass';
+import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { AvatarView } from '../chatlist/AvatarView';
 import { QrDialog } from '../common/QrDialog';
 import { AvatarViewer } from '../common/AvatarViewer';
@@ -134,13 +139,15 @@ struct ProfilePage {
   }
 
   @Styles
+  // 行的常态必须透明：刷成 CARD_BG 会把底下整块卡片的玻璃盖住，列表看起来
+  // 就是一块实心板。按压态用半透明高光，压在玻璃上仍然看得见。
   sharedRowNormalStyle() {
-    .backgroundColor(CARD_BG)
+    .backgroundColor(Color.Transparent)
   }
 
   @Styles
   sharedRowPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor($r('app.color.press_overlay'))
   }
 
   aboutToAppear(): void {
@@ -531,26 +538,52 @@ struct ProfilePage {
     return `${m}:${`${s}`.padStart(2, '0')}`;
   }
 
+  // 和群组简介页同一套玻璃面，见 ProfileGlass。两页必须看起来是同一个页面。
+  @Styles
+  glassCard() {
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
+    .borderRadius(GLASS_RADIUS_CARD)
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
+  }
+
+  @Styles
+  glassTile() {
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
+    .borderRadius(GLASS_RADIUS_TILE)
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
+  }
+
   @Builder
   circleButton(symbol: string, onTap: () => void) {
     Row() {
       SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
     }
-    .width(40).height(40).borderRadius(20).backgroundColor($r('app.color.surface'))
+    .width(44).height(44).borderRadius(22)
     .justifyContent(FlexAlign.Center)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
     .onClick(onTap);
   }
 
   @Builder
   actionButton(symbol: string, label: string, onTap: () => void) {
-    Column({ space: 5 }) {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_PRIMARY]);
-      Text(label).fontSize(12).fontColor(COLOR_PRIMARY);
+    Column({ space: 7 }) {
+      SymbolGlyph($r(symbol)).fontSize(24).fontColor([COLOR_PRIMARY]);
+      Text(label).fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .layoutWeight(1).height(62)
+    .layoutWeight(1).height(86)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+    .glassTile()
     .onClick(onTap);
   }
 
@@ -572,12 +605,21 @@ struct ProfilePage {
         this.circleButton('sys.symbol.chevron_left', () => { router.back(); });
         Blank().layoutWeight(1);
         this.circleButton('sys.symbol.more', () => {});
-      }.width('100%').padding({ left: 12, right: 12 });
-      AvatarView({
-        avatarPath: this.avatarPath, initials: this.initials,
-        colorSeed: this.userId, avatarSize: 100,
-        animPath: this.avatarAnimPath
-      })
+      }.width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
+      Column() {
+        AvatarView({
+          avatarPath: this.avatarPath, initials: this.initials,
+          colorSeed: this.userId, avatarSize: 116,
+          animPath: this.avatarAnimPath
+        });
+      }
+      .width(130).height(130).padding(7).borderRadius(65)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+      .backdropBlur(overlayBackdropBlur('card'))
+      .border({ width: 0.7, color: $r('app.color.divider') })
+      .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+      .systemMaterial(overlayMaterial('card'))
         // 没有头像文件时（仅首字母占位）点击无意义，不给反馈。
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
@@ -589,7 +631,7 @@ struct ProfilePage {
         });
       Row({ space: 5 }) {
         Text(this.name)
-          .fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
+          .fontSize(24).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           .flexShrink(1);
         if (this.statusEmojiPath !== '') {
@@ -646,11 +688,11 @@ struct ProfilePage {
         }.width('100%');
       }
       .width('100%').padding(12)
-      .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+      .glassCard()
       .alignItems(HorizontalAlign.Start)
       .onClick(() => { this.openChat(this.personalChatId); });
     }
-    .margin({ left: 12, right: 12, top: 12 });
+    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
   }
 
   @Builder
@@ -733,10 +775,10 @@ struct ProfilePage {
         }
       }
       .width('100%').padding({ left: 12, right: 12, top: 4, bottom: 4 })
-      .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+      .glassCard()
       .alignItems(HorizontalAlign.Start);
     }
-    .margin({ left: 12, right: 12, top: 12 });
+    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
   }
 
   private creatingSecretChat: boolean = false;
@@ -778,11 +820,10 @@ struct ProfilePage {
       }
       .width('100%')
       .padding(14)
-      .backgroundColor(CARD_BG)
-      .borderRadius(CARD_RADIUS)
+      .glassCard()
       .onClick((): void => { this.startSecretChat(); });
     }
-    .margin({ left: 12, right: 12, top: 12 });
+    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
   }
 
   @Builder
@@ -798,11 +839,10 @@ struct ProfilePage {
       }
       .width('100%')
       .padding(14)
-      .backgroundColor(CARD_BG)
-      .borderRadius(CARD_RADIUS)
+      .glassCard()
       .onClick((): void => { this.addContact(); });
     }
-    .margin({ left: 12, right: 12, top: 12 });
+    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
   }
 
   @Builder
@@ -853,7 +893,13 @@ struct ProfilePage {
       });
     }
     .height(PROFILE_TAB_BAR_HEIGHT)
-    .backgroundColor(CARD_BG).borderRadius(PROFILE_TAB_BAR_HEIGHT / 2).clip(true)
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
+    .borderRadius(PROFILE_TAB_BAR_HEIGHT / 2)
+    .border({ width: 0.7, color: $r('app.color.divider') })
+    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
+    .systemMaterial(overlayMaterial('card'))
+    .clip(true)
     .margin({ left: 8, right: 8, top: 14, bottom: 8 });
   }
 
@@ -937,7 +983,7 @@ struct ProfilePage {
             .onClick(() => { this.openChat(g.id); });
           }, (g: CommonGroup) => `grp_${g.id}_${g.avatarPath}`);
         }
-        .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
+        .width('100%').glassCard()
         .padding({ top: 4, bottom: 4 });
       }
     }
@@ -997,7 +1043,7 @@ struct ProfilePage {
     .width('calc(100% - 24vp)').height(178)
     .margin({ left: 12, right: 12, bottom: 18 })
     .padding({ left: 24, right: 24 }).justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+    .glassCard();
   }
 
   @Builder
@@ -1036,7 +1082,7 @@ struct ProfilePage {
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12 })
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).clip(true);
+    .glassCard().clip(true);
     this.sharedPaginationFooter();
   }
 
@@ -1084,7 +1130,7 @@ struct ProfilePage {
       }, (item: ProfileContentItem) => `${item.messageId}_${item.thumbPath}`);
     }
     .width('calc(100% - 24vp)').margin({ left: 12, right: 12 })
-    .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).clip(true);
+    .glassCard().clip(true);
     this.sharedPaginationFooter();
   }
 

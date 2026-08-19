@@ -1,5 +1,6 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { MemberRole, memberRoleOf, memberRoleRank } from '../util/memberRole';
 import { formatUserStatus } from '../util/formatUserStatus';
 import { formatMemberCount } from '../util/formatMemberCount';
 import { formatPreview } from '../util/formatPreview';
@@ -32,6 +33,9 @@ export interface MemberItem {
   initials: string;
   avatarPath: string;
   status: string;
+  // 身份标签：'' / 'creator' / 'admin'，以及可选的自定义头衔。见 util/memberRole。
+  role: string;
+  roleTitle: string;
 }
 
 export interface ProfileContentItem {
@@ -798,6 +802,15 @@ export class ChatProfileStore {
     this.fetchMembersPage();
   }
 
+  // 成员被移出后重拉整份名单。TDLib 不会为"某人被移出"单独推更新到这个
+  // 列表，所以只能重取；分页游标也必须一起归零，否则新名单会接在旧偏移后面。
+  reloadMembers(): void {
+    if (this.supergroupId === 0) {
+      return;
+    }
+    this.loadSupergroupMembers();
+  }
+
   // Scroll-driven: the profile page calls this near the list's end.
   loadMoreMembers(): void {
     if (!this.hasMoreMembers || this.membersPending || this.supergroupId === 0) {
@@ -865,6 +878,8 @@ export class ChatProfileStore {
       if (uid <= 0) {
         continue;
       }
+      // 身份就在这条 chatMember 里，不用为它再发一次请求。
+      const role: MemberRole = memberRoleOf(m['status'] as TdObject | undefined);
       if (this.memberIds.has(uid)) {
         continue;
       }
@@ -883,16 +898,23 @@ export class ChatProfileStore {
           name,
           initials: name.substring(0, 1).toUpperCase(),
           avatarPath: '',
-          status: formatUserStatus(user['status'] as TdObject | undefined, Math.floor(Date.now() / 1000))
+          status: formatUserStatus(user['status'] as TdObject | undefined, Math.floor(Date.now() / 1000)),
+          role: role.kind,
+          roleTitle: role.title
         };
-        this.members = [...this.members, item];
+        // 创建者和管理员排在前面。稳定排序：同档之间保持 TDLib 给的顺序，
+        // 否则每来一个成员整列都会重排一次。
+        this.members = [...this.members, item].sort(
+          (a: MemberItem, b: MemberItem): number =>
+            memberRoleRank(a.role) - memberRoleRank(b.role));
         const photo = user['profile_photo'] as TdObject | undefined;
         const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
         this.download(small !== undefined ? ((small['id'] as number | undefined) ?? 0) : 0,
           (p: string) => {
             this.members = this.members.map((x: MemberItem): MemberItem =>
               x.userId === uid ? {
-                userId: x.userId, name: x.name, initials: x.initials, avatarPath: p, status: x.status
+                userId: x.userId, name: x.name, initials: x.initials, avatarPath: p,
+                status: x.status, role: x.role, roleTitle: x.roleTitle
               } : x);
           });
         this.notify();

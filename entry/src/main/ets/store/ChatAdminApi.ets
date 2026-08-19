@@ -186,6 +186,19 @@ export async function banMember(
   await getTdClient().send(request, 15000);
 }
 
+// 移出群组：把成员状态设成 left。
+//
+// 和 banMember 是两件事——banChatMember 是**永久封禁**（进黑名单，加不回来），
+// 这里只是把人请出去，之后还能重新加入或被邀请。管理员日常要的是后者。
+export async function removeMember(chatId: number, userId: number): Promise<void> {
+  const status: TdObject = { '@type': 'chatMemberStatusLeft' };
+  const request: TdRequest = { '@type': 'setChatMemberStatus' };
+  request['chat_id'] = chatId;
+  request['member_id'] = memberSender(userId);
+  request['status'] = status;
+  await getTdClient().send(request, 15000);
+}
+
 export async function deleteMessagesFromSender(chatId: number, userId: number): Promise<void> {
   const request: TdRequest = { '@type': 'deleteChatMessagesBySender' };
   request['chat_id'] = chatId;
