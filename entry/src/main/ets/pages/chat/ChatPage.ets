@@ -44,11 +44,6 @@ import { cacheDestPath, isVideoPath } from '../../util/mediaPick';
 import {
   ChatBackgroundState, ChatBackgroundStore, emptyChatBackground
 } from '../../store/ChatBackgroundStore';
-import { gradientStops } from '../../util/backgroundPresentation';
-import {
-  BackgroundRasterParams, backgroundBlurRadius, cachedRaster, patternTileGrid,
-  patternTileGridLayer, rasterSignature, rasterizeBackground, patternOpacity
-} from '../../util/chatBackgroundRaster';
 import {
   chatHeaderPresentation, chatHeaderTitle, ChatHeaderPresentation
 } from '../../util/chatHeaderPresentation';
@@ -59,6 +54,7 @@ import { actionMenuRow } from './ActionMenuRow';
 import { AlbumGroupDataSource, contentFingerprint, DataSourceUpdateKind } from './AlbumGroupDataSource';
 import { BasicPrefetcher } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
+import { ChatBackdrop } from './ChatBackdrop';
 import { CachedImage } from '../common/CachedImage';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import { AvatarView } from '../chatlist/AvatarView';
@@ -113,8 +109,6 @@ import { audioQueueApplies } from '../../util/audioQueueGate';
 import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
-import { KEY_APP_DARK } from '../../util/theme';
-import { CHAT_DIM_MAX, KEY_CHAT_DIM } from '../../store/AppSettings';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
 import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
@@ -313,28 +307,16 @@ struct ChatPage {
   // 「自动播放视频」开关。播放位竞选的总闸门之一，见 playSlotsEnabled()。
   @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) @Watch('onAutoplayPolicyChanged')
   autoplayVideo: boolean = true;
-  // 聊天背景设置页的「模糊度」滑块（KEY_BG_BLUR）。拖动时要立即重算离屏合成图，
   // 否则拖完滑块背景看起来没反应（命中旧签名的缓存图）。
-  @StorageProp(KEY_BG_BLUR) @Watch('onBgBlurChanged') bgBlur: number = BG_BLUR_DEFAULT;
-  // 图案线条浓度，深浅各一份。和模糊度一样，改动要重算离屏合成图。
-  @StorageProp(KEY_BG_PATTERN) @Watch('onBgBlurChanged') bgPatternLight: number = BG_PATTERN_DEFAULT;
-  @StorageProp(KEY_BG_PATTERN_DARK) @Watch('onBgBlurChanged') bgPatternDark: number = BG_PATTERN_DEFAULT;
-  @State powerBackgroundPhase: boolean = false;
   // TDLib per-chat wallpaper. Solid/gradient fills render immediately;
   // wallpaper and pattern documents appear as soon as downloadFile completes.
   // One snapshot in place of the nine background state variables this replaces.
   // Resolution (chat background → theme → account default → installed default)
   // and its four TDLib subscriptions live in ChatBackgroundStore.
   @State chatBg: ChatBackgroundState = emptyChatBackground();
-  // 深色下压在聊天背景上的黑色遮罩（用户可调）。两个都读：浅色模式一律不画，
-  // 所以模式一变遮罩就跟着出现/消失，不需要重进页面。
-  @StorageProp(KEY_APP_DARK) appDark: boolean = false;
-  @StorageProp(KEY_CHAT_DIM) chatDim: number = 0;
   private bgStore: ChatBackgroundStore | null = null;
   private unsubBg: (() => void) | null = null;
   private unsubTranslatable: (() => void) | null = null;
-  private powerBackgroundTimer: number = -1;
-  private readonly powerParticleIds: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
   @State replyToId: number = 0;      // message being replied to (0 = none)
   @State replyToName: string = '';
   @State replyToText: string = '';
@@ -999,7 +981,6 @@ struct ChatPage {
     this.bgStore.seedFromDefault();
     this.unsubBg = this.bgStore.subscribe((state: ChatBackgroundState): void => {
       this.chatBg = state;
-      this.syncBackgroundRaster();
     });
     this.bgStore.open(this.chatId);
     this.unsubMembershipSupergroup = getTdClient().onUpdate('updateSupergroup', (u: TdObject) => {
@@ -1045,14 +1026,6 @@ struct ChatPage {
       }
       this.livePulseExpanded = !this.livePulseExpanded;
     }, 780);
-    this.powerBackgroundTimer = setInterval((): void => {
-      if (powerGroupFeatureEnabled(KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BACKGROUND) ||
-        powerFeatureEnabled(KEY_POWER_PARTICLES)) {
-        this.powerBackgroundPhase = !this.powerBackgroundPhase;
-      } else {
-        this.powerBackgroundPhase = false;
-      }
-    }, 4200);
     // Updates remain the fast path. Polling is a small safety net for devices
     // that resume this cached page after an update was delivered while its
     // subscriptions were inactive.
@@ -1615,10 +1588,6 @@ struct ChatPage {
       clearTimeout(this.cachedCountTimer);
       this.cachedCountTimer = -1;
     }
-    if (this.bgRasterTimer !== -1) {
-      clearTimeout(this.bgRasterTimer);
-      this.bgRasterTimer = -1;
-    }
     this.clearNowSecTimer();
     if (this.unsubChatAction !== null) {
       this.unsubChatAction();
@@ -1722,10 +1691,6 @@ struct ChatPage {
     if (this.unsubVideoChat !== null) { this.unsubVideoChat(); this.unsubVideoChat = null; }
     if (this.unsubGroupCall !== null) { this.unsubGroupCall(); this.unsubGroupCall = null; }
     if (this.livePulseTimer !== -1) { clearInterval(this.livePulseTimer); this.livePulseTimer = -1; }
-    if (this.powerBackgroundTimer !== -1) {
-      clearInterval(this.powerBackgroundTimer);
-      this.powerBackgroundTimer = -1;
-    }
     if (this.liveStateRefreshTimer !== -1) {
       clearInterval(this.liveStateRefreshTimer);
       this.liveStateRefreshTimer = -1;
@@ -2007,11 +1972,6 @@ struct ChatPage {
       console.warn(`screenW ${Math.round(this.lastScreenW)} -> ${Math.round(this.screenW)}`);
       this.lastScreenW = this.screenW;
     }
-  }
-
-  // 当前主题下生效的图案浓度。背景分深浅两套选，浓度也跟着分。
-  private bgPatternNow(): number {
-    return this.appDark ? this.bgPatternDark : this.bgPatternLight;
   }
 
   private refreshAtBottom(): void {
@@ -7986,15 +7946,6 @@ struct ChatPage {
     }, 60);
   }
 
-  private backgroundEffectsEnabled(): boolean {
-    return !this.chatBg.custom &&
-      !this.powerSaving && this.powerChatEffects && this.powerBackgroundEffect;
-  }
-
-  private particlesEnabled(): boolean {
-    return !this.chatBg.custom && !this.powerSaving && this.powerParticles;
-  }
-
   private emptyHistoryTitle(): string {
     if (this.threadRootId > 0) {
       return str('cp_no_replies');
@@ -8229,210 +8180,10 @@ struct ChatPage {
 
   // The flattened background, once it exists. Until then the layered version
   // below renders, so the chat never waits on the raster.
-  @State bgRasterPath: string = '';
-
-  private backgroundRasterParams(): BackgroundRasterParams {
-    return {
-      colors: this.chatBg.colors, angle: this.chatBg.angle, path: this.chatBg.path,
-      isPattern: this.chatBg.isPattern,
-      imageOpacity: patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.bgPatternNow()),
-      dimming: this.chatBg.dimming, blurred: this.chatBg.blurred, userBlur: this.bgBlur,
-      width: this.screenW, height: this.screenH
-    };
-  }
-
-  // The blur-amount slider (ChatBackgroundPage) changes KEY_BG_BLUR in
-  // AppStorage; @Watch fires this so the chat's background re-composites at
-  // the new radius instead of keeping whatever was last rasterised.
-  private onBgBlurChanged(): void {
-    this.syncBackgroundRaster();
-  }
-
-  private bgRasterTimer: number = -1;
-
-  private syncBackgroundRaster(): void {
-    const params = this.backgroundRasterParams();
-    const sig = rasterSignature(params);
-    const hit = cachedRaster(sig, (getContext(this) as common.UIAbilityContext).cacheDir);
-    if (hit !== '') {
-      this.bgRasterPath = hit;
-      return;
-    }
-    // Drop the stale raster first: keeping the previous background on screen
-    // while a new one encodes would show the wrong chat's wallpaper.
-    this.bgRasterPath = '';
-    // Debounced: background resolution publishes several INTERMEDIATE states
-    // in quick succession while the theme/custom image settle (measured as
-    // three full-screen JPEG encodes, 52+68+58ms, on every first entry). Only
-    // the state that survives the quiet window is worth rasterizing — the live
-    // layered background renders meanwhile, so nothing is visually missing.
-    if (this.bgRasterTimer !== -1) {
-      clearTimeout(this.bgRasterTimer);
-    }
-    this.bgRasterTimer = setTimeout((): void => {
-      this.bgRasterTimer = -1;
-      const settled = this.backgroundRasterParams();
-      const settledSig = rasterSignature(settled);
-      const settledHit = cachedRaster(settledSig,
-        (getContext(this) as common.UIAbilityContext).cacheDir);
-      if (settledHit !== '') {
-        this.bgRasterPath = settledHit;
-        return;
-      }
-      rasterizeBackground(this.getUIContext(), settled,
-        (getContext(this) as common.UIAbilityContext).cacheDir).then((path: string): void => {
-        // The background can change again while this encodes.
-        if (path !== '' && rasterSignature(this.backgroundRasterParams()) === settledSig) {
-          this.bgRasterPath = path;
-        }
-      });
-    }, 280);
-  }
-
-  @Builder
-  chatBackgroundLayer() {
-    if (this.bgRasterPath !== '') {
-      // Through the PixelMap cache, not Image(file://…). The raster is a
-      // full-screen JPEG, so decoding it costs ~20ms — and measurement showed
-      // that bill being paid again on every single chat open, which is most of
-      // why the first entry into a chat stuttered while the second felt fine.
-      // Every chat shares the same background, so cached it is decoded once.
-      CachedImage({
-        path: this.bgRasterPath,
-        boxWidth: this.screenW,
-        boxHeight: this.screenH,
-        radius: 0,
-        fit: ImageFit.Cover,
-        pin: true
-      });
-    } else {
-    Stack() {
-      if (this.chatBg.colors.length > 0) {
-        Column()
-          .width('100%').height('100%')
-          .linearGradient({
-            angle: this.chatBg.angle,
-            colors: gradientStops(this.chatBg.colors)
-          });
-      } else {
-        Column().width('100%').height('100%')
-          .backgroundColor($r('app.color.chat_bg'));
-      }
-      // A pattern document is a small repeatable motif, not a standalone
-      // photo: the official client tiles it edge-to-edge at a fixed density
-      // instead of fitting one instance to the screen (see
-      // patternTileGrid()'s comment in chatBackgroundRaster.ets — fitting one
-      // instance with Contain is what used to leave the screen's off-axis
-      // edges bare on devices wider than the pattern's own ratio, e.g.
-      // tablets). A wallpaper photo still fills the surface and crops
-      // (Cover).
-      if (this.chatBg.path !== '' && this.chatBg.isPattern) {
-        patternTileGridLayer(
-          this.chatBg.path,
-          patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.bgPatternNow()),
-          patternTileGrid(this.screenW, this.screenH),
-          backgroundBlurRadius(this.chatBg.path, this.chatBg.isPattern, this.chatBg.blurred, this.bgBlur));
-      } else if (this.chatBg.path !== '') {
-        Image(this.chatBg.path.startsWith('/')
-          ? `file://${this.chatBg.path}` : this.chatBg.path).draggable(false)
-          .width('100%').height('100%')
-          .objectFit(ImageFit.Cover)
-          .opacity(patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.bgPatternNow()))
-          // Blurring needs a little overscan or transparent edge pixels become
-          // visible around the viewport. Gated on the actual radius (not just
-          // the `blurred` flag) so a user-set blur of 0 doesn't overscan either.
-          .scale({
-            x: backgroundBlurRadius(this.chatBg.path, this.chatBg.isPattern, this.chatBg.blurred, this.bgBlur) > 0
-              ? 1.08 : 1,
-            y: backgroundBlurRadius(this.chatBg.path, this.chatBg.isPattern, this.chatBg.blurred, this.bgBlur) > 0
-              ? 1.08 : 1
-          })
-          .blur(backgroundBlurRadius(this.chatBg.path, this.chatBg.isPattern, this.chatBg.blurred, this.bgBlur));
-      }
-      if (this.chatBg.dimming > 0) {
-        Column().width('100%').height('100%')
-          .backgroundColor(Color.Black)
-          .opacity(this.chatBg.dimming);
-      }
-    }
-    .width('100%').height('100%')
-    // 尽量把背景铺进键盘区。RESIZE 下 expandSafeArea 对向下扩展只做到一半
-    // （官方《安全区域》：[KEYBOARD]+[BOTTOM] 不生效），但这已经够用——抽屉
-    // 现在是齐边铺满的，铺不到的那一截正好被抽屉盖住，看不见。
-    //
-    // 另外两条路都实测更差：背景改固定高度会把扩展方向限制成只剩向上；
-    // 切 OFFSET 虽然能让 expandSafeArea 完全生效，但整页上抬会把背景顶出屏幕。
-    .expandSafeArea([SafeAreaType.KEYBOARD, SafeAreaType.SYSTEM])
-    .hitTestBehavior(HitTestMode.None)
-    // The tile grid rounds up to a whole number of tiles and is centered by
-    // the Stack's default alignment, so it typically overruns the viewport a
-    // little on every edge — clip it back instead of letting it push out.
-    .clip(true);
-    }
-  }
-
-  // 深色下的黑色遮罩。放在这一层的末尾而不是 chatBackgroundLayer 里面，是为了
-  // 一处覆盖三种情况：光栅缓存路径、实时绘制路径、以及上面那两颗氛围光斑。
-  // 气泡和文字画在这整层之上，所以只压暗背景，不影响可读性。
-  //
-  // 也没有并进 chatBg.dimming：那个值是服务端按会话下发的（dark_theme_dimming），
-  // 且已经烘进了光栅缓存的签名。把用户的这一份混进去会让每次调滑杆都作废整张
-  // 缓存图，而单独一层是纯合成，不触发任何重新栅格化。
-  private darkMaskOpacity(): number {
-    if (!this.appDark) {
-      return 0;
-    }
-    return Math.max(0, Math.min(CHAT_DIM_MAX, this.chatDim));
-  }
-
-  @Builder
-  chatPowerBackground() {
-    Stack() {
-      this.chatBackgroundLayer();
-      if (this.backgroundEffectsEnabled()) {
-        Circle({ width: 250, height: 250 })
-          .fill('#142A9FE8')
-          .position({ x: this.powerBackgroundPhase ? this.screenW - 150 : -90, y: 110 })
-          .opacity(this.powerBackgroundPhase ? 0.42 : 0.18)
-          .animation({
-            duration: this.chatEffectDuration(KEY_POWER_EFFECT_BACKGROUND, 4200),
-            curve: Curve.EaseInOut
-          });
-        Circle({ width: 210, height: 210 })
-          .fill('#1056C76F')
-          .position({ x: this.powerBackgroundPhase ? -70 : this.screenW - 130, y: 500 })
-          .opacity(this.powerBackgroundPhase ? 0.16 : 0.36)
-          .animation({
-            duration: this.chatEffectDuration(KEY_POWER_EFFECT_BACKGROUND, 4200),
-            curve: Curve.EaseInOut
-          });
-      }
-      if (this.particlesEnabled()) {
-        ForEach(this.powerParticleIds, (id: number) => {
-          Circle({ width: 3 + (id % 3), height: 3 + (id % 3) })
-            .fill(id % 2 === 0 ? '#462A9FE8' : '#3D56C76F')
-            .position({
-              x: 22 + ((id * 67 + (this.powerBackgroundPhase ? 34 : 0)) % Math.max(40, this.screenW - 44)),
-              y: 120 + ((id * 151 + (this.powerBackgroundPhase ? 90 : 0)) % 650)
-            })
-            .opacity(this.powerBackgroundPhase ? 0.2 + (id % 3) * 0.12 : 0.48 - (id % 3) * 0.08)
-            .animation({ duration: powerAnimationDuration(KEY_POWER_PARTICLES, 4200), curve: Curve.EaseInOut });
-        }, (id: number): string => `power_particle_${id}`);
-      }
-      if (this.darkMaskOpacity() > 0) {
-        Column().width('100%').height('100%')
-          .backgroundColor(Color.Black)
-          .opacity(this.darkMaskOpacity())
-          .hitTestBehavior(HitTestMode.None);
-      }
-    }
-    .width('100%').height('100%')
-    .hitTestBehavior(HitTestMode.None);
-  }
-
   build() {
     Stack() {
-      this.chatPowerBackground();
+      // 整层背景搬到了 ChatBackdrop：它只吃输入不回调，所以这里只传三个入参。
+      ChatBackdrop({ chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH });
       Column() {
         Stack() {
         List({ scroller: this.scroller }) {
