@@ -111,7 +111,7 @@ import { KEY_APP_DARK } from '../../util/theme';
 import { CHAT_DIM_MAX, KEY_CHAT_DIM } from '../../store/AppSettings';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
-import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
+import { BOTTOM_DRAWER_HEIGHT } from '../../util/drawerMetrics';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -574,6 +574,8 @@ struct ChatPage {
   // spike 验过的四件事：内容能顶起（但避让要自己做）、切换不闪、面板内点击
   // 与横滑可用、点面板外**不会**自动收起（输入框始终聚焦，系统没有理由收）。
   @State attachPanelOpen: boolean = false;
+  // 这一次获焦是我们为了打开抽屉发起的，onFocus 不该把它当成"用户要键盘"。
+  private focusKeepsPanel: boolean = false;
   // 当前打开的底部抽屉占据的高度（附件或表情，两者互斥）。supportAvoidance
   // 只保证输入框不被挡，列表内容它不管——官方《自定义键盘》文档明说这一段
   // 要开发者自己做：监听面板根节点 onAreaChange 拿高度，再设置布局避让。
@@ -4545,7 +4547,7 @@ struct ChatPage {
       this.showEmojiPanel = true;
       // 换绑之后要重新获焦一次键盘才会切过去；解绑/换绑和获焦必须分帧。
       this.composerController.stopEditing();
-      this.raiseSystemKeyboard();
+      this.raiseSystemKeyboard(true);
       if (settle === 0) {
         this.panelContentReady = true;
         return;
@@ -6038,14 +6040,15 @@ struct ChatPage {
     this.forwardMessageIds = [];
   }
 
-  // 抽屉卡片：表情面板当浮卡时的那身衣服，一字未改地搬过来——上边框 0.7、
-  // 圆角 18、向上的浅阴影。两个抽屉共用，观感和顶栏胶囊、置顶消息条是同一
-  // 套语言。
+  // 抽屉外观。沿用表情面板当浮卡时的上边框、圆角和向上的浅阴影，但**只做
+  // 上圆角、左右齐边**：浮卡的左右留白在聊天页里露出的是壁纸，在键盘区里
+  // 露出的是一条纯色，看着就是两道白边（实测反馈）。下圆角同理没有意义，
+  // 抽屉贴着屏幕底边。
   @Styles
   drawerCard() {
     .backgroundColor($r('app.color.surface'))
     .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
-    .borderRadius(18)
+    .borderRadius({ topLeft: 18, topRight: 18 })
     .clip(true)
     .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
   }
@@ -6511,7 +6514,17 @@ struct ChatPage {
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
         curve: Curve.EaseOut
       })
+      // 和左边两颗顶栏胶囊同一档：半透明底（headerActionNormalStyle 里换的）
+      // + backdropBlur 自绘玻璃，API 26 上让位给沉浸光感。此前这颗漏了这两行，
+      // 所以它只是"透"的，不是"毛"的。
+      .backdropBlur(overlayBackdropBlur('bar'))
+      .systemMaterial(overlayMaterial('bar'))
       .bindMenu(this.headerMenuShow, this.headerMenu(), {
+        // 菜单容器要自己透出来才看得到模糊：框架默认给的是一块不透明底板。
+        // backgroundBlurStyle 是低于 API 26 时的降级，systemMaterial 是 26 起
+        // 的材质，两者互斥（overlayBlur 在材质可用时返回 undefined）。
+        backgroundColor: Color.Transparent,
+        backgroundBlurStyle: overlayBlur('menu'),
         systemMaterial: overlayMaterial('menu'),
         onDisappear: (): void => { this.headerMenuShow = false; }
       })
@@ -6941,9 +6954,8 @@ struct ChatPage {
       .drawerCard();
     }
     .width('100%')
-    .height(BOTTOM_DRAWER_HEIGHT + DRAWER_INSET)
-    .padding({ left: DRAWER_INSET, right: DRAWER_INSET, bottom: DRAWER_INSET })
-    .backgroundColor($r('app.color.chat_bg'))
+    .height(BOTTOM_DRAWER_HEIGHT)
+    .backgroundColor($r('app.color.surface'))
     .onAreaChange((_old: Area, area: Area): void => {
       this.noteBottomPanelHeight(area.height as number);
     });
@@ -6979,7 +6991,7 @@ struct ChatPage {
     // 换绑之后要重新获焦一次才会切过去；解绑/换绑和获焦必须分帧，同一帧里
     // 属性还没落地，重新获焦只会把上一种键盘再弹一次。
     this.composerController.stopEditing();
-    this.raiseSystemKeyboard();
+    this.raiseSystemKeyboard(true);
   }
 
   private closeAttachPanel(): void {
@@ -6993,8 +7005,14 @@ struct ChatPage {
     this.composerController.stopEditing();
   }
 
-  // 解绑之后把焦点还给输入框，系统键盘就会顶上来。
-  private raiseSystemKeyboard(): void {
+  // 把焦点还给输入框。两种用途：解绑之后让系统键盘顶上来，以及换绑之后让
+  // 抽屉顶上来——customKeyboard 只在输入框获焦时出现，两种都得走这一步。
+  //
+  // keepPanel 区分这两者。输入框的 onFocus 里有一句"聚焦就关面板"，那是给
+  // 旧世界写的：那时聚焦 = 用户要键盘不要面板。现在面板**就是**键盘，是我们
+  // 自己去聚焦的，那一句会立刻把刚打开的面板关掉——表情抽屉打不开正是这个。
+  private raiseSystemKeyboard(keepPanel: boolean = false): void {
+    this.focusKeepsPanel = keepPanel;
     setTimeout((): void => {
       this.getUIContext().getFocusController().requestFocus('chat_composer');
     }, 30);
@@ -7096,9 +7114,8 @@ struct ChatPage {
       .drawerCard();
     }
     .width('100%')
-    .height(BOTTOM_DRAWER_HEIGHT + DRAWER_INSET)
-    .padding({ left: DRAWER_INSET, right: DRAWER_INSET, bottom: DRAWER_INSET })
-    .backgroundColor($r('app.color.chat_bg'))
+    .height(BOTTOM_DRAWER_HEIGHT)
+    .backgroundColor($r('app.color.surface'))
     .onAreaChange((_old: Area, area: Area): void => {
       this.noteBottomPanelHeight(area.height as number);
     });
@@ -7270,7 +7287,14 @@ struct ChatPage {
               this.imeTailPinned = this.atBottom && this.viewerMsgId === 0 &&
                 !this.stayAtUnread;
               this.composerFocused = true;
-              this.setEmojiPanel(false);
+              // 我们自己为了挂抽屉去请求的焦点，不要把抽屉关掉；用户真的点了
+              // 输入框那一路，面板早在 TextArea 的 onClick 里就关过了。
+              if (this.focusKeepsPanel) {
+                this.focusKeepsPanel = false;
+              } else {
+                this.setEmojiPanel(false);
+                this.closeAttachPanel();
+              }
               this.replyKbCollapsed = true;
               this.commandMenuOpen = false;
               if (this.keyboardH > 0) {

@@ -172,8 +172,10 @@ struct ChatSettingsPage {
 
   // 深色遮罩。反馈是"深色背景太亮"——尤其配了浅色壁纸的会话，夜里刺眼。
   // 它只压背景那一层，气泡和文字画在上面，所以调到最深也不会影响可读性。
+  // 放在夜间模式那张卡里：它只在深色模式下有效果，和"何时用深色"是同一件
+  // 事，独立成卡反而让人以为浅色模式下也起作用。
   @Builder
-  darkDimCard() {
+  darkDimRow() {
     Column() {
       this.cardTitle(str('chat_settings_dark_dim'));
       Text($r('app.string.chat_settings_dark_dim_sub'))
@@ -196,8 +198,7 @@ struct ChatSettingsPage {
         Text(`${Math.round(this.chatDim * 100)}%`)
           .fontSize(15).fontColor(COLOR_PRIMARY).width(44).textAlign(TextAlign.End);
       }.width('100%').padding({ left: 16, right: 16, bottom: 6 });
-    }
-    .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+    }.width('100%');
   }
 
   @Builder
@@ -346,9 +347,9 @@ struct ChatSettingsPage {
 
           Column() {
             this.nightModeCard();
+            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+            this.darkDimRow();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
-
-          this.darkDimCard();
 
           Column() {
             this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);

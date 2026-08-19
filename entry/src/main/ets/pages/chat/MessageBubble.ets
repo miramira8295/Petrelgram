@@ -966,7 +966,9 @@ export struct MessageBubble {
         .decoration({ type: this.richRunDecoration(run), color: Color.Transparent })
         .textBackgroundStyle({ color: '#708E8E93', radius: 3 })
         .animation({ duration: this.effectDuration(150), curve: Curve.EaseOut })
-        .onClick((): void => { this.revealSpoiler(run); });
+        .onClick((): void => {
+          if (this.gestureClaimed) { return; }
+          this.revealSpoiler(run); });
     } else if (run.customEmojiId !== '' && this.inlineCustomEmojiPath(run.customEmojiId) !== '') {
       ImageSpan(this.inlineCustomEmojiSource(run.customEmojiId))
         .width(this.msgTextSize + 3)
@@ -1004,7 +1006,9 @@ export struct MessageBubble {
           pressed: this.linkRunPressedStyle
         })
         .animation({ duration: this.effectDuration(90), curve: Curve.EaseOut })
-        .onClick(() => { this.onLinkTap(run.url); });
+        .onClick(() => {
+          if (this.gestureClaimed) { return; }
+          this.onLinkTap(run.url); });
     } else {
       Span(run.text)
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
@@ -1069,7 +1073,9 @@ export struct MessageBubble {
                   pressed: this.linkRunPressedStyle
                 })
                 .animation({ duration: this.effectDuration(90), curve: Curve.EaseOut })
-                .onClick((): void => { this.onCopyCode(seg.text); });
+                .onClick((): void => {
+                  if (this.gestureClaimed) { return; }
+                  this.onCopyCode(seg.text); });
             }
             .width(maxWidth - 18)
             .alignItems(VerticalAlign.Center)
@@ -1117,7 +1123,9 @@ export struct MessageBubble {
                   pressed: this.linkRunPressedStyle
                 })
                 .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
-                .onClick((): void => { this.toggleQuote(seg); });
+                .onClick((): void => {
+                  if (this.gestureClaimed) { return; }
+                  this.toggleQuote(seg); });
             }
           }
           .backgroundColor('#103391E8').borderRadius(7)
@@ -1159,7 +1167,9 @@ export struct MessageBubble {
             .fontSize(11).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
         }
         .constraintSize({ maxWidth: this.inlineMaxW() })
-        .onClick((): void => { this.onRetryTranslation(this.msg.id); });
+        .onClick((): void => {
+          if (this.gestureClaimed) { return; }
+          this.onRetryTranslation(this.msg.id); });
       }
     }
     if (this.msg.translatedText !== '') {
@@ -1187,6 +1197,7 @@ export struct MessageBubble {
       }
       .margin({ top: 4 })
       .onClick((): void => {
+        if (this.gestureClaimed) { return; }
         this.onToggleTranslation(this.msg.id, !this.msg.translationHidden);
       });
     }
@@ -1222,7 +1233,9 @@ export struct MessageBubble {
     .constraintSize({ maxWidth: this.inlineMaxW() })
     .border({ width: { top: 1 }, color: '#00000014' })
     .padding({ top: 6 }).margin({ top: 6 })
-    .onClick(() => { this.onCommentTap(this.msg.id); });
+    .onClick(() => {
+      if (this.gestureClaimed) { return; }
+      this.onCommentTap(this.msg.id); });
   }
 
   // Bot inline keyboard rendered below the bubble: translucent rounded buttons,
@@ -1248,6 +1261,7 @@ export struct MessageBubble {
                 })
                 .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
                 .onClick(() => {
+                  if (this.gestureClaimed) { return; }
                   if (btn.url !== '') {
                     this.onLinkTap(btn.url);
                   } else if (btn.callbackData !== '') {
@@ -1626,6 +1640,7 @@ export struct MessageBubble {
                   (area.globalPosition.y as number) + (area.height as number) / 2);
               })
               .onClick((e: ClickEvent) => {
+                if (this.gestureClaimed) { return; }
                 // Same as the single-media case: a failed cell offers retry.
                 if (this.albumCellRetryable(cell.idx)) {
                   this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
@@ -1649,6 +1664,7 @@ export struct MessageBubble {
                   // 相册竞选只看这一格是不是视频，图片格不上报
                 })
               .onClick((e: ClickEvent) => {
+                if (this.gestureClaimed) { return; }
                 // Same as the single-media case: a failed cell offers retry.
                 if (this.albumCellRetryable(cell.idx)) {
                   this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
@@ -1771,7 +1787,9 @@ export struct MessageBubble {
       .animation({ duration: this.effectDuration(180), curve: Curve.EaseOut }))
     .accessibilityText(`${this.linkPresentation().siteLabel}，${this.linkPreviewActionLabel()}`)
     .enabled(this.linkPresentation().actionable || this.msg.linkPhotoFailed)
-    .onClick((): void => { this.openOrRetryLinkPreview(); });
+    .onClick((): void => {
+      if (this.gestureClaimed) { return; }
+      this.openOrRetryLinkPreview(); });
   }
 
   // Emoji reaction pills (👍 3, ❤️ 2, ...), highlighted when the current user
@@ -1806,6 +1824,7 @@ export struct MessageBubble {
         })
         .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
         .onClick(() => {
+          if (this.gestureClaimed) { return; }
           this.onSetReaction(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId), r.isChosen);
         })
         // Long-press a chip to see who reacted with it.
@@ -1935,6 +1954,7 @@ export struct MessageBubble {
       .padding({ left: 6, top: 2, bottom: 2 }).margin({ bottom: 4 })
       // Tap the quote → jump to the original message.
       .onClick(() => {
+        if (this.gestureClaimed) { return; }
         if (this.msg.replyToMessageId !== 0) {
           this.onReplyTap(this.msg.replyToMessageId);
         }
@@ -2099,6 +2119,7 @@ export struct MessageBubble {
         this.mediaCenterY = (area.globalPosition.y as number) + (area.height as number) / 2;
       })
       .onClick((e: ClickEvent) => {
+        if (this.gestureClaimed) { return; }
         // When the media shows a retry control, the tap has to retry. It used
         // to fall through to onMediaTap, which opened a viewer onto a file that
         // was never downloaded — the retry badge was decoration.
@@ -2175,7 +2196,9 @@ export struct MessageBubble {
       .clip(true)
       .accessibilityText(this.videoNotePlaying
         ? str('mb_video_note_playing') : str('mb_video_note', this.videoNoteDuration()))
-      .onClick((): void => { this.toggleVideoNote(); });
+      .onClick((): void => {
+        if (this.gestureClaimed) { return; }
+        this.toggleVideoNote(); });
     } else if (this.msg.contentType === 'voice') {
       // Voice note with live playback progress — VoiceBubble subscribes to the
       // shared player itself, so ticks don't depend on this row re-rendering.
@@ -2433,6 +2456,7 @@ export struct MessageBubble {
       .width(72).height(68)
       .alignContent(Alignment.Center)
       .onClick(() => {
+        if (this.gestureClaimed) { return; }
         if (this.msg.contentType === 'customEmoji' && this.msg.photoFailed) {
           this.onStickerRetry(this.msg.id);
         }
@@ -2506,6 +2530,7 @@ export struct MessageBubble {
       }
       .width(this.stickerW()).height(this.stickerH())
       .onClick(() => {
+        if (this.gestureClaimed) { return; }
         if (this.stickerPlaybackFailed) {
           this.stickerPlaybackFailed = false;
           return;
@@ -2722,6 +2747,7 @@ export struct MessageBubble {
     })
     .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
     .onClick((): void => {
+      if (this.gestureClaimed) { return; }
       if (this.liveVideoChatTappable()) {
         this.onLiveStreamTap(this.liveGroupCallId);
       }
@@ -2777,6 +2803,7 @@ export struct MessageBubble {
           })
             .margin({ right: 6 })
             .onClick(() => {
+              if (this.gestureClaimed) { return; }
               // Group message avatar → that user's profile page.
               if (this.msg.senderIsUser && this.msg.senderId > 0) {
                 this.onAvatarTap(this.msg.senderId);
@@ -2810,6 +2837,7 @@ export struct MessageBubble {
             .fontWeight(FontWeight.Medium).margin({ bottom: 2 })
             .constraintSize({ maxWidth: this.inlineMaxW() })
             .onClick(() => {
+              if (this.gestureClaimed) { return; }
               if (this.msg.forwardOriginChatId !== 0 || this.msg.forwardOriginUserId !== 0) {
                 this.onForwardTap(this.msg.forwardOriginChatId, this.msg.forwardOriginMsgId,
                   this.msg.forwardOriginUserId);
@@ -2876,6 +2904,7 @@ export struct MessageBubble {
       // 气泡空白处的点击才轮到菜单。而 parallelGesture 是例外，它父子都会触发，
       // 用它就会出现"点链接同时开链接和菜单"。
       .onClick((): void => {
+        if (this.gestureClaimed) { return; }
         if (messageGesturePolicy(this.gestureScheme).tapOpensMenu) {
           this.msgContextMenuShown = true;
         }
@@ -2947,22 +2976,13 @@ export struct MessageBubble {
         if (event.type === TouchType.Down) {
           this.gestureClaimed = false;
         }
-      })
-      // 一旦左滑或长按认领了这次交互，抬手时的点击一律驳回。
+      });
+      // 认领之后，消息表面上的每个 onClick 都会自己早退（搜 gestureClaimed）。
       //
-      // 逐个去 onClick 里加判断也能做，但整行有二十来个可点的东西（图片、
-      // 链接、内联按钮、反应、评论行……），漏一个就是一个 bug。这个回调是
-      // 官方为手势冲突准备的口子：它拿得到**整条响应链上**的识别器，包括子
-      // 元素自带的，所以一处就够。
-      .onGestureRecognizerJudgeBegin(
-        (_event: BaseGestureEvent, current: GestureRecognizer,
-          _others: Array<GestureRecognizer>): GestureJudgeResult => {
-          if (this.gestureClaimed && current.getType() === GestureControl.GestureType.CLICK) {
-            return GestureJudgeResult.REJECT;
-          }
-          return GestureJudgeResult.CONTINUE;
-        }
-      );
+      // 本来想用 onGestureRecognizerJudgeBegin 一处驳回所有 CLICK 识别器——
+      // 官方把它列为手势冲突的口子，文档也说拿得到整条响应链上的识别器。
+      // **实测无效**：从图片上左滑、在链接上长按，松手照样触发子元素的点击。
+      // 所以改成在每个处理函数里早退，代码多几行，但行为是确定的。
       if (this.msg.inlineButtons.length > 0) {
         this.inlineKeyboard();
       }
