@@ -36,11 +36,31 @@ function runJob(job: PlayerJob): void {
   }
 }
 
+// 释放队列的"闸门"。系统输入法要弹出时先摁住：一次关面板会排进一屏
+// （实测 29 个）ijk 播放器的销毁，每个几十毫秒，主线程被占满，键盘的第一次
+// 布局排不进去——实测从手指抬起到键盘出现 1859ms，输入框先落下、快两秒后
+// 又被顶上去，就是这两跳。
+//
+// 摁住不减少总工作量，只是把它挪到键盘落定之后。那时用户正在看键盘，
+// 几百毫秒的零碎销毁看不出来。
+let jobsHeldUntil: number = 0;
+
+export function holdPlayerJobs(ms: number): void {
+  const until: number = Date.now() + ms;
+  if (until > jobsHeldUntil) {
+    jobsHeldUntil = until;
+  }
+}
+
 function pumpPlayerJobs(): void {
   if (playerJobTimer !== -1) {
     return;
   }
   playerJobTimer = setInterval(() => {
+    if (Date.now() < jobsHeldUntil) {
+      // 闸门关着：这一拍什么都不做，但定时器留着，开闸后自然继续。
+      return;
+    }
     if (releaseJobs.length > 0) {
       // Drain teardowns first — they free native resources.
       for (let i = 0; i < RELEASES_PER_TICK; i++) {
