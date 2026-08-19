@@ -13,7 +13,11 @@ export const BOTTOM_DRAWER_HEIGHT: number = 260;
 export const DRAWER_INSET: number = 8;
 
 // 表情抽屉底部那条「表情 / 贴纸 / GIF」标签条的高度。内容区是抽屉高度减掉它。
-export const EMOJI_TAB_BAR_HEIGHT: number = 59;
+//
+// 59 是它当浮卡（300 高）时的尺寸。抽屉压到 260 之后，这条 + 包切换条 44 +
+// 搜索框 42 一共吃掉 145，真正的表情网格只剩 115——标签条自己就显得过大。
+// 44 够放下"图标 + 文字 + 选中下划线"三层，且和包切换条同高。
+export const EMOJI_TAB_BAR_HEIGHT: number = 44;
 
 // 表情抽屉的内容区。抽屉压到 260 之后这里是 201，比当浮卡时（241）少一行。
 export const EMOJI_CONTENT_HEIGHT: number = BOTTOM_DRAWER_HEIGHT - EMOJI_TAB_BAR_HEIGHT;

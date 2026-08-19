@@ -111,7 +111,7 @@ import { KEY_APP_DARK } from '../../util/theme';
 import { CHAT_DIM_MAX, KEY_CHAT_DIM } from '../../store/AppSettings';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
-import { BOTTOM_DRAWER_HEIGHT } from '../../util/drawerMetrics';
+import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -4391,7 +4391,12 @@ struct ChatPage {
   private panelReadySeq: number = 0;
 
   private composerBottomGap(): number {
-    return this.keyboardH > 0 ? 6 : Math.max(8, this.bottomSafe);
+    // 抽屉打开等同于键盘起来：底部安全区已经被抽屉占住了，输入框再留一条
+    // 就会浮得离抽屉老远。
+    //
+    // 不能只看 keyboardH——自定义键盘的高度系统**不算作键盘高度**（诊断日志
+    // 里 keyboardH 全程为 0），只判断它的话抽屉打开时会走到 else 分支。
+    return (this.keyboardH > 0 || this.bottomPanelOpen()) ? 6 : Math.max(8, this.bottomSafe);
   }
 
   // TextArea's intrinsic minimum is taller than the old 48vp input capsule on
@@ -6040,17 +6045,24 @@ struct ChatPage {
     this.forwardMessageIds = [];
   }
 
-  // 抽屉外观。沿用表情面板当浮卡时的上边框、圆角和向上的浅阴影，但**只做
-  // 上圆角、左右齐边**：浮卡的左右留白在聊天页里露出的是壁纸，在键盘区里
-  // 露出的是一条纯色，看着就是两道白边（实测反馈）。下圆角同理没有意义，
-  // 抽屉贴着屏幕底边。
+  // 抽屉外观：表情面板当浮卡时的那身衣服，一字未改地搬过来——上边框 0.7、
+  // 圆角 18、向上的浅阴影。卡片四周留 DRAWER_INSET 的空当，空当里是自己画
+  // 的那份聊天背景。
   @Styles
   drawerCard() {
-    .backgroundColor($r('app.color.surface'))
+    // 毛玻璃/沉浸光感走 'card' 档（和输入框胶囊同档）。这里有东西可透——
+    // 抽屉底下铺着自己画的那份聊天背景，模糊的正是它。
+    // 自绘玻璃的两半必须一起上：半透明底 + backdropBlur，不透明底会把模糊
+    // 完全盖住。材质接管时这两者自动让位（overlayGlassFill 交回实心色、
+    // overlayBackdropBlur 归 0）。
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backdropBlur(overlayBackdropBlur('card'))
     .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
+    // 齐边铺满，只留上圆角——左右和底部都贴着屏幕，那三个角没有落脚处。
     .borderRadius({ topLeft: 18, topRight: 18 })
     .clip(true)
     .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
+    .systemMaterial(overlayMaterial('card'))
   }
 
   @Styles
@@ -6941,7 +6953,23 @@ struct ChatPage {
   // 那个高度得在内容挂上来之前就确定，否则第一帧会先塌一下再弹开。
   @Builder
   attachDrawer() {
-    Column() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      // 抽屉后面自己铺一份聊天背景。
+      //
+      // 不是为了填空当（卡片已经齐边铺满，没有空当），而是**给玻璃提供可透
+      // 的内容**：卡片是材质玻璃，它模糊的是身后的东西；身后空着的话透出来
+      // 的是系统底板，看着就是一块死材质。
+      //
+      // 页面那张铺不进来：RESIZE 下窗口被压缩，壁纸只铺到压缩后的底边，而
+      // expandSafeArea 对向下扩展无效（官方《安全区域》写死），三种写法实测
+      // 都只到一半。
+      //
+      // **整屏高度 + 底端对齐 + 外层 clip**：缩进这 260 的框里会把图案重新铺
+      // 一遍、和上面接不上；底端对齐之后露出的正好是壁纸最底下那一截。
+      Column() {
+        this.chatBackgroundLayer();
+      }
+      .width('100%').height(this.screenH);
       Column() {
         AttachPanel({
           actions: attachActions(this.isGroup, this.isChannel),
@@ -6949,13 +6977,27 @@ struct ChatPage {
           effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
         })
       }
+      // calc 而不是 width('100%') + margin：后者是"满宽再往外推"，多出来的
+      // 部分被 Stack 裁掉，看着仍然齐边——实测取色，左边缘 60px 全是卡片底色。
+      // 齐边铺满：两侧和底部都不留空当。留过空当，露出的要么是接不上的背景
+      // 副本，要么是页面底色，两种都比不留难看。
       .width('100%')
-      .height(BOTTOM_DRAWER_HEIGHT)
+      .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
       .drawerCard();
     }
     .width('100%')
-    .height(BOTTOM_DRAWER_HEIGHT)
-    .backgroundColor($r('app.color.surface'))
+    // 键盘区要把系统导航条那一截也算进来，否则卡片下沿被手势条压着。
+    // 用 drawerBottomInset() 而不是整条 bottomSafe：后者是完整的安全区高度，
+    // 而手势条本身只占其中一小条，全留就显得下面空了一大块。
+    .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
+    // **必须裁剪**。chatBackgroundLayer 内部按整屏尺寸绘制（CachedImage 的 box
+    // 是 screenW × screenH），限了高度但不裁的话图会溢出到键盘区外面，把输入框
+    // 整个盖住——实测就是这样，中间还多出一条颜色对不上的壁纸。
+    .clip(true)
+    // 透明：空当里露出的是页面那张壁纸本身。背景层加了
+    // expandSafeArea([SafeAreaType.KEYBOARD]) 之后不再被键盘压缩，一直铺满
+    // 整屏，所以这里透出来的和上面是**同一张图的同一处**，不可能对不齐。
+    .backgroundColor(Color.Transparent)
     .onAreaChange((_old: Area, area: Area): void => {
       this.noteBottomPanelHeight(area.height as number);
     });
@@ -6964,6 +7006,18 @@ struct ChatPage {
   // 当前该把哪个抽屉当键盘挂上去。两者互斥，所以这里最多返回一个；
   // 都没开时返回 null 解绑——**不能返回 undefined**，ArkUI 里 undefined 往往
   // 是"保持上次的值"，写成 undefined 时面板关掉后再点输入框还会把它弹回来。
+  // 有没有面板要挂。和 bottomDrawer 里的分支条件必须一致，否则会出现
+  // "说有、却渲染不出东西"的空键盘。
+  // 抽屉下沿要让出的高度。整条 bottomSafe 是完整安全区（含厂商给的富余），
+  // 手势条本身只占一小条，全留会在抽屉下面空出一大块。取一半并封顶 12。
+  private drawerBottomInset(): number {
+    return Math.min(12, Math.round(this.bottomSafe / 2));
+  }
+
+  private bottomPanelOpen(): boolean {
+    return this.attachPanelOpen || (this.showEmojiPanel && this.membershipState === 'writable');
+  }
+
   @Builder
   bottomDrawer() {
     if (this.attachPanelOpen) {
@@ -7026,6 +7080,11 @@ struct ChatPage {
       return;
     }
     const keepTailVisible: boolean = this.atBottom && this.viewerMsgId === 0;
+    // ===== 诊断（用完即删）=====
+    // 想分清"推上去的高度不一致"是双份避让（系统 RESIZE 已经缩过一次，我们
+    // 又加了一次）还是上报晚了一拍。keyboardH 是系统报的键盘占位高度。
+    console.error(`[panel] h=${this.bottomPanelH}->${next} keyboardH=${this.keyboardH}` +
+      ` chrome=${this.bottomChromeH} attach=${this.attachPanelOpen} emoji=${this.showEmojiPanel}`);
     this.bottomPanelH = next;
     if (!keepTailVisible) {
       return;
@@ -7072,7 +7131,12 @@ struct ChatPage {
   // 先让壳落地，内容下一拍再进来。
   @Builder
   emojiDrawer() {
-    Column() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      // 同 attachDrawer：给玻璃提供可透的内容。
+      Column() {
+        this.chatBackgroundLayer();
+      }
+      .width('100%').height(this.screenH);
       Column() {
             if (this.panelContentReady) {
               EmojiPanel({
@@ -7109,13 +7173,27 @@ struct ChatPage {
               .justifyContent(FlexAlign.Center);
             }
     }
+      // calc 而不是 width('100%') + margin：后者是"满宽再往外推"，多出来的
+      // 部分被 Stack 裁掉，看着仍然齐边——实测取色，左边缘 60px 全是卡片底色。
+      // 齐边铺满：两侧和底部都不留空当。留过空当，露出的要么是接不上的背景
+      // 副本，要么是页面底色，两种都比不留难看。
       .width('100%')
-      .height(BOTTOM_DRAWER_HEIGHT)
+      .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
       .drawerCard();
     }
     .width('100%')
-    .height(BOTTOM_DRAWER_HEIGHT)
-    .backgroundColor($r('app.color.surface'))
+    // 键盘区要把系统导航条那一截也算进来，否则卡片下沿被手势条压着。
+    // 用 drawerBottomInset() 而不是整条 bottomSafe：后者是完整的安全区高度，
+    // 而手势条本身只占其中一小条，全留就显得下面空了一大块。
+    .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
+    // **必须裁剪**。chatBackgroundLayer 内部按整屏尺寸绘制（CachedImage 的 box
+    // 是 screenW × screenH），限了高度但不裁的话图会溢出到键盘区外面，把输入框
+    // 整个盖住——实测就是这样，中间还多出一条颜色对不上的壁纸。
+    .clip(true)
+    // 透明：空当里露出的是页面那张壁纸本身。背景层加了
+    // expandSafeArea([SafeAreaType.KEYBOARD]) 之后不再被键盘压缩，一直铺满
+    // 整屏，所以这里透出来的和上面是**同一张图的同一处**，不可能对不齐。
+    .backgroundColor(Color.Transparent)
     .onAreaChange((_old: Area, area: Area): void => {
       this.noteBottomPanelHeight(area.height as number);
     });
@@ -7250,7 +7328,11 @@ struct ChatPage {
             // null 而不是 undefined：ArkUI 里 undefined 往往是"保持上次的值"，
             // 只有显式 null 才解绑（官方示例用的也是 null）。写成 undefined 时
             // 面板关掉后再点输入框还会把它弹回来。
-            .customKeyboard(this.bottomDrawer(), { supportAvoidance: true })
+            // **必须在没有面板时传 null**。@Builder 什么都不渲染 ≠ 没有绑定：
+            // 传 this.bottomDrawer() 时框架看到的是"绑了一个内容为空的自定义
+            // 键盘"，于是系统键盘永远不弹——重构成统一入口时踩的正是这个。
+            .customKeyboard(this.bottomPanelOpen() ? this.bottomDrawer() : null,
+              { supportAvoidance: true })
             // 面板开着时输入框本就是聚焦态，再点它不产生焦点变化，框架不会做
             // 任何事。想要"点输入框收面板、弹系统键盘"，得自己解绑再重新获焦。
             .onClick((): void => {
@@ -7301,7 +7383,21 @@ struct ChatPage {
                 this.syncTailOnImeFrame();
               }
             })
-            .onBlur(() => { this.composerFocused = false; });
+            .onBlur(() => {
+              this.composerFocused = false;
+              // 两个抽屉都是 customKeyboard，只在输入框聚焦时存在。系统把焦点
+              // 收走时不会通知我们，状态就会卡住——现象是回形针停在 ✕ 上、
+              // 抽屉却已经没了。这里兜底收一次。
+              //
+              // focusKeepsPanel 为真说明是我们自己为了换绑抽屉才主动
+              // stopEditing 的，那次失焦不能当成"用户离开了"。
+              if (this.focusKeepsPanel) {
+                return;
+              }
+              this.attachPanelOpen = false;
+              this.showEmojiPanel = false;
+              this.noteBottomPanelHeight(0);
+            });
           if (this.replyKeyboard !== null) {
             // Bot-keyboard toggle: tinted while the keyboard is up, gray when
             // collapsed — tapping flips between the two.
@@ -8150,6 +8246,13 @@ struct ChatPage {
       }
     }
     .width('100%').height('100%')
+    // 尽量把背景铺进键盘区。RESIZE 下 expandSafeArea 对向下扩展只做到一半
+    // （官方《安全区域》：[KEYBOARD]+[BOTTOM] 不生效），但这已经够用——抽屉
+    // 现在是齐边铺满的，铺不到的那一截正好被抽屉盖住，看不见。
+    //
+    // 另外两条路都实测更差：背景改固定高度会把扩展方向限制成只剩向上；
+    // 切 OFFSET 虽然能让 expandSafeArea 完全生效，但整页上抬会把背景顶出屏幕。
+    .expandSafeArea([SafeAreaType.KEYBOARD, SafeAreaType.SYSTEM])
     .hitTestBehavior(HitTestMode.None)
     // The tile grid rounds up to a whole number of tiles and is centered by
     // the Stack's default alignment, so it typically overruns the viewport a
@@ -8468,7 +8571,7 @@ struct ChatPage {
           fractionStops: this.headerBlurStops(),
           direction: GradientDirection.Bottom
         })
-        .contentEndOffset(this.bottomChromeH + 8 + this.bottomPanelH)
+        .contentEndOffset(this.bottomChromeH + 8)
         // Pre-build a few offscreen rows so a fling doesn't pay the full
         // MessageBubble construction cost inside the visible frame.
         // Starts small and grows once the chat is on screen.
