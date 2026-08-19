@@ -77,6 +77,7 @@ import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest from './AttachActions.test';
 import mediaBoxTest from './MediaBox.test';
 import messageGesturesTest from './MessageGestures.test';
+import readingReturnTest from './ReadingReturn.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -158,4 +159,5 @@ export default function testsuite() {
   attachActionsTest();
   mediaBoxTest();
   messageGesturesTest();
+  readingReturnTest();
 }
