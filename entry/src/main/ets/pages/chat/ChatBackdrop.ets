@@ -32,7 +32,7 @@ const AMBIENT_PHASE_MS: number = 4200;
 
 @Component
 export struct ChatBackdrop {
-  @Prop chatBg: ChatBackgroundState;
+  @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
   @Prop @Watch('onParamsChanged') screenW: number;
   @Prop @Watch('onParamsChanged') screenH: number;
 
@@ -77,7 +77,12 @@ export struct ChatBackdrop {
   }
 
   // 背景状态、屏幕尺寸、模糊度、图案浓度、深浅主题——任何一个变了，合成图都
-  // 得重算。@Prop 的 chatBg 变化会触发重建，这里再补上其余几路。
+  // 得重算，所以每一路都挂 @Watch。
+  //
+  // chatBg 尤其不能漏：@Prop 变化只触发**重新渲染**，不会重跑副作用。漏掉它
+  // 时 syncRaster 只在 aboutToAppear 跑一次，而那时 bgStore 的订阅还没回调、
+  // 拿到的是种子默认背景——真背景到达后光栅永不重算，轻则缓存全废、每次进
+  // 会话都走实时分层绘制，重则一直停在默认背景的旧缓存图上，显示错壁纸。
   private onParamsChanged(): void {
     this.syncRaster();
   }
