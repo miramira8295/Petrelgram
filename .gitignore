@@ -23,3 +23,6 @@ entry/libs/
 # 翻译中间产物（分块 JSON）。成品是 resources/<locale>/element/string.json，
 # 由 scripts/i18n-assemble-locale.mjs 从这些块拼出来。
 /i18n-work
+
+# 重构期间的对照备份，不进版本库
+*.ets.bak

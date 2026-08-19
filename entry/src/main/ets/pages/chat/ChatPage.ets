@@ -55,6 +55,9 @@ import { AlbumGroupDataSource, contentFingerprint, DataSourceUpdateKind } from '
 import { BasicPrefetcher } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
+import {
+  SEARCH_FETCH, SEARCH_JUMP, SearchStep, searchCounterText, stepNewer, stepOlder
+} from '../../util/searchPaging';
 import { CachedImage } from '../common/CachedImage';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import { AvatarView } from '../chatlist/AvatarView';
@@ -3253,21 +3256,22 @@ struct ChatPage {
     this.onReplyTap(this.searchResults[idx]); // same jump + double-blink flash
   }
 
-  // ∧ = older result. Past the loaded window → fetch the next page first.
-  private searchOlder(): void {
-    const next = this.searchIdx + 1;
-    if (next < this.searchResults.length) {
-      this.jumpToResult(next);
-    } else if (this.searchResults.length < this.searchTotal && this.searchResults.length > 0) {
-      this.runSearch(this.searchResults[this.searchResults.length - 1], next);
+  // ∧ / ∨ 的决策交给纯函数（util/searchPaging，有单测）：下标越界、总数为 0、
+  // 已加载等于总数、空结果集——这几个边界混在异步回调之间最容易写错。
+  private applySearchStep(step: SearchStep): void {
+    if (step.action === SEARCH_JUMP) {
+      this.jumpToResult(step.index);
+    } else if (step.action === SEARCH_FETCH) {
+      this.runSearch(step.fromMessageId, step.index);
     }
   }
 
-  // ∨ = newer result.
+  private searchOlder(): void {
+    this.applySearchStep(stepOlder(this.searchResults, this.searchIdx, this.searchTotal));
+  }
+
   private searchNewer(): void {
-    if (this.searchIdx > 0) {
-      this.jumpToResult(this.searchIdx - 1);
-    }
+    this.applySearchStep(stepNewer(this.searchIdx));
   }
 
   // 点引用块：先把"跳走之前在哪"压进返回栈，再跳。
@@ -7550,7 +7554,7 @@ struct ChatPage {
   searchBottomBar() {
     Row() {
       Text(this.searchResults.length > 0
-        ? `${this.searchTotal - this.searchIdx} / ${this.searchTotal}`
+        ? searchCounterText(this.searchIdx, this.searchTotal)
         : (this.searchTotal === 0 && this.searchQuery.trim() !== '' ? '' : $r('app.string.cp_search_placeholder')))
         .fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
       Blank().layoutWeight(1);

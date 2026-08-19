@@ -81,6 +81,7 @@ import readingReturnTest from './ReadingReturn.test';
 import richMessageTest from './RichMessage.test';
 import richBlocksTest from './RichBlocks.test';
 import memberRoleTest from './MemberRole.test';
+import searchPagingTest from './SearchPaging.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -166,4 +167,5 @@ export default function testsuite() {
   richMessageTest();
   richBlocksTest();
   memberRoleTest();
+  searchPagingTest();
 }
