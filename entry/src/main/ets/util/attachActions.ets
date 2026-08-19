@@ -11,7 +11,9 @@ export const ATTACH_KEYS: string[] =
 
 export interface AttachAction {
   key: string;
-  // sys.symbol 的名字。缺名不会报错，会静默画成空白，所以新符号必须上机看过。
+  // sys.symbol 的名字。**缺名不会报错，会静默画成空白**——music_note 和
+  // chart_bar 就是这么空了一版才被截图抓到。新符号必须先在项目里找到已有的
+  // 使用点，或者上机看过再用。
   icon: string;
   label: Resource;
   // 图标圆底的颜色。取 AVATAR_PALETTE 同族的实色，和头像占位色是一套观感。
@@ -28,11 +30,11 @@ export interface AttachAction {
 const ORDER: AttachAction[] = [
   { key: 'media', icon: 'sys.symbol.picture', label: $r('app.string.cp_photo_or_video'), tint: '#65AADD' },
   { key: 'file', icon: 'sys.symbol.doc', label: $r('app.string.storage_file'), tint: '#7BC862' },
-  { key: 'audio', icon: 'sys.symbol.music_note', label: $r('app.string.storage_audio'), tint: '#EFA92E' },
+  { key: 'audio', icon: 'sys.symbol.speaker_wave_2', label: $r('app.string.storage_audio'), tint: '#EFA92E' },
   { key: 'videoNote', icon: 'sys.symbol.video', label: $r('app.string.cp_video_message'), tint: '#6EC9CB' },
   { key: 'location', icon: 'sys.symbol.map', label: $r('app.string.loc_location'), tint: '#E17076' },
   { key: 'contact', icon: 'sys.symbol.person', label: $r('app.string.tab_contacts'), tint: '#A695E7' },
-  { key: 'poll', icon: 'sys.symbol.chart_bar', label: $r('app.string.poll_word'), tint: '#EE7AAE' },
+  { key: 'poll', icon: 'sys.symbol.data_proportion', label: $r('app.string.poll_word'), tint: '#EE7AAE' },
   { key: 'dice', icon: 'sys.symbol.gamecontroller', label: $r('app.string.cp_dice'), tint: '#FAA774' }
 ];
 

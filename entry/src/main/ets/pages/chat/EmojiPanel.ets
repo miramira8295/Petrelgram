@@ -66,6 +66,10 @@ const SECTIONS: EmojiSection[] = [
   }
 ];
 
+// 横滑切页的触发阈值。比 PanGesture 的 distance 大一截：那个只决定"算不算
+// 一次拖动"，这个决定"这次拖动算不算翻页"，太小会让轻轻蹭一下就换页。
+const SWIPE_TAB_THRESHOLD: number = 60;
+
 const CLASSIC_PACKS: ClassicPack[] = SECTIONS.map((s: EmojiSection): ClassicPack => ({
   title: s.title,
   icon: s.emoji[0],
@@ -101,7 +105,8 @@ export struct EmojiPanel {
   }
 
   private switchTab(idx: number): void {
-    if (idx === this.tab) {
+    // 越界就什么也不做——滑到第一页再往右滑不该跳到 GIF。
+    if (idx < 0 || idx > 2 || idx === this.tab) {
       return;
     }
     if (idx === 1) {
@@ -114,24 +119,25 @@ export struct EmojiPanel {
     });
   }
 
+  // 只留文字。图标去掉之后字号可以放大一档，三个标签横排反而更清楚；
+  // 选中态靠主色 + 下面那条指示条，不画任何框。
   @Builder
-  bottomTab(symbol: Resource, label: string, idx: number) {
-    Column({ space: 2 }) {
-      SymbolGlyph(symbol)
-        .fontSize(21)
-        .fontColor([this.tab === idx ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+  bottomTab(_symbol: Resource, label: string, idx: number) {
+    Column({ space: 3 }) {
       Text(label)
-        .fontSize(11)
+        .fontSize(14)
         .fontWeight(this.tab === idx ? FontWeight.Medium : FontWeight.Normal)
         .fontColor(this.tab === idx ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY);
       Row()
         .width(18).height(2).borderRadius(1)
         .backgroundColor(this.tab === idx ? COLOR_PRIMARY : Color.Transparent);
     }
-    .layoutWeight(1).height(48)
+    .layoutWeight(1).height(EMOJI_TAB_BAR_HEIGHT - 4)
     .justifyContent(FlexAlign.Center)
-    .borderRadius(12)
-    .backgroundColor(this.tab === idx ? $r('app.color.selected_pill') : Color.Transparent)
+    // 不画任何框：选中态靠图标和文字变主色 + 下面那条 18×2 的指示条表示。
+    // 原来还压一块 selected_pill 的圆角底，在玻璃面板上像给按钮描了个边。
+    .backgroundColor(Color.Transparent)
+    // 同格子：这里不挂材质，否则三个标签各自变成一块玻璃砖，看着就是三个框。
     .animation({ duration: this.panelDuration(140), curve: Curve.EaseOut })
     .accessibilityText(str('a11y_option_state', label, this.tab === idx ? str('a11y_selected') : ''))
     .onClick(() => { this.switchTab(idx); });
@@ -174,19 +180,34 @@ export struct EmojiPanel {
       // Keep the content viewport explicit. A layoutWeight chain inside the
       // empty-GIF state could otherwise propagate through Stack and make the
       // overlay consume the whole chat page after switching tabs.
-      .width('100%').height(EMOJI_CONTENT_HEIGHT);
+      .width('100%').height(EMOJI_CONTENT_HEIGHT)
+      // 左右滑动切页。只认横向：里面的网格是纵向滚动的，PanDirection.Horizontal
+      // 让纵向拖动压根不满足这个识别器，直接落到网格自己身上。
+      // parallelGesture 而不是 gesture：不抢子组件的点击（点表情要照常发出去）。
+      .parallelGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 24 })
+          .onActionEnd((event: GestureEvent): void => {
+            const dx: number = event.offsetX;
+            if (Math.abs(dx) < SWIPE_TAB_THRESHOLD) {
+              return;
+            }
+            // 手指向左 = 看下一页。
+            this.switchTab(dx < 0 ? this.tab + 1 : this.tab - 1);
+          })
+      );
       Row({ space: 5 }) {
         this.bottomTab($r('sys.symbol.face_smiling'), str('emoji_tab'), 0);
         this.bottomTab($r('sys.symbol.gift'), str('sticker_tab'), 1);
         this.bottomTab($r('sys.symbol.video'), 'GIF', 2);
       }
       .width('100%').height(EMOJI_TAB_BAR_HEIGHT)
-      .padding({ left: 12, right: 12, top: 5, bottom: 6 })
-      .border({ width: { top: 0.7 }, color: $r('app.color.divider') });
+      .padding({ left: 12, right: 12, top: 5, bottom: 6 });
     }
     .width('100%').height(BOTTOM_DRAWER_HEIGHT)
     .constraintSize({ minHeight: BOTTOM_DRAWER_HEIGHT, maxHeight: BOTTOM_DRAWER_HEIGHT })
-    .backgroundColor($r('app.color.surface'))
+    // 透明：底色由抽屉卡片提供（毛玻璃/沉浸光感在那一层）。这里再涂一层
+    // 不透明的 surface，就是把玻璃整个盖死——表情面板背景一直是死深色的原因。
+    .backgroundColor(Color.Transparent)
     .accessibilityText($r('app.string.emoji_panel_a11y'));
   }
 }

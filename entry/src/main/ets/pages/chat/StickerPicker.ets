@@ -105,6 +105,8 @@ const SET_LIMIT: number = 20;
 @Component
 export struct StickerPicker {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  // 正在被按住的格子（setIdx_pos）。空串表示没有。
+  @State private pressedCell: string = '';
   onPick: (s: StickerItem, x: number, y: number) => void = (): void => {};
   stickerType: string = 'regular'; // 'regular' | 'custom_emoji'
   includeTrending: boolean = false;
@@ -817,20 +819,15 @@ export struct StickerPicker {
     }
   }
 
-  @Styles
-  stickerCellNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  stickerCellPressedStyle() {
-    .opacity(0.72)
-    .scale({ x: 0.9, y: 0.9 })
+  // 按压态自己管，不用 stateStyles。格子在 Grid 里，而 Grid 自带的滑动手势
+  // 优先级更高，stateStyles 的按压判定要等它先放弃——表现出来就是"按下去
+  // 半天才有反应"。onTouch 是基础事件，按下即到。
+  private pressedCellStyleScale(cellKey: string): number {
+    return this.pressedCell === cellKey ? 0.9 : 1;
   }
 
   @Builder
-  stickerCell(s: StickerItem) {
+  stickerCell(s: StickerItem, cellKey: string) {
     Stack() {
       if (this.animate && s.format === 'tgs' && s.srcPath !== '') {
         Column() {
@@ -863,9 +860,17 @@ export struct StickerPicker {
       }
     }
     .width('100%').aspectRatio(1)
-    .stateStyles({
-      normal: this.stickerCellNormalStyle,
-      pressed: this.stickerCellPressedStyle
+    // 这里**不挂材质**。每格挂一层 THIN 材质之后，每个 emoji 都变成一块独立
+    // 的玻璃砖，边缘连成一片网格线——API 26 真机上一眼就能看到（截图为证）。
+    // 材质属于面板那一层，格子只负责按压反馈。
+    .opacity(this.pressedCell === cellKey ? 0.72 : 1)
+    .scale({ x: this.pressedCellStyleScale(cellKey), y: this.pressedCellStyleScale(cellKey) })
+    .onTouch((event: TouchEvent): void => {
+      if (event.type === TouchType.Down) {
+        this.pressedCell = cellKey;
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        this.pressedCell = '';
+      }
     })
     .animation({
       duration: this.reduceAnimations || this.powerSaving ? 0 : 110,
@@ -938,8 +943,10 @@ export struct StickerPicker {
               }
               .width(38).height(38)
               .justifyContent(FlexAlign.Center)
-              .backgroundColor(this.curSet === idx && this.searchQuery.trim() === ''
-                ? $r('app.color.selected_pill') : Color.Transparent)
+              // 不画框：选中态用透明度区分。原来压一块 selected_pill 的圆角底，
+              // 在玻璃面板上看着就是给这个表情描了个边。
+              .backgroundColor(Color.Transparent)
+              .opacity(this.curSet === idx && this.searchQuery.trim() === '' ? 1 : 0.45)
               .borderRadius(10)
               .onClick(() => {
                 this.searchQuery = '';
@@ -958,7 +965,7 @@ export struct StickerPicker {
             text: this.searchQuery,
             placeholder: this.stickerType === 'custom_emoji' ? $r('app.string.sp_search_emoji') : $r('app.string.sp_search_stickers')
           })
-            .fontSize(14).layoutWeight(1).height(30)
+            .fontSize(14).layoutWeight(1).height(28)
             .backgroundColor(Color.Transparent).padding(0)
             .placeholderColor(COLOR_TEXT_SECONDARY)
             .onChange((v: string) => { this.onSearchChanged(v); });
@@ -974,11 +981,13 @@ export struct StickerPicker {
               });
           }
         }
-        .width('92%').height(34)
+        // 抽屉里高度紧张（260 总高，包条 44 + 标签条 44 已经吃掉 88），
+        // 搜索框压到 30 并收紧外边距，省下的都给表情网格。
+        .width('92%').height(30)
         .padding({ left: 12, right: 12 })
-        .backgroundColor($r('app.color.surface_alt')).borderRadius(17)
+        .backgroundColor($r('app.color.surface_alt')).borderRadius(15)
         .alignItems(VerticalAlign.Center)
-        .margin({ top: 4, bottom: 4 });
+        .margin({ top: 2, bottom: 2 });
         if (this.contentError !== '' && this.searchQuery.trim() === '') {
           Row({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
@@ -1037,7 +1046,7 @@ export struct StickerPicker {
                 .columnStart(0).columnEnd(this.stickerType === 'custom_emoji' ? 7 : 4);
               } else if (e.sticker !== null) {
                 GridItem() {
-                  this.stickerCell(e.sticker);
+                  this.stickerCell(e.sticker, `${e.setIdx}_${e.pos}`);
                 }
               }
             }, (e: FlatEntry, index: number) => guardKey('stickers', index,
