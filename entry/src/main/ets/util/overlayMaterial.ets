@@ -90,10 +90,12 @@ export function pressAnimationWins(surface: OverlaySurface): boolean {
 
 function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
   switch (surface) {
-    // Menus want what is behind them pushed firmly back but still legible —
-    // the thickness the platform gives its own menus.
+    // 菜单：REGULAR 而不是 THICK。THICK 把背后压得太实，真机上几乎读不出
+    // 玻璃感，看着就是一块浅色板；REGULAR 仍然把内容推远、文字照样清楚，
+    // 但透出的层次让它像一块玻璃。同一档同时用于消息长按菜单和顶栏菜单，
+    // 两者本来就该长得一样（见 ActionMenuRow 的注释）。
     case 'menu':
-      return uiMaterial.ImmersiveStyle.THICK;
+      return uiMaterial.ImmersiveStyle.REGULAR;
     // A modal covers what it interrupts; nothing behind it should read.
     case 'dialog':
       return uiMaterial.ImmersiveStyle.ULTRA_THICK;

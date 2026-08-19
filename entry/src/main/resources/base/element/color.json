@@ -70,7 +70,7 @@
     },
     {
       "name": "badge_bg",
-      "value": "#B6B6BB"
+      "value": "#9A9AA2"
     },
     {
       "name": "select_highlight",
@@ -79,6 +79,10 @@
     {
       "name": "reaction_chip",
       "value": "#1F000000"
+    },
+    {
+      "name": "press_overlay",
+      "value": "#14000000"
     }
   ]
 }

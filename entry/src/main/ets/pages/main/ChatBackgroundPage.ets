@@ -7,12 +7,14 @@ import {
 import {
   BackgroundPreview, backgroundPreviewOf, backgroundThumbnailFile
 } from '../../util/backgroundPresentation';
-import { invalidateDefaultSnapshot } from '../../store/ChatBackgroundStore';
+import { defaultChatBackgroundSnapshot, invalidateDefaultSnapshot } from '../../store/ChatBackgroundStore';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import {
-  BG_BLUR_DEFAULT, BG_BLUR_MAX, BG_BLUR_MIN, KEY_BG_BLUR, setNumber
+  BG_BLUR_DEFAULT, BG_BLUR_MAX, BG_BLUR_MIN, BG_PATTERN_DEFAULT, BG_PATTERN_MIN,
+  CHAT_DIM_MAX, KEY_BG_BLUR, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM,
+  patternStrengthKey, setNumber
 } from '../../store/AppSettings';
 
 const CARD_RADIUS: number = 14;
@@ -36,6 +38,10 @@ struct ChatBackgroundPage {
   @State loadState: string = 'loading';
   @State rows: GalleryRow[] = [];
   @State forDark: boolean = false;
+  @StorageProp(KEY_BG_PATTERN) bgPatternLight: number = BG_PATTERN_DEFAULT;
+  @StorageProp(KEY_BG_PATTERN_DARK) bgPatternDark: number = BG_PATTERN_DEFAULT;
+  // 深色遮罩强度（0..CHAT_DIM_MAX）。滑杆按百分比显示，存的是 0..1 的小数。
+  @StorageLink(KEY_CHAT_DIM) chatDim: number = 0;
   @State applyingId: string = '';
   @State thumbPaths: Map<string, string> = new Map();
   // 0 = account default mode; non-zero = one chat only. Group/channel chat
@@ -199,6 +205,91 @@ struct ChatBackgroundPage {
     .padding(3).borderRadius(20).backgroundColor(COLOR_SURFACE);
   }
 
+  // 深色遮罩。原来在「聊天设置 → 夜间模式」那张卡里，但它调的是背景的明暗，
+  // 归到背景页的深色一侧才找得着。只在深色页签下出现——它本来就只在深色模式
+  // 生效，挂在浅色页签上会让人以为浅色也起作用。
+  //
+  // 全局设置：单个会话的背景页没有浅/深切换（chatId !== 0 时不显示），
+  // 遮罩也就不在那里露面。
+  @Builder
+  darkDimCard() {
+    Column({ space: 8 }) {
+      Row() {
+        Text($r('app.string.chat_settings_dark_dim')).fontSize(15)
+          .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        Text(`${Math.round(this.chatDim * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+      }.width('100%');
+      Text($r('app.string.chat_settings_dark_dim_sub'))
+        .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      Slider({
+        value: Math.round(this.chatDim * 100),
+        min: 0,
+        max: Math.round(CHAT_DIM_MAX * 100),
+        step: 5,
+        style: SliderStyle.OutSet
+      })
+        .width('100%')
+        .trackColor($r('app.color.divider'))
+        .selectedColor(COLOR_PRIMARY)
+        .blockColor(COLOR_PRIMARY)
+        .onChange((value: number): void => {
+          const next: number = Math.round(value) / 100;
+          this.chatDim = next;
+          setNumber(KEY_CHAT_DIM, next);
+        });
+    }
+    .width('100%')
+    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
+  // 图案线条太重时压一档。乘在壁纸自带的 intensity 上，不改壁纸本身，
+  // 所以换一张图案后这个设置仍然生效。整图壁纸没有图案可言，滑块不出现。
+  private patternValue(): number {
+    return this.forDark ? this.bgPatternDark : this.bgPatternLight;
+  }
+
+  // 当前生效的背景是不是图案。整图壁纸没有图案可言，滑块不该出现。
+  // 读的是全局那份快照——这个页面自己只管"能选哪些"，不持有当前状态。
+  private currentIsPattern(): boolean {
+    return defaultChatBackgroundSnapshot(this.forDark).isPattern;
+  }
+
+  @Builder
+  patternCard() {
+    Column({ space: 8 }) {
+      Row() {
+        Text($r('app.string.cb_pattern_strength')).fontSize(15)
+          .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        Text(`${Math.round(this.patternValue() * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+      }.width('100%');
+      Slider({
+        value: Math.round(this.patternValue() * 100),
+        min: Math.round(BG_PATTERN_MIN * 100),
+        max: 100,
+        step: 5,
+        style: SliderStyle.OutSet
+      })
+        .width('100%')
+        .trackColor($r('app.color.divider'))
+        .selectedColor(COLOR_PRIMARY)
+        .blockColor(COLOR_PRIMARY)
+        .onChange((value: number): void => {
+          const next: number = Math.round(value) / 100;
+          // 写到当前页签对应的那一份：浅色页签调浅色，深色页签调深色。
+          if (this.forDark) {
+            this.bgPatternDark = next;
+          } else {
+            this.bgPatternLight = next;
+          }
+          setNumber(patternStrengthKey(this.forDark), next);
+        });
+    }
+    .width('100%')
+    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
   @Builder
   blurCard() {
     Column({ space: 8 }) {
@@ -293,6 +384,12 @@ struct ChatBackgroundPage {
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => this.reset());
             this.blurCard();
+            if (this.currentIsPattern()) {
+              this.patternCard();
+            }
+            if (this.forDark && this.chatId === 0) {
+              this.darkDimCard();
+            }
             GridRow({ columns: 3, gutter: 10 }) {
               ForEach(this.rows, (row: GalleryRow) => {
                 GridCol({ span: 1 }) { this.tile(row); }

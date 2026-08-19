@@ -46,6 +46,17 @@ const BLUR_OVERSCAN_SCALE: number = 1.08;
 // Pure function: given the shape of the background and the user's blur
 // setting, decide how much blur (if any) the composited image should get.
 // Returns a new value only — no mutation of the caller's params.
+// 图案的实际不透明度 = 壁纸自带的 intensity × 用户设的浓度。
+// 只作用于图案；整图壁纸的 imageOpacity 恒为 1，压低它会让整张图发灰。
+export function patternOpacity(
+  isPattern: boolean, imageOpacity: number, strength: number
+): number {
+  if (!isPattern) {
+    return imageOpacity;
+  }
+  return Math.max(0.04, Math.min(1, imageOpacity * strength));
+}
+
 export function backgroundBlurRadius(
   path: string, isPattern: boolean, blurred: boolean, userBlur: number
 ): number {

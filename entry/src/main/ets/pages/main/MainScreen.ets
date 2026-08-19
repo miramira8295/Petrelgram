@@ -18,8 +18,9 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { updateChecker, STORAGE_UPDATE_AVAILABLE } from '../../services/UpdateChecker';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { BG_PATTERN_DEFAULT, patternStrengthKey } from '../../store/AppSettings';
 import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/ChatBackgroundStore';
-import { rasterizeBackground } from '../../util/chatBackgroundRaster';
+import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
 import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial';
 
@@ -78,7 +79,11 @@ export struct MainScreen {
       (state: ChatBackgroundState): void => {
         rasterizeBackground(this.getUIContext(), {
           colors: state.colors, angle: state.angle, path: state.path,
-          isPattern: state.isPattern, imageOpacity: state.imageOpacity,
+          isPattern: state.isPattern,
+          imageOpacity: patternOpacity(state.isPattern, state.imageOpacity,
+            AppStorage.get<number>(patternStrengthKey(
+              darkResourceMode(getContext(this) as common.UIAbilityContext)
+            )) ?? BG_PATTERN_DEFAULT),
           dimming: state.dimming, blurred: state.blurred, userBlur: this.bgBlur,
           width: this.screenW, height: this.screenH
         }, (getContext(this) as common.UIAbilityContext).cacheDir);

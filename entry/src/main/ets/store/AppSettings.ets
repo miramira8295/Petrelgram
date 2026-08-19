@@ -72,6 +72,20 @@ export const KEY_BG_BLUR: string = 'bgBlur';
 export const BG_BLUR_DEFAULT: number = 8;
 export const BG_BLUR_MIN: number = 0;
 export const BG_BLUR_MAX: number = 20;
+
+// 图案壁纸的线条浓度，作为 TDLib 给的 intensity 的**乘数**（0.2~1，默认 1 =
+// 原样）。服务端那个值是壁纸作者定的，不少图案在小屏上线条压得很重；这里
+// 让用户自己压一档，而不是去改壁纸本身。
+// 深浅两套各存一份：背景本身就是分主题选的，两张图案的线条轻重不一样，
+// 共用一个浓度等于在深色下调完浅色也跟着变。
+export const KEY_BG_PATTERN: string = 'bgPatternStrength';
+export const KEY_BG_PATTERN_DARK: string = 'bgPatternStrengthDark';
+export const BG_PATTERN_DEFAULT: number = 1;
+export const BG_PATTERN_MIN: number = 0.2;
+
+export function patternStrengthKey(forDark: boolean): string {
+  return forDark ? KEY_BG_PATTERN_DARK : KEY_BG_PATTERN;
+}
 // 自动播放时静音。默认开启 —— 聊天列表里突然出声是最招人烦的行为。
 export const KEY_AUTOPLAY_MUTED: string = 'autoplayMuted';
 export const POWER_THRESHOLD_DEFAULT: number = 10;
@@ -308,6 +322,9 @@ export async function initSettings(context: common.Context): Promise<void> {
     }
     AppStorage.setOrCreate(KEY_CACHE_LIMIT, await s.get(KEY_CACHE_LIMIT, CACHE_LIMIT_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_BG_BLUR, await s.get(KEY_BG_BLUR, BG_BLUR_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_BG_PATTERN, await s.get(KEY_BG_PATTERN, BG_PATTERN_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_BG_PATTERN_DARK,
+      await s.get(KEY_BG_PATTERN_DARK, BG_PATTERN_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_AUTOPLAY_MUTED, await s.get(KEY_AUTOPLAY_MUTED, true) as boolean);
     for (const key of DATA_STRING_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
