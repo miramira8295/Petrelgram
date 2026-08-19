@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "Mesej tidak tersedia"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "Buang akaun ini"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "Hanya memadam data setempat. Akaun Telegram anda tidak terjejas."
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "Keluarkan dari kumpulan"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "Kepekatan corak"
     }
   ]
 }

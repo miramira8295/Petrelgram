@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "Повідомлення недоступне"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "Вилучити цей акаунт"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "Видаляються лише локальні дані. Сам акаунт Telegram не змінюється."
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "Вилучити з групи"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "Насиченість візерунка"
     }
   ]
 }

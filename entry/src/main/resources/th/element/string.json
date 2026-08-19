@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "ข้อความไม่พร้อมใช้งาน"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "ลบบัญชีนี้"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "ลบเฉพาะข้อมูลในเครื่อง บัญชี Telegram ไม่ได้รับผลกระทบ"
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "นำออกจากกลุ่ม"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "ความเข้มลาย"
     }
   ]
 }

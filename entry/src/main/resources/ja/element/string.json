@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "メッセージを表示できません"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "このアカウントを削除"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "端末内のデータのみ削除します。Telegram アカウントには影響しません。"
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "グループから削除"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "パターンの濃さ"
     }
   ]
 }

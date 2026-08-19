@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "消息不可用"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "移除此账号"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "仅删除本机上该账号的缓存数据，不影响 Telegram 账号本身。"
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "移出群组"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "图案浓度"
     }
   ]
 }

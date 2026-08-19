@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "訊息無法顯示"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "移除此帳號"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "僅刪除本機上該帳號的快取資料，不影響 Telegram 帳號本身。"
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "移出群組"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "圖案濃度"
     }
   ]
 }

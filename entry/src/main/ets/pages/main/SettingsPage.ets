@@ -4,7 +4,7 @@ import {
   logoutCurrentTdAccount, removeDuplicateTdAccountsForActive,
   switchTdAccount, updateActiveTdAccountProfile
 } from '../../tdkit/Globals';
-import { TdAccountSummary } from '../../tdkit/AccountRegistry';
+import { TD_ACCOUNT_REGISTRY_EPOCH, TdAccountSummary, accountRegistry } from '../../tdkit/AccountRegistry';
 import { ProfileStore } from '../../store/ProfileStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from '../chat/TgsStickerView';
@@ -865,7 +865,34 @@ export struct SettingsPage {
     .enabled(this.switchingSlotId === '' &&
       !this.accountNavigationLocked && this.openingSettingPage === '')
     .accessibilityText(str('a11y_switch_account', account.name !== '' ? account.name : str('settings_telegram_account')))
-    .onClick((): void => this.switchAccount(account.slotId));
+    .onClick((): void => this.switchAccount(account.slotId))
+    // 长按移除。列表里之所以会出现同一个账号的两条，是因为自动去重现在只清
+    // 空壳、不动有数据的槽位（删条目留几百 MB 的库，等于账号进不去又占空间）。
+    // 哪一份该留不是代码能判断的，所以交给用户在这里选。
+    .gesture(LongPressGesture().onAction((): void => { this.confirmRemoveAccount(account); }));
+  }
+
+  // 移除一个账号：条目和它在本机的数据一起删。删数据是必须的——只删条目的话
+  // 下次启动的自愈扫描会按磁盘把它捡回来。
+  private confirmRemoveAccount(account: TdAccountSummary): void {
+    const name: string = account.name !== '' ? account.name : str('settings_telegram_account');
+    promptAction.showDialog({
+      title: str('ar_remove_account'),
+      message: `${name}\n\n${str('ar_remove_account_sub')}`,
+      buttons: [
+        { text: $r('app.string.cancel'), color: '#8E8E93' },
+        { text: $r('app.string.delete'), color: '#E64646' }
+      ]
+    }).then((result: promptAction.ShowDialogSuccessResponse): void => {
+      if (result.index !== 1) {
+        return;
+      }
+      if (accountRegistry.removeAccountAndData(account.slotId)) {
+        this.accountRegistryEpoch = AppStorage.get<number>(TD_ACCOUNT_REGISTRY_EPOCH) ?? 0;
+      }
+    }).catch((caught: Error): void => {
+      console.error(`SettingsPage.confirmRemoveAccount failed: ${caught.message}`);
+    });
   }
 
   @Builder

@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "الرسالة غير متاحة"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "إزالة هذا الحساب"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "يحذف البيانات المحلية فقط؛ لا يتأثر حساب تيليجرام."
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "إزالة من المجموعة"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "كثافة النقش"
     }
   ]
 }

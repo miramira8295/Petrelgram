@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "پیام در دسترس نیست"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "حذف این حساب"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "فقط داده‌های محلی حذف می‌شود؛ حساب تلگرام تغییری نمی‌کند."
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "حذف از گروه"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "شدت الگو"
     }
   ]
 }

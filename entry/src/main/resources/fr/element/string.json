@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "Message indisponible"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "Supprimer ce compte"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "Supprime uniquement les données locales. Votre compte Telegram n'est pas affecté."
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "Retirer du groupe"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "Intensité du motif"
     }
   ]
 }

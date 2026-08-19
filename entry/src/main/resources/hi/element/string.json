@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "संदेश उपलब्ध नहीं"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "यह खाता हटाएँ"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "केवल स्थानीय डेटा हटाता है। आपका Telegram खाता अप्रभावित रहता है।"
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "समूह से हटाएँ"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "पैटर्न की गहराई"
     }
   ]
 }

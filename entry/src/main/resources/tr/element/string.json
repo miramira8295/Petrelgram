@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "Mesaj kullanılamıyor"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "Bu hesabı kaldır"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "Yalnızca yerel veriler silinir. Telegram hesabınız etkilenmez."
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "Gruptan çıkar"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "Desen yoğunluğu"
     }
   ]
 }

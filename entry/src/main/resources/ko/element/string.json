@@ -11019,6 +11019,22 @@
     {
       "name": "mb_reply_unavailable",
       "value": "메시지를 사용할 수 없음"
+    },
+    {
+      "name": "ar_remove_account",
+      "value": "이 계정 제거"
+    },
+    {
+      "name": "ar_remove_account_sub",
+      "value": "기기의 데이터만 삭제합니다. Telegram 계정에는 영향이 없습니다."
+    },
+    {
+      "name": "ga_remove_member",
+      "value": "그룹에서 내보내기"
+    },
+    {
+      "name": "cb_pattern_strength",
+      "value": "패턴 진하기"
     }
   ]
 }

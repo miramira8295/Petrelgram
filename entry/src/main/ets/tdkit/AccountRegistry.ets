@@ -1,11 +1,18 @@
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
+import fs from '@ohos.file.fs';
 import { str } from '../util/strings';
 
 const STORE_NAME: string = 'td_accounts';
 const KEY_ACTIVE_SLOT: string = 'active_slot';
 const KEY_ACCOUNTS_JSON: string = 'accounts_json';
 const PRIMARY_SLOT: string = 'primary';
+
+// 一个 TDLib 库里 td.binlog 的大小，用来区分"真的登录过"和"开了一下就废"。
+// 实测：登录过的约 927KB 并带 profile_photos/stickers/thumbnails 等子目录；
+// 没走完登录的空槽只有 9.6KB、且一个子目录都没有。取 64KB 做界，两者相差
+// 两个数量级，不需要更精细。
+const LIVE_BINLOG_BYTES: number = 64 * 1024;
 
 export const TD_ACCOUNT_REGISTRY_EPOCH: string = 'tdAccountRegistryEpoch';
 export const TD_SESSION_EPOCH: string = 'tdSessionEpoch';
@@ -57,6 +64,68 @@ class AccountRegistry {
   private store: preferences.Preferences | null = null;
   private accounts: TdAccountSummary[] = [];
   private activeSlot: string = PRIMARY_SLOT;
+  private baseFilesDir: string = '';
+
+  // 磁盘上这个库是不是真的登录过。
+  private static hasLiveSession(databaseDirectory: string): boolean {
+    try {
+      const binlog = `${databaseDirectory}/td.binlog`;
+      if (!fs.accessSync(binlog)) {
+        return false;
+      }
+      return fs.statSync(binlog).size >= LIVE_BINLOG_BYTES;
+    } catch (caught) {
+      console.error(`AccountRegistry.hasLiveSession failed: ${caught}`);
+      return false;
+    }
+  }
+
+  // 按磁盘自愈：注册表里没有、但库里确实有会话的槽位补回来。
+  //
+  // 起因是一次真实的数据丢失：主账号的条目从 accounts_json 里消失了，而它
+  // 206MB 的库原封不动躺在磁盘上——init() 只有在 JSON 整个为空时才补 primary，
+  // 于是那个账号再也进不去。**条目可以丢，数据不能丢**：数据库才是"这里有个
+  // 账号"的事实来源，JSON 只是它的元信息缓存。
+  //
+  // 主动退登过的槽位不会被误捡：TDLib 退登时会把库清空，binlog 掉回 10KB
+  // 量级，hasLiveSession 直接判否。
+  private recoverOrphanedSlots(baseFilesDir: string): number {
+    let added: number = 0;
+    const candidates: string[] = [PRIMARY_SLOT];
+    try {
+      const root = `${baseFilesDir}/td_accounts`;
+      if (fs.accessSync(root)) {
+        for (const name of fs.listFileSync(root)) {
+          candidates.push(name);
+        }
+      }
+    } catch (caught) {
+      console.error(`AccountRegistry.recoverOrphanedSlots list failed: ${caught}`);
+    }
+    for (const slotId of candidates) {
+      if (this.hasSlot(slotId)) {
+        continue;
+      }
+      const dirs = this.directories(baseFilesDir, slotId);
+      if (!AccountRegistry.hasLiveSession(dirs.databaseDirectory)) {
+        continue;
+      }
+      // 名字和头像等它被激活后由 updateActiveProfile 填上；这里只保证进得去。
+      this.accounts = [...this.accounts, {
+        slotId,
+        userId: 0,
+        name: slotId === PRIMARY_SLOT ? str('settings_current_account') : str('ar_new_account'),
+        phone: '',
+        username: '',
+        avatarPath: '',
+        pendingLogin: false,
+        previousSlotId: ''
+      }];
+      added++;
+      console.error(`AccountRegistry: recovered orphaned slot ${slotId}`);
+    }
+    return added;
+  }
 
   init(context: common.Context): void {
     AppStorage.setOrCreate(TD_ACCOUNT_REGISTRY_EPOCH, 0);
@@ -71,6 +140,8 @@ class AccountRegistry {
       if (this.accounts.length === 0) {
         this.accounts = [primaryAccount()];
       }
+      this.baseFilesDir = context.filesDir;
+      this.recoverOrphanedSlots(context.filesDir);
       const storedActive = this.store.getSync(KEY_ACTIVE_SLOT, PRIMARY_SLOT) as string;
       this.activeSlot = this.hasSlot(storedActive) ? storedActive : this.accounts[0].slotId;
       this.persist();
@@ -219,11 +290,7 @@ class AccountRegistry {
       return '';
     }
     this.activeSlot = previous;
-    this.accounts = this.accounts.filter(
-      (item: TdAccountSummary): boolean => item.slotId !== current.slotId
-    );
-    this.persist();
-    this.bumpRegistryEpoch();
+    this.dropSlots([current.slotId], 'abandonStalePending');
     return previous;
   }
 
@@ -234,11 +301,7 @@ class AccountRegistry {
     if (account === undefined || !account.pendingLogin || this.activeSlot === slotId) {
       return;
     }
-    this.accounts = this.accounts.filter(
-      (item: TdAccountSummary): boolean => item.slotId !== slotId
-    );
-    this.persist();
-    this.bumpRegistryEpoch();
+    this.dropSlots([slotId], 'discardPending');
   }
 
   markLoggedOut(slotId: string): void {
@@ -269,9 +332,7 @@ class AccountRegistry {
       (item: TdAccountSummary): boolean => item.slotId !== slotId
     );
     if (next.length === this.accounts.length || next.length === 0) { return; }
-    this.accounts = next;
-    this.persist();
-    this.bumpRegistryEpoch();
+    this.dropSlots([slotId], 'removeAccount');
   }
 
   removeDuplicatesForActive(): number {
@@ -281,16 +342,72 @@ class AccountRegistry {
     if (active === undefined || active.userId === 0 || active.pendingLogin) {
       return 0;
     }
+    // 同一个 userId 的其它槽位，**只清理没有活会话的空壳**。
+    //
+    // 原来是一律删掉，代价很实：删的是一行元信息，留下的是几百 MB 的库——
+    // 实测把 primary（206MB、完整数据）从列表里抹掉，账号再也进不去。同一个
+    // 账号在两个槽位各有一份数据时，哪一份更该留不是这里能判断的，所以一份
+    // 都不动，交给用户自己在账号列表里处理。
+    const duplicates = this.accounts
+      .filter((account: TdAccountSummary): boolean =>
+        account.slotId !== active.slotId && account.userId === active.userId)
+      .filter((account: TdAccountSummary): boolean => {
+        const dirs = this.directories(this.baseFilesDir, account.slotId);
+        return !AccountRegistry.hasLiveSession(dirs.databaseDirectory);
+      })
+      .map((account: TdAccountSummary): string => account.slotId);
+    return this.dropSlots(duplicates, 'dedupe');
+  }
+
+  // 所有删除条目的路径都走这里。
+  //
+  // 不需要"墓碑"记住谁被删过：真正的退登会让 TDLib 把库清空（binlog 从
+  // 900KB 回落到 10KB 量级），自愈扫描据此自然跳过它。反过来，自动去重那类
+  // 删除并不动库，被误删的账号下次启动就会被捡回来——这正是我们要的。
+  //
+  // 曾经加过墓碑，结果把"数据完好、只是被自动去重误删"的账号永久挡在门外，
+  // 恰好是它要防的那个损失。数据目录一律留在原地。
+  private dropSlots(slotIds: string[], reason: string): number {
+    if (slotIds.length === 0) {
+      return 0;
+    }
     const next = this.accounts.filter(
-      (account: TdAccountSummary): boolean =>
-        account.slotId === active.slotId || account.userId !== active.userId
+      (item: TdAccountSummary): boolean => slotIds.indexOf(item.slotId) < 0
     );
     const removed = this.accounts.length - next.length;
-    if (removed <= 0 || next.length === 0) { return 0; }
+    if (removed <= 0 || next.length === 0) {
+      return 0;
+    }
     this.accounts = next;
+    console.error(`AccountRegistry.dropSlots(${reason}): ${slotIds.join(',')}`);
     this.persist();
     this.bumpRegistryEpoch();
     return removed;
+  }
+
+  // 手动移除一个账号：条目和数据一起删。
+  //
+  // 数据必须一起删，否则下次启动自愈会按磁盘把它捡回来——那是给"误删条目"
+  // 兜底的，分不清这次是用户自己要删的。这也是全项目唯一会删 TDLib 库的地方。
+  //
+  // 拒绝删当前账号：正在跑的运行时还开着这个库。
+  removeAccountAndData(slotId: string): boolean {
+    if (slotId === this.activeSlot || !this.hasSlot(slotId) || this.accounts.length <= 1) {
+      return false;
+    }
+    const dirs = this.directories(this.baseFilesDir, slotId);
+    this.dropSlots([slotId], 'removeAccountAndData');
+    for (const dir of [dirs.databaseDirectory, dirs.filesDirectory]) {
+      try {
+        if (fs.accessSync(dir)) {
+          fs.rmdirSync(dir);
+        }
+      } catch (caught) {
+        // 条目已经摘掉，数据删不掉只是留了一坨占空间的文件，不该让整个操作失败。
+        console.error(`AccountRegistry.removeAccountAndData rmdir ${dir} failed: ${caught}`);
+      }
+    }
+    return true;
   }
 
   private persist(): void {
