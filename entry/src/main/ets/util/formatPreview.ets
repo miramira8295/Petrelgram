@@ -1,4 +1,5 @@
 import { str } from './strings';
+import { flattenRichMessage } from './richMessage';
 import { TdObject } from '../tdkit/TdTypes';
 
 function captionText(content: TdObject): string {
@@ -182,6 +183,13 @@ export function formatPreview(message: TdObject | null): string {
   }
   if (type === 'messageExpiredVoiceNote') {
     return str('preview_voice_expired');
+  }
+  if (type === 'messageRichMessage') {
+    // 富文本长帖：摊平后取正文，会话列表里就不再是一行"暂不支持"。
+    const flat = flattenRichMessage(content);
+    if (flat.text !== '') {
+      return flat.text.replace(/\n+/g, ' ');
+    }
   }
   if (type === 'messageUnsupported') {
     return str('preview_unsupported');

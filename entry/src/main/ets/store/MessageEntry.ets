@@ -33,6 +33,9 @@ export interface MessageEntry {
   photoWidth: number;
   photoHeight: number;
   placeholderLabel: string;
+  // 富文本长帖的原始页面块。可选：只有 contentType === 'richMessage' 才有，
+  // 其余构造点不用改。
+  richBlocks?: TdObject[];
   // Semantic category used only to decorate centered service-message pills.
   // The message keeps the same timeline position regardless of category.
   systemKind: string;
@@ -240,7 +243,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     contentType: m.contentType, text: m.text, photoFileId: m.photoFileId, photoPath: m.photoPath,
     photoProgress: m.photoProgress, photoFailed: m.photoFailed,
     photoWidth: m.photoWidth, photoHeight: m.photoHeight,
-    placeholderLabel: m.placeholderLabel, systemKind: m.systemKind,
+    placeholderLabel: m.placeholderLabel, richBlocks: m.richBlocks, systemKind: m.systemKind,
     systemType: m.systemType, systemUserIds: m.systemUserIds.slice(),
     isUnsupportedMessage: m.isUnsupportedMessage,
     isVideoChatStarted: m.isVideoChatStarted,
@@ -995,6 +998,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     photoWidth: c.photoWidth,
     photoHeight: c.photoHeight,
     placeholderLabel: sys.label !== '' ? sys.label : c.placeholderLabel,
+    richBlocks: c.richBlocks,
     systemKind: sys.kind,
     systemType: sys.label !== '' ? rawType : '',
     systemUserIds: sys.label !== '' ? systemUserIdsOf(rawContent, rawType) : [],

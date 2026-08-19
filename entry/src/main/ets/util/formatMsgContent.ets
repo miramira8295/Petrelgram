@@ -1,3 +1,4 @@
+import { FlatText, flattenRichMessage } from './richMessage';
 import { TdObject } from '../tdkit/TdTypes';
 import { formatPreview } from './formatPreview';
 import { decimalUpTo, usd } from './intlFormat';
@@ -26,6 +27,9 @@ export interface MsgContent {
   linkPhotoFileId: number;
   linkUrl: string;
   linkPreviewType?: string;
+  // messageRichMessage 的原始页面块。渲染在 RichMessageView 里做，这里只把
+  // 数据带过去——解析结果是自定义类型，塞进 MessageEntry 会牵一大串。
+  richBlocks?: TdObject[];
   linkPhotoWidth?: number;
   linkPhotoHeight?: number;
   linkPhotoLocalPath?: string;
@@ -557,6 +561,26 @@ export function speechTextOf(note: TdObject | undefined): string {
 export function formatMsgContent(message: TdObject): MsgContent {
   const content = message['content'] as TdObject | undefined;
   const type = content !== undefined ? (content['@type'] as string | undefined) : undefined;
+  // 富文本长帖：页面块模型摊平成常规的 text + entities，之后就是一条普通
+  // 文本消息，气泡那边一行都不用改（见 util/richMessage）。
+  if (type === 'messageRichMessage') {
+    const flat: FlatText = flattenRichMessage(content!);
+    const rich = content!['message'] as TdObject | undefined;
+    const blocks = rich !== undefined
+      ? ((rich['blocks'] as TdObject[] | undefined) ?? []) : [];
+    if (flat.text !== '') {
+      return {
+        // 摊平的 text 仍然带着：会话预览、搜索命中、复制都用它，只有气泡走
+        // 块渲染。contentType 是 richMessage，气泡据此挂 RichMessageView。
+        contentType: 'richMessage', text: flat.text, richBlocks: blocks, photoFileId: 0, photoWidth: 0, photoHeight: 0,
+        placeholderLabel: '', entities: flat.entities,
+        linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [],
+        linkPhotoFileId: 0, linkUrl: '',
+        videoDuration: 0, videoFileId: 0, videoFileSize: 0, videoMimeType: '',
+        videoFileName: '', photoFullFileId: 0
+      };
+    }
+  }
   if (type === 'messageText') {
     const ft = content!['text'] as TdObject | undefined;
     const text = ft !== undefined ? ((ft['text'] as string | undefined) ?? '') : '';
