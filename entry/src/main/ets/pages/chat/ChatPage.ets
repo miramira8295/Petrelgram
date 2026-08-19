@@ -158,6 +158,8 @@ const TOP_CARD_ACTION_GUARD_MS: number = 650;
 // 系统键盘从请求到落定的大致时间。摁住播放器销毁队列用这个数——量到的
 // 键盘弹出被拖到 1859ms，其中绝大部分是销毁占的主线程。
 const KEYBOARD_SETTLE_MS: number = 700;
+// 判定"在底部"时允许的行数余量，见 refreshAtBottom。
+const AT_BOTTOM_ROW_SLACK: number = 3;
 // 跳转落地后多久才允许"用户自己滚回最新"的判定重新生效。
 const JUMP_LANDING_GRACE_MS: number = 900;
 
@@ -2030,11 +2032,15 @@ struct ChatPage {
       // 那一支照常开火，把用户从中间拽到最新。实测日志里同一时刻
       // atBottom=true 而 endIdx=11 / rows=42，自相矛盾。
       //
-      // 用可见行号交叉验证：最后一个可见行不是最后一行，就一定不在底部，
-      // 不管 isAtEnd() 说什么。curEndIdx < 0 表示首帧还没有行号，那时只能信
-      // isAtEnd()。
-      const indexSaysTail: boolean = this.curEndIdx < 0 ||
-        this.groups.length === 0 || this.curEndIdx >= this.groups.length - 1;
+      // 用可见行号交叉验证，但要留余量：**不能要求"最后可见行就是最后一行"**。
+      // 新消息到达时 groups.length 先加一，curEndIdx 要等 onScrollIndex 才更新，
+      // 那一刻正好差一行；判成"不在底部"就再也不贴底，不贴底就不滚动，不滚动
+      // 就没有新的 onScrollIndex——自锁死，现象是停在底部却不跟新消息。
+      //
+      // 三行的余量足够覆盖这个时间差，也照样挡得住真正的误判：出问题时的现场
+      // 是 endIdx=11 / rows=42，差 31 行。
+      const indexSaysTail: boolean = this.curEndIdx < 0 || this.groups.length === 0 ||
+        this.groups.length - this.curEndIdx <= AT_BOTTOM_ROW_SLACK;
       const nextAtBottom = this.scroller.isAtEnd() && indexSaysTail &&
         (this.store === null || !this.store.getHasMoreNewer());
       if (this.atBottom !== nextAtBottom) {
