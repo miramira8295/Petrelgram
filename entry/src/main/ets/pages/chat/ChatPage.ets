@@ -56,6 +56,8 @@ import { BasicPrefetcher } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
+import { TopBanners } from './TopBanners';
+import { pinnedShownIndex } from '../../util/pinnedSegments';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
 import {
   ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
@@ -132,7 +134,6 @@ interface StickerSuggestion {
   thumbPath: string;
 }
 
-const PINNED_SEG_MAX: number = 5;
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
 const JUMP_RELOAD_THRESHOLD: number = 40;
@@ -1758,16 +1759,13 @@ struct ChatPage {
     this.topCardLoadingVisible = false;
   }
 
-  private topCardHasContent(): boolean {
-    return this.pinnedPreview !== '' ||
-      (this.liveGroupCallId > 0 && this.liveCallIsActive);
-  }
-
   private topCardShouldShow(): boolean {
     // Pinned/live information is optional chrome. If its background probe
     // fails while TDLib is reconnecting and there is no confirmed content,
     // don't turn that transient transport problem into a persistent banner.
-    return this.topCardHasContent() || this.topCardLoadingVisible;
+    return this.pinnedPreview !== '' ||
+      (this.liveGroupCallId > 0 && this.liveCallIsActive) ||
+      this.topCardLoadingVisible;
   }
 
   // Resolve chat.video_chat first, then the referenced group call. Sequence
@@ -2457,7 +2455,7 @@ struct ChatPage {
     if (idx < 0) {
       idx = ids.length - 1; // viewport is above every pinned message → nearest is the oldest
     }
-    if (idx !== this.pinnedShownIdx()) {
+    if (idx !== pinnedShownIndex(this.pinnedCycle, this.pinnedCount)) {
       this.pinnedCycle = idx;
       if (idx < previews.length) {
         this.pinnedPreview = previews[idx];
@@ -2487,7 +2485,7 @@ struct ChatPage {
     }
     this.startPinnedJumpGuard(2500);
     this.prepareUserJump();
-    const idx: number = this.pinnedShownIdx();
+    const idx: number = pinnedShownIndex(this.pinnedCycle, this.pinnedCount);
     const targetId: number = ids[idx];
     const topId: number = this.curStartIdx >= 0 && this.curStartIdx < this.groups.length
       ? this.groups[this.curStartIdx].head.id : 0;
@@ -6278,20 +6276,6 @@ struct ChatPage {
   }
 
   @Styles
-  topCardRowNormalStyle() {
-    .backgroundColor(Color.Transparent)
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  topCardRowPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
-    .opacity(0.82)
-    .scale({ x: 0.992, y: 0.97 })
-  }
-
-  @Styles
   timelineStatusNormalStyle() {
     .opacity(1)
     .scale({ x: 1, y: 1 })
@@ -6301,13 +6285,6 @@ struct ChatPage {
   timelineStatusPressedStyle() {
     .opacity(0.76)
     .scale({ x: 0.97, y: 0.97 })
-  }
-
-  @Styles
-  liveEntryNormalStyle() {
-    .backgroundColor('#FF405C')
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
   }
 
   @Styles
@@ -7337,221 +7314,6 @@ struct ChatPage {
     });
   }
 
-  // Segmented indicator like Telegram: short vertical bars, the currently-shown
-  // pinned message highlighted. A sliding window of up to PINNED_SEG_MAX bars so
-  // the highlight moves on every tap (and the window scrolls past the window size).
-  private pinnedShownIdx(): number {
-    return Math.min(this.pinnedCycle, Math.max(0, this.pinnedCount - 1));
-  }
-
-  private pinnedSegCount(): number {
-    return Math.min(this.pinnedCount, PINNED_SEG_MAX);
-  }
-
-  // Segments run oldest (top) → newest (bottom), so the newest pinned message
-  // highlights the BOTTOM bar. pinnedShownIdx() is in newest-first space and
-  // gets flipped into this display space.
-  private pinnedDispActive(): number {
-    return Math.max(0, this.pinnedCount - 1 - this.pinnedShownIdx());
-  }
-
-  private pinnedSegStart(): number {
-    const n: number = this.pinnedSegCount();
-    if (this.pinnedCount <= n) {
-      return 0;
-    }
-    const s: number = this.pinnedDispActive() - (n - 1);
-    return Math.max(0, Math.min(s, this.pinnedCount - n));
-  }
-
-  private pinnedSegs(): number[] {
-    const n: number = this.pinnedSegCount();
-    const a: number[] = [];
-    for (let i = 0; i < n; i++) {
-      a.push(i);
-    }
-    return a;
-  }
-
-  private pinnedActiveSeg(): number {
-    return this.pinnedDispActive() - this.pinnedSegStart();
-  }
-
-  @Builder
-  pinnedBanner() {
-    Row({ space: 10 }) {
-      Column() {
-        ForEach(this.pinnedSegs(), (i: number) => {
-          Column().width(3).layoutWeight(1)
-            .backgroundColor(i === this.pinnedActiveSeg() ? COLOR_PRIMARY : '#303E3E40')
-            .borderRadius(1.5).margin({ top: 1, bottom: 1 });
-        }, (i: number) => `seg_${i}_${i === this.pinnedActiveSeg()}`);
-      }.height(34).width(3);
-      Column({ space: 2 }) {
-        Row({ space: 6 }) {
-          Text($r('app.string.cp_pinned_message')).fontSize(12).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-          if (this.pinnedCount > 1) {
-            Text(`${this.pinnedShownIdx() + 1}/${this.pinnedCount}`)
-              .fontSize(10)
-              .fontColor(COLOR_TEXT_SECONDARY);
-          }
-          if (this.pinnedLoadState === 'loading') {
-            LoadingProgress().width(12).height(12).color(COLOR_PRIMARY);
-          }
-        }
-        Text(this.pinnedPreview).fontSize(13).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      if (this.pinnedJumpBusy) {
-        LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-      } else {
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(15)
-          .fontColor([COLOR_TEXT_SECONDARY]);
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 54 })
-    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .stateStyles({
-      normal: this.topCardRowNormalStyle,
-      pressed: this.topCardRowPressedStyle
-    })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
-      curve: Curve.EaseOut
-    })
-    .enabled(!this.pinnedJumpBusy)
-    .accessibilityText(str('cp_pinned_a11y', this.pinnedPreview))
-    .onClick(() => { this.onPinnedTap(); });
-  }
-
-  // Pinned and live rows are separate actions inside one shared card. This
-  // preserves both features when they coexist while keeping their hierarchy
-  // explicit: pinned content first, active live session second.
-  @Builder
-  liveStreamBanner() {
-    Row({ space: 10 }) {
-      Column()
-        .width(3).height(34).backgroundColor('#FF405C').borderRadius(1.5)
-        .opacity(this.livePulseExpanded ? 1 : 0.62)
-        .scale({ x: 1, y: this.livePulseExpanded ? 1 : 0.82 })
-        .animation({ duration: powerAnimationDuration(KEY_POWER_PARTICLES, 720), curve: Curve.EaseInOut });
-      Column({ space: 2 }) {
-        Row({ space: 6 }) {
-          Text($r('app.string.cp_live_now')).fontSize(12).fontColor('#FF405C').fontWeight(FontWeight.Medium);
-          if (this.liveCallIsRtmp) {
-            Text($r('app.string.cp_one_way')).fontSize(9).fontColor(Color.White).fontWeight(FontWeight.Bold)
-              .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-              .backgroundColor('#FF405C').borderRadius(6);
-          }
-          Circle({ width: 6, height: 6 }).fill('#FF405C')
-            .opacity(this.livePulseExpanded ? 1 : 0.45);
-        }
-        Text(this.liveParticipantCount > 0 ? plural('cp_n_online', this.liveParticipantCount, this.liveParticipantCount) : $r('app.string.cp_live_in_progress'))
-          .fontSize(13).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      Button() {
-        Row({ space: 5 }) {
-          if (this.liveDialogOpening || this.liveNavigationBusy) {
-            LoadingProgress().width(13).height(13).color(Color.White);
-          }
-          Text(this.liveNavigationBusy ? $r('app.string.cp_entering') : $r('app.string.cp_enter'))
-            .fontSize(12)
-            .fontColor(Color.White)
-            .fontWeight(FontWeight.Medium);
-        }
-      }
-        .height(32).padding({ left: 12, right: 12 })
-        .borderRadius(16)
-        .stateStyles({
-          normal: this.liveEntryNormalStyle,
-          pressed: this.liveEntryPressedStyle
-        })
-        .enabled(!this.liveDialogOpening && !this.liveNavigationBusy)
-        .onClick((): void => { this.onLiveStreamTap(); });
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 54 })
-    .padding({ left: 14, right: 12, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .stateStyles({
-      normal: this.topCardRowNormalStyle,
-      pressed: this.topCardRowPressedStyle
-    })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
-      curve: Curve.EaseOut
-    })
-    .accessibilityText(`正在直播，${this.liveParticipantCount > 0 ?
-      plural('cp_n_online', this.liveParticipantCount, this.liveParticipantCount) : $r('app.string.cp_live_in_progress')}，点击进入`)
-    .onClick((): void => { this.onLiveStreamTap(); });
-  }
-
-  @Builder
-  topCardLoadingBanner() {
-    Row({ space: 12 }) {
-      LoadingProgress().width(22).height(22).color(COLOR_PRIMARY);
-      Column({ space: 2 }) {
-        Text($r('app.string.cp_syncing_chat'))
-          .fontSize(13)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY);
-        Text($r('app.string.cp_checking_pinned_live'))
-          .fontSize(12)
-          .fontColor(COLOR_TEXT_SECONDARY);
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 54 })
-    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .accessibilityText($r('app.string.cp_syncing_pinned_live'));
-  }
-
-  @Builder
-  topBanners() {
-    Column() {
-      if (this.topCardHasContent()) {
-        if (this.pinnedPreview !== '') {
-          this.pinnedBanner();
-        }
-        if (this.pinnedPreview !== '' && this.liveGroupCallId > 0 && this.liveCallIsActive) {
-          Divider()
-            .strokeWidth(0.5)
-            .color($r('app.color.divider'))
-            .margin({ left: 14, right: 14 });
-        }
-        if (this.liveGroupCallId > 0 && this.liveCallIsActive) {
-          this.liveStreamBanner();
-        }
-      } else if (this.topCardLoadingVisible) {
-        this.topCardLoadingBanner();
-      }
-    }
-    .width('calc(100% - 24vp)')
-    // 置顶消息条和直播状态条共用这一张卡，它浮在消息列表之上、消息从下面
-    // 滚过去——和顶栏胶囊、dock 是同一种角色，所以走同一档 'bar' 玻璃。
-    // 自绘玻璃的两半要一起上：半透明底 + backdropBlur（不透明底会把模糊盖死）。
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .borderRadius(14)
-    .margin({ left: 12, right: 12, bottom: 2 })
-    // 'bar' 档自带阴影关闭，这条浮卡的阴影保持自己的。
-    .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .clip(true)
-    .systemMaterial(overlayMaterial('bar'))
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -6 }))
-      .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 240), curve: Curve.EaseOut }));
-  }
-
   private scrollFabBadgeWidth(): number {
     if (this.unreadBadge > 99) {
       return 34;
@@ -8358,7 +8120,23 @@ struct ChatPage {
             });
           }
           if (this.topCardShouldShow()) {
-            this.topBanners();
+            TopBanners({
+              pinnedPreview: this.pinnedPreview,
+              pinnedCount: this.pinnedCount,
+              pinnedCycle: this.pinnedCycle,
+              pinnedLoadState: this.pinnedLoadState,
+              pinnedJumpBusy: this.pinnedJumpBusy,
+              liveGroupCallId: this.liveGroupCallId,
+              liveCallIsActive: this.liveCallIsActive,
+              liveCallIsRtmp: this.liveCallIsRtmp,
+              liveParticipantCount: this.liveParticipantCount,
+              livePulseExpanded: this.livePulseExpanded,
+              liveDialogOpening: this.liveDialogOpening,
+              liveNavigationBusy: this.liveNavigationBusy,
+              topCardLoadingVisible: this.topCardLoadingVisible,
+              onPinnedTap: (): void => { this.onPinnedTap(); },
+              onLiveStreamTap: (): void => { this.onLiveStreamTap(); }
+            });
           }
         }
         .width('100%')

@@ -84,6 +84,7 @@ import memberRoleTest from './MemberRole.test';
 import searchPagingTest from './SearchPaging.test';
 import composerModeTest from './ComposerMode.test';
 import bottomSlotTest from './BottomSlot.test';
+import pinnedSegmentsTest from './PinnedSegments.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -172,4 +173,5 @@ export default function testsuite() {
   searchPagingTest();
   composerModeTest();
   bottomSlotTest();
+  pinnedSegmentsTest();
 }

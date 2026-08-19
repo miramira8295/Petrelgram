@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "끄면 시스템 브라우저로 열립니다"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "라이브 방송 중, %1$s, 눌러서 참여"
     }
   ]
 }

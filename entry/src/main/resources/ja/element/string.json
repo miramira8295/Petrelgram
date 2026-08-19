@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "オフのときはシステムのブラウザで開きます"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "ライブ配信中、%1$s、タップして参加"
     }
   ]
 }

@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "关闭后交给系统浏览器打开"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "正在直播，%1$s，点击进入"
     }
   ]
 }

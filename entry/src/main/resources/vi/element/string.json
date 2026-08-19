@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "Khi tắt, liên kết mở bằng trình duyệt hệ thống"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "Đang phát trực tiếp, %1$s, chạm để tham gia"
     }
   ]
 }

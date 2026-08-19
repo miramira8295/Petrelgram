@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "Quando desativado, os links abrem no navegador do sistema"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "Ao vivo, %1$s, toque para entrar"
     }
   ]
 }

@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "When off, links open in the system browser"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "Live now, %1$s, tap to join"
     }
   ]
 }

@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "Désactivé, les liens s'ouvrent dans le navigateur du système"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "En direct, %1$s, appuyez pour rejoindre"
     }
   ]
 }

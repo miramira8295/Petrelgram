@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "عند إيقافه، تُفتح الروابط في متصفح النظام"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "بث مباشر، %1$s، اضغط للانضمام"
     }
   ]
 }

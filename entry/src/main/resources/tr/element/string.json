@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "Kapalıyken bağlantılar sistem tarayıcısında açılır"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "Canlı yayında, %1$s, katılmak için dokunun"
     }
   ]
 }

@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "Ist die Option aus, öffnen Links im Systembrowser"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "Live, %1$s, zum Beitreten tippen"
     }
   ]
 }

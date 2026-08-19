@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "關閉後交給系統瀏覽器開啟"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "正在直播，%1$s，點擊進入"
     }
   ]
 }

@@ -11043,6 +11043,10 @@
     {
       "name": "chat_settings_in_app_browser_sub",
       "value": "Jika nonaktif, tautan dibuka di peramban sistem"
+    },
+    {
+      "name": "cp_live_a11y",
+      "value": "Sedang siaran langsung, %1$s, ketuk untuk bergabung"
     }
   ]
 }
