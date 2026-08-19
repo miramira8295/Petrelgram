@@ -28,6 +28,13 @@ export function closeAllSlots(): string {
   return SLOT_NONE;
 }
 
+// 异步到达的东西只在无人占位时入座。机器人键盘是随消息来的，不该把用户
+// 手动打开的抽屉顶掉——用户开抽屉时 composerFocused 已经是 false，只按
+// "没在打字"判断会误伤。
+export function claimIfFree(current: string, next: string): string {
+  return current === SLOT_NONE ? next : current;
+}
+
 // 点同一个入口第二次是收起。附件按钮和机器人键盘按钮都是这个语义。
 export function toggleSlot(current: string, target: string): string {
   return current === target ? SLOT_NONE : target;

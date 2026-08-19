@@ -59,8 +59,8 @@ import {
   ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
 } from '../../util/composerMode';
 import {
-  SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, closeAllSlots, closeSlot, openSlot,
-  toggleSlot
+  SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, claimIfFree, closeAllSlots, closeSlot,
+  openSlot, toggleSlot
 } from '../../util/bottomSlot';
 import {
   SEARCH_FETCH, SEARCH_JUMP, SearchStep, searchCounterText, stepNewer, stepOlder
@@ -1374,10 +1374,10 @@ struct ChatPage {
       if (newId !== prevId) {
         // Present an initial/fresh keyboard, but never yank the composer away
         // while the user is already typing or browsing media.
-        // 新键盘到了就让它占位，但正在打字或看表情时不抢——那两种情况用户
-        // 的注意力在别处，把输入区换掉是打断。
-        this.applyBottomSlot(this.composerFocused || this.showEmojiPanel
-          ? this.bottomSlot : openSlot(this.bottomSlot, SLOT_REPLY_KB));
+        // 新键盘到了就让它占位，但只在这块高度空着时——用户正开着抽屉或
+        // 正在打字，都不该被一条异步到达的消息把输入区换掉。
+        this.applyBottomSlot(this.composerFocused
+          ? this.bottomSlot : claimIfFree(this.bottomSlot, SLOT_REPLY_KB));
       }
       this.replyKeyboard = kb;
       if (kb === null) {

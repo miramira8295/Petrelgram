@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB,
-  closeAllSlots, closeSlot, openSlot, slotIsDrawer, slotOccupied, toggleSlot
+  claimIfFree, closeAllSlots, closeSlot, openSlot, slotIsDrawer, slotOccupied, toggleSlot
 } from '../main/ets/util/bottomSlot';
 
 // 一块高度只有一个主人：任何一个打开，另外两个自动让位。
@@ -13,6 +13,12 @@ export default function bottomSlotTest() {
       // 这一条是此前缺的：开附件也该收起机器人键盘。
       expect(openSlot(SLOT_REPLY_KB, SLOT_ATTACH)).assertEqual(SLOT_ATTACH);
       expect(openSlot(SLOT_EMOJI, SLOT_REPLY_KB)).assertEqual(SLOT_REPLY_KB);
+    });
+
+    it('异步到达只在空位时入座，不顶掉用户开着的抽屉', 0, () => {
+      expect(claimIfFree(SLOT_NONE, SLOT_REPLY_KB)).assertEqual(SLOT_REPLY_KB);
+      expect(claimIfFree(SLOT_ATTACH, SLOT_REPLY_KB)).assertEqual(SLOT_ATTACH);
+      expect(claimIfFree(SLOT_EMOJI, SLOT_REPLY_KB)).assertEqual(SLOT_EMOJI);
     });
 
     it('点同一个入口第二次是收起', 0, () => {
