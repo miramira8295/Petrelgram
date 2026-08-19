@@ -55,6 +55,7 @@ import { AlbumGroupDataSource, contentFingerprint, DataSourceUpdateKind } from '
 import { BasicPrefetcher } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
+import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
 import {
   ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
 } from '../../util/composerMode';
@@ -151,8 +152,6 @@ const HEADER_BLUR_RADIUS: number = 140;
 const LIST_CACHED_COUNT: number = 4;
 const CACHED_COUNT_GROW_MS: number = 450;
 
-const CHAT_HEADER_ACTION_SIZE: number = 42;
-const CHAT_HEADER_RADIUS: number = 22;
 const CHAT_HEADER_NAV_GUARD_MS: number = 700;
 const TOP_CARD_LOADING_DELAY_MS: number = 180;
 const TOP_CARD_ACTION_GUARD_MS: number = 650;
@@ -6260,21 +6259,6 @@ struct ChatPage {
   }
 
   @Styles
-  headerIdentityNormalStyle() {
-    // 同 headerActionNormalStyle：自绘玻璃时底色必须半透明。
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  headerIdentityPressedStyle() {
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
-    .opacity(0.78)
-    .scale({ x: 0.985, y: 0.96 })
-  }
-
-  @Styles
   headerMenuRowNormalStyle() {
     .backgroundColor(Color.Transparent)
     .opacity(1)
@@ -6542,195 +6526,6 @@ struct ChatPage {
     .border({ width: 0.5, color: $r('app.color.divider') })
     .borderRadius(23)
     .shadow({ radius: 5, color: '#16000000', offsetX: 0, offsetY: 1 })
-    .alignItems(VerticalAlign.Center)
-    .opacity(this.headerVisible ? 1 : 0)
-    .translate({ y: this.headerVisible ? 0 : -6 })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
-      curve: Curve.EaseOut
-    })
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -5 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }));
-  }
-
-  @Builder
-  header() {
-    Row({ space: 8 }) {
-      this.circleButton('sys.symbol.chevron_left', () => { this.closeChatPage(); });
-      Row({ space: 10 }) {
-        AvatarView({
-          avatarPath: this.avatarPath,
-          initials: this.initials,
-          colorSeed: this.chatId,
-          avatarSize: 38
-        });
-        Column() {
-          Row() {
-            Text(this.headerText().titleText)
-              .fontSize(16)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(COLOR_TEXT_PRIMARY)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .flexShrink(1);
-            if (this.headerState === 'loading' || this.headerProfileOpening) {
-              LoadingProgress()
-                .width(15)
-                .height(15)
-                .color(COLOR_PRIMARY)
-                .margin({ left: 5 });
-            } else if (this.headerEmojiPath !== '') {
-              if (this.headerEmojiFormat === 'tgs') {
-                TgsStickerView({
-                  tgsPath: this.headerEmojiPath,
-                  boxWidth: 18,
-                  boxHeight: 18,
-                  powerCategory: 'emojiStatus'
-                })
-                  .margin({ left: 4 });
-              } else if (this.headerEmojiFormat === 'webm') {
-                WebmStickerView({
-                  webmPath: this.headerEmojiPath,
-                  boxWidth: 18,
-                  boxHeight: 18,
-                  powerCategory: 'emojiStatus'
-                })
-                  .margin({ left: 4 });
-              } else {
-                Image(`file://${this.headerEmojiPath}`).draggable(false)
-                  .width(18)
-                  .height(18)
-                  .objectFit(ImageFit.Contain)
-                  .margin({ left: 4 });
-              }
-            }
-            if (this.headerMuteUpdating) {
-              LoadingProgress()
-                .width(14)
-                .height(14)
-                .color(COLOR_TEXT_SECONDARY)
-                .margin({ left: 4 });
-            } else if (this.isMuted) {
-              SymbolGlyph($r('sys.symbol.bell_slash'))
-                .fontSize(14)
-                .fontColor([COLOR_TEXT_SECONDARY])
-                .margin({ left: 4 });
-            }
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center);
-          Text(this.headerText().subtitleText)
-            .fontSize(12)
-            .fontColor(this.headerState === 'error' ? '#E64646' : COLOR_TEXT_SECONDARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: 1 });
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1);
-      }
-      .layoutWeight(1)
-      .constraintSize({ minHeight: CHAT_HEADER_ACTION_SIZE })
-      .padding({ left: 7, right: 12, top: 4, bottom: 4 })
-      .borderRadius(CHAT_HEADER_RADIUS)
-      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-      .stateStyles({
-        normal: this.headerIdentityNormalStyle,
-        pressed: this.headerIdentityPressedStyle
-      })
-      // 聊天页顶栏的三个胶囊（返回 / 头像+名称 / ⋮）都浮在消息列表之上，
-      // 正对 ULTRA_THIN 那档「浮动工具栏」。材质生效时会把 stateStyles 的
-      // 背景色清成透明并接管边框，按压反馈仍由 stateStyles 的缩放/透明度
-      // 体现；'bar' 档的 applyShadow:false 让这里手调的阴影继续生效。
-      //
-      // 注意：它悬浮在滚动列表上，官方明确提醒材质要逐帧重采样背后内容，
-      // 这一处的滑动开销必须实测，不能想当然。
-      .backdropBlur(overlayBackdropBlur('bar'))
-      .systemMaterial(overlayMaterial('bar'))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
-        curve: Curve.EaseOut
-      })
-      .accessibilityText(str('cp_header_a11y', this.headerText().titleText, this.headerText().subtitleText))
-      .onClick((): void => {
-        if (this.headerState === 'error') {
-          this.resolveHeaderIdentity();
-        } else {
-          this.openProfile();
-        }
-      });
-      Row() {
-        // 菜单展开时汉堡变叉。两个图标叠着做交叉淡入淡出 + 反向旋转，比直接
-        // 替换更像"同一个东西转过去了"。SVG 是位图路径、没法真正形变，这是
-        // 视觉上最接近的做法。
-        //
-        // 系统符号库里没有汉堡线条（list_bullet 带项目符号，不是一回事），
-        // 所以横线用自带的 SVG；fillColor 能染色，深浅色主题下跟其它图标一致。
-        Stack() {
-          Image($r('app.media.ic_header_menu'))
-            .width(18).height(18)
-            .fillColor(COLOR_TEXT_PRIMARY)
-            .draggable(false)
-            .opacity(this.headerMenuShow ? 0 : 1)
-            .rotate({ angle: this.headerMenuShow ? 90 : 0 })
-            // animation 必须挂在**属性发生变化的那个节点**上。挂在外层 Stack
-            // 上不会生效——隐式动画只作用于同一节点自身的属性变化。
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.EaseInOut
-            });
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(19).fontColor([COLOR_TEXT_PRIMARY])
-            .opacity(this.headerMenuShow ? 1 : 0)
-            .rotate({ angle: this.headerMenuShow ? 0 : -90 })
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.EaseInOut
-            });
-        }
-        .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE);
-      }
-      .width(CHAT_HEADER_ACTION_SIZE)
-      .height(CHAT_HEADER_ACTION_SIZE)
-      .borderRadius(CHAT_HEADER_RADIUS)
-      .justifyContent(FlexAlign.Center)
-      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-      .stateStyles({
-        normal: this.headerActionNormalStyle,
-        pressed: this.headerActionPressedStyle
-      })
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-        curve: Curve.EaseOut
-      })
-      // 和左边两颗顶栏胶囊同一档：半透明底（headerActionNormalStyle 里换的）
-      // + backdropBlur 自绘玻璃，API 26 上让位给沉浸光感。此前这颗漏了这两行，
-      // 所以它只是"透"的，不是"毛"的。
-      .backdropBlur(overlayBackdropBlur('bar'))
-      .systemMaterial(overlayMaterial('bar'))
-      .bindMenu(this.headerMenuShow, this.headerMenu(), {
-        // 菜单容器要自己透出来才看得到模糊：框架默认给的是一块不透明底板。
-        // backgroundBlurStyle 是低于 API 26 时的降级，systemMaterial 是 26 起
-        // 的材质，两者互斥（overlayBlur 在材质可用时返回 undefined）。
-        backgroundColor: Color.Transparent,
-        backgroundBlurStyle: overlayBlur('menu'),
-        systemMaterial: overlayMaterial('menu'),
-        onDisappear: (): void => { this.headerMenuShow = false; }
-      })
-      .enabled(!this.pageClosing && this.chatId !== 0)
-      .accessibilityText($r('app.string.cp_more_actions'))
-      .onClick((): void => {
-        if (!this.headerMenuShow) {
-          this.headerMenuShow = true;
-        }
-      });
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
     .opacity(this.headerVisible ? 1 : 0)
     .translate({ y: this.headerVisible ? 0 : -6 })
@@ -8650,7 +8445,27 @@ struct ChatPage {
           } else if (this.searchMode) {
             this.searchHeader();
           } else {
-            this.header();
+            ChatHeader({
+              titleText: this.headerText().titleText,
+              subtitleText: this.headerText().subtitleText,
+              headerState: this.headerState,
+              avatarPath: this.avatarPath,
+              initials: this.initials,
+              chatId: this.chatId,
+              emojiPath: this.headerEmojiPath,
+              emojiFormat: this.headerEmojiFormat,
+              isMuted: this.isMuted,
+              muteUpdating: this.headerMuteUpdating,
+              profileOpening: this.headerProfileOpening,
+              headerVisible: this.headerVisible,
+              topSafe: this.topSafe,
+              pageClosing: this.pageClosing,
+              menuShow: this.headerMenuShow,
+              menu: (): void => { this.headerMenu(); },
+              onBack: (): void => { this.closeChatPage(); },
+              onOpenProfile: (): void => { this.openProfile(); },
+              onResolveIdentity: (): void => { this.resolveHeaderIdentity(); }
+            });
           }
           if (this.topCardShouldShow()) {
             this.topBanners();
