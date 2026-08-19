@@ -158,8 +158,6 @@ const TOP_CARD_ACTION_GUARD_MS: number = 650;
 // 系统键盘从请求到落定的大致时间。摁住播放器销毁队列用这个数——量到的
 // 键盘弹出被拖到 1859ms，其中绝大部分是销毁占的主线程。
 const KEYBOARD_SETTLE_MS: number = 700;
-// 判定"在底部"时允许的行数余量，见 refreshAtBottom。
-const AT_BOTTOM_ROW_SLACK: number = 3;
 // 跳转落地后多久才允许"用户自己滚回最新"的判定重新生效。
 const JUMP_LANDING_GRACE_MS: number = 900;
 
@@ -496,6 +494,8 @@ struct ChatPage {
   private stayAtUnread: boolean = false;
   private curStartIdx: number = -1; // topmost visible row index (from onScrollIndex)
   private curEndIdx: number = -1;   // bottom visible row index (from onScrollIndex)
+  // onScrollIndex 上报那一刻的 groups.length。行号只有配上它才有意义。
+  private indexGroupsLen: number = -1;
   // 右下角「↓」的去向状态。它不是"回到底部"，而是"回到该继续看的地方"：
   // 引用返回 > 阅读进度 > 最新消息。规则在 util/readingReturn（有单测），
   // 这里只负责喂状态和执行结果。
@@ -2032,15 +2032,24 @@ struct ChatPage {
       // 那一支照常开火，把用户从中间拽到最新。实测日志里同一时刻
       // atBottom=true 而 endIdx=11 / rows=42，自相矛盾。
       //
-      // 用可见行号交叉验证，但要留余量：**不能要求"最后可见行就是最后一行"**。
-      // 新消息到达时 groups.length 先加一，curEndIdx 要等 onScrollIndex 才更新，
-      // 那一刻正好差一行；判成"不在底部"就再也不贴底，不贴底就不滚动，不滚动
-      // 就没有新的 onScrollIndex——自锁死，现象是停在底部却不跟新消息。
+      // 用可见行号交叉验证，但**只在行号确实描述当前这份数据时**才允许否决。
       //
-      // 三行的余量足够覆盖这个时间差，也照样挡得住真正的误判：出问题时的现场
-      // 是 endIdx=11 / rows=42，差 31 行。
-      const indexSaysTail: boolean = this.curEndIdx < 0 || this.groups.length === 0 ||
-        this.groups.length - this.curEndIdx <= AT_BOTTOM_ROW_SLACK;
+      // 行号是 onScrollIndex 给的，它落后于数据：新消息到达时 groups.length
+      // 先加一，行号要等下一次回调才更新。拿旧行号去否决，就会判成"不在底部"
+      // → 不贴底 → 不滚动 → 没有新的 onScrollIndex → 自锁死，现象是停在底部
+      // 却不跟新消息。
+      //
+      // 先前用"距末尾 3 行"的余量绕过这个时间差，但那个数是设备相关的：
+      // onScrollIndex 报的区间取决于屏幕能装下多少行（官方文档：List 与
+      // LazyForEach 结合时按屏幕范围创建节点），pad 屏高、可见行多，同样的
+      // 3 行完全不是一回事——pad 和部分手机上因此失效。
+      //
+      // 改成记录"这批行号是在数据长度为多少时算出来的"，只有两者一致才敢否决。
+      // 不涉及像素也不涉及行数，跨设备一致。
+      const indexFresh: boolean = this.curEndIdx >= 0 &&
+        this.indexGroupsLen === this.groups.length;
+      const indexSaysTail: boolean = !indexFresh ||
+        this.curEndIdx >= this.groups.length - 1;
       const nextAtBottom = this.scroller.isAtEnd() && indexSaysTail &&
         (this.store === null || !this.store.getHasMoreNewer());
       if (this.atBottom !== nextAtBottom) {
@@ -8716,6 +8725,8 @@ struct ChatPage {
           this.refreshAtBottom();
           this.curStartIdx = start;
           this.curEndIdx = end;
+          // 记下这批行号对应的数据长度，refreshAtBottom 据此判断行号是否新鲜。
+          this.indexGroupsLen = this.groups.length;
           this.curBottomId = this.bottomVisibleId(end);
           this.syncReturnState();
           this.markVisibleRead(end);
