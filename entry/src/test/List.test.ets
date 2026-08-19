@@ -85,6 +85,7 @@ import searchPagingTest from './SearchPaging.test';
 import composerModeTest from './ComposerMode.test';
 import bottomSlotTest from './BottomSlot.test';
 import pinnedSegmentsTest from './PinnedSegments.test';
+import translationModeTest from './TranslationMode.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -174,4 +175,5 @@ export default function testsuite() {
   composerModeTest();
   bottomSlotTest();
   pinnedSegmentsTest();
+  translationModeTest();
 }

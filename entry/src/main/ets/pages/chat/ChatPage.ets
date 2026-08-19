@@ -57,6 +57,11 @@ import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
 import { TopBanners } from './TopBanners';
+import { TranslateSheet } from './TranslateSheet';
+import {
+  TRANSLATE_DONE, TRANSLATE_LOADING, TranslateToggle,
+  sheetStateOf, toggleTranslation, translationActive as isTranslationActive
+} from '../../util/translationMode';
 import { pinnedShownIndex } from '../../util/pinnedSegments';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
 import {
@@ -5592,8 +5597,11 @@ struct ChatPage {
   // 内容签名变化触发 CHANGE，气泡里长出译文块。
   // 这个会话此刻到底翻不翻。总开关是"默认值"，会话级那一项是对默认值的反转：
   // 开着就是排除名单，关着就是白名单。
+  // 同名的纯函数以 isTranslationActive 引入：裸名 translationActive 在方法体里
+  // 解析到的是导入而不是这个方法（方法必须带 this.），两个名字并存太容易读错。
   private translationActive(): boolean {
-    return this.translateChatsEnabled ? !this.translateChatOptOut : this.isTranslatable;
+    return isTranslationActive(
+      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable);
   }
 
   // 总开关在设置页被改动后，当前页要立刻跟上：开了就把可见范围补翻，
@@ -5718,15 +5726,17 @@ struct ChatPage {
   // 总开关开着时写本地排除名单（纯本地，不会失败）；总开关关着时才走
   // 服务端的 toggleChatIsTranslatable，跟官方客户端保持同一份状态。
   private toggleTranslatable(): void {
-    const next: boolean = !this.translationActive();
-    if (this.translateChatsEnabled) {
-      this.translateChatOptOut = !next;
-      setTranslateOptedOut(this.chatId, !next);
+    const decision: TranslateToggle = toggleTranslation(
+      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable);
+    const next: boolean = decision.active;
+    if (decision.writesOptOut) {
+      this.translateChatOptOut = decision.optOut;
+      setTranslateOptedOut(this.chatId, decision.optOut);
       this.afterTranslationToggled(next);
       return;
     }
     const previous: boolean = this.isTranslatable;
-    this.isTranslatable = next;
+    this.isTranslatable = decision.translatable;
     this.afterTranslationToggled(next);
     const req: TdRequest = { '@type': 'toggleChatIsTranslatable' };
     req['chat_id'] = this.chatId;
@@ -6011,7 +6021,7 @@ struct ChatPage {
   @State translateSheetOpen: boolean = false;
   @State translateSheetOriginal: string = '';
   @State translateSheetText: string = '';
-  @State translateSheetState: string = 'loading'; // loading | done | failed | empty
+  @State translateSheetState: string = TRANSLATE_LOADING;
   @State translateSheetLang: string = '';
   private translateSheetMsgId: number = 0;
   private translateSheetEditDate: number = 0;
@@ -6035,7 +6045,7 @@ struct ChatPage {
     const seq: number = ++this.translateSheetSeq;
     this.translateSheetLang = lang;
     this.translateSheetText = '';
-    this.translateSheetState = 'loading';
+    this.translateSheetState = TRANSLATE_LOADING;
     const service = getTranslationService(getTdClient());
     const msgId: number = this.translateSheetMsgId;
     const editDate: number = this.translateSheetEditDate;
@@ -6044,14 +6054,11 @@ struct ChatPage {
       if (seq !== this.translateSheetSeq) {
         return;
       }
-      if (text === null) {
-        this.translateSheetState = 'failed';
-      } else if (text === '' || text === original) {
-        this.translateSheetState = 'empty';
-      } else {
-        this.translateSheetText = text;
-        this.translateSheetState = 'done';
+      const next: string = sheetStateOf(text, original);
+      if (next === TRANSLATE_DONE) {
+        this.translateSheetText = text as string;
       }
+      this.translateSheetState = next;
     };
     service.request(this.chatId, msgId, editDate, lang, (text: string | null): void => {
       if (text !== null) {
@@ -6080,86 +6087,26 @@ struct ChatPage {
     });
   }
 
+  // bindSheet 只吃 @Builder，所以留一层薄壳把组件包进去。
+  @Builder
+  translateSheetBody() {
+    TranslateSheet({
+      original: this.translateSheetOriginal,
+      translated: this.translateSheetText,
+      state: this.translateSheetState,
+      lang: this.translateSheetLang,
+      bottomSafe: this.bottomSafe,
+      onPickLang: (): void => { this.pickTranslateSheetLang(); },
+      onRetry: (): void => { this.runSheetTranslation(this.translateSheetLang); },
+      onCopy: (): void => { this.copySheetTranslation(); }
+    });
+  }
+
   private copySheetTranslation(): void {
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.translateSheetText);
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
       promptAction.showToast({ message: $r('app.string.copied'), duration: 1300 });
     }).catch((): void => {});
-  }
-
-  @Builder
-  translateSheet() {
-    Column() {
-      Row() {
-        Text($r('app.string.mb_translate'))
-          .fontSize(17).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-          .layoutWeight(1);
-        // 目标语言胶囊：点它换语言并重译。
-        Row({ space: 4 }) {
-          Text(languageDisplayName(this.translateSheetLang))
-            .fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(12).fontColor([COLOR_PRIMARY]);
-        }
-        .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-        .borderRadius(14)
-        .backgroundColor('#143390EC')
-        .onClick((): void => { this.pickTranslateSheetLang(); });
-      }
-      .width('100%')
-      .padding({ left: 18, right: 18, top: 6, bottom: 10 });
-      Scroll() {
-        Column({ space: 6 }) {
-          Text($r('app.string.cp_translate_original'))
-            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-            .alignSelf(ItemAlign.Start);
-          Text(this.translateSheetOriginal)
-            .fontSize(16).lineHeight(22).fontColor(COLOR_TEXT_PRIMARY)
-            .copyOption(CopyOptions.LocalDevice)
-            .alignSelf(ItemAlign.Start);
-          Divider().color($r('app.color.divider')).strokeWidth(0.7)
-            .margin({ top: 8, bottom: 8 });
-          Text(str('mb_translated_into', languageDisplayName(this.translateSheetLang)))
-            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-            .alignSelf(ItemAlign.Start);
-          if (this.translateSheetState === 'loading') {
-            LoadingProgress().width(26).height(26).color(COLOR_PRIMARY)
-              .alignSelf(ItemAlign.Center).margin({ top: 12 });
-          } else if (this.translateSheetState === 'failed') {
-            Text($r('app.string.cp_translate_failed'))
-              .fontSize(14).fontColor(COLOR_TEXT_SECONDARY).alignSelf(ItemAlign.Start);
-            Button($r('app.string.cp_translate_retry'))
-              .fontSize(14).height(34)
-              .backgroundColor('#143390EC').fontColor(COLOR_PRIMARY)
-              .alignSelf(ItemAlign.Start)
-              .onClick((): void => { this.runSheetTranslation(this.translateSheetLang); });
-          } else if (this.translateSheetState === 'empty') {
-            Text($r('app.string.cp_nothing_to_translate'))
-              .fontSize(14).fontColor(COLOR_TEXT_SECONDARY).alignSelf(ItemAlign.Start);
-          } else {
-            Text(this.translateSheetText)
-              .fontSize(16).lineHeight(22).fontColor(COLOR_TEXT_PRIMARY)
-              .copyOption(CopyOptions.LocalDevice)
-              .alignSelf(ItemAlign.Start);
-          }
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Start)
-        .padding({ left: 18, right: 18, bottom: 16 });
-      }
-      .layoutWeight(1)
-      .align(Alignment.TopStart)
-      .scrollBar(BarState.Off);
-      if (this.translateSheetState === 'done') {
-        Button($r('app.string.copy'))
-          .width('100%').height(44).fontSize(16)
-          .backgroundColor(COLOR_PRIMARY).fontColor(Color.White)
-          .margin({ left: 18, right: 18, bottom: this.bottomSafe + 10 })
-          .onClick((): void => { this.copySheetTranslation(); });
-      }
-    }
-    .width('100%').height('100%')
-    .alignItems(HorizontalAlign.Start)
-    .padding({ top: 8 });
   }
 
   // Long-press on a reaction chip: who reacted with it.
@@ -8315,7 +8262,7 @@ struct ChatPage {
       }
     }
     .width('100%').height('100%')
-    .bindSheet($$this.translateSheetOpen, this.translateSheet(), {
+    .bindSheet($$this.translateSheetOpen, this.translateSheetBody(), {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       backgroundColor: $r('app.color.surface'),
       dragBar: true,
