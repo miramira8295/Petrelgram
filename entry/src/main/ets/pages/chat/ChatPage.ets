@@ -766,7 +766,10 @@ struct ChatPage {
     this.replyKeyboard = null;
     this.applyBottomSlot(closeAllSlots());
     this.replyKeyboardSendingKey = '';
-    this.clearReply();
+    // 整个清成普通输入，而不是只 clearReply()。clearReply 按设计只处理回复态，
+    // 编辑态下是空操作——换会话时编辑态因此能活下来，editingId 还指着上一个
+    // 会话的消息，下一次提交就编辑到别的会话去了。
+    this.applyComposerMode(idleComposer());
   }
 
   private resetMessageActionSession(): void {

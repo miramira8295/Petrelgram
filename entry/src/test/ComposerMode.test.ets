@@ -55,6 +55,20 @@ export default function composerModeTest() {
       expect(draftToRestore(enterReply(idleComposer(), 42, 'a', 'b'))).assertEqual('');
     });
 
+    // 这一条钉的是页面侧踩过的坑：换会话时只调 clearReply 清不掉编辑态。
+    // 想"回到普通输入"就得说 idleComposer()，不能指望某个 clear 顺手带走。
+    it('clearReply 清不掉编辑态——要清干净只能用 idleComposer', 0, () => {
+      const editing = enterEdit(idleComposer(), 88, 'text', '原文', '草稿');
+      const afterClearReply = clearReply(editing);
+      expect(afterClearReply.kind).assertEqual(COMPOSER_EDIT);
+      expect(afterClearReply.editingId).assertEqual(88);
+      const fresh = idleComposer();
+      expect(fresh.kind).assertEqual(COMPOSER_IDLE);
+      expect(fresh.editingId).assertEqual(0);
+      expect(fresh.replyToId).assertEqual(0);
+      expect(fresh.draftBeforeEdit).assertEqual('');
+    });
+
     it('取消不匹配的状态是空操作', 0, () => {
       const reply: ComposerMode = enterReply(idleComposer(), 42, 'a', 'b');
       expect(cancelEdit(reply).kind).assertEqual(COMPOSER_REPLY);
