@@ -12,7 +12,7 @@ import { SettingsPage } from './SettingsPage';
 import { MyProfilePage } from './MyProfilePage';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
-  COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TAB_PILL_BG, COLOR_TAB_UNSELECTED, darkResourceMode
+  COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TAB_UNSELECTED, darkResourceMode
 } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { updateChecker, STORAGE_UPDATE_AVAILABLE } from '../../services/UpdateChecker';
@@ -26,8 +26,13 @@ import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
 const DOCK_BG: ResourceColor = $r('app.color.dock_glass');
 const BADGE_BG: string = '#4CD964';
-const DOCK_H: number = 64;      // capsule height
-const DOCK_GAP: number = 12;    // gap below the capsule (above it: content padding)
+// 56：图标 24 + 间距 2 + 文字 10 = 36，加上 item 自己的 5 上下内缩正好 46，
+// 余下 10 是胶囊的呼吸。原先 64 多出来的那 8 是空的。
+const DOCK_H: number = 56;      // capsule height
+// 底距。一路试下来：bottomSafe + 12（太远）→ max(8, bottomSafe)（还是远）→
+// 半个 bottomSafe（太低）→ 现在取七成，落在后两者中间。别再往下：底部那条是
+// 系统的返回/主页手势带，胶囊下沿贴太近，下半截的点击会被系统先吃掉。
+const DOCK_GAP: number = 6;     // minimum gap below the capsule
 const DOCK_ITEM_INSET: number = 5;
 const DOCK_SWITCH_DURATION: number = 240;
 
@@ -51,7 +56,6 @@ export struct MainScreen {
   @State myId: number = 0;
   @State meAvatar: string = '';
   @State meInitials: string = '?';
-  @State dockWidth: number = 0;
   private controller: TabsController = new TabsController();
   private store: ProfileStore | null = null;
   private unsubStore: (() => void) | null = null;
@@ -155,16 +159,15 @@ export struct MainScreen {
     this.controller.changeIndex(index);
   }
 
-  private dockItemWidth(): number {
-    return this.dockWidth > 0 ? this.dockWidth / 4 : 0;
-  }
-
   @Styles
   dockItemNormalStyle() {
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
+  // 按压反馈只能自己画。'control' 档材质确实自带 interactive 形变和 lightEffect
+  // 触点光晕，但那层光感和它渲染的玻璃是同一块——挂到格子上，四个按钮底下就
+  // 各多一块圆底（真机实测）。材质属于胶囊那一层，格子只负责缩放。
   @Styles
   dockItemPressedStyle() {
     .opacity(0.72)
@@ -179,16 +182,16 @@ export struct MainScreen {
   dockItem(index: number, icon: string, label: ResourceStr, labelKey: string) {
     Column({ space: 2 }) {
       Stack({ alignContent: Alignment.TopEnd }) {
+        // 系统符号动效，不是自己写的 scale：选中时整体向上弹一下，动画曲线
+        // 由系统给，和其它系统图标一致。第二个参数是布尔触发器——false→true
+        // 的那一刻播一次，所以只有"变成选中"会弹，重复点已选中的不会。
         SymbolGlyph($r(icon)).fontSize(24)
           .fontColor([this.tab === index ? COLOR_PRIMARY : COLOR_TAB_UNSELECTED])
-          .scale({
-            x: this.tab === index ? 1.06 : 1,
-            y: this.tab === index ? 1.06 : 1
-          })
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.EaseOut
-        });
+          .symbolEffect(
+            new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP),
+            this.tab === index
+          )
+          .effectStrategy(SymbolEffectStrategy.NONE);
         // 设置页签的红点：和「关于」那一行是同一个信号，一路引到更新入口。
         if (index === 2 && this.updateAvailable) {
           Circle({ width: 8, height: 8 }).fill(BADGE_BG).offset({ x: 6, y: -2 });
@@ -262,32 +265,16 @@ export struct MainScreen {
   @Builder
   dock() {
     Column() {
-      Stack({ alignContent: Alignment.TopStart }) {
-        if (this.dockWidth > 0) {
-          Row()
-            .width(Math.max(0, this.dockItemWidth() - DOCK_ITEM_INSET * 2))
-            .height(DOCK_H - DOCK_ITEM_INSET * 2)
-            .backgroundColor(COLOR_TAB_PILL_BG)
-            .borderRadius((DOCK_H - DOCK_ITEM_INSET * 2) / 2)
-            .position({
-              x: this.tab * this.dockItemWidth() + DOCK_ITEM_INSET,
-              y: DOCK_ITEM_INSET
-            })
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION),
-              curve: Curve.EaseOut
-            })
-            .hitTestBehavior(HitTestMode.None);
-        }
-        Row() {
-          this.dockItem(0, 'sys.symbol.message', $r('app.string.tab_chats'), 'tab_chats');
-          this.dockItem(1, 'sys.symbol.person_2', $r('app.string.tab_contacts'), 'tab_contacts');
-          this.dockItem(2, 'sys.symbol.gearshape', $r('app.string.settings_title'), 'settings_title');
-          this.profileDockItem();
-        }
-        .width('100%').height('100%')
-        .alignItems(VerticalAlign.Center);
+      // 选中不再画底。原先是一块跟着 tab 滑的药丸，在玻璃胶囊上等于第二层
+      // 不透明底色，正好压在材质上面。现在靠主色 + 图标自己的弹跳表示选中，
+      // 外面那层 Stack（唯一作用是给药丸定位）也一并去掉了。
+      Row() {
+        this.dockItem(0, 'sys.symbol.message', $r('app.string.tab_chats'), 'tab_chats');
+        this.dockItem(1, 'sys.symbol.person_2', $r('app.string.tab_contacts'), 'tab_contacts');
+        this.dockItem(2, 'sys.symbol.gearshape', $r('app.string.settings_title'), 'settings_title');
+        this.profileDockItem();
       }
+      .alignItems(VerticalAlign.Center)
       .width('100%').height(DOCK_H)
       .backgroundColor(DOCK_BG)
       // backdropBlur over a light tint: COMPONENT_* material styles carry an
@@ -300,13 +287,14 @@ export struct MainScreen {
       .border({ width: 0.5, color: COLOR_DIVIDER })
       .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 })
       .systemMaterial(overlayMaterial('bar'))
-      .onAreaChange((_old: Area, area: Area) => {
-        this.dockWidth = area.width as number;
-      });
+      ;
     }
     .width('100%')
-    .padding({ left: 16, right: 16 })
-    .margin({ bottom: this.bottomSafe + DOCK_GAP });
+    // 两侧留白 16 → 28 → 40，胶囊再窄一档。四个格子是 layoutWeight 均分的，
+    // 收窄只吃格子宽度，图标和文字尺寸不动——但「联系人」是最长的一条，
+    // 再窄就该撞它了。
+    .padding({ left: 40, right: 40 })
+    .margin({ bottom: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)) });
   }
 
   build() {

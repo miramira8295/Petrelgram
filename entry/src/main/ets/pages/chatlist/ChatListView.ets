@@ -16,7 +16,10 @@ export struct ChatListView {
   @Prop reserveDockSpace: boolean = true;
   // Floating frosted folder bar overlays the list top — start content below
   // it while still letting rows scroll (blurred) underneath.
-  @Prop reserveFolderBarSpace: boolean = false;
+  // 顶部悬浮 chrome（顶栏 + 文件夹条）的总高度。改成数值是因为顶栏也浮起来
+  // 了：列表从它底下穿过去，才有玻璃透隐可看。原来是个布尔，只够表达"有没有
+  // 文件夹条"。
+  @Prop contentTopInset: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
@@ -262,7 +265,7 @@ export struct ChatListView {
       .enableScrollInteraction(!this.menuOpen)
       .scrollBar(BarState.Off)
       .contentEndOffset(this.endInset())
-      .contentStartOffset(this.reserveFolderBarSpace ? 54 : 0)
+      .contentStartOffset(this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       .onReachEnd(() => { this.loadMore(); });
     }

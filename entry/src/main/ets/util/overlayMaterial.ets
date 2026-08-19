@@ -165,6 +165,12 @@ export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
 
 // The backdrop-blur radius a self-drawn glass surface uses before the material.
 // Zero means no blur, so this is safe to apply unconditionally at the call site.
+// 明确要高斯模糊、不要材质的面用这个。和 overlayBackdropBlur 不同：那个在
+// 材质可用时返回 0（把观感让给材质），这个无条件给出模糊半径。
+export function plainBackdropBlur(): number {
+  return BAR_BACKDROP_BLUR;
+}
+
 export function overlayBackdropBlur(surface: OverlaySurface): number {
   return materialAvailable ? 0 : BAR_BACKDROP_BLUR;
 }

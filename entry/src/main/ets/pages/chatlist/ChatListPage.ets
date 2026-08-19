@@ -9,7 +9,7 @@ import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayMaterial, overlayGlassFill, plainBackdropBlur } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 
 interface TabSpec {
@@ -26,6 +26,8 @@ const TOP_BAR_HEIGHT: number = 56;
 const TOP_ACTION_SIZE: number = 44;
 const TAB_BADGE_MAX: number = 99;
 const FOLDER_BAR_HEIGHT: number = 44;
+// 文件夹条连同它自己的上下留白占的高度（列表让位用）。
+const FOLDER_BAR_SPACE: number = 54;
 const FOLDER_INDICATOR_HEIGHT: number = 32;
 const FOLDER_SWITCH_DURATION: number = 250;
 
@@ -426,6 +428,13 @@ export struct ChatListPage {
     return $r('app.string.cl_connecting');
   }
 
+  // 悬浮 chrome 的总高度 = 顶栏 + （有文件夹时）文件夹条。列表按这个值让出
+  // 起始位置，滚动时内容从玻璃底下穿过去。
+  private chromeInset(): number {
+    return this.topSafe + TOP_BAR_HEIGHT +
+      (this.folders.length > 0 ? FOLDER_BAR_SPACE : 0);
+  }
+
   @Builder
   topBar() {
     Row({ space: 2 }) {
@@ -476,7 +485,9 @@ export struct ChatListPage {
     .width('100%').height(TOP_BAR_HEIGHT)
     .padding({ left: this.horizontalPadding() + 4, right: this.horizontalPadding() })
     .alignItems(VerticalAlign.Center)
-    .backgroundColor($r('app.color.surface'));
+    // 自己不画玻璃：顶栏和文件夹条合成一整块，材质挂在外层那个容器上。
+    // 各画各的时，两块玻璃叠在一起会在交界处显出一条边。
+    .backgroundColor(Color.Transparent);
   }
 
   @Builder
@@ -563,16 +574,16 @@ export struct ChatListPage {
         this.ensureTabVisible(this.selectedIndex);
       });
     }
-    // Frosted material: translucent tint + backdrop blur, same recipe as the
-    // bottom dock. The list scrolls underneath and shows through.
-    .backgroundColor($r('app.color.dock_glass'))
+    // 只有这条保留沉浸光感：外面那块顶栏走的是高斯模糊，两种质感叠在一起，
+    // 胶囊才像是浮在模糊层之上的一块玻璃。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.dock_glass')))
     .backdropBlur(overlayBackdropBlur('bar'))
     .borderRadius(FOLDER_BAR_HEIGHT / 2)
     .clip(true)
     .border({ width: 0.5, color: $r('app.color.divider') })
-    .shadow({ radius: 12, color: '#1F000000', offsetX: 0, offsetY: 4 })
+    .shadow({ radius: 10, color: '#1F000000', offsetX: 0, offsetY: 3 })
     .systemMaterial(overlayMaterial('bar'))
-    .margin({ left: 8, right: 8, top: 2 })
+    .margin({ left: 8, right: 8, bottom: 6 })
     .transition(
       TransitionEffect.OPACITY
         .combine(TransitionEffect.translate({ y: -4 }))
@@ -585,7 +596,9 @@ export struct ChatListPage {
 
   build() {
     Column() {
-      this.topBar();
+      // 顶栏和文件夹条一起浮在列表上层，列表靠 contentStartOffset 让出等高的
+      // 起始位置。放在 Column 里上下排时列表不从顶栏底下过，玻璃背后没有东西
+      // 可透，材质就只剩纹理没有穿透。
       Stack({ alignContent: Alignment.Top }) {
         Tabs({ controller: this.controller }) {
         ForEach(this.tabs(), (spec: TabSpec) => {
@@ -596,10 +609,10 @@ export struct ChatListPage {
             // the body's layoutWeight(1) actually stretch.
             Column() {
               if (spec.key === 'main') {
-                MainTabBody({ reserveFolderBarSpace: this.folders.length > 0 });
+                MainTabBody({ contentTopInset: this.chromeInset() });
               } else {
                 ChatListView({
-                  listKey: spec.key, reserveFolderBarSpace: this.folders.length > 0
+                  listKey: spec.key, contentTopInset: this.chromeInset()
                 });
               }
             }.width('100%').height('100%')
@@ -644,9 +657,33 @@ export struct ChatListPage {
       .width('100%').height('100%')
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM]);
 
-        if (this.folders.length > 0) {
-          this.tabBar();
+        // 顶栏和文件夹条同在一块模糊层里，下沿一起收圆角。
+        // 代价记在这儿：胶囊那层材质采样到的是父层已经模糊过的均匀底子，
+        // 等于玻璃背后是一块平板，悬浮感会弱于它单独浮在列表上时。
+        Column() {
+          Column() {
+            this.topBar();
+            if (this.folders.length > 0) {
+              this.tabBar();
+            }
+          }
+          .width('100%')
+          // 状态栏那段高度由这块自己吃掉，而不是根容器往下推。根容器推的话，
+          // 状态栏底下留的是一条实色，和模糊块之间断一层——沉浸就没了。
+          .padding({ top: this.topSafe })
+          // 这一层走高斯模糊，不挂材质：沉浸光感只留给下面那条文件夹胶囊。
+          .backgroundColor($r('app.color.dock_glass'))
+          .backdropBlur(plainBackdropBlur())
+          // 四个角必须都写：只给 bottomLeft/bottomRight 时整条下沿是直的
+          // （实测量过左边缘和正中的下沿在同一 y），漏写的两个角会把整组吃掉。
+          .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: 18, bottomRight: 18 })
+          .clip(true)
+          // 下沿什么都不画：边框和投影都去掉了。投影虽然不是线，但 offsetY 4
+          // 让它整条压在下沿，在浅色底上看起来就是一条暗带，和边线没区别。
+          // 分界完全交给模糊本身——内容滑过去时糊掉，就是分界。
+          ;
         }
+        .width('100%');
       }
       .layoutWeight(1).width('100%');
     }
@@ -657,7 +694,6 @@ export struct ChatListPage {
     // 绘制延伸到状态栏和导航区。
     // 取 surface 是因为顶栏和列表行用的就是它，延伸出去才连成一片。
     .backgroundColor($r('app.color.surface'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }
