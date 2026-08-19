@@ -3045,9 +3045,14 @@ export struct MessageBubble {
       // 左滑回复作用在**整行**上：头像和气泡一起走。挂在气泡上时只有气泡
       // 滑动，头像钉在原地，看着像两个东西。
       .translate({ x: this.swipeReplyX })
-      // 仍然是 parallelGesture：与祖先 List 的 pan 识别器并行，纵向拖动不满足
-      // PanDirection.Horizontal，直接落到 List 去滚动，不受影响。
-      .parallelGesture(
+      // priorityGesture 而不是 parallelGesture：菜单绑在里面那层（bindContextMenu
+      // 的受控模式会在该节点上装自己的长按/预览识别器），起于气泡内部的横向
+      // 拖动会被它先吃掉——现象是在自己发的消息上左滑没反应，因为那种消息的
+      // 气泡靠右，手指几乎总是落在气泡里。
+      //
+      // 提优先级只影响横向：PanDirection.Horizontal 让纵向拖动压根不满足这个
+      // 识别器，照样落到祖先 List 去滚动。
+      .priorityGesture(
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
           .onActionUpdate((event: GestureEvent): void => { this.onSwipeReplyUpdate(event.offsetX); })
           .onActionEnd((): void => { this.onSwipeReplyEnd(); })

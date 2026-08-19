@@ -6888,7 +6888,18 @@ struct ChatPage {
     const captionTypes: string[] = ['photo', 'video', 'file', 'audio', 'voice'];
     if (msg === undefined || !msg.isOutgoing ||
       (msg.contentType !== 'text' && captionTypes.indexOf(msg.contentType) < 0)) {
+      // 诊断：反馈"点了编辑没进编辑态"。菜单和这里各判一次同样的条件，两边
+      // 一旦不一致就会出现"菜单有、点了没反应"。打出实际值才知道差在哪。
+      console.warn(`startEdit refused id=${messageId} found=${msg !== undefined}` +
+        ` outgoing=${msg?.isOutgoing} type=${msg?.contentType}`);
       return;
+    }
+    // 进编辑态就把待回复清掉：两者共用输入框那一条，编辑优先显示，回复条被
+    // 盖住却仍然生效——发出去时 replyToId 还在，用户看不见也取消不掉。
+    if (this.replyToId !== 0) {
+      this.replyToId = 0;
+      this.replyToName = '';
+      this.replyToText = '';
     }
     if (this.editingId === 0) {
       this.draftBeforeEdit = this.draft;
