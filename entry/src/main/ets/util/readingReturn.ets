@@ -89,6 +89,27 @@ export function advanceRead(state: ReturnState, messageId: number): ReturnState 
   return { jumpStack: state.jumpStack, readAnchor: messageId };
 }
 
+// 用户自己滑到了某个返回点：那一层的返回已经由他自己完成，出栈。
+//
+// 栈里存的是"跳走之前所在的那条消息"，通常比跳转目标新（id 更大）。视口
+// 底部一旦到达或越过它，再让「↓」把人送回那里就是多余的一步。
+//
+// 从栈顶往下逐层判：连续滑过好几层返回点时，一次全部出清，而不是留着让用户
+// 按三下什么都不发生。
+export function dropReachedJumps(state: ReturnState, currentId: number): ReturnState {
+  if (currentId <= 0 || state.jumpStack.length === 0) {
+    return state;
+  }
+  let end: number = state.jumpStack.length;
+  while (end > 0 && state.jumpStack[end - 1] <= currentId) {
+    end--;
+  }
+  if (end === state.jumpStack.length) {
+    return state;
+  }
+  return { jumpStack: state.jumpStack.slice(0, end), readAnchor: state.readAnchor };
+}
+
 // 用户自己滚回了最新消息：这趟"返回"已经由他自己完成，整套关系作废。
 export function reachedLatest(): ReturnState {
   return emptyReturnState();

@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   ReturnState, ReturnTarget, RETURN_JUMP, RETURN_LATEST, RETURN_NONE, RETURN_READ,
-  advanceRead, emptyReturnState, nextReturnTarget, popJump, pushJump, reachedLatest
+  advanceRead, dropReachedJumps, emptyReturnState, nextReturnTarget, popJump, pushJump,
+  reachedLatest
 } from '../main/ets/util/readingReturn';
 
 // 「↓」的三级优先级：引用返回 > 阅读进度 > 最新消息。
@@ -75,6 +76,33 @@ export default function readingReturnTest() {
     it('连点同一条引用不重复入栈', 0, () => {
       let s: ReturnState = pushJump(emptyReturnState(), 20);
       s = pushJump(s, 20);
+      expect(s.jumpStack.length).assertEqual(1);
+    });
+
+    it('手动滑到返回点：那一层出栈', 0, () => {
+      let s: ReturnState = pushJump(emptyReturnState(), 100);
+      // 还在更早的位置，栈不动。
+      s = dropReachedJumps(s, 40);
+      expect(s.jumpStack.length).assertEqual(1);
+      // 滑到返回点本身就算到达。
+      s = dropReachedJumps(s, 100);
+      expect(s.jumpStack.length).assertEqual(0);
+    });
+
+    it('一次滑过多层返回点：全部出清', 0, () => {
+      let s: ReturnState = pushJump(pushJump(emptyReturnState(), 100), 40);
+      s = dropReachedJumps(s, 100);
+      expect(s.jumpStack.length).assertEqual(0);
+    });
+
+    it('越过返回点也算到达', 0, () => {
+      let s: ReturnState = pushJump(emptyReturnState(), 100);
+      s = dropReachedJumps(s, 180);
+      expect(s.jumpStack.length).assertEqual(0);
+    });
+
+    it('还不知道看的是哪条时不动栈', 0, () => {
+      const s: ReturnState = dropReachedJumps(pushJump(emptyReturnState(), 100), 0);
       expect(s.jumpStack.length).assertEqual(1);
     });
 

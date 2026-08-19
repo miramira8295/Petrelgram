@@ -105,7 +105,8 @@ import { liveLocation, LiveLocationState } from '../../services/LiveLocationServ
 import { plural, str } from '../../util/strings';
 import {
   ReturnState, ReturnTarget, RETURN_JUMP, RETURN_NONE, RETURN_READ,
-  advanceRead, emptyReturnState, nextReturnTarget, popJump, pushJump, reachedLatest
+  advanceRead, dropReachedJumps, emptyReturnState, nextReturnTarget, popJump, pushJump,
+  reachedLatest
 } from '../../util/readingReturn';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
@@ -2957,6 +2958,12 @@ struct ChatPage {
   // 每次视口变化后更新返回状态。两件事：读到哪了（只前进），以及用户是不是
   // 自己滚回了最新——后者意味着这趟"返回"他已经自己完成，整套关系作废。
   private syncReturnState(): void {
+    // 手动滑到（或越过）某个返回点，那一层就出栈——和按「↓」返回是同一件事。
+    // 落地宽限期内不判：刚跳走时视口还停在返回点上，不设防会立刻把刚压进去
+    // 的那层弹掉，一步都退不回去。
+    if (Date.now() >= this.jumpLandingUntil) {
+      this.returnState = dropReachedJumps(this.returnState, this.curBottomId);
+    }
     if (this.atBottom) {
       if (Date.now() >= this.jumpLandingUntil) {
         this.returnState = reachedLatest();
