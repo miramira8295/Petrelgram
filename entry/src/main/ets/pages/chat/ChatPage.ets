@@ -59,6 +59,10 @@ import {
   ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
 } from '../../util/composerMode';
 import {
+  SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, closeAllSlots, closeSlot, openSlot,
+  toggleSlot
+} from '../../util/bottomSlot';
+import {
   SEARCH_FETCH, SEARCH_JUMP, SearchStep, searchCounterText, stepNewer, stepOlder
 } from '../../util/searchPaging';
 import { CachedImage } from '../common/CachedImage';
@@ -648,6 +652,9 @@ struct ChatPage {
   // 输入框上方那一条的当前状态。字段仍在（读取处很多），但**只由
   // applyComposerMode 写**，转换逻辑在 util/composerMode。
   @State composerMode: ComposerMode = idleComposer();
+  // 输入框下面那块高度归谁（none / attach / emoji / replyKeyboard）。
+  // 三个既有字段仍在（读取处很多），但**只由 applyBottomSlot 写**。
+  @State bottomSlot: string = SLOT_NONE;
   @State searchMode: boolean = false;
   // Multi-select mode (entered via the long-press menu's 选择 item).
   @State selecting: boolean = false;
@@ -749,7 +756,7 @@ struct ChatPage {
     this.commandMenuOpen = false;
     this.botMenuAvailable = false;
     this.replyKeyboard = null;
-    this.replyKbCollapsed = false;
+    this.applyBottomSlot(closeAllSlots());
     this.replyKeyboardSendingKey = '';
     this.clearReply();
   }
@@ -1367,7 +1374,10 @@ struct ChatPage {
       if (newId !== prevId) {
         // Present an initial/fresh keyboard, but never yank the composer away
         // while the user is already typing or browsing media.
-        this.replyKbCollapsed = this.composerFocused || this.showEmojiPanel;
+        // 新键盘到了就让它占位，但正在打字或看表情时不抢——那两种情况用户
+        // 的注意力在别处，把输入区换掉是打断。
+        this.applyBottomSlot(this.composerFocused || this.showEmojiPanel
+          ? this.bottomSlot : openSlot(this.bottomSlot, SLOT_REPLY_KB));
       }
       this.replyKeyboard = kb;
       if (kb === null) {
@@ -4623,7 +4633,7 @@ struct ChatPage {
       this.composerController.stopEditing();
       this.composerFocused = false;
     }
-    this.replyKbCollapsed = !this.replyKbCollapsed;
+    this.applyBottomSlot(toggleSlot(this.bottomSlot, SLOT_REPLY_KB));
     if (!openingCustom) {
       // Switching from the Bot keyboard back to text input should actually
       // present the IME rather than leaving an empty gap below the composer.
@@ -4674,7 +4684,7 @@ struct ChatPage {
     if (show) {
       this.emojiPanelClosing = false;
       this.composerFocused = false;
-      this.replyKbCollapsed = true;
+      this.applyBottomSlot(openSlot(this.bottomSlot, SLOT_EMOJI));
       this.showEmojiPanel = true;
       // 收起系统键盘，把这块高度让给抽屉。
       this.composerController.stopEditing();
@@ -4701,6 +4711,7 @@ struct ChatPage {
         }
         this.showEmojiPanel = false;
         this.emojiPanelClosing = false;
+        this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_EMOJI));
       }, 0);
     }
   }
@@ -4713,7 +4724,7 @@ struct ChatPage {
     } else {
       this.mentionItems = [];
       this.setEmojiPanel(false);
-      this.replyKbCollapsed = true;
+      this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
       this.commandMenuOpen = true;
       this.ensureCommandsLoaded();
       this.applyCommandFilter();
@@ -4855,7 +4866,7 @@ struct ChatPage {
       return;
     }
     this.setEmojiPanel(false);
-    this.replyKbCollapsed = true;
+    this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
     this.mentionItems = [];
     this.commandItems = [];
     this.commandMenuOpen = false;
@@ -5238,7 +5249,7 @@ struct ChatPage {
       // tap leaves the controls visible so the user can retry.
       if (oneTime && this.replyKeyboard !== null &&
         this.replyKeyboard.messageId === keyboardId) {
-        this.replyKbCollapsed = true;
+        this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
       }
     }).catch((e: TdError): void => {
       this.replyKeyboardSendingKey = '';
@@ -5312,7 +5323,7 @@ struct ChatPage {
     this.applyComposerMode(enterReply(this.composerMode, messageId,
       m.senderName !== '' ? m.senderName : this.title, this.replySnippet(m)));
     this.setEmojiPanel(false);
-    this.replyKbCollapsed = true;
+    this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
     setTimeout((): void => {
       focusControl.requestFocus('chat_composer');
     }, 0);
@@ -7176,24 +7187,37 @@ struct ChatPage {
     }
   }
 
+  // 底部那块高度的归属，状态机在 util/bottomSlot（有单测）。所有开关都经过
+  // 这里：状态机决定谁占着，这里把结果摊到三个既有字段上。
+  //
+  // 表情面板的分帧挂载（panelContentReady / emojiPanelClosing / 那两个
+  // setTimeout）留在页面——那是渲染时序，状态机不该知道。
+  private applyBottomSlot(next: string): void {
+    this.bottomSlot = next;
+    this.attachPanelOpen = next === SLOT_ATTACH;
+    this.replyKbCollapsed = next !== SLOT_REPLY_KB;
+  }
+
   private closeBottomPanels(): void {
     this.closeAttachPanel();
     this.setEmojiPanel(false);
   }
 
   private toggleAttachPanel(): void {
-    if (this.attachPanelOpen) {
+    const next: string = toggleSlot(this.bottomSlot, SLOT_ATTACH);
+    if (next !== SLOT_ATTACH) {
       this.closeAttachPanel();
       return;
     }
-    // 两个面板互斥；打开时收起系统键盘，让出这块高度。
+    // 打开抽屉要收起系统键盘，把这块高度让出来。表情面板由状态机顶掉，
+    // 但它的卸载分帧仍要走 setEmojiPanel。
     this.setEmojiPanel(false);
     this.composerController.stopEditing();
-    this.attachPanelOpen = true;
+    this.applyBottomSlot(next);
   }
 
   private closeAttachPanel(): void {
-    this.attachPanelOpen = false;
+    this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_ATTACH));
   }
 
   // 面板只说"点了哪一格"，这里说"那一格做什么"。两边靠 key 对上，
@@ -7453,8 +7477,7 @@ struct ChatPage {
               holdPlayerJobs(KEYBOARD_SETTLE_MS);
               // 点输入框 = 要打字，收起抽屉把高度让给系统键盘。
               this.setEmojiPanel(false);
-              this.closeAttachPanel();
-              this.replyKbCollapsed = true;
+              this.applyBottomSlot(closeAllSlots());
               this.commandMenuOpen = false;
               if (this.keyboardH > 0) {
                 this.syncTailOnImeFrame();

@@ -83,6 +83,7 @@ import richBlocksTest from './RichBlocks.test';
 import memberRoleTest from './MemberRole.test';
 import searchPagingTest from './SearchPaging.test';
 import composerModeTest from './ComposerMode.test';
+import bottomSlotTest from './BottomSlot.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -170,4 +171,5 @@ export default function testsuite() {
   memberRoleTest();
   searchPagingTest();
   composerModeTest();
+  bottomSlotTest();
 }
