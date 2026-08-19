@@ -3030,19 +3030,16 @@ struct ChatPage {
         return;
       }
       const replyId = this.replyToId;
-      this.composerSending = true;
       this.atBottom = true;
       this.stayAtUnread = false;
-      store.sendAsync(command, replyId).then((): void => {
-        this.composerSending = false;
+      this.withSendLock((): Promise<void> => store.sendAsync(command, replyId).then((): void => {
         if (this.replyToId === replyId) {
           this.clearReply();
         }
       }).catch((e: TdError): void => {
-        this.composerSending = false;
         console.error(`ChatPage.botCommand failed: ${e.message}`);
         promptAction.showToast({ message: $r('app.string.cp_command_failed'), duration: 1600 });
-      });
+      }));
       return;
     }
     if (url.startsWith('tg-copy:')) {
@@ -4833,22 +4830,19 @@ struct ChatPage {
         promptAction.showToast({ message: plural('cp_media_skipped', skipped, skipped), duration: 1800 });
       }
       const store: MessageStore = this.store;
-      this.composerSending = true;
       this.atBottom = true;
       this.stayAtUnread = false;
-      store.sendMedia(items, caption, replyId).then((): void => {
+      this.withSendLock((): Promise<void> => store.sendMedia(items, caption, replyId).then((): void => {
         if (this.draft === captionSnapshot) {
           this.draft = '';
         }
         if (this.replyToId === replyId) {
           this.clearReply();
         }
-        this.composerSending = false;
       }).catch((e: TdError): void => {
-        this.composerSending = false;
         console.error(`ChatPage.sendMedia failed: ${e.message}`);
         promptAction.showToast({ message: $r('app.string.cp_photo_send_failed'), duration: 2000 });
-      });
+      }));
     }).catch((e: Object) => {
       this.mediaPickerOpen = false;
       console.error(`ChatPage.pickAndSendMedia failed: ${JSON.stringify(e)}`);
@@ -5173,6 +5167,25 @@ struct ChatPage {
     });
   }
 
+  // 发送闸门：同一时刻只允许一个发送在途，**且无论成败都必须放行**。
+  //
+  // 四条发送路径（文本、命令、媒体、编辑）此前各自在 then 和 catch 里复位
+  // composerSending，13 个写入点。只要有一条异步分支漏掉复位，输入框就永久
+  // 卡在"发送中"——四个守卫都读这一个标志，会一起拒绝后续发送，而且没有任何
+  // 出口能把它掰回来（除非退出重进会话）。
+  //
+  // 用 finally 而不是在两个分支各写一遍：放行不再依赖调用方记得写。调用方
+  // 自己的 then/catch 照常挂在 task 上，只是不用再管这个标志。
+  private withSendLock(task: () => Promise<void>): void {
+    if (this.composerSending) {
+      return;
+    }
+    this.composerSending = true;
+    task().finally((): void => {
+      this.composerSending = false;
+    });
+  }
+
   private doSend(): void {
     if (this.editingId !== 0) {
       this.commitEdit();
@@ -5185,14 +5198,13 @@ struct ChatPage {
       return;
     }
     const replyId: number = this.replyToId;
-    this.composerSending = true;
     this.commandMenuOpen = false;
     this.atBottom = true;
     this.stayAtUnread = false;
     // 按名字提及的实体在这里生成：偏移必须相对**实际发出去的那串文本**，
     // 所以用 trim 之后的 text，不是原始草稿。
     const entities: TdObject[] = buildMentionEntities(text, this.pendingNameMentions);
-    store.sendAsync(text, replyId, entities).then((): void => {
+    this.withSendLock((): Promise<void> => store.sendAsync(text, replyId, entities).then((): void => {
       // The user may already have started the next message while TDLib was
       // accepting this one. Never erase newer input or a newly selected reply.
       if (this.draft === draftSnapshot) {
@@ -5207,12 +5219,10 @@ struct ChatPage {
       this.mentionItems = [];
       this.commandItems = [];
       this.commandMenuOpen = false;
-      this.composerSending = false;
     }).catch((e: TdError): void => {
-      this.composerSending = false;
       console.error(`ChatPage.doSend failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_send_failed_kept'), duration: 1800 });
-    });
+    }));
   }
 
   // Bot reply-keyboard button. keyboardButtonTypeText simply sends its own label
@@ -6572,25 +6582,23 @@ struct ChatPage {
       (text === '' && this.editingKind === 'text')) {
       return;
     }
-    this.composerSending = true;
-    const task: Promise<void> = this.editingKind === 'caption'
-      ? store.editCaptionAsync(editId, text) : store.editTextAsync(editId, text);
-    task.then((): void => {
-      this.composerSending = false;
+    const editKind: string = this.editingKind;
+    this.withSendLock((): Promise<void> => (editKind === 'caption'
+      ? store.editCaptionAsync(editId, text) : store.editTextAsync(editId, text)
+    ).then((): void => {
       if (this.editingId === editId) {
         const restored: string = draftToRestore(this.composerMode);
         this.applyComposerMode(cancelEdit(this.composerMode));
         this.draft = restored;
       }
     }).catch((e: TdError): void => {
-      this.composerSending = false;
       console.error(`ChatPage.commitEdit failed: ${e.message}`);
       promptAction.showToast({
         message: e.message.indexOf('MESSAGE_NOT_MODIFIED') >= 0
           ? $r('app.string.cp_no_change') : $r('app.string.cp_edit_failed'),
         duration: 1800
       });
-    });
+    }));
   }
 
   // Edit strip: pencil accent + original excerpt + ✕. Sits inside the same
