@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Kepekatan pola"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Buka tautan di peramban bawaan"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Jika nonaktif, tautan dibuka di peramban sistem"
     }
   ]
 }

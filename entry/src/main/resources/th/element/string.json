@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "ความเข้มลาย"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "เปิดลิงก์ในเบราว์เซอร์ในตัว"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "เมื่อปิด ลิงก์จะเปิดในเบราว์เซอร์ของระบบ"
     }
   ]
 }

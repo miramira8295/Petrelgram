@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI';
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_THREE_LINES, KEY_NIGHT_MODE, KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER,
-  KEY_POWER_SMOOTH_TRANSITIONS,
+  KEY_POWER_SMOOTH_TRANSITIONS, KEY_IN_APP_BROWSER,
   TEXT_SIZE_MIN, TEXT_SIZE_MAX, RADIUS_MIN, RADIUS_MAX,
   NIGHT_SYSTEM, NIGHT_DARK, NIGHT_LIGHT,
   powerAnimationDuration, setNumber, setBoolean, setNightMode
@@ -320,6 +320,9 @@ struct ChatSettingsPage {
             this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);
             Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
             this.toggleRow(str('chat_settings_send_by_enter'), str('chat_settings_send_by_enter_sub'), KEY_SEND_BY_ENTER);
+            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+            this.toggleRow(str('chat_settings_in_app_browser'),
+              str('chat_settings_in_app_browser_sub'), KEY_IN_APP_BROWSER);
           }
           .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
           .padding({ top: 4, bottom: 4 });

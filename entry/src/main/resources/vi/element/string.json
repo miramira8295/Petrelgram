@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Độ đậm hoa văn"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Mở liên kết trong trình duyệt tích hợp"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Khi tắt, liên kết mở bằng trình duyệt hệ thống"
     }
   ]
 }

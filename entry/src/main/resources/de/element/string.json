@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Musterstärke"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Links im integrierten Browser öffnen"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Ist die Option aus, öffnen Links im Systembrowser"
     }
   ]
 }

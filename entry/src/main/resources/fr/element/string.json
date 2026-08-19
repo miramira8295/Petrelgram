@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Intensité du motif"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Ouvrir les liens dans le navigateur intégré"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Désactivé, les liens s'ouvrent dans le navigateur du système"
     }
   ]
 }

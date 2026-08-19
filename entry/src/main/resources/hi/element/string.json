@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "पैटर्न की गहराई"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "लिंक अंतर्निहित ब्राउज़र में खोलें"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "बंद होने पर लिंक सिस्टम ब्राउज़र में खुलते हैं"
     }
   ]
 }

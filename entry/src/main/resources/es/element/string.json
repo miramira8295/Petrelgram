@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Intensidad del patrón"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Abrir enlaces en el navegador integrado"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Si está desactivado, los enlaces se abren en el navegador del sistema"
     }
   ]
 }

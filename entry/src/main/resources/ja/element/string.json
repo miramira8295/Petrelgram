@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "パターンの濃さ"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "リンクを内蔵ブラウザで開く"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "オフのときはシステムのブラウザで開きます"
     }
   ]
 }

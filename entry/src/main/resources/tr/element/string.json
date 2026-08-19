@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Desen yoğunluğu"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Bağlantıları dahili tarayıcıda aç"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Kapalıyken bağlantılar sistem tarayıcısında açılır"
     }
   ]
 }

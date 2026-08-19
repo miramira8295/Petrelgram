@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "كثافة النقش"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "فتح الروابط في المتصفح المدمج"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "عند إيقافه، تُفتح الروابط في متصفح النظام"
     }
   ]
 }

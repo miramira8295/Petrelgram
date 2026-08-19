@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "شدت الگو"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "باز کردن پیوندها در مرورگر داخلی"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "در صورت خاموش بودن، پیوندها در مرورگر سیستم باز می‌شوند"
     }
   ]
 }

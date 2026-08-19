@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Насыщенность узора"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Открывать ссылки во встроенном браузере"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Если выключено, ссылки откроются в системном браузере"
     }
   ]
 }

@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "图案浓度"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "用内置浏览器打开链接"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "关闭后交给系统浏览器打开"
     }
   ]
 }

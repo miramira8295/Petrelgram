@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Pattern strength"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Open links in the built-in browser"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "When off, links open in the system browser"
     }
   ]
 }

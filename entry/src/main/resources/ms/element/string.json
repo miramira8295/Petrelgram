@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Kepekatan corak"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Buka pautan dalam pelayar terbina"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Jika dimatikan, pautan dibuka dalam pelayar sistem"
     }
   ]
 }

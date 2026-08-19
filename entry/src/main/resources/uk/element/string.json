@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Насиченість візерунка"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Відкривати посилання у вбудованому браузері"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Якщо вимкнено, посилання відкриються в системному браузері"
     }
   ]
 }

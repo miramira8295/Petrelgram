@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "패턴 진하기"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "내장 브라우저로 링크 열기"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "끄면 시스템 브라우저로 열립니다"
     }
   ]
 }

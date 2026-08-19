@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "Intensità del motivo"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "Apri i link nel browser integrato"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "Se disattivato, i link si aprono nel browser di sistema"
     }
   ]
 }

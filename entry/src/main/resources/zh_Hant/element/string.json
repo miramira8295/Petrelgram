@@ -11035,6 +11035,14 @@
     {
       "name": "cb_pattern_strength",
       "value": "圖案濃度"
+    },
+    {
+      "name": "chat_settings_in_app_browser",
+      "value": "用內建瀏覽器開啟連結"
+    },
+    {
+      "name": "chat_settings_in_app_browser_sub",
+      "value": "關閉後交給系統瀏覽器開啟"
     }
   ]
 }
