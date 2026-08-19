@@ -86,6 +86,7 @@ import composerModeTest from './ComposerMode.test';
 import bottomSlotTest from './BottomSlot.test';
 import pinnedSegmentsTest from './PinnedSegments.test';
 import translationModeTest from './TranslationMode.test';
+import messageSelectionTest from './MessageSelection.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -176,4 +177,5 @@ export default function testsuite() {
   bottomSlotTest();
   pinnedSegmentsTest();
   translationModeTest();
+  messageSelectionTest();
 }

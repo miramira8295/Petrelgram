@@ -55,9 +55,13 @@ import { AlbumGroupDataSource, contentFingerprint, DataSourceUpdateKind } from '
 import { BasicPrefetcher } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
-import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
+import { ChatHeader } from './ChatHeader';
 import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
+import { SelectionHeader } from './SelectionHeader';
+import {
+  forwardableIds, pruneSelection, rowSelectable, rowSelected, toggleRow
+} from '../../util/messageSelection';
 import {
   TRANSLATE_DONE, TRANSLATE_LOADING, TranslateToggle,
   sheetStateOf, toggleTranslation, translationActive as isTranslationActive
@@ -5363,24 +5367,15 @@ struct ChatPage {
   }
 
   private rowSelected(g: AlbumGroup): boolean {
-    for (const id of g.memberIds) {
-      if (this.selectedIds.indexOf(id) >= 0) {
-        return true;
-      }
-    }
-    return false;
+    return rowSelected(this.selectedIds, g.memberIds);
   }
 
   // Toggle a whole display row (an album row selects all its members).
   private toggleSelectRow(g: AlbumGroup): void {
-    if (g.head.contentType === 'system' || g.head.contentType === 'hidden') {
+    if (!rowSelectable(g.head.contentType)) {
       return;
     }
-    if (this.rowSelected(g)) {
-      this.selectedIds = this.selectedIds.filter((id: number) => g.memberIds.indexOf(id) < 0);
-    } else {
-      this.selectedIds = [...this.selectedIds, ...g.memberIds];
-    }
+    this.selectedIds = toggleRow(this.selectedIds, g.memberIds);
     if (this.selectedIds.length === 0) {
       this.exitSelect();
     }
@@ -5388,9 +5383,8 @@ struct ChatPage {
 
   private reconcileMessageActionTargets(list: MessageEntry[]): void {
     if (this.selecting) {
-      this.selectedIds = this.selectedIds.filter((id: number): boolean =>
-        list.findIndex((m: MessageEntry): boolean => m.id === id) >= 0
-      );
+      this.selectedIds = pruneSelection(this.selectedIds,
+        list.map((m: MessageEntry): number => m.id));
       if (this.selectedIds.length === 0) {
         this.exitSelect();
       }
@@ -6152,15 +6146,12 @@ struct ChatPage {
   }
 
   private forwardableMessageIds(ids: number[]): number[] {
-    const result: number[] = [];
-    for (const id of ids) {
+    // 查不到的消息给一个不可选的类型，等价于过滤掉——原来的写法是
+    // m !== null 单独判一次，合进 contentTypeOf 之后语义一样。
+    return forwardableIds(ids, (id: number): string => {
       const m: MessageEntry | null = this.findMsg(id);
-      if (m !== null && m.contentType !== 'system' && m.contentType !== 'hidden' &&
-        result.indexOf(id) < 0) {
-        result.push(id);
-      }
-    }
-    return result;
+      return m !== null ? m.contentType : 'hidden';
+    });
   }
 
   // Only decides *whether* the picker opens and what it will forward — the chat
@@ -6201,23 +6192,6 @@ struct ChatPage {
     .clip(true)
     .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
     .systemMaterial(overlayMaterial('card'))
-  }
-
-  @Styles
-  headerActionNormalStyle() {
-    // 低于 API 26 自己画玻璃时这里换成半透明底，否则 backdropBlur 被盖死。
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  headerActionPressedStyle() {
-    // 按下时也留在玻璃上：换成不透明的 surface_alt 会让玻璃"闪一下变实心"。
-    // 按压反馈由下面的 opacity + scale 表达，不靠底色。
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
-    .opacity(0.72)
-    .scale({ x: 0.9, y: 0.9 })
   }
 
   @Styles
@@ -6337,75 +6311,6 @@ struct ChatPage {
       this.pageClosing = false;
     }, CHAT_HEADER_NAV_GUARD_MS);
     router.back();
-  }
-
-  @Builder
-  circleButton(symbol: string, onTap: () => void) {
-    Row() {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
-    }
-    .width(CHAT_HEADER_ACTION_SIZE)
-    .height(CHAT_HEADER_ACTION_SIZE)
-    .borderRadius(CHAT_HEADER_RADIUS)
-    .justifyContent(FlexAlign.Center)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .stateStyles({
-      normal: this.headerActionNormalStyle,
-      pressed: this.headerActionPressedStyle
-    })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-      curve: Curve.EaseOut
-    })
-    // 见 header()：顶栏胶囊统一走 'bar' 档材质。低于 API 26 材质返回 undefined，
-    // 改由 backdropBlur + 半透明底色自己画玻璃（overlayGlassFill 已换底色）。
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .systemMaterial(overlayMaterial('bar'))
-    .onClick(onTap);
-  }
-
-  // Multi-select header: ✕ / count / copy / delete.
-  @Builder
-  selectionHeader() {
-    Row({ space: 8 }) {
-      this.circleButton('sys.symbol.xmark', () => { this.exitSelect(); });
-      Text(str('cp_selected_n', this.selectedIds.length))
-        .fontSize(16).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-        .layoutWeight(1).margin({ left: 6 });
-      this.circleButton('sys.symbol.arrowshape_turn_up_right', () => {
-        this.openForwardPicker(this.selectedIds);
-      });
-      this.circleButton('sys.symbol.plus_square_on_square', () => { this.copySelected(); });
-      Row() {
-        SymbolGlyph($r('sys.symbol.trash')).fontSize(22).fontColor(['#FF3B30']);
-      }
-      .width(CHAT_HEADER_ACTION_SIZE)
-      .height(CHAT_HEADER_ACTION_SIZE)
-      .borderRadius(CHAT_HEADER_RADIUS)
-      .justifyContent(FlexAlign.Center)
-      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-      .stateStyles({
-        normal: this.headerActionNormalStyle,
-        pressed: this.headerActionPressedStyle
-      })
-      // 见上：顶栏胶囊统一走 'bar' 档材质。
-      .backdropBlur(overlayBackdropBlur('bar'))
-      .systemMaterial(overlayMaterial('bar'))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-        curve: Curve.EaseOut
-      })
-      .onClick(() => { this.deleteSelected(); });
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -5 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }));
   }
 
   // Search owns the complete top bar. Keeping the regular avatar/title beside
@@ -8050,7 +7955,14 @@ struct ChatPage {
         // 顶部 chrome 放在最后 = 叠在最上层，消息从它下面穿过去。
         Column() {
           if (this.selecting) {
-            this.selectionHeader();
+            SelectionHeader({
+              selectedCount: this.selectedIds.length,
+              topSafe: this.topSafe,
+              onExit: (): void => { this.exitSelect(); },
+              onForward: (): void => { this.openForwardPicker(this.selectedIds); },
+              onCopy: (): void => { this.copySelected(); },
+              onDelete: (): void => { this.deleteSelected(); }
+            });
           } else if (this.searchMode) {
             this.searchHeader();
           } else {
