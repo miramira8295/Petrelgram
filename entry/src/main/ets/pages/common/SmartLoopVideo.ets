@@ -36,9 +36,23 @@ export struct SmartLoopVideo {
   @StorageProp(KEY_POWER_EMOJI_REACTIONS) emojiReactions: boolean = true;
   @StorageProp(KEY_POWER_EMOJI_STATUS) emojiStatus: boolean = true;
   @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
+  // 透明素材必须走 ijk，见 aboutToAppear。这里的初值只管非透明那一类。
   @State useIjk: boolean = avWebmVerdict === -1;
   @State videoReady: boolean = false;
   private firstFrameTimer: number = -1;
+
+  aboutToAppear(): void {
+    // 贴纸和表情带 alpha：系统 AVPlayer 把画面解到一个**不带透明通道**的
+    // surface 上，透明区域被填成实色（真机上是白底）；ijk 走 TEXTURE
+    // XComponent，能带 alpha 合成。所以这一类不参与"优先 AVPlayer"的探测。
+    //
+    // 这个坑还会扩散：AVPlayer 只要在某个不透明素材上成功过一次，
+    // avWebmVerdict 就记成 1，之后所有贴纸都会走它——所以判断必须在这里按
+    // 素材类别做，不能只靠那个全局探测结果。
+    if (this.isTransparentAsset()) {
+      this.useIjk = true;
+    }
+  }
 
   aboutToDisappear(): void {
     if (this.firstFrameTimer !== -1) {
