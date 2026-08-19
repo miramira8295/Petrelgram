@@ -79,7 +79,10 @@ export struct ForwardSheet {
   }
 
   private applyChats(list: ChatEntry[]): void {
-    this.chats = list.filter((chat: ChatEntry): boolean => chat.id > 0);
+    // 只排占位条目。**不能写 id > 0**：Telegram 的 chat id 只有私聊是正数，
+    // 普通群是负数、超级群和频道是 -100… 开头的负数，那样写等于把所有群组
+    // 和频道都过滤掉——现象就是转发时只列得出个人。
+    this.chats = list.filter((chat: ChatEntry): boolean => chat.id !== 0);
     if (this.chats.length > 0) {
       this.loadState = 'ready';
     }
@@ -137,7 +140,13 @@ export struct ForwardSheet {
     if (this.sendingChatId !== 0 || this.messageIds.length === 0) {
       return;
     }
-    const ids: number[] = [...this.messageIds];
+    // 必须升序且不重复：TDLib 对 forwardMessages 的原话是"Message identifiers
+    // must be in a strictly increasing order"，多选是按点击顺序攒的，从下往上
+    // 选就是递减，请求直接被拒。单条永远"有序"，所以这个坑只在多条时露出来。
+    // 排序放在这里而不是选择那侧：这里是和 TDLib 的边界，任何调用方都得过。
+    const ids: number[] = [...this.messageIds]
+      .sort((a: number, b: number): number => a - b)
+      .filter((id: number, i: number, arr: number[]): boolean => i === 0 || id !== arr[i - 1]);
     const seq: number = this.seq;
     this.sendingChatId = chat.id;
     const req: TdRequest = { '@type': 'forwardMessages' };
