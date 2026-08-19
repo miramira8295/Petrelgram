@@ -57,6 +57,9 @@ import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
 const REPLY_QUOTE_WIDTH_RATIO: number = 0.76;
+// 引用块每行的固定行高。12 号字的默认行高由字体度量决定，内容为空时那一行
+// 会塌成 0——锁死它，加载中的占位和加载完的内容才是同一个高度。
+const REPLY_QUOTE_LINE_H: number = 16;
 
 const ALBUM_MAX_WIDTH: number = 280;
 const STICKER_MAX: number = 160;
@@ -98,7 +101,9 @@ struct LiveSenderAvatar {
   initialPath: string = '';
   initials: string = '?';
   // 评论行的头像栈比发送者头像小一圈。
-  avatarSize: number = 32;
+  // 群聊里发送者头像的直径。占位列宽 = 它 + 6 的右外边距，两处必须一起改，
+  // 否则连续消息的气泡和带头像那行会错开。
+  avatarSize: number = 38;
   @State private path: string = '';
   private unsubAvatar: (() => void) | null = null;
 
@@ -183,7 +188,9 @@ export struct MessageBubble {
   // Long press on a group message avatar → mention that sender in the composer.
   onAvatarLongPress: (userId: number, name: string) => void =
     (_userId: number, _name: string): void => {};
-  onReplyTap: (messageId: number) => void = (): void => {};
+  // 第二个参数是"从哪条跳走的"。页面拿它当返回点——只用视口底部那条的话，
+  // 引用块在屏幕靠上时返回位置会偏，跨屏的长消息尤其明显。
+  onReplyTap: (messageId: number, fromId: number) => void = (): void => {};
   onFileTap: (messageId: number) => void = (): void => {};
   onFileSave: (messageId: number) => void = (): void => {};
   onStickerRetry: (messageId: number) => void = (): void => {};
@@ -1154,6 +1161,9 @@ export struct MessageBubble {
         Row({ space: 5 }) {
           LoadingProgress().width(12).height(12).color(COLOR_TEXT_SECONDARY);
           Text($r('app.string.mb_translating')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+          if (this.timeReserveOnStatus()) {
+            Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);
+          }
         }.constraintSize({ maxWidth: this.inlineMaxW() });
       } else {
         // 原始报错原样展示（按要求）。失败行整体可点，点一下立刻重发，
@@ -1165,6 +1175,9 @@ export struct MessageBubble {
             .layoutWeight(1);
           Text($r('app.string.settings_retry'))
             .fontSize(11).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+          if (this.timeReserveOnStatus()) {
+            Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);
+          }
         }
         .constraintSize({ maxWidth: this.inlineMaxW() })
         .onClick((): void => {
@@ -1220,14 +1233,17 @@ export struct MessageBubble {
               avatarSize: 22
             })
               .margin({ left: idx === 0 ? 0 : -8 })
-              // 白圈是用来在互相叠压时分开相邻两个头像的。border 画在组件
-              // **边框盒**上，而头像图片本身还带自己的圆角，两者之间会露出
-              // 一圈底色——看着就是"白框和图片有段距离"。改用 outline：它画在
-              // 边框盒之外、紧贴组件边缘，不占布局也不会和内容之间留缝。
               .borderRadius(11)
+              // 叠压处那圈是"挖掉的间隙"，不是描边——所以取气泡自己的底色，
+              // 而不是白色。白色在这里会实实在在盖住下面那个头像的一道边，
+              // 看着像多了个白框；同色则读作两个头像之间空开了一道。
+              //
+              // 用 outline 而不是 border：border 画在边框盒上，头像图片自己
+              // 还带圆角，两者之间会露出一圈底色（"框和图片有段距离"）。
+              // outline 画在边框盒之外、紧贴组件边缘，不占布局也不留缝。
               .outline({
                 width: 1.5,
-                color: Color.White,
+                color: this.bubbleFillColor(),
                 radius: 11,
                 style: OutlineStyle.SOLID
               });
@@ -1822,8 +1838,12 @@ export struct MessageBubble {
           }
           Text(`${r.count}`).fontSize(12).fontColor(r.isChosen ? Color.White : COLOR_TEXT_SECONDARY);
         }
-        .backgroundColor(r.isChosen ? COLOR_PRIMARY : '#00000010')
-        .borderRadius(11).padding({ left: 8, right: 8, top: 3, bottom: 3 })
+        // 未选中态原来是写死的 '#00000010'（6% 的黑）：浅色气泡上几乎看不见，
+        // 深色气泡上黑叠黑更是没有。换成跟随主题的资源，深色那边用的是白色
+        // 透明度而不是黑色。
+        .backgroundColor(r.isChosen ? COLOR_PRIMARY : $r('app.color.reaction_chip'))
+        // 半径取高度的一半（15 的内容 + 上下各 4 = 23），两端才是正圆弧。
+        .borderRadius(12).padding({ left: 9, right: 9, top: 4, bottom: 4 })
         .margin({ right: 4, top: 4 })
         .stateStyles({
           normal: this.menuActionNormalStyle,
@@ -1949,11 +1969,17 @@ export struct MessageBubble {
 
   @Builder
   content() {
-    if (this.msg.replyText !== '') {
+    // 条件是"有没有回复"，不是"引用内容到没到"。被引用的消息是异步取回来的，
+    // 等内容到了才画这一块，气泡就会在落地后凭空长高约 40vp——进聊天页时那次
+    // 重排就是这么来的。两行都锁死行高，加载中和加载完是同一个高度。
+    // 前提：拉不到原消息时 store 会填 mb_reply_unavailable，不会永远空着。
+    if (this.msg.replyToMessageId !== 0) {
       Column() {
         Text(this.msg.replySenderName).fontSize(12).fontColor(COLOR_PRIMARY).maxLines(1)
+          .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
         Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
+          .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
       }
       .alignItems(HorizontalAlign.Start)
@@ -1963,7 +1989,7 @@ export struct MessageBubble {
       .onClick(() => {
         if (this.gestureClaimed) { return; }
         if (this.msg.replyToMessageId !== 0) {
-          this.onReplyTap(this.msg.replyToMessageId);
+          this.onReplyTap(this.msg.replyToMessageId, this.msg.id);
         }
       });
     }
@@ -2629,13 +2655,33 @@ export struct MessageBubble {
   // Whether the timestamp overlay should reserve space at the end of the last
   // text line (only when the time actually lands there — not when reactions
   // or a comments bar sit below the text).
+  // 「翻译中 / 翻译失败」这一行也是气泡的最后一行。它出现时 translatedText
+  // 还是空，所以不能只按"有没有译文"分流——漏了这一支，占位会留在正文里，
+  // 时间戳浮在状态行上面，和「重试」两个字叠在一起（实测截图）。
+  private hasTranslationStatusRow(): boolean {
+    return this.msg.translatedText === '' && this.translationStatus !== null;
+  }
+
+  // 气泡自身的填充色。叠压头像的间隙圈要取它，才能读作"挖空"而不是描边。
+  private bubbleFillColor(): ResourceColor {
+    if (this.msg.isOutgoing) {
+      return this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT;
+    }
+    return COLOR_BUBBLE_IN;
+  }
+
   private timeReserveInText(): boolean {
-    // 有译文时最后一行是翻译脚注，时间戳的占位改由脚注行承担。
-    return this.msg.reactions.length === 0 && this.msg.translatedText === '';
+    // 最后一行是翻译脚注或翻译状态行时，时间戳的占位改由那一行承担。
+    return this.msg.reactions.length === 0 && this.msg.translatedText === '' &&
+      !this.hasTranslationStatusRow();
   }
 
   private timeReserveOnFooter(): boolean {
     return this.msg.reactions.length === 0 && this.msg.translatedText !== '';
+  }
+
+  private timeReserveOnStatus(): boolean {
+    return this.msg.reactions.length === 0 && this.hasTranslationStatusRow();
   }
 
   // Bare media at the bubble's bottom edge → the timestamp needs a translucent
@@ -2797,6 +2843,10 @@ export struct MessageBubble {
           .padding({ top: 3, bottom: 3 }).margin({ bottom: 4 });
       }
       Row() {
+      // 内层这一行按内容宽度，只裹住头像和气泡——消息菜单绑在它身上，
+      // 抬起来的预览才是"头像 + 气泡"。绑到外面那层满宽的行上，浮起来的会是
+      // 一条通栏横条，右边一大片空白也跟着抬。满宽那层继续负责左滑和对齐。
+      Row() {
       if (this.isGroup && !this.msg.isOutgoing) {
         if (this.showAvatar) {
           // LiveSenderAvatar, not AvatarView directly: the path arrives via the
@@ -2823,7 +2873,7 @@ export struct MessageBubble {
             }));
         } else {
           // Mid-run row: keep the avatar column's width so bubbles stay aligned.
-          Column().width(38);
+          Column().width(44);
         }
       }
       // Telegram-style bubble tail poking out of the bottom corner (left for
@@ -2916,6 +2966,16 @@ export struct MessageBubble {
           this.msgContextMenuShown = true;
         }
       })
+      if (this.msg.isOutgoing && this.hasBubbleTail()) {
+        Polygon({ width: 8, height: 12 })
+          .points([[0, 0], [8, 12], [0, 12]])
+          .fill(this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT)
+          .margin({ left: -1 });
+      } else if (this.msg.isOutgoing && !this.isBareEmoji()) {
+        Column().width(7);
+      }
+      }
+      .alignItems(VerticalAlign.Bottom)
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
         // A play-slot bubble hosts a XComponentType.SURFACE video surface that
         // componentSnapshot cannot capture (see hasLiveVideoSurface()) — fall
@@ -2951,14 +3011,6 @@ export struct MessageBubble {
           this.msgContextMenuShown = false;
         }
       });
-      if (this.msg.isOutgoing && this.hasBubbleTail()) {
-        Polygon({ width: 8, height: 12 })
-          .points([[0, 0], [8, 12], [0, 12]])
-          .fill(this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT)
-          .margin({ left: -1 });
-      } else if (this.msg.isOutgoing && !this.isBareEmoji()) {
-        Column().width(7);
-      }
       }
       .width('100%').padding({
         left: 10, right: 10,
