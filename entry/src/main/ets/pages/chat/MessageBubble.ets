@@ -319,6 +319,10 @@ export struct MessageBubble {
   // dragging, then sprung back to 0 on release. onReplyTo fires once the drag
   // clears SWIPE_REPLY_TRIGGER; it never fires mid-drag.
   @State private swipeReplyX: number = 0;
+  // 这一次触摸已经被左滑或长按认领了。认领之后抬手时的点击必须吞掉，否则
+  // 手指从一张图片上划走、或在链接上长按出多选，松手时那张图/那个链接还会
+  // 被"点"一下。普通字段而不是 @State：没有任何界面依赖它。
+  private gestureClaimed: boolean = false;
   // 播放位竞选用的中心 y（vp）。只在 onAreaChange 回调里写、onVisibleAreaApproximateChange
   // 回调里读，不参与 build() —— 用普通字段而非 @State，避免每帧 onAreaChange 触发重建。
   private mediaCenterY: number = 0;
@@ -504,6 +508,7 @@ export struct MessageBubble {
   // 长按干什么由方案决定：老交互出菜单，新交互直接进多选并选中这一条。
   // 两者互斥（messageGesturePolicy 的测试钉着这一点），不会同时发生。
   private onLongPress(): void {
+    this.gestureClaimed = true;
     const policy: MessageGesturePolicy = messageGesturePolicy(this.gestureScheme);
     if (policy.longPressOpensMenu) {
       this.msgContextMenuShown = true;
@@ -526,6 +531,11 @@ export struct MessageBubble {
     }
     // Leftward-only, clamped to SWIPE_REPLY_MAX (both negative).
     this.swipeReplyX = Math.max(SWIPE_REPLY_MAX, Math.min(0, offsetX));
+    // 真的滑动起来了才算认领。PanGesture 的 distance 已经是 8，这里再确认
+    // 一次位移，避免"手指抖了一下"就把一次正常点击吃掉。
+    if (this.swipeReplyX < 0) {
+      this.gestureClaimed = true;
+    }
   }
 
   private onSwipeReplyEnd(): void {
@@ -2930,6 +2940,28 @@ export struct MessageBubble {
           .onActionUpdate((event: GestureEvent): void => { this.onSwipeReplyUpdate(event.offsetX); })
           .onActionEnd((): void => { this.onSwipeReplyEnd(); })
           .onActionCancel((): void => { this.onSwipeReplyEnd(); })
+      )
+      // 每次按下先把认领标记清掉。onTouch 是冒泡事件，落在任何子元素上都会
+      // 走到这里，所以这一下一定发生在子元素的点击判定之前。
+      .onTouch((event: TouchEvent): void => {
+        if (event.type === TouchType.Down) {
+          this.gestureClaimed = false;
+        }
+      })
+      // 一旦左滑或长按认领了这次交互，抬手时的点击一律驳回。
+      //
+      // 逐个去 onClick 里加判断也能做，但整行有二十来个可点的东西（图片、
+      // 链接、内联按钮、反应、评论行……），漏一个就是一个 bug。这个回调是
+      // 官方为手势冲突准备的口子：它拿得到**整条响应链上**的识别器，包括子
+      // 元素自带的，所以一处就够。
+      .onGestureRecognizerJudgeBegin(
+        (_event: BaseGestureEvent, current: GestureRecognizer,
+          _others: Array<GestureRecognizer>): GestureJudgeResult => {
+          if (this.gestureClaimed && current.getType() === GestureControl.GestureType.CLICK) {
+            return GestureJudgeResult.REJECT;
+          }
+          return GestureJudgeResult.CONTINUE;
+        }
       );
       if (this.msg.inlineButtons.length > 0) {
         this.inlineKeyboard();
