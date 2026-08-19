@@ -684,9 +684,22 @@ export class MessageStore {
 
   // Load the previous (older) page. Guarded so scroll-driven prefetch can call
   // this repeatedly without stacking duplicate in-flight requests.
+  private loadOlderRefusalLogged: boolean = false;
+
   loadOlder(): boolean {
     if (this.olderPending || this.olderLoadState === 'error' ||
       !this.hasMoreOlder || this.oldestId === 0) {
+      // 诊断：反馈过"有会话进去只有一页、往上翻不动"，且不必现。这里是历史
+      // 分页唯一的拒绝点，四个条件各指一处原因。
+      //
+      // 每个会话只打一行：正常翻到顶也会走这里，逐次打会把环形缓冲刷爆，
+      // 等偶发现象时反而把证据挤掉。
+      if (!this.loadOlderRefusalLogged) {
+        this.loadOlderRefusalLogged = true;
+        console.warn(`loadOlder refused pending=${this.olderPending}` +
+          ` state=${this.olderLoadState} hasMore=${this.hasMoreOlder}` +
+          ` oldest=${this.oldestId} rows=${this.messages.length}`);
+      }
       return false;
     }
     const anchorId = this.oldestId;

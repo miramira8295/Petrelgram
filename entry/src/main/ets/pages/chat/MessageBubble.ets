@@ -14,6 +14,7 @@ import {
 } from '../../store/AppSettings';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
+import { RichMessageView } from './RichMessageView';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { LiveThumbImage } from './LiveThumbImage';
 import {
@@ -2002,6 +2003,17 @@ export struct MessageBubble {
             this.timeReserveInText());
         }.margin({ top: 6 });
       }
+    } else if (this.msg.contentType === 'richMessage') {
+      // 富文本长帖单独一个组件，见 RichMessageView。这个文件已经够大，
+      // 那套按块渲染（标题分档、引用竖条、列表符号）不往里塞。
+      RichMessageView({
+        rawBlocks: this.msg.richBlocks ?? [],
+        maxWidth: this.inlineMaxW(),
+        onOpenUrl: (url: string): void => {
+          if (this.gestureClaimed) { return; }
+          this.onLinkTap(url);
+        }
+      });
     } else if (this.msg.contentType === 'text') {
       if (this.msg.text.trim() === '') {
         Text() {
@@ -2976,6 +2988,18 @@ export struct MessageBubble {
       }
       }
       .alignItems(VerticalAlign.Bottom)
+      // 诊断：气泡偶发"横贯整屏"。气泡本体从没超过自己的 cap（量过），所以
+      // 被撑开的是这一层——它按内容宽度排，正常应当 ≈ 头像 + 气泡。
+      // 只在越界时打，正常滚动一条都不产生。
+      .onAreaChange((_old: Area, area: Area): void => {
+        const w: number = area.width as number;
+        if (w > this.screenW * 0.9) {
+          console.warn(`rowStretched w=${Math.round(w)} screenW=${Math.round(this.screenW)}` +
+            ` bubbleW=${Math.round(this.bubbleW)} cap=${Math.round(this.bubbleMaxW())}` +
+            ` type=${this.msg.contentType} album=${this.albumPaths.length}` +
+            ` inline=${this.msg.inlineButtons.length}`);
+        }
+      })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
         // A play-slot bubble hosts a XComponentType.SURFACE video surface that
         // componentSnapshot cannot capture (see hasLiveVideoSurface()) — fall

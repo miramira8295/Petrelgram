@@ -47,7 +47,7 @@ import {
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
   BackgroundRasterParams, backgroundBlurRadius, cachedRaster, patternTileGrid,
-  patternTileGridLayer, rasterSignature, rasterizeBackground
+  patternTileGridLayer, rasterSignature, rasterizeBackground, patternOpacity
 } from '../../util/chatBackgroundRaster';
 import {
   chatHeaderPresentation, chatHeaderTitle, ChatHeaderPresentation
@@ -68,7 +68,8 @@ import {
   KEY_POWER_EFFECT_REACTION, KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_POWER_AUTOPLAY_VIDEO,
   KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS,
-  KEY_AUTOPLAY_MUTED, KEY_BG_BLUR, BG_BLUR_DEFAULT,
+  KEY_AUTOPLAY_MUTED, KEY_BG_BLUR, BG_BLUR_DEFAULT, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK,
+  BG_PATTERN_DEFAULT,
   powerAnimationDuration,
   powerFeatureEnabled, powerGroupAnimationDuration, powerGroupFeatureEnabled, autosaveEnabled,
   translateOptedOut, setTranslateOptedOut
@@ -275,7 +276,7 @@ struct ChatPage {
       const actionSeq: number = ++this.scrollActionSeq;
       setTimeout((): void => {
         if (actionSeq === this.scrollActionSeq) {
-          this.scroller.scrollEdge(Edge.Bottom);
+          this.glueBottom('L279');
         }
       }, 0);
     }
@@ -298,7 +299,8 @@ struct ChatPage {
   @State draft: string = '';
   // 聊天设置 → 回车键发送.
   @StorageProp(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
-  @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenWidthVp') @Watch('onScreenWidthChanged') screenW: number = 360;
+  private lastScreenW: number = 0;
   @StorageProp('screenHeightVp') screenH: number = 780;
   @StorageProp(KEY_POWER_ACTIVE) @Watch('onAutoplayPolicyChanged') powerSaving: boolean = false;
   @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
@@ -313,6 +315,9 @@ struct ChatPage {
   // 聊天背景设置页的「模糊度」滑块（KEY_BG_BLUR）。拖动时要立即重算离屏合成图，
   // 否则拖完滑块背景看起来没反应（命中旧签名的缓存图）。
   @StorageProp(KEY_BG_BLUR) @Watch('onBgBlurChanged') bgBlur: number = BG_BLUR_DEFAULT;
+  // 图案线条浓度，深浅各一份。和模糊度一样，改动要重算离屏合成图。
+  @StorageProp(KEY_BG_PATTERN) @Watch('onBgBlurChanged') bgPatternLight: number = BG_PATTERN_DEFAULT;
+  @StorageProp(KEY_BG_PATTERN_DARK) @Watch('onBgBlurChanged') bgPatternDark: number = BG_PATTERN_DEFAULT;
   @State powerBackgroundPhase: boolean = false;
   // TDLib per-chat wallpaper. Solid/gradient fills render immediately;
   // wallpaper and pattern documents appear as soon as downloadFile completes.
@@ -838,7 +843,7 @@ struct ChatPage {
       const actionSeq: number = ++this.scrollActionSeq;
       setTimeout((): void => {
         if (actionSeq === this.scrollActionSeq) {
-          this.scroller.scrollEdge(Edge.Bottom);
+          this.glueBottom('L846');
           this.refreshAtBottom();
         }
       }, 0);
@@ -1145,10 +1150,10 @@ struct ChatPage {
         if (this.resumeScrollAtBottom) {
           this.atBottom = false;
           const actionSeq: number = ++this.scrollActionSeq;
-          this.scroller.scrollEdge(Edge.Bottom);
+          this.glueBottom('L1153');
           setTimeout((): void => {
             if (actionSeq === this.scrollActionSeq) {
-              this.scroller.scrollEdge(Edge.Bottom);
+              this.glueBottom('L1156');
               this.refreshAtBottom();
             }
           }, 60);
@@ -1158,7 +1163,7 @@ struct ChatPage {
           if (resumeIndex >= 0) {
             this.restoreScrollAnchor(resumeIndex, this.resumeScrollItemY);
           } else {
-            this.scroller.scrollEdge(Edge.Bottom);
+            this.glueBottom('L1166');
           }
         }
       }
@@ -1212,7 +1217,7 @@ struct ChatPage {
           this.stayAtUnread = true;
           this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
         } else {
-          this.scroller.scrollEdge(Edge.Bottom);
+          this.glueBottom('L1220');
         }
       } else if (!positionHandled && this.didInitialScroll && maxId > this.lastMaxId) {
         // Only follow to the bottom for genuinely new messages AND only when the
@@ -1234,7 +1239,7 @@ struct ChatPage {
         // touches) or while the fullscreen viewer is open — the chat should
         // return to the same underlying message after the preview closes.
         if (notifyKind === 'update' && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0) {
-          this.scroller.scrollEdge(Edge.Bottom);
+          this.glueBottom('L1242');
         }
       } else if (this.didInitialScroll && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0
         && (this.store === null || !this.store.getHasMoreNewer())) {
@@ -1244,7 +1249,7 @@ struct ChatPage {
         // glue while unloaded newer pages exist — being at the window's edge
         // there is NOT the live tail, and gluing chain-loads every page.
         // Also never move the underlying list while the media viewer is open.
-        this.scroller.scrollEdge(Edge.Bottom);
+        this.glueBottom('L1252');
       }
       // jumpToLatest's newest page arrived — snap to the end. The dataset was
       // just replaced wholesale, so scroll once now and once after the List has
@@ -1255,10 +1260,10 @@ struct ChatPage {
         this.lastMaxId = maxId;
         this.atBottom = true;
         const actionSeq: number = this.scrollActionSeq;
-        this.scroller.scrollEdge(Edge.Bottom);
+        this.glueBottom('L1263');
         setTimeout(() => {
           if (actionSeq === this.scrollActionSeq) {
-            this.scroller.scrollEdge(Edge.Bottom);
+            this.glueBottom('L1266');
             this.refreshAtBottom();
           }
         }, 60);
@@ -1992,6 +1997,20 @@ struct ChatPage {
     }, CACHED_COUNT_GROW_MS);
   }
 
+  // 诊断：屏宽本该恒定，任何变化都值得记一笔——气泡摊平那类问题第一个要
+  // 排除的就是它。变化极少，不会刷日志。
+  private onScreenWidthChanged(): void {
+    if (Math.abs(this.screenW - this.lastScreenW) > 0.5) {
+      console.warn(`screenW ${Math.round(this.lastScreenW)} -> ${Math.round(this.screenW)}`);
+      this.lastScreenW = this.screenW;
+    }
+  }
+
+  // 当前主题下生效的图案浓度。背景分深浅两套选，浓度也跟着分。
+  private bgPatternNow(): number {
+    return this.appDark ? this.bgPatternDark : this.bgPatternLight;
+  }
+
   private refreshAtBottom(): void {
     if (this.viewerMsgId === 0) {
       // During an IME resize the last row is briefly clipped before List has
@@ -2006,7 +2025,17 @@ struct ChatPage {
       // The end of a loadAround window is not the live end of the chat. Keep
       // the down button available until MessageStore has actually exhausted
       // newer history.
-      const nextAtBottom = this.scroller.isAtEnd() &&
+      // isAtEnd() 单独不可信。恢复/重取窗口时列表刚被换掉、还没排好版，它会
+      // 瞬时返回真，atBottom 就被置成 true 卡住；随后"内容原地长高时保持贴底"
+      // 那一支照常开火，把用户从中间拽到最新。实测日志里同一时刻
+      // atBottom=true 而 endIdx=11 / rows=42，自相矛盾。
+      //
+      // 用可见行号交叉验证：最后一个可见行不是最后一行，就一定不在底部，
+      // 不管 isAtEnd() 说什么。curEndIdx < 0 表示首帧还没有行号，那时只能信
+      // isAtEnd()。
+      const indexSaysTail: boolean = this.curEndIdx < 0 ||
+        this.groups.length === 0 || this.curEndIdx >= this.groups.length - 1;
+      const nextAtBottom = this.scroller.isAtEnd() && indexSaysTail &&
         (this.store === null || !this.store.getHasMoreNewer());
       if (this.atBottom !== nextAtBottom) {
         this.atBottom = nextAtBottom;
@@ -2025,14 +2054,14 @@ struct ChatPage {
     // final List measurement after the system IME animation has settled.
     setTimeout((): void => {
       if (seq === this.imeLayoutSeq && this.imeTailPinned) {
-        this.scroller.scrollEdge(Edge.Bottom);
+        this.glueBottom('L2057');
       }
     }, 0);
     setTimeout((): void => {
       if (seq !== this.imeLayoutSeq || !this.imeTailPinned) {
         return;
       }
-      this.scroller.scrollEdge(Edge.Bottom);
+      this.glueBottom('L2064');
       this.atBottom = true;
       if (releaseAfter) {
         this.imeTailPinned = false;
@@ -2046,7 +2075,7 @@ struct ChatPage {
     }
     this.atBottom = true;
     this.stayAtUnread = false;
-    this.scroller.scrollEdge(Edge.Bottom);
+    this.glueBottom('L2078');
   }
 
   private onKeyboardHeightChanged(): void {
@@ -2941,6 +2970,17 @@ struct ChatPage {
     this.scrollToLatest();
   }
 
+  // 诊断：视口明明停在中段却触发了"贴底"。正常贴底不打——那是每次新消息
+  // 到达都会走的路，逐次记会把环形缓冲刷满，导出日志时最该看的那段反而被
+  // 挤掉。只在自相矛盾时打：说自己在底部，可见的最后一行却离末尾很远。
+  private glueBottom(tag: string): void {
+    if (this.curEndIdx >= 0 && this.groups.length - this.curEndIdx > 3) {
+      console.warn(`glueBottom ${tag} atBottom=${this.atBottom} endIdx=${this.curEndIdx}` +
+        ` rows=${this.groups.length} stayUnread=${this.stayAtUnread}`);
+    }
+    this.scroller.scrollEdge(Edge.Bottom);
+  }
+
   private markVisibleRead(end: number): void {
     if (this.store === null || end < 0 || end >= this.groups.length) {
       return;
@@ -2959,7 +2999,20 @@ struct ChatPage {
     }
     if (maxId > 0) {
       this.store.markViewed(maxId);
-      getChatStore().markReadLocally(this.chatId, maxId);
+      // 本地摘角标只在**确实站在实时尾部**时做。
+      //
+      // markReadLocally 自己只能拿会话列表快照里的 lastMessageId 作参照，那个
+      // 值可能慢一拍；只凭它判断"读到最新了"，用户停在中段也可能满足条件，
+      // 角标被提前摘掉而下面还有新消息。"最新"的权威在 MessageStore：
+      // hasMoreNewer 为假 + 最后一组已可见，才是真尾部。
+      //
+      // 这个错还不会自愈——0 一旦写进缓存，若该会话此后没有任何更新，TDLib
+      // 不会再下发一次把它纠回来。
+      const atLiveTail: boolean = !this.store.getHasMoreNewer() &&
+        end >= this.groups.length - 1;
+      if (atLiveTail) {
+        getChatStore().markReadLocally(this.chatId, maxId);
+      }
     }
   }
 
@@ -4445,7 +4498,8 @@ struct ChatPage {
           this.closeHeaderMenuThen((): void => { this.confirmLeaveChat(); }));
       }
     }
-    .width(262)
+    // 262 太宽，菜单项最长的也只占一半，右边空一大片。224 刚好容下最长的一条。
+    .width(224)
     .padding({ top: 6, bottom: 6 });
   }
 
@@ -4560,7 +4614,7 @@ struct ChatPage {
       const seq: number = ++this.bottomChromeLayoutSeq;
       setTimeout((): void => {
         if (seq === this.bottomChromeLayoutSeq && this.atBottom) {
-          this.scroller.scrollEdge(Edge.Bottom);
+          this.glueBottom('L4617');
         }
       }, 0);
     }
@@ -6260,15 +6314,19 @@ struct ChatPage {
   }
 
   @Styles
+  // 底色交给材质：材质渲染在 backgroundColor **之下**，填一层不透明的
+  // surface 就把它整个盖住了。overlayGlassFill 在材质可用时返回透明，
+  // 不可用的设备上返回可见的降级色。
+  @Styles
   scrollFabNormalStyle() {
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
   scrollFabPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor($r('app.color.press_overlay'))
     .opacity(0.84)
     .scale({ x: 0.92, y: 0.92 })
   }
@@ -7823,6 +7881,9 @@ struct ChatPage {
         pressed: this.scrollFabPressedStyle
       })
       .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130), curve: Curve.EaseOut })
+      .backdropBlur(overlayBackdropBlur('card'))
+      .border({ width: 0.7, color: $r('app.color.divider') })
+      .systemMaterial(overlayMaterial('card'))
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
       .enabled(!this.scrollToBottomBusy)
       .accessibilityText(this.scrollToBottomBusy ? $r('app.string.cp_returning_latest') : $r('app.string.cp_return_latest'))
@@ -7897,7 +7958,7 @@ struct ChatPage {
     this.scroller.scrollToIndex(Math.max(0, this.groups.length - 1), false, ScrollAlign.END);
     setTimeout((): void => {
       if (actionSeq === this.scrollActionSeq) {
-        this.scroller.scrollEdge(Edge.Bottom);
+        this.glueBottom('L7961');
         this.refreshAtBottom();
       }
     }, 60);
@@ -8151,7 +8212,8 @@ struct ChatPage {
   private backgroundRasterParams(): BackgroundRasterParams {
     return {
       colors: this.chatBg.colors, angle: this.chatBg.angle, path: this.chatBg.path,
-      isPattern: this.chatBg.isPattern, imageOpacity: this.chatBg.imageOpacity,
+      isPattern: this.chatBg.isPattern,
+      imageOpacity: patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.bgPatternNow()),
       dimming: this.chatBg.dimming, blurred: this.chatBg.blurred, userBlur: this.bgBlur,
       width: this.screenW, height: this.screenH
     };
@@ -8244,7 +8306,8 @@ struct ChatPage {
       // (Cover).
       if (this.chatBg.path !== '' && this.chatBg.isPattern) {
         patternTileGridLayer(
-          this.chatBg.path, this.chatBg.imageOpacity,
+          this.chatBg.path,
+          patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.bgPatternNow()),
           patternTileGrid(this.screenW, this.screenH),
           backgroundBlurRadius(this.chatBg.path, this.chatBg.isPattern, this.chatBg.blurred, this.bgBlur));
       } else if (this.chatBg.path !== '') {
@@ -8252,7 +8315,7 @@ struct ChatPage {
           ? `file://${this.chatBg.path}` : this.chatBg.path).draggable(false)
           .width('100%').height('100%')
           .objectFit(ImageFit.Cover)
-          .opacity(this.chatBg.imageOpacity)
+          .opacity(patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.bgPatternNow()))
           // Blurring needs a little overscan or transparent edge pixels become
           // visible around the viewport. Gated on the actual radius (not just
           // the `blurred` flag) so a user-set blur of 0 doesn't overscan either.

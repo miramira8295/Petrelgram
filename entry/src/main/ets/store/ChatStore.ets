@@ -626,7 +626,15 @@ export class ChatStore {
   // the watermark proves over the raw counter.
   private static effectiveUnread(unread: number, lastReadInboxId: number,
     lastMessageId: number): number {
-    return unread > 0 && lastMessageId > 0 && lastReadInboxId >= lastMessageId ? 0 : unread;
+    const suppressed: boolean = unread > 0 && lastMessageId > 0 && lastReadInboxId >= lastMessageId;
+    if (suppressed) {
+      // 诊断：反馈过"有些会话不显示未读数"。这里是**唯一**会把非零未读抹成 0
+      // 的地方（另外两处是本地摘角标和 TDLib 自己下发），三个数一起打才判断
+      // 得出是真幽灵未读还是误伤。只在真抹掉时打。
+      console.warn(`effectiveUnread suppressed unread=${unread}` +
+        ` lastRead=${lastReadInboxId} lastMsg=${lastMessageId}`);
+    }
+    return suppressed ? 0 : unread;
   }
 
   // Mark lists dirty and schedule one coalesced flush. A field-only change
