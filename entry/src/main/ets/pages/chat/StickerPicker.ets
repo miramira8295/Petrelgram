@@ -14,6 +14,7 @@ import {
 import { promptAction } from '@kit.ArkUI';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { probeEvent, probeHit } from '../../util/panelProbe';
 
 export interface StickerItem {
   fileId: number;   // the sticker's own file (what gets sent)
@@ -67,6 +68,8 @@ class StickerDataSource implements IDataSource {
   }
 
   update(next: FlatEntry[]): void {
+    // 探针：这里是无条件整表 RELOAD，贴纸包一个个加载回来会连发多次。
+    probeEvent('sticker.reload', `items=${this.items.length}->${next.length}`);
     this.items = next;
     for (const l of this.listeners) {
       l.onDatasetChange([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
@@ -785,6 +788,13 @@ export struct StickerPicker {
   }
 
   // Emoji grids use smaller cells (8 columns) — less canvas area per Lottie.
+  // 探针：格子构建计数。挂在 cellPx 上而不是写一条裸语句——ArkUI 的
+  // builder 体里不接受那种写法，而每个格子构建时本来就要问一次尺寸。
+  private cellPxProbed(): number {
+    probeHit('sticker.cell');
+    return this.cellPx();
+  }
+
   private cellPx(): number {
     return this.stickerType === 'custom_emoji' ? 38 : 62;
   }
@@ -826,7 +836,7 @@ export struct StickerPicker {
         Column() {
           TgsStickerView({
             tgsPath: s.srcPath, thumbPath: s.thumbPath,
-            boxWidth: this.cellPx(), boxHeight: this.cellPx(),
+            boxWidth: this.cellPxProbed(), boxHeight: this.cellPx(),
             powerCategory: this.playbackCategory()
           });
         }
@@ -836,7 +846,7 @@ export struct StickerPicker {
         Column() {
           SmartLoopVideo({
             videoPath: s.srcPath, thumbPath: s.thumbPath,
-            boxWidth: this.cellPx(), boxHeight: this.cellPx(),
+            boxWidth: this.cellPxProbed(), boxHeight: this.cellPx(),
             powerCategory: this.playbackCategory()
           });
         }

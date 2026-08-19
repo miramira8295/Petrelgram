@@ -5,6 +5,7 @@ import {
   KEY_POWER_EMOJI_STATUS, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP,
   KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
+import { probeHit } from '../../util/panelProbe';
 
 // Cap on simultaneously running Lottie animations: a screenful of TGS emoji
 // cells (40+) redrawing canvases every frame stutters badly. Cells over the
@@ -92,7 +93,12 @@ export struct TgsStickerView {
     }
   }
 
+  aboutToAppear(): void {
+    probeHit('tgs.mount');
+  }
+
   aboutToDisappear(): void {
+    probeHit('tgs.unmount');
     this.disposed = true;
     this.stopAnim();
   }

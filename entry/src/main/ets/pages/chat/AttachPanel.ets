@@ -1,5 +1,6 @@
 import { AttachAction } from '../../util/attachActions';
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
+import { BOTTOM_DRAWER_HEIGHT } from '../../util/drawerMetrics';
 
 // 附件抽屉的内容：一张 4 列的图标网格。
 //
@@ -8,8 +9,8 @@ import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 // （ChatPage）三件事各自可以单独改。
 //
 // 高度写死而不是自适应：抽屉要顶起输入框和聊天内容，那个高度得在内容挂上来
-// 之前就确定，否则第一帧会先塌一下再弹开。8 项两行，260 是量出来的。
-export const ATTACH_PANEL_HEIGHT: number = 260;
+// 之前就确定，否则第一帧会先塌一下再弹开。数值和表情抽屉共用一处，见
+// util/drawerMetrics。
 
 const COLUMNS: number = 4;
 const ICON_SIZE: number = 52;
@@ -35,7 +36,7 @@ export struct AttachPanel {
     .rowsGap(6)
     .columnsGap(0)
     .width('100%')
-    .height(ATTACH_PANEL_HEIGHT)
+    .height(BOTTOM_DRAWER_HEIGHT)
     .padding({ top: 14, bottom: 14 })
     // 八项固定两行，不该滚；给了滚动条反而会在两行的网格上出现一条多余的轨道。
     .scrollBar(BarState.Off);
