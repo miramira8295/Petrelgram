@@ -21,8 +21,13 @@ import { trimPixelCache } from '../util/pixelCache';
 const BUBBLE_MEDIA_MAX_VP: number = 280;
 
 const DOMAIN = 0x0000;
+// windowSizeChange 带来的密度和启动时相差超过这个比例，就判定这次回调不可信。
+// 折叠屏切换屏幕那类真实变化远小于它。
+const DENSITY_TOLERANCE: number = 0.2;
 
 export default class EntryAbility extends UIAbility {
+  // 启动时算出的显示密度，作为后续 windowSizeChange 的校验基准。
+  private uiDensity: number = 0;
   // 上一次见到的系统语言，用来判断配置变更里语言到底变没变。
   private lastLanguage: string = '';
   private windowStageRef: window.WindowStage | null = null;
@@ -185,6 +190,8 @@ export default class EntryAbility extends UIAbility {
       // 就是多几倍的解码像素，滑动时那笔账要在主线程上还。
       const rectPx: number = win.getWindowProperties().windowRect.width;
       const density: number = rectPx / Math.max(1, px2vp(rectPx));
+      // 记住启动时的密度，windowSizeChange 里拿它做换算和校验。见下面的注释。
+      this.uiDensity = density;
       setInlinePhotoTargetPx(Math.min(rectPx, BUBBLE_MEDIA_MAX_VP * density));
       win.on('avoidAreaChange', (data) => {
         if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
@@ -203,7 +210,28 @@ export default class EntryAbility extends UIAbility {
         AppStorage.setOrCreate('keyboardHeightVp', px2vp(h));
       });
       win.on('windowSizeChange', (size) => {
-        AppStorage.setOrCreate('screenWidthVp', px2vp(size.width));
+        // px2vp 依赖当前显示密度。灭屏/亮屏那一瞬间这个回调会带着尚未恢复的
+        // 密度过来，密度当成 1 时 px2vp 直接把物理像素原样返回——屏宽从 385
+        // 跳到 1316，气泡的 maxWidth（屏宽 × 0.78）变成 1026 远超可用宽度，
+        // 整条消息就摊平到整行。等下一次正常回调到达才自己恢复。
+        //
+        // 所以这里不直接信 px2vp：拿它反推一次密度，和启动时那个对不上就
+        // 判定这次回调不可信，跳过。密度真正变化只发生在折叠屏切换屏幕那
+        // 类场景，那时误差远小于这个阈值，仍然会被接受并刷新基准。
+        const candidate: number = px2vp(size.width);
+        const derived: number = size.width / Math.max(1, candidate);
+        const base: number = this.uiDensity > 0 ? this.uiDensity : derived;
+        if (Math.abs(derived - base) / base > DENSITY_TOLERANCE) {
+          hilog.warn(DOMAIN, 'testTag',
+            'windowSizeChange ignored: density %{public}f vs %{public}f (px=%{public}d)',
+            derived, base, size.width);
+          return;
+        }
+        this.uiDensity = derived;
+        hilog.info(DOMAIN, 'testTag',
+          'windowSizeChange accepted: px=%{public}d vp=%{public}f density=%{public}f',
+          size.width, candidate, derived);
+        AppStorage.setOrCreate('screenWidthVp', candidate);
         AppStorage.setOrCreate('screenHeightVp', px2vp(size.height));
       });
     } catch (err) {
