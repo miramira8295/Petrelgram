@@ -7154,6 +7154,24 @@ struct ChatPage {
         // prepended above — without this, the List stays index-anchored and
         // visibly jumps to the top of the newly loaded page.
         .maintainVisibleContentPosition(true)
+        // 从末尾开始布局——聊天列表本该是"底部锚定"的。
+        //
+        // 默认的顶部锚定意味着：内容比视口短时贴顶，末尾插入一条时上面的内容
+        // 不动、新消息落在视口之外，得靠我们自己判"在不在底部"再补一次
+        // scrollToIndex。那套判定（util/atBottom）依赖 onScrollIndex 报的行号，
+        // 而行号落后于数据一帧，pad 屏高、可见行多，时序更容易错开——用户反馈
+        // 的"停在底部却不跟新消息"就出在这里。
+        //
+        // stackFromEnd 把锚点换到末尾，由布局本身保证：
+        //   内容短于视口时底部对齐；显示区域内插入 ListItem 时，上方内容上移。
+        // 用户滑上去看历史时，新消息插在可视区之外，位置不动——正是想要的语义。
+        //
+        // API 19 起支持，compatibleSdkVersion 是 6.0.0(20)，所有目标设备都有，
+        // 不需要运行时判版本。
+        //
+        // 原有的贴底逻辑保留：它和这里指向同一个位置，最坏是多做一次无效功，
+        // 而在真机上验证之前，删掉它的风险更大。
+        .stackFromEnd(true)
         .onReachStart(() => {
           this.maybeLoadOlder();
         })
