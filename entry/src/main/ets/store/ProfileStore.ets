@@ -339,18 +339,12 @@ export class ProfileStore {
       // 诊断：用户报"别人的动态头像会动，自己的不动"，而两页走的是同一个
       // store、同一段代码。把这段的输入全打出来，自己的和别人的各开一次就
       // 能看出差在哪一环。
-      console.warn(`[AvatarDiag] user=${this.userId}` +
-        ` hasPhoto=${(full['photo'] as TdObject | undefined) !== undefined}` +
-        ` hasPersonal=${(full['personal_photo'] as TdObject | undefined) !== undefined}` +
-        ` hasPublic=${(full['public_photo'] as TdObject | undefined) !== undefined}` +
-        ` picked=${photoFull !== undefined} anim=${anim !== undefined} animId=${animId}`);
       if (animId <= 0) {
         this.avatarAnimPath = '';
       } else {
         this.download(animId, (p: string) => {
           if (animationVersion === this.avatarAnimationVersion) {
             this.avatarAnimPath = p;
-            console.warn(`[AvatarDiag] user=${this.userId} animPath=${p}`);
           }
         });
       }

@@ -1071,9 +1071,7 @@ export class MessageStore {
     return this.client.send(req).then((m: TdObject): void => {
       const roundTripMs: number = Date.now() - sentAt;
       if (roundTripMs > 300) {
-        console.warn(`[SendDiag] sendMessage roundTrip=${roundTripMs}ms rows=${this.messages.length}`);
       } else {
-        console.info(`[SendDiag] sendMessage roundTrip=${roundTripMs}ms rows=${this.messages.length}`);
       }
       this.upsert(buildMessageEntry(m, this.users));
       this.resolveReplies();
@@ -3303,31 +3301,7 @@ export class MessageStore {
     return size > 0 ? Math.min(100, Math.floor((downloaded / size) * 100)) : 0;
   }
 
-  // 诊断：applyFile 是 updateFile 的落点，而每个活跃下载的每次进度变化都会
-  // 来一条。它内部有四次全量 messages.some() 扫描外加一次 patch（又一遍
-  // map + 克隆），窗口几百行时单条就不便宜。每秒汇总一次调用数和累计耗时，
-  // 用来判断 sendMessage 的应答是不是排在这堆活后面。
-  private fileDiagWindowStart: number = 0;
-  private fileDiagCalls: number = 0;
-  private fileDiagMs: number = 0;
-
   private applyFile(file: TdObject): void {
-    const enteredAt: number = Date.now();
-    if (this.fileDiagWindowStart === 0) {
-      this.fileDiagWindowStart = enteredAt;
-    } else if (enteredAt - this.fileDiagWindowStart >= 1000) {
-      console.info(`[SendDiag] applyFile calls=${this.fileDiagCalls}` +
-        ` totalMs=${this.fileDiagMs} rows=${this.messages.length}`);
-      this.fileDiagWindowStart = enteredAt;
-      this.fileDiagCalls = 0;
-      this.fileDiagMs = 0;
-    }
-    this.fileDiagCalls++;
-    this.applyFileInner(file);
-    this.fileDiagMs += Date.now() - enteredAt;
-  }
-
-  private applyFileInner(file: TdObject): void {
     const id = file['id'] as number | undefined;
     if (id === undefined) {
       return;

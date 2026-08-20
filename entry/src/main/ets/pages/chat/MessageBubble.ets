@@ -3060,10 +3060,6 @@ export struct MessageBubble {
       .onAreaChange((_old: Area, area: Area): void => {
         const w: number = area.width as number;
         if (w > this.screenW * 0.9) {
-          console.warn(`rowStretched w=${Math.round(w)} screenW=${Math.round(this.screenW)}` +
-            ` bubbleW=${Math.round(this.bubbleW)} cap=${Math.round(this.bubbleMaxW())}` +
-            ` type=${this.msg.contentType} album=${this.albumPaths.length}` +
-            ` inline=${this.msg.inlineButtons.length}`);
         }
       })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {

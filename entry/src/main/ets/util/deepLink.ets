@@ -141,7 +141,6 @@ export function tgSchemeToUrl(rawUri: string): string {
 // Route a raw incoming deep-link URI into the app.
 export function handleIncomingLink(context: common.UIAbilityContext, rawUri: string): void {
   const uri = normalizeTgScheme(rawUri.trim());
-  console.warn(`[LinkDiag] handleIncomingLink raw=${rawUri} -> ${tgSchemeToUrl(uri)}`);
   if (uri === '') {
     return;
   }

@@ -120,8 +120,6 @@ struct Index {
   // 的失败路径给出提示。
   private consumeDeepLink(): void {
     if (this.pendingDeepLink !== '') {
-      console.warn(`[LinkDiag] consume stage=${this.stage} connReady=${this.connReady}` +
-        ` uri=${this.pendingDeepLink}`);
     }
     if (this.stage !== AuthStage.Ready || this.pendingDeepLink === '') {
       return;

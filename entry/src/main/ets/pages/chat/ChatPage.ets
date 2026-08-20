@@ -349,37 +349,18 @@ struct ChatPage {
 
   // 诊断：把视口附近这一段数据集原样打出来，供和屏幕逐行对照。
   //
-  // 要判的是两件性质完全不同的事：数据集顺序正常而屏幕错乱，说明是框架那份
-  // key→node 表失准；数据集本身就是交错的，说明问题在我们这侧的分组/合并。
-  // 两者的修法没有交集，所以先分清再动手。
-  private dumpRows(tag: string): void {
-    const from: number = Math.max(0, this.curStartIdx);
-    const to: number = Math.min(this.groups.length, from + 12);
-    const parts: string[] = [];
-    for (let i = from; i < to; i++) {
-      const g: AlbumGroup = this.groups[i];
-      const sender: string = g.head.senderName !== '' ? g.head.senderName : '-';
-      parts.push(`${i}:${g.head.id}:${g.head.contentType}:${sender}`);
-    }
-    console.info(`[ChatDiag] rows(${tag}) start=${this.curStartIdx}` +
-      ` total=${this.groups.length} ${parts.join(' | ')}`);
-  }
 
   private resyncListAfterHidden(): void {
     const anchorId: number = this.hiddenAnchorId;
     const anchorY: number = this.hiddenAnchorY;
     this.hiddenAnchorId = 0;
     this.hiddenAnchorY = 0;
-    console.info(`[ChatDiag] resync anchorId=${anchorId} anchorY=${Math.round(anchorY)}` +
-      ` groups=${this.groups.length}`);
-    this.dumpRows('beforeReload');
     this.groupsData.reload();
     // 再打一次：此时框架已经渲染完，屏幕上如果是错的，这一份就是"数据本来
     // 长什么样"的对照。
     const dumpSeq: number = this.scrollActionSeq;
     setTimeout((): void => {
       if (dumpSeq === this.scrollActionSeq) {
-        this.dumpRows('afterSettle');
       }
     }, 2500);
     if (anchorId > 0) {
@@ -1650,7 +1631,6 @@ struct ChatPage {
   onPageHide(): void {
     // 跳走了就是解析成功了：闸门开，加载态收掉，免得退回来还亮着。
     endLinkNav();
-    console.info(`[ChatDiag] hide msgs=${this.messages.length} groups=${this.groups.length} ds=${this.groupsData.totalCount()}`);
     this.pageVisible = false;
     this.hiddenSinceMs = Date.now();
     this.captureHiddenAnchor();
@@ -1680,10 +1660,6 @@ struct ChatPage {
     this.hiddenSinceMs = 0;
     const wasBackgrounded: boolean = this.appWentBackground;
     this.appWentBackground = false;
-    console.info(`[ChatDiag] show hiddenMs=${hiddenMs} dirty=${this.hiddenListDirty}` +
-      ` bg=${wasBackgrounded} groups=${this.groups.length}` +
-      ` ds=${this.groupsData.totalCount()}` +
-      ` startIdx=${this.curStartIdx} atBottom=${this.atBottom}`);
     // 两条触发路径：隐藏期间数据变过，或者应用整个进过后台。后者即便数据
     // 没变也必须重建——框架的 key 表在窗口回收后就不可信了。
     if (this.hiddenListDirty || wasBackgrounded) {
@@ -2630,12 +2606,8 @@ struct ChatPage {
   private maybeLoadOlder(): void {
     // 诊断：用户报"999+ 却滑不动"，而日志里 loadOlder 一次都没被调用过——
     // 需要看清是没被叫、还是被 olderArmed 挡住、还是 store 拒绝。
-    console.info(`[ChatDiag] tryOlder armed=${this.olderArmed} rows=${this.groups.length}` +
-      ` hasMore=${this.store !== null ? this.store.getHasMoreOlder() : false}`);
     if (this.olderArmed && this.store !== null) {
       const started = this.store.loadOlder();
-      console.info(`[ChatDiag] fireOlder started=${started}` +
-        ` hasMore=${this.store.getHasMoreOlder()}`);
       if (started || !this.store.getHasMoreOlder()) {
         this.olderArmed = false;
       }
@@ -2649,9 +2621,6 @@ struct ChatPage {
     }
     // 诊断：向下预取又跑飞了两次，判据本身要能看见。end 在内容追加时到底动
     // 没动，是"视口跟着贴底走"还是"用户真在滚"，只有这行能分清。
-    console.info(`[ChatDiag] fireNewer end=${end} rows=${this.groups.length}` +
-      ` firedAt=${this.newerFiredAtEnd} atBottom=${this.atBottom}` +
-      ` stayUnread=${this.stayAtUnread}`);
     const started: boolean = this.store.loadNewer();
     if (started || !this.store.getHasMoreNewer()) {
       this.newerFiredAtEnd = end;
@@ -7080,7 +7049,6 @@ struct ChatPage {
         // visibly jumps to the top of the newly loaded page.
         .maintainVisibleContentPosition(true)
         .onReachStart(() => {
-          console.info('[ChatDiag] reachStart');
           this.maybeLoadOlder();
         })
         // Each new touch gesture re-arms one older-page load: a fling that ends
