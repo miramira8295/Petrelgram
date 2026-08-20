@@ -276,6 +276,17 @@ struct ChatPage {
   // around the anchor row.
   private pageVisible: boolean = true;
   private hiddenListDirty: boolean = false;
+  private hiddenSinceMs: number = 0;
+  // 应用整个进过后台（熄屏、回桌面），而不只是本页被应用内的另一页盖住。
+  //
+  // hiddenListDirty 只认"隐藏期间数据变过"。但实测下来更常见的是另一路：
+  // 熄屏放置一两分钟，数据一个字没变（groups/ds 前后相等、dirty=false），
+  // 回来照样错乱——窗口在后台被系统回收，节点树重建时撞上框架里那份陈旧的
+  // key→node 表，于是最新几行是新建的、正确，上面那些行拿到别人的内容。
+  //
+  // 用"进没进过后台"而不是"隐藏了多少毫秒"：熄屏/回桌面会置位，应用内跳
+  // 查看器、资料页不会——后者本来就没问题，不必为它们白付一次 RELOAD。
+  private appWentBackground: boolean = false;
 
   // The single gate for publishing a dataset while the page may be hidden.
   private publishGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
@@ -298,6 +309,8 @@ struct ChatPage {
         anchorY = 0;
       }
     }
+    console.info(`[ChatDiag] resync anchorId=${anchorId} anchorY=${Math.round(anchorY)}` +
+      ` groups=${this.groups.length}`);
     this.groupsData.reload();
     if (anchorId > 0) {
       this.restorePrependAnchor(this.groups, anchorId, anchorY);
@@ -1591,6 +1604,7 @@ struct ChatPage {
     endLinkNav();
     console.info(`[ChatDiag] hide msgs=${this.messages.length} groups=${this.groups.length} ds=${this.groupsData.totalCount()}`);
     this.pageVisible = false;
+    this.hiddenSinceMs = Date.now();
     // 页面不可见时停表，回来时补一次即时值再续上。
     this.clearNowSecTimer();
     // 切走（含被查看器等页面盖住）立刻停播放位——不能等 aboutToDisappear，
@@ -1613,7 +1627,17 @@ struct ChatPage {
     // The list changed while this page was hidden. See hiddenListDirty: the
     // framework applies hidden-period notifications incompletely, so rebuild
     // its key table from the dataset before the user can see mismatched rows.
-    if (this.hiddenListDirty) {
+    const hiddenMs: number = this.hiddenSinceMs > 0 ? Date.now() - this.hiddenSinceMs : -1;
+    this.hiddenSinceMs = 0;
+    const wasBackgrounded: boolean = this.appWentBackground;
+    this.appWentBackground = false;
+    console.info(`[ChatDiag] show hiddenMs=${hiddenMs} dirty=${this.hiddenListDirty}` +
+      ` bg=${wasBackgrounded} groups=${this.groups.length}` +
+      ` ds=${this.groupsData.totalCount()}` +
+      ` startIdx=${this.curStartIdx} atBottom=${this.atBottom}`);
+    // 两条触发路径：隐藏期间数据变过，或者应用整个进过后台。后者即便数据
+    // 没变也必须重建——框架的 key 表在窗口回收后就不可信了。
+    if (this.hiddenListDirty || wasBackgrounded) {
       this.hiddenListDirty = false;
       this.resyncListAfterHidden();
     }
@@ -3541,6 +3565,7 @@ struct ChatPage {
     if (this.appIsForeground) {
       this.store?.resumeOpenChat();
     } else {
+      this.appWentBackground = true;
       this.store?.suspendOpenChat();
     }
     if (!this.appIsForeground) {
