@@ -101,7 +101,18 @@ function progressBucket(percent: number): number {
 function mutableSig(m: MessageEntry): string {
   // videoPath: voice/file/video rows change rendering once the file lands.
   // senderName: chat-sender (posting-as-channel) names resolve async.
-  let s = `${m.commentCount}_${m.forwardFrom}_${m.senderName}_${m.contentType}_${m.stickerFormat}` +
+  //
+  // m.id 进**内容签名**（不是行身份）。行身份用 rowId，发送成功时它跨过临时
+  // id → 真实 id 的替换保持不变，行才不会被销毁重建。可 id 本身是气泡要用的
+  // 数据：编辑、删除、复制链接、回复全按 m.id 定位。id 不进任何 key 时，纯文本
+  // 消息发送成功前后这一行的 key 逐字节相同，数据源判定"没变"、不发 CHANGE，
+  // LazyForEach 于是不再重读这一格——气泡里的 @Prop msg 一直揣着那个已经作废
+  // 的临时 id，直到别的字段碰巧改动或退出重进（issue #66「刚发的消息无法编辑」）。
+  //
+  // 放进内容签名而不是行身份，得到的是 CHANGE 而非 RELOAD：sameIdentity 只看
+  // rowId，仍然判同一个 item，行不重建，只是就地拿到新数据。每条发出的消息
+  // 多一次 CHANGE，代价可以忽略。
+  let s = `${m.id}_${m.commentCount}_${m.forwardFrom}_${m.senderName}_${m.contentType}_${m.stickerFormat}` +
     `_${m.placeholderLabel}_${m.systemKind}_${m.isUnsupportedMessage}` +
     `_${m.linkPreviewType}_${m.linkUrl}_${m.linkSiteName}_${m.linkTitle}_${m.linkDescription}` +
     `_${m.linkPhotoFileId}_${m.linkPhotoPath !== '' ? 'lp' : ''}_${m.linkPhotoWidth}_${m.linkPhotoHeight}` +
@@ -218,11 +229,13 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         // 真机实测净效果为零。等待中的进度环由 LiveProgressRing 自订阅刷新。
         // photoFileIds 仍然留着——fileId 变了说明换了另一份媒体（编辑替换、
         // 相册成员变动），那时确实该重建，LiveThumbImage 也需要重建才能订阅新的 fileId。
-        // rowId 而不是 id、rowMemberIds 而不是 memberIds：发送成功时 TDLib 把
-        // 临时 id 换成真实 id，用 id 做 key 会让这一行被当成新 item 重建。
+        // 行身份用 rowId / rowMemberIds 而不是真实 id：发送成功时 TDLib 把临时 id
+        // 换成真实 id，拿 id 当行身份会让这一行被当成新 item 销毁重建。
+        // 但 memberIds（真实 id）仍要进内容签名——相册每一格的点击、下载、
+        // 转发都按真实 id 定位，见 mutableSig 里 m.id 那段。
         // sendState 也不进 key——它经 sendStateChannel 直达气泡里的状态图标，
         // 就地把时钟换成对号，不必重建整行。
-        key: `a_${m.albumId}_${m.rowId}_${rowMemberIds.join(',')}_${photoFileIds.join(',')}_${photoFailed.join(',')}_${videoFileIds.join(',')}_${caption}_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}_${dateLabel}_${mutableSig(displayHead)}`,
+        key: `a_${m.albumId}_${m.rowId}_${rowMemberIds.join(',')}_${memberIds.join(',')}_${photoFileIds.join(',')}_${photoFailed.join(',')}_${videoFileIds.join(',')}_${caption}_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}_${dateLabel}_${mutableSig(displayHead)}`,
         head: displayHead,
         memberIds,
         rowMemberIds,

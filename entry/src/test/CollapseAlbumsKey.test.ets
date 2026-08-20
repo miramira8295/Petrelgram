@@ -141,15 +141,24 @@ export default function collapseAlbumsKeyTest() {
     });
 
     // 发送成功时 TDLib 把临时 id 换成真实 id，MessageStore 让新条目继承旧条目
-    // 的 rowId（onSendSucceeded）。行 key 用 rowId，所以这一步 key 必须纹丝
-    // 不动——否则列表把它当成新 item 销毁重建，界面上就是发完消息"闪一下"。
-    it('单条媒体行：id 换新但 rowId 不变时 key 不变', 0, () => {
+    // 的 rowId（onSendSucceeded）。两件事必须同时成立：
+    //   行身份（rowId）不变 —— 列表才不会把它当成新 item 销毁重建，
+    //                          界面上就是发完消息不"闪一下"；
+    //   内容 key 变          —— 数据源才会发 CHANGE，气泡拿到带真实 id 的新
+    //                          数据。这一条原来是反着钉的，正是 issue #66
+    //                          「刚发的消息无法编辑」的成因：key 不变则不发
+    //                          CHANGE，@Prop msg 一直揣着作废的临时 id。
+    it('单条媒体行：id 换新而 rowId 不变——行身份不变、内容 key 变', 0, () => {
       const u = usersOf();
       const before: MessageEntry = media(5, '', 201, '/data/5.jpg', u);
       const after: MessageEntry = cloneMessage(before);
       after.id = 999;            // 真实 id 到位
       after.rowId = before.rowId; // 行身份由新条目继承
-      expect(collapseAlbums([after])[0].key).assertEqual(collapseAlbums([before])[0].key);
+      const g0: AlbumGroup = collapseAlbums([before])[0];
+      const g1: AlbumGroup = collapseAlbums([after])[0];
+      expect(g1.head.rowId).assertEqual(g0.head.rowId);
+      expect(g1.rowMemberIds.join(',')).assertEqual(g0.rowMemberIds.join(','));
+      expect(g1.key === g0.key).assertFalse();
     });
 
     it('单条媒体行：sendState 变化时 key 不变（走旁路通道）', 0, () => {
@@ -167,6 +176,16 @@ export default function collapseAlbumsKeyTest() {
       const after: MessageEntry = cloneMessage(before);
       after.rowId = 777;
       expect(collapseAlbums([after])[0].key === collapseAlbums([before])[0].key).assertFalse();
+    });
+
+    it('相册：成员 id 换了而 rowId 不变时，key 必须变', 0, () => {
+      const u = usersOf();
+      const a: MessageEntry = media(11, 'alb', 201, '/data/a.jpg', u);
+      const b: MessageEntry = media(12, 'alb', 202, '/data/b.jpg', u);
+      const a2: MessageEntry = cloneMessage(a);
+      const b2: MessageEntry = cloneMessage(b);
+      a2.id = 111; b2.id = 112;    // rowId 保持 11 / 12
+      expect(collapseAlbums([a2, b2])[0].key === collapseAlbums([a, b])[0].key).assertFalse();
     });
   });
 }
