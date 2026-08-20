@@ -624,6 +624,9 @@ struct ChatPage {
   // 内容增长不会让 end 变大（视口没动），所以自驱的链子到此为止；用户真往下
   // 滚时照常一页一页地跟。
   private newerFiredAtEnd: number = -1;
+  // 内容铺不满一屏时主动补页的上限。到这个行数还说"整份都可见"，说明判据
+  // 本身出了问题，停手比无限拉更安全。
+  private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
   // Jump-target highlight: a translucent overlay over the target row that
   // gently blinks twice after a reply/pinned/link jump lands.
   @State flashTop: number = 0;
@@ -1232,6 +1235,7 @@ struct ChatPage {
       // 就按当前视口驱动一次；curStartIdx/curEndIdx 在首帧前是 -1，此时用
       // 首屏兜底，滑动事件来了会立刻纠正。
       this.driveVisibleWork();
+      this.fillViewportIfNeeded();
       this.musicQueue.settlePending(list);
       // Incremental ops (the normal prepend) keep the viewport anchored via
       // maintainVisibleContentPosition; forcing scrollToIndex on top of that
@@ -2612,6 +2616,31 @@ struct ChatPage {
         this.olderArmed = false;
       }
     }
+  }
+
+  // 内容不足一屏时主动补页。
+  //
+  // 向上分页全靠滚动事件驱动（onReachStart / onScrollIndex 里 start<=4），
+  // 可内容铺不满一屏时列表根本滚不动，这两个事件永远不来，于是卡在初始那点
+  // 内容上——用户看到的就是"999+ 却滑不动"。平板尤其容易中招：屏幕更高，
+  // 要更多行才铺得满。
+  //
+  // 判据用"最后一行是否可见"：onScrollIndex 报的可见末行已经是最后一行，
+  // 说明整份数据都在屏幕上、列表滚不动。此时不能等下一次滚动，得自己敲门。
+  private fillViewportIfNeeded(): void {
+    if (this.store === null || !this.store.getHasMoreOlder()) {
+      return;
+    }
+    if (this.groups.length === 0 || this.groups.length >= ChatPage.FILL_VIEWPORT_MAX_ROWS) {
+      return;
+    }
+    // 首帧之前 curEndIdx 是 -1，那时还不知道能看见多少，交给后续的滚动/数据
+    // 变化再判一次。
+    if (this.curEndIdx < 0 || this.curEndIdx < this.groups.length - 1) {
+      return;
+    }
+    this.olderArmed = true;
+    this.maybeLoadOlder();
   }
 
   // 只有视口确实往下走过才再取一页，见 newerFiredAtEnd 的说明。
@@ -7083,6 +7112,9 @@ struct ChatPage {
           this.curEndIdx = end;
           // 记下这批行号对应的数据长度，refreshAtBottom 据此判断行号是否新鲜。
           this.indexGroupsLen = this.groups.length;
+          // 首帧之前 curEndIdx 是 -1，数据先到那次判不出来；这里是可见行号第一
+          // 次变得可用的地方，补判一次，否则铺不满一屏时就永远没人敲门了。
+          this.fillViewportIfNeeded();
           this.curBottomId = this.bottomVisibleId(end);
           this.syncReturnState();
           this.markVisibleRead(end);
