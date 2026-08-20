@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "Учасники побачать це звання замість «адміністратор»"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "Медіа"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "Не більше %1$d, пропущено: %2$d"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "Спершу надішліть або скасуйте вкладення"
     }
   ]
 }

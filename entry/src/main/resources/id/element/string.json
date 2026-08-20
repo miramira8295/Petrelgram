@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "Anggota akan melihat gelar ini, bukan \"admin\""
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "Media"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "Maksimal %1$d, %2$d diabaikan"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "Kirim atau batalkan media terlampir dulu"
     }
   ]
 }

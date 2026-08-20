@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "สมาชิกจะเห็นตำแหน่งนี้แทนคำว่า \"ผู้ดูแล\""
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "สื่อ"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "สูงสุด %1$d รายการ ข้าม %2$d รายการ"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "กรุณาส่งหรือยกเลิกสื่อที่แนบไว้ก่อน"
     }
   ]
 }

@@ -60,6 +60,12 @@ import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
 import { MessageListStateCard, TimelineStatePill } from './MessageListState';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
+import { MediaStrip } from './MediaStrip';
+import {
+  PENDING_MEDIA_MAX, PendingMediaAppend, PendingMediaItem, appendPendingMedia,
+  clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend,
+  removePendingMedia
+} from '../../util/pendingMedia';
 import { ComposerSendButton } from './ComposerSendButton';
 import { ScrollFab } from './ScrollFab';
 import { MembershipBar } from './MembershipBar';
@@ -745,6 +751,10 @@ struct ChatPage {
   @State composerFocused: boolean = false;
   private composerController: TextAreaController = new TextAreaController();
   private mediaPickerOpen: boolean = false;
+  // 选好但还没发出去的媒体。和 replyToId 正交——回复某条 + 附图 + 配文是
+  // 一次完整操作，所以不进 composerMode 那个互斥状态机（见 util/pendingMedia）。
+  @State private pendingMedia: PendingMediaItem[] = [];
+
   private mediaCopySeq: number = 0;
   @State headerMenuShow: boolean = false; // header ⋮ dropdown
   // Header state is kept separate from message-history state. getChat can
@@ -869,6 +879,9 @@ struct ChatPage {
     this.panelContentReady = false;
     this.emojiPanelClosing = false;
     this.draft = '';
+    // 暂存的媒体不跨会话保留：草稿有 TDLib 的 setChatDraftMessage 可以落盘，
+    // 本地文件路径没有，要留就得自建一套持久化，不值。
+    this.pendingMedia = clearPendingMedia();
     this.composerSending = false;
     this.composerFocused = false;
     this.imeTailPinned = false;
@@ -4899,23 +4912,28 @@ struct ChatPage {
     }).catch((): void => { this.mediaPickerOpen = false; });
   }
 
-  private pickAndSendMedia(): void {
+  private pickMedia(): void {
     if (this.mediaPickerOpen || this.composerSending || this.store === null) {
+      return;
+    }
+    // 选择器自己就按"还能再放几张"限制，好过让用户挑满九张再被截断。
+    const room: number = PENDING_MEDIA_MAX - this.pendingMedia.length;
+    if (room <= 0) {
+      promptAction.showToast({
+        message: str('cp_pending_media_full', PENDING_MEDIA_MAX, 0), duration: 2000
+      });
       return;
     }
     this.mediaPickerOpen = true;
     const photoPicker = new photoAccessHelper.PhotoViewPicker();
     const opts = new photoAccessHelper.PhotoSelectOptions();
     opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
-    opts.maxSelectNumber = 9;
+    opts.maxSelectNumber = room;
     photoPicker.select(opts).then((res: photoAccessHelper.PhotoSelectResult) => {
       this.mediaPickerOpen = false;
       if (res.photoUris.length === 0 || this.store === null) {
         return;
       }
-      const captionSnapshot = this.draft;
-      const caption = captionSnapshot.trim();
-      const replyId = this.replyToId;
       const items: MediaSendItem[] = [];
       let skipped = 0;
       for (const uri of res.photoUris) {
@@ -4933,23 +4951,20 @@ struct ChatPage {
       if (skipped > 0) {
         promptAction.showToast({ message: plural('cp_media_skipped', skipped, skipped), duration: 1800 });
       }
-      const store: MessageStore = this.store;
-      this.atBottom = true;
-      this.stayAtUnread = false;
-      this.withSendLock((): Promise<void> => store.sendMedia(items, caption, replyId).then((): void => {
-        if (this.draft === captionSnapshot) {
-          this.draft = '';
-        }
-        if (this.replyToId === replyId) {
-          this.clearReply();
-        }
-      }).catch((e: TdError): void => {
-        console.error(`ChatPage.sendMedia failed: ${e.message}`);
-        promptAction.showToast({ message: $r('app.string.cp_photo_send_failed'), duration: 2000 });
-      }));
+      // 不直接发：先攒到输入框上方那一条，等用户配完文字再一起发。
+      // 追加而不是替换——用户分几次从不同相册挑图是常见操作。超出九张
+      // （Telegram 相册上限）时截断并**明确告知截了几张**，不静默丢弃。
+      const merged: PendingMediaAppend = appendPendingMedia(this.pendingMedia, items);
+      this.pendingMedia = merged.items;
+      if (merged.dropped > 0) {
+        promptAction.showToast({
+          message: str('cp_pending_media_full', PENDING_MEDIA_MAX, merged.dropped),
+          duration: 2200
+        });
+      }
     }).catch((e: Object) => {
       this.mediaPickerOpen = false;
-      console.error(`ChatPage.pickAndSendMedia failed: ${JSON.stringify(e)}`);
+      console.error(`ChatPage.pickMedia failed: ${JSON.stringify(e)}`);
       promptAction.showToast({ message: $r('app.string.cp_cannot_open_picker'), duration: 1800 });
     });
   }
@@ -5276,9 +5291,49 @@ struct ChatPage {
     });
   }
 
+  // 把暂存的媒体连同正文一起发出去。正文可以为空——媒体本身就是内容。
+  //
+  // 和 doSend 的文本路径不同，这里**不能**在发送前就清空暂存：媒体走的是
+  // sendMedia 一次请求带全部文件，失败了得把用户挑好的九张还回去，而那些
+  // 只存在于这个数组里（文本失败还有 draftSnapshot 兜底）。所以清空放在
+  // 成功回调里，期间由 withSendLock 挡住重复点击。
+  private sendPendingMedia(): void {
+    const store: MessageStore | null = this.store;
+    if (store === null || !hasPendingMedia(this.pendingMedia)) {
+      return;
+    }
+    const items: MediaSendItem[] = this.pendingMedia.map(
+      (item: PendingMediaItem): MediaSendItem => ({ path: item.path, isVideo: item.isVideo }));
+    const captionSnapshot: string = this.draft;
+    const caption: string = captionSnapshot.trim();
+    const replyId: number = this.replyToId;
+    this.commandMenuOpen = false;
+    this.atBottom = true;
+    this.stayAtUnread = false;
+    this.withSendLock((): Promise<void> => store.sendMedia(items, caption, replyId).then((): void => {
+      this.pendingMedia = clearPendingMedia();
+      if (this.draft === captionSnapshot) {
+        this.draft = '';
+        this.pendingNameMentions = [];
+      }
+      if (this.replyToId === replyId) {
+        this.clearReply();
+      }
+    }).catch((e: TdError): void => {
+      console.error(`ChatPage.sendMedia failed: ${e.message}`);
+      promptAction.showToast({ message: $r('app.string.cp_photo_send_failed'), duration: 2000 });
+    }));
+  }
+
   private doSend(): void {
     if (this.editingId !== 0) {
       this.commitEdit();
+      return;
+    }
+    // 有暂存媒体就走相册路径，正文当说明。判断放在文本的空串闸门之前——
+    // 只挑了图没打字也要能发。
+    if (hasPendingMedia(this.pendingMedia)) {
+      this.sendPendingMedia();
       return;
     }
     const draftSnapshot: string = this.draft;
@@ -6303,6 +6358,15 @@ struct ChatPage {
   // Suggestion panel above the input bar: group members for a trailing '@',
   // bot commands for a leading '/'.
   private startEdit(messageId: number): void {
+    // 编辑改的是旧消息，发媒体是发新消息，发送键做哪件事说不清。宁可拒绝，
+    // 也不静默丢掉用户刚挑好的九张图（对照 enterEdit 会清掉待回复——那里
+    // 丢的只是一个引用）。
+    if (hasPendingMedia(this.pendingMedia)) {
+      promptAction.showToast({
+        message: $r('app.string.cp_pending_media_blocks_edit'), duration: 2000
+      });
+      return;
+    }
     const msg = this.store?.getMessages().find(
       (m: MessageEntry): boolean => m.id === messageId);
     const captionTypes: string[] = ['photo', 'video', 'file', 'audio', 'voice'];
@@ -6488,7 +6552,7 @@ struct ChatPage {
   private runAttachAction(key: string): void {
     this.closeAttachPanel();
     if (key === 'media') {
-      this.pickAndSendMedia();
+      this.pickMedia();
     } else if (key === 'file') {
       this.pickAndSendFile();
     } else if (key === 'audio') {
@@ -6563,6 +6627,18 @@ struct ChatPage {
         .onClick((): void => { this.toggleAttachPanel(); });
       }
       Column() {
+        if (hasPendingMedia(this.pendingMedia)) {
+          MediaStrip({
+            items: this.pendingMedia,
+            onRemoveAt: (index: number): void => {
+              this.pendingMedia = removePendingMedia(this.pendingMedia, index);
+            },
+            onMove: (from: number, to: number): void => {
+              this.pendingMedia = movePendingMedia(this.pendingMedia, from, to);
+            },
+            onCancel: (): void => { this.pendingMedia = clearPendingMedia(); }
+          });
+        }
         if (this.editingId !== 0) {
           EditStrip({
             editingKind: this.editingKind,
@@ -6722,7 +6798,8 @@ struct ChatPage {
               .onClick((): void => { this.openBotMiniApp(); });
           }
           ComposerSendButton({
-            hasDraft: this.draft.trim() !== '',
+            // 有暂存媒体时正文可以为空，按钮也该是"发送"而不是麦克风。
+            hasDraft: pendingMediaCanSend(this.pendingMedia, this.draft),
             recordingStarting: this.recordingStarting,
             sending: this.composerSending,
             onRecord: (): void => { this.startRecording(); },

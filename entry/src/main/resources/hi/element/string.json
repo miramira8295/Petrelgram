@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "सदस्यों को \"एडमिन\" के बजाय यह पदनाम दिखेगा"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "मीडिया"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "अधिकतम %1$d, %2$d को छोड़ा गया"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "पहले संलग्न मीडिया भेजें या हटाएँ"
     }
   ]
 }

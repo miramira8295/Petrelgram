@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "群组成员将看到此头衔，而不是「管理员」"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "媒体消息"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "最多 %1$d 个，已忽略 %2$d 个"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "先发送或取消待发送的媒体"
     }
   ]
 }

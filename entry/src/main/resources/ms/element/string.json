@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "Ahli akan melihat gelaran ini, bukan \"admin\""
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "Media"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "Maksimum %1$d, %2$d diabaikan"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "Hantar atau batalkan media yang dilampirkan dahulu"
     }
   ]
 }

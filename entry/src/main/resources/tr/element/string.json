@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "Üyeler «yönetici» yerine bu unvanı görecek"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "Medya"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "En fazla %1$d, %2$d yok sayıldı"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "Önce ekli medyayı gönderin veya iptal edin"
     }
   ]
 }

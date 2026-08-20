@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "سيرى الأعضاء هذا اللقب بدلاً من «مشرف»"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "وسائط"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "بحد أقصى %1$d، تم تجاهل %2$d"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "أرسل الوسائط المرفقة أو ألغِها أولاً"
     }
   ]
 }

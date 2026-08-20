@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "اعضا این عنوان را به‌جای «ادمین» می‌بینند"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "رسانه"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "حداکثر %1$d، %2$d نادیده گرفته شد"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "ابتدا رسانهٔ پیوست‌شده را ارسال یا لغو کنید"
     }
   ]
 }

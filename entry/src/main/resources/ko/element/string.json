@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "멤버에게 '관리자' 대신 이 직함이 표시됩니다"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "미디어"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "최대 %1$d개, %2$d개 제외됨"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "첨부된 미디어를 먼저 보내거나 취소하세요"
     }
   ]
 }

@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "Thành viên sẽ thấy chức danh này thay vì \"quản trị viên\""
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "Phương tiện"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "Tối đa %1$d, đã bỏ qua %2$d"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "Hãy gửi hoặc huỷ phương tiện đã đính kèm trước"
     }
   ]
 }

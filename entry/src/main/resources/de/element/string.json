@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "Mitglieder sehen diesen Titel statt „Admin“"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "Medien"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "Maximal %1$d, %2$d ignoriert"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "Sende oder verwirf zuerst die angehängten Medien"
     }
   ]
 }

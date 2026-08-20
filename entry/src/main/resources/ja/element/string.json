@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "メンバーには「管理者」ではなくこの肩書きが表示されます"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "メディア"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "最大 %1$d 件、%2$d 件を除外しました"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "添付中のメディアを先に送信するか取り消してください"
     }
   ]
 }

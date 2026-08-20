@@ -11259,6 +11259,18 @@
     {
       "name": "ga_title_hint",
       "value": "Les membres verront ce titre au lieu de « admin »"
+    },
+    {
+      "name": "cp_pending_media",
+      "value": "Médias"
+    },
+    {
+      "name": "cp_pending_media_full",
+      "value": "%1$d maximum, %2$d ignorés"
+    },
+    {
+      "name": "cp_pending_media_blocks_edit",
+      "value": "Envoyez ou annulez d'abord les médias joints"
     }
   ]
 }
