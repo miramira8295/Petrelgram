@@ -141,6 +141,8 @@ export struct WebmStickerView {
   aboutToAppear(): void {
     probeHit('webm.mount');
     this.useAlpha = alphaStickerCandidate(this.powerCategory) && alphaStickerPipelineAvailable();
+    console.warn(`[AlphaDiag] gate cat=${this.powerCategory}` +
+      ` candidate=${alphaStickerCandidate(this.powerCategory)} useAlpha=${this.useAlpha}`);
   }
 
   aboutToDisappear(): void {
@@ -315,7 +317,10 @@ export struct WebmStickerView {
         powerCategory: this.powerCategory,
         forcePlay: this.forcePlay,
         onWorking: (): void => { this.onWorking(); },
-        onFallback: (): void => { this.useAlpha = false; }
+        onFallback: (): void => {
+          console.warn('[AlphaDiag] fallback to ijkplayer');
+          this.useAlpha = false;
+        }
       });
     } else {
       XComponent({ id: this.componentId(), type: XComponentType.TEXTURE, libraryname: 'ijkplayer_napi' })

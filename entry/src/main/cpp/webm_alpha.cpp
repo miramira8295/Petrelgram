@@ -24,6 +24,18 @@ constexpr const char *kLogTag = "WebmAlpha";
 // 字符串常量本身是稳定的协议标识，硬写没有兼容性风险。
 constexpr const char *kVp9Mime = "video/x-vnd.on2.vp9";
 
+const char *kVp9MimeCandidates[] = {
+    "video/x-vnd.on2.vp9",
+    "video/vp9",
+    "video/x-vnd.on2.VP9",
+};
+const char *g_vp9Mime = nullptr;
+
+// 探测选中的那个串；探测没跑过或全都失败时退回默认值。
+const char *Vp9Mime() {
+    return g_vp9Mime != nullptr ? g_vp9Mime : kVp9Mime;
+}
+
 // 输入/输出轮询的节奏。同步模式下这两个超时只影响忙等程度，不影响正确性。
 constexpr int64_t kInputTimeoutUs = 0;
 constexpr int64_t kOutputTimeoutUs = 20000;
@@ -105,7 +117,7 @@ bool ConfigureDecoder(OH_AVCodec *codec, int32_t srcW, int32_t srcH) {
 bool DecodeStream(const std::vector<Packet> &packets, int32_t srcW, int32_t srcH,
                   const FrameSink &sink) {
     DecoderHandle handle;
-    handle.codec = OH_VideoDecoder_CreateByMime(kVp9Mime);
+    handle.codec = OH_VideoDecoder_CreateByMime(Vp9Mime());
     if (handle.codec == nullptr) {
         OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "%{public}s", "no vp9 decoder");
         return false;
@@ -227,13 +239,67 @@ inline uint8_t ExpandRange(uint8_t v, bool full) {
 
 } // namespace
 
+// 实测这台 API 26 的机器上 GetCapability("video/x-vnd.on2.vp9") 返回 nullptr，
+// 于是整条链路一次都没跑起来。原因只可能是两个：mime 串不是这个，或者设备
+// 真的没有 VP9 解码器。挨个试候选串，并且用 video/avc 做对照——连 H.264 都
+// 拿不到就说明是探测本身没工作，而不是缺 VP9。
+//
+// 用 GetCapability（API 9）而不是 GetCapabilityList（API 24）：后者是函数
+// 符号没有加载期风险，但没必要为一次探测抬高门槛。
 bool Vp9DecoderAvailable() {
     static const bool available = []() -> bool {
-        OH_AVCapability *cap = OH_AVCodec_GetCapability(kVp9Mime, false);
-        return cap != nullptr;
+        OH_AVCapability *control = OH_AVCodec_GetCapability("video/avc", false);
+        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
+                     "probe control video/avc=%{public}s", control != nullptr ? "ok" : "NULL");
+        for (const char *mime : kVp9MimeCandidates) {
+            OH_AVCapability *cap = OH_AVCodec_GetCapability(mime, false);
+            OH_AVCapability *sw = OH_AVCodec_GetCapabilityByCategory(mime, false, SOFTWARE);
+            OH_AVCapability *hw = OH_AVCodec_GetCapabilityByCategory(mime, false, HARDWARE);
+            OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
+                         "probe %{public}s any=%{public}s sw=%{public}s hw=%{public}s", mime,
+                         cap != nullptr ? "ok" : "NULL", sw != nullptr ? "ok" : "NULL",
+                         hw != nullptr ? "ok" : "NULL");
+            OH_AVCapability *any = cap != nullptr ? cap : (sw != nullptr ? sw : hw);
+            if (any != nullptr && g_vp9Mime == nullptr) {
+                g_vp9Mime = mime;
+                OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
+                             "picked mime=%{public}s name=%{public}s", mime,
+                             OH_AVCapability_GetName(any));
+            }
+        }
+        // 决定性的一问：把系统里所有视频解码器枚举出来，看 VP9 到底在不在。
+        // GetCapabilityList 是 API 24 的**函数**符号（惰性绑定，没有加载期
+        // 风险），而且这段只是诊断。
+        uint32_t count = 0;
+        OH_AVCapability **list = OH_AVCodec_GetCapabilityList(OH_AVCODEC_TYPE_VIDEO_DECODER, &count);
+        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "decoderCount=%{public}u", count);
+        if (list != nullptr) {
+            for (uint32_t i = 0; i < count; i++) {
+                OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
+                             "decoder[%{public}u] mime=%{public}s name=%{public}s hw=%{public}d", i,
+                             OH_AVCapability_GetMimeType(list[i]), OH_AVCapability_GetName(list[i]),
+                             OH_AVCapability_IsHardware(list[i]) ? 1 : 0);
+            }
+        }
+        // 最后的兜底：能力查询问不出来，不代表创建不出来。直接试着建一个。
+        if (g_vp9Mime == nullptr) {
+            for (const char *mime : kVp9MimeCandidates) {
+                OH_AVCodec *probe = OH_VideoDecoder_CreateByMime(mime);
+                OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
+                             "createProbe %{public}s=%{public}s", mime,
+                             probe != nullptr ? "ok" : "NULL");
+                if (probe != nullptr) {
+                    OH_VideoDecoder_Destroy(probe);
+                    g_vp9Mime = mime;
+                    break;
+                }
+            }
+        }
+        return g_vp9Mime != nullptr;
     }();
     return available;
 }
+
 
 bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
                          const std::vector<Packet> &alphaPackets, int32_t srcW, int32_t srcH,

@@ -71,8 +71,16 @@ function nativeAvailable(): boolean {
 
 // 这台设备能不能走透明贴纸链路。API 门控 + 原生能力探测，都只算一次。
 export function alphaStickerPipelineAvailable(): boolean {
-  return vp9StickerApiAvailable() && nativeAvailable();
+  const api: boolean = vp9StickerApiAvailable();
+  const native: boolean = nativeAvailable();
+  if (!probeLogged) {
+    probeLogged = true;
+    console.warn(`[AlphaDiag] pipeline api=${api} native=${native}`);
+  }
+  return api && native;
 }
+
+let probeLogged: boolean = false;
 
 export function alphaStickerCacheKey(path: string, boxPx: number): string {
   const raw = Math.ceil(Math.max(1, boxPx) / SIZE_BUCKET) * SIZE_BUCKET;
@@ -229,6 +237,8 @@ function serialize(job: () => Promise<DecodeOutcome>): Promise<DecodeOutcome> {
 
 // 取一段可播的透明贴纸。拿到之后必须配对调用 releaseAlphaSticker。
 export async function acquireAlphaSticker(path: string, boxPx: number): Promise<AlphaClip | null> {
+  console.warn(`[AlphaDiag] acquire path=${path.substring(path.lastIndexOf('/') + 1)}` +
+    ` box=${boxPx} pipeline=${alphaStickerPipelineAvailable()} rejected=${rejected.has(path)}`);
   if (path === '' || !alphaStickerPipelineAvailable() || rejected.has(path)) {
     return null;
   }
