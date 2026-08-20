@@ -177,6 +177,22 @@ export struct MessageBubble {
   // Measured width of the bubble (it shrinks to fit content) — the inline
   // keyboard below matches it exactly instead of the theoretical max width.
   @State bubbleW: number = 0;
+  // 时间层要跟随"气泡里最宽的那个兄弟"（转发标签 / 发送者名 / 评论行），
+  // 它们都在时间 Stack **外面**，所以测它们不构成环。
+  // 曾经是拿 bubbleW 回灌的，那是 minWidth ← bubbleW ← minWidth 的循环，
+  // 只能涨不能落：任何一次量到偏大的宽度都被固化，气泡再也缩不回去，
+  // BottomEnd 随即把正文推到右侧、时间戳压到文字底下——就是那个偶发的
+  // "气泡横贯整屏、文字靠右、时间戳不见了"。
+  @State private forwardLabelW: number = 0;
+  @State private senderLabelW: number = 0;
+  @State private commentsRowW: number = 0;
+  // 换成另一条消息时把上面三个清零：新消息若不再显示某个标签，那个节点
+  // 不会重新触发 onAreaChange，旧值会一直留着。
+  //
+  // 用 rowId 而不是 id：发送成功时 TDLib 把临时 id 换成真实 id，而 rowId 由
+  // 新条目继承旧条目（MessageStore.onSendSucceeded），跨过那次替换保持不变。
+  // 用 id 会让每条自己发出去的消息在成功那一刻白白重量一次宽度。
+  private labelWidthRowId: number = 0;
   @State revealedSpoilerKeys: string[] = [];
   @State expandedQuoteKeys: string[] = [];
   // x/y are the tap's window coordinates (vp) — the fullscreen viewer uses them
@@ -397,6 +413,12 @@ export struct MessageBubble {
   // 状态变化、替换媒体等，不是每帧）比较一次「参与竞选」状态，只在从 true 翻到
   // false 的那一次补发 onMediaGone，翻转之外什么也不做。
   private onMsgPropChanged(): void {
+    if (this.msg.rowId !== this.labelWidthRowId) {
+      this.labelWidthRowId = this.msg.rowId;
+      this.forwardLabelW = 0;
+      this.senderLabelW = 0;
+      this.commentsRowW = 0;
+    }
     // 同一个组件原地换了 msg：rowId 不变，订阅仍然有效，但初值要跟上。
     const known: string = sendStateFor(this.msg.rowId);
     this.liveSendState = known !== '' ? known : this.msg.sendState;
@@ -2716,11 +2738,17 @@ export struct MessageBubble {
   // Reuse the measured shell width so BottomEnd always means the bubble's real
   // lower-right corner, while short bubbles can still remain shrink-to-fit.
   private measuredTimeLayerWidth(): number {
-    if (this.bubbleW <= 0) {
+    if (this.isBareEmoji()) {
       return 0;
     }
-    const horizontalPadding: number = this.isBareEmoji() ? 0 : 16;
-    return Math.min(this.inlineMaxW(), Math.max(0, this.bubbleW - horizontalPadding));
+    // 正文本来就在这个 Stack 里、天然参与它的固有宽度，不需要在这里照顾；
+    // 需要照顾的只有排在 Stack 外面、可能比正文更宽的那几个标签。
+    const widest: number = Math.max(this.forwardLabelW,
+      Math.max(this.senderLabelW, this.commentsRowW));
+    if (widest <= 0) {
+      return 0;
+    }
+    return Math.min(this.inlineMaxW(), widest);
   }
 
   // Timestamp (+ send status) overlaid at the bubble's bottom-right, sharing
@@ -2905,6 +2933,9 @@ export struct MessageBubble {
           Text(str('mb_forwarded_from', this.msg.forwardFrom)).fontSize(13).fontColor(COLOR_PRIMARY)
             .fontWeight(FontWeight.Medium).margin({ bottom: 2 })
             .constraintSize({ maxWidth: this.inlineMaxW() })
+            .onAreaChange((_old: Area, area: Area): void => {
+              this.forwardLabelW = area.width as number;
+            })
             .onClick(() => {
               if (this.gestureClaimed) { return; }
               if (this.msg.forwardOriginChatId !== 0 || this.msg.forwardOriginUserId !== 0) {
@@ -2914,7 +2945,11 @@ export struct MessageBubble {
             });
         }
         if (this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.showSenderName) {
-          Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor()).fontWeight(FontWeight.Medium).margin({ bottom: 2 });
+          Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
+            .fontWeight(FontWeight.Medium).margin({ bottom: 2 })
+            .onAreaChange((_old: Area, area: Area): void => {
+              this.senderLabelW = area.width as number;
+            });
         }
         // Inline timestamp: overlaid at the content's bottom-right, sharing the
         // last text line (which reserves invisible tail space for it).
@@ -2933,7 +2968,12 @@ export struct MessageBubble {
           maxWidth: this.inlineMaxW()
         })
         if (this.isChannel && this.msg.commentCount > 0) {
-          this.commentsRow();
+          Column() {
+            this.commentsRow();
+          }
+          .onAreaChange((_old: Area, area: Area): void => {
+            this.commentsRowW = area.width as number;
+          });
         }
       }
       .alignItems(HorizontalAlign.Start)
