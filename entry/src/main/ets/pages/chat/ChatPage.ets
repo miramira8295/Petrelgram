@@ -68,6 +68,7 @@ import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
 } from '../../util/messageLinkAction';
 import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
+import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
 import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
@@ -2083,48 +2084,24 @@ struct ChatPage {
     }
   }
 
+  // 判定本身在 util/atBottom（10 条测）：那里记着两条上线过的 bug——
+  // isAtEnd() 瞬时误报导致把用户从中间拽到最新，以及拿陈旧行号否决导致的自锁死。
   private refreshAtBottom(): void {
-    if (this.viewerMsgId === 0) {
-      // During an IME resize the last row is briefly clipped before List has
-      // received its new height. Keep the pre-focus verdict until the layout
-      // settles; a real list touch clears imeTailPinned first.
-      if (this.imeTailPinned) {
-        if (!this.atBottom) {
-          this.atBottom = true;
-        }
-        return;
-      }
-      // The end of a loadAround window is not the live end of the chat. Keep
-      // the down button available until MessageStore has actually exhausted
-      // newer history.
-      // isAtEnd() 单独不可信。恢复/重取窗口时列表刚被换掉、还没排好版，它会
-      // 瞬时返回真，atBottom 就被置成 true 卡住；随后"内容原地长高时保持贴底"
-      // 那一支照常开火，把用户从中间拽到最新。实测日志里同一时刻
-      // atBottom=true 而 endIdx=11 / rows=42，自相矛盾。
-      //
-      // 用可见行号交叉验证，但**只在行号确实描述当前这份数据时**才允许否决。
-      //
-      // 行号是 onScrollIndex 给的，它落后于数据：新消息到达时 groups.length
-      // 先加一，行号要等下一次回调才更新。拿旧行号去否决，就会判成"不在底部"
-      // → 不贴底 → 不滚动 → 没有新的 onScrollIndex → 自锁死，现象是停在底部
-      // 却不跟新消息。
-      //
-      // 先前用"距末尾 3 行"的余量绕过这个时间差，但那个数是设备相关的：
-      // onScrollIndex 报的区间取决于屏幕能装下多少行（官方文档：List 与
-      // LazyForEach 结合时按屏幕范围创建节点），pad 屏高、可见行多，同样的
-      // 3 行完全不是一回事——pad 和部分手机上因此失效。
-      //
-      // 改成记录"这批行号是在数据长度为多少时算出来的"，只有两者一致才敢否决。
-      // 不涉及像素也不涉及行数，跨设备一致。
-      const indexFresh: boolean = this.curEndIdx >= 0 &&
-        this.indexGroupsLen === this.groups.length;
-      const indexSaysTail: boolean = !indexFresh ||
-        this.curEndIdx >= this.groups.length - 1;
-      const nextAtBottom = this.scroller.isAtEnd() && indexSaysTail &&
-        (this.store === null || !this.store.getHasMoreNewer());
-      if (this.atBottom !== nextAtBottom) {
-        this.atBottom = nextAtBottom;
-      }
+    const verdict: string = atBottomVerdict({
+      viewerOpen: this.viewerMsgId !== 0,
+      imeTailPinned: this.imeTailPinned,
+      scrollerAtEnd: this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd(),
+      visibleEndIdx: this.curEndIdx,
+      indexGroupsLen: this.indexGroupsLen,
+      groupsLen: this.groups.length,
+      hasMoreNewer: this.store !== null && this.store.getHasMoreNewer()
+    });
+    if (verdict === AT_BOTTOM_KEEP) {
+      return;
+    }
+    const next: boolean = verdict === AT_BOTTOM_YES;
+    if (this.atBottom !== next) {
+      this.atBottom = next;
     }
   }
 

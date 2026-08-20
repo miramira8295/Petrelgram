@@ -94,6 +94,7 @@ import composerChromeTest from './ComposerChrome.test';
 import unreadBadgeTest from './UnreadBadge.test';
 import messageLinkActionTest from './MessageLinkAction.test';
 import membershipStateTest from './MembershipState.test';
+import atBottomTest from './AtBottom.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -192,4 +193,5 @@ export default function testsuite() {
   unreadBadgeTest();
   messageLinkActionTest();
   membershipStateTest();
+  atBottomTest();
 }
