@@ -20,6 +20,9 @@ import { publishProgress } from '../util/mediaProgressChannel';
 import { publishSendState } from '../util/sendStateChannel';
 
 const PAGE: number = 30;
+// 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
+// 填不满的会话里一直问下去。
+const INITIAL_FILL_TRIES: number = 3;
 // Visible bubble/header thumbnails should outrank silent video prefetch. The
 // bubble still requests the compact inline size; this only changes scheduling,
 // not image quality or transferred bytes.
@@ -313,6 +316,16 @@ export class MessageStore {
       this.loadHistory(0);
     }
   }
+
+  // 首屏填充还能再追几次。
+  //
+  // TDLib 只给本地库里已有的，不够时返回更少并在后台向服务端补，契约是
+  // 「再问一次」——**一次往往不够**：实测首屏 around 回 14 条、补链只补到 2 条。
+  // 所以按短页继续追，直到窗口够一页、或者对方回 0（真到顶了），或者用完次数。
+  //
+  // 上限存在的意义是防死循环：某些会话（被限流、纯服务消息）可能每次都回少量
+  // 却永远填不满，没有上限就会一直问下去。
+  private initialFillTries: number = 0;
 
   private chatSuspended: boolean = false;
 
@@ -1638,7 +1651,18 @@ export class MessageStore {
     // response came back short, so the page fills in right after the first
     // (possibly single-message) snapshot renders.
     if (kind === 'latest' && arr.length > 0 && arr.length < this.historyPageSize) {
+      this.initialFillTries = INITIAL_FILL_TRIES;
       this.loadOlder();
+    } else if (kind === 'older' && this.initialFillTries > 0) {
+      // 首屏填充的续追：还短就再问一次。回 0 说明真到顶，够一页说明填满了，
+      // 两种情况都收手。
+      this.initialFillTries--;
+      const stillShort: boolean = this.messages.length < this.historyPageSize;
+      if (arr.length > 0 && stillShort && this.initialFillTries > 0) {
+        this.loadOlder();
+      } else {
+        this.initialFillTries = 0;
+      }
     }
     this.injectLastMessageAtTail();
     this.resolveReplies();
@@ -3686,6 +3710,7 @@ export class MessageStore {
       //
       // 只在首屏补：会话中途的跳转本来就是整页，且用户已有明确的目标位置。
       if (initial && got > 0 && got < wanted) {
+        this.initialFillTries = INITIAL_FILL_TRIES;
         this.loadOlder();
       }
       if (onComplete !== undefined) {
