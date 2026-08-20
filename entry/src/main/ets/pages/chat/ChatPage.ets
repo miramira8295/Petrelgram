@@ -62,6 +62,11 @@ import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
 import { MessageListStateCard, TimelineStatePill } from './MessageListState';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
+import { ComposerSendButton } from './ComposerSendButton';
+import {
+  composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
+  replyKeyboardVisible
+} from '../../util/composerChrome';
 import { replySnippetOf } from '../../util/replySnippet';
 import {
   TL_NEWER_ERROR, TL_NONE, TL_OLDER_ERROR, TL_SYNC_ERROR,
@@ -4544,13 +4549,10 @@ struct ChatPage {
   @State panelContentReady: boolean = false;
   private panelReadySeq: number = 0;
 
+  // 纯函数以 bottomGapOf 引入：裸名在方法体里解析到的是导入而不是本方法
+  // （方法必须带 this.），同名并存太容易读错。placeholderOf 同理。
   private composerBottomGap(): number {
-    // 抽屉打开等同于键盘起来：底部安全区已经被抽屉占住了，输入框再留一条
-    // 就会浮得离抽屉老远。
-    //
-    // 不能只看 keyboardH——自定义键盘的高度系统**不算作键盘高度**（诊断日志
-    // 里 keyboardH 全程为 0），只判断它的话抽屉打开时会走到 else 分支。
-    return (this.keyboardH > 0 || this.bottomPanelOpen()) ? 6 : Math.max(8, this.bottomSafe);
+    return bottomGapOf(this.keyboardH, this.bottomPanelOpen(), this.bottomSafe);
   }
 
   // TextArea's intrinsic minimum is taller than the old 48vp input capsule on
@@ -6334,21 +6336,13 @@ struct ChatPage {
   }
 
   private replyKbVisible(): boolean {
-    return this.membershipState === 'writable' &&
-      this.replyKeyboard !== null && !this.replyKbCollapsed;
+    return replyKeyboardVisible(
+      this.membershipState, this.replyKeyboard !== null, this.replyKbCollapsed);
   }
 
   private composerPlaceholder(): string {
-    // Live typing state borrows the composer's gray placeholder — costs no
-    // space and can never cover a message.
-    if (this.typingLabel !== '') {
-      return this.typingLabel;
-    }
-    if (this.replyKbVisible() && this.replyKeyboard !== null &&
-      this.replyKeyboard.placeholder.trim() !== '') {
-      return this.replyKeyboard.placeholder;
-    }
-    return str('cp_message_placeholder');
+    return placeholderOf(this.typingLabel, this.replyKbVisible(),
+      this.replyKeyboard !== null ? this.replyKeyboard.placeholder : '');
   }
 
   // Bot custom reply keyboard: full-width button rows under the input bar.
@@ -6867,55 +6861,14 @@ struct ChatPage {
               .accessibilityText($r('app.string.cp_open_miniapp'))
               .onClick((): void => { this.openBotMiniApp(); });
           }
-          // Mic ↔ send swap: outgoing icon shrinks/fades while the incoming one
-          // scales in (the send button adds a small un-rotate flourish).
-          Stack() {
-            if (this.draft.trim() === '') {
-              Button() {
-                if (this.recordingStarting) {
-                  LoadingProgress().width(18).height(18).color(Color.White);
-                } else {
-                  SymbolGlyph($r('sys.symbol.mic')).fontSize(20).fontColor([Color.White]);
-                }
-              }
-              .width(40).height(40).borderRadius(20)
-              .stateStyles({
-                normal: this.composerPrimaryNormalStyle,
-                pressed: this.composerPrimaryPressedStyle
-              })
-              .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120), curve: Curve.EaseOut })
-              .enabled(!this.recordingStarting)
-              .transition(TransitionEffect.OPACITY
-                .combine(TransitionEffect.scale({ x: 0.3, y: 0.3 }))
-                .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200), curve: Curve.EaseOut }))
-              .onClick(() => { this.startRecording(); });
-            } else {
-              Button() {
-                if (this.composerSending) {
-                  LoadingProgress().width(18).height(18).color(Color.White);
-                } else {
-                  // 草稿从空变非空时这个按钮才挂载，isActive=true 让它出现即弹
-                  // 一下，和外层已有的 opacity+scale 转场叠在一起。
-                  SymbolGlyph($r('sys.symbol.paperplane')).fontSize(20).fontColor([Color.White])
-                    .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP), true);
-                }
-              }
-              .width(40).height(40).borderRadius(20)
-              .stateStyles({
-                normal: this.composerPrimaryNormalStyle,
-                pressed: this.composerPrimaryPressedStyle
-              })
-              .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120), curve: Curve.EaseOut })
-              .enabled(!this.composerSending)
-              .transition(TransitionEffect.OPACITY
-                .combine(TransitionEffect.scale({ x: 0.3, y: 0.3 }))
-                .combine(TransitionEffect.rotate({ angle: -45 }))
-                .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200), curve: Curve.EaseOut }))
-              .onClick(() => { this.doSend(); })
-              // Long-press: schedule / silent send.
-              .gesture(LongPressGesture().onAction(() => { this.showSendOptions(); }));
-            }
-          }.width(40).height(40);
+          ComposerSendButton({
+            hasDraft: this.draft.trim() !== '',
+            recordingStarting: this.recordingStarting,
+            sending: this.composerSending,
+            onRecord: (): void => { this.startRecording(); },
+            onSend: (): void => { this.doSend(); },
+            onSendOptions: (): void => { this.showSendOptions(); }
+          });
         }
       }
         .width('100%')

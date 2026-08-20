@@ -90,6 +90,7 @@ import messageSelectionTest from './MessageSelection.test';
 import timelineStateTest from './TimelineState.test';
 import emptyHistoryTest from './EmptyHistory.test';
 import replySnippetTest from './ReplySnippet.test';
+import composerChromeTest from './ComposerChrome.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -184,4 +185,5 @@ export default function testsuite() {
   timelineStateTest();
   emptyHistoryTest();
   replySnippetTest();
+  composerChromeTest();
 }
