@@ -155,6 +155,8 @@ import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard'
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
 import { InlineResultsBar, StickerSuggestion, StickerSuggestionBar } from './ComposerStrips';
+import { copyPlainText } from '../../util/clipboard';
+import { isRealClientJoinNotice } from '../../util/joinNotice';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -873,20 +875,6 @@ struct ChatPage {
     this.closeForwardSheet();
   }
 
-  private isRealClientJoinNotice(message: MessageEntry): boolean {
-    if (message.contentType !== 'system' || !message.isOutgoing) {
-      return false;
-    }
-    // NOTE: the first two clauses compare display text, which is fragile — the
-    // label is whatever the server sent, and it is compared against this app's
-    // own copy. Both sides now go through str() so they at least stay in the
-    // same language, but the structural systemType checks below are the ones
-    // that actually hold. Worth replacing with a marker on the synthetic row.
-    return message.placeholderLabel === str('cp_joined_group') ||
-      message.placeholderLabel === str('cp_joined_channel') ||
-      message.systemType === 'messageChatJoinByLink' ||
-      message.systemType === 'messageChatJoinByRequest';
-  }
 
   private clientJoinNoticeEntry(): MessageEntry {
     if (this.clientJoinNoticeEntryCache !== null) {
@@ -911,7 +899,10 @@ struct ChatPage {
 
   private groupsWithClientJoinNotice(list: MessageEntry[]): AlbumGroup[] {
     if (this.clientJoinNoticeVisible &&
-      list.some((message: MessageEntry): boolean => this.isRealClientJoinNotice(message))) {
+      list.some((message: MessageEntry): boolean => isRealClientJoinNotice({
+        contentType: message.contentType, isOutgoing: message.isOutgoing,
+        placeholderLabel: message.placeholderLabel, systemType: message.systemType
+      }))) {
       // Replace the local row atomically when TDLib eventually supplies the
       // canonical service message, avoiding a one-frame duplicate.
       this.clientJoinNoticeVisible = false;
@@ -3136,7 +3127,7 @@ struct ChatPage {
       return;
     }
     if (action.kind === LINK_COPY) {
-      this.copyPlainText(action.text, str('cp_number_copied'));
+      copyPlainText(action.text, str('cp_number_copied'));
       return;
     }
     if (action.kind === LINK_HASHTAG) {
@@ -3789,7 +3780,7 @@ struct ChatPage {
       promptAction.showToast({ message: $r('app.string.cp_code_unavailable'), duration: 1500 });
       return;
     }
-    this.copyPlainText(code, str('cp_code_copied'));
+    copyPlainText(code, str('cp_code_copied'));
   }
 
   private onGiveawayOpen(chatId: number, messageId: number): void {
@@ -4321,15 +4312,15 @@ struct ChatPage {
         fs.closeSync(file);
         openLocalFile(context, path, 'text/vcard').then((opened: boolean): void => {
           if (!opened) {
-            this.copyPlainText(vcard, str('cp_contact_copied'));
+            copyPlainText(vcard, str('cp_contact_copied'));
           }
         }).catch((caught: Object): void => {
           console.error(`ChatPage.openSharedContact failed: ${JSON.stringify(caught)}`);
-          this.copyPlainText(vcard, str('cp_contact_copied'));
+          copyPlainText(vcard, str('cp_contact_copied'));
         });
       } catch (caught) {
         console.error(`ChatPage.write shared contact failed: ${caught}`);
-        this.copyPlainText(vcard, str('cp_contact_copied'));
+        copyPlainText(vcard, str('cp_contact_copied'));
       }
       return;
     }
@@ -5463,18 +5454,9 @@ struct ChatPage {
       promptAction.showToast({ message: $r('app.string.cp_nothing_to_copy'), duration: 1500 });
       return;
     }
-    this.copyPlainText(m.text, str('copied'));
+    copyPlainText(m.text, str('copied'));
   }
 
-  private copyPlainText(text: string, successMessage: string): void {
-    if (text === '') {
-      return;
-    }
-    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-    pasteboard.getSystemPasteboard().setData(data).then(() => {
-      promptAction.showToast({ message: successMessage, duration: 1200 });
-    }).catch((e: Object) => { console.error(`ChatPage.copyPlainText failed: ${JSON.stringify(e)}`); });
-  }
 
   private copyMessageLink(messageId: number): void {
     if (this.store === null) {
@@ -6972,7 +6954,7 @@ struct ChatPage {
                 onReplyTo: (id: number): void => { this.startReply(id); },
                 editingActive: this.editingId !== 0,
                 onCopyText: (id: number): void => { this.copyMessageText(id); },
-                onCopyCode: (text: string): void => { this.copyPlainText(text, str('cp_code_copied')); },
+                onCopyCode: (text: string): void => { copyPlainText(text, str('cp_code_copied')); },
                 onCopyLink: (id: number): void => { this.copyMessageLink(id); },
                 onForwardMsg: (_id: number): void => { this.openForwardPicker(g.memberIds); },
                 onReportMsg: (id: number): void => { promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 }); },
