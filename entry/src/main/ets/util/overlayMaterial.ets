@@ -54,13 +54,31 @@ function powerSavingNow(): boolean {
 
 // ImmersiveStyle 的枚举值就是 0..4，但别写 `as ImmersiveStyle` 硬转——查表换，
 // 顺序改了也不会悄悄错位。
-const STYLE_BY_INDEX: uiMaterial.ImmersiveStyle[] = [
-  uiMaterial.ImmersiveStyle.ULTRA_THIN,
-  uiMaterial.ImmersiveStyle.THIN,
-  uiMaterial.ImmersiveStyle.REGULAR,
-  uiMaterial.ImmersiveStyle.THICK,
-  uiMaterial.ImmersiveStyle.ULTRA_THICK
-];
+// 绝不能在**模块级**解引用 uiMaterial.ImmersiveStyle。
+//
+// 它是 API 26 才有的，低版本上这个对象根本不存在，取 .ULTRA_THIN 会在模块
+// 加载的那一刻就抛——而 overlayMaterial 被 31 个页面引用，结果是整个应用
+// 启动即崩。实测 6.1.0.135（API 24）上 1.3.6 就是这么挂的。
+//
+// 1.3.5 没事，是因为那时这些枚举只出现在 styleOf() 函数体里，而 styleOf 只
+// 有材质可用时才会被调到。加厚度设置时我把它们提成了模块级常量，等于把
+// 「用到才碰」变成了「加载就碰」。
+//
+// 所以写成函数：调用点全都在 materialAvailable 为真之后。
+function styleByIndex(index: number): uiMaterial.ImmersiveStyle {
+  switch (index) {
+    case 0:
+      return uiMaterial.ImmersiveStyle.ULTRA_THIN;
+    case 1:
+      return uiMaterial.ImmersiveStyle.THIN;
+    case 2:
+      return uiMaterial.ImmersiveStyle.REGULAR;
+    case 3:
+      return uiMaterial.ImmersiveStyle.THICK;
+    default:
+      return uiMaterial.ImmersiveStyle.ULTRA_THICK;
+  }
+}
 
 // 降级路径上框架容器吃的 BlurStyle，同样按 0..4 排。
 const BLUR_STYLE_BY_INDEX: BlurStyle[] = [
@@ -179,7 +197,7 @@ function baseStyleIndex(surface: OverlaySurface): number {
 }
 
 function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
-  return STYLE_BY_INDEX[shiftedStyleIndex(baseStyleIndex(surface), thicknessOffset())];
+  return styleByIndex(shiftedStyleIndex(baseStyleIndex(surface), thicknessOffset()));
 }
 
 // The material draws its own shadow, and it is tuned to go with the material,
