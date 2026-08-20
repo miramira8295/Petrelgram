@@ -2104,7 +2104,34 @@ export class MessageStore {
     if ((u['chat_id'] as number | undefined) !== this.chatId) {
       return;
     }
-    const removeIds = (u['message_ids'] as number[] | undefined) ?? [];
+    // from_cache 不是删除，是 TDLib 把消息挪出了本地缓存——服务端还在，之后
+    // 还能取回。当成真删除会把窗口挖空：应用在后台被冻结一段时间后，TDLib
+    // 回收缓存并补发一批这样的通知，实测一次就把 31 条窗口打到只剩 1 条，
+    // 随后的补链再从别的锚点往下取，中间那段就永久缺失了——现象是消息错乱、
+    // 时间线出现跳跃（10:39 后面直接接 10:54）。
+    //
+    // is_permanent 为真时即便带着 from_cache 也是真删除，照常移除。
+    // 同样的判断 CallsStore.onMessagesDeleted 早就有了，这里一直漏着。
+    const permanent = (u['is_permanent'] as boolean | undefined) ?? false;
+    const fromCache = (u['from_cache'] as boolean | undefined) ?? false;
+    const incoming = (u['message_ids'] as number[] | undefined) ?? [];
+    if (fromCache && !permanent) {
+      // 诊断：确认"窗口被挖空"确实来自这一路。查完连同下面那条一起删。
+      let hit: number = 0;
+      for (const e of this.messages) {
+        if (incoming.indexOf(e.id) >= 0) {
+          hit++;
+        }
+      }
+      console.warn(`[StoreDiag] delete from_cache ids=${incoming.length}` +
+        ` inWindow=${hit} rows=${this.messages.length} — 已忽略`);
+      return;
+    }
+    const removeIds = incoming;
+    if (removeIds.length > 0) {
+      console.info(`[StoreDiag] delete real ids=${removeIds.length}` +
+        ` permanent=${permanent} fromCache=${fromCache} rows=${this.messages.length}`);
+    }
     const set = new Set<number>(removeIds);
     this.messages = this.messages.filter((e: MessageEntry) => !set.has(e.id));
     this.notifySoon();
