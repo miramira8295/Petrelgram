@@ -42,6 +42,7 @@ struct ChatSettingsPage {
   @StorageLink(KEY_NIGHT_MODE) nightMode: string = NIGHT_SYSTEM;
   @StorageLink(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
   @StorageLink(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
+  @StorageLink(KEY_IN_APP_BROWSER) inAppBrowser: boolean = true;
   @State leavingPage: boolean = false;
   private leaveTimer: number = -1;
 
@@ -69,8 +70,12 @@ struct ChatSettingsPage {
     return key === KEY_TEXT_SIZE ? this.textSize : this.bubbleRadius;
   }
 
+  // 每个开关都要在这里挂号。toggleRow 只拿到 key，读值只能靠这张表——
+  // 漏一个不会报错，而是**静默读到兜底那一项**：新开关会显示别人的状态，
+  // 点它又按别人的值取反写自己。inAppBrowser 就这么错过一次。
   private booleanValue(key: string): boolean {
     if (key === KEY_REDUCE_ANIM) { return this.reduceAnim; }
+    if (key === KEY_IN_APP_BROWSER) { return this.inAppBrowser; }
     return this.sendByEnter;
   }
 

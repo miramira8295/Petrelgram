@@ -349,6 +349,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_NIGHT_MODE, NIGHT_SYSTEM);
     AppStorage.setOrCreate(KEY_REDUCE_ANIM, false);
     AppStorage.setOrCreate(KEY_SEND_BY_ENTER, false);
+    AppStorage.setOrCreate(KEY_IN_APP_BROWSER, true);
     AppStorage.setOrCreate(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT);
     for (const key of POWER_BOOLEAN_DEFAULTS) {
       AppStorage.setOrCreate(key, true);
