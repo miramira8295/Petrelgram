@@ -2,7 +2,11 @@
 //
 // "开没开"有两个互不相干的真相来源，取哪一个取决于总开关：
 //   - 总开关开着：整个 app 都翻，会话级别只剩"排除名单"（本地存的 optOut）；
-//   - 总开关关着：回到 Telegram 自己的 chat.is_translatable（服务端下发）。
+//   - 总开关关着：会话自己的启用位 —— 服务端的 chat.is_translatable **或**
+//     本地的加入名单，任一为真即算开。本地那一份是必需的：写服务端靠的是
+//     toggleChatIsTranslatable，那是 Telegram 的自动翻译能力（会员相关），
+//     非会员账号未必落盘、失败也不一定报错，用户看到的就是"这次开了，下次
+//     进来又是关的"。本地记一份，谁都不依赖。
 // 两者的极性是反的——一个是"排除"，一个是"启用"。这里最容易写错的就是在
 // 总开关模式下忘了取反，表现为开关点一下就跳回去。
 //
@@ -15,9 +19,10 @@ export const TRANSLATE_FAILED: string = 'failed';
 export const TRANSLATE_EMPTY: string = 'empty';
 
 export function translationActive(
-  globalEnabled: boolean, chatOptOut: boolean, chatIsTranslatable: boolean
+  globalEnabled: boolean, chatOptOut: boolean, chatIsTranslatable: boolean,
+  chatOptIn: boolean = false
 ): boolean {
-  return globalEnabled ? !chatOptOut : chatIsTranslatable;
+  return globalEnabled ? !chatOptOut : (chatIsTranslatable || chatOptIn);
 }
 
 // 用户在这个会话里点了"翻译"开关之后，该往哪个字段写、写什么。
@@ -34,9 +39,11 @@ export interface TranslateToggle {
 }
 
 export function toggleTranslation(
-  globalEnabled: boolean, chatOptOut: boolean, chatIsTranslatable: boolean
+  globalEnabled: boolean, chatOptOut: boolean, chatIsTranslatable: boolean,
+  chatOptIn: boolean = false
 ): TranslateToggle {
-  const next: boolean = !translationActive(globalEnabled, chatOptOut, chatIsTranslatable);
+  const next: boolean =
+    !translationActive(globalEnabled, chatOptOut, chatIsTranslatable, chatOptIn);
   return {
     active: next,
     optOut: !next,

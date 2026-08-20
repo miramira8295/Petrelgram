@@ -185,6 +185,12 @@ export const KEY_TRANSLATE_CHATS: string = 'translateEntireChats';
 // 会话 id，逗号分隔。做成排除名单而不是白名单，是因为白名单意味着每进一个
 // 新群都要手动点一次。纯本地设置，不占服务端的 is_translatable 字段。
 export const KEY_TRANSLATE_OPT_OUT: string = 'translateOptOutChats';
+// 总开关**关着**时，用户在某个会话里单独打开翻译——这一份要存在本地。
+//
+// 原来只写服务端的 toggleChatIsTranslatable，指望它记住。可那是 Telegram 的
+// 自动翻译能力（会员相关），非会员账号服务端未必落盘，而且失败也不一定报错，
+// 于是用户看到"这次开了，下次进来又是关的"。本地自己记一份，谁都不依赖。
+export const KEY_TRANSLATE_OPT_IN: string = 'translateOptInChats';
 
 // 账号默认聊天背景的快照，按深/浅色各存一份。仅为消除冷启动后第一次进入
 // 聊天的白屏：进程内快照（ChatBackgroundStore）在同一次启动内够用，但跨启动
@@ -204,7 +210,8 @@ const DATA_STRING_KEYS: string[] = [
   KEY_MEOW_SECRET,
   KEY_MEOW_NICKNAME,
   KEY_TRANSLATE_TARGET,
-  KEY_TRANSLATE_OPT_OUT
+  KEY_TRANSLATE_OPT_OUT,
+  KEY_TRANSLATE_OPT_IN
 ];
 
 // 后台播放：各媒体类别切后台是否继续播放（audioPlayback 长时任务）。
@@ -436,27 +443,39 @@ function boolValue(key: string, fallback: boolean): boolean {
 // 名单存成逗号分隔的字符串而不是数组：preferences 只收基本类型，而这个名单
 // 通常是空的或只有几项，解析成本可以忽略。
 
-function optOutList(): string[] {
-  const raw = AppStorage.get<string>(KEY_TRANSLATE_OPT_OUT) ?? '';
+function chatIdList(key: string): string[] {
+  const raw = AppStorage.get<string>(key) ?? '';
   return raw === '' ? [] : raw.split(',');
 }
 
-export function translateOptedOut(chatId: number): boolean {
-  return optOutList().indexOf(`${chatId}`) >= 0;
-}
-
-export function setTranslateOptedOut(chatId: number, optedOut: boolean): void {
+function setChatIdInList(key: string, chatId: number, member: boolean): void {
   const id = `${chatId}`;
-  const list = optOutList();
+  const list = chatIdList(key);
   const at = list.indexOf(id);
-  if (optedOut && at < 0) {
+  if (member && at < 0) {
     list.push(id);
-  } else if (!optedOut && at >= 0) {
+  } else if (!member && at >= 0) {
     list.splice(at, 1);
   } else {
     return; // 已经是目标状态
   }
-  setString(KEY_TRANSLATE_OPT_OUT, list.join(','));
+  setString(key, list.join(','));
+}
+
+export function translateOptedOut(chatId: number): boolean {
+  return chatIdList(KEY_TRANSLATE_OPT_OUT).indexOf(`${chatId}`) >= 0;
+}
+
+export function setTranslateOptedOut(chatId: number, optedOut: boolean): void {
+  setChatIdInList(KEY_TRANSLATE_OPT_OUT, chatId, optedOut);
+}
+
+export function translateOptedIn(chatId: number): boolean {
+  return chatIdList(KEY_TRANSLATE_OPT_IN).indexOf(`${chatId}`) >= 0;
+}
+
+export function setTranslateOptedIn(chatId: number, optedIn: boolean): void {
+  setChatIdInList(KEY_TRANSLATE_OPT_IN, chatId, optedIn);
 }
 
 export function autosaveEnabled(scope: string): boolean {

@@ -108,7 +108,8 @@ import {
   KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_POWER_AUTOPLAY_VIDEO,
-  KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS,
+  KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS, setTranslateOptedIn,
+  translateOptedIn,
   KEY_AUTOPLAY_MUTED, powerAnimationDuration,
   powerFeatureEnabled, powerGroupAnimationDuration, autosaveEnabled,
   translateOptedOut, setTranslateOptedOut
@@ -558,6 +559,8 @@ struct ChatPage {
   // 还得手动点一次才翻，实际不可用。
   @State isTranslatable: boolean = false;
   @State translateChatOptOut: boolean = false;
+  // 总开关关着时，本地记下的"这个会话开了翻译"。见 translationMode 的说明。
+  @State translateChatOptIn: boolean = false;
   @StorageProp(KEY_TRANSLATE_CHATS) @Watch('onTranslateSettingChanged')
   translateChatsEnabled: boolean = false;
   // 是否正在共享实时位置（全局单例状态，不限于当前会话）。
@@ -1004,6 +1007,7 @@ struct ChatPage {
       ? ((params['forumTopicId'] as number | undefined) ?? 0) : 0;
     // 排除名单是本地的，chatId 一确定就能读，不用等 getChat 回来。
     this.translateChatOptOut = translateOptedOut(this.chatId);
+    this.translateChatOptIn = translateOptedIn(this.chatId);
     const incomingJoinNotice: boolean = params !== undefined
       ? ((params['showJoinedNotice'] as boolean | undefined) ?? false) : false;
     if (incomingJoinNotice && this.clientJoinNoticeRouteChatId !== this.chatId) {
@@ -5580,7 +5584,8 @@ struct ChatPage {
   // 解析到的是导入而不是这个方法（方法必须带 this.），两个名字并存太容易读错。
   private translationActive(): boolean {
     return isTranslationActive(
-      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable);
+      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable,
+      this.translateChatOptIn);
   }
 
   // 总开关在设置页被改动后，当前页要立刻跟上：开了就把可见范围补翻，
@@ -5706,7 +5711,8 @@ struct ChatPage {
   // 服务端的 toggleChatIsTranslatable，跟官方客户端保持同一份状态。
   private toggleTranslatable(): void {
     const decision: TranslateToggle = toggleTranslation(
-      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable);
+      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable,
+      this.translateChatOptIn);
     const next: boolean = decision.active;
     if (decision.writesOptOut) {
       this.translateChatOptOut = decision.optOut;
@@ -5716,6 +5722,10 @@ struct ChatPage {
     }
     const previous: boolean = this.isTranslatable;
     this.isTranslatable = decision.translatable;
+    // 本地也记一份：服务端那次写未必落盘（见 translationMode 的说明），
+    // 只靠它的话用户下次进来又得手动开一遍。
+    this.translateChatOptIn = next;
+    setTranslateOptedIn(this.chatId, next);
     this.afterTranslationToggled(next);
     const req: TdRequest = { '@type': 'toggleChatIsTranslatable' };
     req['chat_id'] = this.chatId;
