@@ -1,4 +1,11 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { router, promptAction, LengthMetrics } from '@kit.ArkUI';
+import {
+  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
+  HdsNavigationTitleMode, TitleBarContentOptions
+} from '@kit.UIDesignKit';
+import {
+  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
+} from '../../util/hdsTitleBar';
 import {
   addTdAccount, getActiveTdAccountSlot, getTdAccounts, getTdClient,
   logoutCurrentTdAccount, removeDuplicateTdAccountsForActive,
@@ -111,6 +118,9 @@ function settingGroups(): SettingGroup[] {
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct SettingsPage {
+  // HdsNavigation 靠 bindToScrollable 拿到滚动量，才能驱动标题栏的收缩与
+  // 动态模糊；没有这个绑定，标题栏就是一块静态的板子。
+  private settingsScroller: Scroller = new Scroller();
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -1224,32 +1234,109 @@ export struct SettingsPage {
     .width('100%');
   }
 
-  build() {
+  // 标题栏内容：大标题 + 右上角搜索入口。搜索**打开后**不走这里，见 build()。
+  private titleBarContent(): TitleBarContentOptions {
+    // 菜单项是 { content, badge } 两层，图标和动作都在 content 里
+    // （HdsNavigationMenuItemOptions = HdsNavigationBadgeIconOptions）。
+    const searchIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.magnifyingglass'),
+      label: $r('app.string.settings_search'),
+      isEnabled: this.switchingSlotId === '' &&
+        !this.accountNavigationLocked && this.openingSettingPage === '',
+      action: (): void => {
+        if (this.switchingSlotId === '') {
+          this.settingsSearchOpen = true;
+          this.settingsQuery = '';
+        }
+      }
+    };
+    const searchItem: HdsNavigationMenuItemOptions = { content: searchIcon };
+    return {
+      title: { mainTitle: $r('app.string.settings_title') },
+      menu: { value: [searchItem] }
+    };
+  }
+
+  @Builder
+  settingsBody() {
     Column() {
-      this.topBar();
-      Scroll() {
-        Column() {
-          if (!this.settingsSearchOpen) {
-            this.accountsCard();
-          }
-          this.settingsCard();
+      if (!this.settingsSearchOpen) {
+        this.accountsCard();
+      }
+      this.settingsCard();
+    }
+    .width('100%')
+    .padding({ bottom: this.bottomSafe + 88 });
+  }
+
+  build() {
+    // 两条分支，不是一条。
+    //
+    // 常态走 HdsNavigation：大标题随滚动收缩、内容从标题栏底下穿过并渐变模糊
+    // （issue #44 要的就是这个）。搜索态仍走原来那套 Column + topBar()——那里
+    // 是一个 TextInput 加清除按钮，HDS 标题栏的 stackBuilder 能不能原样承载
+    // 我没有真机可验，把一个能用的搜索框押在未经验证的槽位上不值得。
+    //
+    // 代价是开关搜索时 Scroll 会重挂、滚动位置归零；而搜索本来就会把列表换成
+    // 过滤结果、并收起账号卡片，位置本就不连续，这个代价是可接受的。
+    if (this.settingsSearchOpen) {
+      Column() {
+        this.topBar();
+        Scroll() {
+          this.settingsBody();
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring)
+        .scrollBar(BarState.Off);
+      }
+      .width('100%').height('100%')
+      .backgroundColor(PAGE_BG)
+      // 背景色靠 expandSafeArea 才会延伸到状态栏和导航区底下（官方的
+      // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。只写
+      // backgroundColor 而不延伸，状态栏那条露的是窗口底色。
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+      .padding({ top: this.topSafe });
+    } else {
+      HdsNavigation() {
+        Scroll(this.settingsScroller) {
+          this.settingsBody();
         }
         .width('100%')
-        .padding({ bottom: this.bottomSafe + 88 });
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        // 不裁剪超出自身范围的子组件，内容才能穿透到标题栏下方——渐变模糊
+        // 模糊的正是穿过去的这部分。官方示例同样这么写。
+        .clip(false);
       }
-      .layoutWeight(1)
-      .width('100%')
-      .align(Alignment.Top)
-      .edgeEffect(EdgeEffect.Spring)
-      .scrollBar(BarState.Off);
+      .titleBar({
+        // 标题栏声明为组件级安全区，内容区自动避让它，也就不用再手动
+        // padding(topSafe)。
+        enableComponentSafeArea: true,
+        style: {
+          scrollEffectOpts: {
+            enableScrollEffect: true,
+            // 有 IMMERSIVE_GRADIENT_BLUR（API 23+）就用，没有退到
+            // GRADIENT_BLUR（API 20）。判定在 util/hdsTitleBar 里，
+            // 枚举绝不在模块级解引用。
+            scrollEffectType: titleScrollEffectType(),
+            blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
+            blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
+          },
+          originalStyle: { backgroundStyle: { backgroundColor: PAGE_BG } }
+        },
+        content: this.titleBarContent()
+      })
+      // 设置是从主界面进来的一级页面，顶部没有返回箭头。
+      .hideBackButton(true)
+      // FREE：初始大标题，随内容上滚收缩成 mini 标题栏。
+      .titleMode(HdsNavigationTitleMode.FREE)
+      .bindToScrollable([this.settingsScroller])
+      .width('100%').height('100%')
+      .backgroundColor(PAGE_BG)
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
     }
-    .width('100%').height('100%')
-    .backgroundColor(PAGE_BG)
-    // 背景色靠 expandSafeArea 才会延伸到状态栏和导航区底下（官方的
-    // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。只写
-    // backgroundColor 而不延伸，状态栏那条露的是窗口底色。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
-    ;
   }
 }
