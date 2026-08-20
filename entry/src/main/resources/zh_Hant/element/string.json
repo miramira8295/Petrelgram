@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "開始"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "播放動圖頭像"
     }
   ]
 }

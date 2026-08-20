@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "Start"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "Play animated avatars"
     }
   ]
 }

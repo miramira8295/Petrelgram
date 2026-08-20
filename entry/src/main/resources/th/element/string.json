@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "เริ่ม"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "เล่นรูปโปรไฟล์เคลื่อนไหว"
     }
   ]
 }

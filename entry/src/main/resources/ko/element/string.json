@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "시작"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "움직이는 프로필 사진 재생"
     }
   ]
 }

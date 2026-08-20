@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "شروع"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "پخش آواتارهای متحرک"
     }
   ]
 }

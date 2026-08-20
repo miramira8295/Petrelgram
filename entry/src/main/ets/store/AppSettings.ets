@@ -48,6 +48,10 @@ export const KEY_POWER_CHAT_EFFECTS: string = 'powerChatEffects';
 export const KEY_POWER_CALL_ANIMATIONS: string = 'powerCallAnimations';
 export const KEY_POWER_AUTOPLAY_VIDEO: string = 'powerAutoplayVideo';
 export const KEY_POWER_AUTOPLAY_GIF: string = 'powerAutoplayGif';
+// 动图头像（资料页/顶栏那种循环小片段）。单独一档而不是挂在"自动播放视频"
+// 上：那个开关的用户预期是"聊天里的视频别自动播"，动机是省流量，而动图头像
+// 早就下载完了，不播一点流量都省不了——只是恰好都用播放器解码而已。
+export const KEY_POWER_ANIMATED_AVATAR: string = 'powerAnimatedAvatar';
 export const KEY_POWER_PARTICLES: string = 'powerParticles';
 export const KEY_POWER_SMOOTH_TRANSITIONS: string = 'powerSmoothTransitions';
 export const KEY_POWER_STICKER_AUTOPLAY: string = 'powerStickerAutoplay';
@@ -124,6 +128,7 @@ const POWER_BOOLEAN_DEFAULTS: string[] = [
   KEY_POWER_CALL_ANIMATIONS,
   KEY_POWER_AUTOPLAY_VIDEO,
   KEY_POWER_AUTOPLAY_GIF,
+  KEY_POWER_ANIMATED_AVATAR,
   KEY_POWER_PARTICLES,
   KEY_POWER_SMOOTH_TRANSITIONS,
   KEY_POWER_STICKER_AUTOPLAY,

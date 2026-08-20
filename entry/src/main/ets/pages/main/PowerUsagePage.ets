@@ -16,6 +16,7 @@ import {
   KEY_POWER_EFFECT_REPLY,
   KEY_POWER_PARTICLES,
   KEY_POWER_SMOOTH_TRANSITIONS,
+  KEY_POWER_ANIMATED_AVATAR,
   KEY_POWER_STICKERS,
   KEY_POWER_STICKER_AUTOPLAY,
   KEY_POWER_STICKER_LOOP,
@@ -53,6 +54,7 @@ struct PowerUsagePage {
   @StorageLink(KEY_POWER_THRESHOLD) threshold: number = POWER_THRESHOLD_DEFAULT;
   @StorageProp(KEY_POWER_ACTIVE) active: boolean = false;
   @StorageProp(KEY_BATTERY_PERCENT) batteryPercent: number = 100;
+  @StorageLink(KEY_POWER_ANIMATED_AVATAR) animatedAvatar: boolean = true;
   @StorageLink(KEY_POWER_STICKERS) animatedStickers: boolean = true;
   @StorageLink(KEY_POWER_EMOJI) animatedEmoji: boolean = true;
   @StorageLink(KEY_POWER_CHAT_EFFECTS) chatEffects: boolean = true;
@@ -153,6 +155,7 @@ struct PowerUsagePage {
   }
 
   private featureValue(key: string): boolean {
+    if (key === KEY_POWER_ANIMATED_AVATAR) { return this.animatedAvatar; }
     if (key === KEY_POWER_STICKERS) { return this.animatedStickers; }
     if (key === KEY_POWER_EMOJI) { return this.animatedEmoji; }
     if (key === KEY_POWER_CHAT_EFFECTS) { return this.chatEffects; }
@@ -386,6 +389,9 @@ struct PowerUsagePage {
       Text($r('app.string.power_options'))
         .width('100%').fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
         .padding({ left: 16, right: 16, top: 13, bottom: 5 });
+      this.featureRow('sys.symbol.person_crop_circle', str('power_animated_avatar'),
+        KEY_POWER_ANIMATED_AVATAR, 0);
+      Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 58 });
       this.featureRow('sys.symbol.face_smiling', str('power_animated_stickers'), KEY_POWER_STICKERS, 2);
       if (this.expandedKey === KEY_POWER_STICKERS) {
         this.subFeatureRow(KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, str('power_animated_stickers_sub'));

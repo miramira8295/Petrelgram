@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "शुरू करें"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "एनिमेटेड अवतार चलाएँ"
     }
   ]
 }

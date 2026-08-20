@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "ابدأ"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "تشغيل الصور الرمزية المتحركة"
     }
   ]
 }

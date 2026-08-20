@@ -119,6 +119,10 @@ struct Index {
   // 兜底超时：真的离线时也不能把链接一直压着不处理，到点照常放行，让它走正常
   // 的失败路径给出提示。
   private consumeDeepLink(): void {
+    if (this.pendingDeepLink !== '') {
+      console.warn(`[LinkDiag] consume stage=${this.stage} connReady=${this.connReady}` +
+        ` uri=${this.pendingDeepLink}`);
+    }
     if (this.stage !== AuthStage.Ready || this.pendingDeepLink === '') {
       return;
     }

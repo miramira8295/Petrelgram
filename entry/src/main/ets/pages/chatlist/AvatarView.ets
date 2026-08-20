@@ -2,7 +2,7 @@ import { AVATAR_PALETTE, AVATAR_SIZE, COLOR_PRIMARY } from '../../util/theme';
 import { formatTTL } from '../../util/formatTTL';
 import { AvLoopVideo } from '../common/AvLoopVideo';
 import { CachedImage } from '../common/CachedImage';
-import { KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_VIDEO } from '../../store/AppSettings';
+import { KEY_POWER_ACTIVE, KEY_POWER_ANIMATED_AVATAR } from '../../store/AppSettings';
 
 @Component
 export struct AvatarView {
@@ -16,12 +16,29 @@ export struct AvatarView {
   // list rows stay static (one looping player per row would be too heavy).
   @Prop animPath: string = '';
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
+  @StorageProp(KEY_POWER_ANIMATED_AVATAR) animatedAvatar: boolean = true;
   avatarSize: number = AVATAR_SIZE;
+
+  // 动态头像播不播。
+  //
+  // 原来挂在"自动播放视频"（KEY_POWER_AUTOPLAY_VIDEO）上，那是把实现细节
+  // 漏到了用户语义上——恰好都用播放器解码，就被绑到了同一个开关。可这两件
+  // 事的用户预期完全不同：「自动播放视频」是"聊天里的视频别自动播"，动机是
+  // 省流量；而动态头像是几十 KB 的循环片段、**而且早就下载完了**，不播它一
+  // 点流量都省不了，只是让界面变呆。用户在设置里看到那一行，也不会想到它管
+  // 的是头像。
+  //
+  // 改成省电设置里自己的一档「播放动图头像」。省电模式仍然是总闸。
+  //
+  // 别处的边界本来就是对的（MessageStore 里 isAnimation ? GIF : VIDEO），
+  // 只有头像这一处错了。
+  private shouldAnimate(): boolean {
+    return this.animPath !== '' && this.animatedAvatar && !this.powerSaving;
+  }
 
   @Builder
   base() {
-    if (this.animPath !== '' && this.autoplayVideo && !this.powerSaving) {
+    if (this.shouldAnimate()) {
       // Animated avatars are H.264 MP4 — the system AVPlayer loops them with
       // hardware decode (far lighter than ijkplayer's software path).
       Column() {

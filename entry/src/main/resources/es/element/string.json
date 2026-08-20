@@ -11103,6 +11103,10 @@
     {
       "name": "cp_bot_start",
       "value": "Iniciar"
+    },
+    {
+      "name": "power_animated_avatar",
+      "value": "Reproducir avatares animados"
     }
   ]
 }

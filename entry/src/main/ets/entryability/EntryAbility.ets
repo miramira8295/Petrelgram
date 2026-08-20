@@ -129,6 +129,11 @@ export default class EntryAbility extends UIAbility {
   private stashDeepLink(want: Want): void {
     this.stashNotifyTarget(want);
     const uri = want.uri ?? '';
+    // 诊断：用户报浏览器点 t.me 链接进来提示"无法识别"，而日志里连一次解析
+    // 尝试都没有。先看 want 到底带了什么——uri 为空的话这里就静默 return 了，
+    // 浏览器可能把地址放在别的字段。
+    console.warn(`[LinkDiag] want uri=${uri} action=${want.action ?? ''}` +
+      ` type=${want.type ?? ''} params=${JSON.stringify(want.parameters ?? {})}`);
     if (uri === '') {
       return;
     }

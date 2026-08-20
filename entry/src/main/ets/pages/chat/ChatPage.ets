@@ -2628,8 +2628,14 @@ struct ChatPage {
 
   // Fire at most one loadOlder per arm (see olderArmed).
   private maybeLoadOlder(): void {
+    // 诊断：用户报"999+ 却滑不动"，而日志里 loadOlder 一次都没被调用过——
+    // 需要看清是没被叫、还是被 olderArmed 挡住、还是 store 拒绝。
+    console.info(`[ChatDiag] tryOlder armed=${this.olderArmed} rows=${this.groups.length}` +
+      ` hasMore=${this.store !== null ? this.store.getHasMoreOlder() : false}`);
     if (this.olderArmed && this.store !== null) {
       const started = this.store.loadOlder();
+      console.info(`[ChatDiag] fireOlder started=${started}` +
+        ` hasMore=${this.store.getHasMoreOlder()}`);
       if (started || !this.store.getHasMoreOlder()) {
         this.olderArmed = false;
       }
@@ -7073,7 +7079,10 @@ struct ChatPage {
         // prepended above — without this, the List stays index-anchored and
         // visibly jumps to the top of the newly loaded page.
         .maintainVisibleContentPosition(true)
-        .onReachStart(() => { this.maybeLoadOlder(); })
+        .onReachStart(() => {
+          console.info('[ChatDiag] reachStart');
+          this.maybeLoadOlder();
+        })
         // Each new touch gesture re-arms one older-page load: a fling that ends
         // pinned at the very top (start index never leaves the trigger zone)
         // would otherwise never re-arm, leaving the user unable to load more.
