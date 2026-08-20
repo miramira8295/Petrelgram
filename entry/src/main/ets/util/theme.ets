@@ -47,6 +47,28 @@ export function darkResourceMode(context: common.UIAbilityContext): boolean {
   }
 }
 
+// 强调色的淡底，给"整块染一层主色"的地方用（消息里的引用块）。
+//
+// COLOR_PRIMARY 有两种形态，必须分开处理：用户没自定义强调色时它是 Resource
+// （跟随深浅色由资源系统解析），自定义之后是一个 '#RRGGBB' 字符串。
+//
+// Resource 那支没法在这里加透明度，直接交给 selected_pill——那本来就是默认
+// 强调色 #3390EC 在深浅两套资源里各自调好的淡底（浅色 #E3F0FB / 深色
+// #2B5278），比自己算一个准。字符串那支按 12% alpha 合成 '#AARRGGBB'，压在
+// 气泡底色上深浅两种模式都读得出来。
+export const ACCENT_SOFT_ALPHA: string = '1F';
+
+export function accentSoftOf(primary: ResourceColor): ResourceColor {
+  if (typeof primary === 'string' && primary.length === 7 && primary.startsWith('#')) {
+    return `#${ACCENT_SOFT_ALPHA}${primary.substring(1)}`;
+  }
+  return $r('app.color.selected_pill');
+}
+
+export function accentSoft(): ResourceColor {
+  return accentSoftOf(COLOR_PRIMARY);
+}
+
 export function applyAccentPrimary(hex: string): void {
   const next: ResourceColor = hex !== '' ? hex : $r('app.color.primary');
   COLOR_PRIMARY = next;

@@ -38,7 +38,7 @@ import { parseFormattedText, RichSegment, RichRun } from '../../util/richText';
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
-import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, COLOR_BUBBLE_TEXT, AVATAR_PALETTE, botButtonBg } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, COLOR_BUBBLE_TEXT, AVATAR_PALETTE, botButtonBg, accentSoft} from '../../util/theme';
 import { languageDisplayName } from '../../services/TranslationService';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
@@ -2009,8 +2009,21 @@ export struct MessageBubble {
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
       }
       .alignItems(HorizontalAlign.Start)
+      // 整块染一层强调色的淡底，并撑满气泡的内宽——这样点击区域就是看得见的
+      // 那一块，而不是只有文字那几个字宽。
+      //
+      // 用 alignSelf(Stretch) 而不是 width('100%')：百分比宽度的孩子会按父级
+      // 的**上限**来量，气泡会被这一块顶到最宽（同样的坑在时间戳那层踩过一次，
+      // 见 inline timestamp 的 Stack 注释）。Stretch 是先由别的内容定出宽度、
+      // 再把这一块拉满，正是要的语义。
+      //
+      // 引用文本仍然吃 replyQuoteMaxW 的上限：引用是次要信息，不该决定气泡
+      // 宽度（长 URL 会把气泡撑满，哪怕正文只有两个字）。
+      .alignSelf(ItemAlign.Stretch)
+      .backgroundColor(accentSoft())
+      .borderRadius(6)
       .border({ width: { left: 2 }, color: COLOR_PRIMARY })
-      .padding({ left: 6, top: 2, bottom: 2 }).margin({ bottom: 4 })
+      .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
       // Tap the quote → jump to the original message.
       .onClick(() => {
         if (this.gestureClaimed) { return; }

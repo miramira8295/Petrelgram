@@ -1,6 +1,7 @@
 import localUnitTest from './LocalUnit.test';
 import materialTuningTest from './MaterialTuning.test';
 import botStartTest from './BotStart.test';
+import accentSoftTest from './AccentSoft.test';
 import markdownBlocksTest from './MarkdownBlocks.test';
 import tdClientTest from './TdClient.test';
 import authServiceTest from './AuthService.test';
@@ -107,6 +108,7 @@ export default function testsuite() {
   localUnitTest();
   materialTuningTest();
   botStartTest();
+  accentSoftTest();
   tdClientTest();
   authServiceTest();
   formatTimeTest();
