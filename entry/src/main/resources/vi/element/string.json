@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "Phát ảnh đại diện động"
+    },
+    {
+      "name": "mm_promote",
+      "value": "Thăng cấp"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "Sửa quyền quản trị"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "Hạn chế"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "Thành viên này có thể làm gì?"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "Gửi phương tiện"
+    },
+    {
+      "name": "mm_photos",
+      "value": "Ảnh"
+    },
+    {
+      "name": "mm_videos",
+      "value": "Video"
+    },
+    {
+      "name": "mm_files",
+      "value": "Tệp"
+    },
+    {
+      "name": "mm_music",
+      "value": "Nhạc"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "Tin nhắn thoại"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "Tin nhắn video"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "Nhãn dán & GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "Thời hạn"
+    },
+    {
+      "name": "mm_forever",
+      "value": "Vĩnh viễn"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 ngày"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 tuần"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 tháng"
+    },
+    {
+      "name": "mm_apply",
+      "value": "Áp dụng"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "Danh hiệu tùy chỉnh"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "Thành viên nhóm sẽ thấy danh hiệu này thay vì ‘quản trị viên’."
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "Quyền quản trị"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "Xóa tin nhắn"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "Cấm người dùng"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "Mời người dùng qua liên kết"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "Quản lý tin"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "Đăng tin"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "Sửa tin"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "Xóa tin"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "Quản lý trò chuyện thoại"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "Ẩn danh"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "Thêm quản trị viên mới"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "Quản trị viên này sẽ không thể thêm quản trị viên mới."
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "Đăng tin nhắn"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "Sửa tin nhắn"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "Người này sẽ bị cấm và không thể tham gia lại."
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "Tất cả tin nhắn của người này trong nhóm sẽ bị xóa."
     }
   ]
 }

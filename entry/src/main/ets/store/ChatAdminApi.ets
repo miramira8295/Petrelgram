@@ -1,20 +1,26 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { str } from '../util/strings';
+import {
+  AdminRights, adminRightsFromTd, adminRightsToTd, allAdminRights
+} from '../util/adminRights';
+import {
+  GroupPermissions, allPermissions, permissionsFromTd, permissionsToTd
+} from '../util/chatPermissions';
 
 // Group / channel administration. Every call goes straight to TDLib; the
 // server rejects anything the current user lacks rights for, so the UI only
 // hides what it knows is unavailable and surfaces server errors verbatim.
 
-export interface GroupPermissions {
-  sendMessages: boolean;
-  sendMedia: boolean;
-  sendPolls: boolean;
-  sendOther: boolean;
-  addLinkPreviews: boolean;
-  changeInfo: boolean;
-  inviteUsers: boolean;
-  pinMessages: boolean;
+// 一位成员当前的状态。提权/限制面板都必须先读它再回填，绝不能凭空写一组
+// 权限上去——那会把对方原有的头衔和勾选冲掉。
+export interface MemberStatusInfo {
+  type: string;            // chatMemberStatus* 的 @type，'' 表示读不到
+  customTitle: string;
+  rights: AdminRights;
+  permissions: GroupPermissions;
+  isMember: boolean;
+  restrictedUntil: number; // 绝对秒级时间戳，0 = 永久
 }
 
 export interface AdminRow {
@@ -35,49 +41,6 @@ export interface JoinRequestRow {
   userId: number;
   date: number;
   bio: string;
-}
-
-export function defaultPermissions(): GroupPermissions {
-  return {
-    sendMessages: true, sendMedia: true, sendPolls: true, sendOther: true,
-    addLinkPreviews: true, changeInfo: false, inviteUsers: true, pinMessages: false
-  };
-}
-
-export function permissionsFromTd(raw: TdObject | undefined): GroupPermissions {
-  if (raw === undefined) { return defaultPermissions(); }
-  const flag = (key: string): boolean => (raw[key] as boolean | undefined) ?? false;
-  return {
-    sendMessages: flag('can_send_basic_messages'),
-    // TDLib splits media into five flags; the UI keeps one switch and writes
-    // all of them together.
-    sendMedia: flag('can_send_photos') || flag('can_send_videos') || flag('can_send_documents'),
-    sendPolls: flag('can_send_polls'),
-    sendOther: flag('can_send_other_messages'),
-    addLinkPreviews: flag('can_add_link_previews'),
-    changeInfo: flag('can_change_info'),
-    inviteUsers: flag('can_invite_users'),
-    pinMessages: flag('can_pin_messages')
-  };
-}
-
-function permissionsToTd(value: GroupPermissions): TdObject {
-  const out: TdObject = { '@type': 'chatPermissions' };
-  out['can_send_basic_messages'] = value.sendMessages;
-  out['can_send_audios'] = value.sendMedia;
-  out['can_send_documents'] = value.sendMedia;
-  out['can_send_photos'] = value.sendMedia;
-  out['can_send_videos'] = value.sendMedia;
-  out['can_send_video_notes'] = value.sendMedia;
-  out['can_send_voice_notes'] = value.sendMedia;
-  out['can_send_polls'] = value.sendPolls;
-  out['can_send_other_messages'] = value.sendOther;
-  out['can_add_link_previews'] = value.addLinkPreviews;
-  out['can_change_info'] = value.changeInfo;
-  out['can_invite_users'] = value.inviteUsers;
-  out['can_pin_messages'] = value.pinMessages;
-  out['can_create_topics'] = false;
-  return out;
 }
 
 export async function setChatTitle(chatId: number, title: string): Promise<void> {
@@ -140,34 +103,71 @@ function memberSender(userId: number): TdObject {
   return sender;
 }
 
-// Promote to admin with the common moderation rights, or demote to member.
-export async function setAdmin(
-  chatId: number, userId: number, promote: boolean
-): Promise<void> {
-  const status: TdObject = {
-    '@type': promote ? 'chatMemberStatusAdministrator' : 'chatMemberStatusMember'
+// 读出一位成员当前的状态。提权/限制面板开场就调它——先读后写是这条路径上
+// 唯一安全的做法：TDLib 的 setChatMemberStatus 是整体覆盖，没有"只改一项"。
+export async function getMemberStatus(
+  chatId: number, userId: number
+): Promise<MemberStatusInfo> {
+  const request: TdRequest = { '@type': 'getChatMember' };
+  request['chat_id'] = chatId;
+  request['member_id'] = memberSender(userId);
+  const result = await getTdClient().send(request, 15000);
+  const status = result['status'] as TdObject | undefined;
+  const type = (status?.['@type'] as string | undefined) ?? '';
+  const isCreator = type === 'chatMemberStatusCreator';
+  return {
+    type,
+    customTitle: (status?.['custom_title'] as string | undefined) ?? '',
+    rights: isCreator
+      ? allAdminRights(true)
+      : adminRightsFromTd(status?.['rights'] as TdObject | undefined),
+    // 只有 restricted 带 permissions；其余状态下这个字段没有意义，交给
+    // 调用方拿群默认权限兜底。
+    permissions: type === 'chatMemberStatusRestricted'
+      ? permissionsFromTd(status?.['permissions'] as TdObject | undefined)
+      : allPermissions(true),
+    isMember: type === 'chatMemberStatusRestricted'
+      ? ((status?.['is_member'] as boolean | undefined) ?? false)
+      : (type === 'chatMemberStatusMember' || type === 'chatMemberStatusAdministrator' ||
+        isCreator),
+    restrictedUntil: (status?.['restricted_until_date'] as number | undefined) ?? 0
   };
-  if (promote) {
-    const rights: TdObject = { '@type': 'chatAdministratorRights' };
-    rights['can_manage_chat'] = true;
-    rights['can_change_info'] = true;
-    rights['can_post_messages'] = true;
-    rights['can_edit_messages'] = true;
-    rights['can_delete_messages'] = true;
-    rights['can_invite_users'] = true;
-    rights['can_restrict_members'] = true;
-    rights['can_pin_messages'] = true;
-    rights['can_manage_topics'] = false;
-    rights['can_promote_members'] = false;
-    rights['can_manage_video_chats'] = true;
-    rights['can_post_stories'] = false;
-    rights['can_edit_stories'] = false;
-    rights['can_delete_stories'] = false;
-    rights['can_manage_direct_messages'] = false;
-    rights['is_anonymous'] = false;
-    status['rights'] = rights;
-    status['custom_title'] = '';
-  }
+}
+
+// 提为管理员 / 改管理员权限。头衔和权限都由调用方给全，因为这是一次整体覆盖。
+export async function promoteMember(
+  chatId: number, userId: number, customTitle: string, rights: AdminRights
+): Promise<void> {
+  const status: TdObject = { '@type': 'chatMemberStatusAdministrator' };
+  status['custom_title'] = customTitle;
+  status['rights'] = adminRightsToTd(rights);
+  const request: TdRequest = { '@type': 'setChatMemberStatus' };
+  request['chat_id'] = chatId;
+  request['member_id'] = memberSender(userId);
+  request['status'] = status;
+  await getTdClient().send(request, 15000);
+}
+
+// 撤销管理员：退回普通成员，人还在群里。
+export async function demoteMember(chatId: number, userId: number): Promise<void> {
+  const status: TdObject = { '@type': 'chatMemberStatusMember' };
+  const request: TdRequest = { '@type': 'setChatMemberStatus' };
+  request['chat_id'] = chatId;
+  request['member_id'] = memberSender(userId);
+  request['status'] = status;
+  await getTdClient().send(request, 15000);
+}
+
+// 限制一位成员。untilDate = 0 表示永久；isMember=false 会把人踢出去，所以
+// 面板上一律传 true——限制的语义是"留在群里但受限"。
+export async function restrictMember(
+  chatId: number, userId: number, permissions: GroupPermissions,
+  untilDate: number, isMember: boolean
+): Promise<void> {
+  const status: TdObject = { '@type': 'chatMemberStatusRestricted' };
+  status['is_member'] = isMember;
+  status['restricted_until_date'] = untilDate;
+  status['permissions'] = permissionsToTd(permissions);
   const request: TdRequest = { '@type': 'setChatMemberStatus' };
   request['chat_id'] = chatId;
   request['member_id'] = memberSender(userId);

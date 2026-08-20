@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "เล่นรูปโปรไฟล์เคลื่อนไหว"
+    },
+    {
+      "name": "mm_promote",
+      "value": "เลื่อนขั้น"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "แก้ไขสิทธิ์ผู้ดูแล"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "จำกัด"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "สมาชิกนี้ทำอะไรได้บ้าง"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "ส่งสื่อ"
+    },
+    {
+      "name": "mm_photos",
+      "value": "รูปภาพ"
+    },
+    {
+      "name": "mm_videos",
+      "value": "วิดีโอ"
+    },
+    {
+      "name": "mm_files",
+      "value": "ไฟล์"
+    },
+    {
+      "name": "mm_music",
+      "value": "เพลง"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "ข้อความเสียง"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "ข้อความวิดีโอ"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "สติกเกอร์และ GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "ระยะเวลา"
+    },
+    {
+      "name": "mm_forever",
+      "value": "ตลอดไป"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 วัน"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 สัปดาห์"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 เดือน"
+    },
+    {
+      "name": "mm_apply",
+      "value": "ใช้"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "ตำแหน่งกำหนดเอง"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "สมาชิกกลุ่มจะเห็นตำแหน่งนี้แทน ‘ผู้ดูแล’"
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "สิทธิ์ผู้ดูแล"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "ลบข้อความ"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "แบนผู้ใช้"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "เชิญผู้ใช้ผ่านลิงก์"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "จัดการสตอรี่"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "โพสต์สตอรี่"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "แก้ไขสตอรี่"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "ลบสตอรี่"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "จัดการแชทเสียง"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "ไม่ระบุตัวตน"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "เพิ่มผู้ดูแลใหม่"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "ผู้ดูแลนี้จะไม่สามารถเพิ่มผู้ดูแลใหม่ได้"
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "โพสต์ข้อความ"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "แก้ไขข้อความ"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "ผู้ใช้จะถูกแบนและไม่สามารถเข้าร่วมได้อีก"
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "ข้อความทั้งหมดของผู้ใช้นี้ในกลุ่มจะถูกลบ"
     }
   ]
 }

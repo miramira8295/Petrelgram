@@ -3,12 +3,17 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { getTdClient, getUserStore } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import {
-  AdminRow, GroupPermissions, InviteLinkRow, JoinRequestRow, banMember, createInviteLink,
-  defaultPermissions, deleteMessagesFromSender, getAdministrators, getInviteLinks,
-  checkUsernameAvailable, deleteMessagesByDate, getJoinRequests, permissionsFromTd,
-  processJoinRequest, revokeInviteLink, setAdmin, setChatDescription, setChatPermissions,
+  AdminRow, InviteLinkRow, JoinRequestRow, banMember, createInviteLink,
+  demoteMember, deleteMessagesFromSender, getAdministrators, getInviteLinks,
+  checkUsernameAvailable, deleteMessagesByDate, getJoinRequests, promoteMember,
+  processJoinRequest, revokeInviteLink, setChatDescription, setChatPermissions,
   setChatTitle, setPublicUsername, setSlowMode
 } from '../../store/ChatAdminApi';
+import { defaultAdminRights } from '../../util/adminRights';
+import {
+  GroupPermissions, PERM_SEND_OTHER, anyMedia, defaultPermissions, permissionValue,
+  permissionsFromTd, withAllMedia, withPermission
+} from '../../util/chatPermissions';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
@@ -16,6 +21,8 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 
 const CARD_RADIUS: number = 14;
+// 群级面板把九个媒体标志合成一格开关，这是那一格的伪 key。
+const MEDIA_TOGGLE_KEY: string = 'sendMedia';
 const SLOW_MODE_VALUES: number[] = [0, 10, 30, 60, 300, 900, 3600];
 // A function, not a const: the labels come from str(), which resolves at call
 // time. A module-level array would be built before the string source is
@@ -130,17 +137,13 @@ struct GroupAdminPage {
   }
 
   // Permission switches write the whole set — TDLib has no partial update.
+  //
+  // 'sendMedia' 是界面上的合并开关：群级面板只给一格，落到 TDLib 是九个媒体
+  // 标志一起写。单人限制面板才逐项展开。
   private togglePermission(key: string, value: boolean): void {
-    const next: GroupPermissions = {
-      sendMessages: key === 'sendMessages' ? value : this.permissions.sendMessages,
-      sendMedia: key === 'sendMedia' ? value : this.permissions.sendMedia,
-      sendPolls: key === 'sendPolls' ? value : this.permissions.sendPolls,
-      sendOther: key === 'sendOther' ? value : this.permissions.sendOther,
-      addLinkPreviews: key === 'addLinkPreviews' ? value : this.permissions.addLinkPreviews,
-      changeInfo: key === 'changeInfo' ? value : this.permissions.changeInfo,
-      inviteUsers: key === 'inviteUsers' ? value : this.permissions.inviteUsers,
-      pinMessages: key === 'pinMessages' ? value : this.permissions.pinMessages
-    };
+    const next: GroupPermissions = key === MEDIA_TOGGLE_KEY
+      ? withAllMedia(this.permissions, value)
+      : withPermission(this.permissions, key, value);
     const previous = this.permissions;
     this.permissions = next;
     setChatPermissions(this.chatId, next).catch((e: TdError): void => {
@@ -182,8 +185,10 @@ struct GroupAdminPage {
       const label = labels[chosen.index];
       if (label === undefined) { return; }
       let task: Promise<void> | null = null;
-      if (label === str('ga_demote')) { task = setAdmin(this.chatId, userId, false); }
-      else if (label === str('ga_promote')) { task = setAdmin(this.chatId, userId, true); }
+      if (label === str('ga_demote')) { task = demoteMember(this.chatId, userId); }
+      else if (label === str('ga_promote')) {
+        task = promoteMember(this.chatId, userId, '', defaultAdminRights());
+      }
       else if (label === str('ga_ban')) { task = banMember(this.chatId, userId, false); }
       else { task = deleteMessagesFromSender(this.chatId, userId); }
       task.then((): void => {
@@ -273,23 +278,16 @@ struct GroupAdminPage {
 
   // 按 key 读状态，而不是把值当 @Builder 参数传进来 —— 值参数不会随
   // @State 变化重新求值，开关会停在旧状态（同 ChatProfilePage.muteButton）。
-  private permissionValue(key: string): boolean {
-    const p = this.permissions;
-    if (key === 'sendMessages') { return p.sendMessages; }
-    if (key === 'sendMedia') { return p.sendMedia; }
-    if (key === 'sendPolls') { return p.sendPolls; }
-    if (key === 'sendOther') { return p.sendOther; }
-    if (key === 'addLinkPreviews') { return p.addLinkPreviews; }
-    if (key === 'changeInfo') { return p.changeInfo; }
-    if (key === 'inviteUsers') { return p.inviteUsers; }
-    return p.pinMessages;
+  private permissionSwitchValue(key: string): boolean {
+    if (key === MEDIA_TOGGLE_KEY) { return anyMedia(this.permissions); }
+    return permissionValue(this.permissions, key);
   }
 
   @Builder
   permissionRow(label: string, key: string) {
     Row() {
       Text(label).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-      Toggle({ type: ToggleType.Switch, isOn: this.permissionValue(key) }).selectedColor(COLOR_PRIMARY)
+      Toggle({ type: ToggleType.Switch, isOn: this.permissionSwitchValue(key) }).selectedColor(COLOR_PRIMARY)
         .onChange((next: boolean): void => this.togglePermission(key, next));
     }.width('100%').height(48).padding({ left: 14, right: 12 });
   }
@@ -340,9 +338,9 @@ struct GroupAdminPage {
               Text($r('app.string.ga_member_rights')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
                 .width('100%').padding({ left: 14, top: 12, bottom: 4 });
               this.permissionRow(str('ga_send_messages'), 'sendMessages');
-              this.permissionRow(str('ga_send_media'), 'sendMedia');
+              this.permissionRow(str('ga_send_media'), MEDIA_TOGGLE_KEY);
               this.permissionRow(str('ga_send_polls'), 'sendPolls');
-              this.permissionRow(str('ga_send_stickers'), 'sendOther');
+              this.permissionRow(str('ga_send_stickers'), PERM_SEND_OTHER);
               this.permissionRow(str('ga_embed_links'), 'addLinkPreviews');
               this.permissionRow(str('ga_change_info'), 'changeInfo');
               this.permissionRow(str('ga_invite_users'), 'inviteUsers');

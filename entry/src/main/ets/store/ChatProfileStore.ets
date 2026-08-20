@@ -91,6 +91,15 @@ export class ChatProfileStore {
   isMuted: boolean = false;
   canManageVideoChats: boolean = false;
   canManageChat: boolean = false; // creator or admin with usable admin rights
+  // 自己在这个群里的身份与逐项权限。成员长按菜单按这几项决定出哪些条目——
+  // canManageChat 是"有任意一项管理权限"，用它一刀切会给只会封禁的管理员
+  // 显示提权入口，点了必然失败。
+  isCreator: boolean = false;
+  canPromoteMembers: boolean = false;
+  canRestrictMembers: boolean = false;
+  canDeleteMessages: boolean = false;
+  // 自己的用户 id。菜单要靠它认出"这一行就是我"，0 表示 getMe 还没回来。
+  selfUserId: number = 0;
   liveGroupCallId: number = 0;
   membershipState: string = 'checking'; // checking | writable | joinable | blocked
   joinByRequest: boolean = false;
@@ -167,7 +176,19 @@ export class ChatProfileStore {
         this.notify();
       }
     }));
+    this.loadMe();
     this.loadChat();
+  }
+
+  // 自己的用户 id。菜单要用它把"我自己"这一行排除掉，拿不到就当 0——菜单会
+  // 少排除一行，但不会误操作（对自己提权/踢自己会被 TDLib 拒）。
+  private loadMe(): void {
+    this.client.send({ '@type': 'getMe' } as TdRequest).then((me: TdObject): void => {
+      this.selfUserId = (me['id'] as number | undefined) ?? 0;
+      this.notify();
+    }).catch((e: TdError): void => {
+      console.error(`ChatProfileStore.getMe failed: ${e.message}`);
+    });
   }
 
   close(): void {
@@ -712,23 +733,32 @@ export class ChatProfileStore {
     if (type === 'chatMemberStatusCreator') {
       this.canManageVideoChats = true;
       this.canManageChat = true;
+      this.isCreator = true;
+      this.canPromoteMembers = true;
+      this.canRestrictMembers = true;
+      this.canDeleteMessages = true;
       return;
     }
     if (type === 'chatMemberStatusAdministrator') {
       const rights = status?.['rights'] as TdObject | undefined;
-      this.canManageVideoChats =
-        (rights?.['can_manage_video_chats'] as boolean | undefined) ?? false;
+      const flag = (key: string): boolean =>
+        (rights?.[key] as boolean | undefined) ?? false;
+      this.canManageVideoChats = flag('can_manage_video_chats');
+      this.isCreator = false;
+      this.canPromoteMembers = flag('can_promote_members');
+      this.canRestrictMembers = flag('can_restrict_members');
+      this.canDeleteMessages = flag('can_delete_messages');
       // Any of these rights makes at least part of the admin page usable.
-      this.canManageChat =
-        ((rights?.['can_manage_chat'] as boolean | undefined) ?? false) ||
-        ((rights?.['can_change_info'] as boolean | undefined) ?? false) ||
-        ((rights?.['can_restrict_members'] as boolean | undefined) ?? false) ||
-        ((rights?.['can_invite_users'] as boolean | undefined) ?? false) ||
-        ((rights?.['can_promote_members'] as boolean | undefined) ?? false);
+      this.canManageChat = flag('can_manage_chat') || flag('can_change_info') ||
+        this.canRestrictMembers || flag('can_invite_users') || this.canPromoteMembers;
       return;
     }
     this.canManageVideoChats = false;
     this.canManageChat = false;
+    this.isCreator = false;
+    this.canPromoteMembers = false;
+    this.canRestrictMembers = false;
+    this.canDeleteMessages = false;
   }
 
   private applySupergroup(supergroup: TdObject): void {
@@ -805,10 +835,20 @@ export class ChatProfileStore {
   // 成员被移出后重拉整份名单。TDLib 不会为"某人被移出"单独推更新到这个
   // 列表，所以只能重取；分页游标也必须一起归零，否则新名单会接在旧偏移后面。
   reloadMembers(): void {
-    if (this.supergroupId === 0) {
+    if (this.supergroupId !== 0) {
+      this.loadSupergroupMembers();
       return;
     }
-    this.loadSupergroupMembers();
+    // 基础群的成员挂在 basicGroupFullInfo 上，没有单独的分页接口，也收不到
+    // "某人被移出"的推送，只能整份重取；去重集合要一起清，否则新名单会被
+    // 当成"已经有了"而整份丢掉。
+    if (this.basicGroupId !== 0) {
+      this.members = [];
+      this.memberIds.clear();
+      this.membersState = 'loading';
+      this.notify();
+      this.loadBasicGroup();
+    }
   }
 
   // Scroll-driven: the profile page calls this near the list's end.

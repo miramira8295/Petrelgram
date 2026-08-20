@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "Анімовані аватари"
+    },
+    {
+      "name": "mm_promote",
+      "value": "Призначити адміном"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "Змінити права адміна"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "Обмежити"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "Права учасника"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "Надсилання медіа"
+    },
+    {
+      "name": "mm_photos",
+      "value": "Фото"
+    },
+    {
+      "name": "mm_videos",
+      "value": "Відео"
+    },
+    {
+      "name": "mm_files",
+      "value": "Файли"
+    },
+    {
+      "name": "mm_music",
+      "value": "Музика"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "Голосові повідомлення"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "Відеоповідомлення"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "Стікери та GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "Термін"
+    },
+    {
+      "name": "mm_forever",
+      "value": "Назавжди"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 день"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 тиждень"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 місяць"
+    },
+    {
+      "name": "mm_apply",
+      "value": "Застосувати"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "Титул"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "Учасники групи побачать цей титул замість «адміністратор»."
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "Права адміністратора"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "Видалення повідомлень"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "Блокування користувачів"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "Запрошення за посиланням"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "Керування історіями"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "Публікація історій"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "Редагування історій"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "Видалення історій"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "Керування голосовими чатами"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "Залишатися анонімним"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "Додавання адмінів"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "Цей адміністратор не зможе додавати нових адмінів."
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "Публікація повідомлень"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "Редагування повідомлень"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "Користувача буде заблоковано, і він не зможе повернутися."
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "Усі повідомлення цього користувача в групі буде видалено."
     }
   ]
 }

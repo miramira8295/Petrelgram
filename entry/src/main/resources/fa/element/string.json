@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "پخش آواتارهای متحرک"
+    },
+    {
+      "name": "mm_promote",
+      "value": "ارتقا"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "ویرایش دسترسی‌های مدیر"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "محدود کردن"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "این عضو چه کارهایی می‌تواند بکند؟"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "ارسال رسانه"
+    },
+    {
+      "name": "mm_photos",
+      "value": "عکس‌ها"
+    },
+    {
+      "name": "mm_videos",
+      "value": "ویدیوها"
+    },
+    {
+      "name": "mm_files",
+      "value": "فایل‌ها"
+    },
+    {
+      "name": "mm_music",
+      "value": "موسیقی"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "پیام‌های صوتی"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "پیام‌های ویدیویی"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "استیکر و گیف"
+    },
+    {
+      "name": "mm_duration",
+      "value": "مدت"
+    },
+    {
+      "name": "mm_forever",
+      "value": "همیشه"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "۱ روز"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "۱ هفته"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "۱ ماه"
+    },
+    {
+      "name": "mm_apply",
+      "value": "اعمال"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "عنوان سفارشی"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "اعضای گروه به‌جای «مدیر» این عنوان را می‌بینند."
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "دسترسی‌های مدیر"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "حذف پیام‌ها"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "مسدود کردن کاربران"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "دعوت کاربران با پیوند"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "مدیریت استوری‌ها"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "انتشار استوری"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "ویرایش استوری"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "حذف استوری"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "مدیریت گفتگوهای صوتی"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "ناشناس ماندن"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "افزودن مدیر جدید"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "این مدیر نمی‌تواند مدیر جدید اضافه کند."
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "ارسال پیام"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "ویرایش پیام‌ها"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "کاربر مسدود می‌شود و نمی‌تواند دوباره عضو شود."
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "تمام پیام‌های این کاربر در این گروه حذف می‌شود."
     }
   ]
 }

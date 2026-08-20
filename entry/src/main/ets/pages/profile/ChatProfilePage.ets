@@ -1,7 +1,12 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { MEMBER_ROLE_CREATOR, MEMBER_ROLE_NONE } from '../../util/memberRole';
-import { removeMember } from '../../store/ChatAdminApi';
+import { banMember, deleteMessagesFromSender, removeMember } from '../../store/ChatAdminApi';
+import {
+  MEMBER_ACTION_BAN, MEMBER_ACTION_DELETE_MESSAGES, MEMBER_ACTION_PROMOTE,
+  MEMBER_ACTION_REMOVE, MEMBER_ACTION_RESTRICT, MemberMenuOptions,
+  memberMenuOptions, memberMenuSignature
+} from '../../util/memberMenu';
+import { MemberRow } from './MemberRow';
 import { getTdClient } from '../../tdkit/Globals';
 import {
   ChatProfileStore, MemberItem, ProfileContentItem,
@@ -82,6 +87,12 @@ struct ChatProfilePage {
   @State isMuted: boolean = false;
   @State canManageVideoChats: boolean = false;
   @State canManageChat: boolean = false;
+  // 逐项管理权限。长按菜单按这几项出条目，不用 canManageChat 一刀切。
+  @State viewerIsCreator: boolean = false;
+  @State canPromoteMembers: boolean = false;
+  @State canRestrictMembers: boolean = false;
+  @State canDeleteMessages: boolean = false;
+  @State selfUserId: number = 0;
   @State liveGroupCallId: number = 0;
   @State creatingLive: boolean = false;
   @State members: MemberItem[] = [];
@@ -109,6 +120,7 @@ struct ChatProfilePage {
   private pendingDraftText: string = '';
   private pendingJumpTo: number = 0;
   private justJoined: boolean = false;
+  private pendingMemberReload: boolean = false;
   private store: ChatProfileStore | null = null;
   private unsub: (() => void) | null = null;
   private tabScroller: Scroller = new Scroller();
@@ -176,6 +188,14 @@ struct ChatProfilePage {
     store.open();
   }
 
+  // 从提权/限制面板返回时重拉成员：身份标签和受限状态都可能变了。
+  onPageShow(): void {
+    if (this.pendingMemberReload) {
+      this.pendingMemberReload = false;
+      this.store?.reloadMembers();
+    }
+  }
+
   aboutToDisappear(): void {
     if (this.unsub !== null) { this.unsub(); this.unsub = null; }
     if (this.store !== null) { this.store.close(); this.store = null; }
@@ -231,6 +251,11 @@ struct ChatProfilePage {
     this.isMuted = s.isMuted;
     this.canManageVideoChats = s.canManageVideoChats;
     this.canManageChat = s.canManageChat;
+    this.viewerIsCreator = s.isCreator;
+    this.canPromoteMembers = s.canPromoteMembers;
+    this.canRestrictMembers = s.canRestrictMembers;
+    this.canDeleteMessages = s.canDeleteMessages;
+    this.selfUserId = s.selfUserId;
     this.liveGroupCallId = s.liveGroupCallId;
     this.members = s.members;
   }
@@ -1080,44 +1105,89 @@ struct ChatProfilePage {
     .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
   }
 
-  // 管理员把成员移出群组。
-  //
-  // 用 setChatMemberStatus → left，不是 banChatMember：后者是永久封禁，人进
-  // 黑名单再也加不回来。日常要的是"请出去"，不是"拉黑"。
-  //
-  // 创建者和管理员不给移：对他们动手需要更高权限，失败提示不如不给入口。
-  private confirmRemoveMember(m: MemberItem): void {
-    if (!this.canManageChat || this.chatId === 0 || m.userId <= 0 ||
-      m.role !== MEMBER_ROLE_NONE) {
+  // 长按成员时该出哪些菜单项。判定是纯函数，见 util/memberMenu。
+  private menuOptionsFor(m: MemberItem): MemberMenuOptions {
+    return memberMenuOptions(
+      {
+        isCreator: this.viewerIsCreator,
+        canPromoteMembers: this.canPromoteMembers,
+        canRestrictMembers: this.canRestrictMembers,
+        canDeleteMessages: this.canDeleteMessages
+      },
+      m.role,
+      this.selfUserId !== 0 && m.userId === this.selfUserId,
+      this.isChannel
+    );
+  }
+
+  private handleMemberAction(m: MemberItem, action: string): void {
+    if (this.chatId === 0 || m.userId <= 0) {
       return;
     }
+    if (action === MEMBER_ACTION_PROMOTE) {
+      this.openMemberPanel('pages/profile/MemberPromotePage', m);
+    } else if (action === MEMBER_ACTION_RESTRICT) {
+      this.openMemberPanel('pages/profile/MemberRestrictPage', m);
+    } else if (action === MEMBER_ACTION_BAN) {
+      this.confirmMemberAction(str('ga_ban_short'), str('mm_ban_confirm'), str('ga_ban_short'),
+        (): Promise<void> => banMember(this.chatId, m.userId, false));
+    } else if (action === MEMBER_ACTION_REMOVE) {
+      this.confirmMemberAction(str('ga_remove_member'), m.name, str('ga_remove_member'),
+        (): Promise<void> => removeMember(this.chatId, m.userId));
+    } else if (action === MEMBER_ACTION_DELETE_MESSAGES) {
+      this.confirmMemberAction(str('ga_delete_all'), str('mm_delete_all_confirm'), str('delete'),
+        (): Promise<void> => deleteMessagesFromSender(this.chatId, m.userId));
+    }
+  }
+
+  // 破坏性操作一律二次确认：封禁进黑名单、删消息不可撤销，误触的代价太高。
+  private confirmMemberAction(
+    title: string, message: string, confirmLabel: string, run: () => Promise<void>
+  ): void {
     promptAction.showDialog({
-      title: str('ga_remove_member'),
-      message: m.name,
+      title,
+      message,
       buttons: [
         { text: $r('app.string.cancel'), color: '#8E8E93' },
-        { text: $r('app.string.ga_remove_member'), color: '#E5484D' }
+        { text: confirmLabel, color: '#E5484D' }
       ]
     }).then((result: promptAction.ShowDialogSuccessResponse): void => {
       if (result.index !== 1) {
         return;
       }
-      removeMember(this.chatId, m.userId).then((): void => {
+      run().then((): void => {
         promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
         this.store?.reloadMembers();
       }).catch((caught: TdError): void => {
-        console.error(`ChatProfilePage.removeMember failed: ${caught.message}`);
-        promptAction.showToast({ message: str('ga_failed'), duration: 1600 });
+        console.error(`ChatProfilePage.memberAction failed: ${caught.message}`);
+        promptAction.showToast({
+          message: caught.message.indexOf('rights') >= 0 ||
+            caught.message.indexOf('ADMIN') >= 0
+            ? str('ga_no_permission') : str('ga_failed'),
+          duration: 1700
+        });
       });
     }).catch((): void => {});
   }
 
-  // 标签文案：有自定义头衔就用它，否则按身份给默认词。
-  private memberRoleLabel(m: MemberItem): string {
-    if (m.roleTitle !== '') {
-      return m.roleTitle;
-    }
-    return m.role === MEMBER_ROLE_CREATOR ? str('ga_creator') : str('ga_admin');
+  // 两个面板都是独立页面：它们要先读成员当前状态再回填，逻辑量不小，塞进
+  // 这个已经很大的文件只会更难改。
+  private openMemberPanel(url: string, m: MemberItem): void {
+    const params: Record<string, Object> = {
+      'chatId': this.chatId,
+      'userId': m.userId,
+      'memberName': m.name,
+      'memberInitials': m.initials,
+      'memberAvatar': m.avatarPath,
+      'memberStatus': m.status,
+      'isChannel': this.isChannel
+    };
+    // 面板改完权限后成员的身份标签会变，回来必须重拉一次。
+    this.pendingMemberReload = true;
+    router.pushUrl({ url, params }).catch((error: Error): void => {
+      this.pendingMemberReload = false;
+      console.error(`ChatProfilePage.openMemberPanel failed: ${error.message}`);
+    });
   }
 
   // 公开链接的完整形式。展示和复制用同一个值，免得看到的和粘出来的不一致。
@@ -1223,44 +1293,17 @@ struct ChatProfilePage {
     Column() {
       if (this.members.length > 0) {
         ForEach(this.members, (m: MemberItem, idx: number) => {
-          Column() {
-            Row({ space: 10 }) {
-              AvatarView({ avatarPath: m.avatarPath, initials: m.initials,
-                colorSeed: m.userId, avatarSize: 46 });
-              Column({ space: 2 }) {
-                Text(m.name).fontSize(15.5).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                Text(m.status).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-              }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-              // 身份标签。普通成员不挂，避免整列都是标签反而看不出谁特殊。
-              if (m.role !== MEMBER_ROLE_NONE) {
-                Text(this.memberRoleLabel(m))
-                  .fontSize(11.5).fontColor(COLOR_PRIMARY)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .constraintSize({ maxWidth: 96 })
-                  .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-                  .backgroundColor($r('app.color.selected_pill'))
-                  .borderRadius(9)
-                  .flexShrink(0);
-              }
-              SymbolGlyph($r('sys.symbol.chevron_right'))
-                .fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
-            }
-            .width('100%').padding({ left: 15, right: 13, top: 11, bottom: 11 })
-            .alignItems(VerticalAlign.Center)
-            .stateStyles({ normal: this.contentRowNormalStyle, pressed: this.contentRowPressedStyle })
-            .onClick((): void => { this.openMemberProfile(m.userId); })
-            // 管理员长按成员 → 移出群组。非管理员长按什么都不会发生。
-            .gesture(LongPressGesture().onAction((): void => {
-              this.confirmRemoveMember(m);
-            }));
-            if (idx < this.members.length - 1) {
-              // 玻璃上的分隔线要更淡：0.7 的实线在半透明底上显得很硬。
-              Divider().color($r('app.color.divider')).opacity(0.5).strokeWidth(0.5)
-                .margin({ left: 67 });
-            }
-          }.width('100%');
-        }, (m: MemberItem) => `${m.userId}_${m.avatarPath}`);
+          MemberRow({
+            member: m,
+            options: this.menuOptionsFor(m),
+            showDivider: idx < this.members.length - 1,
+            onOpenProfile: (userId: number): void => { this.openMemberProfile(userId); },
+            onAction: (action: string): void => { this.handleMemberAction(m, action); }
+          });
+          // key 里带上菜单形态：权限是异步读回来的，只按 id 复用的话，先渲染
+          // 出来的那批行会一直挂着"什么都不能做"的旧菜单。
+        }, (m: MemberItem) =>
+          `${m.userId}_${m.avatarPath}_${m.role}_${memberMenuSignature(this.menuOptionsFor(m))}`);
         if (this.store !== null && this.store.hasMoreMembers) {
           Row({ space: 8 }) {
             LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);

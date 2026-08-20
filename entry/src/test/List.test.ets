@@ -103,6 +103,9 @@ import readMarkingTest from './ReadMarking.test';
 import visibleWindowTest from './VisibleWindow.test';
 import atBottomTest from './AtBottom.test';
 import pinnedJumpTest from './PinnedJump.test';
+import chatPermissionsTest from './ChatPermissions.test';
+import adminRightsTest from './AdminRights.test';
+import memberMenuTest from './MemberMenu.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -210,4 +213,7 @@ export default function testsuite() {
   visibleWindowTest();
   atBottomTest();
   pinnedJumpTest();
+  chatPermissionsTest();
+  adminRightsTest();
+  memberMenuTest();
 }

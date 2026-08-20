@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "播放动图头像"
+    },
+    {
+      "name": "mm_promote",
+      "value": "提权"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "编辑管理员权限"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "限制"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "此成员访问权限管理"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "发送媒体文件"
+    },
+    {
+      "name": "mm_photos",
+      "value": "照片"
+    },
+    {
+      "name": "mm_videos",
+      "value": "视频"
+    },
+    {
+      "name": "mm_files",
+      "value": "文件"
+    },
+    {
+      "name": "mm_music",
+      "value": "音乐"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "语音消息"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "圆形视频"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "贴纸与 GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "时限"
+    },
+    {
+      "name": "mm_forever",
+      "value": "永久"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 天"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 周"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 个月"
+    },
+    {
+      "name": "mm_apply",
+      "value": "应用"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "成员标签"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "群组成员将看到此头衔，而不是「管理员」。"
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "管理员权限"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "删除消息"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "封禁用户"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "通过链接邀请用户"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "管理动态"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "发布动态"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "编辑动态"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "删除动态"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "管理语音聊天"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "保持匿名"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "添加新管理员"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "该管理员不能添加新管理员。"
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "发布消息"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "编辑消息"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "封禁后对方将无法再加入该群组。"
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "该用户在此群组中的全部消息都会被删除。"
     }
   ]
 }

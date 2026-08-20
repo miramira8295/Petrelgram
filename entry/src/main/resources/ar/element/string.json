@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "تشغيل الصور الرمزية المتحركة"
+    },
+    {
+      "name": "mm_promote",
+      "value": "ترقية"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "تعديل صلاحيات المشرف"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "تقييد"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "ماذا يمكن لهذا العضو أن يفعل؟"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "إرسال الوسائط"
+    },
+    {
+      "name": "mm_photos",
+      "value": "الصور"
+    },
+    {
+      "name": "mm_videos",
+      "value": "الفيديوهات"
+    },
+    {
+      "name": "mm_files",
+      "value": "الملفات"
+    },
+    {
+      "name": "mm_music",
+      "value": "الموسيقى"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "الرسائل الصوتية"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "رسائل الفيديو"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "الملصقات و GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "المدة"
+    },
+    {
+      "name": "mm_forever",
+      "value": "إلى الأبد"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "يوم واحد"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "أسبوع واحد"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "شهر واحد"
+    },
+    {
+      "name": "mm_apply",
+      "value": "تطبيق"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "لقب مخصص"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "سيرى أعضاء المجموعة هذا اللقب بدلاً من «مشرف»."
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "صلاحيات المشرف"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "حذف الرسائل"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "حظر المستخدمين"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "دعوة المستخدمين عبر رابط"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "إدارة القصص"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "نشر القصص"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "تعديل القصص"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "حذف القصص"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "إدارة المحادثات الصوتية"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "البقاء مجهولاً"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "إضافة مشرفين جدد"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "لن يتمكن هذا المشرف من إضافة مشرفين جدد."
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "نشر الرسائل"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "تعديل الرسائل"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "سيتم حظره ولن يتمكن من الانضمام مجددًا."
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "سيتم حذف جميع رسائل هذا المستخدم في هذه المجموعة."
     }
   ]
 }

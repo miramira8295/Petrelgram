@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "Lire les avatars animés"
+    },
+    {
+      "name": "mm_promote",
+      "value": "Promouvoir"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "Modifier les droits d’admin"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "Restreindre"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "Que peut faire ce membre ?"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "Envoyer des médias"
+    },
+    {
+      "name": "mm_photos",
+      "value": "Photos"
+    },
+    {
+      "name": "mm_videos",
+      "value": "Vidéos"
+    },
+    {
+      "name": "mm_files",
+      "value": "Fichiers"
+    },
+    {
+      "name": "mm_music",
+      "value": "Musique"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "Messages vocaux"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "Messages vidéo"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "Stickers et GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "Durée"
+    },
+    {
+      "name": "mm_forever",
+      "value": "Pour toujours"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 jour"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 semaine"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 mois"
+    },
+    {
+      "name": "mm_apply",
+      "value": "Appliquer"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "Titre personnalisé"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "Les membres du groupe verront ce titre au lieu de « admin »."
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "Droits d’administrateur"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "Supprimer des messages"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "Bannir des utilisateurs"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "Inviter via un lien"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "Gérer les stories"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "Publier des stories"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "Modifier les stories"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "Supprimer les stories"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "Gérer les chats vocaux"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "Rester anonyme"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "Ajouter des admins"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "Cet admin ne pourra pas ajouter de nouveaux admins."
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "Publier des messages"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "Modifier les messages"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "L’utilisateur sera banni et ne pourra plus revenir."
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "Tous les messages de cet utilisateur dans le groupe seront supprimés."
     }
   ]
 }

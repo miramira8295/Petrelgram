@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "움직이는 프로필 사진 재생"
+    },
+    {
+      "name": "mm_promote",
+      "value": "승격"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "관리자 권한 편집"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "제한"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "이 멤버가 할 수 있는 것"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "미디어 보내기"
+    },
+    {
+      "name": "mm_photos",
+      "value": "사진"
+    },
+    {
+      "name": "mm_videos",
+      "value": "동영상"
+    },
+    {
+      "name": "mm_files",
+      "value": "파일"
+    },
+    {
+      "name": "mm_music",
+      "value": "음악"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "음성 메시지"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "화상 메시지"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "스티커 및 GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "기간"
+    },
+    {
+      "name": "mm_forever",
+      "value": "무기한"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1일"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1주"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1개월"
+    },
+    {
+      "name": "mm_apply",
+      "value": "적용"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "사용자 지정 직함"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "그룹 멤버에게 ‘관리자’ 대신 이 직함이 표시됩니다."
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "관리자 권한"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "메시지 삭제"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "사용자 차단"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "링크로 사용자 초대"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "스토리 관리"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "스토리 게시"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "스토리 편집"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "스토리 삭제"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "음성 채팅 관리"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "익명 유지"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "새 관리자 추가"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "이 관리자는 새 관리자를 추가할 수 없습니다."
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "메시지 게시"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "메시지 편집"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "이 사용자는 차단되어 다시 참여할 수 없습니다."
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "이 사용자의 그룹 내 모든 메시지가 삭제됩니다."
     }
   ]
 }

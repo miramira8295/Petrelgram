@@ -11107,6 +11107,150 @@
     {
       "name": "power_animated_avatar",
       "value": "Putar avatar animasi"
+    },
+    {
+      "name": "mm_promote",
+      "value": "Promosikan"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "Ubah hak admin"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "Batasi"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "Apa yang boleh dilakukan anggota ini?"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "Kirim media"
+    },
+    {
+      "name": "mm_photos",
+      "value": "Foto"
+    },
+    {
+      "name": "mm_videos",
+      "value": "Video"
+    },
+    {
+      "name": "mm_files",
+      "value": "File"
+    },
+    {
+      "name": "mm_music",
+      "value": "Musik"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "Pesan suara"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "Pesan video"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "Stiker & GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "Durasi"
+    },
+    {
+      "name": "mm_forever",
+      "value": "Selamanya"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 hari"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 minggu"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 bulan"
+    },
+    {
+      "name": "mm_apply",
+      "value": "Terapkan"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "Gelar khusus"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "Anggota grup akan melihat gelar ini, bukan ‘admin’."
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "Hak admin"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "Hapus pesan"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "Blokir pengguna"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "Undang pengguna via tautan"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "Kelola cerita"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "Posting cerita"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "Edit cerita"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "Hapus cerita"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "Kelola obrolan suara"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "Tetap anonim"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "Tambah admin baru"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "Admin ini tidak dapat menambahkan admin baru."
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "Kirim pesan"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "Edit pesan"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "Pengguna akan diblokir dan tidak bisa bergabung lagi."
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "Semua pesan pengguna ini di grup akan dihapus."
     }
   ]
 }
