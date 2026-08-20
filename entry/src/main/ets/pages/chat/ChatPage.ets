@@ -118,7 +118,7 @@ import {
   TRANSLATE_LANG_CODES
 } from '../../services/TranslationService';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, darkResourceMode
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, darkResourceMode, KEY_APP_DARK
 } from '../../util/theme';
 import {
   normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf,
@@ -234,6 +234,13 @@ struct ChatPage {
   // every row, and the data source has to be told or LazyForEach keeps a key
   // table that no longer matches anything.
   @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
+  // 深浅色切换后要重新解析背景。壁纸本身是**按模式选的**（TDLib 的
+  // for_dark_theme），而 ChatBackgroundStore 只在 open() 时解析过那一次，
+  // 会话开着的时候切换模式没人再跑一遍，壁纸就停在旧模式那张（issue #57）。
+  //
+  // ChatBackdrop 也订阅了 KEY_APP_DARK，但它只管图案浓度和深色遮罩，换不了
+  // 壁纸本身——所以那一份订阅顶不了这一份。
+  @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;  // ✅ 新增
   @StorageProp('keyboardHeightVp') @Watch('onKeyboardHeightChanged') keyboardH: number = 0;
@@ -3519,6 +3526,21 @@ struct ChatPage {
     const sib = this.siblingIdsFor(messageId);
     return sib.length > 1 ? sib.indexOf(messageId) : -1;
   }
+
+  // 见 appDark 的说明：store 注入的 isDarkMode 回调是实时读的，
+
+  // 所以这里只要让它重新解析一次就够，不必重新订阅。
+
+  private onAppDarkChanged(): void {
+
+    if (this.bgStore !== null) {
+
+      this.bgStore.refresh();
+
+    }
+
+  }
+
 
   private onLanguageEpochChanged(): void {
     // A hidden page can't be trusted to apply even a RELOAD; re-issue on show.
