@@ -17,7 +17,6 @@ import {
   overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { AvatarView } from '../chatlist/AvatarView';
-import { QrDialog } from '../common/QrDialog';
 import { AvatarViewer } from '../common/AvatarViewer';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
@@ -25,7 +24,6 @@ import {
   COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG
 } from '../../util/theme';
 import { ExpandableText } from './ExpandableText';
-import { publicLink } from '../../util/telegramLink';
 import {
   createVideoChat, endGroupCall, getGroupCall, startScheduledVideoChat
 } from '../../tdkit/GroupCallApi';
@@ -181,21 +179,6 @@ struct ChatProfilePage {
   aboutToDisappear(): void {
     if (this.unsub !== null) { this.unsub(); this.unsub = null; }
     if (this.store !== null) { this.store.close(); this.store = null; }
-  }
-
-  @State qrLink: string = '';
-  private qrCtrl: CustomDialogController = new CustomDialogController({
-    builder: QrDialog({ link: this.qrLink, title: this.title }),
-    alignment: DialogAlignment.Center,
-    autoCancel: true
-  });
-
-  private openQr(): void {
-    if (this.chatUsername === '') {
-      return;
-    }
-    this.qrLink = publicLink(this.chatUsername);
-    this.qrCtrl.open();
   }
 
   // Mirror the store snapshot into @State (plain-field reads don't re-render).
@@ -1069,13 +1052,18 @@ struct ChatProfilePage {
             }
             .alignItems(HorizontalAlign.Start).layoutWeight(1)
             .onClick((): void => { this.copyPublicLink(); });
+            // 原来这里是二维码。群/频道的公开地址没人会用扫码加入——真正
+            // 要做的动作是把地址拿走贴到别处，所以换成显式的复制按钮。
+            // （点链接文字本身也能复制，这颗是给"看到按钮才知道能点"的人。）
             Row() {
-              SymbolGlyph($r('sys.symbol.qrcode')).fontSize(21).fontColor([COLOR_PRIMARY]);
+              SymbolGlyph($r('sys.symbol.plus_square_on_square'))
+                .fontSize(21).fontColor([COLOR_PRIMARY]);
             }
             .width(42).height(42).borderRadius(GLASS_RADIUS_CHIP)
             .justifyContent(FlexAlign.Center)
             .backgroundColor($r('app.color.selected_pill'))
-            .onClick(() => { this.openQr(); });
+            .accessibilityText($r('app.string.fl_copy_link'))
+            .onClick((): void => { this.copyPublicLink(); });
           }
           .width('100%').padding({ top: 8, bottom: 8 })
           .alignItems(VerticalAlign.Center);
