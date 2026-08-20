@@ -177,6 +177,10 @@ struct InAppBrowserPage {
     }
     .width('100%').height('100%')
     .backgroundColor(COLOR_PAGE_BG)
+    // 少了 expandSafeArea 时，页面的布局区停在安全区边界，状态栏那一条不归
+    // 页面画，露出的是窗口底色——看着就是"没沉浸"。padding 只负责把内容让开
+    // 那一条，铺不铺满是另一回事，两个都要有。其余页面都是这么写的。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe, bottom: this.bottomSafe });
   }
 }

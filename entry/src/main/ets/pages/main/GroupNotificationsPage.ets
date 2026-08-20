@@ -321,6 +321,9 @@ struct GroupNotificationsPage {
         }
       }
       .width('100%').height('100%')
+      // 没有这一行时页面的布局区停在安全区边界，状态栏那一条不归页面画，
+      // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe })
       .backgroundColor(COLOR_PAGE_BG);
 
