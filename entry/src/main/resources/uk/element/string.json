@@ -11099,6 +11099,10 @@
     {
       "name": "material_light_adaptive",
       "value": "Адаптивний"
+    },
+    {
+      "name": "cp_bot_start",
+      "value": "Почати"
     }
   ]
 }

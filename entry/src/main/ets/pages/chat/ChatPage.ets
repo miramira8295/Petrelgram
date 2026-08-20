@@ -152,6 +152,7 @@ import { audioQueueApplies } from '../../util/audioQueueGate';
 import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
@@ -509,6 +510,8 @@ struct ChatPage {
   private threadRootId: number = 0;
   private topicName: string = '';
   private forumTopicId: number = 0;
+  // 私聊对方是机器人。空会话时输入框让位给「开始」，见 util/botStart。
+  @State isBotChat: boolean = false;
   @State isGroup: boolean = false;
   @State isChannel: boolean = false;
   // TDLib keeps membership on the underlying basicGroup/supergroup rather
@@ -2750,17 +2753,22 @@ struct ChatPage {
       this.isGroup = false;
       this.isChannel = false;
       this.refreshBotMiniApp(this.headerPeerUserId);
+      this.refreshIsBot(this.headerPeerUserId, seq);
     } else if (typeName === 'chatTypeBasicGroup') {
+      this.isBotChat = false;
       this.headerKind = 'group';
       this.headerIdentityResolved = true;
       this.isGroup = true;
       this.isChannel = false;
     } else if (typeName === 'chatTypeSupergroup') {
+      this.isBotChat = false;
       this.isChannel = (type!['is_channel'] as boolean | undefined) ?? false;
       this.headerKind = this.isChannel ? 'channel' : 'group';
       this.headerIdentityResolved = true;
       this.isGroup = true;
     } else if (typeName === 'chatTypeSecret') {
+      // 密聊对面不可能是机器人。
+      this.isBotChat = false;
       this.headerKind = 'secret';
       this.isGroup = false;
       this.isChannel = false;
@@ -3812,6 +3820,27 @@ struct ChatPage {
 
   // Bots can expose a Mini App on their menu button — surface it as a composer
   // icon that opens the app in the in-app browser.
+  // 对方是不是机器人。先清成 false 再异步确认：换会话时留着上一个会话的
+  // true，新会话空历史的一瞬间会错误地亮出「开始」。
+  private refreshIsBot(userId: number, seq: number): void {
+    this.isBotChat = false;
+    if (userId <= 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'getUser' };
+    req['user_id'] = userId;
+    getTdClient().send(req).then((user: TdObject): void => {
+      if (seq !== this.headerResolveSeq) {
+        return;
+      }
+      const type = user['type'] as TdObject | undefined;
+      const typeName: string = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
+      this.isBotChat = typeName === 'userTypeBot';
+    }).catch((error: TdError): void => {
+      console.error(`ChatPage.getUser isBot failed: ${error.message}`);
+    });
+  }
+
   private refreshBotMiniApp(userId: number): void {
     this.botMiniAppUrlValue = '';
     if (userId <= 0) { return; }
@@ -4491,6 +4520,18 @@ struct ChatPage {
 
   // 纯函数以 bottomGapOf 引入：裸名在方法体里解析到的是导入而不是本方法
   // （方法必须带 this.），同名并存太容易读错。placeholderOf 同理。
+  // 输入框那块位置归谁：空的机器人会话给「开始」，其余交回成员状态。
+  // 判定在 util/botStart（有单测），这里只把当前字段喂进去。
+  private composerSlot(): string {
+    return composerSlotState({
+      isBot: this.isBotChat,
+      membershipState: this.membershipState,
+      loadState: this.messageLoadState,
+      visibleGroupCount: this.visibleGroupCount,
+      threadRootId: this.threadRootId
+    });
+  }
+
   private composerBottomGap(): number {
     return bottomGapOf(this.keyboardH, this.bottomPanelOpen(), this.bottomSafe);
   }
@@ -6610,14 +6651,15 @@ struct ChatPage {
           onOlder: (): void => { this.searchOlder(); },
           onNewer: (): void => { this.searchNewer(); }
         });
-      } else if (this.membershipState !== 'writable') {
+      } else if (this.composerSlot() !== 'writable') {
         MembershipBar({
-          state: this.membershipState,
+          state: this.composerSlot(),
           isMuted: this.isMuted,
           joining: this.joiningChat,
           bottomGap: this.composerBottomGap(),
           onJoin: (): void => { this.joinCurrentChat(); },
           onToggleMute: (): void => { this.toggleChatMute(); },
+          onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); },
           onHeightChange: (height: number): void => { this.inputBarH = height; }
         });
       } else {

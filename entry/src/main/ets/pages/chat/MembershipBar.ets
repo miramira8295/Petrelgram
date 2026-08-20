@@ -2,6 +2,10 @@ import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY
 } from '../../util/membershipState';
+import { MEMBERSHIP_BOT_START } from '../../util/botStart';
+import {
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
+} from '../../util/overlayMaterial';
 
 // 没有发言权时，输入区的位置放什么。
 //
@@ -13,7 +17,11 @@ import {
 
 @Component
 export struct MembershipBar {
-  // util/membershipState 的取值；writable 时页面根本不挂这个组件。
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // util/membershipState 的取值，外加 util/botStart 的 botStart；
+  // writable 时页面根本不挂这个组件。
   @Prop state: string;
   @Prop isMuted: boolean;
   @Prop joining: boolean;
@@ -21,6 +29,7 @@ export struct MembershipBar {
   @Prop bottomGap: number;
 
   onJoin: () => void = (): void => {};
+  onStartBot: () => void = (): void => {};
   onToggleMute: () => void = (): void => {};
   onHeightChange: (height: number) => void = (): void => {};
 
@@ -40,6 +49,9 @@ export struct MembershipBar {
             .fontSize(17).fontColor([COLOR_PRIMARY]);
           Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'))
             .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+        } else if (this.state === MEMBERSHIP_BOT_START) {
+          Text($r('app.string.cp_bot_start'))
+            .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
         } else {
           if (this.joining) {
             LoadingProgress()
@@ -55,16 +67,23 @@ export struct MembershipBar {
       .padding({ left: 12, right: 12, top: 4, bottom: 4 })
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .backgroundColor($r('app.color.surface'))
+      // 这块位置就是输入框的位置，材质跟着输入框胶囊走同一档。材质接管时
+      // 它自带填充、把实心底色清成透明玻璃；低于 API 26 材质是 undefined，
+      // 改由 backdropBlur + 半透明底色自己画。
+      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
       .borderRadius(24)
+      .backdropBlur(overlayBackdropBlur('card'))
+      .systemMaterial(overlayMaterial('card'))
       // 只有"可加入且没在加入中"和"只读（点了是切静音）"可点。确认中、被挡住
       // 都不可点：前者点了没意义，后者点了只会失败。
       // 照抄原式的正面枚举，而不是反过来排除——反写在遇到意外状态时行为会翻转。
       .enabled((this.state === MEMBERSHIP_JOINABLE && !this.joining) ||
-        this.state === MEMBERSHIP_READONLY)
+        this.state === MEMBERSHIP_READONLY || this.state === MEMBERSHIP_BOT_START)
       .onClick((): void => {
         if (this.state === MEMBERSHIP_READONLY) {
           this.onToggleMute();
+        } else if (this.state === MEMBERSHIP_BOT_START) {
+          this.onStartBot();
         } else {
           this.onJoin();
         }
