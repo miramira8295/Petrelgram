@@ -59,6 +59,7 @@ import { ChatHeader } from './ChatHeader';
 import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
+import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
 import {
   forwardableIds, pruneSelection, rowSelectable, rowSelected, toggleRow
 } from '../../util/messageSelection';
@@ -76,7 +77,7 @@ import {
   openSlot, toggleSlot
 } from '../../util/bottomSlot';
 import {
-  SEARCH_FETCH, SEARCH_JUMP, SearchStep, searchCounterText, stepNewer, stepOlder
+  SEARCH_FETCH, SEARCH_JUMP, SearchStep, stepNewer, stepOlder
 } from '../../util/searchPaging';
 import { CachedImage } from '../common/CachedImage';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
@@ -6316,77 +6317,6 @@ struct ChatPage {
   // Search owns the complete top bar. Keeping the regular avatar/title beside
   // the field squeezed group/channel queries into a narrow trailing slot and
   // made the mode look like an accessory instead of navigation state.
-  @Builder
-  searchHeader() {
-    Row({ space: 4 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-        .width(40).height(40)
-        .borderRadius(20)
-        .justifyContent(FlexAlign.Center)
-        .stateStyles({
-          normal: this.headerMenuRowNormalStyle,
-          pressed: this.headerMenuRowPressedStyle
-        })
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-          curve: Curve.EaseOut
-        })
-        .onClick((): void => { this.exitSearch(); })
-        .accessibilityText($r('app.string.cp_back_to_chat'));
-      TextInput({ text: this.searchQuery, placeholder: $r('app.string.cp_search_messages') })
-        .layoutWeight(1).height(40).fontSize(16)
-        .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
-        .placeholderColor(COLOR_TEXT_SECONDARY)
-        .caretColor(COLOR_PRIMARY)
-        .enterKeyType(EnterKeyType.Search)
-        .defaultFocus(true)
-        .onChange((v: string): void => { this.updateSearchQuery(v); })
-        .onSubmit((): void => { this.runSearch(0, 0); });
-      if (this.searchQuery !== '') {
-        Row() {
-          SymbolGlyph($r('sys.symbol.xmark_circle'))
-            .fontSize(19).fontColor([COLOR_TEXT_SECONDARY]);
-        }
-        .width(34).height(34)
-        .borderRadius(17)
-        .justifyContent(FlexAlign.Center)
-        .stateStyles({
-          normal: this.headerMenuRowNormalStyle,
-          pressed: this.headerMenuRowPressedStyle
-        })
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-          curve: Curve.EaseOut
-        })
-        .onClick((): void => { this.updateSearchQuery(''); })
-        .accessibilityText($r('app.string.clear_search'));
-      }
-    }
-    .width('calc(100% - 24vp)').height(46)
-    .padding({ left: 3, right: 6 })
-    .margin({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: 0.5, color: $r('app.color.divider') })
-    .borderRadius(23)
-    .shadow({ radius: 5, color: '#16000000', offsetX: 0, offsetY: 1 })
-    .alignItems(VerticalAlign.Center)
-    .opacity(this.headerVisible ? 1 : 0)
-    .translate({ y: this.headerVisible ? 0 : -6 })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
-      curve: Curve.EaseOut
-    })
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -5 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }));
-  }
-
   // Suggestion panel above the input bar: group members for a trailing '@',
   // bot commands for a leading '/'.
   private startEdit(messageId: number): void {
@@ -7100,38 +7030,6 @@ struct ChatPage {
   }
 
   @Builder
-  searchBottomBar() {
-    Row() {
-      Text(this.searchResults.length > 0
-        ? searchCounterText(this.searchIdx, this.searchTotal)
-        : (this.searchTotal === 0 && this.searchQuery.trim() !== '' ? '' : $r('app.string.cp_search_placeholder')))
-        .fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
-      Blank().layoutWeight(1);
-      if (this.searchResults.length > 0) {
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_up')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
-        }
-        .width(42).height(42).justifyContent(FlexAlign.Center)
-        .opacity(this.searchIdx + 1 < this.searchTotal ? 1 : 0.4)
-        .onClick(() => { this.searchOlder(); });
-        Row() {
-          // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
-        }
-        .width(42).height(42).justifyContent(FlexAlign.Center)
-        .opacity(this.searchIdx > 0 ? 1 : 0.4)
-        .onClick(() => { this.searchNewer(); });
-      }
-    }
-    .width('100%').height(52 + this.composerBottomGap())
-    .padding({ left: 20, right: 10, bottom: this.composerBottomGap() })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: { top: 0.7 }, color: $r('app.color.divider') });
-  }
-
-  @Builder
   bottomDock() {
     Column() {
       if (this.selecting) {
@@ -7139,7 +7037,15 @@ struct ChatPage {
         // its reserved list inset so messages expand naturally into the space.
         Column().width('100%').height(0);
       } else if (this.searchMode) {
-        this.searchBottomBar();
+        SearchBottomBar({
+          query: this.searchQuery,
+          loadedCount: this.searchResults.length,
+          total: this.searchTotal,
+          currentIndex: this.searchIdx,
+          bottomGap: this.composerBottomGap(),
+          onOlder: (): void => { this.searchOlder(); },
+          onNewer: (): void => { this.searchNewer(); }
+        });
       } else if (this.membershipState !== 'writable') {
         this.membershipBar();
       } else {
@@ -7964,7 +7870,14 @@ struct ChatPage {
               onDelete: (): void => { this.deleteSelected(); }
             });
           } else if (this.searchMode) {
-            this.searchHeader();
+            SearchHeader({
+              query: this.searchQuery,
+              headerVisible: this.headerVisible,
+              topSafe: this.topSafe,
+              onExit: (): void => { this.exitSearch(); },
+              onQueryChange: (v: string): void => { this.updateSearchQuery(v); },
+              onSubmit: (): void => { this.runSearch(0, 0); }
+            });
           } else {
             ChatHeader({
               titleText: this.headerText().titleText,

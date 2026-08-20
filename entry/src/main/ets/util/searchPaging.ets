@@ -52,3 +52,38 @@ export function searchCounterText(currentIndex: number, total: number): string {
   }
   return `${total - currentIndex} / ${total}`;
 }
+
+// 底部那一条左边显示什么。三种情形，返回"哪一类"而不是文案本身——文案里有
+// Resource，把它留在组件侧，这里只做判断，才测得动。
+export const SEARCH_LABEL_COUNTER: string = 'counter';   // 第几条 / 共几条
+export const SEARCH_LABEL_NONE: string = 'none';         // 查过了，没有结果
+export const SEARCH_LABEL_HINT: string = 'hint';         // 还没查，显示提示语
+
+// 注意"查过了没结果"和"还没开始查"要分开：前者显示空白（提示语再挂着会像
+// 没反应过），后者才显示提示语。判据是"用户敲进了非空关键词而总数为 0"。
+export function searchLabelKind(
+  loadedCount: number, total: number, query: string
+): string {
+  if (loadedCount > 0) {
+    return SEARCH_LABEL_COUNTER;
+  }
+  return (total === 0 && query.trim() !== '') ? SEARCH_LABEL_NONE : SEARCH_LABEL_HINT;
+}
+
+// ∧ / ∨ 两个箭头亮不亮。必须和 stepOlder / stepNewer 的判断一致——按钮看着
+// 能点、点下去没反应是最难查的那类 bug，所以单测里用穷举把两者钉在一起。
+//
+// 页面里原来写的是 `searchIdx + 1 < searchTotal`，少了"已加载数为 0 就没有
+// 翻页锚点"这一支：total 大于 0 而一条都还没到货时，那个式子说亮，stepOlder
+// 却只会返回 STAY。眼下不出问题只是因为箭头整体挂在 `results.length > 0` 里、
+// 那种状态下根本没渲染——换句话说，正确性寄存在调用方的一个 if 上。
+// 这里按 stepOlder 的真实条件写全，就不必再依赖那个 if。
+export function canStepOlder(
+  loadedCount: number, currentIndex: number, total: number
+): boolean {
+  return currentIndex + 1 < loadedCount || (loadedCount > 0 && loadedCount < total);
+}
+
+export function canStepNewer(currentIndex: number): boolean {
+  return currentIndex > 0;
+}
