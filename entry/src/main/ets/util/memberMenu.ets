@@ -2,10 +2,13 @@ import { MEMBER_ROLE_ADMIN, MEMBER_ROLE_CREATOR } from './memberRole';
 
 // 菜单项标识。用常量而不是下标，免得菜单顺序一变行为就跟着错位。
 export const MEMBER_ACTION_PROMOTE: string = 'promote';
+export const MEMBER_ACTION_TITLE: string = 'editTitle';
 export const MEMBER_ACTION_RESTRICT: string = 'restrict';
 export const MEMBER_ACTION_BAN: string = 'ban';
 export const MEMBER_ACTION_REMOVE: string = 'remove';
 export const MEMBER_ACTION_DELETE_MESSAGES: string = 'deleteMessages';
+// 单独改头衔。官方 PC 端把它做成菜单里独立的一项，而不是埋进管理员权限面板
+// ——改个称呼是高频小操作，不该每次都进那一大页开关。
 
 // 长按成员时那份菜单该出哪几项。
 //
@@ -23,6 +26,9 @@ export interface MemberMenuOptions {
   showPromote: boolean;
   // 对方已经是管理员时，同一个入口的文案是「编辑管理员权限」。
   promoteIsEdit: boolean;
+  // 「编辑标签」。头衔是 chatMemberStatusAdministrator 的字段，只有管理员
+  // 才有——普通成员给这一项，点进去无从写起。
+  showEditTitle: boolean;
   showRestrict: boolean;
   showBan: boolean;
   showRemove: boolean;
@@ -32,7 +38,7 @@ export interface MemberMenuOptions {
 
 export function noMemberMenu(): MemberMenuOptions {
   return {
-    showPromote: false, promoteIsEdit: false, showRestrict: false,
+    showPromote: false, promoteIsEdit: false, showEditTitle: false, showRestrict: false,
     showBan: false, showRemove: false, showDeleteMessages: false,
     anyVisible: false
   };
@@ -55,6 +61,7 @@ export function memberMenuOptions(
   return {
     showPromote: canPromote,
     promoteIsEdit: isAdmin,
+    showEditTitle: canPromote && isAdmin,
     showRestrict,
     showBan: canRestrict,
     showRemove: canRestrict,
@@ -67,6 +74,7 @@ export function memberMenuOptions(
 // 复用的行会一直挂着旧菜单。
 export function memberMenuSignature(o: MemberMenuOptions): string {
   const bit = (v: boolean): string => v ? '1' : '0';
-  return `${bit(o.showPromote)}${bit(o.promoteIsEdit)}${bit(o.showRestrict)}` +
+  return `${bit(o.showPromote)}${bit(o.promoteIsEdit)}${bit(o.showEditTitle)}` +
+    `${bit(o.showRestrict)}` +
     `${bit(o.showBan)}${bit(o.showRemove)}${bit(o.showDeleteMessages)}`;
 }

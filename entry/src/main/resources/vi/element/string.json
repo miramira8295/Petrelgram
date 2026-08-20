@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "Tất cả tin nhắn của người này trong nhóm sẽ bị xóa."
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "Sửa chức danh"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "Thành viên sẽ thấy chức danh này thay vì \"quản trị viên\""
     }
   ]
 }

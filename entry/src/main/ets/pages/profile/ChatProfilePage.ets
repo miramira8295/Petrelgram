@@ -1,12 +1,13 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { banMember, deleteMessagesFromSender, removeMember } from '../../store/ChatAdminApi';
+import { banMember, deleteMessagesFromSender, removeMember, setMemberTitle} from '../../store/ChatAdminApi';
 import {
   MEMBER_ACTION_BAN, MEMBER_ACTION_DELETE_MESSAGES, MEMBER_ACTION_PROMOTE,
   MEMBER_ACTION_REMOVE, MEMBER_ACTION_RESTRICT, MemberMenuOptions,
-  memberMenuOptions, memberMenuSignature
+  memberMenuOptions, memberMenuSignature, MEMBER_ACTION_TITLE
 } from '../../util/memberMenu';
 import { MemberRow } from './MemberRow';
+import { MemberTitleDialog } from './MemberTitleDialog';
 import { getTdClient } from '../../tdkit/Globals';
 import {
   ChatProfileStore, MemberItem, ProfileContentItem,
@@ -1124,7 +1125,9 @@ struct ChatProfilePage {
     if (this.chatId === 0 || m.userId <= 0) {
       return;
     }
-    if (action === MEMBER_ACTION_PROMOTE) {
+    if (action === MEMBER_ACTION_TITLE) {
+      this.openTitleDialog(m);
+    } else if (action === MEMBER_ACTION_PROMOTE) {
       this.openMemberPanel('pages/profile/MemberPromotePage', m);
     } else if (action === MEMBER_ACTION_RESTRICT) {
       this.openMemberPanel('pages/profile/MemberRestrictPage', m);
@@ -1138,6 +1141,49 @@ struct ChatProfilePage {
       this.confirmMemberAction(str('ga_delete_all'), str('mm_delete_all_confirm'), str('delete'),
         (): Promise<void> => deleteMessagesFromSender(this.chatId, m.userId));
     }
+  }
+
+  // 「编辑标签」：只改头衔，不进权限面板。
+  //
+  // 当前头衔直接用列表里已有的 roleTitle，不再多问服务端一次——成员列表本来
+  // 就是从 chatMember.status 解析出来的，那里的 custom_title 就是这个值。
+  @State private titleTarget: MemberItem | null = null;
+  private titleCtrl: CustomDialogController = new CustomDialogController({
+    builder: MemberTitleDialog({
+      memberName: '',
+      title: '',
+      onConfirm: (next: string): void => { this.applyMemberTitle(next); }
+    }),
+    alignment: DialogAlignment.Center,
+    autoCancel: true
+  });
+
+  private openTitleDialog(m: MemberItem): void {
+    this.titleTarget = m;
+    this.titleCtrl = new CustomDialogController({
+      builder: MemberTitleDialog({
+        memberName: m.name,
+        title: m.roleTitle,
+        onConfirm: (next: string): void => { this.applyMemberTitle(next); }
+      }),
+      alignment: DialogAlignment.Center,
+      autoCancel: true
+    });
+    this.titleCtrl.open();
+  }
+
+  private applyMemberTitle(next: string): void {
+    const target: MemberItem | null = this.titleTarget;
+    if (target === null || this.chatId === 0) {
+      return;
+    }
+    setMemberTitle(this.chatId, target.userId, next).then((): void => {
+      promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
+      this.store?.reloadMembers();
+    }).catch((error: TdError): void => {
+      console.error(`ChatProfilePage.setMemberTitle failed: ${error.message}`);
+      promptAction.showToast({ message: str('ga_failed'), duration: 1600 });
+    });
   }
 
   // 破坏性操作一律二次确认：封禁进黑名单、删消息不可撤销，误触的代价太高。

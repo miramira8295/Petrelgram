@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "Tous les messages de cet utilisateur dans le groupe seront supprimés."
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "Modifier le titre"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "Les membres verront ce titre au lieu de « admin »"
     }
   ]
 }

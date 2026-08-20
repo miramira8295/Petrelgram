@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "이 사용자의 그룹 내 모든 메시지가 삭제됩니다."
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "직함 편집"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "멤버에게 '관리자' 대신 이 직함이 표시됩니다"
     }
   ]
 }

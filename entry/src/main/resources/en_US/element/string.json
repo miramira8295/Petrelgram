@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "All messages from this user in this group will be deleted."
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "Edit custom title"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "Members will see this title instead of \"admin\""
     }
   ]
 }

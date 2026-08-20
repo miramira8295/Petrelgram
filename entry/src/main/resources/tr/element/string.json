@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "Bu kullanıcının gruptaki tüm mesajları silinecek."
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "Unvanı düzenle"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "Üyeler «yönetici» yerine bu unvanı görecek"
     }
   ]
 }

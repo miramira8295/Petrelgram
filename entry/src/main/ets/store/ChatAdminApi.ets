@@ -149,6 +149,23 @@ export async function promoteMember(
 }
 
 // 撤销管理员：退回普通成员，人还在群里。
+// 只改头衔，别的一概不动。
+//
+// TDLib 的 setChatMemberStatus 是**整体覆盖**，没有"只改一项"，所以必须先读
+// 回当前状态、把 rights 原样带回去。少了这一步，改个称呼会把这位管理员的权限
+// 全部重置——这正是旧 setAdmin() 的毛病。
+export async function setMemberTitle(
+  chatId: number, userId: number, title: string
+): Promise<void> {
+  const current: MemberStatusInfo = await getMemberStatus(chatId, userId);
+  if (current.type !== 'chatMemberStatusAdministrator') {
+    // 头衔是管理员状态的字段。对普通成员无从写起，菜单也不会给这一项；
+    // 走到这里说明期间对方身份变了，如实报错比悄悄改成管理员安全。
+    throw new Error('member is not an administrator');
+  }
+  await promoteMember(chatId, userId, title.trim(), current.rights);
+}
+
 export async function demoteMember(chatId: number, userId: number): Promise<void> {
   const status: TdObject = { '@type': 'chatMemberStatusMember' };
   const request: TdRequest = { '@type': 'setChatMemberStatus' };

@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "該用戶在此群組中的所有訊息都會被刪除。"
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "編輯標籤"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "群組成員將看到此頭銜，而不是「管理員」"
     }
   ]
 }

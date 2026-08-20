@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "Semua pesan pengguna ini di grup akan dihapus."
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "Edit gelar"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "Anggota akan melihat gelar ini, bukan \"admin\""
     }
   ]
 }

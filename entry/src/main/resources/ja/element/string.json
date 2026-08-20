@@ -11251,6 +11251,14 @@
     {
       "name": "mm_delete_all_confirm",
       "value": "このユーザーのグループ内の全メッセージが削除されます。"
+    },
+    {
+      "name": "ga_edit_title",
+      "value": "肩書きを編集"
+    },
+    {
+      "name": "ga_title_hint",
+      "value": "メンバーには「管理者」ではなくこの肩書きが表示されます"
     }
   ]
 }

@@ -4,7 +4,8 @@ import { MemberItem } from '../../store/ChatProfileStore';
 import { MEMBER_ROLE_CREATOR, MEMBER_ROLE_NONE } from '../../util/memberRole';
 import {
   MEMBER_ACTION_BAN, MEMBER_ACTION_DELETE_MESSAGES, MEMBER_ACTION_PROMOTE,
-  MEMBER_ACTION_REMOVE, MEMBER_ACTION_RESTRICT, MemberMenuOptions, noMemberMenu
+  MEMBER_ACTION_REMOVE, MEMBER_ACTION_RESTRICT, MEMBER_ACTION_TITLE, MemberMenuOptions,
+  noMemberMenu
 } from '../../util/memberMenu';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -49,6 +50,14 @@ export struct MemberRow {
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person_badge_plus')),
           content: this.options.promoteIsEdit ? str('mm_edit_admin') : str('mm_promote')
         }).onClick((): void => { this.onAction(MEMBER_ACTION_PROMOTE); });
+      }
+      // 「编辑标签」紧跟在提权后面：两者都是管理员相关，而改称呼比调权限
+      // 高频得多，放前面少一次误点。
+      if (this.options.showEditTitle) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
+          content: str('ga_edit_title')
+        }).onClick((): void => { this.onAction(MEMBER_ACTION_TITLE); });
       }
       if (this.options.showRestrict) {
         MenuItem({
