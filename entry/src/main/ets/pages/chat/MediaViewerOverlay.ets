@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { MediaPageWindow, mediaPageWindow } from '../../util/viewerPaging';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
 import { AlbumGroup } from '../../util/collapseAlbums';
@@ -16,6 +17,10 @@ const VIEWER_CHROME_BG: string = '#6e3e3e40';
 const VIEWER_MIN_SCALE: number = 1;
 const VIEWER_MAX_SCALE: number = 4;
 const VIEWER_DOUBLE_TAP_SCALE: number = 2.5;
+// 浏览器一次最多能往前/往后翻多少张。Swiper 用的是 ForEach，所有页都会被
+// 建出来，一个翻了很久的会话里媒体能有好几百条——必须封顶。前后各 15 张
+// （最多 31 页）够一次连续浏览，也不至于把组件树撑爆。
+const VIEWER_PAGE_WINDOW: number = 15;
 
 interface ViewerFit {
   w: number;
@@ -111,11 +116,40 @@ export struct MediaViewerOverlay {
   // 让"滑到边上还能翻下一张"在放大时也成立（此时 Swiper 收不到手势）。
   private edgeOverscroll: number = 0;
   private swiperCtrl: SwiperController = new SwiperController();
+  // 打开浏览器那一刻冻结下来的可翻页媒体 id（见 buildPageIds）。
+  private pageIds: number[] = [];
 
   aboutToAppear(): void {
-    this.pageIdx = this.initIdx;
+    // 下标由 buildPageWindow 一并给出，不用调用方传的 initIdx —— 那是**相册
+    // 内**的下标，而这里的列表是整个会话的媒体，两者口径不同。
+    const win: MediaPageWindow = this.buildPageWindow();
+    this.pageIds = win.ids;
+    this.pageIdx = Math.max(0, win.index);
     this.initialViewerMsgId = this.viewerMsgId;
     this.prefetchNeighbours(this.pageIdx);
+  }
+
+  // 可以翻页的媒体：**整个已加载会话**里的图片和视频，而不只是当前相册。
+  //
+  // 原来单图消息的 Swiper 里只有一页，翻无可翻——双击放大、拖动、拖到边缘
+  // 翻页这几条代码早就有，只是没有下一页可去（issue #49）。相册的情形被这
+  // 一版自然包含：album 成员在 messages 里本来就是相邻的独立条目。
+  //
+  // 只取当前这张前后各 VIEWER_PAGE_WINDOW 张，并且**在打开时冻结**：
+  //   - 冻结是为了不让 messages 的增长（滚动加载历史）中途改变列表长度，
+  //     那会让 Swiper 的下标错位、画面直接跳走；
+  //   - 开窗是为了给 Swiper 的孩子数量封顶。ForEach 会把所有页都建出来，
+  //     一个翻了很久的会话里媒体能有几百条。
+  private buildPageWindow(): MediaPageWindow {
+    const media: number[] = [];
+    for (const m of this.messages) {
+      if (m.contentType === 'photo' || this.isVideoEntry(m)) {
+        media.push(m.id);
+      }
+    }
+    // 开窗与定位的下标边界交给纯函数（util/viewerPaging，有单测）：目标在
+    // 列表头/尾、目标不在列表里、列表比窗口短——这几处最容易改错。
+    return mediaPageWindow(media, this.viewerMsgId, VIEWER_PAGE_WINDOW);
   }
 
   // Leaving the viewer in landscape would strand the chat page sideways.
@@ -399,14 +433,10 @@ export struct MediaViewerOverlay {
     return null;
   }
 
-  // Sibling message ids for swipe/filmstrip navigation — just the current
-  // message when it isn't part of a multi-item album.
+  // 翻页/胶片条用的 id 列表。打开时由 buildPageIds 冻结，之后不再变——
+  // 变了 Swiper 的下标就会错位。
   private siblingIds(): number[] {
-    const g = this.group();
-    if (g !== null && g.memberIds.length > 1) {
-      return g.memberIds;
-    }
-    return this.viewerMsgId !== 0 ? [this.viewerMsgId] : [];
+    return this.pageIds;
   }
 
   private siblingPath(id: number): string {
