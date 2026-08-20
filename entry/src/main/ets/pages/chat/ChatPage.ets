@@ -65,6 +65,8 @@ import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { ComposerSendButton } from './ComposerSendButton';
 import { ScrollFab } from './ScrollFab';
 import { MembershipBar } from './MembershipBar';
+import { BottomDrawerShell } from './BottomDrawerShell';
+import { ReplyKeyboardPanel } from './ReplyKeyboardPanel';
 import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
 } from '../../util/messageLinkAction';
@@ -1495,7 +1497,6 @@ struct ChatPage {
       }
       this.replyKeyboard = kb;
       if (kb === null) {
-        this.replyKbH = 0;
         this.replyKeyboardSendingKey = '';
       }
     });
@@ -4609,7 +4610,6 @@ struct ChatPage {
   private bottomChromeLayoutSeq: number = 0;
   // Measured bot-keyboard height; with the input bar it makes up the bottom
   // chrome the scroll-to-bottom FAB has to clear.
-  @State replyKbH: number = 0;
   // 输入框的真实宽度，composerEditorHeight() 拿它做排版约束。
   @State composerEditorW: number = 0;
   // "Fake" animation: the open/close transition flies an empty white shell;
@@ -6235,25 +6235,6 @@ struct ChatPage {
     this.forwardMessageIds = [];
   }
 
-  // 抽屉外观：表情面板当浮卡时的那身衣服，一字未改地搬过来——上边框 0.7、
-  // 圆角 18、向上的浅阴影。卡片四周留 DRAWER_INSET 的空当，空当里是自己画
-  // 的那份聊天背景。
-  @Styles
-  drawerCard() {
-    // 毛玻璃/沉浸光感走 'card' 档（和输入框胶囊同档）。这里有东西可透——
-    // 抽屉底下铺着自己画的那份聊天背景，模糊的正是它。
-    // 自绘玻璃的两半必须一起上：半透明底 + backdropBlur，不透明底会把模糊
-    // 完全盖住。材质接管时这两者自动让位（overlayGlassFill 交回实心色、
-    // overlayBackdropBlur 归 0）。
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('card'))
-    .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
-    // 四角都圆：卡片四周都有空当，浮在壁纸上。
-    .borderRadius(18)
-    .clip(true)
-    .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
-    .systemMaterial(overlayMaterial('card'))
-  }
 
   @Styles
   headerMenuRowNormalStyle() {
@@ -6306,17 +6287,7 @@ struct ChatPage {
     .scale({ x: 0.92, y: 0.92 })
   }
 
-  @Styles
-  botKeyboardButtonNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
 
-  @Styles
-  botKeyboardButtonPressedStyle() {
-    .opacity(0.72)
-    .scale({ x: 0.96, y: 0.9 })
-  }
 
   private closeChatPage(): void {
     if (this.pageClosing) {
@@ -6401,68 +6372,6 @@ struct ChatPage {
   }
 
   // Bot custom reply keyboard: full-width button rows under the input bar.
-  @Builder
-  replyKeyboardPanel() {
-    Scroll() {
-      Column({ space: 6 }) {
-        ForEach(this.replyKeyboard!.rows, (row: KeyboardBtn[], rowIdx: number) => {
-          Row({ space: 6 }) {
-            ForEach(row, (btn: KeyboardBtn, btnIdx: number) => {
-              Row({ space: 6 }) {
-                if (this.replyKeyboardSendingKey === `${rowIdx}_${btnIdx}_${btn.text}`) {
-                  LoadingProgress()
-                    .width(16).height(16)
-                    .color(btn.style !== '' ? Color.White : COLOR_PRIMARY);
-                }
-                Text(btn.text)
-                  .fontSize(14)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(btn.style !== '' ? Color.White : COLOR_TEXT_PRIMARY)
-                  .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .textAlign(TextAlign.Center);
-                if (btn.type !== '' && btn.type !== KB_TEXT) {
-                  SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-                    .fontSize(12)
-                    .fontColor([btn.style !== '' ? Color.White : COLOR_TEXT_SECONDARY]);
-                }
-              }
-              .layoutWeight(1)
-              .constraintSize({ minHeight: 42 })
-              .padding({ left: 8, right: 8, top: 7, bottom: 7 })
-              .backgroundColor(botButtonBg(btn.style, $r('app.color.surface')))
-              .borderRadius(10)
-              .justifyContent(FlexAlign.Center)
-              .stateStyles({
-                normal: this.botKeyboardButtonNormalStyle,
-                pressed: this.botKeyboardButtonPressedStyle
-              })
-              .animation({
-                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-                curve: Curve.EaseOut
-              })
-              .enabled(this.replyKeyboardSendingKey === '')
-              .onClick(() => {
-                this.onReplyKeyboardTap(btn, `${rowIdx}_${btnIdx}_${btn.text}`);
-              });
-            }, (btn: KeyboardBtn, btnIdx: number) => `kb_${rowIdx}_${btnIdx}_${btn.text}`);
-          }.width('100%');
-        }, (_row: KeyboardBtn[], rowIdx: number) => `kbrow_${rowIdx}`);
-      }
-      .width('100%');
-    }
-    .width('calc(100% - 16vp)')
-    .constraintSize({ maxHeight: this.replyKeyboard!.resize ? 210 : 280 })
-    .scrollBar(BarState.Auto)
-    .padding(8)
-    .margin({ left: 8, right: 8, bottom: this.composerBottomGap() })
-    .backgroundColor($r('app.color.surface_alt'))
-    .borderRadius(16)
-    .shadow({ radius: 6, color: '#16000000', offsetX: 0, offsetY: 2 })
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: 10 }))
-      .animation({ duration: this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190), curve: Curve.EaseOut }))
-    .onAreaChange((_old: Area, area: Area) => { this.replyKbH = area.height as number; });
-  }
 
   // Replaces the composer for public groups/channels the current user hasn't
   // joined yet, and carries the mute toggle for read-only channels.
@@ -6474,62 +6383,66 @@ struct ChatPage {
 
   // 附件抽屉的内容。高度写死而不是自适应：抽屉要顶起输入框和聊天内容，
   // 那个高度得在内容挂上来之前就确定，否则第一帧会先塌一下再弹开。
-  @Builder
-  attachDrawer() {
-    Stack() {
-      Column() {
-        AttachPanel({
-          actions: attachActions(this.isGroup, this.isChannel),
-          onPick: (key: string): void => { this.runAttachAction(key); },
-          effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
-        })
-      }
-      // calc 而不是 width('100%') + margin：后者是"满宽再往外推"，多出来的
-      // 部分被 Stack 裁掉，看着仍然齐边——实测取色，左边缘 60px 全是卡片底色。
-      // 两侧留白。抽屉现在在页面里，空当露出的就是这张壁纸本身——当它还是
-      // 自定义键盘时做不到这一点（另一个图层，背后没有页面背景），才被迫齐边。
-      .width('calc(100% - 16vp)')
-      .height(BOTTOM_DRAWER_HEIGHT)
-      .margin({ bottom: DRAWER_INSET })
-      .drawerCard();
-    }
-    .width('100%')
-    // 键盘区要把系统导航条那一截也算进来，否则卡片下沿被手势条压着。
-    // 用 drawerBottomInset() 而不是整条 bottomSafe：后者是完整的安全区高度，
-    // 而手势条本身只占其中一小条，全留就显得下面空了一大块。
-    .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
-    // **必须裁剪**。chatBackgroundLayer 内部按整屏尺寸绘制（CachedImage 的 box
-    // 是 screenW × screenH），限了高度但不裁的话图会溢出到键盘区外面，把输入框
-    // 整个盖住——实测就是这样，中间还多出一条颜色对不上的壁纸。
-    .clip(true)
-    // 透明：空当里露出的是页面那张壁纸本身。背景层加了
-    // expandSafeArea([SafeAreaType.KEYBOARD]) 之后不再被键盘压缩，一直铺满
-    // 整屏，所以这里透出来的和上面是**同一张图的同一处**，不可能对不齐。
-    .backgroundColor(Color.Transparent)
-    ;
-  }
 
-  // 当前该把哪个抽屉当键盘挂上去。两者互斥，所以这里最多返回一个；
-  // 都没开时返回 null 解绑——**不能返回 undefined**，ArkUI 里 undefined 往往
-  // 是"保持上次的值"，写成 undefined 时面板关掉后再点输入框还会把它弹回来。
-  // 有没有面板要挂。和 bottomDrawer 里的分支条件必须一致，否则会出现
-  // "说有、却渲染不出东西"的空键盘。
-  // 抽屉下沿要让出的高度。整条 bottomSafe 是完整安全区（含厂商给的富余），
-  // 手势条本身只占一小条，全留会在抽屉下面空出一大块。取一半并封顶 12。
-  private drawerBottomInset(): number {
-    return Math.min(12, Math.round(this.bottomSafe / 2));
-  }
 
   private bottomPanelOpen(): boolean {
     return this.attachPanelOpen || (this.showEmojiPanel && this.membershipState === 'writable');
   }
 
   @Builder
+  attachDrawerContent() {
+    AttachPanel({
+      actions: attachActions(this.isGroup, this.isChannel),
+      onPick: (key: string): void => { this.runAttachAction(key); },
+      effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
+    })
+  }
+
+  @Builder
+  emojiDrawerContent() {
+    if (this.panelContentReady) {
+      EmojiPanel({
+        tab: $emojiPanelTab,
+        onPick: (e: string): void => { this.insertEmoji(e); },
+        onPickCustomEmoji: (e: string, ceId: string): void => {
+          if (this.store !== null) {
+            this.atBottom = true;
+            this.store.sendCustomEmoji(e, ceId);
+            this.finishStickerSend('', 0, 0);
+          }
+        },
+        onPickSticker: (s: StickerItem, x: number, y: number): void => {
+          if (this.store !== null) {
+            this.atBottom = true;
+            this.store.sendSticker(s.fileId, s.width, s.height);
+            this.finishStickerSend(s.thumbPath, x, y);
+          }
+        },
+        onPickGif: (g: GifItem): void => {
+          if (this.store !== null) {
+            this.atBottom = true;
+            this.store.sendAnimation(g.fileId, g.width, g.height, g.duration);
+            this.finishStickerSend('', 0, 0);
+          }
+        }
+      });
+    } else if (!this.emojiPanelClosing) {
+      Column({ space: 8 }) {
+        LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
+        Text($r('app.string.cp_opening_panel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      .width('100%').height('100%')
+      .justifyContent(FlexAlign.Center);
+    }
+  }
+
+  // 两个抽屉共用同一身外壳（见 BottomDrawerShell），这里只挑内容。
+  @Builder
   bottomDrawer() {
     if (this.attachPanelOpen) {
-      this.attachDrawer();
+      BottomDrawerShell({ bottomSafe: this.bottomSafe, content: this.attachDrawerContent });
     } else if (this.showEmojiPanel && this.membershipState === 'writable') {
-      this.emojiDrawer();
+      BottomDrawerShell({ bottomSafe: this.bottomSafe, content: this.emojiDrawerContent });
     }
   }
 
@@ -6598,69 +6511,6 @@ struct ChatPage {
   // panelContentReady 那套延迟挂载保留：面板里同时挂着三个 picker（自定义表情
   // 常驻，贴纸/GIF 访问过就常驻），一次性挂/卸实测 ~51ms，和挂载位置无关。
   // 先让壳落地，内容下一拍再进来。
-  @Builder
-  emojiDrawer() {
-    Stack() {
-      Column() {
-            if (this.panelContentReady) {
-              EmojiPanel({
-                tab: $emojiPanelTab,
-                onPick: (e: string): void => { this.insertEmoji(e); },
-                onPickCustomEmoji: (e: string, ceId: string): void => {
-                  if (this.store !== null) {
-                    this.atBottom = true;
-                    this.store.sendCustomEmoji(e, ceId);
-                    this.finishStickerSend('', 0, 0);
-                  }
-                },
-                onPickSticker: (s: StickerItem, x: number, y: number): void => {
-                  if (this.store !== null) {
-                    this.atBottom = true;
-                    this.store.sendSticker(s.fileId, s.width, s.height);
-                    this.finishStickerSend(s.thumbPath, x, y);
-                  }
-                },
-                onPickGif: (g: GifItem): void => {
-                  if (this.store !== null) {
-                    this.atBottom = true;
-                    this.store.sendAnimation(g.fileId, g.width, g.height, g.duration);
-                    this.finishStickerSend('', 0, 0);
-                  }
-                }
-              });
-            } else if (!this.emojiPanelClosing) {
-              Column({ space: 8 }) {
-                LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
-                Text($r('app.string.cp_opening_panel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-              }
-              .width('100%').height('100%')
-              .justifyContent(FlexAlign.Center);
-            }
-    }
-      // calc 而不是 width('100%') + margin：后者是"满宽再往外推"，多出来的
-      // 部分被 Stack 裁掉，看着仍然齐边——实测取色，左边缘 60px 全是卡片底色。
-      // 两侧留白。抽屉现在在页面里，空当露出的就是这张壁纸本身——当它还是
-      // 自定义键盘时做不到这一点（另一个图层，背后没有页面背景），才被迫齐边。
-      .width('calc(100% - 16vp)')
-      .height(BOTTOM_DRAWER_HEIGHT)
-      .margin({ bottom: DRAWER_INSET })
-      .drawerCard();
-    }
-    .width('100%')
-    // 键盘区要把系统导航条那一截也算进来，否则卡片下沿被手势条压着。
-    // 用 drawerBottomInset() 而不是整条 bottomSafe：后者是完整的安全区高度，
-    // 而手势条本身只占其中一小条，全留就显得下面空了一大块。
-    .height(BOTTOM_DRAWER_HEIGHT + this.drawerBottomInset())
-    // **必须裁剪**。chatBackgroundLayer 内部按整屏尺寸绘制（CachedImage 的 box
-    // 是 screenW × screenH），限了高度但不裁的话图会溢出到键盘区外面，把输入框
-    // 整个盖住——实测就是这样，中间还多出一条颜色对不上的壁纸。
-    .clip(true)
-    // 透明：空当里露出的是页面那张壁纸本身。背景层加了
-    // expandSafeArea([SafeAreaType.KEYBOARD]) 之后不再被键盘压缩，一直铺满
-    // 整屏，所以这里透出来的和上面是**同一张图的同一处**，不可能对不齐。
-    .backgroundColor(Color.Transparent)
-    ;
-  }
 
   @Builder
   inputBar() {
@@ -6931,7 +6781,16 @@ struct ChatPage {
         Column() {
           this.inputBar();
           if (this.replyKbVisible()) {
-            this.replyKeyboardPanel();
+            ReplyKeyboardPanel({
+            rows: this.replyKeyboard!.rows,
+            sendingKey: this.replyKeyboardSendingKey,
+            resize: this.replyKeyboard!.resize,
+            bottomGap: this.composerBottomGap(),
+            enterDuration: this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190),
+            onTap: (btn: KeyboardBtn, key: string): void => {
+              this.onReplyKeyboardTap(btn, key);
+            }
+          });
           }
           // 抽屉是 dock 的一部分，不是自定义键盘。这样它和聊天内容共享同一个
           // 页面背景——壁纸就在它后面，不需要再画副本去对齐（那条路走了很久，
