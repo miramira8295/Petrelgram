@@ -89,6 +89,7 @@ import translationModeTest from './TranslationMode.test';
 import messageSelectionTest from './MessageSelection.test';
 import timelineStateTest from './TimelineState.test';
 import emptyHistoryTest from './EmptyHistory.test';
+import replySnippetTest from './ReplySnippet.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -182,4 +183,5 @@ export default function testsuite() {
   messageSelectionTest();
   timelineStateTest();
   emptyHistoryTest();
+  replySnippetTest();
 }

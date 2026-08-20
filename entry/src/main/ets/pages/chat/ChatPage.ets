@@ -61,6 +61,8 @@ import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
 import { MessageListStateCard, TimelineStatePill } from './MessageListState';
+import { EditStrip, ReplyStrip } from './ComposerStrip';
+import { replySnippetOf } from '../../util/replySnippet';
 import {
   TL_NEWER_ERROR, TL_NONE, TL_OLDER_ERROR, TL_SYNC_ERROR,
   timelineStateMode, timelineStateText
@@ -5316,28 +5318,10 @@ struct ChatPage {
   }
 
   private replySnippet(m: MessageEntry): string {
-    if (m.text.trim() !== '') {
-      return m.text;
-    }
-    if (m.placeholderLabel.trim() !== '') {
-      return m.placeholderLabel;
-    }
-    if (m.contentType === 'sticker') {
-      return str('sticker_tab');
-    }
-    if (m.contentType === 'photo') {
-      return str('storage_photo');
-    }
-    if (m.contentType === 'video') {
-      return str('storage_video');
-    }
-    if (m.contentType === 'paidMedia') {
-      return m.paidMediaLocked ? str('paid_media') : str('cp_unlocked_media');
-    }
-    if (m.contentType === 'voice') {
-      return str('ns_voice_message');
-    }
-    return str('cp_media_message');
+    return replySnippetOf({
+      text: m.text, placeholderLabel: m.placeholderLabel,
+      contentType: m.contentType, paidMediaLocked: m.paidMediaLocked
+    });
   }
 
   // Long-press menu: reply. Populates the reply preview above the input bar;
@@ -6266,20 +6250,6 @@ struct ChatPage {
   }
 
   @Styles
-  suggestionRowNormalStyle() {
-    .backgroundColor(Color.Transparent)
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  suggestionRowPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
-    .opacity(0.76)
-    .scale({ x: 0.985, y: 0.96 })
-  }
-
-  @Styles
   botKeyboardButtonNormalStyle() {
     .opacity(1)
     .scale({ x: 1, y: 1 })
@@ -6361,67 +6331,6 @@ struct ChatPage {
         duration: 1800
       });
     }));
-  }
-
-  // Edit strip: pencil accent + original excerpt + ✕. Sits inside the same
-  // rounded card as the input row (no own background/border/divider) so the
-  // composer reads as one continuous surface.
-  @Builder
-  editPreview() {
-    Row({ space: 10 }) {
-      Row().width(3).height(34).borderRadius(2).backgroundColor(COLOR_PRIMARY);
-      Column({ space: 1 }) {
-        Text(this.editingKind === 'caption' ? $r('app.string.mb_edit_caption') : $r('app.string.cp_edit_message'))
-          .fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-        Text(this.editingPreview).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      Row() {
-        SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
-      }
-      .width(32).height(32).borderRadius(16)
-      .justifyContent(FlexAlign.Center)
-      .onClick(() => { this.cancelEdit(); });
-    }
-    .width('100%').height(44).padding({ left: 12, right: 8 });
-  }
-
-  // Reply preview strip (Telegram style): accent bar, "回复 <name>", quoted
-  // excerpt, and an ✕ to cancel. Sits inside the same rounded card as the
-  // input row (no own background/border/divider) so the composer reads as
-  // one continuous surface, with the accent bar spanning both text lines.
-  @Builder
-  replyPreview() {
-    Row({ space: 10 }) {
-      Row().width(3).height(34).borderRadius(2).backgroundColor(COLOR_PRIMARY);
-      Column({ space: 1 }) {
-        Text(`${str('mb_reply')} ${this.replyToName}`).fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(this.replyToText).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1)
-      .onClick(() => { this.onReplyTap(this.replyToId); });
-      Row() {
-        SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
-      }
-      .width(32).height(32).borderRadius(16)
-      .justifyContent(FlexAlign.Center)
-      .stateStyles({
-        normal: this.suggestionRowNormalStyle,
-        pressed: this.suggestionRowPressedStyle
-      })
-      .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110), curve: Curve.EaseOut })
-        .onClick(() => { this.clearReply(); });
-    }
-    .width('100%').padding({ left: 16, right: 16, top: 7, bottom: 7 })
-    .alignItems(VerticalAlign.Center)
-    .transition(
-      TransitionEffect.translate({ y: 12 })
-        .combine(TransitionEffect.OPACITY)
-        .animation({ duration: this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, 180), curve: Curve.EaseOut })
-    );
   }
 
   private replyKbVisible(): boolean {
@@ -6801,9 +6710,19 @@ struct ChatPage {
       }
       Column() {
         if (this.editingId !== 0) {
-          this.editPreview();
+          EditStrip({
+            editingKind: this.editingKind,
+            preview: this.editingPreview,
+            onCancel: (): void => { this.cancelEdit(); }
+          });
         } else if (this.replyToId !== 0) {
-          this.replyPreview();
+          ReplyStrip({
+            name: this.replyToName,
+            snippet: this.replyToText,
+            enterDuration: this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, 180),
+            onTapQuote: (): void => { this.onReplyTap(this.replyToId); },
+            onCancel: (): void => { this.clearReply(); }
+          });
         }
         Row({ space: 6 }) {
         if (this.isRecording) {
