@@ -157,6 +157,9 @@ import { AttachPanel } from './AttachPanel';
 import { InlineResultsBar, StickerSuggestion, StickerSuggestionBar } from './ComposerStrips';
 import { copyPlainText } from '../../util/clipboard';
 import { isRealClientJoinNotice } from '../../util/joinNotice';
+import {
+  ANCHOR_UNREAD, InitialAnchor, anchorLatchesBottom, initialAnchorOf
+} from '../../util/initialAnchor';
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 
@@ -1286,23 +1289,16 @@ struct ChatPage {
         this.didInitialScroll = true;
         this.lastMaxId = maxId;
         const fu: number = this.store !== null ? this.store.getFirstUnreadId() : 0;
-        const gidx: number = fu > 0 ? groupIndexOf(groups, fu) : -1;
-        this.firstUnreadId = fu > 0 && gidx >= 0 ? groups[gidx].head.id : 0;
-        if (gidx >= 0) {
-          // Landing mid-history at the unread boundary: atBottom defaults to
-          // true, and the bottom-glue branch below would otherwise drag the
-          // view to the tail (chain-loading every newer page) before the
-          // first scroll event corrects it.
+        // 落点判定在 util/initialAnchor（6 条测），两个分支各自的理由写在那里。
+        const anchor: InitialAnchor = initialAnchorOf(
+          fu, fu > 0 ? groupIndexOf(groups, fu) : -1,
+          (index: number): number => groups[index].head.id);
+        this.firstUnreadId = anchor.dividerId;
+        if (anchor.kind === ANCHOR_UNREAD) {
+          // 两个标志必须一起动，各自挡一个已经发生过的问题，见 util 里的说明。
           this.atBottom = false;
-          // With only a few unread, ScrollAlign.START can't lift the boundary to
-          // the top (too little content below), so it lands near the bottom and
-          // the last group becomes visible — onScrollIndex then flips atBottom
-          // back to true, and the very next in-place notify (thumbnails/reply
-          // quotes filling in) would glue us to the tail, skipping past the
-          // unread divider. Latch here so no auto-scroll overrides the boundary
-          // until the user actually touches the list.
-          this.stayAtUnread = true;
-          this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
+          this.stayAtUnread = anchorLatchesBottom(anchor);
+          this.scroller.scrollToIndex(anchor.index, false, ScrollAlign.START);
         } else {
           this.glueBottom('L1220');
         }
