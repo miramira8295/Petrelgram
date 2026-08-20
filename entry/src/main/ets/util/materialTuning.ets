@@ -58,9 +58,14 @@ export function fallbackBlurRadius(offset: number): number {
 // ── 光感等级 ──────────────────────────────────────────────────────────
 //
 // 官方那三档（EXQUISITE/GENTLE/SMOOTH）是 UI Design Kit 给 HDS 导航/页签用的
-// systemMaterialEffect，本应用一个 HDS 组件都没有，设不了；ArkUI 的
-// ImmersiveOptions 里也没有"强度"参数——强度由设备算力档和**系统设置**里的
-// 沉浸光感强弱决定，应用写不了。
+// systemMaterialEffect，只作用在 HDS 组件的标题栏/页签栏上，管不到本模块负责
+// 的这些自绘面（菜单容器、dock、分组栏、卡片）；ArkUI 的 ImmersiveOptions 里
+// 也没有"强度"参数——强度由设备算力档和**系统设置**里的沉浸光感强弱决定，
+// 应用写不了。
+//
+// 注：设置页从 issue #44 起用了 HdsNavigation，那一处的标题栏理论上可以设
+// TitleBarStyleOptions.systemMaterialEffect。但那是 HDS 自己那一块的事，
+// 和这里的四档是两套口径，别混。
 //
 // 所以这里按 ArkUI 真正能调的两个字段来分档：lightEffect（触点流光）和
 // interactive（按压形变）。官方注明这两个"对所有算力档都生效"，不会被低端
