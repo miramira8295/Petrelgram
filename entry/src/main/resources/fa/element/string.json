@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "تنظیمات گفتگو"
+      "value": "ظاهر"
     },
     {
       "name": "settings_chat_sub",
-      "value": "اندازه متن، گوشه‌ها، حالت شب و انیمیشن‌ها"
+      "value": "اندازه متن، گوشه‌ها، حالت تیره، متریال و انیمیشن"
     },
     {
       "name": "settings_accent",

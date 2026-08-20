@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Ajustes de chat"
+      "value": "Apariencia"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Tamaño de letra, esquinas redondeadas, modo nocturno y animaciones"
+      "value": "Tamaño de texto, esquinas, modo oscuro, material y animaciones"
     },
     {
       "name": "settings_accent",

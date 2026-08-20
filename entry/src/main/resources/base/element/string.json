@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "聊天设置"
+      "value": "外观设置"
     },
     {
       "name": "settings_chat_sub",
-      "value": "字号、圆角、夜间模式与动画效果"
+      "value": "字号、圆角、夜间模式、材质与动效"
     },
     {
       "name": "settings_accent",

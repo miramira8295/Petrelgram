@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Chat settings"
+      "value": "Appearance"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Text size, corners, dark mode and animation"
+      "value": "Text size, corners, dark mode, material and motion"
     },
     {
       "name": "settings_accent",

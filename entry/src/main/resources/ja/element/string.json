@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "チャット設定"
+      "value": "外観"
     },
     {
       "name": "settings_chat_sub",
-      "value": "文字サイズ、角丸、ダークモード、アニメーション効果"
+      "value": "文字サイズ、角丸、ダークモード、素材とアニメーション"
     },
     {
       "name": "settings_accent",

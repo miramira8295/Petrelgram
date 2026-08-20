@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Cài đặt trò chuyện"
+      "value": "Giao diện"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Cỡ chữ, bo góc, chế độ ban đêm và hiệu ứng"
+      "value": "Cỡ chữ, bo góc, chế độ tối, vật liệu và chuyển động"
     },
     {
       "name": "settings_accent",

@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Impostazioni chat"
+      "value": "Aspetto"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Dimensione testo, angoli arrotondati, modalità notte ed effetti animati"
+      "value": "Dimensione testo, angoli, modalità scura, materiale e animazioni"
     },
     {
       "name": "settings_accent",

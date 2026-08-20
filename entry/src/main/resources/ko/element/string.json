@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "채팅 설정"
+      "value": "화면 설정"
     },
     {
       "name": "settings_chat_sub",
-      "value": "글자 크기, 모서리, 야간 모드, 애니메이션 효과"
+      "value": "글자 크기, 모서리, 다크 모드, 재질 및 애니메이션"
     },
     {
       "name": "settings_accent",

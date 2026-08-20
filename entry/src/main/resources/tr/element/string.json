@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Sohbet Ayarları"
+      "value": "Görünüm"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Yazı boyutu, köşe yarıçapı, gece modu ve animasyonlar"
+      "value": "Yazı boyutu, köşeler, koyu mod, malzeme ve animasyon"
     },
     {
       "name": "settings_accent",

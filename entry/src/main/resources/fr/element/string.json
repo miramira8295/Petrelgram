@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Paramètres de discussion"
+      "value": "Apparence"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Taille du texte, arrondi, mode nuit et animations"
+      "value": "Taille du texte, coins, mode sombre, matériau et animations"
     },
     {
       "name": "settings_accent",

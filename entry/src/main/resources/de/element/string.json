@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Chat-Einstellungen"
+      "value": "Erscheinungsbild"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Schriftgröße, Ecken, Nachtmodus und Animationen"
+      "value": "Schriftgröße, Ecken, Dunkelmodus, Material und Animation"
     },
     {
       "name": "settings_accent",

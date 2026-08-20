@@ -1838,11 +1838,11 @@
     },
     {
       "name": "settings_chat",
-      "value": "Pengaturan Obrolan"
+      "value": "Tampilan"
     },
     {
       "name": "settings_chat_sub",
-      "value": "Ukuran teks, sudut, mode malam, dan animasi"
+      "value": "Ukuran teks, sudut, mode gelap, material, dan animasi"
     },
     {
       "name": "settings_accent",
