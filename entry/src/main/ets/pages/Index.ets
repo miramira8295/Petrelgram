@@ -14,6 +14,11 @@ import { handleIncomingLink } from '../util/deepLink';
 import { COLOR_TEXT_PRIMARY } from '../util/theme';
 import { refreshNetworkState } from '../services/NetworkStateService';
 import { navigateToChat } from '../util/chatNav';
+import { getTdClient } from '../tdkit/Globals';
+import { TdObject } from '../tdkit/TdTypes';
+
+// 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
+const DEEP_LINK_CONNECT_WAIT_MS: number = 8000;
 
 @Entry
 @Preview
@@ -30,12 +35,33 @@ struct Index {
   // 点击本地通知进入的目标会话（EntryAbility 写入，登录就绪后路由）。
   @StorageLink('pendingNotifyChatId') @Watch('onNotifyChat') pendingNotifyChatId: number = 0;
   private offAuth: (() => void) | null = null;
+  // 深链要等的是**连接**就绪，不是登录就绪。见 consumeDeepLink 的说明。
+  private offConn: (() => void) | null = null;
+  private connReady: boolean = false;
+  private deepLinkTimer: number = -1;
 
   aboutToAppear(): void {
     this.bindAuthService();
+    this.offConn = getTdClient().onUpdate('updateConnectionState', (u: TdObject): void => {
+      const st: TdObject | undefined = u['state'] as TdObject | undefined;
+      const name: string = st !== undefined ? ((st['@type'] as string | undefined) ?? '') : '';
+      // Updating 也算连上了：那时已经能发请求，只是还在补历史。
+      this.connReady = name === 'connectionStateReady' || name === 'connectionStateUpdating';
+      if (this.connReady) {
+        this.consumeDeepLink();
+      }
+    });
   }
 
   aboutToDisappear(): void {
+    if (this.offConn !== null) {
+      this.offConn();
+      this.offConn = null;
+    }
+    if (this.deepLinkTimer !== -1) {
+      clearTimeout(this.deepLinkTimer);
+      this.deepLinkTimer = -1;
+    }
     if (this.offAuth !== null) {
       this.offAuth();
       this.offAuth = null;
@@ -82,11 +108,33 @@ struct Index {
     navigateToChat(params);
   }
 
-  // Route the pending link only once signed in; otherwise leave it queued for
-  // the next stage change. Clear before routing so it's handled exactly once.
+  // 路由待处理的深链。条件是**登录就绪 + 连接就绪**，两个都要。
+  //
+  // 只等 AuthStage.Ready 是不够的：那对应 TDLib 的 authorizationStateReady，
+  // 意思是"你已登录"——它从本地库读出登录态就立刻发出来，比真正连上服务器早
+  // 得多，走代理时差得更远。而 t.me/<用户名> 这类链接的解析（searchPublicChat）
+  // 必须走一次实时往返，连接没建好就会失败，最后弹一句"无法识别该链接"。
+  // 用户看到的现象正是：同一个链接应用内点能跳，从浏览器冷启动进来就说不认识。
+  //
+  // 兜底超时：真的离线时也不能把链接一直压着不处理，到点照常放行，让它走正常
+  // 的失败路径给出提示。
   private consumeDeepLink(): void {
     if (this.stage !== AuthStage.Ready || this.pendingDeepLink === '') {
       return;
+    }
+    if (!this.connReady) {
+      if (this.deepLinkTimer === -1) {
+        this.deepLinkTimer = setTimeout((): void => {
+          this.deepLinkTimer = -1;
+          this.connReady = true; // 等够了就按"能发请求"处理，失败自有提示
+          this.consumeDeepLink();
+        }, DEEP_LINK_CONNECT_WAIT_MS);
+      }
+      return;
+    }
+    if (this.deepLinkTimer !== -1) {
+      clearTimeout(this.deepLinkTimer);
+      this.deepLinkTimer = -1;
     }
     const uri = this.pendingDeepLink;
     this.pendingDeepLink = '';
