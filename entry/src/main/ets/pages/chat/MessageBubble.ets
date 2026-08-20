@@ -1065,12 +1065,12 @@ export struct MessageBubble {
   }
 
   @Builder
-  richRuns(runs: RichRun[], maxWidth: number, reserveTail: boolean) {
+  richRuns(runs: RichRun[], maxWidth: number, isLastSegment: boolean) {
     Text() {
       ForEach(runs, (r: RichRun) => {
         this.richInlineRun(r);
       }, (r: RichRun, i: number) => `run_${i}_${r.offset}_${r.text}`);
-      if (reserveTail) {
+      if (this.timeReserveInText() && isLastSegment) {
         // fontSize 14 (not 11): when this reserve wraps onto its own line, the
         // taller line leaves a visible gap between the text and the timestamp.
         Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
@@ -1084,10 +1084,19 @@ export struct MessageBubble {
 
   // Render TDLib formatted text: inline bold/link runs, pre/code blocks and
   // blockquotes as gray boxes. maxWidth is the caller's available content
-  // width (narrower inside nested cards like the link preview). reserveTail
-  // pads the final text line for the inline timestamp overlay.
+  // width (narrower inside nested cards like the link preview).
+  //
+  // 时间戳的尾部占位**不作为参数传进来**，而是在这里读 this.timeReserveInText()。
+  //
+  // 带多个参数的 @Builder，参数变化不会刷新它内部的 UI（官方《自定义构建函数》
+  // 写明：按引用传递只在单参数时生效，多参数不支持刷新）。而这个占位恰恰是会
+  // 翻转的：翻译开始时它移到状态行、翻译撤销时又该回到正文。作为参数传的话，
+  // 翻转那一下正文不会重画，时间戳就直接压在最后几个字上（issue #83：群内自动
+  // 翻译遇到"这句不用翻"时复现）。
+  //
+  // 规则：会变的值从 this 读，参数里只留稳定的东西（如 isLast）。
   @Builder
-  richContent(text: string, entities: TdObject[], maxWidth: number, reserveTail: boolean) {
+  richContent(text: string, entities: TdObject[], maxWidth: number) {
     Column() {
       ForEach(parseFormattedText(text, entities), (seg: RichSegment, segIdx: number) => {
         if (seg.kind === 'pre') {
@@ -1119,7 +1128,7 @@ export struct MessageBubble {
             .margin({ bottom: 5 });
             Text() {
               Span(seg.text);
-              if (reserveTail && seg.isLast) {
+              if (this.timeReserveInText() && seg.isLast) {
                 Span(this.timeReserve()).fontColor(Color.Transparent);
               }
             }
@@ -1142,7 +1151,7 @@ export struct MessageBubble {
               ForEach(seg.runs, (r: RichRun) => {
                 this.richInlineRun(r);
               }, (r: RichRun, i: number) => `qrun_${i}_${r.offset}_${r.text}`);
-              if (reserveTail && seg.isLast) {
+              if (this.timeReserveInText() && seg.isLast) {
                 Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
               }
             }
@@ -1170,7 +1179,7 @@ export struct MessageBubble {
           .padding({ left: 9, right: 8, top: 7, bottom: 7 }).margin({ top: 4, bottom: 2 })
           .animation({ duration: this.effectDuration(180), curve: Curve.EaseOut });
         } else {
-          this.richRuns(seg.runs, maxWidth, reserveTail && seg.isLast);
+          this.richRuns(seg.runs, maxWidth, seg.isLast);
         }
       }, (seg: RichSegment, i: number) => `seg_${i}_${seg.kind}`);
     }
@@ -2041,8 +2050,7 @@ export struct MessageBubble {
       if (this.albumCaption !== '') {
         // Rich caption: links/@mentions/#hashtags stay tappable in albums too.
         Column() {
-          this.richContent(this.albumCaption, this.albumCaptionEntities, this.inlineMaxW(),
-            this.timeReserveInText());
+          this.richContent(this.albumCaption, this.albumCaptionEntities, this.inlineMaxW());
         }.margin({ top: 6 });
       }
     } else if (this.msg.contentType === 'richMessage') {
@@ -2067,8 +2075,7 @@ export struct MessageBubble {
         .fontSize(this.msgTextSize)
         .lineHeight(this.msgTextSize * 1.34);
       } else {
-        this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
-          this.timeReserveInText());
+        this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
       }
       if (this.hasLinkPreview()) {
         this.linkPreviewCard();
@@ -2227,8 +2234,7 @@ export struct MessageBubble {
       // Media caption shown below the media, within the same bubble.
       if (this.msg.text !== '') {
         Column() {
-          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
-            this.timeReserveInText());
+          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
           // 配文也要能翻译。translationCandidates 一直把带配文的媒体收进去，
           // 译文也存下来了，只是原来 translationBlock() 只挂在 text 分支上，
           // 结果"请求发了、译文有了、没地方显示"。
@@ -2336,8 +2342,7 @@ export struct MessageBubble {
       });
       if (this.msg.text !== '') {
         Column() {
-          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
-            this.timeReserveInText());
+          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
           // 见上：配文的译文原来无处可显示。
           this.translationBlock();
         }.margin({ top: 5 });
@@ -2358,8 +2363,7 @@ export struct MessageBubble {
       });
       if (this.msg.text !== '') {
         Column() {
-          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW(),
-            this.timeReserveInText());
+          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
           // 见上：配文的译文原来无处可显示。
           this.translationBlock();
         }.margin({ top: 5 });
