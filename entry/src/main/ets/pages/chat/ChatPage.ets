@@ -161,6 +161,9 @@ import {
   ANCHOR_UNREAD, InitialAnchor, anchorLatchesBottom, initialAnchorOf
 } from '../../util/initialAnchor';
 import { isAtLiveTail, newestVisibleMessageId } from '../../util/readMarking';
+import {
+  MediaWindow, VisibleRange, mediaWindowRange, visibleRangeOrFallback
+} from '../../util/visibleWindow';
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 
@@ -5556,12 +5559,10 @@ struct ChatPage {
     }
     // 首帧之前还没有滚动事件，curStartIdx/curEndIdx 是 -1：用首屏兜底
     // （聊天默认停在底部，所以取末尾一屏），滑动事件到了会立刻纠正。
-    const hasViewport: boolean = this.curStartIdx >= 0 && this.curEndIdx >= this.curStartIdx;
-    const start: number = hasViewport ? this.curStartIdx
-      : Math.max(0, this.groups.length - LIST_CACHED_COUNT - 1);
-    const end: number = hasViewport ? this.curEndIdx : this.groups.length - 1;
-    this.driveTranslations(start, end);
-    this.syncMediaWindow(start, end);
+    const range: VisibleRange = visibleRangeOrFallback(
+      this.curStartIdx, this.curEndIdx, this.groups.length, LIST_CACHED_COUNT);
+    this.driveTranslations(range.start, range.end);
+    this.syncMediaWindow(range.start, range.end);
     // 同一个道理：数据一变（新消息到达、翻页、被查看器等场景清空候选表后
     // 恢复）就补一次播放位判定，不指望用户正好在这一刻滚动。
     this.armPlaySlotSettle();
@@ -5571,19 +5572,21 @@ struct ChatPage {
   // 因为一行之差反复取消又重下。
   private syncMediaWindow(startIdx: number, endIdx: number): void {
     const store = this.store;
-    if (store === null || this.groups.length === 0) {
+    if (store === null) {
       return;
     }
-    const from: number = Math.max(0, startIdx - 3);
-    const to: number = Math.min(this.groups.length - 1, endIdx + 3);
-    if (from > to) {
-      return;
+    // 外扩与夹取在 util/visibleWindow（10 条测）：上界取末行的最后一个成员，
+    // 相册一整行多条，取行首会把更新的那几条漏在窗外。
+    const w: MediaWindow = mediaWindowRange(
+      startIdx, endIdx, this.groups.length,
+      (index: number): number => this.groups[index].head.id,
+      (index: number): number => {
+        const members: number[] = this.groups[index].memberIds;
+        return members[members.length - 1];
+      });
+    if (w.valid) {
+      store.setMediaWindow(w.fromId, w.toId);
     }
-    const toGroup: AlbumGroup = this.groups[to];
-    store.setMediaWindow(
-      this.groups[from].head.id,
-      toGroup.memberIds[toGroup.memberIds.length - 1]
-    );
   }
 
   // 菜单里那一项永远是"把当前状态反过来"，但落到哪个开关上取决于总开关：
