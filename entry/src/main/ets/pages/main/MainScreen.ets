@@ -22,7 +22,7 @@ import { BG_PATTERN_DEFAULT, patternStrengthKey } from '../../store/AppSettings'
 import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/ChatBackgroundStore';
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
-import { overlayBackdropBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
 const DOCK_BG: ResourceColor = $r('app.color.dock_glass');
@@ -44,6 +44,9 @@ const DOCK_SWITCH_DURATION: number = 240;
 // Tabs — only dock taps switch tabs.
 @Component
 export struct MainScreen {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;

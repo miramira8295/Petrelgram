@@ -1,11 +1,16 @@
 import { generateBarcode, scanCore } from '@kit.ScanKit';
 import { image } from '@kit.ImageKit';
 import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 
 // Shared QR dialog: renders a t.me link as a scannable code (ScanKit).
 @CustomDialog
 export struct QrDialog {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   controller?: CustomDialogController;
   link: string = '';
   title: string = '';

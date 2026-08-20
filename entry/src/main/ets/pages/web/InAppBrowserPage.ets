@@ -10,7 +10,7 @@ import { openTelegramLink } from '../../util/openTelegramLink';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
-import { overlayMaterial } from '../../util/overlayMaterial';
+import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 
 interface BrowserParams {
   url?: string;
@@ -27,6 +27,9 @@ function hostOf(url: string): string {
 @Entry
 @Component
 struct InAppBrowserPage {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @State pageTitle: string = '';

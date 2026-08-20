@@ -7,7 +7,9 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { str } from '../../util/strings';
 import { monthDay } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -739,6 +741,9 @@ struct AccountEditPage {
 // Simple username editor dialog: @-prefixed input + 取消/保存.
 @CustomDialog
 struct UsernameDialog {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   controller?: CustomDialogController;
   value: string = '';
   onSave: (v: string) => void = (): void => {};

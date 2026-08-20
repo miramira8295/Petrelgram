@@ -49,7 +49,7 @@ import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
-import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
@@ -134,6 +134,9 @@ struct LiveSenderAvatar {
 
 @Component
 export struct MessageBubble {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   // @Watch fires whenever ChatPage hands down a new msg object (edits, status
   // changes, "replace media", etc.) — not once per frame — so the transition
   // check inside onMsgPropChanged is cheap and only fires onMediaGone on an

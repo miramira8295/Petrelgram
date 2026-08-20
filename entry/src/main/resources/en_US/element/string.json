@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "Live now, %1$s, tap to join"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "Overlay material thickness"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "Frosted glass on bars, composer, menus and dialogs"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "Ultra thin"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "Thin"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "Standard"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "Thick"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "Ultra thick"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "Immersive light level"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "Glow and press deformation on touch"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "Exquisite"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "Gentle"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "Smooth"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "Adaptive"
     }
   ]
 }

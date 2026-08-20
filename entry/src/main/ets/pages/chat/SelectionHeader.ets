@@ -2,7 +2,7 @@ import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS } from './ChatHeader';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { str } from '../../util/strings';
 
@@ -18,6 +18,9 @@ const DESTRUCTIVE: ResourceColor = '#FF3B30';
 
 @Component
 export struct SelectionHeader {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop selectedCount: number;
   @Prop topSafe: number;
 

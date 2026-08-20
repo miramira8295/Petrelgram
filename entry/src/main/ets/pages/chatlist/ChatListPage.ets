@@ -9,7 +9,9 @@ import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBackdropBlur, overlayMaterial, overlayGlassFill, plainBackdropBlur } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayMaterial, overlayGlassFill, plainBackdropBlur, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 
 interface TabSpec {
@@ -37,6 +39,9 @@ const FOLDER_SWITCH_DURATION: number = 250;
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct ChatListPage {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @State folders: FolderInfo[] = [];
   @State unreadMap: Map<string, number> = new Map();

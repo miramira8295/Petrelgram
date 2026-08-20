@@ -9,11 +9,14 @@ import {
 import { LoginHero } from './LoginHero';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 
 @Preview
 @Component
 export struct PhoneNumberPage {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   // 窗口是全屏沉浸的（EntryAbility.setWindowLayoutFullScreen），页面自己让出
   // 状态栏高度，否则标题会压在时钟和信号图标底下。
   @StorageProp('topSafeHeight') topSafe: number = 0;

@@ -7,7 +7,7 @@ import { promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
-import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToChat } from '../../util/chatNav';
 
@@ -29,6 +29,9 @@ const SKELETON_ROWS: number[] = [0, 1, 2, 3, 4];
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct ContactsPage {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;

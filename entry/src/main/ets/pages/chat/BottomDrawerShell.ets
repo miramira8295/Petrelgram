@@ -1,6 +1,6 @@
 import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 
 // 底部抽屉（附件 / 表情贴纸）共用的那身外壳。
@@ -19,6 +19,9 @@ export function drawerBottomInset(bottomSafe: number): number {
 
 @Component
 export struct BottomDrawerShell {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop bottomSafe: number;
   @BuilderParam content: () => void;
 

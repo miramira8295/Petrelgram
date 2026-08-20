@@ -15,7 +15,9 @@ import { promptAction, LengthMetrics } from '@kit.ArkUI';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { probeEvent, probeHit } from '../../util/panelProbe';
-import { overlayMaterial, overlayGlassFill, overlayBackdropBlur } from '../../util/overlayMaterial';
+import {
+  overlayMaterial, overlayGlassFill, overlayBackdropBlur, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 
 export interface StickerItem {
   fileId: number;   // the sticker's own file (what gets sent)
@@ -105,6 +107,9 @@ const SET_LIMIT: number = 20;
 // server's trending packs, like the official client.
 @Component
 export struct StickerPicker {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   // 正在被按住的格子（setIdx_pos）。空串表示没有。
   @State private pressedCell: string = '';

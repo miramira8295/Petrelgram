@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "Ao vivo, %1$s, toque para entrar"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "Espessura do material de sobreposição"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "Vidro fosco em barras, campo de texto, menus e diálogos"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "Ultrafino"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "Fino"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "Padrão"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "Espesso"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "Ultraespesso"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "Nível de luz imersiva"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "Brilho e deformação ao pressionar"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "Refinado"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "Suave"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "Fluido"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "Adaptável"
     }
   ]
 }

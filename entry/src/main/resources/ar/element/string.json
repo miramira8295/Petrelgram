@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "بث مباشر، %1$s، اضغط للانضمام"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "سماكة مادة الطبقة"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "الزجاج المصنفر للأشرطة وحقل الكتابة والقوائم والنوافذ"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "رقيق جدًا"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "رقيق"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "قياسي"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "سميك"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "سميك جدًا"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "مستوى الإضاءة الغامرة"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "التوهج والتشوه عند الضغط"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "فاخر"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "هادئ"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "سلس"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "تكيفي"
     }
   ]
 }

@@ -1,4 +1,5 @@
 import localUnitTest from './LocalUnit.test';
+import materialTuningTest from './MaterialTuning.test';
 import markdownBlocksTest from './MarkdownBlocks.test';
 import tdClientTest from './TdClient.test';
 import authServiceTest from './AuthService.test';
@@ -103,6 +104,7 @@ import pinnedJumpTest from './PinnedJump.test';
 
 export default function testsuite() {
   localUnitTest();
+  materialTuningTest();
   tdClientTest();
   authServiceTest();
   formatTimeTest();

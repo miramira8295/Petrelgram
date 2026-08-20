@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "En directo, %1$s, toca para unirte"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "Grosor del material superpuesto"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "Cristal esmerilado en barras, campo de texto, menús y diálogos"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "Ultrafino"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "Fino"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "Estándar"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "Grueso"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "Ultragrueso"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "Nivel de luz inmersiva"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "Brillo y deformación al pulsar"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "Refinado"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "Suave"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "Fluido"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "Adaptativo"
     }
   ]
 }

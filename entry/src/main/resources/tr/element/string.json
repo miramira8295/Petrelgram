@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "Canlı yayında, %1$s, katılmak için dokunun"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "Katman malzeme kalınlığı"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "Çubuklar, yazı alanı, menüler ve iletişim kutularındaki buzlu cam"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "Çok ince"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "İnce"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "Standart"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "Kalın"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "Çok kalın"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "Sürükleyici ışık seviyesi"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "Dokunuşta parıltı ve baskı deformasyonu"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "Zarif"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "Yumuşak"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "Akıcı"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "Uyarlanabilir"
     }
   ]
 }

@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "Прямий ефір, %1$s, натисніть, щоб приєднатися"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "Товщина матеріалу оверлея"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "Матове скло панелей, поля вводу, меню й діалогів"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "Ультратонкий"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "Тонкий"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "Стандартний"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "Товстий"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "Ультратовстий"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "Рівень світлових ефектів"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "Сяйво та деформація під час натискання"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "Вишуканий"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "М'який"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "Плавний"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "Адаптивний"
     }
   ]
 }

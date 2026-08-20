@@ -13,7 +13,9 @@ import {
   GLASS_GAP, GLASS_PAGE_PAD, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
   GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
 } from './ProfileGlass';
-import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 import { AvatarView } from '../chatlist/AvatarView';
 import { QrDialog } from '../common/QrDialog';
 import { AvatarViewer } from '../common/AvatarViewer';
@@ -61,6 +63,9 @@ const PROFILE_TABS: ProfileTabItem[] = [
 @Entry
 @Component
 struct ChatProfilePage {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;

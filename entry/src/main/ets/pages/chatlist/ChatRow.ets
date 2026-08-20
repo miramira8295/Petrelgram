@@ -17,7 +17,7 @@ import { formatTime } from '../../util/formatTime';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_MUTED_BADGE, ROW_PAD_H, ROW_PAD_V } from '../../util/theme';
 import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
-import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
@@ -29,6 +29,9 @@ const MENU_DISMISS_MS: number = 150;
 @Reusable
 @Component
 export struct ChatRow {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop chat: ChatEntry;
   // The list this row is being shown in — pinning is per-list, and the menu
   // offers 取消归档 instead of 归档 inside the archive.

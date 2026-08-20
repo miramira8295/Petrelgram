@@ -4,7 +4,7 @@ import { WebmStickerView } from './WebmStickerView';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
-  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { str } from '../../util/strings';
 
@@ -22,6 +22,9 @@ export const CHAT_HEADER_RADIUS: number = 22;
 
 @Component
 export struct ChatHeader {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop titleText: string;
   @Prop subtitleText: string;
   // 'ready' | 'loading' | 'error'——error 时副标题变红，点击是重试而不是进资料页。

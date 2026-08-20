@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "लाइव, %1$s, शामिल होने के लिए टैप करें"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "ओवरले मटीरियल की मोटाई"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "बार, इनपुट, मेन्यू और डायलॉग का फ़्रॉस्टेड ग्लास"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "अति पतला"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "पतला"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "मानक"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "मोटा"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "अति मोटा"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "इमर्सिव लाइट स्तर"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "स्पर्श पर चमक और दबाव विरूपण"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "उत्कृष्ट"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "कोमल"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "सहज"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "अनुकूली"
     }
   ]
 }

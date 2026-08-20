@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "ライブ配信中、%1$s、タップして参加"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "オーバーレイ素材の厚さ"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "バー、入力欄、メニュー、ダイアログのすりガラス"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "極薄"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "薄い"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "標準"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "厚い"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "極厚"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "没入型ライトのレベル"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "タッチ時の光沢と押し込み変形"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "精緻"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "やわらか"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "なめらか"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "自動"
     }
   ]
 }

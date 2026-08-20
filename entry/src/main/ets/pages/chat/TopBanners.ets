@@ -2,7 +2,9 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import {
   KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 import { pinnedActiveSeg, pinnedSegIndices, pinnedShownIndex } from '../../util/pinnedSegments';
 import { plural, str } from '../../util/strings';
 
@@ -18,6 +20,9 @@ const LIVE_ACCENT_PRESSED: string = '#E93652';
 
 @Component
 export struct TopBanners {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   // 置顶条
   @Prop pinnedPreview: string;
   @Prop pinnedCount: number;

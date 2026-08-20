@@ -4,8 +4,15 @@ import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_IN_APP_BROWSER,
   TEXT_SIZE_MIN, TEXT_SIZE_MAX, RADIUS_MIN, RADIUS_MAX,
   NIGHT_SYSTEM, NIGHT_DARK, NIGHT_LIGHT,
-  powerAnimationDuration, setNumber, setBoolean, setNightMode
+  KEY_MATERIAL_THICKNESS, KEY_MATERIAL_LIGHT,
+  powerAnimationDuration, setNumber, setBoolean, setString, setNightMode
 } from '../../store/AppSettings';
+import {
+  LIGHT_ADAPTIVE, LIGHT_DEFAULT, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH,
+  THICKNESS_DEFAULT, THICKNESS_REGULAR, THICKNESS_THICK, THICKNESS_THIN,
+  THICKNESS_ULTRA_THICK, THICKNESS_ULTRA_THIN
+} from '../../util/materialTuning';
+import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overlayMaterial';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT
 } from '../../util/theme';
@@ -19,6 +26,34 @@ interface NightOption {
   label: string;
   value: string;
 }
+
+interface MaterialThicknessOption {
+  label: string;
+  value: number;
+}
+
+interface MaterialLightOption {
+  label: string;
+  value: string;
+}
+
+// 从薄到厚，和 ImmersiveStyle 的枚举次序一致。存的是相对偏移，"标准" 是 0，
+// 也就是出厂手感——见 materialTuning 里为什么不存绝对档位。
+const THICKNESS_OPTIONS: MaterialThicknessOption[] = [
+  { label: str('material_thickness_ultra_thin'), value: THICKNESS_ULTRA_THIN },
+  { label: str('material_thickness_thin'), value: THICKNESS_THIN },
+  { label: str('material_thickness_regular'), value: THICKNESS_REGULAR },
+  { label: str('material_thickness_thick'), value: THICKNESS_THICK },
+  { label: str('material_thickness_ultra_thick'), value: THICKNESS_ULTRA_THICK }
+];
+
+// 从省到满，四档单调包含（单测钉着）。默认自适应。
+const LIGHT_OPTIONS: MaterialLightOption[] = [
+  { label: str('material_light_smooth'), value: LIGHT_SMOOTH },
+  { label: str('material_light_gentle'), value: LIGHT_GENTLE },
+  { label: str('material_light_adaptive'), value: LIGHT_ADAPTIVE },
+  { label: str('material_light_exquisite'), value: LIGHT_EXQUISITE }
+];
 
 const NIGHT_OPTIONS: NightOption[] = [
   { label: str('night_system'), value: NIGHT_SYSTEM },
@@ -43,6 +78,8 @@ struct ChatSettingsPage {
   @StorageLink(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
   @StorageLink(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
   @StorageLink(KEY_IN_APP_BROWSER) inAppBrowser: boolean = true;
+  @StorageLink(KEY_MATERIAL_THICKNESS) materialThickness: number = THICKNESS_DEFAULT;
+  @StorageLink(KEY_MATERIAL_LIGHT) materialLight: string = LIGHT_DEFAULT;
   @State leavingPage: boolean = false;
   private leaveTimer: number = -1;
 
@@ -255,6 +292,78 @@ struct ChatSettingsPage {
     });
   }
 
+  // 浮层材质厚度。降级路径（低于 API 26）上它驱动自绘玻璃的高斯模糊半径，
+  // 所以这一档在任何设备上都有效果，永远显示。
+  @Builder
+  materialThicknessCard() {
+    Column() {
+      this.cardTitle($r('app.string.chat_settings_material_thickness'));
+      Text($r('app.string.chat_settings_material_thickness_sub'))
+        .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+        .width('100%').padding({ left: 16, right: 16, bottom: 8 });
+      ForEach(THICKNESS_OPTIONS, (opt: MaterialThicknessOption, idx: number) => {
+        if (idx > 0) {
+          Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        }
+        Row() {
+          Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+          if (this.materialThickness === opt.value) {
+            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+          }
+        }
+        .width('100%').height(48).padding({ left: 16, right: 16 })
+        .stateStyles({
+          normal: this.optionNormalStyle,
+          pressed: this.optionPressedStyle
+        })
+        .accessibilityText(str('a11y_option_state', opt.label,
+          this.materialThickness === opt.value ? str('a11y_selected') : ''))
+        .onClick((): void => {
+          if (this.materialThickness !== opt.value) {
+            setNumber(KEY_MATERIAL_THICKNESS, opt.value);
+            bumpMaterialEpoch();
+          }
+        });
+      }, (opt: MaterialThicknessOption) => `t${opt.value}`);
+    }.width('100%');
+  }
+
+  // 光感等级。lightEffect / interactive 是 ImmersiveOptions 的字段，没有材质
+  // 就没有它们——低于 API 26 时整张卡片不显示。挂个调了没反应的开关比没有更糟。
+  @Builder
+  materialLightCard() {
+    Column() {
+      this.cardTitle($r('app.string.chat_settings_material_light'));
+      Text($r('app.string.chat_settings_material_light_sub'))
+        .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+        .width('100%').padding({ left: 16, right: 16, bottom: 8 });
+      ForEach(LIGHT_OPTIONS, (opt: MaterialLightOption, idx: number) => {
+        if (idx > 0) {
+          Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        }
+        Row() {
+          Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+          if (this.materialLight === opt.value) {
+            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+          }
+        }
+        .width('100%').height(48).padding({ left: 16, right: 16 })
+        .stateStyles({
+          normal: this.optionNormalStyle,
+          pressed: this.optionPressedStyle
+        })
+        .accessibilityText(str('a11y_option_state', opt.label,
+          this.materialLight === opt.value ? str('a11y_selected') : ''))
+        .onClick((): void => {
+          if (this.materialLight !== opt.value) {
+            setString(KEY_MATERIAL_LIGHT, opt.value);
+            bumpMaterialEpoch();
+          }
+        });
+      }, (opt: MaterialLightOption) => `l${opt.value}`);
+    }.width('100%');
+  }
+
   @Builder
   nightModeCard() {
     Column() {
@@ -320,6 +429,16 @@ struct ChatSettingsPage {
           Column() {
             this.nightModeCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+
+          Column() {
+            this.materialThicknessCard();
+          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+
+          if (immersiveMaterialAvailable()) {
+            Column() {
+              this.materialLightCard();
+            }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+          }
 
           Column() {
             this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);

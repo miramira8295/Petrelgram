@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "پخش زنده، %1$s، برای پیوستن ضربه بزنید"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "ضخامت متریال لایه رویی"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "شیشه مات نوارها، کادر نوشتن، منوها و پنجره‌ها"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "خیلی نازک"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "نازک"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "استاندارد"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "ضخیم"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "خیلی ضخیم"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "سطح نور فراگیر"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "درخشش و تغییر شکل هنگام لمس"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "ظریف"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "ملایم"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "روان"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "تطبیقی"
     }
   ]
 }

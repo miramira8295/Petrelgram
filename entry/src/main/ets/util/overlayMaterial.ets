@@ -25,13 +25,51 @@
 
 import { uiMaterial } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import {
+  LIGHT_DEFAULT, THICKNESS_DEFAULT, fallbackBlurRadius, interactiveOn,
+  lightEffectOn, normalizeLightLevel, normalizeThickness, shiftedStyleIndex
+} from './materialTuning';
+import { KEY_MATERIAL_LIGHT, KEY_MATERIAL_THICKNESS, KEY_POWER_ACTIVE } from '../store/AppSettings';
 
 // The API version that introduced ImmersiveMaterial. Below this the material
 // does not exist and every surface stays exactly as it shipped.
 const IMMERSIVE_MATERIAL_API: number = 26;
 
-// The blur radius the self-drawn glass bars used before the material existed.
-const BAR_BACKDROP_BLUR: number = 22;
+// 用户的两个档位。这是个 util 而不是组件，订阅不了 @StorageProp，所以每次
+// 取值都现读 AppStorage——这些 getter 只在组件 build 时跑，不在每帧路径上。
+//
+// 读不到（设置还没落地、或者键不存在）就用出厂值，由 materialTuning 那边的
+// normalize 兜底，不让脏值把档位推到边上。
+function thicknessOffset(): number {
+  return normalizeThickness(AppStorage.get<number>(KEY_MATERIAL_THICKNESS) ?? THICKNESS_DEFAULT);
+}
+
+function lightLevel(): string {
+  return normalizeLightLevel(AppStorage.get<string>(KEY_MATERIAL_LIGHT) ?? LIGHT_DEFAULT);
+}
+
+function powerSavingNow(): boolean {
+  return AppStorage.get<boolean>(KEY_POWER_ACTIVE) ?? false;
+}
+
+// ImmersiveStyle 的枚举值就是 0..4，但别写 `as ImmersiveStyle` 硬转——查表换，
+// 顺序改了也不会悄悄错位。
+const STYLE_BY_INDEX: uiMaterial.ImmersiveStyle[] = [
+  uiMaterial.ImmersiveStyle.ULTRA_THIN,
+  uiMaterial.ImmersiveStyle.THIN,
+  uiMaterial.ImmersiveStyle.REGULAR,
+  uiMaterial.ImmersiveStyle.THICK,
+  uiMaterial.ImmersiveStyle.ULTRA_THICK
+];
+
+// 降级路径上框架容器吃的 BlurStyle，同样按 0..4 排。
+const BLUR_STYLE_BY_INDEX: BlurStyle[] = [
+  BlurStyle.COMPONENT_ULTRA_THIN,
+  BlurStyle.COMPONENT_THIN,
+  BlurStyle.COMPONENT_REGULAR,
+  BlurStyle.COMPONENT_THICK,
+  BlurStyle.COMPONENT_ULTRA_THICK
+];
 
 // Which overlay a surface is. The name describes the surface's role, because
 // the thickness and the fallback both follow from the role.
@@ -66,20 +104,41 @@ export function materialWinsAt(apiVersion: number): boolean {
 // rather than per frame, and these getters sit on the render path.
 const materialAvailable: boolean = materialWinsAt(deviceInfo.sdkApiVersion);
 
+// 材质档位变更纪元。overlayMaterial 的这些 getter 是普通函数，util 订阅不了
+// AppStorage，所以"改了设置要重绘"只能由调用方订阅——和语言切换的
+// LANGUAGE_EPOCH 是同一套办法，见 util/appLanguage.ets 的说明。
+//
+// 用一个纪元而不是让每个组件分别订阅两个设置键：调用方只关心"材质变了"，
+// 不关心变的是厚度还是光感，订阅一个数就够。
+export const MATERIAL_EPOCH: string = 'materialEpoch';
+
+export function bumpMaterialEpoch(): void {
+  AppStorage.setOrCreate(MATERIAL_EPOCH, (AppStorage.get<number>(MATERIAL_EPOCH) ?? 0) + 1);
+}
+
 export function immersiveMaterialAvailable(): boolean {
   return materialAvailable;
 }
 
-// 按压形变。只给 'control'：整块面板跟着手指变形会很怪，背景板不该动。
-function usesInteraction(surface: OverlaySurface): boolean {
+// 按压形变的**基准**：只给 'control'——整块面板跟着手指变形会很怪，背景板
+// 不该动。用户的光感档位在这之上决定给不给，见 materialTuning。
+function interactionBase(surface: OverlaySurface): boolean {
   return surface === 'control';
+}
+
+function usesInteraction(surface: OverlaySurface): boolean {
+  return interactiveOn(lightLevel(), interactionBase(surface), powerSavingNow());
 }
 
 // 触点光晕。比形变宽一档：面板自己被摸到时也该有光感反馈，那正是"沉浸光感"
 // 里"光感"的部分，而且它不改变任何几何，叠在大面积背景上没有副作用。
 // 菜单和弹窗不给：它们是一次性出现、点一下就走的东西，摸上去发光没有意义。
-function usesLightEffect(surface: OverlaySurface): boolean {
+function lightEffectBase(surface: OverlaySurface): boolean {
   return surface === 'control' || surface === 'card' || surface === 'bar';
+}
+
+function usesLightEffect(surface: OverlaySurface): boolean {
+  return lightEffectOn(lightLevel(), lightEffectBase(surface), powerSavingNow());
 }
 
 // 材质接管按压时，调用方手写的按压动画必须让位——两层形变叠加是官方点名的坑。
@@ -88,33 +147,39 @@ export function pressAnimationWins(surface: OverlaySurface): boolean {
   return !(materialAvailable && usesInteraction(surface));
 }
 
-function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
+// 每个面调好的**基准**厚度档，用下标表示（0=超薄 … 4=超厚）。用户的厚度偏移
+// 在这之上整体平移，相对次序不变——见 materialTuning 的说明。
+function baseStyleIndex(surface: OverlaySurface): number {
   switch (surface) {
     // 菜单：REGULAR 而不是 THICK。THICK 把背后压得太实，真机上几乎读不出
     // 玻璃感，看着就是一块浅色板；REGULAR 仍然把内容推远、文字照样清楚，
     // 但透出的层次让它像一块玻璃。同一档同时用于消息长按菜单和顶栏菜单，
     // 两者本来就该长得一样（见 ActionMenuRow 的注释）。
     case 'menu':
-      return uiMaterial.ImmersiveStyle.REGULAR;
+      return 2;
     // A modal covers what it interrupts; nothing behind it should read.
     case 'dialog':
-      return uiMaterial.ImmersiveStyle.ULTRA_THICK;
+      return 4;
     // 输入框胶囊和底部抽屉。THIN 而不是 REGULAR：REGULAR 糊得太狠，壁纸的
     // 花纹被抹平成一片纯渐变，抽屉看着像贴上去的另一块东西（真机截图为证）。
     // 薄一档能透出花纹，才读得出"同一张壁纸上蒙了层玻璃"。官方对浮动工具栏
     // 的建议也是 THIN。
     case 'card':
-      return uiMaterial.ImmersiveStyle.THIN;
+      return 1;
     // 控件比它所在的面板更靠前，用薄一档让它从面板里"浮"出来。官方建议
     // 浮动工具栏用 THIN。
     case 'control':
-      return uiMaterial.ImmersiveStyle.THIN;
+      return 1;
     // Bars sit over live content and have to stay see-through enough that a
     // list scrolling under them still reads as continuous.
     case 'bar':
     default:
-      return uiMaterial.ImmersiveStyle.ULTRA_THIN;
+      return 0;
   }
+}
+
+function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
+  return STYLE_BY_INDEX[shiftedStyleIndex(baseStyleIndex(surface), thicknessOffset())];
 }
 
 // The material draws its own shadow, and it is tuned to go with the material,
@@ -131,7 +196,13 @@ function usesOwnShadow(surface: OverlaySurface): boolean {
 // a colour computation per resource-set colour in the subtree — so it is scoped
 // to the one surface thin enough for it to apply and whose contrast is at risk.
 function usesColorInvert(surface: OverlaySurface): boolean {
-  return surface === 'bar';
+  if (surface !== 'bar') {
+    return false;
+  }
+  // 官方注明自动反色只在材质足够薄（THIN / ULTRA_THIN）时才可能生效，而它
+  // 是按子树里每个资源色逐个算反色的。用户把厚度调上去之后反色不再生效，
+  // 那笔计算就纯属白付——档位超过 THIN 就别开。
+  return shiftedStyleIndex(baseStyleIndex(surface), thicknessOffset()) <= 1;
 }
 
 // 低于 API 26 时这些面自己画毛玻璃。沉浸光感要 API 26，但毛玻璃本身要得低
@@ -161,8 +232,9 @@ export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
   if (materialAvailable || !frameworkContainer(surface)) {
     return undefined;
   }
-  // 菜单要把背后压实，模态更甚；两者都取最厚的一档。
-  return BlurStyle.COMPONENT_ULTRA_THICK;
+  // 菜单要把背后压实，模态更甚；两者的基准都是最厚的一档，再吃用户的厚度
+  // 偏移——调薄时这条降级路径也得跟着薄，否则设置在 26 以下只对自绘面生效。
+  return BLUR_STYLE_BY_INDEX[shiftedStyleIndex(4, thicknessOffset())];
 }
 
 // The backdrop-blur radius a self-drawn glass surface uses before the material.
@@ -170,11 +242,11 @@ export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
 // 明确要高斯模糊、不要材质的面用这个。和 overlayBackdropBlur 不同：那个在
 // 材质可用时返回 0（把观感让给材质），这个无条件给出模糊半径。
 export function plainBackdropBlur(): number {
-  return BAR_BACKDROP_BLUR;
+  return fallbackBlurRadius(thicknessOffset());
 }
 
 export function overlayBackdropBlur(surface: OverlaySurface): number {
-  return materialAvailable ? 0 : BAR_BACKDROP_BLUR;
+  return materialAvailable ? 0 : fallbackBlurRadius(thicknessOffset());
 }
 
 // 自绘面的底色。两种情况都不能是原来那个不透明实色，但理由不同：
@@ -193,7 +265,15 @@ export function overlayGlassFill(_surface: OverlaySurface, _solid: ResourceColor
 // Materials are built once per surface and reused. Rebuilding one per frame
 // re-triggers the material computation the guidance warns about, and none of
 // these parameters change at runtime.
-const cache: Map<OverlaySurface, uiMaterial.Material> = new Map<OverlaySurface, uiMaterial.Material>();
+//
+// 缓存键必须带上用户档位，不能只按面缓存：只按面缓存时，第一次建好的那个
+// 材质会一直被返回，用户调厚度或光感全都不生效。带上档位则新档位自然落到
+// 新条目，旧条目留着——档位调回去时还能命中，不必失效重建。
+const cache: Map<string, uiMaterial.Material> = new Map<string, uiMaterial.Material>();
+
+function cacheKey(surface: OverlaySurface): string {
+  return `${surface}_${thicknessOffset()}_${lightLevel()}_${powerSavingNow() ? 'p' : 'n'}`;
+}
 
 function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
   return new uiMaterial.ImmersiveMaterial({
@@ -213,11 +293,12 @@ export function overlayMaterial(surface: OverlaySurface): uiMaterial.Material | 
   if (!materialAvailable) {
     return undefined;
   }
-  const hit = cache.get(surface);
+  const key: string = cacheKey(surface);
+  const hit = cache.get(key);
   if (hit !== undefined) {
     return hit;
   }
   const built = buildMaterial(surface);
-  cache.set(surface, built);
+  cache.set(key, built);
   return built;
 }

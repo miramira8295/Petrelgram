@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "라이브 방송 중, %1$s, 눌러서 참여"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "오버레이 재질 두께"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "바, 입력창, 메뉴, 대화상자의 유리 질감"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "초박형"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "얇게"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "표준"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "두껍게"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "초두껍게"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "몰입형 광택 수준"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "터치 시 광택과 눌림 변형"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "정교하게"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "부드럽게"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "부드러움"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "자동"
     }
   ]
 }

@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "正在直播，%1$s，點擊進入"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "浮層材質厚度"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "頂欄、輸入框、選單和彈窗的毛玻璃厚度"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "超薄"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "薄"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "標準"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "厚"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "超厚"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "沉浸光感等級"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "觸摸時的流光與按壓形變"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "精緻"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "柔和"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "平滑"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "自適應"
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { preferences } from '@kit.ArkData';
+import { LIGHT_DEFAULT, THICKNESS_DEFAULT } from '../util/materialTuning';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
 import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
@@ -68,6 +69,15 @@ export const KEY_AUTOSAVE_GROUP: string = 'autosaveGroup';
 export const KEY_AUTOSAVE_CHANNEL: string = 'autosaveChannel';
 // 缓存上限（字节）。0 = 不限，见 CacheLimit.ets。
 export const KEY_CACHE_LIMIT: string = 'cacheLimit';
+
+// 浮层材质厚度与光感等级——沉浸光感的两个用户档位。取值语义、四档单调性
+// 与降级路径的映射都在 util/materialTuning.ets，那边有单测钉着。
+//
+// 厚度存的是**相对偏移**（-2..2，0 = 出厂手感），不是绝对档位：每个面的厚度
+// 是分别调过的，绝对档位会把弹窗和顶栏压成同一厚度。
+export const KEY_MATERIAL_THICKNESS: string = 'materialThickness';
+// 光感等级只在 API 26 的材质路径上有意义，低于 26 时设置页不显示这一行。
+export const KEY_MATERIAL_LIGHT: string = 'materialLight';
 // 聊天背景模糊半径（vp）。用户可调，见 chatBackgroundRaster.ets 的
 // backgroundBlurRadius —— pattern 与"需要模糊"的照片壁纸都用这一个值。
 export const KEY_BG_BLUR: string = 'bgBlur';
@@ -324,6 +334,10 @@ export async function initSettings(context: common.Context): Promise<void> {
       AppStorage.setOrCreate(key, await s.get(key, false) as boolean);
     }
     AppStorage.setOrCreate(KEY_CACHE_LIMIT, await s.get(KEY_CACHE_LIMIT, CACHE_LIMIT_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS,
+      await s.get(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_MATERIAL_LIGHT,
+      await s.get(KEY_MATERIAL_LIGHT, LIGHT_DEFAULT) as string);
     AppStorage.setOrCreate(KEY_BG_BLUR, await s.get(KEY_BG_BLUR, BG_BLUR_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_BG_PATTERN, await s.get(KEY_BG_PATTERN, BG_PATTERN_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_BG_PATTERN_DARK,
@@ -350,6 +364,8 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_REDUCE_ANIM, false);
     AppStorage.setOrCreate(KEY_SEND_BY_ENTER, false);
     AppStorage.setOrCreate(KEY_IN_APP_BROWSER, true);
+    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT);
+    AppStorage.setOrCreate(KEY_MATERIAL_LIGHT, LIGHT_DEFAULT);
     AppStorage.setOrCreate(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT);
     for (const key of POWER_BOOLEAN_DEFAULTS) {
       AppStorage.setOrCreate(key, true);

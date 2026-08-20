@@ -149,7 +149,9 @@ import {
 } from '../../util/readingReturn';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
-import { overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
@@ -224,6 +226,9 @@ const COMPOSER_MAX_LINES: number = 4;
 @Preview
 @Component
 struct ChatPage {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   // @Watch, because the row key below embeds this value: bumping it renames
   // every row, and the data source has to be told or LazyForEach keeps a key
   // table that no longer matches anything.

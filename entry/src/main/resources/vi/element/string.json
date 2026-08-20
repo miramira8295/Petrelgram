@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "Đang phát trực tiếp, %1$s, chạm để tham gia"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "Độ dày vật liệu lớp phủ"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "Kính mờ trên thanh, ô soạn, menu và hộp thoại"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "Siêu mỏng"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "Mỏng"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "Tiêu chuẩn"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "Dày"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "Siêu dày"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "Mức hiệu ứng ánh sáng"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "Ánh sáng và biến dạng khi nhấn"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "Tinh tế"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "Nhẹ nhàng"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "Mượt"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "Thích ứng"
     }
   ]
 }

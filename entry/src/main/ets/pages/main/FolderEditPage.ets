@@ -19,7 +19,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 
 const CARD_RADIUS: number = 14;
 const PICK_INCLUDE: string = 'include';
@@ -33,6 +33,9 @@ export interface FolderEditParams {
 @Entry
 @Component
 struct FolderEditPage {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;

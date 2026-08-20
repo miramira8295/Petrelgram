@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "กำลังถ่ายทอดสด %1$s แตะเพื่อเข้าร่วม"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "ความหนาของวัสดุโอเวอร์เลย์"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "กระจกฝ้าบนแถบ ช่องพิมพ์ เมนู และกล่องโต้ตอบ"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "บางพิเศษ"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "บาง"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "มาตรฐาน"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "หนา"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "หนาพิเศษ"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "ระดับแสงอิมเมอร์ซีฟ"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "แสงเรืองและการยุบตัวเมื่อกด"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "ประณีต"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "นุ่มนวล"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "ลื่นไหล"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "ปรับอัตโนมัติ"
     }
   ]
 }

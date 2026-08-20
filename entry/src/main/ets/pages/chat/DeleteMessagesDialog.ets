@@ -1,12 +1,17 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
-import { overlayBackdropBlur, overlayGlassFill, overlayMaterial } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 
 // 删除消息的确认弹窗。用 CustomDialog 而不是 promptAction.showDialog：后者
 // 只能排按钮，挂不了复选框，而"是否同时为对方删除"是一个开关而非第三个按钮
 // —— 做成三按钮时用户得在两个红色危险项之间辨认，容易点错。
 @CustomDialog
 export struct DeleteMessagesDialog {
+  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
+  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   controller?: CustomDialogController;
   // 复选框文案里的对方名字；群聊传空，显示"为所有人删除"。
   peerName: string = '';

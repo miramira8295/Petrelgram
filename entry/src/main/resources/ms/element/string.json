@@ -11047,6 +11047,58 @@
     {
       "name": "cp_live_a11y",
       "value": "Sedang siaran langsung, %1$s, ketik untuk sertai"
+    },
+    {
+      "name": "chat_settings_material_thickness",
+      "value": "Ketebalan bahan tindanan"
+    },
+    {
+      "name": "chat_settings_material_thickness_sub",
+      "value": "Kaca kabur pada bar, ruang tulis, menu dan dialog"
+    },
+    {
+      "name": "material_thickness_ultra_thin",
+      "value": "Sangat nipis"
+    },
+    {
+      "name": "material_thickness_thin",
+      "value": "Nipis"
+    },
+    {
+      "name": "material_thickness_regular",
+      "value": "Standard"
+    },
+    {
+      "name": "material_thickness_thick",
+      "value": "Tebal"
+    },
+    {
+      "name": "material_thickness_ultra_thick",
+      "value": "Sangat tebal"
+    },
+    {
+      "name": "chat_settings_material_light",
+      "value": "Tahap cahaya imersif"
+    },
+    {
+      "name": "chat_settings_material_light_sub",
+      "value": "Cahaya dan ubah bentuk semasa ditekan"
+    },
+    {
+      "name": "material_light_exquisite",
+      "value": "Halus"
+    },
+    {
+      "name": "material_light_gentle",
+      "value": "Lembut"
+    },
+    {
+      "name": "material_light_smooth",
+      "value": "Lancar"
+    },
+    {
+      "name": "material_light_adaptive",
+      "value": "Adaptif"
     }
   ]
 }
