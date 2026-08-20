@@ -2957,19 +2957,29 @@ export struct MessageBubble {
         // Inline timestamp: overlaid at the content's bottom-right, sharing the
         // last text line (which reserves invisible tail space for it).
         Stack({ alignContent: Alignment.BottomEnd }) {
+          // minWidth 挂在**正文 Column 上**，不是挂在 Stack 上。
+          //
+          // 挂在 Stack 上时，Stack 的 alignContent 作用在每一个孩子身上、不只是
+          // 时间戳：标签比正文宽而把 Stack 撑开之后，BottomEnd 会把正文这个
+          // Column 一起推到右边，正好压在时间戳上——正文靠右、和时间叠字。
+          //
+          // 挂在 Column 上则是 Column 自己变宽，而它的 alignItems(Start) 让正文
+          // 留在左边；Stack 的宽度仍由这个最宽的孩子决定，BottomEnd 摆的就只剩
+          // 时间戳，落点还是气泡真正的右下角。
+          //
+          // 注意别用「给时间戳套一层 width('100%') 的 Row」那种写法：百分比宽度
+          // 的孩子会让 Stack 直接取到 maxWidth，每条气泡都被撑成整屏宽。
           Column() {
             this.content();
             if (this.msg.reactions.length > 0) {
               this.reactionsRow();
             }
           }
-          .alignItems(HorizontalAlign.Start);
+          .alignItems(HorizontalAlign.Start)
+          .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
           this.timeOverlay();
         }
-        .constraintSize({
-          minWidth: this.measuredTimeLayerWidth(),
-          maxWidth: this.inlineMaxW()
-        })
+        .constraintSize({ maxWidth: this.inlineMaxW() })
         if (this.isChannel && this.msg.commentCount > 0) {
           Column() {
             this.commentsRow();
