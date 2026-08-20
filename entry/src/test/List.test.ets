@@ -120,6 +120,7 @@ import pinnedJumpTest from './PinnedJump.test';
 import chatPermissionsTest from './ChatPermissions.test';
 import adminRightsTest from './AdminRights.test';
 import memberMenuTest from './MemberMenu.test';
+import webmAlphaTest from './WebmAlpha.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -244,4 +245,5 @@ export default function testsuite() {
   chatPermissionsTest();
   adminRightsTest();
   memberMenuTest();
+  webmAlphaTest();
 }
