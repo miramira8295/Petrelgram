@@ -1,5 +1,6 @@
 import localUnitTest from './LocalUnit.test';
 import materialTuningTest from './MaterialTuning.test';
+import adminLabelTest from './AdminLabel.test';
 import botStartTest from './BotStart.test';
 import accentSoftTest from './AccentSoft.test';
 import markdownBlocksTest from './MarkdownBlocks.test';
@@ -110,6 +111,7 @@ import memberMenuTest from './MemberMenu.test';
 export default function testsuite() {
   localUnitTest();
   materialTuningTest();
+  adminLabelTest();
   botStartTest();
   accentSoftTest();
   tdClientTest();

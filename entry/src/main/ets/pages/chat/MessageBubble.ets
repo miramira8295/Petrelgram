@@ -14,6 +14,7 @@ import {
 } from '../../store/AppSettings';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
+import { SenderRoleTag } from './SenderRoleTag';
 import { RichMessageView } from './RichMessageView';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { LiveThumbImage } from './LiveThumbImage';
@@ -150,6 +151,9 @@ export struct MessageBubble {
   // 本机正在共享实时位置的那条消息 id（0 = 没有共享）。
   @Prop liveSharingId: number = 0;
   onStopLiveLocation: () => void = (): void => {};
+  // 身份标签按群区分（同一个人在别的群未必是管理员），所以标签通道的 key
+  // 要带 chatId。MessageEntry 里没有这个字段，由页面传。
+  @Prop chatId: number = 0;
   @Prop isGroup: boolean;
   @Prop isChannel: boolean;
   @Prop showUnreadDivider: boolean;
@@ -2961,11 +2965,20 @@ export struct MessageBubble {
             });
         }
         if (this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.showSenderName) {
-          Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
-            .fontWeight(FontWeight.Medium).margin({ bottom: 2 })
-            .onAreaChange((_old: Area, area: Area): void => {
-              this.senderLabelW = area.width as number;
-            });
+          // 名字和身份标签同一行。标签自订阅（见 SenderRoleTag），名单到货时
+          // 只有那一枚小标签换字，不会牵动整行重建。
+          Row({ space: 5 }) {
+            Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
+              .fontWeight(FontWeight.Medium)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .flexShrink(1);
+            SenderRoleTag({ chatId: this.chatId, senderId: this.msg.senderId });
+          }
+          .margin({ bottom: 2 })
+          .alignItems(VerticalAlign.Center)
+          .onAreaChange((_old: Area, area: Area): void => {
+            this.senderLabelW = area.width as number;
+          });
         }
         // Inline timestamp: overlaid at the content's bottom-right, sharing the
         // last text line (which reserves invisible tail space for it).

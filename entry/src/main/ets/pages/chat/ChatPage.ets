@@ -154,6 +154,9 @@ import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
+import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
+import { adminLabelOf } from '../../util/adminLabel';
+import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/senderRoleChannel';
 import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
@@ -2772,6 +2775,7 @@ struct ChatPage {
     } else if (typeName === 'chatTypeBasicGroup') {
       this.isBotChat = false;
       this.headerKind = 'group';
+      this.refreshAdminLabels();
       this.headerIdentityResolved = true;
       this.isGroup = true;
       this.isChannel = false;
@@ -2781,6 +2785,7 @@ struct ChatPage {
       this.headerKind = this.isChannel ? 'channel' : 'group';
       this.headerIdentityResolved = true;
       this.isGroup = true;
+      this.refreshAdminLabels();
     } else if (typeName === 'chatTypeSecret') {
       // 密聊对面不可能是机器人。
       this.isBotChat = false;
@@ -3852,6 +3857,35 @@ struct ChatPage {
   // icon that opens the app in the in-app browser.
   // 对方是不是机器人。先清成 false 再异步确认：换会话时留着上一个会话的
   // true，新会话空历史的一瞬间会错误地亮出「开始」。
+  // 群里发送者名字旁边那枚身份标签的数据源。
+  //
+  // 一次 getChatAdministrators 就够：管理员是少数，且变动很少。拿到后发进
+  // 旁路通道，由每条消息旁边的 SenderRoleTag 自己订阅——不写进 MessageEntry，
+  // 否则名单到货会让整页每行的 key 都变、列表整体重建。
+  //
+  // 频道不取：频道消息的署名走的是 author_signature，不是成员身份。
+  private refreshAdminLabels(): void {
+    if (this.chatId === 0 || !this.isGroup || this.isChannel) {
+      return;
+    }
+    const chatId: number = this.chatId;
+    // 先清掉这个群的旧标签：管理员被撤销时名单里不会再有他，只发布新名单
+    // 的话那枚旧标签会一直挂着。
+    clearSenderRoles(chatId);
+    getAdministrators(chatId).then((rows: AdminRow[]): void => {
+      if (this.chatId !== chatId) {
+        return; // 期间换了会话
+      }
+      for (const row of rows) {
+        publishSenderRole(senderRoleKey(chatId, row.userId),
+          adminLabelOf(row.isCreator, row.customTitle));
+      }
+    }).catch((error: TdError): void => {
+      // 拿不到就不显示标签，不打扰用户——这不是功能主线。
+      console.error(`ChatPage.getAdministrators failed: ${error.message}`);
+    });
+  }
+
   private refreshIsBot(userId: number, seq: number): void {
     this.isBotChat = false;
     if (userId <= 0) {
@@ -6846,7 +6880,8 @@ struct ChatPage {
                 .alignItems(HorizontalAlign.Center);
               }
               Column() {
-              MessageBubble({ msg: g.head, nowSec: this.nowSec, isGroup: this.isGroup, isChannel: this.isChannel,
+              MessageBubble({ msg: g.head, nowSec: this.nowSec, chatId: this.chatId,
+                isGroup: this.isGroup, isChannel: this.isChannel,
                 liveSharingId: this.liveLocationMessageId,
                 onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
                 themeBubbleOut: this.chatBg.bubbleOutColor,
