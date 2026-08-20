@@ -1465,7 +1465,7 @@ struct ChatPage {
       // Fallback header for chats not yet in ChatStore (e.g. opened by t.me link).
       if (t !== '') {
         if (this.threadRootId === 0 && this.forumTopicId === 0) {
-          this.title = t;
+          this.title = this.headerTitleFor(t);
         }
         this.initials = computeInitials(t);
         this.headerState = 'ready';
@@ -2744,7 +2744,7 @@ struct ChatPage {
     const resolvedTitle = (chat['title'] as string | undefined) ?? '';
     if (resolvedTitle !== '') {
       if (this.threadRootId === 0 && this.forumTopicId === 0) {
-        this.title = resolvedTitle;
+        this.title = this.headerTitleFor(resolvedTitle);
       }
       this.initials = computeInitials(resolvedTitle);
     }
@@ -2815,9 +2815,21 @@ struct ChatPage {
 
   // Header title/subtitle wording lives in chatHeaderPresentation, where the
   // "cached title beats a pending load" and error-fallback rules are tested.
+  // 和自己的私聊就是「我的收藏」。TDLib 对它没有任何标记，标题是自己的昵称、
+  // 头像是自己的头像；判据只能是 chat.id === 自己的 user id（见 ChatStore）。
+  private isSavedMessagesChat(): boolean {
+    const entry = getChatStore().entryOf(this.chatId);
+    return entry !== undefined && entry.isSavedMessages;
+  }
+
+  // 标题的统一出口：三处赋值都先过这里，「我的收藏」在这一处换掉就够了。
+  private headerTitleFor(chatTitle: string): string {
+    return this.isSavedMessagesChat() ? str('cl_saved_messages') : chatTitle;
+  }
+
   private chatHeaderTitleNow(chatTitle: string): string {
     return chatHeaderTitle({
-      chatTitle,
+      chatTitle: this.headerTitleFor(chatTitle),
       topicName: this.topicName,
       forumTopicId: this.forumTopicId,
       threadRootId: this.threadRootId
@@ -7366,6 +7378,7 @@ struct ChatPage {
               headerState: this.headerState,
               avatarPath: this.avatarPath,
               initials: this.initials,
+              savedMessages: this.isSavedMessagesChat(),
               chatId: this.chatId,
               emojiPath: this.headerEmojiPath,
               emojiFormat: this.headerEmojiFormat,

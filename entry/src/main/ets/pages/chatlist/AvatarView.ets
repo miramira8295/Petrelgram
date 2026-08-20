@@ -15,6 +15,9 @@ export struct AvatarView {
   // Animated profile photo (MPEG4 loop). Only profile pages pass this —
   // list rows stay static (one looping player per row would be too heavy).
   @Prop animPath: string = '';
+  // 「我的收藏」：和自己的私聊。画书签而不是自己的头像——用户在列表里要一眼
+  // 认出它，Telegram 各端都是这么处理的（issue #8）。
+  @Prop savedMessages: boolean = false;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_ANIMATED_AVATAR) animatedAvatar: boolean = true;
   avatarSize: number = AVATAR_SIZE;
@@ -38,7 +41,17 @@ export struct AvatarView {
 
   @Builder
   base() {
-    if (this.shouldAnimate()) {
+    if (this.savedMessages) {
+      Row() {
+        SymbolGlyph($r('sys.symbol.bookmark_fill'))
+          .fontSize(this.avatarSize * 0.5)
+          .fontColor([Color.White]);
+      }
+      .width(this.avatarSize).height(this.avatarSize)
+      .borderRadius(this.avatarSize / 2)
+      .backgroundColor(COLOR_PRIMARY)
+      .justifyContent(FlexAlign.Center);
+    } else if (this.shouldAnimate()) {
       // Animated avatars are H.264 MP4 — the system AVPlayer loops them with
       // hardware decode (far lighter than ijkplayer's software path).
       Column() {

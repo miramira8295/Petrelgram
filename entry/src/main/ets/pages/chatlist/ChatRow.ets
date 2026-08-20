@@ -374,11 +374,13 @@ export struct ChatRow {
         colorSeed: this.chat.id,
         autoDeleteTime: this.chat.autoDeleteTime,
         isLive: this.chat.isLive,
-        livePulseExpanded: this.livePulseExpanded
+        livePulseExpanded: this.livePulseExpanded,
+        savedMessages: this.chat.isSavedMessages
       });
       Column({ space: 4 }) {
         Row() {
-          Text(this.chat.title)
+          Text(this.chat.isSavedMessages
+            ? $r('app.string.cl_saved_messages') : this.chat.title)
             .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
           if (this.chat.isMuted) {

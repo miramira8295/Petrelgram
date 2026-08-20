@@ -31,6 +31,8 @@ export struct ChatHeader {
   @Prop headerState: string;
   @Prop avatarPath: string;
   @Prop initials: string;
+  // 「我的收藏」：头像位画书签而不是自己的头像（issue #8）。
+  @Prop savedMessages: boolean = false;
   @Prop chatId: number;
   // 名字后面的 emoji 状态：'tgs' 动画、'webm' 视频、其余当静态图。
   @Prop emojiPath: string;
@@ -198,7 +200,8 @@ export struct ChatHeader {
           avatarPath: this.avatarPath,
           initials: this.initials,
           colorSeed: this.chatId,
-          avatarSize: 38
+          avatarSize: 38,
+          savedMessages: this.savedMessages
         });
         Column() {
           Row() {

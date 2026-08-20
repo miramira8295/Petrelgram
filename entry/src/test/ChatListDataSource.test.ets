@@ -13,7 +13,7 @@ function chat(id: number): ChatEntry {
     id, revision: 0, title: `c${id}`, isMuted: false, usesDefaultMute: true, unreadCount: 0,
     lastMessageText: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
     photoFileId: 0, avatarPath: '', initials: '', autoDeleteTime: 0,
-    kind: 'supergroup', isMarkedUnread: false, background: null, themeName: '',
+    kind: 'supergroup', isMarkedUnread: false, isSavedMessages: false, background: null, themeName: '',
     liveGroupCallId: 0, isLive: false, isRtmpLive: false
   };
 }

@@ -67,7 +67,7 @@ function makeEntry(isMuted: boolean, usesDefaultMute: boolean): ChatEntry {
     id: 1, revision: 0, title: 't', isMuted, usesDefaultMute, unreadCount: 0,
     lastMessageText: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
     photoFileId: 0, avatarPath: '', initials: '', autoDeleteTime: 0,
-    kind: 'supergroup', isMarkedUnread: false, background: null, themeName: '',
+    kind: 'supergroup', isMarkedUnread: false, isSavedMessages: false, background: null, themeName: '',
     liveGroupCallId: 0, isLive: false, isRtmpLive: false
   };
 }

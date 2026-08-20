@@ -37,6 +37,15 @@ function pushNewChat(bridge: FakeBridge, id: number, title: string,
   bridge.onReceive(JSON.stringify(u));
 }
 
+
+function pushMyId(bridge: FakeBridge, id: number): void {
+  const value: TdObject = { '@type': 'optionValueInteger' };
+  value['value'] = `${id}`;   // TDLib 的 int53 在 JSON 里是字符串
+  const u: TdObject = { '@type': 'updateOption' };
+  u['name'] = 'my_id'; u['value'] = value;
+  bridge.onReceive(JSON.stringify(u));
+}
+
 // ChatStore 按 NOTIFY_COALESCE_MS(80ms) 合并订阅者通知，断言前需等窗口结束。
 function settleNotify(): Promise<void> {
   return new Promise<void>((resolve: (v: void) => void): void => {
@@ -494,6 +503,31 @@ export default function chatStoreTest() {
       b.pagesBeforeEnd = b.loadChatsCalls + 1;
       await store.ensureFullyLoaded('folder:5');
       expect(b.loadChatsCalls > first).assertTrue();
+    });
+
+    // issue #8：和自己的私聊就是「我的收藏」。TDLib 不做任何标记——标题是自己
+    // 的昵称、头像是自己的头像，只能靠 chat.id === 自己的 user id 认出来。
+    it('和自己的私聊标记为我的收藏', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushMyId(b, 42);
+      pushNewChat(b, 42, 'Me', [mainPos('100', false)], null, 0);
+      pushNewChat(b, 43, 'Someone', [mainPos('99', false)], null, 0);
+      expect(store.entryOf(42)!.isSavedMessages).assertTrue();
+      expect(store.entryOf(43)!.isSavedMessages).assertFalse();
+    });
+
+    // my_id 通常先到；万一晚到，已经建好的那条要补标，且 revision 必须往前走
+    // ——行 key 含 revision，不变就不重画，标题会一直停在自己的昵称上。
+    it('my_id 晚到时补标，并推进 revision', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushNewChat(b, 42, 'Me', [mainPos('100', false)], null, 0);
+      expect(store.entryOf(42)!.isSavedMessages).assertFalse();
+      const before: number = store.entryOf(42)!.revision;
+      pushMyId(b, 42);
+      expect(store.entryOf(42)!.isSavedMessages).assertTrue();
+      expect(store.entryOf(42)!.revision > before).assertTrue();
     });
   });
 }

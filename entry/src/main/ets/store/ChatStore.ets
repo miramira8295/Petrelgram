@@ -32,6 +32,10 @@ export class ChatStore {
   private initializedLists: Set<string> = new Set();
   private exhaustedLists: Set<string> = new Set();
   private fullyLoadedLists: Set<string> = new Set();
+  // 自己的 user id，来自 TDLib 的 updateOption('my_id')。和自己的私聊就是
+  // 「我的收藏」，TDLib 不做任何标记，只能靠这个 id 认出来（issue #8）。
+  // 0 表示还没收到。
+  private selfId: number = 0;
   private groupCallChats: Map<number, number> = new Map();
   private chatSupergroupIds: Map<number, number> = new Map();
   private forumSupergroupIds: Set<number> = new Set();
@@ -47,6 +51,7 @@ export class ChatStore {
   constructor(client: TdClient, users: UserStore) {
     this.client = client;
     this.users = users;
+    client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
     client.onUpdate('updateNewChat', (u: TdObject) => this.onNewChat(u));
     client.onUpdate('updateSupergroup', (u: TdObject) => this.onSupergroup(u));
     client.onUpdate('updateChatPosition', (u: TdObject) => this.onPosition(u));
@@ -468,6 +473,7 @@ export class ChatStore {
       autoDeleteTime: (chat['message_auto_delete_time'] as number | undefined) ?? 0,
       kind: chatKindOf(chat['type'] as TdObject | undefined),
       isMarkedUnread: (chat['is_marked_as_unread'] as boolean | undefined) ?? false,
+      isSavedMessages: this.selfId !== 0 && id === this.selfId,
       background: this.backgroundOf(chat['background']),
       themeName: (chat['theme_name'] as string | undefined) ?? '',
       liveGroupCallId: groupCallId,
@@ -479,6 +485,31 @@ export class ChatStore {
     const positions = (chat['positions'] as TdObject[] | undefined) ?? [];
     this.applyPositions(id, positions);
     this.notify();
+  }
+
+  // my_id 通常在会话列表出现之前就到了；万一晚到，把已经建好的那条重标一次。
+  // 走 cloneEntry 是必要的——它会把 revision 加一，行 key 才会变、列表才会
+  // 重画（否则标题仍是自己的昵称）。
+  private onOption(update: TdObject): void {
+    if (((update['name'] as string | undefined) ?? '') !== 'my_id') {
+      return;
+    }
+    const valueObject = update['value'] as TdObject | undefined;
+    const raw = valueObject !== undefined ? valueObject['value'] : undefined;
+    // int53 在 JSON 里可能是数字也可能是字符串。
+    const id: number = typeof raw === 'number' ? raw as number : Number(`${raw ?? 0}`);
+    if (!Number.isFinite(id) || id <= 0 || id === this.selfId) {
+      return;
+    }
+    this.selfId = id;
+    const existing = this.chats.get(id);
+    if (existing === undefined || existing.isSavedMessages) {
+      return;
+    }
+    const next = cloneEntry(existing);
+    next.isSavedMessages = true;
+    this.chats.set(id, next);
+    this.notify(id);
   }
 
   private onPosition(update: TdObject): void {
