@@ -236,6 +236,42 @@ function pollMessage(id: number, chatId: number): TdObject {
   message['content'] = content;
   return message;
 }
+// tgs 贴纸消息：source 是动画文件，thumbnail 是静态占位图。
+function tgsStickerMessage(id: number, chatId: number, srcId: number, thumbId: number): TdObject {
+  const source: TdObject = { '@type': 'file' };
+  source['id'] = srcId;
+  source['size'] = 20000;
+  const thumbFile: TdObject = { '@type': 'file' };
+  thumbFile['id'] = thumbId;
+  const thumb: TdObject = { '@type': 'thumbnail' };
+  thumb['file'] = thumbFile;
+  thumb['format'] = { '@type': 'thumbnailFormatWebp' } as TdObject;
+  const sticker: TdObject = { '@type': 'sticker' };
+  sticker['sticker'] = source;
+  sticker['thumbnail'] = thumb;
+  sticker['width'] = 512;
+  sticker['height'] = 512;
+  sticker['emoji'] = '\u{1F600}';
+  sticker['format'] = { '@type': 'stickerFormatTgs' } as TdObject;
+  const content: TdObject = { '@type': 'messageSticker' };
+  content['sticker'] = sticker;
+  const m: TdObject = { '@type': 'message' };
+  m['id'] = id; m['chat_id'] = chatId; m['is_outgoing'] = false; m['date'] = 100;
+  m['content'] = content;
+  return m;
+}
+
+function downloadCount(b: FakeBridge, fileId: number): number {
+  let n = 0;
+  for (const json of b.sent) {
+    const request = JSON.parse(json) as TdObject;
+    if (request['@type'] === 'downloadFile' && request['file_id'] === fileId) {
+      n++;
+    }
+  }
+  return n;
+}
+
 function pushNewMessage(b: FakeBridge, m: TdObject): void {
   const u: TdObject = { '@type': 'updateNewMessage' }; u['message'] = m;
   b.onReceive(JSON.stringify(u));
@@ -659,6 +695,21 @@ export default function messageStoreTest() {
       expect(store.getMessages()[0].videoPath).assertEqual('/data/voice.ogg');
       expect(store.getMessages()[0].videoProgress).assertEqual(100);
     });
+    it('sticker_source_is_requested_once_and_not_stormed', 0, () => {
+      // issue #68 的回归位：贴纸源文件请求要去重，不能每次 requestPhotos 都
+      // 重发一次（那是另一个方向的病：请求风暴）。真正的修复是超过 8s 的
+      // 限速重发，时间相关那半没法在宿主测里等，这里钉住的是"短时间内只发
+      // 一次"这一半。
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      pushNewMessage(b, tgsStickerMessage(90, 5, 960, 961));
+      expect(store.getMessages()[0].contentType).assertEqual('sticker');
+      expect(downloadCount(b, 960)).assertEqual(1);
+      // 再来一条消息会再跑一遍 requestPhotos：贴纸不该被重新请求。
+      pushNewMessage(b, textMessage(91, 5, false, 'hi'));
+      expect(downloadCount(b, 960)).assertEqual(1);
+    });
+
     it('audio_prefetches_cover_and_downloads_source_on_demand', 0, () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();

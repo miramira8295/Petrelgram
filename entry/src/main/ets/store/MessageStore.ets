@@ -123,6 +123,9 @@ export class MessageStore {
   private videoFileToMsg: Map<number, number> = new Map();
   private voiceListenPending: Set<number> = new Set();
   private stickerFileToMsg: Map<number, number> = new Map();
+  // fileId -> 上次发出 downloadFile 的时间。见 requestStickerSource 里的说明：
+  // 没有它时，一次静默卡死的下载会把贴纸永久钉在 0%。
+  private stickerLastKick: Map<number, number> = new Map();
   // Live incoming media is the only automatic-download/autosave candidate.
   // Initial history never starts a burst of full-resolution downloads.
   // Consumed by ChatPage's autosave-to-gallery flow (consumeLiveIncomingMediaIds).
@@ -3024,9 +3027,24 @@ export class MessageStore {
     }
     if (forceRetry) {
       this.stickerFileToMsg.delete(fileId);
-    } else if (entry.stickerFailed || this.stickerFileToMsg.has(fileId)) {
+      this.stickerLastKick.delete(fileId);
+    } else if (entry.stickerFailed) {
+      // 明确失败过的要用户主动点重试，不自动重发。
       return;
+    } else if (this.stickerFileToMsg.has(fileId)) {
+      // 已经请求过、本地文件却仍然没有。下载可能把重试次数烧光了（加载时的
+      // 瞬时网络故障）——它既不完成也不报错，于是 stickerFileToMsg 里这一条
+      // 永远清不掉，贴纸卡在 0%。用户看到的就是"贴纸加载不出来，退出会话
+      // 再进去就好"：退出销毁了 store，连带清掉了这张表（issue #68）。
+      //
+      // 缩略图那条路一直有这个限速重发（requestPhotos 里的 thumbLastKick），
+      // 贴纸这条漏了。同一档 8s，downloadFile 幂等，重发没有副作用。
+      const now: number = Date.now();
+      if (now - (this.stickerLastKick.get(fileId) ?? 0) <= THUMB_REKICK_MS) {
+        return;
+      }
     }
+    this.stickerLastKick.set(fileId, Date.now());
     this.stickerFileToMsg.set(fileId, messageId);
     this.patchStickerEntries(fileId, (c: MessageEntry): void => {
       c.stickerFailed = false;
@@ -3040,6 +3058,7 @@ export class MessageStore {
     req['priority'] = THUMBNAIL_PRIORITY;
     this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
       this.stickerFileToMsg.delete(fileId);
+      this.stickerLastKick.delete(fileId);
       this.patchStickerEntries(fileId, (c: MessageEntry): void => {
         c.stickerFailed = true;
         c.stickerProgress = 0;
@@ -3266,6 +3285,7 @@ export class MessageStore {
       });
       if (done && path !== '') {
         this.stickerFileToMsg.delete(id);
+        this.stickerLastKick.delete(id);
       }
       return;
     }
