@@ -63,6 +63,7 @@ import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
 import { MessageListStateCard, TimelineStatePill } from './MessageListState';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { ComposerSendButton } from './ComposerSendButton';
+import { ScrollFab } from './ScrollFab';
 import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
@@ -6216,20 +6217,6 @@ struct ChatPage {
   // surface 就把它整个盖住了。overlayGlassFill 在材质可用时返回透明，
   // 不可用的设备上返回可见的降级色。
   @Styles
-  scrollFabNormalStyle() {
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  scrollFabPressedStyle() {
-    .backgroundColor($r('app.color.press_overlay'))
-    .opacity(0.84)
-    .scale({ x: 0.92, y: 0.92 })
-  }
-
-  @Styles
   composerIconNormalStyle() {
     .backgroundColor(Color.Transparent)
     .opacity(1)
@@ -6953,72 +6940,6 @@ struct ChatPage {
     });
   }
 
-  private scrollFabBadgeWidth(): number {
-    if (this.unreadBadge > 99) {
-      return 34;
-    }
-    return this.unreadBadge > 9 ? 27 : 22;
-  }
-
-  @Builder
-  scrollFab() {
-    Stack() {
-      Button() {
-        if (this.scrollToBottomBusy) {
-          LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
-        } else {
-          // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
-        }
-      }
-      .width(46).height(46).borderRadius(23)
-      .stateStyles({
-        normal: this.scrollFabNormalStyle,
-        pressed: this.scrollFabPressedStyle
-      })
-      .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130), curve: Curve.EaseOut })
-      .backdropBlur(overlayBackdropBlur('card'))
-      .border({ width: 0.7, color: $r('app.color.divider') })
-      .systemMaterial(overlayMaterial('card'))
-      .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
-      .enabled(!this.scrollToBottomBusy)
-      .accessibilityText(this.scrollToBottomBusy ? $r('app.string.cp_returning_latest') : $r('app.string.cp_return_latest'))
-      .onClick(() => { this.onScrollFabTap(); })
-      .position({ x: 6, y: 10 });
-      if (this.unreadBadge > 0) {
-        Row() {
-          Text(this.unreadBadge > 99 ? '99+' : `${this.unreadBadge}`)
-            .fontSize(12).fontColor(Color.White).fontWeight(FontWeight.Medium)
-            .maxLines(1).textAlign(TextAlign.Center);
-        }
-        .width(this.scrollFabBadgeWidth()).height(22)
-        .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
-        .backgroundColor(COLOR_PRIMARY).borderRadius(11)
-        .border({ width: 1.5, color: $r('app.color.surface') })
-        .shadow({ radius: 3, color: '#24000000', offsetX: 0, offsetY: 1 })
-        .position({ x: 52 - this.scrollFabBadgeWidth(), y: 0 })
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
-          curve: Curve.EaseOut
-        })
-        .transition(TransitionEffect.OPACITY
-          .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
-            curve: Curve.EaseOut
-          }))
-        .enabled(!this.scrollToBottomBusy)
-        .onClick((): void => { this.onScrollFabTap(); })
-        .accessibilityText(plural('cp_unread_a11y', this.unreadBadge, this.unreadBadge));
-      }
-    }
-    .width(52).height(56)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
-      .combine(TransitionEffect.translate({ y: 10 }))
-      .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220), curve: Curve.EaseOut }));
-  }
 
   private scrollToLatest(): void {
     if (this.store === null || this.scrollToBottomBusy) {
@@ -7733,7 +7654,11 @@ struct ChatPage {
       // 但引用链还没退完时，箭头仍然该在。
       if (this.returnTarget().kind !== RETURN_NONE && !this.searchMode && !this.showEmojiPanel) {
         Column() {
-          this.scrollFab();
+          ScrollFab({
+            unreadCount: this.unreadBadge,
+            busy: this.scrollToBottomBusy,
+            onTap: (): void => { this.onScrollFabTap(); }
+          });
         }
         .width('100%').height('100%')
         .justifyContent(FlexAlign.End).alignItems(HorizontalAlign.End)
