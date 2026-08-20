@@ -129,7 +129,7 @@ import {
 } from '../../util/openTelegramLink';
 import { openUrl } from '../../util/openUrl';
 import {
-  reactionDisplayLabel, reactionTypeOf
+  reactionDisplayLabel, reactionTypeOf, setDefaultReaction
 } from '../../util/reactions';
 import { openWebUrl } from '../../util/webBrowserNav';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
@@ -157,6 +157,8 @@ import { AttachPanel } from './AttachPanel';
 import { InlineResultsBar, StickerSuggestion, StickerSuggestionBar } from './ComposerStrips';
 import { copyPlainText } from '../../util/clipboard';
 import { isRealClientJoinNotice } from '../../util/joinNotice';
+import { openByUsername, openForwardOrigin } from '../../util/chatNavigation';
+import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -1537,26 +1539,6 @@ struct ChatPage {
     }
   }
 
-  // 停止共享是不可撤销的：一旦结束，那条消息就再也编辑不回来了（服务端直接
-  // 判定为不可编辑），只能重新发一条。所以先确认。
-  private confirmStopLiveLocation(): void {
-    promptAction.showDialog({
-      title: $r('app.string.cp_stop_live_location'),
-      message: $r('app.string.cp_stop_live_location_body'),
-      buttons: [
-        { text: $r('app.string.cancel'), color: '#8E8E93' },
-        { text: $r('app.string.cp_stop_sharing'), color: '#D95B57' }
-      ]
-    }).then((result: promptAction.ShowDialogSuccessResponse): void => {
-      if (result.index !== 1) {
-        return;
-      }
-      liveLocation.stopSharing();
-      promptAction.showToast({ message: $r('app.string.cp_live_location_stopped'), duration: 1500 });
-    }).catch((e: Object): void => {
-      console.error(`ChatPage.confirmStopLiveLocation failed: ${JSON.stringify(e)}`);
-    });
-  }
 
   // 驻留判定是逐候选的，onVisibleAreaApproximateChange 只在跨阈值时触发——
   // 一条视频稳稳停着反而不再有任何回调，所以判定不能只靠回调推动。这里用
@@ -3225,34 +3207,6 @@ struct ChatPage {
     });
   }
 
-  // Resolve a bare @username: a user opens the profile card; a group/channel
-  // opens its chat page. `original` is the raw tapped URL for browser fallback.
-  private openByUsername(name: string, original: string): void {
-    const req: TdRequest = { '@type': 'searchPublicChat' };
-    req['username'] = name;
-    getTdClient().send(req).then((chat: TdObject) => {
-      const chatId = (chat['id'] as number | undefined) ?? 0;
-      const type = chat['type'] as TdObject | undefined;
-      const typeName = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
-      if (typeName === 'chatTypePrivate') {
-        const uid = ((type as TdObject)['user_id'] as number | undefined) ?? 0;
-        if (uid > 0) {
-          const params: Record<string, Object> = { 'userId': uid };
-          router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
-          return;
-        }
-      }
-      if (chatId !== 0) {
-        const params: Record<string, Object> = { 'chatId': chatId };
-        navigateToChat(params);
-        return;
-      }
-      openWebUrl(getContext(this) as common.UIAbilityContext, original);
-    }).catch((e: TdError) => {
-      console.error(`ChatPage.searchPublicChat(${name}) failed: ${e.message}`);
-      openWebUrl(getContext(this) as common.UIAbilityContext, original);
-    });
-  }
 
   // Reply-quote tap: jump to the quoted original message (same in-place scroll
   // as a same-chat link jump).
@@ -3446,36 +3400,6 @@ struct ChatPage {
     this.flashAlpha = 0;
   }
 
-  // "N Comments" tap: resolve the channel post's discussion thread and open it
-  // as a normal chat page on the linked discussion group, jumped to the post.
-  // "转发自 X" tapped: open the original post in its channel/chat, or — for a
-  // forward from a user — that user's private chat.
-  private onForwardTap(originChatId: number, originMsgId: number, originUserId: number): void {
-    if (originChatId !== 0) {
-      const params: Record<string, Object> = { 'chatId': originChatId };
-      if (originMsgId !== 0) {
-        params['jumpTo'] = originMsgId;
-      }
-      navigateToChat(params);
-      return;
-    }
-    if (originUserId === 0) {
-      return;
-    }
-    const req: TdRequest = { '@type': 'createPrivateChat' };
-    req['user_id'] = originUserId;
-    req['force'] = true;
-    getTdClient().send(req).then((chat: TdObject) => {
-      const id = (chat['id'] as number | undefined) ?? 0;
-      if (id !== 0) {
-        const params: Record<string, Object> = { 'chatId': id };
-        navigateToChat(params);
-      }
-    }).catch((e: TdError) => {
-      console.error(`ChatPage.onForwardTap createPrivateChat failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_cannot_open_source'), duration: 1500 });
-    });
-  }
 
   private onCommentTap(messageId: number): void {
     const req: TdRequest = { '@type': 'getMessageThread' };
@@ -4499,7 +4423,7 @@ struct ChatPage {
         this.closeHeaderMenuThen((): void => { this.pickJumpDate(); }));
       if (this.liveLocationActive) {
         actionMenuRow('sys.symbol.stop_circle', str('cp_stop_location'), true,
-          this.closeHeaderMenuThen((): void => { this.confirmStopLiveLocation(); }));
+          this.closeHeaderMenuThen((): void => { confirmStopLiveLocation(); }));
       }
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
       // 总开关开着时这个会话默认就在翻，所以这一项显示「关闭翻译」；总开关
@@ -5034,7 +4958,7 @@ struct ChatPage {
   // 替我们采集位置，更新完全由客户端驱动，所以这里自己维护定时器；页面销毁
   // 或时长到期就停，避免后台一直定位耗电。
   private startLiveLocation(periodSec: number): void {
-    this.withLocationPermission((): void => {
+    withLocationPermission(getContext(this) as common.UIAbilityContext, (): void => {
       this.currentLocation(10000).then((loc: geoLocationManager.Location): void => {
         const store = this.store;
         if (store === null) { return; }
@@ -5055,22 +4979,6 @@ struct ChatPage {
     });
   }
 
-  private withLocationPermission(run: () => void): void {
-    const context = getContext(this) as common.UIAbilityContext;
-    const permissions: Permissions[] =
-      ['ohos.permission.APPROXIMATELY_LOCATION', 'ohos.permission.LOCATION'];
-    abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions)
-      .then((result): void => {
-        if (result.authResults.length > 0 && result.authResults[0] === 0) {
-          run();
-          return;
-        }
-        promptAction.showToast({ message: $r('app.string.cp_needs_location'), duration: 1800 });
-      })
-      .catch((e: BusinessError): void => {
-        console.error(`ChatPage location permission failed: ${e.message}`);
-      });
-  }
 
   private currentLocation(timeoutMs: number): Promise<geoLocationManager.Location> {
     const request: geoLocationManager.SingleLocationRequest = {
@@ -5817,18 +5725,6 @@ struct ChatPage {
     }).catch((): void => {});
   }
 
-  private setDefaultReaction(emoji: string): void {
-    const rt: TdObject = { '@type': 'reactionTypeEmoji' };
-    rt['emoji'] = emoji;
-    const req: TdRequest = { '@type': 'setDefaultReactionType' };
-    req['reaction_type'] = rt;
-    getTdClient().send(req).then((): void => {
-      promptAction.showToast({ message: str('cp_default_reaction_set', emoji), duration: 1600 });
-    }).catch((e: TdError): void => {
-      console.error(`ChatPage.setDefaultReaction failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_default_reaction_failed'), duration: 1600 });
-    });
-  }
 
   // Chat-level auto-delete timer (阅后即焚).
   private chooseAutoDelete(): void {
@@ -6826,7 +6722,7 @@ struct ChatPage {
               Column() {
               MessageBubble({ msg: g.head, nowSec: this.nowSec, isGroup: this.isGroup, isChannel: this.isChannel,
                 liveSharingId: this.liveLocationMessageId,
-                onStopLiveLocation: (): void => { this.confirmStopLiveLocation(); },
+                onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
                 themeBubbleOut: this.chatBg.bubbleOutColor,
                 showUnreadDivider: this.firstUnreadId !== 0 &&
                   g.memberIds.indexOf(this.firstUnreadId) >= 0,
@@ -6846,7 +6742,7 @@ struct ChatPage {
                 onLinkTap: (u: string): void => { this.onLinkTap(u); },
                 onCommentTap: (id: number): void => { this.onCommentTap(id); },
                 onForwardTap: (cid: number, mid: number, uid: number): void => {
-                  this.onForwardTap(cid, mid, uid);
+                  openForwardOrigin(cid, mid, uid);
                 },
                 onBotCallback: (id: number, data: string): void => { this.onBotCallback(id, data); },
                 onAvatarTap: (uid: number): void => {
@@ -6870,7 +6766,7 @@ struct ChatPage {
                 onStopPoll: (id: number): void => { this.stopPoll(id); },
                 onReplaceMedia: (id: number): void => { this.replaceMedia(id); },
                 onPollVoters: (id: number): void => { this.showPollVoters(id); },
-                onSetDefaultReaction: (emoji: string): void => { this.setDefaultReaction(emoji); },
+                onSetDefaultReaction: (emoji: string): void => { setDefaultReaction(emoji); },
                 isPinnedMsg: (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0,
                 onFileTap: (id: number): void => { this.onFileTap(id); },
                 onFileSave: (id: number): void => { this.onFileSave(id); },

@@ -1,5 +1,7 @@
 import { str } from './strings';
-import { TdObject } from '../tdkit/TdTypes';
+import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
+import { promptAction } from '@kit.ArkUI';
+import { getTdClient } from '../tdkit/Globals';
 
 // 反应在 UI 层（气泡 chip、面板、长按详情）统一用一个字符串 key 传递：
 // 标准反应就是 emoji 本身，自定义 emoji 反应加 'ce:' 前缀。这样既有的
@@ -92,4 +94,19 @@ export function parseAvailableReactions(result: TdObject): AvailableReactionSet 
     customEmojiIds,
     allowCustomEmoji: (result['allow_custom_emoji'] as boolean | undefined) ?? false
   };
+}
+
+// 设为默认反应（长按反应面板里的某个 emoji）。不碰任何页面状态，之前被关在
+// ChatPage 里；成功与失败都只是一句提示。
+export function setDefaultReaction(emoji: string): void {
+  const rt: TdObject = { '@type': 'reactionTypeEmoji' };
+  rt['emoji'] = emoji;
+  const req: TdRequest = { '@type': 'setDefaultReactionType' };
+  req['reaction_type'] = rt;
+  getTdClient().send(req).then((): void => {
+    promptAction.showToast({ message: str('cp_default_reaction_set', emoji), duration: 1600 });
+  }).catch((e: TdError): void => {
+    console.error(`setDefaultReaction failed: ${e.message}`);
+    promptAction.showToast({ message: $r('app.string.cp_default_reaction_failed'), duration: 1600 });
+  });
 }
