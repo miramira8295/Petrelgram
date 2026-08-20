@@ -42,6 +42,8 @@ const REPLY_KB_PROBE_LIMIT: number = 500;
 // Re-request a still-missing thumbnail at most this often (stalled downloads
 // whose bounded retries were exhausted by a transient network failure).
 const THUMB_REKICK_MS: number = 8000;
+// 向上翻页拿到空页时的重试次数。3 次之后仍然一条更旧的都没有，才认为到顶。
+const OLDER_EMPTY_RETRIES: number = 3;
 // 缩略图同时在途上限。放开时几十个请求互相抢带宽，首屏那几张反而最晚到；
 // 4 条既能压满一般家宽，又给整段媒体和消息同步留出余量。
 const THUMB_MAX_ACTIVE: number = 4;
@@ -714,6 +716,9 @@ export class MessageStore {
   // Load the previous (older) page. Guarded so scroll-driven prefetch can call
   // this repeatedly without stacking duplicate in-flight requests.
   private loadOlderRefusalLogged: boolean = false;
+  // 向上翻页遇到"这一页没有更旧的"时，还允许再问几次。见 loadOlder 里的说明：
+  // TDLib 返回空不等于没有历史，它的契约是"再问一次"。
+  private olderEmptyRetries: number = OLDER_EMPTY_RETRIES;
 
   loadOlder(): boolean {
     if (this.olderPending || this.olderLoadState === 'error' ||
@@ -748,9 +753,27 @@ export class MessageStore {
         }
       }
       if (!hasOlderEntry) {
+        // 空页**不等于**到顶。getChatHistory 只给本地缓存里有的，明明还有历史
+        // 也可能返回空或只返回锚点自己——它的契约是"再问一次"（同一个文件里
+        // latest 那条路的注释早就写明了这一点，这里却更严：一次没拿到更旧的
+        // 就把 hasMoreOlder 永久置 false，之后 loadOlder 在入口直接拒绝，那个
+        // 会话就永远停在那点内容上，用户看到的是"999+ 却滑不动"）。
+        //
+        // 而且这个坑会自锁：向上预取是滚动驱动的，内容不够一屏就滚不动，
+        // 滚不动就没人再来敲门。所以这里不能等下一次滚动，得自己立刻再问。
+        if (this.olderEmptyRetries > 0) {
+          this.olderEmptyRetries--;
+          this.olderLoadState = 'idle';
+          console.warn(`[StoreDiag] older empty, retrying left=${this.olderEmptyRetries}` +
+            ` anchor=${anchorId} rows=${this.messages.length}`);
+          this.onHistory(res, 'older');
+          this.loadOlder();
+          return;
+        }
         this.hasMoreOlder = false;
         this.olderLoadState = 'end';
       } else {
+        this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
         this.olderLoadState = 'idle';
       }
       this.onHistory(res, 'older');
@@ -844,6 +867,7 @@ export class MessageStore {
       this.hasMoreOlder = true;
       this.newerPending = false;
       this.olderPending = false;
+      this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
       this.newerLoadState = 'end';
       this.olderLoadState = 'idle';
       this.messages = [];
