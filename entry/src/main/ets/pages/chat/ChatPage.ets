@@ -70,6 +70,10 @@ import {
 import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
 import {
+  PINNED_EMPTY, PINNED_IGNORE, PINNED_JUMP, PINNED_LATEST, PINNED_RETRY,
+  PinnedTap, pinnedTapAction
+} from '../../util/pinnedJump';
+import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
 } from '../../util/composerChrome';
@@ -2535,50 +2539,57 @@ struct ChatPage {
   // Tap the pinned banner: jump to the pinned message it currently shows.
   // Once at/above the oldest pinned message, tapping wraps back to the bottom.
   private onPinnedTap(): void {
-    if (this.pinnedJumpBusy) {
+    const store = this.store;
+    if (store === null) {
       return;
     }
-    if (this.pinnedLoadState === 'error') {
-      this.store?.refreshPinned();
+    // 这一下该做什么，判定在 util/pinnedJump（10 条测）——尤其是"转到最后
+    // 一条且已经滚过它就循环回最新"那条规则。
+    const action: PinnedTap = pinnedTapAction({
+      busy: this.pinnedJumpBusy,
+      loadState: this.pinnedLoadState,
+      pinnedIds: store.getPinnedIds(),
+      cycle: this.pinnedCycle,
+      topVisibleId: this.curStartIdx >= 0 && this.curStartIdx < this.groups.length
+        ? this.groups[this.curStartIdx].head.id : 0
+    }, (messageId: number): number => groupIndexOf(this.groups, messageId));
+
+    if (action.kind === PINNED_IGNORE) {
+      return;
+    }
+    if (action.kind === PINNED_RETRY) {
+      store.refreshPinned();
       promptAction.showToast({ message: $r('app.string.cp_resyncing_pinned'), duration: 1200 });
       return;
     }
-    if (this.store === null) {
-      return;
-    }
-    const ids: number[] = this.store.getPinnedIds();
-    if (ids.length === 0) {
+    if (action.kind === PINNED_EMPTY) {
       this.pinnedPreview = '';
       this.pinnedCount = 0;
       return;
     }
     this.startPinnedJumpGuard(2500);
     this.prepareUserJump();
-    const idx: number = pinnedShownIndex(this.pinnedCycle, this.pinnedCount);
-    const targetId: number = ids[idx];
-    const topId: number = this.curStartIdx >= 0 && this.curStartIdx < this.groups.length
-      ? this.groups[this.curStartIdx].head.id : 0;
-    if (idx === ids.length - 1 && topId !== 0 && topId <= targetId) {
+    if (action.kind === PINNED_LATEST) {
       this.scrollToLatest();
       this.startPinnedJumpGuard(TOP_CARD_ACTION_GUARD_MS);
       return;
     }
-    const gidx: number = groupIndexOf(this.groups, targetId);
-    if (gidx >= 0) {
-      this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-      this.flashAtIndex(gidx);
+    if (action.kind === PINNED_JUMP) {
+      this.scroller.scrollToIndex(action.index, false, ScrollAlign.START);
+      this.flashAtIndex(action.index);
       this.startPinnedJumpGuard(TOP_CARD_ACTION_GUARD_MS);
-    } else {
-      this.pendingJumpId = targetId;
-      this.store.loadAround(targetId, (found: boolean): void => {
-        if (!found && this.pendingJumpId === targetId) {
-          this.pendingJumpId = 0;
-          this.finishPinnedJump();
-          this.store?.refreshPinned();
-          promptAction.showToast({ message: $r('app.string.cp_pinned_unavailable'), duration: 1500 });
-        }
-      });
+      return;
     }
+    const targetId: number = action.targetId;
+    this.pendingJumpId = targetId;
+    store.loadAround(targetId, (found: boolean): void => {
+      if (!found && this.pendingJumpId === targetId) {
+        this.pendingJumpId = 0;
+        this.finishPinnedJump();
+        this.store?.refreshPinned();
+        promptAction.showToast({ message: $r('app.string.cp_pinned_unavailable'), duration: 1500 });
+      }
+    });
   }
 
   private startPinnedJumpGuard(duration: number): void {
