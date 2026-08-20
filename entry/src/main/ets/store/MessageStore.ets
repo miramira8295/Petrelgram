@@ -306,6 +306,9 @@ export class MessageStore {
     // simply absent — rendered as a seamless jump (10:46 followed by 10:57).
     // Refetch the newest page; onHistory's continuity check decides whether it
     // merges into the window or replaces it.
+    console.info(`[StoreDiag] resume rows=${this.messages.length}` +
+      ` oldest=${this.oldestId} state=${this.initialHistoryState}` +
+      ` hasMoreNewer=${this.hasMoreNewer} olderPending=${this.olderPending}`);
     if (this.initialHistoryState === 'ready' && !this.hasMoreNewer) {
       this.loadHistory(0);
     }
@@ -1590,6 +1593,8 @@ export class MessageStore {
     // newer remove marker already superseded.
     this.ensureKeyboardHistoryProbe();
     const entries: MessageEntry[] = arr.map((m: TdObject): MessageEntry => buildMessageEntry(m, this.users));
+    console.info(`[StoreDiag] onHistory kind=${kind} got=${arr.length}` +
+      ` rowsBefore=${this.messages.length} oldest=${this.oldestId}`);
     // Continuity check for the newest page. If it does not overlap the loaded
     // window — its oldest id is newer than everything we hold — then the pages
     // between were never fetched (they were delivered while the process was
