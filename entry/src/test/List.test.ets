@@ -96,6 +96,7 @@ import messageLinkActionTest from './MessageLinkAction.test';
 import membershipStateTest from './MembershipState.test';
 import joinNoticeTest from './JoinNotice.test';
 import initialAnchorTest from './InitialAnchor.test';
+import readMarkingTest from './ReadMarking.test';
 import atBottomTest from './AtBottom.test';
 import pinnedJumpTest from './PinnedJump.test';
 
@@ -198,6 +199,7 @@ export default function testsuite() {
   membershipStateTest();
   joinNoticeTest();
   initialAnchorTest();
+  readMarkingTest();
   atBottomTest();
   pinnedJumpTest();
 }

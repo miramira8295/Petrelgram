@@ -160,6 +160,7 @@ import { isRealClientJoinNotice } from '../../util/joinNotice';
 import {
   ANCHOR_UNREAD, InitialAnchor, anchorLatchesBottom, initialAnchorOf
 } from '../../util/initialAnchor';
+import { isAtLiveTail, newestVisibleMessageId } from '../../util/readMarking';
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 
@@ -3038,18 +3039,10 @@ struct ChatPage {
     if (this.store === null || end < 0 || end >= this.groups.length) {
       return;
     }
-    let maxId: number = 0;
-    // A client-only service row has no member ids. Walk back to the newest
-    // visible real row so its presence can't prevent the actual tail from
-    // being marked read.
-    for (let groupIndex: number = end; groupIndex >= 0 && maxId === 0; groupIndex--) {
-      const g: AlbumGroup = this.groups[groupIndex];
-      for (const id of g.memberIds) {
-        if (id > maxId) {
-          maxId = id;
-        }
-      }
-    }
+    // 往回找第一条"真实"消息行、以及"是不是实时尾部"，两个判定都在
+    // util/readMarking（8 条测）——已读是高水位，报高了就吞掉没看过的消息。
+    const maxId: number = newestVisibleMessageId(
+      this.groups.length, (index: number): number[] => this.groups[index].memberIds, end);
     if (maxId > 0) {
       this.store.markViewed(maxId);
       // 本地摘角标只在**确实站在实时尾部**时做。
@@ -3061,9 +3054,7 @@ struct ChatPage {
       //
       // 这个错还不会自愈——0 一旦写进缓存，若该会话此后没有任何更新，TDLib
       // 不会再下发一次把它纠回来。
-      const atLiveTail: boolean = !this.store.getHasMoreNewer() &&
-        end >= this.groups.length - 1;
-      if (atLiveTail) {
+      if (isAtLiveTail(end, this.groups.length, this.store.getHasMoreNewer())) {
         getChatStore().markReadLocally(this.chatId, maxId);
       }
     }
