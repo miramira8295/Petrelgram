@@ -67,6 +67,7 @@ import { ScrollFab } from './ScrollFab';
 import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
 } from '../../util/messageLinkAction';
+import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
 import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
@@ -2948,25 +2949,17 @@ struct ChatPage {
     if (type === '') {
       return;
     }
-    let next: string = 'writable';
-    if (type === 'chatMemberStatusLeft') {
-      next = 'joinable';
-    } else if (type === 'chatMemberStatusRestricted') {
-      const isMember: boolean = (status?.['is_member'] as boolean | undefined) ?? false;
-      next = isMember ? 'writable' : 'joinable';
-    } else if (type === 'chatMemberStatusBanned') {
-      next = 'blocked';
-    } else if (this.isChannel && type === 'chatMemberStatusMember') {
-      // Broadcast-channel subscribers can never post — only the creator and
-      // admins with posting rights get the composer.
-      next = 'readonly';
-    } else if (this.isChannel && type === 'chatMemberStatusAdministrator') {
-      const rights = status?.['rights'] as TdObject | undefined;
-      next = ((rights?.['can_post_messages'] as boolean | undefined) ?? false)
-        ? 'writable' : 'readonly';
-    }
+    const rights = status?.['rights'] as TdObject | undefined;
+    // 判定本身在 util/membershipState（有单测）：几条规则都不直观——被限制但
+    // 仍在群里照样能发言、频道订阅者只读、频道管理员还要看有没有发帖权。
+    const next: string = membershipStateOf({
+      statusType: type,
+      isMember: (status?.['is_member'] as boolean | undefined) ?? false,
+      isChannel: this.isChannel,
+      canPostMessages: (rights?.['can_post_messages'] as boolean | undefined) ?? false
+    });
     this.membershipState = next;
-    if (next === 'writable') {
+    if (!membershipLosesComposer(next)) {
       this.joiningChat = false;
       return;
     }

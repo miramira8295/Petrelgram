@@ -93,6 +93,7 @@ import replySnippetTest from './ReplySnippet.test';
 import composerChromeTest from './ComposerChrome.test';
 import unreadBadgeTest from './UnreadBadge.test';
 import messageLinkActionTest from './MessageLinkAction.test';
+import membershipStateTest from './MembershipState.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -190,4 +191,5 @@ export default function testsuite() {
   composerChromeTest();
   unreadBadgeTest();
   messageLinkActionTest();
+  membershipStateTest();
 }
