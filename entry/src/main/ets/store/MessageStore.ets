@@ -2124,7 +2124,7 @@ export class MessageStore {
         }
       }
       console.warn(`[StoreDiag] delete from_cache ids=${incoming.length}` +
-        ` inWindow=${hit} rows=${this.messages.length} — 已忽略`);
+        ` inWindow=${hit} rows=${this.messages.length} ignored`);
       return;
     }
     const removeIds = incoming;
