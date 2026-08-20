@@ -64,6 +64,7 @@ import { MessageListStateCard, TimelineStatePill } from './MessageListState';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { ComposerSendButton } from './ComposerSendButton';
 import { ScrollFab } from './ScrollFab';
+import { MembershipBar } from './MembershipBar';
 import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
 } from '../../util/messageLinkAction';
@@ -333,6 +334,24 @@ struct ChatPage {
     }
   }
 
+  // 诊断：把视口附近这一段数据集原样打出来，供和屏幕逐行对照。
+  //
+  // 要判的是两件性质完全不同的事：数据集顺序正常而屏幕错乱，说明是框架那份
+  // key→node 表失准；数据集本身就是交错的，说明问题在我们这侧的分组/合并。
+  // 两者的修法没有交集，所以先分清再动手。
+  private dumpRows(tag: string): void {
+    const from: number = Math.max(0, this.curStartIdx);
+    const to: number = Math.min(this.groups.length, from + 12);
+    const parts: string[] = [];
+    for (let i = from; i < to; i++) {
+      const g: AlbumGroup = this.groups[i];
+      const sender: string = g.head.senderName !== '' ? g.head.senderName : '-';
+      parts.push(`${i}:${g.head.id}:${g.head.contentType}:${sender}`);
+    }
+    console.info(`[ChatDiag] rows(${tag}) start=${this.curStartIdx}` +
+      ` total=${this.groups.length} ${parts.join(' | ')}`);
+  }
+
   private resyncListAfterHidden(): void {
     const anchorId: number = this.hiddenAnchorId;
     const anchorY: number = this.hiddenAnchorY;
@@ -340,7 +359,16 @@ struct ChatPage {
     this.hiddenAnchorY = 0;
     console.info(`[ChatDiag] resync anchorId=${anchorId} anchorY=${Math.round(anchorY)}` +
       ` groups=${this.groups.length}`);
+    this.dumpRows('beforeReload');
     this.groupsData.reload();
+    // 再打一次：此时框架已经渲染完，屏幕上如果是错的，这一份就是"数据本来
+    // 长什么样"的对照。
+    const dumpSeq: number = this.scrollActionSeq;
+    setTimeout((): void => {
+      if (dumpSeq === this.scrollActionSeq) {
+        this.dumpRows('afterSettle');
+      }
+    }, 2500);
     if (anchorId > 0) {
       // 先松开贴底：还原发起到 onScrollIndex 回调落地之间，atBottom 还是隐藏
       // 前那个 true，这期间任何一条到达通知都会走"在底部就跟随"那一支
@@ -6443,55 +6471,6 @@ struct ChatPage {
   // both edges, not a full-width bar with a divider. It occupies the same slot
   // and swaps with the composer as membership changes, so anything else reads
   // as the bottom of the screen changing shape.
-  @Builder
-  membershipBar() {
-    Column() {
-    Row({ space: 8 }) {
-      if (this.membershipState === 'checking') {
-        LoadingProgress()
-          .width(20).height(20).color(COLOR_PRIMARY);
-        Text($r('app.string.cp_fetching_membership'))
-          .fontSize(15).fontColor(COLOR_TEXT_SECONDARY);
-      } else if (this.membershipState === 'blocked') {
-        Text($r('app.string.cp_cannot_join'))
-          .fontSize(16).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium);
-      } else if (this.membershipState === 'readonly') {
-        SymbolGlyph($r(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash'))
-          .fontSize(17).fontColor([COLOR_PRIMARY]);
-        Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'))
-          .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-      } else {
-        if (this.joiningChat) {
-          LoadingProgress()
-            .width(20).height(20).color(COLOR_PRIMARY);
-        }
-        Text(this.joiningChat ? $r('app.string.cp_joining') : $r('app.string.cp_join'))
-          .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-      }
-    }
-    .width('100%')
-    // Same silhouette as the composer's inner pill.
-    .constraintSize({ minHeight: 48 })
-    .padding({ left: 12, right: 12, top: 4, bottom: 4 })
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor($r('app.color.surface'))
-    .borderRadius(24)
-    .enabled((this.membershipState === 'joinable' && !this.joiningChat) ||
-      this.membershipState === 'readonly')
-    .onClick(() => {
-      if (this.membershipState === 'readonly') {
-        this.toggleChatMute();
-      } else {
-        this.joinCurrentChat();
-      }
-    });
-    }
-    .width('100%')
-    .padding({ left: 14, right: 14, top: 6, bottom: this.composerBottomGap() })
-    .alignItems(HorizontalAlign.Center)
-    .onAreaChange((_old: Area, area: Area) => { this.inputBarH = area.height as number; });
-  }
 
   // 附件抽屉的内容。高度写死而不是自适应：抽屉要顶起输入框和聊天内容，
   // 那个高度得在内容挂上来之前就确定，否则第一帧会先塌一下再弹开。
@@ -6939,7 +6918,15 @@ struct ChatPage {
           onNewer: (): void => { this.searchNewer(); }
         });
       } else if (this.membershipState !== 'writable') {
-        this.membershipBar();
+        MembershipBar({
+          state: this.membershipState,
+          isMuted: this.isMuted,
+          joining: this.joiningChat,
+          bottomGap: this.composerBottomGap(),
+          onJoin: (): void => { this.joinCurrentChat(); },
+          onToggleMute: (): void => { this.toggleChatMute(); },
+          onHeightChange: (height: number): void => { this.inputBarH = height; }
+        });
       } else {
         Column() {
           this.inputBar();
