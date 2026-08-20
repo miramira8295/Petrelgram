@@ -12,6 +12,9 @@ const MAIN: string = 'main';
 // per update stalls the UI thread, so notifications are coalesced into one
 // flush per window.
 const NOTIFY_COALESCE_MS: number = 80;
+// 分组列表最多连翻多少页。分组通常只有几十个会话，这个上限只是防呆——
+// 真被撞上会打日志，不会悄悄截断（见 ensureFullyLoaded）。
+const MAX_FULL_LOAD_PAGES: number = 20;
 
 interface Sub {
   listKey: string;
@@ -28,6 +31,7 @@ export class ChatStore {
   private activeLoads: Map<string, Promise<boolean>> = new Map();
   private initializedLists: Set<string> = new Set();
   private exhaustedLists: Set<string> = new Set();
+  private fullyLoadedLists: Set<string> = new Set();
   private groupCallChats: Map<number, number> = new Map();
   private chatSupergroupIds: Map<number, number> = new Map();
   private forumSupergroupIds: Set<number> = new Set();
@@ -252,6 +256,47 @@ export class ChatStore {
 
   async loadMore(listKey: string = MAIN): Promise<boolean> {
     return await this.load(listKey);
+  }
+
+  // 把一个列表一次性翻到底。
+  //
+  // 「所有」那个角标读的是 TDLib 的 updateUnreadChatCount——服务端真值，完整。
+  // 分组的角标和分组列表却都只能按**本地已加载的会话**算（TDLib 不为分组下发
+  // updateUnreadChatCount，见 unreadChatCount）。而分组此前只预取一页 30 条，
+  // 于是两个口径对不上：issue #43 里「所有」显示 5 个群有新消息，某个分组只
+  // 显示 3 个，退出重进变 4 个，还有一个哪个分组都找不到——那几个会话就排在
+  // 这一页之外，本地根本不知道它们属于这个分组。
+  //
+  // 分组是定义在客户端已知会话之上的，翻到底是有界的；上限只是防呆。
+  async ensureFullyLoaded(listKey: string): Promise<void> {
+    if (this.fullyLoadedLists.has(listKey)) {
+      return;
+    }
+    this.fullyLoadedLists.add(listKey);
+    for (let page = 0; page < MAX_FULL_LOAD_PAGES; page++) {
+      if (this.exhaustedLists.has(listKey)) {
+        return;
+      }
+      const ok: boolean = await this.load(listKey);
+      if (!ok) {
+        // 网络失败：撤销标记，下次进来还能重试。
+        this.fullyLoadedLists.delete(listKey);
+        return;
+      }
+    }
+    if (!this.exhaustedLists.has(listKey)) {
+      console.warn(`ChatStore.ensureFullyLoaded(${listKey}) stopped at the ` +
+        `${MAX_FULL_LOAD_PAGES}-page cap; its badge and list may still be incomplete`);
+    }
+  }
+
+  // 分组定义变了（成员规则改动、增删分组）：之前"翻到底"的结论作废，
+  // 让下一次 ensureFullyLoaded 重新翻。exhaustedLists 也要清——它是粘性的，
+  // 不清的话新加入分组的会话永远取不回来。
+  invalidateList(listKey: string): void {
+    this.fullyLoadedLists.delete(listKey);
+    this.exhaustedLists.delete(listKey);
+    this.initializedLists.delete(listKey);
   }
 
   setAvatarPath(chatId: number, path: string): void {

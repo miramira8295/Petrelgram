@@ -82,6 +82,36 @@ function bridgeOf(store: ChatStore): FakeBridge {
   return (store as object)['__bridge'] as FakeBridge;
 }
 
+
+// 会应答 loadChats 的桥：前 pagesBeforeEnd 页返回 ok，之后返回 404
+// （TDLib 用 404 表示"这个列表没有更多会话了"）。
+class PagingBridge implements TdBridge {
+  onReceive: (json: string) => void = (): void => {};
+  loadChatsCalls: number = 0;
+  pagesBeforeEnd: number = 2;
+  init(cb: (json: string) => void): void { this.onReceive = cb; }
+  send(json: string): void {
+    const req = JSON.parse(json) as Record<string, Object>;
+    if (req['@type'] !== 'loadChats') {
+      return;
+    }
+    this.loadChatsCalls += 1;
+    const extra = req['@extra'] as string;
+    const ended: boolean = this.loadChatsCalls > this.pagesBeforeEnd;
+    const reply: Record<string, Object> = ended
+      ? { '@type': 'error', 'code': 404, 'message': 'Not Found', '@extra': extra }
+      : { '@type': 'ok', '@extra': extra };
+    this.onReceive(JSON.stringify(reply));
+  }
+}
+
+function pagingStore(bridge: PagingBridge): ChatStore {
+  const c = new TdClient(bridge);
+  const s = new ChatStore(c, new UserStore(c));
+  c.start();
+  return s;
+}
+
 export default function chatStoreTest() {
   describe('ChatStore', () => {
     it('forum_supergroup_detected', 0, () => {
@@ -430,6 +460,40 @@ export default function chatStoreTest() {
       const e = store.entryOf(1);
       expect(e !== undefined).assertTrue();
       expect(e!.title).assertEqual('Alice');
+    });
+
+    // issue #43：分组的角标和列表都按本地已加载的会话算，而「所有」的角标是
+    // TDLib 的服务端真值。分组只预取一页就会两边对不上——分组里少几个群。
+    it('分组列表要一直翻到 404 为止，而不是只取一页', 0, async () => {
+      const b = new PagingBridge();
+      b.pagesBeforeEnd = 3;
+      const store = pagingStore(b);
+      await store.ensureFullyLoaded('folder:5');
+      expect(b.loadChatsCalls).assertEqual(4); // 3 页 + 收到 404 的那次
+      expect(store.isListExhausted('folder:5')).assertTrue();
+    });
+
+    it('翻到底之后再调不会重复请求', 0, async () => {
+      const b = new PagingBridge();
+      b.pagesBeforeEnd = 1;
+      const store = pagingStore(b);
+      await store.ensureFullyLoaded('folder:5');
+      const first = b.loadChatsCalls;
+      await store.ensureFullyLoaded('folder:5');
+      expect(b.loadChatsCalls).assertEqual(first);
+    });
+
+    it('分组定义变了：invalidateList 之后会重新翻', 0, async () => {
+      const b = new PagingBridge();
+      b.pagesBeforeEnd = 1;
+      const store = pagingStore(b);
+      await store.ensureFullyLoaded('folder:5');
+      const first = b.loadChatsCalls;
+      store.invalidateList('folder:5');
+      expect(store.isListExhausted('folder:5')).assertFalse();
+      b.pagesBeforeEnd = b.loadChatsCalls + 1;
+      await store.ensureFullyLoaded('folder:5');
+      expect(b.loadChatsCalls > first).assertTrue();
     });
   });
 }

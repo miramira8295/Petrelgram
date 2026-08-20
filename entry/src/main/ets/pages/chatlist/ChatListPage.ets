@@ -172,8 +172,10 @@ export struct ChatListPage {
       this.mainListPosition = nextMainListPosition;
       if (foldersChanged) {
         this.reconcileSelectedFolder(selectedKey, previousTabs);
+        this.reloadFolderLists(f);
+      } else {
+        this.ensureFolderLoads(f);
       }
-      this.ensureFolderLoads(f);
       this.refreshUnread();
     });
     this.unsubUnread = getUnreadCountStore().subscribe(() => { this.refreshUnread(); });
@@ -233,11 +235,23 @@ export struct ChatListPage {
 
   // TDLib does not emit updateUnreadChatCount for chat folders, so load each
   // folder once to populate its chats; the badge is then derived from them.
+  // 分组列表要**翻到底**，不能只预取一页：分组的角标和列表都按本地已加载的
+  // 会话算，而「所有」的角标是 TDLib 的服务端真值。只取一页就会出现 issue #43
+  // 描述的对不上——「所有」说 5 个群有新消息，分组里只看得见 3 个。
   private ensureFolderLoads(fs: FolderInfo[]): void {
     for (const f of fs) {
       const key = `folder:${f.id}`;
-      getChatStore().ensureLoaded(key);
+      getChatStore().ensureFullyLoaded(key).then((): void => { this.refreshUnread(); });
     }
+  }
+
+  // 分组定义变了：把"已翻到底"的结论作废后再翻一遍，否则新符合规则的会话
+  // 进不来（exhaustedLists 是粘性的）。
+  private reloadFolderLists(fs: FolderInfo[]): void {
+    for (const f of fs) {
+      getChatStore().invalidateList(`folder:${f.id}`);
+    }
+    this.ensureFolderLoads(fs);
   }
 
   // Main uses TDLib's authoritative unread count; folders derive it from loaded chats.
