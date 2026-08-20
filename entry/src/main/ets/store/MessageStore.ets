@@ -1014,7 +1014,18 @@ export class MessageStore {
     }
     req['input_message_content'] = content;
     this.applyTopicScope(req);
+    // 诊断：sendMessage 的往返耗时。用户报"发消息慢"（issue #47），但慢在
+    // 哪一段没量过——TDLib 本地接收下这个请求本该是毫秒级的，真慢的话说明
+    // 应答排在主线程上别的活后面（所有 TDLib 应答都经 threadsafe function
+    // 投递到 UI 线程，updateFile 的洪流也在同一条队里）。先把数拿到。
+    const sentAt: number = Date.now();
     return this.client.send(req).then((m: TdObject): void => {
+      const roundTripMs: number = Date.now() - sentAt;
+      if (roundTripMs > 300) {
+        console.warn(`[SendDiag] sendMessage roundTrip=${roundTripMs}ms rows=${this.messages.length}`);
+      } else {
+        console.info(`[SendDiag] sendMessage roundTrip=${roundTripMs}ms rows=${this.messages.length}`);
+      }
       this.upsert(buildMessageEntry(m, this.users));
       this.resolveReplies();
       this.notifySoon();
@@ -3243,7 +3254,31 @@ export class MessageStore {
     return size > 0 ? Math.min(100, Math.floor((downloaded / size) * 100)) : 0;
   }
 
+  // 诊断：applyFile 是 updateFile 的落点，而每个活跃下载的每次进度变化都会
+  // 来一条。它内部有四次全量 messages.some() 扫描外加一次 patch（又一遍
+  // map + 克隆），窗口几百行时单条就不便宜。每秒汇总一次调用数和累计耗时，
+  // 用来判断 sendMessage 的应答是不是排在这堆活后面。
+  private fileDiagWindowStart: number = 0;
+  private fileDiagCalls: number = 0;
+  private fileDiagMs: number = 0;
+
   private applyFile(file: TdObject): void {
+    const enteredAt: number = Date.now();
+    if (this.fileDiagWindowStart === 0) {
+      this.fileDiagWindowStart = enteredAt;
+    } else if (enteredAt - this.fileDiagWindowStart >= 1000) {
+      console.info(`[SendDiag] applyFile calls=${this.fileDiagCalls}` +
+        ` totalMs=${this.fileDiagMs} rows=${this.messages.length}`);
+      this.fileDiagWindowStart = enteredAt;
+      this.fileDiagCalls = 0;
+      this.fileDiagMs = 0;
+    }
+    this.fileDiagCalls++;
+    this.applyFileInner(file);
+    this.fileDiagMs += Date.now() - enteredAt;
+  }
+
+  private applyFileInner(file: TdObject): void {
     const id = file['id'] as number | undefined;
     if (id === undefined) {
       return;
