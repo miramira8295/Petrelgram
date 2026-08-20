@@ -21,7 +21,7 @@ endif()
 include_directories(${NATIVERENDER_ROOT_PATH}
                     ${NATIVERENDER_ROOT_PATH}/include)
 
-add_library(entry SHARED napi_init.cpp)
+add_library(entry SHARED napi_init.cpp webm_alpha.cpp webm_alpha_napi.cpp)
 
 add_library(tdjson SHARED IMPORTED)
 set_target_properties(tdjson PROPERTIES IMPORTED_LOCATION
@@ -31,4 +31,7 @@ add_library(tgcalls_ohos SHARED IMPORTED)
 set_target_properties(tgcalls_ohos PROPERTIES IMPORTED_LOCATION
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../libs/${OHOS_ARCH}/libtgcalls_ohos.so)
 
-target_link_libraries(entry PUBLIC libace_napi.z.so tdjson tgcalls_ohos libhilog_ndk.z.so)
+# 透明 webm 贴纸走系统 VP9 解码 + PixelMap 合成，见 webm_alpha.cpp。
+target_link_libraries(entry PUBLIC libace_napi.z.so tdjson tgcalls_ohos libhilog_ndk.z.so
+    libnative_media_codecbase.so libnative_media_core.so libnative_media_vdec.so
+    libpixelmap.so)
