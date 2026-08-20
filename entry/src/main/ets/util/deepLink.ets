@@ -98,7 +98,24 @@ export function parseOpenMessageLink(uri: string): OpenMessageTarget | null {
 // tg://join?invite=HASH           → https://t.me/+HASH
 // tg://user?id=123 and anything else are left untouched — openTelegramLink
 // handles tg://user directly and falls back to the browser for the rest.
-export function tgSchemeToUrl(uri: string): string {
+// 系统递过来的可能是 `tg:resolve?domain=x` —— **没有双斜杠**。
+//
+// 这在 URI 语法上完全合法：`//` 只有在有 authority 段时才需要，而 tg 链接
+// 的 authority 是空的，华为浏览器（或系统的 want 规范化）会把它省掉。实测
+// want.uri = "tg:resolve?domain=Petrelgram"。
+//
+// 下游所有解析都假设 `tg://`，所以在最外层补齐一次，而不是让每个调用点各自
+// 判断两种形态（linkNav 里已经出现过 `startsWith('tg:resolve')` 这种窄补丁，
+// 就是这么来的）。
+export function normalizeTgScheme(uri: string): string {
+  if (uri.startsWith('tg://') || !uri.startsWith('tg:')) {
+    return uri;
+  }
+  return `tg://${uri.substring('tg:'.length)}`;
+}
+
+export function tgSchemeToUrl(rawUri: string): string {
+  const uri = normalizeTgScheme(rawUri);
   if (!uri.startsWith('tg://')) {
     return uri;
   }
@@ -123,7 +140,8 @@ export function tgSchemeToUrl(uri: string): string {
 
 // Route a raw incoming deep-link URI into the app.
 export function handleIncomingLink(context: common.UIAbilityContext, rawUri: string): void {
-  const uri = rawUri.trim();
+  const uri = normalizeTgScheme(rawUri.trim());
+  console.warn(`[LinkDiag] handleIncomingLink raw=${rawUri} -> ${tgSchemeToUrl(uri)}`);
   if (uri === '') {
     return;
   }

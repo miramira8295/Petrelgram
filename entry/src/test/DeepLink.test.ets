@@ -9,6 +9,14 @@ export default function deepLinkTest() {
       expect(tgSchemeToUrl('tg://join?invite=HASH')).assertEqual('https://t.me/+HASH');
       // 非 tg:// 与未知 action 原样返回，交给下游路由。
       expect(tgSchemeToUrl('https://t.me/foo')).assertEqual('https://t.me/foo');
+      // 系统递过来的没有双斜杠：实测 want.uri = "tg:resolve?domain=Petrelgram"。
+      // 少了这一支，浏览器点进来的链接会原样交给 TDLib，最后弹"无法识别"。
+      expect(tgSchemeToUrl('tg:resolve?domain=foo')).assertEqual('https://t.me/foo');
+      expect(tgSchemeToUrl('tg:resolve?domain=foo&post=12')).assertEqual('https://t.me/foo/12');
+      expect(tgSchemeToUrl('tg:join?invite=HASH')).assertEqual('https://t.me/+HASH');
+      // 不是 tg 的一律不动，别把别的 scheme 也补上斜杠。
+      expect(tgSchemeToUrl('tgx:resolve?domain=foo')).assertEqual('tgx:resolve?domain=foo');
+      expect(tgSchemeToUrl('mailto:a@b.c')).assertEqual('mailto:a@b.c');
       expect(tgSchemeToUrl('tg://user?id=7')).assertEqual('tg://user?id=7');
     });
 
