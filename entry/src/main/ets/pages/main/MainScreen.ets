@@ -26,7 +26,9 @@ import { overlayBackdropBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util
 
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
 const DOCK_BG: ResourceColor = $r('app.color.dock_glass');
-const BADGE_BG: string = '#4CD964';
+// 「有新版本」那颗小圆点。它和未读数不是一回事，所以有自己的颜色：绿色表示
+// "有更新可拿"，跟着强调色走反而会和未读混成一个信号。
+const UPDATE_DOT_BG: string = '#4CD964';
 // 56：图标 24 + 间距 2 + 文字 10 = 36，加上 item 自己的 5 上下内缩正好 46，
 // 余下 10 是胶囊的呼吸。原先 64 多出来的那 8 是空的。
 const DOCK_H: number = 56;      // capsule height
@@ -202,7 +204,7 @@ export struct MainScreen {
           .effectStrategy(SymbolEffectStrategy.NONE);
         // 设置页签的红点：和「关于」那一行是同一个信号，一路引到更新入口。
         if (index === 2 && this.updateAvailable) {
-          Circle({ width: 8, height: 8 }).fill(BADGE_BG).offset({ x: 6, y: -2 });
+          Circle({ width: 8, height: 8 }).fill(UPDATE_DOT_BG).offset({ x: 6, y: -2 });
         }
         if (index === 0 && this.unread > 0) {
           Row() {
@@ -212,7 +214,9 @@ export struct MainScreen {
             .constraintSize({ minWidth: 18 }).height(18)
             .padding({ left: 5, right: 5 })
             .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
-            .backgroundColor(BADGE_BG).borderRadius(9)
+            // 未读数跟强调色。原来这里写死成 #4CD964，用户换了强调色也不变
+            // ——而聊天列表行里的未读气泡一直是 COLOR_PRIMARY，两处对不上。
+            .backgroundColor(COLOR_PRIMARY).borderRadius(9)
             .offset({ x: 12, y: -7 });
         }
       }
