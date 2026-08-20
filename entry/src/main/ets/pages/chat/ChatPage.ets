@@ -157,7 +157,7 @@ import { AttachPanel } from './AttachPanel';
 import { InlineResultsBar, StickerSuggestion, StickerSuggestionBar } from './ComposerStrips';
 import { copyPlainText } from '../../util/clipboard';
 import { isRealClientJoinNotice } from '../../util/joinNotice';
-import { openByUsername, openForwardOrigin } from '../../util/chatNavigation';
+import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
