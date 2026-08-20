@@ -163,7 +163,7 @@ struct AboutPage {
               Image($r('app.media.foreground')).width(72).height(72).draggable(false);
             }
             .width(72).height(72).borderRadius(16).clip(true);
-            Text('Telegram for HarmonyOS')
+            Text($r('app.string.app_name'))
               .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
             Text(this.currentVersion !== '' ? str('about_version', this.currentVersion) : $r('app.string.about_version_loading'))
               .fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
