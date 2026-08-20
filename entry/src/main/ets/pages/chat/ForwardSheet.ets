@@ -2,7 +2,7 @@ import { promptAction } from '@kit.ArkUI';
 import { ChatEntry } from '../../store/ChatEntry';
 import { AvatarView } from '../chatlist/AvatarView';
 import { getChatStore, getTdClient } from '../../tdkit/Globals';
-import { TdRequest, TdError } from '../../tdkit/TdTypes';
+import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   KEY_POWER_EFFECT_REPLY, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
@@ -156,7 +156,18 @@ export struct ForwardSheet {
     req['message_ids'] = ids;
     req['send_copy'] = false;
     req['remove_caption'] = false;
-    getTdClient().send(req).then((): void => {
+    getTdClient().send(req).then((result: TdObject): void => {
+      // 诊断：反馈"多图消息转发过去变成一张一张"。相册要么在请求这一侧就没
+      // 成组，要么 TDLib 成了组而我们没渲染成组——两者的修法完全不同，靠读
+      // 代码分不出来。forwardMessages 回的是 Messages，把每条的 media_album_id
+      // 打出来即可定论：都相同且非 0 = TDLib 成了组，问题在渲染侧；各不相同
+      // 或缺失 = 问题在请求侧。
+      //
+      // 只打 id 和相册号，不含任何消息内容——与 StoreDiag 同一口径。
+      const forwarded: TdObject[] = (result['messages'] as TdObject[] | undefined) ?? [];
+      const albums: string[] = forwarded.map((m: TdObject): string =>
+        `${(m['id'] as number | undefined) ?? 0}:${m['media_album_id'] ?? '-'}`);
+      console.info(`[FwdDiag] sent=${ids.length} got=${forwarded.length} ${albums.join(' ')}`);
       if (seq !== this.seq) {
         return;
       }

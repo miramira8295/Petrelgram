@@ -5417,12 +5417,18 @@ struct ChatPage {
   }
 
   // --- multi-select ---
-  private enterSelect(messageId: number): void {
+  // 从消息菜单进多选：选中的是**整行**，不是被长按的那一条。
+  //
+  // messageSelection 开篇写明的不变量是"一行要么整体选中、要么整体不选"，而
+  // 这里原来只放被长按消息的 id。相册行被长按时，那是相册的头一条：行在 UI 上
+  // 显示为选中（rowSelected 是"沾上就算"），计数却是 1，接着转发也只发出这一
+  // 张——九图相册转发成一张。
+  private enterSelect(memberIds: number[]): void {
     ContextMenu.close();
     this.closeReactionSheet();
     this.setEmojiPanel(false);
     this.selecting = true;
-    this.selectedIds = [messageId];
+    this.selectedIds = toggleRow([], memberIds);
   }
 
   private exitSelect(): void {
@@ -7047,7 +7053,7 @@ struct ChatPage {
                 onCopyLink: (id: number): void => { this.copyMessageLink(id); },
                 onForwardMsg: (_id: number): void => { this.openForwardPicker(g.memberIds); },
                 onReportMsg: (id: number): void => { promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 }); },
-                onSelectMsg: (id: number): void => { this.enterSelect(id); },
+                onSelectMsg: (_id: number): void => { this.enterSelect(g.memberIds); },
                 onDeleteMsg: (id: number): void => { this.deleteMessage(id); },
                 onOpenReactions: (id: number): void => { this.openReactionSheet(id); },
                 onRecognizeSpeech: (id: number): void => { this.recognizeSpeech(id); },
