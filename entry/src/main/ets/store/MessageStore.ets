@@ -1595,6 +1595,7 @@ export class MessageStore {
     const entries: MessageEntry[] = arr.map((m: TdObject): MessageEntry => buildMessageEntry(m, this.users));
     console.info(`[StoreDiag] onHistory kind=${kind} got=${arr.length}` +
       ` rowsBefore=${this.messages.length} oldest=${this.oldestId}`);
+    this.logWindowGap(kind);
     // Continuity check for the newest page. If it does not overlap the loaded
     // window — its oldest id is newer than everything we hold — then the pages
     // between were never fetched (they were delivered while the process was
@@ -2097,6 +2098,33 @@ export class MessageStore {
     });
     if (changed) {
       this.notifySoon();
+    }
+  }
+
+  // 诊断：窗口里有没有"洞"。TDLib 的消息 id 每条递增 2^20，所以相邻两行的
+  // 差值除以 2^20 就是它们之间隔了几条。正常相邻是 1；被删过的地方会留下永久
+  // 空档，所以小差值不算异常，只报最大的那个。
+  //
+  // 用来区分两种现象：窗口真的缺了一大段（差值几十），还是分页方向的问题
+  // （窗口连续、只是没往某个方向取）。
+  private logWindowGap(tag: string): void {
+    if (this.messages.length < 2) {
+      return;
+    }
+    let worst: number = 0;
+    let atIdx: number = -1;
+    for (let i = 1; i < this.messages.length; i++) {
+      const step: number = Math.round(
+        (this.messages[i].id - this.messages[i - 1].id) / 1048576);
+      if (step > worst) {
+        worst = step;
+        atIdx = i;
+      }
+    }
+    if (worst > 3) {
+      console.warn(`[StoreDiag] gap after=${tag} biggest=${worst} atIdx=${atIdx}` +
+        ` rows=${this.messages.length}` +
+        ` around=${this.messages[atIdx - 1].id}..${this.messages[atIdx].id}`);
     }
   }
 
