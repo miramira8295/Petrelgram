@@ -60,5 +60,38 @@ export default function mediaBoxTest() {
       expect(a.width).assertEqual(b.width);
       expect(a.height).assertEqual(b.height);
     });
+
+    // 视频不能裁：框必须和画面同比例，否则播放时左右留黑。
+    it('keeps a tall video in its true aspect instead of cropping', 0, () => {
+      // 9:16 竖屏视频。照片会被压到高度上限并靠 Cover 裁掉多余部分；
+      // 视频不行——播放器只会留黑边，所以宽度要跟着收。
+      const box = mediaBoxFor(SCREEN, 900, 1600, true);
+      const boxRatio: number = box.width / box.height;
+      expect(Math.abs(boxRatio - 900 / 1600) < 0.02).assertTrue();
+    });
+
+    it('a tall video is narrower than the bubble, a tall photo is not', 0, () => {
+      const video = mediaBoxFor(SCREEN, 900, 1600, true);
+      const photo = mediaBoxFor(SCREEN, 900, 1600, false);
+      expect(photo.width).assertEqual(mediaThumbWidth(SCREEN));
+      expect(video.width < photo.width).assertTrue();
+    });
+
+    it('a landscape video still fills the bubble width', 0, () => {
+      // 高度没到上限，不需要收宽度。
+      expect(mediaBoxFor(SCREEN, 1600, 900, true).width).assertEqual(mediaThumbWidth(SCREEN));
+    });
+
+    it('video ratio clamp is looser than the photo one', 0, () => {
+      // 极端竖屏 1:3。照片夹到 0.56，视频夹到 0.4——视频更贴近真实比例。
+      expect(mediaRatio(1000, 3000, false) > mediaRatio(1000, 3000, true)).assertTrue();
+    });
+
+    it('video height still respects the cap', 0, () => {
+      const cap: number = mediaThumbWidth(SCREEN) * MEDIA_MAX_HEIGHT_RATIO;
+      for (const h of [1600, 4000, 20000]) {
+        expect(mediaBoxFor(SCREEN, 900, h, true).height <= cap + 0.001).assertTrue();
+      }
+    });
   });
 }
