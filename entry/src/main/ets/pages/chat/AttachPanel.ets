@@ -76,10 +76,8 @@ export struct AttachPanel {
     // 按压反馈只做缩放，不改底色：圆底是这一格的身份色，一按变灰会让人以为
     // 是另一个东西。
     //
-    // 材质接管按压时这套必须让位——interactive 自己会做形变，再叠一层手写的
-    // 就是两层形变打架（官方明确点名的坑）。pressAnimationWins 就是那个开关：
-    // 材质在 → 归零，材质不在（当前设备 API 24）→ 照旧。
-    // 格子上没有材质了，按压形变就得自己做，不再受 pressAnimationWins 约束。
+    // 格子上没有材质（见上面那段注释），按压形变就得自己做，不受
+    // pressAnimationWins 约束。
     .scale(this.pressedKey === action.key ? { x: 0.9, y: 0.9 } : { x: 1, y: 1 })
     .animation({ duration: this.effectDuration(110), curve: Curve.EaseOut })
     .onTouch((event: TouchEvent): void => {

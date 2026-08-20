@@ -6219,7 +6219,19 @@ struct ChatPage {
     return this.attachPanelOpen || (this.showEmojiPanel && this.membershipState === 'writable');
   }
 
-  @Builder
+  // @LocalBuilder 而不是 @Builder：这两个抽屉内容是**传给 BottomDrawerShell 的
+  // @BuilderParam** 的，而官方《@LocalBuilder》写得很清楚——@Builder 里的 this
+  // 指向**实际调用点**的组件（也就是 BottomDrawerShell），@LocalBuilder 里的
+  // this 才指向声明它的组件。
+  //
+  // 写成 @Builder 时两个抽屉都是坏的，而且症状完全不同、看不出同源：附件那边
+  // this.chatEffectDuration 取到 undefined，一开就 TypeError 崩掉；表情那边
+  // this.panelContentReady 取到 undefined（假值），于是永远停在"正在打开面板"。
+  //
+  // 本文件其它几处（headerMenu、缩略图占位）传的都是 `() => { this.x(); }`，
+  // 箭头函数按词法捕获 this，所以一直是好的。保证放在声明上而不是指望每个
+  // 调用点都写对。
+  @LocalBuilder
   attachDrawerContent() {
     AttachPanel({
       actions: attachActions(this.isGroup, this.isChannel),
@@ -6228,7 +6240,8 @@ struct ChatPage {
     })
   }
 
-  @Builder
+  // 同上，必须是 @LocalBuilder。
+  @LocalBuilder
   emojiDrawerContent() {
     if (this.panelContentReady) {
       EmojiPanel({
