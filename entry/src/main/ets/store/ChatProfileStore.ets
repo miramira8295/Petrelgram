@@ -7,7 +7,6 @@ import { formatPreview } from '../util/formatPreview';
 import { formatFileSize } from '../util/formatFileSize';
 import { formatTime } from '../util/formatTime';
 import { plural, str } from '../util/strings';
-import { ViewerAdminRights } from '../util/memberMenu';
 
 type Listener = () => void;
 
@@ -760,16 +759,6 @@ export class ChatProfileStore {
     this.canPromoteMembers = false;
     this.canRestrictMembers = false;
     this.canDeleteMessages = false;
-  }
-
-  // 打包给 util/memberMenu 的判定输入。
-  viewerRights(): ViewerAdminRights {
-    return {
-      isCreator: this.isCreator,
-      canPromoteMembers: this.canPromoteMembers,
-      canRestrictMembers: this.canRestrictMembers,
-      canDeleteMessages: this.canDeleteMessages
-    };
   }
 
   private applySupergroup(supergroup: TdObject): void {
