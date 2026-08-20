@@ -903,7 +903,8 @@ export class MessageStore {
       const skipped: number = pageOldest > newestId
         ? Math.round((pageOldest - newestId) / ID_STEP) : 0;
       if (skipped > NEWER_GAP_TOLERANCE && this.newerGapRetries > 0) {
-        // 不合并这一页：从同一个锚点重问，等 TDLib 把中间那段取回来。
+        // 页首就和窗口接不上：整页都不要，从同一个锚点重问，等 TDLib 把中间
+        // 那段取回来。
         this.newerGapRetries--;
         this.newerLoadState = 'idle';
         console.warn(`[StoreDiag] newer discontinuous skipped=${skipped}` +
@@ -916,6 +917,40 @@ export class MessageStore {
         console.warn(`[StoreDiag] newer discontinuous skipped=${skipped} merged anyway`);
       }
       this.newerGapRetries = NEWER_GAP_RETRIES;
+      // 页首连得上还不够：这一页**内部**也可能是断的。本地库里若只剩"紧挨着
+      // 窗口的几条"和"最新那一条"，TDLib 会把两截一起给回来，中间几万条缺着。
+      // 实测抓到过 99689 条的缺口就是这么进来的——页首连续，检查放行，洞跟着
+      // 整页一起进了窗口，而且再也不会自己合上。
+      //
+      // 所以只收与窗口连续的那一段，断点之后的整段丢掉：那部分等用户真翻到
+      // 那里再取，宁可少收也不能留洞。
+      const sorted: TdObject[] = arr.slice().sort((a: TdObject, b: TdObject): number =>
+        (((a['id'] as number | undefined) ?? 0) - ((b['id'] as number | undefined) ?? 0)));
+      const contiguous: TdObject[] = [];
+      let prevId: number = newestId;
+      let dropped: number = 0;
+      for (const m of sorted) {
+        const id = (m['id'] as number | undefined) ?? 0;
+        const step: number = prevId > 0 ? Math.round((id - prevId) / ID_STEP) : 1;
+        if (dropped === 0 && step <= NEWER_GAP_TOLERANCE) {
+          contiguous.push(m);
+          prevId = id;
+        } else {
+          dropped++;
+        }
+      }
+      if (dropped > 0) {
+        console.warn(`[StoreDiag] newer page had inner gap: kept=${contiguous.length}` +
+          ` dropped=${dropped} lastKept=${prevId}`);
+        // 丢掉了后半段，说明更新的消息还在，别把分页关掉。
+        this.hasMoreNewer = true;
+        this.newerLoadState = 'idle';
+        const trimmed: TdObject = { '@type': 'messages' };
+        trimmed['messages'] = contiguous;
+        this.onHistory(trimmed, 'newer');
+        this.notify('paginationState');
+        return;
+      }
       if (maxId <= newestId) {
         // TDLib's classic negative-offset trap: the FIRST getChatHistory with
         // offset < 0 is often served from the local cache only and returns
@@ -1892,6 +1927,21 @@ export class MessageStore {
     // A bot that shows/removes its keyboard does it via a message's markup.
     this.scanKeyboardMarkup([m]);
     const entry: MessageEntry = buildMessageEntry(m, this.users);
+    // 窗口停在旧历史里时，实时到达的消息不能直接贴到尾部。
+    //
+    // 它和窗口最后一条之间可能隔着上万条没加载的历史，贴上去就是一个永久的
+    // 洞——后续加载都发生在更新的那一端，中间那段再也没人去取。实测：停在
+    // 未读锚点几分钟，频道来了 5 条，窗口里就出现 13009 条的缺口。
+    //
+    // 不收也不会丢：用户往下翻时由分页把它连同中间那段一起取回来。
+    // injectLastMessageAtTail 早就有同样的门槛（见那边的注释），这里一直漏着。
+    //
+    // 自己发出去的消息例外——那是用户刚做的动作，必须立刻可见。
+    if (this.hasMoreNewer && !entry.isOutgoing) {
+      console.info(`[StoreDiag] live arrival skipped id=${entry.id}` +
+        ` windowNewest=${this.messages.length > 0 ? this.messages[this.messages.length - 1].id : 0}`);
+      return;
+    }
     this.upsert(entry);
     // 实时到达（不是翻历史翻出来的）。整段媒体的可见窗口对这些消息放行：
     // 它们一次就一条，用户多半正看着尾部，等滚动事件才下会明显发愣。

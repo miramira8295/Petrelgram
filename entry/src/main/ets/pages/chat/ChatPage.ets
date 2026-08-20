@@ -617,10 +617,17 @@ struct ChatPage {
   // trigger zone never clears). Re-armed when the user scrolls clear of the
   // top zone or starts a new touch gesture.
   private olderArmed: boolean = true;
-  // 向下分页的同款闸门。缺了它时，视口贴着底部的每一次 onScrollIndex 都会再
-  // 发一次 loadNewer：新页追加后视口仍在底部，于是继续发——实测 45 秒里连发
-  // 15 次，窗口从 238 行涨到 630 行还在涨。向上那一侧一直有这个闸门，向下漏了。
-  private newerArmed: boolean = true;
+  // 上一次向下分页是在哪个可见末行触发的；-1 表示已完全上膛。
+  //
+  // 这里不能照抄向上那侧的"离边界够远就重新上膛"：新页一追加，groups.length
+  // 就涨 30 而视口没动，"离末尾还有几行"立刻成立、自动上膛，下一次
+  // onScrollIndex（追加本身就会触发）又开一枪——闸门被内容增长自己顶开，
+  // 等于没加。实测 5 秒内窗口从 14 行涨到 268 行。
+  //
+  // 判据改成"视口确实往下走了"：只有 end 越过上次开枪的位置才再放一枪。
+  // 内容增长不会让 end 变大（视口没动），所以自驱的链子到此为止；用户真往下
+  // 滚时照常一页一页地跟。
+  private newerFiredAtEnd: number = -1;
   // Jump-target highlight: a translucent overlay over the target row that
   // gently blinks twice after a reply/pinned/link jump lands.
   @State flashTop: number = 0;
@@ -827,7 +834,7 @@ struct ChatPage {
     this.fileOpenInFlightId = 0;
     this.musicQueue.reset();
     this.olderArmed = true;
-    this.newerArmed = true;
+    this.newerFiredAtEnd = -1;
     this.freshSinceId = 0;
     this.freshClearSeq++;
     this.imeTailPinned = false;
@@ -2614,13 +2621,19 @@ struct ChatPage {
     }
   }
 
-  // 向下同理：一次装填只放一枪，离开底部区域才重新上膛。
-  private maybeLoadNewer(): void {
-    if (this.newerArmed && this.store !== null) {
-      const started = this.store.loadNewer();
-      if (started || !this.store.getHasMoreNewer()) {
-        this.newerArmed = false;
-      }
+  // 只有视口确实往下走过才再取一页，见 newerFiredAtEnd 的说明。
+  private maybeLoadNewer(end: number): void {
+    if (this.store === null || end <= this.newerFiredAtEnd) {
+      return;
+    }
+    // 诊断：向下预取又跑飞了两次，判据本身要能看见。end 在内容追加时到底动
+    // 没动，是"视口跟着贴底走"还是"用户真在滚"，只有这行能分清。
+    console.info(`[ChatDiag] fireNewer end=${end} rows=${this.groups.length}` +
+      ` firedAt=${this.newerFiredAtEnd} atBottom=${this.atBottom}` +
+      ` stayUnread=${this.stayAtUnread}`);
+    const started: boolean = this.store.loadNewer();
+    if (started || !this.store.getHasMoreNewer()) {
+      this.newerFiredAtEnd = end;
     }
   }
 
@@ -7023,9 +7036,9 @@ struct ChatPage {
             this.maybeLoadOlder();
           }
           if (end < this.groups.length - 5) {
-            this.newerArmed = true; // 离开底部区域，重新上膛
+            this.newerFiredAtEnd = -1; // 离开底部区域，完全上膛
           } else {
-            this.maybeLoadNewer();
+            this.maybeLoadNewer(end);
           }
         })
         // onScrollIndex only fires when the visible index RANGE changes, so
