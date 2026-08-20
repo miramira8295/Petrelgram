@@ -296,6 +296,14 @@ export struct ChatBackdrop {
       }
     }
     .width('100%').height('100%')
+    // 整层背景必须自己铺进安全区。ChatPage 的根 Stack 没有 expandSafeArea
+    // （只有里面那层内容 Column 有），所以背景作为它的孩子默认停在安全区
+    // 边界，状态栏那一条就露出窗口底色——深色下是 #17212B 压在壁纸上，一条
+    // 明显的分界（issue #7）。
+    //
+    // 原来只有下面实时绘制那一支带了 expandSafeArea，光栅那一支（缓存命中的
+    // 常态路径）没带，于是同一个页面时好时坏。挂在这一层，两条路一起覆盖。
+    .expandSafeArea([SafeAreaType.KEYBOARD, SafeAreaType.SYSTEM])
     .hitTestBehavior(HitTestMode.None);
   }
 }
