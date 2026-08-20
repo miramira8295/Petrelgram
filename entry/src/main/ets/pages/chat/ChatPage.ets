@@ -735,6 +735,12 @@ struct ChatPage {
     // onScrollIndex 落地再收紧。
     this.curEndIdx = -1;
     this.indexGroupsLen = -1;
+    // 「↓」的返回关系和"底部看到的是哪条"同样是会话级的。消息 id 在每个会话
+    // 里独立编号，把上一个会话的跳转栈带过来，↓ 就会指向本会话里一条恰好同号
+    // 的无关消息——或者一条根本不存在的 id，点下去只是空转。
+    this.returnState = emptyReturnState();
+    this.curBottomId = 0;
+    this.jumpLandingUntil = 0;
     this.pendingScrollBottom = false;
     this.scrollToBottomBusy = false;
     this.pendingJumpId = 0;
