@@ -87,3 +87,43 @@ export function canStepOlder(
 export function canStepNewer(currentIndex: number): boolean {
   return currentIndex > 0;
 }
+
+// 从全局搜索点某条消息进来时，那一条就是"锚点"：用户已经指明了要看哪一条。
+//
+// 进来之后还会用同一串关键词跑一次会话内搜索（searchChatMessages），目的只是
+// 把 ∧/∨ 的结果列表填上。但两边的匹配口径并不一致：issue #80 里，全局搜索命中
+// 的是「opengram，还有最近那个」，会话内搜索用同一串词只回了另一条同样含
+// "opengram"、"还有" 的消息。原来的写法是 indexOf 找不到锚点就跳到 results[0]，
+// 于是刚落对的位置被甩开，用户眼睁睁看着页面自己滑到别处。
+//
+// 锚点是用户的选择，不能被这次搜索推翻。结果按 id 降序（新→旧）排，把锚点按
+// 序插进去即可：∧/∨ 相对它仍然是"更旧/更新"，翻页锚点也仍然是最后一条。
+export interface AnchorMerge {
+  results: number[];
+  // 锚点在 results 里的下标；没有锚点时为 -1。
+  index: number;
+  // 是否是这次插进去的（调用方据此决定要不要把总数 +1）。
+  inserted: boolean;
+}
+
+export function mergeAnchorHit(ids: number[], anchorId: number): AnchorMerge {
+  if (anchorId <= 0) {
+    return { results: ids, index: -1, inserted: false };
+  }
+  const at: number = ids.indexOf(anchorId);
+  if (at >= 0) {
+    return { results: ids, index: at, inserted: false };
+  }
+  let pos: number = ids.length;
+  for (let i = 0; i < ids.length; i++) {
+    if (ids[i] < anchorId) {
+      pos = i;
+      break;
+    }
+  }
+  return {
+    results: [...ids.slice(0, pos), anchorId, ...ids.slice(pos)],
+    index: pos,
+    inserted: true
+  };
+}

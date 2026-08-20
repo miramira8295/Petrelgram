@@ -100,7 +100,7 @@ import {
   openSlot, toggleSlot
 } from '../../util/bottomSlot';
 import {
-  SEARCH_FETCH, SEARCH_JUMP, SearchStep, stepNewer, stepOlder
+  AnchorMerge, SEARCH_FETCH, SEARCH_JUMP, SearchStep, mergeAnchorHit, stepNewer, stepOlder
 } from '../../util/searchPaging';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import {
@@ -1451,7 +1451,7 @@ struct ChatPage {
             const jg2: number = groupIndexOf(this.groups, jumpTargetId);
             if (jg2 >= 0) {
               this.scroller.scrollToIndex(jg2, false, ScrollAlign.START);
-              this.flashAtIndex(jg2);
+              this.flashAtIndex(jg2, jumpTargetId);
             }
           }, 80);
         }
@@ -3229,7 +3229,7 @@ struct ChatPage {
           const gidx = groupIndexOf(this.groups, msgId);
           if (gidx >= 0) {
             this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-            this.flashAtIndex(gidx);
+            this.flashAtIndex(gidx, msgId);
           } else {
             this.pendingJumpId = msgId;
             if (this.store !== null) {
@@ -3324,15 +3324,22 @@ struct ChatPage {
         promptAction.showToast({ message: $r('app.string.cp_no_messages_found'), duration: 1500 });
         return;
       }
-      // Entered on a specific hit (a message tapped in global search): it is
-      // already the jump target, so just make it the current hit.
+      // 从全局搜索点某条消息进来：那一条就是跳转目标，已经落到位了，这次
+      // 搜索只是为了把 ∧/∨ 的列表填上——**任何情况下都不再跳**。
+      //
+      // 原来是 indexOf 找不到锚点就 jumpToResult(0)。两边匹配口径不同时这就
+      // 会把用户刚落对的位置甩开（issue #80：全局搜索命中「opengram，还有最近
+      // 那个」，会话内搜索用同一串词只回了另一条含 "opengram" 的消息，页面
+      // 于是自己滑走）。锚点是用户的选择，按 id 序插进结果里，不推翻它。
       if (this.searchAnchorId !== 0) {
-        const at = this.searchResults.indexOf(this.searchAnchorId);
+        const merged: AnchorMerge = mergeAnchorHit(this.searchResults, this.searchAnchorId);
         this.searchAnchorId = 0;
-        if (at >= 0) {
-          this.searchIdx = at;
-          return;
+        this.searchResults = merged.results;
+        this.searchIdx = merged.index;
+        if (merged.inserted) {
+          this.searchTotal = this.searchTotal + 1;
         }
+        return;
       }
       this.jumpToResult(thenJumpTo);
     }).catch((e: TdError) => {
@@ -3379,7 +3386,7 @@ struct ChatPage {
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-      this.flashAtIndex(gidx);
+      this.flashAtIndex(gidx, messageId);
     } else if (this.store !== null) {
       this.pendingJumpId = messageId;
       this.store.loadAround(messageId, (found: boolean): void => {
@@ -3394,16 +3401,29 @@ struct ChatPage {
   // Gently blink the row at gidx twice — visual confirmation of where a
   // reply/pinned/link jump landed. Waits a beat for the scroll to settle so
   // getItemRect sees the laid-out row.
-  private flashAtIndex(gidx: number): void {
+  //
+  // targetId：这一跳要照亮的那条消息。下标是**现在**算出来的，而矩形要等
+  // 150ms 布局稳了才取——这中间往上补进一页历史，同一个下标就指向别人了
+  // （issue #80 的视频里，高亮框落在目标上方五行的另一条上）。给了 id 就在
+  // 取矩形前重新解析一次下标；没有 id（置顶跳转那种只有下标的调用）沿用旧行为。
+  private flashAtIndex(gidx: number, targetId: number = 0): void {
     const seq = ++this.flashSeq;
     setTimeout(() => {
       if (seq !== this.flashSeq) {
         return;
       }
+      let idx = gidx;
+      if (targetId > 0) {
+        const re: number = groupIndexOf(this.groups, targetId);
+        if (re < 0) {
+          return;
+        }
+        idx = re;
+      }
       let top = 0;
       let height = 0;
       try {
-        const rect = this.scroller.getItemRect(gidx);
+        const rect = this.scroller.getItemRect(idx);
         top = rect.y;
         height = rect.height;
       } catch (e) {
@@ -5597,7 +5617,7 @@ struct ChatPage {
     const gidx: number = groupIndexOf(this.groups, targetId);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-      this.flashAtIndex(gidx);
+      this.flashAtIndex(gidx, targetId);
       return;
     }
     this.pendingJumpId = targetId;

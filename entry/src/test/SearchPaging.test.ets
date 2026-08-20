@@ -2,7 +2,8 @@ import { describe, expect, it } from '@ohos/hypium';
 import {
   SEARCH_FETCH, SEARCH_JUMP, SEARCH_STAY, SearchStep,
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_HINT, SEARCH_LABEL_NONE,
-  canStepNewer, canStepOlder, searchCounterText, searchLabelKind, stepNewer, stepOlder
+  AnchorMerge, canStepNewer, canStepOlder, mergeAnchorHit, searchCounterText,
+  searchLabelKind, stepNewer, stepOlder
 } from '../main/ets/util/searchPaging';
 
 // 结果按新→旧排列：∧ 往更旧（下标 +1），∨ 往更新（下标 -1）。
@@ -85,6 +86,47 @@ export default function searchPagingTest() {
           }
         }
       }
+    });
+
+    // 从全局搜索点进某条消息：那条就是锚点。会话内搜索用同一串关键词再查一次，
+    // 结果不一定包含它——两边的匹配口径不同（issue #80）。锚点必须留住。
+    it('锚点已在结果里：原样返回，下标指向它', 0, () => {
+      const m: AnchorMerge = mergeAnchorHit([90, 80, 70], 80);
+      expect(m.index).assertEqual(1);
+      expect(m.inserted).assertEqual(false);
+      expect(m.results.length).assertEqual(3);
+    });
+
+    it('锚点不在结果里：按 id 降序插进去，下标指向它', 0, () => {
+      const m: AnchorMerge = mergeAnchorHit([90, 70], 80);
+      expect(m.inserted).assertEqual(true);
+      expect(m.index).assertEqual(1);
+      expect(m.results.join(',')).assertEqual('90,80,70');
+    });
+
+    it('锚点比所有结果都新 / 都旧：落在两端', 0, () => {
+      expect(mergeAnchorHit([80, 70], 90).index).assertEqual(0);
+      expect(mergeAnchorHit([90, 80], 70).index).assertEqual(2);
+    });
+
+    it('结果为空：锚点自己成为唯一一条', 0, () => {
+      const m: AnchorMerge = mergeAnchorHit([], 80);
+      expect(m.inserted).assertEqual(true);
+      expect(m.index).assertEqual(0);
+      expect(m.results.join(',')).assertEqual('80');
+    });
+
+    it('没有锚点：不动、下标为 -1', 0, () => {
+      const m: AnchorMerge = mergeAnchorHit([90, 80], 0);
+      expect(m.index).assertEqual(-1);
+      expect(m.inserted).assertEqual(false);
+      expect(m.results.join(',')).assertEqual('90,80');
+    });
+
+    it('不修改传入的数组', 0, () => {
+      const src: number[] = [90, 70];
+      mergeAnchorHit(src, 80);
+      expect(src.join(',')).assertEqual('90,70');
     });
   });
 }
