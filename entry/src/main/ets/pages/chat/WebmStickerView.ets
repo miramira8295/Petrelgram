@@ -1,4 +1,7 @@
 import { IjkMediaPlayer, OnPreparedListener, OnErrorListener, OnCompletionListener } from '@ohos/ijkplayer';
+import { AlphaWebmStickerView } from '../common/AlphaWebmStickerView';
+import { alphaStickerPipelineAvailable } from '../../services/AlphaStickerStore';
+import { alphaStickerCandidate } from '../../util/webm/alphaStickerGate';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_EMOJI,
   KEY_POWER_EMOJI_CHAT, KEY_POWER_EMOJI_REACTIONS, KEY_POWER_EMOJI_STATUS,
@@ -97,6 +100,10 @@ function enqueueInit(job: PlayerJob): void {
 // Loops a Telegram WEBM (VP9) video sticker inline, muted, via ijkplayer on a
 // TEXTURE XComponent (composites within ArkUI, unlike SURFACE). Falls back to
 // the raster thumbnail if playback fails.
+//
+// 真带透明通道的贴纸走 AlphaWebmStickerView（自解封装 + 系统 VP9 + 自绘），
+// 那条路走不通时原样退回下面的 ijk 播放器——所有调用点都经过这里，所以判定
+// 只在这一个地方做。
 @Component
 export struct WebmStickerView {
   @Prop webmPath: string;
@@ -119,6 +126,9 @@ export struct WebmStickerView {
   onWorking: () => void = (): void => {};
   onFailed: () => void = (): void => {};
   @State failed: boolean = false;
+  // 先试自解码链路；它自己会读文件头判断有没有 alpha，判不出来就把这面旗降下
+  // 来，退回 ijk。设备低于 API 23（系统没有 VP9 解码器）时一开始就是 false。
+  @State useAlpha: boolean = false;
   private player: IjkMediaPlayer | null = null;
   private readonly instanceId: number = nextWebmStickerId++;
   private loopTimer: number = -1;
@@ -130,6 +140,7 @@ export struct WebmStickerView {
 
   aboutToAppear(): void {
     probeHit('webm.mount');
+    this.useAlpha = alphaStickerCandidate(this.powerCategory) && alphaStickerPipelineAvailable();
   }
 
   aboutToDisappear(): void {
@@ -297,6 +308,15 @@ export struct WebmStickerView {
     } else if (this.failed && this.thumbPath !== '') {
       Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
         .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+    } else if (this.useAlpha) {
+      AlphaWebmStickerView({
+        webmPath: this.webmPath, thumbPath: this.thumbPath,
+        boxWidth: this.boxWidth, boxHeight: this.boxHeight,
+        powerCategory: this.powerCategory,
+        forcePlay: this.forcePlay,
+        onWorking: (): void => { this.onWorking(); },
+        onFallback: (): void => { this.useAlpha = false; }
+      });
     } else {
       XComponent({ id: this.componentId(), type: XComponentType.TEXTURE, libraryname: 'ijkplayer_napi' })
         .width(this.boxWidth).height(this.boxHeight)
