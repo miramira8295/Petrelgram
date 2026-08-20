@@ -124,7 +124,17 @@ struct InAppBrowserPage {
         SymbolGlyph($r('sys.symbol.dot_grid_2x2')).fontSize(20).fontColor([COLOR_TEXT_PRIMARY]);
       }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
       .bindMenu(this.moreMenu(), { systemMaterial: overlayMaterial('menu') });
-    }.width('100%').height(50).padding({ left: 6, right: 6 }).alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    // 顶栏自己吃掉状态栏那一条：高度加上 topSafe、内容用 padding 顶下来，
+    // 于是那条由**顶栏的底色**来画，和顶栏浑然一体。
+    //
+    // 之前是根容器 padding 把整页推下来，那条归根容器画、是 page_bg，而顶栏
+    // 是 surface —— 两个颜色紧挨着，看着仍然不沉浸（issue #7 原话："状态栏
+    // 跟顶栏的颜色是不一样的"）。
+    .height(50 + this.topSafe)
+    .padding({ left: 6, right: 6, top: this.topSafe })
+    .alignItems(VerticalAlign.Center)
     .backgroundColor(COLOR_SURFACE);
   }
 
@@ -181,6 +191,7 @@ struct InAppBrowserPage {
     // 页面画，露出的是窗口底色——看着就是"没沉浸"。padding 只负责把内容让开
     // 那一条，铺不铺满是另一回事，两个都要有。其余页面都是这么写的。
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe, bottom: this.bottomSafe });
+    // 顶部不再由这里让开——那一条交给顶栏自己画（见上面的说明）。底部照旧。
+    .padding({ bottom: this.bottomSafe });
   }
 }
