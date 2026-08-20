@@ -37,11 +37,11 @@ export interface BackgroundRasterParams {
 // "should blur" actually applies is now the user's own call — the Chat
 // Background page's slider (KEY_BG_BLUR in AppSettings.ets, default 8) — so
 // the radius itself is a caller-supplied parameter, not a fixed constant.
-const NO_BLUR_RADIUS: number = 0;
+export const NO_BLUR_RADIUS: number = 0;
 // Both the single-image wallpaper and the composited pattern grid need the
 // same overscan when blurred, so the edges softened by the blur don't expose
 // a rim of the layer underneath.
-const BLUR_OVERSCAN_SCALE: number = 1.08;
+export const BLUR_OVERSCAN_SCALE: number = 1.08;
 
 // Pure function: given the shape of the background and the user's blur
 // setting, decide how much blur (if any) the composited image should get.
@@ -123,7 +123,7 @@ export function patternTileGrid(width: number, height: number): PatternTileGrid 
 }
 
 // [0, count) as a fresh array — ForEach needs a concrete array, not a range.
-function tileIndices(count: number): number[] {
+export function tileIndices(count: number): number[] {
   const result: number[] = [];
   for (let i = 0; i < count; i++) {
     result.push(i);
@@ -141,6 +141,9 @@ function tileIndices(count: number): number[] {
 // artwork does — only the outer boundary of the whole grid (already handled
 // by the existing overrun + Stack.clip(true) in backgroundLayer) needs the
 // overscan.
+// 只给离屏光栅用。它是多参数的全局 @Builder，建完就不跟随参数变化了（官方
+// 《自定义构建函数》：多个参数时不支持 @Builder 函数内 UI 组件刷新），而快照
+// 是一次性的，这里正好无所谓。实时绘制那一路必须用 PatternTileLayer 组件。
 @Builder
 export function patternTileGridLayer(
   path: string, opacity: number, grid: PatternTileGrid, blurRadius: number

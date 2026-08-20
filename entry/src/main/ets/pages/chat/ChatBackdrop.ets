@@ -2,9 +2,10 @@ import { common } from '@kit.AbilityKit';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { CachedImage } from '../common/CachedImage';
 import {
-  BackgroundRasterParams, backgroundBlurRadius, cachedRaster,
-  patternOpacity, patternTileGrid, patternTileGridLayer, rasterSignature, rasterizeBackground
+  BackgroundRasterParams, backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedRaster,
+  NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground
 } from '../../util/chatBackgroundRaster';
+import { PatternTileLayer } from './PatternTileLayer';
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
   BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX, KEY_BG_BLUR, KEY_BG_PATTERN,
@@ -208,9 +209,15 @@ export struct ChatBackdrop {
         // 时，比例比图案更宽的设备（如平板）会在离轴边缘露白）。整图壁纸仍然
         // 铺满并裁切（Cover）。
         if (this.chatBg.path !== '' && this.chatBg.isPattern) {
-          patternTileGridLayer(
-            this.chatBg.path, this.imageOpacity(),
-            patternTileGrid(this.screenW, this.screenH), this.blurRadius());
+          // 组件而不是全局 @Builder：多参数的全局 @Builder 建完就不再跟随参数
+          // 变化，模糊度/图案浓度到货后这一层会停在旧值上。见 PatternTileLayer。
+          PatternTileLayer({
+            path: this.chatBg.path,
+            tileOpacity: this.imageOpacity(),
+            blurRadius: this.blurRadius(),
+            screenW: this.screenW,
+            screenH: this.screenH
+          });
         } else if (this.chatBg.path !== '') {
           Image(this.chatBg.path.startsWith('/')
             ? `file://${this.chatBg.path}` : this.chatBg.path).draggable(false)
@@ -220,10 +227,8 @@ export struct ChatBackdrop {
             // 模糊需要一点过扫：否则边缘的半透明像素会在视口四周露出来。按
             // **实际半径**判断而不是 blurred 标志——用户把滑杆拖到 0 时不该白白
             // 放大裁掉边缘。
-            .scale({
-              x: this.blurRadius() > 0 ? 1.08 : 1,
-              y: this.blurRadius() > 0 ? 1.08 : 1
-            })
+            .scale(this.blurRadius() > NO_BLUR_RADIUS
+              ? { x: BLUR_OVERSCAN_SCALE, y: BLUR_OVERSCAN_SCALE } : { x: 1, y: 1 })
             .blur(this.blurRadius());
         }
         if (this.chatBg.dimming > 0) {
