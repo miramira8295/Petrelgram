@@ -287,6 +287,12 @@ struct ChatPage {
   // 用"进没进过后台"而不是"隐藏了多少毫秒"：熄屏/回桌面会置位，应用内跳
   // 查看器、资料页不会——后者本来就没问题，不必为它们白付一次 RELOAD。
   private appWentBackground: boolean = false;
+  // 隐藏那一刻"屏幕最上面那条消息是哪条、它在哪个高度"。
+  //
+  // 必须在隐藏时就记：恢复时再拿 curStartIdx 去索引数据集，隐藏期间若发生过
+  // prepend，这个下标已经指向别的消息了。
+  private hiddenAnchorId: number = 0;
+  private hiddenAnchorY: number = 0;
 
   // The single gate for publishing a dataset while the page may be hidden.
   private publishGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
@@ -297,22 +303,40 @@ struct ChatPage {
     return kind;
   }
 
-  private resyncListAfterHidden(): void {
-    let anchorId: number = 0;
-    let anchorY: number = 0;
-    if (!this.atBottom && this.didInitialScroll &&
-      this.curStartIdx >= 0 && this.curStartIdx < this.groups.length) {
-      anchorId = this.groups[this.curStartIdx].head.id;
-      try {
-        anchorY = this.scroller.getItemRect(this.curStartIdx).y;
-      } catch (e) {
-        anchorY = 0;
-      }
+  // 隐藏时把视口位置记下来，供回来后还原。
+  //
+  // **包括当时正停在底部的情况**：停在底部只说明那一刻那里是最新的，不代表
+  // 用户愿意把隐藏期间到达的消息当成看过的划走。原来那一支直接 glueBottom，
+  // 表现就是"切出去、来了消息、切回来直接甩到最底下"。还原到原位之后，新消息
+  // 留在下方，「↓」带未读数指回去，要不要下去由用户决定。
+  private captureHiddenAnchor(): void {
+    this.hiddenAnchorId = 0;
+    this.hiddenAnchorY = 0;
+    if (!this.didInitialScroll ||
+      this.curStartIdx < 0 || this.curStartIdx >= this.groups.length) {
+      return;
     }
+    this.hiddenAnchorId = this.groups[this.curStartIdx].head.id;
+    try {
+      this.hiddenAnchorY = this.scroller.getItemRect(this.curStartIdx).y;
+    } catch (e) {
+      this.hiddenAnchorY = 0;
+    }
+  }
+
+  private resyncListAfterHidden(): void {
+    const anchorId: number = this.hiddenAnchorId;
+    const anchorY: number = this.hiddenAnchorY;
+    this.hiddenAnchorId = 0;
+    this.hiddenAnchorY = 0;
     console.info(`[ChatDiag] resync anchorId=${anchorId} anchorY=${Math.round(anchorY)}` +
       ` groups=${this.groups.length}`);
     this.groupsData.reload();
     if (anchorId > 0) {
+      // 先松开贴底：还原发起到 onScrollIndex 回调落地之间，atBottom 还是隐藏
+      // 前那个 true，这期间任何一条到达通知都会走"在底部就跟随"那一支
+      // （见 L1242）把视口又拽回底部。同文件 1216 / 1227 两处也是这个写法。
+      this.atBottom = false;
       this.restorePrependAnchor(this.groups, anchorId, anchorY);
     } else if (this.atBottom && this.didInitialScroll) {
       const actionSeq: number = ++this.scrollActionSeq;
@@ -1605,6 +1629,7 @@ struct ChatPage {
     console.info(`[ChatDiag] hide msgs=${this.messages.length} groups=${this.groups.length} ds=${this.groupsData.totalCount()}`);
     this.pageVisible = false;
     this.hiddenSinceMs = Date.now();
+    this.captureHiddenAnchor();
     // 页面不可见时停表，回来时补一次即时值再续上。
     this.clearNowSecTimer();
     // 切走（含被查看器等页面盖住）立刻停播放位——不能等 aboutToDisappear，
