@@ -168,6 +168,43 @@ function outcome(clip: AlphaClip | null, permanent: boolean): DecodeOutcome {
   return { clip: clip, permanent: permanent };
 }
 
+// 预算 -> 解码 -> 入账，整段在排队里做。
+//
+// 拆开会有一个很难查的洞：两张贴纸同时算预算，会各自看到"还有 56MB"，加起来
+// 就超了。入账也必须在这里，不能等调用方 await 回来再记——那时下一个任务
+// 可能已经开算了。
+async function decodeReserved(clip: WebmAlphaClip, key: string): Promise<DecodeOutcome> {
+  const plan: AlphaDecodePlan = planAlphaDecode(
+    clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, alphaStickerFreeBytes());
+  if (!plan.accept) {
+    return outcome(null, false); // 只是这一刻没预算，别永久拉黑
+  }
+  const payload = packAlphaStreams(clip.frames, plan.frameStep);
+  if (payload === null) {
+    return outcome(null, true);
+  }
+  const frames: image.PixelMap[] = await nativeWebm.webmAlphaDecode(
+    payload.colorData, payload.colorLengths, payload.alphaData, payload.alphaLengths,
+    clip.track.width, clip.track.height, plan.targetW, plan.targetH, plan.frameStep);
+  if (frames.length === 0) {
+    // 原生失败的原因分不清是文件还是设备，按暂时处理：拉黑的代价是这张贴纸
+    // 永远白底，重试的代价只是多一次几十毫秒的解码。
+    return outcome(null, false);
+  }
+  // 原生可能比预期少吐几帧（解码器丢帧），时间戳表按实际帧数截断。
+  const timesMs: number[] = payload.keptTimesMs.slice(0, frames.length);
+  const durationMs = Math.max(clip.durationMs, timesMs.length > 0 ? timesMs[timesMs.length - 1] : 0);
+  const decoded: AlphaClip = {
+    key: key, frames: frames, timesMs: timesMs, durationMs: durationMs,
+    width: plan.targetW, height: plan.targetH
+  };
+  const bytes = plan.targetW * plan.targetH * 4 * frames.length;
+  evictUntilFits(bytes);
+  totalBytes += bytes;
+  cache.set(key, { clip: decoded, bytes: bytes, refs: 0, lastUsed: Date.now() });
+  return outcome(decoded, false);
+}
+
 async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
   const bytes = await readFileBytes(path);
   if (bytes === null) {
@@ -178,36 +215,12 @@ async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
     // 不带 alpha、不是 VP9、或者容器里有我们不处理的写法——文件不会变，拉黑。
     return outcome(null, true);
   }
-  const plan: AlphaDecodePlan = planAlphaDecode(
-    clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, alphaStickerFreeBytes());
-  if (!plan.accept) {
-    return outcome(null, false); // 只是这一刻没预算，别永久拉黑
-  }
-  const payload = packAlphaStreams(clip.frames, plan.frameStep);
-  if (payload === null) {
-    return outcome(null, true);
-  }
-  // 只有真正的解码排队，读文件和拆包不排：绝大多数 webm 贴纸走到这一步之前
-  // 就被判成"不带 alpha"了，让它们排在别人的解码后面才回退，等于白等一轮。
-  const decoded: image.PixelMap[] = await serialize((): Promise<image.PixelMap[]> => nativeWebm.webmAlphaDecode(
-    payload.colorData, payload.colorLengths, payload.alphaData, payload.alphaLengths,
-    clip.track.width, clip.track.height, plan.targetW, plan.targetH, plan.frameStep));
-  if (decoded.length === 0) {
-    // 原生失败的原因分不清是文件还是设备，按暂时处理：拉黑的代价是这张贴纸
-    // 永远白底，重试的代价只是多一次几十毫秒的解码。
-    return outcome(null, false);
-  }
-  const frames: image.PixelMap[] = decoded;
-  // 原生可能比预期少吐几帧（解码器丢帧），时间戳表按实际帧数截断。
-  const timesMs: number[] = payload.keptTimesMs.slice(0, frames.length);
-  const durationMs = Math.max(clip.durationMs, timesMs.length > 0 ? timesMs[timesMs.length - 1] : 0);
-  return outcome({
-    key: key, frames: frames, timesMs: timesMs, durationMs: durationMs,
-    width: plan.targetW, height: plan.targetH
-  }, false);
+  // 读文件和拆包**不**排队：绝大多数 webm 贴纸在上面这一步就被判成"不带
+  // alpha"了，让它们排在别人的解码后面才回退，等于白等一轮。
+  return serialize((): Promise<DecodeOutcome> => decodeReserved(clip, key));
 }
 
-function serialize(job: () => Promise<image.PixelMap[]>): Promise<image.PixelMap[]> {
+function serialize(job: () => Promise<DecodeOutcome>): Promise<DecodeOutcome> {
   const run = decodeChain.then(job);
   // 链条本身不能因为某一次失败而断掉，否则后面的贴纸全部排不进来。
   decodeChain = run.then((): void => {}, (): void => {});
@@ -246,18 +259,20 @@ export async function acquireAlphaSticker(path: string, boxPx: number): Promise<
     console.error(`AlphaStickerStore: decode threw: ${e}`);
   }
   inFlight.delete(key);
-  const clip = result.clip;
-  if (clip === null) {
+  if (result.clip === null) {
     if (result.permanent) {
       markRejected(path);
     }
     return null;
   }
-  const bytes = clip.width * clip.height * 4 * clip.frames.length;
-  evictUntilFits(bytes);
-  totalBytes += bytes;
-  cache.set(key, { clip: clip, bytes: bytes, refs: 1, lastUsed: Date.now() });
-  return clip;
+  // 入账已经在 decodeReserved 里做完了，这里只认领引用。
+  const entry = cache.get(key);
+  if (entry === undefined) {
+    return null; // 极端情况下刚解完就被回收了，让调用方回退
+  }
+  entry.refs++;
+  entry.lastUsed = Date.now();
+  return entry.clip;
 }
 
 export function releaseAlphaSticker(clip: AlphaClip | null): void {
