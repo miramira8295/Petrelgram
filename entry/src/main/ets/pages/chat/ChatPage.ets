@@ -60,6 +60,11 @@ import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
+import { MessageListStateCard, TimelineStatePill } from './MessageListState';
+import {
+  TL_NEWER_ERROR, TL_NONE, TL_OLDER_ERROR, TL_SYNC_ERROR,
+  timelineStateMode, timelineStateText
+} from '../../util/timelineState';
 import {
   forwardableIds, pruneSelection, rowSelectable, rowSelected, toggleRow
 } from '../../util/messageSelection';
@@ -6208,18 +6213,6 @@ struct ChatPage {
   }
 
   @Styles
-  timelineStatusNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  timelineStatusPressedStyle() {
-    .opacity(0.76)
-    .scale({ x: 0.97, y: 0.97 })
-  }
-
-  @Styles
   liveEntryPressedStyle() {
     .backgroundColor('#E93652')
     .opacity(0.82)
@@ -7190,236 +7183,23 @@ struct ChatPage {
     }, 60);
   }
 
-  private emptyHistoryTitle(): string {
-    if (this.threadRootId > 0) {
-      return str('cp_no_replies');
-    }
-    if (this.membershipState === 'blocked') {
-      return str('cp_cannot_show');
-    }
-    if (this.isChannel) {
-      return str('cp_channel_empty');
-    }
-    if (this.isGroup) {
-      return str('cp_group_empty');
-    }
-    return str('cp_no_messages');
-  }
-
-  private emptyHistoryIcon(): string {
-    if (this.membershipState === 'blocked') {
-      return 'sys.symbol.lock_fill';
-    }
-    if (this.membershipState === 'joinable') {
-      return 'sys.symbol.person_badge_plus';
-    }
-    if (this.threadRootId > 0) {
-      return 'sys.symbol.arrowshape_turn_up_left';
-    }
-    return 'sys.symbol.message';
-  }
-
-  private emptyHistoryHint(): string {
-    if (this.threadRootId > 0) {
-      return this.membershipState === 'writable' ? str('cp_send_first_reply') : str('cp_no_replies_sub');
-    }
-    if (this.membershipState === 'joinable') {
-      return str('cp_join_to_chat');
-    }
-    if (this.membershipState === 'blocked') {
-      return str('cp_maybe_removed');
-    }
-    if (this.membershipState === 'checking') {
-      return str('cp_confirming_membership');
-    }
-    if (this.isChannel) {
-      return str('cp_posts_appear_here');
-    }
-    if (this.isGroup) {
-      return str('cp_send_first_group');
-    }
-    return str('cp_send_to_start');
-  }
-
-  @Builder
-  messageListState() {
-    Column({ space: 9 }) {
-      if (this.messageLoadState === 'loading') {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle({ width: 56, height: 56 }).fill($r('app.color.surface_alt'));
-          LoadingProgress()
-            .width(30).height(30).color(COLOR_PRIMARY);
-        }.width(56).height(56);
-        Text($r('app.string.cp_syncing_messages'))
-          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).fontWeight(FontWeight.Medium);
-        Text($r('app.string.cp_history_soon'))
-          .fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-      } else if (this.messageLoadState === 'error') {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle({ width: 56, height: 56 }).fill('#12E64646');
-          SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-            .fontSize(30).fontColor(['#E64646']);
-        }.width(56).height(56);
-        Text($r('app.string.cp_messages_failed'))
-          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).fontWeight(FontWeight.Medium);
-        Text(this.messageLoadError !== '' ? this.messageLoadError : $r('app.string.cp_check_network'))
-          .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-          .textAlign(TextAlign.Center).maxLines(2);
-        Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14).fontColor([Color.White]);
-          Text($r('app.string.settings_retry')).fontSize(13).fontColor(Color.White).fontWeight(FontWeight.Medium);
-        }
-        .height(34).padding({ left: 14, right: 14 })
-        .borderRadius(17)
-        .stateStyles({
-          normal: this.composerPrimaryNormalStyle,
-          pressed: this.composerPrimaryPressedStyle
-        })
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-          curve: Curve.EaseOut
-        })
-        .onClick((): void => { this.store?.retryInitialHistory(); });
-      } else {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle({ width: 56, height: 56 }).fill($r('app.color.surface_alt'));
-          SymbolGlyph($r(this.emptyHistoryIcon()))
-            .fontSize(28).fontColor([COLOR_PRIMARY]);
-        }.width(56).height(56);
-        Text(this.emptyHistoryTitle())
-          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).fontWeight(FontWeight.Medium);
-        Text(this.emptyHistoryHint())
-          .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
-      }
-    }
-    .constraintSize({ minWidth: 210, maxWidth: this.screenW - 48 })
-    .padding({ left: 24, right: 24, top: 22, bottom: 22 })
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: 0.5, color: $r('app.color.divider') })
-    .borderRadius(20)
-    .shadow({ radius: 8, color: '#18000000', offsetX: 0, offsetY: 3 })
-    .alignItems(HorizontalAlign.Center)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: 8 }))
-      .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
-        curve: Curve.EaseOut
-      }));
-  }
-
-  private timelineStateMode(): string {
-    if (this.visibleGroupCount <= 0) {
-      return '';
-    }
-    if (this.messageLoadState === 'error') {
-      return 'syncError';
-    }
-    if (this.messageLoadState === 'loading') {
-      return 'syncLoading';
-    }
-    if (this.olderLoadState === 'error') {
-      return 'olderError';
-    }
-    if (this.newerLoadState === 'error') {
-      return 'newerError';
-    }
-    if (this.olderLoadState === 'loading') {
-      return 'olderLoading';
-    }
-    if (this.newerLoadState === 'loading') {
-      return 'newerLoading';
-    }
-    return '';
-  }
-
-  private timelineStateText(mode: string): string {
-    if (mode === 'syncError') {
-      return str('cp_sync_failed');
-    }
-    if (mode === 'syncLoading') {
-      return str('cp_syncing_latest');
-    }
-    if (mode === 'olderError') {
-      return str('cp_older_failed');
-    }
-    if (mode === 'newerError') {
-      return str('cp_newer_failed');
-    }
-    return mode === 'olderLoading' ? str('cp_loading_older') : str('cp_loading_newer');
+  private timelinePillMode(): string {
+    return timelineStateMode(this.visibleGroupCount, this.messageLoadState,
+      this.olderLoadState, this.newerLoadState);
   }
 
   private timelineStateRetry(mode: string): void {
     if (this.store === null) {
       return;
     }
-    if (mode === 'syncError') {
+    if (mode === TL_SYNC_ERROR) {
       this.store.retryInitialHistory();
-    } else if (mode === 'olderError') {
+    } else if (mode === TL_OLDER_ERROR) {
       this.olderArmed = false;
       this.store.retryOlder();
-    } else if (mode === 'newerError') {
+    } else if (mode === TL_NEWER_ERROR) {
       this.store.retryNewer();
     }
-  }
-
-  @Builder
-  timelineStatePill() {
-    Column() {
-      Row({ space: 7 }) {
-        if (this.timelineStateMode().indexOf('Loading') >= 0) {
-          LoadingProgress().width(15).height(15).color(COLOR_PRIMARY);
-        } else {
-          SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-            .fontSize(15).fontColor(['#E64646']);
-        }
-        Text(this.timelineStateText(this.timelineStateMode()))
-          .fontSize(12.5).fontColor(COLOR_TEXT_PRIMARY).fontWeight(FontWeight.Medium);
-        if (this.timelineStateMode().indexOf('Error') >= 0) {
-          Divider().vertical(true).height(14).color($r('app.color.divider'));
-          Text($r('app.string.settings_retry')).fontSize(12.5).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-        }
-      }
-      .height(32)
-      .padding({ left: 11, right: 11 })
-      .backgroundColor($r('app.color.surface'))
-      .border({ width: 0.5, color: $r('app.color.divider') })
-      .borderRadius(16)
-      .shadow({ radius: 5, color: '#1A000000', offsetX: 0, offsetY: 2 })
-      .stateStyles({
-        normal: this.timelineStatusNormalStyle,
-        pressed: this.timelineStatusPressedStyle
-      })
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-        curve: Curve.EaseOut
-      })
-      .onClick((): void => { this.timelineStateRetry(this.timelineStateMode()); })
-      .accessibilityText(this.timelineStateMode().indexOf('Error') >= 0
-        ? str('cp_timeline_retry_a11y', this.timelineStateText(this.timelineStateMode()))
-        : this.timelineStateText(this.timelineStateMode()));
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Center)
-    .padding({ top: this.floatDate !== '' ? 42 : 8 })
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -6 }))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }));
-  }
-
-  @Builder
-  messageListStateLayer() {
-    Column() {
-      this.messageListState();
-    }
-    .width('100%').height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .padding({ bottom: this.bottomChromeH + 28 })
-    .hitTestBehavior(HitTestMode.Transparent);
   }
 
   // The flattened background, once it exists. Until then the layered version
@@ -7785,9 +7565,31 @@ struct ChatPage {
           this.playSlots.setViewportCenter(y + height / 2);
         });
         if (this.visibleGroupCount === 0) {
-          this.messageListStateLayer();
-        } else if (this.timelineStateMode() !== '') {
-          this.timelineStatePill();
+          // 卡片本身不管定位，这一层负责居中并让开底部输入区。
+          Column() {
+            MessageListStateCard({
+              loadState: this.messageLoadState,
+              loadError: this.messageLoadError,
+              threadRootId: this.threadRootId,
+              membershipState: this.membershipState,
+              isChannel: this.isChannel,
+              isGroup: this.isGroup,
+              screenW: this.screenW,
+              onRetry: (): void => { this.store?.retryInitialHistory(); }
+            });
+          }
+          .width('100%').height('100%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .padding({ bottom: this.bottomChromeH + 28 })
+          .hitTestBehavior(HitTestMode.Transparent);
+        } else if (this.timelinePillMode() !== TL_NONE) {
+          TimelineStatePill({
+            mode: this.timelinePillMode(),
+            label: timelineStateText(this.timelinePillMode()),
+            floatDateShown: this.floatDate !== '',
+            onRetry: (): void => { this.timelineStateRetry(this.timelinePillMode()); }
+          });
         }
         // Jump-target highlight overlay (gentle double blink over the row a
         // reply/pinned/link jump just landed on). Coordinates come from

@@ -87,6 +87,8 @@ import bottomSlotTest from './BottomSlot.test';
 import pinnedSegmentsTest from './PinnedSegments.test';
 import translationModeTest from './TranslationMode.test';
 import messageSelectionTest from './MessageSelection.test';
+import timelineStateTest from './TimelineState.test';
+import emptyHistoryTest from './EmptyHistory.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -178,4 +180,6 @@ export default function testsuite() {
   pinnedSegmentsTest();
   translationModeTest();
   messageSelectionTest();
+  timelineStateTest();
+  emptyHistoryTest();
 }
