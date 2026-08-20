@@ -43,6 +43,8 @@
     "pages/main/WebPushPage",
     "pages/call/CallPage",
     "pages/chat/ForumTopicsPage",
-    "pages/story/StoryViewerPage"
+    "pages/story/StoryViewerPage",
+    "pages/profile/MemberRestrictPage",
+    "pages/profile/MemberPromotePage"
   ]
 }

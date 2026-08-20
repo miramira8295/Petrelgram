@@ -11035,6 +11035,150 @@
     {
       "name": "cb_pattern_strength",
       "value": "पैटर्न की गहराई"
+    },
+    {
+      "name": "mm_promote",
+      "value": "प्रमोट करें"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "एडमिन अधिकार संपादित करें"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "प्रतिबंधित करें"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "यह सदस्य क्या कर सकता है?"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "मीडिया भेजें"
+    },
+    {
+      "name": "mm_photos",
+      "value": "फ़ोटो"
+    },
+    {
+      "name": "mm_videos",
+      "value": "वीडियो"
+    },
+    {
+      "name": "mm_files",
+      "value": "फ़ाइलें"
+    },
+    {
+      "name": "mm_music",
+      "value": "संगीत"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "वॉइस संदेश"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "वीडियो संदेश"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "स्टिकर और GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "अवधि"
+    },
+    {
+      "name": "mm_forever",
+      "value": "हमेशा के लिए"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 दिन"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 सप्ताह"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 माह"
+    },
+    {
+      "name": "mm_apply",
+      "value": "लागू करें"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "कस्टम शीर्षक"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "समूह के सदस्यों को ‘एडमिन’ के बजाय यह शीर्षक दिखेगा।"
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "एडमिन अधिकार"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "संदेश हटाएँ"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "उपयोगकर्ताओं को बैन करें"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "लिंक से उपयोगकर्ता आमंत्रित करें"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "स्टोरी प्रबंधित करें"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "स्टोरी पोस्ट करें"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "स्टोरी संपादित करें"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "स्टोरी हटाएँ"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "वॉइस चैट प्रबंधित करें"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "गुमनाम रहें"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "नए एडमिन जोड़ें"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "यह एडमिन नए एडमिन नहीं जोड़ सकेगा।"
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "संदेश पोस्ट करें"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "संदेश संपादित करें"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "यह उपयोगकर्ता बैन हो जाएगा और दोबारा शामिल नहीं हो सकेगा।"
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "इस समूह में इस उपयोगकर्ता के सभी संदेश हटा दिए जाएंगे।"
     }
   ]
 }

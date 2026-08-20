@@ -11035,6 +11035,150 @@
     {
       "name": "cb_pattern_strength",
       "value": "圖案濃度"
+    },
+    {
+      "name": "mm_promote",
+      "value": "提權"
+    },
+    {
+      "name": "mm_edit_admin",
+      "value": "編輯管理員權限"
+    },
+    {
+      "name": "mm_restrict",
+      "value": "限制"
+    },
+    {
+      "name": "mm_access_section",
+      "value": "此成員的存取權限"
+    },
+    {
+      "name": "mm_send_media_files",
+      "value": "傳送媒體檔案"
+    },
+    {
+      "name": "mm_photos",
+      "value": "相片"
+    },
+    {
+      "name": "mm_videos",
+      "value": "影片"
+    },
+    {
+      "name": "mm_files",
+      "value": "檔案"
+    },
+    {
+      "name": "mm_music",
+      "value": "音樂"
+    },
+    {
+      "name": "mm_voice_messages",
+      "value": "語音訊息"
+    },
+    {
+      "name": "mm_round_videos",
+      "value": "圓形影片"
+    },
+    {
+      "name": "mm_stickers_gifs",
+      "value": "貼圖與 GIF"
+    },
+    {
+      "name": "mm_duration",
+      "value": "時限"
+    },
+    {
+      "name": "mm_forever",
+      "value": "永久"
+    },
+    {
+      "name": "mm_one_day",
+      "value": "1 天"
+    },
+    {
+      "name": "mm_one_week",
+      "value": "1 週"
+    },
+    {
+      "name": "mm_one_month",
+      "value": "1 個月"
+    },
+    {
+      "name": "mm_apply",
+      "value": "套用"
+    },
+    {
+      "name": "mm_custom_title",
+      "value": "成員頭銜"
+    },
+    {
+      "name": "mm_custom_title_hint",
+      "value": "群組成員會看到這個頭銜，而不是「管理員」。"
+    },
+    {
+      "name": "mm_admin_rights",
+      "value": "管理員權限"
+    },
+    {
+      "name": "mm_right_delete_messages",
+      "value": "刪除訊息"
+    },
+    {
+      "name": "mm_right_restrict",
+      "value": "封鎖用戶"
+    },
+    {
+      "name": "mm_right_invite",
+      "value": "透過連結邀請用戶"
+    },
+    {
+      "name": "mm_manage_stories",
+      "value": "管理限時動態"
+    },
+    {
+      "name": "mm_story_post",
+      "value": "發布限時動態"
+    },
+    {
+      "name": "mm_story_edit",
+      "value": "編輯限時動態"
+    },
+    {
+      "name": "mm_story_delete",
+      "value": "刪除限時動態"
+    },
+    {
+      "name": "mm_manage_calls",
+      "value": "管理語音聊天"
+    },
+    {
+      "name": "mm_anonymous",
+      "value": "保持匿名"
+    },
+    {
+      "name": "mm_add_admins",
+      "value": "新增管理員"
+    },
+    {
+      "name": "mm_no_add_admins_note",
+      "value": "該管理員無法新增管理員。"
+    },
+    {
+      "name": "mm_post_messages",
+      "value": "發布訊息"
+    },
+    {
+      "name": "mm_edit_messages",
+      "value": "編輯訊息"
+    },
+    {
+      "name": "mm_ban_confirm",
+      "value": "封鎖後對方將無法再加入此群組。"
+    },
+    {
+      "name": "mm_delete_all_confirm",
+      "value": "該用戶在此群組中的所有訊息都會被刪除。"
     }
   ]
 }
