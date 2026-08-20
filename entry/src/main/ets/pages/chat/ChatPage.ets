@@ -154,13 +154,7 @@ import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
-
-// One emoji-triggered sticker hint shown above the composer.
-interface StickerSuggestion {
-  fileId: number;
-  thumbId: number;
-  thumbPath: string;
-}
+import { InlineResultsBar, StickerSuggestion, StickerSuggestionBar } from './ComposerStrips';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -3975,37 +3969,6 @@ struct ChatPage {
     });
   }
 
-  @Builder
-  inlineResultsBar() {
-    Scroll() {
-      Row({ space: 8 }) {
-        ForEach(this.inlineResults, (row: InlineResultRow) => {
-          Column({ space: 3 }) {
-            Stack({ alignContent: Alignment.Center }) {
-              if (row.thumbPath !== '') {
-                Image(`file://${row.thumbPath}`).draggable(false).width(56).height(56)
-                  .objectFit(ImageFit.Cover).borderRadius(8);
-              } else {
-                SymbolGlyph($r('sys.symbol.doc')).fontSize(22)
-                  .fontColor([COLOR_TEXT_SECONDARY]);
-              }
-            }.width(58).height(58)
-            .backgroundColor($r('app.color.surface_alt')).borderRadius(8);
-            if (row.title !== '') {
-              Text(row.title).fontSize(10).fontColor(COLOR_TEXT_SECONDARY)
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                .constraintSize({ maxWidth: 62 });
-            }
-          }
-          .onClick((): void => this.pickInlineResult(row));
-        }, (row: InlineResultRow): string => `ir_${row.resultId}`);
-      }.padding({ left: 10, right: 10, top: 6, bottom: 6 });
-    }
-    .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
-    .width('100%').height(88)
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: { top: 0.7 }, color: $r('app.color.divider') });
-  }
 
   // Typing a bare emoji offers matching stickers above the composer, as the
   // official clients do.
@@ -4061,28 +4024,6 @@ struct ChatPage {
     this.stickerSuggestSeq++;
   }
 
-  @Builder
-  stickerSuggestionBar() {
-    Scroll() {
-      Row({ space: 8 }) {
-        ForEach(this.stickerSuggestions, (row: StickerSuggestion) => {
-          Stack({ alignContent: Alignment.Center }) {
-            if (row.thumbPath !== '') {
-              Image(`file://${row.thumbPath}`).draggable(false).width(56).height(56).objectFit(ImageFit.Contain);
-            } else {
-              LoadingProgress().width(20).height(20).color(COLOR_TEXT_SECONDARY);
-            }
-          }
-          .width(62).height(62)
-          .onClick((): void => this.sendSuggestedSticker(row.fileId));
-        }, (row: StickerSuggestion): string => `sg_${row.fileId}`);
-      }.padding({ left: 10, right: 10 });
-    }
-    .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
-    .width('100%').height(70)
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: { top: 0.7 }, color: $r('app.color.divider') });
-  }
 
   private refreshCommands(): void {
     this.ensureCommandsLoaded();
@@ -7313,12 +7254,18 @@ struct ChatPage {
           if (this.membershipState === 'writable' && !this.showEmojiPanel &&
             this.mentionItems.length === 0 && !this.commandPanelActive() &&
             this.inlineResults.length > 0) {
-            this.inlineResultsBar();
+            InlineResultsBar({
+              results: this.inlineResults,
+              onPick: (row: InlineResultRow): void => { this.pickInlineResult(row); }
+            });
           }
           if (this.membershipState === 'writable' && !this.showEmojiPanel &&
             this.mentionItems.length === 0 && !this.commandPanelActive() &&
             this.inlineResults.length === 0 && this.stickerSuggestions.length > 0) {
-            this.stickerSuggestionBar();
+            StickerSuggestionBar({
+              suggestions: this.stickerSuggestions,
+              onPick: (fileId: number): void => { this.sendSuggestedSticker(fileId); }
+            });
           }
           this.bottomDock();
         }
