@@ -1,7 +1,6 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { DeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { i18n } from '@kit.LocalizationKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { getStickersForEmoji, rememberRecentSticker } from '../../store/StickerApi';
 import { botMiniAppUrl, openMiniApp } from '../../store/BotApi';
@@ -20,8 +19,7 @@ import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { fileOpenMimeType } from '../../util/fileMessage';
 import { resolveEmojiStatus } from '../../util/emojiStatus';
-import { TgsStickerView } from './TgsStickerView';
-import { WebmStickerView, holdPlayerJobs } from './WebmStickerView';
+import { holdPlayerJobs } from './WebmStickerView';
 import { EmojiPanel } from './EmojiPanel';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
@@ -104,19 +102,15 @@ import {
 import {
   SEARCH_FETCH, SEARCH_JUMP, SearchStep, stepNewer, stepOlder
 } from '../../util/searchPaging';
-import { CachedImage } from '../common/CachedImage';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
-import { AvatarView } from '../chatlist/AvatarView';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS,
   KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
-  KEY_POWER_EFFECT_REACTION, KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
+  KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_POWER_AUTOPLAY_VIDEO,
   KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS,
-  KEY_AUTOPLAY_MUTED, KEY_BG_BLUR, BG_BLUR_DEFAULT, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK,
-  BG_PATTERN_DEFAULT,
-  powerAnimationDuration,
-  powerFeatureEnabled, powerGroupAnimationDuration, powerGroupFeatureEnabled, autosaveEnabled,
+  KEY_AUTOPLAY_MUTED, powerAnimationDuration,
+  powerFeatureEnabled, powerGroupAnimationDuration, autosaveEnabled,
   translateOptedOut, setTranslateOptedOut
 } from '../../store/AppSettings';
 import {
@@ -124,7 +118,7 @@ import {
   TRANSLATE_LANG_CODES
 } from '../../services/TranslationService';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, botButtonBg, darkResourceMode
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, darkResourceMode
 } from '../../util/theme';
 import {
   normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf,
@@ -160,7 +154,6 @@ import { navigateToChat } from '../../util/chatNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
-import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
 
 // One emoji-triggered sticker hint shown above the composer.
 interface StickerSuggestion {
@@ -707,7 +700,6 @@ struct ChatPage {
   // 副本去对齐，那条路走了很久也接不上。
   @State attachPanelOpen: boolean = false;
   @State diceSheetOpen: boolean = false;
-
 
   // 当前打开的底部抽屉占据的高度（附件或表情，两者互斥）。supportAvoidance
   // 只保证输入框不被挡，列表内容它不管——官方《自定义键盘》文档明说这一段
@@ -5039,7 +5031,6 @@ struct ChatPage {
     this.showScheduledSheet = true;
   }
 
-
   private openPollComposer(): void {
     this.showPollSheet = true;
   }
@@ -6235,7 +6226,6 @@ struct ChatPage {
     this.forwardMessageIds = [];
   }
 
-
   @Styles
   headerMenuRowNormalStyle() {
     .backgroundColor(Color.Transparent)
@@ -6286,7 +6276,6 @@ struct ChatPage {
     .opacity(0.84)
     .scale({ x: 0.92, y: 0.92 })
   }
-
 
 
   private closeChatPage(): void {
@@ -6383,7 +6372,6 @@ struct ChatPage {
 
   // 附件抽屉的内容。高度写死而不是自适应：抽屉要顶起输入框和聊天内容，
   // 那个高度得在内容挂上来之前就确定，否则第一帧会先塌一下再弹开。
-
 
   private bottomPanelOpen(): boolean {
     return this.attachPanelOpen || (this.showEmojiPanel && this.membershipState === 'writable');
@@ -6819,7 +6807,6 @@ struct ChatPage {
       blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
-
 
   private scrollToLatest(): void {
     if (this.store === null || this.scrollToBottomBusy) {
