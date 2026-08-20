@@ -5191,6 +5191,9 @@ struct ChatPage {
   // 自己的 then/catch 照常挂在 task 上，只是不用再管这个标志。
   private withSendLock(task: () => Promise<void>): void {
     if (this.composerSending) {
+      // 静默 return 是"点了没反应"的来源。文本发送已经不走这个闸门了，
+      // 剩下三条（媒体、命令、编辑）本来就该一次一件，但至少要说一声。
+      promptAction.showToast({ message: $r('app.string.sending'), duration: 1200 });
       return;
     }
     this.composerSending = true;
@@ -5207,35 +5210,44 @@ struct ChatPage {
     const draftSnapshot: string = this.draft;
     const text: string = draftSnapshot.trim();
     const store: MessageStore | null = this.store;
-    if (text === '' || store === null || this.composerSending) {
+    // 这里**不再看 composerSending**。它原本横跨整个 TDLib 往返，于是走代理
+    // 时输入框会连着几秒既不清空也不接受新的发送，而且两处闸门都是静默
+    // return——用户点了没反应、也没有任何提示（issue #47 的"被吞"）。
+    //
+    // 防重复提交现在由"立刻清空输入框"本身承担：草稿空了，第二次点击在
+    // text === '' 这一关就停住了，比一个横跨网络往返的标志可靠得多。
+    // 上传媒体的时候照样能发文字，官方端也是这样。
+    if (text === '' || store === null) {
       return;
     }
     const replyId: number = this.replyToId;
+    const mentionsSnapshot: NameMention[] = this.pendingNameMentions;
     this.commandMenuOpen = false;
     this.atBottom = true;
     this.stayAtUnread = false;
     // 按名字提及的实体在这里生成：偏移必须相对**实际发出去的那串文本**，
     // 所以用 trim 之后的 text，不是原始草稿。
     const entities: TdObject[] = buildMentionEntities(text, this.pendingNameMentions);
-    this.withSendLock((): Promise<void> => store.sendAsync(text, replyId, entities).then((): void => {
-      // The user may already have started the next message while TDLib was
-      // accepting this one. Never erase newer input or a newly selected reply.
-      if (this.draft === draftSnapshot) {
-        this.draft = '';
-        // 草稿清空了，提及记录也跟着作废；草稿被新输入接管时则留着，
-        // 用户可能还在续写同一条消息。
-        this.pendingNameMentions = [];
-      }
-      if (this.replyToId === replyId) {
-        this.clearReply();
-      }
-      this.mentionItems = [];
-      this.commandItems = [];
-      this.commandMenuOpen = false;
-    }).catch((e: TdError): void => {
+    // 清空放在**发送之前**，不等应答。消息本身不用我们伪造回显：TDLib 会先
+    // 发 updateNewMessage（自己发的消息在 onNewMessage 里是放行的），列表那边
+    // 立刻就有一条 pending 的气泡。
+    this.draft = '';
+    this.pendingNameMentions = [];
+    if (this.replyToId === replyId) {
+      this.clearReply();
+    }
+    this.mentionItems = [];
+    this.commandItems = [];
+    store.sendAsync(text, replyId, entities).catch((e: TdError): void => {
       console.error(`ChatPage.doSend failed: ${e.message}`);
+      // 提示语说的是"草稿已保留"，那就真的还回去。但用户可能已经开始写下
+      // 一条了——那种情况不覆盖他的输入，只报错。
+      if (this.draft === '') {
+        this.draft = draftSnapshot;
+        this.pendingNameMentions = mentionsSnapshot;
+      }
       promptAction.showToast({ message: $r('app.string.cp_send_failed_kept'), duration: 1800 });
-    }));
+    });
   }
 
   // Bot reply-keyboard button. keyboardButtonTypeText simply sends its own label
