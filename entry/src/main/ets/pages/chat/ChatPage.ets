@@ -65,6 +65,9 @@ import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { ComposerSendButton } from './ComposerSendButton';
 import { ScrollFab } from './ScrollFab';
 import {
+  LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
+} from '../../util/messageLinkAction';
+import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
 } from '../../util/composerChrome';
@@ -3105,49 +3108,49 @@ struct ChatPage {
   // @<name>) resolve via TDLib and open the target chat inside the app, jumped
   // to the specific message when the link points to one; everything else opens
   // in the system browser.
+  // 机器人命令是 Telegram 里的可点实体：点一下立刻发出去，并共用输入框那把
+  // 发送锁，所以连点不会排出重复的两条。
+  private sendBotCommand(command: string): void {
+    const store: MessageStore | null = this.store;
+    if (store === null || this.composerSending) {
+      return;
+    }
+    const replyId = this.replyToId;
+    this.atBottom = true;
+    this.stayAtUnread = false;
+    this.withSendLock((): Promise<void> => store.sendAsync(command, replyId).then((): void => {
+      if (this.replyToId === replyId) {
+        this.clearReply();
+      }
+    }).catch((e: TdError): void => {
+      console.error(`ChatPage.botCommand failed: ${e.message}`);
+      promptAction.showToast({ message: $r('app.string.cp_command_failed'), duration: 1600 });
+    }));
+  }
+
+  // 点了消息里的链接。分派本身（走哪一路、载荷是什么）在
+  // util/messageLinkAction，有单测；这里只负责执行。
   private onLinkTap(url: string): void {
-    // Bot commands are active entities in Telegram. A deliberate tap sends
-    // the command immediately, while sharing the composer's in-flight guard so
-    // double taps cannot enqueue duplicates.
-    if (url.startsWith('tg-command:')) {
-      const command = url.substring('tg-command:'.length);
-      const store: MessageStore | null = this.store;
-      if (command === '' || store === null || this.composerSending) {
-        return;
-      }
-      const replyId = this.replyToId;
-      this.atBottom = true;
-      this.stayAtUnread = false;
-      this.withSendLock((): Promise<void> => store.sendAsync(command, replyId).then((): void => {
-        if (this.replyToId === replyId) {
-          this.clearReply();
-        }
-      }).catch((e: TdError): void => {
-        console.error(`ChatPage.botCommand failed: ${e.message}`);
-        promptAction.showToast({ message: $r('app.string.cp_command_failed'), duration: 1600 });
-      }));
+    const action: LinkAction = linkActionOf(url);
+    if (action.kind === LINK_NONE) {
       return;
     }
-    if (url.startsWith('tg-copy:')) {
-      this.copyPlainText(url.substring('tg-copy:'.length), str('cp_number_copied'));
+    if (action.kind === LINK_COMMAND) {
+      this.sendBotCommand(action.text);
       return;
     }
-    // Hashtag tap → global search across all chats.
-    if (url.startsWith('tg-hashtag:')) {
-      const tag = url.substring('tg-hashtag:'.length);
-      if (tag !== '') {
-        const params: Record<string, Object> = { 'query': tag };
-        router.pushUrl({ url: 'pages/search/GlobalSearchPage', params: params });
-      }
+    if (action.kind === LINK_COPY) {
+      this.copyPlainText(action.text, str('cp_number_copied'));
       return;
     }
-    // Text mention (no username): the entity carries the user id directly.
-    if (url.startsWith('tg://user?id=')) {
-      const uid = Number(url.substring('tg://user?id='.length));
-      if (uid > 0) {
-        const params: Record<string, Object> = { 'userId': uid };
-        router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
-      }
+    if (action.kind === LINK_HASHTAG) {
+      const params: Record<string, Object> = { 'query': action.text };
+      router.pushUrl({ url: 'pages/search/GlobalSearchPage', params: params });
+      return;
+    }
+    if (action.kind === LINK_USER) {
+      const params: Record<string, Object> = { 'userId': action.userId };
+      router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
       return;
     }
     // 从这里往下每一条分支都要往返一次服务器才知道该开哪一页。网络一慢，

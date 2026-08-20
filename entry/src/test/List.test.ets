@@ -92,6 +92,7 @@ import emptyHistoryTest from './EmptyHistory.test';
 import replySnippetTest from './ReplySnippet.test';
 import composerChromeTest from './ComposerChrome.test';
 import unreadBadgeTest from './UnreadBadge.test';
+import messageLinkActionTest from './MessageLinkAction.test';
 
 export default function testsuite() {
   localUnitTest();
@@ -188,4 +189,5 @@ export default function testsuite() {
   replySnippetTest();
   composerChromeTest();
   unreadBadgeTest();
+  messageLinkActionTest();
 }
