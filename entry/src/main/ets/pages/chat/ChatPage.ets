@@ -617,6 +617,10 @@ struct ChatPage {
   // trigger zone never clears). Re-armed when the user scrolls clear of the
   // top zone or starts a new touch gesture.
   private olderArmed: boolean = true;
+  // 向下分页的同款闸门。缺了它时，视口贴着底部的每一次 onScrollIndex 都会再
+  // 发一次 loadNewer：新页追加后视口仍在底部，于是继续发——实测 45 秒里连发
+  // 15 次，窗口从 238 行涨到 630 行还在涨。向上那一侧一直有这个闸门，向下漏了。
+  private newerArmed: boolean = true;
   // Jump-target highlight: a translucent overlay over the target row that
   // gently blinks twice after a reply/pinned/link jump lands.
   @State flashTop: number = 0;
@@ -823,6 +827,7 @@ struct ChatPage {
     this.fileOpenInFlightId = 0;
     this.musicQueue.reset();
     this.olderArmed = true;
+    this.newerArmed = true;
     this.freshSinceId = 0;
     this.freshClearSeq++;
     this.imeTailPinned = false;
@@ -2605,6 +2610,16 @@ struct ChatPage {
       const started = this.store.loadOlder();
       if (started || !this.store.getHasMoreOlder()) {
         this.olderArmed = false;
+      }
+    }
+  }
+
+  // 向下同理：一次装填只放一枪，离开底部区域才重新上膛。
+  private maybeLoadNewer(): void {
+    if (this.newerArmed && this.store !== null) {
+      const started = this.store.loadNewer();
+      if (started || !this.store.getHasMoreNewer()) {
+        this.newerArmed = false;
       }
     }
   }
@@ -7007,8 +7022,10 @@ struct ChatPage {
           } else {
             this.maybeLoadOlder();
           }
-          if (this.store !== null && end >= this.groups.length - 5) {
-            this.store.loadNewer();
+          if (end < this.groups.length - 5) {
+            this.newerArmed = true; // 离开底部区域，重新上膛
+          } else {
+            this.maybeLoadNewer();
           }
         })
         // onScrollIndex only fires when the visible index RANGE changes, so
