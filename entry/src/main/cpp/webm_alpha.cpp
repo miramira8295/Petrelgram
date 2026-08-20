@@ -14,8 +14,9 @@
 namespace webm_alpha {
 namespace {
 
-constexpr unsigned int LOG_DOMAIN = 0x0000;
-constexpr const char *LOG_TAG = "WebmAlpha";
+// LOG_DOMAIN / LOG_TAG 是 hilog 的宏名，不能拿来当变量。
+constexpr unsigned int kLogDomain = 0x0000;
+constexpr const char *kLogTag = "WebmAlpha";
 
 // 不用 OH_AVCODEC_MIMETYPE_VIDEO_VP9：它是 API 23 才引入的**数据符号**，
 // 而 libentry.so 要在 API 20 的机器上一起加载。数据符号在加载时就要解析，
@@ -106,13 +107,13 @@ bool DecodeStream(const std::vector<Packet> &packets, int32_t srcW, int32_t srcH
     DecoderHandle handle;
     handle.codec = OH_VideoDecoder_CreateByMime(kVp9Mime);
     if (handle.codec == nullptr) {
-        OH_LOG_Print(LOG_APP, LOG_WARN, LOG_DOMAIN, LOG_TAG, "%{public}s", "no vp9 decoder");
+        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "%{public}s", "no vp9 decoder");
         return false;
     }
     if (!ConfigureDecoder(handle.codec, srcW, srcH) ||
         OH_VideoDecoder_Prepare(handle.codec) != AV_ERR_OK ||
         OH_VideoDecoder_Start(handle.codec) != AV_ERR_OK) {
-        OH_LOG_Print(LOG_APP, LOG_WARN, LOG_DOMAIN, LOG_TAG, "%{public}s", "decoder start failed");
+        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "%{public}s", "decoder start failed");
         return false;
     }
 

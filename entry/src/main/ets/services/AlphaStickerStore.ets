@@ -189,7 +189,7 @@ async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
   }
   // 只有真正的解码排队，读文件和拆包不排：绝大多数 webm 贴纸走到这一步之前
   // 就被判成"不带 alpha"了，让它们排在别人的解码后面才回退，等于白等一轮。
-  const decoded: Object[] = await serialize((): Promise<Object[]> => nativeWebm.webmAlphaDecode(
+  const decoded: image.PixelMap[] = await serialize((): Promise<image.PixelMap[]> => nativeWebm.webmAlphaDecode(
     payload.colorData, payload.colorLengths, payload.alphaData, payload.alphaLengths,
     clip.track.width, clip.track.height, plan.targetW, plan.targetH, plan.frameStep));
   if (decoded.length === 0) {
@@ -197,10 +197,7 @@ async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
     // 永远白底，重试的代价只是多一次几十毫秒的解码。
     return outcome(null, false);
   }
-  const frames: image.PixelMap[] = [];
-  for (const item of decoded) {
-    frames.push(item as image.PixelMap);
-  }
+  const frames: image.PixelMap[] = decoded;
   // 原生可能比预期少吐几帧（解码器丢帧），时间戳表按实际帧数截断。
   const timesMs: number[] = payload.keptTimesMs.slice(0, frames.length);
   const durationMs = Math.max(clip.durationMs, timesMs.length > 0 ? timesMs[timesMs.length - 1] : 0);
@@ -210,7 +207,7 @@ async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
   }, false);
 }
 
-function serialize(job: () => Promise<Object[]>): Promise<Object[]> {
+function serialize(job: () => Promise<image.PixelMap[]>): Promise<image.PixelMap[]> {
   const run = decodeChain.then(job);
   // 链条本身不能因为某一次失败而断掉，否则后面的贴纸全部排不进来。
   decodeChain = run.then((): void => {}, (): void => {});

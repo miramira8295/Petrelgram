@@ -1,3 +1,5 @@
+import { image } from '@kit.ImageKit';
+
 export const tdInit: (onReceive: (json: string) => void) => void;
 export const tdSend: (json: string) => void;
 export const tdExecute: (json: string) => string;
@@ -78,4 +80,4 @@ export const webmAlphaDecode: (
   alphaData: ArrayBuffer, alphaLengths: ArrayBuffer,
   srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
   frameStep: number
-) => Promise<Object[]>;
+) => Promise<image.PixelMap[]>;

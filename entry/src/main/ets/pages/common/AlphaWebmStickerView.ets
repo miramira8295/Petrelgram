@@ -48,7 +48,8 @@ export struct AlphaWebmStickerView {
   @StorageProp(KEY_REDUCE_ANIM) @Watch('onPowerChanged') reduceAnimations: boolean = false;
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
-  private clip: AlphaClip | null = null;
+  // 不叫 clip：那是 ArkUI 的通用属性名，组件成员重名会编译失败。
+  private sequence: AlphaClip | null = null;
   private timer: number = -1;
   private startedAt: number = 0;
   private shownIndex: number = -1;
@@ -61,8 +62,8 @@ export struct AlphaWebmStickerView {
     this.disposed = true;
     this.stopTicker();
     this.releaseSlot();
-    releaseAlphaSticker(this.clip);
-    this.clip = null;
+    releaseAlphaSticker(this.sequence);
+    this.sequence = null;
   }
 
   private releaseSlot(): void {
@@ -75,7 +76,7 @@ export struct AlphaWebmStickerView {
   private onPowerChanged(): void {
     if (this.powerSuspended()) {
       this.stopTicker();
-    } else if (this.clip !== null) {
+    } else if (this.sequence !== null) {
       this.startTicker();
     }
   }
@@ -89,7 +90,7 @@ export struct AlphaWebmStickerView {
 
   private startTicker(): void {
     this.stopTicker();
-    if (this.clip === null || this.disposed) {
+    if (this.sequence === null || this.disposed) {
       return;
     }
     this.startedAt = Date.now();
@@ -103,7 +104,7 @@ export struct AlphaWebmStickerView {
   // 用"经过的时间 -> 帧号"而不是"每拍前进一帧"：定时器的实际间隔会漂，
   // 按时间查表才不会让贴纸越播越慢。
   private onTick(): void {
-    const clip = this.clip;
+    const clip = this.sequence;
     if (clip === null || this.disposed) {
       return;
     }
@@ -130,7 +131,7 @@ export struct AlphaWebmStickerView {
   }
 
   private drawFrame(index: number): void {
-    const clip = this.clip;
+    const clip = this.sequence;
     if (clip === null || index < 0 || index >= clip.frames.length || index === this.shownIndex) {
       return;
     }
@@ -156,15 +157,15 @@ export struct AlphaWebmStickerView {
 
   private fallback(): void {
     this.releaseSlot();
-    releaseAlphaSticker(this.clip);
-    this.clip = null;
+    releaseAlphaSticker(this.sequence);
+    this.sequence = null;
     if (!this.disposed) {
       this.onFallback();
     }
   }
 
   private async load(): Promise<void> {
-    if (this.loading || this.clip !== null || this.disposed || this.webmPath === '') {
+    if (this.loading || this.sequence !== null || this.disposed || this.webmPath === '') {
       return;
     }
     if (liveAlpha >= MAX_LIVE_ALPHA) {
@@ -187,7 +188,7 @@ export struct AlphaWebmStickerView {
       this.fallback();
       return;
     }
-    this.clip = clip;
+    this.sequence = clip;
     if (!this.powerSuspended()) {
       this.startTicker();
     }

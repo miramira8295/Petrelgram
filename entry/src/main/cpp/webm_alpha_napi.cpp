@@ -10,8 +10,9 @@
 
 namespace {
 
-constexpr unsigned int LOG_DOMAIN = 0x0000;
-constexpr const char *LOG_TAG = "WebmAlpha";
+// LOG_DOMAIN / LOG_TAG 是 hilog 的宏名，不能拿来当变量。
+constexpr unsigned int kLogDomain = 0x0000;
+constexpr const char *kLogTag = "WebmAlpha";
 constexpr int32_t kPixelFormatRgba8888 = 3;          // PIXEL_FORMAT_RGBA_8888
 constexpr int32_t kAlphaTypeUnpremultiplied = 3;     // PIXELMAP_ALPHA_TYPE_UNPREMULTIPLIED
 // 单次调用的包数上限，纯粹是给"参数被算错"兜底；正常贴纸远低于此。
@@ -135,7 +136,7 @@ void CompleteDecode(napi_env env, napi_status status, void *data) {
     } else {
         // 失败一律 resolve 成空数组而不是 reject：调用方拿到空就回退到
         // ijkplayer，跟"设备不支持"是同一条路，不必区分两种错误处理。
-        OH_LOG_Print(LOG_APP, LOG_WARN, LOG_DOMAIN, LOG_TAG, "%{public}s", "decode failed, falling back");
+        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "%{public}s", "decode failed, falling back");
         napi_value empty = nullptr;
         napi_create_array_with_length(env, 0, &empty);
         napi_resolve_deferred(env, task->deferred, empty);
