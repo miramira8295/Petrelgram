@@ -1606,7 +1606,19 @@ export class MessageStore {
         }
       }
       const windowNewest: number = this.messages[this.messages.length - 1].id;
-      if (pageOldest > windowNewest) {
+      let pageNewest: number = entries[0].id;
+      for (const e of entries) {
+        if (e.id > pageNewest) {
+          pageNewest = e.id;
+        }
+      }
+      const replaced: boolean = pageOldest > windowNewest;
+      // 诊断：恢复后窗口出现空洞。要判的是这一页到底装了什么——是不是真的
+      // 最新页、和窗口有没有重叠、替换与否。
+      console.info(`[StoreDiag] latest page=${entries.length}` +
+        ` [${pageOldest}..${pageNewest}] windowNewest=${windowNewest}` +
+        ` windowLen=${this.messages.length} replaced=${replaced}`);
+      if (replaced) {
         this.messages = [];
         this.hasMoreOlder = true;
         this.olderLoadState = 'idle';
@@ -1719,6 +1731,14 @@ export class MessageStore {
     const newestId = this.messages.length > 0 ? this.messages[this.messages.length - 1].id : 0;
     if (id <= 0 || id <= newestId) {
       return; // already part of the loaded window
+    }
+    // 诊断：这里是唯一会把一条"远期"消息硬接在窗口尾巴上的地方，观测到的
+    // 空洞形状（一段连续的旧消息 + 孤零零一条最新的）正好是它的产物。
+    // id 与 newestId 的差值就是被跳过的消息条数（TDLib 的 id 每条加 2^20）。
+    const skipped: number = Math.round((id - newestId) / 1048576);
+    if (skipped > 1) {
+      console.warn(`[StoreDiag] inject tail id=${id} newestId=${newestId}` +
+        ` skipped=${skipped} windowLen=${this.messages.length}`);
     }
     this.upsert(buildMessageEntry(m, this.users));
   }
