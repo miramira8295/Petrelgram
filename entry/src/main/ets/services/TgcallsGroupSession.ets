@@ -206,7 +206,7 @@ export class TgcallsGroupSession {
 
   setMuted(muted: boolean): boolean {
     if (this.created && !this.stopped) {
-      const changed = tgcallsNative.tgcallsSetMuted(muted);
+      const changed: boolean = tgcallsNative.tgcallsSetMuted(muted);
       if (changed) { this.muted = muted; }
       return changed;
     }
@@ -223,7 +223,7 @@ export class TgcallsGroupSession {
     const groupCallId = this.groupCallId;
     await toggleGroupCallIsMyVideoEnabled(client, groupCallId, true);
     this.ensureCurrent(generation);
-    const changed = tgcallsNative.tgcallsSetLocalVideo(
+    const changed: boolean = tgcallsNative.tgcallsSetLocalVideo(
       mode, Math.max(0, Math.round(width)), Math.max(0, Math.round(height))
     );
     if (changed) {
@@ -240,7 +240,7 @@ export class TgcallsGroupSession {
     const wasCameraEnabled = this.cameraEnabled ||
       this.localVideoMode === 1 || this.localVideoMode === 2;
     if (!wasCameraEnabled) { return true; }
-    const changed = tgcallsNative.tgcallsSetLocalVideo(0, 0, 0);
+    const changed: boolean = tgcallsNative.tgcallsSetLocalVideo(0, 0, 0);
     this.cameraEnabled = false;
     this.localVideoMode = 0;
     if (this.client !== null && this.groupCallId > 0) {
