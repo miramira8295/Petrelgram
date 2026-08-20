@@ -515,8 +515,14 @@ export struct MessageBubble {
     return this.showAvatar && !this.isBareEmoji();
   }
 
+  // 头像和气泡之间那 7vp。有尾巴的行由三角 Polygon 占掉（宽 8、右边距 -1），
+  // 没尾巴的行垫一个等宽的空 Column，一个发送者连发多条时左边缘才不会跳。
+  //
+  // 贴纸/大表情/视频消息曾经不占这一槽——它们没有气泡，看着"不需要留位"。
+  // 但这一槽的作用是**横向对齐**，和有没有气泡无关：不占就比上下的文字气泡
+  // 整整左移 7vp，正是 issue #81 里那条歪掉的贴纸。
   private bubbleTailGutter(): number {
-    return this.isBareEmoji() ? 0 : 7;
+    return 7;
   }
 
   private rowTopPadding(): number {
@@ -1342,8 +1348,8 @@ export struct MessageBubble {
     }
     .width('100%')
     .padding({
-      // Align with the bubble body; every non-bare row reserves the same 7vp
-      // tail gutter so first/middle/last bubbles never shift horizontally.
+      // Align with the bubble body; every row reserves the same 7vp tail
+      // gutter so first/middle/last bubbles never shift horizontally.
       left: 10 + (this.msg.isOutgoing ? 0 : (this.isGroup ? 38 : 0) +
         this.bubbleTailGutter()),
       right: 10 + (this.msg.isOutgoing ? this.bubbleTailGutter() : 0),
@@ -2947,8 +2953,8 @@ export struct MessageBubble {
           .points([[8, 0], [0, 12], [8, 12]])
           .fill(COLOR_BUBBLE_IN)
           .margin({ right: -1 });
-      } else if (!this.msg.isOutgoing && !this.isBareEmoji()) {
-        Column().width(7);
+      } else if (!this.msg.isOutgoing) {
+        Column().width(this.bubbleTailGutter());
       }
       Column() {
         if (this.msg.forwardFrom !== '') {
@@ -3066,8 +3072,8 @@ export struct MessageBubble {
           .points([[0, 0], [8, 12], [0, 12]])
           .fill(this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT)
           .margin({ left: -1 });
-      } else if (this.msg.isOutgoing && !this.isBareEmoji()) {
-        Column().width(7);
+      } else if (this.msg.isOutgoing) {
+        Column().width(this.bubbleTailGutter());
       }
       }
       .alignItems(VerticalAlign.Bottom)
