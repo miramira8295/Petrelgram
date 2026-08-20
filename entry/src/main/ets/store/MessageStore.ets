@@ -23,6 +23,14 @@ const PAGE: number = 30;
 // 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
 // 填不满的会话里一直问下去。
 const INITIAL_FILL_TRIES: number = 3;
+// TDLib 的消息 id 每条递增 2^20。
+const ID_STEP: number = 1048576;
+// 向上分页时，新页最旧一条和窗口最新一条之间隔多少条才算"接不上"。
+// 被删过的消息会留下永久空档，所以小差值属正常；43 那种才是本地库缺了一段。
+const NEWER_GAP_TOLERANCE: number = 5;
+// 接不上时从同一个锚点重问几次。TDLib 会在后台向服务端补，重问通常能拿到
+// 连续的那一段；用完还接不上就照旧合并，宁可有洞也别把消息卡住不显示。
+const NEWER_GAP_RETRIES: number = 2;
 // Visible bubble/header thumbnails should outrank silent video prefetch. The
 // bubble still requests the compact inline size; this only changes scheduling,
 // not image quality or transferred bytes.
@@ -326,6 +334,8 @@ export class MessageStore {
   // 上限存在的意义是防死循环：某些会话（被限流、纯服务消息）可能每次都回少量
   // 却永远填不满，没有上限就会一直问下去。
   private initialFillTries: number = 0;
+  // 向上分页遇到"接不上"时还能重问几次。
+  private newerGapRetries: number = NEWER_GAP_RETRIES;
 
   private chatSuspended: boolean = false;
 
@@ -877,6 +887,35 @@ export class MessageStore {
           maxId = id;
         }
       }
+      // 连续性检查。loadNewer 从窗口最新一条往上取，如果本地库里紧邻的那段
+      // 是空的，TDLib 会返回**更上面**的一段——和窗口接不上。无条件合并就会
+      // 在中间留下一个洞，而且再也不会自己合上（后续加载都发生在更新的那端）。
+      // 实测抓到过 43 条的洞卡在第 223 行、窗口涨到 630 行它还在。
+      //
+      // latest 那边早有同样的检查，newer 一直漏着。
+      let pageOldest: number = 0;
+      for (const m of arr) {
+        const id = (m['id'] as number | undefined) ?? 0;
+        if (id > 0 && (pageOldest === 0 || id < pageOldest)) {
+          pageOldest = id;
+        }
+      }
+      const skipped: number = pageOldest > newestId
+        ? Math.round((pageOldest - newestId) / ID_STEP) : 0;
+      if (skipped > NEWER_GAP_TOLERANCE && this.newerGapRetries > 0) {
+        // 不合并这一页：从同一个锚点重问，等 TDLib 把中间那段取回来。
+        this.newerGapRetries--;
+        this.newerLoadState = 'idle';
+        console.warn(`[StoreDiag] newer discontinuous skipped=${skipped}` +
+          ` newestId=${newestId} pageOldest=${pageOldest}` +
+          ` retriesLeft=${this.newerGapRetries}`);
+        this.loadNewer();
+        return;
+      }
+      if (skipped > NEWER_GAP_TOLERANCE) {
+        console.warn(`[StoreDiag] newer discontinuous skipped=${skipped} merged anyway`);
+      }
+      this.newerGapRetries = NEWER_GAP_RETRIES;
       if (maxId <= newestId) {
         // TDLib's classic negative-offset trap: the FIRST getChatHistory with
         // offset < 0 is often served from the local cache only and returns
