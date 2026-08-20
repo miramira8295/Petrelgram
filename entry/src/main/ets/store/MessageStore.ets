@@ -715,7 +715,7 @@ export class MessageStore {
 
   // Load the previous (older) page. Guarded so scroll-driven prefetch can call
   // this repeatedly without stacking duplicate in-flight requests.
-  private loadOlderRefusalLogged: boolean = false;
+  private loadOlderRefusalSeen: Set<string> = new Set<string>();
   // 向上翻页遇到"这一页没有更旧的"时，还允许再问几次。见 loadOlder 里的说明：
   // TDLib 返回空不等于没有历史，它的契约是"再问一次"。
   private olderEmptyRetries: number = OLDER_EMPTY_RETRIES;
@@ -728,8 +728,12 @@ export class MessageStore {
       //
       // 每个会话只打一行：正常翻到顶也会走这里，逐次打会把环形缓冲刷爆，
       // 等偶发现象时反而把证据挤掉。
-      if (!this.loadOlderRefusalLogged) {
-        this.loadOlderRefusalLogged = true;
+      // 每种**理由**各打一次，而不是整个会话只打一次：先因为"请求在途"被拒
+      // （正常），之后因为 hasMore=false 被拒（异常）就再也看不见了——那正是
+      // 要查的那种。
+      const reason: string = `${this.olderPending}/${this.olderLoadState}/${this.hasMoreOlder}`;
+      if (!this.loadOlderRefusalSeen.has(reason)) {
+        this.loadOlderRefusalSeen.add(reason);
         console.warn(`loadOlder refused pending=${this.olderPending}` +
           ` state=${this.olderLoadState} hasMore=${this.hasMoreOlder}` +
           ` oldest=${this.oldestId} rows=${this.messages.length}`);
@@ -951,8 +955,15 @@ export class MessageStore {
       //
       // 所以只收与窗口连续的那一段，断点之后的整段丢掉：那部分等用户真翻到
       // 那里再取，宁可少收也不能留洞。
-      const sorted: TdObject[] = arr.slice().sort((a: TdObject, b: TdObject): number =>
-        (((a['id'] as number | undefined) ?? 0) - ((b['id'] as number | undefined) ?? 0)));
+      // 只看**严格更新**的那些。页里往往还带着窗口已有的几条，它们与锚点的
+      // 步长是 0，会被当成"连续前缀"留下来——留下来又都是重复的，窗口一行
+      // 不涨、锚点一步不进，于是同一个锚点问同一个问题，永远原地打转。
+      // 实测就是这样卡死的：一页 30 条留 2 条，rows 恒定 14，新消息还被
+      // 实时到达守卫一并挡掉，表现为"999+ 却滑不动、也不更新"。
+      const sorted: TdObject[] = arr.slice()
+        .filter((m: TdObject): boolean => (((m['id'] as number | undefined) ?? 0) > newestId))
+        .sort((a: TdObject, b: TdObject): number =>
+          (((a['id'] as number | undefined) ?? 0) - ((b['id'] as number | undefined) ?? 0)));
       const contiguous: TdObject[] = [];
       let prevId: number = newestId;
       let dropped: number = 0;
@@ -965,6 +976,20 @@ export class MessageStore {
         } else {
           dropped++;
         }
+      }
+      // 一条都接不上：这一页里更新的消息全在缺口之后。再问同一个锚点只会拿到
+      // 同一页，所以不能再丢——整页收下，让窗口带着这个洞往前走。
+      //
+      // 留洞确实是这套过滤当初要避免的，但"洞"和"整个会话冻住"不是一个量级：
+      // 洞还能往下翻、新消息照常进来，冻住则什么都做不了。宁可留洞。
+      if (contiguous.length === 0 && sorted.length > 0) {
+        console.warn(`[StoreDiag] newer page all behind a gap: taking ${sorted.length}` +
+          ` as-is to avoid stalling (newest=${newestId})`);
+        const whole: TdObject = { '@type': 'messages' };
+        whole['messages'] = sorted;
+        this.onHistory(whole, 'newer');
+        this.notify('paginationState');
+        return;
       }
       if (dropped > 0) {
         console.warn(`[StoreDiag] newer page had inner gap: kept=${contiguous.length}` +
