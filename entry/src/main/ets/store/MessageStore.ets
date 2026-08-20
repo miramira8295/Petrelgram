@@ -3673,8 +3673,21 @@ export class MessageStore {
     const initial: boolean = this.initialHistoryState === 'loading';
     const req = this.historyRequest(messageId, initial ? -7 : -15);
     req['limit'] = initial ? 14 : 30;
+    const wanted: number = initial ? 14 : 30;
     this.client.send(req).then((res: TdObject): void => {
+      const got: number = ((res['messages'] as TdObject[] | undefined) ?? []).length;
       this.onHistory(res, 'around');
+      // 短页补链：和 loadHistory('latest') 那边同样的处理，之前只有 latest 有。
+      //
+      // TDLib 只给本地库里已有的，不够时返回更少并在后台向服务端补，契约是
+      // 「再问一次」，短页**不代表**到头了。首屏取小窗是为了首帧流畅（见上），
+      // 但未读锚点打开的会话如果只回来十来条，用户看到的就是一屏就没了、还得
+      // 自己往上滚才长出来——999+ 未读的群实测就是这样。
+      //
+      // 只在首屏补：会话中途的跳转本来就是整页，且用户已有明确的目标位置。
+      if (initial && got > 0 && got < wanted) {
+        this.loadOlder();
+      }
       if (onComplete !== undefined) {
         onComplete(this.indexOf(messageId) >= 0);
       }
