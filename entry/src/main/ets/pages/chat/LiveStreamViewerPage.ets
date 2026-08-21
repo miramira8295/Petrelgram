@@ -2376,7 +2376,9 @@ struct LiveStreamViewerPage {
       .backgroundColor(this.callInteractionStatusBackground()).borderRadius(13);
       SymbolGlyph($r('sys.symbol.chevron_up')).fontSize(13).fontColor([CALL_SUBTEXT]);
     }
-    .width('100%').height(58).padding({ left: 12, right: 12 })
+    // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在
+    // 外部，总宽 = 父宽 + left + right，右端会被裁掉。宽度改用 calc 扣掉左右 margin。
+    .width('calc(100% - 16vp)').height(58).padding({ left: 12, right: 12 })
     .margin({ left: 8, right: 8, top: 6, bottom: 5 })
     .backgroundColor(CALL_PANEL).borderRadius(16)
     .border({ width: 1, color: '#182F4350' })

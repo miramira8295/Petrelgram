@@ -426,7 +426,10 @@ struct CallsPage {
         SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(16).fontColor([COLOR_WARNING]);
         Text(this.syncError).fontSize(12).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
         Text($r('app.string.settings_retry')).fontSize(12).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
-      }.width('100%').padding({ left: 12, right: 12, top: 9, bottom: 9 })
+      }
+        // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在
+        // 外部，总宽 = 父宽 + left + right，右端会被裁掉。宽度改用 calc 扣掉左右 margin。
+        .width('calc(100% - 24vp)').padding({ left: 12, right: 12, top: 9, bottom: 9 })
         .margin({ left: 12, right: 12, bottom: 7 })
         .backgroundColor('#16E68A00').borderRadius(11)
         .onClick((): void => this.refresh())

@@ -579,7 +579,9 @@ struct ChatFoldersPage {
       }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
       Text(this.leaveSelected.length > 0 ? plural('cf_delete_and_leave', this.leaveSelected.length, this.leaveSelected.length) : $r('app.string.cf_delete_only'))
         .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White).textAlign(TextAlign.Center)
-        .width('100%').padding({ top: 12, bottom: 12 }).backgroundColor(DANGER).borderRadius(12)
+        // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在
+        // 外部，总宽 = 父宽 + left + right，右端会被裁掉。宽度改用 calc 扣掉左右 margin。
+        .width('calc(100% - 32vp)').padding({ top: 12, bottom: 12 }).backgroundColor(DANGER).borderRadius(12)
         .margin({ left: 16, right: 16, top: 8, bottom: this.bottomSafe + 10 })
         .onClick((): void => this.deleteNow(this.deleteTargetId, this.leaveSelected));
     }.width('100%').height('100%');

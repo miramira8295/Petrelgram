@@ -376,7 +376,10 @@ struct FolderInviteLinksPage {
         }, (chat: FolderChatSummary): string => `new_${chat.id}`);
       }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
       Text(plural('fl_add_chats', this.selectedNewChatIds.length, this.selectedNewChatIds.length)).fontSize(16).fontWeight(FontWeight.Medium)
-        .fontColor(Color.White).textAlign(TextAlign.Center).width('100%')
+        .fontColor(Color.White).textAlign(TextAlign.Center)
+        // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在
+        // 外部，总宽 = 父宽 + left + right，右端会被裁掉。宽度改用 calc 扣掉左右 margin。
+        .width('calc(100% - 32vp)')
         .padding({ top: 12, bottom: 12 }).backgroundColor(COLOR_PRIMARY).borderRadius(12)
         .margin({ left: 16, right: 16, top: 8, bottom: this.bottomSafe + 10 })
         .enabled(this.selectedNewChatIds.length > 0).onClick((): void => this.addNewChats());

@@ -1095,7 +1095,9 @@ export struct ChatProfilePage {
         });
       }
     }
-    .width('100%').padding({ top: 28, bottom: 28, left: 16, right: 16 })
+    // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在
+    // 外部，总宽 = 父宽 + left + right，右端会被裁掉。宽度改用 calc 扣掉左右 margin。
+    .width('calc(100% - 24vp)').padding({ top: 28, bottom: 28, left: 16, right: 16 })
     .glassCard()
     .margin({ left: 12, right: 12, top: 16 });
   }

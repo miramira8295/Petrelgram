@@ -99,8 +99,10 @@ export struct TranslateSheet {
       .align(Alignment.TopStart)
       .scrollBar(BarState.Off);
       if (this.state === TRANSLATE_DONE) {
+        // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在
+        // 外部，总宽 = 父宽 + left + right，右端会被裁掉。宽度改用 calc 扣掉左右 margin。
         Button($r('app.string.copy'))
-          .width('100%').height(44).fontSize(16)
+          .width('calc(100% - 36vp)').height(44).fontSize(16)
           .backgroundColor(COLOR_PRIMARY).fontColor(Color.White)
           .margin({ left: 18, right: 18, bottom: this.bottomSafe + 10 })
           .onClick((): void => { this.onCopy(); });
