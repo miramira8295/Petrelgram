@@ -30,9 +30,8 @@ export struct MainTabBody {
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
   @State chats: ChatEntry[] = [];
   private chatsData: ChatListDataSource = new ChatListDataSource();
-  @State showArchive: boolean = false;
-  @State archiveLoadFailed: boolean = false;
-  @State refreshing: boolean = false;
+  @State @Watch('onArchiveRowToggled') showArchive: boolean = false;
+  @State @Watch('onArchiveRowToggled') archiveLoadFailed: boolean = false;
   private updateGate: ChatListFreeze = new ChatListFreeze();
   private unsubscribe: (() => void) | null = null;
   private unsubArchive: (() => void) | null = null;
@@ -101,6 +100,27 @@ export struct MainTabBody {
     return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}`;
   }
 
+  // 归档入口是否作为列表第 0 行存在。
+  private archiveRowShown(): boolean {
+    return this.showArchive || this.archiveLoadFailed;
+  }
+
+  // 归档行是**插在列表顶端之上**的，插进去会把内容整体下推一行高。列表还停在
+  // 顶端时要顺手把它滚掉，用户才看不见；已经滚下去了就不动，免得把人拽回顶部。
+  //
+  // 延后一帧：@Watch 在状态写入时就跑，那一刻新行还没进布局，scrollToIndex(1)
+  // 会滚到一个不存在的位置。
+  private onArchiveRowToggled(): void {
+    if (!this.archiveRowShown()) {
+      return;
+    }
+    setTimeout((): void => {
+      if (this.listScroller.currentOffset().yOffset <= 1) {
+        this.listScroller.scrollToIndex(1);
+      }
+    }, 0);
+  }
+
   private openArchive(): void {
     router.pushUrl({ url: 'pages/chatlist/ArchivePage' });
   }
@@ -112,7 +132,11 @@ export struct MainTabBody {
     });
   }
 
-  // Revealed only while the user over-scrolls (pulls down) at the top.
+  // 列表的第 0 行，默认滚在视口之上看不见；在顶部下拉才把它拉出来。
+  //
+  // 原来它挂在 Refresh 的 builder 上，下拉松手 onRefreshing 直接 pushUrl 进归档
+  // ——手势太容易误触，而且拉出来的那一下根本来不及点。现在改成一行普通的
+  // ListItem：拉出来会留在那儿，点一下才进去，往下滚一点它自己退回去。
   @Builder
   archiveHeader() {
     Row() {
@@ -131,7 +155,13 @@ export struct MainTabBody {
 
   @Builder
   chatList() {
-    List({ scroller: this.listScroller }) {
+    // initialIndex 让首帧就停在第 1 行——归档行在第 0 行，这样它一开始就在视口
+    // 之上。initialIndex 只在创建时生效，之后归档桶从无到有的情况由
+    // onArchiveRowToggled 兜底。
+    List({ scroller: this.listScroller, initialIndex: this.archiveRowShown() ? 1 : 0 }) {
+      if (this.archiveRowShown()) {
+        ListItem() { this.archiveHeader(); }
+      }
       // LazyForEach, not ForEach: ForEach builds every row up front, which for
       // a real account meant hundreds of live ChatRow components for the eight
       // that are visible.
@@ -157,29 +187,12 @@ export struct MainTabBody {
 
   build() {
     Column() {
-    // No story ring here — stories live on the profile pages. StoryStore and
-    // StoryViewerPage are kept, but nothing on the chat list launches them.
-    if (this.showArchive || this.archiveLoadFailed) {
-      Refresh({ refreshing: $$this.refreshing, builder: this.archiveHeader() }) {
-        this.chatList();
-      }
-      .layoutWeight(1).width('100%')
-      // 列表要画到标题栏底下去，这一路每一层都不能裁剪——Refresh 也算一层。
-      .clip(false)
-      // 停留/触发高度钉在归档行高，否则默认下拉区比一行高得多（"很高"）。
-      .refreshOffset(ARCHIVE_ROW_HEIGHT)
-      .pullToRefresh(true)
-      .onRefreshing(() => {
-        // 同步复位会被 Refresh 忽略（进入 Refreshing 当帧的状态写丢失），
-        // 下拉区就永远收不回去；下一帧异步复位。
-        setTimeout((): void => {
-          this.refreshing = false;
-        }, 60);
-        if (this.archiveLoadFailed) { this.retryArchive(); } else { this.openArchive(); }
-      });
-    } else {
+      // No story ring here — stories live on the profile pages. StoryStore and
+      // StoryViewerPage are kept, but nothing on the chat list launches them.
+      //
+      // 归档入口不再包一层 Refresh：它现在是列表自己的第 0 行，靠 initialIndex
+      // 藏在视口之上，下拉即现。见 archiveHeader。
       this.chatList();
-    }
     }
     .width('100%').layoutWeight(1)
     // 本组件的根节点。HdsNavigation → Tabs → TabContent → Column → 这里 →
