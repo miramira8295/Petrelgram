@@ -721,8 +721,20 @@ struct GlobalSearchPage {
     return it.chatId !== 0 && it.messageId !== 0;
   }
 
+  // 和 openChat / openApp / openResult 一样先过防连点闸门。这一处的目标也是
+  // 一条具体消息，所以 key 与 openResult 同格式——同一条消息无论从哪个 tab
+  // 点进去都是同一把闸。
+  //
+  // 这里本来没有闸门：它是长按菜单里的 MenuItem，菜单点一次就关，"连点两次"
+  // 看着不可能。但那条安全网押的是"两次点击是两个宏任务、中间微任务队列必然
+  // 排空"这个隐含前提——openChatAndClose 里的 router.back() 挂在 navigateToChat
+  // 的 then 上，双 back 会把下面的页面一起弹掉。不把正确性押在事件循环时序上。
   private locateDownloadMessage(it: DownloadItem): void {
     if (!this.canLocateDownload(it)) {
+      return;
+    }
+    const openingKey = `message:${it.chatId}:${it.messageId}`;
+    if (!this.beginResultOpening(openingKey)) {
       return;
     }
     const params: Record<string, Object> = { 'chatId': it.chatId, 'jumpTo': it.messageId };
