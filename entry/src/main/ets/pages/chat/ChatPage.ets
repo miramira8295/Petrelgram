@@ -1016,9 +1016,15 @@ export struct ChatPage {
   }
 
   // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
-  // onReady 里从 NavDestinationContext 拿，且 onReady 早于 aboutToAppear 之外
-  // 的一切——所以先存下来，aboutToAppear 里照旧读。
+  // onReady 里从 NavDestinationContext 拿。
+  //
+  // 实测（平板 API 26，commit 8046f73 上机）：**onReady 晚于 aboutToAppear**。
+  // 官方文档写 onReady 在「即将构建子组件之前」触发，但 aboutToAppear 比它更早，
+  // 所以 aboutToAppear 里读不到 navParams。用参数的那一段因此整体挪进了
+  // applyRouteParams()，由 onReady 存完 navParams 之后立即调用。
   private navParams: Record<string, Object> | undefined = undefined;
+  // applyRouteParams() 的一次性守卫，理由见那个方法上的注释。
+  private paramsApplied: boolean = false;
 
   aboutToAppear(): void {
     // Before anything can publish a dataset: the data source names the keys of
@@ -1032,6 +1038,31 @@ export struct ChatPage {
       this.playSlotKey = key;
     });
     this.nowSec = Math.floor(Date.now() / 1000);
+    // 下面原本还有一大段（读 params → 定 chatId → 建 MessageStore 与十几个
+    // 订阅）。实测 onReady 晚于 aboutToAppear（平板 API 26，commit 8046f73 上机：
+    // aboutToAppear 读 this.navParams 时还是 undefined，chatId 落成 0，标题栏报
+    // 「会话参数无效」、内容区报「消息加载失败」）——所以那段整体搬进了
+    // applyRouteParams()，由 onReady 在存完 navParams 之后调用。
+    //
+    // 留在这里的三行与路由参数无关（数据源 keyBuilder、播放位订阅、秒表初值），
+    // 时机保持原样：它们必须在任何 LazyForEach 发布数据之前就绪。
+  }
+
+  // 路由参数就绪后的初始化。这就是迁移前 aboutToAppear 的后半段，顺序一字未改，
+  // 只是改由 onReady 触发——onReady 才是 NavDestination 拿得到 pathInfo.param 的
+  // 第一个时机。
+  //
+  // 只跑一次：这段里建了 MessageStore、十几个 TDLib 订阅和两个 setInterval，句柄都
+  // 存在 this.unsubXxx / this.xxxTimer 上。第二次进来会把旧句柄直接覆盖掉，旧订阅和
+  // 旧定时器就再也退订不了了——aboutToDisappear 只认得最后一份句柄。HdsNavDestination
+  // 在页面被复用时（MOVE_TO_TOP_SINGLETON、onNewParam）可能不止触发一次 onReady，
+  // 所以这个守卫是必须的。当前的 navigateToChat 走的是 clearAndPush，每次都是新实例，
+  // 守卫在正常路径上不会拦到东西——它挡的是复用路径。
+  private applyRouteParams(): void {
+    if (this.paramsApplied) {
+      return;
+    }
+    this.paramsApplied = true;
     const params = this.navParams;
     this.chatId = params !== undefined ? (params['chatId'] as number) : 0;
     this.threadRootId = params !== undefined ? ((params['threadRootId'] as number | undefined) ?? 0) : 0;
@@ -7837,9 +7868,12 @@ export struct ChatPage {
     // ChatPage 自己画标题栏（会话头像/名称/在线状态那一条），不要 HDS 的。
     .hideTitleBar(true)
     // 入参：router 时代是 aboutToAppear 里 router.getParams() 现取，现在从
-    // NavDestinationContext 的 pathInfo 里取，存下来给 aboutToAppear 读。
+    // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
+    // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。
     .onReady((ctx: NavDestinationContext): void => {
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
+      // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
+      this.applyRouteParams();
     })
     // 下面三条对应迁移前的 onPageShow / onPageHide / onBackPress，方法体一字未动：
     // onBackPress 返回 true「已处理不返回」与 onBackPressed 返回 true「重写返回键
