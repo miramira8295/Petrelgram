@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "Pausado. Toque para retomar"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "Toque em voltar novamente para sair"
     }
   ]
 }

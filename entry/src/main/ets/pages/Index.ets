@@ -156,9 +156,36 @@ struct Index {
     });
   }
 
+  // 双击退出的时间窗。
+  private lastBackAt: number = 0;
+
   onBackPress(): boolean {
-    if (!this.isAddingAccount()) { return false; }
-    this.returnToOriginalAccount();
+    if (this.isAddingAccount()) {
+      this.returnToOriginalAccount();
+      return true;
+    }
+    if (this.stage !== AuthStage.Ready) {
+      return false;
+    }
+    // 主屏返回键三级递退：设置/联系人/个人资料 → 聊天页签；聊天页签在别的
+    // 文件夹 → 先回"所有"；都在原位了才轮到退出，且要两秒内再按一次（防误触，
+    // issue #71/#48 的诉求）。
+    const tab: number = AppStorage.get<number>('mainTabIndex') ?? 0;
+    if (tab !== 0) {
+      AppStorage.setOrCreate<number>('mainTabIndex', 0);
+      return true;
+    }
+    const folder: number = AppStorage.get<number>('chatFolderIndex') ?? 0;
+    if (folder !== 0) {
+      AppStorage.setOrCreate<number>('chatFolderIndex', 0);
+      return true;
+    }
+    const now: number = Date.now();
+    if (now - this.lastBackAt < 2000) {
+      return false; // 放行，应用退到后台
+    }
+    this.lastBackAt = now;
+    promptAction.showToast({ message: $r('app.string.app_exit_again'), duration: 1600 });
     return true;
   }
 

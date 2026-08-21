@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "In pausa. Tocca per riprendere"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "Premi di nuovo Indietro per uscire"
     }
   ]
 }

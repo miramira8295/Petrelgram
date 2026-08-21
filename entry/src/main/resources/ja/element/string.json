@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "一時停止中。タップで再開"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "もう一度戻るで終了"
     }
   ]
 }

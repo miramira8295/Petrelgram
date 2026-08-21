@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "Pausiert. Zum Fortsetzen tippen"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "Zum Beenden erneut Zurück drücken"
     }
   ]
 }

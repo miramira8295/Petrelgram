@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "Dijeda. Ketuk untuk melanjutkan"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "Tekan kembali sekali lagi untuk keluar"
     }
   ]
 }

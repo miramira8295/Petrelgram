@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "Duraklatıldı. Devam için dokunun"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "Çıkmak için tekrar geri basın"
     }
   ]
 }

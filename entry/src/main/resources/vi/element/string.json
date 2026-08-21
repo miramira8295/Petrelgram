@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "Đã tạm dừng. Chạm để tiếp tục"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "Nhấn lại lần nữa để thoát"
     }
   ]
 }

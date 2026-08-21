@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "已暫停，點擊繼續下載"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "再按一次返回鍵退出"
     }
   ]
 }

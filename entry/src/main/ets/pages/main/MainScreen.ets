@@ -59,7 +59,11 @@ export struct MainScreen {
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
   // 回前台补偿：后台期间的来电 push 可能被系统拒绝，前台一刻重查一次。
   @StorageProp('appIsForeground') @Watch('onAppForegroundChanged') appIsForeground: boolean = true;
-  @State tab: number = 0;
+  // 镜像到 AppStorage：Index.onBackPress 的三级递退（先回聊天页签，再回
+  // "所有"文件夹，最后二次确认退出）要读它、也要写它。外部写入由 @Watch
+  // 落到 TabsController 上。
+  @StorageLink('mainTabIndex') @Watch('onTabExternallyChanged') tab: number = 0;
+  private appliedTab: number = 0;
   @State unread: number = 0;
   @State myId: number = 0;
   @State meAvatar: string = '';
@@ -164,11 +168,21 @@ export struct MainScreen {
     if (index === this.tab) {
       return;
     }
+    this.appliedTab = index;
     animateTo({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION),
       curve: Curve.EaseOut
     }, (): void => { this.tab = index; });
     this.controller.changeIndex(index);
+  }
+
+  // AppStorage 侧被外部改写（返回键递退）时，把 Tabs 真正切过去。自己内部
+  // 的写入先记 appliedTab，这里就不会重复 changeIndex。
+  private onTabExternallyChanged(): void {
+    if (this.tab !== this.appliedTab) {
+      this.appliedTab = this.tab;
+      this.controller.changeIndex(this.tab);
+    }
   }
 
   @Styles
@@ -339,6 +353,7 @@ export struct MainScreen {
         // Keep the dock synced if Tabs changes its final index after a rapid
         // sequence of taps.
         if (this.tab !== index) {
+          this.appliedTab = index;
           this.tab = index;
         }
       })

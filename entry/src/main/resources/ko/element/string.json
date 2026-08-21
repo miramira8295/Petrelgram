@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "일시정지됨. 탭하여 계속"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "한 번 더 누르면 종료됩니다"
     }
   ]
 }

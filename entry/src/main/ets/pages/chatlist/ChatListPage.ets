@@ -56,7 +56,11 @@ export struct ChatListPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @State folders: FolderInfo[] = [];
   @State unreadMap: Map<string, number> = new Map();
-  @State selectedIndex: number = 0;
+  // 镜像到 AppStorage：返回键递退要在非"所有"页签时先切回第 0 个文件夹。
+  // 外部写入由 @Watch 落到 TabsController；内部每次写入前先记 appliedFolder，
+  // 避免自己触发自己。
+  @StorageLink('chatFolderIndex') @Watch('onFolderExternallyChanged') selectedIndex: number = 0;
+  private appliedFolder: number = 0;
   // TDLib connection state as a small status hint beside the title
   // ('' when connectionStateReady — nothing shown).
   // The connection state itself, not its label. Keeping the token rather than
@@ -133,6 +137,14 @@ export struct ChatListPage {
     const w1 = this.tabWs[i1] ?? w0;
     this.indicatorX = x0 + (x1 - x0) * f;
     this.indicatorW = w0 + (w1 - w0) * f;
+  }
+
+  // AppStorage 侧被外部改写（返回键递退回"所有"）时，真正把 Tabs 切过去。
+  private onFolderExternallyChanged(): void {
+    if (this.selectedIndex !== this.appliedFolder) {
+      this.appliedFolder = this.selectedIndex;
+      this.controller.changeIndex(this.selectedIndex);
+    }
   }
 
   // Scroll the tab strip so the selected tab is fully visible.
@@ -240,6 +252,7 @@ export struct ChatListPage {
     // the preserved folder instead of flashing out and rebuilding at width 0.
     this.folderLayoutPending = this.indicatorW > 0;
     if (nextIndex !== this.selectedIndex) {
+      this.appliedFolder = nextIndex;
       this.selectedIndex = nextIndex;
       this.controller.changeIndex(nextIndex);
     }
@@ -764,6 +777,7 @@ export struct ChatListPage {
       // scroll the strip if that tab sits outside the visible range.
       .onAnimationStart((_index: number, targetIndex: number) => {
         this.folderLayoutPending = false;
+        this.appliedFolder = targetIndex;
         this.selectedIndex = targetIndex;
         animateTo({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION),
@@ -775,6 +789,7 @@ export struct ChatListPage {
         // onAnimationStart already drives animated changes. Avoid starting the
         // same settle animation twice when onChange fires at the end.
         if (this.selectedIndex !== index) {
+          this.appliedFolder = index;
           this.selectedIndex = index;
           animateTo({
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION),

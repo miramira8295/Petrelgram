@@ -11343,6 +11343,10 @@
     {
       "name": "cp_file_paused",
       "value": "Paused. Tap to resume"
+    },
+    {
+      "name": "app_exit_again",
+      "value": "Press back again to exit"
     }
   ]
 }
