@@ -11335,6 +11335,10 @@
     {
       "name": "mb_copy_url",
       "value": "Sao chép liên kết"
+    },
+    {
+      "name": "lk_open",
+      "value": "Mở"
     }
   ]
 }

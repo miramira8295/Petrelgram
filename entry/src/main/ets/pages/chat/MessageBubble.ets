@@ -1930,18 +1930,39 @@ export struct MessageBubble {
 
   // Long-press context menu: quick-reaction row (tap an emoji to toggle it, the
   // chevron opens the full picker) over the standard message actions.
-  private copyMessageUrls(): void {
-    const urls: string[] = messageUrls(this.msg.text, this.msg.textEntities);
-    if (urls.length === 0) {
-      return;
-    }
-    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN,
-      urls.length === 1 ? urls[0] : urls.join('\n'));
+  private copyUrlToPasteboard(url: string): void {
+    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, url);
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
       promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1300 });
     }).catch((): void => {
       promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1300 });
     });
+  }
+
+  private copyMessageUrls(): void {
+    const urls: string[] = messageUrls(this.msg.text, this.msg.textEntities);
+    if (urls.length === 0) {
+      return;
+    }
+    if (urls.length === 1) {
+      this.copyUrlToPasteboard(urls[0]);
+      return;
+    }
+    // 多条链接：弹菜单挑一条。showActionMenu 最多 6 个按钮，超出的截断——
+    // 一条消息塞六条以上链接的场景，逐条挑本来也没有意义。
+    const shown: string[] = urls.slice(0, 6);
+    promptAction.showActionMenu({
+      title: str('mb_copy_url'),
+      buttons: shown.map((u: string): promptAction.Button => ({
+        text: u.length > 40 ? u.substring(0, 37) + '…' : u,
+        color: '#3390EC'
+      })) as [promptAction.Button]
+    }).then((result: promptAction.ActionMenuSuccessResponse): void => {
+      const picked: string = shown[result.index] ?? '';
+      if (picked !== '') {
+        this.copyUrlToPasteboard(picked);
+      }
+    }).catch((): void => {});
   }
 
   @Builder

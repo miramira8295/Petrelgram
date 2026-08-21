@@ -3202,6 +3202,28 @@ struct ChatPage {
 
   // 点了消息里的链接。分派本身（走哪一路、载荷是什么）在
   // util/messageLinkAction，有单测；这里只负责执行。
+  // 外部链接的「打开 / 复制」选择。beginLinkNav 的闸门在调用前已经过了，
+  // 无论选什么（包括点空白取消）都要把忙碌态收掉，否则那段链接文字会一直
+  // 呼吸下去。
+  private offerExternalLink(url: string): void {
+    promptAction.showActionMenu({
+      title: url.length > 60 ? url.substring(0, 57) + '…' : url,
+      buttons: [
+        { text: $r('app.string.lk_open'), color: '#3390EC' },
+        { text: $r('app.string.mb_copy_url'), color: '#3390EC' }
+      ]
+    }).then((result: promptAction.ActionMenuSuccessResponse): void => {
+      if (result.index === 0) {
+        openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
+        return;
+      }
+      endLinkNavIf(url);
+      copyPlainText(url, str('link_copied'));
+    }).catch((): void => {
+      endLinkNavIf(url); // 点空白取消
+    });
+  }
+
   private onLinkTap(url: string): void {
     const action: LinkAction = linkActionOf(url);
     if (action.kind === LINK_NONE) {
@@ -3259,7 +3281,10 @@ struct ChatPage {
     }
     const tgUrl = normalizeTelegramLink(url);
     if (tgUrl === '') {
-      openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
+      // 纯外部网页链接：弹一个「打开/复制」的选择，而不是直接开——用户点链接
+      // 的意图经常只是想拿到地址。Telegram 内部链接（进群/贴纸包/消息跳转）
+      // 不走这里，照旧直接开。
+      this.offerExternalLink(url);
       return;
     }
     const req: TdRequest = { '@type': 'getMessageLinkInfo' };

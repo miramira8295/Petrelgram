@@ -11335,6 +11335,10 @@
     {
       "name": "mb_copy_url",
       "value": "Link kopieren"
+    },
+    {
+      "name": "lk_open",
+      "value": "Öffnen"
     }
   ]
 }
