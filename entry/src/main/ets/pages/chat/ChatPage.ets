@@ -2806,10 +2806,12 @@ struct ChatPage {
     } else if (typeName === 'chatTypeBasicGroup') {
       this.isBotChat = false;
       this.headerKind = 'group';
-      this.refreshAdminLabels();
       this.headerIdentityResolved = true;
       this.isGroup = true;
       this.isChannel = false;
+      // 必须在 isGroup 赋值**之后**：refreshAdminLabels 开头就按 !isGroup 早退，
+      // 原来这行在赋值之前，普通群（非超级群）的管理员标签从来没取到过。
+      this.refreshAdminLabels();
     } else if (typeName === 'chatTypeSupergroup') {
       this.isBotChat = false;
       this.isChannel = (type!['is_channel'] as boolean | undefined) ?? false;
