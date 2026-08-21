@@ -16,6 +16,7 @@ import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlay
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
+import { readableContentWidth } from '../../util/contentWidth';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -45,6 +46,9 @@ export struct ContactsPage {
   @State private topMenuShown: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
+  // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State contacts: ContactItem[] = [];
   @State loading: boolean = true;
   @State loadError: string = '';
@@ -1339,20 +1343,28 @@ export struct ContactsPage {
     Stack({ alignContent: Alignment.BottomEnd }) {
       HdsNavigation() {
         Scroll(this.contactsScroller) {
+          // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
+          // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
           Column() {
-            this.searchBox();
-            this.actionCard();
-            if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
-              this.loadingCard();
-            } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
-              this.errorContactsCard();
-            } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
-              this.emptyContactsCard();
-            } else {
-              this.listCard();
+            Column() {
+              this.searchBox();
+              this.actionCard();
+              if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
+                this.loadingCard();
+              } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
+                this.errorContactsCard();
+              } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
+                this.emptyContactsCard();
+              } else {
+                this.listCard();
+              }
             }
+            .width('100%')
+            .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
           }
           .width('100%')
+          // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
+          .alignItems(HorizontalAlign.Center)
           .padding({ bottom: this.bottomSafe + 88 });
         }
         .width('100%')

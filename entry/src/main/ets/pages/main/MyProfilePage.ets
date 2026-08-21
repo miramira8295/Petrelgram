@@ -29,6 +29,7 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
+import { readableContentWidth } from '../../util/contentWidth';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -51,6 +52,8 @@ export struct MyProfilePage {
   onOpenSettings: () => void = (): void => {};
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的
+  // windowSizeChange 会刷新它。平板上用来给内容限宽——见 util/contentWidth。
   @StorageProp('screenWidthVp') screenW: number = 360;
   @StorageProp('appIsForeground') appIsForeground: boolean = false;
   @State myId: number = 0;
@@ -730,7 +733,9 @@ export struct MyProfilePage {
   }
 
   private storyCell(): number {
-    return (this.screenW - 4) / 3;
+    // 三宫格铺满的是**内容列**，不是窗口。限宽之后仍拿 screenW 去除，格子会比
+    // 内容列宽出一截、右边一列被裁掉。
+    return (readableContentWidth(this.screenW) - 4) / 3;
   }
 
   private formatStoryDuration(totalSeconds: number): string {
@@ -1931,13 +1936,22 @@ export struct MyProfilePage {
   build() {
     HdsNavigation() {
       Scroll(this.profileScroller) {
+        // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
+        // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
         Column() {
-          this.header();
-          this.actionsRow();
-          this.infoCard();
-          this.postsSection();
+          Column() {
+            this.header();
+            this.actionsRow();
+            this.infoCard();
+            this.postsSection();
+          }
+          .width('100%')
+          .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
         }
         .width('100%')
+        // Column 默认左对齐：限了宽不居中就是把「设置照片 / 编辑信息 / 设置」
+        // 那三个卡堆在屏幕左边，比不限还难看。
+        .alignItems(HorizontalAlign.Center)
         .padding({ bottom: this.bottomSafe + 88 });
       }
       .width('100%')

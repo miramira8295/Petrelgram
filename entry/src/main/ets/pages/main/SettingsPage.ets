@@ -25,6 +25,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { readableContentWidth } from '../../util/contentWidth';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -128,6 +129,9 @@ export struct SettingsPage {
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
+  // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   // The setting titles come from str() rather than $r() so the search box can
   // filter on them, which means they do not re-resolve by themselves. Observing
   // the epoch is what rebuilds this list when the language changes.
@@ -1263,13 +1267,22 @@ export struct SettingsPage {
 
   @Builder
   settingsBody() {
+    // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
+    // 限宽如果加在外面的 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
+    // 搜索态和常态两条分支都走这个 Builder，限宽因此只写一处。
     Column() {
-      if (!this.settingsSearchOpen) {
-        this.accountsCard();
+      Column() {
+        if (!this.settingsSearchOpen) {
+          this.accountsCard();
+        }
+        this.settingsCard();
       }
-      this.settingsCard();
+      .width('100%')
+      .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
     }
     .width('100%')
+    // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
+    .alignItems(HorizontalAlign.Center)
     .padding({ bottom: this.bottomSafe + 88 });
   }
 
