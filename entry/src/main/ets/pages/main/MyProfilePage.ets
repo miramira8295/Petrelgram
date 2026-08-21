@@ -1,4 +1,11 @@
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction, router, LengthMetrics } from '@kit.ArkUI';
+import {
+  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
+  HdsNavigationTitleMode, TitleBarContentOptions
+} from '@kit.UIDesignKit';
+import {
+  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
+} from '../../util/hdsTitleBar';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { cameraPicker } from '@kit.CameraKit';
@@ -72,6 +79,7 @@ export struct MyProfilePage {
   @State avatarPressed: boolean = false;
   @State photoUploading: boolean = false;
   @State openingEditor: boolean = false;
+  private profileScroller: Scroller = new Scroller();
   @State topMenuOpen: boolean = false;
   @State photoMenuOpen: boolean = false;
   @State switchingToSettings: boolean = false;
@@ -1007,25 +1015,6 @@ export struct MyProfilePage {
     .scale({ x: 0.92, y: 0.92 })
   }
 
-  @Builder
-  circleButton(symbol: string, label: string, onTap: () => void) {
-    Row() {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
-    }
-    .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE).borderRadius(TOP_ACTION_SIZE / 2)
-    .justifyContent(FlexAlign.Center)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .stateStyles({
-      normal: this.topActionNormalStyle,
-      pressed: this.topActionPressedStyle
-    })
-    .enabled(!this.profileLoading && this.profileError === '' &&
-      !this.photoUploading && !this.photoMenuOpen && !this.openingEditor &&
-      !this.switchingToSettings && !this.topMenuOpen)
-    .opacity(this.profileLoading || this.profileError !== '' ? 0.46 : 1)
-    .accessibilityText(label)
-    .onClick(onTap);
-  }
 
   @Builder
   actionButton(symbol: string, label: string, key: string, accent: string, onTap: () => void) {
@@ -1208,13 +1197,10 @@ export struct MyProfilePage {
 
   @Builder
   header() {
+    // 二维码和 ⋮ 原来是浮在头像块上方的一行，现在搬进了标题栏（见
+    // titleBarContent）——它们本来就是"页面级动作"，放在标题栏才是它们该在的
+    // 地方，头像块也因此能一直顶到最上面。
     Column({ space: 8 }) {
-      Row() {
-        this.circleButton('sys.symbol.qrcode', str('mp_show_profile_qr'), () => { this.openQr(); });
-        Blank().layoutWeight(1);
-        this.circleButton('sys.symbol.more', str('mp_more_actions'), () => { this.showTopMenu(); });
-      }.width('100%').padding({ left: 12, right: 12 });
-
       Stack({ alignContent: Alignment.BottomEnd }) {
         Stack({ alignContent: Alignment.Center }) {
           if (this.profileLoading) {
@@ -1917,24 +1903,74 @@ export struct MyProfilePage {
     }
   }
 
+  // 标题栏内容：大标题 + 右上角二维码与 ⋮。
+  //
+  // ⋮ 走的是 promptAction.showActionMenu（系统动作面板），不是 bindMenu，
+  // 所以不需要联系人页那种锚点，action 里直接调即可。
+  private titleBarContent(): TitleBarContentOptions {
+    const qrIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.qrcode'),
+      label: str('mp_show_profile_qr'),
+      action: (): void => { this.openQr(); }
+    };
+    const moreIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.more'),
+      label: str('mp_more_actions'),
+      action: (): void => { this.showTopMenu(); }
+    };
+    return {
+      title: { mainTitle: $r('app.string.tab_profile') },
+      menu: {
+        value: [
+          { content: qrIcon } as HdsNavigationMenuItemOptions,
+          { content: moreIcon } as HdsNavigationMenuItemOptions
+        ]
+      }
+    };
+  }
+
   build() {
-    Scroll() {
-      Column() {
-        this.header();
-        this.actionsRow();
-        this.infoCard();
-        this.postsSection();
+    HdsNavigation() {
+      Scroll(this.profileScroller) {
+        Column() {
+          this.header();
+          this.actionsRow();
+          this.infoCard();
+          this.postsSection();
+        }
+        .width('100%')
+        .padding({ bottom: this.bottomSafe + 88 });
       }
       .width('100%')
-      .padding({ bottom: this.bottomSafe + 88 });
+      .align(Alignment.Top)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      // 不裁剪，头像块才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false);
     }
+    .titleBar({
+      // 两个都要，各管一头。漏掉 avoidLayoutSafeArea 标题栏会顶进状态栏。
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: titleScrollEffectType(),
+          blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
+          blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
+        },
+        originalStyle: { backgroundStyle: { backgroundColor: PAGE_BG } }
+      },
+      content: this.titleBarContent()
+    })
+    // 一级页签，没有返回键。
+    .hideBackButton(true)
+    .titleMode(HdsNavigationTitleMode.FREE)
+    .bindToScrollable([this.profileScroller])
     .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
     // 见 ContactsPage：背景色要靠 expandSafeArea 才延伸到状态栏底下。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .align(Alignment.Top)
-    .edgeEffect(EdgeEffect.Spring)
-    .scrollBar(BarState.Off);
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }
 
