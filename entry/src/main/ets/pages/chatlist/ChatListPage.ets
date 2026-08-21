@@ -710,8 +710,13 @@ export struct ChatListPage {
                   listScroller: this.scrollerFor(spec.key)
                 });
               }
-            }.width('100%').height('100%')
+            }
+            .width('100%').height('100%')
+            // 这一路每一层都要放开裁剪，列表才画得到标题栏底下去。中间任何
+            // 一层裁剪，穿过去的那部分就被切掉，渐变模糊没有东西可糊。
+            .clip(false)
           }
+          .clip(false)
         }, (spec: TabSpec) => spec.key);
       }
       .barHeight(0)
@@ -750,6 +755,7 @@ export struct ChatListPage {
         this.ensureTabVisible(index);
       })
       .width('100%').height('100%')
+      .clip(false)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM]);
 
         // 浮在列表上层。放在 Tabs 之后 = 画在它上面。
@@ -757,7 +763,8 @@ export struct ChatListPage {
           this.tabBar();
         }
         }
-        .width('100%').height('100%');
+        .width('100%').height('100%')
+        .clip(false);
       }
       .titleBar({
         // 两个都要，各管一头：
