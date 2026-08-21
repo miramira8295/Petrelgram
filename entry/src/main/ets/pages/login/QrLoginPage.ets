@@ -74,6 +74,13 @@ export struct QrLoginPage {
     }
     this.renderSeq += 1;
     const seq: number = this.renderSeq;
+    // Scan Kit 缺席的环境（模拟器镜像没有 HMS 扫码服务）里 createBarcode 会
+    // 既不成功也不报错地挂死，页面永远转圈。10 秒兜底进失败态，用户至少能
+    // 看到"生成失败"并改走手机号登录。
+    setTimeout((): void => {
+      if (this.disposed || seq !== this.renderSeq || this.code !== null) { return; }
+      this.failed = true;
+    }, 10000);
     const options: generateBarcode.CreateOptions = {
       scanType: scanCore.ScanType.QR_CODE,
       height: QR_PIXEL_SIZE,
