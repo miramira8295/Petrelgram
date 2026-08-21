@@ -11,6 +11,16 @@
 //   3. maxWidth − minWidth ≥ 一段真实行程 —— 否则 enableDragBar(true) 画得出
 //      把手却拖不动（官方文档：同时设置 navBarWidthRange 与 minContentWidth 时，
 //      「满足 minContentWidth 后在 navBarWidthRange 范围内拖拽」）
+//
+// 【输入前提】三个函数都**假定 windowWidthVp ≥ 600**（NavigationMode.Auto 的分栏
+// 断点），由调用方保证——这三个值只在分栏成立时才被 HdsNavigation 读取。
+// 没有在函数里加下限保护，是因为 600 以下没有任何一组取值是「对」的：约束 1 和
+// 约束 3 在那里必然互斥（0.4 × 500 = 200，再留 40 行程就只剩 160），随便挑一个
+// 数只会让一段死代码看起来像是有意义的。
+// **但区间合法性（minWidth ≤ maxWidth）是无条件保证的**——见 splitNavMinWidth
+// 末尾那次收敛，用例里对 240–2560 逐 vp 断言过。也就是说即便哪天真被喂进一个
+// 小于 600 的宽度，结果也只是「行程为 0、拖不动」，不会退化成 HdsNavigation
+// 文档里那句「设置异常值时按默认值处理」把整组取值作废。
 
 // 左栏想要的比例。窗口越宽，左栏越宽——但只按比例走，不按定值。
 const SPLIT_NAV_RATIO: number = 1 / 3;
