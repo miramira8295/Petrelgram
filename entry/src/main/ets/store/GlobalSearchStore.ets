@@ -53,6 +53,14 @@ export class GlobalSearchStore {
   similarFailed: boolean = false;
   appsFailed: boolean = false;
 
+  // 自己的 user id（＝「我的收藏」那个私聊的 chat id）。loadTop 用它把收藏钉在
+  // 常用联系人第一位；渲染层用它认出该行换标题和书签头像。
+  private selfId: number = 0;
+
+  selfChatId(): number {
+    return this.selfId;
+  }
+
   constructor(client: TdClient) {
     this.client = client;
   }
@@ -283,9 +291,27 @@ export class GlobalSearchStore {
     const req: TdRequest = { '@type': 'getTopChats' };
     req['category'] = { '@type': 'topChatCategoryUsers' } as TdObject;
     req['limit'] = 10;
-    this.client.send(req).then((res: TdObject) => {
+    // 先拿自己的 id（getMe 在 TDLib 侧是缓存命中，几乎无代价），把「我的收藏」
+    // 钉在常用联系人第一位——官方客户端的搜索页就是这个顺序。getMe 失败就退回
+    // 纯 getTopChats，别让收藏把整个横排拖死。
+    const me: TdRequest = { '@type': 'getMe' };
+    this.client.send(me).then((user: TdObject) => {
+      this.selfId = (user['id'] as number | undefined) ?? 0;
+      if (this.selfId > 0) {
+        // 收藏会话可能从未创建过（chat id == user id，但对象未必存在）。
+        // createPrivateChat 幂等，确保点进去有的可开。
+        const cp: TdRequest = { '@type': 'createPrivateChat' };
+        cp['user_id'] = this.selfId;
+        this.client.send(cp).catch((e: TdError): void => {
+          logE(`GlobalSearchStore.createPrivateChat(self) failed: ${e.message}`);
+        });
+      }
+      return this.client.send(req);
+    }).then((res: TdObject) => {
       this.topLoaded = true;
-      this.fillBucket('top', (res['chat_ids'] as number[] | undefined) ?? []);
+      const ids = ((res['chat_ids'] as number[] | undefined) ?? [])
+        .filter((id: number): boolean => id !== this.selfId);
+      this.fillBucket('top', this.selfId > 0 ? [this.selfId, ...ids] : ids);
     }).catch((e: TdError) => {
       this.topLoaded = true;
       this.topFailed = true;
@@ -501,7 +527,11 @@ export class GlobalSearchStore {
     req['chat_id'] = chatId;
     this.client.send(req).then((chat: TdObject) => {
       const rawTitle = (chat['title'] as string | undefined) ?? '';
-      const title = rawTitle !== '' ? rawTitle : str('deleted_account');
+      // 和自己的私聊就是「我的收藏」。TDLib 对它没有任何特殊标记（标题是自己的
+      // 昵称，见 issue #8），只能按 chatId === selfId 认。
+      const isSelf: boolean = this.selfId > 0 && chatId === this.selfId;
+      const title = isSelf ? str('cl_saved_messages')
+        : (rawTitle !== '' ? rawTitle : str('deleted_account'));
       const type = chat['type'] as TdObject | undefined;
       const typeName = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
       const isChannel = typeName === 'chatTypeSupergroup'
@@ -517,7 +547,7 @@ export class GlobalSearchStore {
         initials: rawTitle.length > 0 ? rawTitle.substring(0, 1).toUpperCase() : '?',
         avatarPath: r.avatarPath, subtitle: subtitle !== '' ? subtitle : r.subtitle, isChannel
       }));
-      if (typeName === 'chatTypePrivate') {
+      if (typeName === 'chatTypePrivate' && !isSelf) {
         const uid = ((type as TdObject)['user_id'] as number | undefined) ?? 0;
         if (uid > 0) {
           this.resolveUserSubtitle(bucket, chatId, uid);

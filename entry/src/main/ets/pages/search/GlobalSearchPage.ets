@@ -1569,7 +1569,10 @@ struct GlobalSearchPage {
           .margin({ left: SEARCH_RESULT_DIVIDER_INSET });
       }
       Row({ space: 12 }) {
-        AvatarView({ avatarPath: r.avatarPath, initials: r.initials, colorSeed: r.chatId, avatarSize: 48 });
+        AvatarView({
+          avatarPath: r.avatarPath, initials: r.initials, colorSeed: r.chatId, avatarSize: 48,
+          savedMessages: this.store !== null && r.chatId === this.store.selfChatId()
+        });
         Column({ space: 3 }) {
           Text(r.title !== '' ? r.title : '…')
             .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
@@ -1617,7 +1620,8 @@ struct GlobalSearchPage {
                   avatarPath: row.avatarPath,
                   initials: row.initials,
                   colorSeed: row.chatId,
-                  avatarSize: 58
+                  avatarSize: 58,
+                  savedMessages: this.store !== null && row.chatId === this.store.selfChatId()
                 });
                 if (this.resultOpeningKey === `chat:${row.chatId}`) {
                   Circle({ width: 58, height: 58 }).fill('#66000000');
