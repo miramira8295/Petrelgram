@@ -11,6 +11,7 @@ import {
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { contentSideGutter } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 16;
 const COLOR_DANGER: string = '#E5484D';
@@ -21,6 +22,8 @@ struct TwoStepVerificationPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State loadState: string = 'loading';
   @State passwordState: TdObject | null = null;
   @State mode: string = 'password';
@@ -449,7 +452,17 @@ struct TwoStepVerificationPage {
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18)
               .width('100%').padding({ left: 16, right: 16 });
           }
-          .width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+          .width('100%')
+          // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+          // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+          // 密码输入框跟着这一列收窄，不再在 2880px 上拉成一条通栏。
+          // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+          .padding({
+            left: 12 + contentSideGutter(this.screenW),
+            right: 12 + contentSideGutter(this.screenW),
+            top: 6,
+            bottom: this.bottomSafe + 24
+          });
         }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
       }
     }

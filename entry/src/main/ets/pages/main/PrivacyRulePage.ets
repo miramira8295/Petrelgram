@@ -10,6 +10,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
+import { readableContentWidth } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 16;
 
@@ -41,6 +42,8 @@ const ALL_OPTIONS: RuleOption[] = [
 struct PrivacyRulePage {
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State setting: string = '';
   @State title: string = '';
   @State hint: string = '';
@@ -176,61 +179,71 @@ struct PrivacyRulePage {
         this.loadError();
       } else {
         Scroll() {
-          Column({ space: 12 }) {
-            Column() {
-              Text($r('app.string.privacy_who_can')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
-                .width('100%').padding({ left: 16, top: 13, bottom: 5 });
-              ForEach(this.options(), (option: RuleOption, index: number) => {
-                if (index > 0) { this.divider(); }
-                Row({ space: 10 }) {
-                  Text(option.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-                  if (this.base === option.value) {
-                    SymbolGlyph($r('sys.symbol.checkmark')).fontSize(19).fontColor([COLOR_PRIMARY]);
+          // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
+          // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来，侧边留白
+          // 区域还会拖不动页面；做在里面则留白仍在 Scroll 的命中区，能拖。
+          Column() {
+            Column({ space: 12 }) {
+              Column() {
+                Text($r('app.string.privacy_who_can')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+                  .width('100%').padding({ left: 16, top: 13, bottom: 5 });
+                ForEach(this.options(), (option: RuleOption, index: number) => {
+                  if (index > 0) { this.divider(); }
+                  Row({ space: 10 }) {
+                    Text(option.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+                    if (this.base === option.value) {
+                      SymbolGlyph($r('sys.symbol.checkmark')).fontSize(19).fontColor([COLOR_PRIMARY]);
+                    }
                   }
+                  .width('100%').constraintSize({ minHeight: 50 }).padding({ left: 16, right: 16 })
+                  .borderRadius(12).stateStyles({ normal: this.optionNormalStyle, pressed: this.optionPressedStyle })
+                  .opacity(this.saving ? 0.72 : 1)
+                  .onClick((): void => { this.pick(option.value); });
+                }, (option: RuleOption): string => `${option.value}_${this.base}`);
+              }
+              .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).padding({ bottom: 5 });
+
+              Text(this.hint).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18)
+                .width('100%').padding({ left: 16, right: 16 });
+
+              Column() {
+                Text($r('app.string.privacy_exceptions')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+                  .width('100%').padding({ left: 16, top: 13, bottom: 5 });
+                Row({ space: 9 }) {
+                  Column({ space: 2 }) {
+                    Text($r('app.string.privacy_always_allow')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+                    Text($r('app.string.privacy_always_allow_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+                  }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+                  Text(`${this.allowExceptions}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+                  SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
                 }
-                .width('100%').constraintSize({ minHeight: 50 }).padding({ left: 16, right: 16 })
-                .borderRadius(12).stateStyles({ normal: this.optionNormalStyle, pressed: this.optionPressedStyle })
-                .opacity(this.saving ? 0.72 : 1)
-                .onClick((): void => { this.pick(option.value); });
-              }, (option: RuleOption): string => `${option.value}_${this.base}`);
-            }
-            .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).padding({ bottom: 5 });
-
-            Text(this.hint).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18)
-              .width('100%').padding({ left: 16, right: 16 });
-
-            Column() {
-              Text($r('app.string.privacy_exceptions')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
-                .width('100%').padding({ left: 16, top: 13, bottom: 5 });
-              Row({ space: 9 }) {
-                Column({ space: 2 }) {
-                  Text($r('app.string.privacy_always_allow')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
-                  Text($r('app.string.privacy_always_allow_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-                }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                Text(`${this.allowExceptions}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
-                SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+                .width('100%').constraintSize({ minHeight: 60 }).padding({ left: 16, right: 14 })
+                .onClick((): void => { this.openExceptions(); });
+                this.divider();
+                Row({ space: 9 }) {
+                  Column({ space: 2 }) {
+                    Text($r('app.string.privacy_never_allow')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+                    Text($r('app.string.privacy_never_allow_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+                  }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+                  Text(`${this.restrictExceptions}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+                  SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+                }
+                .width('100%').constraintSize({ minHeight: 60 }).padding({ left: 16, right: 14 })
+                .onClick((): void => { this.openExceptions(); });
               }
-              .width('100%').constraintSize({ minHeight: 60 }).padding({ left: 16, right: 14 })
-              .onClick((): void => { this.openExceptions(); });
-              this.divider();
-              Row({ space: 9 }) {
-                Column({ space: 2 }) {
-                  Text($r('app.string.privacy_never_allow')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
-                  Text($r('app.string.privacy_never_allow_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-                }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                Text(`${this.restrictExceptions}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
-                SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
-              }
-              .width('100%').constraintSize({ minHeight: 60 }).padding({ left: 16, right: 14 })
-              .onClick((): void => { this.openExceptions(); });
-            }
-            .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).padding({ bottom: 5 });
+              .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).padding({ bottom: 5 });
 
-            Text($r('app.string.privacy_exceptions_note'))
-              .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18)
-              .width('100%').padding({ left: 16, right: 16 });
+              Text($r('app.string.privacy_exceptions_note'))
+                .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18)
+                .width('100%').padding({ left: 16, right: 16 });
+            }
+            .width('100%')
+            .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
+            .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
           }
-          .width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+          .width('100%')
+          // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
+          .alignItems(HorizontalAlign.Center);
         }
         .layoutWeight(1).width('100%').align(Alignment.Top).scrollBar(BarState.Off);
       }

@@ -12,6 +12,7 @@ import { str } from '../../util/strings';
 import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { readableContentWidth } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -22,6 +23,8 @@ struct NetworkUsagePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State usage: NetworkUsage | null = null;
   @State loading: boolean = true;
   @State refreshing: boolean = false;
@@ -219,28 +222,40 @@ struct NetworkUsagePage {
     Column() {
       this.header();
       Scroll() {
-        Column({ space: 12 }) {
-          if (this.warning !== '') {
-            Text(this.warning).fontSize(12).fontColor('#FF9500').width('100%')
-              .padding(10).backgroundColor('#12FF9500').borderRadius(10);
+        // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
+        // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来，侧边留白
+        // 区域还会拖不动页面；做在里面则留白仍在 Scroll 的命中区，能拖。
+        // 分类占比条按父宽的百分比算，跟着内层一起收窄，不用另外处理。
+        Column() {
+          Column({ space: 12 }) {
+            if (this.warning !== '') {
+              Text(this.warning).fontSize(12).fontColor('#FF9500').width('100%')
+                .padding(10).backgroundColor('#12FF9500').borderRadius(10);
+            }
+            if (this.loading && this.usage === null) { this.loadingState(); }
+            else if (this.errorText !== '' && this.usage === null) { this.errorState(); }
+            else if (this.usage !== null && this.usage.sent + this.usage.received <= 0) {
+              this.emptyState();
+            } else if (this.usage !== null) {
+              this.summaryCard();
+              if (this.usage.byNetwork.length > 0) { this.breakdownCard($r('app.string.network_by_network'), this.usage.byNetwork); }
+              if (this.usage.byCategory.length > 0) { this.breakdownCard($r('app.string.network_by_type'), this.usage.byCategory); }
+            }
+            Row({ space: 8 }) {
+              if (this.resetting) { LoadingProgress().width(17).height(17).color(DANGER); }
+              Text(this.resetting ? $r('app.string.resetting') : $r('app.string.network_reset'))
+                .fontSize(15).fontColor(DANGER).fontWeight(FontWeight.Medium);
+            }.width('100%').height(46).justifyContent(FlexAlign.Center)
+              .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
+              .enabled(!this.resetting && !this.loading).onClick((): void => this.reset());
           }
-          if (this.loading && this.usage === null) { this.loadingState(); }
-          else if (this.errorText !== '' && this.usage === null) { this.errorState(); }
-          else if (this.usage !== null && this.usage.sent + this.usage.received <= 0) {
-            this.emptyState();
-          } else if (this.usage !== null) {
-            this.summaryCard();
-            if (this.usage.byNetwork.length > 0) { this.breakdownCard($r('app.string.network_by_network'), this.usage.byNetwork); }
-            if (this.usage.byCategory.length > 0) { this.breakdownCard($r('app.string.network_by_type'), this.usage.byCategory); }
-          }
-          Row({ space: 8 }) {
-            if (this.resetting) { LoadingProgress().width(17).height(17).color(DANGER); }
-            Text(this.resetting ? $r('app.string.resetting') : $r('app.string.network_reset'))
-              .fontSize(15).fontColor(DANGER).fontWeight(FontWeight.Medium);
-          }.width('100%').height(46).justifyContent(FlexAlign.Center)
-            .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
-            .enabled(!this.resetting && !this.loading).onClick((): void => this.reset());
-        }.width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+          .width('100%')
+          .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
+          .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+        }
+        .width('100%')
+        // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
+        .alignItems(HorizontalAlign.Center);
       }.layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
     }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])

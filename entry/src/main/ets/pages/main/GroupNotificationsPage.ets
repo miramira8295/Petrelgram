@@ -11,6 +11,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { contentSideGutter } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 14;
 const UNDO_VISIBLE_MS: number = 10000;
@@ -38,6 +39,8 @@ struct GroupNotificationsPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   // 分组结果直接存成状态，而不是渲染时现算 —— @Builder 的值参数不会随数据
   // 变化重新求值，把数组当参数传进去点了不会重排（这一版的真正病根）。
   @State openRows: ChatEntry[] = [];
@@ -298,7 +301,13 @@ struct GroupNotificationsPage {
             .onChange((value: string): void => { this.query = value; this.regroup(); });
         }
         .width('100%')
-        .padding({ left: SIDE_PADDING, right: SIDE_PADDING, bottom: 10 });
+        // 搜索框在 Scroll 外面，得自己吃同一份留白，否则内容列收窄了它还
+        // 通栏，两者左右对不齐。手机上 contentSideGutter 恒为 0。
+        .padding({
+          left: SIDE_PADDING + contentSideGutter(this.screenW),
+          right: SIDE_PADDING + contentSideGutter(this.screenW),
+          bottom: 10
+        });
 
         if (!this.scopesLoaded) {
           Column({ space: 9 }) {
@@ -316,7 +325,13 @@ struct GroupNotificationsPage {
                 .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
             }
             .width('100%')
-            .padding({ left: SIDE_PADDING, right: SIDE_PADDING, bottom: this.bottomSafe + 90 });
+            // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满
+            // 窗口，两侧留白还在它的命中区里，按在留白上照样能滚列表。
+            .padding({
+              left: SIDE_PADDING + contentSideGutter(this.screenW),
+              right: SIDE_PADDING + contentSideGutter(this.screenW),
+              bottom: this.bottomSafe + 90
+            });
           }.layoutWeight(1).width('100%').scrollBar(BarState.Off).align(Alignment.Top);
         }
       }
@@ -332,7 +347,12 @@ struct GroupNotificationsPage {
           this.undoBar();
         }
         .width('100%')
-        .padding({ left: SIDE_PADDING, right: SIDE_PADDING, bottom: this.bottomSafe + 12 })
+        // 撤销条浮在列表之上，同样跟着内容列收窄，否则它比正在撤销的那一行还宽。
+        .padding({
+          left: SIDE_PADDING + contentSideGutter(this.screenW),
+          right: SIDE_PADDING + contentSideGutter(this.screenW),
+          bottom: this.bottomSafe + 12
+        })
         .hitTestBehavior(HitTestMode.Transparent);
       }
     }

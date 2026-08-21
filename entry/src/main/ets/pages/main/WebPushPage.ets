@@ -21,6 +21,7 @@ import { HuaweiPushResult, registerHuaweiPush } from '../../services/HuaweiPushR
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { contentSideGutter } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 14;
 
@@ -43,6 +44,8 @@ struct WebPushPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @StorageProp(KEY_WEBPUSH_ENABLED) pushEnabled: boolean = false;
   @StorageProp(KEY_WEBPUSH_ACCEPTED) accepted: boolean = false;
   @StorageProp(KEY_WEBPUSH_ENDPOINT) storedEndpoint: string = '';
@@ -599,7 +602,16 @@ struct WebPushPage {
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
           }
         }
-        .width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 16 });
+        .width('100%')
+        // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+        // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+        // 这一页的说明文字最长，收窄后一行才不用横扫整屏。
+        // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+        .padding({
+          left: 12 + contentSideGutter(this.screenW),
+          right: 12 + contentSideGutter(this.screenW),
+          bottom: this.bottomSafe + 16
+        });
       }
       .layoutWeight(1).width('100%')
       .scrollBar(BarState.Off)
