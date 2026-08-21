@@ -10,6 +10,7 @@ import {
   darkResourceMode
 } from '../../util/theme';
 import { logE } from '../../util/log';
+import { contentSideGutter } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 128;
@@ -23,6 +24,8 @@ interface ThemePageParams {
 struct ChatThemePage {
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State previews: ChatThemePreview[] = [];
   @State applyingName: string = '';
   private chatId: number = 0;
@@ -152,7 +155,19 @@ struct ChatThemePage {
             }
             Text($r('app.string.chat_theme_note'))
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
-          }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
+          }
+          .width('100%')
+            // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+            // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+            // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+          // 三列网格跟着一起收窄是限宽的正常结果：1440vp 窗口下内容列 880，
+          // 去掉左右各 12 的内边距和两道 10 的 gutter，单格 (856−20)/3 ≈ 278.7vp，
+          // 仍比手机上的 105vp 宽得多，格子只会更接近手机上的比例，不会被压扁。
+          .padding({
+            left: 12 + contentSideGutter(this.screenW),
+            right: 12 + contentSideGutter(this.screenW),
+            bottom: this.bottomSafe + 24
+          });
         }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
       }
     }

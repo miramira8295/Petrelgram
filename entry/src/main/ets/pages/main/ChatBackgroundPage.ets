@@ -17,6 +17,7 @@ import {
   patternStrengthKey, setNumber
 } from '../../store/AppSettings';
 import { logE } from '../../util/log';
+import { contentSideGutter } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 118;
@@ -35,6 +36,8 @@ interface BackgroundPageParams {
 struct ChatBackgroundPage {
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
   @State loadState: string = 'loading';
   @State rows: GalleryRow[] = [];
@@ -400,7 +403,20 @@ struct ChatBackgroundPage {
               ? $r('app.string.cb_chat_note')
               : $r('app.string.cb_global_note'))
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
-          }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
+          }
+          .width('100%')
+            // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+            // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+            // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+          // 三列缩略图网格跟着一起收窄是限宽的正常结果：1440vp 窗口下内容列 880，
+          // 去掉左右各 12 的内边距和两道 10 的 gutter，单格 (856−20)/3 ≈ 278.7vp。
+          // 格子高度是定值 TILE_HEIGHT，没有 aspectRatio，所以只是从 465×118 变成
+          // 278.7×118 —— 比手机上的 105×118 还宽，不存在压扁。
+          .padding({
+            left: 12 + contentSideGutter(this.screenW),
+            right: 12 + contentSideGutter(this.screenW),
+            bottom: this.bottomSafe + 24
+          });
         }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
       }
     }

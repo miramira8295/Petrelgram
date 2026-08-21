@@ -16,6 +16,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
+import { contentSideGutter } from '../../util/contentWidth';
 
 interface FolderInviteParams {
   folderId: number;
@@ -34,6 +35,8 @@ struct FolderInviteLinksPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State folderId: number = 0;
   @State title: string = '';
   @State loadState: string = 'loading';
@@ -300,7 +303,17 @@ struct FolderInviteLinksPage {
           .stateStyles({ normal: this.pressNormal, pressed: this.pressDown }).onClick((): void => this.openCreate());
         Text($r('app.string.fl_create_note'))
           .fontSize(11).fontColor(COLOR_TEXT_SECONDARY).padding({ left: 8, right: 8 });
-      }.width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+      }
+      .width('100%')
+      // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+      // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+      // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+      .padding({
+        left: 12 + contentSideGutter(this.screenW),
+        right: 12 + contentSideGutter(this.screenW),
+        top: 6,
+        bottom: this.bottomSafe + 24
+      });
     }.layoutWeight(1).width('100%').scrollBar(BarState.Off).align(Alignment.Top);
   }
 

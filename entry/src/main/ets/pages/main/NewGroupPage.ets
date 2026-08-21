@@ -19,6 +19,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
 import { navigateToChat } from '../../util/chatNav';
+import { contentSideGutter, readableContentWidth } from '../../util/contentWidth';
 
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -26,6 +27,8 @@ const CARD_RADIUS: number = 14;
 const SEARCH_DELAY_MS: number = 350;
 const DEFAULT_BASIC_GROUP_SIZE_MAX: number = 200;
 const SKELETON_ROWS: number[] = [0, 1, 2, 3, 4];
+// 选人屏那几张卡片左右各让出的边距，跟它们 width 里扣掉的 24vp 是同一个数。
+const CARD_SIDE_MARGIN: number = 12;
 
 @Entry
 @Component
@@ -33,6 +36,8 @@ struct NewGroupPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State contacts: ContactItem[] = [];
   @State loading: boolean = true;
   @State loadError: string = '';
@@ -507,6 +512,17 @@ struct NewGroupPage {
     .alignItems(VerticalAlign.Center).backgroundColor(PAGE_BG);
   }
 
+  // 选人那一屏的卡片（搜索框 / 联系人列表 / 空态）宽度上限。
+  // 这几张卡片本来就是 width('calc(100% - 24vp)') + margin 左右各 12 —— 那个
+  // 写法是对的，宽度里先把两侧 margin 扣掉了，不是 width('100%') 加 margin 的
+  // 溢出写法。限宽因此只能顺着它做：上限同样要扣掉那 24，不然卡片宽度加上
+  // margin 会超出限宽后的内容列。
+  // 手机上 readableContentWidth 原样返回窗口宽，上限正好等于 calc 算出来的值，
+  // 约束不生效，逐像素等于改动前。
+  private pickerCardMaxWidth(): number {
+    return readableContentWidth(this.screenW) - CARD_SIDE_MARGIN * 2;
+  }
+
   @Builder
   searchBox() {
     Row({ space: 8 }) {
@@ -536,7 +552,8 @@ struct NewGroupPage {
         .accessibilityText($r('app.string.clear_search')).onClick((): void => this.clearSearch());
       }
     }
-    .width('calc(100% - 24vp)').height(46).padding({ left: 13, right: 9 })
+    .width('calc(100% - 24vp)').constraintSize({ maxWidth: this.pickerCardMaxWidth() })
+    .height(46).padding({ left: 13, right: 9 })
     .margin({ left: 12, right: 12, top: 4, bottom: 8 })
     .backgroundColor(CARD_BG).borderRadius(23)
     .border({ width: 1, color: this.searchFocused ? COLOR_PRIMARY : Color.Transparent })
@@ -579,7 +596,14 @@ struct NewGroupPage {
             this.selectedChip(this.contactFor(userId));
           }, (userId: number): string => `${userId}`);
         }
-        .padding({ left: 16, right: 16, top: 5, bottom: 9 });
+        // 横滑条本身保持满宽（留白里照样能横滑），只把里面的头像行推到内容列
+        // 边缘上，免得平板上一排头像贴着屏幕左沿、跟下面的卡片对不齐。
+        // 手机上 contentSideGutter 恒为 0，逐像素等于改动前的 16。
+        .padding({
+          left: 16 + contentSideGutter(this.screenW),
+          right: 16 + contentSideGutter(this.screenW),
+          top: 5, bottom: 9
+        });
       }
       .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).width('100%')
       .transition(TransitionEffect.OPACITY.combine(
@@ -645,7 +669,8 @@ struct NewGroupPage {
       ForEach(SKELETON_ROWS, (index: number): void => this.skeletonRow(index),
         (index: number): string => `${index}`);
     }
-    .width('calc(100% - 24vp)').margin({ left: 12, right: 12, top: 4 })
+    .width('calc(100% - 24vp)').constraintSize({ maxWidth: this.pickerCardMaxWidth() })
+    .margin({ left: 12, right: 12, top: 4 })
     .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
     .opacity(this.skeletonBright ? 0.56 : 0.94)
     .animation({ duration: this.animationDuration(640), curve: Curve.EaseInOut })
@@ -678,6 +703,7 @@ struct NewGroupPage {
       }
     }
     .layoutWeight(1).width('calc(100% - 24vp)')
+    .constraintSize({ maxWidth: this.pickerCardMaxWidth() })
     .margin({ left: 12, right: 12, top: 4, bottom: this.bottomSafe + 12 })
     .justifyContent(FlexAlign.Center).backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
     .transition(TransitionEffect.OPACITY.combine(
@@ -735,6 +761,11 @@ struct NewGroupPage {
       }
     }
     .layoutWeight(1).width('calc(100% - 24vp)')
+    // 这张卡片本身就是滚动容器（List 既是卡片又是滚动体），限宽后两侧留白
+    // 不在它的命中区里、滑不动列表——这一点跟改动前的 12vp 边距同性质，只是
+    // 平板上更宽。要让留白也能滑，得把卡片背景从 List 挪到 ListItem 上，那是
+    // 另一回事，不在限宽这一轮里做。
+    .constraintSize({ maxWidth: this.pickerCardMaxWidth() })
     .margin({ left: 12, right: 12, top: 4 })
     .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
     .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
@@ -785,6 +816,9 @@ struct NewGroupPage {
       this.memberContent();
     }
     .layoutWeight(1).width('100%')
+    // 限了宽不居中就是把卡片全堆在屏幕左边，比不限还难看。手机上卡片宽度
+    // 加左右 margin 正好铺满，居中与否没有区别。
+    .alignItems(HorizontalAlign.Center)
     .transition(TransitionEffect.OPACITY.combine(
       TransitionEffect.translate({ x: -18 })
     ).animation({ duration: this.animationDuration(210), curve: Curve.EaseOut }));
@@ -914,8 +948,14 @@ struct NewGroupPage {
         }
         .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
       }
-      .width('100%').padding({
-        left: 12, right: 12, top: 4, bottom: this.bottomSafe + 24
+      .width('100%')
+      // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+      // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+      // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+      .padding({
+        left: 12 + contentSideGutter(this.screenW),
+        right: 12 + contentSideGutter(this.screenW),
+        top: 4, bottom: this.bottomSafe + 24
       });
     }
     .layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)

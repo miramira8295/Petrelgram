@@ -21,6 +21,7 @@ import {
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { contentSideGutter } from '../../util/contentWidth';
 
 // 单个成员的「提权 / 编辑管理员权限」面板：setChatMemberStatus +
 // chatMemberStatusAdministrator，带 custom_title 与 chatAdministratorRights。
@@ -60,6 +61,8 @@ struct MemberPromotePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State loadState: string = 'loading'; // loading | ready | error
   @State busy: boolean = false;
   @State rights: AdminRights = allAdminRights(false);
@@ -343,7 +346,16 @@ struct MemberPromotePage {
                 .enabled(!this.busy)
                 .onClick((): void => { this.dismiss(); });
             }
-          }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
+          }
+          .width('100%')
+          // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+          // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+          // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+          .padding({
+            left: 12 + contentSideGutter(this.screenW),
+            right: 12 + contentSideGutter(this.screenW),
+            bottom: this.bottomSafe + 24
+          });
         }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
       }
     }

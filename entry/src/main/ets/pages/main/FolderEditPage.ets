@@ -21,6 +21,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
+import { contentSideGutter } from '../../util/contentWidth';
 
 const CARD_RADIUS: number = 14;
 const PICK_INCLUDE: string = 'include';
@@ -40,6 +41,8 @@ struct FolderEditPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State folderId: number = 0;
   @State loadState: string = 'loading';
   @State saving: boolean = false;
@@ -499,7 +502,13 @@ struct FolderEditPage {
       Row().width('100%').height(92).borderRadius(CARD_RADIUS).backgroundColor(COLOR_SURFACE);
       Row().width('100%').height(220).borderRadius(CARD_RADIUS).backgroundColor(COLOR_SURFACE);
       Row().width('100%').height(160).borderRadius(CARD_RADIUS).backgroundColor(COLOR_SURFACE);
-    }.padding({ left: 12, right: 12, top: 8 });
+    }
+    // 骨架屏跟正文用同一套内边距，否则加载完那一刻三张灰卡片会"跳"一下宽度。
+    .padding({
+      left: 12 + contentSideGutter(this.screenW),
+      right: 12 + contentSideGutter(this.screenW),
+      top: 8
+    });
   }
 
   @Builder
@@ -734,7 +743,18 @@ struct FolderEditPage {
           this.sectionTitle($r('app.string.share'));
           this.shareCard();
         }
-      }.width('100%').padding({ left: 12, right: 12, top: 4, bottom: this.bottomSafe + 28 });
+      }
+      .width('100%')
+      // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
+      // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+      // 图标横滑条在这一列里面，跟着一起收窄；它自己的横向滚动不受影响。
+      // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+      .padding({
+        left: 12 + contentSideGutter(this.screenW),
+        right: 12 + contentSideGutter(this.screenW),
+        top: 4,
+        bottom: this.bottomSafe + 28
+      });
     }.layoutWeight(1).width('100%').scrollBar(BarState.Off).align(Alignment.Top);
   }
 
