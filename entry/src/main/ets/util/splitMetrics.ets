@@ -22,6 +22,24 @@
 // 小于 600 的宽度，结果也只是「行程为 0、拖不动」，不会退化成 HdsNavigation
 // 文档里那句「设置异常值时按默认值处理」把整组取值作废。
 
+// 分栏断点，vp。**这是 NavigationMode.Auto 内部那条线**，不是我们挑的：
+// HdsNavigation / Navigation 在窗口宽 ≥ 这个值时自动进双栏，小于它走单栏。
+// 官方《一次开发多端部署》把它记作 sm/md 的分界。
+//
+// 导出它是因为断点判断已经不只发生在 HdsNavigation 内部：联系人页签要按
+// 同一条线决定「点一个联系人是开会话（手机单栏）还是在右栏开资料页（平板
+// 分栏）」——两处若各写一个字面量 600，哪天官方挪了断点就会错开一档，出现
+// 「组件已经分栏了但代码还以为是手机」的半拉状态。
+export const SPLIT_BREAKPOINT_VP: number = 600;
+
+// 当前窗口宽下 HdsNavigation 会不会分栏。喂的必须是**窗口宽**而不是屏幕宽
+// （AppStorage 的 'screenWidthVp' 存的正是窗口宽，分屏/悬浮窗/折叠屏改变窗口
+// 时由 EntryAbility 的 windowSizeChange 刷新），否则平板分屏到一半时判断会
+// 与组件实际的单栏状态相反。
+export function isSplitLayout(windowWidthVp: number): boolean {
+  return windowWidthVp >= SPLIT_BREAKPOINT_VP;
+}
+
 // 左栏想要的比例。窗口越宽，左栏越宽——但只按比例走，不按定值。
 const SPLIT_NAV_RATIO: number = 1 / 3;
 // 官方 40% 上限。maxWidth 永远不越它，minWidth 因此也不会。

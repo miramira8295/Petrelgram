@@ -11351,6 +11351,10 @@
     {
       "name": "split_pick_a_chat",
       "value": "Chọn một cuộc trò chuyện để bắt đầu"
+    },
+    {
+      "name": "split_pick_a_contact",
+      "value": "Chọn một liên hệ"
     }
   ]
 }

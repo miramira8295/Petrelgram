@@ -11351,6 +11351,10 @@
     {
       "name": "split_pick_a_chat",
       "value": "Başlamak için bir sohbet seçin"
+    },
+    {
+      "name": "split_pick_a_contact",
+      "value": "Bir kişi seçin"
     }
   ]
 }

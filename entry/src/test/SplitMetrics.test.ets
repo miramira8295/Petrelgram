@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth
+  splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth,
+  isSplitLayout, SPLIT_BREAKPOINT_VP
 } from '../main/ets/util/splitMetrics';
 
 // 分栏起作用的最窄窗口（NavigationMode.Auto 的断点）。
@@ -91,6 +92,19 @@ export default function splitMetricsTest(): void {
     it('超宽屏被 480/560 兜住，不会一路拉白边', 0, (): void => {
       expect(restingWidth(2560)).assertEqual(480);
       expect(splitNavMaxWidth(2560)).assertEqual(560);
+    });
+
+    // isSplitLayout 是 ContactsPage 决定「点联系人开会话还是开资料页」的那条线。
+    // 它必须与本文件里那三个宽度函数的输入前提（≥600 才分栏）用同一个数，否则
+    // 会出现「组件已经分栏、代码还以为是手机」的半拉状态。
+    it('分栏断点就是 600，边界含等号', 0, (): void => {
+      expect(SPLIT_BREAKPOINT_VP).assertEqual(SPLIT_MIN_W);
+      expect(isSplitLayout(599)).assertFalse();
+      expect(isSplitLayout(600)).assertTrue();
+      expect(isSplitLayout(601)).assertTrue();
+      // 手机竖屏 / 平板真机两个常见值，各站一边。
+      expect(isSplitLayout(360)).assertFalse();
+      expect(isSplitLayout(1137)).assertTrue();
     });
   });
 }

@@ -3,7 +3,7 @@ import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
-import { promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
+import { ComponentContent, promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
@@ -17,6 +17,11 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
 import { contentSideGutter, readableContentWidth } from '../../util/contentWidth';
+import { registerStack, NavStackLike } from '../../util/navStacks';
+import { navigateToProfile } from '../../util/profileNav';
+import {
+  isSplitLayout, splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth
+} from '../../util/splitMetrics';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -27,6 +32,43 @@ const SEARCH_BAR_HEIGHT: number = 46;
 const SEARCH_DELAY_MS: number = 350;
 const CONTACT_LONG_PRESS_MS: number = 500;
 const SKELETON_ROWS: number[] = [0, 1, 2, 3, 4];
+
+// 联系人页签分栏时左栏的实际宽度，vp。与聊天页签的 NAV_BAR_WIDTH_KEY、设置
+// 页签的 SETTINGS_NAV_BAR_WIDTH_KEY 同一个用途、**第三个键**：三个页签各有一个
+// HdsNavigation、各自 enableDragBar(true)，用户把其中一条分割线拖开之后左栏
+// 宽度就不再相等，共用一个键会让 dock 在另外两个页签上与左栏错开。
+export const CONTACTS_NAV_BAR_WIDTH_KEY: string = 'contactsNavBarWidth';
+
+// 联系人页签的 navBar 此刻是否可见。**等价于「不是（单栏且联系人栈非空）」**，
+// 与 CHAT_NAV_BAR_VISIBLE_KEY / SETTINGS_NAV_BAR_VISIBLE_KEY 同构：分栏（平板）
+// 下左栏常驻，恒为 true；单栏（手机）下推入 NavDestination 后 navBar 被系统隐藏，
+// false。
+// MainScreen 靠它决定悬浮 dock 藏不藏——NavDestination 不是盖住整个 MainScreen
+// 的整页 router 页，dock 会浮在它上面，必须显式藏。
+// 手机上本页**不推任何目的地**（见 openContact 的断点分流），所以这个键在手机
+// 上恒为 true，dock 行为与改造前逐字相同。
+export const CONTACTS_NAV_BAR_VISIBLE_KEY: string = 'contactsNavBarVisible';
+
+// 分栏且右栏栈空时的占位。官方明确它仅在分栏模式下展示、不受路由栈管理、
+// 不可获焦、不响应事件，是纯展示层；单栏模式（手机）下永远不出现。
+//
+// 写成模块级函数而不是 struct 里的 @Builder 成员：splitPlaceholder 收的是
+// ComponentContent，要 wrapBuilder() 包一层，而 wrapBuilder 只接全局 @Builder。
+// 与 ChatListPage 的 splitPanePlaceholder 同一个形状，只是文案不同。
+@Builder
+function contactsSplitPlaceholder(): void {
+  Column({ space: 12 }) {
+    Image($r('app.media.foreground'))
+      .width(64).height(64).opacity(0.45)
+      .draggable(false);
+    Text($r('app.string.split_pick_a_contact'))
+      .fontSize(14)
+      .fontColor(COLOR_TEXT_SECONDARY);
+  }
+  .width('100%').height('100%')
+  .justifyContent(FlexAlign.Center)
+  .backgroundColor($r('app.color.page_bg'));
+}
 
 // The contacts tab: search box, recent-calls shortcut, and the contact
 // list sorted by last-seen. Title shows 正在刷新... until getContacts resolves.
@@ -41,6 +83,12 @@ export struct ContactsPage {
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   private contactsScroller: Scroller = new Scroller();
+  // 联系人页签的路由栈。平板（分栏）上点一个联系人会把 ProfilePage 推进这里，
+  // 它就是右栏；手机（单栏）上这个栈恒为空——见 openContact 的断点分流。
+  private contactsStack: NavPathStack = new NavPathStack();
+  // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
+  // 等于每帧重建一棵子树。
+  private splitPlaceholder: ComponentContent<Object> | null = null;
   // ⋮ 的菜单。HDS 标题栏的菜单项只给 action 回调、挂不了 bindMenu，所以由它
   // 翻这个开关，菜单本体绑在右上角一个零尺寸锚点上（见 build）。
   @State private topMenuShown: boolean = false;
@@ -121,6 +169,14 @@ export struct ContactsPage {
   }
 
   aboutToAppear(): void {
+    // 全局注册表取栈：与聊天/设置两个页签同构。本页目前只有一个入口
+    // （openContact），但注册进去之后 profileNav 才能按 tab 参数推进来，
+    // 也才有可能在页面之外触发（将来的「联系人」深链）。
+    registerStack('contacts', this.contactsStack as NavStackLike);
+    // 复位一次再挂树：本页刚建好时栈必然是空的，navBar 一定可见。不复位的话，
+    // 上一轮（退登/换账号）留在 AppStorage 里的 false 会让 dock 一直藏着——
+    // onNavBarStateChange 只在**变化**时触发，不会替我们补一发 true。
+    AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, true);
     this.releaseActionLock();
     const store = new ContactsStore(getTdClient());
     this.store = store;
@@ -131,6 +187,11 @@ export struct ContactsPage {
   }
 
   aboutToDisappear(): void {
+    // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
+    if (this.splitPlaceholder !== null) {
+      this.splitPlaceholder.dispose();
+      this.splitPlaceholder = null;
+    }
     this.stopSkeletonPulse();
     this.releaseActionLock();
     this.pressedAction = '';
@@ -383,6 +444,70 @@ export struct ContactsPage {
       logE(`ContactsPage.openRecentCalls failed: ${error.message}`);
       this.releaseActionLock();
     });
+  }
+
+  // 分栏的三个宽度。算法在 util/splitMetrics.ets（含 40% 上限、拖拽行程、
+  // 与 minContentWidth 不打架三条约束的推导），这里只把当前窗口宽喂进去。
+  // 与聊天/设置两个页签用的是同一组函数：三个页签的左栏静息宽度因此一致，
+  // dock 在页签之间切换时不会跳一下。
+  private navBarMinWidth(): number {
+    return splitNavMinWidth(this.screenW);
+  }
+
+  private navBarMaxWidth(): number {
+    return splitNavMaxWidth(this.screenW);
+  }
+
+  private contentMinWidth(): number {
+    return splitContentMinWidth(this.screenW);
+  }
+
+  // splitPlaceholder 收的是 ComponentContent，不是 @Builder 引用——直接传
+  // this.xxx 那种写法编译不过。懒建一次：build 每帧都跑，在这里 new 就是
+  // 每帧重建一棵子树。
+  private placeholderContent(): ComponentContent<Object> {
+    let content: ComponentContent<Object> | null = this.splitPlaceholder;
+    if (content === null) {
+      content = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(contactsSplitPlaceholder));
+      this.splitPlaceholder = content;
+    }
+    return content;
+  }
+
+  // 点一个联系人。**按断点分流**，这是本页在平板上的核心行为差异：
+  //
+  //   sm（窗口 < SPLIT_BREAKPOINT_VP，手机）→ openChatWith()，直接开会话。
+  //     与改造前**逐字相同**——它调的就是那个一个字没动的 openChatWith()。
+  //   lg（≥ 断点，平板/横屏）→ 右栏开 ProfilePage，页内「发消息」再开会话。
+  //     右栏放资料页符合官方《多设备即时通讯界面》范例（通讯录页 lg 断点的
+  //     右栏就是联系人主页）。
+  //
+  // 为什么不统一成「都开资料页」：手机是单栏、右栏根本不存在，推 ProfilePage
+  // 就是整页替换——用户点联系人会看到资料页而不是会话，要多点一次才能发消息。
+  // 那是手机端的行为变更。官方《一次开发多端部署》4.2.1 明确认可按断点做差异化
+  // 交互，所以这里是分流而不是取其一。
+  //
+  // 断点值取自 util/splitMetrics.ets 的 SPLIT_BREAKPOINT_VP（isSplitLayout），
+  // 和 HdsNavigation 内部 NavigationMode.Auto 用的是同一条线；screenW 是**窗口宽**
+  // 不是屏幕宽（AppStorage 'screenWidthVp'，见字段处的注释），分屏/悬浮窗下才不会
+  // 与组件实际的单双栏状态相反。
+  private openContact(contact: ContactItem): void {
+    if (!isSplitLayout(this.screenW)) {
+      this.openChatWith(contact.id);
+      return;
+    }
+    // 与 openChatWith 同一道闸：正在开会话或正在删联系人时不接受新的点击。
+    // 复制而不是共用，是因为 openChatWith 的函数体必须保持一个字不动。
+    if (this.openingContactId !== 0 || this.deletingContactId !== 0) {
+      return;
+    }
+    // 资料页只吃 userId，没有 createPrivateChat 那一步异步——所以既不需要
+    // openingContactId 的 spinner，也不需要 chatOpenSequence 的乱序保护。
+    const params: Record<string, Object> = { 'userId': contact.id };
+    // 'contacts' 让 profileNav 推进本页签自己的栈（默认仍是 'chat'，聊天线的
+    // 八个调用点不受影响），并按 'navbar' 语义清栈——连点两个联系人是替换右栏，
+    // 不是叠第二层。
+    navigateToProfile(params, 'contacts');
   }
 
   // Ensure the private chat exists (TDLib may not have it loaded yet), then
@@ -835,7 +960,7 @@ export struct ContactsPage {
         this.contactPressConsumedByMenu = false;
         return;
       }
-      this.openChatWith(c.id);
+      this.openContact(c);
     })
     .parallelGesture(
       LongPressGesture({ fingers: 1, repeat: false, duration: CONTACT_LONG_PRESS_MS })
@@ -1348,7 +1473,7 @@ export struct ContactsPage {
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
-      HdsNavigation() {
+      HdsNavigation(this.contactsStack) {
         Scroll(this.contactsScroller) {
           // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
           // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
@@ -1379,6 +1504,18 @@ export struct ContactsPage {
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .scrollBar(BarState.Off)
         .enableScrollInteraction(!this.contextMenuShown)
+        // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
+        // dock 要跟着走。这个 Scroll 是 navBar 内容的根节点、width('100%')，
+        // 它的宽度就是 navBar 宽度——HdsNavigation 没有回调宽度的接口，只能这么
+        // 量（与 SettingsPage 同一个办法）。
+        // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而
+        // setOrCreate 即便同值也会惊动订阅方。
+        .onAreaChange((_old: Area, area: Area): void => {
+          const w: number = area.width as number;
+          if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
+            AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
+          }
+        })
         // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
         .clip(false);
       }
@@ -1403,10 +1540,36 @@ export struct ContactsPage {
         content: this.titleBarContent()
       })
       .hideBackButton(true)
-      // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
+      //
+      // 【这里曾经是 .mode(NavigationMode.Stack)】原注释（保留在下面）说的是：
+      // 「强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
       // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
-      // 右边一片空白（平板用户报"没法用了"）。
-      .mode(NavigationMode.Stack)
+      // 右边一片空白（平板用户报"没法用了"）。」那条止血的前提是"不用
+      // NavDestination"，本次改动起联系人页签在平板上会把 ProfilePage 推进右栏
+      // （见 openContact），前提不再成立，止血可以拆。聊天/设置两个页签拆的是
+      // 同一条。
+      // 不显式设 mode：HdsNavigation 默认就是 Auto——窗口 < 600vp 走单栏（手机，
+      // 观感与改造前一致，而且手机上本页压根不推目的地），≥600vp 自动分栏
+      // （平板，左联系人列表右资料页）。
+      .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
+      // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
+      .splitPlaceholder(this.placeholderContent())
+      .minContentWidth(this.contentMinWidth())
+      // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
+      // CONTACTS_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
+      // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
+      .onNavBarStateChange((isVisible: boolean): void => {
+        if (AppStorage.get<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
+          AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, isVisible);
+        }
+      })
+      .enableDragBar(true)
+      // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶
+      // HdsNavDestination 的 onHidden。**本页确实有 bindSheet**（build() 末尾那个
+      // 「添加联系人」面板，绑在最外层 Stack 上），而右栏此刻很可能正站着
+      // ProfilePage——它有 store 订阅和头像放大态，不该因为在左栏拉起一个面板
+      // 就以为自己隐藏了。取值与聊天/设置两个页签一致。
+      .enableVisibilityLifecycleWithContentCover(false)
       .titleMode(HdsNavigationTitleMode.FREE)
       .bindToScrollable([this.contactsScroller])
       .width('100%').height('100%');
