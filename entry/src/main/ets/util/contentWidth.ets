@@ -56,3 +56,16 @@ export function readableContentWidth(windowWidthVp: number): number {
   // 保证 tapered < windowWidthVp，但不想把这条正确性押在常量以后不会被人调上。
   return Math.min(Math.floor(tapered), windowWidthVp);
 }
+
+// 内容列单侧的留白宽度。
+//
+// 悬浮元素（联系人页右下角的 FAB）拿它把自己从**屏幕**边缘拉回**内容列**边缘：
+// 2880px 平板上不加这个偏移，FAB 落在 x≈2790px，而内容列右边缘在 x≈2290px，
+// 中间隔着约 500px 的空白——视线在居中的内容列上，手却要伸到屏幕最右边（设备
+// 实测确认）。
+//
+// 手机上恒为 0（readableContentWidth 原样返回窗口宽），所以调用方直接把它加进
+// 既有的 margin 里就行，手机上逐像素不变。
+export function contentSideGutter(windowWidthVp: number): number {
+  return (windowWidthVp - readableContentWidth(windowWidthVp)) / 2;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { readableContentWidth } from '../main/ets/util/contentWidth';
+import { readableContentWidth, contentSideGutter } from '../main/ets/util/contentWidth';
 
 export default function contentWidthTest(): void {
   describe('contentWidth', (): void => {
@@ -46,6 +46,27 @@ export default function contentWidthTest(): void {
       for (let w = 320; w <= 2560; w++) {
         expect(readableContentWidth(w) <= w).assertTrue();
       }
+    });
+
+    // 单侧留白宽度。悬浮元素（联系人页的 FAB）靠它跟住内容列的右下角，而不是
+    // 继续贴屏幕右下角——2880px 平板上实测两者差了约 500px。
+    it('手机上单侧留白为 0——悬浮元素位置逐像素不变', 0, (): void => {
+      expect(contentSideGutter(360)).assertEqual(0);
+      expect(contentSideGutter(374)).assertEqual(0);
+      expect(contentSideGutter(599)).assertEqual(0);
+    });
+
+    it('单侧留白恒等于（窗口宽 − 内容宽）的一半，且从不为负', 0, (): void => {
+      for (let w = 320; w <= 2560; w++) {
+        const g: number = contentSideGutter(w);
+        expect(g >= 0).assertTrue();
+        expect(g === (w - readableContentWidth(w)) / 2).assertTrue();
+      }
+    });
+
+    it('宽屏上留白确实把悬浮元素拉回来了', 0, (): void => {
+      expect(contentSideGutter(1440)).assertEqual(280);
+      expect(contentSideGutter(2560)).assertEqual(840);
     });
 
   });

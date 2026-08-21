@@ -16,7 +16,7 @@ import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlay
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
-import { readableContentWidth } from '../../util/contentWidth';
+import { contentSideGutter, readableContentWidth } from '../../util/contentWidth';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -1317,7 +1317,14 @@ export struct ContactsPage {
       }
     })
     .onClick((): void => { this.openAddContactSheet(); })
-    .margin({ right: 18, bottom: this.bottomSafe + 88 });
+    // FAB 跟住**内容列**的右下角，不是屏幕的右下角：右边距 = 原来的 18 + 单侧
+    // 留白。2880px 平板上不加这一项，FAB 落在内容列右边缘外约 500px 的空白里
+    // （设备实测），视线在居中的内容列上、手却要够到屏幕最右边。
+    //
+    // 用 margin 而不是把 FAB 塞进限宽容器：FAB 必须留在最外层 Stack 上才能悬浮，
+    // 进了 Scroll 就跟着列表滚走了。手机上 contentSideGutter 恒为 0，这一行逐像素
+    // 等于改动前的 `right: 18`。
+    .margin({ right: 18 + contentSideGutter(this.screenW), bottom: this.bottomSafe + 88 });
   }
 
   // 标题栏内容：大标题 +「刷新中」副标题 + 右上角 ⋮。
