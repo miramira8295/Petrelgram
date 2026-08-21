@@ -1313,8 +1313,15 @@ export struct SettingsPage {
         .clip(false);
       }
       .titleBar({
-        // 标题栏声明为组件级安全区，内容区自动避让它，也就不用再手动
-        // padding(topSafe)。
+        // 两个字段管的是两件事，都默认 false，缺一个就出问题：
+        //
+        //   avoidLayoutSafeArea    标题栏**自己**避让系统安全区。不设的话它会
+        //                          直接顶进状态栏里（真机实测）。
+        //   enableComponentSafeArea 标题栏成为**内容区**的安全区，内容自动避让
+        //                          它，因此不用再手动 padding(topSafe)。
+        //
+        // 第一版只设了后者，于是内容避开了标题栏、标题栏却压在状态栏上。
+        avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
         style: {
           scrollEffectOpts: {

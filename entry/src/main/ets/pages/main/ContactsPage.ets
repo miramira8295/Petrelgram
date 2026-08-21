@@ -3,7 +3,14 @@ import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
-import { promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
+import { promptAction, router, SymbolGlyphModifier, LengthMetrics } from '@kit.ArkUI';
+import {
+  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
+  HdsNavigationTitleMode, TitleBarContentOptions
+} from '@kit.UIDesignKit';
+import {
+  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
+} from '../../util/hdsTitleBar';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
@@ -34,6 +41,10 @@ export struct ContactsPage {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  private contactsScroller: Scroller = new Scroller();
+  // ⋮ 的菜单。HDS 标题栏的菜单项只给 action 回调、挂不了 bindMenu，所以由它
+  // 翻这个开关，菜单本体绑在右上角一个零尺寸锚点上（见 build）。
+  @State private topMenuShown: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @State contacts: ContactItem[] = [];
@@ -1307,11 +1318,29 @@ export struct ContactsPage {
     .margin({ right: 18, bottom: this.bottomSafe + 88 });
   }
 
+  // 标题栏内容：大标题 +「刷新中」副标题 + 右上角 ⋮。
+  private titleBarContent(): TitleBarContentOptions {
+    const moreIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.more'),
+      label: $r('app.string.ct_more_actions'),
+      action: (): void => { this.topMenuShown = true; }
+    };
+    const moreItem: HdsNavigationMenuItemOptions = { content: moreIcon };
+    return {
+      title: {
+        mainTitle: $r('app.string.tab_contacts'),
+        // 加载中才有副标题。原来那一版是两行文字各自做位移动画来"挤"出副标题，
+        // HDS 的标题栏自己管这个位置，交给它即可。
+        subTitle: this.loading ? $r('app.string.refreshing') : ''
+      },
+      menu: { value: [moreItem] }
+    };
+  }
+
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
-      Column() {
-        this.topBar();
-        Scroll() {
+      HdsNavigation() {
+        Scroll(this.contactsScroller) {
           Column() {
             this.searchBox();
             this.actionCard();
@@ -1328,24 +1357,52 @@ export struct ContactsPage {
           .width('100%')
           .padding({ bottom: this.bottomSafe + 88 });
         }
-        .layoutWeight(1)
         .width('100%')
         .align(Alignment.Top)
-        .edgeEffect(EdgeEffect.Spring)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .scrollBar(BarState.Off)
-        .enableScrollInteraction(!this.contextMenuShown);
+        .enableScrollInteraction(!this.contextMenuShown)
+        // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
+        .clip(false);
       }
+      .titleBar({
+        // 两个都要：avoidLayoutSafeArea 让标题栏自己避开状态栏（不设会顶进
+        // 状态栏里），enableComponentSafeArea 让内容区避让标题栏。见设置页。
+        avoidLayoutSafeArea: true,
+        enableComponentSafeArea: true,
+        style: {
+          scrollEffectOpts: {
+            enableScrollEffect: true,
+            scrollEffectType: titleScrollEffectType(),
+            blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
+            blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
+          },
+          originalStyle: { backgroundStyle: { backgroundColor: PAGE_BG } }
+        },
+        content: this.titleBarContent()
+      })
+      .hideBackButton(true)
+      .titleMode(HdsNavigationTitleMode.FREE)
+      .bindToScrollable([this.contactsScroller])
       .width('100%').height('100%');
+
+      // ⋮ 菜单的锚点：零尺寸，只为让菜单弹在右上角。HDS 的菜单项给不了
+      // bindMenu，只能这样把两者接起来。
+      Row()
+        .width(1).height(1)
+        .position({ x: '100%', y: this.topSafe + 44 })
+        .bindMenu(this.topMenuShown, this.topMenu, {
+          systemMaterial: overlayMaterial('menu'),
+          onDisappear: (): void => { this.topMenuShown = false; }
+        });
 
       this.fab();
     }
     .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
     // 背景色靠 expandSafeArea 才会延伸到状态栏和导航区底下（官方的
-    // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。只写
-    // backgroundColor 而不延伸，状态栏那条露的是窗口底色。
+    // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
     .bindSheet($$this.addContactSheetOpen, this.addContactSheet(), {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: CARD_BG,
