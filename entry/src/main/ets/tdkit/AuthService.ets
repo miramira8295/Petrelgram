@@ -122,7 +122,26 @@ export class AuthService {
   async submitPhone(phone: string): Promise<void> {
     const request: TdRequest = { '@type': 'setAuthenticationPhoneNumber' };
     request['phone_number'] = phone;
-    await this.client.send(request);
+    // 从扫码态切回手机号时，TDLib 要求"没有在途的鉴权请求"才接受这次提交；
+    // 而扫码 token 每 30 秒刷新一次，慢链路（代理）下刷新请求经常正好在途，
+    // 撞上就报 "Call to setAuthenticationPhoneNumber unexpected"。这是纯时机
+    // 问题，等一拍重试即可，不该把错误甩给用户（模拟器实测复现）。
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.client.send(request);
+        return;
+      } catch (e) {
+        lastError = e as Error;
+        if (`${lastError.message}`.indexOf('unexpected') < 0) {
+          throw lastError; // 真错误（号码格式等）不重试
+        }
+        await new Promise<void>((resolve: (v: void) => void): void => {
+          setTimeout((): void => resolve(), 1500);
+        });
+      }
+    }
+    throw lastError ?? new Error('setAuthenticationPhoneNumber failed');
   }
 
   async submitCode(code: string): Promise<void> {
