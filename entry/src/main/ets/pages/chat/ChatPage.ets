@@ -404,6 +404,10 @@ struct ChatPage {
   private unsubChatAction: (() => void) | null = null;
   @State title: string = '';
   @State avatarPath: string = '';
+  // 聊天页头部的动态头像（MP4 循环）。issue #63：资料页会动、对话里不动——
+  // 头部一直只拿静态图。动画文件挂在 full info 的 chatPhoto.animation 里，
+  // getChat 的 chatPhotoInfo 只有 has_animation 标志，必须多要一次。
+  @State headerAvatarAnimPath: string = '';
   @State initials: string = '?';
   @State draft: string = '';
   // 聊天设置 → 回车键发送.
@@ -2803,12 +2807,14 @@ struct ChatPage {
       this.isChannel = false;
       this.refreshBotMiniApp(this.headerPeerUserId);
       this.refreshIsBot(this.headerPeerUserId, seq);
+      this.refreshHeaderAvatarAnimation(type);
     } else if (typeName === 'chatTypeBasicGroup') {
       this.isBotChat = false;
       this.headerKind = 'group';
       this.headerIdentityResolved = true;
       this.isGroup = true;
       this.isChannel = false;
+      this.refreshHeaderAvatarAnimation(type);
       // 必须在 isGroup 赋值**之后**：refreshAdminLabels 开头就按 !isGroup 早退，
       // 原来这行在赋值之前，普通群（非超级群）的管理员标签从来没取到过。
       this.refreshAdminLabels();
@@ -2819,6 +2825,7 @@ struct ChatPage {
       this.headerIdentityResolved = true;
       this.isGroup = true;
       this.refreshAdminLabels();
+      this.refreshHeaderAvatarAnimation(type);
     } else if (typeName === 'chatTypeSecret') {
       // 密聊对面不可能是机器人。
       this.isBotChat = false;
@@ -3929,6 +3936,62 @@ struct ChatPage {
   // 否则名单到货会让整页每行的 key 都变、列表整体重建。
   //
   // 频道不取：频道消息的署名走的是 author_signature，不是成员身份。
+  // 头部动态头像。full info 的 photo 是 chatPhoto，可选的 animation 是一小段
+  // MP4；有就下下来交给 AvatarView（它自己看省电开关决定放不放）。
+  private refreshHeaderAvatarAnimation(type: TdObject | undefined): void {
+    this.headerAvatarAnimPath = '';
+    const chatId: number = this.chatId;
+    const typeName: string = type !== undefined
+      ? ((type['@type'] as string | undefined) ?? '') : '';
+    let req: TdRequest | null = null;
+    if (typeName === 'chatTypePrivate') {
+      req = { '@type': 'getUserFullInfo' };
+      req['user_id'] = (type!['user_id'] as number | undefined) ?? 0;
+    } else if (typeName === 'chatTypeSupergroup') {
+      req = { '@type': 'getSupergroupFullInfo' };
+      req['supergroup_id'] = (type!['supergroup_id'] as number | undefined) ?? 0;
+    } else if (typeName === 'chatTypeBasicGroup') {
+      req = { '@type': 'getBasicGroupFullInfo' };
+      req['basic_group_id'] = (type!['basic_group_id'] as number | undefined) ?? 0;
+    }
+    if (req === null) {
+      return;
+    }
+    getTdClient().send(req, 15000).then((full: TdObject): void => {
+      if (this.chatId !== chatId) {
+        return; // 期间换了会话
+      }
+      const photo = (full['photo'] as TdObject | undefined)
+        ?? (full['personal_photo'] as TdObject | undefined)
+        ?? (full['public_photo'] as TdObject | undefined);
+      const anim = photo !== undefined ? (photo['animation'] as TdObject | undefined) : undefined;
+      const file = anim !== undefined ? (anim['file'] as TdObject | undefined) : undefined;
+      const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+      if (fileId <= 0) {
+        return;
+      }
+      const dl: TdRequest = { '@type': 'downloadFile' };
+      dl['file_id'] = fileId;
+      dl['priority'] = 2;
+      dl['synchronous'] = true;
+      getTdClient().send(dl, 30000).then((f: TdObject): void => {
+        if (this.chatId !== chatId) {
+          return;
+        }
+        const local = f['local'] as TdObject | undefined;
+        const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+        if (path !== '') {
+          this.headerAvatarAnimPath = path;
+        }
+      }).catch((e: TdError): void => {
+        logE(`ChatPage.headerAvatarAnimation download failed: ${e.message}`);
+      });
+    }).catch((e: TdError): void => {
+      // 拿不到 full info 就保持静态头像，不打扰。
+      logE(`ChatPage.headerAvatarAnimation fullInfo failed: ${e.message}`);
+    });
+  }
+
   private refreshAdminLabels(): void {
     if (this.chatId === 0 || !this.isGroup || this.isChannel) {
       return;
@@ -7501,6 +7564,7 @@ struct ChatPage {
               subtitleText: this.headerText().subtitleText,
               headerState: this.headerState,
               avatarPath: this.avatarPath,
+              avatarAnimPath: this.headerAvatarAnimPath,
               initials: this.initials,
               savedMessages: this.isSavedMessagesChat(),
               chatId: this.chatId,

@@ -31,6 +31,8 @@ export struct ChatHeader {
   // 'ready' | 'loading' | 'error'——error 时副标题变红，点击是重试而不是进资料页。
   @Prop headerState: string;
   @Prop avatarPath: string;
+  // 动态头像（MP4 小循环）。'' 表示没有或没取到，AvatarView 自己退回静态图。
+  @Prop avatarAnimPath: string = '';
   @Prop initials: string;
   // 「我的收藏」：头像位画书签而不是自己的头像（issue #8）。
   @Prop savedMessages: boolean = false;
@@ -199,6 +201,7 @@ export struct ChatHeader {
       Row({ space: 10 }) {
         AvatarView({
           avatarPath: this.avatarPath,
+          animPath: this.avatarAnimPath,
           initials: this.initials,
           colorSeed: this.chatId,
           avatarSize: 38,
