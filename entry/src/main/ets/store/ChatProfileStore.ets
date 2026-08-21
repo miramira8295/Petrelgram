@@ -37,6 +37,9 @@ export interface MemberItem {
   // 身份标签：'' / 'creator' / 'admin'，以及可选的自定义头衔。见 util/memberRole。
   role: string;
   roleTitle: string;
+  // 群成员标签（chatMember.tag）。TDLib 语义：普通成员的标签，或管理员的
+  // 头衔——二合一字段，直接可显示。
+  tag: string;
 }
 
 export interface ProfileContentItem {
@@ -925,6 +928,7 @@ export class ChatProfileStore {
       }
       // 身份就在这条 chatMember 里，不用为它再发一次请求。
       const role: MemberRole = memberRoleOf(m['status'] as TdObject | undefined);
+      const memberTag: string = ((m['tag'] as string | undefined) ?? '').trim();
       if (this.memberIds.has(uid)) {
         continue;
       }
@@ -945,7 +949,8 @@ export class ChatProfileStore {
           avatarPath: '',
           status: formatUserStatus(user['status'] as TdObject | undefined, Math.floor(Date.now() / 1000)),
           role: role.kind,
-          roleTitle: role.title
+          roleTitle: role.title,
+          tag: memberTag
         };
         // 创建者和管理员排在前面。稳定排序：同档之间保持 TDLib 给的顺序，
         // 否则每来一个成员整列都会重排一次。
@@ -959,7 +964,7 @@ export class ChatProfileStore {
             this.members = this.members.map((x: MemberItem): MemberItem =>
               x.userId === uid ? {
                 userId: x.userId, name: x.name, initials: x.initials, avatarPath: p,
-                status: x.status, role: x.role, roleTitle: x.roleTitle
+                status: x.status, role: x.role, roleTitle: x.roleTitle, tag: x.tag
               } : x);
           });
         this.notify();

@@ -99,9 +99,10 @@ export struct MemberRow {
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         Text(this.member.status).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
       }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-      // 身份标签。普通成员不挂，避免整列都是标签反而看不出谁特殊。
-      if (this.member.role !== MEMBER_ROLE_NONE) {
-        Text(this.roleLabel())
+      // 身份/成员标签。普通成员默认不挂（避免整列都是标签），但被打了
+      // chatMemberTag 的成员例外——标签就是打给所有人看的。
+      if (this.member.role !== MEMBER_ROLE_NONE || this.member.tag !== '') {
+        Text(this.member.tag !== '' ? this.member.tag : this.roleLabel())
           .fontSize(11.5).fontColor(COLOR_PRIMARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           .constraintSize({ maxWidth: 96 })

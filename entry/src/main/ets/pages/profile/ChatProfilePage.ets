@@ -1149,8 +1149,8 @@ struct ChatProfilePage {
   }
 
   // 「编辑标签」：群成员标签（chatMemberTag），任何成员都能打，全员可见。
-  // 弹窗打开时不预填旧值——成员列表接口里拿不到现有标签，预填 roleTitle 会把
-  // 管理员头衔错当标签写回去。
+  // 回显直接用 chatMember.tag——TDLib 把"成员标签或管理员头衔"合在这一个
+  // 字段里，正好就是该预填的值。
   @State private titleTarget: MemberItem | null = null;
   private titleCtrl: CustomDialogController = new CustomDialogController({
     builder: MemberTitleDialog({
@@ -1170,7 +1170,7 @@ struct ChatProfilePage {
     this.titleCtrl = new CustomDialogController({
       builder: MemberTitleDialog({
         memberName: m.name,
-        title: '',
+        title: m.tag,
         onConfirm: (next: string): void => { this.applyMemberTitle(next); }
       }),
       alignment: DialogAlignment.Center,
@@ -1357,7 +1357,7 @@ struct ChatProfilePage {
           // key 里带上菜单形态：权限是异步读回来的，只按 id 复用的话，先渲染
           // 出来的那批行会一直挂着"什么都不能做"的旧菜单。
         }, (m: MemberItem) =>
-          `${m.userId}_${m.avatarPath}_${m.role}_${memberMenuSignature(this.menuOptionsFor(m))}`);
+          `${m.userId}_${m.avatarPath}_${m.role}_${m.tag}_${memberMenuSignature(this.menuOptionsFor(m))}`);
         if (this.store !== null && this.store.hasMoreMembers) {
           Row({ space: 8 }) {
             LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
