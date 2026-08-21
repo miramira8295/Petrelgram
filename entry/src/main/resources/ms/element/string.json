@@ -11339,6 +11339,10 @@
     {
       "name": "lk_open",
       "value": "Buka"
+    },
+    {
+      "name": "cp_file_paused",
+      "value": "Dijeda. Ketik untuk sambung"
     }
   ]
 }

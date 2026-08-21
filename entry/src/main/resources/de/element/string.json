@@ -11339,6 +11339,10 @@
     {
       "name": "lk_open",
       "value": "Öffnen"
+    },
+    {
+      "name": "cp_file_paused",
+      "value": "Pausiert. Zum Fortsetzen tippen"
     }
   ]
 }

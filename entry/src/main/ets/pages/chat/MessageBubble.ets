@@ -1301,8 +1301,11 @@ export struct MessageBubble {
       SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([COLOR_PRIMARY]);
     }
     .constraintSize({ maxWidth: this.inlineMaxW() })
+    .width('100%')
     .border({ width: { top: 1 }, color: '#00000014' })
-    .padding({ top: 6 }).margin({ top: 6 })
+    // 整条拉满气泡宽、上下各给 10：原来只有一行 13 号字加 6 的上内边距，
+    // 热区不到 30 高，频道评论入口这么高频的动作点着费劲（用户点名要大）。
+    .padding({ top: 10, bottom: 4 }).margin({ top: 6 })
     .onClick(() => {
       if (this.gestureClaimed) { return; }
       this.onCommentTap(this.msg.id); });

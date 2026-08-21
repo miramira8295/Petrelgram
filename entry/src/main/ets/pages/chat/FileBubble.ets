@@ -91,6 +91,13 @@ export struct FileBubble {
         } else {
           LoadingProgress().width(21).height(21).color(Color.White);
         }
+      } else if (!this.downloadFailed && this.filePath === '' && this.downloadProgress > 0) {
+        // 暂停态：停在百分比上的静止环 + ▶，一眼看出"点一下会继续"。
+        Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
+          .width(40).height(40)
+          .color(Color.White)
+          .style({ strokeWidth: 2 });
+        SymbolGlyph($r('sys.symbol.play_fill')).fontSize(14).fontColor([Color.White]);
       } else if (this.downloadFailed) {
         Text('!')
           .fontSize(22)

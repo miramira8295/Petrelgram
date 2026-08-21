@@ -3172,6 +3172,31 @@ export class MessageStore {
 
   // 播放结束（关播放器 / 划走）：解除豁免，没下完的就地取消。
   // 已经下完的不动（本地文件留着有用），进过下载管理器的也不动 —— 那是用户
+  // 文件下载的"暂停"。cancelDownloadFile 不删已下的那部分，重新
+  // requestVideoDownload 会从断点续传——TDLib 语义天然就是暂停/继续。
+  // 只清 active、**保留 progress**：卡片上要显示"停在 43%"，清成 0 就成了
+  // "从没下过"。
+  pauseFileDownload(messageId: number): void {
+    const idx = this.indexOf(messageId);
+    if (idx < 0) {
+      return;
+    }
+    const e = this.messages[idx];
+    const fileId = e.videoFileId;
+    if (fileId === 0 || e.videoPath !== '') {
+      return;
+    }
+    this.userRequestedFiles.delete(fileId);
+    this.videoFileToMsg.delete(fileId);
+    const req: TdRequest = { '@type': 'cancelDownloadFile' };
+    req['file_id'] = fileId;
+    req['only_if_pending'] = false;
+    this.client.send(req).catch((): void => { /* 取消失败无副作用 */ });
+    this.patchVideoEntries(fileId, (c: MessageEntry): void => {
+      c.mediaDownloadActive = false;
+    });
+  }
+
   // 明确要留的东西，不该被"看完了"顺手取消掉。
   releaseVideoPlayback(messageId: number): void {
     const idx = this.indexOf(messageId);

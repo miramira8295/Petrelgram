@@ -11339,6 +11339,10 @@
     {
       "name": "lk_open",
       "value": "열기"
+    },
+    {
+      "name": "cp_file_paused",
+      "value": "일시정지됨. 탭하여 계속"
     }
   ]
 }

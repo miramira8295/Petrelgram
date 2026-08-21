@@ -4467,11 +4467,19 @@ struct ChatPage {
       promptAction.showToast({ message: $r('app.string.cp_file_unavailable'), duration: 1600 });
       return;
     }
+    if (m.mediaDownloadActive) {
+      // 下载中再点一下 = 暂停（issue #45 子项：下载开始后没法暂停取消）。
+      // 已下的部分留着，下次点从断点继续。
+      this.pendingFileOpenId = 0;
+      this.store.pauseFileDownload(messageId);
+      promptAction.showToast({ message: $r('app.string.cp_file_paused'), duration: 1500 });
+      return;
+    }
     this.pendingFileOpenId = messageId;
     this.store.requestVideoDownload(messageId, true, m.videoFailed);
     promptAction.showToast({
       message: m.videoFailed ? $r('app.string.cp_redownloading_file')
-        : (m.mediaDownloadActive ? $r('app.string.cp_file_downloading_open') : $r('app.string.cp_file_download_started')),
+        : $r('app.string.cp_file_download_started'),
       duration: 1700
     });
   }

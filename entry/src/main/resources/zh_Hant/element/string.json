@@ -11339,6 +11339,10 @@
     {
       "name": "lk_open",
       "value": "開啟"
+    },
+    {
+      "name": "cp_file_paused",
+      "value": "已暫停，點擊繼續下載"
     }
   ]
 }
