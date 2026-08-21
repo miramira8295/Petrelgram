@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import {
   KEY_BATTERY_PERCENT,
   KEY_POWER_ACTIVE,
@@ -30,7 +29,7 @@ import {
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -46,9 +45,16 @@ const EFFECT_KEYS: string[] = [
   KEY_POWER_EFFECT_BACKGROUND
 ];
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router
+// 页和 NavDestination。形状与 ChatPageBuilder 一致。
+@Builder
+export function PowerUsagePageBuilder(): void {
+  PowerUsagePage();
+}
+
 @Component
-struct PowerUsagePage {
+export struct PowerUsagePage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -75,33 +81,25 @@ struct PowerUsagePage {
   @StorageLink(KEY_POWER_EFFECT_BLUR) effectBlur: boolean = false;
   @StorageLink(KEY_POWER_EFFECT_BACKGROUND) effectBackground: boolean = false;
   @State expandedKey: string = '';
-  @State leavingPage: boolean = false;
-  private leaveTimer: number = -1;
 
   aboutToAppear(): void {
     refreshPowerSavingState();
   }
 
   aboutToDisappear(): void {
-    if (this.leaveTimer !== -1) {
-      clearTimeout(this.leaveTimer);
-      this.leaveTimer = -1;
-    }
-    this.leavingPage = false;
     this.expandedKey = '';
   }
 
-  private leavePage(): void {
-    if (this.leavingPage) {
-      return;
-    }
-    this.leavingPage = true;
-    this.leaveTimer = setTimeout((): void => {
-      this.leaveTimer = -1;
-      this.leavingPage = false;
-    }, 500);
-    router.back();
-  }
+  // 迁移前这里还有一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下
+  // 返回箭头弹掉两页。两半都随迁移失效：
+  //   · router.back() 在 NavDestination 上是**错的**——它弹的是 router 页栈，
+  //     而本页已不在那条栈上，弹掉的会是 Index，现象是直接退到桌面
+  //     （HdsSubDestination 文件头记了同一条实测）。返回改由外壳默认的
+  //     出栈（NavPathStack.pop）承担，不再需要本页自己写。
+  //   · 防抖也随之无对象：设置栈的推入走 decidePush 的 clearAndPush，栈深恒为
+  //     1，连点两下的第二次 pop() 落在空栈上是 no-op。
+  // 【将来要注意】哪天设置子页开始互相跳转、栈深可能大于 1 时，防抖要按
+  // NavPathStack 重新加回来（那时第二次 pop 会真的多弹一层）。
 
   @Styles
   actionNormalStyle() {
@@ -440,7 +438,7 @@ struct PowerUsagePage {
 
   build() {
     Column() {
-      HdsSubPage({ title: $r('app.string.settings_power'), scroller: this.hdsScroller, onBack: (): void => { this.leavePage(); } }) {
+      HdsSubDestination({ title: $r('app.string.settings_power'), scroller: this.hdsScroller }) {
       Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
           this.modeCard();

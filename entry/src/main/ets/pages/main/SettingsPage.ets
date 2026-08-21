@@ -26,6 +26,9 @@ import { str } from '../../util/strings';
 import { logE } from '../../util/log';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { readableContentWidth } from '../../util/contentWidth';
+import { registerStack, NavStackLike } from '../../util/navStacks';
+import { navigateToSetting } from '../../util/settingsNav';
+import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../util/splitMetrics';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -34,12 +37,30 @@ const TOP_BAR_HEIGHT: number = 56;
 const TOP_ACTION_SIZE: number = 44;
 const PROFILE_LOAD_TIMEOUT_MS: number = 8000;
 
+// 设置页签分栏时左栏的实际宽度，vp。与聊天页签的 NAV_BAR_WIDTH_KEY 同一个用途、
+// **另一个键**：两个页签各有一个 HdsNavigation、各自 enableDragBar(true)，用户
+// 把其中一条分割线拖开之后两边的左栏宽度就不再相等，共用一个键会让 dock 在其中
+// 一个页签上与左栏错开。
+export const SETTINGS_NAV_BAR_WIDTH_KEY: string = 'settingsNavBarWidth';
+
+// 设置页签的 navBar 此刻是否可见。**等价于「不是（单栏且设置栈非空）」**，
+// 与 CHAT_NAV_BAR_VISIBLE_KEY 同构：分栏（平板）下左栏常驻，恒为 true；单栏
+// （手机）下推入任何设置子页后 navBar 被系统隐藏，false。
+// MainScreen 靠它决定悬浮 dock 藏不藏——子页迁成 NavDestination 之后不再是盖住
+// 整个 MainScreen 的整页 router 页，dock 会浮在子页上，必须显式藏。
+export const SETTINGS_NAV_BAR_VISIBLE_KEY: string = 'settingsNavBarVisible';
+
 interface SettingItem {
   icon: string;
   bg: string;
   title: string;
   subtitle: string;
   page: string; // route to open ('' = not implemented yet)
+  // 路由表（router_map.json）里的 NavDestination 名。有值的条目走设置页签自己的
+  // NavPathStack（平板上落在右栏），没值的继续走 router.pushUrl 整页跳转。
+  // 十六个子页是一页一页迁的，这个字段就是迁与没迁的分界——迁完之后它会变成
+  // 必填、page 随之消失。
+  dest?: string;
 }
 
 interface SettingGroup {
@@ -96,7 +117,8 @@ function settingGroups(): SettingGroup[] {
       { icon: 'sys.symbol.link', bg: '#5856D6', title: str('settings_proxy'),
         subtitle: str('settings_proxy_sub'), page: 'pages/main/ProxyPage' },
       { icon: 'sys.symbol.battery_100percent', bg: '#FF9500', title: str('settings_power'),
-        subtitle: str('settings_power_sub'), page: 'pages/main/PowerUsagePage' },
+        subtitle: str('settings_power_sub'), page: 'pages/main/PowerUsagePage',
+        dest: 'PowerUsagePage' },
       { icon: 'sys.symbol.play_fill', bg: '#30B0C7', title: str('settings_media'),
         subtitle: str('settings_media_sub'), page: 'pages/main/MediaSettingsPage' }
     ]
@@ -124,6 +146,9 @@ export struct SettingsPage {
   // HdsNavigation 靠 bindToScrollable 拿到滚动量，才能驱动标题栏的收缩与
   // 动态模糊；没有这个绑定，标题栏就是一块静态的板子。
   private settingsScroller: Scroller = new Scroller();
+  // 设置页签的路由栈。已迁成 HdsNavDestination 的子页推进这里；平板上它就是
+  // 右栏，手机上它盖住整个页签（HdsNavigation 默认 Auto，<600vp 单栏）。
+  private settingsStack: NavPathStack = new NavPathStack();
   // 标题栏的材质档位来自设置里的「光感等级」，改了要重绘。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -172,6 +197,14 @@ export struct SettingsPage {
   private profileSkeletonTimer: number = -1;
 
   aboutToAppear(): void {
+    // 全局注册表取栈：设置子页的跳转不止本页这一个入口——tg://settings/... 深链
+    // 在页面之外触发，拿不到组件上下文（openTelegramLink.openSettingsSection）。
+    // 见 util/navStacks.ets 的说明。
+    registerStack('settings', this.settingsStack as NavStackLike);
+    // 复位一次再挂树：本页刚建好时栈必然是空的，navBar 一定可见。不复位的话，
+    // 上一轮（退登/换账号）留在 AppStorage 里的 false 会让 dock 一直藏着——
+    // onNavBarStateChange 只在**变化**时触发，不会替我们补一发 true。
+    AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, true);
     this.reloadAccounts();
     this.loadProfile();
   }
@@ -380,6 +413,22 @@ export struct SettingsPage {
     this.accountNavigationLocked = false;
   }
 
+  // 分栏的三个宽度。算法在 util/splitMetrics.ets（含 40% 上限、拖拽行程、
+  // 与 minContentWidth 不打架三条约束的推导），这里只把当前窗口宽喂进去。
+  // 与 ChatListPage 用的是同一组函数：两个页签的左栏静息宽度因此一致，dock
+  // 在页签之间切换时不会跳一下。
+  private navBarMinWidth(): number {
+    return splitNavMinWidth(this.screenW);
+  }
+
+  private navBarMaxWidth(): number {
+    return splitNavMaxWidth(this.screenW);
+  }
+
+  private contentMinWidth(): number {
+    return splitContentMinWidth(this.screenW);
+  }
+
   private openSetting(item: SettingItem): void {
     if (this.switchingSlotId !== '' || this.openingSettingPage !== '' ||
       this.accountNavigationLocked) {
@@ -394,11 +443,45 @@ export struct SettingsPage {
       this.settingNavigationTimer = -1;
       this.openingSettingPage = '';
     }, 800);
+    // 800ms 连点锁在两条分支上都照常上：它不只防连点，还是全页十来处 .enabled()
+    // 的依据（开着子页的这一瞬间，账号切换、搜索、退登都该是灰的）。分流只换
+    // 「怎么推」，不换「推的时候页面处于什么态」。
+    const dest: string | undefined = item.dest;
+    if (dest !== undefined) {
+      this.pushSettingDestination(item, dest);
+      return;
+    }
     router.pushUrl({ url: item.page }).catch((error: Error): void => {
       logE(`SettingsPage.openSetting(${item.title}) failed: ${error.message}`);
       promptAction.showToast({ message: str('settings_open_failed', item.title), duration: 1800 });
       this.releaseSettingNavigation();
     });
+  }
+
+  // 已迁到 NavDestination 的子页走这条：推进设置页签自己的 NavPathStack。规则
+  // 在 util/settingsNav.ets——深链（tg://settings/...）走的是同一个函数。
+  //
+  // 返回 false 只可能是"栈没注册"，而本页 aboutToAppear 里刚注册过、此刻必然
+  // 在树上，所以这一支不该发生。仍然接住：它和 router.pushUrl 失败是同一类
+  // "页面没打开"，给用户的反馈也该一样，否则 800ms 连点锁会一直锁着。
+  private pushSettingDestination(item: SettingItem, dest: string): void {
+    // 先关搜索。**必须的一步，不是顺手清理**：build() 有两条分支，搜索态走的是
+    // Column + topBar() 那条，HdsNavigation 整个不在树上，栈里推了东西也没有
+    // 容器去渲染——从搜索结果里点一条已迁的子页会变成"点了没反应"。
+    // 迁移前不会：那时是 router.pushUrl，整页盖在搜索态之上。
+    // 代价：从子页返回后搜索态不再保留（迁移前保留）。这是十六个页面迁完之后
+    // 才好彻底解决的问题（把搜索框搬进 HDS 标题栏的 stackBuilder，见 build()
+    // 里那段注释说明为什么当时没搬）。
+    if (this.settingsSearchOpen) {
+      this.settingsSearchOpen = false;
+      this.settingsQuery = '';
+    }
+    if (navigateToSetting(dest)) {
+      return;
+    }
+    logE(`SettingsPage.openSetting(${item.title}) failed: settings stack missing`);
+    promptAction.showToast({ message: str('settings_open_failed', item.title), duration: 1800 });
+    this.releaseSettingNavigation();
   }
 
   private releaseSettingNavigation(): void {
@@ -1312,7 +1395,7 @@ export struct SettingsPage {
       .backgroundColor(PAGE_BG)
       .padding({ top: this.topSafe });
     } else {
-      HdsNavigation() {
+      HdsNavigation(this.settingsStack) {
         Scroll(this.settingsScroller) {
           this.settingsBody();
         }
@@ -1320,6 +1403,18 @@ export struct SettingsPage {
         .align(Alignment.Top)
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .scrollBar(BarState.Off)
+        // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
+        // dock 要跟着走。这个 Scroll 是 navBar 内容的根节点、width('100%')，
+        // 它的宽度就是 navBar 宽度——HdsNavigation 没有回调宽度的接口，只能这么
+        // 量（与 ChatListPage 靠 Tabs 的 onAreaChange 量同一个办法）。
+        // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而
+        // setOrCreate 即便同值也会惊动订阅方。
+        .onAreaChange((_old: Area, area: Area): void => {
+          const w: number = area.width as number;
+          if (AppStorage.get<number>(SETTINGS_NAV_BAR_WIDTH_KEY) !== w) {
+            AppStorage.setOrCreate<number>(SETTINGS_NAV_BAR_WIDTH_KEY, w);
+          }
+        })
         // 不裁剪超出自身范围的子组件，内容才能穿透到标题栏下方——渐变模糊
         // 模糊的正是穿过去的这部分。官方示例同样这么写。
         .clip(false);
@@ -1347,10 +1442,37 @@ export struct SettingsPage {
       // 设置是从主界面进来的一级页面，顶部没有返回箭头。
       .hideBackButton(true)
       // FREE：初始大标题，随内容上滚收缩成 mini 标题栏。
-      // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
+      //
+      // 【这里曾经是 .mode(NavigationMode.Stack)】原注释（保留在下面）说的是：
+      // 「强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
       // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
-      // 右边一片空白（平板用户报"没法用了"）。
-      .mode(NavigationMode.Stack)
+      // 右边一片空白（平板用户报"没法用了"）。」那条止血的前提是"不用
+      // NavDestination"，本次改动起设置子页开始迁成 HdsNavDestination（首个是
+      // PowerUsagePage），前提不再成立，止血可以拆。ChatListPage 上一轮拆的是
+      // 同一条。
+      // 不显式设 mode：HdsNavigation 默认就是 Auto——窗口 <600vp 走单栏（手机，
+      // 观感与 router.pushUrl 一致），≥600vp 自动分栏（平板，左设置列表右子页）。
+      .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
+      .minContentWidth(this.contentMinWidth())
+      .enableDragBar(true)
+      // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
+      // SETTINGS_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
+      // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
+      .onNavBarStateChange((isVisible: boolean): void => {
+        if (AppStorage.get<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
+          AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, isVisible);
+        }
+      })
+      // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶
+      // HdsNavDestination 的 onHidden。**本轮它是个空操作**——迁过来的
+      // PowerUsagePage 既没有 bindSheet 也没有 onShown/onHidden。之所以现在就写上：
+      // 待迁的十五个里有八个带 bindSheet（ProxyPage / ChatFoldersPage /
+      // ActiveSessionsPage / BlockedUsersPage / PrivacyExceptionsPage /
+      // FolderEditPage / FolderInviteLinksPage / WebPushPage），它们把 onPageHide
+      // 映射成 .onHidden() 的那一刻，默认值就会让"一拉起面板页面就以为自己隐藏了"
+      // ——ChatPage 上一轮正是踩了这个（一开转发面板音视频就停）。取值与聊天页签
+      // 一致，两个页签没有理由不同。
+      .enableVisibilityLifecycleWithContentCover(false)
       .titleMode(HdsNavigationTitleMode.FREE)
       .bindToScrollable([this.settingsScroller])
       .width('100%').height('100%')

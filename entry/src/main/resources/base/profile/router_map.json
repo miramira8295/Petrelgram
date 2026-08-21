@@ -24,6 +24,11 @@
       "name": "ArchivePage",
       "pageSourceFile": "src/main/ets/pages/chatlist/ArchivePage.ets",
       "buildFunction": "ArchivePageBuilder"
+    },
+    {
+      "name": "PowerUsagePage",
+      "pageSourceFile": "src/main/ets/pages/main/PowerUsagePage.ets",
+      "buildFunction": "PowerUsagePageBuilder"
     }
   ]
 }

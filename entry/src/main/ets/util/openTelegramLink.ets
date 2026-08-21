@@ -11,6 +11,7 @@ import { openWebUrl } from './webBrowserNav';
 import { getMainMiniApp, getMiniAppLinkUrl } from '../store/BotApi';
 import { logChatNavFailure, navigateToChat } from './chatNav';
 import { navigateToChatProfile, navigateToProfile } from './profileNav';
+import { navigateToSetting } from './settingsNav';
 import { logE } from './log';
 
 function openChatPage(chatId: number, showJoinedNotice: boolean = false,
@@ -269,7 +270,15 @@ function openSettingsSection(type: TdObject): void {
   } else if (sectionName === 'settingsSectionDataAndStorage') {
     page = 'pages/main/DataStoragePage';
   } else if (sectionName === 'settingsSectionPowerSaving') {
-    page = 'pages/main/PowerUsagePage';
+    // 耗电页已经迁成 HdsNavDestination、从 main_pages.json 摘掉了，router.pushUrl
+    // 对它必然失败（而且这里原本连 catch 都没有，会是"点了深链什么都不发生"）。
+    // 走设置页签的路由栈——和 SettingsPage 那张列表同一个漏斗。
+    // 【每迁一个设置子页，就有一条 else-if 要从上面搬到这里来。】
+    if (!navigateToSetting('PowerUsagePage')) {
+      // 栈还没注册：只可能是 SettingsPage 尚未挂树（登录前/冷启动早期）。
+      promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+    }
+    return;
   }
   if (page !== '') {
     router.pushUrl({ url: page });

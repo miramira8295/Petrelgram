@@ -25,7 +25,6 @@
     "pages/main/ChatFoldersPage",
     "pages/main/FolderEditPage",
     "pages/main/FolderInviteLinksPage",
-    "pages/main/PowerUsagePage",
     "pages/main/NewGroupPage",
     "pages/web/InAppBrowserPage",
     "pages/main/ChatBackgroundPage",

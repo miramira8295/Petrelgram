@@ -8,7 +8,9 @@ import { ProfileStore } from '../../store/ProfileStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { ChatListPage, NAV_BAR_WIDTH_KEY, CHAT_NAV_BAR_VISIBLE_KEY } from '../chatlist/ChatListPage';
 import { ContactsPage } from './ContactsPage';
-import { SettingsPage } from './SettingsPage';
+import {
+  SettingsPage, SETTINGS_NAV_BAR_VISIBLE_KEY, SETTINGS_NAV_BAR_WIDTH_KEY
+} from './SettingsPage';
 import { MyProfilePage } from './MyProfilePage';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
@@ -63,6 +65,13 @@ export struct MainScreen {
   // 聊天页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 聊天栈非空」
   // ——也就是手机上打开了会话/资料/话题列表/归档的时候。见 CHAT_NAV_BAR_VISIBLE_KEY。
   @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private chatNavBarVisible: boolean = true;
+  // 设置页签分栏时左栏的实际宽度（vp，0 = 还没量到）。与聊天页签分开存：两个
+  // 页签各自 enableDragBar(true)，拖过之后两边不再相等。见
+  // SETTINGS_NAV_BAR_WIDTH_KEY。
+  @StorageProp(SETTINGS_NAV_BAR_WIDTH_KEY) private settingsNavBarWidth: number = 0;
+  // 设置页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 设置栈非空」
+  // ——也就是手机上打开了已迁成 NavDestination 的设置子页的时候。
+  @StorageProp(SETTINGS_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private settingsNavBarVisible: boolean = true;
   // dock 的**交互态**：false 的那一刻起就不再接收任何点击，不等淡出结束。
   // 与 dockMounted 分开是本次修复的核心，理由见 syncDock()。
   @State private dockShown: boolean = true;
@@ -356,12 +365,22 @@ export struct MainScreen {
   // 分栏时 dock 归左栏：它导航的就是左栏内容，横跨整屏正好压在右栏的聊天输入框
   // 上（真机截图确认）。宽度不能写死——enableDragBar(true) 允许用户拖分割线。
   //
-  // 只认聊天页签：联系人/设置/个人资料三个页签都显式 .mode(NavigationMode.Stack)
-  // 强制单栏，它们在屏上时整页就是整屏宽，dock 缩在左边一条是错的。
-  // 手机（单栏）下 navBarWidth 量到的就是整屏宽，自然退化为改造前的行为；
-  // 还没量到（0）时同样退化，不会先闪一下窄条。
+  // 认聊天(0)和设置(2)两个页签：这两个的 HdsNavigation 都带 NavPathStack、都走
+  // 默认的 Auto 模式，宽屏上会分栏。联系人(1)/个人资料(3)仍显式
+  // .mode(NavigationMode.Stack) 强制单栏，它们在屏上时整页就是整屏宽，dock 缩在
+  // 左边一条是错的。
+  // 两个页签各读各的键：拖过分割线之后左栏宽度不再相等，共用一个会在其中一个
+  // 页签上错开。
+  // 手机（单栏）下量到的就是整屏宽，自然退化为改造前的行为；还没量到（0）时
+  // 同样退化，不会先闪一下窄条。
   private dockWidth(): Length {
-    return this.tab === 0 && this.navBarWidth > 0 ? this.navBarWidth : '100%';
+    if (this.tab === 0) {
+      return this.navBarWidth > 0 ? this.navBarWidth : '100%';
+    }
+    if (this.tab === 2) {
+      return this.settingsNavBarWidth > 0 ? this.settingsNavBarWidth : '100%';
+    }
+    return '100%';
   }
 
   // dock 该不该在屏上。
@@ -377,11 +396,22 @@ export struct MainScreen {
   // 它约束在左栏宽度内）。chatNavBarVisible 正好就是这个组合的反面——navBar
   // 只在单栏推入 NavDestination 时才会被系统隐藏，分栏下恒可见。
   //
-  // 【为什么还要看 tab】联系人/设置/个人资料三个页签有各自的 HdsNavigation，
-  // 都不带 NavPathStack、永远不推目的地，chatNavBarVisible 与它们无关。停在
-  // 这三个页签上时 dock 必须照常显示，哪怕聊天栈里还留着一个会话。
+  // 【为什么还要看 tab】每个页签的 navBar 显隐是各自独立的一件事，chatNavBarVisible
+  // 只描述聊天页签。停在别的页签上时 dock 必须照常显示，哪怕聊天栈里还留着一个
+  // 会话。
+  //
+  // 设置页签（2）现在也有自己的 NavPathStack（首个 NavDestination 是
+  // PowerUsagePage），于是同一套判断要照做一遍：手机上推入设置子页之后，子页不再
+  // 是盖住整个 MainScreen 的整页 router 页，dock 会浮在它上面——必须跟着藏。
+  // 联系人（1）/个人资料（3）仍强制单栏、永远不推目的地，恒显示。
   private dockVisible(): boolean {
-    return this.tab !== 0 || this.chatNavBarVisible;
+    if (this.tab === 0) {
+      return this.chatNavBarVisible;
+    }
+    if (this.tab === 2) {
+      return this.settingsNavBarVisible;
+    }
+    return true;
   }
 
   // Floating capsule: outer Column carries the horizontal padding + bottom
