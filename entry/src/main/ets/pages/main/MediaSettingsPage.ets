@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
   setBoolean,
   KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_AUTOPLAY_GIF, KEY_AUTOPLAY_MUTED,
@@ -17,9 +17,16 @@ const CARD_RADIUS: number = 14;
 // 「媒体」设置页：自动播放（视频/GIF，视频开启时展开静音播放）与后台播放
 // （音乐/语音/视频/直播）两个分组。取代原来分散在缓存设置页里的播放段落
 // 与独立的后台播放设置页。
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function MediaSettingsPageBuilder(): void {
+  MediaSettingsPage();
+}
+
 @Component
-struct MediaSettingsPage {
+export struct MediaSettingsPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -92,8 +99,10 @@ struct MediaSettingsPage {
   build() {
     // 外面这层 Column 是必需的：@Entry 组件的 build 根节点必须是**容器组件**，
     // 自定义组件（HdsSubPage）不行。它不带任何样式，只是个合法的根。
+    // 【迁移后】@Entry 已经摘掉，这条约束对本页不再成立；这层 Column 仍然留着，
+    // 因为它不带任何样式，删不删对渲染没有区别，留着可以让 diff 只有必须的几行。
     Column() {
-    HdsSubPage({
+    HdsSubDestination({
       title: $r('app.string.settings_media'),
       pageBackground: COLOR_PAGE_BG,
       scroller: this.pageScroller

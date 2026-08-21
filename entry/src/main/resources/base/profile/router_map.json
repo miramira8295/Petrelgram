@@ -49,6 +49,26 @@
       "name": "InteractionSettingsPage",
       "pageSourceFile": "src/main/ets/pages/main/InteractionSettingsPage.ets",
       "buildFunction": "InteractionSettingsPageBuilder"
+    },
+    {
+      "name": "ChatSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/ChatSettingsPage.ets",
+      "buildFunction": "ChatSettingsPageBuilder"
+    },
+    {
+      "name": "MediaSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/MediaSettingsPage.ets",
+      "buildFunction": "MediaSettingsPageBuilder"
+    },
+    {
+      "name": "NotificationSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/NotificationSettingsPage.ets",
+      "buildFunction": "NotificationSettingsPageBuilder"
+    },
+    {
+      "name": "PrivacySecurityPage",
+      "pageSourceFile": "src/main/ets/pages/main/PrivacySecurityPage.ets",
+      "buildFunction": "PrivacySecurityPageBuilder"
     }
   ]
 }

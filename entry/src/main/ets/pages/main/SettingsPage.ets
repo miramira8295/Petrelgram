@@ -83,7 +83,8 @@ function settingGroups(): SettingGroup[] {
       { icon: 'sys.symbol.person_fill', bg: '#3478F6', title: str('settings_account'), subtitle: str('settings_account_sub'),
         page: 'pages/main/AccountEditPage' },
       { icon: 'sys.symbol.message_fill', bg: '#FF9500', title: str('settings_chat'),
-        subtitle: str('settings_chat_sub'), page: 'pages/main/ChatSettingsPage' },
+        subtitle: str('settings_chat_sub'), page: 'pages/main/ChatSettingsPage',
+        dest: 'ChatSettingsPage' },
       { icon: 'sys.symbol.hand_thumbsup', bg: '#5856D6', title: str('settings_interaction'),
         subtitle: str('settings_interaction_sub'), page: 'pages/main/InteractionSettingsPage',
         dest: 'InteractionSettingsPage' },
@@ -96,7 +97,8 @@ function settingGroups(): SettingGroup[] {
       { icon: 'sys.symbol.folder_fill', bg: '#34AADC', title: str('settings_folders'),
         subtitle: str('settings_folders_sub'), page: 'pages/main/ChatFoldersPage' },
       { icon: 'sys.symbol.bell_fill', bg: '#FF3B30', title: str('settings_notifications'),
-        subtitle: str('settings_notifications_sub'), page: 'pages/main/NotificationSettingsPage' },
+        subtitle: str('settings_notifications_sub'), page: 'pages/main/NotificationSettingsPage',
+        dest: 'NotificationSettingsPage' },
       { icon: 'sys.symbol.translate', bg: '#5856D6', title: str('language_title'),
         subtitle: str('settings_language_sub'), page: 'pages/main/LanguagePage',
         dest: 'LanguagePage' }
@@ -106,7 +108,8 @@ function settingGroups(): SettingGroup[] {
     title: str('settings_group_privacy'),
     items: [
       { icon: 'sys.symbol.lock_fill', bg: '#34C759', title: str('settings_privacy'),
-        subtitle: str('settings_privacy_sub'), page: 'pages/main/PrivacySecurityPage' },
+        subtitle: str('settings_privacy_sub'), page: 'pages/main/PrivacySecurityPage',
+        dest: 'PrivacySecurityPage' },
       { icon: 'sys.symbol.computer', bg: '#5AC8FA', title: str('settings_devices'),
         subtitle: str('settings_devices_sub'), page: 'pages/main/ActiveSessionsPage' }
     ]
@@ -122,7 +125,8 @@ function settingGroups(): SettingGroup[] {
         subtitle: str('settings_power_sub'), page: 'pages/main/PowerUsagePage',
         dest: 'PowerUsagePage' },
       { icon: 'sys.symbol.play_fill', bg: '#30B0C7', title: str('settings_media'),
-        subtitle: str('settings_media_sub'), page: 'pages/main/MediaSettingsPage' }
+        subtitle: str('settings_media_sub'), page: 'pages/main/MediaSettingsPage',
+        dest: 'MediaSettingsPage' }
     ]
   },
   {

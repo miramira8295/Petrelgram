@@ -19,7 +19,7 @@ import {
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -67,9 +67,16 @@ const NIGHT_OPTIONS: NightOption[] = [
 // official page also offers wallpapers, colour themes and app icons, which need
 // capabilities we don't have yet, and a switch that changes nothing is worse
 // than no switch at all.
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function ChatSettingsPageBuilder(): void {
+  ChatSettingsPage();
+}
+
 @Component
-struct ChatSettingsPage {
+export struct ChatSettingsPage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -83,28 +90,22 @@ struct ChatSettingsPage {
   @StorageLink(KEY_IN_APP_BROWSER) inAppBrowser: boolean = true;
   @StorageLink(KEY_MATERIAL_THICKNESS) materialThickness: number = THICKNESS_DEFAULT;
   @StorageLink(KEY_MATERIAL_LIGHT) materialLight: string = LIGHT_DEFAULT;
-  @State leavingPage: boolean = false;
-  private leaveTimer: number = -1;
-
-  aboutToDisappear(): void {
-    if (this.leaveTimer !== -1) {
-      clearTimeout(this.leaveTimer);
-      this.leaveTimer = -1;
-    }
-    this.leavingPage = false;
-  }
-
-  private leavePage(): void {
-    if (this.leavingPage) {
-      return;
-    }
-    this.leavingPage = true;
-    this.leaveTimer = setTimeout((): void => {
-      this.leaveTimer = -1;
-      this.leavingPage = false;
-    }, 500);
-    router.back();
-  }
+  // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
+  // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
+  // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
+  //   · router.back() 在 NavDestination 上是**错的**——它弹的是 router 页栈，
+  //     而本页已不在那条栈上，弹掉的会是 Index，现象是直接退到桌面
+  //     （HdsSubDestination 文件头记了同一条实测）。返回改由外壳默认的出栈
+  //     （NavPathStack.pop）承担，不再需要本页自己写，onBack 也随之不用传。
+  //   · 防抖随之无对象：设置栈的推入走 decidePush 的 clearAndPush，栈深恒为 1，
+  //     连点两下的第二次 pop() 落在空栈上是 no-op。
+  //   · leavingPage 全文件没有任何渲染读取（不像 AccountEditPage 那个同名字段
+  //     驱动 .enabled()），删掉不影响任何 UI。
+  // 注意本页的 router import **要留着**：底下「聊天背景」那一项还在 router.pushUrl
+  // 到 ChatBackgroundPage——那个页面这一轮没迁，仍是 router 页，从 NavDestination
+  // 往 router 页跳是可以的（整页盖上来），反过来才不行。
+  // 【将来要注意】哪天设置子页开始互相跳转、栈深可能大于 1 时，防抖要按
+  // NavPathStack 重新加回来。
 
   private numberValue(key: string): number {
     return key === KEY_TEXT_SIZE ? this.textSize : this.bubbleRadius;
@@ -376,7 +377,7 @@ struct ChatSettingsPage {
 
   build() {
     Column() {
-      HdsSubPage({ title: $r('app.string.settings_chat'), scroller: this.hdsScroller, onBack: (): void => { this.leavePage(); } }) {
+      HdsSubDestination({ title: $r('app.string.settings_chat'), scroller: this.hdsScroller }) {
       Scroll(this.hdsScroller) {
         Column({ space: 14 }) {
           // 字号 + 圆角, with the preview they drive.

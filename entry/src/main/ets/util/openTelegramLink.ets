@@ -258,13 +258,27 @@ function openSettingsSection(type: TdObject): void {
   if (sectionName === 'settingsSectionEditProfile') {
     page = 'pages/main/AccountEditPage';
   } else if (sectionName === 'settingsSectionAppearance') {
-    page = 'pages/main/ChatSettingsPage';
+    // 聊天设置已迁成 HdsNavDestination、从 main_pages.json 摘掉，走设置页签的
+    // 路由栈——理由同下面 settingsSectionPowerSaving 那一支。
+    if (!navigateToSetting('ChatSettingsPage')) {
+      promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+    }
+    return;
   } else if (sectionName === 'settingsSectionChatFolders') {
     page = 'pages/main/ChatFoldersPage';
   } else if (sectionName === 'settingsSectionPrivacyAndSecurity') {
     const subsection = (section['subsection'] as string | undefined) ?? '';
-    page = subsection.startsWith('blocked')
-      ? 'pages/main/BlockedUsersPage' : 'pages/main/PrivacySecurityPage';
+    // 两支目标现在性质不同，所以不能再共用底下那一句 router.pushUrl：
+    // BlockedUsersPage 这一轮没迁，仍是 router 页；隐私与安全页已迁成
+    // HdsNavDestination，只能走设置页签的路由栈。
+    if (subsection.startsWith('blocked')) {
+      page = 'pages/main/BlockedUsersPage';
+    } else {
+      if (!navigateToSetting('PrivacySecurityPage')) {
+        promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+      }
+      return;
+    }
   } else if (sectionName === 'settingsSectionDevices') {
     page = 'pages/main/ActiveSessionsPage';
   } else if (sectionName === 'settingsSectionDataAndStorage') {

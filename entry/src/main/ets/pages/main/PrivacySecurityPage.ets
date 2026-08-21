@@ -18,7 +18,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 16;
 const COLOR_WARNING: string = '#D98914';
@@ -92,9 +92,16 @@ function ruleRows(): RuleRow[] {
   ];
 }
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function PrivacySecurityPageBuilder(): void {
+  PrivacySecurityPage();
+}
+
 @Component
-struct PrivacySecurityPage {
+export struct PrivacySecurityPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   private hdsScroller: Scroller = new Scroller();
@@ -588,7 +595,7 @@ struct PrivacySecurityPage {
 
   build() {
     Column() {
-    HdsSubPage({
+    HdsSubDestination({
       title: $r('app.string.settings_privacy'),
       pageBackground: COLOR_PAGE_BG,
       scroller: this.hdsScroller
