@@ -139,6 +139,14 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 资料页那几个「从右栏内部选会话」的调用点传 'content'——那要动 28 个调用点，
 // 所以没在 Task 7 里顺手做。别当新 bug 去查。
 //
+// **同一根因还有第三个表现，容易被当成两件事**：ChatRow 的代码位置只有一处，
+// 但它有**两个运行时上下文**——MainTabBody（左栏会话列表）和 ArchivePage（归档
+// 列表）。归档里点一个话题群时，navigateToForumTopics 同样按 'navbar' 清栈，
+// 把 ArchivePage 那一层一起清了，返回后回到的是会话列表而不是归档。
+// 修法与上面同一个：origin 不该由"调用点写在哪个文件"决定，而该由"用户此刻
+// 在哪一栏"决定（ChatRow 已经有 listKey 可以区分 'main' 和归档）。一次改就
+// 把三个表现一起覆盖，别分三次修。
+//
 // 之所以不把失败吞在这里：NewGroupPage 建完群要靠这个 rejection 才能把
 // "打不开会话" 反馈给用户（复位 spinner + 显示错误），吞掉它那段就是死代码。
 // 代价是每个调用点都得接住——除 ChatListPage（return 进了自己的链）和
