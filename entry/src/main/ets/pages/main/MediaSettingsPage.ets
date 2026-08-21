@@ -1,4 +1,5 @@
 import { router } from '@kit.ArkUI';
+import { HdsSubPage } from '../common/HdsSubPage';
 import {
   setBoolean,
   KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_AUTOPLAY_GIF, KEY_AUTOPLAY_MUTED,
@@ -22,6 +23,7 @@ struct MediaSettingsPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  private pageScroller: Scroller = new Scroller();
   @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_GIF) autoplayGif: boolean = true;
   @StorageProp(KEY_AUTOPLAY_MUTED) autoplayMuted: boolean = true;
@@ -100,9 +102,15 @@ struct MediaSettingsPage {
   }
 
   build() {
+    // 外面这层 Column 是必需的：@Entry 组件的 build 根节点必须是**容器组件**，
+    // 自定义组件（HdsSubPage）不行。它不带任何样式，只是个合法的根。
     Column() {
-      this.header();
-      Scroll() {
+    HdsSubPage({
+      title: $r('app.string.settings_media'),
+      pageBackground: COLOR_PAGE_BG,
+      scroller: this.pageScroller
+    }) {
+      Scroll(this.pageScroller) {
         Column({ space: 12 }) {
           Text(str('ms_autoplay_group')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
             .width('100%').padding({ left: 4, top: 4 });
@@ -114,9 +122,12 @@ struct MediaSettingsPage {
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
             .width('100%').padding({ left: 14, right: 14 });
         }.width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
-      }.layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
-    }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-      .padding({ top: this.topSafe });
+      }
+      .width('100%').scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false);
+    }
+    }.width('100%').height('100%');
   }
 }
