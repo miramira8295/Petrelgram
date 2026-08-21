@@ -11331,6 +11331,10 @@
     {
       "name": "mt_tag_hint",
       "value": "Semua anggota grup dapat melihat tag ini. Kosongkan untuk menghapus. Maksimal 16 karakter, tanpa emoji"
+    },
+    {
+      "name": "mb_copy_url",
+      "value": "Salin tautan"
     }
   ]
 }

@@ -439,3 +439,28 @@ function parseFormattedTextUncached(text: string, entities: TdObject[]): RichSeg
   }
   return segments;
 }
+
+// 消息正文里的可复制链接（真 URL：显式 textUrl 的目标、裸 URL 的原文）。
+// @提及/#话题/命令等可点击实体不算——"复制链接"复制出一个 @名字没有意义。
+export function messageUrls(text: string, entities: TdObject[]): string[] {
+  const out: string[] = [];
+  for (const e of entities) {
+    const type = e['type'] as TdObject | undefined;
+    const t: string = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
+    if (t === 'textEntityTypeTextUrl') {
+      const url: string = (type!['url'] as string | undefined) ?? '';
+      if (url !== '' && out.indexOf(url) < 0) {
+        out.push(url);
+      }
+    } else if (t === 'textEntityTypeUrl') {
+      const offset: number = (e['offset'] as number | undefined) ?? 0;
+      const length: number = (e['length'] as number | undefined) ?? 0;
+      // TDLib 的 offset/length 是 UTF-16 码元，和 JS 的 substring 同一口径。
+      const url: string = text.substring(offset, offset + length);
+      if (url !== '' && out.indexOf(url) < 0) {
+        out.push(url);
+      }
+    }
+  }
+  return out;
+}

@@ -11331,6 +11331,10 @@
     {
       "name": "mt_tag_hint",
       "value": "Gruptaki herkes bu etiketi görebilir. Kaldırmak için boş bırakın. En fazla 16 karakter, emoji yok"
+    },
+    {
+      "name": "mb_copy_url",
+      "value": "Bağlantıyı kopyala"
     }
   ]
 }

@@ -11331,6 +11331,10 @@
     {
       "name": "mt_tag_hint",
       "value": "Mọi thành viên trong nhóm đều thấy thẻ này. Để trống để xóa. Tối đa 16 ký tự, không dùng emoji"
+    },
+    {
+      "name": "mb_copy_url",
+      "value": "Sao chép liên kết"
     }
   ]
 }

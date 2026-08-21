@@ -11331,6 +11331,10 @@
     {
       "name": "mt_tag_hint",
       "value": "Todos os membros do grupo podem ver esta etiqueta. Deixe em branco para remover. Máx. 16 caracteres, sem emojis"
+    },
+    {
+      "name": "mb_copy_url",
+      "value": "Copiar link"
     }
   ]
 }

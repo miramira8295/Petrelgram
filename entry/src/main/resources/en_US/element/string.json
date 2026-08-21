@@ -11331,6 +11331,10 @@
     {
       "name": "mt_tag_hint",
       "value": "Everyone in the group can see this tag. Leave empty to remove. Up to 16 characters, no emoji"
+    },
+    {
+      "name": "mb_copy_url",
+      "value": "Copy link"
     }
   ]
 }

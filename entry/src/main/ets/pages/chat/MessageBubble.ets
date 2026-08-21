@@ -1,3 +1,5 @@
+import { promptAction } from '@kit.ArkUI';
+import { pasteboard } from '@kit.BasicServicesKit';
 import { MessageEntry, ReactionInfo, InlineBtn } from '../../store/MessageEntry';
 import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO, slotKey } from './playSlot';
 import { VideoBubbleSurface } from './VideoBubbleSurface';
@@ -35,7 +37,7 @@ import { GiftBubble } from './GiftBubble';
 import { GiveawayBubble } from './GiveawayBubble';
 import { formatClockTime } from '../../util/formatTime';
 import { formatFileSize } from '../../util/formatFileSize';
-import { parseFormattedText, RichSegment, RichRun } from '../../util/richText';
+import { messageUrls, parseFormattedText, RichSegment, RichRun } from '../../util/richText';
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
@@ -1928,6 +1930,20 @@ export struct MessageBubble {
 
   // Long-press context menu: quick-reaction row (tap an emoji to toggle it, the
   // chevron opens the full picker) over the standard message actions.
+  private copyMessageUrls(): void {
+    const urls: string[] = messageUrls(this.msg.text, this.msg.textEntities);
+    if (urls.length === 0) {
+      return;
+    }
+    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN,
+      urls.length === 1 ? urls[0] : urls.join('\n'));
+    pasteboard.getSystemPasteboard().setData(data).then((): void => {
+      promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1300 });
+    }).catch((): void => {
+      promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1300 });
+    });
+  }
+
   @Builder
   msgContextMenu() {
     Column() {
@@ -1980,6 +1996,14 @@ export struct MessageBubble {
       actionMenuRow('sys.symbol.plus_square_on_square', str('mb_copy_text'), false, () => { this.onCopyText(this.msg.id); });
       if (this.msg.text !== '') {
         actionMenuRow('sys.symbol.translate', str('mb_translate'), false, () => { this.onTranslateMsg(this.msg.id); });
+      }
+      // 「复制链接」复制的是**正文里的 URL**（显式超链接的目标 + 裸链接原文，
+      // @提及/#话题不算）；和下面「拷贝消息链接」（这条消息的 t.me 跳转）是两回事。
+      // Span 不支持长按手势（ArkUI 限制），所以"长按链接复制"落在消息菜单这里。
+      if (messageUrls(this.msg.text, this.msg.textEntities).length > 0) {
+        actionMenuRow('sys.symbol.paperclip', str('mb_copy_url'), false, () => {
+          this.copyMessageUrls();
+        });
       }
       actionMenuRow('sys.symbol.link', str('mb_copy_link'), false, () => { this.onCopyLink(this.msg.id); });
       actionMenuRow('sys.symbol.arrowshape_turn_up_right', str('mb_forward'), false, () => { this.onForwardMsg(this.msg.id); });
