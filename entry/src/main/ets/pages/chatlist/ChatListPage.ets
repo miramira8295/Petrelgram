@@ -508,13 +508,9 @@ export struct ChatListPage {
         ]
       }
     };
-    // 没有文件夹时不挂底部条，否则标题栏底下会空出一块。
-    if (this.folders.length > 0) {
-      content.bottomBuilder = {
-        builder: (): void => { this.tabBar(); },
-        height: FOLDER_BAR_SPACE
-      };
-    }
+    // 文件夹条**不**挂 bottomBuilder。挂进去它就成了标题栏的一部分，跟着标题栏
+    // 一起收缩；而这条横条是页面的常驻导航，应当一直在、并且待在标题栏**下面**
+    // ——和改造前的位置关系一致。所以它作为内容区的第一个子节点单独排（见 build）。
     return content;
   }
 
@@ -685,6 +681,11 @@ export struct ChatListPage {
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation() {
+        Column() {
+        // 标题栏下面的常驻横条。它在滚动容器之外，所以不跟着列表滚走。
+        if (this.folders.length > 0) {
+          this.tabBar();
+        }
         Tabs({ controller: this.controller }) {
         ForEach(this.tabs(), (spec: TabSpec) => {
           TabContent() {
@@ -745,9 +746,11 @@ export struct ChatListPage {
         }
         this.ensureTabVisible(index);
       })
-      .width('100%').height('100%')
+      // 横条占掉的高度由 layoutWeight 自动让出，Tabs 吃掉剩下的。
+      .layoutWeight(1).width('100%')
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM]);
-
+        }
+        .width('100%').height('100%');
       }
       .titleBar({
         // 两个都要，各管一头：
