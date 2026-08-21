@@ -8,6 +8,7 @@ import { installStringsFromContext } from '../util/strings';
 import { refreshLocale } from '../util/intlFormat';
 import { bumpLanguageEpoch } from '../util/appLanguage';
 import { backgroundGraceTask } from '../services/BackgroundGraceTask';
+import { startCrashWatch } from '../services/crashReport';
 import { initSettings, refreshPowerSavingState, KEY_CACHE_LIMIT } from '../store/AppSettings';
 import { CACHE_LIMIT_DEFAULT, shouldTrimNow } from '../store/CacheLimit';
 import { applyCacheLimit } from '../store/StorageApi';
@@ -37,6 +38,9 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     // Before anything that formats text: stores build chat previews during
     // startup, and without a source installed those would come out as raw keys.
+    // 崩溃观察者要在**业务逻辑之前**注册：应用没主动捕获时，崩溃事件是在下次
+    // 启动才回调的，注册晚了那一次就漏了（官方《订阅崩溃事件》写明这一点）。
+    startCrashWatch(this.context);
     // ApplicationContext rather than this.context — the lookup is not tied to
     // any Ability or window, and locale is application-level configuration.
     installStringsFromContext(this.context.getApplicationContext());
