@@ -2360,7 +2360,7 @@ export struct MessageBubble {
         speechText: this.msg.speechText,
         onNeedDownload: (): void => { this.onVoiceTap(this.msg.id); },
         onPlaybackStarted: (): void => { this.onVoicePlaybackStarted(this.msg.id); },
-        onRecognizeTap: (): void => { this.onRecognizeSpeech(this.msg.id); }
+        onRecognizeTap: (): void => { if (this.gestureClaimed) { return; } this.onRecognizeSpeech(this.msg.id); }
       });
     } else if (this.msg.contentType === 'audio') {
       // Music is intentionally distinct from a voice note: album artwork and
@@ -2386,9 +2386,9 @@ export struct MessageBubble {
         hasPrevious: this.audioHasPrevious,
         hasNext: this.audioHasNext,
         maxWidth: this.inlineMaxW(),
-        onToggle: (): void => { this.onAudioTap(this.msg.id); },
-        onPrevious: (): void => { this.onAudioPrevious(this.msg.id); },
-        onNext: (): void => { this.onAudioNext(this.msg.id); },
+        onToggle: (): void => { if (this.gestureClaimed) { return; } this.onAudioTap(this.msg.id); },
+        onPrevious: (): void => { if (this.gestureClaimed) { return; } this.onAudioPrevious(this.msg.id); },
+        onNext: (): void => { if (this.gestureClaimed) { return; } this.onAudioNext(this.msg.id); },
         onSeek: (fraction: number): void => { this.onAudioSeek(this.msg.id, fraction); }
       });
       if (this.msg.text !== '') {
@@ -2409,8 +2409,16 @@ export struct MessageBubble {
         downloadFailed: this.msg.videoFailed,
         downloadActive: this.msg.mediaDownloadActive,
         maxWidth: this.inlineMaxW(),
-        onOpen: (): void => { this.onFileTap(this.msg.id); },
-        onSave: (): void => { this.onFileSave(this.msg.id); }
+        // 长按弹菜单/左滑回复会认领手势；FileBubble 是子组件、看不到认领标记，
+        // 早退只能在这层闭包里做——否则长按文件消息弹菜单的同时把下载也触发了。
+        onOpen: (): void => {
+          if (this.gestureClaimed) { return; }
+          this.onFileTap(this.msg.id);
+        },
+        onSave: (): void => {
+          if (this.gestureClaimed) { return; }
+          this.onFileSave(this.msg.id);
+        }
       });
       if (this.msg.text !== '') {
         Column() {
@@ -2435,7 +2443,7 @@ export struct MessageBubble {
             this.msg.contactVcard
           );
         },
-        onCall: (): void => { this.onPhoneOpen(this.msg.contactPhone); }
+        onCall: (): void => { if (this.gestureClaimed) { return; } this.onPhoneOpen(this.msg.contactPhone); }
       });
     } else if (this.msg.contentType === 'location' || this.msg.contentType === 'venue') {
       LocationBubble({
@@ -2453,7 +2461,7 @@ export struct MessageBubble {
         proximityRadius: this.msg.locationProximityRadius,
         maxWidth: this.inlineMaxW(),
         sharing: this.liveSharingId !== 0 && this.liveSharingId === this.msg.id,
-        onStopLive: (): void => { this.onStopLiveLocation(); },
+        onStopLive: (): void => { if (this.gestureClaimed) { return; } this.onStopLiveLocation(); },
         onOpen: (): void => {
           this.onLocationOpen(
             this.msg.locationLatitude,
@@ -2506,8 +2514,8 @@ export struct MessageBubble {
         photoProgress: this.msg.photoProgress,
         photoFailed: this.msg.photoFailed,
         maxWidth: this.inlineMaxW(),
-        onOpen: (messageId: number): void => { this.onGameOpen(messageId); },
-        onRetryPhoto: (messageId: number): void => { this.onGamePhotoRetry(messageId); }
+        onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onGameOpen(messageId); },
+        onRetryPhoto: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onGamePhotoRetry(messageId); }
       });
     } else if (this.msg.contentType === 'paidMedia') {
       PaidMediaBubble({
@@ -2523,8 +2531,8 @@ export struct MessageBubble {
         photoFailed: this.msg.photoFailed,
         pending: this.paidMediaPending,
         maxWidth: this.inlineMaxW(),
-        onUnlock: (messageId: number): void => { this.onPaidMediaUnlock(messageId); },
-        onOpen: (messageId: number): void => { this.onPaidMediaOpen(messageId); },
+        onUnlock: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onPaidMediaUnlock(messageId); },
+        onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onPaidMediaOpen(messageId); },
         onRetryPhoto: (messageId: number): void => {
           this.onSpecialPhotoRetry(messageId);
         }
@@ -2547,7 +2555,7 @@ export struct MessageBubble {
         onRetryPhoto: (messageId: number): void => {
           this.onSpecialPhotoRetry(messageId);
         },
-        onCopyCode: (code: string): void => { this.onGiftCodeCopy(code); }
+        onCopyCode: (code: string): void => { if (this.gestureClaimed) { return; } this.onGiftCodeCopy(code); }
       });
     } else if (this.msg.contentType === 'giveaway') {
       GiveawayBubble({
