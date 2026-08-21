@@ -10,6 +10,9 @@ import {
 import {
   MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
+import {
+  FOCUS_PAUSE, FOCUS_RESUME, FOCUS_STOP, acquireAudioFocus
+} from '../../services/audioFocus';
 import { audio } from '@kit.AudioKit';
 import { getTdClient, getUiAbilityContext } from '../../tdkit/Globals';
 import { mediaPlaybackKeepAlive } from '../../services/MediaPlaybackKeepAlive';
@@ -81,6 +84,12 @@ export struct StreamingVideoPlayer {
   // viewer. No control bar / gestures / speed / rotate — just poster +
   // surface + buffering hint. See build() and onPlayingChanged() below.
   @Prop embedded: boolean = false;
+  // 音频焦点：拿着的时候别的应用/来电开始发声，系统会通知我们让位。
+  // 释放函数在停止播放时调用（幂等）。
+  private releaseAudioFocus: (() => void) | null = null;
+  // 是**被系统打断**才暂停的。打断结束时只恢复这一种暂停——用户自己按的
+  // 暂停不能因为别人打完电话就自己动起来。
+  private pausedByFocusLoss: boolean = false;
   @Watch('onMutedChanged') @Prop muted: boolean = false;
   @Prop startPositionMs: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -150,6 +159,8 @@ export struct StreamingVideoPlayer {
 
   aboutToDisappear(): void {
     this.active = false;
+    this.isPlaying = false;
+    this.syncAudioFocus();
     mediaPlaybackKeepAlive.release('video');
     this.release();
   }
@@ -158,6 +169,7 @@ export struct StreamingVideoPlayer {
   // 切后台由系统正常挂起）。内嵌模式（列表内播放位）从不申请保活——
   // 划走气泡就该正常息屏/挂起，不能被一段列表预览挡住。
   onPlayingChanged(): void {
+    this.syncAudioFocus();
     if (this.embedded) {
       mediaPlaybackKeepAlive.release('video');
       return;
@@ -268,6 +280,9 @@ export struct StreamingVideoPlayer {
   // 产生任何额外的 setVolume 调用；@Watch 本身也不在初始赋值时触发。
   private onMutedChanged(): void {
     this.applyMutedVolume();
+    // 静音的播放不该占着音频焦点（会把别人的音乐掐掉），取消静音时又该重新
+    // 拿回来——判据在 syncAudioFocus 里，这里只负责在 muted 变化时过一遍。
+    this.syncAudioFocus();
   }
 
   private async initPlayer(context: object): Promise<void> {
@@ -459,6 +474,48 @@ export struct StreamingVideoPlayer {
     }, 100);
   }
 
+  // 播放期间持有音频焦点，停下就交还。
+  //
+  // 内嵌模式（列表里的播放位）不申请：那是静音预览，抢焦点会把用户正在听的
+  // 音乐掐掉——划过一条视频气泡就静音了别人的播放器，是最难查的那种投诉。
+  private syncAudioFocus(): void {
+    const wants: boolean = this.isPlaying && !this.embedded && !this.muted;
+    if (wants && this.releaseAudioFocus === null) {
+      this.releaseAudioFocus = acquireAudioFocus((action: string): void => {
+        this.onAudioFocusChanged(action);
+      });
+      return;
+    }
+    if (!wants && this.releaseAudioFocus !== null) {
+      const release = this.releaseAudioFocus;
+      this.releaseAudioFocus = null;
+      release();
+    }
+  }
+
+  private onAudioFocusChanged(action: string): void {
+    if (!this.active || this.player === null) {
+      return;
+    }
+    if (action === FOCUS_PAUSE || action === FOCUS_STOP) {
+      if (this.isPlaying) {
+        this.player.pause();
+        this.isPlaying = false;
+        // STOP 是永久失去焦点，不会再有 resume；标成"被打断"只会让它以后
+        // 莫名其妙自己响起来。
+        this.pausedByFocusLoss = action === FOCUS_PAUSE;
+      }
+      return;
+    }
+    if (action === FOCUS_RESUME && this.pausedByFocusLoss) {
+      this.pausedByFocusLoss = false;
+      if (!this.isPlaying && this.isPrepared && !this.hasError && !this.isCompleted) {
+        this.player.start();
+        this.isPlaying = true;
+      }
+    }
+  }
+
   private togglePlay(): void {
     if (this.player === null || this.hasError || !this.isPrepared) {
       return;
@@ -467,6 +524,8 @@ export struct StreamingVideoPlayer {
       this.replay();
       return;
     }
+    // 用户自己动过手就不再算"被系统打断"：打断结束时不该覆盖他的选择。
+    this.pausedByFocusLoss = false;
     if (this.isPlaying) {
       this.player.pause();
       this.isPlaying = false;

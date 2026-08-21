@@ -1,4 +1,5 @@
 import { media } from '@kit.MediaKit';
+import { audio } from '@kit.AudioKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { mediaPlaybackKeepAlive } from './MediaPlaybackKeepAlive';
@@ -60,6 +61,8 @@ class VoicePlayback {
   }
 
   toggle(messageId: number, path: string, fallbackDurationSec: number): void {
+    // 用户自己动过手就不再算"被系统打断"：打断结束时不该覆盖他的选择。
+    this.pausedByFocusLoss = false;
     this.toggleSource(messageId, path, fallbackDurationSec, 'voice');
   }
 
@@ -161,6 +164,10 @@ class VoicePlayback {
     return next;
   }
 
+  // 是被系统打断才暂停的。打断结束时只恢复这一种暂停——用户自己按的暂停
+  // 不能因为别人打完电话就自己响起来。
+  private pausedByFocusLoss: boolean = false;
+
   pauseForBackground(): void {
     if (this.state.status !== 'playing') {
       return;
@@ -172,6 +179,30 @@ class VoicePlayback {
       return;
     }
     this.pauseCurrent();
+  }
+
+  // 强制打断（INTERRUPT_FORCE）时系统已经把流停了，我们只需要把状态改成
+  // 暂停、让界面对得上；共享打断（INTERRUPT_SHARE）的 RESUME 才是我们该主动
+  // 调 play() 的时机——这两半的分工是官方《基于AVPlayer播放长视频实践》写明的。
+  //
+  // DUCK/UNDUCK 不处理：那是"压低音量让别人说话"，语音该继续放。
+  private onAudioInterrupt(event: audio.InterruptEvent): void {
+    if (event.forceType === audio.InterruptForceType.INTERRUPT_FORCE) {
+      const hint = event.hintType;
+      if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE ||
+        hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+        if (this.state.status === 'playing') {
+          this.pausedByFocusLoss = hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE;
+          this.pauseCurrent();
+        }
+      }
+      return;
+    }
+    if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_RESUME &&
+      this.pausedByFocusLoss && this.state.playingId !== 0) {
+      this.pausedByFocusLoss = false;
+      this.resumeCurrent(this.state.playingId);
+    }
   }
 
   private pauseCurrent(): void {
@@ -231,6 +262,15 @@ class VoicePlayback {
         this.fail(token, messageId, caught, mode);
         return;
       }
+      // 别的应用或来电开始发声时自动暂停。语音走的是官方 media.AVPlayer，
+      // 直接有 on('audioInterrupt')；视频走 ijkplayer 拿不到这个回调，那边
+      // 绕的是 AudioSessionManager（见 services/audioFocus）。
+      player.on('audioInterrupt', (event: audio.InterruptEvent): void => {
+        if (token !== this.generation || this.player !== player) {
+          return;
+        }
+        this.onAudioInterrupt(event);
+      });
       player.on('stateChange', (state: string): void => {
         if (token !== this.generation || this.player !== player) {
           return;
