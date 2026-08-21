@@ -2,7 +2,6 @@
   "src": [
     "pages/Index",
     "pages/chatlist/ArchivePage",
-    "pages/chat/ChatPage",
     "pages/chat/LiveStreamViewerPage",
     "pages/chat/RtmpLiveStreamViewerPage",
     "pages/profile/ProfilePage",

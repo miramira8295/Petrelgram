@@ -18,6 +18,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
+import { navigateToChat } from '../../util/chatNav';
 
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -430,12 +431,20 @@ struct NewGroupPage {
     this.openingCreatedChat = true;
     this.createError = '';
     const params: Record<string, Object> = { 'chatId': chatId };
-    router.replaceUrl({ url: 'pages/chat/ChatPage', params: params }).catch((error: Error): void => {
+    // 曾经是 router.replaceUrl('pages/chat/ChatPage')——ChatPage 迁成
+    // HdsNavDestination 后已从 main_pages.json 摘掉，直连 router 会跳不动。
+    // replaceUrl 的语义（用会话页顶掉本页）拆成两步：漏斗把会话推进聊天栈，
+    // 再把本页弹掉，露出下面的会话。
+    navigateToChat(params);
+    try {
+      router.back();
+    } catch (e) {
+      const error = e as Error;
       if (!this.active) { return; }
       this.openingCreatedChat = false;
       this.createError = str('ng_created_cannot_open');
       logE(`NewGroupPage.openCreatedGroup failed: ${error.message}`);
-    });
+    }
   }
 
   private back(): void {

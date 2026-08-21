@@ -841,7 +841,7 @@ export struct ChatListPage {
       //
       // 这里曾经是 .mode(NavigationMode.Stack)（commit 0d81e2e）：当时没有任何
       // HdsNavDestination，分栏的结果是整页内容挤进左列、右边一片空白，只能强制
-      // 单栏止血。现在 ChatPage 已经是 HdsNavDestination，止血可以拆了。
+      // 单栏止血。本次改动起 ChatPage 迁为 HdsNavDestination，止血可以拆了。
       //
       // 侧边栏宽度上限 440 是官方大屏 UX 标准 3.2.2.4 定的：不超过窗口宽度 40%，
       // 内容区至少 60%。平板 1137vp 下 420/717 ≈ 37%/63%。

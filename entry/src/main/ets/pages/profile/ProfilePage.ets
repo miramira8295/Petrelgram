@@ -528,10 +528,13 @@ struct ProfilePage {
 
   private openSharedMessage(messageId: number): void {
     if (this.privateChatId > 0 && messageId > 0) {
-      router.pushUrl({
-        url: 'pages/chat/ChatPage',
-        params: { 'chatId': this.privateChatId, 'jumpTo': messageId }
-      });
+      // 曾经是 router.pushUrl('pages/chat/ChatPage')——ChatPage 迁成
+      // HdsNavDestination 后已从 main_pages.json 摘掉，直连 router 会跳不动。
+      // 走 navigateToChat 这个唯一漏斗，由它决定推栈还是回退整页路由。
+      const params: Record<string, Object> = {
+        'chatId': this.privateChatId, 'jumpTo': messageId
+      };
+      navigateToChat(params);
     }
   }
 

@@ -1,0 +1,9 @@
+{
+  "routerMap": [
+    {
+      "name": "ChatPage",
+      "pageSourceFile": "src/main/ets/pages/chat/ChatPage.ets",
+      "buildFunction": "ChatPageBuilder"
+    }
+  ]
+}

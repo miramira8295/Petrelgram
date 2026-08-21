@@ -165,6 +165,7 @@ import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
 import { adminLabelOf } from '../../util/adminLabel';
 import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/senderRoleChannel';
 import { navigateToChat } from '../../util/chatNav';
+import { HdsNavDestination } from '@kit.UIDesignKit';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
@@ -235,10 +236,16 @@ const COMPOSER_MAX_LINES: number = 4;
 
 // Emoji offered in the full reaction picker (opened from the long-press menu's
 // chevron). Ordered roughly like the official client's reaction sheet.
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再需要进 main_pages.json。
+@Builder
+export function ChatPageBuilder(): void {
+  ChatPage();
+}
+
 @Preview
 @Component
-struct ChatPage {
+export struct ChatPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -1008,6 +1015,11 @@ struct ChatPage {
     this.resumeScrollPending = true;
   }
 
+  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // onReady 里从 NavDestinationContext 拿，且 onReady 早于 aboutToAppear 之外
+  // 的一切——所以先存下来，aboutToAppear 里照旧读。
+  private navParams: Record<string, Object> | undefined = undefined;
+
   aboutToAppear(): void {
     // Before anything can publish a dataset: the data source names the keys of
     // the rows its operations touch, and it has to name them the same way the
@@ -1020,7 +1032,7 @@ struct ChatPage {
       this.playSlotKey = key;
     });
     this.nowSec = Math.floor(Date.now() / 1000);
-    const params = router.getParams() as Record<string, Object> | undefined;
+    const params = this.navParams;
     this.chatId = params !== undefined ? (params['chatId'] as number) : 0;
     this.threadRootId = params !== undefined ? ((params['threadRootId'] as number | undefined) ?? 0) : 0;
     // 话题模式（从 ForumTopicsPage 进入）：标题显示话题名而非"评论"。
@@ -1674,7 +1686,7 @@ struct ChatPage {
     this.armPlaySlotSettle();
   }
 
-  onPageHide(): void {
+  private handleHidden(): void {
     // 跳走了就是解析成功了：闸门开，加载态收掉，免得退回来还亮着。
     endLinkNav();
     this.pageVisible = false;
@@ -1688,7 +1700,7 @@ struct ChatPage {
     this.playSlots.suspend();
   }
 
-  onPageShow(): void {
+  private handleShown(): void {
     this.pageVisible = true;
     // 回到这一页说明上一次链接解析已经有了结局（开了页又退回来，或者只弹了
     // 个提示），闸门必须开——否则那个链接会一直卡在加载态直到看门狗到点。
@@ -2413,7 +2425,7 @@ struct ChatPage {
 
   // System back (gesture/hardware button): close the fullscreen viewer first
   // if it's open, rather than popping all the way back to the chat list.
-  onBackPress(): boolean {
+  private handleBackPressed(): boolean {
     // 录制浮层盖住整页，返回键必须先关它（组件退场时会取消录制并删掉临时文件）。
     if (this.showVideoNoteRecorder) {
       this.showVideoNoteRecorder = false;
@@ -7081,6 +7093,7 @@ struct ChatPage {
   // The flattened background, once it exists. Until then the layered version
   // below renders, so the chat never waits on the raster.
   build() {
+    HdsNavDestination() {
     Stack() {
       // 整层背景搬到了 ChatBackdrop：它只吃输入不回调，所以这里只传三个入参。
       ChatBackdrop({ chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH });
@@ -7820,5 +7833,20 @@ struct ChatPage {
       dragBar: true,
       blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
+    }
+    // ChatPage 自己画标题栏（会话头像/名称/在线状态那一条），不要 HDS 的。
+    .hideTitleBar(true)
+    // 入参：router 时代是 aboutToAppear 里 router.getParams() 现取，现在从
+    // NavDestinationContext 的 pathInfo 里取，存下来给 aboutToAppear 读。
+    .onReady((ctx: NavDestinationContext): void => {
+      this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
+    })
+    // 下面三条对应迁移前的 onPageShow / onPageHide / onBackPress，方法体一字未动：
+    // onBackPress 返回 true「已处理不返回」与 onBackPressed 返回 true「重写返回键
+    // 不出栈」语义等价。
+    .onShown((): void => { this.handleShown(); })
+    .onHidden((): void => { this.handleHidden(); })
+    .onBackPressed((): boolean => { return this.handleBackPressed(); })
+    .width('100%').height('100%');
   }
 }
