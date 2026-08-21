@@ -1,3 +1,4 @@
+import { router } from '@kit.ArkUI';
 import {
   canReturnToPreviousTdAccount, getAuthService, returnToPreviousTdAccount, waitForConnection
 } from '../../tdkit/Globals';
@@ -295,6 +296,22 @@ export struct PhoneNumberPage {
         .justifyContent(FlexAlign.Center)
         .enabled(!this.busy)
         .onClick((): void => this.startQrLogin());
+
+        // 代理入口必须在登录**前**就够得着：网络环境需要代理的用户（以及本地
+        // 模拟器调试）连不上 DC 就永远走不到登录后的设置页——先有鸡先有蛋。
+        // TDLib 的代理接口在鉴权前就可用，ProxyPage 不依赖登录态。
+        Row({ space: 8 }) {
+          SymbolGlyph($r('sys.symbol.link'))
+            .fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+          Text($r('app.string.px_title'))
+            .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+        }
+        .width('100%').height(40)
+        .justifyContent(FlexAlign.Center)
+        .enabled(!this.busy)
+        .onClick((): void => {
+          router.pushUrl({ url: 'pages/main/ProxyPage' });
+        });
 
         if (canReturnToPreviousTdAccount()) {
           Button($r('app.string.lg_back_to_account'))
