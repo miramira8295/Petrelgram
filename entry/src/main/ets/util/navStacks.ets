@@ -22,6 +22,12 @@ export interface NavPathInfoLike {
 export interface NavStackLike {
   clear(animated?: boolean): void;
   pushPath(info: NavPathInfoLike): void;
+  // 出栈一层。返回值声明成 void 而不是 NavPathInfoLike：真栈的
+  // pop(animated?): NavPathInfo | undefined 在结构上仍然满足 void 返回
+  //（返回值更具体是允许的），而 NavPathInfo.param 是 unknown、和
+  // NavPathInfoLike.param 的 Object|undefined 对不上，照抄会让 SettingsPage 里
+  // 那个 as NavStackLike 的转换失败。调用方本来也不用这个返回值。
+  pop(animated?: boolean): void;
   size(): number;
   getAllPathName(): string[];
   getParamByIndex(index: number): Object | undefined;

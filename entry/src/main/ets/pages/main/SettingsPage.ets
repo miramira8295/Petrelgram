@@ -81,7 +81,8 @@ function settingGroups(): SettingGroup[] {
     title: str('settings_group_account'),
     items: [
       { icon: 'sys.symbol.person_fill', bg: '#3478F6', title: str('settings_account'), subtitle: str('settings_account_sub'),
-        page: 'pages/main/AccountEditPage' },
+        page: 'pages/main/AccountEditPage',
+        dest: 'AccountEditPage' },
       { icon: 'sys.symbol.message_fill', bg: '#FF9500', title: str('settings_chat'),
         subtitle: str('settings_chat_sub'), page: 'pages/main/ChatSettingsPage',
         dest: 'ChatSettingsPage' },
@@ -89,11 +90,14 @@ function settingGroups(): SettingGroup[] {
         subtitle: str('settings_interaction_sub'), page: 'pages/main/InteractionSettingsPage',
         dest: 'InteractionSettingsPage' },
       { icon: 'sys.symbol.paintpalette', bg: '#FF2D55', title: str('settings_accent'),
-        subtitle: str('settings_accent_sub'), page: 'pages/main/AccentColorPage' },
+        subtitle: str('settings_accent_sub'), page: 'pages/main/AccentColorPage',
+        dest: 'AccentColorPage' },
       { icon: 'sys.symbol.face_smiling', bg: '#AF52DE', title: str('settings_stickers'),
-        subtitle: str('settings_stickers_sub'), page: 'pages/main/StickerSetsPage' },
+        subtitle: str('settings_stickers_sub'), page: 'pages/main/StickerSetsPage',
+        dest: 'StickerSetsPage' },
       { icon: 'sys.symbol.star', bg: '#FFCC00', title: str('settings_emoji_status'),
-        subtitle: str('settings_emoji_status_sub'), page: 'pages/main/EmojiStatusPage' },
+        subtitle: str('settings_emoji_status_sub'), page: 'pages/main/EmojiStatusPage',
+        dest: 'EmojiStatusPage' },
       { icon: 'sys.symbol.folder_fill', bg: '#34AADC', title: str('settings_folders'),
         subtitle: str('settings_folders_sub'), page: 'pages/main/ChatFoldersPage' },
       { icon: 'sys.symbol.bell_fill', bg: '#FF3B30', title: str('settings_notifications'),
@@ -406,11 +410,21 @@ export struct SettingsPage {
       this.accountNavigationTimer = -1;
       this.accountNavigationLocked = false;
     }, 600);
-    router.pushUrl({ url: 'pages/main/AccountEditPage' }).catch((error: Error): void => {
-      logE(`SettingsPage.openAccountEditor failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
-      this.releaseAccountNavigation();
-    });
+    // 头像这条入口和列表里那条「账号」是同一个页面，AccountEditPage 已经迁成
+    // NavDestination、从 main_pages.json 摘掉，router.pushUrl 对它必然失败，
+    // 所以这里也改走 navigateToSetting——和 pushSettingDestination 同一个漏斗。
+    // 搜索态下 HdsNavigation 整个不在树上，推栈没有容器渲染，推之前先关搜索
+    //（理由见 pushSettingDestination 里那段注释）。
+    if (this.settingsSearchOpen) {
+      this.settingsSearchOpen = false;
+      this.settingsQuery = '';
+    }
+    if (navigateToSetting('AccountEditPage')) {
+      return;
+    }
+    logE('SettingsPage.openAccountEditor failed: settings stack missing');
+    promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
+    this.releaseAccountNavigation();
   }
 
   private releaseAccountNavigation(): void {

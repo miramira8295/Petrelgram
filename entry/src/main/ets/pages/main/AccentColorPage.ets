@@ -14,14 +14,21 @@ import {
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 14;
 const SWATCH: number = 44;
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function AccentColorPageBuilder(): void {
+  AccentColorPage();
+}
+
 @Component
-struct AccentColorPage {
+export struct AccentColorPage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -192,7 +199,7 @@ struct AccentColorPage {
   build() {
     Column() {
     // 整个分支结构一起包进来，而不是只包 Scroll 那一支——加载态也要有标题栏。
-    HdsSubPage({
+    HdsSubDestination({
       title: $r('app.string.settings_accent'),
       pageBackground: COLOR_PAGE_BG,
       scroller: this.hdsScroller

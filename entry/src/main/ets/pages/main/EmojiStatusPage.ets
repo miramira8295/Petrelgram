@@ -9,7 +9,7 @@ import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 14;
 const CELL: number = 52;
@@ -22,9 +22,16 @@ interface StatusEmoji {
   fallback: string;
 }
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function EmojiStatusPageBuilder(): void {
+  EmojiStatusPage();
+}
+
 @Component
-struct EmojiStatusPage {
+export struct EmojiStatusPage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -180,7 +187,7 @@ struct EmojiStatusPage {
   build() {
     Column() {
     // 内联的顶栏搬进标题栏了。
-    HdsSubPage({ title: $r('app.string.settings_emoji_status'), pageBackground: COLOR_PAGE_BG, scroller: this.hdsScroller, subTitle: this.busy ? $r('app.string.refreshing') : '' }) {
+    HdsSubDestination({ title: $r('app.string.settings_emoji_status'), pageBackground: COLOR_PAGE_BG, scroller: this.hdsScroller, subTitle: this.busy ? $r('app.string.refreshing') : '' }) {
       Column() {
       if (this.loadState === 'loading') {
         Column({ space: 9 }) {

@@ -11,7 +11,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 14;
 
@@ -22,9 +22,16 @@ interface StickerSetRow {
   archived: boolean;
 }
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function StickerSetsPageBuilder(): void {
+  StickerSetsPage();
+}
+
 @Component
-struct StickerSetsPage {
+export struct StickerSetsPage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -173,7 +180,7 @@ struct StickerSetsPage {
     Column() {
     // 搜索框和三个状态分支一起包进来——只包 Scroll 那一支的话，加载态和
     // 搜索框就跑到标题栏外面去了。
-    HdsSubPage({
+    HdsSubDestination({
       title: $r('app.string.settings_stickers'),
       pageBackground: COLOR_PAGE_BG,
       scroller: this.hdsScroller

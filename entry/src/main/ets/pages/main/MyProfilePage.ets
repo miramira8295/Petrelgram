@@ -29,6 +29,7 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
+import { navigateToSetting } from '../../util/settingsNav';
 import { readableContentWidth } from '../../util/contentWidth';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -253,15 +254,24 @@ export struct MyProfilePage {
       this.editorNavigationTimer = -1;
       this.openingEditor = false;
     }, 700);
-    router.pushUrl({ url: 'pages/main/AccountEditPage' }).catch((error: Error): void => {
-      logE(`MyProfilePage.openEditor failed: ${error.message}`);
+    // AccountEditPage 已经迁成 HdsNavDestination、从 main_pages.json 摘掉了，
+    // router.pushUrl 对它必然失败（现象是点了没反应），改走设置页签的路由栈。
+    //
+    // 【这里有一个必须知道的行为变化】编辑页现在只存在于**设置页签**那条栈上
+    //（TabKind 只有 chat / contacts / settings 三条，个人资料页签没有自己的栈），
+    // 所以 navigateToSetting 会把当前页签切到设置。迁移前它是盖在个人资料页签
+    // 之上的整页 router 页，返回时回到个人资料；现在返回回到的是设置页签那张
+    // 列表。本页原本就有「切到设置页签」这个动作（openSettings），这条路对用户
+    // 不算陌生，但它确实和迁移前不一样。
+    if (!navigateToSetting('AccountEditPage')) {
+      logE('MyProfilePage.openEditor failed: settings stack missing');
       promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
       if (this.editorNavigationTimer !== -1) {
         clearTimeout(this.editorNavigationTimer);
         this.editorNavigationTimer = -1;
       }
       this.openingEditor = false;
-    });
+    }
   }
 
   private openSettings(): void {

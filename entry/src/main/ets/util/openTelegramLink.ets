@@ -256,7 +256,12 @@ function openSettingsSection(type: TdObject): void {
   const sectionName = (section['@type'] as string | undefined) ?? '';
   let page = '';
   if (sectionName === 'settingsSectionEditProfile') {
-    page = 'pages/main/AccountEditPage';
+    // 账号编辑页已迁成 HdsNavDestination、从 main_pages.json 摘掉，走设置页签的
+    // 路由栈——理由同下面 settingsSectionPowerSaving 那一支。
+    if (!navigateToSetting('AccountEditPage')) {
+      promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+    }
+    return;
   } else if (sectionName === 'settingsSectionAppearance') {
     // 聊天设置已迁成 HdsNavDestination、从 main_pages.json 摘掉，走设置页签的
     // 路由栈——理由同下面 settingsSectionPowerSaving 那一支。

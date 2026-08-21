@@ -1,4 +1,4 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
 import { getTdClient, logoutCurrentTdAccount } from '../../tdkit/Globals';
 import { floatingLiveWindow } from '../chat/LiveFloatingWindow';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
@@ -12,7 +12,8 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
+import { NavStackLike, stackOf } from '../../util/navStacks';
 import {
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions
 } from '@kit.UIDesignKit';
@@ -24,9 +25,16 @@ const ACCOUNT_LOAD_TIMEOUT_MS: number = 8000;
 
 // 账号 edit page (Telegram-style): first/last name, bio (140 chars), and the
 // read-only personal-info card. ✓ in the header saves via setName/setBio.
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function AccountEditPageBuilder(): void {
+  AccountEditPage();
+}
+
 @Component
-struct AccountEditPage {
+export struct AccountEditPage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -163,6 +171,20 @@ struct AccountEditPage {
       this.bio !== this.origBio;
   }
 
+  // 【和其它几个设置子页不一样，leavingPage 这一套要留着】
+  // 别的页面（PowerUsagePage / LanguagePage / ChatSettingsPage /
+  // InteractionSettingsPage）里的同名字段只是"连点两下返回"的防抖，全文件没有
+  // 渲染读取，迁移时整块删掉了。本页的 leavingPage 是**渲染依赖**：
+  //   · loadErrorState() 的「重新加载」按钮 .enabled(!this.leavingPage)；
+  //   · 标题栏右上角保存键 saveMenuItem() 的 isEnabled 里有 !this.leavingPage；
+  //   · requestBack() / save() 两个入口的守卫也读它。
+  // 语义是「这一次离场已经发起了，别再让用户按东西」，和栈深没关系，所以迁移
+  // 不影响它——字段、500ms 定时器、aboutToDisappear 的清理全部原样保留。
+  //
+  // 真正要改的只有最后一句离场动作：迁移前是 router.back()，那在 NavDestination
+  // 上是**错的**——它弹的是 router 页栈，而本页已不在那条栈上，弹掉的会是 Index，
+  // 现象是直接退到桌面（HdsSubDestination 文件头记了同一条实测）。改成出
+  // Navigation 栈。
   private leavePage(): void {
     if (this.leavingPage) {
       return;
@@ -172,7 +194,29 @@ struct AccountEditPage {
       this.leaveTimer = -1;
       this.leavingPage = false;
     }, 500);
-    router.back();
+    this.popSelf();
+  }
+
+  // 出栈。**取的是设置页签的栈**，不是随便哪个栈：本页只有三个入口
+  //（SettingsPage 的「账号」条目、SettingsPage 头部头像、MyProfilePage 的
+  // 「编辑信息」），三个都走 navigateToSetting()，推的都是 'settings' 这条栈。
+  //
+  // 为什么不像 ArchivePage 那样用 onReady(ctx.pathStack) 拿：那个回调挂在
+  // HdsNavDestination 上，而本页并不自己写 HdsNavDestination——它在外壳
+  // HdsSubDestination 里，onReady 拿到的栈存在外壳的私有字段上，本页够不着。
+  // 外壳的默认 onBack 已经是正确的出栈，但本页必须传自己的 onBack（未保存确认
+  // 框要先弹），所以只能自己找一次栈。
+  //
+  // 栈缺失时**故意不回退到 router.back()**：那正是会把应用退到桌面的那条路，
+  // 返回键"什么都不做 + 一条日志"远比退到桌面好。形状与 HdsSubDestination.popSelf
+  // 一致。
+  private popSelf(): void {
+    const stack: NavStackLike | undefined = stackOf('settings');
+    if (stack === undefined) {
+      logE('AccountEditPage.popSelf: settings stack not registered, back ignored');
+      return;
+    }
+    stack.pop();
   }
 
   private requestBack(): void {
@@ -627,7 +671,7 @@ struct AccountEditPage {
     // 内联顶栏搬进标题栏：返回走 requestBack()（它管着未保存的确认），
     // 保存变成标题栏右上角的对勾。保存中时对勾换成副标题「保存中」——HDS 的
     // 菜单项只能放图标，放不下 LoadingProgress。
-    HdsSubPage({
+    HdsSubDestination({
       title: $r('app.string.settings_account'),
       subTitle: this.saving ? $r('app.string.saving') : '',
       pageBackground: $r('app.color.page_bg'),

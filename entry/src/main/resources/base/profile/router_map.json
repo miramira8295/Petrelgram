@@ -69,6 +69,26 @@
       "name": "PrivacySecurityPage",
       "pageSourceFile": "src/main/ets/pages/main/PrivacySecurityPage.ets",
       "buildFunction": "PrivacySecurityPageBuilder"
+    },
+    {
+      "name": "AccentColorPage",
+      "pageSourceFile": "src/main/ets/pages/main/AccentColorPage.ets",
+      "buildFunction": "AccentColorPageBuilder"
+    },
+    {
+      "name": "EmojiStatusPage",
+      "pageSourceFile": "src/main/ets/pages/main/EmojiStatusPage.ets",
+      "buildFunction": "EmojiStatusPageBuilder"
+    },
+    {
+      "name": "StickerSetsPage",
+      "pageSourceFile": "src/main/ets/pages/main/StickerSetsPage.ets",
+      "buildFunction": "StickerSetsPageBuilder"
+    },
+    {
+      "name": "AccountEditPage",
+      "pageSourceFile": "src/main/ets/pages/main/AccountEditPage.ets",
+      "buildFunction": "AccountEditPageBuilder"
     }
   ]
 }
