@@ -11,6 +11,7 @@ import {
   ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { navigateToArchive } from '../../util/profileNav';
 
 // 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
 // 长得和会话行一个个头，拉出来时才不显得是另一种东西。
@@ -118,7 +119,9 @@ export struct MainTabBody {
   }
 
   private openArchive(): void {
-    router.pushUrl({ url: 'pages/chatlist/ArchivePage' });
+    // 曾经是 router.pushUrl('pages/chatlist/ArchivePage')——归档页已迁成
+    // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
+    navigateToArchive();
   }
 
   private retryArchive(): void {

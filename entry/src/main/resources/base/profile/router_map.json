@@ -4,6 +4,26 @@
       "name": "ChatPage",
       "pageSourceFile": "src/main/ets/pages/chat/ChatPage.ets",
       "buildFunction": "ChatPageBuilder"
+    },
+    {
+      "name": "ProfilePage",
+      "pageSourceFile": "src/main/ets/pages/profile/ProfilePage.ets",
+      "buildFunction": "ProfilePageBuilder"
+    },
+    {
+      "name": "ChatProfilePage",
+      "pageSourceFile": "src/main/ets/pages/profile/ChatProfilePage.ets",
+      "buildFunction": "ChatProfilePageBuilder"
+    },
+    {
+      "name": "ForumTopicsPage",
+      "pageSourceFile": "src/main/ets/pages/chat/ForumTopicsPage.ets",
+      "buildFunction": "ForumTopicsPageBuilder"
+    },
+    {
+      "name": "ArchivePage",
+      "pageSourceFile": "src/main/ets/pages/chatlist/ArchivePage.ets",
+      "buildFunction": "ArchivePageBuilder"
     }
   ]
 }

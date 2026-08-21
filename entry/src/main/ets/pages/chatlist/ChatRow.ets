@@ -12,6 +12,7 @@ import {
   KEY_THREE_LINES, powerAnimationDuration
 } from '../../store/AppSettings';
 import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
+import { navigateToForumTopics } from '../../util/profileNav';
 import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_MUTED_BADGE, ROW_PAD_H, ROW_PAD_V } from '../../util/theme';
@@ -461,7 +462,9 @@ export struct ChatRow {
         const forumParams: Record<string, Object> = {
           'chatId': this.chat.id, 'title': this.chat.title
         };
-        router.pushUrl({ url: 'pages/chat/ForumTopicsPage', params: forumParams });
+        // 曾经是 router.pushUrl('pages/chat/ForumTopicsPage')——话题列表已迁成
+        // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
+        navigateToForumTopics(forumParams);
         return;
       }
       const params: Record<string, Object> = { 'chatId': this.chat.id };

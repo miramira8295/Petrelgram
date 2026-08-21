@@ -18,10 +18,10 @@ export const CHAT_DEST_NAME: string = 'ChatPage';
 // MainScreen 的当前页签下标，@StorageLink('mainTabIndex') 双向绑定，外部写入由
 // 它的 @Watch('onTabExternallyChanged') 落到 TabsController 上。Index.ets:175
 // 也是这么写的。
-const KEY_MAIN_TAB: string = 'mainTabIndex';
+export const KEY_MAIN_TAB: string = 'mainTabIndex';
 // MainScreen.build() 里 TabContent 的顺序：ChatListPage / ContactsPage /
 // SettingsPage / MyProfilePage。
-const CHAT_TAB_INDEX: number = 0;
+export const CHAT_TAB_INDEX: number = 0;
 
 // 不关心跳转结果的调用点用它收尾。navigateToChat 现在**会 reject**（回退的
 // 整页路由真失败时），而 ArkTS 里被丢弃的 rejection 会冒到全局去，所以每个

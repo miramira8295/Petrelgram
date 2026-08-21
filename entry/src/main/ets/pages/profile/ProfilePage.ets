@@ -34,6 +34,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
+import { HdsNavDestination } from '@kit.UIDesignKit';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -68,10 +69,27 @@ const USER_PROFILE_TABS: UserProfileTab[] = [
 // 动态/礼物/群组 tabs. Store data is MIRRORED into @State fields — ArkUI's
 // minimal-update re-renders only nodes that read changed state, so reading
 // plain store fields from build() would never refresh.
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再需要进 main_pages.json。
+@Builder
+export function ProfilePageBuilder(): void {
+  ProfilePage();
+}
+
 @Preview
 @Component
-struct ProfilePage {
+export struct ProfilePage {
+  // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
+  // router 页，router.back() 弹不到自己。
+  private navStack: NavPathStack | undefined = undefined;
+  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
+  // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
+  // applyRouteParams()。
+  private navParams: Record<string, Object> | undefined = undefined;
+  // applyRouteParams() 的一次性守卫：那段里建了 ProfileStore 并订阅了它，句柄
+  // 存在 this.store / this.unsub 上，重入会把旧句柄覆盖掉，旧订阅就再也退不掉。
+  private paramsApplied: boolean = false;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -157,8 +175,20 @@ struct ProfilePage {
     .backgroundColor($r('app.color.press_overlay'))
   }
 
+  // 迁移前 aboutToAppear 的**全部**内容都吃路由参数（userId 一路渗透到建
+  // ProfileStore），所以整段搬进了 applyRouteParams()，这里没有留下任何一行。
+  // 保留空方法是为了让这条注释有地方待着：读代码的人会先来找 aboutToAppear。
   aboutToAppear(): void {
-    const params = router.getParams() as Record<string, Object> | undefined;
+  }
+
+  // 路由参数就绪后的初始化。就是迁移前 aboutToAppear 的全部内容，顺序一字未改，
+  // 只是改由 onReady 触发——onReady 才是拿得到 pathInfo.param 的第一个时机。
+  private applyRouteParams(): void {
+    if (this.paramsApplied) {
+      return;
+    }
+    this.paramsApplied = true;
+    const params = this.navParams;
     this.userId = params !== undefined
       ? ((params['userId'] as number | undefined) ?? 0) : 0;
     this.pendingDraftText = params !== undefined
@@ -171,6 +201,16 @@ struct ProfilePage {
     this.store = store;
     this.unsub = store.subscribe(() => { this.refresh(); });
     store.open();
+  }
+
+  // 返回上一层。迁成 NavDestination 前这里是 router.back()。
+  private goBack(): void {
+    const stack = this.navStack;
+    if (stack !== undefined) {
+      stack.pop();
+      return;
+    }
+    router.back();
   }
 
   aboutToDisappear(): void {
@@ -612,7 +652,7 @@ struct ProfilePage {
   header() {
     Column({ space: 8 }) {
       Row() {
-        this.circleButton('sys.symbol.chevron_left', () => { router.back(); });
+        this.circleButton('sys.symbol.chevron_left', () => { this.goBack(); });
         Blank().layoutWeight(1);
         this.circleButton('sys.symbol.more', () => {});
       }.width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
@@ -1241,6 +1281,7 @@ struct ProfilePage {
   }
 
   build() {
+    HdsNavDestination() {
     Stack() {
       Scroll() {
         Column() {
@@ -1296,5 +1337,15 @@ struct ProfilePage {
         this.giftPicker();
       }
     }.width('100%').height('100%');
+    }
+    // 本页自绘标题栏（头图上那一行返回/更多），不要 HDS 的。
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext): void => {
+      this.navStack = ctx.pathStack;
+      this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
+      // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
+      this.applyRouteParams();
+    })
+    .width('100%').height('100%');
   }
 }

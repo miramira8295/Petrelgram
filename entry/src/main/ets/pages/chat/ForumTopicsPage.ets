@@ -9,6 +9,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
+import { HdsNavDestination } from '@kit.UIDesignKit';
 
 const CARD_RADIUS: number = 14;
 // forumTopicIcon.color 的取值集合（TDLib 固定的六色）。
@@ -28,10 +29,27 @@ interface TopicRow {
   lastMessageText: string;
 }
 
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再需要进 main_pages.json。
+@Builder
+export function ForumTopicsPageBuilder(): void {
+  ForumTopicsPage();
+}
+
 // 话题群（forum）的话题列表页。点话题 → ChatPage(threadRootId)。
-@Entry
 @Component
-struct ForumTopicsPage {
+export struct ForumTopicsPage {
+  // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
+  // router 页，router.back() 弹不到自己。
+  private navStack: NavPathStack | undefined = undefined;
+  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
+  // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
+  // applyRouteParams()。
+  private navParams: Record<string, Object> | undefined = undefined;
+  // applyRouteParams() 的一次性守卫：那段里 push 了两个 TDLib 订阅，重入会把
+  // 同一个订阅叠两份，而 aboutToDisappear 只退订它当时看到的那一份。
+  private paramsApplied: boolean = false;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -45,8 +63,21 @@ struct ForumTopicsPage {
   private unsubs: Array<() => void> = [];
 
   aboutToAppear(): void {
+    // 留在这里的只有这一行：它与路由参数无关，且必须早于任何 load() 的回调
+    // 落地（onTopicUpdate/load 都用 this.active 判断本页是否还在）。
     this.active = true;
-    const params = router.getParams() as Record<string, Object> | undefined;
+    // 下面原本还有一段（读 params → 定 chatId/title → 两个 TDLib 订阅 → load()）。
+    // 实测 onReady 晚于 aboutToAppear，在这里读 navParams 只会读到 undefined、
+    // chatId 落成 0、页面静默停在 error 态，所以那段整体搬进了 applyRouteParams()。
+  }
+
+  // 路由参数就绪后的初始化。就是迁移前 aboutToAppear 的后半段，顺序一字未改。
+  private applyRouteParams(): void {
+    if (this.paramsApplied) {
+      return;
+    }
+    this.paramsApplied = true;
+    const params = this.navParams;
     this.chatId = params !== undefined ? ((params['chatId'] as number | undefined) ?? 0) : 0;
     const title = params !== undefined ? ((params['title'] as string | undefined) ?? '') : '';
     if (title !== '') {
@@ -59,6 +90,16 @@ struct ForumTopicsPage {
     this.unsubs.push(getTdClient().onUpdate('updateForumTopic',
       (u: TdObject): void => this.onTopicUpdate(u)));
     this.load();
+  }
+
+  // 返回上一层。迁成 NavDestination 前这里是 router.back()。
+  private goBack(): void {
+    const stack = this.navStack;
+    if (stack !== undefined) {
+      stack.pop();
+      return;
+    }
+    router.back();
   }
 
   aboutToDisappear(): void {
@@ -121,7 +162,8 @@ struct ForumTopicsPage {
     return [...pinned, ...rest];
   }
 
-  onPageShow(): void {
+  // 迁移前是 onPageShow，方法体一字未动，改由 HdsNavDestination.onShown() 触发。
+  private handleShown(): void {
     // 从话题内返回时刷新未读数/最后消息。
     if (this.loadState === 'ready') {
       this.load();
@@ -358,13 +400,14 @@ struct ForumTopicsPage {
   }
 
   build() {
+    HdsNavDestination() {
     Column() {
       Row({ space: 6 }) {
         Row() {
           SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]);
         }
         .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
-        .onClick((): void => router.back());
+        .onClick((): void => this.goBack());
         Column({ space: 1 }) {
           Text(this.title).fontSize(19).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
@@ -448,5 +491,16 @@ struct ForumTopicsPage {
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    }
+    // 本页自绘标题栏（返回键 + 群名 + 话题数那一条），不要 HDS 的。
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext): void => {
+      this.navStack = ctx.pathStack;
+      this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
+      // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
+      this.applyRouteParams();
+    })
+    .onShown((): void => { this.handleShown(); })
+    .width('100%').height('100%');
   }
 }

@@ -10,6 +10,7 @@ import {
 import { openWebUrl } from './webBrowserNav';
 import { getMainMiniApp, getMiniAppLinkUrl } from '../store/BotApi';
 import { logChatNavFailure, navigateToChat } from './chatNav';
+import { navigateToChatProfile, navigateToProfile } from './profileNav';
 import { logE } from './log';
 
 function openChatPage(chatId: number, showJoinedNotice: boolean = false,
@@ -55,7 +56,9 @@ function openProfileForChat(chat: TdObject, draftText: string = '', openProfile:
       if (draftText !== '') {
         params['draftText'] = draftText;
       }
-      router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
+      // 曾经是 router.pushUrl('pages/profile/ProfilePage')——两张资料页都已迁成
+      // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
+      navigateToProfile(params);
       return;
     }
   }
@@ -64,7 +67,7 @@ function openProfileForChat(chat: TdObject, draftText: string = '', openProfile:
     params['draftText'] = draftText;
   }
   if (openProfile) {
-    router.pushUrl({ url: 'pages/profile/ChatProfilePage', params: params });
+    navigateToChatProfile(params);
     return;
   }
   navigateToChat(params).catch(logChatNavFailure);
@@ -143,7 +146,7 @@ function openSelfProfile(): void {
     const userId = (me['id'] as number | undefined) ?? 0;
     if (userId > 0) {
       const params: Record<string, Object> = { 'userId': userId };
-      router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
+      navigateToProfile(params);
     }
   }).catch((error: TdError): void => {
     logE(`openTelegramLink.getMe failed: ${error.message}`);
@@ -218,7 +221,7 @@ function openPhoneNumberUser(context: common.UIAbilityContext, type: TdObject, o
       if (draftText !== '') {
         params['draftText'] = draftText;
       }
-      router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
+      navigateToProfile(params);
       return;
     }
     const create: TdRequest = { '@type': 'createPrivateChat' };
@@ -666,7 +669,7 @@ export function openTelegramLink(context: common.UIAbilityContext, url: string,
     const uid = Number(raw.substring('tg://user?id='.length));
     if (uid > 0) {
       const params: Record<string, Object> = { 'userId': uid };
-      router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
+      navigateToProfile(params);
     }
     return;
   }

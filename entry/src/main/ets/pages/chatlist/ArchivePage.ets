@@ -6,11 +6,23 @@ import { getChatStore, getUnreadCountStore } from '../../tdkit/Globals';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { HdsNavDestination } from '@kit.UIDesignKit';
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再需要进 main_pages.json。
+@Builder
+export function ArchivePageBuilder(): void {
+  ArchivePage();
+}
+
 @Preview
 @Component
-struct ArchivePage {
+export struct ArchivePage {
+  // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮要靠它出栈——迁成
+  // NavDestination 之后 router.back() 弹的是 router 页栈，而本页已经不是
+  // router 页了，弹不到自己。
+  private navStack: NavPathStack | undefined = undefined;
+
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @State archivedCount: number = 0;
@@ -29,6 +41,8 @@ struct ArchivePage {
     .backgroundColor($r('app.color.surface_alt'))
   }
 
+  // 本页不读路由参数（归档列表没有入参），所以没有 ChatPage 那套
+  // applyRouteParams()/paramsApplied 的拆分——aboutToAppear 原样保留。
   aboutToAppear(): void {
     this.unsubscribeChats = getChatStore().subscribe((chats: ChatEntry[]): void => {
       this.archivedCount = chats.length;
@@ -57,6 +71,17 @@ struct ArchivePage {
     }
   }
 
+  // 返回上一层。迁成 NavDestination 前这里是 router.back()。
+  private goBack(): void {
+    const stack = this.navStack;
+    if (stack !== undefined) {
+      stack.pop();
+      return;
+    }
+    // 栈没拿到（理论上 onReady 必先于点击，留着兜底）时退回老路径。
+    router.back();
+  }
+
   private archiveSummary(): string {
     if (this.archivedCount === 0) { return str('ap_subtitle'); }
     if (this.unreadCount > 0) {
@@ -66,6 +91,7 @@ struct ArchivePage {
   }
 
   build() {
+    HdsNavDestination() {
     Column() {
       Row() {
         Row() {
@@ -77,7 +103,7 @@ struct ArchivePage {
           normal: this.backNormalStyle,
           pressed: this.backPressedStyle
         })
-        .onClick(() => { router.back(); });
+        .onClick(() => { this.goBack(); });
         Column({ space: 1 }) {
           Text($r('app.string.ap_title'))
             .fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
@@ -96,5 +122,12 @@ struct ArchivePage {
     .width('100%').height('100%')
     .backgroundColor($r('app.color.page_bg'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    }
+    // 本页自绘标题栏（返回键 + 「归档」标题那一条），不要 HDS 的。
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext): void => {
+      this.navStack = ctx.pathStack;
+    })
+    .width('100%').height('100%');
   }
 }

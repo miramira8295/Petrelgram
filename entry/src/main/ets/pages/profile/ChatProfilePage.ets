@@ -40,6 +40,8 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
+import { navigateToProfile } from '../../util/profileNav';
+import { HdsNavDestination } from '@kit.UIDesignKit';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -66,9 +68,26 @@ const PROFILE_TABS: ProfileTabItem[] = [
 
 // Group / channel detail page — visually mirrors ProfilePage (header, action
 // row, info card) with a member list instead of the personal tabs.
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再需要进 main_pages.json。
+@Builder
+export function ChatProfilePageBuilder(): void {
+  ChatProfilePage();
+}
+
 @Component
-struct ChatProfilePage {
+export struct ChatProfilePage {
+  // 本页所在的 Navigation 栈，onReady 时拿到。返回按钮靠它出栈——本页已不是
+  // router 页，router.back() 弹不到自己。
+  private navStack: NavPathStack | undefined = undefined;
+  // 路由参数。router 时代靠 router.getParams() 现取，NavDestination 要在
+  // onReady 里从 NavDestinationContext 拿，而 onReady 实测晚于 aboutToAppear
+  // （平板 API 26，见 ChatPage 的同名注释），所以吃参数的那一段整体挪进了
+  // applyRouteParams()。
+  private navParams: Record<string, Object> | undefined = undefined;
+  // applyRouteParams() 的一次性守卫：那段里建了 ChatProfileStore 并订阅了它
+  // （经 startStore()），重入会覆盖 this.store / this.unsub，旧订阅退不掉。
+  private paramsApplied: boolean = false;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -154,8 +173,21 @@ struct ChatProfilePage {
     .backgroundColor($r('app.color.press_overlay'))
   }
 
+  // 迁移前 aboutToAppear 的**全部**内容都吃路由参数（chatId/inviteLink 决定
+  // 走 startStore 还是 loadInvitePreview 还是 error 态），所以整段搬进了
+  // applyRouteParams()，这里没有留下任何一行。保留空方法是为了让这条注释有
+  // 地方待着：读代码的人会先来找 aboutToAppear。
   aboutToAppear(): void {
-    const params = router.getParams() as Record<string, Object> | undefined;
+  }
+
+  // 路由参数就绪后的初始化。就是迁移前 aboutToAppear 的全部内容，顺序一字未改，
+  // 只是改由 onReady 触发——onReady 才是拿得到 pathInfo.param 的第一个时机。
+  private applyRouteParams(): void {
+    if (this.paramsApplied) {
+      return;
+    }
+    this.paramsApplied = true;
+    const params = this.navParams;
     this.chatId = params !== undefined
       ? ((params['chatId'] as number | undefined) ?? 0) : 0;
     this.inviteLink = params !== undefined
@@ -172,6 +204,16 @@ struct ChatProfilePage {
       this.pageState = 'error';
       this.errorText = str('cpp_link_no_chat');
     }
+  }
+
+  // 返回上一层。迁成 NavDestination 前这里是 router.back()。
+  private goBack(): void {
+    const stack = this.navStack;
+    if (stack !== undefined) {
+      stack.pop();
+      return;
+    }
+    router.back();
   }
 
   private startStore(): void {
@@ -193,7 +235,8 @@ struct ChatProfilePage {
   }
 
   // 从提权/限制面板返回时重拉成员：身份标签和受限状态都可能变了。
-  onPageShow(): void {
+  // 迁移前是 onPageShow，方法体一字未动，改由 HdsNavDestination.onShown() 触发。
+  private handleShown(): void {
     if (this.pendingMemberReload) {
       this.pendingMemberReload = false;
       this.store?.reloadMembers();
@@ -305,7 +348,7 @@ struct ChatProfilePage {
       req['chat_id'] = this.chatId;
       getTdClient().send(req).then((): void => {
         promptAction.showToast({ message: $r('app.string.cpp_left'), duration: 1500 });
-        router.back();
+        this.goBack();
       }).catch((error: TdError): void => {
         logE(`ChatProfilePage.leave failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.cpp_leave_failed'), duration: 1800 });
@@ -541,7 +584,10 @@ struct ChatProfilePage {
 
   private openMemberProfile(userId: number): void {
     const params: Record<string, Object> = { 'userId': userId };
-    router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
+    // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
+    // HdsNavDestination 并从 main_pages.json 摘出后，整页路由已经跳不动，统一
+    // 走 navigateToProfile 这个唯一漏斗。
+    navigateToProfile(params);
   }
 
   private moveDetailIndicator(index: number): void {
@@ -924,7 +970,7 @@ struct ChatProfilePage {
   header() {
     Column({ space: 10 }) {
       Row() {
-        this.circleButton('sys.symbol.chevron_left', () => { router.back(); });
+        this.circleButton('sys.symbol.chevron_left', () => { this.goBack(); });
         Blank().layoutWeight(1);
         // Top-right is the leave action; everything else lives in the
         // actions-row 更多 menu.
@@ -1593,6 +1639,7 @@ struct ChatProfilePage {
   }
 
   build() {
+    HdsNavDestination() {
     // 查看器需覆盖整页，故在滚动容器外再包一层 Stack。
     Stack() {
     Scroll() {
@@ -1649,6 +1696,17 @@ struct ChatProfilePage {
       });
     }
     }
+    .width('100%').height('100%');
+    }
+    // 本页自绘标题栏（头图上那一行返回/退出），不要 HDS 的。
+    .hideTitleBar(true)
+    .onReady((ctx: NavDestinationContext): void => {
+      this.navStack = ctx.pathStack;
+      this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
+      // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
+      this.applyRouteParams();
+    })
+    .onShown((): void => { this.handleShown(); })
     .width('100%').height('100%');
   }
 }

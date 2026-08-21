@@ -166,6 +166,7 @@ import { adminLabelOf } from '../../util/adminLabel';
 import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/senderRoleChannel';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { HdsNavDestination } from '@kit.UIDesignKit';
+import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
@@ -3287,7 +3288,9 @@ export struct ChatPage {
     }
     if (action.kind === LINK_USER) {
       const params: Record<string, Object> = { 'userId': action.userId };
-      router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
+      // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
+      // HdsNavDestination 并从 main_pages.json 摘出后整页路由跳不动，走漏斗。
+      navigateToProfile(params);
       return;
     }
     // 从这里往下每一条分支都要往返一次服务器才知道该开哪一页。网络一慢，
@@ -3940,14 +3943,17 @@ export struct ChatPage {
     }
     const storeUid = this.store !== null ? this.store.getPeerUserId() : 0;
     const uid = this.headerPeerUserId > 0 ? this.headerPeerUserId : storeUid;
-    let url = '';
+    // 曾经是一个 url 字符串变量 + 末尾一次 router.pushUrl；两张资料页都迁成了
+    // HdsNavDestination，改成用 openUserProfile 记住该开哪一张，末尾分发到对应
+    // 漏斗。分支条件与参数一字未改。
+    let openUserProfile: boolean = false;
     let params: Record<string, Object>;
     if (uid > 0) {
-      url = 'pages/profile/ProfilePage';
+      openUserProfile = true;
       params = { 'userId': uid };
     } else if (this.headerIdentityResolved ||
       (this.store !== null && this.store.getIsGroup())) {
-      url = 'pages/profile/ChatProfilePage';
+      openUserProfile = false;
       params = { 'chatId': this.chatId };
     } else {
       promptAction.showToast({ message: $r('app.string.cp_profile_loading'), duration: 1200 });
@@ -3962,15 +3968,16 @@ export struct ChatPage {
       this.headerNavigationTimer = -1;
       this.headerProfileOpening = false;
     }, CHAT_HEADER_NAV_GUARD_MS);
-    router.pushUrl({ url, params }).catch((error: Error): void => {
-      if (this.headerNavigationTimer !== -1) {
-        clearTimeout(this.headerNavigationTimer);
-        this.headerNavigationTimer = -1;
-      }
-      this.headerProfileOpening = false;
-      logE(`ChatPage.openProfile failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_cannot_open_profile'), duration: 1600 });
-    });
+    // 迁移前这里是 router.pushUrl(...).catch(...)：失败时提前解掉防连点闸门并
+    // 弹「打不开资料页」。漏斗是同步 void，推进一个已注册的栈不会失败，那个
+    // catch 分支因此不再可达——闸门仍由上面那个 CHAT_HEADER_NAV_GUARD_MS 的
+    // 定时器按时解掉，行为与「跳转成功」那一路完全一致。栈没注册时的回退路径
+    // 由 profileNav 内部记日志。
+    if (openUserProfile) {
+      navigateToProfile(params);
+    } else {
+      navigateToChatProfile(params);
+    }
   }
 
   // Refresh the '@' mention / '/' command suggestion panels for the new draft.
@@ -4542,9 +4549,9 @@ export struct ChatPage {
     }
     if (userId > 0) {
       const params: Record<string, Object> = { 'userId': userId };
-      router.pushUrl({ url: 'pages/profile/ProfilePage', params: params }).catch(() => {
-        promptAction.showToast({ message: $r('app.string.cp_cannot_open_contact'), duration: 1500 });
-      });
+      // 迁移前是 router.pushUrl(...).catch(弹「打不开联系人」)。漏斗是同步 void，
+      // 推进已注册的栈不会失败，那个 toast 分支不再可达；成功路径完全一致。
+      navigateToProfile(params);
       return;
     }
     if (vcard.trim() !== '') {
@@ -7183,7 +7190,7 @@ export struct ChatPage {
                 onBotCallback: (id: number, data: string): void => { this.onBotCallback(id, data); },
                 onAvatarTap: (uid: number): void => {
                   const params: Record<string, Object> = { 'userId': uid };
-                  router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
+                  navigateToProfile(params);
                 },
                 onAvatarLongPress: (uid: number, name: string): void => {
                   this.mentionSender(uid, name);
