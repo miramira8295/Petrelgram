@@ -84,6 +84,8 @@ export struct StreamingVideoPlayer {
   // viewer. No control bar / gestures / speed / rotate — just poster +
   // surface + buffering hint. See build() and onPlayingChanged() below.
   @Prop embedded: boolean = false;
+  @StorageProp('appIsForeground') @Watch('onAppForegroundChanged')
+  private appIsForeground: boolean = true;
   // 音频焦点：拿着的时候别的应用/来电开始发声，系统会通知我们让位。
   // 释放函数在停止播放时调用（幂等）。
   private releaseAudioFocus: (() => void) | null = null;
@@ -165,9 +167,11 @@ export struct StreamingVideoPlayer {
     this.release();
   }
 
-  // 播放状态变化时同步"视频后台播放"保活（开关关闭则不挂任务，
-  // 切后台由系统正常挂起）。内嵌模式（列表内播放位）从不申请保活——
-  // 划走气泡就该正常息屏/挂起，不能被一段列表预览挡住。
+  // 播放状态变化时同步"视频后台播放"保活。开关关闭时不挂任务，**并且**由
+  // onAppForegroundChanged 主动暂停——原来这里只写了不挂任务，指望系统把进程
+  // 挂起，但 backgroundGraceTask 会让进程多活几分钟，那几分钟里声音照放。
+  // 内嵌模式（列表内播放位）从不申请保活——划走气泡就该正常息屏/挂起，
+  // 不能被一段列表预览挡住。
   onPlayingChanged(): void {
     this.syncAudioFocus();
     if (this.embedded) {
@@ -472,6 +476,30 @@ export struct StreamingVideoPlayer {
         this.initPlayer(context);
       }
     }, 100);
+  }
+
+  // 切后台时按「后台播放视频」这个设置决定停不停。语音/音乐那边早就有对应的
+  // pauseForBackground（ChatPage.onAppForegroundChanged 调），视频这边只做了
+  // 保活任务那一半：开关开着就挂任务，关着**什么都不做**，注释里的假设是
+  // "由系统正常挂起"。
+  //
+  // 那个假设不成立。EntryAbility.onBackground 会 backgroundGraceTask.begin()
+  // 申请 requestSuspendDelay，为了继续收消息让进程多活几分钟——这几分钟里
+  // 进程没被挂起，开关关着的视频照样带着声音在放。
+  //
+  // 回前台不自动续播：和语音那边一致（pauseForBackground 也不自动恢复），
+  // 而且用户离开时未必想让它接着放。
+  private onAppForegroundChanged(): void {
+    if (this.appIsForeground || !this.isPlaying || this.player === null) {
+      return;
+    }
+    // 内嵌播放位是列表里的静音预览，切后台没有任何理由继续解码。
+    if (!this.embedded && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false)) {
+      return;
+    }
+    // 不标记 pausedByFocusLoss：这不是音频打断，别让打断恢复的逻辑接管它。
+    this.player.pause();
+    this.isPlaying = false;
   }
 
   // 播放期间持有音频焦点，停下就交还。
