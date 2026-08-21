@@ -26,8 +26,10 @@ export interface MemberMenuOptions {
   showPromote: boolean;
   // 对方已经是管理员时，同一个入口的文案是「编辑管理员权限」。
   promoteIsEdit: boolean;
-  // 「编辑标签」。头衔是 chatMemberStatusAdministrator 的字段，只有管理员
-  // 才有——普通成员给这一项，点进去无从写起。
+  // 「编辑标签」。头衔是 chatMemberStatusAdministrator 的字段；给普通成员
+  // 设头衔时按官方客户端的做法**零权限提为管理员**再带上头衔（见
+  // setMemberTitle），所以入口对普通成员同样开放。频道不开：官方限定头衔
+  // 只在群里有。
   showEditTitle: boolean;
   showRestrict: boolean;
   showBan: boolean;
@@ -61,7 +63,7 @@ export function memberMenuOptions(
   return {
     showPromote: canPromote,
     promoteIsEdit: isAdmin,
-    showEditTitle: canPromote && isAdmin,
+    showEditTitle: canPromote && !isChannel,
     showRestrict,
     showBan: canRestrict,
     showRemove: canRestrict,

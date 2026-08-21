@@ -1157,7 +1157,10 @@ struct ChatProfilePage {
       onConfirm: (next: string): void => { this.applyMemberTitle(next); }
     }),
     alignment: DialogAlignment.Center,
-    autoCancel: true
+    autoCancel: true,
+    // 弹窗自绘玻璃卡片，必须 customStyle——否则系统还会再包一层白色对话框
+    // 底板，看着是"两层弹窗"。
+    customStyle: true
   });
 
   private openTitleDialog(m: MemberItem): void {
@@ -1169,7 +1172,8 @@ struct ChatProfilePage {
         onConfirm: (next: string): void => { this.applyMemberTitle(next); }
       }),
       alignment: DialogAlignment.Center,
-      autoCancel: true
+      autoCancel: true,
+      customStyle: true
     });
     this.titleCtrl.open();
   }

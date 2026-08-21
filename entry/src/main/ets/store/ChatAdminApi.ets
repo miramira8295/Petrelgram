@@ -158,12 +158,24 @@ export async function setMemberTitle(
   chatId: number, userId: number, title: string
 ): Promise<void> {
   const current: MemberStatusInfo = await getMemberStatus(chatId, userId);
-  if (current.type !== 'chatMemberStatusAdministrator') {
-    // 头衔是管理员状态的字段。对普通成员无从写起，菜单也不会给这一项；
-    // 走到这里说明期间对方身份变了，如实报错比悄悄改成管理员安全。
-    throw new Error('member is not an administrator');
+  const next: string = title.trim();
+  if (current.type === 'chatMemberStatusAdministrator') {
+    await promoteMember(chatId, userId, next, current.rights);
+    return;
   }
-  await promoteMember(chatId, userId, title.trim(), current.rights);
+  if (current.type === 'chatMemberStatusMember') {
+    // 普通成员的头衔：官方客户端的做法是**零权限提为管理员**再带上头衔——
+    // 头衔本来就是管理员状态的字段，没有别的挂法。零权限意味着 TA 得不到
+    // 任何管理能力，只多一枚标签。
+    if (next === '') {
+      return; // 普通成员 + 空头衔 = 本来的样子，别白提一次权。
+    }
+    await promoteMember(chatId, userId, next, allAdminRights(false));
+    return;
+  }
+  // 受限/被封禁等状态不趟：给受限成员挂管理员头衔会顺手解除限制，那不是
+  // "改标签"该有的副作用。
+  throw new Error('member is not eligible for a custom title');
 }
 
 export async function demoteMember(chatId: number, userId: number): Promise<void> {
