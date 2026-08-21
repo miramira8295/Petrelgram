@@ -9,9 +9,7 @@ import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
-import {
-  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
-} from '../../util/hdsTitleBar';
+import { titleBarStyle } from '../../util/hdsTitleBar';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
@@ -756,20 +754,15 @@ export struct ChatListPage {
         // 标题栏。都默认 false，漏掉前者标题栏会顶进状态栏。
         avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
-        style: {
-          scrollEffectOpts: {
-            enableScrollEffect: true,
-            scrollEffectType: titleScrollEffectType(),
-            blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
-            blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
-          },
-          originalStyle: { backgroundStyle: { backgroundColor: $r('app.color.surface') } }
-        },
+        style: titleBarStyle($r('app.color.surface')),
         content: this.titleBarContent()
       })
       // 一级页签，没有返回键。
       .hideBackButton(true)
-      .titleMode(HdsNavigationTitleMode.FREE)
+      // MINI 而不是 FREE：首页要的是"应用名和搜索键在同一行"的一条窄栏，
+      // FREE 的大标题会先占掉一整行、把列表整体压下去，在这个每天开几十次的
+      // 页面上尤其显得高。其余页面仍用 FREE——那里大标题是想要的效果。
+      .titleMode(HdsNavigationTitleMode.MINI)
       // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
       .bindToScrollable(this.allTabScrollers())
       .width('100%').height('100%')

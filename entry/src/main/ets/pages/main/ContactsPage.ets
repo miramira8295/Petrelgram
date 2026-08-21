@@ -3,14 +3,12 @@ import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
-import { promptAction, router, SymbolGlyphModifier, LengthMetrics } from '@kit.ArkUI';
+import { promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
-import {
-  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
-} from '../../util/hdsTitleBar';
+import { titleBarStyle } from '../../util/hdsTitleBar';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
@@ -1370,15 +1368,7 @@ export struct ContactsPage {
         // 状态栏里），enableComponentSafeArea 让内容区避让标题栏。见设置页。
         avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
-        style: {
-          scrollEffectOpts: {
-            enableScrollEffect: true,
-            scrollEffectType: titleScrollEffectType(),
-            blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
-            blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
-          },
-          originalStyle: { backgroundStyle: { backgroundColor: PAGE_BG } }
-        },
+        style: titleBarStyle(PAGE_BG),
         content: this.titleBarContent()
       })
       .hideBackButton(true)

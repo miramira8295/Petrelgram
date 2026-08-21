@@ -1,11 +1,9 @@
-import { router, promptAction, LengthMetrics } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
-import {
-  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
-} from '../../util/hdsTitleBar';
+import { titleBarStyle } from '../../util/hdsTitleBar';
 import {
   addTdAccount, getActiveTdAccountSlot, getTdAccounts, getTdClient,
   logoutCurrentTdAccount, removeDuplicateTdAccountsForActive,
@@ -1325,18 +1323,7 @@ export struct SettingsPage {
         // 第一版只设了后者，于是内容避开了标题栏、标题栏却压在状态栏上。
         avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
-        style: {
-          scrollEffectOpts: {
-            enableScrollEffect: true,
-            // 有 IMMERSIVE_GRADIENT_BLUR（API 23+）就用，没有退到
-            // GRADIENT_BLUR（API 20）。判定在 util/hdsTitleBar 里，
-            // 枚举绝不在模块级解引用。
-            scrollEffectType: titleScrollEffectType(),
-            blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
-            blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
-          },
-          originalStyle: { backgroundStyle: { backgroundColor: PAGE_BG } }
-        },
+        style: titleBarStyle(PAGE_BG),
         content: this.titleBarContent()
       })
       // 设置是从主界面进来的一级页面，顶部没有返回箭头。

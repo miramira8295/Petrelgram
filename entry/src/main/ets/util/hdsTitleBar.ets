@@ -17,7 +17,10 @@
 // 版本号先比，枚举只在函数体里、确认版本够了之后才碰。
 
 import { deviceInfo } from '@kit.BasicServicesKit';
-import { ScrollEffectType } from '@kit.UIDesignKit';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  HdsNavigationTitleBarStyle, ScrollEffectType, TitleBarStyleOptions
+} from '@kit.UIDesignKit';
 
 // IMMERSIVE_GRADIENT_BLUR 的起始 API 版本。
 const IMMERSIVE_GRADIENT_BLUR_API: number = 23;
@@ -42,3 +45,51 @@ export function titleScrollEffectType(): ScrollEffectType {
 // 变实，看着像 bug。
 export const TITLE_BLUR_START_VP: number = 0;
 export const TITLE_BLUR_END_VP: number = 20;
+
+// 标题栏的完整样式。**每个用 HdsNavigation 的地方都必须走这里。**
+//
+// 起因是一个真机上很显眼的问题：只配了 backgroundStyle、没配 contentStyle 时，
+// 标题、副标题、菜单图标、返回箭头全部用 HDS 的默认色，而那套默认色**不跟随
+// 应用的深浅色模式**——夜间模式下标题还是深色，压在深色背板上几乎看不见。
+// 官方示例里这几项是逐个显式给的，我第一版照抄了 scrollEffectOpts 却漏掉了
+// contentStyle，二十个页面于是一起中招。
+//
+// 颜色一律用 app.color.*：这些资源在 resources/dark 下有对应值，跟随模式是
+// 资源系统免费给的，不需要在代码里判断。
+//
+// originalStyle 和 scrollEffectStyle 都要给：前者是内容还没滚动时的样子，后者是
+// 滚过 blurEffectiveEndOffset 之后的样子。只给前者的话，滚起来会跳回默认色。
+function barStyle(background: ResourceColor): HdsNavigationTitleBarStyle {
+  return {
+    backgroundStyle: { backgroundColor: background },
+    contentStyle: {
+      titleStyle: {
+        mainTitleColor: $r('app.color.text_primary'),
+        subTitleColor: $r('app.color.text_secondary')
+      },
+      menuStyle: {
+        backgroundColor: $r('app.color.surface_alt'),
+        iconColor: $r('app.color.text_primary')
+      },
+      backIconStyle: {
+        backgroundColor: $r('app.color.surface_alt'),
+        iconColor: $r('app.color.text_primary')
+      }
+    }
+  };
+}
+
+export function titleBarStyle(background: ResourceColor): TitleBarStyleOptions {
+  return {
+    scrollEffectOpts: {
+      enableScrollEffect: true,
+      // 有 IMMERSIVE_GRADIENT_BLUR（API 23+）就用，没有退到 GRADIENT_BLUR。
+      scrollEffectType: titleScrollEffectType(),
+      blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
+      blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
+    },
+    originalStyle: barStyle(background),
+    // 滚起来之后背板让位给模糊本身，其余颜色不变。
+    scrollEffectStyle: barStyle(Color.Transparent)
+  };
+}

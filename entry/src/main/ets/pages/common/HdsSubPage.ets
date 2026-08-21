@@ -1,10 +1,8 @@
-import { LengthMetrics, router } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationMenuItemOptions, HdsNavigationTitleMode
 } from '@kit.UIDesignKit';
-import {
-  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
-} from '../../util/hdsTitleBar';
+import { titleBarStyle } from '../../util/hdsTitleBar';
 
 // 设置类子页面的外壳：HdsNavigation 大标题 + 返回键 + 滚动渐变模糊。
 //
@@ -50,16 +48,7 @@ export struct HdsSubPage {
       // 标题栏。都默认 false，漏掉前者标题栏会顶进状态栏里。
       avoidLayoutSafeArea: true,
       enableComponentSafeArea: true,
-      style: {
-        scrollEffectOpts: {
-          enableScrollEffect: true,
-          // 有 IMMERSIVE_GRADIENT_BLUR（API 23+）就用，否则退到 GRADIENT_BLUR。
-          scrollEffectType: titleScrollEffectType(),
-          blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
-          blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
-        },
-        originalStyle: { backgroundStyle: { backgroundColor: this.pageBackground } }
-      },
+      style: titleBarStyle(this.pageBackground),
       content: {
         title: { mainTitle: this.title, subTitle: this.subTitle },
         backIcon: { action: (): void => { this.onBack(); } },

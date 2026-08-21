@@ -1,11 +1,9 @@
-import { promptAction, router, LengthMetrics } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
-import {
-  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
-} from '../../util/hdsTitleBar';
+import { titleBarStyle } from '../../util/hdsTitleBar';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { cameraPicker } from '@kit.CameraKit';
@@ -1952,15 +1950,7 @@ export struct MyProfilePage {
       // 两个都要，各管一头。漏掉 avoidLayoutSafeArea 标题栏会顶进状态栏。
       avoidLayoutSafeArea: true,
       enableComponentSafeArea: true,
-      style: {
-        scrollEffectOpts: {
-          enableScrollEffect: true,
-          scrollEffectType: titleScrollEffectType(),
-          blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
-          blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
-        },
-        originalStyle: { backgroundStyle: { backgroundColor: PAGE_BG } }
-      },
+      style: titleBarStyle(PAGE_BG),
       content: this.titleBarContent()
     })
     // 一级页签，没有返回键。
