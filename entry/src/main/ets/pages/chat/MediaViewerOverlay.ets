@@ -119,6 +119,9 @@ export struct MediaViewerOverlay {
   // 放大态下拖到左右边界后继续拖动的累计量。达到阈值即翻页，
   // 让"滑到边上还能翻下一张"在放大时也成立（此时 Swiper 收不到手势）。
   private edgeOverscroll: number = 0;
+  // 下滑关闭：整层（图片 + 控制层）跟着手指往下走的位移。松手时要么越过阈值
+  // 关闭，要么弹回 0。
+  @State private dismissY: number = 0;
   private swiperCtrl: SwiperController = new SwiperController();
 
   aboutToAppear(): void {
@@ -292,8 +295,38 @@ export struct MediaViewerOverlay {
     this.edgeOverscroll = 0;
   }
 
+  // 1x 下拖：整层跟着手指走。只跟随向下，往上拖不动——向上没有"退出"的语义，
+  // 让它跟手只会让用户以为还有别的东西可以拉出来。
+  private onDismissUpdate(event: GestureEvent): void {
+    this.dismissY = Math.max(0, event.offsetY);
+  }
+
+  // 松手：越过阈值就关，否则弹回。阈值取视口高度的 1/5，比写死一个 vp 数更
+  // 跨设备一致——pad 上 120vp 只是轻轻一划，手机上却已经是小半屏。
+  private onDismissEnd(): void {
+    const threshold: number = Math.max(80, this.areaH / 5);
+    if (this.dismissY >= threshold) {
+      this.onRequestClose();
+      return;
+    }
+    animateTo({
+      duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 220), curve: Curve.Friction
+    }, () => { this.dismissY = 0; });
+  }
+
+  // 下滑过程中背景由黑渐透，露出底下的聊天页——"整层往下走然后退出"这件事
+  // 靠这个才读得出来，否则只是一张图在黑幕里滑动。
+  private dismissProgress(): number {
+    const span: number = Math.max(1, this.areaH / 3);
+    return Math.min(1, this.dismissY / span);
+  }
+
   private onPanEnd(): void {
-    if (!this.zoomed() || Math.abs(this.edgeOverscroll) < 60) {
+    if (!this.zoomed()) {
+      this.onDismissEnd();
+      return;
+    }
+    if (Math.abs(this.edgeOverscroll) < 60) {
       this.edgeOverscroll = 0;
       return;
     }
@@ -312,6 +345,7 @@ export struct MediaViewerOverlay {
   // the fitted 1x size this is a no-op and the Swiper keeps paging instead.
   private onPanUpdate(event: GestureEvent): void {
     if (!this.zoomed()) {
+      this.onDismissUpdate(event);
       return;
     }
     const desiredX: number = this.panStartOffsetX + event.offsetX;
@@ -322,22 +356,16 @@ export struct MediaViewerOverlay {
     this.edgeOverscroll = desiredX - this.photoOffsetX;
   }
 
-  // A single tap on a photo at 1x closes the viewer, the way the official
-  // client behaves — at that zoom level there is nothing to inspect, so a tap
-  // means "done". Once zoomed the tap goes back to toggling chrome, because
-  // closing out of a zoomed photo would lose the user's position.
+  // 单击一律切换控制层的显隐，**不再关闭查看器**。
   //
-  // Video keeps the toggle at every level: a tap there is how you reach the
-  // controls.
+  // 原来 1x 的图片上单击是关闭（照官方端的行为）。改掉是因为那让"看清这张图"
+  // 和"退出"抢同一个手势：想把顶栏和缩略图条收起来只看图，唯一的办法反而是
+  // 退出去。现在收起控制层交给单击，退出交给下滑（onDismissUpdate），两个
+  // 意图各有各的手势。
   //
-  // Closing goes through onRequestClose, the same path as the top-left button,
-  // so the shrink-back-to-thumbnail transition is unchanged.
+  // 视频本来就是切换，不受影响。
   private onPhotoTap(): void {
     if (Date.now() < this.ignoreTapUntilMs) {
-      return;
-    }
-    if (!this.isVideo() && !this.zoomed()) {
-      this.onRequestClose();
       return;
     }
     this.toggleChrome();
@@ -476,6 +504,7 @@ export struct MediaViewerOverlay {
     if (this.videoLandscape) {
       this.setVideoLandscape(false);
     }
+    this.dismissY = 0;
     this.resetPhotoZoom(false);
     this.pageIdx = index;
     this.viewerMsgId = id;
@@ -697,10 +726,10 @@ export struct MediaViewerOverlay {
             // nothing at all, because the binding is not re-evaluated when the
             // condition changes.
             //
-            // Consequences, both acceptable. At 1x the first tap closes, so
-            // double-tap-to-zoom-in never gets a chance — pinch is the way in.
-            // While zoomed, a double tap also fires the single tap twice, which
-            // toggles chrome twice and lands back where it started.
+            // 并行组的后果：一次双击也会把单击触发两次。单击现在是切换控制层
+            // 的显隐，切两次等于没切，落回原样——所以双击放大在 1x 上现在是
+            // 真的可用了。（以前 1x 的单击是关闭查看器，第一下就把整层关掉，
+            // 双击根本没有机会成立，进放大只能靠双指捏合。）
             .gesture(
               GestureGroup(GestureMode.Parallel,
                 TapGesture({ count: 2, fingers: 1 })
@@ -716,11 +745,16 @@ export struct MediaViewerOverlay {
                   .onActionUpdate((event: GestureEvent) => { this.onPinchUpdate(event); })
                   .onActionEnd(() => { this.onPinchEnd(); })
                   .onActionCancel(() => { this.onPinchEnd(); }),
-                // Dynamic distance resolves the Swiper conflict (official
-                // best practice): a large threshold at 1x lets the Swiper's
-                // own pan win and page the album; a small one while zoomed
-                // keeps single-finger panning responsive.
-                PanGesture({ fingers: 1, distance: this.zoomed() ? 3 : 50 })
+                // 放大态：全方向、阈值小，单指拖动平移图片。
+                // 1x：**只认竖直**，横向原样留给 Swiper 翻页——这比原来单靠
+                // 一个大阈值（50）挡住横向更可靠，那样横向拖过 50vp 仍会把
+                // Swiper 的手势抢走。竖直方向拖的是"下滑关闭"，阈值取 20 让
+                // 它跟手，又不至于被列表式的轻微竖向抖动误触发。
+                PanGesture({
+                  fingers: 1,
+                  distance: this.zoomed() ? 3 : 20,
+                  direction: this.zoomed() ? PanDirection.All : PanDirection.Vertical
+                })
                   .onActionStart(() => { this.onPanStart(); })
                   .onActionUpdate((event: GestureEvent) => { this.onPanUpdate(event); })
                   .onActionEnd(() => { this.onPanEnd(); })
@@ -919,7 +953,13 @@ export struct MediaViewerOverlay {
           }));
       }
     }
-    .width('100%').height('100%').backgroundColor(Color.Black)
+    .width('100%').height('100%')
+    // 整层（图片 + 控制层）一起跟着手指往下走，退出的是"这一整块沉浸"，
+    // 不是单独一张图。
+    .translate({ y: this.dismissY })
+    .backgroundColor(this.dismissY > 0 ? `#${
+      Math.round((1 - this.dismissProgress()) * 255).toString(16).padStart(2, '0')
+    }000000` : Color.Black)
     // The fullscreen surface owns its transition. The chat thumbnail stays
     // mounted and decoded underneath, so closing can never leave that cell
     // as a grey/background placeholder or an empty Image node.
