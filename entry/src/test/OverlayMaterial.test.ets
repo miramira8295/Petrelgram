@@ -18,7 +18,7 @@ import {
 // The API-version tests are pure. The rest run against whatever device the
 // suite is on, so they assert the invariant rather than one side of it.
 
-const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control'];
+const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control', 'viewer'];
 
 export default function overlayMaterialTest() {
   describe('overlayMaterial', () => {
@@ -146,6 +146,23 @@ export default function overlayMaterialTest() {
           // 材质接管了按压 = 这个面开了 interactive，那它必须也在光晕范围内。
           expect(immersiveMaterialAvailable()).assertTrue();
         }
+      }
+    });
+
+    // 'viewer' 浮在照片/视频上，底永远是黑的、文字图标永远是白的，不跟随主题。
+    // 别的面在无材质时回退到 dock_glass（跟随主题的资源），浅色主题下会在照片
+    // 上糊出一块亮色药丸；这一档必须回退到一个固定的深色半透明。
+    it('无材质时，viewer 这一档的回退色与跟随主题的那些面不同', 0, () => {
+      const solid: ResourceColor = $r('app.color.surface');
+      const viewerFill: ResourceColor = overlayGlassFill('viewer', solid);
+      const barFill: ResourceColor = overlayGlassFill('bar', solid);
+      if (immersiveMaterialAvailable()) {
+        // 有材质时一律透明——不透明底色会盖在材质层之上（官方 FAQ 写死）。
+        expect(`${viewerFill}`).assertEqual(`${barFill}`);
+      } else {
+        // 固定深色半透明，且不是那个跟随主题的资源。
+        expect(viewerFill as string).assertEqual('#6e3e3e40');
+        expect(`${viewerFill}` === `${barFill}`).assertFalse();
       }
     });
   });

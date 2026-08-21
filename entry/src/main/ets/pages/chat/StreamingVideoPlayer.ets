@@ -7,6 +7,9 @@ import {
   OnPreparedListener,
   OnVideoSizeChangedListener
 } from '@ohos/ijkplayer';
+import {
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
+} from '../../util/overlayMaterial';
 import { audio } from '@kit.AudioKit';
 import { getTdClient, getUiAbilityContext } from '../../tdkit/Globals';
 import { mediaPlaybackKeepAlive } from '../../services/MediaPlaybackKeepAlive';
@@ -72,6 +75,7 @@ export struct StreamingVideoPlayer {
   @Prop localPath: string = '';
   @Prop posterPath: string = '';
   @Prop showControls: boolean = true;
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop landscape: boolean = false;
   // Embed mode: mounted directly in a chat bubble instead of the fullscreen
   // viewer. No control bar / gestures / speed / rotate — just poster +
@@ -1054,7 +1058,11 @@ export struct StreamingVideoPlayer {
             bottom: Math.max(14, this.bottomSafe + 8)
           })
           .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-          .backgroundColor(CONTROL_BAR_BG)
+          // 控制条和查看器顶栏是同一层东西，走同一档材质（见 overlayMaterial
+          // 的 'viewer'：底永远是黑的，不跟随主题）。
+          .backgroundColor(overlayGlassFill('viewer', CONTROL_BAR_BG))
+          .backdropBlur(overlayBackdropBlur('viewer'))
+          .systemMaterial(overlayMaterial('viewer'))
           .borderRadius(18)
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.translate({ y: 10 }))

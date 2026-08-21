@@ -1,4 +1,7 @@
 import { common } from '@kit.AbilityKit';
+import {
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
+} from '../../util/overlayMaterial';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
 import { AlbumGroup } from '../../util/collapseAlbums';
@@ -12,6 +15,9 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
 
+// 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
+// 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
+// overlayMaterial 里持有的 viewer 回退色和这个是同一个值，观感不变。
 const VIEWER_CHROME_BG: string = '#6e3e3e40';
 const VIEWER_MIN_SCALE: number = 1;
 const VIEWER_MAX_SCALE: number = 4;
@@ -37,6 +43,9 @@ export struct MediaViewerOverlay {
   // Two-way with the page: tapping close clears the id from in here.
   @Link viewerMsgId: number;
   @Link chromeVisible: boolean;
+  // 材质档位是设置里的用户偏好，而 overlayMaterial 那几个是普通函数、订阅不了
+  // AppStorage。订阅这个纪元，用户改了厚度/光感这一层才会重绘（和别处一样）。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   // @Link (not @Prop) for both arrays: @Prop deep-copies its source, which for
   // the whole loaded message list would run on every download-progress tick.
   @Link messages: MessageEntry[];
@@ -569,7 +578,9 @@ export struct MediaViewerOverlay {
       Text($r('app.string.mv_loading')).fontSize(13).fontColor('#D9FFFFFF');
     }
     .padding({ left: 18, right: 18, top: 16, bottom: 16 })
-    .backgroundColor(VIEWER_CHROME_BG).borderRadius(16)
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .systemMaterial(overlayMaterial('viewer'))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
       .animation({ duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.EaseOut }));
@@ -584,7 +595,9 @@ export struct MediaViewerOverlay {
       Text($r('app.string.tap_to_retry')).fontSize(12).fontColor('#D9FFFFFF');
     }
     .padding({ left: 22, right: 22, top: 16, bottom: 16 })
-    .backgroundColor(VIEWER_CHROME_BG).borderRadius(16)
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .systemMaterial(overlayMaterial('viewer'))
     .stateStyles({
       normal: this.chromeNormalStyle,
       pressed: this.chromePressedStyle
@@ -748,7 +761,9 @@ export struct MediaViewerOverlay {
           .fontSize(12).fontColor(Color.White);
       }
       .padding({ left: 11, right: 11, top: 7, bottom: 7 })
-      .backgroundColor(VIEWER_CHROME_BG).borderRadius(16)
+      .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .systemMaterial(overlayMaterial('viewer'))
       .position({ x: 14, y: this.topSafe + 76 })
       .hitTestBehavior(HitTestMode.None)
       .transition(TransitionEffect.OPACITY
@@ -760,7 +775,9 @@ export struct MediaViewerOverlay {
         Text($r('app.string.mv_full_failed')).fontSize(12).fontColor(Color.White);
       }
       .padding({ left: 11, right: 11, top: 7, bottom: 7 })
-      .backgroundColor(VIEWER_CHROME_BG).borderRadius(16)
+      .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .systemMaterial(overlayMaterial('viewer'))
       .position({ x: 14, y: this.topSafe + 76 })
       .onClick((): void => { this.retryPhoto(); });
     }
@@ -806,7 +823,13 @@ export struct MediaViewerOverlay {
     Row() {
       Row({ space: 10 }) {
         Stack() {
-          Circle({ width: 36, height: 36 }).fill('#12000000');
+          // Circle 的 fill 挂不了 systemMaterial，换成同尺寸的 Row —— 36 在
+          // 40 的热区里居中，视觉尺寸和原来一致。
+          Row()
+            .width(36).height(36).borderRadius(18)
+            .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
+            .backdropBlur(overlayBackdropBlur('viewer'))
+            .systemMaterial(overlayMaterial('viewer'));
           SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([Color.White]);
         }
         .width(40).height(40).borderRadius(20)
@@ -831,7 +854,9 @@ export struct MediaViewerOverlay {
         .alignItems(HorizontalAlign.Start).flexShrink(1);
       }
       .padding({ left: 12, right: 14, top: 10, bottom: 10 })
-      .backgroundColor(VIEWER_CHROME_BG)
+      .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
+      .backdropBlur(overlayBackdropBlur('viewer'))
+      .systemMaterial(overlayMaterial('viewer'))
       .borderRadius(18)
       .alignItems(VerticalAlign.Center)
       .flexShrink(1);
@@ -840,7 +865,11 @@ export struct MediaViewerOverlay {
       // the downloaded span, and a stalled player draws a centered ring.
       // "⋮" menu — 保存到相册 etc.
       Stack() {
-        Circle({ width: 36, height: 36 }).fill(VIEWER_CHROME_BG);
+        Row()
+          .width(36).height(36).borderRadius(18)
+          .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
+          .backdropBlur(overlayBackdropBlur('viewer'))
+          .systemMaterial(overlayMaterial('viewer'));
         SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([Color.White]);
       }
       .width(40).height(40).borderRadius(20)

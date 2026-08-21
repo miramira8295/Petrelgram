@@ -35,6 +35,10 @@ import { KEY_MATERIAL_LIGHT, KEY_MATERIAL_THICKNESS, KEY_POWER_ACTIVE } from '..
 // does not exist and every surface stays exactly as it shipped.
 const IMMERSIVE_MATERIAL_API: number = 26;
 
+// 低于 API 26 时，全屏查看器控制层自绘玻璃用的底色。和查看器原本写死的那个
+// 值一致，所以老设备上观感不变；新设备上它整个让位给材质。
+const VIEWER_GLASS_FALLBACK: string = '#6e3e3e40';
+
 // 用户的两个档位。这是个 util 而不是组件，订阅不了 @StorageProp，所以每次
 // 取值都现读 AppStorage——这些 getter 只在组件 build 时跑，不在每帧路径上。
 //
@@ -104,6 +108,14 @@ export type OverlaySurface =
   // ——按压形变和触点光晕由材质负责，调用方必须把自己那套按压动画让出来，
   // 否则两层形变叠加（官方明确点名的坑）。
   | 'control'
+  // 全屏媒体查看器的控制层：顶栏胶囊、⋮ 按钮、视频控制条。
+  //
+  // 单开一档而不是复用 'bar'，因为它有一条别的面都没有的性质：**底永远是黑的**。
+  // 其余每个面都浮在应用自己的界面上，跟随浅色/深色主题；这一档浮在照片或视频
+  // 上，无论主题如何，文字和图标都是白的。直接用 'bar' 会在低于 API 26 的设备
+  // 上回退到 dock_glass 那个跟随主题的资源色——浅色主题下就是在照片上糊一块
+  // 亮色药丸。见 overlayGlassFill 里的分支。
+  | 'viewer'
   ;
 
 // 'control' 这一档来得晚：一开始刻意没有，因为本应用每个可按压元素都是实色
@@ -152,7 +164,8 @@ function usesInteraction(surface: OverlaySurface): boolean {
 // 里"光感"的部分，而且它不改变任何几何，叠在大面积背景上没有副作用。
 // 菜单和弹窗不给：它们是一次性出现、点一下就走的东西，摸上去发光没有意义。
 function lightEffectBase(surface: OverlaySurface): boolean {
-  return surface === 'control' || surface === 'card' || surface === 'bar';
+  return surface === 'control' || surface === 'card' || surface === 'bar'
+    || surface === 'viewer';
 }
 
 function usesLightEffect(surface: OverlaySurface): boolean {
@@ -190,6 +203,9 @@ function baseStyleIndex(surface: OverlaySurface): number {
       return 1;
     // Bars sit over live content and have to stay see-through enough that a
     // list scrolling under them still reads as continuous.
+    // 查看器的控制层最薄。它盖住的是用户此刻正在看的那张照片——糊一点点
+    // 让文字读得出就够，多一档都是在挡内容。
+    case 'viewer':
     case 'bar':
     default:
       return 0;
@@ -213,6 +229,9 @@ function usesOwnShadow(surface: OverlaySurface): boolean {
 // Auto-invert only takes effect on THIN and ULTRA_THIN materials, and it costs
 // a colour computation per resource-set colour in the subtree — so it is scoped
 // to the one surface thin enough for it to apply and whose contrast is at risk.
+// 'viewer' 明确不开自动反色：它是按子树里每个**资源色**逐个算反色的，而查看器
+// 控制层的文字和图标写的是字面量 Color.White（底永远是黑的，不跟主题走），
+// 反色对它们本来就不生效，开着只是白付一笔计算。
 function usesColorInvert(surface: OverlaySurface): boolean {
   if (surface !== 'bar') {
     return false;
@@ -276,8 +295,21 @@ export function overlayBackdropBlur(surface: OverlaySurface): number {
 //
 // 材质不可用时必须**半透明**。那时靠 backdropBlur 自己画玻璃，而不透明底色
 // 会把模糊完全盖住——模糊的是身后的东西，它自己不透光。
-export function overlayGlassFill(_surface: OverlaySurface, _solid: ResourceColor): ResourceColor {
-  return materialAvailable ? Color.Transparent : $r('app.color.dock_glass');
+export function overlayGlassFill(surface: OverlaySurface, _solid: ResourceColor): ResourceColor {
+  if (materialAvailable) {
+    return Color.Transparent;
+  }
+  // 查看器控制层回退到一个**固定的深色半透明**，而不是 dock_glass。后者是
+  // 跟随主题的资源，浅色主题下会在照片上糊出一块亮色药丸；查看器的底永远
+  // 是黑的、文字图标永远是白的，不跟主题走。
+  //
+  // 这个色由本模块自己持有，不回显调用方传进来的 solid：这个模块的职责就是
+  // 替调用方决定，而不是指望调用方传来的恰好是半透明的（不透明底色会把
+  // backdropBlur 完全盖住，OverlayMaterial.test 里钉着这条）。
+  if (surface === 'viewer') {
+    return VIEWER_GLASS_FALLBACK;
+  }
+  return $r('app.color.dock_glass');
 }
 
 // Materials are built once per surface and reused. Rebuilding one per frame
