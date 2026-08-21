@@ -22,6 +22,10 @@ export struct MainTabBody {
   // 了：列表从它底下穿过去，才有玻璃透隐可看。原来是个布尔，只够表达"有没有
   // 文件夹条"。
   @Prop contentTopInset: number = 0;
+  // 由 ChatListPage 传进来，每个文件夹页签一个。HdsNavigation 靠它拿到滚动量
+  // 才能驱动标题栏收缩与渐变模糊；页签里的列表在子组件内部，父层拿不到，
+  // 只能这样把控制器递下来。
+  listScroller: Scroller = new Scroller();
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
   @State chats: ChatEntry[] = [];
@@ -127,7 +131,7 @@ export struct MainTabBody {
 
   @Builder
   chatList() {
-    List() {
+    List({ scroller: this.listScroller }) {
       // LazyForEach, not ForEach: ForEach builds every row up front, which for
       // a real account meant hundreds of live ChatRow components for the eight
       // that are visible.

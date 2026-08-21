@@ -20,6 +20,10 @@ export struct ChatListView {
   // 了：列表从它底下穿过去，才有玻璃透隐可看。原来是个布尔，只够表达"有没有
   // 文件夹条"。
   @Prop contentTopInset: number = 0;
+  // 由 ChatListPage 传进来，每个文件夹页签一个。HdsNavigation 靠它拿到滚动量
+  // 才能驱动标题栏收缩与渐变模糊；页签里的列表在子组件内部，父层拿不到，
+  // 只能这样把控制器递下来。
+  listScroller: Scroller = new Scroller();
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
@@ -207,7 +211,7 @@ export struct ChatListView {
     if (this.chats.length === 0) {
       this.emptyState();
     } else {
-      List() {
+      List({ scroller: this.listScroller }) {
         if (this.loadFailed) {
           ListItem() {
             Row({ space: 7 }) {
