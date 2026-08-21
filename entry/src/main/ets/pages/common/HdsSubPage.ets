@@ -44,13 +44,21 @@ export struct HdsSubPage {
       this.content();
     }
     .titleBar({
-      // **只留这一个**，和官方《设置动态模糊样式》的示例一致。
+      // 两个都要，各管一头：
       //
-      // 曾经在根上加 expandSafeArea、再用 avoidLayoutSafeArea 去压它——两个设置
-      // 互相打架：前者把标题栏推进状态栏，后者再把它拽回来。官方示例两个都没有，
-      // 因为标题栏本身就是组件级安全区的处理者：它自己延伸进状态栏并在那里画
-      // 背板，内容区避让它。多加那两行的结果是标题栏先推出去再拉回来，渐变模糊
-      // 的合成也跟着失效。
+      //   avoidLayoutSafeArea     标题栏**自己**避让系统安全区
+      //   enableComponentSafeArea 标题栏成为**内容区**的安全区，内容避让它
+      //
+      // 官方示例里只有后者，因为那是个普通非全屏窗口。**本应用整体是全屏沉浸
+      // 布局**（EntryAbility 调了 setWindowLayoutFullScreen(true)），页面的布局区
+      // 本来就覆盖状态栏——这也是全应用每个页面都要手动 padding(topSafe) 的原因。
+      // 所以这里必须自己避让，少了它标题栏就顶进状态栏（真机两次实测）。
+      //
+      // 但**不要**再在 HdsNavigation 根上加 expandSafeArea：那会把标题栏往状态栏
+      // 里推，和这一行正好对着干，两者抵消之后渐变模糊的合成也跟着废掉。状态栏
+      // 那条的底色由 HdsNavigation 自己的 backgroundColor 铺——全屏布局下它本来
+      // 就盖到那儿。
+      avoidLayoutSafeArea: true,
       enableComponentSafeArea: true,
       style: titleBarStyle(this.pageBackground),
       content: {
