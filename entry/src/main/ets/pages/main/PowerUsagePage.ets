@@ -30,6 +30,7 @@ import {
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -48,6 +49,7 @@ const EFFECT_KEYS: string[] = [
 @Entry
 @Component
 struct PowerUsagePage {
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -461,8 +463,8 @@ struct PowerUsagePage {
 
   build() {
     Column() {
-      this.header();
-      Scroll() {
+      HdsSubPage({ title: $r('app.string.settings_power'), scroller: this.hdsScroller, onBack: (): void => { this.leavePage(); } }) {
+      Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
           this.modeCard();
           Text(this.thresholdDescription())
@@ -477,11 +479,13 @@ struct PowerUsagePage {
         .width('100%')
         .padding({ left: 12, right: 12, top: 8, bottom: this.bottomSafe + 24 });
       }
-      .layoutWeight(1).width('100%').scrollBar(BarState.Off);
+      .layoutWeight(1).width('100%').scrollBar(BarState.Off)
+      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false);
+    }
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.page_bg'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

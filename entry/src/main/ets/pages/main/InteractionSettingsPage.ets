@@ -4,6 +4,7 @@ import { GESTURE_CLASSIC, GESTURE_TAP_FIRST } from '../../util/messageGestures';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -33,6 +34,7 @@ const GESTURE_OPTIONS: GestureOption[] = [
 @Entry
 @Component
 struct InteractionSettingsPage {
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -163,8 +165,8 @@ struct InteractionSettingsPage {
 
   build() {
     Column() {
-      this.header();
-      Scroll() {
+      HdsSubPage({ title: $r('app.string.settings_interaction'), scroller: this.hdsScroller, onBack: (): void => { this.leavePage(); } }) {
+      Scroll(this.hdsScroller) {
         Column({ space: 14 }) {
           this.chatCard();
         }
@@ -173,13 +175,15 @@ struct InteractionSettingsPage {
       }
       .layoutWeight(1)
       .scrollBar(BarState.Off)
-      .align(Alignment.Top);
+      .align(Alignment.Top)
+      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false);
+    }
     }
     .width('100%').height('100%')
     // 没有这一行时页面的布局区停在安全区边界，状态栏那一条不归页面画，
     // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
     .backgroundColor($r('app.color.page_bg'));
   }
 }

@@ -8,6 +8,7 @@ import { MdBlock, MdSpan, parseMarkdownBlocks } from '../../util/markdownBlocks'
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -15,6 +16,7 @@ const CARD_RADIUS: number = 14;
 @Entry
 @Component
 struct AboutPage {
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -153,8 +155,8 @@ struct AboutPage {
 
   build() {
     Column() {
-      this.header();
-      Scroll() {
+      HdsSubPage({ title: $r('app.string.settings_about'), scroller: this.hdsScroller }) {
+      Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
           Column({ space: 6 }) {
             // layered_image.json 只是指向 background/foreground 两层的描述文件，
@@ -221,11 +223,13 @@ struct AboutPage {
         .padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
       }
       .layoutWeight(1).width('100%').align(Alignment.Top)
-      .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
+      .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false);
+    }
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.page_bg'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

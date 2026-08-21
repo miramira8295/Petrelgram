@@ -19,6 +19,7 @@ import {
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -69,6 +70,7 @@ const NIGHT_OPTIONS: NightOption[] = [
 @Entry
 @Component
 struct ChatSettingsPage {
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -396,8 +398,8 @@ struct ChatSettingsPage {
 
   build() {
     Column() {
-      this.header();
-      Scroll() {
+      HdsSubPage({ title: $r('app.string.settings_chat'), scroller: this.hdsScroller, onBack: (): void => { this.leavePage(); } }) {
+      Scroll(this.hdsScroller) {
         Column({ space: 14 }) {
           // 字号 + 圆角, with the preview they drive.
           Column() {
@@ -458,11 +460,13 @@ struct ChatSettingsPage {
       }
       .layoutWeight(1).width('100%')
       .align(Alignment.Top)
-      .scrollBar(BarState.Off);
+      .scrollBar(BarState.Off)
+      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false);
+    }
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.page_bg'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

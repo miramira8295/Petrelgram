@@ -22,6 +22,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_RADIUS: number = 14;
 const TOP_ACTION_SIZE: number = 44;
@@ -49,6 +50,7 @@ const TYPES: TypeOption[] = [
 struct ProxyPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -1230,8 +1232,8 @@ struct ProxyPage {
 
   build() {
     Column() {
-      this.header();
-      Scroll() {
+      HdsSubPage({ title: $r('app.string.px_title'), scroller: this.hdsScroller, pageBackground: COLOR_PAGE_BG }) {
+      Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
           if (!this.loading || this.proxies.length > 0) {
             this.connectionCard();
@@ -1255,11 +1257,13 @@ struct ProxyPage {
         });
       }
       .layoutWeight(1).width('100%').align(Alignment.Top)
-      .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
+      .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+      // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+      .clip(false);
+    }
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
     .bindSheet($$this.sheetOpen, this.proxyFormSheet(), {
       height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
