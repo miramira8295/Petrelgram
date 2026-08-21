@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "Tekan kembali sekali lagi untuk keluar"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "Pilih sembang untuk bermula"
     }
   ]
 }

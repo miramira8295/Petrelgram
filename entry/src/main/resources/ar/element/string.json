@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "اضغط رجوع مرة أخرى للخروج"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "اختر محادثة للبدء"
     }
   ]
 }

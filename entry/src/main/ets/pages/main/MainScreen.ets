@@ -6,7 +6,7 @@ import { callKeepAliveTask } from '../../services/CallKeepAliveTask';
 import { bindAccentPrimary } from '../../util/accentTheme';
 import { ProfileStore } from '../../store/ProfileStore';
 import { AvatarView } from '../chatlist/AvatarView';
-import { ChatListPage } from '../chatlist/ChatListPage';
+import { ChatListPage, NAV_BAR_WIDTH_KEY } from '../chatlist/ChatListPage';
 import { ContactsPage } from './ContactsPage';
 import { SettingsPage } from './SettingsPage';
 import { MyProfilePage } from './MyProfilePage';
@@ -54,6 +54,9 @@ export struct MainScreen {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 聊天页签分栏时左栏的实际宽度（vp，0 = 还没量到）。由 ChatListPage 在自己的
+  // 布局回调里写入——HdsNavigation 不回调宽度，拖分割线又会改它，只能这么拿。
+  @StorageProp(NAV_BAR_WIDTH_KEY) private navBarWidth: number = 0;
   @StorageProp('screenHeightVp') screenH: number = 780;
   @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
@@ -287,6 +290,17 @@ export struct MainScreen {
     return str(key);
   }
 
+  // 分栏时 dock 归左栏：它导航的就是左栏内容，横跨整屏正好压在右栏的聊天输入框
+  // 上（真机截图确认）。宽度不能写死——enableDragBar(true) 允许用户拖分割线。
+  //
+  // 只认聊天页签：联系人/设置/个人资料三个页签都显式 .mode(NavigationMode.Stack)
+  // 强制单栏，它们在屏上时整页就是整屏宽，dock 缩在左边一条是错的。
+  // 手机（单栏）下 navBarWidth 量到的就是整屏宽，自然退化为改造前的行为；
+  // 还没量到（0）时同样退化，不会先闪一下窄条。
+  private dockWidth(): Length {
+    return this.tab === 0 && this.navBarWidth > 0 ? this.navBarWidth : '100%';
+  }
+
   // Floating capsule: outer Column carries the horizontal padding + bottom
   // margin (width('100%') + horizontal margin conflict on the same node in
   // ArkUI), inner Row is the pill itself.
@@ -317,7 +331,7 @@ export struct MainScreen {
       .attributeModifier(materialModifier('bar'))
       ;
     }
-    .width('100%')
+    .width(this.dockWidth())
     // 两侧留白 16 → 28 → 40，胶囊再窄一档。四个格子是 layoutWeight 均分的，
     // 收窄只吃格子宽度，图标和文字尺寸不动——但「联系人」是最长的一条，
     // 再窄就该撞它了。
@@ -326,7 +340,10 @@ export struct MainScreen {
   }
 
   build() {
-    Stack({ alignContent: Alignment.Bottom }) {
+    // BottomStart 而不是 Bottom：dock 分栏时是一条定宽的左栏内容，居中就飘到
+    // 两栏中间去了。Tabs 是 width/height 100%，换对齐方式影响不到它。
+    // Start 会跟着布局方向镜像，和 navBar 默认的 NavBarPosition.Start 一致。
+    Stack({ alignContent: Alignment.BottomStart }) {
       Tabs({ controller: this.controller }) {
         TabContent() { ChatListPage(); }
         TabContent() { ContactsPage(); }

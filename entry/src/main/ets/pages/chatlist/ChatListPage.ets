@@ -4,7 +4,7 @@ import { FolderInfo } from '../../store/FolderStore';
 import { ChatListView } from './ChatListView';
 import { MainTabBody } from './MainTabBody';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
-import { LengthMetrics } from '@kit.ArkUI';
+import { ComponentContent, LengthMetrics } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
@@ -45,6 +45,45 @@ const FOLDER_BAR_SPACE: number = 54;
 const FOLDER_CHIP_HEIGHT: number = 28;
 const FOLDER_SWITCH_DURATION: number = 250;
 
+// 分栏时左栏（navBar）占窗口宽度的比例。官方大屏 UX 标准 3.2.2.4 的硬约束是
+// 侧边栏不超过窗口宽度 40%、内容区至少 60%；取 1/3 留一档余量，拖拽上限才顶到
+// 40%（SPLIT_NAV_CAP_RATIO）。
+//
+// 为什么是比例而不是定值：写死 320–440 的那一版在 1440vp 的模拟器上左栏只占
+// 22%，会话名被截成「TG资源搜索(全…」、时间和未读数挤成两行。那组数是按
+// MatePad 的 1137vp 反推的，换一块屏就不成立。
+const SPLIT_NAV_RATIO: number = 1 / 3;
+const SPLIT_NAV_CAP_RATIO: number = 0.4;
+// 两端的绝对兜底：下限取一个手机宽度（再窄会话行就没法看了），上限拦住超宽屏
+// ——比例再乘下去左栏只是在拉白边，会话行本身早就够宽了。
+const SPLIT_NAV_MIN_VP: number = 320;
+const SPLIT_NAV_MAX_VP: number = 480;
+const SPLIT_NAV_DRAG_MAX_VP: number = 560;
+
+// navBar（分栏时的左栏）的实际宽度，vp。由 ChatListPage 在布局回调里写入，
+// MainScreen 订阅它给 dock 定宽。联系人/设置页签强制单栏，不参与这个键。
+export const NAV_BAR_WIDTH_KEY: string = 'navBarWidth';
+
+// 分栏且右栏栈空时的占位。官方明确它仅在分栏模式下展示、不受路由栈管理、
+// 不可获焦、不响应事件，是纯展示层；单栏模式（手机）下永远不出现。
+//
+// 写成模块级函数而不是 struct 里的 @Builder 成员：splitPlaceholder 收的是
+// ComponentContent，要 wrapBuilder() 包一层，而 wrapBuilder 只接全局 @Builder。
+@Builder
+function splitPanePlaceholder(): void {
+  Column({ space: 12 }) {
+    Image($r('app.media.foreground'))
+      .width(64).height(64).opacity(0.45)
+      .draggable(false);
+    Text($r('app.string.split_pick_a_chat'))
+      .fontSize(14)
+      .fontColor(COLOR_TEXT_SECONDARY);
+  }
+  .width('100%').height('100%')
+  .justifyContent(FlexAlign.Center)
+  .backgroundColor($r('app.color.page_bg'));
+}
+
 @Preview
 // 组件冻结：这四个页签由 MainScreen 的 Tabs 保活，同一时刻只有一个在屏上，
 // 其余三棵树却照样响应各自 store 的状态更新、照样重跑 build。冻结之后非
@@ -52,6 +91,9 @@ const FOLDER_SWITCH_DURATION: number = 250;
 @Component({ freezeWhenInactive: true })
 export struct ChatListPage {
   private chatStack: NavPathStack = new NavPathStack();
+  // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
+  // 等于每帧重建一棵子树。
+  private splitPlaceholder: ComponentContent<Object> | null = null;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -329,6 +371,11 @@ export struct ChatListPage {
       this.searchOpeningTimer = -1;
     }
     this.searchOpening = false;
+    // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
+    if (this.splitPlaceholder !== null) {
+      this.splitPlaceholder.dispose();
+      this.splitPlaceholder = null;
+    }
   }
 
   private tabs(): TabSpec[] {
@@ -553,6 +600,36 @@ export struct ChatListPage {
     return content;
   }
 
+  // 左栏宽度按窗口宽度取比例。**minWidth 才是真正决定观感的那个数**：
+  // HdsNavigation 没有开放 navBarWidth 设置项，内部默认 240vp，被 range 一夹就
+  // 落在 minWidth 上——这正是上一版在 1440vp 屏上稳稳停在 320（22%）的原因。
+  // maxWidth 只是 enableDragBar 拖分割线时的上限。
+  private navBarMinWidth(): number {
+    const byRatio: number = Math.max(SPLIT_NAV_MIN_VP, this.screenW * SPLIT_NAV_RATIO);
+    // 40% 那一条最后再夹一次：窄窗口（刚够分栏的 720vp 一带）下是绝对下限
+    // SPLIT_NAV_MIN_VP 在起作用，不夹的话 320/720 就是 44%，越了官方的线。
+    return Math.round(Math.min(SPLIT_NAV_MAX_VP, this.screenW * SPLIT_NAV_CAP_RATIO, byRatio));
+  }
+
+  private navBarMaxWidth(): number {
+    const cap: number = Math.min(SPLIT_NAV_DRAG_MAX_VP, this.screenW * SPLIT_NAV_CAP_RATIO);
+    // 兜底值可能把下限顶到比 40% 还高（窄窗口下 SPLIT_NAV_MIN_VP 起作用），
+    // maxWidth < minWidth 是非法区间，取大的那个。
+    return Math.max(this.navBarMinWidth(), Math.round(cap));
+  }
+
+  // splitPlaceholder 收的是 ComponentContent，不是 @Builder 引用——直接传
+  // this.xxx 那种写法编译不过（签名见 @hms.hds.hdsBaseComponent.d.ets:2485）。
+  // 懒建一次：build 每帧都跑，在这里 new 就是每帧重建一棵子树。
+  private placeholderContent(): ComponentContent<Object> {
+    let content: ComponentContent<Object> | null = this.splitPlaceholder;
+    if (content === null) {
+      content = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(splitPanePlaceholder));
+      this.splitPlaceholder = content;
+    }
+    return content;
+  }
+
   private chromeInset(): number {
     return this.topSafe + TOP_BAR_HEIGHT +
       (this.folders.length > 0 ? FOLDER_BAR_SPACE : 0);
@@ -770,7 +847,17 @@ export struct ChatListPage {
       }
       .barHeight(0)
       .animationDuration(powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION))
-      .onAreaChange((_old: Area, area: Area) => { this.tabsWidth = area.width as number; })
+      .onAreaChange((_old: Area, area: Area) => {
+        this.tabsWidth = area.width as number;
+        // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
+        // dock 要跟着走。Tabs 是 navBar 内容的根节点、width('100%')，它的宽度
+        // 就是 navBar 宽度——所以复用这一个已有的布局回调，不另挂一个：
+        // HdsNavigation 没有回调宽度的接口，而多一个 onAreaChange 就是每次
+        // 布局多跑一遍回调。
+        if (AppStorage.get<number>(NAV_BAR_WIDTH_KEY) !== this.tabsWidth) {
+          AppStorage.setOrCreate<number>(NAV_BAR_WIDTH_KEY, this.tabsWidth);
+        }
+      })
       // Content swipe in progress: convert the swipe offset into a fractional
       // tab position so the selection pill tracks the finger continuously.
       .onGestureSwipe((index: number, event: TabsAnimationEvent) => {
@@ -843,9 +930,16 @@ export struct ChatListPage {
       // HdsNavDestination，分栏的结果是整页内容挤进左列、右边一片空白，只能强制
       // 单栏止血。本次改动起 ChatPage 迁为 HdsNavDestination，止血可以拆了。
       //
-      // 侧边栏宽度上限 440 是官方大屏 UX 标准 3.2.2.4 定的：不超过窗口宽度 40%，
-      // 内容区至少 60%。平板 1137vp 下 420/717 ≈ 37%/63%。
-      .navBarWidthRange({ minWidth: 320, maxWidth: 440 })
+      // 【下面这段是被比例式取代的旧结论，留作记录】侧边栏宽度上限 440 是官方
+      // 大屏 UX 标准 3.2.2.4 定的：不超过窗口宽度 40%，内容区至少 60%。平板
+      // 1137vp 下 420/717 ≈ 37%/63%。——标准这一条仍然成立，错的是"按 1137vp
+      // 反推一组定值"：同一组数放到 1440vp 的屏上，左栏卡在下限 320 只占 22%。
+      // 现在改成按窗口宽度取比例，见 navBarMinWidth() / navBarMaxWidth()。
+      // 字段名是 minWidth / maxWidth——官方文档写的 min / max 编译不过，
+      // 声明在 @hms.hds.hdsBaseComponent.d.ets:2048。
+      .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
+      // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
+      .splitPlaceholder(this.placeholderContent())
       .minContentWidth(400)
       .enableDragBar(true)
       // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶

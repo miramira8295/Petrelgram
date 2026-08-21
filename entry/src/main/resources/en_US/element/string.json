@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "Press back again to exit"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "Select a chat to start"
     }
   ]
 }

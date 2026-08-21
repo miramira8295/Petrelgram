@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "Çıkmak için tekrar geri basın"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "Başlamak için bir sohbet seçin"
     }
   ]
 }

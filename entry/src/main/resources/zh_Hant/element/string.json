@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "再按一次返回鍵退出"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "選擇一個對話開始"
     }
   ]
 }

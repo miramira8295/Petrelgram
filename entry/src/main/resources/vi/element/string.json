@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "Nhấn lại lần nữa để thoát"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "Chọn một cuộc trò chuyện để bắt đầu"
     }
   ]
 }

@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "Appuyez encore sur Retour pour quitter"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "Sélectionnez une discussion pour commencer"
     }
   ]
 }

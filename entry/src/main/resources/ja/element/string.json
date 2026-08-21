@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "もう一度戻るで終了"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "チャットを選択してください"
     }
   ]
 }

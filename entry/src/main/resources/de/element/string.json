@@ -11347,6 +11347,10 @@
     {
       "name": "app_exit_again",
       "value": "Zum Beenden erneut Zurück drücken"
+    },
+    {
+      "name": "split_pick_a_chat",
+      "value": "Wähle einen Chat aus, um zu beginnen"
     }
   ]
 }
