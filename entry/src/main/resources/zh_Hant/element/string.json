@@ -11355,6 +11355,10 @@
     {
       "name": "split_pick_a_contact",
       "value": "選擇一位聯絡人"
+    },
+    {
+      "name": "split_pick_a_setting",
+      "value": "選擇一項設定"
     }
   ]
 }

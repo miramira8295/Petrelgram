@@ -1,4 +1,4 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { ComponentContent, router, promptAction } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
@@ -49,6 +49,28 @@ export const SETTINGS_NAV_BAR_WIDTH_KEY: string = 'settingsNavBarWidth';
 // MainScreen 靠它决定悬浮 dock 藏不藏——子页迁成 NavDestination 之后不再是盖住
 // 整个 MainScreen 的整页 router 页，dock 会浮在子页上，必须显式藏。
 export const SETTINGS_NAV_BAR_VISIBLE_KEY: string = 'settingsNavBarVisible';
+
+// 分栏且右栏栈空时的占位。官方明确它仅在分栏模式下展示、不受路由栈管理、
+// 不可获焦、不响应事件，是纯展示层；单栏模式（手机）下永远不出现。
+//
+// 写成模块级函数而不是 struct 里的 @Builder 成员：splitPlaceholder 收的是
+// ComponentContent，要 wrapBuilder() 包一层，而 wrapBuilder 只接全局 @Builder。
+// 与 ChatListPage 的 splitPanePlaceholder、ContactsPage 的
+// contactsSplitPlaceholder 同一个形状，只是文案不同。
+@Builder
+function settingsSplitPlaceholder(): void {
+  Column({ space: 12 }) {
+    Image($r('app.media.foreground'))
+      .width(64).height(64).opacity(0.45)
+      .draggable(false);
+    Text($r('app.string.split_pick_a_setting'))
+      .fontSize(14)
+      .fontColor(COLOR_TEXT_SECONDARY);
+  }
+  .width('100%').height('100%')
+  .justifyContent(FlexAlign.Center)
+  .backgroundColor($r('app.color.page_bg'));
+}
 
 interface SettingItem {
   icon: string;
@@ -165,6 +187,9 @@ export struct SettingsPage {
   // 设置页签的路由栈。已迁成 HdsNavDestination 的子页推进这里；平板上它就是
   // 右栏，手机上它盖住整个页签（HdsNavigation 默认 Auto，<600vp 单栏）。
   private settingsStack: NavPathStack = new NavPathStack();
+  // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
+  // 等于每帧重建一棵子树。
+  private splitPlaceholder: ComponentContent<Object> | null = null;
   // 标题栏的材质档位来自设置里的「光感等级」，改了要重绘。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -226,6 +251,11 @@ export struct SettingsPage {
   }
 
   aboutToDisappear(): void {
+    // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
+    if (this.splitPlaceholder !== null) {
+      this.splitPlaceholder.dispose();
+      this.splitPlaceholder = null;
+    }
     this.profileLoadSequence++;
     this.clearProfileLoadTimer();
     this.closeProfileStore();
@@ -453,6 +483,18 @@ export struct SettingsPage {
 
   private contentMinWidth(): number {
     return splitContentMinWidth(this.screenW);
+  }
+
+  // splitPlaceholder 收的是 ComponentContent，不是 @Builder 引用——直接传
+  // this.xxx 那种写法编译不过。懒建一次：build 每帧都跑，在这里 new 就是
+  // 每帧重建一棵子树。
+  private placeholderContent(): ComponentContent<Object> {
+    let content: ComponentContent<Object> | null = this.splitPlaceholder;
+    if (content === null) {
+      content = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(settingsSplitPlaceholder));
+      this.splitPlaceholder = content;
+    }
+    return content;
   }
 
   private openSetting(item: SettingItem): void {
@@ -1479,6 +1521,8 @@ export struct SettingsPage {
       // 不显式设 mode：HdsNavigation 默认就是 Auto——窗口 <600vp 走单栏（手机，
       // 观感与 router.pushUrl 一致），≥600vp 自动分栏（平板，左设置列表右子页）。
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
+      // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
+      .splitPlaceholder(this.placeholderContent())
       .minContentWidth(this.contentMinWidth())
       .enableDragBar(true)
       // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见

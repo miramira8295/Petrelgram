@@ -11355,6 +11355,10 @@
     {
       "name": "split_pick_a_contact",
       "value": "एक संपर्क चुनें"
+    },
+    {
+      "name": "split_pick_a_setting",
+      "value": "एक सेटिंग चुनें"
     }
   ]
 }

@@ -11355,6 +11355,10 @@
     {
       "name": "split_pick_a_contact",
       "value": "Виберіть контакт"
+    },
+    {
+      "name": "split_pick_a_setting",
+      "value": "Виберіть налаштування"
     }
   ]
 }

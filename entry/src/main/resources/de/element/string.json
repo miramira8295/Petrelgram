@@ -11355,6 +11355,10 @@
     {
       "name": "split_pick_a_contact",
       "value": "Wähle einen Kontakt aus"
+    },
+    {
+      "name": "split_pick_a_setting",
+      "value": "Wähle eine Einstellung aus"
     }
   ]
 }

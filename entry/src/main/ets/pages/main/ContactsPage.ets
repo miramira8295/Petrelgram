@@ -467,6 +467,28 @@ export struct ContactsPage {
     return splitContentMinWidth(this.screenW);
   }
 
+  // ⋮ 菜单锚点的 x。锚点本身留在最外层 Stack 上（y 的基准因此不变），只换 x。
+  //
+  //   单栏（手机）→ 原字面量 '100%'。最外层 Stack 就是整个页签，'100%' = 屏幕
+  //     右缘，与改动前逐字相同。**这里必须是字面量而不是"算出来碰巧等于窗口宽"**：
+  //     readableContentWidth / contentSideGutter 那套按窗口宽算的量在分栏下会
+  //     吃错基准，本项目已经踩过两次，不再让手机路径依赖任何计算。
+  //   分栏（平板）→ 左栏实际宽度 navBarW（vp）。⋮ 按钮住在左栏的标题栏里，
+  //     锚点落在左栏右缘，菜单才贴着按钮弹。navBarW 由本页那个 Scroll 的
+  //     onAreaChange 量出来写进 CONTACTS_NAV_BAR_WIDTH_KEY，dock 用的是同一个值。
+  //   分栏但还没量到（navBarW <= 0，首帧）→ 退回 '100%'，与改动前同。下一帧
+  //     onAreaChange 一到就归位。
+  private topMenuAnchorX(): Length {
+    if (!isSplitLayout(this.screenW)) {
+      return '100%';
+    }
+    const w: number = this.navBarW;
+    if (w <= 0) {
+      return '100%';
+    }
+    return w;
+  }
+
   // splitPlaceholder 收的是 ComponentContent，不是 @Builder 引用——直接传
   // this.xxx 那种写法编译不过。懒建一次：build 每帧都跑，在这里 new 就是
   // 每帧重建一棵子树。
@@ -1627,9 +1649,13 @@ export struct ContactsPage {
 
       // ⋮ 菜单的锚点：零尺寸，只为让菜单弹在右上角。HDS 的菜单项给不了
       // bindMenu，只能这样把两者接起来。
+      //
+      // x 见 topMenuAnchorX()：分栏时收到左栏右缘，否则菜单会弹在右栏上方、
+      // 离触发它的 ⋮ 按钮半个屏幕远。y 不动——它是**屏幕坐标**（本 Stack 是
+      // 最外层、顶到状态栏），锚点留在这一层就不必换基准，手机上一像素不变。
       Row()
         .width(1).height(1)
-        .position({ x: '100%', y: this.topSafe + 44 })
+        .position({ x: this.topMenuAnchorX(), y: this.topSafe + 44 })
         .bindMenu(this.topMenuShown, this.topMenu, {
           systemMaterial: overlayMaterial('menu'),
           onDisappear: (): void => { this.topMenuShown = false; }
