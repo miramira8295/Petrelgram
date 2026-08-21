@@ -91,28 +91,6 @@ struct InteractionSettingsPage {
   }
 
   @Builder
-  header() {
-    Row({ space: 8 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-      .width(44).height(44).borderRadius(22)
-      .justifyContent(FlexAlign.Center)
-      .stateStyles({
-        normal: this.actionNormalStyle,
-        pressed: this.actionPressedStyle
-      })
-      .enabled(!this.leavingPage)
-      .accessibilityText($r('app.string.back_to_settings'))
-      .onClick((): void => { this.leavePage(); });
-      Text($r('app.string.settings_interaction')).fontSize(22).fontWeight(FontWeight.Bold)
-        .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-    }
-    .width('100%').height(56).padding({ left: 8, right: 16 })
-    .alignItems(VerticalAlign.Center);
-  }
-
-  @Builder
   cardTitle(text: ResourceStr) {
     Text(text).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
       .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });

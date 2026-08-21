@@ -136,23 +136,6 @@ struct AboutPage {
     }
   }
 
-  @Builder
-  header() {
-    Row() {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-      .width(40).height(40).justifyContent(FlexAlign.Center)
-      .accessibilityText($r('app.string.back'))
-      .onClick((): void => { router.back(); });
-      Text($r('app.string.settings_about')).fontSize(18).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
-      Blank().layoutWeight(1);
-    }
-    .width('100%').height(56)
-    .padding({ left: 8, right: 16 })
-    .alignItems(VerticalAlign.Center);
-  }
-
   build() {
     Column() {
       HdsSubPage({ title: $r('app.string.settings_about'), scroller: this.hdsScroller }) {

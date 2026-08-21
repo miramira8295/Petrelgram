@@ -15,6 +15,7 @@ import { clockTime, fullDate, monthDayTime } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_RADIUS: number = 16;
 const DANGER: string = '#EF5B5B';
@@ -134,6 +135,7 @@ function formatLastActive(seconds: number, isCurrent: boolean): string {
 struct ActiveSessionsPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -596,37 +598,6 @@ struct ActiveSessionsPage {
     } finally {
       this.actionKey = '';
     }
-  }
-
-  @Builder
-  header() {
-    Row({ space: 10 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(26).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-      .width(40).height(40).borderRadius(20)
-      .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-      .onClick((): void => { router.back(); });
-      Text($r('app.string.as_title'))
-        .fontSize(24).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-        .layoutWeight(1);
-      Stack({ alignContent: Alignment.Center }) {
-        if (this.refreshing) {
-          LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
-        } else {
-          SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
-            .fontSize(21).fontColor([COLOR_PRIMARY]);
-        }
-      }
-      .width(40).height(40).borderRadius(20)
-      .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-      .enabled(!this.refreshing && this.actionKey === '')
-      .onClick((): void => { this.load(false); });
-    }
-    .width('100%').height(52)
-    .padding({ left: 8, right: 12 })
-    .alignItems(VerticalAlign.Center);
   }
 
   @Builder
@@ -1162,13 +1133,20 @@ struct ActiveSessionsPage {
 
   build() {
     Column() {
-      this.header();
+    // 三个状态分支一起包进来——只包 Scroll 那一支的话，加载态和错误态就没有
+    // 标题栏了。
+    HdsSubPage({
+      title: $r('app.string.as_title'),
+      pageBackground: $r('app.color.page_bg'),
+      scroller: this.hdsScroller
+    }) {
+      Column() {
       if (this.loadState === 'loading') {
         this.loadingSkeleton();
       } else if (this.loadState === 'error') {
         this.errorState();
       } else {
-        Scroll() {
+        Scroll(this.hdsScroller) {
           Column({ space: 12 }) {
             if (this.syncError !== '') { this.syncWarning(); }
             this.linkDeviceCard();
@@ -1200,11 +1178,11 @@ struct ActiveSessionsPage {
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring);
       }
+      }.width('100%').height('100%');
+    }
     }
     .width('100%').height('100%')
-    .backgroundColor($r('app.color.page_bg'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe })
+    // bindSheet 留在最外层：它是页面级的浮层，不属于标题栏管辖的内容区。
     .bindSheet($$this.detailOpen, this.sessionDetailSheet(), {
       height: '78%',
       backgroundColor: $r('app.color.surface'),

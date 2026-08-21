@@ -754,52 +754,6 @@ struct ProxyPage {
   }
 
   @Builder
-  header() {
-    Row({ space: 6 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-      .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE).borderRadius(TOP_ACTION_SIZE / 2)
-      .justifyContent(FlexAlign.Center)
-      .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .accessibilityText($r('app.string.back')).onClick((): void => { if (!this.saving) { router.back(); } });
-
-      Column({ space: 1 }) {
-        Text($r('app.string.px_title')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
-        if (this.refreshing) {
-          Text($r('app.string.syncing')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
-            .transition(TransitionEffect.OPACITY.animation({
-              duration: this.animationDuration(140), curve: Curve.EaseOut
-            }));
-        }
-      }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-
-      Row() {
-        if (this.refreshing) {
-          LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-        } else {
-          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(20)
-            .fontColor([COLOR_TEXT_SECONDARY]);
-        }
-      }
-      .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE).borderRadius(TOP_ACTION_SIZE / 2)
-      .justifyContent(FlexAlign.Center).enabled(!this.loading && !this.refreshing)
-      .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .accessibilityText($r('app.string.px_refresh')).onClick((): void => this.load(false));
-
-      Row() {
-        SymbolGlyph($r('sys.symbol.plus')).fontSize(21).fontColor([COLOR_PRIMARY]);
-      }
-      .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE).borderRadius(TOP_ACTION_SIZE / 2)
-      .justifyContent(FlexAlign.Center).enabled(this.actionKey === '' && !this.saving)
-      .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .accessibilityText($r('app.string.px_add')).onClick((): void => this.openAdd());
-    }
-    .width('100%').height(56).padding({ left: 6, right: 8 })
-    .alignItems(VerticalAlign.Center).backgroundColor(COLOR_PAGE_BG);
-  }
-
-  @Builder
   connectionCard() {
     Column({ space: 12 }) {
       Row({ space: 12 }) {

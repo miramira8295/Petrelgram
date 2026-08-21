@@ -22,6 +22,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE, logW } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -34,6 +35,7 @@ const ROW_STEP: number = ROW_HEIGHT + 0.5;
 struct ChatFoldersPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -336,24 +338,6 @@ struct ChatFoldersPage {
   }
 
   @Builder
-  header() {
-    Row({ space: 6 }) {
-      Row() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]); }
-        .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
-        .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-        .onClick((): void => router.back());
-      Column({ space: 1 }) {
-        Text($r('app.string.settings_folders')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
-        Text(this.loading ? $r('app.string.syncing') : str('cf_folder_quota', this.folders.length, this.limits.folderCount))
-          .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      if (this.operationKey !== '') {
-        LoadingProgress().width(19).height(19).color(COLOR_PRIMARY).margin({ right: 13 });
-      }
-    }.width('100%').height(56).padding({ left: 8, right: 8 }).alignItems(VerticalAlign.Center);
-  }
-
-  @Builder
   skeleton() {
     Column({ space: 12 }) {
       ForEach([0, 1, 2], (skeletonIndex: number) => {
@@ -538,7 +522,7 @@ struct ChatFoldersPage {
 
   @Builder
   content() {
-    Scroll() {
+    Scroll(this.hdsScroller) {
       Column({ space: 14 }) {
         Text($r('app.string.cf_note'))
           .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%')
@@ -567,7 +551,9 @@ struct ChatFoldersPage {
           }.width('100%').padding(14).backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
         }
       }.width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
-    }.layoutWeight(1).width('100%').scrollBar(BarState.Off).align(Alignment.Top);
+    }.layoutWeight(1).width('100%').scrollBar(BarState.Off).align(Alignment.Top)
+      // 不裁剪，内容才能穿到标题栏底下。
+      .clip(false);
   }
 
   @Builder
@@ -601,13 +587,21 @@ struct ChatFoldersPage {
 
   build() {
     Column() {
-      this.header();
+    // 三个状态分支一起包进来。滚动容器在 content() 里，控制器直接接到那边的
+    // Scroll 上（同一个 hdsScroller），标题栏才收缩得起来。
+    HdsSubPage({
+      title: $r('app.string.settings_folders'),
+      pageBackground: COLOR_PAGE_BG,
+      scroller: this.hdsScroller
+    }) {
+      Column() {
       if (this.loading) { this.skeleton(); }
       else if (this.loadError) { this.errorState(); }
       else { this.content(); }
-    }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-      .padding({ top: this.topSafe })
+      }.width('100%').height('100%');
+    }
+    }.width('100%').height('100%')
+      // bindSheet 留在最外层：页面级浮层，不属于标题栏管辖的内容区。
       .bindSheet($$this.deleteSheetOpen, this.leaveSheet(), {
         height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       });

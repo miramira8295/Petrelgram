@@ -43,18 +43,6 @@ struct MediaSettingsPage {
   }
 
   @Builder
-  header() {
-    Row({ space: 8 }) {
-      Row() { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]); }
-      .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
-      .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .onClick((): void => router.back());
-      Text($r('app.string.settings_media')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-        .layoutWeight(1);
-    }.width('100%').height(56).padding({ left: 8, right: 8 }).alignItems(VerticalAlign.Center);
-  }
-
-  @Builder
   toggleRow(title: string, subtitle: string, value: boolean, change: (next: boolean) => void) {
     Row({ space: 10 }) {
       Column({ space: 2 }) {

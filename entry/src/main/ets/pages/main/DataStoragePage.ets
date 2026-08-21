@@ -225,36 +225,6 @@ struct DataStoragePage {
   }
 
   @Builder
-  header() {
-    Row({ space: 8 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-      .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
-      .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .accessibilityText($r('app.string.back_to_settings')).onClick((): void => router.back());
-      Column({ space: 1 }) {
-        Text($r('app.string.settings_data')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
-        if (this.storageLoading || this.networkLoading) {
-          Text($r('app.string.ds_syncing')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-        }
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      Row() {
-        if (this.storageLoading || this.networkLoading) {
-          LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-        } else {
-          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(20).fontColor([COLOR_PRIMARY]);
-        }
-      }
-      .width(44).height(44).borderRadius(22).justifyContent(FlexAlign.Center)
-      .enabled(!this.storageLoading && !this.networkLoading)
-      .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-      .accessibilityText($r('app.string.ds_refresh')).onClick((): void => this.load(false));
-    }
-    .width('100%').height(56).padding({ left: 8, right: 8 }).alignItems(VerticalAlign.Center);
-  }
-
-  @Builder
   skeletonCard() {
     Column({ space: 13 }) {
       Row().width('42%').height(14).borderRadius(7).backgroundColor($r('app.color.surface_alt'));

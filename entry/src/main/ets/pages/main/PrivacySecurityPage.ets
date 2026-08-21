@@ -18,6 +18,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_RADIUS: number = 16;
 const COLOR_WARNING: string = '#D98914';
@@ -96,6 +97,7 @@ function ruleRows(): RuleRow[] {
 struct PrivacySecurityPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -309,32 +311,6 @@ struct PrivacySecurityPage {
   }
 
   @Builder
-  header() {
-    Row({ space: 8 }) {
-      Button() {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-      .width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
-      Text($r('app.string.settings_privacy')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-        .layoutWeight(1);
-      if (this.loadState === 'ready') {
-        Button() {
-          if (this.refreshing) {
-            LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
-          } else {
-            SymbolGlyph($r('sys.symbol.arrow_counterclockwise')).fontSize(20).fontColor([COLOR_PRIMARY]);
-          }
-        }
-        .width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-        .enabled(!this.refreshing && this.actionKey === '')
-        .onClick((): void => { this.store?.refresh(); });
-      }
-    }
-    .width('100%').height(52).padding({ left: 8, right: 10 }).alignItems(VerticalAlign.Center);
-  }
-
-  @Builder
   sectionTitle(text: ResourceStr) {
     Text(text).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
       .width('100%').padding({ left: 16, right: 16, top: 13, bottom: 5 });
@@ -400,7 +376,7 @@ struct PrivacySecurityPage {
 
   @Builder
   content() {
-    Scroll() {
+    Scroll(this.hdsScroller) {
       Column({ space: 12 }) {
         if (this.syncError !== '') {
           Row({ space: 9 }) {
@@ -605,18 +581,24 @@ struct PrivacySecurityPage {
       }
       .width('100%').padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
     }
-    .layoutWeight(1).width('100%').align(Alignment.Top).scrollBar(BarState.Off);
+    .layoutWeight(1).width('100%').align(Alignment.Top).scrollBar(BarState.Off)
+      // 不裁剪，内容才能穿到标题栏底下。
+      .clip(false);
   }
 
   build() {
     Column() {
-      this.header();
+    HdsSubPage({
+      title: $r('app.string.settings_privacy'),
+      pageBackground: COLOR_PAGE_BG,
+      scroller: this.hdsScroller
+    }) {
+      Column() {
       if (this.loadState === 'loading') { this.skeleton(); }
       else if (this.loadState === 'error') { this.errorState(); }
       else { this.content(); }
+      }.width('100%').height('100%');
     }
-    .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    }.width('100%').height('100%');
   }
 }

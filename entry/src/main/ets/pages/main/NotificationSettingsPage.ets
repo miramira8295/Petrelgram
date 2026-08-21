@@ -13,12 +13,14 @@ import {
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_RADIUS: number = 14;
 
 @Entry
 @Component
 struct NotificationSettingsPage {
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -182,14 +184,9 @@ struct NotificationSettingsPage {
 
   build() {
     Column() {
-      Row({ space: 8 }) {
-        Button() {
-          SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
-        }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-        .onClick((): void => { router.back(); });
-        Text($r('app.string.settings_notifications')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-          .layoutWeight(1);
-      }.width('100%').height(52).padding({ left: 8, right: 16 }).alignItems(VerticalAlign.Center);
+    // 内联的顶栏搬进标题栏了。
+    HdsSubPage({ title: $r('app.string.settings_notifications'), pageBackground: COLOR_PAGE_BG, scroller: this.hdsScroller }) {
+      Column() {
       if (this.loadState === 'loading') {
         Column({ space: 9 }) {
           LoadingProgress().width(32).height(32).color(COLOR_PRIMARY);
@@ -201,7 +198,7 @@ struct NotificationSettingsPage {
           Button($r('app.string.settings_reload')).onClick((): void => this.load());
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
-        Scroll() {
+        Scroll(this.hdsScroller) {
           Column({ space: 12 }) {
             this.privateCard();
             this.groupCard();
@@ -248,13 +245,13 @@ struct NotificationSettingsPage {
             Text($r('app.string.ns_priority_note'))
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
           }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
-        }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        }
+        .layoutWeight(1).width('100%').scrollBar(BarState.Off)
+        // 不裁剪，内容才能穿到标题栏底下。
+        .clip(false);
       }
+      }.width('100%').height('100%');
     }
-    .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    // 没有这一行时页面的布局区停在安全区边界，状态栏那一条不归页面画，
-    // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    }.width('100%').height('100%');
   }
 }

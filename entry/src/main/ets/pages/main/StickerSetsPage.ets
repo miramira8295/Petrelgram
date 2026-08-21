@@ -11,6 +11,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
 
 const CARD_RADIUS: number = 14;
 
@@ -24,6 +25,7 @@ interface StickerSetRow {
 @Entry
 @Component
 struct StickerSetsPage {
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -138,19 +140,6 @@ struct StickerSetsPage {
   }
 
   @Builder
-  header() {
-    Row({ space: 8 }) {
-      Button() {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([COLOR_TEXT_PRIMARY]);
-      }.width(40).height(40).borderRadius(20).backgroundColor(Color.Transparent)
-      .onClick((): void => { router.back(); });
-      Text($r('app.string.settings_stickers')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-        .layoutWeight(1);
-      if (this.busyId !== '') { LoadingProgress().width(20).height(20).color(COLOR_PRIMARY); }
-    }.width('100%').height(52).padding({ left: 8, right: 16 }).alignItems(VerticalAlign.Center);
-  }
-
-  @Builder
   setRow(row: StickerSetRow, index: number, isArchived: boolean) {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
@@ -182,7 +171,14 @@ struct StickerSetsPage {
 
   build() {
     Column() {
-      this.header();
+    // 搜索框和三个状态分支一起包进来——只包 Scroll 那一支的话，加载态和
+    // 搜索框就跑到标题栏外面去了。
+    HdsSubPage({
+      title: $r('app.string.settings_stickers'),
+      pageBackground: COLOR_PAGE_BG,
+      scroller: this.hdsScroller
+    }) {
+      Column() {
       Row({ space: 8 }) {
         SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
         TextInput({ placeholder: $r('app.string.sticker_search'), text: this.query })
@@ -202,7 +198,7 @@ struct StickerSetsPage {
           Button($r('app.string.settings_reload')).onClick((): void => this.load());
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
-        Scroll() {
+        Scroll(this.hdsScroller) {
           Column({ space: 12 }) {
             Text(str('sticker_installed_count', this.installed.length)).fontSize(12)
               .fontColor(COLOR_TEXT_SECONDARY).width('100%').padding({ left: 4 });
@@ -229,13 +225,13 @@ struct StickerSetsPage {
             Text($r('app.string.sticker_archive_note'))
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
           }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
-        }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        }
+        .layoutWeight(1).width('100%').scrollBar(BarState.Off)
+        // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
+        .clip(false);
       }
+      }.width('100%').height('100%');
     }
-    .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    // 没有这一行时页面的布局区停在安全区边界，状态栏那一条不归页面画，
-    // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    }.width('100%').height('100%');
   }
 }

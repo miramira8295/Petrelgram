@@ -11,6 +11,10 @@ import {
   overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
+import { HdsSubPage } from '../common/HdsSubPage';
+import {
+  HdsNavigationIconOptions, HdsNavigationMenuItemOptions
+} from '@kit.UIDesignKit';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -22,6 +26,7 @@ const ACCOUNT_LOAD_TIMEOUT_MS: number = 8000;
 @Entry
 @Component
 struct AccountEditPage {
+  private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
@@ -604,44 +609,32 @@ struct AccountEditPage {
     });
   }
 
+  // 标题栏右上角的保存键。禁用条件照搬原来那个对勾。
+  private saveMenuItem(): HdsNavigationMenuItemOptions {
+    const icon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.checkmark'),
+      label: $r('app.string.ae_save_profile'),
+      isEnabled: !this.loading && this.loadError === '' &&
+        !this.leavingPage && !this.discardDialogOpen,
+      action: (): void => { this.save(); }
+    };
+    return { content: icon };
+  }
+
   build() {
     Column() {
-      Row({ space: 8 }) {
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(25).fontColor([COLOR_TEXT_PRIMARY]);
-        }
-        .width(44).height(44).borderRadius(22)
-        .justifyContent(FlexAlign.Center)
-        .stateStyles({
-          normal: this.headerActionNormalStyle,
-          pressed: this.headerActionPressedStyle
-        })
-        .enabled(!this.saving && !this.leavingPage && !this.discardDialogOpen)
-        .accessibilityText($r('app.string.back_to_settings'))
-        .onClick((): void => { this.requestBack(); });
-        Text($r('app.string.settings_account')).fontSize(22).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-          .layoutWeight(1);
-        if (this.saving) {
-          LoadingProgress().width(24).height(24).color(COLOR_PRIMARY);
-        } else {
-          Row() {
-            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(23).fontColor([COLOR_PRIMARY]);
-          }
-          .width(44).height(44).borderRadius(22)
-          .justifyContent(FlexAlign.Center)
-          .stateStyles({
-            normal: this.headerActionNormalStyle,
-            pressed: this.headerActionPressedStyle
-          })
-          .enabled(!this.loading && this.loadError === '' &&
-            !this.leavingPage && !this.discardDialogOpen)
-          .opacity(!this.loading && this.loadError === '' ? 1 : 0.34)
-          .accessibilityText($r('app.string.ae_save_profile'))
-          .onClick((): void => { this.save(); });
-        }
-      }
-      .width('100%').height(56).padding({ left: 8, right: 8 })
-      .alignItems(VerticalAlign.Center);
+    // 内联顶栏搬进标题栏：返回走 requestBack()（它管着未保存的确认），
+    // 保存变成标题栏右上角的对勾。保存中时对勾换成副标题「保存中」——HDS 的
+    // 菜单项只能放图标，放不下 LoadingProgress。
+    HdsSubPage({
+      title: $r('app.string.settings_account'),
+      subTitle: this.saving ? $r('app.string.saving') : '',
+      pageBackground: $r('app.color.page_bg'),
+      scroller: this.hdsScroller,
+      onBack: (): void => { this.requestBack(); },
+      menuItems: this.saving ? [] : [this.saveMenuItem()]
+    }) {
+      Column() {
 
       if (this.loading) {
         Column() {
@@ -652,7 +645,7 @@ struct AccountEditPage {
       } else if (this.loadError !== '') {
         this.loadErrorState();
       } else {
-        Scroll() {
+        Scroll(this.hdsScroller) {
           Column({ space: 0 }) {
             if (this.saveError !== '') {
               Column() {
@@ -728,13 +721,13 @@ struct AccountEditPage {
         .width('100%')
         .align(Alignment.Top)
         .edgeEffect(EdgeEffect.Spring)
-        .scrollBar(BarState.Off);
+        .scrollBar(BarState.Off)
+        // 不裁剪，内容才能穿到标题栏底下。
+        .clip(false);
       }
+      }.width('100%').height('100%');
     }
-    .width('100%').height('100%')
-    .backgroundColor($r('app.color.page_bg'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .padding({ top: this.topSafe });
+    }.width('100%').height('100%');
   }
 }
 
