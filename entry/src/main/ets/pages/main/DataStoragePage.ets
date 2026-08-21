@@ -22,15 +22,22 @@ import { plural, str } from '../../util/strings';
 import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
 const SKELETON_ROWS: number[] = [0, 1, 2];
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router
+// 页和 NavDestination。形状与 PowerUsagePageBuilder 一致。
+@Builder
+export function DataStoragePageBuilder(): void {
+  DataStoragePage();
+}
+
 @Component
-struct DataStoragePage {
+export struct DataStoragePage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -97,7 +104,14 @@ struct DataStoragePage {
     });
   }
 
-  onPageShow(): void {
+  // 迁移前是 router 页的 onPageShow()。**方法体一字未改**，只改了名字并由外壳
+  // 转发——NavDestination 上对应的是 HdsNavDestination.onShown()，调用页够不着
+  // 那一层，所以在 build() 里把它作为 onShown Prop 传给 HdsSubDestination。
+  //
+  // 触发时机对得上：这个页面本来就是靠"从 StorageUsagePage / NetworkUsagePage
+  // 返回时重新拉一次用量"才不显示陈旧数字的，而那两个页面还是 router 页，盖在
+  // 本 NavDestination 之上、退出时本页重新可见——正是 onShown。
+  onShown(): void {
     if (Date.now() - this.lastLoadAt > 1200) { this.load(false); }
   }
 
@@ -437,7 +451,11 @@ struct DataStoragePage {
 
   build() {
     Column() {
-      HdsSubPage({ title: $r('app.string.settings_data'), scroller: this.hdsScroller, pageBackground: COLOR_PAGE_BG }) {
+      HdsSubDestination({
+        title: $r('app.string.settings_data'), scroller: this.hdsScroller,
+        pageBackground: COLOR_PAGE_BG,
+        onShown: (): void => { this.onShown(); }
+      }) {
       Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
           this.warningCard();

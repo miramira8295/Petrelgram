@@ -15,7 +15,7 @@ import { clockTime, fullDate, monthDayTime } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 16;
 const DANGER: string = '#EF5B5B';
@@ -130,9 +130,16 @@ function formatLastActive(seconds: number, isCurrent: boolean): string {
   return formatClock(seconds);
 }
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router
+// 页和 NavDestination。形状与 PowerUsagePageBuilder 一致。
+@Builder
+export function ActiveSessionsPageBuilder(): void {
+  ActiveSessionsPage();
+}
+
 @Component
-struct ActiveSessionsPage {
+export struct ActiveSessionsPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   private hdsScroller: Scroller = new Scroller();
@@ -1135,7 +1142,7 @@ struct ActiveSessionsPage {
     Column() {
     // 三个状态分支一起包进来——只包 Scroll 那一支的话，加载态和错误态就没有
     // 标题栏了。
-    HdsSubPage({
+    HdsSubDestination({
       title: $r('app.string.as_title'),
       pageBackground: $r('app.color.page_bg'),
       scroller: this.hdsScroller

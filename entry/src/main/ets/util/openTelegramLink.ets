@@ -270,7 +270,12 @@ function openSettingsSection(type: TdObject): void {
     }
     return;
   } else if (sectionName === 'settingsSectionChatFolders') {
-    page = 'pages/main/ChatFoldersPage';
+    // 文件夹页已迁成 HdsNavDestination、从 main_pages.json 摘掉，走设置页签的
+    // 路由栈——理由同下面 settingsSectionPowerSaving 那一支。
+    if (!navigateToSetting('ChatFoldersPage')) {
+      promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+    }
+    return;
   } else if (sectionName === 'settingsSectionPrivacyAndSecurity') {
     const subsection = (section['subsection'] as string | undefined) ?? '';
     // 两支目标现在性质不同，所以不能再共用底下那一句 router.pushUrl：
@@ -285,9 +290,19 @@ function openSettingsSection(type: TdObject): void {
       return;
     }
   } else if (sectionName === 'settingsSectionDevices') {
-    page = 'pages/main/ActiveSessionsPage';
+    // 设备（登录会话）页已迁成 HdsNavDestination、从 main_pages.json 摘掉，走
+    // 设置页签的路由栈——理由同下面 settingsSectionPowerSaving 那一支。
+    if (!navigateToSetting('ActiveSessionsPage')) {
+      promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+    }
+    return;
   } else if (sectionName === 'settingsSectionDataAndStorage') {
-    page = 'pages/main/DataStoragePage';
+    // 数据与存储页已迁成 HdsNavDestination、从 main_pages.json 摘掉，走设置
+    // 页签的路由栈——理由同下面 settingsSectionPowerSaving 那一支。
+    if (!navigateToSetting('DataStoragePage')) {
+      promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+    }
+    return;
   } else if (sectionName === 'settingsSectionPowerSaving') {
     // 耗电页已经迁成 HdsNavDestination、从 main_pages.json 摘掉了，router.pushUrl
     // 对它必然失败（而且这里原本连 catch 都没有，会是"点了深链什么都不发生"）。

@@ -89,6 +89,21 @@
       "name": "AccountEditPage",
       "pageSourceFile": "src/main/ets/pages/main/AccountEditPage.ets",
       "buildFunction": "AccountEditPageBuilder"
+    },
+    {
+      "name": "DataStoragePage",
+      "pageSourceFile": "src/main/ets/pages/main/DataStoragePage.ets",
+      "buildFunction": "DataStoragePageBuilder"
+    },
+    {
+      "name": "ActiveSessionsPage",
+      "pageSourceFile": "src/main/ets/pages/main/ActiveSessionsPage.ets",
+      "buildFunction": "ActiveSessionsPageBuilder"
+    },
+    {
+      "name": "ChatFoldersPage",
+      "pageSourceFile": "src/main/ets/pages/main/ChatFoldersPage.ets",
+      "buildFunction": "ChatFoldersPageBuilder"
     }
   ]
 }

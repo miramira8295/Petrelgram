@@ -105,6 +105,35 @@ export struct HdsSubDestination {
   onBack: () => void = (): void => { this.popSelf(); };
   // 右上角的图标按钮，最多三个（HDS 自己会把多的收进"更多"）。
   menuItems: HdsNavigationMenuItemOptions[] = [];
+
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │ router 页生命周期 / 入参的转发入口                                     │
+  // └──────────────────────────────────────────────────────────────────────┘
+  // 这四个回调都挂在外壳内部的 HdsNavDestination 上，调用页够不着，只能由外壳
+  // 转发。映射关系（router 页 → NavDestination）：
+  //   onPageShow      → onShown
+  //   onPageHide      → onHidden
+  //   onBackPress     → onBackPressed
+  //   router.getParams() → onReady(ctx.pathInfo.param) → onRouteParams
+  //
+  // 【默认值为什么保证已经迁过来的页面零变化】它们一个都没传这四个 Prop：
+  //   · onShown / onHidden 注册一个空 lambda，与不注册该属性无区别；
+  //   · onBackPressed 返回 **false** 就是"本页不拦截"，返回键交回 NavDestination
+  //     的默认处理（出栈）——与根本不注册这个属性等价。返回 true 才是拦截。
+  //   · onRouteParams 空实现，不读也不写任何状态。
+  // 所以这四行是纯增量，不动既有页面的任何一条路径。
+  onShown: () => void = (): void => {};
+  onHidden: () => void = (): void => {};
+  // 返回 true 表示本页自己消化了这次返回（例如先关掉一个浮层），不出栈。
+  onBackPressed: () => boolean = (): boolean => false;
+  // 路由参数就绪。**必须用这个回调而不是在 aboutToAppear 里读**：onReady 实测
+  // 晚于调用页的 aboutToAppear（平板 API 26，见 ChatPage 里那段实测注释），
+  // 照 router 时代的位置读会拿到 undefined，现象是静默的空白页。
+  //
+  // 页面复用时（MOVE_TO_TOP_SINGLETON / onNewParam）onReady 可能触发不止一次，
+  // 需要"只吃一次"的调用页自己加守卫——外壳不替调用页决定这件事，因为将来也
+  // 可能有页面想每次都重新吃参数。
+  onRouteParams: (param: Object | undefined) => void = (): void => {};
   // 内容区的滚动控制器，必须和内容里那个 Scroll/List 用的是同一个。
   //
   // bindToScrollable 按 Scroller **对象引用**绑定，与布局层级无关——控制器被
@@ -259,7 +288,14 @@ export struct HdsSubDestination {
     .bindToScrollable([this.scroller])
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
+      // 先存栈再交参数：调用页在 onRouteParams 里可能直接决定退场，那时
+      // popSelf() 得已经有栈可用。
+      this.onRouteParams(ctx.pathInfo.param as Object | undefined);
     })
+    // 三个转发。默认值是空操作 / 返回 false，见上面 Prop 声明处的说明。
+    .onShown((): void => { this.onShown(); })
+    .onHidden((): void => { this.onHidden(); })
+    .onBackPressed((): boolean => { return this.onBackPressed(); })
     .width('100%').height('100%')
     .backgroundColor(this.pageBackground);
   }

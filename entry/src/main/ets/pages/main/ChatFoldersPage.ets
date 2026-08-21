@@ -22,7 +22,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE, logW } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -30,9 +30,16 @@ const ROW_HEIGHT: number = 66;
 // 拖拽时一格的位移：行高 + 行间分隔线，否则累计几行后会错位。
 const ROW_STEP: number = ROW_HEIGHT + 0.5;
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router
+// 页和 NavDestination。形状与 PowerUsagePageBuilder 一致。
+@Builder
+export function ChatFoldersPageBuilder(): void {
+  ChatFoldersPage();
+}
+
 @Component
-struct ChatFoldersPage {
+export struct ChatFoldersPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   private hdsScroller: Scroller = new Scroller();
@@ -591,7 +598,7 @@ struct ChatFoldersPage {
     Column() {
     // 三个状态分支一起包进来。滚动容器在 content() 里，控制器直接接到那边的
     // Scroll 上（同一个 hdsScroller），标题栏才收缩得起来。
-    HdsSubPage({
+    HdsSubDestination({
       title: $r('app.string.settings_folders'),
       pageBackground: COLOR_PAGE_BG,
       scroller: this.hdsScroller

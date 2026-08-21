@@ -99,7 +99,8 @@ function settingGroups(): SettingGroup[] {
         subtitle: str('settings_emoji_status_sub'), page: 'pages/main/EmojiStatusPage',
         dest: 'EmojiStatusPage' },
       { icon: 'sys.symbol.folder_fill', bg: '#34AADC', title: str('settings_folders'),
-        subtitle: str('settings_folders_sub'), page: 'pages/main/ChatFoldersPage' },
+        subtitle: str('settings_folders_sub'), page: 'pages/main/ChatFoldersPage',
+        dest: 'ChatFoldersPage' },
       { icon: 'sys.symbol.bell_fill', bg: '#FF3B30', title: str('settings_notifications'),
         subtitle: str('settings_notifications_sub'), page: 'pages/main/NotificationSettingsPage',
         dest: 'NotificationSettingsPage' },
@@ -115,14 +116,16 @@ function settingGroups(): SettingGroup[] {
         subtitle: str('settings_privacy_sub'), page: 'pages/main/PrivacySecurityPage',
         dest: 'PrivacySecurityPage' },
       { icon: 'sys.symbol.computer', bg: '#5AC8FA', title: str('settings_devices'),
-        subtitle: str('settings_devices_sub'), page: 'pages/main/ActiveSessionsPage' }
+        subtitle: str('settings_devices_sub'), page: 'pages/main/ActiveSessionsPage',
+        dest: 'ActiveSessionsPage' }
     ]
   },
   {
     title: str('settings_group_storage'),
     items: [
       { icon: 'sys.symbol.data_proportion', bg: '#007AFF', title: str('settings_data'),
-        subtitle: str('settings_data_sub'), page: 'pages/main/DataStoragePage' },
+        subtitle: str('settings_data_sub'), page: 'pages/main/DataStoragePage',
+        dest: 'DataStoragePage' },
       { icon: 'sys.symbol.link', bg: '#5856D6', title: str('settings_proxy'),
         subtitle: str('settings_proxy_sub'), page: 'pages/main/ProxyPage' },
       { icon: 'sys.symbol.battery_100percent', bg: '#FF9500', title: str('settings_power'),
