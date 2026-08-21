@@ -12,6 +12,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logW } from '../../util/log';
+import { authErrorText } from '../../util/authErrorText';
 
 @Preview
 @Component
@@ -111,7 +112,7 @@ export struct PhoneNumberPage {
       }
       return action();
     }).catch((caught: TdError): void => {
-      this.errorText = caught.message;
+      this.errorText = authErrorText(caught.message);
     }).finally((): void => {
       this.busy = false;
       this.connecting = false;
@@ -322,7 +323,7 @@ export struct PhoneNumberPage {
             .onClick((): void => {
               this.busy = true;
               returnToPreviousTdAccount().catch((caught: Error): void => {
-                this.errorText = caught.message;
+                this.errorText = authErrorText(caught.message);
                 this.busy = false;
               });
             });

@@ -9833,6 +9833,10 @@
       "value": "Masukkan nomor telepon yang benar"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "Masuk tidak dapat dilanjutkan saat ini. Silakan coba lagi."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Pilih negara atau wilayah"
     },

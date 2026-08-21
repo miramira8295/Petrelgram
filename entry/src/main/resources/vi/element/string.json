@@ -9833,6 +9833,10 @@
       "value": "Vui lòng nhập số điện thoại đúng"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "Hiện không thể tiếp tục đăng nhập. Vui lòng thử lại."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Chọn quốc gia hoặc khu vực"
     },

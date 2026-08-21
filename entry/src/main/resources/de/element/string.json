@@ -9833,6 +9833,10 @@
       "value": "Bitte gib eine gültige Telefonnummer ein"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "Die Anmeldung kann gerade nicht fortgesetzt werden. Bitte versuche es erneut."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Land oder Region wählen"
     },

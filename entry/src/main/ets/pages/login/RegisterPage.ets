@@ -6,6 +6,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { LoginHero } from './LoginHero';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { authErrorText } from '../../util/authErrorText';
 
 // 号码尚未注册 Telegram 时走到这里（authorizationStateWaitRegistration）。
 // 此前没有这个页面，该状态映射不到任何 stage，界面会停在验证码页毫无反应 ——
@@ -43,7 +44,7 @@ export struct RegisterPage {
     this.errorText = '';
     getAuthService().registerUser(this.firstName.trim(), this.lastName.trim())
       .catch((caught: TdError): void => {
-        this.errorText = caught.message;
+        this.errorText = authErrorText(caught.message);
       })
       .finally((): void => {
         this.busy = false;
@@ -151,7 +152,7 @@ export struct RegisterPage {
             .onClick((): void => {
               this.busy = true;
               returnToPreviousTdAccount().catch((caught: Error): void => {
-                this.errorText = caught.message;
+                this.errorText = authErrorText(caught.message);
                 this.busy = false;
               });
             });

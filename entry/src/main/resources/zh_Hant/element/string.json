@@ -9833,6 +9833,10 @@
       "value": "請輸入正確的手機號碼"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "登入暫時無法繼續，請稍後重試"
+    },
+    {
       "name": "lg_pick_country",
       "value": "選擇國家或地區"
     },

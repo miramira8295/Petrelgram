@@ -4,6 +4,7 @@ import {
 import { TdError } from '../../tdkit/TdTypes';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { LoginHero } from './LoginHero';
+import { authErrorText } from '../../util/authErrorText';
 
 @Preview
 @Component
@@ -20,7 +21,7 @@ export struct PasswordPage {
     this.busy = true;
     this.errorText = '';
     getAuthService().submitPassword(this.password).catch((caught: TdError): void => {
-      this.errorText = caught.message;
+      this.errorText = authErrorText(caught.message);
     }).finally((): void => {
       this.busy = false;
     });
@@ -78,7 +79,7 @@ export struct PasswordPage {
             .onClick((): void => {
               this.busy = true;
               returnToPreviousTdAccount().catch((caught: Error): void => {
-                this.errorText = caught.message;
+                this.errorText = authErrorText(caught.message);
                 this.busy = false;
               });
             });

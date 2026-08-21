@@ -6,6 +6,7 @@ import accentSoftTest from './AccentSoft.test';
 import markdownBlocksTest from './MarkdownBlocks.test';
 import tdClientTest from './TdClient.test';
 import authServiceTest from './AuthService.test';
+import authErrorTextTest from './AuthErrorText.test';
 import formatTimeTest from './formatTime.test';
 import intlFormatTest from './intlFormat.test';
 import formatPreviewTest from './formatPreview.test';
@@ -123,6 +124,7 @@ export default function testsuite() {
   accentSoftTest();
   tdClientTest();
   authServiceTest();
+  authErrorTextTest();
   formatTimeTest();
   intlFormatTest();
   formatPreviewTest();

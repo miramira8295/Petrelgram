@@ -9833,6 +9833,10 @@
       "value": "Sila masukkan nombor telefon yang betul"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "Log masuk tidak dapat diteruskan sekarang. Sila cuba lagi."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Pilih negara atau rantau"
     },

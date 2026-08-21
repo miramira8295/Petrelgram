@@ -9833,6 +9833,10 @@
       "value": "请输入正确的手机号码"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "登录暂时无法继续，请稍后重试"
+    },
+    {
       "name": "lg_pick_country",
       "value": "选择国家或地区"
     },

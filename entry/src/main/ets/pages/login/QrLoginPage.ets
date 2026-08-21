@@ -7,6 +7,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
+import { authErrorText } from '../../util/authErrorText';
 
 interface QrLoginStep {
   index: string;
@@ -105,7 +106,7 @@ export struct QrLoginPage {
   private returnToOriginalAccount(): void {
     this.busy = true;
     returnToPreviousTdAccount().catch((caught: Error): void => {
-      this.errorText = caught.message;
+      this.errorText = authErrorText(caught.message);
       this.busy = false;
     });
   }

@@ -9833,6 +9833,10 @@
       "value": "Inserisci un numero di telefono corretto"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "L'accesso non può continuare adesso. Riprova."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Scegli il paese"
     },

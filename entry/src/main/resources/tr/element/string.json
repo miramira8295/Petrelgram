@@ -9833,6 +9833,10 @@
       "value": "Geçerli bir telefon numarası girin"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "Girişe şu anda devam edilemiyor. Lütfen tekrar deneyin."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Ülke veya bölge seçin"
     },

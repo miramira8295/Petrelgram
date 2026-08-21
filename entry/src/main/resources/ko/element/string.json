@@ -9833,6 +9833,10 @@
       "value": "올바른 휴대폰 번호를 입력해 주세요"
     },
     {
+      "name": "lg_auth_retry_later",
+      "value": "지금은 로그인을 계속할 수 없습니다. 잠시 후 다시 시도해 주세요."
+    },
+    {
       "name": "lg_pick_country",
       "value": "국가 또는 지역 선택"
     },

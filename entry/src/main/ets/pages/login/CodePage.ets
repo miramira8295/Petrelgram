@@ -7,6 +7,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { LoginHero } from './LoginHero';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { authErrorText } from '../../util/authErrorText';
 
 @Preview
 @Component
@@ -171,7 +172,7 @@ export struct CodePage {
     this.errorText = '';
     this.lastSubmittedCode = this.code;
     getAuthService().submitCode(this.code).catch((caught: TdError): void => {
-      this.errorText = caught.message;
+      this.errorText = authErrorText(caught.message);
       this.code = '';
       this.lastSubmittedCode = '';
       setTimeout((): void => {
@@ -195,7 +196,7 @@ export struct CodePage {
         focusControl.requestFocus('telegram_login_code');
       }, 80);
     }).catch((caught: TdError): void => {
-      this.errorText = caught.message;
+      this.errorText = authErrorText(caught.message);
     }).finally((): void => {
       this.busy = false;
     });
@@ -302,7 +303,7 @@ export struct CodePage {
             .onClick((): void => {
               this.busy = true;
               returnToPreviousTdAccount().catch((caught: Error): void => {
-                this.errorText = caught.message;
+                this.errorText = authErrorText(caught.message);
                 this.busy = false;
               });
             });
