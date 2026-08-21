@@ -54,6 +54,10 @@ export struct MediaViewerOverlay {
   // the whole loaded message list would run on every download-progress tick.
   @Link messages: MessageEntry[];
   @Link groups: AlbumGroup[];
+  // 越界方向上已加载的消息里没有下一组媒体时调用（dir 同 hopDirection 的约定，
+  // -1 = 要更旧的历史）。groups 是从**已加载的聊天窗口**折叠出来的，窗口边缘
+  // 不等于会话边缘——不补历史的话，切几组就"到头"，其实服务器上还有。
+  onNeedHistory: (dir: number) => void = (): void => {};
 
   @StorageProp('topSafeHeight') topSafe: number = 0;
 
@@ -436,6 +440,10 @@ export struct MediaViewerOverlay {
         this.groups.length, from, dir,
         (i: number): boolean => this.groupIsMedia(i));
       if (target < 0) {
+        // 已加载的消息里没有这一方向的下一组。多半是历史窗口没拉到那儿，先把
+        // 那个方向的历史翻一页；消息一到 groups 会自己更新，用户再拉一次就能
+        // 切过去。这一次先当没越界处理。
+        this.onNeedHistory(dir);
         this.clearHop();
         return;
       }

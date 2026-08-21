@@ -7693,6 +7693,14 @@ struct ChatPage {
           videoLandscape: this.viewerVideoLandscape,
           messages: this.messages,
           groups: this.groups,
+          onNeedHistory: (dir: number): void => {
+            // 查看器切组切到已加载窗口的边缘：-1 要更旧的，+1 要更新的。
+            if (dir < 0) {
+              this.store?.loadOlder();
+            } else if (dir > 0) {
+              this.store?.loadNewer();
+            }
+          },
           initIdx: this.viewerInitIdx,
           initStartPositionMs: this.viewerStartPositionMs,
           tapX: this.tapX,
