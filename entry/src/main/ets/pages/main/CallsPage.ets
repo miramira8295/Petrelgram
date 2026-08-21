@@ -120,7 +120,15 @@ struct CallsPage {
     if (this.actionKey !== '' || this.navigationLocked || call.chatId === 0) { return; }
     this.navigationLocked = true;
     const params: Record<string, Object> = { 'chatId': call.chatId };
-    navigateToChat(params).catch(logChatNavFailure);
+    // 会话被推进的是**聊天页签的栈**，而本页是 router 页、整个盖在那条栈上面：
+    // 只推不关，用户看到的是"什么都没发生"。形状取自 NewGroupPage.openCreatedGroup
+    // ——漏斗成功之后再把本页弹掉，露出下面已经切到聊天页签的会话。
+    // router.back() 是同步 void、正常失败不抛，所以它不需要自己的 try/catch；
+    // 真正会失败的是 navigateToChat（栈未注册时回退整页路由），由 catch 收尾。
+    // 失败时本页留在原地，navigationLocked 由下面那个 800ms 定时器解锁。
+    navigateToChat(params).then((): void => {
+      router.back();
+    }).catch(logChatNavFailure);
     this.navigationTimer = setTimeout((): void => {
       this.navigationLocked = false;
       this.navigationTimer = -1;

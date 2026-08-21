@@ -726,7 +726,7 @@ struct GlobalSearchPage {
       return;
     }
     const params: Record<string, Object> = { 'chatId': it.chatId, 'jumpTo': it.messageId };
-    navigateToChat(params).catch(logChatNavFailure);
+    this.openChatAndClose(params);
   }
 
   // Rows the current tab actually shows: the 频道 tab keeps only messages from
@@ -1183,6 +1183,25 @@ struct GlobalSearchPage {
     this.hashtagPosts = this.hashtagPosts.map((it: FoundItem): FoundItem => it.chatId === chatId ? fn(it) : it);
   }
 
+  // 会话被推进的是**聊天页签的栈**，而本页是 router 页、整个盖在那条栈上面：
+  // 只推不关，用户看到的是"什么都没发生"。形状取自 NewGroupPage.openCreatedGroup
+  // ——漏斗成功之后再把本页弹掉，露出下面已经切到聊天页签的会话。
+  // router.back() 是同步 void、正常失败不抛，所以它不需要自己的 try/catch；
+  // 真正会失败的是 navigateToChat（栈未注册时回退整页路由），由 catch 收尾，
+  // 此时本页留在原地，防连点闸门由 beginResultOpening 的 900ms 定时器解开。
+  // closingSearch 是"取消"按钮那条路已经调过 router.back() 的标记：那 650ms 窗口
+  // 里再弹一次会把下面的页面一起弹掉，所以要挡；反过来本路径也要立起这个标记，
+  // 免得成功之后又被一次点击弹第二层。
+  private openChatAndClose(params: Record<string, Object>): void {
+    navigateToChat(params).then((): void => {
+      if (this.closingSearch) {
+        return;
+      }
+      this.closingSearch = true;
+      router.back();
+    }).catch(logChatNavFailure);
+  }
+
   private resetResultOpening(): void {
     if (this.resultOpeningTimer !== -1) {
       clearTimeout(this.resultOpeningTimer);
@@ -1216,7 +1235,7 @@ struct GlobalSearchPage {
       this.store.rememberFoundChat(chatId);
     }
     const params: Record<string, Object> = { 'chatId': chatId };
-    navigateToChat(params).catch(logChatNavFailure);
+    this.openChatAndClose(params);
   }
 
   // App (mini-app bot) rows open the bot's chat — running the web app itself
@@ -1233,7 +1252,7 @@ struct GlobalSearchPage {
       const id = (chat['id'] as number | undefined) ?? 0;
       if (id !== 0) {
         const params: Record<string, Object> = { 'chatId': id };
-        navigateToChat(params).catch(logChatNavFailure);
+        this.openChatAndClose(params);
       } else {
         this.resetResultOpening();
       }
@@ -1256,7 +1275,7 @@ struct GlobalSearchPage {
     if (q !== '') {
       params['searchQuery'] = q;
     }
-    navigateToChat(params).catch(logChatNavFailure);
+    this.openChatAndClose(params);
   }
 
   private resolvedTopUsers(): SearchRow[] {
