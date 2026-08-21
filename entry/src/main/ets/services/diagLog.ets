@@ -12,6 +12,13 @@ import { diagLogText } from '../util/log';
 
 const UPLOAD_TIMEOUT_MS: number = 15000;
 
+// 发给收集端的请求体。字段名和服务端 diag.go 里的 diagLogUpload 一一对应。
+interface DiagPayload {
+  note: string;
+  snapshot: string;
+  lines: string;
+}
+
 export interface DiagUploadResult {
   ok: boolean;
   // 失败时给用户看的原因（HTTP 码或异常信息）。成功时为空。
@@ -29,9 +36,10 @@ export function uploadDiagLog(note: string, snapshot: string): Promise<DiagUploa
     return Promise.resolve({ ok: false, reason: 'not-configured' } as DiagUploadResult);
   }
   const request = http.createHttp();
-  const body: string = JSON.stringify({
-    note, snapshot, lines: diagLogText()
-  } as Record<string, string>);
+  // 显式接口而不是对象字面量：ArkTS 不接受未声明类型的字面量
+  // （arkts-no-untyped-obj-literals），Record 的断言也不算数。
+  const payload: DiagPayload = { note, snapshot, lines: diagLogText() };
+  const body: string = JSON.stringify(payload);
   const options: http.HttpRequestOptions = {
     method: http.RequestMethod.POST,
     header: {

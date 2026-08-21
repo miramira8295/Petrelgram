@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "放開即可檢視"
+    },
+    {
+      "name": "diag_title",
+      "value": "日誌與診斷"
+    },
+    {
+      "name": "diag_sub",
+      "value": "回報問題時把日誌傳給開發者"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "自動回報當機"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "只含例外堆疊與版本資訊，不含聊天內容"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "回報執行日誌"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "執行日誌可能包含訊息編號等使用痕跡，只有你點擊時才會傳送。"
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "簡單描述遇到的問題（選填）"
+    },
+    {
+      "name": "diag_sending",
+      "value": "回報中…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "已回報，謝謝"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "回報失敗：%1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "這個版本沒有設定回報位址"
     }
   ]
 }

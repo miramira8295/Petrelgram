@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Lepaskan untuk melihat"
+    },
+    {
+      "name": "diag_title",
+      "value": "Log & diagnostik"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Kirim log ke pengembang saat melaporkan masalah"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Kirim laporan crash otomatis"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Hanya jejak galat dan versi, tanpa isi obrolan"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Kirim log runtime"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "Log mungkin berisi id pesan. Hanya dikirim saat Anda menekan tombol."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Jelaskan singkat masalahnya (opsional)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Mengirim…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Terkirim, terima kasih"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Gagal mengirim: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "Build ini tidak punya endpoint laporan"
     }
   ]
 }

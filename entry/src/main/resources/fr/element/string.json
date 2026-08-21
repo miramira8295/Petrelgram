@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Relâchez pour afficher"
+    },
+    {
+      "name": "diag_title",
+      "value": "Journaux et diagnostic"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Envoyer les journaux au développeur lors d'un signalement"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Envoyer les rapports de plantage automatiquement"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Uniquement traces et version, sans contenu des discussions"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Envoyer le journal d'exécution"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "Le journal peut contenir des identifiants de messages. Il n'est envoyé que si vous appuyez."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Décrivez brièvement le problème (facultatif)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Envoi…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Envoyé, merci"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Échec de l'envoi : %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "Aucun point d'envoi configuré dans cette version"
     }
   ]
 }

@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "أفلت للعرض"
+    },
+    {
+      "name": "diag_title",
+      "value": "السجلات والتشخيص"
+    },
+    {
+      "name": "diag_sub",
+      "value": "أرسل السجلات إلى المطوّر عند الإبلاغ عن مشكلة"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "إرسال تقارير الأعطال تلقائيًا"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "تتبّع الأخطاء ومعلومات الإصدار فقط، دون محتوى المحادثات"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "إرسال سجل التشغيل"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "قد يحتوي السجل على معرّفات الرسائل. لا يُرسل إلا عند نقرك."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "صف المشكلة باختصار (اختياري)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "جارٍ الإرسال…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "تم الإرسال، شكرًا"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "فشل الإرسال: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "لا يوجد عنوان إرسال في هذه النسخة"
     }
   ]
 }

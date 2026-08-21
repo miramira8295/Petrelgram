@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "देखने के लिए छोड़ें"
+    },
+    {
+      "name": "diag_title",
+      "value": "लॉग और डायग्नोस्टिक्स"
+    },
+    {
+      "name": "diag_sub",
+      "value": "समस्या बताते समय डेवलपर को लॉग भेजें"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "क्रैश रिपोर्ट स्वतः भेजें"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "केवल स्टैक ट्रेस और वर्ज़न, चैट सामग्री नहीं"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "रनटाइम लॉग भेजें"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "लॉग में संदेश आईडी हो सकती हैं। यह केवल आपके टैप करने पर भेजा जाता है।"
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "समस्या संक्षेप में बताएं (वैकल्पिक)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "भेजा जा रहा है…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "भेज दिया गया, धन्यवाद"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "भेजना विफल: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "इस बिल्ड में रिपोर्ट पता सेट नहीं है"
     }
   ]
 }

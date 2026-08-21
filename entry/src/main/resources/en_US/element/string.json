@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Release to view"
+    },
+    {
+      "name": "diag_title",
+      "value": "Logs & diagnostics"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Send logs to the developer when reporting a problem"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Send crash reports automatically"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Stack traces and version info only — no chat content"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Send runtime log"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "The runtime log may contain message ids and other usage traces. It is only sent when you tap the button."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Briefly describe the problem (optional)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Sending…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Sent — thank you"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Send failed: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "No report endpoint configured in this build"
     }
   ]
 }

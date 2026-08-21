@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Lepaskan untuk melihat"
+    },
+    {
+      "name": "diag_title",
+      "value": "Log & diagnostik"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Hantar log kepada pembangun apabila melaporkan masalah"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Hantar laporan ranap secara automatik"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Hanya surih ralat dan versi, tiada kandungan sembang"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Hantar log masa jalan"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "Log mungkin mengandungi id mesej. Ia hanya dihantar apabila anda menekan."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Terangkan ringkas masalahnya (pilihan)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Menghantar…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Dihantar, terima kasih"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Gagal menghantar: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "Binaan ini tiada endpoint laporan"
     }
   ]
 }

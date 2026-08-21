@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "指を離すと表示"
+    },
+    {
+      "name": "diag_title",
+      "value": "ログと診断"
+    },
+    {
+      "name": "diag_sub",
+      "value": "問題報告時にログを開発者へ送信"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "クラッシュを自動送信"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "スタックトレースとバージョン情報のみ。チャット内容は含みません"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "実行ログを送信"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "実行ログにはメッセージ ID などの利用痕跡が含まれる場合があります。タップしたときのみ送信されます。"
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "問題を簡単に記入（任意）"
+    },
+    {
+      "name": "diag_sending",
+      "value": "送信中…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "送信しました。ありがとうございます"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "送信に失敗しました: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "このビルドには送信先が設定されていません"
     }
   ]
 }

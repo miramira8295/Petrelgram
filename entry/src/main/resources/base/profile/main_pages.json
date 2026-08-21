@@ -45,6 +45,7 @@
     "pages/chat/ForumTopicsPage",
     "pages/story/StoryViewerPage",
     "pages/profile/MemberRestrictPage",
-    "pages/profile/MemberPromotePage"
+    "pages/profile/MemberPromotePage",
+    "pages/main/DiagnosticsPage"
   ]
 }

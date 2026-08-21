@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "松手即可查看"
+    },
+    {
+      "name": "diag_title",
+      "value": "日志与诊断"
+    },
+    {
+      "name": "diag_sub",
+      "value": "反馈问题时把日志发给开发者"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "自动上报崩溃"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "只含异常堆栈与版本信息，不含聊天内容"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "上报运行日志"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "运行日志可能包含消息编号等使用痕迹，只有你点击时才会发送。"
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "简单描述遇到的问题（可选）"
+    },
+    {
+      "name": "diag_sending",
+      "value": "上报中…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "已上报，谢谢"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "上报失败：%1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "这个版本没有配置上报地址"
     }
   ]
 }

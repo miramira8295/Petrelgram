@@ -1,0 +1,153 @@
+import { promptAction } from '@kit.ArkUI';
+import { HdsSubPage } from '../common/HdsSubPage';
+import {
+  COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
+  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+} from '../../util/theme';
+import { KEY_CRASH_UPLOAD, setBoolean } from '../../store/AppSettings';
+import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { str } from '../../util/strings';
+import { diagLogSize } from '../../util/log';
+import { DiagUploadResult, diagUploadConfigured, uploadDiagLog } from '../../services/diagLog';
+
+const CARD_RADIUS: number = 14;
+
+// 设置 → 日志与诊断。
+//
+// 两件事在这里，而且**性质完全不同**，页面上也要让用户看得出区别：
+//
+//   崩溃上报  自动。崩了下次启动补发；起不来时系统在 30 分钟后单独唤起
+//             FaultLogExtensionAbility 上报。载荷里没有任何聊天内容，所以
+//             默认开、用户不必操心。
+//   运行日志  **只有用户点这个按钮才发**。它含 [StoreDiag] 那类消息编号，属于
+//             使用痕迹，不能自动上传。
+//
+// 备注框比日志本身更值钱："我点了转发之后就白屏了"这一句，往往一眼就把范围
+// 缩到几十行代码；而没有它，几万行日志只能从头看。
+
+@Entry
+@Component
+struct DiagnosticsPage {
+  private hdsScroller: Scroller = new Scroller();
+  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  @StorageProp(LANGUAGE_EPOCH) languageEpoch: number = 0;
+  @StorageProp(KEY_CRASH_UPLOAD) crashUpload: boolean = true;
+  @State private note: string = '';
+  @State private sending: boolean = false;
+  // 日志体积只在进页面时算一次：collectAll 会把内存里的部分刷进磁盘再整份读
+  // 回来，挂在 build 上等于每帧读一次文件。
+  @State private logBytes: number = 0;
+
+  aboutToAppear(): void {
+    this.logBytes = diagLogSize();
+  }
+
+  private sizeText(): string {
+    const kb: number = Math.round(this.logBytes / 1024);
+    return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+  }
+
+  private sendLog(): void {
+    if (this.sending) {
+      return;
+    }
+    if (!diagUploadConfigured()) {
+      promptAction.showToast({ message: $r('app.string.diag_not_configured'), duration: 2000 });
+      return;
+    }
+    this.sending = true;
+    uploadDiagLog(this.note.trim(), '').then((result: DiagUploadResult): void => {
+      this.sending = false;
+      if (result.ok) {
+        this.note = '';
+        promptAction.showToast({ message: $r('app.string.diag_sent'), duration: 1800 });
+      } else {
+        promptAction.showToast({
+          message: str('diag_send_failed', result.reason), duration: 2400
+        });
+      }
+    });
+  }
+
+  @Builder
+  crashCard() {
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.diag_crash_upload'))
+          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+        Text($r('app.string.diag_crash_upload_sub'))
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      .alignItems(HorizontalAlign.Start).layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.crashUpload })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((next: boolean): void => { setBoolean(KEY_CRASH_UPLOAD, next); });
+    }
+    .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
+  @Builder
+  logCard() {
+    Column() {
+      TextArea({ text: this.note, placeholder: $r('app.string.diag_note_hint') })
+        .fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
+        .placeholderColor(COLOR_TEXT_SECONDARY)
+        .backgroundColor(Color.Transparent)
+        .constraintSize({ minHeight: 76, maxHeight: 140 })
+        .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+        .onChange((value: string): void => { this.note = value; });
+      Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
+      Row({ space: 10 }) {
+        Column({ space: 3 }) {
+          Text($r('app.string.diag_send_log'))
+            .fontSize(16).fontColor(this.sending ? COLOR_TEXT_SECONDARY : COLOR_PRIMARY)
+            .fontWeight(FontWeight.Medium);
+          // 把体积摆出来：用户按下之前有权知道要发多少东西出去。
+          Text(this.sizeText()).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+        }
+        .alignItems(HorizontalAlign.Start).layoutWeight(1);
+        if (this.sending) {
+          LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
+          Text($r('app.string.diag_sending')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+        } else {
+          SymbolGlyph($r('sys.symbol.arrow_up_circle'))
+            .fontSize(21).fontColor([COLOR_PRIMARY]);
+        }
+      }
+      .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+      .alignItems(VerticalAlign.Center)
+      .enabled(!this.sending)
+      .onClick((): void => { this.sendLog(); });
+    }
+    .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);
+  }
+
+  build() {
+    // @Entry 的 build 根节点必须是容器组件，自定义组件不行。
+    Column() {
+      HdsSubPage({
+        title: $r('app.string.diag_title'),
+        pageBackground: COLOR_PAGE_BG,
+        scroller: this.hdsScroller
+      }) {
+        Scroll(this.hdsScroller) {
+          Column({ space: 12 }) {
+            this.crashCard();
+            this.logCard();
+            Text($r('app.string.diag_privacy_note'))
+              .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18)
+              .width('100%').padding({ left: 14, right: 14 });
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+        }
+        .width('100%').scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        // 不裁剪，内容才能穿到标题栏底下。
+        .clip(false);
+      }
+    }.width('100%').height('100%');
+  }
+}

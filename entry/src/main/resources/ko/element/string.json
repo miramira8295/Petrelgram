@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "놓으면 이동"
+    },
+    {
+      "name": "diag_title",
+      "value": "로그 및 진단"
+    },
+    {
+      "name": "diag_sub",
+      "value": "문제 신고 시 개발자에게 로그 전송"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "충돌 자동 보고"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "스택 추적과 버전 정보만 포함, 대화 내용 없음"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "실행 로그 보내기"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "실행 로그에는 메시지 ID 등 사용 흔적이 포함될 수 있습니다. 직접 누를 때만 전송됩니다."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "문제를 간단히 설명 (선택)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "보내는 중…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "보냈습니다. 감사합니다"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "보내기 실패: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "이 빌드에는 보고 주소가 없습니다"
     }
   ]
 }

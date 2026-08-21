@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Görüntülemek için bırakın"
+    },
+    {
+      "name": "diag_title",
+      "value": "Günlükler ve tanılama"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Sorun bildirirken günlükleri geliştiriciye gönderin"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Çökme raporlarını otomatik gönder"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Yalnızca yığın izi ve sürüm, sohbet içeriği yok"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Çalışma günlüğünü gönder"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "Günlük mesaj kimlikleri içerebilir. Yalnızca dokunduğunuzda gönderilir."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Sorunu kısaca açıklayın (isteğe bağlı)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Gönderiliyor…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Gönderildi, teşekkürler"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Gönderilemedi: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "Bu sürümde gönderim adresi yok"
     }
   ]
 }

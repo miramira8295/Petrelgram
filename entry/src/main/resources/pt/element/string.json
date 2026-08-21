@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Solte para ver"
+    },
+    {
+      "name": "diag_title",
+      "value": "Registros e diagnóstico"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Envie registros ao desenvolvedor ao relatar um problema"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Enviar relatórios de falha automaticamente"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Apenas rastreamentos e versão, sem conteúdo de conversas"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Enviar registro de execução"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "O registro pode conter ids de mensagens. Só é enviado quando você toca."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Descreva brevemente o problema (opcional)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Enviando…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Enviado, obrigado"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Falha ao enviar: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "Esta versão não tem endpoint configurado"
     }
   ]
 }

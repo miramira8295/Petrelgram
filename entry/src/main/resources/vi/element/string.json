@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Thả ra để xem"
+    },
+    {
+      "name": "diag_title",
+      "value": "Nhật ký & chẩn đoán"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Gửi nhật ký cho nhà phát triển khi báo lỗi"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Tự động gửi báo cáo sự cố"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Chỉ dấu vết lỗi và phiên bản, không có nội dung trò chuyện"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Gửi nhật ký chạy"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "Nhật ký có thể chứa id tin nhắn. Chỉ gửi khi bạn nhấn."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Mô tả ngắn gọn vấn đề (tuỳ chọn)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Đang gửi…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Đã gửi, cảm ơn"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Gửi thất bại: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "Bản dựng này chưa cấu hình địa chỉ gửi"
     }
   ]
 }

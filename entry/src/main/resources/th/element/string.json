@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "ปล่อยเพื่อดู"
+    },
+    {
+      "name": "diag_title",
+      "value": "บันทึกและการวินิจฉัย"
+    },
+    {
+      "name": "diag_sub",
+      "value": "ส่งบันทึกให้ผู้พัฒนาเมื่อรายงานปัญหา"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "ส่งรายงานข้อขัดข้องอัตโนมัติ"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "เฉพาะสแต็กและเวอร์ชัน ไม่มีเนื้อหาแชท"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "ส่งบันทึกการทำงาน"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "บันทึกอาจมีรหัสข้อความ จะส่งเมื่อคุณกดเท่านั้น"
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "อธิบายปัญหาสั้น ๆ (ไม่บังคับ)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "กำลังส่ง…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "ส่งแล้ว ขอบคุณ"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "ส่งไม่สำเร็จ: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "บิลด์นี้ไม่ได้ตั้งค่าปลายทาง"
     }
   ]
 }

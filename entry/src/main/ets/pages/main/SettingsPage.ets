@@ -104,6 +104,8 @@ function settingGroups(): SettingGroup[] {
   {
     title: str('settings_about'),
     items: [
+      { icon: 'sys.symbol.doc_text', bg: '#636366', title: str('diag_title'),
+        subtitle: str('diag_sub'), page: 'pages/main/DiagnosticsPage' },
       { icon: 'sys.symbol.info_circle', bg: '#8E8E93', title: str('settings_about'),
         subtitle: str('settings_about_sub'), page: 'pages/main/AboutPage' }
     ]

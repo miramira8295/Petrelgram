@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "برای مشاهده رها کنید"
+    },
+    {
+      "name": "diag_title",
+      "value": "گزارش‌ها و عیب‌یابی"
+    },
+    {
+      "name": "diag_sub",
+      "value": "هنگام گزارش مشکل، گزارش‌ها را برای توسعه‌دهنده بفرستید"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "ارسال خودکار گزارش خرابی"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "فقط ردیابی خطا و اطلاعات نسخه، بدون محتوای گفتگو"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "ارسال گزارش اجرا"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "گزارش ممکن است شناسهٔ پیام‌ها را داشته باشد و فقط با زدن شما ارسال می‌شود."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "مشکل را کوتاه بنویسید (اختیاری)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "در حال ارسال…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "ارسال شد، سپاس"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "ارسال ناموفق: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "در این نسخه آدرس ارسال تنظیم نشده است"
     }
   ]
 }

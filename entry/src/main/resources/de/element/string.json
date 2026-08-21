@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Loslassen zum Anzeigen"
+    },
+    {
+      "name": "diag_title",
+      "value": "Protokolle & Diagnose"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Beim Melden eines Problems Protokolle senden"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Absturzberichte automatisch senden"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Nur Stacktraces und Version – keine Chatinhalte"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Laufzeitprotokoll senden"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "Das Protokoll kann Nachrichten-IDs enthalten. Es wird nur auf Tippen gesendet."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Problem kurz beschreiben (optional)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Wird gesendet…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Gesendet – danke"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Senden fehlgeschlagen: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "In diesem Build ist kein Endpunkt konfiguriert"
     }
   ]
 }

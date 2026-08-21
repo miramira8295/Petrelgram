@@ -11283,6 +11283,50 @@
     {
       "name": "mv_hop_release",
       "value": "Rilascia per visualizzare"
+    },
+    {
+      "name": "diag_title",
+      "value": "Log e diagnostica"
+    },
+    {
+      "name": "diag_sub",
+      "value": "Invia i log allo sviluppatore quando segnali un problema"
+    },
+    {
+      "name": "diag_crash_upload",
+      "value": "Invia report di crash automaticamente"
+    },
+    {
+      "name": "diag_crash_upload_sub",
+      "value": "Solo stack trace e versione, nessun contenuto delle chat"
+    },
+    {
+      "name": "diag_send_log",
+      "value": "Invia log di esecuzione"
+    },
+    {
+      "name": "diag_privacy_note",
+      "value": "Il log può contenere id dei messaggi. Viene inviato solo se lo tocchi."
+    },
+    {
+      "name": "diag_note_hint",
+      "value": "Descrivi brevemente il problema (facoltativo)"
+    },
+    {
+      "name": "diag_sending",
+      "value": "Invio…"
+    },
+    {
+      "name": "diag_sent",
+      "value": "Inviato, grazie"
+    },
+    {
+      "name": "diag_send_failed",
+      "value": "Invio non riuscito: %1$s"
+    },
+    {
+      "name": "diag_not_configured",
+      "value": "Questa build non ha un endpoint configurato"
     }
   ]
 }
