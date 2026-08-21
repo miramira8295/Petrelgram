@@ -19,10 +19,16 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { LengthMetrics } from '@kit.ArkUI';
 import {
-  HdsNavigationTitleBarStyle, ScrollEffectType, TitleBarStyleOptions
+  BlurStrategy, HdsNavigationTitleBarStyle, ScrollEffectType, SystemMaterialParams,
+  TitleBarStyleOptions, hdsMaterial
 } from '@kit.UIDesignKit';
+import {
+  LIGHT_DEFAULT, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH, normalizeLightLevel
+} from './materialTuning';
+import { KEY_MATERIAL_LIGHT, KEY_POWER_ACTIVE } from '../store/AppSettings';
 
-// IMMERSIVE_GRADIENT_BLUR 的起始 API 版本。
+// IMMERSIVE_GRADIENT_BLUR 的起始 API 版本。hdsMaterial 的 MaterialType /
+// MaterialLevel 同样是 6.1.0(23) 起，共用这个门槛。
 const IMMERSIVE_GRADIENT_BLUR_API: number = 23;
 
 // deviceInfo 返回的是设备常量，官方建议只读一次缓存起来。读的是数字，
@@ -59,6 +65,40 @@ export const TITLE_BLUR_END_VP: number = 20;
 //
 // originalStyle 和 scrollEffectStyle 都要给：前者是内容还没滚动时的样子，后者是
 // 滚过 blurEffectiveEndOffset 之后的样子。只给前者的话，滚起来会跳回默认色。
+// 标题栏的沉浸材质（毛玻璃 + 光影）。
+//
+// materialTuning 里那句"官方那三档 EXQUISITE/GENTLE/SMOOTH 是 UI Design Kit 给
+// HDS 导航/页签用的 systemMaterialEffect，本应用够不着"——现在够得着了，因为
+// 标题栏本身就是 HDS 组件。而且那三档的名字和设置里「光感等级」的档位一一对应，
+// 直接把用户已有的选择接过来，不必再造一个开关。
+//
+// 6.1.0(23) 起才有；低于这个版本返回 undefined，标题栏退回纯色背板。枚举只在
+// 函数体里解引用（v1.3.6 启动崩溃的教训）。
+function titleBarMaterial(): SystemMaterialParams | undefined {
+  if (apiVersion < IMMERSIVE_GRADIENT_BLUR_API) {
+    return undefined;
+  }
+  // 省电模式下不上材质：它是纯观感，而这一档的用户诉求是省电。
+  if (AppStorage.get<boolean>(KEY_POWER_ACTIVE) ?? false) {
+    return undefined;
+  }
+  const level: string = normalizeLightLevel(
+    AppStorage.get<string>(KEY_MATERIAL_LIGHT) ?? LIGHT_DEFAULT);
+  let materialLevel: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE;
+  if (level === LIGHT_EXQUISITE) {
+    materialLevel = hdsMaterial.MaterialLevel.EXQUISITE;
+  } else if (level === LIGHT_GENTLE) {
+    materialLevel = hdsMaterial.MaterialLevel.GENTLE;
+  } else if (level === LIGHT_SMOOTH) {
+    materialLevel = hdsMaterial.MaterialLevel.SMOOTH;
+  }
+  return { materialType: hdsMaterial.MaterialType.IMMERSIVE, materialLevel };
+}
+
+function materialOn(): boolean {
+  return titleBarMaterial() !== undefined;
+}
+
 function barStyle(background: ResourceColor): HdsNavigationTitleBarStyle {
   return {
     backgroundStyle: { backgroundColor: background },
@@ -88,8 +128,13 @@ export function titleBarStyle(background: ResourceColor): TitleBarStyleOptions {
       blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
       blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
     },
-    originalStyle: barStyle(background),
+    // 材质接管时背板必须**透明**：官方《沉浸光感常见问题》写死，材质的视觉
+    // 层级在 backgroundColor **之下**，不透明底色会把材质整个盖住看不见。
+    // 这一条本应用在 overlayMaterial 上已经踩过一次。
+    originalStyle: barStyle(materialOn() ? Color.Transparent : background),
     // 滚起来之后背板让位给模糊本身，其余颜色不变。
-    scrollEffectStyle: barStyle(Color.Transparent)
+    scrollEffectStyle: barStyle(Color.Transparent),
+    systemMaterialEffect: titleBarMaterial(),
+    blurStrategy: BlurStrategy.ADAPTIVE
   };
 }

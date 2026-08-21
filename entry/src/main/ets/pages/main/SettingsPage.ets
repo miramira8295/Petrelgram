@@ -24,6 +24,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -122,6 +123,8 @@ export struct SettingsPage {
   // HdsNavigation 靠 bindToScrollable 拿到滚动量，才能驱动标题栏的收缩与
   // 动态模糊；没有这个绑定，标题栏就是一块静态的板子。
   private settingsScroller: Scroller = new Scroller();
+  // 标题栏的材质档位来自设置里的「光感等级」，改了要重绘。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;

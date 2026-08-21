@@ -3,6 +3,7 @@ import {
   HdsNavigation, HdsNavigationMenuItemOptions, HdsNavigationTitleMode
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 
 // 设置类子页面的外壳：HdsNavigation 大标题 + 返回键 + 滚动渐变模糊。
 //
@@ -26,6 +27,10 @@ import { titleBarStyle } from '../../util/hdsTitleBar';
 
 @Component
 export struct HdsSubPage {
+  // 标题栏的材质档位读的是设置里的「光感等级」，而 titleBarStyle 是普通函数、
+  // 订阅不了 AppStorage。订阅这个纪元，用户改了设置这一层才会重绘（和别处
+  // 同一套办法）。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop title: ResourceStr;
   // 空串表示不显示副标题。
   @Prop subTitle: ResourceStr = '';
