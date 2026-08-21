@@ -1616,6 +1616,22 @@ struct ChatPage {
   // 播放器/拉下载（分别是 Critical-2 和 Important-3 的核心不变量）。
   // closeViewer()/onPageShow() 这两条恢复路径都是先把状态改回"已关闭/
   // 可见"再调这个方法，守卫在它们那次调用里天然放行。
+  // 手动滑动消息列表就收起键盘。
+  //
+  // 判据是 listTouchActive（手指正按在列表上），不是"发生了滚动"——程序性
+  // 滚动同样会触发 onScrollStart：发完消息贴底、点引用跳转、点「↓」回底部
+  // 都是。那些时候把键盘收掉，用户接着想再打一条就得重新点输入框。
+  //
+  // 只在键盘确实立着时才动手。stopEditing 在没有焦点时是空操作，但白跑一次
+  // 就意味着每一次滑动都要过一遍输入法的 IPC。
+  private dismissKeyboardOnUserScroll(): void {
+    if (!this.listTouchActive || this.keyboardH <= 0) {
+      return;
+    }
+    this.composerController.stopEditing();
+    this.composerFocused = false;
+  }
+
   private armPlaySlotSettle(): void {
     if (this.viewerMsgId !== 0 || !this.pageVisible || !this.playSlotsEnabled()) {
       return;
@@ -7341,6 +7357,9 @@ struct ChatPage {
           if (this.listUserScrollActive) {
             this.updateFloatDate(this.curStartIdx);
           }
+        })
+        .onScrollStart(() => {
+          this.dismissKeyboardOnUserScroll();
         })
         .onScrollStop(() => {
           this.armPlaySlotSettle();
