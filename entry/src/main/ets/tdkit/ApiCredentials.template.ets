@@ -34,5 +34,13 @@ export const pushRelayToken: string = '';
 //
 // 载荷里**没有任何用户内容**：只有时间、应用版本、崩溃类型、前后台、进程存活
 // 时长、异常名/信息/堆栈。hilog 与 external_log 刻意不取——那两样含聊天痕迹。
+//
+// 如果收集端就跑在上面那个推送中转上（推荐），这两行直接引用即可——/crash 和
+// /log 走的是中转里同一个 requireToken，校验的就是同一个 RELAY_TOKEN，不必
+// 另立一个秘密：
+//
+//   export const crashReportBase: string = pushRelayBase;
+//   export const crashReportToken: string = pushRelayToken;
+//
 export const crashReportBase: string = '';
 export const crashReportToken: string = '';
