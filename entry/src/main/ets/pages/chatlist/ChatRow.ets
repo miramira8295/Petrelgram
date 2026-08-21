@@ -18,7 +18,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_MUTED_BA
 import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logI } from '../../util/log';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
@@ -465,7 +465,7 @@ export struct ChatRow {
         return;
       }
       const params: Record<string, Object> = { 'chatId': this.chat.id };
-      navigateToChat(params);
+      navigateToChat(params).catch(logChatNavFailure);
     })
     .onTouch((event: TouchEvent): void => {
       if (event.type === TouchType.Down) {

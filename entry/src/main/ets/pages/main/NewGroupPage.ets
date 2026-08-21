@@ -433,18 +433,20 @@ struct NewGroupPage {
     const params: Record<string, Object> = { 'chatId': chatId };
     // 曾经是 router.replaceUrl('pages/chat/ChatPage')——ChatPage 迁成
     // HdsNavDestination 后已从 main_pages.json 摘掉，直连 router 会跳不动。
-    // replaceUrl 的语义（用会话页顶掉本页）拆成两步：漏斗把会话推进聊天栈，
-    // 再把本页弹掉，露出下面的会话。
-    navigateToChat(params);
-    try {
+    // replaceUrl 的语义（用会话页顶掉本页）拆成两步：漏斗把会话推进聊天栈
+    // 并把聊天页签选中，成功之后再把本页弹掉，露出下面的会话。
+    //
+    // 两步必须串起来而不是并排写：router.back() 是同步 void，正常失败不抛，
+    // 把它包进 try/catch 只会让下面这段错误处理永远不可达（spinner 一直转）。
+    // 真正会失败的是 navigateToChat，所以错误处理挂在它的 Promise 上。
+    navigateToChat(params).then((): void => {
       router.back();
-    } catch (e) {
-      const error = e as Error;
+    }).catch((e: Error): void => {
       if (!this.active) { return; }
       this.openingCreatedChat = false;
       this.createError = str('ng_created_cannot_open');
-      logE(`NewGroupPage.openCreatedGroup failed: ${error.message}`);
-    }
+      logE(`NewGroupPage.openCreatedGroup failed: ${e.message}`);
+    });
   }
 
   private back(): void {

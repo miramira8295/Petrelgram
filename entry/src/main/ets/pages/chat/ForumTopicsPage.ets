@@ -7,7 +7,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
@@ -282,7 +282,7 @@ struct ForumTopicsPage {
       'forumTopicId': row.threadId,
       'topicName': row.name
     };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   private createTopic(name: string): void {

@@ -13,7 +13,7 @@ import { MainScreen } from './main/MainScreen';
 import { handleIncomingLink } from '../util/deepLink';
 import { COLOR_TEXT_PRIMARY } from '../util/theme';
 import { refreshNetworkState } from '../services/NetworkStateService';
-import { navigateToChat } from '../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../util/chatNav';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject } from '../tdkit/TdTypes';
 import { logE } from '../util/log';
@@ -106,7 +106,7 @@ struct Index {
     const chatId: number = this.pendingNotifyChatId;
     this.pendingNotifyChatId = 0;
     const params: Record<string, Object> = { 'chatId': chatId };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   // 路由待处理的深链。条件是**登录就绪 + 连接就绪**，两个都要。

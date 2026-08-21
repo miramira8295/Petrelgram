@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
 import { openTelegramLink } from './openTelegramLink';
-import { navigateToChat } from './chatNav';
+import { logChatNavFailure, navigateToChat } from './chatNav';
 
 // Incoming deep links arrive as tg:// URIs (a browser https://t.me link can't
 // hand off to a third-party client — see module.json5). Map the tg:// forms
@@ -152,7 +152,7 @@ export function handleIncomingLink(context: common.UIAbilityContext, rawUri: str
     if (target.messageId > 0) {
       params['jumpTo'] = target.messageId;
     }
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
     return;
   }
   // allowBrowser=false: a deep link that fails to resolve must NOT re-open the

@@ -13,7 +13,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
@@ -120,7 +120,7 @@ struct CallsPage {
     if (this.actionKey !== '' || this.navigationLocked || call.chatId === 0) { return; }
     this.navigationLocked = true;
     const params: Record<string, Object> = { 'chatId': call.chatId };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
     this.navigationTimer = setTimeout((): void => {
       this.navigationLocked = false;
       this.navigationTimer = -1;

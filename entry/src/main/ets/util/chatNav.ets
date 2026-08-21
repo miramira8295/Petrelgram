@@ -15,6 +15,21 @@ const CHAT_PAGE_NAME: string = 'ChatPage';
 // 就把另一个也带歪。
 export const CHAT_DEST_NAME: string = 'ChatPage';
 
+// MainScreen 的当前页签下标，@StorageLink('mainTabIndex') 双向绑定，外部写入由
+// 它的 @Watch('onTabExternallyChanged') 落到 TabsController 上。Index.ets:175
+// 也是这么写的。
+const KEY_MAIN_TAB: string = 'mainTabIndex';
+// MainScreen.build() 里 TabContent 的顺序：ChatListPage / ContactsPage /
+// SettingsPage / MyProfilePage。
+const CHAT_TAB_INDEX: number = 0;
+
+// 不关心跳转结果的调用点用它收尾。navigateToChat 现在**会 reject**（回退的
+// 整页路由真失败时），而 ArkTS 里被丢弃的 rejection 会冒到全局去，所以每个
+// 即发即忘的调用点都必须显式收掉——收法只有这一种，抽出来省得抄二十几遍。
+export function logChatNavFailure(e: Error): void {
+  logE(`navigateToChat failed: ${e.message}`);
+}
+
 // 路由栈的一层，抽成纯数据是为了让去重规则可以脱离 router 单测。
 export interface RouteSnapshot {
   index: number;
@@ -102,9 +117,10 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
       return Promise.resolve();
     }
   }
-  return router.pushUrl({ url: CHAT_PAGE_URL, params: params }).catch((e: Error): void => {
-    logE(`chatNav.pushUrl failed: ${e.message}`);
-  });
+  // 这里**不再**吞掉失败：整页路由跳不动是真正的"会话打不开"，调用方
+  // （比如 NewGroupPage 建完群要据此决定是弹掉自己还是报错）需要知道。
+  // 即发即忘的调用点用 logChatNavFailure 自行收尾。
+  return router.pushUrl({ url: CHAT_PAGE_URL, params: params });
 }
 
 // 打开会话详情页。这是**所有**会话入口的唯一漏斗（通知、深链、搜索结果、
@@ -115,8 +131,16 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 export function navigateToChat(params: Record<string, Object>): Promise<void> {
   const stack: NavStackLike | undefined = stackOf('chat');
   if (stack === undefined) {
+    // 回退走的是整页 router，不依赖页签，所以下面那句切页签不能提到这上面来。
     return navigateToChatViaRouter(params);
   }
+  // 推进去的是**聊天页签的栈**，所以必须先确保聊天页签是当前页签——否则会话
+  // 推进去了却在屏幕外。从联系人页签建群（ContactsPage → NewGroupPage）、停在
+  // 设置页签时点通知或深链，都会撞上这个。
+  //
+  // 放在 decidePush 之前是有意的：skip 分支（会话已经在栈顶）同样需要切页签，
+  // 那种情况下用户看不见它的原因恰恰就是页签不对，此时什么都不做等于点击失灵。
+  AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
   const target: StackFrame = {
     name: CHAT_DEST_NAME,
     key: chatKey(numberField(params, 'chatId'), numberField(params, 'forumTopicId'))

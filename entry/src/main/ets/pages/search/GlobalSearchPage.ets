@@ -28,7 +28,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logI } from '../../util/log';
 
 interface FoundItem {
@@ -726,7 +726,7 @@ struct GlobalSearchPage {
       return;
     }
     const params: Record<string, Object> = { 'chatId': it.chatId, 'jumpTo': it.messageId };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   // Rows the current tab actually shows: the 频道 tab keeps only messages from
@@ -1216,7 +1216,7 @@ struct GlobalSearchPage {
       this.store.rememberFoundChat(chatId);
     }
     const params: Record<string, Object> = { 'chatId': chatId };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   // App (mini-app bot) rows open the bot's chat — running the web app itself
@@ -1233,7 +1233,7 @@ struct GlobalSearchPage {
       const id = (chat['id'] as number | undefined) ?? 0;
       if (id !== 0) {
         const params: Record<string, Object> = { 'chatId': id };
-        navigateToChat(params);
+        navigateToChat(params).catch(logChatNavFailure);
       } else {
         this.resetResultOpening();
       }
@@ -1256,7 +1256,7 @@ struct GlobalSearchPage {
     if (q !== '') {
       params['searchQuery'] = q;
     }
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   private resolvedTopUsers(): SearchRow[] {

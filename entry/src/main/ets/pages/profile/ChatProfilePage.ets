@@ -38,7 +38,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -281,13 +281,13 @@ struct ChatProfilePage {
       params['joinedNoticeIsChannel'] = this.isChannel;
       this.justJoined = false;
     }
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   private openSearchInChat(): void {
     if (this.chatId === 0) { return; }
     const params: Record<string, Object> = { 'chatId': this.chatId, 'startSearch': true };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
 
@@ -639,7 +639,7 @@ struct ChatProfilePage {
       'chatId': this.chatId,
       'jumpTo': messageId
     };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   private currentTabLabel(): string {

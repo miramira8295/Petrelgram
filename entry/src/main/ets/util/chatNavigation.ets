@@ -1,7 +1,7 @@
 import { promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
-import { navigateToChat } from './chatNav';
+import { logChatNavFailure, navigateToChat } from './chatNav';
 import { logE } from './log';
 
 // 点"转发自 X"时的跳转。不碰页面状态，之前只是被关在 ChatPage 里。
@@ -16,7 +16,7 @@ export function openForwardOrigin(
     if (originMsgId !== 0) {
       params['jumpTo'] = originMsgId;
     }
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
     return;
   }
   if (originUserId === 0) {
@@ -29,7 +29,7 @@ export function openForwardOrigin(
     const id = (chat['id'] as number | undefined) ?? 0;
     if (id !== 0) {
       const params: Record<string, Object> = { 'chatId': id };
-      navigateToChat(params);
+      navigateToChat(params).catch(logChatNavFailure);
     }
   }).catch((e: TdError): void => {
     logE(`openForwardOrigin createPrivateChat failed: ${e.message}`);

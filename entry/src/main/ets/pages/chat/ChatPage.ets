@@ -164,7 +164,7 @@ import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
 import { adminLabelOf } from '../../util/adminLabel';
 import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/senderRoleChannel';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
@@ -3370,7 +3370,7 @@ export struct ChatPage {
       if (msgId !== undefined && msgId > 0) {
         params['jumpTo'] = msgId;
       }
-      navigateToChat(params);
+      navigateToChat(params).catch(logChatNavFailure);
       endLinkNavIf(url);
     }).catch((e: TdError) => {
       logE(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
@@ -3608,7 +3608,7 @@ export struct ChatPage {
         // not the whole discussion group's history.
         params['threadRootId'] = threadId;
       }
-      navigateToChat(params);
+      navigateToChat(params).catch(logChatNavFailure);
     }).catch((e: TdError) => {
       logE(`ChatPage.getMessageThread failed: ${e.message}`);
     });
@@ -3925,7 +3925,7 @@ export struct ChatPage {
       'chatId': chatId,
       'jumpTo': messageId
     };
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   // Header avatar/title tap → detail page: users/bots get the personal

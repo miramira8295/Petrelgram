@@ -9,7 +9,7 @@ import {
 } from './linkNav';
 import { openWebUrl } from './webBrowserNav';
 import { getMainMiniApp, getMiniAppLinkUrl } from '../store/BotApi';
-import { navigateToChat } from './chatNav';
+import { logChatNavFailure, navigateToChat } from './chatNav';
 import { logE } from './log';
 
 function openChatPage(chatId: number, showJoinedNotice: boolean = false,
@@ -19,7 +19,7 @@ function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     params['showJoinedNotice'] = true;
     params['joinedNoticeIsChannel'] = joinedNoticeIsChannel;
   }
-  navigateToChat(params);
+  navigateToChat(params).catch(logChatNavFailure);
 }
 
 function isTelegramInternalUrl(url: string): boolean {
@@ -67,7 +67,7 @@ function openProfileForChat(chat: TdObject, draftText: string = '', openProfile:
     router.pushUrl({ url: 'pages/profile/ChatProfilePage', params: params });
     return;
   }
-  navigateToChat(params);
+  navigateToChat(params).catch(logChatNavFailure);
 }
 
 function resolvePublicChat(context: common.UIAbilityContext, username: string, draftText: string,
@@ -106,7 +106,7 @@ function openMessageLink(context: common.UIAbilityContext, link: string, origina
     if (msgId > 0) {
       params['jumpTo'] = msgId;
     }
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }).catch((error: TdError): void => {
     logE(`openTelegramLink.getMessageLinkInfo failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
@@ -231,7 +231,7 @@ function openPhoneNumberUser(context: common.UIAbilityContext, type: TdObject, o
         if (draftText !== '') {
           params['draftText'] = draftText;
         }
-        navigateToChat(params);
+        navigateToChat(params).catch(logChatNavFailure);
       }
     }).catch((error: TdError): void => {
       logE(`openTelegramLink.createPhoneChat failed: ${error.message}`);
@@ -629,7 +629,7 @@ export function openChatLinkAction(context: common.UIAbilityContext, action: Cha
     if (action.draftText !== '') {
       params['draftText'] = action.draftText;
     }
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
     if (action.startParam === '') {
       return;
     }

@@ -32,7 +32,7 @@ import { publicLink } from '../../util/telegramLink';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -338,7 +338,7 @@ struct ProfilePage {
     if (this.pendingJumpTo > 0) {
       params['jumpTo'] = this.pendingJumpTo;
     }
-    navigateToChat(params);
+    navigateToChat(params).catch(logChatNavFailure);
   }
 
   private startCall(isVideo: boolean): void {
@@ -534,7 +534,7 @@ struct ProfilePage {
       const params: Record<string, Object> = {
         'chatId': this.privateChatId, 'jumpTo': messageId
       };
-      navigateToChat(params);
+      navigateToChat(params).catch(logChatNavFailure);
     }
   }
 
@@ -809,7 +809,7 @@ struct ProfilePage {
         return;
       }
       const params: Record<string, Object> = { 'chatId': chatId };
-      navigateToChat(params);
+      navigateToChat(params).catch(logChatNavFailure);
     }).catch((e: TdError): void => {
       this.creatingSecretChat = false;
       logE(`ProfilePage.createNewSecretChat failed: ${e.message}`);

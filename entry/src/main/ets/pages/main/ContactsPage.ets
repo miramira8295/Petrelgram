@@ -14,7 +14,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { navigateToChat } from '../../util/chatNav';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -400,7 +400,7 @@ export struct ContactsPage {
       const id = chat['id'] as number | undefined;
       if (id !== undefined) {
         const params: Record<string, Object> = { 'chatId': id };
-        navigateToChat(params);
+        navigateToChat(params).catch(logChatNavFailure);
       }
     }).catch((e: TdError): void => {
       if (sequence !== this.chatOpenSequence) {
