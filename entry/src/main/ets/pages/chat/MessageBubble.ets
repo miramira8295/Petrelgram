@@ -2437,6 +2437,7 @@ export struct MessageBubble {
         avatarPath: this.msg.contactAvatarPath,
         maxWidth: this.inlineMaxW(),
         onOpen: (): void => {
+          if (this.gestureClaimed) { return; }
           this.onContactOpen(
             this.msg.contactUserId,
             this.msg.contactPhone,
@@ -2463,6 +2464,7 @@ export struct MessageBubble {
         sharing: this.liveSharingId !== 0 && this.liveSharingId === this.msg.id,
         onStopLive: (): void => { if (this.gestureClaimed) { return; } this.onStopLiveLocation(); },
         onOpen: (): void => {
+          if (this.gestureClaimed) { return; }
           this.onLocationOpen(
             this.msg.locationLatitude,
             this.msg.locationLongitude,
@@ -2490,6 +2492,7 @@ export struct MessageBubble {
         revision: this.pollRevision(),
         maxWidth: this.inlineMaxW(),
         onVote: (messageId: number, optionIds: number[]): void => {
+          if (this.gestureClaimed) { return; }
           this.onPollVote(messageId, optionIds);
         }
       });
@@ -2534,6 +2537,7 @@ export struct MessageBubble {
         onUnlock: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onPaidMediaUnlock(messageId); },
         onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onPaidMediaOpen(messageId); },
         onRetryPhoto: (messageId: number): void => {
+          if (this.gestureClaimed) { return; }
           this.onSpecialPhotoRetry(messageId);
         }
       });
@@ -2553,6 +2557,7 @@ export struct MessageBubble {
         photoFailed: this.msg.photoFailed,
         maxWidth: this.inlineMaxW(),
         onRetryPhoto: (messageId: number): void => {
+          if (this.gestureClaimed) { return; }
           this.onSpecialPhotoRetry(messageId);
         },
         onCopyCode: (code: string): void => { if (this.gestureClaimed) { return; } this.onGiftCodeCopy(code); }
@@ -2573,6 +2578,7 @@ export struct MessageBubble {
         photoPath: this.msg.photoPath,
         maxWidth: this.inlineMaxW(),
         onOpenOriginal: (chatId: number, messageId: number): void => {
+          if (this.gestureClaimed) { return; }
           this.onGiveawayOpen(chatId, messageId);
         }
       });
