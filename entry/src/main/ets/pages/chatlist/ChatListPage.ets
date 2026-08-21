@@ -508,9 +508,18 @@ export struct ChatListPage {
         ]
       }
     };
-    // 文件夹条**不**挂 bottomBuilder。挂进去它就成了标题栏的一部分，跟着标题栏
-    // 一起收缩；而这条横条是页面的常驻导航，应当一直在、并且待在标题栏**下面**
-    // ——和改造前的位置关系一致。所以它作为内容区的第一个子节点单独排（见 build）。
+    // 文件夹条挂在 bottomBuilder 上——这是 HDS 给"标题栏底下那一行"准备的槽位，
+    // 横条和标题栏因此共用同一块背板与材质，看上去是一整块。
+    //
+    // 试过让它单独浮在内容区上层（Stack）：两者中间断开一道，观感割裂；而且
+    // 标题栏那块玻璃背后只剩一小段列表，透不出东西来，看着几乎是实心的。
+    // 合成一块之后列表从整块底下穿过去，玻璃才有内容可透。
+    if (this.folders.length > 0) {
+      content.bottomBuilder = {
+        builder: (): void => { this.tabBar(); },
+        height: FOLDER_BAR_SPACE
+      };
+    }
     return content;
   }
 
@@ -660,13 +669,15 @@ export struct ChatListPage {
     }
     // 只有这条保留沉浸光感：外面那块顶栏走的是高斯模糊，两种质感叠在一起，
     // 胶囊才像是浮在模糊层之上的一块玻璃。
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.dock_glass')))
-    .backdropBlur(overlayBackdropBlur('bar'))
+    // 自己**不再画玻璃**：这条横条现在挂在标题栏的 bottomBuilder 上，和标题栏
+    // 共用同一块背板与材质。再叠一层自己的材质，两层玻璃相乘，整块就发实了
+    // ——用户报的"首页基本不透明"正是这么来的。边框和投影一并去掉：那是它当年
+    // 单独浮在列表上时用来托起悬浮感的，现在它不悬浮了，留着只会在标题栏内部
+    // 画出一道多余的分界。
+    //
+    // 选中项那颗胶囊（COLOR_TAB_PILL_BG）保留——那是内容，不是容器。
     .borderRadius(FOLDER_BAR_HEIGHT / 2)
     .clip(true)
-    .border({ width: 0.5, color: $r('app.color.divider') })
-    .shadow({ radius: 10, color: '#1F000000', offsetX: 0, offsetY: 3 })
-    .systemMaterial(overlayMaterial('bar'))
     .margin({ left: 8, right: 8, bottom: 6 })
     .transition(
       TransitionEffect.OPACITY
@@ -681,13 +692,6 @@ export struct ChatListPage {
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation() {
-        // 文件夹条浮在列表上层，列表用 contentStartOffset 让出等高的起始位置
-        // ——改造前就是这个结构，只是那时整个页面都归自己管，现在这一层只覆盖
-        // 标题栏下方的内容区。
-        //
-        // 上下排（Column）不行：那样列表不从横条底下过，横条那层玻璃背后没有
-        // 东西可透，材质就只剩纹理没有穿透。
-        Stack({ alignContent: Alignment.Top }) {
         Tabs({ controller: this.controller }) {
         ForEach(this.tabs(), (spec: TabSpec) => {
           TabContent() {
@@ -698,15 +702,15 @@ export struct ChatListPage {
             Column() {
               if (spec.key === 'main') {
                 MainTabBody({
-                  // 只让文件夹条这一段：标题栏那段由 enableComponentSafeArea
-                  // 负责，不必也不该在这里重复算。
-                  contentTopInset: this.folders.length > 0 ? FOLDER_BAR_SPACE : 0,
+                  // 让位整个交给标题栏的 enableComponentSafeArea——横条现在挂在
+                  // bottomBuilder 上，也算标题栏的一部分，这里再算一次就是重复。
+                  contentTopInset: 0,
                   listScroller: this.scrollerFor(spec.key)
                 });
               } else {
                 ChatListView({
                   listKey: spec.key,
-                  contentTopInset: this.folders.length > 0 ? FOLDER_BAR_SPACE : 0,
+                  contentTopInset: 0,
                   listScroller: this.scrollerFor(spec.key)
                 });
               }
@@ -758,13 +762,6 @@ export struct ChatListPage {
       .clip(false)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM]);
 
-        // 浮在列表上层。放在 Tabs 之后 = 画在它上面。
-        if (this.folders.length > 0) {
-          this.tabBar();
-        }
-        }
-        .width('100%').height('100%')
-        .clip(false);
       }
       .titleBar({
         // 两个都要，各管一头：
