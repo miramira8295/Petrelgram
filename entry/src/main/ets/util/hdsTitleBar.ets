@@ -19,13 +19,8 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { LengthMetrics } from '@kit.ArkUI';
 import {
-  BlurStrategy, HdsNavigationTitleBarStyle, ScrollEffectType, SystemMaterialParams,
-  TitleBarStyleOptions, hdsMaterial
+  HdsNavigationTitleBarStyle, ScrollEffectType, TitleBarStyleOptions
 } from '@kit.UIDesignKit';
-import {
-  LIGHT_DEFAULT, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH, normalizeLightLevel
-} from './materialTuning';
-import { KEY_MATERIAL_LIGHT, KEY_POWER_ACTIVE } from '../store/AppSettings';
 
 // IMMERSIVE_GRADIENT_BLUR 的起始 API 版本。hdsMaterial 的 MaterialType /
 // MaterialLevel 同样是 6.1.0(23) 起，共用这个门槛。
@@ -51,53 +46,6 @@ export function titleScrollEffectType(): ScrollEffectType {
 // 变实，看着像 bug。
 export const TITLE_BLUR_START_VP: number = 0;
 export const TITLE_BLUR_END_VP: number = 20;
-
-// 标题栏的完整样式。**每个用 HdsNavigation 的地方都必须走这里。**
-//
-// 起因是一个真机上很显眼的问题：只配了 backgroundStyle、没配 contentStyle 时，
-// 标题、副标题、菜单图标、返回箭头全部用 HDS 的默认色，而那套默认色**不跟随
-// 应用的深浅色模式**——夜间模式下标题还是深色，压在深色背板上几乎看不见。
-// 官方示例里这几项是逐个显式给的，我第一版照抄了 scrollEffectOpts 却漏掉了
-// contentStyle，二十个页面于是一起中招。
-//
-// 颜色一律用 app.color.*：这些资源在 resources/dark 下有对应值，跟随模式是
-// 资源系统免费给的，不需要在代码里判断。
-//
-// originalStyle 和 scrollEffectStyle 都要给：前者是内容还没滚动时的样子，后者是
-// 滚过 blurEffectiveEndOffset 之后的样子。只给前者的话，滚起来会跳回默认色。
-// 标题栏的沉浸材质（毛玻璃 + 光影）。
-//
-// materialTuning 里那句"官方那三档 EXQUISITE/GENTLE/SMOOTH 是 UI Design Kit 给
-// HDS 导航/页签用的 systemMaterialEffect，本应用够不着"——现在够得着了，因为
-// 标题栏本身就是 HDS 组件。而且那三档的名字和设置里「光感等级」的档位一一对应，
-// 直接把用户已有的选择接过来，不必再造一个开关。
-//
-// 6.1.0(23) 起才有；低于这个版本返回 undefined，标题栏退回纯色背板。枚举只在
-// 函数体里解引用（v1.3.6 启动崩溃的教训）。
-function titleBarMaterial(): SystemMaterialParams | undefined {
-  if (apiVersion < IMMERSIVE_GRADIENT_BLUR_API) {
-    return undefined;
-  }
-  // 省电模式下不上材质：它是纯观感，而这一档的用户诉求是省电。
-  if (AppStorage.get<boolean>(KEY_POWER_ACTIVE) ?? false) {
-    return undefined;
-  }
-  const level: string = normalizeLightLevel(
-    AppStorage.get<string>(KEY_MATERIAL_LIGHT) ?? LIGHT_DEFAULT);
-  let materialLevel: hdsMaterial.MaterialLevel = hdsMaterial.MaterialLevel.ADAPTIVE;
-  if (level === LIGHT_EXQUISITE) {
-    materialLevel = hdsMaterial.MaterialLevel.EXQUISITE;
-  } else if (level === LIGHT_GENTLE) {
-    materialLevel = hdsMaterial.MaterialLevel.GENTLE;
-  } else if (level === LIGHT_SMOOTH) {
-    materialLevel = hdsMaterial.MaterialLevel.SMOOTH;
-  }
-  return { materialType: hdsMaterial.MaterialType.IMMERSIVE, materialLevel };
-}
-
-function materialOn(): boolean {
-  return titleBarMaterial() !== undefined;
-}
 
 function barStyle(background: ResourceColor): HdsNavigationTitleBarStyle {
   return {
@@ -128,19 +76,17 @@ export function titleBarStyle(background: ResourceColor): TitleBarStyleOptions {
       blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
       blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
     },
-    // 材质接管时背板必须**透明**：官方《沉浸光感常见问题》写死，材质的视觉
-    // 层级在 backgroundColor **之下**，不透明底色会把材质整个盖住看不见。
-    // 这一条本应用在 overlayMaterial 上已经踩过一次。
-    originalStyle: barStyle(materialOn() ? Color.Transparent : background),
-    // 滚起来之后背板让位给模糊本身，其余颜色不变。
-    scrollEffectStyle: barStyle(Color.Transparent),
-    systemMaterialEffect: titleBarMaterial(),
-    // ENABLE 而不是 ADAPTIVE。ADAPTIVE 是"由系统策略决定要不要模糊"，实测下来
-    // 系统判成了不模糊，标题栏于是整块发实——毛玻璃根本没开。这里要的就是
-    // 毛玻璃，明确要过来。
+    // **静止时不透明，滚过阈值后才变玻璃——这是 HDS 的既定模型，不是 bug。**
     //
-    // 省电时不必在这里挡：titleBarMaterial() 已经在省电模式下返回 undefined，
-    // 没有材质时这一项也就无从生效。
-    blurStrategy: BlurStrategy.ENABLE
+    // 官方示例里 originalStyle 的背景就是不透明的 ohos_id_color_background，
+    // 只有 scrollEffectStyle 才是 ..._transparent。模糊是"内容滑到标题栏底下"
+    // 这件事的表现，内容还没滑上来的时候没有东西可透，自然也就不该透。
+    //
+    // 曾经把静止态也改成透明、并额外加了 systemMaterialEffect 与 blurStrategy
+    // ——那两项官方示例里根本没有。结果是两套机制打架：材质要自己的背板，
+    // scrollEffect 要按滚动量换背板，最后整块发实，反而比不加还糟。剥回官方
+    // 形状之后，滚动时的渐变模糊才是干净的。
+    originalStyle: barStyle(background),
+    scrollEffectStyle: barStyle(Color.Transparent)
   };
 }
