@@ -1,7 +1,7 @@
 import { promptAction, router, LengthMetrics } from '@kit.ArkUI';
 import {
-  BottomBuilderShowType, HdsNavigation, HdsNavigationIconOptions,
-  HdsNavigationMenuItemOptions, HdsNavigationTitleMode, TitleBarContentOptions
+  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
+  HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import {
   TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
@@ -31,9 +31,6 @@ import {
 } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 
-// 标题栏底部那块悬浮头像区的高度：头像 100 + 昵称行 + 状态行 + 间距。
-// 写死是因为 bottomBuilder 要求给定高度——它得在内容布局之前就知道让出多少。
-const PROFILE_HEADER_H: number = 176;
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
@@ -1198,11 +1195,7 @@ export struct MyProfilePage {
       }));
   }
 
-  // @LocalBuilder 而不是 @Builder：这个块现在要作为 CustomBuilder 交给
-  // HdsNavigation 的标题栏，@Builder 传出去之后 this 会绑到接收方，读不到本
-  // 组件的状态（头像、昵称、在线状态全是本组件的 @State）。@LocalBuilder 才
-  // 保持绑在声明它的组件上。
-  @LocalBuilder
+  @Builder
   header() {
     // 二维码和 ⋮ 原来是浮在头像块上方的一行，现在搬进了标题栏（见
     // titleBarContent）——它们本来就是"页面级动作"，放在标题栏才是它们该在的
@@ -1932,16 +1925,6 @@ export struct MyProfilePage {
           { content: qrIcon } as HdsNavigationMenuItemOptions,
           { content: moreIcon } as HdsNavigationMenuItemOptions
         ]
-      },
-      // 头像 + 昵称 + 在线状态挂在标题栏底部，于是它是**悬浮**的：内容从它
-      // 底下穿过去，它跟着标题栏一起收缩，而不是作为第一屏内容被滚走。
-      //
-      // DIRECTLY_SHOW = 一直显示（另一档 OVERDRAG_SHOW 是拉过头才露出来，
-      // 那是给下拉刷新那类用的）。
-      bottomBuilder: {
-        builder: (): void => { this.header(); },
-        height: PROFILE_HEADER_H,
-        showType: BottomBuilderShowType.DIRECTLY_SHOW
       }
     };
   }
@@ -1950,6 +1933,7 @@ export struct MyProfilePage {
     HdsNavigation() {
       Scroll(this.profileScroller) {
         Column() {
+          this.header();
           this.actionsRow();
           this.infoCard();
           this.postsSection();
