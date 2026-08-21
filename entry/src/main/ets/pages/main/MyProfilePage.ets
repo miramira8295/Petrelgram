@@ -31,6 +31,9 @@ import {
 } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 
+// 上滑多少之后，标题栏由「个人资料」换成头像 + 昵称。取头像块高度的一半上下：
+// 滚到头像开始被标题栏吃掉时切换，视觉上就是它"顶"上去了。
+const TITLE_COLLAPSE_AT: number = 96;
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
@@ -80,6 +83,8 @@ export struct MyProfilePage {
   @State photoUploading: boolean = false;
   @State openingEditor: boolean = false;
   private profileScroller: Scroller = new Scroller();
+  // 标题栏是否已经切成"头像 + 昵称"。由内容滚动量驱动，见 onDidScroll。
+  @State private titleCollapsed: boolean = false;
   @State topMenuOpen: boolean = false;
   @State photoMenuOpen: boolean = false;
   @State switchingToSettings: boolean = false;
@@ -1903,6 +1908,38 @@ export struct MyProfilePage {
     }
   }
 
+  // 收起态盖在标题栏上的那一层：小头像 + 昵称。
+  //
+  // 用 stackBuilder 自己画，而不是指望 HDS 的 subIcon —— 它的 icon 只收
+  // ResourceStr / SymbolGlyphModifier / PixelMap，而我们的头像是一个本地文件
+  // 路径，能不能被它当图片渲染没有把握；AvatarView 还顺带管了"没有头像时显示
+  // 首字母"这件事。
+  //
+  // @LocalBuilder：这个块要作为 CustomBuilder 交出去，@Builder 传出去之后
+  // this 会绑到接收方，读不到本组件的 name / avatarPath。
+  @LocalBuilder
+  collapsedTitle() {
+    Row({ space: 8 }) {
+      AvatarView({
+        avatarPath: this.avatarPath,
+        initials: this.initials,
+        colorSeed: 0,
+        avatarSize: 30
+      });
+      Text(this.name)
+        .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: 180 });
+    }
+    .alignItems(VerticalAlign.Center)
+    .height('100%')
+    .padding({ left: 16 })
+    // 跟着收起状态淡入淡出，和 mainTitle 的淡出正好交叉。
+    .opacity(this.titleCollapsed ? 1 : 0)
+    // 不挡手势：标题栏上的菜单键还要能点。
+    .hitTestBehavior(HitTestMode.None);
+  }
+
   // 标题栏内容：大标题 + 右上角二维码与 ⋮。
   //
   // ⋮ 走的是 promptAction.showActionMenu（系统动作面板），不是 bindMenu，
@@ -1919,7 +1956,10 @@ export struct MyProfilePage {
       action: (): void => { this.showTopMenu(); }
     };
     return {
-      title: { mainTitle: $r('app.string.tab_profile') },
+      // 收起时把大标题让出来——头像+昵称那一层正盖在这个位置上，两个都画
+      // 就会叠字。
+      title: { mainTitle: this.titleCollapsed ? '' : $r('app.string.tab_profile') },
+      stackBuilder: (): void => { this.collapsedTitle(); },
       menu: {
         value: [
           { content: qrIcon } as HdsNavigationMenuItemOptions,
@@ -1927,6 +1967,20 @@ export struct MyProfilePage {
         ]
       }
     };
+  }
+
+  // 滚动量决定标题栏显示哪一套。只在跨过阈值那一下改状态并做动画——
+  // onDidScroll 是每帧回调，每帧都 animateTo 等于每帧重启一次动画。
+  private syncTitleCollapsed(): void {
+    const y: number = this.profileScroller.currentOffset().yOffset;
+    const next: boolean = y > TITLE_COLLAPSE_AT;
+    if (next === this.titleCollapsed) {
+      return;
+    }
+    animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+      curve: Curve.EaseOut
+    }, (): void => { this.titleCollapsed = next; });
   }
 
   build() {
@@ -1946,7 +2000,8 @@ export struct MyProfilePage {
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
       // 不裁剪，头像块才能穿到标题栏底下——渐变模糊模糊的正是这部分。
-      .clip(false);
+      .clip(false)
+      .onDidScroll((): void => { this.syncTitleCollapsed(); });
     }
     .titleBar({
       // 两个都要，各管一头。漏掉 avoidLayoutSafeArea 标题栏会顶进状态栏。
