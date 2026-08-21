@@ -681,11 +681,13 @@ export struct ChatListPage {
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation() {
-        Column() {
-        // 标题栏下面的常驻横条。它在滚动容器之外，所以不跟着列表滚走。
-        if (this.folders.length > 0) {
-          this.tabBar();
-        }
+        // 文件夹条浮在列表上层，列表用 contentStartOffset 让出等高的起始位置
+        // ——改造前就是这个结构，只是那时整个页面都归自己管，现在这一层只覆盖
+        // 标题栏下方的内容区。
+        //
+        // 上下排（Column）不行：那样列表不从横条底下过，横条那层玻璃背后没有
+        // 东西可透，材质就只剩纹理没有穿透。
+        Stack({ alignContent: Alignment.Top }) {
         Tabs({ controller: this.controller }) {
         ForEach(this.tabs(), (spec: TabSpec) => {
           TabContent() {
@@ -696,14 +698,15 @@ export struct ChatListPage {
             Column() {
               if (spec.key === 'main') {
                 MainTabBody({
-                  // 让位交给标题栏的 enableComponentSafeArea，这里不再自己算。
-                  contentTopInset: 0,
+                  // 只让文件夹条这一段：标题栏那段由 enableComponentSafeArea
+                  // 负责，不必也不该在这里重复算。
+                  contentTopInset: this.folders.length > 0 ? FOLDER_BAR_SPACE : 0,
                   listScroller: this.scrollerFor(spec.key)
                 });
               } else {
                 ChatListView({
                   listKey: spec.key,
-                  contentTopInset: 0,
+                  contentTopInset: this.folders.length > 0 ? FOLDER_BAR_SPACE : 0,
                   listScroller: this.scrollerFor(spec.key)
                 });
               }
@@ -746,9 +749,13 @@ export struct ChatListPage {
         }
         this.ensureTabVisible(index);
       })
-      // 横条占掉的高度由 layoutWeight 自动让出，Tabs 吃掉剩下的。
-      .layoutWeight(1).width('100%')
+      .width('100%').height('100%')
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM]);
+
+        // 浮在列表上层。放在 Tabs 之后 = 画在它上面。
+        if (this.folders.length > 0) {
+          this.tabBar();
+        }
         }
         .width('100%').height('100%');
       }
