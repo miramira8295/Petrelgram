@@ -1334,6 +1334,10 @@ export struct SettingsPage {
       // 设置是从主界面进来的一级页面，顶部没有返回箭头。
       .hideBackButton(true)
       // FREE：初始大标题，随内容上滚收缩成 mini 标题栏。
+      // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
+      // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
+      // 右边一片空白（平板用户报"没法用了"）。
+      .mode(NavigationMode.Stack)
       .titleMode(HdsNavigationTitleMode.FREE)
       .bindToScrollable([this.settingsScroller])
       .width('100%').height('100%')

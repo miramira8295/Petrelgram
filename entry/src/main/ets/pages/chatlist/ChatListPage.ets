@@ -830,6 +830,10 @@ export struct ChatListPage {
       // MINI 而不是 FREE：首页要的是"应用名和搜索键在同一行"的一条窄栏，
       // FREE 的大标题会先占掉一整行、把列表整体压下去，在这个每天开几十次的
       // 页面上尤其显得高。其余页面仍用 FREE——那里大标题是想要的效果。
+      // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
+      // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
+      // 右边一片空白（平板用户报"没法用了"）。
+      .mode(NavigationMode.Stack)
       .titleMode(HdsNavigationTitleMode.MINI)
       // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
       .bindToScrollable(this.allTabScrollers())

@@ -1969,6 +1969,10 @@ export struct MyProfilePage {
     })
     // 一级页签，没有返回键。
     .hideBackButton(true)
+    // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
+    // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
+    // 右边一片空白（平板用户报"没法用了"）。
+    .mode(NavigationMode.Stack)
     .titleMode(HdsNavigationTitleMode.FREE)
     .bindToScrollable([this.profileScroller])
     .width('100%').height('100%')

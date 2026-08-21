@@ -73,6 +73,10 @@ export struct HdsSubPage {
       }
     })
     // 子页面都有返回键——这正是它们和设置/联系人那两个一级页面的区别。
+    // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
+    // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
+    // 右边一片空白（平板用户报"没法用了"）。
+    .mode(NavigationMode.Stack)
     .titleMode(HdsNavigationTitleMode.FREE)
     .bindToScrollable([this.scroller])
     .width('100%').height('100%')
