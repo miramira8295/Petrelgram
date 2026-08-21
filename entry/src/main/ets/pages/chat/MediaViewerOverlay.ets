@@ -1001,7 +1001,9 @@ export struct MediaViewerOverlay {
             .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
             .backdropBlur(overlayBackdropBlur('viewer'))
             .attributeModifier(materialModifier('viewer'));
-          SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([Color.White]);
+          // 玻璃背板浅色模式下是亮的，白字看不见——玻璃上的前景一律跟主题走，
+          // 压在视频画面/黑蒙层上的才保持白。
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([$r('app.color.text_primary')]);
         }
         .width(40).height(40).borderRadius(20)
         .stateStyles({
@@ -1014,11 +1016,11 @@ export struct MediaViewerOverlay {
         })
         .onClick(() => { this.onRequestClose(); });
         Column({ space: 1 }) {
-          Text(this.infoTitle()).fontSize(13).fontColor(Color.White).fontWeight(FontWeight.Medium)
+          Text(this.infoTitle()).fontSize(13).fontColor($r('app.color.text_primary')).fontWeight(FontWeight.Medium)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .constraintSize({ maxWidth: 220 });
           if (this.infoSubtitle() !== '') {
-            Text(this.infoSubtitle()).fontSize(11).fontColor('#BFFFFFFF')
+            Text(this.infoSubtitle()).fontSize(11).fontColor($r('app.color.text_secondary'))
               .maxLines(1);
           }
         }
@@ -1041,7 +1043,7 @@ export struct MediaViewerOverlay {
           .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
           .backdropBlur(overlayBackdropBlur('viewer'))
           .attributeModifier(materialModifier('viewer'));
-        SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([Color.White]);
+        SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([$r('app.color.text_primary')]);
       }
       .width(40).height(40).borderRadius(20)
       .stateStyles({
@@ -1076,7 +1078,7 @@ export struct MediaViewerOverlay {
   hopBubble() {
     Row({ space: 8 }) {
       if (this.hopDir < 0) {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(15).fontColor([Color.White]);
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(15).fontColor([$r('app.color.text_primary')]);
       }
       if (this.hopThumbPath() !== '') {
         Image(this.hopThumbPath()).draggable(false)
@@ -1085,11 +1087,11 @@ export struct MediaViewerOverlay {
       Text(this.hopProgress >= 1
         ? $r('app.string.mv_hop_release')
         : (this.hopDir > 0 ? $r('app.string.mv_hop_next') : $r('app.string.mv_hop_prev')))
-        .fontSize(12).fontColor(Color.White)
+        .fontSize(12).fontColor($r('app.color.text_primary'))
         .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: 132 });
       if (this.hopDir > 0) {
-        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([Color.White]);
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([$r('app.color.text_primary')]);
       }
     }
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })

@@ -25,12 +25,16 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
 
 const CONTROL_BAR_BG: string = '#6e3e3e40';
-const CONTROL_ACCENT: string = '#FFFFFF';
-const CONTROL_TEXT_SOFT: string = '#EAEEF2'; // over dark video chrome — mode-independent
+// 控制条自从换了沉浸材质（materialModifier('viewer')），浅色模式下是**亮**
+// 玻璃，写死的白字在上面看不见。玻璃上的前景一律跟主题走；仍压在视频画面
+// /黑蒙层上的元素（快进反馈、重播、速度气泡）继续用字面白。
+const CONTROL_ACCENT: ResourceColor = $r('app.color.text_primary');
+const CONTROL_TEXT_SOFT: ResourceColor = $r('app.color.text_secondary');
 // Seek bar, back to front: unbuffered track → downloaded span → played span.
-const CONTROL_TRACK_SOFT: string = '#4C5259';       // unbuffered remainder
+const CONTROL_TRACK_SOFT: string = '#804C5259';       // unbuffered remainder
 const CONTROL_TRACK_SOFT_FILL: string = '#8E969E';  // downloaded but not played
-const CONTROL_TRACK: string = '#FFFFFF';            // played, matches the knob
+// 已播放段和拇指同色，跟主题走——白轨在浅色玻璃上同样看不见。
+const CONTROL_TRACK: ResourceColor = $r('app.color.text_primary');
 
 // Output device types that count as "headphones": unplugging/disconnecting one
 // of these pauses playback instead of blasting the speaker.
@@ -870,7 +874,7 @@ export struct StreamingVideoPlayer {
     .width(48)
     .height(36)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.speedIdx === DEFAULT_SPEED_IDX ? Color.Transparent : '#24FFFFFF')
+    .backgroundColor(this.speedIdx === DEFAULT_SPEED_IDX ? Color.Transparent : $r('app.color.selected_pill'))
     .borderRadius(18)
     .stateStyles({
       normal: this.controlNormalStyle,
