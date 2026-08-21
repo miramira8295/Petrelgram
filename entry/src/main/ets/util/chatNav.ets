@@ -126,8 +126,15 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 打开会话详情页。这是**所有**会话入口的唯一漏斗（通知、深链、搜索结果、
 // 群链接、转发来源、联系人页），改这一个函数等于改全部入口。
 //
-// 返回 Promise 只是为了让少数几个想串在自己流程里的调用点还能 then/catch，
-// 它不会 reject——跳不动是这里自己记日志，不该把调用方的流程也带崩。
+// **会 reject**，但只在一条窄路径上：栈还没注册（冷启动早期，ChatListPage 尚未
+// 挂树）时会回退到整页 router，此时 pushUrl 的失败会原样透出来。栈已注册的主
+// 路径全程 resolve。
+//
+// 之所以不把失败吞在这里：NewGroupPage 建完群要靠这个 rejection 才能把
+// "打不开会话" 反馈给用户（复位 spinner + 显示错误），吞掉它那段就是死代码。
+// 代价是每个调用点都得接住——除 ChatListPage（return 进了自己的链）和
+// NewGroupPage（自己处理）外，其余 26 处统一 .catch(logChatNavFailure)。
+// 新增调用点时别忘了跟上，否则是未捕获的 Promise rejection。
 export function navigateToChat(params: Record<string, Object>): Promise<void> {
   const stack: NavStackLike | undefined = stackOf('chat');
   if (stack === undefined) {
