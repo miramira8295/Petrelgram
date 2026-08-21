@@ -2,6 +2,9 @@ import { common } from '@kit.AbilityKit';
 import {
   MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
+import {
+  hopDirection, hopProgress, nextMediaGroupIndex
+} from '../../util/viewerGroupHop';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
 import { AlbumGroup } from '../../util/collapseAlbums';
@@ -122,6 +125,15 @@ export struct MediaViewerOverlay {
   // 下滑关闭：整层（图片 + 控制层）跟着手指往下走的位移。松手时要么越过阈值
   // 关闭，要么弹回 0。
   @State private dismissY: number = 0;
+  // 越界切组：方向（+1 下一组 / -1 上一组 / 0 无）、拉拽进度 0..1、目标组下标。
+  // 松手时按 hopProgress 是否到 1 决定切还是弹回。
+  @State private hopDir: number = 0;
+  @State private hopProgress: number = 0;
+  private hopTargetIdx: number = -1;
+  // 缩略图条自己的滚动控制器。切组之后内容会整体换掉（siblingIds 从
+  // viewerMsgId 推出来），但横向偏移不会自动回位——往前切落在新组的最后一张
+  // 时，那张会停在屏幕右边看不见的地方。
+  private filmScroller: Scroller = new Scroller();
   private swiperCtrl: SwiperController = new SwiperController();
 
   aboutToAppear(): void {
@@ -395,6 +407,94 @@ export struct MediaViewerOverlay {
     });
   }
 
+  // 这一行是不是媒体行。用户拉的是"下一组媒体"，中间隔着几十条文字消息不该
+  // 让这个动作失效，所以要能跳过非媒体行。
+  private groupIsMedia(index: number): boolean {
+    const g = this.groups[index];
+    return g !== undefined &&
+      (g.head.contentType === 'photo' || this.isVideoEntry(g.head));
+  }
+
+  private currentGroupIndex(): number {
+    return this.groups.findIndex(
+      (g: AlbumGroup): boolean => g.memberIds.indexOf(this.viewerMsgId) >= 0);
+  }
+
+  // Swiper 拖动中：判断有没有越界，以及拉了多少。
+  private onSwiperGesture(offset: number): void {
+    const ids: number[] = this.siblingIds();
+    const dir: number = hopDirection(this.pageIdx, ids.length, offset);
+    if (dir === 0) {
+      this.clearHop();
+      return;
+    }
+    if (dir !== this.hopDir) {
+      // 换了方向：重新找目标组。找不到就当没越界——没有下一组时不该弹气泡。
+      const from: number = this.currentGroupIndex();
+      const target: number = from < 0 ? -1 : nextMediaGroupIndex(
+        this.groups.length, from, dir,
+        (i: number): boolean => this.groupIsMedia(i));
+      if (target < 0) {
+        this.clearHop();
+        return;
+      }
+      this.hopTargetIdx = target;
+      this.hopDir = dir;
+    }
+    // 阈值随视口宽度走：pad 上 80vp 只是轻轻一带，手机上已经是小半屏。
+    this.hopProgress = hopProgress(offset, Math.max(80, this.areaW / 4));
+  }
+
+  private clearHop(): void {
+    if (this.hopDir === 0 && this.hopProgress === 0) {
+      return;
+    }
+    this.hopDir = 0;
+    this.hopProgress = 0;
+    this.hopTargetIdx = -1;
+  }
+
+  // 松手：拉够了就切组，没拉够就把气泡收回去、什么都不做。
+  private settleHop(): void {
+    const dir: number = this.hopDir;
+    const target: number = this.hopTargetIdx;
+    if (dir === 0 || target < 0 || this.hopProgress < 1) {
+      animateTo({
+        duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.Friction
+      }, () => { this.clearHop(); });
+      return;
+    }
+    this.clearHop();
+    const g = this.groups[target];
+    if (g === undefined || g.memberIds.length === 0) {
+      return;
+    }
+    // 往后切落在新组的第一张，往前切落在最后一张——都是"接着刚才的方向继续
+    // 看下去"的那一张，而不是让用户从组的另一头重新开始。
+    const landing: number = dir > 0 ? g.memberIds[0] : g.memberIds[g.memberIds.length - 1];
+    this.resetPhotoZoom(false);
+    this.dismissY = 0;
+    this.viewerMsgId = landing;
+    this.pageIdx = dir > 0 ? 0 : g.memberIds.length - 1;
+    this.prefetchNeighbours(this.pageIdx);
+    // 缩略图条的内容随 viewerMsgId 自动换掉，但滚动偏移不会——手动带回去。
+    // 放在下一帧：这一帧新的那批缩略图还没挂上，量不出位置。
+    const landingIdx: number = this.pageIdx;
+    setTimeout((): void => { this.scrollFilmstripTo(landingIdx); }, 0);
+  }
+
+  // 气泡里那张缩略图。目标组的封面：往后切给第一张，往前切给最后一张，
+  // 和真正会落到的那一张保持一致。
+  private hopThumbPath(): string {
+    const g = this.groups[this.hopTargetIdx];
+    if (g === undefined || g.photoPaths.length === 0) {
+      return '';
+    }
+    const p: string = this.hopDir > 0
+      ? g.photoPaths[0] : g.photoPaths[g.photoPaths.length - 1];
+    return p !== '' && p.startsWith('/') ? `file://${p}` : p;
+  }
+
   private entryById(id: number): MessageEntry | null {
     const idx = this.messages.findIndex((m: MessageEntry) => m.id === id);
     return idx >= 0 ? this.messages[idx] : null;
@@ -512,6 +612,8 @@ export struct MediaViewerOverlay {
       this.store.requestFullPhoto(id);
     }
     this.prefetchNeighbours(index);
+    // 组内翻页也把缩略图条带过去：不然翻到第七张时高亮的那一格还在条外面。
+    this.scrollFilmstripTo(index);
   }
 
   private isVideo(): boolean {
@@ -770,6 +872,18 @@ export struct MediaViewerOverlay {
     // While enlarged, one-finger movement must not page the album out from
     // under the zoomed photo. Resetting to 1x re-enables normal paging.
     .disableSwipe(this.zoomed() || this.videoLandscape)
+    // 拖动中上报当前位移。停在头/尾还继续往外拖时，这个值会越过 0 继续走，
+    // 那段就是"越界量"——切组的气泡跟着它长。
+    .onGestureSwipe((_index: number, extra: SwiperAnimationEvent) => {
+      this.onSwiperGesture(extra.currentOffset);
+    })
+    // 松手的判定放在 onTouch 而不是 onAnimationStart：后者在"拖了但不足以翻页"
+    // 时不一定触发，而这恰恰是气泡最需要收回去的那种情形。
+    .onTouch((e: TouchEvent) => {
+      if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+        this.settleHop();
+      }
+    })
     .onChange((i: number) => { this.onPageChange(i); })
     .onAreaChange((_old: Area, area: Area) => {
       this.areaW = Number(area.width);
@@ -819,9 +933,23 @@ export struct MediaViewerOverlay {
 
   // Thumbnail strip for the current message's album (photo/video list) —
   // tap a thumbnail to switch the viewer to that item.
+  // 把第 index 张缩略图滚到可视范围中间。
+  // 52 的缩略图 + 6 的间距 = 每格 58；左边还有 12 的内边距。
+  private scrollFilmstripTo(index: number): void {
+    if (index < 0) {
+      return;
+    }
+    const target: number = Math.max(0, 12 + index * 58 + 26 - this.areaW / 2);
+    try {
+      this.filmScroller.scrollTo({ xOffset: target, yOffset: 0, animation: true });
+    } catch (e) {
+      // 条还没挂上（切组的同一帧）时会抛，下一次 onPageChange 会再来一次。
+    }
+  }
+
   @Builder
   viewerFilmstrip() {
-    Scroll() {
+    Scroll(this.filmScroller) {
       Row({ space: 6 }) {
         ForEach(this.siblingIds(), (id: number) => {
           Stack() {
@@ -931,9 +1059,55 @@ export struct MediaViewerOverlay {
       }));
   }
 
+  // 越界切组的气泡。跟着手指长，拉满时换成"松手即可查看"。
+  //
+  // 贴在越界的那一侧：往下一组是从右边出来，往上一组从左边——方向和手指
+  // 拖出去的方向一致，才读得出"那边还有东西"。
+  @Builder
+  hopBubble() {
+    Row({ space: 8 }) {
+      if (this.hopDir < 0) {
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(15).fontColor([Color.White]);
+      }
+      if (this.hopThumbPath() !== '') {
+        Image(this.hopThumbPath()).draggable(false)
+          .width(34).height(34).borderRadius(6).objectFit(ImageFit.Cover);
+      }
+      Text(this.hopProgress >= 1
+        ? $r('app.string.mv_hop_release')
+        : (this.hopDir > 0 ? $r('app.string.mv_hop_next') : $r('app.string.mv_hop_prev')))
+        .fontSize(12).fontColor(Color.White)
+        .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: 132 });
+      if (this.hopDir > 0) {
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([Color.White]);
+      }
+    }
+    .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .systemMaterial(overlayMaterial('viewer'))
+    .borderRadius(18)
+    .alignItems(VerticalAlign.Center)
+    // 跟手：越拉越显、越拉越实。拉满前是"还差一点"的观感，拉满才定下来。
+    .opacity(0.35 + 0.65 * this.hopProgress)
+    .scale({ x: 0.88 + 0.12 * this.hopProgress, y: 0.88 + 0.12 * this.hopProgress })
+    .hitTestBehavior(HitTestMode.None);
+  }
+
   build() {
     Stack() {
       this.viewerContent();
+      if (this.hopDir !== 0) {
+        Row() {
+          this.hopBubble();
+        }
+        .width('100%').height('100%')
+        .padding({ left: 16, right: 16 })
+        .justifyContent(this.hopDir > 0 ? FlexAlign.End : FlexAlign.Start)
+        .alignItems(VerticalAlign.Center)
+        .hitTestBehavior(HitTestMode.None);
+      }
       if (this.chromeVisible) {
         this.chromeLayer();
       }

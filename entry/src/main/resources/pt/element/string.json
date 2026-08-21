@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "Envie ou descarte primeiro a mídia anexada"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "Continue deslizando para a próxima mídia"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "Continue deslizando para a mídia anterior"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "Solte para ver"
     }
   ]
 }

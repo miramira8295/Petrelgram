@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "أرسل الوسائط المرفقة أو ألغِها أولاً"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "تابع التمرير للوسائط التالية"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "تابع التمرير للوسائط السابقة"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "أفلت للعرض"
     }
   ]
 }

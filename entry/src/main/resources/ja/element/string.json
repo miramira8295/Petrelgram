@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "添付中のメディアを先に送信するか取り消してください"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "スワイプを続けて次のメディアへ"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "スワイプを続けて前のメディアへ"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "指を離すと表示"
     }
   ]
 }

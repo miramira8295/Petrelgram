@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "Hãy gửi hoặc huỷ phương tiện đã đính kèm trước"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "Tiếp tục vuốt để xem phương tiện kế tiếp"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "Tiếp tục vuốt để xem phương tiện trước"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "Thả ra để xem"
     }
   ]
 }

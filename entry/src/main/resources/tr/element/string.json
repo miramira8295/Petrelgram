@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "Önce ekli medyayı gönderin veya iptal edin"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "Sonraki medya için kaydırmaya devam edin"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "Önceki medya için kaydırmaya devam edin"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "Görüntülemek için bırakın"
     }
   ]
 }

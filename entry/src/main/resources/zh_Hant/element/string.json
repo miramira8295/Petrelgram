@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "請先發送或取消待發送的媒體"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "繼續滑動，檢視下一組媒體"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "繼續滑動，檢視上一組媒體"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "放開即可檢視"
     }
   ]
 }

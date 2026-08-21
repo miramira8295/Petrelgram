@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "กรุณาส่งหรือยกเลิกสื่อที่แนบไว้ก่อน"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "ปัดต่อเพื่อดูสื่อถัดไป"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "ปัดต่อเพื่อดูสื่อก่อนหน้า"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "ปล่อยเพื่อดู"
     }
   ]
 }

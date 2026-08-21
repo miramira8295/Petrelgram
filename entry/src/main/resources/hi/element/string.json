@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "पहले संलग्न मीडिया भेजें या हटाएँ"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "अगले मीडिया के लिए स्वाइप करते रहें"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "पिछले मीडिया के लिए स्वाइप करते रहें"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "देखने के लिए छोड़ें"
     }
   ]
 }

@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "Hantar atau batalkan media yang dilampirkan dahulu"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "Terus leret untuk media seterusnya"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "Terus leret untuk media sebelumnya"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "Lepaskan untuk melihat"
     }
   ]
 }

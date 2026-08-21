@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "첨부된 미디어를 먼저 보내거나 취소하세요"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "계속 스와이프하면 다음 미디어"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "계속 스와이프하면 이전 미디어"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "놓으면 이동"
     }
   ]
 }

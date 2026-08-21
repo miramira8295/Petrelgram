@@ -11271,6 +11271,18 @@
     {
       "name": "cp_pending_media_blocks_edit",
       "value": "Send or discard the attached media first"
+    },
+    {
+      "name": "mv_hop_next",
+      "value": "Keep swiping for the next media"
+    },
+    {
+      "name": "mv_hop_prev",
+      "value": "Keep swiping for the previous media"
+    },
+    {
+      "name": "mv_hop_release",
+      "value": "Release to view"
     }
   ]
 }
