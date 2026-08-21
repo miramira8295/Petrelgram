@@ -112,6 +112,7 @@ export default function authServiceTest() {
       auth.onQrLinkChange((link: string) => { links.push(link); });
       client.start();
       pushAuthState(bridge, 'authorizationStateWaitPhoneNumber');
+      auth.requestQrLogin(); // 扫码态要"本次会话主动点过扫码"才展示（冷启动恢复默认回手机页）
       pushQrState(bridge, 'tg://login?token=first');
       pushQrState(bridge, 'tg://login?token=second');
       expect(auth.getQrLoginLink()).assertEqual('tg://login?token=second');
@@ -129,6 +130,7 @@ export default function authServiceTest() {
       const stages: AuthStage[] = [];
       auth.onStageChange((s: AuthStage) => { stages.push(s); });
       client.start();
+      auth.requestQrLogin();
       pushQrState(bridge, 'tg://login?token=abc');
       pushAuthState(bridge, 'authorizationStateWaitPassword');
       pushAuthState(bridge, 'authorizationStateReady');
@@ -146,6 +148,7 @@ export default function authServiceTest() {
       const stages: AuthStage[] = [];
       auth.onStageChange((s: AuthStage) => { stages.push(s); });
       client.start();
+      auth.requestQrLogin();
       pushQrState(bridge, 'tg://login?token=abc');
       auth.switchToPhoneLogin();
       // token 刷新不得把用户拽回扫码页。
@@ -161,6 +164,7 @@ export default function authServiceTest() {
       const client = new TdClient(bridge);
       const auth = new AuthService(client, '/data/test/files/tdlib', '/data/test/files');
       client.start();
+      auth.requestQrLogin();
       pushQrState(bridge, 'tg://login?token=abc');
       auth.switchToPhoneLogin();
       pushAuthState(bridge, 'authorizationStateWaitPhoneNumber');
@@ -169,6 +173,21 @@ export default function authServiceTest() {
       pushQrState(bridge, 'tg://login?token=ghi');
       expect(stages.join(',')).assertEqual(
         [AuthStage.WaitPhone, AuthStage.WaitQrCode].join(','));
+    });
+
+    // 冷启动恢复出来的扫码态（本次会话没点过扫码）默认转回手机号页，
+    // 且不暴露二维码链接——登录的默认入口是手机号（用户点名的契约）。
+    it('restored_qr_state_defaults_back_to_phone', 0, () => {
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      const auth = new AuthService(client, '/data/test/files/tdlib', '/data/test/files');
+      const stages: AuthStage[] = [];
+      auth.onStageChange((s: AuthStage) => { stages.push(s); });
+      client.start();
+      pushQrState(bridge, 'tg://login?token=restored');
+      expect(stages.join(',')).assertEqual(
+        [AuthStage.Init, AuthStage.WaitPhone].join(','));
+      expect(auth.getQrLoginLink()).assertEqual('');
     });
   });
 }
