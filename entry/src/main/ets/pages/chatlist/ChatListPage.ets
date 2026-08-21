@@ -22,7 +22,8 @@ import { materialModifier } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike } from '../../util/navStacks';
-import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth } from '../../util/splitMetrics';
+import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout } from '../../util/splitMetrics';
+import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 
 interface TabSpec {
   key: string;
@@ -954,6 +955,17 @@ export struct ChatListPage {
       // 现在改成按窗口宽度取比例，见 navBarMinWidth() / navBarMaxWidth()。
       // 字段名是 minWidth / maxWidth——官方文档写的 min / max 编译不过，
       // 声明在 @hms.hds.hdsBaseComponent.d.ets:2048。
+      // **不能靠 NavigationMode.Auto 自己判断。** 拆掉 .mode(Stack) 那几个 commit
+      // 的前提是"Auto 的断点就是 600vp"，2026-08-22 手机模拟器实测推翻了它：
+      // 窗口 1320px / density 3 = **440vp**（启动日志 [Layout] 那一行有据），远在
+      // 600vp 之下，Auto 照样进了分栏——左栏挤成一条、会话名全没了、dock 揉成
+      // 一团压在左下角。手机端被这条默认行为整个毁掉，而平板那台是 API 26、
+      // 宽得多，整轮平板验证一次都没暴露。
+      //
+      // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
+      // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
+      // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
+      .mode(isSplitLayout(this.screenW) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())
@@ -971,7 +983,7 @@ export struct ChatListPage {
       // HdsNavDestination 的 onHidden。ChatPage 的 onPageHide 挂着「立刻停播放位」，
       // 而它自己就有 showForwardSheet / showReactionSheet 两个全模态——联动打开
       // 的话，一开转发面板音视频就停了，这是迁移前没有的行为。
-      .enableVisibilityLifecycleWithContentCover(false)
+      .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
       .titleMode(HdsNavigationTitleMode.MINI)
       // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
       .bindToScrollable(this.allTabScrollers())

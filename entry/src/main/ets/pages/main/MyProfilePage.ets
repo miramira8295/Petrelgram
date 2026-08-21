@@ -32,6 +32,7 @@ import { logE } from '../../util/log';
 import { registerStack, NavStackLike, snapshotOf, stackOf } from '../../util/navStacks';
 import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
 import { readableContentWidth } from '../../util/contentWidth';
+import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -2094,7 +2095,7 @@ export struct MyProfilePage {
     // onShown / onHidden。写上它是为了对齐聊天/设置两个页签的取值：四条栈没有
     // 理由在这件事上不同，而将来往这条栈上加一个带面板的页面时，默认值会让
     //「一拉起面板页面就以为自己隐藏了」（ChatPage 踩过：一开转发面板音视频就停）。
-    .enableVisibilityLifecycleWithContentCover(false)
+    .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
     .titleMode(HdsNavigationTitleMode.FREE)
     .bindToScrollable([this.profileScroller])
     .width('100%').height('100%')

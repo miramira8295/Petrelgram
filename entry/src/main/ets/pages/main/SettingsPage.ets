@@ -28,7 +28,8 @@ import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { readableContentWidth } from '../../util/contentWidth';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { navigateToSetting } from '../../util/settingsNav';
-import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../util/splitMetrics';
+import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth, isSplitLayout } from '../../util/splitMetrics';
+import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -1520,6 +1521,17 @@ export struct SettingsPage {
       // 同一条。
       // 不显式设 mode：HdsNavigation 默认就是 Auto——窗口 <600vp 走单栏（手机，
       // 观感与 router.pushUrl 一致），≥600vp 自动分栏（平板，左设置列表右子页）。
+      // **不能靠 NavigationMode.Auto 自己判断。** 拆掉 .mode(Stack) 那几个 commit
+      // 的前提是"Auto 的断点就是 600vp"，2026-08-22 手机模拟器实测推翻了它：
+      // 窗口 1320px / density 3 = **440vp**（启动日志 [Layout] 那一行有据），远在
+      // 600vp 之下，Auto 照样进了分栏——左栏挤成一条、会话名全没了、dock 揉成
+      // 一团压在左下角。手机端被这条默认行为整个毁掉，而平板那台是 API 26、
+      // 宽得多，整轮平板验证一次都没暴露。
+      //
+      // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
+      // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
+      // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
+      .mode(isSplitLayout(this.screenW) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())
@@ -1542,7 +1554,7 @@ export struct SettingsPage {
       // 映射成 .onHidden() 的那一刻，默认值就会让"一拉起面板页面就以为自己隐藏了"
       // ——ChatPage 上一轮正是踩了这个（一开转发面板音视频就停）。取值与聊天页签
       // 一致，两个页签没有理由不同。
-      .enableVisibilityLifecycleWithContentCover(false)
+      .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
       .titleMode(HdsNavigationTitleMode.FREE)
       .bindToScrollable([this.settingsScroller])
       .width('100%').height('100%')

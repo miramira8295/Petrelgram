@@ -22,6 +22,7 @@ import { navigateToProfile } from '../../util/profileNav';
 import {
   isSplitLayout, splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth
 } from '../../util/splitMetrics';
+import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -514,8 +515,14 @@ export struct ContactsPage {
   // 那是手机端的行为变更。官方《一次开发多端部署》4.2.1 明确认可按断点做差异化
   // 交互，所以这里是分流而不是取其一。
   //
-  // 断点值取自 util/splitMetrics.ets 的 SPLIT_BREAKPOINT_VP（isSplitLayout），
-  // 和 HdsNavigation 内部 NavigationMode.Auto 用的是同一条线；screenW 是**窗口宽**
+  // 断点值取自 util/splitMetrics.ets 的 SPLIT_BREAKPOINT_VP（isSplitLayout）。
+  //
+  // 【这里原先写的是"和 HdsNavigation 内部 NavigationMode.Auto 用的是同一条线"，
+  // 那句话是错的，2026-08-22 手机模拟器上被推翻】440vp 的窗口 Auto 照样进分栏。
+  // 现在 build() 里显式给了 .mode()，两边真的同源了——但同源的原因是我们自己
+  // 把它钉死，不是 Auto 恰好也这么想。
+  //
+  // screenW 是**窗口宽**
   // 不是屏幕宽（AppStorage 'screenWidthVp'，见字段处的注释），分屏/悬浮窗下才不会
   // 与组件实际的单双栏状态相反。
   private openContact(contact: ContactItem): void {
@@ -1624,6 +1631,17 @@ export struct ContactsPage {
       // 不显式设 mode：HdsNavigation 默认就是 Auto——窗口 < 600vp 走单栏（手机，
       // 观感与改造前一致，而且手机上本页压根不推目的地），≥600vp 自动分栏
       // （平板，左联系人列表右资料页）。
+      // **不能靠 NavigationMode.Auto 自己判断。** 拆掉 .mode(Stack) 那几个 commit
+      // 的前提是"Auto 的断点就是 600vp"，2026-08-22 手机模拟器实测推翻了它：
+      // 窗口 1320px / density 3 = **440vp**（启动日志 [Layout] 那一行有据），远在
+      // 600vp 之下，Auto 照样进了分栏——左栏挤成一条、会话名全没了、dock 揉成
+      // 一团压在左下角。手机端被这条默认行为整个毁掉，而平板那台是 API 26、
+      // 宽得多，整轮平板验证一次都没暴露。
+      //
+      // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
+      // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
+      // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
+      .mode(isSplitLayout(this.screenW) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())
@@ -1642,7 +1660,7 @@ export struct ContactsPage {
       // 「添加联系人」面板，绑在最外层 Stack 上），而右栏此刻很可能正站着
       // ProfilePage——它有 store 订阅和头像放大态，不该因为在左栏拉起一个面板
       // 就以为自己隐藏了。取值与聊天/设置两个页签一致。
-      .enableVisibilityLifecycleWithContentCover(false)
+      .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
       .titleMode(HdsNavigationTitleMode.FREE)
       .bindToScrollable([this.contactsScroller])
       .width('100%').height('100%');

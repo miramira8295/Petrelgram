@@ -205,6 +205,17 @@ export default class EntryAbility extends UIAbility {
       const density: number = rectPx / Math.max(1, px2vp(rectPx));
       // 记住启动时的密度，windowSizeChange 里拿它做换算和校验。见下面的注释。
       this.uiDensity = density;
+      // 启动时把窗口度量打一行出来。**分栏与否完全由 vp 宽决定**（600vp 断点），
+      // 而 vp 宽 = 物理像素 / 密度——光看分辨率会得出错误结论。2026-08-22 手机
+      // 模拟器上就撞过：1320px 屏按 3x 密度算是 440vp（该单栏），按 2x 算是 660vp
+      // （该分栏），两者行为天差地别，而当时没有任何一处日志能把这个数说清楚。
+      // hilog 的 %{public}f 在本机不生效（打出来是字面的 "}f"），先在 JS 里格式化
+      // 成字符串再交给它。
+      const heightPx: number = win.getWindowProperties().windowRect.height;
+      const metrics: string =
+        `${rectPx}px x ${heightPx}px, density ${density} -> ` +
+        `${px2vp(rectPx)}vp x ${px2vp(heightPx)}vp`;
+      hilog.info(DOMAIN, 'testTag', '[Layout] window %{public}s', metrics);
       setInlinePhotoTargetPx(Math.min(rectPx, BUBBLE_MEDIA_MAX_VP * density));
       win.on('avoidAreaChange', (data) => {
         if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
