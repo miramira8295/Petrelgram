@@ -6,10 +6,15 @@ import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import {
+  AVATAR_SIZE, COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+  ROW_PAD_H, ROW_PAD_V
+} from '../../util/theme';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 
-const ARCHIVE_ROW_HEIGHT: number = 56;
+// 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
+// 长得和会话行一个个头，拉出来时才不显得是另一种东西。
+const ARCHIVE_ROW_HEIGHT: number = AVATAR_SIZE + ROW_PAD_V * 2;
 
 @Preview
 @Component
@@ -161,19 +166,29 @@ export struct MainTabBody {
   // ListItem：拉出来会留在那儿，点一下才进去，往下滚一点它自己退回去。
   @Builder
   archiveHeader() {
-    Row() {
-      SymbolGlyph(this.archiveLoadFailed
-        ? $r('sys.symbol.exclamationmark_circle') : $r('sys.symbol.archivebox'))
-        .fontSize(22).fontColor([COLOR_TEXT_SECONDARY]).margin({ right: 12 });
+    Row({ space: 12 }) {
+      // 照会话行的头像规格画一颗"归档头像"：灰底圆形，白色归档图标。
+      // 出错态换成红一点的底和感叹号，一眼能分出"这行现在是重试"。
+      Row() {
+        SymbolGlyph(this.archiveLoadFailed
+          ? $r('sys.symbol.exclamationmark_circle') : $r('sys.symbol.archivebox'))
+          .fontSize(26).fontColor([Color.White]);
+      }
+      .width(AVATAR_SIZE).height(AVATAR_SIZE)
+      .borderRadius(AVATAR_SIZE / 2)
+      .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
+      .backgroundColor(this.archiveLoadFailed ? '#E64646' : COLOR_MUTED_BADGE);
       Text(this.archiveLoadFailed ? $r('app.string.cl_archive_failed_tap') : $r('app.string.ap_title'))
-        .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        .fontSize(17).fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
     }
-    .width('100%').height(ARCHIVE_ROW_HEIGHT).padding({ left: 14, right: 14 })
+    .width('100%').height(ARCHIVE_ROW_HEIGHT)
+    .padding({ left: ROW_PAD_H, right: ROW_PAD_H })
+    .alignItems(VerticalAlign.Center)
     .onClick(() => {
       if (this.archiveLoadFailed) { this.retryArchive(); } else { this.openArchive(); }
     });
   }
-
 
   @Builder
   chatList() {
@@ -216,6 +231,26 @@ export struct MainTabBody {
       if (y <= ARCHIVE_ROW_HEIGHT + 1 || this.listTopOffset <= ARCHIVE_ROW_HEIGHT) {
         this.listTopOffset = y;
       }
+    })
+    // 归档行的吸附门槛：轻轻一划就把它整行带出来太廉价，也容易误触。松手后
+    // 停在"半露"区间时二选一——拉出来不到六成弹回收起，过了六成吸附到全露。
+    // 想拉出来就得带点力度，和 Telegram 的手感一致。
+    //
+    // onScrollStop 在滚动完全停下（含惯性走完）后触发一次，在这里补位不会和
+    // 用户手上的动作打架。
+    .onScrollStop((): void => {
+      if (!this.archiveRowShown()) {
+        return;
+      }
+      const y: number = this.listScroller.currentOffset().yOffset;
+      if (y <= 0 || y >= ARCHIVE_ROW_HEIGHT) {
+        return;
+      }
+      const target: number = y > ARCHIVE_ROW_HEIGHT * 0.4 ? ARCHIVE_ROW_HEIGHT : 0;
+      this.listScroller.scrollTo({
+        xOffset: 0, yOffset: target,
+        animation: { duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160), curve: Curve.EaseOut }
+      });
     })
     .onReachEnd(() => { getChatStore().loadMore('main'); });
   }
