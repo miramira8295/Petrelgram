@@ -4,6 +4,14 @@ import { FolderInfo } from '../../store/FolderStore';
 import { ChatListView } from './ChatListView';
 import { MainTabBody } from './MainTabBody';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
+  HdsNavigationTitleMode, TitleBarContentOptions
+} from '@kit.UIDesignKit';
+import {
+  TITLE_BLUR_END_VP, TITLE_BLUR_START_VP, titleScrollEffectType
+} from '../../util/hdsTitleBar';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
@@ -71,6 +79,13 @@ export struct ChatListPage {
   private unsubConn: (() => void) | null = null;
   @State searchOpening: boolean = false;
   private savedMessagesOpening: boolean = false;
+  // 每个文件夹页签一个滚动控制器。HdsNavigation 靠它们驱动标题栏的收缩与
+  // 渐变模糊，而列表在子组件内部，只能由这里建好递下去。按 key 存：文件夹
+  // 增删时页签数会变，按下标存会错位。
+  private tabScrollers: Map<string, Scroller> = new Map<string, Scroller>();
+  // ⋮ 菜单。HDS 标题栏的菜单项只给 action 回调、挂不了 bindMenu，由它翻开关，
+  // 菜单本体绑在右上角一个零尺寸锚点上（见 build）。
+  @State private moreMenuShown: boolean = false;
   private folderLayoutPending: boolean = false;
   // Keep the SDK-provided position locally so a position-only update can be
   // reconciled just like a folder reorder. Reading the store directly from
@@ -450,6 +465,61 @@ export struct ChatListPage {
 
   // 悬浮 chrome 的总高度 = 顶栏 + （有文件夹时）文件夹条。列表按这个值让出
   // 起始位置，滚动时内容从玻璃底下穿过去。
+  private scrollerFor(key: string): Scroller {
+    const hit = this.tabScrollers.get(key);
+    if (hit !== undefined) {
+      return hit;
+    }
+    const made = new Scroller();
+    this.tabScrollers.set(key, made);
+    return made;
+  }
+
+  // 交给 bindToScrollable 的那一批。页签是动态的（文件夹可增删），所以按当前
+  // tabs() 现取，顺带把已经不存在的页签的控制器留在 Map 里——它们不占什么，
+  // 而删掉会在文件夹顺序变动时把正在用的那个也误删。
+  private allTabScrollers(): Scroller[] {
+    return this.tabs().map((spec: TabSpec): Scroller => this.scrollerFor(spec.key));
+  }
+
+  // 标题栏内容：应用名 + 同步状态副标题 + 搜索/⋮ 两个动作 + 底部的文件夹条。
+  //
+  // 同步状态原来是顶栏里第二行文字、靠位移动画"挤"出来，现在交给标题栏的
+  // subTitle —— 它自己管这个位置。
+  private titleBarContent(): TitleBarContentOptions {
+    const searchIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.magnifyingglass'),
+      label: $r('app.string.cl_global_search'),
+      isEnabled: !this.searchOpening,
+      action: (): void => { this.openGlobalSearch(); }
+    };
+    const moreIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.more'),
+      label: $r('app.string.cl_more_actions'),
+      action: (): void => { this.moreMenuShown = true; }
+    };
+    const content: TitleBarContentOptions = {
+      title: {
+        mainTitle: $r('app.string.app_name'),
+        subTitle: this.syncState === '' ? '' : this.syncLabel()
+      },
+      menu: {
+        value: [
+          { content: searchIcon } as HdsNavigationMenuItemOptions,
+          { content: moreIcon } as HdsNavigationMenuItemOptions
+        ]
+      }
+    };
+    // 没有文件夹时不挂底部条，否则标题栏底下会空出一块。
+    if (this.folders.length > 0) {
+      content.bottomBuilder = {
+        builder: (): void => { this.tabBar(); },
+        height: FOLDER_BAR_SPACE
+      };
+    }
+    return content;
+  }
+
   private chromeInset(): number {
     return this.topSafe + TOP_BAR_HEIGHT +
       (this.folders.length > 0 ? FOLDER_BAR_SPACE : 0);
@@ -615,11 +685,8 @@ export struct ChatListPage {
   }
 
   build() {
-    Column() {
-      // 顶栏和文件夹条一起浮在列表上层，列表靠 contentStartOffset 让出等高的
-      // 起始位置。放在 Column 里上下排时列表不从顶栏底下过，玻璃背后没有东西
-      // 可透，材质就只剩纹理没有穿透。
-      Stack({ alignContent: Alignment.Top }) {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      HdsNavigation() {
         Tabs({ controller: this.controller }) {
         ForEach(this.tabs(), (spec: TabSpec) => {
           TabContent() {
@@ -629,10 +696,16 @@ export struct ChatListPage {
             // the body's layoutWeight(1) actually stretch.
             Column() {
               if (spec.key === 'main') {
-                MainTabBody({ contentTopInset: this.chromeInset() });
+                MainTabBody({
+                  // 让位交给标题栏的 enableComponentSafeArea，这里不再自己算。
+                  contentTopInset: 0,
+                  listScroller: this.scrollerFor(spec.key)
+                });
               } else {
                 ChatListView({
-                  listKey: spec.key, contentTopInset: this.chromeInset()
+                  listKey: spec.key,
+                  contentTopInset: 0,
+                  listScroller: this.scrollerFor(spec.key)
                 });
               }
             }.width('100%').height('100%')
@@ -677,43 +750,45 @@ export struct ChatListPage {
       .width('100%').height('100%')
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM]);
 
-        // 顶栏和文件夹条同在一块模糊层里，下沿一起收圆角。
-        // 代价记在这儿：胶囊那层材质采样到的是父层已经模糊过的均匀底子，
-        // 等于玻璃背后是一块平板，悬浮感会弱于它单独浮在列表上时。
-        Column() {
-          Column() {
-            this.topBar();
-            if (this.folders.length > 0) {
-              this.tabBar();
-            }
-          }
-          .width('100%')
-          // 状态栏那段高度由这块自己吃掉，而不是根容器往下推。根容器推的话，
-          // 状态栏底下留的是一条实色，和模糊块之间断一层——沉浸就没了。
-          .padding({ top: this.topSafe })
-          // 这一层走高斯模糊，不挂材质：沉浸光感只留给下面那条文件夹胶囊。
-          .backgroundColor($r('app.color.dock_glass'))
-          .backdropBlur(plainBackdropBlur())
-          // 四个角必须都写：只给 bottomLeft/bottomRight 时整条下沿是直的
-          // （实测量过左边缘和正中的下沿在同一 y），漏写的两个角会把整组吃掉。
-          .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: 18, bottomRight: 18 })
-          .clip(true)
-          // 下沿什么都不画：边框和投影都去掉了。投影虽然不是线，但 offsetY 4
-          // 让它整条压在下沿，在浅色底上看起来就是一条暗带，和边线没区别。
-          // 分界完全交给模糊本身——内容滑过去时糊掉，就是分界。
-          ;
-        }
-        .width('100%');
       }
-      .layoutWeight(1).width('100%');
+      .titleBar({
+        // 两个都要，各管一头：前者让标题栏自己避开状态栏，后者让内容区避让
+        // 标题栏。都默认 false，漏掉前者标题栏会顶进状态栏。
+        avoidLayoutSafeArea: true,
+        enableComponentSafeArea: true,
+        style: {
+          scrollEffectOpts: {
+            enableScrollEffect: true,
+            scrollEffectType: titleScrollEffectType(),
+            blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
+            blurEffectiveEndOffset: LengthMetrics.vp(TITLE_BLUR_END_VP)
+          },
+          originalStyle: { backgroundStyle: { backgroundColor: $r('app.color.surface') } }
+        },
+        content: this.titleBarContent()
+      })
+      // 一级页签，没有返回键。
+      .hideBackButton(true)
+      .titleMode(HdsNavigationTitleMode.FREE)
+      // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
+      .bindToScrollable(this.allTabScrollers())
+      .width('100%').height('100%')
+      // 背景色是 expandSafeArea 真正延伸出去的东西——只写 expandSafeArea 而不画
+      // 背景，延伸的是"什么都没有"，状态栏底下露的就是窗口底色（实测深色模式
+      // 下那是一条纯黑）。
+      .backgroundColor($r('app.color.surface'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+
+      // ⋮ 菜单的锚点：零尺寸，只为让菜单弹在右上角。HDS 的菜单项给不了
+      // bindMenu，只能这样把两者接起来。
+      Row()
+        .width(1).height(1)
+        .margin({ top: this.topSafe + 44, right: 8 })
+        .bindMenu(this.moreMenuShown, this.moreMenu, {
+          systemMaterial: overlayMaterial('menu'),
+          onDisappear: (): void => { this.moreMenuShown = false; }
+        });
     }
-    .width('100%').height('100%')
-    // 背景色是 expandSafeArea 真正延伸出去的东西——只写 expandSafeArea 而不画
-    // 背景，延伸的是"什么都没有"，状态栏底下露的就是窗口底色（实测深色模式
-    // 下那是一条纯黑）。官方把这称作"组件安全区方案"：布局仍在安全区内，
-    // 绘制延伸到状态栏和导航区。
-    // 取 surface 是因为顶栏和列表行用的就是它，延伸出去才连成一片。
-    .backgroundColor($r('app.color.surface'))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    .width('100%').height('100%');
   }
 }
