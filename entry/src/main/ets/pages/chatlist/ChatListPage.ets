@@ -21,6 +21,7 @@ import {
 import { materialModifier } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
+import { registerStack, NavStackLike } from '../../util/navStacks';
 
 interface TabSpec {
   key: string;
@@ -50,6 +51,7 @@ const FOLDER_SWITCH_DURATION: number = 250;
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct ChatListPage {
+  private chatStack: NavPathStack = new NavPathStack();
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -182,6 +184,9 @@ export struct ChatListPage {
   }
 
   aboutToAppear(): void {
+    // 深链、通知点击、账号切换都在页面之外触发跳转，拿不到组件上下文，
+    // 只能靠全局注册表取栈。见 util/navStacks.ets 的说明。
+    registerStack('chat', this.chatStack as NavStackLike);
     // 预热聊天详情页的模块图。首次 router.pushUrl 要现场加载并执行 ChatPage
     // 及其依赖链（近万行的页面 + MessageBubble + lottie 等），这笔一次性成本
     // 正是"第一次进聊天卡、之后都不卡"的来源。首页落地后空闲时提前把模块
@@ -731,7 +736,7 @@ export struct ChatListPage {
 
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
-      HdsNavigation() {
+      HdsNavigation(this.chatStack) {
         Tabs({ controller: this.controller }) {
         ForEach(this.tabs(), (spec: TabSpec) => {
           TabContent() {
@@ -830,10 +835,24 @@ export struct ChatListPage {
       // MINI 而不是 FREE：首页要的是"应用名和搜索键在同一行"的一条窄栏，
       // FREE 的大标题会先占掉一整行、把列表整体压下去，在这个每天开几十次的
       // 页面上尤其显得高。其余页面仍用 FREE——那里大标题是想要的效果。
-      // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
-      // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
-      // 右边一片空白（平板用户报"没法用了"）。
-      .mode(NavigationMode.Stack)
+      // 不显式设 mode：HdsNavigation 默认就是 Auto——窗口 <600vp 走单栏（手机，
+      // 观感与 router.pushUrl 一致），≥600vp 自动分栏（平板，左会话列表右详情）。
+      // 一行断点代码都不用写。
+      //
+      // 这里曾经是 .mode(NavigationMode.Stack)（commit 0d81e2e）：当时没有任何
+      // HdsNavDestination，分栏的结果是整页内容挤进左列、右边一片空白，只能强制
+      // 单栏止血。现在 ChatPage 已经是 HdsNavDestination，止血可以拆了。
+      //
+      // 侧边栏宽度上限 440 是官方大屏 UX 标准 3.2.2.4 定的：不超过窗口宽度 40%，
+      // 内容区至少 60%。平板 1137vp 下 420/717 ≈ 37%/63%。
+      .navBarWidthRange({ minWidth: 320, maxWidth: 440 })
+      .minContentWidth(400)
+      .enableDragBar(true)
+      // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶
+      // HdsNavDestination 的 onHidden。ChatPage 的 onPageHide 挂着「立刻停播放位」，
+      // 而它自己就有 showForwardSheet / showReactionSheet 两个全模态——联动打开
+      // 的话，一开转发面板音视频就停了，这是迁移前没有的行为。
+      .enableVisibilityLifecycleWithContentCover(false)
       .titleMode(HdsNavigationTitleMode.MINI)
       // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
       .bindToScrollable(this.allTabScrollers())
