@@ -77,6 +77,7 @@ import mentionEntitiesTest from './MentionEntities.test';
 import chatListDataSourceTest from './ChatListDataSource.test';
 import overlayMaterialTest from './OverlayMaterial.test';
 import splitRoutingTest from './SplitRouting.test';
+import navStacksTest from './NavStacks.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest from './AttachActions.test';
@@ -191,6 +192,7 @@ export default function testsuite() {
   chatListDataSourceTest();
   overlayMaterialTest();
   splitRoutingTest();
+  navStacksTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();
