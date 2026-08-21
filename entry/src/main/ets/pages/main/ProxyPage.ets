@@ -1,4 +1,4 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
 import { getConnectionState, getTdClient } from '../../tdkit/Globals';
@@ -22,7 +22,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 14;
 const TOP_ACTION_SIZE: number = 44;
@@ -45,9 +45,16 @@ const TYPES: TypeOption[] = [
 
 // Proxy settings are backed only by TDLib. The UI serializes mutations and
 // reconciles uncertain results, while TDLib remains the owner of networking.
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
+// 本模块并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router
+// 页和 NavDestination。形状与 PowerUsagePageBuilder 一致。
+@Builder
+export function ProxyPageBuilder(): void {
+  ProxyPage();
+}
+
 @Component
-struct ProxyPage {
+export struct ProxyPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   private hdsScroller: Scroller = new Scroller();
@@ -86,6 +93,14 @@ struct ProxyPage {
   @State formOutcomeUnknown: boolean = false;
 
   private active: boolean = false;
+  // 路由参数。router 时代是 aboutToAppear 里 router.getParams() 现取，现在由
+  // 外壳（HdsSubDestination）的 onRouteParams 从 NavDestinationContext.pathInfo
+  // 里交过来——**onReady 实测晚于 aboutToAppear**（平板 API 26，ChatPage 里记了
+  // 同一条实测），照原位置读会拿到 undefined。
+  private navParams: Record<string, Object> | undefined = undefined;
+  // applyRouteParams() 的一次性守卫。页面复用时（MOVE_TO_TOP_SINGLETON /
+  // onNewParam）onReady 可能触发不止一次，没有它 load(true) 会被重复发起。
+  private paramsApplied: boolean = false;
   private paramsConsumed: boolean = false;
   private loadSequence: number = 0;
   private operationSequence: number = 0;
@@ -136,6 +151,23 @@ struct ProxyPage {
   aboutToAppear(): void {
     this.active = true;
     this.subscribeConnectionState();
+    // 后面原本还有 consumeRouteParams() + load(true) 两句，整段平移进了
+    // applyRouteParams()，由外壳的 onRouteParams 触发——见那个方法上的注释。
+    // 留在这里的两句与路由参数无关：active 是本页自己的存活标志，
+    // subscribeConnectionState() 订阅的是全局连接态。
+  }
+
+  // 路由参数就绪后的初始化。**这就是迁移前 aboutToAppear 的后半段，两句的顺序
+  // 一字未改**，只是改由外壳的 onRouteParams 触发。
+  //
+  // 【为什么 load(true) 也一起搬过来，而不是留在 aboutToAppear】它本身不读参数，
+  // 但它原本排在 consumeRouteParams() **之后**。把 consumeRouteParams() 单独往后
+  // 挪就等于把这两句的先后顺序调了个个儿——代理列表的加载和"预填表单/弹出表单"
+  // 之间的时序偏差，编译和单测都发现不了，只会在真机上以偶发的形式冒出来。
+  // 整段平移则保证前后逐字等价。
+  private applyRouteParams(): void {
+    if (this.paramsApplied) { return; }
+    this.paramsApplied = true;
     this.consumeRouteParams();
     this.load(true);
   }
@@ -153,7 +185,12 @@ struct ProxyPage {
     }
   }
 
-  onBackPress(): boolean {
+  // 迁移前是 router 页的 onBackPress()。**方法体一字未改**，只改了名字并由外壳
+  // 转发——NavDestination 上对应的是 HdsNavDestination.onBackPressed()，调用页
+  // 够不着那一层，所以在 build() 里作为 onBackPressed Prop 传给 HdsSubDestination。
+  // 语义也一一对上：返回 true = 本页消化掉这次返回（保存中不许走 / 先关表单），
+  // 返回 false = 交回默认处理（router 时代是退页，现在是出 Navigation 栈）。
+  onBackPressed(): boolean {
     if (this.saving) { return true; }
     if (this.sheetOpen) {
       this.cancelForm();
@@ -203,7 +240,8 @@ struct ProxyPage {
   private consumeRouteParams(): void {
     if (this.paramsConsumed) { return; }
     this.paramsConsumed = true;
-    const params = router.getParams() as Record<string, Object> | undefined;
+    // 由 applyRouteParams() 调用，那时 navParams 已经由外壳填好。
+    const params: Record<string, Object> | undefined = this.navParams;
     if (params === undefined) { return; }
     const server = (params['proxyServer'] as string | undefined) ?? '';
     const portValue = params['proxyPort'] as number | undefined;
@@ -1186,7 +1224,16 @@ struct ProxyPage {
 
   build() {
     Column() {
-      HdsSubPage({ title: $r('app.string.px_title'), scroller: this.hdsScroller, pageBackground: COLOR_PAGE_BG }) {
+      HdsSubDestination({
+        title: $r('app.string.px_title'), scroller: this.hdsScroller,
+        pageBackground: COLOR_PAGE_BG,
+        onBackPressed: (): boolean => { return this.onBackPressed(); },
+        onRouteParams: (param: Object | undefined): void => {
+          this.navParams = param as Record<string, Object> | undefined;
+          // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
+          this.applyRouteParams();
+        }
+      }) {
       Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
           if (!this.loading || this.proxies.length > 0) {

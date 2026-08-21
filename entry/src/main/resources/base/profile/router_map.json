@@ -104,6 +104,11 @@
       "name": "ChatFoldersPage",
       "pageSourceFile": "src/main/ets/pages/main/ChatFoldersPage.ets",
       "buildFunction": "ChatFoldersPageBuilder"
+    },
+    {
+      "name": "ProxyPage",
+      "pageSourceFile": "src/main/ets/pages/main/ProxyPage.ets",
+      "buildFunction": "ProxyPageBuilder"
     }
   ]
 }

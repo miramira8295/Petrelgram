@@ -80,6 +80,7 @@ import splitRoutingTest from './SplitRouting.test';
 import splitMetricsTest from './SplitMetrics.test';
 import contentWidthTest from './ContentWidth.test';
 import navStacksTest from './NavStacks.test';
+import settingsNavTest from './SettingsNav.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest from './AttachActions.test';
@@ -197,6 +198,7 @@ export default function testsuite() {
   splitMetricsTest();
   contentWidthTest();
   navStacksTest();
+  settingsNavTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();

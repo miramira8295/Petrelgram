@@ -12,7 +12,6 @@
     "pages/main/BlockedUsersPage",
     "pages/main/StorageUsagePage",
     "pages/main/NetworkUsagePage",
-    "pages/main/ProxyPage",
     "pages/main/FolderEditPage",
     "pages/main/FolderInviteLinksPage",
     "pages/main/NewGroupPage",

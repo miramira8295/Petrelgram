@@ -139,7 +139,14 @@ function openProxyLink(type: TdObject): void {
     'proxySecret': (proxyType['secret'] as string | undefined) ?? '',
     'proxyHttpOnly': (proxyType['http_only'] as boolean | undefined) ?? false
   };
-  router.pushUrl({ url: 'pages/main/ProxyPage', params: params });
+  // 代理页已迁成 HdsNavDestination、从 main_pages.json 摘掉，router.pushUrl 对它
+  // 必然失败。走设置页签的路由栈——和 SettingsPage 那张列表同一个漏斗，params
+  // 原封不动交给 pushPath 的 param，页面在 onRouteParams 里取。
+  // 这是唯一一条**带参数**的设置深链，settingsNav.settingFrameKey 为它开了按
+  // 「服务器:端口」区分实例的口子，见那里的注释。
+  if (!navigateToSetting('ProxyPage', params)) {
+    promptAction.showToast({ message: str('tglink_use_bottom_bar'), duration: 1700 });
+  }
 }
 
 function openSelfProfile(): void {

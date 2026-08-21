@@ -16,18 +16,44 @@ import { KEY_MAIN_TAB } from './chatNav';
 // SettingsPage / MyProfilePage。
 export const SETTINGS_TAB_INDEX: number = 2;
 
-// 设置栈里 NavDestination 的实例键。设置子页都是单例语义（同一个页面不存在
-// 「另一个实例」，没有 chatId 那样的参数），所以键恒为空串，去重完全由 name
-// 决定：栈顶已经是这一页时 decidePush 返回 skip。
+// 设置栈里 NavDestination 的实例键。
+//
+// 十六个设置子页是单例语义（同一个页面不存在「另一个实例」，没有 chatId 那样的
+// 参数），键恒为空串，去重完全由 name 决定：栈顶已经是这一页时 decidePush 返回
+// skip。
+//
+// **ProxyPage 是唯一的例外**：tg://proxy 深链会带着一组代理参数把它拉起来，
+// 页面据此把「新增代理」表单预填好并弹出（迁移前那是 router.pushUrl 的 params，
+// 每次都新建一个页面实例）。键若仍恒为空串，站在 ProxyPage 上再点第二条代理
+// 链接就会被判成 skip——表单不弹，现象是"点了没反应"。所以带参数的那一层按
+// 「服务器:端口」区分实例：
+//   · 同一条代理链接点两次 → 键相同 → skip（表单已经开着，正是想要的）；
+//   · 另一条代理链接      → 键不同 → clearAndPush，重建页面吃新参数；
+//   · 从设置列表点进来（无参数）→ 键是空串，和任何带参数的层都不等 →
+//     clearAndPush，得到一个干净的、不预填表单的代理页。
 export function settingFrameKey(name: string, param: Object | undefined): string {
-  return '';
+  if (param === undefined) {
+    return '';
+  }
+  const fields = param as Record<string, Object>;
+  const server = (fields['proxyServer'] as string | undefined) ?? '';
+  const port = (fields['proxyPort'] as number | undefined) ?? 0;
+  if (server === '' || port <= 0) {
+    // 参数不成形（或者是将来某个页面塞的别的形状）：退回单例语义，别拿一个
+    // 随机键把去重打散。
+    return '';
+  }
+  return `${server}:${port}`;
 }
 
 // 返回 false 表示栈还没注册（SettingsPage 尚未挂树，只可能出现在登录前/冷启动
 // 早期的深链上）。**故意不回退到 router.pushUrl**：目标页已经不在 main_pages.json
 // 里，那条回退必然失败，调用方拿一个假的"成功"比拿 false 更糟。调用方据此给
 // 用户一条"请从底部栏进设置"的提示。
-export function navigateToSetting(dest: string): boolean {
+// param 只有 tg://proxy 深链会传（预填代理表单用），其余调用方一律省略——
+// 省略时行为与加这个参数之前逐字一致：pushPath 不带 param，settingFrameKey
+// 返回空串。
+export function navigateToSetting(dest: string, param?: Object): boolean {
   const stack: NavStackLike | undefined = stackOf('settings');
   if (stack === undefined) {
     logE(`navigateToSetting(${dest}): settings stack not registered`);
@@ -39,7 +65,7 @@ export function navigateToSetting(dest: string): boolean {
   if (AppStorage.get<number>(KEY_MAIN_TAB) !== SETTINGS_TAB_INDEX) {
     AppStorage.setOrCreate<number>(KEY_MAIN_TAB, SETTINGS_TAB_INDEX);
   }
-  const target: StackFrame = { name: dest, key: '' };
+  const target: StackFrame = { name: dest, key: settingFrameKey(dest, param) };
   // origin 恒为 'navbar'：设置子页要么从左栏那张列表点进来，要么从深链进来，
   // 两者的语义都是「换一个右栏内容」，所以 decidePush 给的是 clearAndPush——
   // 右栏是替换不是叠加。由此设置栈的深度恒为 1。将来若出现「子页里再点进下
@@ -52,6 +78,6 @@ export function navigateToSetting(dest: string): boolean {
   if (action === 'clearAndPush') {
     stack.clear(false);
   }
-  stack.pushPath({ name: dest });
+  stack.pushPath({ name: dest, param: param });
   return true;
 }
