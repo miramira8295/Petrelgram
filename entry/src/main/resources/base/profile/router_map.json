@@ -29,6 +29,26 @@
       "name": "PowerUsagePage",
       "pageSourceFile": "src/main/ets/pages/main/PowerUsagePage.ets",
       "buildFunction": "PowerUsagePageBuilder"
+    },
+    {
+      "name": "AboutPage",
+      "pageSourceFile": "src/main/ets/pages/main/AboutPage.ets",
+      "buildFunction": "AboutPageBuilder"
+    },
+    {
+      "name": "DiagnosticsPage",
+      "pageSourceFile": "src/main/ets/pages/main/DiagnosticsPage.ets",
+      "buildFunction": "DiagnosticsPageBuilder"
+    },
+    {
+      "name": "LanguagePage",
+      "pageSourceFile": "src/main/ets/pages/main/LanguagePage.ets",
+      "buildFunction": "LanguagePageBuilder"
+    },
+    {
+      "name": "InteractionSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/main/InteractionSettingsPage.ets",
+      "buildFunction": "InteractionSettingsPageBuilder"
     }
   ]
 }

@@ -8,14 +8,21 @@ import { MdBlock, MdSpan, parseMarkdownBlocks } from '../../util/markdownBlocks'
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function AboutPageBuilder(): void {
+  AboutPage();
+}
+
 @Component
-struct AboutPage {
+export struct AboutPage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -138,7 +145,7 @@ struct AboutPage {
 
   build() {
     Column() {
-      HdsSubPage({ title: $r('app.string.settings_about'), scroller: this.hdsScroller }) {
+      HdsSubDestination({ title: $r('app.string.settings_about'), scroller: this.hdsScroller }) {
       Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
           Column({ space: 6 }) {

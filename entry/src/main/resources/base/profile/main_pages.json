@@ -7,8 +7,6 @@
     "pages/main/CallsPage",
     "pages/main/AccountEditPage",
     "pages/main/ChatSettingsPage",
-    "pages/main/InteractionSettingsPage",
-    "pages/main/LanguagePage",
     "pages/main/PrivacySecurityPage",
     "pages/main/PrivacyRulePage",
     "pages/main/PrivacyExceptionsPage",
@@ -21,7 +19,6 @@
     "pages/main/NetworkUsagePage",
     "pages/main/MediaSettingsPage",
     "pages/main/ProxyPage",
-    "pages/main/AboutPage",
     "pages/main/ChatFoldersPage",
     "pages/main/FolderEditPage",
     "pages/main/FolderInviteLinksPage",
@@ -39,7 +36,6 @@
     "pages/call/CallPage",
     "pages/story/StoryViewerPage",
     "pages/profile/MemberRestrictPage",
-    "pages/profile/MemberPromotePage",
-    "pages/main/DiagnosticsPage"
+    "pages/profile/MemberPromotePage"
   ]
 }

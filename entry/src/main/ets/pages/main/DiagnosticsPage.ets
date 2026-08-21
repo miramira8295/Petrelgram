@@ -1,5 +1,5 @@
 import { promptAction } from '@kit.ArkUI';
-import { HdsSubPage } from '../common/HdsSubPage';
+import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
@@ -25,9 +25,16 @@ const CARD_RADIUS: number = 14;
 // 备注框比日志本身更值钱："我点了转发之后就白屏了"这一句，往往一眼就把范围
 // 缩到几十行代码；而没有它，几万行日志只能从头看。
 
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
+// 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
+// NavDestination。形状与试点的 PowerUsagePageBuilder 一致。
+@Builder
+export function DiagnosticsPageBuilder(): void {
+  DiagnosticsPage();
+}
+
 @Component
-struct DiagnosticsPage {
+export struct DiagnosticsPage {
   private hdsScroller: Scroller = new Scroller();
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp(LANGUAGE_EPOCH) languageEpoch: number = 0;
@@ -126,8 +133,10 @@ struct DiagnosticsPage {
 
   build() {
     // @Entry 的 build 根节点必须是容器组件，自定义组件不行。
+    // 【迁移后】@Entry 已经摘掉，这条约束对本页不再成立；外层 Column 仍然留着，
+    // 因为它不带任何样式，删不删对渲染没有区别，留着可以让 diff 只有必须的几行。
     Column() {
-      HdsSubPage({
+      HdsSubDestination({
         title: $r('app.string.diag_title'),
         pageBackground: COLOR_PAGE_BG,
         scroller: this.hdsScroller
