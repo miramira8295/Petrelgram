@@ -22,6 +22,7 @@ import { materialModifier } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike } from '../../util/navStacks';
+import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth } from '../../util/splitMetrics';
 
 interface TabSpec {
   key: string;
@@ -52,17 +53,26 @@ const FOLDER_SWITCH_DURATION: number = 250;
 // 为什么是比例而不是定值：写死 320–440 的那一版在 1440vp 的模拟器上左栏只占
 // 22%，会话名被截成「TG资源搜索(全…」、时间和未读数挤成两行。那组数是按
 // MatePad 的 1137vp 反推的，换一块屏就不成立。
-const SPLIT_NAV_RATIO: number = 1 / 3;
-const SPLIT_NAV_CAP_RATIO: number = 0.4;
+//
+// 【这几个常量已搬到 util/splitMetrics.ets】上面这段结论一字未改，仍然成立；
+// 搬家的原因是它们在 600–800vp 上算出过两个错值（拖不动 + 和 minContentWidth
+// 打架），而这个区间手上没有设备，只能靠宿主单测验算——见 SplitMetrics.test.ets。
 // 两端的绝对兜底：下限取一个手机宽度（再窄会话行就没法看了），上限拦住超宽屏
 // ——比例再乘下去左栏只是在拉白边，会话行本身早就够宽了。
-const SPLIT_NAV_MIN_VP: number = 320;
-const SPLIT_NAV_MAX_VP: number = 480;
-const SPLIT_NAV_DRAG_MAX_VP: number = 560;
 
 // navBar（分栏时的左栏）的实际宽度，vp。由 ChatListPage 在布局回调里写入，
 // MainScreen 订阅它给 dock 定宽。联系人/设置页签强制单栏，不参与这个键。
 export const NAV_BAR_WIDTH_KEY: string = 'navBarWidth';
+
+// 聊天页签的 navBar 此刻是否可见。**它等价于「不是（单栏且栈非空）」**：
+//   分栏（平板）  navBar 常驻左栏，恒为 true；
+//   单栏（手机）  栈空时 navBar 就是整个页面，true；推入任何 NavDestination
+//                （会话/资料/群资料/话题列表/归档）后 navBar 被系统隐藏，false。
+// MainScreen 靠它决定悬浮 dock 藏不藏——它自己对 chatStack 完全无感知，而
+// NavPathStack 又没有变更通知，这个系统回调是唯一能同时捕获入栈和出栈
+// （含系统返回手势）的信号。默认 true：回调没来（或本页尚未挂树）时退化成
+// 「dock 照常显示」，也就是修复前的行为，不会把 dock 弄丢。
+export const CHAT_NAV_BAR_VISIBLE_KEY: string = 'chatNavBarVisible';
 
 // 分栏且右栏栈空时的占位。官方明确它仅在分栏模式下展示、不受路由栈管理、
 // 不可获焦、不响应事件，是纯展示层；单栏模式（手机）下永远不出现。
@@ -229,6 +239,10 @@ export struct ChatListPage {
     // 深链、通知点击、账号切换都在页面之外触发跳转，拿不到组件上下文，
     // 只能靠全局注册表取栈。见 util/navStacks.ets 的说明。
     registerStack('chat', this.chatStack as NavStackLike);
+    // 复位一次再挂树：本页刚建好时栈必然是空的，navBar 一定可见。不复位的话，
+    // 上一轮（退登/换账号）留在 AppStorage 里的 false 会让 dock 一直藏着——
+    // onNavBarStateChange 只在**变化**时触发，不会替我们补一发 true。
+    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, true);
     // 预热聊天详情页的模块图。首次 router.pushUrl 要现场加载并执行 ChatPage
     // 及其依赖链（近万行的页面 + MessageBubble + lottie 等），这笔一次性成本
     // 正是"第一次进聊天卡、之后都不卡"的来源。首页落地后空闲时提前把模块
@@ -604,18 +618,21 @@ export struct ChatListPage {
   // HdsNavigation 没有开放 navBarWidth 设置项，内部默认 240vp，被 range 一夹就
   // 落在 minWidth 上——这正是上一版在 1440vp 屏上稳稳停在 320（22%）的原因。
   // maxWidth 只是 enableDragBar 拖分割线时的上限。
+  // 算法搬到 util/splitMetrics.ets，理由见那里的文件头。这三个方法只剩把
+  // 当前窗口宽度喂进去。
   private navBarMinWidth(): number {
-    const byRatio: number = Math.max(SPLIT_NAV_MIN_VP, this.screenW * SPLIT_NAV_RATIO);
-    // 40% 那一条最后再夹一次：窄窗口（刚够分栏的 720vp 一带）下是绝对下限
-    // SPLIT_NAV_MIN_VP 在起作用，不夹的话 320/720 就是 44%，越了官方的线。
-    return Math.round(Math.min(SPLIT_NAV_MAX_VP, this.screenW * SPLIT_NAV_CAP_RATIO, byRatio));
+    return splitNavMinWidth(this.screenW);
   }
 
   private navBarMaxWidth(): number {
-    const cap: number = Math.min(SPLIT_NAV_DRAG_MAX_VP, this.screenW * SPLIT_NAV_CAP_RATIO);
-    // 兜底值可能把下限顶到比 40% 还高（窄窗口下 SPLIT_NAV_MIN_VP 起作用），
-    // maxWidth < minWidth 是非法区间，取大的那个。
-    return Math.max(this.navBarMinWidth(), Math.round(cap));
+    return splitNavMaxWidth(this.screenW);
+  }
+
+  // 右栏最小宽度。原先写死 400：在 600–667vp 上它和左栏 40% 上限加起来超过
+  // 窗口宽，两个约束打架、HdsNavigation 怎么裁决无文档。现在窄窗口下退成
+  // 窗口的 60%，和 40% 上限正好拼满。
+  private contentMinWidth(): number {
+    return splitContentMinWidth(this.screenW);
   }
 
   // splitPlaceholder 收的是 ComponentContent，不是 @Builder 引用——直接传
@@ -940,7 +957,15 @@ export struct ChatListPage {
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())
-      .minContentWidth(400)
+      .minContentWidth(this.contentMinWidth())
+      // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
+      // CHAT_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
+      // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
+      .onNavBarStateChange((isVisible: boolean): void => {
+        if (AppStorage.get<boolean>(CHAT_NAV_BAR_VISIBLE_KEY) !== isVisible) {
+          AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, isVisible);
+        }
+      })
       .enableDragBar(true)
       // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶
       // HdsNavDestination 的 onHidden。ChatPage 的 onPageHide 挂着「立刻停播放位」，

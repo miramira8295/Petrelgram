@@ -6,7 +6,7 @@ import { callKeepAliveTask } from '../../services/CallKeepAliveTask';
 import { bindAccentPrimary } from '../../util/accentTheme';
 import { ProfileStore } from '../../store/ProfileStore';
 import { AvatarView } from '../chatlist/AvatarView';
-import { ChatListPage, NAV_BAR_WIDTH_KEY } from '../chatlist/ChatListPage';
+import { ChatListPage, NAV_BAR_WIDTH_KEY, CHAT_NAV_BAR_VISIBLE_KEY } from '../chatlist/ChatListPage';
 import { ContactsPage } from './ContactsPage';
 import { SettingsPage } from './SettingsPage';
 import { MyProfilePage } from './MyProfilePage';
@@ -57,6 +57,9 @@ export struct MainScreen {
   // 聊天页签分栏时左栏的实际宽度（vp，0 = 还没量到）。由 ChatListPage 在自己的
   // 布局回调里写入——HdsNavigation 不回调宽度，拖分割线又会改它，只能这么拿。
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarWidth: number = 0;
+  // 聊天页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 聊天栈非空」
+  // ——也就是手机上打开了会话/资料/话题列表/归档的时候。见 CHAT_NAV_BAR_VISIBLE_KEY。
+  @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) private chatNavBarVisible: boolean = true;
   @StorageProp('screenHeightVp') screenH: number = 780;
   @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
@@ -301,6 +304,26 @@ export struct MainScreen {
     return this.tab === 0 && this.navBarWidth > 0 ? this.navBarWidth : '100%';
   }
 
+  // dock 该不该在屏上。
+  //
+  // 【为什么需要这个判断】会话页迁到 HdsNavDestination（commit 8046f73）之前，
+  // ChatPage 是 main_pages.json 里的整页 router 页，整屏盖在 MainScreen 之上，
+  // dock 根本不可见。迁移之后 ChatPage 渲染在 chatStack 里，而 chatStack 在
+  // 本组件的 Tabs 之内——dock 是 Tabs 的兄弟节点且写在后面，于是常驻在会话页
+  // 之上，正压住底部输入栏。归档/资料/群资料/话题列表四个页面同理。
+  //
+  // 【为什么条件是这个】要藏的是「单栏 **且** 栈非空」这个组合，不是单看栈深。
+  // 分栏（平板）下栈非空是常态，那时 dock 在左栏、不需要任何避让（Task 8 已把
+  // 它约束在左栏宽度内）。chatNavBarVisible 正好就是这个组合的反面——navBar
+  // 只在单栏推入 NavDestination 时才会被系统隐藏，分栏下恒可见。
+  //
+  // 【为什么还要看 tab】联系人/设置/个人资料三个页签有各自的 HdsNavigation，
+  // 都不带 NavPathStack、永远不推目的地，chatNavBarVisible 与它们无关。停在
+  // 这三个页签上时 dock 必须照常显示，哪怕聊天栈里还留着一个会话。
+  private dockVisible(): boolean {
+    return this.tab !== 0 || this.chatNavBarVisible;
+  }
+
   // Floating capsule: outer Column carries the horizontal padding + bottom
   // margin (width('100%') + horizontal margin conflict on the same node in
   // ArkUI), inner Row is the pill itself.
@@ -336,7 +359,16 @@ export struct MainScreen {
     // 收窄只吃格子宽度，图标和文字尺寸不动——但「联系人」是最长的一条，
     // 再窄就该撞它了。
     .padding({ left: 40, right: 40 })
-    .margin({ bottom: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)) });
+    .margin({ bottom: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)) })
+    // 进出会话时的淡入淡出。迁移前是整页 router 覆盖，dock 消失得没有过渡；
+    // 这里补一段短淡出，免得 NavDestination 从右侧滑入的那两百多毫秒里，
+    // 底下的会话列表突然秃一块。时长跟随「流畅动效」开关，关掉即为 0。
+    .transition(
+      TransitionEffect.OPACITY.animation({
+        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
+        curve: Curve.EaseOut
+      })
+    );
   }
 
   build() {
@@ -376,7 +408,13 @@ export struct MainScreen {
       })
       .width('100%').height('100%');
 
-      this.dock();
+      // 条件渲染而不是 visibility(Hidden)：Hidden 的节点仍然参与布局与合成，
+      // 而这里要的是「像迁移前一样彻底不在」。dockVisible() 在 build 里被读到，
+      // 它内部读的 tab / chatNavBarVisible 两个状态因此建立依赖，任一变化都会
+      // 重跑这一段（同 dockLabel 读 langEpoch 的做法）。
+      if (this.dockVisible()) {
+        this.dock();
+      }
     }
     .width('100%').height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
