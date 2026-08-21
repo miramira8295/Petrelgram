@@ -462,6 +462,8 @@ export class ChatStore {
         (chat['unread_count'] as number | undefined) ?? 0,
         (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
         lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0),
+      rawUnreadCount: (chat['unread_count'] as number | undefined) ?? 0,
+      lastReadInboxId: (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
       lastMessageText: formatPreview(lastMsg ?? null),
       lastMessageDate: lastMsg !== undefined ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
       lastMessageId: lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0,
@@ -535,6 +537,13 @@ export class ChatStore {
     c.lastMessageDate = lastMsg !== undefined ? ((lastMsg['date'] as number | undefined) ?? 0) : 0;
     c.lastMessageId = lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0;
     c.lastSenderName = this.senderName(lastMsg);
+    // 末条 id 变了必须重算未读。竞态：刚读完的会话来新消息时，TDLib 的
+    // updateChatReadInbox（unread=1）可能先于本更新到达——那一刻仓里的末条
+    // 还是旧的、水位恰好盖住它，effectiveUnread 会把 1 当幽灵未读抹成 0。
+    // 这里换上新 id 后用原始值重算，被误抹的未读数才找得回来（用户报的
+    // "会话上浮但角标不出现"就是这条竞态）。
+    c.unreadCount = ChatStore.effectiveUnread(
+      c.rawUnreadCount, c.lastReadInboxId, c.lastMessageId);
     this.chats.set(id, c);
     const positions = update['positions'] as TdObject[] | undefined;
     if (positions !== undefined) {
@@ -552,10 +561,10 @@ export class ChatStore {
       return;
     }
     const c = cloneEntry(e);
+    c.rawUnreadCount = (update['unread_count'] as number | undefined) ?? 0;
+    c.lastReadInboxId = (update['last_read_inbox_message_id'] as number | undefined) ?? 0;
     c.unreadCount = ChatStore.effectiveUnread(
-      (update['unread_count'] as number | undefined) ?? 0,
-      (update['last_read_inbox_message_id'] as number | undefined) ?? 0,
-      e.lastMessageId);
+      c.rawUnreadCount, c.lastReadInboxId, e.lastMessageId);
     this.chats.set(id, c);
     this.notify(id);
   }

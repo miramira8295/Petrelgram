@@ -14,6 +14,11 @@ export interface ChatEntry {
   // 是否跟随作用域默认静音设置（见 effectiveMuted）。
   usesDefaultMute: boolean;
   unreadCount: number;
+  // TDLib 原始值。unreadCount 是把"幽灵未读"抑制掉之后的展示值，而抑制要拿
+  // 读水位和末条 id 比——这三个数分别从不同的 update 来、到达顺序不保证，
+  // 所以原始值必须留着，任何一个变了都能重算（见 ChatStore.refreshUnread）。
+  rawUnreadCount: number;
+  lastReadInboxId: number;
   lastMessageText: string;
   lastMessageDate: number;
   lastMessageId: number;   // newest message — 标记为已读 reads up to it
@@ -44,6 +49,7 @@ export function cloneEntry(e: ChatEntry): ChatEntry {
     id: e.id, revision: e.revision + 1,
     title: e.title, isMuted: e.isMuted, usesDefaultMute: e.usesDefaultMute,
     unreadCount: e.unreadCount,
+    rawUnreadCount: e.rawUnreadCount, lastReadInboxId: e.lastReadInboxId,
     lastMessageText: e.lastMessageText, lastMessageDate: e.lastMessageDate,
     lastMessageId: e.lastMessageId,
     lastSenderName: e.lastSenderName, photoFileId: e.photoFileId,

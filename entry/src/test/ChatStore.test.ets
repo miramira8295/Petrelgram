@@ -196,6 +196,35 @@ export default function chatStoreTest() {
       b.onReceive(JSON.stringify(u));
       expect(store.getChats()[0].unreadCount).assertEqual(0);
     });
+    // 回归：刚读完的会话来新消息时，updateChatReadInbox（unread=1、水位=旧末条）
+    // 可能先于 updateChatLastMessage 到达。那一刻按旧末条判，水位恰好盖住它，
+    // 幽灵未读抑制会把 1 抹成 0；换上新末条后必须重算，否则"会话上浮但角标
+    // 不出现"。
+    it('unread_survives_read_inbox_before_last_message', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      const read = textMessage('old', 1783512000);
+      read['id'] = 100;
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = 1; chat['title'] = 'A';
+      chat['positions'] = [mainPos('100', false)];
+      chat['unread_count'] = 0;
+      chat['last_read_inbox_message_id'] = 100; // 全部读完
+      chat['last_message'] = read;
+      const nc: TdObject = { '@type': 'updateNewChat' }; nc['chat'] = chat;
+      b.onReceive(JSON.stringify(nc));
+      // 新消息的两条更新按"坏"顺序到：先 ReadInbox 后 LastMessage。
+      const ri: TdObject = { '@type': 'updateChatReadInbox' };
+      ri['chat_id'] = 1; ri['unread_count'] = 1;
+      ri['last_read_inbox_message_id'] = 100;
+      b.onReceive(JSON.stringify(ri));
+      const fresh = textMessage('new', 1783512100);
+      fresh['id'] = 101;
+      const lm: TdObject = { '@type': 'updateChatLastMessage' };
+      lm['chat_id'] = 1; lm['last_message'] = fresh;
+      b.onReceive(JSON.stringify(lm));
+      expect(store.getChats()[0].unreadCount).assertEqual(1);
+    });
     it('visible_last_message_clears_stuck_unread_optimistically', 0, () => {
       const store = make();
       const b = bridgeOf(store);

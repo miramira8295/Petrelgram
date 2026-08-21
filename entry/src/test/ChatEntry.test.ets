@@ -64,7 +64,7 @@ export default function chatEntryTest() {
 // 只填 effectiveMuted 用得到的两个字段，其余取占位值。
 function makeEntry(isMuted: boolean, usesDefaultMute: boolean): ChatEntry {
   return {
-    id: 1, revision: 0, title: 't', isMuted, usesDefaultMute, unreadCount: 0,
+    id: 1, revision: 0, title: 't', isMuted, usesDefaultMute, unreadCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
     lastMessageText: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
     photoFileId: 0, avatarPath: '', initials: '', autoDeleteTime: 0,
     kind: 'supergroup', isMarkedUnread: false, isSavedMessages: false, background: null, themeName: '',
