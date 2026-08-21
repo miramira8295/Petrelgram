@@ -446,6 +446,7 @@ struct ForumTopicsPage {
         .borderRadius({ topLeft: 16, topRight: 16 });
       }
     }
-    .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG);
+    .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

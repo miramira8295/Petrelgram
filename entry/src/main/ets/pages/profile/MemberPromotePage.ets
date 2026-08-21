@@ -348,6 +348,8 @@ struct MemberPromotePage {
       }
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .padding({ top: this.topSafe });
+    .padding({ top: this.topSafe })
+    // 背景铺进上下安全区，别依赖"全屏布局恰好覆盖"——聊天页深色黑边的教训。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

@@ -103,7 +103,7 @@ export struct MemberRow {
       // chatMemberTag 的成员例外——标签就是打给所有人看的。
       if (this.member.role !== MEMBER_ROLE_NONE || this.member.tag !== '') {
         Text(this.member.tag !== '' ? this.member.tag : this.roleLabel())
-          .fontSize(11.5).fontColor(COLOR_PRIMARY)
+          .fontSize(11.5).fontColor($r('app.color.tag_text'))
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           .constraintSize({ maxWidth: 96 })
           .padding({ left: 8, right: 8, top: 3, bottom: 3 })

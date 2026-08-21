@@ -1,4 +1,4 @@
-import { COLOR_PRIMARY } from '../../util/theme';
+
 import { senderRoleFor, senderRoleKey, subscribeSenderRole } from '../../util/senderRoleChannel';
 
 // 气泡里发送者名字旁边那枚身份标签（管理员 / 创建者 / 自定义头衔）。
@@ -35,7 +35,9 @@ export struct SenderRoleTag {
     // 普通成员没有标签，整行不占位——否则每条消息旁边都留一块空白。
     if (this.presetTag !== '' || this.label !== '') {
       Text(this.presetTag !== '' ? this.presetTag : this.label)
-        .fontSize(11).fontColor(COLOR_PRIMARY)
+        // 不跟强调色（COLOR_PRIMARY）走：深色模式的胶囊底是深蓝，中蓝的强调色
+        // 压上去看不清。tag_text 按主题各给一档，保证和 selected_pill 有对比。
+        .fontSize(11).fontColor($r('app.color.tag_text'))
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: 88 })
         .padding({ left: 6, right: 6, top: 1, bottom: 1 })

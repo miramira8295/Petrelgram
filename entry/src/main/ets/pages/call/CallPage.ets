@@ -261,7 +261,8 @@ struct CallPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Column().width('100%').height('100%').backgroundColor(BG_COLOR);
+      Column().width('100%').height('100%').backgroundColor(BG_COLOR)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
       // 远端视频全屏（TEXTURE 参与 ArkUI 合成，覆盖层才能正常显示）。
       if (this.videoActive()) {
         XComponent({

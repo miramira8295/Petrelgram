@@ -244,7 +244,11 @@ export struct ChatBackdrop {
       //
       // 另外两条路都实测更差：背景改固定高度会把扩展方向限制成只剩向上；
       // 切 OFFSET 虽然能让 expandSafeArea 完全生效，但整页上抬会把背景顶出屏幕。
-      .expandSafeArea([SafeAreaType.KEYBOARD, SafeAreaType.SYSTEM])
+      // SYSTEM 和 KEYBOARD 必须**分两次调用**：合在一个数组里时 BOTTOM 方向
+      // 的扩展会失效（上面注释里"[KEYBOARD]+[BOTTOM] 不生效"的真身），底部
+      // 安全区那一截铺不进去——深色模式下输入条下面就是一道窗口底色的黑边。
+      .expandSafeArea([SafeAreaType.SYSTEM])
+      .expandSafeArea([SafeAreaType.KEYBOARD])
       .hitTestBehavior(HitTestMode.None)
       // 平铺网格会向上取整到整数块并被 Stack 居中，通常四边都略微超出视口——
       // 裁回去，而不是让它把布局顶开。
@@ -303,7 +307,8 @@ export struct ChatBackdrop {
     //
     // 原来只有下面实时绘制那一支带了 expandSafeArea，光栅那一支（缓存命中的
     // 常态路径）没带，于是同一个页面时好时坏。挂在这一层，两条路一起覆盖。
-    .expandSafeArea([SafeAreaType.KEYBOARD, SafeAreaType.SYSTEM])
+    .expandSafeArea([SafeAreaType.SYSTEM])
+    .expandSafeArea([SafeAreaType.KEYBOARD])
     .hitTestBehavior(HitTestMode.None);
   }
 }

@@ -83,6 +83,10 @@
     {
       "name": "press_overlay",
       "value": "#1FFFFFFF"
+    },
+    {
+      "name": "tag_text",
+      "value": "#A9CDF5"
     }
   ]
 }

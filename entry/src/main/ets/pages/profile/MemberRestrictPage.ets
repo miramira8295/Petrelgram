@@ -301,6 +301,7 @@ struct MemberRestrictPage {
       }
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
-    .padding({ top: this.topSafe });
+    .padding({ top: this.topSafe })
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }
