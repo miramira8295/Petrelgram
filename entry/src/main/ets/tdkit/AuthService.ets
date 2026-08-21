@@ -60,6 +60,11 @@ export class AuthService {
   // 拽回扫码页。setAuthenticationPhoneNumber 在该状态下依然可用，所以本地
   // 直接把阶段回退到 WaitPhone 即可，无需先取消服务端的扫码会话。
   private phoneLoginPreferred: boolean = false;
+  // 本次进程里用户是否主动点过「扫码登录」。TDLib 会把扫码等待态持久化，
+  // 冷启动原样恢复——但登录的默认入口应该是手机号页，扫码只在用户本次主动
+  // 选择时展示。没有这个标记，上次点过一次扫码，之后每次冷启动都直接落在
+  // 扫码页（用户点名不对）。
+  private sessionQrRequested: boolean = false;
   private offAuthorizationState: (() => void) | null = null;
 
   constructor(client: TdClient, databaseDirectory: string, filesDirectory: string) {
@@ -102,6 +107,7 @@ export class AuthService {
   // 请求扫码登录：TDLib 随后进入 WaitOtherDeviceConfirmation 并给出 tg://login 链接。
   // other_user_ids 仅用于「同一设备上的已登录账号免确认」，本机是新会话故传空。
   async requestQrLogin(): Promise<void> {
+    this.sessionQrRequested = true;
     this.phoneLoginPreferred = false;
     const request: TdRequest = { '@type': 'requestQrCodeAuthentication' };
     request['other_user_ids'] = [];
@@ -288,6 +294,10 @@ export class AuthService {
     if (type === 'authorizationStateWaitTdlibParameters') {
       this.sendTdlibParameters();
       return;
+    }
+    if (type === QR_CONFIRMATION_STATE && !this.sessionQrRequested) {
+      // 恢复出来的扫码态（不是本次会话里用户点的）：默认回手机号页。
+      this.phoneLoginPreferred = true;
     }
     if (type === QR_CONFIRMATION_STATE && !this.phoneLoginPreferred) {
       // token 会被服务端周期性刷新，每次刷新都是一条新的同类型更新。
