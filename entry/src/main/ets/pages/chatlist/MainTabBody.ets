@@ -35,6 +35,11 @@ export struct MainTabBody {
   private updateGate: ChatListFreeze = new ChatListFreeze();
   private unsubscribe: (() => void) | null = null;
   private unsubArchive: (() => void) | null = null;
+  // 首批会话到位时把归档行收上去一次就够。之后每次数据更新都收，会把正在
+  // 看列表的用户反复拽回顶部。
+  private archiveTucked: boolean = false;
+  // 列表当前滚动偏移，只用来算归档行的透明度。初值取行高＝完全透明。
+  @State private listTopOffset: number = ARCHIVE_ROW_HEIGHT;
 
   private onLanguageEpochChanged(): void {
     this.chatsData.reload();
@@ -91,6 +96,13 @@ export struct MainTabBody {
   private publishChats(next: ChatEntry[]): void {
     this.chats = next;
     this.chatsData.update(next, next.map((item: ChatEntry): string => this.rowKey(item)));
+    // 首帧列表是空的——会话是异步来的。空列表没有第 1 行可停，initialIndex: 1
+    // 在那一刻是空转；等行到位时偏移已经是 0，归档行就留在顶上露着（真机截图
+    // 证实）。首批数据落地时补收一次。
+    if (!this.archiveTucked && next.length > 0) {
+      this.archiveTucked = true;
+      this.tuckArchiveRow();
+    }
   }
 
   // langEpoch is in the key so a language switch rebuilds the rows once, rather
@@ -105,20 +117,30 @@ export struct MainTabBody {
     return this.showArchive || this.archiveLoadFailed;
   }
 
-  // 归档行是**插在列表顶端之上**的，插进去会把内容整体下推一行高。列表还停在
-  // 顶端时要顺手把它滚掉，用户才看不见；已经滚下去了就不动，免得把人拽回顶部。
-  //
-  // 延后一帧：@Watch 在状态写入时就跑，那一刻新行还没进布局，scrollToIndex(1)
-  // 会滚到一个不存在的位置。
   private onArchiveRowToggled(): void {
+    this.tuckArchiveRow();
+  }
+
+  // 把第 0 行的归档入口滚出视口。归档行是**插在列表顶端之上**的，插进去会把
+  // 内容整体下推一行高；列表还停在顶端时要顺手把它滚掉，用户才看不见。
+  //
+  // 补两拍，不是保险起见：调用点都在状态刚写入的那一刻，新行还没进布局，
+  // scrollToIndex(1) 会滚到一个不存在的位置。下一帧（0ms）通常够；归档桶和
+  // 首批会话几乎同时落地时还会差一拍，120ms 再补一次。
+  //
+  // 每拍都先看偏移，只在列表仍停在顶端时才滚——已经翻下去的话不动，免得把人
+  // 拽回顶部。
+  private tuckArchiveRow(): void {
     if (!this.archiveRowShown()) {
       return;
     }
-    setTimeout((): void => {
-      if (this.listScroller.currentOffset().yOffset <= 1) {
+    const tuck = (): void => {
+      if (this.archiveRowShown() && this.listScroller.currentOffset().yOffset <= 1) {
         this.listScroller.scrollToIndex(1);
       }
-    }, 0);
+    };
+    setTimeout(tuck, 0);
+    setTimeout(tuck, 120);
   }
 
   private openArchive(): void {
@@ -161,6 +183,12 @@ export struct MainTabBody {
     List({ scroller: this.listScroller, initialIndex: this.archiveRowShown() ? 1 : 0 }) {
       if (this.archiveRowShown()) {
         ListItem() { this.archiveHeader(); }
+        // 收进标题栏底下时必须**完全看不见**：列表是 clip(false) 的（滚动模糊
+        // 需要内容穿到标题栏下面），单靠滚出视口，这一行还会透过标题栏的玻璃
+        // 隐约露着。所以透明度跟着滚动走——收好（偏移≥行高）时为 0，下拉把它
+        // 往外拉的过程中渐显。
+        .opacity(Math.min(1, Math.max(0,
+          (ARCHIVE_ROW_HEIGHT - this.listTopOffset) / ARCHIVE_ROW_HEIGHT)))
       }
       // LazyForEach, not ForEach: ForEach builds every row up front, which for
       // a real account meant hundreds of live ChatRow components for the eight
@@ -182,6 +210,13 @@ export struct MainTabBody {
     .scrollBar(BarState.Off)
     .contentEndOffset(this.bottomSafe + 88)
     .contentStartOffset(this.contentTopInset)
+    .onDidScroll((): void => {
+      // 只在归档行可能可见的区间里刷状态，翻到下面去之后没必要每帧驱动重绘。
+      const y: number = this.listScroller.currentOffset().yOffset;
+      if (y <= ARCHIVE_ROW_HEIGHT + 1 || this.listTopOffset <= ARCHIVE_ROW_HEIGHT) {
+        this.listTopOffset = y;
+      }
+    })
     .onReachEnd(() => { getChatStore().loadMore('main'); });
   }
 
