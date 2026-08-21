@@ -23,3 +23,16 @@ export const pushRelayBase: string = '';
 // Bearer token sent on every relay request. Must also be non-empty (along
 // with pushRelayBase) for the MeoW entry to appear.
 export const pushRelayToken: string = '';
+
+// Optional: base URL of a crash-report collector. Leave empty to disable
+// uploading entirely — crashes are still recorded locally either way.
+//
+// 崩溃上报的接收端。留空则完全不上传（本地记录照常留）。
+// 期望接口：POST {crashReportBase}/crash，Content-Type: application/json，
+// Authorization: Bearer {crashReportToken}，请求体是一条 CrashRecord
+// （见 services/crashReport）。返回 2xx 视为成功，之后不再重发这一条。
+//
+// 载荷里**没有任何用户内容**：只有时间、应用版本、崩溃类型、前后台、进程存活
+// 时长、异常名/信息/堆栈。hilog 与 external_log 刻意不取——那两样含聊天痕迹。
+export const crashReportBase: string = '';
+export const crashReportToken: string = '';

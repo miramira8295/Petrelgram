@@ -1,4 +1,5 @@
 import { preferences } from '@kit.ArkData';
+import { setCrashUploadOptOut } from '../services/crashRecordStore';
 import { LIGHT_DEFAULT, THICKNESS_DEFAULT } from '../util/materialTuning';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
@@ -220,7 +221,13 @@ export const KEY_BG_PLAY_VOICE: string = 'bgPlayVoice';
 export const KEY_BG_PLAY_VIDEO: string = 'bgPlayVideo';
 export const KEY_BG_PLAY_LIVE: string = 'bgPlayLive';
 
+// 崩溃上报。默认**开**——这一项存在的全部意义就是"应用打不开时也能知道为什么"，
+// 默认关等于没有。载荷里没有任何用户内容（见 services/crashReport），用户可以
+// 在设置里关掉。
+export const KEY_CRASH_UPLOAD: string = 'crashUpload';
+
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
+  KEY_CRASH_UPLOAD,
   KEY_NOTIFY_PRIVATE,
   KEY_NOTIFY_GROUP,
   KEY_NOTIFY_CHANNEL,
@@ -425,6 +432,12 @@ export function setNumber(key: string, value: number): void {
 }
 
 export function setBoolean(key: string, value: boolean): void {
+  if (key === KEY_CRASH_UPLOAD) {
+    // 崩溃上报的开关额外落一个标记文件。扩展进程读不到 AppStorage、也不能
+    // import 这个模块（会把 ArkUI 依赖拖进那个没有 ArkUI 的进程），标记文件
+    // 是它唯一能看见用户选择的方式。见 services/crashRecordStore。
+    setCrashUploadOptOut(!value);
+  }
   AppStorage.setOrCreate(key, value);
   persist(key, value);
 }

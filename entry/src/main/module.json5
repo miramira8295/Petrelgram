@@ -106,6 +106,15 @@
     ],
     "extensionAbilities": [
       {
+        // 应用起不来时把崩溃信息取出来的救命通道：崩溃 30 分钟后系统单独拉起
+        // 这个进程。API 21 起支持，低于 21 的设备上它只是不会被拉起，主进程
+        // 那条正常路径不受影响。
+        "name": "CrashFaultLogAbility",
+        "srcEntry": "./ets/faultlogextension/CrashFaultLogAbility.ets",
+        "type": "faultLog",
+        "exported": false
+      },
+      {
         "name": "EntryBackupAbility",
         "srcEntry": "./ets/entrybackupability/EntryBackupAbility.ets",
         "type": "backup",

@@ -1,4 +1,5 @@
-// 崩溃记录：把上一次崩溃留下来，好让用户反馈问题时有东西可贴（issue #61）。
+// 崩溃订阅（主进程侧）。存储与上报在 services/crashRecordStore——那一层的
+// import 被刻意压到最少，因为扩展进程也要加载它，见那边的文件头。
 //
 // 走 hiAppEvent 订阅 OS/APP_CRASH。官方《订阅崩溃事件（ArkTS）》写明这一条同时
 // 覆盖 JsError 和 NativeCrash——后者正是 tdlib / ijkplayer 这些 .so 的信号崩溃，
@@ -8,105 +9,46 @@
 // 时序：应用没有主动捕获时，崩溃事件在**下次启动**才回调。所以观察者必须在
 // onCreate 里、执行业务逻辑之前就注册好，否则那次崩溃的事件就漏了。
 //
-// **只留不含用户内容的字段。** 事件里还有两样东西刻意不碰：
-//   hilog —— 崩溃前最多 1000 行本应用的流水日志。我们的日志里有 [StoreDiag]
-//            这类消息 id，以后也难保不会有别的，整段留下来就是把聊天痕迹落盘。
-//   external_log —— 故障日志全文，同样含 HiLog 段。
-// 留下的是时间、版本、崩溃类型、异常名/信息/堆栈——堆栈是我们自己的代码路径，
-// 不含用户数据，而它恰恰是唯一真正有用的部分。
+// 光有主进程的观察者救不了"启动就崩"：模块级崩溃发生在 import 阶段，onCreate
+// 的函数体根本执行不到（v1.3.6 那次正是如此）。注意**记录本身不会丢**——采集和
+// 落盘是系统做的，只要之前有一次正常启动注册过订阅条件，事件就已经存进沙箱了。
+// 丢的是"取出来"这一步。官方对此的答案是 FaultLogExtensionAbility：崩溃 30 分钟
+// 后系统单独拉起一个进程来处理，不依赖应用能启动。
 //
-// 这里只负责**记下来**，不发送。往哪儿报是另一件事，需要单独决定。
+// 为此注册**两个**观察者：
+//   A（NORMAL_WATCHER）  正常重启时处理事件；
+//   B（DELAYED_WATCHER） 空实现，只为把订阅条件留在沙箱里，让扩展进程接得上。
+// 两者名字必须不同，否则后注册的会覆盖前一个的过滤条件、事件直接丢（官方
+// 《使用FaultLogExtensionAbility订阅事件》的"部分事件丢失"一节）。
 
 import { hiAppEvent } from '@kit.PerformanceAnalysisKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
+import { flushCrashUploads, ingestCrashParams, initCrashStore } from './crashRecordStore';
 
-// 留几条。崩溃是低频事件，留太多只是占地方；留太少又会被一次连环崩溃冲掉。
-const MAX_RECORDS: number = 10;
-// 堆栈截断长度。够定位到我们自己的帧，又不至于把整个 so 的地址表存下来。
-const MAX_STACK_CHARS: number = 4000;
-const FILE_NAME: string = 'crash-records.json';
+// 扩展进程里用的是 DELAYED 这个名字，两边必须一致。
+export const NORMAL_WATCHER: string = 'petrelgramCrashWatcher';
+export const DELAYED_WATCHER: string = 'petrelgramCrashWatcherDelayed';
 
 // 官方示例里这两个配置各有版本门槛，照它的写法用 sdkApiVersion 挡。
 const EVENT_CONFIG_API: number = 20;
 const EVENT_POLICY_API: number = 24;
 
-export interface CrashRecord {
-  // 崩溃发生的时间戳（毫秒）。
-  time: number;
-  // 'JsError' | 'NativeCrash'
-  crashType: string;
-  appVersion: string;
-  // 崩溃时应用在不在前台。前台崩是用户看得见的，后台崩往往是另一类问题。
-  foreground: boolean;
-  // 进程存活了多久（秒）。极短就意味着启动崩溃——1.3.6 那次就是。
-  lifeTimeSec: number;
-  exceptionName: string;
-  exceptionMessage: string;
-  stack: string;
-}
-
-let recordsPath: string = '';
-
-function readAll(): CrashRecord[] {
-  if (recordsPath === '' || !fs.accessSync(recordsPath)) {
-    return [];
+function paramsOf(groups: Array<hiAppEvent.AppEventGroup>): Array<Record<string, Object>> {
+  const out: Array<Record<string, Object>> = [];
+  for (const group of groups) {
+    for (const info of group.appEventInfos) {
+      out.push(info.params as Record<string, Object>);
+    }
   }
-  try {
-    const stat = fs.statSync(recordsPath);
-    const buffer = new ArrayBuffer(stat.size);
-    const file = fs.openSync(recordsPath, fs.OpenMode.READ_ONLY);
-    fs.readSync(file.fd, buffer);
-    fs.closeSync(file);
-    const text: string = String.fromCharCode(...new Uint8Array(buffer));
-    const parsed = JSON.parse(text) as CrashRecord[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    console.error(`crashReport.readAll failed: ${e}`);
-    return [];
-  }
-}
-
-function writeAll(records: CrashRecord[]): void {
-  if (recordsPath === '') {
-    return;
-  }
-  try {
-    const file = fs.openSync(recordsPath,
-      fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-    fs.writeSync(file.fd, JSON.stringify(records));
-    fs.closeSync(file);
-  } catch (e) {
-    console.error(`crashReport.writeAll failed: ${e}`);
-  }
-}
-
-function textOf(value: Object | undefined): string {
-  return value === undefined || value === null ? '' : `${value}`;
-}
-
-function recordOf(params: Record<string, Object>): CrashRecord {
-  const exception = params['exception'] as Record<string, Object> | undefined;
-  const stack: string = exception !== undefined ? textOf(exception['stack']) : '';
-  return {
-    time: Number(textOf(params['time'])) || 0,
-    crashType: textOf(params['crash_type']),
-    appVersion: textOf(params['bundle_version']),
-    foreground: `${params['foreground']}` === 'true',
-    lifeTimeSec: Number(textOf(params['process_life_time'])) || 0,
-    exceptionName: exception !== undefined ? textOf(exception['name']) : '',
-    exceptionMessage: exception !== undefined ? textOf(exception['message']) : '',
-    stack: stack.length > MAX_STACK_CHARS ? stack.substring(0, MAX_STACK_CHARS) : stack
-  };
+  return out;
 }
 
 // 在 onCreate 里、业务逻辑之前调用。
 export function startCrashWatch(context: common.UIAbilityContext): void {
-  recordsPath = `${context.filesDir}/${FILE_NAME}`;
+  initCrashStore(context.filesDir);
 
   // 崩溃日志规格：把日志截到 1MB，别让一次崩溃写出一个巨大的文件。
-  // 官方示例同样用 sdkApiVersion 挡着这两段——枚举/接口都只在函数体里碰。
   if (deviceInfo.sdkApiVersion >= EVENT_CONFIG_API) {
     const config: Record<string, hiAppEvent.ParamType> = {
       'log_file_cutoff_sz_bytes': 1024000,
@@ -127,32 +69,28 @@ export function startCrashWatch(context: common.UIAbilityContext): void {
     });
   }
 
-  const watcher: hiAppEvent.Watcher = {
-    name: 'petrelgramCrashWatcher',
-    appEventFilters: [{ domain: hiAppEvent.domain.OS, names: [hiAppEvent.event.APP_CRASH] }],
+  const filters: hiAppEvent.AppEventFilter[] =
+    [{ domain: hiAppEvent.domain.OS, names: [hiAppEvent.event.APP_CRASH] }];
+  const normal: hiAppEvent.Watcher = {
+    name: NORMAL_WATCHER,
+    appEventFilters: filters,
     onReceive: (_domain: string, groups: Array<hiAppEvent.AppEventGroup>): void => {
-      const next: CrashRecord[] = readAll();
-      for (const group of groups) {
-        for (const info of group.appEventInfos) {
-          next.push(recordOf(info.params as Record<string, Object>));
-        }
-      }
-      // 新的在前，超出上限的丢最旧的。
-      next.sort((a: CrashRecord, b: CrashRecord): number => b.time - a.time);
-      writeAll(next.slice(0, MAX_RECORDS));
+      ingestCrashParams(paramsOf(groups));
     }
   };
+  // B 是空实现。它唯一的作用是把订阅条件留在沙箱里，好让应用起不来时扩展进程
+  // 接得上（同名覆盖）。A 已经处理过的事件，B 在这里空转一次消耗掉。
+  const delayed: hiAppEvent.Watcher = {
+    name: DELAYED_WATCHER,
+    appEventFilters: filters,
+    onReceive: (_domain: string, _groups: Array<hiAppEvent.AppEventGroup>): void => {}
+  };
   try {
-    hiAppEvent.addWatcher(watcher);
+    hiAppEvent.addWatcher(normal);
+    hiAppEvent.addWatcher(delayed);
   } catch (e) {
     console.error(`crashReport.addWatcher failed: ${e}`);
   }
-}
-
-export function crashRecords(): CrashRecord[] {
-  return readAll();
-}
-
-export function clearCrashRecords(): void {
-  writeAll([]);
+  // 上次没发出去的补发（当时网络不通、或者进程被切断）。
+  flushCrashUploads();
 }
