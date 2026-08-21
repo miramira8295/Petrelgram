@@ -135,6 +135,12 @@ export function titleBarStyle(background: ResourceColor): TitleBarStyleOptions {
     // 滚起来之后背板让位给模糊本身，其余颜色不变。
     scrollEffectStyle: barStyle(Color.Transparent),
     systemMaterialEffect: titleBarMaterial(),
-    blurStrategy: BlurStrategy.ADAPTIVE
+    // ENABLE 而不是 ADAPTIVE。ADAPTIVE 是"由系统策略决定要不要模糊"，实测下来
+    // 系统判成了不模糊，标题栏于是整块发实——毛玻璃根本没开。这里要的就是
+    // 毛玻璃，明确要过来。
+    //
+    // 省电时不必在这里挡：titleBarMaterial() 已经在省电模式下返回 undefined，
+    // 没有材质时这一项也就无从生效。
+    blurStrategy: BlurStrategy.ENABLE
   };
 }
