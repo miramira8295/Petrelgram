@@ -164,6 +164,8 @@ export struct MainTabBody {
         this.chatList();
       }
       .layoutWeight(1).width('100%')
+      // 列表要画到标题栏底下去，这一路每一层都不能裁剪——Refresh 也算一层。
+      .clip(false)
       // 停留/触发高度钉在归档行高，否则默认下拉区比一行高得多（"很高"）。
       .refreshOffset(ARCHIVE_ROW_HEIGHT)
       .pullToRefresh(true)
@@ -179,6 +181,11 @@ export struct MainTabBody {
       this.chatList();
     }
     }
-    .width('100%').layoutWeight(1);
+    .width('100%').layoutWeight(1)
+    // 本组件的根节点。HdsNavigation → Tabs → TabContent → Column → 这里 →
+    // ChatListView 的 List，整条链上任何一层裁剪，穿到标题栏底下的那部分就被
+    // 切掉，滚动模糊没有东西可糊。之前只有这一层漏了，真机上表现为列表在文件夹
+    // 横条下缘被一刀切平。
+    .clip(false);
   }
 }
