@@ -203,14 +203,21 @@ export struct ProfilePage {
     store.open();
   }
 
-  // 返回上一层。迁成 NavDestination 前这里是 router.back()。
+  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
+  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private goBack(): void {
     const stack = this.navStack;
-    if (stack !== undefined) {
-      stack.pop();
+    if (stack === undefined) {
+      // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
+      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
+      logE('ProfilePage.goBack: navStack missing, back ignored');
       return;
     }
-    router.back();
+    // pop() 弹的就是本页这一层。栈空时它返回 undefined，但那意味着"本页正显示
+    // 却不在栈里"，不可能发生，故不另做处理。
+    stack.pop();
   }
 
   aboutToDisappear(): void {

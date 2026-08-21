@@ -130,6 +130,15 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 挂树）时会回退到整页 router，此时 pushUrl 的失败会原样透出来。栈已注册的主
 // 路径全程 resolve。
 //
+// **已知行为，不是 bug（Task 7 已裁决本轮不改）**：origin 恒为 'navbar' 意味着
+// 每次都 clearAndPush，会把栈里原有的层全清掉。于是「话题列表 → 点某个话题 →
+// 返回」不会退回话题列表，而是直接回到会话列表——ForumTopicsPage 那一层在推
+// 会话时被一起清了。同理，从资料页点「发消息」进会话后，返回也不回资料页。
+// 迁移到 Navigation 之前不是这样（那时是 router 页层层叠加）。
+// 真要改，形状大概是给本函数加一个可选的 origin 参数，只有 ForumTopicsPage /
+// 资料页那几个「从右栏内部选会话」的调用点传 'content'——那要动 28 个调用点，
+// 所以没在 Task 7 里顺手做。别当新 bug 去查。
+//
 // 之所以不把失败吞在这里：NewGroupPage 建完群要靠这个 rejection 才能把
 // "打不开会话" 反馈给用户（复位 spinner + 显示错误），吞掉它那段就是死代码。
 // 代价是每个调用点都得接住——除 ChatListPage（return 进了自己的链）和

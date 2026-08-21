@@ -1026,6 +1026,29 @@ export struct ChatPage {
   private navParams: Record<string, Object> | undefined = undefined;
   // applyRouteParams() 的一次性守卫，理由见那个方法上的注释。
   private paramsApplied: boolean = false;
+  // 本页所在的 Navigation 栈，同样在 onReady 里拿。返回键必须靠它出栈，
+  // 理由见 goBack()。
+  private navStack: NavPathStack | undefined = undefined;
+
+  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
+  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
+  //
+  // Task 6 迁移本页时这两处（closeChatPage、leaveChat 成功回调）原样留了
+  // router.back()，是漏改，不是有意为之。
+  private goBack(): void {
+    const stack = this.navStack;
+    if (stack === undefined) {
+      // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
+      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
+      logE('ChatPage.goBack: navStack missing, back ignored');
+      return;
+    }
+    // pop() 弹的就是本页这一层。栈空时它返回 undefined，但那意味着"本页正显示
+    // 却不在栈里"，不可能发生，故不另做处理。
+    stack.pop();
+  }
 
   aboutToAppear(): void {
     // Before anything can publish a dataset: the data source names the keys of
@@ -4707,7 +4730,7 @@ export struct ChatPage {
           const req: TdRequest = { '@type': 'leaveChat' };
           req['chat_id'] = this.chatId;
           getTdClient().send(req).then(() => {
-            router.back();
+            this.goBack();
           }).catch((e: TdError) => {
             logE(`ChatPage.leaveChat failed: ${e.message}`);
             promptAction.showToast({ message: $r('app.string.cp_leave_failed'), duration: 2000 });
@@ -6515,7 +6538,7 @@ export struct ChatPage {
       this.headerNavigationTimer = -1;
       this.pageClosing = false;
     }, CHAT_HEADER_NAV_GUARD_MS);
-    router.back();
+    this.goBack();
   }
 
   // Search owns the complete top bar. Keeping the regular avatar/title beside
@@ -7878,6 +7901,7 @@ export struct ChatPage {
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。
     .onReady((ctx: NavDestinationContext): void => {
+      this.navStack = ctx.pathStack;
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
       this.applyRouteParams();

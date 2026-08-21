@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { ChatListView } from './ChatListView';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
 import { ChatEntry } from '../../store/ChatEntry';
@@ -7,6 +6,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { HdsNavDestination } from '@kit.UIDesignKit';
+import { logE } from '../../util/log';
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
 // 本模块并调用它，页面因此不再需要进 main_pages.json。
@@ -71,15 +71,21 @@ export struct ArchivePage {
     }
   }
 
-  // 返回上一层。迁成 NavDestination 前这里是 router.back()。
+  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
+  // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
+  // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   private goBack(): void {
     const stack = this.navStack;
-    if (stack !== undefined) {
-      stack.pop();
+    if (stack === undefined) {
+      // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
+      // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
+      // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
+      logE('ArchivePage.goBack: navStack missing, back ignored');
       return;
     }
-    // 栈没拿到（理论上 onReady 必先于点击，留着兜底）时退回老路径。
-    router.back();
+    // pop() 弹的就是本页这一层。栈空时它返回 undefined，但那意味着"本页正显示
+    // 却不在栈里"，不可能发生，故不另做处理。
+    stack.pop();
   }
 
   private archiveSummary(): string {
