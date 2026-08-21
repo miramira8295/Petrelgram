@@ -76,6 +76,7 @@ import audioQueueGateTest from './AudioQueueGate.test';
 import mentionEntitiesTest from './MentionEntities.test';
 import chatListDataSourceTest from './ChatListDataSource.test';
 import overlayMaterialTest from './OverlayMaterial.test';
+import splitRoutingTest from './SplitRouting.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest from './AttachActions.test';
@@ -189,6 +190,7 @@ export default function testsuite() {
   mentionEntitiesTest();
   chatListDataSourceTest();
   overlayMaterialTest();
+  splitRoutingTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();
