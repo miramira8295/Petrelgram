@@ -750,9 +750,13 @@ export struct ChatListPage {
 
       }
       .titleBar({
-        // 两个都要，各管一头：前者让标题栏自己避开状态栏，后者让内容区避让
-        // 标题栏。都默认 false，漏掉前者标题栏会顶进状态栏。
-        avoidLayoutSafeArea: true,
+        // **只留这一个**，和官方《设置动态模糊样式》的示例一致。
+        //
+        // 曾经在根上加 expandSafeArea、再用 avoidLayoutSafeArea 去压它——两个设置
+        // 互相打架：前者把标题栏推进状态栏，后者再把它拽回来。官方示例两个都没有，
+        // 因为标题栏本身就是组件级安全区的处理者：它自己延伸进状态栏并在那里画
+        // 背板，内容区避让它。多加那两行的结果是标题栏先推出去再拉回来，渐变模糊
+        // 的合成也跟着失效。
         enableComponentSafeArea: true,
         style: titleBarStyle($r('app.color.surface')),
         content: this.titleBarContent()
@@ -769,8 +773,7 @@ export struct ChatListPage {
       // 背景色是 expandSafeArea 真正延伸出去的东西——只写 expandSafeArea 而不画
       // 背景，延伸的是"什么都没有"，状态栏底下露的就是窗口底色（实测深色模式
       // 下那是一条纯黑）。
-      .backgroundColor($r('app.color.surface'))
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+      .backgroundColor($r('app.color.surface'));
 
       // ⋮ 菜单的锚点：零尺寸，只为让菜单弹在右上角。HDS 的菜单项给不了
       // bindMenu，只能这样把两者接起来。

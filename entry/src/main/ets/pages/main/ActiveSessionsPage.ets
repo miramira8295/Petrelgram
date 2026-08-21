@@ -1176,7 +1176,9 @@ struct ActiveSessionsPage {
         .layoutWeight(1).width('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.Spring);
+        .edgeEffect(EdgeEffect.Spring)
+          // 不裁剪，内容才能穿到标题栏底下。
+          .clip(false);
       }
       }.width('100%').height('100%');
     }

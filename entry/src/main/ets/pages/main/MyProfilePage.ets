@@ -1947,8 +1947,13 @@ export struct MyProfilePage {
       .clip(false);
     }
     .titleBar({
-      // 两个都要，各管一头。漏掉 avoidLayoutSafeArea 标题栏会顶进状态栏。
-      avoidLayoutSafeArea: true,
+      // **只留这一个**，和官方《设置动态模糊样式》的示例一致。
+      //
+      // 曾经在根上加 expandSafeArea、再用 avoidLayoutSafeArea 去压它——两个设置
+      // 互相打架：前者把标题栏推进状态栏，后者再把它拽回来。官方示例两个都没有，
+      // 因为标题栏本身就是组件级安全区的处理者：它自己延伸进状态栏并在那里画
+      // 背板，内容区避让它。多加那两行的结果是标题栏先推出去再拉回来，渐变模糊
+      // 的合成也跟着失效。
       enableComponentSafeArea: true,
       style: titleBarStyle(PAGE_BG),
       content: this.titleBarContent()
@@ -1958,9 +1963,7 @@ export struct MyProfilePage {
     .titleMode(HdsNavigationTitleMode.FREE)
     .bindToScrollable([this.profileScroller])
     .width('100%').height('100%')
-    .backgroundColor(PAGE_BG)
-    // 见 ContactsPage：背景色要靠 expandSafeArea 才延伸到状态栏底下。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    .backgroundColor(PAGE_BG);
   }
 }
 

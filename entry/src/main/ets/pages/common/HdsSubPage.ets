@@ -44,9 +44,13 @@ export struct HdsSubPage {
       this.content();
     }
     .titleBar({
-      // 两个都要，各管一头：前者让标题栏自己避开状态栏，后者让内容区避让
-      // 标题栏。都默认 false，漏掉前者标题栏会顶进状态栏里。
-      avoidLayoutSafeArea: true,
+      // **只留这一个**，和官方《设置动态模糊样式》的示例一致。
+      //
+      // 曾经在根上加 expandSafeArea、再用 avoidLayoutSafeArea 去压它——两个设置
+      // 互相打架：前者把标题栏推进状态栏，后者再把它拽回来。官方示例两个都没有，
+      // 因为标题栏本身就是组件级安全区的处理者：它自己延伸进状态栏并在那里画
+      // 背板，内容区避让它。多加那两行的结果是标题栏先推出去再拉回来，渐变模糊
+      // 的合成也跟着失效。
       enableComponentSafeArea: true,
       style: titleBarStyle(this.pageBackground),
       content: {
@@ -59,9 +63,6 @@ export struct HdsSubPage {
     .titleMode(HdsNavigationTitleMode.FREE)
     .bindToScrollable([this.scroller])
     .width('100%').height('100%')
-    .backgroundColor(this.pageBackground)
-    // 背景色靠 expandSafeArea 才会延伸到状态栏和导航区底下（官方的
-    // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    .backgroundColor(this.pageBackground);
   }
 }

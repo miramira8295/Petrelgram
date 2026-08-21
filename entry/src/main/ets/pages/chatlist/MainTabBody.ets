@@ -141,7 +141,12 @@ export struct MainTabBody {
         guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));
     }
     .layoutWeight(1).width('100%')
-    .cachedCount(8)
+    .cachedCount(8, true)
+    // cachedCount 的第二个参数 true 与这里的 clip(false) 是一对：前者让滚出
+    // 视口的行不被回收，后者让它画得出来。官方《设置动态模糊样式》点名过——
+    // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有
+    // 东西可糊。
+    .clip(false)
     .edgeEffect(EdgeEffect.Spring)
     .enableScrollInteraction(!this.menuOpen)
     .scrollBar(BarState.Off)

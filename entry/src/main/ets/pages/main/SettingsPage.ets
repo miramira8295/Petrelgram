@@ -1294,10 +1294,6 @@ export struct SettingsPage {
       }
       .width('100%').height('100%')
       .backgroundColor(PAGE_BG)
-      // 背景色靠 expandSafeArea 才会延伸到状态栏和导航区底下（官方的
-      // 「组件安全区方案」：布局仍在安全区内，绘制延伸出去）。只写
-      // backgroundColor 而不延伸，状态栏那条露的是窗口底色。
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe });
     } else {
       HdsNavigation() {
@@ -1313,15 +1309,13 @@ export struct SettingsPage {
         .clip(false);
       }
       .titleBar({
-        // 两个字段管的是两件事，都默认 false，缺一个就出问题：
+        // **只留这一个**，和官方《设置动态模糊样式》的示例一致。
         //
-        //   avoidLayoutSafeArea    标题栏**自己**避让系统安全区。不设的话它会
-        //                          直接顶进状态栏里（真机实测）。
-        //   enableComponentSafeArea 标题栏成为**内容区**的安全区，内容自动避让
-        //                          它，因此不用再手动 padding(topSafe)。
-        //
-        // 第一版只设了后者，于是内容避开了标题栏、标题栏却压在状态栏上。
-        avoidLayoutSafeArea: true,
+        // 曾经在根上加 expandSafeArea、再用 avoidLayoutSafeArea 去压它——两个设置
+        // 互相打架：前者把标题栏推进状态栏，后者再把它拽回来。官方示例两个都没有，
+        // 因为标题栏本身就是组件级安全区的处理者：它自己延伸进状态栏并在那里画
+        // 背板，内容区避让它。多加那两行的结果是标题栏先推出去再拉回来，渐变模糊
+        // 的合成也跟着失效。
         enableComponentSafeArea: true,
         style: titleBarStyle(PAGE_BG),
         content: this.titleBarContent()
