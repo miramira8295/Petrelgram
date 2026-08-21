@@ -97,6 +97,11 @@ export struct ContactsPage {
   // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
   // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 本页签左栏（navBar）的实际宽度，vp，0 = 还没量到。**写入方就是本页**（下面
+  // 那个 Scroll 的 onAreaChange），这里再读回来是给 FAB 用的：FAB 现在住在
+  // navBar 里，它的「内容列留白」必须按左栏宽度算，不能按窗口宽算。
+  // 与 MainScreen 读的是同一个键，见 CONTACTS_NAV_BAR_WIDTH_KEY。
+  @StorageProp(CONTACTS_NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
   @State contacts: ContactItem[] = [];
   @State loading: boolean = true;
   @State loadError: string = '';
@@ -1399,6 +1404,30 @@ export struct ContactsPage {
     .backgroundColor(CARD_BG);
   }
 
+  // FAB 单侧留白。喂给 contentSideGutter 的必须是**FAB 所在那一栏**的宽度，不是
+  // 窗口宽——这正是本次 bug 的根因：contentSideGutter / readableContentWidth 的
+  // 形参名叫 windowWidthVp，但它们要的其实是「内容列所在区域的宽度」，单栏时
+  // 二者恰好相等，分栏时不相等。
+  //
+  // 三种取值：
+  //   已量到左栏宽    → 用它。分栏时约 480vp（splitMetrics 的上限是 560），
+  //                     contentSideGutter 在 <600vp 恒为 0，于是 FAB 就是左栏
+  //                     右下角内缩 18——与手机上的观感一致。
+  //   还没量到 + 分栏 → 用 splitNavMinWidth 估一个，同样 <600 → 0。这一支是为了
+  //                     避开首帧闪一下：若退回 screenW，平板上第一帧会按 280 的
+  //                     留白把 FAB 画到左栏中间，量到之后再跳回去。
+  //   还没量到 + 单栏 → 退回 screenW，**与改动前逐字相同**（手机上量没量到都是
+  //                     整屏宽，contentSideGutter 恒为 0）。
+  private fabSideGutter(): number {
+    if (this.navBarW > 0) {
+      return contentSideGutter(this.navBarW);
+    }
+    if (isSplitLayout(this.screenW)) {
+      return contentSideGutter(splitNavMinWidth(this.screenW));
+    }
+    return contentSideGutter(this.screenW);
+  }
+
   @Builder
   fab() {
     Row() {
@@ -1446,10 +1475,15 @@ export struct ContactsPage {
     // 留白。2880px 平板上不加这一项，FAB 落在内容列右边缘外约 500px 的空白里
     // （设备实测），视线在居中的内容列上、手却要够到屏幕最右边。
     //
-    // 用 margin 而不是把 FAB 塞进限宽容器：FAB 必须留在最外层 Stack 上才能悬浮，
-    // 进了 Scroll 就跟着列表滚走了。手机上 contentSideGutter 恒为 0，这一行逐像素
-    // 等于改动前的 `right: 18`。
-    .margin({ right: 18 + contentSideGutter(this.screenW), bottom: this.bottomSafe + 88 });
+    // 【原注释后半句已失效，保留原文备查】「用 margin 而不是把 FAB 塞进限宽容器：
+    // FAB 必须留在最外层 Stack 上才能悬浮，进了 Scroll 就跟着列表滚走了。手机上
+    // contentSideGutter 恒为 0，这一行逐像素等于改动前的 `right: 18`。」
+    // ——「最外层 Stack」那一半在分栏之后是错的：最外层 Stack 罩着整个
+    // HdsNavigation，**包括右栏**，FAB 于是飘到右栏去压着资料页（1440vp 平板上
+    // 实测 FAB 在 x≈2225px，而分栏线在 x≈958px）。真正的约束只是「不能进
+    // Scroll」，不是「必须在最外层」——现在 FAB 是 navBar 里那个 Stack 的直接
+    // 子节点，既悬浮又天然被左栏框住。margin 的写法不变。
+    .margin({ right: 18 + this.fabSideGutter(), bottom: this.bottomSafe + 88 });
   }
 
   // 标题栏内容：大标题 +「刷新中」副标题 + 右上角 ⋮。
@@ -1474,49 +1508,66 @@ export struct ContactsPage {
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       HdsNavigation(this.contactsStack) {
-        Scroll(this.contactsScroller) {
-          // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
-          // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
-          Column() {
+        // 这一层 Stack 是本次修复加的：FAB 必须住在 **navBar 内容**里，才会被
+        // 左栏框住。原来它挂在最外层 Stack 上（HdsNavigation 的兄弟节点），那
+        // 在单栏时无所谓——整屏就是一栏——分栏之后它罩着整个 HdsNavigation、
+        // 连右栏一起罩，FAB 于是飘进右栏压着资料页。
+        //
+        // clip 默认就是 false（Stack 不裁子节点，只有 Scroll/List/Grid 这类默认
+        // 裁），但这里**显式写出来**：本页的渐变模糊靠的是内容穿透到标题栏底下
+        // 再被合成，整条链上任何一层开始裁剪，模糊就没了内容可透。链上新插一层
+        // 就得跟着表态一次，别让下一个人去猜默认值。
+        Stack({ alignContent: Alignment.BottomEnd }) {
+          Scroll(this.contactsScroller) {
+            // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
+            // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
             Column() {
-              this.searchBox();
-              this.actionCard();
-              if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
-                this.loadingCard();
-              } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
-                this.errorContactsCard();
-              } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
-                this.emptyContactsCard();
-              } else {
-                this.listCard();
+              Column() {
+                this.searchBox();
+                this.actionCard();
+                if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
+                  this.loadingCard();
+                } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
+                  this.errorContactsCard();
+                } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
+                  this.emptyContactsCard();
+                } else {
+                  this.listCard();
+                }
               }
+              .width('100%')
+              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
             }
             .width('100%')
-            .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+            // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
+            .alignItems(HorizontalAlign.Center)
+            .padding({ bottom: this.bottomSafe + 88 });
           }
           .width('100%')
-          // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
-          .alignItems(HorizontalAlign.Center)
-          .padding({ bottom: this.bottomSafe + 88 });
+          .align(Alignment.Top)
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off)
+          .enableScrollInteraction(!this.contextMenuShown)
+          // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
+          // dock 要跟着走。这个 Scroll 是 navBar 内容的根节点、width('100%')，
+          // 它的宽度就是 navBar 宽度——HdsNavigation 没有回调宽度的接口，只能这么
+          // 量（与 SettingsPage 同一个办法）。
+          // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而
+          // setOrCreate 即便同值也会惊动订阅方。
+          .onAreaChange((_old: Area, area: Area): void => {
+            const w: number = area.width as number;
+            if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
+              AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
+            }
+          })
+          // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
+          .clip(false);
+
+          // FAB 与 Scroll 是**兄弟**，不是 Scroll 的子节点——所以它悬浮、不跟着
+          // 列表滚走。这一点与改动前一致，变的只是它悬浮在哪个盒子里。
+          this.fab();
         }
-        .width('100%')
-        .align(Alignment.Top)
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .scrollBar(BarState.Off)
-        .enableScrollInteraction(!this.contextMenuShown)
-        // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
-        // dock 要跟着走。这个 Scroll 是 navBar 内容的根节点、width('100%')，
-        // 它的宽度就是 navBar 宽度——HdsNavigation 没有回调宽度的接口，只能这么
-        // 量（与 SettingsPage 同一个办法）。
-        // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而
-        // setOrCreate 即便同值也会惊动订阅方。
-        .onAreaChange((_old: Area, area: Area): void => {
-          const w: number = area.width as number;
-          if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
-            AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
-          }
-        })
-        // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
+        .width('100%').height('100%')
         .clip(false);
       }
       .titleBar({
@@ -1583,8 +1634,6 @@ export struct ContactsPage {
           systemMaterial: overlayMaterial('menu'),
           onDisappear: (): void => { this.topMenuShown = false; }
         });
-
-      this.fab();
     }
     .width('100%').height('100%')
     .backgroundColor(PAGE_BG)
