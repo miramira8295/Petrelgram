@@ -134,6 +134,17 @@ export async function getMemberStatus(
   };
 }
 
+// 只有「邀请用户」一项权限——这是当年"给普通成员挂头衔"实验造出的空壳
+// 管理员的特征。清头衔时顺手把这种空壳降回普通成员。
+function isTitleOnlyRights(rights: AdminRights): boolean {
+  return rights.inviteUsers &&
+    !rights.manageChat && !rights.changeInfo && !rights.postMessages &&
+    !rights.editMessages && !rights.deleteMessages && !rights.restrictMembers &&
+    !rights.pinMessages && !rights.manageTopics && !rights.promoteMembers &&
+    !rights.manageVideoChats && !rights.postStories && !rights.editStories &&
+    !rights.deleteStories && !rights.manageDirectMessages && !rights.isAnonymous;
+}
+
 // 提为管理员 / 改管理员权限。头衔和权限都由调用方给全，因为这是一次整体覆盖。
 export async function promoteMember(
   chatId: number, userId: number, customTitle: string, rights: AdminRights
@@ -160,22 +171,19 @@ export async function setMemberTitle(
   const current: MemberStatusInfo = await getMemberStatus(chatId, userId);
   const next: string = title.trim();
   if (current.type === 'chatMemberStatusAdministrator') {
+    if (next === '' && isTitleOnlyRights(current.rights)) {
+      // 由"给普通成员挂头衔"造出来的最小权限管理员，头衔一清就降回普通
+      // 成员——别留一个空壳管理员在名单里。真正的管理员清头衔不受影响。
+      await demoteMember(chatId, userId);
+      return;
+    }
     await promoteMember(chatId, userId, next, current.rights);
     return;
   }
-  if (current.type === 'chatMemberStatusMember') {
-    // 普通成员的头衔：官方客户端的做法是**零权限提为管理员**再带上头衔——
-    // 头衔本来就是管理员状态的字段，没有别的挂法。零权限意味着 TA 得不到
-    // 任何管理能力，只多一枚标签。
-    if (next === '') {
-      return; // 普通成员 + 空头衔 = 本来的样子，别白提一次权。
-    }
-    await promoteMember(chatId, userId, next, allAdminRights(false));
-    return;
-  }
-  // 受限/被封禁等状态不趟：给受限成员挂管理员头衔会顺手解除限制，那不是
-  // "改标签"该有的副作用。
-  throw new Error('member is not eligible for a custom title');
+  // 头衔是管理员状态的字段，普通成员无处可挂。曾试过零权限提权（服务端当
+  // 普通成员、头衔静默丢）和最小权限提权（真把人提成管理员），都不是"设个
+  // 标签"该有的样子——入口已退回仅管理员，走到这里说明期间身份变了。
+  throw new Error('member is not an administrator');
 }
 
 export async function demoteMember(chatId: number, userId: number): Promise<void> {
