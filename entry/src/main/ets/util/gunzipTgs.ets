@@ -1,5 +1,6 @@
 import { zlib } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
+import { logE } from './log';
 
 const CHUNK: number = 256 * 1024;
 
@@ -57,7 +58,7 @@ export async function gunzipTgs(tgsPath: string): Promise<string> {
     }
     return json;
   } catch (e) {
-    console.error(`gunzipTgs(${tgsPath}) failed: ${e}`);
+    logE(`gunzipTgs(${tgsPath}) failed: ${e}`);
     return '';
   }
 }

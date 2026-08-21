@@ -1,3 +1,4 @@
+import { logE } from './log';
 // 面板性能探针（诊断用，定位完整体删除）。
 //
 // 为什么要聚合：贴纸网格一屏几十格，逐格打一行日志会把 hilog 刷爆，光是
@@ -25,7 +26,7 @@ function flush(): void {
   const parts: string[] = [];
   counts.forEach((n: number, k: string): void => { parts.push(`${k}=${n}`); });
   parts.sort();
-  console.error(`[probe] ${elapsed}ms ${parts.join(' ')}`);
+  logE(`[probe] ${elapsed}ms ${parts.join(' ')}`);
   counts.clear();
   windowStart = Date.now();
 }
@@ -41,5 +42,5 @@ export function probeHit(name: string, times: number = 1): void {
 // 一次性的、需要看具体数值的事件（比如整表 RELOAD 带了多少条），直接打出来。
 // 这类事件本身应当是低频的——如果它高频到刷屏，那件事本身就是要找的问题。
 export function probeEvent(name: string, detail: string): void {
-  console.error(`[probe] ${name} ${detail}`);
+  logE(`[probe] ${name} ${detail}`);
 }

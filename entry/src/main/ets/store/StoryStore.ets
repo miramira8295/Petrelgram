@@ -1,5 +1,6 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { logE } from '../util/log';
 
 export interface StoryRingEntry {
   chatId: number;
@@ -40,7 +41,7 @@ export class StoryStore {
         this.publish();
       }
     }).catch((e: TdError): void => {
-      console.error(`StoryStore.getMe failed: ${e.message}`);
+      logE(`StoryStore.getMe failed: ${e.message}`);
     });
   }
 
@@ -62,7 +63,7 @@ export class StoryStore {
     this.client.send(req).catch((e: TdError): void => {
       // 404 = 列表已到底（无更多会话），是正常终止信号。
       if (e.code !== 404) {
-        console.error(`StoryStore.loadActiveStories failed: ${e.message}`);
+        logE(`StoryStore.loadActiveStories failed: ${e.message}`);
       }
     });
   }

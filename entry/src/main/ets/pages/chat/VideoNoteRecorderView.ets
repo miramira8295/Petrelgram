@@ -5,6 +5,7 @@ import {
 } from '../../services/VideoNoteRecorder';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 type VideoNotePhase = 'opening' | 'ready' | 'recording' | 'sending' | 'error';
 
@@ -89,7 +90,7 @@ export struct VideoNoteRecorderView {
       })
       .catch((e: Object): void => {
         this.opening = false;
-        console.error(`VideoNoteRecorderView.openCamera failed: ${JSON.stringify(e)}`);
+        logE(`VideoNoteRecorderView.openCamera failed: ${JSON.stringify(e)}`);
         this.phase = 'error';
         this.errorText = str('vn_camera_failed');
       });
@@ -154,7 +155,7 @@ export struct VideoNoteRecorderView {
         }
       }
     }).catch((e: Object): void => {
-      console.error(`VideoNoteRecorderView.beginRecord failed: ${JSON.stringify(e)}`);
+      logE(`VideoNoteRecorderView.beginRecord failed: ${JSON.stringify(e)}`);
       this.phase = 'error';
       this.errorText = str('vn_record_failed');
     });
@@ -180,7 +181,7 @@ export struct VideoNoteRecorderView {
       }
       this.onClose();
     }).catch((e: Object): void => {
-      console.error(`VideoNoteRecorderView.finish failed: ${JSON.stringify(e)}`);
+      logE(`VideoNoteRecorderView.finish failed: ${JSON.stringify(e)}`);
       this.onClose();
     });
   }

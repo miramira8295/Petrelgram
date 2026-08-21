@@ -2,6 +2,7 @@ import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { str } from '../util/strings';
 import { buildCacheTrimRequest, shouldTrimCache } from './CacheLimit';
+import { logE } from '../util/log';
 
 export interface StorageUsage {
   filesSize: number;
@@ -314,6 +315,6 @@ export async function applyCacheLimit(limitBytes: number): Promise<void> {
     await getTdClient().send(buildCacheTrimRequest(limitBytes) as TdRequest, 60000);
   } catch (e) {
     const error = e as TdError;
-    console.error(`StorageApi.applyCacheLimit failed: ${error.message}`);
+    logE(`StorageApi.applyCacheLimit failed: ${error.message}`);
   }
 }

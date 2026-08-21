@@ -9,6 +9,7 @@ import {
 import { CALL_VIDEO_OFF, CALL_VIDEO_FRONT } from '../../services/CallMediaBridge';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE, logI } from '../../util/log';
 
 const BG_COLOR: string = '#FF17212B';
 const CONTROL_BG: string = '#33FFFFFF';
@@ -62,10 +63,10 @@ struct CallPage {
       abilityAccessCtrl.createAtManager()
         .requestPermissionsFromUser(context, permissions)
         .catch((error: Error): void => {
-          console.error(`CallPage permission request failed: ${error.message}`);
+          logE(`CallPage permission request failed: ${error.message}`);
         });
     } catch (e) {
-      console.error(`CallPage permission request threw: ${(e as Error).message}`);
+      logE(`CallPage permission request threw: ${(e as Error).message}`);
     }
   }
 
@@ -271,7 +272,7 @@ struct CallPage {
           .onLoad((): void => {
             const surfaceId: string = this.remoteController.getXComponentSurfaceId();
             this.boundRemoteSurface = surfaceId;
-            console.info(`CallPage remote surface bind ${surfaceId}`);
+            logI(`CallPage remote surface bind ${surfaceId}`);
             getCallSession().setRemoteSurface(surfaceId);
           })
           .onDestroy((): void => {
@@ -279,7 +280,7 @@ struct CallPage {
             const surfaceId: string = this.remoteController.getXComponentSurfaceId();
             if (this.boundRemoteSurface === surfaceId) {
               this.boundRemoteSurface = '0';
-              console.info(`CallPage remote surface clear ${surfaceId}`);
+              logI(`CallPage remote surface clear ${surfaceId}`);
               getCallSession().setRemoteSurface('0');
             }
           })
@@ -311,14 +312,14 @@ struct CallPage {
           .onLoad((): void => {
             const surfaceId: string = this.localController.getXComponentSurfaceId();
             this.boundLocalSurface = surfaceId;
-            console.info(`CallPage local surface bind ${surfaceId}`);
+            logI(`CallPage local surface bind ${surfaceId}`);
             getCallSession().setLocalSurface(surfaceId);
           })
           .onDestroy((): void => {
             const surfaceId: string = this.localController.getXComponentSurfaceId();
             if (this.boundLocalSurface === surfaceId) {
               this.boundLocalSurface = '0';
-              console.info(`CallPage local surface clear ${surfaceId}`);
+              logI(`CallPage local surface clear ${surfaceId}`);
               getCallSession().setLocalSurface('0');
             }
           })

@@ -5,6 +5,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { mediaPlaybackKeepAlive } from './MediaPlaybackKeepAlive';
 import { getUiAbilityContext } from '../tdkit/Globals';
 import { KEY_BG_PLAY_MUSIC, KEY_BG_PLAY_VOICE } from '../store/AppSettings';
+import { logE } from '../util/log';
 
 export interface VoiceState {
   playingId: number;  // current/preparing/completed message; 0 = idle/error
@@ -147,7 +148,7 @@ class VoicePlayback {
       try {
         this.player.setSpeed(playbackSpeedOf(next));
       } catch (caught) {
-        console.error(`VoicePlayback.setSpeed failed: ${caught}`);
+        logE(`VoicePlayback.setSpeed failed: ${caught}`);
       }
     }
     this.setState({
@@ -251,7 +252,7 @@ class VoicePlayback {
     media.createAVPlayer().then((player: media.AVPlayer): void => {
       if (token !== this.generation) {
         player.release().catch((caught: Object): void => {
-          console.error(`VoicePlayback stale release failed: ${JSON.stringify(caught)}`);
+          logE(`VoicePlayback stale release failed: ${JSON.stringify(caught)}`);
         });
         return;
       }
@@ -372,7 +373,7 @@ class VoicePlayback {
     if (token !== this.generation) {
       return;
     }
-    console.error(`VoicePlayback failed message=${messageId}: ${JSON.stringify(reason)}`);
+    logE(`VoicePlayback failed message=${messageId}: ${JSON.stringify(reason)}`);
     // Invalidate state/error callbacks emitted while release() tears down the
     // failed player, otherwise they can overwrite the same error repeatedly.
     this.generation++;
@@ -389,14 +390,14 @@ class VoicePlayback {
       const player: media.AVPlayer = this.player;
       this.player = null;
       player.release().catch((caught: Object): void => {
-        console.error(`VoicePlayback release failed: ${JSON.stringify(caught)}`);
+        logE(`VoicePlayback release failed: ${JSON.stringify(caught)}`);
       });
     }
     if (this.file !== null) {
       try {
         fs.closeSync(this.file);
       } catch (caught) {
-        console.error(`VoicePlayback close failed: ${caught}`);
+        logE(`VoicePlayback close failed: ${caught}`);
       }
       this.file = null;
     }

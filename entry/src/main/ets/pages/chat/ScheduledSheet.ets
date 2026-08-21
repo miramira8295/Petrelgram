@@ -6,6 +6,7 @@ import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { monthDayTime } from '../../util/intlFormat';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 // "定时消息" list, extracted from ChatPage.
 //
@@ -77,7 +78,7 @@ export struct ScheduledSheet {
       if (seq !== this.seq) {
         return;
       }
-      console.error(`ScheduledSheet.load failed: ${e.message}`);
+      logE(`ScheduledSheet.load failed: ${e.message}`);
       this.loadState = 'error';
     });
   }
@@ -90,7 +91,7 @@ export struct ScheduledSheet {
     getTdClient().send(req).then((): void => {
       this.load();
     }).catch((e: TdError): void => {
-      console.error(`ScheduledSheet.sendNow failed: ${e.message}`);
+      logE(`ScheduledSheet.sendNow failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.send_failed_retry'), duration: 1700 });
     });
   }
@@ -103,7 +104,7 @@ export struct ScheduledSheet {
     getTdClient().send(req).then((): void => {
       this.load();
     }).catch((e: TdError): void => {
-      console.error(`ScheduledSheet.remove failed: ${e.message}`);
+      logE(`ScheduledSheet.remove failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.delete_failed_retry_soon'), duration: 1700 });
     });
   }

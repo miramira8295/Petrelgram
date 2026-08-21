@@ -1,5 +1,6 @@
 import { media } from '@kit.MediaKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { logE, logI } from '../../util/log';
 
 let nextAvLoopId: number = 1;
 
@@ -33,14 +34,14 @@ export struct AvLoopVideo {
     this.player = null;
     if (p !== null) {
       p.release().catch((e: Object) => {
-        console.error(`AvLoopVideo.release failed: ${JSON.stringify(e)}`);
+        logE(`AvLoopVideo.release failed: ${JSON.stringify(e)}`);
       });
     }
     if (this.fd >= 0) {
       try {
         fs.closeSync(this.fd);
       } catch (e) {
-        console.error(`AvLoopVideo fd close failed: ${e}`);
+        logE(`AvLoopVideo fd close failed: ${e}`);
       }
       this.fd = -1;
     }
@@ -63,7 +64,7 @@ export struct AvLoopVideo {
         if (state === 'initialized') {
           p.surfaceId = surfaceId;
           p.prepare().catch((e: Object) => {
-            console.error(`AvLoopVideo.prepare failed: ${JSON.stringify(e)}`);
+            logE(`AvLoopVideo.prepare failed: ${JSON.stringify(e)}`);
             this.onFailed();
           });
         } else if (state === 'prepared') {
@@ -74,11 +75,11 @@ export struct AvLoopVideo {
           p.videoScaleType = media.VideoScaleType.VIDEO_SCALE_TYPE_FIT_CROP;
           p.setVolume(this.muted ? 0 : 1);
           p.play().catch((e: Object) => {
-            console.error(`AvLoopVideo.play failed: ${JSON.stringify(e)}`);
+            logE(`AvLoopVideo.play failed: ${JSON.stringify(e)}`);
             this.onFailed();
           });
         } else if (state === 'playing') {
-          console.info(`AvLoopVideo playing: ${this.videoPath}`);
+          logI(`AvLoopVideo playing: ${this.videoPath}`);
           this.onWorking();
         } else if (state === 'completed') {
           // 非循环播放（圆形视频）播完要通知调用方收回播放态。
@@ -86,7 +87,7 @@ export struct AvLoopVideo {
         }
       });
       p.on('error', (err: Object) => {
-        console.error(`AvLoopVideo player error: ${JSON.stringify(err)}`);
+        logE(`AvLoopVideo player error: ${JSON.stringify(err)}`);
         this.onFailed();
       });
       try {
@@ -94,11 +95,11 @@ export struct AvLoopVideo {
         this.fd = f.fd;
         p.url = `fd://${f.fd}`;
       } catch (e) {
-        console.error(`AvLoopVideo open(${this.videoPath}) failed: ${e}`);
+        logE(`AvLoopVideo open(${this.videoPath}) failed: ${e}`);
         this.onFailed();
       }
     }).catch((e: Object) => {
-      console.error(`AvLoopVideo.createAVPlayer failed: ${JSON.stringify(e)}`);
+      logE(`AvLoopVideo.createAVPlayer failed: ${JSON.stringify(e)}`);
       this.onFailed();
     });
   }
@@ -107,7 +108,7 @@ export struct AvLoopVideo {
     XComponent({ id: `avloop_${this.instanceId}`, type: XComponentType.TEXTURE, controller: this.ctrl })
       .width(this.boxWidth).height(this.boxHeight)
       .onLoad(() => {
-        console.info(`AvLoopVideo surface ready for ${this.videoPath}`);
+        logI(`AvLoopVideo surface ready for ${this.videoPath}`);
         this.initPlayer(this.ctrl.getXComponentSurfaceId());
       })
       .onDestroy(() => {

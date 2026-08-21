@@ -1,5 +1,6 @@
 import { common, Want, wantConstant } from '@kit.AbilityKit';
 import { fileUri } from '@kit.CoreFileKit';
+import { logE } from './log';
 
 // Open a downloaded local file with whatever system app handles its type.
 // Resolves false when the source is invalid or no installed ability accepts it,
@@ -25,7 +26,7 @@ export async function openLocalFile(
     await context.startAbility(want);
     return true;
   } catch (e) {
-    console.error(`openLocalFile failed for ${path}: ${JSON.stringify(e)}`);
+    logE(`openLocalFile failed for ${path}: ${JSON.stringify(e)}`);
     return false;
   }
 }

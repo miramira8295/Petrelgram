@@ -6,6 +6,7 @@ import { ChatThemeStore } from './ChatThemeStore';
 import { fillColorsOf, objectOrNull } from '../util/backgroundPresentation';
 import { gunzipTgs } from '../util/gunzipTgs';
 import { KEY_CHAT_BG_SNAP_DARK, KEY_CHAT_BG_SNAP_LIGHT, setString } from './AppSettings';
+import { logE, logI } from '../util/log';
 
 // Everything the chat surface needs to paint its background. One immutable
 // snapshot instead of the nine separate page state variables this replaces.
@@ -337,7 +338,7 @@ export class ChatBackgroundStore {
         this.applyTheme(themeName, seq);
       }
     }).catch((error: TdError): void => {
-      console.error(`ChatBackgroundStore getChat failed: ${error.message}`);
+      logE(`ChatBackgroundStore getChat failed: ${error.message}`);
     });
   }
 
@@ -397,7 +398,7 @@ export class ChatBackgroundStore {
       inflatedPatterns.set(path, svgPath);
       return svgPath;
     } catch (e) {
-      console.error(`ChatBackgroundStore.inflateIfPattern(${path}) failed: ${e}`);
+      logE(`ChatBackgroundStore.inflateIfPattern(${path}) failed: ${e}`);
       return '';
     }
   }
@@ -444,11 +445,11 @@ export class ChatBackgroundStore {
     }
     const localPath: string = this.localPathOf(file);
     if (localPath !== '') {
-      console.info(`[ChatBackground] chat=${this.chatId} file=${id} cached=true`);
+      logI(`[ChatBackground] chat=${this.chatId} file=${id} cached=true`);
       this.usePath(localPath, id);
       return;
     }
-    console.info(`[ChatBackground] chat=${this.chatId} file=${id} download=true`);
+    logI(`[ChatBackground] chat=${this.chatId} file=${id} download=true`);
     const request: TdRequest = { '@type': 'downloadFile' };
     request['file_id'] = id;
     request['priority'] = 1;
@@ -458,7 +459,7 @@ export class ChatBackgroundStore {
     this.client.send(request).then((downloaded: TdObject): void => {
       this.applyFile(downloaded);
     }).catch((error: TdError): void => {
-      console.error(`ChatBackgroundStore download ${id} failed: ${error.message}`);
+      logE(`ChatBackgroundStore download ${id} failed: ${error.message}`);
     });
   }
 
@@ -505,7 +506,7 @@ export class ChatBackgroundStore {
       ? ((fill['rotation_angle'] as number | undefined) ?? 180) : 180;
     const file = this.documentFile(background);
     const id: number = file !== null ? ((file['id'] as number | undefined) ?? 0) : 0;
-    console.info(
+    logI(
       `[ChatBackground] chat=${this.chatId} type=${typeName} colors=${colors.length} file=${id}`
     );
     if (colors.length === 0 && id === 0) {
@@ -562,13 +563,13 @@ export class ChatBackgroundStore {
       // TDLib has no matching candidate the renderer keeps chat_bg.
       const selected = matchingDefaults.length > 0
         ? matchingDefaults[0] : (matchingTheme.length > 0 ? matchingTheme[0] : null);
-      console.info(
+      logI(
         `[ChatBackground] chat=${this.chatId} source=installed dark=${forDarkTheme} ` +
         `count=${backgrounds.length} defaults=${matchingDefaults.length}`
       );
       this.applyBackground(selected);
     }).catch((error: TdError): void => {
-      console.error(`ChatBackgroundStore getInstalledBackgrounds failed: ${error.message}`);
+      logE(`ChatBackgroundStore getInstalledBackgrounds failed: ${error.message}`);
       if (seq === this.resolveSeq) {
         this.applyBackground(null);
       }

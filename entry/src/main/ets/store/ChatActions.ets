@@ -5,6 +5,7 @@ import { chatListOf } from './ListKey';
 import { serializeFolderMutation } from './FolderApi';
 import { ChatKind } from './ChatEntry';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 // Every chat-list context-menu action, as a plain TDLib call. The UI never
 // mutates the store directly — TDLib echoes each change back as an update
@@ -35,7 +36,7 @@ export const MUTE_OPTIONS: MuteOption[] = [
 ];
 
 function fail(what: string, e: TdError): void {
-  console.error(`ChatActions.${what} failed: ${e.message}`);
+  logE(`ChatActions.${what} failed: ${e.message}`);
   promptAction.showToast({ message: str('ca_action_failed_msg', e.message), duration: 2000 });
 }
 

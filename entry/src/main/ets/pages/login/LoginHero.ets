@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { TgsStickerView } from '../chat/TgsStickerView';
+import { logE } from '../../util/log';
 
 const UTYA_PHONE_RAW: string = 'login_utya_phone.tgs';
 const UTYA_WAVE_RAW: string = 'login_utya_wave.tgs';
@@ -49,7 +50,7 @@ export struct LoginHero {
       fs.closeSync(file);
       if (!this.disposed) { this.tgsPath = target; }
     } catch (caught) {
-      console.error(`LoginHero.prepareSticker(${rawName}) failed: ${caught}`);
+      logE(`LoginHero.prepareSticker(${rawName}) failed: ${caught}`);
       if (!this.disposed) { this.failed = true; }
     }
   }

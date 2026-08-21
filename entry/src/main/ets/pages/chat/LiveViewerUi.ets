@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction, window } from '@kit.ArkUI';
+import { logE } from '../../util/log';
 
 const EXIT_RED: string = '#E64646';
 const LEAVE_BLUE: string = '#3E8BFF';
@@ -79,7 +80,7 @@ export function setLiveStreamFullscreen(
       });
     });
   }).catch((caught: Error): void => {
-    console.error(`LiveViewerUi.setLiveStreamFullscreen failed: ${caught.message}`);
+    logE(`LiveViewerUi.setLiveStreamFullscreen failed: ${caught.message}`);
   });
   return liveFullscreenTask;
 }
@@ -95,7 +96,7 @@ export function setLiveStreamKeepScreenOn(
     if (requestSeq !== liveKeepScreenRequestSeq) { return Promise.resolve(); }
     return mainWindow.setWindowKeepScreenOn(keepScreenOn);
   }).catch((caught: Error): void => {
-    console.error(`LiveViewerUi.setKeepScreenOn failed: ${caught.message}`);
+    logE(`LiveViewerUi.setKeepScreenOn failed: ${caught.message}`);
   });
 }
 
@@ -114,9 +115,9 @@ export function setMediaViewerOrientation(
       ? window.Orientation.AUTO_ROTATION_LANDSCAPE
       : window.Orientation.PORTRAIT;
     mainWindow.setPreferredOrientation(orientation).catch((caught: Error): void => {
-      console.error(`LiveViewerUi.setMediaOrientation failed: ${caught.message}`);
+      logE(`LiveViewerUi.setMediaOrientation failed: ${caught.message}`);
     });
   }).catch((caught: Error): void => {
-    console.error(`LiveViewerUi.getMediaWindow failed: ${caught.message}`);
+    logE(`LiveViewerUi.getMediaWindow failed: ${caught.message}`);
   });
 }

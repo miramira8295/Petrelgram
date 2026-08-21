@@ -2,6 +2,7 @@ import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { gradientStops } from './backgroundPresentation';
+import { logE } from './log';
 
 // Flatten the chat background into one opaque JPEG, once per (background, size).
 //
@@ -336,7 +337,7 @@ export async function rasterizeBackground(
     rasterCache.set(sig, dest);
     return dest;
   } catch (e) {
-    console.error(`rasterizeBackground failed: ${e}`);
+    logE(`rasterizeBackground failed: ${e}`);
     return '';
   } finally {
     inFlight.delete(sig);

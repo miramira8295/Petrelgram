@@ -10,6 +10,7 @@ import {
   KEY_NOTIFY_PRIVATE, KEY_NOTIFY_GROUP, KEY_NOTIFY_CHANNEL
 } from '../store/AppSettings';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 // 来电通知固定 id（TDLib notification id 为正整数，取远离区间的常量）。
 export const CALL_NOTIFICATION_ID: number = 999001;
@@ -159,7 +160,7 @@ export class NotificationService {
     req['name'] = name;
     req['value'] = optionValue;
     this.client.send(req).catch((e: TdError): void => {
-      console.error(`NotificationService.setOption(${name}) failed: ${e.message}`);
+      logE(`NotificationService.setOption(${name}) failed: ${e.message}`);
     });
   }
 
@@ -284,7 +285,7 @@ export class NotificationService {
         const muted: boolean = ((res['mute_for'] as number | undefined) ?? 0) > 0;
         this.scopeMuted.set(key, muted);
       }).catch((e: TdError): void => {
-        console.error(`NotificationService.getScopeNotificationSettings(${key}): ${e.message}`);
+        logE(`NotificationService.getScopeNotificationSettings(${key}): ${e.message}`);
       });
     }
   }

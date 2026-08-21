@@ -6,6 +6,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 export interface PickedContact {
   userId: number;
@@ -38,7 +39,7 @@ export struct ContactPickerSheet {
       const ids: number[] = (res['user_ids'] as number[] | undefined) ?? [];
       return this.loadUsers(ids);
     }).catch((e: TdError): void => {
-      console.error(`ContactPickerSheet.getContacts failed: ${e.message}`);
+      logE(`ContactPickerSheet.getContacts failed: ${e.message}`);
       this.loadState = 'error';
     });
   }
@@ -65,7 +66,7 @@ export struct ContactPickerSheet {
       }).filter((row: ContactRow): boolean => row.userId > 0);
       this.loadState = 'ready';
     }).catch((e: TdError): void => {
-      console.error(`ContactPickerSheet.loadUsers failed: ${e.message}`);
+      logE(`ContactPickerSheet.loadUsers failed: ${e.message}`);
       this.loadState = 'error';
     });
   }

@@ -1,6 +1,7 @@
 import { media } from '@kit.MediaKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { logE } from '../../util/log';
 
 // 故事视频播放器：本地文件、带声音、播一次，结束回调 onEnded。
 // 与 AvLoopVideo（静音循环）职责不同，故单列组件。
@@ -37,7 +38,7 @@ export struct StoryVideoView {
     this.player = null;
     if (player !== null) {
       player.release().catch((e: BusinessError): void => {
-        console.error(`StoryVideoView.release failed: ${e.message}`);
+        logE(`StoryVideoView.release failed: ${e.message}`);
       });
     }
     if (this.file !== null) {
@@ -69,7 +70,7 @@ export struct StoryVideoView {
         }
       });
       player.on('error', (e: BusinessError): void => {
-        console.error(`StoryVideoView player error: ${e.message}`);
+        logE(`StoryVideoView player error: ${e.message}`);
         this.onEnded(); // 播放失败当作播完，让查看器继续推进
       });
       try {
@@ -77,11 +78,11 @@ export struct StoryVideoView {
         this.file = file;
         player.url = `fd://${file.fd}`;
       } catch (e) {
-        console.error(`StoryVideoView open failed: ${(e as Error).message}`);
+        logE(`StoryVideoView open failed: ${(e as Error).message}`);
         this.onEnded();
       }
     }).catch((e: BusinessError): void => {
-      console.error(`StoryVideoView.createAVPlayer failed: ${e.message}`);
+      logE(`StoryVideoView.createAVPlayer failed: ${e.message}`);
       this.onEnded();
     });
   }

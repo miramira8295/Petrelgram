@@ -11,6 +11,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 16;
 
@@ -163,7 +164,7 @@ struct PrivacyExceptionsPage {
       this.loadState = 'ready';
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`PrivacyExceptionsPage.load failed: ${error.message}`);
+      logE(`PrivacyExceptionsPage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
   }
@@ -196,7 +197,7 @@ struct PrivacyExceptionsPage {
       this.candidateState = merged.length > 0 ? 'ready' : 'empty';
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`PrivacyExceptionsPage.contacts failed: ${error.message}`);
+      logE(`PrivacyExceptionsPage.contacts failed: ${error.message}`);
       this.candidateState = 'error';
     });
   }
@@ -238,7 +239,7 @@ struct PrivacyExceptionsPage {
       this.saving = false;
       this.load();
     }).catch((error: TdError): void => {
-      console.error(`PrivacyExceptionsPage.save failed: ${error.message}`);
+      logE(`PrivacyExceptionsPage.save failed: ${error.message}`);
       if (!this.active) { return; }
       this.saving = false;
       promptAction.showToast({ message: $r('app.string.pe_save_failed'), duration: 1800 });

@@ -10,6 +10,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
   overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -125,7 +126,7 @@ struct AccountEditPage {
         return;
       }
       const error = caught as Error;
-      console.error(`AccountEditPage.loadProfile failed: ${error.message}`);
+      logE(`AccountEditPage.loadProfile failed: ${error.message}`);
       this.loading = false;
       this.loadError = str('settings_profile_failed');
       this.stopSkeletonPulse();
@@ -260,7 +261,7 @@ struct AccountEditPage {
     }).catch((e: TdError) => {
       this.saving = false;
       this.saveError = str('ae_save_partial');
-      console.error(`AccountEditPage.save failed: ${e.message}`);
+      logE(`AccountEditPage.save failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.ae_save_failed'), duration: 2000 });
     });
   }
@@ -280,7 +281,7 @@ struct AccountEditPage {
       if (result.index !== 1) { return; }
       this.performLogout();
     }).catch((e: Object): void => {
-      console.error(`AccountEditPage.confirmLogout failed: ${JSON.stringify(e)}`);
+      logE(`AccountEditPage.confirmLogout failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -291,7 +292,7 @@ struct AccountEditPage {
       .then((): Promise<void> => logoutCurrentTdAccount())
       .catch((caught: Error): void => {
         this.loggingOut = false;
-        console.error(`AccountEditPage.logout failed: ${caught.message}`);
+        logE(`AccountEditPage.logout failed: ${caught.message}`);
         promptAction.showToast({ message: $r('app.string.ae_log_out_failed'), duration: 1800 });
       });
   }

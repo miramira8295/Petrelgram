@@ -1,5 +1,6 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { logE } from './log';
 
 // Resolve a user's premium emoji status (user.emoji_status) into a local
 // sticker file. Handles both TDLib shapes: emoji_status.custom_emoji_id
@@ -45,9 +46,9 @@ export function resolveEmojiStatus(es: TdObject | undefined,
         cb(path, format);
       }
     }).catch((e: TdError) => {
-      console.error(`resolveEmojiStatus.download failed: ${e.message}`);
+      logE(`resolveEmojiStatus.download failed: ${e.message}`);
     });
   }).catch((e: TdError) => {
-    console.error(`resolveEmojiStatus.getCustomEmojiStickers failed: ${e.message}`);
+    logE(`resolveEmojiStatus.getCustomEmojiStickers failed: ${e.message}`);
   });
 }

@@ -2,6 +2,7 @@ import { str } from './strings';
 import {
   PROXY_HTTP, PROXY_MTPROTO, ProxyEntry
 } from '../store/ProxyApi';
+import { logE } from './log';
 
 export function parseProxyPort(rawPort: string): number {
   const value = rawPort.trim();
@@ -36,7 +37,7 @@ export function proxyActionErrorText(rawMessage: string, action: string): string
   // 原始文案只在这里出现一次，映射之后就只剩一句面向用户的话了。代理出问题
   // 时"连不上"和"参数非法"用户要做的事完全不同，而下面的分流全靠关键词猜，
   // 猜错了没有别的线索——所以原文得留在日志里。
-  console.error(`[proxy] ${action} failed, raw: ${rawMessage}`);
+  logE(`[proxy] ${action} failed, raw: ${rawMessage}`);
   const message = rawMessage.toUpperCase();
   if (message.indexOf('TIMEOUT') >= 0) { return str('proxy_error_timeout', action); }
   if (message.indexOf('NETWORK') >= 0 || message.indexOf('CONNECTION') >= 0) {

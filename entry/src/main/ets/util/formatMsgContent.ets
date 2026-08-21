@@ -3,6 +3,7 @@ import { TdObject } from '../tdkit/TdTypes';
 import { formatPreview } from './formatPreview';
 import { decimalUpTo, usd } from './intlFormat';
 import { plural, str } from './strings';
+import { logI } from './log';
 
 export interface PollOptionInfo {
   text: string;
@@ -594,7 +595,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       const off = (ents[0]['offset'] as number | undefined) ?? -1;
       const len = (ents[0]['length'] as number | undefined) ?? 0;
       if (etName === 'textEntityTypeCustomEmoji') {
-        console.info(`formatMsgContent customEmoji cand: off=${off} len=${len} textLen=${text.length}`);
+        logI(`formatMsgContent customEmoji cand: off=${off} len=${len} textLen=${text.length}`);
       }
       const customEmojiId = et !== undefined ? `${et['custom_emoji_id'] ?? ''}` : '';
       if (etName === 'textEntityTypeCustomEmoji' && customEmojiId !== '' &&
@@ -1289,7 +1290,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
   }
   // Diagnostics for the "bare 'Message' bubble" reports — identifies which
   // TDLib content type still lacks a renderer.
-  console.info(`formatMsgContent: unhandled content type ${type ?? 'undefined'} (msg ${message['id']})`);
+  logI(`formatMsgContent: unhandled content type ${type ?? 'undefined'} (msg ${message['id']})`);
   return {
     contentType: 'other', text: '', photoFileId: 0, photoWidth: 0, photoHeight: 0, placeholderLabel: formatPreview(message), entities: [],
     linkSiteName: '', linkTitle: '', linkDescription: '', linkDescriptionEntities: [], linkPhotoFileId: 0, linkUrl: '',

@@ -28,6 +28,7 @@ import {
   TdAccountDirectories, TdAccountSummary
 } from './AccountRegistry';
 import { str } from '../util/strings';
+import { logE, logI } from '../util/log';
 
 let client: TdClient | undefined = undefined;
 let auth: AuthService | undefined = undefined;
@@ -59,7 +60,7 @@ export function initTdKit(context: common.Context): void {
   // 就只剩登录页、原账号再也进不去。建运行时之前先把它交还给来源账号。
   const recovered: string = accountRegistry.abandonStalePending();
   if (recovered !== '') {
-    console.error(`Globals: abandoned a stale pending login, back to slot ${recovered}`);
+    logE(`Globals: abandoned a stale pending login, back to slot ${recovered}`);
   }
   createRuntime(accountRegistry.activeSlotId());
 }
@@ -75,10 +76,10 @@ function repairTdTempDirectory(filesDirectory: string): void {
   try {
     if (fs.accessSync(tempPath) && !fs.statSync(tempPath).isDirectory()) {
       fs.unlinkSync(tempPath);
-      console.error(`Globals: removed a plain file squatting on ${tempPath}`);
+      logE(`Globals: removed a plain file squatting on ${tempPath}`);
     }
   } catch (e) {
-    console.error(`Globals.repairTdTempDirectory failed: ${e}`);
+    logE(`Globals.repairTdTempDirectory failed: ${e}`);
   }
 }
 
@@ -100,7 +101,7 @@ function createRuntime(slotId: string): void {
   try {
     setCallLibraryVersions(JSON.parse(nativeCallVersionsJson()) as string[]);
   } catch (e) {
-    console.error('call versions parse failed, using fallback list');
+    logE('call versions parse failed, using fallback list');
   }
   callSession = new CallSession(client, users, new NativeCallMedia());
   // 系统来电界面上的接听/拒接/挂断/静音回传到通话会话。
@@ -213,9 +214,9 @@ function reregisterWebPush(client: TdClient): void {
     return;
   }
   registerWebPush(client, config).then((receiverId: string): void => {
-    console.info(`WebPush re-registered, receiver id ${receiverId}`);
+    logI(`WebPush re-registered, receiver id ${receiverId}`);
   }).catch((e: Object): void => {
-    console.error(`WebPush re-register failed: ${JSON.stringify(e)}`);
+    logE(`WebPush re-register failed: ${JSON.stringify(e)}`);
   });
 }
 
@@ -229,7 +230,7 @@ async function stopRuntime(): Promise<void> {
       await sendOnlineOption(currentClient, false);
     } catch (caught) {
       const error = caught as Error;
-      console.error(`Globals.stopRuntime set offline failed: ${error.message}`);
+      logE(`Globals.stopRuntime set offline failed: ${error.message}`);
     }
   }
   if (currentAuth !== undefined) {
@@ -240,7 +241,7 @@ async function stopRuntime(): Promise<void> {
   try {
     testNapi.tdDestroy();
   } catch (caught) {
-    console.error(`Globals.stopRuntime tdDestroy failed: ${caught}`);
+    logE(`Globals.stopRuntime tdDestroy failed: ${caught}`);
   }
   client = undefined;
   auth = undefined;
@@ -267,7 +268,7 @@ function applyDesiredOnlineState(runtimeClient: TdClient): void {
     if (client !== runtimeClient) {
       return;
     }
-    console.error(`Globals.setOnline(${target}) failed: ${caught.message}`);
+    logE(`Globals.setOnline(${target}) failed: ${caught.message}`);
   });
 }
 
@@ -293,7 +294,7 @@ async function restartOnSlot(slotId: string, previousSlotId: string): Promise<vo
     bumpSessionEpoch();
   } catch (caught) {
     const error = caught as Error;
-    console.error(`Globals.restartOnSlot(${slotId}) failed: ${error.message}`);
+    logE(`Globals.restartOnSlot(${slotId}) failed: ${error.message}`);
     if (previousSlotId !== '' && accountRegistry.hasSlot(previousSlotId)) {
       accountRegistry.setActive(previousSlotId);
       if (client === undefined) {
@@ -445,7 +446,7 @@ function refreshActiveAccountSummary(runtimeClient: TdClient): void {
       avatarPath
     );
   }).catch((caught: Error): void => {
-    console.error(`Globals.refreshActiveAccountSummary failed: ${caught.message}`);
+    logE(`Globals.refreshActiveAccountSummary failed: ${caught.message}`);
   });
 }
 
@@ -468,7 +469,7 @@ function resolveDuplicateAccountLogin(
         userId, name, phone, username, avatarPath
       );
     }).catch((caught: Error): void => {
-      console.error(`Globals.resolveDuplicateAccountLogin wait failed: ${caught.message}`);
+      logE(`Globals.resolveDuplicateAccountLogin wait failed: ${caught.message}`);
     });
     return;
   }
@@ -485,7 +486,7 @@ function resolveDuplicateAccountLogin(
     await restartOnSlot(existingSlotId, duplicateSlotId);
     accountRegistry.removeAccount(duplicateSlotId);
   }).catch((caught: Error): void => {
-    console.error(`Globals.resolveDuplicateAccountLogin failed: ${caught.message}`);
+    logE(`Globals.resolveDuplicateAccountLogin failed: ${caught.message}`);
     if (!logoutCompleted && client === runtimeClient &&
       accountRegistry.activeSlotId() === duplicateSlotId) {
       // Keep the freshly authenticated runtime usable if Telegram rejected

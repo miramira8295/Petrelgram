@@ -1,5 +1,6 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { logE } from '../util/log';
 
 // Data sources for the chat input's '@' mention and '/' command suggestion
 // panels. Pure request helpers — no state; ChatPage owns filtering/UI.
@@ -87,7 +88,7 @@ export function searchMentions(client: TdClient, chatId: number, query: string):
       return items;
     });
   }).catch((e: TdError) => {
-    console.error(`searchMentions failed: ${e.message}`);
+    logE(`searchMentions failed: ${e.message}`);
     const empty: MentionItem[] = [];
     return empty;
   });
@@ -99,7 +100,7 @@ export function mentionOfUser(client: TdClient, userId: number): Promise<Mention
   return getUser(client, userId).then((user: TdObject): MentionItem => {
     return { userId, name: displayNameOf(user), username: usernameOf(user) };
   }).catch((e: TdError): MentionItem => {
-    console.error(`mentionOfUser failed: ${e.message}`);
+    logE(`mentionOfUser failed: ${e.message}`);
     return { userId, name: '', username: '' };
   });
 }
@@ -156,7 +157,7 @@ export function loadBotCommands(client: TdClient, chatId: number, peerUserId: nu
     // real loading error instead of an indistinguishable empty catalog.
     const fetches: Array<Promise<CommandItem[]>> = ids.map((uid: number) =>
       getGroupBotCommands(client, uid).catch((e: TdError) => {
-        console.error(`get bot commands ${uid} failed: ${e.message}`);
+        logE(`get bot commands ${uid} failed: ${e.message}`);
         const empty: CommandItem[] = [];
         return empty;
       }));

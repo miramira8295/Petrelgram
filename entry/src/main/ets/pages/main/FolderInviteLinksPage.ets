@@ -15,6 +15,7 @@ import { AvatarView } from '../chatlist/AvatarView';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 interface FolderInviteParams {
   folderId: number;
@@ -98,7 +99,7 @@ struct FolderInviteLinksPage {
       if (!this.active || sequence !== this.loadSequence) { return; }
       this.loadState = 'error';
       this.warning = str('fl_load_failed_soft');
-      console.error(`FolderInviteLinksPage.load failed: ${error.message}`);
+      logE(`FolderInviteLinksPage.load failed: ${error.message}`);
     });
   }
 
@@ -163,7 +164,7 @@ struct FolderInviteLinksPage {
       this.warning = error.message.indexOf('PREMIUM') >= 0
         ? str('fl_limit_reached') : str('fl_save_failed');
       promptAction.showToast({ message: this.warning, duration: 1900 });
-      console.error(`FolderInviteLinksPage.saveLink failed: ${error.message}`);
+      logE(`FolderInviteLinksPage.saveLink failed: ${error.message}`);
     });
   }
 
@@ -186,7 +187,7 @@ struct FolderInviteLinksPage {
         if (!this.active) { return; }
         this.operationKey = '';
         this.warning = str('fl_delete_failed');
-        console.error(`FolderInviteLinksPage.delete failed: ${error.message}`);
+        logE(`FolderInviteLinksPage.delete failed: ${error.message}`);
       });
     }).catch((): void => {});
   }
@@ -212,7 +213,7 @@ struct FolderInviteLinksPage {
       if (!this.active) { return; }
       this.operationKey = '';
       this.warning = str('fl_join_partial');
-      console.error(`FolderInviteLinksPage.newChats failed: ${error.message}`);
+      logE(`FolderInviteLinksPage.newChats failed: ${error.message}`);
     });
   }
 

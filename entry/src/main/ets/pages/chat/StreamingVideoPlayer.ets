@@ -21,6 +21,7 @@ import { VideoRangeServer } from '../../services/VideoRangeServer';
 import { VideoStreamSession } from '../../services/VideoStreamSession';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE, logI } from '../../util/log';
 
 const CONTROL_BAR_BG: string = '#6e3e3e40';
 const CONTROL_ACCENT: string = '#FFFFFF';
@@ -206,7 +207,7 @@ export struct StreamingVideoPlayer {
       };
       routingManager.on('deviceChange', audio.DeviceFlag.OUTPUT_DEVICES_FLAG, this.deviceChangeCb);
     } catch (e) {
-      console.error(`StreamingVideoPlayer.setupAudioDeviceListener failed: ${e}`);
+      logE(`StreamingVideoPlayer.setupAudioDeviceListener failed: ${e}`);
     }
   }
 
@@ -215,7 +216,7 @@ export struct StreamingVideoPlayer {
       try {
         this.routingManager.off('deviceChange', this.deviceChangeCb);
       } catch (e) {
-        console.error(`StreamingVideoPlayer.cleanupAudioDeviceListener failed: ${e}`);
+        logE(`StreamingVideoPlayer.cleanupAudioDeviceListener failed: ${e}`);
       }
     }
     this.routingManager = null;
@@ -252,7 +253,7 @@ export struct StreamingVideoPlayer {
         // Native release must finish before its HTTP source is closed.
         p.release();
       } catch (e) {
-        console.error(`StreamingVideoPlayer.release failed: ${e}`);
+        logE(`StreamingVideoPlayer.release failed: ${e}`);
       }
     }
     if (this.rangeServer !== null) {
@@ -416,7 +417,7 @@ export struct StreamingVideoPlayer {
         onError: (what: number, extra: number): void => {
           this.isPlaying = false;
           this.showError(str('player_play_failed'));
-          console.error(`StreamingVideoPlayer error: what=${what}, extra=${extra}`);
+          logE(`StreamingVideoPlayer error: what=${what}, extra=${extra}`);
         }
       };
       const sizeListener: OnVideoSizeChangedListener = {
@@ -439,7 +440,7 @@ export struct StreamingVideoPlayer {
       player.setDataSource(sourceUrl);
       player.prepareAsync();
     } catch (e) {
-      console.error(`StreamingVideoPlayer.init failed: ${e}`);
+      logE(`StreamingVideoPlayer.init failed: ${e}`);
       this.release();
       this.showError(str('player_load_failed'));
     }
@@ -633,11 +634,11 @@ export struct StreamingVideoPlayer {
       try {
         this.player.setSpeed(SPEEDS[nextIdx]);
         const nativeSpeed: number = this.player.getSpeed();
-        console.info(`StreamingVideoPlayer speed requested=${SPEEDS[nextIdx]}, native=${nativeSpeed}`);
+        logI(`StreamingVideoPlayer speed requested=${SPEEDS[nextIdx]}, native=${nativeSpeed}`);
         applied = nativeSpeed <= 0 || Math.abs(nativeSpeed - Number(SPEEDS[nextIdx])) < 0.08;
       } catch (caught) {
         applied = false;
-        console.error(`StreamingVideoPlayer.setSpeed failed: ${caught}`);
+        logE(`StreamingVideoPlayer.setSpeed failed: ${caught}`);
       }
     }
     // Keep the chosen value even while preparing. onPrepared applies the

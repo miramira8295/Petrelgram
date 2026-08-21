@@ -1,6 +1,7 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 // 自定义 Web Push 中转通道的注册。
 //
@@ -176,6 +177,6 @@ export function deregisterWebPush(client: TdClient): Promise<void> {
     .then((): void => {})
     .catch((e: TdError): void => {
       // 注销失败不该阻塞用户关开关，记录即可。
-      console.error(`WebPushRegistration.deregister failed: ${e.message}`);
+      logE(`WebPushRegistration.deregister failed: ${e.message}`);
     });
 }

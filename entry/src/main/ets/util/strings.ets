@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { resourceManager } from '@kit.LocalizationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { logE } from './log';
 
 // Localized string lookup for code with no UI context.
 //
@@ -58,7 +59,7 @@ class ResourceStrings implements StringSource {
       // whole formatting path, so degrade to the key: it is visibly wrong in
       // the UI and greppable in a bug report, which a blank string is not.
       const err = e as BusinessError;
-      console.error(`strings: '${key}' unavailable (${err.code}) ${err.message}`);
+      logE(`strings: '${key}' unavailable (${err.code}) ${err.message}`);
       return key;
     }
   }
@@ -68,7 +69,7 @@ class ResourceStrings implements StringSource {
       return this.res().getIntPluralStringByNameSync(key, count, ...args);
     } catch (e) {
       const err = e as BusinessError;
-      console.error(`strings: plural '${key}' unavailable (${err.code}) ${err.message}`);
+      logE(`strings: plural '${key}' unavailable (${err.code}) ${err.message}`);
       return key;
     }
   }

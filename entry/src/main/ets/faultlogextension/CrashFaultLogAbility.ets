@@ -12,6 +12,7 @@
 
 import { FaultLogExtensionAbility, hiAppEvent } from '@kit.PerformanceAnalysisKit';
 import { flushCrashUploads, ingestCrashParams, initCrashStore } from '../services/crashRecordStore';
+import { logE } from '../util/log';
 
 // 和 services/crashReport 里的 DELAYED_WATCHER 同名。**不从那边 import**：
 // 那个模块会拉进 hiAppEvent 之外的东西，而这里越少越好。改名时两处一起改。
@@ -22,7 +23,7 @@ export default class CrashFaultLogAbility extends FaultLogExtensionAbility {
     try {
       initCrashStore(this.context.filesDir);
     } catch (e) {
-      console.error(`CrashFaultLogAbility initCrashStore failed: ${e}`);
+      logE(`CrashFaultLogAbility initCrashStore failed: ${e}`);
       return;
     }
     hiAppEvent.addWatcher({

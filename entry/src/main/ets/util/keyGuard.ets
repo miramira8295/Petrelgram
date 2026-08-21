@@ -1,3 +1,4 @@
+import { logE } from './log';
 // Diagnostic for LazyForEach duplicate keys.
 //
 // ArkUI logs "Use repeat key for index: N" but names neither the key nor the
@@ -47,7 +48,7 @@ export function guardKey(list: string, index: number, key: string): string {
   const t = tableFor(list);
   const at = t.byKey.get(key);
   if (at !== undefined && at !== index) {
-    console.error(`[KeyGuard] ${list}: key claimed by index ${index} and ${at} -> ${key}`);
+    logE(`[KeyGuard] ${list}: key claimed by index ${index} and ${at} -> ${key}`);
   }
   // Whatever this index held before is gone; drop its reverse entry so a stale
   // key cannot outlive the row that produced it.

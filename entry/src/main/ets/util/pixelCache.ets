@@ -2,6 +2,7 @@ import { image } from '@kit.ImageKit';
 import { sendableImage } from '@kit.ImageKit';
 import { taskpool } from '@kit.ArkTS';
 import { decodeSendable } from './pixelDecodeTask';
+import { logE } from './log';
 
 // Decode local images ourselves instead of handing a file path to Image.
 //
@@ -106,7 +107,7 @@ function decRef(entry: PixelHandle): void {
   try {
     entry.pixelMap.release();
   } catch (e) {
-    console.error(`pixelCache release failed: ${e}`);
+    logE(`pixelCache release failed: ${e}`);
   }
 }
 
@@ -252,7 +253,7 @@ async function decode(req: PixelRequest, key: string): Promise<PixelHandle | und
     setTimeout((): void => { decRef(entry); }, 0);
     return entry;
   } catch (e) {
-    console.error(`pixelCache decode(${req.path}) failed: ${e}`);
+    logE(`pixelCache decode(${req.path}) failed: ${e}`);
     return undefined;
   }
   // No ImageSource to release here any more — it is created and released inside

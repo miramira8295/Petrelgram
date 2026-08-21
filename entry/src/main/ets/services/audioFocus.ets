@@ -19,6 +19,7 @@
 // 这里不碰播放器：只负责"系统说该停/该继续了"，怎么停由订阅方决定。
 
 import { audio } from '@kit.AudioKit';
+import { logE } from '../util/log';
 
 // 系统要求我们做什么。
 export const FOCUS_PAUSE: string = 'pause';    // 让位：暂停，等 resume
@@ -55,7 +56,7 @@ function managerOf(): audio.AudioSessionManager | null {
     try {
       sessionManager = audio.getAudioManager().getSessionManager();
     } catch (e) {
-      console.error(`audioFocus.getSessionManager failed: ${e}`);
+      logE(`audioFocus.getSessionManager failed: ${e}`);
       sessionManager = null;
     }
   }
@@ -82,7 +83,7 @@ function subscribe(manager: audio.AudioSessionManager): void {
     });
     subscribed = true;
   } catch (e) {
-    console.error(`audioFocus.on(audioSessionStateChanged) failed: ${e}`);
+    logE(`audioFocus.on(audioSessionStateChanged) failed: ${e}`);
   }
 }
 
@@ -100,7 +101,7 @@ export function acquireAudioFocus(listener: AudioFocusListener): () => void {
         concurrencyMode: audio.AudioConcurrencyMode.CONCURRENCY_DEFAULT
       };
       manager.activateAudioSession(strategy).catch((e: Error): void => {
-        console.error(`audioFocus.activateAudioSession failed: ${e.message}`);
+        logE(`audioFocus.activateAudioSession failed: ${e.message}`);
       });
     }
   }
@@ -117,7 +118,7 @@ export function acquireAudioFocus(listener: AudioFocusListener): () => void {
     holders = Math.max(0, holders - 1);
     if (holders === 0 && manager !== null) {
       manager.deactivateAudioSession().catch((e: Error): void => {
-        console.error(`audioFocus.deactivateAudioSession failed: ${e.message}`);
+        logE(`audioFocus.deactivateAudioSession failed: ${e.message}`);
       });
     }
   };

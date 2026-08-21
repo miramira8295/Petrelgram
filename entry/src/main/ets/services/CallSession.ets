@@ -3,6 +3,7 @@ import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from '../store/UserStore';
 import { CallMediaBridge, CallMediaConfig, CALL_VIDEO_OFF } from './CallMediaBridge';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 // TDLib callProtocol 的 min/max_layer 取官方移动端长期使用的取值。
 const CALL_MIN_LAYER: number = 65;
@@ -105,7 +106,7 @@ export class CallSession {
     req['protocol'] = this.protocol();
     req['is_video'] = isVideo;
     this.client.send(req).catch((e: TdError): void => {
-      console.error(`CallSession.createCall failed: ${e.message}`);
+      logE(`CallSession.createCall failed: ${e.message}`);
       this.endWith('error', e.message);
     });
     this.publish();
@@ -119,7 +120,7 @@ export class CallSession {
     req['call_id'] = this.callId;
     req['protocol'] = this.protocol();
     this.client.send(req).catch((e: TdError): void => {
-      console.error(`CallSession.acceptCall failed: ${e.message}`);
+      logE(`CallSession.acceptCall failed: ${e.message}`);
       this.endWith('error', e.message);
     });
     this.phase = 'connecting';
@@ -204,7 +205,7 @@ export class CallSession {
     req['duration'] = duration;
     req['is_video'] = this.isVideo;
     this.client.send(req).catch((e: TdError): void => {
-      console.error(`CallSession.discardCall failed: ${e.message}`);
+      logE(`CallSession.discardCall failed: ${e.message}`);
     });
   }
 
@@ -360,7 +361,7 @@ export class CallSession {
         req['duration'] = duration;
         req['is_video'] = this.isVideo;
         this.client.send(req).catch((e: TdError): void => {
-          console.error(`CallSession.discardCall(failed) failed: ${e.message}`);
+          logE(`CallSession.discardCall(failed) failed: ${e.message}`);
         });
       }
       this.endWith('error', str('svc_connect_failed'));
@@ -375,7 +376,7 @@ export class CallSession {
     req['call_id'] = this.callId;
     req['data'] = dataBase64;
     this.client.send(req).catch((e: TdError): void => {
-      console.error(`CallSession.sendCallSignalingData failed: ${e.message}`);
+      logE(`CallSession.sendCallSignalingData failed: ${e.message}`);
     });
   }
 

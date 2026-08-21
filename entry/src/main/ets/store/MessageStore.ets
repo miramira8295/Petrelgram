@@ -18,6 +18,7 @@ import { reactionTypeOf } from '../util/reactions';
 import { str } from '../util/strings';
 import { publishProgress } from '../util/mediaProgressChannel';
 import { publishSendState } from '../util/sendStateChannel';
+import { logE, logI, logW } from '../util/log';
 
 const PAGE: number = 30;
 // 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
@@ -322,7 +323,7 @@ export class MessageStore {
     // simply absent — rendered as a seamless jump (10:46 followed by 10:57).
     // Refetch the newest page; onHistory's continuity check decides whether it
     // merges into the window or replaces it.
-    console.info(`[StoreDiag] resume rows=${this.messages.length}` +
+    logI(`[StoreDiag] resume rows=${this.messages.length}` +
       ` oldest=${this.oldestId} state=${this.initialHistoryState}` +
       ` hasMoreNewer=${this.hasMoreNewer} olderPending=${this.olderPending}`);
     if (this.initialHistoryState === 'ready' && !this.hasMoreNewer) {
@@ -404,7 +405,7 @@ export class MessageStore {
       this.resolveSenderAvatars();
       this.notifySoon();
     }).catch((e: TdError) => {
-      console.error(`MessageStore.fetchThreadRoot failed: ${e.message}`);
+      logE(`MessageStore.fetchThreadRoot failed: ${e.message}`);
     });
   }
 
@@ -519,7 +520,7 @@ export class MessageStore {
       }
       this.setReplyKeyboard(parseReplyKeyboard(m));
     }).catch((e: TdError) => {
-      console.error(`MessageStore.resolveReplyKeyboard(${id}) failed: ${e.message}`);
+      logE(`MessageStore.resolveReplyKeyboard(${id}) failed: ${e.message}`);
       this.setReplyKeyboard(this.kbFromHistory);
       this.startKeyboardHistoryProbe();
     });
@@ -647,7 +648,7 @@ export class MessageStore {
     }).catch((e: TdError): void => {
       this.finishKeyboardHistoryProbe(seq);
       if (e.code !== 404) {
-        console.error(`MessageStore keyboard history probe failed: ${e.message}`);
+        logE(`MessageStore keyboard history probe failed: ${e.message}`);
       }
     });
   }
@@ -734,7 +735,7 @@ export class MessageStore {
       const reason: string = `${this.olderPending}/${this.olderLoadState}/${this.hasMoreOlder}`;
       if (!this.loadOlderRefusalSeen.has(reason)) {
         this.loadOlderRefusalSeen.add(reason);
-        console.warn(`loadOlder refused pending=${this.olderPending}` +
+        logW(`loadOlder refused pending=${this.olderPending}` +
           ` state=${this.olderLoadState} hasMore=${this.hasMoreOlder}` +
           ` oldest=${this.oldestId} rows=${this.messages.length}`);
       }
@@ -768,7 +769,7 @@ export class MessageStore {
         if (this.olderEmptyRetries > 0) {
           this.olderEmptyRetries--;
           this.olderLoadState = 'idle';
-          console.warn(`[StoreDiag] older empty, retrying left=${this.olderEmptyRetries}` +
+          logW(`[StoreDiag] older empty, retrying left=${this.olderEmptyRetries}` +
             ` anchor=${anchorId} rows=${this.messages.length}`);
           this.onHistory(res, 'older');
           this.loadOlder();
@@ -788,7 +789,7 @@ export class MessageStore {
         this.olderLoadState = 'end';
       } else {
         this.olderLoadState = 'error';
-        console.error(`MessageStore.loadOlder failed: ${e.message}`);
+        logE(`MessageStore.loadOlder failed: ${e.message}`);
       }
       this.notify('paginationState');
     });
@@ -883,7 +884,7 @@ export class MessageStore {
     }).catch((e: TdError): void => {
       this.latestPending = false;
       if ((e as TdError).code !== 404) {
-        console.error(`MessageStore.jumpToLatest failed: ${e.message}`);
+        logE(`MessageStore.jumpToLatest failed: ${e.message}`);
       }
       if (onComplete !== undefined) {
         onComplete(false);
@@ -938,14 +939,14 @@ export class MessageStore {
         // 那段取回来。
         this.newerGapRetries--;
         this.newerLoadState = 'idle';
-        console.warn(`[StoreDiag] newer discontinuous skipped=${skipped}` +
+        logW(`[StoreDiag] newer discontinuous skipped=${skipped}` +
           ` newestId=${newestId} pageOldest=${pageOldest}` +
           ` retriesLeft=${this.newerGapRetries}`);
         this.loadNewer();
         return;
       }
       if (skipped > NEWER_GAP_TOLERANCE) {
-        console.warn(`[StoreDiag] newer discontinuous skipped=${skipped} merged anyway`);
+        logW(`[StoreDiag] newer discontinuous skipped=${skipped} merged anyway`);
       }
       this.newerGapRetries = NEWER_GAP_RETRIES;
       // 页首连得上还不够：这一页**内部**也可能是断的。本地库里若只剩"紧挨着
@@ -983,7 +984,7 @@ export class MessageStore {
       // 留洞确实是这套过滤当初要避免的，但"洞"和"整个会话冻住"不是一个量级：
       // 洞还能往下翻、新消息照常进来，冻住则什么都做不了。宁可留洞。
       if (contiguous.length === 0 && sorted.length > 0) {
-        console.warn(`[StoreDiag] newer page all behind a gap: taking ${sorted.length}` +
+        logW(`[StoreDiag] newer page all behind a gap: taking ${sorted.length}` +
           ` as-is to avoid stalling (newest=${newestId})`);
         const whole: TdObject = { '@type': 'messages' };
         whole['messages'] = sorted;
@@ -992,7 +993,7 @@ export class MessageStore {
         return;
       }
       if (dropped > 0) {
-        console.warn(`[StoreDiag] newer page had inner gap: kept=${contiguous.length}` +
+        logW(`[StoreDiag] newer page had inner gap: kept=${contiguous.length}` +
           ` dropped=${dropped} lastKept=${prevId}`);
         // 丢掉了后半段，说明更新的消息还在，别把分页关掉。
         this.hasMoreNewer = true;
@@ -1031,7 +1032,7 @@ export class MessageStore {
         this.newerLoadState = 'end';
       } else {
         this.newerLoadState = 'error';
-        console.error(`MessageStore.loadNewer failed: ${e.message}`);
+        logE(`MessageStore.loadNewer failed: ${e.message}`);
       }
       this.notify('paginationState');
     });
@@ -1040,7 +1041,7 @@ export class MessageStore {
 
   send(text: string, replyToId: number = 0): void {
     this.sendAsync(text, replyToId).catch((e: TdError) => {
-      console.error(`MessageStore.send failed: ${e.message}`);
+      logE(`MessageStore.send failed: ${e.message}`);
     });
   }
 
@@ -1134,7 +1135,7 @@ export class MessageStore {
       req['draft_message'] = draft;
     }
     this.client.send(req).catch((e: TdError): void => {
-      console.error(`MessageStore.saveDraft failed: ${e.message}`);
+      logE(`MessageStore.saveDraft failed: ${e.message}`);
     });
   }
 
@@ -1302,7 +1303,7 @@ export class MessageStore {
       req['message_id'] = messageId;
       req['reaction_type'] = rt;
       return this.client.send(req).then((): void => {}).catch((e: TdError): Promise<void> => {
-        console.error(`MessageStore.removeMessageReaction failed: ${e.message}`);
+        logE(`MessageStore.removeMessageReaction failed: ${e.message}`);
         return Promise.reject(e);
       });
     }
@@ -1313,7 +1314,7 @@ export class MessageStore {
     req['is_big'] = false;
     req['update_recent_reactions'] = true;
     return this.client.send(req).then((): void => {}).catch((e: TdError): Promise<void> => {
-      console.error(`MessageStore.addMessageReaction failed: ${e.message}`);
+      logE(`MessageStore.addMessageReaction failed: ${e.message}`);
       return Promise.reject(e);
     });
   }
@@ -1326,7 +1327,7 @@ export class MessageStore {
     this.client.send(req).then((res: TdObject) => {
       cb((res['link'] as string | undefined) ?? '');
     }).catch((e: TdError) => {
-      console.error(`MessageStore.getMessageLink failed: ${e.message}`);
+      logE(`MessageStore.getMessageLink failed: ${e.message}`);
       cb('');
     });
   }
@@ -1354,7 +1355,7 @@ export class MessageStore {
       this.requestPhotos();
       this.notifySoon();
     }).catch((e: TdError) => {
-      console.error(`MessageStore.sendDocument failed: ${e.message}`);
+      logE(`MessageStore.sendDocument failed: ${e.message}`);
     });
   }
 
@@ -1375,7 +1376,7 @@ export class MessageStore {
       this.notifySoon();
       return (m['id'] as number | undefined) ?? 0;
     }).catch((e: TdError): number => {
-      console.error(`MessageStore.${tag} failed: ${e.message}`);
+      logE(`MessageStore.${tag} failed: ${e.message}`);
       return 0;
     });
   }
@@ -1603,7 +1604,7 @@ export class MessageStore {
       this.requestPhotos();
       this.notifySoon();
     }).catch((e: TdError): Promise<void> => {
-      console.error(`MessageStore.sendMedia failed: ${e.message}`);
+      logE(`MessageStore.sendMedia failed: ${e.message}`);
       return Promise.reject(e);
     });
   }
@@ -1686,7 +1687,7 @@ export class MessageStore {
     const req: TdRequest = { '@type': type };
     req['chat_id'] = this.chatId;
     this.client.send(req).catch((e: TdError) => {
-      console.error(`MessageStore.${type} failed: ${e.message}`);
+      logE(`MessageStore.${type} failed: ${e.message}`);
     });
   }
 
@@ -1702,7 +1703,7 @@ export class MessageStore {
       .catch((e: TdError) => {
       const code = (e as TdError).code;
       if (code !== 404) {
-        console.error(`MessageStore.getChatHistory failed: ${e.message}`);
+        logE(`MessageStore.getChatHistory failed: ${e.message}`);
       }
       if (this.initialHistoryState === 'loading') {
         // A 404 is TDLib's valid "this chat has no messages" result.
@@ -1741,7 +1742,7 @@ export class MessageStore {
     // newer remove marker already superseded.
     this.ensureKeyboardHistoryProbe();
     const entries: MessageEntry[] = arr.map((m: TdObject): MessageEntry => buildMessageEntry(m, this.users));
-    console.info(`[StoreDiag] onHistory kind=${kind} got=${arr.length}` +
+    logI(`[StoreDiag] onHistory kind=${kind} got=${arr.length}` +
       ` rowsBefore=${this.messages.length} oldest=${this.oldestId}`);
     this.logWindowGap(kind);
     // Continuity check for the newest page. If it does not overlap the loaded
@@ -1769,7 +1770,7 @@ export class MessageStore {
       const replaced: boolean = pageOldest > windowNewest;
       // 诊断：恢复后窗口出现空洞。要判的是这一页到底装了什么——是不是真的
       // 最新页、和窗口有没有重叠、替换与否。
-      console.info(`[StoreDiag] latest page=${entries.length}` +
+      logI(`[StoreDiag] latest page=${entries.length}` +
         ` [${pageOldest}..${pageNewest}] windowNewest=${windowNewest}` +
         ` windowLen=${this.messages.length} replaced=${replaced}`);
       if (replaced) {
@@ -1902,7 +1903,7 @@ export class MessageStore {
     // id 与 newestId 的差值就是被跳过的消息条数（TDLib 的 id 每条加 2^20）。
     const skipped: number = Math.round((id - newestId) / 1048576);
     if (skipped > 1) {
-      console.warn(`[StoreDiag] inject tail id=${id} newestId=${newestId}` +
+      logW(`[StoreDiag] inject tail id=${id} newestId=${newestId}` +
         ` skipped=${skipped} windowLen=${this.messages.length}`);
     }
     this.upsert(buildMessageEntry(m, this.users));
@@ -1949,7 +1950,7 @@ export class MessageStore {
       this.clearManualUnreadFlag();
     }).catch((error: TdError): void => {
       this.initialJoinServiceReadPending = false;
-      console.error(`MessageStore.viewInitialJoinService failed: ${error.message}`);
+      logE(`MessageStore.viewInitialJoinService failed: ${error.message}`);
     });
   }
 
@@ -1963,7 +1964,7 @@ export class MessageStore {
     req['is_marked_as_unread'] = false;
     this.client.send(req).catch((error: TdError): void => {
       this.manualUnreadClearSent = false;
-      console.error(`MessageStore.clearMarkedUnread failed: ${error.message}`);
+      logE(`MessageStore.clearMarkedUnread failed: ${error.message}`);
     });
   }
 
@@ -1999,7 +2000,7 @@ export class MessageStore {
     //
     // 自己发出去的消息例外——那是用户刚做的动作，必须立刻可见。
     if (this.hasMoreNewer && !entry.isOutgoing) {
-      console.info(`[StoreDiag] live arrival skipped id=${entry.id}` +
+      logI(`[StoreDiag] live arrival skipped id=${entry.id}` +
         ` windowNewest=${this.messages.length > 0 ? this.messages[this.messages.length - 1].id : 0}`);
       return;
     }
@@ -2296,7 +2297,7 @@ export class MessageStore {
       }
     }
     if (worst > 3) {
-      console.warn(`[StoreDiag] gap after=${tag} biggest=${worst} atIdx=${atIdx}` +
+      logW(`[StoreDiag] gap after=${tag} biggest=${worst} atIdx=${atIdx}` +
         ` rows=${this.messages.length}` +
         ` around=${this.messages[atIdx - 1].id}..${this.messages[atIdx].id}`);
     }
@@ -2325,13 +2326,13 @@ export class MessageStore {
           hit++;
         }
       }
-      console.warn(`[StoreDiag] delete from_cache ids=${incoming.length}` +
+      logW(`[StoreDiag] delete from_cache ids=${incoming.length}` +
         ` inWindow=${hit} rows=${this.messages.length} ignored`);
       return;
     }
     const removeIds = incoming;
     if (removeIds.length > 0) {
-      console.info(`[StoreDiag] delete real ids=${removeIds.length}` +
+      logI(`[StoreDiag] delete real ids=${removeIds.length}` +
         ` permanent=${permanent} fromCache=${fromCache} rows=${this.messages.length}`);
     }
     const set = new Set<number>(removeIds);
@@ -2500,7 +2501,7 @@ export class MessageStore {
       this.applyFile(f);
       settle();
     }).catch((err: TdError) => {
-      console.error(`MessageStore photo ${fileId} (attempt ${attempt}): ${err.message}`);
+      logE(`MessageStore photo ${fileId} (attempt ${attempt}): ${err.message}`);
       settle();
       if (attempt <= 2) {
         setTimeout(() => this.downloadThumb(fileId), 1000 * attempt);
@@ -2539,7 +2540,7 @@ export class MessageStore {
     this.client.send(req).then((file: TdObject): void => {
       this.applyFile(file);
     }).catch((error: TdError): void => {
-      console.error(`MessageStore link photo ${fileId} (attempt ${attempt}): ${error.message}`);
+      logE(`MessageStore link photo ${fileId} (attempt ${attempt}): ${error.message}`);
       if (attempt <= 2) {
         setTimeout((): void => { this.downloadLinkPreviewPhoto(fileId); }, 1000 * attempt);
       } else {
@@ -2703,7 +2704,7 @@ export class MessageStore {
       this.customEmojiFailed.delete(ceId);
     }
     this.customEmojiRequested.add(ceId);
-    console.info(`MessageStore: resolving custom emoji ${ceId} for msg ${messageId}`);
+    logI(`MessageStore: resolving custom emoji ${ceId} for msg ${messageId}`);
     const req: TdRequest = { '@type': 'getCustomEmojiStickers' };
     req['custom_emoji_ids'] = [ceId];
     this.client.send(req).then((res: TdObject) => {
@@ -2751,7 +2752,7 @@ export class MessageStore {
           download['file_id'] = inlineFileId;
           download['priority'] = THUMBNAIL_PRIORITY;
           this.client.send(download).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-            console.error(`MessageStore inline custom emoji ${inlineFileId}: ${err.message}`);
+            logE(`MessageStore inline custom emoji ${inlineFileId}: ${err.message}`);
           });
         }
       }
@@ -2798,7 +2799,7 @@ export class MessageStore {
         this.notifySoon();
       }
     }).catch((err: TdError) => {
-      console.error(`MessageStore.getCustomEmojiStickers(${ceId}) failed: ${err.message}`);
+      logE(`MessageStore.getCustomEmojiStickers(${ceId}) failed: ${err.message}`);
       this.markCustomEmojiResolveFailed(ceId);
     });
   }
@@ -2969,7 +2970,7 @@ export class MessageStore {
           this.client.send(layerReq).then((f: TdObject) => this.applyFile(f))
             .catch((err: TdError): void => {
               this.diceLayerRequested.delete(layerFileId);
-              console.error(`MessageStore dice layer ${layerFileId}: ${err.message}`);
+              logE(`MessageStore dice layer ${layerFileId}: ${err.message}`);
             });
         }
       }
@@ -3021,7 +3022,7 @@ export class MessageStore {
         c.photoFullFailed = true;
         c.photoFullProgress = 0;
       });
-      console.error(`MessageStore full photo ${e.photoFullFileId}: ${err.message}`);
+      logE(`MessageStore full photo ${e.photoFullFileId}: ${err.message}`);
     });
   }
 
@@ -3122,7 +3123,7 @@ export class MessageStore {
         c.stickerProgress = 0;
         c.stickerDownloadActive = false;
       });
-      console.error(`MessageStore sticker ${fileId}: ${err.message}`);
+      logE(`MessageStore sticker ${fileId}: ${err.message}`);
     });
   }
 
@@ -3262,7 +3263,7 @@ export class MessageStore {
         c.videoProgress = 0;
         c.mediaDownloadActive = false;
       });
-      console.error(`MessageStore video ${e.videoFileId}: ${err.message}`);
+      logE(`MessageStore video ${e.videoFileId}: ${err.message}`);
     });
   }
 
@@ -3468,7 +3469,7 @@ export class MessageStore {
     req['file_id'] = this.chatPhotoFileId;
     req['priority'] = THUMBNAIL_PRIORITY;
     this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-      console.error(`MessageStore chatPhoto ${this.chatPhotoFileId}: ${err.message}`);
+      logE(`MessageStore chatPhoto ${this.chatPhotoFileId}: ${err.message}`);
     });
   }
 
@@ -3517,11 +3518,11 @@ export class MessageStore {
           dl['file_id'] = fileId;
           dl['priority'] = THUMBNAIL_PRIORITY;
           this.client.send(dl).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-            console.error(`MessageStore chat-sender avatar ${fileId}: ${err.message}`);
+            logE(`MessageStore chat-sender avatar ${fileId}: ${err.message}`);
           });
         }
       }).catch((err: TdError) => {
-        console.error(`MessageStore.resolveChatSenders getChat(${senderId}) failed: ${err.message}`);
+        logE(`MessageStore.resolveChatSenders getChat(${senderId}) failed: ${err.message}`);
       });
     }
   }
@@ -3582,7 +3583,7 @@ export class MessageStore {
       req['file_id'] = fileId;
       req['priority'] = THUMBNAIL_PRIORITY;
       this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-        console.error(`MessageStore avatar ${fileId}: ${err.message}`);
+        logE(`MessageStore avatar ${fileId}: ${err.message}`);
       });
     }
   }
@@ -3673,7 +3674,7 @@ export class MessageStore {
       this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
         this.contactAvatarRequested.delete(userId);
         this.avatarFileToContact.delete(fileId);
-        console.error(`MessageStore contact avatar ${fileId}: ${err.message}`);
+        logE(`MessageStore contact avatar ${fileId}: ${err.message}`);
       });
     }
   }
@@ -3717,7 +3718,7 @@ export class MessageStore {
         req['file_id'] = fileId;
         req['priority'] = THUMBNAIL_PRIORITY;
         this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-          console.error(`MessageStore replier avatar ${fileId}: ${err.message}`);
+          logE(`MessageStore replier avatar ${fileId}: ${err.message}`);
         });
       }
     }
@@ -3811,7 +3812,7 @@ export class MessageStore {
       }
       this.pinnedLoadState = 'error';
       this.notifyPinned();
-      console.error(`MessageStore.resolvePinned failed: ${e.message}`);
+      logE(`MessageStore.resolvePinned failed: ${e.message}`);
     });
   }
 
@@ -3885,7 +3886,7 @@ export class MessageStore {
       }
     }).catch((e: TdError) => {
       this.hasMoreNewer = hadMoreNewer;
-      console.error(`MessageStore.loadAround failed: ${e.message}`);
+      logE(`MessageStore.loadAround failed: ${e.message}`);
       if (this.initialHistoryState === 'loading') {
         if ((e as TdError).code === 404) {
           // A stale unread/search anchor should not turn a healthy chat into
@@ -3928,7 +3929,7 @@ export class MessageStore {
     const req: TdRequest = { '@type': 'getChat' };
     req['chat_id'] = this.chatId;
     this.client.send(req).then((chat: TdObject) => this.onChat(chat)).catch((e: TdError) => {
-      console.error(`MessageStore.getChat failed: ${e.message}`);
+      logE(`MessageStore.getChat failed: ${e.message}`);
       this.startInitialLoad();
       this.flushInitial();
     });
@@ -4023,7 +4024,7 @@ export class MessageStore {
     this.client.send(req).then((user: TdObject) => {
       this.applyPeerUserStatus(user['status'] as TdObject | undefined);
     }).catch((e: TdError) => {
-      console.error(`MessageStore.getUser failed: ${e.message}`);
+      logE(`MessageStore.getUser failed: ${e.message}`);
     });
   }
 
@@ -4117,7 +4118,7 @@ export class MessageStore {
         this.setMemberSubtitle(c);
       }
     }).catch((e: TdError) => {
-      console.error(`MessageStore.getSupergroup failed: ${e.message}`);
+      logE(`MessageStore.getSupergroup failed: ${e.message}`);
     });
     const full: TdRequest = { '@type': 'getSupergroupFullInfo' };
     full['supergroup_id'] = id;
@@ -4127,7 +4128,7 @@ export class MessageStore {
         this.setMemberSubtitle(c);
       }
     }).catch((e: TdError) => {
-      console.error(`MessageStore.getSupergroupFullInfo failed: ${e.message}`);
+      logE(`MessageStore.getSupergroupFullInfo failed: ${e.message}`);
     });
   }
 
@@ -4144,7 +4145,7 @@ export class MessageStore {
         this.setMemberSubtitle(c);
       }
     }).catch((e: TdError) => {
-      console.error(`MessageStore.getBasicGroup failed: ${e.message}`);
+      logE(`MessageStore.getBasicGroup failed: ${e.message}`);
     });
   }
 
@@ -4170,7 +4171,7 @@ export class MessageStore {
     req['message_ids'] = [maxVisibleId];
     req['force_read'] = true;
     this.client.send(req).catch((e: TdError) => {
-      console.error(`MessageStore.viewMessages failed: ${e.message}`);
+      logE(`MessageStore.viewMessages failed: ${e.message}`);
     });
   }
 
@@ -4267,7 +4268,7 @@ export class MessageStore {
         if (message === str('ms_poll_closed')) { current.pollIsClosed = true; }
       });
       onFinished(false, message);
-      console.error(`MessageStore.setPollAnswer failed: ${error.message}`);
+      logE(`MessageStore.setPollAnswer failed: ${error.message}`);
     });
   }
 
@@ -4301,7 +4302,7 @@ export class MessageStore {
           c.voiceListened = false;
         }
       });
-      console.error(`MessageStore.openMessageContent failed: ${e.message}`);
+      logE(`MessageStore.openMessageContent failed: ${e.message}`);
     });
   }
 
@@ -4329,7 +4330,7 @@ export class MessageStore {
         this.forwardTitleCache.set(id, title);
         this.resolveForwardTitles();
       }).catch((err: TdError) => {
-        console.error(`MessageStore forward title ${id}: ${err.message}`);
+        logE(`MessageStore forward title ${id}: ${err.message}`);
       });
     }
   }
@@ -4402,7 +4403,7 @@ export class MessageStore {
       });
       this.notifySoon();
     }).catch((e: TdError): void => {
-      console.error(`MessageStore.getMessage(reply ${messageId}) failed: ${e.message}`);
+      logE(`MessageStore.getMessage(reply ${messageId}) failed: ${e.message}`);
       this.markReplyUnavailable(messageId);
     });
   }

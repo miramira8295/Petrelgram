@@ -13,6 +13,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const SWATCH: number = 44;
@@ -87,7 +88,7 @@ struct AccentColorPage {
       this.currentNameId = ids[0];
       this.currentProfileId = ids[1];
     }).catch((error: TdError): void => {
-      console.error(`AccentColorPage.selection failed: ${error.message}`);
+      logE(`AccentColorPage.selection failed: ${error.message}`);
     });
     getTdClient().send({ '@type': 'getMe' } as TdRequest).then((me: TdObject): void => {
       if (!this.active) { return; }

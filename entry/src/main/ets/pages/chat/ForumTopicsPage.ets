@@ -8,6 +8,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToChat } from '../../util/chatNav';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 // forumTopicIcon.color 的取值集合（TDLib 固定的六色）。
@@ -151,7 +152,7 @@ struct ForumTopicsPage {
       if (!this.active) {
         return;
       }
-      console.error(`ForumTopicsPage.getForumTopics failed: ${e.message}`);
+      logE(`ForumTopicsPage.getForumTopics failed: ${e.message}`);
       this.loadState = 'error';
     });
   }
@@ -190,7 +191,7 @@ struct ForumTopicsPage {
   }
 
   private manageFailed(action: string, e: TdError): void {
-    console.error(`ForumTopicsPage.${action} failed: ${e.message}`);
+    logE(`ForumTopicsPage.${action} failed: ${e.message}`);
     promptAction.showToast({ message: str('ft_action_failed', action === 'delete' ? str('delete') : str('ft_action_word')), duration: 2000 });
   }
 
@@ -305,7 +306,7 @@ struct ForumTopicsPage {
       }
     }).catch((e: TdError): void => {
       this.creating = false;
-      console.error(`ForumTopicsPage.createForumTopic failed: ${e.message}`);
+      logE(`ForumTopicsPage.createForumTopic failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.ft_create_failed'), duration: 2000 });
     });
   }

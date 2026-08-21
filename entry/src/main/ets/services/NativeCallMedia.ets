@@ -1,5 +1,6 @@
 import tgcallsNative from 'libentry.so';
 import { CallMediaBridge, CallMediaConfig } from './CallMediaBridge';
+import { logE } from '../util/log';
 
 // 原生 state int → CallMediaBridge 状态字符串（见 Index.d.ts callCreate 注释）。
 function mapNativeState(state: number): string {
@@ -24,7 +25,7 @@ export class NativeCallMedia implements CallMediaBridge {
 
   start(config: CallMediaConfig): boolean {
     if (this.active) {
-      console.error('NativeCallMedia.start: session already active');
+      logE('NativeCallMedia.start: session already active');
       return false;
     }
     try {
@@ -39,7 +40,7 @@ export class NativeCallMedia implements CallMediaBridge {
       this.active = ok;
       return ok;
     } catch (e) {
-      console.error(`NativeCallMedia.start failed: ${(e as Error).message}`);
+      logE(`NativeCallMedia.start failed: ${(e as Error).message}`);
       return false;
     }
   }
@@ -52,7 +53,7 @@ export class NativeCallMedia implements CallMediaBridge {
     try {
       tgcallsNative.callDestroy();
     } catch (e) {
-      console.error(`NativeCallMedia.stop failed: ${(e as Error).message}`);
+      logE(`NativeCallMedia.stop failed: ${(e as Error).message}`);
     }
   }
 
@@ -98,7 +99,7 @@ export function nativeCallVersionsJson(): string {
   try {
     return tgcallsNative.callVersions();
   } catch (e) {
-    console.error(`nativeCallVersionsJson failed: ${(e as Error).message}`);
+    logE(`nativeCallVersionsJson failed: ${(e as Error).message}`);
     return '[]';
   }
 }

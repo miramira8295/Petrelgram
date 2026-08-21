@@ -11,6 +11,7 @@ import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 interface BrowserParams {
   url?: string;
@@ -53,7 +54,7 @@ struct InAppBrowserPage {
       }
     } catch (caught) {
       const error = caught as BusinessError;
-      console.error(`InAppBrowser back failed: ${error.code} ${error.message}`);
+      logE(`InAppBrowser back failed: ${error.code} ${error.message}`);
     }
     return false;
   }
@@ -79,7 +80,7 @@ struct InAppBrowserPage {
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
       promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1400 });
     }).catch((error: BusinessError): void => {
-      console.error(`InAppBrowser copy failed: ${error.code} ${error.message}`);
+      logE(`InAppBrowser copy failed: ${error.code} ${error.message}`);
       promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1400 });
     });
   }
@@ -90,7 +91,7 @@ struct InAppBrowserPage {
       this.controller.refresh();
     } catch (caught) {
       const error = caught as BusinessError;
-      console.error(`InAppBrowser reload failed: ${error.code} ${error.message}`);
+      logE(`InAppBrowser reload failed: ${error.code} ${error.message}`);
     }
   }
 

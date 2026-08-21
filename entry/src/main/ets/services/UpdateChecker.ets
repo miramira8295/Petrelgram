@@ -2,6 +2,7 @@ import { http } from '@kit.NetworkKit';
 import { bundleManager } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { logE } from '../util/log';
 
 // 版本检查。数据源直接用 GitHub Releases —— 发版时打的 tag 本身就是版本号，
 // 不额外维护一个 version.json：多一个文件就多一处"忘了同步"的地方。
@@ -72,13 +73,13 @@ class UpdateChecker {
       );
       this.currentVersion = info.versionName;
     } catch (e) {
-      console.error(`UpdateChecker.getBundleInfo failed: ${JSON.stringify(e)}`);
+      logE(`UpdateChecker.getBundleInfo failed: ${JSON.stringify(e)}`);
     }
     try {
       this.prefs = await preferences.getPreferences(context, STORE_NAME);
       this.restoreCached();
     } catch (e) {
-      console.error(`UpdateChecker.getPreferences failed: ${JSON.stringify(e)}`);
+      logE(`UpdateChecker.getPreferences failed: ${JSON.stringify(e)}`);
     }
   }
 
@@ -162,7 +163,7 @@ class UpdateChecker {
       }
     } catch (e) {
       // 静默失败：查不到就当没有更新，不打扰用户。
-      console.error(`UpdateChecker.check failed: ${JSON.stringify(e)}`);
+      logE(`UpdateChecker.check failed: ${JSON.stringify(e)}`);
     } finally {
       request.destroy();
       this.inFlight = false;

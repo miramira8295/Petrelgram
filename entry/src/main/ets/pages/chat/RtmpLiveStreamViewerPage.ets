@@ -39,6 +39,7 @@ import {
 import { LiveInteractionBubble } from './LiveInteractionBubble';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE, logI } from '../../util/log';
 
 const LIVE_BACKGROUND: string = '#0A1117';
 const LIVE_PANEL: string = '#101A23';
@@ -703,7 +704,7 @@ struct RtmpLiveStreamViewerPage {
             group['status'] as TdObject | undefined, isChannel, defaultPermission
           );
         }).catch((error: TdError): void => {
-          console.error(`RtmpLiveStream getSupergroup permission failed: ${error.message}`);
+          logE(`RtmpLiveStream getSupergroup permission failed: ${error.message}`);
         });
         return;
       }
@@ -718,13 +719,13 @@ struct RtmpLiveStreamViewerPage {
             group['status'] as TdObject | undefined, false, defaultPermission
           );
         }).catch((error: TdError): void => {
-          console.error(`RtmpLiveStream getBasicGroup permission failed: ${error.message}`);
+          logE(`RtmpLiveStream getBasicGroup permission failed: ${error.message}`);
         });
         return;
       }
       this.channelCanSendMessages = defaultPermission;
     }).catch((error: TdError): void => {
-      console.error(`RtmpLiveStream getChat permission failed: ${error.message}`);
+      logE(`RtmpLiveStream getChat permission failed: ${error.message}`);
     });
   }
 
@@ -773,7 +774,7 @@ struct RtmpLiveStreamViewerPage {
         this.onVideoGeometry(session, endpointId, width, height)
     );
     this.session = session;
-    console.info(`[RtmpLiveStream] session ${sequence} start reason=${reason}`);
+    logI(`[RtmpLiveStream] session ${sequence} start reason=${reason}`);
     session.join(client, this.groupCallId, true).then((result: TgcallsJoinResult): void => {
       if (!this.isCurrent(session, sequence)) { return; }
       if (!result.isBroadcast || !result.isUnifiedBroadcast) {
@@ -1095,7 +1096,7 @@ struct RtmpLiveStreamViewerPage {
       } else {
         this.onLiveState(next);
       }
-      console.info(
+      logI(
         `[RtmpLiveStream] health reason=${reason} active=${next.isActive} joined=${next.isJoined} ` +
         `needRejoin=${next.needRejoin} admin=${this.canManageLive} ` +
         `canBeManaged=${canBeManaged} isOwned=${isOwned} ` +
@@ -1104,7 +1105,7 @@ struct RtmpLiveStreamViewerPage {
     } catch (caught) {
       const error = caught as Error;
       if (!this.hasJoinedOnce) { this.headerQueryFailed = true; }
-      console.error(`[RtmpLiveStream] health check failed reason=${reason}: ${error.message}`);
+      logE(`[RtmpLiveStream] health check failed reason=${reason}: ${error.message}`);
     } finally {
       this.groupCallRefreshInFlight = false;
     }
@@ -1506,7 +1507,7 @@ struct RtmpLiveStreamViewerPage {
     if (!this.leavingForFloating) { liveStreamBackgroundTask.stop(); }
     if (this.groupCallId > 0 && !this.leavingForFloating) {
       leaveGroupCall(getTdClient(), this.groupCallId).catch((error: Error): void => {
-        console.error(`RtmpLiveStream.leaveGroupCall failed: ${error.message}`);
+        logE(`RtmpLiveStream.leaveGroupCall failed: ${error.message}`);
       });
     }
   }

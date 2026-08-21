@@ -25,6 +25,7 @@ import { STORAGE_UPDATE_AVAILABLE } from '../../services/UpdateChecker';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { str } from '../../util/strings';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -222,7 +223,7 @@ export struct SettingsPage {
       this.profileLoading = false;
       this.profileError = str('settings_profile_failed');
       this.stopProfileSkeletonPulse();
-      console.error(`SettingsPage.getMe failed: ${e.message}`);
+      logE(`SettingsPage.getMe failed: ${e.message}`);
     });
   }
 
@@ -358,7 +359,7 @@ export struct SettingsPage {
       this.accountNavigationLocked = false;
     }, 600);
     router.pushUrl({ url: 'pages/main/AccountEditPage' }).catch((error: Error): void => {
-      console.error(`SettingsPage.openAccountEditor failed: ${error.message}`);
+      logE(`SettingsPage.openAccountEditor failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
       this.releaseAccountNavigation();
     });
@@ -387,7 +388,7 @@ export struct SettingsPage {
       this.openingSettingPage = '';
     }, 800);
     router.pushUrl({ url: item.page }).catch((error: Error): void => {
-      console.error(`SettingsPage.openSetting(${item.title}) failed: ${error.message}`);
+      logE(`SettingsPage.openSetting(${item.title}) failed: ${error.message}`);
       promptAction.showToast({ message: str('settings_open_failed', item.title), duration: 1800 });
       this.releaseSettingNavigation();
     });
@@ -479,7 +480,7 @@ export struct SettingsPage {
     floatingLiveWindow.closeForAccountSwitch()
       .then((): Promise<void> => switchTdAccount(slotId))
       .catch((caught: Error): void => {
-        console.error(`SettingsPage.switchAccount failed: ${caught.message}`);
+        logE(`SettingsPage.switchAccount failed: ${caught.message}`);
         promptAction.showToast({ message: str('settings_switch_failed'), duration: 1800 });
         this.switchingSlotId = '';
         this.accountActionError = str('settings_switch_failed_network');
@@ -496,7 +497,7 @@ export struct SettingsPage {
     floatingLiveWindow.closeForAccountSwitch()
       .then((): Promise<void> => addTdAccount())
       .catch((caught: Error): void => {
-        console.error(`SettingsPage.addAccount failed: ${caught.message}`);
+        logE(`SettingsPage.addAccount failed: ${caught.message}`);
         promptAction.showToast({ message: str('settings_add_account_failed'), duration: 1800 });
         this.switchingSlotId = '';
         this.accountActionError = str('settings_start_login_failed');
@@ -901,7 +902,7 @@ export struct SettingsPage {
         this.accountRegistryEpoch = AppStorage.get<number>(TD_ACCOUNT_REGISTRY_EPOCH) ?? 0;
       }
     }).catch((caught: Error): void => {
-      console.error(`SettingsPage.confirmRemoveAccount failed: ${caught.message}`);
+      logE(`SettingsPage.confirmRemoveAccount failed: ${caught.message}`);
     });
   }
 

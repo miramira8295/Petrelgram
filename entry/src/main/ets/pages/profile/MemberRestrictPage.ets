@@ -19,6 +19,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 // 单个成员的「限制」面板：setChatMemberStatus + chatMemberStatusRestricted。
 //
@@ -128,7 +129,7 @@ struct MemberRestrictPage {
       if (!this.active) {
         return;
       }
-      console.error(`MemberRestrictPage.load failed: ${error.message}`);
+      logE(`MemberRestrictPage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
   }
@@ -185,7 +186,7 @@ struct MemberRestrictPage {
       router.back();
     }).catch((error: TdError): void => {
       this.busy = false;
-      console.error(`MemberRestrictPage.apply failed: ${error.message}`);
+      logE(`MemberRestrictPage.apply failed: ${error.message}`);
       promptAction.showToast({
         message: error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
           ? str('ga_no_permission') : str('ga_failed'),

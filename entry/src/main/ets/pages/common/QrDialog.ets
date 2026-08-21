@@ -4,6 +4,7 @@ import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 // Shared QR dialog: renders a t.me link as a scannable code (ScanKit).
 @CustomDialog
@@ -26,7 +27,7 @@ export struct QrDialog {
     generateBarcode.createBarcode(this.link, options).then((p: image.PixelMap) => {
       this.pix = p;
     }).catch((e: Object) => {
-      console.error(`QrDialog.createBarcode failed: ${JSON.stringify(e)}`);
+      logE(`QrDialog.createBarcode failed: ${JSON.stringify(e)}`);
       this.failed = true;
     });
   }

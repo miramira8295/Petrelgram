@@ -16,6 +16,7 @@ import { refreshNetworkState } from '../services/NetworkStateService';
 import { navigateToChat } from '../util/chatNav';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject } from '../tdkit/TdTypes';
+import { logE } from '../util/log';
 
 // 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
 const DEEP_LINK_CONNECT_WAIT_MS: number = 8000;
@@ -150,7 +151,7 @@ struct Index {
   private returnToOriginalAccount(): void {
     if (this.tdAccountSwitching || !this.isAddingAccount()) { return; }
     returnToPreviousTdAccount().catch((caught: Error): void => {
-      console.error(`Index.returnToOriginalAccount failed: ${caught.message}`);
+      logE(`Index.returnToOriginalAccount failed: ${caught.message}`);
       promptAction.showToast({ message: '返回原账号失败，请重试', duration: 1800 });
     });
   }

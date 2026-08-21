@@ -21,6 +21,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE, logW } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -89,7 +90,7 @@ struct DataStoragePage {
     prepareAutosaveSettings().then((): void => {
       this.autosavePrepared = true;
     }).catch((error: TdError): void => {
-      console.warn(`DataStoragePage.prepareAutosave failed: ${error.message}`);
+      logW(`DataStoragePage.prepareAutosave failed: ${error.message}`);
       if (this.active) { this.autosaveWarning = str('ms_album_sync_failed'); }
     });
   }
@@ -143,7 +144,7 @@ struct DataStoragePage {
       this.storageError = this.storage === null ? str('ds_storage_load_failed') : '';
       if (this.storage !== null) { this.syncWarning = str('ds_partial_sync'); }
       if (!this.networkLoading) { this.stopSkeleton(); }
-      console.error(`DataStoragePage.getStorageUsage failed: ${error.message}`);
+      logE(`DataStoragePage.getStorageUsage failed: ${error.message}`);
     });
     getNetworkUsage().then((value: NetworkUsage): void => {
       if (!this.active || sequence !== this.loadSequence) { return; }
@@ -157,7 +158,7 @@ struct DataStoragePage {
       this.networkError = this.network === null ? str('network_load_failed') : '';
       if (this.network !== null) { this.syncWarning = str('ds_partial_sync'); }
       if (!this.storageLoading) { this.stopSkeleton(); }
-      console.error(`DataStoragePage.getNetworkUsage failed: ${error.message}`);
+      logE(`DataStoragePage.getNetworkUsage failed: ${error.message}`);
     });
   }
 
@@ -166,7 +167,7 @@ struct DataStoragePage {
     setNumber(KEY_CACHE_LIMIT, value);
     applyCacheLimit(value).catch((error: TdError): void => {
       if (this.active) { this.autosaveWarning = str('ms_download_sync_failed'); }
-      console.error(`DataStoragePage.applyCacheLimit failed: ${error.message}`);
+      logE(`DataStoragePage.applyCacheLimit failed: ${error.message}`);
     });
   }
 
@@ -186,7 +187,7 @@ struct DataStoragePage {
       if (!this.active || current !== this.autosaveSyncSequence) { return; }
       this.autosaveSyncing = false;
       this.autosaveWarning = str('ms_album_cloud_sync_failed');
-      console.error(`DataStoragePage.syncAutosave failed: ${error.message}`);
+      logE(`DataStoragePage.syncAutosave failed: ${error.message}`);
     });
   }
 
@@ -214,7 +215,7 @@ struct DataStoragePage {
         this.load(false);
       }).catch((error: TdError): void => {
         this.actionKey = '';
-        console.error(`DataStoragePage.${key} failed: ${error.message}`);
+        logE(`DataStoragePage.${key} failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.action_failed_retry'), duration: 1800 });
         this.load(false);
       });

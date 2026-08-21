@@ -179,6 +179,7 @@ import {
 } from '../../util/visibleWindow';
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
+import { logE, logI, logW } from '../../util/log';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -1935,7 +1936,7 @@ struct ChatPage {
         this.liveLoadState = 'error';
       }
       this.settleTopCardLoading();
-      console.error(`ChatPage.refreshVideoChat getChat failed: ${e.message}`);
+      logE(`ChatPage.refreshVideoChat getChat failed: ${e.message}`);
     });
   }
 
@@ -1986,7 +1987,7 @@ struct ChatPage {
         this.liveLoadState = 'error';
       }
       this.settleTopCardLoading();
-      console.error(`ChatPage.getGroupCall failed: ${error.message}`);
+      logE(`ChatPage.getGroupCall failed: ${error.message}`);
     });
   }
 
@@ -2044,7 +2045,7 @@ struct ChatPage {
         this.liveNavigationBusy = false;
       }).catch((error: Error): void => {
         this.liveNavigationBusy = false;
-        console.error(`ChatPage.enterLiveStream failed: ${error.message}`);
+        logE(`ChatPage.enterLiveStream failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.cp_live_join_failed'), duration: 1600 });
       });
     });
@@ -2089,7 +2090,7 @@ struct ChatPage {
       if (result.index === 1) { this.enterLiveStream(groupCallId); }
     }).catch((error: Object): void => {
       this.liveDialogOpening = false;
-      console.error(`ChatPage live confirmation failed: ${JSON.stringify(error)}`);
+      logE(`ChatPage live confirmation failed: ${JSON.stringify(error)}`);
     });
   }
 
@@ -2114,7 +2115,7 @@ struct ChatPage {
   // 排除的就是它。变化极少，不会刷日志。
   private onScreenWidthChanged(): void {
     if (Math.abs(this.screenW - this.lastScreenW) > 0.5) {
-      console.warn(`screenW ${Math.round(this.lastScreenW)} -> ${Math.round(this.screenW)}`);
+      logW(`screenW ${Math.round(this.lastScreenW)} -> ${Math.round(this.screenW)}`);
       this.lastScreenW = this.screenW;
     }
   }
@@ -2472,7 +2473,7 @@ struct ChatPage {
       if (resolveSeq === this.headerResolveSeq) {
         this.headerEmojiFetched = false;
       }
-      console.error(`ChatPage.fetchHeaderEmojiStatus failed: ${e.message}`);
+      logE(`ChatPage.fetchHeaderEmojiStatus failed: ${e.message}`);
     });
   }
 
@@ -2833,7 +2834,7 @@ struct ChatPage {
           this.headerIdentityResolved = this.headerPeerUserId > 0;
           this.fetchHeaderEmojiStatus();
         }).catch((error: TdError): void => {
-          console.error(`ChatPage.getSecretChat header failed: ${error.message}`);
+          logE(`ChatPage.getSecretChat header failed: ${error.message}`);
         });
       }
     }
@@ -2898,7 +2899,7 @@ struct ChatPage {
         this.headerState = 'error';
         this.headerLoadError = str('cp_chat_load_failed');
       }
-      console.error(`ChatPage.resolveHeaderIdentity failed: ${error.message}`);
+      logE(`ChatPage.resolveHeaderIdentity failed: ${error.message}`);
     });
   }
 
@@ -2985,7 +2986,7 @@ struct ChatPage {
           if (seq === this.membershipSeq) {
             this.membershipState = 'writable';
           }
-          console.error(`ChatPage.getSupergroup membership failed: ${e.message}`);
+          logE(`ChatPage.getSupergroup membership failed: ${e.message}`);
         });
         return;
       }
@@ -3005,7 +3006,7 @@ struct ChatPage {
           if (seq === this.membershipSeq) {
             this.membershipState = 'writable';
           }
-          console.error(`ChatPage.getBasicGroup membership failed: ${e.message}`);
+          logE(`ChatPage.getBasicGroup membership failed: ${e.message}`);
         });
         return;
       }
@@ -3018,7 +3019,7 @@ struct ChatPage {
         // if the supplementary status request fails.
         this.membershipState = 'writable';
       }
-      console.error(`ChatPage.getChat membership failed: ${e.message}`);
+      logE(`ChatPage.getChat membership failed: ${e.message}`);
     });
   }
 
@@ -3070,7 +3071,7 @@ struct ChatPage {
       this.refreshMembership();
     }).catch((e: TdError): void => {
       this.joiningChat = false;
-      console.error(`ChatPage.joinChat failed: ${e.message}`);
+      logE(`ChatPage.joinChat failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_join_failed'), duration: 2000 });
     });
   }
@@ -3134,7 +3135,7 @@ struct ChatPage {
   // 挤掉。只在自相矛盾时打：说自己在底部，可见的最后一行却离末尾很远。
   private glueBottom(tag: string): void {
     if (this.curEndIdx >= 0 && this.groups.length - this.curEndIdx > 3) {
-      console.warn(`glueBottom ${tag} atBottom=${this.atBottom} endIdx=${this.curEndIdx}` +
+      logW(`glueBottom ${tag} atBottom=${this.atBottom} endIdx=${this.curEndIdx}` +
         ` rows=${this.groups.length} stayUnread=${this.stayAtUnread}`);
     }
     this.scroller.scrollEdge(Edge.Bottom);
@@ -3184,7 +3185,7 @@ struct ChatPage {
         this.clearReply();
       }
     }).catch((e: TdError): void => {
-      console.error(`ChatPage.botCommand failed: ${e.message}`);
+      logE(`ChatPage.botCommand failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_command_failed'), duration: 1600 });
     }));
   }
@@ -3294,7 +3295,7 @@ struct ChatPage {
       navigateToChat(params);
       endLinkNavIf(url);
     }).catch((e: TdError) => {
-      console.error(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
+      logE(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
       openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
     });
   }
@@ -3384,7 +3385,7 @@ struct ChatPage {
       }
       this.jumpToResult(thenJumpTo);
     }).catch((e: TdError) => {
-      console.error(`ChatPage.searchChatMessages failed: ${e.message}`);
+      logE(`ChatPage.searchChatMessages failed: ${e.message}`);
     });
   }
 
@@ -3531,7 +3532,7 @@ struct ChatPage {
       }
       navigateToChat(params);
     }).catch((e: TdError) => {
-      console.error(`ChatPage.getMessageThread failed: ${e.message}`);
+      logE(`ChatPage.getMessageThread failed: ${e.message}`);
     });
   }
 
@@ -3692,7 +3693,7 @@ struct ChatPage {
       }
     }).catch((e: TdError) => {
       this.botCallbackPending.delete(key);
-      console.error(`ChatPage.getCallbackQueryAnswer failed: ${e.message}`);
+      logE(`ChatPage.getCallbackQueryAnswer failed: ${e.message}`);
       promptAction.showToast({
         message: suffix === 'game' ? $r('app.string.cp_game_cannot_open') : $r('app.string.action_failed_retry'),
         duration: 1800
@@ -3802,7 +3803,7 @@ struct ChatPage {
           promptAction.showToast({ message: $r('app.string.cp_payment_incomplete_short'), duration: 1600 });
         }).catch((e: TdError): void => {
           this.setPaidMediaPending(messageId, false);
-          console.error(`ChatPage.sendPaymentForm failed: ${e.message}`);
+          logE(`ChatPage.sendPaymentForm failed: ${e.message}`);
           promptAction.showToast({ message: $r('app.string.cp_payment_failed'), duration: 1800 });
         });
       }).catch((): void => {
@@ -3810,7 +3811,7 @@ struct ChatPage {
       });
     }).catch((e: TdError): void => {
       this.setPaidMediaPending(messageId, false);
-      console.error(`ChatPage.get paid media payment form failed: ${e.message}`);
+      logE(`ChatPage.get paid media payment form failed: ${e.message}`);
       promptAction.showToast({
         message: e.message !== '' ? e.message : $r('app.string.cp_no_payment_info'),
         duration: 1800
@@ -3889,7 +3890,7 @@ struct ChatPage {
         this.headerNavigationTimer = -1;
       }
       this.headerProfileOpening = false;
-      console.error(`ChatPage.openProfile failed: ${error.message}`);
+      logE(`ChatPage.openProfile failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.cp_cannot_open_profile'), duration: 1600 });
     });
   }
@@ -3943,7 +3944,7 @@ struct ChatPage {
       }
     }).catch((error: TdError): void => {
       // 拿不到就不显示标签，不打扰用户——这不是功能主线。
-      console.error(`ChatPage.getAdministrators failed: ${error.message}`);
+      logE(`ChatPage.getAdministrators failed: ${error.message}`);
     });
   }
 
@@ -3962,7 +3963,7 @@ struct ChatPage {
       const typeName: string = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
       this.isBotChat = typeName === 'userTypeBot';
     }).catch((error: TdError): void => {
-      console.error(`ChatPage.getUser isBot failed: ${error.message}`);
+      logE(`ChatPage.getUser isBot failed: ${error.message}`);
     });
   }
 
@@ -3984,7 +3985,7 @@ struct ChatPage {
       }
       openWebUrl(getContext(this) as common.UIAbilityContext, resolved);
     }).catch((e: TdError): void => {
-      console.error(`ChatPage.openBotMiniApp failed: ${e.message}`);
+      logE(`ChatPage.openBotMiniApp failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_cannot_open_miniapp'), duration: 1600 });
     });
   }
@@ -4056,7 +4057,7 @@ struct ChatPage {
       this.clearReply();
       this.atBottom = true;
     }).catch((e: TdError): void => {
-      console.error(`ChatPage.sendInlineResult failed: ${e.message}`);
+      logE(`ChatPage.sendInlineResult failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_inline_send_failed'), duration: 1600 });
     });
   }
@@ -4146,7 +4147,7 @@ struct ChatPage {
       if (seq !== this.commandLoadSeq || chatId !== this.chatId) {
         return;
       }
-      console.error(`ChatPage.loadBotCommands failed: ${e.message}`);
+      logE(`ChatPage.loadBotCommands failed: ${e.message}`);
       this.allCommands = [];
       this.commandItems = [];
       this.commandLoadState = 'error';
@@ -4350,7 +4351,7 @@ struct ChatPage {
       if (this.fileOpenInFlightId === messageId) {
         this.fileOpenInFlightId = 0;
       }
-      console.error(`ChatPage.openDownloadedFile failed: ${JSON.stringify(caught)}`);
+      logE(`ChatPage.openDownloadedFile failed: ${JSON.stringify(caught)}`);
       promptAction.showToast({ message: $r('app.string.cp_file_open_failed'), duration: 1800 });
     });
   }
@@ -4416,11 +4417,11 @@ struct ChatPage {
             copyPlainText(vcard, str('cp_contact_copied'));
           }
         }).catch((caught: Object): void => {
-          console.error(`ChatPage.openSharedContact failed: ${JSON.stringify(caught)}`);
+          logE(`ChatPage.openSharedContact failed: ${JSON.stringify(caught)}`);
           copyPlainText(vcard, str('cp_contact_copied'));
         });
       } catch (caught) {
-        console.error(`ChatPage.write shared contact failed: ${caught}`);
+        logE(`ChatPage.write shared contact failed: ${caught}`);
         copyPlainText(vcard, str('cp_contact_copied'));
       }
       return;
@@ -4534,7 +4535,7 @@ struct ChatPage {
           getTdClient().send(req).then(() => {
             promptAction.showToast({ message: $r('app.string.cp_history_cleared'), duration: 2000 });
           }).catch((e: TdError) => {
-            console.error(`ChatPage.deleteChatHistory failed: ${e.message}`);
+            logE(`ChatPage.deleteChatHistory failed: ${e.message}`);
             promptAction.showToast({ message: $r('app.string.cp_clear_failed'), duration: 2000 });
           });
         }
@@ -4559,7 +4560,7 @@ struct ChatPage {
           getTdClient().send(req).then(() => {
             router.back();
           }).catch((e: TdError) => {
-            console.error(`ChatPage.leaveChat failed: ${e.message}`);
+            logE(`ChatPage.leaveChat failed: ${e.message}`);
             promptAction.showToast({ message: $r('app.string.cp_leave_failed'), duration: 2000 });
           });
         }
@@ -4701,7 +4702,7 @@ struct ChatPage {
       measured = px2vp(size.height as number) + COMPOSER_EDITOR_PAD * 2;
     } catch (e) {
       // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
-      console.error(`composerEditorHeight measure failed: ${(e as Error).message}`);
+      logE(`composerEditorHeight measure failed: ${(e as Error).message}`);
     }
     return Math.max(oneLine, Math.min(cap, Math.ceil(measured)));
   }
@@ -4874,7 +4875,7 @@ struct ChatPage {
       fs.closeSync(src);
       return dest;
     } catch (e) {
-      console.error(`ChatPage.copyUriToCache failed: ${e}`);
+      logE(`ChatPage.copyUriToCache failed: ${e}`);
       return '';
     }
   }
@@ -4922,7 +4923,7 @@ struct ChatPage {
       store.editMediaAsync(messageId, path, isVideoPath(path), msg.text).then((): void => {
         promptAction.showToast({ message: $r('app.string.cp_media_replaced'), duration: 1500 });
       }).catch((e: TdError): void => {
-        console.error(`ChatPage.replaceMedia failed: ${e.message}`);
+        logE(`ChatPage.replaceMedia failed: ${e.message}`);
         promptAction.showToast({ message: $r('app.string.cp_replace_failed'), duration: 1700 });
       });
     }).catch((): void => { this.mediaPickerOpen = false; });
@@ -4980,7 +4981,7 @@ struct ChatPage {
       }
     }).catch((e: Object) => {
       this.mediaPickerOpen = false;
-      console.error(`ChatPage.pickMedia failed: ${JSON.stringify(e)}`);
+      logE(`ChatPage.pickMedia failed: ${JSON.stringify(e)}`);
       promptAction.showToast({ message: $r('app.string.cp_cannot_open_picker'), duration: 1800 });
     });
   }
@@ -5021,7 +5022,7 @@ struct ChatPage {
       }
       this.recordingStarting = false;
       this.voiceRec = null;
-      console.error(`ChatPage.startRecording failed: ${JSON.stringify(e)}`);
+      logE(`ChatPage.startRecording failed: ${JSON.stringify(e)}`);
       promptAction.showToast({ message: $r('app.string.cp_record_failed'), duration: 1800 });
     });
   }
@@ -5120,7 +5121,7 @@ struct ChatPage {
         this.draft = '';
       }
     }).catch((e: Object) => {
-      console.error(`ChatPage.pickAndSendAudio select failed: ${JSON.stringify(e)}`);
+      logE(`ChatPage.pickAndSendAudio select failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -5204,12 +5205,12 @@ struct ChatPage {
             }
           })
           .catch((e: BusinessError): void => {
-            console.error(`ChatPage.sendCurrentLocation failed: ${e.message}`);
+            logE(`ChatPage.sendCurrentLocation failed: ${e.message}`);
             promptAction.showToast({ message: $r('app.string.cp_location_failed'), duration: 2000 });
           });
       })
       .catch((e: BusinessError): void => {
-        console.error(`ChatPage location permission failed: ${e.message}`);
+        logE(`ChatPage location permission failed: ${e.message}`);
       });
   }
 
@@ -5281,7 +5282,7 @@ struct ChatPage {
         this.draft = '';
       }
     }).catch((e: Object) => {
-      console.error(`ChatPage.pickAndSendFile select failed: ${JSON.stringify(e)}`);
+      logE(`ChatPage.pickAndSendFile select failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -5336,7 +5337,7 @@ struct ChatPage {
         this.clearReply();
       }
     }).catch((e: TdError): void => {
-      console.error(`ChatPage.sendMedia failed: ${e.message}`);
+      logE(`ChatPage.sendMedia failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_photo_send_failed'), duration: 2000 });
     }));
   }
@@ -5384,7 +5385,7 @@ struct ChatPage {
     this.mentionItems = [];
     this.commandItems = [];
     store.sendAsync(text, replyId, entities).catch((e: TdError): void => {
-      console.error(`ChatPage.doSend failed: ${e.message}`);
+      logE(`ChatPage.doSend failed: ${e.message}`);
       // 提示语说的是"草稿已保留"，那就真的还回去。但用户可能已经开始写下
       // 一条了——那种情况不覆盖他的输入，只报错。
       if (this.draft === '') {
@@ -5429,7 +5430,7 @@ struct ChatPage {
       }
     }).catch((e: TdError): void => {
       this.replyKeyboardSendingKey = '';
-      console.error(`ChatPage.replyKeyboard send failed: ${e.message}`);
+      logE(`ChatPage.replyKeyboard send failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.send_failed_retry_short'), duration: 1600 });
     });
   }
@@ -5553,7 +5554,7 @@ struct ChatPage {
     pasteboard.getSystemPasteboard().setData(data).then(() => {
       promptAction.showToast({ message: plural('cp_copied_n', parts.length, parts.length), duration: 1200 });
       this.exitSelect();
-    }).catch((e: Object) => { console.error(`ChatPage.copySelected failed: ${JSON.stringify(e)}`); });
+    }).catch((e: Object) => { logE(`ChatPage.copySelected failed: ${JSON.stringify(e)}`); });
   }
 
   // "同时为对方删除"是一个开关，不是第三个按钮：做成三按钮时用户要在两个
@@ -5600,7 +5601,7 @@ struct ChatPage {
     getTdClient().send(req).then(() => {
       this.exitSelect();
     }).catch((e: TdError) => {
-      console.error(`ChatPage.deleteMessages failed: ${e.message}`);
+      logE(`ChatPage.deleteMessages failed: ${e.message}`);
       promptAction.showToast({ message: str('cp_delete_failed_msg', e.message), duration: 2000 });
     });
   }
@@ -5627,7 +5628,7 @@ struct ChatPage {
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, url);
       pasteboard.getSystemPasteboard().setData(data).then(() => {
         promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1200 });
-      }).catch((e: Object) => { console.error(`ChatPage.copyMessageLink failed: ${JSON.stringify(e)}`); });
+      }).catch((e: Object) => { logE(`ChatPage.copyMessageLink failed: ${JSON.stringify(e)}`); });
     });
   }
 
@@ -5648,7 +5649,7 @@ struct ChatPage {
       if (this.reactionPendingKey === key) {
         this.reactionPendingKey = '';
       }
-      console.error(`ChatPage.toggleReaction failed: ${e.message}`);
+      logE(`ChatPage.toggleReaction failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_reaction_failed'), duration: 1600 });
     });
   }
@@ -5875,7 +5876,7 @@ struct ChatPage {
     req['is_translatable'] = next;
     getTdClient().send(req).catch((e: TdError): void => {
       this.isTranslatable = previous;
-      console.error(`ChatPage.toggleTranslatable failed: ${e.message}`);
+      logE(`ChatPage.toggleTranslatable failed: ${e.message}`);
       promptAction.showToast({ message: str('cp_setting_failed_msg', e.message), duration: 1800 });
     });
   }
@@ -5923,7 +5924,7 @@ struct ChatPage {
       prompt.showDialog(options).then((res: promptAction.ShowDialogSuccessResponse): void => {
         onConfirm(res.index);
       }).catch((e: Object): void => {
-        console.info(`ChatPage.${what} dialog dismissed: ${JSON.stringify(e)}`);
+        logI(`ChatPage.${what} dialog dismissed: ${JSON.stringify(e)}`);
       });
     }, MENU_DISMISS_MS);
   }
@@ -5941,7 +5942,7 @@ struct ChatPage {
       this.store?.stopPollAsync(messageId).then((): void => {
         promptAction.showToast({ message: $r('app.string.cp_poll_stopped'), duration: 1500 });
       }).catch((e: TdError): void => {
-        console.error(`ChatPage.stopPoll failed: ${e.message}`);
+        logE(`ChatPage.stopPoll failed: ${e.message}`);
         promptAction.showToast({ message: $r('app.string.cp_stop_poll_failed'), duration: 1600 });
       });
     });
@@ -6000,7 +6001,7 @@ struct ChatPage {
           duration: 1800
         });
       }).catch((e: TdError): void => {
-        console.error(`ChatPage.autoDelete failed: ${e.message}`);
+        logE(`ChatPage.autoDelete failed: ${e.message}`);
         promptAction.showToast({ message: $r('app.string.cp_setting_failed_permission'), duration: 1700 });
       });
     }).catch((): void => {});
@@ -6041,7 +6042,7 @@ struct ChatPage {
           message: sendDate > 0 ? $r('app.string.cp_scheduled') : $r('app.string.cp_sent_silently'), duration: 1600
         });
       }).catch((e: TdError): void => {
-        console.error(`ChatPage.sendScheduled failed: ${e.message}`);
+        logE(`ChatPage.sendScheduled failed: ${e.message}`);
         promptAction.showToast({ message: $r('app.string.send_failed'), duration: 1600 });
       });
     }).catch((): void => {});
@@ -6055,7 +6056,7 @@ struct ChatPage {
     task.then((): void => {
       promptAction.showToast({ message: unpin ? $r('app.string.cp_unpinned') : $r('app.string.cp_pinned'), duration: 1400 });
     }).catch((e: TdError): void => {
-      console.error(`ChatPage.togglePin failed: ${e.message}`);
+      logE(`ChatPage.togglePin failed: ${e.message}`);
       promptAction.showToast({
         message: e.message.indexOf('not enough rights') >= 0 || e.message.indexOf('ADMIN') >= 0
           ? $r('app.string.cp_no_pin_permission') : (unpin ? $r('app.string.cp_unpin_failed') : $r('app.string.cp_pin_failed')),
@@ -6261,7 +6262,7 @@ struct ChatPage {
         buttons: [{ text: $r('app.string.close'), color: '#3390EC' }]
       }).catch((): void => {});
     }).catch((e: TdError): void => {
-      console.error(`ChatPage.showReactors failed: ${e.message}`);
+      logE(`ChatPage.showReactors failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cp_no_reaction_details'), duration: 1600 });
     });
   }
@@ -6424,7 +6425,7 @@ struct ChatPage {
         this.draft = restored;
       }
     }).catch((e: TdError): void => {
-      console.error(`ChatPage.commitEdit failed: ${e.message}`);
+      logE(`ChatPage.commitEdit failed: ${e.message}`);
       promptAction.showToast({
         message: e.message.indexOf('MESSAGE_NOT_MODIFIED') >= 0
           ? $r('app.string.cp_no_change') : $r('app.string.cp_edit_failed'),

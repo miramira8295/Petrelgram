@@ -10,6 +10,7 @@ import { LoginHero } from './LoginHero';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logW } from '../../util/log';
 
 @Preview
 @Component
@@ -105,7 +106,7 @@ export struct PhoneNumberPage {
       this.connecting = false;
       if (!connected) {
         // 等不到就照发：让 TDLib 给出真实原因，而不是我们编一个。
-        console.warn('PhoneNumberPage: sending login request without a ready connection');
+        logW('PhoneNumberPage: sending login request without a ready connection');
       }
       return action();
     }).catch((caught: TdError): void => {

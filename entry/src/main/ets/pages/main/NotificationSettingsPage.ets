@@ -12,6 +12,7 @@ import {
 } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 
@@ -53,7 +54,7 @@ struct NotificationSettingsPage {
       this.loadState = 'ready';
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
-      console.error(`NotificationSettingsPage.load failed: ${error.message}`);
+      logE(`NotificationSettingsPage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
   }
@@ -81,7 +82,7 @@ struct NotificationSettingsPage {
     };
     this.applyLocal(scope, next);
     setScopeSettings(scope, next).catch((error: TdError): void => {
-      console.error(`NotificationSettingsPage.update failed: ${error.message}`);
+      logE(`NotificationSettingsPage.update failed: ${error.message}`);
       this.applyLocal(scope, current);
       promptAction.showToast({ message: $r('app.string.ns_update_failed'), duration: 1600 });
     });
@@ -218,7 +219,7 @@ struct NotificationSettingsPage {
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => {
               router.pushUrl({ url: 'pages/main/GroupNotificationsPage' }).catch((e: Error): void => {
-                console.error(`NotificationSettingsPage.openGroupNotifications failed: ${e.message}`);
+                logE(`NotificationSettingsPage.openGroupNotifications failed: ${e.message}`);
               });
             });
             Row({ space: 10 }) {
@@ -234,7 +235,7 @@ struct NotificationSettingsPage {
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => {
               router.pushUrl({ url: 'pages/main/WebPushPage' }).catch((e: Error): void => {
-                console.error(`NotificationSettingsPage.openWebPush failed: ${e.message}`);
+                logE(`NotificationSettingsPage.openWebPush failed: ${e.message}`);
               });
             });
             Row({ space: 10 }) {

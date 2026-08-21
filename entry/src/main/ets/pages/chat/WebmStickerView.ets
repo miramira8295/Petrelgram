@@ -5,6 +5,7 @@ import {
   KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP, KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
 import { probeHit } from '../../util/panelProbe';
+import { logE, logW } from '../../util/log';
 
 let nextWebmStickerId: number = 1;
 // Pre-EOF rewind: poll the position and seek to 0 this far before the end.
@@ -32,7 +33,7 @@ function runJob(job: PlayerJob): void {
   try {
     job();
   } catch (e) {
-    console.error(`WebmStickerView player job failed: ${e}`);
+    logE(`WebmStickerView player job failed: ${e}`);
   }
 }
 
@@ -155,7 +156,7 @@ export struct WebmStickerView {
           p.seekTo('0');
         }
       } catch (e) {
-        console.error(`WebmStickerView loop watch failed: ${e}`);
+        logE(`WebmStickerView loop watch failed: ${e}`);
       }
     }, LOOP_POLL_MS);
   }
@@ -219,14 +220,14 @@ export struct WebmStickerView {
             player.seekTo('0');
             player.start();
           } catch (e) {
-            console.error(`WebmStickerView loop restart failed: ${e}`);
+            logE(`WebmStickerView loop restart failed: ${e}`);
           }
         }
       };
       player.setOnCompletionListener(completionListener);
       const errorListener: OnErrorListener = {
         onError: (what: number, extra: number): void => {
-          console.error(`WebmStickerView error: what=${what}, extra=${extra}`);
+          logE(`WebmStickerView error: what=${what}, extra=${extra}`);
           this.failed = true;
           this.onFailed();
         }
@@ -245,7 +246,7 @@ export struct WebmStickerView {
       player.prepareAsync();
       return true;
     } catch (e) {
-      console.error(`WebmStickerView.init failed: ${e}`);
+      logE(`WebmStickerView.init failed: ${e}`);
       this.failed = true;
       this.onFailed();
       this.release();
@@ -309,7 +310,7 @@ export struct WebmStickerView {
             if (this.initPlayer(context)) {
               livePlayers++;
               if (livePlayers > 24) {
-                console.warn(`WebmStickerView: ${livePlayers} live players`);
+                logW(`WebmStickerView: ${livePlayers} live players`);
               }
             }
           });

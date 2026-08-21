@@ -1,6 +1,7 @@
 import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { str } from '../../util/strings';
+import { logE } from '../../util/log';
 
 export interface CountryOption {
   iso2: string;
@@ -128,7 +129,7 @@ export async function loadCountries(): Promise<CountryOption[]> {
     return countries.length > 0 ? countries : fallbackCountries();
   } catch (caught) {
     const error = caught as Error;
-    console.error(`CountryData.loadCountries failed: ${error.message}`);
+    logE(`CountryData.loadCountries failed: ${error.message}`);
     return fallbackCountries();
   }
 }

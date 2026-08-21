@@ -21,6 +21,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const TOP_ACTION_SIZE: number = 44;
@@ -261,7 +262,7 @@ struct ProxyPage {
       } else {
         this.syncWarning = str('px_sync_failed');
       }
-      console.error(`ProxyPage.listProxies failed: ${error.message}`);
+      logE(`ProxyPage.listProxies failed: ${error.message}`);
     });
   }
 
@@ -348,7 +349,7 @@ struct ProxyPage {
         // 原来这里把错误整个吞掉，行上只剩一句"无法连接"，分不清是代理真的
         // 不通还是请求本身没发对——testProxy 就栽在后者上（这个 TDLib 构建
         // 的 proxy 系列 API 收的是 proxy 对象，不是标准的平铺字段）。
-        console.error(`[proxy] ping ${entry.id} failed, raw: ${(caught as Error).message}`);
+        logE(`[proxy] ping ${entry.id} failed, raw: ${(caught as Error).message}`);
         if (generation === this.pingGeneration) {
           this.finishPing(entry.id, token, 0, false);
         }
@@ -453,7 +454,7 @@ struct ProxyPage {
         message: proxyActionErrorText(error.message, entry !== null ? str('px_enable') : str('px_use_direct')),
         duration: 1900
       });
-      console.error(`ProxyPage.setEnabledProxy failed: ${error.message}`);
+      logE(`ProxyPage.setEnabledProxy failed: ${error.message}`);
       this.load(false);
     }
   }
@@ -472,7 +473,7 @@ struct ProxyPage {
     }).then((result: promptAction.ShowDialogSuccessResponse): void => {
       if (result.index === 1) { this.performRemove(entry); }
     }).catch((error: Object): void => {
-      console.error(`ProxyPage.remove dialog failed: ${JSON.stringify(error)}`);
+      logE(`ProxyPage.remove dialog failed: ${JSON.stringify(error)}`);
     });
   }
 
@@ -517,13 +518,13 @@ struct ProxyPage {
       }).catch((error: Error): void => {
         if (!this.active) { return; }
         this.actionKey = '';
-        console.error(`ProxyPage.copyProxyLink failed: ${error.message}`);
+        logE(`ProxyPage.copyProxyLink failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.px_copy_failed'), duration: 1600 });
       });
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.actionKey = '';
-      console.error(`ProxyPage.getProxyLink failed: ${error.message}`);
+      logE(`ProxyPage.getProxyLink failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.px_link_failed'), duration: 1600 });
     });
   }
@@ -720,7 +721,7 @@ struct ProxyPage {
     } else {
       this.formError = proxyActionErrorText(error.message, action);
     }
-    console.error(`ProxyPage.${action} failed: ${error.message}`);
+    logE(`ProxyPage.${action} failed: ${error.message}`);
   }
 
   private typeTint(type: string): string {

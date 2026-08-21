@@ -3,6 +3,7 @@ import { TdObject, TdRequest } from './TdTypes';
 import { clientRev, clientSig } from './ApiCredentials';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { str } from '../util/strings';
+import { logE, logW } from '../util/log';
 
 export enum AuthStage {
   Init = 'Init',
@@ -237,12 +238,12 @@ export class AuthService {
       };
       this.closedCallbacks = [...this.closedCallbacks, complete];
       timer = setTimeout((): void => {
-        console.warn('AuthService.closeDatabase timed out; recreating TDLib client');
+        logW('AuthService.closeDatabase timed out; recreating TDLib client');
         complete();
       }, 5000);
       const request: TdRequest = { '@type': 'close' };
       this.client.send(request, 5000).catch((caught: Error): void => {
-        console.error(`AuthService.closeDatabase failed: ${caught.message}`);
+        logE(`AuthService.closeDatabase failed: ${caught.message}`);
         complete();
       });
     });
@@ -366,7 +367,7 @@ export class AuthService {
     // versionName 保持一致（发版时一起改）。之前一直停在 0.1.0。
     request['application_version'] = '1.3.1';
     this.client.send(request).catch((e: Error) => {
-      console.error(`setTdlibParameters failed: ${e.message}`);
+      logE(`setTdlibParameters failed: ${e.message}`);
     });
   }
 }

@@ -2,6 +2,7 @@ import { TdClient } from '../tdkit/TdClient';
 import { GroupCallParticipantInfo, GroupCallVideoSource } from '../tdkit/GroupCallTypes';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { str } from '../util/strings';
+import { logE, logI } from '../util/log';
 
 export type GroupCallParticipantsListener = (participants: GroupCallParticipantInfo[]) => void;
 
@@ -166,7 +167,7 @@ export class GroupCallParticipantsStore {
       this.participants.set(key, participant);
     }
     if (speaking) { this.cancelRemoval(key); }
-    console.info(
+    logI(
       `[GroupCallParticipants] PCM key=${key} source=${normalizedSource} speaking=${speaking}`
     );
     this.emit();
@@ -218,7 +219,7 @@ export class GroupCallParticipantsStore {
     const screenSharingAudioSourceId =
       (raw['screen_sharing_audio_source_id'] as number | undefined) ?? 0;
     const revision = ++this.revisionSequence;
-    console.info(
+    logI(
       `[GroupCallParticipants] update key=${key} revision=${revision} muted=${isMuted} ` +
       `speaking=${isSpeaking} audioSource=${audioSourceId} order=${order}`
     );
@@ -326,7 +327,7 @@ export class GroupCallParticipantsStore {
       this.emit();
     }).catch((error: Error): void => {
       this.resolvingNames.delete(key);
-      console.error(`GroupCallParticipantsStore.resolveName(${key}): ${error.message}`);
+      logE(`GroupCallParticipantsStore.resolveName(${key}): ${error.message}`);
     });
   }
 
@@ -345,7 +346,7 @@ export class GroupCallParticipantsStore {
       (groupCall['id'] as number | undefined) !== this.groupCallId) { return; }
     this.reportedParticipantCount = (groupCall['participant_count'] as number | undefined) ??
       this.reportedParticipantCount;
-    console.info(
+    logI(
       `[GroupCallParticipants] count=${this.reportedParticipantCount} cached=${this.participants.size} ` +
       `pending=${this.pendingRemovals.size}`
     );
@@ -359,7 +360,7 @@ export class GroupCallParticipantsStore {
   private scheduleRemoval(key: string): void {
     const participant = this.participants.get(key);
     if (participant === undefined) {
-      console.info(`[GroupCallParticipants] ignore removal for unknown key=${key}`);
+      logI(`[GroupCallParticipants] ignore removal for unknown key=${key}`);
       return;
     }
     this.cancelRemoval(key);
@@ -396,7 +397,7 @@ export class GroupCallParticipantsStore {
         })
       )
     });
-    console.info(
+    logI(
       `[GroupCallParticipants] removal pending key=${key} revision=${revision} ` +
       `graceMs=${GroupCallParticipantsStore.REMOVAL_GRACE_MS}`
     );
@@ -411,7 +412,7 @@ export class GroupCallParticipantsStore {
       this.pendingRemovals.set(key, -1);
       this.reconcileRemovals();
       if (this.pendingRemovals.has(key)) {
-        console.info(
+        logI(
           `[GroupCallParticipants] retained muted key=${key} ` +
           `count=${this.reportedParticipantCount} cached=${this.participants.size}`
         );
@@ -429,7 +430,7 @@ export class GroupCallParticipantsStore {
     if (timerId === undefined) { return; }
     if (timerId >= 0) { clearTimeout(timerId); }
     this.pendingRemovals.delete(key);
-    console.info(`[GroupCallParticipants] removal cancelled by active update key=${key}`);
+    logI(`[GroupCallParticipants] removal cancelled by active update key=${key}`);
   }
 
   private reconcileRemovals(): void {
@@ -445,7 +446,7 @@ export class GroupCallParticipantsStore {
       if (this.participants.delete(key)) {
         excess -= 1;
         changed = true;
-        console.info(
+        logI(
           `[GroupCallParticipants] removed confirmed leaver key=${key} ` +
           `count=${this.reportedParticipantCount}`
         );
@@ -459,12 +460,12 @@ export class GroupCallParticipantsStore {
     this.recoveryTimer = setTimeout((): void => {
       this.recoveryTimer = -1;
       if (this.disposed || (!force && this.reportedParticipantCount <= this.participants.size)) { return; }
-      console.info(
+      logI(
         `[GroupCallParticipants] recovery load count=${this.reportedParticipantCount} ` +
         `cached=${this.participants.size}`
       );
       this.load(100).catch((error: Error): void => {
-        console.error(`[GroupCallParticipants] recovery load failed: ${error.message}`);
+        logE(`[GroupCallParticipants] recovery load failed: ${error.message}`);
       });
     }, 300);
   }

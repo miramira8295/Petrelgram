@@ -9,6 +9,7 @@ import {
 } from '../../services/TranslationService';
 import { str } from '../../util/strings';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -87,7 +88,7 @@ struct LanguagePage {
     } catch (e) {
       // 16000053 (not on top) and 16000064 (too frequent) are both recoverable
       // by the user restarting by hand, so say so rather than failing silently.
-      console.error(`LanguagePage.restartApp failed: ${e}`);
+      logE(`LanguagePage.restartApp failed: ${e}`);
       promptAction.showToast({ message: str('language_restart_manual'), duration: 3000 });
     }
   }

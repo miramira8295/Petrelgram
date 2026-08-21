@@ -5,6 +5,7 @@ import { formatMsgContent, MsgContent, PollOptionInfo } from '../util/formatMsgC
 import { SERVICE_LABEL_KEYS } from '../util/formatPreview';
 import { plural, str } from '../util/strings';
 import { monthDayTime } from '../util/intlFormat';
+import { logW } from '../util/log';
 
 export interface MessageEntry {
   id: number;
@@ -975,7 +976,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
   if (!hidden && c.contentType === 'other') {
     const rc = message['content'] as TdObject | undefined;
     const rt = rc !== undefined ? ((rc['@type'] as string | undefined) ?? 'unknown') : 'unknown';
-    console.warn(`[UNHANDLED_MSG] type=${rt} id=${(message['id'] as number | undefined) ?? 0}`);
+    logW(`[UNHANDLED_MSG] type=${rt} id=${(message['id'] as number | undefined) ?? 0}`);
   }
   return {
     id: (message['id'] as number | undefined) ?? 0,

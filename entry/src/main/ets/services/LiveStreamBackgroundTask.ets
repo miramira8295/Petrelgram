@@ -3,6 +3,7 @@ import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { avSession } from '@kit.AVSessionKit';
 import { KEY_BG_PLAY_LIVE } from '../store/AppSettings';
 import { str } from '../util/strings';
+import { logE, logI } from '../util/log';
 
 // One live-room page can be active at a time. Serialize changes because
 // start/update/stop are asynchronous system calls and a quick mute + back
@@ -24,7 +25,7 @@ class LiveStreamBackgroundTask {
     // 设置里关闭"直播后台播放"时不申请后台任务（切后台由系统正常挂起；
     // 推流/录音场景 recording=true 不受该开关限制）。
     if (!recording && !(AppStorage.get<boolean>(KEY_BG_PLAY_LIVE) ?? true)) {
-      console.info('[LiveStreamBackgroundTask] bg play disabled by setting, skip');
+      logI('[LiveStreamBackgroundTask] bg play disabled by setting, skip');
       return;
     }
     this.context = context;
@@ -50,7 +51,7 @@ class LiveStreamBackgroundTask {
       await backgroundTaskManager.startBackgroundRunning(current, this.modes(), agent);
       this.started = true;
       await this.ensureSession(current);
-      console.info(`[LiveStreamBackgroundTask] started modes=${this.modes().join(',')}`);
+      logI(`[LiveStreamBackgroundTask] started modes=${this.modes().join(',')}`);
       if (!this.wantsRunning) { await this.stopCurrent(); }
     });
   }
@@ -75,7 +76,7 @@ class LiveStreamBackgroundTask {
   private async updateModes(): Promise<void> {
     if (this.context === null) { return; }
     await backgroundTaskManager.updateBackgroundRunning(this.context, this.modes());
-    console.info(`[LiveStreamBackgroundTask] updated modes=${this.modes().join(',')}`);
+    logI(`[LiveStreamBackgroundTask] updated modes=${this.modes().join(',')}`);
   }
 
   private async stopCurrent(): Promise<void> {
@@ -83,7 +84,7 @@ class LiveStreamBackgroundTask {
     await this.destroySession();
     await backgroundTaskManager.stopBackgroundRunning(this.context);
     this.started = false;
-    console.info('[LiveStreamBackgroundTask] stopped');
+    logI('[LiveStreamBackgroundTask] stopped');
   }
 
   private async ensureSession(context: common.UIAbilityContext): Promise<void> {
@@ -101,10 +102,10 @@ class LiveStreamBackgroundTask {
       });
       await session.activate();
       this.session = session;
-      console.info('[LiveStreamBackgroundTask] avsession activated');
+      logI('[LiveStreamBackgroundTask] avsession activated');
     } catch (caught) {
       const error = caught as Error;
-      console.error(`[LiveStreamBackgroundTask] avsession failed: ${error.message}`);
+      logE(`[LiveStreamBackgroundTask] avsession failed: ${error.message}`);
     }
   }
 
@@ -117,13 +118,13 @@ class LiveStreamBackgroundTask {
       await session.destroy();
     } catch (caught) {
       const error = caught as Error;
-      console.error(`[LiveStreamBackgroundTask] avsession destroy failed: ${error.message}`);
+      logE(`[LiveStreamBackgroundTask] avsession destroy failed: ${error.message}`);
     }
   }
 
   private enqueue(action: () => Promise<void>): void {
     this.operation = this.operation.then(action).catch((error: Error): void => {
-      console.error(`[LiveStreamBackgroundTask] ${error.message}`);
+      logE(`[LiveStreamBackgroundTask] ${error.message}`);
     });
   }
 }

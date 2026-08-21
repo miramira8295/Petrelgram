@@ -10,6 +10,7 @@ import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToChat } from '../../util/chatNav';
+import { logE, logW } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -174,7 +175,7 @@ export struct ContactsPage {
         if (sequence !== this.searchSequence) {
           return;
         }
-        console.warn(`ContactsPage.searchPublicUsers failed: ${error.message}`);
+        logW(`ContactsPage.searchPublicUsers failed: ${error.message}`);
         this.remoteUsers = [];
         this.remoteLoading = false;
       });
@@ -342,7 +343,7 @@ export struct ContactsPage {
       }
       this.addContactSaving = false;
       this.addContactError = this.addContactFailureMessage(error);
-      console.error(`ContactsPage.addContact failed: ${error.message}`);
+      logE(`ContactsPage.addContact failed: ${error.message}`);
     });
   }
 
@@ -366,7 +367,7 @@ export struct ContactsPage {
       this.actionNavigationLocked = false;
     }, 500);
     router.pushUrl({ url: 'pages/main/CallsPage' }).catch((error: Error): void => {
-      console.error(`ContactsPage.openRecentCalls failed: ${error.message}`);
+      logE(`ContactsPage.openRecentCalls failed: ${error.message}`);
       this.releaseActionLock();
     });
   }
@@ -397,7 +398,7 @@ export struct ContactsPage {
         return;
       }
       this.openingContactId = 0;
-      console.error(`ContactsPage.createPrivateChat failed: ${e.message}`);
+      logE(`ContactsPage.createPrivateChat failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.open_chat_failed'), duration: 1800 });
     });
   }
@@ -490,7 +491,7 @@ export struct ContactsPage {
         return;
       }
       this.deletingContactId = 0;
-      console.error(`ContactsPage.removeContact failed: ${error.message}`);
+      logE(`ContactsPage.removeContact failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.ct_delete_failed'), duration: 1800 });
     });
   }

@@ -4,6 +4,7 @@ import { AccentPalettes } from '../store/AccentColorStore';
 import { TdError, TdObject } from '../tdkit/TdTypes';
 import { profileAccentPreviewOf } from './accentPresentation';
 import { applyAccentPrimary, darkResourceMode } from './theme';
+import { logE } from './log';
 
 // Re-derives the app primary color from the account's profile accent color.
 // No selection (or no palette entry) restores the built-in primary.
@@ -21,7 +22,7 @@ export function syncAccentPrimary(context: common.UIAbilityContext): void {
     const preview = profileAccentPreviewOf(raw, darkResourceMode(context));
     applyAccentPrimary(preview !== null && preview.colors.length > 0 ? preview.colors[0] : '');
   }).catch((error: TdError): void => {
-    console.error(`accentTheme.sync failed: ${error.message}`);
+    logE(`accentTheme.sync failed: ${error.message}`);
   });
 }
 

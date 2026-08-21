@@ -5,6 +5,7 @@ import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import {
   clearTranslationStatus, publishTranslating, publishTranslationFailed
 } from '../util/translationChannel';
+import { logE } from '../util/log';
 
 // Whole-chat translation engine.
 //
@@ -278,7 +279,7 @@ export class TranslationService {
       if (match === null) {
         publishTranslationFailed(job.messageId, e.message);
       }
-      console.error(`TranslationService: ${job.messageId} failed: ${e.message}`);
+      logE(`TranslationService: ${job.messageId} failed: ${e.message}`);
       this.finish(job, null, match !== null);
     });
   }

@@ -17,6 +17,7 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { http } from '@kit.NetworkKit';
 import { crashReportBase, crashReportToken } from '../tdkit/ApiCredentials';
+import { logE } from '../util/log';
 
 // 留几条。崩溃是低频事件，留太多只是占地方；留太少又会被一次连环崩溃冲掉。
 const MAX_RECORDS: number = 10;
@@ -70,7 +71,7 @@ function readAll(): CrashRecord[] {
     const parsed = JSON.parse(text) as CrashRecord[];
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
-    console.error(`crashReport.readAll failed: ${e}`);
+    logE(`crashReport.readAll failed: ${e}`);
     return [];
   }
 }
@@ -85,7 +86,7 @@ function writeAll(records: CrashRecord[]): void {
     fs.writeSync(file.fd, JSON.stringify(records));
     fs.closeSync(file);
   } catch (e) {
-    console.error(`crashReport.writeAll failed: ${e}`);
+    logE(`crashReport.writeAll failed: ${e}`);
   }
 }
 
@@ -127,7 +128,7 @@ export function setCrashUploadOptOut(optOut: boolean): void {
       fs.unlinkSync(marker);
     }
   } catch (e) {
-    console.error(`crashRecordStore.setCrashUploadOptOut failed: ${e}`);
+    logE(`crashRecordStore.setCrashUploadOptOut failed: ${e}`);
   }
 }
 
@@ -161,7 +162,7 @@ function upload(record: CrashRecord): Promise<boolean> {
       return res.responseCode >= 200 && res.responseCode < 300;
     }).catch((e: Error): boolean => {
       request.destroy();
-      console.error(`crashReport.upload failed: ${e.message}`);
+      logE(`crashReport.upload failed: ${e.message}`);
       return false;
     });
 }

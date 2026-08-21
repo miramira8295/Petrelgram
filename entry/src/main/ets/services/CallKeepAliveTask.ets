@@ -2,6 +2,7 @@ import { common, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { avSession } from '@kit.AVSessionKit';
 import { str } from '../util/strings';
+import { logE, logI } from '../util/log';
 
 // 1对1 通话期间的后台保活：voip 长时任务让通话切后台后进程不被挂起、
 // 音频路由不被冻结。串行化模式与 LiveStreamBackgroundTask 相同 ——
@@ -35,14 +36,14 @@ class CallKeepAliveTask {
       const agent = await wantAgent.getWantAgent(info);
       try {
         await backgroundTaskManager.startBackgroundRunning(current, ['voip'], agent);
-        console.info('[CallKeepAliveTask] started mode=voip');
+        logI('[CallKeepAliveTask] started mode=voip');
       } catch (caught) {
         // 部分机型/版本对 voip 类型有额外校验；退化为 audioPlayback，
         // 保证通话音频在后台仍然存活。
-        console.error(`[CallKeepAliveTask] voip failed: ${(caught as Error).message}`);
+        logE(`[CallKeepAliveTask] voip failed: ${(caught as Error).message}`);
         await backgroundTaskManager.startBackgroundRunning(
           current, ['audioPlayback'], agent);
-        console.info('[CallKeepAliveTask] started mode=audioPlayback (fallback)');
+        logI('[CallKeepAliveTask] started mode=audioPlayback (fallback)');
       }
       this.started = true;
       await this.ensureSession(current);
@@ -69,9 +70,9 @@ class CallKeepAliveTask {
       });
       await session.activate();
       this.session = session;
-      console.info('[CallKeepAliveTask] avsession activated');
+      logI('[CallKeepAliveTask] avsession activated');
     } catch (caught) {
-      console.error(`[CallKeepAliveTask] avsession failed: ${(caught as Error).message}`);
+      logE(`[CallKeepAliveTask] avsession failed: ${(caught as Error).message}`);
     }
   }
 
@@ -85,7 +86,7 @@ class CallKeepAliveTask {
       await session.deactivate();
       await session.destroy();
     } catch (caught) {
-      console.error(`[CallKeepAliveTask] avsession destroy failed: ${(caught as Error).message}`);
+      logE(`[CallKeepAliveTask] avsession destroy failed: ${(caught as Error).message}`);
     }
   }
 
@@ -96,12 +97,12 @@ class CallKeepAliveTask {
     await this.destroySession();
     await backgroundTaskManager.stopBackgroundRunning(this.context);
     this.started = false;
-    console.info('[CallKeepAliveTask] stopped');
+    logI('[CallKeepAliveTask] stopped');
   }
 
   private enqueue(action: () => Promise<void>): void {
     this.operation = this.operation.then(action).catch((error: Error): void => {
-      console.error(`[CallKeepAliveTask] ${error.message}`);
+      logE(`[CallKeepAliveTask] ${error.message}`);
     });
   }
 }

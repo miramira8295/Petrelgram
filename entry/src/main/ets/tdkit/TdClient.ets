@@ -1,4 +1,5 @@
 import { TdObject, TdRequest, TdError, TdBridge } from './TdTypes';
+import { logE } from '../util/log';
 
 export const DEFAULT_TIMEOUT_MS: number = 15000;
 
@@ -73,7 +74,7 @@ export class TdClient {
     try {
       obj = JSON.parse(json) as TdObject;
     } catch (e) {
-      console.error(`TdClient: unparseable payload, skipped: ${json.substring(0, 120)}`);
+      logE(`TdClient: unparseable payload, skipped: ${json.substring(0, 120)}`);
       return;
     }
     const extra = obj['@extra'] as string | undefined;
@@ -95,7 +96,7 @@ export class TdClient {
         try {
           handler(obj);
         } catch (e) {
-          console.error(`TdClient: handler for ${type} threw, skipped: ${e}`);
+          logE(`TdClient: handler for ${type} threw, skipped: ${e}`);
         }
       }
     }

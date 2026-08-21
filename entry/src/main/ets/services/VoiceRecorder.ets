@@ -1,6 +1,7 @@
 import { media } from '@kit.MediaKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
+import { logE } from '../util/log';
 
 const MIC_PERMISSION: Permissions = 'ohos.permission.MICROPHONE';
 
@@ -18,7 +19,7 @@ export class VoiceRecorder {
       const res = await atManager.requestPermissionsFromUser(context, [MIC_PERMISSION]);
       return res.authResults.length > 0 && res.authResults[0] === 0;
     } catch (e) {
-      console.error(`VoiceRecorder.requestPermission failed: ${e}`);
+      logE(`VoiceRecorder.requestPermission failed: ${e}`);
       return false;
     }
   }
@@ -50,7 +51,7 @@ export class VoiceRecorder {
       this.startedAtMs = Date.now();
       return true;
     } catch (e) {
-      console.error(`VoiceRecorder.start failed: ${e}`);
+      logE(`VoiceRecorder.start failed: ${e}`);
       await this.cleanup();
       return false;
     }
@@ -70,7 +71,7 @@ export class VoiceRecorder {
       try {
         fs.unlinkSync(this.path);
       } catch (e) {
-        console.error(`VoiceRecorder.cancel unlink failed: ${e}`);
+        logE(`VoiceRecorder.cancel unlink failed: ${e}`);
       }
       this.path = '';
     }
@@ -83,19 +84,19 @@ export class VoiceRecorder {
       try {
         await r.stop();
       } catch (e) {
-        console.error(`VoiceRecorder stop failed: ${e}`);
+        logE(`VoiceRecorder stop failed: ${e}`);
       }
       try {
         await r.release();
       } catch (e) {
-        console.error(`VoiceRecorder release failed: ${e}`);
+        logE(`VoiceRecorder release failed: ${e}`);
       }
     }
     if (this.file !== null) {
       try {
         fs.closeSync(this.file);
       } catch (e) {
-        console.error(`VoiceRecorder close failed: ${e}`);
+        logE(`VoiceRecorder close failed: ${e}`);
       }
       this.file = null;
     }

@@ -1,5 +1,6 @@
 import { socket } from '@kit.NetworkKit';
 import { VideoStreamSession } from './VideoStreamSession';
+import { logE, logW } from '../util/log';
 
 const LOOPBACK: string = '127.0.0.1';
 const SERVE_CHUNK_SIZE: number = 256 * 1024;
@@ -45,12 +46,12 @@ export class VideoRangeServer {
         this.requestBuffers.delete(connection.clientId);
       });
       connection.on('error', (error: Error): void => {
-        console.warn(`VideoRangeServer client ${connection.clientId}: ${error.message}`);
+        logW(`VideoRangeServer client ${connection.clientId}: ${error.message}`);
       });
     });
     server.on('error', (error: Error): void => {
       if (!this.closed) {
-        console.error(`VideoRangeServer: ${error.message}`);
+        logE(`VideoRangeServer: ${error.message}`);
       }
     });
     await server.listen({ address: LOOPBACK, port: 0, family: 1 });
@@ -91,7 +92,7 @@ export class VideoRangeServer {
     this.requestBuffers.delete(clientId);
     connection.off('message');
     this.serve(connection, request).catch((e: Error): void => {
-      console.error(`VideoRangeServer.serve failed: ${e.message}`);
+      logE(`VideoRangeServer.serve failed: ${e.message}`);
       connection.close().catch((): void => {});
     });
   }

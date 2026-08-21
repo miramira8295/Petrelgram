@@ -2,6 +2,7 @@ import { voipCall } from '@kit.CallServiceKit';
 import { image } from '@kit.ImageKit';
 import { avatarPixelMapOrPlaceholder } from '../util/avatarPixelMap';
 import { str } from '../util/strings';
+import { logE, logI } from '../util/log';
 
 // 系统级来电界面（Call Service Kit）。官方完整方案依赖 Push Kit 下发 VoIP
 // 消息后上报，但文档同时说明"应用通过自己的网络连接收到来电"也可直接上报
@@ -31,17 +32,17 @@ class SystemCallUi {
       };
       this.reportedCallId = id;
       voipCall.reportIncomingCall(attribute).then((reason: voipCall.ErrorReason): void => {
-        console.info(`[SystemCallUi] reportIncomingCall reason=${reason} ` +
+        logI(`[SystemCallUi] reportIncomingCall reason=${reason} ` +
           `(0=ERROR_NONE 表示系统已接管来电界面)`); // i18n-exempt: console diagnostic, explains the numeric reason code
         if (reason !== voipCall.ErrorReason.ERROR_NONE) {
           this.reportedCallId = '';
         }
       }).catch((e: Error): void => {
-        console.error(`[SystemCallUi] reportIncomingCall failed: ${e.message}`);
+        logE(`[SystemCallUi] reportIncomingCall failed: ${e.message}`);
         this.reportedCallId = '';
       });
     } catch (e) {
-      console.error(`[SystemCallUi] threw: ${(e as Error).message}`);
+      logE(`[SystemCallUi] threw: ${(e as Error).message}`);
       this.reportedCallId = '';
     }
   }
@@ -54,7 +55,7 @@ class SystemCallUi {
     voipCall.reportCallStateChange(this.reportedCallId,
       voipCall.VoipCallState.VOIP_CALL_STATE_ACTIVE)
       .catch((e: Error): void => {
-        console.error(`[SystemCallUi] reportActive failed: ${e.message}`);
+        logE(`[SystemCallUi] reportActive failed: ${e.message}`);
       });
   }
 
@@ -67,7 +68,7 @@ class SystemCallUi {
     this.reportedCallId = '';
     voipCall.reportCallStateChange(id, voipCall.VoipCallState.VOIP_CALL_STATE_DISCONNECTED)
       .catch((e: Error): void => {
-        console.error(`[SystemCallUi] reportEnded failed: ${e.message}`);
+        logE(`[SystemCallUi] reportEnded failed: ${e.message}`);
       });
   }
 
@@ -81,7 +82,7 @@ class SystemCallUi {
     try {
       voipCall.on('voipCallUiEvent', (info: voipCall.VoipCallUiEventInfo): void => {
         const event: voipCall.VoipCallUiEvent = info.voipCallUiEvent;
-        console.info(`[SystemCallUi] ui event=${event} callId=${info.callId}`);
+        logI(`[SystemCallUi] ui event=${event} callId=${info.callId}`);
         if (event === voipCall.VoipCallUiEvent.VOIP_CALL_EVENT_VOICE_ANSWER ||
           event === voipCall.VoipCallUiEvent.VOIP_CALL_EVENT_VIDEO_ANSWER) {
           actions.accept();
@@ -96,7 +97,7 @@ class SystemCallUi {
         }
       });
     } catch (e) {
-      console.error(`[SystemCallUi] bindActions failed: ${(e as Error).message}`);
+      logE(`[SystemCallUi] bindActions failed: ${(e as Error).message}`);
       this.bound = false;
     }
   }

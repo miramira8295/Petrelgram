@@ -9,6 +9,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE, logW } from '../../util/log';
 
 const PAGE_LIMIT: number = 40;
 const CARD_RADIUS: number = 16;
@@ -111,7 +112,7 @@ struct BlockedUsersPage {
       for (const row of incoming) { this.resolveRow(row); }
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`BlockedUsersPage.load failed: ${error.message}`);
+      logE(`BlockedUsersPage.load failed: ${error.message}`);
       if (initial) { this.loadState = 'error'; }
       else { this.pageState = 'error'; }
     });
@@ -187,7 +188,7 @@ struct BlockedUsersPage {
           str('bu_kind_chat'), this.watchFile(small, row.key));
       }
     }).catch((error: TdError): void => {
-      console.warn(`BlockedUsersPage.resolve(${row.key}) failed: ${error.message}`);
+      logW(`BlockedUsersPage.resolve(${row.key}) failed: ${error.message}`);
       if (this.active) { this.patch(row.key, row.userId > 0 ? str('bu_unknown_user') : str('bu_unknown_channel'), '', ''); }
     });
   }
@@ -220,7 +221,7 @@ struct BlockedUsersPage {
         this.actionKey = '';
         if (this.rows.length < this.totalCount) { this.load(false); }
       }).catch((error: TdError): void => {
-        console.error(`BlockedUsersPage.unblock failed: ${error.message}`);
+        logE(`BlockedUsersPage.unblock failed: ${error.message}`);
         if (!this.active) { return; }
         this.rows = before;
         this.totalCount = beforeTotal;
@@ -272,7 +273,7 @@ struct BlockedUsersPage {
       this.pickerState = rows.length > 0 ? 'ready' : 'empty';
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`BlockedUsersPage.picker failed: ${error.message}`);
+      logE(`BlockedUsersPage.picker failed: ${error.message}`);
       this.pickerState = 'error';
     });
   }
@@ -297,7 +298,7 @@ struct BlockedUsersPage {
       this.load(true);
       promptAction.showToast({ message: str('bu_blocked_toast', user.name), duration: 1500 });
     }).catch((error: TdError): void => {
-      console.error(`BlockedUsersPage.block failed: ${error.message}`);
+      logE(`BlockedUsersPage.block failed: ${error.message}`);
       if (!this.active) { return; }
       this.actionKey = '';
       promptAction.showToast({ message: $r('app.string.bu_block_failed'), duration: 1800 });

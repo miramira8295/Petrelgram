@@ -4,6 +4,7 @@ import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { StoryRingEntry } from '../../store/StoryStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { StoryVideoView } from './StoryVideoView';
+import { logE } from '../../util/log';
 
 const PHOTO_DISPLAY_MS: number = 5000;
 
@@ -106,7 +107,7 @@ struct StoryViewerPage {
       if (!this.active || seq !== this.loadSeq) {
         return;
       }
-      console.error(`StoryViewerPage.getStory(${storyId}) failed: ${e.message}`);
+      logE(`StoryViewerPage.getStory(${storyId}) failed: ${e.message}`);
       this.loadFailed = true;
     });
   }
@@ -168,7 +169,7 @@ struct StoryViewerPage {
       if (!this.active || seq !== this.loadSeq) {
         return;
       }
-      console.error(`StoryViewerPage download failed: ${e.message}`);
+      logE(`StoryViewerPage download failed: ${e.message}`);
       this.loadFailed = true;
     });
   }

@@ -1,5 +1,6 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { logE } from '../util/log';
 
 // Names and profile-photo file ids for users, filled from updateUser pushes and,
 // for users TDLib never pushed, by asking for them once (see ensure).
@@ -48,7 +49,7 @@ export class UserStore {
     req['user_id'] = userId;
     this.client.send(req).catch((e: TdError) => {
       this.requested.delete(userId);
-      console.error(`UserStore.getUser(${userId}) failed: ${e.message}`);
+      logE(`UserStore.getUser(${userId}) failed: ${e.message}`);
     });
   }
 

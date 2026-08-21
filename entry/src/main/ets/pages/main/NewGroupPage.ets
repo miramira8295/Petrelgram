@@ -17,6 +17,7 @@ import {
 } from '../../util/newGroupLogic';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE, logW } from '../../util/log';
 
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -171,7 +172,7 @@ struct NewGroupPage {
       const sizeMax = parseOptionInteger(result['value'], DEFAULT_BASIC_GROUP_SIZE_MAX);
       this.maxSelectableMembers = maxSelectableBasicGroupMembers(sizeMax);
     }).catch((error: TdError): void => {
-      console.warn(`NewGroupPage basic_group_size_max failed: ${error.message}`);
+      logW(`NewGroupPage basic_group_size_max failed: ${error.message}`);
     });
   }
 
@@ -214,7 +215,7 @@ struct NewGroupPage {
         }
       ).catch((error: TdError): void => {
         if (!this.active || sequence !== this.searchSequence) { return; }
-        console.warn(`NewGroupPage.searchPublicUsers failed: ${error.message}`);
+        logW(`NewGroupPage.searchPublicUsers failed: ${error.message}`);
         this.remoteUsers = [];
         this.remoteState = 'error';
       });
@@ -371,7 +372,7 @@ struct NewGroupPage {
       } else {
         this.createError = newGroupCreationErrorText(error.message);
       }
-      console.error(`NewGroupPage.createNewBasicGroupChat failed: ${error.message}`);
+      logE(`NewGroupPage.createNewBasicGroupChat failed: ${error.message}`);
     });
   }
 
@@ -403,7 +404,7 @@ struct NewGroupPage {
         invite['chat_id'] = chatId;
         invite['user_ids'] = selectedSnapshot;
         getTdClient().send(invite).catch((error: TdError): void => {
-          console.error(`NewGroupPage.addChatMembers failed: ${error.message}`);
+          logE(`NewGroupPage.addChatMembers failed: ${error.message}`);
           promptAction.showToast({
             message: $r('app.string.ng_channel_created_partial'), duration: 2600
           });
@@ -419,7 +420,7 @@ struct NewGroupPage {
       } else {
         this.createError = newGroupCreationErrorText(error.message);
       }
-      console.error(`NewGroupPage.createNewSupergroupChat failed: ${error.message}`);
+      logE(`NewGroupPage.createNewSupergroupChat failed: ${error.message}`);
     });
   }
 
@@ -433,7 +434,7 @@ struct NewGroupPage {
       if (!this.active) { return; }
       this.openingCreatedChat = false;
       this.createError = str('ng_created_cannot_open');
-      console.error(`NewGroupPage.openCreatedGroup failed: ${error.message}`);
+      logE(`NewGroupPage.openCreatedGroup failed: ${error.message}`);
     });
   }
 

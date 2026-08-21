@@ -38,6 +38,7 @@ import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToChat } from '../../util/chatNav';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -303,7 +304,7 @@ struct ChatProfilePage {
         promptAction.showToast({ message: $r('app.string.cpp_left'), duration: 1500 });
         router.back();
       }).catch((error: TdError): void => {
-        console.error(`ChatProfilePage.leave failed: ${error.message}`);
+        logE(`ChatProfilePage.leave failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.cpp_leave_failed'), duration: 1800 });
       });
     }).catch((): void => {});
@@ -329,7 +330,7 @@ struct ChatProfilePage {
         this.performBoost();
       }).catch((): void => {});
     }).catch((error: TdError): void => {
-      console.error(`ChatProfilePage.boostStatus failed: ${error.message}`);
+      logE(`ChatProfilePage.boostStatus failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.cpp_boost_info_failed'), duration: 1700 });
     });
   }
@@ -352,11 +353,11 @@ struct ChatProfilePage {
         getTdClient().send(req).then((): void => {
           promptAction.showToast({ message: $r('app.string.cpp_boosted'), duration: 1600 });
         }).catch((error: TdError): void => {
-          console.error(`ChatProfilePage.boost failed: ${error.message}`);
+          logE(`ChatProfilePage.boost failed: ${error.message}`);
           promptAction.showToast({ message: $r('app.string.cpp_boost_failed'), duration: 1800 });
         });
       }).catch((error: TdError): void => {
-        console.error(`ChatProfilePage.boostSlots failed: ${error.message}`);
+        logE(`ChatProfilePage.boostSlots failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.cpp_boost_slots_failed'), duration: 1700 });
       });
   }
@@ -408,7 +409,7 @@ struct ChatProfilePage {
       }
       promptAction.showToast({ message: $r('app.string.cpp_report_step_unsupported'), duration: 1800 });
     }).catch((error: TdError): void => {
-      console.error(`ChatProfilePage.report failed: ${error.message}`);
+      logE(`ChatProfilePage.report failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.cpp_report_failed'), duration: 1800 });
     });
   }
@@ -450,7 +451,7 @@ struct ChatProfilePage {
       this.tabsState = 'ready';
       this.pageState = 'ready';
     }).catch((e: TdError): void => {
-      console.error(`ChatProfilePage.checkChatInviteLink failed: ${e.message}`);
+      logE(`ChatProfilePage.checkChatInviteLink failed: ${e.message}`);
       this.pageState = 'error';
       this.errorText = str('cpp_invite_invalid');
       this.membershipState = 'blocked';
@@ -492,7 +493,7 @@ struct ChatProfilePage {
       }
     }).catch((e: TdError): void => {
       this.joining = false;
-      console.error(`ChatProfilePage.join failed: ${e.message}`);
+      logE(`ChatProfilePage.join failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cpp_join_failed'), duration: 1800 });
     });
   }
@@ -761,7 +762,7 @@ struct ChatProfilePage {
         this.liveGroupCallId = 0;
         promptAction.showToast({ message: $r('app.string.lfw_ended'), duration: 1500 });
       }).catch((error: TdError): void => {
-        console.error(`ChatProfilePage.endLive failed: ${error.message}`);
+        logE(`ChatProfilePage.endLive failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.cpp_end_live_failed'), duration: 1700 });
       });
     }).catch((): void => {});
@@ -990,7 +991,7 @@ struct ChatProfilePage {
               const params: Record<string, Object> = { 'chatId': this.chatId };
               router.pushUrl({ url: 'pages/main/ChatThemePage', params })
                 .catch((error: Error): void => {
-                  console.error(`ChatProfilePage.openTheme failed: ${error.message}`);
+                  logE(`ChatProfilePage.openTheme failed: ${error.message}`);
                 });
             });
           }
@@ -1000,7 +1001,7 @@ struct ChatProfilePage {
               const params: Record<string, Object> = { 'chatId': this.chatId };
               router.pushUrl({ url: 'pages/main/GroupAdminPage', params })
                 .catch((error: Error): void => {
-                  console.error(`ChatProfilePage.openAdmin failed: ${error.message}`);
+                  logE(`ChatProfilePage.openAdmin failed: ${error.message}`);
                 });
             });
           }
@@ -1181,7 +1182,7 @@ struct ChatProfilePage {
       promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
       this.store?.reloadMembers();
     }).catch((error: TdError): void => {
-      console.error(`ChatProfilePage.setMemberTitle failed: ${error.message}`);
+      logE(`ChatProfilePage.setMemberTitle failed: ${error.message}`);
       promptAction.showToast({ message: str('ga_failed'), duration: 1600 });
     });
   }
@@ -1205,7 +1206,7 @@ struct ChatProfilePage {
         promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
         this.store?.reloadMembers();
       }).catch((caught: TdError): void => {
-        console.error(`ChatProfilePage.memberAction failed: ${caught.message}`);
+        logE(`ChatProfilePage.memberAction failed: ${caught.message}`);
         promptAction.showToast({
           message: caught.message.indexOf('rights') >= 0 ||
             caught.message.indexOf('ADMIN') >= 0
@@ -1232,7 +1233,7 @@ struct ChatProfilePage {
     this.pendingMemberReload = true;
     router.pushUrl({ url, params }).catch((error: Error): void => {
       this.pendingMemberReload = false;
-      console.error(`ChatProfilePage.openMemberPanel failed: ${error.message}`);
+      logE(`ChatProfilePage.openMemberPanel failed: ${error.message}`);
     });
   }
 
@@ -1250,7 +1251,7 @@ struct ChatProfilePage {
     pasteboard.getSystemPasteboard().setData(data).then((): void => {
       promptAction.showToast({ message: $r('app.string.link_copied'), duration: 1200 });
     }).catch((e: Object): void => {
-      console.error(`ChatProfilePage.copyPublicLink failed: ${JSON.stringify(e)}`);
+      logE(`ChatProfilePage.copyPublicLink failed: ${JSON.stringify(e)}`);
       promptAction.showToast({ message: $r('app.string.copy_failed'), duration: 1500 });
     });
   }

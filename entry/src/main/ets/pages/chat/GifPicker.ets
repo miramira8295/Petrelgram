@@ -9,6 +9,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { EMOJI_CONTENT_HEIGHT } from '../../util/drawerMetrics';
 import { probeHit } from '../../util/panelProbe';
+import { logE } from '../../util/log';
 
 export interface GifItem {
   fileId: number;    // the animation file (what gets sent)
@@ -122,7 +123,7 @@ export struct GifPicker {
       if (this.disposed || seq !== this.loadSeq) {
         return;
       }
-      console.error(`GifPicker.getSavedAnimations failed: ${e.message}`);
+      logE(`GifPicker.getSavedAnimations failed: ${e.message}`);
       this.errorText = str('gif_load_failed');
       this.loadState = 'error';
     });
@@ -158,7 +159,7 @@ export struct GifPicker {
           }
           : g);
     }).catch((e: TdError) => {
-      console.error(`GifPicker.downloadThumb failed: ${e.message}`);
+      logE(`GifPicker.downloadThumb failed: ${e.message}`);
     });
   }
 
@@ -198,7 +199,7 @@ export struct GifPicker {
           : g);
     }).catch((e: TdError) => {
       this.sourceLoading.delete(gifFileId);
-      console.error(`GifPicker.downloadSource failed: ${e.message}`);
+      logE(`GifPicker.downloadSource failed: ${e.message}`);
     });
   }
 

@@ -2,6 +2,7 @@ import { TdClient } from '../tdkit/TdClient';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 const MAX_VISIBLE_MESSAGES: number = 100;
 
@@ -214,7 +215,7 @@ export class GroupCallMessageStore {
       if (fileId > 0) { this.requestAvatar(fileId, senderKey); }
       this.patchSender(senderKey, name);
     }).catch((error: TdError): void => {
-      console.error(`GroupCallMessageStore.getChat(${chatId}) failed: ${error.message}`);
+      logE(`GroupCallMessageStore.getChat(${chatId}) failed: ${error.message}`);
     });
   }
 
@@ -229,7 +230,7 @@ export class GroupCallMessageStore {
     this.client.send(request).then((file: TdObject): void => {
       this.applyAvatarFile(fileId, senderKey, file);
     }).catch((error: TdError): void => {
-      console.error(`GroupCallMessageStore.downloadFile(${fileId}) failed: ${error.message}`);
+      logE(`GroupCallMessageStore.downloadFile(${fileId}) failed: ${error.message}`);
     });
   }
 

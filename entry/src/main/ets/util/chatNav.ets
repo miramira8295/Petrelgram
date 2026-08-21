@@ -1,4 +1,5 @@
 import router from '@ohos.router';
+import { logE } from './log';
 
 // 聊天详情页的路由地址。此前十个调用点各自写了一遍这个字符串，也各自
 // 直接 pushUrl——谁也不检查栈里是否已经有一个同会话的详情页，于是通知、
@@ -77,7 +78,7 @@ export function navigateToChat(params: Record<string, Object>): Promise<void> {
     } catch (e) {
       // 路由栈读不到不该连累跳转本身——退化成老行为（新开一页）即可。
       const err = e as Error;
-      console.error(`chatNav.snapshot failed: ${err.message}`);
+      logE(`chatNav.snapshot failed: ${err.message}`);
     }
     if (existing > 0) {
       // back 带上新参数，已经在栈里的那一页可以据此跳到指定消息。
@@ -86,6 +87,6 @@ export function navigateToChat(params: Record<string, Object>): Promise<void> {
     }
   }
   return router.pushUrl({ url: CHAT_PAGE_URL, params: params }).catch((e: Error): void => {
-    console.error(`chatNav.pushUrl failed: ${e.message}`);
+    logE(`chatNav.pushUrl failed: ${e.message}`);
   });
 }

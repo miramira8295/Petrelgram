@@ -9,6 +9,7 @@ import { refreshLocale } from '../util/intlFormat';
 import { bumpLanguageEpoch } from '../util/appLanguage';
 import { backgroundGraceTask } from '../services/BackgroundGraceTask';
 import { startCrashWatch } from '../services/crashReport';
+import { initDiagLog } from '../util/log';
 import { initSettings, refreshPowerSavingState, KEY_CACHE_LIMIT } from '../store/AppSettings';
 import { CACHE_LIMIT_DEFAULT, shouldTrimNow } from '../store/CacheLimit';
 import { applyCacheLimit } from '../store/StorageApi';
@@ -17,6 +18,7 @@ import { updateChecker } from '../services/UpdateChecker';
 import { liveLocation } from '../services/LiveLocationService';
 import { setInlinePhotoTargetPx } from '../util/formatMsgContent';
 import { trimPixelCache } from '../util/pixelCache';
+import { logE } from '../util/log';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
 const BUBBLE_MEDIA_MAX_VP: number = 280;
@@ -38,6 +40,10 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     // Before anything that formats text: stores build chat previews during
     // startup, and without a source installed those would come out as raw keys.
+    // 日志落盘目录尽早设好：在这之前 logI/logW/logE 只在内存里攒（模块加载时
+    // 就已经在攒了），设好之后才开始轮转到文件。启动期恰好是最难查的一段，
+    // 早一点设就多留住一点。
+    initDiagLog(this.context.filesDir);
     // 崩溃观察者要在**业务逻辑之前**注册：应用没主动捕获时，崩溃事件是在下次
     // 启动才回调的，注册晚了那一次就漏了（官方《订阅崩溃事件》写明这一点）。
     startCrashWatch(this.context);
@@ -116,7 +122,7 @@ export default class EntryAbility extends UIAbility {
     try {
       win.setWindowBackgroundColor(dark ? '#17212B' : '#EFEFF4');
     } catch (e) {
-      console.error(`setWindowBackgroundColor failed: ${(e as Error).message}`);
+      logE(`setWindowBackgroundColor failed: ${(e as Error).message}`);
     }
     win.setWindowSystemBarProperties({
       statusBarColor: '#00000000',
@@ -124,7 +130,7 @@ export default class EntryAbility extends UIAbility {
       navigationBarColor: '#00000000',
       navigationBarContentColor: dark ? '#FFFFFF' : '#000000'
     }).catch((e: Error): void => {
-      console.error(`setWindowSystemBarProperties failed: ${e.message}`);
+      logE(`setWindowSystemBarProperties failed: ${e.message}`);
     });
   }
 
@@ -170,10 +176,10 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       notificationManager.requestEnableNotification(this.context).catch((e: Error): void => {
-        console.error(`requestEnableNotification failed: ${e.message}`);
+        logE(`requestEnableNotification failed: ${e.message}`);
       });
     }).catch((e: Error): void => {
-      console.error(`isNotificationEnabled failed: ${e.message}`);
+      logE(`isNotificationEnabled failed: ${e.message}`);
     });
 
     try {
@@ -282,7 +288,7 @@ export default class EntryAbility extends UIAbility {
       this.lastCacheTrimAt = now;
       // applyCacheLimit 内部已吞掉 TdError，这里的 catch 只兜底 Promise 层面的意外异常。
       applyCacheLimit(limit).catch((e: Error): void => {
-        console.error(`EntryAbility cache trim failed: ${e.message}`);
+        logE(`EntryAbility cache trim failed: ${e.message}`);
       });
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');

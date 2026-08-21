@@ -21,6 +21,7 @@ import {
   FloatingDragAnchor, FloatingDragBounds, clampFloatingTranslation, dragFloatingTranslation
 } from '../../util/floatingDrag';
 import { str } from '../../util/strings';
+import { logE } from '../../util/log';
 
 const FLOAT_BACKGROUND: string = '#101820';
 const FLOAT_PANEL: string = '#E9142029';
@@ -269,7 +270,7 @@ export class LiveFloatingWindowController {
       );
       this.overlayManager.addComponentContent(this.overlayContent);
     } catch (caught) {
-      console.error(`LiveFloating.showSeamless overlay failed: ${caught}`);
+      logE(`LiveFloating.showSeamless overlay failed: ${caught}`);
       this.removeOverlay();
       this.descriptor = null;
       this.primarySource = null;
@@ -360,7 +361,7 @@ export class LiveFloatingWindowController {
       await leaveGroupCall(getTdClient(), groupCallId);
     } catch (caught) {
       const error = caught as Error;
-      console.error(`LiveFloating.accountSwitch leave failed: ${error.message}`);
+      logE(`LiveFloating.accountSwitch leave failed: ${error.message}`);
     }
   }
 
@@ -380,7 +381,7 @@ export class LiveFloatingWindowController {
       await leaveGroupCall(getTdClient(), groupCallId);
     } catch (caught) {
       const error = caught as Error;
-      console.error(`LiveFloating.prepareForOpening leave failed: ${error.message}`);
+      logE(`LiveFloating.prepareForOpening leave failed: ${error.message}`);
     }
   }
 
@@ -463,7 +464,7 @@ export class LiveFloatingWindowController {
         this.state.status = this.state.hasVideo ? str('lfw_playing') : str('lfw_audio_playing');
         this.emit();
       }
-      console.error(`LiveFloating.restore failed: ${caught}`);
+      logE(`LiveFloating.restore failed: ${caught}`);
     }
   }
 
@@ -480,7 +481,7 @@ export class LiveFloatingWindowController {
     liveStreamBackgroundTask.stop();
     if (groupCallId > 0) {
       leaveGroupCall(getTdClient(), groupCallId).catch((caught: Error): void => {
-        console.error(`LiveFloating.dismiss leave failed: ${caught.message}`);
+        logE(`LiveFloating.dismiss leave failed: ${caught.message}`);
       });
     }
   }
@@ -554,7 +555,7 @@ export class LiveFloatingWindowController {
     } else {
       if (this.primarySource !== null) { this.configurePrimarySource(this.primarySource); }
       this.participantStore?.load(100).catch((caught: Error): void => {
-        console.error(`LiveFloating.loadParticipants failed: ${caught.message}`);
+        logE(`LiveFloating.loadParticipants failed: ${caught.message}`);
       });
     }
     session.resumeMedia();
@@ -705,7 +706,7 @@ export class LiveFloatingWindowController {
         this.participantStore?.applyAudioActivity(audioSourceId, speaking, sender);
       }
     }).catch((caught: Error): void => {
-      console.error(`LiveFloating.set speaking failed: ${caught.message}`);
+      logE(`LiveFloating.set speaking failed: ${caught.message}`);
     });
   }
 
@@ -791,7 +792,7 @@ export class LiveFloatingWindowController {
       }
     } catch (caught) {
       const error = caught as Error;
-      console.error(`LiveFloating.refresh failed: ${error.message}`);
+      logE(`LiveFloating.refresh failed: ${error.message}`);
     } finally {
       this.refreshInFlight = false;
     }
@@ -815,7 +816,7 @@ export class LiveFloatingWindowController {
       try {
         this.overlayManager?.removeComponentContent(content);
       } catch (caught) {
-        console.error(`LiveFloating.removeOverlay failed: ${caught}`);
+        logE(`LiveFloating.removeOverlay failed: ${caught}`);
       }
       content.dispose();
     }

@@ -6,6 +6,7 @@ import {
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 interface QrLoginStep {
   index: string;
@@ -83,7 +84,7 @@ export struct QrLoginPage {
       this.code = pixels;
       this.failed = false;
     }).catch((caught: Object): void => {
-      console.error(`QrLoginPage.createBarcode failed: ${JSON.stringify(caught)}`);
+      logE(`QrLoginPage.createBarcode failed: ${JSON.stringify(caught)}`);
       if (this.disposed || seq !== this.renderSeq) { return; }
       this.failed = true;
     });

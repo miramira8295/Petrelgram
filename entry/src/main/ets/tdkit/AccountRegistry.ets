@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import fs from '@ohos.file.fs';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 const STORE_NAME: string = 'td_accounts';
 const KEY_ACTIVE_SLOT: string = 'active_slot';
@@ -75,7 +76,7 @@ class AccountRegistry {
       }
       return fs.statSync(binlog).size >= LIVE_BINLOG_BYTES;
     } catch (caught) {
-      console.error(`AccountRegistry.hasLiveSession failed: ${caught}`);
+      logE(`AccountRegistry.hasLiveSession failed: ${caught}`);
       return false;
     }
   }
@@ -100,7 +101,7 @@ class AccountRegistry {
         }
       }
     } catch (caught) {
-      console.error(`AccountRegistry.recoverOrphanedSlots list failed: ${caught}`);
+      logE(`AccountRegistry.recoverOrphanedSlots list failed: ${caught}`);
     }
     for (const slotId of candidates) {
       if (this.hasSlot(slotId)) {
@@ -122,7 +123,7 @@ class AccountRegistry {
         previousSlotId: ''
       }];
       added++;
-      console.error(`AccountRegistry: recovered orphaned slot ${slotId}`);
+      logE(`AccountRegistry: recovered orphaned slot ${slotId}`);
     }
     return added;
   }
@@ -146,7 +147,7 @@ class AccountRegistry {
       this.activeSlot = this.hasSlot(storedActive) ? storedActive : this.accounts[0].slotId;
       this.persist();
     } catch (caught) {
-      console.error(`AccountRegistry.init failed: ${caught}`);
+      logE(`AccountRegistry.init failed: ${caught}`);
       this.accounts = [primaryAccount()];
       this.activeSlot = PRIMARY_SLOT;
     }
@@ -379,7 +380,7 @@ class AccountRegistry {
       return 0;
     }
     this.accounts = next;
-    console.error(`AccountRegistry.dropSlots(${reason}): ${slotIds.join(',')}`);
+    logE(`AccountRegistry.dropSlots(${reason}): ${slotIds.join(',')}`);
     this.persist();
     this.bumpRegistryEpoch();
     return removed;
@@ -404,7 +405,7 @@ class AccountRegistry {
         }
       } catch (caught) {
         // 条目已经摘掉，数据删不掉只是留了一坨占空间的文件，不该让整个操作失败。
-        console.error(`AccountRegistry.removeAccountAndData rmdir ${dir} failed: ${caught}`);
+        logE(`AccountRegistry.removeAccountAndData rmdir ${dir} failed: ${caught}`);
       }
     }
     return true;
@@ -417,7 +418,7 @@ class AccountRegistry {
       this.store.putSync(KEY_ACCOUNTS_JSON, JSON.stringify(this.accounts));
       this.store.flushSync();
     } catch (caught) {
-      console.error(`AccountRegistry.persist failed: ${caught}`);
+      logE(`AccountRegistry.persist failed: ${caught}`);
     }
   }
 

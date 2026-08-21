@@ -9,6 +9,7 @@ import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
   darkResourceMode
 } from '../../util/theme';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 128;
@@ -65,7 +66,7 @@ struct ChatThemePage {
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.applyingName = '';
-      console.error(`ChatThemePage.apply failed: ${error.message}`);
+      logE(`ChatThemePage.apply failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.chat_theme_failed'), duration: 1800 });
     });
   }

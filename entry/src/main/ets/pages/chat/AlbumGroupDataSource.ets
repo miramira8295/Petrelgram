@@ -3,6 +3,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { mediaBoxFor } from '../../util/mediaBox';
 import { cancelPixelMap, loadPixelMap, PixelRequest } from '../../util/pixelCache';
 import { keyTableAdd, keyTableDelete, keyTableReload, newKeyTableId } from '../../util/keyGuard';
+import { logE, logI } from '../../util/log';
 
 // LazyForEach data source for the message list.
 //
@@ -222,7 +223,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       const rowKey = this.keyOf(next[i]);
       const at = keysSeen.get(rowKey);
       if (at !== undefined) {
-        console.error(`[DS] duplicate row key in snapshot at ${i} and ${at} -> ${rowKey}`);
+        logE(`[DS] duplicate row key in snapshot at ${i} and ${at} -> ${rowKey}`);
       } else {
         keysSeen.set(rowKey, i);
       }
@@ -352,7 +353,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
         // Diagnostic: every older-page prepend is landing here instead of on the
         // incremental path, and the RELOAD it falls through to is what rebuilds
         // the list. Name the rows that failed to line up. Temporary.
-        console.info(`[DS] misaligned added=${added} prevHead=${prev[p].head.id}` +
+        logI(`[DS] misaligned added=${added} prevHead=${prev[p].head.id}` +
           ` frontCand=${next[p].head.id} backCand=${next[p + added].head.id}` +
           ` prevMembers=${prev[p].memberIds.join('/')}` +
           ` backMembers=${next[p + added].memberIds.join('/')}`);

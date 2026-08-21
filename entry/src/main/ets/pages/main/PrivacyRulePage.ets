@@ -9,6 +9,7 @@ import {
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 16;
 
@@ -96,7 +97,7 @@ struct PrivacyRulePage {
       this.loadState = 'ready';
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`PrivacyRulePage.load failed: ${error.message}`);
+      logE(`PrivacyRulePage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
   }
@@ -115,7 +116,7 @@ struct PrivacyRulePage {
       if (!this.active) { return; }
       this.saving = false;
     }).catch((error: TdError): void => {
-      console.error(`PrivacyRulePage.setPrivacy failed: ${error.message}`);
+      logE(`PrivacyRulePage.setPrivacy failed: ${error.message}`);
       if (!this.active) { return; }
       this.base = previous;
       this.saving = false;

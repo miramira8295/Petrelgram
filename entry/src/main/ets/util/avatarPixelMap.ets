@@ -1,5 +1,6 @@
 import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { logE } from './log';
 
 // 已下载的头像文件 → PixelMap。系统通知的 largeIcon 与来电界面的 userProfile
 // 都要 PixelMap，解码逻辑在此共用。
@@ -30,7 +31,7 @@ export function avatarPixelMap(avatarPath: string): image.PixelMap | undefined {
     cache.set(avatarPath, pixelMap);
     return pixelMap;
   } catch (e) {
-    console.error(`avatarPixelMap(${avatarPath}) failed: ${(e as Error).message}`);
+    logE(`avatarPixelMap(${avatarPath}) failed: ${(e as Error).message}`);
     return undefined;
   } finally {
     if (file !== null) {

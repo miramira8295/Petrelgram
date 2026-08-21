@@ -29,6 +29,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
+import { logE, logI } from '../../util/log';
 
 interface FoundItem {
   chatId: number;
@@ -473,7 +474,7 @@ struct GlobalSearchPage {
         this.closeSearchTimer = -1;
       }
       this.closingSearch = false;
-      console.error(`GlobalSearchPage.closeSearch failed: ${caught}`);
+      logE(`GlobalSearchPage.closeSearch failed: ${caught}`);
     }
   }
 
@@ -554,7 +555,7 @@ struct GlobalSearchPage {
         });
       }
     }).catch((e: Object) => {
-      console.error(`GlobalSearchPage.searchFileDownloads failed: ${downloadErrorMessage(str('gs_action_load_downloads'), e)}`);
+      logE(`GlobalSearchPage.searchFileDownloads failed: ${downloadErrorMessage(str('gs_action_load_downloads'), e)}`);
       promptAction.showToast({ message: downloadErrorMessage(str('gs_action_load_downloads'), e), duration: 1800 });
     });
   }
@@ -643,7 +644,7 @@ struct GlobalSearchPage {
     const req: TdRequest = { '@type': 'getFile' };
     req['file_id'] = fileId;
     getTdClient().send(req).then((f: TdObject) => { this.applyDownloadFile(f); })
-      .catch((e: TdError) => { console.error(`GlobalSearchPage.getFile failed: ${e.message}`); });
+      .catch((e: TdError) => { logE(`GlobalSearchPage.getFile failed: ${e.message}`); });
   }
 
   private applyDownloadFile(file: TdObject): void {
@@ -692,7 +693,7 @@ struct GlobalSearchPage {
         this.downloadsScanning = false;
       })
       .catch((e: Object): void => {
-        console.error(`GlobalSearchPage.scanDownloadedFiles failed: ${JSON.stringify(e)}`);
+        logE(`GlobalSearchPage.scanDownloadedFiles failed: ${JSON.stringify(e)}`);
         this.downloadsScanning = false;
         // 允许下次进入 tab 时重试，否则一次失败会让列表永久空白。
         this.downloadsLoaded = false;
@@ -875,13 +876,13 @@ struct GlobalSearchPage {
       if (requestSeq !== this.postsQuotaSeq || this.query.trim() !== requestQuery) {
         return;
       }
-      console.info(`GlobalSearchPage.postSearchLimits: ${JSON.stringify(res)}`);
+      logI(`GlobalSearchPage.postSearchLimits: ${JSON.stringify(res)}`);
       const remaining = (res['remaining_free_query_count'] as number | undefined)
         ?? ((res['remaining_count'] as number | undefined)
           ?? ((res['free_query_count'] as number | undefined) ?? -1));
       this.postsQuota = remaining >= 0 ? plural('gs_free_left', remaining, remaining) : '';
     }).catch((e: TdError) => {
-      console.error(`GlobalSearchPage.getPublicPostSearchLimits failed: ${e.message}`);
+      logE(`GlobalSearchPage.getPublicPostSearchLimits failed: ${e.message}`);
     });
   }
 
@@ -998,7 +999,7 @@ struct GlobalSearchPage {
         this.pagingError = true;
         this.failedPagingOffset = offset;
       }
-      console.error(`GlobalSearchPage.searchMessages failed: ${e.message}`);
+      logE(`GlobalSearchPage.searchMessages failed: ${e.message}`);
     });
   }
 
@@ -1046,7 +1047,7 @@ struct GlobalSearchPage {
       }
       this.hashtagPosts = this.mergeFoundItems(this.hashtagPosts, fresh, offset === '');
     }).catch((e: TdError) => {
-      console.error(`GlobalSearchPage.searchPublicMessagesByTag failed: ${e.message}`);
+      logE(`GlobalSearchPage.searchPublicMessagesByTag failed: ${e.message}`);
     });
   }
 
@@ -1103,7 +1104,7 @@ struct GlobalSearchPage {
           avatarPath: it.avatarPath, initials: it.initials, isChannelChat: it.isChannelChat
         } : it);
     }).catch((e: TdError) => {
-      console.error(`GlobalSearchPage.mediaThumb failed: ${e.message}`);
+      logE(`GlobalSearchPage.mediaThumb failed: ${e.message}`);
     });
   }
 
@@ -1161,7 +1162,7 @@ struct GlobalSearchPage {
             }));
           }
         }).catch((e: TdError) => {
-          console.error(`GlobalSearchPage.avatar download failed: ${e.message}`);
+          logE(`GlobalSearchPage.avatar download failed: ${e.message}`);
         });
       }
     }).catch((e: TdError) => {
@@ -1173,7 +1174,7 @@ struct GlobalSearchPage {
       this.items = this.items.filter((it: FoundItem) => it.chatId !== chatId);
       this.hashtagPosts = this.hashtagPosts.filter((it: FoundItem) => it.chatId !== chatId);
       this.maybeAutoPage();
-      console.error(`GlobalSearchPage.getChat failed: ${e.message}`);
+      logE(`GlobalSearchPage.getChat failed: ${e.message}`);
     });
   }
 
@@ -1238,7 +1239,7 @@ struct GlobalSearchPage {
       }
     }).catch((e: TdError) => {
       this.resetResultOpening();
-      console.error(`GlobalSearchPage.openApp failed: ${e.message}`);
+      logE(`GlobalSearchPage.openApp failed: ${e.message}`);
     });
   }
 

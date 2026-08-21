@@ -3,6 +3,7 @@ import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { GroupCallStreamInfo } from '../tdkit/GroupCallTypes';
 import { getGroupCallStreamSegment } from '../tdkit/GroupCallApi';
 import { startOffset } from './StreamSegmentMath';
+import { logI, logW } from '../util/log';
 
 // Phase 0 probe (diagnostic). Adds a MINIMAL-PAYLOAD join attempt: the empty
 // payload was rejected only for being empty, so we now send a syntactically
@@ -14,7 +15,7 @@ async function sendRaw(client: TdClient, req: TdRequest, tag: string): Promise<T
   try {
     return await client.send(req, PROBE_TIMEOUT_MS);
   } catch (e) {
-    console.warn(`[Phase0] ${tag} failed: ${e}`);
+    logW(`[Phase0] ${tag} failed: ${e}`);
     return null;
   }
 }
@@ -63,33 +64,33 @@ async function fetchStreams(client: TdClient, groupCallId: number, tag: string):
   req['group_call_id'] = groupCallId;
   const resp = await sendRaw(client, req, `${tag} getGroupCallStreams`);
   const streams = parseStreams(resp);
-  console.info(`[Phase0] ${tag} streams=${JSON.stringify(streams)}`);
+  logI(`[Phase0] ${tag} streams=${JSON.stringify(streams)}`);
   return streams;
 }
 
 async function trySegment(client: TdClient, groupCallId: number, streams: GroupCallStreamInfo[]): Promise<void> {
-  if (streams.length === 0) { console.warn('[Phase0] no streams -> skip segment'); return; }
+  if (streams.length === 0) { logW('[Phase0] no streams -> skip segment'); return; }
   const s: GroupCallStreamInfo = streams[0];
   const probeOffset: number = startOffset(s.timeOffset, s.scale, 2);
   try {
     const seg: Uint8Array = await getGroupCallStreamSegment(
       client, groupCallId, probeOffset, s.scale, s.channelId, 'groupCallVideoQualityThumbnail'
     );
-    console.info(`[Phase0] segment ok len=${seg.length} first16=${JSON.stringify(Array.from(seg.slice(0, 16)))}`);
+    logI(`[Phase0] segment ok len=${seg.length} first16=${JSON.stringify(Array.from(seg.slice(0, 16)))}`);
   } catch (e) {
-    console.warn(`[Phase0] segment failed: ${e}`);
+    logW(`[Phase0] segment failed: ${e}`);
   }
 }
 
 export async function runLiveStreamProbe(client: TdClient, groupCallId: number): Promise<void> {
-  console.info(`[Phase0] probe start gcid=${groupCallId}`);
-  if (groupCallId <= 0) { console.warn('[Phase0] invalid gcid, abort'); return; }
+  logI(`[Phase0] probe start gcid=${groupCallId}`);
+  if (groupCallId <= 0) { logW('[Phase0] invalid gcid, abort'); return; }
 
   const gcReq: TdRequest = { '@type': 'getGroupCall' };
   gcReq['group_call_id'] = groupCallId;
   const gc = await sendRaw(client, gcReq, 'getGroupCall');
   if (gc !== null) {
-    console.info(`[Phase0] getGroupCall ok: is_rtmp=${gc['is_rtmp_stream']} active=${gc['is_active']} joined=${gc['is_joined']} participants=${gc['participant_count']}`);
+    logI(`[Phase0] getGroupCall ok: is_rtmp=${gc['is_rtmp_stream']} active=${gc['is_active']} joined=${gc['is_joined']} participants=${gc['participant_count']}`);
   }
 
   // Step A: streams without joining
@@ -111,11 +112,11 @@ export async function runLiveStreamProbe(client: TdClient, groupCallId: number):
   joinReqObj['invite_hash'] = '';
   const joinResp = await sendRaw(client, joinReqObj as TdRequest, 'joinVideoChat(minimal payload)');
   if (joinResp === null) {
-    console.warn('[Phase0] minimal-payload join did not succeed; cannot reach stream after join');
+    logW('[Phase0] minimal-payload join did not succeed; cannot reach stream after join');
     return;
   }
   const respText = (joinResp['text'] as string | undefined) ?? '';
-  console.info(`[Phase0] joinVideoChat(minimal payload) ACCEPTED response_len=${respText.length} resp_head=${respText.substring(0, 80)}`);
+  logI(`[Phase0] joinVideoChat(minimal payload) ACCEPTED response_len=${respText.length} resp_head=${respText.substring(0, 80)}`);
 
   // Step C: after join, retry streams + segment
   streams = await fetchStreams(client, groupCallId, 'POST-JOIN');

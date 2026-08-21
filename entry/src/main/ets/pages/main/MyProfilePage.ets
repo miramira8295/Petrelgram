@@ -22,6 +22,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
   overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -149,7 +150,7 @@ export struct MyProfilePage {
       this.clearProfileLoadTimer();
       this.profileLoading = false;
       this.profileError = str('mp_load_failed');
-      console.error(`MyProfilePage.getMe failed: ${e.message}`);
+      logE(`MyProfilePage.getMe failed: ${e.message}`);
     });
   }
 
@@ -243,7 +244,7 @@ export struct MyProfilePage {
       this.openingEditor = false;
     }, 700);
     router.pushUrl({ url: 'pages/main/AccountEditPage' }).catch((error: Error): void => {
-      console.error(`MyProfilePage.openEditor failed: ${error.message}`);
+      logE(`MyProfilePage.openEditor failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
       if (this.editorNavigationTimer !== -1) {
         clearTimeout(this.editorNavigationTimer);
@@ -328,7 +329,7 @@ export struct MyProfilePage {
       }
     }).catch((e: Object) => {
       this.photoMenuOpen = false;
-      console.error(`MyProfilePage.setPhotoMenu failed: ${JSON.stringify(e)}`);
+      logE(`MyProfilePage.setPhotoMenu failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -346,7 +347,7 @@ export struct MyProfilePage {
         }
       }
     } catch (e) {
-      console.error(`MyProfilePage.photoFromCamera failed: ${e}`);
+      logE(`MyProfilePage.photoFromCamera failed: ${e}`);
     }
   }
 
@@ -364,7 +365,7 @@ export struct MyProfilePage {
         }
       }
     }).catch((e: Object) => {
-      console.error(`MyProfilePage.photoFromGallery failed: ${JSON.stringify(e)}`);
+      logE(`MyProfilePage.photoFromGallery failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -384,7 +385,7 @@ export struct MyProfilePage {
           this.uploadPhotoScaled(path);
         }
       }).catch((e: TdError) => {
-        console.error(`MyProfilePage sticker download failed: ${e.message}`);
+        logE(`MyProfilePage sticker download failed: ${e.message}`);
       });
     } else if (st.thumbPath !== '') {
       this.uploadPhotoScaled(st.thumbPath);
@@ -401,7 +402,7 @@ export struct MyProfilePage {
           this.uploadPhotoScaled(path);
         }
       }).catch((e: TdError) => {
-        console.error(`MyProfilePage thumb download failed: ${e.message}`);
+        logE(`MyProfilePage thumb download failed: ${e.message}`);
       });
     } else {
       promptAction.showToast({ message: $r('app.string.mp_emoji_unsupported'), duration: 2000 });
@@ -435,7 +436,7 @@ export struct MyProfilePage {
       fs.closeSync(f);
       return dest;
     } catch (e) {
-      console.error(`MyProfilePage.upscaleForAvatar failed: ${e}`);
+      logE(`MyProfilePage.upscaleForAvatar failed: ${e}`);
       return path;
     }
   }
@@ -471,7 +472,7 @@ export struct MyProfilePage {
         return;
       }
       this.photoUploading = false;
-      console.error(`MyProfilePage.setProfilePhoto failed: ${e.message}`);
+      logE(`MyProfilePage.setProfilePhoto failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.mp_photo_failed'), duration: 2000 });
     });
   }
@@ -485,7 +486,7 @@ export struct MyProfilePage {
       fs.closeSync(src);
       return dest;
     } catch (e) {
-      console.error(`MyProfilePage.copyUriToCache failed: ${e}`);
+      logE(`MyProfilePage.copyUriToCache failed: ${e}`);
       return '';
     }
   }
@@ -684,7 +685,7 @@ export struct MyProfilePage {
       }, 1000);
     }).catch((caught: Object): void => {
       this.copyingInfoKey = '';
-      console.error(`MyProfilePage.copyInfo(${key}) failed: ${JSON.stringify(caught)}`);
+      logE(`MyProfilePage.copyInfo(${key}) failed: ${JSON.stringify(caught)}`);
       promptAction.showToast({ message: $r('app.string.copy_failed_retry'), duration: 1500 });
     });
   }
@@ -785,7 +786,7 @@ export struct MyProfilePage {
         });
       }).catch((error: TdError): void => {
         this.storyPickerOpen = false;
-        console.error(`MyProfilePage.canPostStory failed: ${error.message}`);
+        logE(`MyProfilePage.canPostStory failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.mp_add_story_failed'), duration: 1800 });
       });
     };
@@ -804,7 +805,7 @@ export struct MyProfilePage {
       continueWithChat(this.storyChatId);
     }).catch((error: TdError): void => {
       this.storyPickerOpen = false;
-      console.error(`MyProfilePage.createStoryChat failed: ${error.message}`);
+      logE(`MyProfilePage.createStoryChat failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.mp_add_story_failed'), duration: 1800 });
     });
   }
@@ -823,7 +824,7 @@ export struct MyProfilePage {
         }
       }
     } catch (error) {
-      console.error(`MyProfilePage.storyFromCamera failed: ${error}`);
+      logE(`MyProfilePage.storyFromCamera failed: ${error}`);
       promptAction.showToast({ message: $r('app.string.mp_camera_failed'), duration: 1800 });
     }
   }
@@ -842,7 +843,7 @@ export struct MyProfilePage {
         this.confirmStoryPrivacy(path);
       }
     }).catch((error: Object): void => {
-      console.error(`MyProfilePage.storyFromGallery failed: ${JSON.stringify(error)}`);
+      logE(`MyProfilePage.storyFromGallery failed: ${JSON.stringify(error)}`);
       promptAction.showToast({ message: $r('app.string.mp_gallery_failed'), duration: 1800 });
     });
   }
@@ -915,7 +916,7 @@ export struct MyProfilePage {
       source.release();
       return destination;
     } catch (error) {
-      console.error(`MyProfilePage.prepareStoryPhoto failed: ${error}`);
+      logE(`MyProfilePage.prepareStoryPhoto failed: ${error}`);
       return '';
     }
   }
@@ -969,7 +970,7 @@ export struct MyProfilePage {
         return;
       }
       this.storyPosting = false;
-      console.error(`MyProfilePage.postStory failed: ${error.message}`);
+      logE(`MyProfilePage.postStory failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.mp_story_post_failed'), duration: 2000 });
     });
   }

@@ -5,6 +5,7 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { preferences } from '@kit.ArkData';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { getTdClient } from '../tdkit/Globals';
+import { logE } from '../util/log';
 
 // 实时位置共享。
 //
@@ -55,7 +56,7 @@ class LiveLocationService {
       this.prefs = p;
     }).catch((e: Object): void => {
       // 拿不到存储只影响"杀进程后接续"，当前会话的共享不受影响。
-      console.error(`LiveLocationService.getPreferences failed: ${JSON.stringify(e)}`);
+      logE(`LiveLocationService.getPreferences failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -120,7 +121,7 @@ class LiveLocationService {
     p.putSync(KEY_ENDS_AT, this.endsAtMs);
     p.putSync(KEY_PERIOD, this.periodSec);
     p.flush().catch((e: Object): void => {
-      console.error(`LiveLocationService.persist failed: ${JSON.stringify(e)}`);
+      logE(`LiveLocationService.persist failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -131,7 +132,7 @@ class LiveLocationService {
     }
     p.putSync(KEY_MESSAGE, 0);
     p.flush().catch((e: Object): void => {
-      console.error(`LiveLocationService.clearPersisted failed: ${JSON.stringify(e)}`);
+      logE(`LiveLocationService.clearPersisted failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -193,7 +194,7 @@ class LiveLocationService {
     req['message_id'] = messageId;
     // 不带 location 即为 null —— 这就是"停止共享"。
     getTdClient().send(req, 15000).catch((e: TdError): void => {
-      console.error(`LiveLocationService.stopSharing failed: ${e.message}`);
+      logE(`LiveLocationService.stopSharing failed: ${e.message}`);
     });
   }
 
@@ -287,12 +288,12 @@ class LiveLocationService {
         req['message_id'] = messageId;
         req['location'] = live;
         getTdClient().send(req, 15000).catch((e: TdError): void => {
-          console.error(`LiveLocationService.update failed: ${e.message}`);
+          logE(`LiveLocationService.update failed: ${e.message}`);
         });
       })
       .catch((e: Object): void => {
         // 单次定位失败不终止共享，下一轮再试。
-        console.error(`LiveLocationService.locate failed: ${JSON.stringify(e)}`);
+        logE(`LiveLocationService.locate failed: ${JSON.stringify(e)}`);
       });
   }
 
@@ -318,7 +319,7 @@ class LiveLocationService {
       this.taskStarted = true;
     }).catch((e: Object): void => {
       // 拿不到长时任务不影响前台上报，只是切后台后会被冻结。
-      console.error(`LiveLocationService.startBackgroundRunning failed: ${JSON.stringify(e)}`);
+      logE(`LiveLocationService.startBackgroundRunning failed: ${JSON.stringify(e)}`);
     });
   }
 
@@ -329,7 +330,7 @@ class LiveLocationService {
     }
     this.taskStarted = false;
     backgroundTaskManager.stopBackgroundRunning(context).catch((e: Object): void => {
-      console.error(`LiveLocationService.stopBackgroundRunning failed: ${JSON.stringify(e)}`);
+      logE(`LiveLocationService.stopBackgroundRunning failed: ${JSON.stringify(e)}`);
     });
   }
 

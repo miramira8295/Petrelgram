@@ -20,6 +20,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const PICK_INCLUDE: string = 'include';
@@ -138,7 +139,7 @@ struct FolderEditPage {
       if (!this.active || sequence !== this.loadSequence) { return; }
       this.loadState = 'error';
       this.warning = str('fe_load_failed');
-      console.error(`FolderEditPage.load failed: ${error.message}`);
+      logE(`FolderEditPage.load failed: ${error.message}`);
     });
   }
 
@@ -286,7 +287,7 @@ struct FolderEditPage {
       if (!this.active) { return; }
       this.saving = false;
       this.warning = this.folderErrorMessage(error);
-      console.error(`FolderEditPage.save failed: ${error.message}`);
+      logE(`FolderEditPage.save failed: ${error.message}`);
     });
   }
 
@@ -413,7 +414,7 @@ struct FolderEditPage {
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.pickerSequence) { return; }
       this.pickerState = 'error';
-      console.error(`FolderEditPage.search failed: ${error.message}`);
+      logE(`FolderEditPage.search failed: ${error.message}`);
     });
   }
 

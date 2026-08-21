@@ -25,6 +25,7 @@ import { hiAppEvent } from '@kit.PerformanceAnalysisKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { flushCrashUploads, ingestCrashParams, initCrashStore } from './crashRecordStore';
+import { logE } from '../util/log';
 
 // 扩展进程里用的是 DELAYED 这个名字，两边必须一致。
 export const NORMAL_WATCHER: string = 'petrelgramCrashWatcher';
@@ -55,7 +56,7 @@ export function startCrashWatch(context: common.UIAbilityContext): void {
       'simplify_vma_printing': true
     };
     hiAppEvent.setEventConfig(hiAppEvent.event.APP_CRASH, config).catch((e: Error): void => {
-      console.error(`crashReport.setEventConfig failed: ${e.message}`);
+      logE(`crashReport.setEventConfig failed: ${e.message}`);
     });
   }
   if (deviceInfo.sdkApiVersion >= EVENT_POLICY_API) {
@@ -65,7 +66,7 @@ export function startCrashWatch(context: common.UIAbilityContext): void {
       'appCrashPolicy': { 'pageSwitchLogEnable': true }
     };
     hiAppEvent.configEventPolicy(policy).catch((e: Error): void => {
-      console.error(`crashReport.configEventPolicy failed: ${e.message}`);
+      logE(`crashReport.configEventPolicy failed: ${e.message}`);
     });
   }
 
@@ -89,7 +90,7 @@ export function startCrashWatch(context: common.UIAbilityContext): void {
     hiAppEvent.addWatcher(normal);
     hiAppEvent.addWatcher(delayed);
   } catch (e) {
-    console.error(`crashReport.addWatcher failed: ${e}`);
+    logE(`crashReport.addWatcher failed: ${e}`);
   }
   // 上次没发出去的补发（当时网络不通、或者进程被切断）。
   flushCrashUploads();

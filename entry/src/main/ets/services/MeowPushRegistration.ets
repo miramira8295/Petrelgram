@@ -9,6 +9,7 @@ import {
 import {
   WebPushConfig, deregisterWebPush, registerWebPush, validateWebPushConfig
 } from './WebPushRegistration';
+import { logE } from '../util/log';
 
 // MeoW 推送模式：用户只填 MeoW 用户名，三个 Web Push 字段 (endpoint / p256dh /
 // auth) 由作者自建的中转服务器下发，再复用 WebPushRegistration 那条已经跑通的
@@ -115,10 +116,10 @@ function stringField(source: Record<string, Object>, key: string): string {
 // 解密密钥，一旦进了 hilog，任何能连上设备的人都读得到。
 function logShape(step: string, root: Record<string, Object> | null, text: string): void {
   if (root === null) {
-    console.error(`[meow] ${step}: body is not a JSON object, len=${text.length}`);
+    logE(`[meow] ${step}: body is not a JSON object, len=${text.length}`);
     return;
   }
-  console.error(`[meow] ${step}: keys=${Object.keys(root).join(',')}`);
+  logE(`[meow] ${step}: keys=${Object.keys(root).join(',')}`);
 }
 
 function parseJsonObject(text: string): Record<string, Object> | null {

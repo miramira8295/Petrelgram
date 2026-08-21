@@ -32,6 +32,7 @@ import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToChat } from '../../util/chatNav';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -345,7 +346,7 @@ struct ProfilePage {
     }
     getCallSession().startCall(this.userId, isVideo);
     router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
-      console.error(`ProfilePage.startCall navigation failed: ${error.message}`);
+      logE(`ProfilePage.startCall navigation failed: ${error.message}`);
     });
   }
 
@@ -365,13 +366,13 @@ struct ProfilePage {
           start['parameter'] = this.pendingStartParam;
           this.pendingStartParam = '';
           getTdClient().send(start).catch((e: TdError): void => {
-            console.error(`ProfilePage.sendBotStartMessage failed: ${e.message}`);
+            logE(`ProfilePage.sendBotStartMessage failed: ${e.message}`);
             promptAction.showToast({ message: $r('app.string.pp_start_failed'), duration: 1500 });
           });
         }
       }
     }).catch((e: TdError) => {
-      console.error(`ProfilePage.createPrivateChat failed: ${e.message}`);
+      logE(`ProfilePage.createPrivateChat failed: ${e.message}`);
     });
   }
 
@@ -393,7 +394,7 @@ struct ProfilePage {
             promptAction.showToast({ message: $r('app.string.pp_added_contact'), duration: 1500 });
           })
           .catch((retryError: TdError) => {
-            console.error(`ProfilePage.addContact retry failed(code=${retryError.code}): ` +
+            logE(`ProfilePage.addContact retry failed(code=${retryError.code}): ` +
               `${retryError.message} userId=${this.userId}`);
             this.importContactFallback();
           });
@@ -401,7 +402,7 @@ struct ProfilePage {
       }
       // 手机号和姓名是对方的个人信息，不进日志——userId 已经足够把这条
       // 失败对上号了。
-      console.error(`ProfilePage.addContact failed(code=${e.code}): ${e.message} ` +
+      logE(`ProfilePage.addContact failed(code=${e.code}): ${e.message} ` +
         `userId=${this.userId} hasPhone=${this.phone !== ''}`);
       promptAction.showToast({
         message: e.code === 400 ? $r('app.string.pp_add_incomplete') : $r('app.string.pp_add_failed'),
@@ -432,7 +433,7 @@ struct ProfilePage {
         message: $r('app.string.pp_privacy_blocks_add'), duration: 2000
       });
     }).catch((e: TdError) => {
-      console.error(`ProfilePage.importContacts failed(code=${e.code}): ${e.message}`);
+      logE(`ProfilePage.importContacts failed(code=${e.code}): ${e.message}`);
       promptAction.showToast({ message: $r('app.string.pp_add_failed'), duration: 1700 });
     });
   }
@@ -807,7 +808,7 @@ struct ProfilePage {
       navigateToChat(params);
     }).catch((e: TdError): void => {
       this.creatingSecretChat = false;
-      console.error(`ProfilePage.createNewSecretChat failed: ${e.message}`);
+      logE(`ProfilePage.createNewSecretChat failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.pp_secret_failed_retry'), duration: 1700 });
     });
   }

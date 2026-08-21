@@ -1,6 +1,7 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { ChatStore } from '../store/ChatStore';
+import { logE } from '../util/log';
 
 const AVATAR_PRIORITY: number = 1;
 
@@ -75,7 +76,7 @@ export class FileService {
     this.client.send(req).then((file: TdObject) => {
       this.applyFile(file);
     }).catch((e: TdError) => {
-      console.error(`FileService.downloadFile ${fileId} failed: ${e.message}`);
+      logE(`FileService.downloadFile ${fileId} failed: ${e.message}`);
       this.requested.delete(fileId);
     });
   }

@@ -7,6 +7,7 @@ import {
 import { MdBlock, MdSpan, parseMarkdownBlocks } from '../../util/markdownBlocks';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -62,7 +63,7 @@ struct AboutPage {
       entities: ['entity.system.browsable'],
       uri: updateChecker.getReleaseUrl()
     }).catch((e: Object): void => {
-      console.error(`AboutPage.openReleasePage failed: ${JSON.stringify(e)}`);
+      logE(`AboutPage.openReleasePage failed: ${JSON.stringify(e)}`);
       promptAction.showToast({ message: $r('app.string.about_browser_failed'), duration: 1600 });
     });
   }

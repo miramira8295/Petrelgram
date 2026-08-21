@@ -10,6 +10,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 
@@ -66,7 +67,7 @@ struct StickerSetsPage {
         this.loadState = 'ready';
       }).catch((error: TdError): void => {
         if (!this.active) { return; }
-        console.error(`StickerSetsPage.load failed: ${error.message}`);
+        logE(`StickerSetsPage.load failed: ${error.message}`);
         this.loadState = 'error';
       });
   }
@@ -100,7 +101,7 @@ struct StickerSetsPage {
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.busyId = '';
-      console.error(`StickerSetsPage.archive failed: ${error.message}`);
+      logE(`StickerSetsPage.archive failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.action_failed_retry'), duration: 1600 });
     });
   }
@@ -131,7 +132,7 @@ struct StickerSetsPage {
     this.installed = next;
     reorderInstalledStickerSets(next.map((r: StickerSetRow): string => r.id))
       .catch((error: TdError): void => {
-        console.error(`StickerSetsPage.reorder failed: ${error.message}`);
+        logE(`StickerSetsPage.reorder failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.sticker_reorder_failed'), duration: 1500 });
       });
   }

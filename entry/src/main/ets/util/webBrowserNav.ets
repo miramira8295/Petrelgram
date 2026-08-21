@@ -2,6 +2,7 @@ import { router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { normalizeExternalUrl, openUrl } from './openUrl';
 import { KEY_IN_APP_BROWSER } from '../store/AppSettings';
+import { logE } from './log';
 
 // The URL the in-app browser should load for a tapped link: http/https URLs
 // pass through, bare web addresses get an https:// scheme, and every other
@@ -33,7 +34,7 @@ export function openWebUrl(
   }
   const params: Record<string, Object> = { 'url': target };
   router.pushUrl({ url: 'pages/web/InAppBrowserPage', params }).catch((e: Object): void => {
-    console.error(`openWebUrl push failed for ${target}: ${JSON.stringify(e)}`);
+    logE(`openWebUrl push failed for ${target}: ${JSON.stringify(e)}`);
     // The in-app page failing must never eat the tap — degrade to the browser.
     openUrl(context, target, onFailed);
   });

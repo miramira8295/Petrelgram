@@ -1,5 +1,6 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { logE } from './log';
 
 const THUMB_PRIORITY: number = 1;
 
@@ -75,10 +76,10 @@ export function resolveCustomEmojiThumbs(customEmojiIds: string[],
           cb(id, path);
         }
       }).catch((e: TdError): void => {
-        console.error(`resolveCustomEmojiThumbs.download(${fileId}) failed: ${e.message}`);
+        logE(`resolveCustomEmojiThumbs.download(${fileId}) failed: ${e.message}`);
       });
     });
   }).catch((e: TdError): void => {
-    console.error(`resolveCustomEmojiThumbs.getCustomEmojiStickers failed: ${e.message}`);
+    logE(`resolveCustomEmojiThumbs.getCustomEmojiStickers failed: ${e.message}`);
   });
 }

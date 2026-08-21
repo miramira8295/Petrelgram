@@ -13,6 +13,7 @@ import {
   overlayBackdropBlur, overlayMaterial, overlayGlassFill, plainBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
+import { logE } from '../../util/log';
 
 interface TabSpec {
   key: string;
@@ -328,7 +329,7 @@ export struct ChatListPage {
       this.savedMessagesOpening = false;
     }).catch((error: Error): void => {
       this.savedMessagesOpening = false;
-      console.error(`ChatListPage.openSavedMessages failed: ${error.message}`);
+      logE(`ChatListPage.openSavedMessages failed: ${error.message}`);
     });
   }
 
@@ -352,7 +353,7 @@ export struct ChatListPage {
           this.searchOpeningTimer = -1;
         }
         this.searchOpening = false;
-        console.error(`ChatListPage.openGlobalSearch failed: ${error.message}`);
+        logE(`ChatListPage.openGlobalSearch failed: ${error.message}`);
       });
   }
 

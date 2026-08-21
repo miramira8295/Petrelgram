@@ -10,6 +10,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 16;
 const COLOR_DANGER: string = '#E5484D';
@@ -60,7 +61,7 @@ struct TwoStepVerificationPage {
       this.errorText = '';
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`TwoStepVerificationPage.load failed: ${error.message}`);
+      logE(`TwoStepVerificationPage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
   }

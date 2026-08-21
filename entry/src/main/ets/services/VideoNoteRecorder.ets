@@ -3,6 +3,7 @@ import { display } from '@kit.ArkUI';
 import { media } from '@kit.MediaKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
+import { logE } from '../util/log';
 
 const MIC_PERMISSION: Permissions = 'ohos.permission.MICROPHONE';
 const CAMERA_PERMISSION: Permissions = 'ohos.permission.CAMERA';
@@ -58,7 +59,7 @@ export class VideoNoteRecorder {
       }
       return res.authResults[0] === 0 && res.authResults[1] === 0;
     } catch (e) {
-      console.error(`VideoNoteRecorder.requestPermissions failed: ${e}`);
+      logE(`VideoNoteRecorder.requestPermissions failed: ${e}`);
       return false;
     }
   }
@@ -206,7 +207,7 @@ export class VideoNoteRecorder {
       this.applyRotation(videoOutput);
       return 'ok';
     } catch (e) {
-      console.error(`VideoNoteRecorder.open failed: ${e}`);
+      logE(`VideoNoteRecorder.open failed: ${e}`);
       await this.release();
       return 'failed';
     }
@@ -243,7 +244,7 @@ export class VideoNoteRecorder {
         previewOutput.getPreviewRotation(VideoNoteRecorder.displayRotationDegrees());
       this.previewRotationDeg = ((target - TEXTURE_BASE_ROTATION) % 360 + 360) % 360;
     } catch (e) {
-      console.error(`VideoNoteRecorder.getPreviewRotation failed: ${e}`);
+      logE(`VideoNoteRecorder.getPreviewRotation failed: ${e}`);
       this.previewRotationDeg = 0;
     }
   }
@@ -261,10 +262,10 @@ export class VideoNoteRecorder {
       const rotation: number = videoOutput.getVideoRotation(
         VideoNoteRecorder.displayRotationDegrees());
       recorder.updateRotation(rotation).catch((e: Object): void => {
-        console.error(`VideoNoteRecorder.updateRotation failed: ${JSON.stringify(e)}`);
+        logE(`VideoNoteRecorder.updateRotation failed: ${JSON.stringify(e)}`);
       });
     } catch (e) {
-      console.error(`VideoNoteRecorder.getVideoRotation failed: ${e}`);
+      logE(`VideoNoteRecorder.getVideoRotation failed: ${e}`);
     }
   }
 
@@ -312,7 +313,7 @@ export class VideoNoteRecorder {
       this.recording = true;
       return true;
     } catch (e) {
-      console.error(`VideoNoteRecorder.beginRecord failed: ${e}`);
+      logE(`VideoNoteRecorder.beginRecord failed: ${e}`);
       return false;
     }
   }
@@ -336,7 +337,7 @@ export class VideoNoteRecorder {
       try {
         fs.unlinkSync(this.path);
       } catch (e) {
-        console.error(`VideoNoteRecorder.cancel unlink failed: ${e}`);
+        logE(`VideoNoteRecorder.cancel unlink failed: ${e}`);
       }
       this.path = '';
     }
@@ -355,13 +356,13 @@ export class VideoNoteRecorder {
         try {
           await recorder.stop();
         } catch (e) {
-          console.error(`VideoNoteRecorder recorder stop failed: ${e}`);
+          logE(`VideoNoteRecorder recorder stop failed: ${e}`);
         }
       }
       try {
         await recorder.release();
       } catch (e) {
-        console.error(`VideoNoteRecorder recorder release failed: ${e}`);
+        logE(`VideoNoteRecorder recorder release failed: ${e}`);
       }
     }
     this.recording = false;
@@ -373,7 +374,7 @@ export class VideoNoteRecorder {
       try {
         await videoOutput.release();
       } catch (e) {
-        console.error(`VideoNoteRecorder videoOutput release failed: ${e}`);
+        logE(`VideoNoteRecorder videoOutput release failed: ${e}`);
       }
     }
     const previewOutput: camera.PreviewOutput | null = this.previewOutput;
@@ -382,7 +383,7 @@ export class VideoNoteRecorder {
       try {
         await previewOutput.release();
       } catch (e) {
-        console.error(`VideoNoteRecorder previewOutput release failed: ${e}`);
+        logE(`VideoNoteRecorder previewOutput release failed: ${e}`);
       }
     }
     const session: camera.VideoSession | null = this.session;
@@ -391,12 +392,12 @@ export class VideoNoteRecorder {
       try {
         await session.stop();
       } catch (e) {
-        console.error(`VideoNoteRecorder session stop failed: ${e}`);
+        logE(`VideoNoteRecorder session stop failed: ${e}`);
       }
       try {
         await session.release();
       } catch (e) {
-        console.error(`VideoNoteRecorder session release failed: ${e}`);
+        logE(`VideoNoteRecorder session release failed: ${e}`);
       }
     }
     const input: camera.CameraInput | null = this.cameraInput;
@@ -405,14 +406,14 @@ export class VideoNoteRecorder {
       try {
         await input.close();
       } catch (e) {
-        console.error(`VideoNoteRecorder cameraInput close failed: ${e}`);
+        logE(`VideoNoteRecorder cameraInput close failed: ${e}`);
       }
     }
     if (this.file !== null) {
       try {
         fs.closeSync(this.file);
       } catch (e) {
-        console.error(`VideoNoteRecorder file close failed: ${e}`);
+        logE(`VideoNoteRecorder file close failed: ${e}`);
       }
       this.file = null;
     }

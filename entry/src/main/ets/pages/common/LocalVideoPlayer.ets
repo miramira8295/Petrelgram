@@ -1,6 +1,7 @@
 import { media } from '@kit.MediaKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { COLOR_PRIMARY } from '../../util/theme';
+import { logE } from '../../util/log';
 
 let nextLocalPlayerId: number = 1;
 
@@ -72,21 +73,21 @@ export struct LocalVideoPlayer {
     this.player = null;
     if (p !== null) {
       p.release().catch((e: Object): void => {
-        console.error(`LocalVideoPlayer.release failed: ${JSON.stringify(e)}`);
+        logE(`LocalVideoPlayer.release failed: ${JSON.stringify(e)}`);
       });
     }
     if (this.fd >= 0) {
       try {
         fs.closeSync(this.fd);
       } catch (e) {
-        console.error(`LocalVideoPlayer fd close failed: ${e}`);
+        logE(`LocalVideoPlayer fd close failed: ${e}`);
       }
       this.fd = -1;
     }
   }
 
   private fail(where: string, e: Object): void {
-    console.error(`LocalVideoPlayer.${where} failed: ${JSON.stringify(e)}`);
+    logE(`LocalVideoPlayer.${where} failed: ${JSON.stringify(e)}`);
     if (!this.destroyed) {
       this.failed = true;
     }

@@ -20,6 +20,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 // 单个成员的「提权 / 编辑管理员权限」面板：setChatMemberStatus +
 // chatMemberStatusAdministrator，带 custom_title 与 chatAdministratorRights。
@@ -125,7 +126,7 @@ struct MemberPromotePage {
         if (!this.active) {
           return;
         }
-        console.error(`MemberPromotePage.load failed: ${error.message}`);
+        logE(`MemberPromotePage.load failed: ${error.message}`);
         this.loadState = 'error';
       });
   }
@@ -136,7 +137,7 @@ struct MemberPromotePage {
 
   private fail(error: TdError): void {
     this.busy = false;
-    console.error(`MemberPromotePage: ${error.message}`);
+    logE(`MemberPromotePage: ${error.message}`);
     promptAction.showToast({
       message: error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
         ? str('ga_no_permission') : str('ga_failed'),

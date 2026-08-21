@@ -17,6 +17,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 16;
 const COLOR_WARNING: string = '#D98914';
@@ -187,7 +188,7 @@ struct PrivacySecurityPage {
       : router.pushUrl({ url });
     work.catch((error: Error): void => {
       this.navigationLocked = false;
-      console.error(`PrivacySecurityPage.route failed: ${error.message}`);
+      logE(`PrivacySecurityPage.route failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.page_open_failed'), duration: 1700 });
     });
     setTimeout((): void => { this.navigationLocked = false; }, 700);
@@ -200,7 +201,7 @@ struct PrivacySecurityPage {
       if (!this.active) { return; }
       this.actionKey = '';
     }).catch((error: TdError): void => {
-      console.error(`PrivacySecurityPage.${key} failed: ${error.message}`);
+      logE(`PrivacySecurityPage.${key} failed: ${error.message}`);
       if (!this.active) { return; }
       rollback();
       this.actionKey = '';

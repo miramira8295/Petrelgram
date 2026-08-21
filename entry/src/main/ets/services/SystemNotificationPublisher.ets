@@ -2,6 +2,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import { wantAgent } from '@kit.AbilityKit';
 import { NotificationPublisher, LocalNotice } from './NotificationService';
 import { avatarPixelMap } from '../util/avatarPixelMap';
+import { logE } from '../util/log';
 
 // NotificationPublisher 的系统实现：Notification Kit 文本通知。
 // 点击经 wantAgent 拉起 EntryAbility 并携带 notifyChatId（Index 消费路由）。
@@ -40,19 +41,19 @@ export class SystemNotificationPublisher implements NotificationPublisher {
       return notificationManager.publish(request);
     }).then((): void => {
     }).catch((e: Error): void => {
-      console.error(`SystemNotificationPublisher.publish(${notice.id}) failed: ${e.message}`);
+      logE(`SystemNotificationPublisher.publish(${notice.id}) failed: ${e.message}`);
     });
   }
 
   cancel(id: number): void {
     notificationManager.cancel(id).catch((e: Error): void => {
-      console.error(`SystemNotificationPublisher.cancel(${id}) failed: ${e.message}`);
+      logE(`SystemNotificationPublisher.cancel(${id}) failed: ${e.message}`);
     });
   }
 
   cancelAll(): void {
     notificationManager.cancelAll().catch((e: Error): void => {
-      console.error(`SystemNotificationPublisher.cancelAll failed: ${e.message}`);
+      logE(`SystemNotificationPublisher.cancelAll failed: ${e.message}`);
     });
   }
 

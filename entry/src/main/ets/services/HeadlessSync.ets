@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { initTdKit, getAuthService, getTdClient } from '../tdkit/Globals';
 import { AuthStage } from '../tdkit/AuthService';
 import { TdRequest, TdError, TdObject } from '../tdkit/TdTypes';
+import { logE, logI } from '../util/log';
 
 // 延迟任务补收：主进程死亡时在扩展进程无头拉起 TDLib，等登录态就绪、
 // 给通知管理器一个收集窗口（初始化时机由 Globals 装配的
@@ -31,12 +32,12 @@ export function runHeadlessSync(context: common.Context): Promise<void> {
       // 请求 TDLib 干净关闭（binlog 落盘）；不等回执，进程随任务结束。
       const req: TdRequest = { '@type': 'close' };
       getTdClient().send(req).catch((e: TdError): void => {
-        console.error(`HeadlessSync.close failed: ${e.message}`);
+        logE(`HeadlessSync.close failed: ${e.message}`);
       });
       resolve();
     };
     const timeout = setTimeout((): void => {
-      console.info('[HeadlessSync] ready timeout — main process likely alive, skip');
+      logI('[HeadlessSync] ready timeout — main process likely alive, skip');
       finish();
     }, READY_TIMEOUT_MS);
     offAuth = getAuthService().onStageChange((stage: AuthStage): void => {
@@ -44,9 +45,9 @@ export function runHeadlessSync(context: common.Context): Promise<void> {
         return;
       }
       clearTimeout(timeout);
-      console.info('[HeadlessSync] td ready — collecting notifications');
+      logI('[HeadlessSync] td ready — collecting notifications');
       setTimeout((): void => {
-        console.info('[HeadlessSync] collect window closed');
+        logI('[HeadlessSync] collect window closed');
         finish();
       }, COLLECT_WINDOW_MS);
     });

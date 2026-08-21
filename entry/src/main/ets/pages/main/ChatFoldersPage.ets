@@ -21,6 +21,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE, logW } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -143,7 +144,7 @@ struct ChatFoldersPage {
           next.set(folder.id, count);
           this.counts = next;
         }).catch((error: TdError): void => {
-          console.warn(`ChatFoldersPage.count(${folder.id}) failed: ${error.message}`);
+          logW(`ChatFoldersPage.count(${folder.id}) failed: ${error.message}`);
         });
     }
   }
@@ -157,7 +158,7 @@ struct ChatFoldersPage {
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.recommendationState = 'error';
-      console.warn(`ChatFoldersPage.recommendations failed: ${error.message}`);
+      logW(`ChatFoldersPage.recommendations failed: ${error.message}`);
     });
   }
 
@@ -223,7 +224,7 @@ struct ChatFoldersPage {
       getFolderStore().applyLocalOrder(previous.map((folder: FolderInfo): number => folder.id),
         getFolderStore().getMainChatListPosition());
       promptAction.showToast({ message: $r('app.string.cf_reorder_failed'), duration: 1800 });
-      console.error(`ChatFoldersPage.reorder failed: ${error.message}`);
+      logE(`ChatFoldersPage.reorder failed: ${error.message}`);
     });
   }
 
@@ -239,7 +240,7 @@ struct ChatFoldersPage {
       this.tagsEnabled = previous;
       this.operationKey = '';
       promptAction.showToast({ message: $r('app.string.cf_tags_failed'), duration: 1800 });
-      console.error(`ChatFoldersPage.tags failed: ${error.message}`);
+      logE(`ChatFoldersPage.tags failed: ${error.message}`);
     });
   }
 
@@ -266,7 +267,7 @@ struct ChatFoldersPage {
       this.operationKey = '';
       // Failure to calculate optional leave choices must not make the folder
       // impossible to remove; default to keeping all chats.
-      console.warn(`ChatFoldersPage.getChatsToLeave failed: ${error.message}`);
+      logW(`ChatFoldersPage.getChatsToLeave failed: ${error.message}`);
       this.confirmSimpleDelete(folder);
     });
   }
@@ -302,7 +303,7 @@ struct ChatFoldersPage {
       if (!this.active) { return; }
       this.operationKey = '';
       promptAction.showToast({ message: $r('app.string.delete_failed_retry'), duration: 1800 });
-      console.error(`ChatFoldersPage.delete failed: ${error.message}`);
+      logE(`ChatFoldersPage.delete failed: ${error.message}`);
     });
   }
 
@@ -330,7 +331,7 @@ struct ChatFoldersPage {
       if (!this.active) { return; }
       this.operationKey = '';
       promptAction.showToast({ message: $r('app.string.create_failed_retry'), duration: 1800 });
-      console.error(`ChatFoldersPage.addRecommendation failed: ${error.message}`);
+      logE(`ChatFoldersPage.addRecommendation failed: ${error.message}`);
     });
   }
 

@@ -1,6 +1,7 @@
 import fileIo from '@ohos.file.fs';
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
+import { logE, logW } from '../util/log';
 
 const STREAM_PRIORITY: number = 32;
 const CHUNK_SIZE: number = 1024 * 1024;
@@ -140,7 +141,7 @@ export class VideoStreamSession {
           }
         } catch (e) {
           // 文件刚被 TDLib 创建/截断时可能瞬时打开失败，同样重试。
-          console.warn(`VideoStreamSession.readRange retry(${attempt}): ${e}`);
+          logW(`VideoStreamSession.readRange retry(${attempt}): ${e}`);
         }
       }
       attempt++;
@@ -182,7 +183,7 @@ export class VideoStreamSession {
       this.keepAhead(offset + readBytes);
       return readBytes;
     } catch (e) {
-      console.error(`VideoStreamSession.read failed: ${e}`);
+      logE(`VideoStreamSession.read failed: ${e}`);
       return -2;
     }
   }
@@ -293,7 +294,7 @@ export class VideoStreamSession {
       if (attempt <= MAX_REQUEST_RETRIES) {
         this.requestAttempts.set(offset, attempt);
         const delayMs = Math.min(4000, 300 * Math.pow(2, attempt - 1));
-        console.warn(`VideoStreamSession.download ${this.fileId}@${offset}+${length} retry ${attempt}: ${e.message}`);
+        logW(`VideoStreamSession.download ${this.fileId}@${offset}+${length} retry ${attempt}: ${e.message}`);
         setTimeout(() => {
           if (this.closed) {
             return;
@@ -307,7 +308,7 @@ export class VideoStreamSession {
       this.pendingStarts.delete(offset);
       this.requestLengths.delete(offset);
       this.requestAttempts.delete(offset);
-      console.error(`VideoStreamSession.download ${this.fileId}@${offset}+${length} failed after retries: ${e.message}`);
+      logE(`VideoStreamSession.download ${this.fileId}@${offset}+${length} failed after retries: ${e.message}`);
       this.pumpQueue();
     });
   }

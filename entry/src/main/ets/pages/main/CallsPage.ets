@@ -14,6 +14,7 @@ import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToChat } from '../../util/chatNav';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const COLOR_MISSED: string = '#E64646';
@@ -151,7 +152,7 @@ struct CallsPage {
       }).catch((error: Error): void => {
         if (!this.active) { return; }
         this.actionKey = '';
-        console.error(`CallsPage.clearAll failed: ${error.message}`);
+        logE(`CallsPage.clearAll failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.calls_clear_failed'), duration: 1900 });
       });
     }).catch((): void => {});
@@ -176,7 +177,7 @@ struct CallsPage {
       }).catch((error: Error): void => {
         if (!this.active) { return; }
         this.actionKey = '';
-        console.error(`CallsPage.deleteCall failed: ${error.message}`);
+        logE(`CallsPage.deleteCall failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.calls_delete_failed'), duration: 1800 });
       });
     }).catch((): void => {});
@@ -269,7 +270,7 @@ struct CallsPage {
     }
     getCallSession().startCall(call.chatId, call.isVideo);
     router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
-      console.error(`CallsPage.redial failed: ${error.message}`);
+      logE(`CallsPage.redial failed: ${error.message}`);
     });
   }
 

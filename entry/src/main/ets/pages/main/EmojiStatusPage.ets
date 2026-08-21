@@ -8,6 +8,7 @@ import { TgsStickerView } from '../chat/TgsStickerView';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const CELL: number = 52;
@@ -116,7 +117,7 @@ struct EmojiStatusPage {
         this.loadState = 'ready';
       }).catch((error: TdError): void => {
         if (!this.active) { return; }
-        console.error(`EmojiStatusPage.load failed: ${error.message}`);
+        logE(`EmojiStatusPage.load failed: ${error.message}`);
         this.loadState = 'error';
       });
   }
@@ -133,7 +134,7 @@ struct EmojiStatusPage {
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.busy = false;
-      console.error(`EmojiStatusPage.apply failed: ${error.message}`);
+      logE(`EmojiStatusPage.apply failed: ${error.message}`);
       promptAction.showToast({
         message: error.message.indexOf('PREMIUM') >= 0 || error.message.indexOf('premium') >= 0
           ? $r('app.string.emoji_status_needs_premium') : $r('app.string.apply_failed_retry'),

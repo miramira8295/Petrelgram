@@ -3,6 +3,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs, fileUri, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
+import { logE } from './log';
 
 const COPY_BUF: number = 1024 * 1024;
 
@@ -45,7 +46,7 @@ export async function saveMediaToGallery(context: common.UIAbilityContext, srcPa
     copyToUri(srcPath, uris[0]);
     promptAction.showToast({ message: str('media_saved_gallery'), duration: 2000 });
   } catch (e) {
-    console.error(`saveMediaToGallery(${srcPath}) failed: ${e}`);
+    logE(`saveMediaToGallery(${srcPath}) failed: ${e}`);
     promptAction.showToast({ message: str('media_save_failed'), duration: 2000 });
   }
 }
@@ -78,11 +79,11 @@ export function saveFileToLocal(context: common.UIAbilityContext, srcPath: strin
       copyToUri(srcPath, uris[0]);
       promptAction.showToast({ message: str('media_saved'), duration: 2000 });
     } catch (e) {
-      console.error(`saveFileToLocal copy failed: ${e}`);
+      logE(`saveFileToLocal copy failed: ${e}`);
       promptAction.showToast({ message: str('media_save_failed'), duration: 2000 });
     }
   }).catch((e: Object) => {
-    console.error(`saveFileToLocal picker failed: ${JSON.stringify(e)}`);
+    logE(`saveFileToLocal picker failed: ${JSON.stringify(e)}`);
     promptAction.showToast({ message: str('media_cannot_open_location'), duration: 1800 });
   });
 }

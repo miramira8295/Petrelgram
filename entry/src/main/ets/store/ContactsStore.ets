@@ -2,6 +2,7 @@ import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { formatLastSeen } from '../util/formatLastSeen';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 const DL_PRIORITY: number = 1;
 
@@ -117,7 +118,7 @@ export class ContactsStore {
       if (sequence !== this.loadSequence) {
         return;
       }
-      console.error(`ContactsStore.getContacts failed: ${e.message}`);
+      logE(`ContactsStore.getContacts failed: ${e.message}`);
       this.loading = false;
       this.errorMessage = str('contacts_load_failed');
       this.notify();
@@ -146,7 +147,7 @@ export class ContactsStore {
       this.applyUser(user);
       return true;
     }).catch((e: TdError) => {
-      console.error(`ContactsStore.getUser failed: ${e.message}`);
+      logE(`ContactsStore.getUser failed: ${e.message}`);
       return false;
     });
   }
@@ -280,7 +281,7 @@ export class ContactsStore {
     req['file_id'] = fileId;
     req['priority'] = DL_PRIORITY;
     this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((e: TdError) => {
-      console.error(`ContactsStore.downloadFile failed: ${e.message}`);
+      logE(`ContactsStore.downloadFile failed: ${e.message}`);
     });
   }
 

@@ -9,6 +9,7 @@ import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   KEY_POWER_EFFECT_REACTION, KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, powerGroupFeatureEnabled
 } from '../../store/AppSettings';
+import { logE } from '../../util/log';
 
 // Emoji offered in the full reaction picker (opened from the long-press menu's
 // chevron). Ordered roughly like the official client's reaction sheet.
@@ -107,7 +108,7 @@ export struct ReactionSheet {
         this.applyCustomEmojiThumb(id, path);
       });
     }).catch((e: TdError): void => {
-      console.error(`ReactionSheet.availableReactions failed: ${e.message}`);
+      logE(`ReactionSheet.availableReactions failed: ${e.message}`);
     });
   }
 

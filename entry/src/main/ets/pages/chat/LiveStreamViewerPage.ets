@@ -41,6 +41,7 @@ import {
 import { LiveInteractionBubble } from './LiveInteractionBubble';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE, logI } from '../../util/log';
 
 const CALL_BACKGROUND: string = '#0D141B';
 const CALL_PANEL: string = '#141E27';
@@ -568,7 +569,7 @@ struct LiveStreamViewerPage {
       this.setMediaStatus(str('lv_audio_connected'), LIVE_PHASE_AUDIO);
     }
     this.participantStore?.load(100).catch((caught: Error): void => {
-      console.error(`LiveStreamViewer.adopt load participants failed: ${caught.message}`);
+      logE(`LiveStreamViewer.adopt load participants failed: ${caught.message}`);
     });
   }
 
@@ -771,7 +772,7 @@ struct LiveStreamViewerPage {
       }
     );
     this.tgcallsSession = session;
-    console.info(`[LiveStreamViewer] session ${sequence} start reason=${reason}`);
+    logI(`[LiveStreamViewer] session ${sequence} start reason=${reason}`);
     session.join(client, this.groupCallId, this.isMuted).then((result: TgcallsJoinResult): void => {
       if (!this.pageActive || this.tgcallsSession !== session || sequence !== this.sessionSequence) { return; }
       this.hasJoinedOnce = true;
@@ -816,7 +817,7 @@ struct LiveStreamViewerPage {
       }
       this.onParticipants(this.participants);
       this.participantStore?.load(100).catch((error: Error): void => {
-        console.error(`loadGroupCallParticipants: ${error.message}`);
+        logE(`loadGroupCallParticipants: ${error.message}`);
       });
       this.applyVideoSources(this.videoSources);
       this.restoreSurfaceBindings();
@@ -877,7 +878,7 @@ struct LiveStreamViewerPage {
     audioSourceId: number, speaking: boolean
   ): void {
     if (!this.pageActive || this.tgcallsSession !== session) { return; }
-    console.info(`[LiveStreamViewer] audio activity source=${audioSourceId} speaking=${speaking}`);
+    logI(`[LiveStreamViewer] audio activity source=${audioSourceId} speaking=${speaking}`);
     this.participantStore?.applyAudioActivity(audioSourceId, speaking);
     setGroupCallParticipantIsSpeaking(
       client, this.groupCallId, audioSourceId, speaking
@@ -885,7 +886,7 @@ struct LiveStreamViewerPage {
       if (!this.pageActive || this.tgcallsSession !== session) { return; }
       this.participantStore?.applyAudioActivity(audioSourceId, speaking, sender);
     }).catch((error: Error): void => {
-      console.error(
+      logE(
         `[LiveStreamViewer] set speaking source=${audioSourceId} failed: ${error.message}`
       );
     });
@@ -895,7 +896,7 @@ struct LiveStreamViewerPage {
     session: TgcallsGroupSession, mode: number, active: boolean, error: number
   ): void {
     if (!this.pageActive || this.tgcallsSession !== session) { return; }
-    console.info(
+    logI(
       `[LiveStreamViewer] local video mode=${mode} active=${active} error=${error}`
     );
     if (mode === 3) {
@@ -914,7 +915,7 @@ struct LiveStreamViewerPage {
       this.screenShareDesired = false;
       this.screenShareOperationSequence += 1;
       session.stopScreenSharing().catch((caught: Error): void => {
-        console.error(`[LiveStreamViewer] screen-share cleanup failed: ${caught.message}`);
+        logE(`[LiveStreamViewer] screen-share cleanup failed: ${caught.message}`);
       });
       this.setMediaStatus(error !== 0
         ? str('lv_screen_not_started')
@@ -948,7 +949,7 @@ struct LiveStreamViewerPage {
     this.refreshPrimaryVideoAspect();
     this.localVideoOperationSequence += 1;
     session.stopCamera().catch((caught: Error): void => {
-      console.error(`[LiveStreamViewer] camera cleanup failed: ${caught.message}`);
+      logE(`[LiveStreamViewer] camera cleanup failed: ${caught.message}`);
     });
     if (error !== 0) {
       this.setMediaStatus(str('lv_camera_start_failed'));
@@ -974,7 +975,7 @@ struct LiveStreamViewerPage {
     if (endpointId !== primaryEndpoint) { return; }
     if (Math.abs(this.primaryVideoAspectRatio - aspectRatio) < 0.01) { return; }
     this.primaryVideoAspectRatio = aspectRatio;
-    console.info(
+    logI(
       `[LiveStreamViewer] primary video geometry endpoint=${endpointId} ` +
       `${width}x${height} aspect=${aspectRatio}`
     );
@@ -1141,7 +1142,7 @@ struct LiveStreamViewerPage {
         this.onLiveState(next);
       }
       if (!next.isActive) { this.setMediaStatus(str('lfw_ended')); }
-      console.info(
+      logI(
         `[LiveStreamViewer] health reason=${reason} active=${next.isActive} ` +
         `joined=${next.isJoined} needRejoin=${next.needRejoin} media=${this.mediaConnected} ` +
         `admin=${this.canManageLive} canBeManaged=${canBeManaged} isOwned=${isOwned}`
@@ -1149,7 +1150,7 @@ struct LiveStreamViewerPage {
     } catch (caught) {
       const error = caught as Error;
       if (!this.hasJoinedOnce) { this.headerQueryFailed = true; }
-      console.error(`[LiveStreamViewer] health check failed reason=${reason}: ${error.message}`);
+      logE(`[LiveStreamViewer] health check failed reason=${reason}: ${error.message}`);
     } finally {
       this.groupCallRefreshInFlight = false;
     }
@@ -1296,7 +1297,7 @@ struct LiveStreamViewerPage {
           toggleGroupCallParticipantIsMuted(
             getTdClient(), this.groupCallId, this.selfParticipantId, true
           ).catch((error: Error): void => {
-            console.error(`toggleGroupCallParticipantIsMuted(true): ${error.message}`);
+            logE(`toggleGroupCallParticipantIsMuted(true): ${error.message}`);
           });
         }
       }
@@ -1452,7 +1453,7 @@ struct LiveStreamViewerPage {
       this.localVideoBusy = false;
       this.setMediaStatus(str('lv_camera_first_frame_timeout'));
       session.stopCamera().catch((caught: Error): void => {
-        console.error(`[LiveStreamViewer] timed-out camera cleanup failed: ${caught.message}`);
+        logE(`[LiveStreamViewer] timed-out camera cleanup failed: ${caught.message}`);
       });
     }, LOCAL_VIDEO_START_TIMEOUT_MS);
     try {
@@ -1497,7 +1498,7 @@ struct LiveStreamViewerPage {
       this.screenShareBusy = false;
       this.setMediaStatus(str('lv_screen_timeout'));
       session.stopScreenSharing().catch((caught: Error): void => {
-        console.error(`[LiveStreamViewer] timed-out screen-share cleanup failed: ${caught.message}`);
+        logE(`[LiveStreamViewer] timed-out screen-share cleanup failed: ${caught.message}`);
       });
     }, LOCAL_VIDEO_START_TIMEOUT_MS);
     try {
@@ -1940,7 +1941,7 @@ struct LiveStreamViewerPage {
     if (this.store !== null) { this.store.dispose(); this.store = null; }
     if (this.groupCallId > 0 && !this.leavingForFloating) {
       leaveGroupCall(getTdClient(), this.groupCallId).catch((error: Error): void => {
-        console.error(`LiveStreamViewerPage.leaveGroupCall failed: ${error.message}`);
+        logE(`LiveStreamViewerPage.leaveGroupCall failed: ${error.message}`);
       });
     }
   }

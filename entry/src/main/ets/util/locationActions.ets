@@ -2,6 +2,7 @@ import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 import { liveLocation } from '../services/LiveLocationService';
+import { logE } from './log';
 
 // 位置相关的两个交互前置动作。都不碰页面状态。
 
@@ -20,7 +21,7 @@ export function withLocationPermission(
       promptAction.showToast({ message: $r('app.string.cp_needs_location'), duration: 1800 });
     })
     .catch((e: BusinessError): void => {
-      console.error(`location permission failed: ${e.message}`);
+      logE(`location permission failed: ${e.message}`);
     });
 }
 
@@ -41,6 +42,6 @@ export function confirmStopLiveLocation(): void {
     liveLocation.stopSharing();
     promptAction.showToast({ message: $r('app.string.cp_live_location_stopped'), duration: 1500 });
   }).catch((e: Object): void => {
-    console.error(`confirmStopLiveLocation failed: ${JSON.stringify(e)}`);
+    logE(`confirmStopLiveLocation failed: ${JSON.stringify(e)}`);
   });
 }

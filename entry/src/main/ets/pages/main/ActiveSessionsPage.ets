@@ -14,6 +14,7 @@ import { plural, str } from '../../util/strings';
 import { clockTime, fullDate, monthDayTime } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 16;
 const DANGER: string = '#EF5B5B';
@@ -251,7 +252,7 @@ struct ActiveSessionsPage {
     } catch (caught) {
       if (!this.active || sequence !== this.loadSequence) { return; }
       const error = caught as Error;
-      console.error(`ActiveSessionsPage.getActiveSessions failed: ${error.message}`);
+      logE(`ActiveSessionsPage.getActiveSessions failed: ${error.message}`);
       const presentation = activeSessionError(error.message, str('as_load_failed_retry'));
       const message = error.message === 'CURRENT_SESSION_MISSING'
         ? str('as_incomplete')
@@ -397,7 +398,7 @@ struct ActiveSessionsPage {
     } catch (caught) {
       const error = caught as BusinessError;
       if (error.code !== 1000500002) {
-        console.error(`ActiveSessionsPage.linkDesktopDevice failed: ${error.message}`);
+        logE(`ActiveSessionsPage.linkDesktopDevice failed: ${error.message}`);
         const presentation = activeSessionError(error.message, str('as_connect_failed'));
         promptAction.showToast({
           message: presentation.text,
@@ -434,7 +435,7 @@ struct ActiveSessionsPage {
       await this.load(false);
     } catch (caught) {
       const error = caught as TdError;
-      console.error(`ActiveSessionsPage.terminateAll failed: ${error.message}`);
+      logE(`ActiveSessionsPage.terminateAll failed: ${error.message}`);
       this.showMutationError(error, str('action_failed_retry'));
     } finally {
       this.actionKey = '';
@@ -470,7 +471,7 @@ struct ActiveSessionsPage {
       promptAction.showToast({ message: $r('app.string.as_terminated'), duration: 1800 });
     } catch (caught) {
       const error = caught as TdError;
-      console.error(`ActiveSessionsPage.terminateSession failed: ${error.message}`);
+      logE(`ActiveSessionsPage.terminateSession failed: ${error.message}`);
       this.others = before;
       this.showMutationError(error, str('as_terminate_failed'));
     } finally {
@@ -492,7 +493,7 @@ struct ActiveSessionsPage {
       await getTdClient().send(request);
     } catch (caught) {
       const error = caught as TdError;
-      console.error(`ActiveSessionsPage.toggleSecretChats failed: ${error.message}`);
+      logE(`ActiveSessionsPage.toggleSecretChats failed: ${error.message}`);
       this.replaceSession(before);
       this.showMutationError(error, str('as_secret_chats_failed'));
     } finally {
@@ -514,7 +515,7 @@ struct ActiveSessionsPage {
       await getTdClient().send(request);
     } catch (caught) {
       const error = caught as TdError;
-      console.error(`ActiveSessionsPage.toggleCalls failed: ${error.message}`);
+      logE(`ActiveSessionsPage.toggleCalls failed: ${error.message}`);
       this.replaceSession(before);
       this.showMutationError(error, str('as_calls_failed'));
     } finally {
@@ -535,7 +536,7 @@ struct ActiveSessionsPage {
       promptAction.showToast({ message: $r('app.string.as_device_confirmed'), duration: 1800 });
     } catch (caught) {
       const error = caught as TdError;
-      console.error(`ActiveSessionsPage.confirmSession failed: ${error.message}`);
+      logE(`ActiveSessionsPage.confirmSession failed: ${error.message}`);
       this.showMutationError(error, str('as_confirm_failed'));
     } finally {
       this.actionKey = '';
@@ -589,7 +590,7 @@ struct ActiveSessionsPage {
       });
     } catch (caught) {
       const error = caught as TdError;
-      console.error(`ActiveSessionsPage.setInactiveTtl failed: ${error.message}`);
+      logE(`ActiveSessionsPage.setInactiveTtl failed: ${error.message}`);
       this.inactiveTtlDays = previous;
       this.showMutationError(error, str('as_ttl_failed'));
     } finally {

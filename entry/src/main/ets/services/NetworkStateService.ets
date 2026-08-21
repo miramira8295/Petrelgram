@@ -3,6 +3,7 @@ import { radio } from '@kit.TelephonyKit';
 import { getTdClient, isReady } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { KEY_CURRENT_NETWORK_TYPE } from '../store/AppSettings';
+import { logW } from '../util/log';
 
 let monitor: connection.NetConnection | null = null;
 let lastPublished: string = '';
@@ -26,7 +27,7 @@ function publish(network: string, forceTd: boolean = false): void {
   const request: TdRequest = { '@type': 'setNetworkType' };
   request['type'] = tdNetworkTypeOf(normalized);
   getTdClient().send(request).catch((caught: Error): void => {
-    console.warn(`NetworkStateService.setNetworkType(${normalized}) failed: ${caught.message}`);
+    logW(`NetworkStateService.setNetworkType(${normalized}) failed: ${caught.message}`);
   });
 }
 
@@ -35,7 +36,7 @@ async function cellularType(): Promise<string> {
     const state = await radio.getNetworkState();
     return state.isRoaming ? 'roaming' : 'mobile';
   } catch (caught) {
-    console.warn(`NetworkStateService.getNetworkState failed: ${caught}`);
+    logW(`NetworkStateService.getNetworkState failed: ${caught}`);
     return 'mobile';
   }
 }
@@ -64,7 +65,7 @@ export function refreshNetworkState(forceTd: boolean = false): void {
     if (sequence === refreshSequence) { publish(network, forceTd); }
   }).catch((caught: Error): void => {
     if (sequence === refreshSequence) {
-      console.warn(`NetworkStateService.refresh failed: ${caught.message}`);
+      logW(`NetworkStateService.refresh failed: ${caught.message}`);
       publish('other', forceTd);
     }
   });
@@ -92,7 +93,7 @@ export function beginNetworkMonitoring(): void {
   });
   next.register((error): void => {
     if (error !== undefined && error !== null && error.code !== 0) {
-      console.warn(`NetworkStateService.register failed: ${error.message}`);
+      logW(`NetworkStateService.register failed: ${error.message}`);
     }
     refreshNetworkState(true);
   });

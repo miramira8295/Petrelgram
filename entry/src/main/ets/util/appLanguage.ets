@@ -1,6 +1,7 @@
 import { i18n } from '@kit.LocalizationKit';
 import { refreshLocale } from './intlFormat';
 import { str } from './strings';
+import { logE } from './log';
 
 // The platform owns the app's language: setAppPreferredLanguage() switches the
 // resource lookup and survives restarts, so nothing here re-applies anything on
@@ -75,7 +76,7 @@ export function systemMatchedLanguage(): string {
     const system = i18n.System.getSystemLanguage();
     return i18n.I18NUtil.getBestMatchLocale(system, supportedLanguageTags());
   } catch (e) {
-    console.error(`appLanguage.systemMatched failed: ${e}`);
+    logE(`appLanguage.systemMatched failed: ${e}`);
     return '';
   }
 }
@@ -100,7 +101,7 @@ export function applyAppLanguage(tag: string): boolean {
   try {
     i18n.System.setAppPreferredLanguage(tag);
   } catch (e) {
-    console.error(`appLanguage.apply ${tag} failed: ${e}`);
+    logE(`appLanguage.apply ${tag} failed: ${e}`);
     return false;
   }
   // Resources reload themselves; the Intl formatters do not, and would keep

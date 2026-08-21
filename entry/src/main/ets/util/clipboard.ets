@@ -6,6 +6,7 @@
 
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
+import { logE } from './log';
 
 export function copyPlainText(text: string, successMessage: ResourceStr): void {
   // 空串不进剪贴板，也不弹提示——否则用户会以为复制成功了。
@@ -16,6 +17,6 @@ export function copyPlainText(text: string, successMessage: ResourceStr): void {
   pasteboard.getSystemPasteboard().setData(data).then((): void => {
     promptAction.showToast({ message: successMessage, duration: 1200 });
   }).catch((e: Object): void => {
-    console.error(`copyPlainText failed: ${JSON.stringify(e)}`);
+    logE(`copyPlainText failed: ${JSON.stringify(e)}`);
   });
 }

@@ -9,6 +9,7 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE, logI } from '../../util/log';
 
 // "Forward to…" chat picker, extracted from ChatPage.
 //
@@ -167,7 +168,7 @@ export struct ForwardSheet {
       const forwarded: TdObject[] = (result['messages'] as TdObject[] | undefined) ?? [];
       const albums: string[] = forwarded.map((m: TdObject): string =>
         `${(m['id'] as number | undefined) ?? 0}:${m['media_album_id'] ?? '-'}`);
-      console.info(`[FwdDiag] sent=${ids.length} got=${forwarded.length} ${albums.join(' ')}`);
+      logI(`[FwdDiag] sent=${ids.length} got=${forwarded.length} ${albums.join(' ')}`);
       if (seq !== this.seq) {
         return;
       }
@@ -183,7 +184,7 @@ export struct ForwardSheet {
         return;
       }
       this.sendingChatId = 0;
-      console.error(`ForwardSheet.forwardMessages failed: ${e.message}`);
+      logE(`ForwardSheet.forwardMessages failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.fw_failed'), duration: 2000 });
     });
   }

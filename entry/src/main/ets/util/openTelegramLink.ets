@@ -10,6 +10,7 @@ import {
 import { openWebUrl } from './webBrowserNav';
 import { getMainMiniApp, getMiniAppLinkUrl } from '../store/BotApi';
 import { navigateToChat } from './chatNav';
+import { logE } from './log';
 
 function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     joinedNoticeIsChannel: boolean = false): void {
@@ -84,7 +85,7 @@ function resolvePublicChat(context: common.UIAbilityContext, username: string, d
     }
     openProfileForChat(chat, draftText, openProfile);
   }).catch((error: TdError): void => {
-    console.error(`openTelegramLink.searchPublicChat(${username}) failed: ${error.message}`);
+    logE(`openTelegramLink.searchPublicChat(${username}) failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
   });
 }
@@ -107,7 +108,7 @@ function openMessageLink(context: common.UIAbilityContext, link: string, origina
     }
     navigateToChat(params);
   }).catch((error: TdError): void => {
-    console.error(`openTelegramLink.getMessageLinkInfo failed: ${error.message}`);
+    logE(`openTelegramLink.getMessageLinkInfo failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
   });
 }
@@ -145,7 +146,7 @@ function openSelfProfile(): void {
       router.pushUrl({ url: 'pages/profile/ProfilePage', params: params });
     }
   }).catch((error: TdError): void => {
-    console.error(`openTelegramLink.getMe failed: ${error.message}`);
+    logE(`openTelegramLink.getMe failed: ${error.message}`);
     promptAction.showToast({ message: str('tglink_cannot_open_profile'), duration: 1600 });
   });
 }
@@ -166,11 +167,11 @@ function openSavedMessages(): void {
         openChatPage(chatId);
       }
     }).catch((error: TdError): void => {
-      console.error(`openTelegramLink.createSavedMessages failed: ${error.message}`);
+      logE(`openTelegramLink.createSavedMessages failed: ${error.message}`);
       promptAction.showToast({ message: str('tglink_cannot_open_saved'), duration: 1600 });
     });
   }).catch((error: TdError): void => {
-    console.error(`openTelegramLink.getMeForSaved failed: ${error.message}`);
+    logE(`openTelegramLink.getMeForSaved failed: ${error.message}`);
     promptAction.showToast({ message: str('tglink_cannot_open_saved'), duration: 1600 });
   });
 }
@@ -190,7 +191,7 @@ function openStoryOwner(context: common.UIAbilityContext, username: string, orig
       duration: live ? 2200 : 1400
     });
   }).catch((error: TdError): void => {
-    console.error(`openTelegramLink.storyOwner(${username}) failed: ${error.message}`);
+    logE(`openTelegramLink.storyOwner(${username}) failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
   });
 }
@@ -233,11 +234,11 @@ function openPhoneNumberUser(context: common.UIAbilityContext, type: TdObject, o
         navigateToChat(params);
       }
     }).catch((error: TdError): void => {
-      console.error(`openTelegramLink.createPhoneChat failed: ${error.message}`);
+      logE(`openTelegramLink.createPhoneChat failed: ${error.message}`);
       onLinkUnresolved(context, original, allowBrowser);
     });
   }).catch((error: TdError): void => {
-    console.error(`openTelegramLink.searchUserByPhoneNumber failed: ${error.message}`);
+    logE(`openTelegramLink.searchUserByPhoneNumber failed: ${error.message}`);
     promptAction.showToast({ message: str('tglink_phone_not_found'), duration: 1800 });
   });
 }
@@ -426,7 +427,7 @@ function openMiniAppLink(context: common.UIAbilityContext, type: TdObject, isMai
     }
     openWebUrl(context, url);
   }).catch((error: TdError): void => {
-    console.error(`openMiniAppLink failed: ${error.message}`);
+    logE(`openMiniAppLink failed: ${error.message}`);
     promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });
   });
 }
@@ -438,7 +439,7 @@ function classifyTelegramLink(context: common.UIAbilityContext, url: string,
   getTdClient().send(req).then((type: TdObject): void => {
     handleInternalLinkType(context, type, url, allowBrowser);
   }).catch((error: TdError): void => {
-    console.error(`openTelegramLink.getInternalLinkType failed: ${error.message}`);
+    logE(`openTelegramLink.getInternalLinkType failed: ${error.message}`);
     // Keep a compatibility fallback for older TDLib builds: the two oldest
     // public link shapes can still be resolved without opening a browser.
     const bareName = bareUsernameOf(url);
@@ -493,14 +494,14 @@ export function openInviteLink(context: common.UIAbilityContext, invite: string,
           openChatPage(id, true, isChannel);
         }
       }).catch((e: TdError) => {
-        console.error(`openInviteLink.join failed: ${e.message}`);
+        logE(`openInviteLink.join failed: ${e.message}`);
         promptAction.showToast({ message: str('tglink_join_failed') });
       });
     });
   }).catch((e: TdError) => {
     // Expired or invalid Telegram resources stay in-app and show a precise
     // failure instead of opening Telegram's web landing page.
-    console.error(`openInviteLink.check failed: ${e.message}`);
+    logE(`openInviteLink.check failed: ${e.message}`);
     onLinkUnresolved(context, original, allowBrowser);
   });
 }
@@ -555,12 +556,12 @@ export function openChatFolderInviteLink(invite: string): void {
       getTdClient().send(add).then((): void => {
         promptAction.showToast({ message: str('folder_link_added_toast'), duration: 1600 });
       }).catch((error: TdError): void => {
-        console.error(`openChatFolderInviteLink.add failed: ${error.message}`);
+        logE(`openChatFolderInviteLink.add failed: ${error.message}`);
         promptAction.showToast({ message: str('folder_link_add_failed'), duration: 1800 });
       });
     }).catch((): void => {});
   }).catch((error: TdError): void => {
-    console.error(`openChatFolderInviteLink.check failed: ${error.message}`);
+    logE(`openChatFolderInviteLink.check failed: ${error.message}`);
     promptAction.showToast({ message: str('folder_link_invalid'), duration: 1800 });
   });
 }
@@ -602,12 +603,12 @@ export function openStickerSetLink(link: StickerSetLink): void {
       getTdClient().send(change).then((): void => {
         promptAction.showToast({ message: str('sticker_link_added_toast', resourceName), duration: 1500 });
       }).catch((error: TdError): void => {
-        console.error(`openStickerSetLink.change failed: ${error.message}`);
+        logE(`openStickerSetLink.change failed: ${error.message}`);
         promptAction.showToast({ message: str('sticker_link_add_failed', resourceName), duration: 1800 });
       });
     }).catch((): void => {});
   }).catch((error: TdError): void => {
-    console.error(`openStickerSetLink.search(${link.name}) failed: ${error.message}`);
+    logE(`openStickerSetLink.search(${link.name}) failed: ${error.message}`);
     promptAction.showToast({ message: str('sticker_link_invalid'), duration: 1800 });
   });
 }
@@ -642,11 +643,11 @@ export function openChatLinkAction(context: common.UIAbilityContext, action: Cha
     start['chat_id'] = chatId;
     start['parameter'] = action.startParam;
     getTdClient().send(start).catch((e: TdError) => {
-      console.error(`openTelegramLink.sendBotStartMessage failed: ${e.message}`);
+      logE(`openTelegramLink.sendBotStartMessage failed: ${e.message}`);
       promptAction.showToast({ message: str('tglink_start_failed'), duration: 1500 });
     });
   }).catch((e: TdError) => {
-    console.error(`openTelegramLink.searchPublicChat(${action.username}) failed: ${e.message}`);
+    logE(`openTelegramLink.searchPublicChat(${action.username}) failed: ${e.message}`);
     onLinkUnresolved(context, original, allowBrowser);
   });
 }

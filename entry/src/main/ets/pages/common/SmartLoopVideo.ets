@@ -5,6 +5,7 @@ import {
   KEY_POWER_EMOJI_CHAT, KEY_POWER_EMOJI_REACTIONS, KEY_POWER_EMOJI_STATUS,
   KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP, KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
+import { logW } from '../../util/log';
 
 // One-time probe verdict for VP9/WEBM on the system AVPlayer:
 // 0 = unknown (try AVPlayer), 1 = works, -1 = unsupported (go straight to ijk).
@@ -156,7 +157,7 @@ export struct SmartLoopVideo {
             loop: this.loopEnabled(),
             onFailed: (): void => {
               if (avWebmVerdict === 0) {
-                console.warn('SmartLoopVideo: AVPlayer cannot play this webm — falling back to ijkplayer');
+                logW('SmartLoopVideo: AVPlayer cannot play this webm — falling back to ijkplayer');
               }
               this.videoReady = false;
               avWebmVerdict = -1;

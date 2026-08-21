@@ -7,6 +7,7 @@ import { TdClient } from '../tdkit/TdClient';
 import { GroupCallStreamInfo } from '../tdkit/GroupCallTypes';
 import { TdRequest } from '../tdkit/TdTypes';
 import { parseOptionInteger } from '../store/FolderApi';
+import { logE, logI, logW } from '../util/log';
 
 const JOIN_PAYLOAD_TIMEOUT_MS: number = 15000;
 const SCREEN_SHARE_JOIN_PAYLOAD_TIMEOUT_MS: number = 15000;
@@ -119,11 +120,11 @@ export class TgcallsGroupSession {
     this.broadcastConnection = false;
     this.generation += 1;
     const generation = this.generation;
-    console.info(`[tgcalls] join start gcid=${groupCallId}`);
+    logI(`[tgcalls] join start gcid=${groupCallId}`);
     tgcallsNative.tgcallsCreate(
       (connected: boolean): void => {
         if (!this.stopped && generation === this.generation) {
-          console.info(`[tgcalls] network state connected=${connected}`);
+          logI(`[tgcalls] network state connected=${connected}`);
           if (connected) { this.resumeMedia(); }
           this.onNetworkState(connected);
         }
@@ -157,16 +158,16 @@ export class TgcallsGroupSession {
     this.created = true;
     try {
       const local = await this.emitJoinPayload();
-      console.info(`[tgcalls] emitJoinPayload ok audioSourceId=${local.audioSourceId} payloadLen=${local.payload.length}`);
+      logI(`[tgcalls] emitJoinPayload ok audioSourceId=${local.audioSourceId} payloadLen=${local.payload.length}`);
       this.ensureCurrent(generation);
       const response = await joinVideoChat(client, groupCallId, local.audioSourceId, local.payload, muted);
-      console.info(`[tgcalls] joinVideoChat resp len=${response.length} head=${response.substring(0, 100)}`);
+      logI(`[tgcalls] joinVideoChat resp len=${response.length} head=${response.substring(0, 100)}`);
       this.ensureCurrent(generation);
       if (response.trim() === '') {
         throw new Error('Telegram returned an empty group-call join response');
       }
       const parsedResponse = this.parseJoinResponse(response);
-      console.info(
+      logI(
         `[tgcalls] isBroadcast=${parsedResponse.isBroadcast} unified=${parsedResponse.isUnifiedBroadcast}`
       );
       if (parsedResponse.isBroadcast) {
@@ -181,7 +182,7 @@ export class TgcallsGroupSession {
         // tgcalls' streaming context requests time-aligned OGG parts through
         // the callback registered above, then decodes and A/V-syncs them.
         tgcallsNative.tgcallsSetConnectionMode(2, parsedResponse.isUnifiedBroadcast);
-        console.info(`[tgcalls] broadcast streams discovered=${streams.length}`);
+        logI(`[tgcalls] broadcast streams discovered=${streams.length}`);
         this.setMuted(muted);
         return {
           isBroadcast: true,
@@ -195,10 +196,10 @@ export class TgcallsGroupSession {
       this.broadcastConnection = false;
       tgcallsNative.tgcallsSetJoinResponse(response);
       this.setMuted(muted);
-      console.info('[tgcalls] rtc mode set + join response fed; waiting for connection');
+      logI('[tgcalls] rtc mode set + join response fed; waiting for connection');
       return { isBroadcast: false, isUnifiedBroadcast: false, streams: [] };
     } catch (e) {
-      console.error(`[tgcalls] join failed: ${e}`);
+      logE(`[tgcalls] join failed: ${e}`);
       this.stop();
       throw new Error(`${e}`);
     }
@@ -272,7 +273,7 @@ export class TgcallsGroupSession {
             screenGeneration !== this.screenShareGeneration) {
             return;
           }
-          console.info(`[tgcalls] screen-sharing network connected=${connected}`);
+          logI(`[tgcalls] screen-sharing network connected=${connected}`);
         },
         (mode: number, active: boolean, error: number): void => {
           if (this.stopped || mainGeneration !== this.generation ||
@@ -299,7 +300,7 @@ export class TgcallsGroupSession {
       }
       tgcallsNative.tgcallsScreenShareSetConnectionMode();
       tgcallsNative.tgcallsScreenShareSetJoinResponse(response);
-      console.info(
+      logI(
         `[tgcalls] screen-sharing joined audioSourceId=${local.audioSourceId} payloadLen=${local.payload.length}`
       );
       return true;
@@ -385,7 +386,7 @@ export class TgcallsGroupSession {
       tgcallsNative.tgcallsScreenShareDestroy();
       if (client !== null && groupCallId > 0) {
         endGroupCallScreenSharing(client, groupCallId).catch((caught: Error): void => {
-          console.warn(`[tgcalls] end screen sharing during stop failed: ${caught.message}`);
+          logW(`[tgcalls] end screen sharing during stop failed: ${caught.message}`);
         });
       }
     }
@@ -395,7 +396,7 @@ export class TgcallsGroupSession {
         toggleGroupCallIsMyVideoEnabled(
           client, groupCallId, false
         ).catch((caught: Error): void => {
-          console.warn(`[tgcalls] disable camera during stop failed: ${caught.message}`);
+          logW(`[tgcalls] disable camera during stop failed: ${caught.message}`);
         });
       }
     }
@@ -491,7 +492,7 @@ export class TgcallsGroupSession {
       await new Promise<void>((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
     }
     if (lastError !== null) {
-      console.warn(`[tgcalls] initial broadcast stream discovery failed: ${lastError.message}`);
+      logW(`[tgcalls] initial broadcast stream discovery failed: ${lastError.message}`);
     }
     // An RTMP publisher may not have started yet. Joining still succeeds;
     // tgcalls will request time again once per second until channels appear.
@@ -557,7 +558,7 @@ export class TgcallsGroupSession {
       const upper = error.message.toUpperCase();
       const status = upper.includes('TIME_TOO_SMALL') || upper.includes('RESYNC') || upper.includes('OFFSET_INVALID')
         ? 2 : 1;
-      console.error(
+      logE(
         `[tgcalls] broadcast request failed kind=${kind} ts=${timestampMs} duration=${durationMs} ` +
         `channel=${channelId}: ${error.message}`
       );

@@ -5,6 +5,7 @@ import { formatMemberCount } from '../util/formatMemberCount';
 import { formatPreview } from '../util/formatPreview';
 import { str } from '../util/strings';
 import { monthDay } from '../util/intlFormat';
+import { logE, logI } from '../util/log';
 
 const DL_PRIORITY: number = 1;
 const WEEK_MINUTES: number = 7 * 24 * 60;
@@ -204,7 +205,7 @@ export class ProfileStore {
   private send(req: TdRequest, tag: string, onOk: (res: TdObject) => void,
     onError?: (error: TdError) => void): void {
     this.client.send(req).then(onOk).catch((e: TdError) => {
-      console.error(`ProfileStore.${tag} failed: ${e.message}`);
+      logE(`ProfileStore.${tag} failed: ${e.message}`);
       if (onError !== undefined) {
         onError(e);
       }
@@ -365,7 +366,7 @@ export class ProfileStore {
         this.loadChannel(this.personalChatId);
       }
       const groupCount = (full['group_in_common_count'] as number | undefined) ?? 0;
-      console.info(`ProfileStore: fullInfo groups=${groupCount} gifts=${(full['gift_count'] as number | undefined) ?? 0} personalChat=${this.personalChatId}`);
+      logI(`ProfileStore: fullInfo groups=${groupCount} gifts=${(full['gift_count'] as number | undefined) ?? 0} personalChat=${this.personalChatId}`);
       if (groupCount > 0) {
         this.loadGroupsInCommon();
       }
@@ -433,7 +434,7 @@ export class ProfileStore {
     req['limit'] = 100;
     this.send(req, 'getGroupsInCommon', (res: TdObject) => {
       const ids = (res['chat_ids'] as number[] | undefined) ?? [];
-      console.info(`ProfileStore: groupsInCommon page=${ids.length} offset=${offsetChatId}`);
+      logI(`ProfileStore: groupsInCommon page=${ids.length} offset=${offsetChatId}`);
       if (ids.length > 0) {
         this.loadGroupsInCommon(ids[ids.length - 1]);
       }
@@ -486,7 +487,7 @@ export class ProfileStore {
       this.privateChatId = (chat['id'] as number | undefined) ?? this.userId;
       this.notify();
     }, (): void => {
-      console.error(`ProfileStore.createPrivateChat(${this.userId}) failed`);
+      logE(`ProfileStore.createPrivateChat(${this.userId}) failed`);
     });
   }
 
@@ -711,7 +712,7 @@ export class ProfileStore {
     const req: TdRequest = { '@type': 'getAvailableGifts' };
     this.send(req, 'getAvailableGifts', (res: TdObject) => {
       const arr = (res['gifts'] as TdObject[] | undefined) ?? [];
-      console.info(`ProfileStore: availableGifts=${arr.length}`);
+      logI(`ProfileStore: availableGifts=${arr.length}`);
       for (const ag of arr) {
         const gift = ag['gift'] as TdObject | undefined;
         if (gift === undefined) {
@@ -745,7 +746,7 @@ export class ProfileStore {
     this.client.send(req).then(() => {
       onResult('');
     }).catch((e: TdError) => {
-      console.error(`ProfileStore.sendGift failed: ${e.message}`);
+      logE(`ProfileStore.sendGift failed: ${e.message}`);
       onResult(e.message);
     });
   }
@@ -768,7 +769,7 @@ export class ProfileStore {
     req['limit'] = 30;
     this.send(req, 'getReceivedGifts', (res: TdObject) => {
       const arr = (res['gifts'] as TdObject[] | undefined) ?? [];
-      console.info(`ProfileStore: gifts total=${(res['total_count'] as number | undefined) ?? 0} page=${arr.length}`);
+      logI(`ProfileStore: gifts total=${(res['total_count'] as number | undefined) ?? 0} page=${arr.length}`);
       for (const rg of arr) {
         const rid = (rg['received_gift_id'] as string | undefined) ?? '';
         const sent = rg['gift'] as TdObject | undefined;

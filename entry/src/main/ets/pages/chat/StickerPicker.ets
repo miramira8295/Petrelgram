@@ -18,6 +18,7 @@ import { probeEvent, probeHit } from '../../util/panelProbe';
 import {
   overlayMaterial, overlayGlassFill, overlayBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { logE, logI } from '../../util/log';
 
 export interface StickerItem {
   fileId: number;   // the sticker's own file (what gets sent)
@@ -317,7 +318,7 @@ export struct StickerPicker {
       if (seq !== this.loadSeq) {
         return;
       }
-      console.error(`StickerPicker.getInstalledStickerSets failed: ${e.message}`);
+      logE(`StickerPicker.getInstalledStickerSets failed: ${e.message}`);
       this.loading = false;
       if (this.sets.length === 0) {
         this.loadError = this.stickerType === 'custom_emoji' ? str('sp_emoji_load_failed') : str('sp_sticker_load_failed');
@@ -371,7 +372,7 @@ export struct StickerPicker {
         }
       }
     }).catch((e: TdError) => {
-      console.error(`StickerPicker.getTrendingStickerSets failed: ${e.message}`);
+      logE(`StickerPicker.getTrendingStickerSets failed: ${e.message}`);
     });
   }
 
@@ -417,7 +418,7 @@ export struct StickerPicker {
           loaded: t.loaded, failed: t.failed, stickers: t.stickers
         } : t);
     }).catch((e: TdError) => {
-      console.error(`StickerPicker.resolveTabIcon failed: ${e.message}`);
+      logE(`StickerPicker.resolveTabIcon failed: ${e.message}`);
     });
   }
 
@@ -529,7 +530,7 @@ export struct StickerPicker {
       if (seq !== this.searchSeq) {
         return;
       }
-      console.error(`StickerPicker.searchStickers failed: ${e.message}`);
+      logE(`StickerPicker.searchStickers failed: ${e.message}`);
       this.searchLoading = false;
       this.searchError = str('search_failed');
       this.searchItems = [];
@@ -566,7 +567,7 @@ export struct StickerPicker {
         this.refreshGrid();
       }
     }).catch((e: TdError) => {
-      console.error(`StickerPicker.downloadSearchThumb failed: ${e.message}`);
+      logE(`StickerPicker.downloadSearchThumb failed: ${e.message}`);
     });
   }
 
@@ -694,7 +695,7 @@ export struct StickerPicker {
       for (const it of items) {
         if (it.format === 'tgs') { tgs++; } else if (it.format === 'webm') { webm++; } else { webp++; }
       }
-      console.info(`StickerPicker: set ${setId} loaded ${items.length} stickers (tgs=${tgs} webm=${webm} webp=${webp})`);
+      logI(`StickerPicker: set ${setId} loaded ${items.length} stickers (tgs=${tgs} webm=${webm} webp=${webp})`);
       this.sets = this.sets.map((t: StickerSetTab): StickerSetTab =>
         t.id === setId
           ? {
@@ -715,7 +716,7 @@ export struct StickerPicker {
             loaded: false, failed: true, stickers: t.stickers
           }
           : t);
-      console.error(`StickerPicker.getStickerSet failed: ${e.message}`);
+      logE(`StickerPicker.getStickerSet failed: ${e.message}`);
     });
   }
 
@@ -747,7 +748,7 @@ export struct StickerPicker {
         srcPath: s.srcPath, customEmojiId: s.customEmojiId
       }));
     }).catch((e: TdError) => {
-      console.error(`StickerPicker.downloadThumb failed: ${e.message}`);
+      logE(`StickerPicker.downloadThumb failed: ${e.message}`);
     });
   }
 
@@ -812,7 +813,7 @@ export struct StickerPicker {
       }));
     }).catch((e: TdError) => {
       this.sourceLoading.delete(stickerFileId);
-      console.error(`StickerPicker.downloadSource failed: ${e.message}`);
+      logE(`StickerPicker.downloadSource failed: ${e.message}`);
     });
   }
 

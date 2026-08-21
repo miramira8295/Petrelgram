@@ -4,6 +4,7 @@ import { UserStore } from './UserStore';
 import { ChatEntry, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, isMutedFrom, usesDefaultMuteFrom, chatKindOf } from './ChatEntry';
 import { listKeyOf, chatListOf } from './ListKey';
 import { formatPreview } from '../util/formatPreview';
+import { logE, logI, logW } from '../util/log';
 
 const PAGE_LIMIT: number = 30;
 const MAIN: string = 'main';
@@ -238,7 +239,7 @@ export class ChatStore {
         this.exhaustedLists.add(listKey);
         return true;
       }
-      console.error(`ChatStore.load(${listKey}) failed: ${error.message}`);
+      logE(`ChatStore.load(${listKey}) failed: ${error.message}`);
       return false;
     });
     this.activeLoads.set(listKey, task);
@@ -290,7 +291,7 @@ export class ChatStore {
       }
     }
     if (!this.exhaustedLists.has(listKey)) {
-      console.warn(`ChatStore.ensureFullyLoaded(${listKey}) stopped at the ` +
+      logW(`ChatStore.ensureFullyLoaded(${listKey}) stopped at the ` +
         `${MAX_FULL_LOAD_PAGES}-page cap; its badge and list may still be incomplete`);
     }
   }
@@ -408,7 +409,7 @@ export class ChatStore {
     }).catch((error: TdError): void => {
       this.groupCallLoading.delete(groupCallId);
       if (error.code !== 404) {
-        console.error(`ChatStore.getGroupCall(${groupCallId}) failed: ${error.message}`);
+        logE(`ChatStore.getGroupCall(${groupCallId}) failed: ${error.message}`);
       }
     });
   }
@@ -654,7 +655,7 @@ export class ChatStore {
       this.defaultBackgroundLight = background;
       this.defaultBackgroundLightKnown = true;
     }
-    console.info(
+    logI(
       `[ChatBackground] default dark=${forDarkTheme} background=${background !== null}`
     );
     this.notify();
@@ -707,7 +708,7 @@ export class ChatStore {
       // 诊断：反馈过"有些会话不显示未读数"。这里是**唯一**会把非零未读抹成 0
       // 的地方（另外两处是本地摘角标和 TDLib 自己下发），三个数一起打才判断
       // 得出是真幽灵未读还是误伤。只在真抹掉时打。
-      console.warn(`effectiveUnread suppressed unread=${unread}` +
+      logW(`effectiveUnread suppressed unread=${unread}` +
         ` lastRead=${lastReadInboxId} lastMsg=${lastMessageId}`);
     }
     return suppressed ? 0 : unread;

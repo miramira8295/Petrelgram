@@ -11,6 +11,7 @@ import {
 import { str } from '../../util/strings';
 import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -60,7 +61,7 @@ struct NetworkUsagePage {
       this.refreshing = false;
       if (this.usage === null) { this.errorText = str('network_unreadable'); }
       else { this.warning = str('network_refresh_failed'); }
-      console.error(`NetworkUsagePage.load failed: ${error.message}`);
+      logE(`NetworkUsagePage.load failed: ${error.message}`);
     });
   }
 
@@ -88,7 +89,7 @@ struct NetworkUsagePage {
         this.load(false);
       }).catch((error: TdError): void => {
         this.resetting = false;
-        console.error(`NetworkUsagePage.reset failed: ${error.message}`);
+        logE(`NetworkUsagePage.reset failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.reset_failed_retry'), duration: 1700 });
         this.load(false);
       });

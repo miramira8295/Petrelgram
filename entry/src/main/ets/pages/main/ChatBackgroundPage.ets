@@ -16,6 +16,7 @@ import {
   CHAT_DIM_MAX, KEY_BG_BLUR, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM,
   patternStrengthKey, setNumber
 } from '../../store/AppSettings';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 118;
@@ -79,7 +80,7 @@ struct ChatBackgroundPage {
       this.loadThumbnails(rows, sequence);
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`ChatBackgroundPage.load failed: ${error.message}`);
+      logE(`ChatBackgroundPage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
   }
@@ -98,7 +99,7 @@ struct ChatBackgroundPage {
         next.set(row.preview.backgroundId, path);
         this.thumbPaths = next;
       }).catch((error: TdError): void => {
-        console.error(`ChatBackgroundPage.thumb ${fileId} failed: ${error.message}`);
+        logE(`ChatBackgroundPage.thumb ${fileId} failed: ${error.message}`);
       });
     }
   }
@@ -136,7 +137,7 @@ struct ChatBackgroundPage {
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.applyingId = '';
-      console.error(`ChatBackgroundPage.apply failed: ${error.message}`);
+      logE(`ChatBackgroundPage.apply failed: ${error.message}`);
       const text = error.message.indexOf('BOOST') >= 0 || error.message.indexOf('boost') >= 0
         ? $r('app.string.cb_boost_required')
         : (error.message.indexOf('ADMIN') >= 0 || error.message.indexOf('rights') >= 0
@@ -169,7 +170,7 @@ struct ChatBackgroundPage {
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.applyingId = '';
-      console.error(`ChatBackgroundPage.reset failed: ${error.message}`);
+      logE(`ChatBackgroundPage.reset failed: ${error.message}`);
       promptAction.showToast({ message: $r('app.string.cb_reset_failed'), duration: 1800 });
     });
   }

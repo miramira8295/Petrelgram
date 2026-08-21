@@ -13,6 +13,7 @@ import {
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -83,7 +84,7 @@ struct StorageUsagePage {
       this.refreshing = false;
       if (this.usage === null) { this.loadError = str('storage_unreadable'); }
       else { this.syncWarning = str('storage_refresh_failed'); }
-      console.error(`StorageUsagePage.load failed: ${error.message}`);
+      logE(`StorageUsagePage.load failed: ${error.message}`);
     });
   }
 
@@ -122,7 +123,7 @@ struct StorageUsagePage {
         this.load(false);
       }).catch((error: TdError): void => {
         this.actionKey = '';
-        console.error(`StorageUsagePage.clear failed: ${error.message}`);
+        logE(`StorageUsagePage.clear failed: ${error.message}`);
         promptAction.showToast({ message: $r('app.string.clear_failed_retry'), duration: 1700 });
       });
     });

@@ -23,6 +23,7 @@ import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/C
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
 import { overlayBackdropBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { logE } from '../../util/log';
 
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
 const DOCK_BG: ResourceColor = $r('app.color.dock_glass');
@@ -107,7 +108,7 @@ export struct MainScreen {
         }
         this.callPagePushed = true;
         router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
-          console.error(`MainScreen incoming call navigation failed: ${error.message}`);
+          logE(`MainScreen incoming call navigation failed: ${error.message}`);
         });
       } else if (s.phase === 'idle' || s.phase === 'ended') {
         this.callPagePushed = false;
@@ -132,7 +133,7 @@ export struct MainScreen {
       });
       store.open();
     }).catch((e: TdError) => {
-      console.error(`MainScreen.getMe failed: ${e.message}`);
+      logE(`MainScreen.getMe failed: ${e.message}`);
     });
   }
 
@@ -153,7 +154,7 @@ export struct MainScreen {
       this.callPagePushed = true;
       router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
         this.callPagePushed = false;
-        console.error(`MainScreen foreground call check failed: ${error.message}`);
+        logE(`MainScreen foreground call check failed: ${error.message}`);
       });
     }
   }

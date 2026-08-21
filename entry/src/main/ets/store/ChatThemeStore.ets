@@ -1,5 +1,6 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
+import { logE, logI } from '../util/log';
 
 type ChatThemeListener = (themes: TdObject[]) => void;
 
@@ -15,7 +16,7 @@ export class ChatThemeStore {
     this.client = client;
     client.onUpdate('updateChatThemes', (update: TdObject): void => {
       this.themes = ((update['chat_themes'] as TdObject[] | undefined) ?? []).slice();
-      console.info(`[ChatThemeStore] updateChatThemes received: ${this.themes.length} themes`);
+      logI(`[ChatThemeStore] updateChatThemes received: ${this.themes.length} themes`);
       const snapshot = this.themes.slice();
       for (const listener of this.listeners) { listener(snapshot); }
     });
@@ -35,13 +36,13 @@ export class ChatThemeStore {
         const updates = (state['updates'] as TdObject[] | undefined) ?? [];
         const themesUpdate = updates.find((update: TdObject): boolean =>
           ((update['@type'] as string | undefined) ?? '') === 'updateChatThemes');
-        console.info(`[ChatThemeStore] getCurrentState: found=${themesUpdate !== undefined}`);
+        logI(`[ChatThemeStore] getCurrentState: found=${themesUpdate !== undefined}`);
         if (themesUpdate === undefined || this.themes.length > 0) { return; }
         this.themes = ((themesUpdate['chat_themes'] as TdObject[] | undefined) ?? []).slice();
         const snapshot = this.themes.slice();
         for (const listener of this.listeners) { listener(snapshot); }
       }).catch((caught: Error): void => {
-        console.error(`[ChatThemeStore] getCurrentState failed: ${caught.message}`);
+        logE(`[ChatThemeStore] getCurrentState failed: ${caught.message}`);
       });
   }
 

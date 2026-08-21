@@ -1,4 +1,5 @@
 import { common, Want } from '@kit.AbilityKit';
+import { logE } from './log';
 
 export function normalizeExternalUrl(url: string): string {
   const target = url.trim();
@@ -27,7 +28,7 @@ export function openUrl(
     uri: target
   };
   context.startAbility(want).catch((e: Object) => {
-    console.error(`openUrl failed for ${target}: ${JSON.stringify(e)}`);
+    logE(`openUrl failed for ${target}: ${JSON.stringify(e)}`);
     onFailed();
   });
 }

@@ -19,6 +19,7 @@ import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { navigateToChat } from '../../util/chatNav';
+import { logI } from '../../util/log';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
@@ -222,7 +223,7 @@ export struct ChatRow {
         onConfirm(res.index);
       }).catch((e: Object): void => {
         // 点击遮罩关闭也会走到这里，所以只记录不打扰用户。
-        console.info(`ChatRow.${what} dialog dismissed: ${JSON.stringify(e)}`);
+        logI(`ChatRow.${what} dialog dismissed: ${JSON.stringify(e)}`);
       });
     }, MENU_DISMISS_MS);
   }

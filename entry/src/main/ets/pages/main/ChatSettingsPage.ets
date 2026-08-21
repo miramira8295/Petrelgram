@@ -18,6 +18,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -418,7 +419,7 @@ struct ChatSettingsPage {
           .onClick((): void => {
             router.pushUrl({ url: 'pages/main/ChatBackgroundPage' })
               .catch((error: Error): void => {
-                console.error(`ChatSettings open background failed: ${error.message}`);
+                logE(`ChatSettings open background failed: ${error.message}`);
               });
           });
 

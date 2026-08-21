@@ -7,6 +7,7 @@ import {
   getPrivacy, getReadDatePrivacy, getSessionCount, parsePrivacyRules
 } from './PrivacyApi';
 import { str } from '../util/strings';
+import { logW } from '../util/log';
 
 export type PrivacyLoadState = 'loading' | 'ready' | 'error';
 
@@ -117,7 +118,7 @@ export class PrivacyStore {
       apply(value);
       return true;
     }).catch((caught: TdError): boolean => {
-      console.warn(`PrivacyStore.${label} failed: ${caught.message}`);
+      logW(`PrivacyStore.${label} failed: ${caught.message}`);
       return false;
     });
   }

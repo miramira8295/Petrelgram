@@ -5,6 +5,7 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
 import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
 import { GESTURE_CLASSIC } from '../util/messageGestures';
+import { logE } from '../util/log';
 
 // User settings that outlive the process. Each one is mirrored into AppStorage
 // so any component can bind it with @StorageProp and re-render on change, while
@@ -261,7 +262,7 @@ export function refreshPowerSavingState(): void {
   try {
     applyPowerState(batteryInfo.batterySOC);
   } catch (e) {
-    console.error(`AppSettings.refreshPowerSavingState failed: ${e}`);
+    logE(`AppSettings.refreshPowerSavingState failed: ${e}`);
   }
 }
 
@@ -283,14 +284,14 @@ function beginBatteryMonitoring(): void {
         // HarmonyOS returns null (rather than undefined) for a successful
         // AsyncCallback error argument on some device releases.
         if (error !== undefined && error !== null && error.code !== 0) {
-          console.error(`AppSettings battery event failed: ${error.message}`);
+          logE(`AppSettings battery event failed: ${error.message}`);
           return;
         }
         refreshPowerSavingState();
       });
     }
   ).catch((e: Object): void => {
-    console.error(`AppSettings battery subscribe failed: ${JSON.stringify(e)}`);
+    logE(`AppSettings battery subscribe failed: ${JSON.stringify(e)}`);
   });
 }
 
@@ -312,7 +313,7 @@ export function applyNightMode(nightMode: string): void {
   try {
     (appContext as common.Context).getApplicationContext().setColorMode(colorModeOf(nightMode));
   } catch (e) {
-    console.error(`AppSettings.applyNightMode failed: ${e}`);
+    logE(`AppSettings.applyNightMode failed: ${e}`);
   }
 }
 
@@ -374,7 +375,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     refreshPowerSavingState();
     beginBatteryMonitoring();
   } catch (e) {
-    console.error(`AppSettings.initSettings failed: ${e}`);
+    logE(`AppSettings.initSettings failed: ${e}`);
     // Defaults still populate AppStorage so the UI works without persistence.
     AppStorage.setOrCreate(KEY_TEXT_SIZE, TEXT_SIZE_DEFAULT);
     AppStorage.setOrCreate(KEY_BUBBLE_RADIUS, RADIUS_DEFAULT);
@@ -419,7 +420,7 @@ function persist(key: string, value: preferences.ValueType): void {
   }
   const s = store as preferences.Preferences;
   s.put(key, value).then(() => s.flush()).catch((e: Object) => {
-    console.error(`AppSettings.persist(${key}) failed: ${JSON.stringify(e)}`);
+    logE(`AppSettings.persist(${key}) failed: ${JSON.stringify(e)}`);
   });
 }
 

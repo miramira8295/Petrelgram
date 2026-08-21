@@ -1,5 +1,6 @@
 import { image } from '@kit.ImageKit';
 import { sendableImage } from '@kit.ImageKit';
+import { logE } from './log';
 
 // Image decoding, off the UI thread.
 //
@@ -48,14 +49,14 @@ export async function decodeSendable(
     source = sendableImage.createImageSource(path);
     return await source.createPixelMap(opts);
   } catch (e) {
-    console.error(`pixelDecodeTask(${path}) failed: ${e}`);
+    logE(`pixelDecodeTask(${path}) failed: ${e}`);
     return undefined;
   } finally {
     if (source !== undefined) {
       try {
         source.release();
       } catch (e) {
-        console.error(`pixelDecodeTask release failed: ${e}`);
+        logE(`pixelDecodeTask release failed: ${e}`);
       }
     }
   }

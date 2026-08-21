@@ -9,6 +9,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 16;
 const COLOR_DANGER: string = '#E5484D';
@@ -45,7 +46,7 @@ struct ConnectedWebsitesPage {
       this.loadState = 'ready';
     }).catch((error: TdError): void => {
       if (!this.active || sequence !== this.sequence) { return; }
-      console.error(`ConnectedWebsitesPage.load failed: ${error.message}`);
+      logE(`ConnectedWebsitesPage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
   }
@@ -78,7 +79,7 @@ struct ConnectedWebsitesPage {
         if (!this.active) { return; }
         this.actionKey = '';
       }).catch((error: TdError): void => {
-        console.error(`ConnectedWebsitesPage.disconnect failed: ${error.message}`);
+        logE(`ConnectedWebsitesPage.disconnect failed: ${error.message}`);
         if (!this.active) { return; }
         this.websites = before;
         this.actionKey = '';
@@ -105,7 +106,7 @@ struct ConnectedWebsitesPage {
         if (!this.active) { return; }
         this.actionKey = '';
       }).catch((error: TdError): void => {
-        console.error(`ConnectedWebsitesPage.disconnectAll failed: ${error.message}`);
+        logE(`ConnectedWebsitesPage.disconnectAll failed: ${error.message}`);
         if (!this.active) { return; }
         this.websites = before;
         this.actionKey = '';

@@ -2,6 +2,7 @@ import { promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { navigateToChat } from './chatNav';
+import { logE } from './log';
 
 // 点"转发自 X"时的跳转。不碰页面状态，之前只是被关在 ChatPage 里。
 
@@ -31,7 +32,7 @@ export function openForwardOrigin(
       navigateToChat(params);
     }
   }).catch((e: TdError): void => {
-    console.error(`openForwardOrigin createPrivateChat failed: ${e.message}`);
+    logE(`openForwardOrigin createPrivateChat failed: ${e.message}`);
     promptAction.showToast({ message: $r('app.string.cp_cannot_open_source'), duration: 1500 });
   });
 }

@@ -3,6 +3,7 @@ import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { formatUserStatus } from '../util/formatUserStatus';
 import { formatMemberCount } from '../util/formatMemberCount';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 const DL_PRIORITY: number = 1;
 
@@ -105,7 +106,7 @@ export class GlobalSearchStore {
       this.joinedLoaded = true;
       this.joinedFailed = true;
       this.notify();
-      console.error(`GlobalSearchStore.getChats failed: ${e.message}`);
+      logE(`GlobalSearchStore.getChats failed: ${e.message}`);
     });
   }
 
@@ -129,7 +130,7 @@ export class GlobalSearchStore {
       this.similarLoaded = true;
       this.similarFailed = true;
       this.notify();
-      console.error(`GlobalSearchStore.getRecommendedChats failed: ${e.message}`);
+      logE(`GlobalSearchStore.getRecommendedChats failed: ${e.message}`);
     });
   }
 
@@ -170,7 +171,7 @@ export class GlobalSearchStore {
       });
     }).catch((e: TdError) => {
       this.finishChannelResolve(bucket);
-      console.error(`GlobalSearchStore.appendIfChannel(${chatId}) failed: ${e.message}`);
+      logE(`GlobalSearchStore.appendIfChannel(${chatId}) failed: ${e.message}`);
     });
   }
 
@@ -202,7 +203,7 @@ export class GlobalSearchStore {
         }));
       }
     }).catch((e: TdError) => {
-      console.error(`GlobalSearchStore.getSupergroup failed: ${e.message}`);
+      logE(`GlobalSearchStore.getSupergroup failed: ${e.message}`);
     });
   }
 
@@ -228,7 +229,7 @@ export class GlobalSearchStore {
       this.appsLoaded = true;
       this.appsFailed = true;
       this.notify();
-      console.error(`GlobalSearchStore.getGrossingWebAppBots failed: ${e.message}`);
+      logE(`GlobalSearchStore.getGrossingWebAppBots failed: ${e.message}`);
     });
   }
 
@@ -263,7 +264,7 @@ export class GlobalSearchStore {
     }).catch((e: TdError) => {
       this.apps = this.apps.filter((r: SearchRow) => r.userId !== userId);
       this.notify();
-      console.error(`GlobalSearchStore.resolveAppUser(${userId}) failed: ${e.message}`);
+      logE(`GlobalSearchStore.resolveAppUser(${userId}) failed: ${e.message}`);
     });
   }
 
@@ -289,7 +290,7 @@ export class GlobalSearchStore {
       this.topLoaded = true;
       this.topFailed = true;
       this.notify();
-      console.error(`GlobalSearchStore.getTopChats failed: ${e.message}`);
+      logE(`GlobalSearchStore.getTopChats failed: ${e.message}`);
     });
   }
 
@@ -310,7 +311,7 @@ export class GlobalSearchStore {
       this.recentLoaded = true;
       this.recentFailed = true;
       this.notify();
-      console.error(`GlobalSearchStore.loadRecent failed: ${e.message}`);
+      logE(`GlobalSearchStore.loadRecent failed: ${e.message}`);
     });
   }
 
@@ -327,7 +328,7 @@ export class GlobalSearchStore {
       this.openedLoaded = true;
       this.openedFailed = true;
       this.notify();
-      console.error(`GlobalSearchStore.getRecentlyOpenedChats failed: ${e.message}`);
+      logE(`GlobalSearchStore.getRecentlyOpenedChats failed: ${e.message}`);
     });
   }
 
@@ -339,7 +340,7 @@ export class GlobalSearchStore {
     return this.client.send(req).then((): void => {}).catch((e: TdError) => {
       this.recent = previous;
       this.notify();
-      console.error(`GlobalSearchStore.clearRecentlyFoundChats failed: ${e.message}`);
+      logE(`GlobalSearchStore.clearRecentlyFoundChats failed: ${e.message}`);
       return Promise.reject(e);
     });
   }
@@ -353,7 +354,7 @@ export class GlobalSearchStore {
     this.client.send(req).then((): void => {
       this.loadRecent();
     }).catch((e: TdError) => {
-      console.error(`GlobalSearchStore.addRecentlyFoundChat failed: ${e.message}`);
+      logE(`GlobalSearchStore.addRecentlyFoundChat failed: ${e.message}`);
     });
   }
 
@@ -424,7 +425,7 @@ export class GlobalSearchStore {
         this.fillBucket('results', merged);
       }).catch((e: TdError) => {
         // Public lookup can fail (e.g. too-short query) — local results still count.
-        console.error(`GlobalSearchStore.searchPublicChats failed: ${e.message}`);
+        logE(`GlobalSearchStore.searchPublicChats failed: ${e.message}`);
         if (seq === this.searchSeq) {
           this.searching = false;
           this.searchFailed = false;
@@ -432,7 +433,7 @@ export class GlobalSearchStore {
         }
       });
     }).catch((e: TdError) => {
-      console.error(`GlobalSearchStore.searchChats failed: ${e.message}`);
+      logE(`GlobalSearchStore.searchChats failed: ${e.message}`);
       if (seq === this.searchSeq) {
         this.searching = false;
         this.searchFailed = true;
@@ -534,7 +535,7 @@ export class GlobalSearchStore {
     }).catch((e: TdError) => {
       this.setBucket(bucket, this.getBucket(bucket).filter((r: SearchRow) => r.chatId !== chatId));
       this.notify();
-      console.error(`GlobalSearchStore.getChat(${chatId}) failed: ${e.message}`);
+      logE(`GlobalSearchStore.getChat(${chatId}) failed: ${e.message}`);
     });
   }
 
@@ -552,7 +553,7 @@ export class GlobalSearchStore {
         avatarPath: r.avatarPath, subtitle, isChannel: r.isChannel
       }));
     }).catch((e: TdError) => {
-      console.error(`GlobalSearchStore.getUser(${userId}) failed: ${e.message}`);
+      logE(`GlobalSearchStore.getUser(${userId}) failed: ${e.message}`);
     });
   }
 
@@ -565,7 +566,7 @@ export class GlobalSearchStore {
     req['file_id'] = fileId;
     req['priority'] = DL_PRIORITY;
     this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((e: TdError) => {
-      console.error(`GlobalSearchStore.downloadFile failed: ${e.message}`);
+      logE(`GlobalSearchStore.downloadFile failed: ${e.message}`);
     });
   }
 

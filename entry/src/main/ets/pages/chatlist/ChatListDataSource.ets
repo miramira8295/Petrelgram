@@ -1,5 +1,6 @@
 import { ChatEntry } from '../../store/ChatEntry';
 import { keyTableReload, newKeyTableId } from '../../util/keyGuard';
+import { logE } from '../../util/log';
 
 // LazyForEach data source for the chat list.
 //
@@ -59,7 +60,7 @@ export class ChatListDataSource implements IDataSource {
     for (let i = 0; i < nextKeys.length; i++) {
       const at = seen.get(nextKeys[i]);
       if (at !== undefined) {
-        console.error(`[CL] duplicate row key in snapshot at ${i} and ${at} -> ${nextKeys[i]}`);
+        logE(`[CL] duplicate row key in snapshot at ${i} and ${at} -> ${nextKeys[i]}`);
       } else {
         seen.set(nextKeys[i], i);
       }

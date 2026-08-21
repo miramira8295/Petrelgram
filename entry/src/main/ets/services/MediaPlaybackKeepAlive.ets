@@ -2,6 +2,7 @@ import { common, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { avSession } from '@kit.AVSessionKit';
 import { str } from '../util/strings';
+import { logE, logI } from '../util/log';
 
 // 媒体播放期后台保活：正在播（音乐/语音/视频原声）时挂 audioPlayback
 // 长时任务 + AVSession，切后台继续播放；全部停止即释放。
@@ -35,7 +36,7 @@ class MediaPlaybackKeepAlive {
       await backgroundTaskManager.startBackgroundRunning(current, ['audioPlayback'], agent);
       this.started = true;
       await this.ensureSession(current);
-      console.info(`[MediaPlaybackKeepAlive] started kinds=${Array.from(this.activeKinds).join(',')}`);
+      logI(`[MediaPlaybackKeepAlive] started kinds=${Array.from(this.activeKinds).join(',')}`);
       if (this.activeKinds.size === 0) {
         await this.stopCurrent();
       }
@@ -58,7 +59,7 @@ class MediaPlaybackKeepAlive {
     await this.destroySession();
     await backgroundTaskManager.stopBackgroundRunning(this.context);
     this.started = false;
-    console.info('[MediaPlaybackKeepAlive] stopped');
+    logI('[MediaPlaybackKeepAlive] stopped');
   }
 
   // 系统要求后台音频播放持有已激活的 AVSession，否则流仍会被静音/冻结
@@ -79,7 +80,7 @@ class MediaPlaybackKeepAlive {
       await session.activate();
       this.session = session;
     } catch (caught) {
-      console.error(`[MediaPlaybackKeepAlive] avsession failed: ${(caught as Error).message}`);
+      logE(`[MediaPlaybackKeepAlive] avsession failed: ${(caught as Error).message}`);
     }
   }
 
@@ -93,13 +94,13 @@ class MediaPlaybackKeepAlive {
       await session.deactivate();
       await session.destroy();
     } catch (caught) {
-      console.error(`[MediaPlaybackKeepAlive] avsession destroy failed: ${(caught as Error).message}`);
+      logE(`[MediaPlaybackKeepAlive] avsession destroy failed: ${(caught as Error).message}`);
     }
   }
 
   private enqueue(action: () => Promise<void>): void {
     this.operation = this.operation.then(action).catch((error: Error): void => {
-      console.error(`[MediaPlaybackKeepAlive] ${error.message}`);
+      logE(`[MediaPlaybackKeepAlive] ${error.message}`);
     });
   }
 }

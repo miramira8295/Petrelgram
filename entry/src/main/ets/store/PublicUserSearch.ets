@@ -3,6 +3,7 @@ import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import { formatLastSeen } from '../util/formatLastSeen';
 import { ContactItem } from './ContactsStore';
 import { str } from '../util/strings';
+import { logW } from '../util/log';
 
 const SEARCH_REQUEST_TIMEOUT_MS: number = 4500;
 const RESOLVE_REQUEST_TIMEOUT_MS: number = 3500;
@@ -35,7 +36,7 @@ async function runChatSearch(
     return { ids: chatIds(await client.send(request, SEARCH_REQUEST_TIMEOUT_MS)), success: true };
   } catch (error) {
     const caught = error as TdError;
-    console.warn(`PublicUserSearch.${type} failed: ${caught.message}`);
+    logW(`PublicUserSearch.${type} failed: ${caught.message}`);
     return { ids: [], success: false };
   }
 }
@@ -101,7 +102,7 @@ async function resolvePrivateUser(client: TdClient, chatId: number): Promise<Con
     };
   } catch (error) {
     const caught = error as TdError;
-    console.warn(`PublicUserSearch.resolvePrivateUser(${chatId}) failed: ${caught.message}`);
+    logW(`PublicUserSearch.resolvePrivateUser(${chatId}) failed: ${caught.message}`);
     return null;
   }
 }
@@ -114,7 +115,7 @@ function withinBudget<T>(work: Promise<T>, timeoutMs: number, fallback: T): Prom
         return;
       }
       settled = true;
-      console.warn(`PublicUserSearch exceeded ${timeoutMs}ms budget`);
+      logW(`PublicUserSearch exceeded ${timeoutMs}ms budget`);
       resolve(fallback);
     }, timeoutMs);
     work.then((value: T): void => {
@@ -130,7 +131,7 @@ function withinBudget<T>(work: Promise<T>, timeoutMs: number, fallback: T): Prom
       }
       settled = true;
       clearTimeout(timerId);
-      console.warn(`PublicUserSearch failed: ${JSON.stringify(error)}`);
+      logW(`PublicUserSearch failed: ${JSON.stringify(error)}`);
       resolve(fallback);
     });
   });

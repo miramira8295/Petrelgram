@@ -7,6 +7,7 @@ import { formatPreview } from '../util/formatPreview';
 import { formatFileSize } from '../util/formatFileSize';
 import { formatTime } from '../util/formatTime';
 import { plural, str } from '../util/strings';
+import { logE } from '../util/log';
 
 type Listener = () => void;
 
@@ -187,7 +188,7 @@ export class ChatProfileStore {
       this.selfUserId = (me['id'] as number | undefined) ?? 0;
       this.notify();
     }).catch((e: TdError): void => {
-      console.error(`ChatProfileStore.getMe failed: ${e.message}`);
+      logE(`ChatProfileStore.getMe failed: ${e.message}`);
     });
   }
 
@@ -209,7 +210,7 @@ export class ChatProfileStore {
 
   private send(req: TdRequest, tag: string, onOk: (res: TdObject) => void): void {
     this.client.send(req).then(onOk).catch((e: TdError) => {
-      console.error(`ChatProfileStore.${tag} failed: ${e.message}`);
+      logE(`ChatProfileStore.${tag} failed: ${e.message}`);
     });
   }
 
@@ -288,7 +289,7 @@ export class ChatProfileStore {
         if (seq !== this.tabProbeSeq) {
           return;
         }
-        console.error(`ChatProfileStore.getChatMessageCount(${tab}) failed: ${e.message}`);
+        logE(`ChatProfileStore.getChatMessageCount(${tab}) failed: ${e.message}`);
         // A failed capability probe must not create a dead tab. It stays hidden
         // until a future page refresh can establish that the category exists.
         this.finishTabProbe(tab, false);
@@ -338,7 +339,7 @@ export class ChatProfileStore {
       if (seq !== this.tabProbeSeq) {
         return;
       }
-      console.error(`ChatProfileStore.probeGifts failed: ${e.message}`);
+      logE(`ChatProfileStore.probeGifts failed: ${e.message}`);
       this.finishTabProbe(PROFILE_TAB_GIFTS, false);
     });
   }
@@ -502,7 +503,7 @@ export class ChatProfileStore {
       if (seq !== this.contentSeq || tab !== this.contentTab) {
         return;
       }
-      console.error(`ChatProfileStore.searchChatMessages(${tab}) failed: ${e.message}`);
+      logE(`ChatProfileStore.searchChatMessages(${tab}) failed: ${e.message}`);
       this.contentPaging = false;
       if (replace || this.contentItems.length === 0) {
         this.contentState = 'error';
@@ -696,7 +697,7 @@ export class ChatProfileStore {
       this.errorText = '';
       this.notify();
     }).catch((e: TdError): void => {
-      console.error(`ChatProfileStore.getChat failed: ${e.message}`);
+      logE(`ChatProfileStore.getChat failed: ${e.message}`);
       this.loadState = 'error';
       this.errorText = str('cps_details_failed');
       this.notify();
@@ -874,7 +875,7 @@ export class ChatProfileStore {
       this.notify();
       this.resolveMembers(raw);
     }).catch((e: TdError): void => {
-      console.error(`ChatProfileStore.getSupergroupMembers failed: ${e.message}`);
+      logE(`ChatProfileStore.getSupergroupMembers failed: ${e.message}`);
       this.membersPending = false;
       this.hasMoreMembers = false;
       this.membersState = this.members.length > 0 ? 'ready' : 'error';

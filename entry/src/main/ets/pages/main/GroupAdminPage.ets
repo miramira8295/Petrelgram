@@ -19,6 +19,7 @@ import {
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { logE } from '../../util/log';
 
 const CARD_RADIUS: number = 14;
 // 群级面板把九个媒体标志合成一格开关，这是那一格的伪 key。
@@ -82,7 +83,7 @@ struct GroupAdminPage {
       this.loadState = 'ready';
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
-      console.error(`GroupAdminPage.load failed: ${error.message}`);
+      logE(`GroupAdminPage.load failed: ${error.message}`);
       this.loadState = 'error';
     });
     getAdministrators(this.chatId).then((rows: AdminRow[]): void => {
@@ -109,7 +110,7 @@ struct GroupAdminPage {
 
   private fail(error: TdError, fallback: string): void {
     this.busy = false;
-    console.error(`GroupAdminPage: ${error.message}`);
+    logE(`GroupAdminPage: ${error.message}`);
     promptAction.showToast({
       message: error.message.indexOf('rights') >= 0 || error.message.indexOf('ADMIN') >= 0
         ? $r('app.string.ga_no_permission') : fallback,

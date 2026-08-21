@@ -6,6 +6,7 @@ import {
   KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
 import { probeHit } from '../../util/panelProbe';
+import { logE } from '../../util/log';
 
 // Cap on simultaneously running Lottie animations: a screenful of TGS emoji
 // cells (40+) redrawing canvases every frame stutters badly. Cells over the
@@ -161,7 +162,7 @@ export struct TgsStickerView {
         contentMode: 'Contain'
       });
     } catch (e) {
-      console.error(`TgsStickerView lottie load failed: ${e}`);
+      logE(`TgsStickerView lottie load failed: ${e}`);
       this.failed = true;
       this.onFailed();
       this.stopAnim();

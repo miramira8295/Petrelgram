@@ -6,6 +6,7 @@ import {
   parseCallContent
 } from '../util/CallHistoryPresentation';
 import { str } from '../util/strings';
+import { logE } from '../util/log';
 
 const DOWNLOAD_PRIORITY: number = 1;
 const PAGE_LIMIT: number = 50;
@@ -373,7 +374,7 @@ export class CallsStore {
         this.pageState = 'error';
       }
       this.publish();
-      console.error(`CallsStore.searchCallMessages failed: ${error.message}`);
+      logE(`CallsStore.searchCallMessages failed: ${error.message}`);
     });
   }
 
@@ -436,7 +437,7 @@ export class CallsStore {
       const fallback: PeerInfo = { title: str('cs_unknown_chat'), initials: '?', avatarPath: '' };
       this.peers.set(chatId, fallback);
       this.patchChat(chatId, fallback);
-      console.error(`CallsStore.getChat(${chatId}) failed: ${error.message}`);
+      logE(`CallsStore.getChat(${chatId}) failed: ${error.message}`);
     });
   }
 
@@ -452,7 +453,7 @@ export class CallsStore {
     request['priority'] = DOWNLOAD_PRIORITY;
     this.client.send(request).then((file: TdObject): void => this.applyFile(file)).catch((error: TdError): void => {
       this.fileChats.delete(fileId);
-      console.error(`CallsStore.downloadFile(${fileId}) failed: ${error.message}`);
+      logE(`CallsStore.downloadFile(${fileId}) failed: ${error.message}`);
     });
   }
 
