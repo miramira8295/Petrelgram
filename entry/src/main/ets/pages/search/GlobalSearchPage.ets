@@ -30,6 +30,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logI } from '../../util/log';
+import { readableContentWidth } from '../../util/contentWidth';
 
 interface FoundItem {
   chatId: number;
@@ -124,6 +125,9 @@ struct GlobalSearchPage {
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把结果列拉满 2880px，头像贴最左、时间
+  // 贴最右，眼睛要横扫整屏才读得完一行（设备截图实测）。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State query: string = '';
   @State tab: number = 0;
   @State searchFocused: boolean = false;
@@ -3004,17 +3008,41 @@ struct GlobalSearchPage {
     Stack({ alignContent: Alignment.TopStart }) {
     Column() {
       Column() {
-        this.searchBar();
-        this.tabsBar();
+        // 搜索框和分类条跟着下面的结果列一起限宽、一起居中。它们语义上像标题栏
+        // （通栏也说得通），但它们和结果卡片是上下贴着的一组，一个通栏一个居中
+        // 会明显不对齐；何况一个 2880px 宽的输入框本身就没法看。
+        Column() {
+          this.searchBar();
+          this.tabsBar();
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
+        .padding({ left: 12, right: 12, top: this.topSafe + 10, bottom: 8 });
       }
-      .width('100%').padding({ left: 12, right: 12, top: this.topSafe + 10, bottom: 8 });
+      .width('100%')
+      // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
+      .alignItems(HorizontalAlign.Center);
 
       Tabs({ controller: this.controller, index: this.tab }) {
         ForEach(TABS, (t: string, idx: number) => {
           TabContent() {
+            // 这一页的限宽只能套在 tabBody 外面，不像联系人/设置那样落在滚动容器
+            // 内部：十个 tab 各有各的容器，其中六个（聊天结果 / 媒体宫格 / 消息结果
+            // / 下载 / 组合结果 / 各种空态）**自己就是那张卡片**——List/Grid/Scroll
+            // 上直接挂着 calc(100% - 24vp) + 圆角 + surface 背景，卡片外面本来就
+            // 不是内容区。套在外面还有一个好处：空态、加载态、错误态、以后新加的
+            // 状态全部自动同宽，不会漏掉某个分支导致 tab 之间宽度不一。
+            // 已知代价：limit 之后滚动容器本身收窄了，两侧留白按不动、拖不动页面。
             Column() {
-              this.tabBody(idx);
-            }.width('100%').height('100%');
+              Column() {
+                this.tabBody(idx);
+              }
+              .width('100%').height('100%')
+              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+            }
+            .width('100%').height('100%')
+            // Column 默认左对齐：限了宽不居中，结果卡就全堆在屏幕左边了。
+            .alignItems(HorizontalAlign.Center);
           }
         }, (t: string) => t);
       }

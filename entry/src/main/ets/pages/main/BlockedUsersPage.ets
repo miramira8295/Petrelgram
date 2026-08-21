@@ -10,6 +10,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE, logW } from '../../util/log';
+import { contentSideGutter } from '../../util/contentWidth';
 
 const PAGE_LIMIT: number = 40;
 const CARD_RADIUS: number = 16;
@@ -42,6 +43,8 @@ struct BlockedUsersPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
+  @StorageProp('screenWidthVp') screenW: number = 360;
   @State rows: BlockedRow[] = [];
   @State loadState: string = 'loading';
   @State pageState: string = 'idle';
@@ -448,7 +451,14 @@ struct BlockedUsersPage {
           }
         }
         .layoutWeight(1).width('100%').backgroundColor(COLOR_SURFACE).scrollBar(BarState.Off)
-        .padding({ left: 4, right: 4, bottom: this.bottomSafe })
+        // 限宽做在 List 的内边距上而不是 List 的宽度上：List 仍铺满窗口，两侧
+        // 让出来的留白因此还在 List 的命中区里，手指按在留白上照样能拖动列表。
+        // 手机上 contentSideGutter 恒为 0，这两个值逐像素等于改动前的 4。
+        .padding({
+          left: 4 + contentSideGutter(this.screenW),
+          right: 4 + contentSideGutter(this.screenW),
+          bottom: this.bottomSafe
+        })
         .onReachEnd((): void => { this.load(false); });
       }
     }
