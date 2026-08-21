@@ -62,9 +62,19 @@ struct InAppBrowserPage {
   // Telegram resources tapped inside a web page belong back in the app; only
   // real web navigation stays inside this WebView.
   private interceptTelegram(url: string): boolean {
-    if (!url.startsWith('tg://') && normalizeTelegramLink(url) === '') { return false; }
-    openTelegramLink(getContext(this) as common.UIAbilityContext, url, false);
-    return true;
+    if (url.startsWith('tg://') || normalizeTelegramLink(url) !== '') {
+      openTelegramLink(getContext(this) as common.UIAbilityContext, url, false);
+      return true;
+    }
+    // 非 http(s) 的私有 scheme（baiduboxapp:// 一类的拉起自家 App 跳转）不能
+    // 交给 Web 组件——它渲染不了，主框架直接判失败，整页变成错误态（issue #77
+    // 百度网盘正是这么挂的）。转交系统试着拉起对应应用，拉不起来就地忽略，
+    // 网页本身留在原地。
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      openUrl(getContext(this) as common.UIAbilityContext, url, (): void => {});
+      return true;
+    }
+    return false;
   }
 
   private openExternally(): void {
@@ -149,6 +159,23 @@ struct InAppBrowserPage {
       Stack({ alignContent: Alignment.Center }) {
         Web({ src: this.initialUrl, controller: this.controller })
           .domStorageAccess(true)
+          // 百度系站点按 UA 分流，认不出的 UA 直接给错误页/白页。ArkWeb 默认
+          // UA 带着 ArkWeb 标识，不在它们的白名单里——去掉自有标识、对齐主流
+          // 移动端 Chrome 的形状，站点才走正常的移动版路径。
+          .onControllerAttached((): void => {
+            try {
+              const ua: string = this.controller.getUserAgent();
+              this.controller.setCustomUserAgent(
+                ua.replace(/ArkWeb\/[\d.]+ /, '').replace('Mobile ', 'Mobile Safari/537.36 '));
+            } catch (e) {
+              // UA 设不上就用默认——大多数站点仍可用，不值得让整页失败。
+            }
+          })
+          // target=_blank / window.open 的链接在本窗口继续开，而不是无声吞掉
+          // ——没有这一段，网盘里"打开/下载"一类按钮点了没反应。
+          .multiWindowAccess(false)
+          .javaScriptAccess(true)
+          .onlineImageAccess(true)
           .onLoadIntercept((event): boolean => {
             const url = event.data.getRequestUrl();
             return this.interceptTelegram(url);
