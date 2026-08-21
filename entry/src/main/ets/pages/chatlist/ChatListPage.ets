@@ -607,6 +607,17 @@ export struct ChatListPage {
     .padding({ left: 12, right: 12 })
     .margin({ right: 2 })
     .borderRadius(FOLDER_BAR_HEIGHT / 2)
+    // 每个文件夹项自己一块玻璃。用 'control' 这一档（小控件），厚度比顶栏薄，
+    // 免得一排胶囊连成一片实的。
+    //
+    // 三行是一套，缺一不可（见 util/overlayMaterial 文件头）：材质的视觉层级在
+    // backgroundColor **之下**，所以底色必须让出来——材质可用时 overlayGlassFill
+    // 返回透明，不可用时返回半透明、由 backdropBlur 自己画玻璃。
+    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+    .backdropBlur(overlayBackdropBlur('control'))
+    .systemMaterial(overlayMaterial('control'))
+    // 圆角要裁，否则模糊会溢出胶囊外沿画成一个方块。
+    .clip(true)
     .stateStyles({
       normal: this.tabNormalStyle,
       pressed: this.tabPressedStyle
@@ -677,6 +688,10 @@ export struct ChatListPage {
     //
     // 选中项那颗胶囊（COLOR_TAB_PILL_BG）保留——那是内容，不是容器。
     .borderRadius(FOLDER_BAR_HEIGHT / 2)
+    // 描一圈发丝边。横条自己**仍然不画玻璃**——它和标题栏共用同一块背板，再叠
+    // 一层材质两层相乘就发实了（用户报过的"首页基本不透明"就是这么来的）。
+    // 边框只勾轮廓、不铺底，所以不会重蹈那次。
+    .border({ width: 0.5, color: $r('app.color.divider') })
     .clip(true)
     .margin({ left: 8, right: 8, bottom: 6 })
     .transition(
