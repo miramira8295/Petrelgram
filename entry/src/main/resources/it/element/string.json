@@ -11327,6 +11327,10 @@
     {
       "name": "diag_not_configured",
       "value": "Questa build non ha un endpoint configurato"
+    },
+    {
+      "name": "mt_tag_hint",
+      "value": "Tutti i membri del gruppo vedono questo tag. Lascia vuoto per rimuoverlo. Max 16 caratteri, senza emoji"
     }
   ]
 }

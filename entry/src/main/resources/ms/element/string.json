@@ -11327,6 +11327,10 @@
     {
       "name": "diag_not_configured",
       "value": "Binaan ini tiada endpoint laporan"
+    },
+    {
+      "name": "mt_tag_hint",
+      "value": "Semua ahli kumpulan boleh melihat tag ini. Biarkan kosong untuk membuang. Maksimum 16 aksara, tiada emoji"
     }
   ]
 }

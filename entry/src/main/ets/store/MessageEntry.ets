@@ -19,6 +19,8 @@ export interface MessageEntry {
   rowId: number;
   isOutgoing: boolean;
   senderName: string;
+  // 群成员标签（chatMemberTag），消息对象自带（sender_tag），全员可见。
+  senderTag: string;
   senderId: number;
   senderIsUser: boolean;
   senderInitials: string;
@@ -238,6 +240,7 @@ export function parseInlineKeyboard(replyMarkup: TdObject | undefined): InlineBt
 export function cloneMessage(m: MessageEntry): MessageEntry {
   return {
     id: m.id, rowId: m.rowId, isOutgoing: m.isOutgoing, senderName: m.senderName,
+    senderTag: m.senderTag,
     senderId: m.senderId, senderIsUser: m.senderIsUser,
     senderInitials: m.senderInitials, senderAvatarPath: m.senderAvatarPath, date: m.date,
     editDate: m.editDate,
@@ -983,6 +986,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     rowId: (message['id'] as number | undefined) ?? 0,
     isOutgoing,
     senderName: name,
+    senderTag: (message['sender_tag'] as string | undefined) ?? '',
     senderId: senderIdOf(message),
     senderIsUser: senderIsUserOf(message),
     senderInitials: name.length > 0 ? name.substring(0, 1).toUpperCase() : '?',

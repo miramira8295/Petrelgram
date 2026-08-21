@@ -11327,6 +11327,10 @@
     {
       "name": "diag_not_configured",
       "value": "Bản dựng này chưa cấu hình địa chỉ gửi"
+    },
+    {
+      "name": "mt_tag_hint",
+      "value": "Mọi thành viên trong nhóm đều thấy thẻ này. Để trống để xóa. Tối đa 16 ký tự, không dùng emoji"
     }
   ]
 }

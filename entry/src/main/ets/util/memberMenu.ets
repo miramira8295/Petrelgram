@@ -20,16 +20,20 @@ export interface ViewerAdminRights {
   canPromoteMembers: boolean;
   canRestrictMembers: boolean;
   canDeleteMessages: boolean;
+  // 设置群成员标签（chatMemberTag）的权限，TDLib 字段 can_manage_tags。
+  canManageTags: boolean;
 }
 
 export interface MemberMenuOptions {
   showPromote: boolean;
   // 对方已经是管理员时，同一个入口的文案是「编辑管理员权限」。
   promoteIsEdit: boolean;
-  // 「编辑标签」。头衔是 chatMemberStatusAdministrator 的字段，只有管理员
-  // 才有。曾试过对普通成员开放（零权限提权挂头衔）：服务端把全零权限当普通
-  // 成员、头衔静默丢；带最小权限则真的把人提成了管理员——两头都不是"设个
-  // 标签"该有的样子，遂退回仅管理员。
+  // 「编辑标签」——**群成员标签**（chatMemberTag），不是管理员头衔。任何
+  // 成员都能被打标、全员可见，需要 can_manage_tags 权限。频道没有这功能。
+  //
+  // 曾经这一项接的是管理员头衔（custom_title），还试过给普通成员零权限/最小
+  // 权限提权来挂头衔——服务端要么静默丢头衔要么真把人提成管理员，全是弯路；
+  // 后来发现 Telegram 新出的成员标签才是正主。
   showEditTitle: boolean;
   showRestrict: boolean;
   showBan: boolean;
@@ -63,12 +67,13 @@ export function memberMenuOptions(
   return {
     showPromote: canPromote,
     promoteIsEdit: isAdmin,
-    showEditTitle: canPromote && isAdmin,
+    showEditTitle: (viewer.isCreator || viewer.canManageTags) && !isChannel,
     showRestrict,
     showBan: canRestrict,
     showRemove: canRestrict,
     showDeleteMessages: canDelete,
-    anyVisible: canPromote || showRestrict || canRestrict || canDelete
+    anyVisible: canPromote || showRestrict || canRestrict || canDelete ||
+      ((viewer.isCreator || viewer.canManageTags) && !isChannel)
   };
 }
 

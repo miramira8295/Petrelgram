@@ -10,6 +10,9 @@ import { senderRoleFor, senderRoleKey, subscribeSenderRole } from '../../util/se
 export struct SenderRoleTag {
   @Prop chatId: number;
   @Prop senderId: number;
+  // 群成员标签（消息自带的 sender_tag）。有它就显示它——标签是打给所有人看
+  // 的；没有再落到管理员头衔那条异步通道。
+  @Prop presetTag: string = '';
   @State private label: string = '';
   private unsub: (() => void) | null = null;
 
@@ -30,8 +33,8 @@ export struct SenderRoleTag {
 
   build() {
     // 普通成员没有标签，整行不占位——否则每条消息旁边都留一块空白。
-    if (this.label !== '') {
-      Text(this.label)
+    if (this.presetTag !== '' || this.label !== '') {
+      Text(this.presetTag !== '' ? this.presetTag : this.label)
         .fontSize(11).fontColor(COLOR_PRIMARY)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: 88 })

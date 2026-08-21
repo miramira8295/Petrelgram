@@ -11327,6 +11327,10 @@
     {
       "name": "diag_not_configured",
       "value": "In diesem Build ist kein Endpunkt konfiguriert"
+    },
+    {
+      "name": "mt_tag_hint",
+      "value": "Alle Gruppenmitglieder sehen dieses Tag. Leer lassen zum Entfernen. Max. 16 Zeichen, keine Emojis"
     }
   ]
 }

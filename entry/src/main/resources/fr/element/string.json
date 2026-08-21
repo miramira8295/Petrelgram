@@ -11327,6 +11327,10 @@
     {
       "name": "diag_not_configured",
       "value": "Aucun point d'envoi configuré dans cette version"
+    },
+    {
+      "name": "mt_tag_hint",
+      "value": "Tous les membres du groupe voient cette étiquette. Laissez vide pour la retirer. 16 caractères max, sans emoji"
     }
   ]
 }

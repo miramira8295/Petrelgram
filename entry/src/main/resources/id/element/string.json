@@ -11327,6 +11327,10 @@
     {
       "name": "diag_not_configured",
       "value": "Build ini tidak punya endpoint laporan"
+    },
+    {
+      "name": "mt_tag_hint",
+      "value": "Semua anggota grup dapat melihat tag ini. Kosongkan untuk menghapus. Maksimal 16 karakter, tanpa emoji"
     }
   ]
 }

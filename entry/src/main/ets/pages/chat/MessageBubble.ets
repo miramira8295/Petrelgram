@@ -2982,7 +2982,8 @@ export struct MessageBubble {
               .fontWeight(FontWeight.Medium)
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               .flexShrink(1);
-            SenderRoleTag({ chatId: this.chatId, senderId: this.msg.senderId });
+            SenderRoleTag({ chatId: this.chatId, senderId: this.msg.senderId,
+              presetTag: this.msg.senderTag });
           }
           .margin({ bottom: 2 })
           .alignItems(VerticalAlign.Center)

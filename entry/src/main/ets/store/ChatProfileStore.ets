@@ -99,6 +99,7 @@ export class ChatProfileStore {
   canPromoteMembers: boolean = false;
   canRestrictMembers: boolean = false;
   canDeleteMessages: boolean = false;
+  canManageTags: boolean = false;
   // 自己的用户 id。菜单要靠它认出"这一行就是我"，0 表示 getMe 还没回来。
   selfUserId: number = 0;
   liveGroupCallId: number = 0;
@@ -738,6 +739,7 @@ export class ChatProfileStore {
       this.canPromoteMembers = true;
       this.canRestrictMembers = true;
       this.canDeleteMessages = true;
+      this.canManageTags = true;
       return;
     }
     if (type === 'chatMemberStatusAdministrator') {
@@ -749,6 +751,7 @@ export class ChatProfileStore {
       this.canPromoteMembers = flag('can_promote_members');
       this.canRestrictMembers = flag('can_restrict_members');
       this.canDeleteMessages = flag('can_delete_messages');
+      this.canManageTags = flag('can_manage_tags');
       // Any of these rights makes at least part of the admin page usable.
       this.canManageChat = flag('can_manage_chat') || flag('can_change_info') ||
         this.canRestrictMembers || flag('can_invite_users') || this.canPromoteMembers;
@@ -757,6 +760,7 @@ export class ChatProfileStore {
     this.canManageVideoChats = false;
     this.canManageChat = false;
     this.isCreator = false;
+    this.canManageTags = false;
     this.canPromoteMembers = false;
     this.canRestrictMembers = false;
     this.canDeleteMessages = false;

@@ -85,6 +85,39 @@ export async function setSlowMode(chatId: number, seconds: number): Promise<void
 }
 
 export async function getAdministrators(chatId: number): Promise<AdminRow[]> {
+  // getChatAdministrators 走 TDLib 本地缓存，会又旧又缺：真机对过账——官方端
+  // 刚给成员设的头衔，这里的名单既没有那个人、连老管理员的头衔都是空串。
+  // 超级群改走 getSupergroupMembers(administratorsFilter)，它强制到服务器取，
+  // status 里的 custom_title 是新鲜的。普通群没有这条通道，保留缓存路径
+  // （普通群本来也没有头衔一说）。
+  const chatReq: TdRequest = { '@type': 'getChat' };
+  chatReq['chat_id'] = chatId;
+  const chat = await getTdClient().send(chatReq, 15000);
+  const type = chat['type'] as TdObject | undefined;
+  const supergroupId: number = type !== undefined &&
+    ((type['@type'] as string | undefined) ?? '') === 'chatTypeSupergroup'
+    ? ((type['supergroup_id'] as number | undefined) ?? 0) : 0;
+  if (supergroupId > 0) {
+    const req: TdRequest = { '@type': 'getSupergroupMembers' };
+    req['supergroup_id'] = supergroupId;
+    req['filter'] = { '@type': 'supergroupMembersFilterAdministrators' } as TdObject;
+    req['offset'] = 0;
+    req['limit'] = 200;
+    const res = await getTdClient().send(req, 15000);
+    return ((res['members'] as TdObject[] | undefined) ?? []).map(
+      (m: TdObject): AdminRow => {
+        const sender = m['member_id'] as TdObject | undefined;
+        const status = m['status'] as TdObject | undefined;
+        const statusType: string = status !== undefined
+          ? ((status['@type'] as string | undefined) ?? '') : '';
+        return {
+          userId: sender !== undefined ? ((sender['user_id'] as number | undefined) ?? 0) : 0,
+          isCreator: statusType === 'chatMemberStatusCreator',
+          customTitle: status !== undefined
+            ? ((status['custom_title'] as string | undefined) ?? '') : ''
+        };
+      }).filter((r: AdminRow): boolean => r.userId > 0);
+  }
   const request: TdRequest = { '@type': 'getChatAdministrators' };
   request['chat_id'] = chatId;
   const result = await getTdClient().send(request, 15000);
@@ -134,17 +167,6 @@ export async function getMemberStatus(
   };
 }
 
-// 只有「邀请用户」一项权限——这是当年"给普通成员挂头衔"实验造出的空壳
-// 管理员的特征。清头衔时顺手把这种空壳降回普通成员。
-function isTitleOnlyRights(rights: AdminRights): boolean {
-  return rights.inviteUsers &&
-    !rights.manageChat && !rights.changeInfo && !rights.postMessages &&
-    !rights.editMessages && !rights.deleteMessages && !rights.restrictMembers &&
-    !rights.pinMessages && !rights.manageTopics && !rights.promoteMembers &&
-    !rights.manageVideoChats && !rights.postStories && !rights.editStories &&
-    !rights.deleteStories && !rights.manageDirectMessages && !rights.isAnonymous;
-}
-
 // 提为管理员 / 改管理员权限。头衔和权限都由调用方给全，因为这是一次整体覆盖。
 export async function promoteMember(
   chatId: number, userId: number, customTitle: string, rights: AdminRights
@@ -159,31 +181,17 @@ export async function promoteMember(
   await getTdClient().send(request, 15000);
 }
 
-// 撤销管理员：退回普通成员，人还在群里。
-// 只改头衔，别的一概不动。
-//
-// TDLib 的 setChatMemberStatus 是**整体覆盖**，没有"只改一项"，所以必须先读
-// 回当前状态、把 rights 原样带回去。少了这一步，改个称呼会把这位管理员的权限
-// 全部重置——这正是旧 setAdmin() 的毛病。
-export async function setMemberTitle(
-  chatId: number, userId: number, title: string
+// 群成员标签（chatMemberTag）。和管理员头衔是两套东西：任何成员都能被打标，
+// 全员可见，由带 can_manage_tags 权限的管理员设置；0-16 字符、不支持表情，
+// 超限或带表情服务端会拒。空串即清除。
+export async function setMemberTag(
+  chatId: number, userId: number, tag: string
 ): Promise<void> {
-  const current: MemberStatusInfo = await getMemberStatus(chatId, userId);
-  const next: string = title.trim();
-  if (current.type === 'chatMemberStatusAdministrator') {
-    if (next === '' && isTitleOnlyRights(current.rights)) {
-      // 由"给普通成员挂头衔"造出来的最小权限管理员，头衔一清就降回普通
-      // 成员——别留一个空壳管理员在名单里。真正的管理员清头衔不受影响。
-      await demoteMember(chatId, userId);
-      return;
-    }
-    await promoteMember(chatId, userId, next, current.rights);
-    return;
-  }
-  // 头衔是管理员状态的字段，普通成员无处可挂。曾试过零权限提权（服务端当
-  // 普通成员、头衔静默丢）和最小权限提权（真把人提成管理员），都不是"设个
-  // 标签"该有的样子——入口已退回仅管理员，走到这里说明期间身份变了。
-  throw new Error('member is not an administrator');
+  const request: TdRequest = { '@type': 'setChatMemberTag' };
+  request['chat_id'] = chatId;
+  request['user_id'] = userId;
+  request['tag'] = tag.trim();
+  await getTdClient().send(request, 15000);
 }
 
 export async function demoteMember(chatId: number, userId: number): Promise<void> {

@@ -7,11 +7,12 @@ import {
 } from '../main/ets/util/memberMenu';
 
 function viewer(
-  isCreator: boolean, promote: boolean, restrict: boolean, del: boolean
+  isCreator: boolean, promote: boolean, restrict: boolean, del: boolean,
+  tags: boolean = false
 ): ViewerAdminRights {
   return {
     isCreator, canPromoteMembers: promote, canRestrictMembers: restrict,
-    canDeleteMessages: del
+    canDeleteMessages: del, canManageTags: tags
   };
 }
 
@@ -33,6 +34,14 @@ export default function memberMenuTest() {
     it('普通成员看不到任何入口', 0, () => {
       const o = memberMenuOptions(NOBODY, MEMBER_ROLE_NONE, false, false);
       expect(o.anyVisible).assertFalse();
+    });
+
+    it('编辑标签跟 can_manage_tags 走，频道不给', 0, () => {
+      const tagger: ViewerAdminRights = viewer(false, false, false, false, true);
+      expect(memberMenuOptions(tagger, MEMBER_ROLE_NONE, false, false).showEditTitle).assertTrue();
+      expect(memberMenuOptions(tagger, MEMBER_ROLE_ADMIN, false, false).showEditTitle).assertTrue();
+      expect(memberMenuOptions(tagger, MEMBER_ROLE_NONE, false, true).showEditTitle).assertFalse();
+      expect(memberMenuOptions(NOBODY, MEMBER_ROLE_NONE, false, false).showEditTitle).assertFalse();
     });
 
     it('对自己和对群主都不给入口', 0, () => {

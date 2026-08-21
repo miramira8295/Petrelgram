@@ -1,6 +1,6 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { banMember, deleteMessagesFromSender, removeMember, setMemberTitle} from '../../store/ChatAdminApi';
+import { banMember, deleteMessagesFromSender, removeMember, setMemberTag } from '../../store/ChatAdminApi';
 import {
   MEMBER_ACTION_BAN, MEMBER_ACTION_DELETE_MESSAGES, MEMBER_ACTION_PROMOTE,
   MEMBER_ACTION_REMOVE, MEMBER_ACTION_RESTRICT, MemberMenuOptions,
@@ -93,6 +93,7 @@ struct ChatProfilePage {
   // 逐项管理权限。长按菜单按这几项出条目，不用 canManageChat 一刀切。
   @State viewerIsCreator: boolean = false;
   @State canPromoteMembers: boolean = false;
+  @State canManageTags: boolean = false;
   @State canRestrictMembers: boolean = false;
   @State canDeleteMessages: boolean = false;
   @State selfUserId: number = 0;
@@ -258,6 +259,7 @@ struct ChatProfilePage {
     this.canPromoteMembers = s.canPromoteMembers;
     this.canRestrictMembers = s.canRestrictMembers;
     this.canDeleteMessages = s.canDeleteMessages;
+      this.canManageTags = this.store?.canManageTags ?? false;
     this.selfUserId = s.selfUserId;
     this.liveGroupCallId = s.liveGroupCallId;
     this.members = s.members;
@@ -1115,7 +1117,8 @@ struct ChatProfilePage {
         isCreator: this.viewerIsCreator,
         canPromoteMembers: this.canPromoteMembers,
         canRestrictMembers: this.canRestrictMembers,
-        canDeleteMessages: this.canDeleteMessages
+        canDeleteMessages: this.canDeleteMessages,
+        canManageTags: this.canManageTags
       },
       m.role,
       this.selfUserId !== 0 && m.userId === this.selfUserId,
@@ -1145,10 +1148,9 @@ struct ChatProfilePage {
     }
   }
 
-  // 「编辑标签」：只改头衔，不进权限面板。
-  //
-  // 当前头衔直接用列表里已有的 roleTitle，不再多问服务端一次——成员列表本来
-  // 就是从 chatMember.status 解析出来的，那里的 custom_title 就是这个值。
+  // 「编辑标签」：群成员标签（chatMemberTag），任何成员都能打，全员可见。
+  // 弹窗打开时不预填旧值——成员列表接口里拿不到现有标签，预填 roleTitle 会把
+  // 管理员头衔错当标签写回去。
   @State private titleTarget: MemberItem | null = null;
   private titleCtrl: CustomDialogController = new CustomDialogController({
     builder: MemberTitleDialog({
@@ -1168,7 +1170,7 @@ struct ChatProfilePage {
     this.titleCtrl = new CustomDialogController({
       builder: MemberTitleDialog({
         memberName: m.name,
-        title: m.roleTitle,
+        title: '',
         onConfirm: (next: string): void => { this.applyMemberTitle(next); }
       }),
       alignment: DialogAlignment.Center,
@@ -1183,11 +1185,11 @@ struct ChatProfilePage {
     if (target === null || this.chatId === 0) {
       return;
     }
-    setMemberTitle(this.chatId, target.userId, next).then((): void => {
+    setMemberTag(this.chatId, target.userId, next).then((): void => {
       promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
       this.store?.reloadMembers();
     }).catch((error: TdError): void => {
-      logE(`ChatProfilePage.setMemberTitle failed: ${error.message}`);
+      logE(`ChatProfilePage.setMemberTag failed: ${error.message}`);
       promptAction.showToast({ message: str('ga_failed'), duration: 1600 });
     });
   }

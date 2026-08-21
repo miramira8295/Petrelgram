@@ -5,12 +5,8 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 
-// 单独改成员头衔的小弹窗。
-//
-// 官方 PC 端把「编辑标签」做成菜单里独立的一项，而不是埋进管理员权限面板：
-// 改个称呼是高频小操作，为它进那一大页开关不划算。这里只放一个输入框。
-//
-// 留空即清掉头衔，回到默认的「管理员」——和官方一致，不需要额外的删除按钮。
+// 群成员标签（chatMemberTag）的小弹窗。任何成员都能被打标、全员可见；
+// 留空即清除，不需要额外的删除按钮。上限 16 字符、不支持表情，超了服务端拒。
 @CustomDialog
 export struct MemberTitleDialog {
   // 材质档位改变时重绘。overlayMaterial 是 util，订阅不了 AppStorage。
@@ -27,14 +23,14 @@ export struct MemberTitleDialog {
       Text(this.memberName)
         .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      TextInput({ text: this.title, placeholder: $r('app.string.ga_admin') })
-        // TDLib 对 custom_title 的上限是 16 个字符，超了会被服务端拒。
+      TextInput({ text: this.title })
+        // chatMemberTag 的上限是 16 个字符，超了会被服务端拒。
         .maxLength(16)
         .width('100%').height(44)
         .backgroundColor($r('app.color.surface_alt'))
         .borderRadius(12)
         .onChange((value: string): void => { this.title = value; });
-      Text($r('app.string.ga_title_hint'))
+      Text($r('app.string.mt_tag_hint'))
         .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%');
       Row({ space: 12 }) {
         Button($r('app.string.cancel'))
