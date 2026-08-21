@@ -141,7 +141,15 @@ export struct ChatListPage {
     if (w === 0 || this.tabViewW === 0) {
       return;
     }
-    const off = this.tabScroller.currentOffset().xOffset;
+    // currentOffset() 在控制器**没绑上滚动容器**时返回 undefined（文档如此，
+    // 类型签名骗人）。tabScroller 绑的横条挂在标题栏 bottomBuilder 上，文件夹
+    // 列表刷新时横条会短暂离树，这一瞬切页签就踩空——线上七连崩（v1.3.7
+    // "Cannot read property xOffset of undefined"）全是它。
+    const cur: OffsetResult | undefined = this.tabScroller.currentOffset();
+    if (cur === undefined) {
+      return;
+    }
+    const off = cur.xOffset;
     let target = -1;
     if (x < off + 8) {
       target = Math.max(0, x - 8);
