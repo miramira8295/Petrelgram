@@ -1,7 +1,8 @@
 import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 
 // 底部抽屉（附件 / 表情贴纸）共用的那身外壳。
 //
@@ -39,7 +40,7 @@ export struct BottomDrawerShell {
     .borderRadius(18)
     .clip(true)
     .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
   }
 
   build() {

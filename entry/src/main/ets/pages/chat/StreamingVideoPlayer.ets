@@ -8,8 +8,9 @@ import {
   OnVideoSizeChangedListener
 } from '@ohos/ijkplayer';
 import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import {
   FOCUS_PAUSE, FOCUS_RESUME, FOCUS_STOP, acquireAudioFocus
 } from '../../services/audioFocus';
@@ -1150,7 +1151,7 @@ export struct StreamingVideoPlayer {
           // 的 'viewer'：底永远是黑的，不跟随主题）。
           .backgroundColor(overlayGlassFill('viewer', CONTROL_BAR_BG))
           .backdropBlur(overlayBackdropBlur('viewer'))
-          .systemMaterial(overlayMaterial('viewer'))
+          .attributeModifier(materialModifier('viewer'))
           .borderRadius(18)
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.translate({ y: 10 }))

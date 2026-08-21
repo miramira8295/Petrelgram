@@ -2,8 +2,9 @@ import { generateBarcode, scanCore } from '@kit.ScanKit';
 import { image } from '@kit.ImageKit';
 import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 
 // Shared QR dialog: renders a t.me link as a scannable code (ScanKit).
@@ -61,6 +62,6 @@ export struct QrDialog {
     .borderRadius(16)
     .alignItems(HorizontalAlign.Center)
     .backdropBlur(overlayBackdropBlur('dialog'))
-    .systemMaterial(overlayMaterial('dialog'));
+    .attributeModifier(materialModifier('dialog'));
   }
 }

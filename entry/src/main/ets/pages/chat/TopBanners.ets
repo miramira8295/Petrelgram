@@ -3,8 +3,9 @@ import {
   KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { pinnedActiveSeg, pinnedSegIndices, pinnedShownIndex } from '../../util/pinnedSegments';
 import { plural, str } from '../../util/strings';
 
@@ -253,7 +254,7 @@ export struct TopBanners {
     // 'bar' 档自带阴影关闭，这条浮卡的阴影保持自己的。
     .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 1 })
     .clip(true)
-    .systemMaterial(overlayMaterial('bar'))
+    .attributeModifier(materialModifier('bar'))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({

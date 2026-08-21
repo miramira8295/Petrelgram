@@ -1,7 +1,8 @@
 import { common } from '@kit.AbilityKit';
 import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import {
   hopDirection, hopProgress, nextMediaGroupIndex
 } from '../../util/viewerGroupHop';
@@ -711,7 +712,7 @@ export struct MediaViewerOverlay {
     .padding({ left: 18, right: 18, top: 16, bottom: 16 })
     .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
     .backdropBlur(overlayBackdropBlur('viewer'))
-    .systemMaterial(overlayMaterial('viewer'))
+    .attributeModifier(materialModifier('viewer'))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
       .animation({ duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 180), curve: Curve.EaseOut }));
@@ -728,7 +729,7 @@ export struct MediaViewerOverlay {
     .padding({ left: 22, right: 22, top: 16, bottom: 16 })
     .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
     .backdropBlur(overlayBackdropBlur('viewer'))
-    .systemMaterial(overlayMaterial('viewer'))
+    .attributeModifier(materialModifier('viewer'))
     .stateStyles({
       normal: this.chromeNormalStyle,
       pressed: this.chromePressedStyle
@@ -911,7 +912,7 @@ export struct MediaViewerOverlay {
       .padding({ left: 11, right: 11, top: 7, bottom: 7 })
       .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
     .backdropBlur(overlayBackdropBlur('viewer'))
-    .systemMaterial(overlayMaterial('viewer'))
+    .attributeModifier(materialModifier('viewer'))
       .position({ x: 14, y: this.topSafe + 76 })
       .hitTestBehavior(HitTestMode.None)
       .transition(TransitionEffect.OPACITY
@@ -925,7 +926,7 @@ export struct MediaViewerOverlay {
       .padding({ left: 11, right: 11, top: 7, bottom: 7 })
       .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG)).borderRadius(16)
     .backdropBlur(overlayBackdropBlur('viewer'))
-    .systemMaterial(overlayMaterial('viewer'))
+    .attributeModifier(materialModifier('viewer'))
       .position({ x: 14, y: this.topSafe + 76 })
       .onClick((): void => { this.retryPhoto(); });
     }
@@ -991,7 +992,7 @@ export struct MediaViewerOverlay {
             .width(36).height(36).borderRadius(18)
             .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
             .backdropBlur(overlayBackdropBlur('viewer'))
-            .systemMaterial(overlayMaterial('viewer'));
+            .attributeModifier(materialModifier('viewer'));
           SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([Color.White]);
         }
         .width(40).height(40).borderRadius(20)
@@ -1018,7 +1019,7 @@ export struct MediaViewerOverlay {
       .padding({ left: 12, right: 14, top: 10, bottom: 10 })
       .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
       .backdropBlur(overlayBackdropBlur('viewer'))
-      .systemMaterial(overlayMaterial('viewer'))
+      .attributeModifier(materialModifier('viewer'))
       .borderRadius(18)
       .alignItems(VerticalAlign.Center)
       .flexShrink(1);
@@ -1031,7 +1032,7 @@ export struct MediaViewerOverlay {
           .width(36).height(36).borderRadius(18)
           .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
           .backdropBlur(overlayBackdropBlur('viewer'))
-          .systemMaterial(overlayMaterial('viewer'));
+          .attributeModifier(materialModifier('viewer'));
         SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([Color.White]);
       }
       .width(40).height(40).borderRadius(20)
@@ -1086,7 +1087,7 @@ export struct MediaViewerOverlay {
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })
     .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
     .backdropBlur(overlayBackdropBlur('viewer'))
-    .systemMaterial(overlayMaterial('viewer'))
+    .attributeModifier(materialModifier('viewer'))
     .borderRadius(18)
     .alignItems(VerticalAlign.Center)
     // 跟手：越拉越显、越拉越实。拉满前是"还差一点"的观感，拉满才定下来。

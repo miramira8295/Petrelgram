@@ -12,8 +12,9 @@ import {
   GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
 } from './ProfileGlass';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { AvatarView } from '../chatlist/AvatarView';
 import { QrDialog } from '../common/QrDialog';
 import { AvatarViewer } from '../common/AvatarViewer';
@@ -552,7 +553,7 @@ struct ProfilePage {
     .borderRadius(GLASS_RADIUS_CARD)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
   }
 
   @Styles
@@ -562,7 +563,7 @@ struct ProfilePage {
     .borderRadius(GLASS_RADIUS_TILE)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
   }
 
   @Builder
@@ -576,7 +577,7 @@ struct ProfilePage {
     .backdropBlur(overlayBackdropBlur('card'))
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
     .onClick(onTap);
   }
 
@@ -625,7 +626,7 @@ struct ProfilePage {
       .backdropBlur(overlayBackdropBlur('card'))
       .border({ width: 0.7, color: $r('app.color.divider') })
       .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-      .systemMaterial(overlayMaterial('card'))
+      .attributeModifier(materialModifier('card'))
         // 没有头像文件时（仅首字母占位）点击无意义，不给反馈。
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
@@ -904,7 +905,7 @@ struct ProfilePage {
     .borderRadius(PROFILE_TAB_BAR_HEIGHT / 2)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
     .clip(true)
     .margin({ left: 8, right: 8, top: 14, bottom: 8 });
   }

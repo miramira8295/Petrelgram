@@ -20,8 +20,9 @@ import {
   GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
 } from './ProfileGlass';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { AvatarView } from '../chatlist/AvatarView';
 import { AvatarViewer } from '../common/AvatarViewer';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
@@ -795,7 +796,7 @@ struct ChatProfilePage {
     .borderRadius(GLASS_RADIUS_CARD)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
   }
 
   @Styles
@@ -805,7 +806,7 @@ struct ChatProfilePage {
     .borderRadius(GLASS_RADIUS_TILE)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
   }
 
   @Builder
@@ -819,7 +820,7 @@ struct ChatProfilePage {
     .backdropBlur(overlayBackdropBlur('card'))
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
     .onClick(onTap);
   }
 
@@ -944,7 +945,7 @@ struct ChatProfilePage {
       .backdropBlur(overlayBackdropBlur('card'))
       .border({ width: 0.7, color: $r('app.color.divider') })
       .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-      .systemMaterial(overlayMaterial('card'))
+      .attributeModifier(materialModifier('card'))
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
           if (this.avatarPath !== '') {
@@ -1317,7 +1318,7 @@ struct ChatProfilePage {
     .borderRadius(DETAIL_TAB_BAR_HEIGHT / 2)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .systemMaterial(overlayMaterial('card'))
+    .attributeModifier(materialModifier('card'))
     .clip(true)
     .alignSelf(ItemAlign.Center)
     .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, bottom: 6 });

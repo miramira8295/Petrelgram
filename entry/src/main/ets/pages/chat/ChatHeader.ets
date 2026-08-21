@@ -6,6 +6,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
 
 // 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。
@@ -123,7 +124,7 @@ export struct ChatHeader {
       curve: Curve.EaseOut
     })
     .backdropBlur(overlayBackdropBlur('bar'))
-    .systemMaterial(overlayMaterial('bar'))
+    .attributeModifier(materialModifier('bar'))
     .onClick((): void => { this.onBack(); });
   }
 
@@ -173,7 +174,7 @@ export struct ChatHeader {
     // 和左边两颗顶栏胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上
     // 让位给沉浸光感。
     .backdropBlur(overlayBackdropBlur('bar'))
-    .systemMaterial(overlayMaterial('bar'))
+    .attributeModifier(materialModifier('bar'))
     .bindMenu(this.menuShow, this.menu, {
       // 菜单容器要自己透出来才看得到模糊：框架默认给的是一块不透明底板。
       // backgroundBlurStyle 是低于 API 26 时的降级，systemMaterial 是 26 起
@@ -239,7 +240,7 @@ export struct ChatHeader {
       // 注意：它悬浮在滚动列表上，官方明确提醒材质要逐帧重采样背后内容，
       // 这一处的滑动开销必须实测，不能想当然。
       .backdropBlur(overlayBackdropBlur('bar'))
-      .systemMaterial(overlayMaterial('bar'))
+      .attributeModifier(materialModifier('bar'))
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
         curve: Curve.EaseOut

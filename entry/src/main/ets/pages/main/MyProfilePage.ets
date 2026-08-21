@@ -25,8 +25,9 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -1999,6 +2000,6 @@ struct StickerAvatarDialog {
     .borderRadius({ topLeft: 16, topRight: 16 })
     .clip(true)
     .backdropBlur(overlayBackdropBlur('dialog'))
-    .systemMaterial(overlayMaterial('dialog'));
+    .attributeModifier(materialModifier('dialog'));
   }
 }

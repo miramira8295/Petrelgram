@@ -1,8 +1,9 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import {
   BADGE_HEIGHT, unreadBadgeOffsetX, unreadBadgeText, unreadBadgeWidth
 } from '../../util/unreadBadge';
@@ -61,7 +62,7 @@ export struct ScrollFab {
       })
       .backdropBlur(overlayBackdropBlur('card'))
       .border({ width: 0.7, color: $r('app.color.divider') })
-      .systemMaterial(overlayMaterial('card'))
+      .attributeModifier(materialModifier('card'))
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
       .enabled(!this.busy)
       .accessibilityText(this.busy

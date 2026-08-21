@@ -22,7 +22,8 @@ import { BG_PATTERN_DEFAULT, patternStrengthKey } from '../../store/AppSettings'
 import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/ChatBackgroundStore';
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
-import { overlayBackdropBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
@@ -299,7 +300,7 @@ export struct MainScreen {
       .clip(true)
       .border({ width: 0.5, color: COLOR_DIVIDER })
       .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 })
-      .systemMaterial(overlayMaterial('bar'))
+      .attributeModifier(materialModifier('bar'))
       ;
     }
     .width('100%')

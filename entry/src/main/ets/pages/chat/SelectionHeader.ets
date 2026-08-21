@@ -2,8 +2,9 @@ import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS } from './ChatHeader';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
 
 // 多选态的顶栏：✕ 退出、已选计数、转发 / 复制 / 删除。
@@ -56,7 +57,7 @@ export struct SelectionHeader {
     .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
     // 顶栏胶囊统一走 'bar' 档材质；低于 API 26 由 backdropBlur + 半透明底自绘。
     .backdropBlur(overlayBackdropBlur('bar'))
-    .systemMaterial(overlayMaterial('bar'))
+    .attributeModifier(materialModifier('bar'))
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
       curve: Curve.EaseOut

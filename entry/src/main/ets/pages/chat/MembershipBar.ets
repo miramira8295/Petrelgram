@@ -4,8 +4,9 @@ import {
 } from '../../util/membershipState';
 import { MEMBERSHIP_BOT_START } from '../../util/botStart';
 import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 
 // 没有发言权时，输入区的位置放什么。
 //
@@ -73,7 +74,7 @@ export struct MembershipBar {
       .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
       .borderRadius(24)
       .backdropBlur(overlayBackdropBlur('card'))
-      .systemMaterial(overlayMaterial('card'))
+      .attributeModifier(materialModifier('card'))
       // 只有"可加入且没在加入中"和"只读（点了是切静音）"可点。确认中、被挡住
       // 都不可点：前者点了没意义，后者点了只会失败。
       // 照抄原式的正面枚举，而不是反过来排除——反写在遇到意外状态时行为会翻转。

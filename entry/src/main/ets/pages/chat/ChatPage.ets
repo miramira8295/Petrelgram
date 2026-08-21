@@ -159,6 +159,7 @@ import { audioQueueApplies } from '../../util/audioQueueGate';
 import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
 import { adminLabelOf } from '../../util/adminLabel';
@@ -6640,7 +6641,7 @@ struct ChatPage {
         .margin({ bottom: 1 })
         .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
         .backdropBlur(overlayBackdropBlur('card'))
-        .systemMaterial(overlayMaterial('card'))
+        .attributeModifier(materialModifier('card'))
         .onClick((): void => { this.toggleAttachPanel(); });
       }
       Column() {
@@ -6836,7 +6837,7 @@ struct ChatPage {
       // 材质接管时它自带填充，把上面的实心色清成透明玻璃；低于 API 26 材质
       // 是 undefined，改由 backdropBlur + 半透明底色自己画。
       .backdropBlur(overlayBackdropBlur('card'))
-      .systemMaterial(overlayMaterial('card'));
+      .attributeModifier(materialModifier('card'));
     }.width('100%')
     .padding({
       left: 14,

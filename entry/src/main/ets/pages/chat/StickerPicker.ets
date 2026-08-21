@@ -16,8 +16,9 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { probeEvent, probeHit } from '../../util/panelProbe';
 import {
-  overlayMaterial, overlayGlassFill, overlayBackdropBlur, MATERIAL_EPOCH
+  overlayGlassFill, overlayBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { logE, logI } from '../../util/log';
 
 export interface StickerItem {
@@ -1032,7 +1033,7 @@ export struct StickerPicker {
               .justifyContent(FlexAlign.Center)
               .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
               .backdropBlur(overlayBackdropBlur('control'))
-              .systemMaterial(overlayMaterial('control'))
+              .attributeModifier(materialModifier('control'))
               .onClick(() => { this.toggleSearch(); });
             }
             .width(48).height(44)

@@ -18,6 +18,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
   overlayBackdropBlur, overlayMaterial, overlayGlassFill, plainBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 
@@ -626,7 +627,7 @@ export struct ChatListPage {
     // 返回透明，不可用时返回半透明、由 backdropBlur 自己画玻璃。
     .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
     .backdropBlur(overlayBackdropBlur('control'))
-    .systemMaterial(overlayMaterial('control'))
+    .attributeModifier(materialModifier('control'))
     // 圆角要裁，否则模糊会溢出胶囊外沿画成一个方块。
     .clip(true)
     .stateStyles({

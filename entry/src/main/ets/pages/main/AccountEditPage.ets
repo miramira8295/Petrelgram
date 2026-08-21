@@ -8,8 +8,9 @@ import { str } from '../../util/strings';
 import { monthDay } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
-  overlayBackdropBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 import { HdsSubPage } from '../common/HdsSubPage';
 import {
@@ -780,6 +781,6 @@ struct UsernameDialog {
     .borderRadius(16)
     .width('86%')
     .backdropBlur(overlayBackdropBlur('dialog'))
-    .systemMaterial(overlayMaterial('dialog'));
+    .attributeModifier(materialModifier('dialog'));
   }
 }

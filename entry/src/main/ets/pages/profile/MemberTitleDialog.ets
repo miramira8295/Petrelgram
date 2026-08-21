@@ -1,8 +1,9 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill, overlayMaterial
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
 } from '../../util/overlayMaterial';
+import { materialModifier } from '../../util/materialModifier';
 
 // 单独改成员头衔的小弹窗。
 //
@@ -54,7 +55,7 @@ export struct MemberTitleDialog {
     .width('88%').padding(20)
     .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
     .backdropBlur(overlayBackdropBlur('dialog'))
-    .systemMaterial(overlayMaterial('dialog'))
+    .attributeModifier(materialModifier('dialog'))
     .borderRadius(20)
     .alignItems(HorizontalAlign.Start);
   }
