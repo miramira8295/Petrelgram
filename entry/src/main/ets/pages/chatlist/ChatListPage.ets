@@ -38,6 +38,10 @@ const FOLDER_BAR_HEIGHT: number = 44;
 // 文件夹条连同它自己的上下留白占的高度（列表让位用）。
 const FOLDER_BAR_SPACE: number = 54;
 const FOLDER_INDICATOR_HEIGHT: number = 32;
+// 文件夹项自身的高度。和滑动指示器取同一个值，两者才严丝合缝——每项现在自己带
+// 一块玻璃，比指示器高一圈的话，选中态就会露出一圈错位的边。
+// 横条整体仍是 FOLDER_BAR_HEIGHT(44)，多出来的那 12 是上下留白。
+const FOLDER_CHIP_HEIGHT: number = FOLDER_INDICATOR_HEIGHT;
 const FOLDER_SWITCH_DURATION: number = 250;
 
 @Preview
@@ -586,7 +590,7 @@ export struct ChatListPage {
   @Builder
   pill(spec: TabSpec, index: number) {
     Row({ space: 5 }) {
-      Text(spec.title).fontSize(14)
+      Text(spec.title).fontSize(13)
         .fontWeight(this.selectedIndex === index ? FontWeight.Medium : FontWeight.Normal)
         .fontColor(this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -596,17 +600,17 @@ export struct ChatListPage {
           Text(this.tabBadgeText(spec))
             .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
         }
-          .constraintSize({ minWidth: 18 })
-          .height(18).padding({ left: 5, right: 5 })
+          .constraintSize({ minWidth: 16 })
+          .height(16).padding({ left: 4, right: 4 })
           .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
           .backgroundColor(this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_BADGE_BG)
-          .borderRadius(9);
+          .borderRadius(8);
       }
     }
-    .height(FOLDER_BAR_HEIGHT)
-    .padding({ left: 12, right: 12 })
+    .height(FOLDER_CHIP_HEIGHT)
+    .padding({ left: 10, right: 10 })
     .margin({ right: 2 })
-    .borderRadius(FOLDER_BAR_HEIGHT / 2)
+    .borderRadius(FOLDER_CHIP_HEIGHT / 2)
     // 每个文件夹项自己一块玻璃。用 'control' 这一档（小控件），厚度比顶栏薄，
     // 免得一排胶囊连成一片实的。
     //
