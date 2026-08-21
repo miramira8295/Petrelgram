@@ -13,7 +13,6 @@ import {
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { NavStackLike, stackOf } from '../../util/navStacks';
 import {
   HdsNavigationIconOptions, HdsNavigationMenuItemOptions
 } from '@kit.UIDesignKit';
@@ -57,6 +56,10 @@ export struct AccountEditPage {
   private origLast: string = '';
   private origBio: string = '';
   private leaveTimer: number = -1;
+  // 本页所在的 Navigation 栈，由外壳 HdsSubDestination 在 onReady 时转发。
+  // 见 popSelf()——本页可能落在设置页签或个人资料页签的栈上，只有框架给的这条
+  // 才认得出是哪一条。
+  private navStack: NavPathStack | undefined = undefined;
   private loadSequence: number = 0;
   private skeletonTimer: number = -1;
 
@@ -197,23 +200,33 @@ export struct AccountEditPage {
     this.popSelf();
   }
 
-  // 出栈。**取的是设置页签的栈**，不是随便哪个栈：本页只有三个入口
-  //（SettingsPage 的「账号」条目、SettingsPage 头部头像、MyProfilePage 的
-  // 「编辑信息」），三个都走 navigateToSetting()，推的都是 'settings' 这条栈。
+  // 出栈。
   //
-  // 为什么不像 ArchivePage 那样用 onReady(ctx.pathStack) 拿：那个回调挂在
-  // HdsNavDestination 上，而本页并不自己写 HdsNavDestination——它在外壳
-  // HdsSubDestination 里，onReady 拿到的栈存在外壳的私有字段上，本页够不着。
-  // 外壳的默认 onBack 已经是正确的出栈，但本页必须传自己的 onBack（未保存确认
-  // 框要先弹），所以只能自己找一次栈。
+  // 【原注释，已经是历史，保留原文】「出栈。**取的是设置页签的栈**，不是随便
+  // 哪个栈：本页只有三个入口（SettingsPage 的「账号」条目、SettingsPage 头部
+  // 头像、MyProfilePage 的「编辑信息」），三个都走 navigateToSetting()，推的都是
+  // 'settings' 这条栈。／ 为什么不像 ArchivePage 那样用 onReady(ctx.pathStack)
+  // 拿：那个回调挂在 HdsNavDestination 上，而本页并不自己写 HdsNavDestination
+  // ——它在外壳 HdsSubDestination 里，onReady 拿到的栈存在外壳的私有字段上，本页
+  // 够不着。外壳的默认 onBack 已经是正确的出栈，但本页必须传自己的 onBack
+  //（未保存确认框要先弹），所以只能自己找一次栈。」
+  //
+  // 【现在】那条「三个入口推的都是 settings 栈」的前提没了：个人资料页签有了
+  // 自己的路由栈，「编辑信息」推的是 'profile' 那条（这样它才不会把页签切走）。
+  // 硬取 'settings' 会在从个人资料进来时弹错栈——现象是返回键没反应，而且
+  // 设置栈里若正好也压着一个本页，弹掉的是屏幕外那一个。
+  // 外壳新加的 onNavStack 把 ctx.pathStack 转发过来，那才是「本实例所在的栈」
+  // 的唯一可靠来源，与栈叫什么名字无关。
   //
   // 栈缺失时**故意不回退到 router.back()**：那正是会把应用退到桌面的那条路，
   // 返回键"什么都不做 + 一条日志"远比退到桌面好。形状与 HdsSubDestination.popSelf
   // 一致。
   private popSelf(): void {
-    const stack: NavStackLike | undefined = stackOf('settings');
+    const stack: NavPathStack | undefined = this.navStack;
     if (stack === undefined) {
-      logE('AccountEditPage.popSelf: settings stack not registered, back ignored');
+      // navStack 由外壳的 onReady 转发，而 onReady 必先于本页可见，所以这一支
+      // 不该发生。
+      logE('AccountEditPage.popSelf: nav stack missing, back ignored');
       return;
     }
     stack.pop();
@@ -677,6 +690,7 @@ export struct AccountEditPage {
       pageBackground: $r('app.color.page_bg'),
       scroller: this.hdsScroller,
       onBack: (): void => { this.requestBack(); },
+      onNavStack: (stack: NavPathStack): void => { this.navStack = stack; },
       menuItems: this.saving ? [] : [this.saveMenuItem()]
     }) {
       Column() {

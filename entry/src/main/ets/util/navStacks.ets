@@ -10,7 +10,12 @@ import { StackFrame } from './splitRouting';
 // 存 NavStackLike 而不是 NavPathStack：后者是 ArkUI 类型，宿主单测里构造不出来。
 // NavPathStack 在结构上满足这个接口，运行时直接传进来即可。
 
-export type TabKind = 'chat' | 'contacts' | 'settings';
+// 【原声明，保留作为历史】`export type TabKind = 'chat' | 'contacts' | 'settings';`
+// ——个人资料页签当时不是路由容器，它的唯一子页（AccountEditPage）只能落在设置
+// 栈上，代价是点「编辑信息」会把页签切到设置。加上 'profile' 之后它有了自己的
+// 栈，编辑页回到「盖在个人资料页签之上、返回就回个人资料」的迁移前行为。
+// 个人资料页签强制单栏（.mode(NavigationMode.Stack)），推目的地就是整页替换。
+export type TabKind = 'chat' | 'contacts' | 'settings' | 'profile';
 
 // 对齐 NavPathInfo 里我们实际用到的两个字段。
 export interface NavPathInfoLike {

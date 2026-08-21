@@ -134,6 +134,18 @@ export struct HdsSubDestination {
   // 需要"只吃一次"的调用页自己加守卫——外壳不替调用页决定这件事，因为将来也
   // 可能有页面想每次都重新吃参数。
   onRouteParams: (param: Object | undefined) => void = (): void => {};
+  // 本页落在**哪一条** Navigation 栈上，onReady 时转发给调用页。
+  //
+  // 【为什么需要它】绝大多数子页用不着：外壳默认的 onBack 已经用自己的
+  // navStack 正确出栈。要用它的是那种**自己传了 onBack**、因而必须自己出栈的
+  // 页面（目前只有 AccountEditPage：未保存确认框要先弹）。这类页面此前只能靠
+  // 全局注册表按 tab 名硬取一条栈，而同一个页面从此可能被推到不止一条栈上
+  //（AccountEditPage：设置页签的列表 / 深链推设置栈，个人资料页签的「编辑信息」
+  // 推 profile 栈），硬编码的那条就会弹错栈——现象是返回键没反应。
+  // 框架给的 ctx.pathStack 才是「本实例所在的栈」的唯一可靠来源。
+  //
+  // 纯增量：默认空 lambda，不传的十六个页面一条路径都不变。
+  onNavStack: (stack: NavPathStack) => void = (): void => {};
   // 内容区的滚动控制器，必须和内容里那个 Scroll/List 用的是同一个。
   //
   // bindToScrollable 按 Scroller **对象引用**绑定，与布局层级无关——控制器被
@@ -288,6 +300,9 @@ export struct HdsSubDestination {
     .bindToScrollable([this.scroller])
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
+      // 调用页也要拿到同一条栈（见 onNavStack 的说明）。与下面同理：它可能在
+      // onRouteParams 里直接决定退场，那时它自己的出栈动作得已经有栈可用。
+      this.onNavStack(ctx.pathStack);
       // 先存栈再交参数：调用页在 onRouteParams 里可能直接决定退场，那时
       // popSelf() 得已经有栈可用。
       this.onRouteParams(ctx.pathInfo.param as Object | undefined);

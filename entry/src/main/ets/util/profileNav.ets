@@ -52,9 +52,10 @@ export function profileFrameKey(name: string, param: Object | undefined): string
 // SettingsPage / MyProfilePage。
 export const CONTACTS_TAB_INDEX: number = 1;
 
-// 目标页签对应的 TabContent 下标。只列本文件真会推的两个：'settings' 落到
-// 这里是调用错误（设置栈里没有资料页这类目的地），归到聊天页签也无从补救，
-// 所以不为它单开一支——settingsNav.ets 才是那条线的漏斗。
+// 目标页签对应的 TabContent 下标。只列本文件真会推的两个：'settings' /
+// 'profile' 落到这里是调用错误（那两条栈里没有资料页这类目的地），归到聊天页签
+// 也无从补救，所以不为它们单开一支——settingsNav.ets 和 MyProfilePage.pushEditor
+// 才是那两条线各自的漏斗。
 function tabIndexOf(tab: TabKind): number {
   return tab === 'contacts' ? CONTACTS_TAB_INDEX : CHAT_TAB_INDEX;
 }

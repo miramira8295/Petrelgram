@@ -29,7 +29,8 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
-import { navigateToSetting } from '../../util/settingsNav';
+import { registerStack, NavStackLike, snapshotOf, stackOf } from '../../util/navStacks';
+import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
 import { readableContentWidth } from '../../util/contentWidth';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -37,6 +38,31 @@ const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
 const TOP_ACTION_SIZE: number = 44;
 const PROFILE_LOAD_TIMEOUT_MS: number = 8000;
+
+// 个人资料页签的 navBar 此刻是否可见。与 CHAT_NAV_BAR_VISIBLE_KEY /
+// SETTINGS_NAV_BAR_VISIBLE_KEY / CONTACTS_NAV_BAR_VISIBLE_KEY 同一个用途、**第四个
+// 键**：MainScreen 靠它决定悬浮 dock 藏不藏。
+//
+// 【和另外三个的差别】那三个页签的 HdsNavigation 走默认 Auto，宽屏会分栏，所以
+// 它们的 false 等价于「单栏 **且** 栈非空」。本页**强制单栏**
+//（.mode(NavigationMode.Stack)，理由见 build()），于是这里的 false 直接等价于
+//「栈非空」——平板上同样为 false，这正是要的：单栏模式下 NavDestination 是整页
+// 替换、铺满整屏，dock 浮在它上面就是错的，与手机上一模一样。
+//
+// **没有配套的宽度键**：单栏下 navBar 恒等于整屏宽，dock 用 '100%' 就对，
+// 另外三个页签那种「拖过分割线之后左栏宽度不再相等」的问题在这里不存在。
+export const PROFILE_NAV_BAR_VISIBLE_KEY: string = 'profileNavBarVisible';
+
+// 路由表（router_map.json）里编辑页的 NavDestination 名。
+const EDITOR_DEST_NAME: string = 'AccountEditPage';
+
+// 个人资料栈里 NavDestination 的实例键。这条栈上只可能有 AccountEditPage 一个
+// 目的地，且是单例语义（没有 chatId 那样的参数），键恒为空串——去重完全由 name
+// 决定：栈顶已经是编辑页时 decidePush 返回 skip。形状与 settingsNav 的
+// settingFrameKey 一致，只是这里没有 ProxyPage 那种带参数的例外。
+function profileFrameKey(name: string, param: Object | undefined): string {
+  return '';
+}
 
 // The current user's own profile tab (Telegram-style "my profile"): avatar
 // header, 设置照片/编辑信息/设置 quick actions, an info card (phone/username/
@@ -97,6 +123,9 @@ export struct MyProfilePage {
   @State storyPosting: boolean = false;
   private store: ProfileStore | null = null;
   private unsub: (() => void) | null = null;
+  // 个人资料页签的路由栈。本页强制单栏，推进来的目的地是**整页替换**——
+  // 正是 AccountEditPage 迁移前那条 router.pushUrl 的观感。
+  private profileStack: NavPathStack = new NavPathStack();
   private profileLoadSequence: number = 0;
   private profileLoadTimer: number = -1;
   private headerRevealTimer: number = -1;
@@ -108,6 +137,14 @@ export struct MyProfilePage {
   private storyChatId: number = 0;
 
   aboutToAppear(): void {
+    // 全局注册表取栈：与聊天/联系人/设置三个页签同构。本页目前只有一个入口
+    //（openEditor），注册进去主要是为了让 openEditor 和将来页面之外的触发点
+    // 共用同一条栈。见 util/navStacks.ets 的说明。
+    registerStack('profile', this.profileStack as NavStackLike);
+    // 复位一次再挂树：本页刚建好时栈必然是空的，navBar 一定可见。不复位的话，
+    // 上一轮（退登/换账号）留在 AppStorage 里的 false 会让 dock 一直藏着——
+    // onNavBarStateChange 只在**变化**时触发，不会替我们补一发 true。
+    AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, true);
     this.loadProfile();
   }
 
@@ -243,6 +280,27 @@ export struct MyProfilePage {
     this.qrCtrl.open();
   }
 
+  // 把编辑页推进**本页签**的栈。返回 false 只可能是"栈没注册"，而 aboutToAppear
+  // 里刚注册过、此刻必然在树上，所以那一支不该发生；仍然接住，让调用方把连点锁
+  // 解掉并给用户一条提示。
+  private pushEditor(): boolean {
+    const stack: NavStackLike | undefined = stackOf('profile');
+    if (stack === undefined) {
+      return false;
+    }
+    const target: StackFrame = { name: EDITOR_DEST_NAME, key: profileFrameKey(EDITOR_DEST_NAME, undefined) };
+    const snap: StackFrame[] = snapshotOf(stack, profileFrameKey);
+    const action: StackAction = decidePush(snap, 'navbar', target);
+    if (action === 'skip') {
+      return true;
+    }
+    if (action === 'clearAndPush') {
+      stack.clear(false);
+    }
+    stack.pushPath({ name: EDITOR_DEST_NAME });
+    return true;
+  }
+
   private openEditor(): void {
     if (this.profileLoading || this.profileError !== '' ||
       this.photoUploading || this.photoMenuOpen || this.openingEditor ||
@@ -255,16 +313,31 @@ export struct MyProfilePage {
       this.openingEditor = false;
     }, 700);
     // AccountEditPage 已经迁成 HdsNavDestination、从 main_pages.json 摘掉了，
-    // router.pushUrl 对它必然失败（现象是点了没反应），改走设置页签的路由栈。
+    // router.pushUrl 对它必然失败（现象是点了没反应），改走 Navigation 路由栈。
     //
-    // 【这里有一个必须知道的行为变化】编辑页现在只存在于**设置页签**那条栈上
-    //（TabKind 只有 chat / contacts / settings 三条，个人资料页签没有自己的栈），
-    // 所以 navigateToSetting 会把当前页签切到设置。迁移前它是盖在个人资料页签
-    // 之上的整页 router 页，返回时回到个人资料；现在返回回到的是设置页签那张
-    // 列表。本页原本就有「切到设置页签」这个动作（openSettings），这条路对用户
-    // 不算陌生，但它确实和迁移前不一样。
-    if (!navigateToSetting('AccountEditPage')) {
-      logE('MyProfilePage.openEditor failed: settings stack missing');
+    // 【原注释，描述的行为已经是历史，保留原文】「【这里有一个必须知道的行为
+    // 变化】编辑页现在只存在于**设置页签**那条栈上（TabKind 只有 chat /
+    // contacts / settings 三条，个人资料页签没有自己的栈），所以 navigateToSetting
+    // 会把当前页签切到设置。迁移前它是盖在个人资料页签之上的整页 router 页，
+    // 返回时回到个人资料；现在返回回到的是设置页签那张列表。本页原本就有
+    //「切到设置页签」这个动作（openSettings），这条路对用户不算陌生，但它确实和
+    // 迁移前不一样。」
+    //
+    // 【现在】个人资料页签有了自己的路由栈（TabKind 多了 'profile'），编辑页推进
+    // 本页签这条栈，页签不再被切走。本页强制单栏，推目的地就是整页替换、返回
+    // 就回到个人资料页——与迁移前逐字相同。
+    //
+    // 【为什么不复用 navigateToSetting】那个函数的职责里**焊死了一句「先把当前
+    // 页签切到设置」**（深链可能在任何页签上被触发，子页推进去了得跟着显示出来），
+    // 给它加一个目标栈参数就得把那句也变成条件的，一个函数两套语义；而它文件头
+    // 那张「每迁一页搬一条」的清单说的全是设置子页。这里直接用 stackOf('profile')
+    // + decidePush，规则（同一个 decidePush）不变，少一层拧巴。
+    //
+    // origin 用 'navbar'：语义上是「从这一页选一项进去」，和从设置列表点一条
+    // 子页、从会话列表选一个会话完全一致——要的是替换而不是叠加，所以
+    // decidePush 给 clearAndPush，这条栈的深度恒为 1。
+    if (!this.pushEditor()) {
+      logE('MyProfilePage.openEditor failed: profile stack missing');
       promptAction.showToast({ message: $r('app.string.settings_open_profile_failed'), duration: 1800 });
       if (this.editorNavigationTimer !== -1) {
         clearTimeout(this.editorNavigationTimer);
@@ -1944,7 +2017,7 @@ export struct MyProfilePage {
   }
 
   build() {
-    HdsNavigation() {
+    HdsNavigation(this.profileStack) {
       Scroll(this.profileScroller) {
         // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
         // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
@@ -1996,7 +2069,32 @@ export struct MyProfilePage {
     // 强制单栏：HdsNavigation 在宽屏（平板/横屏）会自动进分栏模式，我们只拿
     // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
     // 右边一片空白（平板用户报"没法用了"）。
+    //
+    // 【本页现在有 NavDestination 了，这一行仍然保留】另外三个页签拆掉它是因为
+    // 它们有「列表 + 详情」结构，分栏是净收益；本页没有——它是一张自己的资料卡，
+    // 唯一的子页（编辑信息）是对同一份资料的编辑，不是「另一条目的详情」。官方
+    //《多设备即时通讯界面》范例里的朋友圈页在 lg 断点下同样不分栏，同一个理由。
+    // 保留它还顺带保证了手机端零变化：单栏下推目的地就是整页替换、返回回到本页，
+    // 与 AccountEditPage 迁移前那条 router.pushUrl 逐字相同。
+    // 也正因为永远单栏，本页不设 navBarWidthRange / minContentWidth /
+    // enableDragBar / splitPlaceholder——那四样只在分栏下有意义。
     .mode(NavigationMode.Stack)
+    // navBar 显隐。单栏下它等价于「栈非空」，dock 要藏在这种时候，见
+    // PROFILE_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
+    // 惊动订阅方。
+    .onNavBarStateChange((isVisible: boolean): void => {
+      if (AppStorage.get<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY) !== isVisible) {
+        AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
+      }
+    })
+    // 关掉全模态联动：默认 true 时，bindSheet / bindContentCover 一拉起就会触发
+    // 栈顶 HdsNavDestination 的 onHidden。**此刻它是个空操作**——本页自己没有
+    // bindSheet（两个浮层是 CustomDialogController，弹窗不是全模态，不触发这条），
+    // 这条栈上唯一的目的地 AccountEditPage 也既没有 bindSheet 也没有传
+    // onShown / onHidden。写上它是为了对齐聊天/设置两个页签的取值：四条栈没有
+    // 理由在这件事上不同，而将来往这条栈上加一个带面板的页面时，默认值会让
+    //「一拉起面板页面就以为自己隐藏了」（ChatPage 踩过：一开转发面板音视频就停）。
+    .enableVisibilityLifecycleWithContentCover(false)
     .titleMode(HdsNavigationTitleMode.FREE)
     .bindToScrollable([this.profileScroller])
     .width('100%').height('100%')

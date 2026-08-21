@@ -65,6 +65,29 @@ export default function navStacksTest(): void {
       expect(stackOf('contacts') === undefined).assertTrue();
     });
 
+    it('个人资料页签有自己的一条栈，和设置那条互不串', 0, (): void => {
+      const settings = new FakeStack();
+      const profile = new FakeStack();
+      registerStack('settings', settings);
+      registerStack('profile', profile);
+      profile.pushPath({ name: 'AccountEditPage' });
+      // 同一个页面可能同时压在两条栈上（设置列表进一次、个人资料进一次），
+      // 两条栈必须各记各的。
+      expect(stackOf('profile') === profile).assertTrue();
+      expect(stackOf('settings') === settings).assertTrue();
+      expect(settings.size()).assertEqual(0);
+      expect(profile.size()).assertEqual(1);
+    });
+
+    it('clearAllStacks 覆盖新加的 profile 栈', 0, (): void => {
+      const profile = new FakeStack();
+      profile.pushPath({ name: 'AccountEditPage' });
+      registerStack('profile', profile);
+      clearAllStacks();
+      expect(profile.cleared).assertEqual(1);
+      expect(profile.size()).assertEqual(0);
+    });
+
     it('重复注册同一 tab 以后者为准（账号切换会重建组件树）', 0, (): void => {
       const a = new FakeStack();
       const b = new FakeStack();

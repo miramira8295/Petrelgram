@@ -13,7 +13,7 @@ import {
 import {
   SettingsPage, SETTINGS_NAV_BAR_VISIBLE_KEY, SETTINGS_NAV_BAR_WIDTH_KEY
 } from './SettingsPage';
-import { MyProfilePage } from './MyProfilePage';
+import { MyProfilePage, PROFILE_NAV_BAR_VISIBLE_KEY } from './MyProfilePage';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TAB_UNSELECTED, darkResourceMode
@@ -83,6 +83,12 @@ export struct MainScreen {
   // 常驻，同样恒为 true。留着这一支不是冗余：断点是窗口宽，平板分屏到
   // < 600vp 时就是单栏，那时右栏那层 ProfilePage 会盖上来，dock 必须跟着藏。
   @StorageProp(CONTACTS_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private contactsNavBarVisible: boolean = true;
+  // 个人资料页签的 navBar 此刻可不可见。**没有配套的宽度键**：这一页强制单栏
+  //（.mode(NavigationMode.Stack)），navBar 恒等于整屏宽，dock 用 '100%' 就对。
+  // 也正因为永远单栏，这个键的 false 直接等价于「个人资料栈非空」——平板上
+  // 同样会翻 false，而那正是要的：单栏下编辑页是整页替换、铺满整屏。
+  // 见 PROFILE_NAV_BAR_VISIBLE_KEY。
+  @StorageProp(PROFILE_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private profileNavBarVisible: boolean = true;
   // dock 的**交互态**：false 的那一刻起就不再接收任何点击，不等淡出结束。
   // 与 dockMounted 分开是本次修复的核心，理由见 syncDock()。
   @State private dockShown: boolean = true;
@@ -377,9 +383,10 @@ export struct MainScreen {
   // 上（真机截图确认）。宽度不能写死——enableDragBar(true) 允许用户拖分割线。
   //
   // 认聊天(0)、联系人(1)、设置(2)三个页签：这三个的 HdsNavigation 都带
-  // NavPathStack、都走默认的 Auto 模式，宽屏上会分栏。个人资料(3)仍显式
-  // .mode(NavigationMode.Stack) 强制单栏，它在屏上时整页就是整屏宽，dock 缩在
-  // 左边一条是错的。
+  // NavPathStack、都走默认的 Auto 模式，宽屏上会分栏。个人资料(3)现在也带
+  // NavPathStack（编辑信息推进去），但仍显式 .mode(NavigationMode.Stack) 强制
+  // 单栏——它在屏上时整页就是整屏宽，dock 缩在左边一条是错的，所以这一支照旧
+  // 落到底下的 '100%'，不给它开第四个宽度键。
   // 三个页签各读各的键：拖过分割线之后左栏宽度不再相等，共用一个会在另外两个
   // 页签上错开。
   // 手机（单栏）下量到的就是整屏宽，自然退化为改造前的行为；还没量到（0）时
@@ -420,7 +427,11 @@ export struct MainScreen {
   // 联系人页签（1）同理，只是它在手机上不推目的地（点联系人直接开会话），
   // contactsNavBarVisible 在手机上恒为 true，dock 行为与改造前逐字相同；这一支
   // 真正管的是「平板分屏到 <600vp、右栏那层 ProfilePage 盖上来」那一刻。
-  // 个人资料（3）仍强制单栏、永远不推目的地，恒显示。
+  // 【原注释，已经是历史，保留原文】「个人资料（3）仍强制单栏、永远不推目的地，
+  // 恒显示。」——个人资料页签现在有自己的栈了（「编辑信息」推 AccountEditPage
+  // 进去），于是同一套判断要照做第四遍。它强制单栏，编辑页因此是**整页替换**、
+  // 铺满整屏，dock 浮在它上面正好压住底部——手机平板都一样，这一支不像联系人
+  // 那样在手机上恒为 true。
   private dockVisible(): boolean {
     if (this.tab === 0) {
       return this.chatNavBarVisible;
@@ -430,6 +441,9 @@ export struct MainScreen {
     }
     if (this.tab === 2) {
       return this.settingsNavBarVisible;
+    }
+    if (this.tab === 3) {
+      return this.profileNavBarVisible;
     }
     return true;
   }
