@@ -21,6 +21,67 @@ class FakeBridge implements TdBridge {
   }
 }
 
+// 前 failures 次请求回 "Call to <method> unexpected"，之后放行。用来复现 TDLib
+// 的时机冲突：鉴权类请求同一时刻只接受一个在途、且授权态必须正好对得上，
+// 不满足时它不排队、直接拒——冷启动点扫码就是踩这个（手机模拟器实测）。
+class UnexpectedThenOkBridge implements TdBridge {
+  onReceive: (json: string) => void;
+  sent: string[];
+  private remaining: number;
+
+  constructor(failures: number) {
+    this.sent = [];
+    this.remaining = failures;
+    this.onReceive = (json: string): void => {};
+  }
+
+  init(cb: (json: string) => void): void {
+    this.onReceive = cb;
+  }
+
+  send(json: string): void {
+    this.sent.push(json);
+    const req = JSON.parse(json) as TdObject;
+    const extra = req['@extra'] as string;
+    const method = req['@type'] as string;
+    if (this.remaining > 0) {
+      this.remaining--;
+      this.reply({ '@type': 'error', 'code': 400, 'message': `Call to ${method} unexpected`, '@extra': extra });
+      return;
+    }
+    this.reply({ '@type': 'ok', '@extra': extra });
+  }
+
+  private reply(obj: TdObject): void {
+    this.onReceive(JSON.stringify(obj));
+  }
+}
+
+// 硬错误（号码格式非法之类）——不含 "unexpected"，一次就该抛出去。
+class HardErrorBridge implements TdBridge {
+  onReceive: (json: string) => void;
+  sent: string[];
+
+  constructor() {
+    this.sent = [];
+    this.onReceive = (json: string): void => {};
+  }
+
+  init(cb: (json: string) => void): void {
+    this.onReceive = cb;
+  }
+
+  send(json: string): void {
+    this.sent.push(json);
+    const req = JSON.parse(json) as TdObject;
+    const err: TdObject = {
+      '@type': 'error', 'code': 400,
+      'message': 'PHONE_NUMBER_INVALID', '@extra': req['@extra'] as string
+    };
+    this.onReceive(JSON.stringify(err));
+  }
+}
+
 function pushAuthState(bridge: FakeBridge, stateType: string): void {
   const authState: TdObject = { '@type': stateType };
   const update: TdObject = {
@@ -100,6 +161,49 @@ export default function authServiceTest() {
       expect(sent['@type']).assertEqual('requestQrCodeAuthentication');
       const otherUserIds = sent['other_user_ids'] as number[];
       expect(otherUserIds.length).assertEqual(0);
+    });
+
+    // 冷启动进扫码页的回归：TDLib 还在 WaitTdlibParameters -> WaitPhoneNumber
+    // 之间过渡时会拒掉 requestQrCodeAuthentication。此前这一向没有重试，用户
+    // 冷启动点一次扫码就被弹回手机号页并看到原始英文错误串。
+    it('requestQrLogin_retries_when_tdlib_says_unexpected', 0, async () => {
+      const bridge = new UnexpectedThenOkBridge(1);
+      const client = new TdClient(bridge);
+      const auth = new AuthService(client, '/data/test/files/tdlib', '/data/test/files');
+      client.start();
+      await auth.requestQrLogin();
+      const qrSends = bridge.sent.filter((j: string): boolean =>
+        (JSON.parse(j) as TdObject)['@type'] === 'requestQrCodeAuthentication');
+      expect(qrSends.length).assertEqual(2); // 第一次被拒，第二次成功
+    });
+
+    it('submitPhone_retries_when_tdlib_says_unexpected', 0, async () => {
+      const bridge = new UnexpectedThenOkBridge(1);
+      const client = new TdClient(bridge);
+      const auth = new AuthService(client, '/data/test/files/tdlib', '/data/test/files');
+      client.start();
+      await auth.submitPhone('+8613800138000');
+      const phoneSends = bridge.sent.filter((j: string): boolean =>
+        (JSON.parse(j) as TdObject)['@type'] === 'setAuthenticationPhoneNumber');
+      expect(phoneSends.length).assertEqual(2);
+    });
+
+    // 重试只针对时机冲突。真错误重试三次只是把用户多晾 4.5 秒，错误依旧。
+    it('submitPhone_does_not_retry_a_real_error', 0, async () => {
+      const bridge = new HardErrorBridge();
+      const client = new TdClient(bridge);
+      const auth = new AuthService(client, '/data/test/files/tdlib', '/data/test/files');
+      client.start();
+      let message: string = '';
+      try {
+        await auth.submitPhone('bogus');
+      } catch (e) {
+        message = `${(e as Error).message}`;
+      }
+      expect(message).assertEqual('PHONE_NUMBER_INVALID');
+      const phoneSends = bridge.sent.filter((j: string): boolean =>
+        (JSON.parse(j) as TdObject)['@type'] === 'setAuthenticationPhoneNumber');
+      expect(phoneSends.length).assertEqual(1);
     });
 
     it('qr_confirmation_state_maps_to_wait_qr_and_exposes_link', 0, () => {

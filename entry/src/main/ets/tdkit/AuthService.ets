@@ -18,6 +18,12 @@ export enum AuthStage {
 
 const QR_CONFIRMATION_STATE: string = 'authorizationStateWaitOtherDeviceConfirmation';
 
+// 鉴权请求撞上 "unexpected"（时机冲突）时的重试上限与间隔——见 sendAuthRequest。
+// 三次 × 1.5 秒足够覆盖冷启动的授权态过渡和一次扫码 token 刷新的在途窗口；
+// 再多只是把真失败的反馈往后拖。
+const AUTH_RETRY_ATTEMPTS: number = 3;
+const AUTH_RETRY_DELAY_MS: number = 1500;
+
 // Set true to connect to Telegram's test datacenter, which validates the login
 // flow end-to-end without SMS or production flood limits. Test phone numbers are
 // 99966<dc><4 digits> (e.g. 9996627777 for DC 2); the login code is the dc id
@@ -104,6 +110,41 @@ export class AuthService {
     return this.qrLoginLink;
   }
 
+  // 鉴权请求的统一发送口，带 "unexpected" 重试。
+  //
+  // TDLib 对鉴权类请求有一条硬约束：**同一时刻只接受一个在途请求**，而且当前
+  // 授权态必须正好是该请求期待的那个。不满足时它不排队、不等待，直接回
+  // "Call to <method> unexpected"。这不是调用方写错了，是纯粹的时机问题——
+  // 等一拍重发即可。两个已知的撞车窗口：
+  //
+  //   · 冷启动进扫码页：TDLib 还在 WaitTdlibParameters → WaitPhoneNumber 之间
+  //     过渡，此时发 requestQrCodeAuthentication 必被拒（手机模拟器上稳定复现：
+  //     冷启动、确认已连上 DC、只点一次扫码入口，照样弹回手机号页）。
+  //   · 扫码态切回手机号：扫码 token 每 30 秒刷新一次，慢链路（代理）下刷新
+  //     请求经常正好在途，撞上就拒 setAuthenticationPhoneNumber。
+  //
+  // 两处是同一个根因，所以共用这一个重试口——别再单独给某一处补重试了。
+  private async sendAuthRequest(request: TdRequest): Promise<void> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < AUTH_RETRY_ATTEMPTS; attempt++) {
+      try {
+        await this.client.send(request);
+        return;
+      } catch (e) {
+        lastError = e as Error;
+        // 真错误（号码格式非法、被封禁等）不该重试——重试三次只是把用户多晾
+        // 4.5 秒，错误依旧。只有 "unexpected" 这一类时机冲突值得重来。
+        if (`${lastError.message}`.indexOf('unexpected') < 0) {
+          throw lastError;
+        }
+        await new Promise<void>((resolve: (v: void) => void): void => {
+          setTimeout((): void => resolve(), AUTH_RETRY_DELAY_MS);
+        });
+      }
+    }
+    throw lastError ?? new Error(`${request['@type']} failed`);
+  }
+
   // 请求扫码登录：TDLib 随后进入 WaitOtherDeviceConfirmation 并给出 tg://login 链接。
   // other_user_ids 仅用于「同一设备上的已登录账号免确认」，本机是新会话故传空。
   async requestQrLogin(): Promise<void> {
@@ -111,7 +152,7 @@ export class AuthService {
     this.phoneLoginPreferred = false;
     const request: TdRequest = { '@type': 'requestQrCodeAuthentication' };
     request['other_user_ids'] = [];
-    await this.client.send(request);
+    await this.sendAuthRequest(request);
   }
 
   // 从扫码页退回手机号登录。不向 TDLib 发请求，避免打断仍然有效的授权会话；
@@ -128,26 +169,9 @@ export class AuthService {
   async submitPhone(phone: string): Promise<void> {
     const request: TdRequest = { '@type': 'setAuthenticationPhoneNumber' };
     request['phone_number'] = phone;
-    // 从扫码态切回手机号时，TDLib 要求"没有在途的鉴权请求"才接受这次提交；
-    // 而扫码 token 每 30 秒刷新一次，慢链路（代理）下刷新请求经常正好在途，
-    // 撞上就报 "Call to setAuthenticationPhoneNumber unexpected"。这是纯时机
-    // 问题，等一拍重试即可，不该把错误甩给用户（模拟器实测复现）。
-    let lastError: Error | null = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        await this.client.send(request);
-        return;
-      } catch (e) {
-        lastError = e as Error;
-        if (`${lastError.message}`.indexOf('unexpected') < 0) {
-          throw lastError; // 真错误（号码格式等）不重试
-        }
-        await new Promise<void>((resolve: (v: void) => void): void => {
-          setTimeout((): void => resolve(), 1500);
-        });
-      }
-    }
-    throw lastError ?? new Error('setAuthenticationPhoneNumber failed');
+    // 时机冲突与重试规则见 sendAuthRequest 的注释——扫码 token 刷新在途时
+    // 这次提交会被拒，等一拍重发即可。
+    await this.sendAuthRequest(request);
   }
 
   async submitCode(code: string): Promise<void> {
