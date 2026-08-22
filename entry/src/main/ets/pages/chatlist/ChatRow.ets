@@ -46,6 +46,8 @@ export struct ChatRow {
   @StorageProp(FOLDER_TAGS_ENABLED) folderTagsEnabled: boolean = false;
   @State livePulseExpanded: boolean = false;
   @State contextMenuShown: boolean = false;
+  // 长按落点相对行中心的水平偏移，交给 bindContextMenu 的 offset。
+  @State menuOffsetX: number = 0;
   private livePulseTimer: number = -1;
   // A long press is only valid for the exact row snapshot that was under the
   // finger on TouchType.Down. A new message can update the row revision or
@@ -174,7 +176,21 @@ export struct ChatRow {
     this.pressActive = false;
   }
 
-  private openContextMenuIfCurrent(): void {
+  // 记下长按落点相对行中心的水平偏移。在手势回调里记而不是在 onTouch 的 Down 里：
+  // 实测行右半边的按下到不了 onTouch（被行内子元素吃掉），放在那儿会让菜单沿用
+  // 上一次按压的旧偏移。
+  private recordMenuOffset(event: GestureEvent): void {
+    const fingers = event.fingerList;
+    const rowWidth: number = event.target.area.width as number;
+    if (fingers.length === 0 || rowWidth <= 0) {
+      this.menuOffsetX = 0;
+      return;
+    }
+    this.menuOffsetX = fingers[0].localX - rowWidth / 2;
+  }
+
+  private openContextMenuIfCurrent(event: GestureEvent): void {
+    this.recordMenuOffset(event);
     const current = getChatStore().entryOf(this.chat.id);
     const unchanged = this.pressActive && current !== undefined
       && current.revision === this.pressRevision
@@ -481,13 +497,29 @@ export struct ChatRow {
     // while a stationary hold reaches the data-consistency check above.
     .parallelGesture(
       LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-        .onAction((): void => { this.openContextMenuIfCurrent(); })
+        .onAction((event: GestureEvent): void => { this.openContextMenuIfCurrent(event); })
         .onActionCancel((): void => { this.endPress(); })
     )
     // While the menu is open the list must not rebuild: an incoming message
     // increments the row revision and would otherwise take the menu down.
     // The flag freezes the list (see CHAT_MENU_OPEN).
     .bindContextMenu(this.contextMenuShown, this.contextMenu, {
+      // 钉死 placement：不指定时 ArkUI 按可用空间自己挑锚定角，锚点一换偏移的
+      // 参照就变了。钉死之后 offset 才是一个稳定的水平平移。
+      placement: Placement.BottomLeft,
+      // **符号取反，这里必须解释清楚。**
+      //
+      // 实测（平板，同一行两次长按，日志记的 offset 与截图量的菜单左缘）：
+      //   不取反   offset −110 -> 菜单左缘 418 ； offset +110 -> 176   （反向）
+      //   取反后   offset −110 -> 菜单左缘 176 ； offset +110 -> 418   （正向）
+      // 取反之后单调且方向正确：按行左侧菜单在左，按右侧在右。
+      //
+      // **我解释不了为什么这里要取反而 MessageBubble 不用**——那边同样是
+      // bindContextMenu + preview: IMAGE，用未取反的 offset 方向就是对的
+      // （左缘长按菜单左缘 521、右缘 827）。两处唯一的结构差别是预览的宽度：
+      // 这里的预览是整行满宽，那边是一个小气泡。先按实测结果写，别按推测写；
+      // 哪天 ArkUI 这块行为变了，上面那四组数字就是重新验证的基准。
+      offset: { x: -this.menuOffsetX, y: 0 },
       // IMAGE captures this exact chat strip. The framework then lifts that
       // snapshot above the mask, so list inertia can no longer move the
       // focused item away from the menu.
