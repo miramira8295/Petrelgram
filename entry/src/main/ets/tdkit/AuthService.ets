@@ -23,6 +23,8 @@ const QR_CONFIRMATION_STATE: string = 'authorizationStateWaitOtherDeviceConfirma
 // 再多只是把真失败的反馈往后拖。
 const AUTH_RETRY_ATTEMPTS: number = 3;
 const AUTH_RETRY_DELAY_MS: number = 1500;
+// destroy 的等待上限。与 closeDatabase 的 5 秒同量级：再久用户就该怀疑应用挂了。
+const DESTROY_TIMEOUT_MS: number = 5000;
 
 // Set true to connect to Telegram's test datacenter, which validates the login
 // flow end-to-end without SMS or production flood limits. Test phone numbers are
@@ -267,6 +269,54 @@ export class AuthService {
   // 拒为 "Code can't be resent"。按钮该直接禁用，而不是让用户点出个报错。
   canResendCode(): boolean {
     return this.nextAuthenticationCodeType !== '';
+  }
+
+  // 当前的 TDLib 授权态原文。判定要不要重置授权流时要看它——见
+  // util/authError.ets 的 needsAuthorizationReset。
+  getCurrentAuthType(): string {
+    return this.currentAuthType;
+  }
+
+  // **销毁本地授权数据**并等 TDLib 关闭。
+  //
+  // 与 closeDatabase 的区别是关键的：`close` 只关库，**binlog 原样留着**，重开之后
+  // 授权态照旧恢复；`destroy` 才会把本地数据删掉，重开时 TDLib 从零开始，授权态
+  // 回到 WaitPhoneNumber。扫码态卡死只有这一条出路（见 needsAuthorizationReset 的
+  // 注释）。
+  //
+  // **只在未登录时调用。** 卡在扫码授权态意味着这个账号槽根本没登录成功过，
+  // binlog 里只有待定的授权态和 TDLib 参数，没有消息、没有账号——删掉不丢任何东西。
+  // 已登录的槽走 logOut，不要走这里。
+  //
+  // 超时兜底与 closeDatabase 同款：TDLib 不回 closed 时也要让调用方往下走，
+  // 否则用户卡在一个转圈的登录页上，比重建失败更糟。
+  destroyAuthorization(): Promise<void> {
+    if (this.currentAuthType === 'authorizationStateClosed') {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve: () => void): void => {
+      let finished: boolean = false;
+      let timer: number = -1;
+      const complete = (): void => {
+        if (finished) { return; }
+        finished = true;
+        if (timer !== -1) { clearTimeout(timer); }
+        this.closedCallbacks = this.closedCallbacks.filter(
+          (callback: () => void): boolean => callback !== complete
+        );
+        resolve();
+      };
+      this.closedCallbacks = [...this.closedCallbacks, complete];
+      timer = setTimeout((): void => {
+        logW('AuthService.destroyAuthorization timed out; recreating TDLib client anyway');
+        complete();
+      }, DESTROY_TIMEOUT_MS);
+      const request: TdRequest = { '@type': 'destroy' };
+      this.client.send(request, DESTROY_TIMEOUT_MS).catch((caught: Error): void => {
+        logE(`AuthService.destroyAuthorization failed: ${caught.message}`);
+        complete();
+      });
+    });
   }
 
   closeDatabase(): Promise<void> {

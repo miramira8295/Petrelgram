@@ -9837,6 +9837,10 @@
       "value": "Não é possível continuar o login agora. Tente novamente."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "O estado de login foi redefinido. Digite seu número de telefone novamente."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Escolher país ou região"
     },

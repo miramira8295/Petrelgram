@@ -9837,6 +9837,10 @@
       "value": "Sign-in can't continue right now. Please try again."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "Sign-in state was reset. Please enter your phone number again."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Choose a country or region"
     },

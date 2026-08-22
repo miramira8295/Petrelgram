@@ -9837,6 +9837,10 @@
       "value": "Log masuk tidak dapat diteruskan sekarang. Sila cuba lagi."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "Status log masuk telah ditetapkan semula. Sila masukkan nombor telefon anda semula."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Pilih negara atau rantau"
     },

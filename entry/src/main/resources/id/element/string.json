@@ -9837,6 +9837,10 @@
       "value": "Masuk tidak dapat dilanjutkan saat ini. Silakan coba lagi."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "Status masuk telah disetel ulang. Silakan masukkan nomor telepon Anda lagi."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Pilih negara atau wilayah"
     },

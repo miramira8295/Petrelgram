@@ -9837,6 +9837,10 @@
       "value": "Die Anmeldung kann gerade nicht fortgesetzt werden. Bitte versuche es erneut."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "Der Anmeldestatus wurde zurückgesetzt. Bitte gib deine Telefonnummer erneut ein."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Land oder Region wählen"
     },

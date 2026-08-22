@@ -36,3 +36,34 @@ export function isInternalAuthError(raw: string): boolean {
   }
   return text.endsWith(INTERNAL_SUFFIX);
 }
+
+// TDLib 的扫码授权态字符串。与 AuthService 里的同名常量同值——这里再写一份是
+// 为了让判定保持纯函数（不 import AuthService，否则单测要拖进整个 TdClient）。
+export const QR_CONFIRMATION_STATE: string = 'authorizationStateWaitOtherDeviceConfirmation';
+
+// 要不要清掉本地授权数据重来。
+//
+// **背景**：扫码授权态是持久化的。用户点过一次扫码登录，TDLib 就把
+// authorizationStateWaitOtherDeviceConfirmation 写进 td.binlog；之后每次冷启动都
+// 从 binlog 恢复成扫码态，**跳过 WaitPhoneNumber**，而 setAuthenticationPhoneNumber
+// 只在 WaitPhoneNumber 下被接受，于是被永久拒绝——用户从此再也用不了手机号登录，
+// 只能清除应用数据脱困。手机模拟器 hilog 实证：
+//   污染态  WaitTdlibParameters -> WaitOtherDeviceConfirmation
+//   干净态  WaitTdlibParameters -> WaitPhoneNumber
+//
+// **为什么之前三次都没修好**：c4b6c49 改的是 UI（冷启动不再直落扫码页），页面对了
+// 但 TDLib 还在扫码态；e504235 和 7b56098 都把它当成瞬时竞态加了重试，而这是**持久
+// 状态**，重试三次和一次没区别。
+//
+// **为什么判定要两个条件同时成立**：唯一的出路是 TDLib 的 destroy——它删掉本地
+// 授权数据，是破坏性的。所以必须同时满足「TDLib 明确拒绝了」和「当前确实卡在扫码
+// 态」才动手。少一个条件都可能把用户的本地状态白白毁掉：
+//   · 同样的拒绝但不在扫码态 → 是别的时机问题，sendAuthRequest 的重试就够了；
+//   · 在扫码态但错误是 PHONE_NUMBER_INVALID / FLOOD_WAIT → 号码或频率的问题，
+//     清数据解决不了，只是白白毁掉状态。
+export function needsAuthorizationReset(errorMessage: string, authType: string): boolean {
+  if (authType !== QR_CONFIRMATION_STATE) {
+    return false;
+  }
+  return isInternalAuthError(errorMessage);
+}

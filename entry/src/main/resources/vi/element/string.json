@@ -9837,6 +9837,10 @@
       "value": "Hiện không thể tiếp tục đăng nhập. Vui lòng thử lại."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "Trạng thái đăng nhập đã được đặt lại. Vui lòng nhập lại số điện thoại."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Chọn quốc gia hoặc khu vực"
     },

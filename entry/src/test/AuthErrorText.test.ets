@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { isInternalAuthError } from '../main/ets/util/authError';
+import { isInternalAuthError, needsAuthorizationReset, QR_CONFIRMATION_STATE } from '../main/ets/util/authError';
 
 export default function authErrorTextTest() {
   describe('authError', () => {
@@ -36,6 +36,38 @@ export default function authErrorTextTest() {
     // 完整形状，比裸 indexOf('unexpected') 稳，免得哪天误伤。
     it('does_not_match_bare_unexpected', 0, () => {
       expect(isInternalAuthError('UNEXPECTED_SERVER_RESPONSE')).assertFalse();
+    });
+
+    // 扫码授权态是**持久化**的：TDLib 把它写进 td.binlog，之后每次冷启动都恢复，
+    // setAuthenticationPhoneNumber 被永久拒绝，用户再也用不了手机号登录
+    // （手机模拟器 hilog 实证：污染态 WaitTdlibParameters -> WaitOtherDeviceConfirmation，
+    // 跳过 WaitPhoneNumber；干净态才走 WaitPhoneNumber）。
+    // 唯一的出路是清掉本地授权数据重来，但那是破坏性的——所以判定必须**两个条件同时成立**。
+    it('resets_only_when_stuck_in_qr_state_and_rejected', 0, () => {
+      expect(needsAuthorizationReset(
+        'Call to setAuthenticationPhoneNumber unexpected', QR_CONFIRMATION_STATE)).assertTrue();
+    });
+
+    // 同样的拒绝，但授权态不是扫码态——那是别的时机问题，重试就够了，不该清数据。
+    it('does_not_reset_when_not_in_qr_state', 0, () => {
+      expect(needsAuthorizationReset(
+        'Call to setAuthenticationPhoneNumber unexpected',
+        'authorizationStateWaitPhoneNumber')).assertFalse();
+      expect(needsAuthorizationReset(
+        'Call to setAuthenticationPhoneNumber unexpected', '')).assertFalse();
+    });
+
+    // 在扫码态下，但错误是真实的服务端错误——号码本身有问题，清数据解决不了，
+    // 反而把用户的本地状态白白毁掉。
+    it('does_not_reset_on_real_server_errors', 0, () => {
+      expect(needsAuthorizationReset('PHONE_NUMBER_INVALID', QR_CONFIRMATION_STATE)).assertFalse();
+      expect(needsAuthorizationReset('FLOOD_WAIT_86400', QR_CONFIRMATION_STATE)).assertFalse();
+      expect(needsAuthorizationReset('PHONE_NUMBER_BANNED', QR_CONFIRMATION_STATE)).assertFalse();
+    });
+
+    // 空输入不该触发破坏性操作。
+    it('does_not_reset_on_empty_input', 0, () => {
+      expect(needsAuthorizationReset('', QR_CONFIRMATION_STATE)).assertFalse();
     });
   });
 }

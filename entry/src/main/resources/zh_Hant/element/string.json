@@ -9837,6 +9837,10 @@
       "value": "登入暫時無法繼續，請稍後重試"
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "登入狀態已重設，請重新輸入手機號碼"
+    },
+    {
       "name": "lg_pick_country",
       "value": "選擇國家或地區"
     },

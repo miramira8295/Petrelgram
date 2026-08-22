@@ -13,6 +13,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logW } from '../../util/log';
 import { authErrorText } from '../../util/authErrorText';
+import { submitPhoneWithRecovery, AUTH_RESET_NOTICE } from '../../util/loginFlow';
 
 @Preview
 @Component
@@ -44,6 +45,13 @@ export struct PhoneNumberPage {
 
   aboutToAppear(): void {
     this.reloadCountries();
+    // 授权流刚被重置过（扫码态卡死的自救，见 util/loginFlow.ets）。重置会重建整个
+    // 运行时，本页也跟着重挂——表单被清空、国家回到默认。不说一句话的话，用户看到
+    // 的是"点了继续，什么都没发生，连输入都没了"。读完立刻清零，只提示这一次。
+    if (AppStorage.get<boolean>(AUTH_RESET_NOTICE) === true) {
+      AppStorage.setOrCreate<boolean>(AUTH_RESET_NOTICE, false);
+      this.errorText = str('lg_auth_reset_notice');
+    }
   }
 
   // 国家名两条来源都跟当前语言走：str() 的兜底表和 TDLib 的 getCountries。
@@ -88,7 +96,9 @@ export struct PhoneNumberPage {
       return;
     }
     const fullPhone = `+${this.selectedCountry.callingCode}${this.phoneDigits}`;
-    this.runWhenConnected((): Promise<void> => getAuthService().submitPhone(fullPhone));
+    // 走 loginFlow 而不是直接调 AuthService：扫码态卡死时它会清掉本地授权数据
+    // 重建运行时再提交一次（见 util/loginFlow.ets）。
+    this.runWhenConnected((): Promise<void> => submitPhoneWithRecovery(fullPhone));
   }
 
   // 状态流转到 WaitQrCode 后 Index 会切到扫码页，这里只需负责发起请求。

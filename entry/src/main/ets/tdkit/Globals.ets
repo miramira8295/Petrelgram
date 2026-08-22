@@ -83,6 +83,8 @@ function repairTdTempDirectory(filesDirectory: string): void {
   }
 }
 
+type RuntimeStopMode = 'close' | 'destroy';
+
 function createRuntime(slotId: string): void {
   runtimeReady = false;
   const directories: TdAccountDirectories = accountRegistry.directories(baseFilesDir, slotId);
@@ -220,7 +222,13 @@ function reregisterWebPush(client: TdClient): void {
   });
 }
 
-async function stopRuntime(): Promise<void> {
+// 停掉当前运行时。
+//
+// mode 决定**本地数据的去留**，这是两者唯一但要命的区别：
+//   'close'   只关库，binlog 原样留着 —— 账号切换要的就是这个，切回来还能用。
+//   'destroy' 删掉本地授权数据 —— 只有卡在扫码授权态、必须从零重来时才用
+//             （见 util/authError.ets 的 needsAuthorizationReset）。
+async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   const currentAuth = auth;
   const currentClient = client;
   const currentReady = runtimeReady;
@@ -234,7 +242,11 @@ async function stopRuntime(): Promise<void> {
     }
   }
   if (currentAuth !== undefined) {
-    await currentAuth.closeDatabase();
+    if (mode === 'destroy') {
+      await currentAuth.destroyAuthorization();
+    } else {
+      await currentAuth.closeDatabase();
+    }
     currentAuth.dispose();
   }
   currentClient?.dispose();
@@ -289,7 +301,7 @@ function bumpSessionEpoch(): void {
 async function restartOnSlot(slotId: string, previousSlotId: string): Promise<void> {
   AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, true);
   try {
-    await stopRuntime();
+    await stopRuntime('close');
     createRuntime(slotId);
     bumpSessionEpoch();
   } catch (caught) {
@@ -301,6 +313,50 @@ async function restartOnSlot(slotId: string, previousSlotId: string): Promise<vo
         createRuntime(previousSlotId);
         bumpSessionEpoch();
       }
+    }
+    throw error;
+  } finally {
+    AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, false);
+  }
+}
+
+// 卡在扫码授权态时，把本地授权数据清掉、在**同一个账号槽**上重建运行时。
+//
+// 为什么需要这个：TDLib 把扫码授权态持久化在 binlog 里，冷启动会原样恢复，
+// setAuthenticationPhoneNumber 从此被永久拒绝——用户再也用不了手机号登录，
+// 只能去系统设置里清除应用数据。判定条件与实证见 util/authError.ets 的
+// needsAuthorizationReset，那里说明了为什么必须两个条件同时成立才动手。
+//
+// **复用账号切换那把锁（switchInFlight）**：两者都要拆掉再重建整个运行时，
+// 同时跑会让 client / auth / 各 store 互相踩。切换在途时直接让出——用户此刻
+// 在切账号，登录页的这次重置没有意义。
+//
+// 槽位不变：这不是换账号，是把当前这个还没登录成功的槽从头来过。
+export function resetAuthorizationForPhoneLogin(): Promise<void> {
+  if (switchInFlight !== null) {
+    return switchInFlight;
+  }
+  const slotId = accountRegistry.activeSlotId();
+  switchInFlight = restartWithDestroy(slotId).finally((): void => {
+    switchInFlight = null;
+  });
+  return switchInFlight;
+}
+
+async function restartWithDestroy(slotId: string): Promise<void> {
+  AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, true);
+  try {
+    await stopRuntime('destroy');
+    createRuntime(slotId);
+    bumpSessionEpoch();
+  } catch (caught) {
+    const error = caught as Error;
+    logE(`Globals.restartWithDestroy(${slotId}) failed: ${error.message}`);
+    // 重建失败时至少把运行时拉起来，否则应用停在一个没有 client 的状态上，
+    // 连登录页都不工作。槽位不变，失败的是这一次重置而不是账号本身。
+    if (client === undefined) {
+      createRuntime(slotId);
+      bumpSessionEpoch();
     }
     throw error;
   } finally {

@@ -9837,6 +9837,10 @@
       "value": "Girişe şu anda devam edilemiyor. Lütfen tekrar deneyin."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "Oturum açma durumu sıfırlandı. Lütfen telefon numaranızı tekrar girin."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Ülke veya bölge seçin"
     },

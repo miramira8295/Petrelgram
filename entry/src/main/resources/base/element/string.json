@@ -9837,6 +9837,10 @@
       "value": "登录暂时无法继续，请稍后重试"
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "登录状态已重置，请重新输入手机号"
+    },
+    {
       "name": "lg_pick_country",
       "value": "选择国家或地区"
     },

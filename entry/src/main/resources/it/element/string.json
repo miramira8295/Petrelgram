@@ -9837,6 +9837,10 @@
       "value": "L'accesso non può continuare adesso. Riprova."
     },
     {
+      "name": "lg_auth_reset_notice",
+      "value": "Lo stato di accesso è stato reimpostato. Inserisci di nuovo il tuo numero."
+    },
+    {
       "name": "lg_pick_country",
       "value": "Scegli il paese"
     },
