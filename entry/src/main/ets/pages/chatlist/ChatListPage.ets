@@ -24,6 +24,8 @@ import { logE } from '../../util/log';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout } from '../../util/splitMetrics';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
+import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
+import { KEY_APP_DARK } from '../../util/theme';
 
 interface TabSpec {
   key: string;
@@ -104,7 +106,11 @@ export struct ChatListPage {
   private chatStack: NavPathStack = new NavPathStack();
   // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
   // 等于每帧重建一棵子树。
-  private splitPlaceholder: ComponentContent<Object> | null = null;
+  private splitPlaceholder: SplitPlaceholderHolder = new SplitPlaceholderHolder();
+  // 右栏空态是一棵脱离主树的 ComponentContent，深浅色切换不会重解析它的资源
+  // ——必须自己丢掉重建，否则夜间模式下左栏和会话页都变深、只有右栏空态还是
+  // 浅色（平板实测）。详见 util/splitPlaceholderHolder。
+  @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -387,10 +393,7 @@ export struct ChatListPage {
     }
     this.searchOpening = false;
     // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
-    if (this.splitPlaceholder !== null) {
-      this.splitPlaceholder.dispose();
-      this.splitPlaceholder = null;
-    }
+    this.splitPlaceholder.dispose();
   }
 
   private tabs(): TabSpec[] {
@@ -640,12 +643,12 @@ export struct ChatListPage {
   // this.xxx 那种写法编译不过（签名见 @hms.hds.hdsBaseComponent.d.ets:2485）。
   // 懒建一次：build 每帧都跑，在这里 new 就是每帧重建一棵子树。
   private placeholderContent(): ComponentContent<Object> {
-    let content: ComponentContent<Object> | null = this.splitPlaceholder;
-    if (content === null) {
-      content = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(splitPanePlaceholder));
-      this.splitPlaceholder = content;
-    }
-    return content;
+    return this.splitPlaceholder.content(this.getUIContext(), wrapBuilder(splitPanePlaceholder));
+  }
+
+  // 夜间模式切换：右栏空态要整棵重建，见字段处的说明。
+  private onAppDarkChanged(): void {
+    this.splitPlaceholder.invalidate();
   }
 
   private chromeInset(): number {

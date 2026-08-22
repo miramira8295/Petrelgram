@@ -23,6 +23,8 @@ import {
   isSplitLayout, splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth
 } from '../../util/splitMetrics';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
+import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
+import { KEY_APP_DARK } from '../../util/theme';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -89,7 +91,11 @@ export struct ContactsPage {
   private contactsStack: NavPathStack = new NavPathStack();
   // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
   // 等于每帧重建一棵子树。
-  private splitPlaceholder: ComponentContent<Object> | null = null;
+  private splitPlaceholder: SplitPlaceholderHolder = new SplitPlaceholderHolder();
+  // 右栏空态是一棵脱离主树的 ComponentContent，深浅色切换不会重解析它的资源
+  // ——必须自己丢掉重建，否则夜间模式下左栏和会话页都变深、只有右栏空态还是
+  // 浅色（平板实测）。详见 util/splitPlaceholderHolder。
+  @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
   // ⋮ 的菜单。HDS 标题栏的菜单项只给 action 回调、挂不了 bindMenu，所以由它
   // 翻这个开关，菜单本体绑在右上角一个零尺寸锚点上（见 build）。
   @State private topMenuShown: boolean = false;
@@ -192,12 +198,14 @@ export struct ContactsPage {
     store.open();
   }
 
+  // 夜间模式切换：右栏空态要整棵重建，见字段处的说明。
+  private onAppDarkChanged(): void {
+    this.splitPlaceholder.invalidate();
+  }
+
   aboutToDisappear(): void {
     // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
-    if (this.splitPlaceholder !== null) {
-      this.splitPlaceholder.dispose();
-      this.splitPlaceholder = null;
-    }
+    this.splitPlaceholder.dispose();
     this.stopSkeletonPulse();
     this.releaseActionLock();
     this.pressedAction = '';
@@ -494,12 +502,7 @@ export struct ContactsPage {
   // this.xxx 那种写法编译不过。懒建一次：build 每帧都跑，在这里 new 就是
   // 每帧重建一棵子树。
   private placeholderContent(): ComponentContent<Object> {
-    let content: ComponentContent<Object> | null = this.splitPlaceholder;
-    if (content === null) {
-      content = new ComponentContent<Object>(this.getUIContext(), wrapBuilder(contactsSplitPlaceholder));
-      this.splitPlaceholder = content;
-    }
-    return content;
+    return this.splitPlaceholder.content(this.getUIContext(), wrapBuilder(contactsSplitPlaceholder));
   }
 
   // 点一个联系人。**按断点分流**，这是本页在平板上的核心行为差异：
