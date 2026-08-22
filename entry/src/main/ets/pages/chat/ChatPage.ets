@@ -6483,7 +6483,8 @@ export struct ChatPage {
       promptAction.showToast({ message: $r('app.string.mb_forward_failed'), duration: 1800 });
       return;
     }
-    forwardDirect(getTdClient(), this.chatId, me, messageIds, this.threadRootId)
+    // 保留来源抬头：收藏里回头看，得认得出这条是谁在哪儿说的。
+    forwardDirect(getTdClient(), this.chatId, me, messageIds, this.threadRootId, false)
       .then((sent: number): void => {
         promptAction.showToast({
           message: sent > 0 ? $r('app.string.mb_saved_done') : $r('app.string.mb_forward_failed'),
@@ -6492,10 +6493,13 @@ export struct ChatPage {
       });
   }
 
-  // 「复读」：转发回本会话。目标就是当前 chatId，话题模式下带上话题号，
-  // 否则会落到群的主时间线而不是用户正在看的话题里。
+  // 「复读」：把内容原样再发一遍到本会话。目标就是当前 chatId，话题模式下带上
+  // 话题号，否则会落到群的主时间线而不是用户正在看的话题里。
+  //
+  // asCopy=true —— 发副本、不带"转发自"抬头，看上去就是自己说的。群里的"复读"
+  // 本来就是这个意思；带着抬头的那种官方转发两步就能做到，不必再加一项。
   private repeatMessages(messageIds: number[]): void {
-    forwardDirect(getTdClient(), this.chatId, this.chatId, messageIds, this.threadRootId)
+    forwardDirect(getTdClient(), this.chatId, this.chatId, messageIds, this.threadRootId, true)
       .then((sent: number): void => {
         if (sent === 0) {
           promptAction.showToast({ message: $r('app.string.mb_forward_failed'), duration: 1800 });

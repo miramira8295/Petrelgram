@@ -16,7 +16,11 @@ export function forwardDirect(
   fromChatId: number,
   toChatId: number,
   messageIds: number[],
-  threadRootId: number
+  threadRootId: number,
+  // true = 发副本，不带"转发自"抬头（「复读」要的就是这个效果）。
+  // false = 普通转发，保留来源（「保存消息」用这个：进了收藏之后还得认得出
+  // 它是谁在哪儿说的，抬头就是那条线索）。
+  asCopy: boolean
 ): Promise<number> {
   const ids: number[] = [...messageIds]
     .sort((a: number, b: number): number => a - b)
@@ -31,10 +35,14 @@ export function forwardDirect(
   req['message_thread_id'] = toChatId === fromChatId ? threadRootId : 0;
   req['from_chat_id'] = fromChatId;
   req['message_ids'] = ids;
-  // send_copy=false 保留"转发自"抬头。「复读」按理该去掉抬头（那才是复读），
-  // 但去掉之后就是伪造他人发言的原创副本；保留来源是更诚实的默认，
-  // 也和官方客户端的转发一致。
-  req['send_copy'] = false;
+  // send_copy=true 让 TDLib 发一份**副本**而不是转发：没有"转发自"抬头，
+  // 看上去就是你自己说的——这正是群里"复读"要的效果。
+  //
+  // 两个已知限制，都由服务端裁决，这里只负责把失败如实报出去：
+  //   · 源会话开了"禁止保存内容"时，send_copy 会被拒（普通转发也一样）；
+  //   · 投票之类的消息类型副本语义不同（会创建一个新投票），TDLib 自己处理。
+  // remove_caption 保持 false：复读一张带说明的图，说明也该跟着。
+  req['send_copy'] = asCopy;
   req['remove_caption'] = false;
   return client.send(req).then((result: TdObject): number => {
     const sent = (result['messages'] as TdObject[] | undefined) ?? [];
