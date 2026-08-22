@@ -7385,6 +7385,26 @@
       "value": "Transférer"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Enregistrer le message"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Enregistré dans Messages enregistrés"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Répéter ici"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Voir ses messages"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Échec du transfert. Veuillez réessayer."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Remplacer l'image/la vidéo"
     },

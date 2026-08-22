@@ -7385,6 +7385,26 @@
       "value": "Weiterleiten"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Nachricht speichern"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "In „Gespeichertes“ gesichert"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Hier wiederholen"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Nachrichten dieser Person"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Weiterleiten fehlgeschlagen. Bitte erneut versuchen."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Bild/Video ersetzen"
     },

@@ -7385,6 +7385,26 @@
       "value": "轉發"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "儲存訊息"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "已儲存到收藏"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "複讀"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "檢視歷史"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "轉發失敗，請重試"
+    },
+    {
       "name": "mb_replace_media",
       "value": "替換圖片/視訊"
     },

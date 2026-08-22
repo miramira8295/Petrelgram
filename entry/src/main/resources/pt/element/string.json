@@ -7385,6 +7385,26 @@
       "value": "Encaminhar"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Salvar mensagem"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Salvo em Mensagens salvas"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Repetir aqui"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Ver mensagens dessa pessoa"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Falha ao encaminhar. Tente novamente."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Substituir foto/vídeo"
     },

@@ -7385,6 +7385,26 @@
       "value": "Teruskan"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Simpan pesan"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Disimpan ke Pesan Tersimpan"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Ulangi di sini"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Lihat pesan pengirim ini"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Penerusan gagal. Silakan coba lagi."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Ganti gambar/video"
     },

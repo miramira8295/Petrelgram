@@ -183,6 +183,8 @@ import {
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
+import { forwardDirect } from '../../store/ForwardDirect';
+import { getActiveTdUserId } from '../../tdkit/Globals';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -803,7 +805,10 @@ export struct ChatPage {
   // Message id the chat was opened on from global search — becomes the current
   // hit instead of the search jumping to the newest one. 0 = no anchor.
   private searchAnchorId: number = 0;
-  private searchSeq: number = 0;       // drops stale responses
+  private searchSeq: number = 0;
+  // 「查看历史」筛的那个发送者；0 = 不按发送者筛（普通关键词搜索）。
+  // 按发送者筛时 query 允许为空——TDLib 支持"空 query + sender_id"列出此人全部消息。
+  @State private searchSenderId: number = 0;       // drops stale responses
   private unsubMsg: (() => void) | null = null;
   private unsubSub: (() => void) | null = null;
   // Peer's premium emoji status (private chats) shown beside the header title.
@@ -3419,6 +3424,9 @@ export struct ChatPage {
   private exitSearch(): void {
     this.searchMode = false;
     this.searchQuery = '';
+    // 发送者过滤必须跟着一起清：留着的话下一次普通关键词搜索会被悄悄限定在
+    // 那个人身上，用户完全看不出为什么搜不到。
+    this.searchSenderId = 0;
     this.searchResults = [];
     this.searchTotal = 0;
     this.searchIdx = 0;
@@ -3442,13 +3450,20 @@ export struct ChatPage {
   // older than that message (pagination for the ∧ button past the first 50).
   private runSearch(fromMsgId: number, thenJumpTo: number): void {
     const q = this.searchQuery.trim();
-    if (q === '') {
+    // 关键词为空时通常没什么可搜的，但**按发送者筛是例外**：空 query + sender_id
+    // 正是 TDLib 列出"此人在本会话的全部消息"的用法（「查看历史」走这条）。
+    if (q === '' && this.searchSenderId === 0) {
       return;
     }
     const seq = ++this.searchSeq;
     const req: TdRequest = { '@type': 'searchChatMessages' };
     req['chat_id'] = this.chatId;
     req['query'] = q;
+    if (this.searchSenderId > 0) {
+      const sender: TdObject = { '@type': 'messageSenderUser' };
+      sender['user_id'] = this.searchSenderId;
+      req['sender_id'] = sender;
+    }
     req['from_message_id'] = fromMsgId;
     req['offset'] = 0;
     req['limit'] = 50;
@@ -6458,6 +6473,50 @@ export struct ChatPage {
 
   // Only decides *whether* the picker opens and what it will forward — the chat
   // list, filtering and the forwardMessages request live in ForwardSheet.
+  // 「保存消息」：直接转发到收藏（和自己的会话），不弹选择面板。
+  //
+  // Telegram 里"收藏"就是和自己的私聊，chat_id 等于自己的 user id。拿不到
+  // （getMe 还没回）时不静默失败——给一句提示，否则用户点了没反应会以为卡了。
+  private saveToSavedMessages(messageIds: number[]): void {
+    const me: number = getActiveTdUserId();
+    if (me === 0) {
+      promptAction.showToast({ message: $r('app.string.mb_forward_failed'), duration: 1800 });
+      return;
+    }
+    forwardDirect(getTdClient(), this.chatId, me, messageIds, this.threadRootId)
+      .then((sent: number): void => {
+        promptAction.showToast({
+          message: sent > 0 ? $r('app.string.mb_saved_done') : $r('app.string.mb_forward_failed'),
+          duration: 1600
+        });
+      });
+  }
+
+  // 「复读」：转发回本会话。目标就是当前 chatId，话题模式下带上话题号，
+  // 否则会落到群的主时间线而不是用户正在看的话题里。
+  private repeatMessages(messageIds: number[]): void {
+    forwardDirect(getTdClient(), this.chatId, this.chatId, messageIds, this.threadRootId)
+      .then((sent: number): void => {
+        if (sent === 0) {
+          promptAction.showToast({ message: $r('app.string.mb_forward_failed'), duration: 1800 });
+        }
+      });
+  }
+
+  // 「查看历史」：在本会话里筛出这个人的全部消息。
+  //
+  // 复用会话内搜索的整套界面（结果计数、上/下一条、跳转高亮），只是把
+  // sender_id 填上、query 留空——TDLib 支持这种组合。
+  private viewSenderHistory(senderId: number): void {
+    if (senderId <= 0) {
+      return;
+    }
+    this.searchSenderId = senderId;
+    this.searchQuery = '';
+    this.searchMode = true;
+    this.runSearch(0, 0);
+  }
+
   private openForwardPicker(ids: number[]): void {
     const validIds: number[] = this.forwardableMessageIds(ids);
     ContextMenu.close();
@@ -7322,6 +7381,11 @@ export struct ChatPage {
                 onCopyCode: (text: string): void => { copyPlainText(text, str('cp_code_copied')); },
                 onCopyLink: (id: number): void => { this.copyMessageLink(id); },
                 onForwardMsg: (_id: number): void => { this.openForwardPicker(g.memberIds); },
+                // 相册是一条消息多个成员，三个动作都按 memberIds 整组处理——
+                // 只转其中一张会把相册拆开。
+                onSaveToSaved: (_id: number): void => { this.saveToSavedMessages(g.memberIds); },
+                onRepeatMsg: (_id: number): void => { this.repeatMessages(g.memberIds); },
+                onViewSenderHistory: (senderId: number): void => { this.viewSenderHistory(senderId); },
                 onReportMsg: (id: number): void => { promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 }); },
                 onSelectMsg: (_id: number): void => { this.enterSelect(g.memberIds); },
                 onDeleteMsg: (id: number): void => { this.deleteMessage(id); },

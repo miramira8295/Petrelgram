@@ -303,6 +303,12 @@ export struct MessageBubble {
   onCopyCode: (text: string) => void = (): void => {};
   onCopyLink: (messageId: number) => void = (): void => {};
   onForwardMsg: (messageId: number) => void = (): void => {};
+  // 直接转发到收藏（和自己的会话），不弹选择面板。
+  onSaveToSaved: (messageId: number) => void = (): void => {};
+  // 转发回本会话——群里俗称"复读"。
+  onRepeatMsg: (messageId: number) => void = (): void => {};
+  // 在本会话里筛出这个发送者的全部消息。
+  onViewSenderHistory: (senderId: number) => void = (): void => {};
   onReportMsg: (messageId: number) => void = (): void => {};
   onSelectMsg: (messageId: number) => void = (): void => {};
   onDeleteMsg: (messageId: number) => void = (): void => {};
@@ -2060,6 +2066,21 @@ export struct MessageBubble {
       }
       actionMenuRow('sys.symbol.link', str('mb_copy_link'), false, () => { this.onCopyLink(this.msg.id); });
       actionMenuRow('sys.symbol.arrowshape_turn_up_right', str('mb_forward'), false, () => { this.onForwardMsg(this.msg.id); });
+      // 「保存消息」= 转发到收藏（和自己的会话）。和上面的「转发」区别只在
+      // 目标固定、不弹选择面板，所以紧挨着放。
+      actionMenuRow('sys.symbol.bookmark', str('mb_save_to_saved'), false,
+        () => { this.onSaveToSaved(this.msg.id); });
+      // 「复读」= 转发回本会话。群里的常见玩法，官方要走"转发→再选回本群"两步。
+      actionMenuRow('sys.symbol.repeat', str('mb_repeat'), false,
+        () => { this.onRepeatMsg(this.msg.id); });
+      // 「查看历史」= 在本会话里筛出这个人的全部消息。
+      // **只在群里、且发送者确实是个用户时出现**：私聊里整个会话就是对方的
+      // 消息，这一项没有意义；频道身份/匿名管理员发的消息 senderIsUser 为假，
+      // 按 user 筛不出来，给了也是个死项。
+      if (this.isGroup && this.msg.senderIsUser && this.msg.senderId > 0) {
+        actionMenuRow('sys.symbol.person', str('mb_view_history'), false,
+          () => { this.onViewSenderHistory(this.msg.senderId); });
+      }
       actionMenuRow('sys.symbol.pin', this.isPinnedMsg ? str('ft_unpin') : str('ft_pin'), false,
         () => { this.onPinMsg(this.msg.id, this.isPinnedMsg); });
       if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800 &&

@@ -7385,6 +7385,26 @@
       "value": "転送"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "メッセージを保存"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "保存済みメッセージに保存しました"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "この会話に再送"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "この人のメッセージを表示"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "転送に失敗しました。もう一度お試しください。"
+    },
+    {
       "name": "mb_replace_media",
       "value": "画像/動画を置き換え"
     },

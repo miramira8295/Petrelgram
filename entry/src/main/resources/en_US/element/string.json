@@ -7385,6 +7385,26 @@
       "value": "Forward"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Save message"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Saved to Saved Messages"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Repeat here"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "View their messages"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Forwarding failed. Please try again."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Replace photo or video"
     },

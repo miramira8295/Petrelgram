@@ -7385,6 +7385,26 @@
       "value": "फ़ॉरवर्ड"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "संदेश सहेजें"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "सहेजे गए संदेशों में सहेजा गया"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "यहीं दोहराएँ"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "इनके संदेश देखें"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "अग्रेषण विफल। कृपया पुनः प्रयास करें।"
+    },
+    {
       "name": "mb_replace_media",
       "value": "फ़ोटो/वीडियो बदलें"
     },

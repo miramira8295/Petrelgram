@@ -7385,6 +7385,26 @@
       "value": "Reenviar"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Guardar mensaje"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Guardado en Mensajes guardados"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Repetir aquí"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Ver sus mensajes"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Error al reenviar. Inténtalo de nuevo."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Reemplazar foto/video"
     },

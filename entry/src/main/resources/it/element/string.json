@@ -7385,6 +7385,26 @@
       "value": "Inoltra"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Salva messaggio"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Salvato nei messaggi salvati"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Ripeti qui"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Vedi i suoi messaggi"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Inoltro non riuscito. Riprova."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Sostituisci immagine/video"
     },

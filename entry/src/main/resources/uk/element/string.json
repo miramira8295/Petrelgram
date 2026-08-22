@@ -7385,6 +7385,26 @@
       "value": "Переслати"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Зберегти повідомлення"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Збережено в «Обране»"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Повторити тут"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Повідомлення цього відправника"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Не вдалося переслати. Спробуйте ще раз."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Замінити фото/відео"
     },

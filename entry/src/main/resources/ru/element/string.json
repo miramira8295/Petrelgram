@@ -7385,6 +7385,26 @@
       "value": "Переслать"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Сохранить сообщение"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Сохранено в «Избранное»"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Повторить здесь"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Сообщения этого отправителя"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Не удалось переслать. Попробуйте ещё раз."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Заменить фото/видео"
     },

@@ -7385,6 +7385,26 @@
       "value": "Chuyển tiếp"
     },
     {
+      "name": "mb_save_to_saved",
+      "value": "Lưu tin nhắn"
+    },
+    {
+      "name": "mb_saved_done",
+      "value": "Đã lưu vào Tin nhắn đã lưu"
+    },
+    {
+      "name": "mb_repeat",
+      "value": "Gửi lại ở đây"
+    },
+    {
+      "name": "mb_view_history",
+      "value": "Xem tin nhắn của người này"
+    },
+    {
+      "name": "mb_forward_failed",
+      "value": "Chuyển tiếp thất bại. Vui lòng thử lại."
+    },
+    {
       "name": "mb_replace_media",
       "value": "Thay thế ảnh/video"
     },

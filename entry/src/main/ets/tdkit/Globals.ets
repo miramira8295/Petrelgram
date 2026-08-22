@@ -613,3 +613,10 @@ export function setUiAbilityContext(context: common.UIAbilityContext): void {
 export function getUiAbilityContext(): common.UIAbilityContext | null {
   return uiAbilityContext;
 }
+
+// 当前账号自己的 user id。「保存消息」要往它对应的私聊（Saved Messages）里
+// 转发——Telegram 里"收藏"就是和自己的会话，chat_id 等于自己的 user id。
+// 0 表示还没拿到（getMe 未回），调用方据此退化。
+export function getActiveTdUserId(): number {
+  return accountRegistry.active().userId;
+}
