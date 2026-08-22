@@ -159,6 +159,15 @@ export struct CachedImage {
       .draggable(false)
       .width(this.boxWidth).height(this.boxHeight)
       .borderRadius(this.radius)
+      // **borderRadius 要配 clip(true)**，否则圆角只是把角画圆，内容并没有被
+      // 按那条曲线裁剪、边缘不做抗锯齿——头像的圆周上就是一圈台阶状锯齿
+      // （issue #92，用户拿官方客户端对比过）。AvatarView 自己的另外两个分支
+      // （Saved Messages、动态头像）本来就是 borderRadius + clip(true) 成对写的，
+      // 只有走 PixelMap 缓存这一支漏了，而绝大多数头像恰恰走这一支。
+      .clip(true)
+      // 解码目标尺寸按 vp2px(box) 给，正常是 1:1 不缩放；但 DPR 取整、以及
+      // 复用缓存里尺寸相近的那张时仍会有轻微缩放，此时默认的插值会更糙。
+      .interpolation(ImageInterpolation.High)
       .objectFit(this.fit);
   }
 }
