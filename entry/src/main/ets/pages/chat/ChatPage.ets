@@ -143,7 +143,7 @@ import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   searchMentions, mentionOfUser, loadBotCommands, MentionItem, CommandItem
 } from '../../store/InputSuggestions';
-import { appendMention, mentionToken } from '../../util/mentionDraft';
+import { appendMention, mentionToken, mentionQueryOf } from '../../util/mentionDraft';
 import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { floatingLiveWindow } from './LiveFloatingWindow';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
@@ -4013,9 +4013,11 @@ export struct ChatPage {
       return;
     }
     this.commandItems = [];
-    const at = v.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/);
+    // 判定在 util/mentionDraft（mentionQueryOf，9 条测）：那里说明了为什么放宽
+    // 到非 ASCII，以及 @ 的位置和终止条件各自挡的是什么（issue #95）。
+    const at: string | null = mentionQueryOf(v);
     if (at !== null && this.isGroup && !this.isChannel) {
-      this.refreshMentions(at[1]);
+      this.refreshMentions(at);
       return;
     }
     this.mentionItems = [];
@@ -4351,7 +4353,8 @@ export struct ChatPage {
     const seq = ++this.mentionSeq;
     searchMentions(getTdClient(), this.chatId, query).then((items: MentionItem[]) => {
       // Drop the response if a newer query fired or the '@' trigger is gone.
-      if (seq !== this.mentionSeq || this.draft.match(/(?:^|\s)@([a-zA-Z0-9_]*)$/) === null) {
+      // 和上面共用同一个判定——两边不一致会出现「面板该弹却把结果丢掉」。
+      if (seq !== this.mentionSeq || mentionQueryOf(this.draft) === null) {
         return;
       }
       this.mentionItems = items;
