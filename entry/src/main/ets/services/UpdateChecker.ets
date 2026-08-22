@@ -3,6 +3,7 @@ import { bundleManager } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { logE } from '../util/log';
+import { updateCheckThrottled } from '../util/updateThrottle';
 
 // 版本检查。数据源直接用 GitHub Releases —— 发版时打的 tag 本身就是版本号，
 // 不额外维护一个 version.json：多一个文件就多一处"忘了同步"的地方。
@@ -16,6 +17,9 @@ const REQUEST_TIMEOUT_MS: number = 8000;
 const CHECK_INTERVAL_MS: number = 6 * 3600 * 1000;
 const STORE_NAME: string = 'update_check';
 const KEY_LAST_CHECK: string = 'last_check_ms';
+// 这条缓存结果是哪个应用版本查出来的。应用自己升级之后缓存即失效——见
+// util/updateThrottle 的说明（issue #87）。
+const KEY_CHECKED_FOR: string = 'checked_for_version';
 const KEY_LATEST_TAG: string = 'latest_tag';
 const KEY_LATEST_NOTES: string = 'latest_notes';
 
@@ -128,7 +132,10 @@ class UpdateChecker {
       return false;
     }
     const last: number = Number(p.getSync(KEY_LAST_CHECK, 0));
-    return Number.isFinite(last) && Date.now() - last < CHECK_INTERVAL_MS;
+    const checkedFor: string = String(p.getSync(KEY_CHECKED_FOR, ''));
+    // 判定在 util/updateThrottle（7 条测）：除了间隔，还要看这条结果是不是
+    // 当前这个应用版本查的——升级之后旧结果一律失效。
+    return updateCheckThrottled(last, Date.now(), CHECK_INTERVAL_MS, checkedFor, this.currentVersion);
   }
 
   // force=true 是"关于"页里的手动检查，忽略节流。
@@ -158,6 +165,8 @@ class UpdateChecker {
           p.putSync(KEY_LATEST_TAG, tag);
           p.putSync(KEY_LATEST_NOTES, notes);
           p.putSync(KEY_LAST_CHECK, Date.now());
+          // 和结果一起存：下次启动才认得出"这是不是本版本查的"。
+          p.putSync(KEY_CHECKED_FOR, this.currentVersion);
           await p.flush();
         }
       }
