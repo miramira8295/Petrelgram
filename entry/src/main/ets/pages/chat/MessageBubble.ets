@@ -186,6 +186,10 @@ export struct MessageBubble {
   // Measured width of the bubble (it shrinks to fit content) — the inline
   // keyboard below matches it exactly instead of the theoretical max width.
   @State bubbleW: number = 0;
+  // 长按/点击的落点相对气泡中心的水平偏移，交给 bindContextMenu 的 offset。
+  // 菜单默认贴着气泡排（ArkUI 按组件矩形算位置，与触点无关，实测同一条消息
+  // 按左缘和按右缘弹出位置完全一样），这个值让它朝手指那一侧挪。
+  @State menuOffsetX: number = 0;
   // 时间层要跟随"气泡里最宽的那个兄弟"（转发标签 / 发送者名 / 评论行），
   // 它们都在时间 Stack **外面**，所以测它们不构成环。
   // 曾经是拿 bubbleW 回灌的，那是 minWidth ← bubbleW ← minWidth 的循环，
@@ -552,7 +556,25 @@ export struct MessageBubble {
 
   // 长按干什么由方案决定：老交互出菜单，新交互直接进多选并选中这一条。
   // 两者互斥（messageGesturePolicy 的测试钉着这一点），不会同时发生。
-  private onLongPress(): void {
+  // 记下这次触摸落在气泡内的水平位置，换算成相对中心的偏移。
+  //
+  // 用**局部坐标**（localX，相对气泡左上角）而不是窗口坐标：要的就是"手指偏离
+  // 气泡中心多远"，局部坐标直接给出这个量，不必再去查气泡在窗口里的绝对位置——
+  // 那在分栏、滚动、软键盘顶起的情况下都要重新算，多一处出错的地方。
+  //
+  // 只动 x：y 方向的关系（菜单贴在被抬起的气泡下方）是抬起预览的一部分，动它
+  // 会和 ArkUI 的预览布局打架。
+  private recordMenuOffset(localX: number): void {
+    const w: number = this.bubbleW;
+    // 首帧还没量到宽度时不猜，用 0 退化成原来的居中行为。
+    this.menuOffsetX = w > 0 ? localX - w / 2 : 0;
+  }
+
+  private onLongPress(event: GestureEvent): void {
+    const fingers = event.fingerList;
+    if (fingers.length > 0) {
+      this.recordMenuOffset(fingers[0].localX);
+    }
     this.gestureClaimed = true;
     const policy: MessageGesturePolicy = messageGesturePolicy(this.gestureScheme);
     if (policy.longPressOpensMenu) {
@@ -3117,16 +3139,18 @@ export struct MessageBubble {
       // never satisfies this recognizer and falls through to the List.
       .parallelGesture(
         LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-          .onAction((): void => { this.onLongPress(); })
+          .onAction((event: GestureEvent): void => { this.onLongPress(event); })
       )
       // 单击出菜单只在新交互下挂。用 .onClick 而不是塞进上面那个
       // parallelGesture：官方文档明写父子都绑点击手势时**子组件优先、父组件
       // 不触发**，正是我们要的——点链接、点图片、点内联按钮各归各，只有落在
       // 气泡空白处的点击才轮到菜单。而 parallelGesture 是例外，它父子都会触发，
       // 用它就会出现"点链接同时开链接和菜单"。
-      .onClick((): void => {
+      .onClick((event: ClickEvent): void => {
         if (this.gestureClaimed) { return; }
         if (messageGesturePolicy(this.gestureScheme).tapOpensMenu) {
+          // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
+          this.recordMenuOffset(event.x);
           this.msgContextMenuShown = true;
         }
       })
@@ -3149,6 +3173,8 @@ export struct MessageBubble {
         }
       })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
+        // 朝手指那一侧挪。ArkUI 自己会把菜单夹在屏幕内，所以极端偏移不会出界。
+        offset: { x: this.menuOffsetX, y: 0 },
         // A play-slot bubble hosts a XComponentType.SURFACE video surface that
         // componentSnapshot cannot capture (see hasLiveVideoSurface()) — fall
         // back to no preview there instead of lifting a black rectangle.
