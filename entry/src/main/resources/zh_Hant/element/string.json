@@ -11329,6 +11329,26 @@
       "value": "已回報，謝謝"
     },
     {
+      "name": "diag_export",
+      "value": "匯出日誌檔案"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "儲存到本機，自行傳送給開發者"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "日誌已匯出"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "匯出失敗，請重試"
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "目前沒有日誌可匯出"
+    },
+    {
       "name": "diag_send_failed",
       "value": "回報失敗：%1$s"
     },

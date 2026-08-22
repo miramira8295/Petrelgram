@@ -11329,6 +11329,26 @@
       "value": "تم الإرسال، شكرًا"
     },
     {
+      "name": "diag_export",
+      "value": "تصدير ملف السجل"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "احفظه محليًا وأرسله بنفسك إلى المطوّر"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "تم تصدير السجل"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "فشل التصدير. حاول مرة أخرى."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "لا يوجد سجل للتصدير بعد"
+    },
+    {
       "name": "diag_send_failed",
       "value": "فشل الإرسال: %1$s"
     },

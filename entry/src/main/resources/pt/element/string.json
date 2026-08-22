@@ -11329,6 +11329,26 @@
       "value": "Enviado, obrigado"
     },
     {
+      "name": "diag_export",
+      "value": "Exportar arquivo de log"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Salve localmente e envie você mesmo ao desenvolvedor"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Log exportado"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Falha ao exportar. Tente novamente."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Ainda não há log para exportar"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Falha ao enviar: %1$s"
     },

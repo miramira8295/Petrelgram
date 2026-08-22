@@ -11329,6 +11329,26 @@
       "value": "ส่งแล้ว ขอบคุณ"
     },
     {
+      "name": "diag_export",
+      "value": "ส่งออกไฟล์บันทึก"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "บันทึกไว้ในเครื่องแล้วส่งให้นักพัฒนาด้วยตัวเอง"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "ส่งออกบันทึกแล้ว"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "ส่งออกไม่สำเร็จ โปรดลองอีกครั้ง"
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "ยังไม่มีบันทึกให้ส่งออก"
+    },
+    {
       "name": "diag_send_failed",
       "value": "ส่งไม่สำเร็จ: %1$s"
     },

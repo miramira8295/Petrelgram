@@ -11329,6 +11329,26 @@
       "value": "Envoyé, merci"
     },
     {
+      "name": "diag_export",
+      "value": "Exporter le fichier journal"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Enregistrez-le puis envoyez-le vous-même au développeur"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Journal exporté"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Échec de l’export. Veuillez réessayer."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Aucun journal à exporter pour le moment"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Échec de l'envoi : %1$s"
     },

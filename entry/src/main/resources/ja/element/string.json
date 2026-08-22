@@ -11329,6 +11329,26 @@
       "value": "送信しました。ありがとうございます"
     },
     {
+      "name": "diag_export",
+      "value": "ログファイルを書き出す"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "端末に保存して、自分で開発者に送ってください"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "ログを書き出しました"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "書き出しに失敗しました。もう一度お試しください。"
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "書き出せるログがまだありません"
+    },
+    {
       "name": "diag_send_failed",
       "value": "送信に失敗しました: %1$s"
     },

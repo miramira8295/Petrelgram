@@ -11329,6 +11329,26 @@
       "value": "Enviado, gracias"
     },
     {
+      "name": "diag_export",
+      "value": "Exportar archivo de registro"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Guárdalo localmente y envíalo tú al desarrollador"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Registro exportado"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Error al exportar. Inténtalo de nuevo."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Todavía no hay registro para exportar"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Error al enviar: %1$s"
     },

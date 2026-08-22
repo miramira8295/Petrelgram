@@ -9,6 +9,8 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { str } from '../../util/strings';
 import { diagLogSize } from '../../util/log';
 import { DiagUploadResult, diagUploadConfigured, uploadDiagLog } from '../../services/diagLog';
+import { common } from '@kit.AbilityKit';
+import { exportDiagLog, diagLogStamp } from '../../util/diagLogExport';
 
 const CARD_RADIUS: number = 14;
 
@@ -127,6 +129,26 @@ export struct DiagnosticsPage {
       .alignItems(VerticalAlign.Center)
       .enabled(!this.sending)
       .onClick((): void => { this.sendLog(); });
+
+      Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
+      // 导出到本地。上传依赖网络，用户反馈网络差时反复失败，而那正是最需要
+      // 看日志的时候（issue #89）。导出之后用他自己顺手的方式发出来即可。
+      Row({ space: 10 }) {
+        Column({ space: 3 }) {
+          Text($r('app.string.diag_export'))
+            .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+          Text($r('app.string.diag_export_sub'))
+            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+        }
+        .alignItems(HorizontalAlign.Start).layoutWeight(1);
+        SymbolGlyph($r('sys.symbol.square_and_arrow_down'))
+          .fontSize(21).fontColor([COLOR_PRIMARY]);
+      }
+      .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+      .alignItems(VerticalAlign.Center)
+      .onClick((): void => {
+        exportDiagLog(getContext(this) as common.UIAbilityContext, diagLogStamp(new Date()));
+      });
     }
     .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);
   }

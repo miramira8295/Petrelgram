@@ -11329,6 +11329,26 @@
       "value": "Đã gửi, cảm ơn"
     },
     {
+      "name": "diag_export",
+      "value": "Xuất tệp nhật ký"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Lưu về máy rồi tự gửi cho nhà phát triển"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Đã xuất nhật ký"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Xuất thất bại. Vui lòng thử lại."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Chưa có nhật ký để xuất"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Gửi thất bại: %1$s"
     },

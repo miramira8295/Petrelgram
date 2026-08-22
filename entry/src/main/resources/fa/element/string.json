@@ -11329,6 +11329,26 @@
       "value": "ارسال شد، سپاس"
     },
     {
+      "name": "diag_export",
+      "value": "خروجی گرفتن از فایل گزارش"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "به‌صورت محلی ذخیره کنید و خودتان برای توسعه‌دهنده بفرستید"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "گزارش خروجی گرفته شد"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "خروجی‌گرفتن ناموفق بود. دوباره تلاش کنید."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "هنوز گزارشی برای خروجی‌گرفتن وجود ندارد"
+    },
+    {
       "name": "diag_send_failed",
       "value": "ارسال ناموفق: %1$s"
     },

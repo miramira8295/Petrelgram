@@ -11329,6 +11329,26 @@
       "value": "भेज दिया गया, धन्यवाद"
     },
     {
+      "name": "diag_export",
+      "value": "लॉग फ़ाइल निर्यात करें"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "स्थानीय रूप से सहेजें और स्वयं डेवलपर को भेजें"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "लॉग निर्यात हो गया"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "निर्यात विफल। कृपया पुनः प्रयास करें।"
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "निर्यात करने के लिए अभी कोई लॉग नहीं है"
+    },
+    {
       "name": "diag_send_failed",
       "value": "भेजना विफल: %1$s"
     },

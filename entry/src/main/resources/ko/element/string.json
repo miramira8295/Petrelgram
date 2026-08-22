@@ -11329,6 +11329,26 @@
       "value": "보냈습니다. 감사합니다"
     },
     {
+      "name": "diag_export",
+      "value": "로그 파일 내보내기"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "기기에 저장한 뒤 직접 개발자에게 보내세요"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "로그를 내보냈습니다"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "내보내기에 실패했습니다. 다시 시도해 주세요."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "내보낼 로그가 아직 없습니다"
+    },
+    {
       "name": "diag_send_failed",
       "value": "보내기 실패: %1$s"
     },

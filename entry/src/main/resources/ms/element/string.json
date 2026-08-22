@@ -11329,6 +11329,26 @@
       "value": "Dihantar, terima kasih"
     },
     {
+      "name": "diag_export",
+      "value": "Eksport fail log"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Simpan setempat, hantar sendiri kepada pembangun"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Log dieksport"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Eksport gagal. Sila cuba lagi."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Tiada log untuk dieksport lagi"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Gagal menghantar: %1$s"
     },

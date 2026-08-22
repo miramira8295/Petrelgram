@@ -11329,6 +11329,26 @@
       "value": "Gesendet – danke"
     },
     {
+      "name": "diag_export",
+      "value": "Protokolldatei exportieren"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Lokal speichern und selbst an den Entwickler senden"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Protokoll exportiert"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Export fehlgeschlagen. Bitte erneut versuchen."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Es gibt noch kein Protokoll zum Exportieren"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Senden fehlgeschlagen: %1$s"
     },

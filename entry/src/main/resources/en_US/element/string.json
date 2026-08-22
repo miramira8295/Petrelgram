@@ -11329,6 +11329,26 @@
       "value": "Sent — thank you"
     },
     {
+      "name": "diag_export",
+      "value": "Export log file"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Save locally and send it to the developer yourself"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Log exported"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Export failed. Please try again."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "There is no log to export yet"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Send failed: %1$s"
     },

@@ -11329,6 +11329,26 @@
       "value": "Надіслано, дякуємо"
     },
     {
+      "name": "diag_export",
+      "value": "Експортувати файл журналу"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Збережіть локально й надішліть розробнику самі"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Журнал експортовано"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Не вдалося експортувати. Спробуйте ще раз."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Поки немає журналу для експорту"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Не вдалося надіслати: %1$s"
     },

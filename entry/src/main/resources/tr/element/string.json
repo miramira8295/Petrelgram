@@ -11329,6 +11329,26 @@
       "value": "Gönderildi, teşekkürler"
     },
     {
+      "name": "diag_export",
+      "value": "Günlük dosyasını dışa aktar"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "Cihaza kaydedin ve geliştiriciye kendiniz gönderin"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "Günlük dışa aktarıldı"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "Dışa aktarma başarısız. Lütfen tekrar deneyin."
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "Dışa aktarılacak günlük yok"
+    },
+    {
       "name": "diag_send_failed",
       "value": "Gönderilemedi: %1$s"
     },

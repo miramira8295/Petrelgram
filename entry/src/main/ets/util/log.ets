@@ -17,6 +17,7 @@
 // 聊天痕迹，和崩溃记录不是一回事。
 
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 
 // 两级：内存里留一小段，攒够就追加到磁盘，磁盘上轮转两份。
 //
@@ -96,17 +97,35 @@ export function initDiagLog(filesDir: string): void {
   logDir = filesDir;
 }
 
+// **不要用 String.fromCharCode(...bytes)**。这里原本是那么写的，两个问题：
+//
+//   1. 展开成实参会爆栈。日志文件轻易到几百 KB，spread 就是几十万个实参，
+//      直接抛异常被下面的 catch 吞掉、返回空串——**表现是日志"读出来是空的"**。
+//      实测：磁盘上 716 KB 的日志，界面显示 0 KB，上报也就一直在传空内容。
+//      用户报的"上传老是失败"很可能根本不是网络问题（issue #89）。
+//   2. 按字节码位拼字符串对 UTF-8 是错的，中文会被拆成乱码。
+//
+// TextDecoder 两个问题一起解决：不受长度限制，且按 UTF-8 正确解码。
 function readFile(path: string): string {
   try {
     if (!fs.accessSync(path)) {
       return '';
     }
     const stat = fs.statSync(path);
+    if (stat.size <= 0) {
+      return '';
+    }
     const buffer = new ArrayBuffer(stat.size);
     const file = fs.openSync(path, fs.OpenMode.READ_ONLY);
-    fs.readSync(file.fd, buffer);
+    // readSync 返回实际读到的字节数——用它而不是 stat.size 去切，文件在读的
+    // 过程中被轮转/截断时才不会把尾部的垃圾也解出来。
+    const read: number = fs.readSync(file.fd, buffer);
     fs.closeSync(file);
-    return String.fromCharCode(...new Uint8Array(buffer));
+    if (read <= 0) {
+      return '';
+    }
+    const decoder = util.TextDecoder.create('utf-8');
+    return decoder.decodeToString(new Uint8Array(buffer, 0, read));
   } catch (e) {
     return '';
   }

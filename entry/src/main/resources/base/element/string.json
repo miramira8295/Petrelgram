@@ -11329,6 +11329,26 @@
       "value": "已上报，谢谢"
     },
     {
+      "name": "diag_export",
+      "value": "导出日志文件"
+    },
+    {
+      "name": "diag_export_sub",
+      "value": "保存到本地，自行发送给开发者"
+    },
+    {
+      "name": "diag_export_done",
+      "value": "日志已导出"
+    },
+    {
+      "name": "diag_export_failed",
+      "value": "导出失败，请重试"
+    },
+    {
+      "name": "diag_export_empty",
+      "value": "当前没有日志可导出"
+    },
+    {
       "name": "diag_send_failed",
       "value": "上报失败：%1$s"
     },
