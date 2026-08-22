@@ -1937,7 +1937,14 @@ export struct MessageBubble {
         );
         // key 里带上路径，位图下载完成后 chip 才会重建并显示图片。
       }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}_${r.customEmojiPath}`);
-    }.constraintSize({ maxWidth: this.inlineMaxW() }).margin({ top: 4 });
+    }
+    // **Flex 无固定宽时默认撑满父容器**，只写 maxWidth 挡不住——一个反应就能把
+    // 气泡顶到最大内容宽，短消息因此变得很长（issue #100，实测 width('auto')
+    // 对 Flex 无效）。alignSelf(Start) 让它在父 Column 的交叉轴上按内容收缩，
+    // 而不是被拉满；maxWidth 仍然是换行的上限。
+    // （引用块那里用的是同一个属性的反面 ItemAlign.Stretch——那里要的正是撑满。）
+    .alignSelf(ItemAlign.Start)
+    .constraintSize({ maxWidth: this.inlineMaxW() }).margin({ top: 4 });
   }
 
   private reactionImageSource(path: string): string {
