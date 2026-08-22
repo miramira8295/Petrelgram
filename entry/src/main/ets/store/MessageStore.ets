@@ -6,6 +6,7 @@ import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
 import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChannel';
 import { publishThumbPath } from '../util/mediaThumbChannel';
 import { formatUserStatus } from '../util/formatUserStatus';
+import { reachedLiveTail } from '../util/liveTail';
 import { formatPreview } from '../util/formatPreview';
 import { formatMemberCount } from '../util/formatMemberCount';
 import {
@@ -195,6 +196,9 @@ export class MessageStore {
   private latestPending: boolean = false;
   private hasMoreOlder: boolean = true;
   private hasMoreNewer: boolean = false;
+  // 会话最后一条消息的 id，由 updateChatLastMessage 直接给。这是"到没到实时
+  // 尾部"的权威判据——分页自己那套在有洞的活跃会话里追不上，见 util/liveTail。
+  private chatLastMessageId: number = 0;
   // Pagination errors never replace an already-readable timeline. The page
   // renders them as compact edge pills with an explicit retry action.
   private olderLoadState: string = 'idle'; // idle | loading | error | end
@@ -385,6 +389,18 @@ export class MessageStore {
     this.unsubs.push(this.client.onUpdate('updateMessageEdited', (u: TdObject) => this.onEdited(u)));
     // Bot showed/removed its custom reply keyboard.
     this.unsubs.push(this.client.onUpdate('updateChatReplyMarkup', (u: TdObject) => this.onChatReplyMarkup(u)));
+    // 会话最后一条变了：可能因此已经追到尾部，重新判一次。
+    this.unsubs.push(this.client.onUpdate('updateChatLastMessage', (u: TdObject) => {
+      if ((u['chat_id'] as number | undefined) !== this.chatId) {
+        return;
+      }
+      const last = u['last_message'] as TdObject | undefined;
+      const id: number = last !== undefined ? ((last['id'] as number | undefined) ?? 0) : 0;
+      if (id > this.chatLastMessageId) {
+        this.chatLastMessageId = id;
+      }
+      this.syncTailFromChatLast();
+    }));
     this.requestedAroundMessageId = aroundMessageId !== undefined ? aroundMessageId : 0;
     this.resolveChat();
     this.resolvePinned();
@@ -1718,6 +1734,31 @@ export class MessageStore {
     });
   }
 
+  // 窗口追上会话最后一条就是真尾部，把分页关掉。
+  //
+  // 光靠 loadNewer "取不到更新的消息"来关分页，在有洞的活跃会话里成立不了：
+  // 每次收到带洞的页都会把 hasMoreNewer 显式置回 true，而群里新消息又一直来。
+  // 于是 hasMoreNewer 恒真 → ChatPage 的 atBottom 恒假 → 新消息不自动跟随
+  // （issue #62，平板实测 rows 402→414→442、洞始终在 246 行不合）。
+  //
+  // **只单向关，不反向开**：这里绝不把 hasMoreNewer 置回 true。窗口落后于会话
+  // 最后一条是常态（用户正在翻历史），那时分页状态该由 loadNewer 自己管；
+  // 在这里插一脚会和它打架。
+  private syncTailFromChatLast(): void {
+    if (this.messages.length === 0 || !this.hasMoreNewer) {
+      return;
+    }
+    const newestId: number = this.messages[this.messages.length - 1].id;
+    if (!reachedLiveTail(newestId, this.chatLastMessageId)) {
+      return;
+    }
+    logW(`[StoreDiag] live tail reached: window=${newestId}` +
+      ` chatLast=${this.chatLastMessageId}, closing newer pagination`);
+    this.hasMoreNewer = false;
+    this.newerLoadState = 'end';
+    this.notify('paginationState');
+  }
+
   private onHistory(res: TdObject, kind: string = 'history'): void {
     const arr = (res['messages'] as TdObject[] | undefined) ?? [];
     if (this.initialHistoryState !== 'ready' && (kind === 'latest' || kind === 'around')) {
@@ -1812,6 +1853,9 @@ export class MessageStore {
     // Hold the very first render until getChat supplies the unread anchor, so the
     // page can position at the first unread message without a race. Later loads
     // (loadOlder) notify normally.
+    // 这一页合进来之后可能就追上尾部了。只等 updateChatLastMessage 不够——
+    // 用户往下翻的这段时间里会话最后一条可能一直没变，那就永远等不到回调。
+    this.syncTailFromChatLast();
     if (this.chatResolved) {
       this.notify(kind);
     } else {
@@ -3964,6 +4008,14 @@ export class MessageStore {
     // Thread views exclude it: chat.last_message need not belong to the thread.
     if (this.threadRootId === 0) {
       this.pendingLastMessage = (chat['last_message'] as TdObject | undefined) ?? null;
+      // 记下初始的"会话最后一条"。updateChatLastMessage 只在它**变化**时才来，
+      // 一个安静的会话可能整场都不发这个回调——只靠回调就永远拿不到基准值，
+      // 追到尾部也认不出来（见 util/liveTail）。
+      const lastId: number = this.pendingLastMessage !== null
+        ? ((this.pendingLastMessage['id'] as number | undefined) ?? 0) : 0;
+      if (lastId > this.chatLastMessageId) {
+        this.chatLastMessageId = lastId;
+      }
     }
     // Capture the unread boundary BEFORE loading history / marking read, so the
     // page can position at the first unread message even after we mark it read.
