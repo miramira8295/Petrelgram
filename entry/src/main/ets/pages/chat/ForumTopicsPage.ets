@@ -331,7 +331,7 @@ export struct ForumTopicsPage {
       'forumTopicId': row.threadId,
       'topicName': row.name
     };
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
   private createTopic(name: string): void {

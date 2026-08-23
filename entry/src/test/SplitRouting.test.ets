@@ -57,5 +57,23 @@ export default function splitRoutingTest(): void {
       expect(chatKey(10, 0) === chatKey(10, 1)).assertFalse();
     });
 
+
+    // **1.4.0 回归的场景钉死在这里**：文件夹A → 聊天B →（从 B 内部点进）聊天C。
+    // 从聊天内部跳另一个聊天是 'content'——必须保留 B 那一层，否则返回会跳过
+    // B 直接落回列表。此前 navigateToChat 的 origin 恒为 'navbar'，推 C 时把 B
+    // 清掉了，用户按返回直接回到文件夹A。
+    it('chat_to_chat_from_inside_keeps_the_previous_chat', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '100:0')];
+      const got: StackAction = decidePush(stack, 'content', f('ChatPage', '200:0'));
+      expect(got).assertEqual('push');
+    });
+
+    // 反面：从左栏列表选另一个会话仍然是"换一个看"，该清栈——不然在列表里
+    // 点十个会话就叠十层，返回要按十次。
+    it('chat_to_chat_from_the_list_still_replaces', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '100:0')];
+      const got: StackAction = decidePush(stack, 'navbar', f('ChatPage', '200:0'));
+      expect(got).assertEqual('clearAndPush');
+    });
   });
 }

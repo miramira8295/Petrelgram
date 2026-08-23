@@ -3401,7 +3401,7 @@ export struct ChatPage {
       if (msgId !== undefined && msgId > 0) {
         params['jumpTo'] = msgId;
       }
-      navigateToChat(params).catch(logChatNavFailure);
+      navigateToChat(params, 'content').catch(logChatNavFailure);
       endLinkNavIf(url);
     }).catch((e: TdError) => {
       logE(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
@@ -3649,7 +3649,7 @@ export struct ChatPage {
         // not the whole discussion group's history.
         params['threadRootId'] = threadId;
       }
-      navigateToChat(params).catch(logChatNavFailure);
+      navigateToChat(params, 'content').catch(logChatNavFailure);
     }).catch((e: TdError) => {
       logE(`ChatPage.getMessageThread failed: ${e.message}`);
     });
@@ -3966,7 +3966,7 @@ export struct ChatPage {
       'chatId': chatId,
       'jumpTo': messageId
     };
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
   // Header avatar/title tap → detail page: users/bots get the personal

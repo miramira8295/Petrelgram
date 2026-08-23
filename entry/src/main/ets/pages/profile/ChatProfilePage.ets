@@ -331,13 +331,13 @@ export struct ChatProfilePage {
       params['joinedNoticeIsChannel'] = this.isChannel;
       this.justJoined = false;
     }
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
   private openSearchInChat(): void {
     if (this.chatId === 0) { return; }
     const params: Record<string, Object> = { 'chatId': this.chatId, 'startSearch': true };
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
 
@@ -692,7 +692,7 @@ export struct ChatProfilePage {
       'chatId': this.chatId,
       'jumpTo': messageId
     };
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
   private currentTabLabel(): string {

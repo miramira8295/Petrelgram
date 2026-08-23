@@ -385,7 +385,7 @@ export struct ProfilePage {
     if (this.pendingJumpTo > 0) {
       params['jumpTo'] = this.pendingJumpTo;
     }
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
   private startCall(isVideo: boolean): void {
@@ -581,7 +581,7 @@ export struct ProfilePage {
       const params: Record<string, Object> = {
         'chatId': this.privateChatId, 'jumpTo': messageId
       };
-      navigateToChat(params).catch(logChatNavFailure);
+      navigateToChat(params, 'content').catch(logChatNavFailure);
     }
   }
 
@@ -856,7 +856,7 @@ export struct ProfilePage {
         return;
       }
       const params: Record<string, Object> = { 'chatId': chatId };
-      navigateToChat(params).catch(logChatNavFailure);
+      navigateToChat(params, 'content').catch(logChatNavFailure);
     }).catch((e: TdError): void => {
       this.creatingSecretChat = false;
       logE(`ProfilePage.createNewSecretChat failed: ${e.message}`);

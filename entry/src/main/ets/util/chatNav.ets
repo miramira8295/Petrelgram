@@ -1,6 +1,6 @@
 import router from '@ohos.router';
 import { logE } from './log';
-import { chatKey, decidePush, StackAction, StackFrame } from './splitRouting';
+import { chatKey, decidePush, PushOrigin, StackAction, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 
 // 聊天详情页的路由地址。此前十个调用点各自写了一遍这个字符串，也各自
@@ -130,29 +130,37 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 挂树）时会回退到整页 router，此时 pushUrl 的失败会原样透出来。栈已注册的主
 // 路径全程 resolve。
 //
-// **已知行为，不是 bug（Task 7 已裁决本轮不改）**：origin 恒为 'navbar' 意味着
-// 每次都 clearAndPush，会把栈里原有的层全清掉。于是「话题列表 → 点某个话题 →
-// 返回」不会退回话题列表，而是直接回到会话列表——ForumTopicsPage 那一层在推
-// 会话时被一起清了。同理，从资料页点「发消息」进会话后，返回也不回资料页。
-// 迁移到 Navigation 之前不是这样（那时是 router 页层层叠加）。
-// 真要改，形状大概是给本函数加一个可选的 origin 参数，只有 ForumTopicsPage /
-// 资料页那几个「从右栏内部选会话」的调用点传 'content'——那要动 28 个调用点，
-// 所以没在 Task 7 里顺手做。别当新 bug 去查。
+// **origin 决定推栈方式，这是本函数最要紧的一个参数**：
 //
-// **同一根因还有第三个表现，容易被当成两件事**：ChatRow 的代码位置只有一处，
-// 但它有**两个运行时上下文**——MainTabBody（左栏会话列表）和 ArchivePage（归档
-// 列表）。归档里点一个话题群时，navigateToForumTopics 同样按 'navbar' 清栈，
-// 把 ArchivePage 那一层一起清了，返回后回到的是会话列表而不是归档。
-// 修法与上面同一个：origin 不该由"调用点写在哪个文件"决定，而该由"用户此刻
-// 在哪一栏"决定（ChatRow 已经有 listKey 可以区分 'main' 和归档）。一次改就
-// 把三个表现一起覆盖，别分三次修。
+//   'navbar'  —— 用户从**左栏/列表**选了一个会话（会话列表、通知、深链、搜索
+//                结果）。语义是"换一个会话看"，所以先清空右栏再推：不清的话
+//                在列表里点十个会话就叠十层，返回要按十次。
+//   'content' —— 用户从**当前右栏内部**跳去另一个会话（消息里的群链接、@提及、
+//                转发来源、资料页的「发消息」、话题列表选话题）。语义是"再往
+//                里走一层"，必须保留当前这层，否则返回就跳过了它。
+//
+// **1.4.0 的回归就是这里**：此前 origin 恒为 'navbar'，于是
+//   文件夹A → 聊天B →（从 B 里点进）聊天C → 返回
+// 会直接落回文件夹A 的列表——推 C 的时候把 B 那一层清掉了。用户期望回到 B。
+// 同一根因还有两个表现：「话题列表 → 话题 → 返回」不回话题列表；
+// 「资料页 → 发消息 → 返回」不回资料页。三个一起修。
+//
+// **判据不是"调用点写在哪个文件"，而是"用户此刻在哪一栏"。** 还有一个尚未覆盖
+// 的表现：ChatRow 代码只有一处，却有两个运行时上下文——左栏会话列表和归档列表。
+// 从归档里点话题群仍按 'navbar' 清栈，返回后回到会话列表而不是归档。ChatRow
+// 已经有 listKey 能区分，等哪天动它时一并接上（navigateToForumTopics 同理）。
 //
 // 之所以不把失败吞在这里：NewGroupPage 建完群要靠这个 rejection 才能把
 // "打不开会话" 反馈给用户（复位 spinner + 显示错误），吞掉它那段就是死代码。
 // 代价是每个调用点都得接住——除 ChatListPage（return 进了自己的链）和
 // NewGroupPage（自己处理）外，其余 26 处统一 .catch(logChatNavFailure)。
 // 新增调用点时别忘了跟上，否则是未捕获的 Promise rejection。
-export function navigateToChat(params: Record<string, Object>): Promise<void> {
+export function navigateToChat(
+  params: Record<string, Object>,
+  // 默认 'navbar'：绝大多数调用点确实来自列表/通知/深链，保持原行为。
+  // 只有"从右栏内部再往里走"的那几处显式传 'content'。
+  origin: PushOrigin = 'navbar'
+): Promise<void> {
   const stack: NavStackLike | undefined = stackOf('chat');
   if (stack === undefined) {
     // 回退走的是整页 router，不依赖页签，所以下面那句切页签不能提到这上面来。
@@ -173,7 +181,7 @@ export function navigateToChat(params: Record<string, Object>): Promise<void> {
   // 先清右栏再推。这一步替代了迁移前 findChatRouteIndex() 的去重：那时是
   // 回退到栈里已有的那一层，现在是直接把右栏换成目标会话，结果一致而更简单。
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
-  const action: StackAction = decidePush(snap, 'navbar', target);
+  const action: StackAction = decidePush(snap, origin, target);
   if (action === 'skip') {
     return Promise.resolve();
   }
