@@ -1,7 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  decidePush, chatKey, StackFrame, StackAction
-} from '../main/ets/util/splitRouting';
+  decidePush, chatKey, StackFrame, StackAction, decideChatPush } from '../main/ets/util/splitRouting';
 
 function f(name: string, key: string): StackFrame {
   const out: StackFrame = { name: name, key: key };
@@ -74,6 +73,61 @@ export default function splitRoutingTest(): void {
       const stack: StackFrame[] = [f('ChatPage', '100:0')];
       const got: StackAction = decidePush(stack, 'navbar', f('ChatPage', '200:0'));
       expect(got).assertEqual('clearAndPush');
+    });
+
+    // ——— 会话栈：允许堆叠多个窗口，但同一 chatId 只能有一个 ———
+
+    // 空栈：直接推。
+    it('chat_push_onto_an_empty_stack', 0, () => {
+      const d = decideChatPush([], f('ChatPage', '10:0'));
+      expect(d.action).assertEqual('push');
+      expect(d.popCount).assertEqual(0);
+    });
+
+    // 不同会话：叠上去，不清栈——这是"允许多个聊天窗口"的核心。
+    it('chat_stacks_a_different_chat', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0'), f('ChatPage', '20:0')];
+      const d = decideChatPush(stack, f('ChatPage', '30:0'));
+      expect(d.action).assertEqual('push');
+    });
+
+    // 已在栈顶：什么都不做，别重复推一层一模一样的。
+    it('chat_at_the_top_is_a_no_op', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0'), f('ChatPage', '20:0')];
+      const d = decideChatPush(stack, f('ChatPage', '20:0'));
+      expect(d.action).assertEqual('skip');
+    });
+
+    // **同一 ID 已在栈里更深处：回到那一层，不新开**。
+    // 栈 [A,B,C] 再打开 A → 出两层回到 A，而不是变成 [A,B,C,A]。
+    it('chat_already_deeper_pops_back_to_it', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0'), f('ChatPage', '20:0'), f('ChatPage', '30:0')];
+      const d = decideChatPush(stack, f('ChatPage', '10:0'));
+      expect(d.action).assertEqual('popTo');
+      expect(d.popCount).assertEqual(2);
+    });
+
+    // 栈底那一层同理，只是要出的层数不同。
+    it('chat_pop_count_counts_layers_above_the_target', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0'), f('ChatPage', '20:0')];
+      const d = decideChatPush(stack, f('ChatPage', '10:0'));
+      expect(d.action).assertEqual('popTo');
+      expect(d.popCount).assertEqual(1);
+    });
+
+    // 同一个群的不同话题是**两个**会话窗口，不该互相去重。
+    it('chat_different_topics_are_different_windows', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', chatKey(10, 5))];
+      const d = decideChatPush(stack, f('ChatPage', chatKey(10, 7)));
+      expect(d.action).assertEqual('push');
+    });
+
+    // 栈里混着别的页面（资料页）时，按 name+key 比对，不会误判。
+    it('chat_ignores_other_destinations_when_deduping', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0'), f('ProfilePage', '10')];
+      const d = decideChatPush(stack, f('ChatPage', '10:0'));
+      expect(d.action).assertEqual('popTo');
+      expect(d.popCount).assertEqual(1);
     });
   });
 }

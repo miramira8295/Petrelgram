@@ -1,6 +1,6 @@
 import router from '@ohos.router';
 import { logE } from './log';
-import { chatKey, decidePush, PushOrigin, StackAction, StackFrame } from './splitRouting';
+import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 
 // 聊天详情页的路由地址。此前十个调用点各自写了一遍这个字符串，也各自
@@ -155,10 +155,11 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 代价是每个调用点都得接住——除 ChatListPage（return 进了自己的链）和
 // NewGroupPage（自己处理）外，其余 26 处统一 .catch(logChatNavFailure)。
 // 新增调用点时别忘了跟上，否则是未捕获的 Promise rejection。
+// origin 参数保留但**已不参与决策**——去重规则现在只看"这个会话是不是已经
+// 开着"，与从哪一栏点的无关。留着签名是为了不动 10 个调用点，也为了将来若要
+// 恢复"从列表选会话就替换"的行为时有现成的入口。
 export function navigateToChat(
   params: Record<string, Object>,
-  // 默认 'navbar'：绝大多数调用点确实来自列表/通知/深链，保持原行为。
-  // 只有"从右栏内部再往里走"的那几处显式传 'content'。
   origin: PushOrigin = 'navbar'
 ): Promise<void> {
   const stack: NavStackLike | undefined = stackOf('chat');
@@ -177,16 +178,21 @@ export function navigateToChat(
     name: CHAT_DEST_NAME,
     key: chatKey(numberField(params, 'chatId'), numberField(params, 'forumTopicId'))
   };
-  // 会话是从左栏（或通知/深链——语义同样是"选一个会话"）选的，按分栏规则
-  // 先清右栏再推。这一步替代了迁移前 findChatRouteIndex() 的去重：那时是
-  // 回退到栈里已有的那一层，现在是直接把右栏换成目标会话，结果一致而更简单。
+  // 允许同时开多个会话窗口，但同一个会话只能有一个——规则在 splitRouting 的
+  // decideChatPush（7 条测）。已经开着的会话不再新开一层，而是出栈回到它，
+  // 这正是迁移前 findChatRouteIndex() 做的事（那时是 router.back(index)）。
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
-  const action: StackAction = decidePush(snap, origin, target);
-  if (action === 'skip') {
+  const decision: ChatPushDecision = decideChatPush(snap, target);
+  if (decision.action === 'skip') {
     return Promise.resolve();
   }
-  if (action === 'clearAndPush') {
-    stack.clear(false);
+  if (decision.action === 'popTo') {
+    // 逐层出栈到目标那一层。NavStackLike 没有 popToIndex，只能一层层来；
+    // 层数就是压在目标之上的那些，由 decideChatPush 算好。
+    for (let i = 0; i < decision.popCount; i++) {
+      stack.pop(false);
+    }
+    return Promise.resolve();
   }
   stack.pushPath({ name: CHAT_DEST_NAME, param: params });
   return Promise.resolve();
