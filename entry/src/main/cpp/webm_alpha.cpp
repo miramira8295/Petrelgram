@@ -3,13 +3,11 @@
 #include <algorithm>
 #include <functional>
 #include <hilog/log.h>
-#include <multimedia/player_framework/native_avbuffer.h>
-#include <multimedia/player_framework/native_avbuffer_info.h>
-#include <multimedia/player_framework/native_avcapability.h>
-#include <multimedia/player_framework/native_avcodec_base.h>
-#include <multimedia/player_framework/native_avcodec_videodecoder.h>
-#include <multimedia/player_framework/native_averrors.h>
-#include <multimedia/player_framework/native_avformat.h>
+
+#include <vpx/vp8dx.h>
+#include <vpx/vpx_codec.h>
+#include <vpx/vpx_decoder.h>
+#include <vpx/vpx_image.h>
 
 namespace webm_alpha {
 namespace {
@@ -18,38 +16,23 @@ namespace {
 constexpr unsigned int kLogDomain = 0x0000;
 constexpr const char *kLogTag = "WebmAlpha";
 
-// 不用 OH_AVCODEC_MIMETYPE_VIDEO_VP9：它是 API 23 才引入的**数据符号**，
-// 而 libentry.so 要在 API 20 的机器上一起加载。数据符号在加载时就要解析，
-// 引用它会让整个 so 在老机器上装不进去——不是这个功能不可用，是 App 起不来。
-// 字符串常量本身是稳定的协议标识，硬写没有兼容性风险。
-constexpr const char *kVp9Mime = "video/x-vnd.on2.vp9";
+// 解码线程数。贴纸上限 512px/30fps/3s，单线程也够；给 2 是让首帧快一点，
+// 再多只会在这类小分辨率上被线程同步吃掉。
+constexpr int kDecodeThreads = 2;
 
-const char *kVp9MimeCandidates[] = {
-    "video/x-vnd.on2.vp9",
-    "video/vp9",
-    "video/x-vnd.on2.VP9",
-};
-const char *g_vp9Mime = nullptr;
-
-// 探测选中的那个串；探测没跑过或全都失败时退回默认值。
-const char *Vp9Mime() {
-    return g_vp9Mime != nullptr ? g_vp9Mime : kVp9Mime;
-}
-
-// 输入/输出轮询的节奏。同步模式下这两个超时只影响忙等程度，不影响正确性。
-constexpr int64_t kInputTimeoutUs = 0;
-constexpr int64_t kOutputTimeoutUs = 20000;
-// 连续这么多轮既喂不进去也吐不出来就认输。硬件解码器偶发挂死时，
-// 宁可回退到 ijkplayer，也不能把这条工作线程永远钉在这里。
-constexpr int kMaxStallRounds = 300;
 // 再保守一层：ArkTS 侧已经按预算裁过尺寸，这里只防"参数被算错"。
 constexpr size_t kMaxTotalBytes = 24u * 1024u * 1024u;
 constexpr int32_t kMaxDim = 4096;
 
+// 一帧解出来的样子。
+//
+// **三个平面各带各的行距**，而不是"一个 base 加一个 stride"：libvpx 出的是
+// I420（三个独立平面），不是系统 AVCodec 那种 NV12（UV 交错在 Y 后面）。旧代码
+// 是照 NV12 写的——UV 用 base + stride*sliceH 定位、pixelStride 取 2。换到 libvpx
+// 之后那套定位全错，所以这里跟着改成平面数组。
 struct FrameInfo {
-    const uint8_t *base;
-    int32_t stride;    // Y 平面行距
-    int32_t sliceH;    // Y 平面行数（UV 从 base + stride*sliceH 开始）
+    const uint8_t *plane[3];
+    int32_t stride[3];
     int32_t picW;
     int32_t picH;
     bool rangeFull;
@@ -57,146 +40,92 @@ struct FrameInfo {
 
 using FrameSink = std::function<void(const FrameInfo &)>;
 
-struct DecoderHandle {
-    OH_AVCodec *codec = nullptr;
-    ~DecoderHandle() {
-        if (codec != nullptr) {
-            OH_VideoDecoder_Stop(codec);
-            OH_VideoDecoder_Destroy(codec);
+// vpx_codec_ctx_t 的 RAII 壳。中途任何一步失败都要 destroy，否则解码器内部的
+// 帧缓冲池会漏——一张贴纸几十帧，漏几次就是几十 MB。
+struct VpxDecoder {
+    vpx_codec_ctx_t ctx{};
+    bool inited = false;
+
+    bool Init() {
+        vpx_codec_dec_cfg_t cfg{};
+        cfg.threads = kDecodeThreads;
+        cfg.w = 0; // 0 = 由码流自报，别拿外部尺寸去框它
+        cfg.h = 0;
+        const vpx_codec_err_t err = vpx_codec_dec_init(&ctx, vpx_codec_vp9_dx(), &cfg, 0);
+        inited = err == VPX_CODEC_OK;
+        if (!inited) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, kLogDomain, kLogTag,
+                         "vpx_codec_dec_init failed: %{public}s", vpx_codec_err_to_string(err));
+        }
+        return inited;
+    }
+
+    ~VpxDecoder() {
+        if (inited) {
+            vpx_codec_destroy(&ctx);
         }
     }
 };
 
-// 从一帧输出 buffer 的附带 format 里取行距/可见尺寸/色域范围。
-// 取不到就退回配置值：某些实现只在 OnStreamChanged 里报一次。
-void ReadFrameLayout(OH_AVBuffer *buffer, int32_t srcW, int32_t srcH, FrameInfo &info) {
-    info.stride = srcW;
-    info.sliceH = srcH;
-    info.picW = srcW;
-    info.picH = srcH;
-    info.rangeFull = false;
-    OH_AVFormat *format = OH_AVBuffer_GetParameter(buffer);
-    if (format == nullptr) {
-        return;
-    }
-    int32_t v = 0;
-    if (OH_AVFormat_GetIntValue(format, OH_MD_KEY_VIDEO_STRIDE, &v) && v > 0) {
-        info.stride = v;
-    }
-    if (OH_AVFormat_GetIntValue(format, OH_MD_KEY_VIDEO_SLICE_HEIGHT, &v) && v > 0) {
-        info.sliceH = v;
-    }
-    if (OH_AVFormat_GetIntValue(format, OH_MD_KEY_VIDEO_PIC_WIDTH, &v) && v > 0) {
-        info.picW = v;
-    }
-    if (OH_AVFormat_GetIntValue(format, OH_MD_KEY_VIDEO_PIC_HEIGHT, &v) && v > 0) {
-        info.picH = v;
-    }
-    if (OH_AVFormat_GetIntValue(format, OH_MD_KEY_RANGE_FLAG, &v)) {
-        info.rangeFull = v != 0;
-    }
-    OH_AVFormat_Destroy(format);
-}
-
-bool ConfigureDecoder(OH_AVCodec *codec, int32_t srcW, int32_t srcH) {
-    OH_AVFormat *format = OH_AVFormat_Create();
-    if (format == nullptr) {
+// 解一路 VP9 码流，每解出一帧就交给 sink。
+//
+// **每一包都要喂进去**，哪怕调用方只想留其中几帧：VP9 是帧间预测的，跳过一个包
+// 后面全错。降帧只发生在 sink 那一侧（少留几帧省内存），解码时间省不掉——这正是
+// 预算里优先降分辨率、其次才降帧的原因。
+//
+// 比起原来那套系统 AVCodec 的同步轮询（喂 buffer / 查 buffer / 数 stall 轮次 /
+// 处理 EOS），libvpx 是纯同步的：decode 一次，get_frame 把这一包产出的帧全取走。
+// 没有队列、没有超时、没有硬件挂死，那 100 多行连同它们的兜底一起删掉了。
+bool DecodeStream(const std::vector<Packet> &packets, const FrameSink &sink) {
+    VpxDecoder dec;
+    if (!dec.Init()) {
         return false;
     }
-    OH_AVFormat_SetIntValue(format, OH_MD_KEY_WIDTH, srcW);
-    OH_AVFormat_SetIntValue(format, OH_MD_KEY_HEIGHT, srcH);
-    OH_AVFormat_SetIntValue(format, OH_MD_KEY_PIXEL_FORMAT, AV_PIXEL_FORMAT_NV12);
-    const bool ok = OH_VideoDecoder_Configure(codec, format) == AV_ERR_OK;
-    OH_AVFormat_Destroy(format);
-    return ok;
-}
-
-// 同步模式（API 20 起）：不注册回调，自己轮询进出。回调模式要额外一套线程
-// 和条件变量，而这里本来就跑在 napi async work 的工作线程上，同步更简单，
-// 也更容易在出错时干净收场。
-bool DecodeStream(const std::vector<Packet> &packets, int32_t srcW, int32_t srcH,
-                  const FrameSink &sink) {
-    DecoderHandle handle;
-    handle.codec = OH_VideoDecoder_CreateByMime(Vp9Mime());
-    if (handle.codec == nullptr) {
-        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "%{public}s", "no vp9 decoder");
-        return false;
-    }
-    if (!ConfigureDecoder(handle.codec, srcW, srcH) ||
-        OH_VideoDecoder_Prepare(handle.codec) != AV_ERR_OK ||
-        OH_VideoDecoder_Start(handle.codec) != AV_ERR_OK) {
-        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "%{public}s", "decoder start failed");
-        return false;
-    }
-
-    size_t fed = 0;
-    bool eosSent = false;
-    bool eosSeen = false;
-    int stall = 0;
-    while (!eosSeen && stall < kMaxStallRounds) {
-        bool progressed = false;
-        if (!eosSent) {
-            uint32_t index = 0;
-            if (OH_VideoDecoder_QueryInputBuffer(handle.codec, &index, kInputTimeoutUs) == AV_ERR_OK) {
-                OH_AVBuffer *in = OH_VideoDecoder_GetInputBuffer(handle.codec, index);
-                if (in == nullptr) {
-                    return false;
-                }
-                OH_AVCodecBufferAttr attr{};
-                if (fed < packets.size()) {
-                    const Packet &pkt = packets[fed];
-                    uint8_t *addr = OH_AVBuffer_GetAddr(in);
-                    const int32_t cap = OH_AVBuffer_GetCapacity(in);
-                    if (addr == nullptr || cap < 0 || static_cast<size_t>(cap) < pkt.size()) {
-                        return false;
-                    }
-                    std::copy(pkt.begin(), pkt.end(), addr);
-                    attr.offset = 0;
-                    attr.size = static_cast<int32_t>(pkt.size());
-                    // pts 用序号即可：这条链路的播放时钟由 ArkTS 侧的时间戳表驱动，
-                    // 解码器的 pts 只需要单调。
-                    attr.pts = static_cast<int64_t>(fed);
-                    attr.flags = AVCODEC_BUFFER_FLAGS_NONE;
-                    ++fed;
-                } else {
-                    attr.flags = AVCODEC_BUFFER_FLAGS_EOS;
-                    eosSent = true;
-                }
-                if (OH_AVBuffer_SetBufferAttr(in, &attr) != AV_ERR_OK ||
-                    OH_VideoDecoder_PushInputBuffer(handle.codec, index) != AV_ERR_OK) {
-                    return false;
-                }
-                progressed = true;
-            }
+    for (const Packet &pkt : packets) {
+        if (pkt.empty()) {
+            // 空包不是错误（容器里可能有占位），但也没什么可解的。
+            continue;
         }
-        uint32_t outIndex = 0;
-        const OH_AVErrCode got =
-            OH_VideoDecoder_QueryOutputBuffer(handle.codec, &outIndex, kOutputTimeoutUs);
-        if (got == AV_ERR_OK) {
-            OH_AVBuffer *out = OH_VideoDecoder_GetOutputBuffer(handle.codec, outIndex);
-            if (out == nullptr) {
+        const vpx_codec_err_t err = vpx_codec_decode(&dec.ctx, pkt.data(),
+                                                    static_cast<unsigned int>(pkt.size()),
+                                                    nullptr, 0);
+        if (err != VPX_CODEC_OK) {
+            OH_LOG_Print(LOG_APP, LOG_ERROR, kLogDomain, kLogTag,
+                         "vpx_codec_decode failed: %{public}s", vpx_codec_err_to_string(err));
+            return false;
+        }
+        vpx_codec_iter_t iter = nullptr;
+        const vpx_image_t *img = nullptr;
+        while ((img = vpx_codec_get_frame(&dec.ctx, &iter)) != nullptr) {
+            // **格式必须核**。贴纸是 8bit I420；真拿到别的（高位深、I422、
+            // I444）而照 I420 去读，出来的是错位的花屏而不是报错——那种失败
+            // 极难从现象追回原因。宁可整条回退到 ijkplayer。
+            if (img->fmt != VPX_IMG_FMT_I420) {
+                OH_LOG_Print(LOG_APP, LOG_ERROR, kLogDomain, kLogTag,
+                             "unexpected vpx img fmt: %{public}d", static_cast<int>(img->fmt));
                 return false;
             }
-            OH_AVCodecBufferAttr attr{};
-            const bool haveAttr = OH_AVBuffer_GetBufferAttr(out, &attr) == AV_ERR_OK;
-            if (haveAttr && (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0) {
-                eosSeen = true;
-            } else if (haveAttr && attr.size > 0) {
-                FrameInfo info{};
-                info.base = OH_AVBuffer_GetAddr(out);
-                ReadFrameLayout(out, srcW, srcH, info);
-                if (info.base != nullptr) {
-                    sink(info);
-                }
+            FrameInfo info{};
+            info.plane[0] = img->planes[VPX_PLANE_Y];
+            info.plane[1] = img->planes[VPX_PLANE_U];
+            info.plane[2] = img->planes[VPX_PLANE_V];
+            info.stride[0] = img->stride[VPX_PLANE_Y];
+            info.stride[1] = img->stride[VPX_PLANE_U];
+            info.stride[2] = img->stride[VPX_PLANE_V];
+            // **用 d_w/d_h，不用 w/h。** libvpx 1.17 把 w/h 的语义从"stride 与
+            // 对齐高度"改成了"真实宽高"（CHANGELOG 的 Upgrading 条目）；d_w/d_h
+            // 一直是显示尺寸，两版一致。用 d_w/d_h 就不必跟着版本改口径——按旧
+            // 语义写的代码升级后会静默地把右边缘写成垃圾，还不报错。
+            info.picW = static_cast<int32_t>(img->d_w);
+            info.picH = static_cast<int32_t>(img->d_h);
+            info.rangeFull = img->range == VPX_CR_FULL_RANGE;
+            if (info.plane[0] == nullptr || info.picW <= 0 || info.picH <= 0) {
+                return false;
             }
-            OH_VideoDecoder_FreeOutputBuffer(handle.codec, outIndex);
-            progressed = true;
-        } else if (got == AV_ERR_STREAM_CHANGED) {
-            progressed = true; // 行距/尺寸逐帧重读，这里无需额外处理
+            sink(info);
         }
-        stall = progressed ? 0 : stall + 1;
     }
-    return eosSeen;
+    return true;
 }
 
 // 面积平均缩放。这条链路只会缩不会放（目标尺寸由预算算出，恒 ≤ 源），
@@ -227,9 +156,9 @@ inline uint8_t Clamp255(int32_t v) {
     return static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
 }
 
-// 有限范围（16..235）拉回 0..255。alpha 那一路也要做：ffmpeg 的 libvpx 路径是
-// 把 Y 直接当 A 用，若编码器写的是 limited，全透明区就会停在 16 而不是 0，
-// 表现成一圈灰边。按流自己报的 range 展开才是对的。
+// 有限范围（16..235）拉回 0..255。alpha 那一路也要做：那一路是把 Y 直接当 A 用，
+// 若编码器写的是 limited，全透明区就会停在 16 而不是 0，表现成一圈灰边。按流
+// 自己报的 range 展开才是对的。
 inline uint8_t ExpandRange(uint8_t v, bool full) {
     if (full) {
         return v;
@@ -239,67 +168,18 @@ inline uint8_t ExpandRange(uint8_t v, bool full) {
 
 } // namespace
 
-// 实测这台 API 26 的机器上 GetCapability("video/x-vnd.on2.vp9") 返回 nullptr，
-// 于是整条链路一次都没跑起来。原因只可能是两个：mime 串不是这个，或者设备
-// 真的没有 VP9 解码器。挨个试候选串，并且用 video/avc 做对照——连 H.264 都
-// 拿不到就说明是探测本身没工作，而不是缺 VP9。
+// 恒为 true：VP9 解码器是随包带的（third_party/libvpx-ohos），不再问设备。
 //
-// 用 GetCapability（API 9）而不是 GetCapabilityList（API 24）：后者是函数
-// 符号没有加载期风险，但没必要为一次探测抬高门槛。
+// **这个函数留着是有代价的，但值得。** 它现在没有任何判断，看着像废话——可它
+// 是调用方那条"探测不到就回退 ijkplayer"分支的开关。留着，是因为将来若要按机型
+// 或按内存关掉软解，这里是唯一的开关点；删掉就得把回退逻辑重新长回来。
+//
+// 历史：这里原本枚举系统 AVCodec 的 VP9 能力。2026-08-20 在一台海思设备上枚举
+// 到全部 19 个视频解码器都没有 VP9/VP8（软硬解都没有），整条链路一次都没跑起来。
+// 换成随包自带的 libvpx 之后，设备有没有 VP9 与本功能无关了。
 bool Vp9DecoderAvailable() {
-    static const bool available = []() -> bool {
-        OH_AVCapability *control = OH_AVCodec_GetCapability("video/avc", false);
-        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
-                     "probe control video/avc=%{public}s", control != nullptr ? "ok" : "NULL");
-        for (const char *mime : kVp9MimeCandidates) {
-            OH_AVCapability *cap = OH_AVCodec_GetCapability(mime, false);
-            OH_AVCapability *sw = OH_AVCodec_GetCapabilityByCategory(mime, false, SOFTWARE);
-            OH_AVCapability *hw = OH_AVCodec_GetCapabilityByCategory(mime, false, HARDWARE);
-            OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
-                         "probe %{public}s any=%{public}s sw=%{public}s hw=%{public}s", mime,
-                         cap != nullptr ? "ok" : "NULL", sw != nullptr ? "ok" : "NULL",
-                         hw != nullptr ? "ok" : "NULL");
-            OH_AVCapability *any = cap != nullptr ? cap : (sw != nullptr ? sw : hw);
-            if (any != nullptr && g_vp9Mime == nullptr) {
-                g_vp9Mime = mime;
-                OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
-                             "picked mime=%{public}s name=%{public}s", mime,
-                             OH_AVCapability_GetName(any));
-            }
-        }
-        // 决定性的一问：把系统里所有视频解码器枚举出来，看 VP9 到底在不在。
-        // GetCapabilityList 是 API 24 的**函数**符号（惰性绑定，没有加载期
-        // 风险），而且这段只是诊断。
-        uint32_t count = 0;
-        OH_AVCapability **list = OH_AVCodec_GetCapabilityList(OH_AVCODEC_TYPE_VIDEO_DECODER, &count);
-        OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "decoderCount=%{public}u", count);
-        if (list != nullptr) {
-            for (uint32_t i = 0; i < count; i++) {
-                OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
-                             "decoder[%{public}u] mime=%{public}s name=%{public}s hw=%{public}d", i,
-                             OH_AVCapability_GetMimeType(list[i]), OH_AVCapability_GetName(list[i]),
-                             OH_AVCapability_IsHardware(list[i]) ? 1 : 0);
-            }
-        }
-        // 最后的兜底：能力查询问不出来，不代表创建不出来。直接试着建一个。
-        if (g_vp9Mime == nullptr) {
-            for (const char *mime : kVp9MimeCandidates) {
-                OH_AVCodec *probe = OH_VideoDecoder_CreateByMime(mime);
-                OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag,
-                             "createProbe %{public}s=%{public}s", mime,
-                             probe != nullptr ? "ok" : "NULL");
-                if (probe != nullptr) {
-                    OH_VideoDecoder_Destroy(probe);
-                    g_vp9Mime = mime;
-                    break;
-                }
-            }
-        }
-        return g_vp9Mime != nullptr;
-    }();
-    return available;
+    return true;
 }
-
 
 bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
                          const std::vector<Packet> &alphaPackets, int32_t srcW, int32_t srcH,
@@ -319,25 +199,23 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
     if (frameBytes * keepCount > kMaxTotalBytes) {
         return false;
     }
-    if (!Vp9DecoderAvailable()) {
-        return false;
-    }
 
-    // 两路先后解，不并行：同时开两个硬件实例会占掉别处要用的解码器，而先把
-    // alpha 存成 dstW*dstH 的单字节平面，额外内存只有最终 RGBA 的 1/4。
+    // 两路先后解，不并行：先把 alpha 存成 dstW*dstH 的单字节平面，额外内存只有
+    // 最终 RGBA 的 1/4。并行两个解码器实例省不到多少时间，却让内存翻倍。
     const size_t planeBytes = static_cast<size_t>(dstW) * dstH;
     std::vector<std::vector<uint8_t>> alphaPlanes;
     alphaPlanes.reserve(keepCount);
     bool alphaFull = false;
     size_t alphaSeen = 0;
-    const bool alphaOk = DecodeStream(alphaPackets, srcW, srcH, [&](const FrameInfo &f) {
+    const bool alphaOk = DecodeStream(alphaPackets, [&](const FrameInfo &f) {
         const size_t seen = alphaSeen++;
         if (seen % step != 0 || alphaPlanes.size() >= keepCount) {
             return;
         }
         alphaFull = f.rangeFull;
         std::vector<uint8_t> plane(planeBytes, 0);
-        ResizePlane(f.base, f.stride, 1, std::min(f.picW, srcW), std::min(f.picH, srcH),
+        // alpha 那一路只有 Y 有意义——它就是被当灰度图编码的透明度。
+        ResizePlane(f.plane[0], f.stride[0], 1, std::min(f.picW, srcW), std::min(f.picH, srcH),
                     plane.data(), dstW, dstH);
         alphaPlanes.push_back(std::move(plane));
     });
@@ -349,7 +227,7 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
     std::vector<uint8_t> chromaU(planeBytes, 0);
     std::vector<uint8_t> chromaV(planeBytes, 0);
     size_t colorSeen = 0;
-    const bool colorOk = DecodeStream(colorPackets, srcW, srcH, [&](const FrameInfo &f) {
+    const bool colorOk = DecodeStream(colorPackets, [&](const FrameInfo &f) {
         const size_t seen = colorSeen++;
         // 两路是同一段时间轴、同样的帧数，按解出的序号配对；留哪几帧也用
         // 同一个 step，所以 index 一定对得上。
@@ -359,10 +237,11 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
         }
         const int32_t picW = std::min(f.picW, srcW);
         const int32_t picH = std::min(f.picH, srcH);
-        const uint8_t *uv = f.base + static_cast<size_t>(f.stride) * f.sliceH;
-        ResizePlane(f.base, f.stride, 1, picW, picH, luma.data(), dstW, dstH);
-        ResizePlane(uv, f.stride, 2, picW / 2, picH / 2, chromaU.data(), dstW, dstH);
-        ResizePlane(uv + 1, f.stride, 2, picW / 2, picH / 2, chromaV.data(), dstW, dstH);
+        // I420：三个平面各自连续，pixelStride 一律是 1。（NV12 那套 UV 交错、
+        // pixelStride=2 的写法只适用于系统 AVCodec，换 libvpx 后不再成立。）
+        ResizePlane(f.plane[0], f.stride[0], 1, picW, picH, luma.data(), dstW, dstH);
+        ResizePlane(f.plane[1], f.stride[1], 1, picW / 2, picH / 2, chromaU.data(), dstW, dstH);
+        ResizePlane(f.plane[2], f.stride[2], 1, picW / 2, picH / 2, chromaV.data(), dstW, dstH);
         const std::vector<uint8_t> &alpha = alphaPlanes[index];
         RgbaFrame frame(frameBytes, 0);
         for (size_t p = 0; p < planeBytes; ++p) {

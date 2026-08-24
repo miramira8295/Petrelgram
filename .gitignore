@@ -14,6 +14,8 @@
 **/ApiCredentials.ets
 # Prebuilt native libraries — fetched via scripts/fetch-tdlib.sh
 entry/libs/
+# 原生产物一律不进版本库，由 scripts/build-*.sh 构建（同 entry/libs/）。
+third_party/libvpx-ohos/
 # Local MCP config (machine-specific absolute paths)
 .mcp.json
 # Internal docs & AI tooling — not published
