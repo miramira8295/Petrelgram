@@ -216,7 +216,14 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         videoFileIds.push(list[j].videoFileId);
         videoFileSizes.push(list[j].videoFileSize);
         videoMimeTypes.push(list[j].videoMimeType);
-        if (list[j].text !== '') {
+        // **取第一条带文字的成员，不是最后一条。**
+        //
+        // 相册的配文在 TDLib 里挂在某一条成员消息上，Telegram 各端都挂在第一条。
+        // 而 albumHead() 克隆的正是第一条——配文和"整行的那条消息"因此天然是
+        // 同一条，译文、翻译状态、行签名三者才对得上（见下面 translationBlock
+        // 在相册分支上的挂载）。原来取最后一条，一旦哪天真出现多条带文字的
+        // 相册，配文来自 A、译文取自 B，页面上就是"翻译了却不显示"。
+        if (caption === '' && list[j].text !== '') {
           caption = list[j].text;
           captionEntities = list[j].textEntities;
         }

@@ -2313,6 +2313,15 @@ export struct MessageBubble {
         // Rich caption: links/@mentions/#hashtags stay tappable in albums too.
         Column() {
           this.richContent(this.albumCaption, this.albumCaptionEntities, this.inlineMaxW());
+          // 相册配文也要能翻译（issue #128）。和单张媒体那一支（见下面
+          // contentType 'photo'/'video' 分支）是同一个疏漏的两半：
+          // translationCandidates 一直把带配文的媒体收进去、译文也存下来了，
+          // 只是没有地方显示。
+          //
+          // this.msg 是 albumHead()——第一条成员的克隆，而配文按约定也取第一条
+          // （见 collapseAlbums），所以 translationBlock 读的 translatedText、
+          // translationStatus 订阅的 id、行签名里的翻译态，三者指的是同一条消息。
+          this.translationBlock();
         }.margin({ top: 6 });
       }
     } else if (this.msg.contentType === 'richMessage') {
