@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "重裝應用後會回到預設圖示。桌面重新整理可能需要幾秒。"
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "霧面"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "霓虹"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "極光"
     }
   ]
 }

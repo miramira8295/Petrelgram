@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "앱을 다시 설치하면 기본 아이콘으로 돌아갑니다. 홈 화면 갱신에 몇 초가 걸릴 수 있습니다."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "프로스트"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "네온"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "오로라"
     }
   ]
 }

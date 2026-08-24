@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "Reinstalar o app restaura o ícone padrão. A tela inicial pode levar alguns segundos para atualizar."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "Geada"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "Néon"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "Aurora"
     }
   ]
 }

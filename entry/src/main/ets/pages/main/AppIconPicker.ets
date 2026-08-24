@@ -81,18 +81,35 @@ export struct AppIconPicker {
     });
   }
 
+  // 资源名 → Resource。
+  //
+  // **只能写成这样一串 if**：$r() 的参数必须是编译期字面量，拼不出
+  // `$r('app.media.' + name)`。目录里存的是名字（那张表要被单测读，塞不进
+  // Resource），落到界面这一层就得有人把名字翻成 Resource，而 ArkTS 没给别的
+  // 口子。加图标时这里是四个必改点之一。
+  private previewOf(name: string): Resource {
+    if (name === 'iconprev_frost') { return $r('app.media.iconprev_frost'); }
+    if (name === 'iconprev_neon') { return $r('app.media.iconprev_neon'); }
+    if (name === 'iconprev_aurora') { return $r('app.media.iconprev_aurora'); }
+    if (name === 'iconprev_midnight') { return $r('app.media.iconprev_midnight'); }
+    if (name === 'iconprev_graphite') { return $r('app.media.iconprev_graphite'); }
+    if (name === 'iconprev_forest') { return $r('app.media.iconprev_forest'); }
+    if (name === 'iconprev_sunset') { return $r('app.media.iconprev_sunset'); }
+    if (name === 'iconprev_violet') { return $r('app.media.iconprev_violet'); }
+    // 兜底是默认那张而不是空——名字对不上时给一张看得见的图，比给一个空洞更
+    // 容易在开发期被发现。
+    return $r('app.media.iconprev_default');
+  }
+
   @Builder
   swatch(option: AppIconOption) {
     Column({ space: 6 }) {
       Stack() {
-        // 预览是现拼的：一块底色加同一张前景图，与分层图标的构成一致。底色取自
-        // util/appIcon 的目录，所以不存在"预览图忘了跟着底色改"这回事。
-        Column()
+        // 预览图由脚本从桌面图标那两层合成，来源与真实图标完全相同——所以这里
+        // 直接贴图，不再拿底色现拼（后加的三张各有各的前景，拼不出来）。
+        Image(this.previewOf(option.preview))
           .width(SWATCH).height(SWATCH)
-          .backgroundColor(option.background)
-          .borderRadius(SWATCH_RADIUS);
-        Image($r('app.media.foreground'))
-          .width(SWATCH).height(SWATCH)
+          .borderRadius(SWATCH_RADIUS)
           .draggable(false);
         if (this.selected === option.name) {
           // 选中标记压在右下角，而不是盖住中间——用户要同时看清选中的是哪一张。

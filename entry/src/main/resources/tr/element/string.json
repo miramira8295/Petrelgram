@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "Uygulamayı yeniden yüklerseniz varsayılan simge geri gelir. Ana ekranın güncellenmesi birkaç saniye sürebilir."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "Buzlu"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "Neon"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "Aurora"
     }
   ]
 }

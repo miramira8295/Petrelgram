@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "La réinstallation de l'app rétablit l'icône par défaut. L'écran d'accueil peut mettre quelques secondes à se mettre à jour."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "Givre"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "Néon"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "Aurore"
     }
   ]
 }

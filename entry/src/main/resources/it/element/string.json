@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "Reinstallando l'app viene ripristinata l'icona predefinita. La schermata Home potrebbe impiegare qualche secondo ad aggiornarsi."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "Brina"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "Neon"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "Aurora"
     }
   ]
 }

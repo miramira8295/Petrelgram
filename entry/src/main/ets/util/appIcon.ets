@@ -35,13 +35,19 @@ export interface AppIconOption {
   // 装好之前就被求值，存字符串等于把首次加载时的语言锁死（settingGroups()
   // 写成函数而不是常量数组，是同一个原因）。
   labelKey: string;
-  // 预览用底色，与 AppScope 里那张 bg_*.png 逐字同值。
+  // 预览图在 entry media 里的资源名（不带 app.media. 前缀）。
   //
-  // **为什么预览不用图片**：桌面图标是分层图（background + foreground），而这
-  // 几张只换底色、前景那只海燕完全相同。预览因此可以在界面上现拼——一块圆角
-  // 色块加同一张前景图——省掉六张预览图，也保证预览和真实图标不会走样：底色
-  // 就是这里这个值，不存在"预览图忘了跟着改"的可能。
-  background: string;
+  // **为什么是预览图而不是现拼**：最早那五张只换底色、前景共用同一只海燕，预览
+  // 可以在界面上拿一块色块加一张前景图拼出来。后加进来的三张（frost/neon/
+  // aurora）各有各的前景图形，现拼这条路当场就不成立了。
+  //
+  // 现在所有预览图都由脚本从**各自那两层**合成（192px），来源与桌面上那张分层
+  // 图标完全相同。现拼原本想保证的"预览不会和真实图标走样"，换成生成之后反而
+  // 更牢——不存在"改了底色忘了改预览"这回事，因为预览就是从底色那张图生成的。
+  //
+  // 存资源名而不是 Resource：$r() 的参数必须是字面量，而这张表是数据、还要被
+  // 单测读。名字到 $r() 的映射在 AppIconPicker。
+  preview: string;
 }
 
 // getAlternateIcons() 返回值里我们关心的两个字段。
@@ -55,15 +61,23 @@ export interface IconEnabledState {
 
 // 目录本身。首项恒为默认。
 //
-// 顺序即界面顺序。底色都取自各自那张 bg_*.png，改一处必须改两处——测试只能
-// 保证格式是 #RRGGBB，保证不了两边同值。
+// 顺序即界面顺序：三张独立设计排在默认后面，五张换底色的排在最后。
+//
+// 加一张图标要同时动四处：AppScope 里的 bg_/fg_/icon_*.json、app.json5 的
+// alternateIcons、这张表、以及 AppIconPicker 里 name → $r() 的映射。测试挡得住
+// 重名和命名走样，挡不住"四处漏了一处"。
 const OPTIONS: AppIconOption[] = [
-  { name: APP_ICON_DEFAULT, labelKey: 'app_icon_default', background: '#0060F7' },
-  { name: 'midnight', labelKey: 'app_icon_midnight', background: '#0B1B33' },
-  { name: 'graphite', labelKey: 'app_icon_graphite', background: '#2C2C2E' },
-  { name: 'forest', labelKey: 'app_icon_forest', background: '#10714E' },
-  { name: 'sunset', labelKey: 'app_icon_sunset', background: '#E5533D' },
-  { name: 'violet', labelKey: 'app_icon_violet', background: '#5B3BC4' }
+  { name: APP_ICON_DEFAULT, labelKey: 'app_icon_default', preview: 'iconprev_default' },
+  // 三张独立设计：各有各的前景图形，不是换底色。
+  { name: 'frost', labelKey: 'app_icon_frost', preview: 'iconprev_frost' },
+  { name: 'neon', labelKey: 'app_icon_neon', preview: 'iconprev_neon' },
+  { name: 'aurora', labelKey: 'app_icon_aurora', preview: 'iconprev_aurora' },
+  // 以下五张是同一只海燕换底色。
+  { name: 'midnight', labelKey: 'app_icon_midnight', preview: 'iconprev_midnight' },
+  { name: 'graphite', labelKey: 'app_icon_graphite', preview: 'iconprev_graphite' },
+  { name: 'forest', labelKey: 'app_icon_forest', preview: 'iconprev_forest' },
+  { name: 'sunset', labelKey: 'app_icon_sunset', preview: 'iconprev_sunset' },
+  { name: 'violet', labelKey: 'app_icon_violet', preview: 'iconprev_violet' }
 ];
 
 // 设备支不支持切换图标。不支持时设置里整条入口都不出现——给一个点进去只会

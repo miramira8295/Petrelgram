@@ -7,9 +7,13 @@
     "buildVersion": "1",
     "icon": "$media:layered_image",
     // 桌面图标自选的备用图标。name 必须与 util/appIcon.ets 的目录逐字一致
-    // ——setAlternateIcon 对不上名字抛 17700308。每张只换底色，前景共用同一只
-    // 海燕，所以 icon_*.json 都指向同一个 $media:foreground。
+    // ——setAlternateIcon 对不上名字抛 17700308。
+    // frost/neon/aurora 是三张独立设计，各有各的 bg_ 与 fg_；其余五张是同一只
+    // 海燕换底色，icon_*.json 的 foreground 都指向 $media:foreground。
     "alternateIcons": [
+      { "name": "frost", "icon": "$media:icon_frost" },
+      { "name": "neon", "icon": "$media:icon_neon" },
+      { "name": "aurora", "icon": "$media:icon_aurora" },
       { "name": "midnight", "icon": "$media:icon_midnight" },
       { "name": "graphite", "icon": "$media:icon_graphite" },
       { "name": "forest", "icon": "$media:icon_forest" },

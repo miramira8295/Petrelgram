@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "Cài đặt lại ứng dụng sẽ khôi phục biểu tượng mặc định. Màn hình chính có thể mất vài giây để cập nhật."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "Mờ sương"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "Neon"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "Cực quang"
     }
   ]
 }

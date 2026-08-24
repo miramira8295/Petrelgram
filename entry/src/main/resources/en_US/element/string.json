@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "Reinstalling the app restores the default icon. The home screen may take a few seconds to update."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "Frost"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "Neon"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "Aurora"
     }
   ]
 }

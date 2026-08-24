@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "重装应用后会回到默认图标。桌面刷新可能需要几秒。"
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "雾面"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "霓虹"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "极光"
     }
   ]
 }

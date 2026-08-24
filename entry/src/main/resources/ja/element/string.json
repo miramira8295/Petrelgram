@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "アプリを再インストールするとデフォルトのアイコンに戻ります。ホーム画面の更新には数秒かかることがあります。"
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "フロスト"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "ネオン"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "オーロラ"
     }
   ]
 }

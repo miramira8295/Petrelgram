@@ -11451,6 +11451,18 @@
     {
       "name": "app_icon_note",
       "value": "نصب مجدد برنامه نماد پیش‌فرض را برمی‌گرداند. به‌روزرسانی صفحه اصلی ممکن است چند ثانیه طول بکشد."
+    },
+    {
+      "name": "app_icon_frost",
+      "value": "مه‌آلود"
+    },
+    {
+      "name": "app_icon_neon",
+      "value": "نئون"
+    },
+    {
+      "name": "app_icon_aurora",
+      "value": "شفق"
     }
   ]
 }

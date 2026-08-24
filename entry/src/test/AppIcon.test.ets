@@ -51,10 +51,22 @@ export default function appIconTest() {
       expect(options.length > 1).assertTrue();
     });
 
-    it('每一项都有预览底色，且是 #RRGGBB', 0, () => {
+    it('每一项都有预览图的资源名，且是 iconprev_ 前缀', 0, () => {
+      // 预览图是从各自那两层现合成的（见提交说明），命名必须与 entry 的 media
+      // 一一对应——AppIconPicker 里那张映射表照着这个名字挑 $r()。
       const options: AppIconOption[] = appIconOptions();
       for (let i = 0; i < options.length; i++) {
-        expect(/^#[0-9A-F]{6}$/.test(options[i].background)).assertTrue();
+        expect(options[i].preview.startsWith('iconprev_')).assertTrue();
+      }
+    });
+
+    it('预览图资源名互不重复', 0, () => {
+      // 重名意味着两张图标共用一张预览，界面上会看不出区别。
+      const options: AppIconOption[] = appIconOptions();
+      const seen: string[] = [];
+      for (let i = 0; i < options.length; i++) {
+        expect(seen.indexOf(options[i].preview)).assertEqual(-1);
+        seen.push(options[i].preview);
       }
     });
 
