@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   APP_ICON_API, APP_ICON_DEFAULT, AppIconOption, IconEnabledState,
-  appIconAvailable, appIconOptions, isKnownIconName, selectedIconName
+  appIconAvailable, appIconOptions, isKnownIconName, previewNameOf, selectedIconName
 } from '../main/ets/util/appIcon';
 
 function state(name: string, enabled: boolean): IconEnabledState {
@@ -68,6 +68,18 @@ export default function appIconTest() {
         expect(seen.indexOf(options[i].preview)).assertEqual(-1);
         seen.push(options[i].preview);
       }
+    });
+
+    it('图标名能查到对应的预览图资源名', 0, () => {
+      const options: AppIconOption[] = appIconOptions();
+      expect(previewNameOf(options[1].name)).assertEqual(options[1].preview);
+      expect(previewNameOf(APP_ICON_DEFAULT)).assertEqual(options[0].preview);
+    });
+
+    it('查不到的名字回落到默认那张预览', 0, () => {
+      // 启动首帧用它决定画哪张图。系统报回来的名字理论上都在目录里，但那是外部
+      // 数据——回落到默认，好过让启动那一帧空着。
+      expect(previewNameOf('probe')).assertEqual(appIconOptions()[0].preview);
     });
 
     it('每一项都有文案键', 0, () => {

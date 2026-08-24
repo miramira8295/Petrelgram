@@ -98,6 +98,21 @@ export function appIconOptions(): AppIconOption[] {
   return OPTIONS.slice();
 }
 
+// 图标名 → 预览图资源名。
+//
+// 两个调用方：设置里的选择器（画九宫格），和启动首帧（画当前这一张）。后者
+// 拿到的名字来自 getAlternateIcons()——外部数据，可能是我们不认识的（比如降级
+// 安装留下的旧名字）。**回落到默认那张而不是返回空**：启动那一帧空着比画错一张
+// 更糟，用户会以为卡住了。
+export function previewNameOf(name: string): string {
+  for (let i = 0; i < OPTIONS.length; i++) {
+    if (OPTIONS[i].name === name) {
+      return OPTIONS[i].preview;
+    }
+  }
+  return OPTIONS[0].preview;
+}
+
 export function isKnownIconName(name: string): boolean {
   for (let i = 0; i < OPTIONS.length; i++) {
     if (OPTIONS[i].name === name) {

@@ -17,6 +17,7 @@ import { logChatNavFailure, navigateToChat } from '../util/chatNav';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject } from '../tdkit/TdTypes';
 import { logE } from '../util/log';
+import { StartupSplash } from './common/StartupSplash';
 
 // 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
 const DEEP_LINK_CONNECT_WAIT_MS: number = 8000;
@@ -209,7 +210,10 @@ struct Index {
         } else if (this.stage === AuthStage.LoggedOut) {
           PhoneNumberPage()
         } else {
-          LoadingProgress().width(48).height(48)
+          // AuthStage.Init：系统启动窗刚消失、TDLib 还没就绪的那一帧。原来是个
+          // 裸转圈，换成用户自己选的那张桌面图标——不新增阶段、不加延时，只是把
+          // 本来就要画的这一帧画成品牌图。详见 StartupSplash 的注释。
+          StartupSplash()
         }
       }
       .width('100%')
