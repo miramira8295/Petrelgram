@@ -57,13 +57,41 @@ export struct AlphaWebmStickerView {
   private loading: boolean = false;
   private reportedWorking: boolean = false;
   private holdsSlot: boolean = false;
+  private loadSeq: number = 0;
+
+  aboutToAppear(): void {
+    this.disposed = false;
+  }
 
   aboutToDisappear(): void {
+    this.disposePlayback();
+  }
+
+  aboutToRecycle(): void {
+    this.disposePlayback();
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    this.loadSeq++;
+    const webmPath: string | undefined = params['webmPath'] as string | undefined;
+    if (webmPath !== undefined) {
+      this.webmPath = webmPath;
+    }
+    this.disposed = false;
+    this.reportedWorking = false;
+    this.shownIndex = -1;
+    setTimeout((): void => { this.load(); }, 0);
+  }
+
+  private disposePlayback(): void {
+    this.loadSeq++;
     this.disposed = true;
     this.stopTicker();
     this.releaseSlot();
     releaseAlphaSticker(this.sequence);
     this.sequence = null;
+    this.reportedWorking = false;
+    this.shownIndex = -1;
   }
 
   private releaseSlot(): void {
@@ -175,13 +203,19 @@ export struct AlphaWebmStickerView {
     this.holdsSlot = true;
     liveAlpha++;
     this.loading = true;
+    const seq: number = ++this.loadSeq;
+    const path: string = this.webmPath;
     // 显示尺寸决定解码尺寸：聊天气泡里的贴纸和面板里的小格差着一个数量级，
     // 一律按原生 512 解码就是白烧内存。
     const boxPx = Math.max(vp2px(this.boxWidth), vp2px(this.boxHeight));
-    const clip = await acquireAlphaSticker(this.webmPath, boxPx);
+    const clip = await acquireAlphaSticker(path, boxPx);
     this.loading = false;
-    if (this.disposed) {
+    if (this.disposed || seq !== this.loadSeq || path !== this.webmPath) {
+      this.releaseSlot();
       releaseAlphaSticker(clip);
+      if (!this.disposed) {
+        setTimeout((): void => { this.load(); }, 0);
+      }
       return;
     }
     if (clip === null) {

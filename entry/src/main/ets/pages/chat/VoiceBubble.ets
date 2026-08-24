@@ -34,13 +34,21 @@ export struct VoiceBubble {
   private playbackStartedReported: boolean = false;
   private unsub: (() => void) | null = null;
 
-  aboutToAppear(): void {
-    this.locallyListened = this.listened;
-    this.resolvedDurationSec = Math.max(0, this.durationSec);
+  private attachPlayback(targetId: number, durationSec: number, listened: boolean): void {
+    this.detachPlayback();
+    this.playbackStatus = 'idle';
+    this.finished = false;
+    this.progress = 0;
+    this.elapsedSec = 0;
+    this.speed = 1;
+    this.playbackFailed = false;
+    this.playbackStartedReported = false;
+    this.locallyListened = listened;
+    this.resolvedDurationSec = Math.max(0, durationSec);
     this.unsub = getVoicePlayback().subscribe((state: VoiceState): void => {
-      const mine: boolean = state.mode === 'voice' && state.playingId === this.msgId;
+      const mine: boolean = state.mode === 'voice' && state.playingId === targetId;
       this.speed = state.speed;
-      this.playbackFailed = state.mode === 'voice' && state.errorId === this.msgId;
+      this.playbackFailed = state.mode === 'voice' && state.errorId === targetId;
       if (mine) {
         this.playbackStatus = state.status;
         if (state.durationMs > 0) {
@@ -64,7 +72,7 @@ export struct VoiceBubble {
           this.elapsedSec = 0;
         }
       }
-      if (state.mode === 'voice' && state.completedId === this.msgId) {
+      if (state.mode === 'voice' && state.completedId === targetId) {
         this.finished = true;
         this.progress = 1;
         this.elapsedSec = this.resolvedDuration();
@@ -72,11 +80,37 @@ export struct VoiceBubble {
     });
   }
 
-  aboutToDisappear(): void {
+  private detachPlayback(): void {
     if (this.unsub !== null) {
       this.unsub();
       this.unsub = null;
     }
+  }
+
+  aboutToAppear(): void {
+    this.attachPlayback(this.msgId, this.durationSec, this.listened);
+  }
+
+  aboutToRecycle(): void {
+    this.detachPlayback();
+    this.playbackStatus = 'idle';
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const msgId: number | undefined = params['msgId'] as number | undefined;
+    const durationSec: number | undefined = params['durationSec'] as number | undefined;
+    const listened: boolean | undefined = params['listened'] as boolean | undefined;
+    if (msgId !== undefined) {
+      this.attachPlayback(msgId, durationSec ?? 0, listened ?? true);
+      return;
+    }
+    setTimeout((): void => {
+      this.attachPlayback(this.msgId, this.durationSec, this.listened);
+    }, 0);
+  }
+
+  aboutToDisappear(): void {
+    this.detachPlayback();
   }
 
   @Styles

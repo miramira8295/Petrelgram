@@ -14,26 +14,50 @@ import { progressFor, subscribeProgress } from '../../util/mediaProgressChannel'
 // 发布，只靠订阅会从 0 开始跳。
 @Component
 export struct LiveProgressRing {
-  fileId: number = 0;
-  initialPercent: number = 0;
-  ringSize: number = 36;
+  @Prop fileId: number = 0;
+  @Prop initialPercent: number = 0;
+  @Prop ringSize: number = 36;
   @State private percent: number = 0;
   private unsubProgress: (() => void) | null = null;
 
-  aboutToAppear(): void {
-    const known: number = progressFor(this.fileId);
-    this.percent = known > 0 ? known : this.initialPercent;
-    this.unsubProgress = subscribeProgress(this.fileId, (percent: number): void => {
+  private attach(fileId: number, initialPercent: number): void {
+    this.detach();
+    const known: number = progressFor(fileId);
+    this.percent = known > 0 ? known : initialPercent;
+    this.unsubProgress = subscribeProgress(fileId, (percent: number): void => {
       this.percent = percent;
     });
   }
 
-  // 不退订会让箭头函数一直持有本组件实例，组件无法释放。
-  aboutToDisappear(): void {
+  private detach(): void {
     if (this.unsubProgress !== null) {
       this.unsubProgress();
       this.unsubProgress = null;
     }
+  }
+
+  aboutToAppear(): void {
+    this.attach(this.fileId, this.initialPercent);
+  }
+
+  aboutToRecycle(): void {
+    this.detach();
+    this.percent = 0;
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const fileId: number | undefined = params['fileId'] as number | undefined;
+    const initialPercent: number | undefined = params['initialPercent'] as number | undefined;
+    if (fileId !== undefined) {
+      this.attach(fileId, initialPercent ?? 0);
+      return;
+    }
+    setTimeout((): void => { this.attach(this.fileId, this.initialPercent); }, 0);
+  }
+
+  // 不退订会让箭头函数一直持有本组件实例，组件无法释放。
+  aboutToDisappear(): void {
+    this.detach();
   }
 
   build() {

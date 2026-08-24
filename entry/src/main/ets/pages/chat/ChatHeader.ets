@@ -8,6 +8,7 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
+import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 
 // 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。
 //
@@ -43,7 +44,6 @@ export struct ChatHeader {
   @Prop isMuted: boolean;
   @Prop muteUpdating: boolean;
   @Prop profileOpening: boolean;
-  @Prop headerVisible: boolean;
   @Prop topSafe: number;
   @Prop pageClosing: boolean;
   @Link menuShow: boolean;
@@ -231,8 +231,8 @@ export struct ChatHeader {
         .layoutWeight(1);
       }
       .layoutWeight(1)
-      .constraintSize({ minHeight: CHAT_HEADER_ACTION_SIZE })
-      .padding({ left: 7, right: 12, top: 4, bottom: 4 })
+      .height(CHAT_HEADER_ACTION_SIZE)
+      .padding({ left: 7, right: 12 })
       .borderRadius(CHAT_HEADER_RADIUS)
       .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
       .stateStyles({ normal: this.identityNormalStyle, pressed: this.identityPressedStyle })
@@ -244,10 +244,6 @@ export struct ChatHeader {
       // 这一处的滑动开销必须实测，不能想当然。
       .backdropBlur(overlayBackdropBlur('bar'))
       .attributeModifier(materialModifier('bar'))
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
-        curve: Curve.EaseOut
-      })
       .accessibilityText(str('cp_header_a11y', this.titleText, this.subtitleText))
       .onClick((): void => {
         if (this.headerState === 'error') {
@@ -259,14 +255,9 @@ export struct ChatHeader {
       this.menuButton();
     }
     .width('100%')
+    .height(this.topSafe + CHAT_HEADER_BASE_HEIGHT)
     .padding({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
-    .opacity(this.headerVisible ? 1 : 0)
-    .translate({ y: this.headerVisible ? 0 : -6 })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
-      curve: Curve.EaseOut
-    })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -5 }))
       .animation({

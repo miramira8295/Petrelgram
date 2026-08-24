@@ -12,9 +12,9 @@ import {
 // frees pixels that are still on screen, so it is deliberately not something
 // each call site re-implements.
 //
-// Not @Reusable itself: it sits inside MessageBubble, which is, and the guide
-// warns that nesting reuse builds a pool per nested type and slows things down.
-// Recycling the parent still calls aboutToReuse here, which is all this needs.
+// Not @Reusable: path/size changes are handled by @Watch, while normal row
+// teardown releases the retained PixelMap through aboutToDisappear. Keeping
+// image ownership out of ArkUI's reuse pool also avoids nested cache lifetimes.
 @Component
 export struct CachedImage {
   @Prop @Watch('onSourceChanged') path: string;
@@ -52,7 +52,7 @@ export struct CachedImage {
     this.cancelPending();
   }
 
-  aboutToReuse(_params: Record<string, Object>): void {
+  aboutToReuse(params: Record<string, Object>): void {
     // The bitmap is NOT blanked here: doing that left the row empty until the
     // new decode landed, and the viewer's close animation shrinks back onto
     // this cell — onto nothing.
@@ -64,6 +64,12 @@ export struct CachedImage {
     // blank whenever a row was recycled while its decode was still in flight:
     // the decode got cancelled and no one ever asked again. start() is
     // idempotent, so an unnecessary call costs nothing.
+    const nextPath: string | undefined = params['path'] as string | undefined;
+    if (nextPath !== undefined && this.heldReq !== null && this.heldReq.path !== nextPath) {
+      // A recycled avatar/thumbnail must never display the previous row while
+      // the new decode is pending. Same-source reuse still keeps its bitmap.
+      this.drop();
+    }
     setTimeout((): void => { this.start(); }, 0);
   }
 
@@ -128,6 +134,11 @@ export struct CachedImage {
       return;
     }
     const req = this.request();
+    if (this.heldReq !== null && !this.sameAsHeld(req)) {
+      // Keep the retained handle until the replacement is ready, but stop
+      // exposing its pixels immediately: it belongs to another message.
+      this.pixelMap = undefined;
+    }
     if (this.sameAsHeld(req)) {
       return; // already showing exactly this
     }

@@ -26,6 +26,14 @@ export type DataSourceUpdateKind = 'none' | 'incremental' | 'reload';
 // so it can name the rows its operations affect.
 export type GroupKeyBuilder = (g: AlbumGroup) => string;
 
+// Initial-page staging republishes the same row signatures across several
+// bounded batches. Hashing every long signature again in assertNoDuplicateKeys
+// accounted for 18 ms in the measured open-chat window. Cache by the immutable
+// string value (not by MessageEntry identity), and cap retained strings so live
+// updates cannot grow this process-wide diagnostic cache without bound.
+const CONTENT_FINGERPRINT_CACHE_LIMIT: number = 256;
+const contentFingerprintCache: Map<string, string> = new Map<string, string>();
+
 // Short fingerprint of a row's content signature, for embedding in the
 // LazyForEach key.
 //
@@ -45,11 +53,20 @@ export type GroupKeyBuilder = (g: AlbumGroup) => string;
 // hash collision could at worst miss one rebuild of one row — it can never
 // mix two different rows.
 export function contentFingerprint(s: string): string {
+  const cached: string | undefined = contentFingerprintCache.get(s);
+  if (cached !== undefined) {
+    return cached;
+  }
   let h = 5381;
   for (let i = 0; i < s.length; i++) {
     h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
   }
-  return h.toString(36);
+  const fingerprint: string = h.toString(36);
+  if (contentFingerprintCache.size >= CONTENT_FINGERPRINT_CACHE_LIMIT) {
+    contentFingerprintCache.clear();
+  }
+  contentFingerprintCache.set(s, fingerprint);
+  return fingerprint;
 }
 
 // 同一个列表位置，内容可以不同。

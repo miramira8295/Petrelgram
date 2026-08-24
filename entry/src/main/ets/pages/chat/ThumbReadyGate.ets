@@ -11,36 +11,60 @@ import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 // 它只关心"到了没有"这一个布尔，图由谁画不归它管。
 @Component
 export struct ThumbReadyGate {
-  fileId: number = 0;
+  @Prop fileId: number = 0;
   // 调用方已知的路径（历史消息进入时可能本来就带着）。
-  initialPath: string = '';
+  @Prop initialPath: string = '';
   // 不必等待：没有缩略图可等（fileId 为 0），或者它已经失败了——这两种
   // 情况下等下去就是永远不显示。
-  ready: boolean = false;
+  @Prop ready: boolean = false;
   @BuilderParam content: () => void;
   @State private arrived: boolean = false;
   private unsubThumb: (() => void) | null = null;
 
-  aboutToAppear(): void {
+  private attach(fileId: number, initialPath: string): void {
+    this.detach();
     // 先读通道现值：滚回已经下好的那段历史时不会有新的发布，只靠订阅会一直
     // 是空。
-    this.arrived = thumbPathFor(this.fileId) !== '' || this.initialPath !== '';
+    this.arrived = thumbPathFor(fileId) !== '' || initialPath !== '';
     if (this.arrived) {
       return;
     }
-    this.unsubThumb = subscribeThumbPath(this.fileId, (path: string): void => {
+    this.unsubThumb = subscribeThumbPath(fileId, (path: string): void => {
       if (path !== '') {
         this.arrived = true;
       }
     });
   }
 
-  // 不退订会让箭头函数一直持有本组件实例，组件无法释放。
-  aboutToDisappear(): void {
+  private detach(): void {
     if (this.unsubThumb !== null) {
       this.unsubThumb();
       this.unsubThumb = null;
     }
+  }
+
+  aboutToAppear(): void {
+    this.attach(this.fileId, this.initialPath);
+  }
+
+  aboutToRecycle(): void {
+    this.detach();
+    this.arrived = false;
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const fileId: number | undefined = params['fileId'] as number | undefined;
+    const initialPath: string | undefined = params['initialPath'] as string | undefined;
+    if (fileId !== undefined) {
+      this.attach(fileId, initialPath ?? '');
+      return;
+    }
+    setTimeout((): void => { this.attach(this.fileId, this.initialPath); }, 0);
+  }
+
+  // 不退订会让箭头函数一直持有本组件实例，组件无法释放。
+  aboutToDisappear(): void {
+    this.detach();
   }
 
   build() {

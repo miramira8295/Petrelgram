@@ -3,6 +3,9 @@ import { sendableImage } from '@kit.ImageKit';
 import { taskpool } from '@kit.ArkTS';
 import { decodeSendable } from './pixelDecodeTask';
 import { logE } from './log';
+import {
+  IMAGE_HOLDER_RELEASE_BATCH, IMAGE_PIXEL_CACHE_MAX_BYTES
+} from './NativePixelBudget';
 
 // Decode local images ourselves instead of handing a file path to Image.
 //
@@ -54,9 +57,8 @@ export class PixelHandle {
   }
 }
 
-// Decoded pixels are expensive; this is a budget, not an item count. 64MB is
-// roughly a screen and a half of full-width chat photos.
-const BUDGET_BYTES: number = 64 * 1024 * 1024;
+// 低内存/后台期间会临时收紧；回前台恢复到统一预算表里的 48MiB。
+let budgetBytes: number = IMAGE_PIXEL_CACHE_MAX_BYTES;
 
 // A decode occupies a worker thread and finishes by handing a bitmap to the
 // render pipeline. Letting a fling queue up thirty of them at once means the
@@ -86,6 +88,14 @@ const pending: Map<string, PendingDecode> = new Map();
 const queue: PendingDecode[] = [];
 let activeDecodes: number = 0;
 let usedBytes: number = 0;
+// Component teardown can drop many image holders in one navigation frame. Calling
+// PixelMap.release synchronously for every holder made those native FreeBufferHandle
+// operations part of the chat-page exit frame. Keep reference accounting exact, but
+// drain holder releases in small event-loop batches so native frees cannot pile up in
+// one frame. Cache eviction still drops its own reference synchronously and therefore
+// keeps the byte budget truthful.
+const pendingHolderReleases: PixelHandle[] = [];
+let holderReleaseTimer: number = -1;
 
 function keyOf(req: PixelRequest): string {
   return `${req.path}@${Math.round(req.width)}x${Math.round(req.height)}`;
@@ -111,10 +121,25 @@ function decRef(entry: PixelHandle): void {
   }
 }
 
-function evictDownTo(limit: number): void {
+function drainHolderReleases(): void {
+  holderReleaseTimer = -1;
+  const count: number = Math.min(IMAGE_HOLDER_RELEASE_BATCH, pendingHolderReleases.length);
+  for (let i = 0; i < count; i++) {
+    const entry = pendingHolderReleases.shift();
+    if (entry !== undefined) {
+      decRef(entry);
+    }
+  }
+  if (pendingHolderReleases.length > 0) {
+    holderReleaseTimer = setTimeout(drainHolderReleases, 0);
+  }
+}
+
+function evictDownTo(limit: number, maxEntries: number = Number.MAX_SAFE_INTEGER): number {
+  let evicted: number = 0;
   for (const key of Array.from(cache.keys())) {
-    if (usedBytes <= limit) {
-      return;
+    if (usedBytes <= limit || evicted >= maxEntries) {
+      return evicted;
     }
     const entry = cache.get(key);
     if (entry === undefined || entry.pinned) {
@@ -122,10 +147,12 @@ function evictDownTo(limit: number): void {
     }
     cache.delete(key);
     usedBytes -= entry.bytes;
+    evicted++;
     // Drops the cache's own reference. Anything still on screen survives on
     // the holders' references and is freed when the last one lets go.
     decRef(entry);
   }
+  return evicted;
 }
 
 // Synchronous hit, for the first build pass of a row that has been shown
@@ -249,7 +276,7 @@ async function decode(req: PixelRequest, key: string): Promise<PixelHandle | und
     // before the caller retains) would otherwise free the entry that this very
     // call is about to return. Dropped once the caller has had its chance.
     entry.refs++;
-    evictDownTo(BUDGET_BYTES);
+    evictDownTo(budgetBytes);
     setTimeout((): void => { decRef(entry); }, 0);
     return entry;
   } catch (e) {
@@ -268,7 +295,10 @@ export function retainPixelMap(handle: PixelHandle): void {
 }
 
 export function releasePixelMap(handle: PixelHandle): void {
-  decRef(handle);
+  pendingHolderReleases.push(handle);
+  if (holderReleaseTimer === -1) {
+    holderReleaseTimer = setTimeout(drainHolderReleases, 0);
+  }
 }
 
 // Keep this bitmap for the life of the process. Only worth it for something
@@ -281,11 +311,18 @@ export function pinPixelMap(handle: PixelHandle): void {
   }
 }
 
-// Memory pressure (AbilityStage.onMemoryLevel) — drop everything not on screen.
-// 内存压力：把没在屏幕上的都交出去。钉住的（背景）不受影响——它是全屏位图，
-// 丢了下次开会话又要付 20ms。
-export function trimPixelCache(): void {
-  evictDownTo(0);
+// 收紧后，新完成的解码也按新上限入账，防止切后台时在途任务把缓存重新灌满。
+export function setPixelCacheBudget(bytes: number): void {
+  budgetBytes = Math.max(0, Math.min(IMAGE_PIXEL_CACHE_MAX_BYTES, Math.floor(bytes)));
+}
+
+// 只回收 LRU 自己持有、且未钉住的引用。maxEntries 让生命周期回调可以分批做，
+// 避免在主线程一次 release 几十张 PixelMap。
+export function trimPixelCache(targetBytes: number = 0,
+  maxEntries: number = Number.MAX_SAFE_INTEGER): number {
+  const target: number = Math.max(0, Math.floor(targetBytes));
+  const batch: number = Math.max(0, Math.floor(maxEntries));
+  return evictDownTo(target, batch);
 }
 
 export function pixelCacheBytes(): number {

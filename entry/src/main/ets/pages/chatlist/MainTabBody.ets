@@ -178,7 +178,8 @@ export struct MainTabBody {
     // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有
     // 东西可糊。
     .clip(false)
-    .edgeEffect(EdgeEffect.Spring)
+    // 归档入口依赖顶部回弹位移；即使会话不足一屏，也要允许下拉展开。
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .enableScrollInteraction(!this.menuOpen)
     .scrollBar(BarState.Off)
     .contentEndOffset(this.bottomSafe + 88)

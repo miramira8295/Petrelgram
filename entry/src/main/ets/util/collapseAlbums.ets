@@ -29,6 +29,11 @@ export interface AlbumGroup {
   dateLabel: string;       // date pill shown above this row when the day changes ('' = none)
   showAvatar: boolean;     // last row of a same-sender run — the only one with the avatar
   showSenderName: boolean; // first row of a same-sender run — the only one with the name
+  // Present only during ChatPage's first-frame staging. The data source keeps
+  // the full logical row count while the builder substitutes a fixed-height,
+  // node-light placeholder for this row; the marker is removed by targeted
+  // CHANGE notifications on the following frame.
+  initialDeferred?: boolean;
 }
 
 // Consecutive rows by the same sender form a "run": the sender name renders only

@@ -15,6 +15,7 @@ export struct GameBubble {
   @Prop maxWidth: number = 260;
   @State opening: boolean = false;
   private photoActionAtMs: number = 0;
+  private openingTimer: number = -1;
   onOpen: (messageId: number) => void = (_messageId: number): void => {};
   onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
 
@@ -61,9 +62,31 @@ export struct GameBubble {
     }
     this.opening = true;
     this.onOpen(this.messageId);
-    setTimeout((): void => {
+    this.openingTimer = setTimeout((): void => {
+      this.openingTimer = -1;
       this.opening = false;
     }, 900);
+  }
+
+  private resetTransientState(): void {
+    if (this.openingTimer !== -1) {
+      clearTimeout(this.openingTimer);
+      this.openingTimer = -1;
+    }
+    this.opening = false;
+    this.photoActionAtMs = 0;
+  }
+
+  aboutToRecycle(): void {
+    this.resetTransientState();
+  }
+
+  aboutToReuse(_params: Record<string, Object>): void {
+    this.resetTransientState();
+  }
+
+  aboutToDisappear(): void {
+    this.resetTransientState();
   }
 
   private retryCover(): void {

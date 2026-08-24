@@ -23,12 +23,11 @@ let liveTgs: number = 0;
 
 // Plays a Telegram TGS sticker (gzipped Lottie JSON) on a Canvas via
 // @ohos/lottie. On any decode failure it renders the raster thumbnail instead.
-// @Reusable: grid scrolling recycles cells instead of tearing down and
-// re-creating the Canvas + animation pipeline each time.
-@Reusable
+// Do not mark this child @Reusable: a reusable ancestor would create a nested
+// cache, while a normal ancestor cannot preserve this cache across row teardown.
 @Component
 export struct TgsStickerView {
-  @Prop tgsPath: string;
+  @Prop @Watch('onTgsPathChanged') tgsPath: string;
   @Prop thumbPath: string = '';
   @Prop boxWidth: number = 160;
   @Prop boxHeight: number = 160;
@@ -53,25 +52,19 @@ export struct TgsStickerView {
   private holdsSlot: boolean = false;
   private canvasReady: boolean = false;
   private startTimer: number = -1;
+  // Invalidates an async gunzip/JSON load when this component receives a new
+  // path. Without it, the old sticker could finish last and paint over the new
+  // value.
+  private loadSeq: number = 0;
 
-  aboutToReuse(params: Record<string, Object>): void {
-    const np = params['tgsPath'] as string | undefined;
-    if (np !== undefined) {
-      this.tgsPath = np;
-    }
-    const nt = params['thumbPath'] as string | undefined;
-    if (nt !== undefined) {
-      this.thumbPath = nt;
-    }
+  private onTgsPathChanged(): void {
+    this.loadSeq++;
+    this.stopAnim();
     this.disposed = false;
     this.failed = false;
     if (this.canvasReady) {
       this.scheduleStart();
     }
-  }
-
-  aboutToRecycle(): void {
-    this.stopAnim();
   }
 
   private onPowerChanged(): void {
@@ -96,11 +89,16 @@ export struct TgsStickerView {
 
   aboutToAppear(): void {
     probeHit('tgs.mount');
+    this.disposed = false;
+    if (this.canvasReady) {
+      this.scheduleStart();
+    }
   }
 
   aboutToDisappear(): void {
     probeHit('tgs.unmount');
     this.disposed = true;
+    this.loadSeq++;
     this.stopAnim();
   }
 
@@ -131,7 +129,9 @@ export struct TgsStickerView {
   }
 
   private async startAnimation(): Promise<void> {
-    this.stopAnim(); // reuse path: drop the previous sticker's animation first
+    const seq: number = ++this.loadSeq;
+    const path: string = this.tgsPath;
+    this.stopAnim();
     if (this.powerSuspended() || this.disposed) {
       return;
     }
@@ -141,8 +141,8 @@ export struct TgsStickerView {
     }
     this.holdsSlot = true;
     liveTgs++;
-    const json = await gunzipTgs(this.tgsPath);
-    if (this.disposed) {
+    const json = await gunzipTgs(path);
+    if (this.disposed || seq !== this.loadSeq || path !== this.tgsPath) {
       return;
     }
     if (json === '') {

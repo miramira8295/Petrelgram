@@ -3,6 +3,7 @@ import { image } from '@kit.ImageKit';
 import nativeWebm from 'libentry.so';
 import { ALPHA_TOTAL_MAX_BYTES, AlphaDecodePlan, planAlphaDecode } from '../util/webm/AlphaStickerBudget';
 import { demuxWebmAlpha, packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
+import { ALPHA_STICKER_CACHE_MAX_BYTES } from '../util/NativePixelBudget';
 
 // 透明 webm 贴纸的解码结果仓库。
 //
@@ -46,11 +47,17 @@ const MIN_BUCKET: number = 96;
 const MAX_BUCKET: number = 256;
 // 失败过的路径不再重试：解不了的贴纸每次挂载都重试一遍，等于把开销翻倍。
 const MAX_REJECTED: number = 400;
+// 一段贴纸可能有 90 多张 PixelMap；低内存回调里整段同步 release 仍会卡主线程。
+const RELEASE_BATCH_FRAMES: number = 8;
 
 const cache: Map<string, CacheEntry> = new Map();
 const inFlight: Map<string, Promise<DecodeOutcome>> = new Map();
 const rejected: Set<string> = new Set();
 let totalBytes: number = 0;
+// 生命周期内存压力会临时收紧；回前台恢复为统一预算里的 32MiB。
+let budgetBytes: number = ALPHA_STICKER_CACHE_MAX_BYTES;
+const pendingFrameReleases: image.PixelMap[] = [];
+let frameReleaseTimer: number = -1;
 // 一次只解一张：解码要开硬件解码器实例，几十个一起开会把设备的解码器占满，
 // 也会让工作线程互相抢 CPU。串行反而更快出第一张。
 let decodeChain: Promise<void> = Promise.resolve();
@@ -103,13 +110,48 @@ function markRejected(path: string): void {
   rejected.add(path);
 }
 
-function releaseEntry(entry: CacheEntry): void {
-  for (const frame of entry.clip.frames) {
-    try {
-      frame.release();
-    } catch (e) {
-      console.error(`AlphaStickerStore: pixelmap release failed: ${e}`);
+function releaseFrame(frame: image.PixelMap): void {
+  try {
+    frame.release();
+  } catch (e) {
+    console.error(`AlphaStickerStore: pixelmap release failed: ${e}`);
+  }
+}
+
+function releaseFrames(frames: image.PixelMap[]): void {
+  for (const frame of frames) {
+    releaseFrame(frame);
+  }
+}
+
+function drainFrameReleases(): void {
+  frameReleaseTimer = -1;
+  const count: number = Math.min(RELEASE_BATCH_FRAMES, pendingFrameReleases.length);
+  for (let i = 0; i < count; i++) {
+    const frame = pendingFrameReleases.shift();
+    if (frame !== undefined) {
+      releaseFrame(frame);
     }
+  }
+  if (pendingFrameReleases.length > 0) {
+    frameReleaseTimer = setTimeout(drainFrameReleases, 0);
+  }
+}
+
+function deferFrameReleases(frames: image.PixelMap[]): void {
+  for (const frame of frames) {
+    pendingFrameReleases.push(frame);
+  }
+  if (frameReleaseTimer === -1 && pendingFrameReleases.length > 0) {
+    frameReleaseTimer = setTimeout(drainFrameReleases, 0);
+  }
+}
+
+function releaseEntry(entry: CacheEntry, deferred: boolean): void {
+  if (deferred) {
+    deferFrameReleases(entry.clip.frames);
+  } else {
+    releaseFrames(entry.clip.frames);
   }
   totalBytes -= entry.bytes;
   if (totalBytes < 0) {
@@ -119,8 +161,10 @@ function releaseEntry(entry: CacheEntry): void {
 
 // 只回收没人引用的条目。正在播的贴纸被回收会当场变成破图，宁可暂时超预算，
 // 也不能让屏幕上的东西消失——真正的闸门是 planAlphaDecode 那一层的准入。
-function evictUntilFits(need: number): void {
-  while (totalBytes + need > ALPHA_TOTAL_MAX_BYTES) {
+function evictDownTo(limit: number, maxEntries: number = Number.MAX_SAFE_INTEGER,
+  deferred: boolean = false): number {
+  let evicted: number = 0;
+  while (totalBytes > limit && evicted < maxEntries) {
     let victimKey = '';
     let victimAt = Number.MAX_SAFE_INTEGER;
     cache.forEach((entry: CacheEntry, key: string) => {
@@ -130,14 +174,20 @@ function evictUntilFits(need: number): void {
       }
     });
     if (victimKey === '') {
-      return;
+      return evicted;
     }
     const victim = cache.get(victimKey);
     if (victim !== undefined) {
-      releaseEntry(victim);
+      releaseEntry(victim, deferred);
       cache.delete(victimKey);
+      evicted++;
     }
   }
+  return evicted;
+}
+
+function evictUntilFits(need: number): void {
+  evictDownTo(Math.max(0, budgetBytes - need));
 }
 
 export function alphaStickerFreeBytes(): number {
@@ -147,7 +197,7 @@ export function alphaStickerFreeBytes(): number {
       reclaimable += entry.bytes;
     }
   });
-  return Math.max(0, ALPHA_TOTAL_MAX_BYTES - totalBytes + reclaimable);
+  return Math.max(0, budgetBytes - totalBytes + reclaimable);
 }
 
 async function readFileBytes(path: string): Promise<Uint8Array | null> {
@@ -211,6 +261,12 @@ async function decodeReserved(clip: WebmAlphaClip, key: string): Promise<DecodeO
   };
   const bytes = plan.targetW * plan.targetH * 4 * frames.length;
   evictUntilFits(bytes);
+  // 预算可能在原生解码期间因为切后台/低内存回调而收紧。不能把旧计划的结果
+  // 强行塞回去；立即释放这批帧并让调用方走现有降级链路。
+  if (totalBytes + bytes > budgetBytes) {
+    releaseFrames(frames);
+    return outcome(null, false);
+  }
   totalBytes += bytes;
   cache.set(key, { clip: decoded, bytes: bytes, refs: 0, lastUsed: Date.now() });
   return outcome(decoded, false);
@@ -299,6 +355,24 @@ export function releaseAlphaSticker(clip: AlphaClip | null): void {
   entry.refs = Math.max(0, entry.refs - 1);
   entry.lastUsed = Date.now();
   if (entry.refs === 0) {
-    evictUntilFits(0);
+    // 如果预算已被生命周期回调收紧，组件消失这一拍也不能同步释放整段帧。
+    evictDownTo(budgetBytes, Number.MAX_SAFE_INTEGER, true);
   }
+}
+
+export function setAlphaStickerCacheBudget(bytes: number): void {
+  budgetBytes = Math.max(0, Math.min(ALPHA_TOTAL_MAX_BYTES, Math.floor(bytes)));
+}
+
+// 只碰 refs===0 的 LRU 条目，正在播放的贴纸不会被释放。一个条目可能包含很多
+// 帧，因此生命周期回调默认可以用 maxEntries=1 分批执行。
+export function trimAlphaStickerCache(targetBytes: number = 0,
+  maxEntries: number = Number.MAX_SAFE_INTEGER): number {
+  const target: number = Math.max(0, Math.floor(targetBytes));
+  const batch: number = Math.max(0, Math.floor(maxEntries));
+  return evictDownTo(target, batch, true);
+}
+
+export function alphaStickerCacheBytes(): number {
+  return totalBytes;
 }

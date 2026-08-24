@@ -4,7 +4,7 @@ import { FolderInfo } from '../../store/FolderStore';
 import { ChatListView } from './ChatListView';
 import { MainTabBody } from './MainTabBody';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
-import { ComponentContent, LengthMetrics } from '@kit.ArkUI';
+import { ComponentContent, FrameCallback, LengthMetrics } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
@@ -48,6 +48,27 @@ const FOLDER_BAR_SPACE: number = 54;
 // 横条整体仍是 FOLDER_BAR_HEIGHT(44)，多出来的那 16 是上下留白。
 const FOLDER_CHIP_HEIGHT: number = 28;
 const FOLDER_SWITCH_DURATION: number = 250;
+
+// The route table loads ChatPage dynamically. Queue its module graph immediately
+// after the chat list's first frame instead of waiting a fixed 1200 ms: a quick
+// tap could beat that timer and pay module evaluation inside the navigation
+// frame. ChatPage statically imports ChatHeader, so resolving this import warms
+// both modules. The process-wide guard also covers tab/page recreation.
+let chatModuleWarmupStarted: boolean = false;
+
+class ChatModuleWarmupFrameCallback extends FrameCallback {
+  onFrame(_frameTimeInNano: number): void {
+    if (chatModuleWarmupStarted) {
+      return;
+    }
+    chatModuleWarmupStarted = true;
+    import('../chat/ChatPage').catch((): void => {
+      // A later ChatListPage appearance may retry. Navigation itself remains
+      // the authoritative fallback and will still load the module on demand.
+      chatModuleWarmupStarted = false;
+    });
+  }
+}
 
 // 分栏时左栏（navBar）占窗口宽度的比例。官方大屏 UX 标准 3.2.2.4 的硬约束是
 // 侧边栏不超过窗口宽度 40%、内容区至少 60%；取 1/3 留一档余量，拖拽上限才顶到
@@ -250,13 +271,9 @@ export struct ChatListPage {
     // 上一轮（退登/换账号）留在 AppStorage 里的 false 会让 dock 一直藏着——
     // onNavBarStateChange 只在**变化**时触发，不会替我们补一发 true。
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, true);
-    // 预热聊天详情页的模块图。首次 router.pushUrl 要现场加载并执行 ChatPage
-    // 及其依赖链（近万行的页面 + MessageBubble + lottie 等），这笔一次性成本
-    // 正是"第一次进聊天卡、之后都不卡"的来源。首页落地后空闲时提前把模块
-    // 拉起来，首次导航就只剩建页本身。
-    setTimeout((): void => {
-      import('../chat/ChatPage').catch((): void => { /* 预热失败无碍，首次导航照常加载 */ });
-    }, 1200);
+    // 先让会话列表首帧落地，紧接着预热聊天详情页模块。固定等 1200ms 会让快速
+    // 点击穿过预热窗口；帧回调既避开列表首帧，又保证正常的人手点击前已经开始。
+    this.getUIContext().postFrameCallback(new ChatModuleWarmupFrameCallback());
     this.startClock();
     if (this.searchOpeningTimer !== -1) {
       clearTimeout(this.searchOpeningTimer);

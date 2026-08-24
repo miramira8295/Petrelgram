@@ -7,12 +7,13 @@
 // 救命通道彻底断了。所以这里只依赖 CoreFileKit / NetworkKit / ApiCredentials
 // （后者只依赖同目录的 credCodec，没有别的）。
 //
-// **只留不含用户内容的字段。** 崩溃事件里还有两样东西刻意不碰：
+// **只留不含用户内容的字段。** 崩溃事件里的 hilog 刻意不碰：
 //   hilog —— 崩溃前最多 1000 行本应用的流水日志。我们的日志里有 [StoreDiag]
 //            这类消息 id，整段留下来就是把聊天痕迹落盘。
-//   external_log —— 故障日志全文，同样含 HiLog 段。
-// 留下的是时间、版本、崩溃类型、前后台、进程存活时长、异常名/信息/堆栈。堆栈
-// 是我们自己的代码路径，不含用户数据，而它恰恰是唯一真正有用的部分。
+// NativeCrash 的 exception.stack 经常是空的，而完整 external_log 前半段有唯一
+// 可定位的故障线程。这里只提取 Reason / LastFatalMessage / Fault thread info，遇到
+// Registers 就停止，绝不读取或保存后面的 HiLog 段；处理后删除原文件释放系统
+// 为 external_log 预留的有限空间。
 
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { http } from '@kit.NetworkKit';
@@ -22,7 +23,9 @@ import { logE } from '../util/log';
 // 留几条。崩溃是低频事件，留太多只是占地方；留太少又会被一次连环崩溃冲掉。
 const MAX_RECORDS: number = 10;
 // 堆栈截断长度。够定位到我们自己的帧，又不至于把整个 so 的地址表存下来。
-const MAX_STACK_CHARS: number = 4000;
+const MAX_STACK_CHARS: number = 12000;
+// 故障线程总在日志开头；限制读取前缀也从物理上保证不会碰到末尾的 HiLog。
+const MAX_EXTERNAL_PREFIX_BYTES: number = 256 * 1024;
 const FILE_NAME: string = 'crash-records.json';
 // 两个观察者的名字必须不同，见文件头。扩展进程里用的是 DELAYED 这个名字。
 export const NORMAL_WATCHER: string = 'petrelgramCrashWatcher';
@@ -94,17 +97,122 @@ function textOf(value: Object | undefined): string {
   return value === undefined || value === null ? '' : `${value}`;
 }
 
+export interface NativeCrashDetails {
+  message: string;
+  stack: string;
+}
+
+// Pure parser kept exported for unit tests. Only structural crash lines are
+// admitted; page history, registers, memory maps and HiLog are all excluded.
+export function structuralNativeCrashDetails(text: string): NativeCrashDetails {
+  const lines: string[] = text.replace(/\r/g, '').split('\n');
+  let reason: string = '';
+  let fatal: string = '';
+  let inFaultThread: boolean = false;
+  const frames: string[] = [];
+  for (const raw of lines) {
+    const line: string = raw.trim();
+    if (line.startsWith('Reason:')) {
+      reason = line.substring('Reason:'.length).trim();
+      continue;
+    }
+    if (line.startsWith('LastFatalMessage:')) {
+      fatal = line.substring('LastFatalMessage:'.length).trim();
+      continue;
+    }
+    if (line === 'Fault thread info:') {
+      inFaultThread = true;
+      frames.push(line);
+      continue;
+    }
+    if (!inFaultThread) {
+      continue;
+    }
+    if (line.startsWith('Registers:') || line.startsWith('Other thread info:') ||
+      line.startsWith('Maps:') || line.startsWith('HiLog:')) {
+      break;
+    }
+    if (line.startsWith('Tid:') || line.startsWith('#')) {
+      frames.push(line);
+    }
+  }
+  const message: string = fatal !== '' ? fatal : reason;
+  const stack: string = frames.join('\n');
+  return {
+    message,
+    stack: stack.length > MAX_STACK_CHARS ? stack.substring(0, MAX_STACK_CHARS) : stack
+  };
+}
+
+function externalLogPaths(params: Record<string, Object>): string[] {
+  const raw = params['external_log'] as Array<Object> | undefined;
+  if (raw === undefined || !Array.isArray(raw)) {
+    return [];
+  }
+  const paths: string[] = [];
+  for (const value of raw) {
+    const path: string = textOf(value);
+    if (path !== '') {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+function consumeExternalLogs(params: Record<string, Object>, parseNative: boolean): NativeCrashDetails {
+  let details: NativeCrashDetails = { message: '', stack: '' };
+  for (const path of externalLogPaths(params)) {
+    let readSucceeded: boolean = false;
+    if (parseNative) {
+      try {
+        const text: string = fs.readTextSync(path, { length: MAX_EXTERNAL_PREFIX_BYTES });
+        readSucceeded = true;
+        if (details.stack === '') {
+          details = structuralNativeCrashDetails(text);
+        }
+      } catch (e) {
+        logE(`crashReport external log read failed: ${e}`);
+      }
+    } else {
+      // The event fields already contain a JS stack. The external file is not
+      // needed and deliberately remains unread because its tail contains HiLog.
+      readSucceeded = true;
+    }
+    if (readSucceeded) {
+      try {
+        if (fs.accessSync(path)) {
+          fs.unlinkSync(path);
+        }
+      } catch (e) {
+        logE(`crashReport external log cleanup failed: ${e}`);
+      }
+    }
+  }
+  return details;
+}
+
 function recordOf(params: Record<string, Object>): CrashRecord {
   const exception = params['exception'] as Record<string, Object> | undefined;
-  const stack: string = exception !== undefined ? textOf(exception['stack']) : '';
+  const crashType: string = textOf(params['crash_type']);
+  let exceptionMessage: string = exception !== undefined ? textOf(exception['message']) : '';
+  let stack: string = exception !== undefined ? textOf(exception['stack']) : '';
+  const nativeDetails: NativeCrashDetails = consumeExternalLogs(
+    params, crashType === 'NativeCrash' && (exceptionMessage === '' || stack === '')
+  );
+  if (exceptionMessage === '') {
+    exceptionMessage = nativeDetails.message;
+  }
+  if (stack === '') {
+    stack = nativeDetails.stack;
+  }
   return {
     time: Number(textOf(params['time'])) || 0,
-    crashType: textOf(params['crash_type']),
+    crashType,
     appVersion: textOf(params['bundle_version']),
     foreground: `${params['foreground']}` === 'true',
     lifeTimeSec: Number(textOf(params['process_life_time'])) || 0,
     exceptionName: exception !== undefined ? textOf(exception['name']) : '',
-    exceptionMessage: exception !== undefined ? textOf(exception['message']) : '',
+    exceptionMessage,
     stack: stack.length > MAX_STACK_CHARS ? stack.substring(0, MAX_STACK_CHARS) : stack,
     uploaded: false
   };

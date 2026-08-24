@@ -53,6 +53,20 @@ function isLink(t: string): boolean {
 const AUTO_LINK_RE: RegExp =
   /(https?:\/\/[^\s<>]+|(?:t\.me|telegram\.me|telegram\.dog)\/@?[A-Za-z0-9_+/?=&%-]+|www\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:\/[^\s<>]*)?|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|@[A-Za-z0-9_]{3,32}|#[A-Za-z0-9_\u4e00-\u9fff]+|\$[A-Za-z][A-Za-z0-9_]*)/gi;
 
+// The overwhelmingly common chat row is one ordinary, unstyled text run.
+// Let callers identify it without constructing RichSegment/RichRun arrays.
+// Keep this check tied to AUTO_LINK_RE: entity-less links still need the rich
+// renderer so they remain tappable.
+export function isUnformattedPlainText(text: string, entities: TdObject[]): boolean {
+  if (text.trim() === '' || entities.length !== 0) {
+    return false;
+  }
+  AUTO_LINK_RE.lastIndex = 0;
+  const hasAutoLink: boolean = AUTO_LINK_RE.test(text);
+  AUTO_LINK_RE.lastIndex = 0;
+  return !hasAutoLink;
+}
+
 function trimAutoLinkToken(token: string): string {
   let out = token;
   while (out.length > 0 && /[.,!?;:，。！？；：)\]}》」』]$/.test(out)) {

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <system_error>
 #include <thread>
 
 extern "C" {
@@ -311,21 +312,46 @@ void ReceiveLoop() {
 napi_value TdInit(napi_env env, napi_callback_info info) {
     size_t argc = 1;
     napi_value args[1] = {nullptr};
-    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        napi_throw_type_error(env, nullptr, "tdInit expects one receive callback");
+        return nullptr;
+    }
     if (g_created) {
         napi_throw_error(env, nullptr, "tdInit called twice");
         return nullptr;
     }
+    napi_valuetype callbackType = napi_undefined;
+    if (napi_typeof(env, args[0], &callbackType) != napi_ok || callbackType != napi_function) {
+        napi_throw_type_error(env, nullptr, "tdInit expects one receive callback");
+        return nullptr;
+    }
     napi_value resourceName;
-    napi_create_string_utf8(env, "tdReceive", NAPI_AUTO_LENGTH, &resourceName);
-    napi_create_threadsafe_function(env, args[0], nullptr, resourceName, 0, 1, nullptr, nullptr,
-                                    nullptr, CallJsOnReceive, &g_onReceive);
+    if (napi_create_string_utf8(env, "tdReceive", NAPI_AUTO_LENGTH, &resourceName) != napi_ok ||
+        napi_create_threadsafe_function(env, args[0], nullptr, resourceName, 0, 1, nullptr, nullptr,
+                                        nullptr, CallJsOnReceive, &g_onReceive) != napi_ok) {
+        g_onReceive = nullptr;
+        napi_throw_error(env, "TD_RECEIVER_CREATE_FAILED", "failed to create TD receive callback");
+        return nullptr;
+    }
     // Route TDLib's internal log (verbosity <= 2: fatal/error/warning) to hilog.
     td_set_log_message_callback(2, TdLogCallback);
+    // Start the receiver before allocating a TD client id. std::thread throws
+    // std::system_error when the process cannot create another thread; letting
+    // that cross the N-API boundary invokes std::terminate and kills the app.
+    g_running.store(true);
+    try {
+        g_receiveThread = std::thread(ReceiveLoop);
+    } catch (const std::system_error &error) {
+        g_running.store(false);
+        napi_release_threadsafe_function(g_onReceive, napi_tsfn_abort);
+        g_onReceive = nullptr;
+        OH_LOG_Print(LOG_APP, LOG_ERROR, 0x0000, "TDLib",
+                     "tdInit receive thread failed: %{public}s", error.what());
+        napi_throw_error(env, "TD_THREAD_CREATE_FAILED", error.what());
+        return nullptr;
+    }
     g_clientId = td_create_client_id();
     g_created = true;
-    g_running.store(true);
-    g_receiveThread = std::thread(ReceiveLoop);
     // A newly created client id is inert until the first request activates it and
     // starts the authorization flow; kick it with a cheap getOption.
     td_send(g_clientId, "{\"@type\":\"getOption\",\"name\":\"version\"}");
@@ -379,6 +405,7 @@ napi_value TdDestroy(napi_env env, napi_callback_info info) {
         napi_release_threadsafe_function(g_onReceive, napi_tsfn_release);
         g_onReceive = nullptr;
     }
+    g_clientId = 0;
     return nullptr;
 }
 

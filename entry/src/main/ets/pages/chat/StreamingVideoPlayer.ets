@@ -166,11 +166,53 @@ export struct StreamingVideoPlayer {
   }
 
   aboutToDisappear(): void {
+    this.deactivate();
+  }
+
+  aboutToRecycle(): void {
+    this.deactivate();
+  }
+
+  aboutToReuse(_params: Record<string, Object>): void {
+    this.release();
+    this.resetReusedUi();
+    this.active = true;
+    if (this.surfaceContext !== null) {
+      this.retryTimer = setTimeout((): void => {
+        this.retryTimer = -1;
+        if (this.active && this.surfaceContext !== null) {
+          this.initPlayer(this.surfaceContext);
+        }
+      }, 0);
+    }
+  }
+
+  private deactivate(): void {
     this.active = false;
     this.isPlaying = false;
     this.syncAudioFocus();
     mediaPlaybackKeepAlive.release('video');
     this.release();
+  }
+
+  private resetReusedUi(): void {
+    this.status = str('player_buffering_dots');
+    this.hasError = false;
+    this.errorDetail = '';
+    this.isPrepared = false;
+    this.videoVisible = false;
+    this.bufferedPercent = 0;
+    this.downloadSpeed = 0;
+    this.lastBufferedBytes = 0;
+    this.lastSpeedSampleMs = 0;
+    this.currentTimeMs = 0;
+    this.durationMs = 0;
+    this.dragging = false;
+    this.dragValueMs = 0;
+    this.isCompleted = false;
+    this.decodedAspectRatio = 0;
+    this.seekFeedbackVisible = false;
+    this.speedFeedbackVisible = false;
   }
 
   // 播放状态变化时同步"视频后台播放"保活。开关关闭时不挂任务，**并且**由

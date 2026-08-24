@@ -5,7 +5,7 @@ import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO, slotKey } from './playSlot
 import { VideoBubbleSurface } from './VideoBubbleSurface';
 import { TdObject } from '../../tdkit/TdTypes';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
-import { AvatarView } from '../chatlist/AvatarView';
+import { CachedImage } from '../common/CachedImage';
 import { actionMenuRow } from './ActionMenuRow';
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_REDUCE_ANIM, TEXT_SIZE_DEFAULT, RADIUS_DEFAULT,
@@ -37,7 +37,9 @@ import { GiftBubble } from './GiftBubble';
 import { GiveawayBubble } from './GiveawayBubble';
 import { formatClockTime } from '../../util/formatTime';
 import { formatFileSize } from '../../util/formatFileSize';
-import { messageUrls, parseFormattedText, RichSegment, RichRun } from '../../util/richText';
+import {
+  isUnformattedPlainText, messageUrls, parseFormattedText, RichSegment, RichRun
+} from '../../util/richText';
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
@@ -79,59 +81,91 @@ const EDITABLE_CAPTION_TYPES: string[] = ['photo', 'video', 'file', 'audio', 'vo
 const SWIPE_REPLY_MAX: number = -56;
 const SWIPE_REPLY_TRIGGER: number = -40;
 
-// NOT @Reusable, deliberately.
-//
-// It was, keyed by contentType, and it corrupted rows: text going missing,
-// avatars in the wrong place, messages showing the wrong position — most
-// visible right after a fast jump, when many rows are recycled at once.
-//
-// The reason is structural. @Reusable requires the component tree to stay the
-// same across a reuse, and to split the pool by reuseId wherever it does not.
-// Within a single contentType this build still branches on a reply quote, a
-// forward header, the sender name, the avatar, a link preview, reactions,
-// inline buttons, a date pill and an unread divider — the guide's "reuseId too
-// coarse" case, and enumerating those combinations would land squarely in its
-// "reuseId too fine" case instead, where the pool almost never hits.
-//
-// Making this reusable properly means splitting the bubble into per-part
-// components and reusing those, which is a rewrite rather than a decorator.
+// MessageBubble remains the complete renderer. ChatPage mounts it through a
+// thin shell that owns the page-level callbacks. Component-level reuse is
+// deliberately disabled on the message tree: HarmonyOS 7.0 can double-free a
+// TextPattern while purging that cache as ChatPage is destroyed.
 
 // 群消息的发送者头像。路径经 senderAvatarChannel 旁路直达这里就地刷新，
 // 不触发行重建 —— 头像路径已从行的内容 key 里摘除。
 @Component
 struct LiveSenderAvatar {
-  senderId: number = 0;
-  senderIsUser: boolean = true;
-  initialPath: string = '';
-  initials: string = '?';
+  @Prop senderId: number = 0;
+  @Prop senderIsUser: boolean = true;
+  @Prop initialPath: string = '';
+  @Prop initials: string = '?';
   // 评论行的头像栈比发送者头像小一圈。
   // 群聊里发送者头像的直径。占位列宽 = 它 + 6 的右外边距，两处必须一起改，
   // 否则连续消息的气泡和带头像那行会错开。
-  avatarSize: number = 38;
+  @Prop avatarSize: number = 38;
   @State private path: string = '';
   private unsubAvatar: (() => void) | null = null;
 
-  aboutToAppear(): void {
-    const key: string = senderChannelKey(this.senderId, this.senderIsUser);
+  private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
+    this.detachAvatarChannel();
+    const key: string = senderChannelKey(senderId, senderIsUser);
     const known: string = senderAvatarFor(key);
-    this.path = known !== '' ? known : this.initialPath;
+    this.path = known !== '' ? known : initialPath;
     this.unsubAvatar = subscribeSenderAvatar(key, (path: string): void => {
       this.path = path;
     });
   }
 
-  aboutToDisappear(): void {
+  private detachAvatarChannel(): void {
     if (this.unsubAvatar !== null) {
       this.unsubAvatar();
       this.unsubAvatar = null;
     }
   }
 
+  aboutToAppear(): void {
+    this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
+  }
+
+  aboutToRecycle(): void {
+    this.detachAvatarChannel();
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const nextId: number | undefined = params['senderId'] as number | undefined;
+    const nextIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
+    const nextPath: string | undefined = params['initialPath'] as string | undefined;
+    if (nextId !== undefined && nextIsUser !== undefined) {
+      this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');
+      return;
+    }
+    // Child @Prop refreshes may land after this callback on some runtime
+    // revisions. Reconnect once they have settled instead of retaining the
+    // recycled row's sender channel.
+    setTimeout((): void => {
+      this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
+    }, 0);
+  }
+
+  aboutToDisappear(): void {
+    this.detachAvatarChannel();
+  }
+
   build() {
-    AvatarView({
-      avatarPath: this.path, initials: this.initials,
-      colorSeed: this.senderId, avatarSize: this.avatarSize
-    });
+    // One fixed subtree for initials and decoded bitmap. The old AvatarView
+    // changed branches between empty/non-empty paths; under a recycled message
+    // shell that both defeated reuse and accounted for 110 ms of build/destroy
+    // work in the captured scroll trace.
+    Stack() {
+      Circle({ width: this.avatarSize, height: this.avatarSize })
+        .fill(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length]);
+      Text(this.initials)
+        .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium);
+      CachedImage({
+        path: this.path,
+        boxWidth: this.avatarSize,
+        boxHeight: this.avatarSize,
+        radius: this.avatarSize / 2,
+        fit: ImageFit.Cover
+      })
+        .visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
+    }
+    .width(this.avatarSize).height(this.avatarSize);
   }
 }
 
@@ -176,7 +210,7 @@ export struct MessageBubble {
   @Prop albumVideoFileSizes: number[];
   @Prop albumVideoMimeTypes: string[];
   @Prop albumCaption: string;
-  albumCaptionEntities: TdObject[] = [];
+  @Prop albumCaptionEntities: TdObject[] = [];
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 手势方案（老交互 / 新交互），设置里改完立即生效，不用重进页面。
   @StorageProp(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
@@ -302,15 +336,15 @@ export struct MessageBubble {
   onCopyText: (messageId: number) => void = (): void => {};
   onCopyCode: (text: string) => void = (): void => {};
   onCopyLink: (messageId: number) => void = (): void => {};
-  onForwardMsg: (messageId: number) => void = (): void => {};
+  onForwardMsg: (messageIds: number[]) => void = (): void => {};
   // 直接转发到收藏（和自己的会话），不弹选择面板。
-  onSaveToSaved: (messageId: number) => void = (): void => {};
+  onSaveToSaved: (messageIds: number[]) => void = (): void => {};
   // 转发回本会话——群里俗称"复读"。
-  onRepeatMsg: (messageId: number) => void = (): void => {};
+  onRepeatMsg: (messageIds: number[]) => void = (): void => {};
   // 在本会话里筛出这个发送者的全部消息。
   onViewSenderHistory: (senderId: number) => void = (): void => {};
   onReportMsg: (messageId: number) => void = (): void => {};
-  onSelectMsg: (messageId: number) => void = (): void => {};
+  onSelectMsg: (messageIds: number[]) => void = (): void => {};
   onDeleteMsg: (messageId: number) => void = (): void => {};
   // "转发自 X" tapped: (originChatId, originMsgId, originUserId) — chat ids for a
   // channel/chat origin, user id for a user origin.
@@ -381,20 +415,58 @@ export struct MessageBubble {
     return this.msg.contentType === 'video' && !this.msg.isAnimation;
   }
 
-  aboutToAppear(): void {
+  private attachMessageChannels(message: MessageEntry): void {
+    this.detachMessageChannels();
     // 发送状态不在行 key 里，行不会因为它重建——图标得自己订阅自己更新。
     // 与 LiveThumbImage / LiveProgressRing 同一套办法；先读通道现值，没有
     // 才用 @Prop 带来的初值（滚回历史消息时不会有新的发布）。
-    const known: string = sendStateFor(this.msg.rowId);
-    this.liveSendState = known !== '' ? known : this.msg.sendState;
-    this.unsubSendState = subscribeSendState(this.msg.rowId, (state: string): void => {
+    const known: string = sendStateFor(message.rowId);
+    this.liveSendState = known !== '' ? known : message.sendState;
+    this.unsubSendState = subscribeSendState(message.rowId, (state: string): void => {
       this.liveSendState = state;
     });
     // 「翻译中 / 翻译失败」是瞬时态，不进行 key（见 translationChannel），
     // 所以行不会因为它们重建——这里自己订阅自己更新。
-    this.translationStatus = translationStatusFor(this.msg.id);
-    this.unsubTranslation = subscribeTranslationStatus(this.msg.id,
+    this.translationStatus = translationStatusFor(message.id);
+    this.unsubTranslation = subscribeTranslationStatus(message.id,
       (next: TranslationStatus | null): void => { this.translationStatus = next; });
+  }
+
+  private detachMessageChannels(): void {
+    if (this.unsubSendState !== null) {
+      this.unsubSendState();
+      this.unsubSendState = null;
+    }
+    if (this.unsubTranslation !== null) {
+      this.unsubTranslation();
+      this.unsubTranslation = null;
+    }
+  }
+
+  private resetReusedState(next: MessageEntry): void {
+    this.bubbleW = 0;
+    this.menuOffsetX = 0;
+    this.forwardLabelW = 0;
+    this.senderLabelW = 0;
+    this.commentsRowW = 0;
+    this.labelWidthRowId = next.rowId;
+    this.revealedSpoilerKeys = [];
+    this.expandedQuoteKeys = [];
+    this.mediaVisible = true;
+    this.stickerPlaybackFailed = false;
+    this.linkPreviewOpening = false;
+    this.msgContextMenuShown = false;
+    this.swipeReplyX = 0;
+    this.gestureClaimed = false;
+    this.mediaCenterY = 0;
+    this.albumCellCenterY.clear();
+    this.albumWasCompetingVideo.clear();
+    this.wasCompetingVideo = next.contentType === 'video' && !next.isAnimation;
+    this.videoNotePlaying = false;
+  }
+
+  aboutToAppear(): void {
+    this.attachMessageChannels(this.msg);
     this.requestAutoplayDownload();
     // 只记录初始状态，不在这里上报——上报的语义是「不再参与竞选」，首次挂载时
     // 谈不上「不再」。真正的上报发生在 aboutToDisappear（组件销毁）和
@@ -406,14 +478,11 @@ export struct MessageBubble {
   }
 
   aboutToDisappear(): void {
-    if (this.unsubSendState !== null) {
-      this.unsubSendState();
-      this.unsubSendState = null;
-    }
-    if (this.unsubTranslation !== null) {
-      this.unsubTranslation();
-      this.unsubTranslation = null;
-    }
+    this.detachMessageChannels();
+    this.reportCompetingMediaGone();
+  }
+
+  private reportCompetingMediaGone(): void {
     // LazyForEach 回收组件时若不上报，候选表里会留下永远不消失的幽灵条目。
     if (this.isCompetingVideo()) {
       this.onMediaGone(this.msg.id, -1);
@@ -423,6 +492,38 @@ export struct MessageBubble {
         this.onMediaGone(this.albumMemberIdAt(i), i);
       }
     }
+  }
+
+  // Keep this cleanup defensive in case the component is hosted by a reusable
+  // parent elsewhere. ChatPage itself currently does not use that path.
+  aboutToRecycle(): void {
+    this.detachMessageChannels();
+    this.reportCompetingMediaGone();
+    this.translationStatus = null;
+    this.msgContextMenuShown = false;
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
+    if (next === undefined) {
+      // @Prop refreshes land after this callback. The normal wrapper always
+      // supplies msg in params; keep a safe fallback for framework variations.
+      setTimeout((): void => {
+        this.resetReusedState(this.msg);
+        this.attachMessageChannels(this.msg);
+        this.requestAutoplayDownload();
+      }, 0);
+      return;
+    }
+    this.resetReusedState(next);
+    this.attachMessageChannels(next);
+    const nextAlbum: boolean[] | undefined = params['albumIsVideo'] as boolean[] | undefined;
+    if (nextAlbum !== undefined) {
+      for (let i = 0; i < nextAlbum.length; i++) {
+        this.albumWasCompetingVideo.set(i, nextAlbum[i]);
+      }
+    }
+    setTimeout((): void => { this.requestAutoplayDownload(); }, 0);
   }
 
   // "替换媒体"（约 1511 行附近的菜单项）能在同一条消息 id 上把 contentType 从
@@ -588,7 +689,7 @@ export struct MessageBubble {
       return;
     }
     if (policy.longPressSelects) {
-      this.onSelectMsg(this.msg.id);
+      this.onSelectMsg(this.albumMemberIds);
     }
   }
 
@@ -902,19 +1003,25 @@ export struct MessageBubble {
 
   @Builder
   statusIcon() {
-    if (this.liveSendState === 'sending') {
-      SymbolGlyph($r('sys.symbol.clock')).fontSize(12).fontColor([COLOR_TEXT_SECONDARY]);
-    } else if (this.liveSendState === 'sent') {
-      SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_TEXT_SECONDARY]);
-    } else if (this.liveSendState === 'read') {
-      // Double check: two overlapped checkmarks.
-      Row() {
-        SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_PRIMARY]);
-        SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_PRIMARY])
-          .margin({ left: -8 });
-      }
-    } else if (this.liveSendState === 'failed') {
-      SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(12).fontColor([Color.Red]);
+    // Keep one stable node tree across sending/sent/read/failed. A send-state
+    // update is delivered through a side channel without changing the list row
+    // key; conditionally replacing SymbolGlyph with Row made a pooled plain-text
+    // row enter the cache with a different structure than its reuseId promised.
+    Row() {
+      SymbolGlyph($r(this.liveSendState === 'sending'
+        ? 'sys.symbol.clock'
+        : (this.liveSendState === 'failed'
+          ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
+        .fontSize(12)
+        .fontColor([this.liveSendState === 'failed' ? Color.Red
+          : (this.liveSendState === 'read' ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)])
+        .visibility(this.liveSendState === 'none' || this.liveSendState === ''
+          ? Visibility.None : Visibility.Visible);
+      // The second, overlapped check is present in every state and only shown
+      // for read receipts, so reuse never creates or destroys it.
+      SymbolGlyph($r('sys.symbol.checkmark'))
+        .fontSize(12).fontColor([COLOR_PRIMARY]).margin({ left: -8 })
+        .visibility(this.liveSendState === 'read' ? Visibility.Visible : Visibility.None);
     }
   }
 
@@ -1009,6 +1116,9 @@ export struct MessageBubble {
   }
 
   private formattedTextHasLink(text: string, entities: TdObject[]): boolean {
+    if (isUnformattedPlainText(text, entities)) {
+      return false;
+    }
     const segments = parseFormattedText(text, entities);
     for (const segment of segments) {
       for (const run of segment.runs) {
@@ -1116,6 +1226,47 @@ export struct MessageBubble {
     .lineHeight(this.msgTextSize * 1.34)
     .wordBreak(WordBreak.BREAK_WORD)
     .constraintSize({ maxWidth });
+  }
+
+  // Common first-screen path: one Text node instead of
+  // Column -> ForEach(segment) -> Text -> ForEach(run). The full renderer is
+  // retained for links, formatting, replies, previews, translations and
+  // reactions, so this changes layout work rather than message behaviour.
+  private useDirectPlainText(): boolean {
+    return this.msg.contentType === 'text' && this.albumPaths.length <= 1 &&
+      this.msg.reactions.length === 0 && this.msg.translatedText === '' &&
+      this.translationStatus === null &&
+      !this.hasLinkPreview() &&
+      isUnformattedPlainText(this.msg.text, this.msg.textEntities);
+  }
+
+  @Builder
+  directPlainTextBody() {
+    Text() {
+      Span(this.msg.text).fontColor(COLOR_BUBBLE_TEXT);
+      Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
+    }
+    .fontSize(this.msgTextSize)
+    .lineHeight(this.msgTextSize * 1.34)
+    .wordBreak(WordBreak.BREAK_WORD)
+    .constraintSize({
+      minWidth: this.measuredTimeLayerWidth(),
+      maxWidth: this.inlineMaxW()
+    });
+  }
+
+  @Builder
+  directPlainText() {
+    if (this.msg.replyToMessageId !== 0) {
+      Column() {
+        this.replyQuote();
+        this.directPlainTextBody();
+      }
+      .alignItems(HorizontalAlign.Start)
+      .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
+    } else {
+      this.directPlainTextBody();
+    }
   }
 
   // Render TDLib formatted text: inline bold/link runs, pre/code blocks and
@@ -2065,14 +2216,15 @@ export struct MessageBubble {
         });
       }
       actionMenuRow('sys.symbol.link', str('mb_copy_link'), false, () => { this.onCopyLink(this.msg.id); });
-      actionMenuRow('sys.symbol.arrowshape_turn_up_right', str('mb_forward'), false, () => { this.onForwardMsg(this.msg.id); });
+      actionMenuRow('sys.symbol.arrowshape_turn_up_right', str('mb_forward'), false,
+        () => { this.onForwardMsg(this.albumMemberIds); });
       // 「保存消息」= 转发到收藏（和自己的会话）。和上面的「转发」区别只在
       // 目标固定、不弹选择面板，所以紧挨着放。
       actionMenuRow('sys.symbol.bookmark', str('mb_save_to_saved'), false,
-        () => { this.onSaveToSaved(this.msg.id); });
+        () => { this.onSaveToSaved(this.albumMemberIds); });
       // 「复读」= 转发回本会话。群里的常见玩法，官方要走"转发→再选回本群"两步。
       actionMenuRow('sys.symbol.repeat', str('mb_repeat'), false,
-        () => { this.onRepeatMsg(this.msg.id); });
+        () => { this.onRepeatMsg(this.albumMemberIds); });
       // 「查看历史」= 在本会话里筛出这个人的全部消息。
       // **只在群里、且发送者确实是个用户时出现**：私聊里整个会话就是对方的
       // 消息，这一项没有意义；频道身份/匿名管理员发的消息 senderIsUser 为假，
@@ -2097,7 +2249,8 @@ export struct MessageBubble {
           () => { this.onPollVoters(this.msg.id); });
       }
       actionMenuRow('sys.symbol.exclamationmark_circle', str('mb_report'), true, () => { this.onReportMsg(this.msg.id); });
-      actionMenuRow('sys.symbol.checkmark_circle', str('mb_select'), false, () => { this.onSelectMsg(this.msg.id); });
+      actionMenuRow('sys.symbol.checkmark_circle', str('mb_select'), false,
+        () => { this.onSelectMsg(this.albumMemberIds); });
       actionMenuRow('sys.symbol.trash', str('delete'), true, () => { this.onDeleteMsg(this.msg.id); });
     }
     .width(262)
@@ -2111,43 +2264,48 @@ export struct MessageBubble {
   }
 
   @Builder
-  content() {
+  replyQuote() {
     // 条件是"有没有回复"，不是"引用内容到没到"。被引用的消息是异步取回来的，
     // 等内容到了才画这一块，气泡就会在落地后凭空长高约 40vp——进聊天页时那次
     // 重排就是这么来的。两行都锁死行高，加载中和加载完是同一个高度。
     // 前提：拉不到原消息时 store 会填 mb_reply_unavailable，不会永远空着。
-    if (this.msg.replyToMessageId !== 0) {
-      Column() {
-        Text(this.msg.replySenderName).fontSize(12).fontColor(COLOR_PRIMARY).maxLines(1)
-          .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
-          .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
-          .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
-          .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
+    Column() {
+      Text(this.msg.replySenderName).fontSize(12).fontColor(COLOR_PRIMARY).maxLines(1)
+        .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
+        .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
+      Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
+        .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
+        .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .alignItems(HorizontalAlign.Start)
+    // 整块染一层强调色的淡底，并撑满气泡的内宽——这样点击区域就是看得见的
+    // 那一块，而不是只有文字那几个字宽。
+    //
+    // 用 alignSelf(Stretch) 而不是 width('100%')：百分比宽度的孩子会按父级
+    // 的**上限**来量，气泡会被这一块顶到最宽（同样的坑在时间戳那层踩过一次，
+    // 见 inline timestamp 的 Stack 注释）。Stretch 是先由别的内容定出宽度、
+    // 再把这一块拉满，正是要的语义。
+    //
+    // 引用文本仍然吃 replyQuoteMaxW 的上限：引用是次要信息，不该决定气泡
+    // 宽度（长 URL 会把气泡撑满，哪怕正文只有两个字）。
+    .alignSelf(ItemAlign.Stretch)
+    .backgroundColor(accentSoft())
+    .borderRadius(6)
+    .border({ width: { left: 2 }, color: COLOR_PRIMARY })
+    .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
+    // Tap the quote → jump to the original message.
+    .onClick(() => {
+      if (this.gestureClaimed) { return; }
+      if (this.msg.replyToMessageId !== 0) {
+        this.onReplyTap(this.msg.replyToMessageId, this.msg.id);
       }
-      .alignItems(HorizontalAlign.Start)
-      // 整块染一层强调色的淡底，并撑满气泡的内宽——这样点击区域就是看得见的
-      // 那一块，而不是只有文字那几个字宽。
-      //
-      // 用 alignSelf(Stretch) 而不是 width('100%')：百分比宽度的孩子会按父级
-      // 的**上限**来量，气泡会被这一块顶到最宽（同样的坑在时间戳那层踩过一次，
-      // 见 inline timestamp 的 Stack 注释）。Stretch 是先由别的内容定出宽度、
-      // 再把这一块拉满，正是要的语义。
-      //
-      // 引用文本仍然吃 replyQuoteMaxW 的上限：引用是次要信息，不该决定气泡
-      // 宽度（长 URL 会把气泡撑满，哪怕正文只有两个字）。
-      .alignSelf(ItemAlign.Stretch)
-      .backgroundColor(accentSoft())
-      .borderRadius(6)
-      .border({ width: { left: 2 }, color: COLOR_PRIMARY })
-      .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
-      // Tap the quote → jump to the original message.
-      .onClick(() => {
-        if (this.gestureClaimed) { return; }
-        if (this.msg.replyToMessageId !== 0) {
-          this.onReplyTap(this.msg.replyToMessageId, this.msg.id);
-        }
-      });
+    });
+  }
+
+  @Builder
+  content() {
+    if (this.msg.replyToMessageId !== 0) {
+      this.replyQuote();
     }
     if (this.albumPaths.length > 1) {
       this.albumGrid();
@@ -3118,14 +3276,18 @@ export struct MessageBubble {
           //
           // 注意别用「给时间戳套一层 width('100%') 的 Row」那种写法：百分比宽度
           // 的孩子会让 Stack 直接取到 maxWidth，每条气泡都被撑成整屏宽。
-          Column() {
-            this.content();
-            if (this.msg.reactions.length > 0) {
-              this.reactionsRow();
+          if (this.useDirectPlainText()) {
+            this.directPlainText();
+          } else {
+            Column() {
+              this.content();
+              if (this.msg.reactions.length > 0) {
+                this.reactionsRow();
+              }
             }
+            .alignItems(HorizontalAlign.Start)
+            .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
           }
-          .alignItems(HorizontalAlign.Start)
-          .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
           this.timeOverlay();
         }
         .constraintSize({ maxWidth: this.inlineMaxW() })

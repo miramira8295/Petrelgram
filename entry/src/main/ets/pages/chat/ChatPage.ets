@@ -31,9 +31,12 @@ import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
 import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
-import { MessageBubble } from './MessageBubble';
+import {
+  MessageBubbleActions, MessageBubbleRenderData, ReusableMessageBubble
+} from './ReusableMessageBubble';
+import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { PlaySlotRegistry } from './PlaySlotRegistry';
-import { shouldCompete, slotKeyMessageId } from './playSlot';
+import { shouldCompete, slotKey, slotKeyMessageId } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
 import { ForwardSheet } from './ForwardSheet';
 import { ScheduledSheet } from './ScheduledSheet';
@@ -50,7 +53,7 @@ import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { actionMenuRow } from './ActionMenuRow';
 import { AlbumGroupDataSource, contentFingerprint, DataSourceUpdateKind } from './AlbumGroupDataSource';
-import { BasicPrefetcher } from '@kit.ArkUI';
+import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
 import { ChatHeader } from './ChatHeader';
@@ -185,6 +188,17 @@ import { confirmStopLiveLocation, withLocationPermission } from '../../util/loca
 import { logE, logI, logW } from '../../util/log';
 import { forwardDirect } from '../../store/ForwardDirect';
 import { getActiveTdUserId } from '../../tdkit/Globals';
+import {
+  canRenderLightweightPlainText, formattedTextReuseShape,
+  MessageBubbleReuseContext
+} from '../../util/messageBubbleReuse';
+import {
+  chatChromeHeight, ChatChromeGeometryInput
+} from '../../util/ChatChromeGeometry';
+import {
+  initialMessagePlaceholderHeight, nextInitialMessageRevealCount,
+  stageInitialMessageGroups
+} from '../../util/initialMessageStage';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -202,13 +216,17 @@ const HEADER_BLUR_RADIUS: number = 140;
 // 实时位置的上报间隔。Telegram 官方客户端也是分钟级——秒级上报既费电又没有
 // 实际意义，收到的一方看到的地图精度远达不到那个粒度。
 
-// 稳定后的预建行数，以及首屏之后隔多久补上。
-const LIST_CACHED_COUNT: number = 4;
-const CACHED_COUNT_GROW_MS: number = 450;
+// 固定预建两行：不再用 @State 从 1 延迟涨到 4。后者会在进页面约 450ms 后让
+// 整个可见消息区重跑 build，Insight 里对应两次约 25ms 的帧峰值。
+const LIST_CACHED_COUNT: number = 2;
 
 const CHAT_HEADER_NAV_GUARD_MS: number = 700;
 const TOP_CARD_LOADING_DELAY_MS: number = 180;
 const TOP_CARD_ACTION_GUARD_MS: number = 650;
+// A delayed frame callback cannot be drained again inside the same VSync. On
+// the measured 90 Hz device, 12 ms crosses one 11.1 ms frame boundary and lets
+// the row admitted by the previous callback complete layout before the next.
+const INITIAL_MESSAGE_RELEASE_DELAY_MS: number = 12;
 
 // Composer geometry. These three have to agree with the TextArea's own
 // lineHeight/padding: the editor height is computed from them, and a mismatch
@@ -222,6 +240,35 @@ const JUMP_LANDING_GRACE_MS: number = 900;
 interface DiceChoice {
   emoji: string;
   label: ResourceStr;
+}
+
+interface PreparedMessageBubble {
+  msg: MessageEntry;
+  data: MessageBubbleRenderData;
+}
+
+interface InitialMessageStageTarget {
+  anchorIndex: number;
+  alignFromStart: boolean;
+  availableRows: number;
+}
+
+type InitialMessageReleaseResult = 'released' | 'waiting' | 'finished';
+
+// One-shot UI frame task shared by initial-message staging and the deferred
+// composer mount. The caller uses postDelayedFrameCallback so callbacks queued
+// by adjacent state notifications cannot drain into the same VSync.
+class ChatPageFrameCallback extends FrameCallback {
+  private task: () => void;
+
+  constructor(task: () => void) {
+    super();
+    this.task = task;
+  }
+
+  onFrame(_frameTimeInNano: number): void {
+    this.task();
+  }
 }
 
 // 六个骰子表情。原先是 showActionMenu 的按钮上限刚好装得下，现在是 3×2 的格子。
@@ -298,7 +345,7 @@ export struct ChatPage {
   // paid on every mount and every scroll recycle, to serve something that
   // changes once in a session.
   private rowKeyOf: (g: AlbumGroup) => string = (g: AlbumGroup): string =>
-    `message_group_${g.head.id}_${g.memberIds.join('_')}` +
+    `message_group_${g.head.rowId}_${g.rowMemberIds.join('_')}` +
     `_${contentFingerprint(g.key)}_${this.langEpoch}`;
 
   // Whether this page is currently visible (between onPageShow and onPageHide),
@@ -339,12 +386,189 @@ export struct ChatPage {
   private hiddenAnchorId: number = 0;
   private hiddenAnchorY: number = 0;
 
-  // The single gate for publishing a dataset while the page may be hidden.
-  private publishGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+  private publishGroupsNow(groups: AlbumGroup[]): DataSourceUpdateKind {
     const kind: DataSourceUpdateKind = this.groupsData.update(groups);
     if (!this.pageVisible && kind !== 'none') {
       this.hiddenListDirty = true;
     }
+    return kind;
+  }
+
+  // The normal publication gate also invalidates an unfinished initial stage.
+  private publishGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+    this.initialMessageStageSeq++;
+    this.initialMessageStageActive = false;
+    this.initialMessagePendingGroups = null;
+    this.initialMessageRevealCount = 0;
+    this.initialMessageStageScheduledSeq = 0;
+    return this.publishGroupsNow(groups);
+  }
+
+  // MessageStore can publish another ready snapshot while the initial rows are
+  // still being revealed (reply/photo metadata often arrives immediately).
+  // Keep the newest snapshot for the next batch instead of cancelling staging
+  // and putting the complete list back into the very next VSync.
+  private publishMessageGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+    if (this.initialMessageStageActive) {
+      this.initialMessagePendingGroups = groups;
+      this.postInitialMessageFrame(this.initialMessageStageSeq);
+      return 'none';
+    }
+    return this.publishGroups(groups);
+  }
+
+  private initialMessageStageTarget(groups: AlbumGroup[]): InitialMessageStageTarget {
+    const firstUnreadId: number = this.store !== null ? this.store.getFirstUnreadId() : 0;
+    const anchor: InitialAnchor = initialAnchorOf(
+      firstUnreadId,
+      firstUnreadId > 0 ? groupIndexOf(groups, firstUnreadId) : -1,
+      (index: number): number => groups[index].head.id
+    );
+    const alignFromStart: boolean = anchor.kind === ANCHOR_UNREAD;
+    const anchorIndex: number = alignFromStart ? anchor.index : groups.length - 1;
+    const availableRows: number = alignFromStart
+      ? Math.max(0, groups.length - anchorIndex) : Math.max(0, anchorIndex + 1);
+    return { anchorIndex, alignFromStart, availableRows };
+  }
+
+  private finishInitialMessageStage(groups: AlbumGroup[]): void {
+    this.publishGroupsNow(groups);
+    this.initialMessageStageActive = false;
+    this.initialMessagePendingGroups = null;
+    this.initialMessageRevealCount = 0;
+    this.initialMessageStageScheduledSeq = 0;
+    // The final placeholder -> real-row changes can finish after the first
+    // unread scroll was issued. Re-apply the id-based anchor after layout so
+    // approximate placeholder heights cannot leave the viewport elsewhere.
+    this.scheduleInitialUnreadLanding();
+    // Do not put the editor's stylus bridge into the final message-row frame.
+    // scheduleComposerEditorMount adds one more real VSync boundary.
+    this.scheduleComposerEditorMount();
+  }
+
+  private applyInitialUnreadLanding(seq: number): void {
+    if (seq !== this.initialUnreadLayoutSeq || !this.didInitialScroll ||
+      !this.stayAtUnread || this.firstUnreadId <= 0) {
+      return;
+    }
+    // Recompute from the latest full snapshot. Initial backfill can prepend
+    // rows between the first command and this layout-confirmation pass.
+    const index: number = groupIndexOf(this.groups, this.firstUnreadId);
+    if (index < 0) {
+      return;
+    }
+    this.scroller.scrollToIndex(index, false, ScrollAlign.START);
+  }
+
+  private scheduleInitialUnreadLanding(delayMs: number = 80): void {
+    if (!this.didInitialScroll || !this.stayAtUnread || this.firstUnreadId <= 0) {
+      return;
+    }
+    const seq: number = this.initialUnreadLayoutSeq;
+    setTimeout((): void => {
+      this.applyInitialUnreadLanding(seq);
+    }, delayMs);
+  }
+
+  private beginInitialUnreadLanding(): void {
+    const seq: number = ++this.initialUnreadLayoutSeq;
+    // Keep the immediate path for an already-laid-out list, then confirm after
+    // ArkUI has consumed the newly published LazyForEach operations.
+    this.applyInitialUnreadLanding(seq);
+    this.scheduleInitialUnreadLanding();
+  }
+
+  private releaseNextInitialMessageBatch(stageSeq: number): InitialMessageReleaseResult {
+    if (stageSeq !== this.initialMessageStageSeq || !this.initialMessageStageActive) {
+      return 'finished';
+    }
+    const groups: AlbumGroup[] = this.initialMessagePendingGroups ?? this.groups;
+    const target: InitialMessageStageTarget = this.initialMessageStageTarget(groups);
+    const nextRevealCount: number = nextInitialMessageRevealCount(
+      this.initialMessageRevealCount,
+      target.availableRows
+    );
+    if (nextRevealCount <= this.initialMessageRevealCount) {
+      // A newly visited chat can publish a one-row `latest` page and then chain
+      // one or more `older` requests. Keep admission open while that bounded
+      // chain is in flight; its next snapshot restarts the frame scheduler via
+      // publishMessageGroups instead of dumping every added row at once.
+      if (this.store !== null && this.store.isInitialFillPending()) {
+        return 'waiting';
+      }
+      // Unread anchoring can leave older, off-screen rows deferred even after
+      // every row below the unread marker is real. Publish those in one final
+      // frame; bottom anchoring normally completes in the branch below.
+      this.finishInitialMessageStage(groups);
+      return 'finished';
+    }
+
+    const staged: AlbumGroup[] = stageInitialMessageGroups(
+      groups,
+      target.anchorIndex,
+      target.alignFromStart,
+      nextRevealCount
+    );
+    this.initialMessageRevealCount = nextRevealCount;
+    this.publishGroupsNow(staged);
+    if (staged === groups) {
+      if (this.store !== null && this.store.isInitialFillPending()) {
+        // The rows currently available are real, but a short-page backfill is
+        // still running. Stay active and let that next snapshot extend the
+        // same staged dataset.
+        this.initialMessagePendingGroups = groups;
+        return 'waiting';
+      }
+      this.finishInitialMessageStage(groups);
+      return 'finished';
+    }
+    return 'released';
+  }
+
+  private postInitialMessageFrame(stageSeq: number): void {
+    if (this.initialMessageStageScheduledSeq === stageSeq) {
+      return;
+    }
+    this.initialMessageStageScheduledSeq = stageSeq;
+    this.getUIContext().postDelayedFrameCallback(new ChatPageFrameCallback((): void => {
+      if (this.initialMessageStageScheduledSeq === stageSeq) {
+        this.initialMessageStageScheduledSeq = 0;
+      }
+      if (stageSeq !== this.initialMessageStageSeq || !this.initialMessageStageActive) {
+        return;
+      }
+      const result: InitialMessageReleaseResult = this.releaseNextInitialMessageBatch(stageSeq);
+      if (result === 'released') {
+        this.postInitialMessageFrame(stageSeq);
+      }
+    }), INITIAL_MESSAGE_RELEASE_DELAY_MS);
+  }
+
+  private publishInitialMessageGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+    const target: InitialMessageStageTarget = this.initialMessageStageTarget(groups);
+    // Publish a placeholder-only list first. The initial MessageStore snapshot
+    // also changes title/load/list state and makes ChatPage rerender as a whole;
+    // the frame trace measured 8 ms in that rerender before message layout even
+    // began. Releasing real rows here would put both jobs back into one 52 ms
+    // VSync. The delayed callback gives this cheap dataset one full page frame,
+    // then releaseNextInitialMessageBatch() admits exactly one row per VSync.
+    const firstRevealCount: number = 0;
+    const staged: AlbumGroup[] = stageInitialMessageGroups(
+      groups,
+      target.anchorIndex,
+      target.alignFromStart,
+      firstRevealCount
+    );
+    if (staged === groups) {
+      return this.publishGroups(groups);
+    }
+
+    const stageSeq: number = ++this.initialMessageStageSeq;
+    this.initialMessageStageActive = true;
+    this.initialMessagePendingGroups = groups;
+    this.initialMessageRevealCount = firstRevealCount;
+    const kind: DataSourceUpdateKind = this.publishGroupsNow(staged);
+    this.postInitialMessageFrame(stageSeq);
     return kind;
   }
 
@@ -402,9 +626,282 @@ export struct ChatPage {
   }
   // 官方预取算法：按可见区域变化决定预取/取消哪些行的图片解码。
   private imagePrefetcher: BasicPrefetcher = new BasicPrefetcher(this.groupsData);
-  // 首屏只建可见行，落地后再补预建（见 List.cachedCount）。
-  @State listCachedCount: number = 1;
-  private cachedCountTimer: number = -1;
+  private messageActionsCache: MessageBubbleActions | null = null;
+
+  private messageActions(): MessageBubbleActions {
+    if (this.messageActionsCache === null) {
+      this.messageActionsCache = {
+        onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
+        onMediaTap: (messageId: number, x: number, y: number): void => {
+          this.tapX = x;
+          this.tapY = y;
+          this.openViewer(messageId);
+        },
+        onAvatarTap: (userId: number): void => {
+          const params: Record<string, Object> = { 'userId': userId };
+          navigateToProfile(params);
+        },
+        onAvatarLongPress: (userId: number, name: string): void => {
+          this.mentionSender(userId, name);
+        },
+        onLinkTap: (url: string): void => { this.onLinkTap(url); },
+        onCommentTap: (messageId: number): void => { this.onCommentTap(messageId); },
+        onBotCallback: (messageId: number, data: string): void => {
+          this.onBotCallback(messageId, data);
+        },
+        onReplyTap: (messageId: number, fromId: number): void => {
+          this.onReplyTap(messageId, fromId);
+        },
+        onFileTap: (messageId: number): void => { this.onFileTap(messageId); },
+        onFileSave: (messageId: number): void => { this.onFileSave(messageId); },
+        onStickerRetry: (messageId: number): void => { this.store?.retrySticker(messageId); },
+        onContactOpen: (userId: number, phone: string, vcard: string): void => {
+          this.openSharedContact(userId, phone, vcard);
+        },
+        onPhoneOpen: (phone: string): void => { this.openSharedPhone(phone); },
+        onLocationOpen: (latitude: number, longitude: number, label: string,
+          valid: boolean): void => {
+          this.openSharedLocation(latitude, longitude, label, valid);
+        },
+        onPollVote: (messageId: number, optionIds: number[]): void => {
+          this.onPollVote(messageId, optionIds);
+        },
+        onGameOpen: (messageId: number): void => { this.onGameOpen(messageId); },
+        onGamePhotoRetry: (messageId: number): void => { this.store?.retryPhoto(messageId); },
+        onPaidMediaUnlock: (messageId: number): void => { this.onPaidMediaUnlock(messageId); },
+        onPaidMediaOpen: (messageId: number): void => { this.onPaidMediaOpen(messageId); },
+        onSpecialPhotoRetry: (messageId: number): void => { this.store?.retryPhoto(messageId); },
+        onVideoRetry: (messageId: number): void => {
+          this.store?.requestVideoDownload(messageId, true);
+        },
+        onGiftCodeCopy: (code: string): void => { this.onGiftCodeCopy(code); },
+        onGiveawayOpen: (chatId: number, messageId: number): void => {
+          this.onGiveawayOpen(chatId, messageId);
+        },
+        onVoiceTap: (messageId: number): void => { this.onVoiceTap(messageId); },
+        onVoicePlaybackStarted: (messageId: number): void => {
+          this.onVoicePlaybackStarted(messageId);
+        },
+        onAudioTap: (messageId: number): void => {
+          this.musicQueue.play(this.messages, messageId, false);
+        },
+        onAudioPrevious: (messageId: number): void => {
+          this.musicQueue.previous(this.messages, messageId);
+        },
+        onAudioNext: (messageId: number): void => {
+          this.musicQueue.next(this.messages, messageId);
+        },
+        onAudioSeek: (messageId: number, fraction: number): void => {
+          this.musicQueue.seek(messageId, fraction);
+        },
+        onAutoplayVideoNeedDownload: (messageId: number): void => {
+          this.store?.requestVideoDownload(messageId);
+        },
+        onMediaRatio: (messageId: number, albumIndex: number, ratio: number,
+          centerY: number): void => {
+          if (this.viewerMsgId !== 0 || !this.pageVisible || !this.playSlotsEnabled()) {
+            return;
+          }
+          const now: number = Date.now();
+          this.playSlots.report(messageId, albumIndex, ratio, centerY, now);
+          this.maybeScheduleNextSlotCheck(now);
+        },
+        onMediaGone: (messageId: number, albumIndex: number): void => {
+          this.playSlots.drop(messageId, albumIndex);
+        },
+        onPlaySlotPositionChanged: (messageId: number, _albumIndex: number,
+          positionMs: number): void => {
+          this.bubblePositionMs.set(messageId, positionMs);
+        },
+        onPlaySlotEnded: (messageId: number, albumIndex: number): void => {
+          const now: number = Date.now();
+          this.playSlots.retire(messageId, albumIndex, now);
+          this.maybeScheduleNextSlotCheck(now);
+        },
+        onAnimationTap: (messageId: number, playing: boolean): void => {
+          this.onAnimationTap(messageId, playing);
+        },
+        onAnimationPlaybackFailed: (messageId: number): void => {
+          this.onAnimationPlaybackFailed(messageId);
+        },
+        onForwardTap: (originChatId: number, messageId: number, userId: number): void => {
+          openForwardOrigin(originChatId, messageId, userId);
+        },
+        onEditMsg: (messageId: number): void => { this.startEdit(messageId); },
+        onShowReactors: (messageId: number, emoji: string): void => {
+          this.showReactors(messageId, emoji);
+        },
+        onTranslateMsg: (messageId: number): void => {
+          this.translateMessage(messageId);
+        },
+        onToggleTranslation: (messageId: number, hidden: boolean): void => {
+          this.toggleTranslationHidden(messageId, hidden);
+        },
+        onRetryTranslation: (messageId: number): void => {
+          this.translateInline(messageId);
+        },
+        onPinMsg: (messageId: number, unpin: boolean): void => {
+          this.togglePinMessage(messageId, unpin);
+        },
+        onStopPoll: (messageId: number): void => { this.stopPoll(messageId); },
+        onReplaceMedia: (messageId: number): void => { this.replaceMedia(messageId); },
+        onPollVoters: (messageId: number): void => { this.showPollVoters(messageId); },
+        onSetDefaultReaction: (emoji: string): void => { setDefaultReaction(emoji); },
+        onSetReaction: (messageId: number, emoji: string, chosen: boolean): void => {
+          this.toggleReaction(messageId, emoji, chosen);
+        },
+        onReplyTo: (messageId: number): void => { this.startReply(messageId); },
+        onCopyText: (messageId: number): void => { this.copyMessageText(messageId); },
+        onCopyLink: (messageId: number): void => { this.copyMessageLink(messageId); },
+        onForwardMessages: (messageIds: number[]): void => { this.openForwardPicker(messageIds); },
+        onSaveMessages: (messageIds: number[]): void => { this.saveToSavedMessages(messageIds); },
+        onRepeatMessages: (messageIds: number[]): void => { this.repeatMessages(messageIds); },
+        onViewSenderHistory: (senderId: number): void => { this.viewSenderHistory(senderId); },
+        onReportMsg: (_messageId: number): void => {
+          promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 });
+        },
+        onSelectMessages: (messageIds: number[]): void => { this.enterSelect(messageIds); },
+        onDeleteMsg: (messageId: number): void => { this.deleteMessage(messageId); },
+        onOpenReactions: (messageId: number): void => { this.openReactionSheet(messageId); },
+        onLinkPreviewRetry: (messageId: number): void => {
+          this.store?.retryLinkPreviewPhoto(messageId);
+        },
+        onCopyCode: (value: string): void => {
+          copyPlainText(value, str('cp_code_copied'));
+        },
+        onRecognizeSpeech: (messageId: number): void => { this.recognizeSpeech(messageId); },
+        onVideoNoteDownload: (messageId: number): void => {
+          this.store?.requestVideoDownload(messageId, true);
+        },
+        onLiveStreamTap: (_groupCallId: number): void => { this.onLiveStreamTap(); }
+      };
+    }
+    return this.messageActionsCache;
+  }
+
+  private albumReuseShape(g: AlbumGroup): string {
+    let shape: string = `${g.photoPaths.length}`;
+    for (let i = 0; i < g.photoPaths.length; i++) {
+      const memberId: number = g.memberIds[i] ?? 0;
+      shape += `:${g.photoIsVideo[i] ? 'v' : 'p'}` +
+        `${g.photoPaths[i] !== '' ? 'r' : 'n'}${g.photoFileIds[i] !== 0 ? 'f' : 'z'}` +
+        `${g.photoFailed[i] ? 'e' : 'o'}${this.playSlotKey === slotKey(memberId, i) ? 's' : 'i'}`;
+    }
+    return shape;
+  }
+
+  // Prepare the row once for this build invocation. `data` used to repeat all
+  // of these derived lookups independently for every visible row.
+  private prepareMessageBubble(g: AlbumGroup): PreparedMessageBubble {
+    const paused: boolean = this.animationPaused(g.head.id);
+    const forcePlay: boolean = this.animationForcePlay(g.head.id);
+    const playbackFailed: boolean = this.animationPlaybackFailed(g.head.id);
+    const audio: boolean = audioQueueApplies(g.head.contentType);
+    const audioQueuePosition: number = audio
+      ? this.musicQueue.queuePosition(this.messages, g.head.id) : 0;
+    const audioQueueLength: number = audio ? this.musicQueue.queueLength(this.messages) : 0;
+    const audioHasPrevious: boolean = audio
+      ? this.musicQueue.hasPrevious(this.messages, g.head.id) : false;
+    const audioHasNext: boolean = audio
+      ? this.musicQueue.hasNext(this.messages, g.head.id) : false;
+    const showUnreadDivider: boolean = this.firstUnreadId !== 0 &&
+      g.memberIds.indexOf(this.firstUnreadId) >= 0;
+    const translationActive: boolean = this.translationActive();
+    const isPinnedMsg: boolean = (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0;
+    const paidMediaPending: boolean = this.paidMediaPending(g.head.id);
+    const context: MessageBubbleReuseContext = {
+      albumItemCount: g.photoPaths.length,
+      memberCount: g.memberIds.length,
+      hasDateSeparator: g.dateLabel !== '',
+      showUnreadDivider,
+      isGroup: this.isGroup,
+      isChannel: this.isChannel,
+      showAvatar: g.showAvatar,
+      showSenderName: g.showSenderName,
+      translationActive,
+      menuEditable: g.head.isOutgoing && this.nowSec - g.head.date < 172800,
+      albumShape: this.albumReuseShape(g),
+      albumCaptionShape: formattedTextReuseShape(
+        g.caption,
+        g.captionEntities,
+        g.head.inlineCustomEmojiIds,
+        g.head.inlineCustomEmojiPaths
+      ),
+      playSlotActive: this.playSlotKey === slotKey(g.head.id, -1),
+      animationPaused: paused,
+      animationForcePlay: forcePlay,
+      animationPlaybackFailed: playbackFailed,
+      isPinnedMsg,
+      liveSharing: this.liveLocationMessageId === g.head.id,
+      paidMediaPending,
+      liveVideoChatTappable: g.head.isVideoChatStarted && this.liveCallIsActive,
+      audioQueuePosition,
+      audioQueueLength,
+      pollExpired: g.head.pollCloseDate > 0 && this.nowSec >= g.head.pollCloseDate
+    };
+    const lightweightPlainText: boolean = canRenderLightweightPlainText(g.head, context);
+    const data: MessageBubbleRenderData = {
+      nowSec: this.nowSec, chatId: this.chatId, isGroup: this.isGroup, isChannel: this.isChannel,
+      liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
+      showUnreadDivider,
+      dateLabel: g.dateLabel,
+      albumPaths: g.photoPaths, albumFileIds: g.photoFileIds, albumRatios: g.photoRatios,
+      albumMemberIds: g.memberIds, albumIsVideo: g.photoIsVideo,
+      albumProgress: g.photoProgress, albumFailed: g.photoFailed,
+      albumVideoFileIds: g.videoFileIds, albumVideoFileSizes: g.videoFileSizes,
+      albumVideoMimeTypes: g.videoMimeTypes, albumCaption: g.caption,
+      albumCaptionEntities: g.captionEntities,
+      paidMediaPending,
+      audioQueuePosition,
+      audioQueueLength,
+      audioHasPrevious,
+      audioHasNext,
+      playSlotKey: this.playSlotKey, autoplayMuted: this.autoplayMuted,
+      playSlotStartMs: this.playSlotStartMs,
+      animationPaused: paused,
+      animationForcePlay: forcePlay,
+      animationPlaybackFailed: playbackFailed,
+      editingActive: this.editingId !== 0,
+      isPinnedMsg,
+      liveGroupCallId: this.liveCallIsActive ? this.liveGroupCallId : 0,
+      showAvatar: g.showAvatar, showSenderName: g.showSenderName,
+      animateIn: this.freshSinceId !== 0 && g.head.id > this.freshSinceId,
+      memberIds: g.memberIds,
+      lightweightPlainText
+    };
+    return {
+      msg: g.head,
+      data
+    };
+  }
+
+  @Builder
+  private preparedMessageBubble(prepared: PreparedMessageBubble) {
+    if (prepared.data.lightweightPlainText) {
+      LightweightPlainTextBubble({
+        msg: prepared.msg,
+        nowSec: prepared.data.nowSec,
+        chatId: prepared.data.chatId,
+        isGroup: prepared.data.isGroup,
+        themeBubbleOut: prepared.data.themeBubbleOut,
+        showUnreadDivider: prepared.data.showUnreadDivider,
+        dateLabel: prepared.data.dateLabel,
+        editingActive: prepared.data.editingActive,
+        isPinnedMsg: prepared.data.isPinnedMsg,
+        showAvatar: prepared.data.showAvatar,
+        showSenderName: prepared.data.showSenderName,
+        animateIn: prepared.data.animateIn,
+        memberIds: prepared.data.memberIds,
+        actions: this.messageActions()
+      });
+    } else {
+      ReusableMessageBubble({
+        msg: prepared.msg,
+        data: prepared.data,
+        actions: this.messageActions()
+      });
+    }
+  }
   @State subtitle: string = '';
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
   // header subtitle (see composerPlaceholder).
@@ -550,6 +1047,17 @@ export struct ChatPage {
   private store: MessageStore | null = null;
   private scroller: Scroller = new Scroller();
   private didInitialScroll: boolean = false;
+  // Invalidates delayed initial-unread layout confirmations when the page is
+  // reset or another landing supersedes the current one.
+  private initialUnreadLayoutSeq: number = 0;
+  private initialMessageStageSeq: number = 0;
+  private initialMessageStageActive: boolean = false;
+  private initialMessagePendingGroups: AlbumGroup[] | null = null;
+  private initialMessageRevealCount: number = 0;
+  // 0 means no callback is queued. Storing the stage sequence rather than a
+  // boolean prevents an invalidated old callback from clearing a newer stage's
+  // scheduled marker when it eventually arrives.
+  private initialMessageStageScheduledSeq: number = 0;
   // 播放位竞选：滚动停下后选出唯一播放/下载的视频气泡（见 PlaySlotRegistry）。
   private playSlots: PlaySlotRegistry = new PlaySlotRegistry();
   private unsubPlaySlot: (() => void) | null = null;
@@ -765,6 +1273,14 @@ export struct ChatPage {
   private recordingSeq: number = 0;
   @State composerSending: boolean = false;
   @State composerFocused: boolean = false;
+  // TextArea creation loads the stylus service and performs its first paragraph
+  // layout. The 17:04 trace confirmed the one-frame placeholder moved it out of
+  // page creation, but it then shared a 22 ms frame with the first real message.
+  // Keep the placeholder until initial-message admission finishes, then cross
+  // one more VSync before mounting the editor.
+  @State composerEditorReady: boolean = false;
+  private composerMountScheduled: boolean = false;
+  private composerMountSeq: number = 0;
   private composerController: TextAreaController = new TextAreaController();
   private mediaPickerOpen: boolean = false;
   // 选好但还没发出去的媒体。和 replyToId 正交——回复某条 + 附图 + 配文是
@@ -777,7 +1293,6 @@ export struct ChatPage {
   // resolve before history, fail independently, or arrive after a cached row.
   @State headerState: string = 'loading'; // loading | ready | error
   @State headerLoadError: string = '';
-  @State headerVisible: boolean = false;
   @State headerProfileOpening: boolean = false;
   @State headerMuteUpdating: boolean = false;
   @State pageClosing: boolean = false;
@@ -786,7 +1301,6 @@ export struct ChatPage {
   private headerIdentityResolved: boolean = false;
   private headerResolveSeq: number = 0;
   private headerNavigationTimer: number = -1;
-  private headerEntranceTimer: number = -1;
   // In-chat message search (search-mode header + result navigation).
   // 输入框上方那一条的当前状态。字段仍在（读取处很多），但**只由
   // applyComposerMode 写**，转换逻辑在 util/composerMode。
@@ -841,6 +1355,7 @@ export struct ChatPage {
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
     this.bottomChromeLayoutSeq++;
+    this.initialUnreadLayoutSeq++;
     this.didInitialScroll = false;
     this.lastMaxId = 0;
     this.atBottom = true;
@@ -903,6 +1418,9 @@ export struct ChatPage {
     this.pendingMedia = clearPendingMedia();
     this.composerSending = false;
     this.composerFocused = false;
+    this.composerMountSeq++;
+    this.composerMountScheduled = false;
+    this.composerEditorReady = false;
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
     this.lastKeyboardH = this.keyboardH;
@@ -1302,6 +1820,8 @@ export struct ChatPage {
       if (scrollResumeWaiting && (list.length === 0 || fragment)) {
         return;
       }
+      const firstMessageStage: boolean = !scrollResumeWaiting && !this.didInitialScroll &&
+        this.groupsData.totalCount() === 0;
       const notifyKind: string = store.getCurrentNotifyKind();
       const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
       const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
@@ -1327,7 +1847,8 @@ export struct ChatPage {
         list.findIndex((m: MessageEntry): boolean => m.id === this.viewerMsgId) < 0) {
         this.closeViewer();
       }
-      const updateKind: string = this.publishGroups(groups);
+      const updateKind: string = firstMessageStage
+        ? this.publishInitialMessageGroups(groups) : this.publishMessageGroups(groups);
       // 翻译和媒体窗口原来只挂在 onScrollIndex 上 —— 进页面不滑动就永远不
       // 触发（用户报的"这个页面不会自动翻译"），新消息到达也一样。数据一变
       // 就按当前视口驱动一次；curStartIdx/curEndIdx 在首帧前是 -1，此时用
@@ -1395,6 +1916,7 @@ export struct ChatPage {
         this.store.getPeerUserId() > 0) {
         this.ensureCommandsLoaded();
       }
+      const fillPending: boolean = this.store !== null && this.store.isInitialFillPending();
       if (!positionHandled && !this.didInitialScroll && list.length > 0) {
         // First real page: jump to the first unread message (Android-style);
         // fully-read chats land at the bottom. (Never anchor on
@@ -1408,11 +1930,20 @@ export struct ChatPage {
           fu, fu > 0 ? groupIndexOf(groups, fu) : -1,
           (index: number): number => groups[index].head.id);
         this.firstUnreadId = anchor.dividerId;
+        // 首屏定位的落点诊断。**未读分支原来一条日志都没有**，只有底部分支
+        // 打 glueBottom，于是"没跳到未读"和"压根没落定"在日志上长得一模一样，
+        // 排查时分不开——正是这次浪费掉一轮的原因。
+        logW(`[Anchor] latch fu=${fu} kind=${anchor.kind} index=${anchor.index}` +
+          ` rows=${groups.length} fillPending=${fillPending}`);
         if (anchor.kind === ANCHOR_UNREAD) {
           // 两个标志必须一起动，各自挡一个已经发生过的问题，见 util 里的说明。
           this.atBottom = false;
           this.stayAtUnread = anchorLatchesBottom(anchor);
-          this.scroller.scrollToIndex(anchor.index, false, ScrollAlign.START);
+          // The initial-message performance path has only just published
+          // placeholder rows here. An immediate scroll alone can be swallowed
+          // before List layout; beginInitialUnreadLanding reissues it after the
+          // real anchor row is laid out and recomputes the index after backfill.
+          this.beginInitialUnreadLanding();
         } else {
           this.glueBottom('L1220');
         }
@@ -1547,6 +2078,10 @@ export struct ChatPage {
           }, 80);
         }
       }
+      // Empty/error chats never start message admission, while populated chats
+      // reach this call again after the staged release completes. The method's
+      // store/stage guards make both paths converge without a timer race.
+      this.scheduleComposerEditorMount();
     });
     this.unsubSub = store.subscribeSubtitle((s: string) => {
       this.subtitle = s;
@@ -1710,6 +2245,31 @@ export struct ChatPage {
     this.composerFocused = false;
   }
 
+  private scheduleComposerEditorMount(): void {
+    if (this.composerEditorReady || this.composerMountScheduled) {
+      return;
+    }
+    const store: MessageStore | null = this.store;
+    if (this.initialMessageStageActive || store === null ||
+      store.getInitialHistoryState() === 'loading' || store.isInitialFillPending()) {
+      return;
+    }
+    this.composerMountScheduled = true;
+    const seq: number = ++this.composerMountSeq;
+    this.getUIContext().postDelayedFrameCallback(new ChatPageFrameCallback((): void => {
+      if (seq !== this.composerMountSeq || this.composerEditorReady) {
+        return;
+      }
+      this.composerMountScheduled = false;
+      const currentStore: MessageStore | null = this.store;
+      if (this.initialMessageStageActive || currentStore === null ||
+        currentStore.getInitialHistoryState() === 'loading' || currentStore.isInitialFillPending()) {
+        return;
+      }
+      this.composerEditorReady = true;
+    }), INITIAL_MESSAGE_RELEASE_DELAY_MS);
+  }
+
   private armPlaySlotSettle(): void {
     if (this.viewerMsgId !== 0 || !this.pageVisible || !this.playSlotsEnabled()) {
       return;
@@ -1798,6 +2358,15 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    // Invalidate the staged-row and composer frame callbacks. The page may be
+    // popped while either delayed task is queued.
+    this.initialMessageStageSeq++;
+    this.initialMessageStageActive = false;
+    this.initialMessagePendingGroups = null;
+    this.initialMessageRevealCount = 0;
+    this.initialMessageStageScheduledSeq = 0;
+    this.composerMountSeq++;
+    this.composerMountScheduled = false;
     // 退出会话时播放器可能还开着（返回手势不走 closeViewer），为播放拉起的
     // 下载得在这里也停掉，否则回到列表页它还在后台跑。
     this.releasePlaybackRequests();
@@ -1809,10 +2378,6 @@ export struct ChatPage {
     if (this.unsubPlaySlot !== null) {
       this.unsubPlaySlot();
       this.unsubPlaySlot = null;
-    }
-    if (this.cachedCountTimer !== -1) {
-      clearTimeout(this.cachedCountTimer);
-      this.cachedCountTimer = -1;
     }
     this.clearNowSecTimer();
     if (this.unsubChatAction !== null) {
@@ -1841,7 +2406,6 @@ export struct ChatPage {
     this.headerProfileOpening = false;
     this.headerMuteUpdating = false;
     this.pageClosing = false;
-    this.headerVisible = false;
     this.liveChatResolveSeq++;
     this.liveGroupResolveSeq++;
     this.liveChatRefreshInFlight = false;
@@ -1860,10 +2424,6 @@ export struct ChatPage {
     if (this.headerNavigationTimer !== -1) {
       clearTimeout(this.headerNavigationTimer);
       this.headerNavigationTimer = -1;
-    }
-    if (this.headerEntranceTimer !== -1) {
-      clearTimeout(this.headerEntranceTimer);
-      this.headerEntranceTimer = -1;
     }
     if (this.topCardLoadingTimer !== -1) {
       clearTimeout(this.topCardLoadingTimer);
@@ -2176,18 +2736,6 @@ export struct ChatPage {
   // any index, so an index-based check leaves atBottom stuck true and the glue
   // keeps snapping back down. Frozen while the media viewer is open so the
   // underlying chat position is stable when the preview closes.
-  // 首屏之后再把预建行数补回来。用一次性定时器而不是直接赋值：onScrollIndex
-  // 在首帧就会触发，那时提高 cachedCount 等于把省下的工作原样搬回同一帧。
-  private growCachedCount(): void {
-    if (this.listCachedCount >= LIST_CACHED_COUNT || this.cachedCountTimer !== -1) {
-      return;
-    }
-    this.cachedCountTimer = setTimeout((): void => {
-      this.cachedCountTimer = -1;
-      this.listCachedCount = LIST_CACHED_COUNT;
-    }, CACHED_COUNT_GROW_MS);
-  }
-
   // 诊断：屏宽本该恒定，任何变化都值得记一笔——气泡摊平那类问题第一个要
   // 排除的就是它。变化极少，不会刷日志。
   private onScreenWidthChanged(): void {
@@ -2808,7 +3356,6 @@ export struct ChatPage {
     this.headerProfileOpening = false;
     this.headerMuteUpdating = false;
     this.pageClosing = false;
-    this.headerVisible = false;
     this.subtitle = '';
     this.avatarPath = '';
     this.initials = '?';
@@ -2835,13 +3382,6 @@ export struct ChatPage {
         this.headerState = 'ready';
       }
     }
-    if (this.headerEntranceTimer !== -1) {
-      clearTimeout(this.headerEntranceTimer);
-    }
-    this.headerEntranceTimer = setTimeout((): void => {
-      this.headerEntranceTimer = -1;
-      this.headerVisible = true;
-    }, powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 24));
   }
 
   private applyResolvedHeaderChat(chat: TdObject, seq: number): void {
@@ -4816,8 +5356,6 @@ export struct ChatPage {
   // the emoji panel scales out of / back into.
   private emojiBtnCx: number = 48;
   @State inputBarH: number = 64;
-  // 顶部悬浮 chrome（标题栏 + 横幅）的实测高度，用来给列表让位。
-  @State headerChromeH: number = 0;
   @State listViewportH: number = 0;
   // Height of every persistent bottom surface (composer/reply/Bot keyboard or
   // membership/search bar). The List uses it only as END offset: rows still
@@ -4833,6 +5371,19 @@ export struct ChatPage {
   // after the animation lands, so frames stay cheap.
   @State panelContentReady: boolean = false;
   private panelReadySeq: number = 0;
+
+  // 顶栏高度只由结构状态决定。标题、副标题、头像加载状态的变化不再经过
+  // onAreaChange 写回 @State，也就不会把 List.contentStartOffset 一起拖进重排。
+  private headerChromeHeight(): number {
+    const input: ChatChromeGeometryInput = {
+      topSafe: this.topSafe,
+      searchMode: this.searchMode,
+      pinnedVisible: this.pinnedPreview !== '',
+      liveVisible: this.liveGroupCallId > 0 && this.liveCallIsActive,
+      loadingVisible: this.topCardLoadingVisible
+    };
+    return chatChromeHeight(input);
+  }
 
   // 纯函数以 bottomGapOf 引入：裸名在方法体里解析到的是导入而不是本方法
   // （方法必须带 this.），同名并存太容易读错。placeholderOf 同理。
@@ -4902,7 +5453,8 @@ export struct ChatPage {
   // direction 取 Bottom 时 0 就是列表顶端。
   private headerBlurStops(): [number, number][] {
     const viewport: number = this.listViewportH;
-    if (viewport <= 0 || this.headerChromeH <= 0) {
+    const chromeHeight: number = this.headerChromeHeight();
+    if (viewport <= 0 || chromeHeight <= 0) {
       return [[0, 0], [0, 1]];
     }
     // 过渡带正好是 chrome 那一条：列表顶端（也就是屏幕最上沿）全糊，到 bar
@@ -4910,7 +5462,7 @@ export struct ChatPage {
     //
     // 上半段是**全糊的平台段**而不是单点：只在位置 0 取 1 的话，全糊处是条
     // 零宽度的线，肉眼看到的最糊程度远达不到 100%。
-    const end: number = Math.min(0.6, this.headerChromeH / viewport);
+    const end: number = Math.min(0.6, chromeHeight / viewport);
     return [[1, 0], [1, end * 0.62], [0, end]];
   }
 
@@ -4918,7 +5470,7 @@ export struct ChatPage {
   // 先前误用了 backgroundEffectsEnabled()，它还附带自定义背景/特效开关的条件，
   // 会把模糊直接打成 0。
   private headerBlurRadius(): number {
-    return !this.powerSaving && this.headerChromeH > 0 ? HEADER_BLUR_RADIUS : 0;
+    return !this.powerSaving && this.headerChromeHeight() > 0 ? HEADER_BLUR_RADIUS : 0;
   }
 
   private updateBottomChromeHeight(height: number): void {
@@ -6558,7 +7110,6 @@ export struct ChatPage {
     .scale({ x: 0.94, y: 0.94 })
   }
 
-  @Styles
   // 底色交给材质：材质渲染在 backgroundColor **之下**，填一层不透明的
   // surface 就把它整个盖住了。overlayGlassFill 在材质可用时返回透明，
   // 不可用的设备上返回可见的降级色。
@@ -6964,6 +7515,7 @@ export struct ChatPage {
               this.commandItems = [];
               this.commandMenuOpen = false;
             });
+          if (this.composerEditorReady) {
           TextArea({ text: this.draft, placeholder: this.composerPlaceholder(), controller: this.composerController })
             .layoutWeight(1)
             .height(this.composerEditorHeight())
@@ -7025,6 +7577,26 @@ export struct ChatPage {
               }
             })
             .onBlur(() => { this.composerFocused = false; });
+          } else {
+            // Same one-line geometry as TextArea, but no editor controller,
+            // input-method bridge, stylus library or paragraph editor tree.
+            Text(this.draft !== '' ? this.draft : this.composerPlaceholder())
+              .layoutWeight(1)
+              .height(this.composerEditorHeight())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .fontSize(15)
+              .lineHeight(COMPOSER_LINE_H)
+              .fontColor(this.draft !== '' ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY)
+              .padding({
+                left: 3, right: 3,
+                top: COMPOSER_EDITOR_PAD, bottom: COMPOSER_EDITOR_PAD
+              })
+              .backgroundColor(Color.Transparent)
+              .key('chat_composer_placeholder')
+              .hitTestBehavior(HitTestMode.None)
+              .onAppear((): void => { this.scheduleComposerEditorMount(); });
+          }
           if (this.replyKeyboard !== null) {
             // Bot-keyboard toggle: tinted while the keyboard is up, gray when
             // collapsed — tapping flips between the two.
@@ -7231,6 +7803,17 @@ export struct ChatPage {
           // to hold the scroll position when older pages are prepended above.
           LazyForEach(this.groupsData, (g: AlbumGroup) => {
             ListItem() {
+              if (g.initialDeferred === true) {
+                Column()
+                  .width('100%')
+                  .height(initialMessagePlaceholderHeight(
+                    g,
+                    this.screenW,
+                    this.firstUnreadId !== 0 &&
+                      g.memberIds.indexOf(this.firstUnreadId) >= 0
+                  ))
+                  .hitTestBehavior(HitTestMode.None);
+              } else {
               Stack({ alignContent: Alignment.Start }) {
               // Selection mode shifts the row right into a left check gutter
               // (instead of overlaying the check on the avatars).
@@ -7251,197 +7834,7 @@ export struct ChatPage {
                 .alignItems(HorizontalAlign.Center);
               }
               Column() {
-              MessageBubble({ msg: g.head, nowSec: this.nowSec, chatId: this.chatId,
-                isGroup: this.isGroup, isChannel: this.isChannel,
-                liveSharingId: this.liveLocationMessageId,
-                onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
-                themeBubbleOut: this.chatBg.bubbleOutColor,
-                showUnreadDivider: this.firstUnreadId !== 0 &&
-                  g.memberIds.indexOf(this.firstUnreadId) >= 0,
-                dateLabel: g.dateLabel,
-                albumPaths: g.photoPaths, albumFileIds: g.photoFileIds, albumRatios: g.photoRatios,
-                albumMemberIds: g.memberIds, albumIsVideo: g.photoIsVideo,
-                albumProgress: g.photoProgress, albumFailed: g.photoFailed,
-                albumVideoFileIds: g.videoFileIds, albumVideoFileSizes: g.videoFileSizes,
-                albumVideoMimeTypes: g.videoMimeTypes,
-                albumCaption: g.caption,
-                albumCaptionEntities: g.captionEntities,
-                onMediaTap: (id: number, x: number, y: number): void => {
-                  this.tapX = x;
-                  this.tapY = y;
-                  this.openViewer(id);
-                },
-                onLinkTap: (u: string): void => { this.onLinkTap(u); },
-                onCommentTap: (id: number): void => { this.onCommentTap(id); },
-                onForwardTap: (cid: number, mid: number, uid: number): void => {
-                  openForwardOrigin(cid, mid, uid);
-                },
-                onBotCallback: (id: number, data: string): void => { this.onBotCallback(id, data); },
-                onAvatarTap: (uid: number): void => {
-                  const params: Record<string, Object> = { 'userId': uid };
-                  navigateToProfile(params);
-                },
-                onAvatarLongPress: (uid: number, name: string): void => {
-                  this.mentionSender(uid, name);
-                },
-                onReplyTap: (id: number, fromId: number): void => { this.onReplyTap(id, fromId); },
-                onEditMsg: (id: number): void => { this.startEdit(id); },
-                onShowReactors: (id: number, emoji: string): void => {
-                  this.showReactors(id, emoji);
-                },
-                onTranslateMsg: (id: number): void => { this.translateMessage(id); },
-                onToggleTranslation: (id: number, hidden: boolean): void => {
-                  this.toggleTranslationHidden(id, hidden);
-                },
-                onRetryTranslation: (id: number): void => { this.translateInline(id); },
-                onPinMsg: (id: number, unpin: boolean): void => { this.togglePinMessage(id, unpin); },
-                onStopPoll: (id: number): void => { this.stopPoll(id); },
-                onReplaceMedia: (id: number): void => { this.replaceMedia(id); },
-                onPollVoters: (id: number): void => { this.showPollVoters(id); },
-                onSetDefaultReaction: (emoji: string): void => { setDefaultReaction(emoji); },
-                isPinnedMsg: (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0,
-                onFileTap: (id: number): void => { this.onFileTap(id); },
-                onFileSave: (id: number): void => { this.onFileSave(id); },
-                onStickerRetry: (id: number): void => { this.store?.retrySticker(id); },
-                onLinkPreviewRetry: (id: number): void => { this.store?.retryLinkPreviewPhoto(id); },
-                onContactOpen: (userId: number, phone: string, vcard: string): void => {
-                  this.openSharedContact(userId, phone, vcard);
-                },
-                onPhoneOpen: (phone: string): void => { this.openSharedPhone(phone); },
-                onLocationOpen: (
-                  latitude: number,
-                  longitude: number,
-                  label: string,
-                  valid: boolean
-                ): void => {
-                  this.openSharedLocation(latitude, longitude, label, valid);
-                },
-                onPollVote: (id: number, optionIds: number[]): void => {
-                  this.onPollVote(id, optionIds);
-                },
-                onGameOpen: (id: number): void => { this.onGameOpen(id); },
-                onGamePhotoRetry: (id: number): void => { this.store?.retryPhoto(id); },
-                paidMediaPending: this.paidMediaPending(g.head.id),
-                onPaidMediaUnlock: (id: number): void => {
-                  this.onPaidMediaUnlock(id);
-                },
-                onPaidMediaOpen: (id: number): void => {
-                  this.onPaidMediaOpen(id);
-                },
-                onSpecialPhotoRetry: (id: number): void => {
-                  this.store?.retryPhoto(id);
-                },
-                onVideoRetry: (id: number): void => {
-                  this.store?.requestVideoDownload(id, true);
-                },
-                onGiftCodeCopy: (code: string): void => {
-                  this.onGiftCodeCopy(code);
-                },
-                onGiveawayOpen: (chatId: number, messageId: number): void => {
-                  this.onGiveawayOpen(chatId, messageId);
-                },
-                onVoiceTap: (id: number): void => { this.onVoiceTap(id); },
-                onVoicePlaybackStarted: (id: number): void => {
-                  this.onVoicePlaybackStarted(id);
-                },
-                // 三元短路是必需的，不是风格问题：这四个值要读整个 messages 数组，而
-                // ArkUI 按"build 期实际读取"记录状态依赖。无条件地算它们，等于让每一
-                // 条消息行的 build 都依赖整个 messages @State —— store 每 notify 一次
-                // （哪怕只是某张图的下载进度动了一下），所有可见行都会重跑 build、拿到
-                // 新的 MessageEntry、整行重建。实测 notify≈10/秒时 rebuild≈140/秒，
-                // 比值就是可见行数；notify 为 0 的那些秒 rebuild 恰好也是 0。
-                // 这四个 prop 只在 MessageBubble 的 contentType === 'audio' 分支里被
-                // 消费，非音频行传常量完全等价。不要"化简"掉三元。
-                audioQueuePosition: audioQueueApplies(g.head.contentType)
-                  ? this.musicQueue.queuePosition(this.messages, g.head.id) : 0,
-                audioQueueLength: audioQueueApplies(g.head.contentType)
-                  ? this.musicQueue.queueLength(this.messages) : 0,
-                audioHasPrevious: audioQueueApplies(g.head.contentType)
-                  ? this.musicQueue.hasPrevious(this.messages, g.head.id) : false,
-                audioHasNext: audioQueueApplies(g.head.contentType)
-                  ? this.musicQueue.hasNext(this.messages, g.head.id) : false,
-                onAudioTap: (id: number): void => { this.musicQueue.play(this.messages, id, false); },
-                onAudioPrevious: (id: number): void => { this.musicQueue.previous(this.messages, id); },
-                onAudioNext: (id: number): void => { this.musicQueue.next(this.messages, id); },
-                onAudioSeek: (id: number, fraction: number): void => {
-                  this.musicQueue.seek(id, fraction);
-                },
-                onAutoplayVideoNeedDownload: (id: number): void => {
-                  this.store?.requestVideoDownload(id);
-                },
-                animationPaused: this.animationPaused(g.head.id),
-                animationForcePlay: this.animationForcePlay(g.head.id),
-                animationPlaybackFailed: this.animationPlaybackFailed(g.head.id),
-                onAnimationTap: (id: number, playing: boolean): void => {
-                  this.onAnimationTap(id, playing);
-                },
-                onAnimationPlaybackFailed: (id: number): void => {
-                  this.onAnimationPlaybackFailed(id);
-                },
-                onSetReaction: (id: number, emoji: string, chosen: boolean): void => { this.toggleReaction(id, emoji, chosen); },
-                onReplyTo: (id: number): void => { this.startReply(id); },
-                editingActive: this.editingId !== 0,
-                onCopyText: (id: number): void => { this.copyMessageText(id); },
-                onCopyCode: (text: string): void => { copyPlainText(text, str('cp_code_copied')); },
-                onCopyLink: (id: number): void => { this.copyMessageLink(id); },
-                onForwardMsg: (_id: number): void => { this.openForwardPicker(g.memberIds); },
-                // 相册是一条消息多个成员，三个动作都按 memberIds 整组处理——
-                // 只转其中一张会把相册拆开。
-                onSaveToSaved: (_id: number): void => { this.saveToSavedMessages(g.memberIds); },
-                onRepeatMsg: (_id: number): void => { this.repeatMessages(g.memberIds); },
-                onViewSenderHistory: (senderId: number): void => { this.viewSenderHistory(senderId); },
-                onReportMsg: (id: number): void => { promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 }); },
-                onSelectMsg: (_id: number): void => { this.enterSelect(g.memberIds); },
-                onDeleteMsg: (id: number): void => { this.deleteMessage(id); },
-                onOpenReactions: (id: number): void => { this.openReactionSheet(id); },
-                onRecognizeSpeech: (id: number): void => { this.recognizeSpeech(id); },
-                onVideoNoteDownload: (id: number): void => {
-                  this.store?.requestVideoDownload(id, true);
-                },
-                liveGroupCallId: this.liveCallIsActive ? this.liveGroupCallId : 0,
-                // Reuses the same navigation as the "正在直播" banner (onLiveStreamTap
-                // already reads this.liveGroupCallId and no-ops if it's gone stale).
-                onLiveStreamTap: (): void => { this.onLiveStreamTap(); },
-                showAvatar: g.showAvatar,
-                showSenderName: g.showSenderName,
-                playSlotKey: this.playSlotKey,
-                autoplayMuted: this.autoplayMuted,
-                onPlaySlotPositionChanged: (msgId: number, albumIndex: number, positionMs: number): void => {
-                  this.bubblePositionMs.set(msgId, positionMs);
-                },
-                onMediaRatio: (msgId: number, albumIndex: number, ratio: number, centerY: number): void => {
-                  // 查看器开着/页面不可见时不灌候选表——不然它在不该增长的
-                  // 时候被一批陈旧 ratio 填满，查看器一关或页面一恢复就可能
-                  // 直接 elect 出播放位（同一个根因见 armPlaySlotSettle）。
-                  if (this.viewerMsgId !== 0 || !this.pageVisible) {
-                    return;
-                  }
-                  // 「自动播放视频」关掉 / 省电模式 / 减少动效：闸门加在这里
-                  // 而不是挂载点上——连候选表都不灌，就连分片下载都不会发起
-                  // （spec §1：powerSaving 只影响 stream，退回封面 + 播放按钮）。
-                  if (!this.playSlotsEnabled()) {
-                    return;
-                  }
-                  const now = Date.now();
-                  // report() 内部已经跑过一次 elect：ratio 已经攒够驻留（或
-                  // 本来就是现任/被 pin）的候选会立即当选。这里只需要为还
-                  // 没攒够的候选补一个"驻留到点后再查一次"的定时器。
-                  this.playSlots.report(msgId, albumIndex, ratio, centerY, now);
-                  this.maybeScheduleNextSlotCheck(now);
-                },
-                onMediaGone: (msgId: number, albumIndex: number): void => {
-                  // 移除永远安全，不加守卫——挡住反而会在候选表里留幽灵条目。
-                  this.playSlots.drop(msgId, albumIndex);
-                },
-                // 播完 / 内嵌播放失败：立刻让出播放位，由其它候选重新竞选。
-                // 不会自我循环，理由见 PlaySlotRegistry.retire()。
-                onPlaySlotEnded: (msgId: number, albumIndex: number): void => {
-                  const now = Date.now();
-                  this.playSlots.retire(msgId, albumIndex, now);
-                  this.maybeScheduleNextSlotCheck(now);
-                },
-                playSlotStartMs: this.playSlotStartMs,
-                animateIn: this.freshSinceId !== 0 && g.head.id > this.freshSinceId });
+                this.preparedMessageBubble(this.prepareMessageBubble(g));
               }
               .layoutWeight(1)
               // 多选态下消息本体整体不响应触摸：BLOCK_DESCENDANTS 只封住自己和
@@ -7465,6 +7858,7 @@ export struct ChatPage {
                 }
               });
               }
+              }
             }
           }, (g: AlbumGroup, index: number): string =>
             // Format lives in rowKeyOf — see its comment.
@@ -7474,7 +7868,7 @@ export struct ChatPage {
         // 顶部 chrome 是悬浮的，用 contentStartOffset 让位——和底部的
         // contentEndOffset 对称。不用 padding：padding 会改变内容区尺寸，
         // 而滚动锚点、getItemRect 那一套都吃列表几何。
-        .contentStartOffset(this.headerChromeH)
+        .contentStartOffset(this.headerChromeHeight())
         // 消息滑到标题栏下面时逐渐糊掉，而不是被一条硬边切断。
         // 省电模式下关掉——渐变模糊是逐帧实时渲染，代价不低。
         .linearGradientBlur(this.headerBlurRadius(), {
@@ -7482,18 +7876,9 @@ export struct ChatPage {
           direction: GradientDirection.Bottom
         })
         .contentEndOffset(this.bottomChromeH + 8)
-        // Pre-build a few offscreen rows so a fling doesn't pay the full
-        // MessageBubble construction cost inside the visible frame.
-        // Starts small and grows once the chat is on screen.
-        //
-        // Measurement put the first-open jank at page-build time, before any
-        // image decode and on the UI thread — and cachedCount is the biggest
-        // multiplier there: at 4 the list builds the visible rows plus four
-        // above and four below before it can present anything, each one a
-        // MessageBubble with its whole content-type branch tree. Deferring the
-        // off-screen ones costs nothing visually and takes them off the path
-        // between the tap and the first frame.
-        .cachedCount(this.listCachedCount)
+        // 固定预建两行。图片预取仍由 BasicPrefetcher 按可见区独立驱动；这里不再
+        // 延迟修改 @State，避免首屏落地后把所有可见消息重新 build 一遍。
+        .cachedCount(LIST_CACHED_COUNT)
         // Keep the visible messages pinned in place when an older page is
         // prepended above — without this, the List stays index-anchored and
         // visibly jumps to the top of the newly loaded page.
@@ -7558,7 +7943,6 @@ export struct ChatPage {
           this.syncReturnState();
           this.markVisibleRead(end);
           this.updatePinnedFromScroll(start);
-          this.growCachedCount();
           // Image prefetch: the data source decodes the photos of rows about to
           // arrive and cancels the ones scrolled past. Distinct from the page
           // prefetch below, which loads MESSAGES.
@@ -7672,7 +8056,7 @@ export struct ChatPage {
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
-          .margin({ top: this.headerChromeH + 8 })
+          .margin({ top: this.headerChromeHeight() + 8 })
           .opacity(this.floatDateShown ? 1 : 0)
           .scale({ x: this.floatDateShown ? 1 : 0.9, y: this.floatDateShown ? 1 : 0.9 })
           .translate({ y: this.floatDateShown ? 0 : -5 })
@@ -7730,7 +8114,6 @@ export struct ChatPage {
           } else if (this.searchMode) {
             SearchHeader({
               query: this.searchQuery,
-              headerVisible: this.headerVisible,
               topSafe: this.topSafe,
               onExit: (): void => { this.exitSearch(); },
               onQueryChange: (v: string): void => { this.updateSearchQuery(v); },
@@ -7751,7 +8134,6 @@ export struct ChatPage {
               isMuted: this.isMuted,
               muteUpdating: this.headerMuteUpdating,
               profileOpening: this.headerProfileOpening,
-              headerVisible: this.headerVisible,
               topSafe: this.topSafe,
               pageClosing: this.pageClosing,
               menuShow: this.headerMenuShow,
@@ -7781,13 +8163,7 @@ export struct ChatPage {
             });
           }
         }
-        .width('100%')
-        .onAreaChange((_old: Area, area: Area): void => {
-          const h: number = area.height as number;
-          if (Math.abs(h - this.headerChromeH) > 0.5) {
-            this.headerChromeH = h;
-          }
-        });
+        .width('100%');
         }
         .layoutWeight(1).width('100%')
         .alignContent(Alignment.TopStart)

@@ -841,6 +841,16 @@ export class MessageStore {
     return this.initialHistoryState;
   }
 
+  // The first TDLib history response may contain only the newest message even
+  // though older history exists. onHistory chains bounded `older` requests in
+  // that case. ChatPage must keep its lightweight initial-message admission
+  // open until that chain settles; otherwise the one-row snapshot completes
+  // staging and the following page is published in one expensive layout pass.
+  isInitialFillPending(): boolean {
+    return this.initialFillTries > 0 &&
+      (this.olderPending || this.olderLoadState === 'loading');
+  }
+
   getInitialHistoryError(): string {
     return this.initialHistoryError;
   }

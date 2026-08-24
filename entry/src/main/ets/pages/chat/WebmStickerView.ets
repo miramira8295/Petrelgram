@@ -134,6 +134,7 @@ export struct WebmStickerView {
   private readonly instanceId: number = nextWebmStickerId++;
   private loopTimer: number = -1;
   private durationMs: number = 0;
+  private surfaceContext: object | null = null;
 
   private componentId(): string {
     return `webm_sticker_${this.instanceId}`;
@@ -149,6 +150,38 @@ export struct WebmStickerView {
   aboutToDisappear(): void {
     probeHit('webm.unmount');
     this.release();
+  }
+
+  aboutToRecycle(): void {
+    this.release();
+    this.failed = false;
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const webmPath: string | undefined = params['webmPath'] as string | undefined;
+    const thumbPath: string | undefined = params['thumbPath'] as string | undefined;
+    const category: string | undefined = params['powerCategory'] as string | undefined;
+    if (webmPath !== undefined) {
+      this.webmPath = webmPath;
+    }
+    if (thumbPath !== undefined) {
+      this.thumbPath = thumbPath;
+    }
+    if (category !== undefined) {
+      this.powerCategory = category;
+    }
+    this.destroyed = false;
+    this.failed = false;
+    this.durationMs = 0;
+    this.useAlpha = alphaStickerCandidate(this.powerCategory) && alphaStickerPipelineAvailable();
+    if (this.surfaceContext !== null && !this.useAlpha) {
+      const context: object = this.surfaceContext;
+      enqueueInit((): void => {
+        if (!this.destroyed && this.initPlayer(context)) {
+          livePlayers++;
+        }
+      });
+    }
   }
 
   // Seamless loop: jump back to 0 shortly BEFORE the end, so playback never
@@ -327,6 +360,8 @@ export struct WebmStickerView {
       XComponent({ id: this.componentId(), type: XComponentType.TEXTURE, libraryname: 'ijkplayer_napi' })
         .width(this.boxWidth).height(this.boxHeight)
         .onLoad((context: object) => {
+          this.surfaceContext = context;
+          this.destroyed = false;
           // Deferred: a screenful of cells mounting together would otherwise
           // run all their native setups in the same frame.
           enqueueInit(() => {
@@ -342,6 +377,7 @@ export struct WebmStickerView {
           });
         })
         .onDestroy(() => {
+          this.surfaceContext = null;
           this.release();
         });
     }

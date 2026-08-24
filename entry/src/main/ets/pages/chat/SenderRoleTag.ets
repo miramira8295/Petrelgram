@@ -16,34 +16,61 @@ export struct SenderRoleTag {
   @State private label: string = '';
   private unsub: (() => void) | null = null;
 
-  aboutToAppear(): void {
-    const key: string = senderRoleKey(this.chatId, this.senderId);
+  private attachRoleChannel(chatId: number, senderId: number): void {
+    this.detachRoleChannel();
+    const key: string = senderRoleKey(chatId, senderId);
     this.label = senderRoleFor(key);
     this.unsub = subscribeSenderRole(key, (next: string): void => {
       this.label = next;
     });
   }
 
-  aboutToDisappear(): void {
+  private detachRoleChannel(): void {
     if (this.unsub !== null) {
       this.unsub();
       this.unsub = null;
     }
   }
 
-  build() {
-    // 普通成员没有标签，整行不占位——否则每条消息旁边都留一块空白。
-    if (this.presetTag !== '' || this.label !== '') {
-      Text(this.presetTag !== '' ? this.presetTag : this.label)
-        // 不跟强调色（COLOR_PRIMARY）走：深色模式的胶囊底是深蓝，中蓝的强调色
-        // 压上去看不清。tag_text 按主题各给一档，保证和 selected_pill 有对比。
-        .fontSize(11).fontColor($r('app.color.tag_text'))
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: 88 })
-        .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-        .backgroundColor($r('app.color.selected_pill'))
-        .borderRadius(7)
-        .flexShrink(0);
+  aboutToAppear(): void {
+    this.attachRoleChannel(this.chatId, this.senderId);
+  }
+
+  aboutToRecycle(): void {
+    this.detachRoleChannel();
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const nextChatId: number | undefined = params['chatId'] as number | undefined;
+    const nextSenderId: number | undefined = params['senderId'] as number | undefined;
+    if (nextChatId !== undefined && nextSenderId !== undefined) {
+      this.attachRoleChannel(nextChatId, nextSenderId);
+      return;
     }
+    setTimeout((): void => {
+      this.attachRoleChannel(this.chatId, this.senderId);
+    }, 0);
+  }
+
+  aboutToDisappear(): void {
+    this.detachRoleChannel();
+  }
+
+  build() {
+    // Keep one node across ordinary/admin/custom-tag senders. Visibility.None
+    // removes it from layout, preserving the old no-gap appearance while a
+    // recycled sender row no longer has to create or destroy this Text node.
+    Text(this.presetTag !== '' ? this.presetTag : this.label)
+      // 不跟强调色（COLOR_PRIMARY）走：深色模式的胶囊底是深蓝，中蓝的强调色
+      // 压上去看不清。tag_text 按主题各给一档，保证和 selected_pill 有对比。
+      .fontSize(11).fontColor($r('app.color.tag_text'))
+      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      .constraintSize({ maxWidth: 88 })
+      .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+      .backgroundColor($r('app.color.selected_pill'))
+      .borderRadius(7)
+      .flexShrink(0)
+      .visibility(this.presetTag !== '' || this.label !== ''
+        ? Visibility.Visible : Visibility.None);
   }
 }

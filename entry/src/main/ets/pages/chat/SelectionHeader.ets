@@ -6,6 +6,7 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
+import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 
 // 多选态的顶栏：✕ 退出、已选计数、转发 / 复制 / 删除。
 //
@@ -78,6 +79,7 @@ export struct SelectionHeader {
       this.capsule('sys.symbol.trash', DESTRUCTIVE, (): void => { this.onDelete(); });
     }
     .width('100%')
+    .height(this.topSafe + CHAT_HEADER_BASE_HEIGHT)
     .padding({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
     .transition(TransitionEffect.OPACITY

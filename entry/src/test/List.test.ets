@@ -1,4 +1,5 @@
 import localUnitTest from './LocalUnit.test';
+import crashRecordStoreTest from './CrashRecordStore.test';
 import materialTuningTest from './MaterialTuning.test';
 import adminLabelTest from './AdminLabel.test';
 import botStartTest from './BotStart.test';
@@ -10,6 +11,7 @@ import authErrorTextTest from './AuthErrorText.test';
 import liveTailTest from './LiveTail.test';
 import updateThrottleTest from './UpdateThrottle.test';
 import appIconTest from './AppIcon.test';
+import hmsRelayRegistrationTest from './HmsRelayRegistration.test';
 import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
@@ -121,8 +123,12 @@ import chatPermissionsTest from './ChatPermissions.test';
 import adminRightsTest from './AdminRights.test';
 import memberMenuTest from './MemberMenu.test';
 import webmAlphaTest from './WebmAlpha.test';
+import plainTextBubbleReuseTest from './PlainTextBubbleReuse.test';
+import performanceBudgetsTest from './PerformanceBudgets.test';
+import initialMessageStageTest from './InitialMessageStage.test';
 
 export default function testsuite() {
+  crashRecordStoreTest();
   localUnitTest();
   materialTuningTest();
   adminLabelTest();
@@ -134,6 +140,7 @@ export default function testsuite() {
   liveTailTest();
   updateThrottleTest();
   appIconTest();
+  hmsRelayRegistrationTest();
   startupStageTest();
   diagLogExportTest();
   formatTimeTest();
@@ -246,4 +253,7 @@ export default function testsuite() {
   adminRightsTest();
   memberMenuTest();
   webmAlphaTest();
+  plainTextBubbleReuseTest();
+  performanceBudgetsTest();
+  initialMessageStageTest();
 }

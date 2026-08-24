@@ -9,7 +9,7 @@ let nextAvLoopId: number = 1;
 // webm still needs WebmStickerView's software decoder.
 @Component
 export struct AvLoopVideo {
-  @Prop videoPath: string;
+  @Prop @Watch('onVideoPathChanged') videoPath: string;
   @Prop boxWidth: number = 100;
   @Prop boxHeight: number = 100;
   @Prop loop: boolean = true;
@@ -23,10 +23,40 @@ export struct AvLoopVideo {
   private fd: number = -1;
   private destroyed: boolean = false;
   private readonly instanceId: number = nextAvLoopId++;
+  private surfaceId: string = '';
+  private playerSeq: number = 0;
+
+  aboutToAppear(): void {
+    this.destroyed = false;
+  }
 
   aboutToDisappear(): void {
     this.destroyed = true;
+    this.playerSeq++;
     this.release();
+  }
+
+  aboutToRecycle(): void {
+    this.destroyed = true;
+    this.playerSeq++;
+    this.release();
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    this.playerSeq++;
+    const videoPath: string | undefined = params['videoPath'] as string | undefined;
+    if (videoPath !== undefined) {
+      this.videoPath = videoPath;
+    }
+    this.destroyed = false;
+    this.release();
+    if (this.surfaceId !== '') {
+      setTimeout((): void => {
+        if (!this.destroyed && this.player === null) {
+          this.initPlayer(this.surfaceId);
+        }
+      }, 0);
+    }
   }
 
   private release(): void {
@@ -47,12 +77,26 @@ export struct AvLoopVideo {
     }
   }
 
+  private onVideoPathChanged(): void {
+    this.playerSeq++;
+    this.release();
+    if (!this.destroyed && this.surfaceId !== '') {
+      setTimeout((): void => {
+        if (!this.destroyed && this.player === null) {
+          this.initPlayer(this.surfaceId);
+        }
+      }, 0);
+    }
+  }
+
   private initPlayer(surfaceId: string): void {
     if (this.videoPath === '' || this.destroyed) {
       return;
     }
+    const seq: number = ++this.playerSeq;
+    const sourcePath: string = this.videoPath;
     media.createAVPlayer().then((p: media.AVPlayer) => {
-      if (this.destroyed) {
+      if (this.destroyed || seq !== this.playerSeq || sourcePath !== this.videoPath) {
         p.release();
         return;
       }
@@ -91,14 +135,17 @@ export struct AvLoopVideo {
         this.onFailed();
       });
       try {
-        const f = fs.openSync(this.videoPath, fs.OpenMode.READ_ONLY);
+        const f = fs.openSync(sourcePath, fs.OpenMode.READ_ONLY);
         this.fd = f.fd;
         p.url = `fd://${f.fd}`;
       } catch (e) {
-        logE(`AvLoopVideo open(${this.videoPath}) failed: ${e}`);
+        logE(`AvLoopVideo open(${sourcePath}) failed: ${e}`);
         this.onFailed();
       }
     }).catch((e: Object) => {
+      if (this.destroyed || seq !== this.playerSeq || sourcePath !== this.videoPath) {
+        return;
+      }
       logE(`AvLoopVideo.createAVPlayer failed: ${JSON.stringify(e)}`);
       this.onFailed();
     });
@@ -108,10 +155,15 @@ export struct AvLoopVideo {
     XComponent({ id: `avloop_${this.instanceId}`, type: XComponentType.TEXTURE, controller: this.ctrl })
       .width(this.boxWidth).height(this.boxHeight)
       .onLoad(() => {
+        this.surfaceId = this.ctrl.getXComponentSurfaceId();
+        this.destroyed = false;
         logI(`AvLoopVideo surface ready for ${this.videoPath}`);
-        this.initPlayer(this.ctrl.getXComponentSurfaceId());
+        this.initPlayer(this.surfaceId);
       })
       .onDestroy(() => {
+        this.surfaceId = '';
+        this.destroyed = true;
+        this.playerSeq++;
         this.release();
       });
   }

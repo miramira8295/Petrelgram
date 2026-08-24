@@ -40,11 +40,19 @@ export struct MusicBubble {
   @State dragProgress: number = 0;
   private unsub: (() => void) | null = null;
 
-  aboutToAppear(): void {
-    this.resolvedDurationSec = Math.max(0, this.durationSec);
+  private attachPlayback(targetId: number, durationSec: number): void {
+    this.detachPlayback();
+    this.playbackStatus = 'idle';
+    this.progress = 0;
+    this.elapsedSec = 0;
+    this.resolvedDurationSec = Math.max(0, durationSec);
+    this.playbackFailed = false;
+    this.finished = false;
+    this.dragging = false;
+    this.dragProgress = 0;
     this.unsub = getVoicePlayback().subscribe((state: VoiceState): void => {
-      const mine: boolean = state.mode === 'music' && state.playingId === this.msgId;
-      this.playbackFailed = state.mode === 'music' && state.errorId === this.msgId;
+      const mine: boolean = state.mode === 'music' && state.playingId === targetId;
+      this.playbackFailed = state.mode === 'music' && state.errorId === targetId;
       if (mine) {
         this.playbackStatus = state.status;
         if (state.durationMs > 0) {
@@ -65,7 +73,7 @@ export struct MusicBubble {
           this.elapsedSec = 0;
         }
       }
-      if (state.mode === 'music' && state.completedId === this.msgId) {
+      if (state.mode === 'music' && state.completedId === targetId) {
         this.finished = true;
         this.progress = 1;
         this.elapsedSec = this.resolvedDuration();
@@ -73,11 +81,35 @@ export struct MusicBubble {
     });
   }
 
-  aboutToDisappear(): void {
+  private detachPlayback(): void {
     if (this.unsub !== null) {
       this.unsub();
       this.unsub = null;
     }
+  }
+
+  aboutToAppear(): void {
+    this.attachPlayback(this.msgId, this.durationSec);
+  }
+
+  aboutToRecycle(): void {
+    this.detachPlayback();
+    this.playbackStatus = 'idle';
+    this.dragging = false;
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const msgId: number | undefined = params['msgId'] as number | undefined;
+    const durationSec: number | undefined = params['durationSec'] as number | undefined;
+    if (msgId !== undefined) {
+      this.attachPlayback(msgId, durationSec ?? 0);
+      return;
+    }
+    setTimeout((): void => { this.attachPlayback(this.msgId, this.durationSec); }, 0);
+  }
+
+  aboutToDisappear(): void {
+    this.detachPlayback();
   }
 
   @Styles

@@ -9,8 +9,8 @@
 
 // 单张贴纸的解码上限。超过就先降帧、再降分辨率，都不行才放弃。
 export const ALPHA_STICKER_MAX_BYTES: number = 12 * 1024 * 1024;
-// 全进程上限。聊天里同屏可能几张、面板里几十张，总量必须封顶。
-export const ALPHA_TOTAL_MAX_BYTES: number = 56 * 1024 * 1024;
+// 全进程上限与普通 PixelMap 缓存共用统一预算，见 NativePixelBudget。
+export { ALPHA_STICKER_CACHE_MAX_BYTES as ALPHA_TOTAL_MAX_BYTES } from '../NativePixelBudget';
 // 贴纸原生 512，但屏幕上从来占不到那么大；再大只是白烧内存。
 const MAX_DIM: number = 256;
 // 低于这个尺寸就糊得不像贴纸了，宁可回退。

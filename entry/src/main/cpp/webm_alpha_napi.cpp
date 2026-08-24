@@ -221,8 +221,13 @@ napi_value WebmAlphaDecode(napi_env env, napi_callback_info info) {
     napi_value name = nullptr;
     napi_create_string_utf8(env, "webmAlphaDecode", NAPI_AUTO_LENGTH, &name);
     if (napi_create_async_work(env, nullptr, name, ExecuteDecode, CompleteDecode, task,
-                               &task->work) != napi_ok ||
-        napi_queue_async_work(env, task->work) != napi_ok) {
+                               &task->work) != napi_ok) {
+        delete task;
+        return fail();
+    }
+    if (napi_queue_async_work(env, task->work) != napi_ok) {
+        napi_delete_async_work(env, task->work);
+        task->work = nullptr;
         delete task;
         return fail();
     }

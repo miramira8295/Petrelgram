@@ -56,10 +56,27 @@ export struct SmartLoopVideo {
   }
 
   aboutToDisappear(): void {
+    this.resetPlaybackState();
+  }
+
+  aboutToRecycle(): void {
+    this.resetPlaybackState();
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    this.resetPlaybackState();
+    const category: string | undefined = params['powerCategory'] as string | undefined;
+    const transparent: boolean = category !== undefined
+      ? this.transparentCategory(category) : this.isTransparentAsset();
+    this.useIjk = transparent || avWebmVerdict === -1;
+  }
+
+  private resetPlaybackState(): void {
     if (this.firstFrameTimer !== -1) {
       clearTimeout(this.firstFrameTimer);
       this.firstFrameTimer = -1;
     }
+    this.videoReady = false;
   }
 
   private onVideoWorking(): void {
@@ -108,9 +125,13 @@ export struct SmartLoopVideo {
   }
 
   private isTransparentAsset(): boolean {
-    return this.powerCategory === 'sticker' || this.powerCategory === 'emojiChat'
-      || this.powerCategory === 'emojiPicker' || this.powerCategory === 'emoji'
-      || this.powerCategory === 'emojiReaction' || this.powerCategory === 'emojiStatus';
+    return this.transparentCategory(this.powerCategory);
+  }
+
+  private transparentCategory(category: string): boolean {
+    return category === 'sticker' || category === 'emojiChat'
+      || category === 'emojiPicker' || category === 'emoji'
+      || category === 'emojiReaction' || category === 'emojiStatus';
   }
 
   build() {

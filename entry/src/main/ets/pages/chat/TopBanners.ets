@@ -8,6 +8,10 @@ import {
 import { materialModifier } from '../../util/materialModifier';
 import { pinnedActiveSeg, pinnedSegIndices, pinnedShownIndex } from '../../util/pinnedSegments';
 import { plural, str } from '../../util/strings';
+import {
+  CHAT_TOP_BANNER_BOTTOM_GAP, CHAT_TOP_BANNER_DIVIDER_HEIGHT, CHAT_TOP_BANNER_ROW_HEIGHT,
+  ChatChromeGeometryInput, chatTopBannerHeight
+} from '../../util/ChatChromeGeometry';
 
 // 消息列表上方那张浮卡：置顶消息条 + 直播状态条，两条共用一张卡。
 //
@@ -82,6 +86,18 @@ export struct TopBanners {
     return this.liveGroupCallId > 0 && this.liveCallIsActive;
   }
 
+  private containerHeight(): number {
+    const input: ChatChromeGeometryInput = {
+      topSafe: 0,
+      searchMode: false,
+      pinnedVisible: this.pinnedPreview !== '',
+      liveVisible: this.liveShowing(),
+      loadingVisible: this.topCardLoadingVisible
+    };
+    // 外层的 bottom:2 margin 由父布局计算，不属于节点自己的 height。
+    return chatTopBannerHeight(input) - CHAT_TOP_BANNER_BOTTOM_GAP;
+  }
+
   // 直播条上那句"多少人在线"。a11y 文案要把它拼进整句里，所以用 str/plural
   // 取字符串而不是 $r()——Resource 塞进模板串会变成 "[object Object]"。
   private onlineText(): string {
@@ -127,7 +143,7 @@ export struct TopBanners {
       }
     }
     .width('100%')
-    .constraintSize({ minHeight: 54 })
+    .height(CHAT_TOP_BANNER_ROW_HEIGHT)
     .padding({ left: 14, right: 14, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
     .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
@@ -189,7 +205,7 @@ export struct TopBanners {
       .onClick((): void => { this.onLiveStreamTap(); });
     }
     .width('100%')
-    .constraintSize({ minHeight: 54 })
+    .height(CHAT_TOP_BANNER_ROW_HEIGHT)
     .padding({ left: 14, right: 12, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
     .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
@@ -218,7 +234,7 @@ export struct TopBanners {
       .layoutWeight(1);
     }
     .width('100%')
-    .constraintSize({ minHeight: 54 })
+    .height(CHAT_TOP_BANNER_ROW_HEIGHT)
     .padding({ left: 14, right: 14, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
     .accessibilityText($r('app.string.cp_syncing_pinned_live'));
@@ -233,6 +249,7 @@ export struct TopBanners {
         if (this.pinnedPreview !== '' && this.liveShowing()) {
           Divider()
             .strokeWidth(0.5)
+            .height(CHAT_TOP_BANNER_DIVIDER_HEIGHT)
             .color($r('app.color.divider'))
             .margin({ left: 14, right: 14 });
         }
@@ -244,6 +261,7 @@ export struct TopBanners {
       }
     }
     .width('calc(100% - 24vp)')
+    .height(this.containerHeight())
     // 置顶消息条和直播状态条共用这一张卡，它浮在消息列表之上、消息从下面
     // 滚过去——和顶栏胶囊、dock 是同一种角色，所以走同一档 'bar' 玻璃。
     // 自绘玻璃的两半要一起上：半透明底 + backdropBlur（不透明底会把模糊盖死）。

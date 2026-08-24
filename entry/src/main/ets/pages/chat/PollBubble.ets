@@ -30,6 +30,22 @@ export struct PollBubble {
     this.resetDraft();
   }
 
+  aboutToRecycle(): void {
+    this.draftIds = [];
+    this.draftChanged = false;
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const options: PollOptionInfo[] | undefined =
+      params['options'] as PollOptionInfo[] | undefined;
+    if (options !== undefined) {
+      this.draftIds = this.chosenIdsFrom(options);
+      this.draftChanged = false;
+      return;
+    }
+    setTimeout((): void => { this.resetDraft(); }, 0);
+  }
+
   private onRevisionChanged(): void {
     if (!this.submitting()) {
       this.resetDraft();
@@ -61,8 +77,12 @@ export struct PollBubble {
   }
 
   private chosenIds(): number[] {
+    return this.chosenIdsFrom(this.options);
+  }
+
+  private chosenIdsFrom(options: PollOptionInfo[]): number[] {
     const ids: number[] = [];
-    this.options.forEach((option: PollOptionInfo, index: number): void => {
+    options.forEach((option: PollOptionInfo, index: number): void => {
       if (option.isChosen) {
         ids.push(index);
       }

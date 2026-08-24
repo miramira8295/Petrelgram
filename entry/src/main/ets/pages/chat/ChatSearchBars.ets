@@ -4,6 +4,7 @@ import {
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_NONE,
   canStepNewer, canStepOlder, searchCounterText, searchLabelKind
 } from '../../util/searchPaging';
+import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 
 // 会话内搜索的两条：顶上的输入框、底下的计数与上下翻。
 //
@@ -16,7 +17,6 @@ import {
 @Component
 export struct SearchHeader {
   @Prop query: string;
-  @Prop headerVisible: boolean;
   @Prop topSafe: number;
 
   onExit: () => void = (): void => {};
@@ -77,7 +77,7 @@ export struct SearchHeader {
         .accessibilityText($r('app.string.clear_search'));
       }
     }
-    .width('calc(100% - 24vp)').height(46)
+    .width('calc(100% - 24vp)').height(CHAT_SEARCH_HEADER_BASE_HEIGHT - 16)
     .padding({ left: 3, right: 6 })
     .margin({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
     .backgroundColor($r('app.color.surface'))
@@ -85,12 +85,6 @@ export struct SearchHeader {
     .borderRadius(23)
     .shadow({ radius: 5, color: '#16000000', offsetX: 0, offsetY: 1 })
     .alignItems(VerticalAlign.Center)
-    .opacity(this.headerVisible ? 1 : 0)
-    .translate({ y: this.headerVisible ? 0 : -6 })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
-      curve: Curve.EaseOut
-    })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -5 }))
       .animation({

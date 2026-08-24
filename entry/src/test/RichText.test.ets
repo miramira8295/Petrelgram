@@ -1,5 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { parseFormattedText, RichSegment } from '../main/ets/util/richText';
+import {
+  isUnformattedPlainText, parseFormattedText, RichSegment
+} from '../main/ets/util/richText';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
 function entity(offset: number, length: number, typeName: string): TdObject {
@@ -13,6 +15,15 @@ function entity(offset: number, length: number, typeName: string): TdObject {
 
 export default function richTextTest() {
   describe('RichText', () => {
+    it('detects_only_unstyled_non_link_text_for_direct_rendering', 0, () => {
+      expect(isUnformattedPlainText('ordinary message', [])).assertTrue();
+      expect(isUnformattedPlainText('两行\n普通文本', [])).assertTrue();
+      expect(isUnformattedPlainText('   ', [])).assertFalse();
+      expect(isUnformattedPlainText('打开 https://example.com', [])).assertFalse();
+      expect(isUnformattedPlainText('你好 @alice', [])).assertFalse();
+      expect(isUnformattedPlainText('#话题', [])).assertFalse();
+      expect(isUnformattedPlainText('styled', [{ '@type': 'textEntity' }])).assertFalse();
+    });
     it('collapses_block_boundary_blank_lines', 0, () => {
       const text: string = '来源标题\n\n引用内容';
       const type: TdObject = { '@type': 'textEntityTypeBlockQuote' };

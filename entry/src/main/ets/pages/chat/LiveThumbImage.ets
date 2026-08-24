@@ -15,31 +15,55 @@ import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 // 发布，只靠订阅会一直是空白。
 @Component
 export struct LiveThumbImage {
-  fileId: number = 0;
-  initialPath: string = '';
-  boxWidth: number = 0;
-  boxHeight: number = 0;
-  radius: number = 0;
-  fit: ImageFit = ImageFit.Cover;
+  @Prop fileId: number = 0;
+  @Prop initialPath: string = '';
+  @Prop boxWidth: number = 0;
+  @Prop boxHeight: number = 0;
+  @Prop radius: number = 0;
+  @Prop fit: ImageFit = ImageFit.Cover;
   @BuilderParam placeholder: () => void;
   @State private path: string = '';
   private unsubThumb: (() => void) | null = null;
 
-  aboutToAppear(): void {
-    const known: string = thumbPathFor(this.fileId);
-    this.path = known !== '' ? known : this.initialPath;
-    this.unsubThumb = subscribeThumbPath(this.fileId, (path: string): void => {
+  private attach(fileId: number, initialPath: string): void {
+    this.detach();
+    const known: string = thumbPathFor(fileId);
+    this.path = known !== '' ? known : initialPath;
+    this.unsubThumb = subscribeThumbPath(fileId, (path: string): void => {
       this.path = path;
     });
+  }
+
+  private detach(): void {
+    if (this.unsubThumb !== null) {
+      this.unsubThumb();
+      this.unsubThumb = null;
+    }
+  }
+
+  aboutToAppear(): void {
+    this.attach(this.fileId, this.initialPath);
+  }
+
+  aboutToRecycle(): void {
+    this.detach();
+    this.path = '';
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const fileId: number | undefined = params['fileId'] as number | undefined;
+    const initialPath: string | undefined = params['initialPath'] as string | undefined;
+    if (fileId !== undefined) {
+      this.attach(fileId, initialPath ?? '');
+      return;
+    }
+    setTimeout((): void => { this.attach(this.fileId, this.initialPath); }, 0);
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ
   // 明确点过这个泄漏）。
   aboutToDisappear(): void {
-    if (this.unsubThumb !== null) {
-      this.unsubThumb();
-      this.unsubThumb = null;
-    }
+    this.detach();
   }
 
   build() {
