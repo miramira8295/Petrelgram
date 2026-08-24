@@ -88,6 +88,22 @@ napi_value BuildFrameArray(napi_env env, DecodeTask *task) {
     OH_PixelmapInitializationOptions_SetWidth(options, static_cast<uint32_t>(task->dstW));
     OH_PixelmapInitializationOptions_SetHeight(options, static_cast<uint32_t>(task->dstH));
     OH_PixelmapInitializationOptions_SetPixelFormat(options, kPixelFormatRgba8888);
+    // **源格式必须显式设，不能只设目标格式。**
+    //
+    // SetPixelFormat 设的是 PixelMap 建成之后的格式；CreatePixelmap 还要知道
+    // 传进去那段缓冲区**本身**是什么格式，才知道要不要转、怎么转。那一项是
+    // SetSrcPixelFormat，此前一直没设，于是走了它的默认值——结果是把我们写好的
+    // RGBA 当成别的排列去转，红蓝互换。
+    //
+    // 真机实测（PLA-AL10 / API 26）：贴纸面板里走这条链路的视频贴纸整片偏青，
+    // 同屏的静态贴纸正常——青正是暖色调红蓝互换后的样子。而宿主机验证已经证明
+    // DecodeAlphaSequence 吐出来的字节是正确的 RGBA（红圆 R=232 G=9 B=7），
+    // 所以错位只可能发生在这一步。
+    OH_PixelmapInitializationOptions_SetSrcPixelFormat(options, kPixelFormatRgba8888);
+    // 行距同理：我们的缓冲区是紧凑排布，一行就是 dstW*4 字节。不说清楚就得
+    // 指望它猜对；猜错的表现是每行错开几个像素的斜切。
+    OH_PixelmapInitializationOptions_SetRowStride(options,
+                                                  static_cast<uint32_t>(task->dstW) * 4);
     OH_PixelmapInitializationOptions_SetAlphaType(options, kAlphaTypeUnpremultiplied);
     bool ok = true;
     for (size_t i = 0; i < task->frames.size(); ++i) {

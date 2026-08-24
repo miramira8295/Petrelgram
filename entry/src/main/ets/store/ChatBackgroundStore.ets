@@ -507,7 +507,8 @@ export class ChatBackgroundStore {
     const file = this.documentFile(background);
     const id: number = file !== null ? ((file['id'] as number | undefined) ?? 0) : 0;
     logI(
-      `[ChatBackground] chat=${this.chatId} type=${typeName} colors=${colors.length} file=${id}`
+      `[ChatBackground] chat=${this.chatId} type=${typeName} colors=${colors.length}` +
+      ` [${colors.join(',')}] angle=${angle} file=${id}`
     );
     if (colors.length === 0 && id === 0) {
       return;
