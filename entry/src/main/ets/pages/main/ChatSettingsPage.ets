@@ -20,6 +20,9 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { deviceInfo } from '@kit.BasicServicesKit';
+import { appIconAvailable } from '../../util/appIcon';
+import { AppIconPicker } from './AppIconPicker';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -403,6 +406,15 @@ export struct ChatSettingsPage {
                 logE(`ChatSettings open background failed: ${error.message}`);
               });
           });
+
+          // 桌面图标自选。整块在 API 26 以下不渲染——getAlternateIcons/
+          // setAlternateIcon 是 @since 26.0.0，而本应用 compatibleSdkVersion 是
+          // 6.0.0(20)，低版本上那两个函数根本不存在。判据在 util/appIcon。
+          if (appIconAvailable(deviceInfo.sdkApiVersion)) {
+            Column() {
+              AppIconPicker();
+            }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+          }
 
           Column() {
             this.chatListView();

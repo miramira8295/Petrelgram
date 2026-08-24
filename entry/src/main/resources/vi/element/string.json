@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Chọn một cài đặt"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Biểu tượng ứng dụng"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Đổi biểu tượng màn hình chính"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Mặc định"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Nửa đêm"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Than chì"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Rừng thông"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Hoàng hôn"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Tím violet"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Đã đổi biểu tượng"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Không thể đổi biểu tượng"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Cài đặt lại ứng dụng sẽ khôi phục biểu tượng mặc định. Màn hình chính có thể mất vài giây để cập nhật."
     }
   ]
 }

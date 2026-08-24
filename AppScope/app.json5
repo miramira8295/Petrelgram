@@ -6,6 +6,16 @@
     "versionName": "1.4.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",
+    // 桌面图标自选的备用图标。name 必须与 util/appIcon.ets 的目录逐字一致
+    // ——setAlternateIcon 对不上名字抛 17700308。每张只换底色，前景共用同一只
+    // 海燕，所以 icon_*.json 都指向同一个 $media:foreground。
+    "alternateIcons": [
+      { "name": "midnight", "icon": "$media:icon_midnight" },
+      { "name": "graphite", "icon": "$media:icon_graphite" },
+      { "name": "forest", "icon": "$media:icon_forest" },
+      { "name": "sunset", "icon": "$media:icon_sunset" },
+      { "name": "violet", "icon": "$media:icon_violet" }
+    ],
     "label": "$string:app_name"
   }
 }

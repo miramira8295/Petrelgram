@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "اختر أحد الإعدادات"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "أيقونة التطبيق"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "تغيير أيقونة الشاشة الرئيسية"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "افتراضي"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "منتصف الليل"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "جرافيت"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "غابة"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "غروب"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "بنفسجي"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "تم تغيير الأيقونة"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "تعذر تغيير الأيقونة"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "تؤدي إعادة تثبيت التطبيق إلى استعادة الأيقونة الافتراضية. قد يستغرق تحديث الشاشة الرئيسية بضع ثوانٍ."
     }
   ]
 }

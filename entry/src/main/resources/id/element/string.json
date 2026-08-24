@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Pilih pengaturan"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Ikon Aplikasi"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Ubah ikon layar utama"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Bawaan"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Tengah Malam"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Grafit"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Hutan"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Senja"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Ungu"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Ikon diubah"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Gagal mengubah ikon"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Menginstal ulang aplikasi akan mengembalikan ikon bawaan. Layar utama mungkin perlu beberapa detik untuk diperbarui."
     }
   ]
 }

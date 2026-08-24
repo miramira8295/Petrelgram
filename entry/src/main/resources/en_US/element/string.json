@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Select a setting"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "App Icon"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Change the home screen icon"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Default"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Midnight"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Graphite"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Forest"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Sunset"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Violet"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Icon changed"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Could not change the icon"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Reinstalling the app restores the default icon. The home screen may take a few seconds to update."
     }
   ]
 }

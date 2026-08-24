@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Выберите настройку"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Значок приложения"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Сменить значок на рабочем столе"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "По умолчанию"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Полночь"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Графит"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Лес"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Закат"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Фиалка"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Значок изменён"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Не удалось сменить значок"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "После переустановки приложения вернётся значок по умолчанию. Обновление рабочего стола может занять несколько секунд."
     }
   ]
 }

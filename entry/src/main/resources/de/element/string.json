@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Wähle eine Einstellung aus"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "App-Symbol"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Symbol auf dem Startbildschirm ändern"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Standard"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Mitternacht"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Graphit"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Wald"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Sonnenuntergang"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Violett"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Symbol geändert"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Symbol konnte nicht geändert werden"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Bei einer Neuinstallation wird das Standardsymbol wiederhergestellt. Die Aktualisierung des Startbildschirms kann einige Sekunden dauern."
     }
   ]
 }

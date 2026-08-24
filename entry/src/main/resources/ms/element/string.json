@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Pilih tetapan"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Ikon Apl"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Tukar ikon skrin utama"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Lalai"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Tengah Malam"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Grafit"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Hutan"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Senja"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Ungu"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Ikon ditukar"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Gagal menukar ikon"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Memasang semula apl akan memulihkan ikon lalai. Skrin utama mungkin mengambil masa beberapa saat untuk dikemas kini."
     }
   ]
 }

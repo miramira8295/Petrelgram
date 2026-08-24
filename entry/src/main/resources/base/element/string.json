@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "选择一项设置"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "应用图标"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "换一个桌面图标"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "默认"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "午夜"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "石墨"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "松林"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "落日"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "紫罗兰"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "图标已切换"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "图标切换失败"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "重装应用后会回到默认图标。桌面刷新可能需要几秒。"
     }
   ]
 }

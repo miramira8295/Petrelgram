@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "選擇一項設定"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "應用圖示"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "換一個桌面圖示"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "預設"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "午夜"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "石墨"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "松林"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "落日"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "紫羅蘭"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "圖示已切換"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "圖示切換失敗"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "重裝應用後會回到預設圖示。桌面重新整理可能需要幾秒。"
     }
   ]
 }

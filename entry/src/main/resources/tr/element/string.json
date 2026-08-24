@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Bir ayar seçin"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Uygulama Simgesi"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Ana ekran simgesini değiştir"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Varsayılan"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Gece Yarısı"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Grafit"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Orman"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Gün Batımı"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Menekşe"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Simge değiştirildi"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Simge değiştirilemedi"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Uygulamayı yeniden yüklerseniz varsayılan simge geri gelir. Ana ekranın güncellenmesi birkaç saniye sürebilir."
     }
   ]
 }

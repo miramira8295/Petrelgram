@@ -9,6 +9,7 @@ import authServiceTest from './AuthService.test';
 import authErrorTextTest from './AuthErrorText.test';
 import liveTailTest from './LiveTail.test';
 import updateThrottleTest from './UpdateThrottle.test';
+import appIconTest from './AppIcon.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
 import intlFormatTest from './intlFormat.test';
@@ -130,6 +131,7 @@ export default function testsuite() {
   authErrorTextTest();
   liveTailTest();
   updateThrottleTest();
+  appIconTest();
   diagLogExportTest();
   formatTimeTest();
   intlFormatTest();

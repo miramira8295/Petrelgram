@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "एक सेटिंग चुनें"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "ऐप आइकन"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "होम स्क्रीन आइकन बदलें"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "डिफ़ॉल्ट"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "मध्यरात्रि"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "ग्रेफाइट"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "वन"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "सूर्यास्त"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "बैंगनी"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "आइकन बदला गया"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "आइकन नहीं बदला जा सका"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "ऐप दोबारा इंस्टॉल करने पर डिफ़ॉल्ट आइकन वापस आ जाता है। होम स्क्रीन को अपडेट होने में कुछ सेकंड लग सकते हैं।"
     }
   ]
 }

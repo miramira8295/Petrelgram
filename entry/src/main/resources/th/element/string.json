@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "เลือกการตั้งค่า"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "ไอคอนแอป"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "เปลี่ยนไอคอนหน้าจอหลัก"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "ค่าเริ่มต้น"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "เที่ยงคืน"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "แกรไฟต์"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "ป่าไม้"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "อาทิตย์อัสดง"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "ไวโอเล็ต"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "เปลี่ยนไอคอนแล้ว"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "เปลี่ยนไอคอนไม่สำเร็จ"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "การติดตั้งแอปใหม่จะคืนค่าไอคอนเริ่มต้น หน้าจอหลักอาจใช้เวลาสองสามวินาทีในการอัปเดต"
     }
   ]
 }

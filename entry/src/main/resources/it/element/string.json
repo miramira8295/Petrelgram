@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Seleziona un'impostazione"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Icona dell'app"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Cambia l'icona della schermata Home"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Predefinita"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Mezzanotte"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Grafite"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Foresta"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Tramonto"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Viola"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Icona cambiata"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Impossibile cambiare l'icona"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Reinstallando l'app viene ripristinata l'icona predefinita. La schermata Home potrebbe impiegare qualche secondo ad aggiornarsi."
     }
   ]
 }

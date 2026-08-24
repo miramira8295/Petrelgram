@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Selecciona un ajuste"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Icono de la app"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Cambia el icono de la pantalla de inicio"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Predeterminado"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Medianoche"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Grafito"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Bosque"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Atardecer"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Violeta"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Icono cambiado"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "No se pudo cambiar el icono"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Al reinstalar la app se restaura el icono predeterminado. La pantalla de inicio puede tardar unos segundos en actualizarse."
     }
   ]
 }

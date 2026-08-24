@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "設定を選択してください"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "アプリアイコン"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "ホーム画面のアイコンを変更"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "デフォルト"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "ミッドナイト"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "グラファイト"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "フォレスト"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "サンセット"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "バイオレット"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "アイコンを変更しました"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "アイコンを変更できませんでした"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "アプリを再インストールするとデフォルトのアイコンに戻ります。ホーム画面の更新には数秒かかることがあります。"
     }
   ]
 }

@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Selecione uma configuração"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Ícone do app"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Alterar o ícone da tela inicial"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Padrão"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Meia-noite"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Grafite"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Floresta"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Pôr do sol"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Violeta"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Ícone alterado"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Não foi possível alterar o ícone"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Reinstalar o app restaura o ícone padrão. A tela inicial pode levar alguns segundos para atualizar."
     }
   ]
 }

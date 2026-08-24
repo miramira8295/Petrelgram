@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "یک تنظیم انتخاب کنید"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "نماد برنامه"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "تغییر نماد صفحه اصلی"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "پیش‌فرض"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "نیمه‌شب"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "گرافیت"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "جنگل"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "غروب"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "بنفشه"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "نماد تغییر کرد"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "تغییر نماد ناموفق بود"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "نصب مجدد برنامه نماد پیش‌فرض را برمی‌گرداند. به‌روزرسانی صفحه اصلی ممکن است چند ثانیه طول بکشد."
     }
   ]
 }

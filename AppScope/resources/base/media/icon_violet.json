@@ -1,0 +1,6 @@
+{
+  "layered-image": {
+    "background": "$media:bg_violet",
+    "foreground": "$media:foreground"
+  }
+}

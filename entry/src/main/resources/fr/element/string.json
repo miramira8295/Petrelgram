@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Sélectionnez un paramètre"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Icône de l'app"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Changer l'icône de l'écran d'accueil"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "Par défaut"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Minuit"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Graphite"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Forêt"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Coucher de soleil"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Violet"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Icône modifiée"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Impossible de changer l'icône"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "La réinstallation de l'app rétablit l'icône par défaut. L'écran d'accueil peut mettre quelques secondes à se mettre à jour."
     }
   ]
 }

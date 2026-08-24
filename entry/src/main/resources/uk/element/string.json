@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "Виберіть налаштування"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "Значок застосунку"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "Змінити значок на робочому столі"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "За умовчанням"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "Опівніч"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "Графіт"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "Ліс"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "Захід"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "Фіалка"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "Значок змінено"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "Не вдалося змінити значок"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "Після перевстановлення застосунку повернеться значок за умовчанням. Оновлення робочого столу може зайняти кілька секунд."
     }
   ]
 }

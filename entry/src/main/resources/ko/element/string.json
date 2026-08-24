@@ -11407,6 +11407,50 @@
     {
       "name": "split_pick_a_setting",
       "value": "설정을 선택하세요"
+    },
+    {
+      "name": "app_icon_title",
+      "value": "앱 아이콘"
+    },
+    {
+      "name": "app_icon_sub",
+      "value": "홈 화면 아이콘 변경"
+    },
+    {
+      "name": "app_icon_default",
+      "value": "기본"
+    },
+    {
+      "name": "app_icon_midnight",
+      "value": "미드나이트"
+    },
+    {
+      "name": "app_icon_graphite",
+      "value": "그래파이트"
+    },
+    {
+      "name": "app_icon_forest",
+      "value": "포레스트"
+    },
+    {
+      "name": "app_icon_sunset",
+      "value": "선셋"
+    },
+    {
+      "name": "app_icon_violet",
+      "value": "바이올렛"
+    },
+    {
+      "name": "app_icon_applied",
+      "value": "아이콘이 변경되었습니다"
+    },
+    {
+      "name": "app_icon_failed",
+      "value": "아이콘을 변경하지 못했습니다"
+    },
+    {
+      "name": "app_icon_note",
+      "value": "앱을 다시 설치하면 기본 아이콘으로 돌아갑니다. 홈 화면 갱신에 몇 초가 걸릴 수 있습니다."
     }
   ]
 }
