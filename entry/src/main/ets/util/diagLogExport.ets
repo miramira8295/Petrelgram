@@ -2,7 +2,10 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
+import { deviceInfo } from '@kit.BasicServicesKit';
+import { bundleManager } from '@kit.AbilityKit';
 import { diagLogText, logE } from './log';
+import { DiagEnvironment, diagLogHeader } from './diagLogHeader';
 import { str } from './strings';
 
 // 把诊断日志另存为文件。
@@ -30,12 +33,33 @@ export function diagLogStamp(now: Date): string {
 
 // 导出到用户选定的位置。日志可能有几 MB，先写进应用缓存再拷贝到目标 URI——
 // 与 mediaSaver 保存文件走同一条路，那条路已经在真机上跑过。
+// 当前设备与应用版本。**每一项都单独 try**：getBundleInfoForSelfSync 会抛，
+// 而抬头缺一行远好过因为取不到版本号就导不出日志。
+function currentEnvironment(): DiagEnvironment {
+  let appVersion: string = '';
+  try {
+    appVersion = bundleManager.getBundleInfoForSelfSync(
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT
+    ).versionName;
+  } catch (e) {
+    logE(`exportDiagLog getBundleInfo failed: ${e}`);
+  }
+  return {
+    appVersion: appVersion,
+    apiVersion: deviceInfo.sdkApiVersion,
+    deviceModel: deviceInfo.productModel,
+    osFullName: deviceInfo.osFullName
+  };
+}
+
 export function exportDiagLog(context: common.UIAbilityContext, stamp: string): void {
-  const text: string = diagLogText();
-  if (text === '') {
+  const body: string = diagLogText();
+  if (body === '') {
     promptAction.showToast({ message: str('diag_export_empty'), duration: 1800 });
     return;
   }
+  // 抬头在最前面：用户把日志贴到 issue 里时往往只贴开头几屏。
+  const text: string = `${diagLogHeader(currentEnvironment())}${body}`;
   const name: string = diagLogFileName(stamp);
   const tmpPath: string = `${context.cacheDir}/${name}`;
   try {
