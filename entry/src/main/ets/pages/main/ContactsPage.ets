@@ -1588,6 +1588,12 @@ export struct ContactsPage {
             .padding({ bottom: this.bottomSafe + 88 });
           }
           .width('100%')
+          // **高度必须显式铺满。** 这个 Scroll 现在住在一个
+          // alignContent: BottomEnd 的 Stack 里（FAB 那次修复加的一层），而 Scroll
+          // 不给高度就按内容量高——于是内容少的时候整个滚动区被 Stack 按到底部，
+          // 观感是"联系人列表整体沉在屏幕下半截"（issue #118）。align(Alignment.Top)
+          // 管的是内容在滚动区**内部**怎么放，救不了滚动区本身的位置。
+          .height('100%')
           .align(Alignment.Top)
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .scrollBar(BarState.Off)

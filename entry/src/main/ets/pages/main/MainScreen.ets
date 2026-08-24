@@ -118,6 +118,18 @@ export struct MainScreen {
   private callPagePushed: boolean = false;
 
   aboutToAppear(): void {
+    // **先让 Tabs 与 mainTabIndex 对齐。**
+    //
+    // 本组件不是只在冷启动时建一次：账号切换（含"添加账号"和取消添加返回原
+    // 账号）会 bumpSessionEpoch() 把整棵树重建，而 mainTabIndex 存在 AppStorage
+    // 里、跨重建存活。于是 this.tab 恢复成 2（设置），Tabs 却从 0 开始——
+    // 屏幕上是聊天列表，dock 高亮的却是"设置"。更糟的是点"设置"也没反应：
+    // select() 看见 index === this.tab 就早退了。用户报的正是这一串（issue #119）。
+    //
+    // @Watch 救不了：ArkUI 的 @Watch 不在初始化时触发，只在此后的变化上触发。
+    // 所以对齐必须在这里显式做一次。appliedTab 一并跟上，否则 select() 的
+    // 去重基准从一开始就是错的。
+    this.appliedTab = this.tab;
     // 已登录才查更新（MainScreen 只在登录后渲染），内部按 6 小时节流。
     updateChecker.check(false).catch((): void => {});
     // 背景（尤其是图案）要下载并解压 .tgv，放到开会话时做就是点击到首帧之间
@@ -516,7 +528,10 @@ export struct MainScreen {
     // 两栏中间去了。Tabs 是 width/height 100%，换对齐方式影响不到它。
     // Start 会跟着布局方向镜像，和 navBar 默认的 NavBarPosition.Start 一致。
     Stack({ alignContent: Alignment.BottomStart }) {
-      Tabs({ controller: this.controller }) {
+      // index 显式跟住 mainTabIndex，Tabs 才不会在树重建后从 0 开始——
+      // 见 aboutToAppear 里的说明。稳态下它与 controller.changeIndex 同值，
+      // 重复驱动是幂等的。
+      Tabs({ controller: this.controller, index: this.tab }) {
         TabContent() { ChatListPage(); }
         TabContent() { ContactsPage(); }
         TabContent() { SettingsPage(); }
