@@ -17,6 +17,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
+import { SHEET_CLOSE_RESERVE_VP } from '../../util/sheetChrome';
 
 interface FolderInviteParams {
   folderId: number;
@@ -328,7 +329,10 @@ struct FolderInviteLinksPage {
         }.layoutWeight(1).alignItems(HorizontalAlign.Start);
         Text($r('app.string.save')).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
           .width(52).height(38).textAlign(TextAlign.Center).onClick((): void => this.saveLink());
-      }.width('100%').padding({ left: 16, right: 10, top: 12, bottom: 8 });
+      }
+      // 右侧留出系统关闭按钮的位置，否则「保存」被它盖住（issue #124 同形状）。
+      .width('100%')
+      .padding({ left: 16, right: 10 + SHEET_CLOSE_RESERVE_VP, top: 12, bottom: 8 });
       TextInput({ placeholder: $r('app.string.fl_link_name'), text: this.linkName })
         .fontSize(15).maxLength(32).height(44).margin({ left: 16, right: 16, bottom: 8 })
         .padding({ left: 12, right: 12 }).backgroundColor(COLOR_PAGE_BG).borderRadius(12)

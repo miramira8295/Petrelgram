@@ -469,6 +469,9 @@ struct BlockedUsersPage {
       height: SheetSize.LARGE,
       backgroundColor: COLOR_SURFACE,
       dragBar: true,
+      // 面板自绘的右上角 × 就是关闭入口，系统那个会盖在它上面（issue #124
+      // 在例外名单上的同一个形状）。关掉系统的，留自己的。
+      showClose: false,
       blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }

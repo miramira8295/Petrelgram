@@ -1700,6 +1700,8 @@ export struct ContactsPage {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: CARD_BG,
       dragBar: true,
+      // 同 BlockedUsersPage：面板自绘的 × 会被系统的那个盖住。
+      showClose: false,
       blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }

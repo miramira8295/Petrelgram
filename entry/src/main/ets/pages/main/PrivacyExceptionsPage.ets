@@ -13,6 +13,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
+import { SHEET_CLOSE_RESERVE_VP } from '../../util/sheetChrome';
 
 const CARD_RADIUS: number = 16;
 
@@ -315,7 +316,10 @@ struct PrivacyExceptionsPage {
         Button(this.saving ? $r('app.string.saving') : $r('app.string.done')).fontSize(15).fontColor(COLOR_PRIMARY)
           .backgroundColor(Color.Transparent).enabled(!this.saving)
           .onClick((): void => { this.saveDraft(); });
-      }.width('100%').height(52).alignItems(VerticalAlign.Center);
+      }
+      .width('100%').height(52).alignItems(VerticalAlign.Center)
+      // 给系统关闭按钮让位，否则「完成」被它盖住（issue #124）。
+      .padding({ right: SHEET_CLOSE_RESERVE_VP });
       TextInput({ text: this.query, placeholder: $r('app.string.search_contacts') })
         .height(44).fontSize(15).backgroundColor($r('app.color.surface_alt')).borderRadius(12)
         .padding({ left: 13, right: 13 }).onChange((value: string): void => { this.query = value; });
