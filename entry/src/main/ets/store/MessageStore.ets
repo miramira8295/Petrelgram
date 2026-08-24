@@ -20,6 +20,7 @@ import { str } from '../util/strings';
 import { publishProgress } from '../util/mediaProgressChannel';
 import { publishSendState } from '../util/sendStateChannel';
 import { logE, logI, logW } from '../util/log';
+import { isAnimationPath } from '../util/mediaPick';
 
 const PAGE: number = 30;
 // 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
@@ -1555,6 +1556,22 @@ export class MessageStore {
     this.sendContent(content, 'sendVideo', replyToId);
   }
 
+  // GIF 的输入内容。**裸 InputFile，不包装**——与 sticker / voiceNote 同一族，
+  // 见 sendSticker 上那段关于"半新 schema"的说明。
+  //
+  // 不给 width / height / duration：本地 GIF 的这几个值我们没有现成的来源，
+  // 而 TDLib 在上传时会自己探。给一组瞎猜的数反倒会让接收端按错误比例留位。
+  private animationInputContent(item: MediaSendItem, caption: string): TdObject {
+    const content: TdObject = { '@type': 'inputMessageAnimation' };
+    content['animation'] = MessageStore.localFile(item.path);
+    if (caption !== '') {
+      const ft: TdObject = { '@type': 'formattedText' };
+      ft['text'] = caption;
+      content['caption'] = ft;
+    }
+    return content;
+  }
+
   private mediaInputContent(item: MediaSendItem, caption: string): TdObject {
     const inputFile: TdObject = MessageStore.localFile(item.path);
     const content: TdObject = {
@@ -1605,6 +1622,19 @@ export class MessageStore {
     if (items.length === 0) {
       return Promise.resolve();
     }
+    // **GIF 要单独走。** 相册（sendMessageAlbum）只收 photo/video，塞进
+    // inputMessageAnimation 会被拒；而混选时把 GIF 也按 photo 发就是把它压成
+    // 静态图（issue #105）。所以先把 GIF 摘出来，各自一条 sendMessage 发。
+    const animations: MediaSendItem[] = items.filter(
+      (item: MediaSendItem): boolean => !item.isVideo && isAnimationPath(item.path));
+    if (animations.length > 0) {
+      const rest: MediaSendItem[] = items.filter(
+        (item: MediaSendItem): boolean => animations.indexOf(item) < 0);
+      // 配文跟着第一条走：先发的那一条带上它，与全是照片时的行为一致。
+      return this.sendAnimations(animations, rest.length === 0 ? caption : '', replyToId)
+        .then((): Promise<void> =>
+          rest.length === 0 ? Promise.resolve() : this.sendMedia(rest, caption, replyToId));
+    }
     const contents: TdObject[] = [];
     for (let i = 0; i < items.length; i++) {
       contents.push(this.mediaInputContent(items[i], i === 0 ? caption : ''));
@@ -1638,6 +1668,37 @@ export class MessageStore {
       this.notifySoon();
     }).catch((e: TdError): Promise<void> => {
       logE(`MessageStore.sendMedia failed: ${e.message}`);
+      return Promise.reject(e);
+    });
+  }
+
+  // 逐条发出本地 GIF。相册装不下它们，只能一条一条来（Telegram 官方客户端
+  // 在混选时也是这么做的：GIF 单独成条，其余合成相册）。
+  private sendAnimations(items: MediaSendItem[], caption: string,
+      replyToId: number): Promise<void> {
+    let chain: Promise<void> = Promise.resolve();
+    for (let i = 0; i < items.length; i++) {
+      const item: MediaSendItem = items[i];
+      const own: string = i === 0 ? caption : '';
+      chain = chain.then((): Promise<void> => {
+        const req: TdRequest = { '@type': 'sendMessage' };
+        req['chat_id'] = this.chatId;
+        req['input_message_content'] = this.animationInputContent(item, own);
+        if (replyToId > 0) {
+          const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
+          replyTo['message_id'] = replyToId;
+          req['reply_to'] = replyTo;
+        }
+        this.applyTopicScope(req);
+        return this.client.send(req).then((sent: TdObject): void => {
+          this.upsert(buildMessageEntry(sent, this.users));
+          this.resolveReplies();
+          this.notifySoon();
+        });
+      });
+    }
+    return chain.catch((e: TdError): Promise<void> => {
+      logE(`MessageStore.sendAnimations failed: ${e.message}`);
       return Promise.reject(e);
     });
   }
