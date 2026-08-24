@@ -127,7 +127,8 @@ export struct WebmStickerView {
   onFailed: () => void = (): void => {};
   @State failed: boolean = false;
   // 先试自解码链路；它自己会读文件头判断有没有 alpha，判不出来就把这面旗降下
-  // 来，退回 ijk。设备低于 API 23（系统没有 VP9 解码器）时一开始就是 false。
+  // 来，退回 ijk。**不再看设备 API 版本**——解码器是随包自带的 libvpx，唯一的
+  // 运行期条件是原生模块加载成功。
   @State useAlpha: boolean = false;
   private player: IjkMediaPlayer | null = null;
   private readonly instanceId: number = nextWebmStickerId++;

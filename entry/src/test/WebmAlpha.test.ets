@@ -6,7 +6,7 @@ import {
   demuxWebmAlpha, packAlphaStreams, readWebmTrack, WebmAlphaFrame
 } from '../main/ets/util/webm/WebmAlphaDemuxer';
 import { ALPHA_STICKER_MAX_BYTES, planAlphaDecode } from '../main/ets/util/webm/AlphaStickerBudget';
-import { alphaStickerCandidate, vp9StickerWinsAt } from '../main/ets/util/webm/alphaStickerGate';
+import { alphaStickerCandidate } from '../main/ets/util/webm/alphaStickerGate';
 
 // 透明 webm 贴纸链路里所有能在主机上跑的部分。
 //
@@ -301,15 +301,12 @@ export default function webmAlphaTest() {
       expect(planAlphaDecode(512, 512, 160, 900, ALPHA_STICKER_MAX_BYTES).accept).assertFalse();
     });
 
-    // --- API 门控 -----------------------------------------------------------
-
-    it('turns the whole pipeline on exactly at API 23', 0, () => {
-      expect(vp9StickerWinsAt(23)).assertTrue();
-      expect(vp9StickerWinsAt(22)).assertFalse();
-      // compatibleSdkVersion 是 6.0.0(20)：这些机器一行行为都不能变。
-      expect(vp9StickerWinsAt(20)).assertFalse();
-      expect(vp9StickerWinsAt(99)).assertTrue();
-    });
+    // --- 素材门控 -----------------------------------------------------------
+    //
+    // 这里原本还有一条"API 23 才开门"的门控，随解码器换成随包自带的 libvpx
+    // 一并删掉了：那条门控挡的是"系统有没有 VP9"，而现在系统有没有已经与本
+    // 功能无关。剩下的唯一运行期条件是原生模块加载成功（nativeAvailable），
+    // 那个没法在单测里伪造。
 
     it('only offers the new path to asset classes that can carry alpha', 0, () => {
       expect(alphaStickerCandidate('sticker')).assertTrue();

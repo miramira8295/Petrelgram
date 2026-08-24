@@ -2,7 +2,6 @@ import { fileIo } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 import nativeWebm from 'libentry.so';
 import { ALPHA_TOTAL_MAX_BYTES, AlphaDecodePlan, planAlphaDecode } from '../util/webm/AlphaStickerBudget';
-import { vp9StickerApiAvailable } from '../util/webm/alphaStickerGate';
 import { demuxWebmAlpha, packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
 
 // 透明 webm 贴纸的解码结果仓库。
@@ -70,14 +69,18 @@ function nativeAvailable(): boolean {
 }
 
 // 这台设备能不能走透明贴纸链路。API 门控 + 原生能力探测，都只算一次。
+// 这条链路能不能用。
+//
+// 只剩一个条件：原生模块加载成功。原来还有一条"设备 API ≥ 23"（系统 VP9 是
+// 那个版本才有的），随解码器换成随包自带的 libvpx 一并拆掉——现在 20 上和 26
+// 上跑的是同一份解码器，设备有没有 VP9 与本功能无关。
 export function alphaStickerPipelineAvailable(): boolean {
-  const api: boolean = vp9StickerApiAvailable();
   const native: boolean = nativeAvailable();
   if (!probeLogged) {
     probeLogged = true;
-    console.warn(`[AlphaDiag] pipeline api=${api} native=${native}`);
+    console.warn(`[AlphaDiag] pipeline native=${native}`);
   }
-  return api && native;
+  return native;
 }
 
 let probeLogged: boolean = false;
