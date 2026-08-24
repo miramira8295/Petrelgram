@@ -206,6 +206,9 @@ export struct SettingsPage {
   // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
   // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
+  // 手机一转横屏就被当成平板。
+  @StorageProp('screenHeightVp') screenH: number = 780;
   // The setting titles come from str() rather than $r() so the search box can
   // filter on them, which means they do not re-resolve by themselves. Observing
   // the epoch is what rebuilds this list when the language changes.
@@ -261,7 +264,7 @@ export struct SettingsPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW), this.settingsStack.size()));
+      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH), this.settingsStack.size()));
     this.reloadAccounts();
     this.loadProfile();
   }
@@ -1543,7 +1546,7 @@ export struct SettingsPage {
       // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
       // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
-      .mode(isSplitLayout(this.screenW) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(isSplitLayout(this.screenW, this.screenH) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())

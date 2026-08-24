@@ -84,6 +84,9 @@ export struct MyProfilePage {
   // 窗口宽（不是屏幕宽），分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的
   // windowSizeChange 会刷新它。平板上用来给内容限宽——见 util/contentWidth。
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
+  // 手机一转横屏就被当成平板。
+  @StorageProp('screenHeightVp') screenH: number = 780;
   @StorageProp('appIsForeground') appIsForeground: boolean = false;
   @State myId: number = 0;
   @State name: string = '';
@@ -154,7 +157,7 @@ export struct MyProfilePage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW), this.profileStack.size()));
+      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH), this.profileStack.size()));
     this.loadProfile();
   }
 

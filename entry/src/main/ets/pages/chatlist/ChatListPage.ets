@@ -152,6 +152,9 @@ export struct ChatListPage {
   @State syncState: string = '';
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
+  // 手机一转横屏就被当成平板。
+  @StorageProp('screenHeightVp') screenH: number = 780;
   // Sliding selection pill: position/size interpolated between tab frames so it
   // follows the finger during content swipes (Telegram-style).
   @State indicatorX: number = 8;
@@ -279,7 +282,7 @@ export struct ChatListPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW), this.chatStack.size()));
+      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH), this.chatStack.size()));
     // 先让会话列表首帧落地，紧接着预热聊天详情页模块。固定等 1200ms 会让快速
     // 点击穿过预热窗口；帧回调既避开列表首帧，又保证正常的人手点击前已经开始。
     this.getUIContext().postFrameCallback(new ChatModuleWarmupFrameCallback());
@@ -994,7 +997,7 @@ export struct ChatListPage {
       // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
       // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
-      .mode(isSplitLayout(this.screenW) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(isSplitLayout(this.screenW, this.screenH) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())

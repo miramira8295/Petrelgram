@@ -99,12 +99,44 @@ export default function splitMetricsTest(): void {
     // 会出现「组件已经分栏、代码还以为是手机」的半拉状态。
     it('分栏断点就是 600，边界含等号', 0, (): void => {
       expect(SPLIT_BREAKPOINT_VP).assertEqual(SPLIT_MIN_W);
-      expect(isSplitLayout(599)).assertFalse();
-      expect(isSplitLayout(600)).assertTrue();
-      expect(isSplitLayout(601)).assertTrue();
+      // 高度一律给一个平板量级的值，先只考察宽度这条边。
+      expect(isSplitLayout(599, 900)).assertFalse();
+      expect(isSplitLayout(600, 900)).assertTrue();
+      expect(isSplitLayout(601, 900)).assertTrue();
       // 手机竖屏 / 平板真机两个常见值，各站一边。
-      expect(isSplitLayout(360)).assertFalse();
-      expect(isSplitLayout(1137)).assertTrue();
+      expect(isSplitLayout(360, 780)).assertFalse();
+      expect(isSplitLayout(1137, 800)).assertTrue();
+    });
+
+    // **这条钉的是 issue #125。** 只看宽度的旧版本把「手机横过来」判成平板：
+    // 点视频全屏会把窗口转成横屏，宽度一下越过 600，整个应用进分栏。
+    it('手机横屏不分栏——短边没过线', 0, (): void => {
+      // Mate70 Pro+ 实测量级：竖屏 376×809，横屏 809×376。
+      expect(isSplitLayout(376, 809)).assertFalse();
+      expect(isSplitLayout(809, 376)).assertFalse();
+      // 高度正好卡在断点上，含等号。
+      expect(isSplitLayout(800, 599)).assertFalse();
+      expect(isSplitLayout(800, 600)).assertTrue();
+    });
+
+    it('平板横竖屏都分栏', 0, (): void => {
+      // Pad 量级：632×924 与 924×632，两条边都过线，转屏不改变结论。
+      expect(isSplitLayout(632, 924)).assertTrue();
+      expect(isSplitLayout(924, 632)).assertTrue();
+    });
+
+    it('折叠屏展开进分栏、合上回单栏', 0, (): void => {
+      // 不需要判机型：短边判据天然覆盖折叠屏的两种姿势。
+      expect(isSplitLayout(720, 830)).assertTrue();
+      expect(isSplitLayout(380, 850)).assertFalse();
+    });
+
+    it('高度读不到时退回只看宽度', 0, (): void => {
+      // 冷启动早期 windowSizeChange 还没填过 AppStorage。此时按宽度判断，
+      // 至少不会比一律拒绝分栏更差。
+      expect(isSplitLayout(1000, 0)).assertTrue();
+      expect(isSplitLayout(1000, Number.NaN)).assertTrue();
+      expect(isSplitLayout(400, 0)).assertFalse();
     });
   });
 }

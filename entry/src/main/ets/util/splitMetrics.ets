@@ -32,12 +32,29 @@
 // 「组件已经分栏了但代码还以为是手机」的半拉状态。
 export const SPLIT_BREAKPOINT_VP: number = 600;
 
-// 当前窗口宽下 HdsNavigation 会不会分栏。喂的必须是**窗口宽**而不是屏幕宽
-// （AppStorage 的 'screenWidthVp' 存的正是窗口宽，分屏/悬浮窗/折叠屏改变窗口
-// 时由 EntryAbility 的 windowSizeChange 刷新），否则平板分屏到一半时判断会
-// 与组件实际的单栏状态相反。
-export function isSplitLayout(windowWidthVp: number): boolean {
-  return windowWidthVp >= SPLIT_BREAKPOINT_VP;
+// 当前窗口下 HdsNavigation 会不会分栏。喂的必须是**窗口尺寸**而不是屏幕尺寸
+// （AppStorage 的 'screenWidthVp' / 'screenHeightVp' 存的正是窗口宽高，分屏/
+// 悬浮窗/折叠屏改变窗口时由 EntryAbility 的 windowSizeChange 刷新），否则平板
+// 分屏到一半时判断会与组件实际的单栏状态相反。
+//
+// **两条边都要过线，不是只看宽。** 只看宽的版本把「手机横过来」判成了平板：
+// 手机竖屏 376×809vp，转到横屏就是 809×376——宽度一下越过 600，整个应用进
+// 分栏，而屏幕其实只有一巴掌高。用户报的现象是「点视频全屏被强制分栏，但我
+// 没动过 dpi」（issue #125）：全屏播放会把窗口转成横屏，转的一瞬间就撞上了。
+//
+// 取两边的较小值，等价于 Android 的 smallestScreenWidthDp——它描述的是设备
+// 类别而不是当前姿势，横竖屏切换不会改变结论。折叠屏也因此天然正确：展开后
+// 短边约 720vp 进分栏，合上约 380vp 回单栏，不需要额外判断机型。
+export function isSplitLayout(windowWidthVp: number, windowHeightVp: number): boolean {
+  if (!(windowWidthVp >= SPLIT_BREAKPOINT_VP)) {
+    return false;
+  }
+  // 高度读不到时退回只看宽度的老行为。喂进 NaN/0 的场景只有"AppStorage 还没
+  // 被 windowSizeChange 填过"，那一瞬间按宽度判断至少不会比拒绝分栏更差。
+  if (!Number.isFinite(windowHeightVp) || windowHeightVp <= 0) {
+    return true;
+  }
+  return windowHeightVp >= SPLIT_BREAKPOINT_VP;
 }
 
 // 左栏想要的比例。窗口越宽，左栏越宽——但只按比例走，不按定值。
