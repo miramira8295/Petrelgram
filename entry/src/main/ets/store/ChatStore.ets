@@ -1,7 +1,8 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
-import { ChatEntry, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, isMutedFrom, usesDefaultMuteFrom, chatKindOf } from './ChatEntry';
+import { ChatEntry, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, effectiveMuted, isMutedFrom, usesDefaultMuteFrom, chatKindOf } from './ChatEntry';
+import { scopeMutedForKind } from './ScopeMuteStore';
 import { listKeyOf, chatListOf } from './ListKey';
 import { formatPreview } from '../util/formatPreview';
 import { logE, logI, logW } from '../util/log';
@@ -177,7 +178,10 @@ export class ChatStore {
       const e = this.chats.get(id);
       // 只数有未读消息的会话，"手动标记为未读"不计入——与「全部」角标读的
       // unread_unmuted_count 同一个口径（见 UnreadCountStore）。
-      if (e !== undefined && e.unreadCount > 0 && !e.isMuted) {
+      // 静音判定要过分类默认：整类静音的会话在这里也不该计入"未静音未读"
+      // （issue #110 的同一根因）。
+      if (e !== undefined && e.unreadCount > 0 &&
+        !effectiveMuted(e, scopeMutedForKind(e.kind))) {
         count += 1;
       }
     });

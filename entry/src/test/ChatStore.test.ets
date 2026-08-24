@@ -4,6 +4,8 @@ import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { ChatStore } from '../main/ets/store/ChatStore';
 import { ChatEntry } from '../main/ets/store/ChatEntry';
+import { resetScopeMute, setScopeMuted } from '../main/ets/store/ScopeMuteStore';
+import { SCOPE_CHANNEL, SCOPE_GROUP } from '../main/ets/store/NotificationApi';
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void = (): void => {};
@@ -388,16 +390,52 @@ export default function chatStoreTest() {
       expect(store.hasArchive()).assertEqual(true);
     });
     it('unread_chat_count_excludes_read_and_muted', 0, () => {
+      resetScopeMute();
       const store = make();
       const b = bridgeOf(store);
       pushNewChat(b, 1, 'A', [folderPos(5, '300', false)], null, 3); // unread, unmuted -> counted
       pushNewChat(b, 2, 'B', [folderPos(5, '200', false)], null, 0); // read -> not counted
       pushNewChat(b, 3, 'C', [folderPos(5, '100', false)], null, 5); // unread but muted below -> not counted
-      const ns: TdObject = { '@type': 'chatNotificationSettings' }; ns['mute_for'] = 3600;
+      // **use_default_mute_for 必须显式给 false。** 它为 true 时 mute_for 是无
+      // 意义的（TDLib 文档原话），真实状态在分类默认里——这正是 issue #110。
+      // 用户单独静音一个会话时 TDLib 发的就是 false + 非零 mute_for（我们自己的
+      // setMute 也是这么写的，见 ChatActions）。
+      const ns: TdObject = { '@type': 'chatNotificationSettings' };
+      ns['use_default_mute_for'] = false;
+      ns['mute_for'] = 3600;
       const u: TdObject = { '@type': 'updateChatNotificationSettings' }; u['chat_id'] = 3; u['notification_settings'] = ns;
       b.onReceive(JSON.stringify(u));
       expect(store.unreadChatCount('folder:5')).assertEqual(1);
       expect(store.unreadChatCount('main')).assertEqual(0);
+    });
+    // issue #110：把整类静音（通知设置里关掉"频道"），跟随默认的会话就该算静音。
+    // 原来这里只看 mute_for，于是官版显示静音、我们既照常计数又照常画角标。
+    it('unread_chat_count_honours_scope_default_mute', 0, () => {
+      resetScopeMute();
+      const store = make();
+      const b = bridgeOf(store);
+      // 频道，通知设置跟随默认、自身 mute_for 为 0。
+      const type: TdObject = { '@type': 'chatTypeSupergroup' };
+      type['is_channel'] = true;
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = 7; chat['title'] = 'CH'; chat['type'] = type;
+      chat['positions'] = [folderPos(5, '100', false)];
+      chat['unread_count'] = 4;
+      const ns: TdObject = { '@type': 'chatNotificationSettings' };
+      ns['use_default_mute_for'] = true;
+      ns['mute_for'] = 0;
+      chat['notification_settings'] = ns;
+      const u: TdObject = { '@type': 'updateNewChat' }; u['chat'] = chat;
+      b.onReceive(JSON.stringify(u));
+
+      expect(store.unreadChatCount('folder:5')).assertEqual(1);
+      setScopeMuted(SCOPE_CHANNEL, true);
+      expect(store.unreadChatCount('folder:5')).assertEqual(0);
+      // 群组分类不该被频道那一次写入带上。
+      setScopeMuted(SCOPE_CHANNEL, false);
+      setScopeMuted(SCOPE_GROUP, true);
+      expect(store.unreadChatCount('folder:5')).assertEqual(1);
+      resetScopeMute();
     });
     // 文件夹角标只数**有未读消息**的会话，"手动标记为未读"不计入。
     //

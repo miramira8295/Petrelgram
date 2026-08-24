@@ -1,5 +1,6 @@
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
-import { ChatEntry, ChatKind } from '../../store/ChatEntry';
+import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
+import { scopeMutedForKind } from '../../store/ScopeMuteStore';
 import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
 import {
   MUTE_OPTIONS, MuteOption, togglePin, setMute, markAsRead, markUnread,
@@ -142,12 +143,19 @@ export struct ChatRow {
     return this.chat.unreadCount > 999 ? '999+' : `${this.chat.unreadCount}`;
   }
 
+  // 这一行到底静不静音。**不能直接读 chat.isMuted**：那是 TDLib 的
+  // mute_for > 0，而 use_default_mute_for 为 true 时 mute_for 是无意义的，
+  // 真实状态在分类默认里（issue #110：官版显示静音、我们显示没静音）。
+  private muted(): boolean {
+    return effectiveMuted(this.chat, scopeMutedForKind(this.chat.kind));
+  }
+
   private accessibilitySummary(): string {
     const parts: string[] = [this.chat.title];
     if (this.isPinned()) {
       parts.push(str('cl_pinned'));
     }
-    if (this.chat.isMuted) {
+    if (this.muted()) {
       parts.push(str('cl_muted'));
     }
     if (this.isUnread()) {
@@ -332,7 +340,7 @@ export struct ChatRow {
       })
         .onClick(() => { togglePin(this.listKey, this.chat.id, !this.isPinned()); });
 
-      if (this.chat.isMuted) {
+      if (this.muted()) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bell')),
           content: $r('app.string.cp_unmute')
@@ -401,7 +409,7 @@ export struct ChatRow {
             ? $r('app.string.cl_saved_messages') : this.chat.title)
             .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
-          if (this.chat.isMuted) {
+          if (this.muted()) {
             SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_TEXT_SECONDARY]).margin({ left: 4 }).flexShrink(0);
           }
           if (this.matchingFolders().length > 0) {
@@ -450,12 +458,12 @@ export struct ChatRow {
             .constraintSize({ minWidth: 22 })
             .height(22).padding({ left: 7, right: 7 })
             .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
-            .backgroundColor(this.chat.isMuted ? COLOR_MUTED_BADGE : COLOR_PRIMARY)
+            .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : COLOR_PRIMARY)
             .borderRadius(11);
         } else if (this.chat.isMarkedUnread) {
           // Manually flagged unread — a plain dot, like the official clients.
           Circle({ width: 10, height: 10 })
-            .fill(this.chat.isMuted ? COLOR_MUTED_BADGE : COLOR_PRIMARY);
+            .fill(this.muted() ? COLOR_MUTED_BADGE : COLOR_PRIMARY);
         }
       }.alignItems(HorizontalAlign.End);
     }

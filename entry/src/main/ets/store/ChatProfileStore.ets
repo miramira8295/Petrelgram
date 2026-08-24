@@ -8,6 +8,8 @@ import { formatFileSize } from '../util/formatFileSize';
 import { formatTime } from '../util/formatTime';
 import { plural, str } from '../util/strings';
 import { logE } from '../util/log';
+import { scopeMuted } from './ScopeMuteStore';
+import { SCOPE_CHANNEL, SCOPE_GROUP } from './NotificationApi';
 
 type Listener = () => void;
 
@@ -708,14 +710,30 @@ export class ChatProfileStore {
     });
   }
 
-  // Muted = explicit non-default settings with a positive mute window.
+  // 会话自身的通知设置，原样留着。isMuted 是**算出来的**（见 recomputeMuted）：
+  // 它同时取决于这两个字段和分类默认，而 is_channel 常常比通知设置晚到，
+  // 当场算一次会用错分类。
+  private notifyUsesDefault: boolean = true;
+  private notifyOwnMuted: boolean = false;
+
   private applyNotificationSettings(ns: TdObject | undefined): void {
     if (ns === undefined) {
       return;
     }
-    const useDefault = (ns['use_default_mute_for'] as boolean | undefined) ?? true;
-    const muteFor = (ns['mute_for'] as number | undefined) ?? 0;
-    this.isMuted = !useDefault && muteFor > 0;
+    this.notifyUsesDefault = (ns['use_default_mute_for'] as boolean | undefined) ?? true;
+    this.notifyOwnMuted = ((ns['mute_for'] as number | undefined) ?? 0) > 0;
+    this.recomputeMuted();
+  }
+
+  // 跟随分类默认时 mute_for 是无意义的（TDLib 文档：use_default_mute_for 为
+  // true 时 mute_for 被忽略），真实状态在私聊/群组/频道的默认设置里。原来这里
+  // 直接判 false，于是"把频道整类静音"在资料页上显示成未静音（issue #110）。
+  //
+  // 本页只承载群和频道，分类二选一。
+  private recomputeMuted(): void {
+    this.isMuted = this.notifyUsesDefault
+      ? scopeMuted(this.isChannel ? SCOPE_CHANNEL : SCOPE_GROUP)
+      : this.notifyOwnMuted;
   }
 
   private applyVideoChat(videoChat: TdObject | undefined): void {
@@ -771,6 +789,8 @@ export class ChatProfileStore {
 
   private applySupergroup(supergroup: TdObject): void {
     this.isChannel = (supergroup['is_channel'] as boolean | undefined) ?? false;
+    // 分类变了（群 ↔ 频道），跟随默认的静音结论跟着变——通知设置多半比这条先到。
+    this.recomputeMuted();
     this.applyMemberStatus(supergroup['status'] as TdObject | undefined);
     const usernames = supergroup['usernames'] as TdObject | undefined;
     const editable = usernames !== undefined

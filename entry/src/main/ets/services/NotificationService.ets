@@ -11,6 +11,7 @@ import {
 } from '../store/AppSettings';
 import { str } from '../util/strings';
 import { logE } from '../util/log';
+import { scopeMuted, scopeOfTdType, setScopeMuted } from '../store/ScopeMuteStore';
 
 // 来电通知固定 id（TDLib notification id 为正整数，取远离区间的常量）。
 export const CALL_NOTIFICATION_ID: number = 999001;
@@ -73,12 +74,11 @@ export class NotificationService {
         const settings = u['notification_settings'] as TdObject | undefined;
         const muted: boolean = settings !== undefined
           ? (((settings['mute_for'] as number | undefined) ?? 0) > 0) : false;
-        if (typeName === 'notificationSettingsScopeGroupChats') {
-          this.scopeMuted.set('group', muted);
-        } else if (typeName === 'notificationSettingsScopeChannelChats') {
-          this.scopeMuted.set('channel', muted);
-        } else if (typeName === 'notificationSettingsScopePrivateChats') {
-          this.scopeMuted.set('private', muted);
+        // 写进共享缓存，会话列表和资料页读的是同一份——本服务自己判断"要不要
+        // 弹通知"用的也是它，两边不会再各算各的（issue #110）。
+        const scopeKey: string = scopeOfTdType(typeName);
+        if (scopeKey !== '') {
+          setScopeMuted(scopeKey, muted);
         }
       }));
     // 会话级通知设置：记录它是否覆盖了分类默认。
@@ -220,9 +220,9 @@ export class NotificationService {
   // 从 updateNewMessage 生成，静音判定用 ChatStore 已同步的 isMuted。
   // 已发通知按会话记录，会话被读完时统一撤销。
   private noticeIdsByChat: Map<number, number[]> = new Map();
-  // 分类默认静音（通知设置页的私聊/群组/频道开关）。会话自身
-  // use_default_mute_for=true 时按分类默认判定，否则用会话自己的 mute_for。
-  private scopeMuted: Map<string, boolean> = new Map();
+  // 分类默认静音已搬到 store/ScopeMuteStore——界面也要读它（会话列表画不画
+  // 铃铛）。留在服务实例里的那份别人拿不到，结果就是"通知不弹、列表却显示
+  // 未静音"这种自相矛盾。
   // chatId → 该会话是否使用分类默认值 / 自身 mute_for（来自 updateChat*）。
   private chatUsesDefaultMute: Map<number, boolean> = new Map();
   private chatOwnMuted: Map<number, boolean> = new Map();
@@ -257,7 +257,7 @@ export class NotificationService {
     if (!usesDefault) {
       return this.chatOwnMuted.get(chatId) ?? false;
     }
-    return this.scopeMuted.get(this.scopeKeyOf(chatId)) ?? false;
+    return scopeMuted(this.scopeKeyOf(chatId));
   }
 
   private trackChatNotificationSettings(chatId: number, settings: TdObject | undefined): void {
@@ -283,7 +283,7 @@ export class NotificationService {
       const key: string = scopes[i];
       this.client.send(req).then((res: TdObject): void => {
         const muted: boolean = ((res['mute_for'] as number | undefined) ?? 0) > 0;
-        this.scopeMuted.set(key, muted);
+        setScopeMuted(key, muted);
       }).catch((e: TdError): void => {
         logE(`NotificationService.getScopeNotificationSettings(${key}): ${e.message}`);
       });

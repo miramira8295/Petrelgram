@@ -6,11 +6,15 @@ import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 
 @Component
 export struct ChatListView {
   @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
+  // 分类默认静音一改，每一行的铃铛和角标颜色都可能翻转（见 ChatRow.muted）。
+  // 和 langEpoch 同一套办法：进 key 就是整表改名，@Watch 负责把重建踢起来。
+  @StorageProp(SCOPE_MUTE_EPOCH) @Watch('onLanguageEpochChanged') scopeMuteEpoch: number = 0;
   @Prop listKey: string;
   // Folder tabs sit behind MainScreen's floating dock; ArchivePage does not.
   @Prop reserveDockSpace: boolean = true;
@@ -107,7 +111,7 @@ export struct ChatListView {
   // langEpoch in the key: see MainTabBody.rowKey.
   private rowKey(item: ChatEntry): string {
     const pinned = getChatStore().isPinned(this.listKey, item.id) ? 1 : 0;
-    return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}`;
+    return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}_${this.scopeMuteEpoch}`;
   }
 
   private loadMore(): void {

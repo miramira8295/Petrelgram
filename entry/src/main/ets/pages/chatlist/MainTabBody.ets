@@ -10,6 +10,7 @@ import {
   AVATAR_SIZE, COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
   ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
+import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToArchive } from '../../util/profileNav';
 
@@ -25,6 +26,8 @@ const ARCHIVE_OVERPULL: number = 96;
 export struct MainTabBody {
   // See ChatPage: the row key embeds this, so the data source must be told.
   @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
+  // 见 ChatListView 上的同名字段。
+  @StorageProp(SCOPE_MUTE_EPOCH) @Watch('onLanguageEpochChanged') scopeMuteEpoch: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // Set when the floating folder bar overlays this list (see ChatListView).
   // 顶部悬浮 chrome（顶栏 + 文件夹条）的总高度。改成数值是因为顶栏也浮起来
@@ -110,7 +113,7 @@ export struct MainTabBody {
   // than every ChatRow carrying its own AppStorage observer for it.
   private rowKey(item: ChatEntry): string {
     const pinned = getChatStore().isPinned('main', item.id) ? 1 : 0;
-    return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}`;
+    return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}_${this.scopeMuteEpoch}`;
   }
 
   // 归档入口是否作为列表第 0 行存在。

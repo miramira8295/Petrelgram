@@ -17,6 +17,7 @@ import { SystemNotificationPublisher } from '../services/SystemNotificationPubli
 import { registerMessageSyncWork } from '../services/MessageSyncWork';
 import { WebPushConfig, registerWebPush, validateWebPushConfig } from '../services/WebPushRegistration';
 import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
+import { resetScopeMute } from '../store/ScopeMuteStore';
 import {
   KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH
 } from '../store/AppSettings';
@@ -313,6 +314,9 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   files = undefined;
   folders = undefined;
   unread = undefined;
+  // 分类默认静音是**按账号**的：上一个账号把频道整类静音了，新账号未必。
+  // 它住在模块级的 Map 里，不随运行时一起销毁，必须显式清。
+  resetScopeMute();
 }
 
 function sendOnlineOption(runtimeClient: TdClient, online: boolean): Promise<void> {

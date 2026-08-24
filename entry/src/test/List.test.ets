@@ -14,6 +14,7 @@ import appIconTest from './AppIcon.test';
 import hmsRelayRegistrationTest from './HmsRelayRegistration.test';
 import navBarResetTest from './NavBarReset.test';
 import diagLogHeaderTest from './DiagLogHeader.test';
+import scopeMuteTest from './ScopeMute.test';
 import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
@@ -145,6 +146,7 @@ export default function testsuite() {
   hmsRelayRegistrationTest();
   navBarResetTest();
   diagLogHeaderTest();
+  scopeMuteTest();
   startupStageTest();
   diagLogExportTest();
   formatTimeTest();
