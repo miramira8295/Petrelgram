@@ -174,6 +174,7 @@ export struct DiagnosticsPage {
           .width('100%')
           .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
         }
+        .align(Alignment.Top)
         .width('100%').scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         // 不裁剪，内容才能穿到标题栏底下。

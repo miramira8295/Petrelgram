@@ -1219,6 +1219,7 @@ export struct ProxyPage {
         left: 14, right: 14, top: 5, bottom: this.bottomSafe + 20
       });
     }
+    .align(Alignment.Top)
     .width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
   }
 

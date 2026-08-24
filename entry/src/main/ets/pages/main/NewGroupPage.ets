@@ -958,6 +958,7 @@ struct NewGroupPage {
         top: 4, bottom: this.bottomSafe + 24
       });
     }
+    .align(Alignment.Top)
     .layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
     .transition(TransitionEffect.OPACITY.combine(
       TransitionEffect.translate({ x: 18 })

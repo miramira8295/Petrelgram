@@ -206,7 +206,8 @@ struct ConnectedWebsitesPage {
           .width('100%')
           // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
           .alignItems(HorizontalAlign.Center);
-        }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        }
+        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
       }
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)

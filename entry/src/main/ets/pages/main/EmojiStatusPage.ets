@@ -228,6 +228,11 @@ export struct EmojiStatusPage {
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
           }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
         }
+        // **Scroll 的 align 默认是 Center**，内容比视口短时会被垂直居中。
+        // 本页在非 Premium 账号下只有"清除当前状态"一行加一句说明，于是整块
+        // 悬在屏幕中间、离标题老远（issue #120）。全应用的纵向页面滚动区都要
+        // 显式写这一句，别指望默认值。
+        .align(Alignment.Top)
         .layoutWeight(1).width('100%').scrollBar(BarState.Off)
         // 不裁剪，内容才能穿到标题栏底下。
         .clip(false);

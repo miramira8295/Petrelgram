@@ -34,6 +34,7 @@ import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
 import { readableContentWidth } from '../../util/contentWidth';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { navBarVisibleOnAppear } from '../../util/navBarReset';
+import { isSplitLayout } from '../../util/splitMetrics';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;

@@ -168,7 +168,8 @@ struct ChatThemePage {
             right: 12 + contentSideGutter(this.screenW),
             bottom: this.bottomSafe + 24
           });
-        }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        }
+        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
       }
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)

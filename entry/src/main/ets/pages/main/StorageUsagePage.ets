@@ -314,7 +314,8 @@ struct StorageUsagePage {
         .width('100%')
         // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
         .alignItems(HorizontalAlign.Center);
-      }.layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
+      }
+      .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
     }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe });

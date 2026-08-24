@@ -2764,6 +2764,7 @@ struct LiveStreamViewerPage {
                 `fullscreen:${participant.key}:${participant.revision}`)
             }.width('100%');
           }
+          .align(Alignment.Top)
           .width('100%').layoutWeight(1).scrollBar(BarState.Off);
         }
       }
@@ -3018,6 +3019,7 @@ struct LiveStreamViewerPage {
             }
             .width('100%').padding({ left: 8, right: 8, bottom: 8 });
           }
+          .align(Alignment.Top)
           .width('100%').layoutWeight(1).scrollBar(BarState.Off);
           if (this.shouldShowInteractionSection()) {
             this.interactionDock();

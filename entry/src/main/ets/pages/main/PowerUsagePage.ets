@@ -454,6 +454,7 @@ export struct PowerUsagePage {
         .width('100%')
         .padding({ left: 12, right: 12, top: 8, bottom: this.bottomSafe + 24 });
       }
+      .align(Alignment.Top)
       .layoutWeight(1).width('100%').scrollBar(BarState.Off)
       // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
       .clip(false);

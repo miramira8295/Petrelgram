@@ -1010,6 +1010,7 @@ export struct ActiveSessionsPage {
         .alignItems(HorizontalAlign.Center)
         .padding({ top: 16, bottom: this.bottomSafe + 10 });
       }
+      .align(Alignment.Top)
       .width('100%').layoutWeight(1)
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring);
