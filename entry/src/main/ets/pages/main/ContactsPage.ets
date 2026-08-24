@@ -25,6 +25,7 @@ import {
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
+import { navBarVisibleOnAppear } from '../../util/navBarReset';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -185,10 +186,18 @@ export struct ContactsPage {
     // （openContact），但注册进去之后 profileNav 才能按 tab 参数推进来，
     // 也才有可能在页面之外触发（将来的「联系人」深链）。
     registerStack('contacts', this.contactsStack as NavStackLike);
-    // 复位一次再挂树：本页刚建好时栈必然是空的，navBar 一定可见。不复位的话，
-    // 上一轮（退登/换账号）留在 AppStorage 里的 false 会让 dock 一直藏着——
-    // onNavBarStateChange 只在**变化**时触发，不会替我们补一发 true。
-    AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, true);
+    // 复位一次再挂树。**复位值取自栈的真实状态，不能一律写 true。**
+    //
+    // 需要复位是因为 onNavBarStateChange 只在**变化**时触发，不会在页面重建时
+    // 补一发——上一轮（退登/换账号）留下的 false 会让 dock 永久藏着。
+    //
+    // 但原来那句「本页刚建好时栈必然是空的」在整页 router 跳转下不成立：应用内
+    // 浏览器（pages/web/InAppBrowserPage）是整页 router 页，从聊天详情里打开再
+    // 返回时这棵树会重建、aboutToAppear 再跑一次，而页签栈还压着详情页。无条件
+    // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
+    // 判据见 util/navBarReset。
+    AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY,
+      navBarVisibleOnAppear(isSplitLayout(this.screenW), this.contactsStack.size()));
     this.releaseActionLock();
     const store = new ContactsStore(getTdClient());
     this.store = store;

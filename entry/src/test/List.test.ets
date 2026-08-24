@@ -12,6 +12,7 @@ import liveTailTest from './LiveTail.test';
 import updateThrottleTest from './UpdateThrottle.test';
 import appIconTest from './AppIcon.test';
 import hmsRelayRegistrationTest from './HmsRelayRegistration.test';
+import navBarResetTest from './NavBarReset.test';
 import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
@@ -141,6 +142,7 @@ export default function testsuite() {
   updateThrottleTest();
   appIconTest();
   hmsRelayRegistrationTest();
+  navBarResetTest();
   startupStageTest();
   diagLogExportTest();
   formatTimeTest();

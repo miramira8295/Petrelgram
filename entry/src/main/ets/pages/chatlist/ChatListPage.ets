@@ -26,6 +26,7 @@ import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
+import { navBarVisibleOnAppear } from '../../util/navBarReset';
 
 interface TabSpec {
   key: string;
@@ -267,10 +268,18 @@ export struct ChatListPage {
     // 深链、通知点击、账号切换都在页面之外触发跳转，拿不到组件上下文，
     // 只能靠全局注册表取栈。见 util/navStacks.ets 的说明。
     registerStack('chat', this.chatStack as NavStackLike);
-    // 复位一次再挂树：本页刚建好时栈必然是空的，navBar 一定可见。不复位的话，
-    // 上一轮（退登/换账号）留在 AppStorage 里的 false 会让 dock 一直藏着——
-    // onNavBarStateChange 只在**变化**时触发，不会替我们补一发 true。
-    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, true);
+    // 复位一次再挂树。**复位值取自栈的真实状态，不能一律写 true。**
+    //
+    // 需要复位是因为 onNavBarStateChange 只在**变化**时触发，不会在页面重建时
+    // 补一发——上一轮（退登/换账号）留下的 false 会让 dock 永久藏着。
+    //
+    // 但原来那句「本页刚建好时栈必然是空的」在整页 router 跳转下不成立：应用内
+    // 浏览器（pages/web/InAppBrowserPage）是整页 router 页，从聊天详情里打开再
+    // 返回时这棵树会重建、aboutToAppear 再跑一次，而页签栈还压着详情页。无条件
+    // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
+    // 判据见 util/navBarReset。
+    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY,
+      navBarVisibleOnAppear(isSplitLayout(this.screenW), this.chatStack.size()));
     // 先让会话列表首帧落地，紧接着预热聊天详情页模块。固定等 1200ms 会让快速
     // 点击穿过预热窗口；帧回调既避开列表首帧，又保证正常的人手点击前已经开始。
     this.getUIContext().postFrameCallback(new ChatModuleWarmupFrameCallback());
