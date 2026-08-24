@@ -16,6 +16,7 @@ import { NotificationService } from '../services/NotificationService';
 import { SystemNotificationPublisher } from '../services/SystemNotificationPublisher';
 import { registerMessageSyncWork } from '../services/MessageSyncWork';
 import { WebPushConfig, registerWebPush, validateWebPushConfig } from '../services/WebPushRegistration';
+import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
 import {
   KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH
 } from '../store/AppSettings';
@@ -150,7 +151,36 @@ function createRuntime(slotId: string): void {
       runtimeReady = false;
     }
   });
-  client.start();
+  try {
+    client.start();
+  } catch (caught) {
+    const startError = caught as Error;
+    // A native receiver-thread allocation failure is reported as an ArkTS
+    // exception. Tear down the half-built runtime so account switching can
+    // retry or restore the previous slot instead of retaining unusable stores.
+    notifications?.close();
+    notifications = undefined;
+    callSession?.close();
+    callSession = undefined;
+    auth.dispose();
+    client.dispose();
+    client = undefined;
+    auth = undefined;
+    users = undefined;
+    chats = undefined;
+    files = undefined;
+    folders = undefined;
+    unread = undefined;
+    chatThemes = undefined;
+    accentColors = undefined;
+    storyStore = undefined;
+    try {
+      testNapi.tdDestroy();
+    } catch (_cleanupError) {
+      // Preserve the original startup error; it names the failed resource.
+    }
+    throw startError;
+  }
 }
 
 // --- 连接状态 --------------------------------------------------------------
@@ -204,6 +234,27 @@ export function waitForConnection(timeoutMs: number = 20000): Promise<boolean> {
 // device token 是按账号注册的：切账号或重启后都要对当前账号重新注册一次，
 // 否则新账号根本没订阅，用户却看到开关是开着的。
 function reregisterWebPush(client: TdClient): void {
+  // **先试华为通道，再回到已保存的配置。**
+  //
+  // 顺序是有意的：能取到设备 token 就说明这台机器装的是我们自己签的包，华为
+  // 通道对它可用，那条路由系统弹通知、应用被杀也能到，体验优于 MeoW。取不到就
+  // 什么都不做（未签名包必然如此），照旧走下面已保存的那份配置。
+  //
+  // 不 await：这里在 AuthStage.Ready 的回调里，登录流程不该等一次网络往返。
+  // ensureHmsPushRegistered 内部全程静默失败，不会把异常漏出来。
+  ensureHmsPushRegistered(client).then((ok: boolean): void => {
+    if (ok) {
+      return;
+    }
+    reregisterStoredWebPush(client);
+  }).catch((e: Object): void => {
+    logE(`HMS push registration threw: ${JSON.stringify(e)}`);
+    reregisterStoredWebPush(client);
+  });
+}
+
+// 用已保存的三元组重新向 Telegram 注册。华为通道走不通时的原有行为，一行未改。
+function reregisterStoredWebPush(client: TdClient): void {
   if (!(AppStorage.get<boolean>(KEY_WEBPUSH_ENABLED) ?? false)) {
     return;
   }

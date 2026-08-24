@@ -168,6 +168,10 @@ export const KEY_WEBPUSH_P256DH: string = 'webPushP256dh';
 export const KEY_WEBPUSH_AUTH: string = 'webPushAuth';
 // 页面顶部模式记忆：'custom'（手工三字段）或 'meow'（用户名代填）。
 export const KEY_WEBPUSH_MODE: string = 'webPushMode';
+// 上一次注册到中转的华为设备 token。存它是为了判断"要不要重新注册"——每次启动
+// 都往中转发一次注册是白白的往返，还会把中转的注册限流桶打满（每 IP 有窗口配额，
+// 同一个 Wi-Fi 下多台设备会互相挤掉）。见 HmsRelayRegistration.needsHmsRegistration。
+export const KEY_HMS_PUSH_TOKEN: string = 'hmsPushToken';
 export const WEBPUSH_MODE_CUSTOM: string = 'custom';
 export const WEBPUSH_MODE_MEOW: string = 'meow';
 // MeoW 模式：中转服务器不认识 Telegram userId —— 主键是客户端自己生成的随机
@@ -208,6 +212,7 @@ const DATA_STRING_KEYS: string[] = [
   KEY_WEBPUSH_P256DH,
   KEY_WEBPUSH_AUTH,
   KEY_WEBPUSH_MODE,
+  KEY_HMS_PUSH_TOKEN,
   KEY_MEOW_SUBKEY,
   KEY_MEOW_SECRET,
   KEY_MEOW_NICKNAME,
