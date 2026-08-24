@@ -17,6 +17,8 @@ import { logChatNavFailure, navigateToChat } from '../util/chatNav';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject } from '../tdkit/TdTypes';
 import { logE } from '../util/log';
+import { StartupSplash } from './common/StartupSplash';
+import { isStartupStage } from '../util/startupStage';
 
 // 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
 const DEEP_LINK_CONNECT_WAIT_MS: number = 8000;
@@ -192,7 +194,11 @@ struct Index {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
-        if (this.tdAccountSwitching) {
+        if (isStartupStage(this.stage, this.tdAccountSwitching)) {
+          // 系统启动窗刚消失、TDLib 还没就绪的那一帧。它照抄系统启动窗，为的就是
+          // 让这一次交接看不出来——详见 StartupSplash。
+          StartupSplash()
+        } else if (this.tdAccountSwitching) {
           LoadingProgress().width(48).height(48)
         } else if (this.stage === AuthStage.WaitPhone) {
           PhoneNumberPage()
@@ -206,10 +212,10 @@ struct Index {
           RegisterPage()
         } else if (this.stage === AuthStage.Ready) {
           MainScreen()
-        } else if (this.stage === AuthStage.LoggedOut) {
-          PhoneNumberPage()
         } else {
-          LoadingProgress().width(48).height(48)
+          // LoggedOut 与其余情况都回到手机号登录页。上面那条 isStartupStage
+          // 已经把"还没有界面可画"的阶段挑走了，走到这里的一定是有界面的。
+          PhoneNumberPage()
         }
       }
       .width('100%')
@@ -233,6 +239,11 @@ struct Index {
     .width('100%')
     .height('100%')
     // ChatListPage does its own full-screen top inset; pad only the login stages.
-    .padding({ top: this.stage === AuthStage.Ready ? 0 : this.topSafe })
+    // 启动图也不能留这段：它要顶到屏幕最上沿才能和系统启动窗对齐，下移一个状态栏
+    // 高度就会先错位一下再跳回来——正是这一版要消掉的那种割裂。
+    .padding({
+      top: (this.stage === AuthStage.Ready || isStartupStage(this.stage, this.tdAccountSwitching))
+        ? 0 : this.topSafe
+    })
   }
 }

@@ -10,6 +10,7 @@ import authErrorTextTest from './AuthErrorText.test';
 import liveTailTest from './LiveTail.test';
 import updateThrottleTest from './UpdateThrottle.test';
 import appIconTest from './AppIcon.test';
+import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
 import intlFormatTest from './intlFormat.test';
@@ -132,6 +133,7 @@ export default function testsuite() {
   liveTailTest();
   updateThrottleTest();
   appIconTest();
+  startupStageTest();
   diagLogExportTest();
   formatTimeTest();
   intlFormatTest();
