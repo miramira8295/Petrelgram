@@ -12,6 +12,21 @@
     "installationFree": false,
     "pages": "$profile:main_pages",
     "routerMap": "$profile:router_map",
+    // 华为 Push Kit 的 AGC 应用标识。
+    //
+    // **这里的值不会进版本库**：.gitattributes 给本文件挂了 clean filter，git
+    // 存下来的永远是空串。本机要填真值才能取到 Push Token，装法见
+    // scripts/install-git-filters.sh。别人 clone 拿到的是空值——他们用的是自签
+    // 的未签名包，签名身份和本 AGC 应用对不上，填了也取不到 token。
+    //
+    // 必须配在 module 级 metadata：app.json5 的 schema 不接受这一项，官方文档也
+    // 写了「请注意不要使用其他方式设置 value 值」。
+    "metadata": [
+      {
+        "name": "client_id",
+        "value": ""
+      }
+    ],
     "requestPermissions": [
       {
         "name": "ohos.permission.INTERNET"
