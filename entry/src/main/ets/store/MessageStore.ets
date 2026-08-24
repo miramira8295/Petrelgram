@@ -130,6 +130,9 @@ export class MessageStore {
   // fileId -> 上次发出 downloadFile 的时间。见 requestStickerSource 里的说明：
   // 没有它时，一次静默卡死的下载会把贴纸永久钉在 0%。
   private stickerLastKick: Map<number, number> = new Map();
+  // 诊断：临时消息 id -> 点发送的时刻。sendMessage 的应答只说明 TDLib 本地
+  // 接下了（实测 8ms），真正走网络的是到 updateMessageSendSucceeded 那一段。
+  private sendStartedAt: Map<number, number> = new Map();
   // Live incoming media is the only automatic-download/autosave candidate.
   // Initial history never starts a burst of full-resolution downloads.
   // Consumed by ChatPage's autosave-to-gallery flow (consumeLiveIncomingMediaIds).
@@ -1089,6 +1092,10 @@ export class MessageStore {
       const roundTripMs: number = Date.now() - sentAt;
       if (roundTripMs > 300) {
       } else {
+      }
+      const pendingId: number = (m['id'] as number | undefined) ?? 0;
+      if (pendingId !== 0) {
+        this.sendStartedAt.set(pendingId, sentAt);
       }
       this.upsert(buildMessageEntry(m, this.users));
       this.resolveReplies();
@@ -2080,6 +2087,11 @@ export class MessageStore {
     }
     // 行身份必须跨过这次替换：临时 id 那条的 rowId 传给真实 id 那条，
     // 列表才不会把它当成新行销毁重建（发完消息"闪一下"的来源）。
+    const startedAt: number = this.sendStartedAt.get(oldId) ?? 0;
+    if (startedAt !== 0) {
+      this.sendStartedAt.delete(oldId);
+      console.warn(`[SendDiag] serverAck=${Date.now() - startedAt}ms rows=${this.messages.length}`);
+    }
     const previous = this.messages.find((e: MessageEntry): boolean => e.id === oldId);
     const carriedRowId: number = previous !== undefined ? previous.rowId : 0;
     this.messages = this.messages.filter((e: MessageEntry) => e.id !== oldId);

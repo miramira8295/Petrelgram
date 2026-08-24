@@ -1,3 +1,5 @@
+import { image } from '@kit.ImageKit';
+
 export const tdInit: (onReceive: (json: string) => void) => void;
 export const tdSend: (json: string) => void;
 export const tdExecute: (json: string) => string;
@@ -65,3 +67,17 @@ export const callSetAudioOutput: (speaker: boolean) => void;
 export const callSetLocalVideoSurface: (surfaceId: string) => void;
 export const callSetRemoteVideoSurface: (surfaceId: string) => void;
 export const callVersions: () => string;
+
+// --- 透明 webm 贴纸（VP9 + BlockAdditional alpha） ---
+// 设备有没有系统 VP9 解码器。系统 VP9 是 API 23 起才有的能力。
+export const webmAlphaAvailable: () => boolean;
+// 两路 VP9 码流 -> 一串 PixelMap（非预乘 RGBA，已缩到 dstW x dstH）。
+// 码流按"拼接字节 + int32 长度表"两块 ArrayBuffer 传，只跨一次 NAPI。
+// frameStep 是保留步长：VP9 帧间预测，包必须全喂，只是解出来每 step 帧留一帧。
+// 失败时 resolve 成空数组，调用方据此回退到 ijkplayer。
+export const webmAlphaDecode: (
+  colorData: ArrayBuffer, colorLengths: ArrayBuffer,
+  alphaData: ArrayBuffer, alphaLengths: ArrayBuffer,
+  srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
+  frameStep: number
+) => Promise<image.PixelMap[]>;

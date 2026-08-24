@@ -1,4 +1,5 @@
 #include "napi/native_api.h"
+#include "webm_alpha_napi.h"
 #include <hilog/log.h>
 #include <atomic>
 #include <cstdint>
@@ -1267,6 +1268,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"callVersions", nullptr, CallVersions, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
+    WebmAlphaRegister(env, exports);
     return exports;
 }
 EXTERN_C_END
