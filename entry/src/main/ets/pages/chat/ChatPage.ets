@@ -1971,6 +1971,15 @@ export struct ChatPage {
         // Never follow while parked at the unread boundary (until the user
         // touches) or while the fullscreen viewer is open — the chat should
         // return to the same underlying message after the preview closes.
+        if (notifyKind === 'update') {
+          // 诊断（issue #62）：新消息到了，跟不跟随只取决于这三个标志。用户
+          // 报的现象是"手滑到底之后新消息不跟随，点箭头到底就跟随"——两条路
+          // 的差别一定落在这三个之一，打出来就不用猜了。
+          logW(`[Follow62] atBottom=${this.atBottom} stayAtUnread=${this.stayAtUnread}` +
+            ` viewerOpen=${this.viewerMsgId !== 0}` +
+            ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}` +
+            ` endIdx=${this.curEndIdx} rows=${this.groups.length}`);
+        }
         if (notifyKind === 'update' && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0) {
           this.glueBottom('L1242');
         }
@@ -2753,23 +2762,31 @@ export struct ChatPage {
   // 判定本身在 util/atBottom（10 条测）：那里记着两条上线过的 bug——
   // isAtEnd() 瞬时误报导致把用户从中间拽到最新，以及拿陈旧行号否决导致的自锁死。
   private refreshAtBottom(): void {
+    const scrollerAtEnd: boolean = this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd();
+    const hasMoreNewer: boolean = this.store !== null && this.store.getHasMoreNewer();
     const verdict: string = atBottomVerdict({
       viewerOpen: this.viewerMsgId !== 0,
       imeTailPinned: this.imeTailPinned,
-      scrollerAtEnd: this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd(),
+      scrollerAtEnd: scrollerAtEnd,
       visibleEndIdx: this.curEndIdx,
       indexGroupsLen: this.indexGroupsLen,
       groupsLen: this.groups.length,
-      hasMoreNewer: this.store !== null && this.store.getHasMoreNewer()
+      hasMoreNewer: hasMoreNewer
     });
     if (verdict === AT_BOTTOM_KEEP) {
       return;
     }
     const next: boolean = verdict === AT_BOTTOM_YES;
     if (this.atBottom !== next) {
+      // 诊断（issue #62）：报告人给的复现极精确——点右下角箭头到底之后，新消息
+      // 会自动跟随；自己手滑到底就不会。两条路的差别只可能落在这四个输入之一，
+      // 但光看代码分不出是哪个。**只在翻转时打**，稳态不打：那是每次滚动帧都
+      // 会走的路，逐次记会把环形缓冲刷满。
+      logW(`[Bottom62] ${this.atBottom}->${next} scrollerAtEnd=${scrollerAtEnd}` +
+        ` endIdx=${this.curEndIdx} idxLen=${this.indexGroupsLen} rows=${this.groups.length}` +
+        ` hasMoreNewer=${hasMoreNewer} imePinned=${this.imeTailPinned}`);
       this.atBottom = next;
     }
-  }
 
   private syncTailAfterImeResize(releaseAfter: boolean = false): void {
     if (!this.imeTailPinned || this.viewerMsgId !== 0) {
