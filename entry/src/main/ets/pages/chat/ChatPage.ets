@@ -1170,6 +1170,11 @@ export struct ChatPage {
   @State flashAlpha: number = 0;
   @State flashShown: boolean = false;
   private flashSeq: number = 0;
+  // 高亮当前钉着的行。高亮层是按视口坐标定位的，行高一变（链接预览、缩略图、
+  // 翻译状态异步到货把上面的行撑开）它就和句子错开——用户看到的是「高亮在
+  // 句子上方」（issue #80）。闪烁期间每一拍都按这两个重新对一次位置。
+  private flashTargetIdx: number = -1;
+  private flashTargetId: number = 0;
   // Floating date chip: shows the topmost visible message's date while the
   // list scrolls, fades out shortly after scrolling stops (the in-list date
   // pills stay — this is the always-visible companion).
@@ -4133,12 +4138,47 @@ export struct ChatPage {
       if (height <= 0) {
         return;
       }
+      this.flashTargetIdx = idx;
+      this.flashTargetId = targetId;
       this.flashTop = top;
       this.flashHeight = height;
       this.flashShown = true;
       this.flashAlpha = 0;
       this.runBlink(seq, 2);
     }, 150);
+  }
+
+  // 把高亮层重新对到目标行上。行还在就跟着它走；找不到（被滚出窗口、数据换了）
+  // 就收掉，别留一条悬空的色带。有 id 就按 id 重解下标——prepend 会让下标漂移。
+  private syncFlashRect(): void {
+    if (!this.flashShown) {
+      return;
+    }
+    let idx: number = this.flashTargetIdx;
+    if (this.flashTargetId > 0) {
+      idx = groupIndexOf(this.groups, this.flashTargetId);
+    }
+    if (idx < 0) {
+      this.cancelFlash();
+      return;
+    }
+    let top: number = 0;
+    let height: number = 0;
+    try {
+      const rect = this.scroller.getItemRect(idx);
+      top = rect.y;
+      height = rect.height;
+    } catch (e) {
+      this.cancelFlash();
+      return;
+    }
+    if (height <= 0) {
+      return;
+    }
+    if (Math.abs(top - this.flashTop) > 0.5 || Math.abs(height - this.flashHeight) > 0.5) {
+      this.flashTop = top;
+      this.flashHeight = height;
+    }
   }
 
   private runBlink(seq: number, remaining: number): void {
@@ -4150,6 +4190,8 @@ export struct ChatPage {
       this.flashAlpha = 0;
       return;
     }
+    // 每一拍开始前先对一次位置（issue #80）。
+    this.syncFlashRect();
     animateTo({
       duration: this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, 320), curve: Curve.EaseInOut
     }, () => { this.flashAlpha = 1; });
@@ -4157,6 +4199,7 @@ export struct ChatPage {
       if (seq !== this.flashSeq) {
         return;
       }
+      this.syncFlashRect();
       animateTo({
         duration: this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, 320), curve: Curve.EaseInOut
       }, () => { this.flashAlpha = 0; });
@@ -4164,8 +4207,9 @@ export struct ChatPage {
     }, 340);
   }
 
-  // Any new touch cancels the highlight (it's viewport-anchored, so it would
-  // visibly detach from the row once the user scrolls).
+  // Any new touch cancels the highlight: it is viewport-anchored, and while a
+  // programmatic shift is re-synced by syncFlashRect, a user drag moves faster
+  // than the blink cadence and the band would visibly lag the row.
   private cancelFlash(): void {
     this.flashSeq++;
     this.flashShown = false;
@@ -7973,6 +8017,8 @@ export struct ChatPage {
         // true bottom edge here so the glue stops fighting the user.
         .onDidScroll(() => {
           this.refreshAtBottom();
+          // 列表被程序性挪动（贴底、prepend 复位）时高亮跟着行走（issue #80）。
+          this.syncFlashRect();
           if (this.listTouchActive) {
             // A tap alone does not release the initial unread anchor. Only an
             // actual drag gives scroll ownership to the user.
