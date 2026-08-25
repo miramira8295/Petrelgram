@@ -19,6 +19,7 @@ import decodeSizeTest from './DecodeSize.test';
 import chatContentWidthTest from './ChatContentWidth.test';
 import splitNavWidthTest from './SplitNavWidth.test';
 import reactionsWidthTest from './ReactionsWidth.test';
+import emojiStatusIdTest from './EmojiStatusId.test';
 import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
@@ -156,6 +157,7 @@ export default function testsuite() {
   chatContentWidthTest();
   splitNavWidthTest();
   reactionsWidthTest();
+  emojiStatusIdTest();
   diagLogExportTest();
   formatTimeTest();
   intlFormatTest();

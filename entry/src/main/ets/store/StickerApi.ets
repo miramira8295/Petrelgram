@@ -1,5 +1,7 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
+import { emojiStatusIdsOf } from '../util/emojiStatus';
+import { logW } from '../util/log';
 
 // Sticker library operations beyond the installed-packs list: the 最近/收藏
 // sections, pack management (archive/reorder/local search) and emoji-driven
@@ -137,16 +139,26 @@ export function markTrendingViewed(setIds: string[]): void {
 
 // --- Emoji status (Premium): the animated emoji beside your name ---
 
-export async function getDefaultEmojiStatuses(): Promise<TdObject[]> {
-  const result = await getTdClient().send(
-    { '@type': 'getDefaultEmojiStatuses' } as TdRequest, 12000);
-  return ((result['emoji_statuses'] as TdObject[] | undefined) ?? []).slice();
+// 两个都直接返回 custom_emoji_id 列表，新老 schema 由 emojiStatusIdsOf 兜住。
+// 空时把回包的 keys 打出来：下次 schema 再变不用猜（issue #120 就是这么漏的）。
+function emojiStatusIds(result: TdObject, what: string): string[] {
+  const ids: string[] = emojiStatusIdsOf(result);
+  if (ids.length === 0) {
+    logW(`StickerApi.${what}: no ids; keys=${Object.keys(result).join(',')}`);
+  }
+  return ids;
 }
 
-export async function getRecentEmojiStatuses(): Promise<TdObject[]> {
+export async function getDefaultEmojiStatuses(): Promise<string[]> {
+  const result = await getTdClient().send(
+    { '@type': 'getDefaultEmojiStatuses' } as TdRequest, 12000);
+  return emojiStatusIds(result, 'getDefaultEmojiStatuses');
+}
+
+export async function getRecentEmojiStatuses(): Promise<string[]> {
   const result = await getTdClient().send(
     { '@type': 'getRecentEmojiStatuses' } as TdRequest, 12000);
-  return ((result['emoji_statuses'] as TdObject[] | undefined) ?? []).slice();
+  return emojiStatusIds(result, 'getRecentEmojiStatuses');
 }
 
 // customEmojiId '' clears the status.

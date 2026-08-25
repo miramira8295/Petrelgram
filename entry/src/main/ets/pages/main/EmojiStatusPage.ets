@@ -8,7 +8,7 @@ import { TgsStickerView } from '../chat/TgsStickerView';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
-import { logE } from '../../util/log';
+import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_RADIUS: number = 14;
@@ -48,16 +48,6 @@ export struct EmojiStatusPage {
 
   aboutToDisappear(): void {
     this.active = false;
-  }
-
-  private idsOf(list: TdObject[]): string[] {
-    const ids: string[] = [];
-    for (const status of list) {
-      const type = status['type'] as TdObject | undefined;
-      const id = type !== undefined ? `${type['custom_emoji_id'] ?? ''}` : '';
-      if (id !== '' && id !== 'undefined' && ids.indexOf(id) < 0) { ids.push(id); }
-    }
-    return ids;
   }
 
   // Resolve custom-emoji ids to renderable stickers in one request.
@@ -117,8 +107,8 @@ export struct EmojiStatusPage {
   private load(): void {
     this.loadState = 'loading';
     Promise.all([getRecentEmojiStatuses(), getDefaultEmojiStatuses()])
-      .then((lists: TdObject[][]): Promise<StatusEmoji[][]> =>
-        Promise.all([this.resolve(this.idsOf(lists[0])), this.resolve(this.idsOf(lists[1]))]))
+      .then((lists: string[][]): Promise<StatusEmoji[][]> =>
+        Promise.all([this.resolve(lists[0]), this.resolve(lists[1])]))
       .then((resolved: StatusEmoji[][]): void => {
         if (!this.active) { return; }
         this.recent = resolved[0];
