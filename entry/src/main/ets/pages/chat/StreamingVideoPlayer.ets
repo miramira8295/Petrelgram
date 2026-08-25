@@ -25,6 +25,9 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
 
 const CONTROL_BAR_BG: string = '#6e3e3e40';
+// 出错后自动重试的间隔（ms），用完为止。第一次失败多半是文件刚开始下载
+// ijk 就去开的竞态（issue #127），几百毫秒后再开通常就好了。
+const AUTO_RETRY_DELAYS_MS: number[] = [300, 900, 2000];
 // **一律字面白，不跟主题。**
 //
 // 这里曾经改成跟主题走（commit 622b1fe），理由是"控制条换了沉浸材质，浅色
@@ -127,6 +130,10 @@ export struct StreamingVideoPlayer {
   private seekFeedbackTimer: number = -1;
   private speedFeedbackTimer: number = -1;
   private retryTimer: number = -1;
+  // 出错后已自动重试的次数。进会话第一次点播放大概率失败、手动"刷新"就好
+  // （issue #127）——多半是文件刚开始下载 ijk 就去开的竞态。这种一次性的失败
+  // 不该让用户去点刷新：按递增退避自动重来几次，都不行再报错。
+  private autoRetries: number = 0;
   private firstFrameTimer: number = -1;
   private surfaceContext: object | null = null;
   private active: boolean = true;
@@ -179,6 +186,7 @@ export struct StreamingVideoPlayer {
 
   aboutToReuse(_params: Record<string, Object>): void {
     this.release();
+    this.autoRetries = 0;
     this.resetReusedUi();
     this.active = true;
     if (this.surfaceContext !== null) {
@@ -406,6 +414,7 @@ export struct StreamingVideoPlayer {
       player.native_setup();
       const preparedListener: OnPreparedListener = {
         onPrepared: (): void => {
+          this.autoRetries = 0;
           if (this.player !== player) {
             return;
           }
@@ -467,8 +476,23 @@ export struct StreamingVideoPlayer {
       const errorListener: OnErrorListener = {
         onError: (what: number, extra: number): void => {
           this.isPlaying = false;
+          logE(`StreamingVideoPlayer error: what=${what}, extra=${extra}` +
+            ` autoRetries=${this.autoRetries}`);
+          if (this.autoRetries < AUTO_RETRY_DELAYS_MS.length && this.active) {
+            // 见 autoRetries 的说明。retry() 自己还有 100ms，这里的间隔是在那之上。
+            const delay: number = AUTO_RETRY_DELAYS_MS[this.autoRetries];
+            this.autoRetries++;
+            this.status = str('player_reconnecting');
+            if (this.retryTimer !== -1) {
+              clearTimeout(this.retryTimer);
+            }
+            this.retryTimer = setTimeout((): void => {
+              this.retryTimer = -1;
+              this.retry();
+            }, delay);
+            return;
+          }
           this.showError(str('player_play_failed'));
-          logE(`StreamingVideoPlayer error: what=${what}, extra=${extra}`);
         }
       };
       const sizeListener: OnVideoSizeChangedListener = {
