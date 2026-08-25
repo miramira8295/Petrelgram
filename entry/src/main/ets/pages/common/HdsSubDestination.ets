@@ -18,69 +18,19 @@ import { logE } from '../../util/log';
 //   }
 //
 // ┌────────────────────────────────────────────────────────────────────────┐
-// │ 为什么要自绘大标题                                                       │
+// │ 标题在 MINI 栏里，和返回键同一行                                           │
 // └────────────────────────────────────────────────────────────────────────┘
-// HdsSubPage 用的是 HdsNavigationTitleMode.FREE —— 大标题、随滚动收缩。而
-// **HdsNavDestinationTitleMode 只有 MINI(56vp) 和 MODAL 两档，没有 FREE**
-// （枚举声明见 @hms.hds.hdsBaseComponent.d.ets:864）。直接照搬会让手机和平板
-// 上的十六个设置子页一起从大标题降成 56vp 小标题——为一个平板问题让全量用户
-// 付代价。所以标题栏交给 MINI，大标题这一条自己画。
+// HdsNavDestinationTitleMode 只有 MINI(56vp) 和 MODAL 两档，没有 FREE（枚举声明
+// 见 @hms.hds.hdsBaseComponent.d.ets:864）。这里曾经为了保住大标题，做成
+// 「MINI 栏只放返回键 + bottomBuilder 里自己画一行 24fp 的大标题」，还试过用
+// dynamicHideTitleBar 做"大标题滚走、小标题浮现"（做不到：它只有单向隐藏，
+// 没有任何钩子让另一块浮现，且文档写明配了动态显隐就不能切标题模式）。
 //
-// ┌────────────────────────────────────────────────────────────────────────┐
-// │ dynamicHideTitleBar 做不到「大标题滚走、小标题浮现」                       │
-// └────────────────────────────────────────────────────────────────────────┘
-// 这个 API 在 HdsNavDestinationAttribute 上确实可用（d.ets:2737），但它的语义
-// 是**单向的"隐藏"**，不是"两个标题互相接力"：DynamicHideParams 只有
-// hideTitleArea / hideBottomBuilder / hideStatusBar 三个开关加一个 HideMode
-// （d.ets:2076；官方文档 ui-design-hdsnavdestination#dynamichidetitlebar 的措辞
-// 是"标题栏跟随内容区动态显隐"）。也就是说它能让某一块**滚走再滚回来**，但
-// 没有任何钩子让另一块"浮现"。同一份文档还写明「当配置了标题栏动态显隐时，
-// 不支持配置标题栏模式动态切换」——连"靠切模式来接力"这条路也被堵死。
+// 四个一级页签在 issue #111 里统一成 MINI（标题与图标同一行）之后，子页再留一行
+// 大标题就成了全应用唯一的例外，用户问"顶部的文字和返回按钮为啥不在一行内"。
+// 现在标题/副标题直接交给 MINI 栏，自绘那一行连同它的常量一起删了。
 //
-// 而 ArkUI 侧也拿不到滚动量来自己接力：滚动控制器是调用页 new 的 Scroller，
-// Scroller 只有 currentOffset() 这种拉取式接口，没有可订阅的滚动回调（HDS 自己
-// 是靠 bindToScrollable 在内部拿的，那条通道不对外）。
-//
-// 所以这里落的是**退而求其次的形状**：
-//
-//   · MINI 标题栏常驻，但**主标题留空**——它只承载返回键和菜单；
-//   · 大标题挂在标题栏的 bottomBuilder 上，常驻，不收缩。
-//
-// 两条取舍说明：
-//   1. 主标题为什么留空：留着就是"小标题 + 大标题"同屏写两遍同一个词，那是
-//      肉眼可见的缺陷。留空之后任何时刻页面上都只有一个标题。
-//   2. 大标题为什么挂 bottomBuilder 而不是塞进内容区顶部：bottomBuilder 是
-//      HDS 给"标题栏底下那一行"准备的槽位，挂上去之后大标题和标题栏共用同一块
-//      背板与材质，内容从整块底下穿过去——滚动渐变模糊才有东西可糊。ChatListPage
-//      的文件夹横条走的就是这个槽（那里的注释记了"单独浮一层会断开一道"的实测）。
-//      塞进内容区则相反：内容区顶端被大标题占住，永远滚不到 56vp 标题栏底下，
-//      titleBarStyle 里那套 scrollEffect 等于白配。
-//
-// 【想要"大标题滚走"时怎么改】把下面 .bindToScrollable 那一行上面加一句
-//   .dynamicHideTitleBar({ hideBottomBuilder: true, mode: HideMode.SCROLL_UP_TO })
-// 即可（HideMode 从 @kit.UIDesignKit 导入）。那一行**已经验过能编译**
-// （2026-08-22，临时加上跑通 assembleHap 后撤掉）。代价是滚起来之后栏里一个字
-// 都没有——HDS 不会把大标题"收"成小标题，只会把它整块藏掉。要不要付这个代价
-// 得看真机，所以这一轮不默认开。
 
-// 大标题的字号/字重。HDS 没有把 FREE 大标题的规格开放出来（HdsNavigationTitleStyle
-// 里只有颜色，没有字号，d.ets:1119），TitleSize 那个枚举要 6.1.0(23) 而我们的
-// 底线是 20，也用不了。所以只能取值：
-//   · MINI 栏里的小标题观感是 20fp 粗体（ArchivePage 自绘顶栏就照它写的 20/Bold）；
-//   · 大标题必须**明显**大于它，22 和 20 只差一档、放在一起分不出主次；
-//   · 24 是 HarmonyOS 字阶里 20 往上的下一档，也是本应用里已经用得最多的大字号
-//     之一（pages 下 fontSize(24) 出现 47 处）。
-// 抽成常量是为了真机比对之后改一处就能全局生效。
-const LARGE_TITLE_FONT_SIZE: number = 24;
-const LARGE_TITLE_SUB_FONT_SIZE: number = 12;
-// 大标题块的高度。单行时 56vp（和 MINI 标题栏等高，两条叠起来正好是 FREE 展开
-// 时那个量级）；带副标题时留到 76vp。bottomBuilder 的 height 是必须给的定值——
-// 它不会按内容撑高，给小了就是把字裁掉。
-const LARGE_TITLE_HEIGHT: number = 56;
-const LARGE_TITLE_HEIGHT_WITH_SUB: number = 76;
-// 左右内边距。和 HDS 标题栏里返回键的起始位置对齐（返回键 44×44 落在 6vp 起点，
-// 图标中心因此在 28 附近；正文类内容全应用统一 16）。
-const LARGE_TITLE_PADDING: number = 16;
 
 @Component
 export struct HdsSubDestination {
@@ -173,65 +123,20 @@ export struct HdsSubDestination {
     stack.pop();
   }
 
-  // 副标题是 ResourceStr（string | Resource），不能直接和 '' 比。Resource 那一
-  // 支没法在不解析的情况下判空，一律当作"有副标题"——调用页不想要副标题时传的
-  // 是默认的空串，走的是 string 这一支。
-  private hasSubTitle(): boolean {
-    const sub: ResourceStr = this.subTitle;
-    if (typeof sub === 'string') {
-      return (sub as string).length > 0;
-    }
-    return true;
-  }
 
-  private largeTitleHeight(): number {
-    return this.hasSubTitle() ? LARGE_TITLE_HEIGHT_WITH_SUB : LARGE_TITLE_HEIGHT;
-  }
 
-  // 自绘的大标题。挂在标题栏的 bottomBuilder 上，所以**不在限宽内容列里**——
-  // 它和返回键、菜单同属"栏"这一层，跟着栏走满宽、贴左起排。
+
+  // 标题和副标题直接交给 MINI 栏：和返回键同一行。
   //
-  // 【为什么不跟着内容一起限宽居中】平板上内容列被收窄居中之后，大标题若也跟着
-  // 缩进，就会和它正上方的返回键错开一大截（返回键在栏里，栏是满宽的，HDS 不
-  // 开放它的位置）。而现在 HdsSubPage 用 FREE 时，HDS 画的大标题本来就是满宽
-  // 贴左的——保持在栏里，平板上的观感与已经发布的这十六个页面**零差异**，
-  // 迁移过去用户看不出换了外壳。
-  @Builder
-  largeTitle() {
-    Column({ space: 2 }) {
-      Text(this.title)
-        .fontSize(LARGE_TITLE_FONT_SIZE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        // 标题过长时截断而不是换行：块高是定值，换行的第二行会被裁掉半截。
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis });
-      if (this.hasSubTitle()) {
-        Text(this.subTitle)
-          .fontSize(LARGE_TITLE_SUB_FONT_SIZE)
-          .fontColor($r('app.color.text_secondary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-    }
-    .width('100%')
-    .height('100%')
-    .alignItems(HorizontalAlign.Start)
-    .justifyContent(FlexAlign.Center)
-    .padding({ left: LARGE_TITLE_PADDING, right: LARGE_TITLE_PADDING });
-  }
-
+  // 曾经是「MINI 栏只放返回键 + 下面自己画一行大标题」（bottomBuilder），理由是
+  // HdsNavDestination 的标题模式没有 FREE、不想让子页降成小标题。四个一级页签在
+  // issue #111 里已经统一成 MINI（标题与图标同一行），子页再留一行大标题就成了
+  // 唯一的例外——用户问的正是"顶部的文字和返回按钮为啥不在一行内"。
   private titleBarContent(): TitleBarContentOptions {
     return {
-      // mainTitle 留空：大标题在 bottomBuilder 里，写两遍就是同屏重复。
-      // subTitle 同理——副标题跟着大标题走。
-      title: { mainTitle: '' },
+      title: { mainTitle: this.title, subTitle: this.subTitle },
       backIcon: { action: (): void => { this.onBack(); } },
-      menu: { value: this.menuItems },
-      bottomBuilder: {
-        builder: (): void => { this.largeTitle(); },
-        height: this.largeTitleHeight()
-      }
+      menu: { value: this.menuItems }
     };
   }
 
