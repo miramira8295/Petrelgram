@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Kaca"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Tunjukkan tab Kenalan"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Jika dimatikan, bar bawah tidak menunjukkan Kenalan"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Batal"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

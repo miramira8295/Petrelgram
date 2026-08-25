@@ -55,7 +55,9 @@ import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
 import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH } from '../../util/overlayMaterial';
-import { TAIL_H, TAIL_W, bubbleGlassModifier } from '../../util/bubbleTail';
+import {
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
+} from '../../util/bubbleTail';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
@@ -94,6 +96,13 @@ const SWIPE_REPLY_TRIGGER: number = -40;
 // 不触发行重建 —— 头像路径已从行的内容 key 里摘除。
 @Component
 struct LiveSenderAvatar {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @Prop senderId: number = 0;
   @Prop senderIsUser: boolean = true;
   @Prop initialPath: string = '';
@@ -175,6 +184,12 @@ struct LiveSenderAvatar {
 
 @Component
 export struct MessageBubble {
+
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -1039,13 +1054,13 @@ export struct MessageBubble {
           ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
         .fontSize(12)
         .fontColor([this.liveSendState === 'failed' ? Color.Red
-          : (this.liveSendState === 'read' ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)])
+          : (this.liveSendState === 'read' ? this.accent() : COLOR_TEXT_SECONDARY)])
         .visibility(this.liveSendState === 'none' || this.liveSendState === ''
           ? Visibility.None : Visibility.Visible);
       // The second, overlapped check is present in every state and only shown
       // for read receipts, so reuse never creates or destroys it.
       SymbolGlyph($r('sys.symbol.checkmark'))
-        .fontSize(12).fontColor([COLOR_PRIMARY]).margin({ left: -8 })
+        .fontSize(12).fontColor([this.accent()]).margin({ left: -8 })
         .visibility(this.liveSendState === 'read' ? Visibility.Visible : Visibility.None);
     }
   }
@@ -1194,8 +1209,8 @@ export struct MessageBubble {
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
         .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
         .fontFamily(run.code ? 'monospace' : '')
-        .fontColor(COLOR_PRIMARY)
-        .decoration({ type: this.richRunDecoration(run), color: COLOR_PRIMARY })
+        .fontColor(this.accent())
+        .decoration({ type: this.richRunDecoration(run), color: this.accent() })
         .textBackgroundStyle({
           color: this.linkRunBackground(run),
           radius: run.code || this.linkNavBusyUrl === run.url ? 3 : 0
@@ -1222,10 +1237,10 @@ export struct MessageBubble {
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
         .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
         .fontFamily(run.code ? 'monospace' : '')
-        .fontColor(run.link ? COLOR_PRIMARY : bubbleTextFor(this.msg.isOutgoing))
+        .fontColor(run.link ? this.accent() : bubbleTextFor(this.msg.isOutgoing))
         .decoration({
           type: this.richRunDecoration(run),
-          color: run.link ? COLOR_PRIMARY : bubbleTextFor(this.msg.isOutgoing)
+          color: run.link ? this.accent() : bubbleTextFor(this.msg.isOutgoing)
         })
         .textBackgroundStyle({
           color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
@@ -1320,7 +1335,7 @@ export struct MessageBubble {
                 .layoutWeight(1);
               Row() {
                 Text($r('app.string.copy'))
-                  .fontSize(11).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+                  .fontSize(11).fontColor(this.accent()).fontWeight(FontWeight.Medium);
               }
                 .height(26)
                 .padding({ left: 8, right: 8 })
@@ -1374,7 +1389,7 @@ export struct MessageBubble {
             .constraintSize({ maxWidth: maxWidth - 20 }).wordBreak(WordBreak.BREAK_WORD);
             if (seg.expandable) {
               Text(this.quoteExpanded(seg) ? $r('app.string.mb_collapse_quote') : $r('app.string.mb_expand_quote'))
-                .fontSize(11).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+                .fontSize(11).fontColor(this.accent()).fontWeight(FontWeight.Medium)
                 .margin({ top: 4 })
                 .stateStyles({
                   normal: this.linkRunNormalStyle,
@@ -1387,7 +1402,7 @@ export struct MessageBubble {
             }
           }
           .backgroundColor('#103391E8').borderRadius(7)
-          .border({ width: { left: 3 }, color: COLOR_PRIMARY })
+          .border({ width: { left: 3 }, color: this.accent() })
           .padding({ left: 9, right: 8, top: 7, bottom: 7 }).margin({ top: 4, bottom: 2 })
           .animation({ duration: this.effectDuration(180), curve: Curve.EaseOut });
         } else {
@@ -1425,7 +1440,7 @@ export struct MessageBubble {
             .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1);
           Text($r('app.string.settings_retry'))
-            .fontSize(11).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+            .fontSize(11).fontColor(this.accent()).fontWeight(FontWeight.Medium);
           if (this.timeReserveOnStatus()) {
             Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);
           }
@@ -1501,8 +1516,8 @@ export struct MessageBubble {
           }, (uid: number, idx: number) => `replier_${idx}_${uid}`);
         }
       }
-      Text(plural('mb_comments_n', this.msg.commentCount, this.msg.commentCount)).fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([COLOR_PRIMARY]);
+      Text(plural('mb_comments_n', this.msg.commentCount, this.msg.commentCount)).fontSize(13).fontColor(this.accent()).fontWeight(FontWeight.Medium);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([this.accent()]);
     }
     .constraintSize({ maxWidth: this.inlineMaxW() })
     .width('100%')
@@ -1960,7 +1975,7 @@ export struct MessageBubble {
   linkPreviewMeta(compact: boolean) {
     Column() {
       Text(this.linkPresentation().siteLabel)
-        .fontSize(12).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+        .fontSize(12).fontColor(this.accent()).fontWeight(FontWeight.Medium)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
       if (this.msg.linkTitle !== '') {
         Text(this.msg.linkTitle)
@@ -1998,13 +2013,13 @@ export struct MessageBubble {
         Column({ space: 5 }) {
           if (this.msg.linkPhotoFailed) {
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(compact ? 20 : 24).fontColor([COLOR_PRIMARY]);
+              .fontSize(compact ? 20 : 24).fontColor([this.accent()]);
             if (!compact) {
               Text($r('app.string.mb_photo_load_failed')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
             }
           } else {
             LoadingProgress()
-              .width(compact ? 22 : 26).height(compact ? 22 : 26).color(COLOR_PRIMARY);
+              .width(compact ? 22 : 26).height(compact ? 22 : 26).color(this.accent());
             if (!compact && this.msg.linkPhotoProgress > 0 && this.msg.linkPhotoProgress < 100) {
               Text(`${this.msg.linkPhotoProgress}%`).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
             }
@@ -2041,13 +2056,13 @@ export struct MessageBubble {
       Row({ space: 5 }) {
         Text(this.msg.linkPhotoFailed ? '↻' : (this.linkPresentation().isTelegram ? '›' : '↗'))
           .fontSize(14).fontColor(this.linkPresentation().actionable || this.msg.linkPhotoFailed
-            ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY);
+            ? this.accent() : COLOR_TEXT_SECONDARY);
         Text(this.linkPreviewActionLabel())
           .fontSize(12).fontColor(this.linkPresentation().actionable || this.msg.linkPhotoFailed
-            ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+            ? this.accent() : COLOR_TEXT_SECONDARY)
           .fontWeight(FontWeight.Medium).maxLines(1);
         if (this.linkPreviewOpening) {
-          LoadingProgress().width(13).height(13).color(COLOR_PRIMARY);
+          LoadingProgress().width(13).height(13).color(this.accent());
         }
       }
       .margin({ top: 6 });
@@ -2055,7 +2070,7 @@ export struct MessageBubble {
     .alignItems(HorizontalAlign.Start)
     .width(this.inlineMaxW())
     .backgroundColor($r('app.color.surface_alt')).borderRadius(10)
-    .border({ width: { left: 3 }, color: COLOR_PRIMARY })
+    .border({ width: { left: 3 }, color: this.accent() })
     .padding({ left: 9, right: 9, top: 8, bottom: 8 }).margin({ top: 5 })
     .stateStyles({ normal: this.linkCardNormalStyle, pressed: this.linkCardPressedStyle })
     .animation({ duration: this.effectDuration(120), curve: Curve.EaseOut })
@@ -2095,7 +2110,7 @@ export struct MessageBubble {
         // 未选中态原来是写死的 '#00000010'（6% 的黑）：浅色气泡上几乎看不见，
         // 深色气泡上黑叠黑更是没有。换成跟随主题的资源，深色那边用的是白色
         // 透明度而不是黑色。
-        .backgroundColor(r.isChosen ? COLOR_PRIMARY : $r('app.color.reaction_chip'))
+        .backgroundColor(r.isChosen ? this.accent() : $r('app.color.reaction_chip'))
         // 半径取高度的一半（15 的内容 + 上下各 4 = 23），两端才是正圆弧。
         .borderRadius(12).padding({ left: 9, right: 9, top: 4, bottom: 4 })
         .margin({ right: 4, top: 4 })
@@ -2329,7 +2344,7 @@ export struct MessageBubble {
     // 重排就是这么来的。两行都锁死行高，加载中和加载完是同一个高度。
     // 前提：拉不到原消息时 store 会填 mb_reply_unavailable，不会永远空着。
     Column() {
-      Text(this.msg.replySenderName).fontSize(12).fontColor(COLOR_PRIMARY).maxLines(1)
+      Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
         .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
         .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
       Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
@@ -2350,7 +2365,7 @@ export struct MessageBubble {
     .alignSelf(ItemAlign.Stretch)
     .backgroundColor(accentSoft())
     .borderRadius(6)
-    .border({ width: { left: 2 }, color: COLOR_PRIMARY })
+    .border({ width: { left: 2 }, color: this.accent() })
     .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
     // Tap the quote → jump to the original message.
     .onClick(() => {
@@ -2878,7 +2893,7 @@ export struct MessageBubble {
             if (this.msg.photoFailed) {
               this.stickerStatusBadge(true, 0);
             } else {
-              LoadingProgress().width(14).height(14).color(COLOR_PRIMARY)
+              LoadingProgress().width(14).height(14).color(this.accent())
                 .backgroundColor('#CCFFFFFF').borderRadius(9).padding(2);
             }
           }
@@ -2979,7 +2994,7 @@ export struct MessageBubble {
     } else if (this.msg.isUnsupportedMessage) {
       Row({ space: 8 }) {
         SymbolGlyph($r('sys.symbol.info_circle'))
-          .fontSize(20).fontColor([COLOR_PRIMARY]).width(22);
+          .fontSize(20).fontColor([this.accent()]).width(22);
         Column({ space: 1 }) {
           Text(this.fallbackLabel())
             .fontSize(13).fontColor(bubbleTextFor(this.msg.isOutgoing)).fontWeight(FontWeight.Medium)
@@ -3110,6 +3125,30 @@ export struct MessageBubble {
     return this.glassLive() ? overlayBackdropBlur('bubble') : 0;
   }
 
+  // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
+  private glassRadius(): BorderRadiuses {
+    const r = this.bubbleCornerRadius();
+    if (!this.hasBubbleTail()) {
+      return r;
+    }
+    return this.msg.isOutgoing
+      ? { topLeft: r.topLeft, topRight: r.topRight, bottomRight: 0, bottomLeft: r.bottomLeft }
+      : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
+  }
+
+  // 沿整条轮廓（含尾巴）描一圈，补上材质画不到的内侧边。
+  @Builder
+  glassOutline() {
+    if (this.glassLive() && this.glassW > 0 && this.glassH > 0) {
+      Path({ width: this.glassW, height: this.glassH })
+        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
+        .fill(Color.Transparent)
+        .stroke(GLASS_OUTLINE_COLOR)
+        .strokeWidth(GLASS_OUTLINE_WIDTH)
+        .hitTestBehavior(HitTestMode.None);
+    }
+  }
+
   private glassModifier(): AttributeModifier<CommonAttribute> {
     return bubbleGlassModifier(this.glassLive(), this.glassW, this.glassH, this.msg.isOutgoing,
       this.hasBubbleTail(), this.bubbleCornerRadius());
@@ -3224,17 +3263,17 @@ export struct MessageBubble {
     Row({ space: 5 }) {
       SymbolGlyph($r(this.systemPillIcon()))
         .fontSize(12.5)
-        .fontColor([this.liveVideoChatTappable() ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY])
+        .fontColor([this.liveVideoChatTappable() ? this.accent() : COLOR_TEXT_SECONDARY])
         .width(14);
       Text(this.fallbackLabel())
         .fontSize(12)
-        .fontColor(this.liveVideoChatTappable() ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+        .fontColor(this.liveVideoChatTappable() ? this.accent() : COLOR_TEXT_SECONDARY)
         .fontWeight(this.liveVideoChatTappable() ? FontWeight.Medium : FontWeight.Regular)
         .textAlign(TextAlign.Center)
         .constraintSize({ maxWidth: this.screenW * 0.68 });
       if (this.liveVideoChatTappable()) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(10).fontColor([COLOR_PRIMARY]).width(10);
+          .fontSize(10).fontColor([this.accent()]).width(10);
       }
     }
     .constraintSize({ maxWidth: this.screenW * 0.82 })
@@ -3339,7 +3378,7 @@ export struct MessageBubble {
         if (this.msg.forwardFrom !== '') {
           // Tappable when the origin is known — opens the original post, or the
           // author's chat. A hidden-origin forward carries no ids and stays inert.
-          Text(str('mb_forwarded_from', this.msg.forwardFrom)).fontSize(13).fontColor(COLOR_PRIMARY)
+          Text(str('mb_forwarded_from', this.msg.forwardFrom)).fontSize(13).fontColor(this.accent())
             .fontWeight(FontWeight.Medium).margin({ bottom: 2 })
             .constraintSize({ maxWidth: this.inlineMaxW() })
             .onAreaChange((_old: Area, area: Area): void => {
@@ -3464,6 +3503,8 @@ export struct MessageBubble {
       .backgroundColor(this.glassBg())
       .backdropBlur(this.glassBlur())
       .attributeModifier(this.glassModifier())
+      .borderRadius(this.glassRadius())
+      .overlay(this.glassOutline(), { align: Alignment.TopStart })
       .onAreaChange((_old: Area, area: Area): void => {
         this.glassW = Number(area.width);
         this.glassH = Number(area.height);

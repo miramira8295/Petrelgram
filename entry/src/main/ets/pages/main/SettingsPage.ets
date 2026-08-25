@@ -33,8 +33,9 @@ import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth, isSplitLayout
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
-import { navBarVisibleOnAppear } from '../../util/navBarReset';
+import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -184,6 +185,12 @@ function settingGroups(): SettingGroup[] {
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct SettingsPage {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // HdsNavigation 靠 bindToScrollable 拿到滚动量，才能驱动标题栏的收缩与
   // 动态模糊；没有这个绑定，标题栏就是一块静态的板子。
   private settingsScroller: Scroller = new Scroller();
@@ -747,7 +754,7 @@ export struct SettingsPage {
               .fontSize(16)
               .fontColor(COLOR_TEXT_PRIMARY)
               .placeholderColor(COLOR_TEXT_SECONDARY)
-              .caretColor(COLOR_PRIMARY)
+              .caretColor(this.accent())
               .backgroundColor(Color.Transparent)
               .padding(0)
               .enterKeyType(EnterKeyType.Search)
@@ -846,7 +853,7 @@ export struct SettingsPage {
       LoadingProgress()
         .width(22)
         .height(22)
-        .color(COLOR_PRIMARY);
+        .color(this.accent());
     }
     .width('calc(100% - 24vp)')
     .height(108)
@@ -888,11 +895,11 @@ export struct SettingsPage {
         Row({ space: 5 }) {
           SymbolGlyph($r('sys.symbol.arrow_clockwise'))
             .fontSize(14)
-            .fontColor([COLOR_PRIMARY]);
+            .fontColor([this.accent()]);
           Text($r('app.string.settings_reload'))
             .fontSize(13)
             .fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_PRIMARY);
+            .fontColor(this.accent());
         }
         .height(34)
         .padding({ left: 12, right: 12 })
@@ -943,7 +950,7 @@ export struct SettingsPage {
             .fontColor([Color.White]);
         }
         .width(26).height(26).borderRadius(13)
-        .backgroundColor(COLOR_PRIMARY)
+        .backgroundColor(this.accent())
         .border({ width: 2.5, color: CARD_BG })
         .justifyContent(FlexAlign.Center);
       }
@@ -982,19 +989,19 @@ export struct SettingsPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis });
         Text(this.profileError !== '' ? $r('app.string.settings_tap_reload') : $r('app.string.settings_edit_profile'))
           .fontSize(12)
-          .fontColor(COLOR_PRIMARY);
+          .fontColor(this.accent());
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1);
 
       if (this.profileLoading) {
-        LoadingProgress().width(22).height(22).color(COLOR_PRIMARY);
+        LoadingProgress().width(22).height(22).color(this.accent());
       } else {
         SymbolGlyph(this.profileError !== ''
           ? $r('sys.symbol.arrow_clockwise')
           : $r('sys.symbol.chevron_right'))
           .fontSize(17)
-          .fontColor([this.profileError !== '' ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+          .fontColor([this.profileError !== '' ? this.accent() : COLOR_TEXT_SECONDARY]);
       }
     }
     .width('calc(100% - 24vp)')
@@ -1035,7 +1042,7 @@ export struct SettingsPage {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1);
       if (this.switchingSlotId === account.slotId) {
-        LoadingProgress().width(22).height(22).color(COLOR_PRIMARY);
+        LoadingProgress().width(22).height(22).color(this.accent());
       } else {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
@@ -1103,11 +1110,11 @@ export struct SettingsPage {
       Row({ space: 4 }) {
         SymbolGlyph($r('sys.symbol.arrow_clockwise'))
           .fontSize(13)
-          .fontColor([COLOR_PRIMARY]);
+          .fontColor([this.accent()]);
         Text($r('app.string.settings_retry'))
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_PRIMARY);
+          .fontColor(this.accent());
       }
       .height(34)
       .padding({ left: 10, right: 10 })
@@ -1169,7 +1176,7 @@ export struct SettingsPage {
             .height(34)
             .fontSize(13)
             .fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_PRIMARY)
+            .fontColor(this.accent())
             .padding({ left: 14, right: 14, top: 10 });
           ForEach(this.otherAccounts(), (account: TdAccountSummary, index: number): void => {
             if (index > 0) {
@@ -1191,7 +1198,7 @@ export struct SettingsPage {
           Stack({ alignContent: Alignment.Center }) {
             SymbolGlyph($r('sys.symbol.plus')).fontSize(19).fontColor([Color.White]);
           }
-          .width(40).height(40).borderRadius(20).backgroundColor(COLOR_PRIMARY);
+          .width(40).height(40).borderRadius(20).backgroundColor(this.accent());
           Column({ space: 2 }) {
             Text($r('app.string.settings_add_account')).fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
             Text($r('app.string.settings_add_account_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
@@ -1199,7 +1206,7 @@ export struct SettingsPage {
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1);
           if (this.switchingSlotId === 'new') {
-            LoadingProgress().width(22).height(22).color(COLOR_PRIMARY);
+            LoadingProgress().width(22).height(22).color(this.accent());
           } else {
             SymbolGlyph($r('sys.symbol.chevron_right'))
               .fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
@@ -1276,7 +1283,7 @@ export struct SettingsPage {
         Circle({ width: 8, height: 8 }).fill('#FF3B30').margin({ right: 6 });
       }
       if (this.openingSettingPage === item.title) {
-        LoadingProgress().width(19).height(19).color(COLOR_PRIMARY);
+        LoadingProgress().width(19).height(19).color(this.accent());
       } else {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(16)
@@ -1371,11 +1378,11 @@ export struct SettingsPage {
           Row({ space: 5 }) {
             SymbolGlyph($r('sys.symbol.xmark_circle'))
               .fontSize(14)
-              .fontColor([COLOR_PRIMARY]);
+              .fontColor([this.accent()]);
             Text($r('app.string.settings_clear_query'))
               .fontSize(13)
               .fontWeight(FontWeight.Medium)
-              .fontColor(COLOR_PRIMARY);
+              .fontColor(this.accent());
           }
           .height(34)
           .padding({ left: 13, right: 13 })
@@ -1560,7 +1567,10 @@ export struct SettingsPage {
       // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
       // SETTINGS_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
       // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
-      .onNavBarStateChange((isVisible: boolean): void => {
+      .onNavBarStateChange((reported: boolean): void => {
+        // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
+        const isVisible: boolean = navBarVisibleOnChange(reported,
+          isSplitLayout(this.screenW, this.screenH), this.settingsStack.size());
         if (AppStorage.get<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
           AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, isVisible);
         }

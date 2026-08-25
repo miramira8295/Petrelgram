@@ -87,6 +87,12 @@ export function ChatSettingsPageBuilder(): void {
 
 @Component
 export struct ChatSettingsPage {
+
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   private hdsScroller: Scroller = new Scroller();
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -165,7 +171,7 @@ export struct ChatSettingsPage {
 
   @Builder
   cardTitle(text: ResourceStr) {
-    Text(text).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+    Text(text).fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.accent())
       .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
   }
 
@@ -210,10 +216,10 @@ export struct ChatSettingsPage {
       Row({ space: 12 }) {
         Slider({ value: this.numberValue(key), min: min, max: max, step: 1 })
           .layoutWeight(1)
-          .trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+          .trackColor($r('app.color.divider')).selectedColor(this.accent()).blockColor(this.accent())
           .onChange((value: number): void => { setNumber(key, Math.round(value)); });
         Text(`${this.numberValue(key)}`)
-          .fontSize(15).fontColor(COLOR_PRIMARY).width(28).textAlign(TextAlign.End);
+          .fontSize(15).fontColor(this.accent()).width(28).textAlign(TextAlign.End);
       }.width('100%').padding({ left: 16, right: 16, bottom: 6 });
     }.width('100%');
   }
@@ -239,7 +245,7 @@ export struct ChatSettingsPage {
       .accessibilityText(str('a11y_toggle_state', title, this.booleanValue(key) ? str('state_on') : str('state_off')))
       .onClick((): void => { setBoolean(key, !this.booleanValue(key)); });
       Toggle({ type: ToggleType.Switch, isOn: this.booleanValue(key) })
-        .selectedColor(COLOR_PRIMARY)
+        .selectedColor(this.accent())
         .onChange((value: boolean): void => { setBoolean(key, value); });
     }
     .width('100%').height(64).padding({ left: 16, right: 13 })
@@ -277,14 +283,14 @@ export struct ChatSettingsPage {
       .width('100%').padding(10)
       .borderRadius(10)
       .border({ width: this.threeLines === isThree ? 2 : 1,
-        color: this.threeLines === isThree ? COLOR_PRIMARY : $r('app.color.divider') })
+        color: this.threeLines === isThree ? this.accent() : $r('app.color.divider') })
       .backgroundColor(this.threeLines === isThree ? $r('app.color.surface_alt') : Color.Transparent)
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
         curve: Curve.EaseOut
       });
       Text(label).fontSize(13)
-        .fontColor(this.threeLines === isThree ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY);
+        .fontColor(this.threeLines === isThree ? this.accent() : COLOR_TEXT_SECONDARY);
     }
     .layoutWeight(1)
     .borderRadius(12)
@@ -342,7 +348,7 @@ export struct ChatSettingsPage {
       Select(THICKNESS_OPTIONS.map((o: MaterialThicknessOption): SelectOption => ({ value: o.label } as SelectOption)))
         .selected(this.thicknessIndex(forDark))
         .value(THICKNESS_OPTIONS[this.thicknessIndex(forDark)].label)
-        .font({ size: 15 }).fontColor(COLOR_PRIMARY)
+        .font({ size: 15 }).fontColor(this.accent())
         .onSelect((index: number): void => {
           const v = THICKNESS_OPTIONS[index].value;
           if (this.thicknessOf(forDark) !== v) {
@@ -378,7 +384,7 @@ export struct ChatSettingsPage {
       Select(LIGHT_OPTIONS.map((o: MaterialLightOption): SelectOption => ({ value: o.label } as SelectOption)))
         .selected(this.lightIndex(forDark))
         .value(LIGHT_OPTIONS[this.lightIndex(forDark)].label)
-        .font({ size: 15 }).fontColor(COLOR_PRIMARY)
+        .font({ size: 15 }).fontColor(this.accent())
         .onSelect((index: number): void => {
           const v = LIGHT_OPTIONS[index].value;
           if (this.lightOf(forDark) !== v) {
@@ -402,7 +408,7 @@ export struct ChatSettingsPage {
         Row() {
           Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
           if (this.nightMode === opt.value) {
-            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([this.accent()]);
           }
         }
         .width('100%').height(48).padding({ left: 16, right: 16 })
@@ -438,7 +444,7 @@ export struct ChatSettingsPage {
           BubbleColorsCard();
 
           Row({ space: 12 }) {
-            SymbolGlyph($r('sys.symbol.picture')).fontSize(20).fontColor([COLOR_PRIMARY]);
+            SymbolGlyph($r('sys.symbol.picture')).fontSize(20).fontColor([this.accent()]);
             Text($r('app.string.chat_settings_background')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
             SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16)
               .fontColor([COLOR_TEXT_SECONDARY]);

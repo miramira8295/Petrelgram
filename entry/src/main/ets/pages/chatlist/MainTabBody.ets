@@ -13,6 +13,7 @@ import {
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToArchive } from '../../util/profileNav';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 // 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
 // 长得和会话行一个个头，拉出来时才不显得是另一种东西。
@@ -24,6 +25,12 @@ const ARCHIVE_OVERPULL: number = 96;
 @Preview
 @Component
 export struct MainTabBody {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // See ChatPage: the row key embeds this, so the data source must be told.
   @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
   // 见 ChatListView 上的同名字段。

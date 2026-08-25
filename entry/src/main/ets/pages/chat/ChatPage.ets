@@ -199,6 +199,7 @@ import {
   initialMessagePlaceholderHeight, nextInitialMessageRevealCount,
   stageInitialMessageGroups
 } from '../../util/initialMessageStage';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -296,6 +297,12 @@ export function ChatPageBuilder(): void {
 @Preview
 @Component
 export struct ChatPage {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -1980,7 +1987,11 @@ export struct ChatPage {
             ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}` +
             ` endIdx=${this.curEndIdx} rows=${this.groups.length}`);
         }
-        if (notifyKind === 'update' && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0) {
+        // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
+        // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
+        // 顶是官方行为，不该被它挡住——真机日志：atBottom=true stayAtUnread=true 不跟随。
+        if (notifyKind === 'update' && this.atBottom && this.viewerMsgId === 0) {
+          this.stayAtUnread = false;
           this.glueBottom('L1242');
         }
       } else if (this.didInitialScroll && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0
@@ -7190,7 +7201,7 @@ export struct ChatPage {
 
   @Styles
   composerPrimaryNormalStyle() {
-    .backgroundColor(COLOR_PRIMARY)
+    .backgroundColor(this.accent())
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
@@ -7363,7 +7374,7 @@ export struct ChatPage {
       });
     } else if (!this.emojiPanelClosing) {
       Column({ space: 8 }) {
-        LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
+        LoadingProgress().width(26).height(26).color(this.accent());
         Text($r('app.string.cp_opening_panel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
       }
       .width('100%').height('100%')
@@ -7464,7 +7475,7 @@ export struct ChatPage {
           // 和输入框里麦克风↔发送键的互换是同一套时序。
           SymbolGlyph($r('sys.symbol.paperclip'))
             .fontSize(23)
-            .fontColor([this.attachPanelOpen ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY])
+            .fontColor([this.attachPanelOpen ? this.accent() : COLOR_TEXT_SECONDARY])
             .opacity(this.attachPanelOpen ? 0 : 1)
             .rotate({ angle: this.attachPanelOpen ? 45 : 0 })
             .animation({
@@ -7473,7 +7484,7 @@ export struct ChatPage {
             });
           SymbolGlyph($r('sys.symbol.xmark'))
             .fontSize(21)
-            .fontColor([COLOR_PRIMARY])
+            .fontColor([this.accent()])
             .opacity(this.attachPanelOpen ? 1 : 0)
             .rotate({ angle: this.attachPanelOpen ? 0 : -45 })
             .animation({
@@ -7565,7 +7576,7 @@ export struct ChatPage {
           }
           SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.face_smiling_fill' : 'sys.symbol.face_smiling'))
             .fontSize(24)
-            .fontColor([this.showEmojiPanel ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY])
+            .fontColor([this.showEmojiPanel ? this.accent() : COLOR_TEXT_SECONDARY])
             .onAreaChange((_old: Area, area: Area) => {
               const gx = area.globalPosition.x as number;
               this.emojiBtnCx = gx + (area.width as number) / 2;
@@ -7588,7 +7599,7 @@ export struct ChatPage {
             .fontSize(15)
             .lineHeight(COMPOSER_LINE_H)
             .fontColor(COLOR_TEXT_PRIMARY)
-            .caretColor(COLOR_PRIMARY)
+            .caretColor(this.accent())
             .padding({
               left: 3, right: 3,
               top: COMPOSER_EDITOR_PAD, bottom: COMPOSER_EDITOR_PAD
@@ -7664,7 +7675,7 @@ export struct ChatPage {
             Row() {
               SymbolGlyph($r('sys.symbol.keyboard'))
                 .fontSize(21)
-                .fontColor([this.replyKbCollapsed ? COLOR_TEXT_SECONDARY : COLOR_PRIMARY]);
+                .fontColor([this.replyKbCollapsed ? COLOR_TEXT_SECONDARY : this.accent()]);
             }
             .width(34).height(34).borderRadius(17)
             .justifyContent(FlexAlign.Center)
@@ -7681,7 +7692,7 @@ export struct ChatPage {
           }
           if (this.botMiniAppUrlValue !== '') {
             SymbolGlyph($r('sys.symbol.square_grid_2x2'))
-              .fontSize(22).fontColor([COLOR_PRIMARY])
+              .fontSize(22).fontColor([this.accent()])
               .accessibilityText($r('app.string.cp_open_miniapp'))
               .onClick((): void => { this.openBotMiniApp(); });
           }
@@ -7883,7 +7894,7 @@ export struct ChatPage {
                 Column() {
                   if (this.rowSelected(g)) {
                     SymbolGlyph($r('sys.symbol.checkmark_circle'))
-                      .fontSize(22).fontColor([COLOR_PRIMARY]);
+                      .fontSize(22).fontColor([this.accent()]);
                   } else {
                     Row()
                       .width(20).height(20).borderRadius(10)

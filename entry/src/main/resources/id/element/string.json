@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Kaca"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Tampilkan tab Kontak"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Jika nonaktif, bilah bawah tidak menampilkan Kontak"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Batal"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

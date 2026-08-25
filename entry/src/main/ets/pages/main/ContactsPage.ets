@@ -26,8 +26,9 @@ import {
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
-import { navBarVisibleOnAppear } from '../../util/navBarReset';
+import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -84,6 +85,12 @@ function contactsSplitPlaceholder(): void {
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct ContactsPage {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -772,7 +779,7 @@ export struct ContactsPage {
     Row({ space: 8 }) {
       SymbolGlyph($r('sys.symbol.magnifyingglass'))
         .fontSize(18)
-        .fontColor([this.searchFocused ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY])
+        .fontColor([this.searchFocused ? this.accent() : COLOR_TEXT_SECONDARY])
         .animation({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
           curve: Curve.EaseOut
@@ -781,7 +788,7 @@ export struct ContactsPage {
         .layoutWeight(1).height(38).fontSize(16)
         .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
         .placeholderColor(COLOR_TEXT_SECONDARY)
-        .caretColor(COLOR_PRIMARY)
+        .caretColor(this.accent())
         .enterKeyType(EnterKeyType.Search)
         .onFocus((): void => { this.searchFocused = true; })
         .onBlur((): void => { this.searchFocused = false; })
@@ -790,7 +797,7 @@ export struct ContactsPage {
       if (this.remoteLoading) {
         LoadingProgress()
           .width(18).height(18)
-          .color(COLOR_PRIMARY)
+          .color(this.accent())
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
             .animation({
@@ -826,7 +833,7 @@ export struct ContactsPage {
     .borderRadius(SEARCH_BAR_HEIGHT / 2)
     .border({
       width: this.searchFocused ? 1.5 : 0.5,
-      color: this.searchFocused ? COLOR_PRIMARY : COLOR_DIVIDER
+      color: this.searchFocused ? this.accent() : COLOR_DIVIDER
     })
     .alignItems(VerticalAlign.Center)
     .margin({ left: 12, right: 12, top: 4 })
@@ -965,14 +972,14 @@ export struct ContactsPage {
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         Text(c.statusText)
           .fontSize(13)
-          .fontColor(c.online ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+          .fontColor(c.online ? this.accent() : COLOR_TEXT_SECONDARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
       }.alignItems(HorizontalAlign.Start).layoutWeight(1);
       if (this.openingContactId === c.id || this.deletingContactId === c.id) {
         LoadingProgress()
           .width(18)
           .height(18)
-          .color(COLOR_PRIMARY)
+          .color(this.accent())
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.scale({ x: 0.65, y: 0.65 }))
             .animation({
@@ -1160,11 +1167,11 @@ export struct ContactsPage {
       Row({ space: 6 }) {
         SymbolGlyph($r('sys.symbol.arrow_clockwise'))
           .fontSize(15)
-          .fontColor([COLOR_PRIMARY]);
+          .fontColor([this.accent()]);
         Text($r('app.string.settings_reload'))
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_PRIMARY);
+          .fontColor(this.accent());
       }
       .height(38)
       .padding({ left: 16, right: 16 })
@@ -1225,10 +1232,10 @@ export struct ContactsPage {
             ? $r('sys.symbol.clock')
             : $r('sys.symbol.magnifyingglass'))
             .fontSize(13)
-            .fontColor([COLOR_PRIMARY]);
+            .fontColor([this.accent()]);
           Text(this.query.trim() === '' ? $r('app.string.ct_sort_by_last_seen') : $r('app.string.ct_contacts_and_global'))
             .fontSize(13)
-            .fontColor(COLOR_PRIMARY)
+            .fontColor(this.accent())
             .fontWeight(FontWeight.Medium)
             .layoutWeight(1);
           Text(this.remoteLoading
@@ -1258,7 +1265,7 @@ export struct ContactsPage {
           `${c.id}_${c.avatarPath}_${c.name}_${c.statusText}_${c.online ? 1 : 0}`);
         if (this.remoteLoading) {
           Row({ space: 8 }) {
-            LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
+            LoadingProgress().width(18).height(18).color(this.accent());
             Text($r('app.string.ct_searching_global')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
           }
           .width('100%')
@@ -1325,7 +1332,7 @@ export struct ContactsPage {
           .fontSize(16)
           .fontColor(COLOR_TEXT_PRIMARY)
           .placeholderColor(COLOR_TEXT_SECONDARY)
-          .caretColor(COLOR_PRIMARY)
+          .caretColor(this.accent())
           .backgroundColor($r('app.color.surface_alt'))
           .borderRadius(12)
           .padding({ left: 14, right: 14 })
@@ -1342,7 +1349,7 @@ export struct ContactsPage {
           .fontSize(16)
           .fontColor(COLOR_TEXT_PRIMARY)
           .placeholderColor(COLOR_TEXT_SECONDARY)
-          .caretColor(COLOR_PRIMARY)
+          .caretColor(this.accent())
           .backgroundColor($r('app.color.surface_alt'))
           .borderRadius(12)
           .padding({ left: 14, right: 14 })
@@ -1366,14 +1373,14 @@ export struct ContactsPage {
         Row({ space: 8 }) {
           SymbolGlyph($r('sys.symbol.phone_fill'))
             .fontSize(17)
-            .fontColor([COLOR_PRIMARY]);
+            .fontColor([this.accent()]);
           TextInput({ text: this.addPhone, placeholder: '+86 138 0000 0000' })
             .layoutWeight(1)
             .height(46)
             .fontSize(16)
             .fontColor(COLOR_TEXT_PRIMARY)
             .placeholderColor(COLOR_TEXT_SECONDARY)
-            .caretColor(COLOR_PRIMARY)
+            .caretColor(this.accent())
             .backgroundColor(Color.Transparent)
             .padding(0)
             .type(InputType.PhoneNumber)
@@ -1437,7 +1444,7 @@ export struct ContactsPage {
       .width('100%')
       .height(50)
       .margin({ top: 18 })
-      .backgroundColor(COLOR_PRIMARY)
+      .backgroundColor(this.accent())
       .borderRadius(14)
       .enabled(!this.addContactSaving)
       .onClick((): void => { this.submitNewContact(); });
@@ -1492,7 +1499,7 @@ export struct ContactsPage {
         });
     }
     .width(56).height(56).borderRadius(28)
-    .backgroundColor(COLOR_PRIMARY)
+    .backgroundColor(this.accent())
     .justifyContent(FlexAlign.Center)
     .shadow({
       radius: this.fabPressed ? 4 : 10,
@@ -1678,7 +1685,10 @@ export struct ContactsPage {
       // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
       // CONTACTS_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
       // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
-      .onNavBarStateChange((isVisible: boolean): void => {
+      .onNavBarStateChange((reported: boolean): void => {
+        // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
+        const isVisible: boolean = navBarVisibleOnChange(reported,
+          isSplitLayout(this.screenW, this.screenH), this.contactsStack.size());
         if (AppStorage.get<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
           AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, isVisible);
         }

@@ -47,12 +47,12 @@ export function titleScrollEffectType(): ScrollEffectType {
 export const TITLE_BLUR_START_VP: number = 0;
 export const TITLE_BLUR_END_VP: number = 20;
 
-function barStyle(background: ResourceColor): HdsNavigationTitleBarStyle {
+function barStyle(background: ResourceColor, mainTitleColor: ResourceColor): HdsNavigationTitleBarStyle {
   return {
     backgroundStyle: { backgroundColor: background },
     contentStyle: {
       titleStyle: {
-        mainTitleColor: $r('app.color.text_primary'),
+        mainTitleColor: mainTitleColor,
         subTitleColor: $r('app.color.text_secondary')
       },
       menuStyle: {
@@ -67,7 +67,9 @@ function barStyle(background: ResourceColor): HdsNavigationTitleBarStyle {
   };
 }
 
-export function titleBarStyle(background: ResourceColor): TitleBarStyleOptions {
+// mainTitleColor：首页把应用名染成强调色，其它页默认正文色。
+export function titleBarStyle(background: ResourceColor,
+  mainTitleColor: ResourceColor = $r('app.color.text_primary')): TitleBarStyleOptions {
   return {
     scrollEffectOpts: {
       enableScrollEffect: true,
@@ -86,7 +88,7 @@ export function titleBarStyle(background: ResourceColor): TitleBarStyleOptions {
     // ——那两项官方示例里根本没有。结果是两套机制打架：材质要自己的背板，
     // scrollEffect 要按滚动量换背板，最后整块发实，反而比不加还糟。剥回官方
     // 形状之后，滚动时的渐变模糊才是干净的。
-    originalStyle: barStyle(background),
-    scrollEffectStyle: barStyle(Color.Transparent)
+    originalStyle: barStyle(background, mainTitleColor),
+    scrollEffectStyle: barStyle(Color.Transparent, mainTitleColor)
   };
 }

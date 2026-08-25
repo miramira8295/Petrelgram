@@ -14,15 +14,18 @@ export default function bubbleGlassPathTest() {
       expect(c.indexOf('L101 28 L108 40 L10 40') >= 0).assertTrue();
       expect(c.indexOf('A10 10 0 0 1 0 30') >= 0).assertTrue();
     });
-    it('没尾巴就是四角圆角矩形，半径按短边一半封顶', 0, (): void => {
+    it('没尾巴就是四角圆角矩形，半径按短边一半封顶，左边仍留 7 的空位', 0, (): void => {
       const c = glassBubbleCommands(60, 20, false, false, 17, 17, 17, 17, 8, 12, 1);
       expect(c.indexOf('A10 10') >= 0).assertTrue();
       expect(c.indexOf('A17') < 0).assertTrue();
       expect(c.indexOf('L0 20') < 0).assertTrue();
+      expect(c.startsWith('M17 0')).assertTrue();
+      expect(c.endsWith('A10 10 0 0 1 17 0 Z')).assertTrue();
     });
     it('scale 作用到每个坐标', 0, (): void => {
-      const c = glassBubbleCommands(10, 10, false, false, 0, 0, 0, 0, 8, 12, 3);
-      expect(c.indexOf('L30 0') >= 0).assertTrue();
+      const c = glassBubbleCommands(20, 10, false, false, 0, 0, 0, 0, 8, 12, 3);
+      expect(c.indexOf('L60 0') >= 0).assertTrue();
+      expect(c.startsWith('M21 0')).assertTrue();
     });
   });
 }

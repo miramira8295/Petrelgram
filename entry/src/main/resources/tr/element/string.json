@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Cam"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Kişiler sekmesini göster"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Kapalıyken alt çubukta Kişiler gösterilmez"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "İptal"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "Tamam"
     }
   ]
 }

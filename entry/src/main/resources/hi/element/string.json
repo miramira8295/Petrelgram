@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "ग्लास"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "संपर्क टैब दिखाएँ"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "बंद होने पर नीचे की पट्टी में संपर्क नहीं दिखेंगे"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "रद्द करें"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "ठीक है"
     }
   ]
 }

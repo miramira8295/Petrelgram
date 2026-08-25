@@ -1,7 +1,7 @@
 // 气泡 + 尾巴的整体轮廓（SVG path 命令），给气泡材质开着时的整块裁剪用。
 // 纯函数，坐标单位由 scale 决定（组件里传 vp2px(1)，单测传 1）。
 //
-// 容器 = [尾巴 | 气泡]（收到）或 [气泡 | 尾巴]（发出）。尾巴与气泡重叠 1，
+// 容器 = [尾巴/留白 | 气泡]（收到）或 [气泡 | 尾巴/留白]（发出）。尾巴与气泡重叠 1，
 // 所以气泡在容器里的起点是 tailW - 1。尾巴取代了那一侧的底角：从气泡边缘
 // H - tailH 处斜出到容器底角的尖，再沿底边回到气泡。
 
@@ -11,7 +11,9 @@ function n(v: number): string {
 
 export function glassBubbleCommands(w: number, h: number, outgoing: boolean, hasTail: boolean,
   tl: number, tr: number, br: number, bl: number, tailW: number, tailH: number, scale: number): string {
-  const inset = hasTail ? tailW - 1 : 0;
+  // 没尾巴的行也留同宽的空位（气泡组件里是 bubbleTailGutter = tailW - 1），
+  // 气泡边缘才能上下对齐。
+  const inset = tailW - 1;
   const x0 = outgoing ? 0 : inset;
   const x1 = outgoing ? w - inset : w;
   const bw = x1 - x0;

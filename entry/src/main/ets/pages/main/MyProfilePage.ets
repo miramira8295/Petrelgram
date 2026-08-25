@@ -33,8 +33,9 @@ import { registerStack, NavStackLike, snapshotOf, stackOf } from '../../util/nav
 import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
 import { readableContentWidth } from '../../util/contentWidth';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
-import { navBarVisibleOnAppear } from '../../util/navBarReset';
+import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { isSplitLayout } from '../../util/splitMetrics';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -77,6 +78,12 @@ function profileFrameKey(name: string, param: Object | undefined): string {
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct MyProfilePage {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @Prop active: boolean = false;
   onOpenSettings: () => void = (): void => {};
@@ -1237,7 +1244,7 @@ export struct MyProfilePage {
           LoadingProgress()
             .width(18)
             .height(18)
-            .color(COLOR_PRIMARY);
+            .color(this.accent());
         } else if (this.copiedInfoKey === key) {
           SymbolGlyph($r('sys.symbol.checkmark'))
             .fontSize(17)
@@ -1310,7 +1317,7 @@ export struct MyProfilePage {
             LoadingProgress()
               .width(28)
               .height(28)
-              .color(COLOR_PRIMARY);
+              .color(this.accent());
           } else {
             AvatarView({
               avatarPath: this.avatarPath, initials: this.initials,
@@ -1350,7 +1357,7 @@ export struct MyProfilePage {
           .width(31)
           .height(31)
           .borderRadius(15.5)
-          .backgroundColor(this.profileError !== '' ? '#E64646' : COLOR_PRIMARY)
+          .backgroundColor(this.profileError !== '' ? '#E64646' : this.accent())
           .border({ width: 2.5, color: PAGE_BG })
           .justifyContent(FlexAlign.Center)
           .hitTestBehavior(HitTestMode.None)
@@ -1409,7 +1416,7 @@ export struct MyProfilePage {
 
       Row({ space: 6 }) {
         if (this.profileLoading) {
-          LoadingProgress().width(13).height(13).color(COLOR_PRIMARY);
+          LoadingProgress().width(13).height(13).color(this.accent());
         } else {
           Circle({ width: 7, height: 7 })
             .fill(this.profileError !== ''
@@ -1494,7 +1501,7 @@ export struct MyProfilePage {
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1);
-            LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
+            LoadingProgress().width(20).height(20).color(this.accent());
           }
           .width('100%')
           .height(76)
@@ -1515,13 +1522,13 @@ export struct MyProfilePage {
                 .fontColor(COLOR_TEXT_PRIMARY);
               Text($r('app.string.tap_to_reload'))
                 .fontSize(12)
-                .fontColor(COLOR_PRIMARY);
+                .fontColor(this.accent());
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1);
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))
               .fontSize(17)
-              .fontColor([COLOR_PRIMARY]);
+              .fontColor([this.accent()]);
           }
           .width('100%')
           .height(76)
@@ -1535,7 +1542,7 @@ export struct MyProfilePage {
               Circle({ width: 38, height: 38 }).fill('#143478F6');
               SymbolGlyph($r('sys.symbol.person_fill'))
                 .fontSize(18)
-                .fontColor([COLOR_PRIMARY]);
+                .fontColor([this.accent()]);
             }
             Column({ space: 3 }) {
               Text($r('app.string.mp_account_info_empty'))
@@ -1605,11 +1612,11 @@ export struct MyProfilePage {
         LoadingProgress()
           .width(16)
           .height(16)
-          .color(COLOR_PRIMARY);
+          .color(this.accent());
       } else {
         SymbolGlyph($r(this.postTabIcon(index)))
           .fontSize(16)
-          .fontColor([this.postTab === index ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY])
+          .fontColor([this.postTab === index ? this.accent() : COLOR_TEXT_SECONDARY])
           .scale({
             x: this.pressedPostTab === index ? 0.9 : 1,
             y: this.pressedPostTab === index ? 0.9 : 1
@@ -1622,7 +1629,7 @@ export struct MyProfilePage {
       Text(label)
         .fontSize(14)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.postTab === index ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+        .fontColor(this.postTab === index ? this.accent() : COLOR_TEXT_SECONDARY)
         .maxLines(1);
     }
     .layoutWeight(1)
@@ -1731,7 +1738,7 @@ export struct MyProfilePage {
         LoadingProgress()
           .width(16)
           .height(16)
-          .color(COLOR_PRIMARY);
+          .color(this.accent());
         Text(this.postTab === 0 ? $r('app.string.mp_syncing_stories') : $r('app.string.mp_loading_archived'))
           .fontSize(13)
           .fontColor(COLOR_TEXT_SECONDARY);
@@ -1772,11 +1779,11 @@ export struct MyProfilePage {
       Row({ space: 7 }) {
         SymbolGlyph($r('sys.symbol.arrow_clockwise'))
           .fontSize(17)
-          .fontColor([COLOR_PRIMARY]);
+          .fontColor([this.accent()]);
         Text($r('app.string.settings_reload'))
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_PRIMARY);
+          .fontColor(this.accent());
       }
       .height(40)
       .padding({ left: 18, right: 18 })
@@ -1825,7 +1832,7 @@ export struct MyProfilePage {
           ? $r('sys.symbol.archivebox')
           : $r('sys.symbol.camera'))
           .fontSize(28)
-          .fontColor([archived ? '#7D69D9' : COLOR_PRIMARY]);
+          .fontColor([archived ? '#7D69D9' : this.accent()]);
       }
       .transition(TransitionEffect.OPACITY
         .combine(TransitionEffect.scale({ x: 0.78, y: 0.78 }))
@@ -1840,16 +1847,16 @@ export struct MyProfilePage {
       if (!archived) {
         Row({ space: 7 }) {
           if (this.storyPickerOpen || this.storyPosting) {
-            LoadingProgress().width(17).height(17).color(COLOR_PRIMARY);
+            LoadingProgress().width(17).height(17).color(this.accent());
           } else {
             SymbolGlyph($r('sys.symbol.plus'))
               .fontSize(17)
-              .fontColor([COLOR_PRIMARY]);
+              .fontColor([this.accent()]);
           }
           Text(this.storyPosting ? $r('app.string.mp_posting') : $r('app.string.mp_add_story'))
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_PRIMARY);
+            .fontColor(this.accent());
         }
         .height(40)
         .padding({ left: 18, right: 18 })
@@ -2096,7 +2103,10 @@ export struct MyProfilePage {
     // navBar 显隐。单栏下它等价于「栈非空」，dock 要藏在这种时候，见
     // PROFILE_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
     // 惊动订阅方。
-    .onNavBarStateChange((isVisible: boolean): void => {
+    .onNavBarStateChange((reported: boolean): void => {
+      // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
+      const isVisible: boolean = navBarVisibleOnChange(reported,
+        isSplitLayout(this.screenW, this.screenH), this.profileStack.size());
       if (AppStorage.get<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY) !== isVisible) {
         AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
       }
@@ -2124,6 +2134,12 @@ export struct MyProfilePage {
 // Bottom sheet holding the sticker picker for the emoji-avatar option.
 @CustomDialog
 struct StickerAvatarDialog {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;

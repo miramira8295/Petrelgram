@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "กระจก"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "แสดงแท็บรายชื่อติดต่อ"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "เมื่อปิด แถบด้านล่างจะไม่แสดงรายชื่อติดต่อ"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "ยกเลิก"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "ตกลง"
     }
   ]
 }

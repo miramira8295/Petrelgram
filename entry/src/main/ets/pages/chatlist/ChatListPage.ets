@@ -10,6 +10,7 @@ import {
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
@@ -27,7 +28,7 @@ import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
-import { navBarVisibleOnAppear } from '../../util/navBarReset';
+import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
 
 interface TabSpec {
@@ -138,6 +139,8 @@ export struct ChatListPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 大标题的强调色是活绑定，读一次 epoch 才会在用户改色后重绘。
+  @StorageProp(APPEARANCE_EPOCH) private appearanceEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @State folders: FolderInfo[] = [];
   @State unreadMap: Map<string, number> = new Map();
@@ -548,7 +551,7 @@ export struct ChatListPage {
         LoadingProgress()
           .width(20)
           .height(20)
-          .color(COLOR_PRIMARY)
+          .color(this.accent())
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.scale({ x: 0.72, y: 0.72 }))
             .animation({
@@ -698,7 +701,7 @@ export struct ChatListPage {
         // place users read the product name, so it must not say "Telegram":
         // that is a trademark, and this is an unofficial client.
         Text($r('app.string.app_name'))
-          .fontSize(25).fontWeight(FontWeight.Bold).fontColor(COLOR_PRIMARY)
+          .fontSize(25).fontWeight(FontWeight.Bold).fontColor(this.accent())
           .maxLines(1)
           .translate({ y: this.syncState === '' ? 7 : 0 })
           .animation({
@@ -865,6 +868,10 @@ export struct ChatListPage {
     );
   }
 
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation(this.chatStack) {
@@ -970,7 +977,7 @@ export struct ChatListPage {
         // 就盖到那儿。
         avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
-        style: titleBarStyle($r('app.color.surface')),
+        style: titleBarStyle($r('app.color.surface'), this.accent()),
         content: this.titleBarContent()
       })
       // 一级页签，没有返回键。
@@ -1013,7 +1020,10 @@ export struct ChatListPage {
       // navBar 显隐 = 「单栏且栈非空」。dock 要藏在这种时候，见
       // CHAT_NAV_BAR_VISIBLE_KEY 的说明。写入前先比一次：同值 setOrCreate 也会
       // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
-      .onNavBarStateChange((isVisible: boolean): void => {
+      .onNavBarStateChange((reported: boolean): void => {
+        // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
+        const isVisible: boolean = navBarVisibleOnChange(reported,
+          isSplitLayout(this.screenW, this.screenH), this.chatStack.size());
         if (AppStorage.get<boolean>(CHAT_NAV_BAR_VISIBLE_KEY) !== isVisible) {
           AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, isVisible);
         }

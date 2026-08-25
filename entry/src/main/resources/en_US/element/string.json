@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Glass"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Show Contacts tab"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "When off, the bottom bar no longer shows Contacts"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

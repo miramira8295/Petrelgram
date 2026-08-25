@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Vetro"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Mostra la scheda Contatti"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Se disattivato, la barra inferiore non mostra i Contatti"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Annulla"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

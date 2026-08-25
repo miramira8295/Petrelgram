@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "유리"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "연락처 탭 표시"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "끄면 하단 바에 연락처가 표시되지 않습니다"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "취소"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "확인"
     }
   ]
 }

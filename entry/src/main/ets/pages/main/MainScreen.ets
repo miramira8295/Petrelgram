@@ -26,6 +26,8 @@ import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/C
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
 import { overlayBackdropBlur, materialOff, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { KEY_SHOW_CONTACTS_TAB } from '../../store/AppSettings';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 
@@ -57,6 +59,10 @@ export struct MainScreen {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，不是状态；dock 读一次 epoch 才会在用户改色后重绘。
+  @StorageProp(APPEARANCE_EPOCH) private appearanceEpoch: number = 0;
+  // 交互设置里可以把「联系人」页签从底栏藏掉；正停在它上面时跳回聊天。
+  @StorageProp(KEY_SHOW_CONTACTS_TAB) @Watch('onShowContactsTabChanged') showContactsTab: boolean = true;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
@@ -312,7 +318,7 @@ export struct MainScreen {
         // 由系统给，和其它系统图标一致。第二个参数是布尔触发器——false→true
         // 的那一刻播一次，所以只有"变成选中"会弹，重复点已选中的不会。
         SymbolGlyph($r(icon)).fontSize(24)
-          .fontColor([this.tab === index ? COLOR_PRIMARY : COLOR_TAB_UNSELECTED])
+          .fontColor([this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED])
           .symbolEffect(
             new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP),
             this.tab === index
@@ -332,12 +338,12 @@ export struct MainScreen {
             .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
             // 未读数跟强调色。原来这里写死成 #4CD964，用户换了强调色也不变
             // ——而聊天列表行里的未读气泡一直是 COLOR_PRIMARY，两处对不上。
-            .backgroundColor(COLOR_PRIMARY).borderRadius(9)
+            .backgroundColor(this.accent()).borderRadius(9)
             .offset({ x: 12, y: -7 });
         }
       }
       Text(label).fontSize(10)
-        .fontColor(this.tab === index ? COLOR_PRIMARY : COLOR_TAB_UNSELECTED);
+        .fontColor(this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED);
     }
     .layoutWeight(1).height('100%')
     .justifyContent(FlexAlign.Center)
@@ -364,9 +370,9 @@ export struct MainScreen {
       }
       .width(32).height(32).borderRadius(16).padding(2)
       // A constant border width avoids a size jump when this tab is selected.
-      .border({ width: 2, color: this.tab === 3 ? COLOR_PRIMARY : Color.Transparent });
+      .border({ width: 2, color: this.tab === 3 ? this.accent() : Color.Transparent });
       Text($r('app.string.tab_profile')).fontSize(10)
-        .fontColor(this.tab === 3 ? COLOR_PRIMARY : COLOR_TAB_UNSELECTED);
+        .fontColor(this.tab === 3 ? this.accent() : COLOR_TAB_UNSELECTED);
     }
     .layoutWeight(1).height('100%')
     .justifyContent(FlexAlign.Center)
@@ -467,7 +473,9 @@ export struct MainScreen {
       // 外面那层 Stack（唯一作用是给药丸定位）也一并去掉了。
       Row() {
         this.dockItem(0, 'sys.symbol.message', $r('app.string.tab_chats'), 'tab_chats');
-        this.dockItem(1, 'sys.symbol.person_2', $r('app.string.tab_contacts'), 'tab_contacts');
+        if (this.showContactsTab) {
+          this.dockItem(1, 'sys.symbol.person_2', $r('app.string.tab_contacts'), 'tab_contacts');
+        }
         this.dockItem(2, 'sys.symbol.gearshape', $r('app.string.settings_title'), 'settings_title');
         this.profileDockItem();
       }
@@ -521,6 +529,16 @@ export struct MainScreen {
 
   // dock 的底色/模糊读一次 materialEpoch：厚度/关闭改了才会重绘。厚度「关闭」
   // 时底色退回实色 surface，否则还是那层玻璃色（材质在的时候压在材质上做染色）。
+  onShowContactsTabChanged(): void {
+    if (!this.showContactsTab && this.tab === 1) {
+      this.tab = 0;
+    }
+  }
+
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   private dockBg(): ResourceColor {
     if (this.materialEpoch < 0) {
       return Color.Transparent;

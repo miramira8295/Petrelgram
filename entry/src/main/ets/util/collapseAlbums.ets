@@ -124,6 +124,10 @@ function mutableSig(m: MessageEntry): string {
     `_${progressBucket(m.linkPhotoProgress)}_${m.linkPhotoFailed}_${m.linkPhotoDownloadActive}` +
     `_${m.photoFileId}_${m.videoFileId}_${m.videoDuration}_${progressBucket(m.videoProgress)}_${m.videoFailed}` +
     `_${m.videoPath !== '' ? 'v' : ''}_${m.stickerPath !== '' ? 's' : ''}` +
+    // webp 静态贴纸把自己的文件当缩略图用（photoFileId = 贴纸文件），气泡直接读
+    // msg.photoPath；照片走 thumbPath 旁路不进签名，贴纸没有旁路——不进签名就
+    // 永远转圈、重进才显示（issue #68 的真身）。只对贴纸类计入，照片行不受影响。
+    `_${m.contentType === 'sticker' && m.photoPath !== '' ? 'sp' : ''}` +
     `_${progressBucket(m.stickerProgress)}_${m.stickerFailed}_${m.stickerDownloadActive}_${m.isEmojiSticker}` +
     `_${m.editDate}` +
     // 译文长度 + 语言 + 折叠态足以表达"这行的翻译展示变了"；全文进签名徒增

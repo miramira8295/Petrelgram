@@ -9,6 +9,7 @@ import {
 import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
 import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 // 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。
 //
@@ -24,6 +25,12 @@ export const CHAT_HEADER_RADIUS: number = 22;
 
 @Component
 export struct ChatHeader {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -87,7 +94,7 @@ export struct ChatHeader {
   @Builder
   titleAccessory() {
     if (this.headerState === 'loading' || this.profileOpening) {
-      LoadingProgress().width(15).height(15).color(COLOR_PRIMARY).margin({ left: 5 });
+      LoadingProgress().width(15).height(15).color(this.accent()).margin({ left: 5 });
     } else if (this.emojiPath !== '') {
       if (this.emojiFormat === 'tgs') {
         TgsStickerView({

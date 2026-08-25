@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Cristal"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Mostrar pestaña Contactos"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Si está desactivado, la barra inferior no muestra Contactos"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Cancelar"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "Aceptar"
     }
   ]
 }

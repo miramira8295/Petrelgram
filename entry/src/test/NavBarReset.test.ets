@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { navBarVisibleOnAppear } from '../main/ets/util/navBarReset';
+import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../main/ets/util/navBarReset';
 
 export default function navBarResetTest() {
   describe('navBarReset', () => {
@@ -27,6 +27,18 @@ export default function navBarResetTest() {
       // 不该出现，但栈的实现换了之后 size() 的语义未必还一样；宁可显示 dock
       // 也不要让它永久消失——那个故障用户没法自己恢复。
       expect(navBarVisibleOnAppear(false, -1)).assertTrue();
+    });
+  });
+
+  describe('navBarVisibleOnChange', () => {
+    it('浏览器退掉后补发的 visible=true，单栏且栈非空时不算数', 0, (): void => {
+      expect(navBarVisibleOnChange(true, false, 1)).assertFalse();
+      expect(navBarVisibleOnChange(true, false, 0)).assertTrue();
+      expect(navBarVisibleOnChange(false, false, 0)).assertFalse();
+    });
+    it('分栏下照单全收', 0, (): void => {
+      expect(navBarVisibleOnChange(true, true, 3)).assertTrue();
+      expect(navBarVisibleOnChange(false, true, 3)).assertFalse();
     });
   });
 }

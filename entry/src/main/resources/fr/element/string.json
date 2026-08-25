@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Verre"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Afficher l’onglet Contacts"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Désactivé, la barre du bas n’affiche plus les contacts"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Annuler"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

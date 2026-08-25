@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "玻璃"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "显示联系人页签"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "关闭后底栏不再显示联系人"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "确定"
     }
   ]
 }

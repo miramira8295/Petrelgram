@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Скло"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Показувати вкладку «Контакти»"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Якщо вимкнено, вкладка «Контакти» прихована з нижньої панелі"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Скасувати"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "Гаразд"
     }
   ]
 }

@@ -10,7 +10,9 @@ import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { TAIL_H, TAIL_W, bubbleGlassModifier } from '../../util/bubbleTail';
+import {
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
+} from '../../util/bubbleTail';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
@@ -88,6 +90,13 @@ const EMPTY_ACTIONS: LightweightPlainTextActions = {
 // refreshes only this 38vp node, not the whole lightweight row.
 @Component
 struct LightweightSenderAvatar {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @Prop senderId: number = 0;
   @Prop senderIsUser: boolean = true;
   @Prop initialPath: string = '';
@@ -140,6 +149,12 @@ struct LightweightSenderAvatar {
 
 @Component
 export struct LightweightPlainTextBubble {
+
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @Prop @Watch('onMessageChanged') msg: MessageEntry;
   @Prop nowSec: number = 0;
   @Prop chatId: number = 0;
@@ -188,6 +203,30 @@ export struct LightweightPlainTextBubble {
 
   private glassBlur(): number {
     return this.bubbleMaterialLive() ? overlayBackdropBlur('bubble') : 0;
+  }
+
+  // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
+  private glassRadius(): BorderRadiuses {
+    const r = this.bubbleCorners();
+    if (!this.hasTail()) {
+      return r;
+    }
+    return this.msg.isOutgoing
+      ? { topLeft: r.topLeft, topRight: r.topRight, bottomRight: 0, bottomLeft: r.bottomLeft }
+      : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
+  }
+
+  // 沿整条轮廓（含尾巴）描一圈，补上材质画不到的内侧边。
+  @Builder
+  glassOutline() {
+    if (this.bubbleMaterialLive() && this.glassW > 0 && this.glassH > 0) {
+      Path({ width: this.glassW, height: this.glassH })
+        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
+        .fill(Color.Transparent)
+        .stroke(GLASS_OUTLINE_COLOR)
+        .strokeWidth(GLASS_OUTLINE_WIDTH)
+        .hitTestBehavior(HitTestMode.None);
+    }
   }
 
   private glassModifier(): AttributeModifier<CommonAttribute> {
@@ -377,10 +416,10 @@ export struct LightweightPlainTextBubble {
           ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
         .fontSize(12)
         .fontColor([this.liveSendState === 'failed' ? Color.Red
-          : (this.liveSendState === 'read' ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)])
+          : (this.liveSendState === 'read' ? this.accent() : COLOR_TEXT_SECONDARY)])
         .visibility(this.liveSendState === 'none' || this.liveSendState === ''
           ? Visibility.None : Visibility.Visible);
-      SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([COLOR_PRIMARY])
+      SymbolGlyph($r('sys.symbol.checkmark')).fontSize(12).fontColor([this.accent()])
         .margin({ left: -8 })
         .visibility(this.liveSendState === 'read' ? Visibility.Visible : Visibility.None);
     }
@@ -389,7 +428,7 @@ export struct LightweightPlainTextBubble {
   @Builder
   replyQuote() {
     Column() {
-      Text(this.msg.replySenderName).fontSize(12).fontColor(COLOR_PRIMARY).maxLines(1)
+      Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
         .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
         .constraintSize({ maxWidth: this.replyMaxW() })
         .textOverflow({ overflow: TextOverflow.Ellipsis });
@@ -400,7 +439,7 @@ export struct LightweightPlainTextBubble {
     }
     .alignItems(HorizontalAlign.Start).alignSelf(ItemAlign.Stretch)
     .backgroundColor(accentSoft()).borderRadius(6)
-    .border({ width: { left: 2 }, color: COLOR_PRIMARY })
+    .border({ width: { left: 2 }, color: this.accent() })
     .padding({ left: 6, right: 6, top: 3, bottom: 3 }).margin({ bottom: 4 })
     .onClick((): void => {
       if (!this.gestureClaimed) {
@@ -426,7 +465,7 @@ export struct LightweightPlainTextBubble {
             .fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
           Text($r('app.string.settings_retry')).fontSize(11)
-            .fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+            .fontColor(this.accent()).fontWeight(FontWeight.Medium);
           Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);
         }
         .constraintSize({ maxWidth: this.inlineMaxW() })
@@ -617,6 +656,8 @@ export struct LightweightPlainTextBubble {
           .backgroundColor(this.glassBg())
           .backdropBlur(this.glassBlur())
           .attributeModifier(this.glassModifier())
+          .borderRadius(this.glassRadius())
+          .overlay(this.glassOutline(), { align: Alignment.TopStart })
           .onAreaChange((_old: Area, area: Area): void => {
             this.glassW = Number(area.width);
             this.glassH = Number(area.height);

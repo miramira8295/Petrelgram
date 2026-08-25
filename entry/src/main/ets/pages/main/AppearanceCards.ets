@@ -23,6 +23,7 @@ import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overla
 import { ColorPickerSheet } from '../common/ColorPickerSheet';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 const CARD_RADIUS: number = 14;
 const ROW_H: number = 48;
@@ -37,6 +38,13 @@ function cardTitle(title: ResourceStr) {
     .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
 }
 
+// 整行可点，弹自绘取色器：拖动实时预览、「取消」恢复打开前的值、「确定」保留。
+// 官方 HdsColorPicker 是封闭的旋钮（弹窗自管、没有确认/取消、整行点不到），这里不用。
+function applyHex(key: string, hex: string): void {
+  setString(key, hex);
+  recomputeAppearance();
+}
+
 @Builder
 function rowDivider() {
   Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
@@ -46,6 +54,12 @@ function rowDivider() {
 
 @Component
 export struct BubbleColorsCard {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @StorageProp(KEY_BUBBLE_OUT_HEX) outLight: string = '';
   @StorageProp(KEY_BUBBLE_OUT_HEX_DARK) outDark: string = '';
   @StorageProp(KEY_BUBBLE_IN_HEX) inLight: string = '';
@@ -63,8 +77,12 @@ export struct BubbleColorsCard {
     .backgroundColor($r('app.color.surface_alt'))
   }
 
+  // 打开前的值：取消时恢复，也是取色器的初始色。
+  private pickerBefore: string = '';
+
   private open(key: string): void {
     this.pickerKey = key;
+    this.pickerBefore = hexOrDefault(AppStorage.get<string>(key), defaultHexFor(key));
     this.pickerOpen = true;
   }
 
@@ -88,11 +106,13 @@ export struct BubbleColorsCard {
   @Builder
   sheet() {
     ColorPickerSheet({
-      initialHex: hexOrDefault(AppStorage.get<string>(this.pickerKey), defaultHexFor(this.pickerKey)),
+      initialHex: this.pickerBefore,
+      onChange: (hex: string): void => applyHex(this.pickerKey, hex),
       onPick: (hex: string): void => {
-        setString(this.pickerKey, hex);
-        recomputeAppearance();
+        this.pickerBefore = hex;
+        applyHex(this.pickerKey, hex);
       },
+      onCancel: (): void => applyHex(this.pickerKey, this.pickerBefore),
       onClose: (): void => {
         this.pickerOpen = false;
       }
@@ -129,7 +149,7 @@ export struct BubbleColorsCard {
         KEY_BUBBLE_IN_HEX_DARK);
       rowDivider();
       Row() {
-        Text($r('app.string.appearance_reset')).fontSize(16).fontColor(COLOR_PRIMARY);
+        Text($r('app.string.appearance_reset')).fontSize(16).fontColor(this.accent());
       }
       .width('100%').height(ROW_H).padding({ left: 16, right: 16 })
       .stateStyles({ normal: this.rowNormal, pressed: this.rowPressed })
@@ -139,8 +159,10 @@ export struct BubbleColorsCard {
     .bindSheet($$this.pickerOpen, this.sheet(), {
       height: SheetSize.FIT_CONTENT, showClose: false, dragBar: true,
       backgroundColor: COLOR_SURFACE,
+      // 滑掉面板视同取消。确定/取消按钮先把 pickerBefore 同步成最终值，这里恢复就是空操作。
       onDisappear: (): void => {
         this.pickerOpen = false;
+        applyHex(this.pickerKey, this.pickerBefore);
       }
     });
   }
@@ -150,6 +172,12 @@ export struct BubbleColorsCard {
 
 @Component
 export struct AccentColorCard {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @StorageProp(KEY_ACCENT_CUSTOM_ON) accentOn: boolean = false;
   @StorageProp(KEY_ACCENT_HEX) hexLight: string = '';
   @StorageProp(KEY_ACCENT_HEX_DARK) hexDark: string = '';
@@ -171,8 +199,12 @@ export struct AccentColorCard {
     recomputeAppearance();
   }
 
+  // 打开前的值：取消时恢复，也是取色器的初始色。
+  private pickerBefore: string = '';
+
   private open(key: string): void {
     this.pickerKey = key;
+    this.pickerBefore = hexOrDefault(AppStorage.get<string>(key), defaultHexFor(key));
     this.pickerOpen = true;
   }
 
@@ -183,11 +215,13 @@ export struct AccentColorCard {
   @Builder
   sheet() {
     ColorPickerSheet({
-      initialHex: hexOrDefault(AppStorage.get<string>(this.pickerKey), defaultHexFor(this.pickerKey)),
+      initialHex: this.pickerBefore,
+      onChange: (hex: string): void => applyHex(this.pickerKey, hex),
       onPick: (hex: string): void => {
-        setString(this.pickerKey, hex);
-        recomputeAppearance();
+        this.pickerBefore = hex;
+        applyHex(this.pickerKey, hex);
       },
+      onCancel: (): void => applyHex(this.pickerKey, this.pickerBefore),
       onClose: (): void => {
         this.pickerOpen = false;
       }
@@ -219,7 +253,7 @@ export struct AccentColorCard {
         .stateStyles({ normal: this.rowNormal, pressed: this.rowPressed })
         .onClick((): void => this.setOn(!this.accentOn));
         Toggle({ type: ToggleType.Switch, isOn: this.accentOn })
-          .selectedColor(COLOR_PRIMARY)
+          .selectedColor(this.accent())
           .onChange((v: boolean): void => this.setOn(v));
       }
       .width('100%').height(64).padding({ left: 16, right: 13 }).alignItems(VerticalAlign.Center);
@@ -234,8 +268,10 @@ export struct AccentColorCard {
     .bindSheet($$this.pickerOpen, this.sheet(), {
       height: SheetSize.FIT_CONTENT, showClose: false, dragBar: true,
       backgroundColor: COLOR_SURFACE,
+      // 滑掉面板视同取消。确定/取消按钮先把 pickerBefore 同步成最终值，这里恢复就是空操作。
       onDisappear: (): void => {
         this.pickerOpen = false;
+        applyHex(this.pickerKey, this.pickerBefore);
       }
     });
   }
@@ -245,6 +281,12 @@ export struct AccentColorCard {
 
 @Component
 export struct BubbleMaterialCard {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @StorageProp(KEY_BUBBLE_MATERIAL_ON) on: boolean = false;
 
   private setOn(v: boolean): void {
@@ -277,7 +319,7 @@ export struct BubbleMaterialCard {
         Select(this.options())
           .selected(this.on ? 1 : 0)
           .value(this.on ? str('bubble_material_glass') : str('bubble_material_standard'))
-          .font({ size: 15 }).fontColor(COLOR_PRIMARY)
+          .font({ size: 15 }).fontColor(this.accent())
           .onSelect((index: number): void => this.setOn(index === 1));
       }
       .width('100%').padding({ left: 16, right: 8, top: 10, bottom: 10 }).alignItems(VerticalAlign.Center);
@@ -290,6 +332,12 @@ export struct BubbleMaterialCard {
 
 @Component
 export struct AccountColorsCard {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @State namePreviews: AccentPreview[] = [];
   @State profilePreviews: AccentPreview[] = [];
   @State currentNameId: number = -1;
@@ -447,7 +495,7 @@ export struct AccountColorsCard {
     }
     .width(SWATCH + 8).height(SWATCH + 8)
     .borderRadius((SWATCH + 8) / 2)
-    .border({ width: this.isSelected(preview, forProfile) ? 2 : 0, color: COLOR_PRIMARY })
+    .border({ width: this.isSelected(preview, forProfile) ? 2 : 0, color: this.accent() })
     .onClick(onTap);
   }
 
@@ -466,7 +514,7 @@ export struct AccountColorsCard {
         .width('100%').padding({ left: 16, right: 16 });
       if (this.namePreviews.length === 0 && this.profilePreviews.length === 0) {
         Column({ space: 9 }) {
-          LoadingProgress().width(34).height(34).color(COLOR_PRIMARY);
+          LoadingProgress().width(34).height(34).color(this.accent());
           Text($r('app.string.accent_waiting_palette')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
         }.width('100%').padding(20);
       } else {

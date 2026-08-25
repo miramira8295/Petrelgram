@@ -22,6 +22,7 @@ import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logI } from '../../util/log';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
@@ -32,6 +33,12 @@ const MENU_DISMISS_MS: number = 150;
 @Reusable
 @Component
 export struct ChatRow {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -431,7 +438,7 @@ export struct ChatRow {
         Row() {
           if (this.chat.lastSenderName !== '') {
             Text(`${this.chat.lastSenderName}: `)
-              .fontSize(14).fontColor(COLOR_PRIMARY)
+              .fontSize(14).fontColor(this.accent())
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               .constraintSize({ maxWidth: 112 });
           }
@@ -458,12 +465,12 @@ export struct ChatRow {
             .constraintSize({ minWidth: 22 })
             .height(22).padding({ left: 7, right: 7 })
             .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
-            .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : COLOR_PRIMARY)
+            .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
             .borderRadius(11);
         } else if (this.chat.isMarkedUnread) {
           // Manually flagged unread — a plain dot, like the official clients.
           Circle({ width: 10, height: 10 })
-            .fill(this.muted() ? COLOR_MUTED_BADGE : COLOR_PRIMARY);
+            .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
         }
       }.alignItems(HorizontalAlign.End);
     }

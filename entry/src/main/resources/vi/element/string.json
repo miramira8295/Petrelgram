@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Kính"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Hiện tab Danh bạ"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Khi tắt, thanh dưới không hiện Danh bạ"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Hủy"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

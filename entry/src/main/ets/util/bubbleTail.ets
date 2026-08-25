@@ -48,13 +48,24 @@ function radiusOf(v: Length | undefined): number {
 }
 
 // w/h 是容器量到的 vp 尺寸；没量到（0）时不裁，先让材质按矩形出来。
+// 整体轮廓的 path 命令（px）。裁剪和描边共用同一条。
+export function glassOutlineCommands(w: number, h: number, outgoing: boolean,
+  hasTail: boolean, radii: BorderRadiuses): string {
+  return glassBubbleCommands(w, h, outgoing, hasTail,
+    radiusOf(radii.topLeft), radiusOf(radii.topRight), radiusOf(radii.bottomRight), radiusOf(radii.bottomLeft),
+    TAIL_W, TAIL_H, vp2px(1));
+}
+
+// 材质的高光边只沿节点自身的矩形边画；气泡左边缘（尾巴/留白那侧）是裁出来的
+// 内侧线，没有高光。自己沿整条轮廓描一圈，颜色取接近材质高光的半透明白。
+export const GLASS_OUTLINE_COLOR: string = '#4DFFFFFF';
+export const GLASS_OUTLINE_WIDTH: number = 1;
+
 export function bubbleGlassModifier(live: boolean, w: number, h: number, outgoing: boolean,
   hasTail: boolean, radii: BorderRadiuses): BubbleGlassModifier {
   if (!live || w <= 0 || h <= 0) {
     return new BubbleGlassModifier(live, null);
   }
-  const commands = glassBubbleCommands(w, h, outgoing, hasTail,
-    radiusOf(radii.topLeft), radiusOf(radii.topRight), radiusOf(radii.bottomRight), radiusOf(radii.bottomLeft),
-    TAIL_W, TAIL_H, vp2px(1));
-  return new BubbleGlassModifier(true, new PathShape({ commands: commands }));
+  return new BubbleGlassModifier(true,
+    new PathShape({ commands: glassOutlineCommands(w, h, outgoing, hasTail, radii) }));
 }

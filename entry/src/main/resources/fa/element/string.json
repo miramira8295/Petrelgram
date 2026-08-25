@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "شیشه‌ای"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "نمایش زبانه مخاطبین"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "در حالت خاموش، نوار پایین مخاطبین را نشان نمی‌دهد"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "لغو"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "تأیید"
     }
   ]
 }

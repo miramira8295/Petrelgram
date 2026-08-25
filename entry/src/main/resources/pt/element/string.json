@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Vidro"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Mostrar aba Contatos"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Desativado, a barra inferior não mostra Contatos"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Cancelar"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

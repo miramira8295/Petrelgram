@@ -8,9 +8,16 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 @Component
 export struct ChatListView {
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  private accent(): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+  }
+
   @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
   // 分类默认静音一改，每一行的铃铛和角标颜色都可能翻转（见 ChatRow.muted）。
   // 和 langEpoch 同一套办法：进 key 就是整表改名，@Watch 负责把重建踢起来。
@@ -156,7 +163,7 @@ export struct ChatListView {
       if (this.loading) {
         Stack({ alignContent: Alignment.Center }) {
           Circle({ width: 58, height: 58 }).fill($r('app.color.surface_alt'));
-          LoadingProgress().width(28).height(28).color(COLOR_PRIMARY);
+          LoadingProgress().width(28).height(28).color(this.accent());
         }
         Text(this.listKey === 'archive' ? $r('app.string.cl_syncing_archive') : $r('app.string.cl_loading_chats'))
           .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
@@ -165,7 +172,7 @@ export struct ChatListView {
       } else if (this.loadFailed) {
         Row() {
           SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-            .fontSize(28).fontColor([COLOR_PRIMARY]);
+            .fontSize(28).fontColor([this.accent()]);
         }
         .width(58).height(58).borderRadius(29)
         .backgroundColor($r('app.color.surface_alt'))
@@ -179,7 +186,7 @@ export struct ChatListView {
           Text($r('app.string.settings_reload')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(Color.White);
         }
         .height(38).padding({ left: 15, right: 16 }).borderRadius(19)
-        .backgroundColor(COLOR_PRIMARY)
+        .backgroundColor(this.accent())
         .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
         .onClick((): void => this.loadInitial());
       } else {
@@ -220,10 +227,10 @@ export struct ChatListView {
           ListItem() {
             Row({ space: 7 }) {
               SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-                .fontSize(14).fontColor([COLOR_PRIMARY]);
+                .fontSize(14).fontColor([this.accent()]);
               Text($r('app.string.cl_archive_sync_failed'))
                 .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
-              Text($r('app.string.settings_retry')).fontSize(12).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
+              Text($r('app.string.settings_retry')).fontSize(12).fontWeight(FontWeight.Medium).fontColor(this.accent());
             }
             .height(40).padding({ left: 14, right: 14 })
             .backgroundColor($r('app.color.surface_alt'))
@@ -249,14 +256,14 @@ export struct ChatListView {
         if (this.paging) {
           ListItem() {
             Row() {
-              LoadingProgress().width(22).height(22).color(COLOR_PRIMARY);
+              LoadingProgress().width(22).height(22).color(this.accent());
             }.width('100%').height(44).justifyContent(FlexAlign.Center);
           }
         } else if (this.pagingFailed) {
           ListItem() {
             Row({ space: 6 }) {
-              SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(13).fontColor([COLOR_PRIMARY]);
-              Text($r('app.string.load_more_failed')).fontSize(12).fontColor(COLOR_PRIMARY);
+              SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(13).fontColor([this.accent()]);
+              Text($r('app.string.load_more_failed')).fontSize(12).fontColor(this.accent());
             }
             .width('100%').height(44).justifyContent(FlexAlign.Center)
             .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })

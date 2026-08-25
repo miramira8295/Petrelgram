@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "زجاجي"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "إظهار تبويب جهات الاتصال"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "عند الإيقاف، لا يظهر تبويب جهات الاتصال في الشريط السفلي"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "إلغاء"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "موافق"
     }
   ]
 }

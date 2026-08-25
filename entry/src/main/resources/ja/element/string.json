@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "ガラス"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "連絡先タブを表示"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "オフにすると下部バーに連絡先を表示しません"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "キャンセル"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "OK"
     }
   ]
 }

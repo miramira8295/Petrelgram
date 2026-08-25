@@ -177,7 +177,7 @@ function usesInteraction(surface: OverlaySurface): boolean {
 // 菜单和弹窗不给：它们是一次性出现、点一下就走的东西，摸上去发光没有意义。
 function lightEffectBase(surface: OverlaySurface): boolean {
   return surface === 'control' || surface === 'card' || surface === 'bar'
-    || surface === 'viewer';
+    || surface === 'viewer' || surface === 'bubble';
 }
 
 function usesLightEffect(surface: OverlaySurface): boolean {
@@ -199,7 +199,6 @@ function baseStyleIndex(surface: OverlaySurface): number {
     // 但透出的层次让它像一块玻璃。同一档同时用于消息长按菜单和顶栏菜单，
     // 两者本来就该长得一样（见 ActionMenuRow 的注释）。
     case 'menu':
-    case 'bubble':
       return 2;
     // A modal covers what it interrupts; nothing behind it should read.
     case 'dialog':
@@ -209,6 +208,7 @@ function baseStyleIndex(surface: OverlaySurface): number {
     // 薄一档能透出花纹，才读得出"同一张壁纸上蒙了层玻璃"。官方对浮动工具栏
     // 的建议也是 THIN。
     case 'card':
+    case 'bubble': // 和输入框同一基准，用户在设置里调的是同一个偏移
       return 1;
     // 控件比它所在的面板更靠前，用薄一档让它从面板里"浮"出来。官方建议
     // 浮动工具栏用 THIN。

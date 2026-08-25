@@ -91,6 +91,19 @@ export default function collapseAlbumsKeyTest() {
       expect(after[0].key).assertEqual(before[0].key);
     });
 
+    // webp 静态贴纸把自己的文件当缩略图（photoFileId = 贴纸文件），气泡直接读
+    // msg.photoPath，没有照片那条旁路——路径到了 key 必须变，否则永远转圈
+    // （issue #68）。照片行仍按上一条：路径不进 key。
+    it('静态贴纸行：photoPath 到达时 key 必须变', 0, () => {
+      const u = usersOf();
+      const before: MessageEntry = media(9, '', 301, '', u);
+      before.contentType = 'sticker';
+      before.stickerFormat = 'webp';
+      const after: MessageEntry = cloneMessage(before);
+      after.photoPath = '/data/9.webp';
+      expect(collapseAlbums([after])[0].key === collapseAlbums([before])[0].key).assertFalse();
+    });
+
     it('单条媒体行：photoFileId 变化时 key 必须变', 0, () => {
       const u = usersOf();
       const before: AlbumGroup[] = collapseAlbums([media(5, '', 201, '/data/5.jpg', u)]);

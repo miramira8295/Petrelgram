@@ -11563,6 +11563,22 @@
     {
       "name": "bubble_material_glass",
       "value": "Стекло"
+    },
+    {
+      "name": "ix_show_contacts_tab",
+      "value": "Показывать вкладку «Контакты»"
+    },
+    {
+      "name": "ix_show_contacts_tab_sub",
+      "value": "Если выключено, вкладка «Контакты» скрыта из нижней панели"
+    },
+    {
+      "name": "color_picker_cancel",
+      "value": "Отмена"
+    },
+    {
+      "name": "color_picker_confirm",
+      "value": "ОК"
     }
   ]
 }

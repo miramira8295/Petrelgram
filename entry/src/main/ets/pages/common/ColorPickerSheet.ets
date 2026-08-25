@@ -1,17 +1,11 @@
 // 取色器：SV 方块 + 色相条 + hex 输入 + 预设。挂在 bindSheet 里用。
 // 方块不用 Canvas——底色是纯色相，上面叠「白→透明」「透明→黑」两层渐变，
 // 三层 Column 就是完整的 HSV 平面，色相变了只改底色那一层。
-import { deviceInfo } from '@kit.BasicServicesKit';
-import { HdsColorPicker, HdsColorPickerTabType } from '@kit.UIDesignKit';
-import { hexToHsv, hsvToHex, isValidHex, toRgbHex } from '../../util/colorMath';
-import { COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { hexToHsv, hsvToHex, isValidHex } from '../../util/colorMath';
+import { COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 
-// 官方取色器 HdsColorPicker 从 API 26 起有；低于它走下面手写的 SV 方块。
-const HDS_COLOR_PICKER_API: number = 26;
-
-export function hdsColorPickerAvailable(sdkApiVersion: number): boolean {
-  return Number.isFinite(sdkApiVersion) && sdkApiVersion >= HDS_COLOR_PICKER_API;
-}
+// 没用官方 HdsColorPicker（API 26）：它是封闭的旋钮，弹窗自管、没有确认/取消、
+// 整行也点不到。这里手写 SV 方块 + 色相条，各版本一致。
 
 // 官方 7 个名字色 + 默认蓝 + 深浅两套气泡/页面底色。
 export const PRESET_COLORS: string[] = [
@@ -30,7 +24,11 @@ const FALLBACK_HEX: string = '#3390EC';
 @Component
 export struct ColorPickerSheet {
   @Prop initialHex: string = FALLBACK_HEX;
+  // onChange：拖动/输入时实时回调（用来即时预览）；onPick：按「确定」；
+  // onCancel：按「取消」或滑掉面板——调用方把颜色恢复成打开前的值。
+  onChange: (hex: string) => void = (): void => {};
   onPick: (hex: string) => void = (): void => {};
+  onCancel: () => void = (): void => {};
   onClose: () => void = (): void => {};
   @State hue: number = 0;
   @State sat: number = 1;
@@ -68,6 +66,7 @@ export struct ColorPickerSheet {
     this.val = 1 - Math.max(0, Math.min(1, y / SV_HEIGHT));
     this.hexText = this.current();
     this.hexInvalid = false;
+    this.onChange(this.current());
   }
 
   private pickHue(x: number): void {
@@ -77,6 +76,7 @@ export struct ColorPickerSheet {
     this.hue = Math.max(0, Math.min(359.9, x / this.svW * 360));
     this.hexText = this.current();
     this.hexInvalid = false;
+    this.onChange(this.current());
   }
 
   private onHexInput(v: string): void {
@@ -84,46 +84,19 @@ export struct ColorPickerSheet {
     this.hexText = t;
     if (isValidHex(t)) {
       this.setFromHex(t);
+      this.onChange(this.current());
     } else {
       this.hexInvalid = t !== '';
     }
   }
 
-  // 官方取色器：选一下就应用（onColorSelected），面板靠拖拽条或「完成」收起。
-  @Builder
-  hdsPicker() {
-    Column({ space: 8 }) {
-      Row() {
-        Column().width(28).height(28).borderRadius(8).backgroundColor(this.current())
-          .border({ width: 1, color: '#22000000' });
-        Text(this.hexText).fontSize(14).fontColor(COLOR_TEXT_SECONDARY).margin({ left: 10 }).layoutWeight(1);
-        Button($r('app.string.color_picker_done')).height(36).fontSize(14).backgroundColor(COLOR_PRIMARY)
-          .onClick((): void => this.onClose());
-      }.width('100%').alignItems(VerticalAlign.Center);
-      HdsColorPicker({
-        initialColor: this.current(),
-        onColorSelected: (selected: string): void => {
-          const hex = toRgbHex(selected);
-          if (hex !== '') {
-            this.setFromHex(hex);
-            this.onPick(hex);
-          }
-        },
-        options: {
-          tabs: [HdsColorPickerTabType.SPECTRUM, HdsColorPickerTabType.GRID, HdsColorPickerTabType.SLIDERS]
-        }
-      });
-    }
-    .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 24 })
-    .backgroundColor(COLOR_SURFACE);
+  private pickPreset(hex: string): void {
+    this.setFromHex(hex);
+    this.onChange(hex);
   }
 
   build() {
-    if (hdsColorPickerAvailable(deviceInfo.sdkApiVersion)) {
-      this.hdsPicker();
-    } else {
-      this.customPicker();
-    }
+    this.customPicker();
   }
 
   @Builder
@@ -136,11 +109,6 @@ export struct ColorPickerSheet {
           .layoutWeight(1).height(40).fontSize(15)
           .border({ width: this.hexInvalid ? 1.5 : 0, color: '#E53935' })
           .onChange((v: string): void => this.onHexInput(v));
-        Button($r('app.string.color_picker_done')).height(40).backgroundColor(COLOR_PRIMARY)
-          .onClick((): void => {
-            this.onPick(this.current());
-            this.onClose();
-          });
       }.width('100%');
 
       Stack({ alignContent: Alignment.TopStart }) {
@@ -189,9 +157,24 @@ export struct ColorPickerSheet {
               color: this.current() === hex ? COLOR_PRIMARY : '#22000000'
             })
             .margin(4)
-            .onClick((): void => this.setFromHex(hex));
+            .onClick((): void => this.pickPreset(hex));
         }, (hex: string): string => hex);
       }
+      Row({ space: 12 }) {
+        Button($r('app.string.color_picker_cancel'), { type: ButtonType.Capsule })
+          .layoutWeight(1).height(40).fontSize(15)
+          .backgroundColor($r('app.color.surface_alt')).fontColor(COLOR_TEXT_PRIMARY)
+          .onClick((): void => {
+            this.onCancel();
+            this.onClose();
+          });
+        Button($r('app.string.color_picker_confirm'), { type: ButtonType.Capsule })
+          .layoutWeight(1).height(40).fontSize(15).backgroundColor(COLOR_PRIMARY)
+          .onClick((): void => {
+            this.onPick(this.current());
+            this.onClose();
+          });
+      }.width('100%').margin({ top: 4 });
     }
     .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 24 })
     .backgroundColor(COLOR_SURFACE);

@@ -88,6 +88,8 @@ export const KEY_CACHE_LIMIT: string = 'cacheLimit';
 // 厚度存的是**相对偏移**（-2..2，0 = 出厂手感），不是绝对档位：每个面的厚度
 // 是分别调过的，绝对档位会把弹窗和顶栏压成同一厚度。
 export const KEY_MATERIAL_THICKNESS: string = 'materialThickness';
+// 底栏是否显示「联系人」页签（交互设置）。关掉只是隐藏页签，联系人页本身还在。
+export const KEY_SHOW_CONTACTS_TAB: string = 'showContactsTab';
 // 光感等级只在 API 26 的材质路径上有意义，低于 26 时设置页不显示这一行。
 export const KEY_MATERIAL_LIGHT: string = 'materialLight';
 // 聊天背景模糊半径（vp）。用户可调，见 chatBackgroundRaster.ets 的
@@ -240,6 +242,7 @@ export const KEY_CRASH_UPLOAD: string = 'crashUpload';
 
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
   KEY_CRASH_UPLOAD,
+  KEY_SHOW_CONTACTS_TAB,
   KEY_NOTIFY_PRIVATE,
   KEY_NOTIFY_GROUP,
   KEY_NOTIFY_CHANNEL,
