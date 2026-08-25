@@ -1,5 +1,6 @@
 import { image } from '@kit.ImageKit';
 import { sendableImage } from '@kit.ImageKit';
+import { DecodeSize, decodeDesiredSize } from './decodeSize';
 import { logE } from './log';
 
 // Image decoding, off the UI thread.
@@ -21,6 +22,9 @@ import { logE } from './log';
 // comes out distorted and ImageFit.Cover has nothing left to crop. Scale the
 // SOURCE dimensions so the result still covers the box at the original aspect
 // ratio, and let Cover do the cropping.
+//
+// 缩不缩、缩多少由 util/decodeSize 决定——小幅缩放不走这条路，它的采样质量
+// 不如渲染阶段的 interpolation(High)（issue #92 的头像斜边锯齿）。
 @Concurrent
 export async function decodeSendable(
   path: string, targetW: number, targetH: number
@@ -34,14 +38,12 @@ export async function decodeSendable(
     const probe: image.ImageSource = image.createImageSource(path);
     try {
       const info: image.ImageInfo = await probe.getImageInfo();
-      const srcW: number = info.size.width;
-      const srcH: number = info.size.height;
-      if (srcW > 0 && srcH > 0) {
-        const scale = Math.min(1, Math.max(targetW / srcW, targetH / srcH));
-        opts.desiredSize = {
-          width: Math.max(1, Math.round(srcW * scale)),
-          height: Math.max(1, Math.round(srcH * scale))
-        };
+      const want: DecodeSize | undefined =
+        decodeDesiredSize(info.size.width, info.size.height, targetW, targetH);
+      // undefined = 原样解码。**不是所有缩放都值得交给解码器**：见 decodeSize
+      // 里的说明，小幅缩放换来的是斜边锯齿，而省不下什么。
+      if (want !== undefined) {
+        opts.desiredSize = { width: want.width, height: want.height };
       }
     } finally {
       probe.release();
