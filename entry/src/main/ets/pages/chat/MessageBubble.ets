@@ -60,6 +60,7 @@ import { ThumbReadyGate } from './ThumbReadyGate';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
+import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -2098,13 +2099,47 @@ export struct MessageBubble {
         // key 里带上路径，位图下载完成后 chip 才会重建并显示图片。
       }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}_${r.customEmojiPath}`);
     }
-    // **Flex 无固定宽时默认撑满父容器**，只写 maxWidth 挡不住——一个反应就能把
-    // 气泡顶到最大内容宽，短消息因此变得很长（issue #100，实测 width('auto')
-    // 对 Flex 无效）。alignSelf(Start) 让它在父 Column 的交叉轴上按内容收缩，
-    // 而不是被拉满；maxWidth 仍然是换行的上限。
-    // （引用块那里用的是同一个属性的反面 ItemAlign.Stretch——那里要的正是撑满。）
-    .alignSelf(ItemAlign.Start)
+    // **Flex 开了 wrap 就按父容器最大宽测量**，只写 maxWidth 挡不住，alignSelf
+    // 也挡不住（那只管对齐不管测量——上一版就是这么修的，1.4.0 里用户报仍然
+    // 一个反应就把短消息顶到最大内容宽，issue #100）。给它一个明确宽度：按
+    // chip 内容测出来的自然宽，封顶 inlineMaxW，超了才由 wrap 换行。
+    .width(this.reactionsRowWidth())
     .constraintSize({ maxWidth: this.inlineMaxW() }).margin({ top: 4 });
+  }
+
+  // 反应条的自然宽度（vp），见 util/reactionsWidth。按内容签名缓存：同一条消息
+  // 每次 build 都重测是白烧，反应变了签名才变。
+  private rxWidthSig: string = '';
+  private rxWidthCache: number = 0;
+
+  private reactionsRowWidth(): number {
+    const sig: string = this.msg.reactions
+      .map((r: ReactionInfo): string => `${r.emoji}|${r.customEmojiId}|${r.count}`).join(',');
+    if (sig === this.rxWidthSig && this.rxWidthCache > 0) {
+      return this.rxWidthCache;
+    }
+    const chips: number[] = [];
+    for (const r of this.msg.reactions) {
+      // 自定义表情是 15×15 的位图（或同尺寸占位）；unicode 表情是 13fp 的 Text，得测。
+      const icon: number = r.customEmojiId !== '' ? CHIP_ICON_VP : this.measureTextVp(r.emoji, 13);
+      chips.push(reactionChipWidth(icon, this.measureTextVp(`${r.count}`, 12)));
+    }
+    this.rxWidthSig = sig;
+    this.rxWidthCache = reactionsRowWidth(chips, this.inlineMaxW());
+    return this.rxWidthCache;
+  }
+
+  // 一段文本按给定字号排一行的宽度（vp）。measureTextSize 返回 px。量不出来就按
+  // 字号 × 字数估——宁可略宽也别让最后一个 chip 掉行。
+  private measureTextVp(text: string, fontSize: number): number {
+    try {
+      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
+        textContent: text, fontSize: fontSize
+      });
+      return px2vp(size.width as number);
+    } catch (e) {
+      return fontSize * Math.max(1, text.length);
+    }
   }
 
   private reactionImageSource(path: string): string {

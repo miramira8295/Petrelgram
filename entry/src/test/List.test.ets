@@ -18,6 +18,7 @@ import scopeMuteTest from './ScopeMute.test';
 import decodeSizeTest from './DecodeSize.test';
 import chatContentWidthTest from './ChatContentWidth.test';
 import splitNavWidthTest from './SplitNavWidth.test';
+import reactionsWidthTest from './ReactionsWidth.test';
 import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
@@ -154,6 +155,7 @@ export default function testsuite() {
   startupStageTest();
   chatContentWidthTest();
   splitNavWidthTest();
+  reactionsWidthTest();
   diagLogExportTest();
   formatTimeTest();
   intlFormatTest();
