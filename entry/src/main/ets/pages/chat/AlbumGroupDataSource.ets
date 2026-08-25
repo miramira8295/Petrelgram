@@ -3,7 +3,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { mediaBoxFor } from '../../util/mediaBox';
 import { cancelPixelMap, loadPixelMap, PixelRequest } from '../../util/pixelCache';
 import { keyTableAdd, keyTableDelete, keyTableReload, newKeyTableId } from '../../util/keyGuard';
-import { logE, logI } from '../../util/log';
+import { logI } from '../../util/log';
 import { chatContentWidth } from '../../util/chatContentWidth';
 
 // LazyForEach data source for the message list.
@@ -28,11 +28,10 @@ export type DataSourceUpdateKind = 'none' | 'incremental' | 'reload';
 export type GroupKeyBuilder = (g: AlbumGroup) => string;
 
 // Initial-page staging republishes the same row signatures across several
-// bounded batches. Hashing every long signature again in assertNoDuplicateKeys
-// accounted for 18 ms in the measured open-chat window. Cache by the immutable
-// string value (not by MessageEntry identity), and cap retained strings so live
-// updates cannot grow this process-wide diagnostic cache without bound.
-const CONTENT_FINGERPRINT_CACHE_LIMIT: number = 256;
+// bounded batches. A 256-entry cache thrashed as soon as a long history held
+// 494 rows, so the same signatures were hashed again on the next publication.
+// 2048 covers several large windows while retaining a strict process-wide cap.
+const CONTENT_FINGERPRINT_CACHE_LIMIT: number = 2048;
 const contentFingerprintCache: Map<string, string> = new Map<string, string>();
 
 // Short fingerprint of a row's content signature, for embedding in the
@@ -102,6 +101,14 @@ function sameIdentity(a: AlbumGroup, b: AlbumGroup): boolean {
     }
   }
   return true;
+}
+
+// initialDeferred changes only how this existing row is built (fixed-height
+// placeholder vs real bubble). It must participate in the data-source diff but
+// not in the LazyForEach key: a keyless CHANGE preserves the row identity and
+// avoids a delete+insert around the current scroll anchor.
+function sameRenderSnapshot(a: AlbumGroup, b: AlbumGroup): boolean {
+  return a.key === b.key && (a.initialDeferred === true) === (b.initialDeferred === true);
 }
 
 export class AlbumGroupDataSource implements IDataSourcePrefetching {
@@ -220,46 +227,17 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
     return this.updateInner(next);
   }
 
-  // Authoritative on its own: this looks at ONE snapshot, so a hit here means
-  // two rows in the same dataset carry the same LazyForEach key — a data bug,
-  // no notification timing involved. Silence means the data is clean and any
-  // "Use repeat key" the framework reports is about its table, not ours.
-  // NOTE: not group.key — that is the content signature used for diffing,
-  // while the LazyForEach key is identity only. keyOf is the one the list
-  // actually uses.
-  //
-  // Only called for a snapshot that actually differs from the last one (see
-  // updateInner). keyOf runs contentFingerprint over each row's full content
-  // signature — hundreds of characters per row — so at 494 rows this scan cost
-  // 13-15ms, and running it on every notification burned 130-265ms per second
-  // while media was loading, most of it re-checking a dataset whose keys had
-  // not moved. A key sequence identical to the previous one was already checked
-  // when that one arrived, so skipping it there loses no coverage: a duplicate
-  // that survives into an unchanged snapshot was present in its predecessor and
-  // gets reported one round earlier, not never.
-  private assertNoDuplicateKeys(next: AlbumGroup[]): void {
-    const keysSeen: Map<string, number> = new Map();
-    for (let i = 0; i < next.length; i++) {
-      const rowKey = this.keyOf(next[i]);
-      const at = keysSeen.get(rowKey);
-      if (at !== undefined) {
-        logE(`[DS] duplicate row key in snapshot at ${i} and ${at} -> ${rowKey}`);
-      } else {
-        keysSeen.set(rowKey, i);
-      }
-    }
-  }
-
   private updateInner(next: AlbumGroup[]): DataSourceUpdateKind {
     const prev = this.groups;
     this.groups = next;
     const minLen = Math.min(prev.length, next.length);
     let p = 0;
-    while (p < minLen && prev[p].key === next[p].key) {
+    while (p < minLen && sameRenderSnapshot(prev[p], next[p])) {
       p++;
     }
     let s = 0;
-    while (s < minLen - p && prev[prev.length - 1 - s].key === next[next.length - 1 - s].key) {
+    while (s < minLen - p &&
+      sameRenderSnapshot(prev[prev.length - 1 - s], next[next.length - 1 - s])) {
       s++;
     }
     const oldMid = prev.length - p - s;
@@ -267,8 +245,9 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
     if (oldMid === 0 && newMid === 0) {
       return 'none'; // keys identical — nothing to tell the list
     }
-    // 数据集确实变了才查，且仍在任何 notify 之前。
-    this.assertNoDuplicateKeys(next);
+    // Do not scan and hash the complete snapshot here. The per-live-row
+    // keyGuard still diagnoses duplicate keys as LazyForEach materializes them,
+    // without charging every dataset update for off-screen diagnostic work.
     if (oldMid === newMid) {
       // CHANGE means "this same item's content changed". If the row at an
       // index is a DIFFERENT message — a delete plus an append leaves the
@@ -286,7 +265,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
           // 上面那段注释担心的是"删一条又追加一条，长度不变但每个下标坐着的
           // 都是别人"——那种情况中段会是一大片，不是一行。而只有一行变化时，
           // 它的新 key 不可能已经注册在别的下标上（同一快照内 key 唯一，
-          // assertNoDuplicateKeys 刚查过），把新 key 交给这一格正是
+          // sameRowSlot 已确认仍是同一个列表槽位，把新 key 交给这一格正是
           // DataChangeOperation.key 的用途。
           //
           // 整表 RELOAD 会让所有行销毁重建，表现为发消息时列表"闪一下"、
@@ -307,18 +286,26 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       // of them. With two images downloading ten rows apart, every row between
       // was rebuilt on every progress tick, which is why unrelated photos and
       // inline emoji flickered for as long as anything was still loading.
-      // Every CHANGE row's content signature differs here, so keyOf yields a
-      // genuinely NEW key — which is exactly what DataChangeOperation.key is
-      // for ("new key to assign to the changed data"). A key identical to the
-      // registered one must never be passed: that made the framework
-      // re-register the entry against itself and mis-reuse the node.
+      // Ordinary content changes carry a genuinely NEW key. Initial placeholder
+      // admission is the one deliberate exception: its content key stays the
+      // same, and a keyless CHANGE asks the framework to rebuild that same item
+      // instead of re-registering or replacing it.
       const ops: DataOperation[] = [];
       for (let i = 0; i < oldMid; i++) {
-        if (prev[p + i].key !== next[p + i].key) {
+        const before: AlbumGroup = prev[p + i];
+        const after: AlbumGroup = next[p + i];
+        if (!sameRenderSnapshot(before, after)) {
+          if (before.key === after.key) {
+            ops.push({
+              type: DataOperationType.CHANGE,
+              index: p + i
+            } as DataChangeOperation);
+            continue;
+          }
           ops.push({
             type: DataOperationType.CHANGE,
             index: p + i,
-            key: this.keyOf(next[p + i])
+            key: this.keyOf(after)
           } as DataChangeOperation);
         }
       }
@@ -403,11 +390,20 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
         const ops: DataOperation[] = [];
         for (let i = 0; i < oldMid; i++) {
           const newIndex = backAligned ? p + added + i : p + i;
-          if (prev[p + i].key !== next[newIndex].key) {
+          const before: AlbumGroup = prev[p + i];
+          const after: AlbumGroup = next[newIndex];
+          if (!sameRenderSnapshot(before, after)) {
+            if (before.key === after.key) {
+              ops.push({
+                type: DataOperationType.CHANGE,
+                index: newIndex
+              } as DataChangeOperation);
+              continue;
+            }
             ops.push({
               type: DataOperationType.CHANGE,
               index: newIndex,
-              key: this.keyOf(next[newIndex])
+              key: this.keyOf(after)
             } as DataChangeOperation);
           }
         }

@@ -45,8 +45,8 @@ const DOCK_H: number = 56;      // capsule height
 const DOCK_GAP: number = 6;     // minimum gap below the capsule
 const DOCK_ITEM_INSET: number = 5;
 const DOCK_SWITCH_DURATION: number = 240;
-// dock 进出会话时的淡入淡出时长。比切页签的 240 短：这不是一次「切换」，
-// 只是让 dock 别在 NavDestination 滑入的那一瞬间硬生生消失。
+// dock 返回时的淡入时长。进入目的页时立即撤下，避免它的材质层继续参与
+// NavDestination 的推入合成；返回列表时再用短淡入恢复视觉连续性。
 const DOCK_FADE_DURATION: number = 160;
 
 // Root screen after login: a floating capsule dock (聊天/联系人/设置/个人资料)
@@ -97,8 +97,7 @@ export struct MainScreen {
   // dock 的**交互态**：false 的那一刻起就不再接收任何点击，不等淡出结束。
   // 与 dockMounted 分开是本次修复的核心，理由见 syncDock()。
   @State private dockShown: boolean = true;
-  // dock 的**渲染态**：淡出动画跑完才落 false，节点在这之前必须留在树上，
-  // 否则没有东西可淡。
+  // dock 的**渲染态**：显示时先挂载再淡入；隐藏时与 dockShown 同帧撤下。
   @State private dockMounted: boolean = true;
   @StorageProp('screenHeightVp') screenH: number = 780;
   @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
@@ -242,53 +241,24 @@ export struct MainScreen {
     this.syncDock();
   }
 
-  // 把 dock 的两个状态推到 dockVisible() 要求的目标上。
-  //
-  // 【为什么是两个状态而不是一个 if】上一版写的是
-  // `if (this.dockVisible()) { this.dock(); }` 加一个 TransitionEffect.OPACITY。
-  // 稳态没问题（节点真的不在树上），**但退场那 160ms 是个空档**：过渡期间节点
-  // 仍在渲染树里参与合成与命中测试，而 ArkUI 默认 HitTestMode.Default、
-  // **透明度不影响命中测试**；dock 在 Stack 里写在 Tabs 之后、z 序更高，正悬浮
-  // 在 ChatPage 输入区上方。于是「点开会话后手快点附件没反应」——偶发、难复现。
-  //
-  // 光加 hitTestBehavior 修不了：`if` 分支一旦转 false，那棵子树就不再被 build，
-  // 过渡期间保留的是它**最后一次构建时**的属性（那时还是可点的）。也就是说
-  // 条件渲染 + 过渡这个组合，结构上就没法在退场时改任何属性。所以改成常驻节点，
-  // 由两个状态分别管交互和渲染：
-  //
-  //   dockShown   t=0 立刻翻 —— 决定 opacity 目标、enabled、hitTestBehavior
-  //   dockMounted t=末尾才翻 —— 决定 visibility，节点撤不撤出布局与渲染
-  //
-  // 【进场方向是有意不对称的】隐藏时 t=0 就断交互，显示时 t=0 就恢复交互（两者
-  // 都由 dockShown 一个量给出）。理由：dock 淡入时位置已经是终态、只有透明度在
-  // 变，而它底下那块是 ChatListView 用 reserveDockSpace 特意留空的死区，点那里
-  // 不可能是想点别的东西。此时不响应就是另一种「点了没反应」——把要修的毛病镜像
-  // 了一遍。迁移前整页路由弹回时 dock 也是立刻可点的。
+  // 把 dock 的交互态与渲染态推到目标上。推入目的页时立即断交互并撤下整个
+  // 玻璃层，避免和系统转场并发；返回列表时先挂载 opacity=0 的节点再淡入。
   private syncDock(): void {
     const want: boolean = this.dockVisible();
     if (want === this.dockShown) {
       return;
     }
-    const duration: number =
-      powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_FADE_DURATION);
     if (want) {
       // 先挂树再淡入：节点不在树上时改 opacity 没有任何东西可动。
       this.dockMounted = true;
+      const duration: number =
+        powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_FADE_DURATION);
       animateTo({ duration: duration, curve: Curve.EaseOut },
         (): void => { this.dockShown = true; });
       return;
     }
-    animateTo({
-      duration: duration,
-      curve: Curve.EaseOut,
-      // 淡出跑完才撤出渲染。这里必须再确认一次 dockShown：160ms 内用户可能已经
-      // 返回了（快速进出会话），那时节点刚重新挂上，不能被这个迟到的回调摘掉。
-      onFinish: (): void => {
-        if (!this.dockShown) {
-          this.dockMounted = false;
-        }
-      }
-    }, (): void => { this.dockShown = false; });
+    this.dockShown = false;
+    this.dockMounted = false;
   }
 
   @Styles
@@ -500,10 +470,7 @@ export struct MainScreen {
     // 再窄就该撞它了。
     .padding({ left: 40, right: 40 })
     .margin({ bottom: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)) })
-    // 进出会话时的淡入淡出。迁移前是整页 router 覆盖，dock 消失得没有过渡；
-    // 这里补一段短淡出，免得 NavDestination 从右侧滑入的那两百多毫秒里，
-    // 底下的会话列表突然秃一块。动画由 syncDock() 的 animateTo 驱动，时长跟随
-    // 「流畅动效」开关，关掉即为 0。
+    // 返回列表时淡入；进入目的页时 syncDock() 同帧撤下玻璃层。
     .opacity(this.dockShown ? 1 : 0)
     // 下面这两行是**退场空档**的正解，缺一不可，都在 dockShown 翻 false 的那一
     // 帧立即生效（两者都不是可动画属性，animateTo 不会把它们摊到 160ms 上）：
@@ -521,9 +488,7 @@ export struct MainScreen {
     // （官方 enabled 示例里那个变灰是自己额外写的 opacity(0.4)）。
     .enabled(this.dockShown)
     .hitTestBehavior(this.dockShown ? HitTestMode.Default : HitTestMode.None)
-    // 淡出跑完再撤出布局与渲染。用 visibility 而不是 `if`：节点留在组件树里，
-    // 属性才会继续跟着状态更新——`if` 摘掉的子树在过渡期间是冻结的，那正是
-    // 上一版修不掉退场空档的原因（见 syncDock）。
+    // visibility 保留同一个组件实例，供返回时先挂载再淡入。
     .visibility(this.dockMounted ? Visibility.Visible : Visibility.None);
   }
 

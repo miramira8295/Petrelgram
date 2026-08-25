@@ -11,7 +11,7 @@ export interface TimerFns {
 interface Pending {
   resolve: (value: TdObject) => void;
   reject: (reason: TdError) => void;
-  timerId: number;
+  deadlineMs: number;
 }
 
 export class TdClient {
@@ -20,6 +20,10 @@ export class TdClient {
   private extraSeq: number = 0;
   private pending: Map<string, Pending> = new Map();
   private handlers: Map<string, Array<(update: TdObject) => void>> = new Map();
+  // One timer services every pending request. The old per-request timers made
+  // clearTimeout a measurable NAPI hotspot during TDLib response bursts.
+  private timeoutTimerId: number = -1;
+  private timeoutDeadlineMs: number = 0;
 
   constructor(bridge: TdBridge, timer?: TimerFns) {
     this.bridge = bridge;
@@ -36,19 +40,71 @@ export class TdClient {
   send(request: TdRequest, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<TdObject> {
     this.extraSeq += 1;
     const extra = `req_${this.extraSeq}`;
-    const requestJson = JSON.stringify(request);
-    const requestObj = JSON.parse(requestJson) as TdObject;
+    // TD requests are flat at the top level; nested values are never modified.
+    // A shallow copy protects the caller's object without the former
+    // stringify -> parse -> mutate -> stringify round-trip on the UI thread.
+    const requestObj: TdObject = {};
+    for (const key of Object.keys(request)) {
+      requestObj[key] = request[key];
+    }
     requestObj['@extra'] = extra;
     return new Promise<TdObject>((resolve, reject) => {
-      const timerId = this.timer.setTimeout(() => {
-        if (this.pending.has(extra)) {
-          this.pending.delete(extra);
-          reject(new TdError(-1, 'request timeout'));
-        }
-      }, timeoutMs);
-      this.pending.set(extra, { resolve, reject, timerId });
+      const deadlineMs: number = Date.now() + Math.max(0, timeoutMs);
+      this.pending.set(extra, { resolve, reject, deadlineMs });
+      this.scheduleTimeoutTimer();
       this.bridge.send(JSON.stringify(requestObj));
     });
+  }
+
+  private clearTimeoutTimer(): void {
+    if (this.timeoutTimerId !== -1) {
+      this.timer.clearTimeout(this.timeoutTimerId);
+      this.timeoutTimerId = -1;
+      this.timeoutDeadlineMs = 0;
+    }
+  }
+
+  private scheduleTimeoutTimer(): void {
+    let nearest: number = 0;
+    for (const entry of this.pending.values()) {
+      if (nearest === 0 || entry.deadlineMs < nearest) {
+        nearest = entry.deadlineMs;
+      }
+    }
+    if (nearest === 0) {
+      this.clearTimeoutTimer();
+      return;
+    }
+    if (this.timeoutTimerId !== -1 && this.timeoutDeadlineMs <= nearest) {
+      return;
+    }
+    this.clearTimeoutTimer();
+    this.timeoutDeadlineMs = nearest;
+    this.timeoutTimerId = this.timer.setTimeout((): void => {
+      // A timer callback represents reaching the deadline it was scheduled
+      // for. This also keeps deterministic/manual timers useful in unit tests.
+      const expiredThrough: number = this.timeoutDeadlineMs;
+      this.timeoutTimerId = -1;
+      this.timeoutDeadlineMs = 0;
+      const expired: Pending[] = [];
+      const expiredExtras: string[] = [];
+      this.pending.forEach((entry: Pending, extra: string): void => {
+        if (entry.deadlineMs <= expiredThrough) {
+          expiredExtras.push(extra);
+        }
+      });
+      for (const extra of expiredExtras) {
+        const entry = this.pending.get(extra);
+        if (entry !== undefined) {
+          this.pending.delete(extra);
+          expired.push(entry);
+        }
+      }
+      for (const entry of expired) {
+        entry.reject(new TdError(-1, 'request timeout'));
+      }
+      this.scheduleTimeoutTimer();
+    }, Math.max(0, nearest - Date.now()));
   }
 
   onUpdate(type: string, handler: (update: TdObject) => void): () => void {
@@ -61,8 +117,8 @@ export class TdClient {
   }
 
   dispose(): void {
+    this.clearTimeoutTimer();
     for (const entry of this.pending.values()) {
-      this.timer.clearTimeout(entry.timerId);
       entry.reject(new TdError(-1, 'TDLib account session changed'));
     }
     this.pending.clear();
@@ -81,7 +137,20 @@ export class TdClient {
     if (extra !== undefined && this.pending.has(extra)) {
       const entry = this.pending.get(extra)!;
       this.pending.delete(extra);
-      this.timer.clearTimeout(entry.timerId);
+      let scheduledDeadlineStillNeeded: boolean = false;
+      if (entry.deadlineMs <= this.timeoutDeadlineMs) {
+        for (const pending of this.pending.values()) {
+          if (pending.deadlineMs <= this.timeoutDeadlineMs) {
+            scheduledDeadlineStillNeeded = true;
+            break;
+          }
+        }
+      }
+      if (this.pending.size === 0 ||
+        (entry.deadlineMs <= this.timeoutDeadlineMs && !scheduledDeadlineStillNeeded)) {
+        this.clearTimeoutTimer();
+        this.scheduleTimeoutTimer();
+      }
       if (obj['@type'] === 'error') {
         entry.reject(new TdError(obj['code'] as number, obj['message'] as string));
       } else {

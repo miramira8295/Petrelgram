@@ -189,6 +189,17 @@ export default function chatStoreTest() {
       expect(ids(store.getChats()).join(',')).assertEqual('1,2');
       expect(store.getChats()[0].lastMessageText).assertEqual('hi');
     });
+    it('repositions_inside_an_already_materialized_order_cache', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [mainPos('100', false)], null, 0);
+      pushNewChat(b, 2, 'B', [mainPos('200', false)], null, 0);
+      expect(ids(store.getChats()).join(',')).assertEqual('2,1'); // warm cache
+      pushPosition(b, 1, mainPos('300', false));
+      expect(ids(store.getChats()).join(',')).assertEqual('1,2');
+      pushPosition(b, 2, mainPos('400', true));
+      expect(ids(store.getChats()).join(',')).assertEqual('2,1');
+    });
     it('read_inbox_updates_unread', 0, () => {
       const store = make();
       const b = bridgeOf(store);

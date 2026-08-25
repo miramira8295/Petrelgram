@@ -20,6 +20,7 @@ import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { fileOpenMimeType } from '../../util/fileMessage';
 import { resolveEmojiStatus } from '../../util/emojiStatus';
 import { holdPlayerJobs } from './WebmStickerView';
+import { setChatTgsSuspended } from './TgsStickerView';
 import { EmojiPanel } from './EmojiPanel';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
@@ -56,7 +57,7 @@ import { AlbumGroupDataSource, contentFingerprint, DataSourceUpdateKind } from '
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
-import { ChatHeader } from './ChatHeader';
+import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
 import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
@@ -193,10 +194,10 @@ import {
   MessageBubbleReuseContext
 } from '../../util/messageBubbleReuse';
 import {
-  chatChromeHeight, ChatChromeGeometryInput
+  CHAT_HEADER_BASE_HEIGHT, chatChromeHeight, ChatChromeGeometryInput
 } from '../../util/ChatChromeGeometry';
 import {
-  initialMessagePlaceholderHeight, nextInitialMessageRevealCount,
+  initialMessagePlaceholderHeight, initialMessageViewportRows, nextInitialMessageRevealCount,
   stageInitialMessageGroups
 } from '../../util/initialMessageStage';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
@@ -228,6 +229,24 @@ const TOP_CARD_ACTION_GUARD_MS: number = 650;
 // the measured 90 Hz device, 12 ms crosses one 11.1 ms frame boundary and lets
 // the row admitted by the previous callback complete layout before the next.
 const INITIAL_MESSAGE_RELEASE_DELAY_MS: number = 12;
+// Do not flash a ready one-row timeline in the first instant of the destination
+// push. Bottom landings now wait for a stable lower slice, so they need a much
+// shorter floor than an unread anchor whose complete visible window is prepared.
+const INITIAL_TIMELINE_PRESENT_MIN_MS: number = 80;
+const INITIAL_BOTTOM_PRESENT_MIN_MS: number = 48;
+// The data is already complete and anchored when these animations start. Only
+// render transforms are staggered; no row is inserted or resized here.
+const INITIAL_TIMELINE_ROW_FADE_MS: number = 90;
+const INITIAL_TIMELINE_ROW_STAGGER_MS: number = 14;
+const INITIAL_TIMELINE_REVEAL_ROW_LIMIT: number = 8;
+// Reveal only after real rows cover the complete visible message viewport.
+// Older offscreen rows may continue staging after the page is visible, but
+// visible placeholder replacement must not trigger repeated height correction.
+// HdsNavDestination.onShown is emitted near the beginning of a push, not when
+// the spring has settled. This timer is only a watchdog for a resolved empty
+// timeline; it must never reveal chrome while history/row staging is pending,
+// otherwise a slow fully-read chat paints header/composer before its bubbles.
+const INITIAL_MESSAGE_TRANSITION_SETTLE_MS: number = 640;
 
 // Composer geometry. These three have to agree with the TextArea's own
 // lineHeight/padding: the editor height is computed from them, and a mismatch
@@ -401,13 +420,45 @@ export struct ChatPage {
     return kind;
   }
 
+  private syncChatTgsGate(): void {
+    setChatTgsSuspended(!this.pageVisible || this.initialMessageStageActive ||
+      this.chatTgsScrollActive || this.chatTgsStageSettling);
+  }
+
+  private pauseChatTgsForScroll(): void {
+    this.chatTgsScrollActive = true;
+    this.syncChatTgsGate();
+  }
+
+  private scheduleChatTgsResume(delayMs: number = 140): void {
+    if (this.chatTgsResumeTimer !== -1) {
+      clearTimeout(this.chatTgsResumeTimer);
+    }
+    this.chatTgsStageSettling = true;
+    this.syncChatTgsGate();
+    this.chatTgsResumeTimer = setTimeout((): void => {
+      this.chatTgsResumeTimer = -1;
+      this.chatTgsStageSettling = false;
+      this.syncChatTgsGate();
+    }, delayMs);
+  }
+
+  private resumeChatTgsAfterScroll(): void {
+    this.chatTgsScrollActive = false;
+    this.scheduleChatTgsResume();
+  }
+
   // The normal publication gate also invalidates an unfinished initial stage.
   private publishGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+    const wasStaging: boolean = this.initialMessageStageActive;
     this.initialMessageStageSeq++;
     this.initialMessageStageActive = false;
     this.initialMessagePendingGroups = null;
     this.initialMessageRevealCount = 0;
     this.initialMessageStageScheduledSeq = 0;
+    if (wasStaging) {
+      this.scheduleChatTgsResume();
+    }
     return this.publishGroupsNow(groups);
   }
 
@@ -438,16 +489,40 @@ export struct ChatPage {
     return { anchorIndex, alignFromStart, availableRows };
   }
 
+  private initialTimelinePresentRows(groups: AlbumGroup[],
+    target: InitialMessageStageTarget): number {
+    // contentStartOffset/contentEndOffset define the real message viewport.
+    // Both unread and bottom landings prepare that full anchored window before
+    // reveal so every row that can affect the first visible frame is stable.
+    const viewportHeight: number = Math.max(
+      180,
+      this.screenH - this.headerChromeHeight() - this.bottomChromeH + 32
+    );
+    const unreadId: number = this.firstUnreadId > 0
+      ? this.firstUnreadId : (this.store !== null ? this.store.getFirstUnreadId() : 0);
+    return initialMessageViewportRows(
+      groups,
+      target.anchorIndex,
+      target.alignFromStart,
+      this.screenW,
+      viewportHeight,
+      unreadId
+    );
+  }
+
   private finishInitialMessageStage(groups: AlbumGroup[]): void {
     this.publishGroupsNow(groups);
     this.initialMessageStageActive = false;
     this.initialMessagePendingGroups = null;
     this.initialMessageRevealCount = 0;
     this.initialMessageStageScheduledSeq = 0;
-    // The final placeholder -> real-row changes can finish after the first
-    // unread scroll was issued. Re-apply the id-based anchor after layout so
-    // approximate placeholder heights cannot leave the viewport elsewhere.
-    this.scheduleInitialUnreadLanding();
+    // Keep Lottie startup out of the final placeholder replacement frame.
+    this.scheduleChatTgsResume();
+    // The timeline stays masked until this full snapshot has been laid out and
+    // the final id-based anchor has been applied. Never issue another delayed
+    // landing after the mask is gone: that was the visible second jump.
+    this.initialTimelineReadyToPresent = true;
+    this.scheduleInitialTimelinePresentation();
     // Do not put the editor's stylus bridge into the final message-row frame.
     // scheduleComposerEditorMount adds one more real VSync boundary.
     this.scheduleComposerEditorMount();
@@ -485,12 +560,83 @@ export struct ChatPage {
     this.scheduleInitialUnreadLanding();
   }
 
+  private settleInitialTimelineAnchor(): void {
+    if (!this.didInitialScroll || this.groups.length === 0) {
+      return;
+    }
+    if (this.stayAtUnread && this.firstUnreadId > 0) {
+      const index: number = groupIndexOf(this.groups, this.firstUnreadId);
+      if (index >= 0) {
+        this.scroller.scrollToIndex(index, false, ScrollAlign.START);
+      }
+      return;
+    }
+    this.scroller.scrollToIndex(this.groups.length - 1, false, ScrollAlign.END);
+  }
+
+  private scheduleInitialTimelinePresentation(): void {
+    if (!this.initialTimelineMasked || !this.initialTimelineReadyToPresent ||
+      this.initialTimelinePresentationScheduledSeq !== 0) {
+      return;
+    }
+    const seq: number = ++this.initialTimelinePresentationSeq;
+    this.initialTimelinePresentationScheduledSeq = seq;
+    const delayMs: number = Math.max(0, this.initialTimelineEarliestAt - Date.now());
+    this.getUIContext().postDelayedFrameCallback(new ChatPageFrameCallback((): void => {
+      if (seq !== this.initialTimelinePresentationSeq || !this.pageVisible ||
+        !this.initialTimelineMasked || !this.initialTimelineReadyToPresent) {
+        if (this.initialTimelinePresentationScheduledSeq === seq) {
+          this.initialTimelinePresentationScheduledSeq = 0;
+        }
+        return;
+      }
+      // First frame consumes the scroll command while the list is still
+      // invisible. The next frame confirms against final row heights and only
+      // then removes the mask, so no intermediate position can be painted.
+      // Keep the scheduled marker locked across BOTH frames. Clearing it here
+      // let the next one-row staging publication start a new presentation and
+      // invalidate this second frame; a 101-row bottom timeline therefore
+      // restarted the landing 99 times and stayed blank for about two seconds.
+      this.settleInitialTimelineAnchor();
+      this.getUIContext().postDelayedFrameCallback(new ChatPageFrameCallback((): void => {
+        if (seq !== this.initialTimelinePresentationSeq || !this.pageVisible ||
+          !this.initialTimelineMasked || !this.initialTimelineReadyToPresent) {
+          if (this.initialTimelinePresentationScheduledSeq === seq) {
+            this.initialTimelinePresentationScheduledSeq = 0;
+          }
+          return;
+        }
+        this.settleInitialTimelineAnchor();
+        // Reveal the complete chat surface as one visual event. Header and
+        // composer start their fade in the same frame as the first real bubble;
+        // the remaining bubbles keep their per-row stagger below.
+        this.cancelInitialMessageTransitionSettle();
+        this.initialMessageTransitionSettled = true;
+        this.initialTimelineMasked = false;
+        if (this.initialTimelinePresentationScheduledSeq === seq) {
+          this.initialTimelinePresentationScheduledSeq = 0;
+        }
+      }), INITIAL_MESSAGE_RELEASE_DELAY_MS);
+    }), delayMs);
+  }
+
   private releaseNextInitialMessageBatch(stageSeq: number): InitialMessageReleaseResult {
     if (stageSeq !== this.initialMessageStageSeq || !this.initialMessageStageActive) {
       return 'finished';
     }
+    // A short first TDLib page immediately starts a bounded older-page fill.
+    // Do not reveal against that moving snapshot: the unread/bottom anchor can
+    // move when the prepend arrives, turning a nominal one-row admission into
+    // several MessageBubble builds in one layout. The 11:04 device trace caught
+    // exactly that shape (six bubbles and a 48.7 ms frame just after the push).
+    // The final onHistory notification calls publishMessageGroups(), which
+    // posts this callback again once isInitialFillPending() becomes false.
     const groups: AlbumGroup[] = this.initialMessagePendingGroups ?? this.groups;
     const target: InitialMessageStageTarget = this.initialMessageStageTarget(groups);
+    const fillPending: boolean = this.store !== null && this.store.isInitialFillPending();
+    if (fillPending && target.alignFromStart) {
+      return 'waiting';
+    }
     const nextRevealCount: number = nextInitialMessageRevealCount(
       this.initialMessageRevealCount,
       target.availableRows
@@ -518,8 +664,19 @@ export struct ChatPage {
     );
     this.initialMessageRevealCount = nextRevealCount;
     this.publishGroupsNow(staged);
+    const presentRows: number = Math.min(
+      this.initialTimelinePresentRows(groups, target), target.availableRows);
+    // A short page may still be growing through the bounded initial fill. Do
+    // not reveal a lone bottom row and then let older rows visibly climb upward.
+    // The presentation target above is a stable lower slice for bottom landings
+    // and the complete anchored window for unread landings.
+    if (!this.initialTimelineReadyToPresent && nextRevealCount >= presentRows &&
+      (!fillPending || presentRows > 0)) {
+      this.initialTimelineReadyToPresent = true;
+      this.scheduleInitialTimelinePresentation();
+    }
     if (staged === groups) {
-      if (this.store !== null && this.store.isInitialFillPending()) {
+      if (fillPending) {
         // The rows currently available are real, but a short-page backfill is
         // still running. Stay active and let that next snapshot extend the
         // same staged dataset.
@@ -571,7 +728,14 @@ export struct ChatPage {
     }
 
     const stageSeq: number = ++this.initialMessageStageSeq;
+    this.initialTimelineMasked = true;
+    this.initialTimelineReadyToPresent = false;
+    this.initialTimelinePresentationSeq++;
+    this.initialTimelinePresentationScheduledSeq = 0;
+    this.initialTimelineEarliestAt = Date.now() + (target.alignFromStart
+      ? INITIAL_TIMELINE_PRESENT_MIN_MS : INITIAL_BOTTOM_PRESENT_MIN_MS);
     this.initialMessageStageActive = true;
+    this.syncChatTgsGate();
     this.initialMessagePendingGroups = groups;
     this.initialMessageRevealCount = firstRevealCount;
     const kind: DataSourceUpdateKind = this.publishGroupsNow(staged);
@@ -1065,6 +1229,20 @@ export struct ChatPage {
   // boolean prevents an invalidated old callback from clearing a newer stage's
   // scheduled marker when it eventually arrives.
   private initialMessageStageScheduledSeq: number = 0;
+  // The initial LazyForEach still lays out while masked. Once a complete
+  // viewport has real rows and its unread/bottom anchor has been applied, the
+  // mask is removed in one frame. This prevents both row-by-row appearance and
+  // a visible placeholder-height correction jump.
+  @State private initialTimelineMasked: boolean = false;
+  private initialTimelineReadyToPresent: boolean = false;
+  private initialTimelinePresentationSeq: number = 0;
+  private initialTimelinePresentationScheduledSeq: number = 0;
+  private initialTimelineEarliestAt: number = 0;
+  @State private initialMessageTransitionSettled: boolean = false;
+  private initialMessageReleaseTimer: number = -1;
+  private chatTgsScrollActive: boolean = false;
+  private chatTgsStageSettling: boolean = false;
+  private chatTgsResumeTimer: number = -1;
   // 播放位竞选：滚动停下后选出唯一播放/下载的视频气泡（见 PlaySlotRegistry）。
   private playSlots: PlaySlotRegistry = new PlaySlotRegistry();
   private unsubPlaySlot: (() => void) | null = null;
@@ -1368,6 +1546,13 @@ export struct ChatPage {
     this.prependRestoreSeq++;
     this.bottomChromeLayoutSeq++;
     this.initialUnreadLayoutSeq++;
+    this.initialTimelinePresentationSeq++;
+    this.initialTimelinePresentationScheduledSeq = 0;
+    this.initialTimelineMasked = false;
+    this.initialTimelineReadyToPresent = false;
+    this.initialTimelineEarliestAt = 0;
+    this.initialMessageTransitionSettled = false;
+    this.cancelInitialMessageTransitionSettle();
     this.didInitialScroll = false;
     this.lastMaxId = 0;
     this.atBottom = true;
@@ -1586,6 +1771,10 @@ export struct ChatPage {
   }
 
   aboutToAppear(): void {
+    // The navigation/build frame owns the main thread; chat stickers can start
+    // only after the initial row gate has settled.
+    this.chatTgsStageSettling = true;
+    this.syncChatTgsGate();
     // Before anything can publish a dataset: the data source names the keys of
     // the rows its operations touch, and it has to name them the same way the
     // LazyForEach key generator does.
@@ -1861,6 +2050,24 @@ export struct ChatPage {
       }
       const updateKind: string = firstMessageStage
         ? this.publishInitialMessageGroups(groups) : this.publishMessageGroups(groups);
+      if (firstMessageStage && groups.length === 0) {
+        // There is no bubble that can drive the coordinated presentation.
+        // Reveal the resolved empty/error surface now. Non-empty histories are
+        // released only by scheduleInitialTimelinePresentation(), keeping the
+        // header, composer, and first real bubble in the same render frame.
+        this.cancelInitialMessageTransitionSettle();
+        this.initialMessageTransitionSettled = true;
+      } else if (!firstMessageStage && !this.initialMessageTransitionSettled &&
+        !this.initialMessageStageActive) {
+        // Message-link/search/thread entries set didInitialScroll before their
+        // around-target history arrives because pendingJumpId owns positioning.
+        // They intentionally bypass bottom/unread staging, so they also need a
+        // direct presentation completion path. Release chrome in the same
+        // state publication as the resolved timeline (including an empty/error
+        // result) without issuing another scroll that could override the jump.
+        this.cancelInitialMessageTransitionSettle();
+        this.initialMessageTransitionSettled = true;
+      }
       // 翻译和媒体窗口原来只挂在 onScrollIndex 上 —— 进页面不滑动就永远不
       // 触发（用户报的"这个页面不会自动翻译"），新消息到达也一样。数据一变
       // 就按当前视口驱动一次；curStartIdx/curEndIdx 在首帧前是 -1，此时用
@@ -2295,6 +2502,31 @@ export struct ChatPage {
     }), INITIAL_MESSAGE_RELEASE_DELAY_MS);
   }
 
+  private activateComposerEditor(): void {
+    // Automatic mounting remains outside the transition-critical path, but a
+    // user tap always wins over that scheduler. Replace the text shell now and
+    // focus the real TextArea on the next task, after its keyed node exists.
+    if (!this.composerEditorReady) {
+      this.composerMountSeq++;
+      this.composerMountScheduled = false;
+      this.composerEditorReady = true;
+    }
+    // An early user tap must never wait for the coordinated visual reveal.
+    this.cancelInitialMessageTransitionSettle();
+    this.initialMessageTransitionSettled = true;
+    setTimeout((): void => {
+      focusControl.requestFocus('chat_composer');
+    }, 0);
+  }
+
+  private activateInitialChrome(action: () => void): void {
+    // Lightweight header controls are not decorative: the first tap promotes
+    // the full header and then performs the requested action against it.
+    this.cancelInitialMessageTransitionSettle();
+    this.initialMessageTransitionSettled = true;
+    setTimeout((): void => { action(); }, 0);
+  }
+
   private armPlaySlotSettle(): void {
     if (this.viewerMsgId !== 0 || !this.pageVisible || !this.playSlotsEnabled()) {
       return;
@@ -2334,7 +2566,9 @@ export struct ChatPage {
   private handleHidden(): void {
     // 跳走了就是解析成功了：闸门开，加载态收掉，免得退回来还亮着。
     endLinkNav();
+    this.cancelInitialMessageTransitionSettle();
     this.pageVisible = false;
+    this.syncChatTgsGate();
     this.hiddenSinceMs = Date.now();
     this.captureHiddenAnchor();
     // 页面不可见时停表，回来时补一次即时值再续上。
@@ -2345,8 +2579,23 @@ export struct ChatPage {
     this.playSlots.suspend();
   }
 
+  private handleWillHide(): void {
+    // onHidden is delivered after the outgoing transition has already begun.
+    // Stop the expensive moving-page work at onWillHide so the incoming page
+    // does not composite against a live TGS/video timeline underneath it.
+    this.cancelInitialMessageTransitionSettle();
+    this.pageVisible = false;
+    this.syncChatTgsGate();
+    this.clearNowSecTimer();
+    this.clearSlotTick();
+    this.playSlots.suspend();
+  }
+
   private handleShown(): void {
     this.pageVisible = true;
+    this.armInitialMessageTransitionSettle();
+    this.scheduleInitialTimelinePresentation();
+    this.scheduleChatTgsResume();
     // 回到这一页说明上一次链接解析已经有了结局（开了页又退回来，或者只弹了
     // 个提示），闸门必须开——否则那个链接会一直卡在加载态直到看门狗到点。
     endLinkNav();
@@ -2382,6 +2631,35 @@ export struct ChatPage {
     }
   }
 
+  private cancelInitialMessageTransitionSettle(): void {
+    if (this.initialMessageReleaseTimer !== -1) {
+      clearTimeout(this.initialMessageReleaseTimer);
+      this.initialMessageReleaseTimer = -1;
+    }
+  }
+
+  private armInitialMessageTransitionSettle(): void {
+    if (this.initialMessageTransitionSettled) {
+      return;
+    }
+    this.cancelInitialMessageTransitionSettle();
+    this.initialMessageReleaseTimer = setTimeout((): void => {
+      this.initialMessageReleaseTimer = -1;
+      if (!this.pageVisible) {
+        return;
+      }
+      // This used to be an unconditional 640 ms fallback. When TDLib needed
+      // longer, it exposed the header/composer while the timeline was still
+      // empty, so messages visibly arrived afterwards. A non-empty timeline
+      // has one authoritative release point: scheduleInitialTimelinePresentation.
+      if (this.messageLoadState === 'loading' || this.visibleGroupCount > 0 ||
+        this.initialMessageStageActive || this.initialTimelineMasked) {
+        return;
+      }
+      this.initialMessageTransitionSettled = true;
+    }, INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
+  }
+
   aboutToDisappear(): void {
     // Invalidate the staged-row and composer frame callbacks. The page may be
     // popped while either delayed task is queued.
@@ -2390,6 +2668,17 @@ export struct ChatPage {
     this.initialMessagePendingGroups = null;
     this.initialMessageRevealCount = 0;
     this.initialMessageStageScheduledSeq = 0;
+    this.initialTimelinePresentationSeq++;
+    this.initialTimelinePresentationScheduledSeq = 0;
+    this.cancelInitialMessageTransitionSettle();
+    if (this.chatTgsResumeTimer !== -1) {
+      clearTimeout(this.chatTgsResumeTimer);
+      this.chatTgsResumeTimer = -1;
+    }
+    this.pageVisible = false;
+    this.chatTgsScrollActive = false;
+    this.chatTgsStageSettling = true;
+    this.syncChatTgsGate();
     this.composerMountSeq++;
     this.composerMountScheduled = false;
     // 退出会话时播放器可能还开着（返回手势不走 closeViewer），为播放拉起的
@@ -2798,6 +3087,7 @@ export struct ChatPage {
         ` hasMoreNewer=${hasMoreNewer} imePinned=${this.imeTailPinned}`);
       this.atBottom = next;
     }
+  }
 
   private syncTailAfterImeResize(releaseAfter: boolean = false): void {
     if (!this.imeTailPinned || this.viewerMsgId !== 0) {
@@ -7666,7 +7956,8 @@ export struct ChatPage {
               })
               .backgroundColor(Color.Transparent)
               .key('chat_composer_placeholder')
-              .hitTestBehavior(HitTestMode.None)
+              .accessibilityText(this.composerPlaceholder())
+              .onClick((): void => { this.activateComposerEditor(); })
               .onAppear((): void => { this.scheduleComposerEditorMount(); });
           }
           if (this.replyKeyboard !== null) {
@@ -7728,6 +8019,77 @@ export struct ChatPage {
     })
     .alignItems(VerticalAlign.Center)
     .onAreaChange((_old: Area, area: Area) => { this.inputBarH = area.height as number; });
+  }
+
+  @Builder
+  initialHeaderShell() {
+    // Keep the final material from the first frame. Only the expensive dynamic
+    // contents (animated avatar/status and bound menu subtree) are deferred;
+    // using a solid surface here caused a visible white -> glass swap.
+    Row({ space: 8 }) {
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_left'))
+          .fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+      }
+      .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE)
+      .borderRadius(CHAT_HEADER_RADIUS)
+      .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+      .justifyContent(FlexAlign.Center)
+      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+      .backdropBlur(overlayBackdropBlur('bar'))
+      .attributeModifier(materialModifier('bar'))
+      .onClick((): void => { this.closeChatPage(); });
+      Row() {
+        Text(this.headerText().titleText)
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(COLOR_TEXT_PRIMARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis });
+      }
+      .layoutWeight(1)
+      .height(CHAT_HEADER_ACTION_SIZE)
+      .padding({ left: 12, right: 12 })
+      .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+      .borderRadius(CHAT_HEADER_RADIUS)
+      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+      .backdropBlur(overlayBackdropBlur('bar'))
+      .attributeModifier(materialModifier('bar'))
+      .alignItems(VerticalAlign.Center)
+      .onClick((): void => {
+        this.activateInitialChrome((): void => {
+          if (this.headerState === 'error') {
+            this.resolveHeaderIdentity();
+          } else {
+            this.openProfile();
+          }
+        });
+      });
+      Row() {
+        Image($r('app.media.ic_header_menu'))
+          .width(18).height(18)
+          .fillColor(COLOR_TEXT_PRIMARY)
+          .draggable(false);
+      }
+      .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE)
+      .borderRadius(CHAT_HEADER_RADIUS)
+      .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+      .justifyContent(FlexAlign.Center)
+      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+      .backdropBlur(overlayBackdropBlur('bar'))
+      .attributeModifier(materialModifier('bar'))
+      .onClick((): void => {
+        this.activateInitialChrome((): void => {
+          if (!this.pageClosing && this.chatId !== 0) {
+            this.headerMenuShow = true;
+          }
+        });
+      });
+    }
+    .width('100%')
+    .height(this.topSafe + CHAT_HEADER_BASE_HEIGHT)
+    .padding({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
+    .alignItems(VerticalAlign.Center);
   }
 
   @Builder
@@ -7847,6 +8209,31 @@ export struct ChatPage {
       this.olderLoadState, this.newerLoadState);
   }
 
+  private initialTimelineRowRevealDelay(index: number): number {
+    let first: number = this.curStartIdx;
+    let last: number = this.curEndIdx;
+    if (first < 0 || last < first || last >= this.groups.length) {
+      if (this.stayAtUnread && this.firstUnreadId > 0) {
+        first = Math.max(0, groupIndexOf(this.groups, this.firstUnreadId));
+        last = Math.min(this.groups.length - 1,
+          first + INITIAL_TIMELINE_REVEAL_ROW_LIMIT - 1);
+      } else {
+        last = this.groups.length - 1;
+        first = Math.max(0, last - INITIAL_TIMELINE_REVEAL_ROW_LIMIT + 1);
+      }
+    }
+    if (index < first || index > last) {
+      return 0;
+    }
+    // Bottom landings read naturally from the composer upward. An unread
+    // landing starts at its top anchor and flows down into the unread block.
+    const visualRank: number = this.stayAtUnread ? index - first : last - index;
+    const cappedRank: number = Math.min(
+      INITIAL_TIMELINE_REVEAL_ROW_LIMIT - 1, Math.max(0, visualRank));
+    return powerAnimationDuration(
+      KEY_POWER_SMOOTH_TRANSITIONS, cappedRank * INITIAL_TIMELINE_ROW_STAGGER_MS);
+  }
+
   private timelineStateRetry(mode: string): void {
     if (this.store === null) {
       return;
@@ -7873,7 +8260,7 @@ export struct ChatPage {
         List({ scroller: this.scroller }) {
           // LazyForEach (not ForEach) is required for maintainVisibleContentPosition
           // to hold the scroll position when older pages are prepended above.
-          LazyForEach(this.groupsData, (g: AlbumGroup) => {
+          LazyForEach(this.groupsData, (g: AlbumGroup, index: number) => {
             ListItem() {
               if (g.initialDeferred === true) {
                 Column()
@@ -7932,11 +8319,33 @@ export struct ChatPage {
               }
               }
             }
+            // Deferred rows continue reserving geometry after an early bottom
+            // reveal. Keep each one invisible until its stable-key replacement
+            // is real, then reuse the same per-row fade/transform wave.
+            .opacity(this.initialTimelineMasked || g.initialDeferred === true ? 0 : 1)
+            .translate({
+              y: this.initialTimelineMasked || g.initialDeferred === true ? 2 : 0
+            })
+            .scale({
+              x: this.initialTimelineMasked || g.initialDeferred === true ? 0.99 : 1,
+              y: this.initialTimelineMasked || g.initialDeferred === true ? 0.99 : 1
+            })
+            .animation({
+              duration: powerAnimationDuration(
+                KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
+              delay: this.initialTimelineRowRevealDelay(index),
+              curve: Curve.EaseOut
+            });
           }, (g: AlbumGroup, index: number): string =>
             // Format lives in rowKeyOf — see its comment.
             guardKey(this.groupsData.keyTableId, index, this.rowKeyOf(g)));
         }
         .width('100%').height('100%')
+        // Keep layout/build work alive behind a visual mask. The mask is
+        // removed only after a complete viewport and its final anchor are
+        // ready, so users never see placeholder replacement or a second jump.
+        .opacity(this.initialTimelineMasked ? 0 : 1)
+        .enabled(!this.initialTimelineMasked)
         // 顶部 chrome 是悬浮的，用 contentStartOffset 让位——和底部的
         // contentEndOffset 对称。不用 padding：padding 会改变内容区尺寸，
         // 而滚动锚点、getItemRect 那一套都吃列表几何。
@@ -8062,9 +8471,11 @@ export struct ChatPage {
           }
         })
         .onScrollStart(() => {
+          this.pauseChatTgsForScroll();
           this.dismissKeyboardOnUserScroll();
         })
         .onScrollStop(() => {
+          this.resumeChatTgsAfterScroll();
           this.armPlaySlotSettle();
         })
         .onAreaChange((_old: Area, area: Area): void => {
@@ -8072,8 +8483,10 @@ export struct ChatPage {
           const height: number = area.height as number;
           this.playSlots.setViewportCenter(y + height / 2);
         });
-        if (this.visibleGroupCount === 0) {
-          // 卡片本身不管定位，这一层负责居中并让开底部输入区。
+        if (!this.initialTimelineMasked && this.visibleGroupCount === 0 &&
+          this.messageLoadState !== 'loading') {
+          // 首屏同步期间保持安静：消息在转场背后完成定位后一次性呈现。
+          // 这里只展示真正的空会话或错误，避免用 Loading 卡片制造二次视觉切换。
           Column() {
             MessageListStateCard({
               loadState: this.messageLoadState,
@@ -8138,44 +8551,63 @@ export struct ChatPage {
           .hitTestBehavior(HitTestMode.None);
         }
         Column() {
-          if (this.membershipState === 'writable' && !this.showEmojiPanel && !this.replyKbVisible() &&
-            (this.mentionItems.length > 0 || this.commandPanelActive())) {
-            SuggestionPanel({
-              commandMode: this.commandPanelActive(),
-              commands: this.commandItems,
-              mentions: this.mentionItems,
-              loadState: this.commandLoadState,
-              loadError: this.commandLoadError,
-              catalogSize: this.allCommands.length,
-              onPickCommand: (it: CommandItem): void => { this.pickCommand(it); },
-              onPickMention: (it: MentionItem): void => { this.pickMention(it); },
-              onRetryCommands: (): void => { this.ensureCommandsLoaded(true); }
-            });
-          }
-          if (this.membershipState === 'writable' && !this.showEmojiPanel &&
-            this.mentionItems.length === 0 && !this.commandPanelActive() &&
-            this.inlineResults.length > 0) {
-            InlineResultsBar({
-              results: this.inlineResults,
-              onPick: (row: InlineResultRow): void => { this.pickInlineResult(row); }
-            });
-          }
-          if (this.membershipState === 'writable' && !this.showEmojiPanel &&
-            this.mentionItems.length === 0 && !this.commandPanelActive() &&
-            this.inlineResults.length === 0 && this.stickerSuggestions.length > 0) {
-            StickerSuggestionBar({
-              suggestions: this.stickerSuggestions,
-              onPick: (fileId: number): void => { this.sendSuggestedSticker(fileId); }
-            });
+          // The composer itself is interactive from the first frame. Only its
+          // optional result panels stay behind the transition gate; replacing
+          // the whole dock with a decorative shell made the first tap a no-op.
+          if (this.initialMessageTransitionSettled) {
+            if (this.membershipState === 'writable' && !this.showEmojiPanel && !this.replyKbVisible() &&
+              (this.mentionItems.length > 0 || this.commandPanelActive())) {
+              SuggestionPanel({
+                commandMode: this.commandPanelActive(),
+                commands: this.commandItems,
+                mentions: this.mentionItems,
+                loadState: this.commandLoadState,
+                loadError: this.commandLoadError,
+                catalogSize: this.allCommands.length,
+                onPickCommand: (it: CommandItem): void => { this.pickCommand(it); },
+                onPickMention: (it: MentionItem): void => { this.pickMention(it); },
+                onRetryCommands: (): void => { this.ensureCommandsLoaded(true); }
+              });
+            }
+            if (this.membershipState === 'writable' && !this.showEmojiPanel &&
+              this.mentionItems.length === 0 && !this.commandPanelActive() &&
+              this.inlineResults.length > 0) {
+              InlineResultsBar({
+                results: this.inlineResults,
+                onPick: (row: InlineResultRow): void => { this.pickInlineResult(row); }
+              });
+            }
+            if (this.membershipState === 'writable' && !this.showEmojiPanel &&
+              this.mentionItems.length === 0 && !this.commandPanelActive() &&
+              this.inlineResults.length === 0 && this.stickerSuggestions.length > 0) {
+              StickerSuggestionBar({
+                suggestions: this.stickerSuggestions,
+                onPick: (fileId: number): void => { this.sendSuggestedSticker(fileId); }
+              });
+            }
           }
           this.bottomDock();
         }
         .width('100%').height('100%')
         .justifyContent(FlexAlign.End)
+        .opacity(this.initialMessageTransitionSettled ? 1 : 0)
+        .translate({ y: this.initialMessageTransitionSettled ? 0 : 2 })
+        .scale({
+          x: this.initialMessageTransitionSettled ? 1 : 0.99,
+          y: this.initialMessageTransitionSettled ? 1 : 0.99
+        })
+        .animation({
+          duration: powerAnimationDuration(
+            KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
+          curve: Curve.EaseOut
+        })
         .hitTestBehavior(HitTestMode.None);
 
         // 顶部 chrome 放在最后 = 叠在最上层，消息从它下面穿过去。
         Column() {
+          // Keep the real header mounted behind the initial visual gate. This
+          // removes the lightweight-shell -> full-header intermediate page;
+          // only opacity/transform changes when the message anchor is ready.
           if (this.selecting) {
             SelectionHeader({
               selectedCount: this.selectedIds.length,
@@ -8217,7 +8649,7 @@ export struct ChatPage {
               onResolveIdentity: (): void => { this.resolveHeaderIdentity(); }
             });
           }
-          if (this.topCardShouldShow()) {
+          if (this.initialMessageTransitionSettled && this.topCardShouldShow()) {
             TopBanners({
               pinnedPreview: this.pinnedPreview,
               pinnedCount: this.pinnedCount,
@@ -8237,7 +8669,18 @@ export struct ChatPage {
             });
           }
         }
-        .width('100%');
+        .width('100%')
+        .opacity(this.initialMessageTransitionSettled ? 1 : 0)
+        .translate({ y: this.initialMessageTransitionSettled ? 0 : -2 })
+        .scale({
+          x: this.initialMessageTransitionSettled ? 1 : 0.99,
+          y: this.initialMessageTransitionSettled ? 1 : 0.99
+        })
+        .animation({
+          duration: powerAnimationDuration(
+            KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
+          curve: Curve.EaseOut
+        });
         }
         .layoutWeight(1).width('100%')
         .alignContent(Alignment.TopStart)
@@ -8431,6 +8874,7 @@ export struct ChatPage {
     // onBackPress 返回 true「已处理不返回」与 onBackPressed 返回 true「重写返回键
     // 不出栈」语义等价。
     .onShown((): void => { this.handleShown(); })
+    .onWillHide((): void => { this.handleWillHide(); })
     .onHidden((): void => { this.handleHidden(); })
     .onBackPressed((): boolean => { return this.handleBackPressed(); })
     .width('100%').height('100%');

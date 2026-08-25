@@ -144,5 +144,33 @@ export default function tdClientTest() {
       bridge.onReceive(JSON.stringify({ '@type': 'ok', '@extra': extra } as TdObject));
       return p.then(() => { expect(cleared).assertEqual(true); });
     });
+
+    it('send_keeps_callers_request_untouched', 0, () => {
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      client.start();
+      const request: TdRequest = { '@type': 'getOption' };
+      request['name'] = 'version';
+      client.send(request).catch((): void => {});
+      expect(request['@extra'] === undefined).assertTrue();
+      const sent = parseJson(bridge.sent[0]);
+      expect((sent['@extra'] as string).startsWith('req_')).assertTrue();
+      client.dispose();
+    });
+
+    it('pending_requests_share_one_timeout_timer', 0, () => {
+      let scheduled = 0;
+      const timer: TimerFns = {
+        setTimeout: (_cb: () => void, _ms: number): number => { scheduled += 1; return scheduled; },
+        clearTimeout: (_id: number): void => {}
+      };
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge, timer);
+      client.start();
+      client.send({ '@type': 'getOption' }).catch((): void => {});
+      client.send({ '@type': 'getOption' }).catch((): void => {});
+      expect(scheduled).assertEqual(1);
+      client.dispose();
+    });
   });
 }

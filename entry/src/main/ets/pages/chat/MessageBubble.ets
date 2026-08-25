@@ -2929,6 +2929,7 @@ export struct MessageBubble {
           TgsStickerView({ tgsPath: this.msg.stickerPath, thumbPath: this.msg.photoPath,
             boxWidth: this.stickerW(), boxHeight: this.stickerH(),
             powerCategory: this.msg.isEmojiSticker ? 'emojiChat' : 'sticker',
+            chatTimeline: true,
             onFailed: (): void => { this.stickerPlaybackFailed = true; } })
             .hitTestBehavior(HitTestMode.None);
         } else if (!this.stickerPlaybackFailed &&

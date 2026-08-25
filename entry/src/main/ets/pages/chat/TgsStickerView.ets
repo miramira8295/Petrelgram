@@ -6,13 +6,17 @@ import {
   KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
 import { probeHit } from '../../util/panelProbe';
-import { logE } from '../../util/log';
+import { logE, logW } from '../../util/log';
 
 // Cap on simultaneously running Lottie animations: a screenful of TGS emoji
 // cells (40+) redrawing canvases every frame stutters badly. Cells over the
 // cap render their static thumbnail; scrolling releases slots so fresh cells
 // animate again.
 const MAX_LIVE_TGS: number = 14;
+// A chat row is much larger than a picker cell and competes with message-list
+// layout. Four live canvases cover a normal viewport while keeping Lottie's
+// per-frame shape interpolation inside the UI budget.
+const MAX_LIVE_CHAT_TGS: number = 4;
 const TGS_FIRST_DELAY_MS: number = 120;
 // 一帧只放一个进来，别让它们挤在一起。
 const TGS_STAGGER_MS: number = 70;
@@ -20,6 +24,46 @@ const TGS_STAGGER_MS: number = 70;
 let tgsNextStartAt: number = 0;
 
 let liveTgs: number = 0;
+let liveChatTgs: number = 0;
+
+type ChatTgsGateListener = (suspended: boolean) => void;
+let chatTgsSuspended: boolean = false;
+let chatTgsGateListeners: ChatTgsGateListener[] = [];
+
+// ChatPage drives this directly from navigation, initial row staging and list
+// scrolling. A tiny module channel avoids putting a high-frequency scroll flag
+// into every MessageBubble's @Prop tree.
+export function setChatTgsSuspended(suspended: boolean): void {
+  if (chatTgsSuspended === suspended) {
+    return;
+  }
+  chatTgsSuspended = suspended;
+  logW(`[TgsGate] suspended=${suspended} live=${liveTgs}/${MAX_LIVE_TGS} chat=${liveChatTgs}/${MAX_LIVE_CHAT_TGS} listeners=${chatTgsGateListeners.length}`);
+  for (const listener of chatTgsGateListeners) {
+    listener(suspended);
+  }
+}
+
+// 名额腾出来了：叫醒因为超预算被推迟的视图。没有这一步，第 MAX_LIVE_CHAT_TGS+1
+// 张起的贴纸会一直停在「推迟」——没缩略图就是空白加转圈，只有重进聊天页才重来。
+// 只在门开着时广播；各视图的监听器自己判断"正在播的不动、推迟的才重试"。
+function notifyChatTgsSlotFreed(): void {
+  if (chatTgsSuspended) {
+    return;
+  }
+  for (const listener of chatTgsGateListeners) {
+    listener(false);
+  }
+}
+
+function subscribeChatTgsGate(listener: ChatTgsGateListener): () => void {
+  chatTgsGateListeners = [...chatTgsGateListeners, listener];
+  listener(chatTgsSuspended);
+  return (): void => {
+    chatTgsGateListeners = chatTgsGateListeners.filter(
+      (candidate: ChatTgsGateListener): boolean => candidate !== listener);
+  };
+}
 
 // Plays a Telegram TGS sticker (gzipped Lottie JSON) on a Canvas via
 // @ohos/lottie. On any decode failure it renders the raster thumbnail instead.
@@ -32,6 +76,10 @@ export struct TgsStickerView {
   @Prop boxWidth: number = 160;
   @Prop boxHeight: number = 160;
   @Prop powerCategory: string = 'sticker';
+  // True only for a message-timeline cell. Picker/status/login animations can
+  // use the same power category without inheriting ChatPage's scroll gate or
+  // its tighter four-canvas budget.
+  @Prop chatTimeline: boolean = false;
   // 播一次并定格在最后一帧（骰子/老虎机结果动画的官方语义），不循环。
   @Prop playOnce: boolean = false;
   onFailed: () => void = (): void => {};
@@ -45,6 +93,7 @@ export struct TgsStickerView {
   @StorageProp(KEY_POWER_EMOJI_STATUS) @Watch('onPowerChanged') emojiStatus: boolean = true;
   @StorageProp(KEY_REDUCE_ANIM) @Watch('onPowerChanged') reduceAnimations: boolean = false;
   @State failed: boolean = false;
+  @State private budgetDeferred: boolean = false;
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private anim: AnimationItem | null = null;
@@ -52,6 +101,10 @@ export struct TgsStickerView {
   private holdsSlot: boolean = false;
   private canvasReady: boolean = false;
   private startTimer: number = -1;
+  private visible: boolean = false;
+  private chatGateSuspended: boolean = false;
+  private holdsChatSlot: boolean = false;
+  private unsubChatGate: (() => void) | null = null;
   // Invalidates an async gunzip/JSON load when this component receives a new
   // path. Without it, the old sticker could finish last and paint over the new
   // value.
@@ -62,15 +115,17 @@ export struct TgsStickerView {
     this.stopAnim();
     this.disposed = false;
     this.failed = false;
-    if (this.canvasReady) {
+    this.budgetDeferred = false;
+    if (this.canvasReady && this.visible && !this.animationSuspended()) {
       this.scheduleStart();
     }
   }
 
   private onPowerChanged(): void {
     if (this.powerSuspended()) {
+      this.loadSeq++;
       this.stopAnim();
-    } else if (this.canvasReady) {
+    } else if (this.canvasReady && this.visible && !this.chatGateSuspended) {
       this.scheduleStart();
     }
   }
@@ -81,6 +136,11 @@ export struct TgsStickerView {
       liveTgs--;
       this.holdsSlot = false;
     }
+    if (this.holdsChatSlot) {
+      liveChatTgs--;
+      this.holdsChatSlot = false;
+      notifyChatTgsSlotFreed();
+    }
     if (this.anim !== null) {
       this.anim.destroy();
       this.anim = null;
@@ -90,7 +150,21 @@ export struct TgsStickerView {
   aboutToAppear(): void {
     probeHit('tgs.mount');
     this.disposed = false;
-    if (this.canvasReady) {
+    if (this.chatTimeline && this.unsubChatGate === null) {
+      this.unsubChatGate = subscribeChatTgsGate((suspended: boolean): void => {
+        this.chatGateSuspended = suspended;
+        if (suspended) {
+          this.loadSeq++;
+          this.stopAnim();
+        } else if (this.canvasReady && this.visible && !this.powerSuspended()
+          && (this.budgetDeferred || this.anim === null)) {
+          // 门开 / 名额释放：只叫醒没在播的，正在播的别重启。
+          this.budgetDeferred = false;
+          this.scheduleStart();
+        }
+      });
+    }
+    if (this.canvasReady && this.visible && !this.animationSuspended()) {
       this.scheduleStart();
     }
   }
@@ -98,8 +172,32 @@ export struct TgsStickerView {
   aboutToDisappear(): void {
     probeHit('tgs.unmount');
     this.disposed = true;
+    this.visible = false;
     this.loadSeq++;
     this.stopAnim();
+    if (this.unsubChatGate !== null) {
+      this.unsubChatGate();
+      this.unsubChatGate = null;
+    }
+  }
+
+  private onVisibleAreaChanged(isVisible: boolean, currentRatio: number): void {
+    const next: boolean = isVisible && currentRatio > 0;
+    if (this.visible === next) {
+      return;
+    }
+    this.visible = next;
+    if (!next) {
+      // Cached LazyForEach rows may stay mounted outside the viewport, so
+      // aboutToDisappear alone is not an animation-lifetime signal.
+      this.loadSeq++;
+      this.stopAnim();
+      return;
+    }
+    this.budgetDeferred = false;
+    if (this.canvasReady && !this.animationSuspended()) {
+      this.scheduleStart();
+    }
   }
 
   // Staggered, never in the frame that asked for it.
@@ -112,6 +210,9 @@ export struct TgsStickerView {
   // look like anyway.
   private scheduleStart(): void {
     this.cancelScheduledStart();
+    if (!this.visible || this.animationSuspended()) {
+      return;
+    }
     const now = Date.now();
     const at = Math.max(now + TGS_FIRST_DELAY_MS, tgsNextStartAt);
     tgsNextStartAt = at + TGS_STAGGER_MS;
@@ -132,15 +233,20 @@ export struct TgsStickerView {
     const seq: number = ++this.loadSeq;
     const path: string = this.tgsPath;
     this.stopAnim();
-    if (this.powerSuspended() || this.disposed) {
+    if (this.animationSuspended() || this.disposed || !this.visible) {
       return;
     }
-    if (liveTgs >= MAX_LIVE_TGS) {
-      this.failed = true; // over budget — static thumbnail instead
+    if (liveTgs >= MAX_LIVE_TGS || (this.chatTimeline && liveChatTgs >= MAX_LIVE_CHAT_TGS)) {
+      logW(`[TgsGate] deferred live=${liveTgs}/${MAX_LIVE_TGS} chat=${liveChatTgs}/${MAX_LIVE_CHAT_TGS} thumb=${this.thumbPath !== ''}`);
+      this.budgetDeferred = true; // over budget — static thumbnail instead
       return;
     }
     this.holdsSlot = true;
     liveTgs++;
+    if (this.chatTimeline) {
+      this.holdsChatSlot = true;
+      liveChatTgs++;
+    }
     const json = await gunzipTgs(path);
     if (this.disposed || seq !== this.loadSeq || path !== this.tgsPath) {
       return;
@@ -188,24 +294,35 @@ export struct TgsStickerView {
     return !this.stickersEnabled || !this.stickerAutoplay;
   }
 
+  private animationSuspended(): boolean {
+    return this.powerSuspended() ||
+      (this.chatTimeline && this.chatGateSuspended);
+  }
+
   build() {
-    if (this.powerSuspended()) {
-      if (this.thumbPath !== '') {
+    Stack() {
+      if (this.powerSuspended()) {
+        if (this.thumbPath !== '') {
+          Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
+            .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+        }
+      } else if ((this.failed || this.budgetDeferred) && this.thumbPath !== '') {
         Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
           .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
       } else {
-        Stack().width(this.boxWidth).height(this.boxHeight);
+        Canvas(this.ctx)
+          .width(this.boxWidth).height(this.boxHeight)
+          .onReady(() => {
+            this.canvasReady = true;
+            if (this.visible && !this.animationSuspended()) {
+              this.scheduleStart();
+            }
+          });
       }
-    } else if (this.failed && this.thumbPath !== '') {
-      Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-        .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
-    } else {
-      Canvas(this.ctx)
-        .width(this.boxWidth).height(this.boxHeight)
-        .onReady(() => {
-          this.canvasReady = true;
-          this.scheduleStart();
-        });
     }
+    .width(this.boxWidth).height(this.boxHeight)
+    .onVisibleAreaChange([0.01], (isVisible: boolean, currentRatio: number): void => {
+      this.onVisibleAreaChanged(isVisible, currentRatio);
+    });
   }
 }

@@ -17,9 +17,12 @@ export const CHAT_LIST_NOW: string = 'chatListNowSec';
 export class ChatListFreeze {
   private pending: ChatEntry[] | null = null;
 
-  // Returns the list to render now, or null to keep the current one.
-  accept(list: ChatEntry[]): ChatEntry[] | null {
-    if (AppStorage.get<boolean>(CHAT_MENU_OPEN) === true) {
+  // Returns the list to render now, or null to keep the current one. A covered
+  // chat list uses the same newest-snapshot buffer as an open context menu:
+  // subscriptions remain authoritative, but no @State/DataSource publication
+  // reaches the hidden LazyForEach until the navigation transition has settled.
+  accept(list: ChatEntry[], renderActive: boolean = true): ChatEntry[] | null {
+    if (!renderActive || AppStorage.get<boolean>(CHAT_MENU_OPEN) === true) {
       this.pending = list;
       return null;
     }

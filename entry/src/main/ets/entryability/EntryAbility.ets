@@ -5,7 +5,7 @@ import { window, KeyboardAvoidMode } from '@kit.ArkUI';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
 import { recomputeAppearance } from '../util/appearance';
 import { initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
-import { installStringsFromContext } from '../util/strings';
+import { installStringsFromContext, invalidateStringCache } from '../util/strings';
 import { refreshLocale } from '../util/intlFormat';
 import { bumpLanguageEpoch } from '../util/appLanguage';
 import { backgroundGraceTask } from '../services/BackgroundGraceTask';
@@ -90,6 +90,7 @@ export default class EntryAbility extends UIAbility {
     const language: string = config.language ?? '';
     if (language !== this.lastLanguage) {
       this.lastLanguage = language;
+      invalidateStringCache();
       bumpLanguageEpoch();
     }
     // 深浅色切换时状态栏的图标要跟着反色，否则白图标留在浅色页面上会看不见。

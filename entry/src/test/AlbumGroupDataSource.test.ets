@@ -5,6 +5,7 @@ import { UserStore } from '../main/ets/store/UserStore';
 import { buildMessageEntry, MessageEntry } from '../main/ets/store/MessageEntry';
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
 import { AlbumGroupDataSource, contentFingerprint } from '../main/ets/pages/chat/AlbumGroupDataSource';
+import { stageInitialMessageGroups } from '../main/ets/util/initialMessageStage';
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void = (): void => {};
@@ -133,6 +134,23 @@ export default function albumGroupDataSourceTest() {
       expect(recorded.length).assertEqual(2);
       expect(recorded[0]).assertEqual(0);
       expect(recorded[1]).assertEqual(4);
+    });
+    it('initial_placeholder_reveal_changes_without_renaming_row', 0, () => {
+      const users = usersOf();
+      const ds = new AlbumGroupDataSource();
+      const source = groupsOf([[10, 100], [20, 5000], [30, 90000]], users);
+      ds.update(stageInitialMessageGroups(source, 2, false, 0));
+
+      const listener: RecordingListener = new RecordingListener();
+      ds.registerDataChangeListener(listener);
+
+      expect(ds.update(stageInitialMessageGroups(source, 2, false, 1)))
+        .assertEqual('incremental');
+      expect(listener.batches.join('|')).assertEqual('change');
+      // No replacement key: placeholder and real content are the same item.
+      expect(listener.changeKeys.length).assertEqual(0);
+      expect(listener.ops.length).assertEqual(1);
+      expect(listener.ops[0]).assertEqual(2);
     });
     // A delete plus an append leaves the length unchanged but puts a different
     // message at those indexes. Reporting that as CHANGE told the list the

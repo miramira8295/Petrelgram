@@ -1,6 +1,5 @@
 import { ChatEntry } from '../../store/ChatEntry';
 import { keyTableReload, newKeyTableId } from '../../util/keyGuard';
-import { logE } from '../../util/log';
 
 // LazyForEach data source for the chat list.
 //
@@ -46,27 +45,6 @@ export class ChatListDataSource implements IDataSource {
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
   }
 
-  // `keys` is supplied by the caller because the row key depends on state the
-  // data source has no business knowing — which list it is (pinning is
-  // per-list) and the language epoch.
-  // 同一份快照里两行 key 相同就是数据 bug，与通知时序无关。
-  //
-  // 只在数据集确有变化时调用（见 update）：这段要给全部行建一遍 Map，而首页
-  // 每收一条消息就更新一次；与上一份 key 序列完全相同的快照，上一次它作为
-  // next 到达时已经查过了——最坏是晚一轮报出来，不会永远沉默。
-  // 与 AlbumGroupDataSource.assertNoDuplicateKeys 同源。
-  private assertNoDuplicateKeys(nextKeys: string[]): void {
-    const seen: Map<string, number> = new Map();
-    for (let i = 0; i < nextKeys.length; i++) {
-      const at = seen.get(nextKeys[i]);
-      if (at !== undefined) {
-        logE(`[CL] duplicate row key in snapshot at ${i} and ${at} -> ${nextKeys[i]}`);
-      } else {
-        seen.set(nextKeys[i], i);
-      }
-    }
-  }
-
   update(next: ChatEntry[], nextKeys: string[]): void {
     const prevKeys = this.keys;
     const prevIds = this.items.map((item: ChatEntry): number => item.id);
@@ -102,7 +80,8 @@ export class ChatListDataSource implements IDataSource {
       return;
     }
 
-    this.assertNoDuplicateKeys(nextKeys);
+    // keyGuard checks the rows LazyForEach actually materializes. Avoid a
+    // second whole-list diagnostic Map on every incoming-message reorder.
 
     // 纯插入。翻页加载更多会话走的就是这条——原来只要长度一变就整表 RELOAD，
     // 而 RELOAD 会让 LazyForEach 把所有行作废重建。

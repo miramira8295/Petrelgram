@@ -28,6 +28,12 @@ export class ChatStore {
   private users: UserStore;
   private chats: Map<number, ChatEntry> = new Map();
   private positions: Map<string, Map<number, PositionInfo>> = new Map();
+  // Position updates are much more frequent than list opens. Keep the sorted
+  // identity sequence for every list that has actually been read, then move
+  // only the affected chat when TDLib changes its position. getChats() still
+  // returns a fresh snapshot, but no longer rebuilds and sorts hundreds of
+  // entries for every coalesced notification.
+  private orderedChatIds: Map<string, number[]> = new Map();
   private subs: Sub[] = [];
   private changeListeners: Array<() => void> = [];
   private activeLoads: Map<string, Promise<boolean>> = new Map();
@@ -124,22 +130,72 @@ export class ChatStore {
     if (bucket === undefined) {
       return [];
     }
+    let ordered = this.orderedChatIds.get(listKey);
+    if (ordered === undefined) {
+      ordered = [];
+      bucket.forEach((_pos: PositionInfo, id: number): void => {
+        if (this.chats.has(id)) {
+          ordered!.push(id);
+        }
+      });
+      ordered.sort((a: number, b: number): number => this.compareChatPosition(listKey, a, b));
+      this.orderedChatIds.set(listKey, ordered);
+    }
     const list: ChatEntry[] = [];
-    bucket.forEach((_pos: PositionInfo, id: number) => {
-      const e = this.chats.get(id);
-      if (e !== undefined) {
-        list.push(e);
+    for (const id of ordered) {
+      const entry = this.chats.get(id);
+      if (entry !== undefined) {
+        list.push(entry);
       }
-    });
-    list.sort((a: ChatEntry, b: ChatEntry) => {
-      const pa = bucket.get(a.id)!;
-      const pb = bucket.get(b.id)!;
-      if (pa.isPinned !== pb.isPinned) {
-        return pa.isPinned ? -1 : 1;
-      }
-      return compareOrderDesc(pa.order, pb.order);
-    });
+    }
     return list;
+  }
+
+  private compareChatPosition(listKey: string, a: number, b: number): number {
+    const bucket = this.positions.get(listKey);
+    const pa = bucket?.get(a);
+    const pb = bucket?.get(b);
+    if (pa === undefined) { return pb === undefined ? 0 : 1; }
+    if (pb === undefined) { return -1; }
+    if (pa.isPinned !== pb.isPinned) {
+      return pa.isPinned ? -1 : 1;
+    }
+    return compareOrderDesc(pa.order, pb.order);
+  }
+
+  private removeOrderedChat(listKey: string, id: number): void {
+    const ordered = this.orderedChatIds.get(listKey);
+    if (ordered === undefined) {
+      return;
+    }
+    const index = ordered.indexOf(id);
+    if (index >= 0) {
+      ordered.splice(index, 1);
+    }
+  }
+
+  private insertOrderedChat(listKey: string, id: number): void {
+    const ordered = this.orderedChatIds.get(listKey);
+    if (ordered === undefined || !this.chats.has(id)) {
+      return;
+    }
+    // Remove first so repeated/unchanged position pushes cannot duplicate an
+    // identity in the cache. Then binary-search the new order.
+    const previous = ordered.indexOf(id);
+    if (previous >= 0) {
+      ordered.splice(previous, 1);
+    }
+    let lo = 0;
+    let hi = ordered.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.compareChatPosition(listKey, id, ordered[mid]) < 0) {
+        hi = mid;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    ordered.splice(lo, 0, id);
   }
 
   // Pinning is per chat list: a chat can be pinned in a folder but not in main.
@@ -307,6 +363,7 @@ export class ChatStore {
     this.fullyLoadedLists.delete(listKey);
     this.exhaustedLists.delete(listKey);
     this.initializedLists.delete(listKey);
+    this.orderedChatIds.delete(listKey);
   }
 
   setAvatarPath(chatId: number, path: string): void {
@@ -329,6 +386,7 @@ export class ChatStore {
       if (b !== undefined) {
         b.delete(id);
       }
+      this.removeOrderedChat(listKey, id);
       return;
     }
     let bucket = this.positions.get(listKey);
@@ -337,6 +395,7 @@ export class ChatStore {
       this.positions.set(listKey, bucket);
     }
     bucket.set(id, { order, isPinned });
+    this.insertOrderedChat(listKey, id);
   }
 
   private applyPositions(id: number, positions: TdObject[]): void {
@@ -752,9 +811,18 @@ export class ChatStore {
     const dirty = this.dirtyChatIds;
     this.dirtyAllLists = false;
     this.dirtyChatIds = new Set();
+    // Multiple views can subscribe to the same folder (for example while a
+    // cached tab is transitioning). Materialize that list once and fan out the
+    // same immutable-by-convention snapshot instead of mapping it repeatedly.
+    const snapshots: Map<string, ChatEntry[]> = new Map();
     for (const s of this.subs) {
       if (all || this.listContainsAny(s.listKey, dirty)) {
-        s.listener(this.getChats(s.listKey));
+        let snapshot = snapshots.get(s.listKey);
+        if (snapshot === undefined) {
+          snapshot = this.getChats(s.listKey);
+          snapshots.set(s.listKey, snapshot);
+        }
+        s.listener(snapshot);
       }
     }
     for (const listener of this.changeListeners) {

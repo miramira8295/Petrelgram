@@ -76,10 +76,13 @@ class ResourceStrings implements StringSource {
 }
 
 let source: StringSource | null = null;
+const STATIC_STRING_CACHE_LIMIT: number = 512;
+const staticStringCache: Map<string, string> = new Map();
 
 // Called once during app startup, before any store is built.
 export function installStrings(next: StringSource): void {
   source = next;
+  staticStringCache.clear();
 }
 
 export function installStringsFromContext(context: common.ApplicationContext): void {
@@ -89,6 +92,14 @@ export function installStringsFromContext(context: common.ApplicationContext): v
 // Discards the installed source. Only for tests that need a clean slate.
 export function resetStrings(): void {
   source = null;
+  staticStringCache.clear();
+}
+
+// The platform resource manager switches locale in place. Plain strings that
+// were already resolved do not, so appLanguage calls this in the same commit as
+// refreshLocale()/LANGUAGE_EPOCH.
+export function invalidateStringCache(): void {
+  staticStringCache.clear();
 }
 
 // The one call the rest of the app makes. Returns the key itself when no source
@@ -97,6 +108,21 @@ export function resetStrings(): void {
 export function str(key: string, ...args: Array<string | number>): string {
   if (source === null) {
     return args.length === 0 ? key : `${key}(${args.join(',')})`;
+  }
+  // Static labels dominate row construction and are safe to share until the
+  // locale epoch changes. Parameterized strings remain uncached because their
+  // value space is unbounded and often includes live counts/names.
+  if (args.length === 0) {
+    const cached = staticStringCache.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const value = source.get(key, args);
+    if (staticStringCache.size >= STATIC_STRING_CACHE_LIMIT) {
+      staticStringCache.clear();
+    }
+    staticStringCache.set(key, value);
+    return value;
   }
   return source.get(key, args);
 }

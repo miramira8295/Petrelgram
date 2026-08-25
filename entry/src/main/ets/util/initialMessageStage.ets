@@ -17,7 +17,11 @@ export function nextInitialMessageRevealCount(current: number, available: number
 
 function deferredCopy(group: AlbumGroup): AlbumGroup {
   return {
-    key: `${group.key}|initial-deferred`,
+    // The placeholder is the same LazyForEach item as the real row. Keep the
+    // identity/content key stable and let AlbumGroupDataSource emit a keyless
+    // CHANGE for initialDeferred; renaming the item here forced List to delete
+    // and insert it, which remeasured the surrounding chat window.
+    key: group.key,
     head: group.head,
     memberIds: group.memberIds,
     rowMemberIds: group.rowMemberIds,
@@ -99,4 +103,36 @@ export function initialMessagePlaceholderHeight(
   if (group.dateLabel !== '') { body += 30; }
   if (showUnreadDivider) { body += 26; }
   return body;
+}
+
+// Count only the rows whose estimated heights are needed to cover the actual
+// message viewport. A fixed row count made media-heavy chats wait needlessly,
+// while very short service rows could still leave deferred placeholders on
+// screen. The caller keeps the one-row-per-frame admission policy unchanged.
+export function initialMessageViewportRows(
+  groups: AlbumGroup[],
+  anchorIndex: number,
+  alignFromStart: boolean,
+  screenWidth: number,
+  viewportHeight: number,
+  firstUnreadId: number
+): number {
+  if (groups.length === 0 || anchorIndex < 0 || anchorIndex >= groups.length) {
+    return 0;
+  }
+  const step: number = alignFromStart ? 1 : -1;
+  let index: number = anchorIndex;
+  let coveredHeight: number = 0;
+  let count: number = 0;
+  while (index >= 0 && index < groups.length && coveredHeight < viewportHeight) {
+    const group: AlbumGroup = groups[index];
+    coveredHeight += initialMessagePlaceholderHeight(
+      group,
+      screenWidth,
+      firstUnreadId > 0 && group.memberIds.indexOf(firstUnreadId) >= 0
+    );
+    count++;
+    index += step;
+  }
+  return count;
 }

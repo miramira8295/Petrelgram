@@ -5,6 +5,7 @@ import { ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
+import { CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   AVATAR_SIZE, COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
@@ -47,6 +48,8 @@ export struct MainTabBody {
   listScroller: Scroller = new Scroller();
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
+  @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
+  private renderActive: boolean = true;
   @State chats: ChatEntry[] = [];
   private chatsData: ChatListDataSource = new ChatListDataSource();
   @State showArchive: boolean = false;
@@ -63,8 +66,8 @@ export struct MainTabBody {
     this.chatsData.reload();
   }
 
-  private onMenuToggle(): void {
-    if (this.menuOpen) {
+  private flushBufferedChats(): void {
+    if (this.menuOpen || !this.renderActive) {
       return;
     }
     const next = this.updateGate.flush();
@@ -73,10 +76,18 @@ export struct MainTabBody {
     }
   }
 
+  private onMenuToggle(): void {
+    this.flushBufferedChats();
+  }
+
+  private onRenderGateChanged(): void {
+    this.flushBufferedChats();
+  }
+
   aboutToAppear(): void {
     const store = getChatStore();
     this.unsubscribe = store.subscribe((list: ChatEntry[]) => {
-      const next = this.updateGate.accept(list);
+      const next = this.updateGate.accept(list, this.renderActive);
       if (next !== null) {
         this.applyChats(next);
       }
@@ -182,7 +193,10 @@ export struct MainTabBody {
         guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));
     }
     .layoutWeight(1).width('100%')
-    .cachedCount(8, true)
+    // One screen contains roughly eight rows. Four follows the framework's
+    // n/2 guidance while preserving enough painted cache for the frosted title
+    // bar; eight caused hidden tab lists to prebuild ChatRows during chat push.
+    .cachedCount(4, true)
     // cachedCount 的第二个参数 true 与这里的 clip(false) 是一对：前者让滚出
     // 视口的行不被回收，后者让它画得出来。官方《设置动态模糊样式》点名过——
     // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有

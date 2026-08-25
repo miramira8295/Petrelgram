@@ -17,7 +17,8 @@ export const GLASS_PAGE_PAD: number = 14;
 // 卡片之间的间距。
 export const GLASS_GAP: number = 13;
 
-// 卡片投影。比原来那层 4px 的浅影厚，玻璃才浮得起来。
-export const GLASS_SHADOW_RADIUS: number = 32;
+// 卡片投影。32vp 在整页十余个玻璃面同时滑入时会制造大面积离屏卷积；12vp
+// 仍能把玻璃从背景上托起来，同时把转场期的阴影覆盖面积压到可控范围。
+export const GLASS_SHADOW_RADIUS: number = 12;
 export const GLASS_SHADOW_COLOR: string = '#2A5A6EAA';
-export const GLASS_SHADOW_Y: number = 12;
+export const GLASS_SHADOW_Y: number = 4;

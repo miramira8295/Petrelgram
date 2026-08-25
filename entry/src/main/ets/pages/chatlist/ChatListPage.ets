@@ -29,6 +29,9 @@ import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
+import {
+  setChatListRenderActive
+} from '../../util/chatListRenderGate';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
 
 interface TabSpec {
@@ -52,6 +55,10 @@ const FOLDER_BAR_SPACE: number = 54;
 // 横条整体仍是 FOLDER_BAR_HEIGHT(44)，多出来的那 16 是上下留白。
 const FOLDER_CHIP_HEIGHT: number = 28;
 const FOLDER_SWITCH_DURATION: number = 250;
+// HdsNavigation reports the nav bar visible near the beginning of a pop. Keep
+// child list publications frozen until the measured ~590 ms transition ends,
+// then apply the newest buffered snapshot once.
+const CHAT_LIST_RETURN_SETTLE_MS: number = 640;
 
 // The route table loads ChatPage dynamically. Queue its module graph immediately
 // after the chat list's first frame instead of waiting a fixed 1200 ms: a quick
@@ -192,6 +199,15 @@ export struct ChatListPage {
   private mainListPosition: number = 0;
   private clockTimer: number = -1;
   private searchOpeningTimer: number = -1;
+  // HdsNavigation keeps the nav bar component alive while a ChatPage slides
+  // over it. Store callbacks must not publish new @State snapshots into that
+  // moving, covered page: the frame trace showed six full ChatListPage builds
+  // alongside repeated store notifications. Keep only a dirty bit and mirror the
+  // newest badge snapshot once the nav bar is visible again.
+  private navBarVisible: boolean = true;
+  private unreadRefreshPending: boolean = false;
+  private listRenderActive: boolean = true;
+  private listRenderResumeTimer: number = -1;
 
   @Styles
   actionNormalStyle() {
@@ -288,8 +304,11 @@ export struct ChatListPage {
     // 返回时这棵树会重建、aboutToAppear 再跑一次，而页签栈还压着详情页。无条件
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
-    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH), this.chatStack.size()));
+    this.navBarVisible = navBarVisibleOnAppear(
+      isSplitLayout(this.screenW, this.screenH), this.chatStack.size());
+    AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, this.navBarVisible);
+    this.listRenderActive = this.navBarVisible;
+    setChatListRenderActive(this.listRenderActive);
     // 先让会话列表首帧落地，紧接着预热聊天详情页模块。固定等 1200ms 会让快速
     // 点击穿过预热窗口；帧回调既避开列表首帧，又保证正常的人手点击前已经开始。
     this.getUIContext().postFrameCallback(new ChatModuleWarmupFrameCallback());
@@ -367,13 +386,49 @@ export struct ChatListPage {
   }
 
   private startClock(): void {
-    AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+    if (this.listRenderActive) {
+      AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+    }
     if (this.clockTimer !== -1) {
       return;
     }
     this.clockTimer = setInterval((): void => {
-      AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+      if (this.listRenderActive) {
+        AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+      }
     }, 60000);
+  }
+
+  private cancelListRenderResume(): void {
+    if (this.listRenderResumeTimer !== -1) {
+      clearTimeout(this.listRenderResumeTimer);
+      this.listRenderResumeTimer = -1;
+    }
+  }
+
+  private suspendListRendering(): void {
+    this.cancelListRenderResume();
+    this.listRenderActive = false;
+    setChatListRenderActive(false);
+  }
+
+  private resumeListRenderingAfterTransition(): void {
+    this.cancelListRenderResume();
+    this.listRenderResumeTimer = setTimeout((): void => {
+      this.listRenderResumeTimer = -1;
+      if (!this.navBarVisible) {
+        return;
+      }
+      this.listRenderActive = true;
+      setChatListRenderActive(true);
+      // ChatRow time labels and folder badges were deliberately frozen while
+      // covered. Refresh both after child data sources have flushed their one
+      // coalesced snapshot, outside the pop transition.
+      AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+      if (this.unreadRefreshPending) {
+        this.refreshUnread();
+      }
+    }, CHAT_LIST_RETURN_SETTLE_MS);
   }
 
   // TDLib does not emit updateUnreadChatCount for chat folders, so load each
@@ -405,16 +460,39 @@ export struct ChatListPage {
     return getChatStore().unreadChatCount(key);
   }
 
-  // Rebuild the whole badge map (new Map identity) so the tab bar re-renders.
+  private unreadSnapshotChanged(next: Map<string, number>): boolean {
+    if (next.size !== this.unreadMap.size) {
+      return true;
+    }
+    let changed: boolean = false;
+    next.forEach((value: number, key: string): void => {
+      if (this.unreadMap.get(key) !== value) {
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  // Rebuild the badge map only when its values actually changed. While a
+  // destination covers the nav bar, collapse any number of notifications into
+  // one pending refresh instead of rebuilding the whole HdsNavigation tree.
   private refreshUnread(): void {
+    if (!this.listRenderActive) {
+      this.unreadRefreshPending = true;
+      return;
+    }
     const next: Map<string, number> = new Map();
     for (const spec of this.tabs()) {
       next.set(spec.key, this.computeUnread(spec.key));
     }
-    this.unreadMap = next;
+    this.unreadRefreshPending = false;
+    if (this.unreadSnapshotChanged(next)) {
+      this.unreadMap = next;
+    }
   }
 
   aboutToDisappear(): void {
+    this.cancelListRenderResume();
     if (this.unsubFolders !== null) { this.unsubFolders(); this.unsubFolders = null; }
     if (this.unsubUnread !== null) { this.unsubUnread(); this.unsubUnread = null; }
     if (this.unsubChats !== null) { this.unsubChats(); this.unsubChats = null; }
@@ -1024,6 +1102,13 @@ export struct ChatListPage {
         // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
         const isVisible: boolean = navBarVisibleOnChange(reported,
           isSplitLayout(this.screenW, this.screenH), this.chatStack.size());
+        const changed: boolean = this.navBarVisible !== isVisible;
+        this.navBarVisible = isVisible;
+        if (!isVisible) {
+          this.suspendListRendering();
+        } else if (changed || !this.listRenderActive) {
+          this.resumeListRenderingAfterTransition();
+        }
         if (AppStorage.get<boolean>(CHAT_NAV_BAR_VISIBLE_KEY) !== isVisible) {
           AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, isVisible);
         }

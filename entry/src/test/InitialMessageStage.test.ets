@@ -5,7 +5,7 @@ import { TdBridge, TdObject } from '../main/ets/tdkit/TdTypes';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
-  nextInitialMessageRevealCount, stageInitialMessageGroups
+  initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups
 } from '../main/ets/util/initialMessageStage';
 
 class StageBridge implements TdBridge {
@@ -84,10 +84,12 @@ export default function initialMessageStageTest() {
       const source = groupsOf(12);
       const first = stageInitialMessageGroups(source, 11, false, 3);
       const second = stageInitialMessageGroups(source, 11, false, 6);
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < source.length; i++) {
         expect(first[i].key).assertEqual(second[i].key);
+        expect(first[i].key).assertEqual(source[i].key);
       }
-      expect(first[6].key === second[6].key).assertFalse();
+      expect(first[6].initialDeferred).assertTrue();
+      expect(second[6].initialDeferred === true).assertFalse();
     });
 
     it('keeps_bottom_five_real', 0, () => {
@@ -96,7 +98,7 @@ export default function initialMessageStageTest() {
       for (let i = 0; i < 7; i++) {
         expect(staged[i].initialDeferred).assertTrue();
         expect(staged[i].head === source[i].head).assertTrue();
-        expect(staged[i].key === source[i].key).assertFalse();
+        expect(staged[i].key).assertEqual(source[i].key);
       }
       for (let i = 7; i < 12; i++) {
         expect(staged[i].initialDeferred === true).assertFalse();
@@ -117,6 +119,22 @@ export default function initialMessageStageTest() {
     it('does_not_stage_short_timelines', 0, () => {
       const source = groupsOf(5);
       expect(stageInitialMessageGroups(source, 4, false, 5) === source).assertTrue();
+    });
+
+    it('sizes_bottom_preparation_from_viewport_height', 0, () => {
+      const source = groupsOf(12);
+      // Test text rows estimate to 64vp each; 180vp therefore needs 3 rows.
+      expect(initialMessageViewportRows(source, 11, false, 360, 180, 0)).assertEqual(3);
+    });
+
+    it('sizes_unread_preparation_forward_from_anchor', 0, () => {
+      const source = groupsOf(12);
+      expect(initialMessageViewportRows(source, 3, true, 360, 180, 4)).assertEqual(3);
+    });
+
+    it('caps_viewport_preparation_at_available_rows', 0, () => {
+      const source = groupsOf(2);
+      expect(initialMessageViewportRows(source, 1, false, 360, 1000, 0)).assertEqual(2);
     });
   });
 }

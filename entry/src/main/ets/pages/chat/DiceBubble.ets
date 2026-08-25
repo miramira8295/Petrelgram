@@ -33,6 +33,7 @@ export struct DiceBubble {
               boxWidth: 150,
               boxHeight: 150,
               powerCategory: 'sticker',
+              chatTimeline: true,
               playOnce: true
             });
           }, (path: string, index: number): string => `slot_${index}_${path}`);
@@ -44,6 +45,7 @@ export struct DiceBubble {
           boxWidth: 150,
           boxHeight: 150,
           powerCategory: 'sticker',
+          chatTimeline: true,
           playOnce: true
         });
       } else {

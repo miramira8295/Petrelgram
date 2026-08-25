@@ -137,6 +137,7 @@ import webmAlphaTest from './WebmAlpha.test';
 import plainTextBubbleReuseTest from './PlainTextBubbleReuse.test';
 import performanceBudgetsTest from './PerformanceBudgets.test';
 import initialMessageStageTest from './InitialMessageStage.test';
+import stringsTest from './Strings.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -156,11 +157,11 @@ export default function testsuite() {
   diagLogHeaderTest();
   scopeMuteTest();
   decodeSizeTest();
-  startupStageTest();
   chatContentWidthTest();
   splitNavWidthTest();
   reactionsWidthTest();
   emojiStatusIdTest();
+  startupStageTest();
   diagLogExportTest();
   formatTimeTest();
   intlFormatTest();
@@ -278,4 +279,5 @@ export default function testsuite() {
   plainTextBubbleReuseTest();
   performanceBudgetsTest();
   initialMessageStageTest();
+  stringsTest();
 }

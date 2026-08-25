@@ -175,6 +175,13 @@ export class MessageStore {
   private senderAvatarPaths: Map<string, string> = new Map();
   private senderRequested: Set<string> = new Set();
   private avatarFileToSender: Map<number, string> = new Map();
+  // Monotonic membership indexes for the current store lifetime. Keeping a
+  // stale id after a message leaves the bounded window is harmless; it avoids
+  // rescanning every message for every global updateUser event.
+  private senderUserIds: Set<number> = new Set();
+  private systemLabelUserIds: Set<number> = new Set();
+  private contactUserIds: Set<number> = new Set();
+  private commentUserIds: Set<number> = new Set();
   private forwardTitleCache: Map<number, string> = new Map();
   private forwardTitleRequested: Set<number> = new Set();
   private thumbAttempts: Map<number, number> = new Map();
@@ -380,12 +387,7 @@ export class MessageStore {
     this.unsubs.push(this.client.onUpdate('updateUserStatus', (u: TdObject) => this.onUserStatus(u)));
     this.unsubs.push(this.client.onUpdate('updateBasicGroup', (u: TdObject) => this.onGroup(u)));
     this.unsubs.push(this.client.onUpdate('updateSupergroup', (u: TdObject) => this.onGroup(u)));
-    this.unsubs.push(this.client.onUpdate('updateUser', () => {
-      this.resolveSenderAvatars();
-      this.resolveSystemUserLabels();
-      this.resolveCommentAvatars();
-      this.resolveContactAvatars();
-    }));
+    this.unsubs.push(this.client.onUpdate('updateUser', (u: TdObject) => this.onUserUpdated(u)));
     this.unsubs.push(this.client.onUpdate('updateMessageInteractionInfo', (u: TdObject) => this.onInteractionInfo(u)));
     this.unsubs.push(this.client.onUpdate('updateChatOnlineMemberCount', (u: TdObject) => this.onOnlineCount(u)));
     // A message got (un)pinned while the chat is open — re-resolve the pinned
@@ -425,9 +427,10 @@ export class MessageStore {
     req['chat_id'] = this.chatId;
     req['message_id'] = this.threadRootId;
     this.client.send(req).then((m: TdObject) => {
-      this.upsert(buildMessageEntry(m, this.users));
+      const entry: MessageEntry = buildMessageEntry(m, this.users);
+      this.upsert(entry);
       this.requestPhotos();
-      this.resolveSenderAvatars();
+      this.resolveSenderAvatars([entry]);
       this.notifySoon();
     }).catch((e: TdError) => {
       logE(`MessageStore.fetchThreadRoot failed: ${e.message}`);
@@ -1928,8 +1931,8 @@ export class MessageStore {
     this.resolveReplies();
     this.resolveForwardTitles();
     this.requestPhotos();
-    this.resolveSenderAvatars();
-    this.resolveCommentAvatars();
+    this.resolveSenderAvatars(entries);
+    this.resolveCommentAvatars(entries);
     // NOTE: do NOT mark messages read here. Read state is a high-water mark in
     // TDLib, so viewing the newest loaded message would mark ALL older ones read.
     // Read-marking is driven by the actually-visible range (see markViewed).
@@ -2157,8 +2160,8 @@ export class MessageStore {
     this.resolveReplies();
     this.resolveForwardTitles();
     this.requestPhotos();
-    this.resolveSenderAvatars();
-    this.resolveCommentAvatars();
+    this.resolveSenderAvatars([entry]);
+    this.resolveCommentAvatars([entry]);
     // New incoming messages are marked read only when they become visible
     // (driven by markViewed from the page), not on arrival.
     this.notifySoon();
@@ -2530,7 +2533,10 @@ export class MessageStore {
     if (rx.some((r: ReactionInfo): boolean => r.customEmojiId !== '')) {
       this.resolveCustomEmojis();
     }
-    this.resolveCommentAvatars();
+    for (const userId of cmt.replierIds) {
+      this.commentUserIds.add(userId);
+      this.requestCommentAvatar(userId);
+    }
   }
 
   private onReadOutbox(u: TdObject): void {
@@ -3711,11 +3717,16 @@ export class MessageStore {
   private chatSenderNames: Map<number, string> = new Map();
   private chatSenderRequested: Set<number> = new Set();
 
-  private resolveChatSenders(): void {
-    for (const e of this.messages) {
+  private resolveChatSenders(candidates: MessageEntry[]): void {
+    const seen: Set<number> = new Set();
+    for (const e of candidates) {
       if (e.senderIsUser || e.senderId === 0 || e.senderId === this.chatId) {
         continue;
       }
+      if (seen.has(e.senderId)) {
+        continue;
+      }
+      seen.add(e.senderId);
       const cached = this.chatSenderNames.get(e.senderId);
       if (cached !== undefined && cached !== '') {
         this.applyChatSenderName(e.senderId, cached);
@@ -3771,10 +3782,39 @@ export class MessageStore {
     }
   }
 
-  private resolveSenderAvatars(): void {
-    this.resolveChatSenders();
+  private requestSenderAvatar(userId: number): void {
+    if (userId <= 0) {
+      return;
+    }
+    const key = this.senderKey(userId, true);
+    const known = this.senderAvatarPaths.get(key);
+    if (known !== undefined && known !== '') {
+      this.applySenderPath(key, known);
+      return;
+    }
+    if (this.senderRequested.has(key)) {
+      return;
+    }
+    this.users.ensure(userId);
+    const fileId: number = this.users.photoFileId(userId);
+    if (fileId <= 0) {
+      return; // retried by the targeted updateUser path below
+    }
+    this.senderRequested.add(key);
+    this.avatarFileToSender.set(fileId, key);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      logE(`MessageStore avatar ${fileId}: ${err.message}`);
+    });
+  }
+
+  private resolveSenderAvatars(candidates: MessageEntry[] = this.messages): void {
+    this.resolveChatSenders(candidates);
     const seen = new Set<string>();
-    for (const e of this.messages) {
+    const usersToRefresh: Set<number> = new Set();
+    for (const e of candidates) {
       if (e.isOutgoing || e.senderId === 0) {
         continue;
       }
@@ -3783,6 +3823,11 @@ export class MessageStore {
         continue;
       }
       seen.add(key);
+      if (e.senderIsUser) {
+        usersToRefresh.add(e.senderId);
+        this.requestSenderAvatar(e.senderId);
+        continue;
+      }
       const known = this.senderAvatarPaths.get(key);
       if (known !== undefined && known !== '') {
         this.applySenderPath(key, known);
@@ -3791,18 +3836,9 @@ export class MessageStore {
       if (this.senderRequested.has(key)) {
         continue;
       }
-      let fileId = 0;
-      if (e.senderIsUser) {
-        // Users TDLib was never pushed (a chat opened from global search) have
-        // no photo id and no updateUser is coming unless we ask.
-        this.users.ensure(e.senderId);
-        this.backfillSenderName(e.senderId);
-        fileId = this.users.photoFileId(e.senderId);
-      } else if (e.senderId === this.chatId) {
-        fileId = this.chatPhotoFileId;
-      }
+      const fileId: number = e.senderId === this.chatId ? this.chatPhotoFileId : 0;
       if (fileId <= 0) {
-        continue; // not known yet — retried on updateUser / getChat
+        continue; // messageSenderChat is resolved by getChat above
       }
       this.senderRequested.add(key);
       this.avatarFileToSender.set(fileId, key);
@@ -3813,32 +3849,43 @@ export class MessageStore {
         logE(`MessageStore avatar ${fileId}: ${err.message}`);
       });
     }
+    this.refreshUserDependentMessages(usersToRefresh);
   }
 
-  // Message entries snapshot the sender's name AND initials when built. For a
-  // user the cache didn't know yet both were empty, and many senders in a chat
-  // we aren't a member of never get a profile photo at all (privacy) — their
-  // initials ARE the avatar, so both fields must be backfilled once the user
-  // arrives (the LazyForEach key includes senderName, so the row re-renders).
-  private backfillSenderName(userId: number): void {
-    const name = this.users.displayName(userId);
-    if (name === '') {
+  // One pass handles both sender-name backfill and service-message labels for
+  // the small set of users that changed. updateUser used to run two complete
+  // timeline scans, plus another scan to rediscover avatar candidates.
+  private refreshUserDependentMessages(userIds: Set<number>): void {
+    if (userIds.size === 0) {
       return;
     }
-    const initials = name.substring(0, 1).toUpperCase();
-    // Single-pass bulk update with ONE notify. A per-message patch()+notify()
-    // loop here made every subscriber rebuild the whole timeline once per
-    // message right after an older page landed — the load-more jank.
     let changed = false;
-    const next = this.messages.map((e: MessageEntry): MessageEntry => {
-      if (!e.senderIsUser || e.senderId !== userId || e.senderName === name) {
-        return e;
+    const next = this.messages.map((entry: MessageEntry): MessageEntry => {
+      let current = entry;
+      if (entry.senderIsUser && userIds.has(entry.senderId)) {
+        const name: string = this.users.displayName(entry.senderId);
+        if (name !== '' && entry.senderName !== name) {
+          const copy = cloneMessage(entry);
+          copy.senderName = name;
+          copy.senderInitials = name.substring(0, 1).toUpperCase();
+          current = copy;
+        }
       }
-      const c = cloneMessage(e);
-      c.senderName = name;
-      c.senderInitials = initials;
-      changed = true;
-      return c;
+      let labelAffected: boolean = entry.contentType === 'system' &&
+        entry.senderIsUser && userIds.has(entry.senderId);
+      for (const userId of entry.systemUserIds) {
+        if (userIds.has(userId)) {
+          labelAffected = true;
+          break;
+        }
+      }
+      if (labelAffected) {
+        current = refreshSystemUserLabel(current, this.users);
+      }
+      if (current !== entry) {
+        changed = true;
+      }
+      return current;
     });
     if (changed) {
       this.messages = next;
@@ -3846,18 +3893,23 @@ export class MessageStore {
     }
   }
 
-  private resolveSystemUserLabels(): void {
-    let changed = false;
-    const next = this.messages.map((entry: MessageEntry): MessageEntry => {
-      const refreshed = refreshSystemUserLabel(entry, this.users);
-      if (refreshed !== entry) {
-        changed = true;
-      }
-      return refreshed;
-    });
-    if (changed) {
-      this.messages = next;
-      this.notifySoon();
+  private onUserUpdated(update: TdObject): void {
+    const user = update['user'] as TdObject | undefined;
+    const userId: number = user !== undefined ? ((user['id'] as number | undefined) ?? 0) : 0;
+    if (userId <= 0) {
+      return;
+    }
+    if (this.senderUserIds.has(userId)) {
+      this.requestSenderAvatar(userId);
+    }
+    if (this.senderUserIds.has(userId) || this.systemLabelUserIds.has(userId)) {
+      this.refreshUserDependentMessages(new Set<number>([userId]));
+    }
+    if (this.commentUserIds.has(userId)) {
+      this.requestCommentAvatar(userId);
+    }
+    if (this.contactUserIds.has(userId)) {
+      this.requestContactAvatar(userId);
     }
   }
 
@@ -3871,39 +3923,43 @@ export class MessageStore {
   }
 
   // --- shared-contact avatars ---
-  private resolveContactAvatars(): void {
-    for (const e of this.messages) {
+  private resolveContactAvatars(candidates: MessageEntry[] = this.messages): void {
+    for (const e of candidates) {
       const userId = e.contactUserId;
       if (e.contentType !== 'contact' || userId <= 0) {
         continue;
       }
-      const known = this.contactAvatarPaths.get(userId);
-      if (known !== undefined && known !== '') {
-        this.applyContactAvatarPath(userId, known);
-        continue;
-      }
-      this.users.ensure(userId);
-      const fileId = this.users.photoFileId(userId);
-      if (fileId <= 0 || this.contactAvatarRequested.has(userId)) {
-        continue;
-      }
-      const cachedPath = this.completedFilePaths.get(fileId) ?? '';
-      if (cachedPath !== '') {
-        this.contactAvatarPaths.set(userId, cachedPath);
-        this.applyContactAvatarPath(userId, cachedPath);
-        continue;
-      }
-      this.contactAvatarRequested.add(userId);
-      this.avatarFileToContact.set(fileId, userId);
-      const req: TdRequest = { '@type': 'downloadFile' };
-      req['file_id'] = fileId;
-      req['priority'] = THUMBNAIL_PRIORITY;
-      this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-        this.contactAvatarRequested.delete(userId);
-        this.avatarFileToContact.delete(fileId);
-        logE(`MessageStore contact avatar ${fileId}: ${err.message}`);
-      });
+      this.requestContactAvatar(userId);
     }
+  }
+
+  private requestContactAvatar(userId: number): void {
+    const known = this.contactAvatarPaths.get(userId);
+    if (known !== undefined && known !== '') {
+      this.applyContactAvatarPath(userId, known);
+      return;
+    }
+    this.users.ensure(userId);
+    const fileId: number = this.users.photoFileId(userId);
+    if (fileId <= 0 || this.contactAvatarRequested.has(userId)) {
+      return;
+    }
+    const cachedPath = this.completedFilePaths.get(fileId) ?? '';
+    if (cachedPath !== '') {
+      this.contactAvatarPaths.set(userId, cachedPath);
+      this.applyContactAvatarPath(userId, cachedPath);
+      return;
+    }
+    this.contactAvatarRequested.add(userId);
+    this.avatarFileToContact.set(fileId, userId);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      this.contactAvatarRequested.delete(userId);
+      this.avatarFileToContact.delete(fileId);
+      logE(`MessageStore contact avatar ${fileId}: ${err.message}`);
+    });
   }
 
   private applyContactAvatarPath(userId: number, path: string): void {
@@ -3924,31 +3980,35 @@ export class MessageStore {
   }
 
   // --- comment-row avatars (recent commenters shown on a channel post) ---
-  private resolveCommentAvatars(): void {
-    for (const e of this.messages) {
+  private resolveCommentAvatars(candidates: MessageEntry[] = this.messages): void {
+    for (const e of candidates) {
       for (const uid of e.commentReplierIds) {
-        const known = this.replierAvatarPaths.get(uid);
-        if (known !== undefined && known !== '') {
-          this.applyReplierAvatar(uid, known);
-          continue;
-        }
-        if (this.replierAvatarRequested.has(uid)) {
-          continue;
-        }
-        const fileId = this.users.photoFileId(uid);
-        if (fileId <= 0) {
-          continue; // not known yet — retried on updateUser
-        }
-        this.replierAvatarRequested.add(uid);
-        this.avatarFileToReplier.set(fileId, uid);
-        const req: TdRequest = { '@type': 'downloadFile' };
-        req['file_id'] = fileId;
-        req['priority'] = THUMBNAIL_PRIORITY;
-        this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
-          logE(`MessageStore replier avatar ${fileId}: ${err.message}`);
-        });
+        this.requestCommentAvatar(uid);
       }
     }
+  }
+
+  private requestCommentAvatar(userId: number): void {
+    const known = this.replierAvatarPaths.get(userId);
+    if (known !== undefined && known !== '') {
+      this.applyReplierAvatar(userId, known);
+      return;
+    }
+    if (this.replierAvatarRequested.has(userId)) {
+      return;
+    }
+    const fileId: number = this.users.photoFileId(userId);
+    if (fileId <= 0) {
+      return; // retried by the targeted updateUser path
+    }
+    this.replierAvatarRequested.add(userId);
+    this.avatarFileToReplier.set(fileId, userId);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = THUMBNAIL_PRIORITY;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      logE(`MessageStore replier avatar ${fileId}: ${err.message}`);
+    });
   }
 
   private applyReplierAvatar(userId: number, path: string): void {
@@ -4668,6 +4728,25 @@ export class MessageStore {
     return -1;
   }
 
+  private rememberMessageUsers(entry: MessageEntry): void {
+    if (entry.senderIsUser && entry.senderId > 0) {
+      this.senderUserIds.add(entry.senderId);
+    }
+    for (const userId of entry.systemUserIds) {
+      if (userId > 0) {
+        this.systemLabelUserIds.add(userId);
+      }
+    }
+    if (entry.contentType === 'contact' && entry.contactUserId > 0) {
+      this.contactUserIds.add(entry.contactUserId);
+    }
+    for (const userId of entry.commentReplierIds) {
+      if (userId > 0) {
+        this.commentUserIds.add(userId);
+      }
+    }
+  }
+
   // History pages arrive ~30 messages at a time; merging them one upsert()
   // each costs a full array copy + sort per message. One copy and one sort
   // for the whole page keeps the prepend cheap however long the window grows.
@@ -4683,6 +4762,7 @@ export class MessageStore {
     let appended = false;
     for (const entry of entries) {
       const hydrated = this.hydrateFromFileCache(entry);
+      this.rememberMessageUsers(hydrated);
       const idx = indexById.get(hydrated.id);
       if (idx !== undefined) {
         next[idx] = hydrated;
@@ -4700,6 +4780,7 @@ export class MessageStore {
 
   private upsert(entry: MessageEntry): void {
     const hydrated = this.hydrateFromFileCache(entry);
+    this.rememberMessageUsers(hydrated);
     const idx = this.indexOf(hydrated.id);
     if (idx >= 0) {
       const next = this.messages.slice();
@@ -4779,6 +4860,7 @@ export class MessageStore {
     }
     const c = cloneMessage(this.messages[idx]);
     fn(c);
+    this.rememberMessageUsers(c);
     // 发送状态走旁路直达气泡的状态图标（见 sendStateChannel）：它不在行 key
     // 里，不这样发布就没人知道它变了。通道在状态未变时早退，所以这里不必
     // 挑调用点。

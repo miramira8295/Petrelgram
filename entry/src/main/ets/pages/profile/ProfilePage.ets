@@ -14,7 +14,7 @@ import {
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { AvatarView } from '../chatlist/AvatarView';
 import { QrDialog } from '../common/QrDialog';
 import { AvatarViewer } from '../common/AvatarViewer';
@@ -75,6 +75,10 @@ const USER_PROFILE_TABS: UserProfileTab[] = [
 export function ProfilePageBuilder(): void {
   ProfilePage();
 }
+
+const PROFILE_REFRESH_COALESCE_MS: number = 12;
+const PROFILE_EFFECTS_AFTER_SHOWN_MS: number = 72;
+const PROFILE_TRANSITION_ACTIONS: number[] = [0, 1, 2, 3, 4];
 
 @Preview
 @Component
@@ -139,6 +143,11 @@ export struct ProfilePage {
   @State tabIndicatorW: number = 0;
   @State availGifts: AvailGift[] = [];
   @State showGiftPicker: boolean = false;
+  @State private profileContentReady: boolean = false;
+  // Build the destination's moving first frame without 13+ independent
+  // material/shadow layers. onShown enables the visual effects after data has
+  // been mirrored once outside the system transition.
+  @State private profileEffectsReady: boolean = false;
   private userId: number = 0;
   private privateChatId: number = 0;
   private pendingDraftText: string = '';
@@ -146,6 +155,10 @@ export struct ProfilePage {
   private pendingJumpTo: number = 0;
   private store: ProfileStore | null = null;
   private unsub: (() => void) | null = null;
+  private profileShown: boolean = false;
+  private profileRefreshPending: boolean = false;
+  private profileRefreshTimer: number = -1;
+  private profileEffectsTimer: number = -1;
   private sharedStore: ChatProfileStore | null = null;
   private sharedUnsub: (() => void) | null = null;
   private tabScroller: Scroller = new Scroller();
@@ -199,8 +212,55 @@ export struct ProfilePage {
       ? ((params['jumpTo'] as number | undefined) ?? 0) : 0;
     const store = new ProfileStore(getTdClient(), this.userId);
     this.store = store;
-    this.unsub = store.subscribe(() => { this.refresh(); });
+    this.unsub = store.subscribe((): void => { this.onProfileStoreChanged(); });
     store.open();
+  }
+
+  private onProfileStoreChanged(): void {
+    this.profileRefreshPending = true;
+    this.scheduleProfileRefresh();
+  }
+
+  private scheduleProfileRefresh(): void {
+    if (!this.profileShown || !this.profileRefreshPending || this.profileRefreshTimer !== -1) {
+      return;
+    }
+    this.profileRefreshTimer = setTimeout((): void => {
+      this.profileRefreshTimer = -1;
+      if (!this.profileShown || !this.profileRefreshPending) {
+        return;
+      }
+      this.profileRefreshPending = false;
+      this.refresh();
+      this.profileContentReady = true;
+    }, PROFILE_REFRESH_COALESCE_MS);
+  }
+
+  private handleShown(): void {
+    this.profileShown = true;
+    this.scheduleProfileRefresh();
+    if (!this.profileEffectsReady && this.profileEffectsTimer === -1) {
+      this.profileEffectsTimer = setTimeout((): void => {
+        this.profileEffectsTimer = -1;
+        if (this.profileShown) {
+          this.profileEffectsReady = true;
+        }
+      }, PROFILE_EFFECTS_AFTER_SHOWN_MS);
+    }
+  }
+
+  private handleWillHide(): void {
+    // Stop consuming store publications before the destination starts moving
+    // underneath the next page. The newest snapshot is applied once on return.
+    this.profileShown = false;
+    if (this.profileRefreshTimer !== -1) {
+      clearTimeout(this.profileRefreshTimer);
+      this.profileRefreshTimer = -1;
+    }
+    if (this.profileEffectsTimer !== -1) {
+      clearTimeout(this.profileEffectsTimer);
+      this.profileEffectsTimer = -1;
+    }
   }
 
   // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
@@ -221,6 +281,15 @@ export struct ProfilePage {
   }
 
   aboutToDisappear(): void {
+    if (this.profileRefreshTimer !== -1) {
+      clearTimeout(this.profileRefreshTimer);
+      this.profileRefreshTimer = -1;
+    }
+    if (this.profileEffectsTimer !== -1) {
+      clearTimeout(this.profileEffectsTimer);
+      this.profileEffectsTimer = -1;
+    }
+    this.profileShown = false;
     if (this.unsub !== null) { this.unsub(); this.unsub = null; }
     if (this.store !== null) { this.store.close(); this.store = null; }
     if (this.sharedUnsub !== null) { this.sharedUnsub(); this.sharedUnsub = null; }
@@ -596,24 +665,43 @@ export struct ProfilePage {
   }
 
   // 和群组简介页同一套玻璃面，见 ProfileGlass。两页必须看起来是同一个页面。
+  private profileGlassFill(): ResourceColor {
+    return this.profileEffectsReady
+      ? overlayGlassFill('card', $r('app.color.surface')) : $r('app.color.surface');
+  }
+
+  private profileGlassBlur(): number {
+    return this.profileEffectsReady ? overlayBackdropBlur('card') : 0;
+  }
+
+  private profileGlassShadowRadius(): number {
+    return this.profileEffectsReady ? GLASS_SHADOW_RADIUS : 0;
+  }
+
+  private profileGlassShadowY(): number {
+    return this.profileEffectsReady ? GLASS_SHADOW_Y : 0;
+  }
+
   @Styles
   glassCard() {
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('card'))
+    .backgroundColor(this.profileGlassFill())
+    .backdropBlur(this.profileGlassBlur())
     .borderRadius(GLASS_RADIUS_CARD)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .attributeModifier(materialModifier('card'))
+    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
+      offsetX: 0, offsetY: this.profileGlassShadowY() })
+    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
   }
 
   @Styles
   glassTile() {
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('card'))
+    .backgroundColor(this.profileGlassFill())
+    .backdropBlur(this.profileGlassBlur())
     .borderRadius(GLASS_RADIUS_TILE)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .attributeModifier(materialModifier('card'))
+    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
+      offsetX: 0, offsetY: this.profileGlassShadowY() })
+    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
   }
 
   @Builder
@@ -623,11 +711,12 @@ export struct ProfilePage {
     }
     .width(44).height(44).borderRadius(22)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('card'))
+    .backgroundColor(this.profileGlassFill())
+    .backdropBlur(this.profileGlassBlur())
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .attributeModifier(materialModifier('card'))
+    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
+      offsetX: 0, offsetY: this.profileGlassShadowY() })
+    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
     .onClick(onTap);
   }
 
@@ -672,11 +761,12 @@ export struct ProfilePage {
       }
       .width(130).height(130).padding(7).borderRadius(65)
       .justifyContent(FlexAlign.Center)
-      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-      .backdropBlur(overlayBackdropBlur('card'))
+      .backgroundColor(this.profileGlassFill())
+      .backdropBlur(this.profileGlassBlur())
       .border({ width: 0.7, color: $r('app.color.divider') })
-      .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-      .attributeModifier(materialModifier('card'))
+      .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
+        offsetX: 0, offsetY: this.profileGlassShadowY() })
+      .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
         // 没有头像文件时（仅首字母占位）点击无意义，不给反馈。
         // 记下点击处的屏幕坐标，查看器据此决定放大/缩回的中心点。
         .onClick((event: ClickEvent): void => {
@@ -950,12 +1040,13 @@ export struct ProfilePage {
       });
     }
     .height(PROFILE_TAB_BAR_HEIGHT)
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('card'))
+    .backgroundColor(this.profileGlassFill())
+    .backdropBlur(this.profileGlassBlur())
     .borderRadius(PROFILE_TAB_BAR_HEIGHT / 2)
     .border({ width: 0.7, color: $r('app.color.divider') })
-    .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
-    .attributeModifier(materialModifier('card'))
+    .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
+      offsetX: 0, offsetY: this.profileGlassShadowY() })
+    .attributeModifier(materialModifierWhen('card', this.profileEffectsReady))
     .clip(true)
     .margin({ left: 8, right: 8, top: 14, bottom: 8 });
   }
@@ -1287,36 +1378,75 @@ export struct ProfilePage {
     }
   }
 
+  @Builder
+  profileTransitionShell() {
+    Column({ space: 10 }) {
+      Row() {
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+        }
+        .width(44).height(44).borderRadius(22)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('app.color.surface'))
+        .onClick((): void => { this.goBack(); });
+        Blank().layoutWeight(1);
+        Row() {
+          SymbolGlyph($r('sys.symbol.more')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+        }
+        .width(44).height(44).borderRadius(22)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('app.color.surface'));
+      }
+      .width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
+      Circle({ width: 116, height: 116 }).fill($r('app.color.surface_alt'));
+      Rect({ width: 132, height: 20, radius: 10 }).fill($r('app.color.surface_alt'));
+      Rect({ width: 86, height: 12, radius: 6 }).fill($r('app.color.surface_alt'));
+      Row({ space: 8 }) {
+        ForEach(PROFILE_TRANSITION_ACTIONS, (index: number): void => {
+          Rect({ width: (this.screenW - 64) / 5, height: 72, radius: GLASS_RADIUS_TILE })
+            .fill($r('app.color.surface'));
+        }, (index: number): string => `${index}`);
+      }
+      .width('100%').padding({ left: 12, right: 12, top: 12 });
+    }
+    .width('100%')
+    .padding({ top: this.topSafe + 8 });
+  }
+
   build() {
     HdsNavDestination() {
     Stack() {
       Scroll() {
         Column() {
-          this.header();
-          this.actionsRow();
-          if (this.personalChatId !== 0 && this.chTitle !== '') {
-            this.channelCard();
-          }
-          this.infoCard();
-          if (!this.isContact) {
-            this.addContactCard();
-          }
-          this.secretChatCard();
-          if (this.visibleProfileTabs().length > 0) {
-            Column() {
-              this.tabsBar();
+          if (!this.profileContentReady) {
+            this.profileTransitionShell();
+          } else {
+            this.header();
+            this.actionsRow();
+            if (this.personalChatId !== 0 && this.chTitle !== '') {
+              this.channelCard();
+            }
+            this.infoCard();
+            if (!this.isContact) {
+              this.addContactCard();
+            }
+            this.secretChatCard();
+            if (this.visibleProfileTabs().length > 0) {
               Column() {
-                this.profileTabContent();
+                this.tabsBar();
+                Column() {
+                  this.profileTabContent();
+                }
+                .width('100%')
+                .priorityGesture(
+                  PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+                    .onActionEnd((event: GestureEvent): void => {
+                      this.handleProfileTabPan(event.offsetX);
+                    })
+                );
               }
               .width('100%')
-              .priorityGesture(
-                PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-                  .onActionEnd((event: GestureEvent): void => {
-                    this.handleProfileTabPan(event.offsetX);
-                  })
-              );
             }
-            .width('100%');
           }
         }
         .width('100%')
@@ -1353,6 +1483,8 @@ export struct ProfilePage {
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
       this.applyRouteParams();
     })
+    .onShown((): void => { this.handleShown(); })
+    .onWillHide((): void => { this.handleWillHide(); })
     .width('100%').height('100%');
   }
 }

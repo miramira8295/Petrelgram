@@ -4,6 +4,7 @@ import { ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
+import { CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
@@ -38,6 +39,8 @@ export struct ChatListView {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
+  @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
+  private renderActive: boolean = true;
   @State chats: ChatEntry[] = [];
   @State loading: boolean = true;
   @State loadFailed: boolean = false;
@@ -71,7 +74,7 @@ export struct ChatListView {
     this.active = true;
     const store = getChatStore();
     this.unsubscribe = store.subscribe((list: ChatEntry[]) => {
-      const next = this.updateGate.accept(list);
+      const next = this.updateGate.accept(list, this.renderActive);
       if (next !== null) {
         this.applyChats(next);
       }
@@ -88,7 +91,7 @@ export struct ChatListView {
       // TDLib normally emits the positions before resolving loadChats. Read
       // the bucket once here as well so the empty state can't flash while the
       // coalesced store notification is still waiting for the next frame.
-      const next = this.updateGate.accept(store.getChats(this.listKey));
+    const next = this.updateGate.accept(store.getChats(this.listKey), this.renderActive);
       if (next !== null) { this.applyChats(next); }
       this.loading = false;
       this.loadFailed = !success;
@@ -139,14 +142,22 @@ export struct ChatListView {
     return this.bottomSafe + (this.reserveDockSpace ? 88 : 16);
   }
 
-  private onMenuToggle(): void {
-    if (this.menuOpen) {
+  private flushBufferedChats(): void {
+    if (this.menuOpen || !this.renderActive) {
       return;
     }
     const next = this.updateGate.flush();
     if (next !== null) {
       this.applyChats(next);
     }
+  }
+
+  private onMenuToggle(): void {
+    this.flushBufferedChats();
+  }
+
+  private onRenderGateChanged(): void {
+    this.flushBufferedChats();
   }
 
   aboutToDisappear(): void {
@@ -272,7 +283,9 @@ export struct ChatListView {
         }
       }
       .layoutWeight(1).width('100%')
-      .cachedCount(8, true)
+      // Keep enough painted cache for the floating title blur without asking
+      // every hidden/adjacent tab to prepare a full extra screen of ChatRows.
+      .cachedCount(4, true)
       // cachedCount 的第二个参数 true 与这里的 clip(false) 是一对：前者让滚出
       // 视口的行不被回收，后者让它画得出来。官方《设置动态模糊样式》点名过——
       // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有
