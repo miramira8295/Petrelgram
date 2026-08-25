@@ -18,6 +18,8 @@ const STORE_NAME: string = 'app_settings';
 
 // AppStorage keys (also the Preferences keys — one name per setting).
 export const KEY_TEXT_SIZE: string = 'msgTextSize';        // message font size, vp
+// 平板分栏下用户拖出来的左栏宽度，vp。0 = 没拖过，用 HDS 的静息值。见 util/splitNavWidth。
+export const KEY_SPLIT_NAV_WIDTH: string = 'splitNavWidthVp';
 export const KEY_BUBBLE_RADIUS: string = 'bubbleRadius';   // message corner radius, vp
 export const KEY_THREE_LINES: string = 'chatListThreeLines'; // chat list row shows 2 or 3 lines
 export const KEY_NIGHT_MODE: string = 'nightMode';         // 'system' | 'dark' | 'light'
@@ -330,6 +332,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     store = await preferences.getPreferences(context, STORE_NAME);
     const s = store as preferences.Preferences;
     AppStorage.setOrCreate(KEY_TEXT_SIZE, await s.get(KEY_TEXT_SIZE, TEXT_SIZE_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_SPLIT_NAV_WIDTH, await s.get(KEY_SPLIT_NAV_WIDTH, 0) as number);
     AppStorage.setOrCreate(KEY_BUBBLE_RADIUS, await s.get(KEY_BUBBLE_RADIUS, RADIUS_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_THREE_LINES, await s.get(KEY_THREE_LINES, false) as boolean);
     AppStorage.setOrCreate(KEY_REDUCE_ANIM, await s.get(KEY_REDUCE_ANIM, false) as boolean);
@@ -383,6 +386,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     logE(`AppSettings.initSettings failed: ${e}`);
     // Defaults still populate AppStorage so the UI works without persistence.
     AppStorage.setOrCreate(KEY_TEXT_SIZE, TEXT_SIZE_DEFAULT);
+    AppStorage.setOrCreate(KEY_SPLIT_NAV_WIDTH, 0);
     AppStorage.setOrCreate(KEY_BUBBLE_RADIUS, RADIUS_DEFAULT);
     AppStorage.setOrCreate(KEY_THREE_LINES, false);
     AppStorage.setOrCreate(KEY_NIGHT_MODE, NIGHT_SYSTEM);

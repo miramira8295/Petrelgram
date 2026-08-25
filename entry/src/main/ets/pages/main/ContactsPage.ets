@@ -10,7 +10,8 @@ import {
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
+} from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -26,6 +27,7 @@ import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
 import { navBarVisibleOnAppear } from '../../util/navBarReset';
+import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -108,6 +110,8 @@ export struct ContactsPage {
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
   @StorageProp('screenHeightVp') screenH: number = 780;
+  // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
+  @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // 本页签左栏（navBar）的实际宽度，vp，0 = 还没量到。**写入方就是本页**（下面
   // 那个 Scroll 的 onAreaChange），这里再读回来是给 FAB 用的：FAB 现在住在
   // navBar 里，它的「内容列留白」必须按左栏宽度算，不能按窗口宽算。
@@ -1608,6 +1612,8 @@ export struct ContactsPage {
             const w: number = area.width as number;
             if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
               AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
+              // 三个页签共用一个记忆值，哪个页签拖的都算（issue #106）。
+              rememberSplitNavWidth(w, isSplitLayout(this.screenW, this.screenH));
             }
           })
           // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
@@ -1664,6 +1670,8 @@ export struct ContactsPage {
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
       .mode(isSplitLayout(this.screenW, this.screenH) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
+      // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
+      .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
       // 右栏栈空时的占位。仅分栏模式展示，手机单栏下永不出现。
       .splitPlaceholder(this.placeholderContent())
       .minContentWidth(this.contentMinWidth())
