@@ -23,6 +23,9 @@ import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
 // 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
 // overlayMaterial 里持有的 viewer 回退色和这个是同一个值，观感不变。
 const VIEWER_CHROME_BG: string = '#6e3e3e40';
+// 顶部通栏里那一行（状态栏之下）的高度。加上 topSafe 才是整条栏的高度，
+// 而底下那两个提示胶囊挂在 topSafe + 76 上——56 给它们留出了余量。
+const CHROME_BAR_ROW_H: number = 56;
 const VIEWER_MIN_SCALE: number = 1;
 const VIEWER_MAX_SCALE: number = 4;
 const VIEWER_DOUBLE_TAP_SCALE: number = 2.5;
@@ -989,20 +992,21 @@ export struct MediaViewerOverlay {
 
   @Builder
   chromeLayer() {
-    // Content-height wrapper pinned to the top — a full-screen wrapper here
-    // (default hit-test mode) would block ALL touches on the player below it.
-    Row() {
-      Row({ space: 10 }) {
+    // 顶部通栏。**一整条，不是三块浮在照片上的玻璃胶囊。**
+    //
+    // 原来是「✕ 圆片 + 标题胶囊 + ⋮ 圆片」三块各自带玻璃背板，状态栏那一条
+    // 则什么都没有——照片直接透到系统时钟和图标底下。而本应用的前景色规则是
+    // 「玻璃上的前景跟主题走」（见下面图标的颜色），状态栏没有玻璃可跟，浅色
+    // 主题下就是黑字压在任意一张照片上，深浅全看运气（issue #122）。
+    //
+    // 通栏一铺，状态栏就有了和标题同一块背板：**全局那套跟随主题的状态栏内容
+    // 色于是自动变成对的**，一行 setWindowSystemBarProperties 都不用调，也不
+    // 用去猜照片亮度。三块胶囊的背板随之失去意义，按钮只留热区和按压态。
+    Column() {
+      // 状态栏占位。玻璃铺到这里，系统时钟和图标就压在它上面。
+      Row().width('100%').height(this.topSafe).hitTestBehavior(HitTestMode.None);
+      Row({ space: 6 }) {
         Stack() {
-          // Circle 的 fill 挂不了 systemMaterial，换成同尺寸的 Row —— 36 在
-          // 40 的热区里居中，视觉尺寸和原来一致。
-          Row()
-            .width(36).height(36).borderRadius(18)
-            .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
-            .backdropBlur(overlayBackdropBlur('viewer'))
-            .attributeModifier(materialModifier('viewer'));
-          // 玻璃背板浅色模式下是亮的，白字看不见——玻璃上的前景一律跟主题走，
-          // 压在视频画面/黑蒙层上的才保持白。
           SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([$r('app.color.text_primary')]);
         }
         .width(40).height(40).borderRadius(20)
@@ -1016,52 +1020,46 @@ export struct MediaViewerOverlay {
         })
         .onClick(() => { this.onRequestClose(); });
         Column({ space: 1 }) {
-          Text(this.infoTitle()).fontSize(13).fontColor($r('app.color.text_primary')).fontWeight(FontWeight.Medium)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: 220 });
+          Text(this.infoTitle()).fontSize(15).fontColor($r('app.color.text_primary'))
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
           if (this.infoSubtitle() !== '') {
             Text(this.infoSubtitle()).fontSize(11).fontColor($r('app.color.text_secondary'))
-              .maxLines(1);
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
           }
         }
-        .alignItems(HorizontalAlign.Start).flexShrink(1);
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1);
+        // No download indicator up here: the seek bar's lighter track shows
+        // the downloaded span, and a stalled player draws a centered ring.
+        // "⋮" menu — 保存到相册 etc.
+        Stack() {
+          SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([$r('app.color.text_primary')]);
+        }
+        .width(40).height(40).borderRadius(20)
+        .stateStyles({
+          normal: this.chromeNormalStyle,
+          pressed: this.chromePressedStyle
+        })
+        .animation({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+          curve: Curve.EaseOut
+        })
+        .bindMenu([{
+          value: $r('app.string.ms_save_to_gallery'),
+          action: (): void => { this.onSaveMedia(); }
+        } as MenuElement]);
       }
-      .padding({ left: 12, right: 14, top: 10, bottom: 10 })
-      .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
-      .backdropBlur(overlayBackdropBlur('viewer'))
-      .attributeModifier(materialModifier('viewer'))
-      .borderRadius(18)
-      .alignItems(VerticalAlign.Center)
-      .flexShrink(1);
-      Blank().layoutWeight(1).hitTestBehavior(HitTestMode.None);
-      // No download indicator up here: the seek bar's lighter track shows
-      // the downloaded span, and a stalled player draws a centered ring.
-      // "⋮" menu — 保存到相册 etc.
-      Stack() {
-        Row()
-          .width(36).height(36).borderRadius(18)
-          .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
-          .backdropBlur(overlayBackdropBlur('viewer'))
-          .attributeModifier(materialModifier('viewer'));
-        SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([$r('app.color.text_primary')]);
-      }
-      .width(40).height(40).borderRadius(20)
-      .stateStyles({
-        normal: this.chromeNormalStyle,
-        pressed: this.chromePressedStyle
-      })
-      .animation({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-        curve: Curve.EaseOut
-      })
-      .bindMenu([{
-        value: $r('app.string.ms_save_to_gallery'),
-        action: (): void => { this.onSaveMedia(); }
-      } as MenuElement]);
+      .width('100%').height(CHROME_BAR_ROW_H)
+      .padding({ left: 6, right: 6 })
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%')
     .position({ x: 0, y: 0 })
-    .padding({ left: 12, right: 12, top: this.topSafe + 12 })
+    // 玻璃与材质挂在通栏本身上，三块胶囊的背板因此全部撤掉。
+    .backgroundColor(overlayGlassFill('viewer', VIEWER_CHROME_BG))
+    .backdropBlur(overlayBackdropBlur('viewer'))
+    .attributeModifier(materialModifier('viewer'))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -8 }))
       .animation({
