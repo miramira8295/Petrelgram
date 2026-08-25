@@ -58,3 +58,15 @@ export function proxyConnectionText(state: string, usingProxy: boolean): string 
   if (state === 'connectionStateUpdating') { return str('proxy_state_updating'); }
   return str(usingProxy ? 'proxy_state_reading_proxy' : 'proxy_state_reading');
 }
+
+// 列表里某一行的代理是不是"实际在用且连着"。
+//
+// pingProxy 对某些代理会报错（TDLib 那边 ping 出去 pong 回不来），而代理本身
+// 完全可用——用户拿"无法连接"和"明明能用"一对比，就认定是 bug（issue #31）。
+// 对**当前启用**的那个代理有更真的判据：TDLib 的连接状态。Ready / Updating
+// 都算连着（Updating 是在拉更新，请求照发不误，和 Globals 里的口径一致）。
+// 未启用的代理没有这个判据，只能信 ping。
+export function enabledProxyConnected(isEnabled: boolean, connectionState: string): boolean {
+  return isEnabled &&
+    (connectionState === 'connectionStateReady' || connectionState === 'connectionStateUpdating');
+}

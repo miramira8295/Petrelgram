@@ -9,7 +9,7 @@ import {
 } from '../../store/ProxyApi';
 import {
   parseProxyPort, proxyActionErrorText, proxyConnectionText,
-  proxyFormError, sameProxyConfiguration
+  proxyFormError, sameProxyConfiguration, enabledProxyConnected
 } from '../../util/proxyLogic';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
@@ -339,10 +339,19 @@ export struct ProxyPage {
     return this.pingStates.get(id) ?? 'loading';
   }
 
+  // 启用中的代理以 TDLib 连接状态为准：连着就是连着，ping 报错不算数（issue #31）。
+  private rowConnected(id: number): boolean {
+    const enabled: ProxyEntry | null = this.activeProxy();
+    return enabled !== null && enabled.id === id &&
+      enabledProxyConnected(true, this.connectionState);
+  }
+
   private pingLabel(id: number): string {
     const state = this.pingState(id);
     if (state === 'loading') { return str('px_testing'); }
-    if (state === 'error') { return str('px_unreachable'); }
+    if (state === 'error') {
+      return this.rowConnected(id) ? str('proxy_state_connected') : str('px_unreachable');
+    }
     const seconds = this.pings.get(id) ?? 0;
     return `${Math.max(1, Math.round(seconds * 1000))} ms`;
   }
@@ -350,7 +359,7 @@ export struct ProxyPage {
   private pingColor(id: number): string {
     const state = this.pingState(id);
     if (state === 'ready') { return OK_GREEN; }
-    if (state === 'error') { return DANGER; }
+    if (state === 'error') { return this.rowConnected(id) ? OK_GREEN : DANGER; }
     return COLOR_TEXT_SECONDARY as string;
   }
 

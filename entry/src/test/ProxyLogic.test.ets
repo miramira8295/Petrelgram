@@ -6,7 +6,7 @@ import {
 } from '../main/ets/store/ProxyApi';
 import {
   parseProxyPort, proxyActionErrorText, proxyConnectionText,
-  proxyFormError, sameProxyConfiguration
+  proxyFormError, sameProxyConfiguration, enabledProxyConnected
 } from '../main/ets/util/proxyLogic';
 
 function entry(type: string): ProxyEntry {
@@ -76,6 +76,17 @@ export default function proxyLogicTest() {
         .assertEqual('proxy_state_connecting_proxy');
       expect(proxyActionErrorText('request timeout', '启用代理'))
         .assertEqual('proxy_error_timeout(启用代理)');
+    });
+    // issue #31：pingProxy 对某些代理报错但实际可用；启用中的代理以连接状态为准。
+    it('启用中的代理连上了就算可用，ping 报错不算数', 0, (): void => {
+      expect(enabledProxyConnected(true, 'connectionStateReady')).assertTrue();
+      expect(enabledProxyConnected(true, 'connectionStateUpdating')).assertTrue();
+    });
+    it('没连上、或不是启用中的那个，都不算', 0, (): void => {
+      expect(enabledProxyConnected(true, 'connectionStateConnectingToProxy')).assertFalse();
+      expect(enabledProxyConnected(true, 'connectionStateWaitingForNetwork')).assertFalse();
+      expect(enabledProxyConnected(true, '')).assertFalse();
+      expect(enabledProxyConnected(false, 'connectionStateReady')).assertFalse();
     });
   });
 }
