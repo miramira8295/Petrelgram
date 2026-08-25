@@ -24,6 +24,9 @@ export struct CachedImage {
   @Prop fit: ImageFit = ImageFit.Cover;
   // Keep the decoded bitmap for the whole session (see pinPixelMap).
   @Prop pin: boolean = false;
+  // 位图第一次真正交给 Image 的那一刻。调用方据此决定什么时候撤掉自己的兜底层
+  // ——解码失败时这个回调永远不来，兜底层就一直留着（issue #90）。
+  onReady: () => void = (): void => {};
   @State pixelMap: image.PixelMap | undefined = undefined;
   // The handle currently retained, so it can be released even after path has
   // already been overwritten by a reuse — and even if the LRU has since
@@ -120,6 +123,7 @@ export struct CachedImage {
     this.held = handle;
     this.heldReq = req;
     this.pixelMap = handle.pixelMap;
+    this.onReady();
     if (this.pin) {
       pinPixelMap(handle);
     }

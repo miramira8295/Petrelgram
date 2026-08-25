@@ -44,6 +44,10 @@ export struct ChatBackdrop {
   // （issue #108），标题栏最右端的搜索键也在死区里（issue #109）。平板实测
   // 死区深度 240vp / 280vp，与 (1440−960)/2、(1440−880)/2 严丝合缝。
   // 光栅本身仍按窗口尺寸画（所有会话共用一张，Cover 裁掉即可）。
+  // 光栅是否已经真正上屏。**不是 rasterPath !== ''**：路径有了不等于像素到了，
+  // 解码走共享队列，离线 + 整会话翻译那种全屏重建风暴能把它挤到失败（issue #90），
+  // 失败后 CachedImage 画的是空。分层实时绘制版在它变 true 之前一直垫在底下。
+  @State private rasterShown: boolean = false;
   @State private areaW: number = 0;
   @State private areaH: number = 0;
 
@@ -138,11 +142,11 @@ export struct ChatBackdrop {
     const sig = rasterSignature(this.rasterParams());
     const hit = cachedRaster(sig, this.cacheDir());
     if (hit !== '') {
-      this.rasterPath = hit;
+      this.setRasterPath(hit);
       return;
     }
     // 先把旧图丢掉：一边留着上一张一边编码新图，会短暂显示错误会话的壁纸。
-    this.rasterPath = '';
+    this.setRasterPath('');
     if (this.rasterTimer !== -1) {
       clearTimeout(this.rasterTimer);
     }
@@ -152,17 +156,27 @@ export struct ChatBackdrop {
       const settledSig = rasterSignature(settled);
       const settledHit = cachedRaster(settledSig, this.cacheDir());
       if (settledHit !== '') {
-        this.rasterPath = settledHit;
+        this.setRasterPath(settledHit);
         return;
       }
       rasterizeBackground(this.getUIContext(), settled, this.cacheDir())
         .then((path: string): void => {
           // 编码期间背景还可能再变一次，落盘前对一次签名。
           if (path !== '' && rasterSignature(this.rasterParams()) === settledSig) {
-            this.rasterPath = path;
+            this.setRasterPath(path);
           }
         });
     }, RASTER_DEBOUNCE_MS);
+  }
+
+  // 换光栅路径时兜底层要先回来：CachedImage 换源那一刻会先把旧像素撤掉、等新的
+  // 解出来，中间那段和"解码失败"看起来一样，都是空。
+  private setRasterPath(next: string): void {
+    if (next === this.rasterPath) {
+      return;
+    }
+    this.rasterShown = false;
+    this.rasterPath = next;
   }
 
   private effectDuration(key: string, duration: number): number {
@@ -198,19 +212,16 @@ export struct ChatBackdrop {
 
   @Builder
   wallpaperLayer() {
-    if (this.rasterPath !== '') {
-      // 走 PixelMap 缓存，而不是 Image(file://…)。这张光栅是整屏 JPEG，解码约
-      // 20ms——实测每次进会话都要重付一次，正是"第一次进卡、第二次顺"的主因。
-      // 所有会话共用同一张背景，缓存后只解一次。
-      CachedImage({
-        path: this.rasterPath,
-        boxWidth: this.layerW(),
-        boxHeight: this.layerH(),
-        radius: 0,
-        fit: ImageFit.Cover,
-        pin: true
-      });
-    } else {
+    // 两层叠放，不再 if/else 互斥。
+    //
+    // 原来是「有光栅就只画 CachedImage，否则才画分层版」：光栅路径一有，分层版
+    // 就从树上摘掉，而 CachedImage 解码失败时画的是空、不重试也不回退——背景
+    // 就永久空白，直到退出重进会话。离线 + 整会话翻译正好把解码队列压满
+    // （6 路 translate 同时 20s 超时 → 整屏行同时翻「失败」重建 → 一堆头像和
+    // 缩略图解码，光栅那张全屏 JPEG 最大最容易被挤掉），用户报的就是这个
+    // （issue #90）。现在分层版一直垫在底下，直到光栅像素真正上屏才撤。
+    Stack() {
+      if (!this.rasterShown) {
       Stack() {
         if (this.chatBg.colors.length > 0) {
           Column()
@@ -256,8 +267,25 @@ export struct ChatBackdrop {
             .opacity(this.chatBg.dimming);
         }
       }
-      .width('100%').height('100%')
-      // 尽量把背景铺进键盘区。RESIZE 下 expandSafeArea 对向下扩展只做到一半
+      .width('100%').height('100%');
+      }
+      if (this.rasterPath !== '') {
+      // 走 PixelMap 缓存，而不是 Image(file://…)。这张光栅是整屏 JPEG，解码约
+      // 20ms——实测每次进会话都要重付一次，正是"第一次进卡、第二次顺"的主因。
+      // 所有会话共用同一张背景，缓存后只解一次。
+        CachedImage({
+          path: this.rasterPath,
+          boxWidth: this.layerW(),
+          boxHeight: this.layerH(),
+          radius: 0,
+          fit: ImageFit.Cover,
+          pin: true,
+          onReady: (): void => { this.rasterShown = true; }
+        });
+      }
+    }
+    .width('100%').height('100%')
+    // 尽量把背景铺进键盘区。RESIZE 下 expandSafeArea 对向下扩展只做到一半
       // （官方《安全区域》：[KEYBOARD]+[BOTTOM] 不生效），但这已经够用——抽屉
       // 是齐边铺满的，铺不到的那一截正好被抽屉盖住，看不见。
       //
@@ -270,6 +298,9 @@ export struct ChatBackdrop {
       .expandSafeArea([SafeAreaType.KEYBOARD])
       .hitTestBehavior(HitTestMode.None)
       // 量本层尺寸，见 areaW 的说明。同值不写：分栏拖动/键盘会连着来几次。
+      // **必须挂在这层常驻的外层上**：曾经挂在分层版那个 Stack 上，光栅一到那支
+      // 就下树，尺寸和内容列宽从此不再更新——#108 的修复只是碰巧赶在光栅落地前
+      // 量过一次才成立。
       .onAreaChange((_old: Area, area: Area): void => {
         const w: number = area.width as number;
         const h: number = area.height as number;
@@ -284,7 +315,6 @@ export struct ChatBackdrop {
       // 平铺网格会向上取整到整数块并被 Stack 居中，通常四边都略微超出视口——
       // 裁回去，而不是让它把布局顶开。
       .clip(true);
-    }
   }
 
   build() {
