@@ -216,6 +216,11 @@ export struct MessageBubble {
   // 读的是**内容列宽**，不是窗口宽——分栏下两者差一个左栏（issue #107）。
   // 字段仍叫 screenW：下面十几处按它算宽的式子一个都不用动。
   @StorageProp(CHAT_CONTENT_WIDTH_KEY) screenW: number = 360;
+  // 长按菜单要不要带预览。小窗（悬浮窗）里键盘一弹起，剩下的高度放不下
+  // "预览 + 菜单"，ArkUI 干脆不弹——用户报的就是这个（issue #114）。键盘在、或
+  // 窗口本来就很矮时改成无预览，菜单本身占的高度小得多。
+  @StorageProp('keyboardHeightVp') private menuKeyboardH: number = 0;
+  @StorageProp('screenHeightVp') private menuWindowH: number = 780;
   // 手势方案（老交互 / 新交互），设置里改完立即生效，不用重进页面。
   @StorageProp(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
   // 正在解析中的链接 url（linkTapGuard 广播）。只在渲染链接段时读，因此
@@ -414,6 +419,12 @@ export struct MessageBubble {
   private wasCompetingVideo: boolean = false;
   // 上一次已知的「相册第 idx 格是否参与竞选」状态，key 为 cell.idx。同样是普通 Map。
   private albumWasCompetingVideo: Map<number, boolean> = new Map<number, boolean>();
+
+  // 见 menuKeyboardH 的说明。窗口矮的判据取 480vp：正常手机竖屏远大于此，悬浮
+  // 小窗和分屏下半截才会落到这一档。
+  private compactMenuContext(): boolean {
+    return this.menuKeyboardH > 0 || this.menuWindowH < 480;
+  }
 
   private isCompetingVideo(): boolean {
     return this.msg.contentType === 'video' && !this.msg.isAnimation;
@@ -3415,7 +3426,8 @@ export struct MessageBubble {
         // A play-slot bubble hosts a XComponentType.SURFACE video surface that
         // componentSnapshot cannot capture (see hasLiveVideoSurface()) — fall
         // back to no preview there instead of lifting a black rectangle.
-        preview: this.hasLiveVideoSurface() ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
+        preview: (this.hasLiveVideoSurface() || this.compactMenuContext())
+          ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
         previewBorderRadius: this.bubbleCornerRadius(),
         previewAnimationOptions: {
           scale: [0.98, 1.035],
