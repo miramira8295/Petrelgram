@@ -4,6 +4,7 @@ import { mediaBoxFor } from '../../util/mediaBox';
 import { cancelPixelMap, loadPixelMap, PixelRequest } from '../../util/pixelCache';
 import { keyTableAdd, keyTableDelete, keyTableReload, newKeyTableId } from '../../util/keyGuard';
 import { logE, logI } from '../../util/log';
+import { chatContentWidth } from '../../util/chatContentWidth';
 
 // LazyForEach data source for the message list.
 //
@@ -161,7 +162,9 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       (head.contentType !== 'photo' && head.contentType !== 'video')) {
       return null;
     }
-    const screenW = AppStorage.get<number>('screenWidthVp') ?? 0;
+    // 内容列宽而不是窗口宽：必须和 MessageBubble 算出同一个尺寸，像素缓存按
+    // 尺寸建 key，差一像素就是两份解码（见 util/mediaBox 文件头）。
+    const screenW = chatContentWidth();
     if (screenW <= 0) {
       return null;
     }

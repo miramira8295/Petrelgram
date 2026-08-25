@@ -15,6 +15,7 @@ import {
   powerGroupFeatureEnabled
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
+import { publishChatContentWidth } from '../../util/chatContentWidth';
 
 // 聊天页的整层背景：壁纸 / 图案 / 渐变、两颗氛围光斑、粒子、深色遮罩。
 //
@@ -276,6 +277,9 @@ export struct ChatBackdrop {
           this.areaW = w;
           this.areaH = h;
         }
+        // 本层铺满聊天列，量到的宽就是内容列宽——气泡按它算宽度（issue #107），
+        // 见 util/chatContentWidth。
+        publishChatContentWidth(w);
       })
       // 平铺网格会向上取整到整数块并被 Stack 居中，通常四边都略微超出视口——
       // 裁回去，而不是让它把布局顶开。

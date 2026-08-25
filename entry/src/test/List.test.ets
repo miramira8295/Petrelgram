@@ -16,6 +16,7 @@ import navBarResetTest from './NavBarReset.test';
 import diagLogHeaderTest from './DiagLogHeader.test';
 import scopeMuteTest from './ScopeMute.test';
 import decodeSizeTest from './DecodeSize.test';
+import chatContentWidthTest from './ChatContentWidth.test';
 import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
 import formatTimeTest from './formatTime.test';
@@ -150,6 +151,7 @@ export default function testsuite() {
   scopeMuteTest();
   decodeSizeTest();
   startupStageTest();
+  chatContentWidthTest();
   diagLogExportTest();
   formatTimeTest();
   intlFormatTest();

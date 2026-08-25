@@ -59,6 +59,7 @@ import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import { KEY_MSG_GESTURE } from '../../store/AppSettings';
+import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -211,7 +212,9 @@ export struct MessageBubble {
   @Prop albumVideoMimeTypes: string[];
   @Prop albumCaption: string;
   @Prop albumCaptionEntities: TdObject[] = [];
-  @StorageProp('screenWidthVp') screenW: number = 360;
+  // 读的是**内容列宽**，不是窗口宽——分栏下两者差一个左栏（issue #107）。
+  // 字段仍叫 screenW：下面十几处按它算宽的式子一个都不用动。
+  @StorageProp(CHAT_CONTENT_WIDTH_KEY) screenW: number = 360;
   // 手势方案（老交互 / 新交互），设置里改完立即生效，不用重进页面。
   @StorageProp(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
   // 正在解析中的链接 url（linkTapGuard 广播）。只在渲染链接段时读，因此

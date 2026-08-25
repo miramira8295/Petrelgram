@@ -5,8 +5,9 @@
 // target size, so a prefetch computed even one pixel differently decodes into a
 // second entry that the bubble never asks for — twice the work and no benefit.
 //
-// It is computable ahead of layout on purpose: every input is the window width
-// or a field of the message, never a measured width.
+// It is computable ahead of layout on purpose: every input is the chat content
+// column width (util/chatContentWidth — the window width on phones, the right
+// column in split view) or a field of the message, never a per-row measurement.
 
 export const MEDIA_MAX_WIDTH: number = 280;
 export const MEDIA_MAX_HEIGHT_RATIO: number = 1.2;

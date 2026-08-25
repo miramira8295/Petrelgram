@@ -27,6 +27,7 @@ import { probeHit } from '../../util/panelProbe';
 import { CachedImage } from '../common/CachedImage';
 import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
+import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 const SWIPE_REPLY_MAX: number = -56;
@@ -152,7 +153,9 @@ export struct LightweightPlainTextBubble {
   @Prop memberIds: number[] = [];
   actions: LightweightPlainTextActions = EMPTY_ACTIONS;
 
-  @StorageProp('screenWidthVp') screenW: number = 360;
+  // 读的是**内容列宽**，不是窗口宽——分栏下两者差一个左栏（issue #107）。
+  // 字段仍叫 screenW：下面十几处按它算宽的式子一个都不用动。
+  @StorageProp(CHAT_CONTENT_WIDTH_KEY) screenW: number = 360;
   @StorageProp(KEY_TEXT_SIZE) msgTextSize: number = TEXT_SIZE_DEFAULT;
   @StorageProp(KEY_BUBBLE_RADIUS) bubbleRadius: number = RADIUS_DEFAULT;
   @StorageProp(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
