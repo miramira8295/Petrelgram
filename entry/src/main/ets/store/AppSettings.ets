@@ -6,6 +6,10 @@ import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
 import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
 import { GESTURE_CLASSIC } from '../util/messageGestures';
 import { logE } from '../util/log';
+import {
+  APPEARANCE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_BUBBLE_MATERIAL_ON, KEY_MATERIAL_LIGHT_DARK,
+  KEY_MATERIAL_THICKNESS_DARK, recomputeAppearance
+} from '../util/appearance';
 
 // User settings that outlive the process. Each one is mirrored into AppStorage
 // so any component can bind it with @StorageProp and re-render on change, while
@@ -366,6 +370,15 @@ export async function initSettings(context: common.Context): Promise<void> {
       await s.get(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT,
       await s.get(KEY_MATERIAL_LIGHT, LIGHT_DEFAULT) as string);
+    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS_DARK,
+      await s.get(KEY_MATERIAL_THICKNESS_DARK, THICKNESS_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_MATERIAL_LIGHT_DARK,
+      await s.get(KEY_MATERIAL_LIGHT_DARK, LIGHT_DEFAULT) as string);
+    AppStorage.setOrCreate(KEY_ACCENT_CUSTOM_ON, await s.get(KEY_ACCENT_CUSTOM_ON, false) as boolean);
+    AppStorage.setOrCreate(KEY_BUBBLE_MATERIAL_ON, await s.get(KEY_BUBBLE_MATERIAL_ON, false) as boolean);
+    for (const key of APPEARANCE_HEX_KEYS) {
+      AppStorage.setOrCreate(key, await s.get(key, '') as string);
+    }
     AppStorage.setOrCreate(KEY_BG_BLUR, await s.get(KEY_BG_BLUR, BG_BLUR_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_BG_PATTERN, await s.get(KEY_BG_PATTERN, BG_PATTERN_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_BG_PATTERN_DARK,
@@ -380,6 +393,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     const night = await s.get(KEY_NIGHT_MODE, NIGHT_SYSTEM) as string;
     AppStorage.setOrCreate(KEY_NIGHT_MODE, night);
     applyNightMode(night);
+    recomputeAppearance();
     refreshPowerSavingState();
     beginBatteryMonitoring();
   } catch (e) {
@@ -395,6 +409,13 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_IN_APP_BROWSER, true);
     AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT, LIGHT_DEFAULT);
+    AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS_DARK, THICKNESS_DEFAULT);
+    AppStorage.setOrCreate(KEY_MATERIAL_LIGHT_DARK, LIGHT_DEFAULT);
+    AppStorage.setOrCreate(KEY_ACCENT_CUSTOM_ON, false);
+    AppStorage.setOrCreate(KEY_BUBBLE_MATERIAL_ON, false);
+    for (const key of APPEARANCE_HEX_KEYS) {
+      AppStorage.setOrCreate(key, '');
+    }
     AppStorage.setOrCreate(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT);
     for (const key of POWER_BOOLEAN_DEFAULTS) {
       AppStorage.setOrCreate(key, true);

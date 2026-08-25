@@ -3,6 +3,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, KeyboardAvoidMode } from '@kit.ArkUI';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
+import { recomputeAppearance } from '../util/appearance';
 import { initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
 import { installStringsFromContext } from '../util/strings';
 import { refreshLocale } from '../util/intlFormat';
@@ -112,6 +113,8 @@ export default class EntryAbility extends UIAbility {
     // 界面侧用 @StorageProp(KEY_APP_DARK) 订阅。这里是全应用唯一一处真正知道
     // 模式变了的地方（onConfigurationUpdate 也会走到这个函数）。
     AppStorage.setOrCreate(KEY_APP_DARK, dark);
+    // 主色/气泡色是按模式分存的，模式一变就得重算当前那份。
+    recomputeAppearance();
     // 窗口底色。状态栏透明之后，它下面露出来的就是这一层；悬浮的文件夹条
     // 背后也是它。从没设过，所以一直是系统默认的黑——深色模式下 app 是
     // #17212B 的深蓝灰，顶上压着一条纯黑，就是"状态栏不沉浸"的真相。

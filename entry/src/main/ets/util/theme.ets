@@ -4,10 +4,10 @@ import { resourceManager } from '@kit.LocalizationKit';
 // Shared palette and dimensions for the UI. Colors resolve through the
 // resource system (resources/base|dark/element/color.json), so the whole app
 // follows the system light/dark mode automatically.
-// Mutable on purpose: the profile accent color drives the app primary. ES
-// module live bindings propagate reassignment to every importer; components
-// built after applyAccentPrimary() pick the new value, already-mounted pages
-// refresh when they rebuild (re-enter). COLOR_TAB_SELECTED follows it.
+// Mutable on purpose: the user's local accent colour (util/appearance.ets)
+// drives the app primary. ES module live bindings propagate reassignment to
+// every importer; components subscribed to APPEARANCE_EPOCH redraw at once,
+// the rest pick the new value when they rebuild. COLOR_TAB_SELECTED follows it.
 export let COLOR_PRIMARY: ResourceColor = $r('app.color.primary');
 
 // Pure: does this colorMode value mean the app is currently in dark mode?
@@ -86,9 +86,33 @@ export let COLOR_TAB_SELECTED: ResourceColor = $r('app.color.primary');
 export const COLOR_TAB_UNSELECTED: ResourceColor = $r('app.color.text_secondary');
 export const COLOR_BADGE_BG: ResourceColor = $r('app.color.badge_bg');
 export const COLOR_TAB_PILL_BG: ResourceColor = $r('app.color.tab_pill_bg');
-export const COLOR_BUBBLE_OUT: ResourceColor = $r('app.color.bubble_out');
-export const COLOR_BUBBLE_IN: ResourceColor = $r('app.color.bubble_in');
-export const COLOR_BUBBLE_TEXT: ResourceColor = $r('app.color.bubble_text');
+// 三个气泡色也是活绑定：用户在「外观」里改了颜色，appearance.recomputeAppearance()
+// 通过 applyBubbleColors() 重新赋值；没自定义时交回资源色跟随深浅色。
+export let COLOR_BUBBLE_OUT: ResourceColor = $r('app.color.bubble_out');
+export let COLOR_BUBBLE_IN: ResourceColor = $r('app.color.bubble_in');
+// 收到气泡上的文字色。发出/收到底色可能一深一浅，气泡组件请用 bubbleTextFor()。
+export let COLOR_BUBBLE_TEXT: ResourceColor = $r('app.color.bubble_text');
+let bubbleTextOut: ResourceColor = $r('app.color.bubble_text');
+let bubbleTextIn: ResourceColor = $r('app.color.bubble_text');
+
+export interface BubbleColorSet {
+  out: string;
+  inn: string;
+  textOut: string;
+  textIn: string;
+}
+
+export function applyBubbleColors(c: BubbleColorSet | null): void {
+  COLOR_BUBBLE_OUT = c !== null ? c.out : $r('app.color.bubble_out');
+  COLOR_BUBBLE_IN = c !== null ? c.inn : $r('app.color.bubble_in');
+  bubbleTextOut = c !== null ? c.textOut : $r('app.color.bubble_text');
+  bubbleTextIn = c !== null ? c.textIn : $r('app.color.bubble_text');
+  COLOR_BUBBLE_TEXT = bubbleTextIn;
+}
+
+export function bubbleTextFor(outgoing: boolean): ResourceColor {
+  return outgoing ? bubbleTextOut : bubbleTextIn;
+}
 // Frequently used surfaces (cards, headers, inputs) and page backgrounds.
 export const COLOR_SURFACE: ResourceColor = $r('app.color.surface');
 export const COLOR_PAGE_BG: ResourceColor = $r('app.color.page_bg');

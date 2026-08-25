@@ -71,6 +71,8 @@ import webBrowserNavTest from './WebBrowserNav.test';
 import backgroundPresentationTest from './BackgroundPresentation.test';
 import chatThemePresentationTest from './ChatThemePresentation.test';
 import accentPresentationTest from './AccentPresentation.test';
+import colorMathTest from './ColorMath.test';
+import appearanceTest from './Appearance.test';
 import customEmojiReactionsTest from './CustomEmojiReactions.test';
 import downloadApiTest from './DownloadApi.test';
 import musicQueueTest from './MusicQueue.test';
@@ -209,6 +211,8 @@ export default function testsuite() {
   backgroundPresentationTest();
   chatThemePresentationTest();
   accentPresentationTest();
+  colorMathTest();
+  appearanceTest();
   downloadApiTest();
   musicQueueTest();
   mediaPickTest();

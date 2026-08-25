@@ -6,7 +6,6 @@ import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import {
   AccentPreview, accentPreviewOf, profileAccentPreviewOf
 } from '../../util/accentPresentation';
-import { syncAccentPrimary } from '../../util/accentTheme';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
   darkResourceMode
@@ -142,7 +141,6 @@ export struct AccentColorPage {
       if (!this.active) { return; }
       this.busy = false;
       this.currentProfileId = id;
-      syncAccentPrimary(getContext(this) as common.UIAbilityContext);
       promptAction.showToast({
         message: $r('app.string.accent_profile_updated'), duration: 2200
       });

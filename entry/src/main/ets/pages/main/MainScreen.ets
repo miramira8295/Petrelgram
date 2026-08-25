@@ -3,7 +3,6 @@ import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { CallSnapshot } from '../../services/CallSession';
 import { callKeepAliveTask } from '../../services/CallKeepAliveTask';
-import { bindAccentPrimary } from '../../util/accentTheme';
 import { ProfileStore } from '../../store/ProfileStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { ChatListPage, NAV_BAR_WIDTH_KEY, CHAT_NAV_BAR_VISIBLE_KEY } from '../chatlist/ChatListPage';
@@ -113,7 +112,6 @@ export struct MainScreen {
   private store: ProfileStore | null = null;
   private unsubStore: (() => void) | null = null;
   private unsubUnread: (() => void) | null = null;
-  private unsubAccent: (() => void) | null = null;
   private unsubCall: (() => void) | null = null;
   private callPagePushed: boolean = false;
 
@@ -172,7 +170,6 @@ export struct MainScreen {
         this.callPagePushed = false;
       }
     });
-    this.unsubAccent = bindAccentPrimary(getContext(this) as common.UIAbilityContext);
     this.unread = getUnreadCountStore().getUnread('main');
     this.unsubUnread = getUnreadCountStore().subscribe(() => {
       this.unread = getUnreadCountStore().getUnread('main');
@@ -196,7 +193,6 @@ export struct MainScreen {
   }
 
   aboutToDisappear(): void {
-    if (this.unsubAccent !== null) { this.unsubAccent(); this.unsubAccent = null; }
     if (this.unsubUnread !== null) { this.unsubUnread(); this.unsubUnread = null; }
     if (this.unsubStore !== null) { this.unsubStore(); this.unsubStore = null; }
     if (this.unsubCall !== null) { this.unsubCall(); this.unsubCall = null; }
