@@ -27,8 +27,9 @@ import { uiMaterial } from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   LIGHT_DEFAULT, THICKNESS_DEFAULT, fallbackBlurRadius, interactiveOn,
-  lightEffectOn, normalizeLightLevel, normalizeThickness, shiftedStyleIndex
+  isThicknessOff, lightEffectOn, normalizeLightLevel, normalizeThickness, shiftedStyleIndex
 } from './materialTuning';
+import { KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, appIsDark } from './appearance';
 import { KEY_MATERIAL_LIGHT, KEY_MATERIAL_THICKNESS, KEY_POWER_ACTIVE } from '../store/AppSettings';
 
 // The API version that introduced ImmersiveMaterial. Below this the material
@@ -44,12 +45,20 @@ const VIEWER_GLASS_FALLBACK: string = '#6e3e3e40';
 //
 // 读不到（设置还没落地、或者键不存在）就用出厂值，由 materialTuning 那边的
 // normalize 兜底，不让脏值把档位推到边上。
+// 厚度/光感按浅色/深色各存一份，读当前模式那份（appIsDark 由 EntryAbility 维护）。
 function thicknessOffset(): number {
-  return normalizeThickness(AppStorage.get<number>(KEY_MATERIAL_THICKNESS) ?? THICKNESS_DEFAULT);
+  const key = appIsDark() ? KEY_MATERIAL_THICKNESS_DARK : KEY_MATERIAL_THICKNESS;
+  return normalizeThickness(AppStorage.get<number>(key) ?? THICKNESS_DEFAULT);
+}
+
+// 用户把厚度调到「关闭」：所有面都不挂材质、不模糊，纯色兜底。
+export function materialOff(): boolean {
+  return isThicknessOff(thicknessOffset());
 }
 
 function lightLevel(): string {
-  return normalizeLightLevel(AppStorage.get<string>(KEY_MATERIAL_LIGHT) ?? LIGHT_DEFAULT);
+  const key = appIsDark() ? KEY_MATERIAL_LIGHT_DARK : KEY_MATERIAL_LIGHT;
+  return normalizeLightLevel(AppStorage.get<string>(key) ?? LIGHT_DEFAULT);
 }
 
 function powerSavingNow(): boolean {
@@ -116,6 +125,9 @@ export type OverlaySurface =
   // 上回退到 dock_glass 那个跟随主题的资源色——浅色主题下就是在照片上糊一块
   // 亮色药丸。见 overlayGlassFill 里的分支。
   | 'viewer'
+  // 聊天气泡。只有用户在「外观」里打开气泡材质才会挂上（气泡组件按屏内/省电
+  // 再门控一次）；不按压、不流光，只是半透明染色透壁纸。
+  | 'bubble'
   ;
 
 // 'control' 这一档来得晚：一开始刻意没有，因为本应用每个可按压元素都是实色
@@ -187,6 +199,7 @@ function baseStyleIndex(surface: OverlaySurface): number {
     // 但透出的层次让它像一块玻璃。同一档同时用于消息长按菜单和顶栏菜单，
     // 两者本来就该长得一样（见 ActionMenuRow 的注释）。
     case 'menu':
+    case 'bubble':
       return 2;
     // A modal covers what it interrupts; nothing behind it should read.
     case 'dialog':
@@ -282,7 +295,7 @@ export function usesImmersiveMaterial(surface: OverlaySurface): boolean {
 // The blur a framework-managed container used before the material. Returning it
 // solely while the material is unavailable is what keeps the two from stacking.
 export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
-  if (materialAvailable || !frameworkContainer(surface)) {
+  if (materialOff() || materialAvailable || !frameworkContainer(surface)) {
     return undefined;
   }
   // 菜单要把背后压实，模态更甚；两者的基准都是最厚的一档，再吃用户的厚度
@@ -295,13 +308,13 @@ export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
 // 明确要高斯模糊、不要材质的面用这个。和 overlayBackdropBlur 不同：那个在
 // 材质可用时返回 0（把观感让给材质），这个无条件给出模糊半径。
 export function plainBackdropBlur(): number {
-  return fallbackBlurRadius(thicknessOffset());
+  return materialOff() ? 0 : fallbackBlurRadius(thicknessOffset());
 }
 
 export function overlayBackdropBlur(surface: OverlaySurface): number {
   // 不参与材质的面（'viewer'）自己画玻璃，任何 API 上都要模糊半径——返回 0
   // 是"把观感让给材质"的意思，而它没有材质可让。
-  return (materialAvailable && usesImmersiveMaterial(surface))
+  return (materialOff() || (materialAvailable && usesImmersiveMaterial(surface)))
     ? 0 : fallbackBlurRadius(thicknessOffset());
 }
 
@@ -314,7 +327,10 @@ export function overlayBackdropBlur(surface: OverlaySurface): number {
 //
 // 材质不可用时必须**半透明**。那时靠 backdropBlur 自己画玻璃，而不透明底色
 // 会把模糊完全盖住——模糊的是身后的东西，它自己不透光。
-export function overlayGlassFill(surface: OverlaySurface, _solid: ResourceColor): ResourceColor {
+export function overlayGlassFill(surface: OverlaySurface, solid: ResourceColor): ResourceColor {
+  if (materialOff()) {
+    return solid;
+  }
   // 查看器控制层：**任何 API 上**都是这个固定的深色半透明，不是透明。
   // 透明意味着观感全交给材质，而这一面不参与材质（见 usesImmersiveMaterial）。
   if (!usesImmersiveMaterial(surface)) {
@@ -357,7 +373,7 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
 // The material for a surface, or undefined on systems without it — at which
 // point that surface's own fallback getter is what takes effect.
 export function overlayMaterial(surface: OverlaySurface): uiMaterial.Material | undefined {
-  if (!materialAvailable || !usesImmersiveMaterial(surface)) {
+  if (materialOff() || !materialAvailable || !usesImmersiveMaterial(surface)) {
     return undefined;
   }
   const key: string = cacheKey(surface);

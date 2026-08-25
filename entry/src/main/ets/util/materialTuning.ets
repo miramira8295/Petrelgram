@@ -11,6 +11,8 @@
 // 是坏了。偏移则整体平移、保住相对次序。
 //
 // 0 是出厂手感，界面上显示成"标准"。
+// 关闭：不挂材质、不模糊，所有面纯色兜底。放在最薄档之下，只有这一处特判。
+export const THICKNESS_OFF: number = -3;
 export const THICKNESS_ULTRA_THIN: number = -2;
 export const THICKNESS_THIN: number = -1;
 export const THICKNESS_REGULAR: number = 0;
@@ -33,12 +35,16 @@ function clampStyle(index: number): number {
 }
 
 // 用户偏移只在 [-2, 2] 内有意义；越界值当作没设置，而不是让它把档位推到边上。
+export function isThicknessOff(offset: number): boolean {
+  return offset === THICKNESS_OFF;
+}
+
 export function normalizeThickness(offset: number): number {
   if (!Number.isFinite(offset)) {
     return THICKNESS_DEFAULT;
   }
   const rounded: number = Math.round(offset);
-  if (rounded < THICKNESS_ULTRA_THIN || rounded > THICKNESS_ULTRA_THICK) {
+  if (rounded < THICKNESS_OFF || rounded > THICKNESS_ULTRA_THICK) {
     return THICKNESS_DEFAULT;
   }
   return rounded;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   FALLBACK_BLUR_BASE, LIGHT_ADAPTIVE, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH,
-  THICKNESS_DEFAULT, THICKNESS_ULTRA_THICK, THICKNESS_ULTRA_THIN,
-  fallbackBlurRadius, interactiveOn, lightEffectOn, normalizeLightLevel,
+  THICKNESS_DEFAULT, THICKNESS_OFF, THICKNESS_REGULAR, THICKNESS_ULTRA_THICK, THICKNESS_ULTRA_THIN,
+  fallbackBlurRadius, interactiveOn, isThicknessOff, lightEffectOn, normalizeLightLevel,
   normalizeThickness, shiftedStyleIndex
 } from '../main/ets/util/materialTuning';
 
@@ -103,6 +103,12 @@ export default function materialTuningTest() {
           expect(!lowerI || higherI).assertTrue();
         }
       }
+    });
+    it('厚度关闭档 -3 合法且可判，-4 仍回默认', 0, (): void => {
+      expect(normalizeThickness(THICKNESS_OFF)).assertEqual(THICKNESS_OFF);
+      expect(isThicknessOff(THICKNESS_OFF)).assertTrue();
+      expect(isThicknessOff(THICKNESS_REGULAR)).assertFalse();
+      expect(normalizeThickness(-4)).assertEqual(THICKNESS_DEFAULT);
     });
   });
 }
