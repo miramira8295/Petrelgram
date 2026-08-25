@@ -144,6 +144,11 @@ export class MessageStore {
   // sticker is sent again. Keep completed paths independently from a message
   // id so a newly-created outgoing bubble can render immediately.
   private completedFilePaths: Map<number, string> = new Map();
+  // 贴纸本体下载的失败次数（fileId → 次数）。原来失败一次就永久放弃、只等用户
+  // 点 ↻；缩略图那边一直是 3 次退避重试，贴纸没理由更脆。
+  private stickerAttempts: Map<number, number> = new Map();
+  // 已经为它重取过消息的 fileId。重取只做一次：新 id 再失败就是真失败。
+  private refreshedFiles: Set<number> = new Set();
   private thumbLastKick: Map<number, number> = new Map();
   private peerUserId: number = 0;
   private peerUserStatus: TdObject | undefined = undefined;
@@ -2589,6 +2594,51 @@ export class MessageStore {
 
   // Download an inline thumbnail with up to 2 automatic retries (backoff),
   // so a transient failure doesn't leave the bubble stuck at 0% forever.
+  // 文件 id 失效时重取消息（issue #68：贴纸偶发不加载，退出重进就好）。
+  //
+  // TDLib 的 file id 不是永久的：消息对象在本地库里被刷新过之后，窗口里还拿着
+  // 旧 id 去 downloadFile 只会一次次失败——缩略图那边重试 3 次、8 秒后再踢，
+  // 踢的都是同一个旧 id，永远不会好；"退出重进"之所以好使，是因为重新拉了
+  // 消息、拿到了新 id。这里做同一件事，不用用户退出：getMessage 重取这条消息，
+  // 只把文件 id 换成新的（其余字段——译文、已读态——由现有 entry 保持），
+  // 再让 requestPhotos 按新 id 走正常下载。每个 fileId 只重取一次。
+  private refreshMessageForFile(fileId: number, messageId: number): void {
+    if (fileId === 0 || messageId <= 0 || this.refreshedFiles.has(fileId)) {
+      return;
+    }
+    this.refreshedFiles.add(fileId);
+    const req: TdRequest = { '@type': 'getMessage' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    this.client.send(req).then((m: TdObject): void => {
+      const rebuilt = buildMessageEntry(m, this.users);
+      let changed: boolean = false;
+      this.patch(messageId, (c: MessageEntry): void => {
+        if (rebuilt.photoFileId !== 0 && rebuilt.photoFileId !== c.photoFileId) {
+          c.photoFileId = rebuilt.photoFileId;
+          c.photoFailed = false;
+          c.photoProgress = 0;
+          changed = true;
+        }
+        if (rebuilt.stickerFileId !== 0 && rebuilt.stickerFileId !== c.stickerFileId) {
+          c.stickerFileId = rebuilt.stickerFileId;
+          c.stickerFailed = false;
+          c.stickerProgress = 0;
+          c.stickerDownloadActive = false;
+          changed = true;
+        }
+      });
+      logW(`[StoreDiag] refresh message ${messageId} for file ${fileId}: ` +
+        `photo ${rebuilt.photoFileId} sticker ${rebuilt.stickerFileId} changed=${changed}`);
+      if (changed) {
+        this.requestPhotos();
+        this.notifySoon();
+      }
+    }).catch((e: TdError): void => {
+      logE(`MessageStore.getMessage(refresh ${messageId} for file ${fileId}) failed: ${e.message}`);
+    });
+  }
+
   private downloadThumb(fileId: number): void {
     if (this.thumbQueued.has(fileId)) {
       return; // 已在队列或在途
@@ -2647,6 +2697,8 @@ export class MessageStore {
         setTimeout(() => this.downloadThumb(fileId), 1000 * attempt);
       } else {
         this.setThumbnailFailed(fileId, true);
+        // 三次都不行，多半不是网络而是 id 过期——换新 id 再来（issue #68）。
+        this.refreshMessageForFile(fileId, this.fileToMsg.get(fileId) ?? 0);
       }
     });
   }
@@ -3258,12 +3310,20 @@ export class MessageStore {
     this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
       this.stickerFileToMsg.delete(fileId);
       this.stickerLastKick.delete(fileId);
+      const attempt: number = (this.stickerAttempts.get(fileId) ?? 0) + 1;
+      this.stickerAttempts.set(fileId, attempt);
+      logE(`MessageStore sticker ${fileId} (attempt ${attempt}): ${err.message}`);
+      if (attempt <= 2) {
+        // 和缩略图同一套退避：失败一次就放弃是 issue #68 的另一半。
+        setTimeout((): void => { this.requestStickerSource(messageId, true); }, 1000 * attempt);
+        return;
+      }
       this.patchStickerEntries(fileId, (c: MessageEntry): void => {
         c.stickerFailed = true;
         c.stickerProgress = 0;
         c.stickerDownloadActive = false;
       });
-      logE(`MessageStore sticker ${fileId}: ${err.message}`);
+      this.refreshMessageForFile(fileId, messageId);
     });
   }
 
@@ -3288,6 +3348,8 @@ export class MessageStore {
       this.retryPhoto(messageId);
     }
     if (entry.stickerPath === '' && entry.stickerFileId !== 0) {
+      // 用户亲手点了 ↻：计数归零，重新给三次机会。
+      this.stickerAttempts.delete(entry.stickerFileId);
       this.requestStickerSource(messageId, true);
     }
   }
