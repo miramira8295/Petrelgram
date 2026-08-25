@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "Запись регистрации этого устройства утеряна и сброшена. Запросите новый код и зарегистрируйтесь снова."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Пресеты"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Готово"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Оформление"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Акцент, цвета пузырей и материал"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Акцентный цвет приложения"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Только на этом устройстве, не синхронизируется с аккаунтом"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Свой акцентный цвет"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Светлая тема"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Тёмная тема"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Цвета пузырей"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Исходящие"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Входящие"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Сбросить"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Материал пузырей"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Матовое стекло / иммерсивный материал; толщина и свет — из настроек чатов. Отключается при энергосбережении"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Иммерсивный материал недоступен на этом устройстве; будет матовое стекло"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Цвета аккаунта (видят другие)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Синхронизируется с аккаунтом; доступна только официальная палитра"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Входящее сообщение"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Исходящее сообщение"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Выкл."
     }
   ]
 }

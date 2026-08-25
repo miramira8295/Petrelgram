@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "L'enregistrement de cet appareil a été perdu et réinitialisé. Demandez un nouveau code et inscrivez-vous à nouveau."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Prédéfinis"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Terminé"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Apparence"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Accent, couleurs des bulles et matériau"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Couleur d’accent de l’app"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Sur cet appareil uniquement, non synchronisé avec le compte"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Couleur d’accent personnalisée"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Mode clair"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Mode sombre"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Couleurs des bulles"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Envoyés"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Reçus"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Réinitialiser"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Matériau des bulles"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Verre dépoli / matériau immersif ; épaisseur et lumière selon les réglages de discussion. Désactivé en économie d’énergie"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Matériau immersif indisponible sur cet appareil ; le verre dépoli sera utilisé"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Couleurs du compte (visibles par les autres)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Synchronisé avec le compte ; palette officielle uniquement"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Message reçu"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Message envoyé"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Désactivé"
     }
   ]
 }

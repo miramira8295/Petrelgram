@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "This device's registration record was lost and has been reset. Please request a new code and register again."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Presets"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Done"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Appearance"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Accent, bubble colours and material"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "App accent colour"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Only on this device, not synced to your account"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Custom accent colour"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Light mode"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Dark mode"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Bubble colours"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Outgoing"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Incoming"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Reset to default"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Bubble material"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Frosted glass / immersive material; thickness and light follow Chat settings. Off automatically in power saving"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Immersive material is unavailable on this device; frosted glass will be used"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Account colours (what others see)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Synced to your account; only the official palette is available"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Incoming message"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Outgoing message"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Off"
     }
   ]
 }

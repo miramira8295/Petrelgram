@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "本機的註冊記錄已遺失，已重設。請重新傳送驗證碼再註冊一次"
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "預設"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "完成"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "外觀"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "強調色、氣泡顏色與材質"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "應用強調色"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "僅本機生效，不同步到帳號"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "自訂強調色"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "淺色模式"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "深色模式"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "氣泡顏色"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "發出"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "收到"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "恢復預設"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "氣泡材質"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "毛玻璃 / 沉浸光感，厚度與光感沿用聊天設定；省電時自動關閉"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "本機不支援沉浸光感，將使用毛玻璃"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "帳號顏色（其他人看到的）"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "同步到帳號，只能在官方色板裡選"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "收到的訊息"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "發出的訊息"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "關閉"
     }
   ]
 }

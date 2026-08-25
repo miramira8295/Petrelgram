@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "บันทึกการลงทะเบียนของเครื่องนี้สูญหายและถูกรีเซ็ตแล้ว โปรดขอรหัสใหม่แล้วลงทะเบียนอีกครั้ง"
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "สีที่กำหนดไว้"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "เสร็จสิ้น"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "ลักษณะ"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "สีเน้น สีกล่องข้อความ และวัสดุ"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "สีเน้นของแอป"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "เฉพาะเครื่องนี้ ไม่ซิงค์กับบัญชี"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "สีเน้นแบบกำหนดเอง"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "โหมดสว่าง"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "โหมดมืด"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "สีกล่องข้อความ"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "ส่งออก"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "รับเข้า"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "คืนค่าเริ่มต้น"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "วัสดุกล่องข้อความ"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "กระจกฝ้า / วัสดุเสมือนจริง ความหนาและแสงตามการตั้งค่าแชท ปิดอัตโนมัติเมื่อประหยัดพลังงาน"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "เครื่องนี้ไม่รองรับวัสดุเสมือนจริง จะใช้กระจกฝ้าแทน"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "สีบัญชี (ที่คนอื่นเห็น)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "ซิงค์กับบัญชี เลือกได้เฉพาะจานสีทางการ"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "ข้อความที่ได้รับ"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "ข้อความที่ส่ง"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "ปิด"
     }
   ]
 }

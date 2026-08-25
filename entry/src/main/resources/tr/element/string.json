@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "Bu cihazın kayıt bilgisi kaybolduğu için sıfırlandı. Lütfen yeni bir kod isteyip yeniden kaydolun."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Hazır renkler"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Bitti"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Görünüm"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Vurgu, balon renkleri ve materyal"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Uygulama vurgu rengi"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Yalnızca bu cihazda, hesapla eşitlenmez"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Özel vurgu rengi"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Açık mod"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Koyu mod"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Balon renkleri"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Giden"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Gelen"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Varsayılana sıfırla"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Balon materyali"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Buzlu cam / sarmalayıcı materyal; kalınlık ve ışık Sohbet ayarlarından. Güç tasarrufunda otomatik kapanır"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Sarmalayıcı materyal bu cihazda yok; buzlu cam kullanılacak"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Hesap renkleri (başkalarının gördüğü)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Hesapla eşitlenir; yalnızca resmi palet kullanılabilir"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Gelen mesaj"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Giden mesaj"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Kapalı"
     }
   ]
 }

@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "فُقد سجل تسجيل هذا الجهاز وتمت إعادة تعيينه. يرجى طلب رمز جديد والتسجيل مرة أخرى."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "إعدادات مسبقة"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "تم"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "المظهر"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "لون التمييز وألوان الفقاعات والخامة"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "لون تمييز التطبيق"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "على هذا الجهاز فقط، ولا يُزامن مع الحساب"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "لون تمييز مخصص"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "الوضع الفاتح"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "الوضع الداكن"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "ألوان الفقاعات"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "الصادرة"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "الواردة"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "إعادة التعيين إلى الافتراضي"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "خامة الفقاعات"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "زجاج مصنفر / خامة غامرة؛ السماكة والإضاءة من إعدادات الدردشة. يُعطّل تلقائياً عند توفير الطاقة"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "الخامة الغامرة غير متاحة على هذا الجهاز؛ سيُستخدم الزجاج المصنفر"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "ألوان الحساب (ما يراه الآخرون)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "يُزامن مع الحساب؛ لوحة الألوان الرسمية فقط"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "رسالة واردة"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "رسالة صادرة"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "إيقاف"
     }
   ]
 }

@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "Catatan pendaftaran perangkat ini hilang dan telah direset. Minta kode baru lalu daftar lagi."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Preset"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Selesai"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Tampilan"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Aksen, warna gelembung, dan material"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Warna aksen aplikasi"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Hanya di perangkat ini, tidak disinkronkan ke akun"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Warna aksen kustom"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Mode terang"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Mode gelap"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Warna gelembung"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Keluar"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Masuk"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Kembalikan ke default"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Material gelembung"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Kaca buram / material imersif; ketebalan dan cahaya mengikuti pengaturan Obrolan. Nonaktif otomatis saat hemat daya"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Material imersif tidak tersedia di perangkat ini; kaca buram akan digunakan"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Warna akun (yang dilihat orang lain)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Disinkronkan ke akun; hanya palet resmi yang tersedia"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Pesan masuk"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Pesan keluar"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Nonaktif"
     }
   ]
 }

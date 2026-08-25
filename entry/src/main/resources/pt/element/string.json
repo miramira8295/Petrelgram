@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "O registro deste dispositivo foi perdido e redefinido. Solicite um novo código e registre-se novamente."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Predefinidos"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Concluído"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Aparência"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Destaque, cores dos balões e material"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Cor de destaque do app"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Só neste dispositivo, não sincronizado com a conta"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Cor de destaque personalizada"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Modo claro"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Modo escuro"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Cores dos balões"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Enviados"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Recebidos"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Redefinir"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Material dos balões"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Vidro fosco / material imersivo; espessura e luz seguem as configurações de chat. Desativado na economia de energia"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Material imersivo indisponível neste dispositivo; será usado vidro fosco"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Cores da conta (o que os outros veem)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Sincronizado com a conta; apenas a paleta oficial"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Mensagem recebida"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Mensagem enviada"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Desativado"
     }
   ]
 }

@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "Rekod pendaftaran peranti ini hilang dan telah ditetapkan semula. Sila minta kod baharu dan daftar semula."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Pratetap"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Selesai"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Penampilan"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Aksen, warna gelembung dan bahan"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Warna aksen aplikasi"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Hanya pada peranti ini, tidak disegerakkan ke akaun"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Warna aksen tersuai"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Mod cerah"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Mod gelap"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Warna gelembung"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Keluar"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Masuk"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Set semula ke lalai"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Bahan gelembung"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Kaca kabur / bahan imersif; ketebalan dan cahaya mengikut tetapan Sembang. Dimatikan secara automatik semasa jimat kuasa"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Bahan imersif tidak tersedia pada peranti ini; kaca kabur akan digunakan"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Warna akaun (yang dilihat orang lain)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Disegerakkan ke akaun; hanya palet rasmi tersedia"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Mesej masuk"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Mesej keluar"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Mati"
     }
   ]
 }

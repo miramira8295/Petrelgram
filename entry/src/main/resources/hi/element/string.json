@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "इस डिवाइस का पंजीकरण रिकॉर्ड खो गया था और रीसेट कर दिया गया है। कृपया नया कोड मांगें और फिर से पंजीकरण करें।"
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "प्रीसेट"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "हो गया"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "रूप-रंग"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "एक्सेंट, बबल रंग और मटीरियल"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "ऐप का एक्सेंट रंग"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "केवल इस डिवाइस पर, खाते से सिंक नहीं होता"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "कस्टम एक्सेंट रंग"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "लाइट मोड"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "डार्क मोड"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "बबल रंग"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "भेजे गए"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "प्राप्त"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "डिफ़ॉल्ट पर रीसेट करें"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "बबल मटीरियल"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "फ्रॉस्टेड ग्लास / इमर्सिव मटीरियल; मोटाई और रोशनी चैट सेटिंग से। पावर सेविंग में अपने आप बंद"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "इस डिवाइस पर इमर्सिव मटीरियल उपलब्ध नहीं है; फ्रॉस्टेड ग्लास इस्तेमाल होगा"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "खाता रंग (जो दूसरे देखते हैं)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "खाते से सिंक; केवल आधिकारिक पैलेट उपलब्ध"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "प्राप्त संदेश"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "भेजा गया संदेश"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "बंद"
     }
   ]
 }

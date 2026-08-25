@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "Bản ghi đăng ký của thiết bị này đã mất và đã được đặt lại. Vui lòng yêu cầu mã mới rồi đăng ký lại."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Màu có sẵn"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Xong"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Giao diện"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Màu nhấn, màu bong bóng và chất liệu"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Màu nhấn ứng dụng"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Chỉ trên thiết bị này, không đồng bộ với tài khoản"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Màu nhấn tùy chỉnh"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Chế độ sáng"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Chế độ tối"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Màu bong bóng"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Gửi đi"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Nhận được"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Đặt lại mặc định"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Chất liệu bong bóng"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Kính mờ / chất liệu chìm; độ dày và ánh sáng theo cài đặt Trò chuyện. Tự tắt khi tiết kiệm pin"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Chất liệu chìm không khả dụng trên thiết bị này; sẽ dùng kính mờ"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Màu tài khoản (người khác nhìn thấy)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Đồng bộ với tài khoản; chỉ dùng được bảng màu chính thức"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Tin nhắn nhận"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Tin nhắn gửi"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Tắt"
     }
   ]
 }

@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "Запис реєстрації цього пристрою втрачено та скинуто. Запросіть новий код і зареєструйтеся знову."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Пресети"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Готово"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Оформлення"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Акцент, кольори бульбашок і матеріал"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Акцентний колір застосунку"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Лише на цьому пристрої, не синхронізується з обліковим записом"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Власний акцентний колір"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Світла тема"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Темна тема"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Кольори бульбашок"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Вихідні"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Вхідні"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Скинути"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Матеріал бульбашок"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Матове скло / імерсивний матеріал; товщина та світло — з налаштувань чатів. Вимикається під час енергозбереження"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Імерсивний матеріал недоступний на цьому пристрої; буде матове скло"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Кольори облікового запису (бачать інші)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Синхронізується з обліковим записом; доступна лише офіційна палітра"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Вхідне повідомлення"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Вихідне повідомлення"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Вимк."
     }
   ]
 }

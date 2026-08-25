@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "El registro de este dispositivo se perdió y se ha restablecido. Solicita un nuevo código y regístrate de nuevo."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Predefinidos"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Listo"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Apariencia"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Acento, colores de burbujas y material"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Color de acento de la app"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Solo en este dispositivo, no se sincroniza con la cuenta"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Color de acento personalizado"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Modo claro"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Modo oscuro"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Colores de burbujas"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Enviados"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Recibidos"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Restablecer"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Material de burbujas"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Cristal esmerilado / material inmersivo; grosor y luz según los ajustes de chat. Se desactiva al ahorrar energía"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "El material inmersivo no está disponible en este dispositivo; se usará cristal esmerilado"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Colores de la cuenta (lo que ven los demás)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Sincronizado con la cuenta; solo la paleta oficial"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Mensaje recibido"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Mensaje enviado"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Desactivado"
     }
   ]
 }

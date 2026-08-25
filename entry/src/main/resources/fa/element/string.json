@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "سابقه ثبت‌نام این دستگاه از دست رفت و بازنشانی شد. لطفاً کد جدیدی درخواست کنید و دوباره ثبت‌نام کنید."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "پیش‌تنظیم‌ها"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "تمام"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "ظاهر"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "رنگ تأکید، رنگ حباب‌ها و متریال"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "رنگ تأکید برنامه"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "فقط روی این دستگاه، با حساب همگام نمی‌شود"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "رنگ تأکید سفارشی"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "حالت روشن"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "حالت تاریک"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "رنگ حباب‌ها"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "ارسالی"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "دریافتی"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "بازنشانی به پیش‌فرض"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "متریال حباب‌ها"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "شیشه مات / متریال غوطه‌ور؛ ضخامت و نور از تنظیمات چت. در حالت صرفه‌جویی خودکار خاموش می‌شود"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "متریال غوطه‌ور در این دستگاه در دسترس نیست؛ از شیشه مات استفاده می‌شود"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "رنگ‌های حساب (آنچه دیگران می‌بینند)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "با حساب همگام می‌شود؛ فقط پالت رسمی در دسترس است"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "پیام دریافتی"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "پیام ارسالی"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "خاموش"
     }
   ]
 }

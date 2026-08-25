@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "이 기기의 등록 기록이 손실되어 초기화했습니다. 인증 코드를 다시 요청한 뒤 다시 등록해 주세요."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "프리셋"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "완료"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "모양"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "강조색, 말풍선 색상 및 재질"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "앱 강조색"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "이 기기에서만 적용되며 계정과 동기화되지 않습니다"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "사용자 지정 강조색"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "라이트 모드"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "다크 모드"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "말풍선 색상"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "보낸 메시지"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "받은 메시지"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "기본값으로 재설정"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "말풍선 재질"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "반투명 유리 / 몰입형 재질. 두께와 빛은 채팅 설정을 따르며 절전 시 자동으로 꺼집니다"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "이 기기에서는 몰입형 재질을 사용할 수 없어 반투명 유리를 사용합니다"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "계정 색상(다른 사람에게 보임)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "계정과 동기화되며 공식 팔레트에서만 선택할 수 있습니다"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "받은 메시지"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "보낸 메시지"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "끄기"
     }
   ]
 }

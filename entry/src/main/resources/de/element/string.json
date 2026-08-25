@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "Der Registrierungsdatensatz dieses Geräts ist verloren gegangen und wurde zurückgesetzt. Bitte fordere einen neuen Code an und registriere dich erneut."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Voreinstellungen"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Fertig"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Erscheinungsbild"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Akzent, Blasenfarben und Material"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "App-Akzentfarbe"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Nur auf diesem Gerät, nicht mit dem Konto synchronisiert"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Eigene Akzentfarbe"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Heller Modus"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Dunkler Modus"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Blasenfarben"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Ausgehend"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Eingehend"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Zurücksetzen"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Blasenmaterial"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Milchglas / immersives Material; Dicke und Licht folgen den Chat-Einstellungen. Im Energiesparmodus automatisch aus"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Immersives Material ist auf diesem Gerät nicht verfügbar; Milchglas wird verwendet"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Kontofarben (was andere sehen)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Mit dem Konto synchronisiert; nur die offizielle Palette"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Eingehende Nachricht"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Ausgehende Nachricht"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Aus"
     }
   ]
 }

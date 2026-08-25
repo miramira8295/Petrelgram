@@ -71,9 +71,9 @@
       "buildFunction": "PrivacySecurityPageBuilder"
     },
     {
-      "name": "AccentColorPage",
-      "pageSourceFile": "src/main/ets/pages/main/AccentColorPage.ets",
-      "buildFunction": "AccentColorPageBuilder"
+      "name": "AppearancePage",
+      "pageSourceFile": "src/main/ets/pages/main/AppearancePage.ets",
+      "buildFunction": "AppearancePageBuilder"
     },
     {
       "name": "EmojiStatusPage",

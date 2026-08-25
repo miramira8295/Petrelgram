@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "この端末の登録記録が失われたためリセットしました。確認コードを再送して、もう一度登録してください。"
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "プリセット"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "完了"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "外観"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "アクセント、吹き出しの色と素材"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "アプリのアクセントカラー"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "この端末のみ。アカウントには同期されません"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "カスタムアクセントカラー"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "ライトモード"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "ダークモード"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "吹き出しの色"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "送信"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "受信"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "デフォルトに戻す"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "吹き出しの素材"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "すりガラス / イマーシブ素材。厚みと光はチャット設定に従います。省電力時は自動でオフ"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "この端末ではイマーシブ素材を使えないため、すりガラスを使います"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "アカウントの色（他の人に見える）"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "アカウントに同期。公式パレットからのみ選べます"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "受信メッセージ"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "送信メッセージ"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "オフ"
     }
   ]
 }

@@ -11467,6 +11467,94 @@
     {
       "name": "meow_secret_lost_reset",
       "value": "La registrazione di questo dispositivo è andata persa ed è stata reimpostata. Richiedi un nuovo codice e registrati di nuovo."
+    },
+    {
+      "name": "color_picker_hex_hint",
+      "value": "#RRGGBB"
+    },
+    {
+      "name": "color_picker_presets",
+      "value": "Predefiniti"
+    },
+    {
+      "name": "color_picker_done",
+      "value": "Fine"
+    },
+    {
+      "name": "settings_appearance",
+      "value": "Aspetto"
+    },
+    {
+      "name": "settings_appearance_sub",
+      "value": "Accento, colori dei fumetti e materiale"
+    },
+    {
+      "name": "appearance_accent",
+      "value": "Colore accento dell’app"
+    },
+    {
+      "name": "appearance_accent_sub",
+      "value": "Solo su questo dispositivo, non sincronizzato con l’account"
+    },
+    {
+      "name": "appearance_accent_custom",
+      "value": "Colore accento personalizzato"
+    },
+    {
+      "name": "appearance_mode_light",
+      "value": "Modalità chiara"
+    },
+    {
+      "name": "appearance_mode_dark",
+      "value": "Modalità scura"
+    },
+    {
+      "name": "appearance_bubbles",
+      "value": "Colori dei fumetti"
+    },
+    {
+      "name": "appearance_bubble_out",
+      "value": "Inviati"
+    },
+    {
+      "name": "appearance_bubble_in",
+      "value": "Ricevuti"
+    },
+    {
+      "name": "appearance_reset",
+      "value": "Ripristina"
+    },
+    {
+      "name": "appearance_bubble_material",
+      "value": "Materiale dei fumetti"
+    },
+    {
+      "name": "appearance_bubble_material_sub",
+      "value": "Vetro smerigliato / materiale immersivo; spessore e luce dalle impostazioni chat. Disattivato con risparmio energetico"
+    },
+    {
+      "name": "appearance_bubble_material_glass_only",
+      "value": "Materiale immersivo non disponibile su questo dispositivo; verrà usato il vetro smerigliato"
+    },
+    {
+      "name": "appearance_account_group",
+      "value": "Colori dell’account (visti dagli altri)"
+    },
+    {
+      "name": "appearance_account_group_sub",
+      "value": "Sincronizzato con l’account; solo la tavolozza ufficiale"
+    },
+    {
+      "name": "appearance_preview_in",
+      "value": "Messaggio ricevuto"
+    },
+    {
+      "name": "appearance_preview_out",
+      "value": "Messaggio inviato"
+    },
+    {
+      "name": "material_thickness_off",
+      "value": "Disattivato"
     }
   ]
 }
