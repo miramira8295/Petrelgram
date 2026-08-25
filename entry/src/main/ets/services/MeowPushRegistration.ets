@@ -339,8 +339,13 @@ export async function confirmMeowRegistration(
   if (!check.valid) {
     throw new Error(check.error);
   }
-  const receiverId = await registerWebPush(client, parsed.config);
+  // **secret 收到就落盘，先于 Telegram 那一步。** 中转只在首次注册的响应里下发
+  // 一次 secret（之后同一个 subKey 再 confirm 都不再给）。原来是等 registerWebPush
+  // 成功才存：Telegram 那步一失败——网络抖一下就够——本地没存、中转不再发，此后
+  // 每次重试都是"中转服务器返回的数据不完整，请稍后重试"，永远出不来
+  // （issue #60 / #39）。secret 只用于注销，存下来对 Telegram 那步没有任何依赖。
   setString(KEY_MEOW_SECRET, parsed.secret);
+  const receiverId = await registerWebPush(client, parsed.config);
   setString(KEY_MEOW_NICKNAME, meow.trim());
   return { receiverId, secret: parsed.secret };
 }
