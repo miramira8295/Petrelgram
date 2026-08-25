@@ -11555,6 +11555,14 @@
     {
       "name": "material_thickness_off",
       "value": "Aus"
+    },
+    {
+      "name": "bubble_material_standard",
+      "value": "Standard"
+    },
+    {
+      "name": "bubble_material_glass",
+      "value": "Glas"
     }
   ]
 }

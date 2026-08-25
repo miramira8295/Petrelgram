@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { hexToHsv, hsvToHex, isValidHex, relativeLuminance, textOn } from '../main/ets/util/colorMath';
+import { hexToHsv, hsvToHex, isValidHex, relativeLuminance, textOn, toRgbHex } from '../main/ets/util/colorMath';
 
 export default function colorMathTest() {
   describe('colorMath', () => {
@@ -25,6 +25,12 @@ export default function colorMathTest() {
       expect(hsvToHex(0, 0, 1)).assertEqual('#FFFFFF');
       expect(hsvToHex(0, 1, 1)).assertEqual('#FF0000');
       expect(hsvToHex(120, 1, 0.5)).assertEqual('#008000');
+    });
+    it('toRgbHex 接受 #RRGGBB / #AARRGGBB，其它返回空', 0, (): void => {
+      expect(toRgbHex('#3390ec')).assertEqual('#3390EC');
+      expect(toRgbHex('#FF3390EC')).assertEqual('#3390EC');
+      expect(toRgbHex(' #3390EC ')).assertEqual('#3390EC');
+      expect(toRgbHex('3390EC')).assertEqual('');
     });
     it('textOn 按亮度取黑白', 0, (): void => {
       expect(textOn('#FFFFFF')).assertEqual('#000000');

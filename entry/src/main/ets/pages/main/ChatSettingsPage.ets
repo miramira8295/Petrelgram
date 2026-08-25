@@ -13,12 +13,15 @@ import {
   THICKNESS_ULTRA_THICK, THICKNESS_ULTRA_THIN
 } from '../../util/materialTuning';
 import {
-  KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, recomputeAppearance
+  APPEARANCE_EPOCH, KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, recomputeAppearance
 } from '../../util/appearance';
 import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overlayMaterial';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT, bubbleTextFor
 } from '../../util/theme';
+import {
+  AccentColorCard, AccountColorsCard, BubbleColorsCard, BubbleMaterialCard
+} from './AppearanceCards';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
@@ -99,6 +102,8 @@ export struct ChatSettingsPage {
   @StorageLink(KEY_MATERIAL_THICKNESS) materialThickness: number = THICKNESS_DEFAULT;
   @StorageLink(KEY_MATERIAL_LIGHT) materialLight: string = LIGHT_DEFAULT;
   @StorageLink(KEY_MATERIAL_THICKNESS_DARK) materialThicknessDark: number = THICKNESS_DEFAULT;
+  // 气泡色/文字色是 theme 里的活绑定，不是状态；预览读一次 epoch 让 ArkUI 记下依赖。
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   @StorageLink(KEY_MATERIAL_LIGHT_DARK) materialLightDark: string = LIGHT_DEFAULT;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
   // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
@@ -171,20 +176,31 @@ export struct ChatSettingsPage {
     Column({ space: 8 }) {
       Row() {
         Text($r('app.string.chat_settings_preview_in'))
-          .fontSize(this.textSize).fontColor(COLOR_TEXT_PRIMARY)
+          .fontSize(this.textSize).fontColor(this.previewText(false))
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor(COLOR_BUBBLE_IN)
+          .backgroundColor(this.previewBubble(false))
           .borderRadius(this.bubbleRadius);
       }.width('100%').justifyContent(FlexAlign.Start);
       Row() {
         Text($r('app.string.chat_settings_preview_out'))
-          .fontSize(this.textSize).fontColor(COLOR_TEXT_PRIMARY)
+          .fontSize(this.textSize).fontColor(this.previewText(true))
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor(COLOR_BUBBLE_OUT)
+          .backgroundColor(this.previewBubble(true))
           .borderRadius(this.bubbleRadius);
       }.width('100%').justifyContent(FlexAlign.End);
     }
     .width('100%').padding(14);
+  }
+
+  private previewBubble(outgoing: boolean): ResourceColor {
+    if (this.appearanceEpoch < 0) {
+      return Color.Transparent;
+    }
+    return outgoing ? COLOR_BUBBLE_OUT : COLOR_BUBBLE_IN;
+  }
+
+  private previewText(outgoing: boolean): ResourceColor {
+    return this.appearanceEpoch < 0 ? Color.Transparent : bubbleTextFor(outgoing);
   }
 
   @Builder
@@ -292,18 +308,11 @@ export struct ChatSettingsPage {
       this.cardTitle($r('app.string.chat_settings_material_thickness'));
       Text($r('app.string.chat_settings_material_thickness_sub'))
         .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-        .width('100%').padding({ left: 16, right: 16, bottom: 8 });
-      this.modeLabel($r('app.string.appearance_mode_light'));
-      this.thicknessRows(false);
-      this.modeLabel($r('app.string.appearance_mode_dark'));
-      this.thicknessRows(true);
+        .width('100%').padding({ left: 16, right: 16, bottom: 4 });
+      this.thicknessSelectRow(false);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.thicknessSelectRow(true);
     }.width('100%');
-  }
-
-  @Builder
-  modeLabel(label: ResourceStr) {
-    Text(label).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-      .width('100%').padding({ left: 16, right: 16, top: 10, bottom: 4 });
   }
 
   private thicknessOf(forDark: boolean): number {
@@ -314,33 +323,36 @@ export struct ChatSettingsPage {
     return forDark ? this.materialLightDark : this.materialLight;
   }
 
+  private thicknessIndex(forDark: boolean): number {
+    const idx = THICKNESS_OPTIONS.findIndex((o: MaterialThicknessOption): boolean => o.value === this.thicknessOf(forDark));
+    return idx < 0 ? 0 : idx;
+  }
+
+  private lightIndex(forDark: boolean): number {
+    const idx = LIGHT_OPTIONS.findIndex((o: MaterialLightOption): boolean => o.value === this.lightOf(forDark));
+    return idx < 0 ? 0 : idx;
+  }
+
+  // 一行一个模式：左边「浅色模式 / 深色模式」，右边下拉选档。
   @Builder
-  thicknessRows(forDark: boolean) {
-    ForEach(THICKNESS_OPTIONS, (opt: MaterialThicknessOption, idx: number) => {
-      if (idx > 0) {
-        Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-      }
-      Row() {
-        Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-        if (this.thicknessOf(forDark) === opt.value) {
-          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
-        }
-      }
-      .width('100%').height(48).padding({ left: 16, right: 16 })
-      .stateStyles({
-        normal: this.optionNormalStyle,
-        pressed: this.optionPressedStyle
-      })
-      .accessibilityText(str('a11y_option_state', opt.label,
-        this.thicknessOf(forDark) === opt.value ? str('a11y_selected') : ''))
-      .onClick((): void => {
-        if (this.thicknessOf(forDark) !== opt.value) {
-          setNumber(forDark ? KEY_MATERIAL_THICKNESS_DARK : KEY_MATERIAL_THICKNESS, opt.value);
-          bumpMaterialEpoch();
-          recomputeAppearance();
-        }
-      });
-    }, (opt: MaterialThicknessOption) => `t${forDark ? 'd' : 'l'}${opt.value}`);
+  thicknessSelectRow(forDark: boolean) {
+    Row({ space: 12 }) {
+      Text(forDark ? $r('app.string.appearance_mode_dark') : $r('app.string.appearance_mode_light'))
+        .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+      Select(THICKNESS_OPTIONS.map((o: MaterialThicknessOption): SelectOption => ({ value: o.label } as SelectOption)))
+        .selected(this.thicknessIndex(forDark))
+        .value(THICKNESS_OPTIONS[this.thicknessIndex(forDark)].label)
+        .font({ size: 15 }).fontColor(COLOR_PRIMARY)
+        .onSelect((index: number): void => {
+          const v = THICKNESS_OPTIONS[index].value;
+          if (this.thicknessOf(forDark) !== v) {
+            setNumber(forDark ? KEY_MATERIAL_THICKNESS_DARK : KEY_MATERIAL_THICKNESS, v);
+            bumpMaterialEpoch();
+            recomputeAppearance();
+          }
+        });
+    }
+    .width('100%').height(52).padding({ left: 16, right: 8 }).alignItems(VerticalAlign.Center);
   }
 
   // 光感等级。lightEffect / interactive 是 ImmersiveOptions 的字段，没有材质
@@ -351,41 +363,32 @@ export struct ChatSettingsPage {
       this.cardTitle($r('app.string.chat_settings_material_light'));
       Text($r('app.string.chat_settings_material_light_sub'))
         .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-        .width('100%').padding({ left: 16, right: 16, bottom: 8 });
-      this.modeLabel($r('app.string.appearance_mode_light'));
-      this.lightRows(false);
-      this.modeLabel($r('app.string.appearance_mode_dark'));
-      this.lightRows(true);
+        .width('100%').padding({ left: 16, right: 16, bottom: 4 });
+      this.lightSelectRow(false);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.lightSelectRow(true);
     }.width('100%');
   }
 
   @Builder
-  lightRows(forDark: boolean) {
-    ForEach(LIGHT_OPTIONS, (opt: MaterialLightOption, idx: number) => {
-      if (idx > 0) {
-        Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-      }
-      Row() {
-        Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-        if (this.lightOf(forDark) === opt.value) {
-          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
-        }
-      }
-      .width('100%').height(48).padding({ left: 16, right: 16 })
-      .stateStyles({
-        normal: this.optionNormalStyle,
-        pressed: this.optionPressedStyle
-      })
-      .accessibilityText(str('a11y_option_state', opt.label,
-        this.lightOf(forDark) === opt.value ? str('a11y_selected') : ''))
-      .onClick((): void => {
-        if (this.lightOf(forDark) !== opt.value) {
-          setString(forDark ? KEY_MATERIAL_LIGHT_DARK : KEY_MATERIAL_LIGHT, opt.value);
-          bumpMaterialEpoch();
-          recomputeAppearance();
-        }
-      });
-    }, (opt: MaterialLightOption) => `l${forDark ? 'd' : 'l'}${opt.value}`);
+  lightSelectRow(forDark: boolean) {
+    Row({ space: 12 }) {
+      Text(forDark ? $r('app.string.appearance_mode_dark') : $r('app.string.appearance_mode_light'))
+        .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+      Select(LIGHT_OPTIONS.map((o: MaterialLightOption): SelectOption => ({ value: o.label } as SelectOption)))
+        .selected(this.lightIndex(forDark))
+        .value(LIGHT_OPTIONS[this.lightIndex(forDark)].label)
+        .font({ size: 15 }).fontColor(COLOR_PRIMARY)
+        .onSelect((index: number): void => {
+          const v = LIGHT_OPTIONS[index].value;
+          if (this.lightOf(forDark) !== v) {
+            setString(forDark ? KEY_MATERIAL_LIGHT_DARK : KEY_MATERIAL_LIGHT, v);
+            bumpMaterialEpoch();
+            recomputeAppearance();
+          }
+        });
+    }
+    .width('100%').height(52).padding({ left: 16, right: 8 }).alignItems(VerticalAlign.Center);
   }
 
   @Builder
@@ -431,6 +434,9 @@ export struct ChatSettingsPage {
           }
           .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
 
+          // 气泡颜色紧贴预览——上面那两个气泡就是它的效果。
+          BubbleColorsCard();
+
           Row({ space: 12 }) {
             SymbolGlyph($r('sys.symbol.picture')).fontSize(20).fontColor([COLOR_PRIMARY]);
             Text($r('app.string.chat_settings_background')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
@@ -445,6 +451,8 @@ export struct ChatSettingsPage {
                 logE(`ChatSettings open background failed: ${error.message}`);
               });
           });
+
+          AccentColorCard();
 
           // 桌面图标自选。整块在 API 26 以下不渲染——getAlternateIcons/
           // setAlternateIcon 是 @since 26.0.0，而本应用 compatibleSdkVersion 是
@@ -462,6 +470,8 @@ export struct ChatSettingsPage {
           Column() {
             this.nightModeCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
+
+          BubbleMaterialCard();
 
           Column() {
             this.materialThicknessCard();
@@ -484,6 +494,7 @@ export struct ChatSettingsPage {
           .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
           .padding({ top: 4, bottom: 4 });
 
+          AccountColorsCard();
         }
         .width('100%')
         .padding({ left: 12, right: 12, top: 8, bottom: this.bottomSafe + 24 });

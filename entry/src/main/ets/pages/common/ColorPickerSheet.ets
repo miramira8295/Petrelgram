@@ -1,8 +1,17 @@
 // 取色器：SV 方块 + 色相条 + hex 输入 + 预设。挂在 bindSheet 里用。
 // 方块不用 Canvas——底色是纯色相，上面叠「白→透明」「透明→黑」两层渐变，
 // 三层 Column 就是完整的 HSV 平面，色相变了只改底色那一层。
-import { hexToHsv, hsvToHex, isValidHex } from '../../util/colorMath';
+import { deviceInfo } from '@kit.BasicServicesKit';
+import { HdsColorPicker, HdsColorPickerTabType } from '@kit.UIDesignKit';
+import { hexToHsv, hsvToHex, isValidHex, toRgbHex } from '../../util/colorMath';
 import { COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_SECONDARY } from '../../util/theme';
+
+// 官方取色器 HdsColorPicker 从 API 26 起有；低于它走下面手写的 SV 方块。
+const HDS_COLOR_PICKER_API: number = 26;
+
+export function hdsColorPickerAvailable(sdkApiVersion: number): boolean {
+  return Number.isFinite(sdkApiVersion) && sdkApiVersion >= HDS_COLOR_PICKER_API;
+}
 
 // 官方 7 个名字色 + 默认蓝 + 深浅两套气泡/页面底色。
 export const PRESET_COLORS: string[] = [
@@ -80,7 +89,45 @@ export struct ColorPickerSheet {
     }
   }
 
+  // 官方取色器：选一下就应用（onColorSelected），面板靠拖拽条或「完成」收起。
+  @Builder
+  hdsPicker() {
+    Column({ space: 8 }) {
+      Row() {
+        Column().width(28).height(28).borderRadius(8).backgroundColor(this.current())
+          .border({ width: 1, color: '#22000000' });
+        Text(this.hexText).fontSize(14).fontColor(COLOR_TEXT_SECONDARY).margin({ left: 10 }).layoutWeight(1);
+        Button($r('app.string.color_picker_done')).height(36).fontSize(14).backgroundColor(COLOR_PRIMARY)
+          .onClick((): void => this.onClose());
+      }.width('100%').alignItems(VerticalAlign.Center);
+      HdsColorPicker({
+        initialColor: this.current(),
+        onColorSelected: (selected: string): void => {
+          const hex = toRgbHex(selected);
+          if (hex !== '') {
+            this.setFromHex(hex);
+            this.onPick(hex);
+          }
+        },
+        options: {
+          tabs: [HdsColorPickerTabType.SPECTRUM, HdsColorPickerTabType.GRID, HdsColorPickerTabType.SLIDERS]
+        }
+      });
+    }
+    .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 24 })
+    .backgroundColor(COLOR_SURFACE);
+  }
+
   build() {
+    if (hdsColorPickerAvailable(deviceInfo.sdkApiVersion)) {
+      this.hdsPicker();
+    } else {
+      this.customPicker();
+    }
+  }
+
+  @Builder
+  customPicker() {
     Column({ space: 14 }) {
       Row({ space: 12 }) {
         Column().width(44).height(44).borderRadius(10).backgroundColor(this.current())

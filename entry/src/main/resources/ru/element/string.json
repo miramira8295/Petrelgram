@@ -11555,6 +11555,14 @@
     {
       "name": "material_thickness_off",
       "value": "Выкл."
+    },
+    {
+      "name": "bubble_material_standard",
+      "value": "Обычный"
+    },
+    {
+      "name": "bubble_material_glass",
+      "value": "Стекло"
     }
   ]
 }

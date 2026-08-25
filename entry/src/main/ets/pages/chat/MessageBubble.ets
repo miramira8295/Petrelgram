@@ -55,7 +55,7 @@ import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
 import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH } from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
+import { TAIL_H, TAIL_W, bubbleGlassModifier } from '../../util/bubbleTail';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
@@ -192,6 +192,9 @@ export struct MessageBubble {
   // 气泡材质只给屏内气泡挂，离屏纯色；省电时也退回纯色。
   @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
   @State onScreen: boolean = false;
+  // 「尾巴 + 气泡」外层容器量到的尺寸，整块玻璃的裁剪路径靠它。只在材质开着时被读。
+  @State glassW: number = 0;
+  @State glassH: number = 0;
   @Prop nowSec: number;
   // 本机正在共享实时位置的那条消息 id（0 = 没有共享）。
   @Prop liveSharingId: number = 0;
@@ -3072,14 +3075,44 @@ export struct MessageBubble {
     return COLOR_BUBBLE_IN;
   }
 
+  // 尾巴：材质开着时是一小块裁成三角的玻璃（和气泡同一套材质），否则实色 Polygon。
+  @Builder
+  bubbleTail(outgoing: boolean) {
+    if (this.bubbleMaterialLive()) {
+      // 整块玻璃时尾巴只是占位：形状由外层容器的裁剪路径画出来。
+      Column().width(TAIL_W).height(TAIL_H).margin(outgoing ? { left: -1 } : { right: -1 });
+    } else {
+      Polygon({ width: TAIL_W, height: TAIL_H })
+        .points(outgoing ? [[0, 0], [TAIL_W, TAIL_H], [0, TAIL_H]] : [[TAIL_W, 0], [0, TAIL_H], [TAIL_W, TAIL_H]])
+        .fill(this.bubbleFillColor())
+        .margin(outgoing ? { left: -1 } : { right: -1 });
+    }
+  }
+
   private bubbleMaterialLive(): boolean {
     return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
   }
 
-  // 材质开着时底色交给 overlayGlassFill：有材质 → 透明让材质画，没材质 → 玻璃色。
+  // 材质开着时气泡本体透明，底色/材质/模糊都挂在外层「尾巴 + 气泡」容器上。
   private bubbleBg(): ResourceColor {
-    const solid = this.bubbleFillColor();
-    return this.bubbleMaterialLive() ? overlayGlassFill('bubble', solid) : solid;
+    return this.bubbleMaterialLive() ? Color.Transparent : this.bubbleFillColor();
+  }
+
+  private glassLive(): boolean {
+    return this.bubbleMaterialLive() && !this.isBareEmoji();
+  }
+
+  private glassBg(): ResourceColor {
+    return this.glassLive() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+  }
+
+  private glassBlur(): number {
+    return this.glassLive() ? overlayBackdropBlur('bubble') : 0;
+  }
+
+  private glassModifier(): AttributeModifier<CommonAttribute> {
+    return bubbleGlassModifier(this.glassLive(), this.glassW, this.glassH, this.msg.isOutgoing,
+      this.hasBubbleTail(), this.bubbleCornerRadius());
   }
 
   private timeReserveInText(): boolean {
@@ -3296,11 +3329,9 @@ export struct MessageBubble {
       }
       // Telegram-style bubble tail poking out of the bottom corner (left for
       // incoming, right for outgoing); the adjacent bubble corner is squared off.
+      Row() {
       if (!this.msg.isOutgoing && this.hasBubbleTail()) {
-        Polygon({ width: 8, height: 12 })
-          .points([[8, 0], [0, 12], [8, 12]])
-          .fill(this.bubbleFillColor())
-          .margin({ right: -1 });
+        this.bubbleTail(false);
       } else if (!this.msg.isOutgoing) {
         Column().width(this.bubbleTailGutter());
       }
@@ -3381,8 +3412,6 @@ export struct MessageBubble {
       .alignItems(HorizontalAlign.Start)
       .constraintSize({ maxWidth: this.bubbleMaxW() })
       .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
-      .backdropBlur(this.bubbleMaterialLive() && !this.isBareEmoji() ? overlayBackdropBlur('bubble') : 0)
-      .attributeModifier(materialModifierWhen('bubble', this.bubbleMaterialLive() && !this.isBareEmoji()))
       .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
         this.onScreen = visible;
       })
@@ -3425,13 +3454,20 @@ export struct MessageBubble {
         }
       })
       if (this.msg.isOutgoing && this.hasBubbleTail()) {
-        Polygon({ width: 8, height: 12 })
-          .points([[0, 0], [8, 12], [0, 12]])
-          .fill(this.bubbleFillColor())
-          .margin({ left: -1 });
+        this.bubbleTail(true);
       } else if (this.msg.isOutgoing) {
         Column().width(this.bubbleTailGutter());
       }
+      }
+      // 「尾巴 + 气泡」容器：气泡材质开着时整块是一片玻璃（底色 + 模糊 + 材质 + 整体裁剪）。
+      .alignItems(VerticalAlign.Bottom)
+      .backgroundColor(this.glassBg())
+      .backdropBlur(this.glassBlur())
+      .attributeModifier(this.glassModifier())
+      .onAreaChange((_old: Area, area: Area): void => {
+        this.glassW = Number(area.width);
+        this.glassH = Number(area.height);
+      })
       }
       .alignItems(VerticalAlign.Bottom)
       // 诊断：气泡偶发"横贯整屏"。气泡本体从没超过自己的 cap（量过），所以

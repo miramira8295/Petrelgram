@@ -73,6 +73,7 @@ import chatThemePresentationTest from './ChatThemePresentation.test';
 import accentPresentationTest from './AccentPresentation.test';
 import colorMathTest from './ColorMath.test';
 import appearanceTest from './Appearance.test';
+import bubbleGlassPathTest from './BubbleGlassPath.test';
 import customEmojiReactionsTest from './CustomEmojiReactions.test';
 import downloadApiTest from './DownloadApi.test';
 import musicQueueTest from './MusicQueue.test';
@@ -213,6 +214,7 @@ export default function testsuite() {
   accentPresentationTest();
   colorMathTest();
   appearanceTest();
+  bubbleGlassPathTest();
   downloadApiTest();
   musicQueueTest();
   mediaPickTest();

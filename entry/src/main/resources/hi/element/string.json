@@ -11555,6 +11555,14 @@
     {
       "name": "material_thickness_off",
       "value": "बंद"
+    },
+    {
+      "name": "bubble_material_standard",
+      "value": "मानक"
+    },
+    {
+      "name": "bubble_material_glass",
+      "value": "ग्लास"
     }
   ]
 }

@@ -71,11 +71,6 @@
       "buildFunction": "PrivacySecurityPageBuilder"
     },
     {
-      "name": "AppearancePage",
-      "pageSourceFile": "src/main/ets/pages/main/AppearancePage.ets",
-      "buildFunction": "AppearancePageBuilder"
-    },
-    {
       "name": "EmojiStatusPage",
       "pageSourceFile": "src/main/ets/pages/main/EmojiStatusPage.ets",
       "buildFunction": "EmojiStatusPageBuilder"

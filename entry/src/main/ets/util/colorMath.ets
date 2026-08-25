@@ -6,6 +6,20 @@ export function isValidHex(s: string): boolean {
   return HEX_RE.test(s);
 }
 
+// 官方取色器回的可能是 #AARRGGBB；统一成大写 #RRGGBB，认不出返回空串。
+const ARGB_RE: RegExp = /^#[0-9a-fA-F]{8}$/;
+
+export function toRgbHex(s: string): string {
+  const t = s.trim();
+  if (isValidHex(t)) {
+    return t.toUpperCase();
+  }
+  if (ARGB_RE.test(t)) {
+    return `#${t.substring(3).toUpperCase()}`;
+  }
+  return '';
+}
+
 function channel(v: number): string {
   const n = Math.max(0, Math.min(255, Math.round(v)));
   return (n < 16 ? '0' : '') + n.toString(16).toUpperCase();

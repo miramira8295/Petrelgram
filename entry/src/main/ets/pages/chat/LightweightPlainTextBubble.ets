@@ -10,7 +10,7 @@ import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
+import { TAIL_H, TAIL_W, bubbleGlassModifier } from '../../util/bubbleTail';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
@@ -149,6 +149,8 @@ export struct LightweightPlainTextBubble {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
   @State onScreen: boolean = false;
+  @State glassW: number = 0;
+  @State glassH: number = 0;
 
   private bubbleFillColor(): ResourceColor {
     if (this.appearanceEpoch < 0) {
@@ -160,13 +162,37 @@ export struct LightweightPlainTextBubble {
     return COLOR_BUBBLE_IN;
   }
 
+  @Builder
+  bubbleTail(outgoing: boolean) {
+    if (this.bubbleMaterialLive()) {
+      Column().width(TAIL_W).height(TAIL_H).margin(outgoing ? { left: -1 } : { right: -1 });
+    } else {
+      Polygon({ width: TAIL_W, height: TAIL_H })
+        .points(outgoing ? [[0, 0], [TAIL_W, TAIL_H], [0, TAIL_H]] : [[TAIL_W, 0], [0, TAIL_H], [TAIL_W, TAIL_H]])
+        .fill(this.bubbleFillColor())
+        .margin(outgoing ? { left: -1 } : { right: -1 });
+    }
+  }
+
   private bubbleMaterialLive(): boolean {
     return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
   }
 
   private bubbleBg(): ResourceColor {
-    const solid = this.bubbleFillColor();
-    return this.bubbleMaterialLive() ? overlayGlassFill('bubble', solid) : solid;
+    return this.bubbleMaterialLive() ? Color.Transparent : this.bubbleFillColor();
+  }
+
+  private glassBg(): ResourceColor {
+    return this.bubbleMaterialLive() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+  }
+
+  private glassBlur(): number {
+    return this.bubbleMaterialLive() ? overlayBackdropBlur('bubble') : 0;
+  }
+
+  private glassModifier(): AttributeModifier<CommonAttribute> {
+    return bubbleGlassModifier(this.bubbleMaterialLive(), this.glassW, this.glassH, this.msg.isOutgoing,
+      this.hasTail(), this.bubbleCorners());
   }
   @Prop showUnreadDivider: boolean = false;
   @Prop dateLabel: string = '';
@@ -539,9 +565,9 @@ export struct LightweightPlainTextBubble {
               Column().width(44);
             }
           }
+          Row() {
           if (!this.msg.isOutgoing && this.hasTail()) {
-            Polygon({ width: 8, height: 12 }).points([[8, 0], [0, 12], [8, 12]])
-              .fill(this.bubbleFillColor()).margin({ right: -1 });
+            this.bubbleTail(false);
           } else if (!this.msg.isOutgoing) {
             Column().width(7);
           }
@@ -565,13 +591,11 @@ export struct LightweightPlainTextBubble {
           }
           .alignItems(HorizontalAlign.Start).constraintSize({ maxWidth: this.bubbleMaxW() })
           .backgroundColor(this.bubbleBg())
-          .backdropBlur(this.bubbleMaterialLive() ? overlayBackdropBlur('bubble') : 0)
-          .attributeModifier(materialModifierWhen('bubble', this.bubbleMaterialLive()))
           .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
             this.onScreen = visible;
           })
           .borderRadius(this.bubbleCorners()).padding(8)
-          .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1 })
+          .shadow({ radius: this.bubbleMaterialLive() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
           .stateStyles({ normal: this.bubbleNormalStyle, pressed: this.bubblePressedStyle })
           .animation({ duration: this.effectDuration(110), curve: Curve.EaseOut })
           .onAreaChange((_old: Area, area: Area): void => { this.bubbleW = area.width as number; })
@@ -584,12 +608,19 @@ export struct LightweightPlainTextBubble {
             }
           });
           if (this.msg.isOutgoing && this.hasTail()) {
-            Polygon({ width: 8, height: 12 }).points([[0, 0], [8, 12], [0, 12]])
-              .fill(this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT)
-              .margin({ left: -1 });
+            this.bubbleTail(true);
           } else if (this.msg.isOutgoing) {
             Column().width(7);
           }
+          }
+          .alignItems(VerticalAlign.Bottom)
+          .backgroundColor(this.glassBg())
+          .backdropBlur(this.glassBlur())
+          .attributeModifier(this.glassModifier())
+          .onAreaChange((_old: Area, area: Area): void => {
+            this.glassW = Number(area.width);
+            this.glassH = Number(area.height);
+          })
         }
         .alignItems(VerticalAlign.Bottom)
         .bindContextMenu(this.menuShown, this.contextMenu(), {

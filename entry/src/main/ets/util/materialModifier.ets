@@ -1,4 +1,4 @@
-import { OverlaySurface, overlayMaterial } from './overlayMaterial';
+import { MATERIAL_EPOCH, OverlaySurface, overlayMaterial } from './overlayMaterial';
 
 // systemMaterial 属性的**唯一**出口。
 //
@@ -17,27 +17,50 @@ import { OverlaySurface, overlayMaterial } from './overlayMaterial';
 // overlayMaterial 里自己失效，这里不用管。
 export class SurfaceMaterialModifier implements AttributeModifier<CommonAttribute> {
   private readonly surface: OverlaySurface;
+  private readonly enabled: boolean;
 
-  constructor(surface: OverlaySurface) {
+  constructor(surface: OverlaySurface, enabled: boolean = true) {
     this.surface = surface;
+    this.enabled = enabled;
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
-    const material = overlayMaterial(this.surface);
-    if (material !== undefined) {
-      instance.systemMaterial(material);
+    if (!this.enabled) {
+      instance.systemMaterial(undefined); // 从开到关也要清，不然气泡离屏后材质还挂着
+      return;
     }
+    // 没有材质（厚度调到「关闭」、省电、API 不够）时必须显式清掉：修饰器会在
+    // 同一个节点上反复跑，不清的话上一次挂上的材质就一直留在那儿——用户把厚度
+    // 关掉后 dock 还是玻璃，就是这个原因。
+    instance.systemMaterial(overlayMaterial(this.surface));
   }
 }
 
 const cache: Map<string, SurfaceMaterialModifier> = new Map<string, SurfaceMaterialModifier>();
 
 export function materialModifier(surface: OverlaySurface): SurfaceMaterialModifier {
-  const hit = cache.get(surface);
+  return materialModifierWhen(surface, true);
+}
+
+// Transition-heavy destinations can build a flat first frame and enable the
+// material after onShown. Keep both variants cached so a state-driven rebuild
+// does not allocate another modifier for every surface.
+// 缓存按 MATERIAL_EPOCH 分代：epoch 一变就换一批新实例。ArkUI 对同一个修饰器
+// 实例不一定重新 apply，用户改了厚度/关闭材质时 dock 就是这样卡在旧材质上的。
+let cachedEpoch: number = -1;
+
+export function materialModifierWhen(surface: OverlaySurface, enabled: boolean): SurfaceMaterialModifier {
+  const epoch: number = AppStorage.get<number>(MATERIAL_EPOCH) ?? 0;
+  if (epoch !== cachedEpoch) {
+    cache.clear();
+    cachedEpoch = epoch;
+  }
+  const key: string = `${surface}:${enabled ? 'on' : 'off'}`;
+  const hit = cache.get(key);
   if (hit !== undefined) {
     return hit;
   }
-  const built = new SurfaceMaterialModifier(surface);
-  cache.set(surface, built);
+  const built = new SurfaceMaterialModifier(surface, enabled);
+  cache.set(key, built);
   return built;
 }

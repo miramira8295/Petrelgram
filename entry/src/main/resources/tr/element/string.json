@@ -11555,6 +11555,14 @@
     {
       "name": "material_thickness_off",
       "value": "Kapalı"
+    },
+    {
+      "name": "bubble_material_standard",
+      "value": "Standart"
+    },
+    {
+      "name": "bubble_material_glass",
+      "value": "Cam"
     }
   ]
 }

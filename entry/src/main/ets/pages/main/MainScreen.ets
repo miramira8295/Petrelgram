@@ -25,7 +25,7 @@ import { BG_PATTERN_DEFAULT, patternStrengthKey } from '../../store/AppSettings'
 import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/ChatBackgroundStore';
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
-import { overlayBackdropBlur, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { overlayBackdropBlur, materialOff, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 
@@ -473,12 +473,12 @@ export struct MainScreen {
       }
       .alignItems(VerticalAlign.Center)
       .width('100%').height(DOCK_H)
-      .backgroundColor(DOCK_BG)
+      .backgroundColor(this.dockBg())
       // backdropBlur over a light tint: COMPONENT_* material styles carry an
       // opaque built-in backboard that reads as solid gray, so blur the
       // backdrop directly instead. The immersive material has no such backboard
       // and supersedes this — overlayBackdropBlur() drops to 0 where it applies.
-      .backdropBlur(overlayBackdropBlur('bar'))
+      .backdropBlur(this.dockBlur())
       .borderRadius(DOCK_H / 2)
       .clip(true)
       .border({ width: 0.5, color: COLOR_DIVIDER })
@@ -517,6 +517,19 @@ export struct MainScreen {
     // 属性才会继续跟着状态更新——`if` 摘掉的子树在过渡期间是冻结的，那正是
     // 上一版修不掉退场空档的原因（见 syncDock）。
     .visibility(this.dockMounted ? Visibility.Visible : Visibility.None);
+  }
+
+  // dock 的底色/模糊读一次 materialEpoch：厚度/关闭改了才会重绘。厚度「关闭」
+  // 时底色退回实色 surface，否则还是那层玻璃色（材质在的时候压在材质上做染色）。
+  private dockBg(): ResourceColor {
+    if (this.materialEpoch < 0) {
+      return Color.Transparent;
+    }
+    return materialOff() ? $r('app.color.surface') : DOCK_BG;
+  }
+
+  private dockBlur(): number {
+    return this.materialEpoch < 0 ? 0 : overlayBackdropBlur('bar');
   }
 
   build() {

@@ -11555,6 +11555,14 @@
     {
       "name": "material_thickness_off",
       "value": "關閉"
+    },
+    {
+      "name": "bubble_material_standard",
+      "value": "標準"
+    },
+    {
+      "name": "bubble_material_glass",
+      "value": "玻璃"
     }
   ]
 }
