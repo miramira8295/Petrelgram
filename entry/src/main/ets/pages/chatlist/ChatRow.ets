@@ -488,7 +488,10 @@ export struct ChatRow {
         };
         // 曾经是 router.pushUrl('pages/chat/ForumTopicsPage')——话题列表已迁成
         // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
-        navigateToForumTopics(forumParams);
+        // 同一段代码跑在两个上下文里：会话列表（左栏）和归档页（栈里的一层）。
+        // 从归档进话题列表要**叠**在归档之上，否则返回时归档页已被清掉
+        // （issue #117）。listKey 正好能区分。
+        navigateToForumTopics(forumParams, this.listKey === 'archive' ? 'content' : 'navbar');
         return;
       }
       const params: Record<string, Object> = { 'chatId': this.chat.id };

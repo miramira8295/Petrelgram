@@ -2,6 +2,8 @@ import router from '@ohos.router';
 import { logE } from './log';
 import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
+import { isSplitLayout } from './splitMetrics';
+import { setChatListRenderActive } from './chatListRenderGate';
 
 // 聊天详情页的路由地址。此前十个调用点各自写了一遍这个字符串，也各自
 // 直接 pushUrl——谁也不检查栈里是否已经有一个同会话的详情页，于是通知、
@@ -145,10 +147,10 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 同一根因还有两个表现：「话题列表 → 话题 → 返回」不回话题列表；
 // 「资料页 → 发消息 → 返回」不回资料页。三个一起修。
 //
-// **判据不是"调用点写在哪个文件"，而是"用户此刻在哪一栏"。** 还有一个尚未覆盖
-// 的表现：ChatRow 代码只有一处，却有两个运行时上下文——左栏会话列表和归档列表。
-// 从归档里点话题群仍按 'navbar' 清栈，返回后回到会话列表而不是归档。ChatRow
-// 已经有 listKey 能区分，等哪天动它时一并接上（navigateToForumTopics 同理）。
+// **判据不是"调用点写在哪个文件"，而是"用户此刻在哪一栏"。** ChatRow 代码只有
+// 一处，却有两个运行时上下文——左栏会话列表和归档列表。从归档里点话题群曾按
+// 'navbar' 清栈，返回后落回会话列表而不是归档（issue #117）；现在 ChatRow 按
+// listKey 传 origin，navigateToForumTopics 不再写死。
 //
 // 之所以不把失败吞在这里：NewGroupPage 建完群要靠这个 rejection 才能把
 // "打不开会话" 反馈给用户（复位 spinner + 显示错误），吞掉它那段就是死代码。
@@ -193,6 +195,15 @@ export function navigateToChat(
       stack.pop(false);
     }
     return Promise.resolve();
+  }
+  // onNavBarStateChange(false) arrives after HdsNavigation has started the
+  // push. Close the render gate synchronously first so read/revision updates
+  // caused by opening the chat cannot publish into the covered LazyForEach in
+  // that gap. Split layouts keep the list visible and therefore stay active.
+  const screenW: number = AppStorage.get<number>('screenWidthVp') ?? 0;
+  const screenH: number = AppStorage.get<number>('screenHeightVp') ?? 0;
+  if (!isSplitLayout(screenW, screenH)) {
+    setChatListRenderActive(false);
   }
   stack.pushPath({ name: CHAT_DEST_NAME, param: params });
   return Promise.resolve();

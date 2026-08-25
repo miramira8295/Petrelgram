@@ -124,11 +124,16 @@ export function navigateToChatProfile(params: Record<string, Object>): void {
   pushInto(CHAT_PROFILE_DEST_NAME, CHAT_PROFILE_PAGE_URL, params, 'content', 'chat');
 }
 
-// 话题群的话题列表。origin 是 **'navbar' 不是 'content'**：它唯一的入口是
-// ChatRow（会话列表里点一个话题群），语义与「选一个会话」完全一致——右栏
-// 应该被换成这个话题列表，而不是把它叠在一个不相干的会话上面。
-export function navigateToForumTopics(params: Record<string, Object>): void {
-  pushInto(FORUM_TOPICS_DEST_NAME, FORUM_TOPICS_PAGE_URL, params, 'navbar', 'chat');
+// 话题群的话题列表。origin 由**入口所在的栏**决定，不再写死：
+//   'navbar'  会话列表里点一个话题群——语义与「选一个会话」一致，右栏被换成
+//             这个话题列表，而不是叠在一个不相干的会话上面；
+//   'content' 归档列表里点一个话题群——归档页本身就是栈里的一层，'navbar'
+//             的 clearAndPush 会把它一起清掉，返回时直接落回首页而不是归档
+//             （issue #117 的形状）。chatNav.ets 头部那条「尚未覆盖」说的正是它。
+export function navigateToForumTopics(
+  params: Record<string, Object>, origin: PushOrigin = 'navbar'
+): void {
+  pushInto(FORUM_TOPICS_DEST_NAME, FORUM_TOPICS_PAGE_URL, params, origin, 'chat');
 }
 
 // 归档会话列表。同样是 'navbar'：入口在 MainTabBody（会话列表第 0 行），
