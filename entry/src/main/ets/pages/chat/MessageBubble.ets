@@ -43,7 +43,7 @@ import {
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
-import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, COLOR_BUBBLE_TEXT, AVATAR_PALETTE, botButtonBg, accentSoft} from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, AVATAR_PALETTE, botButtonBg, accentSoft, bubbleTextFor } from '../../util/theme';
 import { languageDisplayName } from '../../services/TranslationService';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
@@ -54,7 +54,9 @@ import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
+import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
@@ -185,6 +187,11 @@ export struct MessageBubble {
   private unsubSendState: (() => void) | null = null;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
   @Prop themeBubbleOut: string = '';
+  // 本地外观：epoch 一变，气泡底色/文字色（theme 里的活绑定）跟着重取。
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 气泡材质只给屏内气泡挂，离屏纯色；省电时也退回纯色。
+  @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
+  @State onScreen: boolean = false;
   @Prop nowSec: number;
   // 本机正在共享实时位置的那条消息 id（0 = 没有共享）。
   @Prop liveSharingId: number = 0;
@@ -1212,10 +1219,10 @@ export struct MessageBubble {
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
         .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
         .fontFamily(run.code ? 'monospace' : '')
-        .fontColor(run.link ? COLOR_PRIMARY : COLOR_BUBBLE_TEXT)
+        .fontColor(run.link ? COLOR_PRIMARY : bubbleTextFor(this.msg.isOutgoing))
         .decoration({
           type: this.richRunDecoration(run),
-          color: run.link ? COLOR_PRIMARY : COLOR_BUBBLE_TEXT
+          color: run.link ? COLOR_PRIMARY : bubbleTextFor(this.msg.isOutgoing)
         })
         .textBackgroundStyle({
           color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
@@ -1258,7 +1265,7 @@ export struct MessageBubble {
   @Builder
   directPlainTextBody() {
     Text() {
-      Span(this.msg.text).fontColor(COLOR_BUBBLE_TEXT);
+      Span(this.msg.text).fontColor(bubbleTextFor(this.msg.isOutgoing));
       Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
     }
     .fontSize(this.msgTextSize)
@@ -1336,7 +1343,7 @@ export struct MessageBubble {
             }
             .fontSize(this.codeTextSize())
             .lineHeight(this.codeTextSize() * 1.42)
-            .fontColor(COLOR_BUBBLE_TEXT)
+            .fontColor(bubbleTextFor(this.msg.isOutgoing))
             .fontFamily('monospace')
             .constraintSize({ maxWidth: maxWidth - 20 })
             .wordBreak(WordBreak.BREAK_ALL);
@@ -1434,7 +1441,7 @@ export struct MessageBubble {
           .fontSize(this.msgTextSize)
           .lineHeight(this.msgTextSize * 1.34)
           .fontStyle(FontStyle.Italic)
-          .fontColor(COLOR_BUBBLE_TEXT)
+          .fontColor(bubbleTextFor(this.msg.isOutgoing))
           .wordBreak(WordBreak.BREAK_WORD)
           .constraintSize({ maxWidth: this.inlineMaxW() });
       }
@@ -1954,7 +1961,7 @@ export struct MessageBubble {
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
       if (this.msg.linkTitle !== '') {
         Text(this.msg.linkTitle)
-          .fontSize(14).fontColor(COLOR_BUBBLE_TEXT).fontWeight(FontWeight.Bold)
+          .fontSize(14).fontColor(bubbleTextFor(this.msg.isOutgoing)).fontWeight(FontWeight.Bold)
           .lineHeight(19).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 });
       }
@@ -1962,7 +1969,7 @@ export struct MessageBubble {
         // Description entities are deliberately display-only: the entire card
         // has one predictable target and nested links can't hijack a tap.
         Text(this.msg.linkDescription)
-          .fontSize(13).fontColor(COLOR_BUBBLE_TEXT).lineHeight(18)
+          .fontSize(13).fontColor(bubbleTextFor(this.msg.isOutgoing)).lineHeight(18)
           .maxLines(compact ? 3 : 4).textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 });
       } else if (this.msg.linkTitle === '') {
@@ -2227,7 +2234,7 @@ export struct MessageBubble {
         Blank();
         // Round "expand" button → opens the full emoji reaction picker.
         Row() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([COLOR_BUBBLE_TEXT]);
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([bubbleTextFor(this.msg.isOutgoing)]);
         }
         .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
         .justifyContent(FlexAlign.Center)
@@ -2972,7 +2979,7 @@ export struct MessageBubble {
           .fontSize(20).fontColor([COLOR_PRIMARY]).width(22);
         Column({ space: 1 }) {
           Text(this.fallbackLabel())
-            .fontSize(13).fontColor(COLOR_BUBBLE_TEXT).fontWeight(FontWeight.Medium)
+            .fontSize(13).fontColor(bubbleTextFor(this.msg.isOutgoing)).fontWeight(FontWeight.Medium)
             .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis });
           Text() {
             Span($r('app.string.mb_partial_content')).fontColor(COLOR_TEXT_SECONDARY);
@@ -3056,10 +3063,23 @@ export struct MessageBubble {
 
   // 气泡自身的填充色。叠压头像的间隙圈要取它，才能读作"挖空"而不是描边。
   private bubbleFillColor(): ResourceColor {
+    if (this.appearanceEpoch < 0) {
+      return Color.Transparent; // 只为让 ArkUI 记下对 epoch 的依赖
+    }
     if (this.msg.isOutgoing) {
       return this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT;
     }
     return COLOR_BUBBLE_IN;
+  }
+
+  private bubbleMaterialLive(): boolean {
+    return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
+  }
+
+  // 材质开着时底色交给 overlayGlassFill：有材质 → 透明让材质画，没材质 → 玻璃色。
+  private bubbleBg(): ResourceColor {
+    const solid = this.bubbleFillColor();
+    return this.bubbleMaterialLive() ? overlayGlassFill('bubble', solid) : solid;
   }
 
   private timeReserveInText(): boolean {
@@ -3279,7 +3299,7 @@ export struct MessageBubble {
       if (!this.msg.isOutgoing && this.hasBubbleTail()) {
         Polygon({ width: 8, height: 12 })
           .points([[8, 0], [0, 12], [8, 12]])
-          .fill(COLOR_BUBBLE_IN)
+          .fill(this.bubbleFillColor())
           .margin({ right: -1 });
       } else if (!this.msg.isOutgoing) {
         Column().width(this.bubbleTailGutter());
@@ -3360,10 +3380,12 @@ export struct MessageBubble {
       }
       .alignItems(HorizontalAlign.Start)
       .constraintSize({ maxWidth: this.bubbleMaxW() })
-      .backgroundColor(this.isBareEmoji() ? Color.Transparent
-        : (this.msg.isOutgoing
-          ? (this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT)
-          : COLOR_BUBBLE_IN))
+      .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
+      .backdropBlur(this.bubbleMaterialLive() && !this.isBareEmoji() ? overlayBackdropBlur('bubble') : 0)
+      .attributeModifier(materialModifierWhen('bubble', this.bubbleMaterialLive() && !this.isBareEmoji()))
+      .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
+        this.onScreen = visible;
+      })
       // Adjacent rows share a restrained 7vp corner. Only the final row gets
       // the tight tail corner; a single-row run keeps the configured top arc.
       .borderRadius(this.bubbleCornerRadius())
@@ -3405,7 +3427,7 @@ export struct MessageBubble {
       if (this.msg.isOutgoing && this.hasBubbleTail()) {
         Polygon({ width: 8, height: 12 })
           .points([[0, 0], [8, 12], [0, 12]])
-          .fill(this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT)
+          .fill(this.bubbleFillColor())
           .margin({ left: -1 });
       } else if (this.msg.isOutgoing) {
         Column().width(this.bubbleTailGutter());

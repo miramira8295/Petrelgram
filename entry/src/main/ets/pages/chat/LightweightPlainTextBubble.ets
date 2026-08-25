@@ -9,7 +9,9 @@ import {
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
-import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
+import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
@@ -20,7 +22,7 @@ import {
 } from '../../util/translationChannel';
 import {
   accentSoft, AVATAR_PALETTE, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT,
-  COLOR_BUBBLE_TEXT, COLOR_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PRIMARY, COLOR_TEXT_SECONDARY, bubbleTextFor
 } from '../../util/theme';
 import { formatClockTime } from '../../util/formatTime';
 import { probeHit } from '../../util/panelProbe';
@@ -143,6 +145,29 @@ export struct LightweightPlainTextBubble {
   @Prop chatId: number = 0;
   @Prop isGroup: boolean = false;
   @Prop themeBubbleOut: string = '';
+  // 本地外观：同 MessageBubble——epoch 驱动底色/文字色重取，材质只给屏内且非省电的气泡。
+  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
+  @State onScreen: boolean = false;
+
+  private bubbleFillColor(): ResourceColor {
+    if (this.appearanceEpoch < 0) {
+      return Color.Transparent; // 只为让 ArkUI 记下对 epoch 的依赖
+    }
+    if (this.msg.isOutgoing) {
+      return this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT;
+    }
+    return COLOR_BUBBLE_IN;
+  }
+
+  private bubbleMaterialLive(): boolean {
+    return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
+  }
+
+  private bubbleBg(): ResourceColor {
+    const solid = this.bubbleFillColor();
+    return this.bubbleMaterialLive() ? overlayGlassFill('bubble', solid) : solid;
+  }
   @Prop showUnreadDivider: boolean = false;
   @Prop dateLabel: string = '';
   @Prop editingActive: boolean = false;
@@ -391,7 +416,7 @@ export struct LightweightPlainTextBubble {
     Column() {
       if (this.msg.replyToMessageId !== 0) { this.replyQuote(); }
       Text() {
-        Span(this.msg.text).fontColor(COLOR_BUBBLE_TEXT);
+        Span(this.msg.text).fontColor(bubbleTextFor(this.msg.isOutgoing));
         if (this.translationStatus === null) {
           Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
         }
@@ -431,7 +456,7 @@ export struct LightweightPlainTextBubble {
         }, (emoji: string): string => emoji);
         Blank();
         Row() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([COLOR_BUBBLE_TEXT]);
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([bubbleTextFor(this.msg.isOutgoing)]);
         }
         .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
         .justifyContent(FlexAlign.Center)
@@ -516,7 +541,7 @@ export struct LightweightPlainTextBubble {
           }
           if (!this.msg.isOutgoing && this.hasTail()) {
             Polygon({ width: 8, height: 12 }).points([[8, 0], [0, 12], [8, 12]])
-              .fill(COLOR_BUBBLE_IN).margin({ right: -1 });
+              .fill(this.bubbleFillColor()).margin({ right: -1 });
           } else if (!this.msg.isOutgoing) {
             Column().width(7);
           }
@@ -539,9 +564,12 @@ export struct LightweightPlainTextBubble {
             }.constraintSize({ maxWidth: this.inlineMaxW() });
           }
           .alignItems(HorizontalAlign.Start).constraintSize({ maxWidth: this.bubbleMaxW() })
-          .backgroundColor(this.msg.isOutgoing
-            ? (this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT)
-            : COLOR_BUBBLE_IN)
+          .backgroundColor(this.bubbleBg())
+          .backdropBlur(this.bubbleMaterialLive() ? overlayBackdropBlur('bubble') : 0)
+          .attributeModifier(materialModifierWhen('bubble', this.bubbleMaterialLive()))
+          .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
+            this.onScreen = visible;
+          })
           .borderRadius(this.bubbleCorners()).padding(8)
           .shadow({ radius: 2, color: '#14000000', offsetX: 0, offsetY: 1 })
           .stateStyles({ normal: this.bubbleNormalStyle, pressed: this.bubblePressedStyle })

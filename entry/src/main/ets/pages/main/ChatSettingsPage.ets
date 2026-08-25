@@ -9,9 +9,12 @@ import {
 } from '../../store/AppSettings';
 import {
   LIGHT_ADAPTIVE, LIGHT_DEFAULT, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH,
-  THICKNESS_DEFAULT, THICKNESS_REGULAR, THICKNESS_THICK, THICKNESS_THIN,
+  THICKNESS_DEFAULT, THICKNESS_OFF, THICKNESS_REGULAR, THICKNESS_THICK, THICKNESS_THIN,
   THICKNESS_ULTRA_THICK, THICKNESS_ULTRA_THIN
 } from '../../util/materialTuning';
+import {
+  KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, recomputeAppearance
+} from '../../util/appearance';
 import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overlayMaterial';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT
@@ -45,6 +48,7 @@ interface MaterialLightOption {
 // 从薄到厚，和 ImmersiveStyle 的枚举次序一致。存的是相对偏移，"标准" 是 0，
 // 也就是出厂手感——见 materialTuning 里为什么不存绝对档位。
 const THICKNESS_OPTIONS: MaterialThicknessOption[] = [
+  { label: str('material_thickness_off'), value: THICKNESS_OFF },
   { label: str('material_thickness_ultra_thin'), value: THICKNESS_ULTRA_THIN },
   { label: str('material_thickness_thin'), value: THICKNESS_THIN },
   { label: str('material_thickness_regular'), value: THICKNESS_REGULAR },
@@ -91,8 +95,11 @@ export struct ChatSettingsPage {
   @StorageLink(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
   @StorageLink(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
   @StorageLink(KEY_IN_APP_BROWSER) inAppBrowser: boolean = true;
+  // 厚度/光感按浅色/深色各一份，两组并列展示；当前模式那份由 overlayMaterial 自己选。
   @StorageLink(KEY_MATERIAL_THICKNESS) materialThickness: number = THICKNESS_DEFAULT;
   @StorageLink(KEY_MATERIAL_LIGHT) materialLight: string = LIGHT_DEFAULT;
+  @StorageLink(KEY_MATERIAL_THICKNESS_DARK) materialThicknessDark: number = THICKNESS_DEFAULT;
+  @StorageLink(KEY_MATERIAL_LIGHT_DARK) materialLightDark: string = LIGHT_DEFAULT;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
   // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
   // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
@@ -286,31 +293,54 @@ export struct ChatSettingsPage {
       Text($r('app.string.chat_settings_material_thickness_sub'))
         .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
         .width('100%').padding({ left: 16, right: 16, bottom: 8 });
-      ForEach(THICKNESS_OPTIONS, (opt: MaterialThicknessOption, idx: number) => {
-        if (idx > 0) {
-          Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-        }
-        Row() {
-          Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-          if (this.materialThickness === opt.value) {
-            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
-          }
-        }
-        .width('100%').height(48).padding({ left: 16, right: 16 })
-        .stateStyles({
-          normal: this.optionNormalStyle,
-          pressed: this.optionPressedStyle
-        })
-        .accessibilityText(str('a11y_option_state', opt.label,
-          this.materialThickness === opt.value ? str('a11y_selected') : ''))
-        .onClick((): void => {
-          if (this.materialThickness !== opt.value) {
-            setNumber(KEY_MATERIAL_THICKNESS, opt.value);
-            bumpMaterialEpoch();
-          }
-        });
-      }, (opt: MaterialThicknessOption) => `t${opt.value}`);
+      this.modeLabel($r('app.string.appearance_mode_light'));
+      this.thicknessRows(false);
+      this.modeLabel($r('app.string.appearance_mode_dark'));
+      this.thicknessRows(true);
     }.width('100%');
+  }
+
+  @Builder
+  modeLabel(label: ResourceStr) {
+    Text(label).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+      .width('100%').padding({ left: 16, right: 16, top: 10, bottom: 4 });
+  }
+
+  private thicknessOf(forDark: boolean): number {
+    return forDark ? this.materialThicknessDark : this.materialThickness;
+  }
+
+  private lightOf(forDark: boolean): string {
+    return forDark ? this.materialLightDark : this.materialLight;
+  }
+
+  @Builder
+  thicknessRows(forDark: boolean) {
+    ForEach(THICKNESS_OPTIONS, (opt: MaterialThicknessOption, idx: number) => {
+      if (idx > 0) {
+        Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      }
+      Row() {
+        Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        if (this.thicknessOf(forDark) === opt.value) {
+          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+        }
+      }
+      .width('100%').height(48).padding({ left: 16, right: 16 })
+      .stateStyles({
+        normal: this.optionNormalStyle,
+        pressed: this.optionPressedStyle
+      })
+      .accessibilityText(str('a11y_option_state', opt.label,
+        this.thicknessOf(forDark) === opt.value ? str('a11y_selected') : ''))
+      .onClick((): void => {
+        if (this.thicknessOf(forDark) !== opt.value) {
+          setNumber(forDark ? KEY_MATERIAL_THICKNESS_DARK : KEY_MATERIAL_THICKNESS, opt.value);
+          bumpMaterialEpoch();
+          recomputeAppearance();
+        }
+      });
+    }, (opt: MaterialThicknessOption) => `t${forDark ? 'd' : 'l'}${opt.value}`);
   }
 
   // 光感等级。lightEffect / interactive 是 ImmersiveOptions 的字段，没有材质
@@ -322,31 +352,40 @@ export struct ChatSettingsPage {
       Text($r('app.string.chat_settings_material_light_sub'))
         .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
         .width('100%').padding({ left: 16, right: 16, bottom: 8 });
-      ForEach(LIGHT_OPTIONS, (opt: MaterialLightOption, idx: number) => {
-        if (idx > 0) {
-          Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
-        }
-        Row() {
-          Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-          if (this.materialLight === opt.value) {
-            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
-          }
-        }
-        .width('100%').height(48).padding({ left: 16, right: 16 })
-        .stateStyles({
-          normal: this.optionNormalStyle,
-          pressed: this.optionPressedStyle
-        })
-        .accessibilityText(str('a11y_option_state', opt.label,
-          this.materialLight === opt.value ? str('a11y_selected') : ''))
-        .onClick((): void => {
-          if (this.materialLight !== opt.value) {
-            setString(KEY_MATERIAL_LIGHT, opt.value);
-            bumpMaterialEpoch();
-          }
-        });
-      }, (opt: MaterialLightOption) => `l${opt.value}`);
+      this.modeLabel($r('app.string.appearance_mode_light'));
+      this.lightRows(false);
+      this.modeLabel($r('app.string.appearance_mode_dark'));
+      this.lightRows(true);
     }.width('100%');
+  }
+
+  @Builder
+  lightRows(forDark: boolean) {
+    ForEach(LIGHT_OPTIONS, (opt: MaterialLightOption, idx: number) => {
+      if (idx > 0) {
+        Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      }
+      Row() {
+        Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        if (this.lightOf(forDark) === opt.value) {
+          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+        }
+      }
+      .width('100%').height(48).padding({ left: 16, right: 16 })
+      .stateStyles({
+        normal: this.optionNormalStyle,
+        pressed: this.optionPressedStyle
+      })
+      .accessibilityText(str('a11y_option_state', opt.label,
+        this.lightOf(forDark) === opt.value ? str('a11y_selected') : ''))
+      .onClick((): void => {
+        if (this.lightOf(forDark) !== opt.value) {
+          setString(forDark ? KEY_MATERIAL_LIGHT_DARK : KEY_MATERIAL_LIGHT, opt.value);
+          bumpMaterialEpoch();
+          recomputeAppearance();
+        }
+      });
+    }, (opt: MaterialLightOption) => `l${forDark ? 'd' : 'l'}${opt.value}`);
   }
 
   @Builder
