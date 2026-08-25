@@ -33,3 +33,30 @@ export function reachedLiveTail(windowNewestId: number, chatLastMessageId: numbe
   }
   return windowNewestId >= chatLastMessageId;
 }
+
+// TDLib 的消息 id 每条加 2^20（服务端 id 左移 20 位），相邻两条的差就是 1 步。
+export const MESSAGE_ID_STEP: number = 1048576;
+
+// 实时到达的消息离窗口尾巴几步。0 = 没有窗口或不比尾巴新。
+export function liveArrivalStep(windowNewestId: number, arrivalId: number): number {
+  if (windowNewestId <= 0 || arrivalId <= windowNewestId) {
+    return 0;
+  }
+  return Math.round((arrivalId - windowNewestId) / MESSAGE_ID_STEP);
+}
+
+// 实时到达的消息是不是**紧接着**窗口尾巴——收下它不会在窗口里留洞。
+//
+// issue #62 的根因就在这一步的缺失：窗口向下翻到底之后 hasMoreNewer 没关（短页
+// 不算到头，syncTailFromChatLast 又要靠 chatLastMessageId），闸门把 id 只比尾巴
+// 大一步的实时消息当成"跨洞"扔掉，窗口从此永远追不上；报告人日志里十次
+// live arrival skipped 全是这个形状（差正好一步，之后每条都丢）。
+//
+// 容差和 loadNewer 的页连续性检查用同一个数：被删的消息、服务消息会让相邻 id
+// 差不止一步，那边算连续的这里也算。
+export function liveArrivalContiguous(
+  windowNewestId: number, arrivalId: number, tolerance: number
+): boolean {
+  const step: number = liveArrivalStep(windowNewestId, arrivalId);
+  return step >= 1 && step <= tolerance;
+}

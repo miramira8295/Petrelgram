@@ -1,5 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { reachedLiveTail } from '../main/ets/util/liveTail';
+import {
+  MESSAGE_ID_STEP, liveArrivalContiguous, liveArrivalStep, reachedLiveTail
+} from '../main/ets/util/liveTail';
 
 export default function liveTailTest() {
   describe('liveTail', () => {
@@ -36,6 +38,21 @@ export default function liveTailTest() {
     it('negative_input_is_not_tail', 0, () => {
       expect(reachedLiveTail(-1, 11472555999232)).assertFalse();
       expect(reachedLiveTail(11472555999232, -1)).assertFalse();
+    });
+    // issue #62：报告人日志里 windowNewest=3182428160、到达 id=3183476736，差正好 2^20。
+    it('实时消息紧接窗口尾巴一步，算连续', 0, (): void => {
+      expect(liveArrivalStep(3182428160, 3183476736)).assertEqual(1);
+      expect(liveArrivalContiguous(3182428160, 3183476736, 5)).assertTrue();
+    });
+    it('容差内的几步也算连续（被删消息/服务消息让 id 跳格）', 0, (): void => {
+      expect(liveArrivalContiguous(3182428160, 3182428160 + 5 * MESSAGE_ID_STEP, 5)).assertTrue();
+      expect(liveArrivalContiguous(3182428160, 3182428160 + 6 * MESSAGE_ID_STEP, 5)).assertFalse();
+    });
+    it('没有窗口、或不比尾巴新，都不算', 0, (): void => {
+      expect(liveArrivalStep(0, 3183476736)).assertEqual(0);
+      expect(liveArrivalStep(3183476736, 3183476736)).assertEqual(0);
+      expect(liveArrivalStep(3183476736, 3182428160)).assertEqual(0);
+      expect(liveArrivalContiguous(0, 3183476736, 5)).assertFalse();
     });
   });
 }

@@ -6,7 +6,7 @@ import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
 import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChannel';
 import { publishThumbPath } from '../util/mediaThumbChannel';
 import { formatUserStatus } from '../util/formatUserStatus';
-import { reachedLiveTail } from '../util/liveTail';
+import { liveArrivalContiguous, liveArrivalStep, reachedLiveTail } from '../util/liveTail';
 import { formatPreview } from '../util/formatPreview';
 import { formatMemberCount } from '../util/formatMemberCount';
 import {
@@ -2122,9 +2122,22 @@ export class MessageStore {
     //
     // 自己发出去的消息例外——那是用户刚做的动作，必须立刻可见。
     if (this.hasMoreNewer && !entry.isOutgoing) {
-      logI(`[StoreDiag] live arrival skipped id=${entry.id}` +
-        ` windowNewest=${this.messages.length > 0 ? this.messages[this.messages.length - 1].id : 0}`);
-      return;
+      const windowNewest: number =
+        this.messages.length > 0 ? this.messages[this.messages.length - 1].id : 0;
+      if (liveArrivalContiguous(windowNewest, entry.id, NEWER_GAP_TOLERANCE)) {
+        // 紧接着窗口尾巴：收下不会留洞，而且它证明窗口此刻就在真尾部——向下
+        // 分页该关了。不关的话下一条又会被当成跨洞扔掉，窗口永远追不上
+        // （issue #62，报告人日志里十次 skipped 全是差一步的形状）。
+        logW(`[StoreDiag] live arrival contiguous id=${entry.id} windowNewest=${windowNewest}` +
+          `: closing newer pagination`);
+        this.hasMoreNewer = false;
+        this.newerLoadState = 'end';
+        this.notify('paginationState');
+      } else {
+        logI(`[StoreDiag] live arrival skipped id=${entry.id} windowNewest=${windowNewest}` +
+          ` step=${liveArrivalStep(windowNewest, entry.id)}`);
+        return;
+      }
     }
     this.upsert(entry);
     // 实时到达（不是翻历史翻出来的）。整段媒体的可见窗口对这些消息放行：
