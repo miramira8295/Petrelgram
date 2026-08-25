@@ -25,16 +25,20 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
 
 const CONTROL_BAR_BG: string = '#6e3e3e40';
-// 控制条自从换了沉浸材质（materialModifier('viewer')），浅色模式下是**亮**
-// 玻璃，写死的白字在上面看不见。玻璃上的前景一律跟主题走；仍压在视频画面
-// /黑蒙层上的元素（快进反馈、重播、速度气泡）继续用字面白。
-const CONTROL_ACCENT: ResourceColor = $r('app.color.text_primary');
-const CONTROL_TEXT_SOFT: ResourceColor = $r('app.color.text_secondary');
+// **一律字面白，不跟主题。**
+//
+// 这里曾经改成跟主题走（commit 622b1fe），理由是"控制条换了沉浸材质，浅色
+// 模式下是亮玻璃，白字看不见"。那个前提现在没有了：'viewer' 这一面已经退出
+// 沉浸材质，底色固定成深色半透明（见 util/overlayMaterial 的
+// usesImmersiveMaterial）——身后是用户随便一张照片，没有任何自适应能成立。
+// 底既然恒暗，前景就该恒白，和压在视频画面上的那些元素统一。
+const CONTROL_ACCENT: ResourceColor = '#FFFFFF';
+const CONTROL_TEXT_SOFT: ResourceColor = '#EAEEF2';
 // Seek bar, back to front: unbuffered track → downloaded span → played span.
 const CONTROL_TRACK_SOFT: string = '#804C5259';       // unbuffered remainder
 const CONTROL_TRACK_SOFT_FILL: string = '#8E969E';  // downloaded but not played
-// 已播放段和拇指同色，跟主题走——白轨在浅色玻璃上同样看不见。
-const CONTROL_TRACK: ResourceColor = $r('app.color.text_primary');
+// 已播放段和拇指同色。
+const CONTROL_TRACK: ResourceColor = '#FFFFFF';
 
 // Output device types that count as "headphones": unplugging/disconnecting one
 // of these pauses playback instead of blasting the speaker.

@@ -7,7 +7,8 @@ import {
   overlayBlur,
   overlayGlassFill,
   overlayMaterial,
-  pressAnimationWins
+  pressAnimationWins,
+  usesImmersiveMaterial
 } from '../main/ets/util/overlayMaterial';
 
 // The immersive system material arrived in API 26. Below it every overlay keeps
@@ -149,21 +150,44 @@ export default function overlayMaterialTest() {
       }
     });
 
-    // 'viewer' 浮在照片/视频上，底永远是黑的、文字图标永远是白的，不跟随主题。
-    // 别的面在无材质时回退到 dock_glass（跟随主题的资源），浅色主题下会在照片
-    // 上糊出一块亮色药丸；这一档必须回退到一个固定的深色半透明。
-    it('无材质时，viewer 这一档的回退色与跟随主题的那些面不同', 0, () => {
+    // ——— 'viewer' 退出沉浸材质 ———
+    //
+    // 沉浸材质的前提是"适应身后的东西"，而这一面身后是**用户随便一张照片**：
+    // 材质算出来是亮是暗全看那张图，前景色再怎么跟也总有一半照片不成立。
+    // #122 把顶栏做成通栏之后仍然看不清，就是因为通栏底色是透明的、观感全
+    // 交给了材质。三条不变量必须一起成立，缺一条这一面就又"看不清"了。
+
+    it('viewer 的底色恒为固定深色半透明，与 API 无关', 0, () => {
       const solid: ResourceColor = $r('app.color.surface');
       const viewerFill: ResourceColor = overlayGlassFill('viewer', solid);
-      const barFill: ResourceColor = overlayGlassFill('bar', solid);
-      if (immersiveMaterialAvailable()) {
-        // 有材质时一律透明——不透明底色会盖在材质层之上（官方 FAQ 写死）。
-        expect(`${viewerFill}`).assertEqual(`${barFill}`);
-      } else {
-        // 固定深色半透明，且不是那个跟随主题的资源。
-        expect(viewerFill as string).assertEqual('#6e3e3e40');
-        expect(`${viewerFill}` === `${barFill}`).assertFalse();
+      expect(viewerFill as string).assertEqual('#6e3e3e40');
+      // 别的面在有材质时是透明（把观感让给材质），无材质时回退 dock_glass
+      // ——两种情况都不等于 viewer 这个固定值。
+      expect(`${viewerFill}` === `${overlayGlassFill('bar', solid)}`).assertFalse();
+    });
+
+    // **判据本身**要被钉住，不能只测 overlayMaterial()：宿主单测里
+    // materialAvailable 恒为假，那个函数在改动前后都返回 undefined，测它等于
+    // 没测。真正的行为差别只在 API 26 的设备上，而设备上跑不了这些用例。
+    it('只有 viewer 退出沉浸材质，别的面照旧', 0, () => {
+      expect(usesImmersiveMaterial('viewer')).assertFalse();
+      for (const surface of ALL_SURFACES) {
+        if (surface !== 'viewer') {
+          expect(usesImmersiveMaterial(surface)).assertTrue();
+        }
       }
+    });
+
+    it('viewer 拿不到材质', 0, () => {
+      // 拿得到就会被 SurfaceMaterialModifier 挂上 systemMaterial，底色随即
+      // 被材质层盖住——回到"看不清"。
+      expect(overlayMaterial('viewer')).assertUndefined();
+    });
+
+    it('viewer 的模糊半径恒大于 0', 0, () => {
+      // 返回 0 的语义是"把观感让给材质"，而它没有材质可让：0 意味着这一面
+      // 只剩一层半透明色，身后的照片纹理会直接透上来压住文字。
+      expect(overlayBackdropBlur('viewer') > 0).assertTrue();
     });
   });
 }

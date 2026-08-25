@@ -263,6 +263,22 @@ function frameworkContainer(surface: OverlaySurface): boolean {
   return surface === 'menu' || surface === 'dialog';
 }
 
+// 'viewer' **不参与沉浸材质**，无论 API 多少。
+//
+// 沉浸材质的整个前提是"适应身后的东西"，而这一面身后是**用户随便一张照片**：
+// 材质算出来是亮是暗全看那张图，前景色再怎么跟也总有一半照片不成立。别的面
+// 浮在应用自己的界面上，底色可知，材质因此成立；只有这一面不是。
+//
+// 这条在 overlayGlassFill 的注释里本来就写着——「查看器的底永远是黑的、文字
+// 图标永远是白的，不跟主题走」——但那句话只在 API 26 以下的降级路径上兑现，
+// 26 上材质把它悄悄推翻了。#122 的顶栏做成通栏之后仍然看不清，就是这个原因：
+// 通栏的底色是透明的，观感全交给了材质。
+//
+// 所以固定成"深色半透明 + 高斯模糊 + 白色前景"，三样一起，缺一不可。
+export function usesImmersiveMaterial(surface: OverlaySurface): boolean {
+  return surface !== 'viewer';
+}
+
 // The blur a framework-managed container used before the material. Returning it
 // solely while the material is unavailable is what keeps the two from stacking.
 export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
@@ -283,7 +299,10 @@ export function plainBackdropBlur(): number {
 }
 
 export function overlayBackdropBlur(surface: OverlaySurface): number {
-  return materialAvailable ? 0 : fallbackBlurRadius(thicknessOffset());
+  // 不参与材质的面（'viewer'）自己画玻璃，任何 API 上都要模糊半径——返回 0
+  // 是"把观感让给材质"的意思，而它没有材质可让。
+  return (materialAvailable && usesImmersiveMaterial(surface))
+    ? 0 : fallbackBlurRadius(thicknessOffset());
 }
 
 // 自绘面的底色。两种情况都不能是原来那个不透明实色，但理由不同：
@@ -296,19 +315,17 @@ export function overlayBackdropBlur(surface: OverlaySurface): number {
 // 材质不可用时必须**半透明**。那时靠 backdropBlur 自己画玻璃，而不透明底色
 // 会把模糊完全盖住——模糊的是身后的东西，它自己不透光。
 export function overlayGlassFill(surface: OverlaySurface, _solid: ResourceColor): ResourceColor {
+  // 查看器控制层：**任何 API 上**都是这个固定的深色半透明，不是透明。
+  // 透明意味着观感全交给材质，而这一面不参与材质（见 usesImmersiveMaterial）。
+  if (!usesImmersiveMaterial(surface)) {
+    return VIEWER_GLASS_FALLBACK;
+  }
   if (materialAvailable) {
     return Color.Transparent;
   }
-  // 查看器控制层回退到一个**固定的深色半透明**，而不是 dock_glass。后者是
-  // 跟随主题的资源，浅色主题下会在照片上糊出一块亮色药丸；查看器的底永远
-  // 是黑的、文字图标永远是白的，不跟主题走。
-  //
   // 这个色由本模块自己持有，不回显调用方传进来的 solid：这个模块的职责就是
   // 替调用方决定，而不是指望调用方传来的恰好是半透明的（不透明底色会把
   // backdropBlur 完全盖住，OverlayMaterial.test 里钉着这条）。
-  if (surface === 'viewer') {
-    return VIEWER_GLASS_FALLBACK;
-  }
   return $r('app.color.dock_glass');
 }
 
@@ -340,7 +357,7 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
 // The material for a surface, or undefined on systems without it — at which
 // point that surface's own fallback getter is what takes effect.
 export function overlayMaterial(surface: OverlaySurface): uiMaterial.Material | undefined {
-  if (!materialAvailable) {
+  if (!materialAvailable || !usesImmersiveMaterial(surface)) {
     return undefined;
   }
   const key: string = cacheKey(surface);

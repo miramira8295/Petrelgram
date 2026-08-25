@@ -1007,7 +1007,7 @@ export struct MediaViewerOverlay {
       Row().width('100%').height(this.topSafe).hitTestBehavior(HitTestMode.None);
       Row({ space: 6 }) {
         Stack() {
-          SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([$r('app.color.text_primary')]);
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([Color.White]);
         }
         .width(40).height(40).borderRadius(20)
         .stateStyles({
@@ -1020,11 +1020,11 @@ export struct MediaViewerOverlay {
         })
         .onClick(() => { this.onRequestClose(); });
         Column({ space: 1 }) {
-          Text(this.infoTitle()).fontSize(15).fontColor($r('app.color.text_primary'))
+          Text(this.infoTitle()).fontSize(15).fontColor(Color.White)
             .fontWeight(FontWeight.Medium)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
           if (this.infoSubtitle() !== '') {
-            Text(this.infoSubtitle()).fontSize(11).fontColor($r('app.color.text_secondary'))
+            Text(this.infoSubtitle()).fontSize(11).fontColor('#D9FFFFFF')
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
           }
         }
@@ -1034,7 +1034,7 @@ export struct MediaViewerOverlay {
         // the downloaded span, and a stalled player draws a centered ring.
         // "⋮" menu — 保存到相册 etc.
         Stack() {
-          SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([$r('app.color.text_primary')]);
+          SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([Color.White]);
         }
         .width(40).height(40).borderRadius(20)
         .stateStyles({
@@ -1075,8 +1075,10 @@ export struct MediaViewerOverlay {
   @Builder
   hopBubble() {
     Row({ space: 8 }) {
+      // 前景一律白：这一面的底是固定的深色半透明，不参与沉浸材质，也就不跟
+      // 主题走（见 util/overlayMaterial 的 usesImmersiveMaterial）。
       if (this.hopDir < 0) {
-        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(15).fontColor([$r('app.color.text_primary')]);
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(15).fontColor([Color.White]);
       }
       if (this.hopThumbPath() !== '') {
         Image(this.hopThumbPath()).draggable(false)
@@ -1085,11 +1087,11 @@ export struct MediaViewerOverlay {
       Text(this.hopProgress >= 1
         ? $r('app.string.mv_hop_release')
         : (this.hopDir > 0 ? $r('app.string.mv_hop_next') : $r('app.string.mv_hop_prev')))
-        .fontSize(12).fontColor($r('app.color.text_primary'))
+        .fontSize(12).fontColor(Color.White)
         .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: 132 });
       if (this.hopDir > 0) {
-        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([$r('app.color.text_primary')]);
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([Color.White]);
       }
     }
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })
