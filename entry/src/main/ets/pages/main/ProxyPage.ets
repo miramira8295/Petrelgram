@@ -11,6 +11,7 @@ import {
   parseProxyPort, proxyActionErrorText, proxyConnectionText,
   proxyFormError, sameProxyConfiguration, enabledProxyConnected
 } from '../../util/proxyLogic';
+import { measureProxyConnectMs } from '../../util/proxyReach';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
@@ -24,6 +25,8 @@ import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlay
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 
+// 回落的 TCP 握手计时上限。5s 内连不上代理服务器，就按不通处理。
+const REACH_TIMEOUT_MS: number = 5000;
 const CARD_RADIUS: number = 14;
 const TOP_ACTION_SIZE: number = 44;
 const DANGER: string = '#E64646';
@@ -352,13 +355,18 @@ export struct ProxyPage {
     if (state === 'error') {
       return this.rowConnected(id) ? str('proxy_state_connected') : str('px_unreachable');
     }
+    if (state === 'reach') {
+      // ≈ = 到代理服务器的 TCP 握手耗时，不是 ping 的整条往返（见 util/proxyReach）。
+      const secs = this.pings.get(id) ?? 0;
+      return `\u2248${Math.max(1, Math.round(secs * 1000))} ms`;
+    }
     const seconds = this.pings.get(id) ?? 0;
     return `${Math.max(1, Math.round(seconds * 1000))} ms`;
   }
 
   private pingColor(id: number): string {
     const state = this.pingState(id);
-    if (state === 'ready') { return OK_GREEN; }
+    if (state === 'ready' || state === 'reach') { return OK_GREEN; }
     if (state === 'error') { return this.rowConnected(id) ? OK_GREEN : DANGER; }
     return COLOR_TEXT_SECONDARY as string;
   }
@@ -370,6 +378,17 @@ export struct ProxyPage {
     states.set(id, 'loading');
     this.pingStates = states;
     return token;
+  }
+
+  // ping 报错但代理连着时的回落结果：TCP 握手耗时当延迟（issue #31）。
+  private finishReach(id: number, token: number, ms: number): void {
+    if (!this.active || this.pingTokens.get(id) !== token) { return; }
+    const states = new Map(this.pingStates);
+    states.set(id, 'reach');
+    this.pingStates = states;
+    const pings = new Map(this.pings);
+    pings.set(id, ms / 1000);
+    this.pings = pings;
   }
 
   private finishPing(id: number, token: number, seconds: number, success: boolean): void {
@@ -399,8 +418,27 @@ export struct ProxyPage {
         // 不通还是请求本身没发对——testProxy 就栽在后者上（这个 TDLib 构建
         // 的 proxy 系列 API 收的是 proxy 对象，不是标准的平铺字段）。
         logE(`[proxy] ping ${entry.id} failed, raw: ${(caught as Error).message}`);
-        if (generation === this.pingGeneration) {
+        if (generation !== this.pingGeneration) {
+          index += 3;
+          continue;
+        }
+        if (!this.rowConnected(entry.id)) {
           this.finishPing(entry.id, token, 0, false);
+          index += 3;
+          continue;
+        }
+        // ping 报错但 TDLib 显示这个代理已连接（issue #31）：ping 给不出数字，
+        // 量一次到代理服务器的 TCP 握手耗时当延迟，显示成 ≈xx ms。
+        try {
+          const ms: number = await measureProxyConnectMs(entry.server, entry.port, REACH_TIMEOUT_MS);
+          if (generation === this.pingGeneration) {
+            this.finishReach(entry.id, token, ms);
+          }
+        } catch (reachErr) {
+          logE(`[proxy] reach ${entry.id} failed: ${(reachErr as Error).message}`);
+          if (generation === this.pingGeneration) {
+            this.finishPing(entry.id, token, 0, false);
+          }
         }
       }
       index += 3;

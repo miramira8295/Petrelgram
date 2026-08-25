@@ -70,3 +70,11 @@ export function enabledProxyConnected(isEnabled: boolean, connectionState: strin
   return isEnabled &&
     (connectionState === 'connectionStateReady' || connectionState === 'connectionStateUpdating');
 }
+
+// host 是不是 IP 字面量（IPv4 点分 / IPv6 含冒号）。是就不用走 DNS。
+export function isIpLiteral(host: string): boolean {
+  if (host.indexOf(':') >= 0) {
+    return true;
+  }
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+}

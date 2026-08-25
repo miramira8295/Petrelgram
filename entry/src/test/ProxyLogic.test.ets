@@ -6,7 +6,7 @@ import {
 } from '../main/ets/store/ProxyApi';
 import {
   parseProxyPort, proxyActionErrorText, proxyConnectionText,
-  proxyFormError, sameProxyConfiguration, enabledProxyConnected
+  proxyFormError, sameProxyConfiguration, enabledProxyConnected, isIpLiteral
 } from '../main/ets/util/proxyLogic';
 
 function entry(type: string): ProxyEntry {
@@ -87,6 +87,12 @@ export default function proxyLogicTest() {
       expect(enabledProxyConnected(true, 'connectionStateWaitingForNetwork')).assertFalse();
       expect(enabledProxyConnected(true, '')).assertFalse();
       expect(enabledProxyConnected(false, 'connectionStateReady')).assertFalse();
+    });
+    it('IP 字面量不走 DNS', 0, (): void => {
+      expect(isIpLiteral('1.2.3.4')).assertTrue();
+      expect(isIpLiteral('2001:db8::1')).assertTrue();
+      expect(isIpLiteral('proxy.example.com')).assertFalse();
+      expect(isIpLiteral('1.2.3')).assertFalse();
     });
   });
 }
