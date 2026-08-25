@@ -119,6 +119,14 @@ export class ProfileStore {
         this.applyFile(f);
       }
     }));
+    // Emoji status / name / photo edits arrive as updateUser; without this the
+    // page keeps the snapshot from the first getUser until the store is rebuilt.
+    this.unsubs.push(this.client.onUpdate('updateUser', (u: TdObject) => {
+      const user = u['user'] as TdObject | undefined;
+      if (user !== undefined && (user['id'] as number | undefined) === this.userId) {
+        this.applyUser(user);
+      }
+    }));
     this.unsubs.push(this.client.onUpdate('updateUserStatus', (u: TdObject) => {
       if ((u['user_id'] as number | undefined) === this.userId) {
         this.applyUserStatus(u['status'] as TdObject | undefined, true);
@@ -244,32 +252,34 @@ export class ProfileStore {
   private loadUser(): void {
     const req: TdRequest = { '@type': 'getUser' };
     req['user_id'] = this.userId;
-    this.send(req, 'getUser', (user: TdObject) => {
-      const first = (user['first_name'] as string | undefined) ?? '';
-      const last = (user['last_name'] as string | undefined) ?? '';
-      this.name = `${first}${last !== '' ? ' ' + last : ''}`;
-      this.initials = this.name.length > 0 ? this.name.substring(0, 1).toUpperCase() : '?';
-      this.phone = (user['phone_number'] as string | undefined) ?? '';
-      this.isContact = (user['is_contact'] as boolean | undefined) ?? false;
-      this.applyUserStatus(user['status'] as TdObject | undefined, false);
-      const un = user['usernames'] as TdObject | undefined;
-      this.usernames = un !== undefined ? ((un['active_usernames'] as string[] | undefined) ?? []) : [];
-      const photo = user['profile_photo'] as TdObject | undefined;
-      const big = photo !== undefined ? (photo['big'] as TdObject | undefined) : undefined;
-      const fileId = big !== undefined ? ((big['id'] as number | undefined) ?? 0) : 0;
-      const avatarVersion = ++this.avatarVersion;
-      if (fileId <= 0) {
-        this.avatarPath = '';
-      } else {
-        this.download(fileId, (p: string) => {
-          if (avatarVersion === this.avatarVersion) {
-            this.avatarPath = p;
-          }
-        });
-      }
-      this.parseEmojiStatus(user['emoji_status'] as TdObject | undefined);
-      this.notify();
-    });
+    this.send(req, 'getUser', (user: TdObject) => this.applyUser(user));
+  }
+
+  private applyUser(user: TdObject): void {
+    const first = (user['first_name'] as string | undefined) ?? '';
+    const last = (user['last_name'] as string | undefined) ?? '';
+    this.name = `${first}${last !== '' ? ' ' + last : ''}`;
+    this.initials = this.name.length > 0 ? this.name.substring(0, 1).toUpperCase() : '?';
+    this.phone = (user['phone_number'] as string | undefined) ?? '';
+    this.isContact = (user['is_contact'] as boolean | undefined) ?? false;
+    this.applyUserStatus(user['status'] as TdObject | undefined, false);
+    const un = user['usernames'] as TdObject | undefined;
+    this.usernames = un !== undefined ? ((un['active_usernames'] as string[] | undefined) ?? []) : [];
+    const photo = user['profile_photo'] as TdObject | undefined;
+    const big = photo !== undefined ? (photo['big'] as TdObject | undefined) : undefined;
+    const fileId = big !== undefined ? ((big['id'] as number | undefined) ?? 0) : 0;
+    const avatarVersion = ++this.avatarVersion;
+    if (fileId <= 0) {
+      this.avatarPath = '';
+    } else {
+      this.download(fileId, (p: string) => {
+        if (avatarVersion === this.avatarVersion) {
+          this.avatarPath = p;
+        }
+      });
+    }
+    this.parseEmojiStatus(user['emoji_status'] as TdObject | undefined);
+    this.notify();
   }
 
   // emoji_status.custom_emoji_id (older TDLib) or emoji_status.type.custom_emoji_id

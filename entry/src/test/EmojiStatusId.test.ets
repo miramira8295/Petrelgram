@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { customEmojiIdOfStatus, emojiStatusIdsOf } from '../main/ets/util/emojiStatus';
+import { buildEmojiStatusValue, customEmojiIdOfStatus, emojiStatusIdsOf } from '../main/ets/util/emojiStatus';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
 export default function emojiStatusIdTest() {
@@ -32,6 +32,20 @@ export default function emojiStatusIdTest() {
     it('回包没有任何一种字段时为空', 0, (): void => {
       expect(emojiStatusIdsOf({ '@type': 'emojiStatuses' } as TdObject).length).assertEqual(0);
       expect(emojiStatusIdsOf(undefined).length).assertEqual(0);
+    });
+  });
+
+  describe('buildEmojiStatusValue', () => {
+    it('新旧两种形状一起带上：老 so 只认平铺的 custom_emoji_id，新 so 只认 type', 0, (): void => {
+      const es = buildEmojiStatusValue('5368324170671202286') as TdObject;
+      expect(es['@type']).assertEqual('emojiStatus');
+      expect(es['custom_emoji_id']).assertEqual('5368324170671202286');
+      const type = es['type'] as TdObject;
+      expect(type['@type']).assertEqual('emojiStatusTypeCustomEmoji');
+      expect(type['custom_emoji_id']).assertEqual('5368324170671202286');
+    });
+    it('空 id 表示清除：不带 emoji_status', 0, (): void => {
+      expect(buildEmojiStatusValue('')).assertUndefined();
     });
   });
 }

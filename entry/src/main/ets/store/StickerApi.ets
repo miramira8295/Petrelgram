@@ -1,6 +1,6 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
-import { emojiStatusIdsOf } from '../util/emojiStatus';
+import { buildEmojiStatusValue, emojiStatusIdsOf } from '../util/emojiStatus';
 import { logW } from '../util/log';
 
 // Sticker library operations beyond the installed-packs list: the 最近/收藏
@@ -164,11 +164,8 @@ export async function getRecentEmojiStatuses(): Promise<string[]> {
 // customEmojiId '' clears the status.
 export async function setEmojiStatus(customEmojiId: string): Promise<void> {
   const request: TdRequest = { '@type': 'setEmojiStatus' };
-  if (customEmojiId !== '') {
-    const status: TdObject = { '@type': 'emojiStatus' };
-    const type: TdObject = { '@type': 'emojiStatusTypeCustomEmoji' };
-    type['custom_emoji_id'] = customEmojiId;
-    status['type'] = type;
+  const status = buildEmojiStatusValue(customEmojiId);
+  if (status !== undefined) {
     request['emoji_status'] = status;
   }
   await getTdClient().send(request, 12000);

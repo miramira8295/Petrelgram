@@ -29,6 +29,22 @@ export function customEmojiIdOfStatus(es: TdObject | undefined): string {
 //   老：emojiStatuses { custom_emoji_ids: [int64…] }   ← 捆绑的 TDLib 回的是这个
 // 表情状态页原来只读 emoji_statuses，老形状下拿到空数组，页面只剩「清除当前状态」
 // （issue #120，会员打开也一样）。
+// The bundled libtdjson reads `emojiStatus.custom_emoji_id` flat (pre-emojiStatusType
+// schema) while current TDLib reads `emojiStatus.type.custom_emoji_id`. Each parser
+// ignores the field it does not know, so carrying both makes setEmojiStatus work on
+// either — sending only the nested form set an id of 0, i.e. silently cleared the status.
+export function buildEmojiStatusValue(customEmojiId: string): TdObject | undefined {
+  if (customEmojiId === '') {
+    return undefined;
+  }
+  const type: TdObject = { '@type': 'emojiStatusTypeCustomEmoji' };
+  type['custom_emoji_id'] = customEmojiId;
+  const status: TdObject = { '@type': 'emojiStatus' };
+  status['custom_emoji_id'] = customEmojiId;
+  status['type'] = type;
+  return status;
+}
+
 export function emojiStatusIdsOf(result: TdObject | undefined): string[] {
   const ids: string[] = [];
   if (result === undefined || result === null) {
