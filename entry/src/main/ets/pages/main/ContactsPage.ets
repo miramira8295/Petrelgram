@@ -1682,7 +1682,11 @@ export struct ContactsPage {
       // ProfilePage——它有 store 订阅和头像放大态，不该因为在左栏拉起一个面板
       // 就以为自己隐藏了。取值与聊天/设置两个页签一致。
       .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
-      .titleMode(HdsNavigationTitleMode.FREE)
+      // MINI 而不是 FREE：四个页签的标题栏现在是同一档窄栏，标题与右上角图标
+      // 同一行。FREE 的大标题会先占掉一整行，把标题压到图标下面一截——用户拿
+      // 四个页签并排对比过，聊天页（本来就是 MINI）的标题明显更高（issue #111）。
+      // 这四处必须一起改：只要有一个还是 FREE，切页签时标题就会跳一下。
+      .titleMode(HdsNavigationTitleMode.MINI)
       .bindToScrollable([this.contactsScroller])
       .width('100%').height('100%');
 

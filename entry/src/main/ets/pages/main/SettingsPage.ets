@@ -1570,7 +1570,11 @@ export struct SettingsPage {
       // ——ChatPage 上一轮正是踩了这个（一开转发面板音视频就停）。取值与聊天页签
       // 一致，两个页签没有理由不同。
       .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
-      .titleMode(HdsNavigationTitleMode.FREE)
+      // MINI 而不是 FREE：四个页签的标题栏现在是同一档窄栏，标题与右上角图标
+      // 同一行。FREE 的大标题会先占掉一整行，把标题压到图标下面一截——用户拿
+      // 四个页签并排对比过，聊天页（本来就是 MINI）的标题明显更高（issue #111）。
+      // 这四处必须一起改：只要有一个还是 FREE，切页签时标题就会跳一下。
+      .titleMode(HdsNavigationTitleMode.MINI)
       .bindToScrollable([this.settingsScroller])
       .width('100%').height('100%')
       .backgroundColor(PAGE_BG)
