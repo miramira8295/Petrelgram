@@ -36,6 +36,24 @@ export struct ChatBackdrop {
   @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
   @Prop @Watch('onParamsChanged') screenW: number;
   @Prop @Watch('onParamsChanged') screenH: number;
+  // 本层自己量到的尺寸。**壁纸盒子不能按 screenW/screenH 铺**：那两个是窗口
+  // 尺寸，分栏之后本层只有右栏那么宽。按窗口宽铺出来的 Image 在这个 Stack
+  // 里居中，两边各溢出 (窗宽−右栏宽)/2——左边那一截压进左栏，根节点的
+  // clip(true) 只裁画面不裁触摸，于是左栏右半边全部点不动、滑不动
+  // （issue #108），标题栏最右端的搜索键也在死区里（issue #109）。平板实测
+  // 死区深度 240vp / 280vp，与 (1440−960)/2、(1440−880)/2 严丝合缝。
+  // 光栅本身仍按窗口尺寸画（所有会话共用一张，Cover 裁掉即可）。
+  @State private areaW: number = 0;
+  @State private areaH: number = 0;
+
+  // 第一帧 onAreaChange 还没来，先按窗口尺寸；量到之后立即换成真值。
+  private layerW(): number {
+    return this.areaW > 0 ? this.areaW : this.screenW;
+  }
+
+  private layerH(): number {
+    return this.areaH > 0 ? this.areaH : this.screenH;
+  }
 
   @StorageProp(KEY_BG_BLUR) @Watch('onParamsChanged') bgBlur: number = BG_BLUR_DEFAULT;
   @StorageProp(KEY_BG_PATTERN) @Watch('onParamsChanged') bgPatternLight: number = BG_PATTERN_DEFAULT;
@@ -185,8 +203,8 @@ export struct ChatBackdrop {
       // 所有会话共用同一张背景，缓存后只解一次。
       CachedImage({
         path: this.rasterPath,
-        boxWidth: this.screenW,
-        boxHeight: this.screenH,
+        boxWidth: this.layerW(),
+        boxHeight: this.layerH(),
         radius: 0,
         fit: ImageFit.Cover,
         pin: true
@@ -215,8 +233,8 @@ export struct ChatBackdrop {
             path: this.chatBg.path,
             tileOpacity: this.imageOpacity(),
             blurRadius: this.blurRadius(),
-            screenW: this.screenW,
-            screenH: this.screenH
+            screenW: this.layerW(),
+            screenH: this.layerH()
           });
         } else if (this.chatBg.path !== '') {
           Image(this.chatBg.path.startsWith('/')
@@ -250,6 +268,15 @@ export struct ChatBackdrop {
       .expandSafeArea([SafeAreaType.SYSTEM])
       .expandSafeArea([SafeAreaType.KEYBOARD])
       .hitTestBehavior(HitTestMode.None)
+      // 量本层尺寸，见 areaW 的说明。同值不写：分栏拖动/键盘会连着来几次。
+      .onAreaChange((_old: Area, area: Area): void => {
+        const w: number = area.width as number;
+        const h: number = area.height as number;
+        if (w > 0 && h > 0 && (w !== this.areaW || h !== this.areaH)) {
+          this.areaW = w;
+          this.areaH = h;
+        }
+      })
       // 平铺网格会向上取整到整数块并被 Stack 居中，通常四边都略微超出视口——
       // 裁回去，而不是让它把布局顶开。
       .clip(true);
@@ -262,7 +289,7 @@ export struct ChatBackdrop {
       if (this.ambientEnabled()) {
         Circle({ width: 250, height: 250 })
           .fill('#142A9FE8')
-          .position({ x: this.phase ? this.screenW - 150 : -90, y: 110 })
+          .position({ x: this.phase ? this.layerW() - 150 : -90, y: 110 })
           .opacity(this.phase ? 0.42 : 0.18)
           .animation({
             duration: this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS),
@@ -270,7 +297,7 @@ export struct ChatBackdrop {
           });
         Circle({ width: 210, height: 210 })
           .fill('#1056C76F')
-          .position({ x: this.phase ? -70 : this.screenW - 130, y: 500 })
+          .position({ x: this.phase ? -70 : this.layerW() - 130, y: 500 })
           .opacity(this.phase ? 0.16 : 0.36)
           .animation({
             duration: this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS),
@@ -282,7 +309,7 @@ export struct ChatBackdrop {
           Circle({ width: 3 + (id % 3), height: 3 + (id % 3) })
             .fill(id % 2 === 0 ? '#462A9FE8' : '#3D56C76F')
             .position({
-              x: 22 + ((id * 67 + (this.phase ? 34 : 0)) % Math.max(40, this.screenW - 44)),
+              x: 22 + ((id * 67 + (this.phase ? 34 : 0)) % Math.max(40, this.layerW() - 44)),
               y: 120 + ((id * 151 + (this.phase ? 90 : 0)) % 650)
             })
             .opacity(this.phase ? 0.2 + (id % 3) * 0.12 : 0.48 - (id % 3) * 0.08)
