@@ -12,6 +12,20 @@ export default function accentPresentationTest() {
       }
       expect(builtinAccentColor(0) === builtinAccentColor(1)).assertFalse();
     });
+    it('内置 7 色是官方的名字色，不是头像色板', 0, (): void => {
+      // 官方（iOS/tdesktop）浅色名字色：红 橙 紫 绿 青 蓝 粉
+      expect([0, 1, 2, 3, 4, 5, 6].map((id: number): string => builtinAccentColor(id)).join(','))
+        .assertEqual('#CC5049,#D67722,#955CDB,#40A920,#309EBA,#368AD1,#C7508B');
+      // 深色模式用官方深色值，且和浅色不同
+      expect(builtinAccentColor(0, true)).assertEqual('#FF8E86');
+      expect(builtinAccentColor(5, true) === builtinAccentColor(5, false)).assertFalse();
+    });
+    it('回退到内置色时也分明暗', 0, (): void => {
+      const value: TdObject = { '@type': 'accentColor' };
+      value['id'] = 2;
+      value['built_in_accent_color_id'] = 2;
+      expect(accentPreviewOf(value, true)?.colors[0]).assertEqual(builtinAccentColor(2, true));
+    });
     it('maps_server_accent_color_to_hex_list', 0, (): void => {
       const value: TdObject = { '@type': 'accentColor' };
       value['id'] = 8;

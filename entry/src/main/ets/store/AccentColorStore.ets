@@ -66,7 +66,7 @@ export class AccentColorStore {
       const preview = accentPreviewOf(raw, forDark);
       if (preview !== null && preview.colors.length > 0) { return preview.colors[0]; }
     }
-    return accentColorId <= 6 ? builtinAccentColor(accentColorId) : '';
+    return accentColorId <= 6 ? builtinAccentColor(accentColorId, forDark) : '';
   }
 
   subscribe(listener: AccentListener): () => void {
