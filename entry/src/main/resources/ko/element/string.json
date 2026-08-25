@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "오로라"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "이 기기의 등록 기록이 손실되어 초기화했습니다. 인증 코드를 다시 요청한 뒤 다시 등록해 주세요."
     }
   ]
 }

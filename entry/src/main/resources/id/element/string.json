@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "Aurora"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "Catatan pendaftaran perangkat ini hilang dan telah direset. Minta kode baru lalu daftar lagi."
     }
   ]
 }

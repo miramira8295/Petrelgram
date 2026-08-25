@@ -333,6 +333,19 @@ export async function confirmMeowRegistration(
   }
   const parsed = parseMeowConfirmResponse(responseText, knownSecret);
   if (parsed.error !== '') {
+    // 三个字段齐全、独独两边都没有 secret：中转早把这个 subKey 记成"已注册"
+    // （secret 只在首次响应里发一次），本机那份又没存上——这台机器用这个 subKey
+    // 永远注册不上，也注销不掉（注销要 secret）。唯一的出路是换一个 subKey，对
+    // 中转来说就是一次全新注册，会重新发 secret。清掉本地 subKey，下次
+    // getOrCreateMeowSubKey 会生成新的；旧订阅留在中转上无害——Telegram 那边
+    // registerDevice 是替换语义，不会再往旧的推。（issue #60 / #39：报告人
+    // "取消注册之后重注册好几次都不行"走的就是这个死循环。）
+    const configComplete: boolean = parsed.config.endpoint !== '' &&
+      parsed.config.p256dh !== '' && parsed.config.auth !== '';
+    if (configComplete && parsed.secret === '') {
+      setString(KEY_MEOW_SUBKEY, '');
+      throw new Error(str('meow_secret_lost_reset'));
+    }
     throw new Error(parsed.error);
   }
   const check = validateWebPushConfig(parsed.config);
@@ -383,6 +396,12 @@ export async function deregisterMeowPush(
     }
   }
   await deregisterWebPush(client);
+  // 没有 secret 就没能告诉中转注销：那个 subKey 在中转上还是"已注册"，用它再
+  // 注册不会再拿到 secret（见 confirmMeowRegistration 里的说明）。一并换掉，
+  // 下次注册是全新的。
+  if (secret === '') {
+    setString(KEY_MEOW_SUBKEY, '');
+  }
   setString(KEY_MEOW_SECRET, '');
   setString(KEY_MEOW_NICKNAME, '');
   return { relayWarning };

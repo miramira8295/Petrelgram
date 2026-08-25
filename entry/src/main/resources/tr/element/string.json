@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "Aurora"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "Bu cihazın kayıt bilgisi kaybolduğu için sıfırlandı. Lütfen yeni bir kod isteyip yeniden kaydolun."
     }
   ]
 }

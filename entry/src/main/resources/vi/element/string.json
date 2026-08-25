@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "Cực quang"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "Bản ghi đăng ký của thiết bị này đã mất và đã được đặt lại. Vui lòng yêu cầu mã mới rồi đăng ký lại."
     }
   ]
 }

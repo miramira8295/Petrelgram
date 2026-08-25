@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "極光"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "本機的註冊記錄已遺失，已重設。請重新傳送驗證碼再註冊一次"
     }
   ]
 }

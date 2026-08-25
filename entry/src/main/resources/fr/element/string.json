@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "Aurore"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "L'enregistrement de cet appareil a été perdu et réinitialisé. Demandez un nouveau code et inscrivez-vous à nouveau."
     }
   ]
 }

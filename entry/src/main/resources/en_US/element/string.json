@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "Aurora"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "This device's registration record was lost and has been reset. Please request a new code and register again."
     }
   ]
 }

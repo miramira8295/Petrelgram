@@ -330,9 +330,23 @@ struct WebPushPage {
         // 确认失败不打开开关，避免用户误以为通知已生效。验证码错误/过期时
         // pendingId 保留，用户可以直接重填验证码重试而不用回退到第一步。
         this.meowStatusOk = false;
-        this.meowStatusText = str('wp_register_failed', e.message);
         this.meowBusy = false;
+        // 本机记录已重置（subKey 换新）：这个 pendingId 已经作废，留在"填码"那一步
+        // 只会让用户对着一个没用的输入框；直接退回"获取验证码"，提示原样展示。
+        if (e.message === str('meow_secret_lost_reset')) {
+          this.meowPendingId = '';
+          this.meowCode = '';
+          this.meowStatusText = e.message;
+          return;
+        }
+        this.meowStatusText = str('wp_register_failed', e.message);
       });
+  }
+
+  // MeoW 通道是否已经注册好：开关开着、模式是 MeoW。两个都来自 AppStorage，
+  // 注册成功 / 注销都会当场改它们，这里不用自己记状态。
+  private meowRegistered(): boolean {
+    return this.pushEnabled && this.mode === WEBPUSH_MODE_MEOW;
   }
 
   private meowCancelCode(): void {
@@ -438,7 +452,9 @@ struct WebPushPage {
                 .width('100%').padding({ left: 16, right: 16, top: 14 });
               Row() {
                 TextInput({ text: $$this.meowNickname, placeholder: $r('app.string.meow_nickname_hint') })
-                  .fontSize(15).layoutWeight(1).enabled(!this.meowBusy && this.meowPendingId === '')
+                  .fontSize(15).layoutWeight(1)
+                  // 已注册时昵称只读：注册流程在这个状态下没有意义。
+                  .enabled(!this.meowBusy && this.meowPendingId === '' && !this.meowRegistered())
                   .backgroundColor(COLOR_PAGE_BG).borderRadius(10).padding(10);
               }.width('100%').padding({ left: 16, right: 16 });
               Text($r('app.string.meow_privacy_note'))
@@ -446,7 +462,7 @@ struct WebPushPage {
                 .width('100%').padding({ left: 16, right: 16, top: 4 });
 
               // 第二步：拿到 pendingId 后才出现验证码输入框，填完点「完成注册」。
-              if (this.meowPendingId !== '') {
+              if (this.meowPendingId !== '' && !this.meowRegistered()) {
                 Text($r('app.string.meow_code_label')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
                   .width('100%').padding({ left: 16, right: 16, top: 4 });
                 Row() {
@@ -457,7 +473,15 @@ struct WebPushPage {
               }
 
               Column({ space: 8 }) {
-                if (this.meowPendingId === '') {
+                // 已注册：只剩「取消注册」。发码 / 填码 / 完成三步摆着只会让人以为还要
+                // 再点一遍；未注册时反过来，不显示「取消注册」。
+                if (this.meowRegistered()) {
+                  Button($r('app.string.wp_deregister'))
+                    .fontSize(15).width('100%').height(44)
+                    .backgroundColor(COLOR_PAGE_BG).fontColor('#FF3B30')
+                    .enabled(!this.meowBusy)
+                    .onClick((): void => this.meowDeregister());
+                } else if (this.meowPendingId === '') {
                   Button(this.meowBusy ? $r('app.string.processing') : $r('app.string.meow_request_code'))
                     .fontSize(15).width('100%').height(44)
                     .backgroundColor(COLOR_PRIMARY).fontColor(Color.White)
@@ -475,11 +499,6 @@ struct WebPushPage {
                     .enabled(!this.meowBusy)
                     .onClick((): void => this.meowCancelCode());
                 }
-                Button($r('app.string.wp_deregister'))
-                  .fontSize(15).width('100%').height(44)
-                  .backgroundColor(COLOR_PAGE_BG).fontColor('#FF3B30')
-                  .enabled(!this.meowBusy)
-                  .onClick((): void => this.meowDeregister());
                 if (this.meowStatusText !== '') {
                   Text(this.meowStatusText)
                     .fontSize(12).lineHeight(17)

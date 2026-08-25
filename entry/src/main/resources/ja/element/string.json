@@ -11463,6 +11463,10 @@
     {
       "name": "app_icon_aurora",
       "value": "オーロラ"
+    },
+    {
+      "name": "meow_secret_lost_reset",
+      "value": "この端末の登録記録が失われたためリセットしました。確認コードを再送して、もう一度登録してください。"
     }
   ]
 }
