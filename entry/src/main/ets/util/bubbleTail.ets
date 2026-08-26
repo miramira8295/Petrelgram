@@ -24,10 +24,16 @@ export function tailClip(outgoing: boolean): PathShape {
 export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
   private readonly live: boolean;
   private readonly path: PathShape | null;
+  // 尺寸回调只在玻璃档挂：关掉材质时整条 onAreaChange 根本不注册，
+  // 省掉每个气泡一个常驻的 area-change 节点（真机 trace：峰值 102 个节点、
+  // 全程 447ms 都花在 HandleOnAreaChangeEvent 上）。
+  private readonly onMeasured: ((w: number, h: number) => void) | null;
 
-  constructor(live: boolean, path: PathShape | null) {
+  constructor(live: boolean, path: PathShape | null,
+    onMeasured: ((w: number, h: number) => void) | null) {
     this.live = live;
     this.path = path;
+    this.onMeasured = onMeasured;
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
@@ -39,6 +45,12 @@ export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
     instance.systemMaterial(overlayMaterial('bubble'));
     if (this.path !== null) {
       instance.clipShape(this.path);
+    }
+    if (this.onMeasured !== null) {
+      const cb = this.onMeasured;
+      instance.onAreaChange((_old: Area, area: Area): void => {
+        cb(Number(area.width), Number(area.height));
+      });
     }
   }
 }
@@ -70,10 +82,11 @@ export function glassOutlineCommands(w: number, h: number, outgoing: boolean,
 }
 
 export function bubbleGlassModifier(live: boolean, w: number, h: number, outgoing: boolean,
-  hasTail: boolean, radii: BorderRadiuses): BubbleGlassModifier {
+  hasTail: boolean, radii: BorderRadiuses,
+  onMeasured: ((w: number, h: number) => void) | null = null): BubbleGlassModifier {
   if (!live || w <= 0 || h <= 0) {
-    return new BubbleGlassModifier(live, null);
+    return new BubbleGlassModifier(live, null, onMeasured);
   }
   return new BubbleGlassModifier(true,
-    new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0) }));
+    new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0) }), onMeasured);
 }

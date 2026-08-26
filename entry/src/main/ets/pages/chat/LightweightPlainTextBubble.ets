@@ -678,11 +678,11 @@ export struct LightweightPlainTextBubble {
           .borderRadius(this.glassRadius())
           .background(this.glassOutline(), { align: Alignment.TopStart })
               .attributeModifier(bubbleGlassModifier(this.bubbleMaterialLive(), this.glassW, this.glassH,
-            this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
-          .onAreaChange((_old: Area, area: Area): void => {
-            this.glassW = Number(area.width);
-            this.glassH = Number(area.height);
-          })
+            this.msg.isOutgoing, this.hasTail(), this.bubbleCorners(),
+            this.bubbleMaterialOn ? (w: number, h: number): void => {
+              this.glassW = w;
+              this.glassH = h;
+            } : null))
         }
         .alignItems(VerticalAlign.Bottom)
         .bindContextMenu(this.menuShown, this.contextMenu(), {

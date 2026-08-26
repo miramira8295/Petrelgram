@@ -3613,21 +3613,13 @@ export struct MessageBubble {
       .borderRadius(this.glassRadius())
       .background(this.glassOutline(), { align: Alignment.TopStart })
       .attributeModifier(bubbleGlassModifier(this.glassLive(), this.glassW, this.glassH,
-        this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
-      .onAreaChange((_old: Area, area: Area): void => {
-        this.glassW = Number(area.width);
-        this.glassH = Number(area.height);
-      })
+        this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius(),
+        this.bubbleMaterialOn ? (w: number, h: number): void => {
+          this.glassW = w;
+          this.glassH = h;
+        } : null))
       }
       .alignItems(VerticalAlign.Bottom)
-      // 诊断：气泡偶发"横贯整屏"。气泡本体从没超过自己的 cap（量过），所以
-      // 被撑开的是这一层——它按内容宽度排，正常应当 ≈ 头像 + 气泡。
-      // 只在越界时打，正常滚动一条都不产生。
-      .onAreaChange((_old: Area, area: Area): void => {
-        const w: number = area.width as number;
-        if (w > this.screenW * 0.9) {
-        }
-      })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
         onAppear: (): void => {
           logW(`[Menu114] menu appear id=${this.msg.id}`);
