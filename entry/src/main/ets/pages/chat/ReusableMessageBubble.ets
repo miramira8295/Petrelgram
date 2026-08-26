@@ -151,6 +151,15 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onRetryTranslation: (_id: number): void => {}, onLiveStreamTap: (_id: number): void => {}
 };
 
+// The reuse pool this @Reusable declares lives on the PARENT custom component
+// (ChatPage, via the LazyForEach item builder) — a component that does not
+// itself reuse does not keep its children's pools alive across recycles. This
+// shell is the right place for the annotation precisely because ChatPage
+// never gets destroyed while the list scrolls; MessageBubble/
+// LightweightPlainTextBubble below must not carry @Reusable of their own.
+// aboutToReuse/aboutToRecycle state-reset work is out of scope here (next
+// task); only the annotation and the reuseId wiring belong to this step.
+@Reusable
 @Component
 export struct ReusableMessageBubble {
   @Prop @Watch('onGroupChanged') group: AlbumGroup;

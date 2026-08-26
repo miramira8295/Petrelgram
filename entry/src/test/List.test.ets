@@ -143,6 +143,7 @@ import adminRightsTest from './AdminRights.test';
 import memberMenuTest from './MemberMenu.test';
 import webmAlphaTest from './WebmAlpha.test';
 import plainTextBubbleReuseTest from './PlainTextBubbleReuse.test';
+import rowReuseIdTest from './RowReuseId.test';
 import performanceBudgetsTest from './PerformanceBudgets.test';
 import initialMessageStageTest from './InitialMessageStage.test';
 import stringsTest from './Strings.test';
@@ -294,6 +295,7 @@ export default function testsuite() {
   memberMenuTest();
   webmAlphaTest();
   plainTextBubbleReuseTest();
+  rowReuseIdTest();
   performanceBudgetsTest();
   initialMessageStageTest();
   stringsTest();

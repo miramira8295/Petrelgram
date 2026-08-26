@@ -31,6 +31,7 @@ import { saveMediaToGallery, saveFileToLocal } from '../../util/mediaSaver';
 import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
+import { ReuseIdLevel, rowReuseId } from '../../util/rowReuseId';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
 import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
 import {
@@ -264,6 +265,11 @@ const INITIAL_MESSAGE_TRANSITION_SETTLE_MS: number = 640;
 const KEYBOARD_SETTLE_MS: number = 700;
 // 跳转落地后多久才允许"用户自己滚回最新"的判定重新生效。
 const JUMP_LANDING_GRACE_MS: number = 900;
+
+// Reuse-pool granularity for ReusableMessageBubble's reuseId. Provisional —
+// to be measured and tuned in P2 Task 3; 'medium' is a placeholder, not a
+// verified-best value.
+const REUSE_ID_LEVEL: ReuseIdLevel = 'medium';
 
 interface DiceChoice {
   emoji: string;
@@ -1125,7 +1131,7 @@ export struct ChatPage {
       nowSec: this.nowSec,
       data: prepared.data,
       actions: this.messageActions()
-    });
+    }).reuseId(rowReuseId(prepared.data, prepared.group.head, REUSE_ID_LEVEL));
   }
   @State subtitle: string = '';
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
