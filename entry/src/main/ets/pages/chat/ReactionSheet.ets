@@ -37,11 +37,15 @@ interface CustomEmojiOption {
 // selected-state highlight.
 @Component
 export struct ReactionSheet {
-  // Two-way: picking an emoji and tapping the scrim both dismiss from in here.
-  @Link show: boolean;
-  // @Link, not a callback: the highlight has to follow reaction updates that
-  // arrive while the sheet is open, and only a tracked state variable does.
-  @Link messages: MessageEntry[];
+  // 单向入 + 回调出，而不是 @Link（@Link 只能被 V1 状态变量初始化，页面迁到
+  // 状态管理 V2 之后就接不上了）：选中一个 emoji、点遮罩，都是从这里关的。
+  // 关的时候先改本地副本（@Prop 允许），再交给页面撤掉这一层。
+  @Prop show: boolean;
+  onShowChange: (show: boolean) => void = (): void => {};
+  // @Prop（不是普通字段）：高亮要跟着面板打开期间到达的表态更新走，只有被
+  // 跟踪的状态变量做得到。@Prop 对复杂类型是深拷贝，但这一层只在表态面板
+  // 打开时存在，不在滚动路径上。
+  @Prop messages: MessageEntry[];
 
   // Set by the page at construction; the sheet is rebuilt on each open.
   targetId: number = 0;
@@ -148,6 +152,7 @@ export struct ReactionSheet {
     const chosen: boolean = this.targetReactionChosen(reactionKey);
     this.seq++;
     this.show = false;
+    this.onShowChange(false);
     this.onPick(reactionKey, chosen);
   }
 
@@ -207,7 +212,7 @@ export struct ReactionSheet {
   build() {
     Column() {
       Column().layoutWeight(1)
-        .onClick(() => { this.show = false; });
+        .onClick(() => { this.show = false; this.onShowChange(false); });
       Column({ space: 8 }) {
         Row().width(40).height(4).borderRadius(2).backgroundColor('#D0D0D0');
         Row() {

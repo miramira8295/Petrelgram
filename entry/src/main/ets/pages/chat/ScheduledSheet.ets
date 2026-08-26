@@ -16,8 +16,10 @@ import { logE } from '../../util/log';
 @Component
 export struct ScheduledSheet {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
-  // Two-way: tapping the scrim dismisses from in here.
-  @Link show: boolean;
+  // 单向入 + 回调出，而不是 @Link（@Link 只能被 V1 状态变量初始化，页面迁到
+  // 状态管理 V2 之后就接不上了）：点遮罩是从这里关的。
+  @Prop show: boolean;
+  onShowChange: (show: boolean) => void = (): void => {};
   chatId: number = 0;
 
   @State ids: number[] = [];
@@ -113,6 +115,7 @@ export struct ScheduledSheet {
     Column() {
       Column().layoutWeight(1).onClick((): void => {
         this.show = false;
+        this.onShowChange(false);
       });
       Column({ space: 10 }) {
         Row().width(40).height(4).borderRadius(2).backgroundColor('#D0D0D0');

@@ -82,8 +82,8 @@ const CLASSIC_PACKS: ClassicPack[] = SECTIONS.map((s: EmojiSection): ClassicPack
 }));
 
 // Unified emoji/sticker/GIF panel. Tabs stay mounted once visited so switching
-// categories doesn't restart requests; the parent link remembers the selected
-// category after the panel is closed and reopened.
+// categories doesn't restart requests; the page owns the selected category and
+// remembers it after the panel is closed and reopened.
 @Component
 export struct EmojiPanel {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
@@ -91,7 +91,11 @@ export struct EmojiPanel {
   onPickCustomEmoji: (emoji: string, customEmojiId: string) => void = (): void => {};
   onPickSticker: (s: StickerItem, x: number, y: number) => void = (): void => {};
   onPickGif: (g: GifItem) => void = (): void => {};
-  @Link tab: number;
+  // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面迁到
+  // 状态管理 V2 之后就接不上了。这里的写回照旧先改本地副本（@Prop 允许），
+  // 再把新值交给页面，页面回灌同一个值，语义与双向同步等价。
+  @Prop tab: number;
+  onTabChange: (tab: number) => void = (): void => {};
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
   @State stickerMounted: boolean = false;
@@ -124,6 +128,7 @@ export struct EmojiPanel {
     }
     animateTo({ duration: this.panelDuration(150), curve: Curve.EaseOut }, (): void => {
       this.tab = idx;
+      this.onTabChange(idx);
     });
   }
 

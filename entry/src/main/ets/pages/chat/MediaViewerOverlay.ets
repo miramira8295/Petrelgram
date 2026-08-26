@@ -47,16 +47,22 @@ interface ViewerFit {
 @Component
 export struct MediaViewerOverlay {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
-  // Two-way with the page: tapping close clears the id from in here.
-  @Link viewerMsgId: number;
-  @Link chromeVisible: boolean;
+  // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面迁到
+  // 状态管理 V2 之后就接不上了。翻页/关闭时先改本地副本（@Prop 允许），再把
+  // 新值交给页面，页面回灌同一个值，语义与双向同步等价。
+  @Prop viewerMsgId: number;
+  onViewerMsgIdChange: (msgId: number) => void = (): void => {};
+  @Prop chromeVisible: boolean;
+  onChromeVisibleChange: (visible: boolean) => void = (): void => {};
   // 材质档位是设置里的用户偏好，而 overlayMaterial 那几个是普通函数、订阅不了
   // AppStorage。订阅这个纪元，用户改了厚度/光感这一层才会重绘（和别处一样）。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
-  // @Link (not @Prop) for both arrays: @Prop deep-copies its source, which for
-  // the whole loaded message list would run on every download-progress tick.
-  @Link messages: MessageEntry[];
-  @Link groups: AlbumGroup[];
+  // @Prop（不是普通字段）：普通字段会冻结在构造时的值，历史加载进来之后查看器
+  // 就翻不动相册了。代价是 @Prop 对复杂类型是深拷贝，而且每次页面侧的数组换新
+  // （下载进度每一跳都会）都要拷一遍——这一层只在查看器打开时存在，不在滚动
+  // 路径上，但真掉帧的话就把这一层也迁到 V2 用 @Param 走引用。
+  @Prop messages: MessageEntry[];
+  @Prop groups: AlbumGroup[];
   // 越界方向上已加载的消息里没有下一组媒体时调用（dir 同 hopDirection 的约定，
   // -1 = 要更旧的历史）。groups 是从**已加载的聊天窗口**折叠出来的，窗口边缘
   // 不等于会话边缘——不补历史的话，切几组就"到头"，其实服务器上还有。
@@ -103,9 +109,10 @@ export struct MediaViewerOverlay {
   private initialViewerMsgId: number = 0;
 
   @State pageIdx: number = 0;
-  // Landscape stays two-way with the page: its onBackPress must be able to see
-  // "we're in landscape" and exit that first instead of closing the viewer.
-  @Link videoLandscape: boolean;
+  // 横屏状态页面也要看得见：它的 onBackPress 得先认出"现在是横屏"、先退横屏
+  // 而不是关查看器。同样走 @Prop + 回调而不是 @Link。
+  @Prop videoLandscape: boolean;
+  onVideoLandscapeChange: (landscape: boolean) => void = (): void => {};
   // Zoom is viewer-owned. Keeping it out of the message row prevents the
   // gesture from mutating a recycled Image node in the chat list.
   //
@@ -222,12 +229,16 @@ export struct MediaViewerOverlay {
       return;
     }
     this.videoLandscape = landscape;
+    this.onVideoLandscapeChange(landscape);
     this.chromeVisible = true;
+    this.onChromeVisibleChange(true);
     setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, landscape);
   }
 
   private toggleChrome(): void {
-    this.chromeVisible = !this.chromeVisible;
+    const next: boolean = !this.chromeVisible;
+    this.chromeVisible = next;
+    this.onChromeVisibleChange(next);
   }
 
   private zoomed(): boolean {
@@ -489,6 +500,7 @@ export struct MediaViewerOverlay {
     this.resetPhotoZoom(false);
     this.dismissY = 0;
     this.viewerMsgId = landing;
+    this.onViewerMsgIdChange(landing);
     this.pageIdx = dir > 0 ? 0 : g.memberIds.length - 1;
     this.prefetchNeighbours(this.pageIdx);
     // 缩略图条的内容随 viewerMsgId 自动换掉，但滚动偏移不会——手动带回去。
@@ -622,6 +634,7 @@ export struct MediaViewerOverlay {
     this.resetPhotoZoom(false);
     this.pageIdx = index;
     this.viewerMsgId = id;
+    this.onViewerMsgIdChange(id);
     if (this.store !== null && !this.siblingIsVideo(id)) {
       this.store.requestFullPhoto(id);
     }

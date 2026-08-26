@@ -22,8 +22,10 @@ import { logE, logI } from '../../util/log';
 @Component
 export struct ForwardSheet {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
-  // Two-way: the close button and a successful send both dismiss from in here.
-  @Link show: boolean;
+  // 单向入 + 回调出，而不是 @Link（@Link 只能被 V1 状态变量初始化，页面迁到
+  // 状态管理 V2 之后就接不上了）：关闭按钮和发送成功都是从这里关的。
+  @Prop show: boolean;
+  onShowChange: (show: boolean) => void = (): void => {};
 
   // Set by the page at construction. Plain fields are correct: the sheet is
   // rebuilt on each open, and these never change while it is up.
@@ -125,6 +127,7 @@ export struct ForwardSheet {
   private close(): void {
     this.seq++;
     this.show = false;
+    this.onShowChange(false);
   }
 
   private filteredChats(): ChatEntry[] {

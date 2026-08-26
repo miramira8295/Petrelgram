@@ -362,11 +362,10 @@ export struct ChatPage {
   @State visibleGroupCount: number = 0;
   // Rendered through the LazyForEach data source (incremental notifications keep
   // scroll position on prepend); the plain array mirror serves index lookups.
-  // Keep the count reactive because groups itself is intentionally not @State.
-  // @State (not a plain field) so MediaViewerOverlay can take it by @Link:
-  // @Link requires its source to be a state variable, and a plain field handed
-  // to a child would freeze at its construction-time value, breaking album
-  // paging in the viewer once more history loads.
+  // @State (not a plain field) so MediaViewerOverlay's @Prop keeps re-syncing:
+  // @Prop only follows a source that is itself a state variable, and a plain
+  // field handed to a child would freeze at its construction-time value,
+  // breaking album paging in the viewer once more history loads.
   @State groups: AlbumGroup[] = [];
   private groupsData: AlbumGroupDataSource = new AlbumGroupDataSource();
 
@@ -7792,7 +7791,8 @@ export struct ChatPage {
   emojiDrawerContent() {
     if (this.panelContentReady) {
       EmojiPanel({
-        tab: $emojiPanelTab,
+        tab: this.emojiPanelTab,
+        onTabChange: (tab: number): void => { this.emojiPanelTab = tab; },
         onPick: (e: string): void => { this.insertEmoji(e); },
         onPickCustomEmoji: (e: string, ceId: string): void => {
           if (this.store !== null) {
@@ -8811,6 +8811,7 @@ export struct ChatPage {
               topSafe: this.topSafe,
               pageClosing: this.pageClosing,
               menuShow: this.headerMenuShow,
+              onMenuShowChange: (show: boolean): void => { this.headerMenuShow = show; },
               menu: (): void => { this.headerMenu(); },
               onBack: (): void => { this.closeChatPage(); },
               onOpenProfile: (): void => { this.openProfile(); },
@@ -8892,6 +8893,7 @@ export struct ChatPage {
       if (this.showReactionSheet) {
         ReactionSheet({
           show: this.showReactionSheet,
+          onShowChange: (show: boolean): void => { this.showReactionSheet = show; },
           messages: this.messages,
           targetId: this.reactionTargetId,
           chatId: this.chatId,
@@ -8907,6 +8909,7 @@ export struct ChatPage {
       if (this.showForwardSheet) {
         ForwardSheet({
           show: this.showForwardSheet,
+          onShowChange: (show: boolean): void => { this.showForwardSheet = show; },
           messageIds: this.forwardMessageIds,
           sourceChatId: this.chatId,
           threadRootId: this.threadRootId,
@@ -8922,6 +8925,7 @@ export struct ChatPage {
       if (this.showScheduledSheet) {
         ScheduledSheet({
           show: this.showScheduledSheet,
+          onShowChange: (show: boolean): void => { this.showScheduledSheet = show; },
           chatId: this.chatId
         })
       }
@@ -8992,8 +8996,11 @@ export struct ChatPage {
       if (this.viewerMsgId !== 0) {
         MediaViewerOverlay({
           viewerMsgId: this.viewerMsgId,
+          onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; },
           chromeVisible: this.chromeVisible,
+          onChromeVisibleChange: (visible: boolean): void => { this.chromeVisible = visible; },
           videoLandscape: this.viewerVideoLandscape,
+          onVideoLandscapeChange: (landscape: boolean): void => { this.viewerVideoLandscape = landscape; },
           messages: this.messages,
           groups: this.groups,
           onNeedHistory: (dir: number): void => {

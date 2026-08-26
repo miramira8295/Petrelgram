@@ -17,8 +17,10 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 // 打开资料、重试解析身份、展开菜单），其余都是"显示什么"。菜单内容留在页面
 // （那 18 个动作只有页面做得了），用 @BuilderParam 传进来。
 //
-// 菜单开关是 @Link：页面里有七处要主动关它（退出选择、跳转、关页面等），
-// 单向传值合不上。
+// 菜单开关走「@Prop 入 + onMenuShowChange 出」：页面里有七处要主动关它（退出
+// 选择、跳转、关页面等），纯单向传值合不上；而 @Link 只能被 V1 状态变量初始化，
+// 页面迁到状态管理 V2 之后就接不上了。展开/收起先改本地副本（@Prop 允许），再
+// 把新值交给页面，页面回灌同一个值——语义与双向同步等价。
 
 export const CHAT_HEADER_ACTION_SIZE: number = 42;
 export const CHAT_HEADER_RADIUS: number = 22;
@@ -53,7 +55,8 @@ export struct ChatHeader {
   @Prop profileOpening: boolean;
   @Prop topSafe: number;
   @Prop pageClosing: boolean;
-  @Link menuShow: boolean;
+  @Prop menuShow: boolean;
+  onMenuShowChange: (show: boolean) => void = (): void => {};
 
   @BuilderParam menu: () => void;
   onBack: () => void = (): void => {};
@@ -191,13 +194,14 @@ export struct ChatHeader {
       backgroundColor: Color.Transparent,
       backgroundBlurStyle: overlayBlur('menu'),
       systemMaterial: overlayMaterial('menu'),
-      onDisappear: (): void => { this.menuShow = false; }
+      onDisappear: (): void => { this.menuShow = false; this.onMenuShowChange(false); }
     })
     .enabled(!this.pageClosing && this.chatId !== 0)
     .accessibilityText($r('app.string.cp_more_actions'))
     .onClick((): void => {
       if (!this.menuShow) {
         this.menuShow = true;
+        this.onMenuShowChange(true);
       }
     });
   }
