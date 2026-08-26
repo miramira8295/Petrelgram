@@ -239,8 +239,11 @@ export struct ReusableMessageBubble {
     // 基准是 probeAttachedKey（上一条真正挂上去的行），不是 this.group——
     // 极性判反的理由见 panelProbe.reuseProbe。this.group 是无初值的 @Prop，
     // 半成品组件上可能还没落地，读它一律走保护（I-1）。
+    // M-3：this.data 同样是无初值的 @Prop，按 I-1 一样的判据（半成品组件上
+    // @Prop 可能还没落地）走保护，chatId 取不到时记 -1。
+    const probeChatId: number = this.data === undefined ? -1 : this.data.chatId;
     const probeKey: string =
-      next === undefined ? '' : `${this.data.chatId}:${next.head.rowId}`;
+      next === undefined ? '' : `${probeChatId}:${next.head.rowId}`;
     const probeStale: boolean =
       probeKey === '' || (this.probeAttachedKey !== '' && probeKey === this.probeAttachedKey);
     if (!reuseProbeSkip(probeStale)) {
@@ -251,6 +254,9 @@ export struct ReusableMessageBubble {
     if (next !== undefined) {
       this.attachPresentation(next);
     } else {
+      // **这条兜底不是冗余，不要删（I-3）。** onGroupChanged 只在 @Prop group
+      // 真的**变化**时触发；复用回同一行时它不跑，而 aboutToRecycle 已经退订、
+      // 把 liveGroup 置 null、attachedKey 归零。那时这里是唯一的重挂路径。
       setTimeout((): void => { this.attachPresentation(this.group); }, 0);
     }
   }

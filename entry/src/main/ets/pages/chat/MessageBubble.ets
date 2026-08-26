@@ -114,8 +114,14 @@ struct LiveSenderAvatar {
   // @Watch（审计设计约束「订阅按 key 自愈」）：头像订阅的 key 就是 senderId，
   // 而 aboutToReuse 的 params 未必带得到新 senderId——迁到状态管理 V2 后
   // @ReusableV2 的 aboutToReuse 根本没有入参（审计 C2），那时 params 恒空。
-  // 挂 @Watch 之后，@Prop 无论早一帧还是晚一帧落地，订阅都会按新 key 自己
-  // 纠正，不再依赖 params 或 setTimeout 兜底。
+  // 挂 @Watch 之后，senderId 只要**变了**，@Prop 无论早一帧还是晚一帧落地，
+  // 订阅都会按新 key 自己纠正，不必依赖 params。
+  //
+  // **但它替代不了 aboutToReuse 里的 setTimeout 兜底，别删那条（I-3）。**
+  // @Watch 只在值**变化**时触发：同一个发送者连发几条时 senderId 不变，
+  // watch 根本不跑，而 aboutToRecycle 已经清了 path、退了订阅、把
+  // attachedAvatarKey 归零。那种情况下 setTimeout 是唯一的复活路径，
+  // 删掉的结果是永久空白头像。
   @Prop @Watch('onSenderChanged') senderId: number = 0;
   @Prop @Watch('onSenderChanged') senderIsUser: boolean = true;
   @Prop initialPath: string = '';

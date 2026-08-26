@@ -105,8 +105,13 @@ struct LightweightSenderAvatar {
 
   // @Watch（审计设计约束「订阅按 key 自愈」）：头像订阅的 key 就是 senderId。
   // aboutToReuse 的 params 未必带得到新值，迁到 V2 后 @ReusableV2 的
-  // aboutToReuse 干脆没有入参（审计 C2）。挂 @Watch 之后 @Prop 无论何时落地
-  // 订阅都会按新 key 自己纠正，不再依赖 params 或 setTimeout 兜底。
+  // aboutToReuse 干脆没有入参（审计 C2）。挂 @Watch 之后，senderId 只要
+  // **变了**，@Prop 无论何时落地订阅都会按新 key 自己纠正，不必依赖 params。
+  //
+  // **但它替代不了 aboutToReuse 里的 setTimeout 兜底，别删那条（I-3）。**
+  // @Watch 只在值**变化**时触发：同一个发送者连发几条时 senderId 不变，
+  // watch 根本不跑，而 aboutToRecycle 已经清了 path、退了订阅、把
+  // attachedKey 归零。那时 setTimeout 是唯一的复活路径，删掉会永久空白。
   @Prop @Watch('onSenderChanged') senderId: number = 0;
   @Prop @Watch('onSenderChanged') senderIsUser: boolean = true;
   @Prop initialPath: string = '';
@@ -423,6 +428,9 @@ export struct LightweightPlainTextBubble {
     if (next !== undefined) {
       this.attachChannels(next);
     } else {
+      // **这条兜底不是冗余，不要删（I-3）。** onMessageChanged 只在 @Prop msg
+      // 真的**变化**时触发；复用回同一条消息时它不跑，而 aboutToRecycle 已经
+      // 退订并把 attachedKey 归零。那时这里是唯一的重挂路径。
       setTimeout((): void => { this.attachChannels(this.msg); }, 0);
     }
     // 见 MessageBubble 同一处：复用后玻璃层要重新量。
