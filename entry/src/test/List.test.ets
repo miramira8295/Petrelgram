@@ -91,6 +91,7 @@ import translationServiceTest from './TranslationService.test';
 import mediaPolicyTest from './MediaPolicy.test';
 import mentionDraftTest from './MentionDraft.test';
 import cacheLimitTest from './CacheLimit.test';
+import debugListPerfTest from './DebugListPerf.test';
 import playSlotTest from './PlaySlot.test';
 import playSlotRegistryTest from './PlaySlotRegistry.test';
 import backgroundBlurTest from './BackgroundBlur.test';
@@ -242,6 +243,7 @@ export default function testsuite() {
   mentionDraftTest();
   mediaPolicyTest();
   cacheLimitTest();
+  debugListPerfTest();
   playSlotTest();
   playSlotRegistryTest();
   customEmojiReactionsTest();

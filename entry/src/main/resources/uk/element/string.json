@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "cachedCount списку"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "Лише для налагодження, типово 6; застосовується до відкритого чату одразу"
     }
   ]
 }

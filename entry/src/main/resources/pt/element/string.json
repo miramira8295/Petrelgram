@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "cachedCount da lista"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "Apenas depuração, padrão 6; aplica-se imediatamente à conversa aberta"
     }
   ]
 }

@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "cachedCount senarai"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "Nyahpepijat sahaja, lalai 6; terus berkuat kuasa pada sembang yang dibuka"
     }
   ]
 }

@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "cachedCount ของรายการ"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "สำหรับดีบักเท่านั้น ค่าเริ่มต้น 6 มีผลกับแชทที่เปิดอยู่ทันที"
     }
   ]
 }

@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "cachedCount de la lista"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "Solo depuración, valor predeterminado 6; se aplica de inmediato al chat abierto"
     }
   ]
 }

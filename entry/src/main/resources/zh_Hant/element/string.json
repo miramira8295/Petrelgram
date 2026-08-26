@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "列表 cachedCount 檔位"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "偵錯項，預設 6；切換後目前對話頁立即生效"
     }
   ]
 }

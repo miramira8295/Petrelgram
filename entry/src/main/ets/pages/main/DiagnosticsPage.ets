@@ -4,7 +4,7 @@ import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
-import { KEY_CRASH_UPLOAD, setBoolean } from '../../store/AppSettings';
+import { KEY_CRASH_UPLOAD, setBoolean, setNumber } from '../../store/AppSettings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { str } from '../../util/strings';
 import { diagLogSize } from '../../util/log';
@@ -14,6 +14,11 @@ import { exportDiagLog, diagLogStamp } from '../../util/diagLogExport';
 // ⚠️ 临时：Repeat 渲染验证页的入口，验完连同本行 import 一起删除（见
 // pages/chat/RepeatSpikePage.ets 文件头的删除清单）。
 import { navigateToSetting } from '../../util/settingsNav';
+// ⚠️ 临时（P6 标定）：cachedCount 档位切换器，标定结束后连同本行 import 一起
+// 删除（清单见 util/debugListPerf.ets 文件末尾）。
+import {
+  KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT, LIST_CACHED_COUNT_OPTIONS
+} from '../../util/debugListPerf';
 
 const CARD_RADIUS: number = 14;
 
@@ -44,6 +49,9 @@ export struct DiagnosticsPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp(LANGUAGE_EPOCH) languageEpoch: number = 0;
   @StorageProp(KEY_CRASH_UPLOAD) crashUpload: boolean = true;
+  // ⚠️ 临时（P6 标定）：当前 cachedCount 档位。@StorageProp 而不是 @State ——
+  // 写入方是 AppSettings.setNumber，界面上的选中态必须跟着 AppStorage 走。
+  @StorageProp(KEY_DEBUG_LIST_CACHED) listCached: number = LIST_CACHED_COUNT_DEFAULT;
   @State private note: string = '';
   @State private sending: boolean = false;
   // 日志体积只在进页面时算一次：collectAll 会把内存里的部分刷进磁盘再整份读
@@ -156,6 +164,44 @@ export struct DiagnosticsPage {
     .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);
   }
 
+  // ⚠️ 临时（P6 标定）：聊天详情页 List 的 cachedCount 档位切换器。
+  //
+  // 存在的理由：在它之前，换一档 = 改常量 → 编译 → 装机 → 应用回到会话列表 →
+  // 重新进会话 → 抓 trace，一轮十几分钟且极易操作失误。标定结束后删除。
+  //
+  // 立即生效的链路：这里 setNumber → AppStorage → ChatPageChrome 的
+  // @StorageProp → ChatPage 的 @Param listCachedCount → .cachedCount() 重新
+  // 求值。会话页在导航栈里活着也照样收到，不需要重进会话、更不需要重启。
+  @Builder
+  listCachedCard() {
+    Column({ space: 8 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.diag_list_cached'))
+          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+        Text($r('app.string.diag_list_cached_sub'))
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      .alignItems(HorizontalAlign.Start).width('100%');
+      Row({ space: 8 }) {
+        ForEach(LIST_CACHED_COUNT_OPTIONS, (option: number): void => {
+          Text(`${option}`) // i18n-exempt: numeric debug value, not copy
+            .fontSize(15)
+            .fontColor(this.listCached === option ? Color.White : COLOR_TEXT_PRIMARY)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 8, bottom: 8 })
+            .backgroundColor(this.listCached === option ? COLOR_PRIMARY : COLOR_PAGE_BG)
+            .borderRadius(10)
+            .onClick((): void => { setNumber(KEY_DEBUG_LIST_CACHED, option); });
+        }, (option: number): string => `${option}`);
+      }
+      .width('100%');
+    }
+    .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .alignItems(HorizontalAlign.Start)
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
   // ⚠️ 临时：Repeat 渲染验证页的入口，验完删除（P4 / R1）。
   @Builder
   repeatSpikeCard() {
@@ -198,6 +244,8 @@ export struct DiagnosticsPage {
             // ⚠️ 临时调试入口 —— **验完删除**。挂在诊断页最底下而不是设置页，
             // 是因为这里本来就是这个应用的调试角落。
             this.repeatSpikeCard();
+            // ⚠️ 临时调试项 —— 标定完删除。同一个调试角落。
+            this.listCachedCard();
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });

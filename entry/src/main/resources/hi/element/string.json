@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "सूची cachedCount"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "केवल डीबग, डिफ़ॉल्ट 6; खुली चैट पर तुरंत लागू होता है"
     }
   ]
 }

@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "목록 cachedCount"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "디버그 전용, 기본값 6. 열려 있는 대화에 즉시 적용됩니다"
     }
   ]
 }

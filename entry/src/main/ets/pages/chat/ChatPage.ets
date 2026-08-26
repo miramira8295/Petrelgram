@@ -213,6 +213,9 @@ import {
   stageInitialMessageGroups
 } from '../../util/initialMessageStage';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
+// ⚠️ 临时（P6 标定）：cachedCount 档位调试项。标定结束后按
+// util/debugListPerf.ets 末尾的清单删除。
+import { KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -230,13 +233,16 @@ const HEADER_BLUR_RADIUS: number = 140;
 // 实时位置的上报间隔。Telegram 官方客户端也是分钟级——秒级上报既费电又没有
 // 实际意义，收到的一方看到的地图精度远达不到那个粒度。
 
+// cachedCount 的取值理由（原写死常量处的注释，值本身搬去了
+// util/debugListPerf.ets 的 LIST_CACHED_COUNT_DEFAULT，仍然是 6）：
 // 固定预建两行：不再用状态变量从 1 延迟涨到 4。后者会在进页面约 450ms 后让
 // 整个可见消息区重跑 build，Insight 里对应两次约 25ms 的帧峰值。
 // A short-message viewport commonly contains 10-16 rows. HarmonyOS long-list
 // guidance recommends keeping roughly half a viewport ready; two rows were
 // exhausted by a single fast 90 Hz fling in the 10:43 device trace. Keep this
-// static so changing the value never invalidates every visible LazyForEach row.
-const LIST_CACHED_COUNT: number = 6;
+// static so changing the value never invalidates every visible row.
+// ⚠️ 临时（P6 标定）：档位现在可以在设置 → 日志与诊断里临时切成 4/8。没有人
+// 动那个开关时行为与写死 6 的时期逐字节相同。
 // 全局复用池按桶封顶的最小间隔。封顶本身只是遍历一个个位数长度的数组，但
 // 每次给 maxCount 赋值都会让框架做一次异步清理，没必要在连续 fling 的每次
 // 停手上都跑一遍。
@@ -380,6 +386,11 @@ struct ChatPageChrome {
   @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
   @StorageProp(KEY_AUTOPLAY_MUTED) autoplayMuted: boolean = true;
   @StorageProp(KEY_TRANSLATE_CHATS) translateChatsEnabled: boolean = false;
+  // ⚠️ 临时（P6 标定）：cachedCount 档位。它走这一层而不是 ChatPage 直接读
+  // AppStorage，是因为「立即生效」靠的正是这条 V1→V2 的透传链：@StorageProp
+  // 观测到键变化 → 本层重跑 build() → @Param 值变了 → ChatPage 里依赖它的
+  // .cachedCount() 重新求值。ChatPage 自己 AppStorage.get 是读不到变化的。
+  @StorageProp(KEY_DEBUG_LIST_CACHED) listCachedCount: number = LIST_CACHED_COUNT_DEFAULT;
 
   build() {
     ChatPage({
@@ -403,7 +414,8 @@ struct ChatPageChrome {
       reduceAnimations: this.reduceAnimations,
       autoplayVideo: this.autoplayVideo,
       autoplayMuted: this.autoplayMuted,
-      translateChatsEnabled: this.translateChatsEnabled
+      translateChatsEnabled: this.translateChatsEnabled,
+      listCachedCount: this.listCachedCount
     });
   }
 }
@@ -539,6 +551,9 @@ export struct ChatPage {
   @Require @Param bottomSafe: number = 0;  // ✅ 新增
   @Require @Param keyboardH: number = 0;
   @Require @Param appIsForeground: boolean = true;
+  // ⚠️ 临时（P6 标定）：List 的 cachedCount 档位，由 ChatPageChrome 透传。
+  // 不是 @Require —— 少数直接 new ChatPage 的调用点（预览）没有它时用默认档。
+  @Param listCachedCount: number = LIST_CACHED_COUNT_DEFAULT;
   @Local messages: MessageEntry[] = [];
   @Local messageLoadState: string = 'loading'; // loading | ready | error
   @Local messageLoadError: string = '';
@@ -1382,7 +1397,8 @@ export struct ChatPage {
         return;
       }
       const rows: number = messageRowViewportRows(this.screenH, MIN_MESSAGE_ROW_HEIGHT_VP);
-      capReuseBuckets(pool, ReusableMessageBubble, reuseBucketMaxCount(rows, LIST_CACHED_COUNT));
+      capReuseBuckets(pool, ReusableMessageBubble,
+        reuseBucketMaxCount(rows, this.listCachedCount));
     } catch (err) {
       // 封顶是纯优化，失败了不该影响任何一行的渲染——吞掉但留痕。
       logW('[ReusePool] cap failed', err);
@@ -7346,7 +7362,7 @@ export struct ChatPage {
     // 首帧之前还没有滚动事件，curStartIdx/curEndIdx 是 -1：用首屏兜底
     // （聊天默认停在底部，所以取末尾一屏），滑动事件到了会立刻纠正。
     const range: VisibleRange = visibleRangeOrFallback(
-      this.curStartIdx, this.curEndIdx, this.groups.length, LIST_CACHED_COUNT);
+      this.curStartIdx, this.curEndIdx, this.groups.length, this.listCachedCount);
     this.driveTranslations(range.start, range.end);
     this.syncMediaWindow(range.start, range.end);
     // 同一个道理：数据一变（新消息到达、翻页、被查看器等场景清空候选表后
@@ -8808,7 +8824,7 @@ export struct ChatPage {
         .contentEndOffset(this.bottomChromeH + 8)
         // 固定预建半屏左右的短消息。图片预取仍由 BasicPrefetcher 按可见区
         // 独立驱动；这里不延迟修改状态变量，避免首屏落地后把可见行全部重建。
-        .cachedCount(LIST_CACHED_COUNT)
+        .cachedCount(this.listCachedCount)
         // Keep the visible messages pinned in place when an older page is
         // prepended above — without this, the List stays index-anchored and
         // visibly jumps to the top of the newly loaded page.

@@ -7,6 +7,11 @@ import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
 import { GESTURE_CLASSIC } from '../util/messageGestures';
 import { logE } from '../util/log';
 import { KEY_PROXY_MIRROR, KEY_PROXY_SYNC_OFF } from '../util/proxyMirror';
+// ⚠️ 临时（P6 标定）：cachedCount 档位调试项，标定结束后删除，清单见
+// util/debugListPerf.ets 文件末尾。
+import {
+  KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT, normalizeListCachedCount
+} from '../util/debugListPerf';
 import {
   APPEARANCE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_BUBBLE_MATERIAL_ON, KEY_MATERIAL_LIGHT_DARK,
   KEY_MATERIAL_THICKNESS_DARK, KEY_STATUS_FOLLOW_TITLE, recomputeAppearance
@@ -377,6 +382,10 @@ export async function initSettings(context: common.Context): Promise<void> {
       AppStorage.setOrCreate(key, await s.get(key, false) as boolean);
     }
     AppStorage.setOrCreate(KEY_CACHE_LIMIT, await s.get(KEY_CACHE_LIMIT, CACHE_LIMIT_DEFAULT) as number);
+    // ⚠️ 临时（P6 标定）：走 normalize 而不是直接信落盘值——档位表将来收窄时，
+    // 旧值会变成野值，而 cachedCount 收到野值不报错，只是行为不可解释。
+    AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED,
+      normalizeListCachedCount(await s.get(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT) as number));
     AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS,
       await s.get(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT,
@@ -427,6 +436,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     for (const key of APPEARANCE_HEX_KEYS) {
       AppStorage.setOrCreate(key, '');
     }
+    AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT); // ⚠️ 临时（P6 标定）
     AppStorage.setOrCreate(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT);
     for (const key of POWER_BOOLEAN_DEFAULTS) {
       AppStorage.setOrCreate(key, true);

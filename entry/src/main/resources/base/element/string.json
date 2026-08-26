@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "临时调试页，验完删除"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "列表 cachedCount 档位"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "调试项，默认 6；切换后当前会话页立即生效"
     }
   ]
 }

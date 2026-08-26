@@ -11627,6 +11627,14 @@
     {
       "name": "diag_repeat_spike_sub",
       "value": "Temporary debug page — remove after verification"
+    },
+    {
+      "name": "diag_list_cached",
+      "value": "cachedCount daftar"
+    },
+    {
+      "name": "diag_list_cached_sub",
+      "value": "Hanya debug, bawaan 6; langsung berlaku pada obrolan yang terbuka"
     }
   ]
 }
