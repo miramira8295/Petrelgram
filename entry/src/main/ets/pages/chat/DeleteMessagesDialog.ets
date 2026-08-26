@@ -1,22 +1,35 @@
+import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
+import { logE } from '../../util/log';
 
-// 删除消息的确认弹窗。用 CustomDialog 而不是 promptAction.showDialog：后者
-// 只能排按钮，挂不了复选框，而"是否同时为对方删除"是一个开关而非第三个按钮
-// —— 做成三按钮时用户得在两个红色危险项之间辨认，容易点错。
-@CustomDialog
+// 删除消息的确认弹窗。用自定义弹窗而不是 promptAction.showDialog：后者只能排
+// 按钮，挂不了复选框，而"是否同时为对方删除"是一个开关而非第三个按钮 —— 做成
+// 三按钮时用户得在两个红色危险项之间辨认，容易点错。
+//
+// 走 ComponentContent + UIContext.openCustomDialog（API 12 起），不走
+// @CustomDialog + CustomDialogController：后两者官方明写只在状态管理 V1 中
+// 使用，而聊天详情页要迁 V2。这一层本身仍是普通的 V1 @Component。
+export interface DeleteMessagesDialogParams {
+  // 复选框文案里的对方名字；群聊传空，显示"为所有人删除"。
+  peerName: string;
+  onConfirm: (revoke: boolean) => void;
+  // 由打开方接上 closeCustomDialog——这一层不再持有 controller。
+  onClose: () => void;
+}
+
+@Component
 export struct DeleteMessagesDialog {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
-  controller?: CustomDialogController;
-  // 复选框文案里的对方名字；群聊传空，显示"为所有人删除"。
   peerName: string = '';
   onConfirm: (revoke: boolean) => void = (): void => {};
+  onClose: () => void = (): void => {};
   @State revoke: boolean = false;
 
   private revokeLabel(): string {
@@ -49,7 +62,7 @@ export struct DeleteMessagesDialog {
           .backgroundColor($r('app.color.surface_alt'))
           .borderRadius(22)
           .layoutWeight(1).height(44)
-          .onClick((): void => { this.controller?.close(); });
+          .onClick((): void => { this.onClose(); });
         Button($r('app.string.delete'))
           .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White)
           .backgroundColor(COLOR_PRIMARY)
@@ -57,7 +70,7 @@ export struct DeleteMessagesDialog {
           .layoutWeight(1).height(44)
           .onClick((): void => {
             const revoke: boolean = this.revoke;
-            this.controller?.close();
+            this.onClose();
             this.onConfirm(revoke);
           });
       }
@@ -72,4 +85,51 @@ export struct DeleteMessagesDialog {
     .backdropBlur(overlayBackdropBlur('dialog'))
     .attributeModifier(materialModifier('dialog'));
   }
+}
+
+// ComponentContent 要的是 wrapBuilder 包过的全局 @Builder，不能是裸箭头函数：
+// 全局 @Builder 在 struct 之外被直接调用时没有组件上下文，会抛
+// "Cannot read property observeComponentCreation2 of undefined"。
+@Builder
+function deleteMessagesDialogLayer(p: DeleteMessagesDialogParams) {
+  DeleteMessagesDialog({
+    peerName: p.peerName,
+    onConfirm: p.onConfirm,
+    onClose: p.onClose
+  })
+}
+
+// 打开弹窗的唯一入口。ComponentContent 是脱离组件树管理的节点实体，关掉之后
+// 必须 dispose，否则那棵子树泄漏；onDidDisappear 覆盖了点遮罩自动取消这条路。
+export function openDeleteMessagesDialog(ui: UIContext, peerName: string,
+  onConfirm: (revoke: boolean) => void): void {
+  let content: ComponentContent<DeleteMessagesDialogParams> | null = null;
+  const close = (): void => {
+    const open: ComponentContent<DeleteMessagesDialogParams> | null = content;
+    if (open === null) {
+      return;
+    }
+    ui.getPromptAction().closeCustomDialog(open)
+      .catch((e: Object): void => { logE(`openDeleteMessagesDialog close failed: ${e}`); });
+  };
+  const params: DeleteMessagesDialogParams = {
+    peerName: peerName,
+    onConfirm: onConfirm,
+    onClose: close
+  };
+  const node: ComponentContent<DeleteMessagesDialogParams> =
+    new ComponentContent(ui, wrapBuilder(deleteMessagesDialogLayer), params);
+  content = node;
+  ui.getPromptAction().openCustomDialog(node, {
+    autoCancel: true,
+    alignment: DialogAlignment.Center,
+    onDidDisappear: (): void => {
+      content = null;
+      node.dispose();
+    }
+  }).catch((e: Object): void => {
+    content = null;
+    node.dispose();
+    logE(`openDeleteMessagesDialog open failed: ${e}`);
+  });
 }

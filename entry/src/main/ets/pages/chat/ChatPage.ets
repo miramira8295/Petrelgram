@@ -1,5 +1,5 @@
 import { router, promptAction } from '@kit.ArkUI';
-import { DeleteMessagesDialog } from './DeleteMessagesDialog';
+import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { setScrollActive } from '../../util/scrollEffects';
@@ -1351,7 +1351,6 @@ export struct ChatPage {
   @State stickerGhostY: number = 0;
   @State stickerGhostFly: boolean = false;
   private stickerGhostTimer: number = -1;
-  private deleteDialog: CustomDialogController | null = null;
   private unsubLiveLocation: (() => void) | null = null;
   @State unreadBadge: number = 0;
   private firstUnreadId: number = 0;
@@ -6773,33 +6772,22 @@ export struct ChatPage {
     if (ids.length === 0) {
       return;
     }
-    this.deleteDialog = new CustomDialogController({
-      builder: DeleteMessagesDialog({
-        peerName: this.isGroup || this.isChannel ? '' : this.headerText().titleText,
-        onConfirm: (revoke: boolean): void => { this.doDeleteMessages(ids, revoke); }
-      }),
-      autoCancel: true,
-      customStyle: true,
-      alignment: DialogAlignment.Center
-    });
-    this.deleteDialog.open();
+    this.openDeleteConfirm(ids);
   }
 
   // 长按菜单里的单条删除：复用 deleteSelected() 的弹窗逻辑，只是目标 id 只有一个。
   // 不处于多选模式时 doDeleteMessages 内部的 exitSelect() 只是把已经为 false/[]
   // 的 selecting/selectedIds 再赋一次同样的值，是无害的空操作。
   private deleteMessage(messageId: number): void {
-    const ids: number[] = [messageId];
-    this.deleteDialog = new CustomDialogController({
-      builder: DeleteMessagesDialog({
-        peerName: this.isGroup || this.isChannel ? '' : this.headerText().titleText,
-        onConfirm: (revoke: boolean): void => { this.doDeleteMessages(ids, revoke); }
-      }),
-      autoCancel: true,
-      customStyle: true,
-      alignment: DialogAlignment.Center
-    });
-    this.deleteDialog.open();
+    this.openDeleteConfirm([messageId]);
+  }
+
+  // 弹窗走 ComponentContent + UIContext.openCustomDialog，不再走
+  // CustomDialogController：后者官方明写只在状态管理 V1 中使用，而本页要迁 V2。
+  private openDeleteConfirm(ids: number[]): void {
+    openDeleteMessagesDialog(this.getUIContext(),
+      this.isGroup || this.isChannel ? '' : this.headerText().titleText,
+      (revoke: boolean): void => { this.doDeleteMessages(ids, revoke); });
   }
 
   private doDeleteMessages(ids: number[], revoke: boolean): void {
