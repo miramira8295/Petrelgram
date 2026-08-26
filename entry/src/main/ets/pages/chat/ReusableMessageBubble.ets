@@ -201,7 +201,7 @@ export struct ReusableMessageBubble {
   }
 
   // 订阅当前挂在哪条 (chatId, rowId) 上。同 key 短路（审计 P1-1 / 3.4）：复用
-  // 一次会挂两遍——aboutToReuse 一次、@Prop group 落地触发 @Watch 再一次，每次
+  // 一次会挂两遍——aboutToReuse 一次、@Param group 落地触发 @Monitor 再一次，每次
   // 都是一整轮「退订 + 读现值 + 重订阅」，是滚动时的每行常数开销。
   // 记下 key 同时也让「订阅挂在哪」成为可判定的事实，谁先到都不影响正确性。
   private attachedKey: string = '';

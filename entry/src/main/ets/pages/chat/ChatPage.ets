@@ -222,7 +222,7 @@ const HEADER_BLUR_RADIUS: number = 140;
 // 实时位置的上报间隔。Telegram 官方客户端也是分钟级——秒级上报既费电又没有
 // 实际意义，收到的一方看到的地图精度远达不到那个粒度。
 
-// 固定预建两行：不再用 @State 从 1 延迟涨到 4。后者会在进页面约 450ms 后让
+// 固定预建两行：不再用状态变量从 1 延迟涨到 4。后者会在进页面约 450ms 后让
 // 整个可见消息区重跑 build，Insight 里对应两次约 25ms 的帧峰值。
 // A short-message viewport commonly contains 10-16 rows. HarmonyOS long-list
 // guidance recommends keeping roughly half a viewport ready; two rows were
@@ -412,9 +412,10 @@ export struct ChatPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @Require @Param materialEpoch: number = 0;
-  // @Watch, because the row key below embeds this value: bumping it renames
-  // every row, and the data source has to be told or LazyForEach keeps a key
-  // table that no longer matches anything.
+  // @Monitor('langEpoch') hangs off this (see onLanguageEpochChanged), because
+  // the row key below embeds this value: bumping it renames every row, and the
+  // data source has to be told or LazyForEach keeps a key table that no longer
+  // matches anything.
   @Require @Param langEpoch: number = 0;
   // 深浅色切换后要重新解析背景。壁纸本身是**按模式选的**（TDLib 的
   // for_dark_theme），而 ChatBackgroundStore 只在 open() 时解析过那一次，
@@ -439,7 +440,7 @@ export struct ChatPage {
   @Local visibleGroupCount: number = 0;
   // Rendered through the LazyForEach data source (incremental notifications keep
   // scroll position on prepend); the plain array mirror serves index lookups.
-  // @State (not a plain field) so MediaViewerOverlay's @Prop keeps re-syncing:
+  // @Local (not a plain field) so MediaViewerOverlay's @Prop keeps re-syncing:
   // @Prop only follows a source that is itself a state variable, and a plain
   // field handed to a child would freeze at its construction-time value,
   // breaking album paging in the viewer once more history loads.
@@ -1301,7 +1302,7 @@ export struct ChatPage {
   @Local pausedAnimationIds: number[] = [];
   @Local forcedAnimationIds: number[] = [];
   @Local failedAnimationIds: number[] = [];
-  // Swiper's initial page when the viewer opens. Plain field, not @State: it is
+  // Swiper's initial page when the viewer opens. Plain field, not @Local: it is
   // read once when MediaViewerOverlay is constructed, which happens after this
   // has already been set by onMediaTap.
   private viewerInitIdx: number = 0;
@@ -1403,7 +1404,7 @@ export struct ChatPage {
   // 缓存设置 → 自动播放静音开关，唯一消费点：下发给气泡播放器的 muted。
   @Require @Param autoplayMuted: boolean = true;
   // 气泡播放位的播放进度，按 messageId 记录。onPlaySlotPositionChanged 是
-  // 350ms 一次的高频回调，故意用普通 Map 而不是 @State/@Link/AppStorage——
+  // 350ms 一次的高频回调，故意用普通 Map 而不是 @Local/AppStorage——
   // 写状态会让消息列表每 350ms 重建一次。打开全屏查看器时读它作为
   // startPositionMs，关闭查看器时把最终进度写回。整个会话关闭时清空
   // （见 aboutToDisappear），避免无界增长。
@@ -1471,7 +1472,7 @@ export struct ChatPage {
   private resumeScrollMessageId: number = 0;
   private resumeScrollItemY: number = 0;
   private resumeScrollAtBottom: boolean = true;
-  // @State: the segment indicator renders from this — a plain field wouldn't
+  // @Local: the segment indicator renders from this — a plain field wouldn't
   // trigger a re-render when scrolling/tapping moves the shown pinned index.
   @Local pinnedCycle: number = 0;
   private pendingJumpId: number = 0;
@@ -2720,7 +2721,8 @@ export struct ChatPage {
   // 播放位竞选的总闸门：「自动播放视频」关掉、省电模式开启、减少动效开启，
   // 三者任一成立就完全不竞选 —— 不挂播放器，更不发起任何分片下载。
   // 判定本身是纯函数 shouldCompete()（见 playSlot.ets），这里只是把三个
-  // @StorageProp 喂给它。isAnimation 传 false：这是页面级闸门，动图本来就
+  // @Param 喂给它（源头仍是 AppStorage，经 ChatPageChrome 透传）。isAnimation
+  // 传 false：这是页面级闸门，动图本来就
   // 不参加竞选，由 MessageBubble.isPlaySlot()/isAlbumCellPlaySlot() 兜底。
   private playSlotsEnabled(): boolean {
     return shouldCompete(this.autoplayVideo, this.powerSaving, this.reduceAnimations, false);
@@ -3616,7 +3618,7 @@ export struct ChatPage {
     }
     const now = Date.now();
     // onDidScroll fires every rendered frame. If the top row hasn't changed,
-    // skip the group scan, date formatting and @State writes; only refresh the
+    // skip the group scan, date formatting and @Local writes; only refresh the
     // hide timer at a coarse cadence so a long drag keeps the chip visible.
     if (start === this.floatDateIndex && this.floatDateShown) {
       if (now - this.floatDateTimerArmedAt < 180) {
@@ -5935,7 +5937,7 @@ export struct ChatPage {
   private panelReadySeq: number = 0;
 
   // 顶栏高度只由结构状态决定。标题、副标题、头像加载状态的变化不再经过
-  // onAreaChange 写回 @State，也就不会把 List.contentStartOffset 一起拖进重排。
+  // onAreaChange 写回状态变量，也就不会把 List.contentStartOffset 一起拖进重排。
   private headerChromeHeight(): number {
     const input: ChatChromeGeometryInput = {
       topSafe: this.topSafe,
@@ -8602,7 +8604,7 @@ export struct ChatPage {
         })
         .contentEndOffset(this.bottomChromeH + 8)
         // 固定预建半屏左右的短消息。图片预取仍由 BasicPrefetcher 按可见区
-        // 独立驱动；这里不延迟修改 @State，避免首屏落地后把可见行全部重建。
+        // 独立驱动；这里不延迟修改状态变量，避免首屏落地后把可见行全部重建。
         .cachedCount(LIST_CACHED_COUNT)
         // Keep the visible messages pinned in place when an older page is
         // prepended above — without this, the List stays index-anchored and
