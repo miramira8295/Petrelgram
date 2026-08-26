@@ -658,7 +658,11 @@ export struct ChatPage {
       }
     }
     const changed: boolean = !sameRowArray(this.groups, next);
-    this.groups = next;
+    // 全等的一次发布不换数组引用：@Local 的通知是按引用发的，换一个逐项相同
+    // 的新数组照样通知 ⇒ Repeat 照样跑一遍 diff。changed 本来就算好了，用上。
+    if (changed) {
+      this.groups = next;
+    }
     // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
     // 必须不同，这不是笔误。
     //
@@ -672,6 +676,9 @@ export struct ChatPage {
     // 但 AlbumGroupDataSource.imageRequestFor 是按 head.photoPath 决定预不预取的：
     // 喂它 next，它对这些行 `return null`，BasicPrefetcher 一次都不会预取——
     // 预取整条静默失效。所以数据面喂原始那份，UI 面喂合并那份。
+    //
+    // 这一行**在 changed 之外**，故意的：合并那份逐项相同（changed === false）
+    // 恰恰是「只有旁路字段变了」的那次发布，而那正是预取源唯一需要的更新。
     this.groupsData.setRows(groups);
     if (!this.pageVisible && changed) {
       this.hiddenListDirty = true;
