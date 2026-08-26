@@ -147,24 +147,73 @@ export default function rowReuseIdTest() {
         customEmojiId: '', customEmojiPath: '' }];
       expect(rowReuseId(data, groupOf(withReaction), 'medium') === baseId).assertFalse();
 
-      // isOutgoing on its own is not one of medium's tracked switches (it was
-      // only ever a side effect of the fixed avatar/sender-name proxy this
-      // file used before the AlbumGroup fix); an outgoing message with the
-      // same group flags as an incoming one lands in the same medium bucket.
+      // msg.isOutgoing is its own structural axis, independent of and
+      // additive to group.showAvatar/showSenderName: it flips which child of
+      // the tail Row comes first (MessageBubble.ets ~3471-3475 vs ~3610-
+      // 3614) and gates a trailing statusIcon() node. Fix wave 3: this used
+      // to be asserted as "no effect at medium" because the prior wave's
+      // avatar/sender-name fix dropped direction as a side effect of
+      // removing the old (flawed) proxy — that was a real regression, not a
+      // deliberate design choice, so this now asserts the opposite.
       const outgoing: AlbumGroup = groupOf(textEntry(21, true));
-      expect(rowReuseId(data, outgoing, 'medium')).assertEqual(baseId);
+      expect(rowReuseId(data, outgoing, 'medium') === baseId).assertFalse();
 
-      // Sender-name/avatar visibility is tracked via AlbumGroup.showAvatar/
-      // showSenderName, not msg.senderName — msg.senderName differing alone
-      // (with the group flag unchanged) must NOT move the medium bucket. The
-      // group-flag-driven case is covered separately below
-      // (avatar_flag_from_group_splits_medium_and_fine_but_not_coarse).
+      // Sender-name visibility is `group.showSenderName && head.senderName
+      // !== ''` (MessageBubble.ets:3494) — the conjunction, not
+      // showSenderName alone. With the group flag held fixed (both groups
+      // default showSenderName: true here), msg.senderName differing alone
+      // still has to move the bucket: a channel post / anonymous admin with
+      // showSenderName=true but senderName === '' renders no name node at
+      // all, unlike a row that does render one.
       const withSenderName: MessageEntry = cloneMessage(base);
       withSenderName.senderName = 'Bob';
       const withoutSenderName: MessageEntry = cloneMessage(base);
       withoutSenderName.senderName = '';
-      expect(rowReuseId(data, groupOf(withSenderName), 'medium'))
-        .assertEqual(rowReuseId(data, groupOf(withoutSenderName), 'medium'));
+      expect(rowReuseId(data, groupOf(withSenderName), 'medium') ===
+        rowReuseId(data, groupOf(withoutSenderName), 'medium')).assertFalse();
+    });
+
+    it('content_kind_hidden_system_normal_are_three_distinct_medium_buckets', 0, () => {
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const normal: MessageEntry = textEntry(80);
+      const hidden: MessageEntry = cloneMessage(normal);
+      hidden.contentType = 'hidden';
+      const system: MessageEntry = cloneMessage(normal);
+      system.contentType = 'system';
+
+      const ids: string[] = [normal, hidden, system]
+        .map((m: MessageEntry): string => rowReuseId(data, groupOf(m), 'medium'));
+      expect(ids[0] === ids[1]).assertFalse();
+      expect(ids[0] === ids[2]).assertFalse();
+      expect(ids[1] === ids[2]).assertFalse();
+
+      // fine must not paper back over the split by folding hidden/system
+      // into the same 'none' media kind as a plain text row.
+      const fineIds: string[] = [normal, hidden, system]
+        .map((m: MessageEntry): string => rowReuseId(data, groupOf(m), 'fine'));
+      expect(fineIds[0] === fineIds[1]).assertFalse();
+      expect(fineIds[0] === fineIds[2]).assertFalse();
+      expect(fineIds[1] === fineIds[2]).assertFalse();
+    });
+
+    it('link_preview_fields_split_medium_and_fine', 0, () => {
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const plain: MessageEntry = textEntry(81);
+      const linked: MessageEntry = cloneMessage(plain);
+      linked.linkUrl = 'https://example.com';
+      linked.linkSiteName = 'Example';
+
+      expect(rowReuseId(data, groupOf(plain), 'medium') ===
+        rowReuseId(data, groupOf(linked), 'medium')).assertFalse();
+      expect(rowReuseId(data, groupOf(plain), 'fine') ===
+        rowReuseId(data, groupOf(linked), 'fine')).assertFalse();
+
+      // Only linkPhotoFileId differing (the fifth field in hasLinkPreview)
+      // must also move the bucket.
+      const linkedByPhotoOnly: MessageEntry = cloneMessage(plain);
+      linkedByPhotoOnly.linkPhotoFileId = 555;
+      expect(rowReuseId(data, groupOf(plain), 'medium') ===
+        rowReuseId(data, groupOf(linkedByPhotoOnly), 'medium')).assertFalse();
     });
 
     // Fix wave: the first cut of this file derived "has avatar"/"has sender
@@ -209,12 +258,14 @@ export default function rowReuseIdTest() {
 
     // translatedText is the biggest structural fork of all: it flips
     // ReusableMessageBubble.build()'s lightweight/full-bubble branch
-    // (~215: `data.lightweightPlainText && group.head.translatedText === ''`),
-    // swapping the entire subtree, not just a child node inside it. Covered
-    // for both a lightweight-eligible plain-text row and a row that is
-    // already routed to the full renderer (rich), since the translation
-    // fork sits above/independent of the coarse plain/rich split.
-    it('translation_on_plain_text_row_splits_medium_and_fine_not_coarse', 0, () => {
+    // (~224: `data.lightweightPlainText && group.head.translatedText === ''`),
+    // swapping the entire subtree, not just a child node inside it. Fix wave
+    // 3: coarseBucket's real condition includes translatedText too — a
+    // lightweight-eligible row that picks up a translation still renders the
+    // full MessageBubble tree, so coarse must split here as well, not just
+    // medium/fine (this is the corrected assertion; the prior wave asserted
+    // coarse stayed equal, which is the bug the audit's item 3 called out).
+    it('translation_on_plain_text_row_splits_every_level', 0, () => {
       const msg: MessageEntry = textEntry(73);
       const data: MessageBubbleRenderData = renderData({ isGroup: true, lightweightPlainText: true });
       const untranslated: AlbumGroup = groupOf(msg);
@@ -223,8 +274,8 @@ export default function rowReuseIdTest() {
       translatedMsg.translatedLang = 'en';
       const translated: AlbumGroup = groupOf(translatedMsg);
 
-      expect(rowReuseId(data, untranslated, 'coarse'))
-        .assertEqual(rowReuseId(data, translated, 'coarse'));
+      expect(rowReuseId(data, untranslated, 'coarse') ===
+        rowReuseId(data, translated, 'coarse')).assertFalse();
       expect(rowReuseId(data, untranslated, 'medium') ===
         rowReuseId(data, translated, 'medium')).assertFalse();
       expect(rowReuseId(data, untranslated, 'fine') ===

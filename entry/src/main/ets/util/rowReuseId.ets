@@ -11,13 +11,39 @@ import { AlbumGroup } from './collapseAlbums';
 // measurement can be done without touching call sites again.
 export type ReuseIdLevel = 'coarse' | 'medium' | 'fine';
 
-type MediaKind = 'none' | 'photo' | 'video' | 'sticker' | 'file' | 'other';
+type MediaKind = 'none' | 'photo' | 'video' | 'sticker' | 'file' | 'other' | 'system' | 'hidden';
+
+// The three-way top-level fork MessageBubble.build() (~3401-3416) makes
+// before anything else: 'hidden' renders a zero-height empty node, 'system'
+// renders a centered service pill with no avatar/bubble/time layer at all,
+// and everything else renders the full message-row tree. These three trees
+// share nothing, so this has to be checked before any of the finer switches
+// below make sense. See docs/superpowers/specs/2026-08-26-p2-state-audit.md,
+// P0-5 (~257-261), which spells this exact three-way split out as the spec.
+type ContentKind = 'hidden' | 'system' | 'normal';
 
 // Whether the row's build() picks the lightweight plain-text renderer or the
 // full MessageBubble tree — the single largest structural fork in the row.
-// See ReusableMessageBubble.build().
-function coarseBucket(data: MessageBubbleRenderData): string {
-  return data.lightweightPlainText ? 'plain' : 'rich';
+// The real condition (ReusableMessageBubble.build() ~224) is
+// `data.lightweightPlainText && group.head.translatedText === ''`, not
+// data.lightweightPlainText alone: a lightweight-eligible row that has
+// picked up a translation still falls through to the full MessageBubble
+// tree, so translatedText has to be part of even the coarse split — leaving
+// it out mixes a genuinely lightweight row with a full-tree row into the
+// same 'plain' bucket.
+function coarseBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
+  const lightweight: boolean = data.lightweightPlainText && group.head.translatedText === '';
+  return lightweight ? 'plain' : 'rich';
+}
+
+function contentKind(msg: MessageEntry): ContentKind {
+  if (msg.contentType === 'hidden') {
+    return 'hidden';
+  }
+  if (msg.contentType === 'system') {
+    return 'system';
+  }
+  return 'normal';
 }
 
 // showAvatar/showSenderName are the real per-row structural flags, computed
@@ -33,8 +59,38 @@ function hasAvatarBranch(group: AlbumGroup): boolean {
   return group.showAvatar;
 }
 
+// The real condition (MessageBubble.ets:3494, LightweightPlainTextBubble.ets
+// :640-641) is `isGroup && !isOutgoing && senderName !== '' && showSenderName`
+// — group.showSenderName alone is the run-position half of that, but a row
+// with showSenderName=true and an empty senderName (channel posts, anonymous
+// admins) renders no name node at all and must not share a bucket with a row
+// that does render one.
 function hasSenderNameBranch(group: AlbumGroup): boolean {
-  return group.showSenderName;
+  return group.showSenderName && group.head.senderName !== '';
+}
+
+// msg.isOutgoing is not a style difference: MessageBubble.ets flips which
+// child comes first in the tail Row depending on direction (incoming ~3471-
+// 3475: tail before the bubble; outgoing ~3610-3614: tail after), and
+// LightweightPlainTextBubble.ets mirrors it at ~633-636 / ~675-679. It also
+// gates whether a trailing statusIcon() node exists at all (outgoing only).
+// This is independent of, and additive to, group.showAvatar — a group's
+// avatar-column existence (MessageBubble.ets ~3439: `isGroup && !isOutgoing`)
+// already depends on isOutgoing too, but direction still has to be tracked
+// on its own because it also reorders/adds nodes on rows where the avatar
+// branch doesn't even apply (private chats, and outgoing rows in general).
+function isOutgoingBranch(group: AlbumGroup): boolean {
+  return group.head.isOutgoing;
+}
+
+// MessageBubble.ets:1075-1079 useDirectPlainText()'s hasLinkPreview() input:
+// a single Text node vs. a Column -> content() -> multi-level ForEach tree
+// whenever any of these five fields is non-empty/non-zero. Copied verbatim
+// from that definition, not reinvented.
+function hasLinkPreview(msg: MessageEntry): boolean {
+  return msg.linkUrl !== '' || msg.linkSiteName !== '' ||
+    msg.linkTitle !== '' || msg.linkDescription !== '' ||
+    msg.linkPhotoFileId !== 0;
 }
 
 // AlbumGroup.dateLabel is '' unless this row is the first of a new day, in
@@ -81,24 +137,31 @@ function hasTranslation(msg: MessageEntry): boolean {
 
 function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
   const msg: MessageEntry = group.head;
+  const content: string = contentKind(msg);
   const avatar: string = hasAvatarBranch(group) ? 'avatar' : 'no-avatar';
   const senderName: string = hasSenderNameBranch(group) ? 'sender' : 'no-sender';
+  const outgoing: string = isOutgoingBranch(group) ? 'out' : 'in';
   const reply: string = hasReplyBlock(msg) ? 'reply' : 'no-reply';
   const forward: string = hasForwardHeader(msg) ? 'forward' : 'no-forward';
   const reactions: string = hasReactionBar(msg) ? 'reactions' : 'no-reactions';
   const dateSep: string = hasDateSeparator(group) ? 'date' : 'no-date';
   const unread: string = hasUnreadDivider(data) ? 'unread' : 'no-unread';
   const translated: string = hasTranslation(msg) ? 'translated' : 'no-translated';
-  return `${coarseBucket(data)}:${avatar}:${senderName}:${reply}:${forward}:${reactions}` +
-    `:${dateSep}:${unread}:${translated}`;
+  const linkPreview: string = hasLinkPreview(msg) ? 'link-preview' : 'no-link-preview';
+  return `${coarseBucket(data, group)}:${content}:${avatar}:${senderName}:${outgoing}` +
+    `:${reply}:${forward}:${reactions}:${dateSep}:${unread}:${translated}:${linkPreview}`;
 }
 
 // contentType values are enumerated from every `contentType === '...'` check
 // in the codebase (store/MessageEntry.ets, pages/chat, util). Mapping choices
 // that are not a literal file-kind match:
-// - 'system' / 'hidden' fold into 'none': they render centered service pills
-//   with no media slot, structurally closer to a medialess text row than to
-//   any of the four media buckets.
+// - 'system' / 'hidden' each get their own MediaKind (NOT folded into
+//   'none'): contentKind() above already routes them to a completely
+//   different top-level tree (an empty node / a centered service pill), and
+//   mediaKind must not paper back over that split by lumping them in with a
+//   plain text row's 'none' — a Column().height(0) and a full text bubble
+//   share nothing.
+// - 'text' is the genuine no-media case and keeps 'none'.
 // - 'customEmoji', 'dice', 'emoji' fold into 'sticker': all three render
 //   through the same animated-sticker-shaped surface (see MessageStore.ets
 //   customEmoji-to-sticker promotion and DiceBubble.ets).
@@ -110,9 +173,11 @@ function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string 
 //   being given a bespoke bucket, per the task's requested five-way split.
 function mediaKind(msg: MessageEntry): MediaKind {
   switch (msg.contentType) {
-    case 'text':
     case 'system':
+      return 'system';
     case 'hidden':
+      return 'hidden';
+    case 'text':
       return 'none';
     case 'photo':
       return 'photo';
@@ -158,7 +223,7 @@ function fineBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
 // itself — see hasAvatarBranch/hasSenderNameBranch/hasDateSeparator above.
 export function rowReuseId(data: MessageBubbleRenderData, group: AlbumGroup, level: ReuseIdLevel): string {
   if (level === 'coarse') {
-    return coarseBucket(data);
+    return coarseBucket(data, group);
   }
   if (level === 'medium') {
     return mediumBucket(data, group);
