@@ -32,7 +32,10 @@ import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../.
 import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import { ReuseIdLevel, rowReuseId } from '../../util/rowReuseId';
-import { globalReusePoolAvailable } from '../../util/messageReusePool';
+import {
+  MIN_MESSAGE_ROW_HEIGHT_VP, capReuseBuckets, globalReusePoolAvailable,
+  messageRowViewportRows, reuseBucketMaxCount
+} from '../../util/messageReusePool';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
 import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
 import {
@@ -59,6 +62,9 @@ import {
   AlbumGroupDataSource, contentFingerprint, countDeferredFlips, reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
+// UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
+// 调用点在 capMessageReuseBuckets 的版本闸门之后。IReusePool 只是类型。
+import { IReusePool, UIUtils } from '@kit.ArkUI';
 import { ChatBackdrop } from './ChatBackdrop';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
 import { TopBanners } from './TopBanners';
@@ -231,6 +237,10 @@ const HEADER_BLUR_RADIUS: number = 140;
 // exhausted by a single fast 90 Hz fling in the 10:43 device trace. Keep this
 // static so changing the value never invalidates every visible LazyForEach row.
 const LIST_CACHED_COUNT: number = 6;
+// 全局复用池按桶封顶的最小间隔。封顶本身只是遍历一个个位数长度的数组，但
+// 每次给 maxCount 赋值都会让框架做一次异步清理，没必要在连续 fling 的每次
+// 停手上都跑一遍。
+const REUSE_CAP_MIN_INTERVAL_MS: number = 1000;
 const PREPARED_MESSAGE_CACHE_LIMIT: number = 1024;
 
 const CHAT_HEADER_NAV_GUARD_MS: number = 700;
@@ -1290,6 +1300,55 @@ export struct ChatPage {
     }
     this.preparedMessageCache.set(cacheKey, prepared);
     return prepared;
+  }
+
+  // ── 全局复用池：按 reuseId 分桶封顶 ──────────────────────────────────
+  //
+  // 这是全局池相对默认池的实质收益之一（默认池根本没有这个旋钮），治的是
+  // 官方点名的「缓存池溢出：短时间内产生大量待回收项，超出缓存容量 → 旧实例
+  // 被丢弃，新项仍需重建」，同时也是 shared 所有权那条使用限制的解药——
+  // 「只要拥有组件类的任何实例存在，池就会持续存在……回收的组件可能会累积。
+  // 使用 maxCount 来控制内存使用」。
+  //
+  // 上限怎么来的写在 messageReusePool.reuseBucketMaxCount 的注释里，一句话：
+  // 一个桶在一次最坏回收潮里能收到的实例数 = 可视窗口行数 + 2 × cachedCount。
+  //
+  // 视口高度这里传的是**整屏高度** this.screenH，而不是 List 的实测高度：
+  // 列表上下还压着头部和输入区，整屏高度是列表高度的上界，于是算出来的行数
+  // 也是上界。方向是对的——上限估高了只是多留几个空实例，估低了会把还要用的
+  // 实例赶出池子，正是要治的那条溢出。
+  //
+  // 只在**滚动停下**和**页面隐藏**时跑，不在滚动中跑：赋值 maxCount 会触发
+  // 框架的异步清理，滚动中做这件事等于自己制造抖动。滚动停下正好是一次回收潮
+  // 刚过、池子最满的时刻；页面隐藏则是 shared 池跨会话累积之前的最后一道闸。
+  //
+  // 低于 API 26 直接返回：UIUtils.getCustomComponentContext 是 API 26 的接口，
+  // 这一句是本页唯一会碰到它的地方，闸门就在函数第一行。
+  private lastReuseCapMs: number = 0;
+
+  private capMessageReuseBuckets(): void {
+    if (!globalReusePoolAvailable()) {
+      return;
+    }
+    const now: number = Date.now();
+    if (now - this.lastReuseCapMs < REUSE_CAP_MIN_INTERVAL_MS) {
+      return;
+    }
+    this.lastReuseCapMs = now;
+    try {
+      const pool: IReusePool | undefined =
+        UIUtils.getCustomComponentContext(this).getReusePool();
+      if (pool === undefined) {
+        // 走到这里说明宿主那层没生效（池宿主没被 new 出来，或者本页不在它
+        // 之下）。不是错误：默认复用池仍然在工作，只是没有封顶这项能力。
+        return;
+      }
+      const rows: number = messageRowViewportRows(this.screenH, MIN_MESSAGE_ROW_HEIGHT_VP);
+      capReuseBuckets(pool, ReusableMessageBubble, reuseBucketMaxCount(rows, LIST_CACHED_COUNT));
+    } catch (err) {
+      // 封顶是纯优化，失败了不该影响任何一行的渲染——吞掉但留痕。
+      logW('[ReusePool] cap failed', err);
+    }
   }
 
   // @ReusableV2 用 .reuse({ reuseId })（API 18 起）取代 V1 的 .reuseId()。
@@ -2840,6 +2899,8 @@ export struct ChatPage {
     // 那要等到组件真被销毁才会跑，用户已经在别的页面上等了半天下载还在跑。
     this.clearSlotTick();
     this.playSlots.suspend();
+    // shared 池不随本页销毁：离开之前先把每个桶收到上限内，免得跨会话累积。
+    this.capMessageReuseBuckets();
   }
 
   private handleWillHide(): void {
@@ -8836,6 +8897,8 @@ export struct ChatPage {
           this.resumeChatTgsAfterScroll();
           this.driveVisibleWork();
           this.armPlaySlotSettle();
+          // 一次回收潮刚过，池子最满，正是封顶该动手的时刻。
+          this.capMessageReuseBuckets();
         })
         .onAreaChange((_old: Area, area: Area): void => {
           const y: number = area.globalPosition.y as number;
