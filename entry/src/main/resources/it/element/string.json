@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Barra di stato segue il colore del titolo"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Sincronizza con gli altri account"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Non sincronizzare con gli altri account"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Salva in File…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Dove salvare"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Azioni con scorrimento nelle chat"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Scorri a destra per letto/non letto, a sinistra per silenzia e archivia. Se disattivato, lo scorrimento cambia cartella"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Torna all’account precedente"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Impossibile tornare indietro, riprova"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Tornato al tuo account"
     }
   ]
 }

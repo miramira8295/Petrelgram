@@ -35,7 +35,6 @@ import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
 import {
   MessageBubbleActions, MessageBubbleRenderData, ReusableMessageBubble
 } from './ReusableMessageBubble';
-import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { PlaySlotRegistry } from './PlaySlotRegistry';
 import { shouldCompete, slotKey, slotKeyMessageId } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
@@ -113,6 +112,7 @@ import {
   AnchorMerge, SEARCH_FETCH, SEARCH_JUMP, SearchStep, mergeAnchorHit, stepNewer, stepOlder
 } from '../../util/searchPaging';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
+import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS,
   KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
@@ -140,7 +140,7 @@ import {
 } from '../../util/openTelegramLink';
 import { openUrl } from '../../util/openUrl';
 import {
-  reactionDisplayLabel, reactionTypeOf, setDefaultReaction
+  AvailableReactionSet, canonicalReactionEmoji, parseAvailableReactions, reactionDisplayLabel, reactionTypeOf, setDefaultReaction
 } from '../../util/reactions';
 import { openWebUrl } from '../../util/webBrowserNav';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
@@ -187,6 +187,8 @@ import {
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
+import { rememberChatPosition, rememberedChatPosition } from '../../util/chatResume';
+import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
 import { getActiveTdUserId } from '../../tdkit/Globals';
 import {
@@ -220,7 +222,12 @@ const HEADER_BLUR_RADIUS: number = 140;
 
 // 固定预建两行：不再用 @State 从 1 延迟涨到 4。后者会在进页面约 450ms 后让
 // 整个可见消息区重跑 build，Insight 里对应两次约 25ms 的帧峰值。
-const LIST_CACHED_COUNT: number = 2;
+// A short-message viewport commonly contains 10-16 rows. HarmonyOS long-list
+// guidance recommends keeping roughly half a viewport ready; two rows were
+// exhausted by a single fast 90 Hz fling in the 10:43 device trace. Keep this
+// static so changing the value never invalidates every visible LazyForEach row.
+const LIST_CACHED_COUNT: number = 6;
+const PREPARED_MESSAGE_CACHE_LIMIT: number = 1024;
 
 const CHAT_HEADER_NAV_GUARD_MS: number = 700;
 const TOP_CARD_LOADING_DELAY_MS: number = 180;
@@ -263,7 +270,7 @@ interface DiceChoice {
 }
 
 interface PreparedMessageBubble {
-  msg: MessageEntry;
+  group: AlbumGroup;
   data: MessageBubbleRenderData;
 }
 
@@ -528,6 +535,19 @@ export struct ChatPage {
     this.scheduleComposerEditorMount();
   }
 
+  private finishInitialMessageStageForInteraction(): void {
+    // Normally the viewport-sized stage finishes before the mask is removed.
+    // A bounded initial-history fill can deliberately keep it waiting, though;
+    // once the user takes ownership of the visible list, never let that
+    // background scheduler compete with their first drag.
+    if (!this.initialMessageStageActive || this.initialTimelineMasked) {
+      return;
+    }
+    const groups: AlbumGroup[] = this.initialMessagePendingGroups ?? this.groups;
+    this.initialMessageStageSeq++;
+    this.finishInitialMessageStage(groups);
+  }
+
   private applyInitialUnreadLanding(seq: number): void {
     if (seq !== this.initialUnreadLayoutSeq || !this.didInitialScroll ||
       !this.stayAtUnread || this.firstUnreadId <= 0) {
@@ -637,6 +657,18 @@ export struct ChatPage {
     if (fillPending && target.alignFromStart) {
       return 'waiting';
     }
+    // The visible landing window is already stable. While a bounded history
+    // fill is still moving the snapshot, keep the current geometry and wait
+    // for its final publication instead of proactively materializing every
+    // off-screen row. When the fill completes, publish the real snapshot once;
+    // LazyForEach then builds only its visible/cache window.
+    if (this.initialTimelineReadyToPresent) {
+      if (fillPending) {
+        return 'waiting';
+      }
+      this.finishInitialMessageStage(groups);
+      return 'finished';
+    }
     const nextRevealCount: number = nextInitialMessageRevealCount(
       this.initialMessageRevealCount,
       target.availableRows
@@ -674,6 +706,14 @@ export struct ChatPage {
       (!fillPending || presentRows > 0)) {
       this.initialTimelineReadyToPresent = true;
       this.scheduleInitialTimelinePresentation();
+      if (!fillPending) {
+        this.finishInitialMessageStage(groups);
+        return 'finished';
+      }
+      // Do not keep walking the off-screen history one row per VSync after the
+      // complete landing window is ready. A later store publication restarts
+      // this callback when the bounded initial fill settles.
+      return 'waiting';
     }
     if (staged === groups) {
       if (fillPending) {
@@ -798,6 +838,13 @@ export struct ChatPage {
   // 官方预取算法：按可见区域变化决定预取/取消哪些行的图片解码。
   private imagePrefetcher: BasicPrefetcher = new BasicPrefetcher(this.groupsData);
   private messageActionsCache: MessageBubbleActions | null = null;
+  // ArkUI may ask the same visible/cache row to build again after unrelated
+  // page state changes. Keep the immutable render bundle by row fingerprint
+  // and the small set of dynamic inputs it actually consumes.
+  private preparedMessageCache: Map<string, PreparedMessageBubble> =
+    new Map<string, PreparedMessageBubble>();
+  private messageListRevision: number = 0;
+  private chatBackgroundRevision: number = 0;
 
   private messageActions(): MessageBubbleActions {
     if (this.messageActionsCache === null) {
@@ -825,6 +872,7 @@ export struct ChatPage {
         },
         onFileTap: (messageId: number): void => { this.onFileTap(messageId); },
         onFileSave: (messageId: number): void => { this.onFileSave(messageId); },
+        onFilePause: (messageId: number): void => { this.store?.pauseFileDownload(messageId); },
         onStickerRetry: (messageId: number): void => { this.store?.retrySticker(messageId); },
         onContactOpen: (userId: number, phone: string, vcard: string): void => {
           this.openSharedContact(userId, phone, vcard);
@@ -968,6 +1016,38 @@ export struct ChatPage {
     const forcePlay: boolean = this.animationForcePlay(g.head.id);
     const playbackFailed: boolean = this.animationPlaybackFailed(g.head.id);
     const audio: boolean = audioQueueApplies(g.head.contentType);
+    const showUnreadDivider: boolean = this.firstUnreadId !== 0 &&
+      g.memberIds.indexOf(this.firstUnreadId) >= 0;
+    const translationActive: boolean = this.translationActive();
+    const isPinnedMsg: boolean = (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0;
+    const paidMediaPending: boolean = this.paidMediaPending(g.head.id);
+    const editingActive: boolean = this.editingId !== 0;
+    const animateIn: boolean = this.freshSinceId !== 0 && g.head.id > this.freshSinceId;
+    const liveGroupCallId: number = this.liveCallIsActive ? this.liveGroupCallId : 0;
+    // nowSec changes every second, but only these two reuse decisions cross a
+    // time boundary. Key the decisions instead of invalidating every prepared
+    // row every second; the live clock itself is passed outside the cache.
+    const menuEditable: boolean = g.head.isOutgoing && this.nowSec - g.head.date < 172800;
+    const pollExpired: boolean = g.head.pollCloseDate > 0 && this.nowSec >= g.head.pollCloseDate;
+    const cacheKey: string = `${this.rowKeyOf(g)}|c${this.chatId}` +
+      `|g${this.isGroup ? 1 : 0}${this.isChannel ? 1 : 0}` +
+      `|u${showUnreadDivider ? 1 : 0}|tr${translationActive ? 1 : 0}` +
+      `|editable${menuEditable ? 1 : 0}|poll${pollExpired ? 1 : 0}` +
+      `|pin${isPinnedMsg ? 1 : 0}|paid${paidMediaPending ? 1 : 0}` +
+      `|anim${paused ? 1 : 0}${forcePlay ? 1 : 0}${playbackFailed ? 1 : 0}` +
+      `|edit${editingActive ? 1 : 0}|fresh${animateIn ? 1 : 0}` +
+      `|live${this.liveLocationMessageId}|call${liveGroupCallId}` +
+      `|slot${this.playSlotKey}|slotms${this.playSlotStartMs}` +
+      `|mute${this.autoplayMuted ? 1 : 0}|msg${audio ? this.messageListRevision : 0}` +
+      `|bg${this.chatBackgroundRevision}|appearance${this.appearanceEpoch}` +
+      `|material${this.materialEpoch}|dark${this.appDark ? 1 : 0}`;
+    const cached: PreparedMessageBubble | undefined = this.preparedMessageCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+    // Queue lookup walks the loaded message list. It now runs only when an
+    // audio row or the list revision genuinely changes, not on every page-wide
+    // rerender of an otherwise stable cached row.
     const audioQueuePosition: number = audio
       ? this.musicQueue.queuePosition(this.messages, g.head.id) : 0;
     const audioQueueLength: number = audio ? this.musicQueue.queueLength(this.messages) : 0;
@@ -975,11 +1055,6 @@ export struct ChatPage {
       ? this.musicQueue.hasPrevious(this.messages, g.head.id) : false;
     const audioHasNext: boolean = audio
       ? this.musicQueue.hasNext(this.messages, g.head.id) : false;
-    const showUnreadDivider: boolean = this.firstUnreadId !== 0 &&
-      g.memberIds.indexOf(this.firstUnreadId) >= 0;
-    const translationActive: boolean = this.translationActive();
-    const isPinnedMsg: boolean = (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0;
-    const paidMediaPending: boolean = this.paidMediaPending(g.head.id);
     const context: MessageBubbleReuseContext = {
       albumItemCount: g.photoPaths.length,
       memberCount: g.memberIds.length,
@@ -990,7 +1065,7 @@ export struct ChatPage {
       showAvatar: g.showAvatar,
       showSenderName: g.showSenderName,
       translationActive,
-      menuEditable: g.head.isOutgoing && this.nowSec - g.head.date < 172800,
+      menuEditable,
       albumShape: this.albumReuseShape(g),
       albumCaptionShape: formattedTextReuseShape(
         g.caption,
@@ -1008,20 +1083,13 @@ export struct ChatPage {
       liveVideoChatTappable: g.head.isVideoChatStarted && this.liveCallIsActive,
       audioQueuePosition,
       audioQueueLength,
-      pollExpired: g.head.pollCloseDate > 0 && this.nowSec >= g.head.pollCloseDate
+      pollExpired
     };
     const lightweightPlainText: boolean = canRenderLightweightPlainText(g.head, context);
     const data: MessageBubbleRenderData = {
-      nowSec: this.nowSec, chatId: this.chatId, isGroup: this.isGroup, isChannel: this.isChannel,
+      chatId: this.chatId, isGroup: this.isGroup, isChannel: this.isChannel,
       liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
       showUnreadDivider,
-      dateLabel: g.dateLabel,
-      albumPaths: g.photoPaths, albumFileIds: g.photoFileIds, albumRatios: g.photoRatios,
-      albumMemberIds: g.memberIds, albumIsVideo: g.photoIsVideo,
-      albumProgress: g.photoProgress, albumFailed: g.photoFailed,
-      albumVideoFileIds: g.videoFileIds, albumVideoFileSizes: g.videoFileSizes,
-      albumVideoMimeTypes: g.videoMimeTypes, albumCaption: g.caption,
-      albumCaptionEntities: g.captionEntities,
       paidMediaPending,
       audioQueuePosition,
       audioQueueLength,
@@ -1032,46 +1100,31 @@ export struct ChatPage {
       animationPaused: paused,
       animationForcePlay: forcePlay,
       animationPlaybackFailed: playbackFailed,
-      editingActive: this.editingId !== 0,
+      editingActive,
       isPinnedMsg,
       liveGroupCallId: this.liveCallIsActive ? this.liveGroupCallId : 0,
-      showAvatar: g.showAvatar, showSenderName: g.showSenderName,
-      animateIn: this.freshSinceId !== 0 && g.head.id > this.freshSinceId,
-      memberIds: g.memberIds,
+      animateIn,
       lightweightPlainText
     };
-    return {
-      msg: g.head,
+    const prepared: PreparedMessageBubble = {
+      group: g,
       data
     };
+    if (this.preparedMessageCache.size >= PREPARED_MESSAGE_CACHE_LIMIT) {
+      this.preparedMessageCache.clear();
+    }
+    this.preparedMessageCache.set(cacheKey, prepared);
+    return prepared;
   }
 
   @Builder
   private preparedMessageBubble(prepared: PreparedMessageBubble) {
-    if (prepared.data.lightweightPlainText) {
-      LightweightPlainTextBubble({
-        msg: prepared.msg,
-        nowSec: prepared.data.nowSec,
-        chatId: prepared.data.chatId,
-        isGroup: prepared.data.isGroup,
-        themeBubbleOut: prepared.data.themeBubbleOut,
-        showUnreadDivider: prepared.data.showUnreadDivider,
-        dateLabel: prepared.data.dateLabel,
-        editingActive: prepared.data.editingActive,
-        isPinnedMsg: prepared.data.isPinnedMsg,
-        showAvatar: prepared.data.showAvatar,
-        showSenderName: prepared.data.showSenderName,
-        animateIn: prepared.data.animateIn,
-        memberIds: prepared.data.memberIds,
-        actions: this.messageActions()
-      });
-    } else {
-      ReusableMessageBubble({
-        msg: prepared.msg,
-        data: prepared.data,
-        actions: this.messageActions()
-      });
-    }
+    ReusableMessageBubble({
+      group: prepared.group,
+      nowSec: this.nowSec,
+      data: prepared.data,
+      actions: this.messageActions()
+    });
   }
   @State subtitle: string = '';
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
@@ -1379,6 +1432,8 @@ export struct ChatPage {
   private lastKeyboardH: number = 0;
   // Message id of a video waiting to be saved to the gallery once downloaded.
   private pendingGallerySaveId: number = 0;
+  // 挂起的保存要去相册还是文件（下载完成后照原样执行）。
+  private pendingGallerySaveToFiles: boolean = false;
   private autoSavePendingIds: number[] = [];
   private autoSaveInFlight: boolean = false;
   // Separate intents keep "tap to open" and the explicit save action honest:
@@ -1589,6 +1644,8 @@ export struct ChatPage {
     this.cancelFlash();
     this.clearFloatingDate();
     this.messages = [];
+    this.messageListRevision++;
+    this.preparedMessageCache.clear();
     this.messageLoadError = '';
     this.olderLoadState = 'idle';
     this.newerLoadState = 'idle';
@@ -1733,6 +1790,10 @@ export struct ChatPage {
       this.resumeScrollItemY = 0;
     }
     this.resumeScrollAtBottom = this.atBottom;
+    // 同一份位置也记到模块级表里：页面销毁后（退出会话再进来）还能落回去，
+    // issue #98。在底部的不记——那种情况下次该跟到最新。
+    rememberChatPosition(this.chatId, this.threadRootId,
+      this.resumeScrollMessageId, this.atBottom);
     this.resumeScrollPending = true;
   }
 
@@ -1927,6 +1988,7 @@ export struct ChatPage {
     this.bgStore.seedFromDefault();
     this.unsubBg = this.bgStore.subscribe((state: ChatBackgroundState): void => {
       this.chatBg = state;
+      this.chatBackgroundRevision++;
     });
     this.bgStore.open(this.chatId);
     this.unsubMembershipSupergroup = getTdClient().onUpdate('updateSupergroup', (u: TdObject) => {
@@ -2026,6 +2088,10 @@ export struct ChatPage {
       const notifyKind: string = store.getCurrentNotifyKind();
       const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
       const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
+      // Transfer completion/failure and translation state keep the stable list
+      // key. Publish them directly to the mounted row before the data-source
+      // diff, so a key-equal snapshot still updates the one affected bubble.
+      publishMessageRowPresentations(this.chatId, groups);
       let prependAnchorId: number = 0;
       let prependAnchorY: number = 0;
       if (this.didInitialScroll && this.groups.length > 0 && groups.length > this.groups.length) {
@@ -2041,6 +2107,7 @@ export struct ChatPage {
         }
       }
       this.messages = list;
+      this.messageListRevision++;
       this.reconcileMessageActionTargets(list);
       this.groups = groups;
       this.visibleGroupCount = groups.length;
@@ -2245,13 +2312,15 @@ export struct ChatPage {
         if (pe !== undefined) {
           if (this.mediaEntryIsVideo(pe) && pe.videoPath !== '') {
             this.pendingGallerySaveId = 0;
-            saveMediaToGallery(getContext(this) as common.UIAbilityContext, pe.videoPath, true);
+            this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.videoPath, true,
+              pe.videoFileName, this.pendingGallerySaveToFiles);
           } else if (this.mediaEntryIsVideo(pe) && pe.videoFailed) {
             this.pendingGallerySaveId = 0;
             promptAction.showToast({ message: $r('app.string.cp_video_download_failed'), duration: 1800 });
           } else if (this.mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
             this.pendingGallerySaveId = 0;
-            saveMediaToGallery(getContext(this) as common.UIAbilityContext, pe.photoFullPath, false);
+            this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.photoFullPath, false,
+              '', this.pendingGallerySaveToFiles);
           } else if (this.mediaEntryIsPhoto(pe) && pe.photoFullFailed) {
             this.pendingGallerySaveId = 0;
             promptAction.showToast({ message: $r('app.string.cp_photo_download_failed'), duration: 1800 });
@@ -2289,6 +2358,7 @@ export struct ChatPage {
       if (this.pendingJumpId !== 0) {
         const jumpTargetId: number = this.pendingJumpId;
         const jg: number = groupIndexOf(groups, jumpTargetId);
+        logW(`[Jump80] pending land target=${jumpTargetId} idx=${jg} rows=${groups.length}`);
         if (jg >= 0) {
           this.pendingJumpId = 0;
           this.finishPinnedJump();
@@ -2375,6 +2445,10 @@ export struct ChatPage {
     } else if (jumpTo !== undefined && jumpTo > 0) {
       // Opened via a message link: load straight around the target message,
       // without racing an additional latest-history request.
+      //
+      // issue #80 诊断：搜索结果点进来落点不对，而这条链一个埋点都没有，报告人
+      // 导的日志看不出断在哪一步。开→加载→落点→高亮各记一行。
+      logW(`[Jump80] open chat=${this.chatId} jumpTo=${jumpTo} search=${this.searchMode}`);
       this.didInitialScroll = true;
       this.pendingJumpId = jumpTo;
       store.open(jumpTo);
@@ -2384,7 +2458,15 @@ export struct ChatPage {
       this.pendingJumpId = this.threadRootId;
       store.open(this.threadRootId);
     } else {
-      store.open();
+      // 记住的浏览位置（issue #98）。未读优先：有未读时交给未读锚点，官方也是
+      // 这个顺序；只有「没有未读」才落回上次看到的地方。
+      const remembered: number = rememberedChatPosition(this.chatId, this.threadRootId);
+      if (remembered > 0) {
+        this.pendingJumpId = remembered;
+        store.open(remembered);
+      } else {
+        store.open();
+      }
     }
     if (this.searchMode && this.searchQuery !== '') {
       // Let the initial history land first — runSearch jumps to the newest hit,
@@ -4174,7 +4256,7 @@ export struct ChatPage {
     }
     if (action.kind === LINK_HASHTAG) {
       const params: Record<string, Object> = { 'query': action.text };
-      router.pushUrl({ url: 'pages/search/GlobalSearchPage', params: params });
+      navigateToSearch(params);
       return;
     }
     if (action.kind === LINK_USER) {
@@ -4456,6 +4538,7 @@ export struct ChatPage {
       if (height <= 0) {
         return;
       }
+      logW(`[Jump80] flash idx=${idx} target=${targetId} top=${Math.round(top)} h=${Math.round(height)} rows=${this.groups.length}`);
       this.flashTargetIdx = idx;
       this.flashTargetId = targetId;
       this.flashTop = top;
@@ -5332,7 +5415,19 @@ export struct ChatPage {
   // Viewer "保存到相册": photos save right away (full-res preferred); a video
   // that isn't fully local yet starts its download and saves automatically on
   // completion (see the pendingGallerySaveId check in the store subscription).
-  private saveViewerMedia(): void {
+  // 保存到相册还是任意文件夹，由菜单里点的是哪一项决定（issue #97/#65）。
+  private saveMediaTo(ctx: common.UIAbilityContext, path: string, isVideo: boolean,
+    fileName: string, toFiles: boolean): void {
+    if (toFiles) {
+      const name: string = fileName.trim() !== ''
+        ? fileName : path.substring(path.lastIndexOf('/') + 1);
+      saveFileToLocal(ctx, path, name);
+      return;
+    }
+    saveMediaToGallery(ctx, path, isVideo);
+  }
+
+  private saveViewerMedia(toFiles: boolean): void {
     const e = this.entryById(this.viewerMsgId);
     if (e === null) {
       return;
@@ -5340,9 +5435,10 @@ export struct ChatPage {
     const ctx = getContext(this) as common.UIAbilityContext;
     if (this.mediaEntryIsVideo(e)) {
       if (e.videoPath !== '') {
-        saveMediaToGallery(ctx, e.videoPath, true);
+        this.saveMediaTo(ctx, e.videoPath, true, e.videoFileName, toFiles);
       } else {
         this.pendingGallerySaveId = e.id;
+        this.pendingGallerySaveToFiles = toFiles;
         if (this.store !== null) {
           this.store.requestVideoDownload(e.id, true, e.videoFailed);
         }
@@ -5351,11 +5447,12 @@ export struct ChatPage {
       return;
     }
     if (e.photoFullPath !== '') {
-      saveMediaToGallery(ctx, e.photoFullPath, false);
+      this.saveMediaTo(ctx, e.photoFullPath, false, '', toFiles);
       return;
     }
     if (e.photoFullFileId !== 0) {
       this.pendingGallerySaveId = e.id;
+      this.pendingGallerySaveToFiles = toFiles;
       if (this.store !== null) {
         this.store.requestFullPhoto(e.id, e.photoFullFailed);
       }
@@ -5363,7 +5460,7 @@ export struct ChatPage {
       return;
     }
     if (e.photoPath !== '') {
-      saveMediaToGallery(ctx, e.photoPath, false);
+      this.saveMediaTo(ctx, e.photoPath, false, '', toFiles);
     } else {
       promptAction.showToast({ message: $r('app.string.cp_photo_not_available'), duration: 1800 });
     }
@@ -6737,6 +6834,42 @@ export struct ChatPage {
   }
 
   // reactionKey：标准 emoji 原样，自定义 emoji 为 'ce:<custom_emoji_id>'。
+  // 本会话允许的表情（服务端的规范写法）。我们内置的快捷表情带变体选择符，
+  // 服务端的可能不带，差一个码位 TDLib 就判 REACTION_INVALID——所以发之前先换成
+  // 它认的那一个。拉一次缓存在页面上，失败就当没有（不拦着用户发）。
+  private allowedReactions: string[] = [];
+  private allowedReactionsTask: Promise<string[]> | null = null;
+
+  // **要等它回来再发**：第一次点的时候列表还是空的，直接发就等于发我们内置的
+  // 原串（带 U+FE0F），必被判 REACTION_INVALID——用户看到的是「第一个表情第一次
+  // 永远失败，再点才行」。拉一次缓存在页面上，之后都是同步命中。
+  private ensureAllowedReactions(messageId: number): Promise<string[]> {
+    if (this.allowedReactions.length > 0) {
+      return Promise.resolve(this.allowedReactions);
+    }
+    const running: Promise<string[]> | null = this.allowedReactionsTask;
+    if (running !== null) {
+      return running;
+    }
+    const req: TdRequest = { '@type': 'getMessageAvailableReactions' };
+    req['chat_id'] = this.chatId;
+    req['message_id'] = messageId;
+    req['row_size'] = 8;
+    const task: Promise<string[]> = getTdClient().send(req).then((result: TdObject): string[] => {
+      const set: AvailableReactionSet = parseAvailableReactions(result);
+      this.allowedReactions = set.emojis;
+      this.allowedReactionsTask = null;
+      return this.allowedReactions;
+    }).catch((e: TdError): string[] => {
+      // 拉不到就按原串发（可能成功，也可能报错——总比拦着用户强）。
+      this.allowedReactionsTask = null;
+      logE(`ChatPage.getMessageAvailableReactions failed: ${e.message}`);
+      return [];
+    });
+    this.allowedReactionsTask = task;
+    return task;
+  }
+
   private toggleReaction(messageId: number, reactionKey: string, isChosen: boolean): void {
     const store: MessageStore | null = this.store;
     const key: string = `${messageId}_${reactionKey}`;
@@ -6745,7 +6878,15 @@ export struct ChatPage {
     }
     ContextMenu.close();
     this.reactionPendingKey = key;
-    store.setReaction(messageId, reactionKey, isChosen).then((): void => {
+    // 自定义表情（'ce:' 前缀）不做映射：它按 id 走，不涉及变体选择符。
+    const custom: boolean = reactionKey.startsWith('ce:');
+    const ready: Promise<string[]> = custom
+      ? Promise.resolve(this.allowedReactions) : this.ensureAllowedReactions(messageId);
+    let sendKey: string = reactionKey;
+    ready.then((allowed: string[]): Promise<void> => {
+      sendKey = custom ? reactionKey : canonicalReactionEmoji(reactionKey, allowed);
+      return store.setReaction(messageId, sendKey, isChosen);
+    }).then((): void => {
       if (this.reactionPendingKey === key) {
         this.reactionPendingKey = '';
       }
@@ -6753,8 +6894,11 @@ export struct ChatPage {
       if (this.reactionPendingKey === key) {
         this.reactionPendingKey = '';
       }
-      logE(`ChatPage.toggleReaction failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_reaction_failed'), duration: 1600 });
+      logE(`ChatPage.toggleReaction(${sendKey}) failed: ${e.message}`);
+      // 带上服务端的原因：光说「失败」用户没法反馈，我们也查不动。
+      promptAction.showToast({
+        message: `${str('cp_reaction_failed')} · ${e.message}`, duration: 2200
+      });
     });
   }
 
@@ -6809,6 +6953,7 @@ export struct ChatPage {
   private jumpToMessageId(targetId: number): void {
     this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
     const gidx: number = groupIndexOf(this.groups, targetId);
+    logW(`[Jump80] jumpToMessageId target=${targetId} idxInLoaded=${gidx} rows=${this.groups.length}`);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
       this.flashAtIndex(gidx, targetId);
@@ -8308,7 +8453,8 @@ export struct ChatPage {
               .alignItems(VerticalAlign.Center)
               .backgroundColor(this.selecting && this.rowSelected(g) ? $r('app.color.select_highlight') : Color.Transparent)
               .animation({
-                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
+                duration: this.chatTgsScrollActive ? 0 :
+                  powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
                 curve: Curve.EaseOut
               })
               .onClick(() => {
@@ -8331,9 +8477,13 @@ export struct ChatPage {
               y: this.initialTimelineMasked || g.initialDeferred === true ? 0.99 : 1
             })
             .animation({
-              duration: powerAnimationDuration(
+              // Newly materialized rows read the plain scroll gate without
+              // invalidating already visible rows at onScrollStart. During a
+              // fling they paint immediately; the entry stagger remains for
+              // the coordinated first presentation.
+              duration: this.chatTgsScrollActive ? 0 : powerAnimationDuration(
                 KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-              delay: this.initialTimelineRowRevealDelay(index),
+              delay: this.chatTgsScrollActive ? 0 : this.initialTimelineRowRevealDelay(index),
               curve: Curve.EaseOut
             });
           }, (g: AlbumGroup, index: number): string =>
@@ -8357,8 +8507,8 @@ export struct ChatPage {
           direction: GradientDirection.Bottom
         })
         .contentEndOffset(this.bottomChromeH + 8)
-        // 固定预建两行。图片预取仍由 BasicPrefetcher 按可见区独立驱动；这里不再
-        // 延迟修改 @State，避免首屏落地后把所有可见消息重新 build 一遍。
+        // 固定预建半屏左右的短消息。图片预取仍由 BasicPrefetcher 按可见区
+        // 独立驱动；这里不延迟修改 @State，避免首屏落地后把可见行全部重建。
         .cachedCount(LIST_CACHED_COUNT)
         // Keep the visible messages pinned in place when an older page is
         // prepended above — without this, the List stays index-anchored and
@@ -8390,6 +8540,7 @@ export struct ChatPage {
         // would otherwise never re-arm, leaving the user unable to load more.
         .onTouch((e: TouchEvent) => {
           if (e.type === TouchType.Down) {
+            this.finishInitialMessageStageForInteraction();
             // A real gesture transfers scroll ownership to the user; never
             // snap back to the bottom while they inspect older messages.
             this.imeTailPinned = false;
@@ -8428,8 +8579,12 @@ export struct ChatPage {
           // arrive and cancels the ones scrolled past. Distinct from the page
           // prefetch below, which loads MESSAGES.
           this.imagePrefetcher.visibleAreaChanged(start, end);
-          // 整聊天翻译与图片预取同源驱动：翻到哪儿译到哪儿。
-          this.driveTranslations(start, end);
+          // Translation results can mutate several rows at once. Keep the
+          // request/refresh lane quiet during a fling and catch up once the
+          // list settles; image prefetch above remains active and directional.
+          if (!this.chatTgsScrollActive) {
+            this.driveTranslations(start, end);
+          }
           // 媒体自动下载的可见窗口：只有窗口内的动图/语音才自动下载，划出去
           // 的自动取消（见 MessageStore.setMediaWindow）。
           this.syncMediaWindow(start, end);
@@ -8471,11 +8626,13 @@ export struct ChatPage {
           }
         })
         .onScrollStart(() => {
+          this.finishInitialMessageStageForInteraction();
           this.pauseChatTgsForScroll();
           this.dismissKeyboardOnUserScroll();
         })
         .onScrollStop(() => {
           this.resumeChatTgsAfterScroll();
+          this.driveVisibleWork();
           this.armPlaySlotSettle();
         })
         .onAreaChange((_old: Area, area: Area): void => {
@@ -8846,7 +9003,8 @@ export struct ChatPage {
           effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
           isVideoEntry: (entry: MessageEntry): boolean => this.mediaEntryIsVideo(entry),
           onRequestClose: (): void => { this.closeViewer(); },
-          onSaveMedia: (): void => { this.saveViewerMedia(); },
+          onSaveMedia: (): void => { this.saveViewerMedia(false); },
+          onSaveMediaToFiles: (): void => { this.saveViewerMedia(true); },
           onPositionChanged: (positionMs: number): void => { this.viewerPositionMs = positionMs; }
         })
       }

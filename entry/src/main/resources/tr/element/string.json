@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "Tamam"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Durum çubuğu başlık rengini izler"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Diğer hesaplara eşitle"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Diğer hesaplara eşitleme"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Dosyalara kaydet…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Nereye kaydedilsin"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Sohbetlerde kaydırma işlemleri"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Sağa kaydırma okundu/okunmadı, sola kaydırma sessize alma ve arşiv. Kapalıyken kaydırma klasör değiştirir"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Önceki hesaba dön"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Geri dönülemedi, tekrar deneyin"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Hesabınıza geri dönüldü"
     }
   ]
 }

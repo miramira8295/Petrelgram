@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "確定"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "狀態列跟隨標題顏色"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "同步到其他帳號"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "不同步到其他帳號"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "儲存到檔案…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "儲存到哪裡"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "會話列滑動操作"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "右滑已讀 / 未讀，左滑靜音與封存；關閉時左右滑用於切換資料夾"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "返回原帳號"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "返回原帳號失敗，請重試"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "已切回原帳號"
     }
   ]
 }

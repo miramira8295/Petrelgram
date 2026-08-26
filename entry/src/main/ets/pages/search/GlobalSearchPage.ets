@@ -29,6 +29,10 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import {
+  SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
+} from '../../util/searchSession';
+import { SEARCH_DEST_NAME } from '../../util/searchNav';
 import { logE, logI } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
 
@@ -117,9 +121,19 @@ interface DownloadItem {
 // Global search (Telegram-style): an empty query shows frequent contacts and
 // recently opened chats; a typed query searches chats/channels by name or
 // messages ("帖子") globally.
-@Entry
+// 路由表（router_map.json）的 buildFunction 指向这里：搜索页现在是**聊天页签栈
+// 里的一层**（issue #129），栈是 聊天列表 → 搜索 → 会话，从会话返回天然回到
+// 还活着的搜索结果页。原来它是整页 router 页、点结果必须自己弹掉，返回也就
+// 回不来了。
+@Builder
+export function GlobalSearchPageBuilder(): void {
+  GlobalSearchPage();
+}
+
 @Component
-struct GlobalSearchPage {
+export struct GlobalSearchPage {
+  // 本页在栈里的位置由外壳给（NavDestination 的 onReady），关闭 = 弹自己。
+  private navStack: NavPathStack | null = null;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -346,13 +360,23 @@ struct GlobalSearchPage {
       this.appsFailed = store.appsFailed;
     });
     store.open();
-    const params = router.getParams() as Record<string, Object> | undefined;
+    const params: Record<string, Object> | undefined = this.entryParams();
     const q = params !== undefined ? (params['query'] as string | undefined) : undefined;
     if (q !== undefined && q !== '') {
       // Hashtag entry — straight into the 帖子 (global posts) tab.
       this.query = q;
       this.tab = TAB_POSTS;
       this.searchMessages('');
+      forgetSearchSession(); // 带关键词进来的（话题跳转等），别被上次的覆盖
+      return;
+    }
+    // 上次点开结果时记下的关键词与分页，时效内自动填回并重跑一次（issue #129）。
+    // 结果本身不存快照——那些条目挂着实时订阅，存下来只会显示过期数据。
+    const restored: SearchSession | null = takeSearchSession(Date.now());
+    if (restored !== null) {
+      this.query = restored.query;
+      this.tab = restored.tab;
+      this.runSearch();
     }
   }
 
@@ -464,6 +488,8 @@ struct GlobalSearchPage {
     if (this.store !== null) {
       this.store.searchChats('');
     }
+    // 点「取消」是明确要离开搜索，别在下次打开时把上次的关键词又端上来。
+    forgetSearchSession();
     this.closingSearch = true;
     this.cancelPressed = false;
     this.closeSearchTimer = setTimeout((): void => {
@@ -471,7 +497,7 @@ struct GlobalSearchPage {
       this.closingSearch = false;
     }, 650);
     try {
-      router.back();
+      this.closeSelf();
     } catch (caught) {
       if (this.closeSearchTimer !== -1) {
         clearTimeout(this.closeSearchTimer);
@@ -1213,9 +1239,35 @@ struct GlobalSearchPage {
       if (this.closingSearch) {
         return;
       }
+      // 关键词和分页记一笔：从会话返回后再点搜索，直接回到这次的结果，不用重搜
+      // （issue #129）。本页是 router 页、点开结果必须弹掉，只能这样接。
+      rememberSearchSession(this.query, this.tab, Date.now());
+      // 退出这个会话时把搜索页带回来（issue #129）。
       this.closingSearch = true;
-      router.back();
     }).catch(logChatNavFailure);
+  }
+
+  // 进来时带的参数（话题标签跳转会带 query）。栈没给就当没有。
+  private entryParams(): Record<string, Object> | undefined {
+    const stack: NavPathStack | null = this.navStack;
+    if (stack === null) {
+      return router.getParams() as Record<string, Object> | undefined;
+    }
+    const param: Object[] = stack.getParamByName(SEARCH_DEST_NAME) as Object[];
+    if (param.length === 0) {
+      return undefined;
+    }
+    return param[param.length - 1] as Record<string, Object>;
+  }
+
+  // 关闭自己：栈里就弹一层，退回整页路由的那种情况才用 router.back()。
+  private closeSelf(): void {
+    const stack: NavPathStack | null = this.navStack;
+    if (stack !== null) {
+      stack.pop(true);
+      return;
+    }
+    router.back();
   }
 
   private resetResultOpening(): void {
@@ -3005,6 +3057,18 @@ struct GlobalSearchPage {
   }
 
   build() {
+    NavDestination() {
+      this.body();
+    }
+    .hideTitleBar(true)
+    .onReady((context: NavDestinationContext): void => {
+      this.navStack = context.pathStack;
+    })
+    .width('100%').height('100%');
+  }
+
+  @Builder
+  body() {
     Stack({ alignContent: Alignment.TopStart }) {
     Column() {
       Column() {

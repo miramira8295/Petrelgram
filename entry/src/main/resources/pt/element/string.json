@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Barra de status segue a cor do título"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Sincronizar com outras contas"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Não sincronizar com outras contas"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Salvar em Arquivos…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Salvar onde"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Ações de deslizar nas conversas"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Deslize para a direita para lido/não lido, para a esquerda para silenciar e arquivar. Desativado, deslizar troca de pasta"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Voltar à conta anterior"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Não foi possível voltar, tente novamente"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Voltamos à sua conta"
     }
   ]
 }

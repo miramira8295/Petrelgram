@@ -1,6 +1,11 @@
 {
   "routerMap": [
     {
+      "name": "GlobalSearchPage",
+      "pageSourceFile": "src/main/ets/pages/search/GlobalSearchPage.ets",
+      "buildFunction": "GlobalSearchPageBuilder"
+    },
+    {
       "name": "ChatPage",
       "pageSourceFile": "src/main/ets/pages/chat/ChatPage.ets",
       "buildFunction": "ChatPageBuilder"

@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "확인"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "상태 표시줄이 제목 색을 따름"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "다른 계정에 동기화"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "다른 계정에 동기화 안 함"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "파일에 저장…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "저장 위치"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "채팅 스와이프 동작"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "오른쪽으로 밀면 읽음/안읽음, 왼쪽으로 밀면 알림 끄기와 보관. 끄면 스와이프로 폴더를 전환합니다"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "이전 계정으로 돌아가기"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "돌아가지 못했습니다. 다시 시도해 주세요"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "계정으로 돌아왔습니다"
     }
   ]
 }

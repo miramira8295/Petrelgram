@@ -16,7 +16,7 @@ import {
 import {
   BUBBLE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_ACCENT_HEX, KEY_ACCENT_HEX_DARK, KEY_BUBBLE_IN_HEX,
   KEY_BUBBLE_IN_HEX_DARK, KEY_BUBBLE_MATERIAL_ON, KEY_BUBBLE_OUT_HEX, KEY_BUBBLE_OUT_HEX_DARK,
-  defaultHexFor, hexOrDefault, recomputeAppearance
+  KEY_STATUS_FOLLOW_TITLE, defaultHexFor, hexOrDefault, recomputeAppearance
 } from '../../util/appearance';
 import { setBoolean, setString } from '../../store/AppSettings';
 import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overlayMaterial';
@@ -179,6 +179,7 @@ export struct AccentColorCard {
   }
 
   @StorageProp(KEY_ACCENT_CUSTOM_ON) accentOn: boolean = false;
+  @StorageProp(KEY_STATUS_FOLLOW_TITLE) statusFollowTitle: boolean = false;
   @StorageProp(KEY_ACCENT_HEX) hexLight: string = '';
   @StorageProp(KEY_ACCENT_HEX_DARK) hexDark: string = '';
   @State pickerOpen: boolean = false;
@@ -263,6 +264,19 @@ export struct AccentColorCard {
         rowDivider();
         this.colorRow($r('app.string.appearance_mode_dark'), KEY_ACCENT_HEX_DARK);
       }
+      rowDivider();
+      Row({ space: 12 }) {
+        Text($r('app.string.appearance_status_follow_title')).fontSize(16)
+          .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        Toggle({ type: ToggleType.Switch, isOn: this.statusFollowTitle })
+          .selectedColor(COLOR_PRIMARY)
+          .onChange((v: boolean): void => {
+            setBoolean(KEY_STATUS_FOLLOW_TITLE, v);
+            recomputeAppearance();
+          });
+      }
+      .width('100%').height(ROW_H).padding({ left: 16, right: 13 })
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
     .bindSheet($$this.pickerOpen, this.sheet(), {

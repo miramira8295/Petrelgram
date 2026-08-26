@@ -31,6 +31,13 @@ export function progressFor(fileId: number): number {
   return percents.get(fileId) ?? 0;
 }
 
+// Unlike progressFor(), this preserves the distinction between "never
+// published" and a real 0% reset (retry/pause). Mounted bubbles use it to seed
+// local state without resurrecting an older @Prop percentage from the cache.
+export function progressForOr(fileId: number, fallback: number): number {
+  return percents.get(fileId) ?? fallback;
+}
+
 export function subscribeProgress(fileId: number, cb: (percent: number) => void): () => void {
   let listeners = subs.get(fileId);
   if (listeners === undefined) {

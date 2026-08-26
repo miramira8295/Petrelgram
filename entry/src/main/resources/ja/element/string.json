@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "ステータスバーをタイトルの色に合わせる"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "他のアカウントに同期"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "他のアカウントに同期しない"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "ファイルに保存…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "保存先"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "チャットのスワイプ操作"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "右スワイプで既読/未読、左スワイプでミュートとアーカイブ。オフのときはスワイプでフォルダーを切り替えます"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "元のアカウントに戻る"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "戻れませんでした。もう一度お試しください"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "元のアカウントに戻りました"
     }
   ]
 }

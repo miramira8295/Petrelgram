@@ -3,7 +3,6 @@
     "pages/Index",
     "pages/chat/LiveStreamViewerPage",
     "pages/chat/RtmpLiveStreamViewerPage",
-    "pages/search/GlobalSearchPage",
     "pages/main/CallsPage",
     "pages/main/PrivacyRulePage",
     "pages/main/PrivacyExceptionsPage",

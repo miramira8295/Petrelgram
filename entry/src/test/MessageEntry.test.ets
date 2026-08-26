@@ -106,7 +106,7 @@ export default function messageEntryTest() {
       expect(groups[1].head.id).assertEqual(26);
       expect(groups[1].dateLabel.length > 0).assertTrue();
     });
-    it('sticker_state_changes_invalidate_the_lazy_row_key', 0, () => {
+    it('sticker_transfer_state_keeps_the_lazy_row_key_stable', 0, () => {
       const sticker = buildMessageEntry(msg(27, false, 7, ''), usersOf());
       sticker.contentType = 'sticker';
       sticker.stickerFileId = 501;
@@ -117,8 +117,8 @@ export default function messageEntryTest() {
       const progressKey = collapseAlbums([updated])[0].key;
       updated.stickerFailed = true;
       const failedKey = collapseAlbums([updated])[0].key;
-      expect(progressKey === loadingKey).assertFalse();
-      expect(failedKey === progressKey).assertFalse();
+      expect(progressKey).assertEqual(loadingKey);
+      expect(failedKey).assertEqual(progressKey);
     });
     it('member_self_join_and_leave_use_natural_service_copy', 0, () => {
       const joinContent: TdObject = { '@type': 'messageChatAddMembers' };

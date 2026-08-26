@@ -5,16 +5,130 @@ import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
 import { CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import {
+  KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
+} from '../../store/AppSettings';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction } from '../../util/tabReTap';
+import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
+import { effectiveMuted } from '../../store/ChatEntry';
+import { scopeMutedForKind } from '../../store/ScopeMuteStore';
+
+// 滑动操作的按钮宽度与触发距离（vp），以及三个动作的底色。
+const SWIPE_BUTTON_VP: number = 76;
+const SWIPE_TRIGGER_VP: number = 76;
+const SWIPE_READ_BG: string = '#3390EC';
+const SWIPE_MUTE_BG: string = '#8E8E93';
+const SWIPE_ARCHIVE_BG: string = '#F09A37';
 
 @Component
 export struct ChatListView {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 行滑动操作的开关（交互设置）。关着时不挂 swipeAction，横向手势留给切文件夹。
+  @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
+  // 底栏点「聊天」页签（已选中）时递增，见 util/tabReTap。
+  @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
+  // 列表首行是否可见：决定这一下是回顶还是跳未读。
+  private topVisible: boolean = true;
+  private firstVisibleIndex: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
+  // 底栏点了已选中的「聊天」页签（issue #35）：不在顶就回顶，已经在顶就跳到
+  // 下一个未读会话，绕一圈找不到就什么都不做。归档页等复用本组件的地方也生效，
+  // 它们同样是聊天页签下的列表。
+  private onTabReTap(): void {
+    if ((AppStorage.get<number>(TAB_RETAP_INDEX) ?? 0) !== 0) {
+      return;
+    }
+    const unread: boolean[] = this.chats.map((c: ChatEntry): boolean =>
+      c.unreadCount > 0 || c.isMarkedUnread);
+    const action: string = reTapAction(this.topVisible,
+      unread.some((u: boolean): boolean => u));
+    if (action === 'top') {
+      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
+      return;
+    }
+    if (action === 'none') {
+      return;
+    }
+    const target: number = nextUnreadIndex(unread, this.firstVisibleIndex);
+    if (target >= 0) {
+      this.listScroller.scrollToIndex(target, true, ScrollAlign.START);
+    }
+  }
+
+  private rowUnread(chat: ChatEntry): boolean {
+    return chat.unreadCount > 0 || chat.isMarkedUnread;
+  }
+
+  private rowMuted(chat: ChatEntry): boolean {
+    return effectiveMuted(chat, scopeMutedForKind(chat.kind));
+  }
+
+  private rowArchived(): boolean {
+    return this.listKey === 'archive';
+  }
+
+  private toggleRead(chat: ChatEntry): void {
+    if (this.rowUnread(chat)) {
+      markAsRead(chat.id, chat.lastMessageId);
+    } else {
+      markUnread(chat.id, true);
+    }
+  }
+
+  private toggleArchive(chat: ChatEntry): void {
+    setArchived(chat.id, !this.rowArchived());
+  }
+
+  private toggleMute(chat: ChatEntry): void {
+    setMute(chat.id, this.rowMuted(chat) ? 0 : MUTE_LONG);
+  }
+
+  // 右滑（从左边拉出）：已读 / 标记未读。
+  @Builder
+  readSwipe(chat: ChatEntry) {
+    this.swipeButton(
+      this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
+      this.rowUnread(chat) ? 'sys.symbol.checkmark_circle' : 'sys.symbol.circle_badge',
+      SWIPE_READ_BG,
+      (): void => this.toggleRead(chat));
+  }
+
+  // 左滑（从右边拉出）：静音开关 + 归档 / 取消归档。滑到底触发的是归档那一个。
+  @Builder
+  endSwipe(chat: ChatEntry) {
+    Row() {
+      this.swipeButton(
+        this.rowMuted(chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
+        this.rowMuted(chat) ? 'sys.symbol.bell' : 'sys.symbol.bell_slash',
+        SWIPE_MUTE_BG,
+        (): void => this.toggleMute(chat));
+      this.swipeButton(
+        this.rowArchived() ? $r('app.string.cl_unarchive') : $r('app.string.cl_archive'),
+        'sys.symbol.archivebox',
+        SWIPE_ARCHIVE_BG,
+        (): void => this.toggleArchive(chat));
+    }.height('100%');
+  }
+
+  @Builder
+  swipeButton(label: ResourceStr, icon: string, background: ResourceColor, action: () => void) {
+    Column({ space: 4 }) {
+      SymbolGlyph($r(icon)).fontSize(20).fontColor([Color.White]);
+      Text(label).fontSize(11).fontColor(Color.White).maxLines(1);
+    }
+    .width(SWIPE_BUTTON_VP).height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(background)
+    .onClick((): void => {
+      this.listScroller.closeAllSwipeActions();
+      action();
+    });
+  }
+
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
@@ -35,7 +149,8 @@ export struct ChatListView {
   // 由 ChatListPage 传进来，每个文件夹页签一个。HdsNavigation 靠它拿到滚动量
   // 才能驱动标题栏收缩与渐变模糊；页签里的列表在子组件内部，父层拿不到，
   // 只能这样把控制器递下来。
-  listScroller: Scroller = new Scroller();
+  // ListScroller（不是 Scroller）：滑动操作要用 closeAllSwipeActions。
+  listScroller: ListScroller = new ListScroller();
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
@@ -256,6 +371,20 @@ export struct ChatListView {
           ListItem() {
             ChatRow({ chat: item, listKey: this.listKey });
           }
+          // 左右滑快捷操作（issue #96/#132）。动作都是聊天菜单里现成的那几个，
+          // 不放删除：滑动误触的代价太大，删除留在长按菜单里。
+          .swipeAction(this.rowSwipeEnabled ? {
+            start: {
+              builder: (): void => { this.readSwipe(item); },
+              actionAreaDistance: SWIPE_TRIGGER_VP,
+              onAction: (): void => { this.toggleRead(item); }
+            },
+            end: {
+              builder: (): void => { this.endSwipe(item); },
+              actionAreaDistance: SWIPE_TRIGGER_VP,
+              onAction: (): void => { this.toggleArchive(item); }
+            }
+          } as SwipeActionOptions : {} as SwipeActionOptions)
           .transition(
             TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 12 })).animation({
               duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
@@ -300,7 +429,12 @@ export struct ChatListView {
       .contentEndOffset(this.endInset())
       .contentStartOffset(this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-      .onReachEnd(() => { this.loadMore(); });
+      .onReachEnd(() => { this.loadMore(); })
+      // 首行是否可见：底栏再点一次「聊天」时据此决定回顶还是跳未读（issue #35）。
+      .onScrollIndex((start: number): void => {
+        this.firstVisibleIndex = start;
+        this.topVisible = start <= 0;
+      });
     }
   }
 }

@@ -13,6 +13,11 @@ import {
 } from '../../util/proxyLogic';
 import { measureProxyConnectMs } from '../../util/proxyReach';
 import {
+  KEY_PROXY_MIRROR, KEY_PROXY_SYNC_OFF, missingFromAccount, parseProxyMirror, parseSyncOff,
+  serializeProxyMirror, serializeSyncOff, syncEnabledFor, syncableOf, toggledSyncOff
+} from '../../util/proxyMirror';
+import { setString } from '../../store/AppSettings';
+import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
@@ -273,6 +278,45 @@ export struct ProxyPage {
     });
   }
 
+  // 换到一个还没有代理的账号时，把本机镜像里的补回去（代理存在 TDLib 里，
+  // 而 TDLib 数据库按账号槽分开——issue #131）。一律加成未启用：切账号那一刻
+  // 自动改连接不礼貌，用户自己点启用。补完重新拉一次，拿到 TDLib 给的新 id。
+  private syncOff(): string[] {
+    return parseSyncOff(AppStorage.get<string>(KEY_PROXY_SYNC_OFF) ?? '');
+  }
+
+  // 单条代理是否参与跨账号同步。关掉的立刻从镜像里摘掉，别人的账号不会再补到它。
+  private toggleSync(entry: ProxyEntry): void {
+    const next: string[] = toggledSyncOff(entry, this.syncOff());
+    setString(KEY_PROXY_SYNC_OFF, serializeSyncOff(next));
+    setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(this.proxies, next)));
+    promptAction.showToast({
+      message: syncEnabledFor(entry, next)
+        ? $r('app.string.px_sync_accounts') : $r('app.string.px_sync_accounts_off'),
+      duration: 1400
+    });
+  }
+
+  private async restoreMirrored(list: ProxyEntry[]): Promise<ProxyEntry[]> {
+    if (list.length > 0) {
+      return list;
+    }
+    const mirror: ProxyEntry[] = parseProxyMirror(AppStorage.get<string>(KEY_PROXY_MIRROR) ?? '');
+    const missing: ProxyEntry[] = missingFromAccount(mirror, list);
+    if (missing.length === 0) {
+      return list;
+    }
+    for (const entry of missing) {
+      try {
+        await addProxy(entry, false);
+      } catch (caught) {
+        // 单条补不回来不影响其余（凭据过期、协议不支持都可能）。绝不打内容。
+        logE('ProxyPage.restoreMirrored: one entry failed');
+      }
+    }
+    return listProxies();
+  }
+
   private load(initial: boolean): void {
     const sequence = ++this.loadSequence;
     if (initial && this.proxies.length === 0) {
@@ -283,8 +327,11 @@ export struct ProxyPage {
       this.refreshing = true;
       this.syncWarning = '';
     }
-    listProxies().then((list: ProxyEntry[]): void => {
+    listProxies().then((list: ProxyEntry[]): Promise<ProxyEntry[]> => this.restoreMirrored(list))
+      .then((list: ProxyEntry[]): void => {
       if (!this.active || sequence !== this.loadSequence) { return; }
+      // 镜像跟着当前账号的清单走：加/改/删之后这里都会再跑一遍。
+      setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(list, this.syncOff())));
       const sorted = this.sorted(list);
       this.proxies = sorted;
       this.loading = false;
@@ -916,6 +963,10 @@ export struct ProxyPage {
       if (entry.type !== PROXY_HTTP) {
         MenuItem({ content: $r('app.string.px_copy_link') }).onClick((): void => this.copyShareLink(entry));
       }
+      MenuItem({
+        content: syncEnabledFor(entry, this.syncOff())
+          ? $r('app.string.px_sync_accounts_off') : $r('app.string.px_sync_accounts')
+      }).onClick((): void => this.toggleSync(entry));
       MenuItem({ content: $r('app.string.px_delete') }).onClick((): void => this.confirmRemove(entry));
     }
   }

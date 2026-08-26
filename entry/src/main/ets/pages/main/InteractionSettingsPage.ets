@@ -1,4 +1,6 @@
-import { KEY_MSG_GESTURE, KEY_SHOW_CONTACTS_TAB, setBoolean, setString } from '../../store/AppSettings';
+import {
+  KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS, KEY_SHOW_CONTACTS_TAB, setBoolean, setString
+} from '../../store/AppSettings';
 import { GESTURE_CLASSIC, GESTURE_TAP_FIRST } from '../../util/messageGestures';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -46,6 +48,7 @@ export struct InteractionSettingsPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageLink(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
   @StorageLink(KEY_SHOW_CONTACTS_TAB) showContactsTab: boolean = true;
+  @StorageLink(KEY_ROW_SWIPE_ACTIONS) rowSwipeActions: boolean = false;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
   // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
   // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
@@ -151,6 +154,24 @@ export struct InteractionSettingsPage {
         .onChange((v: boolean): void => {
           this.showContactsTab = v;
           setBoolean(KEY_SHOW_CONTACTS_TAB, v);
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS);
+
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.ix_row_swipe')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        Text($r('app.string.ix_row_swipe_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      }.layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.rowSwipeActions })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((v: boolean): void => {
+          this.rowSwipeActions = v;
+          setBoolean(KEY_ROW_SWIPE_ACTIONS, v);
         });
     }
     .width('100%')

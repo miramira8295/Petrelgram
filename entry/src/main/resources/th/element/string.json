@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "ตกลง"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "แถบสถานะตามสีหัวข้อ"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "ซิงค์ไปยังบัญชีอื่น"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "ไม่ซิงค์ไปยังบัญชีอื่น"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "บันทึกลงไฟล์…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "บันทึกที่ไหน"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "การปัดบนแชท"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "ปัดขวาเพื่อทำเครื่องหมายอ่าน/ยังไม่อ่าน ปัดซ้ายเพื่อปิดเสียงและเก็บถาวร เมื่อปิดใช้ การปัดจะสลับโฟลเดอร์"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "กลับไปยังบัญชีก่อนหน้า"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "กลับไม่สำเร็จ โปรดลองอีกครั้ง"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "กลับไปยังบัญชีของคุณแล้ว"
     }
   ]
 }

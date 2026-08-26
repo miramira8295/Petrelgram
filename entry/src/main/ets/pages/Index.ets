@@ -1,8 +1,9 @@
 import { common } from '@kit.AbilityKit';
+import { str } from '../util/strings';
 import { promptAction, router } from '@kit.ArkUI';
 import { AuthStage } from '../tdkit/AuthService';
 import {
-  canReturnToPreviousTdAccount, getAuthService, returnToPreviousTdAccount
+  activeSummaryHasUser, canReturnToPreviousTdAccount, getAuthService, healActiveSlotIfSignedOut, returnToPreviousTdAccount
 } from '../tdkit/Globals';
 import { PhoneNumberPage } from './login/PhoneNumberPage';
 import { CodePage } from './login/CodePage';
@@ -86,6 +87,8 @@ struct Index {
     this.stage = AuthStage.Init;
     this.offAuth = getAuthService().onStageChange((s: AuthStage): void => {
       this.stage = s;
+      // 停在登录页却写着已登录 = 活跃槽和 TDLib 对不上，自动切回去（见方法说明）。
+      this.healSignedOutSlotIfNeeded();
       // A link that arrived (or waited) through cold start / login flow.
       this.consumeDeepLink();
       this.consumeNotifyChat();
@@ -146,15 +149,38 @@ struct Index {
     handleIncomingLink(getContext(this) as common.UIAbilityContext, uri);
   }
 
+  // 登录/加账号阶段，只要注册表里还有别的登录过的槽，就给一个回去的出口。
+  // 原来只认「当前槽是 pendingLogin 且记着来路」，漏掉了清理重复登录失败留下的
+  // 那种状态，用户被锁在登录页（真机事故，见 Globals.healActiveSlotIfSignedOut）。
   private isAddingAccount(): boolean {
     return this.stage !== AuthStage.Ready && canReturnToPreviousTdAccount();
+  }
+
+  // 停在登录页、而活跃槽的摘要里还写着用户身份：两边对不上，自动切回去。
+  // 一次会话只尝试一次，失败就把出口留给上面那个按钮。
+  private healedSignedOutSlot: boolean = false;
+
+  private healSignedOutSlotIfNeeded(): void {
+    if (this.healedSignedOutSlot || this.tdAccountSwitching) {
+      return;
+    }
+    if (this.stage !== AuthStage.WaitPhone && this.stage !== AuthStage.LoggedOut) {
+      return;
+    }
+    if (!activeSummaryHasUser()) {
+      return;
+    }
+    this.healedSignedOutSlot = true;
+    if (healActiveSlotIfSignedOut()) {
+      promptAction.showToast({ message: str('ar_recovered_account'), duration: 1800 });
+    }
   }
 
   private returnToOriginalAccount(): void {
     if (this.tdAccountSwitching || !this.isAddingAccount()) { return; }
     returnToPreviousTdAccount().catch((caught: Error): void => {
       logE(`Index.returnToOriginalAccount failed: ${caught.message}`);
-      promptAction.showToast({ message: '返回原账号失败，请重试', duration: 1800 });
+      promptAction.showToast({ message: str('ar_back_to_account_failed'), duration: 1800 });
     });
   }
 
@@ -226,7 +252,7 @@ struct Index {
         Row({ space: 5 }) {
           SymbolGlyph($r('sys.symbol.chevron_left'))
             .fontSize(23).fontColor([COLOR_TEXT_PRIMARY]);
-          Text('返回原账号')
+          Text($r('app.string.ar_back_to_account'))
             .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
         }
         .height(42)

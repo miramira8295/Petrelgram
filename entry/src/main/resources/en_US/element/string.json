@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Status bar follows title colour"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Sync to other accounts"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Do not sync to other accounts"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Save to Files…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Save where"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Swipe actions on chats"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Swipe right to mark read/unread, left for mute and archive. When off, swiping switches folders"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Back to previous account"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Could not switch back, please try again"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Switched back to your account"
     }
   ]
 }

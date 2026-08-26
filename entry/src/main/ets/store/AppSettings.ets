@@ -6,9 +6,10 @@ import { batteryInfo, commonEventManager } from '@kit.BasicServicesKit';
 import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
 import { GESTURE_CLASSIC } from '../util/messageGestures';
 import { logE } from '../util/log';
+import { KEY_PROXY_MIRROR, KEY_PROXY_SYNC_OFF } from '../util/proxyMirror';
 import {
   APPEARANCE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_BUBBLE_MATERIAL_ON, KEY_MATERIAL_LIGHT_DARK,
-  KEY_MATERIAL_THICKNESS_DARK, recomputeAppearance
+  KEY_MATERIAL_THICKNESS_DARK, KEY_STATUS_FOLLOW_TITLE, recomputeAppearance
 } from '../util/appearance';
 
 // User settings that outlive the process. Each one is mirrored into AppStorage
@@ -90,6 +91,9 @@ export const KEY_CACHE_LIMIT: string = 'cacheLimit';
 export const KEY_MATERIAL_THICKNESS: string = 'materialThickness';
 // 底栏是否显示「联系人」页签（交互设置）。关掉只是隐藏页签，联系人页本身还在。
 export const KEY_SHOW_CONTACTS_TAB: string = 'showContactsTab';
+// 会话行的左右滑操作（已读/静音/归档）。默认关：开着会吃掉横向手势，左右滑就
+// 不能切文件夹了——两种用法只能二选一，默认保留切文件夹。
+export const KEY_ROW_SWIPE_ACTIONS: string = 'rowSwipeActions';
 // 光感等级只在 API 26 的材质路径上有意义，低于 26 时设置页不显示这一行。
 export const KEY_MATERIAL_LIGHT: string = 'materialLight';
 // 聊天背景模糊半径（vp）。用户可调，见 chatBackgroundRaster.ets 的
@@ -214,6 +218,8 @@ export const KEY_CHAT_BG_SNAP_DARK: string = 'chatBgSnapshotDark';
 export const KEY_CHAT_BG_SNAP_LIGHT: string = 'chatBgSnapshotLight';
 
 const DATA_STRING_KEYS: string[] = [
+  KEY_PROXY_MIRROR,
+  KEY_PROXY_SYNC_OFF,
   KEY_CHAT_BG_SNAP_DARK,
   KEY_CHAT_BG_SNAP_LIGHT,
   KEY_WEBPUSH_ENDPOINT,
@@ -253,6 +259,8 @@ const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
 ];
 
 const DATA_BOOLEAN_FALSE_DEFAULTS: string[] = [
+  KEY_STATUS_FOLLOW_TITLE,
+  KEY_ROW_SWIPE_ACTIONS,
   KEY_WEBPUSH_ENABLED,
   KEY_WEBPUSH_ACCEPTED,
   KEY_BG_PLAY_VIDEO,

@@ -50,14 +50,19 @@ import {
 } from '../../util/senderAvatarChannel';
 import { plural, str } from '../../util/strings';
 import { LiveProgressRing } from './LiveProgressRing';
+import { progressForOr, subscribeProgress } from '../../util/mediaProgressChannel';
 import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
-import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import {
-  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
+  MATERIAL_EPOCH, glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+} from '../../util/overlayMaterial';
+import {
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
+import { tailShapeCommands } from '../../util/bubbleGlassPath';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
@@ -65,6 +70,7 @@ import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../
 import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
+import { logW } from '../../util/log';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -206,7 +212,10 @@ export struct MessageBubble {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   // 气泡材质只给屏内气泡挂，离屏纯色；省电时也退回纯色。
   @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
-  @State onScreen: boolean = false;
+  // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
+  // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
+  // 由回调负责在真正离屏时关掉——那一路是可靠的。
+  @State onScreen: boolean = true;
   // 「尾巴 + 气泡」外层容器量到的尺寸，整块玻璃的裁剪路径靠它。只在材质开着时被读。
   @State glassW: number = 0;
   @State glassH: number = 0;
@@ -291,6 +300,7 @@ export struct MessageBubble {
   onReplyTap: (messageId: number, fromId: number) => void = (): void => {};
   onFileTap: (messageId: number) => void = (): void => {};
   onFileSave: (messageId: number) => void = (): void => {};
+  onFilePause: (messageId: number) => void = (): void => {};
   onStickerRetry: (messageId: number) => void = (): void => {};
   onLinkPreviewRetry: (messageId: number) => void = (): void => {};
   onContactOpen: (userId: number, phone: string, vcard: string) => void =
@@ -391,6 +401,14 @@ export struct MessageBubble {
   onRetryTranslation: (messageId: number) => void = (): void => {};
   @State private translationStatus: TranslationStatus | null = null;
   private unsubTranslation: (() => void) | null = null;
+  @State private livePhotoProgress: number = 0;
+  @State private liveLinkPhotoProgress: number = 0;
+  @State private liveVideoProgress: number = 0;
+  @State private liveStickerProgress: number = 0;
+  private unsubPhotoProgress: (() => void) | null = null;
+  private unsubLinkPhotoProgress: (() => void) | null = null;
+  private unsubVideoProgress: (() => void) | null = null;
+  private unsubStickerProgress: (() => void) | null = null;
   // 圆形视频原地播放的开关，逐条独立。
   @State private videoNotePlaying: boolean = false;
   // Chat's currently active video chat, if any (0 = none live) — lets a
@@ -470,6 +488,27 @@ export struct MessageBubble {
     this.translationStatus = translationStatusFor(message.id);
     this.unsubTranslation = subscribeTranslationStatus(message.id,
       (next: TranslationStatus | null): void => { this.translationStatus = next; });
+    this.livePhotoProgress = progressForOr(message.photoFileId, message.photoProgress);
+    this.liveLinkPhotoProgress = progressForOr(
+      message.linkPhotoFileId, message.linkPhotoProgress);
+    this.liveVideoProgress = progressForOr(message.videoFileId, message.videoProgress);
+    this.liveStickerProgress = progressForOr(message.stickerFileId, message.stickerProgress);
+    if (message.photoFileId !== 0) {
+      this.unsubPhotoProgress = subscribeProgress(message.photoFileId,
+        (percent: number): void => { this.livePhotoProgress = percent; });
+    }
+    if (message.linkPhotoFileId !== 0) {
+      this.unsubLinkPhotoProgress = subscribeProgress(message.linkPhotoFileId,
+        (percent: number): void => { this.liveLinkPhotoProgress = percent; });
+    }
+    if (message.videoFileId !== 0) {
+      this.unsubVideoProgress = subscribeProgress(message.videoFileId,
+        (percent: number): void => { this.liveVideoProgress = percent; });
+    }
+    if (message.stickerFileId !== 0) {
+      this.unsubStickerProgress = subscribeProgress(message.stickerFileId,
+        (percent: number): void => { this.liveStickerProgress = percent; });
+    }
   }
 
   private detachMessageChannels(): void {
@@ -480,6 +519,22 @@ export struct MessageBubble {
     if (this.unsubTranslation !== null) {
       this.unsubTranslation();
       this.unsubTranslation = null;
+    }
+    if (this.unsubPhotoProgress !== null) {
+      this.unsubPhotoProgress();
+      this.unsubPhotoProgress = null;
+    }
+    if (this.unsubLinkPhotoProgress !== null) {
+      this.unsubLinkPhotoProgress();
+      this.unsubLinkPhotoProgress = null;
+    }
+    if (this.unsubVideoProgress !== null) {
+      this.unsubVideoProgress();
+      this.unsubVideoProgress = null;
+    }
+    if (this.unsubStickerProgress !== null) {
+      this.unsubStickerProgress();
+      this.unsubStickerProgress = null;
     }
   }
 
@@ -503,6 +558,11 @@ export struct MessageBubble {
     this.albumWasCompetingVideo.clear();
     this.wasCompetingVideo = next.contentType === 'video' && !next.isAnimation;
     this.videoNotePlaying = false;
+    // 玻璃层的尺寸是量出来的：复用成另一条消息后，旧尺寸算出的裁剪路径是错的，
+    // 清零等这一帧的 onAreaChange 重新给。onScreen 回到 true 的理由同它的声明处。
+    this.glassW = 0;
+    this.glassH = 0;
+    this.onScreen = true;
   }
 
   aboutToAppear(): void {
@@ -582,6 +642,11 @@ export struct MessageBubble {
     // 同一个组件原地换了 msg：rowId 不变，订阅仍然有效，但初值要跟上。
     const known: string = sendStateFor(this.msg.rowId);
     this.liveSendState = known !== '' ? known : this.msg.sendState;
+    this.livePhotoProgress = progressForOr(this.msg.photoFileId, this.msg.photoProgress);
+    this.liveLinkPhotoProgress = progressForOr(
+      this.msg.linkPhotoFileId, this.msg.linkPhotoProgress);
+    this.liveVideoProgress = progressForOr(this.msg.videoFileId, this.msg.videoProgress);
+    this.liveStickerProgress = progressForOr(this.msg.stickerFileId, this.msg.stickerProgress);
     const competing = this.isCompetingVideo();
     if (this.wasCompetingVideo && !competing) {
       this.onMediaGone(this.msg.id, -1);
@@ -718,6 +783,12 @@ export struct MessageBubble {
   }
 
   private onLongPress(event: GestureEvent): void {
+    // issue #114 诊断：小窗 + 键盘展开时长按调不出菜单。手势有没有到、走的哪一
+    // 支、当时窗口和键盘多高、预览模式取哪种——报告人导日志就能对上。
+    logW(`[Menu114] longPress id=${this.msg.id} scheme=${this.gestureScheme}`
+      + ` kbd=${Math.round(this.menuKeyboardH)} winH=${Math.round(this.menuWindowH)}`
+      + ` compact=${this.compactMenuContext()} liveVideo=${this.hasLiveVideoSurface()}`
+      + ` shown=${this.msgContextMenuShown}`);
     const fingers = event.fingerList;
     if (fingers.length > 0) {
       this.recordMenuOffset(fingers[0].localX);
@@ -922,7 +993,7 @@ export struct MessageBubble {
 
   private videoDownloadActive(): boolean {
     return this.msg.videoPath === '' &&
-      this.msg.videoProgress > 0 && this.msg.videoProgress < 100;
+      this.liveVideoProgress > 0 && this.liveVideoProgress < 100;
   }
 
   private videoMetaText(): string {
@@ -931,10 +1002,13 @@ export struct MessageBubble {
         ? `GIF · ${this.formatDuration(this.msg.videoDuration)}`
         : 'GIF';
     }
+    // 时长和大小一起显示（issue #93）：只有时长时看不出这条视频要下多少。
+    const size: string = this.msg.videoFileSize > 0 ? formatFileSize(this.msg.videoFileSize) : '';
     if (this.msg.videoDuration > 0) {
-      return this.formatDuration(this.msg.videoDuration);
+      const duration: string = this.formatDuration(this.msg.videoDuration);
+      return size !== '' ? `${duration} · ${size}` : duration;
     }
-    return this.msg.videoFileSize > 0 ? formatFileSize(this.msg.videoFileSize) : '';
+    return size;
   }
 
   private videoAccessibilityText(): string {
@@ -946,8 +1020,8 @@ export struct MessageBubble {
         return str('mb_gif_failed');
       }
       if (this.videoDownloadActive() || this.animationDownloadExpected()) {
-        return this.msg.videoProgress > 0
-          ? str('mb_gif_downloaded_pct', this.msg.videoProgress)
+        return this.liveVideoProgress > 0
+          ? str('mb_gif_downloaded_pct', this.liveVideoProgress)
           : str('mb_gif_loading');
       }
       return this.autoplayInlineVideo() ? str('mb_gif_playing') : str('mb_gif_paused');
@@ -959,7 +1033,7 @@ export struct MessageBubble {
       return str('mb_video_failed');
     }
     if (this.videoDownloadActive()) {
-      return str('mb_video_downloaded_pct', this.msg.videoProgress);
+      return str('mb_video_downloaded_pct', this.liveVideoProgress);
     }
     if (this.msg.photoFailed) {
       return str('mb_video_cover_failed');
@@ -1612,10 +1686,10 @@ export struct MessageBubble {
         // Wait only when a real thumbnail file exists. Videos without a
         // cover remain playable and get the normal play control below.
         if (hasFile && !this.msg.photoFailed) {
-          this.mediaLoadState(36, this.msg.photoFileId, this.msg.photoProgress, false);
+          this.mediaLoadState(36, this.msg.photoFileId, this.livePhotoProgress, false);
         }
       } else {
-        this.mediaLoadState(36, this.msg.photoFileId, this.msg.photoProgress,
+        this.mediaLoadState(36, this.msg.photoFileId, this.livePhotoProgress,
           this.msg.photoFailed || !hasFile);
       }
     }.width(this.mediaBox().width).height(this.mediaBox().height);
@@ -1689,7 +1763,7 @@ export struct MessageBubble {
       Circle({ width: size, height: size }).fill('#78000000')
         .stroke('#24FFFFFF').strokeWidth(1);
       if (this.videoDownloadActive()) {
-        Progress({ value: this.msg.videoProgress, total: 100, type: ProgressType.Ring })
+        Progress({ value: this.liveVideoProgress, total: 100, type: ProgressType.Ring })
           .width(size).height(size).color(Color.White);
         SymbolGlyph($r('sys.symbol.play_fill'))
           .fontSize(size * 0.34).fontColor([Color.White]).margin({ left: 2 });
@@ -2020,8 +2094,8 @@ export struct MessageBubble {
           } else {
             LoadingProgress()
               .width(compact ? 22 : 26).height(compact ? 22 : 26).color(this.accent());
-            if (!compact && this.msg.linkPhotoProgress > 0 && this.msg.linkPhotoProgress < 100) {
-              Text(`${this.msg.linkPhotoProgress}%`).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+            if (!compact && this.liveLinkPhotoProgress > 0 && this.liveLinkPhotoProgress < 100) {
+              Text(`${this.liveLinkPhotoProgress}%`).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
             }
           }
         }
@@ -2646,7 +2720,7 @@ export struct MessageBubble {
         isOutgoing: this.msg.isOutgoing,
         voiceFileId: this.msg.videoFileId,
         voicePath: this.msg.videoPath,
-        downloadProgress: this.msg.videoProgress,
+        downloadProgress: this.liveVideoProgress,
         downloadFailed: this.msg.videoFailed,
         waveform: this.msg.voiceWaveform,
         listened: this.msg.voiceListened,
@@ -2672,7 +2746,7 @@ export struct MessageBubble {
         performer: this.msg.audioPerformer,
         coverPath: this.msg.photoPath,
         coverFailed: this.msg.photoFailed,
-        downloadProgress: this.msg.videoProgress,
+        downloadProgress: this.liveVideoProgress,
         downloadFailed: this.msg.videoFailed,
         downloadActive: this.msg.mediaDownloadActive,
         queuePosition: this.audioQueuePosition,
@@ -2699,7 +2773,7 @@ export struct MessageBubble {
         mimeType: this.msg.videoMimeType,
         fileSize: this.msg.videoFileSize,
         filePath: this.msg.videoPath,
-        downloadProgress: this.msg.videoProgress,
+        downloadProgress: this.liveVideoProgress,
         downloadFailed: this.msg.videoFailed,
         downloadActive: this.msg.mediaDownloadActive,
         maxWidth: this.inlineMaxW(),
@@ -2712,6 +2786,10 @@ export struct MessageBubble {
         onSave: (): void => {
           if (this.gestureClaimed) { return; }
           this.onFileSave(this.msg.id);
+        },
+        onPause: (): void => {
+          if (this.gestureClaimed) { return; }
+          this.onFilePause(this.msg.id);
         }
       });
       if (this.msg.text !== '') {
@@ -2808,7 +2886,7 @@ export struct MessageBubble {
         gameText: this.msg.gameText,
         photoPath: this.msg.photoPath,
         photoFileId: this.msg.photoFileId,
-        photoProgress: this.msg.photoProgress,
+        photoProgress: this.livePhotoProgress,
         photoFailed: this.msg.photoFailed,
         maxWidth: this.inlineMaxW(),
         onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onGameOpen(messageId); },
@@ -2824,7 +2902,7 @@ export struct MessageBubble {
         caption: this.msg.text,
         photoPath: this.msg.photoPath,
         photoFileId: this.msg.photoFileId,
-        photoProgress: this.msg.photoProgress,
+        photoProgress: this.livePhotoProgress,
         photoFailed: this.msg.photoFailed,
         pending: this.paidMediaPending,
         maxWidth: this.inlineMaxW(),
@@ -2847,7 +2925,7 @@ export struct MessageBubble {
         refunded: this.msg.giftRefunded,
         photoPath: this.msg.photoPath,
         photoFileId: this.msg.photoFileId,
-        photoProgress: this.msg.photoProgress,
+        photoProgress: this.livePhotoProgress,
         photoFailed: this.msg.photoFailed,
         maxWidth: this.inlineMaxW(),
         onRetryPhoto: (messageId: number): void => {
@@ -2956,7 +3034,7 @@ export struct MessageBubble {
         if (this.msg.stickerPath === '' && this.msg.stickerFileId !== 0) {
           Column() {
             this.stickerStatusBadge(this.msg.stickerFailed,
-              this.msg.stickerProgress > 0 ? this.msg.stickerProgress : this.msg.photoProgress);
+              this.liveStickerProgress > 0 ? this.liveStickerProgress : this.livePhotoProgress);
           }
           .width('100%').height('100%')
           .padding({ right: 7, top: 7 })
@@ -2964,7 +3042,7 @@ export struct MessageBubble {
           .alignItems(HorizontalAlign.End);
         } else if (this.msg.photoPath === '' && this.msg.photoFileId !== 0) {
           Column() {
-            this.stickerStatusBadge(this.msg.photoFailed, this.msg.photoProgress);
+            this.stickerStatusBadge(this.msg.photoFailed, this.livePhotoProgress);
           }
           .width('100%').height('100%')
           .justifyContent(FlexAlign.Center)
@@ -3095,11 +3173,14 @@ export struct MessageBubble {
   @Builder
   bubbleTail(outgoing: boolean) {
     if (this.bubbleMaterialLive()) {
-      // 整块玻璃时尾巴只是占位：形状由外层容器的裁剪路径画出来。
+      // 玻璃气泡的尾巴：实心玻璃色三角。材质是合成层、不吃 clipShape，挂上去会
+      // 在三角外糊出一块矩形背板，所以这里只用它的回退色（见 glassTailFill）。
+      // 玻璃档下尾巴只占位：整块形状由上层容器的轮廓裁剪画出来。
       Column().width(TAIL_W).height(TAIL_H).margin(outgoing ? { left: -1 } : { right: -1 });
     } else {
-      Polygon({ width: TAIL_W, height: TAIL_H })
-        .points(outgoing ? [[0, 0], [TAIL_W, TAIL_H], [0, TAIL_H]] : [[TAIL_W, 0], [0, TAIL_H], [TAIL_W, TAIL_H]])
+      // 和玻璃档同一条曲线（tailShapeCommands），两档尾巴必须长得一样。
+      Path({ width: TAIL_W, height: TAIL_H })
+        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1)))
         .fill(this.bubbleFillColor())
         .margin(outgoing ? { left: -1 } : { right: -1 });
     }
@@ -3111,13 +3192,18 @@ export struct MessageBubble {
 
   // 材质开着时气泡本体透明，底色/材质/模糊都挂在外层「尾巴 + 气泡」容器上。
   private bubbleBg(): ResourceColor {
-    return this.bubbleMaterialLive() ? Color.Transparent : this.bubbleFillColor();
+    return this.bubbleMaterialLive() ? this.glassBg() : this.bubbleFillColor();
   }
 
   private glassLive(): boolean {
     return this.bubbleMaterialLive() && !this.isBareEmoji();
   }
 
+  // 玻璃档：气泡和尾巴用**同一套**普通渲染（玻璃色 + 背景模糊）。
+  //
+  // 不用系统材质：材质是合成层、不吃 clipShape，尾巴那种三角形状挂不上去，只能
+  // 退成普通渲染——一边材质一边普通，两块颜色对不齐，看着就不是一体的（用户报的）。
+  // 统一成普通渲染后两者严丝合缝，代价是没有沉浸光感的动态高光。
   private glassBg(): ResourceColor {
     return this.glassLive() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
@@ -3137,22 +3223,21 @@ export struct MessageBubble {
       : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
   }
 
-  // 沿整条轮廓（含尾巴）描一圈，补上材质画不到的内侧边。
+  // 材质的边框只沿节点自身的 border-box 画。尾巴那一侧（气泡的那条竖边 + 三角的
+  // 两条斜边）在整体轮廓里、却在矩形外，材质画不到，裁剪之后那半圈是秃的——
+  // 顶/右/底有边、左边和尾巴没有。自己沿整条轮廓补一圈同色发丝线，四面才统一。
+  // 画在 .overlay() 里并显式 HitTestMode.None：它盖在气泡上，绝不能吃掉点击和
+  // 长按（这正是当初「玻璃气泡整块点不动」的真凶，裁剪是背锅的）。
   @Builder
   glassOutline() {
     if (this.glassLive() && this.glassW > 0 && this.glassH > 0) {
       Path({ width: this.glassW, height: this.glassH })
-        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
+        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
+          this.hasBubbleTail(), this.bubbleCornerRadius()))
         .fill(Color.Transparent)
         .stroke(GLASS_OUTLINE_COLOR)
-        .strokeWidth(GLASS_OUTLINE_WIDTH)
-        .hitTestBehavior(HitTestMode.None);
+        .strokeWidth(GLASS_OUTLINE_WIDTH);
     }
-  }
-
-  private glassModifier(): AttributeModifier<CommonAttribute> {
-    return bubbleGlassModifier(this.glassLive(), this.glassW, this.glassH, this.msg.isOutgoing,
-      this.hasBubbleTail(), this.bubbleCornerRadius());
   }
 
   private timeReserveInText(): boolean {
@@ -3431,15 +3516,30 @@ export struct MessageBubble {
             Column() {
               this.content();
               if (this.msg.reactions.length > 0) {
-                this.reactionsRow();
+                // 有反应时时间跟在反应行末尾（官方也是这样）：时间浮层原本贴
+                // 气泡右下角，而反应行正好占住那一块，两者会叠在一起（issue #100）。
+                Row({ space: 6 }) {
+                  this.reactionsRow();
+                  this.timeOverlay();
+                }
+                .alignItems(VerticalAlign.Bottom)
+                .constraintSize({ maxWidth: this.inlineMaxW() });
               }
             }
             .alignItems(HorizontalAlign.Start)
             .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
           }
-          this.timeOverlay();
+          if (this.msg.reactions.length === 0) {
+            this.timeOverlay();
+          }
         }
-        .constraintSize({ maxWidth: this.inlineMaxW() })
+        // 时间贴的是这个 Stack 的右下角，而 Stack 按正文宽度排：正文比「昵称+
+        // 标签」短时，时间就停在正文末尾、够不到气泡右边缘（用户报的）。昵称行
+        // 的宽度已经量过（senderLabelW），拿它兜一个最小宽度，两行右边缘就对齐了。
+        .constraintSize({
+          maxWidth: this.inlineMaxW(),
+          minWidth: Math.min(this.inlineMaxW(), this.senderLabelW)
+        })
         if (this.isChannel && this.msg.commentCount > 0) {
           Column() {
             this.commentsRow();
@@ -3452,6 +3552,7 @@ export struct MessageBubble {
       .alignItems(HorizontalAlign.Start)
       .constraintSize({ maxWidth: this.bubbleMaxW() })
       .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
+      .backdropBlur(this.glassBlur())
       .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
         this.onScreen = visible;
       })
@@ -3499,13 +3600,20 @@ export struct MessageBubble {
         Column().width(this.bubbleTailGutter());
       }
       }
-      // 「尾巴 + 气泡」容器：气泡材质开着时整块是一片玻璃（底色 + 模糊 + 材质 + 整体裁剪）。
+      // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
+      // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
+      // 不存在「一边材质一边普通渲染」对不齐的问题。
       .alignItems(VerticalAlign.Bottom)
       .backgroundColor(this.glassBg())
       .backdropBlur(this.glassBlur())
-      .attributeModifier(this.glassModifier())
+      // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
+      // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
+      // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
+      // 重合（尾巴那侧仍由裁剪负责）。
       .borderRadius(this.glassRadius())
-      .overlay(this.glassOutline(), { align: Alignment.TopStart })
+      .background(this.glassOutline(), { align: Alignment.TopStart })
+      .attributeModifier(bubbleGlassModifier(this.glassLive(), this.glassW, this.glassH,
+        this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
       .onAreaChange((_old: Area, area: Area): void => {
         this.glassW = Number(area.width);
         this.glassH = Number(area.height);
@@ -3521,6 +3629,9 @@ export struct MessageBubble {
         }
       })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
+        onAppear: (): void => {
+          logW(`[Menu114] menu appear id=${this.msg.id}`);
+        },
         // 朝手指那一侧挪。ArkUI 自己会把菜单夹在屏幕内，所以极端偏移不会出界。
         offset: { x: this.menuOffsetX, y: 0 },
         // A play-slot bubble hosts a XComponentType.SURFACE video surface that
@@ -3555,6 +3666,7 @@ export struct MessageBubble {
         modalMode: ModalMode.TARGET_WINDOW,
         hapticFeedbackMode: HapticFeedbackMode.AUTO,
         onDisappear: (): void => {
+          logW(`[Menu114] menu disappear id=${this.msg.id}`);
           this.msgContextMenuShown = false;
         }
       });

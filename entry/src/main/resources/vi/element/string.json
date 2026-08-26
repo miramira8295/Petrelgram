@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Thanh trạng thái theo màu tiêu đề"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Đồng bộ sang tài khoản khác"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Không đồng bộ sang tài khoản khác"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Lưu vào Tệp…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Lưu vào đâu"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Vuốt trên hội thoại"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Vuốt phải để đánh dấu đã/chưa đọc, vuốt trái để tắt tiếng và lưu trữ. Khi tắt, vuốt để đổi thư mục"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Quay lại tài khoản trước"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Không quay lại được, hãy thử lại"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Đã quay lại tài khoản của bạn"
     }
   ]
 }

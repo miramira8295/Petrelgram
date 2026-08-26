@@ -13,6 +13,7 @@ import { logChatNavFailure, navigateToChat } from './chatNav';
 import { navigateToChatProfile, navigateToProfile } from './profileNav';
 import { navigateToSetting } from './settingsNav';
 import { logE } from './log';
+import { navigateToSearch } from './searchNav';
 
 function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     joinedNoticeIsChannel: boolean = false): void {
@@ -400,7 +401,7 @@ function handleInternalLinkType(context: common.UIAbilityContext, type: TdObject
     return;
   }
   if (typeName === 'internalLinkTypeSearch') {
-    router.pushUrl({ url: 'pages/search/GlobalSearchPage' });
+    navigateToSearch();
     return;
   }
   if (typeName === 'internalLinkTypeCallsPage') {

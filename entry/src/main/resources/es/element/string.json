@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "Aceptar"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Barra de estado sigue el color del título"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Sincronizar con otras cuentas"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "No sincronizar con otras cuentas"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Guardar en Archivos…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "¿Dónde guardar?"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Acciones al deslizar en chats"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Desliza a la derecha para leído/no leído, a la izquierda para silenciar y archivar. Si está desactivado, deslizar cambia de carpeta"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Volver a la cuenta anterior"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "No se pudo volver, inténtalo de nuevo"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Se volvió a tu cuenta"
     }
   ]
 }

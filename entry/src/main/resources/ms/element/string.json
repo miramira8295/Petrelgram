@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Bar status ikut warna tajuk"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Segerakkan ke akaun lain"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Jangan segerakkan ke akaun lain"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Simpan ke Fail…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Simpan di mana"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Tindakan leret pada sembang"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Leret kanan untuk tanda baca/belum, kiri untuk senyap dan arkib. Jika dimatikan, leret menukar folder"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Kembali ke akaun sebelumnya"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Gagal kembali, cuba lagi"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Kembali ke akaun anda"
     }
   ]
 }

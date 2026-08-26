@@ -111,3 +111,33 @@ export function setDefaultReaction(emoji: string): void {
     promptAction.showToast({ message: $r('app.string.cp_default_reaction_failed'), duration: 1600 });
   });
 }
+
+// 变体选择符（U+FE0F/U+FE0E）：我们内置的快捷表情写作 '❤️'（带 U+FE0F），而
+// 服务端下发的可用表情可能是 '❤'（不带）。TDLib 按字符串精确比对，差一个码位
+// 就是 REACTION_INVALID——用户看到的是「点了没反应」（issue：菜单顶部前两个
+// 表情回复失败）。
+export function stripVariationSelectors(emoji: string): string {
+  let out: string = '';
+  for (const ch of emoji) {
+    const code: number = ch.codePointAt(0) ?? 0;
+    if (code !== 0xFE0F && code !== 0xFE0E) {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+// 把界面上的表情换成服务端认的那一个：精确命中就用它；否则忽略变体选择符再找；
+// 都没有就原样发（可用表情还没拉到时不该拦着用户）。
+export function canonicalReactionEmoji(emoji: string, allowed: string[]): string {
+  if (allowed.length === 0 || allowed.indexOf(emoji) >= 0) {
+    return emoji;
+  }
+  const bare: string = stripVariationSelectors(emoji);
+  for (const candidate of allowed) {
+    if (stripVariationSelectors(candidate) === bare) {
+      return candidate;
+    }
+  }
+  return emoji;
+}

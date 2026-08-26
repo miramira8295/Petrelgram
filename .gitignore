@@ -28,3 +28,7 @@ third_party/libvpx-ohos/
 
 # 重构期间的对照备份，不进版本库
 *.ets.bak
+
+# 本地构建产物与工具目录，不进版本库
+dist/
+.codegenie/

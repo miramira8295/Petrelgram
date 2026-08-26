@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "تأیید"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "نوار وضعیت هم‌رنگ عنوان"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "همگام‌سازی با حساب‌های دیگر"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "با حساب‌های دیگر همگام نشود"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "ذخیره در فایل‌ها…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "ذخیره در کجا"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "کنش‌های کشیدن روی گفتگوها"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "کشیدن به راست: خوانده/نخوانده، به چپ: بی‌صدا و بایگانی. در حالت خاموش، کشیدن پوشه‌ها را عوض می‌کند"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "بازگشت به حساب قبلی"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "بازگشت ناموفق بود، دوباره تلاش کنید"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "به حساب شما بازگشتیم"
     }
   ]
 }

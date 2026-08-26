@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Barre d’état suit la couleur du titre"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Synchroniser avec les autres comptes"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Ne pas synchroniser avec les autres comptes"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Enregistrer dans Fichiers…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Enregistrer où"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Actions par balayage sur les discussions"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Balayez à droite pour lu/non lu, à gauche pour muet et archive. Désactivé, le balayage change de dossier"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Revenir au compte précédent"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Retour impossible, réessayez"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Retour à votre compte"
     }
   ]
 }

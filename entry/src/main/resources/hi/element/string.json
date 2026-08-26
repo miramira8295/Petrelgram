@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "ठीक है"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "स्टेटस बार शीर्षक के रंग का अनुसरण करे"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "अन्य खातों में सिंक करें"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "अन्य खातों में सिंक न करें"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "फ़ाइलों में सहेजें…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "कहाँ सहेजें"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "चैट पर स्वाइप क्रियाएँ"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "दाएँ स्वाइप से पढ़ा/अपठित, बाएँ से म्यूट और संग्रह। बंद होने पर स्वाइप फ़ोल्डर बदलता है"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "पिछले खाते पर लौटें"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "वापस नहीं जा सके, कृपया फिर से प्रयास करें"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "आपके खाते पर लौट आए"
     }
   ]
 }

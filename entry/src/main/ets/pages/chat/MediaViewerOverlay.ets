@@ -91,6 +91,8 @@ export struct MediaViewerOverlay {
   isVideoEntry: (entry: MessageEntry) => boolean = (): boolean => false;
   onRequestClose: () => void = (): void => {};
   onSaveMedia: () => void = (): void => {};
+  // 保存到文件（系统「另存为」，可选 Download 等任意目录）——issue #97/#65。
+  onSaveMediaToFiles: () => void = (): void => {};
   // Viewer→bubble handoff (the other direction): the page samples this on
   // every tick and writes it back to bubblePositionMs when the viewer closes.
   // 350ms-ish cadence from StreamingVideoPlayer, same "plain field, no @State"
@@ -1048,6 +1050,9 @@ export struct MediaViewerOverlay {
         .bindMenu([{
           value: $r('app.string.ms_save_to_gallery'),
           action: (): void => { this.onSaveMedia(); }
+        } as MenuElement, {
+          value: $r('app.string.ms_save_to_files'),
+          action: (): void => { this.onSaveMediaToFiles(); }
         } as MenuElement]);
       }
       .width('100%').height(CHROME_BAR_ROW_H)

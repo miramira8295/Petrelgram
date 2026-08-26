@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "Гаразд"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Рядок стану в кольорі заголовка"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Синхронізувати з іншими акаунтами"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Не синхронізувати з іншими акаунтами"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Зберегти у файли…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Куди зберегти"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Свайп-дії в чатах"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Свайп праворуч — прочитано/непрочитано, ліворуч — звук і архів. Якщо вимкнено, свайп перемикає теки"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Повернутися до попереднього акаунта"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Не вдалося повернутися, спробуйте ще раз"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Повернулися до вашого акаунта"
     }
   ]
 }

@@ -87,6 +87,10 @@
     {
       "name": "tag_text",
       "value": "#2478D0"
+    },
+    {
+      "name": "bubble_glass_tail",
+      "value": "#59FFFFFF"
     }
   ]
 }

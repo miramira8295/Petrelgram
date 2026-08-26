@@ -20,6 +20,7 @@ import { str } from '../util/strings';
 import { publishProgress } from '../util/mediaProgressChannel';
 import { publishSendState } from '../util/sendStateChannel';
 import { logE, logI, logW } from '../util/log';
+import { animationShapeRejected } from '../util/animationShape';
 import { isAnimationPath } from '../util/mediaPick';
 
 const PAGE: number = 30;
@@ -1569,9 +1570,16 @@ export class MessageStore {
   //
   // 不给 width / height / duration：本地 GIF 的这几个值我们没有现成的来源，
   // 而 TDLib 在上传时会自己探。给一组瞎猜的数反倒会让接收端按错误比例留位。
-  private animationInputContent(item: MediaSendItem, caption: string): TdObject {
+  // GIF 的 inputMessageAnimation 要**包装对象**（inputAnimation{animation:InputFile}），
+  // 和 photo/video 一样；1.4.2 里按「sticker 三兄弟仍是裸 InputFile」的旧结论写成
+  // 裸的，服务端一律回 "InputFile is not specified"，GIF 直接发不出去（issue #105
+  // 的回归）。这套 libtdjson 是半新半旧的 schema，所以不单押一边：先发包装的，
+  // 真遇到不认识这个类的库再退回裸的，见 sendAnimations。
+  private animationInputContent(item: MediaSendItem, caption: string, wrapped: boolean): TdObject {
     const content: TdObject = { '@type': 'inputMessageAnimation' };
-    content['animation'] = MessageStore.localFile(item.path);
+    const file: TdObject = MessageStore.localFile(item.path);
+    content['animation'] = wrapped
+      ? MessageStore.wrapInputFile('inputAnimation', 'animation', file) : file;
     if (caption !== '') {
       const ft: TdObject = { '@type': 'formattedText' };
       ft['text'] = caption;
@@ -1688,25 +1696,35 @@ export class MessageStore {
     for (let i = 0; i < items.length; i++) {
       const item: MediaSendItem = items[i];
       const own: string = i === 0 ? caption : '';
-      chain = chain.then((): Promise<void> => {
-        const req: TdRequest = { '@type': 'sendMessage' };
-        req['chat_id'] = this.chatId;
-        req['input_message_content'] = this.animationInputContent(item, own);
-        if (replyToId > 0) {
-          const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
-          replyTo['message_id'] = replyToId;
-          req['reply_to'] = replyTo;
-        }
-        this.applyTopicScope(req);
-        return this.client.send(req).then((sent: TdObject): void => {
-          this.upsert(buildMessageEntry(sent, this.users));
-          this.resolveReplies();
-          this.notifySoon();
-        });
-      });
+      chain = chain.then((): Promise<void> => this.sendOneAnimation(item, own, replyToId, true));
     }
     return chain.catch((e: TdError): Promise<void> => {
       logE(`MessageStore.sendAnimations failed: ${e.message}`);
+      return Promise.reject(e);
+    });
+  }
+
+  // wrapped=true 发包装形状，被库拒了（旧 schema 不认 inputAnimation）再裸发一次。
+  private sendOneAnimation(item: MediaSendItem, caption: string, replyToId: number,
+    wrapped: boolean): Promise<void> {
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    req['input_message_content'] = this.animationInputContent(item, caption, wrapped);
+    if (replyToId > 0) {
+      const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
+      replyTo['message_id'] = replyToId;
+      req['reply_to'] = replyTo;
+    }
+    this.applyTopicScope(req);
+    return this.client.send(req).then((sent: TdObject): void => {
+      this.upsert(buildMessageEntry(sent, this.users));
+      this.resolveReplies();
+      this.notifySoon();
+    }).catch((e: TdError): Promise<void> => {
+      if (wrapped && animationShapeRejected(e.message)) {
+        logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
+        return this.sendOneAnimation(item, caption, replyToId, false);
+      }
       return Promise.reject(e);
     });
   }
@@ -2582,6 +2600,7 @@ export class MessageStore {
       if (failed) {
         c.photoProgress = 0;
       }
+      publishProgress(c.photoFileId, c.photoProgress);
       changed = true;
       return c;
     });
@@ -2717,6 +2736,7 @@ export class MessageStore {
       }
       const next: MessageEntry = cloneMessage(message);
       fn(next);
+      publishProgress(next.linkPhotoFileId, next.linkPhotoProgress);
       changed = true;
       return next;
     });
@@ -3254,6 +3274,7 @@ export class MessageStore {
       }
       const c = cloneMessage(m);
       fn(c);
+      publishProgress(c.stickerFileId, c.stickerProgress);
       changed = true;
       return c;
     });
@@ -4865,6 +4886,10 @@ export class MessageStore {
     // 里，不这样发布就没人知道它变了。通道在状态未变时早退，所以这里不必
     // 挑调用点。
     publishSendState(c.rowId, c.sendState);
+    publishProgress(c.photoFileId, c.photoProgress);
+    publishProgress(c.linkPhotoFileId, c.linkPhotoProgress);
+    publishProgress(c.videoFileId, c.videoProgress);
+    publishProgress(c.stickerFileId, c.stickerProgress);
     const next = this.messages.slice();
     next[idx] = c;
     this.messages = next;
@@ -4885,6 +4910,7 @@ export class MessageStore {
       }
       const c = cloneMessage(m);
       fn(c);
+      publishProgress(c.videoFileId, c.videoProgress);
       changed = true;
       return c;
     });

@@ -236,7 +236,10 @@ function styleOf(surface: OverlaySurface): uiMaterial.ImmersiveStyle {
 // (MainScreen.ets:296); those keep theirs and switch the material's off, which
 // is the documented way to run a custom shadow under a material.
 function usesOwnShadow(surface: OverlaySurface): boolean {
-  return surface === 'bar';
+  // 'bubble'：材质自带的阴影/高光边是按**节点矩形**画的，而气泡整块是按轮廓
+  // （圆角矩形 + 三角尾巴）裁剪的，两者对不上——底边和右侧会多出几条亮线
+  // （真机可见）。关掉它自绘的那层，边缘交给裁剪。
+  return surface === 'bar' || surface === 'bubble';
 }
 
 // Auto-invert only takes effect on THIN and ULTRA_THIN materials, and it costs
@@ -327,6 +330,20 @@ export function overlayBackdropBlur(surface: OverlaySurface): number {
 //
 // 材质不可用时必须**半透明**。那时靠 backdropBlur 自己画玻璃，而不透明底色
 // 会把模糊完全盖住——模糊的是身后的东西，它自己不透光。
+// 气泡尾巴的填充色。系统材质是合成层，**不吃 clipShape**——挂到三角形节点上会
+// 在三角外面糊出一块圆角矩形背板（用户报的「框框把尾巴盖住」）。所以尾巴不挂
+// 材质，用材质的回退玻璃色实心填充，视觉上接得住。
+export function glassTailFill(): ResourceColor {
+  return $r('app.color.bubble_glass_tail');
+}
+
+// 尾巴的背景模糊半径。模糊不是合成层、吃 clipShape，所以三角能真糊出玻璃感；
+// 材质在的时候 overlayBackdropBlur('bubble') 会返回 0（那时由材质负责），
+// 尾巴用不了材质，只能自己要一份非材质的模糊半径。
+export function glassTailBlur(): number {
+  return plainBackdropBlur();
+}
+
 export function overlayGlassFill(surface: OverlaySurface, solid: ResourceColor): ResourceColor {
   if (materialOff()) {
     return solid;

@@ -18,6 +18,8 @@ import { registerMessageSyncWork } from '../services/MessageSyncWork';
 import { WebPushConfig, registerWebPush, validateWebPushConfig } from '../services/WebPushRegistration';
 import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
 import { resetScopeMute } from '../store/ScopeMuteStore';
+import { CHAT_TAB_INDEX, KEY_MAIN_TAB } from '../util/chatNav';
+import { resetChatPositions } from '../util/chatResume';
 import {
   KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH
 } from '../store/AppSettings';
@@ -30,7 +32,7 @@ import {
   TdAccountDirectories, TdAccountSummary
 } from './AccountRegistry';
 import { str } from '../util/strings';
-import { logE, logI } from '../util/log';
+import { logE, logI, logW } from '../util/log';
 
 let client: TdClient | undefined = undefined;
 let auth: AuthService | undefined = undefined;
@@ -317,6 +319,12 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   // 分类默认静音是**按账号**的：上一个账号把频道整类静音了，新账号未必。
   // 它住在模块级的 Map 里，不随运行时一起销毁，必须显式清。
   resetScopeMute();
+  // 页签回到聊天。运行时停掉时整棵主屏会重建，Tabs 从 0 起；而 mainTabIndex
+  // 还留着切换前的下标（多半是「设置」——切账号的入口就在那儿），于是底栏高亮
+  // 在设置、内容却是聊天列表（issue #131）。两边只能有一个真相，取聊天。
+  AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
+  // 记住的会话浏览位置是按账号的消息 id，换账号必须清（issue #98）。
+  resetChatPositions();
 }
 
 function sendOnlineOption(runtimeClient: TdClient, online: boolean): Promise<void> {
@@ -436,6 +444,10 @@ export function addTdAccount(): Promise<void> {
   if (switchInFlight !== null) { return switchInFlight; }
   const previousSlotId = accountRegistry.activeSlotId();
   const account = accountRegistry.addPendingAccount();
+  // 诊断：登录页的「返回原账号」按钮不显示（用户报）。这里记下新槽和它记住的
+  // 原槽，和 AccountRegistry 那条 [AddAcct] 对照就能定位是没写上还是没存住。
+  logW(`[AddAcct] addTdAccount new=${account.slotId} prevRecorded=${account.previousSlotId}`
+    + ` prevExpected=${previousSlotId} pending=${account.pendingLogin}`);
   switchInFlight = restartOnSlot(account.slotId, previousSlotId).finally((): void => {
     switchInFlight = null;
   });
@@ -448,15 +460,45 @@ export function returnToPreviousTdAccount(): Promise<void> {
     return pendingSwitch.then((): Promise<void> => returnToPreviousTdAccount());
   }
   const pendingSlotId = accountRegistry.activeSlotId();
-  const previousSlotId = accountRegistry.previousSlotForActivePending();
+  // 先按「来路」回；没有来路（清理重复登录失败那类事故）就回任意一个登录过的槽。
+  const previousSlotId = accountRegistry.previousSlotForActivePending() !== ''
+    ? accountRegistry.previousSlotForActivePending() : accountRegistry.otherUsableSlotId();
   if (previousSlotId === '') { return Promise.resolve(); }
   return switchTdAccount(previousSlotId).then((): void => {
     accountRegistry.discardPending(pendingSlotId);
   });
 }
 
+// 活跃槽的摘要里有没有用户身份（供界面判断「停在登录页却写着已登录」）。
+export function activeSummaryHasUser(): boolean {
+  return accountRegistry.activeSummaryHasUser();
+}
+
 export function canReturnToPreviousTdAccount(): boolean {
-  return accountRegistry.previousSlotForActivePending() !== '';
+  return accountRegistry.previousSlotForActivePending() !== ''
+    || accountRegistry.otherUsableSlotId() !== '';
+}
+
+// 活跃槽停在未授权状态、而注册表里还有登录过的槽：两边对不上，自动切回去。
+// 清理重复登录失败会造成这种状态（见 resolveDuplicateAccountLogin），用户自己
+// 没有任何出口。返回 true 表示已经开始自愈。
+export function healActiveSlotIfSignedOut(): boolean {
+  if (switchInFlight !== null) {
+    return false;
+  }
+  const fallback: string = accountRegistry.otherUsableSlotId();
+  if (fallback === '') {
+    return false;
+  }
+  const pendingSlotId: string = accountRegistry.activeSlotId();
+  logW(`[AddAcct] heal active=${pendingSlotId} hasUser=${accountRegistry.activeSummaryHasUser()}`
+    + ` -> fallback=${fallback}`);
+  switchTdAccount(fallback).then((): void => {
+    accountRegistry.discardPending(pendingSlotId);
+  }).catch((caught: Error): void => {
+    logE(`Globals.healActiveSlotIfSignedOut failed: ${caught.message}`);
+  });
+  return true;
 }
 
 export function logoutCurrentTdAccount(): Promise<void> {
@@ -590,15 +632,31 @@ function resolveDuplicateAccountLogin(
   }
   let logoutCompleted: boolean = false;
   AppStorage.setOrCreate(TD_ACCOUNT_SWITCHING, true);
+  logW(`[AddAcct] duplicate cleanup start dup=${duplicateSlotId} existing=${existingSlotId}`);
   switchInFlight = runtimeAuth.logOut().then(async (): Promise<void> => {
     logoutCompleted = true;
+    logW(`[AddAcct] duplicate logout ok dup=${duplicateSlotId}`);
     accountRegistry.markLoggedOut(duplicateSlotId);
     accountRegistry.setActive(existingSlotId);
     await restartOnSlot(existingSlotId, duplicateSlotId);
     accountRegistry.removeAccount(duplicateSlotId);
+    logW(`[AddAcct] duplicate cleanup done active=${accountRegistry.activeSlotId()}`);
   }).catch((caught: Error): void => {
     logE(`Globals.resolveDuplicateAccountLogin failed: ${caught.message}`);
-    if (!logoutCompleted && client === runtimeClient &&
+    // logout 已经成功、后面那几步挂了：活跃槽此刻是个**已登出的空库**，
+    // 而摘要还写着用户身份——用户会被锁在登录页且没有任何出口（真机事故）。
+    // 这里把它标回 pendingLogin 并切回原槽，出口和自愈都能重新够到。
+    if (logoutCompleted) {
+      logW(`[AddAcct] duplicate cleanup failed after logout — falling back to ${existingSlotId}`);
+      accountRegistry.markLoggedOut(duplicateSlotId);
+      switchTdAccount(existingSlotId).then((): void => {
+        accountRegistry.discardPending(duplicateSlotId);
+      }).catch((inner: Error): void => {
+        logE(`Globals.resolveDuplicateAccountLogin fallback failed: ${inner.message}`);
+      });
+      return;
+    }
+    if (client === runtimeClient &&
       accountRegistry.activeSlotId() === duplicateSlotId) {
       // Keep the freshly authenticated runtime usable if Telegram rejected
       // the cleanup request; it can be resolved manually from Devices.

@@ -1,6 +1,9 @@
-import { MessageEntry } from '../../store/MessageEntry';
-import { TdObject } from '../../tdkit/TdTypes';
+import { AlbumGroup } from '../../util/collapseAlbums';
+import {
+  messageRowPresentationFor, subscribeMessageRowPresentation
+} from '../../util/messageRowPresentationChannel';
 import { probeHit } from '../../util/panelProbe';
+import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { MessageBubble } from './MessageBubble';
 
 // One stable controller belongs to the ChatPage. The wrapper only forwards
@@ -16,6 +19,8 @@ export interface MessageBubbleActions {
   onReplyTap: (messageId: number, fromId: number) => void;
   onFileTap: (messageId: number) => void;
   onFileSave: (messageId: number) => void;
+  // 下载中点文件卡片 = 暂停（issue #93）。
+  onFilePause: (messageId: number) => void;
   onStickerRetry: (messageId: number) => void;
   onLinkPreviewRetry: (messageId: number) => void;
   onContactOpen: (userId: number, phone: string, vcard: string) => void;
@@ -73,26 +78,12 @@ export interface MessageBubbleActions {
 }
 
 export interface MessageBubbleRenderData {
-  nowSec: number;
   chatId: number;
   isGroup: boolean;
   isChannel: boolean;
   liveSharingId: number;
   themeBubbleOut: string;
   showUnreadDivider: boolean;
-  dateLabel: string;
-  albumPaths: string[];
-  albumFileIds: number[];
-  albumRatios: number[];
-  albumMemberIds: number[];
-  albumIsVideo: boolean[];
-  albumProgress: number[];
-  albumFailed: boolean[];
-  albumVideoFileIds: number[];
-  albumVideoFileSizes: number[];
-  albumVideoMimeTypes: string[];
-  albumCaption: string;
-  albumCaptionEntities: TdObject[];
   paidMediaPending: boolean;
   audioQueuePosition: number;
   audioQueueLength: number;
@@ -107,10 +98,7 @@ export interface MessageBubbleRenderData {
   editingActive: boolean;
   isPinnedMsg: boolean;
   liveGroupCallId: number;
-  showAvatar: boolean;
-  showSenderName: boolean;
   animateIn: boolean;
-  memberIds: number[];
   lightweightPlainText: boolean;
 }
 
@@ -123,6 +111,7 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onAvatarLongPress: (_id: number, _name: string): void => {},
   onReplyTap: (_id: number, _fromId: number): void => {},
   onFileTap: (_id: number): void => {}, onFileSave: (_id: number): void => {},
+  onFilePause: (_id: number): void => {},
   onStickerRetry: (_id: number): void => {}, onLinkPreviewRetry: (_id: number): void => {},
   onContactOpen: (_id: number, _phone: string, _vcard: string): void => {},
   onPhoneOpen: (_phone: string): void => {},
@@ -164,27 +153,101 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
 
 @Component
 export struct ReusableMessageBubble {
-  @Prop msg: MessageEntry;
+  @Prop @Watch('onGroupChanged') group: AlbumGroup;
+  @Prop nowSec: number = 0;
   @Prop data: MessageBubbleRenderData;
   actions: MessageBubbleActions = EMPTY_ACTIONS;
+  @State private liveGroup: AlbumGroup | null = null;
+  private unsubPresentation: (() => void) | null = null;
 
-  aboutToAppear(): void { probeHit('message.mount'); }
+  private currentGroup(): AlbumGroup {
+    if (this.liveGroup !== null && this.liveGroup.head.rowId === this.group.head.rowId) {
+      return this.liveGroup;
+    }
+    return this.group;
+  }
+
+  private attachPresentation(group: AlbumGroup): void {
+    this.detachPresentation();
+    this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
+    this.unsubPresentation = subscribeMessageRowPresentation(
+      this.data.chatId,
+      group.head.rowId,
+      (next: AlbumGroup): void => { this.liveGroup = next; }
+    );
+  }
+
+  private detachPresentation(): void {
+    if (this.unsubPresentation !== null) {
+      this.unsubPresentation();
+      this.unsubPresentation = null;
+    }
+  }
+
+  private onGroupChanged(): void {
+    this.attachPresentation(this.group);
+  }
+
+  aboutToAppear(): void {
+    probeHit('message.mount');
+    this.attachPresentation(this.group);
+  }
+
+  aboutToDisappear(): void {
+    this.detachPresentation();
+  }
+
+  aboutToRecycle(): void {
+    this.detachPresentation();
+    this.liveGroup = null;
+  }
+
+  aboutToReuse(params: Record<string, Object>): void {
+    const next: AlbumGroup | undefined = params['group'] as AlbumGroup | undefined;
+    if (next !== undefined) {
+      this.attachPresentation(next);
+    } else {
+      setTimeout((): void => { this.attachPresentation(this.group); }, 0);
+    }
+  }
 
   build() {
-    MessageBubble({
-      msg: this.msg, nowSec: this.data.nowSec, chatId: this.data.chatId,
+    if (this.data.lightweightPlainText && this.currentGroup().head.translatedText === '') {
+      LightweightPlainTextBubble({
+        msg: this.currentGroup().head,
+        nowSec: this.nowSec,
+        chatId: this.data.chatId,
+        isGroup: this.data.isGroup,
+        themeBubbleOut: this.data.themeBubbleOut,
+        showUnreadDivider: this.data.showUnreadDivider,
+        dateLabel: this.currentGroup().dateLabel,
+        editingActive: this.data.editingActive,
+        isPinnedMsg: this.data.isPinnedMsg,
+        showAvatar: this.currentGroup().showAvatar,
+        showSenderName: this.currentGroup().showSenderName,
+        animateIn: this.data.animateIn,
+        memberIds: this.currentGroup().memberIds,
+        actions: this.actions
+      });
+    } else {
+      MessageBubble({
+      msg: this.currentGroup().head, nowSec: this.nowSec, chatId: this.data.chatId,
       isGroup: this.data.isGroup, isChannel: this.data.isChannel,
       liveSharingId: this.data.liveSharingId,
       onStopLiveLocation: this.actions.onStopLiveLocation,
       themeBubbleOut: this.data.themeBubbleOut,
-      showUnreadDivider: this.data.showUnreadDivider, dateLabel: this.data.dateLabel,
-      albumPaths: this.data.albumPaths, albumFileIds: this.data.albumFileIds,
-      albumRatios: this.data.albumRatios, albumMemberIds: this.data.albumMemberIds,
-      albumIsVideo: this.data.albumIsVideo, albumProgress: this.data.albumProgress,
-      albumFailed: this.data.albumFailed, albumVideoFileIds: this.data.albumVideoFileIds,
-      albumVideoFileSizes: this.data.albumVideoFileSizes,
-      albumVideoMimeTypes: this.data.albumVideoMimeTypes, albumCaption: this.data.albumCaption,
-      albumCaptionEntities: this.data.albumCaptionEntities,
+      showUnreadDivider: this.data.showUnreadDivider, dateLabel: this.currentGroup().dateLabel,
+      albumPaths: this.currentGroup().photoPaths, albumFileIds: this.currentGroup().photoFileIds,
+      albumRatios: this.currentGroup().photoRatios,
+      albumMemberIds: this.currentGroup().memberIds,
+      albumIsVideo: this.currentGroup().photoIsVideo,
+      albumProgress: this.currentGroup().photoProgress,
+      albumFailed: this.currentGroup().photoFailed,
+      albumVideoFileIds: this.currentGroup().videoFileIds,
+      albumVideoFileSizes: this.currentGroup().videoFileSizes,
+      albumVideoMimeTypes: this.currentGroup().videoMimeTypes,
+      albumCaption: this.currentGroup().caption,
+      albumCaptionEntities: this.currentGroup().captionEntities,
       paidMediaPending: this.data.paidMediaPending,
       audioQueuePosition: this.data.audioQueuePosition,
       audioQueueLength: this.data.audioQueueLength,
@@ -196,7 +259,8 @@ export struct ReusableMessageBubble {
       animationPlaybackFailed: this.data.animationPlaybackFailed,
       editingActive: this.data.editingActive, isPinnedMsg: this.data.isPinnedMsg,
       liveGroupCallId: this.data.liveGroupCallId,
-      showAvatar: this.data.showAvatar, showSenderName: this.data.showSenderName,
+      showAvatar: this.currentGroup().showAvatar,
+      showSenderName: this.currentGroup().showSenderName,
       animateIn: this.data.animateIn,
       // `actions` is page-owned and stable. Passing its functions through directly avoids
       // allocating a fresh forwarding closure for every callback of every visible row.
@@ -209,6 +273,7 @@ export struct ReusableMessageBubble {
       onReplyTap: this.actions.onReplyTap,
       onFileTap: this.actions.onFileTap,
       onFileSave: this.actions.onFileSave,
+      onFilePause: this.actions.onFilePause,
       onStickerRetry: this.actions.onStickerRetry,
       onLinkPreviewRetry: this.actions.onLinkPreviewRetry,
       onContactOpen: this.actions.onContactOpen,
@@ -263,6 +328,7 @@ export struct ReusableMessageBubble {
       onToggleTranslation: this.actions.onToggleTranslation,
       onRetryTranslation: this.actions.onRetryTranslation,
       onLiveStreamTap: this.actions.onLiveStreamTap
-    });
+      });
+    }
   }
 }

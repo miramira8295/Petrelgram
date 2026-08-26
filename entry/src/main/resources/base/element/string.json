@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "确定"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "状态栏跟随标题颜色"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "同步到其他账号"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "不同步到其他账号"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "保存到文件…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "保存到哪里"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "会话行滑动操作"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "右滑已读 / 未读，左滑静音与归档；关闭时左右滑用于切换文件夹"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "返回原账号"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "返回原账号失败，请重试"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "已切回原账号"
     }
   ]
 }

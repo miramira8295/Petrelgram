@@ -91,17 +91,15 @@ export default function collapseAlbumsKeyTest() {
       expect(after[0].key).assertEqual(before[0].key);
     });
 
-    // webp 静态贴纸把自己的文件当缩略图（photoFileId = 贴纸文件），气泡直接读
-    // msg.photoPath，没有照片那条旁路——路径到了 key 必须变，否则永远转圈
-    // （issue #68）。照片行仍按上一条：路径不进 key。
-    it('静态贴纸行：photoPath 到达时 key 必须变', 0, () => {
+    // 静态贴纸也由行展示通道拿到最新 MessageEntry，不再靠重命名列表 item。
+    it('静态贴纸行：photoPath 到达时 key 保持稳定', 0, () => {
       const u = usersOf();
       const before: MessageEntry = media(9, '', 301, '', u);
       before.contentType = 'sticker';
       before.stickerFormat = 'webp';
       const after: MessageEntry = cloneMessage(before);
       after.photoPath = '/data/9.webp';
-      expect(collapseAlbums([after])[0].key === collapseAlbums([before])[0].key).assertFalse();
+      expect(collapseAlbums([after])[0].key).assertEqual(collapseAlbums([before])[0].key);
     });
 
     it('单条媒体行：photoFileId 变化时 key 必须变', 0, () => {
@@ -142,15 +140,41 @@ export default function collapseAlbumsKeyTest() {
       expect(after[0].key).assertEqual(before[0].key);
     });
 
-    // 失败态仍然要进 key：它把占位整个换成重试 UI，而且很少发生。
-    it('单条媒体行：photoFailed 变化时 key 必须变', 0, () => {
+    it('单条媒体行：photoFailed 变化时 key 保持稳定', 0, () => {
       const u = usersOf();
       const a: MessageEntry = media(5, '', 201, '', u);
       const b: MessageEntry = cloneMessage(a);
       b.photoFailed = true;
       const before: AlbumGroup[] = collapseAlbums([a]);
       const after: AlbumGroup[] = collapseAlbums([b]);
-      expect(after[0].key === before[0].key).assertFalse();
+      expect(after[0].key).assertEqual(before[0].key);
+    });
+
+    it('相册行：某格 photoFailed 变化时 key 保持稳定', 0, () => {
+      const u = usersOf();
+      const a1: MessageEntry = media(5, 'alb2', 201, '', u);
+      const a2: MessageEntry = media(6, 'alb2', 202, '', u);
+      const b1: MessageEntry = cloneMessage(a1);
+      const b2: MessageEntry = cloneMessage(a2);
+      b2.photoFailed = true;
+      expect(collapseAlbums([b1, b2])[0].key)
+        .assertEqual(collapseAlbums([a1, a2])[0].key);
+    });
+
+    it('下载展示态和译文变化时 key 保持稳定', 0, () => {
+      const u = usersOf();
+      const before: MessageEntry = media(7, '', 301, '', u);
+      before.contentType = 'video';
+      before.videoFileId = 401;
+      const after: MessageEntry = cloneMessage(before);
+      after.videoProgress = 63;
+      after.videoFailed = true;
+      after.mediaDownloadActive = true;
+      after.videoPath = '/data/video.mp4';
+      after.translatedText = 'translated';
+      after.translatedLang = 'en';
+      after.translationHidden = true;
+      expect(collapseAlbums([after])[0].key).assertEqual(collapseAlbums([before])[0].key);
     });
 
     // 发送成功时 TDLib 把临时 id 换成真实 id，MessageStore 让新条目继承旧条目

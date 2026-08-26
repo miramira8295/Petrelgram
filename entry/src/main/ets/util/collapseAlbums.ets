@@ -79,23 +79,11 @@ function albumHead(members: MessageEntry[]): MessageEntry {
   return head;
 }
 
-// Download progress lands in the key at 5% steps, not per byte.
-//
-// TDLib emits updateFile many times a second. At full resolution every one of
-// them changed the row key, so the data source raised CHANGE, LazyForEach
-// rebuilt the row's subtree, and the thumbnail Image came back as a NEW node —
-// replaying its appear transition. That is the "preview flickers while a video
-// downloads" bug: the flicker rate was the updateFile rate. Bucketing keeps the
-// progress ring moving (20 steps is finer than the ring reads) while cutting
-// the rebuilds by an order of magnitude. 100 stays its own bucket so arriving
-// at "done" is never merged into the 95% step.
-function progressBucket(percent: number): number {
-  return percent >= 100 ? 100 : Math.floor(percent / 5);
-}
-
-// Signature of the mutable fields a bubble renders that aren't already part of
-// the key. Keys MUST change whenever rendered content changes: the LazyForEach
-// data source diffs by key and skips notifications for key-equal rows.
+// Signature of structural/content fields rendered by a bubble. High-frequency
+// transfer state and translation presentation deliberately stay out: progress
+// goes through mediaProgressChannel, while completion/failure/active state and
+// translation snapshots go through messageRowPresentationChannel. Putting any
+// of those here renames the LazyForEach item and rebuilds the whole ListItem.
 //
 // Deliberately NOT memoised per entry object. Caching on identity assumes the
 // store only ever replaces entries via cloneMessage(), and entries are also
@@ -120,21 +108,11 @@ function mutableSig(m: MessageEntry): string {
   let s = `${m.id}_${m.commentCount}_${m.forwardFrom}_${m.senderName}_${m.contentType}_${m.stickerFormat}` +
     `_${m.placeholderLabel}_${m.systemKind}_${m.isUnsupportedMessage}` +
     `_${m.linkPreviewType}_${m.linkUrl}_${m.linkSiteName}_${m.linkTitle}_${m.linkDescription}` +
-    `_${m.linkPhotoFileId}_${m.linkPhotoPath !== '' ? 'lp' : ''}_${m.linkPhotoWidth}_${m.linkPhotoHeight}` +
-    `_${progressBucket(m.linkPhotoProgress)}_${m.linkPhotoFailed}_${m.linkPhotoDownloadActive}` +
-    `_${m.photoFileId}_${m.videoFileId}_${m.videoDuration}_${progressBucket(m.videoProgress)}_${m.videoFailed}` +
-    `_${m.videoPath !== '' ? 'v' : ''}_${m.stickerPath !== '' ? 's' : ''}` +
-    // webp 静态贴纸把自己的文件当缩略图用（photoFileId = 贴纸文件），气泡直接读
-    // msg.photoPath；照片走 thumbPath 旁路不进签名，贴纸没有旁路——不进签名就
-    // 永远转圈、重进才显示（issue #68 的真身）。只对贴纸类计入，照片行不受影响。
-    `_${m.contentType === 'sticker' && m.photoPath !== '' ? 'sp' : ''}` +
-    `_${progressBucket(m.stickerProgress)}_${m.stickerFailed}_${m.stickerDownloadActive}_${m.isEmojiSticker}` +
+    `_${m.linkPhotoFileId}_${m.linkPhotoWidth}_${m.linkPhotoHeight}` +
+    `_${m.photoFileId}_${m.videoFileId}_${m.videoDuration}_${m.isEmojiSticker}` +
     `_${m.editDate}` +
-    // 译文长度 + 语言 + 折叠态足以表达"这行的翻译展示变了"；全文进签名徒增
-    // 每次 diff 的字符串比较成本。
-    `_${m.translatedText.length}_${m.translatedLang}_${m.translationHidden}` +
     `_${m.inlineCustomEmojiPaths.join('|')}_${m.voiceListened}_${m.voiceWaveform}` +
-    `_${m.mediaDownloadActive}_${m.audioTitle}_${m.audioPerformer}` +
+    `_${m.audioTitle}_${m.audioPerformer}` +
     `_${m.contactPhone}_${m.contactFirstName}_${m.contactLastName}_${m.contactUserId}` +
     `_${m.contactAvatarPath !== '' ? 'ca' : ''}_${m.locationLatitude}_${m.locationLongitude}` +
     `_${m.locationValid}_${m.locationLivePeriod}_${m.locationExpiresIn}` +
@@ -249,9 +227,9 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         // 换成真实 id，拿 id 当行身份会让这一行被当成新 item 销毁重建。
         // 但 memberIds（真实 id）仍要进内容签名——相册每一格的点击、下载、
         // 转发都按真实 id 定位，见 mutableSig 里 m.id 那段。
-        // sendState 也不进 key——它经 sendStateChannel 直达气泡里的状态图标，
-        // 就地把时钟换成对号，不必重建整行。
-        key: `a_${m.albumId}_${m.rowId}_${rowMemberIds.join(',')}_${memberIds.join(',')}_${photoFileIds.join(',')}_${photoFailed.join(',')}_${videoFileIds.join(',')}_${caption}_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}_${dateLabel}_${mutableSig(displayHead)}`,
+        // sendState 经 sendStateChannel 直达状态图标；完成/失败和翻译展示经
+        // messageRowPresentationChannel 直达行包装器，都不必重建整行。
+        key: `a_${m.albumId}_${m.rowId}_${rowMemberIds.join(',')}_${memberIds.join(',')}_${photoFileIds.join(',')}_${videoFileIds.join(',')}_${caption}_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}_${dateLabel}_${mutableSig(displayHead)}`,
         head: displayHead,
         memberIds,
         rowMemberIds,
@@ -280,8 +258,8 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         // photoProgress 同理且与之同源：它和路径在同一个事件里一起变，留下
         // 任何一个，另一个的旁路化就白做（见相册分支的详细注释）。
         // 见相册分支的注释：rowId 让行身份跨过"临时 id → 真实 id"，
-        // sendState 走旁路通道而不进 key。
-        key: `${m.rowId}_${m.photoFailed}_${m.text}_${m.replyText}_${dateLabel}_${mutableSig(m)}`,
+        // sendState、下载展示态和翻译走旁路通道而不进 key。
+        key: `${m.rowId}_${m.text}_${m.replyText}_${dateLabel}_${mutableSig(m)}`,
         head: m,
         memberIds: [m.id],
         rowMemberIds: [m.rowId],

@@ -10,7 +10,7 @@ import {
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
-import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
@@ -29,6 +29,7 @@ import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
+import { navigateToSearch } from '../../util/searchNav';
 import {
   setChatListRenderActive
 } from '../../util/chatListRenderGate';
@@ -148,6 +149,8 @@ export struct ChatListPage {
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   // 大标题的强调色是活绑定，读一次 epoch 才会在用户改色后重绘。
   @StorageProp(APPEARANCE_EPOCH) private appearanceEpoch: number = 0;
+  // 状态栏跟不跟标题变色，用户可开（设置 → 聊天 → 自定义强调色）。
+  @StorageProp(KEY_STATUS_FOLLOW_TITLE) private statusFollowTitle: boolean = false;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @State folders: FolderInfo[] = [];
   @State unreadMap: Map<string, number> = new Map();
@@ -188,7 +191,8 @@ export struct ChatListPage {
   // 每个文件夹页签一个滚动控制器。HdsNavigation 靠它们驱动标题栏的收缩与
   // 渐变模糊，而列表在子组件内部，只能由这里建好递下去。按 key 存：文件夹
   // 增删时页签数会变，按下标存会错位。
-  private tabScrollers: Map<string, Scroller> = new Map<string, Scroller>();
+  // ListScroller 而不是 Scroller：会话行的左右滑操作要用 closeAllSwipeActions。
+  private tabScrollers: Map<string, ListScroller> = new Map<string, ListScroller>();
   // ⋮ 菜单。HDS 标题栏的菜单项只给 action 回调、挂不了 bindMenu，由它翻开关，
   // 菜单本体绑在右上角一个零尺寸锚点上（见 build）。
   @State private moreMenuShown: boolean = false;
@@ -560,23 +564,13 @@ export struct ChatListPage {
       return;
     }
     this.searchOpening = true;
-    router.pushUrl({ url: 'pages/search/GlobalSearchPage' })
-      .then((): void => {
-        // Keep a short guard after the route request is accepted so a rapid
-        // double tap cannot enqueue a second search page.
-        this.searchOpeningTimer = setTimeout((): void => {
-          this.searchOpeningTimer = -1;
-          this.searchOpening = false;
-        }, 520);
-      })
-      .catch((error: Error): void => {
-        if (this.searchOpeningTimer !== -1) {
-          clearTimeout(this.searchOpeningTimer);
-          this.searchOpeningTimer = -1;
-        }
-        this.searchOpening = false;
-        logE(`ChatListPage.openGlobalSearch failed: ${error.message}`);
-      });
+    // 推进聊天页签的栈（搜索页现在是栈里的一层，见 util/searchNav）。同步调用，
+    // 防连点闸门照旧用定时器解开。
+    navigateToSearch();
+    this.searchOpeningTimer = setTimeout((): void => {
+      this.searchOpeningTimer = -1;
+      this.searchOpening = false;
+    }, 520);
   }
 
   private tabBadgeText(spec: TabSpec): string {
@@ -672,12 +666,12 @@ export struct ChatListPage {
 
   // 悬浮 chrome 的总高度 = 顶栏 + （有文件夹时）文件夹条。列表按这个值让出
   // 起始位置，滚动时内容从玻璃底下穿过去。
-  private scrollerFor(key: string): Scroller {
+  private scrollerFor(key: string): ListScroller {
     const hit = this.tabScrollers.get(key);
     if (hit !== undefined) {
       return hit;
     }
-    const made = new Scroller();
+    const made = new ListScroller();
     this.tabScrollers.set(key, made);
     return made;
   }
@@ -686,7 +680,7 @@ export struct ChatListPage {
   // tabs() 现取，顺带把已经不存在的页签的控制器留在 Map 里——它们不占什么，
   // 而删掉会在文件夹顺序变动时把正在用的那个也误删。
   private allTabScrollers(): Scroller[] {
-    return this.tabs().map((spec: TabSpec): Scroller => this.scrollerFor(spec.key));
+    return this.tabs().map((spec: TabSpec): ListScroller => this.scrollerFor(spec.key));
   }
 
   // 标题栏内容：应用名 + 同步状态副标题 + 搜索/⋮ 两个动作 + 底部的文件夹条。
@@ -946,6 +940,13 @@ export struct ChatListPage {
     );
   }
 
+  private pinnedSystemBar(): SystemBarStyle | undefined {
+    if (this.statusFollowTitle) {
+      return undefined;
+    }
+    return { statusBarContentColor: this.appDark ? '#FFFFFF' : '#000000' } as SystemBarStyle;
+  }
+
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
@@ -1058,6 +1059,12 @@ export struct ChatListPage {
         style: titleBarStyle($r('app.color.surface'), this.accent()),
         content: this.titleBarContent()
       })
+      // 状态栏图标色钉死在深浅色上。不设 systemBarStyle 时 HDS 会按标题栏的
+      // 内容色自己推——应用名染了强调色，状态栏的时钟和图标跟着变色（用户报的）。
+      // 两个态给同一份：滚动进玻璃态时状态栏也不该跟着换。
+      // 传 undefined 就是不覆盖，HDS 照旧按标题栏内容色自己推（开关打开时要的
+      // 正是这个联动）；关闭时钉死在深浅色上，和 EntryAbility 那套一致。
+      .systemBarStyle(this.pinnedSystemBar(), this.pinnedSystemBar())
       // 一级页签，没有返回键。
       .hideBackButton(true)
       // MINI 而不是 FREE：首页要的是"应用名和搜索键在同一行"的一条窄栏，

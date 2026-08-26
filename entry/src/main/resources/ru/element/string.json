@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "ОК"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Строка состояния в цвете заголовка"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Синхронизировать с другими аккаунтами"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Не синхронизировать с другими аккаунтами"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Сохранить в файлы…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Куда сохранить"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Свайп-действия в чатах"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Свайп вправо — прочитано/непрочитано, влево — звук и архив. Если выключено, свайп переключает папки"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Вернуться к прежнему аккаунту"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Не удалось вернуться, попробуйте ещё раз"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Вернулись к вашему аккаунту"
     }
   ]
 }

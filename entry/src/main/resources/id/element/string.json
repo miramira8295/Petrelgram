@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Bilah status mengikuti warna judul"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Sinkronkan ke akun lain"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Jangan sinkronkan ke akun lain"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "Simpan ke File…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Simpan di mana"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Aksi geser pada obrolan"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Geser kanan untuk tandai dibaca/belum, kiri untuk bisukan dan arsip. Jika nonaktif, geser mengganti folder"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Kembali ke akun sebelumnya"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Gagal kembali, coba lagi"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Kembali ke akun Anda"
     }
   ]
 }

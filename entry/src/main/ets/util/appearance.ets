@@ -15,6 +15,10 @@ export const KEY_BUBBLE_OUT_HEX_DARK: string = 'bubbleOutHexDark';
 export const KEY_BUBBLE_IN_HEX: string = 'bubbleInHex';
 export const KEY_BUBBLE_IN_HEX_DARK: string = 'bubbleInHexDark';
 export const KEY_BUBBLE_MATERIAL_ON: string = 'bubbleMaterialOn';
+// 状态栏图标色是否跟着首页标题的颜色走。默认关：HDS 不设 systemBarStyle 时会
+// 按标题栏内容色自己推，标题染了强调色状态栏就跟着变（用户报的），默认钉死
+// 在深浅色上；想要那个联动效果的可以打开。
+export const KEY_STATUS_FOLLOW_TITLE: string = 'statusFollowTitle';
 // 厚度/光感的浅色份沿用 AppSettings 里原有的 materialThickness / materialLight，
 // 深色份加 Dark 后缀——与 bgPatternStrength / bgPatternStrengthDark 同一套约定。
 export const KEY_MATERIAL_THICKNESS_DARK: string = 'materialThicknessDark';

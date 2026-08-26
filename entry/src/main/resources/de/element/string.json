@@ -11579,6 +11579,46 @@
     {
       "name": "color_picker_confirm",
       "value": "OK"
+    },
+    {
+      "name": "appearance_status_follow_title",
+      "value": "Statusleiste folgt der Titelfarbe"
+    },
+    {
+      "name": "px_sync_accounts",
+      "value": "Mit anderen Konten synchronisieren"
+    },
+    {
+      "name": "px_sync_accounts_off",
+      "value": "Nicht mit anderen Konten synchronisieren"
+    },
+    {
+      "name": "ms_save_to_files",
+      "value": "In Dateien speichern…"
+    },
+    {
+      "name": "ms_save_where",
+      "value": "Speicherort"
+    },
+    {
+      "name": "ix_row_swipe",
+      "value": "Wischgesten in Chats"
+    },
+    {
+      "name": "ix_row_swipe_sub",
+      "value": "Nach rechts wischen für gelesen/ungelesen, nach links für stumm und Archiv. Wenn aus, wechselt Wischen die Ordner"
+    },
+    {
+      "name": "ar_back_to_account",
+      "value": "Zurück zum vorherigen Konto"
+    },
+    {
+      "name": "ar_back_to_account_failed",
+      "value": "Zurückwechseln fehlgeschlagen, bitte erneut versuchen"
+    },
+    {
+      "name": "ar_recovered_account",
+      "value": "Zurück zu deinem Konto gewechselt"
     }
   ]
 }

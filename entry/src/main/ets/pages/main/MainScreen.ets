@@ -27,6 +27,8 @@ import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRa
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
 import { overlayBackdropBlur, materialOff, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { DOCK_SIDE_PADDING, dockSidePadding } from '../../util/mainTabsWidth';
+import { publishTabReTap } from '../../util/tabReTap';
 import { KEY_SHOW_CONTACTS_TAB } from '../../store/AppSettings';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
@@ -220,6 +222,9 @@ export struct MainScreen {
 
   private select(index: number): void {
     if (index === this.tab) {
+      // 点已经选中的页签：交给那一页自己处理（聊天页是回顶 / 跳下一个未读，
+      // issue #35）。这里只发信号，不知道也不该知道对方怎么响应。
+      publishTabReTap(index);
       return;
     }
     this.appliedTab = index;
@@ -289,6 +294,9 @@ export struct MainScreen {
         // 的那一刻播一次，所以只有"变成选中"会弹，重复点已选中的不会。
         SymbolGlyph($r(icon)).fontSize(24)
           .fontColor([this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED])
+          // 双气泡这类多层图标按不透明度分层：前面那只实心，后面那只淡一层。
+          // 单层图标（齿轮、联系人）走这条也不变样。
+          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
           .symbolEffect(
             new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP),
             this.tab === index
@@ -375,6 +383,13 @@ export struct MainScreen {
   // 页签上错开。
   // 手机（单栏）下量到的就是整屏宽，自然退化为改造前的行为；还没量到（0）时
   // 同样退化，不会先闪一下窄条。
+  // 藏掉联系人页签后胶囊里只剩三格，两侧留白补上空出的那一格（issue #135）。
+  private dockPadding(): number {
+    const w: number = typeof this.dockWidth() === 'number'
+      ? this.dockWidth() as number : this.screenW;
+    return dockSidePadding(w, this.showContactsTab ? 4 : 3, DOCK_SIDE_PADDING);
+  }
+
   private dockWidth(): Length {
     if (this.tab === 0) {
       return this.navBarWidth > 0 ? this.navBarWidth : '100%';
@@ -442,9 +457,9 @@ export struct MainScreen {
       // 不透明底色，正好压在材质上面。现在靠主色 + 图标自己的弹跳表示选中，
       // 外面那层 Stack（唯一作用是给药丸定位）也一并去掉了。
       Row() {
-        this.dockItem(0, 'sys.symbol.message', $r('app.string.tab_chats'), 'tab_chats');
+        this.dockItem(0, 'sys.symbol.message_on_message_fill', $r('app.string.tab_chats'), 'tab_chats');
         if (this.showContactsTab) {
-          this.dockItem(1, 'sys.symbol.person_2', $r('app.string.tab_contacts'), 'tab_contacts');
+          this.dockItem(1, 'sys.symbol.person_2_fill', $r('app.string.tab_contacts'), 'tab_contacts');
         }
         this.dockItem(2, 'sys.symbol.gearshape', $r('app.string.settings_title'), 'settings_title');
         this.profileDockItem();
@@ -468,7 +483,7 @@ export struct MainScreen {
     // 两侧留白 16 → 28 → 40，胶囊再窄一档。四个格子是 layoutWeight 均分的，
     // 收窄只吃格子宽度，图标和文字尺寸不动——但「联系人」是最长的一条，
     // 再窄就该撞它了。
-    .padding({ left: 40, right: 40 })
+    .padding({ left: this.dockPadding(), right: this.dockPadding() })
     .margin({ bottom: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)) })
     // 返回列表时淡入；进入目的页时 syncDock() 同帧撤下玻璃层。
     .opacity(this.dockShown ? 1 : 0)

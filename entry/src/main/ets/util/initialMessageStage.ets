@@ -1,6 +1,8 @@
 import { AlbumGroup } from './collapseAlbums';
 
 export const INITIAL_EAGER_MESSAGE_ROWS: number = 1;
+const PLACEHOLDER_HEIGHT_CACHE_LIMIT: number = 2048;
+const placeholderHeightCache: Map<string, number> = new Map<string, number>();
 
 // Admit exactly one real row per release. The 17:04 device trace showed that a
 // pair containing a sticker can still take 26-28 ms, while a short initial page
@@ -80,6 +82,19 @@ export function initialMessagePlaceholderHeight(
   showUnreadDivider: boolean
 ): number {
   const msg = group.head;
+  // Initial staging republishes the same rows over several VSyncs. Height only
+  // depends on the fields below, so do not repeat the text/shape estimate for
+  // every placeholder CHANGE. rowId keeps equal-looking neighbouring rows
+  // independent without retaining the potentially kilobyte-sized group key.
+  const cacheKey: string = `${msg.rowId}|${Math.round(screenWidth)}|${msg.contentType}` +
+    `|${msg.text.length}|${msg.replyToMessageId !== 0 ? 1 : 0}` +
+    `|${group.photoPaths.length}|${group.showAvatar ? 1 : 0}` +
+    `|${group.showSenderName ? 1 : 0}|${group.dateLabel !== '' ? 1 : 0}` +
+    `|${showUnreadDivider ? 1 : 0}`;
+  const cached: number | undefined = placeholderHeightCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
   let body: number = 52;
   if (msg.contentType === 'system') {
     body = 34;
@@ -102,6 +117,10 @@ export function initialMessagePlaceholderHeight(
   }
   if (group.dateLabel !== '') { body += 30; }
   if (showUnreadDivider) { body += 26; }
+  if (placeholderHeightCache.size >= PLACEHOLDER_HEIGHT_CACHE_LIMIT) {
+    placeholderHeightCache.clear();
+  }
+  placeholderHeightCache.set(cacheKey, body);
   return body;
 }
 

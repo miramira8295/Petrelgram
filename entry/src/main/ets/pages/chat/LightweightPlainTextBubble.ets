@@ -9,10 +9,14 @@ import {
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
-import { overlayBlur, overlayMaterial, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import {
-  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
+  glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+} from '../../util/overlayMaterial';
+import {
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
+import { tailShapeCommands } from '../../util/bubbleGlassPath';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
@@ -32,6 +36,7 @@ import { CachedImage } from '../common/CachedImage';
 import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
+import { logW } from '../../util/log';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 const SWIPE_REPLY_MAX: number = -56;
@@ -163,7 +168,10 @@ export struct LightweightPlainTextBubble {
   // 本地外观：同 MessageBubble——epoch 驱动底色/文字色重取，材质只给屏内且非省电的气泡。
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
-  @State onScreen: boolean = false;
+  // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
+  // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
+  // 由回调负责在真正离屏时关掉——那一路是可靠的。
+  @State onScreen: boolean = true;
   @State glassW: number = 0;
   @State glassH: number = 0;
 
@@ -180,10 +188,14 @@ export struct LightweightPlainTextBubble {
   @Builder
   bubbleTail(outgoing: boolean) {
     if (this.bubbleMaterialLive()) {
+      // 玻璃气泡的尾巴：实心玻璃色三角。材质是合成层、不吃 clipShape，挂上去会
+      // 在三角外糊出一块矩形背板，所以这里只用它的回退色（见 glassTailFill）。
+      // 玻璃档下尾巴只占位：整块形状由上层容器的轮廓裁剪画出来。
       Column().width(TAIL_W).height(TAIL_H).margin(outgoing ? { left: -1 } : { right: -1 });
     } else {
-      Polygon({ width: TAIL_W, height: TAIL_H })
-        .points(outgoing ? [[0, 0], [TAIL_W, TAIL_H], [0, TAIL_H]] : [[TAIL_W, 0], [0, TAIL_H], [TAIL_W, TAIL_H]])
+      // 和玻璃档同一条曲线（tailShapeCommands），两档尾巴必须长得一样。
+      Path({ width: TAIL_W, height: TAIL_H })
+        .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1)))
         .fill(this.bubbleFillColor())
         .margin(outgoing ? { left: -1 } : { right: -1 });
     }
@@ -194,9 +206,10 @@ export struct LightweightPlainTextBubble {
   }
 
   private bubbleBg(): ResourceColor {
-    return this.bubbleMaterialLive() ? Color.Transparent : this.bubbleFillColor();
+    return this.bubbleMaterialLive() ? this.glassBg() : this.bubbleFillColor();
   }
 
+  // 见 MessageBubble 同一处：气泡与尾巴统一走普通玻璃渲染，才能接成一体。
   private glassBg(): ResourceColor {
     return this.bubbleMaterialLive() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
@@ -216,23 +229,20 @@ export struct LightweightPlainTextBubble {
       : { topLeft: r.topLeft, topRight: r.topRight, bottomRight: r.bottomRight, bottomLeft: 0 };
   }
 
-  // 沿整条轮廓（含尾巴）描一圈，补上材质画不到的内侧边。
+  // 见 MessageBubble.glassOutline()：材质的边框只沿节点 border-box 画，尾巴那一侧
+  // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
   @Builder
   glassOutline() {
     if (this.bubbleMaterialLive() && this.glassW > 0 && this.glassH > 0) {
       Path({ width: this.glassW, height: this.glassH })
-        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
+        .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
+          this.hasTail(), this.bubbleCorners()))
         .fill(Color.Transparent)
         .stroke(GLASS_OUTLINE_COLOR)
-        .strokeWidth(GLASS_OUTLINE_WIDTH)
-        .hitTestBehavior(HitTestMode.None);
+        .strokeWidth(GLASS_OUTLINE_WIDTH);
     }
   }
 
-  private glassModifier(): AttributeModifier<CommonAttribute> {
-    return bubbleGlassModifier(this.bubbleMaterialLive(), this.glassW, this.glassH, this.msg.isOutgoing,
-      this.hasTail(), this.bubbleCorners());
-  }
   @Prop showUnreadDivider: boolean = false;
   @Prop dateLabel: string = '';
   @Prop editingActive: boolean = false;
@@ -313,6 +323,10 @@ export struct LightweightPlainTextBubble {
     } else {
       setTimeout((): void => { this.attachChannels(this.msg); }, 0);
     }
+    // 见 MessageBubble 同一处：复用后玻璃层要重新量。
+    this.glassW = 0;
+    this.glassH = 0;
+    this.onScreen = true;
   }
 
   private onMessageChanged(): void { this.attachChannels(this.msg); }
@@ -630,6 +644,7 @@ export struct LightweightPlainTextBubble {
           }
           .alignItems(HorizontalAlign.Start).constraintSize({ maxWidth: this.bubbleMaxW() })
           .backgroundColor(this.bubbleBg())
+          .backdropBlur(this.glassBlur())
           .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
             this.onScreen = visible;
           })
@@ -652,12 +667,18 @@ export struct LightweightPlainTextBubble {
             Column().width(7);
           }
           }
+          // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
+          // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
+          // 不存在「一边材质一边普通渲染」对不齐的问题。
           .alignItems(VerticalAlign.Bottom)
           .backgroundColor(this.glassBg())
           .backdropBlur(this.glassBlur())
-          .attributeModifier(this.glassModifier())
+          // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
+          // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
           .borderRadius(this.glassRadius())
-          .overlay(this.glassOutline(), { align: Alignment.TopStart })
+          .background(this.glassOutline(), { align: Alignment.TopStart })
+              .attributeModifier(bubbleGlassModifier(this.bubbleMaterialLive(), this.glassW, this.glassH,
+            this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
           .onAreaChange((_old: Area, area: Area): void => {
             this.glassW = Number(area.width);
             this.glassH = Number(area.height);

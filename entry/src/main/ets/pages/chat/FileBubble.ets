@@ -17,6 +17,8 @@ export struct FileBubble {
   @Prop maxWidth: number = 250;
   onOpen: () => void = (): void => {};
   onSave: () => void = (): void => {};
+  // 下载中点一下 = 暂停（issue #93）。已下的那部分留着，再点继续断点续传。
+  onPause: () => void = (): void => {};
 
   @Styles
   private cardNormalStyle(): void {
@@ -154,9 +156,14 @@ export struct FileBubble {
       })
       .animation({ duration: 110, curve: Curve.EaseOut })
       .onClick((): void => {
-        if (!this.sourceUnavailable()) {
-          this.onOpen();
+        if (this.sourceUnavailable()) {
+          return;
         }
+        if (this.downloadActive) {
+          this.onPause();
+          return;
+        }
+        this.onOpen();
       });
       Stack() {
         Circle({ width: 30, height: 30 })

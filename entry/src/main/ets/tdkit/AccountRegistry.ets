@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import fs from '@ohos.file.fs';
 import { str } from '../util/strings';
-import { logE } from '../util/log';
+import { logE, logW } from '../util/log';
 
 const STORE_NAME: string = 'td_accounts';
 const KEY_ACTIVE_SLOT: string = 'active_slot';
@@ -261,8 +261,33 @@ class AccountRegistry {
     };
   }
 
+  // 除当前槽外，还有没有一个「登录过」的槽可以回去。
+  //
+  // 「返回原账号」原来只认 previousSlotForActivePending()，即当前槽必须是
+  // pendingLogin 且记着来路。真机上出现过第三种状态：清理重复登录时 logOut()
+  // 成功、后续切回失败，活跃槽停在一个已登出的空库上、pendingLogin 还是 false
+  // ——按钮不显示、冷启动自愈也够不着，用户被锁在登录页（本条就是那次事故）。
+  // 判据放宽成「还有别的可用槽」，出口就一直在。
+  otherUsableSlotId(): string {
+    const activeId = this.activeSlot;
+    const hit = this.accounts.find((item: TdAccountSummary): boolean =>
+      item.slotId !== activeId && !item.pendingLogin && item.userId !== 0);
+    return hit !== undefined ? hit.slotId : '';
+  }
+
+  // 活跃槽的摘要里有没有用户身份。它为真却又停在登录页，说明摘要与 TDLib 对不上。
+  activeSummaryHasUser(): boolean {
+    return this.active().userId !== 0;
+  }
+
   previousSlotForActivePending(): string {
     const current = this.active();
+    // 诊断：登录页左上角的「返回原账号」不显示（用户报）。三个条件哪个空了，
+    // 光看现象分不出来——pendingLogin 没立、previousSlotId 没记、还是原槽没了。
+    logW(`[AddAcct] slot=${current.slotId} pending=${current.pendingLogin}`
+      + ` prev=${current.previousSlotId === '' ? '(empty)' : current.previousSlotId}`
+      + ` prevExists=${current.previousSlotId !== '' && this.hasSlot(current.previousSlotId)}`
+      + ` userId=${current.userId} slots=${this.all().length}`);
     if (!current.pendingLogin || current.previousSlotId === '' ||
       !this.hasSlot(current.previousSlotId)) {
       return '';
