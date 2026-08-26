@@ -1315,7 +1315,7 @@ export struct MessageBubble {
           normal: this.linkRunNormalStyle,
           pressed: this.linkRunPressedStyle
         })
-        .animation({ duration: this.effectDuration(90), curve: Curve.EaseOut })
+        .animation({ duration: this.persistentEffectDuration(90), curve: Curve.EaseOut })
         .onClick(() => {
           if (this.gestureClaimed) { return; }
           this.onLinkTap(run.url); });
