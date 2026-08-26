@@ -27,6 +27,8 @@ struct DecodeTask {
     int32_t dstH = 0;
     int32_t frameStep = 1;
     std::vector<webm_alpha::RgbaFrame> frames;
+    // worker 线程上就建好的原生 PixelMap；complete 回调里只做 napi 转换。
+    std::vector<OH_PixelmapNative *> pixelmaps;
     bool ok = false;
     napi_deferred deferred = nullptr;
     napi_async_work work = nullptr;
@@ -76,14 +78,44 @@ bool ReadArrayBuffer(napi_env env, napi_value value, void **data, size_t *length
     return napi_get_arraybuffer_info(env, value, data, length) == napi_ok;
 }
 
-// 逐帧转成 PixelMap，转完立刻释放那一帧的 RGBA。
-// 不先整批转再释放：那样峰值会是两倍，正是这条链路最不能付的代价。
+// worker 线程上把原生 pixelmap 转成 napi 对象，转完立刻释放原生壳。
+// complete 回调只做这一步——像素级构造已经在 ExecuteDecode 里完成。
 napi_value BuildFrameArray(napi_env env, DecodeTask *task) {
     napi_value array = nullptr;
-    napi_create_array_with_length(env, task->frames.size(), &array);
+    napi_create_array_with_length(env, task->pixelmaps.size(), &array);
+    for (size_t i = 0; i < task->pixelmaps.size(); ++i) {
+        napi_value jsPixelmap = nullptr;
+        const Image_ErrorCode conv =
+            OH_PixelmapNative_ConvertPixelmapNativeToNapi(env, task->pixelmaps[i], &jsPixelmap);
+        // 转换出的 JS 对象自己持有一份内部 PixelMap，这个原生壳必须释放，
+        // 否则每帧漏一个。
+        OH_PixelmapNative_Release(task->pixelmaps[i]);
+        task->pixelmaps[i] = nullptr;
+        if (conv != IMAGE_SUCCESS || jsPixelmap == nullptr) {
+            return nullptr;
+        }
+        napi_set_element(env, array, static_cast<uint32_t>(i), jsPixelmap);
+    }
+    task->pixelmaps.clear();
+    return array;
+}
+
+void ExecuteDecode(napi_env env, void *data) {
+    DecodeTask *task = static_cast<DecodeTask *>(data);
+    task->ok = webm_alpha::DecodeAlphaSequence(task->color, task->alpha, task->srcW, task->srcH,
+                                               task->dstW, task->dstH, task->frameStep, task->frames);
+    // 码流本身不再需要，早一点还回去。
+    std::vector<webm_alpha::Packet>().swap(task->color);
+    std::vector<webm_alpha::Packet>().swap(task->alpha);
+    if (!task->ok) {
+        return;
+    }
+    // PixelMap 构造是像素级拷贝/格式转换，必须留在 worker：放在 complete 回调里
+    // 等于在主线程上一次性做完整段贴纸，真机实测单次 94ms（2026-08-26 trace）。
     OH_Pixelmap_InitializationOptions *options = nullptr;
     if (OH_PixelmapInitializationOptions_Create(&options) != IMAGE_SUCCESS || options == nullptr) {
-        return nullptr;
+        task->ok = false;
+        return;
     }
     OH_PixelmapInitializationOptions_SetWidth(options, static_cast<uint32_t>(task->dstW));
     OH_PixelmapInitializationOptions_SetHeight(options, static_cast<uint32_t>(task->dstH));
@@ -105,40 +137,19 @@ napi_value BuildFrameArray(napi_env env, DecodeTask *task) {
     OH_PixelmapInitializationOptions_SetRowStride(options,
                                                   static_cast<uint32_t>(task->dstW) * 4);
     OH_PixelmapInitializationOptions_SetAlphaType(options, kAlphaTypeUnpremultiplied);
-    bool ok = true;
+    task->pixelmaps.reserve(task->frames.size());
     for (size_t i = 0; i < task->frames.size(); ++i) {
         webm_alpha::RgbaFrame &frame = task->frames[i];
         OH_PixelmapNative *pixelmap = nullptr;
-        const Image_ErrorCode code =
-            OH_PixelmapNative_CreatePixelmap(frame.data(), frame.size(), options, &pixelmap);
-        if (code != IMAGE_SUCCESS || pixelmap == nullptr) {
-            ok = false;
+        if (OH_PixelmapNative_CreatePixelmap(frame.data(), frame.size(), options, &pixelmap)
+                != IMAGE_SUCCESS || pixelmap == nullptr) {
+            task->ok = false;
             break;
         }
-        napi_value jsPixelmap = nullptr;
-        const Image_ErrorCode conv =
-            OH_PixelmapNative_ConvertPixelmapNativeToNapi(env, pixelmap, &jsPixelmap);
-        // 转换出的 JS 对象自己持有一份内部 PixelMap，这个原生壳必须释放，
-        // 否则每张贴纸都会把整段帧序列泄在原生侧。
-        OH_PixelmapNative_Release(pixelmap);
-        if (conv != IMAGE_SUCCESS || jsPixelmap == nullptr) {
-            ok = false;
-            break;
-        }
-        napi_set_element(env, array, static_cast<uint32_t>(i), jsPixelmap);
+        task->pixelmaps.push_back(pixelmap);
         webm_alpha::RgbaFrame().swap(frame);
     }
     OH_PixelmapInitializationOptions_Release(options);
-    return ok ? array : nullptr;
-}
-
-void ExecuteDecode(napi_env env, void *data) {
-    DecodeTask *task = static_cast<DecodeTask *>(data);
-    task->ok = webm_alpha::DecodeAlphaSequence(task->color, task->alpha, task->srcW, task->srcH,
-                                               task->dstW, task->dstH, task->frameStep, task->frames);
-    // 码流本身不再需要，早一点还回去。
-    std::vector<webm_alpha::Packet>().swap(task->color);
-    std::vector<webm_alpha::Packet>().swap(task->alpha);
 }
 
 void CompleteDecode(napi_env env, napi_status status, void *data) {
@@ -147,6 +158,14 @@ void CompleteDecode(napi_env env, napi_status status, void *data) {
     if (status == napi_ok && task->ok) {
         result = BuildFrameArray(env, task);
     }
+    // worker 上建好但没能交出去的那些，必须在这里释放——BuildFrameArray 中途
+    // 失败会留下后半段没转换的。
+    for (size_t i = 0; i < task->pixelmaps.size(); ++i) {
+        if (task->pixelmaps[i] != nullptr) {
+            OH_PixelmapNative_Release(task->pixelmaps[i]);
+        }
+    }
+    task->pixelmaps.clear();
     if (result != nullptr) {
         napi_resolve_deferred(env, task->deferred, result);
     } else {
