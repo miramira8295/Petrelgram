@@ -359,6 +359,10 @@ export struct ChatPage {
   @State messageLoadError: string = '';
   @State olderLoadState: string = 'idle'; // idle | loading | error | end
   @State newerLoadState: string = 'idle'; // idle | loading | error | end
+  // Its own state variable rather than `groups.length`: the rows come from the
+  // LazyForEach data source, so build() never iterates `groups` and would not
+  // re-run on its length alone. This count is what drives the empty/loading
+  // timeline state.
   @State visibleGroupCount: number = 0;
   // Rendered through the LazyForEach data source (incremental notifications keep
   // scroll position on prepend); the plain array mirror serves index lookups.
