@@ -6,6 +6,7 @@ import {
   KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP, KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
 import { logW } from '../../util/log';
+import { reuseParam } from '../../util/reuseParams';
 
 // One-time probe verdict for VP9/WEBM on the system AVPlayer:
 // 0 = unknown (try AVPlayer), 1 = works, -1 = unsupported (go straight to ijk).
@@ -65,7 +66,10 @@ export struct SmartLoopVideo {
 
   aboutToReuse(params: Record<string, Object>): void {
     this.resetPlaybackState();
-    const category: string | undefined = params['powerCategory'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到已有的
+    // isTransparentAsset() 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
+    const category: string | undefined =
+      reuseParam(params, 'powerCategory') as string | undefined;
     const transparent: boolean = category !== undefined
       ? this.transparentCategory(category) : this.isTransparentAsset();
     this.useIjk = transparent || avWebmVerdict === -1;

@@ -2,6 +2,7 @@ import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { formatVoiceDuration, voiceWaveformBars } from '../../util/voiceWaveform';
 import { str } from '../../util/strings';
+import { reuseParam } from '../../util/reuseParams';
 
 const WAVEFORM_BAR_COUNT: number = 34;
 const WAVEFORM_WIDTH: number = 132;
@@ -97,9 +98,12 @@ export struct VoiceBubble {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    const msgId: number | undefined = params['msgId'] as number | undefined;
-    const durationSec: number | undefined = params['durationSec'] as number | undefined;
-    const listened: boolean | undefined = params['listened'] as boolean | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
+    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
+    const msgId: number | undefined = reuseParam(params, 'msgId') as number | undefined;
+    const durationSec: number | undefined =
+      reuseParam(params, 'durationSec') as number | undefined;
+    const listened: boolean | undefined = reuseParam(params, 'listened') as boolean | undefined;
     if (msgId !== undefined) {
       this.attachPlayback(msgId, durationSec ?? 0, listened ?? true);
       return;

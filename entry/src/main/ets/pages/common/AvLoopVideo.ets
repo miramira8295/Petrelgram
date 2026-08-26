@@ -1,6 +1,7 @@
 import { media } from '@kit.MediaKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { logE, logI } from '../../util/log';
+import { reuseParam } from '../../util/reuseParams';
 
 let nextAvLoopId: number = 1;
 
@@ -44,7 +45,10 @@ export struct AvLoopVideo {
 
   aboutToReuse(params: Record<string, Object>): void {
     this.playerSeq++;
-    const videoPath: string | undefined = params['videoPath'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
+    // util/reuseParams.ets）。取不到就保留 this.videoPath，下面的 release/
+    // 重新 init 仍然无条件跑。
+    const videoPath: string | undefined = reuseParam(params, 'videoPath') as string | undefined;
     if (videoPath !== undefined) {
       this.videoPath = videoPath;
     }

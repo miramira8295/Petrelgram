@@ -3,6 +3,7 @@ import { formatFileSize } from '../../util/formatFileSize';
 import { formatVoiceDuration } from '../../util/voiceWaveform';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
+import { reuseParam } from '../../util/reuseParams';
 
 @Component
 export struct MusicBubble {
@@ -99,8 +100,11 @@ export struct MusicBubble {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    const msgId: number | undefined = params['msgId'] as number | undefined;
-    const durationSec: number | undefined = params['durationSec'] as number | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
+    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
+    const msgId: number | undefined = reuseParam(params, 'msgId') as number | undefined;
+    const durationSec: number | undefined =
+      reuseParam(params, 'durationSec') as number | undefined;
     if (msgId !== undefined) {
       this.attachPlayback(msgId, durationSec ?? 0);
       return;

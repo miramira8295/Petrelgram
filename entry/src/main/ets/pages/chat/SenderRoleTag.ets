@@ -1,5 +1,6 @@
 
 import { senderRoleFor, senderRoleKey, subscribeSenderRole } from '../../util/senderRoleChannel';
+import { reuseParam } from '../../util/reuseParams';
 
 // 气泡里发送者名字旁边那枚身份标签（管理员 / 创建者 / 自定义头衔）。
 //
@@ -41,8 +42,10 @@ export struct SenderRoleTag {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    const nextChatId: number | undefined = params['chatId'] as number | undefined;
-    const nextSenderId: number | undefined = params['senderId'] as number | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
+    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
+    const nextChatId: number | undefined = reuseParam(params, 'chatId') as number | undefined;
+    const nextSenderId: number | undefined = reuseParam(params, 'senderId') as number | undefined;
     if (nextChatId !== undefined && nextSenderId !== undefined) {
       this.attachRoleChannel(nextChatId, nextSenderId);
       return;

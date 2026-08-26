@@ -1,4 +1,5 @@
 import { progressFor, subscribeProgress } from '../../util/mediaProgressChannel';
+import { reuseParam } from '../../util/reuseParams';
 
 // 自己订阅、自己更新的下载进度环。
 //
@@ -46,8 +47,11 @@ export struct LiveProgressRing {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    const fileId: number | undefined = params['fileId'] as number | undefined;
-    const initialPercent: number | undefined = params['initialPercent'] as number | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
+    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
+    const fileId: number | undefined = reuseParam(params, 'fileId') as number | undefined;
+    const initialPercent: number | undefined =
+      reuseParam(params, 'initialPercent') as number | undefined;
     if (fileId !== undefined) {
       this.attach(fileId, initialPercent ?? 0);
       return;

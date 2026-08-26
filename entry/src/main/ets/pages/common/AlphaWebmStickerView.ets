@@ -5,6 +5,7 @@ import {
   KEY_POWER_EMOJI_STATUS, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP,
   KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
+import { reuseParam } from '../../util/reuseParams';
 
 // 带 alpha 的 webm 贴纸：预解码好的 RGBA 帧画到 Canvas 上循环播放。
 //
@@ -73,7 +74,10 @@ export struct AlphaWebmStickerView {
 
   aboutToReuse(params: Record<string, Object>): void {
     this.loadSeq++;
-    const webmPath: string | undefined = params['webmPath'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
+    // util/reuseParams.ets）。取不到就保留 this.webmPath，下面的 setTimeout
+    // 仍然无条件跑。
+    const webmPath: string | undefined = reuseParam(params, 'webmPath') as string | undefined;
     if (webmPath !== undefined) {
       this.webmPath = webmPath;
     }

@@ -3,6 +3,7 @@ import {
   cachedPixelMap, cancelPixelMap, loadPixelMap, PixelHandle, PixelRequest,
   pinPixelMap, releasePixelMap, retainPixelMap
 } from '../../util/pixelCache';
+import { reuseParam } from '../../util/reuseParams';
 
 // An Image fed from the decoded-PixelMap cache instead of a file path.
 //
@@ -67,7 +68,10 @@ export struct CachedImage {
     // blank whenever a row was recycled while its decode was still in flight:
     // the decode got cancelled and no one ever asked again. start() is
     // idempotent, so an unnecessary call costs nothing.
-    const nextPath: string | undefined = params['path'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
+    // util/reuseParams.ets）。取不到就跳过 drop，等同于原有的「不判定」分支，
+    // 下面的 setTimeout 仍然无条件跑。
+    const nextPath: string | undefined = reuseParam(params, 'path') as string | undefined;
     if (nextPath !== undefined && this.heldReq !== null && this.heldReq.path !== nextPath) {
       // A recycled avatar/thumbnail must never display the previous row while
       // the new decode is pending. Same-source reuse still keeps its bitmap.

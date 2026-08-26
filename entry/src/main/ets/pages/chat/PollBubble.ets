@@ -1,6 +1,7 @@
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
+import { reuseParam } from '../../util/reuseParams';
 
 @Component
 export struct PollBubble {
@@ -36,8 +37,10 @@ export struct PollBubble {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
+    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
     const options: PollOptionInfo[] | undefined =
-      params['options'] as PollOptionInfo[] | undefined;
+      reuseParam(params, 'options') as PollOptionInfo[] | undefined;
     if (options !== undefined) {
       this.draftIds = this.chosenIdsFrom(options);
       this.draftChanged = false;

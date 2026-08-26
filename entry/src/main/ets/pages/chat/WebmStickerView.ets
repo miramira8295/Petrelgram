@@ -9,6 +9,7 @@ import {
 } from '../../store/AppSettings';
 import { probeHit } from '../../util/panelProbe';
 import { logE, logW } from '../../util/log';
+import { reuseParam } from '../../util/reuseParams';
 
 let nextWebmStickerId: number = 1;
 // Pre-EOF rewind: poll the position and seek to 0 this far before the end.
@@ -158,9 +159,13 @@ export struct WebmStickerView {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    const webmPath: string | undefined = params['webmPath'] as string | undefined;
-    const thumbPath: string | undefined = params['thumbPath'] as string | undefined;
-    const category: string | undefined = params['powerCategory'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
+    // util/reuseParams.ets）。取不到就保留 this.xxx 当前值，等同于原有的
+    // 「不赋值」分支。
+    const webmPath: string | undefined = reuseParam(params, 'webmPath') as string | undefined;
+    const thumbPath: string | undefined = reuseParam(params, 'thumbPath') as string | undefined;
+    const category: string | undefined =
+      reuseParam(params, 'powerCategory') as string | undefined;
     if (webmPath !== undefined) {
       this.webmPath = webmPath;
     }

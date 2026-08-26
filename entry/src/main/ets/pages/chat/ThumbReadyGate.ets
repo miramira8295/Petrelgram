@@ -1,4 +1,5 @@
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
+import { reuseParam } from '../../util/reuseParams';
 
 // 只在缩略图已经到位（或根本不必等）时渲染内容的小闸门。
 //
@@ -53,8 +54,11 @@ export struct ThumbReadyGate {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    const fileId: number | undefined = params['fileId'] as number | undefined;
-    const initialPath: string | undefined = params['initialPath'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
+    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
+    const fileId: number | undefined = reuseParam(params, 'fileId') as number | undefined;
+    const initialPath: string | undefined =
+      reuseParam(params, 'initialPath') as string | undefined;
     if (fileId !== undefined) {
       this.attach(fileId, initialPath ?? '');
       return;
