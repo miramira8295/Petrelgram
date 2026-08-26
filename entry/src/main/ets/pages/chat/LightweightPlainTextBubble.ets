@@ -32,7 +32,7 @@ import {
   COLOR_PRIMARY, COLOR_TEXT_SECONDARY, bubbleTextFor
 } from '../../util/theme';
 import { formatClockTime } from '../../util/formatTime';
-import { probeHit, reuseProbe, reuseProbeSkip } from '../../util/panelProbe';
+import { probeHit } from '../../util/panelProbe';
 import { CachedImage } from '../common/CachedImage';
 import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
@@ -122,10 +122,6 @@ struct LightweightSenderAvatar {
   // 订阅当前挂在哪个发送者 key 上：既用于同 key 短路（审计 P1-1，一次复用会
   // 经 aboutToReuse 和 @Watch 各挂一次），也让「订阅挂在哪」变成可判定的事实。
   private attachedKey: string = '';
-  // 探针专用的对照基准（P2-1，随探针一起删）：attachedKey 会在 detach 里归零，
-  // 而 aboutToRecycle 必然先于 aboutToReuse 跑，到探针那一刻它已经是空的。
-  // 这个副本只写不清，保存「上一次真正挂上去的 sender key」——确定的上一条。
-  private probeAttachedKey: string = '';
 
   private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
@@ -138,7 +134,6 @@ struct LightweightSenderAvatar {
     }
     this.detach();
     this.attachedKey = key;
-    this.probeAttachedKey = key;
     this.path = known !== '' ? known : initialPath;
     this.unsub = subscribeSenderAvatar(key, (path: string): void => { this.path = path; });
   }
@@ -176,24 +171,17 @@ struct LightweightSenderAvatar {
     const senderId: number | undefined = params['senderId'] as number | undefined;
     const senderIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
     const initialPath: string | undefined = params['initialPath'] as string | undefined;
-    // P2-1 探针：递归复用时 params 是新是旧，静态判不了。基准是
-    // probeAttachedKey（上一条真正挂上去的 sender），不是 this.senderId——
-    // 极性判反的理由见 panelProbe.reuseProbe 的注释。
-    const probeKey: string = (senderId === undefined || senderIsUser === undefined)
-      ? '' : senderChannelKey(senderId, senderIsUser);
-    const probeStale: boolean =
-      probeKey === '' || (this.probeAttachedKey !== '' && probeKey === this.probeAttachedKey);
-    if (!reuseProbeSkip(probeStale)) {
-      reuseProbe('LightweightSenderAvatar', 'senderId', senderId !== undefined, probeStale,
-        `sender=${probeKey}`, `sender=${this.probeAttachedKey},prop=${this.senderId}`);
-    }
     if (senderId !== undefined && senderIsUser !== undefined) {
       this.attach(senderId, senderIsUser, initialPath ?? '');
     } else {
-      // **这条兜底不是冗余，不要删（I-3）。** @Watch 只在值变化时触发，连续两条
-      // 同一发送者的消息 senderId 不变 → onSenderChanged 不跑；而 aboutToRecycle
-      // 已经清了 path、退了订阅、把 attachedKey 归零。那时这里是唯一复活路径，
-      // 删掉会得到永久空白头像。
+      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：params
+      // 恒带全 senderId/senderIsUser，present=0 一次都没出现，params 与此刻的
+      // @Prop 也从未不一致——这条分支在当前调用图下**不可达**。
+      // **推导（不是实测）**：仍然不能删（I-3）。@Watch 只在值变化时触发，连续
+      // 两条同一发送者的消息 senderId 不变 → onSenderChanged 不跑；而
+      // aboutToRecycle 已经清了 path、退了订阅、把 attachedKey 归零，那时这里是
+      // 唯一复活路径，删掉会得到永久空白头像。迁 @ReusableV2 后 aboutToReuse
+      // 没有入参（审计 C2），这条还会变成唯一分支。
       setTimeout((): void => {
         this.attach(this.senderId, this.senderIsUser, this.initialPath);
       }, 0);
@@ -342,10 +330,6 @@ export struct LightweightPlainTextBubble {
   // 会经 aboutToReuse 和 @Watch onMessageChanged 各挂一次）+ 按 key 自愈。
   private attachedKey: string = '';
 
-  // 探针专用的对照基准（P2-1，随探针一起删）：理由同头像那个副本——
-  // attachedKey 在 detachChannels 里归零，探针跑的时候它已经是空的。
-  private probeAttachedKey: string = '';
-
   private attachChannels(message: MessageEntry): void {
     const key: string = `${message.rowId}:${message.id}`;
     if (this.unsubSend !== null && this.attachedKey === key) {
@@ -356,7 +340,6 @@ export struct LightweightPlainTextBubble {
     }
     this.detachChannels();
     this.attachedKey = key;
-    this.probeAttachedKey = key;
     this.seedChannelValues(message);
     this.unsubSend = subscribeSendState(message.rowId,
       (state: string): void => { this.liveSendState = state; });
@@ -414,23 +397,16 @@ export struct LightweightPlainTextBubble {
     this.resetTransient();
     this.clearChannelValues();
     const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
-    // P2-1 探针：见 reuseProbe 的说明。基准是 probeAttachedKey（上一条真正挂
-    // 上去的消息），不是 this.msg——极性判反的理由在那条注释里。this.msg 是
-    // 无初值的 @Prop，半成品组件上可能还没落地，读它一律走保护（I-1）。
-    const probeKey: string = next === undefined ? '' : `${next.rowId}:${next.id}`;
-    const probeStale: boolean =
-      probeKey === '' || (this.probeAttachedKey !== '' && probeKey === this.probeAttachedKey);
-    if (!reuseProbeSkip(probeStale)) {
-      reuseProbe('LightweightPlainTextBubble', 'msg', next !== undefined, probeStale,
-        `row=${probeKey}`,
-        `row=${this.probeAttachedKey},prop=${this.msg === undefined ? -1 : this.msg.rowId}`);
-    }
     if (next !== undefined) {
       this.attachChannels(next);
     } else {
-      // **这条兜底不是冗余，不要删（I-3）。** onMessageChanged 只在 @Prop msg
-      // 真的**变化**时触发；复用回同一条消息时它不跑，而 aboutToRecycle 已经
-      // 退订并把 attachedKey 归零。那时这里是唯一的重挂路径。
+      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：params
+      // 恒带 msg，present=0 一次都没出现，params 与此刻的 @Prop 也从未不一致
+      // ——这条分支在当前调用图下**不可达**。
+      // **推导（不是实测）**：仍然不能删（I-3）。onMessageChanged 只在 @Prop msg
+      // 真的变化时触发；复用回同一条消息时它不跑，而 aboutToRecycle 已经退订并
+      // 把 attachedKey 归零，那时这里是唯一的重挂路径。迁 @ReusableV2 后
+      // aboutToReuse 没有入参（审计 C2），这条还会变成唯一分支。
       setTimeout((): void => { this.attachChannels(this.msg); }, 0);
     }
     // 见 MessageBubble 同一处：复用后玻璃层要重新量。

@@ -39,43 +39,6 @@ export function probeHit(name: string, times: number = 1): void {
   }
 }
 
-// [ReuseProbe] 复用语义探针（审计 P2-1，docs/superpowers/specs/2026-08-26-p2-state-audit.md
-// 第 4 节 ①-1）。递归复用时子组件 aboutToReuse 收到的 params 到底是新一轮构造
-// 参数、上一轮的旧值、还是根本没有，官方文档没有规定，静态代码也判不出来。
-// 这条探针是 P0-4 定级的唯一依据：params 恒为新值 → P0-4 是防御性加固；
-// 出现旧值或缺失 → P0-4 是真 bug 修复。上机读一次日志后再决定删不删。
-//
-// 为什么不用 probeHit 的聚合：这里要看的是具体 id 的对比，聚合计数答不了。
-//
-// **判据必须以 attach 时记下的「上一条」为基准，绝不能拿 this.msg / this.group
-// 当基准。** 「aboutToReuse 触发时 @Prop 有没有落地」正是这条探针要回答的那个
-// 未知数（代码里两处注释自己写着 "Child @Prop refreshes may land after this
-// callback"），拿未知数当基准会把极性判反：params 是新值（健康）时反而与旧的
-// this.msg 不等被判成异常，params 是旧值（真 bug）时反而与旧的 this.msg 相等
-// 被判成正常、还会被限流静音掉。
-// 所以基准取各组件 attach 时记下的 id（probeAttachedRowId / probeAttachedKey）：
-//   param id **等于** attached id → params 带的是**上一条**的陈旧值 → STALE（危险）
-//   param id **不等于** attached id → params 带的是新值 → fresh（健康）
-//   present=0（根本没带这个 key）同样记 STALE。
-//
-// 限流只静音**健康行**：前 REUSE_PROBE_VERBOSE 行无条件打（看常态），之后
-// fresh 行不再打，STALE 行永远打——危险样本一条都不能被刷屏限流吃掉。
-const REUSE_PROBE_VERBOSE: number = 200;
-let reuseProbeLines: number = 0;
-
-// 调用点先判这个再拼日志串（I-5）：健康且超配额时直接跳过，两个格式化 id 串
-// 连构造都不构造，不给滚动热路径加常数开销。
-export function reuseProbeSkip(stale: boolean): boolean {
-  reuseProbeLines++;
-  return !stale && reuseProbeLines > REUSE_PROBE_VERBOSE;
-}
-
-export function reuseProbe(component: string, key: string, present: boolean,
-    stale: boolean, paramIds: string, attachedIds: string): void {
-  logE(`[ReuseProbe] ${component} key=${key} present=${present ? 1 : 0}` +
-    ` param(${paramIds}) attached(${attachedIds}) ${stale ? 'STALE' : 'fresh'}`);
-}
-
 // 一次性的、需要看具体数值的事件（比如整表 RELOAD 带了多少条），直接打出来。
 // 这类事件本身应当是低频的——如果它高频到刷屏，那件事本身就是要找的问题。
 export function probeEvent(name: string, detail: string): void {

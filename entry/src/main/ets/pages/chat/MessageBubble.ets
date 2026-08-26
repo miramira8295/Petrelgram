@@ -50,7 +50,6 @@ import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
 import { plural, str } from '../../util/strings';
-import { reuseProbe, reuseProbeSkip } from '../../util/panelProbe';
 import { LiveProgressRing } from './LiveProgressRing';
 import { progressForOr, subscribeProgress } from '../../util/mediaProgressChannel';
 import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
@@ -136,11 +135,6 @@ struct LiveSenderAvatar {
   // 复用会经 aboutToReuse 和 @Watch 各挂一次，每次都是一整轮退订+重订阅）；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 有没有到。
   private attachedAvatarKey: string = '';
-  // 探针专用的对照基准（P2-1，随探针一起删）。attachedAvatarKey 会在 detach
-  // 里归零——而 aboutToRecycle 必然先于 aboutToReuse 跑，到探针那一刻它已经
-  // 是空的，拿它当基准什么也判不出。这个副本只写不清，保存「上一次真正挂上
-  // 去的那个 sender key」，即确定无疑的**上一条**。
-  private probeAttachedKey: string = '';
 
   private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
@@ -153,7 +147,6 @@ struct LiveSenderAvatar {
     }
     this.detachAvatarChannel();
     this.attachedAvatarKey = key;
-    this.probeAttachedKey = key;
     this.path = known !== '' ? known : initialPath;
     this.unsubAvatar = subscribeSenderAvatar(key, (path: string): void => {
       this.path = path;
@@ -201,28 +194,20 @@ struct LiveSenderAvatar {
     const nextId: number | undefined = params['senderId'] as number | undefined;
     const nextIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
     const nextPath: string | undefined = params['initialPath'] as string | undefined;
-    // P2-1 探针：递归复用时子组件拿到的 params 是新是旧无法静态判定。
-    // 基准是 probeAttachedKey（上一条真正挂上去的 sender），不是 this.senderId
-    // ——极性判反的理由见 panelProbe.reuseProbe 的注释。
-    const probeKey: string = (nextId === undefined || nextIsUser === undefined)
-      ? '' : senderChannelKey(nextId, nextIsUser);
-    const probeStale: boolean =
-      probeKey === '' || (this.probeAttachedKey !== '' && probeKey === this.probeAttachedKey);
-    if (!reuseProbeSkip(probeStale)) {
-      reuseProbe('MessageBubble.LiveSenderAvatar', 'senderId', nextId !== undefined, probeStale,
-        `sender=${probeKey}`, `sender=${this.probeAttachedKey},prop=${this.senderId}`);
-    }
     if (nextId !== undefined && nextIsUser !== undefined) {
       this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');
       return;
     }
-    // Child @Prop refreshes may land after this callback on some runtime
-    // revisions. Reconnect once they have settled instead of retaining the
-    // recycled row's sender channel.
-    // **这条兜底不是冗余，不要删（I-3）。** @Watch 只在值**变化**时触发，而
-    // 连续两条同一发送者的消息 senderId 不变 → onSenderChanged 根本不会跑；
-    // 而 aboutToRecycle 已经把 path 清空、订阅退掉、attachedAvatarKey 归零。
-    // 那种情况下这条 setTimeout 是唯一的复活路径，删掉会得到永久空白头像。
+    // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：
+    // aboutToReuse 执行时 params 恒带全 senderId/senderIsUser，present=0 一次
+    // 都没出现，且 params 与此刻的 @Prop 从未不一致。也就是说这条兜底分支在
+    // 当前调用图下**不可达**。
+    // **推导（不是实测）**：它仍然不能删（I-3）。@Watch 只在值**变化**时触发，
+    // 连续两条同一发送者的消息 senderId 不变 → onSenderChanged 根本不跑；而
+    // aboutToRecycle 已经把 path 清空、订阅退掉、attachedAvatarKey 归零。那种
+    // 情况下这条 setTimeout 是唯一的复活路径，删掉会得到永久空白头像。
+    // 另外迁到 @ReusableV2 后 aboutToReuse 没有入参（审计 C2），这条会从
+    // 不可达分支变成唯一分支。
     setTimeout((): void => {
       this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
     }, 0);
@@ -277,11 +262,6 @@ export struct MessageBubble {
   // P0-4（审计 3.2b）：这是本组件订阅自愈的唯一依据——「params 里的 msg 是新
   // 是旧」静态判不了，「订阅挂在哪」却是本地可判定的事实。0 = 未挂。
   private attachedRowId: number = 0;
-  // 探针专用的对照基准（P2-1，随探针一起删）。attachedRowId 会在
-  // detachMessageChannels 里归零，而 aboutToRecycle 必然先于 aboutToReuse 跑，
-  // 到探针那一刻它已经是 0，拿它当基准什么也判不出。这个副本只写不清，保存
-  // 「上一次真正挂上去的那条消息的 rowId」，即确定无疑的**上一条**。
-  private probeAttachedRowId: number = 0;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
   @Prop themeBubbleOut: string = '';
   // 本地外观：epoch 一变，气泡底色/文字色（theme 里的活绑定）跟着重取。
@@ -587,7 +567,6 @@ export struct MessageBubble {
     }
     // 记下这套订阅挂在哪条消息上，供 onMsgPropChanged 判断是否需要重挂（P0-4）。
     this.attachedRowId = message.rowId;
-    this.probeAttachedRowId = message.rowId;
   }
 
   private detachMessageChannels(): void {
@@ -729,26 +708,14 @@ export struct MessageBubble {
     this.clearTransientState();
     this.clearChannelValues();
     const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
-    // P2-1 探针（审计第 4 节 ①-1）：递归复用时这里的 params 是新值、旧值
-    // 还是缺失，文档没规定、静态代码判不出来，只能上机读日志。
-    // 基准是 probeAttachedRowId（上一条真正挂上去的消息），不是 this.msg
-    // ——极性判反的理由见 panelProbe.reuseProbe 的注释。
-    // this.msg 是**无初值**的 @Prop，C3/C4 那条「复用中新建、aboutToReuse 跑在
-    // 半成品上」的路径下可能还没落地，所以下面读它一律走 undefined 保护（I-1）。
-    const probeRow: number = next === undefined ? -1 : next.rowId;
-    const probeStale: boolean =
-      next === undefined || (this.probeAttachedRowId !== 0 && probeRow === this.probeAttachedRowId);
-    if (!reuseProbeSkip(probeStale)) {
-      reuseProbe('MessageBubble', 'msg', next !== undefined, probeStale,
-        `row=${probeRow},msg=${next === undefined ? -1 : next.id}`,
-        `row=${this.probeAttachedRowId},prop=${this.msg === undefined ? -1 : this.msg.rowId}`);
-    }
     if (next === undefined) {
-      // @Prop refreshes land after this callback. The normal wrapper always
-      // supplies msg in params; keep a safe fallback for framework variations.
-      // **这条兜底不是冗余，不要删（I-3）。** 复用回同一条消息时 @Prop msg 没
-      // 变化 → onMsgPropChanged 不触发 → P0-4 那条自愈也不跑；而 aboutToRecycle
-      // 已经退订并把 attachedRowId 归零。那种情况下这里是唯一的重挂路径。
+      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：
+      // params 恒带 msg，present=0 一次都没出现——这条兜底分支当前**不可达**。
+      // **推导（不是实测）**：仍然不能删（I-3）。复用回同一条消息时 @Prop msg
+      // 没变化 → onMsgPropChanged 不触发 → P0-4 那条自愈也不跑；而
+      // aboutToRecycle 已经退订并把 attachedRowId 归零，那时这里是唯一的重挂
+      // 路径。迁 @ReusableV2 后 aboutToReuse 没有入参（C2），这条还会变成唯一
+      // 分支。
       setTimeout((): void => {
         this.resetReusedState(this.msg);
         this.attachMessageChannels(this.msg);
@@ -780,17 +747,20 @@ export struct MessageBubble {
       this.senderLabelW = 0;
       this.commentsRowW = 0;
     }
-    // P0-4（审计 3.2b——本次审计里唯一一个**不会自愈**的缺陷）。
-    // 这个函数原来的前提是「同一个组件原地换了 msg：rowId 不变，订阅仍然
-    // 有效」。原地更新下成立，复用成另一条消息下不成立：只要 aboutToReuse
-    // 拿到的 params['msg'] 是旧对象（递归复用无法静态排除，迁 V2 后必然
-    // 如此），attachMessageChannels(旧 msg) 会把 6 个通道永久挂在上一条
-    // 消息的 rowId / fileId 上，而且后续没有任何路径能纠正。
-    // 按「订阅挂在哪个 rowId 上」自愈：不一致就整套重挂。这样即使 params
-    // 拿不到、即使 @Prop 落地晚一帧，组件也能自己纠正——和
-    // LightweightPlainTextBubble.onMessageChanged / ReusableMessageBubble
-    // .onGroupChanged 拉平。重挂本身就带重播种，下面几行只对 rowId 未变的
-    // 真·原地更新起作用（幂等，重复播种无害）。
+    // P0-4（审计 3.2b）：按「订阅挂在哪个 rowId 上」自愈——不一致就整套重挂。
+    // 担心的是 aboutToReuse 把 6 个通道挂在上一条消息的 rowId / fileId 上而
+    // 后续无人纠正（审计当时无法静态排除这一点）。
+    //
+    // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：
+    // aboutToReuse 执行时 params 与 @Prop msg **都已经是新消息的数据**，两者
+    // 从未不一致，present=0 从未出现。所以在**当前调用图**下这段自愈是
+    // **防御性**的，不是在修一个正在发生的 bug。
+    //
+    // **但不要因为「现在用不上」把它删掉。** @ReusableV2 的 aboutToReuse
+    // 没有入参（审计 C2），迁 V2 之后 params 恒空，这套按 rowId 的自愈就是
+    // 唯一依靠。它也让本组件和 LightweightPlainTextBubble.onMessageChanged /
+    // ReusableMessageBubble.onGroupChanged 拉平。
+    // 重挂本身带重播种，下面几行只对 rowId 未变的真·原地更新起作用（幂等）。
     if (this.msg.rowId !== this.attachedRowId) {
       this.attachMessageChannels(this.msg);
     }

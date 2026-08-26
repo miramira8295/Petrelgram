@@ -2,7 +2,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import {
   messageRowPresentationFor, subscribeMessageRowPresentation
 } from '../../util/messageRowPresentationChannel';
-import { probeHit, reuseProbe, reuseProbeSkip } from '../../util/panelProbe';
+import { probeHit } from '../../util/panelProbe';
 import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { MessageBubble } from './MessageBubble';
 
@@ -181,10 +181,6 @@ export struct ReusableMessageBubble {
   // 都是一整轮「退订 + 读现值 + 重订阅」，是滚动时的每行常数开销。
   // 记下 key 同时也让「订阅挂在哪」成为可判定的事实，谁先到都不影响正确性。
   private attachedKey: string = '';
-  // 探针专用的对照基准（P2-1，随探针一起删）：attachedKey 在 detachPresentation
-  // 里归零，而 aboutToRecycle 必然先于 aboutToReuse 跑，探针那一刻它已经是空的。
-  // 这个副本只写不清，保存「上一次真正挂上去的那一行」——确定的上一条。
-  private probeAttachedKey: string = '';
 
   private attachPresentation(group: AlbumGroup): void {
     const key: string = `${this.data.chatId}:${group.head.rowId}`;
@@ -196,7 +192,6 @@ export struct ReusableMessageBubble {
     }
     this.detachPresentation();
     this.attachedKey = key;
-    this.probeAttachedKey = key;
     this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
     this.unsubPresentation = subscribeMessageRowPresentation(
       this.data.chatId,
@@ -233,30 +228,16 @@ export struct ReusableMessageBubble {
 
   aboutToReuse(params: Record<string, Object>): void {
     const next: AlbumGroup | undefined = params['group'] as AlbumGroup | undefined;
-    // P2-1 探针（审计第 4 节 ①-1）：这一层是 LazyForEach 直接建的顶层复用
-    // 组件，params 理应恒有 group；打出来是为了拿到「顶层」的对照组，好判断
-    // 递归到子组件时 params 变空/变旧到底发生在哪一层。
-    // 基准是 probeAttachedKey（上一条真正挂上去的行），不是 this.group——
-    // 极性判反的理由见 panelProbe.reuseProbe。this.group 是无初值的 @Prop，
-    // 半成品组件上可能还没落地，读它一律走保护（I-1）。
-    // M-3：this.data 同样是无初值的 @Prop，按 I-1 一样的判据（半成品组件上
-    // @Prop 可能还没落地）走保护，chatId 取不到时记 -1。
-    const probeChatId: number = this.data === undefined ? -1 : this.data.chatId;
-    const probeKey: string =
-      next === undefined ? '' : `${probeChatId}:${next.head.rowId}`;
-    const probeStale: boolean =
-      probeKey === '' || (this.probeAttachedKey !== '' && probeKey === this.probeAttachedKey);
-    if (!reuseProbeSkip(probeStale)) {
-      reuseProbe('ReusableMessageBubble', 'group', next !== undefined, probeStale,
-        `row=${probeKey},msg=${next === undefined ? -1 : next.head.id}`,
-        `row=${this.probeAttachedKey},prop=${this.group === undefined ? -1 : this.group.head.rowId}`);
-    }
     if (next !== undefined) {
       this.attachPresentation(next);
     } else {
-      // **这条兜底不是冗余，不要删（I-3）。** onGroupChanged 只在 @Prop group
-      // 真的**变化**时触发；复用回同一行时它不跑，而 aboutToRecycle 已经退订、
-      // 把 liveGroup 置 null、attachedKey 归零。那时这里是唯一的重挂路径。
+      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：params
+      // 恒带 group，present=0 一次都没出现，params 与此刻的 @Prop 也从未不一致
+      // ——这条分支在当前调用图下**不可达**。
+      // **推导（不是实测）**：仍然不能删（I-3）。onGroupChanged 只在 @Prop group
+      // 真的变化时触发；复用回同一行时它不跑，而 aboutToRecycle 已经退订、把
+      // liveGroup 置 null、attachedKey 归零，那时这里是唯一的重挂路径。迁
+      // @ReusableV2 后 aboutToReuse 没有入参（审计 C2），这条还会变成唯一分支。
       setTimeout((): void => { this.attachPresentation(this.group); }, 0);
     }
   }
