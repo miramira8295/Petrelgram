@@ -73,6 +73,7 @@ import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
 import { reuseParam } from '../../util/reuseParams';
+import { probeHit } from '../../util/panelProbe';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -702,6 +703,34 @@ export struct MessageBubble {
   // Keep this cleanup defensive in case the component is hosted by a reusable
   // parent elsewhere. ChatPage itself currently does not use that path.
   aboutToRecycle(): void {
+    // ── 复用钩子证据探针（F-5，**临时**，删除清单见本函数下方）─────────
+    //
+    // 这是整条复用链路上唯一还**没有任何运行时证据**的一环。
+    // util/reuseParams.ets 的文件头处理的是「params 取不到」，但更坏的一支
+    // 没人处理过：官方《@ReusableV2装饰器》只写「递归地调用所有子组件的
+    // aboutToReuse 回调（即使子组件未被标记可复用）」，**没写清递归到 V1 子
+    // 组件时到底走不走**。本组件是 V1，挂在 @ReusableV2 的 ReusableMessageBubble
+    // 之下。
+    //
+    // 后果是不对称的：下面的 clearTransientState() 清 16 项（剧透揭开态
+    // revealedSpoilerKeys、引用展开态 expandedQuoteKeys、glassW/glassH、
+    // swipeReplyX、mediaVisible 等），而唯一的自愈路径 onMsgPropChanged 只补
+    // 三项。钩子不触发 ⇒ 复用出来的行带着上一条消息的剧透已揭开、引用已展开、
+    // 错误的玻璃裁剪尺寸。
+    //
+    // 而支撑「钩子会触发」的那 820 个复用样本是 **P2 时期父级还是 V1
+    // @Reusable** 时采的（探针已在 ad3d4ab 下架），对当前形态**没有证据力**。
+    //
+    // 用 util/panelProbe 的聚合探针：只累加计数，每秒吐一行汇总，静止时一行
+    // 都不打，代价可忽略。上机判读：
+    //   recycle / reuse 两个计数都在涨 ⇒ 递归到 V1 子组件成立，本探针可删；
+    //   recycle 在涨、reuse 恒为 0     ⇒ 钩子**不触发**，clearTransientState
+    //                                    的 16 项必须换成 onMsgPropChanged
+    //                                    那条按 rowId 的自愈路径补全；
+    //   两个都恒为 0                   ⇒ 这一层根本没被回收（Repeat 的
+    //                                    reusable:false 之下由 @ReusableV2 承担
+    //                                    复用），回头查全局池的分桶计数。
+    probeHit('msgBubble.recycle');
     this.detachMessageChannels();
     this.reportCompetingMediaGone();
     // 和 aboutToReuse 用同一份清理（P0-3 + 3.2a）：组件躺进复用池之前就把
@@ -713,7 +742,14 @@ export struct MessageBubble {
     this.clearChannelValues();
   }
 
+  // ── F-5 探针删除清单（判读完成后一次删干净）────────────────────────
+  //   1. 本文件里的三处 probeHit（'msgBubble.recycle' / 'msgBubble.reuse' /
+  //      'msgBubble.reuse.noParams'）及其上面这两段说明；
+  //   2. 本文件顶部 `import { probeHit } from '../../util/panelProbe';`；
+  //   3. util/panelProbe.ets 本身——**只有在贴纸面板那轮标定也结束时才删**，
+  //      它是共用的（见该文件头「定位完整体删除」）。
   aboutToReuse(params: Record<string, Object>): void {
+    probeHit('msgBubble.reuse');
     // 无条件前置（审计 S1 / P0-3）：不依赖新参数的清理跑在 params 判断之前。
     // 父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，下面的
     // setTimeout **已经是**唯一分支——这两行依然成立，最差是「空一帧」，
@@ -732,6 +768,9 @@ export struct MessageBubble {
       // aboutToRecycle 已经退订并把 attachedRowId 归零，那时这里是唯一的重挂
       // 路径。父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，
       // 这条**已经是**唯一分支。
+      // 这一支在 P2 的 820 个样本里一次都没出现过，但那份样本对当前形态没有
+      // 证据力（见 aboutToRecycle 的说明）。单独计数，好和总数对账。
+      probeHit('msgBubble.reuse.noParams');
       setTimeout((): void => {
         this.resetReusedState(this.msg);
         this.attachMessageChannels(this.msg);
