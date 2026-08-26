@@ -151,22 +151,46 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onRetryTranslation: (_id: number): void => {}, onLiveStreamTap: (_id: number): void => {}
 };
 
-// The reuse pool this @Reusable declares lives on the PARENT custom component
+// The reuse pool this @ReusableV2 declares lives on the PARENT custom component
 // (ChatPage, via the LazyForEach item builder) — a component that does not
 // itself reuse does not keep its children's pools alive across recycles. This
 // shell is the right place for the annotation precisely because ChatPage
 // never gets destroyed while the list scrolls; MessageBubble/
 // LightweightPlainTextBubble below must not carry @Reusable of their own.
-// aboutToReuse/aboutToRecycle state-reset work is out of scope here (next
-// task); only the annotation and the reuseId wiring belong to this step.
-@Reusable
-@Component
+//
+// 必须和 ChatPage 同批迁 V2：官方混用表「V2 普通组件 -> V1 复用组件：不支持，
+// 编译告警，实际使用子组件不创建」——ChatPage 变 V2 而这里还是 @Reusable
+// @Component，整个消息列表运行时一行都不会创建（而且只是个告警，实测本仓
+// 编译连告警都没报出来）。
+//
+// 子树保持 V1：混用表「V2 复用组件 -> V1 普通组件：支持」。MessageBubble /
+// LightweightPlainTextBubble 里现有的 aboutToRecycle 手工清理**全部保留**——
+// 官方只承诺「所有的 V2 自定义组件」会被自动重置，V1 子组件不在其中。
+@ReusableV2
+@ComponentV2
 export struct ReusableMessageBubble {
-  @Prop @Watch('onGroupChanged') group: AlbumGroup;
-  @Prop nowSec: number = 0;
-  @Prop data: MessageBubbleRenderData;
-  actions: MessageBubbleActions = EMPTY_ACTIONS;
-  @State private liveGroup: AlbumGroup | null = null;
+  // @Param 而不是 V1 的 @Prop：官方迁移表「当输入参数为复杂类型时，@Prop 为
+  // 深拷贝，@Param 为引用」。这三个入参每帧每行都要过一遍，深拷贝换成引用是
+  // 这次迁移在滚动路径上唯一的直接收益。
+  //
+  // 不需要 UIUtils.enableV2Compatibility：AlbumGroup / MessageBubbleRenderData
+  // 都是 interface（非 @Observed / @ObservedV2），且上游 collapseAlbums() 每次
+  // 产出全新对象、ChatPage 侧只做整体替换（零原地修改，已逐个 grep 核过），
+  // 所以不存在「同一个可变对象被两套体系各自代理」的双重代理场景，桥接是 no-op。
+  @Require @Param group: AlbumGroup;
+  @Param nowSec: number = 0;
+  @Require @Param data: MessageBubbleRenderData;
+  // **调研 §2.3 说这里「保持无装饰器」，那是错的，被编译器直接推翻**：
+  //   ArkTS Compiler Error 10905324 — The 'regular' property 'actions' in the
+  //   custom component 'ReusableMessageBubble' cannot be initialized here
+  //   (forbidden to specify).
+  // V1 允许父组件一次性初始化无装饰器成员，V2 不允许——无装饰器成员在
+  // @ComponentV2 里是**纯本地常量**，外部构造传参是编译错误。所以必须加
+  // @Param。
+  // 代价可以忽略：messageActions() 惰性建一次、全生命周期同一个引用，
+  // @Param 每帧只多一次 === 比较，比较结果恒为相等，不会触发任何刷新。
+  @Param actions: MessageBubbleActions = EMPTY_ACTIONS;
+  @Local private liveGroup: AlbumGroup | null = null;
   private unsubPresentation: (() => void) | null = null;
 
   private currentGroup(): AlbumGroup {
@@ -208,6 +232,9 @@ export struct ReusableMessageBubble {
     this.attachedKey = '';
   }
 
+  // @Monitor 而不是 V1 的 @Watch。注意它**在复用时不会触发**，见 aboutToReuse。
+  // 非复用路径（同一个实例上 group 真的换了行）仍然走这里。
+  @Monitor('group')
   private onGroupChanged(): void {
     this.attachPresentation(this.group);
   }
@@ -222,24 +249,36 @@ export struct ReusableMessageBubble {
   }
 
   aboutToRecycle(): void {
+    // detachPresentation() 不能因为「V2 会自动重置」而删掉：重置表最后一行
+    // 「常量：包括 readonly 的常量，不重置」，而 attachedKey / unsubPresentation
+    // 都是无装饰器成员，V2 视作常量——不退订就会漏订阅。
+    // liveGroup 这一次赋值在 V2 下不会刷新 UI（回收期间组件被冻结），但赋值
+    // 本身生效，且 @Local 复用时也会被自动重置回 null。语义等价，保留更安全。
     this.detachPresentation();
     this.liveGroup = null;
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
-    const next: AlbumGroup | undefined = params['group'] as AlbumGroup | undefined;
-    if (next !== undefined) {
-      this.attachPresentation(next);
-    } else {
-      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：params
-      // 恒带 group，present=0 一次都没出现，params 与此刻的 @Prop 也从未不一致
-      // ——这条分支在当前调用图下**不可达**。
-      // **推导（不是实测）**：仍然不能删（I-3）。onGroupChanged 只在 @Prop group
-      // 真的变化时触发；复用回同一行时它不跑，而 aboutToRecycle 已经退订、把
-      // liveGroup 置 null、attachedKey 归零，那时这里是唯一的重挂路径。迁
-      // @ReusableV2 后 aboutToReuse 没有入参（审计 C2），这条还会变成唯一分支。
-      setTimeout((): void => { this.attachPresentation(this.group); }, 0);
-    }
+  aboutToReuse(): void {
+    // 迁 @ReusableV2 之后，原来那条读 params['group'] 的快路径**不存在了**：
+    // 官方《@ReusableV2装饰器：V2组件复用》——「与@Reusable不同的是，
+    // aboutToReuse 没有入参」。
+    //
+    // 而 @Monitor('group') 在复用时也**不跑**：同一篇「复用前的组件内状态变量
+    // 重置」表写明「@Monitor：在上述所有变量重置完成之后触发。**重置过程中产生
+    // 的变量变化不会触发 @Monitor 回调**，仅更新 IMonitorValue 中的 before 值」。
+    // aboutToRecycle 已经退订、把 liveGroup 置 null、attachedKey 归零，所以复用
+    // 回来时没有别的路会重挂订阅。
+    //
+    // → 这条 setTimeout 兜底**已经是唯一的重挂路径**（P2 时它还只是「迁 V2 后
+    //   会变成唯一分支」的预判；现在是事实）。删掉它 = 复用出来的行永远停在
+    //   @Param 的静态快照上，下载进度/编辑/表态都不再跟。
+    //
+    // 为什么仍然推迟一帧而不是同步调用：官方没有写清「状态变量重置」与
+    // 「aboutToReuse 回调」的精确先后（冻结那一节说冻结「持续到 aboutToReuse
+    // 前」，重置那一节只说「复用前」），**无法确定**此刻 this.group 已经是新值
+    // 还是仍是旧值。推迟一帧读到的必然是新值。上机探针确认之后（P3 批 2 第一
+    // 项）再决定能不能改成同步、省这一帧。
+    setTimeout((): void => { this.attachPresentation(this.group); }, 0);
   }
 
   build() {

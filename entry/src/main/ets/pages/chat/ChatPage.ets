@@ -1200,6 +1200,20 @@ export struct ChatPage {
     return prepared;
   }
 
+  // @ReusableV2 用 .reuse({ reuseId })（API 18 起）取代 V1 的 .reuseId()。
+  //
+  // ⚠️ 官方《复用选项》对 reuseId 有一条版本相关的行为差，调研没有覆盖到：
+  // 「在 API 版本 26.0.0 之前，当 reuseId 不是**显式返回字符串字面量**的回调
+  // 方法时，实际的复用标识 id 为该自定义组件的名称」。下面这个回调不是字面量，
+  // 所以在旧行为下会被降级成单一的 'ReusableMessageBubble'，REUSE_ID_LEVEL 的
+  // 分档静默失效、所有行共用一个池。
+  //
+  // 走的是哪一侧，看编译产物就知道——ets-loader 把它编成了运行时判断：
+  //   getReuseId: getUINativeModule().common.getApiTargetVersion() >= 26
+  //     ? () => rowReuseId(...) : () => "ReusableMessageBubble"
+  // 闸门是 **getApiTargetVersion()**，也就是 build-profile 里的 targetSdkVersion
+  // （本仓 "26.0.0"），不是 compatibleSdkVersion("6.0.0(20)")、也不是设备版本。
+  // 按这条推断分档是生效的，但这是读产物推出来的，**没上机验过**，列入待验清单。
   @Builder
   private preparedMessageBubble(prepared: PreparedMessageBubble) {
     ReusableMessageBubble({
@@ -1207,7 +1221,7 @@ export struct ChatPage {
       nowSec: this.nowSec,
       data: prepared.data,
       actions: this.messageActions()
-    }).reuseId(rowReuseId(prepared.data, prepared.group, REUSE_ID_LEVEL));
+    }).reuse({ reuseId: (): string => rowReuseId(prepared.data, prepared.group, REUSE_ID_LEVEL) });
   }
   @Local subtitle: string = '';
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
