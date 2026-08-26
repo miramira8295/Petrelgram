@@ -32,6 +32,7 @@ import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../.
 import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import { ReuseIdLevel, rowReuseId } from '../../util/rowReuseId';
+import { globalReusePoolAvailable } from '../../util/messageReusePool';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
 import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
 import {
@@ -397,9 +398,70 @@ struct ChatPageChrome {
   }
 }
 
+// 消息行外壳的**全局复用池宿主**（API 26 起）。
+//
+// 它只做一件事：在 ChatPageChrome 之上多一层，把 reusePool / poolAccepts 挂
+// 出去。官方《全局复用：集中化的组件回收与复用》——复用组件创建或销毁时，
+// 框架「向上遍历组件树」找接纳该类型的全局池；找不到就退回父组件的默认池。
+// 所以宿主只需要是 ReusableMessageBubble 的**任一祖先**，不必是它的父组件，
+// 也不必知道列表长什么样。
+//
+// ── 为什么必须是单独一层，而不是把参数写在 ChatPageChrome 或 ChatPage 上 ──
+//
+// reusePool / poolAccepts 是**装饰器参数**，编译期就定死，没有任何运行时开关。
+// 而这个能力从 API 26 才有，本仓 compatibleSdkVersion 是 6.0.0(20)。要做成
+// 双路径，唯一的办法是让「挂了池的组件」和「没挂池的组件」是两个不同的类，
+// 在运行时按设备版本二选一地**实例化**——见下面的 ChatPageBuilder。
+//
+// 低版本上这个 struct 只是一个从不被 new 出来的类：ChatPageBuilder 那条 if
+// 永远走 else，池配置一次也不会被触碰，行为与 P4 完全一致（回退到默认复用池）。
+//
+// ── 为什么是 'shared' 而不是 'perInstance' ──
+//
+// 本应用的聊天详情页**可以同时存在多个实例**：
+//   - 平板分栏（docs 2026-08-21-tablet-split-view-design）左右两栏各一页；
+//   - Navigation 栈里从搜索结果进会话、再返回，栈上会先后压着两份；
+//   - 会话 → 资料页 → 共同群组 → 另一个会话，栈里两份会话页同时活着。
+// perInstance 的池「生命周期与其拥有组件实例相同」——上面每一种情况都是
+// 「关掉一栏/弹一层，那一份池连同里面所有回收实例一起销毁」，而下一次打开
+// 会话只能从零重建。shared 则是「只要还有任意一个宿主实例活着，池就活着」，
+// 分栏切会话、返回再进，都能从池里取。
+//
+// 官方两处也都指向 shared：能力对比表「shared 模式允许拥有组件类的所有实例
+// 共享单个池」，所有权模式一节直接写「建议开发者配置 shared 所有权。这样可以
+// 获得更好的复用率和更低的内存占用」。
+//
+// shared 的代价官方也点了名：「只要拥有组件类的任何实例存在，池就会持续存在
+// ……回收的组件可能会累积。使用 maxCount 来控制内存使用」——这正是 ChatPage
+// 里 capMessageReuseBuckets() 存在的理由。
+//
+// freezeWhenInactive 必须显式给（官方使用限制：「配置 reusePool 和 poolAccepts
+// 启用全局复用的同时，需要额外配置 freezeWhenInactive 参数」）。给 false 是
+// 因为 ChatPageChrome 现在就是不冻结的（@Component 不写这个参数即为 false），
+// 这一层不该顺手改变冻结语义。
+@ComponentV2({
+  reusePool: 'shared',
+  poolAccepts: [ReusableMessageBubble],
+  freezeWhenInactive: false
+})
+struct ChatPagePoolHost {
+  build() {
+    ChatPageChrome();
+  }
+}
+
 @Builder
 export function ChatPageBuilder(): void {
-  ChatPageChrome();
+  // 双路径。形状照 util/overlayMaterial.ets：判定是一个纯函数吃设备版本，
+  // 调用点只问「赢了没有」。
+  //
+  // 低版本这一支与 P4 逐字节相同：ChatPageChrome 直接上，
+  // ReusableMessageBubble 用父组件的默认复用池，rowReuseId 分档照旧生效。
+  if (globalReusePoolAvailable()) {
+    ChatPagePoolHost();
+  } else {
+    ChatPageChrome();
+  }
 }
 
 @ComponentV2
