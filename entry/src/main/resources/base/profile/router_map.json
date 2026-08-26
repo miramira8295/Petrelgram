@@ -41,6 +41,11 @@
       "buildFunction": "AboutPageBuilder"
     },
     {
+      "name": "RepeatSpikePage",
+      "pageSourceFile": "src/main/ets/pages/chat/RepeatSpikePage.ets",
+      "buildFunction": "RepeatSpikePageBuilder"
+    },
+    {
       "name": "DiagnosticsPage",
       "pageSourceFile": "src/main/ets/pages/main/DiagnosticsPage.ets",
       "buildFunction": "DiagnosticsPageBuilder"

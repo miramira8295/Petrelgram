@@ -11619,6 +11619,14 @@
     {
       "name": "ar_recovered_account",
       "value": "Zurück zu deinem Konto gewechselt"
+    },
+    {
+      "name": "diag_repeat_spike",
+      "value": "Repeat rendering spike"
+    },
+    {
+      "name": "diag_repeat_spike_sub",
+      "value": "Temporary debug page — remove after verification"
     }
   ]
 }
