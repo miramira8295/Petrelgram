@@ -111,8 +111,10 @@ struct LiveSenderAvatar {
   }
 
   // @Watch（审计设计约束「订阅按 key 自愈」）：头像订阅的 key 就是 senderId，
-  // 而 aboutToReuse 的 params 未必带得到新 senderId——迁到状态管理 V2 后
-  // @ReusableV2 的 aboutToReuse 根本没有入参（审计 C2），那时 params 恒空。
+  // 而 aboutToReuse 的 params 未必带得到新 senderId——父级 ReusableMessageBubble
+  // **已经是** @ReusableV2（P3 批 1），它的 aboutToReuse 没有入参（官方
+  // 《@ReusableV2装饰器：V2组件复用》：「与@Reusable不同的是，aboutToReuse
+  // 没有入参」），所以递归下来这一层的 params 也不再带值。
   // 挂 @Watch 之后，senderId 只要**变了**，@Prop 无论早一帧还是晚一帧落地，
   // 订阅都会按新 key 自己纠正，不必依赖 params。
   //
@@ -206,8 +208,14 @@ struct LiveSenderAvatar {
     // 连续两条同一发送者的消息 senderId 不变 → onSenderChanged 根本不跑；而
     // aboutToRecycle 已经把 path 清空、订阅退掉、attachedAvatarKey 归零。那种
     // 情况下这条 setTimeout 是唯一的复活路径，删掉会得到永久空白头像。
-    // 另外迁到 @ReusableV2 后 aboutToReuse 没有入参（审计 C2），这条会从
-    // 不可达分支变成唯一分支。
+    // 另外父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，所以
+    // 这条**已经不是**兜底分支，而是唯一分支。
+    //
+    // ⚠️ **待上机确认（P3 批 1 遗留的头号风险）**：官方只写了 @ReusableV2 会
+    // 「递归地调用所有子组件的 aboutToReuse 回调」，**没有写清递归到 V1 子组件
+    // 时 params 传的是空对象 {} 还是根本不传（undefined）**。若是后者，上面
+    // 那句 params['senderId'] 会直接 TypeError。本批按「不动 V1 子组件」的
+    // 范围约束没有改这里的签名，上机第一件事就是验它。
     setTimeout((): void => {
       this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
     }, 0);
@@ -702,9 +710,10 @@ export struct MessageBubble {
 
   aboutToReuse(params: Record<string, Object>): void {
     // 无条件前置（审计 S1 / P0-3）：不依赖新参数的清理跑在 params 判断之前。
-    // 迁到状态管理 V2 后 @ReusableV2 的 aboutToReuse 没有入参（审计 C2），
-    // 下面的 setTimeout 兜底会从「不可达分支」变成唯一分支——那时这两行
-    // 依然成立，兜底最差是「空一帧」，不会是「别人的一帧」。
+    // 父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，下面的
+    // setTimeout **已经是**唯一分支——这两行依然成立，最差是「空一帧」，
+    // 不会是「别人的一帧」。
+    // ⚠️ params 是 {} 还是 undefined 未定，见 attachAvatarChannel 兜底处的告警。
     this.clearTransientState();
     this.clearChannelValues();
     const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
@@ -714,8 +723,8 @@ export struct MessageBubble {
       // **推导（不是实测）**：仍然不能删（I-3）。复用回同一条消息时 @Prop msg
       // 没变化 → onMsgPropChanged 不触发 → P0-4 那条自愈也不跑；而
       // aboutToRecycle 已经退订并把 attachedRowId 归零，那时这里是唯一的重挂
-      // 路径。迁 @ReusableV2 后 aboutToReuse 没有入参（C2），这条还会变成唯一
-      // 分支。
+      // 路径。父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，
+      // 这条**已经是**唯一分支。
       setTimeout((): void => {
         this.resetReusedState(this.msg);
         this.attachMessageChannels(this.msg);

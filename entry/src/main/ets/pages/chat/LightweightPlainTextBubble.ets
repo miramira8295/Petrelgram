@@ -104,8 +104,9 @@ struct LightweightSenderAvatar {
   }
 
   // @Watch（审计设计约束「订阅按 key 自愈」）：头像订阅的 key 就是 senderId。
-  // aboutToReuse 的 params 未必带得到新值，迁到 V2 后 @ReusableV2 的
-  // aboutToReuse 干脆没有入参（审计 C2）。挂 @Watch 之后，senderId 只要
+  // aboutToReuse 的 params 未必带得到新值，而父级 ReusableMessageBubble
+  // **已经是** @ReusableV2（P3 批 1），它的 aboutToReuse 没有入参。挂 @Watch
+  // 之后，senderId 只要
   // **变了**，@Prop 无论何时落地订阅都会按新 key 自己纠正，不必依赖 params。
   //
   // **但它替代不了 aboutToReuse 里的 setTimeout 兜底，别删那条（I-3）。**
@@ -180,8 +181,12 @@ struct LightweightSenderAvatar {
       // **推导（不是实测）**：仍然不能删（I-3）。@Watch 只在值变化时触发，连续
       // 两条同一发送者的消息 senderId 不变 → onSenderChanged 不跑；而
       // aboutToRecycle 已经清了 path、退了订阅、把 attachedKey 归零，那时这里是
-      // 唯一复活路径，删掉会得到永久空白头像。迁 @ReusableV2 后 aboutToReuse
-      // 没有入参（审计 C2），这条还会变成唯一分支。
+      // 唯一复活路径，删掉会得到永久空白头像。父级**已经是** @ReusableV2
+      // （P3 批 1），aboutToReuse 没有入参，这条**已经是**唯一分支。
+      //
+      // ⚠️ **待上机确认**：官方没写清 @ReusableV2 递归调用 V1 子组件的
+      // aboutToReuse 时，params 传的是 {} 还是 undefined。若是 undefined，
+      // 上面那句 params['senderId'] 会 TypeError。见 MessageBubble 同一处。
       setTimeout((): void => {
         this.attach(this.senderId, this.senderIsUser, this.initialPath);
       }, 0);
@@ -393,7 +398,8 @@ export struct LightweightPlainTextBubble {
   }
   aboutToReuse(params: Record<string, Object>): void {
     probeHit('message.plain.reuse');
-    // 无条件前置（审计 S1）：这两行不依赖新参数，V2 无入参时也成立。
+    // 无条件前置（审计 S1）：这两行不依赖新参数，父级 @ReusableV2 无入参时
+    // 也成立。
     this.resetTransient();
     this.clearChannelValues();
     const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
@@ -405,8 +411,8 @@ export struct LightweightPlainTextBubble {
       // ——这条分支在当前调用图下**不可达**。
       // **推导（不是实测）**：仍然不能删（I-3）。onMessageChanged 只在 @Prop msg
       // 真的变化时触发；复用回同一条消息时它不跑，而 aboutToRecycle 已经退订并
-      // 把 attachedKey 归零，那时这里是唯一的重挂路径。迁 @ReusableV2 后
-      // aboutToReuse 没有入参（审计 C2），这条还会变成唯一分支。
+      // 把 attachedKey 归零，那时这里是唯一的重挂路径。父级**已经是**
+      // @ReusableV2（P3 批 1），aboutToReuse 没有入参，这条**已经是**唯一分支。
       setTimeout((): void => { this.attachChannels(this.msg); }, 0);
     }
     // 见 MessageBubble 同一处：复用后玻璃层要重新量。
