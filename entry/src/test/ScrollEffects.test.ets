@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { animationDurationFor } from '../main/ets/util/scrollEffects';
+import { animationDurationFor, scrollActiveNow, setScrollActive } from '../main/ets/util/scrollEffects';
 
 export default function scrollEffectsTest() {
   describe('animationDurationFor', () => {
@@ -13,6 +13,12 @@ export default function scrollEffectsTest() {
     it('设置开着且没在滑动时原样返回', 0, (): void => {
       expect(animationDurationFor(true, false, 150)).assertEqual(150);
       expect(animationDurationFor(true, false, 0)).assertEqual(0);
+    });
+    it('setScrollActive 往返：置真、置假都能读回', 0, (): void => {
+      setScrollActive(true);
+      expect(scrollActiveNow()).assertTrue();
+      setScrollActive(false);
+      expect(scrollActiveNow()).assertFalse();
     });
   });
 }

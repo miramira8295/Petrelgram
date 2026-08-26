@@ -10,8 +10,25 @@
 
 export const KEY_SCROLL_ACTIVE: string = 'chatScrollActive';
 
+// 看门狗上限。onScrollStop 未必与 onScrollStart 配对（滑动中被程序化跳转打断），
+// 标志卡在 true 的后果是此后所有气泡的隐式动画被永久压成 0。宁可提前过期——
+// 提前过期只是把动画还原成改动前的样子，无害；卡住才是真故障。
+// 同一个页面里 armFloatDateHide（ChatPage.ets:3555）用的是同一套办法。
+const SCROLL_ACTIVE_MAX_MS: number = 3000;
+let scrollWatchdog: number = -1;
+
 export function setScrollActive(active: boolean): void {
+  if (scrollWatchdog !== -1) {
+    clearTimeout(scrollWatchdog);
+    scrollWatchdog = -1;
+  }
   AppStorage.setOrCreate(KEY_SCROLL_ACTIVE, active);
+  if (active) {
+    scrollWatchdog = setTimeout((): void => {
+      scrollWatchdog = -1;
+      AppStorage.setOrCreate(KEY_SCROLL_ACTIVE, false);
+    }, SCROLL_ACTIVE_MAX_MS);
+  }
 }
 
 export function scrollActiveNow(): boolean {
