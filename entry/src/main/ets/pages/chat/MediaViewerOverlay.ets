@@ -1,7 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
-} from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import {
   hopDirection, hopProgress, nextMediaGroupIndex
@@ -16,7 +14,6 @@ import {
   KEY_CURRENT_NETWORK_TYPE, KEY_POWER_EFFECT_BLUR, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
 import { str } from '../../util/strings';
-import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
 
 // 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
@@ -44,31 +41,44 @@ interface ViewerFit {
 // layer — lives here. The component is created and destroyed by the page's
 // `if (viewerMsgId !== 0)` branch, so this state resets per open for free and
 // no explicit teardown is needed.
-@Component
+// 状态管理 V2（P3 批 2 第 2 项）。迁移的理由是还债，不是顺手统一：V1 的 @Prop
+// 对复杂类型是**深拷贝**，而且是单向**同步** —— 父组件里的源每换一次新数组就
+// 重拷一次。查看器开着的时候，页面的 messages 每跳一次下载进度就换一个新数组，
+// 几百个 MessageEntry 会整体深拷一遍（下面 messages 那条注释里预告的就是这件
+// 事）。V2 的 @Param 是引用传递，这笔债到此还清。
+@ComponentV2
 export struct MediaViewerOverlay {
-  @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
-  // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面迁到
-  // 状态管理 V2 之后就接不上了。翻页/关闭时先改本地副本（@Prop 允许），再把
-  // 新值交给页面，页面回灌同一个值，语义与双向同步等价。
-  @Prop viewerMsgId: number;
-  onViewerMsgIdChange: (msgId: number) => void = (): void => {};
-  @Prop chromeVisible: boolean;
-  onChromeVisibleChange: (visible: boolean) => void = (): void => {};
+  // V2 没有 @StorageProp 的等价物，三个全局键（语言纪元 / 材质纪元 / 顶部安全区）
+  // 改由页面透传——页面自己就持有它们。
+  @Param langEpoch: number = 0;
+  // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面已经是
+  // 状态管理 V2，接不上。翻页/关闭时先改本地副本，再把新值交给页面，页面回灌
+  // 同一个值，语义与双向同步等价。
+  //
+  // @Param @Once（不是裸 @Param）：@Param 只读，而这三个变量组件内部要改。官方
+  // 《组件内状态变量迁移》@Prop -> @Param 第三条：「如果子组件需要修改传入的
+  // 参数，使用 @Once 允许子组件在本地修改该变量」。代价是「后续无父组件到子
+  // 组件的同步能力」，这里付得起：页面侧对这三个变量的写入只发生在**打开**
+  // （onMediaTap，本组件尚未构造）和**关闭**（closeViewer，本组件正被 if 摘掉）
+  // 两处，查看器开着的整段时间里页面一次都不往下推新值。
+  @Param @Once viewerMsgId: number = 0;
+  @Event onViewerMsgIdChange: (msgId: number) => void = (): void => {};
+  @Param @Once chromeVisible: boolean = true;
+  @Event onChromeVisibleChange: (visible: boolean) => void = (): void => {};
   // 材质档位是设置里的用户偏好，而 overlayMaterial 那几个是普通函数、订阅不了
-  // AppStorage。订阅这个纪元，用户改了厚度/光感这一层才会重绘（和别处一样）。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
-  // @Prop（不是普通字段）：普通字段会冻结在构造时的值，历史加载进来之后查看器
-  // 就翻不动相册了。代价是 @Prop 对复杂类型是深拷贝，而且每次页面侧的数组换新
-  // （下载进度每一跳都会）都要拷一遍——这一层只在查看器打开时存在，不在滚动
-  // 路径上，但真掉帧的话就把这一层也迁到 V2 用 @Param 走引用。
-  @Prop messages: MessageEntry[];
-  @Prop groups: AlbumGroup[];
+  // AppStorage。跟着这个纪元走，用户改了厚度/光感这一层才会重绘（和别处一样）。
+  // 去掉了 private：@Param 要由父组件构造传参。
+  @Param materialEpoch: number = 0;
+  // @Param（不是普通字段）：普通字段会冻结在构造时的值，历史加载进来之后查看器
+  // 就翻不动相册了。@Param 走引用，不再有 @Prop 的整表深拷贝。
+  @Param messages: MessageEntry[] = [];
+  @Param groups: AlbumGroup[] = [];
   // 越界方向上已加载的消息里没有下一组媒体时调用（dir 同 hopDirection 的约定，
   // -1 = 要更旧的历史）。groups 是从**已加载的聊天窗口**折叠出来的，窗口边缘
   // 不等于会话边缘——不补历史的话，切几组就"到头"，其实服务器上还有。
-  onNeedHistory: (dir: number) => void = (): void => {};
+  @Event onNeedHistory: (dir: number) => void = (): void => {};
 
-  @StorageProp('topSafeHeight') topSafe: number = 0;
+  @Param topSafe: number = 0;
 
   // Window coordinates (vp) of the tap that opened the viewer — anchor for the
   // expand-from-tap open / shrink-back-to-tap close transition. The transition
@@ -77,42 +87,49 @@ export struct MediaViewerOverlay {
   // their inserted/removed children, not for custom-component instances. The
   // page's `if` removing this component still triggers it, because removal
   // recursively fires the transitions of everything being removed.
-  @Prop tapX: number = 0;
-  @Prop tapY: number = 0;
+  @Param tapX: number = 0;
+  @Param tapY: number = 0;
 
   // Set once at construction by the page (index of the tapped album member).
-  initIdx: number = 0;
+  // @Param 而不是无装饰器成员：V2 里无装饰器成员是纯本地常量，父组件初始化它
+  // 是编译错误 10905324（P3 批 1 实测）。下面几个同理。
+  @Param initIdx: number = 0;
   // Bubble→viewer handoff: the play position the page had recorded for the
   // tapped message (see ChatPage.bubblePositionMs), read once here just like
   // initIdx. Only applies to that one message — a different album member
   // reached by swiping starts at 0, since it never had a bubble play slot in
   // this session.
-  initStartPositionMs: number = 0;
-  store: MessageStore | null = null;
-  chatTitle: string = '';
-  @Prop nowSec: number = 0;
+  @Param initStartPositionMs: number = 0;
+  @Param store: MessageStore | null = null;
+  @Param chatTitle: string = '';
+  @Param nowSec: number = 0;
 
-  effectDuration: (key: string, ms: number) => number =
+  // 全部函数型入参一律 @Event，包括这两个「查询型」的。理由是观测能力：调用点
+  // 传的是**内联箭头函数**，页面每重建一次都是一个新闭包，若用 @Param，那个
+  // `!==` 恒不相等，本层就会跟着页面的每一次重建白刷一遍。@Event 不具备观测
+  // 能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。官方《@Event》：
+  // 「@Event 装饰的回调方法中参数以及返回值由开发者决定」——带返回值是允许的。
+  @Event effectDuration: (key: string, ms: number) => number =
     (_key: string, ms: number): number => ms;
-  isVideoEntry: (entry: MessageEntry) => boolean = (): boolean => false;
-  onRequestClose: () => void = (): void => {};
-  onSaveMedia: () => void = (): void => {};
+  @Event isVideoEntry: (entry: MessageEntry) => boolean = (): boolean => false;
+  @Event onRequestClose: () => void = (): void => {};
+  @Event onSaveMedia: () => void = (): void => {};
   // 保存到文件（系统「另存为」，可选 Download 等任意目录）——issue #97/#65。
-  onSaveMediaToFiles: () => void = (): void => {};
+  @Event onSaveMediaToFiles: () => void = (): void => {};
   // Viewer→bubble handoff (the other direction): the page samples this on
   // every tick and writes it back to bubblePositionMs when the viewer closes.
   // 350ms-ish cadence from StreamingVideoPlayer, same "plain field, no @State"
   // reasoning as the bubble side.
-  onPositionChanged: (positionMs: number) => void = (_positionMs: number): void => {};
+  @Event onPositionChanged: (positionMs: number) => void = (_positionMs: number): void => {};
   // Captured once in aboutToAppear: which message initStartPositionMs belongs
   // to, since viewerMsgId itself moves as the user swipes.
   private initialViewerMsgId: number = 0;
 
-  @State pageIdx: number = 0;
+  @Local pageIdx: number = 0;
   // 横屏状态页面也要看得见：它的 onBackPress 得先认出"现在是横屏"、先退横屏
   // 而不是关查看器。同样走 @Prop + 回调而不是 @Link。
-  @Prop videoLandscape: boolean;
-  onVideoLandscapeChange: (landscape: boolean) => void = (): void => {};
+  @Param @Once videoLandscape: boolean = false;
+  @Event onVideoLandscapeChange: (landscape: boolean) => void = (): void => {};
   // Zoom is viewer-owned. Keeping it out of the message row prevents the
   // gesture from mutating a recycled Image node in the chat list.
   //
@@ -120,9 +137,9 @@ export struct MediaViewerOverlay {
   // around its own center and pans via translate, so screen = offset + scale
   // * content-point (measured from the image center). Pinch anchoring and
   // boundary clamping are both computed against that model.
-  @State photoScale: number = VIEWER_MIN_SCALE;
-  @State photoOffsetX: number = 0;
-  @State photoOffsetY: number = 0;
+  @Local photoScale: number = VIEWER_MIN_SCALE;
+  @Local photoOffsetX: number = 0;
+  @Local photoOffsetY: number = 0;
 
   private pinchStartScale: number = VIEWER_MIN_SCALE;
   private pinchStartOffsetX: number = 0;
@@ -141,11 +158,11 @@ export struct MediaViewerOverlay {
   private edgeOverscroll: number = 0;
   // 下滑关闭：整层（图片 + 控制层）跟着手指往下走的位移。松手时要么越过阈值
   // 关闭，要么弹回 0。
-  @State private dismissY: number = 0;
+  @Local private dismissY: number = 0;
   // 越界切组：方向（+1 下一组 / -1 上一组 / 0 无）、拉拽进度 0..1、目标组下标。
   // 松手时按 hopProgress 是否到 1 决定切还是弹回。
-  @State private hopDir: number = 0;
-  @State private hopProgress: number = 0;
+  @Local private hopDir: number = 0;
+  @Local private hopProgress: number = 0;
   private hopTargetIdx: number = -1;
   // 缩略图条自己的滚动控制器。切组之后内容会整体换掉（siblingIds 从
   // viewerMsgId 推出来），但横向偏移不会自动回位——往前切落在新组的最后一张

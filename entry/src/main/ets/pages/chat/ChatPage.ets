@@ -440,10 +440,12 @@ export struct ChatPage {
   @Local visibleGroupCount: number = 0;
   // Rendered through the LazyForEach data source (incremental notifications keep
   // scroll position on prepend); the plain array mirror serves index lookups.
-  // @Local (not a plain field) so MediaViewerOverlay's @Prop keeps re-syncing:
-  // @Prop only follows a source that is itself a state variable, and a plain
+  // @Local (not a plain field) so MediaViewerOverlay's @Param keeps re-syncing:
+  // @Param only follows a source that is itself a state variable, and a plain
   // field handed to a child would freeze at its construction-time value,
   // breaking album paging in the viewer once more history loads.
+  // （P3 批 2：那一层已经从 V1 @Prop 迁到 V2 @Param —— 同样的「必须是状态变量」
+  //   要求，但传的是引用，不再每次换新数组就整表深拷。）
   @Local groups: AlbumGroup[] = [];
   private groupsData: AlbumGroupDataSource = new AlbumGroupDataSource();
 
@@ -8985,6 +8987,10 @@ export struct ChatPage {
           targetId: this.reactionTargetId,
           chatId: this.chatId,
           pendingKey: this.reactionPendingKey,
+          // ReactionSheet 迁 @ComponentV2 之后没有 @StorageProp 可用，安全区/
+          // 键盘高度由页面透传（页面自己就持有这两个键）。
+          bottomSafe: this.bottomSafe,
+          keyboardH: this.keyboardH,
           effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
           onPick: (reactionKey: string, chosen: boolean): void => {
             const targetId: number = this.reactionTargetId;
@@ -9082,6 +9088,11 @@ export struct ChatPage {
       // zoom/pan, paging, the filmstrip and the chrome layer.
       if (this.viewerMsgId !== 0) {
         MediaViewerOverlay({
+          // 迁 @ComponentV2 之后这一层没有 @StorageProp 可用，三个全局键由页面
+          // 透传（页面自己就持有它们）。
+          langEpoch: this.langEpoch,
+          materialEpoch: this.materialEpoch,
+          topSafe: this.topSafe,
           viewerMsgId: this.viewerMsgId,
           onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; },
           chromeVisible: this.chromeVisible,

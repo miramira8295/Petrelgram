@@ -35,36 +35,46 @@ interface CustomEmojiOption {
 // here) and the in-flight guard behind it. This component owns the sheet: which
 // emoji the server allows for this message, custom-emoji thumbnails, and the
 // selected-state highlight.
-@Component
+// 状态管理 V2（P3 批 2 第 2 项）。迁移的理由不是「顺手统一」，而是还债：
+// V1 的 @Prop 对复杂类型是**深拷贝**，且是单向**同步** —— 父组件里的源每换一次
+// 新数组就重拷一次。面板开着的时候，页面的 messages 每跳一次下载进度就换一个
+// 新数组，几百个 MessageEntry 会整体深拷一遍。V2 的 @Param 是引用传递。
+@ComponentV2
 export struct ReactionSheet {
-  // 单向入 + 回调出，而不是 @Link（@Link 只能被 V1 状态变量初始化，页面迁到
-  // 状态管理 V2 之后就接不上了）：选中一个 emoji、点遮罩，都是从这里关的。
-  // 关的时候先改本地副本（@Prop 允许），再交给页面撤掉这一层。
-  @Prop show: boolean;
-  onShowChange: (show: boolean) => void = (): void => {};
-  // @Prop（不是普通字段）：高亮要跟着面板打开期间到达的表态更新走，只有被
-  // 跟踪的状态变量做得到。@Prop 对复杂类型是深拷贝，但这一层只在表态面板
-  // 打开时存在，不在滚动路径上。
-  @Prop messages: MessageEntry[];
+  // 单向入 + 回调出，而不是 @Link（@Link 只能被 V1 状态变量初始化，页面已经是
+  // 状态管理 V2，接不上）：选中一个 emoji、点遮罩，都是从这里关的。
+  // 迁 V2 之后 @Param 不允许组件内部修改，原来那句 `this.show = false` 已删掉
+  // ——它本来就是多余的：show 在本组件内一次都没被读过，真正撤掉这一层的是
+  // 页面侧 `if (this.showReactionSheet)` 在收到 onShowChange 之后的重建。
+  @Param show: boolean = false;
+  @Event onShowChange: (show: boolean) => void = (): void => {};
+  // @Param（不是普通字段）：高亮要跟着面板打开期间到达的表态更新走，只有被
+  // 跟踪的状态变量做得到。@Param 走引用，不再有 @Prop 的整表深拷贝。
+  @Param messages: MessageEntry[] = [];
 
   // Set by the page at construction; the sheet is rebuilt on each open.
-  targetId: number = 0;
-  chatId: number = 0;
+  // @Param 而不是无装饰器成员：V2 里无装饰器成员是纯本地常量，父组件初始化它
+  // 是编译错误 10905324（P3 批 1 实测）。
+  @Param targetId: number = 0;
+  @Param chatId: number = 0;
 
   // The page's in-flight reaction key — a second pick is ignored while one is
   // still being sent.
-  @Prop pendingKey: string = '';
+  @Param pendingKey: string = '';
 
-  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
-  @StorageProp('keyboardHeightVp') keyboardH: number = 0;
+  // V2 没有 @StorageProp 的等价物，由页面透传（页面自己持有这两个键）。
+  @Param bottomSafe: number = 0;
+  @Param keyboardH: number = 0;
 
-  effectDuration: (key: string, ms: number) => number =
+  // @Event 而不是 @Param：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
+  // @Param 的 `!==` 恒不相等会让本层白刷一遍。@Event 不具备观测能力。
+  @Event effectDuration: (key: string, ms: number) => number =
     (_key: string, ms: number): number => ms;
-  onPick: (reactionKey: string, chosen: boolean) => void = (): void => {};
+  @Event onPick: (reactionKey: string, chosen: boolean) => void = (): void => {};
 
-  @State reactions: string[] = REACTION_EMOJIS;
-  @State customEmojis: CustomEmojiOption[] = [];
-  @State allowCustomEmoji: boolean = false;
+  @Local reactions: string[] = REACTION_EMOJIS;
+  @Local customEmojis: CustomEmojiOption[] = [];
+  @Local allowCustomEmoji: boolean = false;
 
   private seq: number = 0;
 
@@ -151,7 +161,6 @@ export struct ReactionSheet {
     }
     const chosen: boolean = this.targetReactionChosen(reactionKey);
     this.seq++;
-    this.show = false;
     this.onShowChange(false);
     this.onPick(reactionKey, chosen);
   }
@@ -212,7 +221,7 @@ export struct ReactionSheet {
   build() {
     Column() {
       Column().layoutWeight(1)
-        .onClick(() => { this.show = false; this.onShowChange(false); });
+        .onClick(() => { this.onShowChange(false); });
       Column({ space: 8 }) {
         Row().width(40).height(4).borderRadius(2).backgroundColor('#D0D0D0');
         Row() {
