@@ -1421,6 +1421,21 @@ export struct ChatPage {
   // （本仓 "26.0.0"），不是 compatibleSdkVersion("6.0.0(20)")、也不是设备版本。
   // 按这条推断分档是生效的，但这是读产物推出来的，**没上机验过**，列入待验清单。
   //
+  // ⚠️ **别再试图用「低版本不走 .reuse()」绕开那段探测——试过了，绕不掉。**
+  // 2026-08-26 的编译实验（把 .reuse({ reuseId }) 整个删掉、只留裸的
+  // ReusableMessageBubble({...})，重新 assembleHap 再读产物）结果是：
+  //   getReuseId: getUINativeModule().common.getApiTargetVersion() >= 26
+  //     ? () => "ReusableMessageBubble" : () => "ReusableMessageBubble",
+  // 探测**照样生成**，两侧只是塌成了同一个组件名。也就是说这段代码是
+  // **@ReusableV2 子组件实例化**的产物，与 reuseId 是不是字符串字面量、与
+  // 有没有 .reuse() 都**无关**。同一次实验里 V1 的 @Reusable（ChatRow）产物
+  // 里一处都没有，全仓 getApiTargetVersion 只出现在本文件。
+  //
+  // 结论：如果 getUINativeModule().common.getApiTargetVersion 在 API 20~25 的
+  // 运行时不存在，那是 **d949bde（P3 批 1 迁 @ReusableV2）** 带进来的风险，
+  // 不是 P5 的 .reuse() 带进来的；唯一的移除路径是退回 V1 @Reusable，那是
+  // 整轮回滚，不是一处旁路。低版本设备是否真的会炸只能上机确认。
+  //
   // 入参是**整个 RepeatItem**，不是从它里面取出来的值。官方《Repeat》使用限制：
   // 「当 Repeat 与自定义组件或 @Builder 函数混用时，必须将 RepeatItem 类型整体
   // 进行传参，组件才能监听到数据变化」，反例正是按值传 ri.item —— 那样 Repeat
