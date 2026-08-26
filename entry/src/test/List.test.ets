@@ -146,6 +146,7 @@ import plainTextBubbleReuseTest from './PlainTextBubbleReuse.test';
 import performanceBudgetsTest from './PerformanceBudgets.test';
 import initialMessageStageTest from './InitialMessageStage.test';
 import stringsTest from './Strings.test';
+import scrollEffectsTest from './ScrollEffects.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -296,4 +297,5 @@ export default function testsuite() {
   performanceBudgetsTest();
   initialMessageStageTest();
   stringsTest();
+  scrollEffectsTest();
 }

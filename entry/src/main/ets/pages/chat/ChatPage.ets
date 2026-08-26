@@ -2,6 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { DeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
+import { setScrollActive } from '../../util/scrollEffects';
 import { getStickersForEmoji, rememberRecentSticker } from '../../store/StickerApi';
 import { botMiniAppUrl, openMiniApp } from '../../store/BotApi';
 import {
@@ -2646,6 +2647,8 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
+    // 页面离开时必须清零，否则标志留在 true、别处的动画被误伤。
+    setScrollActive(false);
     // 跳走了就是解析成功了：闸门开，加载态收掉，免得退回来还亮着。
     endLinkNav();
     this.cancelInitialMessageTransitionSettle();
@@ -8626,11 +8629,13 @@ export struct ChatPage {
           }
         })
         .onScrollStart(() => {
+          setScrollActive(true);
           this.finishInitialMessageStageForInteraction();
           this.pauseChatTgsForScroll();
           this.dismissKeyboardOnUserScroll();
         })
         .onScrollStop(() => {
+          setScrollActive(false);
           this.resumeChatTgsAfterScroll();
           this.driveVisibleWork();
           this.armPlaySlotSettle();

@@ -8,6 +8,7 @@ import {
 } from '../../store/AppSettings';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
+import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import {
   glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
@@ -339,11 +340,15 @@ export struct LightweightPlainTextBubble {
   private rowTopPadding(): number { return this.showSenderName ? 3 : 1; }
   private rowBottomPadding(): number { return this.showAvatar ? 3 : 1; }
   private effectDuration(ms: number): number {
-    return this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving ? ms : 0;
+    return animationDurationFor(
+      this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving,
+      scrollActiveNow(), ms);
   }
   private reactionDuration(ms: number): number {
-    return this.chatEffectsEnabled && this.reactionEffectsEnabled && this.emojiEnabled &&
-      this.emojiReactionsEnabled && !this.powerSaving ? ms : 0;
+    return animationDurationFor(
+      this.chatEffectsEnabled && this.reactionEffectsEnabled && this.emojiEnabled &&
+        this.emojiReactionsEnabled && !this.powerSaving,
+      scrollActiveNow(), ms);
   }
 
   private bubbleCorners(): BorderRadiuses {

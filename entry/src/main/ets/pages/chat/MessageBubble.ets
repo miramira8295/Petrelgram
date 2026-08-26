@@ -43,6 +43,7 @@ import {
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
+import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, AVATAR_PALETTE, botButtonBg, accentSoft, bubbleTextFor } from '../../util/theme';
 import { languageDisplayName } from '../../services/TranslationService';
 import {
@@ -752,12 +753,16 @@ export struct MessageBubble {
   }
 
   private effectDuration(duration: number): number {
-    return this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving ? duration : 0;
+    return animationDurationFor(
+      this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving,
+      scrollActiveNow(), duration);
   }
 
   private reactionDuration(duration: number): number {
-    return this.chatEffectsEnabled && this.reactionEffectsEnabled &&
-      this.emojiEnabled && this.emojiReactionsEnabled && !this.powerSaving ? duration : 0;
+    return animationDurationFor(
+      this.chatEffectsEnabled && this.reactionEffectsEnabled &&
+        this.emojiEnabled && this.emojiReactionsEnabled && !this.powerSaving,
+      scrollActiveNow(), duration);
   }
 
   // Swipe-to-reply's snap-back/settle animation — degrades to an instant jump
