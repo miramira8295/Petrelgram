@@ -3,7 +3,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { mediaBoxFor } from '../../util/mediaBox';
 import { cancelPixelMap, loadPixelMap, PixelRequest } from '../../util/pixelCache';
 import { keyTableAdd, keyTableDelete, keyTableReload, newKeyTableId } from '../../util/keyGuard';
-import { logI } from '../../util/log';
+import { logI, logW } from '../../util/log';
 import { chatContentWidth } from '../../util/chatContentWidth';
 
 // LazyForEach data source for the message list.
@@ -273,8 +273,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
           if (oldMid === 1) {
             break;
           }
-          this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
-          return 'reload';
+          return this.notifyReloadWithDeferredFlips(prev, next, p, oldMid, newMid);
         }
       }
       // Same-length middle region: in-place item changes (photo arrived,
@@ -414,7 +413,81 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       }
     }
     // Genuinely mixed structural edit (e.g. a loadAround window replacement).
+    return this.notifyReloadWithDeferredFlips(prev, next, p, oldMid, newMid);
+  }
+
+  // Rows that a RELOAD would silently leave holding their placeholder.
+  //
+  // The SDK contract for reload is "for data items whose key remains unchanged,
+  // the ORIGINAL child component is used", and initialDeferred is deliberately
+  // NOT part of the key (see sameRenderSnapshot). So a row that flips from
+  // placeholder to real content inside a RELOAD batch keeps its placeholder
+  // Column — while updateInner has already swapped this.groups over to the real
+  // snapshot, which means no later diff will ever name that row again. That is
+  // the blank first-screen row: full height, nothing drawn at all, self-healing
+  // only once the list scrolls it out of the cache and rebuilds it.
+  //
+  // Pairing is by KEY, not by index: the fallback exit below is reached exactly
+  // when the middle regions do not line up by index. A placeholder and its real
+  // row produce the identical key (initialMessageStage.deferredCopy keeps the
+  // identity and content key intact), which is what makes the lookup meaningful
+  // here and what made the framework skip the row in the first place.
+  private deferredFlipIndexes(
+    prev: AlbumGroup[],
+    next: AlbumGroup[],
+    p: number,
+    oldMid: number,
+    newMid: number
+  ): number[] {
+    const flipped: number[] = [];
+    if (oldMid <= 0 || newMid <= 0) {
+      return flipped;
+    }
+    const wasDeferred: Map<string, boolean> = new Map<string, boolean>();
+    for (let i = 0; i < oldMid; i++) {
+      const row: AlbumGroup = prev[p + i];
+      wasDeferred.set(this.keyOf(row), row.initialDeferred === true);
+    }
+    for (let i = 0; i < newMid; i++) {
+      const row: AlbumGroup = next[p + i];
+      const before: boolean | undefined = wasDeferred.get(this.keyOf(row));
+      if (before !== undefined && before !== (row.initialDeferred === true)) {
+        flipped.push(p + i);
+      }
+    }
+    return flipped;
+  }
+
+  // RELOAD, plus a targeted re-notification of the rows the RELOAD would drop.
+  private notifyReloadWithDeferredFlips(
+    prev: AlbumGroup[],
+    next: AlbumGroup[],
+    p: number,
+    oldMid: number,
+    newMid: number
+  ): DataSourceUpdateKind {
+    const flipped: number[] = this.deferredFlipIndexes(prev, next, p, oldMid, newMid);
+    // 诊断：修好之后屏幕上不该再有空白行，但这个数不会因此归零 —— 它统计的是
+    // "RELOAD 本会吞掉多少翻转"，补发正是靠它。下次上机进十几个会话：
+    // flips>0 且仍有空白 ⇒ 补发没覆盖到；flips>0 而无空白 ⇒ 补发生效；
+    // 恒为 0 ⇒ 这条机理没被命中，回去查排查文档里的候选 C。
+    logW(`[BlankRow] reload flips=${flipped.length} oldMid=${oldMid} newMid=${newMid}`);
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
+    if (flipped.length === 0) {
+      return 'reload';
+    }
+    // 单独一次 notify，跟在 RELOAD 后面 —— 不混批。混在同一批里，CHANGE 的
+    // 下标既可以按重建前也可以按重建后解释；本文件上面那段 ADD+CHANGE 的注释
+    // 记着同样的坑（30 行的 prepend 混批发出去，列表显示了错的行）。拆开之后
+    // 下标含义唯一：next 里的位置，也就是 RELOAD 之后列表的当前位置。
+    const ops: DataOperation[] = [];
+    for (const index of flipped) {
+      // 无 key。占位和真身是同一个 item，key 本来就没变（这正是 RELOAD 漏掉
+      // 它的原因）；带 key 会让框架把一个已经注册的 key 重新注册一遍。
+      // 只覆盖真正翻转的行 —— 整段一起 CHANGE 就是上面记着的老毛病。
+      ops.push({ type: DataOperationType.CHANGE, index: index } as DataChangeOperation);
+    }
+    this.notify(ops);
     return 'reload';
   }
 

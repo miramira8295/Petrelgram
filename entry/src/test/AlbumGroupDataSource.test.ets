@@ -250,10 +250,111 @@ export default function albumGroupDataSourceTest() {
       const users = usersOf();
       const ds = new AlbumGroupDataSource();
       ds.update(groupsOf([[10, 100], [20, 5000], [30, 90000], [40, 180000]], users));
+
+      const listener: RecordingListener = new RecordingListener();
+      ds.registerDataChangeListener(listener);
+
       // A loadAround jump replaces the window with unrelated rows (different
       // row count, no shared prefix/suffix) — the only case that reloads.
       expect(ds.update(groupsOf([[50, 100], [60, 5000], [70, 90000]], users)))
         .assertEqual('reload');
+      // 没有 deferred 翻转时不能顺手补发 CHANGE：整表 RELOAD 已经重建了一切，
+      // 再补一批就是这个文件 :283 记着的老毛病（把整段无关的行一起重建）。
+      expect(listener.batches.length).assertEqual(1);
+      expect(listener.batches[0]).assertEqual('reload');
+      expect(listener.ops.length).assertEqual(0);
+    });
+
+    // 本次 bug 的核心。收尾那一次发布同时携带「结构增删」和「一批
+    // deferred→真身的翻转」。RELOAD 的契约是"key 未变 → 沿用原组件"，而
+    // initialDeferred 刻意不进 key，于是占位 Column 被原地留下；同时
+    // this.groups 已经换成真身，此后再不会对这一行发 CHANGE —— 屏幕上就是
+    // 一条占着高度、连气泡背景都没有的空白行，滑出去再回来才自愈。
+    // RELOAD 之后必须对真正翻转的那些行补发定向的无 key CHANGE。
+    it('reload_with_structural_edit_republishes_deferred_flips', 0, () => {
+      const users = usersOf();
+      // 日期彼此远隔，每行自成一个发送者 run、各带各的日期胶囊 —— 删掉中间
+      // 一行不会改动邻行的 key，测的就是 deferred 翻转本身。
+      const layout: number[][] =
+        [[10, 100], [20, 90000], [30, 180000], [40, 270000], [50, 360000]];
+      const real = groupsOf(layout, users);
+      // 只有末行是真身的那份 staged，用来按下标取占位副本。
+      const staged = stageInitialMessageGroups(real, 4, false, 1);
+
+      const ds = new AlbumGroupDataSource();
+      // [占位10, 真身20, 占位30, 占位40, 真身50]
+      ds.update([staged[0], real[1], staged[2], staged[3], real[4]]);
+
+      const listener: RecordingListener = new RecordingListener();
+      ds.registerDataChangeListener(listener);
+
+      // 收尾形状：行 30 消失（结构增删）+ 剩下的占位全部翻成真身。
+      // newMid < oldMid，没有任何对齐分支，一律落到兜底 RELOAD。
+      expect(ds.update([real[0], real[1], real[3], real[4]])).assertEqual('reload');
+
+      // RELOAD 单独一批，补发的 CHANGE 跟在后面 —— 不混批。
+      expect(listener.batches.length).assertEqual(2);
+      expect(listener.batches[0]).assertEqual('reload');
+      expect(listener.batches[1]).assertEqual('change,change');
+      // 只有真正翻转的两行：行 10（新下标 0）和行 40（新下标 2）。
+      expect(listener.ops.length).assertEqual(2);
+      expect(listener.ops[0]).assertEqual(0);
+      expect(listener.ops[1]).assertEqual(2);
+      // 行 20 前后都是真身，没被顺手 CHANGE。
+      expect(listener.ops.indexOf(1)).assertEqual(-1);
+      // 无 key：占位和真身是同一个 item，key 本来就没变（这正是 RELOAD 漏掉
+      // 它的原因）。带 key 会让框架把这个 key 重新注册一遍。
+      expect(listener.changeKeys.length).assertEqual(0);
+    });
+
+    // 另一个 RELOAD 出口：中段等长但每个下标都换了身份。补发同样要覆盖。
+    it('reload_at_identity_shift_republishes_deferred_flips', 0, () => {
+      const users = usersOf();
+      const before =
+        groupsOf([[10, 100], [20, 90000], [30, 180000], [40, 270000]], users);
+      const ds = new AlbumGroupDataSource();
+      // [占位10, 占位20, 占位30, 真身40]
+      ds.update(stageInitialMessageGroups(before, 3, false, 1));
+
+      const listener: RecordingListener = new RecordingListener();
+      ds.registerDataChangeListener(listener);
+
+      // 整窗右移一格：长度不变、每个下标都换了身份（oldMid === newMid > 1），
+      // 同时行 20/30 从占位翻成真身。
+      const after =
+        groupsOf([[20, 90000], [30, 180000], [40, 270000], [50, 360000]], users);
+      expect(ds.update(after)).assertEqual('reload');
+
+      expect(listener.batches.length).assertEqual(2);
+      expect(listener.batches[0]).assertEqual('reload');
+      expect(listener.batches[1]).assertEqual('change,change');
+      // 行 20 → 新下标 0，行 30 → 新下标 1。行 40 前后都是真身、行 50 是新
+      // 行（旧快照里根本没有），都不补发。
+      expect(listener.ops.length).assertEqual(2);
+      expect(listener.ops[0]).assertEqual(0);
+      expect(listener.ops[1]).assertEqual(1);
+      expect(listener.changeKeys.length).assertEqual(0);
+    });
+
+    // 回归保护：只有翻转、没有结构变化时行为必须一字不变 —— 仍走逐行 CHANGE，
+    // 不能因为这次修改而退化成 RELOAD。
+    it('pure_deferred_flip_without_structural_edit_stays_incremental', 0, () => {
+      const users = usersOf();
+      const real =
+        groupsOf([[10, 100], [20, 90000], [30, 180000], [40, 270000]], users);
+      const ds = new AlbumGroupDataSource();
+      ds.update(stageInitialMessageGroups(real, 3, false, 1));
+
+      const listener: RecordingListener = new RecordingListener();
+      ds.registerDataChangeListener(listener);
+
+      expect(ds.update(real)).assertEqual('incremental');
+      expect(listener.batches.join('|')).assertEqual('change,change,change');
+      expect(listener.ops.length).assertEqual(3);
+      expect(listener.ops[0]).assertEqual(0);
+      expect(listener.ops[1]).assertEqual(1);
+      expect(listener.ops[2]).assertEqual(2);
+      expect(listener.changeKeys.length).assertEqual(0);
     });
   });
 }
