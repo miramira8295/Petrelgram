@@ -195,6 +195,17 @@ export function sameRowArray(a: AlbumGroup[], b: AlbumGroup[]): boolean {
 //   恒为 0                     ⇒ 这条机理没被命中，去查
 //                                docs/superpowers/specs/2026-08-26-blank-row-investigation.md
 //                                里的候选 C。
+//
+// ── 删除清单（判断被证实/推翻之后，一次删干净）────────────────────────────
+// 1. 本函数 countDeferredFlips 及其上面这整段注释；
+// 2. ChatPage.ets：publishGroupsNow 里那段 `if (this.initialMessageStageActive)`
+//    的 [BlankRow] 统计，以及 import 列表里的 countDeferredFlips；
+// 3. entry/src/test/AlbumGroupDataSource.test.ets 的
+//    deferred_flip_probe_counts_placeholder_admissions 用例及其 import；
+// 4. docs/superpowers/specs/2026-08-26-blank-row-investigation.md（如果结论
+//    已经写进别处的注释，这份调研稿就不必留）。
+// 注：探针只在首屏分级揭示期间跑（见 ChatPage 那边的理由），日常滚动/发消息
+//     的发布路径上一分钱都不付。
 export function countDeferredFlips(prev: AlbumGroup[], next: AlbumGroup[]): number {
   if (prev.length === 0 || next.length === 0) {
     return 0;

@@ -639,10 +639,22 @@ export struct ChatPage {
   // 不还原没变过的行就等于每次发布都刷新整个可见窗口。
   private publishGroupsNow(groups: AlbumGroup[]): void {
     const next: AlbumGroup[] = reuseUnchangedRows(this.groups, groups);
-    // [BlankRow] 探针，说明见 AlbumGroupDataSource.countDeferredFlips 的注释。
-    const flips: number = countDeferredFlips(this.groups, next);
-    if (flips > 0) {
-      logW(`[BlankRow] repeat flips=${flips} prev=${this.groups.length} next=${next.length}`);
+    // [BlankRow] 探针，说明与删除清单见 AlbumGroupDataSource.countDeferredFlips
+    // 的注释。**只在首屏分级揭示期间统计**：
+    //   · countDeferredFlips 要建两个 Map、扫完整个行数组（长会话 494 行），
+    //     而 publishGroupsNow 是这条性能分支唯一的热路径，不该为一个诊断
+    //     在每次发布上都付这笔钱；
+    //   · 占位↔真身的翻转**只可能**发生在分级揭示期间（initialDeferred 由
+    //     stageInitialMessageGroups 打上、由揭示逐行摘掉），揭示结束之后这个
+    //     计数恒为 0，跑它纯属白跑。
+    // 级别是 logI 不是 logW：flips > 0 是首屏的**正常态**，而 logW 会进用户
+    // 可导出/上传的诊断日志环（util/log.ets 的 push），普通用户每开一次会话
+    // 写一条 warning 是误导。
+    if (this.initialMessageStageActive) {
+      const flips: number = countDeferredFlips(this.groups, next);
+      if (flips > 0) {
+        logI(`[BlankRow] repeat flips=${flips} prev=${this.groups.length} next=${next.length}`);
+      }
     }
     const changed: boolean = !sameRowArray(this.groups, next);
     this.groups = next;
