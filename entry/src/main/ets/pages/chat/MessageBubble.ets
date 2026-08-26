@@ -72,6 +72,7 @@ import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
+import { reuseParam } from '../../util/reuseParams';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -193,9 +194,13 @@ struct LiveSenderAvatar {
     // 这样兜底分支最差是「空一帧」，不会是「别人的一帧」；而且 V2 的
     // aboutToReuse 没有入参（C2）时这一句依然成立。
     this.path = '';
-    const nextId: number | undefined = params['senderId'] as number | undefined;
-    const nextIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
-    const nextPath: string | undefined = params['initialPath'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
+    // setTimeout 兜底（P3 批 2 第 0 项，见 util/reuseParams.ets 的说明）。
+    const nextId: number | undefined = reuseParam(params, 'senderId') as number | undefined;
+    const nextIsUser: boolean | undefined =
+      reuseParam(params, 'senderIsUser') as boolean | undefined;
+    const nextPath: string | undefined =
+      reuseParam(params, 'initialPath') as string | undefined;
     if (nextId !== undefined && nextIsUser !== undefined) {
       this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');
       return;
@@ -211,11 +216,11 @@ struct LiveSenderAvatar {
     // 另外父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，所以
     // 这条**已经不是**兜底分支，而是唯一分支。
     //
-    // ⚠️ **待上机确认（P3 批 1 遗留的头号风险）**：官方只写了 @ReusableV2 会
-    // 「递归地调用所有子组件的 aboutToReuse 回调」，**没有写清递归到 V1 子组件
-    // 时 params 传的是空对象 {} 还是根本不传（undefined）**。若是后者，上面
-    // 那句 params['senderId'] 会直接 TypeError。本批按「不动 V1 子组件」的
-    // 范围约束没有改这里的签名，上机第一件事就是验它。
+    // 官方只写了 @ReusableV2 会「递归地调用所有子组件的 aboutToReuse 回调」，
+    // **没有写清递归到 V1 子组件时 params 传的是空对象 {} 还是根本不传
+    // （undefined）**。P3 批 2 第 0 项把读法换成了 reuseParam：两种情况都不抛，
+    // 都落到这条兜底。上机时仍要看这条兜底的命中率（0% 说明是 {}，100% 说明
+    // 是 undefined），但**无论哪种都不会崩**。
     setTimeout((): void => {
       this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
     }, 0);
@@ -713,10 +718,12 @@ export struct MessageBubble {
     // 父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，下面的
     // setTimeout **已经是**唯一分支——这两行依然成立，最差是「空一帧」，
     // 不会是「别人的一帧」。
-    // ⚠️ params 是 {} 还是 undefined 未定，见 attachAvatarChannel 兜底处的告警。
+    // params 是 {} 还是 undefined 未定，两种都用 reuseParam 读，见
+    // util/reuseParams.ets（P3 批 2 第 0 项）。
     this.clearTransientState();
     this.clearChannelValues();
-    const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
+    const next: MessageEntry | undefined =
+      reuseParam(params, 'msg') as MessageEntry | undefined;
     if (next === undefined) {
       // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：
       // params 恒带 msg，present=0 一次都没出现——这条兜底分支当前**不可达**。
@@ -734,7 +741,8 @@ export struct MessageBubble {
     }
     this.resetReusedState(next);
     this.attachMessageChannels(next);
-    const nextAlbum: boolean[] | undefined = params['albumIsVideo'] as boolean[] | undefined;
+    const nextAlbum: boolean[] | undefined =
+      reuseParam(params, 'albumIsVideo') as boolean[] | undefined;
     if (nextAlbum !== undefined) {
       for (let i = 0; i < nextAlbum.length; i++) {
         this.albumWasCompetingVideo.set(i, nextAlbum[i]);

@@ -38,6 +38,7 @@ import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { logW } from '../../util/log';
+import { reuseParam } from '../../util/reuseParams';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 const SWIPE_REPLY_MAX: number = -56;
@@ -169,9 +170,13 @@ struct LightweightSenderAvatar {
   aboutToReuse(params: Record<string, Object>): void {
     // 无条件前置（审计 S1）：清理跑在 params 判断之前，V2 无入参时同样成立。
     this.path = '';
-    const senderId: number | undefined = params['senderId'] as number | undefined;
-    const senderIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
-    const initialPath: string | undefined = params['initialPath'] as string | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到 else 的
+    // setTimeout 兜底（P3 批 2 第 0 项，见 util/reuseParams.ets）。
+    const senderId: number | undefined = reuseParam(params, 'senderId') as number | undefined;
+    const senderIsUser: boolean | undefined =
+      reuseParam(params, 'senderIsUser') as boolean | undefined;
+    const initialPath: string | undefined =
+      reuseParam(params, 'initialPath') as string | undefined;
     if (senderId !== undefined && senderIsUser !== undefined) {
       this.attach(senderId, senderIsUser, initialPath ?? '');
     } else {
@@ -184,9 +189,9 @@ struct LightweightSenderAvatar {
       // 唯一复活路径，删掉会得到永久空白头像。父级**已经是** @ReusableV2
       // （P3 批 1），aboutToReuse 没有入参，这条**已经是**唯一分支。
       //
-      // ⚠️ **待上机确认**：官方没写清 @ReusableV2 递归调用 V1 子组件的
-      // aboutToReuse 时，params 传的是 {} 还是 undefined。若是 undefined，
-      // 上面那句 params['senderId'] 会 TypeError。见 MessageBubble 同一处。
+      // 官方没写清 @ReusableV2 递归调用 V1 子组件的 aboutToReuse 时，params
+      // 传的是 {} 还是 undefined。P3 批 2 第 0 项改用 reuseParam 读，两种都不抛，
+      // 都落到这条兜底。见 MessageBubble 同一处。
       setTimeout((): void => {
         this.attach(this.senderId, this.senderIsUser, this.initialPath);
       }, 0);
@@ -402,7 +407,9 @@ export struct LightweightPlainTextBubble {
     // 也成立。
     this.resetTransient();
     this.clearChannelValues();
-    const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
+    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 0 项）。
+    const next: MessageEntry | undefined =
+      reuseParam(params, 'msg') as MessageEntry | undefined;
     if (next !== undefined) {
       this.attachChannels(next);
     } else {
