@@ -5,8 +5,8 @@ import { UserStore } from '../main/ets/store/UserStore';
 import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store/MessageEntry';
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
-  AlbumGroupDataSource, contentFingerprint, countDeferredFlips, prependBreaksAnchor,
-  reuseUnchangedRows, sameRenderSnapshot, sameRowArray
+  AlbumGroupDataSource, clampPrefetchRange, contentFingerprint, countDeferredFlips,
+  PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRenderSnapshot, sameRowArray
 } from '../main/ets/pages/chat/AlbumGroupDataSource';
 import { stageInitialMessageGroups } from '../main/ets/util/initialMessageStage';
 
@@ -19,6 +19,23 @@ class FakeBridge implements TdBridge {
   sent: string[] = [];
   init(cb: (json: string) => void): void { this.onReceive = cb; }
   send(json: string): void { this.sent.push(json); }
+}
+
+// BasicPrefetcher 注册进数据源的就是这样一个 DataChangeListener（它内部叫
+// DataSourceObserver）。这里只数 onDataReloaded 被调了几次——那正是让
+// BasicPrefetcher 重新读 totalCount() 的那一条通知。
+class CountingListener implements DataChangeListener {
+  reloaded: number = 0;
+  onDataReloaded(): void { this.reloaded++; }
+  onDataAdded(_index: number): void {}
+  onDataAdd(_index: number): void {}
+  onDataMoved(_from: number, _to: number): void {}
+  onDataMove(_from: number, _to: number): void {}
+  onDataDeleted(_index: number): void {}
+  onDataDelete(_index: number): void {}
+  onDataChanged(_index: number): void {}
+  onDataChange(_index: number): void {}
+  onDatasetChange(_ops: DataOperation[]): void {}
 }
 
 function usersOf(): UserStore {
@@ -213,6 +230,133 @@ export default function albumGroupDataSourceTest() {
       ds.prefetch(0);
       ds.cancel(0);
       expect(ds.totalCount()).assertEqual(2);
+    });
+
+    // ── 崩溃回归：BasicPrefetcher 必须收到集合变更通知 ────────────────
+    //
+    // 钉住的是 2026-08-27 那个「进任何会话都必崩」的 'Invalid range'：
+    // register/unregister 曾是空实现，BasicPrefetcher 内部的 totalItems 因此
+    // 永远停在 0，第一次 onScrollIndex 就 new IndexRange(30, 0) 抛异常。
+    it('registered_listeners_are_notified_when_the_row_count_changes', 0, () => {
+      const users = usersOf();
+      const ds = new AlbumGroupDataSource();
+      const listener = new CountingListener();
+      ds.registerDataChangeListener(listener);
+      expect(listener.reloaded).assertEqual(0);
+
+      // 空 → 2 行：这一次通知是必须的，否则 totalItems 停在 0。
+      ds.setRows(groupsOf([[10, 100], [20, 5000]], users));
+      expect(listener.reloaded).assertEqual(1);
+      expect(ds.totalCount()).assertEqual(2);
+
+      // 前插一页（行数变长）也要通知。
+      ds.setRows(groupsOf([[1, 10], [2, 20], [10, 100], [20, 5000]], users));
+      expect(listener.reloaded).assertEqual(2);
+      expect(ds.totalCount()).assertEqual(4);
+
+      // 变短同样要通知，否则 totalItems 偏大 ⇒ 预取越界读到 undefined。
+      ds.setRows(groupsOf([[10, 100]], users));
+      expect(listener.reloaded).assertEqual(3);
+
+      // 清空。
+      ds.setRows([]);
+      expect(listener.reloaded).assertEqual(4);
+      expect(ds.totalCount()).assertEqual(0);
+    });
+
+    // 行数不变的发布**不**通知：setRows 在每一次发布上都被调用，包括下载进度
+    // 跳动那种只改旁路字段的发布，而 onDataReloaded 会让 BasicPrefetcher
+    // clearFetched 整个可见窗口再重发一轮 prefetch。理由写在 setRows 的注释里。
+    it('same_length_republish_does_not_re_notify', 0, () => {
+      const users = usersOf();
+      const ds = new AlbumGroupDataSource();
+      const listener = new CountingListener();
+      ds.registerDataChangeListener(listener);
+      ds.setRows(groupsOf([[10, 100], [20, 5000]], users));
+      expect(listener.reloaded).assertEqual(1);
+      // 全新的行对象，但行数一样。
+      ds.setRows(groupsOf([[10, 100], [20, 5000]], users));
+      expect(listener.reloaded).assertEqual(1);
+    });
+
+    it('listener_registration_dedupes_and_unregister_stops_notifications', 0, () => {
+      const users = usersOf();
+      const ds = new AlbumGroupDataSource();
+      const listener = new CountingListener();
+      // 重复注册同一个监听器只算一次——BasicPrefetcher.setDataSource 会先
+      // unregister 再 register，重进同一个数据源不该收到双份通知。
+      ds.registerDataChangeListener(listener);
+      ds.registerDataChangeListener(listener);
+      ds.setRows(groupsOf([[10, 100]], users));
+      expect(listener.reloaded).assertEqual(1);
+
+      ds.unregisterDataChangeListener(listener);
+      ds.setRows(groupsOf([[10, 100], [20, 5000]], users));
+      expect(listener.reloaded).assertEqual(1);
+
+      // 注销一个没注册过的监听器不该抛。
+      ds.unregisterDataChangeListener(new CountingListener());
+      expect(ds.totalCount()).assertEqual(2);
+    });
+
+    // ── 下标钳制 ────────────────────────────────────────────────────────
+    //
+    // visibleAreaChanged 的形参文档写着「取值范围为 [0, totalCount()-1]，超出
+    // 范围时计算错误」，而实际后果是 IndexRange 抛 'Invalid range' 并被转抛。
+    it('clamp_visible_range_keeps_indices_inside_the_collection', 0, () => {
+      // 正常区间原样通过。
+      const ok: PrefetchRange | null = clampPrefetchRange(3, 9, 100);
+      expect(ok !== null).assertTrue();
+      expect((ok as PrefetchRange).start).assertEqual(3);
+      expect((ok as PrefetchRange).end).assertEqual(9);
+
+      // 集合在两帧之间变短：行号合法但已越界，钳到最后一行。
+      const shrunk: PrefetchRange | null = clampPrefetchRange(30, 40, 10);
+      expect(shrunk !== null).assertTrue();
+      expect((shrunk as PrefetchRange).start).assertEqual(9);
+      expect((shrunk as PrefetchRange).end).assertEqual(9);
+
+      // 只有 end 越界。
+      const tail: PrefetchRange | null = clampPrefetchRange(5, 40, 10);
+      expect((tail as PrefetchRange).start).assertEqual(5);
+      expect((tail as PrefetchRange).end).assertEqual(9);
+
+      // 首帧之前 curEndIdx 是 -1；start > end 正是 IndexRange 抛异常的形状，
+      // 钳完必须 start <= end。
+      const early: PrefetchRange | null = clampPrefetchRange(0, -1, 10);
+      expect((early as PrefetchRange).start).assertEqual(0);
+      expect((early as PrefetchRange).end).assertEqual(0);
+
+      const negative: PrefetchRange | null = clampPrefetchRange(-5, -3, 10);
+      expect((negative as PrefetchRange).start).assertEqual(0);
+      expect((negative as PrefetchRange).end).assertEqual(0);
+
+      // 单行集合。
+      const single: PrefetchRange | null = clampPrefetchRange(0, 0, 1);
+      expect((single as PrefetchRange).start).assertEqual(0);
+      expect((single as PrefetchRange).end).assertEqual(0);
+
+      // 空集合：一次都不该调 visibleAreaChanged（0 和 -1 都不是合法下标）。
+      expect(clampPrefetchRange(0, 0, 0)).assertNull();
+      expect(clampPrefetchRange(0, 5, 0)).assertNull();
+    });
+
+    // 钳制之后的区间永远满足 IndexRange 的前置条件：0 <= start <= end <= total-1。
+    it('clamp_visible_range_never_produces_an_invalid_range', 0, () => {
+      const totals: number[] = [1, 2, 10, 494];
+      const probes: number[] = [-7, -1, 0, 1, 9, 10, 493, 494, 1000];
+      for (const total of totals) {
+        for (const start of probes) {
+          for (const end of probes) {
+            const r: PrefetchRange | null = clampPrefetchRange(start, end, total);
+            expect(r !== null).assertTrue();
+            const range: PrefetchRange = r as PrefetchRange;
+            expect(range.start >= 0).assertTrue();
+            expect(range.end >= range.start).assertTrue();
+            expect(range.end <= total - 1).assertTrue();
+          }
+        }
+      }
     });
   });
 }

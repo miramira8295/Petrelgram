@@ -60,8 +60,8 @@ import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { actionMenuRow } from './ActionMenuRow';
 import {
-  AlbumGroupDataSource, contentFingerprint, countDeferredFlips, prependBreaksAnchor,
-  reuseUnchangedRows, sameRowArray
+  AlbumGroupDataSource, clampPrefetchRange, contentFingerprint, countDeferredFlips,
+  PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 // UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
@@ -8979,7 +8979,18 @@ export struct ChatPage {
           // Image prefetch: the data source decodes the photos of rows about to
           // arrive and cancels the ones scrolled past. Distinct from the page
           // prefetch below, which loads MESSAGES.
-          this.imagePrefetcher.visibleAreaChanged(start, end);
+          //
+          // 下标必须先钳进 [0, totalCount()-1]：BasicPrefetcher 内部用
+          // IndexRange 表达区间，而 IndexRange 的构造函数对 start > end 是
+          // **抛异常**，visibleAreaChanged 的 catch 又是转抛——越界一次就是一次
+          // 应用崩溃（2026-08-27 的 'Invalid range' 崩溃栈）。这里的 start / end
+          // 报的是上一帧布局的可见行号，而 groupsData 可能已经在这一帧里变短
+          // 了。判据与理由见 clampPrefetchRange。
+          const visible: PrefetchRange | null =
+            clampPrefetchRange(start, end, this.groupsData.totalCount());
+          if (visible !== null) {
+            this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
+          }
           // Translation results can mutate several rows at once. Keep the
           // request/refresh lane quiet during a fling and catch up once the
           // list settles; image prefetch above remains active and directional.

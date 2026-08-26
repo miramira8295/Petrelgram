@@ -17,8 +17,8 @@ import { chatContentWidth } from '../../util/chatContentWidth';
 //      onScrollIndex 手动喂的（imagePrefetcher.visibleAreaChanged(start, end)），
 //      文档里说的「支持与 List、Grid、WaterFlow 和 Swiper 组件配合使用」说的是
 //      容器，不是 LazyForEach。所以那一行一个字都没改。
-//      registerDataChangeListener / unregisterDataChangeListener 保留成空实现：
-//      IDataSource 接口要求它们存在，但 Repeat 之下没有人调。
+//      registerDataChangeListener / unregisterDataChangeListener **必须是真的**：
+//      Repeat 确实不调它们，但 BasicPrefetcher 调——见类尾那段注释。
 //   2. 几个纯函数：行 key 的内容指纹、跨快照的行对象复用、[BlankRow] 诊断。
 //      它们没有 UI 依赖，因此可以被单测直接覆盖。
 
@@ -224,14 +224,107 @@ export function countDeferredFlips(prev: AlbumGroup[], next: AlbumGroup[]): numb
   return flips;
 }
 
+// 喂给 BasicPrefetcher.visibleAreaChanged 的可见区间。
+export interface PrefetchRange {
+  start: number;
+  end: number;
+}
+
+// 把 onScrollIndex 报来的可见区间钳进 [0, total - 1]；集合为空时返回 null，
+// 表示这一次**不要调** visibleAreaChanged。
+//
+// 【为什么需要它——不是防御性编程，是有崩溃日志的】
+//
+// 官方文档对 visibleAreaChanged 两个参数的原话是「取值范围为 [0, totalCount()-1]。
+// **超出范围时计算错误**」，而读 jsPrefetcher.js 可以看到「计算错误」的真实后果
+// 是抛异常、并且**转抛给调用方**：
+//   · ItemsOnScreenProvider.update：new IndexRange(minVisible, maxVisible + 1)
+//     ⇒ maxVisible < minVisible - 1 时 start > end，抛 'Invalid range'；
+//   · PrefetchRangeRatio.calculateRatio：
+//     new IndexRange(max(0, start - n), min(totalCount, end + n))
+//     ⇒ 可见下标越过 totalCount 时同样 start > end，抛 'Invalid range'；
+//   · FetchingDriver.visibleAreaChanged 的 catch 写的是
+//     `reportError(...); throw e;` —— 记一笔然后原样抛出。
+// 这正是 2026-08-27 那份崩溃栈（IndexRange:965 ← calculateRatio:687 ←
+// ... ← ChatPage.ets 的 onScrollIndex）。那一次的成因是监听器空实现让
+// totalItems 停在 0（见下面 AlbumGroupDataSource.listeners 的注释，已修）。
+//
+// 修好通知之后仍然需要钳制，因为还剩一条**时序**上的窄口：start / end 来自
+// List 的 onScrollIndex，报的是**上一帧布局**里的可见行号；删除消息、切换会话、
+// 首屏分级揭示这些场景里，行数组可能已经在这一帧之内变短了。此时行号合法而
+// 集合已缩，越界的是行号本身——钳一下就把这条口子彻底堵上，代价是 O(1)。
+export function clampPrefetchRange(start: number, end: number, total: number): PrefetchRange | null {
+  if (total <= 0) {
+    return null;
+  }
+  const last: number = total - 1;
+  const lo: number = start < 0 ? 0 : (start > last ? last : start);
+  const hi: number = end < lo ? lo : (end > last ? last : end);
+  return { start: lo, end: hi };
+}
+
 // 图片预取源。名字保留成 AlbumGroupDataSource 是为了让这次的 diff 只有必须的
 // 部分——它现在只是 BasicPrefetcher 的数据面，不再是列表的数据源。
 export class AlbumGroupDataSource implements IDataSourcePrefetching {
   private groups: AlbumGroup[] = [];
 
+  // BasicPrefetcher 注册进来的变更监听器。
+  //
+  // 【这里曾经是空实现，代价是「进任何会话都必崩」】
+  //
+  // P4 把这个类瘦身成「只是 BasicPrefetcher 的数据面」时，把 register /
+  // unregister 写成了空实现，注释里写着「Repeat 不注册监听器」。Repeat 确实
+  // 不注册——但 BasicPrefetcher **会**，而且它没有别的途径知道集合变了。
+  //
+  // 读 jsPrefetcher.js（arkui_ace_engine，frameworks/bridge/declarative_frontend/
+  // engine/jsPrefetcher.js）可以把这条链一路对上：
+  //   FetchingDriver.setDataSourceInternal
+  //     → DataSourceObserver.setDataSource：dataSource.registerDataChangeListener(this)
+  //   listener.onDataReloaded()
+  //     → batchUpdate([{ kind: 'reloaded', totalCount: dataSource.totalCount() }])
+  //     → FetchingDriver.collectionChanged
+  //     → FetchingRangeEvaluator.onCollectionChanged：this.totalItems = totalCount
+  // register 是空实现并不妨碍构造时那一次 onDataReloaded（它是直接调的），但
+  // 此后**再没有人**能触发第二次 ⇒ totalItems 永远停在构造时的 0。
+  //
+  // 于是每一次 onScrollIndex 都走进 PrefetchRangeRatio.calculateRatio：
+  //     start = Math.max(0, visibleRange.start - prefetchCount)   // 比如 30
+  //     end   = Math.min(totalCount /* 0 */, visibleRange.end + prefetchCount) // 0
+  //     new IndexRange(30, 0)   // start > end ⇒ throw new Error('Invalid range')
+  // IndexRange 的构造函数没有钳制，FetchingDriver.visibleAreaChanged 的 catch
+  // 是 `reportError(...); throw e;`（**转抛**，不是吞掉），所以异常一路冒到
+  // ChatPage 的 onScrollIndex 回调，整个应用崩溃。
+  private listeners: DataChangeListener[] = [];
+
   // ChatPage 每次发布行数组时同步进来。
+  //
+  // 行数变了就发一次 onDataReloaded：这是 BasicPrefetcher 认识的、表达「整个
+  // 集合换了一份」的通知——它自己回头读 totalCount()，正好对应这里「换掉整个
+  // 数组」的语义（对比 onDataAdd / onDataDelete 那种逐条的形状，我们根本没有
+  // 逐条信息可给：Repeat 自己按 key 差分，P4 删掉的差分引擎不会搬回来）。
+  //
+  // **只在行数变化时发**，不是每次发布都发：setRows 在每一次发布上都被调用，
+  // 包括下载进度跳动那种「只有旁路字段变了」的发布（见 ChatPage.publishGroupsNow
+  // 里那段注释），而 onDataReloaded 会让 BasicPrefetcher clearFetched 整个可见
+  // 窗口再重发一轮 prefetch。行数是 totalItems 的唯一来源，也是崩溃的唯一成因，
+  // O(1) 就能判。代价是：行数不变而内容整体换掉（比如同一个页面切到另一个行数
+  // 恰好相同的会话）时，预取的「已取过」账本会短暂陈旧 ⇒ 少预取几张图。那只是
+  // 优化失效，气泡自己仍会按需加载——不是正确性问题。
   setRows(next: AlbumGroup[]): void {
+    const sizeChanged: boolean = next.length !== this.groups.length;
+    // 先落地，再通知：onDataReloaded 的实现会回头调 totalCount()。
     this.groups = next;
+    if (sizeChanged) {
+      this.notifyReloaded();
+    }
+  }
+
+  private notifyReloaded(): void {
+    // 先拿快照再遍历：监听器在回调里注销自己是允许的。
+    const current: DataChangeListener[] = this.listeners;
+    for (const listener of current) {
+      listener.onDataReloaded();
+    }
   }
 
   // --- prefetching -----------------------------------------------------------
@@ -289,11 +382,17 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
     return this.groups[index];
   }
 
-  // IDataSource 要求这两个方法存在。Repeat 不注册监听器，所以它们是空实现——
-  // 不是遗漏。
-  registerDataChangeListener(_listener: DataChangeListener): void {
+  // Repeat 不会调这两个，BasicPrefetcher 会——理由见 listeners 上面那段。
+  // 形状照抄官方 Prefetcher 文档里的 MyDataSource 示例（listeners 数组 +
+  // indexOf 去重），只是按本仓的不可变约定换成 concat / filter。
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (this.listeners.indexOf(listener) < 0) {
+      this.listeners = this.listeners.concat([listener]);
+    }
   }
 
-  unregisterDataChangeListener(_listener: DataChangeListener): void {
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    this.listeners = this.listeners.filter(
+      (registered: DataChangeListener): boolean => registered !== listener);
   }
 }
