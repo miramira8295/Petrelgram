@@ -449,6 +449,44 @@ struct ChatPageChrome {
 // 启用全局复用的同时，需要额外配置 freezeWhenInactive 参数」）。给 false 是
 // 因为 ChatPageChrome 现在就是不冻结的（@Component 不写这个参数即为 false），
 // 这一层不该顺手改变冻结语义。
+// ── preRender 为什么没有开：它和首屏分级揭示是打架的 ────────────────────
+//
+// 全局池的第三项能力是 IReusePool.preRender(builder, times)：调度**空闲任务**
+// 提前把复用组件建好放进池子，「加快初始渲染速度」。本页已经有一套解决首屏的
+// 机制——首屏分级揭示（initialMessageStage：进页面先只放 1 行真身、其余是估高
+// 占位，之后每次 release 只放行 1 行）。两者都在解决首屏，所以必须挑一个，
+// 不能两个都开着还不说。
+//
+// **结论：保留分级揭示，不开 preRender。** 三条理由，从硬到软：
+//
+// 1. 同一个窗口、同一条线程，而且抢的正是对方赖以成立的那点空隙。
+//    分级揭示的整个机制就是「每个 VSync 只允许建一行」这条硬上限——
+//    nextInitialMessageRevealCount 的注释记着为什么是 1 而不是 3：一对含贴纸的
+//    行能吃掉 26~28ms，六行挤进一次布局是 65ms。而 preRender 是**空闲任务**，
+//    它跑的就是每帧建完那一行之后剩下的那段空闲。在首屏窗口里开 preRender，
+//    等于一边限流一边从旁路灌水，被拖长的恰好是分级揭示要保护的那几帧。
+//
+// 2. 首屏那一刻**不知道该预建哪个桶**。全局池是按 reuseId 分区存放的，
+//    REUSE_ID_LEVEL = 'medium' 之下 rowReuseId 是一个 12 维的字符串，完全由
+//    行自己的数据算出来。而 preRender 必须在数据到达之前调用才谈得上「提前」
+//    ——那时一行消息都还没有，猜错的桶里那个实例不会被任何一行取走，只是白建
+//    一次、再白占一份内存。
+//
+// 3. preRender 吃的是 WrappedBuilder<[]>（零参 @Builder），意味着要在里面凭空
+//    造一个 AlbumGroup / MessageEntry 喂给 ReusableMessageBubble。而这棵子树
+//    挂载时是有副作用的：ReusableMessageBubble.aboutToAppear 会按
+//    (chatId, rowId) 去 messageRowPresentationChannel 订阅，更深的 MessageBubble
+//    会按内容发起缩略图/媒体的取数。拿一条**不存在的消息**去跑这些，副作用是
+//    真的会发出去的。
+//
+// 而 preRender 本来想给的那份「打开会话时池子已经是热的」，shared 池自己就给了：
+// 只要还有任意一个宿主实例活着，上一个会话回收的行就还在池子里，下一个会话
+// 直接取。这是不用伪造任何数据、也不占用首屏那段线程的同一份收益。
+//
+// 什么时候可以回头再看这条：如果上机数据显示首屏的瓶颈不在**建树**而在别处，
+// 或者分级揭示被证明可以撤掉，那时 preRender 才有位置——调用点是本组件的
+// aboutToAppear（官方示例就在那里），拿 UIUtils.getCustomComponentContext(this)
+// .getReusePool() 取池。在那之前，这里刻意什么都不做。
 @ComponentV2({
   reusePool: 'shared',
   poolAccepts: [ReusableMessageBubble],
