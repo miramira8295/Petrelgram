@@ -50,7 +50,7 @@ import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
 import { plural, str } from '../../util/strings';
-import { reuseProbe } from '../../util/panelProbe';
+import { reuseProbe, reuseProbeSkip } from '../../util/panelProbe';
 import { LiveProgressRing } from './LiveProgressRing';
 import { progressForOr, subscribeProgress } from '../../util/mediaProgressChannel';
 import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
@@ -130,6 +130,11 @@ struct LiveSenderAvatar {
   // 复用会经 aboutToReuse 和 @Watch 各挂一次，每次都是一整轮退订+重订阅）；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 有没有到。
   private attachedAvatarKey: string = '';
+  // 探针专用的对照基准（P2-1，随探针一起删）。attachedAvatarKey 会在 detach
+  // 里归零——而 aboutToRecycle 必然先于 aboutToReuse 跑，到探针那一刻它已经
+  // 是空的，拿它当基准什么也判不出。这个副本只写不清，保存「上一次真正挂上
+  // 去的那个 sender key」，即确定无疑的**上一条**。
+  private probeAttachedKey: string = '';
 
   private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
@@ -142,6 +147,7 @@ struct LiveSenderAvatar {
     }
     this.detachAvatarChannel();
     this.attachedAvatarKey = key;
+    this.probeAttachedKey = key;
     this.path = known !== '' ? known : initialPath;
     this.unsubAvatar = subscribeSenderAvatar(key, (path: string): void => {
       this.path = path;
@@ -149,8 +155,14 @@ struct LiveSenderAvatar {
   }
 
   // 按 key 自愈：@Prop 落地时若发送者已经换了，这里把订阅重挂到新 key 上。
+  // 第三个参数刻意传 ''，不传 this.initialPath（I-2）：@Prop 是逐个赋值的，
+  // senderId 的 watch 回调触发时 this.initialPath 可能还是**上一个发送者**的
+  // 路径。attach 里「通道没缓存就用 initialPath」那条会在新面孔滚入（通道缓存
+  // 常常为空）时画出上一个人的头像——正是这轮要修的「头像串行」，只是从
+  // params 路径挪到了 @Watch 路径。传 '' 最差是先显示首字母圆底，等通道推送
+  // 真路径，方向上安全。
   private onSenderChanged(): void {
-    this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
+    this.attachAvatarChannel(this.senderId, this.senderIsUser, '');
   }
 
   private detachAvatarChannel(): void {
@@ -184,9 +196,16 @@ struct LiveSenderAvatar {
     const nextIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
     const nextPath: string | undefined = params['initialPath'] as string | undefined;
     // P2-1 探针：递归复用时子组件拿到的 params 是新是旧无法静态判定。
-    reuseProbe('MessageBubble.LiveSenderAvatar', 'senderId', nextId !== undefined,
-      `sender=${nextId ?? -1},isUser=${nextIsUser === undefined ? -1 : (nextIsUser ? 1 : 0)}`,
-      `sender=${this.senderId},isUser=${this.senderIsUser ? 1 : 0}`);
+    // 基准是 probeAttachedKey（上一条真正挂上去的 sender），不是 this.senderId
+    // ——极性判反的理由见 panelProbe.reuseProbe 的注释。
+    const probeKey: string = (nextId === undefined || nextIsUser === undefined)
+      ? '' : senderChannelKey(nextId, nextIsUser);
+    const probeStale: boolean =
+      probeKey === '' || (this.probeAttachedKey !== '' && probeKey === this.probeAttachedKey);
+    if (!reuseProbeSkip(probeStale)) {
+      reuseProbe('MessageBubble.LiveSenderAvatar', 'senderId', nextId !== undefined, probeStale,
+        `sender=${probeKey}`, `sender=${this.probeAttachedKey},prop=${this.senderId}`);
+    }
     if (nextId !== undefined && nextIsUser !== undefined) {
       this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');
       return;
@@ -194,6 +213,10 @@ struct LiveSenderAvatar {
     // Child @Prop refreshes may land after this callback on some runtime
     // revisions. Reconnect once they have settled instead of retaining the
     // recycled row's sender channel.
+    // **这条兜底不是冗余，不要删（I-3）。** @Watch 只在值**变化**时触发，而
+    // 连续两条同一发送者的消息 senderId 不变 → onSenderChanged 根本不会跑；
+    // 而 aboutToRecycle 已经把 path 清空、订阅退掉、attachedAvatarKey 归零。
+    // 那种情况下这条 setTimeout 是唯一的复活路径，删掉会得到永久空白头像。
     setTimeout((): void => {
       this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
     }, 0);
@@ -248,6 +271,11 @@ export struct MessageBubble {
   // P0-4（审计 3.2b）：这是本组件订阅自愈的唯一依据——「params 里的 msg 是新
   // 是旧」静态判不了，「订阅挂在哪」却是本地可判定的事实。0 = 未挂。
   private attachedRowId: number = 0;
+  // 探针专用的对照基准（P2-1，随探针一起删）。attachedRowId 会在
+  // detachMessageChannels 里归零，而 aboutToRecycle 必然先于 aboutToReuse 跑，
+  // 到探针那一刻它已经是 0，拿它当基准什么也判不出。这个副本只写不清，保存
+  // 「上一次真正挂上去的那条消息的 rowId」，即确定无疑的**上一条**。
+  private probeAttachedRowId: number = 0;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
   @Prop themeBubbleOut: string = '';
   // 本地外观：epoch 一变，气泡底色/文字色（theme 里的活绑定）跟着重取。
@@ -553,6 +581,7 @@ export struct MessageBubble {
     }
     // 记下这套订阅挂在哪条消息上，供 onMsgPropChanged 判断是否需要重挂（P0-4）。
     this.attachedRowId = message.rowId;
+    this.probeAttachedRowId = message.rowId;
   }
 
   private detachMessageChannels(): void {
@@ -610,6 +639,10 @@ export struct MessageBubble {
     this.mediaCenterY = 0;
     this.albumCellCenterY.clear();
     this.albumWasCompetingVideo.clear();
+    // M-1：按 P0-3 的判据（不依赖新参数就该无条件清）归到这里。清成 false 是
+    // 安全方向——它只用于「从参与竞选翻到不参与」的一次性补报，false 起步最多
+    // 少报一次，不会误报。拿得到新消息时 resetReusedState 会立刻覆盖成真值。
+    this.wasCompetingVideo = false;
     this.videoNotePlaying = false;
     // 玻璃层的尺寸是量出来的：复用成另一条消息后，旧尺寸算出的裁剪路径是错的，
     // 清零等这一帧的 onAreaChange 重新给。onScreen 回到 true 的理由同它的声明处。
@@ -631,8 +664,10 @@ export struct MessageBubble {
   }
 
   // 剩下的两条是**依赖新参数**的，只能在拿得到新消息时做。
+  // 前提：调用方必须已经跑过 clearTransientState()。两个调用点都在
+  // aboutToReuse 里，而它开头就无条件跑了那一份（I-4：这里再跑一次是纯重复，
+  // 每复用一行多约 20 次 @State 写入，就在滚动热路径上）。
   private resetReusedState(next: MessageEntry): void {
-    this.clearTransientState();
     this.labelWidthRowId = next.rowId;
     this.wasCompetingVideo = next.contentType === 'video' && !next.isAnimation;
   }
@@ -690,12 +725,24 @@ export struct MessageBubble {
     const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
     // P2-1 探针（审计第 4 节 ①-1）：递归复用时这里的 params 是新值、旧值
     // 还是缺失，文档没规定、静态代码判不出来，只能上机读日志。
-    reuseProbe('MessageBubble', 'msg', next !== undefined,
-      `row=${next?.rowId ?? -1},msg=${next?.id ?? -1}`,
-      `row=${this.msg.rowId},msg=${this.msg.id}`);
+    // 基准是 probeAttachedRowId（上一条真正挂上去的消息），不是 this.msg
+    // ——极性判反的理由见 panelProbe.reuseProbe 的注释。
+    // this.msg 是**无初值**的 @Prop，C3/C4 那条「复用中新建、aboutToReuse 跑在
+    // 半成品上」的路径下可能还没落地，所以下面读它一律走 undefined 保护（I-1）。
+    const probeRow: number = next === undefined ? -1 : next.rowId;
+    const probeStale: boolean =
+      next === undefined || (this.probeAttachedRowId !== 0 && probeRow === this.probeAttachedRowId);
+    if (!reuseProbeSkip(probeStale)) {
+      reuseProbe('MessageBubble', 'msg', next !== undefined, probeStale,
+        `row=${probeRow},msg=${next === undefined ? -1 : next.id}`,
+        `row=${this.probeAttachedRowId},prop=${this.msg === undefined ? -1 : this.msg.rowId}`);
+    }
     if (next === undefined) {
       // @Prop refreshes land after this callback. The normal wrapper always
       // supplies msg in params; keep a safe fallback for framework variations.
+      // **这条兜底不是冗余，不要删（I-3）。** 复用回同一条消息时 @Prop msg 没
+      // 变化 → onMsgPropChanged 不触发 → P0-4 那条自愈也不跑；而 aboutToRecycle
+      // 已经退订并把 attachedRowId 归零。那种情况下这里是唯一的重挂路径。
       setTimeout((): void => {
         this.resetReusedState(this.msg);
         this.attachMessageChannels(this.msg);
