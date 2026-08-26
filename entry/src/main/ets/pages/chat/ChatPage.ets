@@ -54,9 +54,10 @@ import { MusicQueue } from '../../services/MusicQueue';
 import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { actionMenuRow } from './ActionMenuRow';
-import { AlbumGroupDataSource, contentFingerprint, DataSourceUpdateKind } from './AlbumGroupDataSource';
+import {
+  AlbumGroupDataSource, contentFingerprint, countDeferredFlips, reuseUnchangedRows, sameRowArray
+} from './AlbumGroupDataSource';
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
-import { guardKey } from '../../util/keyGuard';
 import { ChatBackdrop } from './ChatBackdrop';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
 import { TopBanners } from './TopBanners';
@@ -433,21 +434,21 @@ export struct ChatPage {
   @Local messageLoadError: string = '';
   @Local olderLoadState: string = 'idle'; // idle | loading | error | end
   @Local newerLoadState: string = 'idle'; // idle | loading | error | end
-  // Its own state variable rather than `groups.length`: the rows come from the
-  // LazyForEach data source, so build() never iterates `groups` and would not
-  // re-run on its length alone. This count is what drives the empty/loading
-  // timeline state.
+  // **完整快照**的行数，不是当前渲染的行数——首屏分级渲染期间 groups 里坐着
+  // 占位副本，长度一样，所以两者此刻仍然相等；将来若有别的分级形状，这个计数
+  // 要跟着"用户最终会看到多少行"走。它驱动的是空/加载中的时间线提示。
   @Local visibleGroupCount: number = 0;
-  // Rendered through the LazyForEach data source (incremental notifications keep
-  // scroll position on prepend); the plain array mirror serves index lookups.
-  // @Local (not a plain field) so MediaViewerOverlay's @Param keeps re-syncing:
-  // @Param only follows a source that is itself a state variable, and a plain
-  // field handed to a child would freeze at its construction-time value,
-  // breaking album paging in the viewer once more history loads.
-  // （P3 批 2：那一层已经从 V1 @Prop 迁到 V2 @Param —— 同样的「必须是状态变量」
-  //   要求，但传的是引用，不再每次换新数组就整表深拷。）
+  // 消息列表的**唯一真相**。P4 之前它只是 LazyForEach 数据源的一份镜像，只用来
+  // 做下标查找；现在 Repeat 直接渲染它，每次发布整体赋值（见 publishGroupsNow）。
+  // @Local（而不是普通字段）有两个理由：Repeat 懒加载必须配状态管理 V2 才能观测
+  // 到数组变化；MediaViewerOverlay 的 @Param 也只跟随本身是状态变量的源。
   @Local groups: AlbumGroup[] = [];
+  // 只剩图片预取源，不再是列表的数据源（见 AlbumGroupDataSource 文件头）。
   private groupsData: AlbumGroupDataSource = new AlbumGroupDataSource();
+  // 强制整表重建用的纪元，进 rowKeyOf。Repeat 没有 LazyForEach 的 reload()——
+  // 让每一行的 key 都改变就是它的等价物（官方：键值变化会触发页面刷新）。
+  // 两个调用点：语言纪元变化、从后台回来的重新对齐。见 rebuildAllRows()。
+  private listRebuildEpoch: number = 0;
 
   // The ONE definition of a message row's LazyForEach key. Both the key
   // generator below and the data source's operations go through this: the data
@@ -465,7 +466,7 @@ export struct ChatPage {
   // changes once in a session.
   private rowKeyOf: (g: AlbumGroup) => string = (g: AlbumGroup): string =>
     `message_group_${g.head.rowId}_${g.rowMemberIds.join('_')}` +
-    `_${contentFingerprint(g.key)}_${this.langEpoch}`;
+    `_${contentFingerprint(g.key)}_${this.langEpoch}_${this.listRebuildEpoch}`;
 
   // Whether this page is currently visible (between onPageShow and onPageHide),
   // and whether the list dataset changed while it was not.
@@ -505,12 +506,37 @@ export struct ChatPage {
   private hiddenAnchorId: number = 0;
   private hiddenAnchorY: number = 0;
 
-  private publishGroupsNow(groups: AlbumGroup[]): DataSourceUpdateKind {
-    const kind: DataSourceUpdateKind = this.groupsData.update(groups);
-    if (!this.pageVisible && kind !== 'none') {
+  // 发布一份新的行快照。**唯一**给 this.groups 赋值的地方（rebuildAllRows 除外）。
+  //
+  // reuseUnchangedRows 是这里唯一的"聪明"步骤，理由写在它自己的注释里：
+  // collapseAlbums 每次都产出全新对象，而 Repeat 按 item 引用判断要不要刷新，
+  // 不还原没变过的行就等于每次发布都刷新整个可见窗口。
+  private publishGroupsNow(groups: AlbumGroup[]): void {
+    const next: AlbumGroup[] = reuseUnchangedRows(this.groups, groups);
+    // [BlankRow] 探针，说明见 AlbumGroupDataSource.countDeferredFlips 的注释。
+    const flips: number = countDeferredFlips(this.groups, next);
+    if (flips > 0) {
+      logW(`[BlankRow] repeat flips=${flips} prev=${this.groups.length} next=${next.length}`);
+    }
+    const changed: boolean = !sameRowArray(this.groups, next);
+    this.groups = next;
+    // 预取源跟着走。BasicPrefetcher 按 onScrollIndex 报的可见区间来问它要行。
+    this.groupsData.setRows(next);
+    if (!this.pageVisible && changed) {
       this.hiddenListDirty = true;
     }
-    return kind;
+  }
+
+  // 让 Repeat 整表重建：每一行的 key 都换掉。
+  //
+  // LazyForEach 时代这是 AlbumGroupDataSource.reload()（一条 RELOAD 通知）。
+  // Repeat 没有对应的命令式接口，但官方写明「键值变化或数据变化均会触发页面
+  // 刷新」，所以把纪元推进一格、再换一个新数组交出去，效果等价：所有 key 都变
+  // 成新 key ⇒ 全部删旧插新。行对象本身原样复用，内容一个字都没动。
+  private rebuildAllRows(): void {
+    this.listRebuildEpoch++;
+    this.groups = this.groups.slice();
+    this.groupsData.setRows(this.groups);
   }
 
   private syncChatTgsGate(): void {
@@ -542,7 +568,7 @@ export struct ChatPage {
   }
 
   // The normal publication gate also invalidates an unfinished initial stage.
-  private publishGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+  private publishGroups(groups: AlbumGroup[]): void {
     const wasStaging: boolean = this.initialMessageStageActive;
     this.initialMessageStageSeq++;
     this.initialMessageStageActive = false;
@@ -552,20 +578,20 @@ export struct ChatPage {
     if (wasStaging) {
       this.scheduleChatTgsResume();
     }
-    return this.publishGroupsNow(groups);
+    this.publishGroupsNow(groups);
   }
 
   // MessageStore can publish another ready snapshot while the initial rows are
   // still being revealed (reply/photo metadata often arrives immediately).
   // Keep the newest snapshot for the next batch instead of cancelling staging
   // and putting the complete list back into the very next VSync.
-  private publishMessageGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+  private publishMessageGroups(groups: AlbumGroup[]): void {
     if (this.initialMessageStageActive) {
       this.initialMessagePendingGroups = groups;
       this.postInitialMessageFrame(this.initialMessageStageSeq);
-      return 'none';
+      return;
     }
-    return this.publishGroups(groups);
+    this.publishGroups(groups);
   }
 
   private initialMessageStageTarget(groups: AlbumGroup[]): InitialMessageStageTarget {
@@ -834,7 +860,7 @@ export struct ChatPage {
     }), INITIAL_MESSAGE_RELEASE_DELAY_MS);
   }
 
-  private publishInitialMessageGroups(groups: AlbumGroup[]): DataSourceUpdateKind {
+  private publishInitialMessageGroups(groups: AlbumGroup[]): void {
     const target: InitialMessageStageTarget = this.initialMessageStageTarget(groups);
     // Publish a placeholder-only list first. The initial MessageStore snapshot
     // also changes title/load/list state and makes ChatPage rerender as a whole;
@@ -850,7 +876,8 @@ export struct ChatPage {
       firstRevealCount
     );
     if (staged === groups) {
-      return this.publishGroups(groups);
+      this.publishGroups(groups);
+      return;
     }
 
     const stageSeq: number = ++this.initialMessageStageSeq;
@@ -864,9 +891,8 @@ export struct ChatPage {
     this.syncChatTgsGate();
     this.initialMessagePendingGroups = groups;
     this.initialMessageRevealCount = firstRevealCount;
-    const kind: DataSourceUpdateKind = this.publishGroupsNow(staged);
+    this.publishGroupsNow(staged);
     this.postInitialMessageFrame(stageSeq);
-    return kind;
   }
 
   // 隐藏时把视口位置记下来，供回来后还原。
@@ -898,7 +924,8 @@ export struct ChatPage {
     const anchorY: number = this.hiddenAnchorY;
     this.hiddenAnchorId = 0;
     this.hiddenAnchorY = 0;
-    this.groupsData.reload();
+    // 迁 Repeat 之前这里是 groupsData.reload()。等价物见 rebuildAllRows()。
+    this.rebuildAllRows();
     // 再打一次：此时框架已经渲染完，屏幕上如果是错的，这一份就是"数据本来
     // 长什么样"的对照。
     const dumpSeq: number = this.scrollActionSeq;
@@ -1217,14 +1244,23 @@ export struct ChatPage {
   // 闸门是 **getApiTargetVersion()**，也就是 build-profile 里的 targetSdkVersion
   // （本仓 "26.0.0"），不是 compatibleSdkVersion("6.0.0(20)")、也不是设备版本。
   // 按这条推断分档是生效的，但这是读产物推出来的，**没上机验过**，列入待验清单。
+  //
+  // 入参是**整个 RepeatItem**，不是从它里面取出来的值。官方《Repeat》使用限制：
+  // 「当 Repeat 与自定义组件或 @Builder 函数混用时，必须将 RepeatItem 类型整体
+  // 进行传参，组件才能监听到数据变化」，反例正是按值传 ri.item —— 那样 Repeat
+  // 更新这一行时（它只换 RepeatItem 里的 item，不重跑 .each()）这个 @Builder
+  // 里的 UI 不会刷新。所以 ri 一路传到这里，group/data 都在本作用域内现取。
   @Builder
-  private preparedMessageBubble(prepared: PreparedMessageBubble) {
+  private preparedMessageBubble(ri: RepeatItem<AlbumGroup>) {
     ReusableMessageBubble({
-      group: prepared.group,
+      group: ri.item,
       nowSec: this.nowSec,
-      data: prepared.data,
+      data: this.prepareMessageBubble(ri.item).data,
       actions: this.messageActions()
-    }).reuse({ reuseId: (): string => rowReuseId(prepared.data, prepared.group, REUSE_ID_LEVEL) });
+    }).reuse({
+      reuseId: (): string =>
+        rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, REUSE_ID_LEVEL)
+    });
   }
   @Local subtitle: string = '';
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
@@ -1746,7 +1782,6 @@ export struct ChatPage {
     this.messageLoadError = '';
     this.olderLoadState = 'idle';
     this.newerLoadState = 'idle';
-    this.groups = [];
     this.visibleGroupCount = 0;
     this.publishGroups([]);
     this.pausedAnimationIds = [];
@@ -1857,7 +1892,6 @@ export struct ChatPage {
     this.clientJoinNoticeDate = Math.floor(Date.now() / 1000);
     this.clientJoinNoticeEntryCache = null;
     const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(this.messages);
-    this.groups = groups;
     this.visibleGroupCount = groups.length;
     this.publishGroups(groups);
     if (this.didInitialScroll && this.atBottom) {
@@ -1933,10 +1967,6 @@ export struct ChatPage {
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
     this.syncChatTgsGate();
-    // Before anything can publish a dataset: the data source names the keys of
-    // the rows its operations touch, and it has to name them the same way the
-    // LazyForEach key generator does.
-    this.groupsData.setKeyBuilder(this.rowKeyOf);
     this.unsubPlaySlot = this.playSlots.subscribe((key: string): void => {
       // 起播位置必须在 playSlotKey 之前落下：气泡是靠 playSlotKey 的变化才
       // 挂载 VideoBubbleSurface 的，晚一步这条播放器就已经从 0 开始了。
@@ -1950,8 +1980,8 @@ export struct ChatPage {
     // 「会话参数无效」、内容区报「消息加载失败」）——所以那段整体搬进了
     // applyRouteParams()，由 onReady 在存完 navParams 之后调用。
     //
-    // 留在这里的三行与路由参数无关（数据源 keyBuilder、播放位订阅、秒表初值），
-    // 时机保持原样：它们必须在任何 LazyForEach 发布数据之前就绪。
+    // 留在这里的两件事与路由参数无关（播放位订阅、秒表初值），时机保持原样：
+    // 它们必须在任何一次行数组发布之前就绪。
   }
 
   // 路由参数就绪后的初始化。这就是迁移前 aboutToAppear 的后半段，顺序一字未改，
@@ -2181,7 +2211,7 @@ export struct ChatPage {
         return;
       }
       const firstMessageStage: boolean = !scrollResumeWaiting && !this.didInitialScroll &&
-        this.groupsData.totalCount() === 0;
+        this.groups.length === 0;
       const notifyKind: string = store.getCurrentNotifyKind();
       const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
       const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
@@ -2189,31 +2219,26 @@ export struct ChatPage {
       // key. Publish them directly to the mounted row before the data-source
       // diff, so a key-equal snapshot still updates the one affected bubble.
       publishMessageRowPresentations(this.chatId, groups);
-      let prependAnchorId: number = 0;
-      let prependAnchorY: number = 0;
-      if (this.didInitialScroll && this.groups.length > 0 && groups.length > this.groups.length) {
-        const previousFirstIndex: number = groupIndexOf(groups, this.groups[0].head.id);
-        const visibleIndex: number = this.curStartIdx;
-        if (previousFirstIndex > 0 && visibleIndex >= 0 && visibleIndex < this.groups.length) {
-          prependAnchorId = this.groups[visibleIndex].head.id;
-          try {
-            prependAnchorY = this.scroller.getItemRect(visibleIndex).y;
-          } catch (e) {
-            prependAnchorY = 0;
-          }
-        }
-      }
+      // 迁 Repeat 之前这里还会先记一份"翻页锚点"，供 `updateKind === 'reload'`
+      // 那一支手动复位。Repeat 没有 RELOAD 这个概念，也就没有那个信号了：向上
+      // 翻页的位置保持完全交给 List.maintainVisibleContentPosition(true)
+      // （官方从 API 20 起支持它与 Repeat 懒加载配合，本仓 compatibleSdkVersion
+      // 正好是 20）。相册跨页合并那一行的 key 会变，属于"删旧插新"而不是纯前插，
+      // 文档答不了它会不会抖——那是待上机的第一项（调研 R2）。真抖了，复位代码
+      // 在 git show cb3c158:entry/src/main/ets/pages/chat/ChatPage.ets 里。
       this.messages = list;
       this.messageListRevision++;
       this.reconcileMessageActionTargets(list);
-      this.groups = groups;
       this.visibleGroupCount = groups.length;
       if (this.viewerMsgId !== 0 &&
         list.findIndex((m: MessageEntry): boolean => m.id === this.viewerMsgId) < 0) {
         this.closeViewer();
       }
-      const updateKind: string = firstMessageStage
-        ? this.publishInitialMessageGroups(groups) : this.publishMessageGroups(groups);
+      if (firstMessageStage) {
+        this.publishInitialMessageGroups(groups);
+      } else {
+        this.publishMessageGroups(groups);
+      }
       if (firstMessageStage && groups.length === 0) {
         // There is no bubble that can drive the coordinated presentation.
         // Reveal the resolved empty/error surface now. Non-empty histories are
@@ -2239,13 +2264,6 @@ export struct ChatPage {
       this.driveVisibleWork();
       this.fillViewportIfNeeded();
       this.musicQueue.settlePending(list);
-      // Incremental ops (the normal prepend) keep the viewport anchored via
-      // maintainVisibleContentPosition; forcing scrollToIndex on top of that
-      // cancelled the user's fling mid-scroll — the load-more stutter. Only a
-      // RELOAD rebuild loses the anchor and needs the manual restore.
-      if (prependAnchorId > 0 && updateKind === 'reload') {
-        this.restorePrependAnchor(groups, prependAnchorId, prependAnchorY);
-      }
       let positionHandled: boolean = false;
       if (scrollResumeWaiting && list.length > 0) {
         scrollResumeWaiting = false;
@@ -4828,12 +4846,12 @@ export struct ChatPage {
 
   @Monitor('langEpoch')
   private onLanguageEpochChanged(): void {
-    // A hidden page can't be trusted to apply even a RELOAD; re-issue on show.
+    // A hidden page can't be trusted to apply even a full rebuild; re-issue on show.
     if (!this.pageVisible) {
       this.hiddenListDirty = true;
       return;
     }
-    this.groupsData.reload();
+    this.rebuildAllRows();
   }
 
   @Monitor('appIsForeground')
@@ -8501,92 +8519,114 @@ export struct ChatPage {
       Column() {
         Stack() {
         List({ scroller: this.scroller }) {
-          // LazyForEach (not ForEach) is required for maintainVisibleContentPosition
-          // to hold the scroll position when older pages are prepended above.
-          LazyForEach(this.groupsData, (g: AlbumGroup, index: number) => {
-            ListItem() {
-              if (g.initialDeferred === true) {
-                Column()
-                  .width('100%')
-                  .height(initialMessagePlaceholderHeight(
-                    g,
-                    this.screenW,
-                    this.firstUnreadId !== 0 &&
-                      g.memberIds.indexOf(this.firstUnreadId) >= 0
-                  ))
-                  .hitTestBehavior(HitTestMode.None);
-              } else {
-              Stack({ alignContent: Alignment.Start }) {
-              // Selection mode shifts the row right into a left check gutter
-              // (instead of overlaying the check on the avatars).
-              Row() {
-              if (this.selecting && g.head.contentType !== 'system' && g.head.contentType !== 'hidden') {
-                Column() {
-                  if (this.rowSelected(g)) {
-                    SymbolGlyph($r('sys.symbol.checkmark_circle'))
-                      .fontSize(22).fontColor([this.accent()]);
-                  } else {
-                    Row()
-                      .width(20).height(20).borderRadius(10)
-                      .border({ width: 1.5, color: '#8E8E93' });
+          // Repeat.virtualScroll（不是 ForEach / LazyForEach）。三条硬约束都满足：
+          //   · 「Repeat 必须在滚动类容器组件内使用」——这里是 List；
+          //   · 「滚动容器组件内只能包含一个 Repeat」——这个 List 的 children 只有
+          //     它一个，逐行确认过；
+          //   · 「Repeat 懒加载模式不支持与状态管理 V1 配合使用」——ChatPage 在
+          //     P3 批 1 已经是 @ComponentV2。
+          //
+          // reusable: false —— **故意关掉 Repeat 自身的复用**。官方原话：「当
+          // Repeat 的子组件为 @ReusableV2 装饰的自定义组件时，Repeat 自身的复用
+          // 能力优先于 @ReusableV2 的复用能力……在懒加载模式下，正常滑动场景、
+          // 更新场景不会触发 @ReusableV2 的回收和复用，若开发者希望使用
+          // @ReusableV2 的复用能力，建议关闭 Repeat 自身的复用能力。」本行的复用
+          // 是 ReusableMessageBubble（@ReusableV2）+ rowReuseId 分档的全局池，
+          // P5 的既定方案就是保住它，所以按官方的建议关掉 Repeat 这一层。
+          // 起始版本：virtualScroll / totalCount / key / each 都是 API 12，
+          // reusable 是 API 18，本仓 compatibleSdkVersion "6.0.0(20)" 全部够用。
+          //
+          // 没有用 .templateId()/.template()：template 是 **Repeat 自己的**复用池
+          // 分档，reusable: false 之下它本就不生效；而且 rowReuseId 的取值空间是
+          // 十二个维度的组合（medium 档最多 4096 种），没法逐个声明成 .template()，
+          // 声明不全的那些按文档会落回 .each()。分档继续由 @ReusableV2 的
+          // .reuse({ reuseId }) 承担，rowReuseId.ets 一个字符没动。
+          Repeat<AlbumGroup>(this.groups)
+            .each((ri: RepeatItem<AlbumGroup>) => {
+              ListItem() {
+                if (ri.item.initialDeferred === true) {
+                  Column()
+                    .width('100%')
+                    .height(initialMessagePlaceholderHeight(
+                      ri.item,
+                      this.screenW,
+                      this.firstUnreadId !== 0 &&
+                        ri.item.memberIds.indexOf(this.firstUnreadId) >= 0
+                    ))
+                    .hitTestBehavior(HitTestMode.None);
+                } else {
+                Stack({ alignContent: Alignment.Start }) {
+                // Selection mode shifts the row right into a left check gutter
+                // (instead of overlaying the check on the avatars).
+                Row() {
+                if (this.selecting && ri.item.head.contentType !== 'system' && ri.item.head.contentType !== 'hidden') {
+                  Column() {
+                    if (this.rowSelected(ri.item)) {
+                      SymbolGlyph($r('sys.symbol.checkmark_circle'))
+                        .fontSize(22).fontColor([this.accent()]);
+                    } else {
+                      Row()
+                        .width(20).height(20).borderRadius(10)
+                        .border({ width: 1.5, color: '#8E8E93' });
+                    }
                   }
+                  .width(34)
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(HorizontalAlign.Center);
                 }
-                .width(34)
-                .justifyContent(FlexAlign.Center)
-                .alignItems(HorizontalAlign.Center);
+                Column() {
+                  this.preparedMessageBubble(ri);
+                }
+                .layoutWeight(1)
+                // 多选态下消息本体整体不响应触摸：BLOCK_DESCENDANTS 只封住自己和
+                // 后代，**不影响祖先**（官方原话），所以外层 List 的滑动照常。
+                // 原来用的是 Block，它连兄弟一起封，实测多选时列表滑不动。
+                // 点击判定放在外面那层，那层保持 Default。
+                .hitTestBehavior(this.selecting && ri.item.head.contentType !== 'system' &&
+                  ri.item.head.contentType !== 'hidden'
+                  ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+                .backgroundColor(this.selecting && this.rowSelected(ri.item) ? $r('app.color.select_highlight') : Color.Transparent)
+                .animation({
+                  duration: this.chatTgsScrollActive ? 0 :
+                    powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
+                  curve: Curve.EaseOut
+                })
+                .onClick(() => {
+                  if (this.selecting) {
+                    this.toggleSelectRow(ri.item);
+                  }
+                });
+                }
+                }
               }
-              Column() {
-                this.preparedMessageBubble(this.prepareMessageBubble(g));
-              }
-              .layoutWeight(1)
-              // 多选态下消息本体整体不响应触摸：BLOCK_DESCENDANTS 只封住自己和
-              // 后代，**不影响祖先**（官方原话），所以外层 List 的滑动照常。
-              // 原来用的是 Block，它连兄弟一起封，实测多选时列表滑不动。
-              // 点击判定放在外面那层，那层保持 Default。
-              .hitTestBehavior(this.selecting && g.head.contentType !== 'system' &&
-                g.head.contentType !== 'hidden'
-                ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
-              }
-              .width('100%')
-              .alignItems(VerticalAlign.Center)
-              .backgroundColor(this.selecting && this.rowSelected(g) ? $r('app.color.select_highlight') : Color.Transparent)
-              .animation({
-                duration: this.chatTgsScrollActive ? 0 :
-                  powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-                curve: Curve.EaseOut
+              // Deferred rows continue reserving geometry after an early bottom
+              // reveal. Keep each one invisible until its stable-key replacement
+              // is real, then reuse the same per-row fade/transform wave.
+              .opacity(this.initialTimelineMasked || ri.item.initialDeferred === true ? 0 : 1)
+              .translate({
+                y: this.initialTimelineMasked || ri.item.initialDeferred === true ? 2 : 0
               })
-              .onClick(() => {
-                if (this.selecting) {
-                  this.toggleSelectRow(g);
-                }
+              .scale({
+                x: this.initialTimelineMasked || ri.item.initialDeferred === true ? 0.99 : 1,
+                y: this.initialTimelineMasked || ri.item.initialDeferred === true ? 0.99 : 1
+              })
+              .animation({
+                // Newly materialized rows read the plain scroll gate without
+                // invalidating already visible rows at onScrollStart. During a
+                // fling they paint immediately; the entry stagger remains for
+                // the coordinated first presentation.
+                duration: this.chatTgsScrollActive ? 0 : powerAnimationDuration(
+                  KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
+                delay: this.chatTgsScrollActive ? 0 : this.initialTimelineRowRevealDelay(ri.index),
+                curve: Curve.EaseOut
               });
-              }
-              }
-            }
-            // Deferred rows continue reserving geometry after an early bottom
-            // reveal. Keep each one invisible until its stable-key replacement
-            // is real, then reuse the same per-row fade/transform wave.
-            .opacity(this.initialTimelineMasked || g.initialDeferred === true ? 0 : 1)
-            .translate({
-              y: this.initialTimelineMasked || g.initialDeferred === true ? 2 : 0
             })
-            .scale({
-              x: this.initialTimelineMasked || g.initialDeferred === true ? 0.99 : 1,
-              y: this.initialTimelineMasked || g.initialDeferred === true ? 0.99 : 1
-            })
-            .animation({
-              // Newly materialized rows read the plain scroll gate without
-              // invalidating already visible rows at onScrollStart. During a
-              // fling they paint immediately; the entry stagger remains for
-              // the coordinated first presentation.
-              duration: this.chatTgsScrollActive ? 0 : powerAnimationDuration(
-                KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-              delay: this.chatTgsScrollActive ? 0 : this.initialTimelineRowRevealDelay(index),
-              curve: Curve.EaseOut
-            });
-          }, (g: AlbumGroup, index: number): string =>
             // Format lives in rowKeyOf — see its comment.
-            guardKey(this.groupsData.keyTableId, index, this.rowKeyOf(g)));
+            .key((g: AlbumGroup): string => this.rowKeyOf(g))
+            .virtualScroll({ totalCount: this.groups.length, reusable: false });
         }
         .width('100%').height('100%')
         // Keep layout/build work alive behind a visual mask. The mask is
