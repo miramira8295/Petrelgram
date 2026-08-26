@@ -1131,7 +1131,7 @@ export struct ChatPage {
       nowSec: this.nowSec,
       data: prepared.data,
       actions: this.messageActions()
-    }).reuseId(rowReuseId(prepared.data, prepared.group.head, REUSE_ID_LEVEL));
+    }).reuseId(rowReuseId(prepared.data, prepared.group, REUSE_ID_LEVEL));
   }
   @State subtitle: string = '';
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the

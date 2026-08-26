@@ -1,5 +1,6 @@
 import { MessageEntry } from '../store/MessageEntry';
 import { MessageBubbleRenderData } from '../pages/chat/ReusableMessageBubble';
+import { AlbumGroup } from './collapseAlbums';
 
 // Reuse-pool key for the ReusableMessageBubble shell, ordered by how coarsely
 // it splits the pool into buckets. Coarser levels give higher hit rates but
@@ -19,27 +20,38 @@ function coarseBucket(data: MessageBubbleRenderData): string {
   return data.lightweightPlainText ? 'plain' : 'rich';
 }
 
-// showAvatar/showSenderName in MessageBubble are run-position flags carried
-// on AlbumGroup (see collapseAlbums.ets), not on a single MessageEntry, and
-// this function only receives the entry plus the render data — so there is no
-// exact field to read here. What follows is a structural proxy: it answers
-// "does this row's branch that CAN hold an avatar column exist at all"
-// (MessageBubble.ets ~3439: `if (isGroup && !isOutgoing) { ... }`), not the
-// exact per-run on/off flag. That's coarser than the real prop (it doesn't
-// distinguish first/last-of-run within a group), but it is still a genuine
-// structural fork: private-chat and outgoing rows never have this branch at
-// all, group incoming rows always do.
-function hasAvatarBranch(data: MessageBubbleRenderData, msg: MessageEntry): boolean {
-  return data.isGroup && !msg.isOutgoing;
+// showAvatar/showSenderName are the real per-row structural flags, computed
+// once per row in collapseAlbums.ets (~290-292) as "last row of a same-sender
+// run" / "first row of a same-sender run" respectively. They gate whether
+// MessageBubble.ets renders the avatar column (~3439) and the sender-name
+// line (~3494) at all, so they belong in the reuseId at the same granularity
+// LazyForEach already uses for its row key: collapseAlbums.ets:292 encodes
+// them into AlbumGroup.key ('A'/'a' + 'N'/'n') for exactly this reason — a
+// key that tells rows apart while reuseId lumps them together is the
+// structural-mismatch failure mode the diagnostics doc warns about.
+function hasAvatarBranch(group: AlbumGroup): boolean {
+  return group.showAvatar;
 }
 
-// Same substitution as hasAvatarBranch, for the sender-name line
-// (MessageBubble.ets ~3494: `if (isGroup && !isOutgoing && senderName !== '' &&
-// showSenderName)`). showSenderName itself is unavailable here for the same
-// reason, so this checks only the preconditions that are visible from a
-// single MessageEntry.
-function hasSenderNameBranch(data: MessageBubbleRenderData, msg: MessageEntry): boolean {
-  return data.isGroup && !msg.isOutgoing && msg.senderName !== '';
+function hasSenderNameBranch(group: AlbumGroup): boolean {
+  return group.showSenderName;
+}
+
+// AlbumGroup.dateLabel is '' unless this row is the first of a new day, in
+// which case MessageBubble.ets (~3420) inserts a centered date-pill Text
+// above the bubble — an extra node that changes the row's child count/shape.
+function hasDateSeparator(group: AlbumGroup): boolean {
+  return group.dateLabel !== '';
+}
+
+// data.showUnreadDivider (MessageBubbleRenderData) mirrors the same-named
+// context field ChatPage computes per row (prepareMessageBubble, ~1020-1021:
+// true when the row's message ids include the chat's first-unread id).
+// MessageBubble.ets (~3427) renders a centered "unread" pill above the bubble
+// when set — another node the reuseId must track, same reasoning as the date
+// separator.
+function hasUnreadDivider(data: MessageBubbleRenderData): boolean {
+  return data.showUnreadDivider;
 }
 
 function hasReplyBlock(msg: MessageEntry): boolean {
@@ -54,13 +66,17 @@ function hasReactionBar(msg: MessageEntry): boolean {
   return msg.reactions.length > 0;
 }
 
-function mediumBucket(data: MessageBubbleRenderData, msg: MessageEntry): string {
-  const avatar: string = hasAvatarBranch(data, msg) ? 'avatar' : 'no-avatar';
-  const senderName: string = hasSenderNameBranch(data, msg) ? 'sender' : 'no-sender';
+function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
+  const msg: MessageEntry = group.head;
+  const avatar: string = hasAvatarBranch(group) ? 'avatar' : 'no-avatar';
+  const senderName: string = hasSenderNameBranch(group) ? 'sender' : 'no-sender';
   const reply: string = hasReplyBlock(msg) ? 'reply' : 'no-reply';
   const forward: string = hasForwardHeader(msg) ? 'forward' : 'no-forward';
   const reactions: string = hasReactionBar(msg) ? 'reactions' : 'no-reactions';
-  return `${coarseBucket(data)}:${avatar}:${senderName}:${reply}:${forward}:${reactions}`;
+  const dateSep: string = hasDateSeparator(group) ? 'date' : 'no-date';
+  const unread: string = hasUnreadDivider(data) ? 'unread' : 'no-unread';
+  return `${coarseBucket(data)}:${avatar}:${senderName}:${reply}:${forward}:${reactions}` +
+    `:${dateSep}:${unread}`;
 }
 
 // contentType values are enumerated from every `contentType === '...'` check
@@ -103,8 +119,8 @@ function mediaKind(msg: MessageEntry): MediaKind {
   }
 }
 
-function fineBucket(data: MessageBubbleRenderData, msg: MessageEntry): string {
-  return `${mediumBucket(data, msg)}:${mediaKind(msg)}`;
+function fineBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
+  return `${mediumBucket(data, group)}:${mediaKind(group.head)}`;
 }
 
 // Structure-only reuse-pool key for the ReusableMessageBubble shell. Message
@@ -121,12 +137,17 @@ function fineBucket(data: MessageBubbleRenderData, msg: MessageEntry): string {
 // worse than no reuse at all. rowReuseId stays deliberately coarse and
 // adjustable (coarse/medium/fine) so the right granularity can be measured
 // instead of assumed.
-export function rowReuseId(data: MessageBubbleRenderData, msg: MessageEntry, level: ReuseIdLevel): string {
+//
+// Takes the whole AlbumGroup (not just its head MessageEntry) because the
+// avatar/sender-name/date-separator flags this function needs are per-row
+// properties collapseAlbums.ets computes on the group, not on the message
+// itself — see hasAvatarBranch/hasSenderNameBranch/hasDateSeparator above.
+export function rowReuseId(data: MessageBubbleRenderData, group: AlbumGroup, level: ReuseIdLevel): string {
   if (level === 'coarse') {
     return coarseBucket(data);
   }
   if (level === 'medium') {
-    return mediumBucket(data, msg);
+    return mediumBucket(data, group);
   }
-  return fineBucket(data, msg);
+  return fineBucket(data, group);
 }

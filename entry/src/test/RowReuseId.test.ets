@@ -4,6 +4,7 @@ import { TdBridge, TdObject } from '../main/ets/tdkit/TdTypes';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { UserStore } from '../main/ets/store/UserStore';
 import { MessageBubbleRenderData } from '../main/ets/pages/chat/ReusableMessageBubble';
+import { AlbumGroup } from '../main/ets/util/collapseAlbums';
 import { ReuseIdLevel, rowReuseId } from '../main/ets/util/rowReuseId';
 
 class FakeBridge implements TdBridge {
@@ -47,6 +48,7 @@ function textEntry(id: number, outgoing: boolean = false): MessageEntry {
 interface RenderDataOverrides {
   isGroup?: boolean;
   lightweightPlainText?: boolean;
+  showUnreadDivider?: boolean;
 }
 
 function renderData(over: RenderDataOverrides = {}): MessageBubbleRenderData {
@@ -56,7 +58,7 @@ function renderData(over: RenderDataOverrides = {}): MessageBubbleRenderData {
     isChannel: false,
     liveSharingId: 0,
     themeBubbleOut: '',
-    showUnreadDivider: false,
+    showUnreadDivider: over.showUnreadDivider ?? false,
     paidMediaPending: false,
     audioQueuePosition: 0,
     audioQueueLength: 0,
@@ -76,21 +78,49 @@ function renderData(over: RenderDataOverrides = {}): MessageBubbleRenderData {
   };
 }
 
+// AlbumGroup carries the two real per-row structural flags (showAvatar,
+// showSenderName) that collapseAlbums.ets computes from run position, plus
+// dateLabel (date-separator pill). rowReuseId needs the whole group, not just
+// head, to reach them — see the fix note in the P2 Task 2a report on why a
+// head-only signature couldn't express these.
+interface GroupOverrides {
+  showAvatar?: boolean;
+  showSenderName?: boolean;
+  dateLabel?: string;
+}
+
+function groupOf(head: MessageEntry, over: GroupOverrides = {}): AlbumGroup {
+  return {
+    key: `group-${head.id}`,
+    head,
+    memberIds: [head.id],
+    rowMemberIds: [head.rowId],
+    photoPaths: [], photoFileIds: [], photoRatios: [], photoIsVideo: [],
+    photoProgress: [], photoFailed: [],
+    videoFileIds: [], videoFileSizes: [], videoMimeTypes: [],
+    caption: '', captionEntities: [],
+    dateLabel: over.dateLabel ?? '',
+    showAvatar: over.showAvatar ?? true,
+    showSenderName: over.showSenderName ?? true
+  };
+}
+
 export default function rowReuseIdTest() {
   describe('RowReuseId', () => {
     it('coarse_level_only_splits_lightweight_from_rich', 0, () => {
-      const plain: MessageEntry = textEntry(1);
+      const plain: AlbumGroup = groupOf(textEntry(1));
       const other: MessageEntry = textEntry(2);
       other.senderName = 'Different sender entirely';
+      const otherGroup: AlbumGroup = groupOf(other);
       expect(rowReuseId(renderData({ lightweightPlainText: true }), plain, 'coarse'))
-        .assertEqual(rowReuseId(renderData({ lightweightPlainText: true }), other, 'coarse'));
+        .assertEqual(rowReuseId(renderData({ lightweightPlainText: true }), otherGroup, 'coarse'));
       expect(rowReuseId(renderData({ lightweightPlainText: true }), plain, 'coarse') ===
         rowReuseId(renderData({ lightweightPlainText: false }), plain, 'coarse')).assertFalse();
     });
 
     it('same_structure_same_id_at_every_level', 0, () => {
-      const a: MessageEntry = textEntry(10);
-      const b: MessageEntry = textEntry(11);
+      const a: AlbumGroup = groupOf(textEntry(10));
+      const b: AlbumGroup = groupOf(textEntry(11));
       const data: MessageBubbleRenderData = renderData({ isGroup: true });
       const levels: ReuseIdLevel[] = ['coarse', 'medium', 'fine'];
       for (const level of levels) {
@@ -101,30 +131,80 @@ export default function rowReuseIdTest() {
     it('medium_level_splits_on_structural_switches', 0, () => {
       const base: MessageEntry = textEntry(20);
       const data: MessageBubbleRenderData = renderData({ isGroup: true });
-      const baseId: string = rowReuseId(data, base, 'medium');
+      const baseGroup: AlbumGroup = groupOf(base);
+      const baseId: string = rowReuseId(data, baseGroup, 'medium');
 
       const withReply: MessageEntry = cloneMessage(base);
       withReply.replyToMessageId = 5;
-      expect(rowReuseId(data, withReply, 'medium') === baseId).assertFalse();
+      expect(rowReuseId(data, groupOf(withReply), 'medium') === baseId).assertFalse();
 
       const withForward: MessageEntry = cloneMessage(base);
       withForward.forwardFrom = 'Alice';
-      expect(rowReuseId(data, withForward, 'medium') === baseId).assertFalse();
+      expect(rowReuseId(data, groupOf(withForward), 'medium') === baseId).assertFalse();
 
       const withReaction: MessageEntry = cloneMessage(base);
       withReaction.reactions = [{ emoji: '👍', count: 1, isChosen: false,
         customEmojiId: '', customEmojiPath: '' }];
-      expect(rowReuseId(data, withReaction, 'medium') === baseId).assertFalse();
+      expect(rowReuseId(data, groupOf(withReaction), 'medium') === baseId).assertFalse();
 
-      const outgoing: MessageEntry = textEntry(21, true);
-      expect(rowReuseId(data, outgoing, 'medium') === baseId).assertFalse();
+      // isOutgoing on its own is not one of medium's tracked switches (it was
+      // only ever a side effect of the fixed avatar/sender-name proxy this
+      // file used before the AlbumGroup fix); an outgoing message with the
+      // same group flags as an incoming one lands in the same medium bucket.
+      const outgoing: AlbumGroup = groupOf(textEntry(21, true));
+      expect(rowReuseId(data, outgoing, 'medium')).assertEqual(baseId);
 
+      // Sender-name/avatar visibility is tracked via AlbumGroup.showAvatar/
+      // showSenderName, not msg.senderName — msg.senderName differing alone
+      // (with the group flag unchanged) must NOT move the medium bucket. The
+      // group-flag-driven case is covered separately below
+      // (avatar_flag_from_group_splits_medium_and_fine_but_not_coarse).
       const withSenderName: MessageEntry = cloneMessage(base);
       withSenderName.senderName = 'Bob';
       const withoutSenderName: MessageEntry = cloneMessage(base);
       withoutSenderName.senderName = '';
-      expect(rowReuseId(data, withSenderName, 'medium') ===
-        rowReuseId(data, withoutSenderName, 'medium')).assertFalse();
+      expect(rowReuseId(data, groupOf(withSenderName), 'medium'))
+        .assertEqual(rowReuseId(data, groupOf(withoutSenderName), 'medium'));
+    });
+
+    // Fix wave: the first cut of this file derived "has avatar"/"has sender
+    // name" from data.isGroup + msg.isOutgoing (a structural proxy) because
+    // the signature only took MessageEntry. That conflated mid-run rows with
+    // run-head/tail rows even though LazyForEach's own row key
+    // (collapseAlbums.ets:292) already tells them apart. These two cases pin
+    // the real per-row flags now that the signature carries the AlbumGroup.
+    it('avatar_flag_from_group_splits_medium_and_fine_but_not_coarse', 0, () => {
+      const msg: MessageEntry = textEntry(70);
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const withAvatar: AlbumGroup = groupOf(msg, { showAvatar: true });
+      const withoutAvatar: AlbumGroup = groupOf(cloneMessage(msg), { showAvatar: false });
+
+      expect(rowReuseId(data, withAvatar, 'coarse'))
+        .assertEqual(rowReuseId(data, withoutAvatar, 'coarse'));
+      expect(rowReuseId(data, withAvatar, 'medium') ===
+        rowReuseId(data, withoutAvatar, 'medium')).assertFalse();
+      expect(rowReuseId(data, withAvatar, 'fine') ===
+        rowReuseId(data, withoutAvatar, 'fine')).assertFalse();
+    });
+
+    it('date_separator_from_group_splits_medium_and_fine', 0, () => {
+      const msg: MessageEntry = textEntry(71);
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const withDate: AlbumGroup = groupOf(msg, { dateLabel: 'Aug 26' });
+      const withoutDate: AlbumGroup = groupOf(cloneMessage(msg), { dateLabel: '' });
+
+      expect(rowReuseId(data, withDate, 'medium') ===
+        rowReuseId(data, withoutDate, 'medium')).assertFalse();
+      expect(rowReuseId(data, withDate, 'fine') ===
+        rowReuseId(data, withoutDate, 'fine')).assertFalse();
+    });
+
+    it('unread_divider_from_render_data_splits_medium_and_fine', 0, () => {
+      const group: AlbumGroup = groupOf(textEntry(72));
+      const withUnread: MessageBubbleRenderData = renderData({ isGroup: true, showUnreadDivider: true });
+      const withoutUnread: MessageBubbleRenderData = renderData({ isGroup: true, showUnreadDivider: false });
+      expect(rowReuseId(withUnread, group, 'medium') ===
+        rowReuseId(withoutUnread, group, 'medium')).assertFalse();
     });
 
     it('fine_level_splits_on_media_kind_only', 0, () => {
@@ -142,7 +222,7 @@ export default function rowReuseIdTest() {
       other.contentType = 'poll';
 
       const ids: string[] = [text, photo, video, sticker, file, other]
-        .map((m: MessageEntry): string => rowReuseId(data, m, 'fine'));
+        .map((m: MessageEntry): string => rowReuseId(data, groupOf(m), 'fine'));
       // Every distinct media kind must land in a distinct bucket.
       for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
@@ -154,33 +234,36 @@ export default function rowReuseIdTest() {
       const photoTwin: MessageEntry = cloneMessage(text);
       photoTwin.contentType = 'photo';
       photoTwin.photoFileId = 999;
-      expect(rowReuseId(data, photo, 'fine')).assertEqual(rowReuseId(data, photoTwin, 'fine'));
+      expect(rowReuseId(data, groupOf(photo), 'fine'))
+        .assertEqual(rowReuseId(data, groupOf(photoTwin), 'fine'));
 
       // Fine level must not collapse back to medium's bucket count: text (no
       // media) still differs from photo even though medium treats them alike.
-      expect(rowReuseId(data, text, 'medium')).assertEqual(rowReuseId(data, photo, 'medium'));
-      expect(rowReuseId(data, text, 'fine') === rowReuseId(data, photo, 'fine')).assertFalse();
+      expect(rowReuseId(data, groupOf(text), 'medium'))
+        .assertEqual(rowReuseId(data, groupOf(photo), 'medium'));
+      expect(rowReuseId(data, groupOf(text), 'fine') ===
+        rowReuseId(data, groupOf(photo), 'fine')).assertFalse();
     });
 
     it('bucket_count_grows_from_coarse_to_fine', 0, () => {
       const data: MessageBubbleRenderData = renderData({ isGroup: true });
-      const samples: MessageEntry[] = [];
+      const samples: AlbumGroup[] = [];
       const base: MessageEntry = textEntry(40);
-      samples.push(base);
+      samples.push(groupOf(base));
       const reply: MessageEntry = cloneMessage(base);
       reply.replyToMessageId = 1;
-      samples.push(reply);
+      samples.push(groupOf(reply));
       const photo: MessageEntry = cloneMessage(base);
       photo.contentType = 'photo';
-      samples.push(photo);
+      samples.push(groupOf(photo));
       const video: MessageEntry = cloneMessage(base);
       video.contentType = 'video';
-      samples.push(video);
+      samples.push(groupOf(video));
 
       const bucketCount = (level: ReuseIdLevel): number => {
         const seen = new Set<string>();
-        for (const m of samples) {
-          seen.add(rowReuseId(data, m, level));
+        for (const g of samples) {
+          seen.add(rowReuseId(data, g, level));
         }
         return seen.size;
       };
@@ -202,7 +285,8 @@ export default function rowReuseIdTest() {
       second.date = first.date + 12345;
       const levels: ReuseIdLevel[] = ['coarse', 'medium', 'fine'];
       for (const level of levels) {
-        expect(rowReuseId(data, first, level)).assertEqual(rowReuseId(data, second, level));
+        expect(rowReuseId(data, groupOf(first), level))
+          .assertEqual(rowReuseId(data, groupOf(second), level));
       }
     });
   });
