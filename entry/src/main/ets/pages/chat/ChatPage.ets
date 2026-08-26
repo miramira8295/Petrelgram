@@ -401,9 +401,9 @@ export function ChatPageBuilder(): void {
   ChatPageChrome();
 }
 
-@Component
+@ComponentV2
 export struct ChatPage {
-  @Prop appearanceEpoch: number = 0;
+  @Require @Param appearanceEpoch: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -411,39 +411,39 @@ export struct ChatPage {
 
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @Prop materialEpoch: number = 0;
+  @Require @Param materialEpoch: number = 0;
   // @Watch, because the row key below embeds this value: bumping it renames
   // every row, and the data source has to be told or LazyForEach keeps a key
   // table that no longer matches anything.
-  @Prop @Watch('onLanguageEpochChanged') langEpoch: number = 0;
+  @Require @Param langEpoch: number = 0;
   // 深浅色切换后要重新解析背景。壁纸本身是**按模式选的**（TDLib 的
   // for_dark_theme），而 ChatBackgroundStore 只在 open() 时解析过那一次，
   // 会话开着的时候切换模式没人再跑一遍，壁纸就停在旧模式那张（issue #57）。
   //
   // ChatBackdrop 也订阅了 KEY_APP_DARK，但它只管图案浓度和深色遮罩，换不了
   // 壁纸本身——所以那一份订阅顶不了这一份。
-  @Prop @Watch('onAppDarkChanged') appDark: boolean = false;
-  @Prop topSafe: number = 0;
-  @Prop bottomSafe: number = 0;  // ✅ 新增
-  @Prop @Watch('onKeyboardHeightChanged') keyboardH: number = 0;
-  @Prop @Watch('onAppForegroundChanged') appIsForeground: boolean = true;
-  @State messages: MessageEntry[] = [];
-  @State messageLoadState: string = 'loading'; // loading | ready | error
-  @State messageLoadError: string = '';
-  @State olderLoadState: string = 'idle'; // idle | loading | error | end
-  @State newerLoadState: string = 'idle'; // idle | loading | error | end
+  @Require @Param appDark: boolean = false;
+  @Require @Param topSafe: number = 0;
+  @Require @Param bottomSafe: number = 0;  // ✅ 新增
+  @Require @Param keyboardH: number = 0;
+  @Require @Param appIsForeground: boolean = true;
+  @Local messages: MessageEntry[] = [];
+  @Local messageLoadState: string = 'loading'; // loading | ready | error
+  @Local messageLoadError: string = '';
+  @Local olderLoadState: string = 'idle'; // idle | loading | error | end
+  @Local newerLoadState: string = 'idle'; // idle | loading | error | end
   // Its own state variable rather than `groups.length`: the rows come from the
   // LazyForEach data source, so build() never iterates `groups` and would not
   // re-run on its length alone. This count is what drives the empty/loading
   // timeline state.
-  @State visibleGroupCount: number = 0;
+  @Local visibleGroupCount: number = 0;
   // Rendered through the LazyForEach data source (incremental notifications keep
   // scroll position on prepend); the plain array mirror serves index lookups.
   // @State (not a plain field) so MediaViewerOverlay's @Prop keeps re-syncing:
   // @Prop only follows a source that is itself a state variable, and a plain
   // field handed to a child would freeze at its construction-time value,
   // breaking album paging in the viewer once more history loads.
-  @State groups: AlbumGroup[] = [];
+  @Local groups: AlbumGroup[] = [];
   private groupsData: AlbumGroupDataSource = new AlbumGroupDataSource();
 
   // The ONE definition of a message row's LazyForEach key. Both the key
@@ -1209,108 +1209,107 @@ export struct ChatPage {
       actions: this.messageActions()
     }).reuseId(rowReuseId(prepared.data, prepared.group, REUSE_ID_LEVEL));
   }
-  @State subtitle: string = '';
+  @Local subtitle: string = '';
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
   // header subtitle (see composerPlaceholder).
-  @State typingLabel: string = '';
+  @Local typingLabel: string = '';
   private typingSenders: Map<number, number> = new Map(); // senderId -> expiry ms
   private typingTimer: number = -1;
   private unsubChatAction: (() => void) | null = null;
-  @State title: string = '';
-  @State avatarPath: string = '';
+  @Local title: string = '';
+  @Local avatarPath: string = '';
   // 聊天页头部的动态头像（MP4 循环）。issue #63：资料页会动、对话里不动——
   // 头部一直只拿静态图。动画文件挂在 full info 的 chatPhoto.animation 里，
   // getChat 的 chatPhotoInfo 只有 has_animation 标志，必须多要一次。
-  @State headerAvatarAnimPath: string = '';
-  @State initials: string = '?';
-  @State draft: string = '';
+  @Local headerAvatarAnimPath: string = '';
+  @Local initials: string = '?';
+  @Local draft: string = '';
   // 聊天设置 → 回车键发送.
-  @Prop sendByEnter: boolean = false;
-  @Prop @Watch('onScreenWidthChanged') screenW: number = 360;
+  @Require @Param sendByEnter: boolean = false;
+  @Require @Param screenW: number = 360;
   private lastScreenW: number = 0;
-  @Prop screenH: number = 780;
-  @Prop @Watch('onAutoplayPolicyChanged') powerSaving: boolean = false;
-  @Prop powerChatEffects: boolean = true;
-  @Prop powerBackgroundEffect: boolean = false;
-  @Prop powerParticles: boolean = true;
-  @Prop powerEmoji: boolean = true;
-  @Prop powerEmojiReactions: boolean = true;
-  @Prop @Watch('onAutoplayPolicyChanged') reduceAnimations: boolean = false;
+  @Require @Param screenH: number = 780;
+  @Require @Param powerSaving: boolean = false;
+  @Require @Param powerChatEffects: boolean = true;
+  @Require @Param powerBackgroundEffect: boolean = false;
+  @Require @Param powerParticles: boolean = true;
+  @Require @Param powerEmoji: boolean = true;
+  @Require @Param powerEmojiReactions: boolean = true;
+  @Require @Param reduceAnimations: boolean = false;
   // 「自动播放视频」开关。播放位竞选的总闸门之一，见 playSlotsEnabled()。
-  @Prop @Watch('onAutoplayPolicyChanged')
-  autoplayVideo: boolean = true;
+  @Require @Param autoplayVideo: boolean = true;
   // 否则拖完滑块背景看起来没反应（命中旧签名的缓存图）。
   // TDLib per-chat wallpaper. Solid/gradient fills render immediately;
   // wallpaper and pattern documents appear as soon as downloadFile completes.
   // One snapshot in place of the nine background state variables this replaces.
   // Resolution (chat background → theme → account default → installed default)
   // and its four TDLib subscriptions live in ChatBackgroundStore.
-  @State chatBg: ChatBackgroundState = emptyChatBackground();
+  @Local chatBg: ChatBackgroundState = emptyChatBackground();
   private bgStore: ChatBackgroundStore | null = null;
   private unsubBg: (() => void) | null = null;
   private unsubTranslatable: (() => void) | null = null;
-  @State replyToId: number = 0;      // message being replied to (0 = none)
-  @State replyToName: string = '';
-  @State replyToText: string = '';
-  @State editingId: number = 0;      // message being edited (0 = none)
-  @State editingPreview: string = '';
-  @State editingKind: string = 'text'; // 'text' | 'caption'
+  @Local replyToId: number = 0;      // message being replied to (0 = none)
+  @Local replyToName: string = '';
+  @Local replyToText: string = '';
+  @Local editingId: number = 0;      // message being edited (0 = none)
+  @Local editingPreview: string = '';
+  @Local editingKind: string = 'text'; // 'text' | 'caption'
   private draftBeforeEdit: string = ''; // composer text stashed while editing
-  @State showReactionSheet: boolean = false; // full emoji reaction picker
-  @State reactionTargetId: number = 0;
+  @Local showReactionSheet: boolean = false; // full emoji reaction picker
+  @Local reactionTargetId: number = 0;
   // The allowed-emoji list and custom-emoji thumbnails live in ReactionSheet,
   // which fetches them per open. Only the in-flight key stays here: the quick
   // reaction row on each bubble issues the same request and shares the guard.
-  @State reactionPendingKey: string = '';
-  @State paidMediaPendingIds: number[] = [];
+  @Local reactionPendingKey: string = '';
+  @Local paidMediaPendingIds: number[] = [];
   // Forwarding is deliberately kept as an in-page sheet: leaving ChatPage to
   // pick a destination used to discard the long-press/selection context.
-  @State showForwardSheet: boolean = false;
-  @State showPollSheet: boolean = false;
-  @State showContactSheet: boolean = false;
-  @State showVideoNoteRecorder: boolean = false;
+  @Local showForwardSheet: boolean = false;
+  @Local showPollSheet: boolean = false;
+  @Local showContactSheet: boolean = false;
+  @Local showVideoNoteRecorder: boolean = false;
   // The list itself lives in ScheduledSheet and reloads on each open.
-  @State showScheduledSheet: boolean = false;
+  @Local showScheduledSheet: boolean = false;
   // Which messages the picker will forward. The picker's own list/query/send
   // state lives in ForwardSheet and resets with it on each open.
   private forwardMessageIds: number[] = [];
-  @State nowSec: number = 0;
+  @Local nowSec: number = 0;
   private nowSecTimer: number = -1;
-  @State @Watch('onViewerTargetChanged') viewerMsgId: number = 0;
-  @State chromeVisible: boolean = true;
-  @State viewerVideoLandscape: boolean = false;
-  @State viewerClosing: boolean = false;
+  @Local viewerMsgId: number = 0;
+  @Local chromeVisible: boolean = true;
+  @Local viewerVideoLandscape: boolean = false;
+  @Local viewerClosing: boolean = false;
   // 播放器为播放拉起的下载（见 notePlaybackRequest）。不参与渲染，普通字段。
   private playbackRequestedIds: number[] = [];
   // GIF playback is page-owned rather than row-owned: LazyForEach replaces a
   // row key as download progress/reactions change, but a user's pause/play
   // choice must survive that replacement.
-  @State pausedAnimationIds: number[] = [];
-  @State forcedAnimationIds: number[] = [];
-  @State failedAnimationIds: number[] = [];
+  @Local pausedAnimationIds: number[] = [];
+  @Local forcedAnimationIds: number[] = [];
+  @Local failedAnimationIds: number[] = [];
   // Swiper's initial page when the viewer opens. Plain field, not @State: it is
   // read once when MediaViewerOverlay is constructed, which happens after this
   // has already been set by onMediaTap.
   private viewerInitIdx: number = 0;
-  @State swipeDir: number = 1; // 1 = advancing forward (next), -1 = going back — drives the slide direction
+  @Local swipeDir: number = 1; // 1 = advancing forward (next), -1 = going back — drives the slide direction
   // Window coordinates (vp) of the tap that opened the viewer — anchor for its
   // expand-from-tap open / shrink-back-to-tap close transition.
-  @State tapX: number = 0;
-  @State tapY: number = 0;
-  @State pinnedPreview: string = '';
-  @State pinnedCount: number = 0;
-  @State pinnedLoadState: string = 'loading'; // loading | ready | error
-  @State pinnedJumpBusy: boolean = false;
+  @Local tapX: number = 0;
+  @Local tapY: number = 0;
+  @Local pinnedPreview: string = '';
+  @Local pinnedCount: number = 0;
+  @Local pinnedLoadState: string = 'loading'; // loading | ready | error
+  @Local pinnedJumpBusy: boolean = false;
   // 正在直播入口条:chat.video_chat.group_call_id > 0 时显示("正在直播").
-  @State liveGroupCallId: number = 0;
-  @State liveCallIsActive: boolean = false;
-  @State liveCallIsRtmp: boolean = false;
-  @State liveParticipantCount: number = 0;
-  @State livePulseExpanded: boolean = false;
-  @State liveLoadState: string = 'loading'; // loading | ready | error
-  @State liveDialogOpening: boolean = false;
-  @State liveNavigationBusy: boolean = false;
-  @State topCardLoadingVisible: boolean = false;
+  @Local liveGroupCallId: number = 0;
+  @Local liveCallIsActive: boolean = false;
+  @Local liveCallIsRtmp: boolean = false;
+  @Local liveParticipantCount: number = 0;
+  @Local livePulseExpanded: boolean = false;
+  @Local liveLoadState: string = 'loading'; // loading | ready | error
+  @Local liveDialogOpening: boolean = false;
+  @Local liveNavigationBusy: boolean = false;
+  @Local topCardLoadingVisible: boolean = false;
   private unsubVideoChat: (() => void) | null = null;
   private unsubGroupCall: (() => void) | null = null;
   private livePulseTimer: number = -1;
@@ -1329,16 +1328,16 @@ export struct ChatPage {
   private topicName: string = '';
   private forumTopicId: number = 0;
   // 私聊对方是机器人。空会话时输入框让位给「开始」，见 util/botStart。
-  @State isBotChat: boolean = false;
-  @State isGroup: boolean = false;
-  @State isChannel: boolean = false;
+  @Local isBotChat: boolean = false;
+  @Local isGroup: boolean = false;
+  @Local isChannel: boolean = false;
   // TDLib keeps membership on the underlying basicGroup/supergroup rather
   // than on chat itself. Public chats opened from search can therefore have
   // readable history while the current user is still outside the chat.
   // writable = normal composer, joinable = bottom "加入" action,
   // blocked = banned/unavailable, checking = waiting for the group object.
-  @State membershipState: string = 'writable';
-  @State joiningChat: boolean = false;
+  @Local membershipState: string = 'writable';
+  @Local joiningChat: boolean = false;
   // TDLib doesn't consistently return the local "joined" service message in
   // getChatHistory. Keep the confirmed join event as a client-only timeline
   // row until the real service message arrives. It deliberately has no member
@@ -1369,12 +1368,12 @@ export struct ChatPage {
   // viewport has real rows and its unread/bottom anchor has been applied, the
   // mask is removed in one frame. This prevents both row-by-row appearance and
   // a visible placeholder-height correction jump.
-  @State private initialTimelineMasked: boolean = false;
+  @Local private initialTimelineMasked: boolean = false;
   private initialTimelineReadyToPresent: boolean = false;
   private initialTimelinePresentationSeq: number = 0;
   private initialTimelinePresentationScheduledSeq: number = 0;
   private initialTimelineEarliestAt: number = 0;
-  @State private initialMessageTransitionSettled: boolean = false;
+  @Local private initialMessageTransitionSettled: boolean = false;
   private initialMessageReleaseTimer: number = -1;
   private chatTgsScrollActive: boolean = false;
   private chatTgsStageSettling: boolean = false;
@@ -1382,13 +1381,13 @@ export struct ChatPage {
   // 播放位竞选：滚动停下后选出唯一播放/下载的视频气泡（见 PlaySlotRegistry）。
   private playSlots: PlaySlotRegistry = new PlaySlotRegistry();
   private unsubPlaySlot: (() => void) | null = null;
-  @State playSlotKey: string = '';
+  @Local playSlotKey: string = '';
   // 新上位的播放位从哪一毫秒起播。换届时从 bubblePositionMs 查一次（见
   // subscribe 回调），随 playSlotKey 一起下发给气泡——查看器交还的进度就是
   // 靠这条路真正接到 VideoBubbleSurface.startPositionMs 上的。
-  @State playSlotStartMs: number = 0;
+  @Local playSlotStartMs: number = 0;
   // 缓存设置 → 自动播放静音开关，唯一消费点：下发给气泡播放器的 muted。
-  @Prop autoplayMuted: boolean = true;
+  @Require @Param autoplayMuted: boolean = true;
   // 气泡播放位的播放进度，按 messageId 记录。onPlaySlotPositionChanged 是
   // 350ms 一次的高频回调，故意用普通 Map 而不是 @State/@Link/AppStorage——
   // 写状态会让消息列表每 350ms 重建一次。打开全屏查看器时读它作为
@@ -1403,33 +1402,32 @@ export struct ChatPage {
   private viewerStartPositionMs: number = 0;
   private slotTickTimer: number = -1;
   private lastMaxId: number = 0;
-  @State atBottom: boolean = true;
-  @State isMuted: boolean = false;
+  @Local atBottom: boolean = true;
+  @Local isMuted: boolean = false;
   // 整聊天翻译有两层，菜单里的那一项在两层之间切换含义：
   //   总开关开着 —— 默认所有会话都翻，菜单是"关掉这个会话"（本地排除名单）。
   //   总开关关着 —— 默认都不翻，菜单是"只翻这个会话"（服务端 is_translatable，
   //                 跟官方客户端同一个字段，多端同步）。
   // 早先只认服务端那个字段，它对没碰过的会话默认 false，结果开了总开关每个群
   // 还得手动点一次才翻，实际不可用。
-  @State isTranslatable: boolean = false;
-  @State translateChatOptOut: boolean = false;
+  @Local isTranslatable: boolean = false;
+  @Local translateChatOptOut: boolean = false;
   // 总开关关着时，本地记下的"这个会话开了翻译"。见 translationMode 的说明。
-  @State translateChatOptIn: boolean = false;
-  @Prop @Watch('onTranslateSettingChanged')
-  translateChatsEnabled: boolean = false;
+  @Local translateChatOptIn: boolean = false;
+  @Require @Param translateChatsEnabled: boolean = false;
   // 是否正在共享实时位置（全局单例状态，不限于当前会话）。
-  @State liveLocationActive: boolean = false;
-  @State liveLocationMessageId: number = 0;
+  @Local liveLocationActive: boolean = false;
+  @Local liveLocationMessageId: number = 0;
   // 贴纸"飞出"动画：从点击处向上收缩淡出，动画收尾时才关面板 —— 关面板要
   // 同步卸载整个贴纸网格并触发全页重排（实测 51ms），压在点击那一帧就是可感
   // 的顿挫；挪到运动尾声则被动作本身盖住。
-  @State stickerGhostPath: string = '';
-  @State stickerGhostX: number = 0;
-  @State stickerGhostY: number = 0;
-  @State stickerGhostFly: boolean = false;
+  @Local stickerGhostPath: string = '';
+  @Local stickerGhostX: number = 0;
+  @Local stickerGhostY: number = 0;
+  @Local stickerGhostFly: boolean = false;
   private stickerGhostTimer: number = -1;
   private unsubLiveLocation: (() => void) | null = null;
-  @State unreadBadge: number = 0;
+  @Local unreadBadge: number = 0;
   private firstUnreadId: number = 0;
   // Set once the initial scroll parks on the unread boundary; suppresses every
   // auto-scroll-to-bottom until the user first touches the list, so a short
@@ -1442,14 +1440,14 @@ export struct ChatPage {
   // 右下角「↓」的去向状态。它不是"回到底部"，而是"回到该继续看的地方"：
   // 引用返回 > 阅读进度 > 最新消息。规则在 util/readingReturn（有单测），
   // 这里只负责喂状态和执行结果。
-  @State returnState: ReturnState = emptyReturnState();
+  @Local returnState: ReturnState = emptyReturnState();
   // 视口最底下那条真实消息的 id。既是"当前位置"，也是跳走时要记下的返回点。
   private curBottomId: number = 0;
   // 跳转落地的宽限期。跳到贴近尾部的引用时视口会短暂判为"在最新"，若不设防
   // 就会把返回栈当成"用户自己滚回来了"清掉，一步都退不回去。
   private jumpLandingUntil: number = 0;
   private pendingScrollBottom: boolean = false; // snap to the end once jumpToLatest's page arrives
-  @State scrollToBottomBusy: boolean = false;
+  @Local scrollToBottomBusy: boolean = false;
   private scrollActionSeq: number = 0;
   // Keep the exact viewport when this cached page is temporarily covered by a
   // profile/media route and then becomes visible again.
@@ -1461,7 +1459,7 @@ export struct ChatPage {
   private resumeScrollAtBottom: boolean = true;
   // @State: the segment indicator renders from this — a plain field wouldn't
   // trigger a re-render when scrolling/tapping moves the shown pinned index.
-  @State pinnedCycle: number = 0;
+  @Local pinnedCycle: number = 0;
   private pendingJumpId: number = 0;
   private jumpLayoutSeq: number = 0;
   // One-shot gate for loading older pages: a fast fling to the very top used to
@@ -1485,10 +1483,10 @@ export struct ChatPage {
   private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
   // Jump-target highlight: a translucent overlay over the target row that
   // gently blinks twice after a reply/pinned/link jump lands.
-  @State flashTop: number = 0;
-  @State flashHeight: number = 0;
-  @State flashAlpha: number = 0;
-  @State flashShown: boolean = false;
+  @Local flashTop: number = 0;
+  @Local flashHeight: number = 0;
+  @Local flashAlpha: number = 0;
+  @Local flashShown: boolean = false;
   private flashSeq: number = 0;
   // 高亮当前钉着的行。高亮层是按视口坐标定位的，行高一变（链接预览、缩略图、
   // 翻译状态异步到货把上面的行撑开）它就和句子错开——用户看到的是「高亮在
@@ -1498,8 +1496,8 @@ export struct ChatPage {
   // Floating date chip: shows the topmost visible message's date while the
   // list scrolls, fades out shortly after scrolling stops (the in-list date
   // pills stay — this is the always-visible companion).
-  @State floatDate: string = '';
-  @State floatDateShown: boolean = false;
+  @Local floatDate: string = '';
+  @Local floatDateShown: boolean = false;
   private floatDateHideTimer: number = -1;
   private floatDateIndex: number = -1;
   private floatDateTimerArmedAt: number = 0;
@@ -1549,80 +1547,80 @@ export struct ChatPage {
   });
   // Messages with id above this slide in from the bottom (live arrivals only —
   // 0 disables, so rows created while scrolling history never animate).
-  @State freshSinceId: number = 0;
+  @Local freshSinceId: number = 0;
   private freshClearSeq: number = 0;
   private prependRestoreSeq: number = 0;
   // '@' mention / '/' command suggestion panels above the input bar.
-  @State mentionItems: MentionItem[] = [];
-  @State stickerSuggestions: StickerSuggestion[] = []; // emoji-typed sticker hints
+  @Local mentionItems: MentionItem[] = [];
+  @Local stickerSuggestions: StickerSuggestion[] = []; // emoji-typed sticker hints
   private stickerSuggestSeq: number = 0;
-  @State botMiniAppUrlValue: string = ''; // bot menu-button Mini App ('' = none)
-  @State inlineResults: InlineResultRow[] = [];  // @bot query results
+  @Local botMiniAppUrlValue: string = ''; // bot menu-button Mini App ('' = none)
+  @Local inlineResults: InlineResultRow[] = [];  // @bot query results
   private inlineQueryId: string = '';
   private inlineSeq: number = 0;
   private inlineTimer: number = -1;
-  @State commandItems: CommandItem[] = [];
+  @Local commandItems: CommandItem[] = [];
   private allCommands: CommandItem[] = [];
-  @State commandLoadState: string = 'idle'; // idle | loading | ready | error
-  @State commandLoadError: string = '';
-  @State commandMenuOpen: boolean = false;
+  @Local commandLoadState: string = 'idle'; // idle | loading | ready | error
+  @Local commandLoadError: string = '';
+  @Local commandMenuOpen: boolean = false;
   private commandLoadSeq: number = 0;
   private mentionSeq: number = 0; // drops stale searchChatMembers responses
   // Bot "菜单" pill (private bot chats with registered commands).
-  @State botMenuAvailable: boolean = false;
+  @Local botMenuAvailable: boolean = false;
   // Emoji panel above the input bar.
-  @State showEmojiPanel: boolean = false;
+  @Local showEmojiPanel: boolean = false;
   // 附件抽屉是否打开。它是 dock 里的一段布局，不是自定义键盘——后者虽然让
   // 系统接管了顶起动画，但自定义键盘**无法获取焦点**（官方明写），面板里的
   // 搜索框永远输不进字；而且它在另一个图层，背后没有页面背景，得自己画一份
   // 副本去对齐，那条路走了很久也接不上。
-  @State attachPanelOpen: boolean = false;
-  @State diceSheetOpen: boolean = false;
+  @Local attachPanelOpen: boolean = false;
+  @Local diceSheetOpen: boolean = false;
 
   // 当前打开的底部抽屉占据的高度（附件或表情，两者互斥）。supportAvoidance
   // 只保证输入框不被挡，列表内容它不管——官方《自定义键盘》文档明说这一段
   // 要开发者自己做：监听面板根节点 onAreaChange 拿高度，再设置布局避让。
-  @State emojiPanelTab: number = 0;
-  @State emojiPanelClosing: boolean = false;
+  @Local emojiPanelTab: number = 0;
+  @Local emojiPanelClosing: boolean = false;
   // Bot custom reply keyboard (null = this chat has none). Always docked when
   // present — no toggle, so there's no state to track beyond the keyboard itself.
-  @State replyKeyboard: ReplyKeyboard | null = null;
+  @Local replyKeyboard: ReplyKeyboard | null = null;
   // Bot keyboard collapsed by the input-bar toggle (or a one_time keyboard
   // after use). A NEW keyboard from the bot un-collapses automatically.
-  @State replyKbCollapsed: boolean = false;
-  @State replyKeyboardSendingKey: string = '';
+  @Local replyKbCollapsed: boolean = false;
+  @Local replyKeyboardSendingKey: string = '';
   // Voice recording state.
-  @State isRecording: boolean = false;
-  @State recordingStarting: boolean = false;
-  @State recordSeconds: number = 0;
+  @Local isRecording: boolean = false;
+  @Local recordingStarting: boolean = false;
+  @Local recordSeconds: number = 0;
   private recordTimer: number = -1;
   private voiceRec: VoiceRecorder | null = null;
   private recordingSeq: number = 0;
-  @State composerSending: boolean = false;
-  @State composerFocused: boolean = false;
+  @Local composerSending: boolean = false;
+  @Local composerFocused: boolean = false;
   // TextArea creation loads the stylus service and performs its first paragraph
   // layout. The 17:04 trace confirmed the one-frame placeholder moved it out of
   // page creation, but it then shared a 22 ms frame with the first real message.
   // Keep the placeholder until initial-message admission finishes, then cross
   // one more VSync before mounting the editor.
-  @State composerEditorReady: boolean = false;
+  @Local composerEditorReady: boolean = false;
   private composerMountScheduled: boolean = false;
   private composerMountSeq: number = 0;
   private composerController: TextAreaController = new TextAreaController();
   private mediaPickerOpen: boolean = false;
   // 选好但还没发出去的媒体。和 replyToId 正交——回复某条 + 附图 + 配文是
   // 一次完整操作，所以不进 composerMode 那个互斥状态机（见 util/pendingMedia）。
-  @State private pendingMedia: PendingMediaItem[] = [];
+  @Local private pendingMedia: PendingMediaItem[] = [];
 
   private mediaCopySeq: number = 0;
-  @State headerMenuShow: boolean = false; // header ⋮ dropdown
+  @Local headerMenuShow: boolean = false; // header ⋮ dropdown
   // Header state is kept separate from message-history state. getChat can
   // resolve before history, fail independently, or arrive after a cached row.
-  @State headerState: string = 'loading'; // loading | ready | error
-  @State headerLoadError: string = '';
-  @State headerProfileOpening: boolean = false;
-  @State headerMuteUpdating: boolean = false;
-  @State pageClosing: boolean = false;
+  @Local headerState: string = 'loading'; // loading | ready | error
+  @Local headerLoadError: string = '';
+  @Local headerProfileOpening: boolean = false;
+  @Local headerMuteUpdating: boolean = false;
+  @Local pageClosing: boolean = false;
   private headerPeerUserId: number = 0;
   private headerKind: string = '';
   private headerIdentityResolved: boolean = false;
@@ -1631,30 +1629,30 @@ export struct ChatPage {
   // In-chat message search (search-mode header + result navigation).
   // 输入框上方那一条的当前状态。字段仍在（读取处很多），但**只由
   // applyComposerMode 写**，转换逻辑在 util/composerMode。
-  @State composerMode: ComposerMode = idleComposer();
+  @Local composerMode: ComposerMode = idleComposer();
   // 输入框下面那块高度归谁（none / attach / emoji / replyKeyboard）。
   // 三个既有字段仍在（读取处很多），但**只由 applyBottomSlot 写**。
-  @State bottomSlot: string = SLOT_NONE;
-  @State searchMode: boolean = false;
+  @Local bottomSlot: string = SLOT_NONE;
+  @Local searchMode: boolean = false;
   // Multi-select mode (entered via the long-press menu's 选择 item).
-  @State selecting: boolean = false;
-  @State selectedIds: number[] = [];
-  @State searchQuery: string = '';
-  @State searchResults: number[] = []; // message ids, newest → oldest
-  @State searchTotal: number = 0;
-  @State searchIdx: number = 0;        // 0-based index into searchResults
+  @Local selecting: boolean = false;
+  @Local selectedIds: number[] = [];
+  @Local searchQuery: string = '';
+  @Local searchResults: number[] = []; // message ids, newest → oldest
+  @Local searchTotal: number = 0;
+  @Local searchIdx: number = 0;        // 0-based index into searchResults
   // Message id the chat was opened on from global search — becomes the current
   // hit instead of the search jumping to the newest one. 0 = no anchor.
   private searchAnchorId: number = 0;
   private searchSeq: number = 0;
   // 「查看历史」筛的那个发送者；0 = 不按发送者筛（普通关键词搜索）。
   // 按发送者筛时 query 允许为空——TDLib 支持"空 query + sender_id"列出此人全部消息。
-  @State private searchSenderId: number = 0;       // drops stale responses
+  @Local private searchSenderId: number = 0;       // drops stale responses
   private unsubMsg: (() => void) | null = null;
   private unsubSub: (() => void) | null = null;
   // Peer's premium emoji status (private chats) shown beside the header title.
-  @State headerEmojiPath: string = '';
-  @State headerEmojiFormat: string = '';
+  @Local headerEmojiPath: string = '';
+  @Local headerEmojiFormat: string = '';
   private headerEmojiFetched: boolean = false;
   private unsubChat: (() => void) | null = null;
   private unsubPinned: (() => void) | null = null;
@@ -2718,6 +2716,7 @@ export struct ChatPage {
   // 订阅者把 playSlotKey 清成 ''，气泡的 VideoBubbleSurface 随之卸载 →
   // StreamingVideoPlayer.aboutToDisappear → release() → session.close()，
   // 播放和下载一起停）；重新打开则补一次判定让它自然重新选出来。
+  @Monitor('powerSaving', 'reduceAnimations', 'autoplayVideo')
   private onAutoplayPolicyChanged(): void {
     if (!this.playSlotsEnabled()) {
       this.clearSlotTick();
@@ -3218,6 +3217,7 @@ export struct ChatPage {
   // underlying chat position is stable when the preview closes.
   // 诊断：屏宽本该恒定，任何变化都值得记一笔——气泡摊平那类问题第一个要
   // 排除的就是它。变化极少，不会刷日志。
+  @Monitor('screenW')
   private onScreenWidthChanged(): void {
     if (Math.abs(this.screenW - this.lastScreenW) > 0.5) {
       logW(`screenW ${Math.round(this.lastScreenW)} -> ${Math.round(this.screenW)}`);
@@ -3290,6 +3290,7 @@ export struct ChatPage {
     this.glueBottom('L2078');
   }
 
+  @Monitor('keyboardH')
   private onKeyboardHeightChanged(): void {
     const wasVisible: boolean = this.lastKeyboardH > 0;
     const visible: boolean = this.keyboardH > 0;
@@ -3477,6 +3478,7 @@ export struct ChatPage {
   // bubblePositionMs，回到气泡就从一个莫名其妙的位置起播。
   // closeViewer 在 animateTo 把 viewerMsgId 清零之前已经读走了进度，所以
   // 关闭那一次的清零不会吃掉正确的值。
+  @Monitor('viewerMsgId')
   private onViewerTargetChanged(): void {
     this.viewerPositionMs = 0;
   }
@@ -4794,6 +4796,7 @@ export struct ChatPage {
 
   // 所以这里只要让它重新解析一次就够，不必重新订阅。
 
+  @Monitor('appDark')
   private onAppDarkChanged(): void {
 
     if (this.bgStore !== null) {
@@ -4805,6 +4808,7 @@ export struct ChatPage {
   }
 
 
+  @Monitor('langEpoch')
   private onLanguageEpochChanged(): void {
     // A hidden page can't be trusted to apply even a RELOAD; re-issue on show.
     if (!this.pageVisible) {
@@ -4814,6 +4818,7 @@ export struct ChatPage {
     this.groupsData.reload();
   }
 
+  @Monitor('appIsForeground')
   private onAppForegroundChanged(): void {
     // 停留在会话页切后台时必须 closeChat，否则 TDLib 认为用户正在看这个
     // 会话，不会为它生成任何通知。
@@ -5898,21 +5903,21 @@ export struct ChatPage {
   // Horizontal center (vp, window coords) of the smiley button — the anchor
   // the emoji panel scales out of / back into.
   private emojiBtnCx: number = 48;
-  @State inputBarH: number = 64;
-  @State listViewportH: number = 0;
+  @Local inputBarH: number = 64;
+  @Local listViewportH: number = 0;
   // Height of every persistent bottom surface (composer/reply/Bot keyboard or
   // membership/search bar). The List uses it only as END offset: rows still
   // travel behind the floating input, while the final row can clear it.
-  @State bottomChromeH: number = 76;
+  @Local bottomChromeH: number = 76;
   private bottomChromeLayoutSeq: number = 0;
   // Measured bot-keyboard height; with the input bar it makes up the bottom
   // chrome the scroll-to-bottom FAB has to clear.
   // 输入框的真实宽度，composerEditorHeight() 拿它做排版约束。
-  @State composerEditorW: number = 0;
+  @Local composerEditorW: number = 0;
   // "Fake" animation: the open/close transition flies an empty white shell;
   // the real panel content (hundreds of emoji + sticker players) mounts only
   // after the animation lands, so frames stay cheap.
-  @State panelContentReady: boolean = false;
+  @Local panelContentReady: boolean = false;
   private panelReadySeq: number = 0;
 
   // 顶栏高度只由结构状态决定。标题、副标题、头像加载状态的变化不再经过
@@ -7056,6 +7061,7 @@ export struct ChatPage {
 
   // 总开关在设置页被改动后，当前页要立刻跟上：开了就把可见范围补翻，
   // 关了就把已经渲染出来的译文收走（服务的缓存留着，再开秒回）。
+  @Monitor('translateChatsEnabled')
   private onTranslateSettingChanged(): void {
     if (this.translationActive()) {
       this.driveVisibleWork();
@@ -7461,11 +7467,11 @@ export struct ChatPage {
   // result in place (dialog). TDLib needs an explicit ISO 639-1 target code.
   // 单条翻译改半模态面板（可上拉全屏）：原文/译文对照、复制、快速换目标语言。
   // 此前是 promptAction.showDialog 小弹窗，长文没法读。
-  @State translateSheetOpen: boolean = false;
-  @State translateSheetOriginal: string = '';
-  @State translateSheetText: string = '';
-  @State translateSheetState: string = TRANSLATE_LOADING;
-  @State translateSheetLang: string = '';
+  @Local translateSheetOpen: boolean = false;
+  @Local translateSheetOriginal: string = '';
+  @Local translateSheetText: string = '';
+  @Local translateSheetState: string = TRANSLATE_LOADING;
+  @Local translateSheetLang: string = '';
   private translateSheetMsgId: number = 0;
   private translateSheetEditDate: number = 0;
   private translateSheetSeq: number = 0;
