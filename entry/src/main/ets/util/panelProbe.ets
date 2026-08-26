@@ -39,6 +39,30 @@ export function probeHit(name: string, times: number = 1): void {
   }
 }
 
+// [ReuseProbe] 复用语义探针（审计 P2-1，docs/superpowers/specs/2026-08-26-p2-state-audit.md
+// 第 4 节 ①-1）。递归复用时子组件 aboutToReuse 收到的 params 到底是新一轮构造
+// 参数、上一轮的旧值、还是根本没有，官方文档没有规定，静态代码也判不出来。
+// 这条探针是 P0-4 定级的唯一依据：params 恒为新值 → P0-4 是防御性加固；
+// 出现旧值或缺失 → P0-4 是真 bug 修复。上机读一次日志后再决定删不删。
+//
+// 为什么不用 probeHit 的聚合：这里要看的是具体 id 的对比，聚合计数答不了。
+// 为什么要限流：滑动时每行都会打一行，刷爆 hilog 本身就会改变被测对象；
+// 前 REUSE_PROBE_VERBOSE 行无条件打（看常态），之后只打异常行（缺 key 或
+// 与 @Prop 不一致），这样罕见的旧值/缺失也不会被限流吃掉。
+const REUSE_PROBE_VERBOSE: number = 200;
+let reuseProbeLines: number = 0;
+
+export function reuseProbe(component: string, key: string, present: boolean,
+    paramIds: string, propIds: string): void {
+  const mismatch: boolean = !present || paramIds !== propIds;
+  reuseProbeLines++;
+  if (reuseProbeLines > REUSE_PROBE_VERBOSE && !mismatch) {
+    return;
+  }
+  logE(`[ReuseProbe] ${component} key=${key} present=${present ? 1 : 0}` +
+    ` param(${paramIds}) prop(${propIds}) ${mismatch ? 'MISMATCH' : 'match'}`);
+}
+
 // 一次性的、需要看具体数值的事件（比如整表 RELOAD 带了多少条），直接打出来。
 // 这类事件本身应当是低频的——如果它高频到刷屏，那件事本身就是要找的问题。
 export function probeEvent(name: string, detail: string): void {

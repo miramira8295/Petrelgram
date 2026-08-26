@@ -32,7 +32,7 @@ import {
   COLOR_PRIMARY, COLOR_TEXT_SECONDARY, bubbleTextFor
 } from '../../util/theme';
 import { formatClockTime } from '../../util/formatTime';
-import { probeHit } from '../../util/panelProbe';
+import { probeHit, reuseProbe } from '../../util/panelProbe';
 import { CachedImage } from '../common/CachedImage';
 import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
@@ -103,19 +103,39 @@ struct LightweightSenderAvatar {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
-  @Prop senderId: number = 0;
-  @Prop senderIsUser: boolean = true;
+  // @Watch（审计设计约束「订阅按 key 自愈」）：头像订阅的 key 就是 senderId。
+  // aboutToReuse 的 params 未必带得到新值，迁到 V2 后 @ReusableV2 的
+  // aboutToReuse 干脆没有入参（审计 C2）。挂 @Watch 之后 @Prop 无论何时落地
+  // 订阅都会按新 key 自己纠正，不再依赖 params 或 setTimeout 兜底。
+  @Prop @Watch('onSenderChanged') senderId: number = 0;
+  @Prop @Watch('onSenderChanged') senderIsUser: boolean = true;
   @Prop initialPath: string = '';
   @Prop initials: string = '?';
   @State private path: string = '';
   private unsub: (() => void) | null = null;
 
+  // 订阅当前挂在哪个发送者 key 上：既用于同 key 短路（审计 P1-1，一次复用会
+  // 经 aboutToReuse 和 @Watch 各挂一次），也让「订阅挂在哪」变成可判定的事实。
+  private attachedKey: string = '';
+
   private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
+    const key: string = senderChannelKey(senderId, senderIsUser);
+    const known: string = senderAvatarFor(key);
+    if (this.unsub !== null && this.attachedKey === key) {
+      // 同 key 短路：订阅不动，但 path 要重新播种——P0-2 让 aboutToRecycle /
+      // aboutToReuse 无条件清空了它，不补种会空一帧头像。
+      this.path = known !== '' ? known : initialPath;
+      return;
+    }
     this.detach();
-    const known: string = senderAvatarFor(senderChannelKey(senderId, senderIsUser));
+    this.attachedKey = key;
     this.path = known !== '' ? known : initialPath;
-    this.unsub = subscribeSenderAvatar(senderChannelKey(senderId, senderIsUser),
-      (path: string): void => { this.path = path; });
+    this.unsub = subscribeSenderAvatar(key, (path: string): void => { this.path = path; });
+  }
+
+  // 按 key 自愈：@Prop 落地时若发送者换了，把订阅重挂到新 key 上。
+  private onSenderChanged(): void {
+    this.attach(this.senderId, this.senderIsUser, this.initialPath);
   }
 
   private detach(): void {
@@ -123,15 +143,29 @@ struct LightweightSenderAvatar {
       this.unsub();
       this.unsub = null;
     }
+    this.attachedKey = '';
   }
 
   aboutToAppear(): void { this.attach(this.senderId, this.senderIsUser, this.initialPath); }
   aboutToDisappear(): void { this.detach(); }
-  aboutToRecycle(): void { this.detach(); }
+  aboutToRecycle(): void {
+    this.detach();
+    // P0-2（审计 3.1；C 类变量 path，行 110）：detach 只停订阅、不改值，而
+    // CachedImage 的 path 与 visibility 都直接读它。不清空的话，走 aboutToReuse
+    // 兜底分支的那一帧画的就是上一个发送者的位图——历史上的「头像串行」。
+    // 清 path 不依赖新参数，所以回收与复用两条路径都无条件执行。
+    this.path = '';
+  }
   aboutToReuse(params: Record<string, Object>): void {
+    // 无条件前置（审计 S1）：清理跑在 params 判断之前，V2 无入参时同样成立。
+    this.path = '';
     const senderId: number | undefined = params['senderId'] as number | undefined;
     const senderIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
     const initialPath: string | undefined = params['initialPath'] as string | undefined;
+    // P2-1 探针：递归复用时 params 是新是旧，静态判不了。
+    reuseProbe('LightweightSenderAvatar', 'senderId', senderId !== undefined,
+      `sender=${senderId ?? -1},isUser=${senderIsUser === undefined ? -1 : (senderIsUser ? 1 : 0)}`,
+      `sender=${this.senderId},isUser=${this.senderIsUser ? 1 : 0}`);
     if (senderId !== undefined && senderIsUser !== undefined) {
       this.attach(senderId, senderIsUser, initialPath ?? '');
     } else {
@@ -278,15 +312,40 @@ export struct LightweightPlainTextBubble {
   private unsubSend: (() => void) | null = null;
   private unsubTranslation: (() => void) | null = null;
 
+  // 订阅当前挂在哪条消息上。发送状态按 rowId 订阅、翻译态按 message.id 订阅，
+  // 所以 key 要把两者都算进去。用途同头像：同 key 短路（审计 P1-1，复用一次
+  // 会经 aboutToReuse 和 @Watch onMessageChanged 各挂一次）+ 按 key 自愈。
+  private attachedKey: string = '';
+
   private attachChannels(message: MessageEntry): void {
+    const key: string = `${message.rowId}:${message.id}`;
+    if (this.unsubSend !== null && this.attachedKey === key) {
+      // 同 key 短路：退订+重订阅整轮省掉，只重新播种数值——清理是无条件的，
+      // 不补种会空一帧。
+      this.seedChannelValues(message);
+      return;
+    }
     this.detachChannels();
-    const known: string = sendStateFor(message.rowId);
-    this.liveSendState = known !== '' ? known : message.sendState;
+    this.attachedKey = key;
+    this.seedChannelValues(message);
     this.unsubSend = subscribeSendState(message.rowId,
       (state: string): void => { this.liveSendState = state; });
-    this.translationStatus = translationStatusFor(message.id);
     this.unsubTranslation = subscribeTranslationStatus(message.id,
       (next: TranslationStatus | null): void => { this.translationStatus = next; });
+  }
+
+  // 先读通道现值，没有才用 @Prop 带来的初值（滚回历史消息时不会有新的发布）。
+  private seedChannelValues(message: MessageEntry): void {
+    const known: string = sendStateFor(message.rowId);
+    this.liveSendState = known !== '' ? known : message.sendState;
+    this.translationStatus = translationStatusFor(message.id);
+  }
+
+  // C 类通道值同样不依赖新参数（同 MessageBubble 的 clearChannelValues，依据
+  // 审计 3.2a）：不清就会拿上一条消息的发送勾/翻译态渲染新消息一帧。
+  private clearChannelValues(): void {
+    this.liveSendState = '';
+    this.translationStatus = null;
   }
 
   private detachChannels(): void {
@@ -295,6 +354,7 @@ export struct LightweightPlainTextBubble {
       this.unsubTranslation();
       this.unsubTranslation = null;
     }
+    this.attachedKey = '';
   }
 
   private resetTransient(): void {
@@ -314,11 +374,20 @@ export struct LightweightPlainTextBubble {
     probeHit('message.plain.recycle');
     this.detachChannels();
     this.resetTransient();
+    // 与 aboutToReuse 保持同一份清理（审计 S1）：通道值也归零，别让组件带着
+    // 上一条消息的发送勾/翻译态躺在复用池里。
+    this.clearChannelValues();
   }
   aboutToReuse(params: Record<string, Object>): void {
     probeHit('message.plain.reuse');
+    // 无条件前置（审计 S1）：这两行不依赖新参数，V2 无入参时也成立。
     this.resetTransient();
+    this.clearChannelValues();
     const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
+    // P2-1 探针：见 reuseProbe 的说明。
+    reuseProbe('LightweightPlainTextBubble', 'msg', next !== undefined,
+      `row=${next?.rowId ?? -1},msg=${next?.id ?? -1}`,
+      `row=${this.msg.rowId},msg=${this.msg.id}`);
     if (next !== undefined) {
       this.attachChannels(next);
     } else {

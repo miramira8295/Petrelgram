@@ -2,7 +2,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import {
   messageRowPresentationFor, subscribeMessageRowPresentation
 } from '../../util/messageRowPresentationChannel';
-import { probeHit } from '../../util/panelProbe';
+import { probeHit, reuseProbe } from '../../util/panelProbe';
 import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { MessageBubble } from './MessageBubble';
 
@@ -176,8 +176,22 @@ export struct ReusableMessageBubble {
     return this.group;
   }
 
+  // 订阅当前挂在哪条 (chatId, rowId) 上。同 key 短路（审计 P1-1 / 3.4）：复用
+  // 一次会挂两遍——aboutToReuse 一次、@Prop group 落地触发 @Watch 再一次，每次
+  // 都是一整轮「退订 + 读现值 + 重订阅」，是滚动时的每行常数开销。
+  // 记下 key 同时也让「订阅挂在哪」成为可判定的事实，谁先到都不影响正确性。
+  private attachedKey: string = '';
+
   private attachPresentation(group: AlbumGroup): void {
+    const key: string = `${this.data.chatId}:${group.head.rowId}`;
+    if (this.unsubPresentation !== null && this.attachedKey === key) {
+      // 已挂在同一行上：订阅原样保留，只重新取一次现值（aboutToRecycle 会把
+      // liveGroup 置 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
+      this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
+      return;
+    }
     this.detachPresentation();
+    this.attachedKey = key;
     this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
     this.unsubPresentation = subscribeMessageRowPresentation(
       this.data.chatId,
@@ -191,6 +205,7 @@ export struct ReusableMessageBubble {
       this.unsubPresentation();
       this.unsubPresentation = null;
     }
+    this.attachedKey = '';
   }
 
   private onGroupChanged(): void {
@@ -213,6 +228,12 @@ export struct ReusableMessageBubble {
 
   aboutToReuse(params: Record<string, Object>): void {
     const next: AlbumGroup | undefined = params['group'] as AlbumGroup | undefined;
+    // P2-1 探针（审计第 4 节 ①-1）：这一层是 LazyForEach 直接建的顶层复用
+    // 组件，params 理应恒有 group；打出来是为了拿到「顶层」的对照组，好判断
+    // 递归到子组件时 params 变空/变旧到底发生在哪一层。
+    reuseProbe('ReusableMessageBubble', 'group', next !== undefined,
+      `row=${next?.head.rowId ?? -1},msg=${next?.head.id ?? -1}`,
+      `row=${this.group.head.rowId},msg=${this.group.head.id}`);
     if (next !== undefined) {
       this.attachPresentation(next);
     } else {

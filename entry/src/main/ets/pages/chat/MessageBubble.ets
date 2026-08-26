@@ -50,6 +50,7 @@ import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
 import { plural, str } from '../../util/strings';
+import { reuseProbe } from '../../util/panelProbe';
 import { LiveProgressRing } from './LiveProgressRing';
 import { progressForOr, subscribeProgress } from '../../util/mediaProgressChannel';
 import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
@@ -110,8 +111,13 @@ struct LiveSenderAvatar {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
-  @Prop senderId: number = 0;
-  @Prop senderIsUser: boolean = true;
+  // @Watch（审计设计约束「订阅按 key 自愈」）：头像订阅的 key 就是 senderId，
+  // 而 aboutToReuse 的 params 未必带得到新 senderId——迁到状态管理 V2 后
+  // @ReusableV2 的 aboutToReuse 根本没有入参（审计 C2），那时 params 恒空。
+  // 挂 @Watch 之后，@Prop 无论早一帧还是晚一帧落地，订阅都会按新 key 自己
+  // 纠正，不再依赖 params 或 setTimeout 兜底。
+  @Prop @Watch('onSenderChanged') senderId: number = 0;
+  @Prop @Watch('onSenderChanged') senderIsUser: boolean = true;
   @Prop initialPath: string = '';
   @Prop initials: string = '?';
   // 评论行的头像栈比发送者头像小一圈。
@@ -120,15 +126,31 @@ struct LiveSenderAvatar {
   @Prop avatarSize: number = 38;
   @State private path: string = '';
   private unsubAvatar: (() => void) | null = null;
+  // 订阅当前挂在哪个发送者 key 上。两个用途：① 同 key 短路（审计 P1-1：一次
+  // 复用会经 aboutToReuse 和 @Watch 各挂一次，每次都是一整轮退订+重订阅）；
+  // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 有没有到。
+  private attachedAvatarKey: string = '';
 
   private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
-    this.detachAvatarChannel();
     const key: string = senderChannelKey(senderId, senderIsUser);
     const known: string = senderAvatarFor(key);
+    if (this.unsubAvatar !== null && this.attachedAvatarKey === key) {
+      // 同 key 短路：订阅原样保留，但 path 必须重新播种——P0-1 让
+      // aboutToRecycle / aboutToReuse 无条件清空了 path，不补种会空一帧。
+      this.path = known !== '' ? known : initialPath;
+      return;
+    }
+    this.detachAvatarChannel();
+    this.attachedAvatarKey = key;
     this.path = known !== '' ? known : initialPath;
     this.unsubAvatar = subscribeSenderAvatar(key, (path: string): void => {
       this.path = path;
     });
+  }
+
+  // 按 key 自愈：@Prop 落地时若发送者已经换了，这里把订阅重挂到新 key 上。
+  private onSenderChanged(): void {
+    this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
   }
 
   private detachAvatarChannel(): void {
@@ -136,6 +158,7 @@ struct LiveSenderAvatar {
       this.unsubAvatar();
       this.unsubAvatar = null;
     }
+    this.attachedAvatarKey = '';
   }
 
   aboutToAppear(): void {
@@ -144,12 +167,26 @@ struct LiveSenderAvatar {
 
   aboutToRecycle(): void {
     this.detachAvatarChannel();
+    // P0-1（审计 3.1，C 类变量 path，行 121）：detach 只停订阅、不改值，
+    // 而 CachedImage 的 path 与 visibility 都直接读它。不清空的话，走
+    // aboutToReuse 兜底分支的那一帧画出来的就是**上一个发送者的位图**——
+    // 这正是历史上全量开 @Reusable 时「头像串行」的机理。
+    // 清 path 不依赖任何新参数，所以回收与复用两条路径都无条件执行。
+    this.path = '';
   }
 
   aboutToReuse(params: Record<string, Object>): void {
+    // 无条件前置（审计 S1）：不依赖新参数的清理放在 params 判断之前。
+    // 这样兜底分支最差是「空一帧」，不会是「别人的一帧」；而且 V2 的
+    // aboutToReuse 没有入参（C2）时这一句依然成立。
+    this.path = '';
     const nextId: number | undefined = params['senderId'] as number | undefined;
     const nextIsUser: boolean | undefined = params['senderIsUser'] as boolean | undefined;
     const nextPath: string | undefined = params['initialPath'] as string | undefined;
+    // P2-1 探针：递归复用时子组件拿到的 params 是新是旧无法静态判定。
+    reuseProbe('MessageBubble.LiveSenderAvatar', 'senderId', nextId !== undefined,
+      `sender=${nextId ?? -1},isUser=${nextIsUser === undefined ? -1 : (nextIsUser ? 1 : 0)}`,
+      `sender=${this.senderId},isUser=${this.senderIsUser ? 1 : 0}`);
     if (nextId !== undefined && nextIsUser !== undefined) {
       this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');
       return;
@@ -207,6 +244,10 @@ export struct MessageBubble {
   @Prop @Watch('onMsgPropChanged') msg: MessageEntry;
   @State private liveSendState: string = '';
   private unsubSendState: (() => void) | null = null;
+  // 6 个通道（发送勾 + 4 个下载进度 + 翻译态）当前挂在哪一条消息的 rowId 上。
+  // P0-4（审计 3.2b）：这是本组件订阅自愈的唯一依据——「params 里的 msg 是新
+  // 是旧」静态判不了，「订阅挂在哪」却是本地可判定的事实。0 = 未挂。
+  private attachedRowId: number = 0;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
   @Prop themeBubbleOut: string = '';
   // 本地外观：epoch 一变，气泡底色/文字色（theme 里的活绑定）跟着重取。
@@ -510,6 +551,8 @@ export struct MessageBubble {
       this.unsubStickerProgress = subscribeProgress(message.stickerFileId,
         (percent: number): void => { this.liveStickerProgress = percent; });
     }
+    // 记下这套订阅挂在哪条消息上，供 onMsgPropChanged 判断是否需要重挂（P0-4）。
+    this.attachedRowId = message.rowId;
   }
 
   private detachMessageChannels(): void {
@@ -537,15 +580,25 @@ export struct MessageBubble {
       this.unsubStickerProgress();
       this.unsubStickerProgress = null;
     }
+    this.attachedRowId = 0;
   }
 
-  private resetReusedState(next: MessageEntry): void {
+  // P0-3（审计 3.3）：把「清」和「拿新值」拆开。这一半是 A 类 16 个 @State
+  // 加四个普通字段/Map，全部是本行自己量出来或点出来的瞬态值，**不依赖任何
+  // 新参数**，所以它必须能在 aboutToReuse 的 params 判断之前无条件执行，并且
+  // 在 aboutToRecycle 里执行同一份。原来它只挂在 params 拿得到这个假设上，
+  // 一旦走兜底分支，这 16 个值会以上一条消息的取值渲染一帧（剧透已揭开、
+  // 引用已展开、圆形视频在播、气泡宽度是别人的）。
+  private clearTransientState(): void {
+    // onAreaChange 量出来的尺寸；新消息若不再显示某个标签，那个节点不会重新
+    // 触发 onAreaChange，旧值会一直留着（见 forwardLabelW 声明处的注释）。
     this.bubbleW = 0;
     this.menuOffsetX = 0;
     this.forwardLabelW = 0;
     this.senderLabelW = 0;
     this.commentsRowW = 0;
-    this.labelWidthRowId = next.rowId;
+    // key 由本条消息的文本段算出，换消息后旧 key 可能碰撞 → 新消息的剧透
+    // 直接就是揭开的、引用直接就是展开的。
     this.revealedSpoilerKeys = [];
     this.expandedQuoteKeys = [];
     this.mediaVisible = true;
@@ -557,13 +610,31 @@ export struct MessageBubble {
     this.mediaCenterY = 0;
     this.albumCellCenterY.clear();
     this.albumWasCompetingVideo.clear();
-    this.wasCompetingVideo = next.contentType === 'video' && !next.isAnimation;
     this.videoNotePlaying = false;
     // 玻璃层的尺寸是量出来的：复用成另一条消息后，旧尺寸算出的裁剪路径是错的，
     // 清零等这一帧的 onAreaChange 重新给。onScreen 回到 true 的理由同它的声明处。
     this.glassW = 0;
     this.glassH = 0;
     this.onScreen = true;
+  }
+
+  // C 类 6 个通道值（审计 3.2a）。它们同样不依赖新参数：清零最多空一帧，不清
+  // 则会用上一条消息的「发送中/已读」勾和下载百分比去渲染新消息。重新挂订阅
+  // 时 attachMessageChannels 会立刻重播种，所以这里放心清。
+  private clearChannelValues(): void {
+    this.liveSendState = '';
+    this.translationStatus = null;
+    this.livePhotoProgress = 0;
+    this.liveLinkPhotoProgress = 0;
+    this.liveVideoProgress = 0;
+    this.liveStickerProgress = 0;
+  }
+
+  // 剩下的两条是**依赖新参数**的，只能在拿得到新消息时做。
+  private resetReusedState(next: MessageEntry): void {
+    this.clearTransientState();
+    this.labelWidthRowId = next.rowId;
+    this.wasCompetingVideo = next.contentType === 'video' && !next.isAnimation;
   }
 
   aboutToAppear(): void {
@@ -600,12 +671,28 @@ export struct MessageBubble {
   aboutToRecycle(): void {
     this.detachMessageChannels();
     this.reportCompetingMediaGone();
-    this.translationStatus = null;
-    this.msgContextMenuShown = false;
+    // 和 aboutToReuse 用同一份清理（P0-3 + 3.2a）：组件躺进复用池之前就把
+    // A 类 16 个和 6 个通道值全部归零，别让它带着上一条消息的剧透揭开态、
+    // 引用展开态、发送勾和下载百分比等下一次复用。
+    // （原来这里只清了 translationStatus 和 msgContextMenuShown 两个，
+    //   两者现在分别被 clearChannelValues / clearTransientState 覆盖。）
+    this.clearTransientState();
+    this.clearChannelValues();
   }
 
   aboutToReuse(params: Record<string, Object>): void {
+    // 无条件前置（审计 S1 / P0-3）：不依赖新参数的清理跑在 params 判断之前。
+    // 迁到状态管理 V2 后 @ReusableV2 的 aboutToReuse 没有入参（审计 C2），
+    // 下面的 setTimeout 兜底会从「不可达分支」变成唯一分支——那时这两行
+    // 依然成立，兜底最差是「空一帧」，不会是「别人的一帧」。
+    this.clearTransientState();
+    this.clearChannelValues();
     const next: MessageEntry | undefined = params['msg'] as MessageEntry | undefined;
+    // P2-1 探针（审计第 4 节 ①-1）：递归复用时这里的 params 是新值、旧值
+    // 还是缺失，文档没规定、静态代码判不出来，只能上机读日志。
+    reuseProbe('MessageBubble', 'msg', next !== undefined,
+      `row=${next?.rowId ?? -1},msg=${next?.id ?? -1}`,
+      `row=${this.msg.rowId},msg=${this.msg.id}`);
     if (next === undefined) {
       // @Prop refreshes land after this callback. The normal wrapper always
       // supplies msg in params; keep a safe fallback for framework variations.
@@ -640,7 +727,20 @@ export struct MessageBubble {
       this.senderLabelW = 0;
       this.commentsRowW = 0;
     }
-    // 同一个组件原地换了 msg：rowId 不变，订阅仍然有效，但初值要跟上。
+    // P0-4（审计 3.2b——本次审计里唯一一个**不会自愈**的缺陷）。
+    // 这个函数原来的前提是「同一个组件原地换了 msg：rowId 不变，订阅仍然
+    // 有效」。原地更新下成立，复用成另一条消息下不成立：只要 aboutToReuse
+    // 拿到的 params['msg'] 是旧对象（递归复用无法静态排除，迁 V2 后必然
+    // 如此），attachMessageChannels(旧 msg) 会把 6 个通道永久挂在上一条
+    // 消息的 rowId / fileId 上，而且后续没有任何路径能纠正。
+    // 按「订阅挂在哪个 rowId 上」自愈：不一致就整套重挂。这样即使 params
+    // 拿不到、即使 @Prop 落地晚一帧，组件也能自己纠正——和
+    // LightweightPlainTextBubble.onMessageChanged / ReusableMessageBubble
+    // .onGroupChanged 拉平。重挂本身就带重播种，下面几行只对 rowId 未变的
+    // 真·原地更新起作用（幂等，重复播种无害）。
+    if (this.msg.rowId !== this.attachedRowId) {
+      this.attachMessageChannels(this.msg);
+    }
     const known: string = sendStateFor(this.msg.rowId);
     this.liveSendState = known !== '' ? known : this.msg.sendState;
     this.livePhotoProgress = progressForOr(this.msg.photoFileId, this.msg.photoProgress);
