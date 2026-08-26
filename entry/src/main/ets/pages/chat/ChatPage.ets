@@ -322,15 +322,88 @@ const COMPOSER_MAX_LINES: number = 4;
 // chevron). Ordered roughly like the official client's reaction sheet.
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
 // 本模块并调用它，页面因此不再需要进 main_pages.json。
-@Builder
-export function ChatPageBuilder(): void {
-  ChatPage();
-}
-
+// V1 外壳组件：只做一件事——订阅 AppStorage，把 21 个全局单值透传给 V2 的
+// ChatPage。
+//
+// 为什么需要它：@StorageProp / @StorageLink 是状态管理 V1 独有的装饰器，
+// ChatPage 迁 @ComponentV2 之后不能再声明它们；而官方 FAQ《如何实现 V1、V2
+// 版本之间父子组件的数据传递与共享》写明「AppStorage 在 V1 向 V2 传递的场景下，
+// V2 版本的子组件不能自动同步更新，只能通过 AppStorage.get 手动获取」。
+//
+// 为什么不直接搬去 AppStorageV2：官方《AppStorageV2》「使用限制」两条都是硬的
+// ——「AppStorage 与 AppStorageV2 之间的数据互不共享」、「不支持存储基本类型，
+// 如 string、number、boolean」。这 21 个键全是 number/boolean，而且不是本页
+// 私有的：全仓 @StorageProp/@StorageLink 共 513 处、分布在 100 个文件，写入方
+// 主要在 AppSettings.ets / EntryAbility.ets / Globals.ets。只搬会话页这一份，
+// 同一个键就会变成「V1 写、V2 读」，永远读到默认值，而且不报错。
+//
+// 合法性：《@ReusableV2装饰器：V2组件复用》的混用支持表「V1 普通组件 → V2 普通
+// 组件：支持」。基本类型不需要 UIUtils.enableV2Compatibility 桥接——那个接口
+// 「不支持非 object 类型」，对 number/boolean 调了也只是返回入参自身。
+//
+// 代价：某个 epoch 变一次，这一层就重跑一次 build()，把 21 个 @Param 重新交给
+// ChatPage。@Param 只在值真的变化（===）时才向下传播刷新，所以代价是一次
+// 参数比较，不是一次页面重建。
 @Preview
 @Component
-export struct ChatPage {
+struct ChatPageChrome {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  @StorageProp(MATERIAL_EPOCH) materialEpoch: number = 0;
+  @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(KEY_APP_DARK) appDark: boolean = false;
+  @StorageProp('topSafeHeight') topSafe: number = 0;
+  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  @StorageProp('keyboardHeightVp') keyboardH: number = 0;
+  @StorageProp('appIsForeground') appIsForeground: boolean = true;
+  @StorageProp(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
+  @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenHeightVp') screenH: number = 780;
+  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
+  @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
+  @StorageProp(KEY_POWER_EFFECT_BACKGROUND) powerBackgroundEffect: boolean = false;
+  @StorageProp(KEY_POWER_PARTICLES) powerParticles: boolean = true;
+  @StorageProp(KEY_POWER_EMOJI) powerEmoji: boolean = true;
+  @StorageProp(KEY_POWER_EMOJI_REACTIONS) powerEmojiReactions: boolean = true;
+  @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
+  @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
+  @StorageProp(KEY_AUTOPLAY_MUTED) autoplayMuted: boolean = true;
+  @StorageProp(KEY_TRANSLATE_CHATS) translateChatsEnabled: boolean = false;
+
+  build() {
+    ChatPage({
+      appearanceEpoch: this.appearanceEpoch,
+      materialEpoch: this.materialEpoch,
+      langEpoch: this.langEpoch,
+      appDark: this.appDark,
+      topSafe: this.topSafe,
+      bottomSafe: this.bottomSafe,
+      keyboardH: this.keyboardH,
+      appIsForeground: this.appIsForeground,
+      sendByEnter: this.sendByEnter,
+      screenW: this.screenW,
+      screenH: this.screenH,
+      powerSaving: this.powerSaving,
+      powerChatEffects: this.powerChatEffects,
+      powerBackgroundEffect: this.powerBackgroundEffect,
+      powerParticles: this.powerParticles,
+      powerEmoji: this.powerEmoji,
+      powerEmojiReactions: this.powerEmojiReactions,
+      reduceAnimations: this.reduceAnimations,
+      autoplayVideo: this.autoplayVideo,
+      autoplayMuted: this.autoplayMuted,
+      translateChatsEnabled: this.translateChatsEnabled
+    });
+  }
+}
+
+@Builder
+export function ChatPageBuilder(): void {
+  ChatPageChrome();
+}
+
+@Component
+export struct ChatPage {
+  @Prop appearanceEpoch: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -338,22 +411,22 @@ export struct ChatPage {
 
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  @Prop materialEpoch: number = 0;
   // @Watch, because the row key below embeds this value: bumping it renames
   // every row, and the data source has to be told or LazyForEach keeps a key
   // table that no longer matches anything.
-  @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageEpochChanged') langEpoch: number = 0;
+  @Prop @Watch('onLanguageEpochChanged') langEpoch: number = 0;
   // 深浅色切换后要重新解析背景。壁纸本身是**按模式选的**（TDLib 的
   // for_dark_theme），而 ChatBackgroundStore 只在 open() 时解析过那一次，
   // 会话开着的时候切换模式没人再跑一遍，壁纸就停在旧模式那张（issue #57）。
   //
   // ChatBackdrop 也订阅了 KEY_APP_DARK，但它只管图案浓度和深色遮罩，换不了
   // 壁纸本身——所以那一份订阅顶不了这一份。
-  @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
-  @StorageProp('topSafeHeight') topSafe: number = 0;
-  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;  // ✅ 新增
-  @StorageProp('keyboardHeightVp') @Watch('onKeyboardHeightChanged') keyboardH: number = 0;
-  @StorageProp('appIsForeground') @Watch('onAppForegroundChanged') appIsForeground: boolean = true;
+  @Prop @Watch('onAppDarkChanged') appDark: boolean = false;
+  @Prop topSafe: number = 0;
+  @Prop bottomSafe: number = 0;  // ✅ 新增
+  @Prop @Watch('onKeyboardHeightChanged') keyboardH: number = 0;
+  @Prop @Watch('onAppForegroundChanged') appIsForeground: boolean = true;
   @State messages: MessageEntry[] = [];
   @State messageLoadState: string = 'loading'; // loading | ready | error
   @State messageLoadError: string = '';
@@ -1152,19 +1225,19 @@ export struct ChatPage {
   @State initials: string = '?';
   @State draft: string = '';
   // 聊天设置 → 回车键发送.
-  @StorageProp(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
-  @StorageProp('screenWidthVp') @Watch('onScreenWidthChanged') screenW: number = 360;
+  @Prop sendByEnter: boolean = false;
+  @Prop @Watch('onScreenWidthChanged') screenW: number = 360;
   private lastScreenW: number = 0;
-  @StorageProp('screenHeightVp') screenH: number = 780;
-  @StorageProp(KEY_POWER_ACTIVE) @Watch('onAutoplayPolicyChanged') powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_BACKGROUND) powerBackgroundEffect: boolean = false;
-  @StorageProp(KEY_POWER_PARTICLES) powerParticles: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI) powerEmoji: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) powerEmojiReactions: boolean = true;
-  @StorageProp(KEY_REDUCE_ANIM) @Watch('onAutoplayPolicyChanged') reduceAnimations: boolean = false;
+  @Prop screenH: number = 780;
+  @Prop @Watch('onAutoplayPolicyChanged') powerSaving: boolean = false;
+  @Prop powerChatEffects: boolean = true;
+  @Prop powerBackgroundEffect: boolean = false;
+  @Prop powerParticles: boolean = true;
+  @Prop powerEmoji: boolean = true;
+  @Prop powerEmojiReactions: boolean = true;
+  @Prop @Watch('onAutoplayPolicyChanged') reduceAnimations: boolean = false;
   // 「自动播放视频」开关。播放位竞选的总闸门之一，见 playSlotsEnabled()。
-  @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) @Watch('onAutoplayPolicyChanged')
+  @Prop @Watch('onAutoplayPolicyChanged')
   autoplayVideo: boolean = true;
   // 否则拖完滑块背景看起来没反应（命中旧签名的缓存图）。
   // TDLib per-chat wallpaper. Solid/gradient fills render immediately;
@@ -1315,7 +1388,7 @@ export struct ChatPage {
   // 靠这条路真正接到 VideoBubbleSurface.startPositionMs 上的。
   @State playSlotStartMs: number = 0;
   // 缓存设置 → 自动播放静音开关，唯一消费点：下发给气泡播放器的 muted。
-  @StorageProp(KEY_AUTOPLAY_MUTED) autoplayMuted: boolean = true;
+  @Prop autoplayMuted: boolean = true;
   // 气泡播放位的播放进度，按 messageId 记录。onPlaySlotPositionChanged 是
   // 350ms 一次的高频回调，故意用普通 Map 而不是 @State/@Link/AppStorage——
   // 写状态会让消息列表每 350ms 重建一次。打开全屏查看器时读它作为
@@ -1342,7 +1415,7 @@ export struct ChatPage {
   @State translateChatOptOut: boolean = false;
   // 总开关关着时，本地记下的"这个会话开了翻译"。见 translationMode 的说明。
   @State translateChatOptIn: boolean = false;
-  @StorageProp(KEY_TRANSLATE_CHATS) @Watch('onTranslateSettingChanged')
+  @Prop @Watch('onTranslateSettingChanged')
   translateChatsEnabled: boolean = false;
   // 是否正在共享实时位置（全局单例状态，不限于当前会话）。
   @State liveLocationActive: boolean = false;
