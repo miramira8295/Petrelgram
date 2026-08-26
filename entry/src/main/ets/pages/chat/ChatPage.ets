@@ -34,7 +34,8 @@ import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import { ReuseIdLevel, rowReuseId } from '../../util/rowReuseId';
 import {
   MIN_MESSAGE_ROW_HEIGHT_VP, capReuseBuckets, globalReusePoolAvailable,
-  messageRowViewportRows, reuseBucketMaxCount
+  messageReuseHostCount, messageRowViewportRows, releaseMessageReuseHost,
+  retainMessageReuseHost, reuseBucketMaxCount
 } from '../../util/messageReusePool';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
 import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
@@ -1392,7 +1393,13 @@ export struct ChatPage {
   // 使用 maxCount 来控制内存使用」。
   //
   // 上限怎么来的写在 messageReusePool.reuseBucketMaxCount 的注释里，一句话：
-  // 一个桶在一次最坏回收潮里能收到的实例数 = 可视窗口行数 + 2 × cachedCount。
+  // 一个桶在一次最坏回收潮里能收到的实例数 = 可视窗口行数 + 2 × cachedCount，
+  // 再乘上当前并存的会话页数（shared 池同时服务它们，见 hostPages）。
+  //
+  // 每桶封顶之外还有一层（F-6）：桶数**本身**也要封顶。medium 档的 rowReuseId
+  // 取值空间约 3000 个，而 shared 池只要栈上还压着任意会话页就不销毁，逛过的
+  // 会话的形状分桶会一直累积。planReuseBuckets 因此在同一趟里把最久未用的桶
+  // 淘汰掉，把活着的桶数压回 REUSE_LIVE_BUCKET_LIMIT 之内。
   //
   // 视口高度这里传的是**整屏高度** this.screenH，而不是 List 的实测高度：
   // 列表上下还压着头部和输入区，整屏高度是列表高度的上界，于是算出来的行数
@@ -1426,7 +1433,7 @@ export struct ChatPage {
       }
       const rows: number = messageRowViewportRows(this.screenH, MIN_MESSAGE_ROW_HEIGHT_VP);
       capReuseBuckets(pool, ReusableMessageBubble,
-        reuseBucketMaxCount(rows, this.listCachedCount));
+        reuseBucketMaxCount(rows, this.listCachedCount, messageReuseHostCount()));
     } catch (err) {
       // 封顶是纯优化，失败了不该影响任何一行的渲染——吞掉但留痕。
       logW('[ReusePool] cap failed', err);
@@ -2181,6 +2188,10 @@ export struct ChatPage {
   }
 
   aboutToAppear(): void {
+    // shared 复用池同时服务所有活着的会话页（平板分栏、Navigation 栈上先后
+    // 压着的两份）。每桶上限的推导前提是「一个页面的最坏回收潮」，所以要数一数
+    // 实际有几个——见 messageReusePool.reuseBucketMaxCount 的 hostPages。
+    retainMessageReuseHost();
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
@@ -3106,6 +3117,7 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    releaseMessageReuseHost();
     // Invalidate the staged-row and composer frame callbacks. The page may be
     // popped while either delayed task is queued.
     this.initialMessageStageSeq++;

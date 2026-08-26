@@ -89,10 +89,17 @@ export function messageRowViewportRows(listHeightVp: number, minRowHeightVp: num
 //
 // 注意这是**每桶**的上限，不是全池的。medium 档的 rowReuseId 取值空间很大，
 // 但只有真正出现过的分桶才会被建出来，实际活着的桶是个位数量级。
-export function reuseBucketMaxCount(viewportRows: number, cachedCount: number): number {
+//
+// hostPages（F-6）：上面这段推导的前提是「**一个**页面的最坏回收潮」，而池是
+// shared 的——平板分栏之下左右两栏各有一个 ChatPage 同时服务，两页并存时这个
+// 上限是**低估**的，低估的后果正是要治的那条溢出。所以按当前活着的宿主页面数
+// 放大。默认 1 让所有既有调用点（和单测）语义不变。
+export function reuseBucketMaxCount(
+  viewportRows: number, cachedCount: number, hostPages: number = 1): number {
   const rows: number = Math.max(0, Math.floor(viewportRows));
   const cached: number = Math.max(0, Math.floor(cachedCount));
-  const raw: number = rows + 2 * cached;
+  const pages: number = Math.max(1, Math.floor(hostPages));
+  const raw: number = (rows + 2 * cached) * pages;
   if (raw < REUSE_BUCKET_MAX_COUNT_FLOOR) {
     return REUSE_BUCKET_MAX_COUNT_FLOOR;
   }
@@ -127,19 +134,167 @@ export function bucketsNeedingCap(
   return out;
 }
 
-// 把上限套到所有活着的桶上。
+// ── 活着的分桶总数上限 + 最久未用淘汰（F-6）──────────────────────────────
+//
+// 【为什么每桶封顶还不够】
+// reuseBucketMaxCount 给的是**每桶**上限（约 35）。但 REUSE_ID_LEVEL = 'medium'
+// 的 rowReuseId 取值空间约 3000 个桶，**桶数本身没有上界**；而池是 shared 的，
+// 只要 Navigation 栈上还压着任意一个会话页就不销毁。会话 A→B→C 逛下来，各自
+// 的形状分桶全部累积——P5 之前的默认池是随页面销毁的，这条累积是新引入的。
+// 官方使用限制原话：「只要拥有组件类的任何实例存在，池就会持续存在……回收的
+// 组件可能会累积。使用 maxCount 来控制内存使用」。maxCount 是唯一的旋钮，
+// 所以「淘汰一个桶」只能表达成「把它的 maxCount 写成 0」。
+//
+// 【为什么 24】
+// medium 档的 12 个维度里，多数在一个会话内是常量（isGroup / isChannel /
+// 大多数行的 isOutgoing 与 contentKind），一个会话真正出现的形状是个位数到
+// 十几个。24 给两三个会话的余量；超过它的必然是逛过之后留下的旧会话形状，
+// 正是要淘汰的那些。
+export const REUSE_LIVE_BUCKET_LIMIT: number = 24;
+
+// 框架默认值（官方：IReusableInfo.maxCount「默认值：100」）。把 maxCount 写回
+// 它有一个额外作用：官方对 getReusableInfo 的定义是「为**每个 count 为正、或
+// maxCount 非默认值**的 reuseId 各返回一条」，所以一个已清空的桶写回默认值之后
+// 就**彻底退出枚举**，不再占我们这边的账。
+export const REUSE_BUCKET_DEFAULT_MAX_COUNT: number = 100;
+
+// 一次封顶要写的一笔。分成「算」和「写」两步，是为了让整段判断脱离设备单测。
+export interface ReuseBucketWrite {
+  info: IReusableInfo;
+  maxCount: number;
+}
+
+export interface ReuseCapPlan {
+  writes: ReuseBucketWrite[];
+  // 新的「最近用过」表。不原地改传进来的那份，调用方拿返回值替换。
+  lastSeen: Map<string, number>;
+}
+
+// 淘汰是**两趟**完成的，因为 maxCount 的清理是异步的（官方：「count 通常
+// <= maxCount，清理异步发生，短时间内允许更大」）：
+//   第 1 趟：选中最久未用的桶，maxCount ← 0（框架开始丢掉里面的实例）；
+//   第 2 趟：看到 maxCount === 0 且 count === 0，说明清干净了，maxCount ← 100
+//            （框架默认值）——桶就此退出枚举，也重新具备缓存能力，下次真用到
+//            它时会重新出现、重新被封顶。
+// 中间态（maxCount === 0 但 count > 0）什么都不写，等下一趟。
+//
+// 这样每个桶每趟最多写一次 maxCount，不会出现「写 0 又立刻写回 target」那种
+// 会被异步清理合并掉的成对赋值。
+export function planReuseBuckets(
+  info: IReusableInfo[] | IReusableInfo | undefined,
+  target: number,
+  lastSeen: Map<string, number>,
+  nowMs: number,
+  limit: number
+): ReuseCapPlan {
+  const empty: ReuseCapPlan = { writes: [], lastSeen: new Map<string, number>() };
+  if (info === undefined) {
+    return empty;
+  }
+  const all: IReusableInfo[] = Array.isArray(info) ? info : [info];
+  const writes: ReuseBucketWrite[] = [];
+  const seen: Map<string, number> = new Map<string, number>();
+  const keep: IReusableInfo[] = [];
+
+  for (let i = 0; i < all.length; i++) {
+    const one: IReusableInfo = all[i];
+    if (one === undefined || one === null) {
+      continue;
+    }
+    const id: string | undefined = one.reuseId;
+    if (id === undefined) {
+      // 「没有 reuseId」的那一条，官方说它恒在。它不参与桶数统计，照常封顶。
+      if (one.maxCount !== target) {
+        writes.push({ info: one, maxCount: target });
+      }
+      continue;
+    }
+    if (one.maxCount === 0) {
+      // 已被淘汰。清干净了就交还默认值（并退出枚举），没清干净就再等一趟。
+      if (one.count === 0) {
+        writes.push({ info: one, maxCount: REUSE_BUCKET_DEFAULT_MAX_COUNT });
+      }
+      continue;
+    }
+    if (one.count > 0) {
+      seen.set(id, nowMs);
+    } else {
+      const before: number | undefined = lastSeen.get(id);
+      seen.set(id, before !== undefined ? before : 0);
+    }
+    keep.push(one);
+  }
+
+  // 超出上限的部分按「最近一次存过东西」的时间从旧到新淘汰。从未存过东西的
+  // 桶（时间戳 0）排在最前面——它们本来就是空的，淘汰它们只是让账面干净。
+  const capped: number = Math.max(0, Math.floor(limit));
+  if (keep.length > capped) {
+    keep.sort((a: IReusableInfo, b: IReusableInfo): number => {
+      const ta: number = seen.get(a.reuseId ?? '') ?? 0;
+      const tb: number = seen.get(b.reuseId ?? '') ?? 0;
+      return ta - tb;
+    });
+  }
+  const surviving: Map<string, number> = new Map<string, number>();
+  for (let i = 0; i < keep.length; i++) {
+    const one: IReusableInfo = keep[i];
+    const id: string = one.reuseId ?? '';
+    if (keep.length > capped && i < keep.length - capped) {
+      writes.push({ info: one, maxCount: 0 });
+      continue;
+    }
+    surviving.set(id, seen.get(id) ?? 0);
+    if (one.maxCount !== target) {
+      writes.push({ info: one, maxCount: target });
+    }
+  }
+  return { writes, lastSeen: surviving };
+}
+
+// 把上限套到所有活着的桶上，并把桶数压回上限之内。
 //
 // getReusableInfo(comp) 不带 reuseId 时，返回的是「每个 count 为正、或
-// maxCount 非默认的 reuseId」各一条，外加一条 reuseId: undefined。也就是说
-// 它枚举的正好是**真的存了东西的桶**——没被用过的分桶不占内存，也就不需要封顶。
+// maxCount 非默认的 reuseId」各一条，外加一条 reuseId: undefined。
+//
+// 「最近用过」表挂在模块级而不是页面上：池是 shared 的，跨会话页共用同一份池，
+// 账也必须是同一本。它的大小被 REUSE_LIVE_BUCKET_LIMIT 夹住（每趟只留存活的
+// 那些），不会自己长大。
+let bucketLastSeen: Map<string, number> = new Map<string, number>();
+
 export function capReuseBuckets(
   pool: IReusePool,
   component: Function,
   target: number
 ): number {
-  const pending: IReusableInfo[] = bucketsNeedingCap(pool.getReusableInfo(component), target);
-  for (let i = 0; i < pending.length; i++) {
-    pending[i].maxCount = target;
+  const plan: ReuseCapPlan = planReuseBuckets(
+    pool.getReusableInfo(component), target, bucketLastSeen, Date.now(),
+    REUSE_LIVE_BUCKET_LIMIT);
+  bucketLastSeen = plan.lastSeen;
+  for (let i = 0; i < plan.writes.length; i++) {
+    plan.writes[i].info.maxCount = plan.writes[i].maxCount;
   }
-  return pending.length;
+  return plan.writes.length;
+}
+
+// ── 并存的宿主页面数（F-6 的另一半）──────────────────────────────────────
+//
+// shared 池同时服务所有活着的 ChatPage（平板分栏左右两栏、Navigation 栈上先后
+// 压着的两份）。每桶上限的推导前提是「一个页面的最坏回收潮」，所以这里数一数
+// 实际有几个，喂给 reuseBucketMaxCount 放大。
+//
+// 计数只增减，不持有任何页面引用；漏减一次的后果是上限估高（多留几个空实例），
+// 方向和整段推导一致——估高只是白占一点内存，估低会把还要用的实例赶出池子。
+let liveHostPages: number = 0;
+
+export function retainMessageReuseHost(): void {
+  liveHostPages++;
+}
+
+export function releaseMessageReuseHost(): void {
+  liveHostPages = Math.max(0, liveHostPages - 1);
+}
+
+// 至少 1：capMessageReuseBuckets 是从页面里调的，那一刻本页必然活着。
+export function messageReuseHostCount(): number {
+  return Math.max(1, liveHostPages);
 }

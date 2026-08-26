@@ -1,12 +1,20 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   MIN_MESSAGE_ROW_HEIGHT_VP,
+  REUSE_BUCKET_DEFAULT_MAX_COUNT,
   REUSE_BUCKET_MAX_COUNT_CEILING,
   REUSE_BUCKET_MAX_COUNT_FLOOR,
+  REUSE_LIVE_BUCKET_LIMIT,
+  ReuseCapPlan,
+  ReuseBucketWrite,
   bucketsNeedingCap,
   globalReusePoolAvailable,
   globalReusePoolWinsAt,
+  messageReuseHostCount,
   messageRowViewportRows,
+  planReuseBuckets,
+  releaseMessageReuseHost,
+  retainMessageReuseHost,
   reuseBucketMaxCount
 } from '../main/ets/util/messageReusePool';
 import { IReusableInfo } from '@kit.ArkUI';
@@ -24,6 +32,27 @@ class FakeBucket implements IReusableInfo {
     this.maxCount = maxCount;
     this.reuseId = reuseId;
   }
+}
+
+// 从一份写入计划里挑出目标值等于 maxCount 的那些桶名，排序后好断言。
+function idsOf(writes: ReuseBucketWrite[], maxCount: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < writes.length; i++) {
+    if (writes[i].maxCount === maxCount) {
+      out.push(writes[i].info.reuseId ?? '<none>');
+    }
+  }
+  out.sort();
+  return out;
+}
+
+function bucketsNamed(n: number, count: number, maxCount: number): IReusableInfo[] {
+  const out: IReusableInfo[] = [];
+  for (let i = 0; i < n; i++) {
+    const suffix: string = i < 10 ? `0${i}` : `${i}`;
+    out.push(new FakeBucket(count, maxCount, `b${suffix}`));
+  }
+  return out;
 }
 
 // 全局复用池是 API 26 起的能力，而本仓 compatibleSdkVersion 是 6.0.0(20)。
@@ -128,6 +157,119 @@ export default function messageReusePoolTest() {
       // 可能暂时超过 maxCount。所以「count 比目标大」必须仍然算需要改。
       const pending: IReusableInfo[] = bucketsNeedingCap([new FakeBucket(80, 100, 'x')], 35);
       expect(pending.length).assertEqual(1);
+    });
+
+    // ── 桶数本身的上界 + 最久未用淘汰（F-6）────────────────────────────
+    //
+    // 每桶封顶治的是「一个桶太满」，治不了「桶太多」：medium 档的 rowReuseId
+    // 取值空间约 3000 个，而 shared 池只要栈上还压着任意会话页就不销毁，逛过
+    // 的会话的形状分桶会一直累积。maxCount 是官方给的唯一旋钮，所以「淘汰」
+    // 只能表达成「maxCount 写 0」，而清理是异步的 ⇒ 分两趟。
+
+    it('leaves the bucket count alone while it is under the limit', 0, () => {
+      const buckets: IReusableInfo[] = bucketsNamed(3, 2, 100);
+      const plan: ReuseCapPlan =
+        planReuseBuckets(buckets, 35, new Map<string, number>(), 1000, REUSE_LIVE_BUCKET_LIMIT);
+      // 三个桶都只是被封顶，一个都没淘汰。
+      expect(idsOf(plan.writes, 35).length).assertEqual(3);
+      expect(idsOf(plan.writes, 0).length).assertEqual(0);
+      expect(plan.lastSeen.size).assertEqual(3);
+    });
+
+    it('evicts the least recently used buckets past the limit', 0, () => {
+      const buckets: IReusableInfo[] = bucketsNamed(6, 2, 35);
+      const lastSeen: Map<string, number> = new Map<string, number>();
+      // b00/b01 最久没用过；其余的刚用过。count > 0 会把「现在」盖上去，
+      // 所以把前两个的 count 设成 0，让它们只保留历史时间戳。
+      const aged: IReusableInfo[] = [
+        new FakeBucket(0, 35, 'b00'), new FakeBucket(0, 35, 'b01'),
+        buckets[2], buckets[3], buckets[4], buckets[5]
+      ];
+      lastSeen.set('b00', 10);
+      lastSeen.set('b01', 20);
+      const plan: ReuseCapPlan = planReuseBuckets(aged, 35, lastSeen, 9000, 4);
+      expect(idsOf(plan.writes, 0).join(',')).assertEqual('b00,b01');
+      // 幸存下来的正好是上限那么多，账本也只留它们。
+      expect(plan.lastSeen.size).assertEqual(4);
+      expect(plan.lastSeen.has('b00')).assertFalse();
+      expect(plan.lastSeen.has('b05')).assertTrue();
+    });
+
+    it('hands a cleaned-out bucket back to the framework default', 0, () => {
+      // 第 2 趟：maxCount 已经是 0 且 count 归零 ⇒ 写回默认值，桶就此退出
+      // getReusableInfo 的枚举（官方：只枚举 count 为正或 maxCount 非默认的）。
+      const plan: ReuseCapPlan = planReuseBuckets(
+        [new FakeBucket(0, 0, 'gone')], 35, new Map<string, number>(), 1000, 4);
+      expect(plan.writes.length).assertEqual(1);
+      expect(plan.writes[0].maxCount).assertEqual(REUSE_BUCKET_DEFAULT_MAX_COUNT);
+      expect(plan.lastSeen.size).assertEqual(0);
+    });
+
+    it('waits out the asynchronous purge instead of un-evicting', 0, () => {
+      // 中间态：maxCount 已经是 0 但异步清理还没跑完（count 仍为正）。
+      // 这一趟什么都不写——写回 target 就等于把刚淘汰的桶又复活了。
+      const plan: ReuseCapPlan = planReuseBuckets(
+        [new FakeBucket(7, 0, 'purging')], 35, new Map<string, number>(), 1000, 4);
+      expect(plan.writes.length).assertEqual(0);
+      expect(plan.lastSeen.size).assertEqual(0);
+    });
+
+    it('never evicts or counts the no-reuseId entry', 0, () => {
+      // 官方：不带 reuseId 查询时恒有一条 reuseId: undefined。它不是一个分档
+      // 桶，不参与桶数统计，但照常封顶。
+      const plan: ReuseCapPlan = planReuseBuckets(
+        [new FakeBucket(3, 100, undefined), new FakeBucket(3, 100, 'a')],
+        35, new Map<string, number>(), 1000, 1);
+      expect(idsOf(plan.writes, 0).length).assertEqual(0);
+      expect(idsOf(plan.writes, 35).join(',')).assertEqual('<none>,a');
+      expect(plan.lastSeen.size).assertEqual(1);
+    });
+
+    it('treats an unaccepted component type as an empty plan', 0, () => {
+      const plan: ReuseCapPlan =
+        planReuseBuckets(undefined, 35, new Map<string, number>(), 1000, 4);
+      expect(plan.writes.length).assertEqual(0);
+      expect(plan.lastSeen.size).assertEqual(0);
+    });
+
+    it('keeps the live-bucket limit small enough to bound the pool', 0, () => {
+      // 上限 × 每桶上限就是全池实例数的上界。它必须是个能说出口的数，否则
+      // 「封顶」这项能力等于没开。
+      expect(REUSE_LIVE_BUCKET_LIMIT > 0).assertTrue();
+      expect(REUSE_LIVE_BUCKET_LIMIT * reuseBucketMaxCount(23, 6) < 1000).assertTrue();
+    });
+
+    // ── 并存的宿主页面数 ───────────────────────────────────────────────
+
+    it('scales the per-bucket cap by the number of live chat pages', 0, () => {
+      expect(reuseBucketMaxCount(23, 6, 1)).assertEqual(35);
+      expect(reuseBucketMaxCount(23, 6, 2)).assertEqual(70);
+      // 缺省仍是单页，既有调用点语义不变。
+      expect(reuseBucketMaxCount(23, 6)).assertEqual(reuseBucketMaxCount(23, 6, 1));
+      // 放大之后照样被官方的 200 夹住。
+      expect(reuseBucketMaxCount(23, 6, 99)).assertEqual(REUSE_BUCKET_MAX_COUNT_CEILING);
+      // 0/负数当单页处理。
+      expect(reuseBucketMaxCount(23, 6, 0)).assertEqual(35);
+      expect(reuseBucketMaxCount(23, 6, -3)).assertEqual(35);
+    });
+
+    it('counts live chat pages and never reports fewer than one', 0, () => {
+      const base: number = messageReuseHostCount();
+      expect(base >= 1).assertTrue();
+      retainMessageReuseHost();
+      retainMessageReuseHost();
+      expect(messageReuseHostCount()).assertEqual(2);
+      releaseMessageReuseHost();
+      expect(messageReuseHostCount()).assertEqual(1);
+      releaseMessageReuseHost();
+      // 一个页面都没有时仍然报 1：调用点是从页面里调的，那一刻本页必然活着。
+      expect(messageReuseHostCount()).assertEqual(1);
+      // 多减不会把计数拖到负数。
+      releaseMessageReuseHost();
+      releaseMessageReuseHost();
+      retainMessageReuseHost();
+      expect(messageReuseHostCount()).assertEqual(1);
+      releaseMessageReuseHost();
     });
 
     it('agrees with the device lookup', 0, () => {
