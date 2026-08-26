@@ -5,8 +5,8 @@ import { UserStore } from '../main/ets/store/UserStore';
 import { buildMessageEntry, MessageEntry } from '../main/ets/store/MessageEntry';
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
-  AlbumGroupDataSource, contentFingerprint, countDeferredFlips, reuseUnchangedRows,
-  sameRenderSnapshot, sameRowArray
+  AlbumGroupDataSource, contentFingerprint, countDeferredFlips, prependBreaksAnchor,
+  reuseUnchangedRows, sameRenderSnapshot, sameRowArray
 } from '../main/ets/pages/chat/AlbumGroupDataSource';
 import { stageInitialMessageGroups } from '../main/ets/util/initialMessageStage';
 
@@ -125,6 +125,43 @@ export default function albumGroupDataSourceTest() {
       expect(countDeferredFlips(staged, real)).assertEqual(2);
       expect(countDeferredFlips(real, real)).assertEqual(0);
       expect(countDeferredFlips([], real)).assertEqual(0);
+    });
+
+    // ── 向上翻页的锚点复位判据（F-1，P4 误删后接回来）─────────────────
+
+    it('prepend_breaks_the_anchor_when_the_old_first_row_key_moves', 0, () => {
+      const users = usersOf();
+      const prev = groupsOf([[20, 5000], [30, 9000]], users);
+      const withOlder = groupsOf([[10, 100], [20, 5000], [30, 9000]], users);
+      // 这就是"向上翻一页"的常态：老首行第一次有了 prev，日期胶囊也搬走了，
+      // 它的 key 因此变了 ⇒ Repeat 会把视口顶端那一行删旧插新。
+      expect(withOlder[1].key === prev[0].key).assertFalse();
+      expect(prependBreaksAnchor(prev, withOlder)).assertTrue();
+    });
+
+    it('prepend_anchor_stays_untouched_when_nothing_was_prepended', 0, () => {
+      const users = usersOf();
+      const prev = groupsOf([[20, 5000], [30, 9000]], users);
+      // 追加：老首行仍在下标 0，前面一行都没多。
+      const appended = groupsOf([[20, 5000], [30, 9000], [40, 12000]], users);
+      expect(prependBreaksAnchor(prev, appended)).assertFalse();
+      // 等长的原地编辑不是翻页。
+      const edited = collapseAlbums([entry(20, 5000, users), entry(30, 9000, users, 'edited')]);
+      expect(prependBreaksAnchor(prev, edited)).assertFalse();
+      // 首次填充（prev 为空）由首屏定位负责，不是翻页。
+      expect(prependBreaksAnchor([], prev)).assertFalse();
+      // 变短（删消息）也不是翻页。
+      expect(prependBreaksAnchor(prev, groupsOf([[30, 9000]], users))).assertFalse();
+    });
+
+    it('prepend_without_a_key_change_is_left_to_maintainVisibleContentPosition', 0, () => {
+      const users = usersOf();
+      const prev = groupsOf([[20, 5000], [30, 9000]], users);
+      const older = groupsOf([[10, 100]], users);
+      // 人工构造"老首行 key 一个字都没变"的前插：那时 Repeat 只是在前面插入
+      // 新节点，锚点行本身没被删，强行复位反而会打断惯性滑动。
+      const untouched: AlbumGroup[] = [older[0], prev[0], prev[1]];
+      expect(prependBreaksAnchor(prev, untouched)).assertFalse();
     });
 
     it('prefetch_source_tracks_the_published_rows', 0, () => {

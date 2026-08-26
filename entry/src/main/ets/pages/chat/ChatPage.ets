@@ -59,7 +59,8 @@ import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { actionMenuRow } from './ActionMenuRow';
 import {
-  AlbumGroupDataSource, contentFingerprint, countDeferredFlips, reuseUnchangedRows, sameRowArray
+  AlbumGroupDataSource, contentFingerprint, countDeferredFlips, prependBreaksAnchor,
+  reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 // UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
@@ -2394,13 +2395,31 @@ export struct ChatPage {
       // key. Publish them directly to the mounted row before the data-source
       // diff, so a key-equal snapshot still updates the one affected bubble.
       publishMessageRowPresentations(this.chatId, groups);
-      // 迁 Repeat 之前这里还会先记一份"翻页锚点"，供 `updateKind === 'reload'`
-      // 那一支手动复位。Repeat 没有 RELOAD 这个概念，也就没有那个信号了：向上
-      // 翻页的位置保持完全交给 List.maintainVisibleContentPosition(true)
-      // （官方从 API 20 起支持它与 Repeat 懒加载配合，本仓 compatibleSdkVersion
-      // 正好是 20）。相册跨页合并那一行的 key 会变，属于"删旧插新"而不是纯前插，
-      // 文档答不了它会不会抖——那是待上机的第一项（调研 R2）。真抖了，复位代码
-      // 在 git show cb3c158:entry/src/main/ets/pages/chat/ChatPage.ets 里。
+      // ── 向上翻页的锚点复位 ──────────────────────────────────────────
+      //
+      // P4 迁 Repeat 时把这一段删了，并留下一句"只有相册跨页合并那一行的 key 会
+      // 变"——**那句话是错的**：每次向上翻页，边界那一行的 key 都会变（判据与
+      // 完整推导见 AlbumGroupDataSource.prependBreaksAnchor 的注释）。key 变了在
+      // Repeat 之下就是删旧插新，被删的正是视口顶端那一行，
+      // maintainVisibleContentPosition(true) 守不守得住文档答不了。所以按那条
+      // 判据把手动复位接回来，防的是"向上翻页跳到已加载页顶部"那个历史 bug。
+      //
+      // 判据不成立时**不复位**：纯追加、纯编辑、以及 key 没变的前插，都由
+      // maintainVisibleContentPosition 自己守住；在那些情形上强行 scrollToIndex
+      // 会打断用户的惯性滑动（当年"加载更多时一顿"就是这么来的）。
+      let prependAnchorId: number = 0;
+      let prependAnchorY: number = 0;
+      if (this.didInitialScroll && prependBreaksAnchor(this.groups, groups)) {
+        const visibleIndex: number = this.curStartIdx;
+        if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
+          prependAnchorId = this.groups[visibleIndex].head.id;
+          try {
+            prependAnchorY = this.scroller.getItemRect(visibleIndex).y;
+          } catch (e) {
+            prependAnchorY = 0;
+          }
+        }
+      }
       this.messages = list;
       this.messageListRevision++;
       this.reconcileMessageActionTargets(list);
@@ -2439,6 +2458,12 @@ export struct ChatPage {
       this.driveVisibleWork();
       this.fillViewportIfNeeded();
       this.musicQueue.settlePending(list);
+      // 复位跑在发布之后：this.groups 此刻已经是新快照，按消息 id 找得到锚点行
+      // 的新下标。restorePrependAnchor 内部是一个 setTimeout(0) + 代次守卫，
+      // 跳转/贴底这些更强的定位意图会把它作废。
+      if (prependAnchorId > 0) {
+        this.restorePrependAnchor(this.groups, prependAnchorId, prependAnchorY);
+      }
       let positionHandled: boolean = false;
       if (scrollResumeWaiting && list.length > 0) {
         scrollResumeWaiting = false;

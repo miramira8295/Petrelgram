@@ -104,6 +104,51 @@ export function reuseUnchangedRows(prev: AlbumGroup[], next: AlbumGroup[]): Albu
   return merged;
 }
 
+// 向上翻页之后，视口锚点还需不需要**手动**复位。
+//
+// 【这段是被 P4 误删、再接回来的，理由写在这里，别再删第二次】
+//
+// 迁 Repeat 之前，ChatPage 只在数据源报 `updateKind === 'reload'` 时手动复位。
+// 迁移时那一支连同增量引擎一起没了，注释里写成「相册跨页合并那一行的 key 才会
+// 变」——**那句话是错的**，现已一并更正。真实情况是：
+//
+//   collapseAlbums 的第二遍扫描把 showAvatar / showSenderName 拼进行 key
+//   （collapseAlbums.ets 末尾的 `_${'A'|'a'}${'N'|'n'}`），而 showSenderName 的
+//   判据是 `prev !== null && dateLabel === '' && sameRun(prev, cur)`。前插一页
+//   之后，原来的**首行第一次有了 prev**，同时它作为「窗口首行」拿到的日期胶囊
+//   会移到新来的那一页上、dateLabel 被清掉 ⇒ 边界那一行的 key **每次向上翻页
+//   都变**。这是翻页的**常态**，不是罕见情形。
+//
+// 老引擎为此把 ADD 与 CHANGE 拆成两次 notify，让这一行走「同一个 item 换新 key」
+// 的路径。**Repeat 没有这个概念**：key 变了就是删旧插新，而被删掉的正好是视口
+// 顶端那一行。List.maintainVisibleContentPosition(true) 能不能在锚点行本身被
+// 删掉时守住位置，官方文档答不了——所以按下面这条判据把手动复位接回来，防的是
+// 「向上翻页跳到已加载页顶部」那个历史 bug。
+//
+// 判据（三条同时成立才需要复位）：
+//   1. 新快照更长——真的多了行，而不是编辑/删除；
+//   2. 老首行在新快照里的位置 > 0——是**前插**，不是追加；
+//   3. 老首行的**内容 key 变了**——Repeat 会把它删旧插新。key 没变时 Repeat
+//      只是原地更新，maintainVisibleContentPosition 自己就守得住，这时复位反而
+//      会打断用户的惯性滑动（那是当年「加载更多时一顿」的成因）。
+export function prependBreaksAnchor(prev: AlbumGroup[], next: AlbumGroup[]): boolean {
+  if (prev.length === 0 || next.length <= prev.length) {
+    return false;
+  }
+  const firstId: string = rowIdentity(prev[0]);
+  let at: number = -1;
+  for (let i = 0; i < next.length; i++) {
+    if (rowIdentity(next[i]) === firstId) {
+      at = i;
+      break;
+    }
+  }
+  if (at <= 0) {
+    return false;
+  }
+  return next[at].key !== prev[0].key;
+}
+
 // 两份行数组是不是逐项同一个对象。配合 reuseUnchangedRows 用：结果为 true 就
 // 说明这次发布没有任何一行需要动。
 export function sameRowArray(a: AlbumGroup[], b: AlbumGroup[]): boolean {
