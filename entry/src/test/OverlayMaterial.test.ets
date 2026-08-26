@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   OverlaySurface,
   immersiveMaterialAvailable,
@@ -37,6 +38,28 @@ export default function overlayMaterialTest() {
     it('keeps the material on past 26', 0, () => {
       expect(materialWinsAt(27)).assertTrue();
       expect(materialWinsAt(99)).assertTrue();
+    });
+
+    // ——— 修饰器闸门 ———
+    //
+    // util/materialModifier.ets 和 util/bubbleTail.ets 里的两个 AttributeModifier
+    // 都拿 immersiveMaterialAvailable() 决定「碰不碰 instance.systemMaterial」。
+    // 那个方法是 API 26 才有的，低版本运行时里**方法本身不存在**：取它就抛
+    // `TypeError: undefined is not callable`，传 undefined 也一样，因为炸在取方法
+    // 那一步、参数还没轮到求值。1.4.2 在 API 20 模拟器上登录后进主界面必崩，
+    // 栈顶正是 materialModifier 的那一句。
+    //
+    // 所以这条钉的是：修饰器用的闸门就是 materialWinsAt 作用在设备版本上，
+    // 没有第二套规则、也没有「材质返回 undefined 就当作可以调」这种松口。
+    it('gates the modifier on exactly the same rule the API check uses', 0, () => {
+      expect(immersiveMaterialAvailable()).assertEqual(materialWinsAt(deviceInfo.sdkApiVersion));
+    });
+
+    // 应用的兼容底线是 6.0.0(20)。底线设备上闸门必须是关的——这正是崩溃现场。
+    it('closes the gate on every API level below the app floor', 0, () => {
+      for (let api: number = 1; api < 26; api++) {
+        expect(materialWinsAt(api)).assertFalse();
+      }
     });
 
     it('never runs a material and a fallback blur on the same surface', 0, () => {

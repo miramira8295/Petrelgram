@@ -1,4 +1,4 @@
-import { MATERIAL_EPOCH, OverlaySurface, overlayMaterial } from './overlayMaterial';
+import { MATERIAL_EPOCH, OverlaySurface, immersiveMaterialAvailable, overlayMaterial } from './overlayMaterial';
 
 // systemMaterial 属性的**唯一**出口。
 //
@@ -7,11 +7,19 @@ import { MATERIAL_EPOCH, OverlaySurface, overlayMaterial } from './overlayMateri
 // 忽略"能救的：炸在取方法那一步，参数还没轮到求值。全应用底线是 6.0.0(20)，
 // 所以任何页面都不允许直接写 .systemMaterial(...)。
 //
-// 出口收在 AttributeModifier 里：apply 时先问 overlayMaterial —— 它内部有
-// 26 的版本闸门，低版本返回 undefined —— 拿不到材质就**根本不碰**那个方法。
-// 于是"调不调"由运行时版本决定，构造上就安全，不依赖任何"低版本会忽略"
-// 的猜测。低版本上观感由各调用点自己的 backdropBlur/overlayGlassFill 降级
-// 路径接住，和以前一致。
+// 出口收在 AttributeModifier 里：apply 时**先问版本**
+// （immersiveMaterialAvailable），版本不够就一次都不碰 instance.systemMaterial
+// ——包括"清除"那一支。清除同样要先取到方法，`systemMaterial(undefined)` 在
+// API 20 上和 `systemMaterial(材质)` 一样炸。这是 1.4.2 登录后进主界面必崩的
+// 原因（栈顶就是本文件；overlayMaterial 内部那道版本闸门救不了，它只管参数值，
+// 而取方法发生在求参数之前）。
+//
+// 版本够了之后才谈"挂还是清"：那一层由 overlayMaterial 的返回值决定（厚度调到
+// 「关闭」、省电、面不参与材质时它返回 undefined），此时传 undefined 是**必要**
+// 的——修饰器会在同一个节点上反复跑，不清的话上一次挂上的材质会一直留着。
+//
+// 低版本上观感由各调用点自己的 backdropBlur/overlayGlassFill 降级路径接住，
+// 和以前一致。
 //
 // 修饰器按面缓存：apply 每次都现取材质，材质缓存（含用户厚度/光感档位）在
 // overlayMaterial 里自己失效，这里不用管。
@@ -25,13 +33,17 @@ export class SurfaceMaterialModifier implements AttributeModifier<CommonAttribut
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
+    // API 26 以下这个方法根本不存在，取它就抛。连清除都不能调。
+    if (!immersiveMaterialAvailable()) {
+      return;
+    }
     if (!this.enabled) {
       instance.systemMaterial(undefined); // 从开到关也要清，不然气泡离屏后材质还挂着
       return;
     }
-    // 没有材质（厚度调到「关闭」、省电、API 不够）时必须显式清掉：修饰器会在
-    // 同一个节点上反复跑，不清的话上一次挂上的材质就一直留在那儿——用户把厚度
-    // 关掉后 dock 还是玻璃，就是这个原因。
+    // 没有材质（厚度调到「关闭」、省电、这个面不参与材质）时必须显式清掉：
+    // 修饰器会在同一个节点上反复跑，不清的话上一次挂上的材质就一直留在那儿
+    // ——用户把厚度关掉后 dock 还是玻璃，就是这个原因。
     instance.systemMaterial(overlayMaterial(this.surface));
   }
 }

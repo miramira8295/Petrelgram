@@ -2,7 +2,7 @@
 // 上），改成一个 8×12 的小容器挂同一套材质，再按三角形裁掉——看上去就是气泡
 // 延伸出来的一角。PathShape 的坐标是 px。
 import { PathShape } from '@kit.ArkUI';
-import { overlayMaterial } from './overlayMaterial';
+import { immersiveMaterialAvailable, overlayMaterial } from './overlayMaterial';
 import { glassBubbleCommands } from './bubbleGlassPath';
 
 export const TAIL_W: number = 8;
@@ -20,6 +20,15 @@ export function tailClip(outgoing: boolean): PathShape {
 // 一个修饰器同时管 systemMaterial 和 clipShape：ArkUI 一个节点只认一个
 // attributeModifier，而 clipShape 又没法用普通属性按条件挂/摘。关掉时
 // systemMaterial(undefined) 清材质、clip(false) 放开裁剪。
+//
+// **systemMaterial 这一句要单独按版本挡住**（materialModifier.ets 那一处是同款，
+// 1.4.2 的登录后必崩就是它）。它是 API 26 才有的方法，低版本运行时里方法本身不
+// 存在，取它就抛 `TypeError: undefined is not callable`——传 undefined 也一样，
+// 因为炸在取方法那一步。
+//
+// 但**只跳过那一句**：clipShape / clip(false) / onAreaChange 在 API 20 上都在，
+// 必须照常执行。整个 applyNormalAttribute 短路掉会让玻璃气泡在低版本上丢掉裁剪
+// 和尺寸测量，渲染成没裁剪的直角矩形。
 
 export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
   private readonly live: boolean;
@@ -47,12 +56,18 @@ export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
         cb(Number(area.width), Number(area.height));
       });
     }
+    // 版本不够时一次都不碰 systemMaterial（连清除都不行），其余属性照常。
+    const material: boolean = immersiveMaterialAvailable();
     if (!this.live) {
-      instance.systemMaterial(undefined);
+      if (material) {
+        instance.systemMaterial(undefined);
+      }
       instance.clip(false);
       return;
     }
-    instance.systemMaterial(overlayMaterial('bubble'));
+    if (material) {
+      instance.systemMaterial(overlayMaterial('bubble'));
+    }
     if (this.path !== null) {
       instance.clipShape(this.path);
     }
