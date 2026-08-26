@@ -344,6 +344,13 @@ export struct LightweightPlainTextBubble {
       this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving,
       scrollActiveNow(), ms);
   }
+  // 不吃滑动门控的时长。用于**参数在 build 之后才被消费**的动画：按下态的
+  // stateStyles 过渡、以及 iterations:-1 的循环动画。滑动中渲染的那一帧会把
+  // 时长固定成 0，而这类动画在那之后才播——结果是滑动停下后按气泡没有过渡、
+  // 循环胶囊永久静止。滑动中本来也按不到气泡，门控它们收益为零。
+  private persistentEffectDuration(ms: number): number {
+    return this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving ? ms : 0;
+  }
   private reactionDuration(ms: number): number {
     return animationDurationFor(
       this.chatEffectsEnabled && this.reactionEffectsEnabled && this.emojiEnabled &&
@@ -656,7 +663,7 @@ export struct LightweightPlainTextBubble {
           .borderRadius(this.bubbleCorners()).padding(8)
           .shadow({ radius: this.bubbleMaterialLive() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
           .stateStyles({ normal: this.bubbleNormalStyle, pressed: this.bubblePressedStyle })
-          .animation({ duration: this.effectDuration(110), curve: Curve.EaseOut })
+          .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
           .onAreaChange((_old: Area, area: Area): void => { this.bubbleW = area.width as number; })
           .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
             .onAction((event: GestureEvent): void => { this.onLongPress(event); }))

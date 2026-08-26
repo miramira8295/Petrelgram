@@ -37,6 +37,16 @@ export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
+    // 尺寸回调必须在 !live 分支之前注册：首帧 w/h 还是 0、离屏、省电这几种情况
+    // 下 live 都是假，但一旦点亮就需要尺寸已经量好，否则会渲染成没裁剪的直角
+    // 矩形（历史 bug「刚进会话玻璃不显示」的同一类）。材质关闭时 onMeasured
+    // 本身是 null，仍然一个节点都不注册，Task 1 的收益不受影响。
+    if (this.onMeasured !== null) {
+      const cb = this.onMeasured;
+      instance.onAreaChange((_old: Area, area: Area): void => {
+        cb(Number(area.width), Number(area.height));
+      });
+    }
     if (!this.live) {
       instance.systemMaterial(undefined);
       instance.clip(false);
@@ -45,12 +55,6 @@ export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
     instance.systemMaterial(overlayMaterial('bubble'));
     if (this.path !== null) {
       instance.clipShape(this.path);
-    }
-    if (this.onMeasured !== null) {
-      const cb = this.onMeasured;
-      instance.onAreaChange((_old: Area, area: Area): void => {
-        cb(Number(area.width), Number(area.height));
-      });
     }
   }
 }

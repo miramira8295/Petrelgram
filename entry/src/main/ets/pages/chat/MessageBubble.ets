@@ -758,6 +758,14 @@ export struct MessageBubble {
       scrollActiveNow(), duration);
   }
 
+  // 不吃滑动门控的时长。用于**参数在 build 之后才被消费**的动画：按下态的
+  // stateStyles 过渡、以及 iterations:-1 的循环动画。滑动中渲染的那一帧会把
+  // 时长固定成 0，而这类动画在那之后才播——结果是滑动停下后按气泡没有过渡、
+  // 循环胶囊永久静止。滑动中本来也按不到气泡，门控它们收益为零。
+  private persistentEffectDuration(duration: number): number {
+    return this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving ? duration : 0;
+  }
+
   private reactionDuration(duration: number): number {
     return animationDurationFor(
       this.chatEffectsEnabled && this.reactionEffectsEnabled &&
@@ -1298,7 +1306,7 @@ export struct MessageBubble {
         // 定时器逐帧改状态（那会把整个气泡按帧重建）。省电模式下
         // effectDuration 归零，退化成一个静止的暗色药丸，仍然看得出在忙。
         .animation({
-          duration: this.effectDuration(620),
+          duration: this.persistentEffectDuration(620),
           curve: Curve.EaseInOut,
           iterations: this.linkNavBusyUrl === run.url ? -1 : 1,
           playMode: PlayMode.Alternate
@@ -3231,8 +3239,8 @@ export struct MessageBubble {
   // 材质的边框只沿节点自身的 border-box 画。尾巴那一侧（气泡的那条竖边 + 三角的
   // 两条斜边）在整体轮廓里、却在矩形外，材质画不到，裁剪之后那半圈是秃的——
   // 顶/右/底有边、左边和尾巴没有。自己沿整条轮廓补一圈同色发丝线，四面才统一。
-  // 画在 .overlay() 里并显式 HitTestMode.None：它盖在气泡上，绝不能吃掉点击和
-  // 长按（这正是当初「玻璃气泡整块点不动」的真凶，裁剪是背锅的）。
+  // 画在 .background() 里：背景节点不参与命中测试，绝不会吃掉点击和长按
+  // （这正是当初「玻璃气泡整块点不动」的真凶，裁剪是背锅的）。
   @Builder
   glassOutline() {
     if (this.glassLive() && this.glassW > 0 && this.glassH > 0) {
@@ -3571,7 +3579,7 @@ export struct MessageBubble {
         normal: this.bubbleNormalStyle,
         pressed: this.bubblePressedStyle
       })
-      .animation({ duration: this.effectDuration(110), curve: Curve.EaseOut })
+      .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
       .onAreaChange((_old: Area, area: Area) => { this.bubbleW = area.width as number; })
       // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
       // LongPressGesture in parallelGesture keeps the chat List's pan

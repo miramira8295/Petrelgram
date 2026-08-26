@@ -78,8 +78,8 @@ bool ReadArrayBuffer(napi_env env, napi_value value, void **data, size_t *length
     return napi_get_arraybuffer_info(env, value, data, length) == napi_ok;
 }
 
-// worker 线程上把原生 pixelmap 转成 napi 对象，转完立刻释放原生壳。
-// complete 回调只做这一步——像素级构造已经在 ExecuteDecode 里完成。
+// 这一步跑在 complete 回调（JS 线程）上，因为 napi 值只能在 JS 线程创建；
+// 转完立刻释放原生壳。像素级构造已经挪到 worker 的 ExecuteDecode 里完成。
 napi_value BuildFrameArray(napi_env env, DecodeTask *task) {
     napi_value array = nullptr;
     napi_create_array_with_length(env, task->pixelmaps.size(), &array);
@@ -147,6 +147,12 @@ void ExecuteDecode(napi_env env, void *data) {
             break;
         }
         task->pixelmaps.push_back(pixelmap);
+        // 此刻释放这一帧的源 RGBA 缓冲是安全的：OH_PixelmapNative_CreatePixelmap
+        // 返回时像素数据的所有权已经转交给 PixelMap 自己持有的那份拷贝——这是
+        // 既有行为已经证明的事实（JS 侧拿到的 PixelMap 在 `delete task` 把
+        // task->frames 整段 RGBA 都释放掉之后仍然长期正常显示）。也必须此刻
+        // 释放：不释放的话，循环剩余的帧会让「整段 RGBA + 整段 PixelMap」同时
+        // 在世，峰值内存直接翻倍。
         webm_alpha::RgbaFrame().swap(frame);
     }
     OH_PixelmapInitializationOptions_Release(options);
