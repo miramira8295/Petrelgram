@@ -646,8 +646,20 @@ export struct ChatPage {
     }
     const changed: boolean = !sameRowArray(this.groups, next);
     this.groups = next;
-    // 预取源跟着走。BasicPrefetcher 按 onScrollIndex 报的可见区间来问它要行。
-    this.groupsData.setRows(next);
+    // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
+    // 必须不同，这不是笔误。
+    //
+    // photoPaths / head.photoPath **刻意不进行 key**（collapseAlbums.ets 里
+    // mutableSig 只带 photoFileId），因为缩略图落地要走 mediaThumbChannel 旁路
+    // 直达气泡，不该拖着整行重建。代价是：缩略图/原图落地那一次发布里行 key
+    // 一个字没变 ⇒ sameRenderSnapshot 为真 ⇒ reuseUnchangedRows 还回**上一份
+    // 快照的对象** ⇒ 那一行的 photoPath 在 next 里**永远停在 ''**。
+    //
+    // 给 Repeat 用的 this.groups 必须是 next（对象身份不变才不会白刷新一整屏），
+    // 但 AlbumGroupDataSource.imageRequestFor 是按 head.photoPath 决定预不预取的：
+    // 喂它 next，它对这些行 `return null`，BasicPrefetcher 一次都不会预取——
+    // 预取整条静默失效。所以数据面喂原始那份，UI 面喂合并那份。
+    this.groupsData.setRows(groups);
     if (!this.pageVisible && changed) {
       this.hiddenListDirty = true;
     }
@@ -662,7 +674,10 @@ export struct ChatPage {
   private rebuildAllRows(): void {
     this.listRebuildEpoch++;
     this.groups = this.groups.slice();
-    this.groupsData.setRows(this.groups);
+    // 这里**不碰** groupsData：它持有的是上一次发布的原始快照（见
+    // publishGroupsNow 里那段注释），而 this.groups 是合并快照——photoPath 等
+    // 旁路字段在它里面是陈旧的。整表重建只改 key 和数组身份、不改任何一行的
+    // 内容，长度也不变，所以预取源保持指向那份更新的数据才是对的。
   }
 
   private syncChatTgsGate(): void {

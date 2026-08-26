@@ -2,7 +2,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
-import { buildMessageEntry, MessageEntry } from '../main/ets/store/MessageEntry';
+import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store/MessageEntry';
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
   AlbumGroupDataSource, contentFingerprint, countDeferredFlips, prependBreaksAnchor,
@@ -162,6 +162,40 @@ export default function albumGroupDataSourceTest() {
       // 新节点，锚点行本身没被删，强行复位反而会打断惯性滑动。
       const untouched: AlbumGroup[] = [older[0], prev[0], prev[1]];
       expect(prependBreaksAnchor(prev, untouched)).assertFalse();
+    });
+
+    // ── 预取源必须拿到 fresh 数组（F-3）───────────────────────────────
+    //
+    // 钉住的是一条会静默失效的接线：photoPath 刻意不进行 key，于是缩略图落地
+    // 那一次发布 reuseUnchangedRows 会把**旧对象**还回来，photoPath 永远停在
+    // ''。ChatPage.publishGroupsNow 因此必须把**原始**那份喂给
+    // AlbumGroupDataSource，把合并那份留给 Repeat。
+    it('prefetch_source_must_be_fed_the_fresh_rows_not_the_merged_ones', 0, () => {
+      const users = usersOf();
+      const base: MessageEntry = cloneMessage(entry(10, 100, users));
+      base.contentType = 'photo';
+      base.photoWidth = 800;
+      base.photoHeight = 600;
+      const landed: MessageEntry = cloneMessage(base);
+      landed.photoPath = '/data/thumb_10.jpg';
+
+      const prev: AlbumGroup[] = collapseAlbums([base]);
+      const fresh: AlbumGroup[] = collapseAlbums([landed]);
+      // 缩略图落地不改行 key —— 这正是它走旁路通道的代价。
+      expect(fresh[0].key).assertEqual(prev[0].key);
+      expect(sameRenderSnapshot(prev[0], fresh[0])).assertTrue();
+
+      const merged: AlbumGroup[] = reuseUnchangedRows(prev, fresh);
+      expect(merged[0] === prev[0]).assertTrue();
+      expect(merged[0].head.photoPath).assertEqual('');
+
+      const ds = new AlbumGroupDataSource();
+      ds.setRows(fresh);
+      expect(ds.getData(0).head.photoPath).assertEqual('/data/thumb_10.jpg');
+      // 喂合并那份就是那条 bug：imageRequestFor 看见 '' 就 return null，
+      // BasicPrefetcher 对这些行一次都不预取。
+      ds.setRows(merged);
+      expect(ds.getData(0).head.photoPath).assertEqual('');
     });
 
     it('prefetch_source_tracks_the_published_rows', 0, () => {
