@@ -207,6 +207,46 @@ export default function rowReuseIdTest() {
         rowReuseId(withoutUnread, group, 'medium')).assertFalse();
     });
 
+    // translatedText is the biggest structural fork of all: it flips
+    // ReusableMessageBubble.build()'s lightweight/full-bubble branch
+    // (~215: `data.lightweightPlainText && group.head.translatedText === ''`),
+    // swapping the entire subtree, not just a child node inside it. Covered
+    // for both a lightweight-eligible plain-text row and a row that is
+    // already routed to the full renderer (rich), since the translation
+    // fork sits above/independent of the coarse plain/rich split.
+    it('translation_on_plain_text_row_splits_medium_and_fine_not_coarse', 0, () => {
+      const msg: MessageEntry = textEntry(73);
+      const data: MessageBubbleRenderData = renderData({ isGroup: true, lightweightPlainText: true });
+      const untranslated: AlbumGroup = groupOf(msg);
+      const translatedMsg: MessageEntry = cloneMessage(msg);
+      translatedMsg.translatedText = 'translated body';
+      translatedMsg.translatedLang = 'en';
+      const translated: AlbumGroup = groupOf(translatedMsg);
+
+      expect(rowReuseId(data, untranslated, 'coarse'))
+        .assertEqual(rowReuseId(data, translated, 'coarse'));
+      expect(rowReuseId(data, untranslated, 'medium') ===
+        rowReuseId(data, translated, 'medium')).assertFalse();
+      expect(rowReuseId(data, untranslated, 'fine') ===
+        rowReuseId(data, translated, 'fine')).assertFalse();
+    });
+
+    it('translation_on_rich_row_splits_medium_and_fine', 0, () => {
+      const msg: MessageEntry = textEntry(74);
+      msg.replyToMessageId = 5; // keep it 'rich', independent of the reply switch
+      const data: MessageBubbleRenderData = renderData({ isGroup: true, lightweightPlainText: false });
+      const untranslated: AlbumGroup = groupOf(msg);
+      const translatedMsg: MessageEntry = cloneMessage(msg);
+      translatedMsg.translatedText = 'translated body';
+      translatedMsg.translatedLang = 'en';
+      const translated: AlbumGroup = groupOf(translatedMsg);
+
+      expect(rowReuseId(data, untranslated, 'medium') ===
+        rowReuseId(data, translated, 'medium')).assertFalse();
+      expect(rowReuseId(data, untranslated, 'fine') ===
+        rowReuseId(data, translated, 'fine')).assertFalse();
+    });
+
     it('fine_level_splits_on_media_kind_only', 0, () => {
       const data: MessageBubbleRenderData = renderData({ isGroup: true });
       const text: MessageEntry = textEntry(30);

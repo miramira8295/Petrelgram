@@ -66,6 +66,19 @@ function hasReactionBar(msg: MessageEntry): boolean {
   return msg.reactions.length > 0;
 }
 
+// translatedText ('' = no translation, see MessageEntry.ets:111-115) is the
+// single largest structural fork this row can take: ReusableMessageBubble.
+// build() (~215) routes to LightweightPlainTextBubble only when
+// `data.lightweightPlainText && group.head.translatedText === ''` — a
+// translated row always falls through to the full MessageBubble tree, a
+// bigger subtree swap than any of the switches above. translationActive (the
+// chat-level translation toggle) is deliberately excluded: it is constant
+// across every row in one chat, so it can never cause a same-scroll pool
+// mismatch the way a per-row flag can.
+function hasTranslation(msg: MessageEntry): boolean {
+  return msg.translatedText !== '';
+}
+
 function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
   const msg: MessageEntry = group.head;
   const avatar: string = hasAvatarBranch(group) ? 'avatar' : 'no-avatar';
@@ -75,8 +88,9 @@ function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string 
   const reactions: string = hasReactionBar(msg) ? 'reactions' : 'no-reactions';
   const dateSep: string = hasDateSeparator(group) ? 'date' : 'no-date';
   const unread: string = hasUnreadDivider(data) ? 'unread' : 'no-unread';
+  const translated: string = hasTranslation(msg) ? 'translated' : 'no-translated';
   return `${coarseBucket(data)}:${avatar}:${senderName}:${reply}:${forward}:${reactions}` +
-    `:${dateSep}:${unread}`;
+    `:${dateSep}:${unread}:${translated}`;
 }
 
 // contentType values are enumerated from every `contentType === '...'` check
