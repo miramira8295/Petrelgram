@@ -2666,8 +2666,23 @@ export struct ChatPage {
         // 首屏定位的落点诊断。**未读分支原来一条日志都没有**，只有底部分支
         // 打 glueBottom，于是"没跳到未读"和"压根没落定"在日志上长得一模一样，
         // 排查时分不开——正是这次浪费掉一轮的原因。
+        // 方向一（进会话落在中间）的落点侧证据：这里说的是"选了哪条落点路径"，
+        // 而 hasMoreNewer 说的是"贴的是已加载窗口的底还是真尾部"——两者要一起
+        // 看才分得清"没跳到未读"和"跳到了但窗口本身没够到尾部"。
+        const anchorHasMoreNewer: boolean =
+          this.store !== null && this.store.getHasMoreNewer();
         logW(`[Anchor] latch fu=${fu} kind=${anchor.kind} index=${anchor.index}` +
-          ` rows=${groups.length} fillPending=${fillPending}`);
+          ` rows=${groups.length} fillPending=${fillPending}` +
+          ` hasMoreNewer=${anchorHasMoreNewer}` +
+          ` windowLast=${list.length > 0 ? list[list.length - 1].id : 0}`);
+        const landSeq: number = this.scrollActionSeq;
+        setTimeout((): void => {
+          if (landSeq !== this.scrollActionSeq) {
+            logW(`[Anchor] landed stale seq=${landSeq} cur=${this.scrollActionSeq}`);
+            return;
+          }
+          logW(`[Anchor] landed kind=${anchor.kind} ${this.scrollStateProbe()}`);
+        }, 400);
         if (anchor.kind === ANCHOR_UNREAD) {
           // 两个标志必须一起动，各自挡一个已经发生过的问题，见 util 里的说明。
           this.atBottom = false;
@@ -4266,6 +4281,32 @@ export struct ChatPage {
       ` idxLen=${this.indexGroupsLen} userScroll=${this.listUserScrollActive}` +
       ` touch=${this.listTouchActive} newerArmed=${this.newerGate.armed}` +
       ` reqUserDriven=${newerPageIsUserDriven(this.listTouchActive, this.listUserScrollActive)}`;
+  }
+
+  // ⚠️ 临时探针（[InitialPage] / [Anchor] / [JumpLatest] 共用，判读完一起删）：
+  // 当前视口与分页状态的一行快照。首屏落点和 ↓ 的走向都要靠这几个值判读，
+  // 尤其是"贴的是已加载窗口的底（hasMoreNewer=true）还是真尾部"。
+  private scrollStateProbe(): string {
+    const hasMoreNewer: boolean = this.store !== null && this.store.getHasMoreNewer();
+    let scrollerAtEnd: boolean = false;
+    try {
+      scrollerAtEnd = this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd();
+    } catch (e) {
+      scrollerAtEnd = false;
+    }
+    const verdict: string = atBottomVerdict({
+      viewerOpen: this.viewerMsgId !== 0,
+      imeTailPinned: this.imeTailPinned,
+      scrollerAtEnd: scrollerAtEnd,
+      visibleEndIdx: this.curEndIdx,
+      indexGroupsLen: this.indexGroupsLen,
+      groupsLen: this.groups.length,
+      hasMoreNewer: hasMoreNewer
+    });
+    return `hasMoreNewer=${hasMoreNewer} atBottom=${this.atBottom} verdict=${verdict}` +
+      ` scrollerAtEnd=${scrollerAtEnd} startIdx=${this.curStartIdx} endIdx=${this.curEndIdx}` +
+      ` rows=${this.groups.length} pendingBottom=${this.pendingScrollBottom}` +
+      ` pendingJumpId=${this.pendingJumpId} busy=${this.scrollToBottomBusy}`;
   }
 
   private restoreScrollAnchor(targetIndex: number, itemY: number): void {

@@ -4190,9 +4190,22 @@ export class MessageStore {
   loadAround(messageId: number, onComplete?: (found: boolean) => void): void {
     // Jumping into the middle of history: newer messages beyond this window
     // may exist — enable downward prefetch to discover/load them.
+    //
+    // 但这**不能无条件为真**。判据和别处一样是 reachedLiveTail（util/liveTail）：
+    // 锚点已经追上会话最后一条，这次开窗就已经在实时尾部，下面没有东西可取。
+    // 无条件置真的后果是一整条链：hasMoreNewer 真 ⇒ atBottomVerdict 恒 NO ⇒
+    // 「新消息不跟随」、「↓ 走重装窗口那条路」、以及（在改判据之前）每次追加
+    // 都复位视口。首屏最常走这条路——unreadCount 陈旧时锚点其实就是最后一条，
+    // 从进会话起 hasMoreNewer 就错着。
     const hadMoreNewer: boolean = this.hasMoreNewer;
-    this.hasMoreNewer = true;
-    this.newerLoadState = 'idle';
+    const anchorAtTail: boolean = reachedLiveTail(messageId, this.chatLastMessageId);
+    this.hasMoreNewer = !anchorAtTail;
+    this.newerLoadState = anchorAtTail ? 'end' : 'idle';
+    // ⚠️ 临时探针 [InitialPage]：这一处正是"无条件置真"改掉的地方。
+    // 改前这行恒 hasMoreNewer=true；改后 anchorAtTail 为真时是 false。
+    logW(`[InitialPage] around request anchor=${messageId}` +
+      ` chatLast=${this.chatLastMessageId} anchorAtTail=${anchorAtTail}` +
+      ` hasMoreNewer=${this.hasMoreNewer} was=${hadMoreNewer}`);
     // 首屏（未读锚点定位）同样取小窗：见 loadHistory 里的注释。之后的滚动
     // 分页（loadOlder/loadNewer）把两侧补齐。会话中途的跳转维持整页。
     const initial: boolean = this.initialHistoryState === 'loading';
@@ -4202,6 +4215,19 @@ export class MessageStore {
     this.client.send(req).then((res: TdObject): void => {
       const got: number = ((res['messages'] as TdObject[] | undefined) ?? []).length;
       this.onHistory(res, 'around');
+      // 窗口落地了才知道它够到哪儿。用的是和 updateChatLastMessage 那条同一个
+      // 判据（syncTailFromChatLast → reachedLiveTail），不另发明一套：窗口最新
+      // 一条追上会话最后一条就是真尾部，把向下分页关掉。
+      // 它只单向关、不反向开，所以在这里补判一次是安全的。
+      this.syncTailFromChatLast();
+      const windowFirst: number = this.messages.length > 0 ? this.messages[0].id : 0;
+      const windowLast: number = this.messages.length > 0
+        ? this.messages[this.messages.length - 1].id : 0;
+      logW(`[InitialPage] around got=${got} rows=${this.messages.length}` +
+        ` windowFirst=${windowFirst} windowLast=${windowLast}` +
+        ` chatLast=${this.chatLastMessageId}` +
+        ` windowAtTail=${reachedLiveTail(windowLast, this.chatLastMessageId)}` +
+        ` hasMoreNewer=${this.hasMoreNewer} hasMoreOlder=${this.hasMoreOlder}`);
       // 短页补链：和 loadHistory('latest') 那边同样的处理，之前只有 latest 有。
       //
       // TDLib 只给本地库里已有的，不够时返回更少并在后台向服务端补，契约是
@@ -4335,7 +4361,16 @@ export class MessageStore {
   }
 
   private requestInitialPage(): void {
+    // ⚠️ 临时探针 [InitialPage]（判读完连同 loadAround 里那两条一起删）：
+    // "读到底了再进去还是落在中间"要能只看日志就分因——是 unreadCount 陈了
+    // （route=around-unread 而 readCoversLast=true），还是窗口本身没够到尾部
+    // （route=around-unread 且 readCoversLast=false）。
+    logW(`[InitialPage] decide unread=${this.unreadCount} lastReadInbox=${this.lastReadInboxId}` +
+      ` chatLast=${this.chatLastMessageId}` +
+      ` readCoversLast=${reachedLiveTail(this.lastReadInboxId, this.chatLastMessageId)}` +
+      ` requestedAround=${this.requestedAroundMessageId} threadRoot=${this.threadRootId}`);
     if (this.requestedAroundMessageId > 0) {
+      logW(`[InitialPage] route=around-requested anchor=${this.requestedAroundMessageId}`);
       this.loadAround(this.requestedAroundMessageId);
       return;
     }
@@ -4350,9 +4385,11 @@ export class MessageStore {
     // loadAround there would miss the real end of the chat. Fully-read chats
     // always just load the newest page instead.
     if (this.unreadCount > 0 && this.lastReadInboxId > 0) {
+      logW(`[InitialPage] route=around-unread anchor=${this.lastReadInboxId}`);
       this.loadAround(this.lastReadInboxId);
       return;
     }
+    logW('[InitialPage] route=latest');
     this.loadHistory(0);
   }
 
