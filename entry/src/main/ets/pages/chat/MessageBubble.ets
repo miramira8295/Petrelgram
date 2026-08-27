@@ -147,6 +147,8 @@ struct LiveSenderAvatar {
   // 复用会经 aboutToReuse 和 @Watch 各挂一次，每次都是一整轮退订+重订阅）；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 有没有到。
   private attachedAvatarKey: string = '';
+  // 回收时挂在哪个发送者上。复用时若还是同一个人，path 原样保留（issue #137）。
+  private recycledAvatarKey: string = '';
   // 见 util/nextFrameQueue：复用路径上的 setTimeout(0) 合并成一帧一个，这是本
   // 实例在那个队列里的序号。无装饰器成员在复用时不重置，序号因此在整个实例生命
   // 周期里稳定——后一次复用排的回调才盖得掉前一次的。
@@ -193,23 +195,20 @@ struct LiveSenderAvatar {
   }
 
   aboutToRecycle(): void {
+    // 记下回收时挂在谁身上，detach 会把 attachedAvatarKey 归零。
+    this.recycledAvatarKey = this.attachedAvatarKey;
     this.detachAvatarChannel();
-    // P0-1（审计 3.1，C 类变量 path，行 121）：detach 只停订阅、不改值，
-    // 而 CachedImage 的 path 与 visibility 都直接读它。不清空的话，走
-    // aboutToReuse 兜底分支的那一帧画出来的就是**上一个发送者的位图**——
-    // 这正是历史上全量开 @Reusable 时「头像串行」的机理。
-    // 清 path 不依赖任何新参数，所以回收与复用两条路径都无条件执行。
-    this.path = '';
+    // path **不在这里清**。P0-1 曾在回收与复用两条路径上无条件清空它，防的是
+    // 「走兜底分支的那一帧画出上一个发送者的位图」；但父级已是 @ReusableV2、
+    // 兜底（下一帧再挂）成了唯一分支，于是**每一次复用都必空一帧**——连续
+    // 同一个人的消息也不例外，翻消息时头像一闪一闪就是它（issue #137）。
+    // 现在改成：复用时按 key 比对，换了人才清；同一个人位图原样留着。
     // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
     // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
     cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    // 无条件前置（审计 S1）：不依赖新参数的清理放在 params 判断之前。
-    // 这样兜底分支最差是「空一帧」，不会是「别人的一帧」；而且 V2 的
-    // aboutToReuse 没有入参（C2）时这一句依然成立。
-    this.path = '';
     // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
     // setTimeout 兜底（P3 批 2 第 0 项，见 util/reuseParams.ets 的说明）。
     const nextId: number | undefined = reuseParam(params, 'senderId') as number | undefined;
@@ -217,6 +216,15 @@ struct LiveSenderAvatar {
       reuseParam(params, 'senderIsUser') as boolean | undefined;
     const nextPath: string | undefined =
       reuseParam(params, 'initialPath') as string | undefined;
+    // 换了人才清 path（issue #137）。params 没带值时拿此刻的 @Prop 比：若 @Prop
+    // 还是旧值，比出来是"同一个人"、位图先留着——真换了人 @Prop 落地时
+    // onSenderChanged 会按新 key 重挂并改写 path，赶在那一帧之前，不会画出
+    // 别人的头像；没换人则什么都不用动，正是要保住的那一帧。
+    const nextKey: string = senderChannelKey(nextId ?? this.senderId, nextIsUser ?? this.senderIsUser);
+    if (nextKey !== this.recycledAvatarKey) {
+      this.path = '';
+    }
+    this.recycledAvatarKey = '';
     if (nextId !== undefined && nextIsUser !== undefined) {
       this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');
       return;

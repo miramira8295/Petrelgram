@@ -130,6 +130,8 @@ struct LightweightSenderAvatar {
   // 订阅当前挂在哪个发送者 key 上：既用于同 key 短路（审计 P1-1，一次复用会
   // 经 aboutToReuse 和 @Watch 各挂一次），也让「订阅挂在哪」变成可判定的事实。
   private attachedKey: string = '';
+  // 回收时挂在哪个发送者上。复用时若还是同一个人，path 原样保留（issue #137）。
+  private recycledKey: string = '';
   // 见 util/nextFrameQueue：复用路径上的 setTimeout(0) 合并成一帧一个，这是本
   // 实例在那个队列里的序号。无装饰器成员在复用时不重置，序号因此在整个实例生命
   // 周期里稳定——后一次复用排的回调才盖得掉前一次的。
@@ -174,19 +176,17 @@ struct LightweightSenderAvatar {
     cancelNextFrame(this.frameOwnerId);
   }
   aboutToRecycle(): void {
+    // 记下回收时挂在谁身上，detach 会把 attachedKey 归零。
+    this.recycledKey = this.attachedKey;
     this.detach();
-    // P0-2（审计 3.1；C 类变量 path，行 110）：detach 只停订阅、不改值，而
-    // CachedImage 的 path 与 visibility 都直接读它。不清空的话，走 aboutToReuse
-    // 兜底分支的那一帧画的就是上一个发送者的位图——历史上的「头像串行」。
-    // 清 path 不依赖新参数，所以回收与复用两条路径都无条件执行。
-    this.path = '';
+    // path 不在这里清：见 MessageBubble.LiveSenderAvatar 同一处（issue #137）——
+    // 无条件清空让每次复用都必空一帧，翻消息时头像一闪一闪。复用时按 key 比对，
+    // 换了人才清。
     // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
     // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
     cancelNextFrame(this.frameOwnerId);
   }
   aboutToReuse(params: Record<string, Object>): void {
-    // 无条件前置（审计 S1）：清理跑在 params 判断之前，V2 无入参时同样成立。
-    this.path = '';
     // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到 else 的
     // setTimeout 兜底（P3 批 2 第 0 项，见 util/reuseParams.ets）。
     const senderId: number | undefined = reuseParam(params, 'senderId') as number | undefined;
@@ -194,6 +194,12 @@ struct LightweightSenderAvatar {
       reuseParam(params, 'senderIsUser') as boolean | undefined;
     const initialPath: string | undefined =
       reuseParam(params, 'initialPath') as string | undefined;
+    // 换了人才清 path（issue #137），理由见 MessageBubble.LiveSenderAvatar。
+    const nextKey: string = senderChannelKey(senderId ?? this.senderId, senderIsUser ?? this.senderIsUser);
+    if (nextKey !== this.recycledKey) {
+      this.path = '';
+    }
+    this.recycledKey = '';
     if (senderId !== undefined && senderIsUser !== undefined) {
       this.attach(senderId, senderIsUser, initialPath ?? '');
     } else {
