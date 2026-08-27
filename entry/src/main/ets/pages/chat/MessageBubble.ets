@@ -1503,6 +1503,17 @@ export struct MessageBubble {
           if (this.gestureClaimed) { return; }
           this.onLinkTap(run.url); });
     } else {
+      // 这里刻意不挂 .animation()：普通 run 是气泡里数量最多的节点，一条常驻
+      // 属性动画会按 run 数线性放大更新开销。2026-08-27 11:57 的真机 trace 里，
+      // 34 个 >20ms 的 CustomNodeUpdate 全部落在 MessageBubble 上；每次
+      // ExecuteRerender 内串着 12–52 个 JSAnimation，每个都会同步 flush 一遍
+      // FlushLayoutTask → Measure[List]/[ListItem]，单个 0.65–1.0ms。也就是
+      // 更新开销 ≈ 气泡上 .animation() 修饰器个数 × 约 0.8ms 的同步重排。
+      //
+      // 别指望用 effectDuration() 在滑动时返回 0 来挡：duration:0 只是让视觉
+      // 过渡瞬间完成，ArkUI 照样建 JSAnimation 上下文，同刷新周期的脏布局照样
+      // 被同步 flush 进去（同一份 trace 里 duration:0 有 3932 个）。要省掉这笔
+      // 开销，只能不写这个修饰器本身。
       Span(run.text)
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
         .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
@@ -1515,8 +1526,7 @@ export struct MessageBubble {
         .textBackgroundStyle({
           color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
           radius: run.code ? 3 : 0
-        })
-        .animation({ duration: this.effectDuration(150), curve: Curve.EaseOut });
+        });
     }
   }
 
