@@ -1,6 +1,25 @@
 import { CachedImage } from '../common/CachedImage';
+import { logW } from '../../util/log';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { reuseParam } from '../../util/reuseParams';
+
+// 探针：复用回来的那一刻，@Prop fileId 到底是新值还是旧值？
+//
+// aboutToReuse 里那条 setTimeout(0) 之所以还在，唯一的理由是「官方没有写清
+// 状态变量重置与 aboutToReuse 回调的先后」（见 ReusableMessageBubble 里同一段
+// 论证）。父级 @ReusableV2 的 aboutToReuse 没有入参，reuseParam 因此恒为
+// undefined，于是**每一次复用都走延迟分支**：回收时 path 已经被清空、build 当帧
+// 切到 placeholder，恢复却要等下一帧——一进一出保证了一帧空窗。
+//
+// 想同步恢复就必须先证明「aboutToReuse 里读到的 this.fileId 已经是新值」。
+// 这个探针就是那份证据：把回调当时读到的 fileId 和一帧之后读到的比一比。
+// 判读（沙箱 petrelgram-log.txt，攒够 300 行才落盘，所以样本上限压得很小）：
+//   · 全部 same= 且 sync 数量可观 → this.fileId 在回调里已经是新值，可以删定时器；
+//   · 出现 stale= → 回调里读到的是旧值，定时器必须留着。
+const REUSE_PROBE_LIMIT: number = 24;
+let reuseProbeLogged: number = 0;
+let reuseProbeSame: number = 0;
+let reuseProbeStale: number = 0;
 
 // 自己订阅、自己换图的缩略图。
 //
@@ -61,7 +80,23 @@ export struct LiveThumbImage {
       this.attach(fileId, initialPath ?? '');
       return;
     }
-    setTimeout((): void => { this.attach(this.fileId, this.initialPath); }, 0);
+    const seenAtReuse: number = this.fileId;
+    setTimeout((): void => {
+      const seenNextFrame: number = this.fileId;
+      if (seenAtReuse === seenNextFrame) {
+        reuseProbeSame++;
+      } else {
+        reuseProbeStale++;
+      }
+      if (reuseProbeLogged < REUSE_PROBE_LIMIT) {
+        reuseProbeLogged++;
+        logW(`[ImgFlick] LiveThumbImage reuse ` +
+          `${seenAtReuse === seenNextFrame ? 'same' : 'stale'}=` +
+          `${seenAtReuse}->${seenNextFrame} totals same=${reuseProbeSame} ` +
+          `stale=${reuseProbeStale}`);
+      }
+      this.attach(this.fileId, this.initialPath);
+    }, 0);
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ
