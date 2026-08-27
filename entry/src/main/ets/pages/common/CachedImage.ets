@@ -3,6 +3,9 @@ import {
   cachedPixelMap, cancelPixelMap, loadPixelMap, PixelHandle, PixelRequest,
   pinPixelMap, releasePixelMap, retainPixelMap
 } from '../../util/pixelCache';
+import {
+  isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode
+} from '../../util/imageSwap';
 import { reuseParam } from '../../util/reuseParams';
 
 // An Image fed from the decoded-PixelMap cache instead of a file path.
@@ -112,11 +115,15 @@ export struct CachedImage {
     this.start();
   }
 
+  // 判定本身在 util/imageSwap（纯函数 + 单测）。这里只负责把当前握着的那张
+  // 摊平成参数。
   private sameAsHeld(req: PixelRequest): boolean {
     const held = this.heldReq;
-    return held !== null && held.path === req.path
-      && Math.round(held.width) === Math.round(req.width)
-      && Math.round(held.height) === Math.round(req.height);
+    if (held === null) {
+      return false;
+    }
+    return sameDecodeTarget(held.path, held.width, held.height,
+      req.path, req.width, req.height);
   }
 
   // The old bitmap stays on screen until the new one is in hand — no blank
@@ -137,14 +144,17 @@ export struct CachedImage {
   }
 
   private start(): void {
-    if (this.path === '' || this.boxWidth <= 0 || this.boxHeight <= 0) {
+    if (!isDecodableTarget(this.path, this.boxWidth, this.boxHeight)) {
       this.drop();
       return;
     }
     const req = this.request();
-    if (this.heldReq !== null && !this.sameAsHeld(req)) {
-      // Keep the retained handle until the replacement is ready, but stop
-      // exposing its pixels immediately: it belongs to another message.
+    // 只在换了**源文件**时才提前清空：复用出来的行绝不能继续画上一条消息的图。
+    //
+    // 同一个源文件仅仅是解码目标尺寸变了（photoWidth/photoHeight 这类元数据晚到，
+    // boxHeight 先给错后修正）时**不再清空**——老位图和新位图画的是同一张图,
+    // 中间那段空窗纯属白送，用户看到的就是图闪一下。新位图由 swapTo 到手再换。
+    if (shouldBlankBeforeDecode(this.heldReq !== null ? this.heldReq.path : '', req.path)) {
       this.pixelMap = undefined;
     }
     if (this.sameAsHeld(req)) {
