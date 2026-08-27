@@ -263,6 +263,30 @@ const INITIAL_MESSAGE_RELEASE_DELAY_MS: number = 12;
 // shorter floor than an unread anchor whose complete visible window is prepared.
 const INITIAL_TIMELINE_PRESENT_MIN_MS: number = 80;
 const INITIAL_BOTTOM_PRESENT_MIN_MS: number = 48;
+// ── 实验性开关：旁路首屏分级揭示 ──────────────────────────────────────────
+//
+// true = 首屏一次性发布全部真身，不再「每个 VSync 放行一行」。
+// 分级揭示的代码、注释、单测、initialDeferred / initialMessagePlaceholderHeight /
+// [BlankRow] 探针全部原样保留：把这里改回 false 就完整恢复旧行为。
+//
+// 为什么旁路：
+//   · 它当初要解决的问题已经不在了。分级揭示是为了摊开首屏那一帧的布局开销，
+//     而 P2 的组件复用已经把 BuildItem 在卡顿帧里的占比从 11.7% 压到 0.59%
+//     ——现在它摊的是一笔几乎不存在的开销。
+//   · 它在 Repeat 之下开始制造真问题。LazyForEach 时代占位→真身是「同 key 的
+//     无 key CHANGE」，就地更新、位置稳；换成 Repeat 之后同 key 内容变会把整行
+//     重建（API 20 模拟器的 RepeatSpikePage 实测：翻转后 9 行 build# 全变）。
+//     于是每帧翻一行 ⇒ 该行高度从估算值跳到实际值 ⇒ 总高度变 ⇒ stackFromEnd
+//     下视口被推，真机表现就是「打开会话后消息一直往下闪，然后停到最底下」。
+//     在这之前它还制造过「首屏一条消息空白」（a78a431 修的）。
+//
+// 什么情况下该改回 false：上机 trace 显示**首屏那一帧**重新出现掉帧（BuildItem
+// 在卡顿帧里的占比重新起来）。那时要一并处理 Repeat 的重建问题，别只翻开关。
+//
+// 旁路只改「发布哪一份快照」：遮罩（initialTimelineMasked）、落点（未读 START /
+// 底部 END）、fillPending 的等待，全部仍然走原来的状态机，见
+// publishInitialMessageGroups 与 releaseNextInitialMessageBatch 的两处引用。
+const INITIAL_MESSAGE_STAGING_BYPASSED: boolean = true;
 // The data is already complete and anchored when these animations start. Only
 // render transforms are staggered; no row is inserted or resized here.
 const INITIAL_TIMELINE_ROW_FADE_MS: number = 90;
@@ -930,6 +954,17 @@ export struct ChatPage {
     if (fillPending && target.alignFromStart) {
       return 'waiting';
     }
+    // 旁路开关：见 INITIAL_MESSAGE_STAGING_BYPASSED。真身已经在
+    // publishInitialMessageGroups 里一次性发过了，这里没有第二行可放，直接走
+    // 收尾——publishGroupsNow 会因为快照逐项相同而不换数组引用（零成本），
+    // finishInitialMessageStage 照旧置 initialTimelineReadyToPresent 并交给
+    // scheduleInitialTimelinePresentation 落点+撤遮罩，状态机不留悬挂。
+    // 位置刻意压在上面那条 fillPending 之后：未读落点仍然要等有界回填结束，
+    // 那正是 5940466 修过的那条时序。
+    if (INITIAL_MESSAGE_STAGING_BYPASSED) {
+      this.finishInitialMessageStage(groups);
+      return 'finished';
+    }
     // The visible landing window is already stable. While a bounded history
     // fill is still moving the snapshot, keep the current geometry and wait
     // for its final publication instead of proactively materializing every
@@ -1051,8 +1086,14 @@ export struct ChatPage {
     this.initialMessageStageActive = true;
     this.syncChatTgsGate();
     this.initialMessagePendingGroups = groups;
-    this.initialMessageRevealCount = firstRevealCount;
-    this.publishGroupsNow(staged);
+    // 旁路开关：见 INITIAL_MESSAGE_STAGING_BYPASSED。上面的 staged 仍然照算，
+    // 因为 `staged === groups` 那条早返回（空会话/短会话）必须保持原样；变的
+    // 只是发布哪一份——旁路时发全部真身，揭示计数直接记成「已全放行」，好让
+    // 状态读起来自洽。遮罩在这一行之前已经打开，所以一次性发布也看不到列表
+    // 从顶部滚下来；撤遮罩前 settleInitialTimelineAnchor 会按最终高度落点。
+    this.initialMessageRevealCount =
+      INITIAL_MESSAGE_STAGING_BYPASSED ? target.availableRows : firstRevealCount;
+    this.publishGroupsNow(INITIAL_MESSAGE_STAGING_BYPASSED ? groups : staged);
     this.postInitialMessageFrame(stageSeq);
   }
 
