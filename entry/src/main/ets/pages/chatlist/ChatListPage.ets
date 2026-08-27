@@ -31,7 +31,7 @@ import { KEY_APP_DARK } from '../../util/theme';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { navigateToSearch } from '../../util/searchNav';
 import {
-  setChatListRenderActive
+  requestChatListFlush, setChatListRenderActive
 } from '../../util/chatListRenderGate';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
 
@@ -1127,6 +1127,9 @@ export struct ChatListPage {
         if (!isVisible) {
           this.suspendListRendering();
         } else if (changed || !this.listRenderActive) {
+          // 先把缓冲里的内容变更刷出去（未读角标之类），再等过渡结束开闸
+          // （issue #159）。见 util/chatListRenderGate.requestChatListFlush。
+          requestChatListFlush();
           this.resumeListRenderingAfterTransition();
         }
         if (AppStorage.get<boolean>(CHAT_NAV_BAR_VISIBLE_KEY) !== isVisible) {

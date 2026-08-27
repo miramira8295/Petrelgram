@@ -5,7 +5,7 @@ import { ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
-import { CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
+import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   AVATAR_SIZE, COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
@@ -50,6 +50,8 @@ export struct MainTabBody {
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
   @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
   private renderActive: boolean = true;
+  @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
+  private flushEpoch: number = 0;
   @State chats: ChatEntry[] = [];
   private chatsData: ChatListDataSource = new ChatListDataSource();
   @State showArchive: boolean = false;
@@ -82,6 +84,25 @@ export struct MainTabBody {
 
   private onRenderGateChanged(): void {
     this.flushBufferedChats();
+  }
+
+  // 闸还关着时的一次性刷新（issue #159，见 util/chatListRenderGate）：只发内容
+  // 变更（身份顺序没变），顺序变了的放回缓冲等闸开。闸开着时走正常路。
+  private onFlushRequested(): void {
+    if (this.menuOpen || this.renderActive) {
+      return;
+    }
+    const next = this.updateGate.flush();
+    if (next === null) {
+      return;
+    }
+    const sameOrder: boolean = this.chats.length === next.length &&
+      this.chats.every((item: ChatEntry, index: number): boolean => item.id === next[index].id);
+    if (sameOrder) {
+      this.publishChats(next);
+    } else {
+      this.updateGate.accept(next, false);
+    }
   }
 
   aboutToAppear(): void {
