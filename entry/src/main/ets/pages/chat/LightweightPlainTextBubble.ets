@@ -654,7 +654,12 @@ export struct LightweightPlainTextBubble {
         }
       }
       .fontSize(this.msgTextSize).lineHeight(this.msgTextSize * 1.34)
-      .wordBreak(WordBreak.BREAK_WORD).constraintSize({ maxWidth: this.inlineMaxW() });
+      .wordBreak(WordBreak.BREAK_WORD)
+      // minWidth 也挂在这个 Text 上：Column 给子节点做 Stretch 是按最宽的孩子量的，
+      // Column 自己的 minWidth 钳位发生在那之后——只挂 Column 时引用块拉不到边
+      // （真机看到时间到了右边缘、引用块没跟上）。Text 是最宽的孩子，它够宽
+      // Column 才够宽，引用块的 alignSelf(Stretch) 才有得伸。
+      .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: this.inlineMaxW() });
       this.translationState();
     }
     .alignItems(HorizontalAlign.Start)

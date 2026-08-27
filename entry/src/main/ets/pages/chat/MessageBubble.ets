@@ -1681,7 +1681,10 @@ export struct MessageBubble {
         }
       }, (seg: RichSegment, i: number) => `seg_${i}_${seg.kind}`);
     }
-    .constraintSize({ maxWidth })
+    // minWidth 挂在这里（正文，content() 里最宽的孩子）而不是只挂外层 Column：
+    // Column 给子节点做 Stretch 是按最宽的孩子量的，自己的 minWidth 钳位在那之后。
+    // 只挂外层时引用块的 alignSelf(Stretch) 拉不到气泡边缘（真机确认）。
+    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth })
     .alignItems(HorizontalAlign.Start);
   }
 
