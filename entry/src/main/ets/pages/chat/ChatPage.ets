@@ -199,6 +199,7 @@ import {
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
+import { armedPageGate, canFirePageGate, firedPageGate, PageGate, rearmPageGate } from '../../util/pageGate';
 import { rememberChatPosition, rememberedChatPosition } from '../../util/chatResume';
 import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
@@ -1793,17 +1794,14 @@ export struct ChatPage {
   // trigger zone never clears). Re-armed when the user scrolls clear of the
   // top zone or starts a new touch gesture.
   private olderArmed: boolean = true;
-  // 上一次向下分页是在哪个可见末行触发的；-1 表示已完全上膛。
+  // 向下分页的一次性闸，语义和上面的 olderArmed 一致：打一发就下膛，只有
+  // 真实用户输入才重新上膛（见 util/pageGate）。
   //
-  // 这里不能照抄向上那侧的"离边界够远就重新上膛"：新页一追加，groups.length
-  // 就涨 30 而视口没动，"离末尾还有几行"立刻成立、自动上膛，下一次
-  // onScrollIndex（追加本身就会触发）又开一枪——闸门被内容增长自己顶开，
-  // 等于没加。实测 5 秒内窗口从 14 行涨到 268 行。
-  //
-  // 判据改成"视口确实往下走了"：只有 end 越过上次开枪的位置才再放一枪。
-  // 内容增长不会让 end 变大（视口没动），所以自驱的链子到此为止；用户真往下
-  // 滚时照常一页一页地跟。
-  private newerFiredAtEnd: number = -1;
+  // 光靠"end 越过上次开枪的位置"这道弱闸挡不住自持回路：stackFromEnd 是底部
+  // 锚定，一页 newer 追加到末尾就把视口往下推，end 自己变大，弱闸每次都放行。
+  // 真机上一次开会话连锁拉了 9 页（rowsBefore 132 → 356）。弱闸留着防同一个
+  // end 被重复敲，真正止血的是 armed。
+  private newerGate: PageGate = armedPageGate();
   // 内容铺不满一屏时主动补页的上限。到这个行数还说"整份都可见"，说明判据
   // 本身出了问题，停手比无限拉更安全。
   private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
@@ -2041,7 +2039,7 @@ export struct ChatPage {
     this.fileOpenInFlightId = 0;
     this.musicQueue.reset();
     this.olderArmed = true;
-    this.newerFiredAtEnd = -1;
+    this.newerGate = armedPageGate();
     this.freshSinceId = 0;
     this.freshClearSeq++;
     this.imeTailPinned = false;
@@ -4136,17 +4134,42 @@ export struct ChatPage {
     this.maybeLoadOlder();
   }
 
-  // 只有视口确实往下走过才再取一页，见 newerFiredAtEnd 的说明。
+  // 只有闸在膛上、且视口确实往下走过，才再取一页。见 util/pageGate。
   private maybeLoadNewer(end: number): void {
-    if (this.store === null || end <= this.newerFiredAtEnd) {
+    if (this.store === null) {
       return;
     }
-    // 诊断：向下预取又跑飞了两次，判据本身要能看见。end 在内容追加时到底动
-    // 没动，是"视口跟着贴底走"还是"用户真在滚"，只有这行能分清。
+    const gate: PageGate = this.newerGate;
+    // 诊断：向下预取跑飞过两次，判据本身要能看见——armed 是不是真的合上了，
+    // 推动 end 的是用户还是程序性位移。
+    //
+    // 只在弱闸放行（end 越过上次开枪位置）时打：这一支同时覆盖"打成了"和
+    // "被 armed 挡住"两种结果，正是要看的两格；底部区里每次 onScrollIndex
+    // 都打会把环形缓冲刷满，最该看的那段反而被挤掉。
+    if (end > gate.firedAtEnd) {
+      logW(`[NewerFire] end=${end} rows=${this.groups.length} firedAt=${gate.firedAtEnd}` +
+        ` armed=${gate.armed} touch=${this.listTouchActive} userScroll=${this.listUserScrollActive}` +
+        ` deferredLeft=${this.countDeferredRows()}`);
+    }
+    if (!canFirePageGate(gate, end)) {
+      return;
+    }
     const started: boolean = this.store.loadNewer();
     if (started || !this.store.getHasMoreNewer()) {
-      this.newerFiredAtEnd = end;
+      this.newerGate = firedPageGate(gate, end);
     }
+  }
+
+  // [NewerFire] 用：还剩多少行是首屏占位。用循环而不是 filter，这行日志在
+  // 底部区里会反复打，不该每次都拷一份数组出来。
+  private countDeferredRows(): number {
+    let count: number = 0;
+    for (const row of this.groups) {
+      if (row.initialDeferred === true) {
+        count++;
+      }
+    }
+    return count;
   }
 
   // A history page is inserted before the current window. Keep the exact
@@ -8989,6 +9012,8 @@ export struct ChatPage {
             this.imeLayoutSeq++;
             this.listTouchActive = true;
             this.olderArmed = true;
+            // 向下分页同样按手势重新上膛：一次手势最多多取一页，和 older 一致。
+            this.newerGate = armedPageGate();
             // The highlight overlay is viewport-anchored — drop it as soon as
             // the user starts interacting, before it can detach from its row.
             this.cancelFlash();
@@ -9051,7 +9076,10 @@ export struct ChatPage {
             this.maybeLoadOlder();
           }
           if (end < this.groups.length - 5) {
-            this.newerFiredAtEnd = -1; // 离开底部区域，完全上膛
+            // 离开底部触发区。但这个位置判据会被内容追加自己顶成立（groups
+            // 变长而视口没动），所以必须叠一条"这一下是用户在滚"——程序性
+            // 位移不上膛。older 那侧靠 onTouch(Down) 和真实滚动上膛，同一套。
+            this.newerGate = rearmPageGate(this.newerGate, this.listUserScrollActive);
           } else {
             this.maybeLoadNewer(end);
           }
