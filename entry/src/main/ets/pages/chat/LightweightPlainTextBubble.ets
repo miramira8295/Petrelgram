@@ -252,9 +252,13 @@ export struct LightweightPlainTextBubble {
       Column().width(TAIL_W).height(TAIL_H).margin(outgoing ? { left: -1 } : { right: -1 });
     } else {
       // 和玻璃档同一条曲线（tailShapeCommands），两档尾巴必须长得一样。
+      // strokeWidth(0)：Path 不显式关描边就会沿轮廓画一圈黑线，尾巴看着像被
+      // 勾了边（真机实拍确认）。填充色由 fill 给，描边一律不要。
       Path({ width: TAIL_W, height: TAIL_H })
         .commands(tailShapeCommands(outgoing, TAIL_W, TAIL_H, vp2px(1)))
         .fill(this.bubbleFillColor())
+        .stroke(Color.Transparent)
+        .strokeWidth(0)
         .margin(outgoing ? { left: -1 } : { right: -1 });
     }
   }
