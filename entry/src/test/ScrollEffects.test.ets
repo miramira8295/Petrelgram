@@ -24,9 +24,10 @@ export default function scrollEffectsTest() {
     });
   });
 
-  // 按压反馈的时长决策。完整气泡（MessageBubble）和轻量气泡
-  // （LightweightPlainTextBubble）的 persistentEffectDuration() 都只是转发到这里，
-  // 所以这组断言同时覆盖两支——以前两支各写一份表达式，改一支漏一支没人发现。
+  // 长期视觉效果的时长决策。目前的调用方是 MessageBubble 里行内链接药丸的
+  // 循环忙态与按下过渡（两支气泡的根节点已经不挂常驻动画，不再调用它）。
+  // 这里只断言开关合取这一件事；动画是否真的被隔离在列表刷新之外，属于 ArkUI
+  // 运行时行为，单元测试证明不了，只能由真机 trace 验证。
   describe('persistentAnimationDurationFor', () => {
     it('三个开关全开时原样返回', 0, (): void => {
       expect(persistentAnimationDurationFor(true, true, false, 110)).assertEqual(110);
@@ -42,11 +43,9 @@ export default function scrollEffectsTest() {
       expect(persistentAnimationDurationFor(true, true, true, 110)).assertEqual(0);
       expect(persistentAnimationDurationFor(false, false, true, 110)).assertEqual(0);
     });
-    // 刻意不吃滑动门控：按下态的参数在 build 之后才被消费，滑动中取 0 会让
-    // 滑动停下后按气泡没有过渡。滑动期间的数据刷新之所以不再产生动画，靠的是
-    // 属性链上的作用域隔离（气泡的几何属性排在 .animation() 之后），不是靠这里
-    // 把时长压成 0。
-    it('滑动态不影响按压时长', 0, (): void => {
+    // 刻意不吃滑动门控：这类动画的参数在 build 之后才被消费，滑动中取 0 会让
+    // 循环效果在滑动停下后永久静止。
+    it('滑动态不影响长期效果时长', 0, (): void => {
       setScrollActive(true);
       expect(persistentAnimationDurationFor(true, true, false, 110)).assertEqual(110);
       setScrollActive(false);

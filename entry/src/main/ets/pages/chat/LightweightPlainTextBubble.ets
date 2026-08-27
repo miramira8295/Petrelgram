@@ -8,9 +8,7 @@ import {
 } from '../../store/AppSettings';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
-import {
-  animationDurationFor, persistentAnimationDurationFor, scrollActiveNow
-} from '../../util/scrollEffects';
+import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import {
   glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
@@ -444,14 +442,6 @@ export struct LightweightPlainTextBubble {
       this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving,
       scrollActiveNow(), ms);
   }
-  // 不吃滑动门控的时长。用于**参数在 build 之后才被消费**的动画：按下态的
-  // stateStyles 过渡、以及 iterations:-1 的循环动画。滑动中渲染的那一帧会把
-  // 时长固定成 0，而这类动画在那之后才播——结果是滑动停下后按气泡没有过渡、
-  // 循环胶囊永久静止。滑动中本来也按不到气泡，门控它们收益为零。
-  private persistentEffectDuration(ms: number): number {
-    return persistentAnimationDurationFor(
-      this.chatEffectsEnabled, this.messageEffectsEnabled, this.powerSaving, ms);
-  }
   private reactionDuration(ms: number): number {
     return animationDurationFor(
       this.chatEffectsEnabled && this.reactionEffectsEnabled && this.emojiEnabled &&
@@ -756,12 +746,11 @@ export struct LightweightPlainTextBubble {
             }.constraintSize({ maxWidth: this.inlineMaxW() });
           }
           .alignItems(HorizontalAlign.Start)
-          // 与 MessageBubble 同一策略、同一理由（见那边的长注释）：110ms 的作用域
-          // 紧跟 stateStyles，只覆盖按下态的 opacity/scale；承载背景、模糊、圆角、
-          // padding、阴影、约束宽度的属性一律排在作用域之后，数据更新不再启动
-          // 隐式动画、也就不再连带整张消息 List 的重测。两支气泡必须同改。
+          // 与 MessageBubble 同一策略、同一理由（见那边的长注释）：气泡根节点上
+          // 不挂常驻 .animation()，按下态直接切换。真机 trace 已证明换位置留不住
+          // 动画边界，只有节点上完全没有常驻动画，普通数据更新才不会进入动画
+          // 上下文、连带整张消息 List 的重测。两支气泡必须同改。
           .stateStyles({ normal: this.bubbleNormalStyle, pressed: this.bubblePressedStyle })
-          .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
           .constraintSize({ maxWidth: this.bubbleMaxW() })
           .backgroundColor(this.bubbleBg())
           .backdropBlur(this.glassBlur())

@@ -40,12 +40,15 @@ export function animationDurationFor(enabled: boolean, scrolling: boolean, ms: n
   return enabled && !scrolling ? ms : 0;
 }
 
-// 按压反馈这类「参数在 build 之后才被消费」的动画的时长决策：不吃滑动门控
-// （理由见 MessageBubble/LightweightPlainTextBubble 的调用点注释），只受聊天
-// 特效开关、消息特效开关和省电模式约束。
+// 长期视觉效果（参数在 build 之后才被消费的动画，例如 iterations:-1 的循环
+// 胶囊、行内链接药丸的按下过渡）的时长决策：不吃滑动门控——滑动中渲染的那一帧
+// 会把时长固定成 0，而这类动画在那之后才播，门控它们只会让循环效果永久静止。
+// 只受聊天特效开关、消息特效开关和省电模式约束。
 //
-// 提成公共函数是为了让完整气泡和轻量气泡共用**同一份**决策：两支气泡必须同时
-// 生效，以前各写一份，改一支漏一支不会被任何测试发现。
+// 注意：这个函数只决定「时长取多少」，不提供任何动画边界。节点上只要挂着常驻
+// .animation()，普通数据更新照样会进入动画上下文并连带列表重测（2026-08-27 真机
+// trace 已证实，属性链换位置也挡不住）。所以两支气泡的根节点现在完全不挂常驻
+// 动画，不再调用本函数。
 export function persistentAnimationDurationFor(
   chatEffectsEnabled: boolean, messageEffectsEnabled: boolean,
   powerSaving: boolean, ms: number): number {

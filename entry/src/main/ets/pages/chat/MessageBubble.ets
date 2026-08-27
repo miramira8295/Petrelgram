@@ -939,10 +939,11 @@ export struct MessageBubble {
       scrollActiveNow(), duration);
   }
 
-  // 不吃滑动门控的时长。用于**参数在 build 之后才被消费**的动画：按下态的
-  // stateStyles 过渡、以及 iterations:-1 的循环动画。滑动中渲染的那一帧会把
-  // 时长固定成 0，而这类动画在那之后才播——结果是滑动停下后按气泡没有过渡、
-  // 循环胶囊永久静止。滑动中本来也按不到气泡，门控它们收益为零。
+  // 不吃滑动门控的时长。用于**参数在 build 之后才被消费**的动画：行内链接药丸
+  // 按下态的 stateStyles 过渡、以及它 iterations:-1 的循环忙态。滑动中渲染的那
+  // 一帧会把时长固定成 0，而这类动画在那之后才播——结果是滑动停下后按链接没有
+  // 过渡、循环胶囊永久静止。滑动中本来也按不到，门控它们收益为零。
+  // 气泡根节点已经不再使用它：那里现在完全不挂常驻动画（见 build 里的注释）。
   private persistentEffectDuration(duration: number): number {
     return persistentAnimationDurationFor(
       this.chatEffectsEnabled, this.messageEffectsEnabled, this.powerSaving, duration);
@@ -3745,18 +3746,21 @@ export struct MessageBubble {
         }
       }
       .alignItems(HorizontalAlign.Start)
-      // 按压反馈的动画作用域**必须**紧跟 stateStyles，并且这一段里只能有
-      // opacity/scale 这两个纯绘制属性。
+      // 气泡根节点上**没有**常驻 .animation()：按下态的 opacity/scale 直接切换，
+      // 不做过渡。
       //
-      // ArkUI 的 .animation() 只作用于「上一个 .animation() 之后、本次调用之前」
-      // 设置的那一段属性（同一份写法见本文件链接药丸的 620/90 两段）。这一段
-      // 以前排在整条属性链的末尾，于是背景色、模糊、圆角、padding、阴影、
-      // 约束宽度统统被卷进 110ms 隐式动画：复用重绑、宽度回写、发送态、下载
-      // 进度、翻译态每变一次，就有一次 JSAnimation -> FlushLayoutTask ->
-      // Measure[List]（2026-08-27 真机 trace：fling 窗口内 1079 个 duration:110
-      // 切片）。把作用域挪到这里之后，下面那些承载几何与材质的属性都在动画
-      // 作用域之外，数据更新只是普通的一次性属性刷新；按下气泡仍有过渡，因为
-      // 变的正是作用域内的 opacity/scale。
+      // 曾经这里挂着 110ms 的常驻 .animation()。第一次尝试是把它从属性链末尾
+      // 提到紧跟 stateStyles 之后，指望作用域语义把几何与材质属性排除在外；
+      // 2026-08-27 的真机 trace 否定了这个假设：fling 窗口内 duration:110 的
+      // 切片只从 1329 降到 1261（-5.1%），duration:110 -> FlushLayoutTask ->
+      // Measure[List] 这条链路仍在，最重的一帧反而从 210ms 涨到 463ms。
+      // 换句话说，只要节点上挂着常驻动画，ArkUI 在组件更新时仍会建立动画
+      // 上下文，并把同一刷新周期里的列表脏节点一起带进动画布局。所以复用重绑、
+      // 宽度回写、发送态、下载进度、翻译态这些普通数据更新必须落在任何动画
+      // 上下文之外——唯一可靠的办法是节点上根本不存在常驻动画。
+      //
+      // 平滑按压反馈如需恢复，只能由真实的 Down/Up/Cancel 触摸事件驱动一次
+      // 显式 animateTo，不要再加回常驻 .animation()。
       //
       // 刻意没有另加一层视觉包装节点：材质挂在上层 Row（bubbleGlassModifier）、
       // 手势与命中都挂在本节点，插节点会动到材质/裁剪/命中三者的相对关系。
@@ -3764,7 +3768,6 @@ export struct MessageBubble {
         normal: this.bubbleNormalStyle,
         pressed: this.bubblePressedStyle
       })
-      .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
       .constraintSize({ maxWidth: this.bubbleMaxW() })
       .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
       .backdropBlur(this.glassBlur())
