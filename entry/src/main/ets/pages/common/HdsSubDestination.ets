@@ -54,7 +54,11 @@ export struct HdsSubDestination {
   // （Task 7 修复轮 1 在设备上实测过）。所以这里必须出 Navigation 栈。
   onBack: () => void = (): void => { this.popSelf(); };
   // 右上角的图标按钮，最多三个（HDS 自己会把多的收进"更多"）。
-  menuItems: HdsNavigationMenuItemOptions[] = [];
+  //
+  // 必须是 @Prop：调用页会按自己的状态重新算这组菜单项（AccountEditPage 的保存
+  // 勾在 loading 期间禁用、加载完再启用）。没有装饰器的成员只在构造时从父组件
+  // 拿一次值、之后再不同步，勾就永远停在第一帧的禁用态（issue #165）。
+  @Prop menuItems: HdsNavigationMenuItemOptions[] = [];
 
   // ┌──────────────────────────────────────────────────────────────────────┐
   // │ router 页生命周期 / 入参的转发入口                                     │

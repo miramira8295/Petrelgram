@@ -43,7 +43,11 @@ export struct HdsSubPage {
   // 返回键的动作。默认 router.back()；有离场动画/需要拦截的页面自己传。
   onBack: () => void = (): void => { router.back(); };
   // 右上角的图标按钮，最多三个（HDS 自己会把多的收进"更多"）。
-  menuItems: HdsNavigationMenuItemOptions[] = [];
+  //
+  // 必须是 @Prop：调用页会按自己的状态重新算这组菜单项（AccountEditPage 的保存
+  // 勾在 loading 期间禁用、加载完再启用）。没有装饰器的成员只在构造时从父组件
+  // 拿一次值、之后再不同步，勾就永远停在第一帧的禁用态（issue #165）。
+  @Prop menuItems: HdsNavigationMenuItemOptions[] = [];
   // 内容区的滚动控制器，必须和内容里那个 Scroll/List 用的是同一个。
   scroller: Scroller = new Scroller();
 
