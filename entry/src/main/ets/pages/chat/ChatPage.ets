@@ -3873,10 +3873,12 @@ export struct ChatPage {
       return;
     }
     if (isPlaying) {
-      this.forcedAnimationIds = this.withoutAnimationId(this.forcedAnimationIds, messageId);
-      if (!this.animationPaused(messageId)) {
-        this.pausedAnimationIds = [...this.pausedAnimationIds, messageId];
-      }
+      // 正在播的 GIF 点一下开大图（issue #105）。原来这里是「点一下暂停」——图库
+      // 里的 GIF 改成按 inputMessageAnimation 发出去之后，它们从 messagePhoto
+      // 变成了 messageAnimation，走到这条分支，用户发现「能动了，但点不开了」。
+      // 官方客户端就是点开大图，内联没有暂停这回事；没在播的那条分支照旧：
+      // 先起播（自动播放关着时这就是"点一下播"）。
+      this.openViewer(messageId);
       return;
     }
 
