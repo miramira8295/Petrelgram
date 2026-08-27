@@ -8,6 +8,9 @@ import { formatFileSize } from '../util/formatFileSize';
 import { formatTime } from '../util/formatTime';
 import { plural, str } from '../util/strings';
 import { logE } from '../util/log';
+import {
+  MEMBER_SENDER_USER, MemberSenderRef, describeMemberSender, readMemberSender
+} from '../util/memberSender';
 import { scopeMuted } from './ScopeMuteStore';
 import { SCOPE_CHANNEL, SCOPE_GROUP } from './NotificationApi';
 
@@ -938,14 +941,15 @@ export class ChatProfileStore {
   // chatMember[] → MemberItem[] via getUser (name/status/avatar) per member.
   private resolveMembers(raw: TdObject[]): void {
     for (const m of raw) {
-      const sender = m['member_id'] as TdObject | undefined;
-      if (sender === undefined || (sender['@type'] as string | undefined) !== 'messageSenderUser') {
+      // 机器人也是 messageSenderUser，跟普通成员一条路；这里落下的只有
+      // 匿名管理员/以频道身份入群那种 messageSenderChat。跳过要留痕，
+      // 否则成员列表少了人根本查不出来。
+      const ref: MemberSenderRef = readMemberSender(m['member_id'] as TdObject | undefined);
+      if (ref.kind !== MEMBER_SENDER_USER || ref.id <= 0) {
+        logE(`ChatProfileStore.resolveMembers skipped member ${describeMemberSender(ref)}`);
         continue;
       }
-      const uid = (sender['user_id'] as number | undefined) ?? 0;
-      if (uid <= 0) {
-        continue;
-      }
+      const uid: number = ref.id;
       // 身份就在这条 chatMember 里，不用为它再发一次请求。
       const role: MemberRole = memberRoleOf(m['status'] as TdObject | undefined);
       const memberTag: string = ((m['tag'] as string | undefined) ?? '').trim();
@@ -960,6 +964,8 @@ export class ChatProfileStore {
         const last = (user['last_name'] as string | undefined) ?? '';
         const name = `${first} ${last}`.trim();
         if (name === '') {
+          // 名字空的成员渲染出来只是一行空白，但也不能悄悄丢——记一笔。
+          logE(`ChatProfileStore.resolveMembers empty name for user ${uid}`);
           return;
         }
         const item: MemberItem = {

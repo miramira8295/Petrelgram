@@ -1,4 +1,4 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { PromptAction, router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { banMember, deleteMessagesFromSender, removeMember, setMemberTag } from '../../store/ChatAdminApi';
 import {
@@ -39,9 +39,13 @@ import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
-import { logE } from '../../util/log';
+import { logE, logI } from '../../util/log';
 import { navigateToProfile } from '../../util/profileNav';
 import { HdsNavDestination } from '@kit.UIDesignKit';
+
+// 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
+// 对话框会挂死（Promise 既不 resolve 也不 reject）。同 ChatRow。
+const MENU_DISMISS_MS: number = 150;
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -1182,7 +1186,11 @@ export struct ChatProfilePage {
   }
 
   private handleMemberAction(m: MemberItem, action: string): void {
+    // 走不下去必须留痕。这条守卫从前是静默 return，成员操作一旦被它拦下，
+    // 界面上什么都不会发生，日志里也什么都没有——排查时无从下手。
     if (this.chatId === 0 || m.userId <= 0) {
+      logE(`ChatProfilePage.handleMemberAction(${action}) skipped:` +
+        ` chatId=${this.chatId} userId=${m.userId}`);
       return;
     }
     if (action === MEMBER_ACTION_TITLE) {
@@ -1220,7 +1228,13 @@ export struct ChatProfilePage {
     customStyle: true
   });
 
+  // 同样从长按菜单里点出来，同样要等菜单收起再弹，否则对话框会挂在
+  // 已经在消失的子窗口上。
   private openTitleDialog(m: MemberItem): void {
+    setTimeout((): void => { this.showTitleDialog(m); }, MENU_DISMISS_MS);
+  }
+
+  private showTitleDialog(m: MemberItem): void {
     this.titleTarget = m;
     this.titleCtrl = new CustomDialogController({
       builder: MemberTitleDialog({
@@ -1250,10 +1264,26 @@ export struct ChatProfilePage {
   }
 
   // 破坏性操作一律二次确认：封禁进黑名单、删消息不可撤销，误触的代价太高。
+  //
+  // 这些确认框全是从成员行的长按菜单里点出来的。上下文菜单是独立子窗口，
+  // 在它收起的过程中调**全局** promptAction.showDialog 会静默挂死：弹出来的
+  // 对话框没有可依附的 UI 上下文，Promise 既不 resolve 也不 reject，界面上
+  // 一点反应都没有（"不提示、不确认、不消失"就是这么来的）。两处修正跟
+  // ChatRow 一致：用 UIContext 作用域的 promptAction，并延后到菜单收起之后。
   private confirmMemberAction(
     title: string, message: string, confirmLabel: string, run: () => Promise<void>
   ): void {
-    promptAction.showDialog({
+    const prompt = this.getUIContext().getPromptAction();
+    setTimeout((): void => {
+      this.runConfirmDialog(prompt, title, message, confirmLabel, run);
+    }, MENU_DISMISS_MS);
+  }
+
+  private runConfirmDialog(
+    prompt: PromptAction, title: string, message: string, confirmLabel: string,
+    run: () => Promise<void>
+  ): void {
+    prompt.showDialog({
       title,
       message,
       buttons: [
@@ -1265,18 +1295,21 @@ export struct ChatProfilePage {
         return;
       }
       run().then((): void => {
-        promptAction.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
+        prompt.showToast({ message: $r('app.string.ga_done'), duration: 1400 });
         this.store?.reloadMembers();
       }).catch((caught: TdError): void => {
         logE(`ChatProfilePage.memberAction failed: ${caught.message}`);
-        promptAction.showToast({
+        prompt.showToast({
           message: caught.message.indexOf('rights') >= 0 ||
             caught.message.indexOf('ADMIN') >= 0
             ? str('ga_no_permission') : str('ga_failed'),
           duration: 1700
         });
       });
-    }).catch((): void => {});
+    }).catch((e: Object): void => {
+      // 点遮罩关掉也走这里，属于正常取消，记一笔就够，不打扰用户。
+      logI(`ChatProfilePage.confirmMemberAction dismissed: ${JSON.stringify(e)}`);
+    });
   }
 
   // 两个面板都是独立页面：它们要先读成员当前状态再回填，逻辑量不小，塞进
