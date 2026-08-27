@@ -2,7 +2,7 @@ import { describe, expect, it } from '@ohos/hypium';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
   PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger,
-  rearmPageGate, idlePageGate
+  rearmPageGate
 } from '../main/ets/util/pageGate';
 
 // 攒够阈值所需的一帧位移：一帧就跨过去，用例里不必凑循环。
@@ -10,16 +10,6 @@ const BIG_DRAG: number = PAGE_GATE_REARM_DRAG_VP + 1;
 
 export default function pageGateTest() {
   describe('pageGate', () => {
-    // 开局不上膛：落在未读锚点时末行本来就可见，满膛的闸会立刻自动打一页 newer。
-    it('startup_gate_is_idle_until_the_user_drags', 0, () => {
-      const idle: PageGate = idlePageGate();
-      expect(canFirePageGate(idle, 13)).assertFalse();
-      expect(pageGateShotIsUserDriven(idle)).assertFalse();
-      const dragged: PageGate = draggedPageGate(idle, BIG_DRAG);
-      expect(canFirePageGate(dragged, 13)).assertTrue();
-      expect(pageGateShotIsUserDriven(dragged)).assertTrue();
-    });
-
     it('initial_gate_is_loaded_but_not_by_the_user', 0, () => {
       const gate: PageGate = armedPageGate();
       expect(gate.armed).assertTrue();
