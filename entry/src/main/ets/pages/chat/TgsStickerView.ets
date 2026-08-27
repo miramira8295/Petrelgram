@@ -154,8 +154,25 @@ export struct TgsStickerView {
       this.unsubChatGate = subscribeChatTgsGate((suspended: boolean): void => {
         this.chatGateSuspended = suspended;
         if (suspended) {
-          this.loadSeq++;
-          this.stopAnim();
+          // 滑动期间只暂停、不销毁（issue #164）。原来走 stopAnim() → destroy()，
+          // 而 lottie 的 destroy 会顺手 clearRect 把画布擦空，Canvas 又一直挂着，
+          // 整段滑动里已经画出来的贴纸全变成白框，停下来还要重新 gunzip +
+          // JSON.parse + loadAnimation（错峰 120ms 起）才回来。pause() 停掉
+          // ticker、定格在当前帧，省下的主线程时间是一样的。名额不放：门关着时
+          // 没人能起新的。还没起来的（排队中 / 正在解压）照旧作废，门开后重排。
+          this.cancelScheduledStart();
+          if (this.anim !== null) {
+            this.anim.pause();
+          } else {
+            this.loadSeq++;
+            this.stopAnim();
+          }
+        } else if (this.anim !== null) {
+          // 门开：滑动前正在播的接着播；已经播完定格的（playOnce）isPaused 也是
+          // true，play() 从最后一帧起走等于没动，不会重放。
+          if (this.anim.isPaused && this.visible && !this.powerSuspended()) {
+            this.anim.play();
+          }
         } else if (this.canvasReady && this.visible && !this.powerSuspended()
           && (this.budgetDeferred || this.anim === null)) {
           // 门开 / 名额释放：只叫醒没在播的，正在播的别重启。
