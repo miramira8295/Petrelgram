@@ -11625,14 +11625,6 @@
       "value": "กลับไปยังบัญชีของคุณแล้ว"
     },
     {
-      "name": "diag_repeat_spike",
-      "value": "Repeat rendering spike"
-    },
-    {
-      "name": "diag_repeat_spike_sub",
-      "value": "Temporary debug page — remove after verification"
-    },
-    {
       "name": "diag_list_cached",
       "value": "cachedCount ของรายการ"
     },

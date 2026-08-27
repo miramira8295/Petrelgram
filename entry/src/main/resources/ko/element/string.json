@@ -11625,14 +11625,6 @@
       "value": "계정으로 돌아왔습니다"
     },
     {
-      "name": "diag_repeat_spike",
-      "value": "Repeat rendering spike"
-    },
-    {
-      "name": "diag_repeat_spike_sub",
-      "value": "Temporary debug page — remove after verification"
-    },
-    {
       "name": "diag_list_cached",
       "value": "목록 cachedCount"
     },

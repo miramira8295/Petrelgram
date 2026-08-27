@@ -12,7 +12,6 @@ import { DiagUploadResult, diagUploadConfigured, uploadDiagLog } from '../../ser
 import { common } from '@kit.AbilityKit';
 import { exportDiagLog, diagLogStamp } from '../../util/diagLogExport';
 // ⚠️ 临时：Repeat 渲染验证页的入口，验完连同本行 import 一起删除（见
-// pages/chat/RepeatSpikePage.ets 文件头的删除清单）。
 import { navigateToSetting } from '../../util/settingsNav';
 // ⚠️ 临时（P6 标定）：cachedCount 档位切换器，标定结束后连同本行 import 一起
 // 删除（清单见 util/debugListPerf.ets 文件末尾）。
@@ -202,28 +201,6 @@ export struct DiagnosticsPage {
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
-  // ⚠️ 临时：Repeat 渲染验证页的入口，验完删除（P4 / R1）。
-  @Builder
-  repeatSpikeCard() {
-    Row({ space: 10 }) {
-      Column({ space: 3 }) {
-        Text($r('app.string.diag_repeat_spike'))
-          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
-        Text($r('app.string.diag_repeat_spike_sub'))
-          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18).fontColor([COLOR_TEXT_SECONDARY]);
-    }
-    .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
-    // 设置栈的推进漏斗。origin 恒为 'navbar' ⇒ clearAndPush，所以从验证页
-    // 返回时回到的是设置列表而不是诊断页——临时页面，不为它改路由语义。
-    .onClick((): void => { navigateToSetting('RepeatSpikePage'); });
-  }
-
   build() {
     // @Entry 的 build 根节点必须是容器组件，自定义组件不行。
     // 【迁移后】@Entry 已经摘掉，这条约束对本页不再成立；外层 Column 仍然留着，
@@ -243,7 +220,6 @@ export struct DiagnosticsPage {
               .width('100%').padding({ left: 14, right: 14 });
             // ⚠️ 临时调试入口 —— **验完删除**。挂在诊断页最底下而不是设置页，
             // 是因为这里本来就是这个应用的调试角落。
-            this.repeatSpikeCard();
             // ⚠️ 临时调试项 —— 标定完删除。同一个调试角落。
             this.listCachedCard();
           }

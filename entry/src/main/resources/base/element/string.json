@@ -11629,14 +11629,6 @@
       "value": "已切回原账号"
     },
     {
-      "name": "diag_repeat_spike",
-      "value": "Repeat 渲染验证页"
-    },
-    {
-      "name": "diag_repeat_spike_sub",
-      "value": "临时调试页，验完删除"
-    },
-    {
       "name": "diag_list_cached",
       "value": "列表 cachedCount 档位"
     },

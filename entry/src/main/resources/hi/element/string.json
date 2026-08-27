@@ -11625,14 +11625,6 @@
       "value": "आपके खाते पर लौट आए"
     },
     {
-      "name": "diag_repeat_spike",
-      "value": "Repeat rendering spike"
-    },
-    {
-      "name": "diag_repeat_spike_sub",
-      "value": "Temporary debug page — remove after verification"
-    },
-    {
       "name": "diag_list_cached",
       "value": "सूची cachedCount"
     },
