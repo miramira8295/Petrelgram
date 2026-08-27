@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { AuthService, AuthStage } from '../main/ets/tdkit/AuthService';
+import { TdDeviceParams } from '../main/ets/util/tdDeviceParams';
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void;
@@ -122,6 +123,38 @@ export default function authServiceTest() {
       const sent: TdObject = lastSent(bridge.sent);
       expect(sent['@type']).assertEqual('setTdlibParameters');
       expect(sent['database_directory']).assertEqual('/data/test/files/tdlib');
+    });
+
+    it('sends_device_params_in_tdlib_parameters', 0, () => {
+      // issue #147：活跃会话里显示的机型/系统/应用版本来自构造时传入的读数，
+      // 不再是写死的字符串。
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      const params: TdDeviceParams = {
+        deviceModel: 'HUAWEI Mate 70 Pro+',
+        systemVersion: 'HarmonyOS 6.0.0 (API 26)',
+        applicationVersion: '1.4.3'
+      };
+      const auth = new AuthService(client, '/data/test/files/tdlib', '/data/test/files', params);
+      client.start();
+      pushAuthState(bridge, 'authorizationStateWaitTdlibParameters');
+      const sent: TdObject = lastSent(bridge.sent);
+      expect(sent['device_model']).assertEqual('HUAWEI Mate 70 Pro+');
+      expect(sent['system_version']).assertEqual('HarmonyOS 6.0.0 (API 26)');
+      expect(sent['application_version']).assertEqual('1.4.3');
+    });
+
+    it('device_params_default_is_non_empty', 0, () => {
+      // TDLib 拒绝空的 device_model / application_version，兜底也得是非空串。
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      const auth = new AuthService(client, '/data/test/files/tdlib', '/data/test/files');
+      client.start();
+      pushAuthState(bridge, 'authorizationStateWaitTdlibParameters');
+      const sent: TdObject = lastSent(bridge.sent);
+      expect((sent['device_model'] as string).length > 0).assertTrue();
+      expect((sent['system_version'] as string).length > 0).assertTrue();
+      expect((sent['application_version'] as string).length > 0).assertTrue();
     });
 
     it('maps_states_to_stages', 0, () => {

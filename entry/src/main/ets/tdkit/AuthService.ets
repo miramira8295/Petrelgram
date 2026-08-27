@@ -4,6 +4,7 @@ import { clientRev, clientSig } from './ApiCredentials';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { str } from '../util/strings';
 import { logE, logW } from '../util/log';
+import { FALLBACK_TD_DEVICE_PARAMS, TdDeviceParams } from '../util/tdDeviceParams';
 
 export enum AuthStage {
   Init = 'Init',
@@ -74,11 +75,15 @@ export class AuthService {
   // 扫码页（用户点名不对）。
   private sessionQrRequested: boolean = false;
   private offAuthorizationState: (() => void) | null = null;
+  // 交给 setTdlibParameters 的机型/系统/应用版本（issue #147）。单测不传就用兜底。
+  private readonly deviceParams: TdDeviceParams;
 
-  constructor(client: TdClient, databaseDirectory: string, filesDirectory: string) {
+  constructor(client: TdClient, databaseDirectory: string, filesDirectory: string,
+    deviceParams: TdDeviceParams = FALLBACK_TD_DEVICE_PARAMS) {
     this.client = client;
     this.databaseDirectory = databaseDirectory;
     this.filesDirectory = filesDirectory;
+    this.deviceParams = deviceParams;
     this.offAuthorizationState =
       client.onUpdate('updateAuthorizationState', (u: TdObject) => this.onAuthState(u));
   }
@@ -465,10 +470,12 @@ export class AuthService {
     request['api_id'] = clientRev;
     request['api_hash'] = clientSig;
     request['system_language_code'] = 'zh-Hans';
-    request['device_model'] = 'HarmonyOS Device';
-    // 会显示在 Telegram 的"活跃会话"列表里，跟 AppScope/app.json5 的
-    // versionName 保持一致（发版时一起改）。之前一直停在 0.1.0。
-    request['application_version'] = '1.3.1';
+    // 三项都显示在 Telegram 的「活跃会话」列表里。原来写死成 'HarmonyOS Device'
+    // / '1.3.1'，发版忘了改就一直陈旧（issue #147）；现在由 Globals 从包信息和
+    // deviceInfo 里读（util/tdDeviceParamsReader）。
+    request['device_model'] = this.deviceParams.deviceModel;
+    request['system_version'] = this.deviceParams.systemVersion;
+    request['application_version'] = this.deviceParams.applicationVersion;
     this.client.send(request).catch((e: Error) => {
       logE(`setTdlibParameters failed: ${e.message}`);
     });

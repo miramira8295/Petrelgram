@@ -2,6 +2,7 @@ import testNapi from 'libentry.so';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { TdClient } from './TdClient';
 import { AuthService, AuthStage } from './AuthService';
+import { readTdDeviceParams } from '../util/tdDeviceParamsReader';
 import { UserStore } from '../store/UserStore';
 import { ChatStore } from '../store/ChatStore';
 import { ChatEntry } from '../store/ChatEntry';
@@ -96,7 +97,8 @@ function createRuntime(slotId: string): void {
   repairTdTempDirectory(directories.filesDirectory);
   client = new TdClient({ init: testNapi.tdInit, send: testNapi.tdSend });
   trackConnectionState(client);
-  auth = new AuthService(client, directories.databaseDirectory, directories.filesDirectory);
+  auth = new AuthService(client, directories.databaseDirectory, directories.filesDirectory,
+    readTdDeviceParams());
   users = new UserStore(client);
   chats = new ChatStore(client, users);
   files = new FileService(client, chats);
