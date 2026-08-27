@@ -3382,7 +3382,10 @@ export struct MessageBubble {
         .fill(this.bubbleFillColor())
         .stroke(Color.Transparent)
         .strokeWidth(0)
-        .margin(outgoing ? { left: -1 } : { right: -1 });
+        // 压叠 2px 而不是 1px：去掉黑描边之后，尾巴和气泡是两个相邻节点，
+        // 1px 压叠下拼缝的抗锯齿会露出一条细线（之前被那圈黑边盖住了）。
+        // 只影响实心档——玻璃档整块是一条轮廓裁出来的，没有拼缝。
+        .margin(outgoing ? { left: -2 } : { right: -2 });
     }
   }
 
