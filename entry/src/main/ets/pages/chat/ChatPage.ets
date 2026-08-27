@@ -9683,6 +9683,7 @@ export struct ChatPage {
           // ChatPage.build 不再碰它。见 FloatingDateOverlay.ets 的注释。
           TimelineStatePillSlot({
             state: this.floatDateState,
+            topInset: this.headerChromeHeight(),
             mode: this.timelinePillMode(),
             label: timelineStateText(this.timelinePillMode()),
             onRetry: (): void => { this.timelineStateRetry(this.timelinePillMode()); }

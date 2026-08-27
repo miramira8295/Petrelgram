@@ -151,12 +151,14 @@ export struct TimelineStatePillSlot {
   @Require @Param state: FloatingDateState;
   @Require @Param mode: string;
   @Require @Param label: string;
+  @Require @Param topInset: number;
   @Event onRetry: () => void = (): void => {};
 
   build() {
     TimelineStatePill({
       mode: this.mode,
       label: this.label,
+      topInset: this.topInset,
       // 判据逐字保留：原来是 `this.floatDate !== ''`，即"日期条这个节点还在不
       // 在"，而不是"它此刻可见不可见"。
       floatDateShown: this.state.label !== '',

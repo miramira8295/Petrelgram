@@ -118,6 +118,10 @@ export struct TimelineStatePill {
   @Prop label: string;
   // 顶上浮着日期条时要往下让一让，否则两者叠在一起。
   @Prop floatDateShown: boolean;
+  // 顶部浮动 chrome（状态栏 + 标题栏 + 横幅）的总高。自从标题栏改成叠在消息
+  // 列表上的浮层，本组件的 Stack 从窗口顶开始算，不加这一段胶囊就压在状态栏里
+  // 或藏在标题栏后面（issue #145）。日期条是同一套算法（FloatingDateOverlay）。
+  @Prop topInset: number = 0;
 
   onRetry: () => void = (): void => {};
 
@@ -167,7 +171,7 @@ export struct TimelineStatePill {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
-    .padding({ top: this.floatDateShown ? 42 : 8 })
+    .padding({ top: this.topInset + (this.floatDateShown ? 42 : 8) })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({
