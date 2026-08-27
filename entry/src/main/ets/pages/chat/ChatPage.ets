@@ -326,6 +326,9 @@ const JUMP_LANDING_GRACE_MS: number = 900;
 // 【结论落地后】若坐实：正确修法不是留着这个常量，而是把 `!this.atBottom` 换成
 // 一条真正表达「这次追加是用户主动向下翻页的结果」的判据（见交付说明）。
 const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = false;
+// 锚点补偿：量不到锚点行时下一帧再量，最多几次、每次隔多久（见 restoreScrollAnchor）。
+const ANCHOR_RESTORE_ATTEMPTS: number = 3;
+const ANCHOR_RESTORE_RETRY_MS: number = 16;
 
 // Reuse-pool granularity for ReusableMessageBubble's reuseId. Provisional —
 // to be measured and tuned in P2 Task 3; 'medium' is a placeholder, not a
@@ -4506,8 +4509,18 @@ export struct ChatPage {
   // 时机沿用原来的 setTimeout(0)：数据已发布、框架也已经跑完一次布局，此时
   // getItemRect 量到的才是新快照下的位置。prependRestoreSeq 代次守卫不动——一
   // 次分页最多修正一次，跳转/贴底这类更强的定位意图仍然作废它。
+  //
+  // **量不到时别急着兜底。** 真机上往上翻历史，setTimeout(0) 那一刻新快照还没排版，
+  // getItemRect 拿到全 0，每次都走了 scrollToIndex+scrollBy 兜底；它按 List 顶端对齐，
+  // 没算 contentStartOffset 那段顶栏留白，把视口往下推了一截（用户：18:00 → 18:05）。
+  // 而框架（maintainVisibleContentPosition / stackFromEnd）其实已经把位置保住了。
+  // 现在量不到就下一帧再量，最多 ANCHOR_RESTORE_ATTEMPTS 次；量到且没动就什么都不做。
   private restoreScrollAnchor(targetIndex: number, itemY: number): void {
     const seq: number = ++this.prependRestoreSeq;
+    this.attemptAnchorRestore(seq, targetIndex, itemY, 0);
+  }
+
+  private attemptAnchorRestore(seq: number, targetIndex: number, itemY: number, attempt: number): void {
     setTimeout((): void => {
       if (seq !== this.prependRestoreSeq || this.pendingJumpId !== 0 || this.pendingScrollBottom) {
         return;
@@ -4522,7 +4535,12 @@ export struct ChatPage {
         rect = INVALID_ANCHOR_RECT;
       }
       const plan: AnchorRestorePlan = planAnchorRestore(rect, itemY);
-      logW(`[AnchorRestore] mode=${plan.mode} idx=${targetIndex}` +
+      if (plan.mode !== ANCHOR_RESTORE_DELTA && attempt + 1 < ANCHOR_RESTORE_ATTEMPTS) {
+        logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex} oldY=${Math.round(itemY)}`);
+        this.attemptAnchorRestore(seq, targetIndex, itemY, attempt + 1);
+        return;
+      }
+      logW(`[AnchorRestore] mode=${plan.mode} attempt=${attempt} idx=${targetIndex}` +
         ` oldY=${Math.round(itemY)} newY=${Math.round(rect.y)}` +
         ` w=${Math.round(rect.width)} h=${Math.round(rect.height)}` +
         ` dy=${Math.round(plan.dy)}`);
@@ -4532,7 +4550,7 @@ export struct ChatPage {
       if (plan.dy !== 0) {
         this.scroller.scrollBy(0, plan.dy);
       }
-    }, 0);
+    }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
   }
 
   private resetHeaderState(cached: ChatEntry | undefined): void {
