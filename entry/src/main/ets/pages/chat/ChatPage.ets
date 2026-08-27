@@ -99,6 +99,7 @@ import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBot
 import {
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
 } from '../../util/appendAnchor';
+import { stackFromEndWanted } from '../../util/stackFromEnd';
 import {
   ANCHOR_RESTORE_DELTA, AnchorRectSnapshot, AnchorRestorePlan,
   INVALID_ANCHOR_RECT, planAnchorRestore
@@ -4929,6 +4930,10 @@ export struct ChatPage {
     return nextReturnTarget(this.returnState, this.curBottomId, this.atBottom);
   }
 
+  private stackFromEndWanted(): boolean {
+    return stackFromEndWanted(this.store !== null && this.store.getHasMoreNewer());
+  }
+
   private onScrollFabTap(): void {
     const target: ReturnTarget = this.returnTarget();
     // ⚠️ 临时探针 [JumpLatest]：↓ 不是"回到底部"而是三级返回（引用栈 > 阅读
@@ -9485,7 +9490,13 @@ export struct ChatPage {
         //
         // 原有的贴底逻辑保留：它和这里指向同一个位置，最坏是多做一次无效功，
         // 而在真机上验证之前，删掉它的风险更大。
-        .stackFromEnd(true)
+        //
+        // **但只在窗口已到实时尾部时开。** 往下翻历史时它是反的：用户停在已加载
+        // 窗口末尾触发翻页，追加一页进来，"离底部的距离 = 0"被保住，视口跟着跑到
+        // 新末尾（真机：进度条很快到底、刷出一屏后依然在最底下）。手动补偿量到的
+        // 是重排前的矩形（[AnchorRestore] dy=0），救不了。规则在 util/stackFromEnd。
+        // 这个值随 groups 一起在每次发布时重算；hasMoreNewer 只在页落地时翻。
+        .stackFromEnd(this.stackFromEndWanted())
         .onReachStart(() => {
           this.maybeLoadOlder();
         })
