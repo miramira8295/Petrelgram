@@ -3510,8 +3510,17 @@ export struct MessageBubble {
     .padding(this.timeOnMedia() ? { left: 5, right: 5, top: 1, bottom: 1 } : { left: 0 })
     .backgroundColor(this.timeOnMedia() ? '#00000066' : Color.Transparent)
     .borderRadius(8)
-    .margin(this.timeOnMedia() ? { right: 6, bottom: 6 } : { right: 0, bottom: 2 })
-    .animation({ duration: this.effectDuration(140), curve: Curve.EaseOut });
+    .margin(this.timeOnMedia() ? { right: 6, bottom: 6 } : { right: 0, bottom: 2 });
+    // 这里**不能**挂 .animation()。时间条几乎每个完整气泡都有，是全 app 最普遍的
+    // 一处常驻属性动画。
+    //
+    // 「滑动时让 effectDuration(140) 返回 0」挡不住它：duration:0 只是让视觉过渡
+    // 瞬间完成，ArkUI 照样建动画上下文，同一刷新周期里的脏布局仍被包进 JSAnimation。
+    // 2026-08-27 真机最慢的 280ms 帧就是这条链：
+    //   CustomNodeUpdate MessageBubble 209ms → JSAnimation 204ms → duration:0 204ms
+    //     → FlushLayoutTask 174ms → Measure[List] 100ms
+    // 纯滑动区间里 MessageBubble 自己拥有的 duration:0 有 267 次、累计 1572ms。
+    // 状态变化（发送中/已发送/已读/失败、已编辑）本阶段直接切换，不做过渡。
   }
 
   // Service/system messages (title/photo changes, joins, pins, ...) render as
