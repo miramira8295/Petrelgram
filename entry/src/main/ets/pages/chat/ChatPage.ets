@@ -129,6 +129,7 @@ import {
 } from '../../util/searchPaging';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
+import { shouldFillViewport } from '../../util/viewportFill';
 import { rowFadeAnimationActive } from '../../util/rowFadeGate';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS,
@@ -4192,20 +4193,29 @@ export struct ChatPage {
   // 内容上——用户看到的就是"999+ 却滑不动"。平板尤其容易中招：屏幕更高，
   // 要更多行才铺得满。
   //
-  // 判据用"最后一行是否可见"：onScrollIndex 报的可见末行已经是最后一行，
-  // 说明整份数据都在屏幕上、列表滚不动。此时不能等下一次滚动，得自己敲门。
+  // 判据是"整份数据都在屏幕上"（首行和末行同时可见）⇒ 列表滚不动 ⇒ 滚动事件
+  // 永远不来，得自己敲门。判据与完整推导见 util/viewportFill——第一版只问
+  // "最后一行可见吗"，而列表是 stackFromEnd(true)、最后一行几乎恒可见，于是
+  // 用户停在底部时也会一路往上补页，正是"带未读进会话立刻下滑却滑不动"的直接
+  // 成因之一。
   private fillViewportIfNeeded(): void {
-    if (this.store === null || !this.store.getHasMoreOlder()) {
+    if (this.store === null) {
       return;
     }
-    if (this.groups.length === 0 || this.groups.length >= ChatPage.FILL_VIEWPORT_MAX_ROWS) {
+    const fill: boolean = shouldFillViewport({
+      hasMoreOlder: this.store.getHasMoreOlder(),
+      rows: this.groups.length,
+      maxRows: ChatPage.FILL_VIEWPORT_MAX_ROWS,
+      startIdx: this.curStartIdx,
+      endIdx: this.curEndIdx,
+      indexRows: this.indexGroupsLen
+    });
+    if (!fill) {
       return;
     }
-    // 首帧之前 curEndIdx 是 -1，那时还不知道能看见多少，交给后续的滚动/数据
-    // 变化再判一次。
-    if (this.curEndIdx < 0 || this.curEndIdx < this.groups.length - 1) {
-      return;
-    }
+    logW(`[FillViewport] fill rows=${this.groups.length}` +
+      ` start=${this.curStartIdx} end=${this.curEndIdx}` +
+      ` idxLen=${this.indexGroupsLen} maxRows=${ChatPage.FILL_VIEWPORT_MAX_ROWS}`);
     this.olderArmed = true;
     this.maybeLoadOlder();
   }

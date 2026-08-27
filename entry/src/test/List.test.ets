@@ -9,6 +9,7 @@ import tdClientTest from './TdClient.test';
 import authServiceTest from './AuthService.test';
 import authErrorTextTest from './AuthErrorText.test';
 import liveTailTest from './LiveTail.test';
+import viewportFillTest from './ViewportFill.test';
 import updateThrottleTest from './UpdateThrottle.test';
 import appIconTest from './AppIcon.test';
 import hmsRelayRegistrationTest from './HmsRelayRegistration.test';
@@ -169,6 +170,7 @@ export default function testsuite() {
   authServiceTest();
   authErrorTextTest();
   liveTailTest();
+  viewportFillTest();
   updateThrottleTest();
   appIconTest();
   hmsRelayRegistrationTest();
