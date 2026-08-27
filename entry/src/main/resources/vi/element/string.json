@@ -7461,6 +7461,10 @@
       "value": "Tin nhắn chưa đọc"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "Vị trí đã xem lần trước"
+    },
+    {
       "name": "lv_join_failed",
       "value": "Tham gia thất bại: %1$s"
     },

@@ -7461,6 +7461,10 @@
       "value": "پیام خوانده‌نشده"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "آخرین موقعیت مشاهده‌شده"
+    },
+    {
       "name": "lv_join_failed",
       "value": "عضویت ناموفق بود: %1$s"
     },

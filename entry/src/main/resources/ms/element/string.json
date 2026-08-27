@@ -7461,6 +7461,10 @@
       "value": "Mesej belum dibaca"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "Kedudukan terakhir dilihat"
+    },
+    {
       "name": "lv_join_failed",
       "value": "Gagal menyertai: %1$s"
     },

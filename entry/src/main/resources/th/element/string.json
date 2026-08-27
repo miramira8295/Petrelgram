@@ -7461,6 +7461,10 @@
       "value": "ข้อความที่ยังไม่ได้อ่าน"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "ตำแหน่งที่ดูล่าสุด"
+    },
+    {
       "name": "lv_join_failed",
       "value": "เข้าร่วมไม่สำเร็จ: %1$s"
     },

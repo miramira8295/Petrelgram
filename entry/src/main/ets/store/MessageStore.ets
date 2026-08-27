@@ -197,6 +197,9 @@ export class MessageStore {
   private contactAvatarRequested: Set<number> = new Set();
   private avatarFileToContact: Map<number, number> = new Map();
   private requestedAroundMessageId: number = 0;
+  // A remembered browsing position is weaker than a newly arrived unread
+  // boundary. Explicit links/thread targets are not: they must always win.
+  private requestedAroundIsResume: boolean = false;
   private initialLoadStarted: boolean = false;
   private initialHistoryState: string = 'loading'; // loading | ready | error
   private initialHistoryError: string = '';
@@ -370,7 +373,8 @@ export class MessageStore {
 
   private chatSuspended: boolean = false;
 
-  open(aroundMessageId?: number, passive: boolean = false): void {
+  open(aroundMessageId?: number, passive: boolean = false,
+    aroundIsResume: boolean = false): void {
     // Embedded consumers such as the livestream interaction panel need chat
     // history and updates without changing TDLib's open-chat lifecycle for the
     // full ChatPage underneath them.
@@ -418,6 +422,7 @@ export class MessageStore {
       this.syncTailFromChatLast();
     }));
     this.requestedAroundMessageId = aroundMessageId !== undefined ? aroundMessageId : 0;
+    this.requestedAroundIsResume = aroundIsResume && this.requestedAroundMessageId > 0;
     this.resolveChat();
     this.resolvePinned();
     if (this.threadRootId > 0) {
@@ -849,6 +854,14 @@ export class MessageStore {
 
   getCurrentNotifyKind(): string {
     return this.currentNotifyKind;
+  }
+
+  // ChatPage cannot choose between a remembered position and the unread
+  // boundary until getChat resolves. Expose the store's authoritative choice
+  // so the page prepares exactly one first-frame anchor.
+  isResumeLandingSelected(): boolean {
+    return this.requestedAroundIsResume && this.requestedAroundMessageId > 0 &&
+      this.unreadCount <= 0;
   }
 
   getInitialHistoryState(): string {
@@ -4294,7 +4307,8 @@ export class MessageStore {
 
   // Load a page centered on a message (for jumping to a pinned/quoted message
   // that isn't in the currently loaded window). Notifies when it arrives.
-  loadAround(messageId: number, onComplete?: (found: boolean) => void): void {
+  loadAround(messageId: number, onComplete?: (found: boolean) => void,
+    initialAlignFromStart: boolean = false): void {
     // Jumping into the middle of history: newer messages beyond this window
     // may exist — enable downward prefetch to discover/load them.
     //
@@ -4313,12 +4327,21 @@ export class MessageStore {
     logW(`[InitialPage] around request anchor=${messageId}` +
       ` chatLast=${this.chatLastMessageId} anchorAtTail=${anchorAtTail}` +
       ` hasMoreNewer=${this.hasMoreNewer} was=${hadMoreNewer}`);
-    // 首屏（未读锚点定位）同样取小窗：见 loadHistory 里的注释。之后的滚动
-    // 分页（loadOlder/loadNewer）把两侧补齐。会话中途的跳转维持整页。
+    // 首屏同样取小窗：见 loadHistory 里的注释。但两种落点要取不同方向：
+    //
+    //   · 未读锚点要保留上下文，继续用居中窗口；
+    //   · 消息链接/上次浏览位置会把目标行对齐到屏幕顶端，首页应尽量取
+    //     目标之后的行。旧的 -7 只给下方七条，短消息在平板上铺不满一屏，
+    //     于是恢复成功后下面先空着，等 newer 分页回来才长出内容。
+    //
+    // 会话中途的跳转维持整页。
     const initial: boolean = this.initialHistoryState === 'loading';
-    const req = this.historyRequest(messageId, initial ? -7 : -15);
-    req['limit'] = initial ? 14 : 30;
     const wanted: number = initial ? 14 : 30;
+    const offset: number = initial
+      ? (initialAlignFromStart ? -(wanted - 1) : -7)
+      : -15;
+    const req = this.historyRequest(messageId, offset);
+    req['limit'] = wanted;
     this.client.send(req).then((res: TdObject): void => {
       const got: number = ((res['messages'] as TdObject[] | undefined) ?? []).length;
       this.onHistory(res, 'around');
@@ -4476,9 +4499,10 @@ export class MessageStore {
       ` chatLast=${this.chatLastMessageId}` +
       ` readCoversLast=${reachedLiveTail(this.lastReadInboxId, this.chatLastMessageId)}` +
       ` requestedAround=${this.requestedAroundMessageId} threadRoot=${this.threadRootId}`);
-    if (this.requestedAroundMessageId > 0) {
+    if (this.requestedAroundMessageId > 0 &&
+      !(this.requestedAroundIsResume && this.unreadCount > 0)) {
       logW(`[InitialPage] route=around-requested anchor=${this.requestedAroundMessageId}`);
-      this.loadAround(this.requestedAroundMessageId);
+      this.loadAround(this.requestedAroundMessageId, undefined, true);
       return;
     }
     // getFirstUnreadId() only scans the loaded window, so with a large unread

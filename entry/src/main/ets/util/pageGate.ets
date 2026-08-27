@@ -69,6 +69,23 @@ export interface PageGate {
 // 卡；够长，任何没有手指参与的连锁都到不了。
 export const PAGE_GATE_REARM_DRAG_VP: number = 120;
 
+// newer 分页只允许在已加载窗口的末端触发。重新上膛和真正开枪是两件事：
+// 手指位移可以在任何位置把闸重新压上，但只有视口仍在最后几行时才能立刻请求。
+//
+// 这道位置检查不能再省。真机上 append 锚点复位发生在手指仍按住列表时，ArkUI
+// 会把 scrollToIndex/scrollBy 造成的位移也以 ScrollState.Scroll 上报；它足以让
+// draggedPageGate 重新上膛。复位之后视口已经从 70 行的末端退到第 41 行，如果
+// 仍无条件立刻开枪，就会形成「追加 -> 复位 -> 重新上膛 -> 再追加」的自持回路。
+export const NEWER_PAGE_TRIGGER_ROWS: number = 5;
+
+export function reachedNewerPageTrigger(end: number, rows: number,
+  triggerRows: number = NEWER_PAGE_TRIGGER_ROWS): boolean {
+  if (end < 0 || rows <= 0 || triggerRows <= 0) {
+    return false;
+  }
+  return end >= rows - triggerRows;
+}
+
 // 完全上膛的初始态。-1 表示"还没开过枪"。
 // byUser 默认假：不明确说是用户压的膛，就当成程序性的。
 export function armedPageGate(byUser: boolean = false): PageGate {
@@ -121,10 +138,10 @@ export function rearmPageGate(gate: PageGate, userDriven: boolean): PageGate {
 // 的在拖列表"唯一可靠的信号，而且**与视口位置无关**——用户停在最后几行照样能
 // 上膛，这正是第一版锁死的那个洞。
 //
-// 取绝对值：List 的 scrollOffset 正负方向随实现约定，而"向上拖也能给 newer 闸
-// 上膛"是无害的——canFirePageGate 还压着 end > firedAtEnd，往上拖只会让 end
-// 变小；真正的连锁里则一帧手指位移都没有。这样判据不依赖符号约定，省掉一条
-// 只能上机才能证伪的假设。
+// 取绝对值：List 的 scrollOffset 正负方向随实现约定。任一方向的拖动都可以给闸
+// 上膛，但 ChatPage 真正开枪前还会用 reachedNewerPageTrigger 检查视口是否仍在
+// 窗口末端；往上拖离末端不会请求 newer。锚点复位在手指仍按着时也可能被 ArkUI
+// 归类成 Scroll，因此这条末端检查同样负责切断程序性复位造成的自持回路。
 export function draggedPageGate(gate: PageGate, deltaVp: number,
   thresholdVp: number = PAGE_GATE_REARM_DRAG_VP): PageGate {
   if (gate.armed) {

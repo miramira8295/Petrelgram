@@ -7461,6 +7461,10 @@
       "value": "Mensagens não lidas"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "Última posição visualizada"
+    },
+    {
       "name": "lv_join_failed",
       "value": "Falha ao entrar: %1$s"
     },

@@ -7461,6 +7461,10 @@
       "value": "읽지 않은 메시지"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "마지막으로 본 위치"
+    },
+    {
       "name": "lv_join_failed",
       "value": "참여 실패: %1$s"
     },

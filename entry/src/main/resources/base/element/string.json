@@ -7461,6 +7461,10 @@
       "value": "未读消息"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "上次看到的位置"
+    },
+    {
       "name": "lv_join_failed",
       "value": "加入失败：%1$s"
     },

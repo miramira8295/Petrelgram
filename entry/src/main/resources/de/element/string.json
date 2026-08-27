@@ -7461,6 +7461,10 @@
       "value": "Ungelesene Nachricht"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "Zuletzt angesehene Position"
+    },
+    {
       "name": "lv_join_failed",
       "value": "Beitritt fehlgeschlagen: %1$s"
     },

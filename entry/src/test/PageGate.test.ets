@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
-  PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, rearmPageGate
+  PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger,
+  rearmPageGate
 } from '../main/ets/util/pageGate';
 
 // 攒够阈值所需的一帧位移：一帧就跨过去，用例里不必凑循环。
@@ -57,6 +58,28 @@ export default function pageGateTest() {
       expect(pageGateShotIsUserDriven(rearmed)).assertTrue();
       // firedAtEnd 归零，同一个 end 也能再打——用户又推了一段就该翻得动。
       expect(canFirePageGate(rearmed, 80)).assertTrue();
+    });
+
+    // 真机回归：42 行末端打出一页后变成 70 行，手动锚点复位把视口放回 end=41。
+    // 复位发生在手指仍按住时会被 ArkUI 报成 Scroll，足以重新上膛；但此刻已经
+    // 远离新窗口末端，绝不能立即再请求一页。
+    it('anchor_restore_away_from_the_new_tail_cannot_kick_another_page', 0, () => {
+      expect(reachedNewerPageTrigger(41, 42)).assertTrue();
+      expect(reachedNewerPageTrigger(41, 70)).assertFalse();
+    });
+
+    it('newer_trigger_zone_is_the_last_five_rows_only', 0, () => {
+      expect(reachedNewerPageTrigger(64, 70)).assertFalse();
+      expect(reachedNewerPageTrigger(65, 70)).assertTrue();
+      expect(reachedNewerPageTrigger(69, 70)).assertTrue();
+      // 布局抖动偶尔会上报越界末行，仍按进入末端触发区处理。
+      expect(reachedNewerPageTrigger(70, 70)).assertTrue();
+    });
+
+    it('invalid_visible_ranges_never_reach_the_newer_trigger', 0, () => {
+      expect(reachedNewerPageTrigger(-1, 70)).assertFalse();
+      expect(reachedNewerPageTrigger(0, 0)).assertFalse();
+      expect(reachedNewerPageTrigger(69, 70, 0)).assertFalse();
     });
 
     it('drag_below_the_threshold_does_not_rearm_yet', 0, () => {

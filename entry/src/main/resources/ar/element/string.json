@@ -7461,6 +7461,10 @@
       "value": "رسائل غير مقروءة"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "آخر موضع تمت مشاهدته"
+    },
+    {
       "name": "lv_join_failed",
       "value": "فشل الانضمام: %1$s"
     },

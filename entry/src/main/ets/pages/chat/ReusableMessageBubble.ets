@@ -84,6 +84,9 @@ export interface MessageBubbleRenderData {
   liveSharingId: number;
   themeBubbleOut: string;
   showUnreadDivider: boolean;
+  // Same divider geometry, different label. Optional keeps older tests/callers
+  // source-compatible; only restored-position rows set it.
+  dividerIsResume?: boolean;
   paidMediaPending: boolean;
   audioQueuePosition: number;
   audioQueueLength: number;
@@ -290,6 +293,7 @@ export struct ReusableMessageBubble {
         isGroup: this.data.isGroup,
         themeBubbleOut: this.data.themeBubbleOut,
         showUnreadDivider: this.data.showUnreadDivider,
+        dividerIsResume: this.data.dividerIsResume === true,
         dateLabel: this.currentGroup().dateLabel,
         editingActive: this.data.editingActive,
         isPinnedMsg: this.data.isPinnedMsg,
@@ -306,7 +310,9 @@ export struct ReusableMessageBubble {
       liveSharingId: this.data.liveSharingId,
       onStopLiveLocation: this.actions.onStopLiveLocation,
       themeBubbleOut: this.data.themeBubbleOut,
-      showUnreadDivider: this.data.showUnreadDivider, dateLabel: this.currentGroup().dateLabel,
+      showUnreadDivider: this.data.showUnreadDivider,
+      dividerIsResume: this.data.dividerIsResume === true,
+      dateLabel: this.currentGroup().dateLabel,
       albumPaths: this.currentGroup().photoPaths, albumFileIds: this.currentGroup().photoFileIds,
       albumRatios: this.currentGroup().photoRatios,
       albumMemberIds: this.currentGroup().memberIds,

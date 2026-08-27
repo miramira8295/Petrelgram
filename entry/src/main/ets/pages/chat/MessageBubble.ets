@@ -303,6 +303,7 @@ export struct MessageBubble {
   @Prop isGroup: boolean;
   @Prop isChannel: boolean;
   @Prop showUnreadDivider: boolean;
+  @Prop dividerIsResume: boolean = false;
   @Prop dateLabel: string = ''; // date pill above this row when the day changes
   @Prop albumPaths: string[];
   @Prop albumFileIds: number[];
@@ -3651,6 +3652,14 @@ export struct MessageBubble {
             .padding({ left: 10, right: 10, top: 3, bottom: 3 })
             .margin({ bottom: 4 });
         }
+        if (this.showUnreadDivider) {
+          Text(this.dividerIsResume
+            ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
+            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+            .width('100%').textAlign(TextAlign.Center)
+            .backgroundColor($r('app.color.system_pill'))
+            .padding({ top: 3, bottom: 3 }).margin({ bottom: 4 });
+        }
         this.systemPill();
       }.width('100%').alignItems(HorizontalAlign.Center).padding({ top: 3, bottom: 3 });
     } else {
@@ -3665,7 +3674,8 @@ export struct MessageBubble {
         }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 5, bottom: 3 });
       }
       if (this.showUnreadDivider) {
-        Text($r('app.string.mb_unread'))
+        Text(this.dividerIsResume
+          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
           .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
           .width('100%').textAlign(TextAlign.Center)
           .backgroundColor($r('app.color.system_pill'))

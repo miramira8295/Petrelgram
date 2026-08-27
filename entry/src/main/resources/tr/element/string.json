@@ -7461,6 +7461,10 @@
       "value": "Okunmamış mesaj"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "Son görülen konum"
+    },
+    {
       "name": "lv_join_failed",
       "value": "Katılınamadı: %1$s"
     },

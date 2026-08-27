@@ -330,6 +330,7 @@ export struct LightweightPlainTextBubble {
   }
 
   @Prop showUnreadDivider: boolean = false;
+  @Prop dividerIsResume: boolean = false;
   @Prop dateLabel: string = '';
   @Prop editingActive: boolean = false;
   @Prop isPinnedMsg: boolean = false;
@@ -719,7 +720,9 @@ export struct LightweightPlainTextBubble {
         }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 5, bottom: 3 });
       }
       if (this.showUnreadDivider) {
-        Text($r('app.string.mb_unread')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+        Text(this.dividerIsResume
+          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
           .width('100%').textAlign(TextAlign.Center)
           .backgroundColor($r('app.color.system_pill'))
           .padding({ top: 3, bottom: 3 }).margin({ bottom: 4 });

@@ -7461,6 +7461,10 @@
       "value": "अपठित संदेश"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "पिछली बार देखी गई जगह"
+    },
+    {
       "name": "lv_join_failed",
       "value": "शामिल नहीं हो सके: %1$s"
     },

@@ -7461,6 +7461,10 @@
       "value": "未読メッセージ"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "前回見た位置"
+    },
+    {
       "name": "lv_join_failed",
       "value": "参加に失敗しました：%1$s"
     },

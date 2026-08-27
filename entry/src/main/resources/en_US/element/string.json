@@ -7461,6 +7461,10 @@
       "value": "Unread messages"
     },
     {
+      "name": "mb_last_viewed_position",
+      "value": "Last viewed position"
+    },
+    {
       "name": "lv_join_failed",
       "value": "Could not join: %1$s"
     },

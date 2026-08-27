@@ -340,6 +340,48 @@ export default function messageStoreTest() {
       expect(types.includes('openChat')).assertTrue();
       expect(types.includes('getChatHistory')).assertTrue();
     });
+    // A remembered/message-link landing is aligned at the top of the viewport.
+    // Bias its small first page toward newer rows so the area below the restored
+    // row is already populated instead of appearing a few seconds later.
+    it('requested_initial_landing_prefetches_a_full_trailing_viewport', 0, async () => {
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open(500, false, true);
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      const request = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
+        .find((candidate: TdObject): boolean => candidate['@type'] === 'getChatHistory');
+      expect(request !== undefined).assertTrue();
+      expect(request !== undefined ? request['from_message_id'] : 0).assertEqual(500);
+      expect(request !== undefined ? request['offset'] : 0).assertEqual(-13);
+      expect(request !== undefined ? request['limit'] : 0).assertEqual(14);
+      expect(store.isResumeLandingSelected()).assertTrue();
+    });
+    it('remembered_landing_yields_to_a_new_unread_boundary', 0, async () => {
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open(500, false, true);
+      let extra = '';
+      for (const json of b.sent) {
+        const request = JSON.parse(json) as TdObject;
+        if (request['@type'] === 'getChat') {
+          extra = extraOf(json);
+        }
+      }
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = 5;
+      chat['unread_count'] = 3;
+      chat['last_read_inbox_message_id'] = 200;
+      chat['last_message'] = textMessage(800, 5, false, 'latest');
+      chat['@extra'] = extra;
+      b.onReceive(JSON.stringify(chat));
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      const request = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
+        .find((candidate: TdObject): boolean => candidate['@type'] === 'getChatHistory');
+      expect(request !== undefined).assertTrue();
+      expect(request !== undefined ? request['from_message_id'] : 0).assertEqual(200);
+      expect(request !== undefined ? request['offset'] : 0).assertEqual(-7);
+      expect(request !== undefined ? request['limit'] : 0).assertEqual(14);
+      expect(store.isResumeLandingSelected()).assertFalse();
+    });
     it('history_loads_ascending', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();

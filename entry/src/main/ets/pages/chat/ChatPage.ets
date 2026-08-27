@@ -207,7 +207,7 @@ import { confirmStopLiveLocation, withLocationPermission } from '../../util/loca
 import { logE, logI, logW } from '../../util/log';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
-  PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven
+  PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger
 } from '../../util/pageGate';
 import { rememberChatPosition, rememberedChatPosition } from '../../util/chatResume';
 import { navigateToSearch } from '../../util/searchNav';
@@ -788,6 +788,19 @@ export struct ChatPage {
   }
 
   private initialMessageStageTarget(groups: AlbumGroup[]): InitialMessageStageTarget {
+    // A selected remembered position is a first-frame START anchor just like
+    // unread, but it has no read-state semantics. Check it before asking the
+    // store for firstUnreadId (which is correctly 0 in a fully-read chat).
+    if (this.resumeDividerId > 0) {
+      const resumeIndex: number = groupIndexOf(groups, this.resumeDividerId);
+      if (resumeIndex >= 0) {
+        return {
+          anchorIndex: resumeIndex,
+          alignFromStart: true,
+          availableRows: Math.max(0, groups.length - resumeIndex)
+        };
+      }
+    }
     const firstUnreadId: number = this.store !== null ? this.store.getFirstUnreadId() : 0;
     const anchor: InitialAnchor = initialAnchorOf(
       firstUnreadId,
@@ -810,8 +823,10 @@ export struct ChatPage {
       180,
       this.screenH - this.headerChromeHeight() - this.bottomChromeH + 32
     );
-    const unreadId: number = this.firstUnreadId > 0
-      ? this.firstUnreadId : (this.store !== null ? this.store.getFirstUnreadId() : 0);
+    const unreadId: number = this.resumeDividerId > 0
+      ? this.resumeDividerId
+      : (this.firstUnreadId > 0
+        ? this.firstUnreadId : (this.store !== null ? this.store.getFirstUnreadId() : 0));
     return initialMessageViewportRows(
       groups,
       target.anchorIndex,
@@ -841,16 +856,35 @@ export struct ChatPage {
   }
 
   private finishInitialMessageStageForInteraction(): void {
-    // Normally the viewport-sized stage finishes before the mask is removed.
-    // A bounded initial-history fill can deliberately keep it waiting, though;
-    // once the user takes ownership of the visible list, never let that
-    // background scheduler compete with their first drag.
-    if (!this.initialMessageStageActive || this.initialTimelineMasked) {
+    // Normally the viewport-sized stage finishes before the mask is removed. A
+    // bounded initial-history fill can deliberately keep it waiting, though;
+    // once the user touches the list, ownership must transfer in that same
+    // gesture. The old code returned while initialTimelineMasked was true and
+    // the List itself was disabled during that interval. A finger that went
+    // down in the first layout window therefore stayed attached to a disabled
+    // target for its whole 3~5 second drag, even after the timeline appeared.
+    if (!this.initialMessageStageActive && !this.initialTimelineMasked) {
       return;
     }
-    const groups: AlbumGroup[] = this.initialMessagePendingGroups ?? this.groups;
-    this.initialMessageStageSeq++;
-    this.finishInitialMessageStage(groups);
+    if (this.initialMessageStageActive) {
+      const groups: AlbumGroup[] = this.initialMessagePendingGroups ?? this.groups;
+      this.initialMessageStageSeq++;
+      this.finishInitialMessageStage(groups);
+    }
+    if (!this.initialTimelineMasked) {
+      return;
+    }
+    // finishInitialMessageStage may just have queued the normal two-frame
+    // presentation. Invalidate it before exposing the list: otherwise its
+    // settleInitialTimelineAnchor() would run after the user's drag begins and
+    // visibly pull the viewport back to the unread marker/bottom.
+    this.initialTimelinePresentationSeq++;
+    this.initialTimelinePresentationScheduledSeq = 0;
+    this.initialTimelineReadyToPresent = false;
+    this.settleInitialTimelineAnchor();
+    this.cancelInitialMessageTransitionSettle();
+    this.initialMessageTransitionSettled = true;
+    this.initialTimelineMasked = false;
   }
 
   private applyInitialUnreadLanding(seq: number): void {
@@ -887,6 +921,13 @@ export struct ChatPage {
 
   private settleInitialTimelineAnchor(): void {
     if (!this.didInitialScroll || this.groups.length === 0) {
+      return;
+    }
+    if (this.resumeDividerId > 0) {
+      const resumeIndex: number = groupIndexOf(this.groups, this.resumeDividerId);
+      if (resumeIndex >= 0) {
+        this.scroller.scrollToIndex(resumeIndex, false, ScrollAlign.START);
+      }
       return;
     }
     if (this.stayAtUnread && this.firstUnreadId > 0) {
@@ -1324,6 +1365,9 @@ export struct ChatPage {
     const audio: boolean = audioQueueApplies(g.head.contentType);
     const showUnreadDivider: boolean = this.firstUnreadId !== 0 &&
       g.memberIds.indexOf(this.firstUnreadId) >= 0;
+    const showResumeDivider: boolean = this.resumeDividerId !== 0 &&
+      g.memberIds.indexOf(this.resumeDividerId) >= 0;
+    const showTimelineDivider: boolean = showUnreadDivider || showResumeDivider;
     const translationActive: boolean = this.translationActive();
     const isPinnedMsg: boolean = (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0;
     const paidMediaPending: boolean = this.paidMediaPending(g.head.id);
@@ -1337,7 +1381,8 @@ export struct ChatPage {
     const pollExpired: boolean = g.head.pollCloseDate > 0 && this.nowSec >= g.head.pollCloseDate;
     const cacheKey: string = `${this.rowKeyOf(g)}|c${this.chatId}` +
       `|g${this.isGroup ? 1 : 0}${this.isChannel ? 1 : 0}` +
-      `|u${showUnreadDivider ? 1 : 0}|tr${translationActive ? 1 : 0}` +
+      `|u${showUnreadDivider ? 1 : 0}|r${showResumeDivider ? 1 : 0}` +
+      `|tr${translationActive ? 1 : 0}` +
       `|editable${menuEditable ? 1 : 0}|poll${pollExpired ? 1 : 0}` +
       `|pin${isPinnedMsg ? 1 : 0}|paid${paidMediaPending ? 1 : 0}` +
       `|anim${paused ? 1 : 0}${forcePlay ? 1 : 0}${playbackFailed ? 1 : 0}` +
@@ -1365,7 +1410,7 @@ export struct ChatPage {
       albumItemCount: g.photoPaths.length,
       memberCount: g.memberIds.length,
       hasDateSeparator: g.dateLabel !== '',
-      showUnreadDivider,
+      showUnreadDivider: showTimelineDivider,
       isGroup: this.isGroup,
       isChannel: this.isChannel,
       showAvatar: g.showAvatar,
@@ -1395,7 +1440,8 @@ export struct ChatPage {
     const data: MessageBubbleRenderData = {
       chatId: this.chatId, isGroup: this.isGroup, isChannel: this.isChannel,
       liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
-      showUnreadDivider,
+      showUnreadDivider: showTimelineDivider,
+      dividerIsResume: showResumeDivider,
       paidMediaPending,
       audioQueuePosition,
       audioQueueLength,
@@ -1783,6 +1829,11 @@ export struct ChatPage {
   // trigger a re-render when scrolling/tapping moves the shown pinned index.
   @Local pinnedCycle: number = 0;
   private pendingJumpId: number = 0;
+  // A module-level remembered position is only a candidate until MessageStore
+  // resolves the chat's authoritative unread count. Once selected it becomes
+  // pendingJumpId and resumeDividerId together.
+  private pendingResumeId: number = 0;
+  private resumeDividerId: number = 0;
   private jumpLayoutSeq: number = 0;
   // One-shot gate for loading older pages: a fast fling to the very top used to
   // chain-load page after page (the list stays pinned at the edge, so the
@@ -2029,6 +2080,8 @@ export struct ChatPage {
     this.clearPendingScrollBottom('resetScrollSession');
     this.scrollToBottomBusy = false;
     this.pendingJumpId = 0;
+    this.pendingResumeId = 0;
+    this.resumeDividerId = 0;
     this.pendingFileOpenId = 0;
     this.pendingFileSaveId = 0;
     this.fileOpenInFlightId = 0;
@@ -2480,11 +2533,32 @@ export struct ChatPage {
       if (scrollResumeWaiting && (list.length === 0 || fragment)) {
         return;
       }
-      const firstMessageStage: boolean = !scrollResumeWaiting && !this.didInitialScroll &&
-        this.groups.length === 0;
       const notifyKind: string = store.getCurrentNotifyKind();
       const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
       const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
+      // A remembered target is conditional: if getChat says new unread
+      // messages exist, MessageStore opened around the unread boundary instead.
+      // Resolve that choice BEFORE firstMessageStage is computed. Otherwise the
+      // same first snapshot is first staged/positioned as a fully-read bottom
+      // landing and then pulled to another anchor, which is the visible
+      // "bottom first, suddenly jump upward" reported on entry.
+      let resumeLandingPrepared: boolean = false;
+      if (!scrollResumeWaiting && !this.didInitialScroll && this.pendingResumeId > 0) {
+        const rememberedId: number = this.pendingResumeId;
+        const rememberedIndex: number = groupIndexOf(groups, rememberedId);
+        if (store.isResumeLandingSelected() && rememberedIndex >= 0) {
+          this.didInitialScroll = true;
+          this.atBottom = false;
+          this.pendingJumpId = rememberedId;
+          this.resumeDividerId = groups[rememberedIndex].head.id;
+          resumeLandingPrepared = true;
+        }
+        // Whether selected or superseded by unread, the decision is final once
+        // the first ready history snapshot arrives.
+        this.pendingResumeId = 0;
+      }
+      const firstMessageStage: boolean = !scrollResumeWaiting && this.groups.length === 0 &&
+        (resumeLandingPrepared || !this.didInitialScroll);
       // Transfer completion/failure and translation state keep the stable list
       // key. Publish them directly to the mounted row before the data-source
       // diff, so a key-equal snapshot still updates the one affected bubble.
@@ -2953,8 +3027,11 @@ export struct ChatPage {
       // 这个顺序；只有「没有未读」才落回上次看到的地方。
       const remembered: number = rememberedChatPosition(this.chatId, this.threadRootId);
       if (remembered > 0) {
-        this.pendingJumpId = remembered;
-        store.open(remembered);
+        // The store resolves the authoritative unread count asynchronously.
+        // Keep this as a candidate until the first ready snapshot says whether
+        // resume or unread won; only then does it become the single landing.
+        this.pendingResumeId = remembered;
+        store.open(remembered, false, true);
       } else {
         store.open();
       }
@@ -4267,9 +4344,14 @@ export struct ChatPage {
   // 用户手指拖动列表：攒够位移就给向下分页的闸重新上膛。
   //
   // 只从 onDidScroll 的 ScrollState.Scroll 那一支进来（见那里的说明）。上膛的
-  // 那一帧立刻补敲一次门：onScrollIndex 只在**可见行号区间变化**时触发，而用户
-  // 正贴在末尾时 end 恒等于 rows - 1，纹丝不动——光等 onScrollIndex 的话，刚上
-  // 膛的这一发会一直没机会打出去。
+  // 那一帧在**仍处于末端触发区**时立刻补敲一次门：onScrollIndex 只在可见行号
+  // 区间变化时触发，而用户正贴在末尾时 end 恒等于 rows - 1，纹丝不动——光等
+  // onScrollIndex 的话，刚上膛的这一发会一直没机会打出去。
+  //
+  // 末端检查不能少：append 锚点复位若发生在手指仍按住时，ArkUI 会把控制器位移
+  // 也报成 Scroll。真机日志里它在 rows=70/end=41 时重新上膛；旧代码无条件补敲，
+  // 于是远离末端仍继续拉页并再次复位，正是进入未读很多的频道后 3~5 秒内滑动
+  // 不跟手、松手弹回的闭环。
   private accumulateNewerDrag(offset: number): void {
     const before: PageGate = this.newerGate;
     if (before.armed) {
@@ -4282,7 +4364,7 @@ export struct ChatPage {
     }
     logW(`[NewerFire] rearm reason=drag end=${this.curEndIdx} rows=${this.groups.length}` +
       ` byUser=${after.armedByUser} thresholdVp=${PAGE_GATE_REARM_DRAG_VP}`);
-    if (this.curEndIdx >= 0) {
+    if (reachedNewerPageTrigger(this.curEndIdx, this.groups.length)) {
       this.maybeLoadNewer(this.curEndIdx);
     }
   }
@@ -9093,8 +9175,10 @@ export struct ChatPage {
     let first: number = this.curStartIdx;
     let last: number = this.curEndIdx;
     if (first < 0 || last < first || last >= this.groups.length) {
-      if (this.stayAtUnread && this.firstUnreadId > 0) {
-        first = Math.max(0, groupIndexOf(this.groups, this.firstUnreadId));
+      if ((this.stayAtUnread && this.firstUnreadId > 0) || this.resumeDividerId > 0) {
+        const startAnchorId: number = this.resumeDividerId > 0
+          ? this.resumeDividerId : this.firstUnreadId;
+        first = Math.max(0, groupIndexOf(this.groups, startAnchorId));
         last = Math.min(this.groups.length - 1,
           first + INITIAL_TIMELINE_REVEAL_ROW_LIMIT - 1);
       } else {
@@ -9107,7 +9191,8 @@ export struct ChatPage {
     }
     // Bottom landings read naturally from the composer upward. An unread
     // landing starts at its top anchor and flows down into the unread block.
-    const visualRank: number = this.stayAtUnread ? index - first : last - index;
+    const visualRank: number = (this.stayAtUnread || this.resumeDividerId > 0)
+      ? index - first : last - index;
     const cappedRank: number = Math.min(
       INITIAL_TIMELINE_REVEAL_ROW_LIMIT - 1, Math.max(0, visualRank));
     return powerAnimationDuration(
@@ -9254,8 +9339,12 @@ export struct ChatPage {
         // Keep layout/build work alive behind a visual mask. The mask is
         // removed only after a complete viewport and its final anchor are
         // ready, so users never see placeholder replacement or a second jump.
+        // Do not disable hit testing while masked: a finger that goes down in
+        // this short interval would remain bound to a disabled target for the
+        // entire gesture. onTouch(Down) finishes/cancels the initial stage via
+        // finishInitialMessageStageForInteraction(), then the same drag owns
+        // the now-visible List without a delayed anchor pulling it back.
         .opacity(this.initialTimelineMasked ? 0 : 1)
-        .enabled(!this.initialTimelineMasked)
         // 顶部 chrome 是悬浮的，用 contentStartOffset 让位——和底部的
         // contentEndOffset 对称。不用 padding：padding 会改变内容区尺寸，
         // 而滚动锚点、getItemRect 那一套都吃列表几何。
@@ -9380,7 +9469,7 @@ export struct ChatPage {
           // 那是第一版锁死的直接原因：用户停在最后几行时 end 恒等于 rows - 1，
           // 这一支永远进不来，闸一旦下膛就是永久的。位置判据在向下这侧两头都
           // 不对，所以不再参与上膛。
-          if (end >= this.groups.length - 5) {
+          if (reachedNewerPageTrigger(end, this.groups.length)) {
             this.maybeLoadNewer(end);
           }
         })
