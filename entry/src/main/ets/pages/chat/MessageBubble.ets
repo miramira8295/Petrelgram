@@ -77,6 +77,7 @@ import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
+import { menuPreviewCompact } from '../../util/menuPreview';
 import { reuseParam } from '../../util/reuseParams';
 import {
   cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
@@ -562,7 +563,7 @@ export struct MessageBubble {
   // 见 menuKeyboardH 的说明。窗口矮的判据取 480vp：正常手机竖屏远大于此，悬浮
   // 小窗和分屏下半截才会落到这一档。
   private compactMenuContext(): boolean {
-    return this.menuKeyboardH > 0 || this.menuWindowH < 480;
+    return menuPreviewCompact(this.menuKeyboardH, this.menuWindowH);
   }
 
   private isCompetingVideo(): boolean {

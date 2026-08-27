@@ -41,6 +41,7 @@ import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { logW } from '../../util/log';
+import { menuPreviewCompact } from '../../util/menuPreview';
 import { reuseParam } from '../../util/reuseParams';
 import {
   cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
@@ -365,6 +366,12 @@ export struct LightweightPlainTextBubble {
   // 读的是**内容列宽**，不是窗口宽——分栏下两者差一个左栏（issue #107）。
   // 字段仍叫 screenW：下面十几处按它算宽的式子一个都不用动。
   @StorageProp(CHAT_CONTENT_WIDTH_KEY) screenW: number = 360;
+  // 长按菜单带不带预览图，和 MessageBubble.menuKeyboardH / menuWindowH 同一套判据
+  // （util/menuPreview）：窗口装不下「预览 + 菜单」时 ArkUI 直接不弹。1.4.2 只在
+  // MessageBubble 上做了，纯文本走的是本组件，最常见的长按目标依旧弹不出来
+  // （issue #114）。
+  @StorageProp('keyboardHeightVp') private menuKeyboardH: number = 0;
+  @StorageProp('screenHeightVp') private menuWindowH: number = 780;
   @StorageProp(KEY_TEXT_SIZE) msgTextSize: number = TEXT_SIZE_DEFAULT;
   @StorageProp(KEY_BUBBLE_RADIUS) bubbleRadius: number = RADIUS_DEFAULT;
   @StorageProp(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
@@ -555,6 +562,11 @@ export struct LightweightPlainTextBubble {
     }
     this.gestureClaimed = true;
     const policy: MessageGesturePolicy = messageGesturePolicy(this.gestureScheme);
+    // 诊断（issue #114）：和 MessageBubble 那条 [Menu114] 对照。报告人 1.4.2 的日志
+    // 里一条菜单相关的行都没有，正是因为长按落在本组件、而本组件什么都不记。
+    logW(`[Menu114] longPress(plain) kbd=${Math.round(this.menuKeyboardH)}`
+      + ` winH=${Math.round(this.menuWindowH)}`
+      + ` compact=${menuPreviewCompact(this.menuKeyboardH, this.menuWindowH)}`);
     if (policy.longPressOpensMenu) {
       this.menuShown = true;
     } else if (policy.longPressSelects) {
@@ -892,7 +904,8 @@ export struct LightweightPlainTextBubble {
         .alignItems(VerticalAlign.Bottom)
         .bindContextMenu(this.menuShown, this.contextMenu(), {
           offset: { x: this.menuOffsetX, y: 0 },
-          preview: MenuPreviewMode.IMAGE,
+          preview: menuPreviewCompact(this.menuKeyboardH, this.menuWindowH)
+            ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
           previewBorderRadius: this.bubbleCorners(),
           previewAnimationOptions: {
             scale: [0.98, 1.035],

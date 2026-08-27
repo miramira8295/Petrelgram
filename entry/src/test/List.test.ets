@@ -17,6 +17,7 @@ import navBarResetTest from './NavBarReset.test';
 import diagLogHeaderTest from './DiagLogHeader.test';
 import tdDeviceParamsTest from './TdDeviceParams.test';
 import drawerMetricsTest from './DrawerMetrics.test';
+import menuPreviewTest from './MenuPreview.test';
 import scopeMuteTest from './ScopeMute.test';
 import decodeSizeTest from './DecodeSize.test';
 import chatContentWidthTest from './ChatContentWidth.test';
@@ -186,6 +187,7 @@ export default function testsuite() {
   diagLogHeaderTest();
   tdDeviceParamsTest();
   drawerMetricsTest();
+  menuPreviewTest();
   scopeMuteTest();
   decodeSizeTest();
   chatContentWidthTest();
