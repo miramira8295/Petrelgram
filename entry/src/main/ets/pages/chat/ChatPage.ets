@@ -202,7 +202,10 @@ import {
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
-import { armedPageGate, canFirePageGate, firedPageGate, PageGate, rearmPageGate } from '../../util/pageGate';
+import {
+  armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
+  PAGE_GATE_REARM_DRAG_VP, PageGate
+} from '../../util/pageGate';
 import { rememberChatPosition, rememberedChatPosition } from '../../util/chatResume';
 import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
@@ -4217,7 +4220,9 @@ export struct ChatPage {
       const blockedBy: string = canFire
         ? 'none' : (gate.armed ? 'weakGate' : 'disarmed');
       logW(`[NewerFire] end=${end} rows=${this.groups.length} firedAt=${gate.firedAtEnd}` +
-        ` armed=${gate.armed} canFire=${canFire} blockedBy=${blockedBy}` +
+        ` armed=${gate.armed} byUser=${gate.armedByUser}` +
+        ` dragSinceFire=${Math.round(gate.dragSinceFire)}/${PAGE_GATE_REARM_DRAG_VP}` +
+        ` canFire=${canFire} blockedBy=${blockedBy}` +
         ` touch=${this.listTouchActive} userScroll=${this.listUserScrollActive}` +
         ` hasMoreNewer=${this.store.getHasMoreNewer()}` +
         ` newerState=${this.store.getNewerLoadState()}` +
@@ -4241,9 +4246,31 @@ export struct ChatPage {
     }
   }
 
+  // 用户手指拖动列表：攒够位移就给向下分页的闸重新上膛。
+  //
+  // 只从 onDidScroll 的 ScrollState.Scroll 那一支进来（见那里的说明）。上膛的
+  // 那一帧立刻补敲一次门：onScrollIndex 只在**可见行号区间变化**时触发，而用户
+  // 正贴在末尾时 end 恒等于 rows - 1，纹丝不动——光等 onScrollIndex 的话，刚上
+  // 膛的这一发会一直没机会打出去。
+  private accumulateNewerDrag(offset: number): void {
+    const before: PageGate = this.newerGate;
+    if (before.armed) {
+      return;
+    }
+    const after: PageGate = draggedPageGate(before, offset);
+    this.newerGate = after;
+    if (!after.armed) {
+      return;
+    }
+    logW(`[NewerFire] rearm reason=drag end=${this.curEndIdx} rows=${this.groups.length}` +
+      ` byUser=${after.armedByUser} thresholdVp=${PAGE_GATE_REARM_DRAG_VP}`);
+    if (this.curEndIdx >= 0) {
+      this.maybeLoadNewer(this.curEndIdx);
+    }
+  }
+
   // [NewerFire] 去重用：上一条已经记过的 end。
   private newerFireLoggedEnd: number = -1;
-  private newerRearmLoggedEnd: number = -1;
 
   // [NewerFire] 用：还剩多少行是首屏占位。用循环而不是 filter，这行日志在
   // 底部区里会反复打，不该每次都拷一份数组出来。
@@ -4311,6 +4338,7 @@ export struct ChatPage {
       ` scrollerAtEnd=${scrollerAtEnd} startIdx=${this.curStartIdx} endIdx=${this.curEndIdx}` +
       ` idxLen=${this.indexGroupsLen} userScroll=${this.listUserScrollActive}` +
       ` touch=${this.listTouchActive} newerArmed=${this.newerGate.armed}` +
+      ` gateByUser=${this.newerGate.armedByUser}` +
       ` reqUserDriven=${newerPageIsUserDriven(this.listTouchActive, this.listUserScrollActive)}`;
   }
 
@@ -9261,8 +9289,11 @@ export struct ChatPage {
             this.imeLayoutSeq++;
             this.listTouchActive = true;
             this.olderArmed = true;
-            // 向下分页同样按手势重新上膛：一次手势最多多取一页，和 older 一致。
-            this.newerGate = armedPageGate();
+            // 向下分页**不**在这里上膛。一次 tap 不是滚动，而按下之后紧随的任何
+            // 一次 onScrollIndex（包括锚点复位这种程序性位移引起的）都能把这一枪
+            // 白白消耗掉——那正是第一版闸被烧掉、之后再也上不了膛的两条路之一。
+            // newer 侧唯一的上膛信号是 onDidScroll 里 ScrollState.Scroll 的累计
+            // 手指位移，见 util/pageGate.draggedPageGate。
             // The highlight overlay is viewport-anchored — drop it as soon as
             // the user starts interacting, before it can detach from its row.
             this.cancelFlash();
@@ -9324,26 +9355,14 @@ export struct ChatPage {
           } else {
             this.maybeLoadOlder();
           }
-          if (end < this.groups.length - 5) {
-            // 离开底部触发区。但这个位置判据会被内容追加自己顶成立（groups
-            // 变长而视口没动），所以必须叠一条"这一下是用户在滚"——程序性
-            // 位移不上膛。older 那侧靠 onTouch(Down) 和真实滚动上膛，同一套。
-            // ⚠️ 诊断 [NewerFire]：重新上膛只认 listUserScrollActive，而那个标志
-            // 实际上挂在浮动日期条的 820ms 隐藏计时器上（见 armFloatDateHide），
-            // 并不是"用户还在滚"。它到底是真是假，得由日志说话。
-            // 只在状态真的翻了才打，否则这一支每次 onScrollIndex 都会刷屏。
-            const beforeRearm: PageGate = this.newerGate;
-            this.newerGate = rearmPageGate(beforeRearm, this.listUserScrollActive);
-            if (this.newerGate !== beforeRearm) {
-              logW(`[NewerFire] rearm end=${end} rows=${this.groups.length}` +
-                ` userScroll=${this.listUserScrollActive} touch=${this.listTouchActive}`);
-            } else if (!beforeRearm.armed && end !== this.newerRearmLoggedEnd) {
-              // 闸空着又没能上膛——这正是"下滑推不动"里翻页链路那一侧的形状。
-              this.newerRearmLoggedEnd = end;
-              logW(`[NewerFire] rearm refused end=${end} rows=${this.groups.length}` +
-                ` userScroll=${this.listUserScrollActive} touch=${this.listTouchActive}`);
-            }
-          } else {
+          // 底部触发区：视口贴近末尾就敲一次门。**位置判据只留在这里**，重新
+          // 上膛已经整条搬到 onDidScroll 的手指位移上（见 util/pageGate）。
+          //
+          // 原来这里的 else 支（end < rows - 5）还兼着"离开触发区就重新上膛"，
+          // 那是第一版锁死的直接原因：用户停在最后几行时 end 恒等于 rows - 1，
+          // 这一支永远进不来，闸一旦下膛就是永久的。位置判据在向下这侧两头都
+          // 不对，所以不再参与上膛。
+          if (end >= this.groups.length - 5) {
             this.maybeLoadNewer(end);
           }
         })
@@ -9351,10 +9370,18 @@ export struct ChatPage {
         // scrolling up inside one tall last message (index unchanged) never
         // updates atBottom. onDidScroll fires on every scroll frame — track the
         // true bottom edge here so the glue stops fighting the user.
-        .onDidScroll(() => {
+        .onDidScroll((offset: number, state: ScrollState) => {
           this.refreshAtBottom();
           // 列表被程序性挪动（贴底、prepend 复位）时高亮跟着行走（issue #80）。
           this.syncFlashRect();
+          // ── 向下分页闸的唯一上膛信号 ──────────────────────────────────
+          // ScrollState.Scroll 的官方语义是"手指拖动列表 / 拖动滚动条 / 鼠标
+          // 滚轮"；惯性是 Fling，控制器的非动画滚动（scrollToIndex / scrollEdge
+          // / 首屏定位 / 锚点复位）是 Idle。只有 Scroll 计入累计位移，所以
+          // 程序性位移既烧不掉也开不了这道闸，而用户停在最后几行照样能上膛。
+          if (state === ScrollState.Scroll) {
+            this.accumulateNewerDrag(offset);
+          }
           if (this.listTouchActive) {
             // A tap alone does not release the initial unread anchor. Only an
             // actual drag gives scroll ownership to the user.

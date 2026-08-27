@@ -987,8 +987,23 @@ export class MessageStore {
   // 由调用方给出，一路带到发布点——ChatPage 据此决定要不要复位视口锚点
   // （见 util/appendAnchor）。默认假：没有明确说是用户打的，就当成程序性的。
   loadNewer(userDriven: boolean = false): boolean {
-    if (this.newerPending || this.newerLoadState === 'error' ||
-      !this.hasMoreNewer || this.messages.length === 0) {
+    // 'error' 原来是**粘住**的：一次网络失败之后 loadNewer 永远返回 false，
+    // 直到用户在时间线上找到那条重试提示点一下（retryNewer）。而向下翻页的
+    // 失败提示挂在列表末尾，用户正往下滑时未必看得见——表现就是"会话突然
+    // 再也翻不动了"，且不必现、极难复现。
+    //
+    // 这里给它一条自愈路径：**用户驱动的请求自带一次重试**。程序性请求仍然
+    // 被挡住（否则一个失败会变成后台重试风暴），而用户驱动的请求现在最快也
+    // 要攒够 PAGE_GATE_REARM_DRAG_VP 的手指位移才发得出来（见 util/pageGate），
+    // 天然就是节流的：用户再往下推一段，就重试一次。
+    // 显式的 retryNewer() 保留不动，两条路互不影响。
+    if (this.newerLoadState === 'error') {
+      if (!userDriven) {
+        return false;
+      }
+      this.newerLoadState = 'idle';
+    }
+    if (this.newerPending || !this.hasMoreNewer || this.messages.length === 0) {
       return false;
     }
     const newestId = this.messages[this.messages.length - 1].id;
