@@ -288,6 +288,28 @@ const KEYBOARD_SETTLE_MS: number = 700;
 // 跳转落地后多久才允许"用户自己滚回最新"的判定重新生效。
 const JUMP_LANDING_GRACE_MS: number = 900;
 
+// ⚠️ 止血开关（可单独回退）：向下翻页追加时的**手动**锚点复位（260e497）整条
+// 旁路掉。true = 旁路（不记锚点、不复位），false = 恢复 260e497 的行为。
+//
+// 【为什么】真机现象四条：静止/滑动时列表每帧重建（闪）、视口纹丝不动、点右下角
+// ↓ 要点好几次才下得去、读到底再进会话仍落在中间。它们指向同一条路径：
+// applyMessages 里那道 `!this.atBottom` 闸。atBottomVerdict（util/atBottom）在
+// hasMoreNewer 为真时**恒返回 NO**——也就是说只要窗口还没取到会话实时尾部，这道
+// 闸就一直开着。于是每次向下翻页的发布都会 scrollToIndex 把视口拽回锚点，视口被
+// 按住 → 可见区间不变 → 边界行每帧建了又拆；等窗口终于取到尾部、hasMoreNewer
+// 翻假，闸关上，拉锯自行结束——正是用户说的「闪完之后位置会动，然后就正常了」。
+// ↓ 按钮那一条同源：restoreScrollAnchor 的 setTimeout 里有
+// `this.pendingScrollBottom` 守卫，点 ↓ 恰好是唯一能压过复位的意图。
+//
+// 【为什么是旁路而不是删】260e497 治的是真问题（stackFromEnd 下追加把可见内容
+// 顶走）。这个常量只是把它整条摘出去，好让用户一次装机就能证实/证伪「是不是它
+// 按住了列表」。原代码与全部单测（AlbumGroupDataSource.test 里 appendBreaksAnchor
+// 那两条）一字未动，改回 false 即完全恢复。
+//
+// 【结论落地后】若坐实：正确修法不是留着这个常量，而是把 `!this.atBottom` 换成
+// 一条真正表达「这次追加是用户主动向下翻页的结果」的判据（见交付说明）。
+const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = true;
+
 // Reuse-pool granularity for ReusableMessageBubble's reuseId. Provisional —
 // to be measured and tuned in P2 Task 3; 'medium' is a placeholder, not a
 // verified-best value.
@@ -2492,7 +2514,8 @@ export struct ChatPage {
       // 这道闸天然是开的。
       let appendAnchorId: number = 0;
       let appendAnchorY: number = 0;
-      if (prependAnchorId === 0 && this.didInitialScroll && !this.atBottom &&
+      if (!APPEND_ANCHOR_RESTORE_BYPASSED &&
+        prependAnchorId === 0 && this.didInitialScroll && !this.atBottom &&
         appendBreaksAnchor(this.groups, groups)) {
         const visibleIndex: number = this.curStartIdx;
         if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
@@ -2503,8 +2526,14 @@ export struct ChatPage {
             appendAnchorY = 0;
           }
           logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
-            ` rows=${this.groups.length}->${groups.length}`);
+            ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
         }
+      } else if (prependAnchorId === 0 && this.didInitialScroll &&
+        appendBreaksAnchor(this.groups, groups)) {
+        // 旁路态 / 闸关上时也留一条：判读时要能看见「这一次追加本来会不会复位」，
+        // 以及解除瞬间是哪个输入翻的。与 hold 那条同格式，随开关一起删。
+        logW(`[AppendAnchor] skip bypass=${APPEND_ANCHOR_RESTORE_BYPASSED}` +
+          ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
       }
       this.messages = list;
       this.messageListRevision++;
@@ -4180,12 +4209,41 @@ export struct ChatPage {
   private restoreAppendAnchor(groups: AlbumGroup[], messageId: number, itemY: number): void {
     const targetIndex: number = groupIndexOf(groups, messageId);
     if (targetIndex < 0) {
-      logW(`[AppendAnchor] lost id=${messageId} rows=${groups.length}`);
+      logW(`[AppendAnchor] lost id=${messageId} rows=${groups.length}` +
+        ` ${this.appendAnchorGateProbe(groups)}`);
       return;
     }
     logW(`[AppendAnchor] restore id=${messageId} idx=${targetIndex} y=${itemY}` +
-      ` rows=${groups.length}`);
+      ` rows=${groups.length} ${this.appendAnchorGateProbe(groups)}`);
     this.restoreScrollAnchor(targetIndex, itemY);
+  }
+
+  // ⚠️ 临时探针（随 APPEND_ANCHOR_RESTORE_BYPASSED 一起删）：把决定这道闸开合的
+  // 全部输入打在同一行上。要看的就是拉锯**解除的那一瞬间**是哪个值翻了——按当前
+  // 假设应当是 hasMoreNewer true→false 带着 verdict no→yes。
+  //
+  // 刻意不调 refreshAtBottom：那个会写 this.atBottom。这里只读，绝不改状态。
+  // groupsLen 用**新快照**的长度，因为闸是在发布这份快照时判的。
+  private appendAnchorGateProbe(groups: AlbumGroup[]): string {
+    const hasMoreNewer: boolean = this.store !== null && this.store.getHasMoreNewer();
+    let scrollerAtEnd: boolean = false;
+    try {
+      scrollerAtEnd = this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd();
+    } catch (e) {
+      scrollerAtEnd = false;
+    }
+    const verdict: string = atBottomVerdict({
+      viewerOpen: this.viewerMsgId !== 0,
+      imeTailPinned: this.imeTailPinned,
+      scrollerAtEnd: scrollerAtEnd,
+      visibleEndIdx: this.curEndIdx,
+      indexGroupsLen: this.indexGroupsLen,
+      groupsLen: groups.length,
+      hasMoreNewer: hasMoreNewer
+    });
+    return `hasMoreNewer=${hasMoreNewer} atBottom=${this.atBottom} verdict=${verdict}` +
+      ` scrollerAtEnd=${scrollerAtEnd} startIdx=${this.curStartIdx} endIdx=${this.curEndIdx}` +
+      ` idxLen=${this.indexGroupsLen} userScroll=${this.listUserScrollActive}`;
   }
 
   private restoreScrollAnchor(targetIndex: number, itemY: number): void {
