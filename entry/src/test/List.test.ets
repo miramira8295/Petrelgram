@@ -161,6 +161,7 @@ import initialMessageStageTest from './InitialMessageStage.test';
 import stringsTest from './Strings.test';
 import scrollEffectsTest from './ScrollEffects.test';
 import anchorRestoreTest from './AnchorRestore.test';
+import floatDateGateTest from './FloatDateGate.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -327,4 +328,5 @@ export default function testsuite() {
   stringsTest();
   scrollEffectsTest();
   anchorRestoreTest();
+  floatDateGateTest();
 }

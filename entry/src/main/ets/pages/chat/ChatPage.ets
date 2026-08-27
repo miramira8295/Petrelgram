@@ -74,7 +74,11 @@ import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
-import { MessageListStateCard, TimelineStatePill } from './MessageListState';
+import { MessageListStateCard } from './MessageListState';
+import {
+  FloatingDateOverlay, FloatingDateState, TimelineStatePillSlot
+} from './FloatingDateOverlay';
+import { floatDateNeedsRescan } from '../../util/floatDateGate';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
 import {
@@ -1870,11 +1874,14 @@ export struct ChatPage {
   // Floating date chip: shows the topmost visible message's date while the
   // list scrolls, fades out shortly after scrolling stops (the in-list date
   // pills stay — this is the always-visible companion).
-  @Local floatDate: string = '';
-  @Local floatDateShown: boolean = false;
-  private floatDateHideTimer: number = -1;
+  //
+  // 日期文字、显隐、820ms 隐藏定时器全部住在 FloatingDateOverlay 那边的
+  // @ObservedV2 对象里。这里只留一个**普通私有字段**持有引用：ChatPage.build
+  // 一个字都不读它，日期变化因此不再让整页重绘。
+  private floatDateState: FloatingDateState = new FloatingDateState();
+  // 留在 ChatPage 的只有"顶行下标"——它是"要不要重新扫 groups 算日期"的判据，
+  // 而 groups 是 ChatPage 的数据。同样是非响应式字段。
   private floatDateIndex: number = -1;
-  private floatDateTimerArmedAt: number = 0;
   private listTouchActive: boolean = false;
   private listUserScrollActive: boolean = false;
   // RESIZE shortens the List while the IME animates in. Preserve the live-tail
@@ -2037,14 +2044,10 @@ export struct ChatPage {
   private unsubMembershipBasicGroup: (() => void) | null = null;
 
   private clearFloatingDate(): void {
-    if (this.floatDateHideTimer !== -1) {
-      clearTimeout(this.floatDateHideTimer);
-      this.floatDateHideTimer = -1;
-    }
-    this.floatDate = '';
-    this.floatDateShown = false;
+    // 定时器与两个显示态一起归 FloatingDateState 管；clear() 不回调 onHidden，
+    // 下面这两个标志本来就在同一句里清。
+    this.floatDateState.clear();
     this.floatDateIndex = -1;
-    this.floatDateTimerArmedAt = 0;
     this.listTouchActive = false;
     this.listUserScrollActive = false;
   }
@@ -2301,6 +2304,9 @@ export struct ChatPage {
       this.playSlotKey = key;
     });
     this.nowSec = Math.floor(Date.now() / 1000);
+    // 日期条隐藏的那一刻 listUserScrollActive 必须跟着翻假——原来它和显隐写在
+    // 同一个定时器体里，定时器下沉之后靠这个回调保住同一时刻。
+    this.floatDateState.setOnHidden((): void => { this.onFloatDateHidden(); });
     // 下面原本还有一大段（读 params → 定 chatId → 建 MessageStore 与十几个
     // 订阅）。实测 onReady 晚于 aboutToAppear（平板 API 26，commit 8046f73 上机：
     // aboutToAppear 读 this.navParams 时还是 undefined，chatId 落成 0，标题栏报
@@ -4096,15 +4102,15 @@ export struct ChatPage {
     if (!this.didInitialScroll || start < 0 || start >= this.groups.length) {
       return;
     }
-    const now = Date.now();
+    const now: number = Date.now();
     // onDidScroll fires every rendered frame. If the top row hasn't changed,
-    // skip the group scan, date formatting and @Local writes; only refresh the
-    // hide timer at a coarse cadence so a long drag keeps the chip visible.
-    if (start === this.floatDateIndex && this.floatDateShown) {
-      if (now - this.floatDateTimerArmedAt < 180) {
-        return;
-      }
-      this.armFloatDateHide(now);
+    // skip the group scan and the date formatting; only refresh the hide timer
+    // at a coarse cadence so a long drag keeps the chip visible.
+    //
+    // 两道判据的归属见 util/floatDateGate 的注释：扫不扫 groups 由这里判（数据
+    // 在这边），续不续期由日期条自己判（定时器在那边）。
+    if (!floatDateNeedsRescan(start, this.floatDateIndex)) {
+      this.floatDateState.keepAlive(now);
       return;
     }
     let date: number = 0;
@@ -4117,31 +4123,25 @@ export struct ChatPage {
     if (date <= 0) {
       return;
     }
-    const nextLabel = formatDateSeparator(date);
-    if (this.floatDate !== nextLabel) {
-      this.floatDate = nextLabel;
-    }
-    if (!this.floatDateShown) {
-      this.floatDateShown = true;
-    }
     if (!this.listUserScrollActive) {
       this.listUserScrollActive = true;
     }
     this.floatDateIndex = start;
-    this.armFloatDateHide(now);
+    this.floatDateState.show(formatDateSeparator(date), now);
   }
 
-  private armFloatDateHide(now: number): void {
-    this.floatDateTimerArmedAt = now;
-    if (this.floatDateHideTimer !== -1) {
-      clearTimeout(this.floatDateHideTimer);
-    }
-    this.floatDateHideTimer = setTimeout(() => {
-      this.floatDateHideTimer = -1;
-      this.floatDateShown = false;
-      this.listUserScrollActive = false;
-      this.floatDateIndex = -1;
-    }, 820);
+  // 隐藏定时器烧到底时由 FloatingDateState 回调（aboutToAppear 里挂上）。
+  //
+  // 【为什么时序等价】搬走之前，这三件事写在**同一个** 820ms 定时器体里：
+  // floatDateShown = false、listUserScrollActive = false、floatDateIndex = -1。
+  // 现在定时器还是同一条、时长还是 820ms，只是拆成"日期条自己翻 shown" +
+  // "回调里翻另外两个"，两段在同一次回调的同一个同步块里先后执行，中间没有
+  // await、没有再一次 setTimeout。对读 listUserScrollActive 的那两方（翻页闸
+  // util/pageGate、锚点判据 appendAnchorGateProbe）来说，它翻假的那一刻与原来
+  // 分毫不差。
+  private onFloatDateHidden(): void {
+    this.listUserScrollActive = false;
+    this.floatDateIndex = -1;
   }
 
   private prepareUserJump(): void {
@@ -9576,10 +9576,12 @@ export struct ChatPage {
           .padding({ bottom: this.bottomChromeH + 28 })
           .hitTestBehavior(HitTestMode.Transparent);
         } else if (this.timelinePillMode() !== TL_NONE) {
-          TimelineStatePill({
+          // 让位判据（日期条在不在）由 V2 外壳自己去读那个 @Trace 对象，
+          // ChatPage.build 不再碰它。见 FloatingDateOverlay.ets 的注释。
+          TimelineStatePillSlot({
+            state: this.floatDateState,
             mode: this.timelinePillMode(),
             label: timelineStateText(this.timelinePillMode()),
-            floatDateShown: this.floatDate !== '',
             onRetry: (): void => { this.timelineStateRetry(this.timelinePillMode()); }
           });
         }
@@ -9597,30 +9599,14 @@ export struct ChatPage {
         }
         // Floating date chip at the top of the viewport — tracks the topmost
         // visible message while scrolling, fades away when scrolling stops.
-        if (this.floatDate !== '') {
-          Row() {
-            Row() {
-              Text(this.floatDate)
-                .fontSize(12)
-                .fontColor(COLOR_TEXT_PRIMARY)
-                .fontWeight(FontWeight.Medium);
-            }
-            .height(28)
-            .padding({ left: 12, right: 12 })
-            .backgroundColor($r('app.color.surface'))
-            .border({ width: 0.5, color: $r('app.color.divider') })
-            .borderRadius(14)
-            .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 });
-          }
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-          .margin({ top: this.headerChromeHeight() + 8 })
-          .opacity(this.floatDateShown ? 1 : 0)
-          .scale({ x: this.floatDateShown ? 1 : 0.9, y: this.floatDateShown ? 1 : 0.9 })
-          .translate({ y: this.floatDateShown ? 0 : -5 })
-          .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200), curve: Curve.EaseOut })
-          .hitTestBehavior(HitTestMode.None);
-        }
+        //
+        // 视觉与修饰器栈原样搬进 FloatingDateOverlay。这里只传引用和顶边距：
+        // headerChromeHeight() 读的那几个字段 ChatPage.build 本来就为
+        // List.contentStartOffset 读了，不新增订阅；日期文字和显隐一个都不读。
+        FloatingDateOverlay({
+          state: this.floatDateState,
+          topMargin: this.headerChromeHeight() + 8
+        });
         Column() {
           // The composer itself is interactive from the first frame. Only its
           // optional result panels stay behind the transition gate; replacing
