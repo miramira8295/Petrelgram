@@ -19,7 +19,7 @@ import { updateChecker } from '../services/UpdateChecker';
 import { liveLocation } from '../services/LiveLocationService';
 import { setInlinePhotoTargetPx } from '../util/formatMsgContent';
 import { trimPixelCache } from '../util/pixelCache';
-import { logE } from '../util/log';
+import { logE, logW } from '../util/log';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
 const BUBBLE_MEDIA_MAX_VP: number = 280;
@@ -35,6 +35,9 @@ export default class EntryAbility extends UIAbility {
   // 上一次见到的系统语言，用来判断配置变更里语言到底变没变。
   private lastLanguage: string = '';
   private windowStageRef: window.WindowStage | null = null;
+  // loadContent 回调之前窗口还没有内容，setWindowBackgroundColor 必失败
+  // （"This window state is abnormal"）——原来每次冷启动都在诊断日志里留一行。
+  private contentLoaded: boolean = false;
   // 上一次跑缓存收缩的时间戳；配合 CACHE_TRIM_MIN_INTERVAL_MS 防止频繁切前台反复触发重操作。
   private lastCacheTrimAt: number = 0;
 
@@ -105,6 +108,17 @@ export default class EntryAbility extends UIAbility {
   //
   // 内容色（时钟和图标）必须跟着深浅色走：深色模式下应用背景是暗的，图标要
   // 白的才看得见；浅色反之。系统不会替我们判断，因为它不知道页面底下画了什么。
+  private applyWindowBackground(win: window.Window, dark: boolean): void {
+    if (!this.contentLoaded) {
+      return;
+    }
+    try {
+      win.setWindowBackgroundColor(dark ? '#17212B' : '#EFEFF4');
+    } catch (e) {
+      logE(`setWindowBackgroundColor failed: ${(e as Error).message}`);
+    }
+  }
+
   private applyImmersiveStatusBar(): void {
     if (this.windowStageRef === null) {
       return;
@@ -123,11 +137,7 @@ export default class EntryAbility extends UIAbility {
     // 这两个值必须与 resources/{base,dark}/element/color.json 的 page_bg 一致。
     // 不用 getColorSync 从资源里取：那条路在本项目实测会在深色模式下仍然
     // 返回浅色值（theme.ets:31 的注释记着这个坑）。
-    try {
-      win.setWindowBackgroundColor(dark ? '#17212B' : '#EFEFF4');
-    } catch (e) {
-      logE(`setWindowBackgroundColor failed: ${(e as Error).message}`);
-    }
+    this.applyWindowBackground(win, dark);
     win.setWindowSystemBarProperties({
       statusBarColor: '#00000000',
       statusBarContentColor: dark ? '#FFFFFF' : '#000000',
@@ -241,6 +251,13 @@ export default class EntryAbility extends UIAbility {
       win.on('keyboardHeightChange', (h: number) => {
         AppStorage.setOrCreate('keyboardHeightVp', px2vp(h));
       });
+      // 悬浮小窗 ↔ 全屏来回时系统会重置状态栏的内容色，而上面那套只在启动和
+      // 配置变更时设过一次——从小窗恢复后图标就不是白的了（issue #136）。
+      // 窗口模式一变就再设一遍。
+      win.on('windowStatusChange', (status: window.WindowStatusType): void => {
+        logW(`windowStatus ${status}`);
+        this.applyImmersiveStatusBar();
+      });
       win.on('windowSizeChange', (size) => {
         // px2vp 依赖当前显示密度。灭屏/亮屏那一瞬间这个回调会带着尚未恢复的
         // 密度过来，密度当成 1 时 px2vp 直接把物理像素原样返回——屏宽从 385
@@ -282,6 +299,13 @@ export default class EntryAbility extends UIAbility {
         windowStage.getMainWindowSync().getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
       } catch (e) {
         hilog.error(DOMAIN, 'testTag', 'setKeyboardAvoidMode failed: %{public}s', JSON.stringify(e));
+      }
+      // 窗口底色要等内容加载完才设得上，见 contentLoaded。
+      this.contentLoaded = true;
+      try {
+        this.applyWindowBackground(windowStage.getMainWindowSync(), darkResourceMode(this.context));
+      } catch (e) {
+        logE(`applyWindowBackground after loadContent failed: ${(e as Error).message}`);
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
     });
