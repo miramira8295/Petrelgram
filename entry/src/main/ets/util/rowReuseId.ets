@@ -148,8 +148,20 @@ function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string 
   const unread: string = hasUnreadDivider(data) ? 'unread' : 'no-unread';
   const translated: string = hasTranslation(msg) ? 'translated' : 'no-translated';
   const linkPreview: string = hasLinkPreview(msg) ? 'link-preview' : 'no-link-preview';
+  // 裸表情/贴纸/圆形视频没有气泡面：不上玻璃、不画轮廓、不带尾巴。它们和文本行
+  // 共池时，一个带玻璃轮廓+尾巴的文本行被复用去画表情，.background() 里那条
+  // 轮廓路径不跟着刷新，表情就套着一圈边框（真机报的「表情/贴纸带边框」）。
+  // mediaKind 只在 fine 档进 key，medium 档得自己分开这两类面。
+  const surface: string = isBareSurface(msg) ? 'bare' : 'bubble';
   return `${coarseBucket(data, group)}:${content}:${avatar}:${senderName}:${outgoing}` +
-    `:${reply}:${forward}:${reactions}:${dateSep}:${unread}:${translated}:${linkPreview}`;
+    `:${reply}:${forward}:${reactions}:${dateSep}:${unread}:${translated}:${linkPreview}:${surface}`;
+}
+
+// 与 MessageBubble.isBareEmoji() 同一份判据（外加 dice，它同样没有气泡面）。
+function isBareSurface(msg: MessageEntry): boolean {
+  return msg.contentType === 'emoji' || msg.contentType === 'sticker'
+    || msg.contentType === 'customEmoji' || msg.contentType === 'videoNote'
+    || msg.contentType === 'dice';
 }
 
 // contentType values are enumerated from every `contentType === '...'` check

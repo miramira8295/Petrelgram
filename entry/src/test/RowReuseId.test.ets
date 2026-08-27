@@ -173,6 +173,19 @@ export default function rowReuseIdTest() {
         rowReuseId(data, groupOf(withoutSenderName), 'medium')).assertFalse();
     });
 
+    it('bare_surface_rows_never_share_a_medium_bucket_with_bubbles', 0, () => {
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const text: MessageEntry = textEntry(90);
+      const emoji: MessageEntry = cloneMessage(text);
+      emoji.contentType = 'emoji';
+      const sticker: MessageEntry = cloneMessage(text);
+      sticker.contentType = 'sticker';
+      // 文本行带玻璃轮廓和尾巴，裸表情没有：复用串档就是「表情带边框」。
+      expect(rowReuseId(data, groupOf(text), 'medium') === rowReuseId(data, groupOf(emoji), 'medium')).assertFalse();
+      // 两种裸面之间在 medium 档仍然共池（都没有气泡面），细分留给 fine。
+      expect(rowReuseId(data, groupOf(emoji), 'medium') === rowReuseId(data, groupOf(sticker), 'medium')).assertTrue();
+    });
+
     it('content_kind_hidden_system_normal_are_three_distinct_medium_buckets', 0, () => {
       const data: MessageBubbleRenderData = renderData({ isGroup: true });
       const normal: MessageEntry = textEntry(80);
