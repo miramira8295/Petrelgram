@@ -78,7 +78,7 @@ import { MessageListStateCard } from './MessageListState';
 import {
   FloatingDateOverlay, FloatingDateState, TimelineStatePillSlot
 } from './FloatingDateOverlay';
-import { floatDateNeedsRescan } from '../../util/floatDateGate';
+import { firstRowBelowChrome, floatDateNeedsRescan } from '../../util/floatDateGate';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
 import {
@@ -4129,6 +4129,16 @@ export struct ChatPage {
     if (!this.didInitialScroll || start < 0 || start >= this.groups.length) {
       return;
     }
+    // 行号得是新鲜的：往上翻插进一页后 groups 已经换了，而 curStartIdx 要等下一次
+    // onScrollIndex 才刷新，这期间拿旧行号查新 groups 会差出一整页（issue #163
+    // 的另一半）。refreshAtBottom 用的是同一道判据。
+    if (this.indexGroupsLen !== this.groups.length) {
+      return;
+    }
+    // start 是 List「显示区」的第一行，包括已经滚到浮动标题栏底下的那一行；
+    // 日期条要报的是用户看得见的第一行，见 util/floatDateGate.firstRowBelowChrome。
+    const top: number = firstRowBelowChrome(start, this.groups.length,
+      this.headerChromeHeight(), (index: number): number => this.rowBottomVp(index));
     const now: number = Date.now();
     // onDidScroll fires every rendered frame. If the top row hasn't changed,
     // skip the group scan and the date formatting; only refresh the hide timer
@@ -4136,12 +4146,12 @@ export struct ChatPage {
     //
     // 两道判据的归属见 util/floatDateGate 的注释：扫不扫 groups 由这里判（数据
     // 在这边），续不续期由日期条自己判（定时器在那边）。
-    if (!floatDateNeedsRescan(start, this.floatDateIndex)) {
+    if (!floatDateNeedsRescan(top, this.floatDateIndex)) {
       this.floatDateState.keepAlive(now);
       return;
     }
     let date: number = 0;
-    for (let i = start; i < this.groups.length; i++) {
+    for (let i = top; i < this.groups.length; i++) {
       if (this.groups[i].head.date > 0) {
         date = this.groups[i].head.date;
         break;
@@ -4153,8 +4163,18 @@ export struct ChatPage {
     if (!this.listUserScrollActive) {
       this.listUserScrollActive = true;
     }
-    this.floatDateIndex = start;
+    this.floatDateIndex = top;
     this.floatDateState.show(formatDateSeparator(date), now);
+  }
+
+  // 第 index 行相对 List 顶的下沿（vp）；量不到返回 NaN，调用方按"看得见"处理。
+  private rowBottomVp(index: number): number {
+    try {
+      const rect = this.scroller.getItemRect(index);
+      return rect.y + rect.height;
+    } catch (e) {
+      return Number.NaN;
+    }
   }
 
   // 隐藏定时器烧到底时由 FloatingDateState 回调（aboutToAppear 里挂上）。

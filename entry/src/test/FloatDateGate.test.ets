@@ -1,10 +1,34 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  floatDateNeedsRescan, floatDateShouldRearm,
-  FLOAT_DATE_HIDE_MS, FLOAT_DATE_REARM_MS
+  floatDateNeedsRescan, floatDateShouldRearm, firstRowBelowChrome,
+  FLOAT_DATE_HIDE_MS, FLOAT_DATE_REARM_MS, FLOAT_DATE_CHROME_SKIP_MAX
 } from '../main/ets/util/floatDateGate';
 
 export default function floatDateGateTest() {
+  describe('firstRowBelowChrome', () => {
+    // 行高 40，chrome 高 100：第 0 行 0..40、第 1 行 40..80 都整行藏在顶栏后面，
+    // 第 2 行 80..120 露出来一截。
+    const bottomOf = (index: number): number => (index + 1) * 40;
+
+    it('整行藏在浮动顶栏后面的行不算，报第一行露出来的（issue #163）', 0, (): void => {
+      expect(firstRowBelowChrome(0, 50, 100, bottomOf)).assertEqual(2);
+    });
+
+    it('第一行本来就露着就原样返回', 0, (): void => {
+      expect(firstRowBelowChrome(5, 50, 100, (index: number): number => 100 + (index - 5 + 1) * 40))
+        .assertEqual(5);
+    });
+
+    it('量不到（NaN）按看得见处理，停在当前行', 0, (): void => {
+      expect(firstRowBelowChrome(3, 50, 100, (): number => Number.NaN)).assertEqual(3);
+    });
+
+    it('最多往下试几行，且不越过最后一行', 0, (): void => {
+      expect(firstRowBelowChrome(0, 50, 10000, bottomOf)).assertEqual(FLOAT_DATE_CHROME_SKIP_MAX);
+      expect(firstRowBelowChrome(0, 2, 10000, bottomOf)).assertEqual(1);
+    });
+  });
+
   describe('floatDateNeedsRescan', () => {
     it('顶行没变就不重扫：onDidScroll 每帧都来，这是主要的省法', 0, (): void => {
       expect(floatDateNeedsRescan(12, 12)).assertFalse();
