@@ -217,7 +217,9 @@ export struct ChatHeader {
           colorSeed: this.chatId,
           avatarSize: 38,
           savedMessages: this.savedMessages
-        });
+        })
+          // 左移 1：右边补回同样的 1，标题和副标题保持原位，只有头像挪。
+          .margin({ left: -1, right: 1 });
         Column() {
           Row() {
             Text(this.titleText)
