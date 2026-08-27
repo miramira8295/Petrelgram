@@ -13,6 +13,8 @@
 // 相册数据源在 UI 树之外算占位高，逐个传等于改十几处签名。
 //
 // 手机单栏下它恒等于窗口宽，行为逐字不变。
+import { logW } from './log';
+
 export const CHAT_CONTENT_WIDTH_KEY: string = 'chatContentWidthVp';
 
 // 当前内容列宽。还没发布过（第一帧之前、或在聊天页之外算占位）时退回窗口宽
@@ -31,7 +33,12 @@ export function publishChatContentWidth(widthVp: number): void {
   if (!(widthVp > 0)) {
     return;
   }
-  if (AppStorage.get<number>(CHAT_CONTENT_WIDTH_KEY) !== widthVp) {
+  const previous: number = AppStorage.get<number>(CHAT_CONTENT_WIDTH_KEY) ?? 0;
+  if (previous !== widthVp) {
+    // 诊断（issue #138）：气泡宽度全部由这个值推出来，而 ChatPage 的 screenW
+    // 探针盯的是窗口宽——小窗里气泡超出右缘时，两条线对照才知道是这个值没跟上
+    // 还是消费方拿的是旧值。只在变化时打，一次窗口变化最多两三行。
+    logW(`chatContentWidth ${previous} -> ${widthVp}`);
     AppStorage.setOrCreate<number>(CHAT_CONTENT_WIDTH_KEY, widthVp);
   }
 }

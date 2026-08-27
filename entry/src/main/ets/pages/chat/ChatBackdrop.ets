@@ -109,6 +109,11 @@ export struct ChatBackdrop {
   // 会话都走实时分层绘制，重则一直停在默认背景的旧缓存图上，显示错壁纸。
   private onParamsChanged(): void {
     this.syncRaster();
+    // 窗口变窄（悬浮小窗）时先把内容列宽压到窗口宽以内（issue #138）：内容列不可
+    // 能比窗口宽，而 onAreaChange 那次精确的量要等布局回来；这期间气泡若还按
+    // 旧的宽算 maxWidth，就会伸出右缘。窗口变宽时 min 取的仍是旧值、同值不写，
+    // 等 onAreaChange 发精确值。
+    publishChatContentWidth(Math.min(this.layerW(), this.screenW));
   }
 
   private patternStrength(): number {
