@@ -8,7 +8,9 @@ import {
 } from '../../store/AppSettings';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
-import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
+import {
+  animationDurationFor, persistentAnimationDurationFor, scrollActiveNow
+} from '../../util/scrollEffects';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import {
   glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
@@ -447,7 +449,8 @@ export struct LightweightPlainTextBubble {
   // 时长固定成 0，而这类动画在那之后才播——结果是滑动停下后按气泡没有过渡、
   // 循环胶囊永久静止。滑动中本来也按不到气泡，门控它们收益为零。
   private persistentEffectDuration(ms: number): number {
-    return this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving ? ms : 0;
+    return persistentAnimationDurationFor(
+      this.chatEffectsEnabled, this.messageEffectsEnabled, this.powerSaving, ms);
   }
   private reactionDuration(ms: number): number {
     return animationDurationFor(
@@ -752,7 +755,14 @@ export struct LightweightPlainTextBubble {
               this.timeOverlay();
             }.constraintSize({ maxWidth: this.inlineMaxW() });
           }
-          .alignItems(HorizontalAlign.Start).constraintSize({ maxWidth: this.bubbleMaxW() })
+          .alignItems(HorizontalAlign.Start)
+          // 与 MessageBubble 同一策略、同一理由（见那边的长注释）：110ms 的作用域
+          // 紧跟 stateStyles，只覆盖按下态的 opacity/scale；承载背景、模糊、圆角、
+          // padding、阴影、约束宽度的属性一律排在作用域之后，数据更新不再启动
+          // 隐式动画、也就不再连带整张消息 List 的重测。两支气泡必须同改。
+          .stateStyles({ normal: this.bubbleNormalStyle, pressed: this.bubblePressedStyle })
+          .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
+          .constraintSize({ maxWidth: this.bubbleMaxW() })
           .backgroundColor(this.bubbleBg())
           .backdropBlur(this.glassBlur())
           .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
@@ -760,8 +770,6 @@ export struct LightweightPlainTextBubble {
           })
           .borderRadius(this.bubbleCorners()).padding(8)
           .shadow({ radius: this.bubbleMaterialLive() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
-          .stateStyles({ normal: this.bubbleNormalStyle, pressed: this.bubblePressedStyle })
-          .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
           .onAreaChange((_old: Area, area: Area): void => { this.bubbleW = area.width as number; })
           .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
             .onAction((event: GestureEvent): void => { this.onLongPress(event); }))

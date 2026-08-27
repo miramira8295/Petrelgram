@@ -39,3 +39,15 @@ export function scrollActiveNow(): boolean {
 export function animationDurationFor(enabled: boolean, scrolling: boolean, ms: number): number {
   return enabled && !scrolling ? ms : 0;
 }
+
+// 按压反馈这类「参数在 build 之后才被消费」的动画的时长决策：不吃滑动门控
+// （理由见 MessageBubble/LightweightPlainTextBubble 的调用点注释），只受聊天
+// 特效开关、消息特效开关和省电模式约束。
+//
+// 提成公共函数是为了让完整气泡和轻量气泡共用**同一份**决策：两支气泡必须同时
+// 生效，以前各写一份，改一支漏一支不会被任何测试发现。
+export function persistentAnimationDurationFor(
+  chatEffectsEnabled: boolean, messageEffectsEnabled: boolean,
+  powerSaving: boolean, ms: number): number {
+  return chatEffectsEnabled && messageEffectsEnabled && !powerSaving ? ms : 0;
+}

@@ -43,7 +43,9 @@ import {
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
-import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
+import {
+  animationDurationFor, persistentAnimationDurationFor, scrollActiveNow
+} from '../../util/scrollEffects';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, AVATAR_PALETTE, botButtonBg, accentSoft, bubbleTextFor } from '../../util/theme';
 import { languageDisplayName } from '../../services/TranslationService';
 import {
@@ -942,7 +944,8 @@ export struct MessageBubble {
   // 时长固定成 0，而这类动画在那之后才播——结果是滑动停下后按气泡没有过渡、
   // 循环胶囊永久静止。滑动中本来也按不到气泡，门控它们收益为零。
   private persistentEffectDuration(duration: number): number {
-    return this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving ? duration : 0;
+    return persistentAnimationDurationFor(
+      this.chatEffectsEnabled, this.messageEffectsEnabled, this.powerSaving, duration);
   }
 
   private reactionDuration(duration: number): number {
@@ -3742,6 +3745,26 @@ export struct MessageBubble {
         }
       }
       .alignItems(HorizontalAlign.Start)
+      // 按压反馈的动画作用域**必须**紧跟 stateStyles，并且这一段里只能有
+      // opacity/scale 这两个纯绘制属性。
+      //
+      // ArkUI 的 .animation() 只作用于「上一个 .animation() 之后、本次调用之前」
+      // 设置的那一段属性（同一份写法见本文件链接药丸的 620/90 两段）。这一段
+      // 以前排在整条属性链的末尾，于是背景色、模糊、圆角、padding、阴影、
+      // 约束宽度统统被卷进 110ms 隐式动画：复用重绑、宽度回写、发送态、下载
+      // 进度、翻译态每变一次，就有一次 JSAnimation -> FlushLayoutTask ->
+      // Measure[List]（2026-08-27 真机 trace：fling 窗口内 1079 个 duration:110
+      // 切片）。把作用域挪到这里之后，下面那些承载几何与材质的属性都在动画
+      // 作用域之外，数据更新只是普通的一次性属性刷新；按下气泡仍有过渡，因为
+      // 变的正是作用域内的 opacity/scale。
+      //
+      // 刻意没有另加一层视觉包装节点：材质挂在上层 Row（bubbleGlassModifier）、
+      // 手势与命中都挂在本节点，插节点会动到材质/裁剪/命中三者的相对关系。
+      .stateStyles({
+        normal: this.bubbleNormalStyle,
+        pressed: this.bubblePressedStyle
+      })
+      .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
       .constraintSize({ maxWidth: this.bubbleMaxW() })
       .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
       .backdropBlur(this.glassBlur())
@@ -3754,11 +3777,6 @@ export struct MessageBubble {
       .padding(this.isBareEmoji() ? 0 : 8)
       .shadow(this.isBareEmoji() ? { radius: 0, color: Color.Transparent, offsetX: 0, offsetY: 0 }
         : { radius: 2, color: '#14000000', offsetX: 0, offsetY: 1 })
-      .stateStyles({
-        normal: this.bubbleNormalStyle,
-        pressed: this.bubblePressedStyle
-      })
-      .animation({ duration: this.persistentEffectDuration(110), curve: Curve.EaseOut })
       .onAreaChange((_old: Area, area: Area) => { this.bubbleW = area.width as number; })
       // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
       // LongPressGesture in parallelGesture keeps the chat List's pan
