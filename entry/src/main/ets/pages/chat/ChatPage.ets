@@ -92,7 +92,9 @@ import {
 } from '../../util/messageLinkAction';
 import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
-import { newerPageIsUserDriven, shouldHoldAppendAnchor } from '../../util/appendAnchor';
+import {
+  newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
+} from '../../util/appendAnchor';
 import {
   PINNED_EMPTY, PINNED_IGNORE, PINNED_JUMP, PINNED_LATEST, PINNED_RETRY,
   PinnedTap, pinnedTapAction
@@ -204,7 +206,7 @@ import { confirmStopLiveLocation, withLocationPermission } from '../../util/loca
 import { logE, logI, logW } from '../../util/log';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
-  PAGE_GATE_REARM_DRAG_VP, PageGate
+  PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven
 } from '../../util/pageGate';
 import { rememberChatPosition, rememberedChatPosition } from '../../util/chatResume';
 import { navigateToSearch } from '../../util/searchNav';
@@ -2528,10 +2530,14 @@ export struct ChatPage {
       let appendAnchorId: number = 0;
       let appendAnchorY: number = 0;
       const appendsRows: boolean = appendBreaksAnchor(this.groups, groups);
-      // 标记只在"确实追加了行"的这一次发布消费：loadNewer 一开头就发一条
-      // paginationState 通知，在那里消费会把标记吃在页回来之前。
+      // 标记**无条件**取走：一次请求最多影响一次发布，绝不跨页残留。用不用得
+      // 上再看这次发布有没有真的追加行。原来只在 appendsRows 为真时才取，于是
+      // "置了位却一行没追加"的请求（短页补链、缓存预热重问、整页丢弃——在
+      // loadNewer 的过滤下是常态）会把标记永久闩住，此后每一次追加都误判成用户
+      // 翻出来的。真机上 hold 40 / skip 0 就是这么来的。见 util/appendAnchor。
+      const appendMarkPending: boolean = store.consumeUserDrivenAppend();
       const userDrivenAppend: boolean =
-        appendsRows ? store.consumeUserDrivenAppend() : false;
+        useUserDrivenAppendMark(appendMarkPending, appendsRows);
       const holdAppendAnchor: boolean = shouldHoldAppendAnchor({
         bypassed: APPEND_ANCHOR_RESTORE_BYPASSED,
         didInitialScroll: this.didInitialScroll,
@@ -2549,12 +2555,14 @@ export struct ChatPage {
             appendAnchorY = 0;
           }
           logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
+            ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
             ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
         }
       } else if (appendsRows && prependAnchorId === 0 && this.didInitialScroll) {
         // 闸关上时也留一条：判读时要能看见「这一次追加本来会不会复位」。与 hold
         // 那条同格式，随探针一起删。
         logW(`[AppendAnchor] skip bypass=${APPEND_ANCHOR_RESTORE_BYPASSED}` +
+          ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
           ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
       }
       this.messages = list;
@@ -4231,12 +4239,12 @@ export struct ChatPage {
     if (!canFire) {
       return;
     }
-    // 谁请求了这一页：只有列表所有权在用户手上时发出的请求算"用户主动向下
-    // 翻页"。标记随请求带到发布点，决定那一页落地时复不复位锚点。
-    // 不能用 gate.armed 代替——开会话时它就是满膛的，首屏布局后的第一次
-    // onScrollIndex 就能把它打掉，那一枪没有任何用户手势参与。
-    const userDriven: boolean =
-      newerPageIsUserDriven(this.listTouchActive, this.listUserScrollActive);
+    // 谁扣的这一枪的扳机。判据是**这一膛是谁压上去的**：手指位移上膛的是用户
+    // （armedByUser=true），会话开局给首屏自动补页留的那一发不是。标记随请求带
+    // 到发布点，决定那一页落地时复不复位锚点。
+    // 不能读 listTouchActive / listUserScrollActive——那两个标志的语义不对，而且
+    // 和上膛条件同源，会让 skip 结构上不可达（见 util/appendAnchor）。
+    const userDriven: boolean = newerPageIsUserDriven(pageGateShotIsUserDriven(gate));
     const started: boolean = this.store.loadNewer(userDriven);
     logW(`[NewerFire] request end=${end} started=${started} userDriven=${userDriven}` +
       ` hasMoreNewer=${this.store.getHasMoreNewer()}` +
@@ -4339,7 +4347,7 @@ export struct ChatPage {
       ` idxLen=${this.indexGroupsLen} userScroll=${this.listUserScrollActive}` +
       ` touch=${this.listTouchActive} newerArmed=${this.newerGate.armed}` +
       ` gateByUser=${this.newerGate.armedByUser}` +
-      ` reqUserDriven=${newerPageIsUserDriven(this.listTouchActive, this.listUserScrollActive)}`;
+      ` reqUserDriven=${newerPageIsUserDriven(pageGateShotIsUserDriven(this.newerGate))}`;
   }
 
   // ⚠️ 临时探针（[InitialPage] / [Anchor] / [JumpLatest] 共用，判读完一起删）：

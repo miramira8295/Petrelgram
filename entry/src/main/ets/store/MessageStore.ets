@@ -968,11 +968,19 @@ export class MessageStore {
   // 有一页用户主动翻出来的 newer 已经发布/即将发布，还没被 ChatPage 消费。
   private userDrivenAppendPending: boolean = false;
 
+  // 置位。只在**这一页真的要合进窗口**的那一刻调用（onHistory(res,'newer') 前
+  // 一行），不在 .then() 开头——不然缓存预热重问、页首断链整页丢弃这些一行都不
+  // 追加的分支也会置位，而它们置的位没人消费，会永久闩住。
+  private markUserDrivenAppend(userDriven: boolean): void {
+    if (userDriven) {
+      this.userDrivenAppendPending = true;
+    }
+  }
+
   // 取走并清掉上面那个标记。
   //
-  // 消费点必须是"这次发布确实在末尾追加了行"那一次，而不是每一次通知：
-  // loadNewer 一开头就发一条 paginationState 通知，若在那里消费，标记会在页
-  // 回来之前就被吃掉，判据永远是假。
+  // ChatPage 在**每一次**发布都无条件调用它（用不用得上再看这次发布有没有真的
+  // 追加行）。所以标记最多活过一次发布，跨页残留不可能发生。
   consumeUserDrivenAppend(): boolean {
     const pending: boolean = this.userDrivenAppendPending;
     this.userDrivenAppendPending = false;
@@ -1013,11 +1021,9 @@ export class MessageStore {
     const req = this.historyRequest(newestId, -(this.historyPageSize - 1));
     this.client.send(req).then((res: TdObject) => {
       this.newerPending = false;
-      // 这一页要发布了。标记留到 ChatPage 真正看到"行变多了"那一次发布才消费
-      // （见 consumeUserDrivenAppend），中途那些 paginationState 通知不消费它。
-      if (userDriven) {
-        this.userDrivenAppendPending = true;
-      }
+      // 标记**不**在这里置位。这一页还没合并，下面好几条分支（缓存预热重问、
+      // 页首断链整页丢弃）一行都不会追加就返回，在这里置位等于凭空造一个没人
+      // 消费的闩。置位挪到真正调用 onHistory(res, 'newer') 合并那两处。
       const arr = (res['messages'] as TdObject[] | undefined) ?? [];
       let maxId = 0;
       for (const m of arr) {
@@ -1095,6 +1101,7 @@ export class MessageStore {
           ` as-is to avoid stalling (newest=${newestId})`);
         const whole: TdObject = { '@type': 'messages' };
         whole['messages'] = sorted;
+        this.markUserDrivenAppend(userDriven);
         this.onHistory(whole, 'newer');
         this.notify('paginationState');
         return;
@@ -1107,6 +1114,7 @@ export class MessageStore {
         this.newerLoadState = 'idle';
         const trimmed: TdObject = { '@type': 'messages' };
         trimmed['messages'] = contiguous;
+        this.markUserDrivenAppend(userDriven);
         this.onHistory(trimmed, 'newer');
         this.notify('paginationState');
         return;
@@ -1131,6 +1139,7 @@ export class MessageStore {
       } else {
         this.newerLoadState = 'idle';
       }
+      this.markUserDrivenAppend(userDriven);
       this.onHistory(res, 'newer');
     }).catch((e: TdError) => {
       this.newerPending = false;
