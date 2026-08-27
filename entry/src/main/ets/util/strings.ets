@@ -78,11 +78,44 @@ class ResourceStrings implements StringSource {
 let source: StringSource | null = null;
 const STATIC_STRING_CACHE_LIMIT: number = 512;
 const staticStringCache: Map<string, string> = new Map();
+// 带参数的字符串也缓存，但有上限、FIFO 淘汰。真机 CPU profile 里
+// getStringByNameSync 累计约 698ms，其中大头是 str('xxx', name, count) 这类
+// 每行都要格式化一遍的参数串——同一条会话里同一个人、同一个计数会反复出现，
+// 命中率并不低。value 空间无界（实时计数、名字），所以不能像静态串那样只
+// 「满了清空」——那会在滚动热路径上周期性地全量失效；改成插入序 FIFO，
+// 每次只挤掉最老的一条。key 里不带语言纪元：切语言时 invalidateStringCache()
+// 和静态缓存一起清，效果等价且省掉每次拼 key 的开销。
+const PARAM_STRING_CACHE_LIMIT: number = 1024;
+const paramStringCache: Map<string, string> = new Map();
+// 参数之间的分隔符：控制字符，不会出现在任何名字或数字里，'a'+'bc' 与 'ab'+'c'
+// 才分得开。
+const PARAM_KEY_SEP: string = '\u001f';
+
+function paramCacheKey(key: string, args: Array<string | number>): string {
+  return `${key}${PARAM_KEY_SEP}${args.join(PARAM_KEY_SEP)}`;
+}
+
+function rememberParamString(cacheKey: string, value: string): void {
+  if (paramStringCache.size >= PARAM_STRING_CACHE_LIMIT) {
+    // Map 按插入序迭代，第一个就是最老的。
+    const oldest: IteratorResult<string> = paramStringCache.keys().next();
+    if (!oldest.done) {
+      paramStringCache.delete(oldest.value);
+    }
+  }
+  paramStringCache.set(cacheKey, value);
+}
+
+// 单测用：当前参数缓存条数。
+export function paramStringCacheSize(): number {
+  return paramStringCache.size;
+}
 
 // Called once during app startup, before any store is built.
 export function installStrings(next: StringSource): void {
   source = next;
   staticStringCache.clear();
+  paramStringCache.clear();
 }
 
 export function installStringsFromContext(context: common.ApplicationContext): void {
@@ -93,6 +126,7 @@ export function installStringsFromContext(context: common.ApplicationContext): v
 export function resetStrings(): void {
   source = null;
   staticStringCache.clear();
+  paramStringCache.clear();
 }
 
 // The platform resource manager switches locale in place. Plain strings that
@@ -100,6 +134,7 @@ export function resetStrings(): void {
 // refreshLocale()/LANGUAGE_EPOCH.
 export function invalidateStringCache(): void {
   staticStringCache.clear();
+  paramStringCache.clear();
 }
 
 // The one call the rest of the app makes. Returns the key itself when no source
@@ -110,8 +145,9 @@ export function str(key: string, ...args: Array<string | number>): string {
     return args.length === 0 ? key : `${key}(${args.join(',')})`;
   }
   // Static labels dominate row construction and are safe to share until the
-  // locale epoch changes. Parameterized strings remain uncached because their
-  // value space is unbounded and often includes live counts/names.
+  // locale epoch changes. Parameterized strings go through a bounded FIFO
+  // cache (see paramStringCache) — their value space is unbounded, but the
+  // working set of one chat is small and repeats a lot.
   if (args.length === 0) {
     const cached = staticStringCache.get(key);
     if (cached !== undefined) {
@@ -124,7 +160,14 @@ export function str(key: string, ...args: Array<string | number>): string {
     staticStringCache.set(key, value);
     return value;
   }
-  return source.get(key, args);
+  const cacheKey: string = paramCacheKey(key, args);
+  const hit = paramStringCache.get(cacheKey);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const formatted = source.get(key, args);
+  rememberParamString(cacheKey, formatted);
+  return formatted;
 }
 
 // Count-dependent wording; `count` selects the plural form and is also the
