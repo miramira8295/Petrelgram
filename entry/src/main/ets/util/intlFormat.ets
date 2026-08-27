@@ -30,6 +30,40 @@ let fullDateFmt: Intl.DateTimeFormat | null = null;
 let monthDayTimeFmt: Intl.DateTimeFormat | null = null;
 let fullDateTimeFmt: Intl.DateTimeFormat | null = null;
 
+// Message bubbles render the same clock string over and over: a timestamp is
+// immutable, and every row rebuild re-formats it. What the clock shows only
+// depends on the minute the timestamp falls in, so results are memoised per
+// minute bucket (floor(unixSec / 60)).
+//
+// The cache lives here rather than in formatTime.ets because the string is a
+// function of locale *and* hour cycle, both of which are owned by this module
+// and can change at runtime (language switch, test seams). A cache placed
+// outside would have no way to observe those and would go stale forever.
+const CLOCK_CACHE_CAPACITY = 1024;
+let clockCache: Map<number, string> = new Map<number, string>();
+// FIFO: a fixed-size ring of the cached keys in insertion order. Scrolling
+// walks a timeline in one direction, so plain insertion order evicts what the
+// viewport already left; an LRU's extra bookkeeping would buy nothing here.
+let clockCacheRing: number[] = [];
+let clockCacheNext: number = 0;
+
+function clearClockCache(): void {
+  clockCache = new Map<number, string>();
+  clockCacheRing = [];
+  clockCacheNext = 0;
+}
+
+function putClockCache(bucket: number, text: string): void {
+  if (clockCache.size >= CLOCK_CACHE_CAPACITY) {
+    clockCache.delete(clockCacheRing[clockCacheNext]);
+    clockCacheRing[clockCacheNext] = bucket;
+  } else {
+    clockCacheRing.push(bucket);
+  }
+  clockCache.set(bucket, text);
+  clockCacheNext = (clockCacheNext + 1) % CLOCK_CACHE_CAPACITY;
+}
+
 export function currentLocale(): string {
   if (localeTag === '') {
     let tag: string = '';
@@ -82,6 +116,7 @@ export function refreshLocale(): void {
   fullDateFmt = null;
   monthDayTimeFmt = null;
   fullDateTimeFmt = null;
+  clearClockCache();
 }
 
 // Test seams: force a locale and a clock without a running platform.
@@ -95,6 +130,7 @@ export function setHourCycleForTest(use24: boolean): void {
   clockFmt = null;
   monthDayTimeFmt = null;
   fullDateTimeFmt = null;
+  clearClockCache();
 }
 
 function pad2(n: number): string {
@@ -113,6 +149,24 @@ export function clockTime(d: Date): string {
     }
   }
   return clockFmt.format(d);
+}
+
+// Cached form of clockTime() for a Unix timestamp in seconds. Seconds below the
+// minute never reach the rendering, so they are dropped before lookup. Invalid
+// or non-positive timestamps have no clock to show and yield an empty string,
+// which is also what the callers already returned for them.
+export function clockTimeAt(unixSec: number): string {
+  if (!Number.isFinite(unixSec) || unixSec <= 0) {
+    return '';
+  }
+  const bucket = Math.floor(unixSec / 60);
+  const cached = clockCache.get(bucket);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const text = clockTime(new Date(bucket * 60000));
+  putClockCache(bucket, text);
+  return text;
 }
 
 // zh-CN "周二", en-US "Tue".

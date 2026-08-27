@@ -1,6 +1,12 @@
-import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect, afterEach } from '@ohos/hypium';
 import { formatClockTime, formatTime } from '../main/ets/util/formatTime';
-import { clockTime, fullDate, monthDay, weekdayShort } from '../main/ets/util/intlFormat';
+import {
+  clockTime, fullDate, monthDay, refreshLocale, setHourCycleForTest, setLocaleForTest, weekdayShort
+} from '../main/ets/util/intlFormat';
+
+// Built from local components so the clock assertions do not depend on the
+// runner's time zone. 2026-08-06 09:05:00 local.
+const MINUTE_BASE = Math.floor(new Date(2026, 7, 6, 9, 5, 0).getTime() / 1000);
 
 const NOW = 1783512000;
 
@@ -50,6 +56,80 @@ export default function formatTimeTest() {
       expect(sameDay === week).assertFalse();
       expect(week === year).assertFalse();
       expect(year === older).assertFalse();
+    });
+  });
+}
+
+// The bubble clock is memoised per minute bucket, because a message timestamp
+// never changes but its row is rebuilt constantly. These guard the two ways a
+// cache goes wrong: showing a stale string, and dropping the right one.
+export function formatClockCacheTest() {
+  describe('formatClockTime_cache', () => {
+    afterEach(() => {
+      refreshLocale();
+    });
+
+    it('same_minute_any_second_renders_alike', 0, () => {
+      setLocaleForTest('zh-CN');
+      setHourCycleForTest(true);
+      const first = formatClockTime(MINUTE_BASE);
+      expect(first).assertEqual('09:05');
+      expect(formatClockTime(MINUTE_BASE + 1)).assertEqual(first);
+      expect(formatClockTime(MINUTE_BASE + 59)).assertEqual(first);
+    });
+
+    it('next_minute_renders_differently', 0, () => {
+      setLocaleForTest('zh-CN');
+      setHourCycleForTest(true);
+      expect(formatClockTime(MINUTE_BASE)).assertEqual('09:05');
+      expect(formatClockTime(MINUTE_BASE + 60)).assertEqual('09:06');
+      expect(formatClockTime(MINUTE_BASE + 3600)).assertEqual('10:05');
+    });
+
+    // A cached string belongs to the locale and hour cycle that produced it.
+    it('locale_and_hour_cycle_switches_invalidate', 0, () => {
+      setLocaleForTest('zh-CN');
+      setHourCycleForTest(true);
+      const h24 = formatClockTime(MINUTE_BASE);
+      expect(h24).assertEqual('09:05');
+
+      setHourCycleForTest(false);
+      const h12 = formatClockTime(MINUTE_BASE);
+      expect(h12 === h24).assertFalse();
+
+      setLocaleForTest('en-US');
+      setHourCycleForTest(false);
+      const en = formatClockTime(MINUTE_BASE);
+      expect(en.indexOf('AM') >= 0 || en.indexOf('am') >= 0).assertTrue();
+
+      setLocaleForTest('zh-CN');
+      setHourCycleForTest(true);
+      expect(formatClockTime(MINUTE_BASE)).assertEqual(h24);
+    });
+
+    // Far more distinct minutes than the cache holds: evicted buckets must be
+    // recomputed, not lost, and the newest ones must still be right.
+    it('stays_correct_past_the_capacity', 0, () => {
+      setLocaleForTest('zh-CN');
+      setHourCycleForTest(true);
+      const oldest = MINUTE_BASE;
+      const oldestText = formatClockTime(oldest);
+      // One Date reused across the sweep: building 4096 of them is exactly what
+      // the linter's reuse-date rule is about, and the loop only needs a cursor.
+      const probe = new Date(0);
+      for (let i = 1; i <= 4096; i++) {
+        const t = MINUTE_BASE + i * 60;
+        probe.setTime(t * 1000);
+        expect(formatClockTime(t)).assertEqual(clockTime(probe));
+      }
+      expect(formatClockTime(oldest)).assertEqual(oldestText);
+      expect(formatClockTime(oldest)).assertEqual(clockTime(new Date(oldest * 1000)));
+    });
+
+    it('empty_for_invalid_timestamps', 0, () => {
+      expect(formatClockTime(0)).assertEqual('');
+      expect(formatClockTime(-1)).assertEqual('');
+      expect(formatClockTime(Number.NaN)).assertEqual('');
     });
   });
 }

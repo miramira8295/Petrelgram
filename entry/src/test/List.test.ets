@@ -22,7 +22,7 @@ import reactionsWidthTest from './ReactionsWidth.test';
 import emojiStatusIdTest from './EmojiStatusId.test';
 import startupStageTest from './StartupStage.test';
 import diagLogExportTest from './DiagLogExport.test';
-import formatTimeTest from './formatTime.test';
+import formatTimeTest, { formatClockCacheTest } from './formatTime.test';
 import intlFormatTest from './intlFormat.test';
 import formatPreviewTest from './formatPreview.test';
 import chatEntryTest from './ChatEntry.test';
@@ -177,6 +177,7 @@ export default function testsuite() {
   startupStageTest();
   diagLogExportTest();
   formatTimeTest();
+  formatClockCacheTest();
   intlFormatTest();
   formatPreviewTest();
   chatEntryTest();
