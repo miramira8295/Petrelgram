@@ -1205,6 +1205,17 @@ export struct ChatPage {
       // （见 L1242）把视口又拽回底部。同文件 1216 / 1227 两处也是这个写法。
       this.atBottom = false;
       this.restorePrependAnchor(this.groups, anchorId, anchorY);
+      // 还原完再判一次贴底（issue #62）。上面把 atBottom 硬置成 false 之后，只有
+      // onScrollIndex 会把它判回来，而锚点没动（锁屏前后视口没变、dy=0）时根本
+      // 没有滚动回调——atBottom 就一直是 false，之后每条新消息都被当成"用户不在
+      // 底部"不跟随，「锁屏解锁后就不滚了」正是它。行号还新鲜（隐藏期间没来新
+      // 消息）时 refreshAtBottom 按 isAtEnd 判回 true；来了新消息则行号已陈旧、
+      // 不下结论，保持 false，新消息留在下方由「↓」指回去（3ff77fc 的有意设计）。
+      setTimeout((): void => {
+        if (this.pageVisible) {
+          this.refreshAtBottom();
+        }
+      }, 0);
     } else if (this.atBottom && this.didInitialScroll) {
       const actionSeq: number = ++this.scrollActionSeq;
       setTimeout((): void => {
