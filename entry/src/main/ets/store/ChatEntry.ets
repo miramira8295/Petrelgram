@@ -29,6 +29,12 @@ export interface ChatEntry {
   autoDeleteTime: number;
   kind: ChatKind;
   isMarkedUnread: boolean; // manually flagged unread (unread_count may be 0)
+  // deleteChatHistory 的两个前置能力位，直接来自 TDLib 的 chat 对象。不能由
+  // kind 推导：活跃密聊只能为双方清空，公开超级群/频道两种都不行。TDLib 没有
+  // 针对这两位的增量 update（updateChat* 里没有对应的类），它们只随完整的
+  // chat 对象（updateNewChat / getChat）到达，所以只在 applyChat 里赋值。
+  canDeleteOnlyForSelf: boolean;
+  canDeleteForAllUsers: boolean;
   // 和自己的私聊 —— Telegram 的「我的收藏」。TDLib 对它没有任何特殊标记：
   // 标题就是自己的昵称、头像就是自己的头像（issue #8 的截图即此）。判据是
   // chat.id === 自己的 user id，只能由客户端自己认。展示成什么样交给渲染层，
@@ -55,6 +61,8 @@ export function cloneEntry(e: ChatEntry): ChatEntry {
     lastSenderName: e.lastSenderName, photoFileId: e.photoFileId,
     avatarPath: e.avatarPath, initials: e.initials, autoDeleteTime: e.autoDeleteTime,
     kind: e.kind, isMarkedUnread: e.isMarkedUnread,
+    canDeleteOnlyForSelf: e.canDeleteOnlyForSelf,
+    canDeleteForAllUsers: e.canDeleteForAllUsers,
     isSavedMessages: e.isSavedMessages,
     background: e.background, themeName: e.themeName,
     liveGroupCallId: e.liveGroupCallId, isLive: e.isLive, isRtmpLive: e.isRtmpLive

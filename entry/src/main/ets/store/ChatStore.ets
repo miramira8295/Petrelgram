@@ -539,6 +539,12 @@ export class ChatStore {
       autoDeleteTime: (chat['message_auto_delete_time'] as number | undefined) ?? 0,
       kind: chatKindOf(chat['type'] as TdObject | undefined),
       isMarkedUnread: (chat['is_marked_as_unread'] as boolean | undefined) ?? false,
+      // deleteChatHistory 的两个前置能力位。TDLib 没有针对它们的增量 update
+      // （updateChat* 里没有对应的类），只随完整 chat 对象到达，所以这里是
+      // 唯一的写入点；缺省取 false —— 宁可少给一个入口，也不要给一个必然
+      // 报 "Can't delete history of X only for self" 的入口。
+      canDeleteOnlyForSelf: (chat['can_be_deleted_only_for_self'] as boolean | undefined) ?? false,
+      canDeleteForAllUsers: (chat['can_be_deleted_for_all_users'] as boolean | undefined) ?? false,
       isSavedMessages: this.selfId !== 0 && id === this.selfId,
       background: this.backgroundOf(chat['background']),
       themeName: (chat['theme_name'] as string | undefined) ?? '',

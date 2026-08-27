@@ -9989,6 +9989,10 @@
       "value": "同时为对方清空"
     },
     {
+      "name": "cl_clear_for_everyone",
+      "value": "为所有人清空"
+    },
+    {
       "name": "cl_delete_and_block",
       "value": "删除并屏蔽"
     },

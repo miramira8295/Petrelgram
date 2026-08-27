@@ -7,6 +7,7 @@ import {
   setArchived, setInFolder, clearHistory, leaveOrDeleteChat, leaveLabel, leaveConfirmMessage,
   blockAndDeleteChat
 } from '../../store/ChatActions';
+import { ClearHistoryOption, clearHistoryOptions, canClearHistory } from '../../store/ClearHistoryOptions';
 import { getChatStore, getFolderStore } from '../../tdkit/Globals';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS,
@@ -220,12 +221,28 @@ export struct ChatRow {
     this.contextMenuShown = true;
   }
 
+  // 能不能清、能怎么清完全由 chat 的两个能力位决定（见 ClearHistoryOptions）。
+  // 老逻辑对任何会话都硬给 revoke=false，超级群/频道因此必然报
+  // "Can't delete history of X only for self"（issue: 老张观影群）。
+  private clearOptions(): ClearHistoryOption[] {
+    return clearHistoryOptions(
+      this.chat.canDeleteOnlyForSelf, this.chat.canDeleteForAllUsers, this.chat.kind);
+  }
+
+  private canClear(): boolean {
+    return canClearHistory(this.chat.canDeleteOnlyForSelf, this.chat.canDeleteForAllUsers);
+  }
+
   private confirmClearHistory(): void {
-    const isPrivate = this.chat.kind === 'private' || this.chat.kind === 'secret';
+    const options: ClearHistoryOption[] = this.clearOptions();
+    if (options.length === 0) {
+      // 菜单项本来就不该出现；这里兜一道，避免弹一个只有取消的空对话框。
+      return;
+    }
     const buttons: promptAction.Button[] = [{ text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string }];
-    buttons.push({ text: $r('app.string.clear_all'), color: '#E64646' });
-    if (isPrivate) {
-      buttons.push({ text: $r('app.string.cl_clear_for_both'), color: '#E64646' });
+    for (const opt of options) {
+      // 用 str() 而不是 $r()：$r 的 key 必须是编译期字面量，这里是按能力位选出来的。
+      buttons.push({ text: str(opt.labelKey), color: '#E64646' });
     }
     const chatId: number = this.chat.id;
     this.showConfirm({
@@ -233,10 +250,11 @@ export struct ChatRow {
       message: str('cl_clear_confirm', this.chat.title),
       buttons: buttons
     }, 'confirmClearHistory', (index: number): void => {
-      if (index === 1) {
-        clearHistory(chatId, false);
-      } else if (index === 2) {
-        clearHistory(chatId, true);
+      // index 0 是取消，其余按钮与 options 一一对应。
+      const picked: ClearHistoryOption | undefined =
+        index >= 1 && index <= options.length ? options[index - 1] : undefined;
+      if (picked !== undefined) {
+        clearHistory(chatId, picked.revoke);
       }
     });
   }
@@ -268,6 +286,8 @@ export struct ChatRow {
     // 只有私聊能屏蔽：私聊的 chat_id 就是对方 user_id；密聊的 chat_id 是会话
     // id，群和频道也没有单一发送者可屏蔽。
     const canBlock: boolean = kind === 'private';
+    const canOnlyForSelf: boolean = this.chat.canDeleteOnlyForSelf;
+    const canForAllUsers: boolean = this.chat.canDeleteForAllUsers;
     const buttons: promptAction.Button[] = canBlock
       ? [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
@@ -286,7 +306,7 @@ export struct ChatRow {
       buttons: buttons
     }, 'confirmLeave', (index: number): void => {
       if (index === 1) {
-        leaveOrDeleteChat(chatId, kind);
+        leaveOrDeleteChat(chatId, kind, canOnlyForSelf, canForAllUsers);
         return;
       }
       if (index === 2 && canBlock) {
@@ -385,11 +405,13 @@ export struct ChatRow {
         builder: (): void => { this.folderSubMenu(); }
       });
 
-      MenuItem({
-        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
-        content: $r('app.string.cp_clear_history')
-      })
-        .onClick(() => { this.confirmClearHistory(); });
+      if (this.canClear()) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+          content: $r('app.string.cp_clear_history')
+        })
+          .onClick(() => { this.confirmClearHistory(); });
+      }
 
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.xmark_circle')).fontColor([Color.Red]),

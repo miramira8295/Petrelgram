@@ -9989,6 +9989,10 @@
       "value": "Also clear for them"
     },
     {
+      "name": "cl_clear_for_everyone",
+      "value": "Clear for everyone"
+    },
+    {
       "name": "cl_delete_and_block",
       "value": "Delete and block"
     },

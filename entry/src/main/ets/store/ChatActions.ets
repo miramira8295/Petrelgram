@@ -4,6 +4,7 @@ import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { chatListOf } from './ListKey';
 import { serializeFolderMutation } from './FolderApi';
 import { ChatKind } from './ChatEntry';
+import { deleteChatRevoke } from './ClearHistoryOptions';
 import { str } from '../util/strings';
 import { logE } from '../util/log';
 
@@ -181,7 +182,8 @@ export async function setInFolder(folderId: number, chatId: number, include: boo
   }
 }
 
-// revoke: also delete the history for the other side (private chats only).
+// revoke: 为所有人清空，而不是只为自己清空。两种做法各有前置条件，见
+// ClearHistoryOptions —— 调用方必须先按 chat 的能力位挑，不能硬写。
 export function clearHistory(chatId: number, revoke: boolean): void {
   withChat(chatId, 'clearHistory', (): Promise<TdObject> => {
     const req: TdRequest = { '@type': 'deleteChatHistory' };
@@ -205,6 +207,9 @@ export function blockPrivateChatSender(chatId: number): Promise<void> {
 
 // 屏蔽并删除。先屏蔽再删除：反过来的话，删除到屏蔽之间对方新发的消息会把
 // 会话重新拉回列表，看起来像"删了又冒出来"。
+// revoke 固定为 false 是安全的：这个入口只对 private 开放（见 blockPrivateChatSender
+// 的注释），而 TDLib 对 User 类型的会话恒有 can_be_deleted_only_for_self=true
+// （MessagesManager::can_delete_dialog 的 DialogType::User 分支返回 {true, …}）。
 export function blockAndDeleteChat(chatId: number): void {
   withChat(chatId, 'blockAndDelete', (): Promise<TdObject> => {
     return blockPrivateChatSender(chatId).then((): Promise<TdObject> => {
@@ -218,7 +223,14 @@ export function blockAndDeleteChat(chatId: number): void {
 }
 
 // Groups/channels are left; private and secret chats are deleted from the list.
-export function leaveOrDeleteChat(chatId: number, kind: ChatKind): void {
+// revoke 由会话的能力位决定，不能硬写 false：活跃密聊在 TDLib 里是
+// {can_be_deleted_only_for_self:false, can_be_deleted_for_all_users:true}
+// （"active secret chats can be deleted only for both users"），带 revoke=false
+// 会直接报 "Can't delete history of X only for self"。
+export function leaveOrDeleteChat(
+  chatId: number, kind: ChatKind,
+  canDeleteOnlyForSelf: boolean, canDeleteForAllUsers: boolean
+): void {
   if (kind === 'basicGroup' || kind === 'supergroup' || kind === 'channel') {
     withChat(chatId, 'leaveChat', (): Promise<TdObject> => {
       const req: TdRequest = { '@type': 'leaveChat' };
@@ -231,7 +243,7 @@ export function leaveOrDeleteChat(chatId: number, kind: ChatKind): void {
     const req: TdRequest = { '@type': 'deleteChatHistory' };
     req['chat_id'] = chatId;
     req['remove_from_chat_list'] = true;
-    req['revoke'] = false;
+    req['revoke'] = deleteChatRevoke(canDeleteOnlyForSelf, canDeleteForAllUsers);
     return getTdClient().send(req);
   });
 }

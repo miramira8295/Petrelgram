@@ -39,6 +39,7 @@ import {
 } from '../../util/messageReusePool';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
 import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
+import { ClearHistoryOption, clearHistoryOptions } from '../../store/ClearHistoryOptions';
 import {
   MessageBubbleActions, MessageBubbleRenderData, ReusableMessageBubble
 } from './ReusableMessageBubble';
@@ -6161,7 +6162,28 @@ export struct ChatPage {
     });
   }
 
+  // 清空历史的可行方式由 chat 的两个能力位决定（见 ClearHistoryOptions）。
+  // 这里的确认框只有一个执行按钮，所以取破坏性最小的那个可行选项：私聊/普通
+  // 群拿到 revoke=false（和以前一样），只能为所有人清的会话（群主的超级群、
+  // 活跃密聊）拿到 revoke=true，两个位都为假则返回 undefined、菜单项不出现。
+  // 老代码对所有会话硬写 revoke=false，超级群必然报
+  // "Can't delete history of X only for self"。
+  private clearHistoryChoice(): ClearHistoryOption | undefined {
+    const e: ChatEntry | undefined = getChatStore().entryOf(this.chatId);
+    if (e === undefined) {
+      return undefined;
+    }
+    const options: ClearHistoryOption[] =
+      clearHistoryOptions(e.canDeleteOnlyForSelf, e.canDeleteForAllUsers, e.kind);
+    return options.length > 0 ? options[0] : undefined;
+  }
+
   private confirmClearHistory(): void {
+    const choice: ClearHistoryOption | undefined = this.clearHistoryChoice();
+    if (choice === undefined) {
+      return;
+    }
+    const revoke: boolean = choice.revoke;
     AlertDialog.show({
       message: $r('app.string.cp_clear_history_confirm'),
       autoCancel: true,
@@ -6170,13 +6192,13 @@ export struct ChatPage {
         action: (): void => {}
       },
       secondaryButton: {
-        value: $r('app.string.clear_all'),
+        value: str(choice.labelKey),
         fontColor: '#FF3B30',
         action: (): void => {
           const req: TdRequest = { '@type': 'deleteChatHistory' };
           req['chat_id'] = this.chatId;
           req['remove_from_chat_list'] = false;
-          req['revoke'] = false;
+          req['revoke'] = revoke;
           getTdClient().send(req).then(() => {
             promptAction.showToast({ message: $r('app.string.cp_history_cleared'), duration: 2000 });
           }).catch((e: TdError) => {
@@ -6254,8 +6276,10 @@ export struct ChatPage {
       actionMenuRow('sys.symbol.translate',
         this.translationActive() ? str('cp_translate_chat_off') : str('cp_translate_chat_on'),
         false, this.closeHeaderMenuThen((): void => { this.toggleTranslatable(); }));
-      actionMenuRow('sys.symbol.xmark_circle', str('cp_clear_history'), false,
-        this.closeHeaderMenuThen((): void => { this.confirmClearHistory(); }));
+      if (this.clearHistoryChoice() !== undefined) {
+        actionMenuRow('sys.symbol.xmark_circle', str('cp_clear_history'), false,
+          this.closeHeaderMenuThen((): void => { this.confirmClearHistory(); }));
+      }
       if (this.isGroup && this.membershipState === 'writable') {
         Divider().color($r('app.color.divider')).strokeWidth(0.7);
         actionMenuRow('sys.symbol.trash', this.isChannel ? str('cp_leave_channel') : str('cp_leave_group'), true,

@@ -26,6 +26,7 @@ import formatTimeTest, { formatClockCacheTest } from './formatTime.test';
 import intlFormatTest from './intlFormat.test';
 import formatPreviewTest from './formatPreview.test';
 import chatEntryTest from './ChatEntry.test';
+import clearHistoryOptionsTest from './ClearHistoryOptions.test';
 import userStoreTest from './UserStore.test';
 import chatStoreTest from './ChatStore.test';
 import fileServiceTest from './FileService.test';
@@ -182,6 +183,7 @@ export default function testsuite() {
   intlFormatTest();
   formatPreviewTest();
   chatEntryTest();
+  clearHistoryOptionsTest();
   userStoreTest();
   chatStoreTest();
   fileServiceTest();
