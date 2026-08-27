@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { glassBubbleCommands, glassPaintReady, tailShapeCommands } from '../main/ets/util/bubbleGlassPath';
+import { glassBodyPainted, glassBubbleCommands, glassPaintReady, glassStage, tailShapeCommands } from '../main/ets/util/bubbleGlassPath';
 
 export default function bubbleGlassPathTest() {
   describe('glassBubbleCommands', () => {
@@ -42,9 +42,43 @@ export default function bubbleGlassPathTest() {
     });
   });
 
+  describe('glassStage', () => {
+    // 三段式：不要玻璃 / 只有本体上玻璃 / 容器也点亮。守的是两条真机 bug：
+    // 没裁剪的容器把 7vp 留白涂满（横跳），以及退回实心档的那下白闪。
+    it('材质没开就是 off，走实心档', 0, (): void => {
+      expect(glassStage(false, 108, 40)).assertEqual('off');
+      expect(glassStage(false, 0, 0)).assertEqual('off');
+    });
+    it('想要玻璃但还没量到 ⇒ bodyOnly，只有气泡本体上玻璃', 0, (): void => {
+      expect(glassStage(true, 0, 0)).assertEqual('bodyOnly');
+      expect(glassStage(true, 0, 40)).assertEqual('bodyOnly');
+      expect(glassStage(true, 108, 0)).assertEqual('bodyOnly');
+      expect(glassStage(true, -1, 40)).assertEqual('bodyOnly');
+    });
+    it('量到了才是 full，容器这才允许上色和裁剪', 0, (): void => {
+      expect(glassStage(true, 108, 40)).assertEqual('full');
+    });
+  });
+
+  describe('glassBodyPainted', () => {
+    // 这一组守的是白闪：本体这一层**不许**因为没量到就退回实心（不透明）底色。
+    it('还没量到时本体照样上玻璃 —— 不许退回实心档', 0, (): void => {
+      expect(glassBodyPainted(true, 0, 0)).assertTrue();
+      expect(glassBodyPainted(true, 108, 0)).assertTrue();
+      expect(glassBodyPainted(true, 0, 40)).assertTrue();
+    });
+    it('量到之后本体依然上玻璃', 0, (): void => {
+      expect(glassBodyPainted(true, 108, 40)).assertTrue();
+    });
+    it('材质没开时本体走实心底色', 0, (): void => {
+      expect(glassBodyPainted(false, 108, 40)).assertFalse();
+      expect(glassBodyPainted(false, 0, 0)).assertFalse();
+    });
+  });
+
   describe('glassPaintReady', () => {
-    // 这一组守的是横向抖动那条 bug：上色和裁剪必须同一个开关。裁剪要尺寸，
-    // 所以上色也必须等尺寸——否则没裁剪的容器把 7vp 留白一起涂上，气泡边缘外扩。
+    // 容器这一层：裁剪要尺寸，所以上色也必须等尺寸——否则没裁剪的容器
+    // 把 7vp 留白一起涂上，气泡左边缘外扩。
     it('量到尺寸才允许上玻璃色', 0, (): void => {
       expect(glassPaintReady(true, 108, 40)).assertTrue();
     });

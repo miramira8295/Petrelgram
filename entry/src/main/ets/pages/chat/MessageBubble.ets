@@ -64,7 +64,7 @@ import {
 import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
-import { glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
+import { glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
 import { materialModifierWhen } from '../../util/materialModifier';
@@ -3380,7 +3380,7 @@ export struct MessageBubble {
   // 尾巴：材质开着时是一小块裁成三角的玻璃（和气泡同一套材质），否则实色 Polygon。
   @Builder
   bubbleTail(outgoing: boolean) {
-    if (this.glassReady()) {
+    if (this.glassBodyOn()) {
       // 玻璃气泡的尾巴：实心玻璃色三角。材质是合成层、不吃 clipShape，挂上去会
       // 在三角外糊出一块矩形背板，所以这里只用它的回退色（见 glassTailFill）。
       // 玻璃档下尾巴只占位：整块形状由上层容器的轮廓裁剪画出来。
@@ -3407,23 +3407,32 @@ export struct MessageBubble {
 
   // 材质开着时气泡本体透明，底色/材质/模糊都挂在外层「尾巴 + 气泡」容器上。
   private bubbleBg(): ResourceColor {
-    return this.glassReady() ? this.glassBg() : this.bubbleFillColor();
+    return this.glassBodyOn() ? this.glassBg() : this.bubbleFillColor();
   }
 
   private glassLive(): boolean {
     return this.bubbleMaterialLive() && !this.isBareEmoji();
   }
 
-  // 玻璃**真的画出来**的条件：想画（glassLive）之外还要**已经量到尺寸**。
+  // **容器**这一层的点亮条件：想要玻璃（glassLive）之外还要**已经量到尺寸**。
   //
-  // 玻璃档的形状全靠 clipShape，而 clipShape 要等 onAreaChange 把 glassW/glassH
-  // 填上才挂得上（见 bubbleGlassModifier）。原来上色只看 glassLive、裁剪却要
-  // 尺寸，两者不同步——「已上色、还没量到」的那一帧画的是**没裁剪的矩形**：
-  // 整块玻璃连尾巴留白一起涂满、没有尾巴、没有那条描边，左边缘因此比正常位置
-  // 外扩一个 bubbleTailGutter（7vp）。量到之后裁剪挂上，边缘再弹回来。
-  // 判据本体是纯函数 glassPaintReady，单测在 BubbleGlassPath.test.ets。
+  // 容器跨着 [尾巴/留白 | 气泡] 整块，它的形状**只**由 clipShape 给，而
+  // clipShape 要等 onAreaChange 填上 glassW/glassH 才挂得上。没量到就上色，
+  // 画出来的是没裁剪的矩形：留白被一起涂满、没有尾巴、没有描边，左边缘外扩
+  // 一个 bubbleTailGutter（7vp）——真机上那个横跳。
+  //
+  // 气泡**本体**不受这条约束，见 glassBodyOn()。三段式判据的完整说明和
+  // 「为什么不能退回实心档」在 bubbleGlassPath.glassStage 的注释里，
+  // 判据本体是纯函数，单测在 BubbleGlassPath.test.ets。
   private glassReady(): boolean {
     return glassPaintReady(this.glassLive(), this.glassW, this.glassH);
+  }
+
+  // 气泡**本体**这一层：想要玻璃就上，不等测量。本体的形状由自己的
+  // borderRadius 给出，不依赖 clipShape，所以没量到也画得对。
+  // 第一版修法在这里退回了实心档，那正是真机上那下白闪的来源。
+  private glassBodyOn(): boolean {
+    return glassBodyPainted(this.glassLive(), this.glassW, this.glassH);
   }
 
   // 玻璃档：气泡和尾巴用**同一套**普通渲染（玻璃色 + 背景模糊）。
@@ -3432,10 +3441,18 @@ export struct MessageBubble {
   // 退成普通渲染——一边材质一边普通，两块颜色对不齐，看着就不是一体的（用户报的）。
   // 统一成普通渲染后两者严丝合缝，代价是没有沉浸光感的动态高光。
   private glassBg(): ResourceColor {
-    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassBodyOn() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
 
   private glassBlur(): number {
+    return this.glassBodyOn() ? overlayBackdropBlur('bubble') : 0;
+  }
+
+  private containerGlassBg(): ResourceColor {
+    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+  }
+
+  private containerGlassBlur(): number {
     return this.glassReady() ? overlayBackdropBlur('bubble') : 0;
   }
 
@@ -3857,8 +3874,11 @@ export struct MessageBubble {
       // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
       // 不存在「一边材质一边普通渲染」对不齐的问题。
       .alignItems(VerticalAlign.Bottom)
-      .backgroundColor(this.glassBg())
-      .backdropBlur(this.glassBlur())
+      // 容器跨着那 7vp 尾巴留白，形状**只**由 clipShape 给。所以它必须等量到
+      // 尺寸才上色，否则没裁剪的一帧会把留白一起涂满、左边缘外扩 7vp。
+      // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛（glassBodyOn）。
+      .backgroundColor(this.containerGlassBg())
+      .backdropBlur(this.containerGlassBlur())
       // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
       // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
       // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓

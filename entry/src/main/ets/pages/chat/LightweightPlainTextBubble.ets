@@ -16,7 +16,7 @@ import {
 import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
-import { glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
+import { glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
 import { materialModifierWhen } from '../../util/materialModifier';
@@ -247,7 +247,7 @@ export struct LightweightPlainTextBubble {
 
   @Builder
   bubbleTail(outgoing: boolean) {
-    if (this.glassReady()) {
+    if (this.glassBodyOn()) {
       // 玻璃气泡的尾巴：实心玻璃色三角。材质是合成层、不吃 clipShape，挂上去会
       // 在三角外糊出一块矩形背板，所以这里只用它的回退色（见 glassTailFill）。
       // 玻璃档下尾巴只占位：整块形状由上层容器的轮廓裁剪画出来。
@@ -272,22 +272,35 @@ export struct LightweightPlainTextBubble {
     return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
   }
 
-  // 见 MessageBubble.glassReady() 的长注释：上色必须和裁剪同一个开关，
-  // 否则「已上色、还没量到」的那一帧是个没裁剪的矩形，左边缘外扩 7vp。
+  // 见 MessageBubble.glassReady()：**容器**这一层要等量到尺寸，
+  // 否则没裁剪的那一帧会把 7vp 尾巴留白一起涂满，左边缘外扩。
   private glassReady(): boolean {
     return glassPaintReady(this.bubbleMaterialLive(), this.glassW, this.glassH);
   }
 
+  // 见 MessageBubble.glassBodyOn()：本体这一层不等测量，退回实心档就是白闪。
+  private glassBodyOn(): boolean {
+    return glassBodyPainted(this.bubbleMaterialLive(), this.glassW, this.glassH);
+  }
+
   private bubbleBg(): ResourceColor {
-    return this.glassReady() ? this.glassBg() : this.bubbleFillColor();
+    return this.glassBodyOn() ? this.glassBg() : this.bubbleFillColor();
   }
 
   // 见 MessageBubble 同一处：气泡与尾巴统一走普通玻璃渲染，才能接成一体。
   private glassBg(): ResourceColor {
-    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassBodyOn() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
 
   private glassBlur(): number {
+    return this.glassBodyOn() ? overlayBackdropBlur('bubble') : 0;
+  }
+
+  private containerGlassBg(): ResourceColor {
+    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+  }
+
+  private containerGlassBlur(): number {
     return this.glassReady() ? overlayBackdropBlur('bubble') : 0;
   }
 
@@ -773,7 +786,7 @@ export struct LightweightPlainTextBubble {
             this.onScreen = visible;
           })
           .borderRadius(this.bubbleCorners()).padding(8)
-          .shadow({ radius: this.glassReady() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
+          .shadow({ radius: this.glassBodyOn() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
           .onAreaChange((_old: Area, area: Area): void => { this.bubbleW = area.width as number; })
           .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
             .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
@@ -793,8 +806,9 @@ export struct LightweightPlainTextBubble {
           // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
           // 不存在「一边材质一边普通渲染」对不齐的问题。
           .alignItems(VerticalAlign.Bottom)
-          .backgroundColor(this.glassBg())
-          .backdropBlur(this.glassBlur())
+          // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色。
+          .backgroundColor(this.containerGlassBg())
+          .backdropBlur(this.containerGlassBlur())
           // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
           // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
           .borderRadius(this.glassRadius())
