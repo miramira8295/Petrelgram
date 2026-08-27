@@ -6,6 +6,14 @@ import {
 
 export default function anchorRestoreTest() {
   describe('planAnchorRestore', () => {
+    // 向下追加：底部锚定下差值量不到位移，必须走 scrollToIndex，哪怕矩形有效。
+    it('append_forces_index_restore_even_when_the_rect_is_valid', 0, () => {
+      const plan = planAnchorRestore({ width: 300, height: 40, y: -24 }, -24, true);
+      expect(plan.mode).assertEqual(ANCHOR_RESTORE_FALLBACK);
+      expect(plan.dy).assertEqual(24);
+      expect(planAnchorRestore({ width: 300, height: 40, y: 0 }, 0, true).dy).assertEqual(0);
+    });
+
     it('行还在显示区：只走一次 scrollBy，不回退', 0, (): void => {
       // 发布前行的顶边在视口顶上方 30vp；发布后框架把它放到了 -18vp。
       // 要把它推回 -30 ⇒ 内容还要再上移 12 ⇒ dy 为正 12。

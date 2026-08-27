@@ -4432,7 +4432,7 @@ export struct ChatPage {
     }
     logW(`[AppendAnchor] restore id=${messageId} idx=${targetIndex} y=${itemY}` +
       ` rows=${groups.length} ${this.appendAnchorGateProbe(groups)}`);
-    this.restoreScrollAnchor(targetIndex, itemY);
+    this.restoreScrollAnchor(targetIndex, itemY, true);
   }
 
   // ⚠️ 临时探针（随 APPEND_ANCHOR_RESTORE_BYPASSED 一起删）：把决定这道闸开合的
@@ -4505,7 +4505,9 @@ export struct ChatPage {
   // 时机沿用原来的 setTimeout(0)：数据已发布、框架也已经跑完一次布局，此时
   // getItemRect 量到的才是新快照下的位置。prependRestoreSeq 代次守卫不动——一
   // 次分页最多修正一次，跳转/贴底这类更强的定位意图仍然作废它。
-  private restoreScrollAnchor(targetIndex: number, itemY: number): void {
+  // forceIndex 的理由见 util/anchorRestore.planAnchorRestore：向下追加必须走
+  // scrollToIndex，差值补偿在底部锚定下量不到追加造成的位移。
+  private restoreScrollAnchor(targetIndex: number, itemY: number, forceIndex: boolean = false): void {
     const seq: number = ++this.prependRestoreSeq;
     setTimeout((): void => {
       if (seq !== this.prependRestoreSeq || this.pendingJumpId !== 0 || this.pendingScrollBottom) {
@@ -4520,8 +4522,8 @@ export struct ChatPage {
       } catch (e) {
         rect = INVALID_ANCHOR_RECT;
       }
-      const plan: AnchorRestorePlan = planAnchorRestore(rect, itemY);
-      logW(`[AnchorRestore] mode=${plan.mode} idx=${targetIndex}` +
+      const plan: AnchorRestorePlan = planAnchorRestore(rect, itemY, forceIndex);
+      logW(`[AnchorRestore] mode=${plan.mode}${forceIndex ? '(append)' : ''} idx=${targetIndex}` +
         ` oldY=${Math.round(itemY)} newY=${Math.round(rect.y)}` +
         ` w=${Math.round(rect.width)} h=${Math.round(rect.height)}` +
         ` dy=${Math.round(plan.dy)}`);

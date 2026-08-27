@@ -65,7 +65,16 @@ const ANCHOR_RESTORE_EPSILON: number = 0.5;
 // 紧跟的那句是 `if (itemY < -0.5) scrollBy(0, -itemY)`——把 rect.y = 0 代进上
 // 式正好得到 dy = -itemY，与旧代码逐字吻合。所以 delta 这一支在 rect.y = 0 时
 // 退化成旧行为，符号方向由既有的、真机验证过的代码背书。
-export function planAnchorRestore(rect: AnchorRectSnapshot, itemY: number): AnchorRestorePlan {
+// forceIndex：调用方明确要走 scrollToIndex 那条（向下追加）。底部锚定的列表
+// （stackFromEnd）往末尾追加一页时，框架在**下一次布局**里保住"离底部的距离"、把视口
+// 推到新末尾；而 setTimeout(0) 里量到的还是重排前的矩形（真机 [AnchorRestore] 全是
+// dy=0），差值补偿等于没补。scrollToIndex 和数据变更在同一次布局里生效，没有中间帧。
+// 向上插入不需要：框架自己保位置，差值补偿只是兜底。
+export function planAnchorRestore(rect: AnchorRectSnapshot, itemY: number,
+  forceIndex: boolean = false): AnchorRestorePlan {
+  if (forceIndex) {
+    return { mode: ANCHOR_RESTORE_FALLBACK, dy: itemY < -ANCHOR_RESTORE_EPSILON ? -itemY : 0 };
+  }
   if (rect.width > 0 && rect.height > 0) {
     const dy: number = rect.y - itemY;
     return {
