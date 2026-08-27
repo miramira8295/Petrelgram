@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.miramira8295.petrelgram",
     "vendor": "miramira8295",
-    "versionCode": 1003013,
-    "versionName": "1.4.2",
+    "versionCode": 1003014,
+    "versionName": "1.4.3",
     "buildVersion": "1",
     "icon": "$media:layered_image",
     // 桌面图标自选的备用图标。name 必须与 util/appIcon.ets 的目录逐字一致
