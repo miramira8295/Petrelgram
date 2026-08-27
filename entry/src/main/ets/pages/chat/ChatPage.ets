@@ -2972,6 +2972,10 @@ export struct ChatPage {
         logW(`[Jump80] pending land target=${jumpTargetId} idx=${jg} rows=${groups.length}`);
         if (jg >= 0) {
           this.pendingJumpId = 0;
+          // 落地宽限从**此刻**起算（issue #51）：原来只在点击时上了 900ms，目标不在
+          // 窗口里要先 loadAround，慢链路上一超时，刚压进返回栈的那层就被
+          // syncReturnState 当成"手动滑过"弹掉了。
+          this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
           this.finishPinnedJump();
           this.scroller.scrollToIndex(jg, false, ScrollAlign.START);
           // loadAround replaces the window wholesale (list RELOAD) — the
@@ -4962,6 +4966,13 @@ export struct ChatPage {
   // 每次视口变化后更新返回状态。两件事：读到哪了（只前进），以及用户是不是
   // 自己滚回了最新——后者意味着这趟"返回"他已经自己完成，整套关系作废。
   private syncReturnState(): void {
+    // 跳转还在路上（目标不在窗口里、正在 loadAround）时不判：这期间视口还停在
+    // 出发点，onScrollIndex 却会因为拉回来的那页插入而触发；900ms 的落地宽限是
+    // 从点击起算的，慢链路上一超时就把刚压进去的那层弹掉（atBottom 时更是整套
+    // 作废），「↓」从此只会回到底（issue #51）。
+    if (this.pendingJumpId !== 0) {
+      return;
+    }
     // 手动滑到（或越过）某个返回点，那一层就出栈——和按「↓」返回是同一件事。
     // 落地宽限期内不判：刚跳走时视口还停在返回点上，不设防会立刻把刚压进去
     // 的那层弹掉，一步都退不回去。
