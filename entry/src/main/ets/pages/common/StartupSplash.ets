@@ -12,7 +12,10 @@ const SPINNER_DELAY_MS: number = 500;
 //
 // 所以这里**照抄系统启动窗**，而不是另画一个品牌页：
 //   · 同一张图     $media:start_splash（那张图本身是透明的，只有飞机）
-//   · 同一个填充   Cover
+//   · 同一个填充   Contain（原来是 Cover：那张图是 720×1560 的竖图，平板横屏
+//                  2560×1600 下按高铺满要放大 3.5 倍，飞机占掉半个窗口，
+//                  issue #157。Contain 按短边算，手机/平板横竖屏都是窗口高的
+//                  一成半左右）
 //   · 同一个底色   $color:start_window_background
 // 三项都逐字取自 resources/base/profile/start_window.json。同一份资源、同一种
 // 摆法，接上去就是同一帧，跳变自然消失。
@@ -49,7 +52,7 @@ export struct StartupSplash {
       // start_splash 是透明图，飞机以外全靠这层底色透出来——和系统启动窗一样。
       Image($r('app.media.start_splash'))
         .width('100%').height('100%')
-        .objectFit(ImageFit.Cover)
+        .objectFit(ImageFit.Contain)
         .draggable(false);
       if (this.showSpinner) {
         // 压在下方三成处，不去碰居中的飞机——飞机的位置正是要和系统启动窗对齐的
