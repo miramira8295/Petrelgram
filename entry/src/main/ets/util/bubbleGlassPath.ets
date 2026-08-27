@@ -20,7 +20,7 @@ function n(v: number): string {
 //     底边因此是凹的——这就是"勾"。HOOK_X 是它离开底边的位置（按 tailW 取比例）。
 // 四个数就是尾巴的全部造型，调它们即可，别去动 path 的拼装。
 const TAIL_CTRL_NEAR_TIP: number = 0.5;
-const TAIL_CTRL_NEAR_BODY: number = 0.78;
+const TAIL_CTRL_NEAR_BODY: number = 0.62;
 const TAIL_HOOK_X: number = 0.85;
 const TAIL_HOOK_LIFT: number = 0.3;
 
