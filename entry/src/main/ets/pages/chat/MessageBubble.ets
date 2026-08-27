@@ -65,6 +65,7 @@ import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
 import { glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
+import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
 import { materialModifierWhen } from '../../util/materialModifier';
@@ -348,16 +349,13 @@ export struct MessageBubble {
   // 只能涨不能落：任何一次量到偏大的宽度都被固化，气泡再也缩不回去，
   // BottomEnd 随即把正文推到右侧、时间戳压到文字底下——就是那个偶发的
   // "气泡横贯整屏、文字靠右、时间戳不见了"。
+  // 这三个宽度**换消息/复用时不清零**，用的时候按「此刻显不显示」门控
+  // （timeLayerWidth.ets 的说明）。曾经是清零的：onAreaChange 只在面积变化时
+  // 触发，复用后名字行若和上一条一样宽，回调不来，宽度就一直是 0——时间停在
+  // 正文末尾、引用块够不到气泡边缘。
   @State private forwardLabelW: number = 0;
   @State private senderLabelW: number = 0;
   @State private commentsRowW: number = 0;
-  // 换成另一条消息时把上面三个清零：新消息若不再显示某个标签，那个节点
-  // 不会重新触发 onAreaChange，旧值会一直留着。
-  //
-  // 用 rowId 而不是 id：发送成功时 TDLib 把临时 id 换成真实 id，而 rowId 由
-  // 新条目继承旧条目（MessageStore.onSendSucceeded），跨过那次替换保持不变。
-  // 用 id 会让每条自己发出去的消息在成功那一刻白白重量一次宽度。
-  private labelWidthRowId: number = 0;
   @State revealedSpoilerKeys: string[] = [];
   @State expandedQuoteKeys: string[] = [];
   // x/y are the tap's window coordinates (vp) — the fullscreen viewer uses them
@@ -623,13 +621,10 @@ export struct MessageBubble {
   // 一旦走兜底分支，这 16 个值会以上一条消息的取值渲染一帧（剧透已揭开、
   // 引用已展开、圆形视频在播、气泡宽度是别人的）。
   private clearTransientState(): void {
-    // onAreaChange 量出来的尺寸；新消息若不再显示某个标签，那个节点不会重新
-    // 触发 onAreaChange，旧值会一直留着（见 forwardLabelW 声明处的注释）。
+    // onAreaChange 量出来的尺寸。forwardLabelW / senderLabelW / commentsRowW
+    // 故意不在这里清（见声明处）。
     this.bubbleW = 0;
     this.menuOffsetX = 0;
-    this.forwardLabelW = 0;
-    this.senderLabelW = 0;
-    this.commentsRowW = 0;
     // key 由本条消息的文本段算出，换消息后旧 key 可能碰撞 → 新消息的剧透
     // 直接就是揭开的、引用直接就是展开的。
     this.revealedSpoilerKeys = [];
@@ -672,7 +667,6 @@ export struct MessageBubble {
   // aboutToReuse 里，而它开头就无条件跑了那一份（I-4：这里再跑一次是纯重复，
   // 每复用一行多约 20 次 @State 写入，就在滚动热路径上）。
   private resetReusedState(next: MessageEntry): void {
-    this.labelWidthRowId = next.rowId;
     this.wasCompetingVideo = next.contentType === 'video' && !next.isAnimation;
   }
 
@@ -802,12 +796,6 @@ export struct MessageBubble {
   // 状态变化、替换媒体等，不是每帧）比较一次「参与竞选」状态，只在从 true 翻到
   // false 的那一次补发 onMediaGone，翻转之外什么也不做。
   private onMsgPropChanged(): void {
-    if (this.msg.rowId !== this.labelWidthRowId) {
-      this.labelWidthRowId = this.msg.rowId;
-      this.forwardLabelW = 0;
-      this.senderLabelW = 0;
-      this.commentsRowW = 0;
-    }
     // P0-4（审计 3.2b）：按「订阅挂在哪个 rowId 上」自愈——不一致就整套重挂。
     // 担心的是 aboutToReuse 把 6 个通道挂在上一条消息的 rowId / fileId 上而
     // 后续无人纠正（审计当时无法静态排除这一点）。
@@ -3524,12 +3512,25 @@ export struct MessageBubble {
     }
     // 正文本来就在这个 Stack 里、天然参与它的固有宽度，不需要在这里照顾；
     // 需要照顾的只有排在 Stack 外面、可能比正文更宽的那几个标签。
-    const widest: number = Math.max(this.forwardLabelW,
-      Math.max(this.senderLabelW, this.commentsRowW));
-    if (widest <= 0) {
-      return 0;
-    }
-    return Math.min(this.inlineMaxW(), widest);
+    // 三个显示判据和 build 里的 if 是同一份（下面三个方法），量到的宽度只在
+    // 标签真的显示时才算数。
+    return timeLayerMinWidth(this.inlineMaxW(), {
+      forwardShown: this.forwardLabelShown(), forwardW: this.forwardLabelW,
+      senderShown: this.senderLabelShown(), senderW: this.senderLabelW,
+      commentsShown: this.commentsRowShown(), commentsW: this.commentsRowW
+    });
+  }
+
+  private forwardLabelShown(): boolean {
+    return this.msg.forwardFrom !== '';
+  }
+
+  private senderLabelShown(): boolean {
+    return this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.showSenderName;
+  }
+
+  private commentsRowShown(): boolean {
+    return this.isChannel && this.msg.commentCount > 0;
   }
 
   // Timestamp (+ send status) overlaid at the bubble's bottom-right, sharing
@@ -3724,7 +3725,7 @@ export struct MessageBubble {
         Column().width(this.bubbleTailGutter());
       }
       Column() {
-        if (this.msg.forwardFrom !== '') {
+        if (this.forwardLabelShown()) {
           // Tappable when the origin is known — opens the original post, or the
           // author's chat. A hidden-origin forward carries no ids and stays inert.
           Text(str('mb_forwarded_from', this.msg.forwardFrom)).fontSize(13).fontColor(this.accent())
@@ -3741,7 +3742,7 @@ export struct MessageBubble {
               }
             });
         }
-        if (this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.showSenderName) {
+        if (this.senderLabelShown()) {
           // 名字和身份标签同一行。标签自订阅（见 SenderRoleTag），名单到货时
           // 只有那一枚小标签换字，不会牵动整行重建。
           Row({ space: 5 }) {
@@ -3801,9 +3802,9 @@ export struct MessageBubble {
         // 的宽度已经量过（senderLabelW），拿它兜一个最小宽度，两行右边缘就对齐了。
         .constraintSize({
           maxWidth: this.inlineMaxW(),
-          minWidth: Math.min(this.inlineMaxW(), this.senderLabelW)
+          minWidth: Math.min(this.inlineMaxW(), this.senderLabelShown() ? this.senderLabelW : 0)
         })
-        if (this.isChannel && this.msg.commentCount > 0) {
+        if (this.commentsRowShown()) {
           Column() {
             this.commentsRow();
           }
