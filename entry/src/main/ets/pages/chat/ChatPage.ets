@@ -1757,6 +1757,8 @@ export struct ChatPage {
   // 就会把返回栈当成"用户自己滚回来了"清掉，一步都退不回去。
   private jumpLandingUntil: number = 0;
   private pendingScrollBottom: boolean = false; // snap to the end once jumpToLatest's page arrives
+  // ⚠️ 临时探针 [JumpLatest] 用：↓ 的点击序号，把同一次点击的日志串起来。
+  private jumpLatestSeq: number = 0;
   @Local scrollToBottomBusy: boolean = false;
   private scrollActionSeq: number = 0;
   // Keep the exact viewport when this cached page is temporarily covered by a
@@ -2014,7 +2016,7 @@ export struct ChatPage {
     this.returnState = emptyReturnState();
     this.curBottomId = 0;
     this.jumpLandingUntil = 0;
-    this.pendingScrollBottom = false;
+    this.clearPendingScrollBottom('resetScrollSession');
     this.scrollToBottomBusy = false;
     this.pendingJumpId = 0;
     this.pendingFileOpenId = 0;
@@ -2295,7 +2297,7 @@ export struct ChatPage {
       this.scrollActionSeq++;
       this.jumpLayoutSeq++;
       this.pendingJumpId = 0;
-      this.pendingScrollBottom = false;
+      this.clearPendingScrollBottom('pageShowResume');
       this.scrollToBottomBusy = false;
       this.didInitialScroll = true;
       this.clearFloatingDate();
@@ -2749,13 +2751,24 @@ export struct ChatPage {
         this.lastMaxId = maxId;
         this.atBottom = true;
         const actionSeq: number = this.scrollActionSeq;
+        const probeSeq: number = this.jumpLatestSeq;
+        logW(`[JumpLatest] #${probeSeq} publish consume call=scrollEdge` +
+          ` rows=${groups.length} list=${list.length} ${this.scrollStateProbe()}`);
         this.glueBottom('L1263');
         setTimeout(() => {
-          if (actionSeq === this.scrollActionSeq) {
-            this.glueBottom('L1266');
-            this.refreshAtBottom();
+          if (actionSeq !== this.scrollActionSeq) {
+            logW(`[JumpLatest] #${probeSeq} publish settle stale actionSeq=${actionSeq}` +
+              ` cur=${this.scrollActionSeq}`);
+            return;
           }
+          this.glueBottom('L1266');
+          this.refreshAtBottom();
+          logW(`[JumpLatest] #${probeSeq} landed ${this.scrollStateProbe()}`);
         }, 60);
+      } else if (this.pendingScrollBottom) {
+        // 意图还挂着但这次发布没有内容可落——留着等下一次发布，别悄悄丢掉。
+        logW(`[JumpLatest] #${this.jumpLatestSeq} publish kept intent list=0` +
+          ` rows=${groups.length}`);
       }
       if (notifyKind === 'newer') {
         // An empty newer page is the signal that this history window has
@@ -3284,7 +3297,7 @@ export struct ChatPage {
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
     this.scrollToBottomBusy = false;
-    this.pendingScrollBottom = false;
+    this.clearPendingScrollBottom('pageHide');
     this.clearFloatingDate();
     if (this.headerNavigationTimer !== -1) {
       clearTimeout(this.headerNavigationTimer);
@@ -4188,18 +4201,25 @@ export struct ChatPage {
       return;
     }
     const gate: PageGate = this.newerGate;
-    // 诊断：向下预取跑飞过两次，判据本身要能看见——armed 是不是真的合上了，
-    // 推动 end 的是用户还是程序性位移。
-    //
-    // 只在弱闸放行（end 越过上次开枪位置）时打：这一支同时覆盖"打成了"和
-    // "被 armed 挡住"两种结果，正是要看的两格；底部区里每次 onScrollIndex
-    // 都打会把环形缓冲刷满，最该看的那段反而被挤掉。
-    if (end > gate.firedAtEnd) {
+    const canFire: boolean = canFirePageGate(gate, end);
+    // ⚠️ 诊断 [NewerFire]：用户报"下滑也推不动"。要能分清两件完全不同的事：
+    //   闸挡住了      → 这里 canFire=false，且写明是 armed 还是弱闸挡的；
+    //   闸放行了没进展 → canFire=true / started=true，但后面 rows 不涨、
+    //                    或者 rows 涨了而 endIdx 原地不动（位置被布局吃掉）。
+    // 按 end 去重：onScrollIndex 只在可见区间变化时触发，但布局抖动会让它高频
+    // 变化，不去重会把环形缓冲刷满（logW 攒 300 行才落盘）。
+    if (end !== this.newerFireLoggedEnd) {
+      this.newerFireLoggedEnd = end;
+      const blockedBy: string = canFire
+        ? 'none' : (gate.armed ? 'weakGate' : 'disarmed');
       logW(`[NewerFire] end=${end} rows=${this.groups.length} firedAt=${gate.firedAtEnd}` +
-        ` armed=${gate.armed} touch=${this.listTouchActive} userScroll=${this.listUserScrollActive}` +
+        ` armed=${gate.armed} canFire=${canFire} blockedBy=${blockedBy}` +
+        ` touch=${this.listTouchActive} userScroll=${this.listUserScrollActive}` +
+        ` hasMoreNewer=${this.store.getHasMoreNewer()}` +
+        ` newerState=${this.store.getNewerLoadState()}` +
         ` deferredLeft=${this.countDeferredRows()}`);
     }
-    if (!canFirePageGate(gate, end)) {
+    if (!canFire) {
       return;
     }
     // 谁请求了这一页：只有列表所有权在用户手上时发出的请求算"用户主动向下
@@ -4209,10 +4229,17 @@ export struct ChatPage {
     const userDriven: boolean =
       newerPageIsUserDriven(this.listTouchActive, this.listUserScrollActive);
     const started: boolean = this.store.loadNewer(userDriven);
+    logW(`[NewerFire] request end=${end} started=${started} userDriven=${userDriven}` +
+      ` hasMoreNewer=${this.store.getHasMoreNewer()}` +
+      ` newerState=${this.store.getNewerLoadState()} rows=${this.groups.length}`);
     if (started || !this.store.getHasMoreNewer()) {
       this.newerGate = firedPageGate(gate, end);
     }
   }
+
+  // [NewerFire] 去重用：上一条已经记过的 end。
+  private newerFireLoggedEnd: number = -1;
+  private newerRearmLoggedEnd: number = -1;
 
   // [NewerFire] 用：还剩多少行是首屏占位。用循环而不是 filter，这行日志在
   // 底部区里会反复打，不该每次都拷一份数组出来。
@@ -4720,6 +4747,15 @@ export struct ChatPage {
 
   private onScrollFabTap(): void {
     const target: ReturnTarget = this.returnTarget();
+    // ⚠️ 临时探针 [JumpLatest]：↓ 不是"回到底部"而是三级返回（引用栈 > 阅读
+    // 进度 > 最新，见 util/readingReturn）。用户说"要点好几次"时，第一件要分
+    // 清的就是前几下究竟去了返回点还是真的走了 scrollToLatest——这行日志把
+    // 每一次点击各自选的分支和当时的返回栈都记下来。
+    this.jumpLatestSeq++;
+    logW(`[JumpLatest] #${this.jumpLatestSeq} tap route=${target.kind}` +
+      ` targetId=${target.messageId} curBottomId=${this.curBottomId}` +
+      ` readAnchor=${this.returnState.readAnchor}` +
+      ` jumpStack=${this.returnState.jumpStack.length} ${this.scrollStateProbe()}`);
     if (target.kind === RETURN_JUMP) {
       this.returnState = popJump(this.returnState);
       this.jumpToMessageId(target.messageId);
@@ -8900,8 +8936,21 @@ export struct ChatPage {
     });
   }
 
+  // pendingScrollBottom 是"点了 ↓，等页回来就贴底"这个意图。它在往返期间被谁
+  // 清掉过，是判"点一次丢一次"的关键，所以每一次清除都记来源。
+  // 只在意图确实挂着时才打，日常复位不刷屏。
+  private clearPendingScrollBottom(source: string): void {
+    if (!this.pendingScrollBottom) {
+      return;
+    }
+    this.pendingScrollBottom = false;
+    logW(`[JumpLatest] #${this.jumpLatestSeq} pendingBottom cleared by=${source}`);
+  }
+
   private scrollToLatest(): void {
     if (this.store === null || this.scrollToBottomBusy) {
+      logW(`[JumpLatest] #${this.jumpLatestSeq} abort reason=` +
+        `${this.store === null ? 'storeNull' : 'busy'} ${this.scrollStateProbe()}`);
       return;
     }
     this.prepareUserJump();
@@ -8910,34 +8959,50 @@ export struct ChatPage {
     // lays them out one by one and visibly crawls): atomically replace the
     // window with the newest page.
     const farFromEnd: boolean = this.groups.length - this.curStartIdx > JUMP_RELOAD_THRESHOLD;
+    const probeSeq: number = this.jumpLatestSeq;
     if (this.store.getHasMoreNewer() || farFromEnd) {
       const actionSeq: number = ++this.scrollActionSeq;
       this.scrollToBottomBusy = true;
       this.pendingScrollBottom = true;
+      logW(`[JumpLatest] #${probeSeq} path=reload farFromEnd=${farFromEnd}` +
+        ` actionSeq=${actionSeq} ${this.scrollStateProbe()}`);
       this.store.jumpToLatest((success: boolean): void => {
         if (actionSeq !== this.scrollActionSeq) {
+          // 早退：这次点击的意图已经被更强的定位动作作废。不打这一行的话，
+          // scrollToBottomBusy 卡住导致后续点击全被吞掉就查不出来。
+          logW(`[JumpLatest] #${probeSeq} reload stale actionSeq=${actionSeq}` +
+            ` cur=${this.scrollActionSeq} busyStuck=${this.scrollToBottomBusy}`);
           return;
         }
         this.scrollToBottomBusy = false;
+        logW(`[JumpLatest] #${probeSeq} reload done success=${success}` +
+          ` ${this.scrollStateProbe()}`);
         if (!success) {
-          this.pendingScrollBottom = false;
+          this.clearPendingScrollBottom('reloadFailed');
           this.atBottom = false;
           promptAction.showToast({ message: $r('app.string.cp_latest_failed'), duration: 1600 });
         } else if (this.groups.length === 0) {
-          this.pendingScrollBottom = false;
+          this.clearPendingScrollBottom('emptyGroups');
           this.atBottom = true;
         }
-      });
+      }, probeSeq);
       return;
     }
     // Close to the end and fully loaded — snap instantly, no animated crawl.
     const actionSeq: number = ++this.scrollActionSeq;
-    this.scroller.scrollToIndex(Math.max(0, this.groups.length - 1), false, ScrollAlign.END);
+    const snapIndex: number = Math.max(0, this.groups.length - 1);
+    logW(`[JumpLatest] #${probeSeq} path=snap call=scrollToIndex index=${snapIndex}` +
+      ` actionSeq=${actionSeq} ${this.scrollStateProbe()}`);
+    this.scroller.scrollToIndex(snapIndex, false, ScrollAlign.END);
     setTimeout((): void => {
-      if (actionSeq === this.scrollActionSeq) {
-        this.glueBottom('L7961');
-        this.refreshAtBottom();
+      if (actionSeq !== this.scrollActionSeq) {
+        logW(`[JumpLatest] #${probeSeq} snap settle stale actionSeq=${actionSeq}` +
+          ` cur=${this.scrollActionSeq}`);
+        return;
       }
+      this.glueBottom('L7961');
+      this.refreshAtBottom();
+      logW(`[JumpLatest] #${probeSeq} snap landed call=scrollEdge ${this.scrollStateProbe()}`);
     }, 60);
   }
 
@@ -9228,7 +9293,21 @@ export struct ChatPage {
             // 离开底部触发区。但这个位置判据会被内容追加自己顶成立（groups
             // 变长而视口没动），所以必须叠一条"这一下是用户在滚"——程序性
             // 位移不上膛。older 那侧靠 onTouch(Down) 和真实滚动上膛，同一套。
-            this.newerGate = rearmPageGate(this.newerGate, this.listUserScrollActive);
+            // ⚠️ 诊断 [NewerFire]：重新上膛只认 listUserScrollActive，而那个标志
+            // 实际上挂在浮动日期条的 820ms 隐藏计时器上（见 armFloatDateHide），
+            // 并不是"用户还在滚"。它到底是真是假，得由日志说话。
+            // 只在状态真的翻了才打，否则这一支每次 onScrollIndex 都会刷屏。
+            const beforeRearm: PageGate = this.newerGate;
+            this.newerGate = rearmPageGate(beforeRearm, this.listUserScrollActive);
+            if (this.newerGate !== beforeRearm) {
+              logW(`[NewerFire] rearm end=${end} rows=${this.groups.length}` +
+                ` userScroll=${this.listUserScrollActive} touch=${this.listTouchActive}`);
+            } else if (!beforeRearm.armed && end !== this.newerRearmLoggedEnd) {
+              // 闸空着又没能上膛——这正是"下滑推不动"里翻页链路那一侧的形状。
+              this.newerRearmLoggedEnd = end;
+              logW(`[NewerFire] rearm refused end=${end} rows=${this.groups.length}` +
+                ` userScroll=${this.listUserScrollActive} touch=${this.listTouchActive}`);
+            }
           } else {
             this.maybeLoadNewer(end);
           }

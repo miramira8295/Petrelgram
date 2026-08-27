@@ -897,8 +897,12 @@ export class MessageStore {
   // until the request succeeds, so a network failure never leaves a blank list.
   // Used by the scroll-to-bottom button when thousands of unloaded messages
   // separate the user from the tail.
-  jumpToLatest(onComplete?: (success: boolean) => void): void {
+  //
+  // probeSeq：调用方的点击序号，只用于把 [JumpLatest] 日志串成一次点击。
+  jumpToLatest(onComplete?: (success: boolean) => void, probeSeq: number = 0): void {
     if (this.latestPending) {
+      // 早退分支也要出声：「什么都没打」和「打了但早退」是两种诊断。
+      logW(`[JumpLatest] #${probeSeq} store abort reason=latestPending`);
       if (onComplete !== undefined) {
         onComplete(false);
       }
@@ -906,8 +910,24 @@ export class MessageStore {
     }
     this.latestPending = true;
     const req = this.historyRequest(0, 0);
+    logW(`[JumpLatest] #${probeSeq} store request limit=${this.historyPageSize}` +
+      ` rows=${this.messages.length} hasMoreNewer=${this.hasMoreNewer}` +
+      ` chatLast=${this.chatLastMessageId}`);
     this.client.send(req).then((res: TdObject): void => {
       this.latestPending = false;
+      const got: number = ((res['messages'] as TdObject[] | undefined) ?? []).length;
+      // 空回复不能把窗口清空。原来是先 `this.messages = []` 再 onHistory，
+      // TDLib 合法地回 0 条时窗口就整个没了，而 ChatPage 那边的贴底意图挂着
+      // `list.length > 0`，于是意图既不落地也不释放——用户看到的正是"点了没
+      // 反应"。留着旧窗口按失败返回，调用方会提示并让用户重试。
+      if (got === 0) {
+        logW(`[JumpLatest] #${probeSeq} store empty reply, window kept` +
+          ` rows=${this.messages.length}`);
+        if (onComplete !== undefined) {
+          onComplete(false);
+        }
+        return;
+      }
       this.hasMoreNewer = false;
       this.hasMoreOlder = true;
       this.newerPending = false;
@@ -918,11 +938,18 @@ export class MessageStore {
       this.messages = [];
       this.oldestId = 0;
       this.onHistory(res, 'latest');
+      const windowLast: number = this.messages.length > 0
+        ? this.messages[this.messages.length - 1].id : 0;
+      logW(`[JumpLatest] #${probeSeq} store applied got=${got} rows=${this.messages.length}` +
+        ` windowLast=${windowLast} chatLast=${this.chatLastMessageId}` +
+        ` windowAtTail=${reachedLiveTail(windowLast, this.chatLastMessageId)}` +
+        ` hasMoreNewer=${this.hasMoreNewer}`);
       if (onComplete !== undefined) {
         onComplete(true);
       }
     }).catch((e: TdError): void => {
       this.latestPending = false;
+      logW(`[JumpLatest] #${probeSeq} store failed code=${(e as TdError).code}`);
       if ((e as TdError).code !== 404) {
         logE(`MessageStore.jumpToLatest failed: ${e.message}`);
       }
