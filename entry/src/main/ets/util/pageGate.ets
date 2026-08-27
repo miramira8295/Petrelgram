@@ -88,6 +88,17 @@ export function reachedNewerPageTrigger(end: number, rows: number,
 
 // 完全上膛的初始态。-1 表示"还没开过枪"。
 // byUser 默认假：不明确说是用户压的膛，就当成程序性的。
+// 开局用的闸：**不上膛**。曾经开局就是满膛的（armedPageGate），于是落在未读锚点
+// 时——窗口 14 行、末行本来就可见——触发区条件立刻满足，自动发一页 newer；28 行
+// 追加进来时首屏还没落定、锚点补偿被跳过，底部锚定把视口推到新末尾。用户看历史
+// 却「变成拉最新、滚动条到底」（真机）。第一页 newer 也得是用户拖出来的。
+export function idlePageGate(): PageGate {
+  const gate: PageGate = {
+    armed: false, armedByUser: false, firedAtEnd: -1, dragSinceFire: 0
+  };
+  return gate;
+}
+
 export function armedPageGate(byUser: boolean = false): PageGate {
   const gate: PageGate = {
     armed: true, armedByUser: byUser, firedAtEnd: -1, dragSinceFire: 0

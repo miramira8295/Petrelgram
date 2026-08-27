@@ -215,8 +215,7 @@ import { confirmStopLiveLocation, withLocationPermission } from '../../util/loca
 import { logE, logI, logW } from '../../util/log';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
-  PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger
-} from '../../util/pageGate';
+  PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger, idlePageGate } from '../../util/pageGate';
 import { rememberChatPosition, rememberedChatPosition } from '../../util/chatResume';
 import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
@@ -1875,7 +1874,7 @@ export struct ChatPage {
   // 锚定，一页 newer 追加到末尾就把视口往下推，end 自己变大，弱闸每次都放行。
   // 真机上一次开会话连锁拉了 9 页（rowsBefore 132 → 356）。弱闸留着防同一个
   // end 被重复敲，真正止血的是 armed。
-  private newerGate: PageGate = armedPageGate();
+  private newerGate: PageGate = idlePageGate();
   // 内容铺不满一屏时主动补页的上限。到这个行数还说"整份都可见"，说明判据
   // 本身出了问题，停手比无限拉更安全。
   private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
@@ -2114,7 +2113,7 @@ export struct ChatPage {
     this.fileOpenInFlightId = 0;
     this.musicQueue.reset();
     this.olderArmed = true;
-    this.newerGate = armedPageGate();
+    this.newerGate = idlePageGate();
     this.freshSinceId = 0;
     this.freshClearSeq++;
     this.imeTailPinned = false;
