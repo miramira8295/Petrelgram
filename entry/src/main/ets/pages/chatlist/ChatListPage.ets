@@ -166,6 +166,10 @@ export struct ChatListPage {
   // a language switch without waiting for the next connection update.
   @State syncState: string = '';
   @StorageProp('topSafeHeight') topSafe: number = 0;
+  // navBar 的实际宽度（onAreaChange 里写进 AppStorage 的那个值）。⋮ 菜单的锚点
+  // 要按它定位：分栏时外层 Stack 横跨两栏，按 TopEnd 对齐会把菜单弹到右栏
+  // 聊天页的右上角去（issue #146）。
+  @StorageProp(NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
@@ -951,6 +955,15 @@ export struct ChatListPage {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
+  // ⋮ 菜单锚点距 Stack 右缘的距离：单栏下 navBar 就是整个窗口，得 8；分栏下
+  // 要跨过右栏，落在 navBar 右缘往里 8。navBar 宽度还没量到（0）时按单栏处理。
+  private moreMenuRightInset(): number {
+    if (this.navBarW <= 0 || this.navBarW >= this.screenW) {
+      return 8;
+    }
+    return this.screenW - this.navBarW + 8;
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       HdsNavigation(this.chatStack) {
@@ -1139,7 +1152,7 @@ export struct ChatListPage {
       // bindMenu，只能这样把两者接起来。
       Row()
         .width(1).height(1)
-        .margin({ top: this.topSafe + 44, right: 8 })
+        .margin({ top: this.topSafe + 44, right: this.moreMenuRightInset() })
         .bindMenu(this.moreMenuShown, this.moreMenu, {
           systemMaterial: overlayMaterial('menu'),
           onDisappear: (): void => { this.moreMenuShown = false; }
