@@ -15,12 +15,14 @@ function n(v: number): string {
 
 // 尾巴的形状参数。尾巴由两条曲线围成：
 //   外侧（上）：从气泡边缘的 yTail 甩出到尾尖，控制点按 tailH 取比例——
-//     NEAR_TIP 贴着尖那侧竖直，尾尖因此是尖的、不是圆的；NEAR_BODY 把线拉回气泡。
+//     NEAR_TIP 贴着尖那侧竖直，尾尖因此是尖的、不是圆的；NEAR_BODY 决定线离开
+//     气泡时的走向——**越大越往下压**（控制点越靠近 yTail，一出气泡就朝尖走），
+//     越小则贴着气泡边缘多竖直走一段再甩出去，看着像靠气泡那侧往上翘。
 //   内侧（下）：从气泡底边**向上兜回**尾尖，两个控制点抬高 HOOK_LIFT，
 //     底边因此是凹的——这就是"勾"。HOOK_X 是它离开底边的位置（按 tailW 取比例）。
 // 四个数就是尾巴的全部造型，调它们即可，别去动 path 的拼装。
 const TAIL_CTRL_NEAR_TIP: number = 0.5;
-const TAIL_CTRL_NEAR_BODY: number = 0.62;
+const TAIL_CTRL_NEAR_BODY: number = 0.92;
 const TAIL_HOOK_X: number = 0.85;
 const TAIL_HOOK_LIFT: number = 0.3;
 

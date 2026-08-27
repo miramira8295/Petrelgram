@@ -6,12 +6,12 @@ export default function bubbleGlassPathTest() {
     it('收到气泡：底边走到尖 (0,h)，再一段三次贝塞尔勾回 (7, h-tailH)', 0, (): void => {
       const c = glassBubbleCommands(108, 40, false, true, 10, 10, 10, 4, 8, 12, 1);
       expect(c.startsWith('M17 0 L98 0 A10 10 0 0 1 108 10')).assertTrue();
-      expect(c.indexOf('L13.8 40 C8.36 36.4 1.75 39.28 0 40 C0 34 7 32.56 7 28') >= 0).assertTrue();
+      expect(c.indexOf('L13.8 40 C8.36 36.4 1.75 39.28 0 40 C0 34 7 28.96 7 28') >= 0).assertTrue();
       expect(c.endsWith('L7 10 A10 10 0 0 1 17 0 Z')).assertTrue();
     });
     it('发出气泡：右边缘 yTail 处甩出到尖 (w,h)，底边再直回左下角', 0, (): void => {
       const c = glassBubbleCommands(108, 40, true, true, 10, 10, 4, 10, 8, 12, 1);
-      expect(c.indexOf('L101 28 C101 32.56 108 34 108 40 C106.25 39.28 99.64 36.4 94.2 40 L10 40') >= 0).assertTrue();
+      expect(c.indexOf('L101 28 C101 28.96 108 34 108 40 C106.25 39.28 99.64 36.4 94.2 40 L10 40') >= 0).assertTrue();
       expect(c.indexOf('A10 10 0 0 1 0 30') >= 0).assertTrue();
     });
     it('inset 把整条轮廓向内缩，描边才不会被裁掉一半', 0, (): void => {
@@ -36,9 +36,9 @@ export default function bubbleGlassPathTest() {
     });
     it('实心档的尾巴和整体轮廓用同一条曲线', 0, (): void => {
       const t = tailShapeCommands(false, 8, 12, 1);
-      expect(t).assertEqual('M8 0 L8 12 C6.8 8.4 2 11.28 0 12 C0 6 8 4.56 8 0 Z');
+      expect(t).assertEqual('M8 0 L8 12 C6.8 8.4 2 11.28 0 12 C0 6 8 0.96 8 0 Z');
       const o = tailShapeCommands(true, 8, 12, 1);
-      expect(o).assertEqual('M0 0 L0 12 C1.2 8.4 6 11.28 8 12 C8 6 0 4.56 0 0 Z');
+      expect(o).assertEqual('M0 0 L0 12 C1.2 8.4 6 11.28 8 12 C8 6 0 0.96 0 0 Z');
     });
   });
 }
