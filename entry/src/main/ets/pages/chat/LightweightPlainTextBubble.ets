@@ -17,6 +17,7 @@ import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
 import { glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
+import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
 import { materialModifierWhen } from '../../util/materialModifier';
@@ -359,6 +360,10 @@ export struct LightweightPlainTextBubble {
   @State private menuShown: boolean = false;
   @State private swipeX: number = 0;
   private bubbleW: number = 0;
+  // 名字行量出来的宽度。名字行比正文宽时，时间层要拿它兜最小宽度，时间戳才落在
+  // 气泡右下角、引用块才能拉到气泡边缘。**复用时不清零**、用时按显不显示门控
+  // （理由见 timeLayerWidth.ets 和 MessageBubble 里同名字段的注释）。
+  @State private senderLabelW: number = 0;
   private menuOffsetX: number = 0;
   private gestureClaimed: boolean = false;
   private unsubSend: (() => void) | null = null;
@@ -622,8 +627,24 @@ export struct LightweightPlainTextBubble {
     }
   }
 
+  private senderLabelShown(): boolean {
+    return this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.showSenderName;
+  }
+
+  // 与 MessageBubble.measuredTimeLayerWidth 同一策略；轻量气泡只有名字行这一个
+  // 可能比正文宽的兄弟（没有转发标签、没有评论行）。
+  private measuredTimeLayerWidth(): number {
+    return timeLayerMinWidth(this.inlineMaxW(), {
+      forwardShown: false, forwardW: 0,
+      senderShown: this.senderLabelShown(), senderW: this.senderLabelW,
+      commentsShown: false, commentsW: 0
+    });
+  }
+
   @Builder
   body() {
+    // minWidth 挂在这个 Column 上（而不是只挂 Stack）：Stack 的 BottomEnd 会作用到
+    // 每个孩子，Column 比 Stack 窄时会被一起推到右边、压在时间戳上。
     Column() {
       if (this.msg.replyToMessageId !== 0) { this.replyQuote(); }
       Text() {
@@ -635,7 +656,9 @@ export struct LightweightPlainTextBubble {
       .fontSize(this.msgTextSize).lineHeight(this.msgTextSize * 1.34)
       .wordBreak(WordBreak.BREAK_WORD).constraintSize({ maxWidth: this.inlineMaxW() });
       this.translationState();
-    }.alignItems(HorizontalAlign.Start);
+    }
+    .alignItems(HorizontalAlign.Start)
+    .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
   }
 
   @Builder
@@ -759,8 +782,7 @@ export struct LightweightPlainTextBubble {
             Column().width(7);
           }
           Column() {
-            if (this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' &&
-              this.showSenderName) {
+            if (this.senderLabelShown()) {
               Row({ space: 5 }) {
                 Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
                   .fontWeight(FontWeight.Medium).maxLines(1)
@@ -769,12 +791,19 @@ export struct LightweightPlainTextBubble {
                   chatId: this.chatId, senderId: this.msg.senderId,
                   presetTag: this.msg.senderTag
                 });
-              }.margin({ bottom: 2 }).alignItems(VerticalAlign.Center);
+              }
+              .margin({ bottom: 2 }).alignItems(VerticalAlign.Center)
+              .onAreaChange((_old: Area, area: Area): void => {
+                this.senderLabelW = area.width as number;
+              });
             }
             Stack({ alignContent: Alignment.BottomEnd }) {
               this.body();
               this.timeOverlay();
-            }.constraintSize({ maxWidth: this.inlineMaxW() });
+            }
+            // 名字行比正文宽时时间戳停在正文末尾、够不到气泡右边缘（用户报的），
+            // 拿量到的名字行宽度兜一个最小宽度。
+            .constraintSize({ maxWidth: this.inlineMaxW(), minWidth: this.measuredTimeLayerWidth() });
           }
           .alignItems(HorizontalAlign.Start)
           // 与 MessageBubble 同一策略、同一理由（见那边的长注释）：气泡根节点上
