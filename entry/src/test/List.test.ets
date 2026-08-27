@@ -99,6 +99,7 @@ import backgroundBlurTest from './BackgroundBlur.test';
 import themeTest from './Theme.test';
 import patternTileGridTest from './PatternTileGrid.test';
 import mediaThumbChannelTest from './MediaThumbChannel.test';
+import inlineThumbUpdateTest from './InlineThumbUpdate.test';
 import collapseAlbumsKeyTest from './CollapseAlbumsKey.test';
 import messageRowPresentationChannelTest from './MessageRowPresentationChannel.test';
 import audioQueueGateTest from './AudioQueueGate.test';
@@ -259,6 +260,7 @@ export default function testsuite() {
   themeTest();
   patternTileGridTest();
   mediaThumbChannelTest();
+  inlineThumbUpdateTest();
   collapseAlbumsKeyTest();
   messageRowPresentationChannelTest();
   audioQueueGateTest();

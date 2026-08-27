@@ -5,6 +5,7 @@ import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteracti
 import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
 import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChannel';
 import { publishThumbPath } from '../util/mediaThumbChannel';
+import { inlineThumbEntryChanged } from '../util/inlineThumbUpdate';
 import { formatUserStatus } from '../util/formatUserStatus';
 import { liveArrivalContiguous, liveArrivalStep, reachedLiveTail } from '../util/liveTail';
 import { formatPreview } from '../util/formatPreview';
@@ -3717,28 +3718,34 @@ export class MessageStore {
     // the in-bubble loading ring).
     if (this.messages.some((m: MessageEntry): boolean => m.photoFileId === id)) {
       const percent = this.downloadPercent(file, local);
+      const landed: boolean = done && path !== '';
       this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
-        if (m.photoFileId !== id) {
+        if (m.photoFileId !== id || !inlineThumbEntryChanged(m, percent, landed, path)) {
           return m;
         }
         const c = cloneMessage(m);
-        if (done && path !== '') {
+        if (landed) {
           c.photoPath = path;
           c.photoFailed = false;
         }
         c.photoProgress = percent;
         return c;
       });
-      // 进度同时走旁路通道：它已经不在行 key 里了（见 collapseAlbums），
-      // 等待中的进度环靠 LiveProgressRing 自订阅刷新。
+      // 进度和路径两条旁路通道都已经铺好，这一支因此一律不再发
+      // notifySoon()：
+      //   · 进度——publishProgress 直达 LiveProgressRing（下一行）；
+      //   · 缩略图路径——applyFile 开头的 publishThumbPath 直达 LiveThumbImage，
+      //     它自己把占位换成 CachedImage，不需要整行重建。
+      // 两个字段都不在 collapseAlbums 的行 key 里，所以 notify 也产生不了
+      // 行重建，只会拉着 ChatPage 重算一遍 groups 并整体 rerender——真机
+      // trace 里那条 CustomNodeUpdate ChatPage → ExecuteRerender 就是它。
+      // map 仍然保留：条目里的 photoPath / photoProgress 还要给缓存落盘、
+      // 给全尺寸分支的回填判定用，只是不再惊动 UI。
       publishProgress(id, percent);
-      if (done && path !== '') {
+      if (landed) {
         this.thumbAttempts.delete(id);
         this.thumbLastKick.delete(id);
       }
-      // The hottest path of all during a fling: every row entering the viewport
-      // downloads its thumbnail. Coalesced, see notifySoon().
-      this.notifySoon();
       return;
     }
 
