@@ -138,7 +138,7 @@ import {
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import { shouldFillViewport } from '../../util/viewportFill';
-import { rowFadeAnimationActive } from '../../util/rowFadeGate';
+import { RowFadeTransition, rowFadeAnimationActive, rowFadeTransition } from '../../util/rowFadeGate';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS,
   KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
@@ -892,7 +892,27 @@ export struct ChatPage {
     this.settleInitialTimelineAnchor();
     this.cancelInitialMessageTransitionSettle();
     this.initialMessageTransitionSettled = true;
-    this.initialTimelineMasked = false;
+    this.revealInitialTimeline();
+  }
+
+  // 遮罩掀开的那一下。
+  //
+  // 逐行的淡入由行自己的 transition 负责（visibility 由 Hidden 翻 Visible 是它
+  // 的触发条件之一，stagger 一并保住）。这里再包一次 animateTo，是给整层
+  // List 的 opacity 一个兜底的淡入：万一某一帧行的 transition 没能起跑，用户
+  // 看到的仍是一次 90ms 的整屏淡入，而不是硬跳。时长与曲线同为
+  // INITIAL_TIMELINE_ROW_FADE_MS / EaseOut。
+  //
+  // 只包这一句：initialMessageTransitionSettled 归底部 dock 自己的动画管，
+  // 一起包进来会变成双重动画。
+  private revealInitialTimeline(): void {
+    animateTo({
+      duration: powerAnimationDuration(
+        KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
+      curve: Curve.EaseOut
+    }, (): void => {
+      this.initialTimelineMasked = false;
+    });
   }
 
   private applyInitialUnreadLanding(seq: number): void {
@@ -986,7 +1006,7 @@ export struct ChatPage {
         // the remaining bubbles keep their per-row stagger below.
         this.cancelInitialMessageTransitionSettle();
         this.initialMessageTransitionSettled = true;
-        this.initialTimelineMasked = false;
+        this.revealInitialTimeline();
         if (this.initialTimelinePresentationScheduledSeq === seq) {
           this.initialTimelinePresentationScheduledSeq = 0;
         }
@@ -7501,11 +7521,28 @@ export struct ChatPage {
     ContextMenu.close();
     this.closeReactionSheet();
     this.setEmojiPanel(false);
-    this.selecting = true;
-    this.selectedIds = toggleRow([], memberIds);
+    this.animateSelection((): void => {
+      this.selecting = true;
+      this.selectedIds = toggleRow([], memberIds);
+    });
+  }
+
+  // 行底色的 150ms 淡入淡出。原来是消息行上一条常驻的 .animation()，现在在
+  // 改动发生的那一刻显式驱动一次——时长与曲线照搬，包括滑动中给 0 那一支。
+  private animateSelection(apply: () => void): void {
+    animateTo({
+      duration: this.chatTgsScrollActive ? 0 :
+        powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
+      curve: Curve.EaseOut
+    }, apply);
   }
 
   private exitSelect(): void {
+    this.animateSelection((): void => { this.clearSelectionState(); });
+  }
+
+  // 不带动画的裸改，供已经在 animateSelection 闭包里的调用点用。
+  private clearSelectionState(): void {
     this.selecting = false;
     this.selectedIds = [];
   }
@@ -7519,10 +7556,12 @@ export struct ChatPage {
     if (!rowSelectable(g.head.contentType)) {
       return;
     }
-    this.selectedIds = toggleRow(this.selectedIds, g.memberIds);
-    if (this.selectedIds.length === 0) {
-      this.exitSelect();
-    }
+    this.animateSelection((): void => {
+      this.selectedIds = toggleRow(this.selectedIds, g.memberIds);
+      if (this.selectedIds.length === 0) {
+        this.clearSelectionState();
+      }
+    });
   }
 
   private reconcileMessageActionTargets(list: MessageEntry[]): void {
@@ -9186,21 +9225,45 @@ export struct ChatPage {
     return rowFadeAnimationActive(false, now, this.initialRowFadeArmedAt);
   }
 
-  // duration / delay 一起给 0，常驻的 .animation() 就不再为无关的布局变化
-  // 开动画上下文——和 chatTgsScrollActive 走的是同一条路。
-  private initialRowFadeDuration(rowDeferred: boolean): number {
-    if (this.chatTgsScrollActive || !this.initialRowFadeArmed(rowDeferred)) {
-      return 0;
+  // 首屏逐条淡入的**一次性**动画。
+  //
+  // 原来是一条常驻的 .animation()，窗口外把 duration / delay 给 0。真机 trace
+  // 说那不够：修饰器常驻，普通 rerender 照样进 JSAnimation duration:0。现在改
+  // 成 transition——官方只在"组件插入/删除"和"visibility 在可见与不可见之间
+  // 改变"两种情形触发它（API 参考「组件内转场 (transition)」把触发条件穷举成
+  // 了这两条），普通属性更新一概不建上下文。
+  //
+  // 两条触发条件在这里各管一段：
+  //   · 遮罩掀开 = 行的 visibility 由 Hidden 翻 Visible ⇒ 首屏那一波逐条淡入，
+  //     stagger 由下面的 delay 给；
+  //   · 占位行换成真行 = key 变了、节点重插 ⇒ 同一套效果，同一条路。
+  //
+  // 关掉时必须整个换成 IDENTITY，不能靠把 duration 给 0：否则滚动中新建的每
+  // 一行都会淡入一次（官方 FAQ faqs-arkui-1136 记的就是这个现象）。
+  //
+  // 出场一律 IDENTITY：虚拟滚动每帧都在拆行，给出场挂效果等于把节点的销毁往后
+  // 拖，那是纯粹的负收益。
+  private initialRowFadeTransition(index: number, rowDeferred: boolean): TransitionEffect {
+    const plan: RowFadeTransition = rowFadeTransition(
+      this.chatTgsScrollActive,
+      this.initialRowFadeArmed(rowDeferred),
+      powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
+      this.initialTimelineRowRevealDelay(index)
+    );
+    if (!plan.enabled) {
+      return TransitionEffect.IDENTITY;
     }
-    return powerAnimationDuration(
-      KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS);
-  }
-
-  private initialRowFadeDelay(index: number, rowDeferred: boolean): number {
-    if (this.chatTgsScrollActive || !this.initialRowFadeArmed(rowDeferred)) {
-      return 0;
-    }
-    return this.initialTimelineRowRevealDelay(index);
+    // animation() 挂在链首：官方原话"如果通过 combine 进行 TransitionEffect
+    // 的组合，前一 TransitionEffect 的动画参数也可用于后一 TransitionEffect"，
+    // 所以这一份 duration / delay / curve 覆盖后面两段。视觉与摘掉的那条
+    // .animation() 逐条一致：opacity 0→1、y 2→0、scale 0.99→1，EaseOut。
+    return TransitionEffect.asymmetric(
+      TransitionEffect.OPACITY
+        .animation({ duration: plan.duration, delay: plan.delay, curve: Curve.EaseOut })
+        .combine(TransitionEffect.translate({ y: 2 }))
+        .combine(TransitionEffect.scale({ x: 0.99, y: 0.99 })),
+      TransitionEffect.IDENTITY
+    );
   }
 
   private initialTimelineRowRevealDelay(index: number): number {
@@ -9324,12 +9387,11 @@ export struct ChatPage {
                 }
                 .width('100%')
                 .alignItems(VerticalAlign.Center)
+                // 这条底色原来也挂着一条常驻 .animation()（150ms）。同样的道理
+                // 摘掉了：多选高亮一年到头只在点选那一下变，却让每一行的每一次
+                // rerender 都进动画上下文。改由 animateSelection() 在事件处一次性
+                // 驱动（enterSelect / exitSelect / toggleSelectRow）。
                 .backgroundColor(this.selecting && this.rowSelected(ri.item) ? $r('app.color.select_highlight') : Color.Transparent)
-                .animation({
-                  duration: this.chatTgsScrollActive ? 0 :
-                    powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-                  curve: Curve.EaseOut
-                })
                 .onClick(() => {
                   if (this.selecting) {
                     this.toggleSelectRow(ri.item);
@@ -9341,27 +9403,34 @@ export struct ChatPage {
               // Deferred rows continue reserving geometry after an early bottom
               // reveal. Keep each one invisible until its stable-key replacement
               // is real, then reuse the same per-row fade/transform wave.
-              .opacity(this.initialTimelineMasked || ri.item.initialDeferred === true ? 0 : 1)
-              .translate({
-                y: this.initialTimelineMasked || ri.item.initialDeferred === true ? 2 : 0
-              })
-              .scale({
-                x: this.initialTimelineMasked || ri.item.initialDeferred === true ? 0.99 : 1,
-                y: this.initialTimelineMasked || ri.item.initialDeferred === true ? 0.99 : 1
-              })
-              .animation({
-                // Newly materialized rows read the plain scroll gate without
-                // invalidating already visible rows at onScrollStart. During a
-                // fling they paint immediately; the entry stagger remains for
-                // the coordinated first presentation.
-                // 修饰器本身是常驻的（挂在 Repeat 行包装上，去不掉），所以由
-                // 时间戳闩决定它是不是活的：首屏那一波之外 duration / delay
-                // 都是 0，一次普通 rerender 因此不会再把布局变化拉成 90ms 的
-                // 滑动。见 initialRowFadeArmed / util/rowFadeGate。
-                duration: this.initialRowFadeDuration(ri.item.initialDeferred === true),
-                delay: this.initialRowFadeDelay(ri.index, ri.item.initialDeferred === true),
-                curve: Curve.EaseOut
-              });
+              //
+              // 原来这里是 opacity / translate / scale 三条绑定，配一条常驻的
+              // .animation() 把它们的变化拉成 90ms 的淡入。现在遮挡改用
+              // visibility，起止形态（opacity 0→1、y 2→0、scale 0.99→1）交给下面
+              // 那条 transition 声明——**Hidden 与 Visible 之间的切换本身就是
+              // transition 的第二种触发条件**（API 参考「组件内转场 (transition)」
+              // 原文：「当组件 visibility 属性在可见和不可见之间改变时，只触发该
+              // 组件的 transition 效果」）。逐行的 stagger 因此原样保住：每一行
+              // 在遮罩掀开的那一帧各自带着自己的 delay 入场。
+              //
+              // Hidden 而不是 None：Hidden「隐藏，但参与布局进行占位」，与原来
+              // opacity 0 一样守着行高，滚动锚点和 getItemRect 那一套不受影响。
+              .visibility(this.initialTimelineMasked || ri.item.initialDeferred === true
+                ? Visibility.Hidden : Visibility.Visible)
+              // Newly materialized rows read the plain scroll gate without
+              // invalidating already visible rows at onScrollStart. During a
+              // fling they paint immediately; the entry stagger remains for
+              // the coordinated first presentation.
+              //
+              // 这里原来是一条常驻的 .animation()。它去掉了：修饰器只要挂着，
+              // 每一次普通 rerender 都会进一次动画上下文（trace 里的
+              // JSAnimation duration:0），把 duration 给 0 也挡不住。换成
+              // transition 之后，只有节点真的插入时才有效果。上面那三条
+              // opacity / translate / scale 保留：它们负责"遮罩期间不可见"这
+              // 件事，遮罩掀开那一下由 animateTo 一次性驱动（见
+              // scheduleInitialTimelinePresentation）。
+              .transition(this.initialRowFadeTransition(
+                ri.index, ri.item.initialDeferred === true));
             })
             // Format lives in rowKeyOf — see its comment.
             .key((g: AlbumGroup): string => this.rowKeyOf(g))

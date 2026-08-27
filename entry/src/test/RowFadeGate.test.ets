@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  rowFadeAnimationActive, INITIAL_ROW_FADE_WINDOW_MS
+  rowFadeAnimationActive, rowFadeTransition,
+  INITIAL_ROW_FADE_WINDOW_MS, RowFadeTransition
 } from '../main/ets/util/rowFadeGate';
 
 export default function rowFadeGateTest() {
@@ -31,6 +32,35 @@ export default function rowFadeGateTest() {
 
     it('从没揭示过就不放行', 0, (): void => {
       expect(rowFadeAnimationActive(false, 10000, 0)).assertFalse();
+    });
+  });
+
+  describe('rowFadeTransition', () => {
+    it('闩开着就带上时长和 stagger', 0, (): void => {
+      const plan: RowFadeTransition = rowFadeTransition(false, true, 90, 42);
+      expect(plan.enabled).assertTrue();
+      expect(plan.duration).assertEqual(90);
+      expect(plan.delay).assertEqual(42);
+    });
+
+    it('闩关了就整个不挂效果——不是把 duration 给 0', 0, (): void => {
+      // 这一条是这轮改动的钉子：常驻 .animation() 给 0 挡不住动画上下文，
+      // 换成 transition 之后"关掉"的写法必须是 TransitionEffect.IDENTITY。
+      const plan: RowFadeTransition = rowFadeTransition(false, false, 90, 42);
+      expect(plan.enabled).assertFalse();
+      expect(plan.duration).assertEqual(0);
+      expect(plan.delay).assertEqual(0);
+    });
+
+    it('滑动中一律不做入场动画', 0, (): void => {
+      // 原判据照搬：chatTgsScrollActive 为真时 duration / delay 都给 0。
+      const plan: RowFadeTransition = rowFadeTransition(true, true, 90, 42);
+      expect(plan.enabled).assertFalse();
+      expect(plan.duration).assertEqual(0);
+    });
+
+    it('两个条件都不成立时也是关的', 0, (): void => {
+      expect(rowFadeTransition(true, false, 90, 42).enabled).assertFalse();
     });
   });
 }

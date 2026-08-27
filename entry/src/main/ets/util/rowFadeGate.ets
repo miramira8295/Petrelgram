@@ -32,3 +32,39 @@ export function rowFadeAnimationActive(masked: boolean, now: number, armedAt: nu
   }
   return now - armedAt <= INITIAL_ROW_FADE_WINDOW_MS;
 }
+
+// ── 从「常驻 .animation() + duration 0」改成「一次性 transition」──────────
+//
+// 上面那道闩本来是给消息行上那条常驻 `.animation()` 用的：窗口外把 duration
+// 和 delay 都给 0，让它"看起来"失效。真机 trace 说这不够——`JSAnimation
+// duration:0` 一直在。只要修饰器还挂在那儿，每一次普通 rerender 都会进一次
+// 动画上下文；给 0 省掉的只是动画本身，省不掉上下文。本会话在气泡上验过两次
+// （02f50cf / 3193982 / 8d1bfb1：换位置、给 0 都挡不住，摘掉修饰器才有效）。
+//
+// 所以行上换成 `.transition()`。官方对它的触发条件只列了两条（API 参考"组件内
+// 转场 (transition)"）：
+//   1. 组件插入或删除时（if 条件改变、ForEach 新增删除组件）；
+//   2. 组件 visibility 属性在可见与不可见之间改变时。
+// 一次普通的属性更新两条都不沾，因此不会为 rerender 建动画上下文——这正是这
+// 一改要的性质。
+//
+// 代价是"关掉"的写法变了：不能再靠把 duration 给 0，得整个换成
+// TransitionEffect.IDENTITY，否则滚动中新建的每一行都会淡入一次（官方 FAQ
+// faqs-arkui-1136 记的就是这个现象：LazyForEach 的列表上滑也触发 transition）。
+export interface RowFadeTransition {
+  // false = 该挂 TransitionEffect.IDENTITY，一点效果都不要。
+  enabled: boolean;
+  duration: number;
+  delay: number;
+}
+
+// scrollActive：chatTgsScrollActive，滑动中一律不做入场动画（原判据照搬）。
+// armed：rowFadeAnimationActive 的结果（首屏窗口内）。
+export function rowFadeTransition(
+  scrollActive: boolean, armed: boolean, duration: number, delay: number
+): RowFadeTransition {
+  if (scrollActive || !armed) {
+    return { enabled: false, duration: 0, delay: 0 };
+  }
+  return { enabled: true, duration: duration, delay: delay };
+}
