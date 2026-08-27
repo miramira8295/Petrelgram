@@ -2648,7 +2648,8 @@ export struct ChatPage {
         didInitialScroll: this.didInitialScroll,
         prependAnchorHeld: prependAnchorId !== 0,
         appendBreaksAnchor: appendsRows,
-        userDrivenAppend: userDrivenAppend
+        atLiveTail: this.atBottom,
+        scrollIntentPending: this.pendingJumpId !== 0 || this.pendingScrollBottom
       });
       if (holdAppendAnchor) {
         const visibleIndex: number = this.curStartIdx;
