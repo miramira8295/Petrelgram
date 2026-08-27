@@ -32,6 +32,10 @@ import { publishTabReTap } from '../../util/tabReTap';
 import { KEY_SHOW_CONTACTS_TAB } from '../../store/AppSettings';
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
+import { TD_ACCOUNT_SWITCHING, TdAccountSummary, accountRegistry } from '../../tdkit/AccountRegistry';
+import { PopupRect, accountPopupRect, accountRowAt } from '../../util/accountSwitchLayout';
+import { switchAccountOrToast } from '../../util/accountSwitch';
+import { AccountSwitchPopup } from './AccountSwitchPopup';
 
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
 const DOCK_BG: ResourceColor = $r('app.color.dock_glass');
@@ -115,6 +119,16 @@ export struct MainScreen {
   @State myId: number = 0;
   @State meAvatar: string = '';
   @State meInitials: string = '?';
+  // 长按「个人资料」页签弹出的账号切换菜单。手指按下的位置记在 pressX/pressY
+  // （窗口坐标，根 Stack 铺满窗口所以就是它的坐标），长按触发时按它摆弹窗；
+  // 手指不抬继续滑，Move 落在哪一行就高亮哪一行，Up 时有高亮就切。
+  @State private switcherShown: boolean = false;
+  @State private switcherAccounts: TdAccountSummary[] = [];
+  @State private switcherRect: PopupRect = { x: 0, y: 0, w: 0, h: 0, scrolls: false };
+  @State private switcherHighlight: number = -1;
+  @StorageProp(TD_ACCOUNT_SWITCHING) private accountSwitching: boolean = false;
+  private pressX: number = 0;
+  private pressY: number = 0;
   private controller: TabsController = new TabsController();
   private store: ProfileStore | null = null;
   private unsubStore: (() => void) | null = null;
@@ -360,7 +374,65 @@ export struct MainScreen {
       pressed: this.dockItemPressedStyle
     })
     .accessibilityText(str('a11y_option_state', str('tab_profile'), this.tab === 3 ? str('a11y_selected') : ''))
-    .onClick(() => { this.select(3); });
+    .onClick(() => { this.select(3); })
+    .onTouch((e: TouchEvent): void => { this.onProfileTouch(e); })
+    .gesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+      .onAction((): void => { this.openAccountSwitcher(); }));
+  }
+
+  private onProfileTouch(e: TouchEvent): void {
+    if (e.touches.length === 0) {
+      return;
+    }
+    const t: TouchObject = e.touches[0];
+    if (e.type === TouchType.Down) {
+      this.pressX = t.windowX;
+      this.pressY = t.windowY;
+      return;
+    }
+    if (!this.switcherShown) {
+      return;
+    }
+    if (e.type === TouchType.Move) {
+      const row: number = accountRowAt(this.switcherRect, this.switcherAccounts.length, t.windowX, t.windowY);
+      if (row !== this.switcherHighlight) {
+        this.switcherHighlight = row;
+      }
+    } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+      // 滑到某行上松开就切；没滑到任何行就留着，等点击（或点遮罩关闭）。
+      const row: number = this.switcherHighlight;
+      this.switcherHighlight = -1;
+      if (e.type === TouchType.Up && row >= 0 && row < this.switcherAccounts.length) {
+        this.pickAccount(this.switcherAccounts[row].slotId);
+      }
+    }
+  }
+
+  private openAccountSwitcher(): void {
+    if (this.switcherShown || this.accountSwitching) {
+      return;
+    }
+    const accounts: TdAccountSummary[] = accountRegistry.all().filter((a: TdAccountSummary) => !a.pendingLogin);
+    if (accounts.length <= 1) {
+      return;
+    }
+    this.switcherAccounts = accounts;
+    this.switcherRect = accountPopupRect(this.pressX, this.pressY, this.screenW, this.screenH, accounts.length);
+    this.switcherHighlight = -1;
+    this.switcherShown = true;
+  }
+
+  private closeAccountSwitcher(): void {
+    this.switcherShown = false;
+    this.switcherHighlight = -1;
+  }
+
+  private pickAccount(slotId: string): void {
+    this.closeAccountSwitcher();
+    if (slotId === accountRegistry.activeSlotId()) {
+      return;
+    }
+    switchAccountOrToast(slotId);
   }
 
   // Dock 标签必须经这里取：str() 出来的是普通字符串，节点只有在"构建时读过
@@ -575,6 +647,16 @@ export struct MainScreen {
       // 在退场过渡期间不再重新构建，属性冻结在「还可点」的那一版上，于是有
       // 160ms 的空档能吃掉落在 ChatPage 输入区上的点击。
       this.dock();
+      if (this.switcherShown) {
+        AccountSwitchPopup({
+          accounts: this.switcherAccounts,
+          activeSlotId: accountRegistry.activeSlotId(),
+          rect: this.switcherRect,
+          highlight: this.switcherHighlight,
+          onPick: (slotId: string): void => { this.pickAccount(slotId); },
+          onDismiss: (): void => { this.closeAccountSwitcher(); }
+        });
+      }
     }
     .width('100%').height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);

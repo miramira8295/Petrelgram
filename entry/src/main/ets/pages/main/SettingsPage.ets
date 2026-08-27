@@ -19,6 +19,7 @@ import {
   COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { floatingLiveWindow } from '../chat/LiveFloatingWindow';
+import { switchAccountWithLiveWindow } from '../../util/accountSwitch';
 import { STORAGE_UPDATE_AVAILABLE } from '../../services/UpdateChecker';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
 } from '../../store/AppSettings';
@@ -659,8 +660,7 @@ export struct SettingsPage {
       this.accountNavigationLocked || this.openingSettingPage !== '') { return; }
     this.clearAccountActionError();
     this.switchingSlotId = slotId;
-    floatingLiveWindow.closeForAccountSwitch()
-      .then((): Promise<void> => switchTdAccount(slotId))
+    switchAccountWithLiveWindow(slotId)
       .catch((caught: Error): void => {
         logE(`SettingsPage.switchAccount failed: ${caught.message}`);
         promptAction.showToast({ message: str('settings_switch_failed'), duration: 1800 });
