@@ -92,6 +92,7 @@ import {
 } from '../../util/messageLinkAction';
 import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
+import { newerPageIsUserDriven, shouldHoldAppendAnchor } from '../../util/appendAnchor';
 import {
   PINNED_EMPTY, PINNED_IGNORE, PINNED_JUMP, PINNED_LATEST, PINNED_RETRY,
   PinnedTap, pinnedTapAction
@@ -308,7 +309,7 @@ const JUMP_LANDING_GRACE_MS: number = 900;
 //
 // 【结论落地后】若坐实：正确修法不是留着这个常量，而是把 `!this.atBottom` 换成
 // 一条真正表达「这次追加是用户主动向下翻页的结果」的判据（见交付说明）。
-const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = true;
+const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = false;
 
 // Reuse-pool granularity for ReusableMessageBubble's reuseId. Provisional —
 // to be measured and tuned in P2 Task 3; 'medium' is a placeholder, not a
@@ -2508,15 +2509,28 @@ export struct ChatPage {
       // 已经开着，真机上仍然跳，所以这一侧也手动复位。判据与推导见
       // AlbumGroupDataSource.appendBreaksAnchor。
       //
-      // `!this.atBottom` 是这里唯一的额外闸：用户确实停在会话末尾时，新消息
-      // 把内容往上顶正是想要的跟随行为，绝不能复位。atBottom 在还有更新的历史
-      // 没拉时恒为假（util/atBottom 里的 hasMoreNewer 一条），所以向下翻页途中
-      // 这道闸天然是开的。
+      // 额外那道闸判的是「**这次追加是不是用户主动向下翻页的结果**」，判据与
+      // 完整推导见 util/appendAnchor。
+      //
+      // 它原来是 `!this.atBottom`——那问的是另一件事（"用户此刻在不在会话实时
+      // 尾部"），而 atBottomVerdict 里带着 !hasMoreNewer，于是向下翻页的整个
+      // 过程中恒为真、闸恒开，每一次追加都把视口按回锚点。那正是真机上"进会话
+      // 落在中间之后持续闪、滑不动、↓ 按不下去"的动力来源。
       let appendAnchorId: number = 0;
       let appendAnchorY: number = 0;
-      if (!APPEND_ANCHOR_RESTORE_BYPASSED &&
-        prependAnchorId === 0 && this.didInitialScroll && !this.atBottom &&
-        appendBreaksAnchor(this.groups, groups)) {
+      const appendsRows: boolean = appendBreaksAnchor(this.groups, groups);
+      // 标记只在"确实追加了行"的这一次发布消费：loadNewer 一开头就发一条
+      // paginationState 通知，在那里消费会把标记吃在页回来之前。
+      const userDrivenAppend: boolean =
+        appendsRows ? store.consumeUserDrivenAppend() : false;
+      const holdAppendAnchor: boolean = shouldHoldAppendAnchor({
+        bypassed: APPEND_ANCHOR_RESTORE_BYPASSED,
+        didInitialScroll: this.didInitialScroll,
+        prependAnchorHeld: prependAnchorId !== 0,
+        appendBreaksAnchor: appendsRows,
+        userDrivenAppend: userDrivenAppend
+      });
+      if (holdAppendAnchor) {
         const visibleIndex: number = this.curStartIdx;
         if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
           appendAnchorId = this.groups[visibleIndex].head.id;
@@ -2528,10 +2542,9 @@ export struct ChatPage {
           logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
             ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
         }
-      } else if (prependAnchorId === 0 && this.didInitialScroll &&
-        appendBreaksAnchor(this.groups, groups)) {
-        // 旁路态 / 闸关上时也留一条：判读时要能看见「这一次追加本来会不会复位」，
-        // 以及解除瞬间是哪个输入翻的。与 hold 那条同格式，随开关一起删。
+      } else if (appendsRows && prependAnchorId === 0 && this.didInitialScroll) {
+        // 闸关上时也留一条：判读时要能看见「这一次追加本来会不会复位」。与 hold
+        // 那条同格式，随探针一起删。
         logW(`[AppendAnchor] skip bypass=${APPEND_ANCHOR_RESTORE_BYPASSED}` +
           ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
       }
@@ -4174,7 +4187,13 @@ export struct ChatPage {
     if (!canFirePageGate(gate, end)) {
       return;
     }
-    const started: boolean = this.store.loadNewer();
+    // 谁请求了这一页：只有列表所有权在用户手上时发出的请求算"用户主动向下
+    // 翻页"。标记随请求带到发布点，决定那一页落地时复不复位锚点。
+    // 不能用 gate.armed 代替——开会话时它就是满膛的，首屏布局后的第一次
+    // onScrollIndex 就能把它打掉，那一枪没有任何用户手势参与。
+    const userDriven: boolean =
+      newerPageIsUserDriven(this.listTouchActive, this.listUserScrollActive);
+    const started: boolean = this.store.loadNewer(userDriven);
     if (started || !this.store.getHasMoreNewer()) {
       this.newerGate = firedPageGate(gate, end);
     }
@@ -4219,8 +4238,9 @@ export struct ChatPage {
   }
 
   // ⚠️ 临时探针（随 APPEND_ANCHOR_RESTORE_BYPASSED 一起删）：把决定这道闸开合的
-  // 全部输入打在同一行上。要看的就是拉锯**解除的那一瞬间**是哪个值翻了——按当前
-  // 假设应当是 hasMoreNewer true→false 带着 verdict no→yes。
+  // 全部输入打在同一行上——旧判据（hasMoreNewer/atBottom/verdict）留着，好和新
+  // 判据（reqUserDriven 及其两个输入）对照，上机时一眼能看出闸是按哪一维开合的。
+  // 新判据下 hold 应当只出现在用户手势翻页那一页上，自动追加一律是 skip。
   //
   // 刻意不调 refreshAtBottom：那个会写 this.atBottom。这里只读，绝不改状态。
   // groupsLen 用**新快照**的长度，因为闸是在发布这份快照时判的。
@@ -4243,7 +4263,9 @@ export struct ChatPage {
     });
     return `hasMoreNewer=${hasMoreNewer} atBottom=${this.atBottom} verdict=${verdict}` +
       ` scrollerAtEnd=${scrollerAtEnd} startIdx=${this.curStartIdx} endIdx=${this.curEndIdx}` +
-      ` idxLen=${this.indexGroupsLen} userScroll=${this.listUserScrollActive}`;
+      ` idxLen=${this.indexGroupsLen} userScroll=${this.listUserScrollActive}` +
+      ` touch=${this.listTouchActive} newerArmed=${this.newerGate.armed}` +
+      ` reqUserDriven=${newerPageIsUserDriven(this.listTouchActive, this.listUserScrollActive)}`;
   }
 
   private restoreScrollAnchor(targetIndex: number, itemY: number): void {

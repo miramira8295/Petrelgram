@@ -888,7 +888,8 @@ export class MessageStore {
       return;
     }
     this.newerLoadState = 'idle';
-    this.loadNewer();
+    // 用户点了"重试"：这一页和手势翻出来的那一页一样属于用户主动请求。
+    this.loadNewer(true);
   }
 
   // Jump straight to the newest messages: drop the loaded window and reload
@@ -936,9 +937,28 @@ export class MessageStore {
   // any) is a different anchor.
   private newerRetryAnchor: number = 0;
 
+  // 有一页用户主动翻出来的 newer 已经发布/即将发布，还没被 ChatPage 消费。
+  private userDrivenAppendPending: boolean = false;
+
+  // 取走并清掉上面那个标记。
+  //
+  // 消费点必须是"这次发布确实在末尾追加了行"那一次，而不是每一次通知：
+  // loadNewer 一开头就发一条 paginationState 通知，若在那里消费，标记会在页
+  // 回来之前就被吃掉，判据永远是假。
+  consumeUserDrivenAppend(): boolean {
+    const pending: boolean = this.userDrivenAppendPending;
+    this.userDrivenAppendPending = false;
+    return pending;
+  }
+
   // Load the next (newer) page — only meaningful after a loadAround jump into
   // the middle of history left unloaded messages below the window.
-  loadNewer(): boolean {
+  //
+  // userDriven: 这一页是用户手势推出来的（手指按着列表 / 惯性滑动中越过底部
+  // 触发线），而不是首屏自动预取、补链或查看器换组。判定在**请求发出时**做，
+  // 由调用方给出，一路带到发布点——ChatPage 据此决定要不要复位视口锚点
+  // （见 util/appendAnchor）。默认假：没有明确说是用户打的，就当成程序性的。
+  loadNewer(userDriven: boolean = false): boolean {
     if (this.newerPending || this.newerLoadState === 'error' ||
       !this.hasMoreNewer || this.messages.length === 0) {
       return false;
@@ -950,6 +970,11 @@ export class MessageStore {
     const req = this.historyRequest(newestId, -(this.historyPageSize - 1));
     this.client.send(req).then((res: TdObject) => {
       this.newerPending = false;
+      // 这一页要发布了。标记留到 ChatPage 真正看到"行变多了"那一次发布才消费
+      // （见 consumeUserDrivenAppend），中途那些 paginationState 通知不消费它。
+      if (userDriven) {
+        this.userDrivenAppendPending = true;
+      }
       const arr = (res['messages'] as TdObject[] | undefined) ?? [];
       let maxId = 0;
       for (const m of arr) {
@@ -981,7 +1006,7 @@ export class MessageStore {
         logW(`[StoreDiag] newer discontinuous skipped=${skipped}` +
           ` newestId=${newestId} pageOldest=${pageOldest}` +
           ` retriesLeft=${this.newerGapRetries}`);
-        this.loadNewer();
+        this.loadNewer(userDriven);
         return;
       }
       if (skipped > NEWER_GAP_TOLERANCE) {
@@ -1055,7 +1080,7 @@ export class MessageStore {
           this.newerRetryAnchor = newestId;
           this.newerLoadState = 'idle';
           this.onHistory(res, 'newer');
-          this.loadNewer();
+          this.loadNewer(userDriven);
           return;
         }
         this.hasMoreNewer = false;
