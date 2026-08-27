@@ -275,6 +275,17 @@ class AccountRegistry {
     return hit !== undefined ? hit.slotId : '';
   }
 
+  // 切换失败时该退到哪：previousSlotId 本身登录过就退回去，否则找别的登录过的
+  // 槽；一个都没有返回 ''（issue #101：退回一个刚登出的空槽等于锁在登录页）。
+  usableFallbackSlot(previousSlotId: string): string {
+    const previous = this.accounts.find(
+      (item: TdAccountSummary): boolean => item.slotId === previousSlotId);
+    if (previous !== undefined && !previous.pendingLogin && previous.userId !== 0) {
+      return previousSlotId;
+    }
+    return this.otherUsableSlotId();
+  }
+
   // 活跃槽的摘要里有没有用户身份。它为真却又停在登录页，说明摘要与 TDLib 对不上。
   activeSummaryHasUser(): boolean {
     return this.active().userId !== 0;
@@ -311,8 +322,10 @@ class AccountRegistry {
     if (!current.pendingLogin || current.userId !== 0) {
       return '';
     }
-    const previous = current.previousSlotId;
-    if (previous === '' || !this.hasSlot(previous)) {
+    const recorded = current.previousSlotId;
+    // 没记来路（重复登录清理把它写成了 ''）就找别的登录过的槽（issue #101）。
+    const previous = (recorded !== '' && this.hasSlot(recorded)) ? recorded : this.otherUsableSlotId();
+    if (previous === '') {
       return '';
     }
     this.activeSlot = previous;

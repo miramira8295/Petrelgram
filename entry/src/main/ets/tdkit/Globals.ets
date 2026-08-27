@@ -372,10 +372,16 @@ async function restartOnSlot(slotId: string, previousSlotId: string): Promise<vo
   } catch (caught) {
     const error = caught as Error;
     logE(`Globals.restartOnSlot(${slotId}) failed: ${error.message}`);
-    if (previousSlotId !== '' && accountRegistry.hasSlot(previousSlotId)) {
-      accountRegistry.setActive(previousSlotId);
+    // 回退目标优先是个登录过的槽：重复登录清理那条路上 previousSlotId 是刚
+    // logOut 掉的空槽，退回去等于把用户锁在登录页（issue #101）。一个登录过的
+    // 都没有时才退回原来那个——有运行时总比没有强。
+    const usable: string = accountRegistry.usableFallbackSlot(previousSlotId);
+    const fallback: string = usable !== '' ? usable
+      : (previousSlotId !== '' && accountRegistry.hasSlot(previousSlotId) ? previousSlotId : '');
+    if (fallback !== '') {
+      accountRegistry.setActive(fallback);
       if (client === undefined) {
-        createRuntime(previousSlotId);
+        createRuntime(fallback);
         bumpSessionEpoch();
       }
     }
@@ -651,11 +657,16 @@ function resolveDuplicateAccountLogin(
     if (logoutCompleted) {
       logW(`[AddAcct] duplicate cleanup failed after logout — falling back to ${existingSlotId}`);
       accountRegistry.markLoggedOut(duplicateSlotId);
-      switchTdAccount(existingSlotId).then((): void => {
-        accountRegistry.discardPending(duplicateSlotId);
-      }).catch((inner: Error): void => {
-        logE(`Globals.resolveDuplicateAccountLogin fallback failed: ${inner.message}`);
-      });
+      // 得等这条链的 finally 把 switchInFlight 清掉再切：此刻它还指着本链，
+      // switchTdAccount 一进门就 `return switchInFlight`，什么都不切——这段
+      // 兜底原来一直是死代码（issue #101）。
+      setTimeout((): void => {
+        switchTdAccount(existingSlotId).then((): void => {
+          accountRegistry.discardPending(duplicateSlotId);
+        }).catch((inner: Error): void => {
+          logE(`Globals.resolveDuplicateAccountLogin fallback failed: ${inner.message}`);
+        });
+      }, 0);
       return;
     }
     if (client === runtimeClient &&
