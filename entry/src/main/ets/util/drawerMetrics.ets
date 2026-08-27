@@ -23,3 +23,14 @@ export const EMOJI_TAB_BAR_HEIGHT: number = 34;
 
 // 表情抽屉的内容区。
 export const EMOJI_CONTENT_HEIGHT: number = BOTTOM_DRAWER_HEIGHT - EMOJI_TAB_BAR_HEIGHT;
+
+// 抽屉卡片下沿到屏幕底的距离：整条导航手势带（bottomSafe）都让出来，至少留
+// DRAWER_INSET 让卡片浮起来。
+//
+// 原来是 min(12, bottomSafe / 2)，理由是「手势条本身只占安全区的一小条，全留
+// 显得下面空」——但那一截是系统的手势识别区，卡片底部那条标签栏落进去，点
+// 「表情 / 贴纸 / GIF」时就会误触小白条（issue #154）。输入框收起面板时留的
+// 也是整条 bottomSafe（composerBottomGap），两处对齐。
+export function drawerBottomInset(bottomSafe: number): number {
+  return Math.max(DRAWER_INSET, Math.round(bottomSafe));
+}

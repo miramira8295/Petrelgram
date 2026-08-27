@@ -1,4 +1,4 @@
-import { BOTTOM_DRAWER_HEIGHT, DRAWER_INSET } from '../../util/drawerMetrics';
+import { BOTTOM_DRAWER_HEIGHT, drawerBottomInset } from '../../util/drawerMetrics';
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
@@ -11,12 +11,6 @@ import { materialModifier } from '../../util/materialModifier';
 // 的只有卡片里装什么，所以外壳收成一处，内容用 @BuilderParam 传进来。
 //
 // 下面这些"为什么"是实测得来的，别按直觉改：
-
-// 抽屉下沿要把系统手势条那一截算进来，否则卡片被压着。用一半、封顶 12 而不是
-// 整条 bottomSafe：手势条本身只占安全区的一小条，全留就显得下面空了一大块。
-export function drawerBottomInset(bottomSafe: number): number {
-  return Math.min(12, Math.round(bottomSafe / 2));
-}
 
 @Component
 export struct BottomDrawerShell {
@@ -44,7 +38,11 @@ export struct BottomDrawerShell {
   }
 
   build() {
-    Stack() {
+    // 卡片贴着 Stack 顶，整条 drawerBottomInset 都落在卡片**下面**。原来是默认
+    // 的居中对齐：卡片 + 8 的外边距被摆在 260 + inset 的中间，留出来的那一截
+    // 一半跑到卡片上面去了，卡片下沿实际只离屏幕底 inset/2 + 4，「表情 / 贴纸
+    // / GIF」那一条整个躺在系统手势带里（issue #154）。
+    Stack({ alignContent: Alignment.Top }) {
       Column() {
         this.content();
       }
@@ -54,7 +52,6 @@ export struct BottomDrawerShell {
       // 键盘时做不到这一点（另一个图层，背后没有页面背景），才被迫齐边。
       .width('calc(100% - 16vp)')
       .height(BOTTOM_DRAWER_HEIGHT)
-      .margin({ bottom: DRAWER_INSET })
       .drawerCard();
     }
     .width('100%')

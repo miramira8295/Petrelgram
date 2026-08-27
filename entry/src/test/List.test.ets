@@ -16,6 +16,7 @@ import hmsRelayRegistrationTest from './HmsRelayRegistration.test';
 import navBarResetTest from './NavBarReset.test';
 import diagLogHeaderTest from './DiagLogHeader.test';
 import tdDeviceParamsTest from './TdDeviceParams.test';
+import drawerMetricsTest from './DrawerMetrics.test';
 import scopeMuteTest from './ScopeMute.test';
 import decodeSizeTest from './DecodeSize.test';
 import chatContentWidthTest from './ChatContentWidth.test';
@@ -184,6 +185,7 @@ export default function testsuite() {
   navBarResetTest();
   diagLogHeaderTest();
   tdDeviceParamsTest();
+  drawerMetricsTest();
   scopeMuteTest();
   decodeSizeTest();
   chatContentWidthTest();
