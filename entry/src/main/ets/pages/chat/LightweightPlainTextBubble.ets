@@ -17,6 +17,8 @@ import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
 import { glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
+// 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
+import { probeGlassMeasure } from '../../util/tailFlipProbe';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
@@ -800,6 +802,7 @@ export struct LightweightPlainTextBubble {
               .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
             this.msg.isOutgoing, this.hasTail(), this.bubbleCorners(),
             this.bubbleMaterialOn ? (w: number, h: number): void => {
+              probeGlassMeasure('plain', this.msg.id, w, h);
               this.glassW = w;
               this.glassH = h;
             } : null))
