@@ -168,6 +168,28 @@ export default function chatBackgroundStoreTest() {
       expect(h.store.current().colors.length).assertEqual(0);
     });
 
+    // 回归：真机切深色后 getInstalledBackgrounds 连续超时，原来 catch 里
+    // applyBackground(null) 把已经画好的背景清成平底。失败不许清空。
+    it('installed default failure keeps the background already on screen', 0, async () => {
+      const h = harness();
+      h.store.open(7);
+      expect(h.bridge.lastType()).assertEqual('getChat');
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = 7;
+      h.bridge.reply(chat);
+      await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+      expect(h.bridge.lastType()).assertEqual('getInstalledBackgrounds');
+      h.store.applyKnownBackground(solidFillBackground(0x336699));
+      expect(h.store.current().colors.length).assertEqual(1);
+      const failure: TdObject = { '@type': 'error' };
+      failure['code'] = 400;
+      failure['message'] = 'request timeout';
+      h.bridge.reply(failure);
+      await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+      expect(h.store.current().custom).assertTrue();
+      expect(h.store.current().colors.length).assertEqual(1);
+    });
+
     it('a fill with neither colors nor file is ignored', 0, () => {
       const h = harness();
       const type: TdObject = { '@type': 'backgroundTypeFill' };

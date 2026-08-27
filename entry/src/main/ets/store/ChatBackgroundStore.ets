@@ -25,6 +25,9 @@ export interface ChatBackgroundState {
   isPattern: boolean;
 }
 
+const INSTALLED_DEFAULT_RETRIES: number = 2;
+const INSTALLED_DEFAULT_RETRY_MS: number = 2500;
+
 export function emptyChatBackground(): ChatBackgroundState {
   return {
     custom: false, colors: [], angle: 180, path: '',
@@ -545,7 +548,11 @@ export class ChatBackgroundStore {
     this.loadInstalledDefault(forDarkTheme, seq);
   }
 
-  private loadInstalledDefault(forDarkTheme: boolean, seq: number): void {
+  // 拉「已安装默认背景」失败（真机上是网络超时，切深色那一刻连续四次）时的处理：
+  // **不清空**。原来 catch 里 applyBackground(null) 会把已经画好的状态打回空——
+  // 用户看到的就是背景突然变成一片 #0E1621 平底，要重进会话才回来。
+  // 现在：当前状态还在就留着；当前是空的就拿本地快照兜底；再有界重试两次。
+  private loadInstalledDefault(forDarkTheme: boolean, seq: number, attempt: number = 0): void {
     const request: TdRequest = { '@type': 'getInstalledBackgrounds' };
     request['for_dark_theme'] = forDarkTheme;
     this.client.send(request).then((result: TdObject): void => {
@@ -571,10 +578,32 @@ export class ChatBackgroundStore {
       this.applyBackground(selected);
     }).catch((error: TdError): void => {
       logE(`ChatBackgroundStore getInstalledBackgrounds failed: ${error.message}`);
-      if (seq === this.resolveSeq) {
-        this.applyBackground(null);
+      if (seq !== this.resolveSeq) {
+        return;
+      }
+      this.keepOrSeedDefault(forDarkTheme);
+      if (attempt < INSTALLED_DEFAULT_RETRIES) {
+        setTimeout((): void => {
+          if (seq === this.resolveSeq && this.chatId !== 0 && !this.hasSpecificBackground()) {
+            this.loadInstalledDefault(forDarkTheme, seq, attempt + 1);
+          }
+        }, INSTALLED_DEFAULT_RETRY_MS);
       }
     });
+  }
+
+  private keepOrSeedDefault(forDarkTheme: boolean): void {
+    if (this.state.colors.length > 0 || this.state.path !== '') {
+      logI(`[ChatBackground] chat=${this.chatId} installed default unavailable, keeping current`);
+      return;
+    }
+    const snapshot: ChatBackgroundState = defaultChatBackgroundSnapshot(forDarkTheme);
+    if (snapshot.colors.length === 0 && snapshot.path === '') {
+      return;
+    }
+    snapshot.bubbleOutColor = this.state.bubbleOutColor;
+    logI(`[ChatBackground] chat=${this.chatId} installed default unavailable, seeded from snapshot`);
+    this.patch(snapshot);
   }
 
   // theme_name backgrounds live in TDLib's chat theme catalog rather than on
