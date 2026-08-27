@@ -513,7 +513,10 @@ export class MessageStore {
       return 0;
     }
     for (const m of this.messages) {
-      if (m.id > this.lastReadInboxId) {
+      // last_read_inbox 只记**收到**的消息，自己发的不算未读——否则「自己刚发了
+      // 几条、又来一条新的」时第一条未读落在自己那条上，分隔线画在那里、开会话
+      // 定位到已读的历史（issue #101）。官方客户端的查法同样是 mid > ? AND out = 0。
+      if (m.id > this.lastReadInboxId && !m.isOutgoing) {
         return m.id;
       }
     }

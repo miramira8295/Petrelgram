@@ -382,6 +382,33 @@ export default function messageStoreTest() {
       expect(request !== undefined ? request['limit'] : 0).assertEqual(14);
       expect(store.isResumeLandingSelected()).assertFalse();
     });
+    it('first_unread_skips_own_outgoing_messages', 0, async () => {
+      // issue #101：last_read_inbox 只记收到的消息。自己刚发过 300/400 再收到
+      // 500，「第一条未读」必须是 500，不能落在自己发的 300 上。
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      let extra = '';
+      for (const json of b.sent) {
+        const request = JSON.parse(json) as TdObject;
+        if (request['@type'] === 'getChat') {
+          extra = extraOf(json);
+        }
+      }
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = 5;
+      chat['unread_count'] = 1;
+      chat['last_read_inbox_message_id'] = 200;
+      chat['last_message'] = textMessage(500, 5, false, 'incoming');
+      chat['@extra'] = extra;
+      b.onReceive(JSON.stringify(chat));
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [
+        textMessage(500, 5, false, 'incoming'), textMessage(400, 5, true, 'mine 2'),
+        textMessage(300, 5, true, 'mine 1'), textMessage(200, 5, false, 'read')
+      ]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.getFirstUnreadId()).assertEqual(500);
+    });
     it('history_loads_ascending', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();
