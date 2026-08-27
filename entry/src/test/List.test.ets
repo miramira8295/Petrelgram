@@ -100,6 +100,7 @@ import themeTest from './Theme.test';
 import patternTileGridTest from './PatternTileGrid.test';
 import mediaThumbChannelTest from './MediaThumbChannel.test';
 import inlineThumbUpdateTest from './InlineThumbUpdate.test';
+import rowFadeGateTest from './RowFadeGate.test';
 import collapseAlbumsKeyTest from './CollapseAlbumsKey.test';
 import messageRowPresentationChannelTest from './MessageRowPresentationChannel.test';
 import audioQueueGateTest from './AudioQueueGate.test';
@@ -261,6 +262,7 @@ export default function testsuite() {
   patternTileGridTest();
   mediaThumbChannelTest();
   inlineThumbUpdateTest();
+  rowFadeGateTest();
   collapseAlbumsKeyTest();
   messageRowPresentationChannelTest();
   audioQueueGateTest();

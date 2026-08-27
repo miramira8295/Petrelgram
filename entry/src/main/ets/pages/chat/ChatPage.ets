@@ -127,6 +127,7 @@ import {
 } from '../../util/searchPaging';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
+import { rowFadeAnimationActive } from '../../util/rowFadeGate';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS,
   KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
@@ -1679,6 +1680,9 @@ export struct ChatPage {
   // mask is removed in one frame. This prevents both row-by-row appearance and
   // a visible placeholder-height correction jump.
   @Local private initialTimelineMasked: boolean = false;
+  // 首屏逐条淡入这条动画的时间戳闩，**故意不进状态**：它只被 build 读，
+  // 自己变化不该引起重渲染（那正是要治的病）。见 util/rowFadeGate。
+  private initialRowFadeArmedAt: number = 0;
   private initialTimelineReadyToPresent: boolean = false;
   private initialTimelinePresentationSeq: number = 0;
   private initialTimelinePresentationScheduledSeq: number = 0;
@@ -9011,6 +9015,34 @@ export struct ChatPage {
       this.olderLoadState, this.newerLoadState);
   }
 
+  // masked / initialDeferred 期间持续续期，揭示之后再放行一个窗口。
+  // 读的同时续期，所以每一次 build 都会把闩推到当前帧。
+  private initialRowFadeArmed(rowDeferred: boolean): boolean {
+    const now: number = Date.now();
+    if (this.initialTimelineMasked || rowDeferred) {
+      this.initialRowFadeArmedAt = now;
+      return true;
+    }
+    return rowFadeAnimationActive(false, now, this.initialRowFadeArmedAt);
+  }
+
+  // duration / delay 一起给 0，常驻的 .animation() 就不再为无关的布局变化
+  // 开动画上下文——和 chatTgsScrollActive 走的是同一条路。
+  private initialRowFadeDuration(rowDeferred: boolean): number {
+    if (this.chatTgsScrollActive || !this.initialRowFadeArmed(rowDeferred)) {
+      return 0;
+    }
+    return powerAnimationDuration(
+      KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS);
+  }
+
+  private initialRowFadeDelay(index: number, rowDeferred: boolean): number {
+    if (this.chatTgsScrollActive || !this.initialRowFadeArmed(rowDeferred)) {
+      return 0;
+    }
+    return this.initialTimelineRowRevealDelay(index);
+  }
+
   private initialTimelineRowRevealDelay(index: number): number {
     let first: number = this.curStartIdx;
     let last: number = this.curEndIdx;
@@ -9159,9 +9191,12 @@ export struct ChatPage {
                 // invalidating already visible rows at onScrollStart. During a
                 // fling they paint immediately; the entry stagger remains for
                 // the coordinated first presentation.
-                duration: this.chatTgsScrollActive ? 0 : powerAnimationDuration(
-                  KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-                delay: this.chatTgsScrollActive ? 0 : this.initialTimelineRowRevealDelay(ri.index),
+                // 修饰器本身是常驻的（挂在 Repeat 行包装上，去不掉），所以由
+                // 时间戳闩决定它是不是活的：首屏那一波之外 duration / delay
+                // 都是 0，一次普通 rerender 因此不会再把布局变化拉成 90ms 的
+                // 滑动。见 initialRowFadeArmed / util/rowFadeGate。
+                duration: this.initialRowFadeDuration(ri.item.initialDeferred === true),
+                delay: this.initialRowFadeDelay(ri.index, ri.item.initialDeferred === true),
                 curve: Curve.EaseOut
               });
             })
