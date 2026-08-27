@@ -6,7 +6,8 @@ import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
   AlbumGroupDataSource, clampPrefetchRange, contentFingerprint, countDeferredFlips,
-  PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRenderSnapshot, sameRowArray
+  appendBreaksAnchor, PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRenderSnapshot,
+  sameRowArray
 } from '../main/ets/pages/chat/AlbumGroupDataSource';
 import { stageInitialMessageGroups } from '../main/ets/util/initialMessageStage';
 
@@ -169,6 +170,32 @@ export default function albumGroupDataSourceTest() {
       expect(prependBreaksAnchor([], prev)).assertFalse();
       // 变短（删消息）也不是翻页。
       expect(prependBreaksAnchor(prev, groupsOf([[30, 9000]], users))).assertFalse();
+    });
+
+    // ── 向下翻页的锚点复位判据 ───────────────────────────────────────
+
+    it('append_breaks_the_anchor_because_the_list_is_end_anchored', 0, () => {
+      const users = usersOf();
+      const prev = groupsOf([[20, 5000], [30, 9000]], users);
+      const withNewer = groupsOf([[20, 5000], [30, 9000], [40, 12000], [50, 20000]], users);
+      // 老首行仍然是首行 —— 增长发生在末尾。stackFromEnd 下这会把可见内容顶走。
+      expect(appendBreaksAnchor(prev, withNewer)).assertTrue();
+    });
+
+    it('append_anchor_ignores_everything_that_is_not_tail_growth', 0, () => {
+      const users = usersOf();
+      const prev = groupsOf([[20, 5000], [30, 9000]], users);
+      // 前插由 prependBreaksAnchor 那条路负责，两条判据互斥。
+      const withOlder = groupsOf([[10, 100], [20, 5000], [30, 9000]], users);
+      expect(appendBreaksAnchor(prev, withOlder)).assertFalse();
+      expect(prependBreaksAnchor(prev, withOlder)).assertTrue();
+      // 等长的原地编辑不是翻页。
+      const edited = collapseAlbums([entry(20, 5000, users), entry(30, 9000, users, 'edited')]);
+      expect(appendBreaksAnchor(prev, edited)).assertFalse();
+      // 首次填充（prev 为空）由首屏定位负责。
+      expect(appendBreaksAnchor([], prev)).assertFalse();
+      // 变短（删消息）也不是翻页。
+      expect(appendBreaksAnchor(prev, groupsOf([[20, 5000]], users))).assertFalse();
     });
 
     it('prepend_without_a_key_change_is_left_to_maintainVisibleContentPosition', 0, () => {

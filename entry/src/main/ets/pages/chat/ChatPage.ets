@@ -60,8 +60,8 @@ import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { actionMenuRow } from './ActionMenuRow';
 import {
-  AlbumGroupDataSource, clampPrefetchRange, contentFingerprint, countDeferredFlips,
-  PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRowArray
+  AlbumGroupDataSource, appendBreaksAnchor, clampPrefetchRange, contentFingerprint,
+  countDeferredFlips, PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 // UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
@@ -2478,6 +2478,33 @@ export struct ChatPage {
           }
         }
       }
+      // ── 向下翻页的锚点复位 ──────────────────────────────────────────
+      //
+      // 上面那一段的镜像。列表是 stackFromEnd(true)（底部锚定），末尾追加一页
+      // 就把可见内容整体往上顶 ⇒ 视口被拽到底。maintainVisibleContentPosition
+      // 已经开着，真机上仍然跳，所以这一侧也手动复位。判据与推导见
+      // AlbumGroupDataSource.appendBreaksAnchor。
+      //
+      // `!this.atBottom` 是这里唯一的额外闸：用户确实停在会话末尾时，新消息
+      // 把内容往上顶正是想要的跟随行为，绝不能复位。atBottom 在还有更新的历史
+      // 没拉时恒为假（util/atBottom 里的 hasMoreNewer 一条），所以向下翻页途中
+      // 这道闸天然是开的。
+      let appendAnchorId: number = 0;
+      let appendAnchorY: number = 0;
+      if (prependAnchorId === 0 && this.didInitialScroll && !this.atBottom &&
+        appendBreaksAnchor(this.groups, groups)) {
+        const visibleIndex: number = this.curStartIdx;
+        if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
+          appendAnchorId = this.groups[visibleIndex].head.id;
+          try {
+            appendAnchorY = this.scroller.getItemRect(visibleIndex).y;
+          } catch (e) {
+            appendAnchorY = 0;
+          }
+          logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
+            ` rows=${this.groups.length}->${groups.length}`);
+        }
+      }
       this.messages = list;
       this.messageListRevision++;
       this.reconcileMessageActionTargets(list);
@@ -2521,6 +2548,10 @@ export struct ChatPage {
       // 跳转/贴底这些更强的定位意图会把它作废。
       if (prependAnchorId > 0) {
         this.restorePrependAnchor(this.groups, prependAnchorId, prependAnchorY);
+      } else if (appendAnchorId > 0) {
+        // 复位走的是和向上那侧同一个 restoreScrollAnchor：setTimeout(0) + 代次
+        // 守卫，跳转/贴底这些更强的定位意图会把它作废。
+        this.restoreAppendAnchor(this.groups, appendAnchorId, appendAnchorY);
       }
       let positionHandled: boolean = false;
       if (scrollResumeWaiting && list.length > 0) {
@@ -4139,6 +4170,20 @@ export struct ChatPage {
     if (targetIndex < 0) {
       return;
     }
+    this.restoreScrollAnchor(targetIndex, itemY);
+  }
+
+  // A newer page is appended after the current window. The list is
+  // end-anchored (stackFromEnd), so the append alone pushes the visible content
+  // upward; put the same message back under the user's finger.
+  private restoreAppendAnchor(groups: AlbumGroup[], messageId: number, itemY: number): void {
+    const targetIndex: number = groupIndexOf(groups, messageId);
+    if (targetIndex < 0) {
+      logW(`[AppendAnchor] lost id=${messageId} rows=${groups.length}`);
+      return;
+    }
+    logW(`[AppendAnchor] restore id=${messageId} idx=${targetIndex} y=${itemY}` +
+      ` rows=${groups.length}`);
     this.restoreScrollAnchor(targetIndex, itemY);
   }
 

@@ -149,6 +149,37 @@ export function prependBreaksAnchor(prev: AlbumGroup[], next: AlbumGroup[]): boo
   return next[at].key !== prev[0].key;
 }
 
+// 向下翻页之后，视口锚点需不需要**手动**复位。
+//
+// 【向上那侧的对称面】
+//
+// 列表是 stackFromEnd(true) 的——底部锚定。底部锚定的含义是：位置由「离末尾
+// 多远」定义，而不是「离开头多远」。于是往**末尾**追加行时，末尾自己往下长，
+// 可见内容相对末尾的距离没变 ⇒ 屏幕上看到的是内容整体上移、视口被推向底部。
+// 这与向上前插时 start 下标被推大是同一件事的两面。
+//
+// List.maintainVisibleContentPosition(true) 的官方描述是「在组件显示区域外插入
+// 或删除数据时保持可见内容位置」（list.d.ts，@since 12），措辞不分方向；但真机
+// 上追加一页之后视口仍然被拽到底（用户复现：每取一页跳一次，翻页节流只是让它
+// 跳得慢了），说明它至少在 stackFromEnd + Repeat 这个组合下管不住追加这一侧。
+// 所以按下面这条判据把手动复位也接到向下这一侧。
+//
+// 判据（两条同时成立）：
+//   1. 新快照更长——真的多了行；
+//   2. 老首行仍然是新快照的首行——增长发生在**末尾**，不是前插。前插由
+//      prependBreaksAnchor 那条路负责，两条判据互斥（那边要求老首行落在 > 0 的
+//      位置），不会同时成立。
+//
+// 不含「key 变没变」那一条：向上那侧的 key 判据说的是「锚点行本身被删旧插新」，
+// 而这里的锚点行在视口顶端、离追加点很远，不会被这次追加碰到；成因是布局锚定
+// 方向，与 key 无关。
+export function appendBreaksAnchor(prev: AlbumGroup[], next: AlbumGroup[]): boolean {
+  if (prev.length === 0 || next.length <= prev.length) {
+    return false;
+  }
+  return rowIdentity(next[0]) === rowIdentity(prev[0]);
+}
+
 // 两份行数组是不是逐项同一个对象。配合 reuseUnchangedRows 用：结果为 true 就
 // 说明这次发布没有任何一行需要动。
 export function sameRowArray(a: AlbumGroup[], b: AlbumGroup[]): boolean {
