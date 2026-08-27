@@ -96,6 +96,10 @@ import {
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
 } from '../../util/appendAnchor';
 import {
+  ANCHOR_RESTORE_DELTA, AnchorRectSnapshot, AnchorRestorePlan,
+  INVALID_ANCHOR_RECT, planAnchorRestore
+} from '../../util/anchorRestore';
+import {
   PINNED_EMPTY, PINNED_IGNORE, PINNED_JUMP, PINNED_LATEST, PINNED_RETRY,
   PinnedTap, pinnedTapAction
 } from '../../util/pinnedJump';
@@ -4468,15 +4472,43 @@ export struct ChatPage {
       ` pendingJumpId=${this.pendingJumpId} busy=${this.scrollToBottomBusy}`;
   }
 
+  // 把锚点行按回 itemY。两级，判据是纯函数 util/anchorRestore.planAnchorRestore：
+  //
+  //   · 行还在显示区（getItemRect 给得出有效矩形）→ 只补一次 scrollBy(0, dy)，
+  //     dy = 新量到的 y - 记下的 y。**不调 scrollToIndex**：那一句会让 List 从
+  //     给定下标起全量重测，真机 Frame trace 里 ScrollToIndex(index=9) 对应的
+  //     正是录制中最大的那几个尖峰。
+  //   · 取不到有效矩形（行已滑出显示区）→ 回退到旧路径 scrollToIndex(START)
+  //     + scrollBy，逐字保持原行为。
+  //
+  // 时机沿用原来的 setTimeout(0)：数据已发布、框架也已经跑完一次布局，此时
+  // getItemRect 量到的才是新快照下的位置。prependRestoreSeq 代次守卫不动——一
+  // 次分页最多修正一次，跳转/贴底这类更强的定位意图仍然作废它。
   private restoreScrollAnchor(targetIndex: number, itemY: number): void {
     const seq: number = ++this.prependRestoreSeq;
     setTimeout((): void => {
       if (seq !== this.prependRestoreSeq || this.pendingJumpId !== 0 || this.pendingScrollBottom) {
         return;
       }
-      this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START);
-      if (itemY < -0.5) {
-        this.scroller.scrollBy(0, -itemY);
+      // 非法下标返回全 0 矩形（faqs-arkui-572），异常按同样处理——两条都落到
+      // planAnchorRestore 的 fallback 支。
+      let rect: AnchorRectSnapshot = INVALID_ANCHOR_RECT;
+      try {
+        const measured = this.scroller.getItemRect(targetIndex);
+        rect = { width: measured.width, height: measured.height, y: measured.y };
+      } catch (e) {
+        rect = INVALID_ANCHOR_RECT;
+      }
+      const plan: AnchorRestorePlan = planAnchorRestore(rect, itemY);
+      logW(`[AnchorRestore] mode=${plan.mode} idx=${targetIndex}` +
+        ` oldY=${Math.round(itemY)} newY=${Math.round(rect.y)}` +
+        ` w=${Math.round(rect.width)} h=${Math.round(rect.height)}` +
+        ` dy=${Math.round(plan.dy)}`);
+      if (plan.mode !== ANCHOR_RESTORE_DELTA) {
+        this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START);
+      }
+      if (plan.dy !== 0) {
+        this.scroller.scrollBy(0, plan.dy);
       }
     }, 0);
   }

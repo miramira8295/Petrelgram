@@ -160,6 +160,7 @@ import performanceBudgetsTest from './PerformanceBudgets.test';
 import initialMessageStageTest from './InitialMessageStage.test';
 import stringsTest from './Strings.test';
 import scrollEffectsTest from './ScrollEffects.test';
+import anchorRestoreTest from './AnchorRestore.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -325,4 +326,5 @@ export default function testsuite() {
   initialMessageStageTest();
   stringsTest();
   scrollEffectsTest();
+  anchorRestoreTest();
 }
