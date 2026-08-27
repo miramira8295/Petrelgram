@@ -60,3 +60,101 @@ export function liveArrivalContiguous(
   const step: number = liveArrivalStep(windowNewestId, arrivalId);
   return step >= 1 && step <= tolerance;
 }
+
+// ── 向下分页到底了没有 ─────────────────────────────────────────────────────
+//
+// 【这条判据要挡的谎】
+// loadNewer 原来用「这一页里没有比窗口更新的消息」当作"到达实时尾部"的证据，
+// 连续两次拿到这样的页就置 hasMoreNewer=false / newerState='end'。
+//
+// 但这两件事不是一回事：
+//
+//   · 「服务端这一页没给出更新的消息」——只说明**此刻这次请求**没拿到东西。
+//     getChatHistory 带负 offset 时常常只吃本地库（loadNewer 里那条 cache-warm
+//     重问的注释就是为这个加的），本地库冷着的时候它照样返回空。
+//   · 「会话真的没有更新的消息了」——只有 chatLastMessageId 说了算。
+//
+// 真机实测（2026-08-27）：store 报 newerState=end / hasMoreNewer=false，用户
+// 怎么拖都不取页（started=false，在旧逻辑下"正确"——没东西可拿），可**过一会儿
+// 那条更新的消息自己从实时推送冒出来了**。用户原话：「闪的时候底下确实没有数据
+// 了，但是闪完之后后面会出来一条」。数据本身是通的，是 loadNewer 这条路把它判
+// 丢了。用户主诉的"推不动"，到这一层已经不是闸挡的，是 store 谎报到底。
+//
+// 【正确的依据】
+// 沿用 reachedLiveTail 那一套，不另发明：窗口最新一条追上 chatLastMessageId 才
+// 是真尾部。页里返回了多少条只是旁证，且**过滤后为 0 ≠ 到达尾部**——过滤后为 0
+// 说明这一页与窗口不连续、或者整页都是窗口已有的重复条目，那是"这次没拿到"，
+// 不是"没有了"。
+//
+// 【为什么不会死循环】
+// 判成"还有"只是把 hasMoreNewer 留在真，**不触发任何自动重试**。下一次请求要么
+// 由用户再拖够 PAGE_GATE_REARM_DRAG_VP（见 util/pageGate，一页一个位移配额），
+// 要么由 loadNewer 自己那条一次性的 cache-warm 重问发出——两条都是有限的。
+//
+// 【为什么不会把 issue #62 放回来】
+// 那个 issue 的形状是 hasMoreNewer 恒真 ⇒ atBottom 恒假 ⇒ 新消息不自动跟随。
+// 这里留真之后仍有两条独立的关闸路径：syncTailFromChatLast（窗口追上 chatLast）
+// 和实时到达守卫里 liveArrivalContiguous 那一支（紧接着尾巴的实时消息证明窗口
+// 就在尾部）。而且留真恰恰让后者能生效——hasMoreNewer 为假时那条守卫整个被跳过。
+// 万一 chatLastMessageId 指向一条永远取不回来的消息（已删、受限），emptyStreak
+// 到 NEWER_TAIL_DOUBT_LIMIT 就认输收摊，判据因此是全函数的，不会卡死。
+export const NEWER_TAIL_DOUBT_LIMIT: number = 3;
+
+export interface NewerPageOutcome {
+  // 服务端这一页给回来多少条（**未过滤**）。
+  serverCount: number;
+  // 过滤后真正比窗口更新、且与窗口连续、合进了窗口的有多少条。
+  mergedCount: number;
+  // 合并之后窗口最新一条的 id。
+  windowNewestId: number;
+  // 会话最后一条的 id（TDLib updateChatLastMessage 给的权威值）。0 = 还不知道。
+  chatLastMessageId: number;
+  // 同一个锚点上"服务端没给出更新的消息"已经连续发生了几次。
+  emptyStreak: number;
+}
+
+export interface NewerTailVerdict {
+  hasMoreNewer: boolean;
+  // 'idle' | 'end'
+  state: string;
+  // 探针用，英文，一眼看出这一票是凭什么投的。
+  reason: string;
+}
+
+function verdict(hasMore: boolean, state: string, reason: string): NewerTailVerdict {
+  const value: NewerTailVerdict = { hasMoreNewer: hasMore, state: state, reason: reason };
+  return value;
+}
+
+export function decideNewerTail(outcome: NewerPageOutcome): NewerTailVerdict {
+  // 1) 权威判据：窗口追上会话最后一条。这是唯一能证明"真的没有了"的证据。
+  if (reachedLiveTail(outcome.windowNewestId, outcome.chatLastMessageId)) {
+    return verdict(false, 'end', 'window-reached-chat-last');
+  }
+  // 2) 这一页确实往前走了：还有没有更多，交给下一次请求判。
+  if (outcome.mergedCount > 0) {
+    return verdict(true, 'idle', 'merged-rows');
+  }
+  // 3) 一行都没合进来。chatLast 已知且窗口还落在它后面 —— 会话里**明确还有**
+  //    更新的消息，这次只是没拿到。绝不能关闸。
+  const behindChatLast: boolean = outcome.chatLastMessageId > 0 &&
+    outcome.windowNewestId > 0 && outcome.windowNewestId < outcome.chatLastMessageId;
+  if (behindChatLast) {
+    if (outcome.emptyStreak >= NEWER_TAIL_DOUBT_LIMIT) {
+      // 认输：chatLast 指着一条怎么都取不回来的消息（已删 / 受限）。再挂着
+      // 只会让 atBottom 恒假、新消息不跟随，那比少翻几页更糟。
+      return verdict(false, 'end', 'gave-up-behind-chat-last');
+    }
+    return outcome.serverCount === 0
+      ? verdict(true, 'idle', 'empty-page-behind-chat-last')
+      : verdict(true, 'idle', 'filtered-empty-behind-chat-last');
+  }
+  // 4) chatLast 还不知道（0），只能看这一页本身。
+  //    服务端一条都没给 —— 当作到尾部（旧行为，也是唯一合理的推断）。
+  if (outcome.serverCount === 0) {
+    return verdict(false, 'end', 'server-empty-tail-unknown');
+  }
+  // 5) 服务端给了 N 条，过滤后一条都不剩：整页是重复条目、或与窗口不连续。
+  //    这是"这次没拿到"，不是"没有了"——正是被误判成到底的那一格。
+  return verdict(true, 'idle', 'filtered-empty-tail-unknown');
+}

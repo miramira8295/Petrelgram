@@ -7,7 +7,10 @@ import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChann
 import { publishThumbPath } from '../util/mediaThumbChannel';
 import { inlineThumbEntryChanged } from '../util/inlineThumbUpdate';
 import { formatUserStatus } from '../util/formatUserStatus';
-import { liveArrivalContiguous, liveArrivalStep, reachedLiveTail } from '../util/liveTail';
+import {
+  decideNewerTail, liveArrivalContiguous, liveArrivalStep, NewerPageOutcome,
+  NewerTailVerdict, reachedLiveTail
+} from '../util/liveTail';
 import { formatPreview } from '../util/formatPreview';
 import { formatMemberCount } from '../util/formatMemberCount';
 import {
@@ -965,6 +968,11 @@ export class MessageStore {
   // any) is a different anchor.
   private newerRetryAnchor: number = 0;
 
+  // 同一个锚点上"服务端没给出更新的消息"连续发生了几次。给 decideNewerTail 的
+  // 认输计数用：chatLast 指着一条永远取不回来的消息时不能无限挂着。
+  private newerEmptyAnchor: number = 0;
+  private newerEmptyStreak: number = 0;
+
   // 有一页用户主动翻出来的 newer 已经发布/即将发布，还没被 ChatPage 消费。
   private userDrivenAppendPending: boolean = false;
 
@@ -1099,6 +1107,11 @@ export class MessageStore {
       if (contiguous.length === 0 && sorted.length > 0) {
         logW(`[StoreDiag] newer page all behind a gap: taking ${sorted.length}` +
           ` as-is to avoid stalling (newest=${newestId})`);
+        logW(`[NewerFire] page got=${arr.length} newer=${sorted.length}` +
+          ` merged=${sorted.length} windowLast=${newestId}` +
+          ` chatLast=${this.chatLastMessageId} verdict=taken-as-is-behind-gap`);
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
         const whole: TdObject = { '@type': 'messages' };
         whole['messages'] = sorted;
         this.markUserDrivenAppend(userDriven);
@@ -1109,6 +1122,11 @@ export class MessageStore {
       if (dropped > 0) {
         logW(`[StoreDiag] newer page had inner gap: kept=${contiguous.length}` +
           ` dropped=${dropped} lastKept=${prevId}`);
+        logW(`[NewerFire] page got=${arr.length} newer=${sorted.length}` +
+          ` merged=${contiguous.length} windowLast=${newestId}` +
+          ` chatLast=${this.chatLastMessageId} verdict=inner-gap-trimmed`);
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
         // 丢掉了后半段，说明更新的消息还在，别把分页关掉。
         this.hasMoreNewer = true;
         this.newerLoadState = 'idle';
@@ -1125,8 +1143,7 @@ export class MessageStore {
         // nothing newer even though newer messages exist server-side. Treating
         // that as "reached the live tail" froze newer-paging permanently —
         // the "unread messages don't fully load" report. The first call warms
-        // TDLib's cache, so ask ONCE more from the same anchor; only a second
-        // empty answer means the tail is real.
+        // TDLib's cache, so ask ONCE more from the same anchor.
         if (this.newerRetryAnchor !== newestId) {
           this.newerRetryAnchor = newestId;
           this.newerLoadState = 'idle';
@@ -1134,12 +1151,44 @@ export class MessageStore {
           this.loadNewer(userDriven);
           return;
         }
-        this.hasMoreNewer = false;
-        this.newerLoadState = 'end';
+        // 第二次仍然没有更新的消息。**这不足以证明到了实时尾部**——只证明这次
+        // 请求没拿到。到底了没有由 decideNewerTail 按 chatLastMessageId 判，见
+        // util/liveTail。原来这里无条件 hasMoreNewer=false / 'end'，真机上就是
+        // 它在谎报到底：用户怎么拖都不取页，可那条更新的消息过一会儿自己从实时
+        // 推送冒出来了。
+        if (this.newerEmptyAnchor === newestId) {
+          this.newerEmptyStreak++;
+        } else {
+          this.newerEmptyAnchor = newestId;
+          this.newerEmptyStreak = 1;
+        }
+        const outcome: NewerPageOutcome = {
+          serverCount: arr.length,
+          mergedCount: 0,
+          windowNewestId: newestId,
+          chatLastMessageId: this.chatLastMessageId,
+          emptyStreak: this.newerEmptyStreak
+        };
+        const tail: NewerTailVerdict = decideNewerTail(outcome);
+        this.hasMoreNewer = tail.hasMoreNewer;
+        this.newerLoadState = tail.state;
+        logW(`[NewerFire] page got=${arr.length} newer=0 merged=0` +
+          ` windowLast=${newestId} chatLast=${this.chatLastMessageId}` +
+          ` streak=${this.newerEmptyStreak} verdict=${tail.reason}` +
+          ` hasMoreNewer=${tail.hasMoreNewer} state=${tail.state}`);
       } else {
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
         this.newerLoadState = 'idle';
+        logW(`[NewerFire] page got=${arr.length} newer=${sorted.length}` +
+          ` merged=${sorted.length} windowLast=${newestId}` +
+          ` chatLast=${this.chatLastMessageId} verdict=merged-rows`);
       }
-      this.markUserDrivenAppend(userDriven);
+      // 一行都没合进来时不置标记：置了也只是被下一次发布无条件丢掉（见
+      // util/appendAnchor 的一次性配对），不如根本不置。
+      if (sorted.length > 0) {
+        this.markUserDrivenAppend(userDriven);
+      }
       this.onHistory(res, 'newer');
     }).catch((e: TdError) => {
       this.newerPending = false;
