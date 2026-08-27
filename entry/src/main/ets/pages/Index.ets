@@ -38,6 +38,8 @@ struct Index {
   @StorageLink('pendingDeepLink') @Watch('onDeepLink') pendingDeepLink: string = '';
   // 点击本地通知进入的目标会话（EntryAbility 写入，登录就绪后路由）。
   @StorageLink('pendingNotifyChatId') @Watch('onNotifyChat') pendingNotifyChatId: number = 0;
+  // 同一次点击带来的目标消息（EntryAbility 在 chatId 之前写入），>0 时走 jumpTo 定位。
+  @StorageLink('pendingNotifyMessageId') pendingNotifyMessageId: number = 0;
   private offAuth: (() => void) | null = null;
   // 深链要等的是**连接**就绪，不是登录就绪。见 consumeDeepLink 的说明。
   private offConn: (() => void) | null = null;
@@ -109,8 +111,13 @@ struct Index {
       return;
     }
     const chatId: number = this.pendingNotifyChatId;
+    const messageId: number = this.pendingNotifyMessageId;
     this.pendingNotifyChatId = 0;
+    this.pendingNotifyMessageId = 0;
     const params: Record<string, Object> = { 'chatId': chatId };
+    if (messageId > 0) {
+      params['jumpTo'] = messageId;
+    }
     navigateToChat(params).catch(logChatNavFailure);
   }
 

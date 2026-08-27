@@ -161,6 +161,10 @@ export default class EntryAbility extends UIAbility {
     if (chatId === 0) {
       return;
     }
+    const messageId = want.parameters !== undefined
+      ? (want.parameters['notifyMessageId'] as number | undefined) ?? 0 : 0;
+    // 消息 id 先写：Index 监听的是 chatId，翻到它的那一刻两个值都得就位。
+    AppStorage.setOrCreate('pendingNotifyMessageId', messageId);
     AppStorage.setOrCreate('pendingNotifyChatId', 0);
     AppStorage.setOrCreate('pendingNotifyChatId', chatId);
   }

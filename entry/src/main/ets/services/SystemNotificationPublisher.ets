@@ -5,7 +5,8 @@ import { avatarPixelMap } from '../util/avatarPixelMap';
 import { logE } from '../util/log';
 
 // NotificationPublisher 的系统实现：Notification Kit 文本通知。
-// 点击经 wantAgent 拉起 EntryAbility 并携带 notifyChatId（Index 消费路由）。
+// 点击经 wantAgent 拉起 EntryAbility 并携带 notifyChatId + notifyMessageId（Index 消费路由，
+// 后者走 ChatPage 的 jumpTo 定位到那条消息）。
 export class SystemNotificationPublisher implements NotificationPublisher {
   private bundleName: string;
   private abilityName: string;
@@ -16,7 +17,7 @@ export class SystemNotificationPublisher implements NotificationPublisher {
   }
 
   publish(notice: LocalNotice): void {
-    this.buildAgent(notice.chatId).then((agent: object): Promise<void> => {
+    this.buildAgent(notice.chatId, notice.messageId ?? 0).then((agent: object): Promise<void> => {
       const request: notificationManager.NotificationRequest = {
         id: notice.id,
         notificationSlotType: notificationManager.SlotType.SOCIAL_COMMUNICATION,
@@ -74,8 +75,10 @@ export class SystemNotificationPublisher implements NotificationPublisher {
     return hash;
   }
 
-  private buildAgent(chatId: number): Promise<object> {
-    const params: Record<string, Object> = { 'notifyChatId': chatId };
+  private buildAgent(chatId: number, messageId: number): Promise<object> {
+    // requestCode 按会话取，UPDATE_PRESENT_FLAG 让同一会话后来的通知覆盖参数——
+    // 点任何一条都定位到该会话最新被通知的那条，和官方一致。
+    const params: Record<string, Object> = { 'notifyChatId': chatId, 'notifyMessageId': messageId };
     const info: wantAgent.WantAgentInfo = {
       wants: [{
         bundleName: this.bundleName,

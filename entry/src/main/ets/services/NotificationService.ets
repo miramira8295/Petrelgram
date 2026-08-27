@@ -24,6 +24,10 @@ export interface LocalNotice {
   text: string;
   isCall: boolean;
   avatarPath: string; // 会话头像本地路径（''=无，发布方回退默认图标）
+  // 点击通知要定位到的那条消息（0 / 缺省 = 只打开会话）。以前通知只带会话 id，
+  // 落点是会话的默认落点——默认落点改成未读锚点 + 小窗口之后，通知那条（最新的）
+  // 常常不在窗口里，用户点了通知看不到那条消息。带上 id 走 jumpTo 才是真定位。
+  messageId?: number;
 }
 
 export interface NotificationPublisher {
@@ -192,6 +196,7 @@ export class NotificationService {
       return {
         id: id, groupId: groupId, chatId: chatId,
         title: title, text: who !== '' ? `${who}: ${text}` : text, isCall: false,
+        messageId: message !== undefined ? ((message['id'] as number | undefined) ?? 0) : 0,
         avatarPath: message !== undefined
           ? this.senderAvatarPath(message, chatId)
           : (entry !== undefined ? entry.avatarPath : '')
@@ -319,6 +324,7 @@ export class NotificationService {
       title: entry !== undefined && entry.title !== '' ? entry.title : str('ns_new_message'),
       text: who !== '' ? `${who}: ${preview}` : preview,
       isCall: false,
+      messageId: messageId,
       avatarPath: this.senderAvatarPath(message, chatId)
     });
   }
