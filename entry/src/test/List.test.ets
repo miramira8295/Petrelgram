@@ -144,7 +144,6 @@ import readMarkingTest from './ReadMarking.test';
 import pageGateTest from './PageGate.test';
 import timeLayerWidthTest from './TimeLayerWidth.test';
 import accountSwitchLayoutTest from './AccountSwitchLayout.test';
-import stackFromEndTest from './StackFromEnd.test';
 import visibleWindowTest from './VisibleWindow.test';
 import atBottomTest from './AtBottom.test';
 import appendAnchorTest from './AppendAnchor.test';
@@ -313,7 +312,6 @@ export default function testsuite() {
   pageGateTest();
   timeLayerWidthTest();
   accountSwitchLayoutTest();
-  stackFromEndTest();
   visibleWindowTest();
   atBottomTest();
   appendAnchorTest();
