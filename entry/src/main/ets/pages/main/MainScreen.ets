@@ -71,6 +71,10 @@ export struct MainScreen {
   @StorageProp(KEY_SHOW_CONTACTS_TAB) @Watch('onShowContactsTabChanged') showContactsTab: boolean = true;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 键盘起来时窗口已被系统缩到键盘之上（RESIZE），底部手势带那份留白就不该再
+  // 留——聊天页输入框（composerBottomGap）正是这么做的。dock 之前没看这个值，
+  // 分栏下左栏 dock 比右栏输入框高出 0.7×bottomSafe−6（issue #150）。
+  @StorageProp('keyboardHeightVp') private keyboardH: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 聊天页签分栏时左栏的实际宽度（vp，0 = 还没量到）。由 ChatListPage 在自己的
   // 布局回调里写入——HdsNavigation 不回调宽度，拖分割线又会改它，只能这么拿。
@@ -357,10 +361,13 @@ export struct MainScreen {
   @Builder
   profileDockItem() {
     Column({ space: 2 }) {
+      // 整个盒子 24 = 头像 20 + 描边 2×2，和另外三格的 24 号符号图标同高；原来
+      // 是 32（头像 24 + 内缩 2 + 描边 2），这一格的文字被顶低 4vp、在胶囊圆角
+      // 处被裁（issue #144）。
       Stack() {
-        AvatarView({ avatarPath: this.meAvatar, initials: this.meInitials, colorSeed: this.myId, avatarSize: 24 });
+        AvatarView({ avatarPath: this.meAvatar, initials: this.meInitials, colorSeed: this.myId, avatarSize: 20 });
       }
-      .width(32).height(32).borderRadius(16).padding(2)
+      .width(24).height(24).borderRadius(12)
       // A constant border width avoids a size jump when this tab is selected.
       .border({ width: 2, color: this.tab === 3 ? this.accent() : Color.Transparent });
       Text($r('app.string.tab_profile')).fontSize(10)
@@ -556,7 +563,9 @@ export struct MainScreen {
     // 收窄只吃格子宽度，图标和文字尺寸不动——但「联系人」是最长的一条，
     // 再窄就该撞它了。
     .padding({ left: this.dockPadding(), right: this.dockPadding() })
-    .margin({ bottom: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)) })
+    .margin({ bottom: this.keyboardH > 0
+      ? DOCK_GAP
+      : Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)) })
     // 返回列表时淡入；进入目的页时 syncDock() 同帧撤下玻璃层。
     .opacity(this.dockShown ? 1 : 0)
     // 下面这两行是**退场空档**的正解，缺一不可，都在 dockShown 翻 false 的那一
