@@ -2,6 +2,9 @@ import { CachedImage } from '../common/CachedImage';
 import { logW } from '../../util/log';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 
 // 探针：复用回来的那一刻，@Prop fileId 到底是新值还是旧值？
 //
@@ -44,6 +47,8 @@ export struct LiveThumbImage {
   @BuilderParam placeholder: () => void;
   @State private path: string = '';
   private unsubThumb: (() => void) | null = null;
+  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   private attach(fileId: number, initialPath: string): void {
     this.detach();
@@ -68,6 +73,9 @@ export struct LiveThumbImage {
   aboutToRecycle(): void {
     this.detach();
     this.path = '';
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
@@ -81,7 +89,8 @@ export struct LiveThumbImage {
       return;
     }
     const seenAtReuse: number = this.fileId;
-    setTimeout((): void => {
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。探针原样保留。
+    enqueueNextFrame(this.frameOwnerId, (): void => {
       const seenNextFrame: number = this.fileId;
       if (seenAtReuse === seenNextFrame) {
         reuseProbeSame++;
@@ -96,13 +105,15 @@ export struct LiveThumbImage {
           `stale=${reuseProbeStale}`);
       }
       this.attach(this.fileId, this.initialPath);
-    }, 0);
+    });
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ
   // 明确点过这个泄漏）。
   aboutToDisappear(): void {
     this.detach();
+    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   build() {

@@ -6,6 +6,9 @@ import {
   KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 
 // 带 alpha 的 webm 贴纸：预解码好的 RGBA 帧画到 Canvas 上循环播放。
 //
@@ -59,6 +62,8 @@ export struct AlphaWebmStickerView {
   private reportedWorking: boolean = false;
   private holdsSlot: boolean = false;
   private loadSeq: number = 0;
+  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   aboutToAppear(): void {
     this.disposed = false;
@@ -66,10 +71,14 @@ export struct AlphaWebmStickerView {
 
   aboutToDisappear(): void {
     this.disposePlayback();
+    // load() 本来就会在 this.disposed 上短路，撤掉只是省掉那一次空转。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToRecycle(): void {
     this.disposePlayback();
+    // 同上。下一次 aboutToReuse 会把 disposed 置回 false 并重新排队。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
@@ -84,7 +93,8 @@ export struct AlphaWebmStickerView {
     this.disposed = false;
     this.reportedWorking = false;
     this.shownIndex = -1;
-    setTimeout((): void => { this.load(); }, 0);
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    enqueueNextFrame(this.frameOwnerId, (): void => { this.load(); });
   }
 
   private disposePlayback(): void {

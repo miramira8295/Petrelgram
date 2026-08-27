@@ -4,6 +4,9 @@ import { formatVoiceDuration } from '../../util/voiceWaveform';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 
 @Component
 export struct MusicBubble {
@@ -40,6 +43,8 @@ export struct MusicBubble {
   @State dragging: boolean = false;
   @State dragProgress: number = 0;
   private unsub: (() => void) | null = null;
+  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   private attachPlayback(targetId: number, durationSec: number): void {
     this.detachPlayback();
@@ -97,6 +102,9 @@ export struct MusicBubble {
     this.detachPlayback();
     this.playbackStatus = 'idle';
     this.dragging = false;
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
@@ -109,11 +117,15 @@ export struct MusicBubble {
       this.attachPlayback(msgId, durationSec ?? 0);
       return;
     }
-    setTimeout((): void => { this.attachPlayback(this.msgId, this.durationSec); }, 0);
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    enqueueNextFrame(this.frameOwnerId,
+      (): void => { this.attachPlayback(this.msgId, this.durationSec); });
   }
 
   aboutToDisappear(): void {
     this.detachPlayback();
+    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   @Styles

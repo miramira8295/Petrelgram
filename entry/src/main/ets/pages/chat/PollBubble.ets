@@ -2,6 +2,9 @@ import { PollOptionInfo } from '../../util/formatMsgContent';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 
 @Component
 export struct PollBubble {
@@ -26,6 +29,8 @@ export struct PollBubble {
 
   @State draftIds: number[] = [];
   @State draftChanged: boolean = false;
+  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   aboutToAppear(): void {
     this.resetDraft();
@@ -34,6 +39,9 @@ export struct PollBubble {
   aboutToRecycle(): void {
     this.draftIds = [];
     this.draftChanged = false;
+    // resetDraft() 只写本组件的 @State，过期跑一次不会挂错订阅；撤掉纯粹是不
+    // 想让复用池里的实例带着上一条投票的草稿。下一次复用会重新排队。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
@@ -46,7 +54,8 @@ export struct PollBubble {
       this.draftChanged = false;
       return;
     }
-    setTimeout((): void => { this.resetDraft(); }, 0);
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    enqueueNextFrame(this.frameOwnerId, (): void => { this.resetDraft(); });
   }
 
   private onRevisionChanged(): void {

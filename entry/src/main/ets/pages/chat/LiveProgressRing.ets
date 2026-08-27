@@ -1,5 +1,8 @@
 import { progressFor, subscribeProgress } from '../../util/mediaProgressChannel';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 
 // 自己订阅、自己更新的下载进度环。
 //
@@ -20,6 +23,8 @@ export struct LiveProgressRing {
   @Prop ringSize: number = 36;
   @State private percent: number = 0;
   private unsubProgress: (() => void) | null = null;
+  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   private attach(fileId: number, initialPercent: number): void {
     this.detach();
@@ -44,6 +49,9 @@ export struct LiveProgressRing {
   aboutToRecycle(): void {
     this.detach();
     this.percent = 0;
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
@@ -56,12 +64,16 @@ export struct LiveProgressRing {
       this.attach(fileId, initialPercent ?? 0);
       return;
     }
-    setTimeout((): void => { this.attach(this.fileId, this.initialPercent); }, 0);
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    enqueueNextFrame(this.frameOwnerId,
+      (): void => { this.attach(this.fileId, this.initialPercent); });
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放。
   aboutToDisappear(): void {
     this.detach();
+    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   build() {

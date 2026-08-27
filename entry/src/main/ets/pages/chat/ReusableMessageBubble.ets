@@ -3,6 +3,9 @@ import {
   messageRowPresentationFor, subscribeMessageRowPresentation
 } from '../../util/messageRowPresentationChannel';
 import { probeHit } from '../../util/panelProbe';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { MessageBubble } from './MessageBubble';
 
@@ -195,6 +198,10 @@ export struct ReusableMessageBubble {
   @Param actions: MessageBubbleActions = EMPTY_ACTIONS;
   @Local private liveGroup: AlbumGroup | null = null;
   private unsubPresentation: (() => void) | null = null;
+  // 见 util/nextFrameQueue：复用路径上的 setTimeout(0) 合并成一帧一个，这是本
+  // 实例在那个队列里的序号。无装饰器成员在复用时不重置，序号因此在整个实例生命
+  // 周期里稳定——后一次复用排的回调才盖得掉前一次的。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   private currentGroup(): AlbumGroup {
     if (this.liveGroup !== null && this.liveGroup.head.rowId === this.group.head.rowId) {
@@ -249,6 +256,9 @@ export struct ReusableMessageBubble {
 
   aboutToDisappear(): void {
     this.detachPresentation();
+    // 组件要销毁了，上一次复用排的那条回调不能再跑：attachPresentation 会重新
+    // 订阅，而这一层再也没有 detach 会被调用——订阅会一直持有这个实例。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToRecycle(): void {
@@ -259,6 +269,9 @@ export struct ReusableMessageBubble {
     // 本身生效，且 @Local 复用时也会被自动重置回 null。语义等价，保留更安全。
     this.detachPresentation();
     this.liveGroup = null;
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(): void {
@@ -281,7 +294,9 @@ export struct ReusableMessageBubble {
     // 前」，重置那一节只说「复用前」），**无法确定**此刻 this.group 已经是新值
     // 还是仍是旧值。推迟一帧读到的必然是新值。上机探针确认之后（P3 批 2 第一
     // 项）再决定能不能改成同步、省这一帧。
-    setTimeout((): void => { this.attachPresentation(this.group); }, 0);
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    enqueueNextFrame(this.frameOwnerId,
+      (): void => { this.attachPresentation(this.group); });
   }
 
   build() {

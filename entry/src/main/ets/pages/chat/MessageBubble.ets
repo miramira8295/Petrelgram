@@ -78,6 +78,9 @@ import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 import { probeHit } from '../../util/panelProbe';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
@@ -144,6 +147,10 @@ struct LiveSenderAvatar {
   // 复用会经 aboutToReuse 和 @Watch 各挂一次，每次都是一整轮退订+重订阅）；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 有没有到。
   private attachedAvatarKey: string = '';
+  // 见 util/nextFrameQueue：复用路径上的 setTimeout(0) 合并成一帧一个，这是本
+  // 实例在那个队列里的序号。无装饰器成员在复用时不重置，序号因此在整个实例生命
+  // 周期里稳定——后一次复用排的回调才盖得掉前一次的。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
@@ -193,6 +200,9 @@ struct LiveSenderAvatar {
     // 这正是历史上全量开 @Reusable 时「头像串行」的机理。
     // 清 path 不依赖任何新参数，所以回收与复用两条路径都无条件执行。
     this.path = '';
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
@@ -227,13 +237,16 @@ struct LiveSenderAvatar {
     // （undefined）**。P3 批 2 第 0 项把读法换成了 reuseParam：两种情况都不抛，
     // 都落到这条兜底。上机时仍要看这条兜底的命中率（0% 说明是 {}，100% 说明
     // 是 undefined），但**无论哪种都不会崩**。
-    setTimeout((): void => {
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    enqueueNextFrame(this.frameOwnerId, (): void => {
       this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
-    }, 0);
+    });
   }
 
   aboutToDisappear(): void {
     this.detachAvatarChannel();
+    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   build() {
@@ -535,6 +548,8 @@ export struct MessageBubble {
   private wasCompetingVideo: boolean = false;
   // 上一次已知的「相册第 idx 格是否参与竞选」状态，key 为 cell.idx。同样是普通 Map。
   private albumWasCompetingVideo: Map<number, boolean> = new Map<number, boolean>();
+  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   // 见 menuKeyboardH 的说明。窗口矮的判据取 480vp：正常手机竖屏远大于此，悬浮
   // 小窗和分屏下半截才会落到这一档。
@@ -685,6 +700,8 @@ export struct MessageBubble {
   aboutToDisappear(): void {
     this.detachMessageChannels();
     this.reportCompetingMediaGone();
+    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   private reportCompetingMediaGone(): void {
@@ -739,6 +756,9 @@ export struct MessageBubble {
     //   两者现在分别被 clearChannelValues / clearTransientState 覆盖。）
     this.clearTransientState();
     this.clearChannelValues();
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
 
   // ── F-5 探针删除清单（判读完成后一次删干净）────────────────────────
@@ -770,11 +790,12 @@ export struct MessageBubble {
       // 这一支在 P2 的 820 个样本里一次都没出现过，但那份样本对当前形态没有
       // 证据力（见 aboutToRecycle 的说明）。单独计数，好和总数对账。
       probeHit('msgBubble.reuse.noParams');
-      setTimeout((): void => {
+      // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+      enqueueNextFrame(this.frameOwnerId, (): void => {
         this.resetReusedState(this.msg);
         this.attachMessageChannels(this.msg);
         this.requestAutoplayDownload();
-      }, 0);
+      });
       return;
     }
     this.resetReusedState(next);
@@ -786,7 +807,9 @@ export struct MessageBubble {
         this.albumWasCompetingVideo.set(i, nextAlbum[i]);
       }
     }
-    setTimeout((): void => { this.requestAutoplayDownload(); }, 0);
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。和上面那一支共用同一
+    // 个 ownerId，但两支互斥（那边 return 了），不会互相覆盖。
+    enqueueNextFrame(this.frameOwnerId, (): void => { this.requestAutoplayDownload(); });
   }
 
   // "替换媒体"（约 1511 行附近的菜单项）能在同一条消息 id 上把 contentType 从

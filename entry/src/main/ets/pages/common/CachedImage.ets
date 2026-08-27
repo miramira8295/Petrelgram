@@ -7,6 +7,9 @@ import {
   isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode
 } from '../../util/imageSwap';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 
 // An Image fed from the decoded-PixelMap cache instead of a file path.
 //
@@ -42,6 +45,10 @@ export struct CachedImage {
   private awaiting: PixelRequest | null = null;
   // Guards against an out-of-order decode landing after a newer one.
   private seq: number = 0;
+  // This instance's slot in the shared next-frame queue (util/nextFrameQueue).
+  // Undecorated members survive reuse untouched, so the id stays stable for the
+  // life of the instance — that is what lets a later reuse override an earlier one.
+  private frameOwnerId: number = nextFrameOwnerId();
 
   aboutToAppear(): void {
     this.start();
@@ -49,6 +56,9 @@ export struct CachedImage {
 
   aboutToDisappear(): void {
     this.drop();
+    // A stale re-check would start a decode for a component that is gone, and
+    // retain a PixelMap nothing will ever release.
+    cancelNextFrame(this.frameOwnerId);
   }
 
   // Recycling cancels work in flight but keeps a bitmap that is already
@@ -57,6 +67,9 @@ export struct CachedImage {
   // it and the cell stayed blank.
   aboutToRecycle(): void {
     this.cancelPending();
+    // Pending work in flight was just cancelled; do not let the previous reuse's
+    // scheduled re-check undo that. The next reuse enqueues again.
+    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(params: Record<string, Object>): void {
@@ -80,7 +93,8 @@ export struct CachedImage {
       // the new decode is pending. Same-source reuse still keeps its bitmap.
       this.drop();
     }
-    setTimeout((): void => { this.start(); }, 0);
+    // Merged into the shared queue; semantics unchanged (util/nextFrameQueue).
+    enqueueNextFrame(this.frameOwnerId, (): void => { this.start(); });
   }
 
   private request(): PixelRequest {

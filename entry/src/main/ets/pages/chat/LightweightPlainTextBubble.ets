@@ -42,6 +42,9 @@ import { SenderRoleTag } from './SenderRoleTag';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { logW } from '../../util/log';
 import { reuseParam } from '../../util/reuseParams';
+import {
+  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
+} from '../../util/nextFrameQueue';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 const SWIPE_REPLY_MAX: number = -56;
@@ -127,6 +130,10 @@ struct LightweightSenderAvatar {
   // 订阅当前挂在哪个发送者 key 上：既用于同 key 短路（审计 P1-1，一次复用会
   // 经 aboutToReuse 和 @Watch 各挂一次），也让「订阅挂在哪」变成可判定的事实。
   private attachedKey: string = '';
+  // 见 util/nextFrameQueue：复用路径上的 setTimeout(0) 合并成一帧一个，这是本
+  // 实例在那个队列里的序号。无装饰器成员在复用时不重置，序号因此在整个实例生命
+  // 周期里稳定——后一次复用排的回调才盖得掉前一次的。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
@@ -161,7 +168,11 @@ struct LightweightSenderAvatar {
   }
 
   aboutToAppear(): void { this.attach(this.senderId, this.senderIsUser, this.initialPath); }
-  aboutToDisappear(): void { this.detach(); }
+  aboutToDisappear(): void {
+    this.detach();
+    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
+    cancelNextFrame(this.frameOwnerId);
+  }
   aboutToRecycle(): void {
     this.detach();
     // P0-2（审计 3.1；C 类变量 path，行 110）：detach 只停订阅、不改值，而
@@ -169,6 +180,9 @@ struct LightweightSenderAvatar {
     // 兜底分支的那一帧画的就是上一个发送者的位图——历史上的「头像串行」。
     // 清 path 不依赖新参数，所以回收与复用两条路径都无条件执行。
     this.path = '';
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
   aboutToReuse(params: Record<string, Object>): void {
     // 无条件前置（审计 S1）：清理跑在 params 判断之前，V2 无入参时同样成立。
@@ -195,9 +209,10 @@ struct LightweightSenderAvatar {
       // 官方没写清 @ReusableV2 递归调用 V1 子组件的 aboutToReuse 时，params
       // 传的是 {} 还是 undefined。P3 批 2 第 0 项改用 reuseParam 读，两种都不抛，
       // 都落到这条兜底。见 MessageBubble 同一处。
-      setTimeout((): void => {
+      // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+      enqueueNextFrame(this.frameOwnerId, (): void => {
         this.attach(this.senderId, this.senderIsUser, this.initialPath);
-      }, 0);
+      });
     }
   }
 
@@ -373,6 +388,8 @@ export struct LightweightPlainTextBubble {
   // 所以 key 要把两者都算进去。用途同头像：同 key 短路（审计 P1-1，复用一次
   // 会经 aboutToReuse 和 @Watch onMessageChanged 各挂一次）+ 按 key 自愈。
   private attachedKey: string = '';
+  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
+  private frameOwnerId: number = nextFrameOwnerId();
 
   private attachChannels(message: MessageEntry): void {
     const key: string = `${message.rowId}:${message.id}`;
@@ -426,7 +443,11 @@ export struct LightweightPlainTextBubble {
     probeHit('message.plain.mount');
     this.attachChannels(this.msg);
   }
-  aboutToDisappear(): void { this.detachChannels(); }
+  aboutToDisappear(): void {
+    this.detachChannels();
+    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
+    cancelNextFrame(this.frameOwnerId);
+  }
   aboutToRecycle(): void {
     probeHit('message.plain.recycle');
     this.detachChannels();
@@ -434,6 +455,9 @@ export struct LightweightPlainTextBubble {
     // 与 aboutToReuse 保持同一份清理（审计 S1）：通道值也归零，别让组件带着
     // 上一条消息的发送勾/翻译态躺在复用池里。
     this.clearChannelValues();
+    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
+    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
+    cancelNextFrame(this.frameOwnerId);
   }
   aboutToReuse(params: Record<string, Object>): void {
     probeHit('message.plain.reuse');
@@ -454,7 +478,8 @@ export struct LightweightPlainTextBubble {
       // 真的变化时触发；复用回同一条消息时它不跑，而 aboutToRecycle 已经退订并
       // 把 attachedKey 归零，那时这里是唯一的重挂路径。父级**已经是**
       // @ReusableV2（P3 批 1），aboutToReuse 没有入参，这条**已经是**唯一分支。
-      setTimeout((): void => { this.attachChannels(this.msg); }, 0);
+      // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+      enqueueNextFrame(this.frameOwnerId, (): void => { this.attachChannels(this.msg); });
     }
     // 见 MessageBubble 同一处：复用后玻璃层要重新量。
     this.glassW = 0;
