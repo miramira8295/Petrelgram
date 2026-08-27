@@ -8204,14 +8204,18 @@ export struct ChatPage {
     const req: TdRequest = { '@type': 'getChat' };
     req['chat_id'] = this.chatId;
     getTdClient().send(req).then((chat: TdObject): void => {
-      if (this.draft !== '') { return; }
       const draft = chat['draft_message'] as TdObject | undefined;
       const content = draft !== undefined
         ? (draft['input_message_text'] as TdObject | undefined) : undefined;
       const ft = content !== undefined ? (content['text'] as TdObject | undefined) : undefined;
       const text = ft !== undefined ? ((ft['text'] as string | undefined) ?? '') : '';
+      // [Draft] 探针：serverLen 是服务端记的草稿长度，localLen 是此刻输入框里的。
+      logW(`[Draft] restore chat=${this.chatId} serverLen=${text.length} localLen=${this.draft.length}`);
+      if (this.draft !== '') { return; }
       if (text !== '') { this.draft = text; }
-    }).catch((): void => {});
+    }).catch((e: TdError): void => {
+      logW(`[Draft] restore chat=${this.chatId} failed: ${e.message}`);
+    });
   }
 
   // Translate a message's text/caption into the system language and show the

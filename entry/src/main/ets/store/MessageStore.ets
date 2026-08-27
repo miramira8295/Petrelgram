@@ -1299,6 +1299,8 @@ export class MessageStore {
   // Persist (or clear, when text is empty) the chat draft so it syncs to the
   // account's other devices. TDLib clears the draft itself on send.
   saveDraft(text: string, replyToId: number): void {
+    // [Draft] 探针：真机上「退出后草稿没保存」，保存/恢复两步原本都没留痕。
+    logW(`[Draft] save chat=${this.chatId} len=${text.trim().length} reply=${replyToId}`);
     const req: TdRequest = { '@type': 'setChatDraftMessage' };
     req['chat_id'] = this.chatId;
     this.applyTopicScope(req);
