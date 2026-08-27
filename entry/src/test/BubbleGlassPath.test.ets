@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { glassBubbleCommands, tailShapeCommands } from '../main/ets/util/bubbleGlassPath';
+import { glassBubbleCommands, glassPaintReady, tailShapeCommands } from '../main/ets/util/bubbleGlassPath';
 
 export default function bubbleGlassPathTest() {
   describe('glassBubbleCommands', () => {
@@ -39,6 +39,31 @@ export default function bubbleGlassPathTest() {
       expect(t).assertEqual('M8 0 L8 12 C6.8 8.4 2 11.28 0 12 C0 6 8 0.96 8 0 Z');
       const o = tailShapeCommands(true, 8, 12, 1);
       expect(o).assertEqual('M0 0 L0 12 C1.2 8.4 6 11.28 8 12 C8 6 0 0.96 0 0 Z');
+    });
+  });
+
+  describe('glassPaintReady', () => {
+    // 这一组守的是横向抖动那条 bug：上色和裁剪必须同一个开关。裁剪要尺寸，
+    // 所以上色也必须等尺寸——否则没裁剪的容器把 7vp 留白一起涂上，气泡边缘外扩。
+    it('量到尺寸才允许上玻璃色', 0, (): void => {
+      expect(glassPaintReady(true, 108, 40)).assertTrue();
+    });
+    it('还没量到（宽为 0）时不许上色，退回实心档', 0, (): void => {
+      expect(glassPaintReady(true, 0, 40)).assertFalse();
+    });
+    it('还没量到（高为 0）时不许上色', 0, (): void => {
+      expect(glassPaintReady(true, 108, 0)).assertFalse();
+    });
+    it('宽高都为 0（复用刚清零的那一帧）不许上色', 0, (): void => {
+      expect(glassPaintReady(true, 0, 0)).assertFalse();
+    });
+    it('负数尺寸同样按没量到处理', 0, (): void => {
+      expect(glassPaintReady(true, -1, 40)).assertFalse();
+      expect(glassPaintReady(true, 108, -1)).assertFalse();
+    });
+    it('材质本来就没开时，量到多少都不上色', 0, (): void => {
+      expect(glassPaintReady(false, 108, 40)).assertFalse();
+      expect(glassPaintReady(false, 0, 0)).assertFalse();
     });
   });
 }

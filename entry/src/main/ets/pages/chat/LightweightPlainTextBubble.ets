@@ -16,7 +16,7 @@ import {
 import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
-import { tailShapeCommands } from '../../util/bubbleGlassPath';
+import { glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
@@ -245,7 +245,7 @@ export struct LightweightPlainTextBubble {
 
   @Builder
   bubbleTail(outgoing: boolean) {
-    if (this.bubbleMaterialLive()) {
+    if (this.glassReady()) {
       // 玻璃气泡的尾巴：实心玻璃色三角。材质是合成层、不吃 clipShape，挂上去会
       // 在三角外糊出一块矩形背板，所以这里只用它的回退色（见 glassTailFill）。
       // 玻璃档下尾巴只占位：整块形状由上层容器的轮廓裁剪画出来。
@@ -270,17 +270,23 @@ export struct LightweightPlainTextBubble {
     return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
   }
 
+  // 见 MessageBubble.glassReady() 的长注释：上色必须和裁剪同一个开关，
+  // 否则「已上色、还没量到」的那一帧是个没裁剪的矩形，左边缘外扩 7vp。
+  private glassReady(): boolean {
+    return glassPaintReady(this.bubbleMaterialLive(), this.glassW, this.glassH);
+  }
+
   private bubbleBg(): ResourceColor {
-    return this.bubbleMaterialLive() ? this.glassBg() : this.bubbleFillColor();
+    return this.glassReady() ? this.glassBg() : this.bubbleFillColor();
   }
 
   // 见 MessageBubble 同一处：气泡与尾巴统一走普通玻璃渲染，才能接成一体。
   private glassBg(): ResourceColor {
-    return this.bubbleMaterialLive() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
 
   private glassBlur(): number {
-    return this.bubbleMaterialLive() ? overlayBackdropBlur('bubble') : 0;
+    return this.glassReady() ? overlayBackdropBlur('bubble') : 0;
   }
 
   // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
@@ -298,7 +304,7 @@ export struct LightweightPlainTextBubble {
   // 补不上，自己沿整条轮廓描一圈；画在 .background() 里，不参与命中测试。
   @Builder
   glassOutline() {
-    if (this.bubbleMaterialLive() && this.glassW > 0 && this.glassH > 0) {
+    if (this.glassReady()) {
       Path({ width: this.glassW, height: this.glassH })
         .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
           this.hasTail(), this.bubbleCorners()))
@@ -765,7 +771,7 @@ export struct LightweightPlainTextBubble {
             this.onScreen = visible;
           })
           .borderRadius(this.bubbleCorners()).padding(8)
-          .shadow({ radius: this.bubbleMaterialLive() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
+          .shadow({ radius: this.glassReady() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
           .onAreaChange((_old: Area, area: Area): void => { this.bubbleW = area.width as number; })
           .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
             .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
@@ -791,7 +797,7 @@ export struct LightweightPlainTextBubble {
           // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
           .borderRadius(this.glassRadius())
           .background(this.glassOutline(), { align: Alignment.TopStart })
-              .attributeModifier(bubbleGlassModifier(this.bubbleMaterialLive(), this.glassW, this.glassH,
+              .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
             this.msg.isOutgoing, this.hasTail(), this.bubbleCorners(),
             this.bubbleMaterialOn ? (w: number, h: number): void => {
               this.glassW = w;

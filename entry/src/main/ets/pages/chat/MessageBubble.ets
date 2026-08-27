@@ -64,7 +64,7 @@ import {
 import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
 } from '../../util/bubbleTail';
-import { tailShapeCommands } from '../../util/bubbleGlassPath';
+import { glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
@@ -3378,7 +3378,7 @@ export struct MessageBubble {
   // 尾巴：材质开着时是一小块裁成三角的玻璃（和气泡同一套材质），否则实色 Polygon。
   @Builder
   bubbleTail(outgoing: boolean) {
-    if (this.bubbleMaterialLive()) {
+    if (this.glassReady()) {
       // 玻璃气泡的尾巴：实心玻璃色三角。材质是合成层、不吃 clipShape，挂上去会
       // 在三角外糊出一块矩形背板，所以这里只用它的回退色（见 glassTailFill）。
       // 玻璃档下尾巴只占位：整块形状由上层容器的轮廓裁剪画出来。
@@ -3405,11 +3405,23 @@ export struct MessageBubble {
 
   // 材质开着时气泡本体透明，底色/材质/模糊都挂在外层「尾巴 + 气泡」容器上。
   private bubbleBg(): ResourceColor {
-    return this.bubbleMaterialLive() ? this.glassBg() : this.bubbleFillColor();
+    return this.glassReady() ? this.glassBg() : this.bubbleFillColor();
   }
 
   private glassLive(): boolean {
     return this.bubbleMaterialLive() && !this.isBareEmoji();
+  }
+
+  // 玻璃**真的画出来**的条件：想画（glassLive）之外还要**已经量到尺寸**。
+  //
+  // 玻璃档的形状全靠 clipShape，而 clipShape 要等 onAreaChange 把 glassW/glassH
+  // 填上才挂得上（见 bubbleGlassModifier）。原来上色只看 glassLive、裁剪却要
+  // 尺寸，两者不同步——「已上色、还没量到」的那一帧画的是**没裁剪的矩形**：
+  // 整块玻璃连尾巴留白一起涂满、没有尾巴、没有那条描边，左边缘因此比正常位置
+  // 外扩一个 bubbleTailGutter（7vp）。量到之后裁剪挂上，边缘再弹回来。
+  // 判据本体是纯函数 glassPaintReady，单测在 BubbleGlassPath.test.ets。
+  private glassReady(): boolean {
+    return glassPaintReady(this.glassLive(), this.glassW, this.glassH);
   }
 
   // 玻璃档：气泡和尾巴用**同一套**普通渲染（玻璃色 + 背景模糊）。
@@ -3418,11 +3430,11 @@ export struct MessageBubble {
   // 退成普通渲染——一边材质一边普通，两块颜色对不齐，看着就不是一体的（用户报的）。
   // 统一成普通渲染后两者严丝合缝，代价是没有沉浸光感的动态高光。
   private glassBg(): ResourceColor {
-    return this.glassLive() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
 
   private glassBlur(): number {
-    return this.glassLive() ? overlayBackdropBlur('bubble') : 0;
+    return this.glassReady() ? overlayBackdropBlur('bubble') : 0;
   }
 
   // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
@@ -3443,7 +3455,7 @@ export struct MessageBubble {
   // （这正是当初「玻璃气泡整块点不动」的真凶，裁剪是背锅的）。
   @Builder
   glassOutline() {
-    if (this.glassLive() && this.glassW > 0 && this.glassH > 0) {
+    if (this.glassReady()) {
       Path({ width: this.glassW, height: this.glassH })
         .commands(glassOutlineCommands(this.glassW, this.glassH, this.msg.isOutgoing,
           this.hasBubbleTail(), this.bubbleCornerRadius()))
@@ -3851,7 +3863,7 @@ export struct MessageBubble {
       // 重合（尾巴那侧仍由裁剪负责）。
       .borderRadius(this.glassRadius())
       .background(this.glassOutline(), { align: Alignment.TopStart })
-      .attributeModifier(bubbleGlassModifier(this.glassLive(), this.glassW, this.glassH,
+      .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
         this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius(),
         this.bubbleMaterialOn ? (w: number, h: number): void => {
           this.glassW = w;

@@ -109,3 +109,27 @@ export function tailShapeCommands(outgoing: boolean, tailW: number, tailH: numbe
     `${n(xTip)} ${n(bottom)} ` +
     `C${n(xTip)} ${n(cNear)} ${n(xBody)} ${n(cBody)} ${n(xBody)} 0 Z`;
 }
+
+// 玻璃档「上色」与「裁剪」必须同一个开关。
+//
+// 容器是 [尾巴/留白 | 气泡]，留白恒为 tailW - 1 = 7vp（见 glassBubbleCommands
+// 里的 gutter）。玻璃档下气泡本体是透明的，颜色/模糊都挂在这个容器上，气泡该有
+// 的形状**完全**由 clipShape 给——而 clipShape 只有在 onAreaChange 量到尺寸
+// （w/h > 0）之后才挂得上。
+//
+// 于是「已上色、还没量到」这一窗口里，容器是**没裁剪**的：整块 7vp 留白连着
+// 气泡一起被涂成玻璃色，看上去就是气泡左边缘（发出的是右边缘）整整外扩 7vp、
+// 而且没有尾巴。量到之后裁剪挂上，边缘再弹回去、尾巴冒出来——正是用户报的
+// 「气泡左边一直在横跳，幅度就是尾巴那么宽」。
+//
+// 这个窗口不是罕见情形：行 key 一变，Repeat 就是删旧插新，新节点从复用池里出来
+// 走 aboutToReuse，那里把 glassW/glassH 清零（复用成另一条消息后旧尺寸算出的
+// 路径是错的，必须清）。而行 key 里编了 senderName、inlineCustomEmojiPaths、
+// 自定义表情位图路径等一批**异步到达**的字段，所以每落地一张图/一个名字就横跳
+// 一次。
+//
+// 修法是让上色跟着裁剪走：没量到就整档退回实心渲染（气泡自己上色 + 独立的
+// 三角 Path 尾巴），形状始终是对的，只是这一两帧没有玻璃。
+export function glassPaintReady(live: boolean, w: number, h: number): boolean {
+  return live && w > 0 && h > 0;
+}
