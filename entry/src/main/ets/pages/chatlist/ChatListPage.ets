@@ -118,8 +118,11 @@ export const CHAT_NAV_BAR_VISIBLE_KEY: string = 'chatNavBarVisible';
 @Builder
 function splitPanePlaceholder(): void {
   Column({ space: 12 }) {
-    Image($r('app.media.foreground'))
-      .width(64).height(64).opacity(0.45)
+    // 用开屏页那架**蓝色**飞机，不是启动图标的前景层（issue #113）。前景层是
+    // 白色的，压在 45% 透明度下几乎看不见——报告人说的就是这个。
+    // ic_split_placeholder 是从 start_splash.png 居中裁出来的那一块，同一架飞机。
+    Image($r('app.media.ic_split_placeholder'))
+      .width(72).height(72).opacity(0.9)
       .draggable(false);
     Text($r('app.string.split_pick_a_chat'))
       .fontSize(14)
