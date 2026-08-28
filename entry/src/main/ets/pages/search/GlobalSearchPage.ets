@@ -969,7 +969,9 @@ export struct GlobalSearchPage {
     const req: TdRequest = mode === 'posts' ? { '@type': 'searchPublicPosts' }
       : (mode === 'tagposts' ? { '@type': 'searchPublicMessagesByTag' } : { '@type': 'searchMessages' });
     if (mode === 'filter' || mode === 'all') {
-      req['chat_list'] = { '@type': 'chatListMain' } as TdObject;
+      // **不设 chat_list**（issue #139）：TDLib 省略这一项时搜的是**所有**会话
+      // 列表，归档里的消息才搜得到。原来固定 chatListMain，归档会话的内容一条
+      // 都出不来，而官方客户端的全局搜索是含归档的。
       if (filterType !== '') {
         req['filter'] = { '@type': filterType } as TdObject;
       }
