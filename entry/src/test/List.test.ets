@@ -19,6 +19,7 @@ import tdDeviceParamsTest from './TdDeviceParams.test';
 import drawerMetricsTest from './DrawerMetrics.test';
 import menuPreviewTest from './MenuPreview.test';
 import rowRemovalTest from './RowRemoval.test';
+import navFullScreenTest from './NavFullScreen.test';
 import scopeMuteTest from './ScopeMute.test';
 import decodeSizeTest from './DecodeSize.test';
 import chatContentWidthTest from './ChatContentWidth.test';
@@ -190,6 +191,7 @@ export default function testsuite() {
   drawerMetricsTest();
   menuPreviewTest();
   rowRemovalTest();
+  navFullScreenTest();
   scopeMuteTest();
   decodeSizeTest();
   chatContentWidthTest();

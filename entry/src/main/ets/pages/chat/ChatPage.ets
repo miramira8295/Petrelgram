@@ -197,7 +197,9 @@ import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
 import { adminLabelOf } from '../../util/adminLabel';
 import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/senderRoleChannel';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
-import { HdsNavDestination } from '@kit.UIDesignKit';
+import { isSplitLayout } from '../../util/splitMetrics';
+import { viewerFullScreenWanted } from '../../util/navFullScreen';
+import { navFullScreenModifier } from '../../util/navFullScreenModifier';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
@@ -291,7 +293,7 @@ const INITIAL_TIMELINE_REVEAL_ROW_LIMIT: number = 8;
 // Reveal only after real rows cover the complete visible message viewport.
 // Older offscreen rows may continue staging after the page is visible, but
 // visible placeholder replacement must not trigger repeated height correction.
-// HdsNavDestination.onShown is emitted near the beginning of a push, not when
+// NavDestination.onShown is emitted near the beginning of a push, not when
 // the spring has settled. This timer is only a watchdog for a resolved empty
 // timeline; it must never reveal chrome while history/row staging is pending,
 // otherwise a slow fully-read chat paints header/composer before its bubbles.
@@ -2340,7 +2342,7 @@ export struct ChatPage {
   // 理由见 goBack()。
   private navStack: NavPathStack | undefined = undefined;
 
-  // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
+  // 返回上一层。**不能用 router.back()**：本页是 NavDestination（导航页，不是 router 页），router 页栈里
   // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   //
@@ -2395,7 +2397,7 @@ export struct ChatPage {
   //
   // 只跑一次：这段里建了 MessageStore、十几个 TDLib 订阅和两个 setInterval，句柄都
   // 存在 this.unsubXxx / this.xxxTimer 上。第二次进来会把旧句柄直接覆盖掉，旧订阅和
-  // 旧定时器就再也退订不了了——aboutToDisappear 只认得最后一份句柄。HdsNavDestination
+  // 旧定时器就再也退订不了了——aboutToDisappear 只认得最后一份句柄。NavDestination
   // 在页面被复用时（MOVE_TO_TOP_SINGLETON、onNewParam）可能不止触发一次 onReady，
   // 所以这个守卫是必须的。当前的 navigateToChat 走的是 clearAndPush，每次都是新实例，
   // 守卫在正常路径上不会拦到东西——它挡的是复用路径。
@@ -5178,7 +5180,7 @@ export struct ChatPage {
     if (action.kind === LINK_USER) {
       const params: Record<string, Object> = { 'userId': action.userId };
       // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
-      // HdsNavDestination 并从 main_pages.json 摘出后整页路由跳不动，走漏斗。
+      // NavDestination 并从 main_pages.json 摘出后整页路由跳不动，走漏斗。
       navigateToProfile(params);
       return;
     }
@@ -5886,7 +5888,7 @@ export struct ChatPage {
     const storeUid = this.store !== null ? this.store.getPeerUserId() : 0;
     const uid = this.headerPeerUserId > 0 ? this.headerPeerUserId : storeUid;
     // 曾经是一个 url 字符串变量 + 末尾一次 router.pushUrl；两张资料页都迁成了
-    // HdsNavDestination，改成用 openUserProfile 记住该开哪一张，末尾分发到对应
+    // NavDestination，改成用 openUserProfile 记住该开哪一张，末尾分发到对应
     // 漏斗。分支条件与参数一字未改。
     let openUserProfile: boolean = false;
     let params: Record<string, Object>;
@@ -9436,7 +9438,13 @@ export struct ChatPage {
   // The flattened background, once it exists. Until then the layered version
   // below renders, so the chat never waits on the raster.
   build() {
-    HdsNavDestination() {
+    // **原生 NavDestination，不是 HdsNavDestination**（issue #139）。本页把 HDS
+    // 的标题栏整个关掉了自己画（hideTitleBar(true)），用到的另外五个回调
+    // onReady / onShown / onWillHide / onHidden / onBackPressed 原生一样有，
+    // 所以换过来是零损失；换的理由是 **HdsNavDestinationAttribute 只继承
+    // CommonMethod，没有 fullScreenOverlay**，而分栏下让查看器盖住整个窗口只能
+    // 靠它。GlobalSearchPage 早就在同一个栈上用原生 NavDestination，可以混用。
+    NavDestination() {
     Stack() {
       // 整层背景搬到了 ChatBackdrop：它只吃输入不回调，所以这里只传三个入参。
       ChatBackdrop({ chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH });
@@ -10136,6 +10144,12 @@ export struct ChatPage {
     }
     // ChatPage 自己画标题栏（会话头像/名称/在线状态那一条），不要 HDS 的。
     .hideTitleBar(true)
+    // 分栏下打开媒体查看器时，本页以全屏覆盖模式显示，盖住左栏（issue #139）。
+    // 查看器是本页内部的一个图层、量的是本页宽高，本页只占右栏时它就只能铺满
+    // 右栏——看图看视频都一样。属性必须经修饰器挂（API 26，低版本取方法即抛），
+    // 见 util/navFullScreenModifier。
+    .attributeModifier(navFullScreenModifier(viewerFullScreenWanted(
+      isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0)))
     // 入参：router 时代是 aboutToAppear 里 router.getParams() 现取，现在从
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。
