@@ -79,6 +79,7 @@ import {
   FloatingDateOverlay, FloatingDateState, TimelineStatePillSlot
 } from './FloatingDateOverlay';
 import { firstRowBelowChrome, floatDateNeedsRescan } from '../../util/floatDateGate';
+import { isInteriorRowRemoval } from '../../util/rowRemoval';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
 import {
@@ -709,7 +710,21 @@ export struct ChatPage {
     // 全等的一次发布不换数组引用：@Local 的通知是按引用发的，换一个逐项相同
     // 的新数组照样通知 ⇒ Repeat 照样跑一遍 diff。changed 本来就算好了，用上。
     if (changed) {
-      this.groups = next;
+      // 删消息时让剩下的行平滑合拢（issue #149）。**只有这一种发布带动画**：
+      // 判据见 util/rowRemoval —— 行变少、且少掉的那几行前后都还有行留着。
+      // 往上翻页时从一头砍掉旧行同样是"行变少"，但那是滚动热路径，绝不能动画。
+      // 判据只在行数变少时才跑，平时零成本。
+      if (next.length < this.groups.length &&
+        isInteriorRowRemoval(
+          this.groups.map((g: AlbumGroup): number => g.head.id),
+          next.map((g: AlbumGroup): number => g.head.id))) {
+        animateTo({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
+          curve: Curve.EaseOut
+        }, (): void => { this.groups = next; });
+      } else {
+        this.groups = next;
+      }
     }
     // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
     // 必须不同，这不是笔误。
