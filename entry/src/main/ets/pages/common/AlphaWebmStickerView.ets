@@ -32,7 +32,9 @@ let liveAlpha: number = 0;
 
 @Component
 export struct AlphaWebmStickerView {
-  @Prop webmPath: string;
+  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。挂错时这一格播的是**上一张**
+  // 贴纸。TgsStickerView 的 onTgsPathChanged 是同一套写法。
+  @Prop @Watch('onWebmPathChanged') webmPath: string;
   @Prop thumbPath: string = '';
   @Prop boxWidth: number = 160;
   @Prop boxHeight: number = 160;
@@ -64,6 +66,15 @@ export struct AlphaWebmStickerView {
   private loadSeq: number = 0;
   // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
   private frameOwnerId: number = nextFrameOwnerId();
+
+  private onWebmPathChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.disposePlayback();
+    this.disposed = false;
+    this.reportedWorking = false;
+    this.shownIndex = -1;
+    this.load();
+  }
 
   aboutToAppear(): void {
     this.disposed = false;

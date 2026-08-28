@@ -12,8 +12,10 @@ import {
 // 同一套做法见 senderAvatarChannel 的注释。
 @Component
 export struct SenderRoleTag {
-  @Prop chatId: number;
-  @Prop senderId: number;
+  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。这一处挂错的后果比图片
+  // 更严重——会把「管理员/群主」这类身份标签贴到别人的消息上。
+  @Prop @Watch('onSenderChanged') chatId: number;
+  @Prop @Watch('onSenderChanged') senderId: number;
   // 群成员标签（消息自带的 sender_tag）。有它就显示它——标签是打给所有人看
   // 的；没有再落到管理员头衔那条异步通道。
   @Prop presetTag: string = '';
@@ -36,6 +38,11 @@ export struct SenderRoleTag {
       this.unsub();
       this.unsub = null;
     }
+  }
+
+  private onSenderChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.attachRoleChannel(this.chatId, this.senderId);
   }
 
   aboutToAppear(): void {

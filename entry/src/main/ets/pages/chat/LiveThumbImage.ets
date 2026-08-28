@@ -38,7 +38,14 @@ let reuseProbeStale: number = 0;
 // 发布，只靠订阅会一直是空白。
 @Component
 export struct LiveThumbImage {
-  @Prop fileId: number = 0;
+  // @Watch 是这一族组件的**自愈**那一半，缺了它就会「图配错文」（用户报：往上翻
+  // 历史加载新数据后，有的行图片是上一条的）。机理：父级是 @ReusableV2，
+  // aboutToReuse **没有入参**，只能排一个下一帧回调去读 this.fileId；那时 @Prop
+  // 若还没落地，就订阅到了上一条消息的文件，而且**再也不会纠正**——正文走 @Prop
+  // 正常更新，图却永远停在旧的。挂上 @Watch 之后，fileId 无论早一帧还是晚一帧
+  // 落地，订阅都会按新值自己纠正。LiveSenderAvatar 早就是这么做的，这一族其余
+  // 组件当时漏了。
+  @Prop @Watch('onFileIdChanged') fileId: number = 0;
   @Prop initialPath: string = '';
   @Prop boxWidth: number = 0;
   @Prop boxHeight: number = 0;
@@ -64,6 +71,14 @@ export struct LiveThumbImage {
       this.unsubThumb();
       this.unsubThumb = null;
     }
+  }
+
+  // 第二个参数传 ''，不传 this.initialPath：@Prop 是逐个落地的，fileId 的回调
+  // 触发时 initialPath 可能还是**上一条消息**的路径，拿它兜底等于把旧图画上去。
+  // 通道现值 thumbPathFor(fileId) 是按新 fileId 查的，本来就对。
+  private onFileIdChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.attach(this.fileId, '');
   }
 
   aboutToAppear(): void {

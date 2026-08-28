@@ -18,7 +18,9 @@ import {
 // 发布，只靠订阅会从 0 开始跳。
 @Component
 export struct LiveProgressRing {
-  @Prop fileId: number = 0;
+  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。进度环挂错文件时，
+  // 显示的是另一条消息的下载进度。
+  @Prop @Watch('onFileIdChanged') fileId: number = 0;
   @Prop initialPercent: number = 0;
   @Prop ringSize: number = 36;
   @State private percent: number = 0;
@@ -40,6 +42,13 @@ export struct LiveProgressRing {
       this.unsubProgress();
       this.unsubProgress = null;
     }
+  }
+
+  // 第二个参数传 0 而不是 this.initialPercent：后者可能还是上一条的进度。
+  // 通道现值 progressFor(fileId) 按新 fileId 查，是对的。
+  private onFileIdChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.attach(this.fileId, 0);
   }
 
   aboutToAppear(): void {

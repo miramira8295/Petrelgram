@@ -12,7 +12,9 @@ const WAVEFORM_WIDTH: number = 132;
 
 @Component
 export struct VoiceBubble {
-  @Prop msgId: number = 0;
+  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源（挂错时跟着别的那条语音的
+  // 播放状态走）。
+  @Prop @Watch('onMsgIdChanged') msgId: number = 0;
   @Prop durationSec: number = 0;
   @Prop isOutgoing: boolean = false;
   @Prop voiceFileId: number = 0;
@@ -91,6 +93,11 @@ export struct VoiceBubble {
       this.unsub();
       this.unsub = null;
     }
+  }
+
+  private onMsgIdChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.attachPlayback(this.msgId, this.durationSec, this.listened);
   }
 
   aboutToAppear(): void {

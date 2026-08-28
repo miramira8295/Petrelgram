@@ -10,7 +10,9 @@ import {
 
 @Component
 export struct MusicBubble {
-  @Prop msgId: number = 0;
+  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。挂错时这一行会跟着**别的**
+  // 那条音乐的播放状态走（进度条在动、其实播的不是它）。
+  @Prop @Watch('onMsgIdChanged') msgId: number = 0;
   @Prop durationSec: number = 0;
   @Prop isOutgoing: boolean = false;
   @Prop audioFileId: number = 0;
@@ -92,6 +94,11 @@ export struct MusicBubble {
       this.unsub();
       this.unsub = null;
     }
+  }
+
+  private onMsgIdChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.attachPlayback(this.msgId, this.durationSec);
   }
 
   aboutToAppear(): void {

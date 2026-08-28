@@ -15,7 +15,9 @@ import {
 // 它只关心"到了没有"这一个布尔，图由谁画不归它管。
 @Component
 export struct ThumbReadyGate {
-  @Prop fileId: number = 0;
+  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源（复用时  可能晚一帧
+  // 落地，只靠下一帧回调会订阅到上一条消息的文件且永不纠正）。
+  @Prop @Watch('onFileIdChanged') fileId: number = 0;
   // 调用方已知的路径（历史消息进入时可能本来就带着）。
   @Prop initialPath: string = '';
   // 不必等待：没有缩略图可等（fileId 为 0），或者它已经失败了——这两种
@@ -47,6 +49,11 @@ export struct ThumbReadyGate {
       this.unsubThumb();
       this.unsubThumb = null;
     }
+  }
+
+  private onFileIdChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.attach(this.fileId, '');
   }
 
   aboutToAppear(): void {

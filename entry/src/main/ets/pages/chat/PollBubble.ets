@@ -10,7 +10,9 @@ import {
 export struct PollBubble {
   @Prop messageId: number = 0;
   @Prop question: string = '';
-  @Prop options: PollOptionInfo[] = [];
+  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。挂错时这一行的草稿勾选
+  // 来自**上一条**投票。
+  @Prop @Watch('onOptionsChanged') options: PollOptionInfo[] = [];
   @Prop totalVoterCount: number = 0;
   @Prop isAnonymous: boolean = true;
   @Prop isQuiz: boolean = false;
@@ -31,6 +33,11 @@ export struct PollBubble {
   @State draftChanged: boolean = false;
   // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
   private frameOwnerId: number = nextFrameOwnerId();
+
+  private onOptionsChanged(): void {
+    cancelNextFrame(this.frameOwnerId);
+    this.resetDraft();
+  }
 
   aboutToAppear(): void {
     this.resetDraft();
