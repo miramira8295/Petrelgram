@@ -914,7 +914,10 @@ export struct ChatListPage {
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
-      .align(Alignment.Start)
+      // 文件夹少、一行装得下时居中显示（issue #156）；装不下时 align 不起作用，
+      // 仍然从左边开始、照常横向滚动。选中胶囊的位置由 indicatorX 按量到的
+      // 页签坐标算，整条内容一起平移不影响它。
+      .align(Alignment.Center)
       .width('100%')
       .onAreaChange((_old: Area, area: Area) => {
         this.tabViewW = area.width as number;
