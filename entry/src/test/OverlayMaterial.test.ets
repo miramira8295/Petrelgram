@@ -7,6 +7,8 @@ import {
   overlayBackdropBlur,
   overlayBlur,
   overlayGlassFill,
+  immersiveTypeSupported,
+  MATERIAL_TYPE_IMMERSIVE,
   overlayMaterial,
   pressAnimationWins,
   usesImmersiveMaterial
@@ -23,6 +25,28 @@ import {
 const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control', 'viewer'];
 
 export default function overlayMaterialTest() {
+  describe('immersiveTypeSupported', () => {
+    // 用户报：升到 HarmonyOS 7.0.0.105 SP6 之后玻璃全没了——顶栏/输入框/附件
+    // 抽屉变成彻底透明的窟窿。根因是「API 26 就一定有材质」这个假设：材质那一
+    // 支把底色和模糊两个兜底都关死了，材质不画就什么都不剩。改成先问设备。
+    it('设备报了 IMMERSIVE 就用材质', 0, (): void => {
+      expect(immersiveTypeSupported([MATERIAL_TYPE_IMMERSIVE])).assertTrue();
+      expect(immersiveTypeSupported([0, 100, MATERIAL_TYPE_IMMERSIVE])).assertTrue();
+    });
+
+    it('报了别的档位、独独没有 IMMERSIVE，就走自绘玻璃', 0, (): void => {
+      // NONE=0 / ADAPTIVE=100，都不是沉浸材质。
+      expect(immersiveTypeSupported([0])).assertFalse();
+      expect(immersiveTypeSupported([100])).assertFalse();
+      expect(immersiveTypeSupported([0, 100])).assertFalse();
+    });
+
+    it('查不到（空数组）当作「不知道」，维持按版本的老判断', 0, (): void => {
+      // 宁可保持现状，也不要在材质本来好好的设备上把它关掉。
+      expect(immersiveTypeSupported([])).assertTrue();
+    });
+  });
+
   describe('overlayMaterial', () => {
     it('turns the material on exactly at API 26', 0, () => {
       expect(materialWinsAt(26)).assertTrue();

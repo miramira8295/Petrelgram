@@ -24,7 +24,9 @@
 //   .systemMaterial(overlayMaterial('bar'))
 
 import { uiMaterial } from '@kit.ArkUI';
+import { hdsMaterial } from '@kit.UIDesignKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
+import { logW } from './log';
 import {
   LIGHT_DEFAULT, THICKNESS_DEFAULT, fallbackBlurRadius, interactiveOn,
   isThicknessOff, lightEffectOn, normalizeLightLevel, normalizeThickness, shiftedStyleIndex
@@ -142,9 +144,69 @@ export function materialWinsAt(apiVersion: number): boolean {
   return apiVersion >= IMMERSIVE_MATERIAL_API;
 }
 
+// 设备自报的材质能力里，「沉浸材质」这一档的枚举值（hdsMaterial.MaterialType
+// .IMMERSIVE）。写成常量是为了让下面那条判据能脱离 HDS 单测——枚举本身在
+// API 23 以下解引用就会抛，宿主单测里碰不得。
+export const MATERIAL_TYPE_IMMERSIVE: number = 101;
+
+// 设备到底给不给沉浸材质。
+//
+// **为什么光看 API 版本不够**（用户报：HarmonyOS 7.0.0.105 SP6 升级后玻璃全没了，
+// 顶栏/输入框/附件抽屉变成彻底透明的窟窿）：材质可用与否不只取决于 API 版本，
+// 还取决于设备档位和系统版本自己的策略。而我们在「材质可用」这一支里把两个
+// 兜底**都关死了**——底色透明、模糊归 0——赌的就是材质一定会画出来。它不画，
+// 就什么都不剩。官方 HDS 指南给的正确做法是先查 getSystemMaterialTypes()。
+//
+// 查不到（接口抛、或者返回空数组）一律当「不知道」，维持按版本的老判断：宁可
+// 保持现状，也不要在材质本来好好的设备上把它关掉。
+export function immersiveTypeSupported(types: number[]): boolean {
+  if (types.length === 0) {
+    return true;
+  }
+  for (const type of types) {
+    if (type === MATERIAL_TYPE_IMMERSIVE) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // deviceInfo returns device constants; the official note is to read them once
-// rather than per frame, and these getters sit on the render path.
-const materialAvailable: boolean = materialWinsAt(deviceInfo.sdkApiVersion);
+// rather than per frame, and these getters sit on the render path. 能力查询同理
+// ——只在第一次用到时查一次，之后走缓存。
+let materialProbed: boolean = false;
+let materialProbeResult: boolean = false;
+
+function materialAvailable(): boolean {
+  if (materialProbed) {
+    return materialProbeResult;
+  }
+  materialProbed = true;
+  // 版本闸必须排在最前：hdsMaterial 的枚举和接口都是 API 23 起，低版本上
+  // **解引用就抛**（同一个坑见本文件 styleByIndex 上面那段，1.3.6 在 API 24
+  // 上启动即崩）。
+  if (!materialWinsAt(deviceInfo.sdkApiVersion)) {
+    materialProbeResult = false;
+    return false;
+  }
+  const types: number[] = [];
+  let queried: boolean = false;
+  try {
+    const reported: Array<hdsMaterial.MaterialType> = hdsMaterial.getSystemMaterialTypes();
+    for (const type of reported) {
+      types.push(type as number);
+    }
+    queried = true;
+  } catch (e) {
+    logW(`[Material] getSystemMaterialTypes failed: ${e}`);
+  }
+  materialProbeResult = queried ? immersiveTypeSupported(types) : true;
+  // 这一行是下次用户报「玻璃没了」时唯一能回答问题的东西：设备报了什么、
+  // 我们据此判成了什么。只在第一次查询时打一行。
+  logW(`[Material] api=${deviceInfo.sdkApiVersion} types=[${types.join(',')}]` +
+    ` queried=${queried} material=${materialProbeResult}`);
+  return materialProbeResult;
+}
 
 // 材质档位变更纪元。overlayMaterial 的这些 getter 是普通函数，util 订阅不了
 // AppStorage，所以"改了设置要重绘"只能由调用方订阅——和语言切换的
@@ -159,7 +221,7 @@ export function bumpMaterialEpoch(): void {
 }
 
 export function immersiveMaterialAvailable(): boolean {
-  return materialAvailable;
+  return materialAvailable();
 }
 
 // 按压形变的**基准**：只给 'control'——整块面板跟着手指变形会很怪，背景板
@@ -187,7 +249,7 @@ function usesLightEffect(surface: OverlaySurface): boolean {
 // 材质接管按压时，调用方手写的按压动画必须让位——两层形变叠加是官方点名的坑。
 // 调用点写成 `pressAnimationWins('control') ? 0.9 : 1` 这种形式。
 export function pressAnimationWins(surface: OverlaySurface): boolean {
-  return !(materialAvailable && usesInteraction(surface));
+  return !(materialAvailable() && usesInteraction(surface));
 }
 
 // 每个面调好的**基准**厚度档，用下标表示（0=超薄 … 4=超厚）。用户的厚度偏移
@@ -298,7 +360,7 @@ export function usesImmersiveMaterial(surface: OverlaySurface): boolean {
 // The blur a framework-managed container used before the material. Returning it
 // solely while the material is unavailable is what keeps the two from stacking.
 export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
-  if (materialOff() || materialAvailable || !frameworkContainer(surface)) {
+  if (materialOff() || materialAvailable() || !frameworkContainer(surface)) {
     return undefined;
   }
   // 菜单要把背后压实，模态更甚；两者的基准都是最厚的一档，再吃用户的厚度
@@ -317,7 +379,7 @@ export function plainBackdropBlur(): number {
 export function overlayBackdropBlur(surface: OverlaySurface): number {
   // 不参与材质的面（'viewer'）自己画玻璃，任何 API 上都要模糊半径——返回 0
   // 是"把观感让给材质"的意思，而它没有材质可让。
-  return (materialOff() || (materialAvailable && usesImmersiveMaterial(surface)))
+  return (materialOff() || (materialAvailable() && usesImmersiveMaterial(surface)))
     ? 0 : fallbackBlurRadius(thicknessOffset());
 }
 
@@ -353,7 +415,7 @@ export function overlayGlassFill(surface: OverlaySurface, solid: ResourceColor):
   if (!usesImmersiveMaterial(surface)) {
     return VIEWER_GLASS_FALLBACK;
   }
-  if (materialAvailable) {
+  if (materialAvailable()) {
     return Color.Transparent;
   }
   // 这个色由本模块自己持有，不回显调用方传进来的 solid：这个模块的职责就是
@@ -390,7 +452,7 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
 // The material for a surface, or undefined on systems without it — at which
 // point that surface's own fallback getter is what takes effect.
 export function overlayMaterial(surface: OverlaySurface): uiMaterial.Material | undefined {
-  if (materialOff() || !materialAvailable || !usesImmersiveMaterial(surface)) {
+  if (materialOff() || !materialAvailable() || !usesImmersiveMaterial(surface)) {
     return undefined;
   }
   const key: string = cacheKey(surface);
