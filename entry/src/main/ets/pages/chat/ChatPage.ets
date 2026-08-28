@@ -676,6 +676,10 @@ export struct ChatPage {
   // prepend，这个下标已经指向别的消息了。
   private hiddenAnchorId: number = 0;
   private hiddenAnchorY: number = 0;
+  // 隐藏那一刻是不是正贴着底，以及当时最后一行的消息 id。两者一起回答「隐藏
+  // 期间列表动没动」——没动就别松开贴底（issue #62），见 resyncListAfterHidden。
+  private hiddenAtBottom: boolean = false;
+  private hiddenNewestId: number = 0;
 
   // 发布一份新的行快照。**唯一**给 this.groups 赋值的地方（rebuildAllRows 除外）。
   //
@@ -1170,10 +1174,14 @@ export struct ChatPage {
   private captureHiddenAnchor(): void {
     this.hiddenAnchorId = 0;
     this.hiddenAnchorY = 0;
+    this.hiddenAtBottom = false;
+    this.hiddenNewestId = 0;
     if (!this.didInitialScroll ||
       this.curStartIdx < 0 || this.curStartIdx >= this.groups.length) {
       return;
     }
+    this.hiddenAtBottom = this.atBottom;
+    this.hiddenNewestId = this.groups[this.groups.length - 1].head.id;
     this.hiddenAnchorId = this.groups[this.curStartIdx].head.id;
     try {
       this.hiddenAnchorY = this.scroller.getItemRect(this.curStartIdx).y;
@@ -1188,8 +1196,12 @@ export struct ChatPage {
   private resyncListAfterHidden(): void {
     const anchorId: number = this.hiddenAnchorId;
     const anchorY: number = this.hiddenAnchorY;
+    const wasAtBottom: boolean = this.hiddenAtBottom;
+    const newestBefore: number = this.hiddenNewestId;
     this.hiddenAnchorId = 0;
     this.hiddenAnchorY = 0;
+    this.hiddenAtBottom = false;
+    this.hiddenNewestId = 0;
     // 迁 Repeat 之前这里是 groupsData.reload()。等价物见 rebuildAllRows()。
     this.rebuildAllRows();
     // 再打一次：此时框架已经渲染完，屏幕上如果是错的，这一份就是"数据本来
@@ -1199,23 +1211,28 @@ export struct ChatPage {
       if (dumpSeq === this.scrollActionSeq) {
       }
     }, 2500);
-    if (anchorId > 0) {
+    const newestNow: number = this.groups.length > 0
+      ? this.groups[this.groups.length - 1].head.id : 0;
+    if (anchorId > 0 && wasAtBottom && newestBefore > 0 && newestNow === newestBefore) {
+      // 隐藏期间一条新消息都没来，而隐藏时正贴着底：列表没动过，没什么可还原的，
+      // **贴底也不能松**（issue #62）。松开之后只有 onScrollIndex 会把它判回来，
+      // 而没有位移就没有滚动回调，atBottom 从此一直是 false，之后每条新消息都
+      // 被当成"用户不在底部"不跟随——「锁屏解锁后就不滚了」正是这条路。
+      //
+      // 不改成"还原完再补判一次"：还原本身跑在 setTimeout 里、量不到还会重试
+      // （attemptAnchorRestore），补判会插在中间，用一个还没落位的 isAtEnd 下
+      // 结论，反而可能把用户从还原点拽到底部。
+      logW(`[Follow62] resume kept atBottom rows=${this.groups.length} newest=${newestNow}`);
+    } else if (anchorId > 0) {
       // 先松开贴底：还原发起到 onScrollIndex 回调落地之间，atBottom 还是隐藏
       // 前那个 true，这期间任何一条到达通知都会走"在底部就跟随"那一支
       // （见 L1242）把视口又拽回底部。同文件 1216 / 1227 两处也是这个写法。
+      //
+      // 走到这里的两种情况：隐藏时不在底部（本来就该还原到原位），或者隐藏期间
+      // 来了新消息——后者按 3ff77fc 的有意设计仍然停在原位，新消息留在下方由
+      // 「↓」带未读数指回去，不自动甩到最新。
       this.atBottom = false;
       this.restorePrependAnchor(this.groups, anchorId, anchorY);
-      // 还原完再判一次贴底（issue #62）。上面把 atBottom 硬置成 false 之后，只有
-      // onScrollIndex 会把它判回来，而锚点没动（锁屏前后视口没变、dy=0）时根本
-      // 没有滚动回调——atBottom 就一直是 false，之后每条新消息都被当成"用户不在
-      // 底部"不跟随，「锁屏解锁后就不滚了」正是它。行号还新鲜（隐藏期间没来新
-      // 消息）时 refreshAtBottom 按 isAtEnd 判回 true；来了新消息则行号已陈旧、
-      // 不下结论，保持 false，新消息留在下方由「↓」指回去（3ff77fc 的有意设计）。
-      setTimeout((): void => {
-        if (this.pageVisible) {
-          this.refreshAtBottom();
-        }
-      }, 0);
     } else if (this.atBottom && this.didInitialScroll) {
       const actionSeq: number = ++this.scrollActionSeq;
       setTimeout((): void => {
@@ -1917,6 +1934,10 @@ export struct ChatPage {
   // 留在 ChatPage 的只有"顶行下标"——它是"要不要重新扫 groups 算日期"的判据，
   // 而 groups 是 ChatPage 的数据。同样是非响应式字段。
   private floatDateIndex: number = -1;
+  // 上一次 onScrollIndex 报的顶行下标（不是日期条认的那个）。日期条要量布局才
+  // 知道哪一行真正露在标题栏下面，而 onDidScroll 每帧都来——下标没变就连量都
+  // 不量，见 updateFloatDate。
+  private floatDateStartIdx: number = -1;
   private listTouchActive: boolean = false;
   private listUserScrollActive: boolean = false;
   // RESIZE shortens the List while the IME animates in. Preserve the live-tail
@@ -2083,6 +2104,7 @@ export struct ChatPage {
     // 下面这两个标志本来就在同一句里清。
     this.floatDateState.clear();
     this.floatDateIndex = -1;
+    this.floatDateStartIdx = -1;
     this.listTouchActive = false;
     this.listUserScrollActive = false;
   }
@@ -4150,15 +4172,23 @@ export struct ChatPage {
     if (this.indexGroupsLen !== this.groups.length) {
       return;
     }
-    // start 是 List「显示区」的第一行，包括已经滚到浮动标题栏底下的那一行；
-    // 日期条要报的是用户看得见的第一行，见 util/floatDateGate.firstRowBelowChrome。
-    const top: number = firstRowBelowChrome(start, this.groups.length,
-      this.headerChromeHeight(), (index: number): number => this.rowBottomVp(index));
     const now: number = Date.now();
     // onDidScroll fires every rendered frame. If the top row hasn't changed,
     // skip the group scan and the date formatting; only refresh the hide timer
     // at a coarse cadence so a long drag keeps the chip visible.
     //
+    // **这道早退必须排在下面那次量布局之前**：firstRowBelowChrome 要 getItemRect
+    // （布局查询，每帧最多三次），而顶行下标没变时它的结果一定和上次一样。原来
+    // 这里是拿 start 直接比的，加了 chrome 让位之后仍然拿 start 当第一道闸。
+    if (start === this.floatDateStartIdx && this.floatDateIndex >= 0) {
+      this.floatDateState.keepAlive(now);
+      return;
+    }
+    this.floatDateStartIdx = start;
+    // start 是 List「显示区」的第一行，包括已经滚到浮动标题栏底下的那一行；
+    // 日期条要报的是用户看得见的第一行，见 util/floatDateGate.firstRowBelowChrome。
+    const top: number = firstRowBelowChrome(start, this.groups.length,
+      this.headerChromeHeight(), (index: number): number => this.rowBottomVp(index));
     // 两道判据的归属见 util/floatDateGate 的注释：扫不扫 groups 由这里判（数据
     // 在这边），续不续期由日期条自己判（定时器在那边）。
     if (!floatDateNeedsRescan(top, this.floatDateIndex)) {
@@ -4183,9 +4213,16 @@ export struct ChatPage {
   }
 
   // 第 index 行相对 List 顶的下沿（vp）；量不到返回 NaN，调用方按"看得见"处理。
+  //
+  // 高度为 0 也算量不到：还没布局的行 getItemRect 返回**全 0 矩形**
+  // （faqs-arkui-572，同 attemptAnchorRestore 里那条注释），而 0 会被当成
+  // "整行都在标题栏上面"往下跳，日期条就报成了视口下方那一天。
   private rowBottomVp(index: number): number {
     try {
       const rect = this.scroller.getItemRect(index);
+      if (!(rect.height > 0)) {
+        return Number.NaN;
+      }
       return rect.y + rect.height;
     } catch (e) {
       return Number.NaN;
@@ -4204,6 +4241,7 @@ export struct ChatPage {
   private onFloatDateHidden(): void {
     this.listUserScrollActive = false;
     this.floatDateIndex = -1;
+    this.floatDateStartIdx = -1;
   }
 
   private prepareUserJump(): void {
