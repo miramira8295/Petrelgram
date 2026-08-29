@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  isLocalWallpaperFile, localWallpaperFileName, localWallpaperWins
+  appWallpaperActive, appWallpaperFileName, isLocalWallpaperFile,
+  localWallpaperFileName, localWallpaperWins
 } from '../main/ets/util/localWallpaper';
 
 export default function localWallpaperTest() {
@@ -42,6 +43,18 @@ export default function localWallpaperTest() {
 
     it('no_local_picture_means_no_override', 0, (): void => {
       expect(localWallpaperWins(false, '')).assertFalse();
+    });
+
+    // APP 壁纸和聊天壁纸互不覆盖。
+    it('app_and_chat_wallpapers_never_collide', 0, (): void => {
+      expect(appWallpaperFileName(true, 5) === localWallpaperFileName(true, 5)).assertFalse();
+    });
+
+    // 分栏下不提供这个功能：右栏被聊天壁纸盖住，只能从左栏窄缝里露出来。
+    it('split_layout_disables_the_app_wallpaper', 0, (): void => {
+      expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', false)).assertTrue();
+      expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', true)).assertFalse();
+      expect(appWallpaperActive('', false)).assertFalse();
     });
   });
 }

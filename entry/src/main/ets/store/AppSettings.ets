@@ -229,6 +229,16 @@ export const KEY_LOCAL_BG_DARK: string = 'localChatBgDark';
 // 键来知道"该重算背景了"——和 MATERIAL_EPOCH / appDark 是同一套做法。
 export const KEY_LOCAL_BG_EPOCH: string = 'localChatBgEpoch';
 
+// APP 背景图（主界面壁纸）。和聊天壁纸是两件事：这张铺在会话列表/联系人/设置
+// 首页背后，**不进设置子页和登录页**——那些地方是密集的列表和表单，铺图只会让
+// 它们更难读。深浅色各一张，理由同 util/localWallpaper。
+export const KEY_APP_BG_LIGHT: string = 'appBgLight';
+export const KEY_APP_BG_DARK: string = 'appBgDark';
+// 这张图自己的模糊与暗化，和聊天壁纸那两根滑杆各管各的：两张图的观感诉求不同，
+// 共用一个值会让调一边毁另一边。
+export const KEY_APP_BG_BLUR: string = 'appBgBlur';
+export const KEY_APP_BG_DIM: string = 'appBgDim';
+
 export function bumpLocalWallpaperEpoch(): void {
   AppStorage.setOrCreate(KEY_LOCAL_BG_EPOCH,
     (AppStorage.get<number>(KEY_LOCAL_BG_EPOCH) ?? 0) + 1);
@@ -241,6 +251,8 @@ const DATA_STRING_KEYS: string[] = [
   KEY_CHAT_BG_SNAP_LIGHT,
   KEY_LOCAL_BG_LIGHT,
   KEY_LOCAL_BG_DARK,
+  KEY_APP_BG_LIGHT,
+  KEY_APP_BG_DARK,
   KEY_WEBPUSH_ENDPOINT,
   KEY_WEBPUSH_P256DH,
   KEY_WEBPUSH_AUTH,

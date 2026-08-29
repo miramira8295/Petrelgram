@@ -33,3 +33,19 @@ export function isLocalWallpaperFile(name: string): boolean {
 export function localWallpaperWins(hasChatSpecific: boolean, localPath: string): boolean {
   return !hasChatSpecific && localPath !== '';
 }
+
+// APP 背景图（主界面壁纸）的文件名。与聊天壁纸分开命名，两者互不覆盖。
+export function appWallpaperFileName(forDark: boolean, stamp: number): string {
+  const safe: number = Number.isFinite(stamp) && stamp > 0 ? Math.floor(stamp) : 0;
+  return `app_bg_${forDark ? 'dark' : 'light'}_${safe}.jpg`;
+}
+
+// APP 壁纸此刻生不生效。
+//
+// path：设置里存的沙箱路径（'' = 没设）。
+// split：是不是分栏（平板/折叠屏展开）。**分栏下不提供这个功能**——右栏被聊天
+// 壁纸盖住，这张图只能从左栏那一条窄缝里露出来，既不好看也没意义；设置项在分栏
+// 下也一并藏掉，免得给一个看不出效果的开关。
+export function appWallpaperActive(path: string, split: boolean): boolean {
+  return path !== '' && !split;
+}
