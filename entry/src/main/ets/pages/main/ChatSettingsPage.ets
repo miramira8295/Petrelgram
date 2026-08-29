@@ -12,7 +12,7 @@ import {
 } from '../../store/ChatBackgroundStore';
 import { appWallpaperFileName } from '../../util/localWallpaper';
 import {
-  SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT,
+  SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
   slotIsApp, slotIsDark, wallpaperSlotKeys
 } from '../../util/wallpaperSlot';
 import { isSplitLayout } from '../../util/splitMetrics';
@@ -447,9 +447,15 @@ export struct ChatSettingsPage {
   @StorageProp('screenWidthVp') private appBgScreenW: number = 360;
   @StorageProp('screenHeightVp') private appBgScreenH: number = 780;
   @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
-  @StorageProp(KEY_APP_BG_STATE_LIGHT) private appBgLight: string = '';
-  @StorageProp(KEY_APP_BG_STATE_DARK) private appBgDark: string = '';
+  @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('rebuildSlotStates') private appBgLight: string = '';
+  @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('rebuildSlotStates') private appBgDark: string = '';
   private pickingAppBg: boolean = false;
+
+  aboutToAppear(): void {
+    // 四个槽位的壁纸状态算一次存下来，别在 build() 的热路径上反复解析——
+    // 见 slotStates 那段说明。
+    this.rebuildSlotStates();
+  }
   // 非空 = 正在放大看这个槽位的壁纸。
   @State enlargedSlot: string = '';
 
@@ -534,16 +540,39 @@ export struct ChatSettingsPage {
     }
   }
 
-  // 某个槽位当前壁纸的状态（null = 没设）。
+  // 四个槽位的壁纸状态，**算一次存下来**。
   //
-  // APP 槽位读本机存的序列化状态；聊天槽位没有本机副本——它由 TDLib 下发——所以
-  // 读账号默认背景的快照，那正是"聊天浅色/深色"这两个槽位实际画出来的东西。
-  private slotState(slot: string): ChatBackgroundState | null {
+  // 【这里曾经每帧解析一遍】原来 slotState() 直接
+  // parseSnapshot(AppStorage.get(...))，而缩略图的四个取值函数
+  // （有没有壁纸 / 图片路径 / 渐变角度 / 渐变色标）各调它一次——四行就是十几次
+  // 字符串解析，全在 build() 的热路径上。用户报"滑到壁纸那里特别卡"，就是它。
+  //
+  // 现在进页面时算一次；APP 那两个槽位的状态键挂了 @Watch，用户改完壁纸回来会
+  // 重算。聊天槽位读的是账号默认背景的快照，本来就是进程级缓存的。
+  @State private slotStates: Map<string, ChatBackgroundState | null> =
+    new Map<string, ChatBackgroundState | null>();
+
+  private rebuildSlotStates(): void {
+    const next: Map<string, ChatBackgroundState | null> =
+      new Map<string, ChatBackgroundState | null>();
+    for (const slot of WALLPAPER_SLOTS) {
+      next.set(slot, this.readSlotState(slot));
+    }
+    this.slotStates = next;
+  }
+
+  private readSlotState(slot: string): ChatBackgroundState | null {
     if (slotIsApp(slot)) {
       return parseSnapshot(AppStorage.get<string>(wallpaperSlotKeys(slot).state) ?? '');
     }
+    // 聊天槽位没有本机副本——壁纸由 TDLib 下发——所以读账号默认背景的快照，
+    // 那正是这两个槽位实际画出来的东西。
     const snap: ChatBackgroundState = defaultChatBackgroundSnapshot(slotIsDark(slot));
     return (snap.colors.length > 0 || snap.path !== '') ? snap : null;
+  }
+
+  private slotState(slot: string): ChatBackgroundState | null {
+    return this.slotStates.get(slot) ?? null;
   }
 
   private slotHasWallpaper(slot: string): boolean {
@@ -590,15 +619,25 @@ export struct ChatSettingsPage {
   @Builder
   wallpaperCanvas(slot: string) {
     Stack() {
+      // 渐变**先打底**，图案/整图叠在上面——和 ChatBackdrop 的层次一致。
+      // 原来写成二选一：图案壁纸只画出一片淡色的填充（看不出是什么），
+      // 或者把一张平铺的图案贴片按 Cover 拉满（更看不出）。
+      Column().width('100%').height('100%')
+        .linearGradient({ angle: this.slotAngle(slot), colors: this.slotGradient(slot) });
       if (this.slotImagePath(slot) !== '') {
         Image(`file://${this.slotImagePath(slot)}`).draggable(false)
-          .width('100%').height('100%').objectFit(ImageFit.Cover);
-      } else {
-        Column().width('100%').height('100%')
-          .linearGradient({ angle: this.slotAngle(slot), colors: this.slotGradient(slot) });
+          .width('100%').height('100%')
+          // 图案是平铺的小图，Cover 会把一个花纹放大到糊；整图壁纸才该 Cover。
+          .objectFit(this.slotIsPattern(slot) ? ImageFit.None : ImageFit.Cover)
+          .opacity(this.slotIsPattern(slot) ? 0.9 : 1);
       }
     }
     .width('100%').height('100%');
+  }
+
+  private slotIsPattern(slot: string): boolean {
+    const st: ChatBackgroundState | null = this.slotState(slot);
+    return st !== null && st.isPattern;
   }
 
   @Builder
