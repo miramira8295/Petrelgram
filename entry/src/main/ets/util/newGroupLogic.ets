@@ -1,3 +1,4 @@
+import { requestOutcomeUncertain } from './tdRequestTimeout';
 import { TdObject } from '../tdkit/TdTypes';
 import { str } from './strings';
 
@@ -41,7 +42,7 @@ export function newGroupCreationOutcomeUncertain(rawMessage: string): boolean {
   // TdClient stops waiting after its local timeout, but TDLib may still have
   // accepted the mutating request. Retrying Create in that state can produce
   // a duplicate group.
-  return rawMessage.toLowerCase().indexOf('request timeout') >= 0;
+  return requestOutcomeUncertain(rawMessage);
 }
 
 export function newGroupCreationErrorText(rawMessage: string): string {

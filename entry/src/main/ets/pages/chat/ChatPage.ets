@@ -218,6 +218,7 @@ import {
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
+import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
   PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger
@@ -5814,6 +5815,13 @@ export struct ChatPage {
     }).catch((e: TdError) => {
       this.botCallbackPending.delete(key);
       logE(`ChatPage.getCallbackQueryAnswer failed: ${e.message}`);
+      // 客户端超时不等于操作失败（issue #178）：按钮已经送到机器人那边，机器人
+      // 多半也已经把消息编辑好了——频道搜索里翻页/换链接就是这么生效的——只是
+      // answerCallbackQuery 的回执没在 15s 内回来。这时弹「操作失败，请重试」
+      // 既是假的，又引诱用户再按一次，那才会真的翻两页。判据见 util/tdRequestTimeout。
+      if (requestOutcomeUncertain(e.message)) {
+        return;
+      }
       promptAction.showToast({
         message: suffix === 'game' ? $r('app.string.cp_game_cannot_open') : $r('app.string.action_failed_retry'),
         duration: 1800

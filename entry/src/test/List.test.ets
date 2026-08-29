@@ -170,6 +170,7 @@ import anchorRestoreTest from './AnchorRestore.test';
 import floatDateGateTest from './FloatDateGate.test';
 import nextFrameQueueTest from './NextFrameQueue.test';
 import mediaGridTest from './MediaGrid.test';
+import tdRequestTimeoutTest from './TdRequestTimeout.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -345,4 +346,5 @@ export default function testsuite() {
   floatDateGateTest();
   nextFrameQueueTest();
   mediaGridTest();
+  tdRequestTimeoutTest();
 }
