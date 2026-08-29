@@ -11631,6 +11631,10 @@
     {
       "name": "diag_list_cached_sub",
       "value": "Débogage uniquement, valeur par défaut 6 ; s'applique immédiatement au chat ouvert"
+    },
+    {
+      "name": "cp_live_photo",
+      "value": "LIVE"
     }
   ]
 }

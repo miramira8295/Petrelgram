@@ -107,6 +107,26 @@ export struct StreamingVideoPlayer {
   private pausedByFocusLoss: boolean = false;
   @Watch('onMutedChanged') @Prop muted: boolean = false;
   @Prop startPositionMs: number = 0;
+  // ── 实况照片模式 ──────────────────────────────────────────────────────
+  // 查看器把 PG 发的实况（见 util/livePhoto）渲染成 iOS 那样：进来自动播一遍，
+  // 左下角一枚「实况」胶囊可以随时暂停/重播。标准控制栏那时是关掉的，所以需要
+  // 这条外部通道。
+  //
+  // 用**计数**而不是布尔：「想暂停」这个意图和播放器的实际状态会因为音频焦点
+  // 被抢、切后台自动暂停而不同步，布尔会两边打架（外部还写着 false，内部其实
+  // 已经停了，再拨就没反应）。计数是命令语义——值一变就切换一次，不关心当前状态。
+  @Prop @Watch('onLiveToggleRequested') liveToggleSeq: number = 0;
+  // 播放状态回报，让胶囊的图标跟真实状态一致。播完时 onCompletion 会把
+  // isPlaying 置 false，因此"播完自动翻回可重播"也走这一条，不用另接。
+  onPlayStateChanged: (playing: boolean) => void = (): void => {};
+
+  private onLiveToggleRequested(): void {
+    // 初值 0 不算一次请求：@Watch 不在初始赋值时触发，但组件复用/重建时可能
+    // 带着非 0 的初值进来，这里挡一道。
+    if (this.liveToggleSeq > 0) {
+      this.togglePlay();
+    }
+  }
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   onBackgroundTap: () => void = (): void => {};
@@ -233,6 +253,7 @@ export struct StreamingVideoPlayer {
   // 内嵌模式（列表内播放位）从不申请保活——划走气泡就该正常息屏/挂起，
   // 不能被一段列表预览挡住。
   onPlayingChanged(): void {
+    this.onPlayStateChanged(this.isPlaying);
     this.syncAudioFocus();
     if (this.embedded) {
       mediaPlaybackKeepAlive.release('video');

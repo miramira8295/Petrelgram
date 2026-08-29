@@ -11631,6 +11631,10 @@
     {
       "name": "diag_list_cached_sub",
       "value": "केवल डीबग, डिफ़ॉल्ट 6; खुली चैट पर तुरंत लागू होता है"
+    },
+    {
+      "name": "cp_live_photo",
+      "value": "LIVE"
     }
   ]
 }

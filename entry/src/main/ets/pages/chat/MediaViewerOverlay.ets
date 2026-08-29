@@ -9,6 +9,7 @@ import { MessageStore } from '../../store/MessageStore';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { formatTime } from '../../util/formatTime';
 import { StreamingVideoPlayer } from './StreamingVideoPlayer';
+import { isLivePhotoVideo } from '../../util/livePhoto';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { thumbPathFor } from '../../util/mediaThumbChannel';
 import {
@@ -699,6 +700,30 @@ export struct MediaViewerOverlay {
     return e !== null ? e.videoPath : '';
   }
 
+  // ── 实况照片（util/livePhoto）───────────────────────────────────────────
+  // PG 发出去的实况在协议上就是一段普通有声视频，只有文件名带标记。这里认出来
+  // 之后按 iOS 的样子渲染：进来自动播一遍（播放器 onPrepared 本来就 start），
+  // 标准控制栏关掉，左下角换成一枚可暂停的「实况」胶囊。
+  //
+  // 别的客户端发的视频一概不走这条路——判定要文件名标记 + 时长 ≤10s 同时成立。
+  @Local private liveToggleSeq: number = 0;
+  // 胶囊图标跟随播放器的真实状态，由 onPlayStateChanged 回报。初值 true：进来
+  // 就是自动播的。
+  @Local private livePlaying: boolean = true;
+
+  private isLiveEntry(id: number): boolean {
+    const idx: number = this.messages.findIndex((m: MessageEntry) => m.id === id);
+    if (idx < 0) {
+      return false;
+    }
+    const e: MessageEntry = this.messages[idx];
+    return this.isVideoEntry(e) && isLivePhotoVideo(e.videoFileName, e.videoDuration);
+  }
+
+  private isLiveNow(): boolean {
+    return this.isLiveEntry(this.viewerMsgId);
+  }
+
   private videoFileId(): number {
     const e = this.entry();
     return e !== null ? e.videoFileId : 0;
@@ -813,6 +838,33 @@ export struct MediaViewerOverlay {
   // Fullscreen viewer content: a Swiper over the album's members, so pages
   // follow the finger and slide continuously to the neighbor. Only the CURRENT
   // page mounts a video player; inactive video pages show their thumbnail.
+  // 左下角的「实况」胶囊。标准元素：同心圆图标（sys.symbol.livephoto，暂停时
+  // 用 livephoto_slash 的斜杠版）+ 文案，点一下切换播放/暂停，播完点它重播。
+  //
+  // 位置选在标准控制栏原本占的那条带子上（底部 40vp 左右）：实况把控制栏关掉了，
+  // 那块地方空着，而缩略图带在更上面的 110vp，两者不会打架。
+  @Builder
+  liveCapsule() {
+    Column() {
+      Row({ space: 5 }) {
+        SymbolGlyph($r(this.livePlaying ? 'sys.symbol.livephoto' : 'sys.symbol.livephoto_slash'))
+          .fontSize(17).fontColor([Color.White]);
+        Text($r('app.string.cp_live_photo'))
+          .fontSize(13).fontColor(Color.White).fontWeight(FontWeight.Medium);
+      }
+      .height(30)
+      .padding({ left: 10, right: 12 })
+      .backgroundColor('#66000000')
+      .borderRadius(15)
+      .onClick((): void => { this.liveToggleSeq++; });
+    }
+    .width('100%').height('100%')
+    .justifyContent(FlexAlign.End)
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 16, bottom: 44 })
+    .hitTestBehavior(HitTestMode.Transparent);
+  }
+
   @Builder
   viewerContent() {
     Swiper(this.swiperCtrl) {
@@ -828,7 +880,10 @@ export struct MediaViewerOverlay {
                 videoHeight: this.videoHeight(),
                 localPath: this.videoLocalPath(),
                 posterPath: this.siblingPath(id),
-                showControls: this.chromeVisible,
+                // 实况走自己的胶囊，标准控制栏（进度条/倍速）让位。
+                showControls: this.chromeVisible && !this.isLiveEntry(id),
+                liveToggleSeq: this.liveToggleSeq,
+                onPlayStateChanged: (playing: boolean): void => { this.livePlaying = playing; },
                 landscape: this.videoLandscape,
                 // 全屏就该有声音，不受气泡自动播放静音开关影响。
                 muted: false,
@@ -1185,6 +1240,9 @@ export struct MediaViewerOverlay {
       }
       if (this.chromeVisible) {
         this.chromeLayer();
+      }
+      if (this.chromeVisible && this.isLiveNow()) {
+        this.liveCapsule();
       }
       if (this.chromeVisible && this.siblingIds().length > 1) {
         Column() {

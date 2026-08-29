@@ -11631,6 +11631,10 @@
     {
       "name": "diag_list_cached_sub",
       "value": "Solo debug, predefinito 6; si applica subito alla chat aperta"
+    },
+    {
+      "name": "cp_live_photo",
+      "value": "LIVE"
     }
   ]
 }

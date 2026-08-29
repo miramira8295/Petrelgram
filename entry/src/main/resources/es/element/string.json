@@ -11631,6 +11631,10 @@
     {
       "name": "diag_list_cached_sub",
       "value": "Solo depuración, valor predeterminado 6; se aplica de inmediato al chat abierto"
+    },
+    {
+      "name": "cp_live_photo",
+      "value": "LIVE"
     }
   ]
 }

@@ -11631,6 +11631,10 @@
     {
       "name": "diag_list_cached_sub",
       "value": "Hanya debug, bawaan 6; langsung berlaku pada obrolan yang terbuka"
+    },
+    {
+      "name": "cp_live_photo",
+      "value": "LIVE"
     }
   ]
 }

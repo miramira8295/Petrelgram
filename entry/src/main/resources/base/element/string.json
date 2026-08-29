@@ -11635,6 +11635,10 @@
     {
       "name": "diag_list_cached_sub",
       "value": "调试项，默认 6；切换后当前会话页立即生效"
+    },
+    {
+      "name": "cp_live_photo",
+      "value": "实况"
     }
   ]
 }
