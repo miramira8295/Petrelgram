@@ -220,6 +220,7 @@ import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
 import { chromeSitsOnLight } from '../../util/chatChrome';
+import { exportLivePhotoMotion } from '../../util/movingPhotoPick';
 import {
   BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_BG_BLUR, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK,
   KEY_CHAT_DIM, KEY_LOCAL_BG_EPOCH
@@ -248,6 +249,12 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 // ⚠️ 临时（P6 标定）：cachedCount 档位调试项。标定结束后按
 // util/debugListPerf.ets 末尾的清单删除。
 import { KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
+
+// collectPickedMedia 的返回：可发送项 + 读不出来被跳过的张数。
+interface PickedMedia {
+  items: MediaSendItem[];
+  skipped: number;
+}
 
 // Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
 // page instead of scrolling row by row through the loaded history.
@@ -7287,39 +7294,63 @@ export struct ChatPage {
       if (res.photoUris.length === 0 || this.store === null) {
         return;
       }
-      const items: MediaSendItem[] = [];
-      let skipped = 0;
-      for (const uri of res.photoUris) {
-        const path = this.copyUriToCache(uri);
-        if (path === '') {
-          skipped++;
-          continue;
-        }
-        items.push({ path, isVideo: isVideoPath(path) });
-      }
-      if (items.length === 0) {
-        promptAction.showToast({ message: $r('app.string.cp_media_read_failed'), duration: 1800 });
-        return;
-      }
-      if (skipped > 0) {
-        promptAction.showToast({ message: plural('cp_media_skipped', skipped, skipped), duration: 1800 });
-      }
-      // 不直接发：先攒到输入框上方那一条，等用户配完文字再一起发。
-      // 追加而不是替换——用户分几次从不同相册挑图是常见操作。超出九张
-      // （Telegram 相册上限）时截断并**明确告知截了几张**，不静默丢弃。
-      const merged: PendingMediaAppend = appendPendingMedia(this.pendingMedia, items);
-      this.pendingMedia = merged.items;
-      if (merged.dropped > 0) {
-        promptAction.showToast({
-          message: str('cp_pending_media_full', PENDING_MEDIA_MAX, merged.dropped),
-          duration: 2200
-        });
-      }
+      // 实况照片要先把动态部分导出来（异步），所以收集这一步整体是异步的。
+      this.collectPickedMedia(res.photoUris).then((picked: PickedMedia): void => {
+        this.applyPickedMedia(picked.items, picked.skipped);
+      });
     }).catch((e: Object) => {
       this.mediaPickerOpen = false;
       logE(`ChatPage.pickMedia failed: ${JSON.stringify(e)}`);
       promptAction.showToast({ message: $r('app.string.cp_cannot_open_picker'), duration: 1800 });
     });
+  }
+
+  // 选中的每一项 → 可发送项。实况照片发它的**动态部分**（带音轨的 mp4，文件名
+  // 带标记）：别的客户端收到就是一段普通有声视频、照常播放，PG 靠文件名把它认回
+  // 实况。协议约定见 util/livePhoto，导出见 util/movingPhotoPick。
+  //
+  // 逐个 await 而不是并发：requestMovingPhoto 背后是媒体库的解码与落盘，一次挑
+  // 九张全并发只会互相抢资源；而一次选择里通常只有一两张是实况。
+  private async collectPickedMedia(uris: string[]): Promise<PickedMedia> {
+    const items: MediaSendItem[] = [];
+    let skipped: number = 0;
+    const ctx = getContext(this) as common.UIAbilityContext;
+    for (const uri of uris) {
+      const motion: string = await exportLivePhotoMotion(
+        ctx, uri, ctx.filesDir, `${Date.now()}_${++this.mediaCopySeq}`);
+      if (motion !== '') {
+        items.push({ path: motion, isVideo: true });
+        continue;
+      }
+      const path: string = this.copyUriToCache(uri);
+      if (path === '') {
+        skipped++;
+        continue;
+      }
+      items.push({ path, isVideo: isVideoPath(path) });
+    }
+    return { items, skipped };
+  }
+
+  private applyPickedMedia(items: MediaSendItem[], skipped: number): void {
+    if (items.length === 0) {
+      promptAction.showToast({ message: $r('app.string.cp_media_read_failed'), duration: 1800 });
+      return;
+    }
+    if (skipped > 0) {
+      promptAction.showToast({ message: plural('cp_media_skipped', skipped, skipped), duration: 1800 });
+    }
+    // 不直接发：先攒到输入框上方那一条，等用户配完文字再一起发。
+    // 追加而不是替换——用户分几次从不同相册挑图是常见操作。超出九张
+    // （Telegram 相册上限）时截断并**明确告知截了几张**，不静默丢弃。
+    const merged: PendingMediaAppend = appendPendingMedia(this.pendingMedia, items);
+    this.pendingMedia = merged.items;
+    if (merged.dropped > 0) {
+      promptAction.showToast({
+        message: str('cp_pending_media_full', PENDING_MEDIA_MAX, merged.dropped),
+        duration: 2200
+      });
+    }
   }
 
   // --- voice recording (mic button) ---
