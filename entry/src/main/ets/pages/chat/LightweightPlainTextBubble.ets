@@ -41,6 +41,8 @@ import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { logW } from '../../util/log';
+// ⚠️ 临时探针，验完即删——见 util/avatarReuseProbe 的删除清单。
+import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
 import { reuseParam } from '../../util/reuseParams';
 import {
@@ -197,9 +199,13 @@ struct LightweightSenderAvatar {
       reuseParam(params, 'initialPath') as string | undefined;
     // 换了人才清 path（issue #137），理由见 MessageBubble.LiveSenderAvatar。
     const nextKey: string = senderChannelKey(senderId ?? this.senderId, senderIsUser ?? this.senderIsUser);
-    if (nextKey !== this.recycledKey) {
+    const keptPath: boolean = nextKey === this.recycledKey;
+    if (!keptPath) {
       this.path = '';
     }
+    // ⚠️ 临时探针：头像那条修法本身不打日志，用户报「还是闪」时无从判断
+    // 是它还是视口位移。判读与删除清单见 util/avatarReuseProbe。
+    probeAvatarReuse('plain', this.recycledKey, nextKey, keptPath, senderId !== undefined);
     this.recycledKey = '';
     if (senderId !== undefined && senderIsUser !== undefined) {
       this.attach(senderId, senderIsUser, initialPath ?? '');

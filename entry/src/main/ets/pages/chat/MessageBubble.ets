@@ -77,6 +77,8 @@ import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
+// ⚠️ 临时探针，验完即删——见 util/avatarReuseProbe 的删除清单。
+import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
 import { reuseParam } from '../../util/reuseParams';
 import {
@@ -222,9 +224,13 @@ struct LiveSenderAvatar {
     // onSenderChanged 会按新 key 重挂并改写 path，赶在那一帧之前，不会画出
     // 别人的头像；没换人则什么都不用动，正是要保住的那一帧。
     const nextKey: string = senderChannelKey(nextId ?? this.senderId, nextIsUser ?? this.senderIsUser);
-    if (nextKey !== this.recycledAvatarKey) {
+    const keptPath: boolean = nextKey === this.recycledAvatarKey;
+    if (!keptPath) {
       this.path = '';
     }
+    // ⚠️ 临时探针：头像那条修法本身不打日志，用户报「还是闪」时无从判断
+    // 是它还是视口位移。判读与删除清单见 util/avatarReuseProbe。
+    probeAvatarReuse('bubble', this.recycledAvatarKey, nextKey, keptPath, nextId !== undefined);
     this.recycledAvatarKey = '';
     if (nextId !== undefined && nextIsUser !== undefined) {
       this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');

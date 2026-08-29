@@ -331,6 +331,11 @@ const JUMP_LANDING_GRACE_MS: number = 900;
 // 【结论落地后】若坐实：正确修法不是留着这个常量，而是把 `!this.atBottom` 换成
 // 一条真正表达「这次追加是用户主动向下翻页的结果」的判据（见交付说明）。
 const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = false;
+
+// ⚠️ 临时探针 [AnchorAudit]：尘埃落定之后再量一次锚点，回答「用户最后停在哪」。
+// 250ms 是折中——够长，等得到布局与图片解码；又够短，多数情况下用户还没来得及
+// 再滑一把（滑了就靠 offDelta 认出来）。删除清单见 auditAnchorRestore 的注释。
+const ANCHOR_AUDIT_DELAY_MS: number = 250;
 // 锚点补偿：量不到锚点行时下一帧再量，最多几次、每次隔多久（见 restoreScrollAnchor）。
 
 // Reuse-pool granularity for ReusableMessageBubble's reuseId. Provisional —
@@ -4704,6 +4709,7 @@ export struct ChatPage {
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
         logW(`[AnchorRestore] give-up attempt=${attempt} idx=${targetIndex}` +
           ` oldY=${Math.round(itemY)} w=${Math.round(rect.width)} h=${Math.round(rect.height)}`);
+        this.auditAnchorRestore(seq, targetIndex, itemY, 'gaveup', 0);
         return;
       }
       // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。
@@ -4721,7 +4727,52 @@ export struct ChatPage {
       if (plan.dy !== 0) {
         this.scroller.scrollBy(0, plan.dy);
       }
+      this.auditAnchorRestore(seq, targetIndex, itemY,
+        plan.dy !== 0 ? 'applied' : 'noop', plan.dy);
     }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
+  }
+
+  // ⚠️ **临时探针，验完即删**（用户 2026-08-29：「preview5 好像也闪或者是抖了几下」）。
+  //
+  // [AnchorRestore] 只记了"补的那一刻发生了什么"，没记**用户最后停在哪**：
+  //   · dy≠0    内容真的跳了，我们在一两帧之后把它拽回来——观感就是闪一下；
+  //   · gaveup  量不到、一点没补，跳了就留在那儿；
+  //   · dy=0    框架自己守住了，什么都没发生。
+  // 三种在日志里长得差不多，但屏幕上完全不同。这条在尘埃落定之后再量一次，
+  // 直接回答"最终偏了多少"。**只诊断，不滚动。**
+  //
+  // 判读：residual 只有在 offDelta≈0 时才可信——用户自己滑动同样会改变 rect.y，
+  // 两者混在一起。所以先看 offDelta，再看 residual：
+  //   · offDelta≈0 且 residual≈0        → 这次是干净的，用户没被挪动；
+  //   · offDelta≈0 且 residual 明显不为 0 → 我们把用户留在了错的位置，这就是"抖"；
+  //   · offDelta 很大                    → 用户自己在滑，这条样本作废。
+  //
+  // 删除清单：本方法、ANCHOR_AUDIT_DELAY_MS、以及 attemptAnchorRestore 里那两处调用。
+  private auditAnchorRestore(seq: number, targetIndex: number, itemY: number,
+    outcome: string, applied: number): void {
+    const offAtRestore: number = this.currentAnchorOffset();
+    setTimeout((): void => {
+      // 期间又落了一页分页 ⇒ 这个下标早已易主，这条样本作废。
+      if (seq !== this.prependRestoreSeq) {
+        return;
+      }
+      let rect: AnchorRectSnapshot = INVALID_ANCHOR_RECT;
+      try {
+        const measured = this.scroller.getItemRect(targetIndex);
+        rect = { width: measured.width, height: measured.height, y: measured.y };
+      } catch (e) {
+        rect = INVALID_ANCHOR_RECT;
+      }
+      const ok: boolean = rect.width > 0 && rect.height > 0;
+      const nowOff: number = this.currentAnchorOffset();
+      const offDelta: number = Number.isNaN(offAtRestore) || Number.isNaN(nowOff)
+        ? Number.NaN : nowOff - offAtRestore;
+      const settled: string = ok ? `${Math.round(rect.y)}` : 'n/a';
+      const residual: string = ok ? `${Math.round(rect.y - itemY)}` : 'n/a';
+      logW(`[AnchorAudit] ${outcome} idx=${targetIndex} applied=${Math.round(applied)}` +
+        ` oldY=${Math.round(itemY)} settledY=${settled} residual=${residual}` +
+        ` offDelta=${Math.round(offDelta)} measurable=${ok}`);
+    }, ANCHOR_AUDIT_DELAY_MS);
   }
 
   private resetHeaderState(cached: ChatEntry | undefined): void {
