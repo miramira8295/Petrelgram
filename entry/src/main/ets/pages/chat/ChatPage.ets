@@ -330,8 +330,6 @@ const JUMP_LANDING_GRACE_MS: number = 900;
 // 一条真正表达「这次追加是用户主动向下翻页的结果」的判据（见交付说明）。
 const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = false;
 // 锚点补偿：量不到锚点行时下一帧再量，最多几次、每次隔多久（见 restoreScrollAnchor）。
-const ANCHOR_RESTORE_ATTEMPTS: number = 3;
-const ANCHOR_RESTORE_RETRY_MS: number = 16;
 
 // Reuse-pool granularity for ReusableMessageBubble's reuseId. Provisional —
 // to be measured and tuned in P2 Task 3; 'medium' is a placeholder, not a
@@ -4669,7 +4667,8 @@ export struct ChatPage {
   // getItemRect 拿到全 0，每次都走了 scrollToIndex+scrollBy 兜底；它按 List 顶端对齐，
   // 没算 contentStartOffset 那段顶栏留白，把视口往下推了一截（用户：18:00 → 18:05）。
   // 而框架（maintainVisibleContentPosition / stackFromEnd）其实已经把位置保住了。
-  // 现在量不到就下一帧再量，最多 ANCHOR_RESTORE_ATTEMPTS 次；量到且没动就什么都不做。
+  // 现在**只量一次**：量到就补差值（真机上这个差值一直是 0，等于什么都不做），
+  // 量不到就直接放弃——依据见 attemptAnchorRestore 里那段真机数据。
   private restoreScrollAnchor(targetIndex: number, itemY: number): void {
     const seq: number = ++this.prependRestoreSeq;
     this.attemptAnchorRestore(seq, targetIndex, itemY, 0);
@@ -4690,9 +4689,24 @@ export struct ChatPage {
         rect = INVALID_ANCHOR_RECT;
       }
       const plan: AnchorRestorePlan = planAnchorRestore(rect, itemY);
-      if (plan.mode !== ANCHOR_RESTORE_DELTA && attempt + 1 < ANCHOR_RESTORE_ATTEMPTS) {
-        logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex} oldY=${Math.round(itemY)}`);
-        this.attemptAnchorRestore(seq, targetIndex, itemY, attempt + 1);
+      // 量不到就**放弃**，不再重试、也不走 scrollToIndex 兜底。
+      //
+      // 【依据是真机数据，不是推理】2026-08-29 PLA-AL10 / 7.0.0.105 上一次会话
+      // （preview.2）里 90 次复位：
+      //   · attempt=0 成功量到的 83 次，**dy 全是 0** —— 锚点行根本没动，
+      //     maintainVisibleContentPosition 自己就把位置守住了，这次复位是空转；
+      //   · 7 次非零 dy（1/10/11/53/62/-24）**无一例外出现在 attempt=1 或 2**，
+      //     也就是首次量不到、16ms 后再量的那一支。那时布局早已翻篇，量到的
+      //     差值不再是「插入造成的位移」，而是这 16ms 里发生的一切；
+      //   · 2 次三连失败走 fallback，`scrollToIndex(START) + scrollBy(85/53)`
+      //     ——**那才是真正把视口挪走的动作**。
+      // 结论：能量到时它没用，量不到时它有害。所以只保留 attempt=0 这一次尝试。
+      //
+      // planAnchorRestore 的 fallback 分支保留不删：判据本身有单测钉着，改判据是
+      // 另一件事；这里只是不再按它去 scrollToIndex。
+      if (plan.mode !== ANCHOR_RESTORE_DELTA) {
+        logW(`[AnchorRestore] give-up attempt=${attempt} idx=${targetIndex}` +
+          ` oldY=${Math.round(itemY)} w=${Math.round(rect.width)} h=${Math.round(rect.height)}`);
         return;
       }
       // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。
@@ -4707,13 +4721,10 @@ export struct ChatPage {
         ` dy=${Math.round(plan.dy)}` +
         ` capOff=${Math.round(this.anchorCaptureOffset)} nowOff=${Math.round(nowOff)}` +
         ` dOff=${Math.round(dOff)}`);
-      if (plan.mode !== ANCHOR_RESTORE_DELTA) {
-        this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START);
-      }
       if (plan.dy !== 0) {
         this.scroller.scrollBy(0, plan.dy);
       }
-    }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
+    }, 0);
   }
 
   private resetHeaderState(cached: ChatEntry | undefined): void {
