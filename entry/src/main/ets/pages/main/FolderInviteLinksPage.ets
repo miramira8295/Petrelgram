@@ -9,7 +9,7 @@ import {
 } from '../../store/FolderApi';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { AvatarView } from '../chatlist/AvatarView';
 import { plural, str } from '../../util/strings';
@@ -257,7 +257,7 @@ struct FolderInviteLinksPage {
           .fontSize(11).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis });
       }.layoutWeight(1).alignItems(HorizontalAlign.Start).onClick((): void => this.copy(link.inviteLink));
-      Row() { SymbolGlyph($r('sys.symbol.more')).fontSize(19).fontColor([COLOR_TEXT_SECONDARY]); }
+      Row() { SymbolGlyph($r('sys.symbol.more')).fontSize(19).fontColor([COLOR_ICON_SECONDARY]); }
         .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
         .bindMenu(this.linkMenu(link), { systemMaterial: overlayMaterial('menu') });

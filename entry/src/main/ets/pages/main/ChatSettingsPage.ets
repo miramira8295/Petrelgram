@@ -17,7 +17,7 @@ import {
 } from '../../util/appearance';
 import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overlayMaterial';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT, bubbleTextFor
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT, bubbleTextFor
 } from '../../util/theme';
 import {
   AccentColorCard, AccountColorsCard, BubbleColorsCard, BubbleMaterialCard
@@ -447,7 +447,7 @@ export struct ChatSettingsPage {
             SymbolGlyph($r('sys.symbol.picture')).fontSize(20).fontColor([this.accent()]);
             Text($r('app.string.chat_settings_background')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
             SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
           }
           .width('100%').height(52).padding({ left: 16, right: 12 })
           .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)

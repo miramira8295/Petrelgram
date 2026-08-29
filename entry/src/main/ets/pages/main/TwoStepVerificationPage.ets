@@ -6,7 +6,7 @@ import {
 } from '../../store/PrivacyApi';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -355,7 +355,7 @@ struct TwoStepVerificationPage {
 
             Column({ space: 8 }) {
               SymbolGlyph($r(this.hasPassword() ? 'sys.symbol.lock_fill' : 'sys.symbol.lock_open_fill'))
-                .fontSize(48).fontColor([this.hasPassword() ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+                .fontSize(48).fontColor([this.hasPassword() ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
               Text(this.hasPassword() ? $r('app.string.tsv_enabled') : $r('app.string.tsv_protect_sub'))
                 .fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
               Text(this.hasPassword()

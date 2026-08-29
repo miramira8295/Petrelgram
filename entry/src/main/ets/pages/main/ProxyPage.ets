@@ -19,7 +19,7 @@ import {
 import { setString } from '../../store/AppSettings';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
@@ -924,7 +924,7 @@ export struct ProxyPage {
           .fontWeight(FontWeight.Medium).fontColor(this.pingColor(this.currentPingId()));
         Row() {
           SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(15)
-            .fontColor([COLOR_TEXT_SECONDARY]);
+            .fontColor([COLOR_ICON_SECONDARY]);
         }
         .width(32).height(32).borderRadius(16).justifyContent(FlexAlign.Center)
         .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
@@ -1028,7 +1028,7 @@ export struct ProxyPage {
       .onClick((): void => { this.setEnabledProxy(entry); });
 
       Row() {
-        SymbolGlyph($r('sys.symbol.more')).fontSize(20).fontColor([COLOR_TEXT_SECONDARY]);
+        SymbolGlyph($r('sys.symbol.more')).fontSize(20).fontColor([COLOR_ICON_SECONDARY]);
       }
       .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
       .margin({ right: 6 }).enabled(this.actionKey === '')

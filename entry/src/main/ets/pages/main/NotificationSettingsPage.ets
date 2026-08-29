@@ -5,7 +5,7 @@ import {
   getScopeSettings, resetAllNotificationSettings, setScopeSettings
 } from '../../store/NotificationApi';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import {
   KEY_NOTIFY_PRIVATE, KEY_NOTIFY_GROUP, KEY_NOTIFY_CHANNEL, KEY_WEBPUSH_ENABLED, setBoolean
@@ -217,7 +217,7 @@ export struct NotificationSettingsPage {
                   .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
               }.alignItems(HorizontalAlign.Start).layoutWeight(1);
               SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16)
-                .fontColor([COLOR_TEXT_SECONDARY]);
+                .fontColor([COLOR_ICON_SECONDARY]);
             }
             .width('100%').height(58).padding({ left: 14, right: 14 })
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
@@ -233,7 +233,7 @@ export struct NotificationSettingsPage {
                   .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
               }.alignItems(HorizontalAlign.Start).layoutWeight(1);
               SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16)
-                .fontColor([COLOR_TEXT_SECONDARY]);
+                .fontColor([COLOR_ICON_SECONDARY]);
             }
             .width('100%').height(58).padding({ left: 14, right: 14 })
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)

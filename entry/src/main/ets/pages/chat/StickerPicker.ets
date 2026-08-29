@@ -6,7 +6,7 @@ import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_EMOJI, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   addFavoriteSticker, getFavoriteStickers, getRecentStickers, rememberRecentSticker,
   removeFavoriteSticker
@@ -919,7 +919,7 @@ export struct StickerPicker {
   @Builder
   stateMessage(symbol: Resource, title: string, detail: string, retry: boolean) {
     Column({ space: 8 }) {
-      SymbolGlyph(symbol).fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph(symbol).fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
       Text(title).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text(detail).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
       if (retry) {
@@ -999,7 +999,7 @@ export struct StickerPicker {
             .width('100%').height(44);
           } else if (this.allowSearch) {
             Row({ space: 6 }) {
-              SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+              SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
               TextInput({
                 text: this.searchQuery,
                 placeholder: this.stickerType === 'custom_emoji' ? $r('app.string.sp_search_emoji') : $r('app.string.sp_search_stickers')
@@ -1027,7 +1027,7 @@ export struct StickerPicker {
               Column() {
                 SymbolGlyph(this.searchOpen ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
                   .fontSize(17)
-                  .fontColor([this.searchOpen ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+                  .fontColor([this.searchOpen ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
               }
               .width(32).height(32).borderRadius(16).clip(true)
               .justifyContent(FlexAlign.Center)
@@ -1046,7 +1046,7 @@ export struct StickerPicker {
         if (this.contentError !== '' && this.searchQuery.trim() === '') {
           Row({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-              .fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+              .fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
             Text(this.contentError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
             Blank().layoutWeight(1);
             Text($r('app.string.settings_retry')).fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
@@ -1072,7 +1072,7 @@ export struct StickerPicker {
         } else if (this.searchError !== '') {
           Column({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(24)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
             Text(this.searchError).fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
             Text($r('app.string.settings_retry')).fontSize(14).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
               .onClick(() => { this.runStickerSearch(); });
@@ -1081,7 +1081,7 @@ export struct StickerPicker {
         } else if (this.searchQuery.trim() !== '' && this.searchItems.length === 0) {
           Column({ space: 7 }) {
             SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(24)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
             Text($r('app.string.no_results')).fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
             Text($r('app.string.sp_try_another')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
           }

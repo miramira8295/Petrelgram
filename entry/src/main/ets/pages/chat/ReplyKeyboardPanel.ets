@@ -1,5 +1,5 @@
 import { KB_TEXT, KeyboardBtn } from '../../store/ReplyKeyboard';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, botButtonBg } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, botButtonBg } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 
 // 机器人自定义键盘：消息随附的一排排按钮。
@@ -58,7 +58,7 @@ export struct ReplyKeyboardPanel {
                 if (btn.type !== '' && btn.type !== KB_TEXT) {
                   SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
                     .fontSize(12)
-                    .fontColor([btn.style !== '' ? Color.White : COLOR_TEXT_SECONDARY]);
+                    .fontColor([btn.style !== '' ? Color.White : COLOR_ICON_SECONDARY]);
                 }
               }
               .layoutWeight(1)

@@ -12,7 +12,7 @@ import {
 import { PrivacyRuleParams } from './PrivacyRulePage';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -330,7 +330,7 @@ export struct PrivacySecurityPage {
 
   @Builder
   disclosure() {
-    SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+    SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
   }
 
   @Builder
@@ -370,7 +370,7 @@ export struct PrivacySecurityPage {
   @Builder
   errorState() {
     Column({ space: 12 }) {
-      SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(48).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(48).fontColor([COLOR_ICON_SECONDARY]);
       Text($r('app.string.ps_load_failed')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text($r('app.string.ps_no_default_substitute')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
         .textAlign(TextAlign.Center);

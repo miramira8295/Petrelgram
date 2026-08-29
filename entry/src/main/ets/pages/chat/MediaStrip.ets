@@ -1,4 +1,4 @@
-import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { PendingMediaItem } from '../../util/pendingMedia';
 import { plural } from '../../util/strings';
@@ -76,7 +76,7 @@ export struct MediaStrip {
         }
         .alignItems(HorizontalAlign.Start).layoutWeight(1);
         Row() {
-          SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
         }
         .width(32).height(32).borderRadius(16)
         .justifyContent(FlexAlign.Center)

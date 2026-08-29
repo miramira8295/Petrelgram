@@ -1,5 +1,5 @@
 import { InlineResultRow } from '../../store/BotApi';
-import { COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 
 // 输入框上方的两条横向建议带：@机器人 的内联结果、打字触发的贴纸提示。
 //
@@ -35,7 +35,7 @@ export struct InlineResultsBar {
               } else {
                 // 缩略图还没下下来：占位用文档图标，别让整条塌下去。
                 SymbolGlyph($r('sys.symbol.doc')).fontSize(22)
-                  .fontColor([COLOR_TEXT_SECONDARY]);
+                  .fontColor([COLOR_ICON_SECONDARY]);
               }
             }.width(58).height(58)
             .backgroundColor($r('app.color.surface_alt')).borderRadius(8);

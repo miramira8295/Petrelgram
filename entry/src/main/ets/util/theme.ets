@@ -76,6 +76,13 @@ export function applyAccentPrimary(hex: string): void {
 }
 export const COLOR_TEXT_PRIMARY: ResourceColor = $r('app.color.text_primary');
 export const COLOR_TEXT_SECONDARY: ResourceColor = $r('app.color.text_secondary');
+// 次级**图标**专用。和 text_secondary 在浅色下同值，深色下明显更亮：
+// 深色的 text_secondary 是 #7D8B99，在 surface_alt(#2B3A4C) 上只有 3.32:1，
+// 低于 4.5 的门槛；而图标是细笔画，同样对比度下比文字更难辨认，旁边又常年
+// 挨着纯白的主文字，一比就发灰（用户报：深色模式下附件/表情/底栏图标看不清）。
+// #AEBACA 在 page_bg/surface/surface_alt 三种底上是 8.28/6.99/5.89，够看又不至于
+// 抢主文字的白。**浅色模式一个像素都没动**。
+export const COLOR_ICON_SECONDARY: ResourceColor = $r('app.color.icon_secondary');
 export const COLOR_MUTED_BADGE: ResourceColor = $r('app.color.badge_bg');
 export const AVATAR_SIZE: number = 56;
 export const ROW_PAD_H: number = 14;

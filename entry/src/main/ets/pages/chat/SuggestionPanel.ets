@@ -1,6 +1,6 @@
 import { AvatarView } from '../chatlist/AvatarView';
 import { CommandItem, MentionItem } from '../../store/InputSuggestions';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 
 // 输入框上方的补全面板：草稿以 '/' 开头时列机器人命令，末尾是 '@' 时列群成员。
@@ -117,7 +117,7 @@ export struct SuggestionPanel {
               }
               .alignItems(HorizontalAlign.Start).layoutWeight(1);
               SymbolGlyph($r('sys.symbol.paperplane'))
-                .fontSize(14).fontColor([COLOR_TEXT_SECONDARY]);
+                .fontSize(14).fontColor([COLOR_ICON_SECONDARY]);
             }
             .width('100%').padding({ left: 12, right: 12, top: 7, bottom: 7 })
             .alignItems(VerticalAlign.Center)

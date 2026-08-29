@@ -53,6 +53,10 @@
       "value": "#7D8B99"
     },
     {
+      "name": "icon_secondary",
+      "value": "#AEBACA"
+    },
+    {
       "name": "divider",
       "value": "#101921"
     },

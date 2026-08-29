@@ -1,4 +1,4 @@
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
@@ -139,7 +139,7 @@ export struct TopBanners {
       } else {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(15)
-          .fontColor([COLOR_TEXT_SECONDARY]);
+          .fontColor([COLOR_ICON_SECONDARY]);
       }
     }
     .width('100%')

@@ -1,6 +1,6 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   updateChecker, UpdateInfo, STORAGE_UPDATE_AVAILABLE
 } from '../../services/UpdateChecker';
@@ -102,7 +102,7 @@ export struct AboutPage {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1);
       SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+        .fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').height(62)
     .padding({ left: 14, right: 14 })

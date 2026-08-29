@@ -1,4 +1,4 @@
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_NONE,
@@ -63,7 +63,7 @@ export struct SearchHeader {
       if (this.query !== '') {
         Row() {
           SymbolGlyph($r('sys.symbol.xmark_circle'))
-            .fontSize(19).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(19).fontColor([COLOR_ICON_SECONDARY]);
         }
         .width(34).height(34)
         .borderRadius(17)

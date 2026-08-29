@@ -1,5 +1,5 @@
 import {
-  COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -76,7 +76,7 @@ export struct PollComposeSheet {
           this.options = next;
         });
       if (this.options.length > 2) {
-        SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY])
+        SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_ICON_SECONDARY])
           .onClick((): void => {
             this.options = this.options.filter((_: string, i: number): boolean => i !== index);
             if (this.correctIdx === index) {

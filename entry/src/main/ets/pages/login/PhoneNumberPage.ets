@@ -3,7 +3,7 @@ import {
   canReturnToPreviousTdAccount, getAuthService, returnToPreviousTdAccount, waitForConnection
 } from '../../tdkit/Globals';
 import { TdError } from '../../tdkit/TdTypes';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   CountryOption, fallbackCountries, filterCountries, loadCountries
 } from './CountryData';
@@ -165,7 +165,7 @@ export struct PhoneNumberPage {
 
       Row({ space: 9 }) {
         SymbolGlyph($r('sys.symbol.magnifyingglass'))
-          .fontSize(17).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
         TextInput({ text: this.countrySearch, placeholder: $r('app.string.lg_search_country') })
           .fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
           .placeholderColor(COLOR_TEXT_SECONDARY)
@@ -247,7 +247,7 @@ export struct PhoneNumberPage {
           Text(`+${this.selectedCountry.callingCode}`)
             .fontSize(15).fontColor(COLOR_TEXT_SECONDARY);
           SymbolGlyph($r('sys.symbol.chevron_down'))
-            .fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
         }
         .width('100%').height(54)
         .padding({ left: 14, right: 14 })
@@ -313,7 +313,7 @@ export struct PhoneNumberPage {
         // TDLib 的代理接口在鉴权前就可用，ProxyPage 不依赖登录态。
         Row({ space: 8 }) {
           SymbolGlyph($r('sys.symbol.link'))
-            .fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
           Text($r('app.string.px_title'))
             .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
         }

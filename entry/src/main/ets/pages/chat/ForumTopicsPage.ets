@@ -3,7 +3,7 @@ import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { formatPreview } from '../../util/formatPreview';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -379,10 +379,10 @@ export struct ForumTopicsPage {
             .fontColor(COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
           if (row.isPinned) {
-            SymbolGlyph($r('sys.symbol.pin_fill')).fontSize(12).fontColor([COLOR_TEXT_SECONDARY]);
+            SymbolGlyph($r('sys.symbol.pin_fill')).fontSize(12).fontColor([COLOR_ICON_SECONDARY]);
           }
           if (row.isClosed) {
-            SymbolGlyph($r('sys.symbol.lock_fill')).fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+            SymbolGlyph($r('sys.symbol.lock_fill')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
           }
         }
         .width('100%');

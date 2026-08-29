@@ -46,7 +46,7 @@ import { reactionKeyFrom } from '../../util/reactions';
 import {
   animationDurationFor, persistentAnimationDurationFor, scrollActiveNow
 } from '../../util/scrollEffects';
-import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, AVATAR_PALETTE, botButtonBg, accentSoft, bubbleTextFor } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, AVATAR_PALETTE, botButtonBg, accentSoft, bubbleTextFor } from '../../util/theme';
 import { languageDisplayName } from '../../services/TranslationService';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
@@ -1358,7 +1358,7 @@ export struct MessageBubble {
           ? 'sys.symbol.exclamationmark_circle' : 'sys.symbol.checkmark')))
         .fontSize(12)
         .fontColor([this.liveSendState === 'failed' ? Color.Red
-          : (this.liveSendState === 'read' ? this.accent() : COLOR_TEXT_SECONDARY)])
+          : (this.liveSendState === 'read' ? this.accent() : COLOR_ICON_SECONDARY)])
         .visibility(this.liveSendState === 'none' || this.liveSendState === ''
           ? Visibility.None : Visibility.Visible);
       // The second, overlapped check is present in every state and only shown
@@ -1960,7 +1960,7 @@ export struct MessageBubble {
   stickerUnavailable() {
     Column({ space: 6 }) {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-        .fontSize(24).fontColor([COLOR_TEXT_SECONDARY]);
+        .fontSize(24).fontColor([COLOR_ICON_SECONDARY]);
       Text($r('app.string.mb_sticker_unavailable'))
         .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium);
     }
@@ -1979,7 +1979,7 @@ export struct MessageBubble {
         .width(this.stickerW()).height(this.stickerH());
     } else {
       Column({ space: 5 }) {
-        SymbolGlyph($r('sys.symbol.pause')).fontSize(21).fontColor([COLOR_TEXT_SECONDARY]);
+        SymbolGlyph($r('sys.symbol.pause')).fontSize(21).fontColor([COLOR_ICON_SECONDARY]);
         Text($r('app.string.mb_animation_paused')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
       }
       .width(this.stickerW()).height(this.stickerH())
@@ -3684,7 +3684,7 @@ export struct MessageBubble {
     Row({ space: 5 }) {
       SymbolGlyph($r(this.systemPillIcon()))
         .fontSize(12.5)
-        .fontColor([this.liveVideoChatTappable() ? this.accent() : COLOR_TEXT_SECONDARY])
+        .fontColor([this.liveVideoChatTappable() ? this.accent() : COLOR_ICON_SECONDARY])
         .width(14);
       Text(this.fallbackLabel())
         .fontSize(12)

@@ -4,7 +4,7 @@ import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -359,7 +359,7 @@ struct BlockedUsersPage {
           Text($r('app.string.bu_add')).fontSize(21).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY);
           Text($r('app.string.bu_add_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
         }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-        Button() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([COLOR_TEXT_SECONDARY]); }
+        Button() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([COLOR_ICON_SECONDARY]); }
           .width(38).height(38).borderRadius(19).backgroundColor(Color.Transparent)
           .onClick((): void => { this.pickerOpen = false; });
       }.width('100%').height(52);
@@ -421,7 +421,7 @@ struct BlockedUsersPage {
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else if (this.rows.length === 0) {
         Column({ space: 9 }) {
-          SymbolGlyph($r('sys.symbol.nosign')).fontSize(52).fontColor([COLOR_TEXT_SECONDARY]);
+          SymbolGlyph($r('sys.symbol.nosign')).fontSize(52).fontColor([COLOR_ICON_SECONDARY]);
           Text($r('app.string.bu_empty')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
           Text($r('app.string.bu_empty_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);

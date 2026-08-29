@@ -6,7 +6,7 @@ import {
 } from '../../store/PrivacyApi';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
@@ -158,7 +158,7 @@ struct PrivacyRulePage {
   @Builder
   loadError() {
     Column({ space: 12 }) {
-      SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(46).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(46).fontColor([COLOR_ICON_SECONDARY]);
       Text($r('app.string.privacy_rule_unreadable')).fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text($r('app.string.privacy_rule_no_overwrite')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
       Button($r('app.string.settings_reload')).height(42).borderRadius(21).fontColor(Color.White).backgroundColor(COLOR_PRIMARY)
@@ -215,7 +215,7 @@ struct PrivacyRulePage {
                     Text($r('app.string.privacy_always_allow_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
                   }.layoutWeight(1).alignItems(HorizontalAlign.Start);
                   Text(`${this.allowExceptions}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
-                  SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+                  SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
                 }
                 .width('100%').constraintSize({ minHeight: 60 }).padding({ left: 16, right: 14 })
                 .onClick((): void => { this.openExceptions(); });
@@ -226,7 +226,7 @@ struct PrivacyRulePage {
                     Text($r('app.string.privacy_never_allow_sub')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
                   }.layoutWeight(1).alignItems(HorizontalAlign.Start);
                   Text(`${this.restrictExceptions}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
-                  SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+                  SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
                 }
                 .width('100%').constraintSize({ minHeight: 60 }).padding({ left: 16, right: 14 })
                 .onClick((): void => { this.openExceptions(); });

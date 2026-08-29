@@ -22,7 +22,7 @@ import { TgsStickerView } from '../chat/TgsStickerView';
 import { WebmStickerView } from '../chat/WebmStickerView';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
   COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG
 } from '../../util/theme';
 import { ExpandableText } from './ExpandableText';
@@ -883,7 +883,7 @@ export struct ProfilePage {
                 Text($r('app.string.ae_username')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
               }
             }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-            SymbolGlyph($r('sys.symbol.qrcode')).fontSize(22).fontColor([COLOR_TEXT_SECONDARY])
+            SymbolGlyph($r('sys.symbol.qrcode')).fontSize(22).fontColor([COLOR_ICON_SECONDARY])
               .onClick(() => { this.openQr(this.usernames.length > 0 ? this.usernames[0] : ''); });
           }
           .width('100%').padding({ top: 8, bottom: 8 })
@@ -1178,7 +1178,7 @@ export struct ProfilePage {
         Text($r('app.string.pp_loading_shared')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       } else if (this.sharedState === 'error') {
         SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-          .fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
         Text(this.sharedErrorText !== '' ? this.sharedErrorText : $r('app.string.load_failed'))
           .fontSize(14).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
         Text($r('app.string.settings_retry')).fontSize(14).fontColor(COLOR_PRIMARY)
@@ -1190,7 +1190,7 @@ export struct ProfilePage {
             }
           });
       } else {
-        SymbolGlyph($r('sys.symbol.message')).fontSize(27).fontColor([COLOR_TEXT_SECONDARY]);
+        SymbolGlyph($r('sys.symbol.message')).fontSize(27).fontColor([COLOR_ICON_SECONDARY]);
         Text($r('app.string.pp_no_shared')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }
     }
@@ -1214,7 +1214,7 @@ export struct ProfilePage {
           } else {
             Column() {
               SymbolGlyph($r(item.isVideo ? 'sys.symbol.video_fill' : 'sys.symbol.photo_fill'))
-                .fontSize(26).fontColor([COLOR_TEXT_SECONDARY]);
+                .fontSize(26).fontColor([COLOR_ICON_SECONDARY]);
             }
             .width('100%').height('100%').justifyContent(FlexAlign.Center)
             .backgroundColor($r('app.color.surface_alt'));
@@ -1284,7 +1284,7 @@ export struct ProfilePage {
               }
             }.alignItems(HorizontalAlign.Start).layoutWeight(1);
             SymbolGlyph($r('sys.symbol.chevron_right'))
-              .fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+              .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
           }
           .width('100%').constraintSize({ minHeight: 64 })
           .padding({ left: 12, right: 10, top: 9, bottom: 9 })

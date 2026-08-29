@@ -16,7 +16,7 @@ import {
 import { folderColor, folderSymbol } from '../../util/FolderVisuals';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -412,7 +412,7 @@ export struct ChatFoldersPage {
         }
         Text(this.countLabel(folder.id)).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
       }.layoutWeight(1).alignItems(HorizontalAlign.Start).onClick((): void => this.openEditor(folder.id));
-      Row() { SymbolGlyph($r('sys.symbol.line_3_horizontal')).fontSize(19).fontColor([COLOR_TEXT_SECONDARY]); }
+      Row() { SymbolGlyph($r('sys.symbol.line_3_horizontal')).fontSize(19).fontColor([COLOR_ICON_SECONDARY]); }
         .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
         .bindMenu(this.folderMenu(folder, index), { systemMaterial: overlayMaterial('menu') });

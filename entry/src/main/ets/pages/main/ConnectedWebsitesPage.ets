@@ -5,7 +5,7 @@ import {
 } from '../../store/PrivacyApi';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -171,7 +171,7 @@ struct ConnectedWebsitesPage {
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else if (this.websites.length === 0) {
         Column({ space: 9 }) {
-          SymbolGlyph($r('sys.symbol.link')).fontSize(50).fontColor([COLOR_TEXT_SECONDARY]);
+          SymbolGlyph($r('sys.symbol.link')).fontSize(50).fontColor([COLOR_ICON_SECONDARY]);
           Text($r('app.string.cw_empty')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
           Text($r('app.string.cw_empty_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);

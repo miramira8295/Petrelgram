@@ -1,7 +1,7 @@
 import { getTdClient } from '../../tdkit/Globals';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { AvatarView } from '../chatlist/AvatarView';
-import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
 import { ComponentContent, promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
@@ -756,7 +756,7 @@ export struct ContactsPage {
 
       Row() {
         SymbolGlyph($r('sys.symbol.more'))
-          .fontSize(23).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
       }
       .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
       .borderRadius(TOP_ACTION_SIZE / 2)
@@ -779,7 +779,7 @@ export struct ContactsPage {
     Row({ space: 8 }) {
       SymbolGlyph($r('sys.symbol.magnifyingglass'))
         .fontSize(18)
-        .fontColor([this.searchFocused ? this.accent() : COLOR_TEXT_SECONDARY])
+        .fontColor([this.searchFocused ? this.accent() : COLOR_ICON_SECONDARY])
         .animation({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
           curve: Curve.EaseOut
@@ -807,7 +807,7 @@ export struct ContactsPage {
       } else if (this.query !== '') {
         Row() {
           SymbolGlyph($r('sys.symbol.xmark_circle'))
-            .fontSize(19).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(19).fontColor([COLOR_ICON_SECONDARY]);
         }
         .width(32).height(32)
         .borderRadius(16)
@@ -877,7 +877,7 @@ export struct ContactsPage {
       .layoutWeight(1);
       SymbolGlyph($r('sys.symbol.chevron_right'))
         .fontSize(16)
-        .fontColor([COLOR_TEXT_SECONDARY])
+        .fontColor([COLOR_ICON_SECONDARY])
         .translate({ x: this.pressedAction === icon ? 2 : 0 })
         .animation({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
@@ -1123,7 +1123,7 @@ export struct ContactsPage {
         Circle({ width: 58, height: 58 }).fill($r('app.color.surface_alt'));
         SymbolGlyph($r('sys.symbol.person_2'))
           .fontSize(28)
-          .fontColor([COLOR_TEXT_SECONDARY]);
+          .fontColor([COLOR_ICON_SECONDARY]);
       }
       Text($r('app.string.ct_empty'))
         .fontSize(17)
@@ -1203,7 +1203,7 @@ export struct ContactsPage {
     Column({ space: 6 }) {
       SymbolGlyph($r('sys.symbol.magnifyingglass'))
         .fontSize(26)
-        .fontColor([COLOR_TEXT_SECONDARY]);
+        .fontColor([COLOR_ICON_SECONDARY]);
       Text($r('app.string.ct_no_results'))
         .fontSize(15)
         .fontWeight(FontWeight.Medium)
@@ -1302,7 +1302,7 @@ export struct ContactsPage {
         Row() {
           SymbolGlyph($r('sys.symbol.xmark'))
             .fontSize(18)
-            .fontColor([COLOR_TEXT_SECONDARY]);
+            .fontColor([COLOR_ICON_SECONDARY]);
         }
         .width(38)
         .height(38)

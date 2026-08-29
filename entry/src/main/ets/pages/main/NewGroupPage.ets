@@ -5,7 +5,7 @@ import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   PublicUserSearchResult, searchPublicUsersDetailed
@@ -527,7 +527,7 @@ struct NewGroupPage {
   searchBox() {
     Row({ space: 8 }) {
       SymbolGlyph($r('sys.symbol.magnifyingglass'))
-        .fontSize(18).fontColor([this.searchFocused ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY])
+        .fontSize(18).fontColor([this.searchFocused ? COLOR_PRIMARY : COLOR_ICON_SECONDARY])
         .animation({ duration: this.animationDuration(150), curve: Curve.EaseOut });
       TextInput({ text: this.query, placeholder: $r('app.string.ct_search_hint') })
         .layoutWeight(1).height(38).fontSize(16)
@@ -545,7 +545,7 @@ struct NewGroupPage {
           ).animation({ duration: this.animationDuration(150), curve: Curve.EaseOut }));
       } else if (this.query !== '') {
         Row() {
-          SymbolGlyph($r('sys.symbol.xmark_circle')).fontSize(19).fontColor([COLOR_TEXT_SECONDARY]);
+          SymbolGlyph($r('sys.symbol.xmark_circle')).fontSize(19).fontColor([COLOR_ICON_SECONDARY]);
         }
         .width(32).height(32).borderRadius(16).justifyContent(FlexAlign.Center)
         .stateStyles({ normal: this.topActionNormalStyle, pressed: this.topActionPressedStyle })
@@ -684,7 +684,7 @@ struct NewGroupPage {
     Column({ space: 8 }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle({ width: 58, height: 58 }).fill($r('app.color.surface_alt'));
-        SymbolGlyph(icon).fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+        SymbolGlyph(icon).fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
       }
       Text(title).fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text(detail).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)

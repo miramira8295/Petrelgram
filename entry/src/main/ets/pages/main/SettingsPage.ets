@@ -16,7 +16,7 @@ import { TgsStickerView } from '../chat/TgsStickerView';
 import { WebmStickerView } from '../chat/WebmStickerView';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
-  COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { floatingLiveWindow } from '../chat/LiveFloatingWindow';
 import { switchAccountWithLiveWindow } from '../../util/accountSwitch';
@@ -747,7 +747,7 @@ export struct SettingsPage {
           Row({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.magnifyingglass'))
               .fontSize(17)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
             TextInput({ text: this.settingsQuery, placeholder: $r('app.string.settings_search') })
               .layoutWeight(1)
               .height(44)
@@ -763,7 +763,7 @@ export struct SettingsPage {
               Row() {
                 SymbolGlyph($r('sys.symbol.xmark_circle_fill'))
                   .fontSize(17)
-                  .fontColor([COLOR_TEXT_SECONDARY]);
+                  .fontColor([COLOR_ICON_SECONDARY]);
               }
               .width(32)
               .height(36)
@@ -798,7 +798,7 @@ export struct SettingsPage {
           Row() {
             SymbolGlyph($r('sys.symbol.magnifyingglass'))
               .fontSize(21)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
           }
           .width(TOP_ACTION_SIZE)
           .height(TOP_ACTION_SIZE)
@@ -1001,7 +1001,7 @@ export struct SettingsPage {
           ? $r('sys.symbol.arrow_clockwise')
           : $r('sys.symbol.chevron_right'))
           .fontSize(17)
-          .fontColor([this.profileError !== '' ? this.accent() : COLOR_TEXT_SECONDARY]);
+          .fontColor([this.profileError !== '' ? this.accent() : COLOR_ICON_SECONDARY]);
       }
     }
     .width('calc(100% - 24vp)')
@@ -1045,7 +1045,7 @@ export struct SettingsPage {
         LoadingProgress().width(22).height(22).color(this.accent());
       } else {
         SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
       }
     }
     .width('100%')
@@ -1129,7 +1129,7 @@ export struct SettingsPage {
       Row() {
         SymbolGlyph($r('sys.symbol.xmark'))
           .fontSize(14)
-          .fontColor([COLOR_TEXT_SECONDARY]);
+          .fontColor([COLOR_ICON_SECONDARY]);
       }
       .width(32)
       .height(32)
@@ -1209,7 +1209,7 @@ export struct SettingsPage {
             LoadingProgress().width(22).height(22).color(this.accent());
           } else {
             SymbolGlyph($r('sys.symbol.chevron_right'))
-              .fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+              .fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
           }
         }
         .width('100%')
@@ -1287,7 +1287,7 @@ export struct SettingsPage {
       } else {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(16)
-          .fontColor([COLOR_TEXT_SECONDARY])
+          .fontColor([COLOR_ICON_SECONDARY])
           .translate({ x: this.pressedSettingPage === item.page ? 2 : 0 })
           .animation({
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
@@ -1366,7 +1366,7 @@ export struct SettingsPage {
             Circle({ width: 52, height: 52 }).fill($r('app.color.surface_alt'));
             SymbolGlyph($r('sys.symbol.magnifyingglass'))
               .fontSize(25)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
           }
           Text(str('settings_no_match', this.settingsQuery.trim()))
             .fontSize(16)

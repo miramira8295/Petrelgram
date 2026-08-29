@@ -7,7 +7,7 @@ import {
   MEMBER_ACTION_REMOVE, MEMBER_ACTION_RESTRICT, MEMBER_ACTION_TITLE, MemberMenuOptions,
   noMemberMenu
 } from '../../util/memberMenu';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
 // 成员列表里的一行 + 它的长按菜单。
@@ -112,7 +112,7 @@ export struct MemberRow {
           .flexShrink(0);
       }
       SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+        .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').padding({ left: 15, right: 13, top: 11, bottom: 11 })
     .alignItems(VerticalAlign.Center)

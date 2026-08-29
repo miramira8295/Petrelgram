@@ -1,4 +1,4 @@
-import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   displayFileName, fileStatusText, fileTypeVisual, FileTypeVisual
 } from '../../util/fileMessage';
@@ -171,7 +171,7 @@ export struct FileBubble {
         SymbolGlyph($r(this.filePath !== ''
           ? 'sys.symbol.arrow_down_circle' : 'sys.symbol.arrow_down'))
           .fontSize(this.filePath !== '' ? 20 : 16)
-          .fontColor([this.sourceUnavailable() ? '#9EA6AF' : COLOR_TEXT_SECONDARY]);
+          .fontColor([this.sourceUnavailable() ? '#9EA6AF' : COLOR_ICON_SECONDARY]);
       }
       .width(30).height(30)
       .opacity(this.sourceUnavailable() ? 0.45 : 1)

@@ -1,4 +1,4 @@
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 
 @Component
@@ -171,7 +171,7 @@ export struct LocationBubble {
         .alignItems(HorizontalAlign.Start);
         if (this.available()) {
           SymbolGlyph($r('sys.symbol.chevron_right'))
-            .fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
         }
       }
       .padding({ left: 2, right: 30, bottom: this.sharing ? 4 : 10 });

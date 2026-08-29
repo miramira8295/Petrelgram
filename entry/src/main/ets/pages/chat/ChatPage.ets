@@ -158,7 +158,7 @@ import {
   TRANSLATE_LANG_CODES
 } from '../../services/TranslationService';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, darkResourceMode, KEY_APP_DARK
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, darkResourceMode, KEY_APP_DARK
 } from '../../util/theme';
 import {
   normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf,
@@ -9005,7 +9005,7 @@ export struct ChatPage {
           // 和输入框里麦克风↔发送键的互换是同一套时序。
           SymbolGlyph($r('sys.symbol.paperclip'))
             .fontSize(23)
-            .fontColor([this.attachPanelOpen ? this.accent() : COLOR_TEXT_SECONDARY])
+            .fontColor([this.attachPanelOpen ? this.accent() : COLOR_ICON_SECONDARY])
             .opacity(this.attachPanelOpen ? 0 : 1)
             .rotate({ angle: this.attachPanelOpen ? 45 : 0 })
             .animation({
@@ -9106,7 +9106,7 @@ export struct ChatPage {
           }
           SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.face_smiling_fill' : 'sys.symbol.face_smiling'))
             .fontSize(24)
-            .fontColor([this.showEmojiPanel ? this.accent() : COLOR_TEXT_SECONDARY])
+            .fontColor([this.showEmojiPanel ? this.accent() : COLOR_ICON_SECONDARY])
             .onAreaChange((_old: Area, area: Area) => {
               const gx = area.globalPosition.x as number;
               this.emojiBtnCx = gx + (area.width as number) / 2;
@@ -9206,7 +9206,7 @@ export struct ChatPage {
             Row() {
               SymbolGlyph($r('sys.symbol.keyboard'))
                 .fontSize(21)
-                .fontColor([this.replyKbCollapsed ? COLOR_TEXT_SECONDARY : this.accent()]);
+                .fontColor([this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accent()]);
             }
             .width(34).height(34).borderRadius(17)
             .justifyContent(FlexAlign.Center)

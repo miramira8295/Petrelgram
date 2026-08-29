@@ -16,7 +16,7 @@ import {
 } from '../../store/CacheLimit';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { fullDate } from '../../util/intlFormat';
@@ -308,7 +308,7 @@ export struct DataStoragePage {
           .textOverflow({ overflow: TextOverflow.Ellipsis });
       }.layoutWeight(1).alignItems(HorizontalAlign.Start);
       if (value !== '') { Text(value).fontSize(13).fontColor(COLOR_TEXT_SECONDARY); }
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').height(64).padding({ left: 12, right: 12 })
     .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })

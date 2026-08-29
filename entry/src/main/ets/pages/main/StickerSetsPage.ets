@@ -6,7 +6,7 @@ import {
   setStickerSetInstalled
 } from '../../store/StickerApi';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -157,7 +157,7 @@ export struct StickerSetsPage {
       }.layoutWeight(1).alignItems(HorizontalAlign.Start);
       if (!isArchived && index > 0) {
         Button() {
-          SymbolGlyph($r('sys.symbol.arrow_up')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+          SymbolGlyph($r('sys.symbol.arrow_up')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
         }.width(34).height(34).backgroundColor(Color.Transparent)
         .onClick((): void => this.moveUp(index));
       }
@@ -187,7 +187,7 @@ export struct StickerSetsPage {
     }) {
       Column() {
       Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+        SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
         TextInput({ placeholder: $r('app.string.sticker_search'), text: this.query })
           .fontSize(15).layoutWeight(1).backgroundColor(Color.Transparent).padding(0)
           .onChange((value: string): void => this.onQueryChange(value));

@@ -3,7 +3,7 @@ import { ChatEntry } from '../../store/ChatEntry';
 import { AvatarView } from '../chatlist/AvatarView';
 import { getChatStore, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   KEY_POWER_EFFECT_REPLY, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
@@ -225,7 +225,7 @@ export struct ForwardSheet {
           }
           .alignItems(HorizontalAlign.Start).layoutWeight(1);
           Row() {
-            SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+            SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
           }
           .width(34).height(34).borderRadius(17).justifyContent(FlexAlign.Center)
           .stateStyles({
@@ -250,7 +250,7 @@ export struct ForwardSheet {
         } else if (this.loadState === 'error') {
           Column({ space: 10 }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-              .fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+              .fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
             Text($r('app.string.fw_load_failed')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
             Button($r('app.string.settings_retry'))
               .fontSize(14).fontColor(Color.White)
@@ -262,7 +262,7 @@ export struct ForwardSheet {
         } else if (this.filteredChats().length === 0) {
           Column({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.magnifyingglass'))
-              .fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+              .fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
             Text(this.query.trim() === '' ? $r('app.string.fw_empty') : $r('app.string.fw_no_match'))
               .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
           }

@@ -9,7 +9,7 @@ import {
   activeSessionError, freshSessionSeconds, inactiveSessionTtlLabel,
   sessionDeviceType, sessionWaitText
 } from '../../util/ActiveSessionPresentation';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { clockTime, fullDate, monthDayTime } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -639,7 +639,7 @@ export struct ActiveSessionsPage {
         LoadingProgress().width(22).height(22).color(COLOR_PRIMARY);
       } else {
         SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
       }
     }
     .width('100%')
@@ -698,7 +698,7 @@ export struct ActiveSessionsPage {
       }
       .alignItems(HorizontalAlign.Start).layoutWeight(1);
       SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+        .fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%')
     .padding({ left: 14, right: 13, top: 11, bottom: 11 })
@@ -794,7 +794,7 @@ export struct ActiveSessionsPage {
           Text(inactiveSessionTtlLabel(this.inactiveTtlDays))
             .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
           SymbolGlyph($r('sys.symbol.chevron_right'))
-            .fontSize(14).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(14).fontColor([COLOR_ICON_SECONDARY]);
         }
       }
       .width('100%')

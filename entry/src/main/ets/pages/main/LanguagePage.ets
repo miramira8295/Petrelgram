@@ -8,7 +8,7 @@ import {
   languageDisplayName, resolveTranslateTarget, TRANSLATE_LANG_CODES
 } from '../../services/TranslationService';
 import { str } from '../../util/strings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 
@@ -188,7 +188,7 @@ export struct LanguagePage {
         Text(this.translateTargetLabel())
           .fontSize(15).fontColor(COLOR_TEXT_SECONDARY);
         SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16)
-          .fontColor([COLOR_TEXT_SECONDARY]).margin({ left: 4 });
+          .fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 });
       }
       .width('100%').padding({ left: 16, right: 12, top: 13, bottom: 13 })
       .stateStyles({

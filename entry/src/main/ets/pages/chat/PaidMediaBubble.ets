@@ -1,4 +1,4 @@
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
 @Component
@@ -113,7 +113,7 @@ export struct PaidMediaBubble {
         Column({ space: 8 }) {
           SymbolGlyph($r(this.mediaKind === 'video'
             ? 'sys.symbol.video_fill' : 'sys.symbol.photo_fill'))
-            .fontSize(30).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(30).fontColor([COLOR_ICON_SECONDARY]);
           Text(this.photoFileId === 0 ? $r('app.string.paid_media_unavailable') : $r('app.string.paid_loading_unlocked'))
             .fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY);
         }

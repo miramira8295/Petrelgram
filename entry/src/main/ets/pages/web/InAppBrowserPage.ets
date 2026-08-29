@@ -8,7 +8,7 @@ import { webBrowserTarget } from '../../util/webBrowserNav';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openTelegramLink } from '../../util/openTelegramLink';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
@@ -204,7 +204,7 @@ struct InAppBrowserPage {
         if (this.loadFailed) {
           Column({ space: 12 }) {
             SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-              .fontSize(46).fontColor([COLOR_TEXT_SECONDARY]);
+              .fontSize(46).fontColor([COLOR_ICON_SECONDARY]);
             Text($r('app.string.web_load_failed')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
             Button($r('app.string.settings_reload')).height(38).fontSize(14)
               .onClick((): void => this.reload());

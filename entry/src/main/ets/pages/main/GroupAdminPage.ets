@@ -15,7 +15,7 @@ import {
   permissionsFromTd, withAllMedia, withPermission
 } from '../../util/chatPermissions';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -391,7 +391,7 @@ struct GroupAdminPage {
                   }.layoutWeight(1).alignItems(HorizontalAlign.Start);
                   if (!row.isCreator) {
                     SymbolGlyph($r('sys.symbol.more')).fontSize(18)
-                      .fontColor([COLOR_TEXT_SECONDARY]);
+                      .fontColor([COLOR_ICON_SECONDARY]);
                   }
                 }
                 .width('100%').height(54).padding({ left: 14, right: 14 })

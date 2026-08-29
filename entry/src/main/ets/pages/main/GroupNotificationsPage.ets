@@ -7,7 +7,7 @@ import {
 } from '../../store/NotificationApi';
 import { AvatarView } from '../chatlist/AvatarView';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -200,7 +200,7 @@ struct GroupNotificationsPage {
       Row() {
         SymbolGlyph($r(muted ? 'sys.symbol.bell_slash_fill' : 'sys.symbol.bell_fill'))
           .fontSize(17)
-          .fontColor([muted ? COLOR_TEXT_SECONDARY : Color.White]);
+          .fontColor([muted ? COLOR_ICON_SECONDARY : Color.White]);
       }
       .width(32).height(32).borderRadius(16)
       .justifyContent(FlexAlign.Center)

@@ -2,7 +2,7 @@ import { promptAction } from '@kit.ArkUI';
 import { getTdClient, logoutCurrentTdAccount } from '../../tdkit/Globals';
 import { floatingLiveWindow } from '../chat/LiveFloatingWindow';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { monthDay } from '../../util/intlFormat';
@@ -568,7 +568,7 @@ export struct AccountEditPage {
         Text(this.phone !== '' ? `+${this.phone}` : $r('app.string.not_set')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
         Text($r('app.string.ct_phone')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
       }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').padding({ left: 16, right: 16, top: 9, bottom: 9 })
     .alignItems(VerticalAlign.Center)
@@ -588,7 +588,7 @@ export struct AccountEditPage {
         Text(this.username !== '' ? `@${this.username}` : $r('app.string.not_set')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
         Text($r('app.string.ae_username_tap')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
       }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').padding({ left: 16, right: 16, top: 9, bottom: 9 })
     .alignItems(VerticalAlign.Center)
@@ -609,7 +609,7 @@ export struct AccountEditPage {
         Text(this.birthday !== '' ? this.birthday : $r('app.string.not_set')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
         Text($r('app.string.ae_birthday_tap')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
       }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').padding({ left: 16, right: 16, top: 9, bottom: 9 })
     .alignItems(VerticalAlign.Center)

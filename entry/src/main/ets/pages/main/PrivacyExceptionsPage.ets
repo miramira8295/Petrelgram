@@ -6,7 +6,7 @@ import { PrivacyExceptionsParams } from './PrivacyRulePage';
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -348,7 +348,7 @@ struct PrivacyExceptionsPage {
                 }.layoutWeight(1).alignItems(HorizontalAlign.Start);
                 SymbolGlyph($r(this.draftIds.indexOf(user.id) >= 0
                   ? 'sys.symbol.checkmark_circle_fill' : 'sys.symbol.circle'))
-                  .fontSize(23).fontColor([this.draftIds.indexOf(user.id) >= 0 ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+                  .fontSize(23).fontColor([this.draftIds.indexOf(user.id) >= 0 ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
               }
               .width('100%').height(58).padding({ left: 6, right: 8 })
               .onClick((): void => { this.toggleDraft(user.id); });

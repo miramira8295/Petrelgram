@@ -14,7 +14,7 @@ import { formatTime } from '../../util/formatTime';
 import {
   COLOR_PRIMARY,
   COLOR_TEXT_PRIMARY,
-  COLOR_TEXT_SECONDARY,
+  COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
   COLOR_TAB_SELECTED,
   COLOR_TAB_UNSELECTED,
   COLOR_TAB_PILL_BG
@@ -1448,7 +1448,7 @@ export struct GlobalSearchPage {
           } else {
             SymbolGlyph($r('sys.symbol.magnifyingglass'))
               .fontSize(18)
-              .fontColor([this.searchFocused ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY])
+              .fontColor([this.searchFocused ? COLOR_PRIMARY : COLOR_ICON_SECONDARY])
               .transition(TransitionEffect.OPACITY
                 .combine(TransitionEffect.scale({ x: 0.84, y: 0.84 }))
                 .animation({
@@ -1481,7 +1481,7 @@ export struct GlobalSearchPage {
           Row() {
             SymbolGlyph($r('sys.symbol.xmark_circle'))
               .fontSize(19)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
           }
           .width(32)
           .height(32)
@@ -1763,7 +1763,7 @@ export struct GlobalSearchPage {
         Row({ space: 6 }) {
           SymbolGlyph($r('sys.symbol.clock'))
             .fontSize(16)
-            .fontColor([COLOR_TEXT_SECONDARY]);
+            .fontColor([COLOR_ICON_SECONDARY]);
           Text($r('app.string.gs_recent'))
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
@@ -1829,7 +1829,7 @@ export struct GlobalSearchPage {
       Row({ space: 6 }) {
         SymbolGlyph($r('sys.symbol.clock'))
           .fontSize(16)
-          .fontColor([COLOR_TEXT_SECONDARY]);
+          .fontColor([COLOR_ICON_SECONDARY]);
         Text($r('app.string.gs_recent_chats'))
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
@@ -1885,7 +1885,7 @@ export struct GlobalSearchPage {
         Circle({ width: 62, height: 62 }).fill($r('app.color.surface_alt'));
         SymbolGlyph($r('sys.symbol.magnifyingglass'))
           .fontSize(28)
-          .fontColor([COLOR_TEXT_SECONDARY]);
+          .fontColor([COLOR_ICON_SECONDARY]);
       }
       Text($r('app.string.gs_search_chats'))
         .fontSize(17)
@@ -2084,7 +2084,7 @@ export struct GlobalSearchPage {
         Circle({ width: 58, height: 58 }).fill($r('app.color.surface_alt'));
         SymbolGlyph(symbol)
           .fontSize(27)
-          .fontColor([COLOR_TEXT_SECONDARY]);
+          .fontColor([COLOR_ICON_SECONDARY]);
       }
       Text(title)
         .fontSize(17)
@@ -2276,7 +2276,7 @@ export struct GlobalSearchPage {
             .onClick(() => { this.toggleOneDownload(it); });
           }
           Button({ type: ButtonType.Circle }) {
-            SymbolGlyph($r('sys.symbol.trash')).fontSize(18).fontColor([COLOR_TEXT_SECONDARY]);
+            SymbolGlyph($r('sys.symbol.trash')).fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
           }
           .width(34).height(34).backgroundColor(Color.Transparent)
           .accessibilityText($r('app.string.gs_remove_download'))

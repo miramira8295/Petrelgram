@@ -27,7 +27,7 @@ import { AvatarView } from '../chatlist/AvatarView';
 import { AvatarViewer } from '../common/AvatarViewer';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
   COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG
 } from '../../util/theme';
 import { ExpandableText } from './ExpandableText';
@@ -1084,7 +1084,7 @@ export struct ChatProfilePage {
         Text($r('app.string.cpp_loading_details')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       } else {
         SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-          .fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
         Text(this.errorText !== '' ? this.errorText : $r('app.string.cpp_details_failed'))
           .fontSize(14).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
         Row({ space: 6 }) {
@@ -1479,13 +1479,13 @@ export struct ChatProfilePage {
         LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
       } else if (kind === 'error') {
         SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-          .fontSize(26).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(26).fontColor([COLOR_ICON_SECONDARY]);
       } else if (kind === 'restricted') {
         SymbolGlyph($r('sys.symbol.lock_fill'))
-          .fontSize(24).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(24).fontColor([COLOR_ICON_SECONDARY]);
       } else {
         SymbolGlyph($r('sys.symbol.message'))
-          .fontSize(25).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(25).fontColor([COLOR_ICON_SECONDARY]);
       }
       Text(text).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
         .textAlign(TextAlign.Center).maxLines(2);
@@ -1503,7 +1503,7 @@ export struct ChatProfilePage {
           .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       } else if (this.contentState === 'error') {
         SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-          .fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
         Text(this.contentErrorText !== '' ? this.contentErrorText : $r('app.string.load_failed'))
           .fontSize(14).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
         Text($r('app.string.settings_retry')).fontSize(14).fontColor(COLOR_PRIMARY)
@@ -1513,7 +1513,7 @@ export struct ChatProfilePage {
       } else {
         SymbolGlyph($r(this.currentTabKey() === PROFILE_TAB_GIFTS
           ? 'sys.symbol.gift' : 'sys.symbol.message'))
-          .fontSize(27).fontColor([COLOR_TEXT_SECONDARY]);
+          .fontSize(27).fontColor([COLOR_ICON_SECONDARY]);
         Text(this.emptyStateText()).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
         if (this.currentTabKey() === PROFILE_TAB_GIFTS && this.contentHasMore) {
           Text($r('app.string.cpp_search_older')).fontSize(14).fontColor(COLOR_PRIMARY)
@@ -1552,7 +1552,7 @@ export struct ChatProfilePage {
           } else {
             Column() {
               SymbolGlyph($r(item.isVideo ? 'sys.symbol.video_fill' : 'sys.symbol.photo_fill'))
-                .fontSize(26).fontColor([COLOR_TEXT_SECONDARY]);
+                .fontSize(26).fontColor([COLOR_ICON_SECONDARY]);
             }
             .width('100%').height('100%').justifyContent(FlexAlign.Center)
             .backgroundColor($r('app.color.surface_alt'));
@@ -1646,7 +1646,7 @@ export struct ChatProfilePage {
               }
             }.alignItems(HorizontalAlign.Start).layoutWeight(1);
             SymbolGlyph($r('sys.symbol.chevron_right'))
-              .fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+              .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
           }
           .width('100%').constraintSize({ minHeight: 64 })
           .padding({ left: 12, right: 10, top: 9, bottom: 9 })

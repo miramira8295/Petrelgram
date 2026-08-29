@@ -8,7 +8,7 @@ import { callClockLabel, callDayKey, callSectionLabel } from '../../util/CallHis
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
@@ -472,7 +472,7 @@ struct CallsPage {
           if (call.isGroup && call.participantCount > 0) {
             Text(plural('calls_participants', call.participantCount, call.participantCount)).fontSize(10).fontColor(COLOR_TEXT_SECONDARY);
           }
-          SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([COLOR_TEXT_SECONDARY]);
+          SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
         }.width('100%').alignItems(VerticalAlign.Center);
       }.layoutWeight(1).alignItems(HorizontalAlign.Start);
     }

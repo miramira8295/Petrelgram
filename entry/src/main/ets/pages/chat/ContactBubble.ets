@@ -1,5 +1,5 @@
 import { AvatarView } from '../chatlist/AvatarView';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
 @Component
@@ -130,7 +130,7 @@ export struct ContactBubble {
       } else {
         SymbolGlyph($r(this.userId > 0 ? 'sys.symbol.chevron_right' : 'sys.symbol.person'))
           .fontSize(this.userId > 0 ? 14 : 19)
-          .fontColor([this.userId > 0 ? COLOR_TEXT_SECONDARY : '#9EA6AF'])
+          .fontColor([this.userId > 0 ? COLOR_ICON_SECONDARY : '#9EA6AF'])
           .opacity(this.available() ? 1 : 0.55);
       }
     }

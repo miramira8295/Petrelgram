@@ -8,7 +8,7 @@ import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/c
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
@@ -340,7 +340,7 @@ export struct ChatListView {
         Row() {
           SymbolGlyph(this.listKey === 'archive'
             ? $r('sys.symbol.archivebox') : $r('sys.symbol.message'))
-            .fontSize(27).fontColor([COLOR_TEXT_SECONDARY]);
+            .fontSize(27).fontColor([COLOR_ICON_SECONDARY]);
         }
         .width(56).height(56).borderRadius(28)
         .backgroundColor($r('app.color.surface_alt'))

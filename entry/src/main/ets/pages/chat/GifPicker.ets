@@ -3,7 +3,7 @@ import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_REDUCE_ANIM
 } from '../../store/AppSettings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -218,7 +218,7 @@ export struct GifPicker {
   @Builder
   stateMessage(symbol: Resource, title: string, detail: string, retry: boolean) {
     Column({ space: 8 }) {
-      SymbolGlyph(symbol).fontSize(28).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph(symbol).fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
       Text(title).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text(detail).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
       if (retry) {

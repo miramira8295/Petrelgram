@@ -1,6 +1,6 @@
 import { AvatarView } from '../chatlist/AvatarView';
 import {
-  COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 
 // 限制面板和提权面板共用的几块积木。
@@ -89,7 +89,7 @@ export struct PanelGroupRow {
         .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       SymbolGlyph(this.expanded
         ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-        .fontSize(14).fontColor([COLOR_TEXT_SECONDARY]);
+        .fontSize(14).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').height(48).padding({ left: 14, right: 14 })
     .onClick((): void => { this.onTap(); });

@@ -17,7 +17,7 @@ import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
 import { navigateToForumTopics } from '../../util/profileNav';
 import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_MUTED_BADGE, ROW_PAD_H, ROW_PAD_V } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_MUTED_BADGE, ROW_PAD_H, ROW_PAD_V } from '../../util/theme';
 import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
@@ -439,7 +439,7 @@ export struct ChatRow {
             .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
           if (this.muted()) {
-            SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_TEXT_SECONDARY]).margin({ left: 4 }).flexShrink(0);
+            SymbolGlyph($r('sys.symbol.bell_slash')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 }).flexShrink(0);
           }
           if (this.matchingFolders().length > 0) {
             Text(this.matchingFolders()[0].title)
@@ -473,7 +473,7 @@ export struct ChatRow {
       Column({ space: 6 }) {
         Row({ space: 3 }) {
           if (this.isPinned()) {
-            SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_TEXT_SECONDARY]);
+            SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
           }
           Text(formatTime(this.chat.lastMessageDate, this.nowSec))
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);

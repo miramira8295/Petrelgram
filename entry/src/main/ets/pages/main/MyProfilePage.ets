@@ -19,7 +19,7 @@ import { QrDialog } from '../common/QrDialog';
 import { TgsStickerView } from '../chat/TgsStickerView';
 import { WebmStickerView } from '../chat/WebmStickerView';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { publicLink } from '../../util/telegramLink';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
@@ -1258,7 +1258,7 @@ export struct MyProfilePage {
         } else {
           SymbolGlyph($r('sys.symbol.plus_square_on_square'))
             .fontSize(17)
-            .fontColor([COLOR_TEXT_SECONDARY]);
+            .fontColor([COLOR_ICON_SECONDARY]);
         }
       }
       .width(34)
@@ -1557,7 +1557,7 @@ export struct MyProfilePage {
             .layoutWeight(1);
             SymbolGlyph($r('sys.symbol.chevron_right'))
               .fontSize(16)
-              .fontColor([COLOR_TEXT_SECONDARY]);
+              .fontColor([COLOR_ICON_SECONDARY]);
           }
           .width('100%')
           .height(76)
@@ -1616,7 +1616,7 @@ export struct MyProfilePage {
       } else {
         SymbolGlyph($r(this.postTabIcon(index)))
           .fontSize(16)
-          .fontColor([this.postTab === index ? this.accent() : COLOR_TEXT_SECONDARY])
+          .fontColor([this.postTab === index ? this.accent() : COLOR_ICON_SECONDARY])
           .scale({
             x: this.pressedPostTab === index ? 0.9 : 1,
             y: this.pressedPostTab === index ? 0.9 : 1
@@ -1902,7 +1902,7 @@ export struct MyProfilePage {
                 ? $r('sys.symbol.video')
                 : $r('sys.symbol.camera'))
                 .fontSize(23)
-                .fontColor([COLOR_TEXT_SECONDARY])
+                .fontColor([COLOR_ICON_SECONDARY])
                 .opacity(0.55);
             }
           }

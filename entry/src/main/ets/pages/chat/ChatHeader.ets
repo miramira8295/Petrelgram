@@ -1,7 +1,7 @@
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
@@ -116,7 +116,7 @@ export struct ChatHeader {
       LoadingProgress().width(14).height(14).color(COLOR_TEXT_SECONDARY).margin({ left: 4 });
     } else if (this.isMuted) {
       SymbolGlyph($r('sys.symbol.bell_slash'))
-        .fontSize(14).fontColor([COLOR_TEXT_SECONDARY]).margin({ left: 4 });
+        .fontSize(14).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 });
     }
   }
 

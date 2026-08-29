@@ -15,7 +15,7 @@ import {
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -557,7 +557,7 @@ struct FolderEditPage {
           Column({ space: 3 }) {
             Row() {
               SymbolGlyph(folderSymbol(this.defaultIconName)).fontSize(20)
-                .fontColor([this.iconName === '' ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+                .fontColor([this.iconName === '' ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
             }.width(42).height(42).borderRadius(14)
               .justifyContent(FlexAlign.Center).backgroundColor(this.iconName === '' ? '#225B8FF9' : COLOR_PAGE_BG)
               .border({ width: this.iconName === '' ? 1.5 : 0, color: COLOR_PRIMARY });
@@ -567,7 +567,7 @@ struct FolderEditPage {
             Column({ space: 3 }) {
               Row() {
                 SymbolGlyph(option.symbol).fontSize(20)
-                  .fontColor([this.iconName === option.name ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY]);
+                  .fontColor([this.iconName === option.name ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
               }.width(42).height(42).borderRadius(14)
                 .justifyContent(FlexAlign.Center).backgroundColor(this.iconName === option.name ? '#225B8FF9' : COLOR_PAGE_BG)
                 .border({ width: this.iconName === option.name ? 1.5 : 0, color: COLOR_PRIMARY });
@@ -580,7 +580,7 @@ struct FolderEditPage {
         Divider().strokeWidth(0.5).color(COLOR_DIVIDER);
         Text($r('app.string.fe_tag_colour')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%');
         Row({ space: 12 }) {
-          Row() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(14).fontColor([COLOR_TEXT_SECONDARY]); }
+          Row() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(14).fontColor([COLOR_ICON_SECONDARY]); }
             .width(30).height(30).borderRadius(15).justifyContent(FlexAlign.Center)
             .border({ width: this.colorId === -1 ? 2 : 1, color: this.colorId === -1 ? COLOR_PRIMARY : COLOR_DIVIDER })
             .onClick((): void => { this.colorId = -1; });
@@ -634,7 +634,7 @@ struct FolderEditPage {
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         Text(this.kindLabel(this.summary(id).kind)).fontSize(10).fontColor(COLOR_TEXT_SECONDARY);
       }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      Row() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TEXT_SECONDARY]); }
+      Row() { SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]); }
         .width(36).height(36).borderRadius(18).justifyContent(FlexAlign.Center)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
         .onClick((): void => this.removeChat(id, included));
@@ -711,7 +711,7 @@ struct FolderEditPage {
         Text(this.base.isShareable ? $r('app.string.fe_manage_links') : $r('app.string.fe_create_link_sub'))
           .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
       }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
     }.width('100%').padding(14).backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
       .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
       .onClick((): void => this.openShareLinks());
@@ -774,7 +774,7 @@ struct FolderEditPage {
           .onClick((): void => { this.pickerOpen = false; this.pickerQuery = ''; });
       }.width('100%').padding({ left: 16, right: 10, top: 12, bottom: 8 });
       Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(17).fontColor([COLOR_TEXT_SECONDARY]);
+        SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
         TextInput({ placeholder: $r('app.string.fe_search_hint'), text: this.pickerQuery })
           .fontSize(15).layoutWeight(1).backgroundColor(Color.Transparent).padding(0)
           .onChange((value: string): void => this.schedulePickerSearch(value));

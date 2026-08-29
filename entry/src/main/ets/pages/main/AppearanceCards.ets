@@ -11,7 +11,7 @@ import { AccentPalettes } from '../../store/AccentColorStore';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { AccentPreview, accentPreviewOf, profileAccentPreviewOf } from '../../util/accentPresentation';
 import {
-  COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, darkResourceMode
+  COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, darkResourceMode
 } from '../../util/theme';
 import {
   BUBBLE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_ACCENT_HEX, KEY_ACCENT_HEX_DARK, KEY_BUBBLE_IN_HEX,
@@ -126,7 +126,7 @@ export struct BubbleColorsCard {
       Column().width(DOT).height(DOT).borderRadius(DOT / 2)
         .backgroundColor(hexOrDefault(this.hexFor(key), defaultHexFor(key)))
         .border({ width: 1, color: '#22000000' });
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').height(ROW_H).padding({ left: 16, right: 12 })
     .stateStyles({ normal: this.rowNormal, pressed: this.rowPressed })
@@ -236,7 +236,7 @@ export struct AccentColorCard {
       Column().width(DOT).height(DOT).borderRadius(DOT / 2)
         .backgroundColor(hexOrDefault(this.hexFor(key), defaultHexFor(key)))
         .border({ width: 1, color: '#22000000' });
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width('100%').height(ROW_H).padding({ left: 16, right: 12 })
     .stateStyles({ normal: this.rowNormal, pressed: this.rowPressed })

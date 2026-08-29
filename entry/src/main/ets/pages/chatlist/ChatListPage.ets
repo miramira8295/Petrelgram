@@ -11,7 +11,7 @@ import {
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
-import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
 } from '../../store/AppSettings';
@@ -610,7 +610,7 @@ export struct ChatListPage {
   @Builder
   topAction(icon: string, label: string, onTap: () => void) {
     Row() {
-      SymbolGlyph($r(icon)).fontSize(23).fontColor([COLOR_TEXT_SECONDARY]);
+      SymbolGlyph($r(icon)).fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
     .borderRadius(TOP_ACTION_SIZE / 2)
@@ -640,7 +640,7 @@ export struct ChatListPage {
       } else {
         SymbolGlyph($r('sys.symbol.magnifyingglass'))
           .fontSize(23)
-          .fontColor([COLOR_TEXT_SECONDARY])
+          .fontColor([COLOR_ICON_SECONDARY])
           .transition(TransitionEffect.OPACITY
             .combine(TransitionEffect.scale({ x: 0.84, y: 0.84 }))
             .animation({
@@ -806,7 +806,7 @@ export struct ChatListPage {
       this.searchAction();
 
       Row() {
-        SymbolGlyph($r('sys.symbol.more')).fontSize(23).fontColor([COLOR_TEXT_SECONDARY]);
+        SymbolGlyph($r('sys.symbol.more')).fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
       }
       .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
       .borderRadius(TOP_ACTION_SIZE / 2)
