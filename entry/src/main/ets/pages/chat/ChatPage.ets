@@ -158,7 +158,8 @@ import {
   TRANSLATE_LANG_CODES
 } from '../../services/TranslationService';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, darkResourceMode, KEY_APP_DARK
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_LIGHT,
+  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY, darkResourceMode, KEY_APP_DARK
 } from '../../util/theme';
 import {
   normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf,
@@ -190,7 +191,7 @@ import {
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
 import {
-  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  glassTintHex, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
@@ -218,6 +219,7 @@ import {
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
+import { chromeSitsOnLight } from '../../util/chatChrome';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
@@ -1673,6 +1675,28 @@ export struct ChatPage {
   // Resolution (chat background → theme → account default → installed default)
   // and its four TDLib subscriptions live in ChatBackgroundStore.
   @Local chatBg: ChatBackgroundState = emptyChatBackground();
+
+  // ── chrome 的前景要跟着**壁纸**翻，不是跟着深浅色模式 ───────────────────
+  //
+  // 顶栏/置顶条/输入栏浮在聊天壁纸上，玻璃只是薄薄一层。用户在深色模式下设了
+  // 一张浅色壁纸时，这几条栏其实坐在**亮底**上——真机实测合成底 RGB(174,172,196)，
+  // 图标 1.13:1、连纯白主文字也只有 2.22:1，整条栏不可读。加厚玻璃救不了
+  // （要 alpha≈0.90 才够，那就不是玻璃了），只能翻前景。判据见 util/chatChrome。
+  //
+  // **只在深色模式下才翻**：浅色模式的前景本来就是给亮底挑的，不用动，也就
+  // 保证了这次改动对浅色模式零影响。
+  private chromeOnLightBg(): boolean {
+    return this.appDark &&
+      chromeSitsOnLight(this.chatBg.colors, glassTintHex(true), false);
+  }
+
+  private chromeIcon(): ResourceColor {
+    return this.chromeOnLightBg() ? COLOR_ICON_ON_LIGHT : COLOR_ICON_SECONDARY;
+  }
+
+  private chromeText(): ResourceColor {
+    return this.chromeOnLightBg() ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_PRIMARY;
+  }
   private bgStore: ChatBackgroundStore | null = null;
   private unsubBg: (() => void) | null = null;
   private unsubTranslatable: (() => void) | null = null;
@@ -9005,7 +9029,7 @@ export struct ChatPage {
           // 和输入框里麦克风↔发送键的互换是同一套时序。
           SymbolGlyph($r('sys.symbol.paperclip'))
             .fontSize(23)
-            .fontColor([this.attachPanelOpen ? this.accent() : COLOR_ICON_SECONDARY])
+            .fontColor([this.attachPanelOpen ? this.accent() : this.chromeIcon()])
             .opacity(this.attachPanelOpen ? 0 : 1)
             .rotate({ angle: this.attachPanelOpen ? 45 : 0 })
             .animation({
@@ -9106,7 +9130,7 @@ export struct ChatPage {
           }
           SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.face_smiling_fill' : 'sys.symbol.face_smiling'))
             .fontSize(24)
-            .fontColor([this.showEmojiPanel ? this.accent() : COLOR_ICON_SECONDARY])
+            .fontColor([this.showEmojiPanel ? this.accent() : this.chromeIcon()])
             .onAreaChange((_old: Area, area: Area) => {
               const gx = area.globalPosition.x as number;
               this.emojiBtnCx = gx + (area.width as number) / 2;
@@ -10030,6 +10054,7 @@ export struct ChatPage {
             });
           } else {
             ChatHeader({
+              onLightBg: this.chromeOnLightBg(),
               titleText: this.headerText().titleText,
               subtitleText: this.headerText().subtitleText,
               headerState: this.headerState,

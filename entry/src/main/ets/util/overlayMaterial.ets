@@ -265,6 +265,20 @@ function usesLightEffect(surface: OverlaySurface): boolean {
 
 // 材质接管按压时，调用方手写的按压动画必须让位——两层形变叠加是官方点名的坑。
 // 调用点写成 `pressAnimationWins('control') ? 0.9 : 1` 这种形式。
+// 当前玻璃填充的**实际色值**，给 util/chatChrome 算合成底用。
+//
+// 为什么要镜像一份而不是读资源：`getColorSync` 在本项目深色模式下会返回浅色
+// 限定的值（见 util/theme 里那段说明与它引用的排查报告），读不得。
+//
+// **改 resources/{base,dark}/element/color.json 的 material_tint / dock_glass
+// 必须同步改这里**，否则 chrome 的亮暗判定会按错误的玻璃厚度算。
+export function glassTintHex(dark: boolean): string {
+  if (immersiveMaterialAvailable()) {
+    return dark ? '#402F3F52' : '#40FFFFFF';
+  }
+  return dark ? '#8C2F3F52' : '#8CFFFFFF';
+}
+
 export function pressAnimationWins(surface: OverlaySurface): boolean {
   return !(materialAvailable() && usesInteraction(surface));
 }

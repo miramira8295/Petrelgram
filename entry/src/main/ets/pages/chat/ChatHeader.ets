@@ -1,7 +1,8 @@
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_LIGHT,
+  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
@@ -36,6 +37,9 @@ export struct ChatHeader {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 顶栏浮在聊天壁纸上：深色模式 + 浅色壁纸时它其实坐在亮底上，白色前景会掉到
+  // 2.22:1。由 ChatPage 算好传进来（判据见 util/chatChrome），这里只按它选前景。
+  @Prop onLightBg: boolean = false;
   @Prop titleText: string;
   @Prop subtitleText: string;
   // 'ready' | 'loading' | 'error'——error 时副标题变红，点击是重试而不是进资料页。
@@ -113,17 +117,17 @@ export struct ChatHeader {
       }
     }
     if (this.muteUpdating) {
-      LoadingProgress().width(14).height(14).color(COLOR_TEXT_SECONDARY).margin({ left: 4 });
+      LoadingProgress().width(14).height(14).color(this.fgSecondary()).margin({ left: 4 });
     } else if (this.isMuted) {
       SymbolGlyph($r('sys.symbol.bell_slash'))
-        .fontSize(14).fontColor([COLOR_ICON_SECONDARY]).margin({ left: 4 });
+        .fontSize(14).fontColor([this.fgIcon()]).margin({ left: 4 });
     }
   }
 
   @Builder
   backButton() {
     Row() {
-      SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+      SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([this.fgPrimary()]);
     }
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
@@ -152,7 +156,7 @@ export struct ChatHeader {
       Stack() {
         Image($r('app.media.ic_header_menu'))
           .width(18).height(18)
-          .fillColor(COLOR_TEXT_PRIMARY)
+          .fillColor(this.fgPrimary())
           .draggable(false)
           .opacity(this.menuShow ? 0 : 1)
           .rotate({ angle: this.menuShow ? 90 : 0 })
@@ -163,7 +167,7 @@ export struct ChatHeader {
             curve: Curve.EaseInOut
           });
         SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(19).fontColor([COLOR_TEXT_PRIMARY])
+          .fontSize(19).fontColor([this.fgPrimary()])
           .opacity(this.menuShow ? 1 : 0)
           .rotate({ angle: this.menuShow ? 0 : -90 })
           .animation({
@@ -206,6 +210,20 @@ export struct ChatHeader {
     });
   }
 
+  private fgPrimary(): ResourceColor {
+    return this.onLightBg ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_PRIMARY;
+  }
+
+  private fgIcon(): ResourceColor {
+    return this.onLightBg ? COLOR_ICON_ON_LIGHT : COLOR_ICON_SECONDARY;
+  }
+
+  private fgSecondary(): ResourceColor {
+    // 亮底上没有"次级灰"可用：#8E8E93 在浅紫合成底上只有 1.5:1。副标题（成员数/
+    // 在线数）本来就短，宁可和主标题同色也别看不见。
+    return this.onLightBg ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_SECONDARY;
+  }
+
   build() {
     Row({ space: 8 }) {
       this.backButton();
@@ -225,7 +243,7 @@ export struct ChatHeader {
             Text(this.titleText)
               .fontSize(16)
               .fontWeight(FontWeight.Bold)
-              .fontColor(COLOR_TEXT_PRIMARY)
+              .fontColor(this.fgPrimary())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .flexShrink(1);
@@ -235,7 +253,7 @@ export struct ChatHeader {
           .alignItems(VerticalAlign.Center);
           Text(this.subtitleText)
             .fontSize(12)
-            .fontColor(this.headerState === 'error' ? '#E64646' : COLOR_TEXT_SECONDARY)
+            .fontColor(this.headerState === 'error' ? '#E64646' : this.fgSecondary())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 1 });

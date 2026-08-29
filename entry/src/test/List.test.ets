@@ -173,6 +173,7 @@ import mediaGridTest from './MediaGrid.test';
 import tdRequestTimeoutTest from './TdRequestTimeout.test';
 import notifyRateTest from './NotifyRate.test';
 import livePhotoTest from './LivePhoto.test';
+import chatChromeTest from './ChatChrome.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -351,4 +352,5 @@ export default function testsuite() {
   tdRequestTimeoutTest();
   notifyRateTest();
   livePhotoTest();
+  chatChromeTest();
 }

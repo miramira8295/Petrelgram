@@ -83,6 +83,12 @@ export const COLOR_TEXT_SECONDARY: ResourceColor = $r('app.color.text_secondary'
 // #AEBACA 在 page_bg/surface/surface_alt 三种底上是 8.28/6.99/5.89，够看又不至于
 // 抢主文字的白。**浅色模式一个像素都没动**。
 export const COLOR_ICON_SECONDARY: ResourceColor = $r('app.color.icon_secondary');
+// 深色模式下 chrome 站到了**亮壁纸**上时用的前景（判定见 util/chatChrome）。
+// 不做成主题资源：它们是为"亮底"挑的，与 app 处于哪个模式无关——深色模式下
+// 恰好站到亮底上，正是这两个值存在的全部理由。
+// 取值依据：在截图那种浅紫合成底 RGB(174,172,196) 上，图标 5.0:1、文字 12.6:1。
+export const COLOR_ICON_ON_LIGHT: ResourceColor = '#333D49';
+export const COLOR_TEXT_ON_LIGHT: ResourceColor = '#0E1621';
 export const COLOR_MUTED_BADGE: ResourceColor = $r('app.color.badge_bg');
 export const AVATAR_SIZE: number = 56;
 export const ROW_PAD_H: number = 14;
