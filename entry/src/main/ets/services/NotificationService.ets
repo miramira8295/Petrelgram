@@ -57,8 +57,20 @@ export class NotificationService {
     this.chats = chats;
     this.publisher = publisher;
     this.isForeground = isForeground;
-    this.unsubs.push(client.onUpdate('updateNotificationGroup',
-      (u: TdObject) => this.onNotificationGroup(u)));
+    // **不订阅 updateNotificationGroup。** 它的 removed_notification_ids 用的是
+    // TDLib 自己的通知 id，与我们发布的 id 没有映射关系（推导见下面
+    // updateChatReadInbox 那段注释）。这里原来照着它逐个 publisher.cancel(id)，
+    // 判断早就写在注释里了，调用却忘了删，后果有两层：
+    //   · 现在：每次都撤了个空。真机一次会话刷出 62 条
+    //     "SystemNotificationPublisher.cancel(N) failed: The notification does
+    //     not exist"，占掉该段日志几乎全部的非 probe 错误，真正的错误被淹掉。
+    //   · 以后：我们发的 id 是 `messageId / 1048576 % 900000 + 1000`，恒 ≥ 1000；
+    //     日志里 TDLib 那批 id 还都 < 1000（150..693），两边暂时错开。但 TDLib 的
+    //     通知 id 是递增计数器，越过 1000 就会撞进我们的区间——那一撤会误关掉一
+    //     条真正属于我们的通知，而且悄无声息。
+    // 撤销的唯一机制是下面的已读水位（updateChatReadInbox）。
+    // notification_group_* 那两个 option 保留不动：改它们会动 TDLib 自己的通知
+    // 计算，不在这次的范围内。
     // 通知发布统一由 updateNewMessage 驱动：TDLib 的通知组只在启动同步等
     // 特定时机产出，不能作为唯一来源。
     this.unsubs.push(client.onUpdate('updateNewMessage', (u: TdObject): void => {
@@ -166,15 +178,6 @@ export class NotificationService {
     this.client.send(req).catch((e: TdError): void => {
       logE(`NotificationService.setOption(${name}) failed: ${e.message}`);
     });
-  }
-
-  private onNotificationGroup(u: TdObject): void {
-    const removed: number[] = (u['removed_notification_ids'] as number[] | undefined) ?? [];
-    for (const id of removed) {
-      this.publisher.cancel(id);
-    }
-    // 发布统一走 considerFallbackNotice（updateNewMessage 驱动）：本机 td
-    // 的通知组只在特定时机产出，不能作为唯一来源；两条路径同时发布会重复。
   }
 
   private buildNotice(notification: TdObject, groupId: number,

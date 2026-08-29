@@ -262,6 +262,24 @@ export default function notificationServiceTest() {
       env.bridge.onReceive(JSON.stringify(read));
       expect(env.publisher.cancelled.join(',')).assertEqual(`${shownId}`);
     });
+    // TDLib 的 removed_notification_ids 是它自己的通知 id，和我们发布的 id 无法
+    // 映射，照着撤只会撤空——真机一次会话刷出 62 条 cancel failed；等 TDLib 的
+    // 递增 id 越过 1000 撞进我们的区间，还会误关掉真正的通知。这条钉住「收到
+    // 通知组移除时一条都不许撤」。
+    it('notification_group_removals_never_cancel', 0, () => {
+      const env = setup();
+      env.foreground = false;
+      feedNewMessage(env.bridge, 5, 12582912, 'a', false);
+      expect(env.publisher.published.length).assertEqual(1);
+      feedGroup(env.bridge, 1, 5, [messageNotification(150, 'hi')], [150, 151, 152]);
+      expect(env.publisher.cancelled.length).assertEqual(0);
+      // 真正的撤销机制（已读水位）不受影响。
+      const read: TdObject = { '@type': 'updateChatReadInbox' };
+      read['chat_id'] = 5;
+      read['unread_count'] = 0;
+      env.bridge.onReceive(JSON.stringify(read));
+      expect(env.publisher.cancelled.length).assertEqual(1);
+    });
     it('call_ringing_publishes_and_clears', 0, () => {
       // CallSession 用独立 bridge，避免与通知服务的 TdClient 事件混淆。
       const b2 = new FakeBridge();
