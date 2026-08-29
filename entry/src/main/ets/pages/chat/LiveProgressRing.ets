@@ -25,6 +25,11 @@ export struct LiveProgressRing {
   @Prop ringSize: number = 36;
   @State private percent: number = 0;
   private unsubProgress: (() => void) | null = null;
+  // 回收时挂在哪个文件上。复用时若还是同一个文件，进度原样留着——理由与
+  // LiveThumbImage.recycledFileId 完全相同：@ReusableV2 + reusable:false 下
+  // 回收/复用是**普通滑动**的常态，无条件重置 = 每次回收必闪一下。
+  // -1 = 没回收过（0 是合法的 fileId，表示「没有文件」）。
+  private recycledFileId: number = -1;
   // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
   private frameOwnerId: number = nextFrameOwnerId();
 
@@ -56,8 +61,9 @@ export struct LiveProgressRing {
   }
 
   aboutToRecycle(): void {
+    this.recycledFileId = this.fileId;
     this.detach();
-    this.percent = 0;
+    // 进度**不在这里重置**，换了文件才重置（见 recycledFileId）。
     // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
     // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
     cancelNextFrame(this.frameOwnerId);
@@ -67,6 +73,10 @@ export struct LiveProgressRing {
     // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
     // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
     const fileId: number | undefined = reuseParam(params, 'fileId') as number | undefined;
+    if ((fileId ?? this.fileId) !== this.recycledFileId) {
+      this.percent = 0;
+    }
+    this.recycledFileId = -1;
     const initialPercent: number | undefined =
       reuseParam(params, 'initialPercent') as number | undefined;
     if (fileId !== undefined) {
