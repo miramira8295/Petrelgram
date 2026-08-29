@@ -41,6 +41,10 @@
       "value": "#CCF3F4F6"
     },
     {
+      "name": "bar_on_wallpaper",
+      "value": "#A6FFFFFF"
+    },
+    {
       "name": "selected_pill",
       "value": "#E3F0FB"
     },

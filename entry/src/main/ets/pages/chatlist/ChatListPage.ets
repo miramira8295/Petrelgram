@@ -25,7 +25,7 @@ import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout } from '../../util/splitMetrics';
-import { mainPageFill } from '../../util/theme';
+import { mainBarFill, mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
@@ -1080,7 +1080,7 @@ export struct ChatListPage {
         avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
         // 标题栏也让位：它和列表同属一张"浮在壁纸上"的面，只有行卡片自己带底。
-        style: titleBarStyle(mainPageFill(this.appWallpaperOn), this.accent()),
+        style: titleBarStyle(mainBarFill(this.appWallpaperOn), this.accent()),
         content: this.titleBarContent()
       })
       // 状态栏图标色钉死在深浅色上。不设 systemBarStyle 时 HDS 会按标题栏的

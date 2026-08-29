@@ -106,6 +106,17 @@ export function mainPageFill(wallpaperOn: boolean): ResourceColor {
   return wallpaperOn ? Color.Transparent : $r('app.color.surface');
 }
 
+// 主界面**标题栏**的底。整页可以全透，标题栏不行：标题和文件夹条直接压在一张
+// 任意照片上会看不清（用户实报）。
+//
+// 65% 是个折中：比行卡片的 80% 透一些，壁纸仍看得见；又比 material_tint 的 25%
+// 实得多，白字读得清。**真正的背景模糊做不到**——HDS 的 titleBarStyle 只接一个
+// 背景色，它自带的模糊是"内容滚到标题栏底下"才生效的滚动效果；要在标题栏底下加
+// backdropBlur，得有一个画在它**上方**的组件，而那块地是 HDS 自己画的。
+export function mainBarFill(wallpaperOn: boolean): ResourceColor {
+  return wallpaperOn ? $r('app.color.bar_on_wallpaper') : $r('app.color.surface');
+}
+
 export const COLOR_ICON_ON_LIGHT: ResourceColor = '#333D49';
 // 聊天页 chrome（顶栏 / 输入栏）在**暗底**上的前景：亮白，不是列表里那种次级灰。
 //

@@ -36,6 +36,8 @@ import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
 import { isSplitLayout } from '../../util/splitMetrics';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { mainBarFill, mainPageFill } from '../../util/theme';
+import { KEY_APP_BG_ON } from '../../store/AppSettings';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -78,6 +80,8 @@ function profileFrameKey(name: string, param: Object | undefined): string {
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct MyProfilePage {
+  // 由 MainScreen 算好写进来的「APP 壁纸生效中」，见 store/AppSettings。
+  @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
@@ -2082,7 +2086,7 @@ export struct MyProfilePage {
       // 就盖到那儿。
       avoidLayoutSafeArea: true,
       enableComponentSafeArea: true,
-      style: titleBarStyle(PAGE_BG),
+      style: titleBarStyle(mainBarFill(this.appWallpaperOn)),
       content: this.titleBarContent()
     })
     // 一级页签，没有返回键。
@@ -2126,7 +2130,7 @@ export struct MyProfilePage {
     .titleMode(HdsNavigationTitleMode.MINI)
     .bindToScrollable([this.profileScroller])
     .width('100%').height('100%')
-    .backgroundColor(PAGE_BG);
+    .backgroundColor(mainPageFill(this.appWallpaperOn));
   }
 }
 
