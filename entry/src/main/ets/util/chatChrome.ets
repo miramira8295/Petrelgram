@@ -48,8 +48,16 @@ function hex2(v: number): string {
 //
 // 图片壁纸拿不到颜色（要解码采样，代价太大），一律走 fallback——那正是"按主题判"
 // 的旧行为，不会比现在更差。
+// darkMask：深色模式下压在整层壁纸上的黑色遮罩不透明度（0..1）。
+//
+// **漏掉它是个真错**（用户报：深色模式下顶栏/输入栏图标变成了深色）。Telegram 的
+// 壁纸——尤其图案类——填充色常常是浅的（真机一例：#DBDDBB,#6BA587,#D5D88D,#88B884，
+// 平均是浅绿），但深色模式下 ChatBackdrop 会在整层上再压一层黑：壁纸自带的
+// dark_theme_dimming（服务端下发，通常 50% 以上）加上用户那根遮罩滑杆。
+// 于是**填充浅 + 遮罩重 = 屏幕上其实是深的**，而只看填充色的判定会一口咬定"亮底"，
+// 把前景翻成深色——正好和实际相反。
 export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
-  fallbackOnLight: boolean): boolean {
+  fallbackOnLight: boolean, darkMask: number = 0): boolean {
   let r: number = 0;
   let g: number = 0;
   let b: number = 0;
@@ -69,11 +77,17 @@ export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
   if (n === 0) {
     return fallbackOnLight;
   }
+  // 合成顺序要和 ChatBackdrop 画的一致：壁纸 → 黑色遮罩 → 玻璃层。遮罩画在整层
+  // 末尾（见 ChatBackdrop.darkMaskOpacity 那段注释），所以它先于玻璃压上去。
+  const mask: number = Math.max(0, Math.min(1, darkMask));
+  const wr: number = (r / n) * (1 - mask);
+  const wg: number = (g / n) * (1 - mask);
+  const wb: number = (b / n) * (1 - mask);
   const tint: number[] = argbOf(tintArgb);
   const a: number = tint[0] < 0 ? 0 : tint[0];
   const mixed: string = '#' +
-    hex2(a * tint[1] + (1 - a) * (r / n)) +
-    hex2(a * tint[2] + (1 - a) * (g / n)) +
-    hex2(a * tint[3] + (1 - a) * (b / n));
+    hex2(a * tint[1] + (1 - a) * wr) +
+    hex2(a * tint[2] + (1 - a) * wg) +
+    hex2(a * tint[3] + (1 - a) * wb);
   return relativeLuminance(mixed) > LIGHT_THRESHOLD;
 }

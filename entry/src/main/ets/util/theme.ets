@@ -107,6 +107,12 @@ export function mainPageFill(wallpaperOn: boolean): ResourceColor {
 }
 
 export const COLOR_ICON_ON_LIGHT: ResourceColor = '#333D49';
+// 聊天页 chrome（顶栏 / 输入栏）在**暗底**上的前景：亮白，不是列表里那种次级灰。
+//
+// 这两条栏浮在壁纸上、周围没有卡片托底，用 #AEBACA 那种灰会糊进背景；而列表里的
+// 图标坐在 surface 上、旁边就是卡片边界，灰一点反而不吵。用户原话：「深色模式，
+// 会话详情输入框图标、顶栏文字应该都是亮白色」。
+export const COLOR_ICON_ON_DARK: ResourceColor = '#FFFFFF';
 export const COLOR_TEXT_ON_LIGHT: ResourceColor = '#0E1621';
 export const COLOR_MUTED_BADGE: ResourceColor = $r('app.color.badge_bg');
 export const AVATAR_SIZE: number = 56;

@@ -38,6 +38,27 @@ export default function chatChromeTest() {
       expect(chromeSitsOnLight(['zzz', '#FFFFFF'], TINT_MATERIAL, false)).assertTrue();
     });
 
+    // **漏算遮罩曾经把深色壁纸判成亮底**（用户实报）：Telegram 图案壁纸的填充色
+    // 常常是浅的，但深色模式下整层还压着一层黑（dark_theme_dimming + 用户滑杆）。
+    it('dark_mask_makes_a_light_fill_render_dark', 0, (): void => {
+      const lightFill: string[] = ['#DBDDBB', '#6BA587', '#D5D88D', '#88B884'];
+      // 不算遮罩：判成亮底（这就是当时的错）。
+      expect(chromeSitsOnLight(lightFill, TINT_MATERIAL, false, 0)).assertTrue();
+      // 算上壁纸自带的 55% 遮罩：其实是暗底，前景应当保持亮色。
+      expect(chromeSitsOnLight(lightFill, TINT_MATERIAL, false, 0.55)).assertFalse();
+    });
+
+    // 遮罩拉满时无论什么壁纸都是暗底。
+    it('full_mask_is_always_dark', 0, (): void => {
+      expect(chromeSitsOnLight(['#FFFFFF'], TINT_MATERIAL, false, 1)).assertFalse();
+    });
+
+    // 脏遮罩值不该翻转结论。
+    it('mask_is_clamped', 0, (): void => {
+      expect(chromeSitsOnLight(['#FFFFFF'], TINT_MATERIAL, false, -1)).assertTrue();
+      expect(chromeSitsOnLight(['#FFFFFF'], TINT_MATERIAL, false, 9)).assertFalse();
+    });
+
     // 阈值按"白色前景还够不够 4.5:1"取（L≈0.183），不是常见的 0.5。
     // #767676 的 L≈0.20，白字在其上只有 4.1:1 —— 必须判成亮底。
     it('threshold_follows_white_text_legibility_not_midpoint', 0, (): void => {

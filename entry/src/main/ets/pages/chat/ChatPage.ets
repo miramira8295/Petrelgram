@@ -158,7 +158,8 @@ import {
   TRANSLATE_LANG_CODES
 } from '../../services/TranslationService';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_LIGHT,
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK,
+  COLOR_ICON_ON_LIGHT,
   COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY, darkResourceMode, KEY_APP_DARK
 } from '../../util/theme';
 import {
@@ -1716,11 +1717,28 @@ export struct ChatPage {
   // 保证了这次改动对浅色模式零影响。
   private chromeOnLightBg(): boolean {
     return this.appDark &&
-      chromeSitsOnLight(this.chatBg.colors, glassTintHex(true), false);
+      chromeSitsOnLight(this.chatBg.colors, glassTintHex(true), false, this.chromeDarkMask());
+  }
+
+  // 深色模式下压在整层壁纸上的黑，两层叠加：壁纸自带的 dark_theme_dimming（服务端
+  // 下发）和用户那根遮罩滑杆。ChatBackdrop 是分两层画的，所以这里按不透明度叠加
+  // 公式合成，而不是简单相加。
+  //
+  // 漏掉这一项就是用户报的那个错：图案壁纸的填充色常常是浅的，只看填充会判成
+  // 亮底、把前景翻成深色，而屏幕上其实是深的。
+  private chromeDarkMask(): number {
+    const server: number = Math.max(0, Math.min(1, this.chatBg.dimming));
+    const user: number = Math.max(0, Math.min(1, this.chatBgDim));
+    return 1 - (1 - server) * (1 - user);
   }
 
   private chromeIcon(): ResourceColor {
-    return this.chromeOnLightBg() ? COLOR_ICON_ON_LIGHT : COLOR_ICON_SECONDARY;
+    if (this.chromeOnLightBg()) {
+      return COLOR_ICON_ON_LIGHT;
+    }
+    // 深色模式下这两条栏浮在暗壁纸上，用亮白；浅色模式保持原来的次级灰——白色在
+    // 浅色底上等于没有。
+    return this.appDark ? COLOR_ICON_ON_DARK : COLOR_ICON_SECONDARY;
   }
 
   private chromeText(): ResourceColor {

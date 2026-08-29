@@ -1,8 +1,8 @@
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_LIGHT,
-  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT,
+  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY, KEY_APP_DARK } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
@@ -40,6 +40,7 @@ export struct ChatHeader {
   // 顶栏浮在聊天壁纸上：深色模式 + 浅色壁纸时它其实坐在亮底上，白色前景会掉到
   // 2.22:1。由 ChatPage 算好传进来（判据见 util/chatChrome），这里只按它选前景。
   @Prop onLightBg: boolean = false;
+  @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @Prop titleText: string;
   @Prop subtitleText: string;
   // 'ready' | 'loading' | 'error'——error 时副标题变红，点击是重试而不是进资料页。
@@ -215,7 +216,11 @@ export struct ChatHeader {
   }
 
   private fgIcon(): ResourceColor {
-    return this.onLightBg ? COLOR_ICON_ON_LIGHT : COLOR_ICON_SECONDARY;
+    if (this.onLightBg) {
+      return COLOR_ICON_ON_LIGHT;
+    }
+    // 和输入栏同一套：顶栏浮在壁纸上，深色下用亮白，浅色下用次级灰。
+    return this.appDark ? COLOR_ICON_ON_DARK : COLOR_ICON_SECONDARY;
   }
 
   private fgSecondary(): ResourceColor {
