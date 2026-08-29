@@ -85,3 +85,36 @@ export function planAnchorRestore(rect: AnchorRectSnapshot, itemY: number): Anch
   }
   return { mode: ANCHOR_RESTORE_FALLBACK, dy: 0 };
 }
+
+// 量不到锚点时，隔一帧再量几次。
+//
+// 【为什么必须重试——2026-08-29 真机日志里的天然 A/B】
+// 同一台设备、同一个人、同一份导出日志跨了两个构建，分界干净（前半只有
+// retry/fallback，后半只有 give-up）：
+//   · 有重试的前半（ca5bde9）：60 次复位 = attempt=0 量到 47 + 重试后量到 11
+//     + 兜底 2，**一次都没有落空**；
+//   · 只量一次的后半（ecce2fd）：31 次复位 = 量到 9 + **放弃 22，占 71%**。
+// 用户正是在后半段报「刚点进新频道动一动就跳了好几下，进来看的消息也找不到
+// 了」：一次向上翻页连着灌进 6 页 30 行，六次前插的补偿**全部放弃**。
+//
+// ecce2fd 当初的依据是另一场会话「attempt=0 成功 83/90」，据此认定「能量到时
+// 没用、量不到时有害」。但那批样本来自较轻的场景；本场后半 attempt=0 只成功
+// 9/31（29%）。媒体重的频道排版更慢，setTimeout(0) 那一刻新快照往往还没排完
+// 版，getItemRect 必然返回全 0——这正是 ca5bde9 当初查明的现象。所以「只量
+// 一次」在这类频道里等于「大多数时候什么都不补」。
+//
+// 【兜底不恢复】ca5bde9 已证实 scrollToIndex(START) 按 List 顶端对齐、没算
+// contentStartOffset 那段顶栏留白，会把视口整体往下推——那才是真正把视口挪走
+// 的动作。它在前半段也只占 2/60。所以这里只恢复重试，重试用尽仍量不到就放弃。
+//
+// 【已知残留】重试量到的 dy 混着这一帧里发生的一切，前半段出现过 dy=1396
+// （dOff=3812）这种大额修正。相比「71% 的前插零补偿」这是更小的害，但不是没有
+// 代价。真正的解法是拿到「排版完成」的回调（inspector 的 layout 观察者）在那
+// 一刻量一次，不必猜帧——留作后续。
+export const ANCHOR_RESTORE_ATTEMPTS: number = 3;
+export const ANCHOR_RESTORE_RETRY_MS: number = 16;
+
+// 量到了（delta）就不再重试；量不到且还有次数就再来一次。
+export function shouldRetryAnchorRestore(mode: string, attempt: number): boolean {
+  return mode !== ANCHOR_RESTORE_DELTA && attempt + 1 < ANCHOR_RESTORE_ATTEMPTS;
+}

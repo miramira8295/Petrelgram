@@ -102,7 +102,8 @@ import {
 } from '../../util/appendAnchor';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
 import {
-  ANCHOR_RESTORE_DELTA, AnchorRectSnapshot, AnchorRestorePlan,
+  ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_RETRY_MS, AnchorRectSnapshot, AnchorRestorePlan,
+  shouldRetryAnchorRestore,
   INVALID_ANCHOR_RECT, planAnchorRestore
 } from '../../util/anchorRestore';
 import {
@@ -4667,8 +4668,8 @@ export struct ChatPage {
   // getItemRect 拿到全 0，每次都走了 scrollToIndex+scrollBy 兜底；它按 List 顶端对齐，
   // 没算 contentStartOffset 那段顶栏留白，把视口往下推了一截（用户：18:00 → 18:05）。
   // 而框架（maintainVisibleContentPosition / stackFromEnd）其实已经把位置保住了。
-  // 现在**只量一次**：量到就补差值（真机上这个差值一直是 0，等于什么都不做），
-  // 量不到就直接放弃——依据见 attemptAnchorRestore 里那段真机数据。
+  // 现在量到就补差值，量不到就下一帧再量（最多三次），用尽仍量不到就放弃——
+  // 依据见 attemptAnchorRestore 里那段真机 A/B 数据。
   private restoreScrollAnchor(targetIndex: number, itemY: number): void {
     const seq: number = ++this.prependRestoreSeq;
     this.attemptAnchorRestore(seq, targetIndex, itemY, 0);
@@ -4689,21 +4690,33 @@ export struct ChatPage {
         rect = INVALID_ANCHOR_RECT;
       }
       const plan: AnchorRestorePlan = planAnchorRestore(rect, itemY);
-      // 量不到就**放弃**，不再重试、也不走 scrollToIndex 兜底。
+      // 量不到就下一帧再量，最多 ANCHOR_RESTORE_ATTEMPTS 次；用尽仍量不到才
+      // 放弃，**且不走 scrollToIndex 兜底**。判据与完整推导见 util/anchorRestore
+      // 的 shouldRetryAnchorRestore。
       //
-      // 【依据是真机数据，不是推理】2026-08-29 PLA-AL10 / 7.0.0.105 上一次会话
-      // （preview.2）里 90 次复位：
-      //   · attempt=0 成功量到的 83 次，**dy 全是 0** —— 锚点行根本没动，
-      //     maintainVisibleContentPosition 自己就把位置守住了，这次复位是空转；
-      //   · 7 次非零 dy（1/10/11/53/62/-24）**无一例外出现在 attempt=1 或 2**，
-      //     也就是首次量不到、16ms 后再量的那一支。那时布局早已翻篇，量到的
-      //     差值不再是「插入造成的位移」，而是这 16ms 里发生的一切；
-      //   · 2 次三连失败走 fallback，`scrollToIndex(START) + scrollBy(85/53)`
-      //     ——**那才是真正把视口挪走的动作**。
-      // 结论：能量到时它没用，量不到时它有害。所以只保留 attempt=0 这一次尝试。
+      // 【这里曾经只量一次，是个回归】ecce2fd 依据一场会话「attempt=0 成功
+      // 83/90、非零 dy 全在重试支」判定「能量到时没用、量不到时有害」，于是删掉
+      // 重试。2026-08-29 的真机日志推翻了这个前提：那份日志跨了两个构建、分界
+      // 干净，等于一次天然 A/B ——
+      //   · 有重试的那半：60 次复位一次都没落空（量到 47 / 重试后量到 11 / 兜底 2）；
+      //   · 只量一次的那半：31 次复位里**放弃 22，占 71%**，且 attempt=0 的成功率
+      //     从 78% 掉到 29%。
+      // 差别在场景轻重：媒体重的频道排版慢，setTimeout(0) 那一刻新快照还没排完
+      // 版，getItemRect 必然全 0（ca5bde9 查明的现象）。用户在后半段报「刚点进新
+      // 频道动一动就跳了好几下，进来看的消息也找不到了」——一次向上翻页连灌 6 页
+      // 30 行，六次前插的补偿全部放弃。
+      //
+      // 兜底仍然不恢复：ca5bde9 已证实 scrollToIndex(START) 没算 contentStartOffset，
+      // 会把视口整体往下推，那才是真正把视口挪走的动作。
       //
       // planAnchorRestore 的 fallback 分支保留不删：判据本身有单测钉着，改判据是
       // 另一件事；这里只是不再按它去 scrollToIndex。
+      if (shouldRetryAnchorRestore(plan.mode, attempt)) {
+        logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex}` +
+          ` oldY=${Math.round(itemY)}`);
+        this.attemptAnchorRestore(seq, targetIndex, itemY, attempt + 1);
+        return;
+      }
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
         logW(`[AnchorRestore] give-up attempt=${attempt} idx=${targetIndex}` +
           ` oldY=${Math.round(itemY)} w=${Math.round(rect.width)} h=${Math.round(rect.height)}`);
@@ -4724,7 +4737,7 @@ export struct ChatPage {
       if (plan.dy !== 0) {
         this.scroller.scrollBy(0, plan.dy);
       }
-    }, 0);
+    }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
   }
 
   private resetHeaderState(cached: ChatEntry | undefined): void {

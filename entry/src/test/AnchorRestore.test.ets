@@ -1,7 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
   planAnchorRestore, INVALID_ANCHOR_RECT,
-  ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_FALLBACK, AnchorRectSnapshot
+  ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_FALLBACK, AnchorRectSnapshot,
+  ANCHOR_RESTORE_ATTEMPTS, shouldRetryAnchorRestore
 } from '../main/ets/util/anchorRestore';
 
 export default function anchorRestoreTest() {
@@ -64,6 +65,37 @@ export default function anchorRestoreTest() {
       expect(planAnchorRestore(noHeight, -30).mode).assertEqual(ANCHOR_RESTORE_FALLBACK);
       const noWidth: AnchorRectSnapshot = { width: 0, height: 64, y: -18 };
       expect(planAnchorRestore(noWidth, -30).mode).assertEqual(ANCHOR_RESTORE_FALLBACK);
+    });
+  });
+
+  describe('shouldRetryAnchorRestore', () => {
+    // 量到了就落地，别再多跑一帧。
+    it('量到就不重试', 0, (): void => {
+      expect(shouldRetryAnchorRestore(ANCHOR_RESTORE_DELTA, 0)).assertFalse();
+      expect(shouldRetryAnchorRestore(ANCHOR_RESTORE_DELTA, 1)).assertFalse();
+    });
+
+    // 真机上 setTimeout(0) 那一刻新快照常常还没排版，首次必然量不到。
+    // 只量一次 = 71% 的前插零补偿（2026-08-29 日志 B 区 22/31）。
+    it('量不到且还有次数就再量一帧', 0, (): void => {
+      expect(shouldRetryAnchorRestore(ANCHOR_RESTORE_FALLBACK, 0)).assertTrue();
+      expect(shouldRetryAnchorRestore(ANCHOR_RESTORE_FALLBACK, 1)).assertTrue();
+    });
+
+    // 用尽了就放弃——不恢复 scrollToIndex 兜底，它会把视口整体往下推。
+    it('次数用尽就放弃', 0, (): void => {
+      expect(shouldRetryAnchorRestore(ANCHOR_RESTORE_FALLBACK, ANCHOR_RESTORE_ATTEMPTS - 1)).assertFalse();
+      expect(shouldRetryAnchorRestore(ANCHOR_RESTORE_FALLBACK, ANCHOR_RESTORE_ATTEMPTS)).assertFalse();
+    });
+
+    // 总次数含首次，所以最多只多跑 ATTEMPTS-1 帧。
+    it('总尝试次数是三次', 0, (): void => {
+      expect(ANCHOR_RESTORE_ATTEMPTS).assertEqual(3);
+      let attempt: number = 0;
+      while (shouldRetryAnchorRestore(ANCHOR_RESTORE_FALLBACK, attempt)) {
+        attempt++;
+      }
+      expect(attempt).assertEqual(ANCHOR_RESTORE_ATTEMPTS - 1);
     });
   });
 }
