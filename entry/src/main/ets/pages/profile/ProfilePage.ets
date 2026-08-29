@@ -34,6 +34,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
+import { mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -134,6 +135,8 @@ export struct ProfilePage {
   @State sharedTabKeys: string[] = [];
   @State sharedTabsState: string = 'loading';
   @State sharedItems: ProfileContentItem[] = [];
+  // 共享媒体网格那张玻璃卡的内容宽，由 onAreaChange 量得；0 = 还没量到。
+  @State private sharedRowW: number = 0;
   @State sharedState: string = 'idle';
   @State sharedErrorText: string = '';
   @State sharedHasMore: boolean = false;
@@ -1139,7 +1142,10 @@ export struct ProfilePage {
   }
 
   private sharedMediaCell(): number {
-    return Math.max(92, (this.screenW - 30) / 3);
+    // 按量到的内容宽算，不是按窗口宽——描边不算在父容器内容区里，按
+    // screenW 算出来的三格会比内容区宽 1.4vp，第三格永远掉行。见 util/mediaGrid。
+    return mediaGridCellSize(this.sharedRowW > 0
+      ? this.sharedRowW : mediaFallbackContentWidth(this.screenW));
   }
 
   private sharedContentIcon(item: ProfileContentItem): string {
@@ -1196,6 +1202,9 @@ export struct ProfilePage {
 
   @Builder
   sharedMediaGrid() {
+    // 玻璃卡挪到外层 Column：Flex 自己不带描边，onAreaChange 量到的就是真正
+    // 可用的内容宽。和群资料页是同一处修法，见 util/mediaGrid。
+    Column() {
     Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
       ForEach(this.sharedItems, (item: ProfileContentItem) => {
         Stack({ alignContent: Alignment.BottomEnd }) {
@@ -1227,6 +1236,16 @@ export struct ProfilePage {
         .stateStyles({ normal: this.tabNormalStyle, pressed: this.tabPressedStyle })
         .onClick((): void => { this.openSharedMessage(item.messageId); });
       }, (item: ProfileContentItem) => `${item.messageId}_${item.thumbPath}`);
+    }
+    .width('100%')
+    .onAreaChange((_old: Area, area: Area): void => {
+      const w: number = area.width as number;
+      // 格子跟着宽度变，Flex 的高度也就跟着变，onAreaChange 会再触发一次。
+      // 宽度没真的变就别写回状态，免得白白多跑一轮布局。
+      if (w > 0 && Math.abs(w - this.sharedRowW) > 0.5) {
+        this.sharedRowW = w;
+      }
+    });
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12 })

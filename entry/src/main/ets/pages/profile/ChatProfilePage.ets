@@ -41,6 +41,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logI } from '../../util/log';
 import { navigateToProfile } from '../../util/profileNav';
+import { mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
@@ -126,6 +127,8 @@ export struct ChatProfilePage {
   @State membersState: string = 'loading';
   @State selectedTab: number = 0;
   @State contentItems: ProfileContentItem[] = [];
+  // 媒体网格那张玻璃卡的内容宽，由 onAreaChange 量得；0 = 还没量到。
+  @State private mediaRowW: number = 0;
   @State contentState: string = 'idle';
   @State contentErrorText: string = '';
   @State contentHasMore: boolean = false;
@@ -1528,11 +1531,18 @@ export struct ChatProfilePage {
   }
 
   private mediaCellSize(): number {
-    return Math.max(92, (this.screenW - 30) / 3);
+    // 按量到的内容宽算，不是按窗口宽——描边不算在父容器内容区里，按
+    // screenW 算出来的三格会比内容区宽 1.4vp，第三格永远掉行。见 util/mediaGrid。
+    return mediaGridCellSize(this.mediaRowW > 0
+      ? this.mediaRowW : mediaFallbackContentWidth(this.screenW));
   }
 
   @Builder
   mediaContent() {
+    // 玻璃卡挪到外层 Column：Flex 自己不带描边，onAreaChange 量到的就是真正
+    // 可用的内容宽。卡片留在 Flex 上的话，量到的是含描边的外框，还得再减一
+    // 个魔数——那正是原来出错的地方。
+    Column() {
     Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
       ForEach(this.contentItems, (item: ProfileContentItem) => {
         Stack({ alignContent: Alignment.BottomEnd }) {
@@ -1564,6 +1574,16 @@ export struct ChatProfilePage {
         .stateStyles({ normal: this.tabNormalStyle, pressed: this.tabPressedStyle })
         .onClick((): void => { this.openContentMessage(item.messageId); });
       }, (item: ProfileContentItem) => `${item.messageId}_${item.thumbPath}`);
+    }
+    .width('100%')
+    .onAreaChange((_old: Area, area: Area): void => {
+      const w: number = area.width as number;
+      // 格子跟着宽度变，Flex 的高度也就跟着变，onAreaChange 会再触发一次。
+      // 宽度没真的变就别写回状态，免得白白多跑一轮布局。
+      if (w > 0 && Math.abs(w - this.mediaRowW) > 0.5) {
+        this.mediaRowW = w;
+      }
+    });
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 10 })

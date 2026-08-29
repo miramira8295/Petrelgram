@@ -169,6 +169,7 @@ import scrollEffectsTest from './ScrollEffects.test';
 import anchorRestoreTest from './AnchorRestore.test';
 import floatDateGateTest from './FloatDateGate.test';
 import nextFrameQueueTest from './NextFrameQueue.test';
+import mediaGridTest from './MediaGrid.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -343,4 +344,5 @@ export default function testsuite() {
   anchorRestoreTest();
   floatDateGateTest();
   nextFrameQueueTest();
+  mediaGridTest();
 }
