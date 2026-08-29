@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Scegli dalla galleria"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Rimuovi sfondo locale"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Impostato come sfondo locale"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Impossibile impostare lo sfondo"
     }
   ]
 }

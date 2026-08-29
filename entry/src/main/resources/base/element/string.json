@@ -11639,6 +11639,22 @@
     {
       "name": "cp_live_photo",
       "value": "实况"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "从相册选择"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "移除本机壁纸"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "已设为本机壁纸"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "设置壁纸失败"
     }
   ]
 }

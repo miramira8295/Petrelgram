@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "實況"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "從相簿選擇"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "移除本機桌布"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "已設為本機桌布"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "設定桌布失敗"
     }
   ]
 }

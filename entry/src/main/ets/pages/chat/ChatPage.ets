@@ -220,6 +220,7 @@ import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
 import { chromeSitsOnLight } from '../../util/chatChrome';
+import { KEY_LOCAL_BG_EPOCH } from '../../store/AppSettings';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
@@ -425,6 +426,7 @@ struct ChatPageChrome {
   @StorageProp(MATERIAL_EPOCH) materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
+  @StorageProp(KEY_LOCAL_BG_EPOCH) localBgEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp('keyboardHeightVp') keyboardH: number = 0;
@@ -452,6 +454,7 @@ struct ChatPageChrome {
     ChatPage({
       appearanceEpoch: this.appearanceEpoch,
       materialEpoch: this.materialEpoch,
+      localBgEpoch: this.localBgEpoch,
       langEpoch: this.langEpoch,
       appDark: this.appDark,
       topSafe: this.topSafe,
@@ -603,6 +606,9 @@ export struct ChatPage {
   // ChatBackdrop 也订阅了 KEY_APP_DARK，但它只管图案浓度和深色遮罩，换不了
   // 壁纸本身——所以那一份订阅顶不了这一份。
   @Require @Param appDark: boolean = false;
+  // 本机自选壁纸的代次。V2 组件用不了 @StorageProp，照既有分工由 ChatPageChrome
+  // 订阅后作为 @Param 传下来（materialEpoch / appDark 都是这么走的）。
+  @Require @Param localBgEpoch: number = 0;
   @Require @Param topSafe: number = 0;
   @Require @Param bottomSafe: number = 0;  // ✅ 新增
   @Require @Param keyboardH: number = 0;
@@ -5781,6 +5787,14 @@ export struct ChatPage {
   // 见 appDark 的说明：store 注入的 isDarkMode 回调是实时读的，
 
   // 所以这里只要让它重新解析一次就够，不必重新订阅。
+
+  // 本机自选壁纸换了图：纯本地改动没有 TDLib update 推回来，靠这个代次通知。
+  @Monitor('localBgEpoch')
+  private onLocalWallpaperChanged(): void {
+    if (this.bgStore !== null) {
+      this.bgStore.refresh();
+    }
+  }
 
   @Monitor('appDark')
   private onAppDarkChanged(): void {

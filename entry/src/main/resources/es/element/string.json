@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Elegir de la galería"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Quitar fondo local"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Establecido como fondo local"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "No se pudo establecer el fondo"
     }
   ]
 }

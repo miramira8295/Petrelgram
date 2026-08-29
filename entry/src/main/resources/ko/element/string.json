@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "갤러리에서 선택"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "로컬 배경화면 제거"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "로컬 배경화면으로 설정됨"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "배경화면을 설정하지 못했습니다"
     }
   ]
 }

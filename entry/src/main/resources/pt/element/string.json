@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Escolher da galeria"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Remover papel de parede local"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Definido como papel de parede local"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Não foi possível definir o papel de parede"
     }
   ]
 }

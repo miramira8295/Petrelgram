@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "اختيار من المعرض"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "إزالة الخلفية المحلية"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "تم التعيين كخلفية محلية"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "تعذر تعيين الخلفية"
     }
   ]
 }

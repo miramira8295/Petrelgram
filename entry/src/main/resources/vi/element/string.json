@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Chọn từ thư viện"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Xóa hình nền cục bộ"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Đã đặt làm hình nền cục bộ"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Không thể đặt hình nền"
     }
   ]
 }

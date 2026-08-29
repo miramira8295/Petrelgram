@@ -174,6 +174,7 @@ import tdRequestTimeoutTest from './TdRequestTimeout.test';
 import notifyRateTest from './NotifyRate.test';
 import livePhotoTest from './LivePhoto.test';
 import chatChromeTest from './ChatChrome.test';
+import localWallpaperTest from './LocalWallpaper.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -353,4 +354,5 @@ export default function testsuite() {
   notifyRateTest();
   livePhotoTest();
   chatChromeTest();
+  localWallpaperTest();
 }

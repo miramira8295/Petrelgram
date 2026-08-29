@@ -221,12 +221,26 @@ export const KEY_TRANSLATE_OPT_IN: string = 'translateOptInChats';
 // 只有约 300ms，整个滑入过程就是兜底纯色。
 export const KEY_CHAT_BG_SNAP_DARK: string = 'chatBgSnapshotDark';
 export const KEY_CHAT_BG_SNAP_LIGHT: string = 'chatBgSnapshotLight';
+// 本机自选壁纸的沙箱路径（'' = 没设）。深浅色各一张，理由见 util/localWallpaper。
+// **只存在本机**：不走 TDLib 的 inputBackgroundLocal，图片不会上传，也不跨设备同步。
+export const KEY_LOCAL_BG_LIGHT: string = 'localChatBgLight';
+export const KEY_LOCAL_BG_DARK: string = 'localChatBgDark';
+// 本机壁纸的代次。纯本地改动不会有 TDLib update 推回来，聊天页靠 @Monitor 这个
+// 键来知道"该重算背景了"——和 MATERIAL_EPOCH / appDark 是同一套做法。
+export const KEY_LOCAL_BG_EPOCH: string = 'localChatBgEpoch';
+
+export function bumpLocalWallpaperEpoch(): void {
+  AppStorage.setOrCreate(KEY_LOCAL_BG_EPOCH,
+    (AppStorage.get<number>(KEY_LOCAL_BG_EPOCH) ?? 0) + 1);
+}
 
 const DATA_STRING_KEYS: string[] = [
   KEY_PROXY_MIRROR,
   KEY_PROXY_SYNC_OFF,
   KEY_CHAT_BG_SNAP_DARK,
   KEY_CHAT_BG_SNAP_LIGHT,
+  KEY_LOCAL_BG_LIGHT,
+  KEY_LOCAL_BG_DARK,
   KEY_WEBPUSH_ENDPOINT,
   KEY_WEBPUSH_P256DH,
   KEY_WEBPUSH_AUTH,

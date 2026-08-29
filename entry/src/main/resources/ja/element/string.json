@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "アルバムから選択"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "端末の壁紙を削除"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "端末の壁紙に設定しました"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "壁紙を設定できませんでした"
     }
   ]
 }

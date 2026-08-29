@@ -5,7 +5,10 @@ import { ChatStore } from './ChatStore';
 import { ChatThemeStore } from './ChatThemeStore';
 import { fillColorsOf, objectOrNull } from '../util/backgroundPresentation';
 import { gunzipTgs } from '../util/gunzipTgs';
-import { KEY_CHAT_BG_SNAP_DARK, KEY_CHAT_BG_SNAP_LIGHT, setString } from './AppSettings';
+import {
+  KEY_CHAT_BG_SNAP_DARK, KEY_CHAT_BG_SNAP_LIGHT, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_LIGHT, setString
+} from './AppSettings';
+import { localWallpaperWins } from '../util/localWallpaper';
 import { logE, logI } from '../util/log';
 
 // Everything the chat surface needs to paint its background. One immutable
@@ -536,8 +539,25 @@ export class ChatBackgroundStore {
     }
   }
 
+  // 本机自选壁纸的路径（'' = 没设）。深浅色各一张。
+  private localWallpaperPath(forDarkTheme: boolean): string {
+    return AppStorage.get<string>(forDarkTheme ? KEY_LOCAL_BG_DARK : KEY_LOCAL_BG_LIGHT) ?? '';
+  }
+
   private applyDefault(seq: number): void {
     const forDarkTheme: boolean = this.isDarkMode();
+    // 本机自选壁纸插在**账号默认背景之前**：那是用户在这台设备上明确挑的图，
+    // 而账号默认多半是服务端下发或从别的端同步来的。会话自己的背景仍然更优先——
+    // 走不到这里（applyBackground 已经处理），localWallpaperWins 里再挡一道，
+    // 判据与完整推导见 util/localWallpaper。
+    const local: string = this.localWallpaperPath(forDarkTheme);
+    if (localWallpaperWins(this.hasSpecificBackground(), local)) {
+      const state: ChatBackgroundState = emptyChatBackground();
+      state.custom = true;
+      state.path = local;
+      this.patch(state);
+      return;
+    }
     if (this.chats.defaultBackgroundKnown(forDarkTheme)) {
       const background = this.chats.defaultBackground(forDarkTheme);
       if (background !== null) {

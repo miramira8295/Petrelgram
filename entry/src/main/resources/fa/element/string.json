@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "انتخاب از گالری"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "حذف تصویر زمینه محلی"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "به‌عنوان تصویر زمینه محلی تنظیم شد"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "تنظیم تصویر زمینه ناموفق بود"
     }
   ]
 }

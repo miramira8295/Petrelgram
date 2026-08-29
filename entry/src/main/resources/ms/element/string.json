@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Pilih dari galeri"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Buang kertas dinding setempat"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Ditetapkan sebagai kertas dinding setempat"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Gagal menetapkan kertas dinding"
     }
   ]
 }

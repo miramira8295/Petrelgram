@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Aus Galerie wählen"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Lokales Hintergrundbild entfernen"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Als lokales Hintergrundbild gesetzt"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Hintergrundbild konnte nicht gesetzt werden"
     }
   ]
 }

@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Выбрать из галереи"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Убрать локальные обои"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Установлено локально"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Не удалось установить обои"
     }
   ]
 }

@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Galeriden seç"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Yerel duvar kağıdını kaldır"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Yerel duvar kağıdı olarak ayarlandı"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Duvar kağıdı ayarlanamadı"
     }
   ]
 }

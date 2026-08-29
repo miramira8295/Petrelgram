@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "เลือกจากคลังภาพ"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "ลบวอลเปเปอร์ในเครื่อง"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "ตั้งเป็นวอลเปเปอร์ในเครื่องแล้ว"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "ตั้งวอลเปเปอร์ไม่สำเร็จ"
     }
   ]
 }

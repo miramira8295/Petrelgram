@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Вибрати з галереї"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Прибрати локальні шпалери"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Встановлено локально"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Не вдалося встановити шпалери"
     }
   ]
 }

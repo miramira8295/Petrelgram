@@ -11635,6 +11635,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "गैलरी से चुनें"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "स्थानीय वॉलपेपर हटाएँ"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "स्थानीय वॉलपेपर सेट किया गया"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "वॉलपेपर सेट नहीं हो सका"
     }
   ]
 }

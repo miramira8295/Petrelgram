@@ -1,4 +1,7 @@
 import { router, promptAction } from '@kit.ArkUI';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
 import {
   applyChatBackground, applyRemoteBackground, clearChatBackground,
@@ -14,8 +17,10 @@ import {
 import {
   BG_BLUR_DEFAULT, BG_BLUR_MAX, BG_BLUR_MIN, BG_PATTERN_DEFAULT, BG_PATTERN_MIN,
   CHAT_DIM_MAX, KEY_BG_BLUR, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM,
-  patternStrengthKey, setNumber
+  bumpLocalWallpaperEpoch, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_LIGHT,
+  patternStrengthKey, setNumber, setString
 } from '../../store/AppSettings';
+import { localWallpaperFileName } from '../../util/localWallpaper';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
 
@@ -47,6 +52,11 @@ struct ChatBackgroundPage {
   // 深色遮罩强度（0..CHAT_DIM_MAX）。滑杆按百分比显示，存的是 0..1 的小数。
   @StorageLink(KEY_CHAT_DIM) chatDim: number = 0;
   @State applyingId: string = '';
+  // 本机自选壁纸的沙箱路径（'' = 没设）。只在全局背景页出现（chatId === 0）：
+  // 它压过账号默认背景，但让位于会话自己的背景，做成"某个会话专属的本地图"
+  // 会和服务端的会话背景抢同一块语义。
+  @State localPath: string = '';
+  private pickingLocal: boolean = false;
   @State thumbPaths: Map<string, string> = new Map();
   // 0 = account default mode; non-zero = one chat only. Group/channel chat
   // ids are NEGATIVE — never gate the per-chat branch on chatId > 0.
@@ -58,6 +68,7 @@ struct ChatBackgroundPage {
     this.active = true;
     const params = router.getParams() as BackgroundPageParams | undefined;
     this.chatId = params?.chatId ?? 0;
+    this.loadLocal();
     this.load();
   }
 
@@ -110,6 +121,8 @@ struct ChatBackgroundPage {
   private setForDark(value: boolean): void {
     if (this.forDark === value) { return; }
     this.forDark = value;
+    // 深浅色各存一张，切档要跟着换。
+    this.loadLocal();
     this.thumbPaths = new Map();
     this.load();
   }
@@ -155,6 +168,80 @@ struct ChatBackgroundPage {
       return;
     }
     setNumber(KEY_BG_BLUR, Math.round(value));
+  }
+
+  private localKey(): string {
+    return this.forDark ? KEY_LOCAL_BG_DARK : KEY_LOCAL_BG_LIGHT;
+  }
+
+  private loadLocal(): void {
+    this.localPath = AppStorage.get<string>(this.localKey()) ?? '';
+  }
+
+  private pickLocal(): void {
+    if (this.pickingLocal) {
+      return;
+    }
+    this.pickingLocal = true;
+    const picker = new photoAccessHelper.PhotoViewPicker();
+    const opts = new photoAccessHelper.PhotoSelectOptions();
+    opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+    opts.maxSelectNumber = 1;
+    picker.select(opts).then((res: photoAccessHelper.PhotoSelectResult): void => {
+      this.pickingLocal = false;
+      if (!this.active || res.photoUris.length === 0) {
+        return;
+      }
+      this.installLocal(res.photoUris[0]);
+    }).catch((): void => { this.pickingLocal = false; });
+  }
+
+  private installLocal(uri: string): void {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      // 文件名带时间戳：固定名会被 Image 的解码缓存卡住，换了图屏幕上还是旧的。
+      // 代价是必须自己删旧图，见 removeQuietly。判据见 util/localWallpaper。
+      const dest: string = `${ctx.filesDir}/${localWallpaperFileName(this.forDark, Date.now())}`;
+      const src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      fs.copyFileSync(src.fd, dest);
+      fs.closeSync(src);
+      const previous: string = this.localPath;
+      setString(this.localKey(), dest);
+      this.localPath = dest;
+      this.removeQuietly(previous);
+      this.afterLocalChange();
+      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+    } catch (error) {
+      logE(`ChatBackgroundPage.installLocal failed: ${error}`);
+      promptAction.showToast({ message: $r('app.string.cb_local_failed'), duration: 1800 });
+    }
+  }
+
+  private clearLocal(): void {
+    const previous: string = this.localPath;
+    setString(this.localKey(), '');
+    this.localPath = '';
+    this.removeQuietly(previous);
+    this.afterLocalChange();
+  }
+
+  // 纯本地改动不会有 TDLib update 推回来，聊天页靠这个代次重算；快照也要作废，
+  // 否则下次进会话会先闪一帧旧背景。
+  private afterLocalChange(): void {
+    bumpLocalWallpaperEpoch();
+    invalidateDefaultSnapshot(this.forDark);
+  }
+
+  // 删旧图。删不掉不该打断流程——壁纸已经换好了，沙箱里残留一个文件不影响任何事。
+  private removeQuietly(path: string): void {
+    if (path === '') {
+      return;
+    }
+    try {
+      fs.unlinkSync(path);
+    } catch (error) {
+      logE(`ChatBackgroundPage.removeQuietly failed: ${error}`);
+    }
   }
 
   private reset(): void {
@@ -379,6 +466,28 @@ struct ChatBackgroundPage {
       } else {
         Scroll() {
           Column({ space: 12 }) {
+            if (this.chatId === 0) {
+              Row({ space: 10 }) {
+                SymbolGlyph($r('sys.symbol.picture')).fontSize(17).fontColor([COLOR_PRIMARY]);
+                Text($r('app.string.cb_pick_local'))
+                  .fontSize(15).fontColor(COLOR_PRIMARY).layoutWeight(1);
+              }
+              .width('100%').height(48).padding({ left: 14, right: 14 })
+              .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
+              .onClick((): void => { this.pickLocal(); });
+              if (this.localPath !== '') {
+                // 单独一行而不是塞进上面那行的尾部：两个 onClick 叠在同一个 Row 上
+                // 会互相吃手势，点"移除"多半会先触发"选择"。
+                Row({ space: 10 }) {
+                  SymbolGlyph($r('sys.symbol.trash')).fontSize(17).fontColor([COLOR_TEXT_SECONDARY]);
+                  Text($r('app.string.cb_clear_local'))
+                    .fontSize(15).fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
+                }
+                .width('100%').height(48).padding({ left: 14, right: 14 })
+                .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
+                .onClick((): void => { this.clearLocal(); });
+              }
+            }
             Row({ space: 10 }) {
               SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(17).fontColor([COLOR_PRIMARY]);
               Text(this.chatId !== 0 ? $r('app.string.cb_reset_to_global_action') : $r('app.string.cb_reset_action'))

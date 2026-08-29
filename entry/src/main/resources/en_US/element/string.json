@@ -11639,6 +11639,22 @@
     {
       "name": "cp_live_photo",
       "value": "LIVE"
+    },
+    {
+      "name": "cb_pick_local",
+      "value": "Choose from gallery"
+    },
+    {
+      "name": "cb_clear_local",
+      "value": "Remove local wallpaper"
+    },
+    {
+      "name": "cb_local_applied",
+      "value": "Set as local wallpaper"
+    },
+    {
+      "name": "cb_local_failed",
+      "value": "Could not set wallpaper"
     }
   ]
 }
