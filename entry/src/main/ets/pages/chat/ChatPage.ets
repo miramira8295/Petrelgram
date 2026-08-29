@@ -220,6 +220,7 @@ import {
 import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
+import { LengthMetrics } from '@kit.ArkUI';
 import { chromeSitsOnLight } from '../../util/chatChrome';
 import { exportLivePhotoMotion } from '../../util/movingPhotoPick';
 import {
@@ -4778,9 +4779,45 @@ export struct ChatPage {
         return;
       }
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
-        logW(`[AnchorRestore] give-up attempt=${attempt} idx=${targetIndex}` +
-          ` oldY=${Math.round(itemY)} w=${Math.round(rect.width)} h=${Math.round(rect.height)}`);
-        this.auditAnchorRestore(seq, targetIndex, itemY, 'gaveup', 0);
+        // ── 量不到时**不能放弃**，改用不依赖测量的定位 ─────────────────────
+        //
+        // 【为什么原来的"放弃"是错的】此前的假设是"框架已经用
+        // maintainVisibleContentPosition 守住了位置，量不到就等于不用补"。这个假设
+        // 不成立——SDK 对该属性的原文是：
+        //   "The visible content position will only remain unchanged when
+        //    **LazyForEach** is used to insert or delete data outside the visible
+        //    area."
+        // 而本页早已迁到 Repeat.virtualScroll。也就是说这个属性**自迁移那天起就是
+        // 空操作**，手动复位不是保险、是唯一的机制。
+        //
+        // 真机 [AnchorAudit] 也把这件事钉死了：五次 give-up 的 offDelta 分别是
+        // 8/-2/41/0/126（用户没在滑），而 250ms 后锚点行**仍然不在屏上**——滚动
+        // 偏移原地不动、内容却在它上面插进了 30 行。那就是用户看到的"乱跳"。
+        //
+        // 【为什么用 scrollToIndex + extraOffset】量不到恰恰是因为视口已经跑掉、
+        // 那一行不在显示区里；再重试多少次也量不回来（三次尝试后依旧 w=0 h=0）。
+        // 这个重载（API 12+）不需要先量：直接把第 idx 行按 START 对齐，再偏移
+        // extraOffset。一次调用完成，不像旧兜底那样 scrollToIndex 再 scrollBy 分两步
+        // 走（那一步之间是看得见的）。
+        //
+        // 【extraOffset 取 -itemY 的依据】旧兜底那两句是
+        //   scrollToIndex(idx, false, START); if (itemY < -0.5) scrollBy(0, -itemY);
+        // START 之后行的 y 是 0，要把它挪回 itemY 正是 scrollBy(0, -itemY)。这里
+        // 把两步合成一步，位移量逐字相同。
+        //
+        // 【留着的那个未知数】ca5bde9 实测旧兜底"没算 contentStartOffset 那段顶栏
+        // 留白，把视口往下推了一截"。我**没有**在这里加那个修正——加错方向会把
+        // 误差翻倍，而 [AnchorAudit] 的 residual 正好能量出来：若下一份日志里
+        // residual 稳定等于顶栏高度，就在这里补上 + this.headerChromeHeight()。
+        logW(`[AnchorRestore] reposition attempt=${attempt} idx=${targetIndex}` +
+          ` oldY=${Math.round(itemY)} extraOffset=${Math.round(-itemY)}`);
+        try {
+          this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START,
+            { extraOffset: LengthMetrics.vp(-itemY) });
+        } catch (e) {
+          logE(`ChatPage.repositionAnchor failed: ${e}`);
+        }
+        this.auditAnchorRestore(seq, targetIndex, itemY, 'reposition', -itemY);
         return;
       }
       // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。
