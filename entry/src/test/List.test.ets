@@ -172,6 +172,7 @@ import nextFrameQueueTest from './NextFrameQueue.test';
 import mediaGridTest from './MediaGrid.test';
 import tdRequestTimeoutTest from './TdRequestTimeout.test';
 import notifyRateTest from './NotifyRate.test';
+import livePhotoTest from './LivePhoto.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -349,4 +350,5 @@ export default function testsuite() {
   mediaGridTest();
   tdRequestTimeoutTest();
   notifyRateTest();
+  livePhotoTest();
 }
