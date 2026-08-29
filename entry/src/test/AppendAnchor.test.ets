@@ -6,8 +6,9 @@ import {
 
 function input(bypassed: boolean, didInitialScroll: boolean, prependAnchorHeld: boolean,
   appendBreaksAnchor: boolean, atLiveTail: boolean = false,
-  scrollIntentPending: boolean = false): AppendAnchorInput {
+  scrollIntentPending: boolean = false, stackFromEnd: boolean = true): AppendAnchorInput {
   const value: AppendAnchorInput = {
+    stackFromEnd: stackFromEnd,
     bypassed: bypassed,
     didInitialScroll: didInitialScroll,
     prependAnchorHeld: prependAnchorHeld,
@@ -23,6 +24,12 @@ export default function appendAnchorTest() {
     // 真机：往下拉新消息时进度条经常到底，看历史却顺滑——自动填充的页以前不补锚点。
     it('any_append_mid_history_holds_the_anchor', 0, () => {
       expect(shouldHoldAppendAnchor(input(false, true, false, true))).assertTrue();
+    });
+    // 往下翻历史时 hasMoreNewer=true ⇒ stackFromEnd=false ⇒ 顶部锚定，视口下方
+    // 追加不动内容。这时补偿是纯多余的，只会把用户自己的滑动位移抵消掉——用户
+    // 报的「往下翻也跳」就出在这里。
+    it('top_anchored_append_never_holds', 0, () => {
+      expect(shouldHoldAppendAnchor(input(false, true, false, true, false, false, false))).assertFalse();
     });
     it('at_the_live_tail_new_messages_are_followed_not_held', 0, () => {
       expect(shouldHoldAppendAnchor(input(false, true, false, true, true))).assertFalse();

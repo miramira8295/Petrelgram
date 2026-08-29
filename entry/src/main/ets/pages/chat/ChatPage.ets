@@ -2661,14 +2661,17 @@ export struct ChatPage {
       // 会打断用户的惯性滑动（当年"加载更多时一顿"就是这么来的）。
       let prependAnchorId: number = 0;
       let prependAnchorY: number = 0;
-      if (this.didInitialScroll && prependBreaksAnchor(this.groups, groups)) {
+      if (this.didInitialScroll && this.anchorIndexFresh() &&
+        prependBreaksAnchor(this.groups, groups)) {
         const visibleIndex: number = this.curStartIdx;
         if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
-          prependAnchorId = this.groups[visibleIndex].head.id;
-          try {
-            prependAnchorY = this.scroller.getItemRect(visibleIndex).y;
-          } catch (e) {
-            prependAnchorY = 0;
+          const y: number = this.anchorItemY(visibleIndex);
+          // 量不到就整个不记锚点：宁可不补，也不要拿一个假 0 去算 dy
+          // （见 anchorItemY 的说明）。
+          if (!Number.isNaN(y)) {
+            prependAnchorId = this.groups[visibleIndex].head.id;
+            prependAnchorY = y;
+            this.captureAnchorOffset();
           }
         }
       }
@@ -2698,6 +2701,9 @@ export struct ChatPage {
       const userDrivenAppend: boolean =
         useUserDrivenAppendMark(appendMarkPending, appendsRows);
       const holdAppendAnchor: boolean = shouldHoldAppendAnchor({
+        // 这一份快照发布时列表的锚定方向。往下翻历史时 hasMoreNewer 为真 ⇒
+        // 顶部锚定 ⇒ 视口下方追加不动内容 ⇒ 不补（见 util/appendAnchor 文件头）。
+        stackFromEnd: this.stackFromEndWanted(),
         bypassed: APPEND_ANCHOR_RESTORE_BYPASSED,
         didInitialScroll: this.didInitialScroll,
         prependAnchorHeld: prependAnchorId !== 0,
@@ -2705,15 +2711,14 @@ export struct ChatPage {
         atLiveTail: this.atBottom,
         scrollIntentPending: this.pendingJumpId !== 0 || this.pendingScrollBottom
       });
-      if (holdAppendAnchor) {
+      if (holdAppendAnchor && this.anchorIndexFresh()) {
         const visibleIndex: number = this.curStartIdx;
-        if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
+        const y: number = visibleIndex >= 0 && visibleIndex < this.groups.length
+          ? this.anchorItemY(visibleIndex) : Number.NaN;
+        if (!Number.isNaN(y)) {
           appendAnchorId = this.groups[visibleIndex].head.id;
-          try {
-            appendAnchorY = this.scroller.getItemRect(visibleIndex).y;
-          } catch (e) {
-            appendAnchorY = 0;
-          }
+          appendAnchorY = y;
+          this.captureAnchorOffset();
           logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
             ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
             ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
@@ -4229,6 +4234,64 @@ export struct ChatPage {
     this.floatDateState.show(formatDateSeparator(date), now);
   }
 
+  // 锚点采样：第 index 行相对 List 顶的 y。**量不到时返回 NaN，绝不返回 0**。
+  //
+  // 官方（faqs-arkui-572）：getItemRect 的下标必须是当前显示区域内的子组件，
+  // 否则视为非法值，**非法值返回的大小和位置均为 0**。原来两处采样都是
+  // `try { y = getItemRect(i).y } catch { y = 0 }` —— 非法下标和"行正好贴在
+  // 视口顶端(y=0)"取到的是同一个 0，分不开。而 anchorRestore 的
+  // dy = rect.y - itemY 会把这个假 0 当成真位置，补出整行级别的位移。
+  // 锚点采样那一刻的滚动偏移。**只用于诊断，不参与 dy 的计算**。
+  //
+  // 为什么不直接拿它做修正项：anchorRestore 的 dy = rect.y - itemY 里确实缺一个
+  // 「采样到测量之间用户自己滑了多少」的项（翻页本来就是滑动触发的，这段时间列表
+  // 在动），补上它才不会把用户的位移反向抵消。但 currentOffset() 在**前插**场景
+  // 下不可信：官方对 List 注明懒加载时总偏移量是**估算**（本工程没设
+  // childrenMainSize，且气泡是变高的），而前插一页会把新插入那 30 行的估算高度
+  // 一并算进 yOffset —— 两次读数之差里混着「插入了多少内容」，不再是「用户滑了
+  // 多少」。拿它做修正会引入新的错位。
+  //
+  // 所以这一版只把两次读数打进 [AnchorRestore]：真机上先看 dOff 与 dy 的关系，
+  // 再决定修正项该怎么取（或者改用 onDidScroll 累计位移）。行为一个字没改。
+  private anchorCaptureOffset: number = Number.NaN;
+
+  private captureAnchorOffset(): void {
+    try {
+      this.anchorCaptureOffset = this.scroller.currentOffset().yOffset;
+    } catch (e) {
+      this.anchorCaptureOffset = Number.NaN;
+    }
+  }
+
+  private currentAnchorOffset(): number {
+    try {
+      return this.scroller.currentOffset().yOffset;
+    } catch (e) {
+      return Number.NaN;
+    }
+  }
+
+  private anchorItemY(index: number): number {
+    try {
+      const rect = this.scroller.getItemRect(index);
+      // width/height 两维都为 0 才是非法（正常停在视口顶端的行 y 就是 0，
+      // x 在单列列表里恒为 0——照抄"四维都不为 0"会把它误判成不可见）。
+      if (!(rect.width > 0) || !(rect.height > 0)) {
+        return Number.NaN;
+      }
+      return rect.y;
+    } catch (e) {
+      return Number.NaN;
+    }
+  }
+
+  // 行号是不是描述当前这份数据。锚点采样读的是 curStartIdx，它由 onScrollIndex
+  // 给出、落后于数据一帧；拿旧行号去 groups 里取消息 id，会差出一整页
+  // （updateFloatDate 为同一件事加过这道守卫，见 issue #163 的另一半）。
+  private anchorIndexFresh(): boolean {
+    return this.indexGroupsLen === this.groups.length;
+  }
+
   // 第 index 行相对 List 顶的下沿（vp）；量不到返回 NaN，调用方按"看得见"处理。
   //
   // 高度为 0 也算量不到：还没布局的行 getItemRect 返回**全 0 矩形**
@@ -4632,10 +4695,18 @@ export struct ChatPage {
         this.attemptAnchorRestore(seq, targetIndex, itemY, attempt + 1);
         return;
       }
+      // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。
+      // 它同时混着「用户自己滑的」和「插入内容的估算高度」，**不参与 dy**，
+      // 用途是回答「dy 里到底有多少是在抵消用户的滑动」。见 anchorCaptureOffset。
+      const nowOff: number = this.currentAnchorOffset();
+      const dOff: number = Number.isNaN(this.anchorCaptureOffset) || Number.isNaN(nowOff)
+        ? Number.NaN : nowOff - this.anchorCaptureOffset;
       logW(`[AnchorRestore] mode=${plan.mode} attempt=${attempt} idx=${targetIndex}` +
         ` oldY=${Math.round(itemY)} newY=${Math.round(rect.y)}` +
         ` w=${Math.round(rect.width)} h=${Math.round(rect.height)}` +
-        ` dy=${Math.round(plan.dy)}`);
+        ` dy=${Math.round(plan.dy)}` +
+        ` capOff=${Math.round(this.anchorCaptureOffset)} nowOff=${Math.round(nowOff)}` +
+        ` dOff=${Math.round(dOff)}`);
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
         this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START);
       }
