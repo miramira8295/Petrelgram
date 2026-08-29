@@ -4,11 +4,12 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import {
   BG_BLUR_MAX, CHAT_DIM_MAX, KEY_APP_BG_BLUR, KEY_APP_BG_DIM,
-  KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
+  KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_EPOCH,
+  KEY_LOCAL_BG_LIGHT
 } from '../../store/AppSettings';
 import {
   ChatBackgroundState, defaultChatBackgroundSnapshot, emptyChatBackground,
-  parseSnapshot, serialiseSnapshot, referencedWallpaperPaths
+  localWallpaperState, parseSnapshot, serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
 import { appWallpaperFileName, wallpaperFileStillUsed } from '../../util/localWallpaper';
 import {
@@ -460,6 +461,9 @@ export struct ChatSettingsPage {
   @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('rebuildSlotStates') private appBgLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('rebuildSlotStates') private appBgDark: string = '';
+  // 聊天槽位换图不会动上面两个键，得盯本机壁纸的代次。本页是 router 页，从背景
+  // 编辑页**弹回来不会再走 aboutToAppear**，没有这一条缩略图就一直是进来时那份。
+  @StorageProp(KEY_LOCAL_BG_EPOCH) @Watch('rebuildSlotStates') private localBgEpoch: number = 0;
   private pickingAppBg: boolean = false;
 
   aboutToAppear(): void {
@@ -607,8 +611,17 @@ export struct ChatSettingsPage {
     if (slotIsApp(slot)) {
       return parseSnapshot(AppStorage.get<string>(wallpaperSlotKeys(slot).state) ?? '');
     }
-    // 聊天槽位没有本机副本——壁纸由 TDLib 下发——所以读账号默认背景的快照，
-    // 那正是这两个槽位实际画出来的东西。
+    // 聊天槽位的取值顺序必须和**真正画出来的那一套**一致，也就是
+    // ChatBackgroundStore.applyDefault：本机自选壁纸 > 账号默认背景。
+    //
+    // 原来这里只读了后者。于是用户给「聊天浅色 / 聊天深色」传了自己的图之后，
+    // 这两行的缩略图仍然是空的——账号默认背景本来就可能一片空白（真机实报：
+    // "选择自己上传的壁纸，聊天浅色和深色的缩略图不展示"）。
+    const local: string = AppStorage.get<string>(
+      slotIsDark(slot) ? KEY_LOCAL_BG_DARK : KEY_LOCAL_BG_LIGHT) ?? '';
+    if (local !== '') {
+      return localWallpaperState(local);
+    }
     const snap: ChatBackgroundState = defaultChatBackgroundSnapshot(slotIsDark(slot));
     return (snap.colors.length > 0 || snap.path !== '') ? snap : null;
   }
