@@ -555,6 +555,12 @@ export class ChatBackgroundStore {
       const state: ChatBackgroundState = emptyChatBackground();
       state.custom = true;
       state.path = local;
+      // blurred 对整图壁纸的含义就是"模糊滑杆对它生效"（见
+      // util/chatBackgroundRaster.backgroundBlurRadius：非图案的整图要这个标志为真
+      // 才吃 userBlur）。服务端壁纸的这一位是壁纸自己的属性，而本机自选的图没有
+      // "自己的属性"——它的模糊完全由用户那根滑杆说了算，所以这里恒为 true。
+      // 深色遮罩不用管：那是画在整层末尾的全局层，与壁纸来源无关，本来就生效。
+      state.blurred = true;
       this.patch(state);
       return;
     }
