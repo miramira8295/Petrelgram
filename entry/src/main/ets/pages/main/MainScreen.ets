@@ -1,6 +1,8 @@
 import { common } from '@kit.AbilityKit';
 import { AppBackdrop } from '../common/AppBackdrop';
-import { KEY_APP_BG_DARK, KEY_APP_BG_LIGHT, KEY_APP_BG_ON } from '../../store/AppSettings';
+import {
+  KEY_APP_BG_ON, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
+} from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { appWallpaperActive } from '../../util/localWallpaper';
 import { isSplitLayout } from '../../util/splitMetrics';
@@ -117,8 +119,8 @@ export struct MainScreen {
   @StorageProp('screenHeightVp') @Watch('syncWallpaperFlag') screenH: number = 780;
   // APP 壁纸：这一层同时知道分栏和路径，所以由它算一次「生效中」写进
   // KEY_APP_BG_ON，其余组件只读那一个键（见 store/AppSettings 的说明）。
-  @StorageProp(KEY_APP_BG_LIGHT) @Watch('syncWallpaperFlag') private appBgLight: string = '';
-  @StorageProp(KEY_APP_BG_DARK) @Watch('syncWallpaperFlag') private appBgDark: string = '';
+  @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('syncWallpaperFlag') private appBgLight: string = '';
+  @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('syncWallpaperFlag') private appBgDark: string = '';
   @StorageProp(KEY_APP_DARK) @Watch('syncWallpaperFlag') private wallpaperDark: boolean = false;
   @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;

@@ -77,7 +77,7 @@ function rememberDefaultSnapshot(state: ChatBackgroundState, forDark: boolean): 
 // 手写序列化而不是 JSON：字段就这几个，且 colors 是字符串数组，用制表符分隔
 // 比 JSON.parse 后逐字段做类型断言更直白，也不依赖 ArkTS 对 parse 结果的
 // 类型处理。颜色值本身是 '#RRGGBB' 形式，不含分隔符。
-function serialiseSnapshot(s: ChatBackgroundState): string {
+export function serialiseSnapshot(s: ChatBackgroundState): string {
   return [
     s.colors.join(','), `${s.angle}`, s.path, `${s.imageOpacity}`,
     `${s.dimming}`, s.blurred ? '1' : '0', s.bubbleOutColor,
@@ -85,7 +85,7 @@ function serialiseSnapshot(s: ChatBackgroundState): string {
   ].join('\t');
 }
 
-function parseSnapshot(raw: string): ChatBackgroundState | null {
+export function parseSnapshot(raw: string): ChatBackgroundState | null {
   if (raw === '') {
     return null;
   }

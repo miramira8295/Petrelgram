@@ -242,6 +242,24 @@ export const KEY_APP_BG_DIM: string = 'appBgDim';
 // 其余组件只读这一个键——否则每个要变透明的容器都得自己拿窗口尺寸重算一遍分栏。
 export const KEY_APP_BG_ON: string = 'appBgOn';
 
+// ── 壁纸四槽位 ────────────────────────────────────────────────────────────
+// APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色，各有自己的壁纸和三根滑杆。
+//
+// APP 槽位存的是**序列化的 ChatBackgroundState**（见 ChatBackgroundStore 的
+// serialiseSnapshot）——这样原生壁纸（渐变/图案/整图）对 APP 背景是白送的：
+// AppBackdrop 直接复用 ChatBackdrop 画它，不必再写一套渲染。
+export const KEY_APP_BG_STATE_LIGHT: string = 'appBgStateLight';
+export const KEY_APP_BG_STATE_DARK: string = 'appBgStateDark';
+// APP 槽位的纹理（图案浓度）。模糊与遮罩沿用上面已有的 KEY_APP_BG_BLUR / DIM。
+export const KEY_APP_BG_PATTERN_LIGHT: string = 'appBgPatternLight';
+export const KEY_APP_BG_PATTERN_DARK: string = 'appBgPatternDark';
+// 聊天槽位的模糊此前是**浅深共用一个键**（KEY_BG_BLUR），四槽位下必须拆开。
+// 旧键继续当浅色那份用，深色新开一个——这样已有用户的设置不会被清掉。
+export const KEY_BG_BLUR_DARK: string = 'bgBlurDark';
+// 聊天浅色的遮罩。KEY_CHAT_DIM 是深色那份（遮罩本来就只在深色下起作用），
+// 浅色这份留着是为了四个槽位的读写路径一致，读到的值不参与渲染。
+export const KEY_CHAT_DIM_LIGHT: string = 'chatDimLight';
+
 export function bumpLocalWallpaperEpoch(): void {
   AppStorage.setOrCreate(KEY_LOCAL_BG_EPOCH,
     (AppStorage.get<number>(KEY_LOCAL_BG_EPOCH) ?? 0) + 1);
@@ -256,6 +274,8 @@ const DATA_STRING_KEYS: string[] = [
   KEY_LOCAL_BG_DARK,
   KEY_APP_BG_LIGHT,
   KEY_APP_BG_DARK,
+  KEY_APP_BG_STATE_LIGHT,
+  KEY_APP_BG_STATE_DARK,
   KEY_WEBPUSH_ENDPOINT,
   KEY_WEBPUSH_P256DH,
   KEY_WEBPUSH_AUTH,

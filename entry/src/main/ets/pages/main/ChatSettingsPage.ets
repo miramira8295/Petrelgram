@@ -3,9 +3,12 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import {
-  BG_BLUR_MAX, CHAT_DIM_MAX, KEY_APP_BG_BLUR, KEY_APP_BG_DARK, KEY_APP_BG_DIM,
-  KEY_APP_BG_LIGHT
+  BG_BLUR_MAX, CHAT_DIM_MAX, KEY_APP_BG_BLUR, KEY_APP_BG_DIM,
+  KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
 } from '../../store/AppSettings';
+import {
+  ChatBackgroundState, emptyChatBackground, parseSnapshot, serialiseSnapshot
+} from '../../store/ChatBackgroundStore';
 import { appWallpaperFileName } from '../../util/localWallpaper';
 import { isSplitLayout } from '../../util/splitMetrics';
 import { KEY_APP_DARK } from '../../util/theme';
@@ -439,8 +442,8 @@ export struct ChatSettingsPage {
   @StorageProp('screenWidthVp') private appBgScreenW: number = 360;
   @StorageProp('screenHeightVp') private appBgScreenH: number = 780;
   @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
-  @StorageProp(KEY_APP_BG_LIGHT) private appBgLight: string = '';
-  @StorageProp(KEY_APP_BG_DARK) private appBgDark: string = '';
+  @StorageProp(KEY_APP_BG_STATE_LIGHT) private appBgLight: string = '';
+  @StorageProp(KEY_APP_BG_STATE_DARK) private appBgDark: string = '';
   private pickingAppBg: boolean = false;
 
   private appBgSplit(): boolean {
@@ -448,11 +451,18 @@ export struct ChatSettingsPage {
   }
 
   private appBgKey(): string {
-    return this.appDark ? KEY_APP_BG_DARK : KEY_APP_BG_LIGHT;
+    return this.appDark ? KEY_APP_BG_STATE_DARK : KEY_APP_BG_STATE_LIGHT;
   }
 
-  private appBgPath(): string {
+  private appBgRaw(): string {
     return this.appDark ? this.appBgDark : this.appBgLight;
+  }
+
+  // 当前 APP 壁纸的本机图片路径（'' = 没设，或设的是原生壁纸而非本机图）。
+  // 只用来在换图/移除时把旧文件删掉——原生壁纸没有本机文件，自然什么都不用删。
+  private appBgPath(): string {
+    const state: ChatBackgroundState | null = parseSnapshot(this.appBgRaw());
+    return state !== null ? state.path : '';
   }
 
   private pickAppBg(): void {
@@ -482,7 +492,15 @@ export struct ChatSettingsPage {
       fs.copyFileSync(src.fd, dest);
       fs.closeSync(src);
       const previous: string = this.appBgPath();
-      setString(this.appBgKey(), dest);
+      // 存成序列化的 ChatBackgroundState，而不是裸路径：APP 槽位和聊天槽位共用
+      // 同一种数据，原生壁纸因此也能给 APP 背景用（见 pages/common/AppBackdrop）。
+      // blurred 恒为 true——对整图而言这一位的含义就是"模糊滑杆对它生效"，而本机
+      // 自选的图没有"自己的属性"，见 ChatBackgroundStore 里同一处说明。
+      const state: ChatBackgroundState = emptyChatBackground();
+      state.custom = true;
+      state.path = dest;
+      state.blurred = true;
+      setString(this.appBgKey(), serialiseSnapshot(state));
       this.removeAppBgFile(previous);
       promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
     } catch (error) {
@@ -554,7 +572,7 @@ export struct ChatSettingsPage {
               }
               .width('100%').height(52).padding({ left: 16, right: 12 })
               .onClick((): void => { this.pickAppBg(); });
-              if (this.appBgPath() !== '') {
+              if (this.appBgRaw() !== '') {
                 Row({ space: 12 }) {
                   SymbolGlyph($r('sys.symbol.trash')).fontSize(20)
                     .fontColor([COLOR_ICON_SECONDARY]);

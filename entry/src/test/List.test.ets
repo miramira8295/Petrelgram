@@ -175,6 +175,7 @@ import notifyRateTest from './NotifyRate.test';
 import livePhotoTest from './LivePhoto.test';
 import chatChromeTest from './ChatChrome.test';
 import localWallpaperTest from './LocalWallpaper.test';
+import wallpaperSlotTest from './WallpaperSlot.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -355,4 +356,5 @@ export default function testsuite() {
   livePhotoTest();
   chatChromeTest();
   localWallpaperTest();
+  wallpaperSlotTest();
 }
