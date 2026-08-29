@@ -25,6 +25,10 @@
       "value": "#8C2F3F52"
     },
     {
+      "name": "material_tint",
+      "value": "#402F3F52"
+    },
+    {
       "name": "surface_alt",
       "value": "#2B3A4C"
     },

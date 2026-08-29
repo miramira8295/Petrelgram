@@ -200,11 +200,28 @@ function materialAvailable(): boolean {
   } catch (e) {
     logW(`[Material] getSystemMaterialTypes failed: ${e}`);
   }
+  // 应用级材质开关（DEFAULT=0 / ENABLE=1 / DISABLE=2）。我们从没配过 module.json5
+  // 里那项 metadata，所以**期望值是 0**；真读到 2 就说明有人把它禁掉了，那会连
+  // 组件级主动设的材质一起失效。
+  let appState: number = -1;
+  try {
+    appState = uiMaterial.getMaterialInfo().state as number;
+  } catch (e) {
+    logW(`[Material] getMaterialInfo failed: ${e}`);
+  }
   materialProbeResult = queried ? immersiveTypeSupported(types) : true;
-  // 这一行是下次用户报「玻璃没了」时唯一能回答问题的东西：设备报了什么、
-  // 我们据此判成了什么。只在第一次查询时打一行。
-  logW(`[Material] api=${deviceInfo.sdkApiVersion} types=[${types.join(',')}]` +
-    ` queried=${queried} material=${materialProbeResult}`);
+  // **这一行是没有设备时唯一能定位「玻璃没了」的东西**，字段都是为了一次问清：
+  //   api        设备 API（<26 根本没有材质）
+  //   state      应用级开关，2=DISABLE 会让组件级设置也失效
+  //   types      设备自报支持的材质类型（101=IMMERSIVE；没有它就该走自绘玻璃）
+  //   thickness  用户自己调的厚度档（-3 = 用户把材质关了，那是预期内的"没玻璃"）
+  //   light      用户调的光感档
+  //   material   我们最终判定用不用材质
+  // 只在第一次查询时打一行，不占日志。
+  logW(`[Material] api=${deviceInfo.sdkApiVersion} state=${appState}` +
+    ` types=[${types.join(',')}] queried=${queried}` +
+    ` thickness=${thicknessOffset()} light=${lightLevel()}` +
+    ` material=${materialProbeResult}`);
   return materialProbeResult;
 }
 
@@ -440,6 +457,25 @@ function cacheKey(surface: OverlaySurface): string {
 function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
   return new uiMaterial.ImmersiveMaterial({
     style: styleOf(surface),
+    // **材质退化时唯一还看得见的东西**（用户报：升到 HarmonyOS 7.0.0.105 后顶栏、
+    // 输入框、附件抽屉变成彻底透明的窟窿，而同机别的应用正常）。
+    //
+    // 材质不是"要么全有要么全无"：官方文档写明它按**设备算力档位**和**系统设置里
+    // 沉浸光感的强弱**分档降级——低算力、或者用户把沉浸光感调到「弱」时，
+    // 「仅保留基础的背景色和边框表现」，滤镜那一层根本不画。那时材质靠什么显形？
+    // 靠 materialColor：「对于低算力设备……该参数作为背景色 backgroundColor
+    // 属性值」。而**它的默认值是 Color.Transparent**（见 ImmersiveMaterial 构造
+    // 函数的默认值说明）——我们又把自绘底色一并让给了材质（overlayGlassFill 在
+    // 材质可用时返回透明），于是退化档位上两层都是透明，什么都不剩。
+    //
+    // 别的应用不受影响，正因为它们没走这一步：系统组件和 HDS 标题栏用各自的默认
+    // 底色，退化了照样有东西可看。
+    //
+    // 传一个**淡的**半透明色：高/中算力上它只是给滤镜再混一层很浅的纯色（官方说
+    // 「若该颜色为纯不透明的颜色，会遮挡材质滤镜效果」——所以绝不能给不透明色）；
+    // 退化档位上它就是那块可见的底。深浅色各一份，由资源系统按当前模式解析。
+    // 要调浓淡改 resources/{base,dark}/element/color.json 的 material_tint 一处。
+    materialColor: $r('app.color.material_tint'),
     colorInvert: usesColorInvert(surface),
     applyShadow: !usesOwnShadow(surface),
     // 这两个和材质本体不同：官方注明它们「takes effect for devices with all
