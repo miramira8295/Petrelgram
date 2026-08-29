@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Gagal menetapkan kertas dinding"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Latar aplikasi"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Kabur latar"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Lapisan gelap"
     }
   ]
 }

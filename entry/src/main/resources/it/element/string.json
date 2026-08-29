@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Impossibile impostare lo sfondo"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Sfondo dell'app"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Sfocatura sfondo"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Velo scuro"
     }
   ]
 }

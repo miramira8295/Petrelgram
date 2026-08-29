@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "No se pudo establecer el fondo"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Fondo de la app"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Desenfoque del fondo"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Capa oscura"
     }
   ]
 }

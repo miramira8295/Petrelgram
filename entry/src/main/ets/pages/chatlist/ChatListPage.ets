@@ -25,6 +25,8 @@ import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout } from '../../util/splitMetrics';
+import { mainPageFill } from '../../util/theme';
+import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
@@ -147,6 +149,8 @@ export struct ChatListPage {
   // ——必须自己丢掉重建，否则夜间模式下左栏和会话页都变深、只有右栏空态还是
   // 浅色（平板实测）。详见 util/splitPlaceholderHolder。
   @StorageProp(KEY_APP_DARK) @Watch('onAppDarkChanged') private appDark: boolean = false;
+  // 由 MainScreen 算好写进来的「APP 壁纸生效中」，见 store/AppSettings。
+  @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -1075,7 +1079,8 @@ export struct ChatListPage {
         // 就盖到那儿。
         avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
-        style: titleBarStyle($r('app.color.surface'), this.accent()),
+        // 标题栏也让位：它和列表同属一张"浮在壁纸上"的面，只有行卡片自己带底。
+        style: titleBarStyle(mainPageFill(this.appWallpaperOn), this.accent()),
         content: this.titleBarContent()
       })
       // 状态栏图标色钉死在深浅色上。不设 systemBarStyle 时 HDS 会按标题栏的
@@ -1155,7 +1160,8 @@ export struct ChatListPage {
       // 背景色是 expandSafeArea 真正延伸出去的东西——只写 expandSafeArea 而不画
       // 背景，延伸的是"什么都没有"，状态栏底下露的就是窗口底色（实测深色模式
       // 下那是一条纯黑）。
-      .backgroundColor($r('app.color.surface'));
+      // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（见 util/theme.mainPageFill）。
+      .backgroundColor(mainPageFill(this.appWallpaperOn));
 
       // ⋮ 菜单的锚点：零尺寸，只为让菜单弹在右上角。HDS 的菜单项给不了
       // bindMenu，只能这样把两者接起来。

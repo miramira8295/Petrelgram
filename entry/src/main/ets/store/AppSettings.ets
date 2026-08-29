@@ -238,6 +238,9 @@ export const KEY_APP_BG_DARK: string = 'appBgDark';
 // 共用一个值会让调一边毁另一边。
 export const KEY_APP_BG_BLUR: string = 'appBgBlur';
 export const KEY_APP_BG_DIM: string = 'appBgDim';
+// 「APP 壁纸此刻生效中」。由 MainScreen 算一次写进来（它同时知道分栏和路径），
+// 其余组件只读这一个键——否则每个要变透明的容器都得自己拿窗口尺寸重算一遍分栏。
+export const KEY_APP_BG_ON: string = 'appBgOn';
 
 export function bumpLocalWallpaperEpoch(): void {
   AppStorage.setOrCreate(KEY_LOCAL_BG_EPOCH,

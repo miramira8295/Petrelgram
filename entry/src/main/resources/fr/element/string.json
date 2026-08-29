@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Impossible de définir le fond"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Fond de l'application"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Flou du fond"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Voile sombre"
     }
   ]
 }

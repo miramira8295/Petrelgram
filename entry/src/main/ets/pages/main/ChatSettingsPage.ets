@@ -1,4 +1,14 @@
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
+import {
+  BG_BLUR_MAX, CHAT_DIM_MAX, KEY_APP_BG_BLUR, KEY_APP_BG_DARK, KEY_APP_BG_DIM,
+  KEY_APP_BG_LIGHT
+} from '../../store/AppSettings';
+import { appWallpaperFileName } from '../../util/localWallpaper';
+import { isSplitLayout } from '../../util/splitMetrics';
+import { KEY_APP_DARK } from '../../util/theme';
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_THREE_LINES, KEY_NIGHT_MODE, KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER,
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_IN_APP_BROWSER,
@@ -426,6 +436,79 @@ export struct ChatSettingsPage {
     }.width('100%');
   }
 
+  @StorageProp('screenWidthVp') private appBgScreenW: number = 360;
+  @StorageProp('screenHeightVp') private appBgScreenH: number = 780;
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
+  @StorageProp(KEY_APP_BG_LIGHT) private appBgLight: string = '';
+  @StorageProp(KEY_APP_BG_DARK) private appBgDark: string = '';
+  private pickingAppBg: boolean = false;
+
+  private appBgSplit(): boolean {
+    return isSplitLayout(this.appBgScreenW, this.appBgScreenH);
+  }
+
+  private appBgKey(): string {
+    return this.appDark ? KEY_APP_BG_DARK : KEY_APP_BG_LIGHT;
+  }
+
+  private appBgPath(): string {
+    return this.appDark ? this.appBgDark : this.appBgLight;
+  }
+
+  private pickAppBg(): void {
+    if (this.pickingAppBg) {
+      return;
+    }
+    this.pickingAppBg = true;
+    const picker = new photoAccessHelper.PhotoViewPicker();
+    const opts = new photoAccessHelper.PhotoSelectOptions();
+    opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+    opts.maxSelectNumber = 1;
+    picker.select(opts).then((res: photoAccessHelper.PhotoSelectResult): void => {
+      this.pickingAppBg = false;
+      if (res.photoUris.length === 0) {
+        return;
+      }
+      this.installAppBg(res.photoUris[0]);
+    }).catch((): void => { this.pickingAppBg = false; });
+  }
+
+  private installAppBg(uri: string): void {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      // 文件名带时间戳，理由同聊天壁纸：固定名会被 Image 的解码缓存卡住。
+      const dest: string = `${ctx.filesDir}/${appWallpaperFileName(this.appDark, Date.now())}`;
+      const src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      fs.copyFileSync(src.fd, dest);
+      fs.closeSync(src);
+      const previous: string = this.appBgPath();
+      setString(this.appBgKey(), dest);
+      this.removeAppBgFile(previous);
+      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+    } catch (error) {
+      logE(`ChatSettings installAppBg failed: ${error}`);
+      promptAction.showToast({ message: $r('app.string.cb_local_failed'), duration: 1800 });
+    }
+  }
+
+  private clearAppBg(): void {
+    const previous: string = this.appBgPath();
+    setString(this.appBgKey(), '');
+    this.removeAppBgFile(previous);
+  }
+
+  // 删旧图。删不掉不该打断流程——壁纸已经换好了，沙箱里残留一个文件不影响任何事。
+  private removeAppBgFile(path: string): void {
+    if (path === '') {
+      return;
+    }
+    try {
+      fs.unlinkSync(path);
+    } catch (error) {
+      logE(`ChatSettings removeAppBgFile failed: ${error}`);
+    }
+  }
+
   build() {
     Column() {
       HdsSubDestination({ title: $r('app.string.settings_chat'), scroller: this.hdsScroller }) {
@@ -457,6 +540,39 @@ export struct ChatSettingsPage {
                 logE(`ChatSettings open background failed: ${error.message}`);
               });
           });
+
+          // APP 背景图（主界面壁纸）。**分栏下整段不渲染**：右栏被聊天壁纸盖住，
+          // 这张图只能从左栏那条窄缝里露出来，给一个看不出效果的开关不如不给
+          // （用户："pad 没有这个选项"）。判据同 AppBackdrop 用的那一个。
+          if (!this.appBgSplit()) {
+            Column() {
+              Row({ space: 12 }) {
+                SymbolGlyph($r('sys.symbol.picture')).fontSize(20).fontColor([this.accent()]);
+                Text($r('app.string.cs_app_background')).fontSize(16)
+                  .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+                Text($r('app.string.cb_pick_local')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+              }
+              .width('100%').height(52).padding({ left: 16, right: 12 })
+              .onClick((): void => { this.pickAppBg(); });
+              if (this.appBgPath() !== '') {
+                Row({ space: 12 }) {
+                  SymbolGlyph($r('sys.symbol.trash')).fontSize(20)
+                    .fontColor([COLOR_ICON_SECONDARY]);
+                  Text($r('app.string.cb_clear_local')).fontSize(16)
+                    .fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
+                }
+                .width('100%').height(52).padding({ left: 16, right: 12 })
+                .onClick((): void => { this.clearAppBg(); });
+                this.sliderRow(str('cs_app_bg_blur'), KEY_APP_BG_BLUR, 0, BG_BLUR_MAX);
+                // 遮罩只在深色模式下起作用（见 AppBackdrop.maskOpacity），
+                // 浅色模式下摆一根无效的滑杆只会让人以为坏了。
+                if (this.appDark) {
+                  this.sliderRow(str('cs_app_bg_dim'), KEY_APP_BG_DIM, 0, CHAT_DIM_MAX);
+                }
+              }
+            }
+            .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+          }
 
           AccentColorCard();
 

@@ -87,6 +87,25 @@ export const COLOR_ICON_SECONDARY: ResourceColor = $r('app.color.icon_secondary'
 // 不做成主题资源：它们是为"亮底"挑的，与 app 处于哪个模式无关——深色模式下
 // 恰好站到亮底上，正是这两个值存在的全部理由。
 // 取值依据：在截图那种浅紫合成底 RGB(174,172,196) 上，图标 5.0:1、文字 12.6:1。
+// APP 壁纸铺开之后，主界面的列表行改成浮在壁纸上的**半透明卡片**（用户选的方案 1）。
+//
+// 80% 不透明度不是随手取的：卡片压在最坏的壁纸（纯白/纯黑）上，合成底与行内文字
+// 的对比度分别是 7.2:1 和 15.5:1，都远在 4.5 之上。也就是说这一层把**行内可读性
+// 和壁纸彻底解耦**——列表里不需要再走一遍 util/chatChrome 那套按亮度翻前景的机制，
+// 那套只留给真正浮在壁纸上、没有卡片托底的 chrome。
+// 低于 0.7 就开始吃紧（纯白壁纸下 5.3:1），别往下调。
+export function mainCardFill(wallpaperOn: boolean, pressed: boolean): ResourceColor {
+  if (wallpaperOn) {
+    return pressed ? $r('app.color.card_on_wallpaper_alt') : $r('app.color.card_on_wallpaper');
+  }
+  return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
+}
+
+// 主界面整页的底。壁纸生效时必须透明，否则壁纸被这层盖死。
+export function mainPageFill(wallpaperOn: boolean): ResourceColor {
+  return wallpaperOn ? Color.Transparent : $r('app.color.surface');
+}
+
 export const COLOR_ICON_ON_LIGHT: ResourceColor = '#333D49';
 export const COLOR_TEXT_ON_LIGHT: ResourceColor = '#0E1621';
 export const COLOR_MUTED_BADGE: ResourceColor = $r('app.color.badge_bg');

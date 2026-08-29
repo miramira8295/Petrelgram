@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "वॉलपेपर सेट नहीं हो सका"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "ऐप पृष्ठभूमि"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "पृष्ठभूमि धुंधलापन"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "गहरी परत"
     }
   ]
 }

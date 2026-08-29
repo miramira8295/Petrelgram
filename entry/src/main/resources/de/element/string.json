@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Hintergrundbild konnte nicht gesetzt werden"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "App-Hintergrund"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Hintergrundunschärfe"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Dunkle Abdeckung"
     }
   ]
 }

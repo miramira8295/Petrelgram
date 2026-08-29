@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "設定桌布失敗"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "APP 背景圖"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "背景模糊"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "深色遮罩"
     }
   ]
 }

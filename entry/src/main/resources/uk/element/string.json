@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Не вдалося встановити шпалери"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Фон застосунку"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Розмиття фону"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Затемнення"
     }
   ]
 }

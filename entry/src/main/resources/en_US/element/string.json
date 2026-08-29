@@ -11655,6 +11655,18 @@
     {
       "name": "cb_local_failed",
       "value": "Could not set wallpaper"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "App background"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Background blur"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Dark overlay"
     }
   ]
 }

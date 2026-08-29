@@ -33,6 +33,14 @@
       "value": "#F3F4F6"
     },
     {
+      "name": "card_on_wallpaper",
+      "value": "#CCFFFFFF"
+    },
+    {
+      "name": "card_on_wallpaper_alt",
+      "value": "#CCF3F4F6"
+    },
+    {
       "name": "selected_pill",
       "value": "#E3F0FB"
     },

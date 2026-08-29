@@ -17,7 +17,11 @@ import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
 import { navigateToForumTopics } from '../../util/profileNav';
 import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_MUTED_BADGE, ROW_PAD_H, ROW_PAD_V } from '../../util/theme';
+import {
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
+  COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
+} from '../../util/theme';
+import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
@@ -43,6 +47,8 @@ export struct ChatRow {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 由 MainScreen 算好写进 AppStorage 的「APP 壁纸生效中」，见 store/AppSettings。
+  @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   @Prop chat: ChatEntry;
   // The list this row is being shown in — pinning is per-list, and the menu
   // offers 取消归档 instead of 归档 inside the archive.
@@ -319,14 +325,16 @@ export struct ChatRow {
   // Native pressed feedback starts as soon as the finger goes down. Besides
   // making ordinary taps feel responsive, it also makes the long-press wait
   // visible before the context menu appears.
+  // 壁纸生效时行改成浮在壁纸上的半透明卡片（方案 1）。80% 不透明度让行内文字的
+  // 可读性和壁纸解耦——推导见 util/theme.mainCardFill。
   @Styles
   rowNormalStyle() {
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
   }
 
   @Styles
   rowPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, true))
   }
 
   @Builder

@@ -1,4 +1,9 @@
 import { common } from '@kit.AbilityKit';
+import { AppBackdrop } from '../common/AppBackdrop';
+import { KEY_APP_BG_DARK, KEY_APP_BG_LIGHT, KEY_APP_BG_ON } from '../../store/AppSettings';
+import { KEY_APP_DARK } from '../../util/theme';
+import { appWallpaperActive } from '../../util/localWallpaper';
+import { isSplitLayout } from '../../util/splitMetrics';
 import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { CallSnapshot } from '../../services/CallSession';
@@ -75,7 +80,7 @@ export struct MainScreen {
   // 留——聊天页输入框（composerBottomGap）正是这么做的。dock 之前没看这个值，
   // 分栏下左栏 dock 比右栏输入框高出 0.7×bottomSafe−6（issue #150）。
   @StorageProp('keyboardHeightVp') private keyboardH: number = 0;
-  @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenWidthVp') @Watch('syncWallpaperFlag') screenW: number = 360;
   // 聊天页签分栏时左栏的实际宽度（vp，0 = 还没量到）。由 ChatListPage 在自己的
   // 布局回调里写入——HdsNavigation 不回调宽度，拖分割线又会改它，只能这么拿。
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarWidth: number = 0;
@@ -109,7 +114,12 @@ export struct MainScreen {
   @State private dockShown: boolean = true;
   // dock 的**渲染态**：显示时先挂载再淡入；隐藏时与 dockShown 同帧撤下。
   @State private dockMounted: boolean = true;
-  @StorageProp('screenHeightVp') screenH: number = 780;
+  @StorageProp('screenHeightVp') @Watch('syncWallpaperFlag') screenH: number = 780;
+  // APP 壁纸：这一层同时知道分栏和路径，所以由它算一次「生效中」写进
+  // KEY_APP_BG_ON，其余组件只读那一个键（见 store/AppSettings 的说明）。
+  @StorageProp(KEY_APP_BG_LIGHT) @Watch('syncWallpaperFlag') private appBgLight: string = '';
+  @StorageProp(KEY_APP_BG_DARK) @Watch('syncWallpaperFlag') private appBgDark: string = '';
+  @StorageProp(KEY_APP_DARK) @Watch('syncWallpaperFlag') private wallpaperDark: boolean = false;
   @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
   @StorageProp(STORAGE_UPDATE_AVAILABLE) updateAvailable: boolean = false;
   // 回前台补偿：后台期间的来电 push 可能被系统拒绝，前台一刻重查一次。
@@ -140,7 +150,17 @@ export struct MainScreen {
   private unsubCall: (() => void) | null = null;
   private callPagePushed: boolean = false;
 
+  private wallpaperSplit(): boolean {
+    return isSplitLayout(this.screenW, this.screenH);
+  }
+
+  private syncWallpaperFlag(): void {
+    const path: string = this.wallpaperDark ? this.appBgDark : this.appBgLight;
+    AppStorage.setOrCreate(KEY_APP_BG_ON, appWallpaperActive(path, this.wallpaperSplit()));
+  }
+
   aboutToAppear(): void {
+    this.syncWallpaperFlag();
     // **先让 Tabs 与 mainTabIndex 对齐。**
     //
     // 本组件不是只在冷启动时建一次：账号切换（含"添加账号"和取消添加返回原
@@ -616,6 +636,9 @@ export struct MainScreen {
     // 两栏中间去了。Tabs 是 width/height 100%，换对齐方式影响不到它。
     // Start 会跟着布局方向镜像，和 navBar 默认的 NavBarPosition.Start 一致。
     Stack({ alignContent: Alignment.BottomStart }) {
+      // 壁纸在最底：Tabs 与 dock 都画在它之上。挂在 MainScreen 而不是 Index，
+      // 是为了不把登录流程也铺上（见 pages/common/AppBackdrop 的说明）。
+      AppBackdrop({ split: this.wallpaperSplit() });
       // index 显式跟住 mainTabIndex，Tabs 才不会在树重建后从 0 开始——
       // 见 aboutToAppear 里的说明。稳态下它与 controller.changeIndex 同值，
       // 重复驱动是幂等的。

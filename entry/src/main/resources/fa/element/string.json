@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "تنظیم تصویر زمینه ناموفق بود"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "پس‌زمینه برنامه"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "محو پس‌زمینه"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "پوشش تیره"
     }
   ]
 }

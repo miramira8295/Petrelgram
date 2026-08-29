@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Duvar kağıdı ayarlanamadı"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Uygulama arka planı"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Arka plan bulanıklığı"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Karartma"
     }
   ]
 }

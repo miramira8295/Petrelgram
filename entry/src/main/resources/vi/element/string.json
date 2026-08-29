@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Không thể đặt hình nền"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Nền ứng dụng"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Làm mờ nền"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Lớp phủ tối"
     }
   ]
 }

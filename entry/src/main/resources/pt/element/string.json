@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Não foi possível definir o papel de parede"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Fundo do app"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Desfoque do fundo"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Camada escura"
     }
   ]
 }

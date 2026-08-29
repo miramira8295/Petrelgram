@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "تعذر تعيين الخلفية"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "خلفية التطبيق"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "تمويه الخلفية"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "تعتيم داكن"
     }
   ]
 }

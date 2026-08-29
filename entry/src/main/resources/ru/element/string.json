@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "Не удалось установить обои"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "Фон приложения"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "Размытие фона"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "Затемнение"
     }
   ]
 }

@@ -11651,6 +11651,18 @@
     {
       "name": "cb_local_failed",
       "value": "ตั้งวอลเปเปอร์ไม่สำเร็จ"
+    },
+    {
+      "name": "cs_app_background",
+      "value": "พื้นหลังแอป"
+    },
+    {
+      "name": "cs_app_bg_blur",
+      "value": "เบลอพื้นหลัง"
+    },
+    {
+      "name": "cs_app_bg_dim",
+      "value": "ชั้นมืด"
     }
   ]
 }
