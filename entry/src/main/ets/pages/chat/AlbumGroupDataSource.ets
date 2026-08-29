@@ -19,7 +19,7 @@ import { chatContentWidth } from '../../util/chatContentWidth';
 //      容器，不是 LazyForEach。所以那一行一个字都没改。
 //      registerDataChangeListener / unregisterDataChangeListener **必须是真的**：
 //      Repeat 确实不调它们，但 BasicPrefetcher 调——见类尾那段注释。
-//   2. 几个纯函数：行 key 的内容指纹、跨快照的行对象复用、[BlankRow] 诊断。
+//   2. 几个纯函数：行 key 的内容指纹、跨快照的行对象复用。
 //      它们没有 UI 依赖，因此可以被单测直接覆盖。
 
 // Initial-page staging republishes the same row signatures across several
@@ -225,67 +225,6 @@ export function sameRowArray(a: AlbumGroup[], b: AlbumGroup[]): boolean {
     }
   }
   return true;
-}
-
-// ── [BlankRow] 诊断 ────────────────────────────────────────────────────────
-//
-// 【这段历史必须留着，因为它记的是一个刚修好的用户可见 bug】
-//
-// LazyForEach 时代：占位符与真身共用同一个 key（initialDeferred 故意不进 key，
-// 见上面的 sameRenderSnapshot），而 RELOAD 的 SDK 契约是「对于 key 没变的数据
-// 项，沿用**原来的**子组件」。于是一行在 RELOAD 那一批里从占位翻成真身，框架
-// 会**默默把它留在占位状态**——而数据源已经把数组换成了真快照，此后任何一次
-// 差分都不会再点到那一行的名。屏幕上就是一条满高的空白行，只有滚出缓存区重建
-// 才自愈。修法是 RELOAD 之后**单独再补发一次不带 key 的 CHANGE**，按 key 配对
-// 找出被吞掉的翻转行（AlbumGroupDataSource.notifyReloadWithDeferredFlips）。
-//
-// 【Repeat 之后还需要吗——我的判断：不需要，但要上机确认】
-//
-// 依据是官方《Repeat：可复用的循环渲染》「节点更新/复用能力说明」的原话：
-//   「Repeat 数据更新触发重新渲染的逻辑是比较当前索引处节点数据 item 是否变化，
-//     以此判断是否进行 UI 刷新，仅改变键值不改变 item 的情况不会触发刷新。」
-// 它的判据是 **item 变没变**，key 只用来配对。占位→真身正是「key 不变、item
-// 换了新对象」（deferredCopy 造的是新对象），落在「刷新」那一侧；而被这条 bug
-// 咬到的前提「key 没变就沿用原组件、且不看内容」在 Repeat 上不成立。换句话说，
-// LazyForEach 的 RELOAD 契约和 Repeat 的更新规则在这一点上是**相反**的。
-//
-// 补发逻辑本身依赖 DataOperation / DataChangeListener，Repeat 之下这些 API 已
-// 不存在，所以代码没法原样留着。留下的是**探针**：统计每次发布里有多少行发生
-// 了占位↔真身的翻转。上机时：
-//   flips>0 且屏幕上没有空白行 ⇒ 判断成立，可以把这个探针一起删掉；
-//   flips>0 且仍有空白行       ⇒ 判断被推翻，Repeat 也需要一条补发路径，
-//                                回到 git show cb3c158:entry/src/main/ets/pages/chat/
-//                                AlbumGroupDataSource.ets 看当年那段代码；
-//   恒为 0                     ⇒ 这条机理没被命中，去查
-//                                docs/superpowers/specs/2026-08-26-blank-row-investigation.md
-//                                里的候选 C。
-//
-// ── 删除清单（判断被证实/推翻之后，一次删干净）────────────────────────────
-// 1. 本函数 countDeferredFlips 及其上面这整段注释；
-// 2. ChatPage.ets：publishGroupsNow 里那段 `if (this.initialMessageStageActive)`
-//    的 [BlankRow] 统计，以及 import 列表里的 countDeferredFlips；
-// 3. entry/src/test/AlbumGroupDataSource.test.ets 的
-//    deferred_flip_probe_counts_placeholder_admissions 用例及其 import；
-// 4. docs/superpowers/specs/2026-08-26-blank-row-investigation.md（如果结论
-//    已经写进别处的注释，这份调研稿就不必留）。
-// 注：探针只在首屏分级揭示期间跑（见 ChatPage 那边的理由），日常滚动/发消息
-//     的发布路径上一分钱都不付。
-export function countDeferredFlips(prev: AlbumGroup[], next: AlbumGroup[]): number {
-  if (prev.length === 0 || next.length === 0) {
-    return 0;
-  }
-  const wasDeferred: Map<string, boolean> = new Map<string, boolean>();
-  for (const row of prev) {
-    wasDeferred.set(rowIdentity(row), row.initialDeferred === true);
-  }
-  let flips: number = 0;
-  for (const row of next) {
-    const before: boolean | undefined = wasDeferred.get(rowIdentity(row));
-    if (before !== undefined && before !== (row.initialDeferred === true)) {
-      flips++;
-    }
-  }
-  return flips;
 }
 
 // 喂给 BasicPrefetcher.visibleAreaChanged 的可见区间。

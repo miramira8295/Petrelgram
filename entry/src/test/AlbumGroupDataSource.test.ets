@@ -5,7 +5,7 @@ import { UserStore } from '../main/ets/store/UserStore';
 import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store/MessageEntry';
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
-  AlbumGroupDataSource, clampPrefetchRange, contentFingerprint, countDeferredFlips,
+  AlbumGroupDataSource, clampPrefetchRange, contentFingerprint,
   appendBreaksAnchor, PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRenderSnapshot,
   sameRowArray
 } from '../main/ets/pages/chat/AlbumGroupDataSource';
@@ -133,16 +133,6 @@ export default function albumGroupDataSourceTest() {
       const merged = reuseUnchangedRows(staged, real);
       expect(merged[0] === real[0]).assertTrue();
       expect(merged[real.length - 1] === staged[real.length - 1]).assertTrue();
-    });
-
-    it('deferred_flip_probe_counts_placeholder_admissions', 0, () => {
-      const users = usersOf();
-      const real = groupsOf([[10, 100], [20, 5000], [30, 9000]], users);
-      const staged = stageInitialMessageGroups(real, real.length - 1, false, 1);
-      // 三行里最后一行是真身，前两行是占位。
-      expect(countDeferredFlips(staged, real)).assertEqual(2);
-      expect(countDeferredFlips(real, real)).assertEqual(0);
-      expect(countDeferredFlips([], real)).assertEqual(0);
     });
 
     // ── 向上翻页的锚点复位判据（F-1，P4 误删后接回来）─────────────────

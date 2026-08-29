@@ -31,8 +31,23 @@ export interface AlbumGroup {
   showSenderName: boolean; // first row of a same-sender run — the only one with the name
   // Present only during ChatPage's first-frame staging. The data source keeps
   // the full logical row count while the builder substitutes a fixed-height,
-  // node-light placeholder for this row; the marker is removed by targeted
-  // CHANGE notifications on the following frame.
+  // node-light placeholder for this row; the marker goes away when the
+  // unstaged snapshot is published on a following frame.
+  //
+  // 这个标记**故意不进行 key**——占位和真身是同一行，key 不该变。LazyForEach
+  // 时代这曾是个用户可见的 bug：RELOAD 的契约是「key 没变就沿用原来的子组件」，
+  // 于是在 RELOAD 那一批里翻成真身的行会被默默留在占位状态，而数据源已经换成
+  // 真快照、此后任何差分都不会再点到它的名——屏幕上就是一条满高的空白行，只有
+  // 滚出缓存区重建才自愈。当时的兜法是 RELOAD 之后补发一次不带 key 的 CHANGE。
+  //
+  // **Repeat 之下不需要那条补发路径，已经上机确认**（2026-08-29，报告人原话：
+  // 「之前见过，现在没发现了」）。Repeat 的更新判据是 item 变没变、key 只用来
+  // 配对（官方《Repeat：可复用的循环渲染》：「仅改变键值不改变 item 的情况不会
+  // 触发刷新」），而占位→真身正是「key 不变、item 换了新对象」，落在**刷新**那
+  // 一侧；咬人的那个前提在 Repeat 上不成立。
+  //
+  // 为验证这件事留的 [BlankRow] 探针（countDeferredFlips）已随结论一起删除。
+  // 别再给这里加补发逻辑——要加之前先回头读这段。
   initialDeferred?: boolean;
 }
 
