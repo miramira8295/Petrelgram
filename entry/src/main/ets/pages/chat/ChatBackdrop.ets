@@ -8,8 +8,7 @@ import {
 import { PatternTileLayer } from './PatternTileLayer';
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX, KEY_BG_BLUR, KEY_BG_PATTERN,
-  KEY_BG_PATTERN_DARK, KEY_CHAT_DIM, KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS,
+  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX, KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS,
   KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS,
   KEY_REDUCE_ANIM, powerAnimationDuration, powerFeatureEnabled, powerGroupAnimationDuration,
   powerGroupFeatureEnabled
@@ -60,11 +59,19 @@ export struct ChatBackdrop {
     return this.areaH > 0 ? this.areaH : this.screenH;
   }
 
-  @StorageProp(KEY_BG_BLUR) @Watch('onParamsChanged') bgBlur: number = BG_BLUR_DEFAULT;
-  @StorageProp(KEY_BG_PATTERN) @Watch('onParamsChanged') bgPatternLight: number = BG_PATTERN_DEFAULT;
-  @StorageProp(KEY_BG_PATTERN_DARK) @Watch('onParamsChanged') bgPatternDark: number = BG_PATTERN_DEFAULT;
+  // ── 三根滑杆：由**调用方按槽位传入**，不再自己读全局键 ────────────────────
+  //
+  // 原来这三个值是从 KEY_BG_BLUR / KEY_BG_PATTERN(_DARK) / KEY_CHAT_DIM 直接读的，
+  // 那等于「全 app 只有一套壁纸参数」。壁纸设置改成四个独立槽位（APP 浅色 /
+  // APP 深色 / 聊天浅色 / 聊天深色）之后，每个槽位都要有自己的纹理、遮罩和模糊，
+  // 所以这层不能再自己去拿——它画的是哪个槽位，只有调用方知道。
+  //
+  // 深浅色的选择也一并上交：本组件仍然订阅 appDark（暗化层要用），但"该拿浅色
+  // 那份还是深色那份参数"是槽位的事，不是它的事。
+  @Prop @Watch('onParamsChanged') bgBlur: number = BG_BLUR_DEFAULT;
+  @Prop @Watch('onParamsChanged') bgPattern: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_APP_DARK) @Watch('onParamsChanged') appDark: boolean = false;
-  @StorageProp(KEY_CHAT_DIM) chatDim: number = 0;
+  @Prop chatDim: number = 0;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
   @StorageProp(KEY_POWER_EFFECT_BACKGROUND) powerBackgroundEffect: boolean = false;
@@ -117,7 +124,7 @@ export struct ChatBackdrop {
   }
 
   private patternStrength(): number {
-    return this.appDark ? this.bgPatternDark : this.bgPatternLight;
+    return this.bgPattern;
   }
 
   private blurRadius(): number {

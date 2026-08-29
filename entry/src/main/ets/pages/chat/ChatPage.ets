@@ -220,7 +220,10 @@ import { openForwardOrigin } from '../../util/chatNavigation';
 import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
 import { logE, logI, logW } from '../../util/log';
 import { chromeSitsOnLight } from '../../util/chatChrome';
-import { KEY_LOCAL_BG_EPOCH } from '../../store/AppSettings';
+import {
+  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_BG_BLUR, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK,
+  KEY_CHAT_DIM, KEY_LOCAL_BG_EPOCH
+} from '../../store/AppSettings';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
@@ -427,6 +430,12 @@ struct ChatPageChrome {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp(KEY_LOCAL_BG_EPOCH) localBgEpoch: number = 0;
+  // 聊天壁纸的三根滑杆：纹理按深浅色分两个键（既有行为），模糊与遮罩暂时仍是
+  // 单键——四槽位独立化是下一步，这里先把"由谁来读"这件事挪对位置。
+  @StorageProp(KEY_BG_BLUR) chatBgBlur: number = BG_BLUR_DEFAULT;
+  @StorageProp(KEY_BG_PATTERN) chatBgPatternLight: number = BG_PATTERN_DEFAULT;
+  @StorageProp(KEY_BG_PATTERN_DARK) chatBgPatternDark: number = BG_PATTERN_DEFAULT;
+  @StorageProp(KEY_CHAT_DIM) chatBgDim: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp('keyboardHeightVp') keyboardH: number = 0;
@@ -455,6 +464,9 @@ struct ChatPageChrome {
       appearanceEpoch: this.appearanceEpoch,
       materialEpoch: this.materialEpoch,
       localBgEpoch: this.localBgEpoch,
+      chatBgBlur: this.chatBgBlur,
+      chatBgPattern: this.appDark ? this.chatBgPatternDark : this.chatBgPatternLight,
+      chatBgDim: this.chatBgDim,
       langEpoch: this.langEpoch,
       appDark: this.appDark,
       topSafe: this.topSafe,
@@ -609,6 +621,10 @@ export struct ChatPage {
   // 本机自选壁纸的代次。V2 组件用不了 @StorageProp，照既有分工由 ChatPageChrome
   // 订阅后作为 @Param 传下来（materialEpoch / appDark 都是这么走的）。
   @Require @Param localBgEpoch: number = 0;
+  // 聊天壁纸的三根滑杆。由 ChatPageChrome 订阅后传下来（V2 用不了 @StorageProp）。
+  @Require @Param chatBgBlur: number = 0;
+  @Require @Param chatBgPattern: number = 0;
+  @Require @Param chatBgDim: number = 0;
   @Require @Param topSafe: number = 0;
   @Require @Param bottomSafe: number = 0;  // ✅ 新增
   @Require @Param keyboardH: number = 0;
@@ -9622,7 +9638,12 @@ export struct ChatPage {
     NavDestination() {
     Stack() {
       // 整层背景搬到了 ChatBackdrop：它只吃输入不回调，所以这里只传三个入参。
-      ChatBackdrop({ chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH });
+      // 聊天槽位的三根滑杆由页面按当前深浅色挑好传进去——见 ChatBackdrop 里
+      // 那段说明：那一层不再自己读全局键。
+      ChatBackdrop({
+        chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH,
+        bgBlur: this.chatBgBlur, bgPattern: this.chatBgPattern, chatDim: this.chatBgDim
+      });
       Column() {
         Stack() {
         List({ scroller: this.scroller }) {
