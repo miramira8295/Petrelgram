@@ -25,6 +25,9 @@ import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
   COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG
 } from '../../util/theme';
+import { AppBackdrop } from '../common/AppBackdrop';
+import { KEY_APP_BG_ON } from '../../store/AppSettings';
+import { isSplitLayout } from '../../util/splitMetrics';
 import { ExpandableText } from './ExpandableText';
 import { openUrl } from '../../util/openUrl';
 import { common } from '@kit.AbilityKit';
@@ -101,6 +104,11 @@ export struct ProfilePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenHeightVp') screenH: number = 780;
+  // APP 壁纸此刻生不生效。本页是压在主界面之上的 NavDestination，**下面那层壁纸
+  // 透不过来**（HdsNavDestination 自带不透明底，Scroll 又铺了一层 page_bg），
+  // 所以和 ChatPage 一样自己画一层——用户实报"点频道/群组/其他人详情看不到壁纸"。
+  @StorageProp(KEY_APP_BG_ON) appWallpaperOn: boolean = false;
   @State profTab: number = 0;
   @State name: string = '';
   @State initials: string = '?';
@@ -1435,6 +1443,9 @@ export struct ProfilePage {
   build() {
     HdsNavDestination() {
     Stack() {
+      // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
+      // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
+      AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH) });
       Scroll() {
         Column() {
           if (!this.profileContentReady) {
@@ -1472,7 +1483,9 @@ export struct ProfilePage {
         .padding({ bottom: 24 })
       }
       .width('100%').height('100%')
-      .backgroundColor(PAGE_BG)
+      // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill 的理由）。
+      // 卡片自己是毛玻璃（profileGlassFill），压在壁纸上仍然读得清。
+      .backgroundColor(this.appWallpaperOn ? Color.Transparent : PAGE_BG)
       .align(Alignment.Top)
       .onReachEnd((): void => {
         if (this.isSharedProfileTab(this.currentProfileTabKey()) && this.sharedStore !== null) {

@@ -34,7 +34,11 @@ import { ExpandableText } from './ExpandableText';
 import {
   createVideoChat, endGroupCall, getGroupCall, startScheduledVideoChat
 } from '../../tdkit/GroupCallApi';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import {
+  KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
+} from '../../store/AppSettings';
+import { AppBackdrop } from '../common/AppBackdrop';
+import { isSplitLayout } from '../../util/splitMetrics';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -99,6 +103,11 @@ export struct ChatProfilePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenHeightVp') screenH: number = 780;
+  // APP 壁纸此刻生不生效。本页是压在主界面之上的 NavDestination，**下面那层壁纸
+  // 透不过来**（HdsNavDestination 自带不透明底，Scroll 又铺了一层 page_bg），
+  // 所以和 ChatPage 一样自己画一层——用户实报"点频道/群组/其他人详情看不到壁纸"。
+  @StorageProp(KEY_APP_BG_ON) appWallpaperOn: boolean = false;
   @State title: string = '';
   @State initials: string = '?';
   @State avatarPath: string = '';
@@ -1704,6 +1713,9 @@ export struct ChatProfilePage {
     HdsNavDestination() {
     // 查看器需覆盖整页，故在滚动容器外再包一层 Stack。
     Stack() {
+    // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
+    // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
+    AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH) });
     Scroll() {
       Column() {
         this.header();
@@ -1737,7 +1749,9 @@ export struct ChatProfilePage {
     .width('100%').height('100%')
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
-    .backgroundColor($r('app.color.page_bg'))
+    // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill
+    // 的理由）。卡片自己是毛玻璃（overlayGlassFill），压在壁纸上仍然读得清。
+    .backgroundColor(this.appWallpaperOn ? Color.Transparent : $r('app.color.page_bg'))
     .onReachEnd((): void => {
       if (this.store === null) {
         return;
