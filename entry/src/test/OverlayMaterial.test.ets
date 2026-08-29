@@ -93,9 +93,12 @@ export default function overlayMaterialTest() {
         }
         expect(overlayBlur(surface)).assertUndefined();
         expect(overlayBackdropBlur(surface)).assertEqual(0);
-        // 底色也不能再被换成半透明：材质会自己把填充清成玻璃。
-        // 材质在时底色必须透明，否则材质被盖住。
-        expect(overlayGlassFill(surface, $r('app.color.surface')) === Color.Transparent).assertTrue();
+        // 底色**不再要求透明**（真机 7.0.0.105：设备自报支持材质、我们也挂了，
+        // 但材质不渲染，全透明就成了内容直接穿透的窟窿）。现在要求的是「不等于
+        // 调用方传进来的那个不透明实色」——既不能是实色（会盖住材质），也不该是
+        // 全透明（材质不渲染时什么都不剩）。具体取值见 overlayGlassFill。
+        const fillWhenMaterial: ResourceColor = overlayGlassFill(surface, $r('app.color.surface'));
+        expect(fillWhenMaterial === Color.Transparent).assertFalse();
       }
     });
 

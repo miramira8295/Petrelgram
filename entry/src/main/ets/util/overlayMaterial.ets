@@ -433,7 +433,21 @@ export function overlayGlassFill(surface: OverlaySurface, solid: ResourceColor):
     return VIEWER_GLASS_FALLBACK;
   }
   if (materialAvailable()) {
-    return Color.Transparent;
+    // **不再返回全透明**（真机 2026-08-29，PLA-AL10 / OpenHarmony-7.0.0.105）：
+    // 那台机器上诊断行是
+    //   [Material] api=26 state=0 types=[101] queried=true thickness=2 light=exquisite material=true
+    // ——设备自报支持沉浸材质(101)、应用级开关是 DEFAULT、用户也没关材质，我们
+    // 确实挂了 systemMaterial，**可玻璃就是不渲染**（同机别的应用正常；同一台机器
+    // 在 7.0.0.100 上是好的）。此前给 materialColor 传淡色也没能救回来。
+    //
+    // 结论：不能再赌「材质一定会画出来」。底色改成同一份淡色——材质真的渲染时它
+    // 只是薄薄一层（官方 FAQ：材质的视觉层级在 backgroundColor 之下，所以是叠在
+    // 上面的一层淡色，不是遮挡）；材质不渲染时它就是**唯一还看得见的东西**，
+    // 顶栏/输入框/抽屉至少是一块半透明的面，而不是内容直接穿透的窟窿。
+    //
+    // 代价说清楚：材质正常的设备上观感会比现在稍"实"一点点。要浓淡在
+    // resources/{base,dark}/element/color.json 的 material_tint 一处调。
+    return $r('app.color.material_tint');
   }
   // 这个色由本模块自己持有，不回显调用方传进来的 solid：这个模块的职责就是
   // 替调用方决定，而不是指望调用方传来的恰好是半透明的（不透明底色会把
