@@ -10,6 +10,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { formatTime } from '../../util/formatTime';
 import { StreamingVideoPlayer } from './StreamingVideoPlayer';
 import { setMediaViewerOrientation } from './LiveViewerUi';
+import { thumbPathFor } from '../../util/mediaThumbChannel';
 import {
   KEY_CURRENT_NETWORK_TYPE, KEY_POWER_EFFECT_BLUR, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
@@ -589,16 +590,44 @@ export struct MediaViewerOverlay {
     return this.viewerMsgId !== 0 ? [this.viewerMsgId] : [];
   }
 
+  // 查看器里那张"预览图"（大图没解码出来之前顶上的缩略图，以及底部胶片条）。
+  //
+  // **先问旁路通道，再看行对象**（用户报：图片组放大之后预览图不展示）。
+  // AlbumGroup.photoPaths 是**刻意不进行 key** 的（见 collapseAlbums：缩略图路径
+  // 走 mediaThumbChannel 直达气泡，进 key 会让每张图落地都拖着整行重建）。代价是
+  // reuseUnchangedRows 在 key 没变时**把旧行对象还回来**，于是缩略图落地之后
+  // photoPaths 永远停在 ''——AlbumGroupDataSource.test 里那条
+  // `prefetch_source_must_be_fed_the_fresh_rows_not_the_merged_ones` 钉的就是它。
+  // 气泡不受影响（LiveThumbImage 自己订阅通道），**只有查看器**这一处直接读行对象，
+  // 所以只有它拿到空路径：大图照常出来（photoSrcFor 读的是新鲜的 entry），
+  // 预览图却是空的。这与 453c00f 修掉的 photoFailed 是同一类问题的另一处。
+  //
+  // 修法不是把 photoPaths 塞回 key 或 sameRenderSnapshot——那正是重建风暴的来源。
+  // 通道按 fileId 索引、永远是最新的，而 photoFileIds **在** key 里（所以是新鲜的）。
   private siblingPath(id: number): string {
     const g = this.group();
     if (g !== null) {
       const idx = g.memberIds.indexOf(id);
       if (idx >= 0 && idx < g.photoPaths.length) {
-        return g.photoPaths[idx];
+        const fileId: number = idx < g.photoFileIds.length ? g.photoFileIds[idx] : 0;
+        const live: string = fileId !== 0 ? thumbPathFor(fileId) : '';
+        if (live !== '') {
+          return live;
+        }
+        if (g.photoPaths[idx] !== '') {
+          return g.photoPaths[idx];
+        }
+        // 行对象和通道都没有：往下走 entry 那一支（this.messages 是每次发布都换
+        // 的新鲜列表，不受 reuseUnchangedRows 影响）。
       }
     }
     const idx2 = this.messages.findIndex((m: MessageEntry) => m.id === id);
-    return idx2 >= 0 ? this.messages[idx2].photoPath : '';
+    if (idx2 < 0) {
+      return '';
+    }
+    const entry: MessageEntry = this.messages[idx2];
+    const live: string = entry.photoFileId !== 0 ? thumbPathFor(entry.photoFileId) : '';
+    return live !== '' ? live : entry.photoPath;
   }
 
   private siblingIsVideo(id: number): boolean {
