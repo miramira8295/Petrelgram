@@ -3,6 +3,7 @@ import { wantAgent } from '@kit.AbilityKit';
 import { NotificationPublisher, LocalNotice } from './NotificationService';
 import { avatarPixelMap } from '../util/avatarPixelMap';
 import { logE } from '../util/log';
+import { NOTIFY_QUEUE_MAX, overflowCount, publishDelayMs } from '../util/notifyRate';
 
 // NotificationPublisher 的系统实现：Notification Kit 文本通知。
 // 点击经 wantAgent 拉起 EntryAbility 并携带 notifyChatId + notifyMessageId（Index 消费路由，
@@ -10,13 +11,47 @@ import { logE } from '../util/log';
 export class SystemNotificationPublisher implements NotificationPublisher {
   private bundleName: string;
   private abilityName: string;
+  // 限频队列，见 util/notifyRate。
+  private queue: LocalNotice[] = [];
+  private lastPublishAt: number = 0;
+  private drainTimer: number = -1;
 
   constructor(bundleName: string, abilityName: string) {
     this.bundleName = bundleName;
     this.abilityName = abilityName;
   }
 
+  // 系统对单应用发布**新**通知的上限是每秒 10 条，超了直接抛 1600009。真机日志
+  // 里网络恢复后 TDLib 一次补推一批消息，这里原来逐条直发，一瞬间 9~10 条连号
+  // 全被拒——那些通知用户根本没看见。改成入队按最小间隔放行，一条都不丢。
+  // 间隔的取值理由见 util/notifyRate。
   publish(notice: LocalNotice): void {
+    this.queue.push(notice);
+    const over: number = overflowCount(this.queue.length, NOTIFY_QUEUE_MAX);
+    if (over > 0) {
+      // 丢最旧的：积压到这个量级时用户最关心的是最新那几条。
+      this.queue = this.queue.slice(over);
+    }
+    this.scheduleDrain();
+  }
+
+  private scheduleDrain(): void {
+    if (this.drainTimer !== -1 || this.queue.length === 0) {
+      return;
+    }
+    this.drainTimer = setTimeout((): void => {
+      this.drainTimer = -1;
+      const next: LocalNotice | undefined = this.queue.shift();
+      if (next !== undefined) {
+        this.lastPublishAt = Date.now();
+        this.sendNow(next);
+      }
+      // 队列里还有就接着排；空了这里直接返回，不留空转的定时器。
+      this.scheduleDrain();
+    }, publishDelayMs(this.lastPublishAt, Date.now()));
+  }
+
+  private sendNow(notice: LocalNotice): void {
     this.buildAgent(notice.chatId, notice.messageId ?? 0).then((agent: object): Promise<void> => {
       const request: notificationManager.NotificationRequest = {
         id: notice.id,

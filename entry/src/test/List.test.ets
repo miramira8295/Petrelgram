@@ -171,6 +171,7 @@ import floatDateGateTest from './FloatDateGate.test';
 import nextFrameQueueTest from './NextFrameQueue.test';
 import mediaGridTest from './MediaGrid.test';
 import tdRequestTimeoutTest from './TdRequestTimeout.test';
+import notifyRateTest from './NotifyRate.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -347,4 +348,5 @@ export default function testsuite() {
   nextFrameQueueTest();
   mediaGridTest();
   tdRequestTimeoutTest();
+  notifyRateTest();
 }
