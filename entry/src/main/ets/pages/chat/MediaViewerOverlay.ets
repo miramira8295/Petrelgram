@@ -10,6 +10,10 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { formatTime } from '../../util/formatTime';
 import { StreamingVideoPlayer } from './StreamingVideoPlayer';
 import { isLivePhotoVideo } from '../../util/livePhoto';
+import { extractFirstFrame, saveMovingPhoto } from '../../util/livePhotoSave';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { promptAction } from '@kit.ArkUI';
+import { logE } from '../../util/log';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { thumbPathFor } from '../../util/mediaThumbChannel';
 import {
@@ -843,6 +847,67 @@ export struct MediaViewerOverlay {
   //
   // 位置选在标准控制栏原本占的那条带子上（底部 40vp 左右）：实况把控制栏关掉了，
   // 那块地方空着，而缩略图带在更上面的 110vp，两者不会打架。
+  // 把这条实况存回图库，变回一张**真的**动态照片而不是一段视频。
+  //
+  // 必须挂在 SaveButton 的 onClick 里：创建动态照片资产只有 createAssetRequest
+  // 那一条路，而它要么申请常驻的媒体写权限、要么由用户点一次安全控件临时授权。
+  // 本应用一贯避开常驻权限，所以用后者——理由与推导见 util/livePhotoSave。
+  private async saveLiveToGallery(): Promise<void> {
+    const video: string = this.videoLocalPath();
+    if (video === '') {
+      // 还没下完就没有本地文件可存。
+      promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+      return;
+    }
+    const ctx = getContext(this) as common.UIAbilityContext;
+    const still: string = `${ctx.filesDir}/live_save_${Date.now()}.jpg`;
+    try {
+      // 静图那一半从视频里抽首帧，而不是拿 TDLib 的缩略图——缩略图只有几百像素
+      // 宽，而这张就是用户之后在图库里看到的照片。
+      const ok: boolean = await extractFirstFrame(
+        video, still, this.videoWidth(), this.videoHeight());
+      if (!ok) {
+        promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+        return;
+      }
+      await saveMovingPhoto(ctx, still, video, `live_${Date.now()}`);
+      promptAction.showToast({ message: str('media_saved_gallery'), duration: 2000 });
+    } catch (error) {
+      logE(`MediaViewer.saveLiveToGallery failed: ${error}`);
+      promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+    } finally {
+      // 抽出来的首帧只是中转，落库之后就没用了。删不掉不该打断流程。
+      try {
+        fs.unlinkSync(still);
+      } catch (error) {
+        logE(`MediaViewer.saveLiveToGallery cleanup failed: ${error}`);
+      }
+    }
+  }
+
+  // 「存为实况」。放在右下角，和左下角那枚实况胶囊分居两侧，互不遮挡。
+  @Builder
+  liveSaveButton() {
+    Column() {
+      SaveButton({
+        icon: SaveIconStyle.FULL_FILLED,
+        text: SaveDescription.SAVE_IMAGE,
+        buttonType: ButtonType.Capsule
+      })
+        .onClick((event: ClickEvent, result: SaveButtonOnClickResult): void => {
+          if (result !== SaveButtonOnClickResult.SUCCESS) {
+            return;
+          }
+          this.saveLiveToGallery();
+        });
+    }
+    .width('100%').height('100%')
+    .justifyContent(FlexAlign.End)
+    .alignItems(HorizontalAlign.End)
+    .padding({ right: 16, bottom: 40 })
+    .hitTestBehavior(HitTestMode.Transparent);
+  }
+
   @Builder
   liveCapsule() {
     Column() {
@@ -1245,6 +1310,7 @@ export struct MediaViewerOverlay {
       }
       if (this.chromeVisible && this.isLiveNow()) {
         this.liveCapsule();
+        this.liveSaveButton();
       }
       if (this.chromeVisible && this.siblingIds().length > 1) {
         Column() {
