@@ -208,6 +208,48 @@ export default function albumGroupDataSourceTest() {
       expect(prependBreaksAnchor(prev, untouched)).assertFalse();
     });
 
+    // ── 失败标记必须能穿过行复用（"媒体点不动"）────────────────────────
+    //
+    // 钉住的是用户报的那条：往上翻历史之后有的媒体点不动，杀掉 APP 重进就好。
+    // photoFailed 不进行 key，重试成功后 store 把它清回 false，可 key 没变 ⇒
+    // 旧对象被还回来、标记永远停在 true ⇒ 气泡把点击吞成一次空重试。
+    it('failure_flags_must_not_be_stranded_by_row_reuse', 0, () => {
+      const users = usersOf();
+      const failed: MessageEntry = cloneMessage(entry(10, 100, users));
+      failed.contentType = 'photo';
+      failed.photoWidth = 800;
+      failed.photoHeight = 600;
+      failed.photoFileId = 55;
+      failed.photoFailed = true;
+      const recovered: MessageEntry = cloneMessage(failed);
+      recovered.photoFailed = false;
+
+      const prev: AlbumGroup[] = collapseAlbums([failed]);
+      const fresh: AlbumGroup[] = collapseAlbums([recovered]);
+      // 前提：失败标记确实不进行 key —— 所以只靠 key 是分不出来的。
+      expect(fresh[0].key).assertEqual(prev[0].key);
+      // 但它必须被判成"不是同一份快照"，否则 store 的修正会被丢掉。
+      expect(sameRenderSnapshot(prev[0], fresh[0])).assertFalse();
+
+      const merged: AlbumGroup[] = reuseUnchangedRows(prev, fresh);
+      expect(merged[0] === prev[0]).assertFalse();
+      expect(merged[0].head.photoFailed).assertFalse();
+    });
+
+    it('video_failure_flag_too', 0, () => {
+      const users = usersOf();
+      const failed: MessageEntry = cloneMessage(entry(11, 100, users));
+      failed.contentType = 'video';
+      failed.videoFileId = 66;
+      failed.videoFailed = true;
+      const recovered: MessageEntry = cloneMessage(failed);
+      recovered.videoFailed = false;
+      const prev: AlbumGroup[] = collapseAlbums([failed]);
+      const fresh: AlbumGroup[] = collapseAlbums([recovered]);
+      expect(fresh[0].key).assertEqual(prev[0].key);
+      expect(sameRenderSnapshot(prev[0], fresh[0])).assertFalse();
+    });
+
     // ── 预取源必须拿到 fresh 数组（F-3）───────────────────────────────
     //
     // 钉住的是一条会静默失效的接线：photoPath 刻意不进行 key，于是缩略图落地

@@ -66,10 +66,43 @@ function rowIdentity(g: AlbumGroup): string {
   return `${g.head.rowId}_${g.rowMemberIds.join('_')}`;
 }
 
-// 两行是不是**完全同一份渲染快照**：身份、内容、以及首屏占位标志都一样。
+// 失败标记变了就不是同一份快照——哪怕行 key 一个字都没变。
+//
+// **为什么要单独拎出来**（用户报：往上翻历史之后有的媒体点不动，杀掉 APP 重进
+// 就好）：photoFailed / videoFailed 都**不在行 key 里**（见 collapseAlbums 的
+// mutableSig）。缩略图重试成功后 store 会把标记清回 false，可那次发布的 key 逐
+// 字节相同 ⇒ reuseUnchangedRows 把**旧对象**还回来，store 的修正被原样丢掉。
+// 于是：图是好的（路径走旁路通道直达气泡），而 msg.photoFailed 永远停在 true，
+// 气泡的 onClick 一直命中 `if (this.thumbnailRetryable()) { 重试; return; }`
+// 那条早退，把这一下点击吞成一次空重试——表现就是"点不动"。杀进程重进之所以
+// 好，是因为内存里那批旧对象全丢了，行是照 store 的真值重建的。
+//
+// 和 photoPath 的区别在**频次**，不在对错：路径是每张图落地都要变，进这道判定
+// 就是重建风暴（那正是它被摘出去的原因，见上面的注释和
+// prefetch_source_must_be_fed_the_fresh_rows_not_the_merged_ones 那条用例）；
+// 失败标记只在"失败 → 重试成功"时翻一次，罕见，让它换一次新对象不值一提。
+function sameFailureFlags(a: AlbumGroup, b: AlbumGroup): boolean {
+  if (a.head.photoFailed !== b.head.photoFailed ||
+    a.head.videoFailed !== b.head.videoFailed) {
+    return false;
+  }
+  if (a.photoFailed.length !== b.photoFailed.length) {
+    return false;
+  }
+  for (let i = 0; i < a.photoFailed.length; i++) {
+    if (a.photoFailed[i] !== b.photoFailed[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// 两行是不是**完全同一份渲染快照**：身份、内容、首屏占位标志、以及不进 key 的
+// 失败标记都一样。
 export function sameRenderSnapshot(a: AlbumGroup, b: AlbumGroup): boolean {
   return a.key === b.key && rowIdentity(a) === rowIdentity(b) &&
-    (a.initialDeferred === true) === (b.initialDeferred === true);
+    (a.initialDeferred === true) === (b.initialDeferred === true) &&
+    sameFailureFlags(a, b);
 }
 
 // 跨快照复用没变过的行对象。
