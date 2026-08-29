@@ -486,6 +486,38 @@ export default function messageStoreTest() {
       expect(ids(store.getMessages()).join(',')).assertEqual('10,20,30,40,50');
       expect(store.getHasMoreNewer()).assertTrue();
     });
+    // 一整页更新的消息全在缺口之后时，store 会「整页收下、让窗口带着洞往前走」
+    // （宁可留洞也不冻住）。那条分支原来**忘了把 newerLoadState 放回 idle**：
+    // 请求发出时置了 'loading'，收下之后没人复位，顶上那颗"正在加载较新消息"的
+    // 胶囊就永远关不掉——用户实报"一直加载较新的消息，关不掉了"。
+    // 另外两条合并路径（inner-gap-trimmed / 正常合并）都有这一句，只有它没有。
+    it('newer_page_taken_as_is_behind_a_gap_clears_the_loading_pill', 0, async () => {
+      const S: number = 1048576; // TDLib 的消息 id 每条加 2^20，一步就是一条
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30 * S, 5, false, 'c'), textMessage(20 * S, 5, false, 'b'),
+        textMessage(10 * S, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      // 跳到历史中间，向下分页才会上膛。
+      store.loadAround(20 * S);
+      feedHistory(b, [textMessage(30 * S, 5, false, 'c'), textMessage(20 * S, 5, false, 'b'),
+        textMessage(10 * S, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.loadNewer()).assertTrue();
+      expect(store.getNewerLoadState()).assertEqual('loading');
+      // 页里带着锚点自己（30），所以**页首连续性检查放行**（skipped=0，不会走
+      // 整页重问那条路）；但更新的三条离锚点都在 98 步之外，一条都接不上。
+      // 这正是真机日志里那一页的形状。
+      feedHistory(b, [textMessage(130 * S, 5, false, 'g'), textMessage(129 * S, 5, false, 'f'),
+        textMessage(128 * S, 5, false, 'e'), textMessage(30 * S, 5, false, 'c')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.getMessages().length).assertEqual(6);
+      expect(ids(store.getMessages())[5]).assertEqual(130 * S);
+      // 回归点：修之前这里是 'loading'，胶囊再也不会消失。
+      expect(store.getNewerLoadState()).assertEqual('idle');
+    });
     it('sole_local_join_notice_is_injected_and_read', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();

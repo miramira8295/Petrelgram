@@ -1128,6 +1128,11 @@ export class MessageStore {
           ` chatLast=${this.chatLastMessageId} verdict=taken-as-is-behind-gap`);
         this.newerEmptyAnchor = 0;
         this.newerEmptyStreak = 0;
+        // **这一句漏了就是"正在加载较新消息"关不掉。**本分支是三条合并路径里
+        // 唯一没把状态放回 idle 的：请求发出时置了 'loading'，整页收下之后没人
+        // 复位，胶囊于是永远挂在顶上，用户翻多久都消不掉（真机实报）。另外两条
+        // 分支（inner-gap-trimmed / 正常合并）都有这一句，只有这里没有。
+        this.newerLoadState = 'idle';
         const whole: TdObject = { '@type': 'messages' };
         whole['messages'] = sorted;
         this.markUserDrivenAppend(userDriven);
