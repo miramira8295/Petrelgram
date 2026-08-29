@@ -8,9 +8,9 @@ import {
 } from '../../store/AppSettings';
 import {
   ChatBackgroundState, defaultChatBackgroundSnapshot, emptyChatBackground,
-  parseSnapshot, serialiseSnapshot
+  parseSnapshot, serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
-import { appWallpaperFileName } from '../../util/localWallpaper';
+import { appWallpaperFileName, wallpaperFileStillUsed } from '../../util/localWallpaper';
 import {
   SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
   slotIsApp, slotIsDark, wallpaperSlotKeys
@@ -47,6 +47,17 @@ import { HdsSubDestination } from '../common/HdsSubDestination';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { appIconAvailable } from '../../util/appIcon';
 import { AppIconPicker } from './AppIconPicker';
+
+// 一个槽位缩略图要画的全部东西，预先算好——**色标数组的引用必须稳定**，
+// 每帧新建会让 ArkUI 认为渐变变了、四行全部重画。
+interface WallpaperThumb {
+  has: boolean;
+  path: string;      // 行内画的整图（图案为 ''）
+  fullPath: string;  // 放大预览画的图（含图案）
+  isPattern: boolean;
+  angle: number;
+  colors: [ResourceColor, number][];
+}
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -528,9 +539,12 @@ export struct ChatSettingsPage {
     this.removeAppBgFile(previous);
   }
 
-  // 删旧图。删不掉不该打断流程——壁纸已经换好了，沙箱里残留一个文件不影响任何事。
+  // 换图/移除之后清理旧文件。**只在没有任何槽位还引用它时才删**——上传过的
+  // 壁纸是共用的，同一张图可能同时给几个槽位用，无条件删会把别人的槽位弄成
+  // 一个指向空路径的洞。删不掉也不该打断流程：壁纸已经换好了，残留一个文件
+  // 不影响任何事。
   private removeAppBgFile(path: string): void {
-    if (path === '') {
+    if (path === '' || wallpaperFileStillUsed(path, referencedWallpaperPaths())) {
       return;
     }
     try {
@@ -540,25 +554,53 @@ export struct ChatSettingsPage {
     }
   }
 
-  // 四个槽位的壁纸状态，**算一次存下来**。
+  // 四个槽位的缩略图规格，**算一次存下来**。
   //
-  // 【这里曾经每帧解析一遍】原来 slotState() 直接
-  // parseSnapshot(AppStorage.get(...))，而缩略图的四个取值函数
-  // （有没有壁纸 / 图片路径 / 渐变角度 / 渐变色标）各调它一次——四行就是十几次
-  // 字符串解析，全在 build() 的热路径上。用户报"滑到壁纸那里特别卡"，就是它。
+  // 【第一版只缓存了状态，还是卡】那一版把 parseSnapshot 挪出了热路径，但四个取值
+  // 函数每次调用仍然**新建一个渐变色标数组**——引用一变 ArkUI 就认为渐变变了，
+  // 四行每帧全部重画。而且图案壁纸的文档是 .tgv 解出来的 **SVG**，在 44vp 的格子里
+  // 逐帧栅格化，四张一起更顶不住。
   //
-  // 现在进页面时算一次；APP 那两个槽位的状态键挂了 @Watch，用户改完壁纸回来会
-  // 重算。聊天槽位读的是账号默认背景的快照，本来就是进程级缓存的。
-  @State private slotStates: Map<string, ChatBackgroundState | null> =
-    new Map<string, ChatBackgroundState | null>();
+  // 现在连色标数组一起预先算好（引用稳定），并且**行内不画图案**：44vp 上一张平铺
+  // 花纹本来也看不出什么，壁纸的身份由填充色承担；图案只在放大预览里画一次。
+  @State private slotThumbs: Map<string, WallpaperThumb> =
+    new Map<string, WallpaperThumb>();
 
   private rebuildSlotStates(): void {
-    const next: Map<string, ChatBackgroundState | null> =
-      new Map<string, ChatBackgroundState | null>();
+    const next: Map<string, WallpaperThumb> = new Map<string, WallpaperThumb>();
     for (const slot of WALLPAPER_SLOTS) {
-      next.set(slot, this.readSlotState(slot));
+      next.set(slot, this.buildThumb(this.readSlotState(slot)));
     }
-    this.slotStates = next;
+    this.slotThumbs = next;
+  }
+
+  private buildThumb(st: ChatBackgroundState | null): WallpaperThumb {
+    if (st === null) {
+      return { has: false, path: '', fullPath: '', isPattern: false, angle: 180,
+        colors: [[$r('app.color.surface_alt'), 0], [$r('app.color.surface_alt'), 1]] };
+    }
+    const cs: string[] = st.colors;
+    let colors: [ResourceColor, number][];
+    if (cs.length === 0) {
+      colors = [[$r('app.color.surface_alt'), 0], [$r('app.color.surface_alt'), 1]];
+    } else if (cs.length === 1) {
+      colors = [[cs[0], 0], [cs[0], 1]];
+    } else {
+      const out: [ResourceColor, number][] = [];
+      for (let i = 0; i < cs.length; i++) {
+        out.push([cs[i], i / (cs.length - 1)]);
+      }
+      colors = out;
+    }
+    return {
+      has: true,
+      // 行内只画整图；图案留空，见上面的说明。
+      path: st.isPattern ? '' : st.path,
+      fullPath: st.path,
+      isPattern: st.isPattern,
+      angle: st.angle,
+      colors
+    };
   }
 
   private readSlotState(slot: string): ChatBackgroundState | null {
@@ -571,39 +613,11 @@ export struct ChatSettingsPage {
     return (snap.colors.length > 0 || snap.path !== '') ? snap : null;
   }
 
-  private slotState(slot: string): ChatBackgroundState | null {
-    return this.slotStates.get(slot) ?? null;
-  }
-
-  private slotHasWallpaper(slot: string): boolean {
-    return this.slotState(slot) !== null;
-  }
-
-  private slotImagePath(slot: string): string {
-    const st: ChatBackgroundState | null = this.slotState(slot);
-    return st !== null ? st.path : '';
-  }
-
-  private slotAngle(slot: string): number {
-    const st: ChatBackgroundState | null = this.slotState(slot);
-    return st !== null ? st.angle : 180;
-  }
-
-  // 渐变至少要两个色标，否则 linearGradient 画不出来；只有一个色就复制一份当纯色。
-  private slotGradient(slot: string): [ResourceColor, number][] {
-    const st: ChatBackgroundState | null = this.slotState(slot);
-    const cs: string[] = st !== null ? st.colors : [];
-    if (cs.length === 0) {
-      return [[$r('app.color.surface_alt'), 0], [$r('app.color.surface_alt'), 1]];
-    }
-    if (cs.length === 1) {
-      return [[cs[0], 0], [cs[0], 1]];
-    }
-    const out: [ResourceColor, number][] = [];
-    for (let i = 0; i < cs.length; i++) {
-      out.push([cs[i], i / (cs.length - 1)]);
-    }
-    return out;
+  private thumbOf(slot: string): WallpaperThumb {
+    const t: WallpaperThumb | undefined = this.slotThumbs.get(slot);
+    return t !== undefined ? t
+      : { has: false, path: '', fullPath: '', isPattern: false, angle: 180,
+          colors: [[$r('app.color.surface_alt'), 0], [$r('app.color.surface_alt'), 1]] };
   }
 
   private openWallpaperSlot(slot: string): void {
@@ -616,35 +630,40 @@ export struct ChatSettingsPage {
   // 壁纸的画面本身。缩略图和放大浮层共用——**不用 ChatBackdrop**：那一层带栅格
   // 缓存和图案合成，为四张 44vp 的小图各起一份不值当。这里只画渐变或整图；
   // 缩略图要回答的是"这个槽位设了什么"，不需要像素级还原。
+  // 行内的小缩略图。渐变打底 + 整图叠上；**图案不画**（见 slotThumbs 的说明）。
   @Builder
   wallpaperCanvas(slot: string) {
     Stack() {
-      // 渐变**先打底**，图案/整图叠在上面——和 ChatBackdrop 的层次一致。
-      // 原来写成二选一：图案壁纸只画出一片淡色的填充（看不出是什么），
-      // 或者把一张平铺的图案贴片按 Cover 拉满（更看不出）。
       Column().width('100%').height('100%')
-        .linearGradient({ angle: this.slotAngle(slot), colors: this.slotGradient(slot) });
-      if (this.slotImagePath(slot) !== '') {
-        Image(`file://${this.slotImagePath(slot)}`).draggable(false)
-          .width('100%').height('100%')
-          // 图案是平铺的小图，Cover 会把一个花纹放大到糊；整图壁纸才该 Cover。
-          .objectFit(this.slotIsPattern(slot) ? ImageFit.None : ImageFit.Cover)
-          .opacity(this.slotIsPattern(slot) ? 0.9 : 1);
+        .linearGradient({ angle: this.thumbOf(slot).angle, colors: this.thumbOf(slot).colors });
+      if (this.thumbOf(slot).path !== '') {
+        Image(`file://${this.thumbOf(slot).path}`).draggable(false)
+          .width('100%').height('100%').objectFit(ImageFit.Cover);
       }
     }
     .width('100%').height('100%');
   }
 
-  private slotIsPattern(slot: string): boolean {
-    const st: ChatBackgroundState | null = this.slotState(slot);
-    return st !== null && st.isPattern;
+  // 放大预览。这里只有一张，图案可以画——44vp 的行内格子才付不起这笔。
+  @Builder
+  wallpaperCanvasLarge(slot: string) {
+    Stack() {
+      Column().width('100%').height('100%')
+        .linearGradient({ angle: this.thumbOf(slot).angle, colors: this.thumbOf(slot).colors });
+      if (this.thumbOf(slot).fullPath !== '') {
+        Image(`file://${this.thumbOf(slot).fullPath}`).draggable(false)
+          .width('100%').height('100%')
+          .objectFit(this.thumbOf(slot).isPattern ? ImageFit.None : ImageFit.Cover);
+      }
+    }
+    .width('100%').height('100%');
   }
 
   @Builder
   wallpaperSlotRow(slot: string, label: string) {
     Row({ space: 12 }) {
       Text(label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-      if (this.slotHasWallpaper(slot)) {
+      if (this.thumbOf(slot).has) {
         Stack() {
           this.wallpaperCanvas(slot);
         }
@@ -668,7 +687,7 @@ export struct ChatSettingsPage {
     Stack() {
       Column().width('100%').height('100%').backgroundColor('#CC000000');
       Stack() {
-        this.wallpaperCanvas(this.enlargedSlot);
+        this.wallpaperCanvasLarge(this.enlargedSlot);
       }
       .width('72%').aspectRatio(0.62).borderRadius(18).clip(true);
     }

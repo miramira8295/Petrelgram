@@ -11687,6 +11687,10 @@
     {
       "name": "cs_wallpaper_none",
       "value": "Not set"
+    },
+    {
+      "name": "cb_uploaded",
+      "value": "Your uploads"
     }
   ]
 }

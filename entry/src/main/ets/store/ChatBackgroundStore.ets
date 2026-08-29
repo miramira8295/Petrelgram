@@ -6,6 +6,7 @@ import { ChatThemeStore } from './ChatThemeStore';
 import { fillColorsOf, objectOrNull } from '../util/backgroundPresentation';
 import { inflateTgvIfNeeded } from '../util/gunzipTgs';
 import {
+  KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT,
   KEY_CHAT_BG_SNAP_DARK, KEY_CHAT_BG_SNAP_LIGHT, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_LIGHT, setString
 } from './AppSettings';
 import { localWallpaperWins } from '../util/localWallpaper';
@@ -96,6 +97,29 @@ export function backgroundStateOf(chatBackground: TdObject): BackgroundStateResu
     },
     file, fileId, typeName, themeName: ''
   };
+}
+
+// 此刻仍被某个壁纸槽位引用着的本机图片路径。
+//
+// 上传过的壁纸是**共用的**：同一张图可以同时给多个槽位用，不必重传（用户要求）。
+// 因此换图/移除时不能再无条件删旧文件——那张图可能正被别的槽位引用着。调用方拿这
+// 份清单配合 util/localWallpaper.wallpaperFileStillUsed 判断，**先写入新值再判断**，
+// 这样本槽位的旧引用已经解除、只剩别人的。
+export function referencedWallpaperPaths(): string[] {
+  const out: string[] = [];
+  for (const key of [KEY_APP_BG_STATE_LIGHT, KEY_APP_BG_STATE_DARK]) {
+    const st: ChatBackgroundState | null = parseSnapshot(AppStorage.get<string>(key) ?? '');
+    if (st !== null && st.path !== '') {
+      out.push(st.path);
+    }
+  }
+  for (const key of [KEY_LOCAL_BG_LIGHT, KEY_LOCAL_BG_DARK]) {
+    const p: string = AppStorage.get<string>(key) ?? '';
+    if (p !== '') {
+      out.push(p);
+    }
+  }
+  return out;
 }
 
 export function emptyChatBackground(): ChatBackgroundState {

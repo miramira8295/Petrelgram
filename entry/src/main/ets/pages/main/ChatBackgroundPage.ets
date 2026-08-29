@@ -12,7 +12,7 @@ import {
 } from '../../util/backgroundPresentation';
 import {
   backgroundStateOf, BackgroundStateResult, ChatBackgroundState, defaultChatBackgroundSnapshot,
-  emptyChatBackground, invalidateDefaultSnapshot, serialiseSnapshot
+  emptyChatBackground, invalidateDefaultSnapshot, serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
 import { inflateTgvIfNeeded } from '../../util/gunzipTgs';
 import {
@@ -24,7 +24,9 @@ import {
   bumpLocalWallpaperEpoch, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_LIGHT,
   patternStrengthKey, setNumber, setString
 } from '../../store/AppSettings';
-import { localWallpaperFileName } from '../../util/localWallpaper';
+import {
+  isUploadedWallpaperFile, localWallpaperFileName, wallpaperFileStillUsed
+} from '../../util/localWallpaper';
 import {
   SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, slotHasDim, slotIsApp, slotIsDark,
   wallpaperSlotKeys, WallpaperSlotKeys
@@ -72,6 +74,9 @@ struct ChatBackgroundPage {
   // 会和服务端的会话背景抢同一块语义。
   @State localPath: string = '';
   private pickingLocal: boolean = false;
+  // 这台机器上传过的壁纸。上传过的图是**共用的**：同一张可以给多个槽位用，不必
+  // 重传（用户："上传的壁纸互相区域之间应该可以显示，不需要重新传"）。
+  @State uploaded: string[] = [];
   @State thumbPaths: Map<string, string> = new Map();
   // 0 = account default mode; non-zero = one chat only. Group/channel chat
   // ids are NEGATIVE — never gate the per-chat branch on chatId > 0.
@@ -89,6 +94,7 @@ struct ChatBackgroundPage {
     }
     this.loadSlotValues();
     this.loadLocal();
+    this.loadUploaded();
     this.load();
   }
 
@@ -144,6 +150,7 @@ struct ChatBackgroundPage {
     // 深浅色各存一张、三根滑杆也各存一份，切档要跟着换。
     this.loadSlotValues();
     this.loadLocal();
+    this.loadUploaded();
     this.thumbPaths = new Map();
     this.load();
   }
@@ -223,6 +230,73 @@ struct ChatBackgroundPage {
     return this.forDark ? KEY_LOCAL_BG_DARK : KEY_LOCAL_BG_LIGHT;
   }
 
+  // 列出沙箱里所有上传过的壁纸。只按文件名前缀认（见
+  // util/localWallpaper.isUploadedWallpaperFile），不去读文件内容。
+  private loadUploaded(): void {
+    try {
+      const dir: string = (getContext(this) as common.UIAbilityContext).filesDir;
+      const names: string[] = fs.listFileSync(dir);
+      const out: string[] = [];
+      for (const name of names) {
+        if (isUploadedWallpaperFile(name)) {
+          out.push(`${dir}/${name}`);
+        }
+      }
+      // 文件名带时间戳，倒序就是"最近上传的排前面"。
+      this.uploaded = out.sort().reverse();
+    } catch (error) {
+      logE(`ChatBackgroundPage.loadUploaded failed: ${error}`);
+      this.uploaded = [];
+    }
+  }
+
+  // 选一张已上传的图给当前槽位。**不复制文件**——共用同一份。
+  private useUploaded(path: string): void {
+    const previous: string = this.localPath;
+    if (slotIsApp(this.effectiveSlot())) {
+      const state: ChatBackgroundState = emptyChatBackground();
+      state.custom = true;
+      state.path = path;
+      state.blurred = true;
+      setString(this.slotKeys().state, serialiseSnapshot(state));
+    } else {
+      setString(this.localKey(), path);
+    }
+    this.localPath = path;
+    this.removeQuietly(previous);
+    this.afterLocalChange();
+    promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+  }
+
+  @Builder
+  uploadedRow() {
+    Column({ space: 8 }) {
+      Text($r('app.string.cb_uploaded'))
+        .fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
+        .width('100%').padding({ left: 14, right: 14 });
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(this.uploaded, (path: string) => {
+            Image(`file://${path}`).draggable(false)
+              .width(52).height(52).borderRadius(8).clip(true)
+              .objectFit(ImageFit.Cover)
+              .border({
+                width: path === this.localPath ? 2 : 0.7,
+                color: path === this.localPath ? COLOR_PRIMARY : $r('app.color.divider')
+              })
+              .onClick((): void => { this.useUploaded(path); });
+          }, (path: string): string => path);
+        }.padding({ left: 14, right: 14 });
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%');
+    }
+    .width('100%')
+    .padding({ top: 12, bottom: 12 })
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
   private loadLocal(): void {
     this.localPath = AppStorage.get<string>(this.localKey()) ?? '';
   }
@@ -255,6 +329,7 @@ struct ChatBackgroundPage {
       fs.copyFileSync(src.fd, dest);
       fs.closeSync(src);
       const previous: string = this.localPath;
+      this.loadUploaded();
       if (slotIsApp(this.effectiveSlot())) {
         // APP 槽位和聊天槽位存的是同一种数据（序列化的 ChatBackgroundState），
         // 这样原生壁纸和本机图走的是同一条渲染路径。blurred 恒为 true 的理由见
@@ -296,9 +371,12 @@ struct ChatBackgroundPage {
     invalidateDefaultSnapshot(this.forDark);
   }
 
-  // 删旧图。删不掉不该打断流程——壁纸已经换好了，沙箱里残留一个文件不影响任何事。
+  // 换图/移除之后清理旧文件。**只在没有任何槽位还引用它时才删**——上传过的
+  // 壁纸是共用的，同一张图可能同时给几个槽位用，无条件删会把别人的槽位弄成
+  // 一个指向空路径的洞。删不掉也不该打断流程：壁纸已经换好了，残留一个文件
+  // 不影响任何事。
   private removeQuietly(path: string): void {
-    if (path === '') {
+    if (path === '' || wallpaperFileStillUsed(path, referencedWallpaperPaths())) {
       return;
     }
     try {
@@ -563,6 +641,9 @@ struct ChatBackgroundPage {
               .width('100%').height(48).padding({ left: 14, right: 14 })
               .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
               .onClick((): void => { this.pickLocal(); });
+              if (this.uploaded.length > 0) {
+                this.uploadedRow();
+              }
               if (this.localPath !== '') {
                 // 单独一行而不是塞进上面那行的尾部：两个 onClick 叠在同一个 Row 上
                 // 会互相吃手势，点"移除"多半会先触发"选择"。

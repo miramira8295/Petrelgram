@@ -11687,6 +11687,10 @@
     {
       "name": "cs_wallpaper_none",
       "value": "未設定"
+    },
+    {
+      "name": "cb_uploaded",
+      "value": "已上傳的桌布"
     }
   ]
 }

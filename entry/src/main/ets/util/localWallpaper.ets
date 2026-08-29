@@ -51,3 +51,27 @@ export function appWallpaperFileName(forDark: boolean, stamp: number): string {
 export function appWallpaperActive(stateRaw: string, split: boolean): boolean {
   return stateRaw !== '' && !split;
 }
+
+// 上传过的壁纸是**共用的**：同一张图可以同时给多个槽位用，不必重传一遍
+// （用户："上传的壁纸互相区域之间应该可以显示，不需要重新传"）。
+//
+// 因此换图时**不能再无条件删旧文件**——那张图可能正被别的槽位引用着，删了那边
+// 就变成一个指向空路径的槽位。改成只在"没有任何槽位还引用它"时才删。
+//
+// paths：当前四个槽位 + 两个聊天本机壁纸键里存着的所有路径（空串会被忽略）。
+export function wallpaperFileStillUsed(path: string, paths: string[]): boolean {
+  if (path === '') {
+    return false;
+  }
+  for (const p of paths) {
+    if (p === path) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// 是不是本应用上传的壁纸文件（聊天的或 APP 的）。用来从沙箱里列出"已上传"那一排。
+export function isUploadedWallpaperFile(name: string): boolean {
+  return isLocalWallpaperFile(name) || name.startsWith('app_bg_');
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  appWallpaperActive, appWallpaperFileName, isLocalWallpaperFile,
-  localWallpaperFileName, localWallpaperWins
+  appWallpaperActive, appWallpaperFileName, isLocalWallpaperFile, isUploadedWallpaperFile,
+  localWallpaperFileName, localWallpaperWins, wallpaperFileStillUsed
 } from '../main/ets/util/localWallpaper';
 
 export default function localWallpaperTest() {
@@ -48,6 +48,21 @@ export default function localWallpaperTest() {
     // APP 壁纸和聊天壁纸互不覆盖。
     it('app_and_chat_wallpapers_never_collide', 0, (): void => {
       expect(appWallpaperFileName(true, 5) === localWallpaperFileName(true, 5)).assertFalse();
+    });
+
+    // 上传过的壁纸共用：换图时只有"没人再引用"才能删，否则会把别的槽位弄坏。
+    it('a_shared_file_is_not_deleted', 0, (): void => {
+      const a: string = '/data/x/app_bg_dark_1.jpg';
+      const b: string = '/data/x/app_bg_light_2.jpg';
+      expect(wallpaperFileStillUsed(a, [b, a])).assertTrue();
+      expect(wallpaperFileStillUsed(a, [b, ''])).assertFalse();
+      expect(wallpaperFileStillUsed('', [a, b])).assertFalse();
+    });
+
+    it('uploaded_files_are_recognised_for_the_library', 0, (): void => {
+      expect(isUploadedWallpaperFile(appWallpaperFileName(true, 1))).assertTrue();
+      expect(isUploadedWallpaperFile(localWallpaperFileName(false, 1))).assertTrue();
+      expect(isUploadedWallpaperFile('avatar_3.jpg')).assertFalse();
     });
 
     // 分栏下不提供这个功能：右栏被聊天壁纸盖住，只能从左栏窄缝里露出来。
