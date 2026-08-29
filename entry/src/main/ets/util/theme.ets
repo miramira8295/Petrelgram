@@ -115,7 +115,14 @@ export const ROW_PAD_V: number = 8;
 // Avatar placeholder palette — identical in both modes (like official clients).
 export const AVATAR_PALETTE: string[] = ['#E17076', '#7BC862', '#65AADD', '#EE7AAE', '#6EC9CB', '#EFA92E', '#FAA774', '#A695E7'];
 export let COLOR_TAB_SELECTED: ResourceColor = $r('app.color.primary');
-export const COLOR_TAB_UNSELECTED: ResourceColor = $r('app.color.text_secondary');
+// 底栏未选中态。**指向 icon_secondary 而不是 text_secondary**：它管的是底栏那排
+// 图标和它们的标签，属于"浮在玻璃条上的 chrome"，和正文的次级文字是两回事。
+//
+// 这里曾经是 text_secondary，于是 2026-08-29 那轮提亮把它整条漏掉了——当时的
+// 判别式是字面量 `fontColor([COLOR_TEXT_SECONDARY])`，而底栏写的是这个**别名**，
+// 扫不到。用户报「底栏图标还是黑的看不清」，实测深色下 3.77:1（dock_glass 压在
+// page_bg 上约 RGB(36,49,64)），换成 icon_secondary 是 6.68:1。
+export const COLOR_TAB_UNSELECTED: ResourceColor = $r('app.color.icon_secondary');
 export const COLOR_BADGE_BG: ResourceColor = $r('app.color.badge_bg');
 export const COLOR_TAB_PILL_BG: ResourceColor = $r('app.color.tab_pill_bg');
 // 三个气泡色也是活绑定：用户在「外观」里改了颜色，appearance.recomputeAppearance()

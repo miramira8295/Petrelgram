@@ -3,7 +3,7 @@ import { image } from '@kit.ImageKit';
 import {
   canReturnToPreviousTdAccount, getAuthService, returnToPreviousTdAccount
 } from '../../tdkit/Globals';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
@@ -123,7 +123,7 @@ export struct QrLoginPage {
           .width(212).height(212).textAlign(TextAlign.Center);
       } else {
         Column() {
-          LoadingProgress().width(34).height(34).color(COLOR_TEXT_SECONDARY);
+          LoadingProgress().width(34).height(34).color(COLOR_ICON_SECONDARY);
         }.width(212).height(212).justifyContent(FlexAlign.Center);
       }
     }

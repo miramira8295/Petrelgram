@@ -1,6 +1,6 @@
 import { generateBarcode, scanCore } from '@kit.ScanKit';
 import { image } from '@kit.ImageKit';
-import { COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
@@ -48,7 +48,7 @@ export struct QrDialog {
             .width(220).height(220).textAlign(TextAlign.Center);
         } else {
           Column() {
-            LoadingProgress().width(32).height(32).color(COLOR_TEXT_SECONDARY);
+            LoadingProgress().width(32).height(32).color(COLOR_ICON_SECONDARY);
           }.width(220).height(220).justifyContent(FlexAlign.Center);
         }
       }

@@ -1742,7 +1742,7 @@ export struct MessageBubble {
         .margin({ top: 6, bottom: 5 });
       if (this.translationStatus?.phase === 'loading') {
         Row({ space: 5 }) {
-          LoadingProgress().width(12).height(12).color(COLOR_TEXT_SECONDARY);
+          LoadingProgress().width(12).height(12).color(COLOR_ICON_SECONDARY);
           Text($r('app.string.mb_translating')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
           if (this.timeReserveOnStatus()) {
             Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);

@@ -71,7 +71,7 @@ export struct StickerSuggestionBar {
               Image(`file://${row.thumbPath}`).draggable(false)
                 .width(56).height(56).objectFit(ImageFit.Contain);
             } else {
-              LoadingProgress().width(20).height(20).color(COLOR_TEXT_SECONDARY);
+              LoadingProgress().width(20).height(20).color(COLOR_ICON_SECONDARY);
             }
           }
           .width(62).height(62)

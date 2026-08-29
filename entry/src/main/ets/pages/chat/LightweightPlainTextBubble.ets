@@ -32,7 +32,7 @@ import {
 } from '../../util/translationChannel';
 import {
   accentSoft, AVATAR_PALETTE, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT,
-  COLOR_PRIMARY, COLOR_TEXT_SECONDARY, bubbleTextFor
+  COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, bubbleTextFor
 } from '../../util/theme';
 import { formatClockTime } from '../../util/formatTime';
 import { probeHit } from '../../util/panelProbe';
@@ -655,7 +655,7 @@ export struct LightweightPlainTextBubble {
         .margin({ top: 6, bottom: 5 });
       if (this.translationStatus?.phase === 'loading') {
         Row({ space: 5 }) {
-          LoadingProgress().width(12).height(12).color(COLOR_TEXT_SECONDARY);
+          LoadingProgress().width(12).height(12).color(COLOR_ICON_SECONDARY);
           Text($r('app.string.mb_translating')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
           Text(this.timeReserve()).fontSize(11).fontColor(Color.Transparent);
         }.constraintSize({ maxWidth: this.inlineMaxW() });

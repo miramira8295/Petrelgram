@@ -272,7 +272,7 @@ export struct GifPicker {
                     .width('100%').height('100%').objectFit(ImageFit.Cover);
                 } else {
                   Column() {
-                    LoadingProgress().width(20).height(20).color(COLOR_TEXT_SECONDARY);
+                    LoadingProgress().width(20).height(20).color(COLOR_ICON_SECONDARY);
                   }
                   .width('100%').height('100%')
                   .justifyContent(FlexAlign.Center)

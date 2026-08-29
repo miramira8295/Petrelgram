@@ -2702,7 +2702,7 @@ export struct GlobalSearchPage {
   chatResultsList() {
     if (this.chatSearching && this.chatResults.length === 0) {
       Column() {
-        LoadingProgress().width(36).height(36).color(COLOR_TEXT_SECONDARY);
+        LoadingProgress().width(36).height(36).color(COLOR_ICON_SECONDARY);
       }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
     } else if (this.filteredChatResults().length === 0) {
       Column() {

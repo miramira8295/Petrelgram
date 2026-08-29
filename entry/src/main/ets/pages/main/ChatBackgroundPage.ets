@@ -16,7 +16,7 @@ import {
 } from '../../store/ChatBackgroundStore';
 import { inflateTgvIfNeeded } from '../../util/gunzipTgs';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import {
   BG_BLUR_DEFAULT, BG_BLUR_MAX, BG_BLUR_MIN, BG_PATTERN_DEFAULT, BG_PATTERN_MIN,
@@ -503,7 +503,7 @@ struct ChatBackgroundPage {
             .width('100%').height('100%').objectFit(ImageFit.Cover);
         } else {
           Column() {
-            LoadingProgress().width(22).height(22).color(COLOR_TEXT_SECONDARY);
+            LoadingProgress().width(22).height(22).color(COLOR_ICON_SECONDARY);
           }.width('100%').height('100%').justifyContent(FlexAlign.Center)
           .backgroundColor(COLOR_SURFACE);
         }
