@@ -6,7 +6,7 @@ import {
   cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
 } from '../../util/nextFrameQueue';
 
-// 探针：复用回来的那一刻，@Prop fileId 到底是新值还是旧值？
+// 探针：一次滑动里有多少媒体行被回收又复用，以及有没有因为换了文件而清图。
 //
 // aboutToReuse 里那条 setTimeout(0) 之所以还在，唯一的理由是「官方没有写清
 // 状态变量重置与 aboutToReuse 回调的先后」（见 ReusableMessageBubble 里同一段
@@ -53,6 +53,9 @@ export struct LiveThumbImage {
   @Prop fit: ImageFit = ImageFit.Cover;
   @BuilderParam placeholder: () => void;
   @State private path: string = '';
+  // 回收时挂在哪个文件上。复用时若还是同一个文件，位图原样留着（issue #137 在
+  // 头像上的做法，这里是它漏掉的另一半）。-1 = 没有回收过；0 是合法值（无图）。
+  private recycledFileId: number = -1;
   private unsubThumb: (() => void) | null = null;
   // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
   private frameOwnerId: number = nextFrameOwnerId();
@@ -86,8 +89,27 @@ export struct LiveThumbImage {
   }
 
   aboutToRecycle(): void {
+    // 记下回收时挂在哪个文件上，复用时据此判断要不要清图。
+    this.recycledFileId = this.fileId;
     this.detach();
-    this.path = '';
+    // **path 不在这里清**（用户报：翻页时图片乱跳/闪）。
+    //
+    // 官方《@ReusableV2》：Repeat 的 virtualScroll 配了 `reusable: false`
+    // （ChatPage.ets:9570）之后，「滑动场景、更新场景**均会**触发 @ReusableV2 的
+    // 回收与复用」，且「回收阶段会**递归**调用所有子组件的 aboutToRecycle（即使
+    // 子组件未被标记可复用）」。也就是说这个回调在普通滑动里就会不停地跑。
+    //
+    // 而本组件的 build() 是 if/else 互斥：path 一空就整个换成占位图。原来在这里
+    // 无条件清空，等于**每一次回收都必然空一帧**——哪怕复用回来还是同一条消息、
+    // 同一个文件。恢复要等 aboutToReuse 排的下一帧回调（@Prop 没变时 @Watch 不
+    // 触发，那条回调是唯一的路），一进一出就是肉眼可见的闪。
+    //
+    // LiveSenderAvatar 为同一件事修过（MessageBubble.ets 的 recycledAvatarKey，
+    // issue #137「翻消息时头像一闪一闪」），缩略图当时没跟上。
+    //
+    // 注意形状：回收这一刻**拿不到**「下一个 fileId」，所以只能记下当前的、到
+    // aboutToReuse 再比，不能写成「下一个相同就不清」。
+    this.detach();
     // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
     // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
     cancelNextFrame(this.frameOwnerId);
@@ -99,26 +121,42 @@ export struct LiveThumbImage {
     const fileId: number | undefined = reuseParam(params, 'fileId') as number | undefined;
     const initialPath: string | undefined =
       reuseParam(params, 'initialPath') as string | undefined;
-    if (fileId !== undefined) {
-      this.attach(fileId, initialPath ?? '');
-      return;
+    // 换了文件才清图（issue #137 的同一套判据）。params 拿不到时用此刻的 @Prop
+    // 比：若 @Prop 还没落地，比出来是「同一个文件」、位图先留着——真换了文件，
+    // @Prop 落地时 onFileIdChanged 会按新 fileId 重挂并改写 path，赶在那一帧
+    // 之前；没换则什么都不用动，那正是要保住的一帧。
+    const nextFileId: number = fileId ?? this.fileId;
+    const kept: boolean = nextFileId === this.recycledFileId;
+    if (!kept) {
+      this.path = '';
     }
-    const seenAtReuse: number = this.fileId;
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。探针原样保留。
-    enqueueNextFrame(this.frameOwnerId, (): void => {
-      const seenNextFrame: number = this.fileId;
-      if (seenAtReuse === seenNextFrame) {
+    const hadRecycled: number = this.recycledFileId;
+    this.recycledFileId = -1;
+    // 复用规模探针（替掉原来那条 [ImgFlick]）。原探针量的是「回调里读到的
+    // fileId 是不是新值」，但它排在 enqueueNextFrame 里，而 onFileIdChanged 第
+    // 一句就是 cancelNextFrame —— @Prop 一落地就把它取消了，`stale=` 那一支
+    // **在当前代码里根本打不出来**，探针只能证明自己没被取消。
+    //
+    // 换成在这里打：kept=false 的条数 = 真正因为换文件而清图的次数，
+    // kept=true 的条数 = 被这次修复救下来的空帧数，params 则回答「下一帧兜底
+    // 是不是唯一路径」（按官方文档 @ReusableV2 的 aboutToReuse 没有入参，
+    // 预期 100% 是 false）。
+    if (reuseProbeLogged < REUSE_PROBE_LIMIT) {
+      reuseProbeLogged++;
+      if (kept) {
         reuseProbeSame++;
       } else {
         reuseProbeStale++;
       }
-      if (reuseProbeLogged < REUSE_PROBE_LIMIT) {
-        reuseProbeLogged++;
-        logW(`[ImgFlick] LiveThumbImage reuse ` +
-          `${seenAtReuse === seenNextFrame ? 'same' : 'stale'}=` +
-          `${seenAtReuse}->${seenNextFrame} totals same=${reuseProbeSame} ` +
-          `stale=${reuseProbeStale}`);
-      }
+      logW(`[ThumbBlank] reuse file=${hadRecycled}->${nextFileId} kept=${kept}` +
+        ` params=${fileId !== undefined} totals kept=${reuseProbeSame} cleared=${reuseProbeStale}`);
+    }
+    if (fileId !== undefined) {
+      this.attach(fileId, initialPath ?? '');
+      return;
+    }
+    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    enqueueNextFrame(this.frameOwnerId, (): void => {
       this.attach(this.fileId, this.initialPath);
     });
   }
