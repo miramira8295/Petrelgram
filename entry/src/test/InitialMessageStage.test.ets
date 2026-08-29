@@ -31,7 +31,7 @@ function groupOf(id: number): AlbumGroup {
   const head = buildMessageEntry(raw, stageUsers());
   return {
     key: `group-${id}`, head, memberIds: [id], rowMemberIds: [id],
-    photoPaths: [], photoFileIds: [], photoRatios: [], photoIsVideo: [],
+    photoPaths: [], photoFileIds: [], photoRatios: [], photoIsVideo: [], photoIsLive: [],
     photoProgress: [], photoFailed: [], videoFileIds: [], videoFileSizes: [],
     videoMimeTypes: [], caption: '', captionEntities: [], dateLabel: '',
     showAvatar: true, showSenderName: true

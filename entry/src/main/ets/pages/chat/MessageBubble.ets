@@ -77,6 +77,7 @@ import { KEY_MSG_GESTURE } from '../../store/AppSettings';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
+import { isLivePhotoVideo } from '../../util/livePhoto';
 // ⚠️ 临时探针，验完即删——见 util/avatarReuseProbe 的删除清单。
 import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
@@ -342,6 +343,10 @@ export struct MessageBubble {
   // from ChatPage, not per frame; onAlbumIsVideoChanged only emits when a
   // specific cell actually flips true→false.
   @Prop @Watch('onAlbumIsVideoChanged') albumIsVideo: boolean[];
+  // 相册里哪几格是实况（见 util/livePhoto）。不挂 @Watch：它只影响角标怎么画，
+  // 不参与播放位竞选。复用时并行数组是一条条重新播种的，读一律走带兜底的
+  // 访问器——这些数组长度不同步曾经把进程搞崩过。
+  @Prop albumIsLive: boolean[];
   @Prop albumProgress: number[];
   @Prop albumFailed: boolean[];
   // 相册视频格子的播放位数据源：缩略图（albumFileIds/albumPaths）不足以起播，
@@ -1982,6 +1987,30 @@ export struct MessageBubble {
     }
   }
 
+  // 实况角标。缩略图上（单图与相册格子都用它）标出「这条是实况」——和查看器
+  // 左下角那枚胶囊同一套元素：同心圆的 sys.symbol.livephoto + LIVE 文案。
+  //
+  // 位置固定在左上角：左下角被时长/大小那条 meta 占着（单图），中心是播放钮，
+  // 只有左上角是空的，相册格子同理。
+  @Builder
+  liveChip() {
+    Row({ space: 3 }) {
+      SymbolGlyph($r('sys.symbol.livephoto')).fontSize(12).fontColor([Color.White]);
+      Text($r('app.string.cp_live_photo'))
+        .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
+    }
+    .height(18)
+    .padding({ left: 5, right: 6 })
+    .backgroundColor('#66000000')
+    .borderRadius(9)
+    .position({ x: 6, y: 6 });
+  }
+
+  private msgIsLivePhoto(): boolean {
+    return this.msg.contentType === 'video' &&
+      isLivePhotoVideo(this.msg.videoFileName, this.msg.videoDuration);
+  }
+
   // Centered play-triangle badge, overlaid on video thumbnails.
   @Builder
   playBadge(size: number) {
@@ -2050,6 +2079,10 @@ export struct MessageBubble {
 
   private albumIsVideoAt(index: number): boolean {
     return this.albumIsVideo[index] ?? false;
+  }
+
+  private albumIsLiveAt(index: number): boolean {
+    return this.albumIsLive[index] ?? false;
   }
 
   private albumMemberIdAt(index: number): number {
@@ -2209,6 +2242,9 @@ export struct MessageBubble {
           this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
         }
       })
+    }
+    if (this.albumIsLiveAt(cell.idx)) {
+      this.liveChip();
     }
   }
 
@@ -2827,6 +2863,9 @@ export struct MessageBubble {
                 Math.min(56, Math.min(this.mediaBox().width, this.mediaBox().height) * 0.34));
             }
           })
+        }
+        if (this.msgIsLivePhoto()) {
+          this.liveChip();
         }
         if (this.msg.contentType === 'video' && this.videoMetaText() !== '') {
           Text(this.videoMetaText())

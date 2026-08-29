@@ -1,3 +1,4 @@
+import { isLivePhotoVideo } from './livePhoto';
 import { MessageEntry, cloneMessage } from '../store/MessageEntry';
 import { TdObject } from '../tdkit/TdTypes';
 import { formatDateSeparator, sameDay } from './formatDateSeparator';
@@ -16,6 +17,10 @@ export interface AlbumGroup {
   photoFileIds: number[];  // thumbnail file ids; 0 means the media has no downloadable cover
   photoRatios: number[];   // width/height per photo, parallel to photoPaths (masonry layout)
   photoIsVideo: boolean[]; // parallel to photoPaths — true for video members (play icon overlay)
+  // parallel to photoPaths — true for PG 发的实况照片（见 util/livePhoto）。
+  // 和 photoIsVideo 同源同处派生：都是成员消息的静态属性，一次算好，
+  // 免得渲染侧各写一份判据、还得再多背两条并行数组（文件名 + 时长）。
+  photoIsLive: boolean[];
   photoProgress: number[]; // parallel to photoPaths — thumbnail download progress (0-100)
   photoFailed: boolean[];  // parallel to photoPaths — tap the failed cell to retry
   // Full-resolution video source, parallel to photoPaths. 0/'' for photo
@@ -191,6 +196,7 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
       const photoFileIds: number[] = [];
       const photoRatios: number[] = [];
       const photoIsVideo: boolean[] = [];
+      const photoIsLive: boolean[] = [];
       const photoProgress: number[] = [];
       const photoFailed: boolean[] = [];
       const videoFileIds: number[] = [];
@@ -208,6 +214,8 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         photoFileIds.push(list[j].photoFileId);
         photoRatios.push(aspectRatio(list[j]));
         photoIsVideo.push(list[j].contentType === 'video');
+        photoIsLive.push(list[j].contentType === 'video' &&
+          isLivePhotoVideo(list[j].videoFileName, list[j].videoDuration));
         photoProgress.push(list[j].photoProgress);
         photoFailed.push(list[j].photoFailed);
         videoFileIds.push(list[j].videoFileId);
@@ -252,6 +260,7 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         photoFileIds,
         photoRatios,
         photoIsVideo,
+        photoIsLive,
         photoProgress,
         photoFailed,
         videoFileIds,
@@ -282,6 +291,7 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         photoFileIds: [],
         photoRatios: [],
         photoIsVideo: [],
+        photoIsLive: [],
         photoProgress: [],
         photoFailed: [],
         videoFileIds: [],

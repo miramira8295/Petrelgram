@@ -95,7 +95,7 @@ function groupOf(head: MessageEntry, over: GroupOverrides = {}): AlbumGroup {
     head,
     memberIds: [head.id],
     rowMemberIds: [head.rowId],
-    photoPaths: [], photoFileIds: [], photoRatios: [], photoIsVideo: [],
+    photoPaths: [], photoFileIds: [], photoRatios: [], photoIsVideo: [], photoIsLive: [],
     photoProgress: [], photoFailed: [],
     videoFileIds: [], videoFileSizes: [], videoMimeTypes: [],
     caption: '', captionEntities: [],

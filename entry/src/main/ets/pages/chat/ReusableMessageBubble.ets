@@ -332,6 +332,7 @@ export struct ReusableMessageBubble {
       albumRatios: this.currentGroup().photoRatios,
       albumMemberIds: this.currentGroup().memberIds,
       albumIsVideo: this.currentGroup().photoIsVideo,
+      albumIsLive: this.currentGroup().photoIsLive,
       albumProgress: this.currentGroup().photoProgress,
       albumFailed: this.currentGroup().photoFailed,
       albumVideoFileIds: this.currentGroup().videoFileIds,

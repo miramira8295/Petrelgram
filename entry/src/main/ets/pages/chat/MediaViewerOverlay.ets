@@ -847,7 +847,9 @@ export struct MediaViewerOverlay {
   liveCapsule() {
     Column() {
       Row({ space: 5 }) {
-        SymbolGlyph($r(this.livePlaying ? 'sys.symbol.livephoto' : 'sys.symbol.livephoto_slash'))
+        // 播完（onCompletion 会把 isPlaying 置 false）或用户按停之后变成播放键，
+        // 一眼就知道点它能再看一遍；播放中则是标准的同心圆实况标。
+        SymbolGlyph($r(this.livePlaying ? 'sys.symbol.livephoto' : 'sys.symbol.play_fill'))
           .fontSize(17).fontColor([Color.White]);
         Text($r('app.string.cp_live_photo'))
           .fontSize(13).fontColor(Color.White).fontWeight(FontWeight.Medium);
