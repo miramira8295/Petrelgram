@@ -10,7 +10,11 @@ import {
 import {
   BackgroundPreview, backgroundPreviewOf, backgroundThumbnailFile
 } from '../../util/backgroundPresentation';
-import { defaultChatBackgroundSnapshot, invalidateDefaultSnapshot } from '../../store/ChatBackgroundStore';
+import {
+  backgroundStateOf, BackgroundStateResult, ChatBackgroundState, defaultChatBackgroundSnapshot,
+  emptyChatBackground, invalidateDefaultSnapshot, serialiseSnapshot
+} from '../../store/ChatBackgroundStore';
+import { inflateTgvIfNeeded } from '../../util/gunzipTgs';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
@@ -21,6 +25,10 @@ import {
   patternStrengthKey, setNumber, setString
 } from '../../store/AppSettings';
 import { localWallpaperFileName } from '../../util/localWallpaper';
+import {
+  SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, slotHasDim, slotIsApp, slotIsDark,
+  wallpaperSlotKeys, WallpaperSlotKeys
+} from '../../util/wallpaperSlot';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
 
@@ -34,6 +42,10 @@ interface GalleryRow {
 
 interface BackgroundPageParams {
   chatId?: number;
+  // 四槽位模式：'appLight' / 'appDark' / 'chatLight' / 'chatDark'（见
+  // util/wallpaperSlot）。给了 slot 就固定深浅色、隐藏页内的模式开关；不给则是
+  // 从会话资料页进来的"给这个会话设背景"，走原来的 chatId 那条路。
+  slot?: string;
 }
 
 @Entry
@@ -43,14 +55,17 @@ struct ChatBackgroundPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
-  @StorageProp(KEY_BG_BLUR) bgBlur: number = BG_BLUR_DEFAULT;
+  // 三根滑杆改成 @State 镜像：它们要按**槽位**读写，而 @StorageProp 的键是写死的。
+  // 这页只活一会儿，进来时从槽位键读一次、改动时写回去就够。
+  @State bgBlur: number = BG_BLUR_DEFAULT;
   @State loadState: string = 'loading';
   @State rows: GalleryRow[] = [];
   @State forDark: boolean = false;
-  @StorageProp(KEY_BG_PATTERN) bgPatternLight: number = BG_PATTERN_DEFAULT;
-  @StorageProp(KEY_BG_PATTERN_DARK) bgPatternDark: number = BG_PATTERN_DEFAULT;
+  // '' = 旧的按会话设背景；非空 = 四槽位之一，见 util/wallpaperSlot。
+  @State slotId: string = '';
+  @State patternPct: number = BG_PATTERN_DEFAULT;
   // 深色遮罩强度（0..CHAT_DIM_MAX）。滑杆按百分比显示，存的是 0..1 的小数。
-  @StorageLink(KEY_CHAT_DIM) chatDim: number = 0;
+  @State chatDim: number = 0;
   @State applyingId: string = '';
   // 本机自选壁纸的沙箱路径（'' = 没设）。只在全局背景页出现（chatId === 0）：
   // 它压过账号默认背景，但让位于会话自己的背景，做成"某个会话专属的本地图"
@@ -68,6 +83,11 @@ struct ChatBackgroundPage {
     this.active = true;
     const params = router.getParams() as BackgroundPageParams | undefined;
     this.chatId = params?.chatId ?? 0;
+    this.slotId = params?.slot ?? '';
+    if (this.slotId !== '') {
+      this.forDark = slotIsDark(this.slotId);
+    }
+    this.loadSlotValues();
     this.loadLocal();
     this.load();
   }
@@ -121,7 +141,8 @@ struct ChatBackgroundPage {
   private setForDark(value: boolean): void {
     if (this.forDark === value) { return; }
     this.forDark = value;
-    // 深浅色各存一张，切档要跟着换。
+    // 深浅色各存一张、三根滑杆也各存一份，切档要跟着换。
+    this.loadSlotValues();
     this.loadLocal();
     this.thumbPaths = new Map();
     this.load();
@@ -137,6 +158,13 @@ struct ChatBackgroundPage {
   private apply(row: GalleryRow): void {
     if (this.applyingId !== '') { return; }
     this.applyingId = row.preview.backgroundId;
+    // APP 槽位不经过 TDLib：协议里根本没有「APP 背景」这个概念，它只能是本机设置。
+    // 但转换必须和聊天壁纸走**同一段** backgroundStateOf + inflateTgvIfNeeded，
+    // 否则同一张壁纸在聊天里和在主界面上会长得不一样。
+    if (slotIsApp(this.effectiveSlot())) {
+      this.applyToAppSlot(row);
+      return;
+    }
     this.invalidateSnapshotIfDefault();
     const task: Promise<void> = this.chatId !== 0
       ? applyChatBackground(this.chatId, row.raw, true)
@@ -167,7 +195,28 @@ struct ChatBackgroundPage {
     if (mode !== SliderChangeMode.End) {
       return;
     }
-    setNumber(KEY_BG_BLUR, Math.round(value));
+    this.bgBlur = Math.round(value);
+    setNumber(this.slotKeys().blur, this.bgBlur);
+  }
+
+  // 当前编辑的是哪个槽位。没给 slot（从会话资料页进来）时按页内的深浅色开关
+  // 落到聊天那两个槽位上——那正是旧行为。
+  private effectiveSlot(): string {
+    if (this.slotId !== '') {
+      return this.slotId;
+    }
+    return this.forDark ? SLOT_CHAT_DARK : SLOT_CHAT_LIGHT;
+  }
+
+  private slotKeys(): WallpaperSlotKeys {
+    return wallpaperSlotKeys(this.effectiveSlot());
+  }
+
+  private loadSlotValues(): void {
+    const keys: WallpaperSlotKeys = this.slotKeys();
+    this.bgBlur = AppStorage.get<number>(keys.blur) ?? BG_BLUR_DEFAULT;
+    this.patternPct = AppStorage.get<number>(keys.pattern) ?? BG_PATTERN_DEFAULT;
+    this.chatDim = AppStorage.get<number>(keys.dim) ?? 0;
   }
 
   private localKey(): string {
@@ -206,7 +255,18 @@ struct ChatBackgroundPage {
       fs.copyFileSync(src.fd, dest);
       fs.closeSync(src);
       const previous: string = this.localPath;
-      setString(this.localKey(), dest);
+      if (slotIsApp(this.effectiveSlot())) {
+        // APP 槽位和聊天槽位存的是同一种数据（序列化的 ChatBackgroundState），
+        // 这样原生壁纸和本机图走的是同一条渲染路径。blurred 恒为 true 的理由见
+        // ChatBackgroundStore 里同一处说明。
+        const state: ChatBackgroundState = emptyChatBackground();
+        state.custom = true;
+        state.path = dest;
+        state.blurred = true;
+        setString(this.slotKeys().state, serialiseSnapshot(state));
+      } else {
+        setString(this.localKey(), dest);
+      }
       this.localPath = dest;
       this.removeQuietly(previous);
       this.afterLocalChange();
@@ -219,7 +279,11 @@ struct ChatBackgroundPage {
 
   private clearLocal(): void {
     const previous: string = this.localPath;
-    setString(this.localKey(), '');
+    if (slotIsApp(this.effectiveSlot())) {
+      setString(this.slotKeys().state, '');
+    } else {
+      setString(this.localKey(), '');
+    }
     this.localPath = '';
     this.removeQuietly(previous);
     this.afterLocalChange();
@@ -241,6 +305,33 @@ struct ChatBackgroundPage {
       fs.unlinkSync(path);
     } catch (error) {
       logE(`ChatBackgroundPage.removeQuietly failed: ${error}`);
+    }
+  }
+
+  private async applyToAppSlot(row: GalleryRow): Promise<void> {
+    try {
+      const parsed: BackgroundStateResult = backgroundStateOf(row.raw);
+      if (parsed.state === null) {
+        throw new Error(`unpaintable background ${parsed.typeName}`);
+      }
+      const state: ChatBackgroundState = parsed.state;
+      if (parsed.fileId > 0) {
+        // 图案是 .tgv（gzip 的 SVG），下完要解压；纯色/渐变没有文档，跳过。
+        state.path = await inflateTgvIfNeeded(await downloadFileToPath(parsed.fileId));
+      }
+      setString(this.slotKeys().state, serialiseSnapshot(state));
+      if (!this.active) {
+        return;
+      }
+      this.applyingId = '';
+      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+    } catch (error) {
+      if (!this.active) {
+        return;
+      }
+      this.applyingId = '';
+      logE(`ChatBackgroundPage.applyToAppSlot failed: ${error}`);
+      promptAction.showToast({ message: $r('app.string.cb_set_failed'), duration: 1800 });
     }
   }
 
@@ -326,7 +417,7 @@ struct ChatBackgroundPage {
         .onChange((value: number): void => {
           const next: number = Math.round(value) / 100;
           this.chatDim = next;
-          setNumber(KEY_CHAT_DIM, next);
+          setNumber(this.slotKeys().dim, next);
         });
     }
     .width('100%')
@@ -337,7 +428,7 @@ struct ChatBackgroundPage {
   // 图案线条太重时压一档。乘在壁纸自带的 intensity 上，不改壁纸本身，
   // 所以换一张图案后这个设置仍然生效。整图壁纸没有图案可言，滑块不出现。
   private patternValue(): number {
-    return this.forDark ? this.bgPatternDark : this.bgPatternLight;
+    return this.patternPct;
   }
 
   // 当前生效的背景是不是图案。整图壁纸没有图案可言，滑块不该出现。
@@ -368,12 +459,8 @@ struct ChatBackgroundPage {
         .onChange((value: number): void => {
           const next: number = Math.round(value) / 100;
           // 写到当前页签对应的那一份：浅色页签调浅色，深色页签调深色。
-          if (this.forDark) {
-            this.bgPatternDark = next;
-          } else {
-            this.bgPatternLight = next;
-          }
-          setNumber(patternStrengthKey(this.forDark), next);
+          this.patternPct = next;
+          setNumber(this.slotKeys().pattern, next);
         });
     }
     .width('100%')
@@ -449,7 +536,8 @@ struct ChatBackgroundPage {
   build() {
     Column() {
       this.header();
-      if (this.chatId === 0) {
+      // 槽位模式下深浅色由槽位定死，页内不该再有一个能改它的开关。
+      if (this.chatId === 0 && this.slotId === '') {
         Row() { this.modeSwitch(); }.width('100%').justifyContent(FlexAlign.Center)
           .padding({ top: 2, bottom: 10 });
       }
@@ -500,7 +588,9 @@ struct ChatBackgroundPage {
             if (this.currentIsPattern()) {
               this.patternCard();
             }
-            if (this.forDark && this.chatId === 0) {
+            // 遮罩只对深色槽位有意义——浅色下它恒为 0，摆一根无效的滑杆会让人
+            // 以为坏了。判据见 util/wallpaperSlot.slotHasDim。
+            if (slotHasDim(this.effectiveSlot())) {
               this.darkDimCard();
             }
             GridRow({ columns: 3, gutter: 10 }) {

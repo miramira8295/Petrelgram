@@ -11663,6 +11663,30 @@
     {
       "name": "cs_app_bg_dim",
       "value": "暗いオーバーレイ"
+    },
+    {
+      "name": "cs_wallpaper_settings",
+      "value": "Wallpapers"
+    },
+    {
+      "name": "cs_slot_app_light",
+      "value": "App · Light"
+    },
+    {
+      "name": "cs_slot_app_dark",
+      "value": "App · Dark"
+    },
+    {
+      "name": "cs_slot_chat_light",
+      "value": "Chat · Light"
+    },
+    {
+      "name": "cs_slot_chat_dark",
+      "value": "Chat · Dark"
+    },
+    {
+      "name": "cs_wallpaper_none",
+      "value": "Not set"
     }
   ]
 }

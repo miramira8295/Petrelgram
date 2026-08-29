@@ -11667,6 +11667,30 @@
     {
       "name": "cs_app_bg_dim",
       "value": "深色遮罩"
+    },
+    {
+      "name": "cs_wallpaper_settings",
+      "value": "壁纸设置"
+    },
+    {
+      "name": "cs_slot_app_light",
+      "value": "APP 浅色"
+    },
+    {
+      "name": "cs_slot_app_dark",
+      "value": "APP 深色"
+    },
+    {
+      "name": "cs_slot_chat_light",
+      "value": "聊天浅色"
+    },
+    {
+      "name": "cs_slot_chat_dark",
+      "value": "聊天深色"
+    },
+    {
+      "name": "cs_wallpaper_none",
+      "value": "未设置"
     }
   ]
 }

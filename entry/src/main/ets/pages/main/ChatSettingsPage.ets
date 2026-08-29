@@ -7,9 +7,14 @@ import {
   KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
 } from '../../store/AppSettings';
 import {
-  ChatBackgroundState, emptyChatBackground, parseSnapshot, serialiseSnapshot
+  ChatBackgroundState, defaultChatBackgroundSnapshot, emptyChatBackground,
+  parseSnapshot, serialiseSnapshot
 } from '../../store/ChatBackgroundStore';
 import { appWallpaperFileName } from '../../util/localWallpaper';
+import {
+  SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT,
+  slotIsApp, slotIsDark, wallpaperSlotKeys
+} from '../../util/wallpaperSlot';
 import { isSplitLayout } from '../../util/splitMetrics';
 import { KEY_APP_DARK } from '../../util/theme';
 import {
@@ -445,6 +450,8 @@ export struct ChatSettingsPage {
   @StorageProp(KEY_APP_BG_STATE_LIGHT) private appBgLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) private appBgDark: string = '';
   private pickingAppBg: boolean = false;
+  // 非空 = 正在放大看这个槽位的壁纸。
+  @State enlargedSlot: string = '';
 
   private appBgSplit(): boolean {
     return isSplitLayout(this.appBgScreenW, this.appBgScreenH);
@@ -527,7 +534,112 @@ export struct ChatSettingsPage {
     }
   }
 
+  // 某个槽位当前壁纸的状态（null = 没设）。
+  //
+  // APP 槽位读本机存的序列化状态；聊天槽位没有本机副本——它由 TDLib 下发——所以
+  // 读账号默认背景的快照，那正是"聊天浅色/深色"这两个槽位实际画出来的东西。
+  private slotState(slot: string): ChatBackgroundState | null {
+    if (slotIsApp(slot)) {
+      return parseSnapshot(AppStorage.get<string>(wallpaperSlotKeys(slot).state) ?? '');
+    }
+    const snap: ChatBackgroundState = defaultChatBackgroundSnapshot(slotIsDark(slot));
+    return (snap.colors.length > 0 || snap.path !== '') ? snap : null;
+  }
+
+  private slotHasWallpaper(slot: string): boolean {
+    return this.slotState(slot) !== null;
+  }
+
+  private slotImagePath(slot: string): string {
+    const st: ChatBackgroundState | null = this.slotState(slot);
+    return st !== null ? st.path : '';
+  }
+
+  private slotAngle(slot: string): number {
+    const st: ChatBackgroundState | null = this.slotState(slot);
+    return st !== null ? st.angle : 180;
+  }
+
+  // 渐变至少要两个色标，否则 linearGradient 画不出来；只有一个色就复制一份当纯色。
+  private slotGradient(slot: string): [ResourceColor, number][] {
+    const st: ChatBackgroundState | null = this.slotState(slot);
+    const cs: string[] = st !== null ? st.colors : [];
+    if (cs.length === 0) {
+      return [[$r('app.color.surface_alt'), 0], [$r('app.color.surface_alt'), 1]];
+    }
+    if (cs.length === 1) {
+      return [[cs[0], 0], [cs[0], 1]];
+    }
+    const out: [ResourceColor, number][] = [];
+    for (let i = 0; i < cs.length; i++) {
+      out.push([cs[i], i / (cs.length - 1)]);
+    }
+    return out;
+  }
+
+  private openWallpaperSlot(slot: string): void {
+    router.pushUrl({ url: 'pages/main/ChatBackgroundPage', params: { slot: slot } })
+      .catch((error: Error): void => {
+        logE(`ChatSettings open wallpaper slot failed: ${error.message}`);
+      });
+  }
+
+  // 壁纸的画面本身。缩略图和放大浮层共用——**不用 ChatBackdrop**：那一层带栅格
+  // 缓存和图案合成，为四张 44vp 的小图各起一份不值当。这里只画渐变或整图；
+  // 缩略图要回答的是"这个槽位设了什么"，不需要像素级还原。
+  @Builder
+  wallpaperCanvas(slot: string) {
+    Stack() {
+      if (this.slotImagePath(slot) !== '') {
+        Image(`file://${this.slotImagePath(slot)}`).draggable(false)
+          .width('100%').height('100%').objectFit(ImageFit.Cover);
+      } else {
+        Column().width('100%').height('100%')
+          .linearGradient({ angle: this.slotAngle(slot), colors: this.slotGradient(slot) });
+      }
+    }
+    .width('100%').height('100%');
+  }
+
+  @Builder
+  wallpaperSlotRow(slot: string, label: string) {
+    Row({ space: 12 }) {
+      Text(label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+      if (this.slotHasWallpaper(slot)) {
+        Stack() {
+          this.wallpaperCanvas(slot);
+        }
+        .width(44).height(44).borderRadius(8).clip(true)
+        .border({ width: 0.7, color: $r('app.color.divider') })
+        // 点缩略图放大看；点整行才是进去改。两个动作分开挂，避免互相吃手势。
+        .onClick((): void => { this.enlargedSlot = slot; });
+      } else {
+        Text($r('app.string.cs_wallpaper_none')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16)
+        .fontColor([COLOR_ICON_SECONDARY]);
+    }
+    .width('100%').height(60).padding({ left: 16, right: 12 })
+    .onClick((): void => { this.openWallpaperSlot(slot); });
+  }
+
+  // 缩略图点开后的放大预览。点任意处关掉。
+  @Builder
+  wallpaperEnlarged() {
+    Stack() {
+      Column().width('100%').height('100%').backgroundColor('#CC000000');
+      Stack() {
+        this.wallpaperCanvas(this.enlargedSlot);
+      }
+      .width('72%').aspectRatio(0.62).borderRadius(18).clip(true);
+    }
+    .width('100%').height('100%')
+    .onClick((): void => { this.enlargedSlot = ''; });
+  }
+
   build() {
+    // 放大预览要盖住整页（含标题栏），所以在最外面再包一层 Stack。
+    Stack() {
     Column() {
       HdsSubDestination({ title: $r('app.string.settings_chat'), scroller: this.hdsScroller }) {
       Scroll(this.hdsScroller) {
@@ -544,53 +656,20 @@ export struct ChatSettingsPage {
           // 气泡颜色紧贴预览——上面那两个气泡就是它的效果。
           BubbleColorsCard();
 
-          Row({ space: 12 }) {
-            SymbolGlyph($r('sys.symbol.picture')).fontSize(20).fontColor([this.accent()]);
-            Text($r('app.string.chat_settings_background')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-            SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16)
-              .fontColor([COLOR_ICON_SECONDARY]);
-          }
-          .width('100%').height(52).padding({ left: 16, right: 12 })
-          .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
-          .onClick((): void => {
-            router.pushUrl({ url: 'pages/main/ChatBackgroundPage' })
-              .catch((error: Error): void => {
-                logE(`ChatSettings open background failed: ${error.message}`);
-              });
-          });
-
-          // APP 背景图（主界面壁纸）。**分栏下整段不渲染**：右栏被聊天壁纸盖住，
-          // 这张图只能从左栏那条窄缝里露出来，给一个看不出效果的开关不如不给
-          // （用户："pad 没有这个选项"）。判据同 AppBackdrop 用的那一个。
-          if (!this.appBgSplit()) {
-            Column() {
-              Row({ space: 12 }) {
-                SymbolGlyph($r('sys.symbol.picture')).fontSize(20).fontColor([this.accent()]);
-                Text($r('app.string.cs_app_background')).fontSize(16)
-                  .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-                Text($r('app.string.cb_pick_local')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
-              }
-              .width('100%').height(52).padding({ left: 16, right: 12 })
-              .onClick((): void => { this.pickAppBg(); });
-              if (this.appBgRaw() !== '') {
-                Row({ space: 12 }) {
-                  SymbolGlyph($r('sys.symbol.trash')).fontSize(20)
-                    .fontColor([COLOR_ICON_SECONDARY]);
-                  Text($r('app.string.cb_clear_local')).fontSize(16)
-                    .fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
-                }
-                .width('100%').height(52).padding({ left: 16, right: 12 })
-                .onClick((): void => { this.clearAppBg(); });
-                this.sliderRow(str('cs_app_bg_blur'), KEY_APP_BG_BLUR, 0, BG_BLUR_MAX);
-                // 遮罩只在深色模式下起作用（见 AppBackdrop.maskOpacity），
-                // 浅色模式下摆一根无效的滑杆只会让人以为坏了。
-                if (this.appDark) {
-                  this.sliderRow(str('cs_app_bg_dim'), KEY_APP_BG_DIM, 0, CHAT_DIM_MAX);
-                }
-              }
+          // ── 壁纸设置：四个独立槽位 ──────────────────────────────────────
+          // APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色，各有自己的壁纸和三根滑杆。
+          // 右侧是该槽位当前壁纸的缩略图，点它放大看，点整行进去改。
+          // 分栏下不显示 APP 那两行（用户："pad 没有这个选项"）。
+          Column() {
+            this.cardTitle(str('cs_wallpaper_settings'));
+            if (!this.appBgSplit()) {
+              this.wallpaperSlotRow(SLOT_APP_LIGHT, str('cs_slot_app_light'));
+              this.wallpaperSlotRow(SLOT_APP_DARK, str('cs_slot_app_dark'));
             }
-            .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
+            this.wallpaperSlotRow(SLOT_CHAT_LIGHT, str('cs_slot_chat_light'));
+            this.wallpaperSlotRow(SLOT_CHAT_DARK, str('cs_slot_chat_dark'));
           }
+          .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);
 
           AccentColorCard();
 
@@ -649,5 +728,10 @@ export struct ChatSettingsPage {
     .width('100%').height('100%')
     .backgroundColor($r('app.color.page_bg'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+    if (this.enlargedSlot !== '') {
+      this.wallpaperEnlarged();
+    }
+    }
+    .width('100%').height('100%');
   }
 }
