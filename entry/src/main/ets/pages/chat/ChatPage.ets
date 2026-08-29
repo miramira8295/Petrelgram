@@ -4805,19 +4805,27 @@ export struct ChatPage {
         // START 之后行的 y 是 0，要把它挪回 itemY 正是 scrollBy(0, -itemY)。这里
         // 把两步合成一步，位移量逐字相同。
         //
-        // 【留着的那个未知数】ca5bde9 实测旧兜底"没算 contentStartOffset 那段顶栏
-        // 留白，把视口往下推了一截"。我**没有**在这里加那个修正——加错方向会把
-        // 误差翻倍，而 [AnchorAudit] 的 residual 正好能量出来：若下一份日志里
-        // residual 稳定等于顶栏高度，就在这里补上 + this.headerChromeHeight()。
+        // 【+ headerChromeHeight() 是量出来的，不是推的】ScrollAlign.START 按 List
+        // 的顶端对齐，而顶部 chrome 是用 contentStartOffset 让出来的一段留白
+        // （见 .contentStartOffset(this.headerChromeHeight())），START 不算它，行就
+        // 落低了整整那一段——ca5bde9 当年"视口被往下推了一截"就是这个。
+        //
+        // 上一版故意没加这个修正，改由 [AnchorAudit] 的 residual 去量。2026-08-30
+        // 的真机日志给出答案：四次 reposition 的 residual 是 153/153/153/770，
+        // 前三次**精确等于**当时的顶栏高度（同份日志里 [Jump80] flash 的 top 也一直
+        // 是 153），符号是"行落得偏低"，所以往回补正的量。第四次 770 是顶栏更高的
+        // 状态（置顶条/通话条会把它撑高），所以这里取**实时值**而不是常数。
+        const extra: number = -itemY + this.headerChromeHeight();
         logW(`[AnchorRestore] reposition attempt=${attempt} idx=${targetIndex}` +
-          ` oldY=${Math.round(itemY)} extraOffset=${Math.round(-itemY)}`);
+          ` oldY=${Math.round(itemY)} extraOffset=${Math.round(extra)}` +
+          ` chrome=${Math.round(this.headerChromeHeight())}`);
         try {
           this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START,
-            { extraOffset: LengthMetrics.vp(-itemY) });
+            { extraOffset: LengthMetrics.vp(extra) });
         } catch (e) {
           logE(`ChatPage.repositionAnchor failed: ${e}`);
         }
-        this.auditAnchorRestore(seq, targetIndex, itemY, 'reposition', -itemY);
+        this.auditAnchorRestore(seq, targetIndex, itemY, 'reposition', extra);
         return;
       }
       // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。

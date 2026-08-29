@@ -7,7 +7,7 @@ import {
 import { KEY_CRASH_UPLOAD, setBoolean, setNumber } from '../../store/AppSettings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { str } from '../../util/strings';
-import { diagLogSize } from '../../util/log';
+import { clearDiagLog, diagLogSize } from '../../util/log';
 import { DiagUploadResult, diagUploadConfigured, uploadDiagLog } from '../../services/diagLog';
 import { common } from '@kit.AbilityKit';
 import { exportDiagLog, diagLogStamp } from '../../util/diagLogExport';
@@ -158,6 +158,32 @@ export struct DiagnosticsPage {
       .alignItems(VerticalAlign.Center)
       .onClick((): void => {
         exportDiagLog(getContext(this) as common.UIAbilityContext, diagLogStamp(new Date()));
+      });
+
+      Divider().color($r('app.color.divider')).strokeWidth(0.5)
+        .margin({ left: 14, right: 14 });
+
+      // 清空。排查一个具体现象时，日志环里往往还压着几个小时前、甚至上一个版本的
+      // 内容——那些行会把这次要看的东西淹掉，也让"按行号分区"变成必需的功课
+      // （见 diag-log-spans-two-builds）。清一次再复现，导出来的就只有这一次。
+      Row({ space: 10 }) {
+        Column({ space: 3 }) {
+          Text($r('app.string.diag_clear'))
+            .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+          Text($r('app.string.diag_clear_sub'))
+            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+        }
+        .alignItems(HorizontalAlign.Start).layoutWeight(1);
+        SymbolGlyph($r('sys.symbol.trash'))
+          .fontSize(21).fontColor([COLOR_PRIMARY]);
+      }
+      .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+      .alignItems(VerticalAlign.Center)
+      .onClick((): void => {
+        clearDiagLog();
+        // 页面上那个"日志大小"要立刻跟着归零，否则看起来像没生效。
+        this.logBytes = diagLogSize();
+        promptAction.showToast({ message: $r('app.string.diag_cleared'), duration: 1500 });
       });
     }
     .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);

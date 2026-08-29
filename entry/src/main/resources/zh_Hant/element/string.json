@@ -11691,6 +11691,18 @@
     {
       "name": "cb_uploaded",
       "value": "已上傳的桌布"
+    },
+    {
+      "name": "diag_clear",
+      "value": "清空日誌"
+    },
+    {
+      "name": "diag_clear_sub",
+      "value": "刪除已記錄的全部診斷日誌，從此刻重新開始"
+    },
+    {
+      "name": "diag_cleared",
+      "value": "日誌已清空"
     }
   ]
 }

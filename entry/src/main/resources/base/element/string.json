@@ -11695,6 +11695,18 @@
     {
       "name": "cb_uploaded",
       "value": "已上传的壁纸"
+    },
+    {
+      "name": "diag_clear",
+      "value": "清空日志"
+    },
+    {
+      "name": "diag_clear_sub",
+      "value": "删掉已记录的全部诊断日志，从此刻重新开始"
+    },
+    {
+      "name": "diag_cleared",
+      "value": "日志已清空"
     }
   ]
 }

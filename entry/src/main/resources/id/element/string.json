@@ -11691,6 +11691,18 @@
     {
       "name": "cb_uploaded",
       "value": "Your uploads"
+    },
+    {
+      "name": "diag_clear",
+      "value": "Clear log"
+    },
+    {
+      "name": "diag_clear_sub",
+      "value": "Deletes all recorded diagnostics and starts fresh"
+    },
+    {
+      "name": "diag_cleared",
+      "value": "Log cleared"
     }
   ]
 }
