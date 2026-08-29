@@ -974,9 +974,18 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     ? ((rawContent['@type'] as string | undefined) ?? '') : '';
   const isVideoChatStarted = !hidden && rawContent !== undefined
     && rawContent['@type'] === 'messageVideoChatStarted';
-  // Log genuinely unhandled content types — not hidden, not given a description
-  // (still the bare 'Message' fallback) — so missing types surface in hilog.
-  if (!hidden && c.contentType === 'other') {
+  // 真正没被支持的内容类型：不是隐藏的、**没被 systemMessageInfo 认领成服务行**、
+  // 且 formatMsgContent 也给不出描述（停在 'Message' 兜底）。
+  //
+  // **三个条件缺一不可。** 这里原先漏了 `sys.label === ''`，于是每一条服务消息
+  // （入群、通过链接加入、置顶……）都被记成「未处理」——它们其实渲染得好好的，
+  // 下面那句 contentType 会把它们置成 'system'。真机日志里 871 条 UNHANDLED_MSG
+  // 有 870 条是这么来的，占整份日志的 9%，把真正漏网的类型全淹了。
+  //
+  // 判据只留这一处，isUnsupportedMessage 直接用它——原来两边各写一遍，走岔了也
+  // 没人发现。
+  const unsupported: boolean = !hidden && sys.label === '' && c.contentType === 'other';
+  if (unsupported) {
     const rc = message['content'] as TdObject | undefined;
     const rt = rc !== undefined ? ((rc['@type'] as string | undefined) ?? 'unknown') : 'unknown';
     logW(`[UNHANDLED_MSG] type=${rt} id=${(message['id'] as number | undefined) ?? 0}`);
@@ -1007,7 +1016,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     systemKind: sys.kind,
     systemType: sys.label !== '' ? rawType : '',
     systemUserIds: sys.label !== '' ? systemUserIdsOf(rawContent, rawType) : [],
-    isUnsupportedMessage: !hidden && sys.label === '' && c.contentType === 'other',
+    isUnsupportedMessage: unsupported,
     isVideoChatStarted,
     replyToMessageId: replyId(message),
     replySenderName: '',

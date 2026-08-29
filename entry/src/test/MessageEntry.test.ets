@@ -178,4 +178,38 @@ export default function messageEntryTest() {
       expect(entry.systemKind).assertEqual('security');
     });
   });
+
+  // 服务消息渲染成系统行，绝不该被当成"不支持的消息"。真机日志里 871 条
+  // UNHANDLED_MSG 有 870 条是这么误报的（判据漏了 sys.label === ''）。
+  describe('isUnsupportedMessage', () => {
+    it('入群/链接入群/置顶都不算不支持', 0, (): void => {
+      const types: string[] = [
+        'messageChatAddMembers', 'messageChatJoinByLink', 'messagePinMessage',
+        'messageChatDeleteMember', 'messageChatSetMessageAutoDeleteTime',
+        'messageSupergroupChatCreate', 'messageChatUpgradeFrom'
+      ];
+      let id: number = 900;
+      for (const t of types) {
+        const content: TdObject = { '@type': t };
+        content['member_user_ids'] = [8];
+        content['user_id'] = 8;
+        const entry = buildMessageEntry(serviceMsg(id, 7, content), usersOf());
+        expect(entry.isUnsupportedMessage).assertFalse();
+        expect(entry.contentType).assertEqual('system');
+        id++;
+      }
+    });
+
+    it('真正不认识的类型才算不支持', 0, (): void => {
+      const content: TdObject = { '@type': 'messageSomethingFromTheFuture' };
+      const entry = buildMessageEntry(serviceMsg(950, 7, content), usersOf());
+      expect(entry.isUnsupportedMessage).assertTrue();
+      expect(entry.contentType).assertEqual('other');
+    });
+
+    it('普通文本不算不支持', 0, (): void => {
+      const entry = buildMessageEntry(msg(951, false, 7, 'hi'), usersOf());
+      expect(entry.isUnsupportedMessage).assertFalse();
+    });
+  });
 }
