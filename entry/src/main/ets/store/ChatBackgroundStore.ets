@@ -4,7 +4,7 @@ import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { ChatStore } from './ChatStore';
 import { ChatThemeStore } from './ChatThemeStore';
 import { fillColorsOf, objectOrNull } from '../util/backgroundPresentation';
-import { gunzipTgs } from '../util/gunzipTgs';
+import { inflateTgvIfNeeded } from '../util/gunzipTgs';
 import {
   KEY_CHAT_BG_SNAP_DARK, KEY_CHAT_BG_SNAP_LIGHT, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_LIGHT, setString
 } from './AppSettings';
@@ -30,6 +30,73 @@ export interface ChatBackgroundState {
 
 const INSTALLED_DEFAULT_RETRIES: number = 2;
 const INSTALLED_DEFAULT_RETRY_MS: number = 2500;
+
+// TdObject 的 background → 我们的 ChatBackgroundState。
+//
+// 【为什么抽出来】APP 壁纸槽位选**原生壁纸**时要走同一段转换：那条路不经过本
+// store（Telegram 协议里根本没有「APP 背景」这个概念，它只能是本机设置），但必须
+// 得到**一模一样**的状态——否则同一张壁纸在聊天里和在主界面上会长得不一样。
+//
+// 返回里 state.path 恒为 ''：文档要异步下载，由调用方拿 file 自己去取。
+// themeName 非空表示这是 backgroundTypeChatTheme，那条路要走主题解析而不是壁纸。
+// state 为 null 表示这个 background 画不出任何东西（既没有填充也没有文档）。
+export interface BackgroundStateResult {
+  state: ChatBackgroundState | null;
+  file: TdObject | null;
+  fileId: number;
+  typeName: string;
+  themeName: string;
+}
+
+export function backgroundStateOf(chatBackground: TdObject): BackgroundStateResult {
+  // Chat.background 是包着可复用 background 对象的 chatBackground；裸的
+  // background 也接受，保持接口兼容。
+  const nested = objectOrNull(chatBackground['background']);
+  const background = nested !== null ? nested : chatBackground;
+  const type = objectOrNull(background['type']);
+  if (type === null) {
+    return { state: null, file: null, fileId: 0, typeName: '', themeName: '' };
+  }
+  const typeName: string = (type['@type'] as string | undefined) ?? '';
+  if (typeName === 'backgroundTypeChatTheme') {
+    return {
+      state: null, file: null, fileId: 0, typeName,
+      themeName: (type['theme_name'] as string | undefined) ?? ''
+    };
+  }
+  let fill: TdObject | null = null;
+  let pattern: boolean = false;
+  if (typeName === 'backgroundTypeFill' || typeName === 'backgroundTypePattern') {
+    fill = objectOrNull(type['fill']);
+    pattern = typeName === 'backgroundTypePattern';
+  }
+  const colors: string[] = fillColorsOf(fill);
+  const angle: number = fill !== null
+    ? ((fill['rotation_angle'] as number | undefined) ?? 180) : 180;
+  const document = objectOrNull(background['document']);
+  const file = document !== null ? objectOrNull(document['document']) : null;
+  const fileId: number = file !== null ? ((file['id'] as number | undefined) ?? 0) : 0;
+  if (colors.length === 0 && fileId === 0) {
+    return { state: null, file: null, fileId: 0, typeName, themeName: '' };
+  }
+  const dimming: number = Math.max(0, Math.min(
+    1, ((chatBackground['dark_theme_dimming'] as number | undefined) ?? 0) / 100
+  ));
+  const blurred: boolean = typeName === 'backgroundTypeWallpaper' &&
+    ((type['is_blurred'] as boolean | undefined) ?? false);
+  let imageOpacity: number = 1;
+  if (pattern) {
+    const intensity: number = Math.abs((type['intensity'] as number | undefined) ?? 50);
+    imageOpacity = Math.max(0.08, Math.min(1, intensity / 100));
+  }
+  return {
+    state: {
+      custom: true, colors, angle, path: '',
+      imageOpacity, dimming, blurred, bubbleOutColor: '', isPattern: pattern
+    },
+    file, fileId, typeName, themeName: ''
+  };
+}
 
 export function emptyChatBackground(): ChatBackgroundState {
   return {
@@ -144,11 +211,6 @@ export function defaultChatBackgroundSnapshot(forDark: boolean): ChatBackgroundS
 
 // Inflated .tgv → .svg, remembered for the process.
 //
-// A fresh ChatBackgroundStore is constructed for every chat that opens, so
-// without this each open pays a fileIo.access at best, and a gunzip plus a full
-// file write whenever the cached .svg is gone. Both sat on the path between the
-// tap and the first frame of the chat.
-const inflatedPatterns: Map<string, string> = new Map();
 
 // Resolves the background for one open chat, following the same precedence the
 // official client uses: the chat's own background → its theme's background →
@@ -380,33 +442,8 @@ export class ChatBackgroundStore {
   // read. Inflate once next to the download and hand back the .svg path; the
   // file is regenerated if TDLib's cache ever drops it.
   private async inflateIfPattern(path: string): Promise<string> {
-    if (!path.endsWith('.tgv')) {
-      return path;
-    }
-    const memo = inflatedPatterns.get(path);
-    if (memo !== undefined) {
-      return memo;
-    }
-    const svgPath = `${path}.svg`;
-    try {
-      if (await fileIo.access(svgPath)) {
-        inflatedPatterns.set(path, svgPath);
-        return svgPath;
-      }
-      const svg = await gunzipTgs(path);
-      if (svg === '') {
-        return '';
-      }
-      const file = await fileIo.open(svgPath,
-        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-      await fileIo.write(file.fd, svg);
-      await fileIo.close(file);
-      inflatedPatterns.set(path, svgPath);
-      return svgPath;
-    } catch (e) {
-      logE(`ChatBackgroundStore.inflateIfPattern(${path}) failed: ${e}`);
-      return '';
-    }
+    // 与 APP 壁纸槽位共用同一份实现，见 util/gunzipTgs。
+    return inflateTgvIfNeeded(path);
   }
 
   private localPathOf(file: TdObject): string {
@@ -485,57 +522,23 @@ export class ChatBackgroundStore {
       return;
     }
 
-    // Chat.background is a chatBackground wrapper around the reusable
-    // background object. Accept a bare background too for API compatibility.
-    const nested = objectOrNull(chatBackground['background']);
-    const background = nested !== null ? nested : chatBackground;
-    const type = objectOrNull(background['type']);
-    if (type === null) {
+    const parsed: BackgroundStateResult = backgroundStateOf(chatBackground);
+    if (parsed.themeName !== '') {
+      this.applyTheme(parsed.themeName, ++this.resolveSeq);
       return;
     }
-    const typeName: string = (type['@type'] as string | undefined) ?? '';
-    if (typeName === 'backgroundTypeChatTheme') {
-      const themeName: string = (type['theme_name'] as string | undefined) ?? '';
-      if (themeName !== '') {
-        this.applyTheme(themeName, ++this.resolveSeq);
-      }
-      return;
-    }
-    let fill: TdObject | null = null;
-    let pattern: boolean = false;
-    if (typeName === 'backgroundTypeFill' || typeName === 'backgroundTypePattern') {
-      fill = objectOrNull(type['fill']);
-      pattern = typeName === 'backgroundTypePattern';
-    }
-    const colors: string[] = fillColorsOf(fill);
-    const angle: number = fill !== null
-      ? ((fill['rotation_angle'] as number | undefined) ?? 180) : 180;
-    const file = this.documentFile(background);
-    const id: number = file !== null ? ((file['id'] as number | undefined) ?? 0) : 0;
     logI(
-      `[ChatBackground] chat=${this.chatId} type=${typeName} colors=${colors.length}` +
-      ` [${colors.join(',')}] angle=${angle} file=${id}`
+      `[ChatBackground] chat=${this.chatId} type=${parsed.typeName}` +
+      ` colors=${parsed.state !== null ? parsed.state.colors.length : 0} file=${parsed.fileId}`
     );
-    if (colors.length === 0 && id === 0) {
+    if (parsed.state === null) {
       return;
     }
-
-    const dimming: number = Math.max(0, Math.min(
-      1, ((chatBackground['dark_theme_dimming'] as number | undefined) ?? 0) / 100
-    ));
-    const blurred: boolean = typeName === 'backgroundTypeWallpaper' &&
-      ((type['is_blurred'] as boolean | undefined) ?? false);
-    let imageOpacity: number = 1;
-    if (pattern) {
-      const intensity: number = Math.abs((type['intensity'] as number | undefined) ?? 50);
-      imageOpacity = Math.max(0.08, Math.min(1, intensity / 100));
-    }
-    this.patch({
-      custom: true, colors, angle, path: '',
-      imageOpacity, dimming, blurred, bubbleOutColor, isPattern: pattern
-    });
-    if (file !== null) {
-      this.requestFile(file);
+    const next: ChatBackgroundState = parsed.state;
+    next.bubbleOutColor = bubbleOutColor;
+    this.patch(next);
+    if (parsed.file !== null) {
+      this.requestFile(parsed.file);
     }
   }
 
@@ -663,7 +666,7 @@ export class ChatBackgroundStore {
 // chatId 0 matches no chat, so the per-chat updates this store subscribes to
 // never fire for it and it settles on the account default — exactly what most
 // chats resolve to anyway. It is closed straight after; the work it warms lives
-// in TDLib's file cache and in inflatedPatterns, both process-wide.
+// in TDLib's file cache and in util/gunzipTgs 的解压缓存，两者都是进程级的。
 export function preloadDefaultChatBackground(
   client: TdClient, chats: ChatStore, themes: ChatThemeStore, isDarkMode: () => boolean,
   onResolved: (state: ChatBackgroundState) => void = (): void => {}
