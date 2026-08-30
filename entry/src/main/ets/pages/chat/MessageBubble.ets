@@ -41,6 +41,7 @@ import {
   isUnformattedPlainText, messageUrls, parseFormattedText, RichSegment, RichRun
 } from '../../util/richText';
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
+import { albumCellKey, albumRowKey } from '../../util/albumCellKey';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
 import {
@@ -1881,7 +1882,12 @@ export struct MessageBubble {
                 });
             }, (btn: InlineBtn, btnIdx: number) => `ib_${rowIdx}_${btnIdx}_${btn.text}`);
           }.width('100%');
-        }, (_row: InlineBtn[], rowIdx: number) => `ibrow_${rowIdx}`);
+        // 行键也得带内容。**只修内层的按钮键是修不动的**：外层键不变时 ForEach
+      // 连行的构建函数都不会重跑，内层那个 ForEach 拿的还是上一条消息的
+      // `row`，按钮文字于是停在上一条上——与相册格子同一个机理，
+      // 见 util/albumCellKey。
+      }, (row: InlineBtn[], rowIdx: number) =>
+        `ibrow_${rowIdx}_${row.map((b: InlineBtn): string => b.text).join('|')}`);
       }
       // Match the bubble's MEASURED width (it shrinks to fit its content), so
       // the keyboard is never wider than the bubble above it.
@@ -2248,6 +2254,13 @@ export struct MessageBubble {
     }
   }
 
+  // 这一格的 ForEach 键。**纯位置的键会让配图配错文**，完整推导见
+  // util/albumCellKey。
+  private cellKeyAt(index: number): string {
+    return albumCellKey(index, this.albumMemberIdAt(index),
+      this.albumFileIds[index] ?? 0, this.albumIsVideoAt(index));
+  }
+
   @Builder
   albumGrid() {
     Column({ space: 2 }) {
@@ -2313,9 +2326,10 @@ export struct MessageBubble {
                 this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
               });
             }
-          }, (cell: AlbumCell) => `cell_${cell.idx}`);
+          }, (cell: AlbumCell) => this.cellKeyAt(cell.idx));
         }
-      }, (_row: AlbumCell[], rowIdx: number) => `row_${rowIdx}`);
+      }, (row: AlbumCell[], rowIdx: number) => albumRowKey(rowIdx,
+        row.map((c: AlbumCell): string => this.cellKeyAt(c.idx))));
     }.alignItems(HorizontalAlign.Start).width(this.albumW()).constraintSize({ maxWidth: this.albumW() });
   }
 
