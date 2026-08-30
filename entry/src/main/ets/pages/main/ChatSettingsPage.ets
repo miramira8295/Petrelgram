@@ -3,7 +3,8 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import {
-  BG_BLUR_MAX, CHAT_DIM_MAX, KEY_APP_BG_BLUR, KEY_APP_BG_DIM,
+  BG_BLUR_DEFAULT, BG_BLUR_MAX, BG_BLUR_MIN, BG_PATTERN_DEFAULT, BG_PATTERN_MIN,
+  CHAT_DIM_MAX,
   KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_EPOCH,
   KEY_LOCAL_BG_LIGHT
 } from '../../store/AppSettings';
@@ -14,7 +15,7 @@ import {
 import { appWallpaperFileName, wallpaperFileStillUsed } from '../../util/localWallpaper';
 import {
   SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
-  slotIsApp, slotIsDark, wallpaperSlotKeys
+  slotHasDim, slotIsApp, slotIsDark, wallpaperSlotKeys
 } from '../../util/wallpaperSlot';
 import { isSplitLayout } from '../../util/splitMetrics';
 import { KEY_APP_DARK } from '../../util/theme';
@@ -48,13 +49,14 @@ import { HdsSubDestination } from '../common/HdsSubDestination';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { appIconAvailable } from '../../util/appIcon';
 import { AppIconPicker } from './AppIconPicker';
+import { WallpaperPreview } from './WallpaperPreview';
 
 // 一个槽位缩略图要画的全部东西，预先算好——**色标数组的引用必须稳定**，
 // 每帧新建会让 ArkUI 认为渐变变了、四行全部重画。
 interface WallpaperThumb {
   has: boolean;
+  background: ChatBackgroundState;
   path: string;      // 行内画的整图（图案为 ''）
-  fullPath: string;  // 放大预览画的图（含图案）
   isPattern: boolean;
   angle: number;
   colors: [ResourceColor, number][];
@@ -473,6 +475,9 @@ export struct ChatSettingsPage {
   }
   // 非空 = 正在放大看这个槽位的壁纸。
   @State enlargedSlot: string = '';
+  @State enlargedBlur: number = BG_BLUR_DEFAULT;
+  @State enlargedPattern: number = BG_PATTERN_DEFAULT;
+  @State enlargedDim: number = 0;
 
   private appBgSplit(): boolean {
     return isSplitLayout(this.appBgScreenW, this.appBgScreenH);
@@ -580,7 +585,7 @@ export struct ChatSettingsPage {
 
   private buildThumb(st: ChatBackgroundState | null): WallpaperThumb {
     if (st === null) {
-      return { has: false, path: '', fullPath: '', isPattern: false, angle: 180,
+      return { has: false, background: emptyChatBackground(), path: '', isPattern: false, angle: 180,
         colors: [[$r('app.color.surface_alt'), 0], [$r('app.color.surface_alt'), 1]] };
     }
     const cs: string[] = st.colors;
@@ -598,9 +603,9 @@ export struct ChatSettingsPage {
     }
     return {
       has: true,
+      background: st,
       // 行内只画整图；图案留空，见上面的说明。
       path: st.isPattern ? '' : st.path,
-      fullPath: st.path,
       isPattern: st.isPattern,
       angle: st.angle,
       colors
@@ -629,8 +634,31 @@ export struct ChatSettingsPage {
   private thumbOf(slot: string): WallpaperThumb {
     const t: WallpaperThumb | undefined = this.slotThumbs.get(slot);
     return t !== undefined ? t
-      : { has: false, path: '', fullPath: '', isPattern: false, angle: 180,
+      : { has: false, background: emptyChatBackground(), path: '', isPattern: false, angle: 180,
           colors: [[$r('app.color.surface_alt'), 0], [$r('app.color.surface_alt'), 1]] };
+  }
+
+  private showWallpaperPreview(slot: string): void {
+    const keys = wallpaperSlotKeys(slot);
+    this.enlargedBlur = AppStorage.get<number>(keys.blur) ?? BG_BLUR_DEFAULT;
+    this.enlargedPattern = AppStorage.get<number>(keys.pattern) ?? BG_PATTERN_DEFAULT;
+    this.enlargedDim = AppStorage.get<number>(keys.dim) ?? 0;
+    this.enlargedSlot = slot;
+  }
+
+  private setEnlargedBlur(value: number): void {
+    this.enlargedBlur = Math.round(value);
+    setNumber(wallpaperSlotKeys(this.enlargedSlot).blur, this.enlargedBlur);
+  }
+
+  private setEnlargedPattern(value: number): void {
+    this.enlargedPattern = Math.round(value) / 100;
+    setNumber(wallpaperSlotKeys(this.enlargedSlot).pattern, this.enlargedPattern);
+  }
+
+  private setEnlargedDim(value: number): void {
+    this.enlargedDim = Math.round(value) / 100;
+    setNumber(wallpaperSlotKeys(this.enlargedSlot).dim, this.enlargedDim);
   }
 
   private openWallpaperSlot(slot: string): void {
@@ -657,17 +685,19 @@ export struct ChatSettingsPage {
     .width('100%').height('100%');
   }
 
-  // 放大预览。这里只有一张，图案可以画——44vp 的行内格子才付不起这笔。
+  // 放大预览只有一张，可以完整画图案、模糊和深色遮罩。
   @Builder
-  wallpaperCanvasLarge(slot: string) {
+  wallpaperCanvasLarge() {
     Stack() {
-      Column().width('100%').height('100%')
-        .linearGradient({ angle: this.thumbOf(slot).angle, colors: this.thumbOf(slot).colors });
-      if (this.thumbOf(slot).fullPath !== '') {
-        Image(`file://${this.thumbOf(slot).fullPath}`).draggable(false)
-          .width('100%').height('100%')
-          .objectFit(this.thumbOf(slot).isPattern ? ImageFit.None : ImageFit.Cover);
-      }
+      WallpaperPreview({
+        wallpaper: this.thumbOf(this.enlargedSlot).background,
+        blurAmount: this.enlargedBlur,
+        patternStrength: this.enlargedPattern,
+        dimAmount: this.enlargedDim,
+        dark: slotIsDark(this.enlargedSlot),
+        previewW: Math.max(1, Math.min(520, this.appBgScreenW * 0.88)),
+        previewH: Math.max(220, Math.min(420, this.appBgScreenH * 0.48))
+      });
     }
     .width('100%').height('100%');
   }
@@ -683,7 +713,7 @@ export struct ChatSettingsPage {
         .width(44).height(44).borderRadius(8).clip(true)
         .border({ width: 0.7, color: $r('app.color.divider') })
         // 点缩略图放大看；点整行才是进去改。两个动作分开挂，避免互相吃手势。
-        .onClick((): void => { this.enlargedSlot = slot; });
+        .onClick((): void => { this.showWallpaperPreview(slot); });
       } else {
         Text($r('app.string.cs_wallpaper_none')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }
@@ -694,18 +724,74 @@ export struct ChatSettingsPage {
     .onClick((): void => { this.openWallpaperSlot(slot); });
   }
 
-  // 缩略图点开后的放大预览。点任意处关掉。
+  // 缩略图点开后的放大预览。原来把关闭手势挂在整层上，预览里任何交互都会先
+  // 把浮层关掉；现在只保留明确的关闭按钮，三根滑杆在浮层里直接驱动同一张预览。
   @Builder
   wallpaperEnlarged() {
-    Stack() {
+    Stack({ alignContent: Alignment.Center }) {
       Column().width('100%').height('100%').backgroundColor('#CC000000');
-      Stack() {
-        this.wallpaperCanvasLarge(this.enlargedSlot);
+      Column({ space: 10 }) {
+        Stack() {
+          this.wallpaperCanvasLarge();
+        }
+        .width('100%').height(Math.max(220, Math.min(420, this.appBgScreenH * 0.48)))
+        .borderRadius(18).clip(true);
+        Column({ space: 4 }) {
+          Row() {
+            Text($r('app.string.cb_blur_amount')).fontSize(14).fontColor(Color.White).layoutWeight(1);
+            Text(`${this.enlargedBlur}`).fontSize(13).fontColor('#BFFFFFFF');
+          }.width('100%');
+          Slider({
+            value: this.enlargedBlur, min: BG_BLUR_MIN, max: BG_BLUR_MAX,
+            step: 1, style: SliderStyle.OutSet
+          })
+            .width('100%').trackColor('#4DFFFFFF').selectedColor(COLOR_PRIMARY)
+            .blockColor(COLOR_PRIMARY)
+            .onChange((value: number): void => { this.setEnlargedBlur(value); });
+        }.width('100%');
+        if (this.thumbOf(this.enlargedSlot).isPattern) {
+          Column({ space: 4 }) {
+            Row() {
+              Text($r('app.string.cb_pattern_strength')).fontSize(14).fontColor(Color.White).layoutWeight(1);
+              Text(`${Math.round(this.enlargedPattern * 100)}%`).fontSize(13).fontColor('#BFFFFFFF');
+            }.width('100%');
+            Slider({
+              value: Math.round(this.enlargedPattern * 100),
+              min: Math.round(BG_PATTERN_MIN * 100), max: 100,
+              step: 5, style: SliderStyle.OutSet
+            })
+              .width('100%').trackColor('#4DFFFFFF').selectedColor(COLOR_PRIMARY)
+              .blockColor(COLOR_PRIMARY)
+              .onChange((value: number): void => { this.setEnlargedPattern(value); });
+          }.width('100%');
+        }
+        if (slotHasDim(this.enlargedSlot)) {
+          Column({ space: 4 }) {
+            Row() {
+              Text($r('app.string.chat_settings_dark_dim')).fontSize(14).fontColor(Color.White).layoutWeight(1);
+              Text(`${Math.round(this.enlargedDim * 100)}%`).fontSize(13).fontColor('#BFFFFFFF');
+            }.width('100%');
+            Slider({
+              value: Math.round(this.enlargedDim * 100), min: 0,
+              max: Math.round(CHAT_DIM_MAX * 100), step: 5, style: SliderStyle.OutSet
+            })
+              .width('100%').trackColor('#4DFFFFFF').selectedColor(COLOR_PRIMARY)
+              .blockColor(COLOR_PRIMARY)
+              .onChange((value: number): void => { this.setEnlargedDim(value); });
+          }.width('100%');
+        }
       }
-      .width('72%').aspectRatio(0.62).borderRadius(18).clip(true);
+      .width('88%').constraintSize({ maxWidth: 520 })
+      .padding({ left: 14, right: 14, top: 14, bottom: 14 })
+      .borderRadius(20).backgroundColor('#E61B1B1B');
+      Button() {
+        SymbolGlyph($r('sys.symbol.xmark')).fontSize(19).fontColor([Color.White]);
+      }
+      .width(40).height(40).borderRadius(20).backgroundColor('#66000000')
+      .position({ right: 18, top: this.topSafe + 12 })
+      .onClick((): void => { this.enlargedSlot = ''; });
     }
-    .width('100%').height('100%')
-    .onClick((): void => { this.enlargedSlot = ''; });
+    .width('100%').height('100%');
   }
 
   build() {

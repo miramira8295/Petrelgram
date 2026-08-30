@@ -6,7 +6,7 @@ import { ChatThemeStore } from './ChatThemeStore';
 import { fillColorsOf, objectOrNull } from '../util/backgroundPresentation';
 import { inflateTgvIfNeeded } from '../util/gunzipTgs';
 import {
-  KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT,
+  KEY_APP_BG_DARK, KEY_APP_BG_LIGHT, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT,
   KEY_CHAT_BG_SNAP_DARK, KEY_CHAT_BG_SNAP_LIGHT, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_LIGHT, setString
 } from './AppSettings';
 import { localWallpaperWins } from '../util/localWallpaper';
@@ -143,6 +143,26 @@ export function localWallpaperState(path: string): ChatBackgroundState {
     custom: true, colors: [], angle: 180, path: path,
     imageOpacity: 1, dimming: 0, blurred: true, bubbleOutColor: '', isPattern: false
   };
+}
+
+// 四槽位版本以前，APP 浅/深背景只存一条裸文件路径。升级后渲染只读序列化状态，
+// 若不迁移，原来设置过的背景会像被清空一样消失。迁移成功后清掉旧键，否则用户
+// 日后在新界面点“重置”，下一次冷启动又会被旧路径复活。
+export function migrateLegacyAppWallpaperStates(): void {
+  migrateLegacyAppWallpaper(KEY_APP_BG_LIGHT, KEY_APP_BG_STATE_LIGHT);
+  migrateLegacyAppWallpaper(KEY_APP_BG_DARK, KEY_APP_BG_STATE_DARK);
+}
+
+function migrateLegacyAppWallpaper(legacyKey: string, stateKey: string): void {
+  const legacyPath: string = AppStorage.get<string>(legacyKey) ?? '';
+  if (legacyPath === '') {
+    return;
+  }
+  const current: string = AppStorage.get<string>(stateKey) ?? '';
+  if (current === '') {
+    setString(stateKey, serialiseSnapshot(localWallpaperState(legacyPath)));
+  }
+  setString(legacyKey, '');
 }
 
 type Listener = (state: ChatBackgroundState) => void;

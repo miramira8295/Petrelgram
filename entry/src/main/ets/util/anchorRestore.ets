@@ -47,6 +47,24 @@ export interface AnchorRestorePlan {
   dy: number;
 }
 
+export interface PrependAnchorCaptureInput {
+  didInitialScroll: boolean;
+  anchorIndexFresh: boolean;
+  boundaryRowReplaced: boolean;
+  touchActive: boolean;
+  userScrollActive: boolean;
+}
+
+// API 20+ List already preserves Repeat.virtualScroll insertions outside the
+// visible area. The only remaining reason for a manual prepend correction is
+// this page's boundary row being replaced because its content key changed.
+// Even then, user movement owns the viewport: an asynchronous measurement
+// cannot distinguish that movement from layout movement and would undo it.
+export function shouldCapturePrependAnchor(input: PrependAnchorCaptureInput): boolean {
+  return input.didInitialScroll && input.anchorIndexFresh && input.boundaryRowReplaced &&
+    !input.touchActive && !input.userScrollActive;
+}
+
 // 小于半个 vp 的残差不值得发一次滚动指令：它在屏幕上不可见，却会白白走一遍
 // 滚动管线（并可能顺带触发一轮 onDidScroll）。既有代码里 `itemY < -0.5` 用的
 // 也是这个阈值。

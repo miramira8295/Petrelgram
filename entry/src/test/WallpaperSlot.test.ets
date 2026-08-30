@@ -3,6 +3,18 @@ import {
   SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
   slotHasDim, slotIsApp, slotIsDark, wallpaperSlotKeys, WallpaperSlotKeys
 } from '../main/ets/util/wallpaperSlot';
+import {
+  WALLPAPER_NUMBER_SETTINGS, WallpaperNumberSetting
+} from '../main/ets/store/AppSettings';
+
+function sliderKeyInitialised(key: string): boolean {
+  for (const setting of WALLPAPER_NUMBER_SETTINGS) {
+    if ((setting as WallpaperNumberSetting).key === key) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export default function wallpaperSlotTest() {
   describe('wallpaperSlot', () => {
@@ -51,6 +63,17 @@ export default function wallpaperSlotTest() {
       expect(slotHasDim(SLOT_CHAT_DARK)).assertTrue();
       expect(slotHasDim(SLOT_APP_LIGHT)).assertFalse();
       expect(slotHasDim(SLOT_CHAT_LIGHT)).assertFalse();
+    });
+
+    // 槽位映射与启动恢复必须是闭环。只给 wallpaperSlotKeys 加新键、忘了在
+    // initSettings 注册时，本次运行能调，冷启动后却会悄悄回默认值。
+    it('every_slider_key_is_restored_on_startup', 0, (): void => {
+      for (const slot of WALLPAPER_SLOTS) {
+        const k: WallpaperSlotKeys = wallpaperSlotKeys(slot);
+        expect(sliderKeyInitialised(k.blur)).assertTrue();
+        expect(sliderKeyInitialised(k.pattern)).assertTrue();
+        expect(sliderKeyInitialised(k.dim)).assertTrue();
+      }
     });
 
     // 未知槽位不能返回空键，否则读写会落到 undefined 上。

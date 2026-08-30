@@ -177,6 +177,8 @@ import livePhotoTest from './LivePhoto.test';
 import chatChromeTest from './ChatChrome.test';
 import localWallpaperTest from './LocalWallpaper.test';
 import wallpaperSlotTest from './WallpaperSlot.test';
+import inlineButtonKeyTest from './InlineButtonKey.test';
+import liveThumbPathTest from './LiveThumbPath.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -359,4 +361,6 @@ export default function testsuite() {
   chatChromeTest();
   localWallpaperTest();
   wallpaperSlotTest();
+  inlineButtonKeyTest();
+  liveThumbPathTest();
 }

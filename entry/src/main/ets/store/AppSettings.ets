@@ -260,6 +260,27 @@ export const KEY_BG_BLUR_DARK: string = 'bgBlurDark';
 // 浅色这份留着是为了四个槽位的读写路径一致，读到的值不参与渲染。
 export const KEY_CHAT_DIM_LIGHT: string = 'chatDimLight';
 
+// 所有壁纸滑杆的持久化数字键。新增槽位时必须在这一张表里登记：initSettings 和
+// 无 Preferences 的降级路径都从它初始化，避免“当前进程能调，重启就回默认值”。
+// 对外导出是为了让 WallpaperSlot.test 能验证每个槽位映射出的键都在这里注册。
+export interface WallpaperNumberSetting {
+  key: string;
+  defaultValue: number;
+}
+
+export const WALLPAPER_NUMBER_SETTINGS: WallpaperNumberSetting[] = [
+  { key: KEY_BG_BLUR, defaultValue: BG_BLUR_DEFAULT },
+  { key: KEY_BG_BLUR_DARK, defaultValue: BG_BLUR_DEFAULT },
+  { key: KEY_BG_PATTERN, defaultValue: BG_PATTERN_DEFAULT },
+  { key: KEY_BG_PATTERN_DARK, defaultValue: BG_PATTERN_DEFAULT },
+  { key: KEY_CHAT_DIM, defaultValue: 0 },
+  { key: KEY_CHAT_DIM_LIGHT, defaultValue: 0 },
+  { key: KEY_APP_BG_BLUR, defaultValue: BG_BLUR_DEFAULT },
+  { key: KEY_APP_BG_DIM, defaultValue: 0 },
+  { key: KEY_APP_BG_PATTERN_LIGHT, defaultValue: BG_PATTERN_DEFAULT },
+  { key: KEY_APP_BG_PATTERN_DARK, defaultValue: BG_PATTERN_DEFAULT }
+];
+
 export function bumpLocalWallpaperEpoch(): void {
   AppStorage.setOrCreate(KEY_LOCAL_BG_EPOCH,
     (AppStorage.get<number>(KEY_LOCAL_BG_EPOCH) ?? 0) + 1);
@@ -410,7 +431,6 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_APP_LANGUAGE, await s.get(KEY_APP_LANGUAGE, 'default') as string);
     // 默认老交互：升级上来的人不该被换掉肌肉记忆，新方案由设置里主动开。
     AppStorage.setOrCreate(KEY_MSG_GESTURE, await s.get(KEY_MSG_GESTURE, GESTURE_CLASSIC) as string);
-    AppStorage.setOrCreate(KEY_CHAT_DIM, await s.get(KEY_CHAT_DIM, 0) as number);
     AppStorage.setOrCreate(
       KEY_POWER_THRESHOLD,
       await s.get(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT) as number
@@ -448,10 +468,10 @@ export async function initSettings(context: common.Context): Promise<void> {
     for (const key of APPEARANCE_HEX_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
     }
-    AppStorage.setOrCreate(KEY_BG_BLUR, await s.get(KEY_BG_BLUR, BG_BLUR_DEFAULT) as number);
-    AppStorage.setOrCreate(KEY_BG_PATTERN, await s.get(KEY_BG_PATTERN, BG_PATTERN_DEFAULT) as number);
-    AppStorage.setOrCreate(KEY_BG_PATTERN_DARK,
-      await s.get(KEY_BG_PATTERN_DARK, BG_PATTERN_DEFAULT) as number);
+    for (const setting of WALLPAPER_NUMBER_SETTINGS) {
+      AppStorage.setOrCreate(setting.key,
+        await s.get(setting.key, setting.defaultValue) as number);
+    }
     AppStorage.setOrCreate(KEY_AUTOPLAY_MUTED, await s.get(KEY_AUTOPLAY_MUTED, true) as boolean);
     for (const key of DATA_STRING_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
@@ -504,6 +524,9 @@ export async function initSettings(context: common.Context): Promise<void> {
     }
     for (const key of DATA_STRING_KEYS) {
       AppStorage.setOrCreate(key, '');
+    }
+    for (const setting of WALLPAPER_NUMBER_SETTINGS) {
+      AppStorage.setOrCreate(setting.key, setting.defaultValue);
     }
     AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, 'other');
     AppStorage.setOrCreate(KEY_POWER_ACTIVE, false);

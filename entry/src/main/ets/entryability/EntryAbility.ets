@@ -12,6 +12,7 @@ import { backgroundGraceTask } from '../services/BackgroundGraceTask';
 import { startCrashWatch } from '../services/crashReport';
 import { initDiagLog } from '../util/log';
 import { initSettings, refreshPowerSavingState, KEY_CACHE_LIMIT } from '../store/AppSettings';
+import { migrateLegacyAppWallpaperStates } from '../store/ChatBackgroundStore';
 import { CACHE_LIMIT_DEFAULT, shouldTrimNow } from '../store/CacheLimit';
 import { applyCacheLimit } from '../store/StorageApi';
 import { beginNetworkMonitoring, refreshNetworkState } from '../services/NetworkStateService';
@@ -56,7 +57,13 @@ export default class EntryAbility extends UIAbility {
     installStringsFromContext(this.context.getApplicationContext());
     // Loads persisted settings into AppStorage and applies the stored night
     // mode (which subsumes the old unconditional COLOR_MODE_NOT_SET).
-    initSettings(this.context);
+    initSettings(this.context).then((): void => {
+      migrateLegacyAppWallpaperStates();
+    }).catch((error: Error): void => {
+      // initSettings 自己已经装好默认值；这里防住未来实现改成向外抛错时的未处理
+      // Promise，启动不能因为一次设置迁移失败而中断。
+      logE(`EntryAbility initSettings failed: ${error.message}`);
+    });
     initTdKit(this.context);
     // 实时位置共享要跨会话、跨前后台存活，服务需要 Ability 上下文申请长时任务。
     liveLocation.init(this.context);

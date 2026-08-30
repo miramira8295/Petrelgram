@@ -1,20 +1,23 @@
 import { router } from '@kit.ArkUI';
 import { getChatStore } from '../../tdkit/Globals';
-import { ChatEntry } from '../../store/ChatEntry';
+import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
 import { ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import {
+  KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
+} from '../../store/AppSettings';
 import {
   AVATAR_SIZE, COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
   ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
-import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
+import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToArchive } from '../../util/profileNav';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
 
 // 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
 // 长得和会话行一个个头，拉出来时才不显得是另一种东西。
@@ -23,10 +26,19 @@ const ARCHIVE_ROW_HEIGHT: number = AVATAR_SIZE + ROW_PAD_V * 2;
 // 实打实的手指行程——"不好出现"的力度感全在这。要松就调小。
 const ARCHIVE_OVERPULL: number = 96;
 
+// 与 ChatListView 保持同一套滑动规格。主列表和文件夹列表是两个独立组件，
+// 交互设置必须分别接入，不能只在文件夹列表上挂 swipeAction。
+const SWIPE_BUTTON_VP: number = 76;
+const SWIPE_TRIGGER_VP: number = 76;
+const SWIPE_READ_BG: string = '#3390EC';
+const SWIPE_MUTE_BG: string = '#8E8E93';
+const SWIPE_ARCHIVE_BG: string = '#F09A37';
+
 @Preview
 @Component
 export struct MainTabBody {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -45,7 +57,7 @@ export struct MainTabBody {
   // 由 ChatListPage 传进来，每个文件夹页签一个。HdsNavigation 靠它拿到滚动量
   // 才能驱动标题栏收缩与渐变模糊；页签里的列表在子组件内部，父层拿不到，
   // 只能这样把控制器递下来。
-  listScroller: Scroller = new Scroller();
+  listScroller: ListScroller = new ListScroller();
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
   @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
@@ -155,6 +167,80 @@ export struct MainTabBody {
     return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}_${this.scopeMuteEpoch}`;
   }
 
+  private rowUnread(chat: ChatEntry): boolean {
+    return chat.unreadCount > 0 || chat.isMarkedUnread;
+  }
+
+  private rowMuted(chat: ChatEntry): boolean {
+    return effectiveMuted(chat, scopeMutedForKind(chat.kind));
+  }
+
+  private toggleRead(chat: ChatEntry): void {
+    if (this.rowUnread(chat)) {
+      markAsRead(chat.id, chat.lastMessageId);
+    } else {
+      markUnread(chat.id, true);
+    }
+  }
+
+  private toggleArchive(chat: ChatEntry): void {
+    setArchived(chat.id, true);
+  }
+
+  private toggleMute(chat: ChatEntry): void {
+    setMute(chat.id, this.rowMuted(chat) ? 0 : MUTE_LONG);
+  }
+
+  @Builder
+  readSwipe(chat: ChatEntry) {
+    Row() {
+      this.swipeButton(
+        this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
+        this.rowUnread(chat) ? 'sys.symbol.checkmark_circle' : 'sys.symbol.circle_badge',
+        SWIPE_READ_BG,
+        (): void => this.toggleRead(chat));
+    }
+    .height('calc(100% - 6vp)')
+    .margin({ left: 12, top: 3, bottom: 3 })
+    .borderRadius(16)
+    .clip(true);
+  }
+
+  @Builder
+  endSwipe(chat: ChatEntry) {
+    Row() {
+      this.swipeButton(
+        this.rowMuted(chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
+        this.rowMuted(chat) ? 'sys.symbol.bell' : 'sys.symbol.bell_slash',
+        SWIPE_MUTE_BG,
+        (): void => this.toggleMute(chat));
+      this.swipeButton(
+        $r('app.string.cl_archive'),
+        'sys.symbol.archivebox',
+        SWIPE_ARCHIVE_BG,
+        (): void => this.toggleArchive(chat));
+    }
+    .height('calc(100% - 6vp)')
+    .margin({ right: 12, top: 3, bottom: 3 })
+    .borderRadius(16)
+    .clip(true);
+  }
+
+  @Builder
+  swipeButton(label: ResourceStr, icon: string, background: ResourceColor, action: () => void) {
+    Column({ space: 4 }) {
+      SymbolGlyph($r(icon)).fontSize(20).fontColor([Color.White]);
+      Text(label).fontSize(11).fontColor(Color.White).maxLines(1);
+    }
+    .width(SWIPE_BUTTON_VP).height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(background)
+    .onClick((): void => {
+      this.listScroller.closeAllSwipeActions();
+      action();
+    });
+  }
+
   // 归档入口是否作为列表第 0 行存在。
   private archiveRowShown(): boolean {
     return this.showArchive || this.archiveLoadFailed;
@@ -210,6 +296,18 @@ export struct MainTabBody {
       // that are visible.
       LazyForEach(this.chatsData, (item: ChatEntry) => {
         ListItem() { ChatRow({ chat: item, listKey: 'main' }); }
+          .swipeAction(this.rowSwipeEnabled ? {
+            start: {
+              builder: (): void => { this.readSwipe(item); },
+              actionAreaDistance: SWIPE_TRIGGER_VP,
+              onAction: (): void => { this.toggleRead(item); }
+            },
+            end: {
+              builder: (): void => { this.endSwipe(item); },
+              actionAreaDistance: SWIPE_TRIGGER_VP,
+              onAction: (): void => { this.toggleArchive(item); }
+            }
+          } as SwipeActionOptions : {} as SwipeActionOptions)
       }, (item: ChatEntry, index: number) =>
         guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));
     }

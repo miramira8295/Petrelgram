@@ -43,6 +43,7 @@ import {
 } from '../../util/richText';
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { albumCellKey, albumRowKey } from '../../util/albumCellKey';
+import { inlineButtonKey, inlineButtonRowKey } from '../../util/inlineButtonKey';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
 import {
@@ -109,6 +110,24 @@ const EDITABLE_CAPTION_TYPES: string[] = ['photo', 'video', 'file', 'audio', 'vo
 // leftward-only).
 const SWIPE_REPLY_MAX: number = -56;
 const SWIPE_REPLY_TRIGGER: number = -40;
+
+// @Builder 的动态参数必须整体装进一个对象字面量再传。ArkUI 官方约束是：
+// 按引用传递只在「单参数 + 调用处直接传对象字面量」时支持内部 UI 刷新；多个
+// 参数是按值快照，消息气泡被复用后会继续拿上一条消息的 text/entities。
+//
+// 这里分两层都做成单参数：只改 richContent 还不够，它里面的 richRuns 原来也有
+// 三个参数，外层虽然拿到了新分段，最内层 Text 仍可能保留上一条的 runs。
+interface RichRunsBuilderParams {
+  runs: RichRun[];
+  maxWidth: number;
+  isLastSegment: boolean;
+}
+
+interface RichContentBuilderParams {
+  text: string;
+  entities: TdObject[];
+  maxWidth: number;
+}
 
 // MessageBubble remains the complete renderer. ChatPage mounts it through a
 // thin shell that owns the page-level callbacks. Component-level reuse is
@@ -1574,12 +1593,12 @@ export struct MessageBubble {
   }
 
   @Builder
-  richRuns(runs: RichRun[], maxWidth: number, isLastSegment: boolean) {
+  richRuns(params: RichRunsBuilderParams) {
     Text() {
-      ForEach(runs, (r: RichRun) => {
+      ForEach(params.runs, (r: RichRun) => {
         this.richInlineRun(r);
       }, (r: RichRun, i: number) => `run_${i}_${r.offset}_${r.text}`);
-      if (this.timeReserveInText() && isLastSegment) {
+      if (this.timeReserveInText() && params.isLastSegment) {
         // fontSize 14 (not 11): when this reserve wraps onto its own line, the
         // taller line leaves a visible gap between the text and the timestamp.
         Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
@@ -1588,7 +1607,7 @@ export struct MessageBubble {
     .fontSize(this.msgTextSize)
     .lineHeight(this.msgTextSize * 1.34)
     .wordBreak(WordBreak.BREAK_WORD)
-    .constraintSize({ maxWidth });
+    .constraintSize({ maxWidth: params.maxWidth });
   }
 
   // Common first-screen path: one Text node instead of
@@ -1638,17 +1657,17 @@ export struct MessageBubble {
   //
   // 时间戳的尾部占位**不作为参数传进来**，而是在这里读 this.timeReserveInText()。
   //
-  // 带多个参数的 @Builder，参数变化不会刷新它内部的 UI（官方《自定义构建函数》
-  // 写明：按引用传递只在单参数时生效，多参数不支持刷新）。而这个占位恰恰是会
-  // 翻转的：翻译开始时它移到状态行、翻译撤销时又该回到正文。作为参数传的话，
-  // 翻转那一下正文不会重画，时间戳就直接压在最后几个字上（issue #83：群内自动
-  // 翻译遇到"这句不用翻"时复现）。
+  // @Builder 的参数整体打成一个对象字面量：官方《自定义构建函数》明确只有
+  // 「单参数 + 对象字面量」的按引用传递支持内部 UI 刷新。原来的 text / entities /
+  // maxWidth 三参数写法在气泡复用时会把旧正文关在构建函数里，外面的媒体已经切到
+  // 新消息、里面的文字却仍是上一条——只修 ForEach 的 key 也跨不过这一层。
   //
-  // 规则：会变的值从 this 读，参数里只留稳定的东西（如 isLast）。
+  // 时间戳占位仍从 this 读：翻译开始时它移到状态行、翻译撤销时又回到正文，
+  // 避免把这个高频翻转再复制进分段数据。
   @Builder
-  richContent(text: string, entities: TdObject[], maxWidth: number) {
+  richContent(params: RichContentBuilderParams) {
     Column() {
-      ForEach(parseFormattedText(text, entities), (seg: RichSegment, segIdx: number) => {
+      ForEach(parseFormattedText(params.text, params.entities), (seg: RichSegment, segIdx: number) => {
         if (seg.kind === 'pre') {
           Column() {
             Row({ space: 8 }) {
@@ -1673,7 +1692,7 @@ export struct MessageBubble {
                   if (this.gestureClaimed) { return; }
                   this.onCopyCode(seg.text); });
             }
-            .width(maxWidth - 18)
+            .width(params.maxWidth - 18)
             .alignItems(VerticalAlign.Center)
             .margin({ bottom: 5 });
             Text() {
@@ -1686,10 +1705,10 @@ export struct MessageBubble {
             .lineHeight(this.codeTextSize() * 1.42)
             .fontColor(bubbleTextFor(this.msg.isOutgoing))
             .fontFamily('monospace')
-            .constraintSize({ maxWidth: maxWidth - 20 })
+            .constraintSize({ maxWidth: params.maxWidth - 20 })
             .wordBreak(WordBreak.BREAK_ALL);
           }
-          .width(maxWidth)
+          .width(params.maxWidth)
           .backgroundColor($r('app.color.surface_alt')).borderRadius(7)
           .padding({ left: 9, right: 9, top: 7, bottom: 8 })
           .margin({ top: 4, bottom: 2 })
@@ -1709,7 +1728,7 @@ export struct MessageBubble {
             .lineHeight(this.msgTextSize * 1.34)
             .maxLines(seg.expandable && !this.quoteExpanded(seg) ? 4 : 10000)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: maxWidth - 20 }).wordBreak(WordBreak.BREAK_WORD);
+            .constraintSize({ maxWidth: params.maxWidth - 20 }).wordBreak(WordBreak.BREAK_WORD);
             if (seg.expandable) {
               Text(this.quoteExpanded(seg) ? $r('app.string.mb_collapse_quote') : $r('app.string.mb_expand_quote'))
                 .fontSize(11).fontColor(this.accent()).fontWeight(FontWeight.Medium)
@@ -1729,7 +1748,11 @@ export struct MessageBubble {
           .padding({ left: 9, right: 8, top: 7, bottom: 7 }).margin({ top: 4, bottom: 2 })
           .animation({ duration: this.effectDuration(180), curve: Curve.EaseOut });
         } else {
-          this.richRuns(seg.runs, maxWidth, seg.isLast);
+          this.richRuns({
+            runs: seg.runs,
+            maxWidth: params.maxWidth,
+            isLastSegment: seg.isLast
+          });
         }
       // 键必须带内容，取值与完整推导见 util/richText.richSegmentKey——只有序号和
       // kind 的话，「格式一致的频道」里每条消息都算出同一串键，正文会停在上一条上。
@@ -1738,7 +1761,7 @@ export struct MessageBubble {
     // minWidth 挂在这里（正文，content() 里最宽的孩子）而不是只挂外层 Column：
     // Column 给子节点做 Stretch 是按最宽的孩子量的，自己的 minWidth 钳位在那之后。
     // 只挂外层时引用块的 alignSelf(Stretch) 拉不到气泡边缘（真机确认）。
-    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth })
+    .constraintSize({ minWidth: this.measuredTimeLayerWidth(), maxWidth: params.maxWidth })
     .alignItems(HorizontalAlign.Start);
   }
 
@@ -1890,18 +1913,14 @@ export struct MessageBubble {
                     this.onGameOpen(this.msg.id);
                   }
                 });
-            // url / callbackData 也要进：两条消息的按钮文字常常一模一样（「查看原文」
-            // 之类），只有点击目标不同——只带 text 的话按钮不重建，点下去打开的是
-            // 上一条消息的目标。
-            }, (btn: InlineBtn, btnIdx: number) =>
-              `ib_${rowIdx}_${btnIdx}_${btn.text}_${btn.url}_${btn.callbackData}`);
+            // 点击目标、游戏分支和样式都属于组件身份，不能只看显示文字。
+            }, (btn: InlineBtn, btnIdx: number) => inlineButtonKey(rowIdx, btnIdx, btn));
           }.width('100%');
         // 行键也得带内容。**只修内层的按钮键是修不动的**：外层键不变时 ForEach
       // 连行的构建函数都不会重跑，内层那个 ForEach 拿的还是上一条消息的
       // `row`，按钮文字于是停在上一条上——与相册格子同一个机理，
       // 见 util/albumCellKey。
-      }, (row: InlineBtn[], rowIdx: number) =>
-        `ibrow_${rowIdx}_${row.map((b: InlineBtn): string => b.text).join('|')}`);
+      }, (row: InlineBtn[], rowIdx: number) => inlineButtonRowKey(rowIdx, row));
       }
       // Match the bubble's MEASURED width (it shrinks to fit its content), so
       // the keyboard is never wider than the bubble above it.
@@ -2766,7 +2785,11 @@ export struct MessageBubble {
       if (this.albumCaption !== '') {
         // Rich caption: links/@mentions/#hashtags stay tappable in albums too.
         Column() {
-          this.richContent(this.albumCaption, this.albumCaptionEntities, this.inlineMaxW());
+          this.richContent({
+            text: this.albumCaption,
+            entities: this.albumCaptionEntities,
+            maxWidth: this.inlineMaxW()
+          });
           // 相册配文也要能翻译（issue #128）。和单张媒体那一支（见下面
           // contentType 'photo'/'video' 分支）是同一个疏漏的两半：
           // translationCandidates 一直把带配文的媒体收进去、译文也存下来了，
@@ -2800,7 +2823,11 @@ export struct MessageBubble {
         .fontSize(this.msgTextSize)
         .lineHeight(this.msgTextSize * 1.34);
       } else {
-        this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
+        this.richContent({
+          text: this.msg.text,
+          entities: this.msg.textEntities,
+          maxWidth: this.inlineMaxW()
+        });
       }
       if (this.hasLinkPreview()) {
         this.linkPreviewCard();
@@ -2962,7 +2989,11 @@ export struct MessageBubble {
       // Media caption shown below the media, within the same bubble.
       if (this.msg.text !== '') {
         Column() {
-          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
+          this.richContent({
+            text: this.msg.text,
+            entities: this.msg.textEntities,
+            maxWidth: this.inlineMaxW()
+          });
           // 配文也要能翻译。translationCandidates 一直把带配文的媒体收进去，
           // 译文也存下来了，只是原来 translationBlock() 只挂在 text 分支上，
           // 结果"请求发了、译文有了、没地方显示"。
@@ -3070,7 +3101,11 @@ export struct MessageBubble {
       });
       if (this.msg.text !== '') {
         Column() {
-          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
+          this.richContent({
+            text: this.msg.text,
+            entities: this.msg.textEntities,
+            maxWidth: this.inlineMaxW()
+          });
           // 见上：配文的译文原来无处可显示。
           this.translationBlock();
         }.margin({ top: 5 });
@@ -3103,7 +3138,11 @@ export struct MessageBubble {
       });
       if (this.msg.text !== '') {
         Column() {
-          this.richContent(this.msg.text, this.msg.textEntities, this.inlineMaxW());
+          this.richContent({
+            text: this.msg.text,
+            entities: this.msg.textEntities,
+            maxWidth: this.inlineMaxW()
+          });
           // 见上：配文的译文原来无处可显示。
           this.translationBlock();
         }.margin({ top: 5 });

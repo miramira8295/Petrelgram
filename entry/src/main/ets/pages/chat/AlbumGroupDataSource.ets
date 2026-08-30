@@ -154,9 +154,10 @@ export function reuseUnchangedRows(prev: AlbumGroup[], next: AlbumGroup[]): Albu
 //
 // 老引擎为此把 ADD 与 CHANGE 拆成两次 notify，让这一行走「同一个 item 换新 key」
 // 的路径。**Repeat 没有这个概念**：key 变了就是删旧插新，而被删掉的正好是视口
-// 顶端那一行。List.maintainVisibleContentPosition(true) 能不能在锚点行本身被
-// 删掉时守住位置，官方文档答不了——所以按下面这条判据把手动复位接回来，防的是
-// 「向上翻页跳到已加载页顶部」那个历史 bug。
+// 顶端那一行。官方文档现在已明确：API 20 起 Repeat 的懒加载场景也支持
+// List.maintainVisibleContentPosition(true)，它会保住可见区外的普通前插；但这里
+// 同时替换了**可见的边界行**，不在那条保证内，所以仍保留下面的精确判据作为
+// 静止状态下的兜底。用户正在拖动/惯性滚动时是否执行由 ChatPage 另行判断。
 //
 // 判据（三条同时成立才需要复位）：
 //   1. 新快照更长——真的多了行，而不是编辑/删除；

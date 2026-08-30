@@ -5,6 +5,7 @@ import { reuseParam } from '../../util/reuseParams';
 import {
   cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
 } from '../../util/nextFrameQueue';
+import { liveThumbPath } from '../../util/liveThumbPath';
 
 // 探针：一次滑动里有多少媒体行被回收又复用，以及有没有因为换了文件而清图。
 //
@@ -46,7 +47,7 @@ export struct LiveThumbImage {
   // 落地，订阅都会按新值自己纠正。LiveSenderAvatar 早就是这么做的，这一族其余
   // 组件当时漏了。
   @Prop @Watch('onFileIdChanged') fileId: number = 0;
-  @Prop initialPath: string = '';
+  @Prop @Watch('onInitialPathChanged') initialPath: string = '';
   @Prop boxWidth: number = 0;
   @Prop boxHeight: number = 0;
   @Prop radius: number = 0;
@@ -59,28 +60,36 @@ export struct LiveThumbImage {
   private unsubThumb: (() => void) | null = null;
   // 订阅此刻挂在哪个文件上。两个用途：① 同 key 短路，让 attach 幂等；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 到没到。
-  // -1 = 没挂；0 是合法值（无缩略图文件）。
+  // -1 = 没挂；0 表示只有 initialPath、没有可订阅的缩略图文件。
   private attachedFileId: number = -1;
   // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
   private frameOwnerId: number = nextFrameOwnerId();
 
   private attach(fileId: number, initialPath: string): void {
+    // fileId=0 cannot publish through mediaThumbChannel. In this path-only
+    // mode initialPath is the source identity, so changing it must replace an
+    // old row's image instead of preserving the old non-empty path.
+    if (fileId === 0) {
+      if (this.attachedFileId !== 0) {
+        this.detach();
+      }
+      this.attachedFileId = 0;
+      this.path = liveThumbPath(fileId, '', this.path, initialPath,
+        this.attachedFileId === fileId);
+      return;
+    }
     if (this.unsubThumb !== null && this.attachedFileId === fileId) {
       // 已经挂在同一个文件上：订阅原样留着（一整轮退订+重订阅是滚动时的每行常数
       // 开销），只重新播种一次现值——回收期间 path 可能被清过。
       // 与 LiveSenderAvatar.attachAvatarChannel 的同 key 短路是同一套做法。
       const seeded: string = thumbPathFor(fileId);
-      if (seeded !== '') {
-        this.path = seeded;
-      } else if (this.path === '' && initialPath !== '') {
-        this.path = initialPath;
-      }
+      this.path = liveThumbPath(fileId, seeded, this.path, initialPath, true);
       return;
     }
     this.detach();
     this.attachedFileId = fileId;
     const known: string = thumbPathFor(fileId);
-    this.path = known !== '' ? known : initialPath;
+    this.path = liveThumbPath(fileId, known, this.path, initialPath, false);
     this.unsubThumb = subscribeThumbPath(fileId, (path: string): void => {
       this.path = path;
     });
@@ -100,6 +109,17 @@ export struct LiveThumbImage {
   private onFileIdChanged(): void {
     cancelNextFrame(this.frameOwnerId);
     this.attach(this.fileId, '');
+  }
+
+  // Same message, same fileId=0, but a local/full-size path was backfilled.
+  // No channel event and no fileId @Watch fires in that case, so initialPath
+  // must drive the image directly. For non-zero IDs the file-scoped channel is
+  // authoritative; ignoring their independently-landed @Prop also avoids
+  // pairing a new path with the previous row's fileId during reuse.
+  private onInitialPathChanged(): void {
+    if (this.fileId === 0) {
+      this.attach(0, this.initialPath);
+    }
   }
 
   aboutToAppear(): void {

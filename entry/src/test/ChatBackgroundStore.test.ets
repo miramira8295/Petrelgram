@@ -6,8 +6,11 @@ import { ChatStore } from '../main/ets/store/ChatStore';
 import { ChatThemeStore } from '../main/ets/store/ChatThemeStore';
 import {
   ChatBackgroundState, ChatBackgroundStore, defaultChatBackgroundSnapshot, emptyChatBackground,
-  invalidateDefaultSnapshot
+  invalidateDefaultSnapshot, migrateLegacyAppWallpaperStates, parseSnapshot, serialiseSnapshot
 } from '../main/ets/store/ChatBackgroundStore';
+import {
+  KEY_APP_BG_LIGHT, KEY_APP_BG_STATE_LIGHT
+} from '../main/ets/store/AppSettings';
 import { gradientStops } from '../main/ets/util/backgroundPresentation';
 
 class FakeBridge implements TdBridge {
@@ -92,6 +95,32 @@ export default function chatBackgroundStoreTest() {
 
     it('gradient stops are empty for no colors', 0, () => {
       expect(gradientStops([]).length).assertEqual(0);
+    });
+
+    it('legacy app wallpaper path migrates to the slot snapshot once', 0, () => {
+      AppStorage.setOrCreate(KEY_APP_BG_LIGHT, '/data/legacy/app_bg_light_1.jpg');
+      AppStorage.setOrCreate(KEY_APP_BG_STATE_LIGHT, '');
+      migrateLegacyAppWallpaperStates();
+      const migrated: ChatBackgroundState | null = parseSnapshot(
+        AppStorage.get<string>(KEY_APP_BG_STATE_LIGHT) ?? '');
+      expect(migrated !== null).assertTrue();
+      expect(migrated?.path ?? '').assertEqual('/data/legacy/app_bg_light_1.jpg');
+      expect(AppStorage.get<string>(KEY_APP_BG_LIGHT) ?? '').assertEqual('');
+      AppStorage.setOrCreate(KEY_APP_BG_STATE_LIGHT, '');
+    });
+
+    it('legacy app wallpaper never overwrites a new slot value', 0, () => {
+      const current: ChatBackgroundState = emptyChatBackground();
+      current.custom = true;
+      current.path = '/data/current/app_bg_light_2.jpg';
+      AppStorage.setOrCreate(KEY_APP_BG_STATE_LIGHT, serialiseSnapshot(current));
+      AppStorage.setOrCreate(KEY_APP_BG_LIGHT, '/data/legacy/app_bg_light_1.jpg');
+      migrateLegacyAppWallpaperStates();
+      const kept: ChatBackgroundState | null = parseSnapshot(
+        AppStorage.get<string>(KEY_APP_BG_STATE_LIGHT) ?? '');
+      expect(kept?.path ?? '').assertEqual('/data/current/app_bg_light_2.jpg');
+      expect(AppStorage.get<string>(KEY_APP_BG_LIGHT) ?? '').assertEqual('');
+      AppStorage.setOrCreate(KEY_APP_BG_STATE_LIGHT, '');
     });
 
     it('starts empty and falls back to the app resource', 0, () => {

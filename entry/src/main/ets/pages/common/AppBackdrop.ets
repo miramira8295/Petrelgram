@@ -1,5 +1,5 @@
 import {
-  BG_PATTERN_DEFAULT, KEY_APP_BG_BLUR, KEY_APP_BG_DIM, KEY_APP_BG_PATTERN_DARK,
+  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_APP_BG_BLUR, KEY_APP_BG_DIM, KEY_APP_BG_PATTERN_DARK,
   KEY_APP_BG_PATTERN_LIGHT, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
@@ -29,7 +29,7 @@ export struct AppBackdrop {
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) stateLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) stateDark: string = '';
-  @StorageProp(KEY_APP_BG_BLUR) blurAmount: number = 0;
+  @StorageProp(KEY_APP_BG_BLUR) blurAmount: number = BG_BLUR_DEFAULT;
   @StorageProp(KEY_APP_BG_DIM) dimAmount: number = 0;
   @StorageProp(KEY_APP_BG_PATTERN_LIGHT) patternLight: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_APP_BG_PATTERN_DARK) patternDark: number = BG_PATTERN_DEFAULT;

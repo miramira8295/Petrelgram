@@ -12,7 +12,8 @@ import {
 } from '../../util/backgroundPresentation';
 import {
   backgroundStateOf, BackgroundStateResult, ChatBackgroundState, defaultChatBackgroundSnapshot,
-  emptyChatBackground, invalidateDefaultSnapshot, serialiseSnapshot, referencedWallpaperPaths
+  emptyChatBackground, invalidateDefaultSnapshot, localWallpaperState, parseSnapshot,
+  serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
 import { inflateTgvIfNeeded } from '../../util/gunzipTgs';
 import {
@@ -33,9 +34,11 @@ import {
 } from '../../util/wallpaperSlot';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
+import { WallpaperPreview } from './WallpaperPreview';
 
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 118;
+const PREVIEW_HEIGHT: number = 188;
 
 interface GalleryRow {
   preview: BackgroundPreview;
@@ -68,6 +71,9 @@ struct ChatBackgroundPage {
   @State patternPct: number = BG_PATTERN_DEFAULT;
   // 深色遮罩强度（0..CHAT_DIM_MAX）。滑杆按百分比显示，存的是 0..1 的小数。
   @State chatDim: number = 0;
+  // 当前槽位真正生效的壁纸。纹理滑块的显隐和实时预览都只读这一份，不能再去
+  // 猜“聊天默认背景”——APP 槽位本来就不经过那份状态。
+  @State currentBackground: ChatBackgroundState = emptyChatBackground();
   @State applyingId: string = '';
   // 本机自选壁纸的沙箱路径（'' = 没设）。只在全局背景页出现（chatId === 0）：
   // 它压过账号默认背景，但让位于会话自己的背景，做成"某个会话专属的本地图"
@@ -178,6 +184,12 @@ struct ChatBackgroundPage {
       : applyRemoteBackground(row.raw, this.forDark);
     task.then((): void => {
       if (!this.active) { return; }
+      const parsed: BackgroundStateResult = backgroundStateOf(row.raw);
+      if (parsed.state !== null) {
+        // TDLib 的默认背景更新会异步回流；先用手里的选择刷新显隐与预览，避免
+        // 刚选中图案时纹理滑杆仍要退出重进才出现。
+        this.currentBackground = parsed.state;
+      }
       this.applyingId = '';
       promptAction.showToast({
         message: this.chatId !== 0
@@ -198,11 +210,10 @@ struct ChatBackgroundPage {
     });
   }
 
-  private setBlur(value: number, mode: SliderChangeMode): void {
-    if (mode !== SliderChangeMode.End) {
-      return;
-    }
+  private setBlur(value: number): void {
     this.bgBlur = Math.round(value);
+    // 官方 Slider 示例也是每次 onChange 都更新 @State。这里同时写回当前槽位，
+    // 点击轨道、键盘/表冠调节和拖动中途都不会再落掉最终值。
     setNumber(this.slotKeys().blur, this.bgBlur);
   }
 
@@ -253,16 +264,14 @@ struct ChatBackgroundPage {
   // 选一张已上传的图给当前槽位。**不复制文件**——共用同一份。
   private useUploaded(path: string): void {
     const previous: string = this.localPath;
+    const state: ChatBackgroundState = localWallpaperState(path);
     if (slotIsApp(this.effectiveSlot())) {
-      const state: ChatBackgroundState = emptyChatBackground();
-      state.custom = true;
-      state.path = path;
-      state.blurred = true;
       setString(this.slotKeys().state, serialiseSnapshot(state));
     } else {
       setString(this.localKey(), path);
     }
     this.localPath = path;
+    this.currentBackground = state;
     this.removeQuietly(previous);
     this.afterLocalChange();
     promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
@@ -298,7 +307,25 @@ struct ChatBackgroundPage {
   }
 
   private loadLocal(): void {
+    if (slotIsApp(this.effectiveSlot())) {
+      const state: ChatBackgroundState | null = parseSnapshot(
+        AppStorage.get<string>(this.slotKeys().state) ?? '');
+      this.currentBackground = state ?? emptyChatBackground();
+      if (state === null || state.path === '') {
+        this.localPath = '';
+        return;
+      }
+      const slash: number = Math.max(state.path.lastIndexOf('/'), state.path.lastIndexOf('\\'));
+      const name: string = state.path.substring(slash + 1);
+      // 原生图案/照片也有本地缓存 path，但只有相册上传文件才属于“本机壁纸”，
+      // 否则会被错误标成已上传、还会出现一个能删除 TDLib 缓存的“移除”按钮。
+      this.localPath = isUploadedWallpaperFile(name) ? state.path : '';
+      return;
+    }
     this.localPath = AppStorage.get<string>(this.localKey()) ?? '';
+    this.currentBackground = this.localPath !== ''
+      ? localWallpaperState(this.localPath)
+      : defaultChatBackgroundSnapshot(this.forDark);
   }
 
   private pickLocal(): void {
@@ -339,8 +366,10 @@ struct ChatBackgroundPage {
         state.path = dest;
         state.blurred = true;
         setString(this.slotKeys().state, serialiseSnapshot(state));
+        this.currentBackground = state;
       } else {
         setString(this.localKey(), dest);
+        this.currentBackground = localWallpaperState(dest);
       }
       this.localPath = dest;
       this.removeQuietly(previous);
@@ -356,8 +385,10 @@ struct ChatBackgroundPage {
     const previous: string = this.localPath;
     if (slotIsApp(this.effectiveSlot())) {
       setString(this.slotKeys().state, '');
+      this.currentBackground = emptyChatBackground();
     } else {
       setString(this.localKey(), '');
+      this.currentBackground = defaultChatBackgroundSnapshot(this.forDark);
     }
     this.localPath = '';
     this.removeQuietly(previous);
@@ -367,6 +398,9 @@ struct ChatBackgroundPage {
   // 纯本地改动不会有 TDLib update 推回来，聊天页靠这个代次重算；快照也要作废，
   // 否则下次进会话会先闪一帧旧背景。
   private afterLocalChange(): void {
+    if (slotIsApp(this.effectiveSlot())) {
+      return;
+    }
     bumpLocalWallpaperEpoch();
     invalidateDefaultSnapshot(this.forDark);
   }
@@ -388,6 +422,7 @@ struct ChatBackgroundPage {
 
   private async applyToAppSlot(row: GalleryRow): Promise<void> {
     try {
+      const previous: string = this.localPath;
       const parsed: BackgroundStateResult = backgroundStateOf(row.raw);
       if (parsed.state === null) {
         throw new Error(`unpaintable background ${parsed.typeName}`);
@@ -398,6 +433,9 @@ struct ChatBackgroundPage {
         state.path = await inflateTgvIfNeeded(await downloadFileToPath(parsed.fileId));
       }
       setString(this.slotKeys().state, serialiseSnapshot(state));
+      this.currentBackground = state;
+      this.localPath = '';
+      this.removeQuietly(previous);
       if (!this.active) {
         return;
       }
@@ -416,12 +454,25 @@ struct ChatBackgroundPage {
   private reset(): void {
     if (this.applyingId !== '') { return; }
     this.applyingId = 'reset';
+    if (slotIsApp(this.effectiveSlot())) {
+      const previous: string = this.localPath;
+      setString(this.slotKeys().state, '');
+      this.localPath = '';
+      this.currentBackground = emptyChatBackground();
+      this.removeQuietly(previous);
+      this.applyingId = '';
+      promptAction.showToast({ message: $r('app.string.cb_reset_done'), duration: 1500 });
+      return;
+    }
     this.invalidateSnapshotIfDefault();
     const task: Promise<void> = this.chatId !== 0
       ? clearChatBackground(this.chatId)
       : resetDefaultBackground(this.forDark);
     task.then((): void => {
       if (!this.active) { return; }
+      this.currentBackground = this.chatId !== 0
+        ? defaultChatBackgroundSnapshot(this.forDark)
+        : emptyChatBackground();
       this.applyingId = '';
       promptAction.showToast({
         message: this.chatId !== 0 ? $r('app.string.cb_reset_to_global') : $r('app.string.cb_reset_done'), duration: 1500
@@ -510,9 +561,29 @@ struct ChatBackgroundPage {
   }
 
   // 当前生效的背景是不是图案。整图壁纸没有图案可言，滑块不该出现。
-  // 读的是全局那份快照——这个页面自己只管"能选哪些"，不持有当前状态。
   private currentIsPattern(): boolean {
-    return defaultChatBackgroundSnapshot(this.forDark).isPattern;
+    return this.currentBackground.isPattern;
+  }
+
+  private previewWidth(): number {
+    return Math.max(1, this.screenW - 24 - contentSideGutter(this.screenW) * 2);
+  }
+
+  @Builder
+  previewCard() {
+    Stack() {
+      WallpaperPreview({
+        wallpaper: this.currentBackground,
+        blurAmount: this.bgBlur,
+        patternStrength: this.patternPct,
+        dimAmount: this.chatDim,
+        dark: this.forDark,
+        previewW: this.previewWidth(),
+        previewH: PREVIEW_HEIGHT
+      });
+    }
+    .width('100%').height(PREVIEW_HEIGHT).borderRadius(CARD_RADIUS).clip(true)
+    .border({ width: 0.7, color: $r('app.color.divider') });
   }
 
   @Builder
@@ -565,7 +636,7 @@ struct ChatBackgroundPage {
         .trackColor($r('app.color.divider'))
         .selectedColor(COLOR_PRIMARY)
         .blockColor(COLOR_PRIMARY)
-        .onChange((value: number, mode: SliderChangeMode): void => { this.setBlur(value, mode); });
+        .onChange((value: number): void => { this.setBlur(value); });
     }
     .width('100%')
     .padding({ left: 14, right: 14, top: 12, bottom: 12 })
@@ -632,6 +703,7 @@ struct ChatBackgroundPage {
       } else {
         Scroll() {
           Column({ space: 12 }) {
+            this.previewCard();
             if (this.chatId === 0) {
               Row({ space: 10 }) {
                 SymbolGlyph($r('sys.symbol.picture')).fontSize(17).fontColor([COLOR_PRIMARY]);

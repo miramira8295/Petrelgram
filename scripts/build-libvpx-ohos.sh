@@ -52,6 +52,7 @@ log() { printf '\033[36m[libvpx]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[libvpx] %s\033[0m\n' "$*" >&2; exit 1; }
 
 [ -d "$OHOS_NATIVE/llvm/bin" ] || die "找不到 OHOS native 工具链：$OHOS_NATIVE"
+[ -x "$OHOS_NATIVE/llvm/bin/clang" ] || die "找不到 OHOS clang：$OHOS_NATIVE/llvm/bin/clang"
 
 mkdir -p "$BUILD_ROOT"
 
@@ -70,6 +71,40 @@ TOOLCHAIN="$OHOS_NATIVE/llvm/bin"
 SYSROOT="$OHOS_NATIVE/sysroot"
 TARGET_TRIPLE="aarch64-linux-ohos"
 
+# libvpx 的 configure 会故意把 CC/CXX/CFLAGS 做未加引号的单词拆分，再交给
+# check_cmd 执行。因此 DevEco Studio 的默认 Windows 安装目录（名字中有空格）会
+# 被截成 `/d/Applications/DevEco`，即使调用本脚本时正确引用了 DEVECO_SDK_ROOT
+# 也没用。给每个工具做一个位于 /tmp、路径中无空格的薄包装，同时把同样会被
+# 拆开的 --sysroot 固定在 clang 包装里。
+TOOL_WRAPPER_DIR="$(mktemp -d /tmp/telegramforharmony-libvpx-toolchain.XXXXXX)"
+cleanup_tool_wrappers() {
+    rm -f "$TOOL_WRAPPER_DIR/clang" "$TOOL_WRAPPER_DIR/clang++" \
+        "$TOOL_WRAPPER_DIR/llvm-ar" "$TOOL_WRAPPER_DIR/llvm-ranlib" \
+        "$TOOL_WRAPPER_DIR/llvm-nm"
+    rmdir "$TOOL_WRAPPER_DIR"
+}
+trap cleanup_tool_wrappers EXIT
+
+write_tool_wrapper() {
+    local wrapper="$1"
+    local tool="$2"
+    shift 2
+    {
+        printf '#!/usr/bin/env bash\nexec '
+        printf '%q ' "$tool" "$@"
+        printf '"$@"\n'
+    } > "$wrapper"
+    chmod +x "$wrapper"
+}
+
+write_tool_wrapper "$TOOL_WRAPPER_DIR/clang" "$TOOLCHAIN/clang" \
+    "--target=$TARGET_TRIPLE" "--sysroot=$SYSROOT" "-ffile-prefix-map=$SRC_DIR=."
+write_tool_wrapper "$TOOL_WRAPPER_DIR/clang++" "$TOOLCHAIN/clang++" \
+    "--target=$TARGET_TRIPLE" "--sysroot=$SYSROOT" "-ffile-prefix-map=$SRC_DIR=."
+write_tool_wrapper "$TOOL_WRAPPER_DIR/llvm-ar" "$TOOLCHAIN/llvm-ar"
+write_tool_wrapper "$TOOL_WRAPPER_DIR/llvm-ranlib" "$TOOLCHAIN/llvm-ranlib"
+write_tool_wrapper "$TOOL_WRAPPER_DIR/llvm-nm" "$TOOLCHAIN/llvm-nm"
+
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
@@ -82,14 +117,13 @@ cd "$OUT_DIR"
 #
 # --enable-vp9-highbitdepth 不开：Telegram 贴纸是 8bit，开了平白多一份代码路径。
 log "configure"
-CC="$TOOLCHAIN/clang" \
-CXX="$TOOLCHAIN/clang++" \
-AR="$TOOLCHAIN/llvm-ar" \
-RANLIB="$TOOLCHAIN/llvm-ranlib" \
-NM="$TOOLCHAIN/llvm-nm" \
-LD="$TOOLCHAIN/clang" \
-CFLAGS="--target=$TARGET_TRIPLE --sysroot=$SYSROOT -O2 -fPIC -ffile-prefix-map=$SRC_DIR=." \
-LDFLAGS="--target=$TARGET_TRIPLE --sysroot=$SYSROOT" \
+CC="$TOOL_WRAPPER_DIR/clang" \
+CXX="$TOOL_WRAPPER_DIR/clang++" \
+AR="$TOOL_WRAPPER_DIR/llvm-ar" \
+RANLIB="$TOOL_WRAPPER_DIR/llvm-ranlib" \
+NM="$TOOL_WRAPPER_DIR/llvm-nm" \
+LD="$TOOL_WRAPPER_DIR/clang" \
+CFLAGS="-O2 -fPIC" \
 "$SRC_DIR/configure" \
     --target=arm64-linux-gcc \
     --enable-vp9-decoder \
@@ -105,7 +139,14 @@ LDFLAGS="--target=$TARGET_TRIPLE --sysroot=$SYSROOT" \
     --disable-shared \
     --enable-pic \
     --disable-runtime-cpu-detect \
-    > "$OUT_DIR/configure.log" 2>&1 || { tail -30 "$OUT_DIR/configure.log"; die "configure 失败"; }
+    > "$OUT_DIR/configure.log" 2>&1 || {
+        tail -30 "$OUT_DIR/configure.log"
+        [ ! -f "$OUT_DIR/config.log" ] || {
+            printf '\n[libvpx] config.log 最后 40 行：\n' >&2
+            tail -40 "$OUT_DIR/config.log" >&2
+        }
+        die "configure 失败"
+    }
 
 log "编译"
 make -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)" > "$OUT_DIR/build.log" 2>&1 \

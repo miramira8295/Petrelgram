@@ -90,11 +90,19 @@ export struct ChatListView {
   // 右滑（从左边拉出）：已读 / 标记未读。
   @Builder
   readSwipe(chat: ChatEntry) {
-    this.swipeButton(
-      this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
-      this.rowUnread(chat) ? 'sys.symbol.checkmark_circle' : 'sys.symbol.circle_badge',
-      SWIPE_READ_BG,
-      (): void => this.toggleRead(chat));
+    Row() {
+      this.swipeButton(
+        this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
+        this.rowUnread(chat) ? 'sys.symbol.checkmark_circle' : 'sys.symbol.circle_badge',
+        SWIPE_READ_BG,
+        (): void => this.toggleRead(chat));
+    }
+    // ChatRow 是左右 12vp、上下 3vp 的真卡片；滑动动作也必须落在同一轮廓里，
+    // 否则卡片滑走后会露出一块贴屏边的整行矩形。
+    .height('calc(100% - 6vp)')
+    .margin({ left: 12, top: 3, bottom: 3 })
+    .borderRadius(16)
+    .clip(true);
   }
 
   // 左滑（从右边拉出）：静音开关 + 归档 / 取消归档。滑到底触发的是归档那一个。
@@ -111,7 +119,11 @@ export struct ChatListView {
         'sys.symbol.archivebox',
         SWIPE_ARCHIVE_BG,
         (): void => this.toggleArchive(chat));
-    }.height('100%');
+    }
+    .height('calc(100% - 6vp)')
+    .margin({ right: 12, top: 3, bottom: 3 })
+    .borderRadius(16)
+    .clip(true);
   }
 
   @Builder

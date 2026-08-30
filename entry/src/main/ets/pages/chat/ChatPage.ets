@@ -103,7 +103,7 @@ import {
 import { stackFromEndWanted } from '../../util/stackFromEnd';
 import {
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_RETRY_MS, AnchorRectSnapshot, AnchorRestorePlan,
-  shouldRetryAnchorRestore,
+  shouldCapturePrependAnchor, shouldRetryAnchorRestore,
   INVALID_ANCHOR_RECT, planAnchorRestore
 } from '../../util/anchorRestore';
 import {
@@ -2709,20 +2709,23 @@ export struct ChatPage {
       publishMessageRowPresentations(this.chatId, groups);
       // ── 向上翻页的锚点复位 ──────────────────────────────────────────
       //
-      // P4 迁 Repeat 时把这一段删了，并留下一句"只有相册跨页合并那一行的 key 会
-      // 变"——**那句话是错的**：每次向上翻页，边界那一行的 key 都会变（判据与
-      // 完整推导见 AlbumGroupDataSource.prependBreaksAnchor 的注释）。key 变了在
-      // Repeat 之下就是删旧插新，被删的正是视口顶端那一行，
-      // maintainVisibleContentPosition(true) 守不守得住文档答不了。所以按那条
-      // 判据把手动复位接回来，防的是"向上翻页跳到已加载页顶部"那个历史 bug。
+      // API 20 起官方已经明确：maintainVisibleContentPosition(true) 支持 Repeat
+      // 的懒加载场景，普通的可见区外前插由框架保位。这里只为「边界行 key 改变、
+      // 可见节点被替换」保留手工兜底；它不在官方对区外插入/删除的保证内。
       //
       // 判据不成立时**不复位**：纯追加、纯编辑、以及 key 没变的前插，都由
       // maintainVisibleContentPosition 自己守住；在那些情形上强行 scrollToIndex
       // 会打断用户的惯性滑动（当年"加载更多时一顿"就是这么来的）。
       let prependAnchorId: number = 0;
       let prependAnchorY: number = 0;
-      if (this.didInitialScroll && this.anchorIndexFresh() &&
-        prependBreaksAnchor(this.groups, groups)) {
+      const boundaryRowReplaced: boolean = prependBreaksAnchor(this.groups, groups);
+      if (shouldCapturePrependAnchor({
+        didInitialScroll: this.didInitialScroll,
+        anchorIndexFresh: this.anchorIndexFresh(),
+        boundaryRowReplaced: boundaryRowReplaced,
+        touchActive: this.listTouchActive,
+        userScrollActive: this.listUserScrollActive
+      })) {
         const visibleIndex: number = this.curStartIdx;
         if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
           const y: number = this.anchorItemY(visibleIndex);
@@ -4636,7 +4639,7 @@ export struct ChatPage {
     if (targetIndex < 0) {
       return;
     }
-    this.restoreScrollAnchor(targetIndex, itemY);
+    this.restoreScrollAnchor(targetIndex, itemY, true);
   }
 
   // A newer page is appended after the current window. The list is
@@ -4731,14 +4734,27 @@ export struct ChatPage {
   // 而框架（maintainVisibleContentPosition / stackFromEnd）其实已经把位置保住了。
   // 现在量到就补差值，量不到就下一帧再量（最多三次），用尽仍量不到就放弃——
   // 依据见 attemptAnchorRestore 里那段真机 A/B 数据。
-  private restoreScrollAnchor(targetIndex: number, itemY: number): void {
+  private restoreScrollAnchor(
+    targetIndex: number, itemY: number, cancelOnUserScroll: boolean = false
+  ): void {
     const seq: number = ++this.prependRestoreSeq;
-    this.attemptAnchorRestore(seq, targetIndex, itemY, 0);
+    this.attemptAnchorRestore(seq, targetIndex, itemY, 0, cancelOnUserScroll);
   }
 
-  private attemptAnchorRestore(seq: number, targetIndex: number, itemY: number, attempt: number): void {
+  private attemptAnchorRestore(
+    seq: number,
+    targetIndex: number,
+    itemY: number,
+    attempt: number,
+    cancelOnUserScroll: boolean
+  ): void {
     setTimeout((): void => {
       if (seq !== this.prependRestoreSeq || this.pendingJumpId !== 0 || this.pendingScrollBottom) {
+        return;
+      }
+      if (cancelOnUserScroll && (this.listTouchActive || this.listUserScrollActive)) {
+        logW(`[AnchorRestore] skip user-owned idx=${targetIndex}` +
+          ` touch=${this.listTouchActive} scroll=${this.listUserScrollActive}`);
         return;
       }
       // 非法下标返回全 0 矩形（faqs-arkui-572），异常按同样处理——两条都落到
@@ -4775,20 +4791,15 @@ export struct ChatPage {
       if (shouldRetryAnchorRestore(plan.mode, attempt)) {
         logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex}` +
           ` oldY=${Math.round(itemY)}`);
-        this.attemptAnchorRestore(seq, targetIndex, itemY, attempt + 1);
+        this.attemptAnchorRestore(seq, targetIndex, itemY, attempt + 1, cancelOnUserScroll);
         return;
       }
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
         // ── 量不到时**不能放弃**，改用不依赖测量的定位 ─────────────────────
         //
-        // 【为什么原来的"放弃"是错的】此前的假设是"框架已经用
-        // maintainVisibleContentPosition 守住了位置，量不到就等于不用补"。这个假设
-        // 不成立——SDK 对该属性的原文是：
-        //   "The visible content position will only remain unchanged when
-        //    **LazyForEach** is used to insert or delete data outside the visible
-        //    area."
-        // 而本页早已迁到 Repeat.virtualScroll。也就是说这个属性**自迁移那天起就是
-        // 空操作**，手动复位不是保险、是唯一的机制。
+        // API 20 起 maintainVisibleContentPosition 已支持 Repeat.virtualScroll，
+        // 普通区外前插由框架保位；能走到这里的是边界可见行因 key 改变而被替换的
+        // 兜底。若期间用户开始拖动，上面的 user-owned 守卫已经放弃本次人工定位。
         //
         // 真机 [AnchorAudit] 也把这件事钉死了：五次 give-up 的 offDelta 分别是
         // 8/-2/41/0/126（用户没在滑），而 250ms 后锚点行**仍然不在屏上**——滚动
@@ -9925,6 +9936,8 @@ export struct ChatPage {
             this.imeTailPinned = false;
             this.imeLayoutSeq++;
             this.listTouchActive = true;
+            // 新手势接管视口，任何上一份快照排队中的人工锚点定位都必须作废。
+            this.prependRestoreSeq++;
             this.olderArmed = true;
             // 向下分页**不**在这里上膛。一次 tap 不是滚动，而按下之后紧随的任何
             // 一次 onScrollIndex（包括锚点复位这种程序性位移引起的）都能把这一枪

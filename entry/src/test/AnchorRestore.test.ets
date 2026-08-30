@@ -2,10 +2,38 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   planAnchorRestore, INVALID_ANCHOR_RECT,
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_FALLBACK, AnchorRectSnapshot,
-  ANCHOR_RESTORE_ATTEMPTS, shouldRetryAnchorRestore
+  ANCHOR_RESTORE_ATTEMPTS, PrependAnchorCaptureInput, shouldCapturePrependAnchor,
+  shouldRetryAnchorRestore
 } from '../main/ets/util/anchorRestore';
 
+function prependInput(touchActive: boolean, userScrollActive: boolean): PrependAnchorCaptureInput {
+  return {
+    didInitialScroll: true,
+    anchorIndexFresh: true,
+    boundaryRowReplaced: true,
+    touchActive,
+    userScrollActive
+  };
+}
+
 export default function anchorRestoreTest() {
+  describe('shouldCapturePrependAnchor', () => {
+    it('只在静止且边界可见行被替换时保留人工兜底', 0, (): void => {
+      expect(shouldCapturePrependAnchor(prependInput(false, false))).assertTrue();
+    });
+
+    it('手指拖动和惯性滚动都由用户拥有，不能反向复位', 0, (): void => {
+      expect(shouldCapturePrependAnchor(prependInput(true, true))).assertFalse();
+      expect(shouldCapturePrependAnchor(prependInput(false, true))).assertFalse();
+    });
+
+    it('普通区外前插交给 API20 maintainVisibleContentPosition', 0, (): void => {
+      const value: PrependAnchorCaptureInput = prependInput(false, false);
+      value.boundaryRowReplaced = false;
+      expect(shouldCapturePrependAnchor(value)).assertFalse();
+    });
+  });
+
   describe('planAnchorRestore', () => {
     it('行还在显示区：只走一次 scrollBy，不回退', 0, (): void => {
       // 发布前行的顶边在视口顶上方 30vp；发布后框架把它放到了 -18vp。

@@ -19,12 +19,15 @@ import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
-  COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
+  COLOR_DIVIDER, COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logI } from '../../util/log';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
@@ -325,16 +328,30 @@ export struct ChatRow {
   // Native pressed feedback starts as soon as the finger goes down. Besides
   // making ordinary taps feel responsive, it also makes the long-press wait
   // visible before the context menu appears.
-  // 壁纸生效时行改成浮在壁纸上的半透明卡片（方案 1）。80% 不透明度让行内文字的
-  // 可读性和壁纸解耦——推导见 util/theme.mainCardFill。
+  // 只有 APP 壁纸生效时才给每一行挂玻璃：普通纯色页面继续走实色 surface，
+  // 避免在没有视觉收益时给滚动列表增加合成层。materialEpoch 虽然不参与数值
+  // 计算，但必须在这里读到，用户改厚度/光感后可复用行才会重新应用材质修饰器。
+  private rowGlassEnabled(): boolean {
+    return this.appWallpaperOn && this.materialEpoch >= 0;
+  }
+
+  private rowFill(pressed: boolean): ResourceColor {
+    const solid: ResourceColor = mainCardFill(this.appWallpaperOn, pressed);
+    return this.rowGlassEnabled() ? overlayGlassFill('card', solid) : solid;
+  }
+
+  private rowBackdropBlur(): number {
+    return this.rowGlassEnabled() ? overlayBackdropBlur('card') : 0;
+  }
+
   @Styles
   rowNormalStyle() {
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+    .backgroundColor(this.rowFill(false))
   }
 
   @Styles
   rowPressedStyle() {
-    .backgroundColor(mainCardFill(this.appWallpaperOn, true))
+    .backgroundColor(this.rowFill(true))
   }
 
   @Builder
@@ -504,7 +521,16 @@ export struct ChatRow {
         }
       }.alignItems(HorizontalAlign.End);
     }
-    .width('100%')
+    // 真卡片与其它一级页面共用 12vp 网格。壁纸生效时卡片交给现有 'card'
+    // 材质：API 26+ 是沉浸光感，低版本是随“材质厚度”变化的自绘毛玻璃；
+    // 用户关闭材质时 overlayGlassFill 会自然退回原来的可读性实底。
+    .width('calc(100% - 24vp)')
+    .margin({ left: 12, right: 12, top: 3, bottom: 3 })
+    .borderRadius(16)
+    .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
+    .backdropBlur(this.rowBackdropBlur())
+    .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled()))
+    .clip(true)
     .constraintSize({ minHeight: 72 })
     .padding({ left: ROW_PAD_H, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
     .alignItems(VerticalAlign.Center)
