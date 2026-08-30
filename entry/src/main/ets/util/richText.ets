@@ -478,3 +478,53 @@ export function messageUrls(text: string, entities: TdObject[]): string[] {
   }
   return out;
 }
+
+// 分段在 ForEach 里的键。
+//
+// **不能只有序号和 kind。** 原来写的是 `seg_${i}_${seg.kind}`——而 kind 只有
+// 'text' | 'pre' | 'quote' 三种取值，是**类型标签，不是内容**。一个「每条都是
+// 一段带话题标签的纯文本」的频道里，每条消息都算出 `seg_0_text`，逐字相同。
+//
+// ForEach 的契约是「键不变就复用已有组件、**不重新执行子构建函数**」。于是分段
+// 那一层的构建函数不重跑，里面 `ForEach(seg.runs, …)` 的数据源还是上一条消息的
+// runs——run 级的键虽然带全文（`run_${i}_${r.offset}_${r.text}`），也**根本没有
+// 机会被求值**。正文因此停在上一条消息上。
+//
+// 而相册的图这一层已经按身份重建了（见 util/albumCellKey），两边一错开，用户
+// 看到的就是**「图是这一条的、字是上一条的」**——真机实报的「文图对不上」，
+// 而且只在格式一致的频道上犯，因为那种频道里每条消息的分段结构恰好都一样。
+//
+// 内容从哪来：'pre' 的正文在 seg.text，'text' 的在 runs 里，'quote' 两边都有。
+// 全折进去。另外几个字段决定这一段画成什么形状（可展开的引用、代码块的语言、
+// 是不是最后一段——它决定要不要给时间戳留位），所以一并进键。
+//
+// 取指纹而不是原文：键会被 ForEach 一直留着，一条几百字的说明乘以可见行数不划算；
+// 而 parseFormattedText 本来每帧就要把同一串字符走一遍，多算一次 djb2 可以忽略。
+function segmentFingerprint(seg: RichSegment): string {
+  let h: number = 5381;
+  const mix = (s: string): void => {
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
+    }
+    h = ((h << 5) + h + 1) & 0x7fffffff; // 分隔符，免得 'ab'+'c' 与 'a'+'bc' 撞
+  };
+  mix(seg.text);
+  for (const run of seg.runs) {
+    mix(run.text);
+    // 只混文字**不够**：同一句话这次挂 textUrl A、下次挂 textUrl B，或者这次加粗
+    // 下次不加粗、这次是剧透下次不是——文字一模一样而实体不同的话，键还是会撞，
+    // 分段子树不重建，点上去打开的就是**上一条消息的链接**。样式位压成一个字符
+    // 一起混进去。
+    mix(run.url);
+    mix(run.customEmojiId);
+    mix(`${run.bold ? 'b' : ''}${run.italic ? 'i' : ''}${run.underline ? 'u' : ''}` +
+      `${run.strike ? 's' : ''}${run.code ? 'c' : ''}${run.spoiler ? 'p' : ''}` +
+      `${run.link ? 'l' : ''}`);
+  }
+  return h.toString(36);
+}
+
+export function richSegmentKey(index: number, seg: RichSegment): string {
+  return `seg_${index}_${seg.kind}_${seg.offset}_${seg.expandable ? 'x' : '-'}` +
+    `_${seg.isLast ? 'z' : '-'}_${seg.language}_${segmentFingerprint(seg)}`;
+}

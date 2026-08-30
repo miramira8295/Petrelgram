@@ -38,7 +38,8 @@ import { GiveawayBubble } from './GiveawayBubble';
 import { formatClockTime } from '../../util/formatTime';
 import { formatFileSize } from '../../util/formatFileSize';
 import {
-  isUnformattedPlainText, messageUrls, parseFormattedText, RichSegment, RichRun
+  isUnformattedPlainText, messageUrls, parseFormattedText, richSegmentKey,
+  RichSegment, RichRun
 } from '../../util/richText';
 import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
 import { albumCellKey, albumRowKey } from '../../util/albumCellKey';
@@ -236,8 +237,15 @@ struct LiveSenderAvatar {
     this.recycledAvatarKey = '';
     if (nextId !== undefined && nextIsUser !== undefined) {
       this.attachAvatarChannel(nextId, nextIsUser, nextPath ?? '');
-      return;
     }
+    // **不 return。** params 那一份只是用来保住这一帧（避免空窗），它是不是和
+    // 本组件的 @Prop 同一代，离线证不出来：编译产物里 paramsGenerator_ 只在首建
+    // 分支赋值，而 @Prop 的刷新走 updateStateVarsOfChildByElmtId——**两条写入
+    // 路径、两个求值时刻**。若 params 是旧一代、而 @Prop 此刻已经是新值，
+    // @Watch 就再也不会触发（值没有变化），订阅从此钉死在上一条消息的发送者上，
+    // 而正文照常更新——群聊里就是「话是这个人说的、头像是上一个人的」，且永久。
+    // 所以后面**总是**再按 @Prop 补一次。同 key 短路让重复调用几乎零成本。
+
     // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：
     // aboutToReuse 执行时 params 恒带全 senderId/senderIsUser，present=0 一次
     // 都没出现，且 params 与此刻的 @Prop 从未不一致。也就是说这条兜底分支在
@@ -1723,7 +1731,9 @@ export struct MessageBubble {
         } else {
           this.richRuns(seg.runs, maxWidth, seg.isLast);
         }
-      }, (seg: RichSegment, i: number) => `seg_${i}_${seg.kind}`);
+      // 键必须带内容，取值与完整推导见 util/richText.richSegmentKey——只有序号和
+      // kind 的话，「格式一致的频道」里每条消息都算出同一串键，正文会停在上一条上。
+      }, (seg: RichSegment, i: number) => richSegmentKey(i, seg));
     }
     // minWidth 挂在这里（正文，content() 里最宽的孩子）而不是只挂外层 Column：
     // Column 给子节点做 Stretch 是按最宽的孩子量的，自己的 minWidth 钳位在那之后。
@@ -1880,7 +1890,11 @@ export struct MessageBubble {
                     this.onGameOpen(this.msg.id);
                   }
                 });
-            }, (btn: InlineBtn, btnIdx: number) => `ib_${rowIdx}_${btnIdx}_${btn.text}`);
+            // url / callbackData 也要进：两条消息的按钮文字常常一模一样（「查看原文」
+            // 之类），只有点击目标不同——只带 text 的话按钮不重建，点下去打开的是
+            // 上一条消息的目标。
+            }, (btn: InlineBtn, btnIdx: number) =>
+              `ib_${rowIdx}_${btnIdx}_${btn.text}_${btn.url}_${btn.callbackData}`);
           }.width('100%');
         // 行键也得带内容。**只修内层的按钮键是修不动的**：外层键不变时 ForEach
       // 连行的构建函数都不会重跑，内层那个 ForEach 拿的还是上一条消息的
@@ -2495,7 +2509,11 @@ export struct MessageBubble {
             .animation({ duration: this.reactionDuration(180), curve: Curve.EaseOut })
         );
         // key 里带上路径，位图下载完成后 chip 才会重建并显示图片。
-      }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}_${r.customEmojiPath}`);
+      // count 与 isChosen 必须进键：它们是这枚 chip 上**唯一会变的两样**，而键不变
+      // 时 ForEach 不重跑子构建函数（同 util/albumCellKey 那段推导）——点赞数会停在
+      // 上一条消息、或者停在自己点之前的那个数上。
+      }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}` +
+        `_${r.customEmojiPath}_${r.count}_${r.isChosen ? 'y' : 'n'}`);
     }
     // **Flex 开了 wrap 就按父容器最大宽测量**，只写 maxWidth 挡不住，alignSelf
     // 也挡不住（那只管对齐不管测量——上一版就是这么修的，1.4.0 里用户报仍然

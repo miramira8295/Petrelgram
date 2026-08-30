@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  isUnformattedPlainText, parseFormattedText, RichSegment
+  isUnformattedPlainText, parseFormattedText, richSegmentKey, RichSegment
 } from '../main/ets/util/richText';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
@@ -116,6 +116,54 @@ export default function richTextTest() {
       ]);
       expect(segments.length).assertEqual(1);
       expect(segments[0].runs[0].text).assertEqual('safe');
+    });
+
+    // 【文图对不上】分段那一层的 ForEach 键原来是 `seg_${i}_${seg.kind}`，而 kind
+    // 只有三种取值。一个「每条都是一段带话题标签的纯文本」的频道里，两条**内容
+    // 完全不同**的消息算出的键逐字相同 → ForEach 判定没变化 → 不重跑分段的构建
+    // 函数 → 里面那个按 run 分的 ForEach（键里带全文）连求值的机会都没有，正文
+    // 停在上一条消息上。而相册的图已经按身份重建了，两边错开就是「图是这一条的、
+    // 字是上一条的」。
+    it('两条结构相同但内容不同的消息，分段键必须不同', 0, () => {
+      const a: RichSegment[] = parseFormattedText('#北京 #十里堡 身高168体重50kg', []);
+      const b: RichSegment[] = parseFormattedText('#丰台 #宋家庄 身高160体重45kg', []);
+      expect(a.length).assertEqual(b.length);
+      expect(a[0].kind).assertEqual(b[0].kind);
+      // 老写法：`seg_0_${kind}` —— 两条一模一样，这正是那个 bug。
+      expect(`seg_0_${a[0].kind}`).assertEqual(`seg_0_${b[0].kind}`);
+      // 新写法必须分得开。
+      expect(richSegmentKey(0, a[0]) === richSegmentKey(0, b[0])).assertFalse();
+    });
+
+    // 反向不变式：同一段内容重新解析必须得到同一个键，否则每帧都在重建正文节点。
+    it('同一段内容的分段键稳定', 0, () => {
+      const text: string = '#朝阳 #青年路 备注：龙哥';
+      const first: RichSegment[] = parseFormattedText(text, []);
+      const again: RichSegment[] = parseFormattedText(text, []);
+      expect(richSegmentKey(0, first[0])).assertEqual(richSegmentKey(0, again[0]));
+    });
+
+    // 指纹要能分辨「同样的字符换个断法」——'ab'+'c' 不能和 'a'+'bc' 撞。
+    it('分段键的指纹带分隔符', 0, () => {
+      const one: RichSegment = {
+        kind: 'text', text: '', offset: 0, expandable: false, language: '', isLast: true,
+        runs: [
+          { offset: 0, text: 'ab', bold: false, italic: false, underline: false, strike: false,
+            code: false, spoiler: false, customEmojiId: '', link: false, url: '' },
+          { offset: 2, text: 'c', bold: false, italic: false, underline: false, strike: false,
+            code: false, spoiler: false, customEmojiId: '', link: false, url: '' }
+        ]
+      };
+      const two: RichSegment = {
+        kind: 'text', text: '', offset: 0, expandable: false, language: '', isLast: true,
+        runs: [
+          { offset: 0, text: 'a', bold: false, italic: false, underline: false, strike: false,
+            code: false, spoiler: false, customEmojiId: '', link: false, url: '' },
+          { offset: 1, text: 'bc', bold: false, italic: false, underline: false, strike: false,
+            code: false, spoiler: false, customEmojiId: '', link: false, url: '' }
+        ]
+      };
+      expect(richSegmentKey(0, one) === richSegmentKey(0, two)).assertFalse();
     });
   });
 }
