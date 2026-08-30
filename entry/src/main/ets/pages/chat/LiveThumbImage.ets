@@ -57,11 +57,28 @@ export struct LiveThumbImage {
   // 头像上的做法，这里是它漏掉的另一半）。-1 = 没有回收过；0 是合法值（无图）。
   private recycledFileId: number = -1;
   private unsubThumb: (() => void) | null = null;
+  // 订阅此刻挂在哪个文件上。两个用途：① 同 key 短路，让 attach 幂等；
+  // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 到没到。
+  // -1 = 没挂；0 是合法值（无缩略图文件）。
+  private attachedFileId: number = -1;
   // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
   private frameOwnerId: number = nextFrameOwnerId();
 
   private attach(fileId: number, initialPath: string): void {
+    if (this.unsubThumb !== null && this.attachedFileId === fileId) {
+      // 已经挂在同一个文件上：订阅原样留着（一整轮退订+重订阅是滚动时的每行常数
+      // 开销），只重新播种一次现值——回收期间 path 可能被清过。
+      // 与 LiveSenderAvatar.attachAvatarChannel 的同 key 短路是同一套做法。
+      const seeded: string = thumbPathFor(fileId);
+      if (seeded !== '') {
+        this.path = seeded;
+      } else if (this.path === '' && initialPath !== '') {
+        this.path = initialPath;
+      }
+      return;
+    }
     this.detach();
+    this.attachedFileId = fileId;
     const known: string = thumbPathFor(fileId);
     this.path = known !== '' ? known : initialPath;
     this.unsubThumb = subscribeThumbPath(fileId, (path: string): void => {
@@ -74,6 +91,7 @@ export struct LiveThumbImage {
       this.unsubThumb();
       this.unsubThumb = null;
     }
+    this.attachedFileId = -1;
   }
 
   // 第二个参数传 ''，不传 this.initialPath：@Prop 是逐个落地的，fileId 的回调
@@ -153,8 +171,14 @@ export struct LiveThumbImage {
     }
     if (fileId !== undefined) {
       this.attach(fileId, initialPath ?? '');
-      return;
     }
+    // **不 return。** params 那一份只是用来保住这一帧（避免空窗），它是不是和
+    // 本组件的 @Prop 同一代，离线证不出来：编译产物里 paramsGenerator_ 只在首建
+    // 分支赋值，而 @Prop 的刷新走 updateStateVarsOfChildByElmtId——**两条写入
+    // 路径、两个求值时刻**。若 params 是旧一代、而 @Prop 此刻已经是新值，
+    // @Watch 就再也不会触发（值没有变化），订阅从此钉死在上一条消息上，而正文
+    // 照常更新——那正是用户报的「字是这条的、图是别条的」，且永久，不是闪一下。
+    // 所以后面**总是**再按 @Prop 补一次。同 key 短路让重复调用几乎零成本。
     // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
     enqueueNextFrame(this.frameOwnerId, (): void => {
       this.attach(this.fileId, this.initialPath);

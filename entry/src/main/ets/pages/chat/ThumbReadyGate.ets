@@ -86,8 +86,14 @@ export struct ThumbReadyGate {
       reuseParam(params, 'initialPath') as string | undefined;
     if (fileId !== undefined) {
       this.attach(fileId, initialPath ?? '');
-      return;
     }
+    // **不 return。** params 那一份只是用来保住这一帧（避免空窗），它是不是和
+    // 本组件的 @Prop 同一代，离线证不出来：编译产物里 paramsGenerator_ 只在首建
+    // 分支赋值，而 @Prop 的刷新走 updateStateVarsOfChildByElmtId——**两条写入
+    // 路径、两个求值时刻**。若 params 是旧一代、而 @Prop 此刻已经是新值，
+    // @Watch 就再也不会触发（值没有变化），订阅从此钉死在上一条消息上，而正文
+    // 照常更新——那正是用户报的「字是这条的、图是别条的」，且永久，不是闪一下。
+    // 所以后面**总是**再按 @Prop 补一次。同 key 短路让重复调用几乎零成本。
     // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
     enqueueNextFrame(this.frameOwnerId,
       (): void => { this.attach(this.fileId, this.initialPath); });
