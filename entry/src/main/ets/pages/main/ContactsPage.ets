@@ -117,10 +117,10 @@ export struct ContactsPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
   // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
-  @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
-  @StorageProp('screenHeightVp') screenH: number = 780;
+  @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // 本页签左栏（navBar）的实际宽度，vp，0 = 还没量到。**写入方就是本页**（下面
@@ -197,6 +197,24 @@ export struct ContactsPage {
     .backgroundColor($r('app.color.selected_pill'))
     .opacity(0.72)
     .scale({ x: 0.96, y: 0.96 })
+  }
+
+  // 窗口尺寸一变，分栏与否可能跟着翻（平板分屏、悬浮窗、旋转、折叠屏都会），
+  // navBar 的真实显隐也跟着翻——而此前**没有任何东西会重算那个标志**：它只由
+  // onNavBarStateChange 写。那是框架给的回调，既保证不了它在每一次 mode 翻转时
+  // 都来，回调里那道兜底闸读的 screenW/screenH 又是 AppStorage 里由 EntryAbility
+  // 的 windowSizeChange 另行刷新的值，两者先后无定。任何一边落空，标志就停在
+  // true，dock 于是浮在详情页上不收（用户实报「Pad 版 dock 偶尔不回收」，
+  // 聊天页签那处有完整推导）。
+  //
+  // 这里按标志的**定义**重算：分栏 → 恒可见；单栏 → 栈空才可见。与
+  // aboutToAppear 的复位同一个判据（util/navBarReset），值没变时不写。
+  private onWindowResized(): void {
+    const isVisible: boolean = navBarVisibleOnAppear(
+      isSplitLayout(this.screenW, this.screenH), this.contactsStack.size());
+    if (AppStorage.get<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
+      AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, isVisible);
+    }
   }
 
   aboutToAppear(): void {

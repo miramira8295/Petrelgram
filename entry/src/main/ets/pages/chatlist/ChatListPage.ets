@@ -177,10 +177,10 @@ export struct ChatListPage {
   // 要按它定位：分栏时外层 Stack 横跨两栏，按 TopEnd 对齐会把菜单弹到右栏
   // 聊天页的右上角去（issue #146）。
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
-  @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
-  @StorageProp('screenHeightVp') screenH: number = 780;
+  @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // Sliding selection pill: position/size interpolated between tab frames so it
@@ -303,6 +303,42 @@ export struct ChatListPage {
         }
       });
     }
+  }
+
+  // navBar 显隐落地：写标志、开关列表渲染闸、同步给 dock。
+  // **两条路共用**——框架的 onNavBarStateChange，以及下面按窗口尺寸自己重算的
+  // onWindowResized。两处各写一遍必然跑偏。
+  private applyNavBarVisible(isVisible: boolean): void {
+    const changed: boolean = this.navBarVisible !== isVisible;
+    this.navBarVisible = isVisible;
+    if (!isVisible) {
+      this.suspendListRendering();
+    } else if (changed || !this.listRenderActive) {
+      // 先把缓冲里的内容变更刷出去（未读角标之类），再等过渡结束开闸
+      // （issue #159）。见 util/chatListRenderGate.requestChatListFlush。
+      requestChatListFlush();
+      this.resumeListRenderingAfterTransition();
+    }
+    if (AppStorage.get<boolean>(CHAT_NAV_BAR_VISIBLE_KEY) !== isVisible) {
+      AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, isVisible);
+    }
+  }
+
+  // 窗口尺寸一变，分栏与否可能跟着翻（平板分屏、悬浮窗、旋转、折叠屏都会），
+  // navBar 的真实显隐也跟着翻——而此前**没有任何东西会重算那个标志**：它只由
+  // onNavBarStateChange 写。那是框架给的回调，我们既保证不了它在每一次 mode
+  // 翻转时都来，回调里那道兜底闸读的 screenW/screenH 又是 AppStorage 里由
+  // EntryAbility 的 windowSizeChange 另行刷新的值，两者先后无定。任何一边落空，
+  // 标志就停在 true，dock 于是浮在会话详情上不收——用户实报「Pad 版 dock 偶尔
+  // 不回收」，"偶尔"正是竞态的形状。
+  //
+  // 这里不去猜框架的时序，直接按标志的**定义**重算：分栏 → 恒可见；单栏 →
+  // 栈空才可见。与 aboutToAppear 的复位是同一个判据（util/navBarReset），
+  // 不引入第二套语义，只是把「谁来通知」这件事从框架手里拿回来一份。
+  // 值没变时 applyNavBarVisible 是幂等的，所以这条路平时什么都不做。
+  private onWindowResized(): void {
+    this.applyNavBarVisible(navBarVisibleOnAppear(
+      isSplitLayout(this.screenW, this.screenH), this.chatStack.size()));
   }
 
   aboutToAppear(): void {
@@ -1131,21 +1167,8 @@ export struct ChatListPage {
       // 惊动订阅方，而这个回调在单双栏切换时会连着来几次。
       .onNavBarStateChange((reported: boolean): void => {
         // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
-        const isVisible: boolean = navBarVisibleOnChange(reported,
-          isSplitLayout(this.screenW, this.screenH), this.chatStack.size());
-        const changed: boolean = this.navBarVisible !== isVisible;
-        this.navBarVisible = isVisible;
-        if (!isVisible) {
-          this.suspendListRendering();
-        } else if (changed || !this.listRenderActive) {
-          // 先把缓冲里的内容变更刷出去（未读角标之类），再等过渡结束开闸
-          // （issue #159）。见 util/chatListRenderGate.requestChatListFlush。
-          requestChatListFlush();
-          this.resumeListRenderingAfterTransition();
-        }
-        if (AppStorage.get<boolean>(CHAT_NAV_BAR_VISIBLE_KEY) !== isVisible) {
-          AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, isVisible);
-        }
+        this.applyNavBarVisible(navBarVisibleOnChange(reported,
+          isSplitLayout(this.screenW, this.screenH), this.chatStack.size()));
       })
       .enableDragBar(true)
       // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶

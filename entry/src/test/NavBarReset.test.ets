@@ -23,6 +23,19 @@ export default function navBarResetTest() {
       expect(navBarVisibleOnAppear(false, 5)).assertFalse();
     });
 
+    // 【Pad 版 dock 偶尔不回收】窗口跨过分栏断点、而栈里还压着详情页，是这个
+    // 标志唯一会「不通知就变值」的场合：分栏那侧恒为 true，单栏那侧因为栈非空
+    // 变成 false。此前只有框架的 onNavBarStateChange 会写它，回调没来（或它读
+    // 到的窗口尺寸还没刷新）标志就停在 true，dock 浮在会话详情上不收。
+    // 三个可分栏的页签现在都在窗口尺寸变化时按这个判据自己重算一次。
+    it('跨过分栏断点时，同一个栈深度会翻出不同的结论', 0, () => {
+      expect(navBarVisibleOnAppear(true, 1)).assertTrue();   // 平板分栏：左栏常驻
+      expect(navBarVisibleOnAppear(false, 1)).assertFalse(); // 缩成单栏：navBar 被盖住
+      // 栈空时两侧同为 true——那时窗口怎么变都不该动 dock。
+      expect(navBarVisibleOnAppear(true, 0)).assertTrue();
+      expect(navBarVisibleOnAppear(false, 0)).assertTrue();
+    });
+
     it('负数深度按空栈处理', 0, () => {
       // 不该出现，但栈的实现换了之后 size() 的语义未必还一样；宁可显示 dock
       // 也不要让它永久消失——那个故障用户没法自己恢复。
