@@ -116,6 +116,22 @@ export struct StreamingVideoPlayer {
   // 被抢、切后台自动暂停而不同步，布尔会两边打架（外部还写着 false，内部其实
   // 已经停了，再拨就没反应）。计数是命令语义——值一变就切换一次，不关心当前状态。
   @Prop @Watch('onLiveToggleRequested') liveToggleSeq: number = 0;
+  // 实况的三处差别（不自动播、不弹中央重播胶囊、不吃双击快进）由这**一个**开关
+  // 统一表达。原来它们全靠 showControls=false 间接兜着，副作用会外溢——中央那枚
+  // 重播胶囊和双击 ±15s 就是这么漏出来的，见 build() 与 tapZone()。
+  @Prop liveMode: boolean = false;
+  // 正在「静音预热出真首帧」。
+  //
+  // 【为什么不能简单地不 start】不 start，ijk 就不解码，也就不会报 what===3，
+  // videoVisible 永远为 false——屏幕上停着的是 TDLib 那张几百像素宽的缩略图
+  // （poster），全屏下又糊又发暗，那不叫「静态照片」。所以照常起播，只是先把
+  // 音量压到 0，等第一帧真的进了 Surface 再就地暂停。首帧直接来自解码器，
+  // 原分辨率、零异步、不落任何临时文件。
+  private primingFirstFrame: boolean = false;
+  // 用户在「还没就绪 / 正在预热」期间点过播放键。那两段窗口里 togglePlay 不能
+  // 直接动播放器（会和 onPrepared / finishPriming 抢），只记意图、到点补执行。
+  // 不记的话点了毫无反应——旧行为下不明显（反正会自动播），新行为下会被当成 bug。
+  private pendingPlayRequest: boolean = false;
   // 播放状态回报，让胶囊的图标跟真实状态一致。播完时 onCompletion 会把
   // isPlaying 置 false，因此"播完自动翻回可重播"也走这一条，不用另接。
   onPlayStateChanged: (playing: boolean) => void = (): void => {};
@@ -306,6 +322,9 @@ export struct StreamingVideoPlayer {
   private release(): void {
     this.cleanupAudioDeviceListener();
     this.stopProgressPolling();
+    // 换届/销毁时归零：留着会让下一个实例开局就以为自己在预热窗口里。
+    this.primingFirstFrame = false;
+    this.pendingPlayRequest = false;
     if (this.seekFeedbackTimer !== -1) {
       clearTimeout(this.seekFeedbackTimer);
       this.seekFeedbackTimer = -1;
@@ -449,9 +468,20 @@ export struct StreamingVideoPlayer {
             player.seekTo(`${Math.floor(this.startPositionMs)}`);
             this.currentTimeMs = this.startPositionMs;
           }
+          this.isCompleted = false;
+          // 实况：预热到首帧就停住（见 primingFirstFrame）。用户在 prepare
+          // 之前就点过播放键的话不预热，直接照常播。
+          if (this.liveMode && !this.pendingPlayRequest) {
+            this.primingFirstFrame = true;
+            player.setVolume('0.0', '0.0');
+            player.start();
+            // isPlaying 故意**不**置真：胶囊图标跟着它走，预热期间画面是静止的。
+            this.startProgressPolling();
+            return;
+          }
+          this.pendingPlayRequest = false;
           player.start();
           this.isPlaying = true;
-          this.isCompleted = false;
           this.startProgressPolling();
         }
       };
@@ -466,6 +496,13 @@ export struct StreamingVideoPlayer {
             return;
           }
           this.isCompleted = true;
+          if (this.liveMode && this.player !== null) {
+            // 播完回到静态首帧（iOS 的手感）。**暂停态下 seek 会不会立刻把那一帧
+            // 刷上屏，文档没写、未上机验证**——不刷的话画面停在最后一帧，与改动前
+            // 一致，不是回退。isCompleted 仍然置真：胶囊那一下要走 replay()。
+            this.player.seekTo('0');
+            this.currentTimeMs = 0;
+          }
         }
       };
       // bufferedPercent tracks the actual TDLib download (subscribeProgress
@@ -486,9 +523,13 @@ export struct StreamingVideoPlayer {
               // poster in place through that gap.
               this.firstFrameTimer = setTimeout((): void => {
                 this.firstFrameTimer = -1;
-                if (this.player === player) {
-                  this.videoVisible = true;
+                if (this.player !== player) {
+                  return;
                 }
+                this.videoVisible = true;
+                // 这里是唯一能确认「Surface 里已经有解码图」的时刻——那 80ms
+                // 本来就是为躲开这一帧空窗加的。实况就停在这一帧上。
+                this.finishPriming();
               }, 80);
             }
           }
@@ -641,8 +682,41 @@ export struct StreamingVideoPlayer {
     }
   }
 
+  // 预热结束：第一帧已经在 Surface 里了，就地停住并把音量还回去。
+  private finishPriming(): void {
+    if (!this.primingFirstFrame || this.player === null) {
+      return;
+    }
+    this.primingFirstFrame = false;
+    if (this.pendingPlayRequest) {
+      // 预热期间用户已经点过播放键：别停，接着播就是了。
+      this.pendingPlayRequest = false;
+      this.applyMutedVolume();
+      this.isPlaying = true;
+      return;
+    }
+    this.player.pause();
+    this.isPlaying = false;
+    // 音量在预热前被压到 0，这里还回去。**不 seek 回 0**：此刻位置本来就在
+    // 几十毫秒内，而暂停态下 seek 会不会刷新 Surface 没有文档、也没验过，
+    // 平白引入一个不确定的动作不划算。
+    this.applyMutedVolume();
+  }
+
   private togglePlay(): void {
-    if (this.player === null || this.hasError || !this.isPrepared) {
+    if (this.player === null || this.hasError) {
+      return;
+    }
+    if (!this.isPrepared || this.primingFirstFrame) {
+      // 还没就绪、或正在预热。**画面上此刻已经有图**，用户看不出播放器还没准备好，
+      // 原来这里直接 return 等于点了没反应。记下意图，到点补执行。
+      //
+      // **是置位，不是取反。** 取反读起来更像「切换」，但这段窗口里没有任何东西
+      // 会因为这一下而变化——胶囊图标跟着 isPlaying 走，而这里不碰它。于是"取消"
+      // 这个动作对用户完全不可见：流式的实况 prepareAsync 可以卡上一两秒，
+      // 不耐烦连点两下的人得到的是"一下都没算"，还得再点第三下。置位则最坏是
+      // 多记一次同样的意图，播起来之后再按停就是了——那一下有反馈。
+      this.pendingPlayRequest = true;
       return;
     }
     if (this.isCompleted) {
@@ -794,7 +868,12 @@ export struct StreamingVideoPlayer {
       }
       this.updateVideoAspect(this.player.getVideoWidth(), this.player.getVideoHeight(),
         this.player.getVideoSarNum(), this.player.getVideoSarDen());
-      this.isPlaying = this.player.isPlaying();
+      // 预热窗口里原生确实在播，但那是为了解出首帧，不是「用户看到的在播」。
+      // 不挡这一下，350ms 的 tick 会把 isPlaying 刷成真，经 onPlayingChanged
+      // 回灌胶囊图标，还会顺手申请音频焦点、开后台播放保活。
+      if (!this.primingFirstFrame) {
+        this.isPlaying = this.player.isPlaying();
+      }
       // No buffered-byte update for a while → the download stalled or finished;
       // drop the speed readout instead of leaving a stale value on screen.
       if (this.downloadSpeed > 0 && this.lastSpeedSampleMs > 0
@@ -862,19 +941,31 @@ export struct StreamingVideoPlayer {
 
   @Builder
   tapZone(forward: boolean) {
-    Column()
-      .width('50%')
-      .height('100%')
-      .backgroundColor(Color.Transparent)
-      .accessibilityText(forward ? $r('app.string.player_double_tap_forward') : $r('app.string.player_double_tap_back'))
-      .gesture(
-        GestureGroup(GestureMode.Exclusive,
-          TapGesture({ count: 2, fingers: 1 })
-            .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
-          TapGesture({ count: 1, fingers: 1 })
-            .onAction((): void => { this.onBackgroundTap(); })
-        )
-      );
+    if (this.liveMode) {
+      // 实况只有一两秒，双击 ±15s 只会瞬间跳到 0 或结尾（seekBy 有 clamp），
+      // 是纯粹的误触。但**单击唤起 chrome 必须留着**——整个 Row 不挂的话那一下
+      // 也一起丢了。改用 onClick 而不是单击 TapGesture：没有双击要区分，就不必
+      // 付那段等待双击的延迟。
+      Column()
+        .width('50%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .onClick((): void => { this.onBackgroundTap(); });
+    } else {
+      Column()
+        .width('50%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .accessibilityText(forward ? $r('app.string.player_double_tap_forward') : $r('app.string.player_double_tap_back'))
+        .gesture(
+          GestureGroup(GestureMode.Exclusive,
+            TapGesture({ count: 2, fingers: 1 })
+              .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
+            TapGesture({ count: 1, fingers: 1 })
+              .onAction((): void => { this.onBackgroundTap(); })
+          )
+        );
+    }
   }
 
   @Builder
@@ -1008,7 +1099,9 @@ export struct StreamingVideoPlayer {
           .width(this.surfaceWidth())
           .height(this.surfaceHeight())
           .objectFit(ImageFit.Contain)
-          .opacity(this.hasError ? 0.54 : 0.88);
+          // 实况这一层是「首帧到位之前用户看到的东西」，压暗到 0.88 会让随后
+          // 淡入的真首帧显得跳一下；普通视频保持原样（它本来就要被播放盖住）。
+          .opacity(this.hasError ? 0.54 : (this.liveMode ? 1 : 0.88));
       }
       XComponent({ id: this.componentId(), type: XComponentType.SURFACE, libraryname: 'ijkplayer_napi' })
         .width(this.surfaceWidth()).height(this.surfaceHeight())
@@ -1144,7 +1237,10 @@ export struct StreamingVideoPlayer {
         })
         .hitTestBehavior(HitTestMode.None);
       }
-      if (this.isCompleted) {
+      // `!this.liveMode`：这一块既没有 !embedded 也没有 showControls 守卫（对比
+      // 下面的控制栏），而实况正是靠关掉 showControls 给左下角那枚胶囊让位的。
+      // 不挡的话播完那一刻中央一个「重播」、左下角一个播放键，两个入口同时在场。
+      if (this.isCompleted && !this.liveMode) {
         Stack() {
           Row({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))

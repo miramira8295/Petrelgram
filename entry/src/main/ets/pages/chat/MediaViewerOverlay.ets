@@ -522,6 +522,11 @@ export struct MediaViewerOverlay {
     const landing: number = dir > 0 ? g.memberIds[0] : g.memberIds[g.memberIds.length - 1];
     this.resetPhotoZoom(false);
     this.dismissY = 0;
+    // 与 onPageChange 同一个理由：换了消息就把胶囊打回「未播放」。这条是**越界
+    // 切组**那条换页路，不经过 onPageChange，漏掉它就会在跨组时残留暂停图标。
+    // 旧播放器卸载兜不住——livePlaying 住在本组件上，而新播放器在预热模式下
+    // 从头到尾不会报一次 true。
+    this.livePlaying = false;
     this.viewerMsgId = landing;
     this.onViewerMsgIdChange(landing);
     this.pageIdx = dir > 0 ? 0 : g.memberIds.length - 1;
@@ -683,6 +688,12 @@ export struct MediaViewerOverlay {
     }
     this.dismissY = 0;
     this.resetPhotoZoom(false);
+    // 翻页要显式把胶囊打回「未播放」。**改成不自动播之后这一句才成为必需**：
+    // 原来它是靠「新播放器 onPrepared 报一次 true」被隐式拉回的，现在那一下没有
+    // 了（@Watch 不在初始赋值时触发，新播放器的 isPlaying 初值 false 不产生变化
+    // 事件）。漏掉的话，从一张播过的实况翻到下一张，胶囊会残留暂停图标而画面
+    // 其实是静止的。
+    this.livePlaying = false;
     this.pageIdx = index;
     this.viewerMsgId = id;
     this.onViewerMsgIdChange(id);
@@ -706,14 +717,22 @@ export struct MediaViewerOverlay {
 
   // ── 实况照片（util/livePhoto）───────────────────────────────────────────
   // PG 发出去的实况在协议上就是一段普通有声视频，只有文件名带标记。这里认出来
-  // 之后按 iOS 的样子渲染：进来自动播一遍（播放器 onPrepared 本来就 start），
-  // 标准控制栏关掉，左下角换成一枚可暂停的「实况」胶囊。
+  // 之后按 iOS 的样子渲染：**进来停在静态首帧**，左下角一枚「实况」胶囊，点一下
+  // 才开始播；标准控制栏关掉，给胶囊让位。
+  //
+  // 「停在首帧」不是靠不起播实现的——那样屏幕上只有 TDLib 那张低清缩略图。
+  // 播放器侧走的是「静音预热到真首帧再暂停」，见 StreamingVideoPlayer 的
+  // primingFirstFrame。这里要做的只有三件：liveMode 传下去、胶囊初值改成
+  // 「未播放」、以及翻页时把它显式重置。
   //
   // 别的客户端发的视频一概不走这条路——判定要文件名标记 + 时长 ≤10s 同时成立。
   @Local private liveToggleSeq: number = 0;
-  // 胶囊图标跟随播放器的真实状态，由 onPlayStateChanged 回报。初值 true：进来
-  // 就是自动播的。
-  @Local private livePlaying: boolean = true;
+  // 胶囊图标跟随播放器的真实状态，由 onPlayStateChanged 回报。初值 false：
+  // 进来停在静态首帧，图标是播放三角。
+  //
+  // **只改这个初值没有用**——播放器一 start 就会经 onPlayStateChanged 把它翻回
+  // 来，必须和 StreamingVideoPlayer 侧的 liveMode 分支配套。
+  @Local private livePlaying: boolean = false;
 
   private isLiveEntry(id: number): boolean {
     const idx: number = this.messages.findIndex((m: MessageEntry) => m.id === id);
@@ -912,8 +931,9 @@ export struct MediaViewerOverlay {
   liveCapsule() {
     Column() {
       Row({ space: 5 }) {
-        // 播完（onCompletion 会把 isPlaying 置 false）或用户按停之后变成播放键，
-        // 一眼就知道点它能再看一遍；播放中则是标准的同心圆实况标。
+        // 三个时刻都是播放键：刚打开（停在静态首帧）、用户按停、播完
+        // （onCompletion 会把 isPlaying 置 false）——一眼就知道点它能看动的那份；
+        // 播放中则是标准的同心圆实况标，点它暂停。
         SymbolGlyph($r(this.livePlaying ? 'sys.symbol.livephoto' : 'sys.symbol.play_fill'))
           .fontSize(17).fontColor([Color.White]);
         Text($r('app.string.cp_live_photo'))
@@ -949,12 +969,16 @@ export struct MediaViewerOverlay {
                 posterPath: this.siblingPath(id),
                 // 实况走自己的胶囊，标准控制栏（进度条/倍速）让位。
                 showControls: this.chromeVisible && !this.isLiveEntry(id),
+                liveMode: this.isLiveEntry(id),
                 liveToggleSeq: this.liveToggleSeq,
                 onPlayStateChanged: (playing: boolean): void => { this.livePlaying = playing; },
                 landscape: this.videoLandscape,
                 // 全屏就该有声音，不受气泡自动播放静音开关影响。
                 muted: false,
-                startPositionMs: id === this.initialViewerMsgId ? this.initStartPositionMs : 0,
+                // 实况恒从 0 起。续播位是给普通视频的——从一条播到一半的实况
+                // 气泡点进来，停在中途那一帧当「静态照片」是不对的。
+                startPositionMs: (id === this.initialViewerMsgId && !this.isLiveEntry(id))
+                  ? this.initStartPositionMs : 0,
                 onPositionChanged: (positionMs: number): void => { this.onPositionChanged(positionMs); },
                 onBackgroundTap: () => { this.toggleChrome(); },
                 onSwipeNext: () => { this.switchViewer(1); },
