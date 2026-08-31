@@ -18,6 +18,7 @@ export struct BottomDrawerShell {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop bottomSafe: number;
+  @Prop drawerHeight: number = BOTTOM_DRAWER_HEIGHT;
   @BuilderParam content: () => void;
 
   @Styles
@@ -51,11 +52,11 @@ export struct BottomDrawerShell {
       // 两侧留白。抽屉在页面里，空当露出的就是这张壁纸本身——当它还是自定义
       // 键盘时做不到这一点（另一个图层，背后没有页面背景），才被迫齐边。
       .width('calc(100% - 16vp)')
-      .height(BOTTOM_DRAWER_HEIGHT)
+      .height(this.drawerHeight)
       .drawerCard();
     }
     .width('100%')
-    .height(BOTTOM_DRAWER_HEIGHT + drawerBottomInset(this.bottomSafe))
+    .height(this.drawerHeight + drawerBottomInset(this.bottomSafe))
     // **必须裁剪**。背景层内部按整屏尺寸绘制（CachedImage 的 box 是
     // screenW × screenH），限了高度但不裁的话图会溢出到键盘区外面，把输入框
     // 整个盖住——实测就是这样，中间还多出一条颜色对不上的壁纸。

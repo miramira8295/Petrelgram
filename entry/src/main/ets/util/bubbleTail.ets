@@ -32,6 +32,7 @@ export function tailClip(outgoing: boolean): PathShape {
 
 export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
   private readonly live: boolean;
+  private readonly materialLive: boolean;
   private readonly path: PathShape | null;
   // 尺寸回调只在玻璃档挂：关掉材质时整条 onAreaChange 根本不注册，
   // 省掉每个气泡一个常驻的 area-change 节点（真机 trace：峰值 102 个节点、
@@ -39,8 +40,9 @@ export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
   private readonly onMeasured: ((w: number, h: number) => void) | null;
 
   constructor(live: boolean, path: PathShape | null,
-    onMeasured: ((w: number, h: number) => void) | null) {
+    onMeasured: ((w: number, h: number) => void) | null, materialLive: boolean) {
     this.live = live;
+    this.materialLive = live && materialLive;
     this.path = path;
     this.onMeasured = onMeasured;
   }
@@ -66,7 +68,9 @@ export class BubbleGlassModifier implements AttributeModifier<CommonAttribute> {
       return;
     }
     if (material) {
-      instance.systemMaterial(overlayMaterial('bubble'));
+      // 滚动时只清掉实时材质，轮廓裁剪继续保留。若连 live 一起关，外层会放开
+      // clip、尾巴结构也会切回实心档，省下的合成成本会换成一次明显的形状闪动。
+      instance.systemMaterial(this.materialLive ? overlayMaterial('bubble') : undefined);
     }
     if (this.path !== null) {
       instance.clipShape(this.path);
@@ -102,10 +106,12 @@ export function glassOutlineCommands(w: number, h: number, outgoing: boolean,
 
 export function bubbleGlassModifier(live: boolean, w: number, h: number, outgoing: boolean,
   hasTail: boolean, radii: BorderRadiuses,
-  onMeasured: ((w: number, h: number) => void) | null = null): BubbleGlassModifier {
+  onMeasured: ((w: number, h: number) => void) | null = null,
+  materialLive: boolean = live): BubbleGlassModifier {
   if (!live || w <= 0 || h <= 0) {
-    return new BubbleGlassModifier(live, null, onMeasured);
+    return new BubbleGlassModifier(live, null, onMeasured, materialLive);
   }
   return new BubbleGlassModifier(true,
-    new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0) }), onMeasured);
+    new PathShape({ commands: outlineCommands(w, h, outgoing, hasTail, radii, 0) }),
+    onMeasured, materialLive);
 }

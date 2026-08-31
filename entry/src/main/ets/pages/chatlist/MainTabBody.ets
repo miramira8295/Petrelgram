@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
-import { ChatRow } from './ChatRow';
+import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
@@ -201,7 +201,7 @@ export struct MainTabBody {
         (): void => this.toggleRead(chat));
     }
     .height('calc(100% - 6vp)')
-    .margin({ left: 12, top: 3, bottom: 3 })
+    .margin({ left: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
     .borderRadius(16)
     .clip(true);
   }
@@ -221,7 +221,7 @@ export struct MainTabBody {
         (): void => this.toggleArchive(chat));
     }
     .height('calc(100% - 6vp)')
-    .margin({ right: 12, top: 3, bottom: 3 })
+    .margin({ right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
     .borderRadius(16)
     .clip(true);
   }

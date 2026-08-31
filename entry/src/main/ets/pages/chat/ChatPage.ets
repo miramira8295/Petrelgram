@@ -2,7 +2,9 @@ import { router, promptAction } from '@kit.ArkUI';
 import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
-import { setScrollActive } from '../../util/scrollEffects';
+import {
+  resumeScrollVisualForPageShow, setScrollActive, suspendScrollVisualForPageHide
+} from '../../util/scrollEffects';
 import { getStickersForEmoji, rememberRecentSticker } from '../../store/StickerApi';
 import { botMiniAppUrl, openMiniApp } from '../../store/BotApi';
 import {
@@ -11,9 +13,7 @@ import {
 import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { geoLocationManager } from '@kit.LocationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { PollComposeSheet } from './PollComposeSheet';
-import { ContactPickerSheet, PickedContact } from './ContactPickerSheet';
-import { VideoNoteRecorderView } from './VideoNoteRecorderView';
+import { PickedContact } from './ContactPickerSheet';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { VoiceRecorder } from '../../services/VoiceRecorder';
@@ -46,9 +46,8 @@ import {
 import { PlaySlotRegistry } from './PlaySlotRegistry';
 import { shouldCompete, slotKey, slotKeyMessageId } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
-import { ForwardSheet } from './ForwardSheet';
-import { ScheduledSheet } from './ScheduledSheet';
-import { ReactionSheet } from './ReactionSheet';
+import { ChatOverlayHost } from './ChatOverlayHost';
+import { ChatTimelineHost } from './ChatTimelineHost';
 import { cacheDestPath, isVideoPath } from '../../util/mediaPick';
 import {
   ChatBackgroundState, ChatBackgroundStore, emptyChatBackground
@@ -62,7 +61,7 @@ import { setMediaViewerOrientation } from './LiveViewerUi';
 import { actionMenuRow } from './ActionMenuRow';
 import {
   AlbumGroupDataSource, appendBreaksAnchor, clampPrefetchRange, contentFingerprint,
-  PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRowArray
+  PrefetchRange, reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 // UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
@@ -74,23 +73,21 @@ import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
-import { MessageListStateCard } from './MessageListState';
-import {
-  FloatingDateOverlay, FloatingDateState, TimelineStatePillSlot
-} from './FloatingDateOverlay';
+import { FloatingDateState } from './FloatingDateOverlay';
 import { firstRowBelowChrome, floatDateNeedsRescan } from '../../util/floatDateGate';
 import { isInteriorRowRemoval } from '../../util/rowRemoval';
-import { EditStrip, ReplyStrip } from './ComposerStrip';
-import { MediaStrip } from './MediaStrip';
 import {
   PENDING_MEDIA_MAX, PendingMediaAppend, PendingMediaItem, appendPendingMedia,
   clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend,
   removePendingMedia
 } from '../../util/pendingMedia';
-import { ComposerSendButton } from './ComposerSendButton';
+import {
+  ChatComposerInput, COMPOSER_EDITOR_PADDING, COMPOSER_LINE_HEIGHT, COMPOSER_MAX_LINES
+} from './ChatComposerInput';
 import { ScrollFab } from './ScrollFab';
 import { MembershipBar } from './MembershipBar';
 import { BottomDrawerShell } from './BottomDrawerShell';
+import { EMOJI_DRAWER_HEIGHT } from '../../util/drawerMetrics';
 import { ReplyKeyboardPanel } from './ReplyKeyboardPanel';
 import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
@@ -103,6 +100,7 @@ import {
 import { stackFromEndWanted } from '../../util/stackFromEnd';
 import {
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_RETRY_MS, AnchorRectSnapshot, AnchorRestorePlan,
+  anchorYAfterUserScroll,
   shouldCapturePrependAnchor, shouldRetryAnchorRestore,
   INVALID_ANCHOR_RECT, planAnchorRestore
 } from '../../util/anchorRestore';
@@ -143,13 +141,12 @@ import { publishMessageRowPresentations } from '../../util/messageRowPresentatio
 import { shouldFillViewport } from '../../util/viewportFill';
 import { RowFadeTransition, rowFadeAnimationActive, rowFadeTransition } from '../../util/rowFadeGate';
 import {
-  KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS,
-  KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
+  KEY_POWER_CHAT_EFFECTS,
+  KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
-  KEY_POWER_SMOOTH_TRANSITIONS, KEY_POWER_AUTOPLAY_VIDEO,
-  KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS, setTranslateOptedIn,
+  KEY_POWER_SMOOTH_TRANSITIONS, setTranslateOptedIn,
   translateOptedIn,
-  KEY_AUTOPLAY_MUTED, powerAnimationDuration,
+  powerAnimationDuration,
   powerFeatureEnabled, powerGroupAnimationDuration, autosaveEnabled,
   translateOptedOut, setTranslateOptedOut
 } from '../../store/AppSettings';
@@ -160,7 +157,7 @@ import {
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK,
   COLOR_ICON_ON_LIGHT,
-  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY, darkResourceMode, KEY_APP_DARK
+  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY, darkResourceMode
 } from '../../util/theme';
 import {
   normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf,
@@ -189,10 +186,9 @@ import {
   advanceRead, dropReachedJumps, emptyReturnState, nextReturnTarget, popJump, pushJump,
   reachedLatest
 } from '../../util/readingReturn';
-import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { audioQueueApplies } from '../../util/audioQueueGate';
 import {
-  glassTintHex, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  glassTintHex, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
@@ -223,10 +219,6 @@ import { logE, logI, logW } from '../../util/log';
 import { LengthMetrics } from '@kit.ArkUI';
 import { chromeSitsOnLight } from '../../util/chatChrome';
 import { exportLivePhotoMotion } from '../../util/movingPhotoPick';
-import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_BG_BLUR, KEY_BG_PATTERN, KEY_BG_PATTERN_DARK,
-  KEY_CHAT_DIM, KEY_LOCAL_BG_EPOCH
-} from '../../store/AppSettings';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
@@ -247,10 +239,17 @@ import {
   initialMessagePlaceholderHeight, initialMessageViewportRows, nextInitialMessageRevealCount,
   stageInitialMessageGroups
 } from '../../util/initialMessageStage';
-import { APPEARANCE_EPOCH } from '../../util/appearance';
 // ⚠️ 临时（P6 标定）：cachedCount 档位调试项。标定结束后按
 // util/debugListPerf.ets 末尾的清单删除。
-import { KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
+import { LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
+import {
+  ChatPageHiddenHooks, ChatPageShownHooks, ChatPageShownState, ChatPageWillHideHooks,
+  coordinateChatPageHidden, coordinateChatPageShown, coordinateChatPageWillHide,
+} from '../../util/chatPageLifecycle';
+import {
+  ChatPageNavigationCoordinator, parseChatRouteParams
+} from '../../util/ChatPageNavigationCoordinator';
+import { ChatPageSubscriptionRegistry } from '../../util/ChatPageSubscriptionRegistry';
 
 // collectPickedMedia 的返回：可发送项 + 读不出来被跳过的张数。
 interface PickedMedia {
@@ -401,209 +400,8 @@ const DICE_CHOICES: DiceChoice[] = [
   { emoji: '🎳', label: $r('app.string.cp_dice_bowling') },
   { emoji: '🎰', label: $r('app.string.cp_dice_slots') }
 ];
-const COMPOSER_LINE_H: number = 22;
-const COMPOSER_EDITOR_PAD: number = 9;
-const COMPOSER_MAX_LINES: number = 4;
-
 // Emoji offered in the full reaction picker (opened from the long-press menu's
 // chevron). Ordered roughly like the official client's reaction sheet.
-// 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
-// 本模块并调用它，页面因此不再需要进 main_pages.json。
-// V1 外壳组件：只做一件事——订阅 AppStorage，把 21 个全局单值透传给 V2 的
-// ChatPage。
-//
-// 为什么需要它：@StorageProp / @StorageLink 是状态管理 V1 独有的装饰器，
-// ChatPage 迁 @ComponentV2 之后不能再声明它们；而官方 FAQ《如何实现 V1、V2
-// 版本之间父子组件的数据传递与共享》写明「AppStorage 在 V1 向 V2 传递的场景下，
-// V2 版本的子组件不能自动同步更新，只能通过 AppStorage.get 手动获取」。
-//
-// 为什么不直接搬去 AppStorageV2：官方《AppStorageV2》「使用限制」两条都是硬的
-// ——「AppStorage 与 AppStorageV2 之间的数据互不共享」、「不支持存储基本类型，
-// 如 string、number、boolean」。这 21 个键全是 number/boolean，而且不是本页
-// 私有的：全仓 @StorageProp/@StorageLink 共 513 处、分布在 100 个文件，写入方
-// 主要在 AppSettings.ets / EntryAbility.ets / Globals.ets。只搬会话页这一份，
-// 同一个键就会变成「V1 写、V2 读」，永远读到默认值，而且不报错。
-//
-// 合法性：《@ReusableV2装饰器：V2组件复用》的混用支持表「V1 普通组件 → V2 普通
-// 组件：支持」。基本类型不需要 UIUtils.enableV2Compatibility 桥接——那个接口
-// 「不支持非 object 类型」，对 number/boolean 调了也只是返回入参自身。
-//
-// 代价：某个 epoch 变一次，这一层就重跑一次 build()，把 21 个 @Param 重新交给
-// ChatPage。@Param 只在值真的变化（===）时才向下传播刷新，所以代价是一次
-// 参数比较，不是一次页面重建。
-@Preview
-@Component
-struct ChatPageChrome {
-  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
-  @StorageProp(MATERIAL_EPOCH) materialEpoch: number = 0;
-  @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
-  @StorageProp(KEY_APP_DARK) appDark: boolean = false;
-  @StorageProp(KEY_LOCAL_BG_EPOCH) localBgEpoch: number = 0;
-  // 聊天壁纸的三根滑杆：纹理按深浅色分两个键（既有行为），模糊与遮罩暂时仍是
-  // 单键——四槽位独立化是下一步，这里先把"由谁来读"这件事挪对位置。
-  @StorageProp(KEY_BG_BLUR) chatBgBlur: number = BG_BLUR_DEFAULT;
-  @StorageProp(KEY_BG_PATTERN) chatBgPatternLight: number = BG_PATTERN_DEFAULT;
-  @StorageProp(KEY_BG_PATTERN_DARK) chatBgPatternDark: number = BG_PATTERN_DEFAULT;
-  @StorageProp(KEY_CHAT_DIM) chatBgDim: number = 0;
-  @StorageProp('topSafeHeight') topSafe: number = 0;
-  @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
-  @StorageProp('keyboardHeightVp') keyboardH: number = 0;
-  @StorageProp('appIsForeground') appIsForeground: boolean = true;
-  @StorageProp(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
-  @StorageProp('screenWidthVp') screenW: number = 360;
-  @StorageProp('screenHeightVp') screenH: number = 780;
-  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_BACKGROUND) powerBackgroundEffect: boolean = false;
-  @StorageProp(KEY_POWER_PARTICLES) powerParticles: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI) powerEmoji: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) powerEmojiReactions: boolean = true;
-  @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
-  @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
-  @StorageProp(KEY_AUTOPLAY_MUTED) autoplayMuted: boolean = true;
-  @StorageProp(KEY_TRANSLATE_CHATS) translateChatsEnabled: boolean = false;
-  // ⚠️ 临时（P6 标定）：cachedCount 档位。它走这一层而不是 ChatPage 直接读
-  // AppStorage，是因为「立即生效」靠的正是这条 V1→V2 的透传链：@StorageProp
-  // 观测到键变化 → 本层重跑 build() → @Param 值变了 → ChatPage 里依赖它的
-  // .cachedCount() 重新求值。ChatPage 自己 AppStorage.get 是读不到变化的。
-  @StorageProp(KEY_DEBUG_LIST_CACHED) listCachedCount: number = LIST_CACHED_COUNT_DEFAULT;
-
-  build() {
-    ChatPage({
-      appearanceEpoch: this.appearanceEpoch,
-      materialEpoch: this.materialEpoch,
-      localBgEpoch: this.localBgEpoch,
-      chatBgBlur: this.chatBgBlur,
-      chatBgPattern: this.appDark ? this.chatBgPatternDark : this.chatBgPatternLight,
-      chatBgDim: this.chatBgDim,
-      langEpoch: this.langEpoch,
-      appDark: this.appDark,
-      topSafe: this.topSafe,
-      bottomSafe: this.bottomSafe,
-      keyboardH: this.keyboardH,
-      appIsForeground: this.appIsForeground,
-      sendByEnter: this.sendByEnter,
-      screenW: this.screenW,
-      screenH: this.screenH,
-      powerSaving: this.powerSaving,
-      powerChatEffects: this.powerChatEffects,
-      powerBackgroundEffect: this.powerBackgroundEffect,
-      powerParticles: this.powerParticles,
-      powerEmoji: this.powerEmoji,
-      powerEmojiReactions: this.powerEmojiReactions,
-      reduceAnimations: this.reduceAnimations,
-      autoplayVideo: this.autoplayVideo,
-      autoplayMuted: this.autoplayMuted,
-      translateChatsEnabled: this.translateChatsEnabled,
-      listCachedCount: this.listCachedCount
-    });
-  }
-}
-
-// 消息行外壳的**全局复用池宿主**（API 26 起）。
-//
-// 它只做一件事：在 ChatPageChrome 之上多一层，把 reusePool / poolAccepts 挂
-// 出去。官方《全局复用：集中化的组件回收与复用》——复用组件创建或销毁时，
-// 框架「向上遍历组件树」找接纳该类型的全局池；找不到就退回父组件的默认池。
-// 所以宿主只需要是 ReusableMessageBubble 的**任一祖先**，不必是它的父组件，
-// 也不必知道列表长什么样。
-//
-// ── 为什么必须是单独一层，而不是把参数写在 ChatPageChrome 或 ChatPage 上 ──
-//
-// reusePool / poolAccepts 是**装饰器参数**，编译期就定死，没有任何运行时开关。
-// 而这个能力从 API 26 才有，本仓 compatibleSdkVersion 是 6.0.0(20)。要做成
-// 双路径，唯一的办法是让「挂了池的组件」和「没挂池的组件」是两个不同的类，
-// 在运行时按设备版本二选一地**实例化**——见下面的 ChatPageBuilder。
-//
-// 低版本上这个 struct 只是一个从不被 new 出来的类：ChatPageBuilder 那条 if
-// 永远走 else，池配置一次也不会被触碰，行为与 P4 完全一致（回退到默认复用池）。
-//
-// ── 为什么是 'shared' 而不是 'perInstance' ──
-//
-// 本应用的聊天详情页**可以同时存在多个实例**：
-//   - 平板分栏（docs 2026-08-21-tablet-split-view-design）左右两栏各一页；
-//   - Navigation 栈里从搜索结果进会话、再返回，栈上会先后压着两份；
-//   - 会话 → 资料页 → 共同群组 → 另一个会话，栈里两份会话页同时活着。
-// perInstance 的池「生命周期与其拥有组件实例相同」——上面每一种情况都是
-// 「关掉一栏/弹一层，那一份池连同里面所有回收实例一起销毁」，而下一次打开
-// 会话只能从零重建。shared 则是「只要还有任意一个宿主实例活着，池就活着」，
-// 分栏切会话、返回再进，都能从池里取。
-//
-// 官方两处也都指向 shared：能力对比表「shared 模式允许拥有组件类的所有实例
-// 共享单个池」，所有权模式一节直接写「建议开发者配置 shared 所有权。这样可以
-// 获得更好的复用率和更低的内存占用」。
-//
-// shared 的代价官方也点了名：「只要拥有组件类的任何实例存在，池就会持续存在
-// ……回收的组件可能会累积。使用 maxCount 来控制内存使用」——这正是 ChatPage
-// 里 capMessageReuseBuckets() 存在的理由。
-//
-// freezeWhenInactive 必须显式给（官方使用限制：「配置 reusePool 和 poolAccepts
-// 启用全局复用的同时，需要额外配置 freezeWhenInactive 参数」）。给 false 是
-// 因为 ChatPageChrome 现在就是不冻结的（@Component 不写这个参数即为 false），
-// 这一层不该顺手改变冻结语义。
-// ── preRender 为什么没有开：它和首屏分级揭示是打架的 ────────────────────
-//
-// 全局池的第三项能力是 IReusePool.preRender(builder, times)：调度**空闲任务**
-// 提前把复用组件建好放进池子，「加快初始渲染速度」。本页已经有一套解决首屏的
-// 机制——首屏分级揭示（initialMessageStage：进页面先只放 1 行真身、其余是估高
-// 占位，之后每次 release 只放行 1 行）。两者都在解决首屏，所以必须挑一个，
-// 不能两个都开着还不说。
-//
-// **结论：保留分级揭示，不开 preRender。** 三条理由，从硬到软：
-//
-// 1. 同一个窗口、同一条线程，而且抢的正是对方赖以成立的那点空隙。
-//    分级揭示的整个机制就是「每个 VSync 只允许建一行」这条硬上限——
-//    nextInitialMessageRevealCount 的注释记着为什么是 1 而不是 3：一对含贴纸的
-//    行能吃掉 26~28ms，六行挤进一次布局是 65ms。而 preRender 是**空闲任务**，
-//    它跑的就是每帧建完那一行之后剩下的那段空闲。在首屏窗口里开 preRender，
-//    等于一边限流一边从旁路灌水，被拖长的恰好是分级揭示要保护的那几帧。
-//
-// 2. 首屏那一刻**不知道该预建哪个桶**。全局池是按 reuseId 分区存放的，
-//    REUSE_ID_LEVEL = 'medium' 之下 rowReuseId 是一个 12 维的字符串，完全由
-//    行自己的数据算出来。而 preRender 必须在数据到达之前调用才谈得上「提前」
-//    ——那时一行消息都还没有，猜错的桶里那个实例不会被任何一行取走，只是白建
-//    一次、再白占一份内存。
-//
-// 3. preRender 吃的是 WrappedBuilder<[]>（零参 @Builder），意味着要在里面凭空
-//    造一个 AlbumGroup / MessageEntry 喂给 ReusableMessageBubble。而这棵子树
-//    挂载时是有副作用的：ReusableMessageBubble.aboutToAppear 会按
-//    (chatId, rowId) 去 messageRowPresentationChannel 订阅，更深的 MessageBubble
-//    会按内容发起缩略图/媒体的取数。拿一条**不存在的消息**去跑这些，副作用是
-//    真的会发出去的。
-//
-// 而 preRender 本来想给的那份「打开会话时池子已经是热的」，shared 池自己就给了：
-// 只要还有任意一个宿主实例活着，上一个会话回收的行就还在池子里，下一个会话
-// 直接取。这是不用伪造任何数据、也不占用首屏那段线程的同一份收益。
-//
-// 什么时候可以回头再看这条：如果上机数据显示首屏的瓶颈不在**建树**而在别处，
-// 或者分级揭示被证明可以撤掉，那时 preRender 才有位置——调用点是本组件的
-// aboutToAppear（官方示例就在那里），拿 UIUtils.getCustomComponentContext(this)
-// .getReusePool() 取池。在那之前，这里刻意什么都不做。
-@ComponentV2({
-  reusePool: 'shared',
-  poolAccepts: [ReusableMessageBubble],
-  freezeWhenInactive: false
-})
-struct ChatPagePoolHost {
-  build() {
-    ChatPageChrome();
-  }
-}
-
-@Builder
-export function ChatPageBuilder(): void {
-  // 双路径。形状照 util/overlayMaterial.ets：判定是一个纯函数吃设备版本，
-  // 调用点只问「赢了没有」。
-  //
-  // 低版本这一支与 P4 逐字节相同：ChatPageChrome 直接上，
-  // ReusableMessageBubble 用父组件的默认复用池，rowReuseId 分档照旧生效。
-  if (globalReusePoolAvailable()) {
-    ChatPagePoolHost();
-  } else {
-    ChatPageChrome();
-  }
-}
-
 @ComponentV2
 export struct ChatPage {
   @Require @Param appearanceEpoch: number = 0;
@@ -1589,9 +1387,10 @@ export struct ChatPage {
   // 也是上界。方向是对的——上限估高了只是多留几个空实例，估低了会把还要用的
   // 实例赶出池子，正是要治的那条溢出。
   //
-  // 只在**滚动停下**和**页面隐藏**时跑，不在滚动中跑：赋值 maxCount 会触发
-  // 框架的异步清理，滚动中做这件事等于自己制造抖动。滚动停下正好是一次回收潮
-  // 刚过、池子最满的时刻；页面隐藏则是 shared 池跨会话累积之前的最后一道闸。
+  // 只在**滚动停下**时跑，不在滚动中或页面退出时跑：赋值 maxCount 会触发框架
+  // 的异步清理，前者会制造滚动抖动，后者会与 NavDestination 销毁转场争抢帧预算。
+  // 用户实际滚过列表时自然会走 scrollStop；若在 fling 中直接退出，下一次会话的
+  // scrollStop 再收口即可，shared 池短暂多留几项比退出掉帧更可控。
   //
   // 低于 API 26 直接返回：UIUtils.getCustomComponentContext 是 API 26 的接口，
   // 这一句是本页唯一会碰到它的地方，闸门就在函数第一行。
@@ -1676,7 +1475,7 @@ export struct ChatPage {
   @Local typingLabel: string = '';
   private typingSenders: Map<number, number> = new Map(); // senderId -> expiry ms
   private typingTimer: number = -1;
-  private unsubChatAction: (() => void) | null = null;
+  private subscriptions: ChatPageSubscriptionRegistry = new ChatPageSubscriptionRegistry();
   @Local title: string = '';
   @Local avatarPath: string = '';
   // 聊天页头部的动态头像（MP4 循环）。issue #63：资料页会动、对话里不动——
@@ -1746,8 +1545,6 @@ export struct ChatPage {
     return this.chromeOnLightBg() ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_PRIMARY;
   }
   private bgStore: ChatBackgroundStore | null = null;
-  private unsubBg: (() => void) | null = null;
-  private unsubTranslatable: (() => void) | null = null;
   @Local replyToId: number = 0;      // message being replied to (0 = none)
   @Local replyToName: string = '';
   @Local replyToText: string = '';
@@ -1810,8 +1607,6 @@ export struct ChatPage {
   @Local liveDialogOpening: boolean = false;
   @Local liveNavigationBusy: boolean = false;
   @Local topCardLoadingVisible: boolean = false;
-  private unsubVideoChat: (() => void) | null = null;
-  private unsubGroupCall: (() => void) | null = null;
   private livePulseTimer: number = -1;
   private liveStateRefreshTimer: number = -1;
   private liveChatRefreshInFlight: boolean = false;
@@ -1883,7 +1678,6 @@ export struct ChatPage {
   private chatTgsResumeTimer: number = -1;
   // 播放位竞选：滚动停下后选出唯一播放/下载的视频气泡（见 PlaySlotRegistry）。
   private playSlots: PlaySlotRegistry = new PlaySlotRegistry();
-  private unsubPlaySlot: (() => void) | null = null;
   @Local playSlotKey: string = '';
   // 新上位的播放位从哪一毫秒起播。换届时从 bubblePositionMs 查一次（见
   // subscribe 回调），随 playSlotKey 一起下发给气泡——查看器交还的进度就是
@@ -1929,7 +1723,6 @@ export struct ChatPage {
   @Local stickerGhostY: number = 0;
   @Local stickerGhostFly: boolean = false;
   private stickerGhostTimer: number = -1;
-  private unsubLiveLocation: (() => void) | null = null;
   @Local unreadBadge: number = 0;
   private firstUnreadId: number = 0;
   // Set once the initial scroll parks on the unread boundary; suppresses every
@@ -1938,6 +1731,13 @@ export struct ChatPage {
   private stayAtUnread: boolean = false;
   private curStartIdx: number = -1; // topmost visible row index (from onScrollIndex)
   private curEndIdx: number = -1;   // bottom visible row index (from onScrollIndex)
+  // Cumulative signed sum of user-originated scroll frames. A history page can
+  // land while the finger/fling is still moving; anchor restoration subtracts
+  // the delta since capture so it fixes only data/layout movement and never
+  // cancels the user's gesture. onWillScroll supplies the source, onDidScroll
+  // supplies the actual applied offset.
+  private userScrollOffsetTotal: number = 0;
+  private nextDidScrollIsUserDriven: boolean = false;
   // onScrollIndex 上报那一刻的 groups.length。行号只有配上它才有意义。
   private indexGroupsLen: number = -1;
   // 右下角「↓」的去向状态。它不是"回到底部"，而是"回到该继续看的地方"：
@@ -2162,19 +1962,10 @@ export struct ChatPage {
   // 「查看历史」筛的那个发送者；0 = 不按发送者筛（普通关键词搜索）。
   // 按发送者筛时 query 允许为空——TDLib 支持"空 query + sender_id"列出此人全部消息。
   @Local private searchSenderId: number = 0;       // drops stale responses
-  private unsubMsg: (() => void) | null = null;
-  private unsubSub: (() => void) | null = null;
   // Peer's premium emoji status (private chats) shown beside the header title.
   @Local headerEmojiPath: string = '';
   @Local headerEmojiFormat: string = '';
   private headerEmojiFetched: boolean = false;
-  private unsubChat: (() => void) | null = null;
-  private unsubPinned: (() => void) | null = null;
-  private unsubHeaderAvatar: (() => void) | null = null;
-  private unsubHeaderTitle: (() => void) | null = null;
-  private unsubReplyKb: (() => void) | null = null;
-  private unsubMembershipSupergroup: (() => void) | null = null;
-  private unsubMembershipBasicGroup: (() => void) | null = null;
 
   private clearFloatingDate(): void {
     // 定时器与两个显示态一起归 FloatingDateState 管；clear() 不回调 onHidden，
@@ -2212,6 +2003,8 @@ export struct ChatPage {
     // onScrollIndex 落地再收紧。
     this.curEndIdx = -1;
     this.indexGroupsLen = -1;
+    this.userScrollOffsetTotal = 0;
+    this.nextDidScrollIsUserDriven = false;
     // 「↓」的返回关系和"底部看到的是哪条"同样是会话级的。消息 id 在每个会话
     // 里独立编号，把上一个会话的跳转栈带过来，↓ 就会指向本会话里一条恰好同号
     // 的无关消息——或者一条根本不存在的 id，点下去只是空转。
@@ -2396,11 +2189,8 @@ export struct ChatPage {
   // 所以 aboutToAppear 里读不到 navParams。用参数的那一段因此整体挪进了
   // applyRouteParams()，由 onReady 存完 navParams 之后立即调用。
   private navParams: Record<string, Object> | undefined = undefined;
-  // applyRouteParams() 的一次性守卫，理由见那个方法上的注释。
-  private paramsApplied: boolean = false;
-  // 本页所在的 Navigation 栈，同样在 onReady 里拿。返回键必须靠它出栈，
-  // 理由见 goBack()。
-  private navStack: NavPathStack | undefined = undefined;
+  private navigationCoordinator: ChatPageNavigationCoordinator =
+    new ChatPageNavigationCoordinator();
 
   // 返回上一层。**不能用 router.back()**：本页是 NavDestination（导航页，不是 router 页），router 页栈里
   // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
@@ -2409,17 +2199,13 @@ export struct ChatPage {
   // Task 6 迁移本页时这两处（closeChatPage、leaveChat 成功回调）原样留了
   // router.back()，是漏改，不是有意为之。
   private goBack(): void {
-    const stack = this.navStack;
-    if (stack === undefined) {
+    if (!this.navigationCoordinator.pop()) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
       // 这一支不该发生。这里**故意不回退到 router.back()**：那正是会退出应用的
       // 那条路，把返回键做成"什么都不做 + 一条日志"远比把应用关掉好。
       logE('ChatPage.goBack: navStack missing, back ignored');
       return;
     }
-    // pop() 弹的就是本页这一层。栈空时它返回 undefined，但那意味着"本页正显示
-    // 却不在栈里"，不可能发生，故不另做处理。
-    stack.pop();
   }
 
   aboutToAppear(): void {
@@ -2431,12 +2217,12 @@ export struct ChatPage {
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
     this.syncChatTgsGate();
-    this.unsubPlaySlot = this.playSlots.subscribe((key: string): void => {
+    this.subscriptions.set('playSlot', this.playSlots.subscribe((key: string): void => {
       // 起播位置必须在 playSlotKey 之前落下：气泡是靠 playSlotKey 的变化才
       // 挂载 VideoBubbleSurface 的，晚一步这条播放器就已经从 0 开始了。
       this.playSlotStartMs = key === '' ? 0 : (this.bubblePositionMs.get(slotKeyMessageId(key)) ?? 0);
       this.playSlotKey = key;
-    });
+    }));
     this.nowSec = Math.floor(Date.now() / 1000);
     // 日期条隐藏的那一刻 listUserScrollActive 必须跟着翻假——原来它和显隐写在
     // 同一个定时器体里，定时器下沉之后靠这个回调保住同一时刻。
@@ -2462,27 +2248,23 @@ export struct ChatPage {
   // 所以这个守卫是必须的。当前的 navigateToChat 走的是 clearAndPush，每次都是新实例，
   // 守卫在正常路径上不会拦到东西——它挡的是复用路径。
   private applyRouteParams(): void {
-    if (this.paramsApplied) {
+    if (!this.navigationCoordinator.beginRouteApply()) {
       return;
     }
-    this.paramsApplied = true;
     const params = this.navParams;
-    this.chatId = params !== undefined ? (params['chatId'] as number) : 0;
-    this.threadRootId = params !== undefined ? ((params['threadRootId'] as number | undefined) ?? 0) : 0;
+    const route = parseChatRouteParams(params);
+    this.chatId = route.chatId;
+    this.threadRootId = route.threadRootId;
     // 话题模式（从 ForumTopicsPage 进入）：标题显示话题名而非"评论"。
-    this.topicName = params !== undefined ? ((params['topicName'] as string | undefined) ?? '') : '';
-    this.forumTopicId = params !== undefined
-      ? ((params['forumTopicId'] as number | undefined) ?? 0) : 0;
+    this.topicName = route.topicName;
+    this.forumTopicId = route.forumTopicId;
     // 排除名单是本地的，chatId 一确定就能读，不用等 getChat 回来。
     this.translateChatOptOut = translateOptedOut(this.chatId);
     this.translateChatOptIn = translateOptedIn(this.chatId);
-    const incomingJoinNotice: boolean = params !== undefined
-      ? ((params['showJoinedNotice'] as boolean | undefined) ?? false) : false;
-    if (incomingJoinNotice && this.clientJoinNoticeRouteChatId !== this.chatId) {
+    if (route.showJoinedNotice && this.clientJoinNoticeRouteChatId !== this.chatId) {
       this.clientJoinNoticeRouteChatId = this.chatId;
       this.clientJoinNoticeVisible = true;
-      this.clientJoinNoticeIsChannel = params !== undefined
-        ? ((params['joinedNoticeIsChannel'] as boolean | undefined) ?? false) : false;
+      this.clientJoinNoticeIsChannel = route.joinedNoticeIsChannel;
       this.clientJoinNoticeDate = Math.floor(Date.now() / 1000);
       this.clientJoinNoticeEntryCache = null;
     }
@@ -2516,7 +2298,7 @@ export struct ChatPage {
       // status of a newly opened public chat arrives.
       this.membershipState = 'checking';
     }
-    const jumpTo = params !== undefined ? (params['jumpTo'] as number | undefined) : undefined;
+    const jumpTo = route.jumpTo;
     this.resetHeaderState(cachedChat);
     this.resetTopCardState();
     this.resolveHeaderIdentity();
@@ -2525,44 +2307,42 @@ export struct ChatPage {
     // message hit, that message is the jump target and becomes the current hit
     // — searchAnchorId keeps the search from jumping somewhere else.
     // Deep links like t.me/<name>?text=… open the chat with a prefilled draft.
-    const incomingDraft = params !== undefined ? ((params['draftText'] as string | undefined) ?? '') : '';
-    if (incomingDraft !== '') {
-      this.draft = incomingDraft;
+    if (route.draftText !== '') {
+      this.draft = route.draftText;
     } else {
       this.restoreServerDraft();
     }
-    const incomingQuery = params !== undefined ? ((params['searchQuery'] as string | undefined) ?? '') : '';
-    if (incomingQuery !== '') {
+    if (route.searchQuery !== '') {
       this.searchMode = true;
-      this.searchQuery = incomingQuery;
+      this.searchQuery = route.searchQuery;
       this.searchAnchorId = jumpTo !== undefined ? jumpTo : 0;
-    } else if (params !== undefined && ((params['startSearch'] as boolean | undefined) ?? false)) {
+    } else if (route.startSearch) {
       // Profile-page 搜索 button: open the chat with an empty, focused search.
       this.searchMode = true;
     }
     this.refreshHeader();
-    this.unsubChatAction = getTdClient().onUpdate('updateChatAction',
-      (u: TdObject): void => this.onChatAction(u));
+    this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
+      (u: TdObject): void => this.onChatAction(u)));
     // ForwardSheet subscribes to the chat list itself while it is open, so this
     // no longer has to push updates into it.
-    this.unsubChat = getChatStore().subscribe(() => {
+    this.subscriptions.set('chat', getChatStore().subscribe(() => {
       this.refreshHeader();
-    }, 'main');
+    }, 'main'));
     // Chat backgrounds have their own TDLib update and can change without a
     // title/message update. Listen directly so setting or clearing one is
     // visible while the conversation is open.
-    this.unsubLiveLocation = liveLocation.subscribe((st: LiveLocationState): void => {
+    this.subscriptions.set('liveLocation', liveLocation.subscribe((st: LiveLocationState): void => {
       this.liveLocationActive = st.active;
       // 只有共享发生在当前会话时才在气泡上显示停止按钮。
       this.liveLocationMessageId = st.active && st.chatId === this.chatId ? st.messageId : 0;
-    });
+    }));
     // 在其它设备改了这个开关时同步过来，否则菜单文案会和实际状态不符。
-    this.unsubTranslatable = getTdClient().onUpdate('updateChatIsTranslatable',
+    this.subscriptions.set('translatable', getTdClient().onUpdate('updateChatIsTranslatable',
       (u: TdObject): void => {
         if ((u['chat_id'] as number | undefined) === this.chatId) {
           this.isTranslatable = (u['is_translatable'] as boolean | undefined) ?? false;
         }
-      });
+      }));
     // Background resolution and its four TDLib subscriptions now live in the
     // store; the page only mirrors its snapshot into state.
     this.bgStore = new ChatBackgroundStore(
@@ -2580,28 +2360,28 @@ export struct ChatPage {
     // that gets thrown away; a chat with its own background still corrects
     // itself as soon as refresh()/open() resolves it, same as before.
     this.bgStore.seedFromDefault();
-    this.unsubBg = this.bgStore.subscribe((state: ChatBackgroundState): void => {
+    this.subscriptions.set('background', this.bgStore.subscribe((state: ChatBackgroundState): void => {
       this.chatBg = state;
       this.chatBackgroundRevision++;
-    });
+    }));
     this.bgStore.open(this.chatId);
-    this.unsubMembershipSupergroup = getTdClient().onUpdate('updateSupergroup', (u: TdObject) => {
+    this.subscriptions.set('membershipSupergroup', getTdClient().onUpdate('updateSupergroup', (u: TdObject) => {
       const supergroup = u['supergroup'] as TdObject | undefined;
       if (supergroup !== undefined &&
         ((supergroup['id'] as number | undefined) ?? 0) === this.membershipSupergroupId) {
         this.applyMembershipStatus(supergroup['status'] as TdObject | undefined);
       }
-    });
-    this.unsubMembershipBasicGroup = getTdClient().onUpdate('updateBasicGroup', (u: TdObject) => {
+    }));
+    this.subscriptions.set('membershipBasicGroup', getTdClient().onUpdate('updateBasicGroup', (u: TdObject) => {
       const basicGroup = u['basic_group'] as TdObject | undefined;
       if (basicGroup !== undefined &&
         ((basicGroup['id'] as number | undefined) ?? 0) === this.membershipBasicGroupId) {
         this.applyMembershipStatus(basicGroup['status'] as TdObject | undefined);
       }
-    });
+    }));
     this.refreshMembership();
     this.refreshVideoChat(true);
-    this.unsubVideoChat = getTdClient().onUpdate('updateChatVideoChat', (u: TdObject) => {
+    this.subscriptions.set('videoChat', getTdClient().onUpdate('updateChatVideoChat', (u: TdObject) => {
       if ((u['chat_id'] as number | undefined) === this.chatId) {
         this.liveChatResolveSeq++;
         this.liveChatRefreshInFlight = false;
@@ -2610,8 +2390,8 @@ export struct ChatPage {
         this.setLiveGroupCallId(vc !== undefined ? ((vc['group_call_id'] as number | undefined) ?? 0) : 0);
         this.settleTopCardLoading();
       }
-    });
-    this.unsubGroupCall = getTdClient().onUpdate('updateGroupCall', (u: TdObject) => {
+    }));
+    this.subscriptions.set('groupCall', getTdClient().onUpdate('updateGroupCall', (u: TdObject) => {
       const groupCall = u['group_call'] as TdObject | undefined;
       if (groupCall !== undefined &&
         ((groupCall['id'] as number | undefined) ?? 0) === this.liveGroupCallId) {
@@ -2620,7 +2400,7 @@ export struct ChatPage {
         this.liveGroupRequestId = 0;
         this.applyLiveGroupCall(groupCall);
       }
-    });
+    }));
     this.livePulseTimer = setInterval((): void => {
       if (!this.liveCallIsActive || !powerFeatureEnabled(KEY_POWER_PARTICLES)) {
         this.livePulseExpanded = false;
@@ -2640,7 +2420,7 @@ export struct ChatPage {
     if (!scrollResumeWaiting || this.groups.length === 0) {
       this.messageLoadState = 'loading';
     }
-    this.unsubMsg = store.subscribe((list: MessageEntry[]) => {
+    this.subscriptions.set('messages', store.subscribe((list: MessageEntry[]) => {
       const historyState: string = store.getInitialHistoryState();
       this.olderLoadState = store.getOlderLoadState();
       this.newerLoadState = store.getNewerLoadState();
@@ -2710,21 +2490,21 @@ export struct ChatPage {
       // ── 向上翻页的锚点复位 ──────────────────────────────────────────
       //
       // API 20 起官方已经明确：maintainVisibleContentPosition(true) 支持 Repeat
-      // 的懒加载场景，普通的可见区外前插由框架保位。这里只为「边界行 key 改变、
-      // 可见节点被替换」保留手工兜底；它不在官方对区外插入/删除的保证内。
+      // 的懒加载场景，但真机媒体相册推翻了“普通区外前插一定能保位”这个前提：
+      // older 页发布时旧首行 key 可以不变，甚至会跨页并入同一相册、旧身份直接
+      // 消失；Repeat 重排超高媒体行后，整个可见窗口仍会换位置。
       //
-      // 判据不成立时**不复位**：纯追加、纯编辑、以及 key 没变的前插，都由
-      // maintainVisibleContentPosition 自己守住；在那些情形上强行 scrollToIndex
-      // 会打断用户的惯性滑动（当年"加载更多时一顿"就是这么来的）。
+      // 因此判据改为 MessageStore 的事务语义：notifyKind 是 older，且原始消息窗口
+      // 确实增长。纯追加、编辑和空页都不复位。即使用户仍在滑也要记锚点；后面的
+      // userScrollOffset 会保留采样后的真实手势位移，只抵消数据/布局造成的跳动。
       let prependAnchorId: number = 0;
       let prependAnchorY: number = 0;
-      const boundaryRowReplaced: boolean = prependBreaksAnchor(this.groups, groups);
+      let prependAnchorUserOffset: number = 0;
+      const olderPageGrowth: boolean = notifyKind === 'older' && list.length > this.messages.length;
       if (shouldCapturePrependAnchor({
         didInitialScroll: this.didInitialScroll,
         anchorIndexFresh: this.anchorIndexFresh(),
-        boundaryRowReplaced: boundaryRowReplaced,
-        touchActive: this.listTouchActive,
-        userScrollActive: this.listUserScrollActive
+        olderPageGrowth: olderPageGrowth
       })) {
         const visibleIndex: number = this.curStartIdx;
         if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
@@ -2734,16 +2514,32 @@ export struct ChatPage {
           if (!Number.isNaN(y)) {
             prependAnchorId = this.groups[visibleIndex].head.id;
             prependAnchorY = y;
+            prependAnchorUserOffset = this.userScrollOffsetTotal;
             this.captureAnchorOffset();
+            logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
+              ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
+              ` messages=${this.messages.length}->${list.length}`);
+          } else {
+            logW(`[PrependAnchor] skip reason=measure idx=${visibleIndex}` +
+              ` rows=${this.groups.length}->${groups.length}` +
+              ` messages=${this.messages.length}->${list.length}`);
           }
+        } else {
+          logW(`[PrependAnchor] skip reason=index idx=${visibleIndex}` +
+            ` rows=${this.groups.length}->${groups.length}` +
+            ` messages=${this.messages.length}->${list.length}`);
         }
+      } else if (olderPageGrowth && this.didInitialScroll) {
+        logW(`[PrependAnchor] skip reason=stale-index startIdx=${this.curStartIdx}` +
+          ` idxLen=${this.indexGroupsLen} rows=${this.groups.length}->${groups.length}` +
+          ` messages=${this.messages.length}->${list.length}`);
       }
       // ── 向下翻页的锚点复位 ──────────────────────────────────────────
       //
-      // 上面那一段的镜像。列表是 stackFromEnd(true)（底部锚定），末尾追加一页
-      // 就把可见内容整体往上顶 ⇒ 视口被拽到底。maintainVisibleContentPosition
-      // 已经开着，真机上仍然跳，所以这一侧也手动复位。判据与推导见
-      // AlbumGroupDataSource.appendBreaksAnchor。
+      // 上面那一段的镜像。底部锚定时末尾追加会把可见内容整体往上顶；顶部锚定
+      // 理论上应当不动，但 Repeat + 超高相册行在真机上仍会重排整个窗口。两侧都
+      // 记录同一可见消息；普通追加若已由框架守住，发布后 dy 自然为 0。判据与
+      // 真机证据见 util/appendAnchor。
       //
       // 额外那道闸判的是「**这次追加是不是用户主动向下翻页的结果**」，判据与
       // 完整推导见 util/appendAnchor。
@@ -2754,6 +2550,7 @@ export struct ChatPage {
       // 落在中间之后持续闪、滑不动、↓ 按不下去"的动力来源。
       let appendAnchorId: number = 0;
       let appendAnchorY: number = 0;
+      let appendAnchorUserOffset: number = 0;
       const appendsRows: boolean = appendBreaksAnchor(this.groups, groups);
       // 标记**无条件**取走：一次请求最多影响一次发布，绝不跨页残留。用不用得
       // 上再看这次发布有没有真的追加行。原来只在 appendsRows 为真时才取，于是
@@ -2764,9 +2561,6 @@ export struct ChatPage {
       const userDrivenAppend: boolean =
         useUserDrivenAppendMark(appendMarkPending, appendsRows);
       const holdAppendAnchor: boolean = shouldHoldAppendAnchor({
-        // 这一份快照发布时列表的锚定方向。往下翻历史时 hasMoreNewer 为真 ⇒
-        // 顶部锚定 ⇒ 视口下方追加不动内容 ⇒ 不补（见 util/appendAnchor 文件头）。
-        stackFromEnd: this.stackFromEndWanted(),
         bypassed: APPEND_ANCHOR_RESTORE_BYPASSED,
         didInitialScroll: this.didInitialScroll,
         prependAnchorHeld: prependAnchorId !== 0,
@@ -2781,6 +2575,7 @@ export struct ChatPage {
         if (!Number.isNaN(y)) {
           appendAnchorId = this.groups[visibleIndex].head.id;
           appendAnchorY = y;
+          appendAnchorUserOffset = this.userScrollOffsetTotal;
           this.captureAnchorOffset();
           logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
             ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
@@ -2835,11 +2630,13 @@ export struct ChatPage {
       // 的新下标。restorePrependAnchor 内部是一个 setTimeout(0) + 代次守卫，
       // 跳转/贴底这些更强的定位意图会把它作废。
       if (prependAnchorId > 0) {
-        this.restorePrependAnchor(this.groups, prependAnchorId, prependAnchorY);
+        this.restorePrependAnchor(
+          this.groups, prependAnchorId, prependAnchorY, prependAnchorUserOffset);
       } else if (appendAnchorId > 0) {
         // 复位走的是和向上那侧同一个 restoreScrollAnchor：setTimeout(0) + 代次
         // 守卫，跳转/贴底这些更强的定位意图会把它作废。
-        this.restoreAppendAnchor(this.groups, appendAnchorId, appendAnchorY);
+        this.restoreAppendAnchor(
+          this.groups, appendAnchorId, appendAnchorY, appendAnchorUserOffset);
       }
       let positionHandled: boolean = false;
       if (scrollResumeWaiting && list.length > 0) {
@@ -3106,12 +2903,12 @@ export struct ChatPage {
       // reach this call again after the staged release completes. The method's
       // store/stage guards make both paths converge without a timer race.
       this.scheduleComposerEditorMount();
-    });
-    this.unsubSub = store.subscribeSubtitle((s: string) => {
+    }));
+    this.subscriptions.set('subtitle', store.subscribeSubtitle((s: string) => {
       this.subtitle = s;
       this.fetchHeaderEmojiStatus();
-    });
-    this.unsubHeaderTitle = store.subscribeHeaderTitle((t: string) => {
+    }));
+    this.subscriptions.set('headerTitle', store.subscribeHeaderTitle((t: string) => {
       // Fallback header for chats not yet in ChatStore (e.g. opened by t.me link).
       if (t !== '') {
         if (this.threadRootId === 0 && this.forumTopicId === 0) {
@@ -3121,8 +2918,8 @@ export struct ChatPage {
         this.headerState = 'ready';
         this.headerLoadError = '';
       }
-    });
-    this.unsubHeaderAvatar = store.subscribeHeaderAvatar((p: string) => {
+    }));
+    this.subscriptions.set('headerAvatar', store.subscribeHeaderAvatar((p: string) => {
       if (p !== '') {
         this.avatarPath = p;
         // MessageStore resolves the chat photo independently of ChatStore/FileService
@@ -3131,8 +2928,8 @@ export struct ChatPage {
         // so the chat list shows the avatar without depending on that separate path.
         getChatStore().setAvatarPath(this.chatId, p);
       }
-    });
-    this.unsubReplyKb = store.subscribeReplyKeyboard((kb: ReplyKeyboard | null) => {
+    }));
+    this.subscriptions.set('replyKeyboard', store.subscribeReplyKeyboard((kb: ReplyKeyboard | null) => {
       const prevId = this.replyKeyboard !== null ? this.replyKeyboard.messageId : 0;
       const newId = kb !== null ? kb.messageId : 0;
       if (newId !== prevId) {
@@ -3147,8 +2944,8 @@ export struct ChatPage {
       if (kb === null) {
         this.replyKeyboardSendingKey = '';
       }
-    });
-    this.unsubPinned = store.subscribePinned((s: string) => {
+    }));
+    this.subscriptions.set('pinned', store.subscribePinned((s: string) => {
       this.pinnedPreview = s;
       this.pinnedCount = store.getPinnedIds().length;
       this.pinnedLoadState = store.getPinnedLoadState();
@@ -3158,7 +2955,7 @@ export struct ChatPage {
         this.finishPinnedJump();
       }
       this.settleTopCardLoading();
-    });
+    }));
     if (scrollResumeWaiting) {
       // Re-open around the captured row unless the old viewport was already
       // at the true live tail, in which case the newest page is sufficient.
@@ -3373,75 +3170,61 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
-    // 页面离开时必须清零，否则标志留在 true、别处的动画被误伤。
-    setScrollActive(false);
-    // 跳走了就是解析成功了：闸门开，加载态收掉，免得退回来还亮着。
-    endLinkNav();
-    this.cancelInitialMessageTransitionSettle();
-    this.pageVisible = false;
-    this.syncChatTgsGate();
-    this.hiddenSinceMs = Date.now();
-    this.captureHiddenAnchor();
-    // 页面不可见时停表，回来时补一次即时值再续上。
-    this.clearNowSecTimer();
-    // 切走（含被查看器等页面盖住）立刻停播放位——不能等 aboutToDisappear，
-    // 那要等到组件真被销毁才会跑，用户已经在别的页面上等了半天下载还在跑。
-    this.clearSlotTick();
-    this.playSlots.suspend();
-    // shared 池不随本页销毁：离开之前先把每个桶收到上限内，免得跨会话累积。
-    this.capMessageReuseBuckets();
+    coordinateChatPageHidden({
+      suspendScrollVisual: (): void => { suspendScrollVisualForPageHide(); },
+      endLinkNavigation: (): void => { endLinkNav(); },
+      cancelInitialTransition: (): void => { this.cancelInitialMessageTransitionSettle(); },
+      setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
+      syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
+      captureHiddenAnchor: (): void => {
+        this.hiddenSinceMs = Date.now();
+        this.captureHiddenAnchor();
+      },
+      clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
+      clearSlotTick: (): void => { this.clearSlotTick(); },
+      suspendPlaySlots: (): void => { this.playSlots.suspend(); }
+    });
   }
 
   private handleWillHide(): void {
-    // onHidden is delivered after the outgoing transition has already begun.
-    // Stop the expensive moving-page work at onWillHide so the incoming page
-    // does not composite against a live TGS/video timeline underneath it.
-    this.cancelInitialMessageTransitionSettle();
-    this.pageVisible = false;
-    this.syncChatTgsGate();
-    this.clearNowSecTimer();
-    this.clearSlotTick();
-    this.playSlots.suspend();
+    coordinateChatPageWillHide({
+      suspendScrollVisual: (): void => { suspendScrollVisualForPageHide(); },
+      cancelInitialTransition: (): void => { this.cancelInitialMessageTransitionSettle(); },
+      setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
+      syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
+      clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
+      clearSlotTick: (): void => { this.clearSlotTick(); },
+      suspendPlaySlots: (): void => { this.playSlots.suspend(); }
+    });
   }
 
   private handleShown(): void {
-    this.pageVisible = true;
-    this.armInitialMessageTransitionSettle();
-    this.scheduleInitialTimelinePresentation();
-    this.scheduleChatTgsResume();
-    // 回到这一页说明上一次链接解析已经有了结局（开了页又退回来，或者只弹了
-    // 个提示），闸门必须开——否则那个链接会一直卡在加载态直到看门狗到点。
-    endLinkNav();
-    // onPageHide 只 suspend() 了播放位：候选表还在，被清掉的是当前播放位和
-    // 驻留计时。回到这个页面时几何没变、onVisibleAreaApproximateChange 不会
-    // 再触发，候选表也就不会被重新灌满——保留候选正是为了这一刻还能选得出
-    // 来。armPlaySlotSettle() 里的 resume() 按此刻重新起算驻留，稳住 400ms
-    // 后自然选出播放位。
-    this.armPlaySlotSettle();
-    // The list changed while this page was hidden. See hiddenListDirty: the
-    // framework applies hidden-period notifications incompletely, so rebuild
-    // its key table from the dataset before the user can see mismatched rows.
-    const hiddenMs: number = this.hiddenSinceMs > 0 ? Date.now() - this.hiddenSinceMs : -1;
-    this.hiddenSinceMs = 0;
-    const wasBackgrounded: boolean = this.appWentBackground;
-    this.appWentBackground = false;
-    // 两条触发路径：隐藏期间数据变过，或者应用整个进过后台。后者即便数据
-    // 没变也必须重建——框架的 key 表在窗口回收后就不可信了。
-    if (this.hiddenListDirty || wasBackgrounded) {
-      this.hiddenListDirty = false;
-      this.resyncListAfterHidden();
-    }
-    this.nowSec = Math.floor(Date.now() / 1000);
-    this.armNowSecTimer();
-    // The chat page is cached underneath the live viewer. A successful
-    // pushUrl can therefore leave the entry button in its transient busy
-    // state when this page becomes visible again. Treat page visibility as
-    // the end of navigation and re-confirm the current call state.
-    this.liveDialogOpening = false;
-    this.liveNavigationBusy = false;
-    if (this.chatId > 0) {
-      this.refreshVideoChat();
-    }
+    const state: ChatPageShownState = {
+      hiddenSinceMs: this.hiddenSinceMs,
+      appWentBackground: this.appWentBackground,
+      hiddenListDirty: this.hiddenListDirty
+    };
+    coordinateChatPageShown(state, {
+      resumeScrollVisual: (): void => { resumeScrollVisualForPageShow(); },
+      setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
+      armInitialTransitionSettle: (): void => { this.armInitialMessageTransitionSettle(); },
+      scheduleInitialTimelinePresentation: (): void => { this.scheduleInitialTimelinePresentation(); },
+      scheduleChatTgsResume: (): void => { this.scheduleChatTgsResume(); },
+      endLinkNavigation: (): void => { endLinkNav(); },
+      armPlaySlotSettle: (): void => { this.armPlaySlotSettle(); },
+      resyncListAfterHidden: (): void => { this.resyncListAfterHidden(); },
+      setNowSec: (value: number): void => { this.nowSec = value; },
+      armNowSecTimer: (): void => { this.armNowSecTimer(); },
+      clearLiveNavigationBusy: (): void => {
+        this.liveDialogOpening = false;
+        this.liveNavigationBusy = false;
+      },
+      chatId: (): number => this.chatId,
+      refreshVideoChat: (): void => { this.refreshVideoChat(); }
+    });
+    this.hiddenSinceMs = state.hiddenSinceMs;
+    this.appWentBackground = state.appWentBackground;
+    this.hiddenListDirty = state.hiddenListDirty;
   }
 
   private cancelInitialMessageTransitionSettle(): void {
@@ -3503,15 +3286,9 @@ export struct ChatPage {
     // 进度表只在这一次会话内有意义（交接回全屏查看器/回到播放位），会话
     // 结束就清空，避免长会话里随刷屏无界增长。
     this.bubblePositionMs.clear();
-    if (this.unsubPlaySlot !== null) {
-      this.unsubPlaySlot();
-      this.unsubPlaySlot = null;
-    }
+    this.subscriptions.clear('playSlot');
     this.clearNowSecTimer();
-    if (this.unsubChatAction !== null) {
-      this.unsubChatAction();
-      this.unsubChatAction = null;
-    }
+    this.subscriptions.clear('chatAction');
     if (this.typingTimer !== -1) {
       clearInterval(this.typingTimer);
       this.typingTimer = -1;
@@ -3570,40 +3347,20 @@ export struct ChatPage {
     this.autoSaveInFlight = false;
     getVoicePlayback().setMusicCompletionListener(null);
     getVoicePlayback().stop();
-    if (this.unsubMsg !== null) { this.unsubMsg(); this.unsubMsg = null; }
-    if (this.unsubSub !== null) { this.unsubSub(); this.unsubSub = null; }
-    if (this.unsubChat !== null) { this.unsubChat(); this.unsubChat = null; }
-    if (this.unsubLiveLocation !== null) {
-      this.unsubLiveLocation();
-      this.unsubLiveLocation = null;
-    }
-    if (this.unsubTranslatable !== null) {
-      this.unsubTranslatable();
-      this.unsubTranslatable = null;
-    }
-    if (this.unsubBg !== null) {
-      this.unsubBg();
-      this.unsubBg = null;
-    }
+    this.subscriptions.clearInOrder([
+      'messages', 'subtitle', 'chat', 'liveLocation', 'translatable', 'background'
+    ]);
     if (this.bgStore !== null) {
       this.bgStore.close();
       this.bgStore = null;
     }
-    if (this.unsubPinned !== null) { this.unsubPinned(); this.unsubPinned = null; }
-    if (this.unsubHeaderAvatar !== null) { this.unsubHeaderAvatar(); this.unsubHeaderAvatar = null; }
-    if (this.unsubHeaderTitle !== null) { this.unsubHeaderTitle(); this.unsubHeaderTitle = null; }
-    if (this.unsubReplyKb !== null) { this.unsubReplyKb(); this.unsubReplyKb = null; }
-    if (this.unsubMembershipSupergroup !== null) {
-      this.unsubMembershipSupergroup();
-      this.unsubMembershipSupergroup = null;
-    }
-    if (this.unsubMembershipBasicGroup !== null) {
-      this.unsubMembershipBasicGroup();
-      this.unsubMembershipBasicGroup = null;
-    }
+    this.subscriptions.clearInOrder([
+      'pinned', 'headerAvatar', 'headerTitle', 'replyKeyboard'
+    ]);
     this.membershipSeq++;
-    if (this.unsubVideoChat !== null) { this.unsubVideoChat(); this.unsubVideoChat = null; }
-    if (this.unsubGroupCall !== null) { this.unsubGroupCall(); this.unsubGroupCall = null; }
+    this.subscriptions.clearInOrder([
+      'membershipSupergroup', 'membershipBasicGroup', 'videoChat', 'groupCall'
+    ]);
     if (this.livePulseTimer !== -1) { clearInterval(this.livePulseTimer); this.livePulseTimer = -1; }
     if (this.liveStateRefreshTimer !== -1) {
       clearInterval(this.liveStateRefreshTimer);
@@ -4634,18 +4391,24 @@ export struct ChatPage {
   // A history page is inserted before the current window. Keep the exact
   // message and its partial row offset under the user's finger; the newly
   // loaded rows should only appear as they continue scrolling upward.
-  private restorePrependAnchor(groups: AlbumGroup[], messageId: number, itemY: number): void {
+  private restorePrependAnchor(
+    groups: AlbumGroup[], messageId: number, itemY: number,
+    userOffsetAtCapture: number = Number.NaN
+  ): void {
     const targetIndex: number = groupIndexOf(groups, messageId);
     if (targetIndex < 0) {
       return;
     }
-    this.restoreScrollAnchor(targetIndex, itemY, true);
+    this.restoreScrollAnchor(targetIndex, itemY, userOffsetAtCapture);
   }
 
   // A newer page is appended after the current window. The list is
   // end-anchored (stackFromEnd), so the append alone pushes the visible content
   // upward; put the same message back under the user's finger.
-  private restoreAppendAnchor(groups: AlbumGroup[], messageId: number, itemY: number): void {
+  private restoreAppendAnchor(
+    groups: AlbumGroup[], messageId: number, itemY: number,
+    userOffsetAtCapture: number = Number.NaN
+  ): void {
     const targetIndex: number = groupIndexOf(groups, messageId);
     if (targetIndex < 0) {
       logW(`[AppendAnchor] lost id=${messageId} rows=${groups.length}` +
@@ -4654,7 +4417,7 @@ export struct ChatPage {
     }
     logW(`[AppendAnchor] restore id=${messageId} idx=${targetIndex} y=${itemY}` +
       ` rows=${groups.length} ${this.appendAnchorGateProbe(groups)}`);
-    this.restoreScrollAnchor(targetIndex, itemY);
+    this.restoreScrollAnchor(targetIndex, itemY, userOffsetAtCapture);
   }
 
   // ⚠️ 临时探针（随 APPEND_ANCHOR_RESTORE_BYPASSED 一起删）：把决定这道闸开合的
@@ -4721,8 +4484,8 @@ export struct ChatPage {
   //     dy = 新量到的 y - 记下的 y。**不调 scrollToIndex**：那一句会让 List 从
   //     给定下标起全量重测，真机 Frame trace 里 ScrollToIndex(index=9) 对应的
   //     正是录制中最大的那几个尖峰。
-  //   · 取不到有效矩形（行已滑出显示区）→ 回退到旧路径 scrollToIndex(START)
-  //     + scrollBy，逐字保持原行为。
+  //   · 取不到有效矩形（行已滑出显示区）→ 重试三次后用一次带 extraOffset 的
+  //     scrollToIndex(START) 定位，避免旧路径两步滚动造成可见闪动。
   //
   // 时机沿用原来的 setTimeout(0)：数据已发布、框架也已经跑完一次布局，此时
   // getItemRect 量到的才是新快照下的位置。prependRestoreSeq 代次守卫不动——一
@@ -4732,31 +4495,31 @@ export struct ChatPage {
   // getItemRect 拿到全 0，每次都走了 scrollToIndex+scrollBy 兜底；它按 List 顶端对齐，
   // 没算 contentStartOffset 那段顶栏留白，把视口往下推了一截（用户：18:00 → 18:05）。
   // 而框架（maintainVisibleContentPosition / stackFromEnd）其实已经把位置保住了。
-  // 现在量到就补差值，量不到就下一帧再量（最多三次），用尽仍量不到就放弃——
-  // 依据见 attemptAnchorRestore 里那段真机 A/B 数据。
+  // 现在量到就补差值，量不到就下一帧再量（最多三次），用尽仍量不到再做一次
+  // 不依赖测量的定位——依据见 attemptAnchorRestore 里那段真机 A/B 数据。
   private restoreScrollAnchor(
-    targetIndex: number, itemY: number, cancelOnUserScroll: boolean = false
+    targetIndex: number, itemY: number,
+    userOffsetAtCapture: number = Number.NaN
   ): void {
+    const capturedUserOffset: number = Number.isNaN(userOffsetAtCapture)
+      ? this.userScrollOffsetTotal : userOffsetAtCapture;
     const seq: number = ++this.prependRestoreSeq;
-    this.attemptAnchorRestore(seq, targetIndex, itemY, 0, cancelOnUserScroll);
+    this.attemptAnchorRestore(seq, targetIndex, itemY, capturedUserOffset, 0);
   }
 
   private attemptAnchorRestore(
     seq: number,
     targetIndex: number,
     itemY: number,
-    attempt: number,
-    cancelOnUserScroll: boolean
+    userOffsetAtCapture: number,
+    attempt: number
   ): void {
     setTimeout((): void => {
       if (seq !== this.prependRestoreSeq || this.pendingJumpId !== 0 || this.pendingScrollBottom) {
         return;
       }
-      if (cancelOnUserScroll && (this.listTouchActive || this.listUserScrollActive)) {
-        logW(`[AnchorRestore] skip user-owned idx=${targetIndex}` +
-          ` touch=${this.listTouchActive} scroll=${this.listUserScrollActive}`);
-        return;
-      }
+      const targetY: number = anchorYAfterUserScroll(
+        itemY, userOffsetAtCapture, this.userScrollOffsetTotal);
       // 非法下标返回全 0 矩形（faqs-arkui-572），异常按同样处理——两条都落到
       // planAnchorRestore 的 fallback 支。
       let rect: AnchorRectSnapshot = INVALID_ANCHOR_RECT;
@@ -4766,9 +4529,9 @@ export struct ChatPage {
       } catch (e) {
         rect = INVALID_ANCHOR_RECT;
       }
-      const plan: AnchorRestorePlan = planAnchorRestore(rect, itemY);
+      const plan: AnchorRestorePlan = planAnchorRestore(rect, targetY);
       // 量不到就下一帧再量，最多 ANCHOR_RESTORE_ATTEMPTS 次；用尽仍量不到才
-      // 放弃，**且不走 scrollToIndex 兜底**。判据与完整推导见 util/anchorRestore
+      // 进入下面的一步式 scrollToIndex 定位。判据与完整推导见 util/anchorRestore
       // 的 shouldRetryAnchorRestore。
       //
       // 【这里曾经只量一次，是个回归】ecce2fd 依据一场会话「attempt=0 成功
@@ -4783,15 +4546,12 @@ export struct ChatPage {
       // 频道动一动就跳了好几下，进来看的消息也找不到了」——一次向上翻页连灌 6 页
       // 30 行，六次前插的补偿全部放弃。
       //
-      // 兜底仍然不恢复：ca5bde9 已证实 scrollToIndex(START) 没算 contentStartOffset，
-      // 会把视口整体往下推，那才是真正把视口挪走的动作。
-      //
-      // planAnchorRestore 的 fallback 分支保留不删：判据本身有单测钉着，改判据是
-      // 另一件事；这里只是不再按它去 scrollToIndex。
+      // ca5bde9 证实旧的两步兜底没算 contentStartOffset，会把视口整体往下推；
+      // 下面的一步式定位会同时补上实时的顶部留白。
       if (shouldRetryAnchorRestore(plan.mode, attempt)) {
         logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex}` +
           ` oldY=${Math.round(itemY)}`);
-        this.attemptAnchorRestore(seq, targetIndex, itemY, attempt + 1, cancelOnUserScroll);
+        this.attemptAnchorRestore(seq, targetIndex, itemY, userOffsetAtCapture, attempt + 1);
         return;
       }
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
@@ -4799,7 +4559,8 @@ export struct ChatPage {
         //
         // API 20 起 maintainVisibleContentPosition 已支持 Repeat.virtualScroll，
         // 普通区外前插由框架保位；能走到这里的是边界可见行因 key 改变而被替换的
-        // 兜底。若期间用户开始拖动，上面的 user-owned 守卫已经放弃本次人工定位。
+        // 兜底。若期间用户开始拖动，targetY 已扣除捕获锚点后的真实用户滚动量，
+        // 因此只修正数据刷新造成的位移，不会把手势或惯性滚动拉回去。
         //
         // 真机 [AnchorAudit] 也把这件事钉死了：五次 give-up 的 offDelta 分别是
         // 8/-2/41/0/126（用户没在滑），而 250ms 后锚点行**仍然不在屏上**——滚动
@@ -4811,10 +4572,10 @@ export struct ChatPage {
         // extraOffset。一次调用完成，不像旧兜底那样 scrollToIndex 再 scrollBy 分两步
         // 走（那一步之间是看得见的）。
         //
-        // 【extraOffset 取 -itemY 的依据】旧兜底那两句是
-        //   scrollToIndex(idx, false, START); if (itemY < -0.5) scrollBy(0, -itemY);
-        // START 之后行的 y 是 0，要把它挪回 itemY 正是 scrollBy(0, -itemY)。这里
-        // 把两步合成一步，位移量逐字相同。
+        // 【extraOffset 取 -targetY 的依据】旧兜底那两句是
+        //   scrollToIndex(idx, false, START); scrollBy(0, -targetY);
+        // START 之后行的 y 是 0，要把它挪回 targetY 正是 scrollBy(0, -targetY)。
+        // targetY 已包含捕获后的用户滚动量，这里把两步合成一步。
         //
         // 【+ headerChromeHeight() 是量出来的，不是推的】ScrollAlign.START 按 List
         // 的顶端对齐，而顶部 chrome 是用 contentStartOffset 让出来的一段留白
@@ -4826,9 +4587,11 @@ export struct ChatPage {
         // 前三次**精确等于**当时的顶栏高度（同份日志里 [Jump80] flash 的 top 也一直
         // 是 153），符号是"行落得偏低"，所以往回补正的量。第四次 770 是顶栏更高的
         // 状态（置顶条/通话条会把它撑高），所以这里取**实时值**而不是常数。
-        const extra: number = -itemY + this.headerChromeHeight();
+        const extra: number = -targetY + this.headerChromeHeight();
         logW(`[AnchorRestore] reposition attempt=${attempt} idx=${targetIndex}` +
-          ` oldY=${Math.round(itemY)} extraOffset=${Math.round(extra)}` +
+          ` oldY=${Math.round(itemY)} targetY=${Math.round(targetY)}` +
+          ` userDelta=${Math.round(this.userScrollOffsetTotal - userOffsetAtCapture)}` +
+          ` extraOffset=${Math.round(extra)}` +
           ` chrome=${Math.round(this.headerChromeHeight())}`);
         try {
           this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START,
@@ -4836,7 +4599,7 @@ export struct ChatPage {
         } catch (e) {
           logE(`ChatPage.repositionAnchor failed: ${e}`);
         }
-        this.auditAnchorRestore(seq, targetIndex, itemY, 'reposition', extra);
+        this.auditAnchorRestore(seq, targetIndex, targetY, 'reposition', extra);
         return;
       }
       // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。
@@ -4846,7 +4609,9 @@ export struct ChatPage {
       const dOff: number = Number.isNaN(this.anchorCaptureOffset) || Number.isNaN(nowOff)
         ? Number.NaN : nowOff - this.anchorCaptureOffset;
       logW(`[AnchorRestore] mode=${plan.mode} attempt=${attempt} idx=${targetIndex}` +
-        ` oldY=${Math.round(itemY)} newY=${Math.round(rect.y)}` +
+        ` oldY=${Math.round(itemY)} targetY=${Math.round(targetY)}` +
+        ` userDelta=${Math.round(this.userScrollOffsetTotal - userOffsetAtCapture)}` +
+        ` newY=${Math.round(rect.y)}` +
         ` w=${Math.round(rect.width)} h=${Math.round(rect.height)}` +
         ` dy=${Math.round(plan.dy)}` +
         ` capOff=${Math.round(this.anchorCaptureOffset)} nowOff=${Math.round(nowOff)}` +
@@ -4854,7 +4619,7 @@ export struct ChatPage {
       if (plan.dy !== 0) {
         this.scroller.scrollBy(0, plan.dy);
       }
-      this.auditAnchorRestore(seq, targetIndex, itemY,
+      this.auditAnchorRestore(seq, targetIndex, targetY,
         plan.dy !== 0 ? 'applied' : 'noop', plan.dy);
     }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
   }
@@ -7088,8 +6853,8 @@ export struct ChatPage {
   // the TextArea has to scroll internally, which it can only do if nothing
   // truncates the layout (see the removed maxLines at the call site).
   private composerEditorHeight(): number {
-    const oneLine: number = COMPOSER_LINE_H + COMPOSER_EDITOR_PAD * 2;
-    const cap: number = COMPOSER_LINE_H * COMPOSER_MAX_LINES + COMPOSER_EDITOR_PAD * 2;
+    const oneLine: number = COMPOSER_LINE_HEIGHT + COMPOSER_EDITOR_PADDING * 2;
+    const cap: number = COMPOSER_LINE_HEIGHT * COMPOSER_MAX_LINES + COMPOSER_EDITOR_PADDING * 2;
     if (this.draft === '' || this.composerEditorW <= 0) {
       return oneLine;
     }
@@ -7110,12 +6875,12 @@ export struct ChatPage {
       const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
         textContent: this.draft,
         fontSize: 15,
-        lineHeight: COMPOSER_LINE_H,
+        lineHeight: COMPOSER_LINE_HEIGHT,
         // 左右各 3 的内边距要从可用宽度里扣掉，否则会少算一行。
         constraintWidth: Math.max(1, this.composerEditorW - 6)
       });
       // measureTextSize 返回的是 px。
-      measured = px2vp(size.height as number) + COMPOSER_EDITOR_PAD * 2;
+      measured = px2vp(size.height as number) + COMPOSER_EDITOR_PADDING * 2;
     } catch (e) {
       // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
       logE(`composerEditorHeight measure failed: ${(e as Error).message}`);
@@ -8870,38 +8635,6 @@ export struct ChatPage {
     .scale({ x: 0.94, y: 0.94 })
   }
 
-  // 底色交给材质：材质渲染在 backgroundColor **之下**，填一层不透明的
-  // surface 就把它整个盖住了。overlayGlassFill 在材质可用时返回透明，
-  // 不可用的设备上返回可见的降级色。
-  @Styles
-  composerIconNormalStyle() {
-    .backgroundColor(Color.Transparent)
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  composerIconPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
-    .opacity(0.72)
-    .scale({ x: 0.9, y: 0.9 })
-  }
-
-  @Styles
-  composerPrimaryNormalStyle() {
-    .backgroundColor(this.accent())
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  composerPrimaryPressedStyle() {
-    .backgroundColor('#287BC8')
-    .opacity(0.84)
-    .scale({ x: 0.92, y: 0.92 })
-  }
-
-
   private closeChatPage(): void {
     if (this.pageClosing) {
       return;
@@ -9077,7 +8810,11 @@ export struct ChatPage {
     if (this.attachPanelOpen) {
       BottomDrawerShell({ bottomSafe: this.bottomSafe, content: this.attachDrawerContent });
     } else if (this.showEmojiPanel && this.membershipState === 'writable') {
-      BottomDrawerShell({ bottomSafe: this.bottomSafe, content: this.emojiDrawerContent });
+      BottomDrawerShell({
+        bottomSafe: this.bottomSafe,
+        drawerHeight: EMOJI_DRAWER_HEIGHT,
+        content: this.emojiDrawerContent
+      });
     }
   }
 
@@ -9146,279 +8883,6 @@ export struct ChatPage {
   // panelContentReady 那套延迟挂载保留：面板里同时挂着三个 picker（自定义表情
   // 常驻，贴纸/GIF 访问过就常驻），一次性挂/卸实测 ~51ms，和挂载位置无关。
   // 先让壳落地，内容下一拍再进来。
-
-  @Builder
-  inputBar() {
-    Row({ space: 6 }) {
-      // 附件按钮在输入框**外面**：它是一个独立动作，不属于正在编辑的这段
-      // 文本。放在胶囊里时它会跟着输入框一起长高（胶囊随文本涨到四行），
-      // 位置飘忽；移出来之后固定贴着左边，和右侧的发送键左右呼应。
-      //
-      // 录音态不显示：那时整条输入区被"红点 + 计时 + 取消 + 发送"接管，
-      // 再挂一个附件入口没有意义。
-      if (!this.isRecording) {
-        // 和胶囊同一块底色、同一种材质，读起来是"输入框旁边的一个键"，
-        // 而不是浮在聊天背景上的一个裸图标。
-        Stack() {
-          // 换字形而不是切 fill 变体：回形针没有 fill 版。开合各自转半圈，
-          // 和输入框里麦克风↔发送键的互换是同一套时序。
-          SymbolGlyph($r('sys.symbol.paperclip'))
-            .fontSize(23)
-            .fontColor([this.attachPanelOpen ? this.accent() : this.chromeIcon()])
-            .opacity(this.attachPanelOpen ? 0 : 1)
-            .rotate({ angle: this.attachPanelOpen ? 45 : 0 })
-            .animation({
-              duration: this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 150),
-              curve: Curve.EaseOut
-            });
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(21)
-            .fontColor([this.accent()])
-            .opacity(this.attachPanelOpen ? 1 : 0)
-            .rotate({ angle: this.attachPanelOpen ? 0 : -45 })
-            .animation({
-              duration: this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 150),
-              curve: Curve.EaseOut
-            });
-        }
-        .width(46)
-        .height(46)
-        .borderRadius(23)
-        // 46 + 1 的底边距，圆盘顶到胶囊上沿差 1px——比 48 的满格轻一点，
-        // 又不至于像 40 那样在胶囊旁边缩成一颗小扣子。
-        .alignSelf(ItemAlign.End)
-        .margin({ bottom: 1 })
-        .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-        .backdropBlur(overlayBackdropBlur('card'))
-        .attributeModifier(materialModifier('card'))
-        .onClick((): void => { this.toggleAttachPanel(); });
-      }
-      Column() {
-        if (hasPendingMedia(this.pendingMedia)) {
-          MediaStrip({
-            items: this.pendingMedia,
-            onRemoveAt: (index: number): void => {
-              this.pendingMedia = removePendingMedia(this.pendingMedia, index);
-            },
-            onMove: (from: number, to: number): void => {
-              this.pendingMedia = movePendingMedia(this.pendingMedia, from, to);
-            },
-            onCancel: (): void => { this.pendingMedia = clearPendingMedia(); }
-          });
-        }
-        if (this.editingId !== 0) {
-          EditStrip({
-            editingKind: this.editingKind,
-            preview: this.editingPreview,
-            onCancel: (): void => { this.cancelEdit(); }
-          });
-        } else if (this.replyToId !== 0) {
-          ReplyStrip({
-            name: this.replyToName,
-            snippet: this.replyToText,
-            enterDuration: this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, 180),
-            onTapQuote: (): void => { this.onReplyTap(this.replyToId); },
-            onCancel: (): void => { this.clearReply(); }
-          });
-        }
-        Row({ space: 6 }) {
-        if (this.isRecording) {
-          // Recording mode: red dot + timer, 取消, send.
-          Row({ space: 7 }) {
-            Circle({ width: 8, height: 8 }).fill('#FF3B30');
-            Text(this.formatRecSeconds()).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
-            Text($r('app.string.cp_recording')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-          }.layoutWeight(1).alignItems(VerticalAlign.Center);
-          Button($r('app.string.cancel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-            .stateStyles({
-              normal: this.composerIconNormalStyle,
-              pressed: this.composerIconPressedStyle
-            })
-            .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120), curve: Curve.EaseOut })
-            .onClick(() => { this.cancelRecording(); });
-          Button() {
-            SymbolGlyph($r('sys.symbol.paperplane')).fontSize(20).fontColor([Color.White]);
-          }
-          .width(40).height(40).borderRadius(20)
-          .stateStyles({
-            normal: this.composerPrimaryNormalStyle,
-            pressed: this.composerPrimaryPressedStyle
-          })
-          .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120), curve: Curve.EaseOut })
-          .onClick(() => { this.finishRecording(); });
-        } else {
-          if (this.botMenuAvailable) {
-            // Bot 菜单 pill — toggles the full command catalog.
-            Row({ space: 4 }) {
-              SymbolGlyph($r(this.commandMenuOpen ? 'sys.symbol.xmark' : 'sys.symbol.line_3_horizontal'))
-                .fontSize(15).fontColor([Color.White]);
-              Text(this.commandMenuOpen ? $r('app.string.close') : $r('app.string.cp_menu')).fontSize(13).fontColor(Color.White);
-            }
-            .padding({ left: 9, right: 10, top: 6, bottom: 6 })
-            .borderRadius(15)
-            .stateStyles({
-              normal: this.composerPrimaryNormalStyle,
-              pressed: this.composerPrimaryPressedStyle
-            })
-            .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120), curve: Curve.EaseOut })
-            .onClick(() => { this.toggleBotMenu(); });
-          }
-          SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.face_smiling_fill' : 'sys.symbol.face_smiling'))
-            .fontSize(24)
-            .fontColor([this.showEmojiPanel ? this.accent() : this.chromeIcon()])
-            .onAreaChange((_old: Area, area: Area) => {
-              const gx = area.globalPosition.x as number;
-              this.emojiBtnCx = gx + (area.width as number) / 2;
-            })
-            .onClick(() => {
-              this.setEmojiPanel(!this.showEmojiPanel);
-              this.mentionItems = [];
-              this.commandItems = [];
-              this.commandMenuOpen = false;
-            });
-          if (this.composerEditorReady) {
-          TextArea({ text: this.draft, placeholder: this.composerPlaceholder(), controller: this.composerController })
-            .layoutWeight(1)
-            .height(this.composerEditorHeight())
-            // No maxLines. It caps the LAYOUT, not just the visible box, so
-            // anything past the last line never lays out and cannot be scrolled
-            // to — a long draft was simply unreachable. The height above is the
-            // only cap; beyond it the TextArea scrolls its own content.
-            .maxLength(4096)
-            .fontSize(15)
-            .lineHeight(COMPOSER_LINE_H)
-            .fontColor(COLOR_TEXT_PRIMARY)
-            .caretColor(this.accent())
-            .padding({
-              left: 3, right: 3,
-              top: COMPOSER_EDITOR_PAD, bottom: COMPOSER_EDITOR_PAD
-            })
-            .barState(BarState.Auto)
-            .backgroundColor(Color.Transparent)
-            .key('chat_composer')
-            // null 而不是 undefined：ArkUI 里 undefined 往往是"保持上次的值"，
-            // 只有显式 null 才解绑（官方示例用的也是 null）。写成 undefined 时
-            // 面板关掉后再点输入框还会把它弹回来。
-            .onAreaChange((_old: Area, area: Area): void => {
-              const next: number = area.width as number;
-              if (Math.abs(next - this.composerEditorW) > 0.5) {
-                this.composerEditorW = next;
-              }
-            })
-            .onChange((v: string) => {
-              this.draft = v;
-              this.updateSuggestions(v);
-              if (v.trim() !== '' && this.editingId === 0) {
-                this.store?.notifyTyping();
-              }
-            })
-            // 聊天设置 → 回车键发送: the IME's action key becomes 发送 and submits;
-            // otherwise TextArea keeps the ordinary newline action.
-            .enterKeyType(this.sendByEnter ? EnterKeyType.Send : EnterKeyType.NEW_LINE)
-            .onSubmit(() => {
-              if (this.sendByEnter) {
-                this.doSend();
-              }
-            })
-            .onFocus(() => {
-              // Capture this before RESIZE starts changing the List viewport.
-              // Only a chat already at the live tail should follow the IME;
-              // focusing while reading older messages must preserve position.
-              this.imeTailPinned = this.atBottom && this.viewerMsgId === 0 &&
-                !this.stayAtUnread;
-              this.composerFocused = true;
-              // 键盘要来了：把贴纸播放器的销毁摁到它落定之后再做。
-              holdPlayerJobs(KEYBOARD_SETTLE_MS);
-              // 点输入框 = 要打字，收起抽屉把高度让给系统键盘。
-              this.setEmojiPanel(false);
-              this.applyBottomSlot(closeAllSlots());
-              this.commandMenuOpen = false;
-              if (this.keyboardH > 0) {
-                this.syncTailOnImeFrame();
-              }
-            })
-            .onBlur(() => { this.composerFocused = false; });
-          } else {
-            // Same one-line geometry as TextArea, but no editor controller,
-            // input-method bridge, stylus library or paragraph editor tree.
-            Text(this.draft !== '' ? this.draft : this.composerPlaceholder())
-              .layoutWeight(1)
-              .height(this.composerEditorHeight())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .fontSize(15)
-              .lineHeight(COMPOSER_LINE_H)
-              .fontColor(this.draft !== '' ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY)
-              .padding({
-                left: 3, right: 3,
-                top: COMPOSER_EDITOR_PAD, bottom: COMPOSER_EDITOR_PAD
-              })
-              .backgroundColor(Color.Transparent)
-              .key('chat_composer_placeholder')
-              .accessibilityText(this.composerPlaceholder())
-              .onClick((): void => { this.activateComposerEditor(); })
-              .onAppear((): void => { this.scheduleComposerEditorMount(); });
-          }
-          if (this.replyKeyboard !== null) {
-            // Bot-keyboard toggle: tinted while the keyboard is up, gray when
-            // collapsed — tapping flips between the two.
-            Row() {
-              SymbolGlyph($r('sys.symbol.keyboard'))
-                .fontSize(21)
-                .fontColor([this.replyKbCollapsed ? COLOR_ICON_SECONDARY : this.accent()]);
-            }
-            .width(34).height(34).borderRadius(17)
-            .justifyContent(FlexAlign.Center)
-            .stateStyles({
-              normal: this.composerIconNormalStyle,
-              pressed: this.composerIconPressedStyle
-            })
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-              curve: Curve.EaseOut
-            })
-            .accessibilityText(this.replyKbCollapsed ? $r('app.string.cp_open_bot_keyboard') : $r('app.string.cp_switch_to_text'))
-            .onClick(() => { this.toggleReplyKeyboard(); });
-          }
-          if (this.botMiniAppUrlValue !== '') {
-            SymbolGlyph($r('sys.symbol.square_grid_2x2'))
-              .fontSize(22).fontColor([this.accent()])
-              .accessibilityText($r('app.string.cp_open_miniapp'))
-              .onClick((): void => { this.openBotMiniApp(); });
-          }
-          ComposerSendButton({
-            // 有暂存媒体时正文可以为空，按钮也该是"发送"而不是麦克风。
-            hasDraft: pendingMediaCanSend(this.pendingMedia, this.draft),
-            recordingStarting: this.recordingStarting,
-            sending: this.composerSending,
-            onRecord: (): void => { this.startRecording(); },
-            onSend: (): void => { this.doSend(); },
-            onSendOptions: (): void => { this.showSendOptions(); }
-          });
-        }
-      }
-        .width('100%')
-        .constraintSize({ minHeight: 48, maxHeight: 120 })
-        .padding({ left: 12, right: 4, top: 4, bottom: 4 })
-        .alignItems(VerticalAlign.Center);
-      }
-      .layoutWeight(1)
-      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-      .borderRadius(24)
-      // 材质接管时它自带填充，把上面的实心色清成透明玻璃；低于 API 26 材质
-      // 是 undefined，改由 backdropBlur + 半透明底色自己画。
-      .backdropBlur(overlayBackdropBlur('card'))
-      .attributeModifier(materialModifier('card'));
-    }.width('100%')
-    .padding({
-      left: 14,
-      right: 14,
-      top: 6,
-      bottom: this.replyKbVisible() ? 8 : this.composerBottomGap()
-    })
-    .alignItems(VerticalAlign.Center)
-    .onAreaChange((_old: Area, area: Area) => { this.inputBarH = area.height as number; });
-  }
 
   @Builder
   initialHeaderShell() {
@@ -9521,7 +8985,102 @@ export struct ChatPage {
         });
       } else {
         Column() {
-          this.inputBar();
+          ChatComposerInput({
+            isRecording: this.isRecording,
+            attachPanelOpen: this.attachPanelOpen,
+            pendingMedia: this.pendingMedia,
+            editingId: this.editingId,
+            editingKind: this.editingKind,
+            editingPreview: this.editingPreview,
+            replyToId: this.replyToId,
+            replyToName: this.replyToName,
+            replyToText: this.replyToText,
+            botMenuAvailable: this.botMenuAvailable,
+            commandMenuOpen: this.commandMenuOpen,
+            showEmojiPanel: this.showEmojiPanel,
+            composerEditorReady: this.composerEditorReady,
+            draft: this.draft,
+            composerPlaceholder: this.composerPlaceholder(),
+            composerController: this.composerController,
+            composerEditorHeight: this.composerEditorHeight(),
+            sendByEnter: this.sendByEnter,
+            replyKeyboard: this.replyKeyboard,
+            replyKbCollapsed: this.replyKbCollapsed,
+            botMiniAppUrlValue: this.botMiniAppUrlValue,
+            recordingStarting: this.recordingStarting,
+            composerSending: this.composerSending,
+            replyKeyboardVisible: this.replyKbVisible(),
+            bottomGap: this.composerBottomGap(),
+            hasDraft: pendingMediaCanSend(this.pendingMedia, this.draft),
+            accentColor: this.accent(),
+            chromeIconColor: this.chromeIcon(),
+            onToggleAttach: (): void => { this.toggleAttachPanel(); },
+            onRemoveMedia: (index: number): void => {
+              this.pendingMedia = removePendingMedia(this.pendingMedia, index);
+            },
+            onMoveMedia: (from: number, to: number): void => {
+              this.pendingMedia = movePendingMedia(this.pendingMedia, from, to);
+            },
+            onClearMedia: (): void => { this.pendingMedia = clearPendingMedia(); },
+            onCancelEdit: (): void => { this.cancelEdit(); },
+            onReplyTap: (messageId: number): void => { this.onReplyTap(messageId); },
+            onClearReply: (): void => { this.clearReply(); },
+            onCancelRecording: (): void => { this.cancelRecording(); },
+            onFinishRecording: (): void => { this.finishRecording(); },
+            onToggleBotMenu: (): void => { this.toggleBotMenu(); },
+            onEmojiButtonArea: (centerX: number): void => { this.emojiBtnCx = centerX; },
+            onEmojiButtonTap: (): void => {
+              this.setEmojiPanel(!this.showEmojiPanel);
+              this.mentionItems = [];
+              this.commandItems = [];
+              this.commandMenuOpen = false;
+            },
+            onEditorWidthChange: (width: number): void => {
+              if (Math.abs(width - this.composerEditorW) > 0.5) {
+                this.composerEditorW = width;
+              }
+            },
+            onDraftChange: (value: string): void => {
+              this.draft = value;
+              this.updateSuggestions(value);
+              if (value.trim() !== '' && this.editingId === 0) {
+                this.store?.notifyTyping();
+              }
+            },
+            onSubmit: (): void => {
+              if (this.sendByEnter) {
+                this.doSend();
+              }
+            },
+            onEditorFocus: (): void => {
+              this.imeTailPinned = this.atBottom && this.viewerMsgId === 0 &&
+                !this.stayAtUnread;
+              this.composerFocused = true;
+              holdPlayerJobs(KEYBOARD_SETTLE_MS);
+              this.setEmojiPanel(false);
+              this.applyBottomSlot(closeAllSlots());
+              this.commandMenuOpen = false;
+              if (this.keyboardH > 0) {
+                this.syncTailOnImeFrame();
+              }
+            },
+            onEditorBlur: (): void => { this.composerFocused = false; },
+            onActivateEditor: (): void => { this.activateComposerEditor(); },
+            onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
+            onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },
+            onOpenMiniApp: (): void => { this.openBotMiniApp(); },
+            onRecord: (): void => { this.startRecording(); },
+            onSend: (): void => { this.doSend(); },
+            onSendOptions: (): void => { this.showSendOptions(); },
+            onInputBarHeightChange: (height: number): void => { this.inputBarH = height; },
+            menuEffectDuration: (duration: number): number =>
+              this.chatEffectDuration(KEY_POWER_EFFECT_MENU, duration),
+            replyEffectDuration: (duration: number): number =>
+              this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, duration),
+            smoothEffectDuration: (duration: number): number =>
+              powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, duration),
+            recordingSecondsLabel: this.formatRecSeconds()
+          });
           if (this.replyKbVisible()) {
             ReplyKeyboardPanel({
             rows: this.replyKeyboard!.rows,
@@ -9731,6 +9290,69 @@ export struct ChatPage {
     }
   }
 
+  // Repeat supplies the complete item metadata here. Keeping the row builder
+  // on the page preserves the existing message-bubble/reuse and selection
+  // behavior while ChatTimelineHost owns only the scrolling shell.
+  @Builder
+  timelineRow(ri: RepeatItem<AlbumGroup>) {
+    ListItem() {
+      if (ri.item.initialDeferred === true) {
+        Column()
+          .width('100%')
+          .height(initialMessagePlaceholderHeight(
+            ri.item,
+            this.screenW,
+            this.firstUnreadId !== 0 &&
+              ri.item.memberIds.indexOf(this.firstUnreadId) >= 0
+          ))
+          .hitTestBehavior(HitTestMode.None);
+      } else {
+        Stack({ alignContent: Alignment.Start }) {
+          // Selection mode shifts the row right into a left check gutter.
+          Row() {
+            if (this.selecting && ri.item.head.contentType !== 'system' &&
+              ri.item.head.contentType !== 'hidden') {
+              Column() {
+                if (this.rowSelected(ri.item)) {
+                  SymbolGlyph($r('sys.symbol.checkmark_circle'))
+                    .fontSize(22).fontColor([this.accent()]);
+                } else {
+                  Row()
+                    .width(20).height(20).borderRadius(10)
+                    .border({ width: 1.5, color: '#8E8E93' });
+                }
+              }
+              .width(34)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center);
+            }
+            Column() {
+              this.preparedMessageBubble(ri);
+            }
+            .layoutWeight(1)
+            // BLOCK_DESCENDANTS keeps the outer List draggable in selection mode.
+            .hitTestBehavior(this.selecting && ri.item.head.contentType !== 'system' &&
+              ri.item.head.contentType !== 'hidden'
+              ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .backgroundColor(this.selecting && this.rowSelected(ri.item)
+            ? $r('app.color.select_highlight') : Color.Transparent)
+          .onClick((): void => {
+            if (this.selecting) {
+              this.toggleSelectRow(ri.item);
+            }
+          });
+        }
+      }
+    }
+    .visibility(this.initialTimelineMasked || ri.item.initialDeferred === true
+      ? Visibility.Hidden : Visibility.Visible)
+    .transition(this.initialRowFadeTransition(
+      ri.index, ri.item.initialDeferred === true));
+  }
+
   // The flattened background, once it exists. Until then the layered version
   // below renders, so the chat never waits on the raster.
   build() {
@@ -9751,373 +9373,128 @@ export struct ChatPage {
       });
       Column() {
         Stack() {
-        List({ scroller: this.scroller }) {
-          // Repeat.virtualScroll（不是 ForEach / LazyForEach）。三条硬约束都满足：
-          //   · 「Repeat 必须在滚动类容器组件内使用」——这里是 List；
-          //   · 「滚动容器组件内只能包含一个 Repeat」——这个 List 的 children 只有
-          //     它一个，逐行确认过；
-          //   · 「Repeat 懒加载模式不支持与状态管理 V1 配合使用」——ChatPage 在
-          //     P3 批 1 已经是 @ComponentV2。
-          //
-          // reusable: false —— **故意关掉 Repeat 自身的复用**。官方原话：「当
-          // Repeat 的子组件为 @ReusableV2 装饰的自定义组件时，Repeat 自身的复用
-          // 能力优先于 @ReusableV2 的复用能力……在懒加载模式下，正常滑动场景、
-          // 更新场景不会触发 @ReusableV2 的回收和复用，若开发者希望使用
-          // @ReusableV2 的复用能力，建议关闭 Repeat 自身的复用能力。」本行的复用
-          // 是 ReusableMessageBubble（@ReusableV2）+ rowReuseId 分档的全局池，
-          // P5 的既定方案就是保住它，所以按官方的建议关掉 Repeat 这一层。
-          // 起始版本：virtualScroll / totalCount / key / each 都是 API 12，
-          // reusable 是 API 18，本仓 compatibleSdkVersion "6.0.0(20)" 全部够用。
-          //
-          // 没有用 .templateId()/.template()：template 是 **Repeat 自己的**复用池
-          // 分档，reusable: false 之下它本就不生效；而且 rowReuseId 的取值空间是
-          // 十二个维度的组合（medium 档最多 4096 种），没法逐个声明成 .template()，
-          // 声明不全的那些按文档会落回 .each()。分档继续由 @ReusableV2 的
-          // .reuse({ reuseId }) 承担，rowReuseId.ets 一个字符没动。
-          Repeat<AlbumGroup>(this.groups)
-            .each((ri: RepeatItem<AlbumGroup>) => {
-              ListItem() {
-                if (ri.item.initialDeferred === true) {
-                  Column()
-                    .width('100%')
-                    .height(initialMessagePlaceholderHeight(
-                      ri.item,
-                      this.screenW,
-                      this.firstUnreadId !== 0 &&
-                        ri.item.memberIds.indexOf(this.firstUnreadId) >= 0
-                    ))
-                    .hitTestBehavior(HitTestMode.None);
-                } else {
-                Stack({ alignContent: Alignment.Start }) {
-                // Selection mode shifts the row right into a left check gutter
-                // (instead of overlaying the check on the avatars).
-                Row() {
-                if (this.selecting && ri.item.head.contentType !== 'system' && ri.item.head.contentType !== 'hidden') {
-                  Column() {
-                    if (this.rowSelected(ri.item)) {
-                      SymbolGlyph($r('sys.symbol.checkmark_circle'))
-                        .fontSize(22).fontColor([this.accent()]);
-                    } else {
-                      Row()
-                        .width(20).height(20).borderRadius(10)
-                        .border({ width: 1.5, color: '#8E8E93' });
-                    }
-                  }
-                  .width(34)
-                  .justifyContent(FlexAlign.Center)
-                  .alignItems(HorizontalAlign.Center);
-                }
-                Column() {
-                  this.preparedMessageBubble(ri);
-                }
-                .layoutWeight(1)
-                // 多选态下消息本体整体不响应触摸：BLOCK_DESCENDANTS 只封住自己和
-                // 后代，**不影响祖先**（官方原话），所以外层 List 的滑动照常。
-                // 原来用的是 Block，它连兄弟一起封，实测多选时列表滑不动。
-                // 点击判定放在外面那层，那层保持 Default。
-                .hitTestBehavior(this.selecting && ri.item.head.contentType !== 'system' &&
-                  ri.item.head.contentType !== 'hidden'
-                  ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Center)
-                // 这条底色原来也挂着一条常驻 .animation()（150ms）。同样的道理
-                // 摘掉了：多选高亮一年到头只在点选那一下变，却让每一行的每一次
-                // rerender 都进动画上下文。改由 animateSelection() 在事件处一次性
-                // 驱动（enterSelect / exitSelect / toggleSelectRow）。
-                .backgroundColor(this.selecting && this.rowSelected(ri.item) ? $r('app.color.select_highlight') : Color.Transparent)
-                .onClick(() => {
-                  if (this.selecting) {
-                    this.toggleSelectRow(ri.item);
-                  }
-                });
-                }
-                }
+        ChatTimelineHost({
+          groups: this.groups,
+          scroller: this.scroller,
+          initialTimelineMasked: this.initialTimelineMasked,
+          headerStartOffset: this.headerChromeHeight(),
+          blurRadius: this.headerBlurRadius(),
+          blurStops: this.headerBlurStops(),
+          bottomChromeH: this.bottomChromeH,
+          listCachedCount: this.listCachedCount,
+          stackFromEnd: this.stackFromEndWanted(),
+          visibleGroupCount: this.visibleGroupCount,
+          messageLoadState: this.messageLoadState,
+          messageLoadError: this.messageLoadError,
+          threadRootId: this.threadRootId,
+          membershipState: this.membershipState,
+          isChannel: this.isChannel,
+          isGroup: this.isGroup,
+          screenW: this.screenW,
+          floatDateState: this.floatDateState,
+          materialEpoch: this.materialEpoch,
+          showTimelinePill: this.timelinePillMode() !== TL_NONE,
+          timelinePillMode: this.timelinePillMode(),
+          timelinePillLabel: timelineStateText(this.timelinePillMode()),
+          flashShown: this.flashShown,
+          flashTop: this.flashTop,
+          flashHeight: this.flashHeight,
+          flashAlpha: this.flashAlpha,
+          timelineTopMargin: this.headerChromeHeight() + 8,
+          timelineRow: (ri: RepeatItem<AlbumGroup>): void => { this.timelineRow(ri); },
+          rowKey: (group: AlbumGroup): string => this.rowKeyOf(group),
+          onTimelineReachStart: (): void => { this.maybeLoadOlder(); },
+          onTimelineTouch: (e: TouchEvent): void => {
+            if (e.type === TouchType.Down) {
+              this.finishInitialMessageStageForInteraction();
+              this.imeTailPinned = false;
+              this.imeLayoutSeq++;
+              this.listTouchActive = true;
+              this.olderArmed = true;
+              this.cancelFlash();
+              this.closeBottomPanels();
+            } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+              this.listTouchActive = false;
+            }
+          },
+          onTimelineScrollIndex: (start: number, end: number): void => {
+            this.armPlaySlotSettle();
+            this.refreshAtBottom();
+            this.curStartIdx = start;
+            this.curEndIdx = end;
+            this.indexGroupsLen = this.groups.length;
+            this.fillViewportIfNeeded();
+            this.curBottomId = this.bottomVisibleId(end);
+            this.syncReturnState();
+            this.markVisibleRead(end);
+            this.updatePinnedFromScroll(start);
+            const visible: PrefetchRange | null =
+              clampPrefetchRange(start, end, this.groupsData.totalCount());
+            if (visible !== null) {
+              this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
+            }
+            if (!this.chatTgsScrollActive) {
+              this.driveTranslations(start, end);
+            }
+            this.syncMediaWindow(start, end);
+            if (start > 4) {
+              this.olderArmed = true;
+            } else {
+              this.maybeLoadOlder();
+            }
+            if (reachedNewerPageTrigger(end, this.groups.length)) {
+              this.maybeLoadNewer(end);
+            }
+          },
+          onTimelineWillScroll: (_offset: number, _state: ScrollState, source: ScrollSource): void => {
+            this.nextDidScrollIsUserDriven = source !== ScrollSource.SCROLLER &&
+              source !== ScrollSource.SCROLLER_ANIMATION;
+          },
+          onTimelineDidScroll: (offset: number, state: ScrollState): void => {
+            if (this.nextDidScrollIsUserDriven && state !== ScrollState.Idle) {
+              this.userScrollOffsetTotal += offset;
+            }
+            this.nextDidScrollIsUserDriven = false;
+            this.refreshAtBottom();
+            this.syncFlashRect();
+            if (state === ScrollState.Scroll) {
+              this.accumulateNewerDrag(offset);
+            }
+            if (this.listTouchActive) {
+              if (this.stayAtUnread) {
+                this.stayAtUnread = false;
               }
-              // Deferred rows continue reserving geometry after an early bottom
-              // reveal. Keep each one invisible until its stable-key replacement
-              // is real, then reuse the same per-row fade/transform wave.
-              //
-              // 原来这里是 opacity / translate / scale 三条绑定，配一条常驻的
-              // .animation() 把它们的变化拉成 90ms 的淡入。现在遮挡改用
-              // visibility，起止形态（opacity 0→1、y 2→0、scale 0.99→1）交给下面
-              // 那条 transition 声明——**Hidden 与 Visible 之间的切换本身就是
-              // transition 的第二种触发条件**（API 参考「组件内转场 (transition)」
-              // 原文：「当组件 visibility 属性在可见和不可见之间改变时，只触发该
-              // 组件的 transition 效果」）。逐行的 stagger 因此原样保住：每一行
-              // 在遮罩掀开的那一帧各自带着自己的 delay 入场。
-              //
-              // Hidden 而不是 None：Hidden「隐藏，但参与布局进行占位」，与原来
-              // opacity 0 一样守着行高，滚动锚点和 getItemRect 那一套不受影响。
-              .visibility(this.initialTimelineMasked || ri.item.initialDeferred === true
-                ? Visibility.Hidden : Visibility.Visible)
-              // Newly materialized rows read the plain scroll gate without
-              // invalidating already visible rows at onScrollStart. During a
-              // fling they paint immediately; the entry stagger remains for
-              // the coordinated first presentation.
-              //
-              // 这里原来是一条常驻的 .animation()。它去掉了：修饰器只要挂着，
-              // 每一次普通 rerender 都会进一次动画上下文（trace 里的
-              // JSAnimation duration:0），把 duration 给 0 也挡不住。换成
-              // transition 之后，只有节点真的插入时才有效果。上面那三条
-              // opacity / translate / scale 保留：它们负责"遮罩期间不可见"这
-              // 件事，遮罩掀开那一下由 animateTo 一次性驱动（见
-              // scheduleInitialTimelinePresentation）。
-              .transition(this.initialRowFadeTransition(
-                ri.index, ri.item.initialDeferred === true));
-            })
-            // Format lives in rowKeyOf — see its comment.
-            .key((g: AlbumGroup): string => this.rowKeyOf(g))
-            .virtualScroll({ totalCount: this.groups.length, reusable: false });
-        }
-        .width('100%').height('100%')
-        // Keep layout/build work alive behind a visual mask. The mask is
-        // removed only after a complete viewport and its final anchor are
-        // ready, so users never see placeholder replacement or a second jump.
-        // Do not disable hit testing while masked: a finger that goes down in
-        // this short interval would remain bound to a disabled target for the
-        // entire gesture. onTouch(Down) finishes/cancels the initial stage via
-        // finishInitialMessageStageForInteraction(), then the same drag owns
-        // the now-visible List without a delayed anchor pulling it back.
-        .opacity(this.initialTimelineMasked ? 0 : 1)
-        // 顶部 chrome 是悬浮的，用 contentStartOffset 让位——和底部的
-        // contentEndOffset 对称。不用 padding：padding 会改变内容区尺寸，
-        // 而滚动锚点、getItemRect 那一套都吃列表几何。
-        .contentStartOffset(this.headerChromeHeight())
-        // 消息滑到标题栏下面时逐渐糊掉，而不是被一条硬边切断。
-        // 省电模式下关掉——渐变模糊是逐帧实时渲染，代价不低。
-        .linearGradientBlur(this.headerBlurRadius(), {
-          fractionStops: this.headerBlurStops(),
-          direction: GradientDirection.Bottom
-        })
-        .contentEndOffset(this.bottomChromeH + 8)
-        // 固定预建半屏左右的短消息。图片预取仍由 BasicPrefetcher 按可见区
-        // 独立驱动；这里不延迟修改状态变量，避免首屏落地后把可见行全部重建。
-        .cachedCount(this.listCachedCount)
-        // Keep the visible messages pinned in place when an older page is
-        // prepended above — without this, the List stays index-anchored and
-        // visibly jumps to the top of the newly loaded page.
-        .maintainVisibleContentPosition(true)
-        // 从末尾开始布局——聊天列表本该是"底部锚定"的。
-        //
-        // 默认的顶部锚定意味着：内容比视口短时贴顶，末尾插入一条时上面的内容
-        // 不动、新消息落在视口之外，得靠我们自己判"在不在底部"再补一次
-        // scrollToIndex。那套判定（util/atBottom）依赖 onScrollIndex 报的行号，
-        // 而行号落后于数据一帧，pad 屏高、可见行多，时序更容易错开——用户反馈
-        // 的"停在底部却不跟新消息"就出在这里。
-        //
-        // stackFromEnd 把锚点换到末尾，由布局本身保证：
-        //   内容短于视口时底部对齐；显示区域内插入 ListItem 时，上方内容上移。
-        // 用户滑上去看历史时，新消息插在可视区之外，位置不动——正是想要的语义。
-        //
-        // API 19 起支持，compatibleSdkVersion 是 6.0.0(20)，所有目标设备都有，
-        // 不需要运行时判版本。
-        //
-        // 原有的贴底逻辑保留：它和这里指向同一个位置，最坏是多做一次无效功，
-        // 而在真机上验证之前，删掉它的风险更大。
-        //
-        // **但只在窗口已到实时尾部时开。** 往下翻历史时它是反的：用户停在已加载
-        // 窗口末尾触发翻页，追加一页进来，"离底部的距离 = 0"被保住，视口跟着跑到
-        // 新末尾（真机：进度条很快到底、刷出一屏后依然在最底下）。手动补偿量到的
-        // 是重排前的矩形（[AnchorRestore] dy=0），救不了。规则在 util/stackFromEnd。
-        // 这个值随 groups 一起在每次发布时重算；hasMoreNewer 只在页落地时翻。
-        .stackFromEnd(this.stackFromEndWanted())
-        .onReachStart(() => {
-          this.maybeLoadOlder();
-        })
-        // Each new touch gesture re-arms one older-page load: a fling that ends
-        // pinned at the very top (start index never leaves the trigger zone)
-        // would otherwise never re-arm, leaving the user unable to load more.
-        .onTouch((e: TouchEvent) => {
-          if (e.type === TouchType.Down) {
+              if (!this.listUserScrollActive) {
+                this.listUserScrollActive = true;
+              }
+            }
+            if (this.listUserScrollActive) {
+              this.updateFloatDate(this.curStartIdx);
+            }
+          },
+          onTimelineScrollStart: (): void => {
+            setScrollActive(true);
             this.finishInitialMessageStageForInteraction();
-            // A real gesture transfers scroll ownership to the user; never
-            // snap back to the bottom while they inspect older messages.
-            this.imeTailPinned = false;
-            this.imeLayoutSeq++;
-            this.listTouchActive = true;
-            // 新手势接管视口，任何上一份快照排队中的人工锚点定位都必须作废。
-            this.prependRestoreSeq++;
-            this.olderArmed = true;
-            // 向下分页**不**在这里上膛。一次 tap 不是滚动，而按下之后紧随的任何
-            // 一次 onScrollIndex（包括锚点复位这种程序性位移引起的）都能把这一枪
-            // 白白消耗掉——那正是第一版闸被烧掉、之后再也上不了膛的两条路之一。
-            // newer 侧唯一的上膛信号是 onDidScroll 里 ScrollState.Scroll 的累计
-            // 手指位移，见 util/pageGate.draggedPageGate。
-            // The highlight overlay is viewport-anchored — drop it as soon as
-            // the user starts interacting, before it can detach from its row.
-            this.cancelFlash();
-            // 点面板外面收起。
-            this.closeBottomPanels();
-          } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
-            this.listTouchActive = false;
+            this.pauseChatTgsForScroll();
+            this.dismissKeyboardOnUserScroll();
+          },
+          onTimelineScrollStop: (): void => {
+            this.nextDidScrollIsUserDriven = false;
+            setScrollActive(false);
+            this.resumeChatTgsAfterScroll();
+            this.driveVisibleWork();
+            this.armPlaySlotSettle();
+            this.capMessageReuseBuckets();
+          },
+          onTimelineAreaChange: (area: Area): void => {
+            const y: number = area.globalPosition.y as number;
+            const height: number = area.height as number;
+            this.playSlots.setViewportCenter(y + height / 2);
+          },
+          onEmptyRetry: (): void => { this.store?.retryInitialHistory(); },
+          onTimelinePillRetry: (): void => {
+            this.timelineStateRetry(this.timelinePillMode());
           }
-        })
-        .onScrollIndex((start: number, end: number) => {
-          // List 首次布局完成即触发一次（哪怕用户从未滑动），是首屏唯一能可靠
-          // 拿到的信号；正常滚动时它也会随可见区间变化反复触发。判定本身现在
-          // 是逐候选驻留（见 PlaySlotRegistry），与列表是否仍在滚动无关，这里
-          // 只是幂等地补一次 tick + 重排后续检查——onScrollStop 那次是重复但
-          // 无害的（scheduleSlotTick 只留一个在途）。
-          this.armPlaySlotSettle();
-          this.refreshAtBottom();
-          this.curStartIdx = start;
-          this.curEndIdx = end;
-          // 记下这批行号对应的数据长度，refreshAtBottom 据此判断行号是否新鲜。
-          this.indexGroupsLen = this.groups.length;
-          // 首帧之前 curEndIdx 是 -1，数据先到那次判不出来；这里是可见行号第一
-          // 次变得可用的地方，补判一次，否则铺不满一屏时就永远没人敲门了。
-          this.fillViewportIfNeeded();
-          this.curBottomId = this.bottomVisibleId(end);
-          this.syncReturnState();
-          this.markVisibleRead(end);
-          this.updatePinnedFromScroll(start);
-          // Image prefetch: the data source decodes the photos of rows about to
-          // arrive and cancels the ones scrolled past. Distinct from the page
-          // prefetch below, which loads MESSAGES.
-          //
-          // 下标必须先钳进 [0, totalCount()-1]：BasicPrefetcher 内部用
-          // IndexRange 表达区间，而 IndexRange 的构造函数对 start > end 是
-          // **抛异常**，visibleAreaChanged 的 catch 又是转抛——越界一次就是一次
-          // 应用崩溃（2026-08-27 的 'Invalid range' 崩溃栈）。这里的 start / end
-          // 报的是上一帧布局的可见行号，而 groupsData 可能已经在这一帧里变短
-          // 了。判据与理由见 clampPrefetchRange。
-          const visible: PrefetchRange | null =
-            clampPrefetchRange(start, end, this.groupsData.totalCount());
-          if (visible !== null) {
-            this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
-          }
-          // Translation results can mutate several rows at once. Keep the
-          // request/refresh lane quiet during a fling and catch up once the
-          // list settles; image prefetch above remains active and directional.
-          if (!this.chatTgsScrollActive) {
-            this.driveTranslations(start, end);
-          }
-          // 媒体自动下载的可见窗口：只有窗口内的动图/语音才自动下载，划出去
-          // 的自动取消（见 MessageStore.setMediaWindow）。
-          this.syncMediaWindow(start, end);
-          // Prefetch: kick off the previous/next page a few rows before the edge,
-          // so scrolling never actually hits an empty top/bottom. loadOlder is
-          // one-shot per arm (see maybeLoadOlder) so a fling that stays pinned
-          // at the top can't chain-load page after page.
-          if (start > 4) {
-            this.olderArmed = true; // moved clear of the top zone — re-arm
-          } else {
-            this.maybeLoadOlder();
-          }
-          // 底部触发区：视口贴近末尾就敲一次门。**位置判据只留在这里**，重新
-          // 上膛已经整条搬到 onDidScroll 的手指位移上（见 util/pageGate）。
-          //
-          // 原来这里的 else 支（end < rows - 5）还兼着"离开触发区就重新上膛"，
-          // 那是第一版锁死的直接原因：用户停在最后几行时 end 恒等于 rows - 1，
-          // 这一支永远进不来，闸一旦下膛就是永久的。位置判据在向下这侧两头都
-          // 不对，所以不再参与上膛。
-          if (reachedNewerPageTrigger(end, this.groups.length)) {
-            this.maybeLoadNewer(end);
-          }
-        })
-        // onScrollIndex only fires when the visible index RANGE changes, so
-        // scrolling up inside one tall last message (index unchanged) never
-        // updates atBottom. onDidScroll fires on every scroll frame — track the
-        // true bottom edge here so the glue stops fighting the user.
-        .onDidScroll((offset: number, state: ScrollState) => {
-          this.refreshAtBottom();
-          // 列表被程序性挪动（贴底、prepend 复位）时高亮跟着行走（issue #80）。
-          this.syncFlashRect();
-          // ── 向下分页闸的唯一上膛信号 ──────────────────────────────────
-          // ScrollState.Scroll 的官方语义是"手指拖动列表 / 拖动滚动条 / 鼠标
-          // 滚轮"；惯性是 Fling，控制器的非动画滚动（scrollToIndex / scrollEdge
-          // / 首屏定位 / 锚点复位）是 Idle。只有 Scroll 计入累计位移，所以
-          // 程序性位移既烧不掉也开不了这道闸，而用户停在最后几行照样能上膛。
-          if (state === ScrollState.Scroll) {
-            this.accumulateNewerDrag(offset);
-          }
-          if (this.listTouchActive) {
-            // A tap alone does not release the initial unread anchor. Only an
-            // actual drag gives scroll ownership to the user.
-            if (this.stayAtUnread) {
-              this.stayAtUnread = false;
-            }
-            if (!this.listUserScrollActive) {
-              this.listUserScrollActive = true;
-            }
-          }
-          if (this.listUserScrollActive) {
-            this.updateFloatDate(this.curStartIdx);
-          }
-        })
-        .onScrollStart(() => {
-          setScrollActive(true);
-          this.finishInitialMessageStageForInteraction();
-          this.pauseChatTgsForScroll();
-          this.dismissKeyboardOnUserScroll();
-        })
-        .onScrollStop(() => {
-          setScrollActive(false);
-          this.resumeChatTgsAfterScroll();
-          this.driveVisibleWork();
-          this.armPlaySlotSettle();
-          // 一次回收潮刚过，池子最满，正是封顶该动手的时刻。
-          this.capMessageReuseBuckets();
-        })
-        .onAreaChange((_old: Area, area: Area): void => {
-          const y: number = area.globalPosition.y as number;
-          const height: number = area.height as number;
-          this.playSlots.setViewportCenter(y + height / 2);
-        });
-        if (!this.initialTimelineMasked && this.visibleGroupCount === 0 &&
-          this.messageLoadState !== 'loading') {
-          // 首屏同步期间保持安静：消息在转场背后完成定位后一次性呈现。
-          // 这里只展示真正的空会话或错误，避免用 Loading 卡片制造二次视觉切换。
-          Column() {
-            MessageListStateCard({
-              loadState: this.messageLoadState,
-              loadError: this.messageLoadError,
-              threadRootId: this.threadRootId,
-              membershipState: this.membershipState,
-              isChannel: this.isChannel,
-              isGroup: this.isGroup,
-              screenW: this.screenW,
-              onRetry: (): void => { this.store?.retryInitialHistory(); }
-            });
-          }
-          .width('100%').height('100%')
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
-          .padding({ bottom: this.bottomChromeH + 28 })
-          .hitTestBehavior(HitTestMode.Transparent);
-        } else if (this.timelinePillMode() !== TL_NONE) {
-          // 让位判据（日期条在不在）由 V2 外壳自己去读那个 @Trace 对象，
-          // ChatPage.build 不再碰它。见 FloatingDateOverlay.ets 的注释。
-          TimelineStatePillSlot({
-            state: this.floatDateState,
-            topInset: this.headerChromeHeight(),
-            mode: this.timelinePillMode(),
-            label: timelineStateText(this.timelinePillMode()),
-            onRetry: (): void => { this.timelineStateRetry(this.timelinePillMode()); }
-          });
-        }
-        // Jump-target highlight overlay (gentle double blink over the row a
-        // reply/pinned/link jump just landed on). Coordinates come from
-        // scroller.getItemRect, which is relative to the List — hence the Stack.
-        if (this.flashShown) {
-          Column()
-            .width('100%').height(this.flashHeight)
-            .backgroundColor('#4D67A0DC')
-            .borderRadius(8)
-            .opacity(this.flashAlpha)
-            .position({ x: 0, y: this.flashTop })
-            .hitTestBehavior(HitTestMode.None);
-        }
-        // Floating date chip at the top of the viewport — tracks the topmost
-        // visible message while scrolling, fades away when scrolling stops.
-        //
-        // 视觉与修饰器栈原样搬进 FloatingDateOverlay。这里只传引用和顶边距：
-        // headerChromeHeight() 读的那几个字段 ChatPage.build 本来就为
-        // List.contentStartOffset 读了，不新增订阅；日期文字和显隐一个都不读。
-        FloatingDateOverlay({
-          state: this.floatDateState,
-          topMargin: this.headerChromeHeight() + 8
         });
         Column() {
           // The composer itself is interactive from the first frame. Only its
@@ -10292,52 +9669,38 @@ export struct ChatPage {
           .hitTestBehavior(HitTestMode.None);
       }
 
-      if (this.showReactionSheet) {
-        ReactionSheet({
-          show: this.showReactionSheet,
-          onShowChange: (show: boolean): void => { this.showReactionSheet = show; },
+      if (this.showReactionSheet || this.showForwardSheet || this.showScheduledSheet ||
+        this.showPollSheet || this.showContactSheet || this.showVideoNoteRecorder) {
+        ChatOverlayHost({
+          showReactionSheet: this.showReactionSheet,
+          showForwardSheet: this.showForwardSheet,
+          showScheduledSheet: this.showScheduledSheet,
+          showPollSheet: this.showPollSheet,
+          showContactSheet: this.showContactSheet,
+          showVideoNoteRecorder: this.showVideoNoteRecorder,
           messages: this.messages,
-          targetId: this.reactionTargetId,
+          reactionTargetId: this.reactionTargetId,
+          reactionPendingKey: this.reactionPendingKey,
           chatId: this.chatId,
-          pendingKey: this.reactionPendingKey,
-          // ReactionSheet 迁 @ComponentV2 之后没有 @StorageProp 可用，安全区/
-          // 键盘高度由页面透传（页面自己就持有这两个键）。
+          threadRootId: this.threadRootId,
+          forwardMessageIds: this.forwardMessageIds,
           bottomSafe: this.bottomSafe,
           keyboardH: this.keyboardH,
-          effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
-          onPick: (reactionKey: string, chosen: boolean): void => {
+          onReactionShowChange: (show: boolean): void => { this.showReactionSheet = show; },
+          onReactionPick: (reactionKey: string, chosen: boolean): void => {
             const targetId: number = this.reactionTargetId;
             this.closeReactionSheet();
             this.toggleReaction(targetId, reactionKey, chosen);
-          }
-        })
-      }
-      if (this.showForwardSheet) {
-        ForwardSheet({
-          show: this.showForwardSheet,
-          onShowChange: (show: boolean): void => { this.showForwardSheet = show; },
-          messageIds: this.forwardMessageIds,
-          sourceChatId: this.chatId,
-          threadRootId: this.threadRootId,
-          effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
-          onSent: (): void => {
+          },
+          onForwardShowChange: (show: boolean): void => { this.showForwardSheet = show; },
+          onForwardSent: (): void => {
             this.forwardMessageIds = [];
             if (this.selecting) {
               this.exitSelect();
             }
-          }
-        })
-      }
-      if (this.showScheduledSheet) {
-        ScheduledSheet({
-          show: this.showScheduledSheet,
-          onShowChange: (show: boolean): void => { this.showScheduledSheet = show; },
-          chatId: this.chatId
-        })
-      }
-      if (this.showPollSheet) {
-        PollComposeSheet({
-          onSubmit: (question: string, options: string[], isAnonymous: boolean,
+          },
+          onScheduledShowChange: (show: boolean): void => { this.showScheduledSheet = show; },
+          onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
             isQuiz: boolean, correctOptionId: number): void => {
             this.showPollSheet = false;
             if (this.store !== null) {
@@ -10345,14 +9708,10 @@ export struct ChatPage {
               this.store.sendPoll(question, options, isAnonymous, isQuiz, correctOptionId);
             }
           },
-          onClose: (): void => {
+          onPollClose: (): void => {
             this.showPollSheet = false;
-          }
-        });
-      }
-      if (this.showContactSheet) {
-        ContactPickerSheet({
-          onPick: (contact: PickedContact): void => {
+          },
+          onContactPick: (contact: PickedContact): void => {
             this.showContactSheet = false;
             if (this.store !== null) {
               this.atBottom = true;
@@ -10360,22 +9719,19 @@ export struct ChatPage {
                 contact.phone, contact.firstName, contact.lastName, contact.userId);
             }
           },
-          onClose: (): void => {
+          onContactClose: (): void => {
             this.showContactSheet = false;
-          }
-        });
-      }
-      if (this.showVideoNoteRecorder) {
-        VideoNoteRecorderView({
-          onCaptured: (path: string, durationSec: number, length: number): void => {
+          },
+          onVideoCaptured: (path: string, durationSec: number, length: number): void => {
             if (this.store !== null) {
               this.atBottom = true;
               this.store.sendVideoNote(path, durationSec, length);
             }
           },
-          onClose: (): void => {
+          onVideoClose: (): void => {
             this.showVideoNoteRecorder = false;
-          }
+          },
+          effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
         });
       }
       // The latest-message FAB belongs to the chat layer. Keeping it visible
@@ -10458,7 +9814,7 @@ export struct ChatPage {
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。
     .onReady((ctx: NavDestinationContext): void => {
-      this.navStack = ctx.pathStack;
+      this.navigationCoordinator.setStack(ctx.pathStack);
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
       this.applyRouteParams();

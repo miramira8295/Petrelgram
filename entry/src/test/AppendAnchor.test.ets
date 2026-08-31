@@ -6,9 +6,8 @@ import {
 
 function input(bypassed: boolean, didInitialScroll: boolean, prependAnchorHeld: boolean,
   appendBreaksAnchor: boolean, atLiveTail: boolean = false,
-  scrollIntentPending: boolean = false, stackFromEnd: boolean = true): AppendAnchorInput {
+  scrollIntentPending: boolean = false): AppendAnchorInput {
   const value: AppendAnchorInput = {
-    stackFromEnd: stackFromEnd,
     bypassed: bypassed,
     didInitialScroll: didInitialScroll,
     prependAnchorHeld: prependAnchorHeld,
@@ -25,11 +24,11 @@ export default function appendAnchorTest() {
     it('any_append_mid_history_holds_the_anchor', 0, () => {
       expect(shouldHoldAppendAnchor(input(false, true, false, true))).assertTrue();
     });
-    // 往下翻历史时 hasMoreNewer=true ⇒ stackFromEnd=false ⇒ 顶部锚定，视口下方
-    // 追加不动内容。这时补偿是纯多余的，只会把用户自己的滑动位移抵消掉——用户
-    // 报的「往下翻也跳」就出在这里。
-    it('top_anchored_append_never_holds', 0, () => {
-      expect(shouldHoldAppendAnchor(input(false, true, false, true, false, false, false))).assertFalse();
+    // 真机：around-unread 的媒体窗口在顶部锚定下从 15 行追加到 19 行，Repeat 仍
+    // 重排了整个窗口。用户位移现在由 anchorYAfterUserScroll 单独保留，所以这条
+    // 保护不再反向抵消手势。
+    it('top_anchored_media_append_still_holds', 0, () => {
+      expect(shouldHoldAppendAnchor(input(false, true, false, true))).assertTrue();
     });
     it('at_the_live_tail_new_messages_are_followed_not_held', 0, () => {
       expect(shouldHoldAppendAnchor(input(false, true, false, true, true))).assertFalse();

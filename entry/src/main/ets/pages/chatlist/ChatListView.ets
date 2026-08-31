@@ -1,6 +1,6 @@
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry } from '../../store/ChatEntry';
-import { ChatRow } from './ChatRow';
+import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
@@ -100,7 +100,7 @@ export struct ChatListView {
     // ChatRow 是左右 12vp、上下 3vp 的真卡片；滑动动作也必须落在同一轮廓里，
     // 否则卡片滑走后会露出一块贴屏边的整行矩形。
     .height('calc(100% - 6vp)')
-    .margin({ left: 12, top: 3, bottom: 3 })
+    .margin({ left: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
     .borderRadius(16)
     .clip(true);
   }
@@ -121,7 +121,7 @@ export struct ChatListView {
         (): void => this.toggleArchive(chat));
     }
     .height('calc(100% - 6vp)')
-    .margin({ right: 12, top: 3, bottom: 3 })
+    .margin({ right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
     .borderRadius(16)
     .clip(true);
   }

@@ -3791,6 +3791,28 @@ export struct MessageBubble {
       ? str('mb_fallback_open', this.fallbackLabel()) : this.fallbackLabel());
   }
 
+  @Builder
+  unreadDivider() {
+    Row() {
+      Row() {
+        Text(this.dividerIsResume
+          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
+          .fontSize(12)
+          .fontColor(COLOR_TEXT_SECONDARY)
+          .fontWeight(FontWeight.Medium);
+      }
+      // 保留分隔感，但不要再用满宽色块把消息流横向切断。
+      .width('calc(100% - 24vp)')
+      .height(22)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor($r('app.color.system_pill'))
+      .borderRadius(8);
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ bottom: 4 });
+  }
+
   build() {
     if (this.msg.contentType === 'hidden') {
       // Filtered service notice (e.g. channel paid-DM price) — render nothing.
@@ -3805,12 +3827,7 @@ export struct MessageBubble {
             .margin({ bottom: 4 });
         }
         if (this.showUnreadDivider) {
-          Text(this.dividerIsResume
-            ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
-            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-            .width('100%').textAlign(TextAlign.Center)
-            .backgroundColor($r('app.color.system_pill'))
-            .padding({ top: 3, bottom: 3 }).margin({ bottom: 4 });
+          this.unreadDivider();
         }
         this.systemPill();
       }.width('100%').alignItems(HorizontalAlign.Center).padding({ top: 3, bottom: 3 });
@@ -3826,12 +3843,7 @@ export struct MessageBubble {
         }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 5, bottom: 3 });
       }
       if (this.showUnreadDivider) {
-        Text(this.dividerIsResume
-          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
-          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-          .width('100%').textAlign(TextAlign.Center)
-          .backgroundColor($r('app.color.system_pill'))
-          .padding({ top: 3, bottom: 3 }).margin({ bottom: 4 });
+        this.unreadDivider();
       }
       Row() {
       // 内层这一行按内容宽度，只裹住头像和气泡——消息菜单绑在它身上，

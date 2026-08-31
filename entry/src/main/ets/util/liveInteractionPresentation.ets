@@ -98,7 +98,7 @@ export function isSupportedLiveChannelMessage(contentType: string, isAnimation: 
   return contentType === 'video' && isAnimation;
 }
 
-export function liveInteractionLooksLikeEmojiOnly(raw: string): boolean {
+export function looksLikeEmojiOnly(raw: string): boolean {
   const value = raw.trim();
   if (value === '') { return false; }
   let hasEmoji = false;
@@ -128,6 +128,10 @@ export function liveInteractionLooksLikeEmojiOnly(raw: string): boolean {
     hasEmoji = true;
   }
   return hasEmoji;
+}
+
+export function liveInteractionLooksLikeEmojiOnly(raw: string): boolean {
+  return looksLikeEmojiOnly(raw);
 }
 
 export function liveInteractionPresentation(

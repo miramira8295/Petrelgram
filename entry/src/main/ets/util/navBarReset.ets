@@ -25,9 +25,10 @@ export function navBarVisibleOnAppear(splitLayout: boolean, stackDepth: number):
   return stackDepth <= 0;
 }
 
-// 运行中 onNavBarStateChange 报上来的值也要过同一道闸：整页 router 页（应用内
-// 浏览器）退掉时 HdsNavigation 会补发一次 visible=true，可页签栈里还压着详情页
-// （真机日志：visible=true stack=1）。单栏且栈非空时 navBar 不可能真的可见。
-export function navBarVisibleOnChange(reported: boolean, splitLayout: boolean, stackDepth: number): boolean {
-  return reported && navBarVisibleOnAppear(splitLayout, stackDepth);
+// 运行中也以布局与栈深为准。HdsNavigation 在页签切到后台时会报告 false，即使
+// 它仍停在栈空的根页；若把这个临时报告存下来，用户下次点该页签时 dock 会先按
+// 陈旧的 false 消失。反方向也一样：整页 router 退掉时可能报告 true，但单栏栈里
+// 仍压着详情页。reported 只是一帧渲染状态，不是 dock 的业务状态。
+export function navBarVisibleOnChange(_reported: boolean, splitLayout: boolean, stackDepth: number): boolean {
+  return navBarVisibleOnAppear(splitLayout, stackDepth);
 }

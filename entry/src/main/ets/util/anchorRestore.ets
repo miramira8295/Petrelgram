@@ -50,19 +50,29 @@ export interface AnchorRestorePlan {
 export interface PrependAnchorCaptureInput {
   didInitialScroll: boolean;
   anchorIndexFresh: boolean;
-  boundaryRowReplaced: boolean;
-  touchActive: boolean;
-  userScrollActive: boolean;
+  olderPageGrowth: boolean;
 }
 
-// API 20+ List already preserves Repeat.virtualScroll insertions outside the
-// visible area. The only remaining reason for a manual prepend correction is
-// this page's boundary row being replaced because its content key changed.
-// Even then, user movement owns the viewport: an asynchronous measurement
-// cannot distinguish that movement from layout movement and would undo it.
+// API 20+ List normally preserves Repeat.virtualScroll insertions outside the
+// visible area, but media albums are a counterexample on current devices. An
+// older page can keep the old first row's key unchanged, or merge members into
+// that album so its old identity disappears altogether; Repeat then relays out
+// several very tall rows and moves the visible window. Therefore the reliable
+// signal is the store transaction itself: an `older` publication that grew the
+// raw message window. The caller preserves movement made after capture
+// separately and subtracts only the layout/data displacement.
 export function shouldCapturePrependAnchor(input: PrependAnchorCaptureInput): boolean {
-  return input.didInitialScroll && input.anchorIndexFresh && input.boundaryRowReplaced &&
-    !input.touchActive && !input.userScrollActive;
+  return input.didInitialScroll && input.anchorIndexFresh && input.olderPageGrowth;
+}
+
+// onDidScroll/onWillScroll report a positive offset when content moves upward.
+// The same row's y therefore decreases by that offset. Anchor correction runs
+// asynchronously after a page publication, so its target must include every
+// user-originated scroll frame that happened since the row was sampled.
+export function anchorYAfterUserScroll(
+  capturedY: number, userOffsetAtCapture: number, userOffsetNow: number
+): number {
+  return capturedY - (userOffsetNow - userOffsetAtCapture);
 }
 
 // 小于半个 vp 的残差不值得发一次滚动指令：它在屏幕上不可见，却会白白走一遍

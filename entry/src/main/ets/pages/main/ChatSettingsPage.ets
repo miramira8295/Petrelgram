@@ -646,19 +646,29 @@ export struct ChatSettingsPage {
     this.enlargedSlot = slot;
   }
 
-  private setEnlargedBlur(value: number): void {
+  private sliderSettled(mode: SliderChangeMode): boolean {
+    return mode === SliderChangeMode.End || mode === SliderChangeMode.Click;
+  }
+
+  private setEnlargedBlur(value: number, mode: SliderChangeMode): void {
     this.enlargedBlur = Math.round(value);
-    setNumber(wallpaperSlotKeys(this.enlargedSlot).blur, this.enlargedBlur);
+    if (this.sliderSettled(mode)) {
+      setNumber(wallpaperSlotKeys(this.enlargedSlot).blur, this.enlargedBlur);
+    }
   }
 
-  private setEnlargedPattern(value: number): void {
+  private setEnlargedPattern(value: number, mode: SliderChangeMode): void {
     this.enlargedPattern = Math.round(value) / 100;
-    setNumber(wallpaperSlotKeys(this.enlargedSlot).pattern, this.enlargedPattern);
+    if (this.sliderSettled(mode)) {
+      setNumber(wallpaperSlotKeys(this.enlargedSlot).pattern, this.enlargedPattern);
+    }
   }
 
-  private setEnlargedDim(value: number): void {
+  private setEnlargedDim(value: number, mode: SliderChangeMode): void {
     this.enlargedDim = Math.round(value) / 100;
-    setNumber(wallpaperSlotKeys(this.enlargedSlot).dim, this.enlargedDim);
+    if (this.sliderSettled(mode)) {
+      setNumber(wallpaperSlotKeys(this.enlargedSlot).dim, this.enlargedDim);
+    }
   }
 
   private openWallpaperSlot(slot: string): void {
@@ -747,7 +757,9 @@ export struct ChatSettingsPage {
           })
             .width('100%').trackColor('#4DFFFFFF').selectedColor(COLOR_PRIMARY)
             .blockColor(COLOR_PRIMARY)
-            .onChange((value: number): void => { this.setEnlargedBlur(value); });
+            .onChange((value: number, mode: SliderChangeMode): void => {
+              this.setEnlargedBlur(value, mode);
+            });
         }.width('100%');
         if (this.thumbOf(this.enlargedSlot).isPattern) {
           Column({ space: 4 }) {
@@ -762,7 +774,9 @@ export struct ChatSettingsPage {
             })
               .width('100%').trackColor('#4DFFFFFF').selectedColor(COLOR_PRIMARY)
               .blockColor(COLOR_PRIMARY)
-              .onChange((value: number): void => { this.setEnlargedPattern(value); });
+              .onChange((value: number, mode: SliderChangeMode): void => {
+                this.setEnlargedPattern(value, mode);
+              });
           }.width('100%');
         }
         if (slotHasDim(this.enlargedSlot)) {
@@ -777,7 +791,9 @@ export struct ChatSettingsPage {
             })
               .width('100%').trackColor('#4DFFFFFF').selectedColor(COLOR_PRIMARY)
               .blockColor(COLOR_PRIMARY)
-              .onChange((value: number): void => { this.setEnlargedDim(value); });
+              .onChange((value: number, mode: SliderChangeMode): void => {
+                this.setEnlargedDim(value, mode);
+              });
           }.width('100%');
         }
       }

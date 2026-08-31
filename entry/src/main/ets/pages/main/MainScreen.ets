@@ -321,6 +321,27 @@ export struct MainScreen {
     .scale({ x: 0.92, y: 0.92 })
   }
 
+  // SymbolGlyph 的 fontSize 只统一排版盒，不统一图形本身的有效笔画：同为 24vp，
+  // 真机上双人/双气泡/齿轮的可见高度约为 17/19/21vp，而头像外圈是 20vp。
+  // 分别做光学尺寸补偿，让四个图标的上下边沿接近同一条线。
+  private dockIconFontSize(index: number): number {
+    if (index === 0) {
+      return 26;
+    }
+    if (index === 1) {
+      return 28;
+    }
+    return 23;
+  }
+
+  // 固定槽位并调整字号后，双人符号的字形基线仍明显偏低；双气泡略偏低。
+  private dockIconOffsetY(index: number): number {
+    if (index === 0) {
+      return -0.5;
+    }
+    return index === 1 ? -4 : 0;
+  }
+
   // label 是 ResourceStr 而不是 string：$r() 由框架在渲染时解析，天然跟随
   // 语言切换。原来传 str() 出来的普通字符串，切语言后要重启才更新 —— 依赖
   // langEpoch 触发重建的做法在这里不可靠，因为 setAppPreferredLanguage 是
@@ -329,19 +350,23 @@ export struct MainScreen {
   dockItem(index: number, icon: string, label: ResourceStr, labelKey: string) {
     Column({ space: 2 }) {
       Stack({ alignContent: Alignment.TopEnd }) {
-        // 系统符号动效，不是自己写的 scale：选中时整体向上弹一下，动画曲线
-        // 由系统给，和其它系统图标一致。第二个参数是布尔触发器——false→true
-        // 的那一刻播一次，所以只有"变成选中"会弹，重复点已选中的不会。
-        SymbolGlyph($r(icon)).fontSize(24)
-          .fontColor([this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED])
-          // 双气泡这类多层图标按不透明度分层：前面那只实心，后面那只淡一层。
-          // 单层图标（齿轮、联系人）走这条也不变样。
-          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
-          .symbolEffect(
-            new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP),
-            this.tab === index
-          )
-          .effectStrategy(SymbolEffectStrategy.NONE);
+        Stack({ alignContent: Alignment.Center }) {
+          // 系统符号动效，不是自己写的 scale：选中时整体向上弹一下，动画曲线
+          // 由系统给，和其它系统图标一致。第二个参数是布尔触发器——false→true
+          // 的那一刻播一次，所以只有"变成选中"会弹，重复点已选中的不会。
+          SymbolGlyph($r(icon)).fontSize(this.dockIconFontSize(index))
+            .fontColor([this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED])
+            // 双气泡这类多层图标按不透明度分层：前面那只实心，后面那只淡一层。
+            // 单层图标（齿轮、联系人）走这条也不变样。
+            .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+            .symbolEffect(
+              new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP),
+              this.tab === index
+            )
+            .effectStrategy(SymbolEffectStrategy.NONE)
+            .offset({ y: this.dockIconOffsetY(index) });
+        }
+        .width(24).height(24);
         // 设置页签的红点：和「关于」那一行是同一个信号，一路引到更新入口。
         if (index === 2 && this.updateAvailable) {
           Circle({ width: 8, height: 8 }).fill(UPDATE_DOT_BG).offset({ x: 6, y: -2 });
@@ -360,6 +385,7 @@ export struct MainScreen {
             .offset({ x: 12, y: -7 });
         }
       }
+      .width(24).height(24);
       Text(label).fontSize(10)
         .fontColor(this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED);
     }
@@ -390,8 +416,9 @@ export struct MainScreen {
         AvatarView({ avatarPath: this.meAvatar, initials: this.meInitials, colorSeed: this.myId, avatarSize: 20 });
       }
       .width(24).height(24).borderRadius(12)
-      // A constant border width avoids a size jump when this tab is selected.
-      .border({ width: 2, color: this.tab === 3 ? this.accent() : Color.Transparent });
+      // 外圈始终保留：选中用强调色，未选中与其它 Dock 图标一样使用灰色。
+      // 宽度恒定也避免切换选中态时头像尺寸跳动。
+      .border({ width: 2, color: this.tab === 3 ? this.accent() : COLOR_TAB_UNSELECTED });
       Text($r('app.string.tab_profile')).fontSize(10)
         .fontColor(this.tab === 3 ? this.accent() : COLOR_TAB_UNSELECTED);
     }

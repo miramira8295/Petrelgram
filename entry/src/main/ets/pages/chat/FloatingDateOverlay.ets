@@ -1,4 +1,6 @@
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { FLOAT_DATE_HIDE_MS, floatDateShouldRearm } from '../../util/floatDateGate';
 import { TimelineStatePill } from './MessageListState';
@@ -94,6 +96,9 @@ export class FloatingDateState {
 @ComponentV2
 export struct FloatingDateOverlay {
   @Require @Param state: FloatingDateState;
+  // V2 组件不能直接订阅 AppStorage；由 ChatPageChrome 现有的材质纪元一路透传。
+  // 只在用户修改档位时变化，不参与滚动中的日期状态更新。
+  @Require @Param materialEpoch: number = 0;
   // 顶部 chrome 的高度由 ChatPage 算（headerChromeHeight()），这里只收结果。
   // 传数值而不是传 getter：getter 会把 ChatPage 的那几个字段拖进本组件的订阅
   // 关系里，而 ChatPage.build 本来就为 List.contentStartOffset 读了它们，多订
@@ -117,10 +122,15 @@ export struct FloatingDateOverlay {
         }
         .height(28)
         .padding({ left: 12, right: 12 })
-        .backgroundColor($r('app.color.surface'))
+        // 浮动日期走与悬浮栏一致的稳定 bar 玻璃：厚度映射到锁定质量的模糊半径，
+        // 滚动与停手期间始终是同一层，不触发 systemMaterial 的降级/恢复闪变。
+        .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+        .backdropBlur(overlayBackdropBlur('bar'))
+        .attributeModifier(materialModifierWhen('bar', this.materialEpoch >= 0))
         .border({ width: 0.5, color: $r('app.color.divider') })
         .borderRadius(14)
-        .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 });
+        .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 })
+        .clip(true);
       }
     }
     .width('100%')

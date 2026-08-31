@@ -1,28 +1,26 @@
-// 底部抽屉的尺寸。附件和表情共用一个高度——两者在同一个位置轮流出现，
-// 高度不同的话来回切换会跳一下。
+// 底部抽屉的尺寸。附件面板是两行快捷入口，媒体面板则要承载可滚动的
+// 表情、贴纸和 GIF 网格，两者不再硬塞进同一个高度。
 //
 // 抽出来是因为这个数原先散在三处（AttachPanel 的 260、EmojiPanel 的 300、
 // ChatPage 里各自的常量），各写各的迟早再次跑偏。改高度只改这里。
 
-// 抽屉卡片的高度。260 由附件面板定：上下留白各 14、两行、行距 6。
-// 表情/贴纸这边同高，内部三条横条（包条 44 + 标签条 34 + 原搜索条 34）曾
-// 吃掉 112；搜索折进包条之后只剩两条 78。
+// 附件抽屉：上下留白各 14、两行、行距 6。
 export const BOTTOM_DRAWER_HEIGHT: number = 260;
+
+// 表情/贴纸/GIF 抽屉。312 能稳定放下 46 高的主分类条、44 高的表情包条，
+// 同时给网格留出 222vp；不再为了迁就附件入口把可滚动内容压到一屏半。
+export const EMOJI_DRAWER_HEIGHT: number = 312;
 
 // 卡片距键盘区三边的留白。沿用表情面板当浮卡时的 calc(100% - 16vp)——左右
 // 各 8；底部同样留 8，让卡片浮起来而不是糊在屏幕下沿。顶部不留：卡片上沿
 // 贴着输入框，两者读起来是连着的。
 export const DRAWER_INSET: number = 8;
 
-// 表情抽屉底部那条「表情 / 贴纸 / GIF」标签条的高度。内容区是抽屉高度减掉它。
-//
-// 一路收下来的：浮卡时 59（要放图标+文字+下划线），去掉图标后 44，现在 34。
-// 34 是文字自己的下限——14 号字约 19，加 3 的间距和 2 的指示条正好 24，上下
-// 各留 1 的余量，再减就要压字了。让出来的高度全给表情网格。
-export const EMOJI_TAB_BAR_HEIGHT: number = 34;
+// 抽屉顶部三段式主分类条。图标+文字始终完整展示，触控高度不低于 36vp。
+export const EMOJI_TAB_BAR_HEIGHT: number = 46;
 
 // 表情抽屉的内容区。
-export const EMOJI_CONTENT_HEIGHT: number = BOTTOM_DRAWER_HEIGHT - EMOJI_TAB_BAR_HEIGHT;
+export const EMOJI_CONTENT_HEIGHT: number = EMOJI_DRAWER_HEIGHT - EMOJI_TAB_BAR_HEIGHT;
 
 // 抽屉卡片下沿到屏幕底的距离：整条导航手势带（bottomSafe）都让出来，至少留
 // DRAWER_INSET 让卡片浮起来。

@@ -8,8 +8,8 @@ import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { EMOJI_CONTENT_HEIGHT } from '../../util/drawerMetrics';
-import { probeHit } from '../../util/panelProbe';
 import { logE } from '../../util/log';
+import { guardKey } from '../../util/keyGuard';
 
 export interface GifItem {
   fileId: number;    // the animation file (what gets sent)
@@ -21,6 +21,71 @@ export interface GifItem {
 }
 
 const GIF_SKELETONS: number[] = [0, 1, 2, 3, 4, 5];
+const GIF_COLUMNS: number = 2;
+const GIF_GRID_GAP: number = 6;
+const GIF_GRID_SIDE_PADDING: number = 10;
+const GIF_CELL_ASPECT: number = 1.45;
+
+// Saved GIF lists can grow large. Keep native players limited to the visible
+// rows instead of mounting every GIF as soon as the drawer opens.
+class GifDataSource implements IDataSource {
+  private items: GifItem[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number {
+    return this.items.length;
+  }
+
+  getData(index: number): GifItem {
+    return this.items[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (this.listeners.indexOf(listener) < 0) {
+      this.listeners.push(listener);
+    }
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    this.listeners = this.listeners.filter((l: DataChangeListener): boolean => l !== listener);
+  }
+
+  update(next: GifItem[]): void {
+    const previous: GifItem[] = this.items;
+    this.items = next;
+
+    if (previous.length === next.length) {
+      let identityChanged: boolean = false;
+      const changes: DataOperation[] = [];
+      for (let i = 0; i < next.length; i++) {
+        if (previous[i].fileId !== next[i].fileId) {
+          identityChanged = true;
+          break;
+        }
+        if (previous[i].thumbPath !== next[i].thumbPath || previous[i].srcPath !== next[i].srcPath ||
+          previous[i].duration !== next[i].duration || previous[i].width !== next[i].width ||
+          previous[i].height !== next[i].height) {
+          changes.push({ type: DataOperationType.CHANGE, index: i } as DataChangeOperation);
+        }
+      }
+      if (!identityChanged) {
+        this.notify(changes);
+        return;
+      }
+    }
+
+    this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
+  }
+
+  private notify(operations: DataOperation[]): void {
+    if (operations.length === 0) {
+      return;
+    }
+    for (const listener of this.listeners) {
+      listener.onDatasetChange(operations);
+    }
+  }
+}
 
 // Saved-GIF picker for the input panel. It keeps a static thumbnail when
 // autoplay/reduced-motion/power-saving settings disable playback.
@@ -28,6 +93,7 @@ const GIF_SKELETONS: number[] = [0, 1, 2, 3, 4, 5];
 export struct GifPicker {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   onPick: (g: GifItem) => void = (): void => {};
+  @Prop @Watch('onPlaybackSettingChanged') active: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_GIF) @Watch('onPlaybackSettingChanged') autoplayGif: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) @Watch('onPlaybackSettingChanged') powerSaving: boolean = false;
   @StorageProp(KEY_REDUCE_ANIM) @Watch('onPlaybackSettingChanged') reduceAnimations: boolean = false;
@@ -35,10 +101,15 @@ export struct GifPicker {
   @State loadState: string = 'loading'; // loading | ready | error
   @State errorText: string = '';
   @State sendingGifId: number = 0;
+  @State pressedGifId: number = 0;
+  @State gridWidth: number = 0;
   private loadSeq: number = 0;
   private disposed: boolean = false;
   private sourceLoading: Set<number> = new Set<number>();
   private sendGuardTimer: number = -1;
+  private gridData: GifDataSource = new GifDataSource();
+  private visibleFirst: number = 0;
+  private visibleLast: number = GIF_SKELETONS.length - 1;
 
   aboutToAppear(): void {
     this.disposed = false;
@@ -55,18 +126,13 @@ export struct GifPicker {
     }
   }
 
-  private playbackProbed(): boolean {
-    probeHit('gif.cell');
-    return this.playbackEnabled();
-  }
-
   private playbackEnabled(): boolean {
-    return this.autoplayGif && !this.powerSaving && !this.reduceAnimations;
+    return this.active && this.autoplayGif && !this.powerSaving && !this.reduceAnimations;
   }
 
   private onPlaybackSettingChanged(): void {
     if (this.playbackEnabled()) {
-      this.requestMissingSources();
+      this.requestVisibleSources();
     }
   }
 
@@ -76,6 +142,21 @@ export struct GifPicker {
       return '';
     }
     return (local['path'] as string | undefined) ?? '';
+  }
+
+  private publishGifs(next: GifItem[]): void {
+    this.gifs = next;
+    this.gridData.update(next);
+  }
+
+  private gifCellWidth(): number {
+    const available: number = this.gridWidth > 0 ? this.gridWidth : 360;
+    const gaps: number = GIF_GRID_SIDE_PADDING * 2 + GIF_GRID_GAP * (GIF_COLUMNS - 1);
+    return Math.max(120, Math.floor((available - gaps) / GIF_COLUMNS));
+  }
+
+  private gifCellHeight(): number {
+    return Math.max(84, Math.floor(this.gifCellWidth() / GIF_CELL_ASPECT));
   }
 
   private load(): void {
@@ -106,7 +187,7 @@ export struct GifPicker {
       }
       // Publish first, then start downloads. Previously a very fast thumbnail
       // completion could patch the old empty array and the image stayed blank.
-      this.gifs = items;
+      this.publishGifs(items);
       this.loadState = 'ready';
       for (const a of raw) {
         const file = a['animation'] as TdObject | undefined;
@@ -117,7 +198,7 @@ export struct GifPicker {
         this.downloadThumb(fileId, a['thumbnail'] as TdObject | undefined, seq);
       }
       if (this.playbackEnabled()) {
-        this.requestMissingSources();
+        this.requestVisibleSources();
       }
     }).catch((e: TdError) => {
       if (this.disposed || seq !== this.loadSeq) {
@@ -151,24 +232,28 @@ export struct GifPicker {
       if (path === '') {
         return;
       }
-      this.gifs = this.gifs.map((g: GifItem): GifItem =>
+      this.publishGifs(this.gifs.map((g: GifItem): GifItem =>
         g.fileId === gifFileId
           ? {
             fileId: g.fileId, width: g.width, height: g.height, duration: g.duration,
             thumbPath: path, srcPath: g.srcPath
           }
-          : g);
+          : g));
     }).catch((e: TdError) => {
       logE(`GifPicker.downloadThumb failed: ${e.message}`);
     });
   }
 
-  private requestMissingSources(): void {
+  private requestVisibleSources(): void {
     if (!this.playbackEnabled()) {
       return;
     }
     const seq: number = this.loadSeq;
-    for (const g of this.gifs) {
+    const first: number = Math.max(0, this.visibleFirst);
+    const last: number = Math.min(this.gifs.length - 1,
+      Math.max(this.visibleLast, first + GIF_SKELETONS.length - 1) + GIF_COLUMNS);
+    for (let i = first; i <= last; i++) {
+      const g: GifItem = this.gifs[i];
       if (g.srcPath === '' && !this.sourceLoading.has(g.fileId)) {
         this.downloadSource(g.fileId, seq);
       }
@@ -190,13 +275,13 @@ export struct GifPicker {
       if (path === '') {
         return;
       }
-      this.gifs = this.gifs.map((g: GifItem): GifItem =>
+      this.publishGifs(this.gifs.map((g: GifItem): GifItem =>
         g.fileId === gifFileId
           ? {
             fileId: g.fileId, width: g.width, height: g.height, duration: g.duration,
             thumbPath: g.thumbPath, srcPath: path
           }
-          : g);
+          : g));
     }).catch((e: TdError) => {
       this.sourceLoading.delete(gifFileId);
       logE(`GifPicker.downloadSource failed: ${e.message}`);
@@ -240,14 +325,14 @@ export struct GifPicker {
           ForEach(GIF_SKELETONS, (idx: number) => {
             GridItem() {
               Column()
-                .width('100%').aspectRatio(1)
-                .backgroundColor($r('app.color.surface_alt')).borderRadius(9)
+                .width('100%').aspectRatio(GIF_CELL_ASPECT)
+                .backgroundColor($r('app.color.surface_alt')).borderRadius(8)
                 .opacity(idx % 2 === 0 ? 0.85 : 0.55);
             }
           }, (idx: number) => `gif_skeleton_${idx}`);
         }
-        .columnsTemplate('1fr 1fr 1fr').columnsGap(7).rowsGap(7)
-        .padding({ left: 10, right: 10, top: 10, bottom: 8 })
+        .columnsTemplate('1fr 1fr').columnsGap(GIF_GRID_GAP).rowsGap(GIF_GRID_GAP)
+        .padding({ left: GIF_GRID_SIDE_PADDING, right: GIF_GRID_SIDE_PADDING, top: 10, bottom: 8 })
         .width('100%').height('100%');
       } else if (this.loadState === 'error') {
         this.stateMessage($r('sys.symbol.exclamationmark_circle'), this.errorText,
@@ -257,15 +342,13 @@ export struct GifPicker {
           str('gif_none_saved_sub'), false);
       } else {
         Grid() {
-          // 探针：这里是 ForEach 不是 LazyForEach——网格不虚拟化，拿回多少
-          // 条就一次性建多少格。计一下实际规模。
-          ForEach(this.gifs, (g: GifItem) => {
+          LazyForEach(this.gridData, (g: GifItem) => {
             GridItem() {
-              Stack() {
-                if (this.playbackProbed() && g.srcPath !== '') {
+              Stack({ alignContent: Alignment.BottomEnd }) {
+                if (this.playbackEnabled() && g.srcPath !== '') {
                   SmartLoopVideo({
                     videoPath: g.srcPath, thumbPath: g.thumbPath,
-                    boxWidth: 112, boxHeight: 112, powerCategory: 'gif'
+                    boxWidth: this.gifCellWidth(), boxHeight: this.gifCellHeight(), powerCategory: 'gif'
                   });
                 } else if (g.thumbPath !== '') {
                   Image(`file://${g.thumbPath}`).draggable(false)
@@ -284,19 +367,52 @@ export struct GifPicker {
                   }
                   .width('100%').height('100%').justifyContent(FlexAlign.Center)
                   .backgroundColor('#33000000');
+                } else if (g.duration > 0) {
+                  Text(`${g.duration}s`)
+                    .fontSize(10).fontWeight(FontWeight.Medium).fontColor(Color.White)
+                    .padding({ left: 5, right: 5, top: 2, bottom: 2 })
+                    .backgroundColor('#73000000').borderRadius(5)
+                    .margin({ right: 6, bottom: 6 });
                 }
               }
               .width('100%').height('100%')
-              .borderRadius(9).clip(true)
+              .borderRadius(8).clip(true)
+              .opacity(this.pressedGifId === g.fileId ? 0.8 : 1)
+              .scale({
+                x: this.pressedGifId === g.fileId ? 0.97 : 1,
+                y: this.pressedGifId === g.fileId ? 0.97 : 1
+              })
+              .animation({
+                duration: this.reduceAnimations || this.powerSaving ? 0 : 100,
+                curve: Curve.EaseOut
+              })
+              .onTouch((event: TouchEvent): void => {
+                if (event.type === TouchType.Down) {
+                  this.pressedGifId = g.fileId;
+                } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+                  this.pressedGifId = 0;
+                }
+              })
               .onClick(() => { this.pickGif(g); });
             }
-            .aspectRatio(1);
-          }, (g: GifItem) => `${g.fileId}_${g.thumbPath}_${g.srcPath}`);
+            .height(this.gifCellHeight());
+          }, (g: GifItem, index: number) => guardKey('saved_gifs', index, `${g.fileId}`));
         }
-        .columnsTemplate('1fr 1fr 1fr')
-        .columnsGap(7).rowsGap(7)
-        .padding({ left: 10, right: 10, top: 7, bottom: 8 })
-        .width('100%').height('100%');
+        .columnsTemplate('1fr 1fr')
+        .columnsGap(GIF_GRID_GAP).rowsGap(GIF_GRID_GAP)
+        .padding({ left: GIF_GRID_SIDE_PADDING, right: GIF_GRID_SIDE_PADDING, top: 8, bottom: 8 })
+        .width('100%').height('100%')
+        .onScrollIndex((first: number, last: number): void => {
+          this.visibleFirst = first;
+          this.visibleLast = last;
+          this.requestVisibleSources();
+        })
+        .onAreaChange((_old: Area, area: Area): void => {
+          const width: number = area.width as number;
+          if (width > 0 && Math.abs(width - this.gridWidth) > 0.5) {
+            this.gridWidth = width;
+          }
+        });
       }
     }
     // 高度跟着抽屉的内容区走（见 util/drawerMetrics）。写死过一次 241，

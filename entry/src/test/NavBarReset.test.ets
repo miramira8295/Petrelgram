@@ -47,11 +47,13 @@ export default function navBarResetTest() {
     it('浏览器退掉后补发的 visible=true，单栏且栈非空时不算数', 0, (): void => {
       expect(navBarVisibleOnChange(true, false, 1)).assertFalse();
       expect(navBarVisibleOnChange(true, false, 0)).assertTrue();
-      expect(navBarVisibleOnChange(false, false, 0)).assertFalse();
+      // 页签切到后台会临时报告 false；栈空的根页仍应让 dock 保持可见。
+      expect(navBarVisibleOnChange(false, false, 0)).assertTrue();
     });
     it('分栏下照单全收', 0, (): void => {
       expect(navBarVisibleOnChange(true, true, 3)).assertTrue();
-      expect(navBarVisibleOnChange(false, true, 3)).assertFalse();
+      // 分栏左侧 navBar 常驻，后台页签的临时 false 不能隐藏 dock。
+      expect(navBarVisibleOnChange(false, true, 3)).assertTrue();
     });
   });
 }

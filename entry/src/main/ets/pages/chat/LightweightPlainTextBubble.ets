@@ -8,7 +8,9 @@ import {
 } from '../../store/AppSettings';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
-import { animationDurationFor, scrollActiveNow } from '../../util/scrollEffects';
+import {
+  animationDurationFor, scrollActiveNow
+} from '../../util/scrollEffects';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import {
   glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
@@ -787,6 +789,27 @@ export struct LightweightPlainTextBubble {
     }.width(262).padding({ top: 6, bottom: 6 });
   }
 
+  @Builder
+  unreadDivider() {
+    Row() {
+      Row() {
+        Text(this.dividerIsResume
+          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
+          .fontSize(12)
+          .fontColor(COLOR_TEXT_SECONDARY)
+          .fontWeight(FontWeight.Medium);
+      }
+      .width('calc(100% - 24vp)')
+      .height(22)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor($r('app.color.system_pill'))
+      .borderRadius(8);
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ bottom: 4 });
+  }
+
   build() {
     Column() {
       if (this.dateLabel !== '') {
@@ -797,12 +820,7 @@ export struct LightweightPlainTextBubble {
         }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 5, bottom: 3 });
       }
       if (this.showUnreadDivider) {
-        Text(this.dividerIsResume
-          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
-          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-          .width('100%').textAlign(TextAlign.Center)
-          .backgroundColor($r('app.color.system_pill'))
-          .padding({ top: 3, bottom: 3 }).margin({ bottom: 4 });
+        this.unreadDivider();
       }
       Row() {
         Row() {

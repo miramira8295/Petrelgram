@@ -210,11 +210,26 @@ struct ChatBackgroundPage {
     });
   }
 
-  private setBlur(value: number): void {
+  private sliderSettled(mode: SliderChangeMode): boolean {
+    return mode === SliderChangeMode.End || mode === SliderChangeMode.Click;
+  }
+
+  private setBlur(value: number, mode: SliderChangeMode): void {
+    if (!this.sliderSettled(mode)) { return; }
     this.bgBlur = Math.round(value);
-    // 官方 Slider 示例也是每次 onChange 都更新 @State。这里同时写回当前槽位，
-    // 点击轨道、键盘/表冠调节和拖动中途都不会再落掉最终值。
     setNumber(this.slotKeys().blur, this.bgBlur);
+  }
+
+  private setPattern(value: number, mode: SliderChangeMode): void {
+    if (!this.sliderSettled(mode)) { return; }
+    this.patternPct = Math.round(value) / 100;
+    setNumber(this.slotKeys().pattern, this.patternPct);
+  }
+
+  private setDim(value: number, mode: SliderChangeMode): void {
+    if (!this.sliderSettled(mode)) { return; }
+    this.chatDim = Math.round(value) / 100;
+    setNumber(this.slotKeys().dim, this.chatDim);
   }
 
   // 当前编辑的是哪个槽位。没给 slot（从会话资料页进来）时按页内的深浅色开关
@@ -516,44 +531,6 @@ struct ChatBackgroundPage {
     .padding(3).borderRadius(20).backgroundColor(COLOR_SURFACE);
   }
 
-  // 深色遮罩。原来在「聊天设置 → 夜间模式」那张卡里，但它调的是背景的明暗，
-  // 归到背景页的深色一侧才找得着。只在深色页签下出现——它本来就只在深色模式
-  // 生效，挂在浅色页签上会让人以为浅色也起作用。
-  //
-  // 全局设置：单个会话的背景页没有浅/深切换（chatId !== 0 时不显示），
-  // 遮罩也就不在那里露面。
-  @Builder
-  darkDimCard() {
-    Column({ space: 8 }) {
-      Row() {
-        Text($r('app.string.chat_settings_dark_dim')).fontSize(15)
-          .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-        Text(`${Math.round(this.chatDim * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
-      }.width('100%');
-      Text($r('app.string.chat_settings_dark_dim_sub'))
-        .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%');
-      Slider({
-        value: Math.round(this.chatDim * 100),
-        min: 0,
-        max: Math.round(CHAT_DIM_MAX * 100),
-        step: 5,
-        style: SliderStyle.OutSet
-      })
-        .width('100%')
-        .trackColor($r('app.color.divider'))
-        .selectedColor(COLOR_PRIMARY)
-        .blockColor(COLOR_PRIMARY)
-        .onChange((value: number): void => {
-          const next: number = Math.round(value) / 100;
-          this.chatDim = next;
-          setNumber(this.slotKeys().dim, next);
-        });
-    }
-    .width('100%')
-    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
-  }
-
   // 图案线条太重时压一档。乘在壁纸自带的 intensity 上，不改壁纸本身，
   // 所以换一张图案后这个设置仍然生效。整图壁纸没有图案可言，滑块不出现。
   private patternValue(): number {
@@ -587,59 +564,67 @@ struct ChatBackgroundPage {
   }
 
   @Builder
-  patternCard() {
-    Column({ space: 8 }) {
+  blurAdjustment() {
+    Column({ space: 6 }) {
       Row() {
-        Text($r('app.string.cb_pattern_strength')).fontSize(15)
-          .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-        Text(`${Math.round(this.patternValue() * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+        Text($r('app.string.cb_blur_amount')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        Text(`${this.bgBlur}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }.width('100%');
-      Slider({
-        value: Math.round(this.patternValue() * 100),
-        min: Math.round(BG_PATTERN_MIN * 100),
-        max: 100,
-        step: 5,
-        style: SliderStyle.OutSet
-      })
-        .width('100%')
-        .trackColor($r('app.color.divider'))
-        .selectedColor(COLOR_PRIMARY)
-        .blockColor(COLOR_PRIMARY)
-        .onChange((value: number): void => {
-          const next: number = Math.round(value) / 100;
-          // 写到当前页签对应的那一份：浅色页签调浅色，深色页签调深色。
-          this.patternPct = next;
-          setNumber(this.slotKeys().pattern, next);
-        });
+      Slider({ value: this.bgBlur, min: BG_BLUR_MIN, max: BG_BLUR_MAX, step: 1, style: SliderStyle.OutSet })
+        .width('100%').trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+        .onChange((value: number, mode: SliderChangeMode): void => { this.setBlur(value, mode); });
     }
-    .width('100%')
-    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+    .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
   }
 
   @Builder
-  blurCard() {
-    Column({ space: 8 }) {
+  patternAdjustment() {
+    Column({ space: 6 }) {
       Row() {
-        Text($r('app.string.cb_blur_amount')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
-          .layoutWeight(1);
-        Text(`${this.bgBlur}`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+        Text($r('app.string.cb_pattern_strength')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+        Text(`${Math.round(this.patternPct * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       }.width('100%');
-      Slider({
-        value: this.bgBlur,
-        min: BG_BLUR_MIN,
-        max: BG_BLUR_MAX,
-        step: 1,
-        style: SliderStyle.OutSet
-      })
-        .width('100%')
-        .trackColor($r('app.color.divider'))
-        .selectedColor(COLOR_PRIMARY)
-        .blockColor(COLOR_PRIMARY)
-        .onChange((value: number): void => { this.setBlur(value); });
+      Slider({ value: Math.round(this.patternPct * 100), min: Math.round(BG_PATTERN_MIN * 100), max: 100,
+        step: 5, style: SliderStyle.OutSet })
+        .width('100%').trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+        .onChange((value: number, mode: SliderChangeMode): void => { this.setPattern(value, mode); });
     }
-    .width('100%')
-    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
+  }
+
+  @Builder
+  dimAdjustment() {
+    Column({ space: 6 }) {
+      Row() {
+        Column({ space: 2 }) {
+        Text($r('app.string.chat_settings_dark_dim')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
+        Text($r('app.string.chat_settings_dark_dim_sub')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        }.alignItems(HorizontalAlign.Start).layoutWeight(1);
+        Text(`${Math.round(this.chatDim * 100)}%`).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+      }.width('100%');
+      Slider({ value: Math.round(this.chatDim * 100), min: 0, max: Math.round(CHAT_DIM_MAX * 100),
+        step: 5, style: SliderStyle.OutSet })
+        .width('100%').trackColor($r('app.color.divider')).selectedColor(COLOR_PRIMARY).blockColor(COLOR_PRIMARY)
+        .onChange((value: number, mode: SliderChangeMode): void => { this.setDim(value, mode); });
+    }
+    .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
+  }
+
+  @Builder
+  adjustmentsCard() {
+    Column() {
+      this.blurAdjustment();
+      if (this.currentIsPattern()) {
+        Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+        this.patternAdjustment();
+      }
+      if (slotHasDim(this.effectiveSlot())) {
+        Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+        this.dimAdjustment();
+      }
+    }
+    .width('100%').padding({ top: 2, bottom: 2 })
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
@@ -679,6 +664,7 @@ struct ChatBackgroundPage {
       }
     }
     .width('100%').height(TILE_HEIGHT).borderRadius(12).clip(true)
+    .renderGroup(true)
     .onClick((): void => this.apply(row));
   }
 
@@ -737,15 +723,7 @@ struct ChatBackgroundPage {
             .width('100%').height(48).padding({ left: 14, right: 14 })
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => this.reset());
-            this.blurCard();
-            if (this.currentIsPattern()) {
-              this.patternCard();
-            }
-            // 遮罩只对深色槽位有意义——浅色下它恒为 0，摆一根无效的滑杆会让人
-            // 以为坏了。判据见 util/wallpaperSlot.slotHasDim。
-            if (slotHasDim(this.effectiveSlot())) {
-              this.darkDimCard();
-            }
+            this.adjustmentsCard();
             GridRow({ columns: 3, gutter: 10 }) {
               ForEach(this.rows, (row: GalleryRow) => {
                 GridCol({ span: 1 }) { this.tile(row); }

@@ -1,36 +1,52 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  planAnchorRestore, INVALID_ANCHOR_RECT,
+  anchorYAfterUserScroll, planAnchorRestore, INVALID_ANCHOR_RECT,
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_FALLBACK, AnchorRectSnapshot,
   ANCHOR_RESTORE_ATTEMPTS, PrependAnchorCaptureInput, shouldCapturePrependAnchor,
   shouldRetryAnchorRestore
 } from '../main/ets/util/anchorRestore';
 
-function prependInput(touchActive: boolean, userScrollActive: boolean): PrependAnchorCaptureInput {
+function prependInput(): PrependAnchorCaptureInput {
   return {
     didInitialScroll: true,
     anchorIndexFresh: true,
-    boundaryRowReplaced: true,
-    touchActive,
-    userScrollActive
+    olderPageGrowth: true
   };
 }
 
 export default function anchorRestoreTest() {
   describe('shouldCapturePrependAnchor', () => {
-    it('只在静止且边界可见行被替换时保留人工兜底', 0, (): void => {
-      expect(shouldCapturePrependAnchor(prependInput(false, false))).assertTrue();
+    it('older 媒体页增长时保留可见锚点', 0, (): void => {
+      expect(shouldCapturePrependAnchor(prependInput())).assertTrue();
     });
 
-    it('手指拖动和惯性滚动都由用户拥有，不能反向复位', 0, (): void => {
-      expect(shouldCapturePrependAnchor(prependInput(true, true))).assertFalse();
-      expect(shouldCapturePrependAnchor(prependInput(false, true))).assertFalse();
-    });
-
-    it('普通区外前插交给 API20 maintainVisibleContentPosition', 0, (): void => {
-      const value: PrependAnchorCaptureInput = prependInput(false, false);
-      value.boundaryRowReplaced = false;
+    it('非 older 增长的发布不抢滚动位置', 0, (): void => {
+      const value: PrependAnchorCaptureInput = prependInput();
+      value.olderPageGrowth = false;
       expect(shouldCapturePrependAnchor(value)).assertFalse();
+    });
+
+    it('首屏定位前和过期行号都不采样', 0, (): void => {
+      const beforeLanding: PrependAnchorCaptureInput = prependInput();
+      beforeLanding.didInitialScroll = false;
+      expect(shouldCapturePrependAnchor(beforeLanding)).assertFalse();
+      const staleIndex: PrependAnchorCaptureInput = prependInput();
+      staleIndex.anchorIndexFresh = false;
+      expect(shouldCapturePrependAnchor(staleIndex)).assertFalse();
+    });
+  });
+
+  describe('anchorYAfterUserScroll', () => {
+    it('数据发布期间用户继续向末尾滑动，锚点目标跟着上移', 0, (): void => {
+      expect(anchorYAfterUserScroll(-20, 100, 136)).assertEqual(-56);
+    });
+
+    it('用户反向滑动也保留，不被异步复位抵消', 0, (): void => {
+      expect(anchorYAfterUserScroll(-20, 100, 84)).assertEqual(-4);
+    });
+
+    it('没有新的用户位移时保持原锚点', 0, (): void => {
+      expect(anchorYAfterUserScroll(-20, 100, 100)).assertEqual(-20);
     });
   });
 

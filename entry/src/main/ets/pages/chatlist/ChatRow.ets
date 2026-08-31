@@ -35,6 +35,8 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
 const MENU_DISMISS_MS: number = 150;
+// 与首页 HDS 大标题的 12vp 起始线对齐；滑动操作背景也复用这一个值。
+export const CHAT_ROW_SIDE_GUTTER: number = 12;
 
 // Reused across list rows. Every chat row is the same shape, so there is no
 // reuseId to split: one pool serves the whole list.
@@ -335,13 +337,20 @@ export struct ChatRow {
     return this.appWallpaperOn && this.materialEpoch >= 0;
   }
 
+  private rowEffectsEnabled(): boolean {
+    // 文件夹横向切换时也保持同一层稳定玻璃。以前在切换开始/结束分别卸载、恢复
+    // 行级效果，会让两屏卡片集体变薄再闪回；公共材质层现在会锁定普通模糊质量，
+    // 不再需要用视觉跳变换取 systemMaterial 的合成开销。
+    return this.rowGlassEnabled();
+  }
+
   private rowFill(pressed: boolean): ResourceColor {
     const solid: ResourceColor = mainCardFill(this.appWallpaperOn, pressed);
     return this.rowGlassEnabled() ? overlayGlassFill('card', solid) : solid;
   }
 
   private rowBackdropBlur(): number {
-    return this.rowGlassEnabled() ? overlayBackdropBlur('card') : 0;
+    return this.rowEffectsEnabled() ? overlayBackdropBlur('card') : 0;
   }
 
   @Styles
@@ -521,15 +530,15 @@ export struct ChatRow {
         }
       }.alignItems(HorizontalAlign.End);
     }
-    // 真卡片与其它一级页面共用 12vp 网格。壁纸生效时卡片交给现有 'card'
-    // 材质：API 26+ 是沉浸光感，低版本是随“材质厚度”变化的自绘毛玻璃；
-    // 用户关闭材质时 overlayGlassFill 会自然退回原来的可读性实底。
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 3, bottom: 3 })
+    // 真卡片左边沿与首页大标题的起始线对齐。壁纸生效时卡片交给现有 'card'
+    // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
+    // overlayGlassFill 会自然退回原来的可读性实底。
+    .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
+    .margin({ left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
     .borderRadius(16)
     .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
     .backdropBlur(this.rowBackdropBlur())
-    .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled()))
+    .attributeModifier(materialModifierWhen('card', this.rowEffectsEnabled()))
     .clip(true)
     .constraintSize({ minHeight: 72 })
     .padding({ left: ROW_PAD_H, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })

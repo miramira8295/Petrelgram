@@ -1,16 +1,15 @@
 // 向下翻页追加行时要不要保住视口（记住顶行 + 发布后补一次差值 scrollBy）。
 //
-// **前提是列表此刻真的底部锚定**。底部锚定时往下追加会改变「离底部的距离」，
-// 可见内容整体上骑、进度条跑到底——那时必须手动补。
+// 底部锚定时往下追加会改变「离底部的距离」，可见内容整体上移、进度条跑到底，
+// 必须手动补。顶部锚定原本被认为不需要补，但媒体会话的真机日志推翻了这个前提：
+// around-unread 的 14 条原始消息折叠成 2 个超高相册行，第一次拖动触发 newer 后，
+// 28 条媒体消息又让 Repeat 从 15 行变成 19 行；即使 stackFromEnd=false，整个可见
+// 窗口仍然换了位置。普通短文本追加通常由 maintainVisibleContentPosition 守住，
+// 此时发布前后的同一行 y 相等，下面的差值复位自然是 noop。
 //
-// 但 stackFromEnd 不是常开的：`util/stackFromEnd.ets` 是 `!hasMoreNewer`，而
-// **往下翻历史时 hasMoreNewer 恰恰是 true**，列表是**顶部锚定**的。顶部锚定下
-// 在视口**下方**追加行，可见内容根本不动，这一次补偿就是纯多余——它唯一的效果
-// 是把采样到测量之间用户自己滑的那一段位移（anchorRestore 的 dy 里没有滚动偏移
-// 项）反向抵消掉，表现为「往下每翻一页回弹/顿一下」。用户报的「上下翻动都有」，
-// 向下那一半就出在这里。
-//
-// 所以判据里必须带上 stackFromEnd：只有底部锚定时这套补偿才有意义。
+// 以前顶部锚定不能补，是因为异步测量把采样后的用户拖动也算进 dy，结果反向抵消
+// 手势。现在 ChatPage 把用户来源的 onDidScroll 位移单独累计，anchorRestore 的
+// targetY 会随手势一起移动，只消掉数据/布局位移；因此两种锚定方向都可以安全保位。
 //
 // 曾经只对「用户拖出来的那一页」补（reqUserDriven），自动填充的页不补，是为了打断
 // 「复位把视口按住 → 又进触发区 → 再取一页」的循环。那个循环的根子已经被拖动式
@@ -22,9 +21,6 @@
 // 消息，该跟着走）、或者有明确的滚动意图在途（点 ↓ / 跳转，别和它抢）。
 
 export interface AppendAnchorInput {
-  // 列表此刻是不是底部锚定（List.stackFromEnd）。false = 顶部锚定，视口下方
-  // 追加不动内容，补偿多余且有害。见文件头。
-  stackFromEnd: boolean;
   bypassed: boolean;
   didInitialScroll: boolean;
   prependAnchorHeld: boolean;
@@ -36,11 +32,6 @@ export interface AppendAnchorInput {
 }
 
 export function shouldHoldAppendAnchor(input: AppendAnchorInput): boolean {
-  // 顶部锚定下追加不动视口，补了反而抵消用户的滑动。排在最前：它比别的条件更
-  // 根本——不满足它时这套补偿整个没有立足点。
-  if (!input.stackFromEnd) {
-    return false;
-  }
   if (input.bypassed || !input.didInitialScroll || input.prependAnchorHeld) {
     return false;
   }

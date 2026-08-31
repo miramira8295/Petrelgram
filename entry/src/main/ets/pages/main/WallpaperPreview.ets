@@ -62,6 +62,9 @@ export struct WallpaperPreview {
       } else if (this.wallpaper.path !== '') {
         Image(this.wallpaper.path.startsWith('/')
           ? `file://${this.wallpaper.path}` : this.wallpaper.path).draggable(false)
+          // 预览只有 188vp 高，不需要把相册原图按数千像素完整解码。
+          // 2x 留足高密屏清晰度，同时显著降低滚动时的纹理上传和合成负担。
+          .sourceSize({ width: this.previewW * 2, height: this.previewH * 2 })
           .width('100%').height('100%')
           .objectFit(ImageFit.Cover)
           .opacity(this.imageOpacity())
@@ -78,6 +81,6 @@ export struct WallpaperPreview {
           .backgroundColor(Color.Black).opacity(this.darkDim());
       }
     }
-    .width('100%').height('100%').clip(true);
+    .width('100%').height('100%').clip(true).renderGroup(true);
   }
 }

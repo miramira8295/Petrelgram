@@ -40,6 +40,10 @@ export struct PatternTileLayer {
         Row() {
           ForEach(tileIndices(this.grid().cols), (c: number) => {
             Image(this.path.startsWith('/') ? `file://${this.path}` : this.path).draggable(false)
+              .sourceSize({
+                width: this.grid().tileWidth * 2,
+                height: this.grid().tileHeight * 2
+              })
               .width(this.grid().tileWidth).height(this.grid().tileHeight)
               .objectFit(ImageFit.Cover)
               .autoResize(false)
@@ -55,6 +59,7 @@ export struct PatternTileLayer {
     .opacity(this.tileOpacity)
     .scale(this.blurRadius > NO_BLUR_RADIUS
       ? { x: BLUR_OVERSCAN_SCALE, y: BLUR_OVERSCAN_SCALE } : { x: 1, y: 1 })
-    .blur(this.blurRadius);
+    .blur(this.blurRadius)
+    .renderGroup(true);
   }
 }

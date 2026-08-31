@@ -6,8 +6,7 @@ import { MainTabBody } from './MainTabBody';
 import { CHAT_LIST_NOW } from './ChatListFreeze';
 import { ComponentContent, FrameCallback, LengthMetrics } from '@kit.ArkUI';
 import {
-  HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
-  HdsNavigationTitleMode, TitleBarContentOptions
+  HdsNavigation, HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
@@ -18,9 +17,9 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WID
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
-  overlayBackdropBlur, overlayMaterial, overlayGlassFill, plainBackdropBlur, MATERIAL_EPOCH
+  overlayBackdropBlur, overlayGlassFill, overlayMaterial, plainBackdropBlur, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { registerStack, NavStackLike } from '../../util/navStacks';
@@ -36,6 +35,9 @@ import {
   requestChatListFlush, setChatListRenderActive
 } from '../../util/chatListRenderGate';
 import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNavWidth';
+import {
+  beginFolderSwitchEffects, finishFolderSwitchEffects
+} from '../../util/folderSwitchEffects';
 
 interface TabSpec {
   key: string;
@@ -50,12 +52,11 @@ interface TabSpec {
 const TOP_BAR_HEIGHT: number = 56;
 const TOP_ACTION_SIZE: number = 44;
 const TAB_BADGE_MAX: number = 99;
-const FOLDER_BAR_HEIGHT: number = 44;
+const FOLDER_BAR_HEIGHT: number = 36;
 // 文件夹条连同它自己的上下留白占的高度（列表让位用）。
-const FOLDER_BAR_SPACE: number = 54;
-// 文件夹项与选中指示器共用这一个高度——两者必须严丝合缝：每项自己带一块玻璃，
-// 指示器画在它背后，差一点就会在胶囊外沿露出一圈错位的边。
-// 横条整体仍是 FOLDER_BAR_HEIGHT(44)，多出来的那 16 是上下留白。
+const FOLDER_BAR_SPACE: number = 42;
+// 文件夹项与选中指示器共用这一个高度。未选项不再各画一块玻璃，只让滑动
+// 指示器托住当前项，避免“外层横条 + 一排胶囊 + 会话卡片”叠出三层容器。
 const FOLDER_CHIP_HEIGHT: number = 28;
 const FOLDER_SWITCH_DURATION: number = 250;
 // HdsNavigation reports the nav bar visible near the beginning of a pop. Keep
@@ -185,7 +186,7 @@ export struct ChatListPage {
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // Sliding selection pill: position/size interpolated between tab frames so it
   // follows the finger during content swipes (Telegram-style).
-  @State indicatorX: number = 8;
+  @State indicatorX: number = 0;
   @State indicatorW: number = 0;
   private tabXs: number[] = [];
   private tabWs: number[] = [];
@@ -226,12 +227,12 @@ export struct ChatListPage {
 
   @Styles
   actionNormalStyle() {
-    .backgroundColor(Color.Transparent)
+    .opacity(1)
   }
 
   @Styles
   actionPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .opacity(0.68)
   }
 
   @Styles
@@ -648,13 +649,17 @@ export struct ChatListPage {
   }
 
   @Builder
-  topAction(icon: string, label: string, onTap: () => void) {
+  topAction(icon: string, label: Resource, onTap: () => void) {
     Row() {
       SymbolGlyph($r(icon)).fontSize(23).fontColor([COLOR_ICON_SECONDARY]);
     }
     .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
     .borderRadius(TOP_ACTION_SIZE / 2)
     .justifyContent(FlexAlign.Center)
+    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+    .backdropBlur(overlayBackdropBlur('control'))
+    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+    .clip(true)
     .stateStyles({
       normal: this.actionNormalStyle,
       pressed: this.actionPressedStyle
@@ -693,6 +698,10 @@ export struct ChatListPage {
     .height(TOP_ACTION_SIZE)
     .borderRadius(TOP_ACTION_SIZE / 2)
     .justifyContent(FlexAlign.Center)
+    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+    .backdropBlur(overlayBackdropBlur('control'))
+    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+    .clip(true)
     .stateStyles({
       normal: this.actionNormalStyle,
       pressed: this.actionPressedStyle
@@ -702,6 +711,26 @@ export struct ChatListPage {
     .onClick((): void => {
       this.openGlobalSearch();
     });
+  }
+
+  // HDS's built-in menu node composites each icon independently. With the
+  // adaptive material level, the sparse search glyph and dense more glyph can
+  // therefore look like two different material strengths even though the same
+  // options were supplied. Draw both actions through one project material
+  // pipeline so size, tint, blur, light level and interaction stay identical.
+  @Builder
+  titleBarActions() {
+    Row({ space: 8 }) {
+      this.searchAction();
+      this.topAction('sys.symbol.more', $r('app.string.cl_more_actions'), (): void => {
+        this.moreMenuShown = true;
+      });
+    }
+    .width('100%')
+    .height(TOP_BAR_HEIGHT)
+    .padding({ right: 16 })
+    .justifyContent(FlexAlign.End)
+    .alignItems(VerticalAlign.Center);
   }
 
   syncLabel(): ResourceStr {
@@ -735,28 +764,12 @@ export struct ChatListPage {
   // 同步状态原来是顶栏里第二行文字、靠位移动画"挤"出来，现在交给标题栏的
   // subTitle —— 它自己管这个位置。
   private titleBarContent(): TitleBarContentOptions {
-    const searchIcon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.magnifyingglass'),
-      label: $r('app.string.cl_global_search'),
-      isEnabled: !this.searchOpening,
-      action: (): void => { this.openGlobalSearch(); }
-    };
-    const moreIcon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.more'),
-      label: $r('app.string.cl_more_actions'),
-      action: (): void => { this.moreMenuShown = true; }
-    };
     const content: TitleBarContentOptions = {
       title: {
         mainTitle: $r('app.string.app_name'),
         subTitle: this.syncState === '' ? '' : this.syncLabel()
       },
-      menu: {
-        value: [
-          { content: searchIcon } as HdsNavigationMenuItemOptions,
-          { content: moreIcon } as HdsNavigationMenuItemOptions
-        ]
-      }
+      stackBuilder: (): void => { this.titleBarActions(); }
     };
     // 文件夹条挂在 bottomBuilder 上——这是 HDS 给"标题栏底下那一行"准备的槽位，
     // 横条和标题栏因此共用同一块背板与材质，看上去是一整块。
@@ -888,19 +901,11 @@ export struct ChatListPage {
     }
     .height(FOLDER_CHIP_HEIGHT)
     .padding({ left: 7, right: 7 })
-    .margin({ right: 8 })
+    .margin({ right: 6 })
     .borderRadius(FOLDER_CHIP_HEIGHT / 2)
-    // 每个文件夹项自己一块玻璃。用 'control' 这一档（小控件），厚度比顶栏薄，
-    // 免得一排胶囊连成一片实的。
-    //
-    // 三行是一套，缺一不可（见 util/overlayMaterial 文件头）：材质的视觉层级在
-    // backgroundColor **之下**，所以底色必须让出来——材质可用时 overlayGlassFill
-    // 返回透明，不可用时返回半透明、由 backdropBlur 自己画玻璃。
-    .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
-    .backdropBlur(overlayBackdropBlur('control'))
-    .attributeModifier(materialModifier('control'))
-    // 圆角要裁，否则模糊会溢出胶囊外沿画成一个方块。
-    .clip(true)
+    // 未选项只铺一层轻量 tint，不再各自叠模糊/材质；选中态由下层滑动胶囊表达。
+    .backgroundColor(this.selectedIndex === index
+      ? Color.Transparent : $r('app.color.material_tint'))
     .stateStyles({
       normal: this.tabNormalStyle,
       pressed: this.tabPressedStyle
@@ -949,37 +954,23 @@ export struct ChatListPage {
             ForEach(this.tabs(), (spec: TabSpec, index: number) => {
               this.pill(spec, index);
             }, (spec: TabSpec) => spec.key);
-          }.padding({ left: 8, right: 8 }).height(FOLDER_BAR_HEIGHT);
+          }.padding({ left: 0, right: 0 }).height(FOLDER_BAR_HEIGHT);
         }
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
-      // 文件夹少、一行装得下时居中显示（issue #156）；装不下时 align 不起作用，
-      // 仍然从左边开始、照常横向滚动。选中胶囊的位置由 indicatorX 按量到的
-      // 页签坐标算，整条内容一起平移不影响它。
-      .align(Alignment.Center)
+      // 无论文件夹多少都从 12vp 网格线起排，与大标题和会话卡片的左外沿一致；
+      // 内容超宽时照常横向滚动。
+      .align(Alignment.TopStart)
       .width('100%')
       .onAreaChange((_old: Area, area: Area) => {
         this.tabViewW = area.width as number;
         this.ensureTabVisible(this.selectedIndex);
       });
     }
-    // 只有这条保留沉浸光感：外面那块顶栏走的是高斯模糊，两种质感叠在一起，
-    // 胶囊才像是浮在模糊层之上的一块玻璃。
-    // 自己**不再画玻璃**：这条横条现在挂在标题栏的 bottomBuilder 上，和标题栏
-    // 共用同一块背板与材质。再叠一层自己的材质，两层玻璃相乘，整块就发实了
-    // ——用户报的"首页基本不透明"正是这么来的。边框和投影一并去掉：那是它当年
-    // 单独浮在列表上时用来托起悬浮感的，现在它不悬浮了，留着只会在标题栏内部
-    // 画出一道多余的分界。
-    //
-    // 选中项那颗胶囊（COLOR_TAB_PILL_BG）保留——那是内容，不是容器。
-    .borderRadius(FOLDER_BAR_HEIGHT / 2)
-    // 描一圈发丝边。横条自己**仍然不画玻璃**——它和标题栏共用同一块背板，再叠
-    // 一层材质两层相乘就发实了（用户报过的"首页基本不透明"就是这么来的）。
-    // 边框只勾轮廓、不铺底，所以不会重蹈那次。
-    .border({ width: 0.5, color: $r('app.color.divider') })
-    .clip(true)
-    .margin({ left: 8, right: 8, bottom: 6 })
+    // 横条无独立外框，直接融入标题栏的统一玻璃背板；只有当前项保留胶囊。
+    // 12vp 起始线同时对齐大标题与会话卡片，底部只留轻微呼吸空间。
+    .margin({ left: 12, right: 12, bottom: 2 })
     .transition(
       TransitionEffect.OPACITY
         .combine(TransitionEffect.translate({ y: -4 }))
@@ -1062,6 +1053,7 @@ export struct ChatListPage {
       // Content swipe in progress: convert the swipe offset into a fractional
       // tab position so the selection pill tracks the finger continuously.
       .onGestureSwipe((index: number, event: TabsAnimationEvent) => {
+        beginFolderSwitchEffects();
         if (this.tabsWidth > 0) {
           this.moveIndicatorTo(index - event.currentOffset / this.tabsWidth);
         }
@@ -1069,6 +1061,9 @@ export struct ChatListPage {
       // Finger released / tab tapped: settle the pill on the target tab and
       // scroll the strip if that tab sits outside the visible range.
       .onAnimationStart((_index: number, targetIndex: number) => {
+        // A gesture may have held most of the watchdog window before release;
+        // restart it for the final settle animation. Tab taps enter here first.
+        beginFolderSwitchEffects(true);
         this.folderLayoutPending = false;
         this.appliedFolder = targetIndex;
         this.selectedIndex = targetIndex;
@@ -1077,6 +1072,9 @@ export struct ChatListPage {
           curve: Curve.EaseOut
         }, () => { this.moveIndicatorTo(targetIndex); });
         this.ensureTabVisible(targetIndex);
+      })
+      .onAnimationEnd((_index: number, _event: TabsAnimationEvent) => {
+        finishFolderSwitchEffects();
       })
       .onChange((index: number) => {
         // onAnimationStart already drives animated changes. Avoid starting the
@@ -1116,6 +1114,8 @@ export struct ChatListPage {
         avoidLayoutSafeArea: true,
         enableComponentSafeArea: true,
         // 标题栏也让位：它和列表同属一张"浮在壁纸上"的面，只有行卡片自己带底。
+        // 两颗动作按钮由 stackBuilder 共用 control 材质；标题栏本身继续只负责
+        // 滚动模糊，避免整栏与按钮材质叠加后发实。
         style: titleBarStyle(mainBarFill(this.appWallpaperOn), this.accent()),
         content: this.titleBarContent()
       })

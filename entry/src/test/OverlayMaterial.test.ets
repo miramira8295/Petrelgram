@@ -22,7 +22,7 @@ import {
 // The API-version tests are pure. The rest run against whatever device the
 // suite is on, so they assert the invariant rather than one side of it.
 
-const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control', 'viewer'];
+const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control', 'viewer', 'bubble'];
 
 export default function overlayMaterialTest() {
   describe('immersiveTypeSupported', () => {
@@ -102,10 +102,11 @@ export default function overlayMaterialTest() {
       }
     });
 
-    it('resolves every surface the same way the device does', 0, () => {
+    it('resolves every participating surface the same way the device does', 0, () => {
       const available = immersiveMaterialAvailable();
       for (const surface of ALL_SURFACES) {
-        expect(overlayMaterial(surface) !== undefined).assertEqual(available);
+        const expected: boolean = available && surface !== 'viewer';
+        expect(overlayMaterial(surface) !== undefined).assertEqual(expected);
       }
     });
 
@@ -127,13 +128,10 @@ export default function overlayMaterialTest() {
     // 毛玻璃本身要的 API 远低于沉浸光感：backdropBlur 从 7 起，
     // backgroundBlurStyle 从 9 起。所以低版本上每个自绘面都画得出玻璃，
     // 由调用点决定用不用——这个 getter 只管"材质没接管时给多少半径"。
-    it('offers a backdrop-blur radius on every surface below the material', 0, () => {
-      if (immersiveMaterialAvailable()) {
-        return;
-      }
-      // The radius the dock and the folder bar already used.
+    it('offers fallback blur only where system material does not own the surface', 0, () => {
       for (const surface of ALL_SURFACES) {
-        expect(overlayBackdropBlur(surface)).assertEqual(22);
+        const expected: number = immersiveMaterialAvailable() && surface !== 'viewer' ? 0 : 22;
+        expect(overlayBackdropBlur(surface)).assertEqual(expected);
       }
     });
 
@@ -157,7 +155,9 @@ export default function overlayMaterialTest() {
       // Rebuilding a material per frame re-triggers the material computation;
       // these parameters never change, so the object must not either.
       for (const surface of ALL_SURFACES) {
-        expect(overlayMaterial(surface) === overlayMaterial(surface)).assertTrue();
+        if (surface !== 'viewer') {
+          expect(overlayMaterial(surface) === overlayMaterial(surface)).assertTrue();
+        }
       }
     });
 

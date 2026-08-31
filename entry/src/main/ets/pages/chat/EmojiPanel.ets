@@ -2,12 +2,12 @@ import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MENU,
   KEY_REDUCE_ANIM, powerGroupAnimationDuration
 } from '../../store/AppSettings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { accentSoft, COLOR_ICON_SECONDARY, COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { StickerPicker, StickerItem, ClassicPack } from './StickerPicker';
 import { GifPicker, GifItem } from './GifPicker';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { BOTTOM_DRAWER_HEIGHT, EMOJI_CONTENT_HEIGHT, EMOJI_TAB_BAR_HEIGHT } from '../../util/drawerMetrics';
+import { EMOJI_CONTENT_HEIGHT, EMOJI_DRAWER_HEIGHT, EMOJI_TAB_BAR_HEIGHT } from '../../util/drawerMetrics';
 
 // 内容区顶部这条带子归包切换条（贴纸/表情两页都有），横滑要留给它自己滚，
 // 不能被"切换表情/贴纸/GIF"抢走。切页手势是 parallelGesture 挂在面板根上的
@@ -132,25 +132,23 @@ export struct EmojiPanel {
     });
   }
 
-  // 只留文字。图标去掉之后字号可以放大一档，三个标签横排反而更清楚；
-  // 选中态靠主色 + 下面那条指示条，不画任何框。
+  // 主分类始终带图标和文字，让三个页面看起来属于同一个抽屉。
+  // 淡主色底是「当前模式」的状态，不是再塞一层卡片。
   @Builder
-  bottomTab(_symbol: Resource, label: string, idx: number) {
-    Column({ space: 3 }) {
+  modeTab(symbol: Resource, label: string, idx: number) {
+    Row({ space: 6 }) {
+      SymbolGlyph(symbol)
+        .fontSize(17)
+        .fontColor([this.tab === idx ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
       Text(label)
-        .fontSize(14)
+        .fontSize(13)
         .fontWeight(this.tab === idx ? FontWeight.Medium : FontWeight.Normal)
         .fontColor(this.tab === idx ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY);
-      Row()
-        .width(18).height(2).borderRadius(1)
-        .backgroundColor(this.tab === idx ? COLOR_PRIMARY : Color.Transparent);
     }
-    .layoutWeight(1).height(EMOJI_TAB_BAR_HEIGHT - 8)
+    .layoutWeight(1).height(36)
     .justifyContent(FlexAlign.Center)
-    // 不画任何框：选中态靠图标和文字变主色 + 下面那条 18×2 的指示条表示。
-    // 原来还压一块 selected_pill 的圆角底，在玻璃面板上像给按钮描了个边。
-    .backgroundColor(Color.Transparent)
-    // 同格子：这里不挂材质，否则三个标签各自变成一块玻璃砖，看着就是三个框。
+    .borderRadius(8)
+    .backgroundColor(this.tab === idx ? accentSoft() : Color.Transparent)
     .animation({ duration: this.panelDuration(140), curve: Curve.EaseOut })
     .accessibilityText(str('a11y_option_state', label, this.tab === idx ? str('a11y_selected') : ''))
     .onClick(() => { this.switchTab(idx); });
@@ -158,9 +156,18 @@ export struct EmojiPanel {
 
   build() {
     Column() {
+      Row({ space: 6 }) {
+        this.modeTab($r('sys.symbol.face_smiling'), str('emoji_tab'), 0);
+        this.modeTab($r('sys.symbol.gift'), str('sticker_tab'), 1);
+        this.modeTab($r('sys.symbol.video'), 'GIF', 2);
+      }
+      .width('100%').height(EMOJI_TAB_BAR_HEIGHT)
+      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+      .border({ width: { bottom: 0.5 }, color: $r('app.color.divider') });
       Stack() {
         Column() {
           StickerPicker({
+            active: this.tab === 0,
             stickerType: 'custom_emoji',
             includeTrending: true,
             classicPacks: CLASSIC_PACKS,
@@ -178,7 +185,8 @@ export struct EmojiPanel {
         if (this.stickerMounted) {
           Column() {
             StickerPicker({
-                onPick: (s: StickerItem, x: number, y: number): void => { this.onPickSticker(s, x, y); }
+              active: this.tab === 1,
+              onPick: (s: StickerItem, x: number, y: number): void => { this.onPickSticker(s, x, y); }
             });
           }
           .width('100%').height('100%')
@@ -186,7 +194,10 @@ export struct EmojiPanel {
         }
         if (this.gifMounted) {
           Column() {
-            GifPicker({ onPick: (g: GifItem): void => { this.onPickGif(g); } });
+            GifPicker({
+              active: this.tab === 2,
+              onPick: (g: GifItem): void => { this.onPickGif(g); }
+            });
           }
           .width('100%').height('100%')
           .visibility(this.tab === 2 ? Visibility.Visible : Visibility.Hidden);
@@ -209,23 +220,20 @@ export struct EmojiPanel {
         PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 24 })
           .onActionEnd((event: GestureEvent): void => {
             const dx: number = event.offsetX;
-            if (Math.abs(dx) < SWIPE_TAB_THRESHOLD) {
+            // Emoji and sticker pages reserve their first 44vp for the pack
+            // scroller. A horizontal drag there belongs to that scroller, not
+            // to the primary Emoji / Sticker / GIF switch.
+            if ((this.tab !== 2 && this.panDownY < PACK_ROW_BAND) ||
+              Math.abs(dx) < SWIPE_TAB_THRESHOLD) {
               return;
             }
             // 手指向左 = 看下一页。
             this.switchTab(dx < 0 ? this.tab + 1 : this.tab - 1);
           })
       );
-      Row({ space: 5 }) {
-        this.bottomTab($r('sys.symbol.face_smiling'), str('emoji_tab'), 0);
-        this.bottomTab($r('sys.symbol.gift'), str('sticker_tab'), 1);
-        this.bottomTab($r('sys.symbol.video'), 'GIF', 2);
-      }
-      .width('100%').height(EMOJI_TAB_BAR_HEIGHT)
-      .padding({ left: 12, right: 12, top: 2, bottom: 6 });
     }
-    .width('100%').height(BOTTOM_DRAWER_HEIGHT)
-    .constraintSize({ minHeight: BOTTOM_DRAWER_HEIGHT, maxHeight: BOTTOM_DRAWER_HEIGHT })
+    .width('100%').height(EMOJI_DRAWER_HEIGHT)
+    .constraintSize({ minHeight: EMOJI_DRAWER_HEIGHT, maxHeight: EMOJI_DRAWER_HEIGHT })
     // 透明：底色由抽屉卡片提供（毛玻璃/沉浸光感在那一层）。这里再涂一层
     // 不透明的 surface，就是把玻璃整个盖死——表情面板背景一直是死深色的原因。
     .backgroundColor(Color.Transparent)

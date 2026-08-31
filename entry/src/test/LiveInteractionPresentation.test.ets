@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   LiveInteractionEntry, LiveInteractionPresentationInput, isSupportedLiveChannelMessage,
-  liveInteractionLooksLikeEmojiOnly, liveInteractionPresentation, mergeLiveInteractions
+  liveInteractionLooksLikeEmojiOnly, liveInteractionPresentation, looksLikeEmojiOnly, mergeLiveInteractions
 } from '../main/ets/util/liveInteractionPresentation';
 
 function entry(key: string, source: string, date: number, arrival: number): LiveInteractionEntry {
@@ -62,6 +62,9 @@ export default function liveInteractionPresentationTest() {
       expect(isSupportedLiveChannelMessage('video', true)).assertTrue();
       expect(liveInteractionLooksLikeEmojiOnly('❤️🔥')).assertTrue();
       expect(liveInteractionLooksLikeEmojiOnly('hi 👋')).assertFalse();
+      expect(looksLikeEmojiOnly('😄')).assertTrue();
+      expect(looksLikeEmojiOnly('开心')).assertFalse();
+      expect(looksLikeEmojiOnly('happy')).assertFalse();
     });
   });
 }
