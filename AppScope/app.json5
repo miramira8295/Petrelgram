@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.miramira8295.petrelgram",
     "vendor": "miramira8295",
-    "versionCode": 1003028,
+    "versionCode": 1003029,
     "versionName": "1.4.4",
     "buildVersion": "1",
     "icon": "$media:layered_image",
