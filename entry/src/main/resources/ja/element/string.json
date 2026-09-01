@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "プロキシを自動切り替え"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "現在のプロキシに接続できない状態が続くと、次の保存済みプロキシを試します"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "自動切り替えを有効にするには2つ以上のプロキシを追加してください"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "切り替えまでの待機時間"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d秒"
     }
   ]
 }

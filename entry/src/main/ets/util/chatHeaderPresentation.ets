@@ -20,6 +20,7 @@ export interface ChatHeaderTitleInput {
   chatTitle: string;      // title from the chat itself, '' when still unknown
   topicName: string;      // forum topic / comment thread name, '' when unnamed
   forumTopicId: number;   // > 0 when viewing a forum topic
+  directMessagesTopicId: number; // > 0 when viewing one channel-DM sender
   threadRootId: number;   // > 0 when viewing a comment thread
 }
 
@@ -31,6 +32,9 @@ export interface ChatHeaderTitleInput {
 // refresh that ran on every chat-list update overwrote it with a bare '评论',
 // so a named thread lost its name a moment after opening.
 export function chatHeaderTitle(input: ChatHeaderTitleInput): string {
+  if (input.directMessagesTopicId > 0) {
+    return input.topicName !== '' ? input.topicName : str('chat_header_kind_user');
+  }
   if (input.forumTopicId > 0) {
     return input.topicName !== '' ? input.topicName : str('chat_header_topic');
   }

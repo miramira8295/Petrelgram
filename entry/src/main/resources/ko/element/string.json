@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "프록시 자동 전환"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "현재 프록시를 계속 사용할 수 없으면 다음 저장된 프록시를 시도합니다"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "자동 전환을 사용하려면 프록시를 두 개 이상 추가하세요"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "전환 대기 시간"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d초"
     }
   ]
 }

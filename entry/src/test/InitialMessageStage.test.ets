@@ -33,7 +33,7 @@ function groupOf(id: number): AlbumGroup {
     key: `group-${id}`, head, memberIds: [id], rowMemberIds: [id],
     photoPaths: [], photoFileIds: [], photoRatios: [], photoIsVideo: [], photoIsLive: [],
     photoProgress: [], photoFailed: [], videoFileIds: [], videoFileSizes: [],
-    videoMimeTypes: [], caption: '', captionEntities: [], dateLabel: '',
+    videoDurations: [], videoMimeTypes: [], caption: '', captionEntities: [], dateLabel: '',
     showAvatar: true, showSenderName: true
   };
 }
@@ -135,6 +135,14 @@ export default function initialMessageStageTest() {
     it('caps_viewport_preparation_at_available_rows', 0, () => {
       const source = groupsOf(2);
       expect(initialMessageViewportRows(source, 1, false, 360, 1000, 0)).assertEqual(2);
+    });
+
+    it('uses_cached_geometry_to_size_the_initial_viewport', 0, () => {
+      const source = groupsOf(12);
+      expect(initialMessageViewportRows(
+        source, 11, false, 360, 180, 0,
+        (_group: AlbumGroup, _width: number, _divider: boolean): number => 100
+      )).assertEqual(2);
     });
   });
 }

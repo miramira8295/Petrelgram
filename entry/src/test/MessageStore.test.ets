@@ -567,6 +567,43 @@ export default function messageStoreTest() {
       expect(store.getHasMoreOlder()).assertFalse();
       expect(store.getOlderLoadState()).assertEqual('end');
     });
+    it('initial_publication_waits_for_transition_and_flushes_once', 0, async () => {
+      const arr = setup(5, 1); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.deferInitialPublication(80);
+      const snapshots: string[] = [];
+      const unsub = store.subscribe((list: MessageEntry[]): void => {
+        snapshots.push(ids(list).join(','));
+      });
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(10, 5, false, 'ready')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.getInitialHistoryState()).assertEqual('ready');
+      expect(store.getMessages().length).assertEqual(1);
+      expect(snapshots.length).assertEqual(1);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 120));
+      expect(snapshots.length).assertEqual(2);
+      expect(snapshots[1]).assertEqual('10');
+      unsub();
+      store.close();
+    });
+    it('closing_store_cancels_deferred_initial_publication', 0, async () => {
+      const arr = setup(5, 1); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.deferInitialPublication(80);
+      let publications: number = 0;
+      const unsub = store.subscribe((): void => { publications++; });
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(10, 5, false, 'ready')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(publications).assertEqual(1);
+      store.close();
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 120));
+      expect(publications).assertEqual(1);
+      unsub();
+    });
     it('initial_history_error_can_retry_without_false_empty_state', 0, async () => {
       const arr = setup(5, 2); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();
@@ -1207,6 +1244,19 @@ export default function messageStoreTest() {
       expect(store.getMessages().length).assertEqual(0);
       const types = b.sent.map((s: string) => (JSON.parse(s) as TdObject)['@type']);
       expect(types.includes('closeChat')).assertTrue();
+    });
+    it('channel_direct_message_send_is_scoped_to_the_selected_sender', 0, () => {
+      const b = new FakeBridge();
+      const c = new TdClient(b);
+      const store = new MessageStore(c, new UserStore(c), -1005, 0, 30, 0, 77);
+      c.start();
+      store.send('hello');
+      const request = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
+        .find((item: TdObject): boolean => item['@type'] === 'sendMessage');
+      expect(request !== undefined).assertTrue();
+      const topic = request!['topic_id'] as TdObject;
+      expect(topic['@type']).assertEqual('messageTopicDirectMessages');
+      expect(topic['direct_messages_chat_topic_id']).assertEqual(77);
     });
   });
 }

@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Tự động chuyển proxy"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Thử proxy đã lưu tiếp theo khi proxy hiện tại vẫn không khả dụng"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Thêm ít nhất hai proxy để bật chuyển đổi tự động"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Độ trễ chuyển đổi"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d giây"
     }
   ]
 }

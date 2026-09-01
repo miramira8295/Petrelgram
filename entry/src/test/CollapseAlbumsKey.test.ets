@@ -59,6 +59,16 @@ function withProgress(e: MessageEntry, percent: number): MessageEntry {
   return c;
 }
 
+function albumVideo(id: number, albumId: string, fileId: number, size: number,
+  duration: number, users: UserStore): MessageEntry {
+  const e: MessageEntry = media(id, albumId, fileId + 1000, `/data/${id}.jpg`, users);
+  e.contentType = 'video';
+  e.videoFileId = fileId;
+  e.videoFileSize = size;
+  e.videoDuration = duration;
+  return e;
+}
+
 export default function collapseAlbumsKeyTest() {
   describe('collapseAlbumsKey', () => {
     it('相册行：只有缩略图路径变化时 key 不变', 0, () => {
@@ -82,6 +92,20 @@ export default function collapseAlbumsKeyTest() {
         media(1, 'alb1', 999, '/data/1.jpg', u), media(2, 'alb1', 102, '/data/2.jpg', u)
       ]);
       expect(after[0].key === before[0].key).assertFalse();
+    });
+
+    it('混合相册：视频时长和大小按格透传，元信息变化时刷新行', 0, () => {
+      const u = usersOf();
+      const photo: MessageEntry = media(1, 'mixed', 101, '/data/1.jpg', u);
+      const video: MessageEntry = albumVideo(2, 'mixed', 202, 7340032, 42, u);
+      const before: AlbumGroup = collapseAlbums([photo, video])[0];
+      expect(before.videoFileSizes.join(',')).assertEqual('0,7340032');
+      expect(before.videoDurations.join(',')).assertEqual('0,42');
+
+      const changedVideo: MessageEntry = cloneMessage(video);
+      changedVideo.videoFileSize = 8388608;
+      const after: AlbumGroup = collapseAlbums([photo, changedVideo])[0];
+      expect(after.key === before.key).assertFalse();
     });
 
     it('单条媒体行：只有路径变化时 key 不变', 0, () => {

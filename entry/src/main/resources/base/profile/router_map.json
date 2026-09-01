@@ -26,6 +26,11 @@
       "buildFunction": "ForumTopicsPageBuilder"
     },
     {
+      "name": "DirectMessagesTopicsPage",
+      "pageSourceFile": "src/main/ets/pages/chat/DirectMessagesTopicsPage.ets",
+      "buildFunction": "DirectMessagesTopicsPageBuilder"
+    },
+    {
       "name": "ArchivePage",
       "pageSourceFile": "src/main/ets/pages/chatlist/ArchivePage.ets",
       "buildFunction": "ArchivePageBuilder"

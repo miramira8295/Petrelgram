@@ -151,6 +151,30 @@ export default function chatStoreTest() {
       expect(store.isForum(-100777)).assertTrue();
       expect(store.isForum(999)).assertFalse();
     });
+    it('administered_channel_direct_messages_group_detected', 0, () => {
+      const b = new FakeBridge();
+      const c = new TdClient(b);
+      const store = new ChatStore(c, new UserStore(c));
+      c.start();
+      const type: TdObject = { '@type': 'chatTypeSupergroup' };
+      type['supergroup_id'] = 88;
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = -100888;
+      chat['title'] = 'Channel inbox';
+      chat['type'] = type;
+      chat['positions'] = [];
+      const newChat: TdObject = { '@type': 'updateNewChat' };
+      newChat['chat'] = chat;
+      b.onReceive(JSON.stringify(newChat));
+      expect(store.isAdministeredDirectMessagesGroup(-100888)).assertFalse();
+      const supergroup: TdObject = { '@type': 'supergroup' };
+      supergroup['id'] = 88;
+      supergroup['is_administered_direct_messages_group'] = true;
+      const update: TdObject = { '@type': 'updateSupergroup' };
+      update['supergroup'] = supergroup;
+      b.onReceive(JSON.stringify(update));
+      expect(store.isAdministeredDirectMessagesGroup(-100888)).assertTrue();
+    });
     it('orders_by_desc_order_pinned_first', 0, () => {
       const store = make();
       const b = bridgeOf(store);

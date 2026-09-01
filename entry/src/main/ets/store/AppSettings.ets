@@ -16,6 +16,9 @@ import {
   APPEARANCE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_BUBBLE_MATERIAL_ON, KEY_MATERIAL_LIGHT_DARK,
   KEY_MATERIAL_THICKNESS_DARK, KEY_STATUS_FOLLOW_TITLE, recomputeAppearance
 } from '../util/appearance';
+import {
+  normalizeProxySwitchDelay, PROXY_SWITCH_DELAY_DEFAULT
+} from '../util/proxyAutoSwitch';
 
 // User settings that outlive the process. Each one is mirrored into AppStorage
 // so any component can bind it with @StorageProp and re-render on change, while
@@ -82,6 +85,8 @@ export const KEY_POWER_EFFECT_BACKGROUND: string = 'powerEffectBackground';
 // Data & storage. The current network is supplied by NetworkStateService and
 // is intentionally kept in AppStorage only; user choices below are persisted.
 export const KEY_CURRENT_NETWORK_TYPE: string = 'currentNetworkType'; // none | wifi | mobile | roaming | other
+export const KEY_PROXY_AUTO_SWITCH: string = 'proxyAutoSwitch';
+export const KEY_PROXY_SWITCH_DELAY_SEC: string = 'proxySwitchDelaySec';
 export const KEY_AUTOSAVE_PRIVATE: string = 'autosavePrivate';
 export const KEY_AUTOSAVE_GROUP: string = 'autosaveGroup';
 export const KEY_AUTOSAVE_CHANNEL: string = 'autosaveChannel';
@@ -342,6 +347,7 @@ const DATA_BOOLEAN_FALSE_DEFAULTS: string[] = [
   KEY_AUTOSAVE_PRIVATE,
   KEY_AUTOSAVE_GROUP,
   KEY_AUTOSAVE_CHANNEL,
+  KEY_PROXY_AUTO_SWITCH,
   KEY_TRANSLATE_CHATS
 ];
 
@@ -451,6 +457,8 @@ export async function initSettings(context: common.Context): Promise<void> {
       AppStorage.setOrCreate(key, await s.get(key, false) as boolean);
     }
     AppStorage.setOrCreate(KEY_CACHE_LIMIT, await s.get(KEY_CACHE_LIMIT, CACHE_LIMIT_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_PROXY_SWITCH_DELAY_SEC, normalizeProxySwitchDelay(
+      await s.get(KEY_PROXY_SWITCH_DELAY_SEC, PROXY_SWITCH_DELAY_DEFAULT) as number));
     // ⚠️ 临时（P6 标定）：走 normalize 而不是直接信落盘值——档位表将来收窄时，
     // 旧值会变成野值，而 cachedCount 收到野值不报错，只是行为不可解释。
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED,
@@ -506,6 +514,7 @@ export async function initSettings(context: common.Context): Promise<void> {
       AppStorage.setOrCreate(key, '');
     }
     AppStorage.setOrCreate(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT); // ⚠️ 临时（P6 标定）
+    AppStorage.setOrCreate(KEY_PROXY_SWITCH_DELAY_SEC, PROXY_SWITCH_DELAY_DEFAULT);
     AppStorage.setOrCreate(KEY_POWER_THRESHOLD, POWER_THRESHOLD_DEFAULT);
     for (const key of POWER_BOOLEAN_DEFAULTS) {
       AppStorage.setOrCreate(key, true);

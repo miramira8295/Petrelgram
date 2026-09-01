@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Tukar proksi secara automatik"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Cuba proksi disimpan seterusnya apabila proksi semasa terus tidak tersedia"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Tambah sekurang-kurangnya dua proksi untuk mendayakan pertukaran automatik"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Lengah pertukaran"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d saat"
     }
   ]
 }

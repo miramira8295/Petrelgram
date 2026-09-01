@@ -1,5 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { glassBodyPainted, glassBubbleCommands, glassPaintReady, glassStage, tailShapeCommands } from '../main/ets/util/bubbleGlassPath';
+import {
+  glassBodyFallbackPainted, glassBodyPainted, glassBubbleCommands, glassPaintReady,
+  glassStage, tailShapeCommands
+} from '../main/ets/util/bubbleGlassPath';
 
 export default function bubbleGlassPathTest() {
   describe('glassBubbleCommands', () => {
@@ -98,6 +101,21 @@ export default function bubbleGlassPathTest() {
     it('材质本来就没开时，量到多少都不上色', 0, (): void => {
       expect(glassPaintReady(false, 108, 40)).assertFalse();
       expect(glassPaintReady(false, 0, 0)).assertFalse();
+    });
+  });
+
+  describe('glassBodyFallbackPainted', () => {
+    it('只在外层尺寸未就绪时由本体临时绘制玻璃', 0, (): void => {
+      expect(glassBodyFallbackPainted(true, 0, 0)).assertTrue();
+      expect(glassBodyFallbackPainted(true, 108, 0)).assertTrue();
+      expect(glassBodyFallbackPainted(true, 0, 40)).assertTrue();
+    });
+    it('完整轮廓就绪后本体停止绘制，避免双层模糊', 0, (): void => {
+      expect(glassBodyFallbackPainted(true, 108, 40)).assertFalse();
+    });
+    it('材质关闭时不进入玻璃回退层', 0, (): void => {
+      expect(glassBodyFallbackPainted(false, 108, 40)).assertFalse();
+      expect(glassBodyFallbackPainted(false, 0, 0)).assertFalse();
     });
   });
 }

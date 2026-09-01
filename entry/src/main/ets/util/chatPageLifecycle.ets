@@ -2,7 +2,7 @@
 // lifecycle. The page remains the owner of all state and side effects.
 
 export interface ChatPageHiddenHooks {
-  suspendScrollVisual: () => void;
+  stopScrollActivity: () => void;
   endLinkNavigation: () => void;
   cancelInitialTransition: () => void;
   setPageVisible: (visible: boolean) => void;
@@ -14,7 +14,7 @@ export interface ChatPageHiddenHooks {
 }
 
 export function coordinateChatPageHidden(hooks: ChatPageHiddenHooks): void {
-  hooks.suspendScrollVisual();
+  hooks.stopScrollActivity();
   hooks.endLinkNavigation();
   hooks.cancelInitialTransition();
   hooks.setPageVisible(false);
@@ -26,7 +26,7 @@ export function coordinateChatPageHidden(hooks: ChatPageHiddenHooks): void {
 }
 
 export interface ChatPageWillHideHooks {
-  suspendScrollVisual: () => void;
+  stopScrollActivity: () => void;
   cancelInitialTransition: () => void;
   setPageVisible: (visible: boolean) => void;
   syncChatTgsGate: () => void;
@@ -36,7 +36,7 @@ export interface ChatPageWillHideHooks {
 }
 
 export function coordinateChatPageWillHide(hooks: ChatPageWillHideHooks): void {
-  hooks.suspendScrollVisual();
+  hooks.stopScrollActivity();
   hooks.cancelInitialTransition();
   hooks.setPageVisible(false);
   hooks.syncChatTgsGate();
@@ -52,7 +52,6 @@ export interface ChatPageShownState {
 }
 
 export interface ChatPageShownHooks {
-  resumeScrollVisual: () => void;
   setPageVisible: (visible: boolean) => void;
   armInitialTransitionSettle: () => void;
   scheduleInitialTimelinePresentation: () => void;
@@ -70,7 +69,6 @@ export interface ChatPageShownHooks {
 export function coordinateChatPageShown(
   state: ChatPageShownState, hooks: ChatPageShownHooks
 ): void {
-  hooks.resumeScrollVisual();
   hooks.setPageVisible(true);
   hooks.armInitialTransitionSettle();
   hooks.scheduleInitialTimelinePresentation();

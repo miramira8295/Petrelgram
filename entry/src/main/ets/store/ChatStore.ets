@@ -47,6 +47,7 @@ export class ChatStore {
   private groupCallChats: Map<number, number> = new Map();
   private chatSupergroupIds: Map<number, number> = new Map();
   private forumSupergroupIds: Set<number> = new Set();
+  private administeredDirectMessagesSupergroupIds: Set<number> = new Set();
   private groupCallLoading: Set<number> = new Set();
   private defaultBackgroundLight: TdObject | null = null;
   private defaultBackgroundDark: TdObject | null = null;
@@ -113,12 +114,25 @@ export class ChatStore {
     } else {
       this.forumSupergroupIds.delete(id);
     }
+    if ((supergroup['is_administered_direct_messages_group'] as boolean | undefined) ?? false) {
+      this.administeredDirectMessagesSupergroupIds.add(id);
+    } else {
+      this.administeredDirectMessagesSupergroupIds.delete(id);
+    }
   }
 
   // 话题群（forum supergroup）：打开时应进入话题列表而非普通消息流。
   isForum(chatId: number): boolean {
     const supergroupId = this.chatSupergroupIds.get(chatId);
     return supergroupId !== undefined && this.forumSupergroupIds.has(supergroupId);
+  }
+
+  // Only the administrators' aggregate direct-messages group needs a sender
+  // picker. The other party's channel DM is a normal one-to-one chat.
+  isAdministeredDirectMessagesGroup(chatId: number): boolean {
+    const supergroupId = this.chatSupergroupIds.get(chatId);
+    return supergroupId !== undefined &&
+      this.administeredDirectMessagesSupergroupIds.has(supergroupId);
   }
 
   allEntries(): ChatEntry[] {

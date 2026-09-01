@@ -70,6 +70,7 @@ import liveInteractionPresentationTest from './LiveInteractionPresentation.test'
 import floatingDragTest from './FloatingDrag.test';
 import newGroupLogicTest from './NewGroupLogic.test';
 import proxyLogicTest from './ProxyLogic.test';
+import proxyAutoSwitchTest from './ProxyAutoSwitch.test';
 import callHistoryPresentationTest from './CallHistoryPresentation.test';
 import callsStoreTest from './CallsStore.test';
 import privacyApiTest from './PrivacyApi.test';
@@ -83,7 +84,9 @@ import animationShapeTest from './AnimationShape.test';
 import reactionCanonicalTest from './ReactionCanonical.test';
 import searchSessionTest from './SearchSession.test';
 import chatResumeTest from './ChatResume.test';
+import chatViewportGeometryTest from './ChatViewportGeometry.test';
 import tabReTapTest from './TabReTap.test';
+import tabPreloadTest from './TabPreload.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -179,6 +182,8 @@ import localWallpaperTest from './LocalWallpaper.test';
 import wallpaperSlotTest from './WallpaperSlot.test';
 import inlineButtonKeyTest from './InlineButtonKey.test';
 import liveThumbPathTest from './LiveThumbPath.test';
+import messageTopicScopeTest from './MessageTopicScope.test';
+import chatTimelineSnapshotTest from './ChatTimelineSnapshot.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -254,6 +259,7 @@ export default function testsuite() {
   floatingDragTest();
   newGroupLogicTest();
   proxyLogicTest();
+  proxyAutoSwitchTest();
   callHistoryPresentationTest();
   callsStoreTest();
   privacyApiTest();
@@ -267,7 +273,9 @@ export default function testsuite() {
   reactionCanonicalTest();
   searchSessionTest();
   chatResumeTest();
+  chatViewportGeometryTest();
   tabReTapTest();
+  tabPreloadTest();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();
@@ -363,4 +371,6 @@ export default function testsuite() {
   wallpaperSlotTest();
   inlineButtonKeyTest();
   liveThumbPathTest();
+  messageTopicScopeTest();
+  chatTimelineSnapshotTest();
 }

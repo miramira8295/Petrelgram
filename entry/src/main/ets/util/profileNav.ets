@@ -22,6 +22,8 @@ export const CHAT_PROFILE_PAGE_URL: string = 'pages/profile/ChatProfilePage';
 export const CHAT_PROFILE_DEST_NAME: string = 'ChatProfilePage';
 export const FORUM_TOPICS_PAGE_URL: string = 'pages/chat/ForumTopicsPage';
 export const FORUM_TOPICS_DEST_NAME: string = 'ForumTopicsPage';
+export const DIRECT_MESSAGES_TOPICS_PAGE_URL: string = 'pages/chat/DirectMessagesTopicsPage';
+export const DIRECT_MESSAGES_TOPICS_DEST_NAME: string = 'DirectMessagesTopicsPage';
 export const ARCHIVE_PAGE_URL: string = 'pages/chatlist/ArchivePage';
 export const ARCHIVE_DEST_NAME: string = 'ArchivePage';
 
@@ -134,6 +136,13 @@ export function navigateToForumTopics(
   params: Record<string, Object>, origin: PushOrigin = 'navbar'
 ): void {
   pushInto(FORUM_TOPICS_DEST_NAME, FORUM_TOPICS_PAGE_URL, params, origin, 'chat');
+}
+
+export function navigateToDirectMessagesTopics(
+  params: Record<string, Object>, origin: PushOrigin = 'navbar'
+): void {
+  pushInto(DIRECT_MESSAGES_TOPICS_DEST_NAME, DIRECT_MESSAGES_TOPICS_PAGE_URL,
+    params, origin, 'chat');
 }
 
 // 归档会话列表。同样是 'navbar'：入口在 MainTabBody（会话列表第 0 行），

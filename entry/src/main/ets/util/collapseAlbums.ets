@@ -28,6 +28,7 @@ export interface AlbumGroup {
   // VideoBubbleSurface) — the thumbnail file above is never enough to stream.
   videoFileIds: number[];
   videoFileSizes: number[];
+  videoDurations: number[];
   videoMimeTypes: string[];
   caption: string;         // album caption (from whichever member carries text)
   captionEntities: TdObject[]; // the caption's TDLib entities (links/mentions/hashtags)
@@ -201,6 +202,7 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
       const photoFailed: boolean[] = [];
       const videoFileIds: number[] = [];
       const videoFileSizes: number[] = [];
+      const videoDurations: number[] = [];
       const videoMimeTypes: string[] = [];
       const albumMembers: MessageEntry[] = [];
       let caption = '';
@@ -220,6 +222,7 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         photoFailed.push(list[j].photoFailed);
         videoFileIds.push(list[j].videoFileId);
         videoFileSizes.push(list[j].videoFileSize);
+        videoDurations.push(list[j].videoDuration);
         videoMimeTypes.push(list[j].videoMimeType);
         // **取第一条带文字的成员，不是最后一条。**
         //
@@ -252,7 +255,10 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         // 转发都按真实 id 定位，见 mutableSig 里 m.id 那段。
         // sendState 经 sendStateChannel 直达状态图标；完成/失败和翻译展示经
         // messageRowPresentationChannel 直达行包装器，都不必重建整行。
-        key: `a_${m.albumId}_${m.rowId}_${rowMemberIds.join(',')}_${memberIds.join(',')}_${photoFileIds.join(',')}_${videoFileIds.join(',')}_${caption}_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}_${dateLabel}_${mutableSig(displayHead)}`,
+        key: `a_${m.albumId}_${m.rowId}_${rowMemberIds.join(',')}_${memberIds.join(',')}_${photoFileIds.join(',')}` +
+          `_${videoFileIds.join(',')}_${videoFileSizes.join(',')}_${videoDurations.join(',')}_${caption}` +
+          `_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}` +
+          `_${dateLabel}_${mutableSig(displayHead)}`,
         head: displayHead,
         memberIds,
         rowMemberIds,
@@ -265,6 +271,7 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         photoFailed,
         videoFileIds,
         videoFileSizes,
+        videoDurations,
         videoMimeTypes,
         caption,
         captionEntities,
@@ -296,6 +303,7 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
         photoFailed: [],
         videoFileIds: [],
         videoFileSizes: [],
+        videoDurations: [],
         videoMimeTypes: [],
         caption: '',
         captionEntities: [],

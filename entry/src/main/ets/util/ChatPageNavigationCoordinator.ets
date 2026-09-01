@@ -3,6 +3,7 @@ export interface ChatRouteParams {
   threadRootId: number;
   topicName: string;
   forumTopicId: number;
+  directMessagesTopicId: number;
   showJoinedNotice: boolean;
   joinedNoticeIsChannel: boolean;
   jumpTo: number | undefined;
@@ -41,6 +42,7 @@ export function parseChatRouteParams(params: Record<string, Object> | undefined)
     threadRootId: numberParam(params, 'threadRootId'),
     topicName: stringParam(params, 'topicName'),
     forumTopicId: numberParam(params, 'forumTopicId'),
+    directMessagesTopicId: numberParam(params, 'directMessagesTopicId'),
     showJoinedNotice: boolParam(params, 'showJoinedNotice'),
     joinedNoticeIsChannel: boolParam(params, 'joinedNoticeIsChannel'),
     jumpTo: params !== undefined ? (params['jumpTo'] as number | undefined) : undefined,

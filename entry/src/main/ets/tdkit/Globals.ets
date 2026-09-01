@@ -21,6 +21,7 @@ import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
 import { resetScopeMute } from '../store/ScopeMuteStore';
 import { CHAT_TAB_INDEX, KEY_MAIN_TAB } from '../util/chatNav';
 import { resetChatPositions } from '../util/chatResume';
+import { resetChatViewportGeometry } from '../util/chatViewportGeometry';
 import {
   KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH
 } from '../store/AppSettings';
@@ -34,6 +35,7 @@ import {
 } from './AccountRegistry';
 import { str } from '../util/strings';
 import { logE, logI, logW } from '../util/log';
+import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
 
 let client: TdClient | undefined = undefined;
 let auth: AuthService | undefined = undefined;
@@ -97,6 +99,7 @@ function createRuntime(slotId: string): void {
   repairTdTempDirectory(directories.filesDirectory);
   client = new TdClient({ init: testNapi.tdInit, send: testNapi.tdSend });
   trackConnectionState(client);
+  proxyAutoSwitchService.attach(client);
   auth = new AuthService(client, directories.databaseDirectory, directories.filesDirectory,
     readTdDeviceParams());
   users = new UserStore(client);
@@ -152,6 +155,7 @@ function createRuntime(slotId: string): void {
       storyStore!.open();
       applyDesiredOnlineState(runtimeClient);
       refreshActiveAccountSummary(runtimeClient);
+      proxyAutoSwitchService.runtimeReady(runtimeClient);
     } else if (client === runtimeClient && auth === runtimeAuth && stage !== AuthStage.Init) {
       runtimeReady = false;
     }
@@ -168,6 +172,7 @@ function createRuntime(slotId: string): void {
     callSession?.close();
     callSession = undefined;
     auth.dispose();
+    proxyAutoSwitchService.detach(client);
     client.dispose();
     client = undefined;
     auth = undefined;
@@ -289,6 +294,9 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   const currentClient = client;
   const currentReady = runtimeReady;
   runtimeReady = false;
+  if (currentClient !== undefined) {
+    proxyAutoSwitchService.detach(currentClient);
+  }
   if (currentClient !== undefined && currentReady) {
     try {
       await sendOnlineOption(currentClient, false);
@@ -327,6 +335,7 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
   // 记住的会话浏览位置是按账号的消息 id，换账号必须清（issue #98）。
   resetChatPositions();
+  resetChatViewportGeometry();
 }
 
 function sendOnlineOption(runtimeClient: TdClient, online: boolean): Promise<void> {

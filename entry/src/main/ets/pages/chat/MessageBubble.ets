@@ -1,4 +1,4 @@
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { MessageEntry, ReactionInfo, InlineBtn } from '../../store/MessageEntry';
 import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO, slotKey } from './playSlot';
@@ -6,7 +6,6 @@ import { VideoBubbleSurface } from './VideoBubbleSurface';
 import { TdObject } from '../../tdkit/TdTypes';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { CachedImage } from '../common/CachedImage';
-import { actionMenuRow } from './ActionMenuRow';
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_REDUCE_ANIM, TEXT_SIZE_DEFAULT, RADIUS_DEFAULT,
   KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_POWER_CHAT_EFFECTS,
@@ -62,16 +61,17 @@ import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
 import {
-  MATERIAL_EPOCH, glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+  MATERIAL_EPOCH, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import {
-  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
 } from '../../util/bubbleTail';
-import { glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
+import {
+  glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
+} from '../../util/bubbleGlassPath';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
-import { materialModifierWhen } from '../../util/materialModifier';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
@@ -381,6 +381,7 @@ export struct MessageBubble {
   // 播放位选中的那一格要挂 VideoBubbleSurface，需要真正的视频文件信息。
   @Prop albumVideoFileIds: number[];
   @Prop albumVideoFileSizes: number[];
+  @Prop albumVideoDurations: number[];
   @Prop albumVideoMimeTypes: string[];
   @Prop albumCaption: string;
   @Prop albumCaptionEntities: TdObject[] = [];
@@ -2136,8 +2137,24 @@ export struct MessageBubble {
     return this.albumVideoFileSizes[index] ?? 0;
   }
 
+  private albumVideoDurationAt(index: number): number {
+    return this.albumVideoDurations[index] ?? 0;
+  }
+
   private albumVideoMimeTypeAt(index: number): string {
     return this.albumVideoMimeTypes[index] ?? '';
+  }
+
+  private albumVideoMetaText(index: number, cellWidth: number): string {
+    const size: string = this.albumVideoFileSizeAt(index) > 0
+      ? formatFileSize(this.albumVideoFileSizeAt(index)) : '';
+    const durationSec: number = this.albumVideoDurationAt(index);
+    if (durationSec <= 0) {
+      return size;
+    }
+    const duration: string = this.formatDuration(durationSec);
+    // 三列等窄格优先保证 issue #93 要求的文件大小可见；宽格与单视频一致。
+    return size !== '' && cellWidth >= 112 ? `${duration} · ${size}` : (size !== '' ? size : duration);
   }
 
   // 与 isPlaySlot() 同一道 !isAnimation 兜底：动图不参加竞选（spec §3.3），
@@ -2284,6 +2301,18 @@ export struct MessageBubble {
     }
     if (this.albumIsLiveAt(cell.idx)) {
       this.liveChip();
+    }
+    if (this.albumIsVideoAt(cell.idx) && this.albumVideoMetaText(cell.idx, cell.width) !== '') {
+      Text(this.albumVideoMetaText(cell.idx, cell.width))
+        .fontSize(10.5)
+        .fontColor(Color.White)
+        .backgroundColor('#00000066')
+        .borderRadius(4)
+        .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: Math.max(24, cell.width - 12) })
+        .position({ x: 6, y: Math.max(6, cell.height - 23) });
     }
   }
 
@@ -2628,106 +2657,118 @@ export struct MessageBubble {
   }
 
   @Builder
-  msgContextMenu() {
-    Column() {
-      Row({ space: 2 }) {
-        ForEach(QUICK_REACTIONS, (e: string) => {
-          Row() {
-            Text(e).fontSize(23);
-          }
-            .width(32).height(34).borderRadius(17)
-            .justifyContent(FlexAlign.Center)
-            .backgroundColor(this.reactionChosen(e) ? '#263391E8' : Color.Transparent)
-            .stateStyles({
-              normal: this.menuActionNormalStyle,
-              pressed: this.menuActionPressedStyle
-            })
-            .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
-            .onClick(() => { this.onSetReaction(this.msg.id, e, this.reactionChosen(e)); })
-            // Long-press a quick emoji to make it the account's default
-            // reaction (used by double-tap in the official clients).
-            .gesture(LongPressGesture().onAction(() => { this.onSetDefaultReaction(e); }));
-        }, (e: string) => e);
-        Blank();
-        // Round "expand" button → opens the full emoji reaction picker.
+  messageReactionMenuItem() {
+    Row({ space: 2 }) {
+      ForEach(QUICK_REACTIONS, (e: string) => {
         Row() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([bubbleTextFor(this.msg.isOutgoing)]);
+          Text(e).fontSize(23);
         }
-        .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
+        .width(32).height(34).borderRadius(17)
         .justifyContent(FlexAlign.Center)
-        .stateStyles({
-          normal: this.menuActionNormalStyle,
-          pressed: this.menuActionPressedStyle
-        })
-        .animation({ duration: this.reactionDuration(110), curve: Curve.EaseOut })
-        .onClick(() => { this.onOpenReactions(this.msg.id); });
+        .backgroundColor(this.reactionChosen(e) ? '#263391E8' : Color.Transparent)
+        .stateStyles({ normal: this.menuActionNormalStyle, pressed: this.menuActionPressedStyle })
+        .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
+        .onClick((): void => { this.onSetReaction(this.msg.id, e, this.reactionChosen(e)); })
+        .gesture(LongPressGesture().onAction((): void => { this.onSetDefaultReaction(e); }));
+      }, (e: string): string => e);
+      Blank();
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
       }
-      .width('100%').padding({ left: 12, right: 10, top: 8, bottom: 8 })
-      .alignItems(VerticalAlign.Center);
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow('sys.symbol.arrowshape_turn_up_left', str('mb_reply'), false, () => { this.onReplyTo(this.msg.id); });
-      // TDLib 1.8.65 has no can_be_edited on message (it moved to
-      // getMessageProperties); gate locally on Telegram's 48h edit window and
-      // let the server be the final judge. Media types edit their caption.
+      .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
+      .justifyContent(FlexAlign.Center)
+      .stateStyles({ normal: this.menuActionNormalStyle, pressed: this.menuActionPressedStyle })
+      .animation({ duration: this.reactionDuration(110), curve: Curve.EaseOut })
+      .onClick((): void => { this.onOpenReactions(this.msg.id); });
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
+  msgContextMenu() {
+    Menu() {
+      MenuItem(this.messageReactionMenuItem);
       if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800 &&
-        (this.msg.contentType === 'text' ||
-          EDITABLE_CAPTION_TYPES.indexOf(this.msg.contentType) >= 0)) {
-        actionMenuRow('sys.symbol.square_and_pencil',
-          this.msg.contentType === 'text' ? str('edit') : str('mb_edit_caption'),
-          false, () => { this.onEditMsg(this.msg.id); });
+        (this.msg.contentType === 'text' || EDITABLE_CAPTION_TYPES.indexOf(this.msg.contentType) >= 0)) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
+          content: this.msg.contentType === 'text' ? $r('app.string.edit') : $r('app.string.mb_edit_caption')
+        }).onClick((): void => { this.onEditMsg(this.msg.id); });
       }
-      actionMenuRow('sys.symbol.plus_square_on_square', str('mb_copy_text'), false, () => { this.onCopyText(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
+        content: $r('app.string.mb_copy_text')
+      }).onClick((): void => { this.onCopyText(this.msg.id); });
       if (this.msg.text !== '') {
-        actionMenuRow('sys.symbol.translate', str('mb_translate'), false, () => { this.onTranslateMsg(this.msg.id); });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.translate')),
+          content: $r('app.string.mb_translate')
+        }).onClick((): void => { this.onTranslateMsg(this.msg.id); });
       }
-      // 「复制链接」复制的是**正文里的 URL**（显式超链接的目标 + 裸链接原文，
-      // @提及/#话题不算）；和下面「拷贝消息链接」（这条消息的 t.me 跳转）是两回事。
-      // Span 不支持长按手势（ArkUI 限制），所以"长按链接复制"落在消息菜单这里。
       if (messageUrls(this.msg.text, this.msg.textEntities).length > 0) {
-        actionMenuRow('sys.symbol.paperclip', str('mb_copy_url'), false, () => {
-          this.copyMessageUrls();
-        });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.paperclip')),
+          content: $r('app.string.mb_copy_url')
+        }).onClick((): void => { this.copyMessageUrls(); });
       }
-      actionMenuRow('sys.symbol.link', str('mb_copy_link'), false, () => { this.onCopyLink(this.msg.id); });
-      actionMenuRow('sys.symbol.arrowshape_turn_up_right', str('mb_forward'), false,
-        () => { this.onForwardMsg(this.albumMemberIds); });
-      // 「保存消息」= 转发到收藏（和自己的会话）。和上面的「转发」区别只在
-      // 目标固定、不弹选择面板，所以紧挨着放。
-      actionMenuRow('sys.symbol.bookmark', str('mb_save_to_saved'), false,
-        () => { this.onSaveToSaved(this.albumMemberIds); });
-      // 「复读」= 转发回本会话。群里的常见玩法，官方要走"转发→再选回本群"两步。
-      actionMenuRow('sys.symbol.repeat', str('mb_repeat'), false,
-        () => { this.onRepeatMsg(this.albumMemberIds); });
-      // 「查看历史」= 在本会话里筛出这个人的全部消息。
-      // **只在群里、且发送者确实是个用户时出现**：私聊里整个会话就是对方的
-      // 消息，这一项没有意义；频道身份/匿名管理员发的消息 senderIsUser 为假，
-      // 按 user 筛不出来，给了也是个死项。
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrowshape_turn_up_right')),
+        content: $r('app.string.mb_forward')
+      }).onClick((): void => { this.onForwardMsg(this.albumMemberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bookmark')),
+        content: $r('app.string.mb_save_to_saved')
+      }).onClick((): void => { this.onSaveToSaved(this.albumMemberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.repeat')),
+        content: $r('app.string.mb_repeat')
+      }).onClick((): void => { this.onRepeatMsg(this.albumMemberIds); });
       if (this.isGroup && this.msg.senderIsUser && this.msg.senderId > 0) {
-        actionMenuRow('sys.symbol.person', str('mb_view_history'), false,
-          () => { this.onViewSenderHistory(this.msg.senderId); });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person')),
+          content: $r('app.string.mb_view_history')
+        }).onClick((): void => { this.onViewSenderHistory(this.msg.senderId); });
       }
-      actionMenuRow('sys.symbol.pin', this.isPinnedMsg ? str('ft_unpin') : str('ft_pin'), false,
-        () => { this.onPinMsg(this.msg.id, this.isPinnedMsg); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
+        content: this.isPinnedMsg ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
+      }).onClick((): void => { this.onPinMsg(this.msg.id, this.isPinnedMsg); });
       if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800 &&
         (this.msg.contentType === 'photo' || this.msg.contentType === 'video')) {
-        actionMenuRow('sys.symbol.picture', str('mb_replace_media'), false,
-          () => { this.onReplaceMedia(this.msg.id); });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.picture')),
+          content: $r('app.string.mb_replace_media')
+        }).onClick((): void => { this.onReplaceMedia(this.msg.id); });
       }
       if (this.msg.contentType === 'poll' && this.msg.isOutgoing && !this.msg.pollIsClosed) {
-        actionMenuRow('sys.symbol.checkmark_circle', str('mb_stop_poll'), false,
-          () => { this.onStopPoll(this.msg.id); });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
+          content: $r('app.string.mb_stop_poll')
+        }).onClick((): void => { this.onStopPoll(this.msg.id); });
       }
       if (this.msg.contentType === 'poll' && !this.msg.pollIsAnonymous) {
-        actionMenuRow('sys.symbol.person_2', str('mb_view_voters'), false,
-          () => { this.onPollVoters(this.msg.id); });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person_2')),
+          content: $r('app.string.mb_view_voters')
+        }).onClick((): void => { this.onPollVoters(this.msg.id); });
       }
-      actionMenuRow('sys.symbol.exclamationmark_circle', str('mb_report'), true, () => { this.onReportMsg(this.msg.id); });
-      actionMenuRow('sys.symbol.checkmark_circle', str('mb_select'), false,
-        () => { this.onSelectMsg(this.albumMemberIds); });
-      actionMenuRow('sys.symbol.trash', str('delete'), true, () => { this.onDeleteMsg(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
+        content: $r('app.string.mb_report')
+      }).onClick((): void => { this.onReportMsg(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
+        content: $r('app.string.mb_select')
+      }).onClick((): void => { this.onSelectMsg(this.albumMemberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
+        content: $r('app.string.delete')
+      }).onClick((): void => { this.onDeleteMsg(this.msg.id); });
     }
+    // 百分比宽度的表情行会让未定宽的 Menu 采用整屏约束，随后屏幕边界夹取会
+    // 吞掉手指落点带来的横向偏移。固定回原菜单宽度，菜单才能继续贴近落点。
     .width(262)
-    .padding({ top: 6, bottom: 6 });
   }
 
   // 引用块比正文更窄。单行 + 省略号的文本会一直吃满可用宽度，长 URL 直接把
@@ -2969,15 +3010,11 @@ export struct MessageBubble {
       })
       .onClick((e: ClickEvent) => {
         if (this.gestureClaimed) { return; }
-        // When the media shows a retry control, the tap has to retry. It used
-        // to fall through to onMediaTap, which opened a viewer onto a file that
-        // was never downloaded — the retry badge was decoration.
+        // A failed cover remains a thumbnail-only retry. A failed video does
+        // not intercept the whole media surface: ChatPage.openViewer can open
+        // the streaming viewer and independently restart the file download.
         if (this.thumbnailRetryable()) {
           this.onSpecialPhotoRetry(this.msg.id);
-          return;
-        }
-        if (this.msg.contentType === 'video' && this.msg.videoFailed) {
-          this.onVideoRetry(this.msg.id);
           return;
         }
         if (this.msg.isAnimation) {
@@ -3545,9 +3582,12 @@ export struct MessageBubble {
     return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
   }
 
-  // 材质开着时气泡本体透明，底色/材质/模糊都挂在外层「尾巴 + 气泡」容器上。
+  // 未量到外层尺寸时由本体临时画玻璃；完整轮廓就绪后本体透明，只留外层一份。
   private bubbleBg(): ResourceColor {
-    return this.glassBodyOn() ? this.glassBg() : this.bubbleFillColor();
+    if (!this.glassLive()) {
+      return this.bubbleFillColor();
+    }
+    return this.glassBodyFallbackOn() ? this.glassBg() : Color.Transparent;
   }
 
   private glassLive(): boolean {
@@ -3568,24 +3608,25 @@ export struct MessageBubble {
     return glassPaintReady(this.glassLive(), this.glassW, this.glassH);
   }
 
-  // 气泡**本体**这一层：想要玻璃就上，不等测量。本体的形状由自己的
-  // borderRadius 给出，不依赖 clipShape，所以没量到也画得对。
-  // 第一版修法在这里退回了实心档，那正是真机上那下白闪的来源。
+  // 玻璃结构是否开启。它不等测量，用于尾巴占位等结构判定；本体是否临时绘制
+  // 玻璃由 glassBodyFallbackOn 单独决定。
   private glassBodyOn(): boolean {
     return glassBodyPainted(this.glassLive(), this.glassW, this.glassH);
   }
 
-  // 玻璃档：气泡和尾巴用**同一套**普通渲染（玻璃色 + 背景模糊）。
-  //
-  // 不用系统材质：材质是合成层、不吃 clipShape，尾巴那种三角形状挂不上去，只能
-  // 退成普通渲染——一边材质一边普通，两块颜色对不齐，看着就不是一体的（用户报的）。
-  // 统一成普通渲染后两者严丝合缝，代价是没有沉浸光感的动态高光。
+  private glassBodyFallbackOn(): boolean {
+    return glassBodyFallbackPainted(this.glassLive(), this.glassW, this.glassH);
+  }
+
+  // 首帧外层轮廓尚未就绪时，本体临时使用同档玻璃色与背景模糊，避免退回实心
+  // 白底。完整态由外层统一接管，本体的这两项归零。
   private glassBg(): ResourceColor {
-    return this.glassBodyOn() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassBodyFallbackOn()
+      ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
 
   private glassBlur(): number {
-    return this.glassBodyOn() ? overlayBackdropBlur('bubble') : 0;
+    return this.glassBodyFallbackOn() ? overlayBackdropBlur('bubble') : 0;
   }
 
   private containerGlassBg(): ResourceColor {
@@ -3794,23 +3835,41 @@ export struct MessageBubble {
   @Builder
   unreadDivider() {
     Row() {
-      Row() {
-        Text(this.dividerIsResume
-          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
-          .fontSize(12)
-          .fontColor(COLOR_TEXT_SECONDARY)
-          .fontWeight(FontWeight.Medium);
+      if (this.dividerIsResume) {
+        Row() {
+          Text($r('app.string.mb_last_viewed_position'))
+            .fontSize(12)
+            .fontColor(COLOR_TEXT_SECONDARY)
+            .fontWeight(FontWeight.Medium);
+        }
+        .layoutWeight(1)
+        .height(22)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('app.color.system_pill'))
+        .borderRadius(8);
+      } else {
+        Divider()
+          .layoutWeight(1)
+          .strokeWidth(1)
+          .color(COLOR_TEXT_SECONDARY)
+          .opacity(0.55);
+        Text($r('app.string.mb_unread'))
+          .fontSize(13)
+          .fontColor(this.accent())
+          .fontWeight(FontWeight.Medium)
+          .margin({ left: 10, right: 10 });
+        Divider()
+          .layoutWeight(1)
+          .strokeWidth(1)
+          .color(COLOR_TEXT_SECONDARY)
+          .opacity(0.55);
       }
-      // 保留分隔感，但不要再用满宽色块把消息流横向切断。
-      .width('calc(100% - 24vp)')
-      .height(22)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor($r('app.color.system_pill'))
-      .borderRadius(8);
     }
     .width('100%')
+    .height(26)
+    .padding({ left: 12, right: 12, bottom: 4 })
     .justifyContent(FlexAlign.Center)
-    .padding({ bottom: 4 });
+    .alignItems(VerticalAlign.Center);
   }
 
   build() {
@@ -4050,7 +4109,8 @@ export struct MessageBubble {
       .alignItems(VerticalAlign.Bottom)
       // 容器跨着那 7vp 尾巴留白，形状**只**由 clipShape 给。所以它必须等量到
       // 尺寸才上色，否则没裁剪的一帧会把留白一起涂满、左边缘外扩 7vp。
-      // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛（glassBodyOn）。
+      // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
+      // 透明，完整态始终只有外层这一份背景与模糊。
       .backgroundColor(this.containerGlassBg())
       .backdropBlur(this.containerGlassBlur())
       // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角

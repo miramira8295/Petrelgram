@@ -38,6 +38,9 @@
         "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
       },
       {
+        "name": "ohos.permission.FILE_ACCESS_PERSIST"
+      },
+      {
         "name": "ohos.permission.MICROPHONE",
         "reason": "$string:mic_permission_reason",
         "usedScene": {
@@ -85,6 +88,7 @@
         "startWindowIcon": "$media:foreground",
         "startWindowBackground": "$color:start_window_background",
         "backgroundModes": [
+          "dataTransfer",
           "audioPlayback",
           "audioRecording",
           "voip",

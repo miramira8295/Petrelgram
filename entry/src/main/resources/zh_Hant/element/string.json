@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "日誌已清空"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "自動切換代理"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "目前代理持續無法連線時，自動嘗試清單中的下一個代理"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "至少新增兩個代理後才能自動切換"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "切換等待時間"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d 秒"
     }
   ]
 }

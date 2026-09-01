@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "تغییر خودکار پروکسی"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "اگر پروکسی فعلی در دسترس نماند، پروکسی ذخیره‌شده بعدی امتحان شود"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "برای تغییر خودکار حداقل دو پروکسی اضافه کنید"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "تأخیر تغییر"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d ثانیه"
     }
   ]
 }

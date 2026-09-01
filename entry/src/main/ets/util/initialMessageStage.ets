@@ -36,6 +36,7 @@ function deferredCopy(group: AlbumGroup): AlbumGroup {
     photoFailed: group.photoFailed,
     videoFileIds: group.videoFileIds,
     videoFileSizes: group.videoFileSizes,
+    videoDurations: group.videoDurations,
     videoMimeTypes: group.videoMimeTypes,
     caption: group.caption,
     captionEntities: group.captionEntities,
@@ -135,7 +136,10 @@ export function initialMessageViewportRows(
   alignFromStart: boolean,
   screenWidth: number,
   viewportHeight: number,
-  firstUnreadId: number
+  firstUnreadId: number,
+  rowHeight: (
+    group: AlbumGroup, screenWidth: number, showUnreadDivider: boolean
+  ) => number = initialMessagePlaceholderHeight
 ): number {
   if (groups.length === 0 || anchorIndex < 0 || anchorIndex >= groups.length) {
     return 0;
@@ -146,7 +150,7 @@ export function initialMessageViewportRows(
   let count: number = 0;
   while (index >= 0 && index < groups.length && coveredHeight < viewportHeight) {
     const group: AlbumGroup = groups[index];
-    coveredHeight += initialMessagePlaceholderHeight(
+    coveredHeight += rowHeight(
       group,
       screenWidth,
       firstUnreadId > 0 && group.memberIds.indexOf(firstUnreadId) >= 0

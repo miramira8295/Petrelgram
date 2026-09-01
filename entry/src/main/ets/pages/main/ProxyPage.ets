@@ -16,7 +16,9 @@ import {
   KEY_PROXY_MIRROR, KEY_PROXY_SYNC_OFF, missingFromAccount, parseProxyMirror, parseSyncOff,
   serializeProxyMirror, serializeSyncOff, syncEnabledFor, syncableOf, toggledSyncOff
 } from '../../util/proxyMirror';
-import { setString } from '../../store/AppSettings';
+import {
+  KEY_PROXY_AUTO_SWITCH, KEY_PROXY_SWITCH_DELAY_SEC, setBoolean, setNumber, setString
+} from '../../store/AppSettings';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
@@ -29,6 +31,12 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import {
+  ProxyAutoSwitchEntry, proxyAutoSwitchService
+} from '../../services/ProxyAutoSwitchService';
+import {
+  normalizeProxySwitchDelay, PROXY_SWITCH_DELAYS
+} from '../../util/proxyAutoSwitch';
 
 // 回落的 TCP 握手计时上限。5s 内连不上代理服务器，就按不通处理。
 const REACH_TIMEOUT_MS: number = 5000;
@@ -81,6 +89,8 @@ export struct ProxyPage {
   @State actionKey: string = '';
   @State preferredProxyId: number = 0;
   @State skeletonBright: boolean = false;
+  @StorageProp(KEY_PROXY_AUTO_SWITCH) private autoSwitch: boolean = false;
+  @StorageProp(KEY_PROXY_SWITCH_DELAY_SEC) private autoSwitchDelay: number = 10;
 
   @State sheetOpen: boolean = false;
   @State editingId: number = 0;
@@ -278,6 +288,38 @@ export struct ProxyPage {
     });
   }
 
+  private publishProxyList(): void {
+    proxyAutoSwitchService.proxyListChanged(this.proxies.map(
+      (entry: ProxyEntry): ProxyAutoSwitchEntry => ({ id: entry.id, isEnabled: entry.isEnabled })
+    ));
+  }
+
+  private autoSwitchAvailable(): boolean {
+    return this.proxies.length >= 2;
+  }
+
+  private autoSwitchSubtitle(): ResourceStr {
+    return this.autoSwitchAvailable()
+      ? $r('app.string.px_auto_switch_sub') : $r('app.string.px_auto_switch_need_more');
+  }
+
+  private autoSwitchDelayIndex(): number {
+    return PROXY_SWITCH_DELAYS.indexOf(normalizeProxySwitchDelay(this.autoSwitchDelay));
+  }
+
+  private setAutoSwitch(value: boolean): void {
+    if (value && !this.autoSwitchAvailable()) { return; }
+    setBoolean(KEY_PROXY_AUTO_SWITCH, value);
+    proxyAutoSwitchService.settingsChanged();
+  }
+
+  private setAutoSwitchDelay(index: number): void {
+    const delay = PROXY_SWITCH_DELAYS[index];
+    if (delay === undefined || delay === this.autoSwitchDelay) { return; }
+    setNumber(KEY_PROXY_SWITCH_DELAY_SEC, delay);
+    proxyAutoSwitchService.settingsChanged();
+  }
+
   // 换到一个还没有代理的账号时，把本机镜像里的补回去（代理存在 TDLib 里，
   // 而 TDLib 数据库按账号槽分开——issue #131）。一律加成未启用：切账号那一刻
   // 自动改连接不礼貌，用户自己点启用。补完重新拉一次，拿到 TDLib 给的新 id。
@@ -334,6 +376,7 @@ export struct ProxyPage {
       setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(list, this.syncOff())));
       const sorted = this.sorted(list);
       this.proxies = sorted;
+      this.publishProxyList();
       this.loading = false;
       this.refreshing = false;
       this.loadError = '';
@@ -539,6 +582,8 @@ export struct ProxyPage {
     this.proxies = this.sorted(this.proxies.map((entry: ProxyEntry): ProxyEntry =>
       this.copyEnabled(entry, proxyId > 0 && entry.id === proxyId)
     ));
+    this.publishProxyList();
+    proxyAutoSwitchService.proxySelectionChanged(proxyId);
   }
 
   private masterChanged(useProxy: boolean): void {
@@ -583,6 +628,7 @@ export struct ProxyPage {
       const error = caught as TdError;
       this.actionKey = '';
       this.proxies = snapshot;
+      this.publishProxyList();
       this.syncWarning = str('px_state_resyncing');
       promptAction.showToast({
         message: proxyActionErrorText(error.message, entry !== null ? str('px_enable') : str('px_use_direct')),
@@ -619,6 +665,7 @@ export struct ProxyPage {
     animateTo({ duration: this.animationDuration(170), curve: Curve.EaseOut }, (): void => {
       this.proxies = this.proxies.filter((item: ProxyEntry): boolean => item.id !== entry.id);
     });
+    this.publishProxyList();
     try {
       await removeProxy(entry.id);
       if (!this.active || sequence !== this.operationSequence) { return; }
@@ -631,6 +678,7 @@ export struct ProxyPage {
       const error = caught as TdError;
       this.actionKey = '';
       this.proxies = before;
+      this.publishProxyList();
       promptAction.showToast({
         message: proxyActionErrorText(error.message, str('px_delete')), duration: 1800
       });
@@ -742,6 +790,7 @@ export struct ProxyPage {
     }
     next.push(entry);
     this.proxies = this.sorted(next);
+    this.publishProxyList();
   }
 
   private testForm(): void {
@@ -794,7 +843,10 @@ export struct ProxyPage {
         if (!this.active || sequence !== this.formSequence) { return; }
         this.saving = false;
         this.upsertProxy(saved);
-        if (saved.isEnabled) { this.preferredProxyId = saved.id; }
+        if (saved.isEnabled) {
+          this.preferredProxyId = saved.id;
+          proxyAutoSwitchService.proxySelectionChanged(saved.id);
+        }
         this.sheetOpen = false;
         this.resetForm();
         promptAction.showToast({ message: $r('app.string.px_saved'), duration: 1400 });
@@ -935,6 +987,49 @@ export struct ProxyPage {
     .transition(TransitionEffect.OPACITY.combine(
       TransitionEffect.translate({ y: -6 })
     ).animation({ duration: this.animationDuration(180), curve: Curve.EaseOut }));
+  }
+
+  @Builder
+  autoSwitchCard() {
+    Column() {
+      Row({ space: 12 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle({ width: 42, height: 42 }).fill('#163478F6');
+          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(21).fontColor([COLOR_PRIMARY]);
+        }
+        Column({ space: 3 }) {
+          Text($r('app.string.px_auto_switch')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+          Text(this.autoSwitchSubtitle()).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
+        }
+        .layoutWeight(1).alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Center);
+        Toggle({ type: ToggleType.Switch, isOn: this.autoSwitch })
+          .selectedColor(COLOR_PRIMARY)
+          .enabled(!this.loading && (this.autoSwitchAvailable() || this.autoSwitch))
+          .onChange((value: boolean): void => this.setAutoSwitch(value));
+      }
+      .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+      .alignItems(VerticalAlign.Center);
+
+      Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 68 });
+
+      Row({ space: 12 }) {
+        Text($r('app.string.px_auto_switch_delay')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
+          .layoutWeight(1);
+        Select(PROXY_SWITCH_DELAYS.map((delay: number): SelectOption => ({
+          value: str('px_auto_switch_seconds', delay)
+        } as SelectOption)))
+          .selected(this.autoSwitchDelayIndex())
+          .value(str('px_auto_switch_seconds', normalizeProxySwitchDelay(this.autoSwitchDelay)))
+          .font({ size: 14 }).fontColor(COLOR_PRIMARY)
+          .enabled(this.autoSwitch && this.autoSwitchAvailable())
+          .onSelect((index: number): void => this.setAutoSwitchDelay(index));
+      }
+      .width('100%').height(52).padding({ left: 16, right: 8 })
+      .alignItems(VerticalAlign.Center)
+      .opacity(this.autoSwitch && this.autoSwitchAvailable() ? 1 : 0.46);
+    }
+    .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
   @Builder
@@ -1337,6 +1432,7 @@ export struct ProxyPage {
         Column({ space: 12 }) {
           if (!this.loading || this.proxies.length > 0) {
             this.connectionCard();
+            this.autoSwitchCard();
           }
           this.syncWarningCard();
           if (this.loading && this.proxies.length === 0) {

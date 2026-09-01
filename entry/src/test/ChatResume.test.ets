@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  forgetChatPosition, openAtMessageId, rememberChatPosition, rememberedChatPosition,
-  resetChatPositions, resumeKeyOf
+  RememberedChatViewport, forgetChatPosition, openAtMessageId, rememberChatPosition,
+  rememberedChatPosition, rememberedChatViewport, resetChatPositions, resumeKeyOf
 } from '../main/ets/util/chatResume';
 
 export default function chatResumeTest() {
@@ -22,6 +22,16 @@ export default function chatResumeTest() {
       expect(rememberedChatPosition(1, 0)).assertEqual(0);
       rememberChatPosition(1, 0, 0, false);
       expect(rememberedChatPosition(1, 0)).assertEqual(0);
+    });
+    it('同时保留首行在视口内的精确偏移', 0, (): void => {
+      resetChatPositions();
+      rememberChatPosition(8, 3, 120, false, -27.5);
+      const viewport: RememberedChatViewport = rememberedChatViewport(8, 3);
+      expect(viewport.messageId).assertEqual(120);
+      expect(viewport.itemY).assertEqual(-27.5);
+      // 取回的是副本，调用方不能改坏模块级缓存。
+      viewport.itemY = 99;
+      expect(rememberedChatViewport(8, 3).itemY).assertEqual(-27.5);
     });
     it('忘记单条与整表清空', 0, (): void => {
       resetChatPositions();

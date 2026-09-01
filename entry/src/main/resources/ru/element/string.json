@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Автопереключение прокси"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Пробовать следующий прокси, если текущий долго недоступен"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Добавьте не менее двух прокси для автопереключения"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Задержка переключения"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d с"
     }
   ]
 }

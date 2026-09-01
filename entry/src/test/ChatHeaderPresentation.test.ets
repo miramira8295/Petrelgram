@@ -80,19 +80,19 @@ export default function chatHeaderPresentationTest() {
 
     it('an ordinary chat is titled after the chat', 0, () => {
       expect(chatHeaderTitle({
-        chatTitle: 'Ann', topicName: '', forumTopicId: 0, threadRootId: 0
+        chatTitle: 'Ann', topicName: '', forumTopicId: 0, directMessagesTopicId: 0, threadRootId: 0
       })).assertEqual('Ann');
     });
 
     it('a forum topic is titled after the topic', 0, () => {
       expect(chatHeaderTitle({
-        chatTitle: 'Group', topicName: '公告', forumTopicId: 5, threadRootId: 0
+        chatTitle: 'Group', topicName: '公告', forumTopicId: 5, directMessagesTopicId: 0, threadRootId: 0
       })).assertEqual('公告');
     });
 
     it('an unnamed forum topic falls back', 0, () => {
       expect(chatHeaderTitle({
-        chatTitle: 'Group', topicName: '', forumTopicId: 5, threadRootId: 0
+        chatTitle: 'Group', topicName: '', forumTopicId: 5, directMessagesTopicId: 0, threadRootId: 0
       })).assertEqual('chat_header_topic');
     });
 
@@ -100,20 +100,27 @@ export default function chatHeaderPresentationTest() {
       // The bug this rule fixes: the per-update refresh used to overwrite this
       // with a bare '评论' moments after the chat opened.
       expect(chatHeaderTitle({
-        chatTitle: 'Channel', topicName: '第 3 集讨论', forumTopicId: 0, threadRootId: 9
+        chatTitle: 'Channel', topicName: '第 3 集讨论', forumTopicId: 0, directMessagesTopicId: 0, threadRootId: 9
       })).assertEqual('第 3 集讨论');
     });
 
     it('an unnamed comment thread falls back', 0, () => {
       expect(chatHeaderTitle({
-        chatTitle: 'Channel', topicName: '', forumTopicId: 0, threadRootId: 9
+        chatTitle: 'Channel', topicName: '', forumTopicId: 0, directMessagesTopicId: 0, threadRootId: 9
       })).assertEqual('chat_header_comments');
     });
 
     it('a forum topic outranks a thread id', 0, () => {
       expect(chatHeaderTitle({
-        chatTitle: 'Group', topicName: '公告', forumTopicId: 5, threadRootId: 9
+        chatTitle: 'Group', topicName: '公告', forumTopicId: 5, directMessagesTopicId: 0, threadRootId: 9
       })).assertEqual('公告');
+    });
+
+    it('a channel direct-message topic is titled after its sender', 0, () => {
+      expect(chatHeaderTitle({
+        chatTitle: 'Channel inbox', topicName: 'Ann', forumTopicId: 0,
+        directMessagesTopicId: 42, threadRootId: 0
+      })).assertEqual('Ann');
     });
   });
 }

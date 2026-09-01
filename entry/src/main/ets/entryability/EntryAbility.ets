@@ -16,6 +16,7 @@ import { migrateLegacyAppWallpaperStates } from '../store/ChatBackgroundStore';
 import { CACHE_LIMIT_DEFAULT, shouldTrimNow } from '../store/CacheLimit';
 import { applyCacheLimit } from '../store/StorageApi';
 import { beginNetworkMonitoring, refreshNetworkState } from '../services/NetworkStateService';
+import { proxyAutoSwitchService } from '../services/ProxyAutoSwitchService';
 import { updateChecker } from '../services/UpdateChecker';
 import { liveLocation } from '../services/LiveLocationService';
 import { setInlinePhotoTargetPx } from '../util/formatMsgContent';
@@ -59,6 +60,7 @@ export default class EntryAbility extends UIAbility {
     // mode (which subsumes the old unconditional COLOR_MODE_NOT_SET).
     initSettings(this.context).then((): void => {
       migrateLegacyAppWallpaperStates();
+      proxyAutoSwitchService.settingsChanged();
     }).catch((error: Error): void => {
       // initSettings 自己已经装好默认值；这里防住未来实现改成向外抛错时的未处理
       // Promise，启动不能因为一次设置迁移失败而中断。

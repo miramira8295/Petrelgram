@@ -2,9 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
-import {
-  resumeScrollVisualForPageShow, setScrollActive, suspendScrollVisualForPageHide
-} from '../../util/scrollEffects';
+import { setScrollActive } from '../../util/scrollEffects';
 import { getStickersForEmoji, rememberRecentSticker } from '../../store/StickerApi';
 import { botMiniAppUrl, openMiniApp } from '../../store/BotApi';
 import {
@@ -27,15 +25,17 @@ import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
 import { getVoicePlayback } from '../../services/VoicePlayback';
 import { openLocalFile } from '../../util/openLocalFile';
-import { saveMediaToGallery, saveFileToLocal } from '../../util/mediaSaver';
+import { FileSaveProgress, saveMediaToGallery } from '../../util/mediaSaver';
+import {
+  DownloadSaveNotification, downloadSaveService
+} from '../../services/DownloadSaveNotification';
 import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import { ReuseIdLevel, rowReuseId } from '../../util/rowReuseId';
 import {
   MIN_MESSAGE_ROW_HEIGHT_VP, capReuseBuckets, globalReusePoolAvailable,
-  messageReuseHostCount, messageRowViewportRows, releaseMessageReuseHost,
-  retainMessageReuseHost, reuseBucketMaxCount
+  messageRowViewportRows, reuseBucketMaxCount
 } from '../../util/messageReusePool';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
 import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
@@ -100,7 +100,7 @@ import {
 import { stackFromEndWanted } from '../../util/stackFromEnd';
 import {
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_RETRY_MS, AnchorRectSnapshot, AnchorRestorePlan,
-  anchorYAfterUserScroll,
+  anchorYAfterUserScroll, canApplyAnchorRestore,
   shouldCapturePrependAnchor, shouldRetryAnchorRestore,
   INVALID_ANCHOR_RECT, planAnchorRestore
 } from '../../util/anchorRestore';
@@ -114,8 +114,7 @@ import {
 } from '../../util/composerChrome';
 import { replySnippetOf } from '../../util/replySnippet';
 import {
-  TL_NEWER_ERROR, TL_NONE, TL_OLDER_ERROR, TL_SYNC_ERROR,
-  timelineStateMode, timelineStateText
+  TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR, timelineStateMode
 } from '../../util/timelineState';
 import {
   forwardableIds, pruneSelection, rowSelectable, rowSelected, toggleRow
@@ -178,7 +177,7 @@ import {
 import { appendMention, mentionToken, mentionQueryOf } from '../../util/mentionDraft';
 import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { floatingLiveWindow } from './LiveFloatingWindow';
-import { MUTE_LONG, setMute } from '../../store/ChatActions';
+import { MUTE_LONG, setMute, showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
 import {
@@ -224,7 +223,12 @@ import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
   PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger
 } from '../../util/pageGate';
-import { rememberChatPosition, rememberedChatPosition } from '../../util/chatResume';
+import {
+  RememberedChatViewport, rememberChatPosition, rememberedChatViewport
+} from '../../util/chatResume';
+import {
+  applyMessageTopicScope, conversationScopeId, messageOutsideTopicScope
+} from '../../util/messageTopicScope';
 import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
 import { getActiveTdUserId } from '../../tdkit/Globals';
@@ -236,9 +240,12 @@ import {
   CHAT_HEADER_BASE_HEIGHT, chatChromeHeight, ChatChromeGeometryInput
 } from '../../util/ChatChromeGeometry';
 import {
-  initialMessagePlaceholderHeight, initialMessageViewportRows, nextInitialMessageRevealCount,
-  stageInitialMessageGroups
+  initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups
 } from '../../util/initialMessageStage';
+import {
+  ChatTimelineSnapshot, coalesceChatTimelineSnapshot, emptyChatTimelineSnapshot
+} from '../../util/chatTimelineSnapshot';
+import { ChatViewportGeometry } from '../../util/chatViewportGeometry';
 // ⚠️ 临时（P6 标定）：cachedCount 档位调试项。标定结束后按
 // util/debugListPerf.ets 末尾的清单删除。
 import { LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
@@ -309,11 +316,12 @@ const INITIAL_TIMELINE_REVEAL_ROW_LIMIT: number = 8;
 // Reveal only after real rows cover the complete visible message viewport.
 // Older offscreen rows may continue staging after the page is visible, but
 // visible placeholder replacement must not trigger repeated height correction.
-// NavDestination.onShown is emitted near the beginning of a push, not when
-// the spring has settled. This timer is only a watchdog for a resolved empty
-// timeline; it must never reveal chrome while history/row staging is pending,
-// otherwise a slow fully-read chat paints header/composer before its bubbles.
-const INITIAL_MESSAGE_TRANSITION_SETTLE_MS: number = 640;
+// NavDestination.onShown is emitted near the beginning of a push, not when the
+// spring has settled. This duration fences the first ready message publication
+// and also remains the empty-timeline watchdog below. The trace shows onReady
+// can lead the system page-switch animation by about 50-75 ms, so leave enough
+// room for the measured ~600 ms transition plus a couple of render frames.
+const INITIAL_MESSAGE_TRANSITION_SETTLE_MS: number = 760;
 
 // Composer geometry. These three have to agree with the TextArea's own
 // lineHeight/padding: the editor height is computed from them, and a mismatch
@@ -356,6 +364,14 @@ const ANCHOR_AUDIT_DELAY_MS: number = 250;
 // to be measured and tuned in P2 Task 3; 'medium' is a placeholder, not a
 // verified-best value.
 const REUSE_ID_LEVEL: ReuseIdLevel = 'medium';
+let nextChatPageReuseScope: number = 1;
+
+function allocateChatPageReuseScope(): number {
+  const scope: number = nextChatPageReuseScope;
+  nextChatPageReuseScope = nextChatPageReuseScope >= 2147483647
+    ? 1 : nextChatPageReuseScope + 1;
+  return scope;
+}
 
 interface DiceChoice {
   emoji: string;
@@ -404,6 +420,10 @@ const DICE_CHOICES: DiceChoice[] = [
 // chevron). Ordered roughly like the official client's reaction sheet.
 @ComponentV2
 export struct ChatPage {
+  // The API 26 pool is shared by every ChatPage still in the navigation stack.
+  // Scope bucket ids to this concrete page so a row recycled by chat A can
+  // never be re-parented into chat B while chat A is still alive underneath.
+  private reusePageScope: number = allocateChatPageReuseScope();
   @Require @Param appearanceEpoch: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
@@ -440,19 +460,19 @@ export struct ChatPage {
   // 不是 @Require —— 少数直接 new ChatPage 的调用点（预览）没有它时用默认档。
   @Param listCachedCount: number = LIST_CACHED_COUNT_DEFAULT;
   @Local messages: MessageEntry[] = [];
-  @Local messageLoadState: string = 'loading'; // loading | ready | error
-  @Local messageLoadError: string = '';
-  @Local olderLoadState: string = 'idle'; // idle | loading | error | end
-  @Local newerLoadState: string = 'idle'; // idle | loading | error | end
+  private messageLoadState: string = 'loading'; // loading | ready | error
+  private messageLoadError: string = '';
+  private olderLoadState: string = 'idle'; // idle | loading | error | end
+  private newerLoadState: string = 'idle'; // idle | loading | error | end
   // **完整快照**的行数，不是当前渲染的行数——首屏分级渲染期间 groups 里坐着
   // 占位副本，长度一样，所以两者此刻仍然相等；将来若有别的分级形状，这个计数
   // 要跟着"用户最终会看到多少行"走。它驱动的是空/加载中的时间线提示。
-  @Local visibleGroupCount: number = 0;
-  // 消息列表的**唯一真相**。P4 之前它只是 LazyForEach 数据源的一份镜像，只用来
-  // 做下标查找；现在 Repeat 直接渲染它，每次发布整体赋值（见 publishGroupsNow）。
-  // @Local（而不是普通字段）有两个理由：Repeat 懒加载必须配状态管理 V2 才能观测
-  // 到数组变化；MediaViewerOverlay 的 @Param 也只跟随本身是状态变量的源。
-  @Local groups: AlbumGroup[] = [];
+  private visibleGroupCount: number = 0;
+  // 消息列表的内部真相。Repeat 和 MediaViewerOverlay 不直接订阅这个普通字段；
+  // publishGroupsNow 把它连同加载/分页状态一次性装进 timelineSnapshot 发布。
+  private groups: AlbumGroup[] = [];
+  @Local private timelineSnapshot: ChatTimelineSnapshot = emptyChatTimelineSnapshot();
+  private viewportGeometry: ChatViewportGeometry = new ChatViewportGeometry();
   // 只剩图片预取源，不再是列表的数据源（见 AlbumGroupDataSource 文件头）。
   private groupsData: AlbumGroupDataSource = new AlbumGroupDataSource();
   // 强制整表重建用的纪元，进 rowKeyOf。Repeat 没有 LazyForEach 的 reload()——
@@ -520,6 +540,40 @@ export struct ChatPage {
   private hiddenAtBottom: boolean = false;
   private hiddenNewestId: number = 0;
 
+  private timelineGeometryDividerId(): number {
+    if (this.resumeDividerId > 0) {
+      return this.resumeDividerId;
+    }
+    if (this.firstUnreadId > 0) {
+      return this.firstUnreadId;
+    }
+    return this.store !== null ? this.store.getFirstUnreadId() : 0;
+  }
+
+  private replaceTimelineGroups(groups: AlbumGroup[]): void {
+    this.viewportGeometry.reconcile(
+      this.chatId,
+      conversationScopeId(this.threadRootId, this.forumTopicId, this.directMessagesTopicId),
+      groups,
+      this.screenW,
+      this.langEpoch,
+      this.timelineGeometryDividerId()
+    );
+    this.groups = groups;
+  }
+
+  private commitTimelineSnapshot(): void {
+    const next: ChatTimelineSnapshot = coalesceChatTimelineSnapshot(this.timelineSnapshot, {
+      groups: this.groups, visibleGroupCount: this.visibleGroupCount,
+      messageLoadState: this.messageLoadState, messageLoadError: this.messageLoadError,
+      olderLoadState: this.olderLoadState, newerLoadState: this.newerLoadState,
+      isChannel: this.isChannel, isGroup: this.isGroup
+    });
+    if (next !== this.timelineSnapshot) {
+      this.timelineSnapshot = next;
+    }
+  }
+
   // 发布一份新的行快照。**唯一**给 this.groups 赋值的地方（rebuildAllRows 除外）。
   //
   // reuseUnchangedRows 是这里唯一的"聪明"步骤，理由写在它自己的注释里：
@@ -542,9 +596,12 @@ export struct ChatPage {
         animateTo({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
           curve: Curve.EaseOut
-        }, (): void => { this.groups = next; });
+        }, (): void => {
+          this.replaceTimelineGroups(next);
+          this.commitTimelineSnapshot();
+        });
       } else {
-        this.groups = next;
+        this.replaceTimelineGroups(next);
       }
     }
     // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
@@ -567,6 +624,9 @@ export struct ChatPage {
     if (!this.pageVisible && changed) {
       this.hiddenListDirty = true;
     }
+    // Loading/paging flags and rows become visible to ChatTimelineHost through
+    // one immutable publication, after this whole transaction is complete.
+    this.commitTimelineSnapshot();
   }
 
   // 让 Repeat 整表重建：每一行的 key 都换掉。
@@ -577,7 +637,8 @@ export struct ChatPage {
   // 成新 key ⇒ 全部删旧插新。行对象本身原样复用，内容一个字都没动。
   private rebuildAllRows(): void {
     this.listRebuildEpoch++;
-    this.groups = this.groups.slice();
+    this.replaceTimelineGroups(this.groups.slice());
+    this.commitTimelineSnapshot();
     // 这里**不碰** groupsData：它持有的是上一次发布的原始快照（见
     // publishGroupsNow 里那段注释），而 this.groups 是合并快照——photoPath 等
     // 旁路字段在它里面是陈旧的。整表重建只改 key 和数组身份、不改任何一行的
@@ -685,7 +746,9 @@ export struct ChatPage {
       target.alignFromStart,
       this.screenW,
       viewportHeight,
-      unreadId
+      unreadId,
+      (group: AlbumGroup, _screenWidth: number, _showDivider: boolean): number =>
+        this.viewportGeometry.rowHeight(group)
     );
   }
 
@@ -791,6 +854,15 @@ export struct ChatPage {
     this.scheduleInitialUnreadLanding();
   }
 
+  private scrollToTimelineIndexAtY(index: number, itemY: number = 0): void {
+    this.scroller.scrollToIndex(index, false, ScrollAlign.START);
+    if (Number.isFinite(itemY) && Math.abs(itemY) > 0.5) {
+      // START puts the row at y=0. Restore the captured partial-row offset so
+      // leaving and reopening a chat returns to the same viewport geometry.
+      this.scroller.scrollBy(0, -itemY);
+    }
+  }
+
   private settleInitialTimelineAnchor(): void {
     if (!this.didInitialScroll || this.groups.length === 0) {
       return;
@@ -798,7 +870,7 @@ export struct ChatPage {
     if (this.resumeDividerId > 0) {
       const resumeIndex: number = groupIndexOf(this.groups, this.resumeDividerId);
       if (resumeIndex >= 0) {
-        this.scroller.scrollToIndex(resumeIndex, false, ScrollAlign.START);
+        this.scrollToTimelineIndexAtY(resumeIndex, this.resumeDividerItemY);
       }
       return;
     }
@@ -1375,7 +1447,7 @@ export struct ChatPage {
   //
   // 上限怎么来的写在 messageReusePool.reuseBucketMaxCount 的注释里，一句话：
   // 一个桶在一次最坏回收潮里能收到的实例数 = 可视窗口行数 + 2 × cachedCount，
-  // 再乘上当前并存的会话页数（shared 池同时服务它们，见 hostPages）。
+  // 页面作用域已经进 reuseId，所以一个桶只属于一个 ChatPage；容量按单页算。
   //
   // 每桶封顶之外还有一层（F-6）：桶数**本身**也要封顶。medium 档的 rowReuseId
   // 取值空间约 3000 个，而 shared 池只要栈上还压着任意会话页就不销毁，逛过的
@@ -1415,7 +1487,7 @@ export struct ChatPage {
       }
       const rows: number = messageRowViewportRows(this.screenH, MIN_MESSAGE_ROW_HEIGHT_VP);
       capReuseBuckets(pool, ReusableMessageBubble,
-        reuseBucketMaxCount(rows, this.listCachedCount, messageReuseHostCount()));
+        reuseBucketMaxCount(rows, this.listCachedCount));
     } catch (err) {
       // 封顶是纯优化，失败了不该影响任何一行的渲染——吞掉但留痕。
       logW('[ReusePool] cap failed', err);
@@ -1466,7 +1538,8 @@ export struct ChatPage {
       actions: this.messageActions()
     }).reuse({
       reuseId: (): string =>
-        rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, REUSE_ID_LEVEL)
+        `chatPage${this.reusePageScope}_` +
+          rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, REUSE_ID_LEVEL)
     });
   }
   @Local subtitle: string = '';
@@ -1622,6 +1695,7 @@ export struct ChatPage {
   private threadRootId: number = 0;
   private topicName: string = '';
   private forumTopicId: number = 0;
+  private directMessagesTopicId: number = 0;
   // 私聊对方是机器人。空会话时输入框让位给「开始」，见 util/botStart。
   @Local isBotChat: boolean = false;
   @Local isGroup: boolean = false;
@@ -1738,6 +1812,9 @@ export struct ChatPage {
   // supplies the actual applied offset.
   private userScrollOffsetTotal: number = 0;
   private nextDidScrollIsUserDriven: boolean = false;
+  // A pending anchor correction yields while the list is still moving. This
+  // keeps an in-flight page response from racing the active drag/fling.
+  private timelineScrollActive: boolean = false;
   // onScrollIndex 上报那一刻的 groups.length。行号只有配上它才有意义。
   private indexGroupsLen: number = -1;
   // 右下角「↓」的去向状态。它不是"回到底部"，而是"回到该继续看的地方"：
@@ -1770,7 +1847,9 @@ export struct ChatPage {
   // resolves the chat's authoritative unread count. Once selected it becomes
   // pendingJumpId and resumeDividerId together.
   private pendingResumeId: number = 0;
+  private pendingResumeItemY: number = 0;
   private resumeDividerId: number = 0;
+  private resumeDividerItemY: number = 0;
   private jumpLayoutSeq: number = 0;
   // One-shot gate for loading older pages: a fast fling to the very top used to
   // chain-load page after page (the list stays pinned at the edge, so the
@@ -1826,15 +1905,12 @@ export struct ChatPage {
   private lastKeyboardH: number = 0;
   // Message id of a video waiting to be saved to the gallery once downloaded.
   private pendingGallerySaveId: number = 0;
-  // 挂起的保存要去相册还是文件（下载完成后照原样执行）。
-  private pendingGallerySaveToFiles: boolean = false;
+  private pendingGallerySaveProgress: DownloadSaveNotification | null = null;
   private autoSavePendingIds: number[] = [];
   private autoSaveInFlight: boolean = false;
   // Separate intents keep "tap to open" and the explicit save action honest:
   // a completed download performs exactly the action the user requested.
   private pendingFileOpenId: number = 0;
-  // Message id of a document waiting for the "save as" picker once downloaded.
-  private pendingFileSaveId: number = 0;
   private fileOpenInFlightId: number = 0;
   private utilityActionAtMs: number = 0;
   // A tapped music message starts automatically once its on-demand download
@@ -2005,6 +2081,7 @@ export struct ChatPage {
     this.indexGroupsLen = -1;
     this.userScrollOffsetTotal = 0;
     this.nextDidScrollIsUserDriven = false;
+    this.timelineScrollActive = false;
     // 「↓」的返回关系和"底部看到的是哪条"同样是会话级的。消息 id 在每个会话
     // 里独立编号，把上一个会话的跳转栈带过来，↓ 就会指向本会话里一条恰好同号
     // 的无关消息——或者一条根本不存在的 id，点下去只是空转。
@@ -2015,9 +2092,10 @@ export struct ChatPage {
     this.scrollToBottomBusy = false;
     this.pendingJumpId = 0;
     this.pendingResumeId = 0;
+    this.pendingResumeItemY = 0;
     this.resumeDividerId = 0;
+    this.resumeDividerItemY = 0;
     this.pendingFileOpenId = 0;
-    this.pendingFileSaveId = 0;
     this.fileOpenInFlightId = 0;
     this.musicQueue.reset();
     this.olderArmed = true;
@@ -2165,19 +2243,16 @@ export struct ChatPage {
       return;
     }
     this.resumeScrollChatId = this.chatId;
-    this.resumeScrollThreadId = this.threadRootId;
+    this.resumeScrollThreadId = conversationScopeId(
+      this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
     this.resumeScrollMessageId = this.groups[this.curStartIdx].head.id;
-    this.resumeScrollItemY = 0;
-    try {
-      this.resumeScrollItemY = this.scroller.getItemRect(this.curStartIdx).y;
-    } catch (e) {
-      this.resumeScrollItemY = 0;
-    }
+    const itemY: number = this.anchorItemY(this.curStartIdx);
+    this.resumeScrollItemY = Number.isNaN(itemY) ? 0 : itemY;
     this.resumeScrollAtBottom = this.atBottom;
     // 同一份位置也记到模块级表里：页面销毁后（退出会话再进来）还能落回去，
     // issue #98。在底部的不记——那种情况下次该跟到最新。
-    rememberChatPosition(this.chatId, this.threadRootId,
-      this.resumeScrollMessageId, this.atBottom);
+    rememberChatPosition(this.chatId, this.resumeScrollThreadId,
+      this.resumeScrollMessageId, this.atBottom, this.resumeScrollItemY);
     this.resumeScrollPending = true;
   }
 
@@ -2209,10 +2284,6 @@ export struct ChatPage {
   }
 
   aboutToAppear(): void {
-    // shared 复用池同时服务所有活着的会话页（平板分栏、Navigation 栈上先后
-    // 压着的两份）。每桶上限的推导前提是「一个页面的最坏回收潮」，所以要数一数
-    // 实际有几个——见 messageReusePool.reuseBucketMaxCount 的 hostPages。
-    retainMessageReuseHost();
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
@@ -2258,6 +2329,7 @@ export struct ChatPage {
     // 话题模式（从 ForumTopicsPage 进入）：标题显示话题名而非"评论"。
     this.topicName = route.topicName;
     this.forumTopicId = route.forumTopicId;
+    this.directMessagesTopicId = route.directMessagesTopicId;
     // 排除名单是本地的，chatId 一确定就能读，不用等 getChat 回来。
     this.translateChatOptOut = translateOptedOut(this.chatId);
     this.translateChatOptIn = translateOptedIn(this.chatId);
@@ -2273,7 +2345,8 @@ export struct ChatPage {
     });
     let scrollResumeWaiting: boolean = this.resumeScrollPending &&
       this.resumeScrollChatId === this.chatId &&
-      this.resumeScrollThreadId === this.threadRootId &&
+      this.resumeScrollThreadId === conversationScopeId(
+        this.threadRootId, this.forumTopicId, this.directMessagesTopicId) &&
       this.groups.length > 0;
     if (!scrollResumeWaiting) {
       this.resumeScrollPending = false;
@@ -2415,7 +2488,10 @@ export struct ChatPage {
       this.refreshVideoChat();
     }, 2000);
     const store = new MessageStore(
-      getTdClient(), getUserStore(), this.chatId, this.threadRootId, 30, this.forumTopicId);
+      getTdClient(), getUserStore(), this.chatId, this.threadRootId, 30,
+      this.forumTopicId, this.directMessagesTopicId);
+    store.deferInitialPublication(isSplitLayout(this.screenW, this.screenH)
+      ? 0 : INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
     this.store = store;
     if (!scrollResumeWaiting || this.groups.length === 0) {
       this.messageLoadState = 'loading';
@@ -2475,11 +2551,13 @@ export struct ChatPage {
           this.atBottom = false;
           this.pendingJumpId = rememberedId;
           this.resumeDividerId = groups[rememberedIndex].head.id;
+          this.resumeDividerItemY = this.pendingResumeItemY;
           resumeLandingPrepared = true;
         }
         // Whether selected or superseded by unread, the decision is final once
         // the first ready history snapshot arrives.
         this.pendingResumeId = 0;
+        this.pendingResumeItemY = 0;
       }
       const firstMessageStage: boolean = !scrollResumeWaiting && this.groups.length === 0 &&
         (resumeLandingPrepared || !this.didInitialScroll);
@@ -2588,6 +2666,8 @@ export struct ChatPage {
           ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
           ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
       }
+      this.isChannel = store.getIsChannel();
+      this.isGroup = store.getIsGroup();
       this.messages = list;
       this.messageListRevision++;
       this.reconcileMessageActionTargets(list);
@@ -2667,14 +2747,8 @@ export struct ChatPage {
           }
         }
       }
-      // isChannel resolves asynchronously (getSupergroup round-trip) after the
-      // first message page can already be showing, so refresh it every notify.
-      this.isChannel = this.store !== null ? this.store.getIsChannel() : false;
-      // A global-search hit opens around jumpTo and marks the initial scroll as
-      // handled before history arrives. Keep the group flag independent of that
-      // scroll state; otherwise every incoming bubble is rendered like a private
-      // chat and its sender-avatar column is omitted.
-      this.isGroup = this.store !== null ? this.store.getIsGroup() : false;
+      // isChannel/isGroup were resolved before the timeline publication above,
+      // so the host receives row data and chat kind in the same snapshot.
       const liveMediaIds: number[] = store.consumeLiveIncomingMediaIds();
       const autoScope: string = this.isChannel ? 'channel' : (this.isGroup ? 'group' : 'private');
       if (autosaveEnabled(autoScope)) {
@@ -2827,17 +2901,27 @@ export struct ChatPage {
         if (pe !== undefined) {
           if (this.mediaEntryIsVideo(pe) && pe.videoPath !== '') {
             this.pendingGallerySaveId = 0;
+            const progress: DownloadSaveNotification | undefined =
+              this.pendingGallerySaveProgress ?? undefined;
+            this.pendingGallerySaveProgress = null;
             this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.videoPath, true,
-              pe.videoFileName, this.pendingGallerySaveToFiles);
+              pe.videoFileName, false, progress);
           } else if (this.mediaEntryIsVideo(pe) && pe.videoFailed) {
             this.pendingGallerySaveId = 0;
+            this.pendingGallerySaveProgress?.downloadFailed();
+            this.pendingGallerySaveProgress = null;
             promptAction.showToast({ message: $r('app.string.cp_video_download_failed'), duration: 1800 });
           } else if (this.mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
             this.pendingGallerySaveId = 0;
+            const progress: DownloadSaveNotification | undefined =
+              this.pendingGallerySaveProgress ?? undefined;
+            this.pendingGallerySaveProgress = null;
             this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.photoFullPath, false,
-              '', this.pendingGallerySaveToFiles);
+              '', false, progress);
           } else if (this.mediaEntryIsPhoto(pe) && pe.photoFullFailed) {
             this.pendingGallerySaveId = 0;
+            this.pendingGallerySaveProgress?.downloadFailed();
+            this.pendingGallerySaveProgress = null;
             promptAction.showToast({ message: $r('app.string.cp_photo_download_failed'), duration: 1800 });
           }
         }
@@ -2857,31 +2941,21 @@ export struct ChatPage {
           this.openDownloadedFile(openEntry);
         }
       }
-      if (this.pendingFileSaveId !== 0) {
-        const fe = list.find((m: MessageEntry) => m.id === this.pendingFileSaveId);
-        if (fe === undefined || fe.contentType !== 'file') {
-          this.pendingFileSaveId = 0;
-        } else if (fe.videoFailed) {
-          this.pendingFileSaveId = 0;
-          promptAction.showToast({ message: $r('app.string.cp_file_download_failed_save'), duration: 1800 });
-        } else if (fe.videoPath !== '') {
-          this.pendingFileSaveId = 0;
-          saveFileToLocal(getContext(this) as common.UIAbilityContext, fe.videoPath, fe.videoFileName);
-        }
-      }
       // A pinned/quoted jump target that had to be loaded has now arrived — scroll to it.
       if (this.pendingJumpId !== 0) {
         const jumpTargetId: number = this.pendingJumpId;
         const jg: number = groupIndexOf(groups, jumpTargetId);
         logW(`[Jump80] pending land target=${jumpTargetId} idx=${jg} rows=${groups.length}`);
         if (jg >= 0) {
+          const itemY: number = jumpTargetId === this.resumeDividerId
+            ? this.resumeDividerItemY : 0;
           this.pendingJumpId = 0;
           // 落地宽限从**此刻**起算（issue #51）：原来只在点击时上了 900ms，目标不在
           // 窗口里要先 loadAround，慢链路上一超时，刚压进返回栈的那层就被
           // syncReturnState 当成"手动滑过"弹掉了。
           this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
           this.finishPinnedJump();
-          this.scroller.scrollToIndex(jg, false, ScrollAlign.START);
+          this.scrollToTimelineIndexAtY(jg, itemY);
           // loadAround replaces the window wholesale (list RELOAD) — the
           // immediate scroll can be swallowed before the new rows lay out.
           // Re-issue once layout settles (index recomputed: prepends may have
@@ -2893,7 +2967,7 @@ export struct ChatPage {
             }
             const jg2: number = groupIndexOf(this.groups, jumpTargetId);
             if (jg2 >= 0) {
-              this.scroller.scrollToIndex(jg2, false, ScrollAlign.START);
+              this.scrollToTimelineIndexAtY(jg2, itemY);
               this.flashAtIndex(jg2, jumpTargetId);
             }
           }, 80);
@@ -2911,7 +2985,8 @@ export struct ChatPage {
     this.subscriptions.set('headerTitle', store.subscribeHeaderTitle((t: string) => {
       // Fallback header for chats not yet in ChatStore (e.g. opened by t.me link).
       if (t !== '') {
-        if (this.threadRootId === 0 && this.forumTopicId === 0) {
+        if (this.threadRootId === 0 && this.forumTopicId === 0 &&
+          this.directMessagesTopicId === 0) {
           this.title = this.headerTitleFor(t);
         }
         this.initials = computeInitials(t);
@@ -2979,13 +3054,17 @@ export struct ChatPage {
     } else {
       // 记住的浏览位置（issue #98）。未读优先：有未读时交给未读锚点，官方也是
       // 这个顺序；只有「没有未读」才落回上次看到的地方。
-      const remembered: number = rememberedChatPosition(this.chatId, this.threadRootId);
-      if (remembered > 0) {
+      const remembered: RememberedChatViewport = rememberedChatViewport(
+        this.chatId,
+        conversationScopeId(this.threadRootId, this.forumTopicId, this.directMessagesTopicId)
+      );
+      if (remembered.messageId > 0) {
         // The store resolves the authoritative unread count asynchronously.
         // Keep this as a candidate until the first ready snapshot says whether
         // resume or unread won; only then does it become the single landing.
-        this.pendingResumeId = remembered;
-        store.open(remembered, false, true);
+        this.pendingResumeId = remembered.messageId;
+        this.pendingResumeItemY = remembered.itemY;
+        store.open(remembered.messageId, false, true);
       } else {
         store.open();
       }
@@ -3171,7 +3250,7 @@ export struct ChatPage {
 
   private handleHidden(): void {
     coordinateChatPageHidden({
-      suspendScrollVisual: (): void => { suspendScrollVisualForPageHide(); },
+      stopScrollActivity: (): void => { setScrollActive(false); },
       endLinkNavigation: (): void => { endLinkNav(); },
       cancelInitialTransition: (): void => { this.cancelInitialMessageTransitionSettle(); },
       setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
@@ -3188,7 +3267,7 @@ export struct ChatPage {
 
   private handleWillHide(): void {
     coordinateChatPageWillHide({
-      suspendScrollVisual: (): void => { suspendScrollVisualForPageHide(); },
+      stopScrollActivity: (): void => { setScrollActive(false); },
       cancelInitialTransition: (): void => { this.cancelInitialMessageTransitionSettle(); },
       setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
       syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
@@ -3205,7 +3284,6 @@ export struct ChatPage {
       hiddenListDirty: this.hiddenListDirty
     };
     coordinateChatPageShown(state, {
-      resumeScrollVisual: (): void => { resumeScrollVisualForPageShow(); },
       setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
       armInitialTransitionSettle: (): void => { this.armInitialMessageTransitionSettle(); },
       scheduleInitialTimelinePresentation: (): void => { this.scheduleInitialTimelinePresentation(); },
@@ -3257,7 +3335,6 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
-    releaseMessageReuseHost();
     // Invalidate the staged-row and composer frame callbacks. The page may be
     // popped while either delayed task is queued.
     this.initialMessageStageSeq++;
@@ -3339,8 +3416,10 @@ export struct ChatPage {
       this.topCardActionTimer = -1;
     }
     this.cancelRecording();
+    this.pendingGallerySaveId = 0;
+    this.pendingGallerySaveProgress?.dispose();
+    this.pendingGallerySaveProgress = null;
     this.pendingFileOpenId = 0;
-    this.pendingFileSaveId = 0;
     this.fileOpenInFlightId = 0;
     this.musicQueue.reset();
     this.autoSavePendingIds = [];
@@ -3629,6 +3708,7 @@ export struct ChatPage {
       logW(`screenW ${Math.round(this.lastScreenW)} -> ${Math.round(this.screenW)}`);
       this.lastScreenW = this.screenW;
     }
+    this.replaceTimelineGroups(this.groups);
   }
 
   // 判定本身在 util/atBottom（10 条测）：那里记着两条上线过的 bug——
@@ -4066,10 +4146,10 @@ export struct ChatPage {
   // 为什么不直接拿它做修正项：anchorRestore 的 dy = rect.y - itemY 里确实缺一个
   // 「采样到测量之间用户自己滑了多少」的项（翻页本来就是滑动触发的，这段时间列表
   // 在动），补上它才不会把用户的位移反向抵消。但 currentOffset() 在**前插**场景
-  // 下不可信：官方对 List 注明懒加载时总偏移量是**估算**（本工程没设
-  // childrenMainSize，且气泡是变高的），而前插一页会把新插入那 30 行的估算高度
-  // 一并算进 yOffset —— 两次读数之差里混着「插入了多少内容」，不再是「用户滑了
-  // 多少」。拿它做修正会引入新的错位。
+  // 下不可信：官方对未提供 childrenMainSize 的懒加载 List 明确注明总偏移量
+  // 是估算值，前插一页会把新行的估算高度混进 yOffset。这里刻意不把动态媒体
+  // 高度绑定回 List（见 ChatTimelineHost），所以锚点恢复沿用 onDidScroll 累计的
+  // 真实手势位移：它天然排除了数据发布造成的位置变化，语义更窄。
   //
   // 所以这一版只把两次读数打进 [AnchorRestore]：真机上先看 dOff 与 dy 的关系，
   // 再决定修正项该怎么取（或者改用 onDidScroll 累计位移）。行为一个字没改。
@@ -4518,6 +4598,12 @@ export struct ChatPage {
       if (seq !== this.prependRestoreSeq || this.pendingJumpId !== 0 || this.pendingScrollBottom) {
         return;
       }
+      const userDelta: number = this.userScrollOffsetTotal - userOffsetAtCapture;
+      if (!canApplyAnchorRestore(this.timelineScrollActive, userDelta)) {
+        logW(`[AnchorRestore] skip reason=user-scroll idx=${targetIndex}` +
+          ` active=${this.timelineScrollActive} userDelta=${Math.round(userDelta)}`);
+        return;
+      }
       const targetY: number = anchorYAfterUserScroll(
         itemY, userOffsetAtCapture, this.userScrollOffsetTotal);
       // 非法下标返回全 0 矩形（faqs-arkui-572），异常按同样处理——两条都落到
@@ -4715,7 +4801,8 @@ export struct ChatPage {
     }
     const resolvedTitle = (chat['title'] as string | undefined) ?? '';
     if (resolvedTitle !== '') {
-      if (this.threadRootId === 0 && this.forumTopicId === 0) {
+      if (this.threadRootId === 0 && this.forumTopicId === 0 &&
+        this.directMessagesTopicId === 0) {
         this.title = this.headerTitleFor(resolvedTitle);
       }
       this.initials = computeInitials(resolvedTitle);
@@ -4785,6 +4872,7 @@ export struct ChatPage {
         });
       }
     }
+    this.commitTimelineSnapshot();
     this.headerState = resolvedTitle !== '' || this.title !== '' ? 'ready' : 'error';
     this.headerLoadError = this.headerState === 'error' ? str('cp_chat_unavailable') : '';
     this.fetchHeaderEmojiStatus();
@@ -4809,6 +4897,7 @@ export struct ChatPage {
       chatTitle: this.headerTitleFor(chatTitle),
       topicName: this.topicName,
       forumTopicId: this.forumTopicId,
+      directMessagesTopicId: this.directMessagesTopicId,
       threadRootId: this.threadRootId
     });
   }
@@ -4922,6 +5011,7 @@ export struct ChatPage {
         this.membershipBasicGroupId = 0;
         this.isGroup = true;
         this.isChannel = (type?.['is_channel'] as boolean | undefined) ?? this.isChannel;
+        this.commitTimelineSnapshot();
         this.membershipState = 'checking';
         const groupReq: TdRequest = { '@type': 'getSupergroup' };
         groupReq['supergroup_id'] = this.membershipSupergroupId;
@@ -4942,6 +5032,7 @@ export struct ChatPage {
         this.membershipSupergroupId = 0;
         this.isGroup = true;
         this.isChannel = false;
+        this.commitTimelineSnapshot();
         this.membershipState = 'checking';
         const groupReq: TdRequest = { '@type': 'getBasicGroup' };
         groupReq['basic_group_id'] = this.membershipBasicGroupId;
@@ -5159,10 +5250,9 @@ export struct ChatPage {
 
   // 点了消息里的链接。分派本身（走哪一路、载荷是什么）在
   // util/messageLinkAction，有单测；这里只负责执行。
-  // 外部链接的「打开 / 复制」选择。beginLinkNav 的闸门在调用前已经过了，
-  // 无论选什么（包括点空白取消）都要把忙碌态收掉，否则那段链接文字会一直
-  // 呼吸下去。
-  private offerExternalLink(url: string): void {
+  // 真 URL 统一先让用户选择「打开 / 复制」。机器人命令、话题标签、号码等
+  // 本地伪链接在 onLinkTap 的前几条分支直接处理，不会多弹这一层。
+  private offerLinkAction(url: string): void {
     promptAction.showActionMenu({
       title: url.length > 60 ? url.substring(0, 57) + '…' : url,
       buttons: [
@@ -5171,17 +5261,14 @@ export struct ChatPage {
       ]
     }).then((result: promptAction.ActionMenuSuccessResponse): void => {
       if (result.index === 0) {
-        openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
+        this.onLinkTap(url, true);
         return;
       }
-      endLinkNavIf(url);
       copyPlainText(url, str('link_copied'));
-    }).catch((): void => {
-      endLinkNavIf(url); // 点空白取消
-    });
+    }).catch((): void => {});
   }
 
-  private onLinkTap(url: string): void {
+  private onLinkTap(url: string, openConfirmed: boolean = false): void {
     const action: LinkAction = linkActionOf(url);
     if (action.kind === LINK_NONE) {
       return;
@@ -5204,6 +5291,10 @@ export struct ChatPage {
       // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
       // NavDestination 并从 main_pages.json 摘出后整页路由跳不动，走漏斗。
       navigateToProfile(params);
+      return;
+    }
+    if (!openConfirmed) {
+      this.offerLinkAction(url);
       return;
     }
     // 从这里往下每一条分支都要往返一次服务器才知道该开哪一页。网络一慢，
@@ -5240,10 +5331,7 @@ export struct ChatPage {
     }
     const tgUrl = normalizeTelegramLink(url);
     if (tgUrl === '') {
-      // 纯外部网页链接：弹一个「打开/复制」的选择，而不是直接开——用户点链接
-      // 的意图经常只是想拿到地址。Telegram 内部链接（进群/贴纸包/消息跳转）
-      // 不走这里，照旧直接开。
-      this.offerExternalLink(url);
+      openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
       return;
     }
     const req: TdRequest = { '@type': 'getMessageLinkInfo' };
@@ -5344,6 +5432,8 @@ export struct ChatPage {
     const req: TdRequest = { '@type': 'searchChatMessages' };
     req['chat_id'] = this.chatId;
     req['query'] = q;
+    applyMessageTopicScope(
+      req, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
     if (this.searchSenderId > 0) {
       const sender: TdObject = { '@type': 'messageSenderUser' };
       sender['user_id'] = this.searchSenderId;
@@ -6375,14 +6465,14 @@ export struct ChatPage {
   // completion (see the pendingGallerySaveId check in the store subscription).
   // 保存到相册还是任意文件夹，由菜单里点的是哪一项决定（issue #97/#65）。
   private saveMediaTo(ctx: common.UIAbilityContext, path: string, isVideo: boolean,
-    fileName: string, toFiles: boolean): void {
+    fileName: string, toFiles: boolean, progress?: FileSaveProgress): void {
     if (toFiles) {
       const name: string = fileName.trim() !== ''
         ? fileName : path.substring(path.lastIndexOf('/') + 1);
-      saveFileToLocal(ctx, path, name);
+      downloadSaveService.saveDownloadedFile(ctx, path, name);
       return;
     }
-    saveMediaToGallery(ctx, path, isVideo);
+    saveMediaToGallery(ctx, path, isVideo, progress);
   }
 
   private saveViewerMedia(toFiles: boolean): void {
@@ -6392,11 +6482,24 @@ export struct ChatPage {
     }
     const ctx = getContext(this) as common.UIAbilityContext;
     if (this.mediaEntryIsVideo(e)) {
+      const displayName: string = e.videoFileName.trim() !== ''
+        ? e.videoFileName : str('storage_video');
       if (e.videoPath !== '') {
-        this.saveMediaTo(ctx, e.videoPath, true, e.videoFileName, toFiles);
+        this.saveMediaTo(ctx, e.videoPath, true, e.videoFileName, toFiles,
+          toFiles ? undefined : new DownloadSaveNotification(displayName));
       } else {
+        if (toFiles) {
+          downloadSaveService.saveRemoteFile(
+            ctx, e.videoFileId, this.chatId, e.id, displayName);
+          promptAction.showToast({
+            message: $r('app.string.cp_video_downloading_save'), duration: 2500
+          });
+          return;
+        }
+        this.pendingGallerySaveProgress?.dispose();
+        this.pendingGallerySaveProgress =
+          new DownloadSaveNotification(displayName, e.videoFileId);
         this.pendingGallerySaveId = e.id;
-        this.pendingGallerySaveToFiles = toFiles;
         if (this.store !== null) {
           this.store.requestVideoDownload(e.id, true, e.videoFailed);
         }
@@ -6405,12 +6508,23 @@ export struct ChatPage {
       return;
     }
     if (e.photoFullPath !== '') {
-      this.saveMediaTo(ctx, e.photoFullPath, false, '', toFiles);
+      this.saveMediaTo(ctx, e.photoFullPath, false, '', toFiles,
+        toFiles ? undefined : new DownloadSaveNotification(str('storage_photo')));
       return;
     }
     if (e.photoFullFileId !== 0) {
+      if (toFiles) {
+        downloadSaveService.saveRemoteFile(
+          ctx, e.photoFullFileId, this.chatId, e.id, str('storage_photo'));
+        promptAction.showToast({
+          message: $r('app.string.cp_photo_downloading_save'), duration: 2200
+        });
+        return;
+      }
+      this.pendingGallerySaveProgress?.dispose();
+      this.pendingGallerySaveProgress =
+        new DownloadSaveNotification(str('storage_photo'), e.photoFullFileId);
       this.pendingGallerySaveId = e.id;
-      this.pendingGallerySaveToFiles = toFiles;
       if (this.store !== null) {
         this.store.requestFullPhoto(e.id, e.photoFullFailed);
       }
@@ -6418,7 +6532,8 @@ export struct ChatPage {
       return;
     }
     if (e.photoPath !== '') {
-      this.saveMediaTo(ctx, e.photoPath, false, '', toFiles);
+      this.saveMediaTo(ctx, e.photoPath, false, '', toFiles,
+        toFiles ? undefined : new DownloadSaveNotification(str('storage_photo')));
     } else {
       promptAction.showToast({ message: $r('app.string.cp_photo_not_available'), duration: 1800 });
     }
@@ -6502,9 +6617,8 @@ export struct ChatPage {
     if (m === undefined || m.contentType !== 'file' || this.store === null) {
       return;
     }
-    // The most recent file action wins. This avoids racing an external viewer
-    // and the save picker when the user changes intent during a download.
-    this.pendingFileSaveId = 0;
+    // Opening is page-scoped. Explicit saves are owned by downloadSaveService
+    // and can continue independently if the page disappears.
     if (m.videoPath !== '') {
       this.pendingFileOpenId = 0;
       this.openDownloadedFile(m);
@@ -6617,8 +6731,9 @@ export struct ChatPage {
     });
   }
 
-  // Document card save arrow: opens the system "save as" picker once the file
-  // is local; otherwise starts the download and saves automatically when done.
+  // Document card save arrow: first asks for a public directory grant, then
+  // exports into its Petrelgram child folder. Download and copy share one
+  // progress notification so the hand-off is visible rather than a silent gap.
   private onFileSave(messageId: number): void {
     const m = this.messages.find((x: MessageEntry) => x.id === messageId);
     if (m === undefined || m.contentType !== 'file' || this.store === null) {
@@ -6626,17 +6741,17 @@ export struct ChatPage {
     }
     this.pendingFileOpenId = 0;
     if (m.videoPath !== '') {
-      this.pendingFileSaveId = 0;
-      saveFileToLocal(getContext(this) as common.UIAbilityContext, m.videoPath, m.videoFileName);
+      downloadSaveService.saveDownloadedFile(
+        getContext(this) as common.UIAbilityContext, m.videoPath, m.videoFileName);
       return;
     }
     if (m.videoFileId === 0) {
-      this.pendingFileSaveId = 0;
       promptAction.showToast({ message: $r('app.string.cp_file_unavailable'), duration: 1600 });
       return;
     }
-    this.pendingFileSaveId = messageId;
-    this.store.requestVideoDownload(messageId, true, m.videoFailed);
+    downloadSaveService.saveRemoteFile(
+      getContext(this) as common.UIAbilityContext,
+      m.videoFileId, this.chatId, messageId, m.videoFileName);
     promptAction.showToast({
       message: m.videoFailed ? $r('app.string.cp_redownload_then_save')
         : $r('app.string.cp_downloading_then_save'),
@@ -6759,6 +6874,10 @@ export struct ChatPage {
         this.headerMuteUpdating ? str('cp_updating_notifications') : (this.isMuted ? str('cp_unmute') : str('cp_mute')),
         false, this.closeHeaderMenuThen((): void => { this.toggleChatMute(); }));
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
+      if (this.isGroup) {
+        actionMenuRow('sys.symbol.folder_badge_plus', str('cl_add_to_folder'), false,
+          this.closeHeaderMenuThen((): void => { showChatFolderPicker(this.getUIContext(), this.chatId); }));
+      }
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
       actionMenuRow('sys.symbol.clock', str('cp_auto_delete'), false,
         this.closeHeaderMenuThen((): void => { this.chooseAutoDelete(); }));
@@ -8332,6 +8451,9 @@ export struct ChatPage {
   // TDLib sends chatActionCancel, but a dropped cancel must not stick forever.
   private onChatAction(update: TdObject): void {
     if (((update['chat_id'] as number | undefined) ?? 0) !== this.chatId) { return; }
+    if ((this.forumTopicId > 0 || this.directMessagesTopicId > 0) &&
+      messageOutsideTopicScope(
+        update, this.threadRootId, this.forumTopicId, this.directMessagesTopicId)) { return; }
     const sender = update['sender_id'] as TdObject | undefined;
     if (sender === undefined || sender['@type'] !== 'messageSenderUser') { return; }
     const uid = (sender['user_id'] as number | undefined) ?? 0;
@@ -9299,12 +9421,7 @@ export struct ChatPage {
       if (ri.item.initialDeferred === true) {
         Column()
           .width('100%')
-          .height(initialMessagePlaceholderHeight(
-            ri.item,
-            this.screenW,
-            this.firstUnreadId !== 0 &&
-              ri.item.memberIds.indexOf(this.firstUnreadId) >= 0
-          ))
+          .height(this.viewportGeometry.rowHeight(ri.item))
           .hitTestBehavior(HitTestMode.None);
       } else {
         Stack({ alignContent: Alignment.Start }) {
@@ -9350,7 +9467,15 @@ export struct ChatPage {
     .visibility(this.initialTimelineMasked || ri.item.initialDeferred === true
       ? Visibility.Hidden : Visibility.Visible)
     .transition(this.initialRowFadeTransition(
-      ri.index, ri.item.initialDeferred === true));
+      ri.index, ri.item.initialDeferred === true))
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.viewportGeometry.record(
+        ri.index,
+        ri.item,
+        area.height as number,
+        ri.item.initialDeferred !== true && !this.selecting
+      );
+    });
   }
 
   // The flattened background, once it exists. Until then the layered version
@@ -9374,7 +9499,7 @@ export struct ChatPage {
       Column() {
         Stack() {
         ChatTimelineHost({
-          groups: this.groups,
+          timeline: this.timelineSnapshot,
           scroller: this.scroller,
           initialTimelineMasked: this.initialTimelineMasked,
           headerStartOffset: this.headerChromeHeight(),
@@ -9383,19 +9508,12 @@ export struct ChatPage {
           bottomChromeH: this.bottomChromeH,
           listCachedCount: this.listCachedCount,
           stackFromEnd: this.stackFromEndWanted(),
-          visibleGroupCount: this.visibleGroupCount,
-          messageLoadState: this.messageLoadState,
-          messageLoadError: this.messageLoadError,
           threadRootId: this.threadRootId,
           membershipState: this.membershipState,
-          isChannel: this.isChannel,
-          isGroup: this.isGroup,
           screenW: this.screenW,
+          langEpoch: this.langEpoch,
           floatDateState: this.floatDateState,
           materialEpoch: this.materialEpoch,
-          showTimelinePill: this.timelinePillMode() !== TL_NONE,
-          timelinePillMode: this.timelinePillMode(),
-          timelinePillLabel: timelineStateText(this.timelinePillMode()),
           flashShown: this.flashShown,
           flashTop: this.flashTop,
           flashHeight: this.flashHeight,
@@ -9473,12 +9591,14 @@ export struct ChatPage {
             }
           },
           onTimelineScrollStart: (): void => {
+            this.timelineScrollActive = true;
             setScrollActive(true);
             this.finishInitialMessageStageForInteraction();
             this.pauseChatTgsForScroll();
             this.dismissKeyboardOnUserScroll();
           },
           onTimelineScrollStop: (): void => {
+            this.timelineScrollActive = false;
             this.nextDidScrollIsUserDriven = false;
             setScrollActive(false);
             this.resumeChatTgsAfterScroll();
@@ -9769,7 +9889,7 @@ export struct ChatPage {
           videoLandscape: this.viewerVideoLandscape,
           onVideoLandscapeChange: (landscape: boolean): void => { this.viewerVideoLandscape = landscape; },
           messages: this.messages,
-          groups: this.groups,
+          groups: this.timelineSnapshot.groups,
           onNeedHistory: (dir: number): void => {
             // 查看器切组切到已加载窗口的边缘：-1 要更旧的，+1 要更新的。
             if (dir < 0) {

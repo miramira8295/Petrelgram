@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  anchorYAfterUserScroll, planAnchorRestore, INVALID_ANCHOR_RECT,
+  anchorYAfterUserScroll, canApplyAnchorRestore, planAnchorRestore, INVALID_ANCHOR_RECT,
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_FALLBACK, AnchorRectSnapshot,
   ANCHOR_RESTORE_ATTEMPTS, PrependAnchorCaptureInput, shouldCapturePrependAnchor,
   shouldRetryAnchorRestore
@@ -47,6 +47,19 @@ export default function anchorRestoreTest() {
 
     it('没有新的用户位移时保持原锚点', 0, (): void => {
       expect(anchorYAfterUserScroll(-20, 100, 100)).assertEqual(-20);
+    });
+  });
+
+  describe('canApplyAnchorRestore', () => {
+    it('静止列表允许修正布局残差', 0, (): void => {
+      expect(canApplyAnchorRestore(false, 0)).assertTrue();
+      expect(canApplyAnchorRestore(false, 0.49)).assertTrue();
+    });
+
+    it('拖动或惯性期间不让程序滚动抢位置', 0, (): void => {
+      expect(canApplyAnchorRestore(true, 0)).assertFalse();
+      expect(canApplyAnchorRestore(false, 1)).assertFalse();
+      expect(canApplyAnchorRestore(false, 2467)).assertFalse();
     });
   });
 

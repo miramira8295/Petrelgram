@@ -120,7 +120,7 @@ export struct MediaViewerOverlay {
   @Event isVideoEntry: (entry: MessageEntry) => boolean = (): boolean => false;
   @Event onRequestClose: () => void = (): void => {};
   @Event onSaveMedia: () => void = (): void => {};
-  // 保存到文件（系统「另存为」，可选 Download 等任意目录）——issue #97/#65。
+  // 保存到文件（首次授权 Download，之后保存到 Download/Petrelgram）——issue #97/#65。
   @Event onSaveMediaToFiles: () => void = (): void => {};
   // Viewer→bubble handoff (the other direction): the page samples this on
   // every tick and writes it back to bubblePositionMs when the viewer closes.

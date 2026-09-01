@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Otomatik proxy değiştir"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Geçerli proxy kullanılamadığında kayıtlı bir sonraki proxy'yi dene"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Otomatik değiştirme için en az iki proxy ekleyin"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Değiştirme gecikmesi"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d sn"
     }
   ]
 }

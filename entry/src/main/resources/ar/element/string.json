@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "التبديل التلقائي للوكيل"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "جرّب الوكيل المحفوظ التالي عند استمرار تعذر الوصول إلى الوكيل الحالي"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "أضف وكيلين على الأقل لتمكين التبديل التلقائي"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "مهلة التبديل"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d ث"
     }
   ]
 }

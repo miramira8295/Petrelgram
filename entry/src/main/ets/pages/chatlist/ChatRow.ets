@@ -14,7 +14,7 @@ import {
   KEY_THREE_LINES, powerAnimationDuration
 } from '../../store/AppSettings';
 import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
-import { navigateToForumTopics } from '../../util/profileNav';
+import { navigateToDirectMessagesTopics, navigateToForumTopics } from '../../util/profileNav';
 import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
 import {
@@ -337,20 +337,13 @@ export struct ChatRow {
     return this.appWallpaperOn && this.materialEpoch >= 0;
   }
 
-  private rowEffectsEnabled(): boolean {
-    // 文件夹横向切换时也保持同一层稳定玻璃。以前在切换开始/结束分别卸载、恢复
-    // 行级效果，会让两屏卡片集体变薄再闪回；公共材质层现在会锁定普通模糊质量，
-    // 不再需要用视觉跳变换取 systemMaterial 的合成开销。
-    return this.rowGlassEnabled();
-  }
-
   private rowFill(pressed: boolean): ResourceColor {
     const solid: ResourceColor = mainCardFill(this.appWallpaperOn, pressed);
     return this.rowGlassEnabled() ? overlayGlassFill('card', solid) : solid;
   }
 
   private rowBackdropBlur(): number {
-    return this.rowEffectsEnabled() ? overlayBackdropBlur('card') : 0;
+    return this.rowGlassEnabled() ? overlayBackdropBlur('card') : 0;
   }
 
   @Styles
@@ -538,7 +531,7 @@ export struct ChatRow {
     .borderRadius(16)
     .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
     .backdropBlur(this.rowBackdropBlur())
-    .attributeModifier(materialModifierWhen('card', this.rowEffectsEnabled()))
+    .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled()))
     .clip(true)
     .constraintSize({ minHeight: 72 })
     .padding({ left: ROW_PAD_H, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
@@ -564,6 +557,14 @@ export struct ChatRow {
         // 从归档进话题列表要**叠**在归档之上，否则返回时归档页已被清掉
         // （issue #117）。listKey 正好能区分。
         navigateToForumTopics(forumParams, this.listKey === 'archive' ? 'content' : 'navbar');
+        return;
+      }
+      if (getChatStore().isAdministeredDirectMessagesGroup(this.chat.id)) {
+        const directParams: Record<string, Object> = {
+          'chatId': this.chat.id, 'title': this.chat.title
+        };
+        navigateToDirectMessagesTopics(
+          directParams, this.listKey === 'archive' ? 'content' : 'navbar');
         return;
       }
       const params: Record<string, Object> = { 'chatId': this.chat.id };

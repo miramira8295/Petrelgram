@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "प्रॉक्सी अपने-आप बदलें"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "मौजूदा प्रॉक्सी उपलब्ध न रहने पर अगला सहेजा गया प्रॉक्सी आज़माएँ"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "अपने-आप बदलने के लिए कम से कम दो प्रॉक्सी जोड़ें"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "बदलने से पहले प्रतीक्षा"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d सेकंड"
     }
   ]
 }

@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "สลับพร็อกซีอัตโนมัติ"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "ลองพร็อกซีที่บันทึกไว้รายการถัดไปเมื่อพร็อกซีปัจจุบันยังใช้ไม่ได้"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "เพิ่มพร็อกซีอย่างน้อยสองรายการเพื่อเปิดการสลับอัตโนมัติ"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "เวลารอก่อนสลับ"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d วินาที"
     }
   ]
 }

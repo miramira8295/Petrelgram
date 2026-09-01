@@ -11707,6 +11707,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Auto-switch proxy"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Try the next saved proxy when the current one remains unavailable"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Add at least two proxies to enable automatic switching"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Switch delay"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d s"
     }
   ]
 }

@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Ganti proksi otomatis"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Coba proksi tersimpan berikutnya saat proksi saat ini tetap tidak tersedia"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Tambahkan setidaknya dua proksi untuk mengaktifkan pergantian otomatis"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Jeda pergantian"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d dtk"
     }
   ]
 }

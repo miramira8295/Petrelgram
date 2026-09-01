@@ -75,6 +75,15 @@ export function anchorYAfterUserScroll(
   return capturedY - (userOffsetNow - userOffsetAtCapture);
 }
 
+// A controller correction must never race a live drag/fling. Even when the
+// target includes the user's offset, applying a multi-screen scrollBy in one
+// layout frame turns smooth inertia into a visible page jump. Older-page loads
+// are normally deferred until scroll stop; this guard covers an already
+// in-flight request that happens to publish while the list is moving.
+export function canApplyAnchorRestore(scrollActive: boolean, userDelta: number): boolean {
+  return !scrollActive && Math.abs(userDelta) < 0.5;
+}
+
 // 小于半个 vp 的残差不值得发一次滚动指令：它在屏幕上不可见，却会白白走一遍
 // 滚动管线（并可能顺带触发一轮 onDidScroll）。既有代码里 `itemY < -0.5` 用的
 // 也是这个阈值。

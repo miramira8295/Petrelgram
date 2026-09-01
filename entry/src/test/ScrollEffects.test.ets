@@ -1,7 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  animationDurationFor, persistentAnimationDurationFor, resumeScrollVisualForPageShow,
-  scrollActiveNow, scrollVisualActiveNow, setScrollActive, suspendScrollVisualForPageHide
+  animationDurationFor, persistentAnimationDurationFor, scrollActiveNow, setScrollActive
 } from '../main/ets/util/scrollEffects';
 
 export default function scrollEffectsTest() {
@@ -20,20 +19,8 @@ export default function scrollEffectsTest() {
     it('setScrollActive 往返：置真、置假都能读回', 0, (): void => {
       setScrollActive(true);
       expect(scrollActiveNow()).assertTrue();
-      expect(scrollVisualActiveNow()).assertTrue();
       setScrollActive(false);
       expect(scrollActiveNow()).assertFalse();
-      // 实时材质晚一小段恢复，List 的回弹/复用和媒体解码先收尾。
-      expect(scrollVisualActiveNow()).assertTrue();
-    });
-    it('页面隐藏时保持材质暂停，重新显示后才进入延迟恢复', 0, (): void => {
-      setScrollActive(true);
-      suspendScrollVisualForPageHide();
-      expect(scrollActiveNow()).assertFalse();
-      expect(scrollVisualActiveNow()).assertTrue();
-      resumeScrollVisualForPageShow();
-      // 显示后仍留出收尾窗口，不在 onShown 同一帧批量恢复材质。
-      expect(scrollVisualActiveNow()).assertTrue();
     });
   });
 

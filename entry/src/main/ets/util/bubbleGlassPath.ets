@@ -133,7 +133,8 @@ export function tailShapeCommands(outgoing: boolean, tailW: number, tailH: numbe
 //              气泡本体天然就在留白右侧，圆角也是它自己的 borderRadius，
 //              不需要任何绝对坐标——所以这一帧看到的是一个「位置完全正确、
 //              只是还没长出尾巴」的玻璃气泡。和最终形态的差异只有一个尾巴。
-//   'full'     量到了。容器补上玻璃色/模糊/整体轮廓裁剪/描边，尾巴长出来。
+//   'full'     量到了。玻璃色/模糊切换到容器，气泡本体退为透明；容器负责整体
+//              轮廓裁剪/描边，尾巴长出来。任一时刻都只有一层背景模糊。
 //
 // 关键点：'bodyOnly' → 'full' 期间**气泡本体的左边缘一动不动**，因为它的位置
 // 由布局里的 7vp 留白决定，与裁剪无关。会变的只有「尾巴有没有」。
@@ -146,10 +147,16 @@ export function glassStage(wanted: boolean, w: number, h: number): GlassStage {
   return w > 0 && h > 0 ? 'full' : 'bodyOnly';
 }
 
-// 气泡**本体**要不要上玻璃：'bodyOnly' 和 'full' 都要。
-// 它刻意不看尺寸——本体的形状是 borderRadius 给的，不依赖测量结果。
+// 是否处于玻璃结构模式：'bodyOnly' 和 'full' 都是。调用方用它决定尾巴占位、
+// 阴影等结构；本体是否真的绘制背景由下面的 glassBodyFallbackPainted 决定。
 export function glassBodyPainted(wanted: boolean, w: number, h: number): boolean {
   return glassStage(wanted, w, h) !== 'off';
+}
+
+// 气泡本体要不要临时承担玻璃绘制。它只服务还没量到外层尺寸的首帧：一旦完整
+// 轮廓可用，背景色和模糊都切到外层，避免本体与容器在同一区域重复合成。
+export function glassBodyFallbackPainted(wanted: boolean, w: number, h: number): boolean {
+  return glassStage(wanted, w, h) === 'bodyOnly';
 }
 
 // **容器**要不要上玻璃（连带裁剪与描边）：只有量到尺寸的 'full' 才行。

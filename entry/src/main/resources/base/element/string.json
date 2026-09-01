@@ -1017,6 +1017,34 @@
       "value": "已保存到相册"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "下载失败"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "正在下载 %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "相册"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "保存失败"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "已保存到 %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "正在保存 %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "所选位置"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "发送语音消息和直播发言需要使用麦克风"
     },
@@ -11707,6 +11735,26 @@
     {
       "name": "diag_cleared",
       "value": "日志已清空"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "自动切换代理"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "当前代理持续无法连接时，自动尝试列表中的下一个代理"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "至少添加两个代理后才能自动切换"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "切换等待时间"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d 秒"
     }
   ]
 }

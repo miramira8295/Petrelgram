@@ -5,7 +5,13 @@
 // 按会话（含话题）记一份，进程活着就一直有效。
 //
 // 不落盘：位置这种东西过一夜就没意义了，而且写盘要在每次滚动后排队，不值。
-const positions: Map<string, number> = new Map<string, number>();
+export interface RememberedChatViewport {
+  messageId: number;
+  itemY: number;
+}
+
+const positions: Map<string, RememberedChatViewport> =
+  new Map<string, RememberedChatViewport>();
 const MAX_REMEMBERED: number = 64;
 
 export function resumeKeyOf(chatId: number, threadId: number): string {
@@ -14,14 +20,17 @@ export function resumeKeyOf(chatId: number, threadId: number): string {
 
 // 在底部就不记：下次进来该跟到最新，而不是钉在当时的最后一条。
 export function rememberChatPosition(chatId: number, threadId: number,
-  messageId: number, atBottom: boolean): void {
+  messageId: number, atBottom: boolean, itemY: number = 0): void {
   const key = resumeKeyOf(chatId, threadId);
   if (atBottom || messageId <= 0) {
     positions.delete(key);
     return;
   }
   positions.delete(key); // 重新插到尾部，下面按插入顺序淘汰最旧的
-  positions.set(key, messageId);
+  positions.set(key, {
+    messageId: messageId,
+    itemY: Number.isFinite(itemY) ? itemY : 0
+  });
   while (positions.size > MAX_REMEMBERED) {
     const oldest = positions.keys().next().value as string | undefined;
     if (oldest === undefined) {
@@ -32,7 +41,17 @@ export function rememberChatPosition(chatId: number, threadId: number,
 }
 
 export function rememberedChatPosition(chatId: number, threadId: number): number {
-  return positions.get(resumeKeyOf(chatId, threadId)) ?? 0;
+  return positions.get(resumeKeyOf(chatId, threadId))?.messageId ?? 0;
+}
+
+export function rememberedChatViewport(
+  chatId: number, threadId: number
+): RememberedChatViewport {
+  const remembered: RememberedChatViewport | undefined =
+    positions.get(resumeKeyOf(chatId, threadId));
+  return remembered === undefined
+    ? { messageId: 0, itemY: 0 }
+    : { messageId: remembered.messageId, itemY: remembered.itemY };
 }
 
 export function forgetChatPosition(chatId: number, threadId: number): void {

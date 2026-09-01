@@ -4,6 +4,7 @@ import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } fro
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 import { isSplitLayout } from './splitMetrics';
 import { setChatListRenderActive } from './chatListRenderGate';
+import { routeTopicId } from './messageTopicScope';
 
 // 聊天详情页的路由地址。此前十个调用点各自写了一遍这个字符串，也各自
 // 直接 pushUrl——谁也不检查栈里是否已经有一个同会话的详情页，于是通知、
@@ -84,7 +85,7 @@ function snapshotRoutes(): RouteSnapshot[] {
       name: st.name,
       path: st.path,
       chatId: numberField(st.params, 'chatId'),
-      topicId: numberField(st.params, 'forumTopicId')
+      topicId: routeTopicId(st.params as Record<string, Object> | undefined)
     });
   }
   return out;
@@ -96,14 +97,15 @@ function chatFrameKey(name: string, param: Object | undefined): string {
   if (name !== CHAT_DEST_NAME || param === undefined) {
     return '';
   }
-  return chatKey(numberField(param, 'chatId'), numberField(param, 'forumTopicId'));
+  return chatKey(numberField(param, 'chatId'),
+    routeTopicId(param as Record<string, Object> | undefined));
 }
 
 // 迁移前的整页路由回退。栈还没注册时（冷启动早期，ChatListPage 尚未挂树）
 // 走这条，行为与迁移前完全一致——含 findChatRouteIndex 的同会话去重。
 function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> {
   const chatId = numberField(params, 'chatId');
-  const topicId = numberField(params, 'forumTopicId');
+  const topicId = routeTopicId(params);
   if (chatId !== 0) {
     let existing: number = 0;
     try {
@@ -178,7 +180,7 @@ export function navigateToChat(
   AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
   const target: StackFrame = {
     name: CHAT_DEST_NAME,
-    key: chatKey(numberField(params, 'chatId'), numberField(params, 'forumTopicId'))
+    key: chatKey(numberField(params, 'chatId'), routeTopicId(params))
   };
   // 允许同时开多个会话窗口，但同一个会话只能有一个——规则在 splitRouting 的
   // decideChatPush（7 条测）。已经开着的会话不再新开一层，而是出栈回到它，

@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Changement automatique de proxy"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Essayer le proxy enregistré suivant si le proxy actuel reste indisponible"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Ajoutez au moins deux proxys pour activer le changement automatique"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Délai de changement"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d s"
     }
   ]
 }

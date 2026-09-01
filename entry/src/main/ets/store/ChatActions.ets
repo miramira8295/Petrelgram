@@ -1,5 +1,5 @@
-import { promptAction } from '@kit.ArkUI';
-import { getFolderStore, getTdClient } from '../tdkit/Globals';
+import { promptAction, UIContext } from '@kit.ArkUI';
+import { getChatStore, getFolderStore, getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { chatListOf } from './ListKey';
 import { serializeFolderMutation } from './FolderApi';
@@ -180,6 +180,30 @@ export async function setInFolder(folderId: number, chatId: number, include: boo
   } catch (e) {
     fail('setInFolder', e as TdError);
   }
+}
+
+export function showChatFolderPicker(uiContext: UIContext, chatId: number): void {
+  const folders = getFolderStore().getFolders();
+  if (folders.length === 0) {
+    uiContext.getPromptAction().showToast({
+      message: str('cl_no_folders'), duration: 1600
+    });
+    return;
+  }
+  const sheets: SheetInfo[] = folders.map((folder): SheetInfo => {
+    const included = getChatStore().isInFolder(folder.id, chatId);
+    return {
+      title: included ? `${folder.title}  ✓` : folder.title,
+      action: (): void => {
+        setInFolder(folder.id, chatId, !getChatStore().isInFolder(folder.id, chatId));
+      }
+    };
+  });
+  uiContext.showActionSheet({
+    title: str('cl_add_to_folder'),
+    message: '',
+    sheets: sheets
+  });
 }
 
 // revoke: 为所有人清空，而不是只为自己清空。两种做法各有前置条件，见

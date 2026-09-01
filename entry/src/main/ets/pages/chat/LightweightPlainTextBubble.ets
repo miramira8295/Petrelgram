@@ -1,3 +1,4 @@
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { MessageEntry } from '../../store/MessageEntry';
 import {
   KEY_BUBBLE_RADIUS, KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS,
@@ -13,16 +14,17 @@ import {
 } from '../../util/scrollEffects';
 import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import {
-  glassTailBlur, glassTailFill, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import {
-  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands, tailClip
+  GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
 } from '../../util/bubbleTail';
-import { glassBodyPainted, glassPaintReady, tailShapeCommands } from '../../util/bubbleGlassPath';
+import {
+  glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
+} from '../../util/bubbleGlassPath';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
-import { materialModifierWhen } from '../../util/materialModifier';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
@@ -39,7 +41,6 @@ import {
 import { formatClockTime } from '../../util/formatTime';
 import { probeHit } from '../../util/panelProbe';
 import { CachedImage } from '../common/CachedImage';
-import { actionMenuRow } from './ActionMenuRow';
 import { SenderRoleTag } from './SenderRoleTag';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { logW } from '../../util/log';
@@ -309,22 +310,30 @@ export struct LightweightPlainTextBubble {
     return glassPaintReady(this.bubbleMaterialLive(), this.glassW, this.glassH);
   }
 
-  // 见 MessageBubble.glassBodyOn()：本体这一层不等测量，退回实心档就是白闪。
+  // 见 MessageBubble.glassBodyOn()：玻璃结构不等测量，避免首帧退回实心档。
   private glassBodyOn(): boolean {
     return glassBodyPainted(this.bubbleMaterialLive(), this.glassW, this.glassH);
   }
 
-  private bubbleBg(): ResourceColor {
-    return this.glassBodyOn() ? this.glassBg() : this.bubbleFillColor();
+  private glassBodyFallbackOn(): boolean {
+    return glassBodyFallbackPainted(this.bubbleMaterialLive(), this.glassW, this.glassH);
   }
 
-  // 见 MessageBubble 同一处：气泡与尾巴统一走普通玻璃渲染，才能接成一体。
+  private bubbleBg(): ResourceColor {
+    if (!this.bubbleMaterialLive()) {
+      return this.bubbleFillColor();
+    }
+    return this.glassBodyFallbackOn() ? this.glassBg() : Color.Transparent;
+  }
+
+  // 见 MessageBubble 同一处：这里只是外层轮廓就绪前的本体玻璃兜底。
   private glassBg(): ResourceColor {
-    return this.glassBodyOn() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassBodyFallbackOn()
+      ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
   }
 
   private glassBlur(): number {
-    return this.glassBodyOn() ? overlayBackdropBlur('bubble') : 0;
+    return this.glassBodyFallbackOn() ? overlayBackdropBlur('bubble') : 0;
   }
 
   private containerGlassBg(): ResourceColor {
@@ -731,83 +740,126 @@ export struct LightweightPlainTextBubble {
   }
 
   @Builder
+  messageReactionMenuItem() {
+    Row({ space: 2 }) {
+      ForEach(QUICK_REACTIONS, (emoji: string) => {
+        Row() { Text(emoji).fontSize(23); }
+          .width(32).height(34).borderRadius(17).justifyContent(FlexAlign.Center)
+          .stateStyles({ normal: this.menuNormalStyle, pressed: this.menuPressedStyle })
+          .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
+          .onClick((): void => { this.actions.onSetReaction(this.msg.id, emoji, false); })
+          .gesture(LongPressGesture().onAction((): void => {
+            this.actions.onSetDefaultReaction(emoji);
+          }));
+      }, (emoji: string): string => emoji);
+      Blank();
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
+      }
+      .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
+      .justifyContent(FlexAlign.Center)
+      .stateStyles({ normal: this.menuNormalStyle, pressed: this.menuPressedStyle })
+      .onClick((): void => { this.actions.onOpenReactions(this.msg.id); });
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center);
+  }
+
+  @Builder
   contextMenu() {
-    Column() {
-      Row({ space: 2 }) {
-        ForEach(QUICK_REACTIONS, (emoji: string) => {
-          Row() { Text(emoji).fontSize(23); }
-            .width(32).height(34).borderRadius(17).justifyContent(FlexAlign.Center)
-            .stateStyles({ normal: this.menuNormalStyle, pressed: this.menuPressedStyle })
-            .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
-            .onClick((): void => { this.actions.onSetReaction(this.msg.id, emoji, false); })
-            .gesture(LongPressGesture().onAction((): void => {
-              this.actions.onSetDefaultReaction(emoji);
-            }));
-        }, (emoji: string): string => emoji);
-        Blank();
-        Row() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(15).fontColor([bubbleTextFor(this.msg.isOutgoing)]);
-        }
-        .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
-        .justifyContent(FlexAlign.Center)
-        .stateStyles({ normal: this.menuNormalStyle, pressed: this.menuPressedStyle })
-        .onClick((): void => { this.actions.onOpenReactions(this.msg.id); });
-      }
-      .width('100%').padding({ left: 12, right: 10, top: 8, bottom: 8 })
-      .alignItems(VerticalAlign.Center);
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow('sys.symbol.arrowshape_turn_up_left', str('mb_reply'), false,
-        (): void => { this.actions.onReplyTo(this.msg.id); });
+    Menu() {
+      MenuItem(this.messageReactionMenuItem);
       if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800) {
-        actionMenuRow('sys.symbol.square_and_pencil', str('edit'), false,
-          (): void => { this.actions.onEditMsg(this.msg.id); });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
+          content: $r('app.string.edit')
+        }).onClick((): void => { this.actions.onEditMsg(this.msg.id); });
       }
-      actionMenuRow('sys.symbol.plus_square_on_square', str('mb_copy_text'), false,
-        (): void => { this.actions.onCopyText(this.msg.id); });
-      actionMenuRow('sys.symbol.translate', str('mb_translate'), false,
-        (): void => { this.actions.onTranslateMsg(this.msg.id); });
-      actionMenuRow('sys.symbol.link', str('mb_copy_link'), false,
-        (): void => { this.actions.onCopyLink(this.msg.id); });
-      actionMenuRow('sys.symbol.arrowshape_turn_up_right', str('mb_forward'), false,
-        (): void => { this.actions.onForwardMessages(this.memberIds); });
-      actionMenuRow('sys.symbol.bookmark', str('mb_save_to_saved'), false,
-        (): void => { this.actions.onSaveMessages(this.memberIds); });
-      actionMenuRow('sys.symbol.repeat', str('mb_repeat'), false,
-        (): void => { this.actions.onRepeatMessages(this.memberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
+        content: $r('app.string.mb_copy_text')
+      }).onClick((): void => { this.actions.onCopyText(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.translate')),
+        content: $r('app.string.mb_translate')
+      }).onClick((): void => { this.actions.onTranslateMsg(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrowshape_turn_up_right')),
+        content: $r('app.string.mb_forward')
+      }).onClick((): void => { this.actions.onForwardMessages(this.memberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bookmark')),
+        content: $r('app.string.mb_save_to_saved')
+      }).onClick((): void => { this.actions.onSaveMessages(this.memberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.repeat')),
+        content: $r('app.string.mb_repeat')
+      }).onClick((): void => { this.actions.onRepeatMessages(this.memberIds); });
       if (this.isGroup && this.msg.senderIsUser && this.msg.senderId > 0) {
-        actionMenuRow('sys.symbol.person', str('mb_view_history'), false,
-          (): void => { this.actions.onViewSenderHistory(this.msg.senderId); });
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person')),
+          content: $r('app.string.mb_view_history')
+        }).onClick((): void => { this.actions.onViewSenderHistory(this.msg.senderId); });
       }
-      actionMenuRow('sys.symbol.pin', this.isPinnedMsg ? str('ft_unpin') : str('ft_pin'), false,
-        (): void => { this.actions.onPinMsg(this.msg.id, this.isPinnedMsg); });
-      actionMenuRow('sys.symbol.exclamationmark_circle', str('mb_report'), true,
-        (): void => { this.actions.onReportMsg(this.msg.id); });
-      actionMenuRow('sys.symbol.checkmark_circle', str('mb_select'), false,
-        (): void => { this.actions.onSelectMessages(this.memberIds); });
-      actionMenuRow('sys.symbol.trash', str('delete'), true,
-        (): void => { this.actions.onDeleteMsg(this.msg.id); });
-    }.width(262).padding({ top: 6, bottom: 6 });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
+        content: this.isPinnedMsg ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
+      }).onClick((): void => { this.actions.onPinMsg(this.msg.id, this.isPinnedMsg); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
+        content: $r('app.string.mb_report')
+      }).onClick((): void => { this.actions.onReportMsg(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
+        content: $r('app.string.mb_select')
+      }).onClick((): void => { this.actions.onSelectMessages(this.memberIds); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
+        content: $r('app.string.delete')
+      }).onClick((): void => { this.actions.onDeleteMsg(this.msg.id); });
+    }
+    // 和完整气泡保持同宽，避免表情行的 100% 宽度把菜单撑到屏幕边缘。
+    .width(262)
   }
 
   @Builder
   unreadDivider() {
     Row() {
-      Row() {
-        Text(this.dividerIsResume
-          ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
-          .fontSize(12)
-          .fontColor(COLOR_TEXT_SECONDARY)
-          .fontWeight(FontWeight.Medium);
+      if (this.dividerIsResume) {
+        Row() {
+          Text($r('app.string.mb_last_viewed_position'))
+            .fontSize(12)
+            .fontColor(COLOR_TEXT_SECONDARY)
+            .fontWeight(FontWeight.Medium);
+        }
+        .layoutWeight(1)
+        .height(22)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('app.color.system_pill'))
+        .borderRadius(8);
+      } else {
+        Divider()
+          .layoutWeight(1)
+          .strokeWidth(1)
+          .color(COLOR_TEXT_SECONDARY)
+          .opacity(0.55);
+        Text($r('app.string.mb_unread'))
+          .fontSize(13)
+          .fontColor(this.accent())
+          .fontWeight(FontWeight.Medium)
+          .margin({ left: 10, right: 10 });
+        Divider()
+          .layoutWeight(1)
+          .strokeWidth(1)
+          .color(COLOR_TEXT_SECONDARY)
+          .opacity(0.55);
       }
-      .width('calc(100% - 24vp)')
-      .height(22)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor($r('app.color.system_pill'))
-      .borderRadius(8);
     }
     .width('100%')
+    .height(26)
+    .padding({ left: 12, right: 12, bottom: 4 })
     .justifyContent(FlexAlign.Center)
-    .padding({ bottom: 4 });
+    .alignItems(VerticalAlign.Center);
   }
 
   build() {
@@ -910,7 +962,8 @@ export struct LightweightPlainTextBubble {
           // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
           // 不存在「一边材质一边普通渲染」对不齐的问题。
           .alignItems(VerticalAlign.Bottom)
-          // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色。
+          // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
+          // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
           .backgroundColor(this.containerGlassBg())
           .backdropBlur(this.containerGlassBlur())
           // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，

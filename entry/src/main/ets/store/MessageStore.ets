@@ -26,6 +26,9 @@ import { publishSendState } from '../util/sendStateChannel';
 import { logE, logI, logW } from '../util/log';
 import { animationShapeRejected } from '../util/animationShape';
 import { isAnimationPath } from '../util/mediaPick';
+import {
+  applyMessageTopicScope, messageOutsideTopicScope, messageTopicObject
+} from '../util/messageTopicScope';
 
 const PAGE: number = 30;
 // 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
@@ -120,6 +123,13 @@ export class MessageStore {
   private pinnedPreviews: string[] = [];
   private pinnedLoadState: string = 'loading';
   private coalesceTimer: number = -1;
+  // ChatPage starts TDLib work while the destination is entering, but holds the
+  // first ready message snapshot until the system page transition has settled.
+  // Loading stays concurrent; only the expensive UI subscriber publication is
+  // deferred and collapsed to the newest store state.
+  private initialPublicationReleaseAt: number = 0;
+  private initialPublicationTimer: number = -1;
+  private initialPublicationKind: string = '';
   private pinnedResolveSeq: number = 0;
   private msgSubs: MsgListener[] = [];
   private subSubs: SubtitleListener[] = [];
@@ -255,54 +265,55 @@ export class MessageStore {
   private historyPageSize: number = PAGE;
 
   constructor(client: TdClient, users: UserStore, chatId: number,
-    threadRootId: number = 0, historyPageSize: number = PAGE, forumTopicId: number = 0) {
+    threadRootId: number = 0, historyPageSize: number = PAGE, forumTopicId: number = 0,
+    directMessagesTopicId: number = 0) {
     this.client = client;
     this.users = users;
     this.chatId = chatId;
     this.threadRootId = threadRootId;
     this.forumTopicId = forumTopicId;
+    this.directMessagesTopicId = directMessagesTopicId;
     this.historyPageSize = Math.max(1, Math.min(100, historyPageSize));
   }
 
   // 论坛话题（forum_topic_id，独立于评论线程的 message_thread_id）。
   // 历史走 getForumTopicHistory，发送带 topic_id: messageTopicForum。
   private forumTopicId: number = 0;
+  // 管理员侧频道私信按来信者拆成独立 topic。这个 id 只属于
+  // is_administered_direct_messages_group，不能拿普通 chat history 读取。
+  private directMessagesTopicId: number = 0;
 
   private topicIdObject(): TdObject {
-    const topic: TdObject = { '@type': 'messageTopicForum' };
-    topic['forum_topic_id'] = this.forumTopicId;
-    return topic;
+    return messageTopicObject(
+      this.threadRootId, this.forumTopicId, this.directMessagesTopicId) ??
+      ({ '@type': 'messageTopicForum' } as TdObject);
   }
 
   // 发送/输入指示类请求的作用域。本 td 版本这些请求已无 message_thread_id
   // 参数，评论线程同样要走 topic_id（messageTopicThread）。
   private applyTopicScope(req: TdRequest): void {
-    if (this.forumTopicId > 0) {
-      req['topic_id'] = this.topicIdObject();
-    } else if (this.threadRootId > 0) {
-      const topic: TdObject = { '@type': 'messageTopicThread' };
-      topic['message_thread_id'] = this.threadRootId;
-      req['topic_id'] = topic;
-    }
+    applyMessageTopicScope(
+      req, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
   }
 
   // 实时更新过滤：不属于当前话题/线程窗口的消息不进入本窗口。
   private outsideTopicScope(m: TdObject): boolean {
-    if (this.forumTopicId > 0) {
-      const topic = m['topic_id'] as TdObject | undefined;
-      const topicId: number = topic !== undefined
-        ? ((topic['forum_topic_id'] as number | undefined) ?? 0) : 0;
-      return topicId !== this.forumTopicId;
-    }
-    if (this.threadRootId > 0) {
-      return (m['message_thread_id'] as number | undefined) !== this.threadRootId;
-    }
-    return false;
+    return messageOutsideTopicScope(
+      m, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
   }
 
   // getChatHistory, or getMessageThreadHistory when scoped to a comment thread
   // (same paging contract: from_message_id + offset + limit).
   private historyRequest(fromId: number, offset: number): TdRequest {
+    if (this.directMessagesTopicId > 0) {
+      const topicReq: TdRequest = { '@type': 'getDirectMessagesChatTopicHistory' };
+      topicReq['chat_id'] = this.chatId;
+      topicReq['topic_id'] = this.directMessagesTopicId;
+      topicReq['from_message_id'] = fromId;
+      topicReq['offset'] = offset;
+      topicReq['limit'] = this.historyPageSize;
+      return topicReq;
+    }
     if (this.forumTopicId > 0) {
       const topicReq: TdRequest = { '@type': 'getForumTopicHistory' };
       topicReq['chat_id'] = this.chatId;
@@ -392,6 +403,8 @@ export class MessageStore {
     this.unsubs.push(this.client.onUpdate('updatePoll', (u: TdObject) => this.onPoll(u)));
     this.unsubs.push(this.client.onUpdate('updateDeleteMessages', (u: TdObject) => this.onDelete(u)));
     this.unsubs.push(this.client.onUpdate('updateChatReadOutbox', (u: TdObject) => this.onReadOutbox(u)));
+    this.unsubs.push(this.client.onUpdate('updateDirectMessagesChatTopic',
+      (u: TdObject) => this.onDirectMessagesTopic(u)));
     this.unsubs.push(this.client.onUpdate('updateFile', (u: TdObject) => this.onFile(u)));
     this.unsubs.push(this.client.onUpdate('updateUserStatus', (u: TdObject) => this.onUserStatus(u)));
     this.unsubs.push(this.client.onUpdate('updateBasicGroup', (u: TdObject) => this.onGroup(u)));
@@ -411,7 +424,8 @@ export class MessageStore {
     this.unsubs.push(this.client.onUpdate('updateChatReplyMarkup', (u: TdObject) => this.onChatReplyMarkup(u)));
     // 会话最后一条变了：可能因此已经追到尾部，重新判一次。
     this.unsubs.push(this.client.onUpdate('updateChatLastMessage', (u: TdObject) => {
-      if ((u['chat_id'] as number | undefined) !== this.chatId) {
+      if (this.directMessagesTopicId > 0 ||
+        (u['chat_id'] as number | undefined) !== this.chatId) {
         return;
       }
       const last = u['last_message'] as TdObject | undefined;
@@ -452,6 +466,12 @@ export class MessageStore {
       clearTimeout(this.coalesceTimer);
       this.coalesceTimer = -1;
     }
+    if (this.initialPublicationTimer !== -1) {
+      clearTimeout(this.initialPublicationTimer);
+      this.initialPublicationTimer = -1;
+    }
+    this.initialPublicationReleaseAt = 0;
+    this.initialPublicationKind = '';
     this.pinnedResolveSeq++;
     this.kbHistoryProbeSeq++;
     this.kbHistoryProbeRunning = false;
@@ -705,6 +725,15 @@ export class MessageStore {
     this.msgSubs = [...this.msgSubs, l];
     l(this.messages);
     return (): void => { this.msgSubs = this.msgSubs.filter((x: MsgListener) => x !== l); };
+  }
+
+  deferInitialPublication(delayMs: number): void {
+    if (this.initialPublicationTimer !== -1) {
+      clearTimeout(this.initialPublicationTimer);
+      this.initialPublicationTimer = -1;
+    }
+    this.initialPublicationKind = '';
+    this.initialPublicationReleaseAt = delayMs > 0 ? Date.now() + delayMs : 0;
   }
 
   subscribeSubtitle(l: SubtitleListener): () => void {
@@ -1393,6 +1422,13 @@ export class MessageStore {
 
   // Clear the @-mention and reaction badges for this chat.
   readAllBadges(): void {
+    if (this.directMessagesTopicId > 0) {
+      const request: TdRequest = { '@type': 'readAllDirectMessagesChatTopicReactions' };
+      request['chat_id'] = this.chatId;
+      request['topic_id'] = this.directMessagesTopicId;
+      this.client.send(request).catch((): void => {});
+      return;
+    }
     const mentions: TdRequest = { '@type': 'readAllChatMentions' };
     mentions['chat_id'] = this.chatId;
     this.client.send(mentions).catch((): void => {});
@@ -2212,7 +2248,8 @@ export class MessageStore {
   // live tail, insert it immediately instead of waiting for newer pagination
   // to prove a tail that history can never contain.
   private injectSoleUnreadJoinService(lastMessage: TdObject | undefined): void {
-    if (this.threadRootId > 0 || this.requestedAroundMessageId > 0 ||
+    if (this.threadRootId > 0 || this.directMessagesTopicId > 0 ||
+      this.requestedAroundMessageId > 0 ||
       this.unreadCount !== 1 || lastMessage === undefined) {
       return;
     }
@@ -2256,8 +2293,12 @@ export class MessageStore {
       return;
     }
     this.manualUnreadClearSent = true;
-    const req: TdRequest = { '@type': 'toggleChatIsMarkedAsUnread' };
+    const req: TdRequest = { '@type': this.directMessagesTopicId > 0
+      ? 'setDirectMessagesChatTopicIsMarkedAsUnread' : 'toggleChatIsMarkedAsUnread' };
     req['chat_id'] = this.chatId;
+    if (this.directMessagesTopicId > 0) {
+      req['topic_id'] = this.directMessagesTopicId;
+    }
     req['is_marked_as_unread'] = false;
     this.client.send(req).catch((error: TdError): void => {
       this.manualUnreadClearSent = false;
@@ -2707,7 +2748,8 @@ export class MessageStore {
   }
 
   private onReadOutbox(u: TdObject): void {
-    if ((u['chat_id'] as number | undefined) !== this.chatId) {
+    if (this.directMessagesTopicId > 0 ||
+      (u['chat_id'] as number | undefined) !== this.chatId) {
       return;
     }
     this.lastReadOutboxId = (u['last_read_outbox_message_id'] as number | undefined) ?? 0;
@@ -4232,7 +4274,7 @@ export class MessageStore {
     const req: TdRequest = { '@type': 'searchChatMessages' };
     // 话题模式：只取本话题内的置顶（全群作用域会把其它话题的置顶带进来，
     // 点击后在本话题历史中找不到目标）。
-    if (this.forumTopicId > 0) {
+    if (this.forumTopicId > 0 || this.directMessagesTopicId > 0) {
       req['topic_id'] = this.topicIdObject();
     }
     req['chat_id'] = this.chatId;
@@ -4435,9 +4477,10 @@ export class MessageStore {
   }
 
   private onChat(chat: TdObject): void {
+    const lastMsg = chat['last_message'] as TdObject | undefined;
     // Thread views exclude it: chat.last_message need not belong to the thread.
-    if (this.threadRootId === 0) {
-      this.pendingLastMessage = (chat['last_message'] as TdObject | undefined) ?? null;
+    if (this.threadRootId === 0 && this.directMessagesTopicId === 0) {
+      this.pendingLastMessage = lastMsg ?? null;
       // 记下初始的"会话最后一条"。updateChatLastMessage 只在它**变化**时才来，
       // 一个安静的会话可能整场都不发这个回调——只靠回调就永远拿不到基准值，
       // 追到尾部也认不出来（见 util/liveTail）。
@@ -4449,18 +4492,22 @@ export class MessageStore {
     }
     // Capture the unread boundary BEFORE loading history / marking read, so the
     // page can position at the first unread message even after we mark it read.
-    this.lastReadInboxId = (chat['last_read_inbox_message_id'] as number | undefined) ?? 0;
-    this.lastReadOutboxId = (chat['last_read_outbox_message_id'] as number | undefined) ?? 0;
-    this.unreadCount = (chat['unread_count'] as number | undefined) ?? 0;
+    if (this.directMessagesTopicId === 0) {
+      this.lastReadInboxId = (chat['last_read_inbox_message_id'] as number | undefined) ?? 0;
+      this.lastReadOutboxId = (chat['last_read_outbox_message_id'] as number | undefined) ?? 0;
+      this.unreadCount = (chat['unread_count'] as number | undefined) ?? 0;
+    }
     // Phantom-unread recovery (see ChatStore.effectiveUnread): a stuck counter
     // whose watermark already covers the newest message must not anchor the
     // page at a "first unread" that does not exist.
-    const lastMsg = chat['last_message'] as TdObject | undefined;
     const lastMsgId = lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0;
-    if (this.unreadCount > 0 && lastMsgId > 0 && this.lastReadInboxId >= lastMsgId) {
+    if (this.directMessagesTopicId === 0 && this.unreadCount > 0 &&
+      lastMsgId > 0 && this.lastReadInboxId >= lastMsgId) {
       this.unreadCount = 0;
     }
-    this.injectSoleUnreadJoinService(lastMsg);
+    if (this.directMessagesTopicId === 0) {
+      this.injectSoleUnreadJoinService(lastMsg);
+    }
     const photo = chat['photo'] as TdObject | undefined;
     const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
     this.chatPhotoFileId = small !== undefined ? ((small['id'] as number | undefined) ?? 0) : 0;
@@ -4488,8 +4535,58 @@ export class MessageStore {
       }
     }
     this.resolveSenderAvatars();
-    this.startInitialLoad();
-    this.flushInitial();
+    if (this.directMessagesTopicId > 0) {
+      this.resolveDirectMessagesTopic();
+    } else {
+      this.startInitialLoad();
+      this.flushInitial();
+    }
+  }
+
+  private resolveDirectMessagesTopic(): void {
+    const request: TdRequest = { '@type': 'getDirectMessagesChatTopic' };
+    request['chat_id'] = this.chatId;
+    request['topic_id'] = this.directMessagesTopicId;
+    this.client.send(request).then((topic: TdObject): void => {
+      this.applyDirectMessagesTopic(topic);
+      this.startInitialLoad();
+      this.flushInitial();
+    }).catch((error: TdError): void => {
+      logE(`MessageStore.getDirectMessagesChatTopic failed: ${error.message}`);
+      this.startInitialLoad();
+      this.flushInitial();
+    });
+  }
+
+  private onDirectMessagesTopic(update: TdObject): void {
+    if (this.directMessagesTopicId <= 0) {
+      return;
+    }
+    const topic = update['topic'] as TdObject | undefined;
+    if (topic === undefined || !this.applyDirectMessagesTopic(topic)) {
+      return;
+    }
+    this.syncTailFromChatLast();
+    this.notifySoon();
+  }
+
+  private applyDirectMessagesTopic(topic: TdObject): boolean {
+    if (((topic['chat_id'] as number | undefined) ?? 0) !== this.chatId ||
+      ((topic['id'] as number | undefined) ?? 0) !== this.directMessagesTopicId) {
+      return false;
+    }
+    const last = topic['last_message'] as TdObject | undefined;
+    this.pendingLastMessage = last ?? null;
+    this.chatLastMessageId = last !== undefined
+      ? ((last['id'] as number | undefined) ?? 0) : 0;
+    this.lastReadInboxId = (topic['last_read_inbox_message_id'] as number | undefined) ?? 0;
+    this.lastReadOutboxId = (topic['last_read_outbox_message_id'] as number | undefined) ?? 0;
+    this.unreadCount = (topic['unread_count'] as number | undefined) ?? 0;
+    if (this.unreadCount > 0 && this.chatLastMessageId > 0 &&
+      this.lastReadInboxId >= this.chatLastMessageId) {
+      this.unreadCount = 0;
+    }
+    return true;
   }
 
   private startInitialLoad(): void {
@@ -4688,6 +4785,9 @@ export class MessageStore {
     const req: TdRequest = { '@type': 'viewMessages' };
     req['chat_id'] = this.chatId;
     req['message_ids'] = [maxVisibleId];
+    if (this.directMessagesTopicId > 0) {
+      req['source'] = { '@type': 'messageSourceDirectMessagesChatTopicHistory' } as TdObject;
+    }
     req['force_read'] = true;
     this.client.send(req).catch((e: TdError) => {
       logE(`MessageStore.viewMessages failed: ${e.message}`);
@@ -5090,6 +5190,7 @@ export class MessageStore {
     // 挑调用点。
     publishSendState(c.rowId, c.sendState);
     publishProgress(c.photoFileId, c.photoProgress);
+    publishProgress(c.photoFullFileId, c.photoFullProgress);
     publishProgress(c.linkPhotoFileId, c.linkPhotoProgress);
     publishProgress(c.videoFileId, c.videoProgress);
     publishProgress(c.stickerFileId, c.stickerProgress);
@@ -5175,6 +5276,9 @@ export class MessageStore {
     if (kind === 'update' && this.initialHistoryState === 'loading') {
       return;
     }
+    if (this.deferInitialNotify(kind)) {
+      return;
+    }
     this.currentNotifyKind = kind;
     try {
       for (const l of this.msgSubs) {
@@ -5183,5 +5287,52 @@ export class MessageStore {
     } finally {
       this.currentNotifyKind = 'update';
     }
+  }
+
+  private deferInitialNotify(kind: string): boolean {
+    if (this.initialPublicationReleaseAt <= 0) {
+      return false;
+    }
+    const remaining: number = this.initialPublicationReleaseAt - Date.now();
+    if (remaining <= 0) {
+      this.initialPublicationReleaseAt = 0;
+      this.initialPublicationKind = '';
+      if (this.initialPublicationTimer !== -1) {
+        clearTimeout(this.initialPublicationTimer);
+        this.initialPublicationTimer = -1;
+      }
+      return false;
+    }
+    // Preserve the first semantic history publication (around/latest/older)
+    // while still allowing a preliminary plain update to be upgraded.
+    if (this.initialPublicationKind === '' ||
+      (this.initialPublicationKind === 'update' && kind !== 'update')) {
+      this.initialPublicationKind = kind;
+    }
+    if (this.initialPublicationTimer === -1) {
+      this.initialPublicationTimer = setTimeout((): void => {
+        this.flushInitialPublication();
+      }, Math.ceil(remaining));
+    }
+    return true;
+  }
+
+  private flushInitialPublication(): void {
+    this.initialPublicationTimer = -1;
+    const remaining: number = this.initialPublicationReleaseAt - Date.now();
+    if (remaining > 0) {
+      this.initialPublicationTimer = setTimeout((): void => {
+        this.flushInitialPublication();
+      }, Math.ceil(remaining));
+      return;
+    }
+    if (this.initialPublicationReleaseAt <= 0) {
+      return;
+    }
+    const kind: string = this.initialPublicationKind !== ''
+      ? this.initialPublicationKind : 'update';
+    this.initialPublicationReleaseAt = 0;
+    this.initialPublicationKind = '';
+    this.notify(kind);
   }
 }

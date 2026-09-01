@@ -11703,6 +11703,26 @@
     {
       "name": "diag_cleared",
       "value": "Log cleared"
+    },
+    {
+      "name": "px_auto_switch",
+      "value": "Автоперемикання проксі"
+    },
+    {
+      "name": "px_auto_switch_sub",
+      "value": "Пробувати наступний проксі, якщо поточний довго недоступний"
+    },
+    {
+      "name": "px_auto_switch_need_more",
+      "value": "Додайте щонайменше два проксі для автоперемикання"
+    },
+    {
+      "name": "px_auto_switch_delay",
+      "value": "Затримка перемикання"
+    },
+    {
+      "name": "px_auto_switch_seconds",
+      "value": "%1$d с"
     }
   ]
 }
