@@ -23,6 +23,7 @@ import { materialModifierWhen } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { nextTabPreloadIndex, pruneBuiltKeys } from '../../util/tabPreload';
+import { FolderBadge, badgeLabel, folderBadge, setFolderBadge } from '../../util/folderBadges';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout } from '../../util/splitMetrics';
 import { mainBarFill, mainPageFill } from '../../util/theme';
@@ -70,6 +71,11 @@ const TAB_PRELOAD_IDLE_MS: number = 800;
 // 涨。cachedMaxCount(2) 封顶为 当前±2（最多 5 棵）；预载在来路上永远领先一
 // 步，缓存上限管住身后不堆树。账本要跟着失效，见 util/tabPreload.pruneBuiltKeys。
 const TAB_KEEP_RANGE: number = 2;
+// 指示器胶囊的位置/宽度走 AppStorage 旁路而不是页面 @State：moveIndicatorTo
+// 在拖动时每帧更新，@State 的话每帧都是一次整页 ExecuteRerender（Frame 录制
+// 实测 13 次 >1ms、最大 14.8ms）；旁路后脏区只剩 FolderPill 一个组件。
+const FOLDER_PILL_X: string = 'folderPillX';
+const FOLDER_PILL_W: string = 'folderPillW';
 // HdsNavigation reports the nav bar visible near the beginning of a pop. Keep
 // child list publications frozen until the measured ~590 ms transition ends,
 // then apply the newest buffered snapshot once.
@@ -172,7 +178,6 @@ export struct ChatListPage {
   @StorageProp(KEY_STATUS_FOLLOW_TITLE) private statusFollowTitle: boolean = false;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @State folders: FolderInfo[] = [];
-  @State unreadMap: Map<string, number> = new Map();
   // 镜像到 AppStorage：返回键递退要在非"所有"页签时先切回第 0 个文件夹。
   // 外部写入由 @Watch 落到 TabsController；内部每次写入前先记 appliedFolder，
   // 避免自己触发自己。
@@ -197,8 +202,10 @@ export struct ChatListPage {
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // Sliding selection pill: position/size interpolated between tab frames so it
   // follows the finger during content swipes (Telegram-style).
-  @State indicatorX: number = 0;
-  @State indicatorW: number = 0;
+  // 不是 @State：真正画胶囊的 FolderPill 走 FOLDER_PILL_X/W 旁路，这两份
+  // 留作页面逻辑自己的读值（folderLayoutPending 的判据等）。
+  private indicatorX: number = 0;
+  private indicatorW: number = 0;
   private tabXs: number[] = [];
   private tabWs: number[] = [];
   private tabsWidth: number = 0; // Tabs (content) width, for swipe-progress ratio
@@ -277,6 +284,8 @@ export struct ChatListPage {
     const w1 = this.tabWs[i1] ?? w0;
     this.indicatorX = x0 + (x1 - x0) * f;
     this.indicatorW = w0 + (w1 - w0) * f;
+    AppStorage.setOrCreate(FOLDER_PILL_X, this.indicatorX);
+    AppStorage.setOrCreate(FOLDER_PILL_W, this.indicatorW);
   }
 
   // AppStorage 侧被外部改写（返回键递退回"所有"）时，真正把 Tabs 切过去。
@@ -594,34 +603,17 @@ export struct ChatListPage {
     return getChatStore().unreadChatCount(key);
   }
 
-  private unreadSnapshotChanged(next: Map<string, number>): boolean {
-    if (next.size !== this.unreadMap.size) {
-      return true;
-    }
-    let changed: boolean = false;
-    next.forEach((value: number, key: string): void => {
-      if (this.unreadMap.get(key) !== value) {
-        changed = true;
-      }
-    });
-    return changed;
-  }
-
-  // Rebuild the badge map only when its values actually changed. While a
-  // destination covers the nav bar, collapse any number of notifications into
-  // one pending refresh instead of rebuilding the whole HdsNavigation tree.
+  // 逐 chip 写入旁路模型（util/folderBadges），只有值变了的角标各自重渲染，
+  // 整页和标题栏不再牵动。While a destination covers the nav bar, collapse any
+  // number of notifications into one pending refresh（延后语义保持原样）。
   private refreshUnread(): void {
     if (!this.listRenderActive) {
       this.unreadRefreshPending = true;
       return;
     }
-    const next: Map<string, number> = new Map();
-    for (const spec of this.tabs()) {
-      next.set(spec.key, this.computeUnread(spec.key));
-    }
     this.unreadRefreshPending = false;
-    if (this.unreadSnapshotChanged(next)) {
-      this.unreadMap = next;
+    for (const spec of this.tabs()) {
+      setFolderBadge(spec.key, this.computeUnread(spec.key));
     }
   }
 
@@ -702,11 +694,6 @@ export struct ChatListPage {
       this.searchOpeningTimer = -1;
       this.searchOpening = false;
     }, 520);
-  }
-
-  private tabBadgeText(spec: TabSpec): string {
-    const unread = this.unreadMap.get(spec.key) ?? 0;
-    return unread > TAB_BADGE_MAX ? `${TAB_BADGE_MAX}+` : `${unread}`;
   }
 
   private horizontalPadding(): number {
@@ -970,17 +957,11 @@ export struct ChatListPage {
         .fontColor(this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_TAB_UNSELECTED)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: this.folderTitleMaxWidth() });
-      if ((this.unreadMap.get(spec.key) ?? 0) > 0) {
-        Row() {
-          Text(this.tabBadgeText(spec))
-            .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
-        }
-          .constraintSize({ minWidth: 16 })
-          .height(16).padding({ left: 4, right: 4 })
-          .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
-          .backgroundColor(this.selectedIndex === index ? COLOR_TAB_SELECTED : COLOR_BADGE_BG)
-          .borderRadius(8);
-      }
+      FolderChipBadge({
+        badge: folderBadge(spec.key),
+        selected: this.selectedIndex === index,
+        plainTitle: spec.plainTitle
+      });
     }
     .height(FOLDER_CHIP_HEIGHT)
     .padding({ left: 7, right: 7 })
@@ -1010,11 +991,9 @@ export struct ChatListPage {
         }
       }
     })
-    .accessibilityText(
-      (this.unreadMap.get(spec.key) ?? 0) > 0
-        ? str('cl_tab_unread_a11y', spec.plainTitle, this.tabBadgeText(spec))
-        : spec.plainTitle
-    )
+    // 未读部分的读屏文案跟着角标子组件走（FolderChipBadge）：计数在旁路模型
+    // 里，chip 这层的绑定读不到它的变化。
+    .accessibilityText(spec.plainTitle)
     .onClick(() => { this.controller.changeIndex(index); });
   }
 
@@ -1023,16 +1002,10 @@ export struct ChatListPage {
     Column() {
       Scroll(this.tabScroller) {
         Stack({ alignContent: Alignment.TopStart }) {
-          // Sliding selection pill behind the labels — driven by indicatorX/W,
-          // which follow the finger during Tabs content swipes.
-          Row()
-            .width(this.indicatorW).height(FOLDER_CHIP_HEIGHT)
-            .borderRadius(FOLDER_CHIP_HEIGHT / 2)
-            .backgroundColor(COLOR_TAB_PILL_BG)
-            .position({
-              x: this.indicatorX,
-              y: (FOLDER_BAR_HEIGHT - FOLDER_CHIP_HEIGHT) / 2
-            });
+          // Sliding selection pill behind the labels — follows the finger
+          // during Tabs content swipes. 独立组件 + AppStorage 旁路，拖动每帧
+          // 只脏它自己（见 FOLDER_PILL_X 的说明）。
+          FolderPill();
           Row() {
             ForEach(this.tabs(), (spec: TabSpec, index: number) => {
               this.pill(spec, index);
@@ -1284,5 +1257,51 @@ export struct ChatListPage {
         });
     }
     .width('100%').height('100%');
+  }
+}
+
+// 滑动选中胶囊。位置/宽度从 ChatListPage 的 @State 旁路成 AppStorage 通道
+// （见 FOLDER_PILL_X 的说明）：拖动页签时 moveIndicatorTo 每帧更新，脏区
+// 只有这一个组件，不再整页 ExecuteRerender。
+@Component
+struct FolderPill {
+  @StorageProp(FOLDER_PILL_X) pillX: number = 0;
+  @StorageProp(FOLDER_PILL_W) pillW: number = 0;
+
+  build() {
+    Row()
+      .width(this.pillW).height(FOLDER_CHIP_HEIGHT)
+      .borderRadius(FOLDER_CHIP_HEIGHT / 2)
+      .backgroundColor(COLOR_TAB_PILL_BG)
+      .position({
+        x: this.pillX,
+        y: (FOLDER_BAR_HEIGHT - FOLDER_CHIP_HEIGHT) / 2
+      });
+  }
+}
+
+// 单个页签的未读角标。@ObjectLink 订阅自己的计数模型（util/folderBadges），
+// 计数变化只重渲染这一个角标；无未读时不渲染任何节点。未读的读屏文案也在
+// 这层：chip 的绑定读不到旁路模型的变化。
+@Component
+struct FolderChipBadge {
+  @ObjectLink badge: FolderBadge;
+  @Prop selected: boolean = false;
+  @Prop plainTitle: string = '';
+
+  build() {
+    if (this.badge.count > 0) {
+      Row() {
+        Text(badgeLabel(this.badge.count, TAB_BADGE_MAX))
+          .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
+      }
+      .constraintSize({ minWidth: 16 })
+      .height(16).padding({ left: 4, right: 4 })
+      .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
+      .backgroundColor(this.selected ? COLOR_TAB_SELECTED : COLOR_BADGE_BG)
+      .borderRadius(8)
+      .accessibilityText(str('cl_tab_unread_a11y', this.plainTitle,
+        badgeLabel(this.badge.count, TAB_BADGE_MAX)));
+    }
   }
 }
