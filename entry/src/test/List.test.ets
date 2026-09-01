@@ -87,6 +87,7 @@ import chatResumeTest from './ChatResume.test';
 import chatViewportGeometryTest from './ChatViewportGeometry.test';
 import tabReTapTest from './TabReTap.test';
 import tabPreloadTest from './TabPreload.test';
+import chatListFreezeTest from './ChatListFreeze.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -276,6 +277,7 @@ export default function testsuite() {
   chatViewportGeometryTest();
   tabReTapTest();
   tabPreloadTest();
+  chatListFreezeTest();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();

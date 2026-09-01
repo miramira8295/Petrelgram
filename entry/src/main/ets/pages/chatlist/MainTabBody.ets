@@ -4,7 +4,7 @@ import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
@@ -16,6 +16,7 @@ import {
 import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToArchive } from '../../util/profileNav';
+import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import {
   isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction
@@ -67,6 +68,8 @@ export struct MainTabBody {
   listScroller: ListScroller = new ListScroller();
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
+  // 手指按在列表上时同样缓冲发布（长按跑行的根修，见 ChatListFreeze）。
+  @StorageProp(CHAT_LIST_TOUCH_HOLD) @Watch('onTouchHoldToggle') touchHold: boolean = false;
   @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
   private renderActive: boolean = true;
   @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
@@ -111,7 +114,7 @@ export struct MainTabBody {
   }
 
   private flushBufferedChats(): void {
-    if (this.menuOpen || !this.renderActive) {
+    if (this.menuOpen || this.touchHold || !this.renderActive) {
       return;
     }
     const next = this.updateGate.flush();
@@ -121,6 +124,10 @@ export struct MainTabBody {
   }
 
   private onMenuToggle(): void {
+    this.flushBufferedChats();
+  }
+
+  private onTouchHoldToggle(): void {
     this.flushBufferedChats();
   }
 
@@ -320,7 +327,9 @@ export struct MainTabBody {
 
   @Builder
   chatList() {
-    List({ scroller: this.listScroller }) {
+    // initialIndex：「所有」页签也可能被 Tabs.cachedMaxCount 释放（用户滑到
+    // 3 个文件夹以外时），重建时回到原来的行。见 util/chatListPosition。
+    List({ scroller: this.listScroller, initialIndex: recallListPosition('main') }) {
       // LazyForEach, not ForEach: ForEach builds every row up front, which for
       // a real account meant hundreds of live ChatRow components for the eight
       // that are visible.
@@ -388,7 +397,10 @@ export struct MainTabBody {
     .onScrollIndex((start: number): void => {
       this.firstVisibleIndex = start;
       this.topVisible = start <= 0;
+      rememberListPosition('main', start);
     })
+    // 指尖按下就关发布闸（抬手/被抢手势即开），见 ChatListView 同款注释。
+    .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); })
     .onReachEnd(() => { getChatStore().loadMore('main'); });
   }
 

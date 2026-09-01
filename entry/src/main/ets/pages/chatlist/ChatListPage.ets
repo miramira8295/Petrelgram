@@ -22,7 +22,7 @@ import {
 import { materialModifierWhen } from '../../util/materialModifier';
 import { navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
-import { nextTabPreloadIndex } from '../../util/tabPreload';
+import { nextTabPreloadIndex, pruneBuiltKeys } from '../../util/tabPreload';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth, isSplitLayout } from '../../util/splitMetrics';
 import { mainBarFill, mainPageFill } from '../../util/theme';
@@ -65,6 +65,11 @@ const FOLDER_SWITCH_DURATION: number = 250;
 //   800ms 后一般已静止而横滑还没开始。
 const TAB_PRELOAD_AFTER_SWITCH_MS: number = 120;
 const TAB_PRELOAD_IDLE_MS: number = 800;
+// Tabs 默认建过的页签永久保活：连滑 9 个页签后 Swiper 里挂了 ~10 棵整页列表
+// 树，横滑期间每帧 Measure[Swiper] 实测 ~5ms（160 次共 837ms），随保活数线性
+// 涨。cachedMaxCount(2) 封顶为 当前±2（最多 5 棵）；预载在来路上永远领先一
+// 步，缓存上限管住身后不堆树。账本要跟着失效，见 util/tabPreload.pruneBuiltKeys。
+const TAB_KEEP_RANGE: number = 2;
 // HdsNavigation reports the nav bar visible near the beginning of a pop. Keep
 // child list publications frozen until the measured ~590 ms transition ends,
 // then apply the newest buffered snapshot once.
@@ -497,9 +502,12 @@ export struct ChatListPage {
     if (currentKey === undefined) {
       return;
     }
+    const keys = specs.map((spec: TabSpec): string => spec.key);
+    // cachedMaxCount 已把 当前±TAB_KEEP_RANGE 之外的页签释放，账本同步失效，
+    // 否则预载会跳过已释放的页签，滑回去又是首帧全量构建。
+    this.builtTabKeys = pruneBuiltKeys(keys, this.selectedIndex, this.builtTabKeys, TAB_KEEP_RANGE);
     this.builtTabKeys.add(currentKey);
-    const index = nextTabPreloadIndex(
-      specs.map((spec: TabSpec): string => spec.key), this.selectedIndex, this.builtTabKeys);
+    const index = nextTabPreloadIndex(keys, this.selectedIndex, this.builtTabKeys);
     if (index < 0) {
       return;
     }
@@ -1111,6 +1119,9 @@ export struct ChatListPage {
         }, (spec: TabSpec) => spec.key);
       }
       .barHeight(0)
+      // 保活封顶（见 TAB_KEEP_RANGE 的说明）。被释放页签的列表位置由
+      // ChatListView/MainTabBody 记在 util/chatListPosition，重建时恢复。
+      .cachedMaxCount(TAB_KEEP_RANGE, TabsCacheMode.CACHE_BOTH_SIDE)
       .animationDuration(powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION))
       .onAreaChange((_old: Area, area: Area) => {
         this.tabsWidth = area.width as number;

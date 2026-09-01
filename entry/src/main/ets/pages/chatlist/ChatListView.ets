@@ -3,8 +3,9 @@ import { ChatEntry } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { CHAT_MENU_OPEN, ChatListFreeze } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
+import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
 } from '../../store/AppSettings';
@@ -169,6 +170,8 @@ export struct ChatListView {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // Rebuilding rows while a row's context menu is open would close it.
   @StorageProp(CHAT_MENU_OPEN) @Watch('onMenuToggle') menuOpen: boolean = false;
+  // 手指按在列表上时同样缓冲发布（长按跑行的根修，见 ChatListFreeze）。
+  @StorageProp(CHAT_LIST_TOUCH_HOLD) @Watch('onTouchHoldToggle') touchHold: boolean = false;
   @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
   private renderActive: boolean = true;
   @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
@@ -275,7 +278,7 @@ export struct ChatListView {
   }
 
   private flushBufferedChats(): void {
-    if (this.menuOpen || !this.renderActive) {
+    if (this.menuOpen || this.touchHold || !this.renderActive) {
       return;
     }
     const next = this.updateGate.flush();
@@ -285,6 +288,10 @@ export struct ChatListView {
   }
 
   private onMenuToggle(): void {
+    this.flushBufferedChats();
+  }
+
+  private onTouchHoldToggle(): void {
     this.flushBufferedChats();
   }
 
@@ -384,7 +391,12 @@ export struct ChatListView {
     if (this.chats.length === 0) {
       this.emptyState();
     } else {
-      List({ scroller: this.listScroller }) {
+      // initialIndex：本页签若曾被 Tabs.cachedMaxCount 释放过，重建时回到
+      // 原来的行（归档页不参与，见 util/chatListPosition）。
+      List({
+        scroller: this.listScroller,
+        initialIndex: this.listKey === 'archive' ? 0 : recallListPosition(this.listKey)
+      }) {
         if (this.loadFailed) {
           ListItem() {
             Row({ space: 7 }) {
@@ -465,11 +477,17 @@ export struct ChatListView {
       .contentEndOffset(this.endInset())
       .contentStartOffset(this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      // 指尖按下就关发布闸（抬手/被抢手势即开）：长按窗口里来更新不再挪行，
+      // 重排动画顺延到抬手后。数据订阅照常流动。
+      .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); })
       .onReachEnd(() => { this.loadMore(); })
       // 首行是否可见：没有未静音未读时，据此决定是否需要回顶（issue #35）。
       .onScrollIndex((start: number): void => {
         this.firstVisibleIndex = start;
         this.topVisible = start <= 0;
+        if (this.listKey !== 'archive') {
+          rememberListPosition(this.listKey, start);
+        }
       });
     }
   }
