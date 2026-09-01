@@ -17,6 +17,9 @@ import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from '../../store/ScopeMuteStore'
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { navigateToArchive } from '../../util/profileNav';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
+import {
+  isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction
+} from '../../util/tabReTap';
 import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
 
 // 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
@@ -39,6 +42,10 @@ const SWIPE_ARCHIVE_BG: string = '#F09A37';
 export struct MainTabBody {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
+  // “所有”页使用独立列表组件，也要单独响应底栏重复点击（issue #35）。
+  @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
+  private topVisible: boolean = true;
+  private firstVisibleIndex: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -75,6 +82,29 @@ export struct MainTabBody {
   @State private archivePullPx: number = 0;
   // 拽到全展开后锁定；再往下滚一段自动收起。
   @State private archiveRevealed: boolean = false;
+
+  private onTabReTap(): void {
+    if ((AppStorage.get<number>(TAB_RETAP_INDEX) ?? 0) !== 0) {
+      return;
+    }
+    const unread: boolean[] = this.chats.map((chat: ChatEntry): boolean =>
+      isPriorityUnread(chat.unreadCount, chat.isMarkedUnread, this.rowMuted(chat)));
+    const action: string = reTapAction(this.topVisible,
+      unread.some((value: boolean): boolean => value));
+    if (action === 'top') {
+      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
+      return;
+    }
+    if (action === 'none') {
+      return;
+    }
+    const target: number = nextUnreadIndex(unread, this.firstVisibleIndex);
+    if (target >= 0) {
+      this.listScroller.scrollToIndex(target, true, ScrollAlign.START);
+    } else {
+      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
+    }
+  }
 
   private onLanguageEpochChanged(): void {
     this.chatsData.reload();
@@ -354,6 +384,10 @@ export struct MainTabBody {
           this.archivePullPx = 0;
         });
       }
+    })
+    .onScrollIndex((start: number): void => {
+      this.firstVisibleIndex = start;
+      this.topVisible = start <= 0;
     })
     .onReachEnd(() => { getChatStore().loadMore('main'); });
   }

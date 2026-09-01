@@ -12,7 +12,9 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
-import { TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction } from '../../util/tabReTap';
+import {
+  isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction
+} from '../../util/tabReTap';
 import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
 import { effectiveMuted } from '../../store/ChatEntry';
 import { scopeMutedForKind } from '../../store/ScopeMuteStore';
@@ -31,19 +33,18 @@ export struct ChatListView {
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
   // 底栏点「聊天」页签（已选中）时递增，见 util/tabReTap。
   @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
-  // 列表首行是否可见：决定这一下是回顶还是跳未读。
+  // 列表首行是否可见：没有未静音未读时，决定是否需要回顶。
   private topVisible: boolean = true;
   private firstVisibleIndex: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
-  // 底栏点了已选中的「聊天」页签（issue #35）：不在顶就回顶，已经在顶就跳到
-  // 下一个未读会话，绕一圈找不到就什么都不做。归档页等复用本组件的地方也生效，
-  // 它们同样是聊天页签下的列表。
+  // 底栏点了已选中的「聊天」页签（issue #35）：优先跳到下一个未静音未读；
+  // 没有这种会话才回顶。归档页等复用本组件的地方也生效。
   private onTabReTap(): void {
     if ((AppStorage.get<number>(TAB_RETAP_INDEX) ?? 0) !== 0) {
       return;
     }
     const unread: boolean[] = this.chats.map((c: ChatEntry): boolean =>
-      c.unreadCount > 0 || c.isMarkedUnread);
+      isPriorityUnread(c.unreadCount, c.isMarkedUnread, this.rowMuted(c)));
     const action: string = reTapAction(this.topVisible,
       unread.some((u: boolean): boolean => u));
     if (action === 'top') {
@@ -56,6 +57,8 @@ export struct ChatListView {
     const target: number = nextUnreadIndex(unread, this.firstVisibleIndex);
     if (target >= 0) {
       this.listScroller.scrollToIndex(target, true, ScrollAlign.START);
+    } else {
+      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
     }
   }
 
@@ -463,7 +466,7 @@ export struct ChatListView {
       .contentStartOffset(this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       .onReachEnd(() => { this.loadMore(); })
-      // 首行是否可见：底栏再点一次「聊天」时据此决定回顶还是跳未读（issue #35）。
+      // 首行是否可见：没有未静音未读时，据此决定是否需要回顶（issue #35）。
       .onScrollIndex((start: number): void => {
         this.firstVisibleIndex = start;
         this.topVisible = start <= 0;
