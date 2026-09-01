@@ -506,14 +506,14 @@ export struct ChatRow {
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
         }
         if (this.chat.unreadCount > 0) {
-          Row() {
-            Text(this.unreadLabel())
-              .fontSize(12).fontColor(Color.White)
-              .fontWeight(FontWeight.Medium);
-          }
+          // 单 Text 画角标胶囊，不再套 Row（无属性容器精简，同 AvatarView
+          // 的字母头像）。居中靠 align/textAlign。
+          Text(this.unreadLabel())
+            .fontSize(12).fontColor(Color.White)
+            .fontWeight(FontWeight.Medium)
             .constraintSize({ minWidth: 22 })
             .height(22).padding({ left: 7, right: 7 })
-            .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
+            .align(Alignment.Center).textAlign(TextAlign.Center)
             .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
             .borderRadius(11);
         } else if (this.chat.isMarkedUnread) {

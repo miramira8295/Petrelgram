@@ -88,15 +88,18 @@ export struct AvatarView {
     }
   }
 
+  // 单 Text 画整颗字母头像：圆是 backgroundColor + borderRadius，居中靠
+  // align/textAlign。原来是 Stack{Circle,Text} 三个节点——这颗头像每行一个、
+  // 全 APP 30 处调用，精简节点数从这种无属性容器下手（docs/chatlist-perf-todo
+  // 第 2 条，rs_node 实测 142 节点/行）。
   @Builder
   initialsCircle() {
-    Stack() {
-      Circle({ width: this.avatarSize, height: this.avatarSize })
-        .fill(AVATAR_PALETTE[Math.abs(this.colorSeed) % AVATAR_PALETTE.length]);
-      Text(this.initials)
-        .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium);
-    }
-    .width(this.avatarSize).height(this.avatarSize);
+    Text(this.initials)
+      .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium)
+      .width(this.avatarSize).height(this.avatarSize)
+      .align(Alignment.Center).textAlign(TextAlign.Center)
+      .backgroundColor(AVATAR_PALETTE[Math.abs(this.colorSeed) % AVATAR_PALETTE.length])
+      .borderRadius(this.avatarSize / 2);
   }
 
   build() {

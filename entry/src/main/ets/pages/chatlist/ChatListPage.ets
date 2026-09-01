@@ -1291,17 +1291,16 @@ struct FolderChipBadge {
 
   build() {
     if (this.badge.count > 0) {
-      Row() {
-        Text(badgeLabel(this.badge.count, TAB_BADGE_MAX))
-          .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
-      }
-      .constraintSize({ minWidth: 16 })
-      .height(16).padding({ left: 4, right: 4 })
-      .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
-      .backgroundColor(this.selected ? COLOR_TAB_SELECTED : COLOR_BADGE_BG)
-      .borderRadius(8)
-      .accessibilityText(str('cl_tab_unread_a11y', this.plainTitle,
-        badgeLabel(this.badge.count, TAB_BADGE_MAX)));
+      // 单 Text 画角标胶囊（同 ChatRow 的未读角标），不套无属性 Row。
+      Text(badgeLabel(this.badge.count, TAB_BADGE_MAX))
+        .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium)
+        .constraintSize({ minWidth: 16 })
+        .height(16).padding({ left: 4, right: 4 })
+        .align(Alignment.Center).textAlign(TextAlign.Center)
+        .backgroundColor(this.selected ? COLOR_TAB_SELECTED : COLOR_BADGE_BG)
+        .borderRadius(8)
+        .accessibilityText(str('cl_tab_unread_a11y', this.plainTitle,
+          badgeLabel(this.badge.count, TAB_BADGE_MAX)));
     }
   }
 }
