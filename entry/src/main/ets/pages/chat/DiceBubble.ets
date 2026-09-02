@@ -4,15 +4,16 @@ import { str } from '../../util/strings';
 
 // 骰子/飞镖/篮球等（messageDice）：直接播 TDLib 下发的官方 TGS 结果动画
 // （动画播完定格在结果上）。动画未就绪时显示 emoji 占位。
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct DiceBubble {
-  @Prop emoji: string = '🎲';
-  @Prop value: number = 0;
-  @Prop hasFinalState: boolean = false;
-  @Prop successFrame: number = 0;
-  @Prop stickerPath: string = '';
+  @Param emoji: string = '🎲';
+  @Param value: number = 0;
+  @Param hasFinalState: boolean = false;
+  @Param successFrame: number = 0;
+  @Param stickerPath: string = '';
   // 🎰 老虎机 5 层（背景/左中右转轮/拉杆，已按 z 序排列），全就绪才叠层播放。
-  @Prop layerPaths: string[] = [];
+  @Param layerPaths: string[] = [];
 
   private safeEmoji(): string {
     return this.emoji.trim() !== '' ? this.emoji : '🎲';

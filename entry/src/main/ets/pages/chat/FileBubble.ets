@@ -4,21 +4,22 @@ import {
 } from '../../util/fileMessage';
 import { str } from '../../util/strings';
 
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct FileBubble {
-  @Prop fileId: number = 0;
-  @Prop fileName: string = '';
-  @Prop mimeType: string = '';
-  @Prop fileSize: number = 0;
-  @Prop filePath: string = '';
-  @Prop downloadProgress: number = 0;
-  @Prop downloadFailed: boolean = false;
-  @Prop downloadActive: boolean = false;
-  @Prop maxWidth: number = 250;
-  onOpen: () => void = (): void => {};
-  onSave: () => void = (): void => {};
+  @Param fileId: number = 0;
+  @Param fileName: string = '';
+  @Param mimeType: string = '';
+  @Param fileSize: number = 0;
+  @Param filePath: string = '';
+  @Param downloadProgress: number = 0;
+  @Param downloadFailed: boolean = false;
+  @Param downloadActive: boolean = false;
+  @Param maxWidth: number = 250;
+  @Param onOpen: () => void = (): void => {};
+  @Param onSave: () => void = (): void => {};
   // 下载中点一下 = 暂停（issue #93）。已下的那部分留着，再点继续断点续传。
-  onPause: () => void = (): void => {};
+  @Param onPause: () => void = (): void => {};
 
   @Styles
   private cardNormalStyle(): void {

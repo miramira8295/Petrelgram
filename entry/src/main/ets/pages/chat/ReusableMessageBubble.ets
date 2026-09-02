@@ -290,13 +290,18 @@ export struct ReusableMessageBubble {
     //   @Param 的静态快照上，下载进度/编辑/表态都不再跟。
     //
     // 为什么仍然推迟一帧而不是同步调用：官方没有写清「状态变量重置」与
-    // 「aboutToReuse 回调」的精确先后（冻结那一节说冻结「持续到 aboutToReuse
-    // 前」，重置那一节只说「复用前」），**无法确定**此刻 this.group 已经是新值
-    // 还是仍是旧值。推迟一帧读到的必然是新值。上机探针确认之后（P3 批 2 第一
-    // 项）再决定能不能改成同步、省这一帧。
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
+    // 「aboutToReuse 回调」的精确先后。批 0.5 的 1370 样本只证明了**子组件**
+    // 回调时 @Param 已是新值；外壳自己是 @ReusableV2 根，时序是另一个问题。
+    // ⚠️ 临时探针（判读完随 avatarReuseProbe 清单删）：比较回调此刻与一帧后
+    // 的 rowId——shell.reuse.fresh 满格且 stale 恒零 ⇒ 可改同步、删掉
+    // nextFrameQueue 的最后一个用户。
+    const rowIdAtCallback: number = this.group.head.rowId;
     enqueueNextFrame(this.frameOwnerId,
-      (): void => { this.attachPresentation(this.group); });
+      (): void => {
+        probeHit(rowIdAtCallback === this.group.head.rowId
+          ? 'shell.reuse.fresh' : 'shell.reuse.stale');
+        this.attachPresentation(this.group);
+      });
   }
 
   build() {

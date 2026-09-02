@@ -19,13 +19,14 @@ const BODY_SIZE: number = 15;
 const LINE_RATIO: number = 1.36;
 const BLOCK_GAP: number = 8;
 
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct RichMessageView {
   // 原始 blocks（TdObject），在这里解析一次。放原始数据而不是解析结果，是为了
   // 让 MessageEntry 只多带一个字段，不必为块模型再引一套类型。
-  @Prop rawBlocks: TdObject[];
-  @Prop maxWidth: number = 260;
-  onOpenUrl: (url: string) => void = (): void => {};
+  @Param rawBlocks: TdObject[] = [];
+  @Param maxWidth: number = 260;
+  @Param onOpenUrl: (url: string) => void = (): void => {};
 
   private blocks(): RichBlock[] {
     const wrapper: TdObject = { '@type': 'messageRichMessage' };

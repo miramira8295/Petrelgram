@@ -1,23 +1,24 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct PaidMediaBubble {
-  @Prop messageId: number = 0;
-  @Prop locked: boolean = true;
-  @Prop starCount: number = 0;
-  @Prop mediaCount: number = 0;
-  @Prop mediaKind: string = '';
-  @Prop caption: string = '';
-  @Prop photoPath: string = '';
-  @Prop photoFileId: number = 0;
-  @Prop photoProgress: number = 0;
-  @Prop photoFailed: boolean = false;
-  @Prop pending: boolean = false;
-  @Prop maxWidth: number = 260;
-  onUnlock: (messageId: number) => void = (_messageId: number): void => {};
-  onOpen: (messageId: number) => void = (_messageId: number): void => {};
-  onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
+  @Param messageId: number = 0;
+  @Param locked: boolean = true;
+  @Param starCount: number = 0;
+  @Param mediaCount: number = 0;
+  @Param mediaKind: string = '';
+  @Param caption: string = '';
+  @Param photoPath: string = '';
+  @Param photoFileId: number = 0;
+  @Param photoProgress: number = 0;
+  @Param photoFailed: boolean = false;
+  @Param pending: boolean = false;
+  @Param maxWidth: number = 260;
+  @Param onUnlock: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onOpen: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
 
   @Styles
   private normalStyle(): void {

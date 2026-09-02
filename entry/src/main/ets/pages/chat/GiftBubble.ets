@@ -1,22 +1,23 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct GiftBubble {
-  @Prop messageId: number = 0;
-  @Prop kind: string = '';
-  @Prop title: string = '';
-  @Prop value: string = '';
-  @Prop status: string = '';
-  @Prop text: string = '';
-  @Prop code: string = '';
-  @Prop refunded: boolean = false;
-  @Prop photoPath: string = '';
-  @Prop photoFileId: number = 0;
-  @Prop photoProgress: number = 0;
-  @Prop photoFailed: boolean = false;
-  @Prop maxWidth: number = 260;
-  onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
-  onCopyCode: (code: string) => void = (_code: string): void => {};
+  @Param messageId: number = 0;
+  @Param kind: string = '';
+  @Param title: string = '';
+  @Param value: string = '';
+  @Param status: string = '';
+  @Param text: string = '';
+  @Param code: string = '';
+  @Param refunded: boolean = false;
+  @Param photoPath: string = '';
+  @Param photoFileId: number = 0;
+  @Param photoProgress: number = 0;
+  @Param photoFailed: boolean = false;
+  @Param maxWidth: number = 260;
+  @Param onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onCopyCode: (code: string) => void = (_code: string): void => {};
 
   @Styles
   private normalStyle(): void {

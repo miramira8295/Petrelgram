@@ -2,22 +2,23 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../u
 import { plural, str } from '../../util/strings';
 import { monthDayTime } from '../../util/intlFormat';
 
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct GiveawayBubble {
-  @Prop messageId: number = 0;
-  @Prop state: string = '';
-  @Prop winnerCount: number = 0;
-  @Prop prize: string = '';
-  @Prop description: string = '';
-  @Prop selectionDate: number = 0;
-  @Prop unclaimedCount: number = 0;
-  @Prop originalMessageId: number = 0;
-  @Prop boostedChatId: number = 0;
-  @Prop refunded: boolean = false;
-  @Prop onlyNewMembers: boolean = false;
-  @Prop photoPath: string = '';
-  @Prop maxWidth: number = 260;
-  onOpenOriginal: (chatId: number, messageId: number) => void =
+  @Param messageId: number = 0;
+  @Param state: string = '';
+  @Param winnerCount: number = 0;
+  @Param prize: string = '';
+  @Param description: string = '';
+  @Param selectionDate: number = 0;
+  @Param unclaimedCount: number = 0;
+  @Param originalMessageId: number = 0;
+  @Param boostedChatId: number = 0;
+  @Param refunded: boolean = false;
+  @Param onlyNewMembers: boolean = false;
+  @Param photoPath: string = '';
+  @Param maxWidth: number = 260;
+  @Param onOpenOriginal: (chatId: number, messageId: number) => void =
     (_chatId: number, _messageId: number): void => {};
 
   @Styles

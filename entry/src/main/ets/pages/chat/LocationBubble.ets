@@ -1,26 +1,27 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct LocationBubble {
-  @Prop latitude: number = 0;
-  @Prop longitude: number = 0;
-  @Prop accuracy: number = 0;
-  @Prop valid: boolean = false;
-  @Prop livePeriod: number = 0;
-  @Prop expiresIn: number = 0;
-  @Prop messageDate: number = 0;
-  @Prop nowSec: number = 0;
-  @Prop venueTitle: string = '';
-  @Prop venueAddress: string = '';
-  @Prop venueProvider: string = '';
-  @Prop proximityRadius: number = 0;
-  @Prop maxWidth: number = 250;
+  @Param latitude: number = 0;
+  @Param longitude: number = 0;
+  @Param accuracy: number = 0;
+  @Param valid: boolean = false;
+  @Param livePeriod: number = 0;
+  @Param expiresIn: number = 0;
+  @Param messageDate: number = 0;
+  @Param nowSec: number = 0;
+  @Param venueTitle: string = '';
+  @Param venueAddress: string = '';
+  @Param venueProvider: string = '';
+  @Param proximityRadius: number = 0;
+  @Param maxWidth: number = 250;
   // 本机正在共享的就是这一条。停止入口必须长在气泡上——之前只放在会话页顶部
   // 的「⋯」菜单里，用户盯着气泡根本找不到。
-  @Prop sharing: boolean = false;
-  onOpen: () => void = (): void => {};
-  onStopLive: () => void = (): void => {};
+  @Param sharing: boolean = false;
+  @Param onOpen: () => void = (): void => {};
+  @Param onStopLive: () => void = (): void => {};
 
   @Styles
   private cardNormalStyle(): void {

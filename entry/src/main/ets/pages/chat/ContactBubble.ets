@@ -2,17 +2,18 @@ import { AvatarView } from '../chatlist/AvatarView';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
-@Component
+// P4 批 6a：迁 @ComponentV2（纯展示组件，@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct ContactBubble {
-  @Prop firstName: string = '';
-  @Prop lastName: string = '';
-  @Prop phone: string = '';
-  @Prop vcard: string = '';
-  @Prop userId: number = 0;
-  @Prop avatarPath: string = '';
-  @Prop maxWidth: number = 250;
-  onOpen: () => void = (): void => {};
-  onCall: () => void = (): void => {};
+  @Param firstName: string = '';
+  @Param lastName: string = '';
+  @Param phone: string = '';
+  @Param vcard: string = '';
+  @Param userId: number = 0;
+  @Param avatarPath: string = '';
+  @Param maxWidth: number = 250;
+  @Param onOpen: () => void = (): void => {};
+  @Param onCall: () => void = (): void => {};
 
   @Styles
   private cardNormalStyle(): void {

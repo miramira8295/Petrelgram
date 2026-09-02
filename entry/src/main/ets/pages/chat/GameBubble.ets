@@ -1,35 +1,31 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
-@Component
+// 成员 @Styles 迁全局（V2 不支持，两组均无状态依赖）。
+@Styles
+function gameNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
+
+@Styles
+function gamePressedStyle() { .scale({ x: 0.985, y: 0.985 }).opacity(0.8) }
+
+// P4 批 6a：迁 @ComponentV2（@Prop/回调 → @Param 引用语义）。
+@ComponentV2
 export struct GameBubble {
-  @Prop messageId: number = 0;
-  @Prop title: string = '';
-  @Prop shortName: string = '';
-  @Prop description: string = '';
-  @Prop gameText: string = '';
-  @Prop photoPath: string = '';
-  @Prop photoFileId: number = 0;
-  @Prop photoProgress: number = 0;
-  @Prop photoFailed: boolean = false;
-  @Prop maxWidth: number = 260;
-  @State opening: boolean = false;
+  @Param messageId: number = 0;
+  @Param title: string = '';
+  @Param shortName: string = '';
+  @Param description: string = '';
+  @Param gameText: string = '';
+  @Param photoPath: string = '';
+  @Param photoFileId: number = 0;
+  @Param photoProgress: number = 0;
+  @Param photoFailed: boolean = false;
+  @Param maxWidth: number = 260;
+  @Local opening: boolean = false;
   private photoActionAtMs: number = 0;
   private openingTimer: number = -1;
-  onOpen: (messageId: number) => void = (_messageId: number): void => {};
-  onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
-
-  @Styles
-  private normalStyle(): void {
-    .scale({ x: 1, y: 1 })
-    .opacity(1)
-  }
-
-  @Styles
-  private pressedStyle(): void {
-    .scale({ x: 0.985, y: 0.985 })
-    .opacity(0.8)
-  }
+  @Param onOpen: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onRetryPhoto: (messageId: number) => void = (_messageId: number): void => {};
 
   private gameAvailable(): boolean {
     return this.title.trim() !== '' || this.shortName.trim() !== '';
@@ -81,7 +77,8 @@ export struct GameBubble {
     this.resetTransientState();
   }
 
-  aboutToReuse(_params: Record<string, Object>): void {
+  aboutToReuse(): void {
+    // @Local opening 由框架重置；只剩无装饰器的定时器与时间戳要手工归零。
     this.resetTransientState();
   }
 
@@ -189,8 +186,8 @@ export struct GameBubble {
     .width(Math.max(220, Math.min(278, this.maxWidth)))
     .alignItems(HorizontalAlign.Start)
     .stateStyles({
-      normal: this.normalStyle,
-      pressed: this.pressedStyle
+      normal: gameNormalStyle,
+      pressed: gamePressedStyle
     })
     .animation({ duration: 110, curve: Curve.EaseOut })
     .accessibilityText(`${this.displayTitle()}，${this.detailText()}`)
