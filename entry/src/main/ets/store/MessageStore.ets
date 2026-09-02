@@ -5,11 +5,6 @@ import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteracti
 import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
 import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChannel';
 import { scrollActiveNow } from '../util/scrollEffects';
-// ⚠️ pub.* 是临时判读探针（调度中枢 批 0，判读完删）：按 kind × 是否滚动中
-// 计数发布率。每次发布都是订阅方一轮全表 collapse/diff；若滚动中 update 类
-// 发布可观，就上「滚动中冻结 update、停止即冲刷」的节流闸（翻页/初始类
-// 永不冻结——那是滚动自己要的数据）；若近零，节流闸取消，此面收官。
-import { probeHit } from '../util/panelProbe';
 import { publishThumbPath } from '../util/mediaThumbChannel';
 import { inlineThumbEntryChanged } from '../util/inlineThumbUpdate';
 import { formatUserStatus } from '../util/formatUserStatus';
@@ -5517,12 +5512,7 @@ export class MessageStore {
     if (kind === 'update' && scrollActiveNow()) {
       this.scrollDeferredUpdate = true;
       this.armScrollDeferFlush();
-      probeHit('pub.defer.update');
       return;
-    }
-    probeHit(`pub.${kind}`);
-    if (scrollActiveNow()) {
-      probeHit(`pub.scroll.${kind}`);
     }
     this.scrollDeferredUpdate = false;
     this.currentNotifyKind = kind;
