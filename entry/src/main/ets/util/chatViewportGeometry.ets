@@ -1,6 +1,10 @@
 import { UIUtils } from '@kit.ArkUI';
 import { AlbumGroup } from './collapseAlbums';
 import { initialMessagePlaceholderHeight } from './initialMessageStage';
+// ⚠️ rowH.* 是临时判读探针（绘制面·行高离线 批 0，判读完删）：量化「事后
+// 纠偏」的规模来决定离线预算值不值得做——rowH.fix 每次都伴随一次
+// childrenMainSize.update（List 重排），gt8 档还意味着肉眼可见的锚点跳动。
+import { probeHit } from './panelProbe';
 
 const DEFAULT_MESSAGE_ROW_HEIGHT: number = 64;
 const MEASURED_ROW_HEIGHT_LIMIT: number = 2048;
@@ -128,6 +132,8 @@ export class ChatViewportGeometry {
     const showDivider: boolean = this.dividerId > 0 &&
       group.memberIds.indexOf(this.dividerId) >= 0;
     const measured: number = rememberedViewportRowHeight(this.keyOf(group));
+    // est/memo 记发布时的记忆命中面：est 高 = 大量行以粗估进表，等着被纠偏。
+    probeHit(measured > 0 ? 'rowH.memo' : 'rowH.est');
     return measured > 0
       ? measured : initialMessagePlaceholderHeight(group, this.screenWidth, showDivider);
   }
@@ -194,9 +200,14 @@ export class ChatViewportGeometry {
     if (currentIndex < 0) {
       return;
     }
-    if (Math.abs(this.rowSizes[currentIndex] - height) > 0.5) {
+    const drift: number = Math.abs(this.rowSizes[currentIndex] - height);
+    if (drift > 0.5) {
+      // 纠偏 = 一次 List 重排；>8vp 档按视口锚点稳定性算肉眼可见级。
+      probeHit(drift > 8 ? 'rowH.fix.gt8' : 'rowH.fix.le8');
       this.rowSizes[currentIndex] = height;
       this.childrenMainSize.update(currentIndex, height);
+    } else {
+      probeHit('rowH.ok');
     }
     if (cacheable) {
       rememberViewportRowHeight(key, height);
