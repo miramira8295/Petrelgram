@@ -1095,6 +1095,11 @@ export struct ChatListPage {
       // 保活封顶（见 TAB_KEEP_RANGE 的说明）。被释放页签的列表位置由
       // ChatListView/MainTabBody 记在 util/chatListPosition，重建时恢复。
       .cachedMaxCount(TAB_KEEP_RANGE, TabsCacheMode.CACHE_BOTH_SIDE)
+      // 远距离 chip 点击/changeIndex 不再横扫中间页签：保活封顶后沿途页签是
+      // 已释放的，默认动画会在首帧把它们全部重建（Frame 录制实测 9 个
+      // TabContent 一帧 536ms）。WITH_JUMP 只建目标页，无动画跳到近旁后只播
+      // 最后一小段。手势滑页不受影响（本来就只跨邻居）。
+      .animationMode(AnimationMode.CONTENT_FIRST_WITH_JUMP)
       .animationDuration(powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION))
       .onAreaChange((_old: Area, area: Area) => {
         this.tabsWidth = area.width as number;

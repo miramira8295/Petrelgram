@@ -14,7 +14,8 @@ import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import {
-  isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction
+  isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction,
+  RETAP_SMOOTH_SPAN, smoothJumpStage
 } from '../../util/tabReTap';
 import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
 import { effectiveMuted } from '../../store/ChatEntry';
@@ -49,18 +50,24 @@ export struct ChatListView {
     const action: string = reTapAction(this.topVisible,
       unread.some((u: boolean): boolean => u));
     if (action === 'top') {
-      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
+      this.jumpToRow(0);
       return;
     }
     if (action === 'none') {
       return;
     }
     const target: number = nextUnreadIndex(unread, this.firstVisibleIndex);
-    if (target >= 0) {
-      this.listScroller.scrollToIndex(target, true, ScrollAlign.START);
-    } else {
-      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
+    this.jumpToRow(target >= 0 ? target : 0);
+  }
+
+  // 远距离先无动画跳到目标近旁再平滑（见 util/tabReTap.smoothJumpStage：
+  // 平滑滚动逐行构建沿途内容，实测跳 169 行 = 单帧 618ms）。
+  private jumpToRow(index: number): void {
+    const stage = smoothJumpStage(this.firstVisibleIndex, index, RETAP_SMOOTH_SPAN);
+    if (stage >= 0) {
+      this.listScroller.scrollToIndex(stage, false, ScrollAlign.START);
     }
+    this.listScroller.scrollToIndex(index, true, ScrollAlign.START);
   }
 
   private rowUnread(chat: ChatEntry): boolean {

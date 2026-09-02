@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { isPriorityUnread, nextUnreadIndex, reTapAction } from '../main/ets/util/tabReTap';
+import {
+  isPriorityUnread, nextUnreadIndex, reTapAction, smoothJumpStage
+} from '../main/ets/util/tabReTap';
 
 export default function tabReTapTest() {
   describe('tabReTap', () => {
@@ -27,6 +29,19 @@ export default function tabReTapTest() {
       expect(reTapAction(false, false)).assertEqual('top');
       expect(reTapAction(true, true)).assertEqual('unread');
       expect(reTapAction(true, false)).assertEqual('none');
+    });
+    it('远跳先无动画中转到目标同侧一屏内', 0, (): void => {
+      // 从 169 回顶：中转到 8，剩下 8 行平滑。
+      expect(smoothJumpStage(169, 0, 8)).assertEqual(8);
+      // 从顶跳到 169：中转到 161。
+      expect(smoothJumpStage(0, 169, 8)).assertEqual(161);
+      // 距离在一屏内：不中转。
+      expect(smoothJumpStage(5, 0, 8)).assertEqual(-1);
+      expect(smoothJumpStage(0, 8, 8)).assertEqual(-1);
+      // 两个方向的中转都落在目标同侧 span 行处。
+      expect(smoothJumpStage(30, 3, 8)).assertEqual(11);
+      expect(smoothJumpStage(3, 30, 8)).assertEqual(22);
+      expect(smoothJumpStage(20, 4, 8)).assertEqual(12);
     });
     it('静音未读不参与定位', 0, (): void => {
       expect(isPriorityUnread(3, false, false)).assertTrue();

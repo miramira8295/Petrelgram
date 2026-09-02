@@ -19,7 +19,8 @@ import { navigateToArchive } from '../../util/profileNav';
 import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import {
-  isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction
+  isPriorityUnread, TAB_RETAP_EPOCH, TAB_RETAP_INDEX, nextUnreadIndex, reTapAction,
+  RETAP_SMOOTH_SPAN, smoothJumpStage
 } from '../../util/tabReTap';
 import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
 
@@ -95,18 +96,24 @@ export struct MainTabBody {
     const action: string = reTapAction(this.topVisible,
       unread.some((value: boolean): boolean => value));
     if (action === 'top') {
-      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
+      this.jumpToRow(0);
       return;
     }
     if (action === 'none') {
       return;
     }
     const target: number = nextUnreadIndex(unread, this.firstVisibleIndex);
-    if (target >= 0) {
-      this.listScroller.scrollToIndex(target, true, ScrollAlign.START);
-    } else {
-      this.listScroller.scrollToIndex(0, true, ScrollAlign.START);
+    this.jumpToRow(target >= 0 ? target : 0);
+  }
+
+  // 见 ChatListView.jumpToRow 同款注释：远距离平滑滚动逐行构建沿途内容
+  //（实测跳 169 行 = 单帧 618ms），先无动画中转再平滑最后一屏。
+  private jumpToRow(index: number): void {
+    const stage = smoothJumpStage(this.firstVisibleIndex, index, RETAP_SMOOTH_SPAN);
+    if (stage >= 0) {
+      this.listScroller.scrollToIndex(stage, false, ScrollAlign.START);
     }
+    this.listScroller.scrollToIndex(index, true, ScrollAlign.START);
   }
 
   private onLanguageEpochChanged(): void {

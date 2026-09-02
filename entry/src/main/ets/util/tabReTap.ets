@@ -38,3 +38,17 @@ export function reTapAction(atTop: boolean, hasPriorityUnread: boolean): string 
   }
   return atTop ? 'none' : 'top';
 }
+
+// 平滑 scrollToIndex 会把沿途每一行都构建出来（Frame 录制实测：跳 169 行 =
+// 单帧 618ms、跳 27 行 ≈ 100ms）。距离超过 span 时先**无动画**跳到目标同侧
+// span 行处，再平滑进位——动画观感只剩最后一小段，成本也只剩一屏。
+// 返回中转下标；-1 表示距离近，直接平滑即可。
+// span 取一屏略少：中转后剩下的平滑段正好一屏出头，观感连续。
+export const RETAP_SMOOTH_SPAN: number = 8;
+
+export function smoothJumpStage(current: number, target: number, span: number): number {
+  if (Math.abs(current - target) <= span) {
+    return -1;
+  }
+  return target > current ? Math.max(0, target - span) : target + span;
+}
