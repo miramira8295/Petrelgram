@@ -1,4 +1,5 @@
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
+import { mirrorChatEnvKey } from '../util/chatEnvMirror';
 import { notificationManager } from '@kit.NotificationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, KeyboardAvoidMode } from '@kit.ArkUI';
@@ -225,6 +226,8 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate('cutoutRightSafeWidth', px2vp(cutoutAvoid.rightRect.width));
       AppStorage.setOrCreate('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
       AppStorage.setOrCreate('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
+      mirrorChatEnvKey('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
+      mirrorChatEnvKey('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
       // 气泡里的媒体最宽 MEDIA_MAX_WIDTH(280vp)，按它的物理像素挑图片尺寸，
       // 别再固定取第二小的那档。用窗口宽算密度，比猜一个屏宽比例准——多挑一档
       // 就是多几倍的解码像素，滑动时那笔账要在主线程上还。
@@ -259,6 +262,7 @@ export default class EntryAbility extends UIAbility {
       // above it, so pages must drop their gesture-bar bottom padding.
       win.on('keyboardHeightChange', (h: number) => {
         AppStorage.setOrCreate('keyboardHeightVp', px2vp(h));
+        mirrorChatEnvKey('keyboardHeightVp', px2vp(h));
       });
       // 悬浮小窗 ↔ 全屏来回时系统会重置状态栏的内容色，而上面那套只在启动和
       // 配置变更时设过一次——从小窗恢复后图标就不是白的了（issue #136）。
@@ -291,6 +295,8 @@ export default class EntryAbility extends UIAbility {
           size.width, candidate, derived);
         AppStorage.setOrCreate('screenWidthVp', candidate);
         AppStorage.setOrCreate('screenHeightVp', px2vp(size.height));
+        mirrorChatEnvKey('screenWidthVp', candidate);
+        mirrorChatEnvKey('screenHeightVp', px2vp(size.height));
       });
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set full-screen layout. Cause: %{public}s', JSON.stringify(err));

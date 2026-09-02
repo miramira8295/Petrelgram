@@ -1,4 +1,5 @@
 import { i18n } from '@kit.LocalizationKit';
+import { mirrorChatEnvKey } from './chatEnvMirror';
 import { refreshLocale } from './intlFormat';
 import { invalidateStringCache, str } from './strings';
 import { logE } from './log';
@@ -19,7 +20,9 @@ export const LANGUAGE_SYSTEM = 'default';
 export const LANGUAGE_EPOCH = 'languageEpoch';
 
 export function bumpLanguageEpoch(): void {
-  AppStorage.setOrCreate(LANGUAGE_EPOCH, (AppStorage.get<number>(LANGUAGE_EPOCH) ?? 0) + 1);
+  const next: number = (AppStorage.get<number>(LANGUAGE_EPOCH) ?? 0) + 1;
+  AppStorage.setOrCreate(LANGUAGE_EPOCH, next);
+  mirrorChatEnvKey(LANGUAGE_EPOCH, next);
 }
 
 export interface AppLanguage {

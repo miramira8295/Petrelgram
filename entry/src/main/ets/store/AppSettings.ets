@@ -1,4 +1,5 @@
 import { preferences } from '@kit.ArkData';
+import { mirrorChatEnvKey, seedChatEnvFromStorage } from '../util/chatEnvMirror';
 import { setCrashUploadOptOut } from '../services/crashRecordStore';
 import { LIGHT_DEFAULT, THICKNESS_DEFAULT } from '../util/materialTuning';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
@@ -357,6 +358,7 @@ function applyPowerState(percent: number): void {
   const active = threshold === 101 || (threshold > 0 && safePercent <= threshold);
   AppStorage.setOrCreate(KEY_BATTERY_PERCENT, safePercent);
   AppStorage.setOrCreate(KEY_POWER_ACTIVE, active);
+  mirrorChatEnvKey(KEY_POWER_ACTIVE, active);
 }
 
 // Read the authoritative SOC instead of trusting event payload field names,
@@ -543,6 +545,8 @@ export async function initSettings(context: common.Context): Promise<void> {
     refreshPowerSavingState();
     beginBatteryMonitoring();
   }
+  // P4 批 0：启动期上面那批 setOrCreate 先于双写接线，收尾整体播种一次镜像。
+  seedChatEnvFromStorage();
 }
 
 // Write-through: AppStorage first (instant UI), Preferences after (durable).
@@ -558,6 +562,7 @@ function persist(key: string, value: preferences.ValueType): void {
 
 export function setNumber(key: string, value: number): void {
   AppStorage.setOrCreate(key, value);
+  mirrorChatEnvKey(key, value);
   persist(key, value);
   if (key === KEY_POWER_THRESHOLD) {
     refreshPowerSavingState();
@@ -572,11 +577,13 @@ export function setBoolean(key: string, value: boolean): void {
     setCrashUploadOptOut(!value);
   }
   AppStorage.setOrCreate(key, value);
+  mirrorChatEnvKey(key, value);
   persist(key, value);
 }
 
 export function setString(key: string, value: string): void {
   AppStorage.setOrCreate(key, value);
+  mirrorChatEnvKey(key, value);
   persist(key, value);
 }
 

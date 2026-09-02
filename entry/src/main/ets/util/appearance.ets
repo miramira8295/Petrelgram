@@ -5,6 +5,7 @@
 // 那份算进 theme.ets 的活绑定（COLOR_PRIMARY / COLOR_BUBBLE_*）再 bump epoch，
 // 订阅了 APPEARANCE_EPOCH 的组件随之重绘。
 import { isValidHex, textOn } from './colorMath';
+import { mirrorChatEnvKey } from './chatEnvMirror';
 import { BubbleColorSet, KEY_APP_DARK, applyAccentPrimary, applyBubbleColors } from './theme';
 
 export const KEY_ACCENT_CUSTOM_ON: string = 'accentCustomOn';
@@ -73,7 +74,9 @@ export function appIsDark(): boolean {
 }
 
 export function bumpAppearanceEpoch(): void {
-  AppStorage.setOrCreate(APPEARANCE_EPOCH, (AppStorage.get<number>(APPEARANCE_EPOCH) ?? 0) + 1);
+  const next: number = (AppStorage.get<number>(APPEARANCE_EPOCH) ?? 0) + 1;
+  AppStorage.setOrCreate(APPEARANCE_EPOCH, next);
+  mirrorChatEnvKey(APPEARANCE_EPOCH, next);
 }
 
 export function storedHex(key: string): string {

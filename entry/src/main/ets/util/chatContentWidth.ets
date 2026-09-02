@@ -14,6 +14,7 @@
 //
 // 手机单栏下它恒等于窗口宽，行为逐字不变。
 import { logW } from './log';
+import { mirrorChatEnvKey } from './chatEnvMirror';
 
 export const CHAT_CONTENT_WIDTH_KEY: string = 'chatContentWidthVp';
 
@@ -40,5 +41,6 @@ export function publishChatContentWidth(widthVp: number): void {
     // 还是消费方拿的是旧值。只在变化时打，一次窗口变化最多两三行。
     logW(`chatContentWidth ${previous} -> ${widthVp}`);
     AppStorage.setOrCreate<number>(CHAT_CONTENT_WIDTH_KEY, widthVp);
+    mirrorChatEnvKey(CHAT_CONTENT_WIDTH_KEY, widthVp);
   }
 }

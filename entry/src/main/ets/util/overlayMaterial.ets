@@ -24,6 +24,7 @@
 //   .systemMaterial(overlayMaterial('bar'))
 
 import { uiMaterial } from '@kit.ArkUI';
+import { mirrorChatEnvKey } from './chatEnvMirror';
 import { hdsMaterial } from '@kit.UIDesignKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { logW } from './log';
@@ -234,7 +235,9 @@ function materialAvailable(): boolean {
 export const MATERIAL_EPOCH: string = 'materialEpoch';
 
 export function bumpMaterialEpoch(): void {
-  AppStorage.setOrCreate(MATERIAL_EPOCH, (AppStorage.get<number>(MATERIAL_EPOCH) ?? 0) + 1);
+  const next: number = (AppStorage.get<number>(MATERIAL_EPOCH) ?? 0) + 1;
+  AppStorage.setOrCreate(MATERIAL_EPOCH, next);
+  mirrorChatEnvKey(MATERIAL_EPOCH, next);
 }
 
 export function immersiveMaterialAvailable(): boolean {
