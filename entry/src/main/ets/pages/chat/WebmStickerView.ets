@@ -2,14 +2,9 @@ import { IjkMediaPlayer, OnPreparedListener, OnErrorListener, OnCompletionListen
 import { AlphaWebmStickerView } from '../common/AlphaWebmStickerView';
 import { alphaStickerPipelineAvailable } from '../../services/AlphaStickerStore';
 import { alphaStickerCandidate } from '../../util/webm/alphaStickerGate';
-import {
-  KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_EMOJI,
-  KEY_POWER_EMOJI_CHAT, KEY_POWER_EMOJI_REACTIONS, KEY_POWER_EMOJI_STATUS,
-  KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP, KEY_REDUCE_ANIM
-} from '../../store/AppSettings';
+import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { probeHit } from '../../util/panelProbe';
 import { logE, logW } from '../../util/log';
-import { reuseParam } from '../../util/reuseParams';
 
 let nextWebmStickerId: number = 1;
 // Pre-EOF rewind: poll the position and seek to 0 this far before the end.
@@ -105,32 +100,24 @@ function enqueueInit(job: PlayerJob): void {
 // 真带透明通道的贴纸走 AlphaWebmStickerView（自解封装 + 系统 VP9 + 自绘），
 // 那条路走不通时原样退回下面的 ijk 播放器——所有调用点都经过这里，所以判定
 // 只在这一个地方做。
-@Component
+// P4 批 6b：迁 @ComponentV2（配方同批 1~6a）。11 个省电键走 chatEnv 镜像；
+// 复用同步化（@Param 已是新值，V1 写回 @Prop 的做法退役）。
+@ComponentV2
 export struct WebmStickerView {
-  @Prop webmPath: string;
-  @Prop thumbPath: string = '';
-  @Prop boxWidth: number = 160;
-  @Prop boxHeight: number = 160;
-  @Prop powerCategory: string = 'sticker';
-  @Prop forcePlay: boolean = false;
-  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_STICKERS) stickersEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI) emojiEnabled: boolean = true;
-  @StorageProp(KEY_POWER_AUTOPLAY_GIF) autoplayGif: boolean = true;
-  @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_AUTOPLAY) stickerAutoplay: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_LOOP) stickerLoop: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_CHAT) emojiChat: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) emojiReactions: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_STATUS) emojiStatus: boolean = true;
-  @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
-  onWorking: () => void = (): void => {};
-  onFailed: () => void = (): void => {};
-  @State failed: boolean = false;
+  @Param webmPath: string = '';
+  @Param thumbPath: string = '';
+  @Param boxWidth: number = 160;
+  @Param boxHeight: number = 160;
+  @Param powerCategory: string = 'sticker';
+  @Param forcePlay: boolean = false;
+  private env: ChatEnvMirror = chatEnv;
+  @Param onWorking: () => void = (): void => {};
+  @Param onFailed: () => void = (): void => {};
+  @Local failed: boolean = false;
   // 先试自解码链路；它自己会读文件头判断有没有 alpha，判不出来就把这面旗降下
   // 来，退回 ijk。**不再看设备 API 版本**——解码器是随包自带的 libvpx，唯一的
   // 运行期条件是原生模块加载成功。
-  @State useAlpha: boolean = false;
+  @Local useAlpha: boolean = false;
   private player: IjkMediaPlayer | null = null;
   private readonly instanceId: number = nextWebmStickerId++;
   private loopTimer: number = -1;
@@ -158,23 +145,8 @@ export struct WebmStickerView {
     this.failed = false;
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
-    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
-    // util/reuseParams.ets）。取不到就保留 this.xxx 当前值，等同于原有的
-    // 「不赋值」分支。
-    const webmPath: string | undefined = reuseParam(params, 'webmPath') as string | undefined;
-    const thumbPath: string | undefined = reuseParam(params, 'thumbPath') as string | undefined;
-    const category: string | undefined =
-      reuseParam(params, 'powerCategory') as string | undefined;
-    if (webmPath !== undefined) {
-      this.webmPath = webmPath;
-    }
-    if (thumbPath !== undefined) {
-      this.thumbPath = thumbPath;
-    }
-    if (category !== undefined) {
-      this.powerCategory = category;
-    }
+  aboutToReuse(): void {
+    // @Param 已是新值（批 0.5 判读）：V1 时代写回 @Prop 的整段退役。
     this.destroyed = false;
     this.failed = false;
     this.durationMs = 0;
@@ -310,32 +282,32 @@ export struct WebmStickerView {
     if (this.forcePlay) {
       return false;
     }
-    if (this.powerSaving || this.reduceAnimations) {
+    if (this.env.powerSaving || this.env.reduceAnim) {
       return true;
     }
     if (this.powerCategory === 'emojiPicker') {
-      return !this.emojiEnabled;
+      return !this.env.animatedEmoji;
     }
     if (this.powerCategory === 'gif') {
-      return !this.autoplayGif;
+      return !this.env.autoplayGif;
     }
     if (this.powerCategory === 'video') {
-      return !this.autoplayVideo;
+      return !this.env.autoplayVideo;
     }
     if (this.powerCategory === 'emojiStatus' || this.powerCategory === 'emoji') {
-      return !this.emojiEnabled || !this.emojiStatus;
+      return !this.env.animatedEmoji || !this.env.emojiStatus;
     }
     if (this.powerCategory === 'emojiReaction') {
-      return !this.emojiEnabled || !this.emojiReactions;
+      return !this.env.animatedEmoji || !this.env.emojiReactions;
     }
     if (this.powerCategory === 'emojiChat') {
-      return !this.emojiEnabled || !this.emojiChat;
+      return !this.env.animatedEmoji || !this.env.emojiChat;
     }
-    return !this.stickersEnabled || !this.stickerAutoplay;
+    return !this.env.stickers || !this.env.stickerAutoplay;
   }
 
   private loopEnabled(): boolean {
-    return this.powerCategory === 'sticker' ? this.stickerLoop : true;
+    return this.powerCategory === 'sticker' ? this.env.stickerLoop : true;
   }
 
   build() {

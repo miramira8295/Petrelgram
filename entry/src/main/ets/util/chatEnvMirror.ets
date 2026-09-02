@@ -37,6 +37,7 @@ export class ChatEnvMirror {
   @Trace stickers: boolean = true;
   @Trace stickerAutoplay: boolean = true;
   @Trace autoplayGif: boolean = true;
+  @Trace autoplayVideo: boolean = true;
   @Trace stickerLoop: boolean = true;
   @Trace emojiStatus: boolean = true;
   @Trace appIsForeground: boolean = true;
@@ -53,7 +54,7 @@ const MIRRORED_KEYS: string[] = [
   'powerChatEffects', 'powerEffectMessage', 'powerEffectReaction',
   'powerAnimatedEmoji', 'powerEmojiReactions', 'msgGestureScheme',
   'powerEmojiChat', 'powerAnimatedStickers', 'powerStickerAutoplay',
-  'powerAutoplayGif', 'powerStickerLoop', 'powerEmojiStatus',
+  'powerAutoplayGif', 'powerAutoplayVideo', 'powerStickerLoop', 'powerEmojiStatus',
   'appIsForeground', 'linkNavBusyUrl'
 ];
 
@@ -87,6 +88,7 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
     case 'powerAnimatedStickers': chatEnv.stickers = value as boolean; break;
     case 'powerStickerAutoplay': chatEnv.stickerAutoplay = value as boolean; break;
     case 'powerAutoplayGif': chatEnv.autoplayGif = value as boolean; break;
+    case 'powerAutoplayVideo': chatEnv.autoplayVideo = value as boolean; break;
     case 'powerStickerLoop': chatEnv.stickerLoop = value as boolean; break;
     case 'powerEmojiStatus': chatEnv.emojiStatus = value as boolean; break;
     case 'appIsForeground': chatEnv.appIsForeground = value as boolean; break;

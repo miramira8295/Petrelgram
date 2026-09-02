@@ -1,10 +1,6 @@
 import lottie, { AnimationItem } from '@ohos/lottie';
 import { gunzipTgs } from '../../util/gunzipTgs';
-import {
-  KEY_POWER_ACTIVE, KEY_POWER_EMOJI, KEY_POWER_EMOJI_CHAT, KEY_POWER_EMOJI_REACTIONS,
-  KEY_POWER_EMOJI_STATUS, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP,
-  KEY_REDUCE_ANIM
-} from '../../store/AppSettings';
+import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { probeHit } from '../../util/panelProbe';
 import { logE, logW } from '../../util/log';
 
@@ -69,31 +65,26 @@ function subscribeChatTgsGate(listener: ChatTgsGateListener): () => void {
 // @ohos/lottie. On any decode failure it renders the raster thumbnail instead.
 // Do not mark this child @Reusable: a reusable ancestor would create a nested
 // cache, while a normal ancestor cannot preserve this cache across row teardown.
-@Component
+// P4 批 6b：迁 @ComponentV2（配方同批 1~6a）。9 个省电键走 chatEnv 镜像，
+// onPowerChanged 用 @Monitor 深层路径一次挂 9 条。本组件无复用钩子（不进
+// 复用池的门控自绘），@Watch→@Monitor 即完成。
+@ComponentV2
 export struct TgsStickerView {
-  @Prop @Watch('onTgsPathChanged') tgsPath: string;
-  @Prop thumbPath: string = '';
-  @Prop boxWidth: number = 160;
-  @Prop boxHeight: number = 160;
-  @Prop powerCategory: string = 'sticker';
+  @Param tgsPath: string = '';
+  @Param thumbPath: string = '';
+  @Param boxWidth: number = 160;
+  @Param boxHeight: number = 160;
+  @Param powerCategory: string = 'sticker';
   // True only for a message-timeline cell. Picker/status/login animations can
   // use the same power category without inheriting ChatPage's scroll gate or
   // its tighter four-canvas budget.
-  @Prop chatTimeline: boolean = false;
+  @Param chatTimeline: boolean = false;
   // 播一次并定格在最后一帧（骰子/老虎机结果动画的官方语义），不循环。
-  @Prop playOnce: boolean = false;
-  onFailed: () => void = (): void => {};
-  @StorageProp(KEY_POWER_ACTIVE) @Watch('onPowerChanged') powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_STICKERS) @Watch('onPowerChanged') stickersEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI) @Watch('onPowerChanged') emojiEnabled: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_AUTOPLAY) @Watch('onPowerChanged') stickerAutoplay: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_LOOP) @Watch('onPowerChanged') stickerLoop: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_CHAT) @Watch('onPowerChanged') emojiChat: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) @Watch('onPowerChanged') emojiReactions: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_STATUS) @Watch('onPowerChanged') emojiStatus: boolean = true;
-  @StorageProp(KEY_REDUCE_ANIM) @Watch('onPowerChanged') reduceAnimations: boolean = false;
-  @State failed: boolean = false;
-  @State private budgetDeferred: boolean = false;
+  @Param playOnce: boolean = false;
+  @Param onFailed: () => void = (): void => {};
+  private env: ChatEnvMirror = chatEnv;
+  @Local failed: boolean = false;
+  @Local private budgetDeferred: boolean = false;
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private anim: AnimationItem | null = null;
@@ -110,7 +101,8 @@ export struct TgsStickerView {
   // value.
   private loadSeq: number = 0;
 
-  private onTgsPathChanged(): void {
+  @Monitor('tgsPath')
+  onTgsPathChanged(): void {
     this.loadSeq++;
     this.stopAnim();
     this.disposed = false;
@@ -121,7 +113,9 @@ export struct TgsStickerView {
     }
   }
 
-  private onPowerChanged(): void {
+  @Monitor('env.powerSaving', 'env.stickers', 'env.animatedEmoji', 'env.stickerAutoplay',
+    'env.stickerLoop', 'env.emojiChat', 'env.emojiReactions', 'env.emojiStatus', 'env.reduceAnim')
+  onPowerChanged(): void {
     if (this.powerSuspended()) {
       this.loadSeq++;
       this.stopAnim();
@@ -279,7 +273,7 @@ export struct TgsStickerView {
       this.anim = lottie.loadAnimation({
         container: this.ctx,
         renderer: 'canvas', // the only supported renderer
-        loop: this.playOnce ? false : (this.powerCategory === 'sticker' ? this.stickerLoop : true),
+        loop: this.playOnce ? false : (this.powerCategory === 'sticker' ? this.env.stickerLoop : true),
         autoplay: true,
         animationData: JSON.parse(json),
         contentMode: 'Contain'
@@ -293,22 +287,22 @@ export struct TgsStickerView {
   }
 
   private powerSuspended(): boolean {
-    if (this.powerSaving || this.reduceAnimations) {
+    if (this.env.powerSaving || this.env.reduceAnim) {
       return true;
     }
     if (this.powerCategory === 'emojiPicker') {
-      return !this.emojiEnabled;
+      return !this.env.animatedEmoji;
     }
     if (this.powerCategory === 'emojiStatus' || this.powerCategory === 'emoji') {
-      return !this.emojiEnabled || !this.emojiStatus;
+      return !this.env.animatedEmoji || !this.env.emojiStatus;
     }
     if (this.powerCategory === 'emojiReaction') {
-      return !this.emojiEnabled || !this.emojiReactions;
+      return !this.env.animatedEmoji || !this.env.emojiReactions;
     }
     if (this.powerCategory === 'emojiChat') {
-      return !this.emojiEnabled || !this.emojiChat;
+      return !this.env.animatedEmoji || !this.env.emojiChat;
     }
-    return !this.stickersEnabled || !this.stickerAutoplay;
+    return !this.env.stickers || !this.env.stickerAutoplay;
   }
 
   private animationSuspended(): boolean {

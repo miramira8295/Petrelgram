@@ -1,24 +1,25 @@
 import { media } from '@kit.MediaKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { logE, logI } from '../../util/log';
-import { reuseParam } from '../../util/reuseParams';
 
 let nextAvLoopId: number = 1;
 
 // Muted, seamlessly looping video via the system AVPlayer (hardware decode,
 // native loop — much lighter than ijkplayer). H.264/H.265 content only; VP9
 // webm still needs WebmStickerView's software decoder.
-@Component
+// P4 批 6b：迁 @ComponentV2（配方同批 1~6a）。复用同步化；@Monitor 兜非复用
+// 路径的换源。
+@ComponentV2
 export struct AvLoopVideo {
-  @Prop @Watch('onVideoPathChanged') videoPath: string;
-  @Prop boxWidth: number = 100;
-  @Prop boxHeight: number = 100;
-  @Prop loop: boolean = true;
+  @Param videoPath: string = '';
+  @Param boxWidth: number = 100;
+  @Param boxHeight: number = 100;
+  @Param loop: boolean = true;
   // 圆形视频是"点一下放一遍并出声"，和贴纸/GIF 的静音循环不是一回事。
-  @Prop muted: boolean = true;
-  onFinished: () => void = (): void => {};
-  onFailed: () => void = (): void => {};   // codec/demux failure — caller may fall back
-  onWorking: () => void = (): void => {};  // first successful playback
+  @Param muted: boolean = true;
+  @Param onFinished: () => void = (): void => {};
+  @Param onFailed: () => void = (): void => {};   // codec/demux failure — caller may fall back
+  @Param onWorking: () => void = (): void => {};  // first successful playback
   private player: media.AVPlayer | null = null;
   private ctrl: XComponentController = new XComponentController();
   private fd: number = -1;
@@ -43,15 +44,9 @@ export struct AvLoopVideo {
     this.release();
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
+  aboutToReuse(): void {
+    // @Param videoPath 已是新值（批 0.5 判读）：V1 写回 @Prop 的做法退役。
     this.playerSeq++;
-    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
-    // util/reuseParams.ets）。取不到就保留 this.videoPath，下面的 release/
-    // 重新 init 仍然无条件跑。
-    const videoPath: string | undefined = reuseParam(params, 'videoPath') as string | undefined;
-    if (videoPath !== undefined) {
-      this.videoPath = videoPath;
-    }
     this.destroyed = false;
     this.release();
     if (this.surfaceId !== '') {
@@ -81,7 +76,8 @@ export struct AvLoopVideo {
     }
   }
 
-  private onVideoPathChanged(): void {
+  @Monitor('videoPath')
+  onVideoPathChanged(): void {
     this.playerSeq++;
     this.release();
     if (!this.destroyed && this.surfaceId !== '') {

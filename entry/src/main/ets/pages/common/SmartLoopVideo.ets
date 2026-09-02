@@ -1,12 +1,7 @@
 import { AvLoopVideo } from './AvLoopVideo';
 import { WebmStickerView } from '../chat/WebmStickerView';
-import {
-  KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_EMOJI,
-  KEY_POWER_EMOJI_CHAT, KEY_POWER_EMOJI_REACTIONS, KEY_POWER_EMOJI_STATUS,
-  KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP, KEY_REDUCE_ANIM
-} from '../../store/AppSettings';
+import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { logW } from '../../util/log';
-import { reuseParam } from '../../util/reuseParams';
 
 // One-time probe verdict for VP9/WEBM on the system AVPlayer:
 // 0 = unknown (try AVPlayer), 1 = works, -1 = unsupported (go straight to ijk).
@@ -15,32 +10,24 @@ let avWebmVerdict: number = 0;
 // Looping muted video that prefers the system AVPlayer (hardware decode) and
 // silently falls back to ijkplayer (ffmpeg software VP9) when the system
 // codec can't handle the file. The verdict is remembered process-wide.
-@Component
+// P4 批 6b：迁 @ComponentV2（配方同批 1~6a）。11 个省电键走 chatEnv 镜像；
+// 复用同步化（@Param 已是新值）。
+@ComponentV2
 export struct SmartLoopVideo {
-  @Prop videoPath: string;
-  @Prop thumbPath: string = '';
-  @Prop boxWidth: number = 160;
-  @Prop boxHeight: number = 160;
-  @Prop powerCategory: string = 'sticker';
+  @Param videoPath: string = '';
+  @Param thumbPath: string = '';
+  @Param boxWidth: number = 160;
+  @Param boxHeight: number = 160;
+  @Param powerCategory: string = 'sticker';
   // A deliberate tap may play a GIF even when automatic playback is disabled
   // by its category/power policy. The parent still pauses it when off-screen
   // or when the app enters the background.
-  @Prop forcePlay: boolean = false;
-  onPlaybackFailed: () => void = (): void => {};
-  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_AUTOPLAY_GIF) autoplayGif: boolean = true;
-  @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
-  @StorageProp(KEY_POWER_STICKERS) stickersEnabled: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_AUTOPLAY) stickerAutoplay: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_LOOP) stickerLoop: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI) emojiEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_CHAT) emojiChat: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) emojiReactions: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_STATUS) emojiStatus: boolean = true;
-  @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
+  @Param forcePlay: boolean = false;
+  @Param onPlaybackFailed: () => void = (): void => {};
+  private env: ChatEnvMirror = chatEnv;
   // 透明素材必须走 ijk，见 aboutToAppear。这里的初值只管非透明那一类。
-  @State useIjk: boolean = avWebmVerdict === -1;
-  @State videoReady: boolean = false;
+  @Local useIjk: boolean = avWebmVerdict === -1;
+  @Local videoReady: boolean = false;
   private firstFrameTimer: number = -1;
 
   aboutToAppear(): void {
@@ -64,15 +51,10 @@ export struct SmartLoopVideo {
     this.resetPlaybackState();
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
+  aboutToReuse(): void {
+    // @Param 已是新值（批 0.5 判读）：直接按新素材类别判定。
     this.resetPlaybackState();
-    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到已有的
-    // isTransparentAsset() 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
-    const category: string | undefined =
-      reuseParam(params, 'powerCategory') as string | undefined;
-    const transparent: boolean = category !== undefined
-      ? this.transparentCategory(category) : this.isTransparentAsset();
-    this.useIjk = transparent || avWebmVerdict === -1;
+    this.useIjk = this.isTransparentAsset() || avWebmVerdict === -1;
   }
 
   private resetPlaybackState(): void {
@@ -100,32 +82,32 @@ export struct SmartLoopVideo {
     if (this.forcePlay) {
       return false;
     }
-    if (this.powerSaving || this.reduceAnimations) {
+    if (this.env.powerSaving || this.env.reduceAnim) {
       return true;
     }
     if (this.powerCategory === 'emojiPicker') {
-      return !this.emojiEnabled;
+      return !this.env.animatedEmoji;
     }
     if (this.powerCategory === 'gif') {
-      return !this.autoplayGif;
+      return !this.env.autoplayGif;
     }
     if (this.powerCategory === 'video') {
-      return !this.autoplayVideo;
+      return !this.env.autoplayVideo;
     }
     if (this.powerCategory === 'emojiStatus' || this.powerCategory === 'emoji') {
-      return !this.emojiEnabled || !this.emojiStatus;
+      return !this.env.animatedEmoji || !this.env.emojiStatus;
     }
     if (this.powerCategory === 'emojiReaction') {
-      return !this.emojiEnabled || !this.emojiReactions;
+      return !this.env.animatedEmoji || !this.env.emojiReactions;
     }
     if (this.powerCategory === 'emojiChat') {
-      return !this.emojiEnabled || !this.emojiChat;
+      return !this.env.animatedEmoji || !this.env.emojiChat;
     }
-    return !this.stickersEnabled || !this.stickerAutoplay;
+    return !this.env.stickers || !this.env.stickerAutoplay;
   }
 
   private loopEnabled(): boolean {
-    return this.powerCategory === 'sticker' ? this.stickerLoop : true;
+    return this.powerCategory === 'sticker' ? this.env.stickerLoop : true;
   }
 
   private isTransparentAsset(): boolean {
