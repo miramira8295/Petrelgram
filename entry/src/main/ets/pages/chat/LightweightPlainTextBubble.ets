@@ -48,6 +48,8 @@ import { logW } from '../../util/log';
 import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
 import { reuseParam } from '../../util/reuseParams';
+// ⚠️ 临时探针（P4 批 0.5，判读完删）。
+import { V2ReuseProbe } from './V2ReuseProbe';
 import {
   cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
 } from '../../util/nextFrameQueue';
@@ -851,6 +853,9 @@ export struct LightweightPlainTextBubble {
 
   build() {
     Column() {
+      // ⚠️ 临时探针（P4 批 0.5，判读完删）：零尺寸 V2 子组件，采集复用时序。
+      // 删除清单见 V2ReuseProbe.ets 顶部。
+      V2ReuseProbe({ rowTag: this.msg.rowId });
       if (this.dateLabel !== '') {
         Row() {
           Text(this.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
