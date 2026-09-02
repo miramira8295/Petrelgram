@@ -1,18 +1,13 @@
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { MessageEntry } from '../../store/MessageEntry';
-import {
-  KEY_BUBBLE_RADIUS, KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS,
-  KEY_POWER_EFFECT_MESSAGE, KEY_POWER_EFFECT_REACTION, KEY_POWER_EMOJI,
-  KEY_POWER_EMOJI_REACTIONS, KEY_POWER_SMOOTH_TRANSITIONS, KEY_REDUCE_ANIM,
-  KEY_TEXT_SIZE, RADIUS_DEFAULT, TEXT_SIZE_DEFAULT, powerAnimationDuration,
-  KEY_MSG_GESTURE
-} from '../../store/AppSettings';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
 import {
   animationDurationFor, scrollActiveNow
 } from '../../util/scrollEffects';
-import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
+import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
@@ -25,7 +20,6 @@ import {
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
-import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
@@ -42,17 +36,12 @@ import { formatClockTime } from '../../util/formatTime';
 import { probeHit } from '../../util/panelProbe';
 import { CachedImage } from '../common/CachedImage';
 import { SenderRoleTag } from './SenderRoleTag';
-import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 import { logW } from '../../util/log';
 // ⚠️ 临时探针，验完即删——见 util/avatarReuseProbe 的删除清单。
 import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
-import { reuseParam } from '../../util/reuseParams';
 // ⚠️ 临时探针（P4 批 0.5，判读完删）。
 import { V2ReuseProbe } from './V2ReuseProbe';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 const SWIPE_REPLY_MAX: number = -56;
@@ -195,31 +184,69 @@ struct LightweightSenderAvatar {
   }
 }
 
-@Component
+// 名字行宽度的进程级记忆（P4 批 2）：V1 时代靠 @State「复用不清零」兜住
+// 「名字行比正文宽」的时间层最小宽度；@Local 复用必重置，改按名字文本记忆
+// ——复用当口先播种，onAreaChange 实测后回写。上限防涨（FIFO 淘汰）。
+const SENDER_LABEL_WIDTHS: Map<string, number> = new Map<string, number>();
+const SENDER_LABEL_WIDTH_LIMIT: number = 512;
+
+function rememberSenderLabelW(name: string, width: number): void {
+  if (name === '' || !(width > 0)) {
+    return;
+  }
+  if (!SENDER_LABEL_WIDTHS.has(name) && SENDER_LABEL_WIDTHS.size >= SENDER_LABEL_WIDTH_LIMIT) {
+    const oldest = SENDER_LABEL_WIDTHS.keys().next().value as string | undefined;
+    if (oldest !== undefined) {
+      SENDER_LABEL_WIDTHS.delete(oldest);
+    }
+  }
+  SENDER_LABEL_WIDTHS.set(name, width);
+}
+
+// 按压反馈这四组样式不读任何组件状态，随批 2 迁成全局 @Styles——
+// @ComponentV2 不支持成员 @Styles。
+@Styles
+function plainBubbleNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
+
+@Styles
+function plainBubblePressedStyle() { .opacity(0.84).scale({ x: 0.992, y: 0.992 }) }
+
+@Styles
+function plainMenuNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
+
+@Styles
+function plainMenuPressedStyle() { .opacity(0.72).scale({ x: 0.94, y: 0.94 }) }
+
+// P4 批 2：主体迁 @ComponentV2（判读依据同批 1，见 survey 批 0.5 节）。
+// 收益本体：@Prop 深拷贝 → @Param 引用（msg/memberIds/actions 都是每次复用
+// 整套重灌的大头）；延帧兜底（nextFrameQueue/reuseParam）整套退役。
+@ComponentV2
 export struct LightweightPlainTextBubble {
+
+  // 全局环境值走 chatEnv 镜像（批 0 建的，V2 没有 @StorageProp）。@Trace
+  // 字段在 build 里读到即登记依赖，写入点双写保证跟手。
+  private env: ChatEnvMirror = chatEnv;
 
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
-    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+    return this.env.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
-  @Prop @Watch('onMessageChanged') msg: MessageEntry;
-  @Prop nowSec: number = 0;
-  @Prop chatId: number = 0;
-  @Prop isGroup: boolean = false;
-  @Prop themeBubbleOut: string = '';
-  // 本地外观：同 MessageBubble——epoch 驱动底色/文字色重取，材质只给屏内且非省电的气泡。
-  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
-  @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
+  @Require @Param msg: MessageEntry;
+  @Param nowSec: number = 0;
+  @Param chatId: number = 0;
+  @Param isGroup: boolean = false;
+  @Param themeBubbleOut: string = '';
   // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
   // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
-  // 由回调负责在真正离屏时关掉——那一路是可靠的。
-  @State onScreen: boolean = true;
-  @State glassW: number = 0;
-  @State glassH: number = 0;
+  // 由回调负责在真正离屏时关掉——那一路是可靠的。@Local 复用时重置回 true，
+  // 语义与 V1 的手工赋值一致。
+  @Local onScreen: boolean = true;
+  @Local glassW: number = 0;
+  @Local glassH: number = 0;
 
   private bubbleFillColor(): ResourceColor {
-    if (this.appearanceEpoch < 0) {
+    if (this.env.appearanceEpoch < 0) {
       return Color.Transparent; // 只为让 ArkUI 记下对 epoch 的依赖
     }
     if (this.msg.isOutgoing) {
@@ -252,7 +279,7 @@ export struct LightweightPlainTextBubble {
   }
 
   private bubbleMaterialLive(): boolean {
-    return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
+    return this.env.bubbleMaterialOn && this.onScreen && !this.env.powerSaving;
   }
 
   // 见 MessageBubble.glassReady()：**容器**这一层要等量到尺寸，
@@ -320,57 +347,40 @@ export struct LightweightPlainTextBubble {
     }
   }
 
-  @Prop showUnreadDivider: boolean = false;
-  @Prop dividerIsResume: boolean = false;
-  @Prop dateLabel: string = '';
-  @Prop editingActive: boolean = false;
-  @Prop isPinnedMsg: boolean = false;
-  @Prop showAvatar: boolean = true;
-  @Prop showSenderName: boolean = true;
-  @Prop animateIn: boolean = false;
-  @Prop memberIds: number[] = [];
-  actions: LightweightPlainTextActions = EMPTY_ACTIONS;
+  @Param showUnreadDivider: boolean = false;
+  @Param dividerIsResume: boolean = false;
+  @Param dateLabel: string = '';
+  @Param editingActive: boolean = false;
+  @Param isPinnedMsg: boolean = false;
+  @Param showAvatar: boolean = true;
+  @Param showSenderName: boolean = true;
+  @Param animateIn: boolean = false;
+  @Param memberIds: number[] = [];
+  // V2 里无装饰器成员是纯本地常量、禁止外部构造传参（编译错误 10905324，
+  // 见 ReusableMessageBubble 的同名注释）——必须 @Param。页面持有的引用全
+  // 生命周期不变，每帧只多一次恒等比较。
+  @Param actions: LightweightPlainTextActions = EMPTY_ACTIONS;
 
-  // 读的是**内容列宽**，不是窗口宽——分栏下两者差一个左栏（issue #107）。
-  // 字段仍叫 screenW：下面十几处按它算宽的式子一个都不用动。
-  @StorageProp(CHAT_CONTENT_WIDTH_KEY) screenW: number = 360;
-  // 长按菜单带不带预览图，和 MessageBubble.menuKeyboardH / menuWindowH 同一套判据
-  // （util/menuPreview）：窗口装不下「预览 + 菜单」时 ArkUI 直接不弹。1.4.2 只在
-  // MessageBubble 上做了，纯文本走的是本组件，最常见的长按目标依旧弹不出来
-  // （issue #114）。
-  @StorageProp('keyboardHeightVp') private menuKeyboardH: number = 0;
-  @StorageProp('screenHeightVp') private menuWindowH: number = 780;
-  @StorageProp(KEY_TEXT_SIZE) msgTextSize: number = TEXT_SIZE_DEFAULT;
-  @StorageProp(KEY_BUBBLE_RADIUS) bubbleRadius: number = RADIUS_DEFAULT;
-  @StorageProp(KEY_REDUCE_ANIM) reduceAnim: boolean = false;
-  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_CHAT_EFFECTS) chatEffectsEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_MESSAGE) messageEffectsEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_REACTION) reactionEffectsEnabled: boolean = false;
-  @StorageProp(KEY_POWER_EMOJI) emojiEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) emojiReactionsEnabled: boolean = true;
-  @StorageProp(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
+  // 环境值（内容列宽/键盘高/字号/圆角/省电系……）都在 this.env 里，见顶部。
 
-  @State private liveSendState: string = '';
-  @State private translationStatus: TranslationStatus | null = null;
-  @State private menuShown: boolean = false;
-  @State private swipeX: number = 0;
+  @Local private liveSendState: string = '';
+  @Local private translationStatus: TranslationStatus | null = null;
+  @Local private menuShown: boolean = false;
+  @Local private swipeX: number = 0;
   private bubbleW: number = 0;
   // 名字行量出来的宽度。名字行比正文宽时，时间层要拿它兜最小宽度，时间戳才落在
-  // 气泡右下角、引用块才能拉到气泡边缘。**复用时不清零**、用时按显不显示门控
-  // （理由见 timeLayerWidth.ets 和 MessageBubble 里同名字段的注释）。
-  @State private senderLabelW: number = 0;
+  // 气泡右下角、引用块才能拉到气泡边缘。V1 靠「复用不清零」留住上一行的近似值；
+  // V2 的 @Local 复用必重置，改为按名字文本进程级记忆（见 SENDER_LABEL_WIDTHS），
+  // 复用当口播种，比 V1 的近似更准（同名即同宽，V1 拿的是上一行随机名字的宽）。
+  @Local private senderLabelW: number = 0;
   private menuOffsetX: number = 0;
   private gestureClaimed: boolean = false;
   private unsubSend: (() => void) | null = null;
   private unsubTranslation: (() => void) | null = null;
 
   // 订阅当前挂在哪条消息上。发送状态按 rowId 订阅、翻译态按 message.id 订阅，
-  // 所以 key 要把两者都算进去。用途同头像：同 key 短路（审计 P1-1，复用一次
-  // 会经 aboutToReuse 和 @Watch onMessageChanged 各挂一次）+ 按 key 自愈。
+  // 所以 key 要把两者都算进去。用途同头像：同 key 短路 + 按 key 自愈。
   private attachedKey: string = '';
-  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
-  private frameOwnerId: number = nextFrameOwnerId();
 
   private attachChannels(message: MessageEntry): void {
     const key: string = `${message.rowId}:${message.id}`;
@@ -396,13 +406,6 @@ export struct LightweightPlainTextBubble {
     this.translationStatus = translationStatusFor(message.id);
   }
 
-  // C 类通道值同样不依赖新参数（同 MessageBubble 的 clearChannelValues，依据
-  // 审计 3.2a）：不清就会拿上一条消息的发送勾/翻译态渲染新消息一帧。
-  private clearChannelValues(): void {
-    this.liveSendState = '';
-    this.translationStatus = null;
-  }
-
   private detachChannels(): void {
     if (this.unsubSend !== null) { this.unsubSend(); this.unsubSend = null; }
     if (this.unsubTranslation !== null) {
@@ -412,9 +415,10 @@ export struct LightweightPlainTextBubble {
     this.attachedKey = '';
   }
 
+  // 只剩无装饰器成员要手工归零：官方表格明确它们复用时**不重置**。
+  // @Local（menuShown/swipeX/通道值/玻璃尺寸/onScreen）由框架在 aboutToReuse
+  // 之前统一重置（批 0.5 实测 1370/1370）。
   private resetTransient(): void {
-    this.menuShown = false;
-    this.swipeX = 0;
     this.bubbleW = 0;
     this.menuOffsetX = 0;
     this.gestureClaimed = false;
@@ -422,83 +426,60 @@ export struct LightweightPlainTextBubble {
 
   aboutToAppear(): void {
     probeHit('message.plain.mount');
+    this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
     this.attachChannels(this.msg);
   }
   aboutToDisappear(): void {
     this.detachChannels();
-    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
-    cancelNextFrame(this.frameOwnerId);
   }
   aboutToRecycle(): void {
     probeHit('message.plain.recycle');
     this.detachChannels();
     this.resetTransient();
-    // 与 aboutToReuse 保持同一份清理（审计 S1）：通道值也归零，别让组件带着
-    // 上一条消息的发送勾/翻译态躺在复用池里。
-    this.clearChannelValues();
-    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
-    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
-    cancelNextFrame(this.frameOwnerId);
   }
-  aboutToReuse(params: Record<string, Object>): void {
+  aboutToReuse(): void {
     probeHit('message.plain.reuse');
-    // 无条件前置（审计 S1）：这两行不依赖新参数，父级 @ReusableV2 无入参时
-    // 也成立。
+    // @Param 已是新值、@Local 已重置（批 0.5 判读 Q1b/Q2）：同步重挂+重播种，
+    // V1 时代的 reuseParam 读参和 nextFrameQueue 延帧兜底整套退役。
     this.resetTransient();
-    this.clearChannelValues();
-    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 0 项）。
-    const next: MessageEntry | undefined =
-      reuseParam(params, 'msg') as MessageEntry | undefined;
-    if (next !== undefined) {
-      this.attachChannels(next);
-    } else {
-      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：params
-      // 恒带 msg，present=0 一次都没出现，params 与此刻的 @Prop 也从未不一致
-      // ——这条分支在当前调用图下**不可达**。
-      // **推导（不是实测）**：仍然不能删（I-3）。onMessageChanged 只在 @Prop msg
-      // 真的变化时触发；复用回同一条消息时它不跑，而 aboutToRecycle 已经退订并
-      // 把 attachedKey 归零，那时这里是唯一的重挂路径。父级**已经是**
-      // @ReusableV2（P3 批 1），aboutToReuse 没有入参，这条**已经是**唯一分支。
-      // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-      enqueueNextFrame(this.frameOwnerId, (): void => { this.attachChannels(this.msg); });
-    }
-    // 见 MessageBubble 同一处：复用后玻璃层要重新量。
-    this.glassW = 0;
-    this.glassH = 0;
-    this.onScreen = true;
+    this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
+    this.attachChannels(this.msg);
   }
 
-  private onMessageChanged(): void { this.attachChannels(this.msg); }
+  // 非复用路径上同一实例换消息时兜底重挂；复用路径靠 aboutToReuse（@Monitor
+  // 复用期静默，批 0.5 实测 0 触发）。
+  @Monitor('msg')
+  onMessageChanged(): void { this.attachChannels(this.msg); }
 
-  private bubbleMaxW(): number { return bubbleMaxWidth(this.screenW); }
+  private bubbleMaxW(): number { return bubbleMaxWidth(this.env.chatContentWidth); }
   private inlineMaxW(): number { return this.bubbleMaxW() - 16; }
-  private runRadius(): number { return Math.min(this.bubbleRadius, 7); }
-  private tailRadius(): number { return Math.min(this.bubbleRadius, 2); }
+  private runRadius(): number { return Math.min(this.env.bubbleRadius, 7); }
+  private tailRadius(): number { return Math.min(this.env.bubbleRadius, 2); }
   private hasTail(): boolean { return this.showAvatar; }
   private rowTopPadding(): number { return this.showSenderName ? 3 : 1; }
   private rowBottomPadding(): number { return this.showAvatar ? 3 : 1; }
   private effectDuration(ms: number): number {
     return animationDurationFor(
-      this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving,
+      this.env.chatEffects && this.env.messageEffects && !this.env.powerSaving,
       scrollActiveNow(), ms);
   }
   private reactionDuration(ms: number): number {
     return animationDurationFor(
-      this.chatEffectsEnabled && this.reactionEffectsEnabled && this.emojiEnabled &&
-        this.emojiReactionsEnabled && !this.powerSaving,
+      this.env.chatEffects && this.env.reactionEffects && this.env.animatedEmoji &&
+        this.env.emojiReactions && !this.env.powerSaving,
       scrollActiveNow(), ms);
   }
 
   private bubbleCorners(): BorderRadiuses {
     return {
-      topLeft: this.msg.isOutgoing ? this.bubbleRadius :
-        (this.showSenderName ? this.bubbleRadius : this.runRadius()),
+      topLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
+        (this.showSenderName ? this.env.bubbleRadius : this.runRadius()),
       topRight: this.msg.isOutgoing ?
-        (this.showSenderName ? this.bubbleRadius : this.runRadius()) : this.bubbleRadius,
-      bottomLeft: this.msg.isOutgoing ? this.bubbleRadius :
+        (this.showSenderName ? this.env.bubbleRadius : this.runRadius()) : this.env.bubbleRadius,
+      bottomLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
         (this.showAvatar ? this.tailRadius() : this.runRadius()),
       bottomRight: this.msg.isOutgoing ?
-        (this.showAvatar ? this.tailRadius() : this.runRadius()) : this.bubbleRadius
+        (this.showAvatar ? this.tailRadius() : this.runRadius()) : this.env.bubbleRadius
     };
   }
 
@@ -529,12 +510,12 @@ export struct LightweightPlainTextBubble {
       this.recordMenuOffset(event.fingerList[0].localX);
     }
     this.gestureClaimed = true;
-    const policy: MessageGesturePolicy = messageGesturePolicy(this.gestureScheme);
+    const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
     // 诊断（issue #114）：和 MessageBubble 那条 [Menu114] 对照。报告人 1.4.2 的日志
     // 里一条菜单相关的行都没有，正是因为长按落在本组件、而本组件什么都不记。
-    logW(`[Menu114] longPress(plain) kbd=${Math.round(this.menuKeyboardH)}`
-      + ` winH=${Math.round(this.menuWindowH)}`
-      + ` compact=${menuPreviewCompact(this.menuKeyboardH, this.menuWindowH)}`);
+    logW(`[Menu114] longPress(plain) kbd=${Math.round(this.env.keyboardHeightVp)}`
+      + ` winH=${Math.round(this.env.screenHeightVp)}`
+      + ` compact=${menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp)}`);
     if (policy.longPressOpensMenu) {
       this.menuShown = true;
     } else if (policy.longPressSelects) {
@@ -551,23 +532,11 @@ export struct LightweightPlainTextBubble {
   private onSwipeEnd(): void {
     const reply: boolean = !this.editingActive && this.swipeX <= SWIPE_REPLY_TRIGGER;
     animateTo({
-      duration: this.powerSaving || this.reduceAnim ? 0 : 180,
+      duration: this.env.powerSaving || this.env.reduceAnim ? 0 : 180,
       curve: Curve.EaseOut
     }, (): void => { this.swipeX = 0; });
     if (reply) { this.actions.onReplyTo(this.msg.id); }
   }
-
-  @Styles
-  bubbleNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
-
-  @Styles
-  bubblePressedStyle() { .opacity(0.84).scale({ x: 0.992, y: 0.992 }) }
-
-  @Styles
-  menuNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
-
-  @Styles
-  menuPressedStyle() { .opacity(0.72).scale({ x: 0.94, y: 0.94 }) }
 
   @Builder
   statusIcon() {
@@ -664,7 +633,7 @@ export struct LightweightPlainTextBubble {
           Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
         }
       }
-      .fontSize(this.msgTextSize).lineHeight(this.msgTextSize * 1.34)
+      .fontSize(this.env.msgTextSize).lineHeight(this.env.msgTextSize * 1.34)
       .wordBreak(WordBreak.BREAK_WORD)
       // minWidth 也挂在这个 Text 上：Column 给子节点做 Stretch 是按最宽的孩子量的，
       // Column 自己的 minWidth 钳位发生在那之后——只挂 Column 时引用块拉不到边
@@ -696,7 +665,7 @@ export struct LightweightPlainTextBubble {
       ForEach(QUICK_REACTIONS, (emoji: string) => {
         Row() { Text(emoji).fontSize(23); }
           .width(32).height(34).borderRadius(17).justifyContent(FlexAlign.Center)
-          .stateStyles({ normal: this.menuNormalStyle, pressed: this.menuPressedStyle })
+          .stateStyles({ normal: plainMenuNormalStyle, pressed: plainMenuPressedStyle })
           .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
           .onClick((): void => { this.actions.onSetReaction(this.msg.id, emoji, false); })
           .gesture(LongPressGesture().onAction((): void => {
@@ -709,7 +678,7 @@ export struct LightweightPlainTextBubble {
       }
       .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
       .justifyContent(FlexAlign.Center)
-      .stateStyles({ normal: this.menuNormalStyle, pressed: this.menuPressedStyle })
+      .stateStyles({ normal: plainMenuNormalStyle, pressed: plainMenuPressedStyle })
       .onClick((): void => { this.actions.onOpenReactions(this.msg.id); });
     }
     .width('100%')
@@ -860,6 +829,7 @@ export struct LightweightPlainTextBubble {
               .margin({ bottom: 2 }).alignItems(VerticalAlign.Center)
               .onAreaChange((_old: Area, area: Area): void => {
                 this.senderLabelW = area.width as number;
+                rememberSenderLabelW(this.msg.senderName, this.senderLabelW);
               });
             }
             Stack({ alignContent: Alignment.BottomEnd }) {
@@ -875,7 +845,7 @@ export struct LightweightPlainTextBubble {
           // 不挂常驻 .animation()，按下态直接切换。真机 trace 已证明换位置留不住
           // 动画边界，只有节点上完全没有常驻动画，普通数据更新才不会进入动画
           // 上下文、连带整张消息 List 的重测。两支气泡必须同改。
-          .stateStyles({ normal: this.bubbleNormalStyle, pressed: this.bubblePressedStyle })
+          .stateStyles({ normal: plainBubbleNormalStyle, pressed: plainBubblePressedStyle })
           .constraintSize({ maxWidth: this.bubbleMaxW() })
           .backgroundColor(this.bubbleBg())
           .backdropBlur(this.glassBlur())
@@ -888,7 +858,7 @@ export struct LightweightPlainTextBubble {
           .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
             .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
           .onClick((event: ClickEvent): void => {
-            if (!this.gestureClaimed && messageGesturePolicy(this.gestureScheme).tapOpensMenu) {
+            if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
               this.recordMenuOffset(event.x);
               this.menuShown = true;
             }
@@ -913,7 +883,7 @@ export struct LightweightPlainTextBubble {
           .background(this.glassOutline(), { align: Alignment.TopStart })
               .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
             this.msg.isOutgoing, this.hasTail(), this.bubbleCorners(),
-            this.bubbleMaterialOn ? (w: number, h: number): void => {
+            this.env.bubbleMaterialOn ? (w: number, h: number): void => {
               probeGlassMeasure('plain', this.msg.id, w, h);
               this.glassW = w;
               this.glassH = h;
@@ -922,7 +892,7 @@ export struct LightweightPlainTextBubble {
         .alignItems(VerticalAlign.Bottom)
         .bindContextMenu(this.menuShown, this.contextMenu(), {
           offset: { x: this.menuOffsetX, y: 0 },
-          preview: menuPreviewCompact(this.menuKeyboardH, this.menuWindowH)
+          preview: menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp)
             ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
           previewBorderRadius: this.bubbleCorners(),
           previewAnimationOptions: {
