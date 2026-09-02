@@ -3,50 +3,57 @@ import { formatFileSize } from '../../util/formatFileSize';
 import { formatVoiceDuration } from '../../util/voiceWaveform';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
-import { reuseParam } from '../../util/reuseParams';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
 
-@Component
+// P4 批 5：迁 @ComponentV2（配方同批 1~4）。复用在 aboutToReuse 同步重挂；
+// @Monitor 兜非复用路径（挂错 = 进度条在动、其实播的不是它）。
+// 成员 @Styles 迁全局（V2 不支持成员 @Styles，四组均无状态依赖）。
+@Styles
+function musicControlNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
+
+@Styles
+function musicControlPressedStyle() { .scale({ x: 0.92, y: 0.92 }).opacity(0.82) }
+
+@Styles
+function musicSkipNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
+
+@Styles
+function musicSkipPressedStyle() { .scale({ x: 0.9, y: 0.9 }).opacity(0.65) }
+
+@ComponentV2
 export struct MusicBubble {
-  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。挂错时这一行会跟着**别的**
-  // 那条音乐的播放状态走（进度条在动、其实播的不是它）。
-  @Prop @Watch('onMsgIdChanged') msgId: number = 0;
-  @Prop durationSec: number = 0;
-  @Prop isOutgoing: boolean = false;
-  @Prop audioFileId: number = 0;
-  @Prop audioPath: string = '';
-  @Prop fileSize: number = 0;
-  @Prop fileName: string = '';
-  @Prop title: string = '';
-  @Prop performer: string = '';
-  @Prop coverPath: string = '';
-  @Prop coverFailed: boolean = false;
-  @Prop downloadProgress: number = 0;
-  @Prop downloadFailed: boolean = false;
-  @Prop downloadActive: boolean = false;
-  @Prop queuePosition: number = 0;
-  @Prop queueLength: number = 0;
-  @Prop hasPrevious: boolean = false;
-  @Prop hasNext: boolean = false;
-  @Prop maxWidth: number = 250;
-  onToggle: () => void = (): void => {};
-  onPrevious: () => void = (): void => {};
-  onNext: () => void = (): void => {};
-  onSeek: (fraction: number) => void = (): void => {};
+  @Param msgId: number = 0;
+  @Param durationSec: number = 0;
+  @Param isOutgoing: boolean = false;
+  @Param audioFileId: number = 0;
+  @Param audioPath: string = '';
+  @Param fileSize: number = 0;
+  @Param fileName: string = '';
+  @Param title: string = '';
+  @Param performer: string = '';
+  @Param coverPath: string = '';
+  @Param coverFailed: boolean = false;
+  @Param downloadProgress: number = 0;
+  @Param downloadFailed: boolean = false;
+  @Param downloadActive: boolean = false;
+  @Param queuePosition: number = 0;
+  @Param queueLength: number = 0;
+  @Param hasPrevious: boolean = false;
+  @Param hasNext: boolean = false;
+  @Param maxWidth: number = 250;
+  @Param onToggle: () => void = (): void => {};
+  @Param onPrevious: () => void = (): void => {};
+  @Param onNext: () => void = (): void => {};
+  @Param onSeek: (fraction: number) => void = (): void => {};
 
-  @State playbackStatus: string = 'idle';
-  @State progress: number = 0;
-  @State elapsedSec: number = 0;
-  @State resolvedDurationSec: number = 0;
-  @State playbackFailed: boolean = false;
-  @State finished: boolean = false;
-  @State dragging: boolean = false;
-  @State dragProgress: number = 0;
+  @Local playbackStatus: string = 'idle';
+  @Local progress: number = 0;
+  @Local elapsedSec: number = 0;
+  @Local resolvedDurationSec: number = 0;
+  @Local playbackFailed: boolean = false;
+  @Local finished: boolean = false;
+  @Local dragging: boolean = false;
+  @Local dragProgress: number = 0;
   private unsub: (() => void) | null = null;
-  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
-  private frameOwnerId: number = nextFrameOwnerId();
 
   private attachPlayback(targetId: number, durationSec: number): void {
     this.detachPlayback();
@@ -96,8 +103,8 @@ export struct MusicBubble {
     }
   }
 
-  private onMsgIdChanged(): void {
-    cancelNextFrame(this.frameOwnerId);
+  @Monitor('msgId')
+  onMsgIdChanged(): void {
     this.attachPlayback(this.msgId, this.durationSec);
   }
 
@@ -107,56 +114,15 @@ export struct MusicBubble {
 
   aboutToRecycle(): void {
     this.detachPlayback();
-    this.playbackStatus = 'idle';
-    this.dragging = false;
-    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
-    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
-    cancelNextFrame(this.frameOwnerId);
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
-    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
-    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
-    const msgId: number | undefined = reuseParam(params, 'msgId') as number | undefined;
-    const durationSec: number | undefined =
-      reuseParam(params, 'durationSec') as number | undefined;
-    if (msgId !== undefined) {
-      this.attachPlayback(msgId, durationSec ?? 0);
-      return;
-    }
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-    enqueueNextFrame(this.frameOwnerId,
-      (): void => { this.attachPlayback(this.msgId, this.durationSec); });
+  aboutToReuse(): void {
+    // @Param 已是新值：attachPlayback 自带全套状态重播种，同步做即可。
+    this.attachPlayback(this.msgId, this.durationSec);
   }
 
   aboutToDisappear(): void {
     this.detachPlayback();
-    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
-    cancelNextFrame(this.frameOwnerId);
-  }
-
-  @Styles
-  private controlNormalStyle(): void {
-    .scale({ x: 1, y: 1 })
-    .opacity(1)
-  }
-
-  @Styles
-  private controlPressedStyle(): void {
-    .scale({ x: 0.92, y: 0.92 })
-    .opacity(0.82)
-  }
-
-  @Styles
-  private skipNormalStyle(): void {
-    .scale({ x: 1, y: 1 })
-    .opacity(1)
-  }
-
-  @Styles
-  private skipPressedStyle(): void {
-    .scale({ x: 0.9, y: 0.9 })
-    .opacity(0.65)
   }
 
   private accent(): ResourceColor {
@@ -313,10 +279,7 @@ export struct MusicBubble {
       }
     }
     .width(52).height(52)
-    .stateStyles({
-      normal: this.controlNormalStyle,
-      pressed: this.controlPressedStyle
-    })
+    .stateStyles({ normal: musicControlNormalStyle, pressed: musicControlPressedStyle })
     .animation({ duration: 110, curve: Curve.EaseOut })
     .accessibilityText(this.statusLabel())
     .onClick((): void => {
@@ -337,10 +300,7 @@ export struct MusicBubble {
       .fontColor(this.accent())
       .backgroundColor(this.isOutgoing ? '#1655A24D' : '#143390EC')
       .opacity(enabled ? 1 : 0.34)
-      .stateStyles({
-        normal: this.skipNormalStyle,
-        pressed: this.skipPressedStyle
-      })
+      .stateStyles({ normal: musicSkipNormalStyle, pressed: musicSkipPressedStyle })
       .animation({ duration: 100, curve: Curve.EaseOut })
       .accessibilityText(previous ? $r('app.string.music_previous') : $r('app.string.music_next'))
       .onClick((): void => {

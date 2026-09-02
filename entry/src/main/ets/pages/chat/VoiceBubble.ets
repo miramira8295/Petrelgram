@@ -2,45 +2,52 @@ import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { formatVoiceDuration, voiceWaveformBars } from '../../util/voiceWaveform';
 import { str } from '../../util/strings';
-import { reuseParam } from '../../util/reuseParams';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
+
+// 成员 @Styles 迁全局（V2 不支持成员 @Styles，四组均无状态依赖）。
+@Styles
+function voiceControlNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
+
+@Styles
+function voiceControlPressedStyle() { .scale({ x: 0.91, y: 0.91 }).opacity(0.82) }
+
+@Styles
+function voiceSpeedNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
+
+@Styles
+function voiceSpeedPressedStyle() { .scale({ x: 0.94, y: 0.94 }).opacity(0.68) }
 
 const WAVEFORM_BAR_COUNT: number = 34;
 const WAVEFORM_WIDTH: number = 132;
 
-@Component
+// P4 批 5：迁 @ComponentV2（配方同批 1~4）。复用在 aboutToReuse 同步重挂；
+// @Monitor 兜非复用路径（挂错 = 跟着别的那条语音的播放状态走）。
+@ComponentV2
 export struct VoiceBubble {
-  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源（挂错时跟着别的那条语音的
-  // 播放状态走）。
-  @Prop @Watch('onMsgIdChanged') msgId: number = 0;
-  @Prop durationSec: number = 0;
-  @Prop isOutgoing: boolean = false;
-  @Prop voiceFileId: number = 0;
-  @Prop voicePath: string = '';
-  @Prop downloadProgress: number = 0;
-  @Prop downloadFailed: boolean = false;
-  @Prop waveform: string = '';
-  @Prop listened: boolean = true;
+  @Param msgId: number = 0;
+  @Param durationSec: number = 0;
+  @Param isOutgoing: boolean = false;
+  @Param voiceFileId: number = 0;
+  @Param voicePath: string = '';
+  @Param downloadProgress: number = 0;
+  @Param downloadFailed: boolean = false;
+  @Param waveform: string = '';
+  @Param listened: boolean = true;
   // 语音转文字：'' 未识别 / pending 识别中 / done 已完成 / error 失败
-  @Prop speechState: string = '';
-  @Prop speechText: string = '';
-  onRecognizeTap: () => void = (): void => {};
-  onNeedDownload: () => void = (): void => {};
-  onPlaybackStarted: () => void = (): void => {};
-  @State playbackStatus: string = 'idle';
-  @State finished: boolean = false;
-  @State progress: number = 0;
-  @State elapsedSec: number = 0;
-  @State resolvedDurationSec: number = 0;
-  @State speed: number = 1;
-  @State playbackFailed: boolean = false;
-  @State locallyListened: boolean = false;
+  @Param speechState: string = '';
+  @Param speechText: string = '';
+  @Param onRecognizeTap: () => void = (): void => {};
+  @Param onNeedDownload: () => void = (): void => {};
+  @Param onPlaybackStarted: () => void = (): void => {};
+  @Local playbackStatus: string = 'idle';
+  @Local finished: boolean = false;
+  @Local progress: number = 0;
+  @Local elapsedSec: number = 0;
+  @Local resolvedDurationSec: number = 0;
+  @Local speed: number = 1;
+  @Local playbackFailed: boolean = false;
+  @Local locallyListened: boolean = false;
   private playbackStartedReported: boolean = false;
   private unsub: (() => void) | null = null;
-  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
-  private frameOwnerId: number = nextFrameOwnerId();
 
   private attachPlayback(targetId: number, durationSec: number, listened: boolean): void {
     this.detachPlayback();
@@ -95,8 +102,8 @@ export struct VoiceBubble {
     }
   }
 
-  private onMsgIdChanged(): void {
-    cancelNextFrame(this.frameOwnerId);
+  @Monitor('msgId')
+  onMsgIdChanged(): void {
     this.attachPlayback(this.msgId, this.durationSec, this.listened);
   }
 
@@ -106,57 +113,15 @@ export struct VoiceBubble {
 
   aboutToRecycle(): void {
     this.detachPlayback();
-    this.playbackStatus = 'idle';
-    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
-    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
-    cancelNextFrame(this.frameOwnerId);
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
-    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
-    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
-    const msgId: number | undefined = reuseParam(params, 'msgId') as number | undefined;
-    const durationSec: number | undefined =
-      reuseParam(params, 'durationSec') as number | undefined;
-    const listened: boolean | undefined = reuseParam(params, 'listened') as boolean | undefined;
-    if (msgId !== undefined) {
-      this.attachPlayback(msgId, durationSec ?? 0, listened ?? true);
-      return;
-    }
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-    enqueueNextFrame(this.frameOwnerId, (): void => {
-      this.attachPlayback(this.msgId, this.durationSec, this.listened);
-    });
+  aboutToReuse(): void {
+    // @Param 已是新值：attachPlayback 自带全套状态重播种，同步做即可。
+    this.attachPlayback(this.msgId, this.durationSec, this.listened);
   }
 
   aboutToDisappear(): void {
     this.detachPlayback();
-    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
-    cancelNextFrame(this.frameOwnerId);
-  }
-
-  @Styles
-  private controlNormalStyle(): void {
-    .scale({ x: 1, y: 1 })
-    .opacity(1)
-  }
-
-  @Styles
-  private controlPressedStyle(): void {
-    .scale({ x: 0.91, y: 0.91 })
-    .opacity(0.82)
-  }
-
-  @Styles
-  private speedNormalStyle(): void {
-    .scale({ x: 1, y: 1 })
-    .opacity(1)
-  }
-
-  @Styles
-  private speedPressedStyle(): void {
-    .scale({ x: 0.94, y: 0.94 })
-    .opacity(0.68)
   }
 
   private accent(): ResourceColor {
@@ -290,8 +255,8 @@ export struct VoiceBubble {
     }
     .width(38).height(38)
     .stateStyles({
-      normal: this.controlNormalStyle,
-      pressed: this.controlPressedStyle
+      normal: voiceControlNormalStyle,
+      pressed: voiceControlPressedStyle
     })
     .animation({ duration: 110, curve: Curve.EaseOut })
     .accessibilityText(this.timeLabel())
@@ -369,8 +334,8 @@ export struct VoiceBubble {
               .borderRadius(10)
               .backgroundColor(this.isOutgoing ? '#1755A24D' : '#163390EC')
               .stateStyles({
-                normal: this.speedNormalStyle,
-                pressed: this.speedPressedStyle
+                normal: voiceSpeedNormalStyle,
+                pressed: voiceSpeedPressedStyle
               })
               .animation({ duration: 100, curve: Curve.EaseOut })
               .accessibilityText(str('voice_speed_a11y', this.speedLabel()))

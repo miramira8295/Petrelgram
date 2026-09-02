@@ -1,41 +1,50 @@
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
-import { reuseParam } from '../../util/reuseParams';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
 
-@Component
+// 成员 @Styles 迁全局（V2 不支持成员 @Styles，四组均无状态依赖）。
+@Styles
+function pollOptionNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
+
+@Styles
+function pollOptionPressedStyle() { .scale({ x: 0.985, y: 0.985 }).opacity(0.76) }
+
+@Styles
+function pollSubmitNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
+
+@Styles
+function pollSubmitPressedStyle() { .scale({ x: 0.97, y: 0.97 }).opacity(0.72) }
+
+// P4 批 5：迁 @ComponentV2（配方同批 1~4）。复用在 aboutToReuse 同步重置
+// 草稿；@Monitor 兜非复用路径（挂错 = 草稿勾选来自上一条投票）。
+@ComponentV2
 export struct PollBubble {
-  @Prop messageId: number = 0;
-  @Prop question: string = '';
+  @Param messageId: number = 0;
+  @Param question: string = '';
   // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。挂错时这一行的草稿勾选
   // 来自**上一条**投票。
-  @Prop @Watch('onOptionsChanged') options: PollOptionInfo[] = [];
-  @Prop totalVoterCount: number = 0;
-  @Prop isAnonymous: boolean = true;
-  @Prop isQuiz: boolean = false;
-  @Prop allowMultiple: boolean = false;
-  @Prop correctOptionId: number = -1;
-  @Prop explanation: string = '';
-  @Prop closeDate: number = 0;
-  @Prop isClosed: boolean = false;
-  @Prop pending: boolean = false;
-  @Prop errorText: string = '';
-  @Prop nowSec: number = 0;
-  @Prop @Watch('onRevisionChanged') revision: string = '';
-  @Prop maxWidth: number = 260;
-  onVote: (messageId: number, optionIds: number[]) => void =
+  @Param options: PollOptionInfo[] = [];
+  @Param totalVoterCount: number = 0;
+  @Param isAnonymous: boolean = true;
+  @Param isQuiz: boolean = false;
+  @Param allowMultiple: boolean = false;
+  @Param correctOptionId: number = -1;
+  @Param explanation: string = '';
+  @Param closeDate: number = 0;
+  @Param isClosed: boolean = false;
+  @Param pending: boolean = false;
+  @Param errorText: string = '';
+  @Param nowSec: number = 0;
+  @Param revision: string = '';
+  @Param maxWidth: number = 260;
+  @Param onVote: (messageId: number, optionIds: number[]) => void =
     (_messageId: number, _optionIds: number[]): void => {};
 
-  @State draftIds: number[] = [];
-  @State draftChanged: boolean = false;
-  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
-  private frameOwnerId: number = nextFrameOwnerId();
+  @Local draftIds: number[] = [];
+  @Local draftChanged: boolean = false;
 
-  private onOptionsChanged(): void {
-    cancelNextFrame(this.frameOwnerId);
+  @Monitor('options')
+  onOptionsChanged(): void {
     this.resetDraft();
   }
 
@@ -43,56 +52,16 @@ export struct PollBubble {
     this.resetDraft();
   }
 
-  aboutToRecycle(): void {
-    this.draftIds = [];
-    this.draftChanged = false;
-    // resetDraft() 只写本组件的 @State，过期跑一次不会挂错订阅；撤掉纯粹是不
-    // 想让复用池里的实例带着上一条投票的草稿。下一次复用会重新排队。
-    cancelNextFrame(this.frameOwnerId);
+  aboutToReuse(): void {
+    // @Param 已是新值、@Local 已重置：按新 options 同步铺草稿。
+    this.resetDraft();
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
-    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
-    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
-    const options: PollOptionInfo[] | undefined =
-      reuseParam(params, 'options') as PollOptionInfo[] | undefined;
-    if (options !== undefined) {
-      this.draftIds = this.chosenIdsFrom(options);
-      this.draftChanged = false;
-      return;
-    }
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-    enqueueNextFrame(this.frameOwnerId, (): void => { this.resetDraft(); });
-  }
-
-  private onRevisionChanged(): void {
+  @Monitor('revision')
+  onRevisionChanged(): void {
     if (!this.submitting()) {
       this.resetDraft();
     }
-  }
-
-  @Styles
-  private optionNormalStyle(): void {
-    .scale({ x: 1, y: 1 })
-    .opacity(1)
-  }
-
-  @Styles
-  private optionPressedStyle(): void {
-    .scale({ x: 0.985, y: 0.985 })
-    .opacity(0.76)
-  }
-
-  @Styles
-  private submitNormalStyle(): void {
-    .scale({ x: 1, y: 1 })
-    .opacity(1)
-  }
-
-  @Styles
-  private submitPressedStyle(): void {
-    .scale({ x: 0.97, y: 0.97 })
-    .opacity(0.72)
   }
 
   private chosenIds(): number[] {
@@ -286,8 +255,8 @@ export struct PollBubble {
     .borderRadius(10)
     .clip(true)
     .stateStyles({
-      normal: this.optionNormalStyle,
-      pressed: this.optionPressedStyle
+      normal: pollOptionNormalStyle,
+      pressed: pollOptionPressedStyle
     })
     .animation({ duration: 110, curve: Curve.EaseOut })
     .opacity(this.interactive() ? 1 : 0.9)
@@ -352,8 +321,8 @@ export struct PollBubble {
         .backgroundColor(this.draftChanged ? COLOR_PRIMARY : '#A7AFB8')
         .borderRadius(9)
         .stateStyles({
-          normal: this.submitNormalStyle,
-          pressed: this.submitPressedStyle
+          normal: pollSubmitNormalStyle,
+          pressed: pollSubmitPressedStyle
         })
         .animation({ duration: 110, curve: Curve.EaseOut })
         .onClick((): void => { this.submitDraft(); });

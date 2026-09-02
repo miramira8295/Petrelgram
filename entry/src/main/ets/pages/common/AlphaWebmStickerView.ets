@@ -1,14 +1,6 @@
 import { image } from '@kit.ImageKit';
 import { acquireAlphaSticker, AlphaClip, releaseAlphaSticker } from '../../services/AlphaStickerStore';
-import {
-  KEY_POWER_ACTIVE, KEY_POWER_EMOJI, KEY_POWER_EMOJI_CHAT, KEY_POWER_EMOJI_REACTIONS,
-  KEY_POWER_EMOJI_STATUS, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_POWER_STICKER_LOOP,
-  KEY_REDUCE_ANIM
-} from '../../store/AppSettings';
-import { reuseParam } from '../../util/reuseParams';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
+import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 
 // 带 alpha 的 webm 贴纸：预解码好的 RGBA 帧画到 Canvas 上循环播放。
 //
@@ -30,28 +22,22 @@ const TICK_MS: number = 30;
 const MAX_LIVE_ALPHA: number = 12;
 let liveAlpha: number = 0;
 
-@Component
+// P4 批 5：迁 @ComponentV2（配方同批 1~4）。9 个省电键走 chatEnv 镜像，
+// onPowerChanged 的 @Watch 改成 @Monitor 深层路径一次挂 8 条；复用在
+// aboutToReuse 同步重载（@Param webmPath 已是新值，V1 的写回 @Prop 与延帧
+// 兜底退役）。
+@ComponentV2
 export struct AlphaWebmStickerView {
-  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。挂错时这一格播的是**上一张**
-  // 贴纸。TgsStickerView 的 onTgsPathChanged 是同一套写法。
-  @Prop @Watch('onWebmPathChanged') webmPath: string;
-  @Prop thumbPath: string = '';
-  @Prop boxWidth: number = 160;
-  @Prop boxHeight: number = 160;
-  @Prop powerCategory: string = 'sticker';
-  @Prop forcePlay: boolean = false;
+  @Param webmPath: string = '';
+  @Param thumbPath: string = '';
+  @Param boxWidth: number = 160;
+  @Param boxHeight: number = 160;
+  @Param powerCategory: string = 'sticker';
+  @Param forcePlay: boolean = false;
   // 这条链路走不通时通知父组件切回 ijkplayer。只会调用一次。
-  onFallback: () => void = (): void => {};
-  onWorking: () => void = (): void => {};
-  @StorageProp(KEY_POWER_ACTIVE) @Watch('onPowerChanged') powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_STICKERS) @Watch('onPowerChanged') stickersEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI) @Watch('onPowerChanged') emojiEnabled: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_AUTOPLAY) @Watch('onPowerChanged') stickerAutoplay: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_LOOP) stickerLoop: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_CHAT) @Watch('onPowerChanged') emojiChat: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) @Watch('onPowerChanged') emojiReactions: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_STATUS) @Watch('onPowerChanged') emojiStatus: boolean = true;
-  @StorageProp(KEY_REDUCE_ANIM) @Watch('onPowerChanged') reduceAnimations: boolean = false;
+  @Param onFallback: () => void = (): void => {};
+  @Param onWorking: () => void = (): void => {};
+  private env: ChatEnvMirror = chatEnv;
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   // 不叫 clip：那是 ArkUI 的通用属性名，组件成员重名会编译失败。
@@ -64,11 +50,10 @@ export struct AlphaWebmStickerView {
   private reportedWorking: boolean = false;
   private holdsSlot: boolean = false;
   private loadSeq: number = 0;
-  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
-  private frameOwnerId: number = nextFrameOwnerId();
 
-  private onWebmPathChanged(): void {
-    cancelNextFrame(this.frameOwnerId);
+  // 自愈：挂错时这一格播的是上一张贴纸。复用路径由 aboutToReuse 覆盖。
+  @Monitor('webmPath')
+  onWebmPathChanged(): void {
     this.disposePlayback();
     this.disposed = false;
     this.reportedWorking = false;
@@ -82,30 +67,19 @@ export struct AlphaWebmStickerView {
 
   aboutToDisappear(): void {
     this.disposePlayback();
-    // load() 本来就会在 this.disposed 上短路，撤掉只是省掉那一次空转。
-    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToRecycle(): void {
     this.disposePlayback();
-    // 同上。下一次 aboutToReuse 会把 disposed 置回 false 并重新排队。
-    cancelNextFrame(this.frameOwnerId);
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
+  aboutToReuse(): void {
+    // @Param webmPath 已是新值：同步重载。
     this.loadSeq++;
-    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
-    // util/reuseParams.ets）。取不到就保留 this.webmPath，下面的 setTimeout
-    // 仍然无条件跑。
-    const webmPath: string | undefined = reuseParam(params, 'webmPath') as string | undefined;
-    if (webmPath !== undefined) {
-      this.webmPath = webmPath;
-    }
     this.disposed = false;
     this.reportedWorking = false;
     this.shownIndex = -1;
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-    enqueueNextFrame(this.frameOwnerId, (): void => { this.load(); });
+    this.load();
   }
 
   private disposePlayback(): void {
@@ -126,7 +100,9 @@ export struct AlphaWebmStickerView {
     }
   }
 
-  private onPowerChanged(): void {
+  @Monitor('env.powerSaving', 'env.stickers', 'env.animatedEmoji', 'env.stickerAutoplay',
+    'env.emojiChat', 'env.emojiReactions', 'env.emojiStatus', 'env.reduceAnim')
+  onPowerChanged(): void {
     if (this.powerSuspended()) {
       this.stopTicker();
     } else if (this.sequence !== null) {
@@ -257,26 +233,26 @@ export struct AlphaWebmStickerView {
     if (this.forcePlay) {
       return false;
     }
-    if (this.powerSaving || this.reduceAnimations) {
+    if (this.env.powerSaving || this.env.reduceAnim) {
       return true;
     }
     if (this.powerCategory === 'emojiPicker') {
-      return !this.emojiEnabled;
+      return !this.env.animatedEmoji;
     }
     if (this.powerCategory === 'emojiStatus' || this.powerCategory === 'emoji') {
-      return !this.emojiEnabled || !this.emojiStatus;
+      return !this.env.animatedEmoji || !this.env.emojiStatus;
     }
     if (this.powerCategory === 'emojiReaction') {
-      return !this.emojiEnabled || !this.emojiReactions;
+      return !this.env.animatedEmoji || !this.env.emojiReactions;
     }
     if (this.powerCategory === 'emojiChat') {
-      return !this.emojiEnabled || !this.emojiChat;
+      return !this.env.animatedEmoji || !this.env.emojiChat;
     }
-    return !this.stickersEnabled || !this.stickerAutoplay;
+    return !this.env.stickers || !this.env.stickerAutoplay;
   }
 
   private loopEnabled(): boolean {
-    return this.powerCategory === 'sticker' ? this.stickerLoop : true;
+    return this.powerCategory === 'sticker' ? this.env.stickerLoop : true;
   }
 
   build() {

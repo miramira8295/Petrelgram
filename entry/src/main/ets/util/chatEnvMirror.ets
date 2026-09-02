@@ -37,6 +37,8 @@ export class ChatEnvMirror {
   @Trace stickers: boolean = true;
   @Trace stickerAutoplay: boolean = true;
   @Trace autoplayGif: boolean = true;
+  @Trace stickerLoop: boolean = true;
+  @Trace emojiStatus: boolean = true;
   @Trace appIsForeground: boolean = true;
   @Trace linkNavBusy: string = '';
 }
@@ -51,7 +53,8 @@ const MIRRORED_KEYS: string[] = [
   'powerChatEffects', 'powerEffectMessage', 'powerEffectReaction',
   'powerAnimatedEmoji', 'powerEmojiReactions', 'msgGestureScheme',
   'powerEmojiChat', 'powerAnimatedStickers', 'powerStickerAutoplay',
-  'powerAutoplayGif', 'appIsForeground', 'linkNavBusyUrl'
+  'powerAutoplayGif', 'powerStickerLoop', 'powerEmojiStatus',
+  'appIsForeground', 'linkNavBusyUrl'
 ];
 
 export function mirroredChatEnvKeys(): string[] {
@@ -84,6 +87,8 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
     case 'powerAnimatedStickers': chatEnv.stickers = value as boolean; break;
     case 'powerStickerAutoplay': chatEnv.stickerAutoplay = value as boolean; break;
     case 'powerAutoplayGif': chatEnv.autoplayGif = value as boolean; break;
+    case 'powerStickerLoop': chatEnv.stickerLoop = value as boolean; break;
+    case 'powerEmojiStatus': chatEnv.emojiStatus = value as boolean; break;
     case 'appIsForeground': chatEnv.appIsForeground = value as boolean; break;
     case 'linkNavBusyUrl': chatEnv.linkNavBusy = value as string; break;
     default: break;
