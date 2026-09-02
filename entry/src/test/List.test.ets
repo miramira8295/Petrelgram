@@ -175,7 +175,6 @@ import stringsTest from './Strings.test';
 import scrollEffectsTest from './ScrollEffects.test';
 import anchorRestoreTest from './AnchorRestore.test';
 import floatDateGateTest from './FloatDateGate.test';
-import nextFrameQueueTest from './NextFrameQueue.test';
 import albumCellKeyTest from './AlbumCellKey.test';
 import mediaGridTest from './MediaGrid.test';
 import tdRequestTimeoutTest from './TdRequestTimeout.test';
@@ -368,7 +367,6 @@ export default function testsuite() {
   scrollEffectsTest();
   anchorRestoreTest();
   floatDateGateTest();
-  nextFrameQueueTest();
   albumCellKeyTest();
   mediaGridTest();
   tdRequestTimeoutTest();

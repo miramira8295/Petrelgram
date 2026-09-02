@@ -3,9 +3,6 @@ import {
   messageRowPresentationFor, subscribeMessageRowPresentation
 } from '../../util/messageRowPresentationChannel';
 import { probeHit } from '../../util/panelProbe';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
 import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { MessageBubble } from './MessageBubble';
 
@@ -198,10 +195,6 @@ export struct ReusableMessageBubble {
   @Param actions: MessageBubbleActions = EMPTY_ACTIONS;
   @Local private liveGroup: AlbumGroup | null = null;
   private unsubPresentation: (() => void) | null = null;
-  // 见 util/nextFrameQueue：复用路径上的 setTimeout(0) 合并成一帧一个，这是本
-  // 实例在那个队列里的序号。无装饰器成员在复用时不重置，序号因此在整个实例生命
-  // 周期里稳定——后一次复用排的回调才盖得掉前一次的。
-  private frameOwnerId: number = nextFrameOwnerId();
 
   private currentGroup(): AlbumGroup {
     if (this.liveGroup !== null && this.liveGroup.head.rowId === this.group.head.rowId) {
@@ -256,9 +249,6 @@ export struct ReusableMessageBubble {
 
   aboutToDisappear(): void {
     this.detachPresentation();
-    // 组件要销毁了，上一次复用排的那条回调不能再跑：attachPresentation 会重新
-    // 订阅，而这一层再也没有 detach 会被调用——订阅会一直持有这个实例。
-    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToRecycle(): void {
@@ -269,39 +259,17 @@ export struct ReusableMessageBubble {
     // 本身生效，且 @Local 复用时也会被自动重置回 null。语义等价，保留更安全。
     this.detachPresentation();
     this.liveGroup = null;
-    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
-    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
-    cancelNextFrame(this.frameOwnerId);
   }
 
   aboutToReuse(): void {
-    // 迁 @ReusableV2 之后，原来那条读 params['group'] 的快路径**不存在了**：
-    // 官方《@ReusableV2装饰器：V2组件复用》——「与@Reusable不同的是，
-    // aboutToReuse 没有入参」。
-    //
-    // 而 @Monitor('group') 在复用时也**不跑**：同一篇「复用前的组件内状态变量
-    // 重置」表写明「@Monitor：在上述所有变量重置完成之后触发。**重置过程中产生
-    // 的变量变化不会触发 @Monitor 回调**，仅更新 IMonitorValue 中的 before 值」。
-    // aboutToRecycle 已经退订、把 liveGroup 置 null、attachedKey 归零，所以复用
-    // 回来时没有别的路会重挂订阅。
-    //
-    // → 这条 setTimeout 兜底**已经是唯一的重挂路径**（P2 时它还只是「迁 V2 后
-    //   会变成唯一分支」的预判；现在是事实）。删掉它 = 复用出来的行永远停在
-    //   @Param 的静态快照上，下载进度/编辑/表态都不再跟。
-    //
-    // 为什么仍然推迟一帧而不是同步调用：官方没有写清「状态变量重置」与
-    // 「aboutToReuse 回调」的精确先后。批 0.5 的 1370 样本只证明了**子组件**
-    // 回调时 @Param 已是新值；外壳自己是 @ReusableV2 根，时序是另一个问题。
-    // ⚠️ 临时探针（判读完随 avatarReuseProbe 清单删）：比较回调此刻与一帧后
-    // 的 rowId——shell.reuse.fresh 满格且 stale 恒零 ⇒ 可改同步、删掉
-    // nextFrameQueue 的最后一个用户。
-    const rowIdAtCallback: number = this.group.head.rowId;
-    enqueueNextFrame(this.frameOwnerId,
-      (): void => {
-        probeHit(rowIdAtCallback === this.group.head.rowId
-          ? 'shell.reuse.fresh' : 'shell.reuse.stale');
-        this.attachPresentation(this.group);
-      });
+    // @ReusableV2 的 aboutToReuse 没有入参（官方《@ReusableV2装饰器》），而
+    // @Monitor('group') 在复用重置期间静默——所以这里是复用路径上**唯一**的
+    // 重挂订阅点，删掉它 = 复用出来的行永远停在 @Param 的静态快照上。
+    // 同步调用的前提是「回调此刻 @Param group 已是新值」：外壳自己是
+    // @ReusableV2 根，官方没写清时序，靠真机探针判定——shell.reuse.fresh
+    // 连续满格、stale 恒零（09-02，数百样本），据此从延帧兜底改为同步，
+    // nextFrameQueue 随最后一个用户退役。
+    this.attachPresentation(this.group);
   }
 
   build() {
