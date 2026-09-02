@@ -1,35 +1,6 @@
 import { UIUtils } from '@kit.ArkUI';
 import { AlbumGroup } from './collapseAlbums';
 import { initialMessagePlaceholderHeight } from './initialMessageStage';
-// ⚠️ rowH.* 是临时判读探针（绘制面·行高离线 批 0，判读完删）：量化「事后
-// 纠偏」的规模来决定离线预算值不值得做——rowH.fix 每次都伴随一次
-// childrenMainSize.update（List 重排），gt8 档还意味着肉眼可见的锚点跳动。
-import { probeEvent, probeHit } from './panelProbe';
-
-// ⚠️ 批 2 校准探针（临时，随 rowH.* 一并删）：批 0 读数显示纠偏几乎全在
-// gt8 档（le8 近零、约 5 次/s）——错的时候错得大，但聚合计数分不清是哪类
-// 行、哪个分量偏了。这里限量抽样打「估计 vs 实测 + 行特征」，用来：
-// ① 校准 chrome 常量（若某类型 delta 恒定 ⇒ 改常数就收敛）；
-// ② 判断文本行数启发式的误差形态（delta ≈ n×22 ⇒ 需要真排版，开批 3）；
-// ③ 识别同 rowId 反复纠偏 = 内容后到（链接预览/翻译/表态），不是估计错。
-const FIX_SAMPLE_LIMIT: number = 60;
-let fixSamplesLogged: number = 0;
-
-function logFixSample(group: AlbumGroup, estimated: number, real: number): void {
-  if (fixSamplesLogged >= FIX_SAMPLE_LIMIT) {
-    return;
-  }
-  fixSamplesLogged++;
-  const msg = group.head;
-  probeEvent('rowHFix',
-    `row=${msg.rowId} type=${msg.contentType} est=${Math.round(estimated)}` +
-    ` real=${Math.round(real)} d=${Math.round(real - estimated)}` +
-    ` album=${group.photoRatios.length} txt=${msg.text.length}` +
-    ` cap=${group.caption.length} name=${group.showSenderName ? 1 : 0}` +
-    ` date=${group.dateLabel !== '' ? 1 : 0}` +
-    ` reply=${msg.replyToMessageId !== 0 ? 1 : 0}` +
-    ` link=${msg.linkUrl !== '' ? 1 : 0} react=${msg.reactions.length}`);
-}
 
 const DEFAULT_MESSAGE_ROW_HEIGHT: number = 64;
 const MEASURED_ROW_HEIGHT_LIMIT: number = 2048;
@@ -157,8 +128,6 @@ export class ChatViewportGeometry {
     const showDivider: boolean = this.dividerId > 0 &&
       group.memberIds.indexOf(this.dividerId) >= 0;
     const measured: number = rememberedViewportRowHeight(this.keyOf(group));
-    // est/memo 记发布时的记忆命中面：est 高 = 大量行以粗估进表，等着被纠偏。
-    probeHit(measured > 0 ? 'rowH.memo' : 'rowH.est');
     return measured > 0
       ? measured : initialMessagePlaceholderHeight(group, this.screenWidth, showDivider);
   }
@@ -225,15 +194,11 @@ export class ChatViewportGeometry {
     if (currentIndex < 0) {
       return;
     }
-    const drift: number = Math.abs(this.rowSizes[currentIndex] - height);
-    if (drift > 0.5) {
-      // 纠偏 = 一次 List 重排；>8vp 档按视口锚点稳定性算肉眼可见级。
-      probeHit(drift > 8 ? 'rowH.fix.gt8' : 'rowH.fix.le8');
-      logFixSample(group, this.rowSizes[currentIndex], height);
+    // 阈值 0.5：估行 v2（2026-09-02 校准，rowHFix 样本判读）已把纠偏压到
+    // ±1 行以内的随机残差，这里的 update 是低频安全网，不再是系统性 churn。
+    if (Math.abs(this.rowSizes[currentIndex] - height) > 0.5) {
       this.rowSizes[currentIndex] = height;
       this.childrenMainSize.update(currentIndex, height);
-    } else {
-      probeHit('rowH.ok');
     }
     if (cacheable) {
       rememberViewportRowHeight(key, height);
