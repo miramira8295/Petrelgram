@@ -4,8 +4,9 @@ import { common } from '@kit.AbilityKit';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import {
-  normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf, chatFolderInviteLinkOf,
-  stickerSetLinkOf, ChatLinkAction, StickerSetLink
+  bareUsernameOf, inviteLinkOf, chatLinkActionOf, chatFolderInviteLinkOf,
+  isTelegramInternalUrl, normalizeTelegramLink, stickerSetLinkOf,
+  ChatLinkAction, StickerSetLink
 } from './linkNav';
 import { openWebUrl } from './webBrowserNav';
 import { getMainMiniApp, getMiniAppLinkUrl } from '../store/BotApi';
@@ -23,11 +24,6 @@ function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     params['joinedNoticeIsChannel'] = joinedNoticeIsChannel;
   }
   navigateToChat(params).catch(logChatNavFailure);
-}
-
-function isTelegramInternalUrl(url: string): boolean {
-  const raw = url.trim();
-  return raw.startsWith('tg://') || raw.startsWith('@') || normalizeTelegramLink(raw) !== '';
 }
 
 // A link that couldn't be resolved in-app. For a tapped in-message link we hand

@@ -160,7 +160,7 @@ import {
 } from '../../util/theme';
 import {
   normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf,
-  chatFolderInviteLinkOf, stickerSetLinkOf
+  chatFolderInviteLinkOf, isTelegramInternalUrl, stickerSetLinkOf
 } from '../../util/linkNav';
 import {
   openTelegramLink, openInviteLink, openChatLinkAction, openChatFolderInviteLink, openStickerSetLink
@@ -5305,7 +5305,9 @@ export struct ChatPage {
       navigateToProfile(params);
       return;
     }
-    if (!openConfirmed) {
+    // Telegram 内链（t.me/@名/tg://）应用内直接解析，不弹「打开/复制」层
+    // ——那层是给外部网页链接的（用户反馈 t.me 被当浏览器链接多问了一道）。
+    if (!openConfirmed && !isTelegramInternalUrl(url)) {
       this.offerLinkAction(url);
       return;
     }

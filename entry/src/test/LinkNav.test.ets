@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { inviteLinkOf, bareUsernameOf } from '../main/ets/util/linkNav';
+import { inviteLinkOf, bareUsernameOf, isTelegramInternalUrl } from '../main/ets/util/linkNav';
 
 export default function linkNavTest() {
   describe('inviteLinkOf', () => {
@@ -35,6 +35,26 @@ export default function linkNavTest() {
     });
     it('plain_username_kept', 0, () => {
       expect(bareUsernameOf('https://t.me/telegram')).assertEqual('telegram');
+    });
+  });
+
+  // 内链跳过「打开/复制」确认层直接解析（用户反馈 t.me 被当浏览器链接）。
+  describe('isTelegramInternalUrl', () => {
+    it('telegram_hosts_and_deep_links_are_internal', 0, () => {
+      expect(isTelegramInternalUrl('https://t.me/telegram')).assertTrue();
+      expect(isTelegramInternalUrl('https://t.me/DocOfCard_Channel/2429')).assertTrue();
+      expect(isTelegramInternalUrl('t.me/+AbCdEf123')).assertTrue();
+      expect(isTelegramInternalUrl('https://telegram.me/addstickers/Cats')).assertTrue();
+      expect(isTelegramInternalUrl('https://telegram.dog/somebot?start=x')).assertTrue();
+      expect(isTelegramInternalUrl('tg://resolve?domain=telegram')).assertTrue();
+      expect(isTelegramInternalUrl('tg://user?id=123')).assertTrue();
+      expect(isTelegramInternalUrl('@durov')).assertTrue();
+    });
+    it('external_web_urls_are_not_internal', 0, () => {
+      expect(isTelegramInternalUrl('https://example.com/t.me/fake')).assertFalse();
+      expect(isTelegramInternalUrl('https://tele.gram.me/x')).assertFalse();
+      expect(isTelegramInternalUrl('https://t.me.evil.com/abc')).assertFalse();
+      expect(isTelegramInternalUrl('http://example.com')).assertFalse();
     });
   });
 }

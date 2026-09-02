@@ -23,6 +23,17 @@ export function normalizeTelegramLink(url: string): string {
   return raw;
 }
 
+// 应用内可解析的 Telegram 链接：tg:// 深链、@用户名、t.me/telegram.me/
+// telegram.dog 全域名（含 addlist/addstickers/邀请链/消息链等一切路径）。
+// 命中的链接**跳过「打开/复制」确认层**直接走应用内解析链（用户反馈：
+// t.me 被当浏览器链接多弹一层）；解析不动的仍会经 onLinkUnresolved 的
+// 内链判据挡在浏览器门外。外部 http 链接保持确认。
+export function isTelegramInternalUrl(url: string): boolean {
+  const raw = url.trim();
+  return raw.startsWith('tg://') || raw.startsWith('tg:resolve') ||
+    raw.startsWith('@') || normalizeTelegramLink(raw) !== '';
+}
+
 // Username for links that point at a chat/user directly — '@name' or a t.me
 // link with a single path segment. '' for message links / invites / web URLs.
 export function bareUsernameOf(url: string): string {
