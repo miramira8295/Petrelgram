@@ -5,8 +5,11 @@ import { TdBridge, TdObject } from '../main/ets/tdkit/TdTypes';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
-  initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups
+  initialMessagePlaceholderHeight, initialMessageViewportRows,
+  nextInitialMessageRevealCount, stageInitialMessageGroups
 } from '../main/ets/util/initialMessageStage';
+import { mediaBoxFor, mediaThumbWidth } from '../main/ets/util/mediaBox';
+import { AlbumCell, packAlbumRows } from '../main/ets/util/packAlbumRows';
 
 class StageBridge implements TdBridge {
   onReceive: (json: string) => void = (_json: string): void => {};
@@ -143,6 +146,73 @@ export default function initialMessageStageTest() {
         source, 11, false, 360, 180, 0,
         (_group: AlbumGroup, _width: number, _divider: boolean): number => 100
       )).assertEqual(2);
+    });
+
+    // 绘制面批 1：媒体行估高与真实布局共用 mediaBoxFor/packAlbumRows。
+    it('media_row_height_follows_shared_media_geometry', 0, () => {
+      const g = groupOf(501);
+      g.head.contentType = 'photo';
+      g.head.text = '';
+      g.head.photoWidth = 900;
+      g.head.photoHeight = 600;
+      g.showSenderName = false;
+      const screenW: number = 400;
+      // MEDIA_BUBBLE_CHROME = 20（气泡 padding 16 + 行外边距近似）。
+      const expected: number = mediaBoxFor(screenW, 900, 600, false).height + 20;
+      expect(initialMessagePlaceholderHeight(g, screenW, false)).assertEqual(expected);
+    });
+
+    it('album_row_height_sums_packed_mosaic_rows', 0, () => {
+      const g = groupOf(502);
+      g.head.contentType = 'photo';
+      g.photoPaths = ['a', 'b', 'c'];
+      g.photoRatios = [1.2, 0.8, 1.5];
+      g.showSenderName = false;
+      const screenW: number = 400;
+      const rows: AlbumCell[][] = packAlbumRows(g.photoRatios, mediaThumbWidth(screenW));
+      let media: number = 0;
+      for (const row of rows) {
+        media += row[0].height;
+      }
+      media += (rows.length - 1) * 2;
+      expect(initialMessagePlaceholderHeight(g, screenW, false)).assertEqual(media + 20);
+    });
+
+    it('sender_name_row_adds_height_for_incoming_group_media', 0, () => {
+      const named = groupOf(504);
+      named.head.contentType = 'photo';
+      named.head.text = '';
+      named.head.photoWidth = 900;
+      named.head.photoHeight = 600;
+      named.showSenderName = true;
+      const anonymous = groupOf(505);
+      anonymous.head.contentType = 'photo';
+      anonymous.head.text = '';
+      anonymous.head.photoWidth = 900;
+      anonymous.head.photoHeight = 600;
+      anonymous.showSenderName = false;
+      const withName: number = initialMessagePlaceholderHeight(named, 400, false);
+      const without: number = initialMessagePlaceholderHeight(anonymous, 400, false);
+      expect(withName - without).assertEqual(22);
+    });
+
+    // 键回归：同 rowId 不同媒体比例不得共享缓存高度（旧键会撞车）。
+    it('different_ratios_do_not_share_cached_heights', 0, () => {
+      const wide = groupOf(503);
+      wide.head.contentType = 'photo';
+      wide.head.text = '';
+      wide.head.photoWidth = 900;
+      wide.head.photoHeight = 600;
+      wide.showSenderName = false;
+      const tall = groupOf(503);
+      tall.head.contentType = 'photo';
+      tall.head.text = '';
+      tall.head.photoWidth = 600;
+      tall.head.photoHeight = 900;
+      tall.showSenderName = false;
+      const wideH: number = initialMessagePlaceholderHeight(wide, 400, false);
+      const tallH: number = initialMessagePlaceholderHeight(tall, 400, false);
+      expect(wideH !== tallH).assertTrue();
     });
   });
 }
