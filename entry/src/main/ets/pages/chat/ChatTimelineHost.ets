@@ -19,8 +19,6 @@ export struct ChatTimelineHost {
   @Param scroller: Scroller = new Scroller();
   @Param initialTimelineMasked: boolean = false;
   @Param headerStartOffset: number = 0;
-  @Param blurRadius: number = 0;
-  @Param blurStops: [number, number][] = [];
   @Param bottomChromeH: number = 0;
   @Param listCachedCount: number = 0;
   @Param stackFromEnd: boolean = false;
@@ -80,10 +78,6 @@ export struct ChatTimelineHost {
       .width('100%').height('100%')
       .opacity(this.initialTimelineMasked ? 0 : 1)
       .contentStartOffset(this.headerStartOffset)
-      .linearGradientBlur(this.blurRadius, {
-        fractionStops: this.blurStops,
-        direction: GradientDirection.Bottom
-      })
       .contentEndOffset(this.bottomChromeH + 8)
       .cachedCount(this.listCachedCount)
       // Media-heavy frames can make a short release look like an 8-9k vp/s

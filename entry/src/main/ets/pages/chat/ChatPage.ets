@@ -58,7 +58,6 @@ import {
 import { MusicQueue } from '../../services/MusicQueue';
 import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
-import { actionMenuRow } from './ActionMenuRow';
 import {
   AlbumGroupDataSource, appendBreaksAnchor, clampPrefetchRange, PrefetchRange,
   repeatRowKey, reuseUnchangedRows, sameRowArray
@@ -68,7 +67,10 @@ import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 // 调用点在 capMessageReuseBuckets 的版本闸门之后。IReusePool 只是类型。
 import { IReusePool, UIUtils } from '@kit.ArkUI';
 import { ChatBackdrop } from './ChatBackdrop';
-import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS, ChatHeader } from './ChatHeader';
+import { ChatHeader } from './ChatHeader';
+import {
+  ChatHeaderMenuController, ChatHeaderMenuParams, createChatHeaderMenuId
+} from './ChatHeaderMenu';
 import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
@@ -187,9 +189,8 @@ import {
 } from '../../util/readingReturn';
 import { audioQueueApplies } from '../../util/audioQueueGate';
 import {
-  glassTintHex, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+  glassTintHex, overlayBlur, overlayMaterial
 } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
 import { adminLabelOf } from '../../util/adminLabel';
@@ -197,7 +198,11 @@ import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/s
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { isSplitLayout } from '../../util/splitMetrics';
 import { viewerFullScreenWanted } from '../../util/navFullScreen';
-import { navFullScreenModifier } from '../../util/navFullScreenModifier';
+import {
+  HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationIconOptions,
+  HdsNavigationMenuItemOptions, TitleBarContentOptions
+} from '@kit.UIDesignKit';
+import { titleBarStyle } from '../../util/hdsTitleBar';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
@@ -236,9 +241,7 @@ import {
   canRenderLightweightPlainText, formattedTextReuseShape,
   MessageBubbleReuseContext
 } from '../../util/messageBubbleReuse';
-import {
-  CHAT_HEADER_BASE_HEIGHT, chatChromeHeight, ChatChromeGeometryInput
-} from '../../util/ChatChromeGeometry';
+import { chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight } from '../../util/ChatChromeGeometry';
 import {
   initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups
 } from '../../util/initialMessageStage';
@@ -275,8 +278,6 @@ const MENU_DISMISS_MS: number = 150;
 const NOW_SEC_TICK_MS: number = 30000;
 const STICKER_FLY_MS: number = 260;
 const STICKER_GHOST_SIDE: number = 92;
-// 绝对像素半径。在高密度屏上 18 远达不到"糊掉"的观感。
-const HEADER_BLUR_RADIUS: number = 140;
 // 实时位置的上报间隔。Telegram 官方客户端也是分钟级——秒级上报既费电又没有
 // 实际意义，收到的一方看到的地图精度远达不到那个粒度。
 
@@ -1997,13 +1998,14 @@ export struct ChatPage {
 
   private mediaCopySeq: number = 0;
   @Local headerMenuShow: boolean = false; // header ⋮ dropdown
+  private headerMenuId: string = createChatHeaderMenuId();
+  private headerMenuController: ChatHeaderMenuController = new ChatHeaderMenuController();
   // Header state is kept separate from message-history state. getChat can
   // resolve before history, fail independently, or arrive after a cached row.
   @Local headerState: string = 'loading'; // loading | ready | error
   @Local headerLoadError: string = '';
   @Local headerProfileOpening: boolean = false;
   @Local headerMuteUpdating: boolean = false;
-  @Local pageClosing: boolean = false;
   private headerPeerUserId: number = 0;
   private headerKind: string = '';
   private headerIdentityResolved: boolean = false;
@@ -2264,8 +2266,8 @@ export struct ChatPage {
   // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
   //
-  // Task 6 迁移本页时这两处（closeChatPage、leaveChat 成功回调）原样留了
-  // router.back()，是漏改，不是有意为之。
+  // Task 6 迁移本页时 leaveChat 成功回调原样留了 router.back()，是漏改，
+  // 不是有意为之。标题栏返回键现在由 HDS 自己弹出同一条 Navigation 栈。
   private goBack(): void {
     if (!this.navigationCoordinator.pop()) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
@@ -3382,13 +3384,12 @@ export struct ChatPage {
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
     this.headerResolveSeq++;
-    this.headerMenuShow = false;
+    this.closeHeaderMenu();
     this.showReactionSheet = false;
     this.reactionTargetId = 0;
     this.closeForwardSheet();
     this.headerProfileOpening = false;
     this.headerMuteUpdating = false;
-    this.pageClosing = false;
     this.liveChatResolveSeq++;
     this.liveGroupResolveSeq++;
     this.liveChatRefreshInFlight = false;
@@ -4020,7 +4021,7 @@ export struct ChatPage {
       return true;
     }
     if (this.headerMenuShow) {
-      this.headerMenuShow = false;
+      this.closeHeaderMenu();
       return true;
     }
     if (this.showForwardSheet) {
@@ -4775,10 +4776,9 @@ export struct ChatPage {
     this.headerEmojiPath = '';
     this.headerEmojiFormat = '';
     this.headerEmojiFetched = false;
-    this.headerMenuShow = false;
+    this.closeHeaderMenu();
     this.headerProfileOpening = false;
     this.headerMuteUpdating = false;
-    this.pageClosing = false;
     this.subtitle = '';
     this.avatarPath = '';
     this.initials = '?';
@@ -6019,7 +6019,7 @@ export struct ChatPage {
   // Header avatar/title tap → detail page: users/bots get the personal
   // profile, groups/channels the chat profile.
   private openProfile(): void {
-    if (this.headerProfileOpening || this.pageClosing) {
+    if (this.headerProfileOpening) {
       return;
     }
     if (this.headerState === 'error') {
@@ -6865,64 +6865,37 @@ export struct ChatPage {
     });
   }
 
-  // actionMenuRow's onTap fires directly on click; the header dropdown also
-  // needs to close itself first (unlike the bubble menu, whose bindContextMenu
-  // host closes on its own), so every row action is wrapped through here.
-  private closeHeaderMenuThen(action: () => void): () => void {
-    return (): void => {
-      this.headerMenuShow = false;
-      action();
+  private openHeaderMenu(): void {
+    if (this.chatId === 0 || this.headerMenuController.isOpen()) {
+      return;
+    }
+    const params: ChatHeaderMenuParams = {
+      isMuted: this.isMuted,
+      muteUpdating: this.headerMuteUpdating,
+      isGroup: this.isGroup,
+      isChannel: this.isChannel,
+      liveLocationActive: this.liveLocationActive,
+      translationActive: this.translationActive(),
+      canClearHistory: this.clearHistoryChoice() !== undefined,
+      canLeaveChat: this.isGroup && this.membershipState === 'writable',
+      onSearch: (): void => { this.enterSearch(); },
+      onProfile: (): void => { this.openProfile(); },
+      onToggleMute: (): void => { this.toggleChatMute(); },
+      onAddToFolder: (): void => { showChatFolderPicker(this.getUIContext(), this.chatId); },
+      onAutoDelete: (): void => { this.chooseAutoDelete(); },
+      onScheduled: (): void => { this.openScheduledSheet(); },
+      onJumpToDate: (): void => { this.pickJumpDate(); },
+      onStopLocation: (): void => { confirmStopLiveLocation(); },
+      onToggleTranslation: (): void => { this.toggleTranslatable(); },
+      onClearHistory: (): void => { this.confirmClearHistory(); },
+      onLeaveChat: (): void => { this.confirmLeaveChat(); }
     };
+    this.headerMenuController.open(this.getUIContext(), this.headerMenuId, this.topBannerHeight(), params,
+      (visible: boolean): void => { this.headerMenuShow = visible; });
   }
 
-  @Builder
-  headerMenu() {
-    Column() {
-      actionMenuRow('sys.symbol.magnifyingglass', str('cp_search'), false,
-        this.closeHeaderMenuThen((): void => { this.enterSearch(); }));
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow('sys.symbol.info_circle', str('cp_profile'), false,
-        this.closeHeaderMenuThen((): void => { this.openProfile(); }));
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash',
-        this.headerMuteUpdating ? str('cp_updating_notifications') : (this.isMuted ? str('cp_unmute') : str('cp_mute')),
-        false, this.closeHeaderMenuThen((): void => { this.toggleChatMute(); }));
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      if (this.isGroup) {
-        actionMenuRow('sys.symbol.folder_badge_plus', str('cl_add_to_folder'), false,
-          this.closeHeaderMenuThen((): void => { showChatFolderPicker(this.getUIContext(), this.chatId); }));
-      }
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow('sys.symbol.clock', str('cp_auto_delete'), false,
-        this.closeHeaderMenuThen((): void => { this.chooseAutoDelete(); }));
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow('sys.symbol.calendar', str('sched_title'), false,
-        this.closeHeaderMenuThen((): void => { this.openScheduledSheet(); }));
-      actionMenuRow('sys.symbol.calendar_badge_clock', str('cp_jump_to_date'), false,
-        this.closeHeaderMenuThen((): void => { this.pickJumpDate(); }));
-      if (this.liveLocationActive) {
-        actionMenuRow('sys.symbol.stop_circle', str('cp_stop_location'), true,
-          this.closeHeaderMenuThen((): void => { confirmStopLiveLocation(); }));
-      }
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      // 总开关开着时这个会话默认就在翻，所以这一项显示「关闭翻译」；总开关
-      // 关着时它就是"只翻这个会话"的入口。单条消息的翻译不受这里影响。
-      actionMenuRow('sys.symbol.translate',
-        this.translationActive() ? str('cp_translate_chat_off') : str('cp_translate_chat_on'),
-        false, this.closeHeaderMenuThen((): void => { this.toggleTranslatable(); }));
-      if (this.clearHistoryChoice() !== undefined) {
-        actionMenuRow('sys.symbol.xmark_circle', str('cp_clear_history'), false,
-          this.closeHeaderMenuThen((): void => { this.confirmClearHistory(); }));
-      }
-      if (this.isGroup && this.membershipState === 'writable') {
-        Divider().color($r('app.color.divider')).strokeWidth(0.7);
-        actionMenuRow('sys.symbol.trash', this.isChannel ? str('cp_leave_channel') : str('cp_leave_group'), true,
-          this.closeHeaderMenuThen((): void => { this.confirmLeaveChat(); }));
-      }
-    }
-    // 262 太宽，菜单项最长的也只占一半，右边空一大片。224 刚好容下最长的一条。
-    .width(224)
-    .padding({ top: 6, bottom: 6 });
+  private closeHeaderMenu(): void {
+    this.headerMenuController.close();
   }
 
   // Horizontal center (vp, window coords) of the smiley button — the anchor
@@ -6945,17 +6918,24 @@ export struct ChatPage {
   @Local panelContentReady: boolean = false;
   private panelReadySeq: number = 0;
 
-  // 顶栏高度只由结构状态决定。标题、副标题、头像加载状态的变化不再经过
-  // onAreaChange 写回状态变量，也就不会把 List.contentStartOffset 一起拖进重排。
-  private headerChromeHeight(): number {
-    const input: ChatChromeGeometryInput = {
+  private chromeGeometryInput(): ChatChromeGeometryInput {
+    return {
       topSafe: this.topSafe,
       searchMode: this.searchMode,
       pinnedVisible: this.pinnedPreview !== '',
       liveVisible: this.liveGroupCallId > 0 && this.liveCallIsActive,
       loadingVisible: this.topCardLoadingVisible
     };
-    return chatChromeHeight(input);
+  }
+
+  // 顶栏高度只由结构状态决定。标题、副标题、头像加载状态的变化不再经过
+  // onAreaChange 写回状态变量，也就不会把 List.contentStartOffset 一起拖进重排。
+  private headerChromeHeight(): number {
+    return chatChromeHeight(this.chromeGeometryInput());
+  }
+
+  private topBannerHeight(): number {
+    return chatTopBannerHeight(this.chromeGeometryInput());
   }
 
   // 纯函数以 bottomGapOf 引入：裸名在方法体里解析到的是导入而不是本方法
@@ -7019,31 +6999,6 @@ export struct ChatPage {
       logE(`composerEditorHeight measure failed: ${(e as Error).message}`);
     }
     return Math.max(oneLine, Math.min(cap, Math.ceil(measured)));
-  }
-
-  // 渐变模糊：只在顶部 chrome 那一条区域内从"全糊"过渡到"清晰"。
-  // fractionStops 是 [模糊比例, 位置]，位置沿 direction 从 0 到 1；
-  // direction 取 Bottom 时 0 就是列表顶端。
-  private headerBlurStops(): [number, number][] {
-    const viewport: number = this.listViewportH;
-    const chromeHeight: number = this.headerChromeHeight();
-    if (viewport <= 0 || chromeHeight <= 0) {
-      return [[0, 0], [0, 1]];
-    }
-    // 过渡带正好是 chrome 那一条：列表顶端（也就是屏幕最上沿）全糊，到 bar
-    // 的下边缘归零。消息往上滑时是连续糊掉的，不是撞上一条硬边。
-    //
-    // 上半段是**全糊的平台段**而不是单点：只在位置 0 取 1 的话，全糊处是条
-    // 零宽度的线，肉眼看到的最糊程度远达不到 100%。
-    const end: number = Math.min(0.6, chromeHeight / viewport);
-    return [[1, 0], [1, end * 0.62], [0, end]];
-  }
-
-  // 只看省电：这里的顾虑是逐帧实时渲染的功耗，跟"聊天背景特效"是两回事。
-  // 先前误用了 backgroundEffectsEnabled()，它还附带自定义背景/特效开关的条件，
-  // 会把模糊直接打成 0。
-  private headerBlurRadius(): number {
-    return !this.powerSaving && this.headerChromeHeight() > 0 ? HEADER_BLUR_RADIUS : 0;
   }
 
   private updateBottomChromeHeight(height: number): void {
@@ -7414,7 +7369,6 @@ export struct ChatPage {
   // Loading and the send-now/delete actions live in ScheduledSheet, which
   // fetches on mount.
   private openScheduledSheet(): void {
-    this.headerMenuShow = false;
     this.showScheduledSheet = true;
   }
 
@@ -8771,22 +8725,6 @@ export struct ChatPage {
     .scale({ x: 0.94, y: 0.94 })
   }
 
-  private closeChatPage(): void {
-    if (this.pageClosing) {
-      return;
-    }
-    this.pageClosing = true;
-    this.headerMenuShow = false;
-    if (this.headerNavigationTimer !== -1) {
-      clearTimeout(this.headerNavigationTimer);
-    }
-    this.headerNavigationTimer = setTimeout((): void => {
-      this.headerNavigationTimer = -1;
-      this.pageClosing = false;
-    }, CHAT_HEADER_NAV_GUARD_MS);
-    this.goBack();
-  }
-
   // Search owns the complete top bar. Keeping the regular avatar/title beside
   // the field squeezed group/channel queries into a narrow trailing slot and
   // made the mode look like an accessory instead of navigation state.
@@ -9019,77 +8957,6 @@ export struct ChatPage {
   // panelContentReady 那套延迟挂载保留：面板里同时挂着三个 picker（自定义表情
   // 常驻，贴纸/GIF 访问过就常驻），一次性挂/卸实测 ~51ms，和挂载位置无关。
   // 先让壳落地，内容下一拍再进来。
-
-  @Builder
-  initialHeaderShell() {
-    // Keep the final material from the first frame. Only the expensive dynamic
-    // contents (animated avatar/status and bound menu subtree) are deferred;
-    // using a solid surface here caused a visible white -> glass swap.
-    Row({ space: 8 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
-      }
-      .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE)
-      .borderRadius(CHAT_HEADER_RADIUS)
-      .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-      .justifyContent(FlexAlign.Center)
-      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-      .backdropBlur(overlayBackdropBlur('bar'))
-      .attributeModifier(materialModifier('bar'))
-      .onClick((): void => { this.closeChatPage(); });
-      Row() {
-        Text(this.headerText().titleText)
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .layoutWeight(1)
-      .height(CHAT_HEADER_ACTION_SIZE)
-      .padding({ left: 12, right: 12 })
-      .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-      .borderRadius(CHAT_HEADER_RADIUS)
-      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-      .backdropBlur(overlayBackdropBlur('bar'))
-      .attributeModifier(materialModifier('bar'))
-      .alignItems(VerticalAlign.Center)
-      .onClick((): void => {
-        this.activateInitialChrome((): void => {
-          if (this.headerState === 'error') {
-            this.resolveHeaderIdentity();
-          } else {
-            this.openProfile();
-          }
-        });
-      });
-      Row() {
-        Image($r('app.media.ic_header_menu'))
-          .width(18).height(18)
-          .fillColor(COLOR_TEXT_PRIMARY)
-          .draggable(false);
-      }
-      .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE)
-      .borderRadius(CHAT_HEADER_RADIUS)
-      .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-      .justifyContent(FlexAlign.Center)
-      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-      .backdropBlur(overlayBackdropBlur('bar'))
-      .attributeModifier(materialModifier('bar'))
-      .onClick((): void => {
-        this.activateInitialChrome((): void => {
-          if (!this.pageClosing && this.chatId !== 0) {
-            this.headerMenuShow = true;
-          }
-        });
-      });
-    }
-    .width('100%')
-    .height(this.topSafe + CHAT_HEADER_BASE_HEIGHT)
-    .padding({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center);
-  }
 
   @Builder
   bottomDock() {
@@ -9492,16 +9359,148 @@ export struct ChatPage {
     });
   }
 
+  @Builder
+  chatTitleBar() {
+    Column() {
+      if (this.selecting) {
+        SelectionHeader({
+          selectedCount: this.selectedIds.length,
+          topSafe: 0,
+          onExit: (): void => { this.exitSelect(); },
+          onForward: (): void => { this.openForwardPicker(this.selectedIds); },
+          onCopy: (): void => { this.copySelected(); },
+          onDelete: (): void => { this.deleteSelected(); }
+        });
+      } else if (this.searchMode) {
+        SearchHeader({
+          query: this.searchQuery,
+          topSafe: 0,
+          onExit: (): void => { this.exitSearch(); },
+          onQueryChange: (v: string): void => { this.updateSearchQuery(v); },
+          onSubmit: (): void => { this.runSearch(0, 0); }
+        });
+      } else {
+        ChatHeader({
+          onLightBg: this.chromeOnLightBg(),
+          titleText: this.headerText().titleText,
+          subtitleText: this.headerText().subtitleText,
+          headerState: this.headerState,
+          avatarPath: this.avatarPath,
+          avatarAnimPath: this.headerAvatarAnimPath,
+          initials: this.initials,
+          savedMessages: this.isSavedMessagesChat(),
+          chatId: this.chatId,
+          emojiPath: this.headerEmojiPath,
+          emojiFormat: this.headerEmojiFormat,
+          isMuted: this.isMuted,
+          muteUpdating: this.headerMuteUpdating,
+          profileOpening: this.headerProfileOpening,
+          onOpenProfile: (): void => { this.openProfile(); },
+          onResolveIdentity: (): void => { this.resolveHeaderIdentity(); }
+        });
+      }
+    }
+    .width('100%')
+    .opacity(this.initialMessageTransitionSettled ? 1 : 0)
+    .translate({ y: this.initialMessageTransitionSettled ? 0 : -2 })
+    .scale({
+      x: this.initialMessageTransitionSettled ? 1 : 0.99,
+      y: this.initialMessageTransitionSettled ? 1 : 0.99
+    })
+    .animation({
+      duration: powerAnimationDuration(
+        KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
+      curve: Curve.EaseOut
+    });
+  }
+
+  @Builder
+  chatTitleBarBottom() {
+    TopBanners({
+      pinnedPreview: this.pinnedPreview,
+      pinnedCount: this.pinnedCount,
+      pinnedCycle: this.pinnedCycle,
+      pinnedLoadState: this.pinnedLoadState,
+      pinnedJumpBusy: this.pinnedJumpBusy,
+      liveGroupCallId: this.liveGroupCallId,
+      liveCallIsActive: this.liveCallIsActive,
+      liveCallIsRtmp: this.liveCallIsRtmp,
+      liveParticipantCount: this.liveParticipantCount,
+      livePulseExpanded: this.livePulseExpanded,
+      liveDialogOpening: this.liveDialogOpening,
+      liveNavigationBusy: this.liveNavigationBusy,
+      topCardLoadingVisible: this.topCardLoadingVisible,
+      onPinnedTap: (): void => { this.onPinnedTap(); },
+      onLiveStreamTap: (): void => { this.onLiveStreamTap(); }
+    });
+  }
+
+  private chatTitleBarContent(): TitleBarContentOptions {
+    const content: TitleBarContentOptions = {
+      stackBuilder: (): void => { this.chatTitleBar(); }
+    };
+    if (this.initialMessageTransitionSettled && !this.selecting && !this.searchMode) {
+      const icon: HdsNavigationIconOptions = {
+        icon: $r('app.media.ic_header_menu'),
+        label: $r('app.string.cp_more_actions'),
+        isEnabled: this.chatId !== 0,
+        componentId: this.headerMenuId,
+        action: (): void => { this.openHeaderMenu(); }
+      };
+      const item: HdsNavigationMenuItemOptions = { content: icon };
+      content.menu = { value: [item] };
+    }
+    const bannerHeight: number = this.topBannerHeight();
+    if (this.initialMessageTransitionSettled && this.topCardShouldShow() && bannerHeight > 0) {
+      content.bottomBuilder = {
+        builder: (): void => { this.chatTitleBarBottom(); },
+        height: bannerHeight
+      };
+    }
+    return content;
+  }
+
+  @Builder
+  mediaViewer() {
+    MediaViewerOverlay({
+      langEpoch: this.langEpoch,
+      materialEpoch: this.materialEpoch,
+      topSafe: this.topSafe,
+      viewerMsgId: this.viewerMsgId,
+      onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; },
+      chromeVisible: this.chromeVisible,
+      onChromeVisibleChange: (visible: boolean): void => { this.chromeVisible = visible; },
+      videoLandscape: this.viewerVideoLandscape,
+      onVideoLandscapeChange: (landscape: boolean): void => { this.viewerVideoLandscape = landscape; },
+      messages: this.messages,
+      groups: this.timelineSnapshot.groups,
+      onNeedHistory: (dir: number): void => {
+        if (dir < 0) {
+          this.store?.loadOlder();
+        } else if (dir > 0) {
+          this.store?.loadNewer();
+        }
+      },
+      initIdx: this.viewerInitIdx,
+      initStartPositionMs: this.viewerStartPositionMs,
+      tapX: this.tapX,
+      tapY: this.tapY,
+      store: this.store,
+      chatTitle: this.title,
+      nowSec: this.nowSec,
+      effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
+      isVideoEntry: (entry: MessageEntry): boolean => this.mediaEntryIsVideo(entry),
+      onRequestClose: (): void => { this.closeViewer(); },
+      onSaveMedia: (): void => { this.saveViewerMedia(false); },
+      onSaveMediaToFiles: (): void => { this.saveViewerMedia(true); },
+      onPositionChanged: (positionMs: number): void => { this.viewerPositionMs = positionMs; }
+    });
+  }
+
   // The flattened background, once it exists. Until then the layered version
   // below renders, so the chat never waits on the raster.
   build() {
-    // **原生 NavDestination，不是 HdsNavDestination**（issue #139）。本页把 HDS
-    // 的标题栏整个关掉了自己画（hideTitleBar(true)），用到的另外五个回调
-    // onReady / onShown / onWillHide / onHidden / onBackPressed 原生一样有，
-    // 所以换过来是零损失；换的理由是 **HdsNavDestinationAttribute 只继承
-    // CommonMethod，没有 fullScreenOverlay**，而分栏下让查看器盖住整个窗口只能
-    // 靠它。GlobalSearchPage 早就在同一个栈上用原生 NavDestination，可以混用。
-    NavDestination() {
+    HdsNavDestination() {
     Stack() {
       // 整层背景搬到了 ChatBackdrop：它只吃输入不回调，所以这里只传三个入参。
       // 聊天槽位的三根滑杆由页面按当前深浅色挑好传进去——见 ChatBackdrop 里
@@ -9517,8 +9516,6 @@ export struct ChatPage {
           scroller: this.scroller,
           initialTimelineMasked: this.initialTimelineMasked,
           headerStartOffset: this.headerChromeHeight(),
-          blurRadius: this.headerBlurRadius(),
-          blurStops: this.headerBlurStops(),
           bottomChromeH: this.bottomChromeH,
           listCachedCount: this.listCachedCount,
           stackFromEnd: this.stackFromEndWanted(),
@@ -9686,86 +9683,6 @@ export struct ChatPage {
         })
         .hitTestBehavior(HitTestMode.None);
 
-        // 顶部 chrome 放在最后 = 叠在最上层，消息从它下面穿过去。
-        Column() {
-          // Keep the real header mounted behind the initial visual gate. This
-          // removes the lightweight-shell -> full-header intermediate page;
-          // only opacity/transform changes when the message anchor is ready.
-          if (this.selecting) {
-            SelectionHeader({
-              selectedCount: this.selectedIds.length,
-              topSafe: this.topSafe,
-              onExit: (): void => { this.exitSelect(); },
-              onForward: (): void => { this.openForwardPicker(this.selectedIds); },
-              onCopy: (): void => { this.copySelected(); },
-              onDelete: (): void => { this.deleteSelected(); }
-            });
-          } else if (this.searchMode) {
-            SearchHeader({
-              query: this.searchQuery,
-              topSafe: this.topSafe,
-              onExit: (): void => { this.exitSearch(); },
-              onQueryChange: (v: string): void => { this.updateSearchQuery(v); },
-              onSubmit: (): void => { this.runSearch(0, 0); }
-            });
-          } else {
-            ChatHeader({
-              onLightBg: this.chromeOnLightBg(),
-              titleText: this.headerText().titleText,
-              subtitleText: this.headerText().subtitleText,
-              headerState: this.headerState,
-              avatarPath: this.avatarPath,
-              avatarAnimPath: this.headerAvatarAnimPath,
-              initials: this.initials,
-              savedMessages: this.isSavedMessagesChat(),
-              chatId: this.chatId,
-              emojiPath: this.headerEmojiPath,
-              emojiFormat: this.headerEmojiFormat,
-              isMuted: this.isMuted,
-              muteUpdating: this.headerMuteUpdating,
-              profileOpening: this.headerProfileOpening,
-              topSafe: this.topSafe,
-              pageClosing: this.pageClosing,
-              menuShow: this.headerMenuShow,
-              onMenuShowChange: (show: boolean): void => { this.headerMenuShow = show; },
-              menu: (): void => { this.headerMenu(); },
-              onBack: (): void => { this.closeChatPage(); },
-              onOpenProfile: (): void => { this.openProfile(); },
-              onResolveIdentity: (): void => { this.resolveHeaderIdentity(); }
-            });
-          }
-          if (this.initialMessageTransitionSettled && this.topCardShouldShow()) {
-            TopBanners({
-              pinnedPreview: this.pinnedPreview,
-              pinnedCount: this.pinnedCount,
-              pinnedCycle: this.pinnedCycle,
-              pinnedLoadState: this.pinnedLoadState,
-              pinnedJumpBusy: this.pinnedJumpBusy,
-              liveGroupCallId: this.liveGroupCallId,
-              liveCallIsActive: this.liveCallIsActive,
-              liveCallIsRtmp: this.liveCallIsRtmp,
-              liveParticipantCount: this.liveParticipantCount,
-              livePulseExpanded: this.livePulseExpanded,
-              liveDialogOpening: this.liveDialogOpening,
-              liveNavigationBusy: this.liveNavigationBusy,
-              topCardLoadingVisible: this.topCardLoadingVisible,
-              onPinnedTap: (): void => { this.onPinnedTap(); },
-              onLiveStreamTap: (): void => { this.onLiveStreamTap(); }
-            });
-          }
-        }
-        .width('100%')
-        .opacity(this.initialMessageTransitionSettled ? 1 : 0)
-        .translate({ y: this.initialMessageTransitionSettled ? 0 : -2 })
-        .scale({
-          x: this.initialMessageTransitionSettled ? 1 : 0.99,
-          y: this.initialMessageTransitionSettled ? 1 : 0.99
-        })
-        .animation({
-          duration: powerAnimationDuration(
-            KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-          curve: Curve.EaseOut
-        });
         }
         .layoutWeight(1).width('100%')
         .alignContent(Alignment.TopStart)
@@ -9892,43 +9809,8 @@ export struct ChatPage {
       // Fullscreen media viewer. The page owns which message is open and the
       // hero transition anchored to the tapped thumbnail; the overlay owns
       // zoom/pan, paging, the filmstrip and the chrome layer.
-      if (this.viewerMsgId !== 0) {
-        MediaViewerOverlay({
-          // 迁 @ComponentV2 之后这一层没有 @StorageProp 可用，三个全局键由页面
-          // 透传（页面自己就持有它们）。
-          langEpoch: this.langEpoch,
-          materialEpoch: this.materialEpoch,
-          topSafe: this.topSafe,
-          viewerMsgId: this.viewerMsgId,
-          onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; },
-          chromeVisible: this.chromeVisible,
-          onChromeVisibleChange: (visible: boolean): void => { this.chromeVisible = visible; },
-          videoLandscape: this.viewerVideoLandscape,
-          onVideoLandscapeChange: (landscape: boolean): void => { this.viewerVideoLandscape = landscape; },
-          messages: this.messages,
-          groups: this.timelineSnapshot.groups,
-          onNeedHistory: (dir: number): void => {
-            // 查看器切组切到已加载窗口的边缘：-1 要更旧的，+1 要更新的。
-            if (dir < 0) {
-              this.store?.loadOlder();
-            } else if (dir > 0) {
-              this.store?.loadNewer();
-            }
-          },
-          initIdx: this.viewerInitIdx,
-          initStartPositionMs: this.viewerStartPositionMs,
-          tapX: this.tapX,
-          tapY: this.tapY,
-          store: this.store,
-          chatTitle: this.title,
-          nowSec: this.nowSec,
-          effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
-          isVideoEntry: (entry: MessageEntry): boolean => this.mediaEntryIsVideo(entry),
-          onRequestClose: (): void => { this.closeViewer(); },
-          onSaveMedia: (): void => { this.saveViewerMedia(false); },
-          onSaveMediaToFiles: (): void => { this.saveViewerMedia(true); },
-          onPositionChanged: (positionMs: number): void => { this.viewerPositionMs = positionMs; }
-        })
+      if (this.viewerMsgId !== 0 && !isSplitLayout(this.screenW, this.screenH)) {
+        this.mediaViewer();
       }
     }
     .width('100%').height('100%')
@@ -9939,14 +9821,27 @@ export struct ChatPage {
       blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
     }
-    // ChatPage 自己画标题栏（会话头像/名称/在线状态那一条），不要 HDS 的。
-    .hideTitleBar(true)
-    // 分栏下打开媒体查看器时，本页以全屏覆盖模式显示，盖住左栏（issue #139）。
-    // 查看器是本页内部的一个图层、量的是本页宽高，本页只占右栏时它就只能铺满
-    // 右栏——看图看视频都一样。属性必须经修饰器挂（API 26，低版本取方法即抛），
-    // 见 util/navFullScreenModifier。
-    .attributeModifier(navFullScreenModifier(viewerFullScreenWanted(
-      isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0)))
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
+      enableComponentSafeArea: false,
+      style: titleBarStyle(Color.Transparent),
+      content: this.chatTitleBarContent()
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    // 普通会话态使用 HDS 原生返回键；搜索/选择态由各自标题组件的关闭键接管。
+    .hideBackButton(!this.initialMessageTransitionSettled || this.selecting || this.searchMode)
+    // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
+    .bindToScrollable([this.scroller])
+    // HdsNavDestination 没有 fullScreenOverlay。只在分栏中把查看器提升为应用内
+    // 顶层全模态，手机仍保留原来的页面内共享元素过渡。
+    .bindContentCover(viewerFullScreenWanted(
+      isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0), this.mediaViewer(), {
+      modalTransition: ModalTransition.NONE,
+      backgroundColor: Color.Black,
+      enableSafeArea: false,
+      onWillDismiss: (): void => { this.closeViewer(); }
+    })
     // 入参：router 时代是 aboutToAppear 里 router.getParams() 现取，现在从
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。

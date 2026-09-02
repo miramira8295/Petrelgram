@@ -110,6 +110,9 @@ const BLUR_STYLE_BY_INDEX: BlurStyle[] = [
 export type OverlaySurface =
   // Framework-managed menu container: long-press menus, header ⋮, attach menu.
   'menu'
+  // HDS 标题栏动作弹出的菜单。官方示例使用 THICK + interactive；单独分档，
+  // 不把消息长按菜单也一起改厚、改成整块随触点形变。
+  | 'navigationMenu'
   // Modal that covers what it interrupts: bindSheet, CustomDialog.
   | 'dialog'
   // Self-drawn translucent bar content scrolls under: dock, folder bar.
@@ -247,7 +250,7 @@ export function immersiveMaterialAvailable(): boolean {
 // 按压形变的**基准**：只给 'control'——整块面板跟着手指变形会很怪，背景板
 // 不该动。用户的光感档位在这之上决定给不给，见 materialTuning。
 function interactionBase(surface: OverlaySurface): boolean {
-  return surface === 'control';
+  return surface === 'control' || surface === 'navigationMenu';
 }
 
 function usesInteraction(surface: OverlaySurface): boolean {
@@ -259,7 +262,7 @@ function usesInteraction(surface: OverlaySurface): boolean {
 // 菜单和弹窗不给：它们是一次性出现、点一下就走的东西，摸上去发光没有意义。
 function lightEffectBase(surface: OverlaySurface): boolean {
   return surface === 'control' || surface === 'card' || surface === 'bar'
-    || surface === 'viewer' || surface === 'bubble';
+    || surface === 'viewer' || surface === 'bubble' || surface === 'navigationMenu';
 }
 
 function usesLightEffect(surface: OverlaySurface): boolean {
@@ -290,6 +293,9 @@ export function pressAnimationWins(surface: OverlaySurface): boolean {
 // 在这之上整体平移，相对次序不变——见 materialTuning 的说明。
 function baseStyleIndex(surface: OverlaySurface): number {
   switch (surface) {
+    // HDS openMenu 官方示例的固定基准档。用户厚度设置仍在此基础上平移。
+    case 'navigationMenu':
+      return 3;
     // 菜单：REGULAR 而不是 THICK。THICK 把背后压得太实，真机上几乎读不出
     // 玻璃感，看着就是一块浅色板；REGULAR 仍然把内容推远、文字照样清楚，
     // 但透出的层次让它像一块玻璃。同一档同时用于消息长按菜单和顶栏菜单，
@@ -372,7 +378,7 @@ function usesColorInvert(surface: OverlaySurface): boolean {
 
 // 能吃 BlurStyle 的框架容器面。'bar' 和 'card' 永远是自绘的。
 function frameworkContainer(surface: OverlaySurface): boolean {
-  return surface === 'menu' || surface === 'dialog';
+  return surface === 'menu' || surface === 'navigationMenu' || surface === 'dialog';
 }
 
 // 'viewer' **不参与沉浸材质**，无论 API 多少。
@@ -512,7 +518,9 @@ function buildMaterial(surface: OverlaySurface): uiMaterial.Material {
     // 这两个和材质本体不同：官方注明它们「takes effect for devices with all
     // levels of computing power」，低算力设备上不会被降级掉。
     interactive: usesInteraction(surface),
-    lightEffect: usesLightEffect(surface) ? { color: Color.White } : null
+    // HDS 导航菜单沿用官方示例的系统默认光色；其它自绘面继续使用明确的白光。
+    lightEffect: usesLightEffect(surface)
+      ? { color: surface === 'navigationMenu' ? undefined : Color.White } : null
   });
 }
 

@@ -22,7 +22,9 @@ import {
 // The API-version tests are pure. The rest run against whatever device the
 // suite is on, so they assert the invariant rather than one side of it.
 
-const ALL_SURFACES: OverlaySurface[] = ['menu', 'dialog', 'bar', 'card', 'control', 'viewer', 'bubble'];
+const ALL_SURFACES: OverlaySurface[] = [
+  'menu', 'navigationMenu', 'dialog', 'bar', 'card', 'control', 'viewer', 'bubble'
+];
 
 export default function overlayMaterialTest() {
   describe('immersiveTypeSupported', () => {
@@ -119,6 +121,7 @@ export default function overlayMaterialTest() {
         return;
       }
       expect(overlayBlur('menu')).assertEqual(BlurStyle.COMPONENT_ULTRA_THICK);
+      expect(overlayBlur('navigationMenu')).assertEqual(BlurStyle.COMPONENT_ULTRA_THICK);
       expect(overlayBlur('dialog')).assertEqual(BlurStyle.COMPONENT_ULTRA_THICK);
       // 自绘面永远不给 BlurStyle，给了就是一块死灰。
       expect(overlayBlur('bar')).assertUndefined();
@@ -172,14 +175,15 @@ export default function overlayMaterialTest() {
     // 手写按压动画和材质的 interactive 不能同时存在——两层形变叠加是官方
     // 明确点名的坑。这条钉的是"恰好一个负责按压"，不是某一边的具体写法。
     it('never runs a hand-written press animation alongside the material one', 0, () => {
-      // 只有 'control' 开 interactive，所以只有它会把手写动画让出去。
+      // 普通控件和 HDS 导航菜单按官方示例开 interactive。
       expect(pressAnimationWins('control')).assertEqual(!immersiveMaterialAvailable());
+      expect(pressAnimationWins('navigationMenu')).assertEqual(!immersiveMaterialAvailable());
     });
 
     // 其余几档是背景板，不该在触摸时变形，手写动画永远说了算。
     it('leaves the press animation to the caller on every non-control surface', 0, () => {
       for (const surface of ALL_SURFACES) {
-        if (surface === 'control') {
+        if (surface === 'control' || surface === 'navigationMenu') {
           continue;
         }
         expect(pressAnimationWins(surface)).assertTrue();
