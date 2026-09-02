@@ -6,10 +6,6 @@ import {
 import {
   isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode
 } from '../../util/imageSwap';
-import { reuseParam } from '../../util/reuseParams';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
 
 // An Image fed from the decoded-PixelMap cache instead of a file path.
 //
@@ -19,22 +15,24 @@ import {
 // frees pixels that are still on screen, so it is deliberately not something
 // each call site re-implements.
 //
-// Not @Reusable: path/size changes are handled by @Watch, while normal row
-// teardown releases the retained PixelMap through aboutToDisappear. Keeping
-// image ownership out of ArkUI's reuse pool also avoids nested cache lifetimes.
-@Component
+// P4 批 4：迁 @ComponentV2（判读依据 survey 批 0.5 节，配方经批 1/2/3b/3c
+// 四轮验证）。aboutToReuse 时 @Param 已是新值 → 换源判定与重启动全部同步，
+// V1 的 reuseParam/nextFrameQueue 延帧退役。V2 专属陷阱：@Local pixelMap 被
+// 框架重置为 undefined，而 held 的位图还 retain 着——同源复用走 sameAsHeld
+// 早退分支时必须补种，见 start() 里的注释。
+@ComponentV2
 export struct CachedImage {
-  @Prop @Watch('onSourceChanged') path: string;
-  @Prop @Watch('onSourceChanged') boxWidth: number;
-  @Prop @Watch('onSourceChanged') boxHeight: number;
-  @Prop radius: number = 0;
-  @Prop fit: ImageFit = ImageFit.Cover;
+  @Param path: string = '';
+  @Param boxWidth: number = 0;
+  @Param boxHeight: number = 0;
+  @Param radius: number = 0;
+  @Param fit: ImageFit = ImageFit.Cover;
   // Keep the decoded bitmap for the whole session (see pinPixelMap).
-  @Prop pin: boolean = false;
+  @Param pin: boolean = false;
   // 位图第一次真正交给 Image 的那一刻。调用方据此决定什么时候撤掉自己的兜底层
   // ——解码失败时这个回调永远不来，兜底层就一直留着（issue #90）。
-  onReady: () => void = (): void => {};
-  @State pixelMap: image.PixelMap | undefined = undefined;
+  @Param onReady: () => void = (): void => {};
+  @Local pixelMap: image.PixelMap | undefined = undefined;
   // The handle currently retained, so it can be released even after path has
   // already been overwritten by a reuse — and even if the LRU has since
   // dropped it from the map.
@@ -45,56 +43,33 @@ export struct CachedImage {
   private awaiting: PixelRequest | null = null;
   // Guards against an out-of-order decode landing after a newer one.
   private seq: number = 0;
-  // This instance's slot in the shared next-frame queue (util/nextFrameQueue).
-  // Undecorated members survive reuse untouched, so the id stays stable for the
-  // life of the instance — that is what lets a later reuse override an earlier one.
-  private frameOwnerId: number = nextFrameOwnerId();
-
   aboutToAppear(): void {
     this.start();
   }
 
   aboutToDisappear(): void {
     this.drop();
-    // A stale re-check would start a decode for a component that is gone, and
-    // retain a PixelMap nothing will ever release.
-    cancelNextFrame(this.frameOwnerId);
   }
 
   // Recycling cancels work in flight but keeps a bitmap that is already
   // decoded. Dropping it here was a real bug: a pooled row reused with the
   // same photo gets no @Watch (the values never changed), so nothing reloaded
   // it and the cell stayed blank.
+  // Recycling cancels work in flight but keeps the retained bitmap: a pooled
+  // row reused with the same photo re-seeds from it synchronously (start()'s
+  // sameAsHeld branch) — no decode, no blank frame.
   aboutToRecycle(): void {
     this.cancelPending();
-    // Pending work in flight was just cancelled; do not let the previous reuse's
-    // scheduled re-check undo that. The next reuse enqueues again.
-    cancelNextFrame(this.frameOwnerId);
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
-    // The bitmap is NOT blanked here: doing that left the row empty until the
-    // new decode landed, and the viewer's close animation shrinks back onto
-    // this cell — onto nothing.
-    //
-    // The re-check is scheduled rather than done now for two reasons. @Prop
-    // refreshes land after this callback, so the new source is not readable
-    // yet; and when a row is reused with the SAME photo, @Watch never fires,
-    // so nothing else would run. That combination is what left a permanent
-    // blank whenever a row was recycled while its decode was still in flight:
-    // the decode got cancelled and no one ever asked again. start() is
-    // idempotent, so an unnecessary call costs nothing.
-    // reuseParam：params 是 {} 还是 undefined 都安全（P3 批 2 第 1 项，见
-    // util/reuseParams.ets）。取不到就跳过 drop，等同于原有的「不判定」分支，
-    // 下面的 setTimeout 仍然无条件跑。
-    const nextPath: string | undefined = reuseParam(params, 'path') as string | undefined;
-    if (nextPath !== undefined && this.heldReq !== null && this.heldReq.path !== nextPath) {
-      // A recycled avatar/thumbnail must never display the previous row while
-      // the new decode is pending. Same-source reuse still keeps its bitmap.
+  aboutToReuse(): void {
+    // @Param 已是新值（批 0.5 判读）：换源判定直接同步做。换了源先 drop——
+    // 复用出来的行绝不能画着上一条消息的图等新解码；同源保留位图，
+    // start() 里补种（@Local 已被框架重置）。
+    if (this.heldReq !== null && this.heldReq.path !== this.path) {
       this.drop();
     }
-    // Merged into the shared queue; semantics unchanged (util/nextFrameQueue).
-    enqueueNextFrame(this.frameOwnerId, (): void => { this.start(); });
+    this.start();
   }
 
   private request(): PixelRequest {
@@ -125,7 +100,10 @@ export struct CachedImage {
     this.pixelMap = undefined;
   }
 
-  private onSourceChanged(): void {
+  // 非复用路径上源/尺寸真变化时重启动；复用路径由 aboutToReuse 覆盖
+  // （@Monitor 复用期静默，批 0.5 实测）。
+  @Monitor('path', 'boxWidth', 'boxHeight')
+  onSourceChanged(): void {
     this.start();
   }
 
@@ -172,6 +150,12 @@ export struct CachedImage {
       this.pixelMap = undefined;
     }
     if (this.sameAsHeld(req)) {
+      // V2 复用把 @Local pixelMap 重置成 undefined，held 的位图却还 retain
+      // 着——不补种就是永久空白（V1 靠「复用不清 @State」天然没这个问题）。
+      if (this.pixelMap === undefined && this.held !== null) {
+        this.pixelMap = this.held.pixelMap;
+        this.onReady();
+      }
       return; // already showing exactly this
     }
     const token = ++this.seq;

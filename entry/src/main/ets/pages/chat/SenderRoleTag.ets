@@ -1,28 +1,23 @@
 
 import { senderRoleFor, senderRoleKey, subscribeSenderRole } from '../../util/senderRoleChannel';
-import { reuseParam } from '../../util/reuseParams';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
 
 // 气泡里发送者名字旁边那枚身份标签（管理员 / 创建者 / 自定义头衔）。
 //
 // 自订阅而不是由页面把标签传下来：管理员名单是异步取的，比消息行晚到。走
 // @Prop 的话，标签一到货整页每行都要重建；这里只让这一枚小标签自己换字。
 // 同一套做法见 senderAvatarChannel 的注释。
-@Component
+// P4 批 4：迁 @ComponentV2（配方同批 1/2/3b/3c）。复用路径在 aboutToReuse
+// 同步重挂（@Param 已是新值），@Monitor 只兜非复用路径——这一处挂错的后果
+// 比图片更严重：会把「管理员/群主」身份标签贴到别人的消息上。
+@ComponentV2
 export struct SenderRoleTag {
-  // 自愈：理由与 LiveThumbImage.onFileIdChanged 同源。这一处挂错的后果比图片
-  // 更严重——会把「管理员/群主」这类身份标签贴到别人的消息上。
-  @Prop @Watch('onSenderChanged') chatId: number;
-  @Prop @Watch('onSenderChanged') senderId: number;
+  @Param chatId: number = 0;
+  @Param senderId: number = 0;
   // 群成员标签（消息自带的 sender_tag）。有它就显示它——标签是打给所有人看
   // 的；没有再落到管理员头衔那条异步通道。
-  @Prop presetTag: string = '';
-  @State private label: string = '';
+  @Param presetTag: string = '';
+  @Local private label: string = '';
   private unsub: (() => void) | null = null;
-  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
-  private frameOwnerId: number = nextFrameOwnerId();
 
   private attachRoleChannel(chatId: number, senderId: number): void {
     this.detachRoleChannel();
@@ -40,8 +35,8 @@ export struct SenderRoleTag {
     }
   }
 
-  private onSenderChanged(): void {
-    cancelNextFrame(this.frameOwnerId);
+  @Monitor('chatId', 'senderId')
+  onSenderChanged(): void {
     this.attachRoleChannel(this.chatId, this.senderId);
   }
 
@@ -51,30 +46,15 @@ export struct SenderRoleTag {
 
   aboutToRecycle(): void {
     this.detachRoleChannel();
-    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
-    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
-    cancelNextFrame(this.frameOwnerId);
   }
 
-  aboutToReuse(params: Record<string, Object>): void {
-    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到下面的
-    // setTimeout 兜底（P3 批 2 第 1 项，见 util/reuseParams.ets）。
-    const nextChatId: number | undefined = reuseParam(params, 'chatId') as number | undefined;
-    const nextSenderId: number | undefined = reuseParam(params, 'senderId') as number | undefined;
-    if (nextChatId !== undefined && nextSenderId !== undefined) {
-      this.attachRoleChannel(nextChatId, nextSenderId);
-      return;
-    }
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-    enqueueNextFrame(this.frameOwnerId, (): void => {
-      this.attachRoleChannel(this.chatId, this.senderId);
-    });
+  aboutToReuse(): void {
+    // @Param 已是新值（批 0.5 判读）：同步重挂+播种（attach 内先读通道现值）。
+    this.attachRoleChannel(this.chatId, this.senderId);
   }
 
   aboutToDisappear(): void {
     this.detachRoleChannel();
-    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
-    cancelNextFrame(this.frameOwnerId);
   }
 
   build() {
