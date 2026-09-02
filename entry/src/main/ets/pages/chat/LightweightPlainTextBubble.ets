@@ -148,16 +148,24 @@ struct LightweightSenderAvatar {
     this.attachedKey = '';
   }
 
-  aboutToAppear(): void { this.attach(this.senderId, this.senderIsUser, this.initialPath); }
+  aboutToAppear(): void {
+    // ⚠️ 临时计数（随 avatarReuseProbe 一起删）：分辨第二层 V2 组件在父复用
+    // 时走的是「回调复用」还是「销毁重建」——[AvatarBlank] 零输出的归因。
+    probeHit('avatar.plain.mount');
+    this.attach(this.senderId, this.senderIsUser, this.initialPath);
+  }
   aboutToDisappear(): void {
+    probeHit('avatar.plain.unmount');
     this.detach();
   }
   aboutToRecycle(): void {
+    probeHit('avatar.plain.recycle');
     // 记下回收时挂在谁身上——只为探针对账；detach 会把 attachedKey 归零。
     this.recycledKey = this.attachedKey;
     this.detach();
   }
   aboutToReuse(): void {
+    probeHit('avatar.plain.reuse');
     // @Param 已是新值（批 0.5 判读 Q1b），直接同步重挂+重播种。initialPath
     // 也是新行的值，V1 时代"watch 里不敢用 initialPath"的 I-2 坑在这条路
     // 不存在。
