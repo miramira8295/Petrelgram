@@ -214,6 +214,16 @@ export class MessageStore {
   private initialHistoryState: string = 'loading'; // loading | ready | error
   private initialHistoryError: string = '';
   private olderPending: boolean = false;
+  // One older page is fetched after the first viewport settles, but kept as
+  // raw TDLib data until the user reaches the top. Parsing/publishing it here
+  // would rebuild media rows during the first scroll and recreate the jump the
+  // prefetch is meant to avoid.
+  private olderPrefetchPending: boolean = false;
+  private olderPrefetchAnchorId: number = 0;
+  private olderPrefetchResult: TdObject | null = null;
+  private olderPrefetchDemanded: boolean = false;
+  private olderPrefetchEmptyRetries: number = OLDER_EMPTY_RETRIES;
+  private olderPrefetchSeq: number = 0;
   private newerPending: boolean = false;
   // chat.last_message captured at open. TDLib can hang a LOCAL service message
   // (e.g. "您已加入此群组") off chat.last_message that getChatHistory never
@@ -462,6 +472,7 @@ export class MessageStore {
   }
 
   close(): void {
+    this.clearOlderPrefetch();
     if (this.coalesceTimer !== -1) {
       clearTimeout(this.coalesceTimer);
       this.coalesceTimer = -1;
@@ -791,7 +802,170 @@ export class MessageStore {
   // TDLib 返回空不等于没有历史，它的契约是"再问一次"。
   private olderEmptyRetries: number = OLDER_EMPTY_RETRIES;
 
+  private clearOlderPrefetch(): void {
+    const resetPromotedLoad: boolean = this.olderPrefetchDemanded &&
+      !this.olderPending && this.olderLoadState === 'loading';
+    this.olderPrefetchSeq++;
+    this.olderPrefetchPending = false;
+    this.olderPrefetchAnchorId = 0;
+    this.olderPrefetchResult = null;
+    this.olderPrefetchDemanded = false;
+    this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+    if (resetPromotedLoad) {
+      this.olderLoadState = 'idle';
+    }
+  }
+
+  private olderPageHasEntry(res: TdObject, anchorId: number): boolean {
+    const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+    for (const message of arr) {
+      const id = (message['id'] as number | undefined) ?? 0;
+      if (id > 0 && id < anchorId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private applyOlderPage(res: TdObject, anchorId: number): void {
+    const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+    if (!this.olderPageHasEntry(res, anchorId)) {
+      // An empty/cache-only TDLib page is not authoritative. Retry from the
+      // same anchor before declaring the history exhausted.
+      if (this.olderEmptyRetries > 0) {
+        this.olderEmptyRetries--;
+        this.olderLoadState = 'idle';
+        logW(`[StoreDiag] older empty, retrying left=${this.olderEmptyRetries}` +
+          ` anchor=${anchorId} rows=${this.messages.length}`);
+        this.onHistory(res, 'older');
+        this.loadOlder();
+        return;
+      }
+      this.hasMoreOlder = false;
+      this.olderLoadState = 'end';
+    } else {
+      this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
+      this.olderLoadState = 'idle';
+    }
+    this.onHistory(res, 'older');
+    if (arr.length > 0 && this.hasMoreOlder && this.initialFillTries === 0) {
+      this.prefetchOlder();
+    }
+  }
+
+  private failOlderLoad(e: TdError): void {
+    if ((e as TdError).code === 404) {
+      this.hasMoreOlder = false;
+      this.olderLoadState = 'end';
+    } else {
+      this.olderLoadState = 'error';
+      logE(`MessageStore.loadOlder failed: ${e.message}`);
+    }
+    this.notify('paginationState');
+  }
+
+  private requestOlderPrefetch(anchorId: number, seq: number): void {
+    this.olderPrefetchPending = true;
+    const req = this.historyRequest(anchorId, 0);
+    this.client.send(req).then((res: TdObject): void => {
+      if (seq !== this.olderPrefetchSeq || anchorId !== this.oldestId) {
+        return;
+      }
+      if (!this.olderPageHasEntry(res, anchorId)) {
+        if (this.olderPrefetchEmptyRetries > 0) {
+          this.olderPrefetchEmptyRetries--;
+          logW(`[StoreDiag] older prefetch empty, retrying left=${this.olderPrefetchEmptyRetries}` +
+            ` anchor=${anchorId} rows=${this.messages.length}`);
+          this.requestOlderPrefetch(anchorId, seq);
+          return;
+        }
+        this.olderPrefetchPending = false;
+        this.olderPrefetchAnchorId = 0;
+        this.olderPrefetchDemanded = false;
+        this.hasMoreOlder = false;
+        this.olderLoadState = 'end';
+        this.notify('paginationState');
+        return;
+      }
+      this.olderPrefetchPending = false;
+      this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+      if (this.olderPrefetchDemanded) {
+        this.olderPrefetchDemanded = false;
+        this.olderPrefetchAnchorId = 0;
+        this.olderLoadState = 'idle';
+        this.applyOlderPage(res, anchorId);
+        return;
+      }
+      this.olderPrefetchResult = res;
+      logI(`[StoreDiag] older prefetch ready anchor=${anchorId}` +
+        ` got=${((res['messages'] as TdObject[] | undefined) ?? []).length}`);
+    }).catch((e: TdError): void => {
+      if (seq !== this.olderPrefetchSeq) {
+        return;
+      }
+      const demanded: boolean = this.olderPrefetchDemanded;
+      this.olderPrefetchPending = false;
+      this.olderPrefetchAnchorId = 0;
+      this.olderPrefetchDemanded = false;
+      this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+      if (demanded) {
+        this.failOlderLoad(e);
+      } else if ((e as TdError).code === 404) {
+        this.hasMoreOlder = false;
+        this.olderLoadState = 'end';
+        this.notify('paginationState');
+      } else {
+        logW(`MessageStore.prefetchOlder failed: ${e.message}`);
+      }
+    });
+  }
+
+  // Warm one older page without changing the observable timeline. Repeated
+  // calls are cheap; ChatPage invokes this after its first anchor is latched.
+  prefetchOlder(): boolean {
+    if (this.olderPrefetchAnchorId !== 0 &&
+      this.olderPrefetchAnchorId !== this.oldestId) {
+      this.clearOlderPrefetch();
+    }
+    if (this.olderPrefetchPending || this.olderPrefetchResult !== null) {
+      return true;
+    }
+    if (this.olderPending || this.initialFillTries > 0 ||
+      this.olderLoadState !== 'idle' || !this.hasMoreOlder || this.oldestId === 0) {
+      return false;
+    }
+    const anchorId: number = this.oldestId;
+    const seq: number = ++this.olderPrefetchSeq;
+    this.olderPrefetchAnchorId = anchorId;
+    this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+    this.requestOlderPrefetch(anchorId, seq);
+    return true;
+  }
+
   loadOlder(): boolean {
+    if (this.olderPrefetchAnchorId !== 0 &&
+      this.olderPrefetchAnchorId !== this.oldestId) {
+      this.clearOlderPrefetch();
+    }
+    if (this.olderPrefetchResult !== null &&
+      this.olderPrefetchAnchorId === this.oldestId) {
+      const anchorId: number = this.olderPrefetchAnchorId;
+      const res: TdObject = this.olderPrefetchResult;
+      this.olderPrefetchAnchorId = 0;
+      this.olderPrefetchResult = null;
+      this.olderPrefetchDemanded = false;
+      this.applyOlderPage(res, anchorId);
+      return true;
+    }
+    if (this.olderPrefetchPending &&
+      this.olderPrefetchAnchorId === this.oldestId) {
+      // The gesture arrived before the warm request completed. Promote that
+      // same request to visible loading instead of starting a duplicate.
+      this.olderPrefetchDemanded = true;
+      this.olderLoadState = 'loading';
+      this.notify('paginationState');
+      return true;
+    }
     if (this.olderPending || this.olderLoadState === 'error' ||
       !this.hasMoreOlder || this.oldestId === 0) {
       // 诊断：反馈过"有会话进去只有一页、往上翻不动"，且不必现。这里是历史
@@ -818,50 +992,10 @@ export class MessageStore {
     const req = this.historyRequest(anchorId, 0);
     this.client.send(req).then((res: TdObject) => {
       this.olderPending = false;
-      const arr = (res['messages'] as TdObject[] | undefined) ?? [];
-      let hasOlderEntry = false;
-      for (const message of arr) {
-        const id = (message['id'] as number | undefined) ?? 0;
-        if (id > 0 && id < anchorId) {
-          hasOlderEntry = true;
-          break;
-        }
-      }
-      if (!hasOlderEntry) {
-        // 空页**不等于**到顶。getChatHistory 只给本地缓存里有的，明明还有历史
-        // 也可能返回空或只返回锚点自己——它的契约是"再问一次"（同一个文件里
-        // latest 那条路的注释早就写明了这一点，这里却更严：一次没拿到更旧的
-        // 就把 hasMoreOlder 永久置 false，之后 loadOlder 在入口直接拒绝，那个
-        // 会话就永远停在那点内容上，用户看到的是"999+ 却滑不动"）。
-        //
-        // 而且这个坑会自锁：向上预取是滚动驱动的，内容不够一屏就滚不动，
-        // 滚不动就没人再来敲门。所以这里不能等下一次滚动，得自己立刻再问。
-        if (this.olderEmptyRetries > 0) {
-          this.olderEmptyRetries--;
-          this.olderLoadState = 'idle';
-          logW(`[StoreDiag] older empty, retrying left=${this.olderEmptyRetries}` +
-            ` anchor=${anchorId} rows=${this.messages.length}`);
-          this.onHistory(res, 'older');
-          this.loadOlder();
-          return;
-        }
-        this.hasMoreOlder = false;
-        this.olderLoadState = 'end';
-      } else {
-        this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
-        this.olderLoadState = 'idle';
-      }
-      this.onHistory(res, 'older');
+      this.applyOlderPage(res, anchorId);
     }).catch((e: TdError) => {
       this.olderPending = false;
-      if ((e as TdError).code === 404) {
-        this.hasMoreOlder = false;
-        this.olderLoadState = 'end';
-      } else {
-        this.olderLoadState = 'error';
-        logE(`MessageStore.loadOlder failed: ${e.message}`);
-      }
-      this.notify('paginationState');
+      this.failOlderLoad(e);
     });
     return true;
   }
@@ -984,6 +1118,7 @@ export class MessageStore {
       this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
       this.newerLoadState = 'end';
       this.olderLoadState = 'idle';
+      this.clearOlderPrefetch();
       this.messages = [];
       this.oldestId = 0;
       this.onHistory(res, 'latest');
@@ -2104,6 +2239,7 @@ export class MessageStore {
         ` [${pageOldest}..${pageNewest}] windowNewest=${windowNewest}` +
         ` windowLen=${this.messages.length} replaced=${replaced}`);
       if (replaced) {
+        this.clearOlderPrefetch();
         this.messages = [];
         this.hasMoreOlder = true;
         this.olderLoadState = 'idle';
@@ -4361,6 +4497,10 @@ export class MessageStore {
   // that isn't in the currently loaded window). Notifies when it arrives.
   loadAround(messageId: number, onComplete?: (found: boolean) => void,
     initialAlignFromStart: boolean = false): void {
+    // Any cached page belongs to the previous window. A jump can change the
+    // oldest id before its request returns, so invalidate both ready/in-flight
+    // prefetches up front.
+    this.clearOlderPrefetch();
     // Jumping into the middle of history: newer messages beyond this window
     // may exist — enable downward prefetch to discover/load them.
     //

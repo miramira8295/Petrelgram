@@ -2584,11 +2584,12 @@ export struct ChatPage {
             prependAnchorY = y;
             prependAnchorUserOffset = this.userScrollOffsetTotal;
             primePrependAnchor = shouldPrimePrependAnchor(
-              visibleIndex, y, this.headerChromeHeight(), this.timelineScrollActive);
+              visibleIndex, y, this.headerChromeHeight(), this.listTouchActive);
             this.captureAnchorOffset();
             logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
               ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
-              ` messages=${this.messages.length}->${list.length} prime=${primePrependAnchor}`);
+              ` messages=${this.messages.length}->${list.length} prime=${primePrependAnchor}` +
+              ` touch=${this.listTouchActive} active=${this.timelineScrollActive}`);
           } else {
             logW(`[PrependAnchor] skip reason=measure idx=${visibleIndex}` +
               ` rows=${this.groups.length}->${groups.length}` +
@@ -2970,6 +2971,9 @@ export struct ChatPage {
       // reach this call again after the staged release completes. The method's
       // store/stage guards make both paths converge without a timer race.
       this.scheduleComposerEditorMount();
+      if (this.didInitialScroll && list.length > 0) {
+        store.prefetchOlder();
+      }
     }));
     this.subscriptions.set('subtitle', store.subscribeSubtitle((s: string) => {
       this.subtitle = s;

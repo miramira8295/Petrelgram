@@ -662,6 +662,56 @@ export default function messageStoreTest() {
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
       expect(ids(store.getMessages()).join(',')).assertEqual('10,20,30');
     });
+    it('older_prefetch_stays_hidden_until_the_page_is_consumed', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.prefetchOlder()).assertTrue();
+      expect(store.getOlderLoadState()).assertEqual('idle');
+      feedHistory(b, [textMessage(10, 5, false, 'a'), textMessage(5, 5, false, 'older')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(ids(store.getMessages()).join(',')).assertEqual('10,20,30');
+      expect(store.loadOlder()).assertTrue();
+      expect(ids(store.getMessages()).join(',')).assertEqual('5,10,20,30');
+      store.close();
+    });
+    it('older_prefetch_is_promoted_when_the_user_reaches_top_while_loading', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.prefetchOlder()).assertTrue();
+      const requests: number = requestCount(b, 'getChatHistory');
+      expect(store.loadOlder()).assertTrue();
+      expect(store.getOlderLoadState()).assertEqual('loading');
+      expect(requestCount(b, 'getChatHistory')).assertEqual(requests);
+      feedHistory(b, [textMessage(10, 5, false, 'a'), textMessage(5, 5, false, 'older')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(ids(store.getMessages()).join(',')).assertEqual('5,10,20,30');
+      store.close();
+    });
+    it('jumping_away_clears_a_promoted_older_prefetch_state', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.prefetchOlder()).assertTrue();
+      expect(store.loadOlder()).assertTrue();
+      expect(store.getOlderLoadState()).assertEqual('loading');
+      store.loadAround(20);
+      expect(store.getOlderLoadState()).assertEqual('idle');
+      store.close();
+    });
     it('sender_name_backfill_publishes_once_not_per_message', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();

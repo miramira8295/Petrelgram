@@ -68,14 +68,18 @@ export function shouldCapturePrependAnchor(input: PrependAnchorCaptureInput): bo
 // When the user has stopped at the absolute history boundary, waiting for a
 // network page before restoring the anchor is visible: the prepended rows are
 // painted first and the later correction looks like a page jump. Prime only
-// this unambiguous state; an in-flight drag keeps the measured restore path.
-const PREPEND_HARD_TOP_EPSILON_VP: number = 1;
+// this unambiguous state. ArkUI keeps scrollActive=true during the edge spring
+// after the finger is released, so gate on an actual touch instead. The device
+// trace shows the resting first row at 152.857vp and the spring at 159.342vp.
+const PREPEND_TOP_UNDERTRAVEL_VP: number = 1;
+const PREPEND_TOP_OVERTRAVEL_VP: number = 12;
 
 export function shouldPrimePrependAnchor(
-  visibleIndex: number, itemY: number, headerChromeHeight: number, scrollActive: boolean
+  visibleIndex: number, itemY: number, headerChromeHeight: number, touchActive: boolean
 ): boolean {
-  return !scrollActive && visibleIndex === 0 &&
-    Math.abs(itemY - headerChromeHeight) <= PREPEND_HARD_TOP_EPSILON_VP;
+  return !touchActive && visibleIndex === 0 &&
+    itemY >= headerChromeHeight - PREPEND_TOP_UNDERTRAVEL_VP &&
+    itemY <= headerChromeHeight + PREPEND_TOP_OVERTRAVEL_VP;
 }
 
 // onDidScroll/onWillScroll report a positive offset when content moves upward.

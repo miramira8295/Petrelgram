@@ -55,12 +55,17 @@ export default function anchorRestoreTest() {
       expect(shouldPrimePrependAnchor(0, 152.857, 153, false)).assertTrue();
     });
 
+    it('松手后的顶部回弹仍然预定位', 0, (): void => {
+      expect(shouldPrimePrependAnchor(0, 159.342, 153, false)).assertTrue();
+    });
+
     it('普通可见位置不走预定位', 0, (): void => {
       expect(shouldPrimePrependAnchor(1, 153, 153, false)).assertFalse();
       expect(shouldPrimePrependAnchor(0, 140, 153, false)).assertFalse();
+      expect(shouldPrimePrependAnchor(0, 166, 153, false)).assertFalse();
     });
 
-    it('拖动或惯性期间不抢滚动位置', 0, (): void => {
+    it('手指仍按着时不抢滚动位置', 0, (): void => {
       expect(shouldPrimePrependAnchor(0, 153, 153, true)).assertFalse();
     });
   });
