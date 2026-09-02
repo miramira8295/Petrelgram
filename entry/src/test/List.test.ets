@@ -90,6 +90,7 @@ import tabPreloadTest from './TabPreload.test';
 import chatListFreezeTest from './ChatListFreeze.test';
 import folderBadgesTest from './FolderBadges.test';
 import chatEnvMirrorTest from './ChatEnvMirror.test';
+import tdUpdateFilterTest from './TdUpdateFilter.test';
 import proxyMirrorTest from './ProxyMirror.test';
 import mainTabsWidthTest from './MainTabsWidth.test';
 import appearanceTest from './Appearance.test';
@@ -282,6 +283,7 @@ export default function testsuite() {
   chatListFreezeTest();
   folderBadgesTest();
   chatEnvMirrorTest();
+  tdUpdateFilterTest();
   proxyMirrorTest();
   mainTabsWidthTest();
   appearanceTest();

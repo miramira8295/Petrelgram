@@ -10,6 +10,7 @@
 
 import { worker, ThreadWorkerGlobalScope, MessageEvents } from '@kit.ArkTS';
 import testNapi from 'libentry.so';
+import { coalesceKeyOf } from '../tdkit/tdUpdateFilter';
 
 const scope: ThreadWorkerGlobalScope = worker.workerPort;
 
@@ -34,9 +35,50 @@ interface TdWorkerEvent {
   head?: string;
 }
 
+// 可交换更新的合并缓冲（A 批 2，见 tdkit/tdUpdateFilter）。Map 迭代按插入序，
+// flush 时的相对顺序即到达顺序（同 key 后写覆盖先写、占原位）。
+const pendingCoalesced: Map<string, object> = new Map<string, object>();
+let flushTimer: number = -1;
+const COALESCE_FLUSH_MS: number = 48;
+
+function flushCoalesced(): void {
+  if (flushTimer !== -1) {
+    clearTimeout(flushTimer);
+    flushTimer = -1;
+  }
+  if (pendingCoalesced.size === 0) {
+    return;
+  }
+  pendingCoalesced.forEach((payload: object): void => {
+    const event: TdWorkerEvent = { kind: 'recv', payload: payload };
+    postSafe(event);
+  });
+  pendingCoalesced.clear();
+}
+
+function deliver(obj: object): void {
+  const key: string = coalesceKeyOf(obj as Record<string, Object>);
+  if (key === '') {
+    // 直通事件发出前先冲积压：与不可交换事件的相对顺序必须保持。
+    flushCoalesced();
+    const event: TdWorkerEvent = { kind: 'recv', payload: obj };
+    postSafe(event);
+    return;
+  }
+  pendingCoalesced.set(key, obj);
+  if (flushTimer === -1) {
+    flushTimer = setTimeout((): void => {
+      flushTimer = -1;
+      flushCoalesced();
+    }, COALESCE_FLUSH_MS);
+  }
+}
+
 scope.onmessage = (e: MessageEvents): void => {
   const msg = e.data as TdWorkerCommand;
   if (msg.kind === 'init') {
+    // 账号切换会重发 init：清掉上一个运行时的积压。
+    pendingCoalesced.clear();
     testNapi.tdInit((json: string): void => {
       let obj: object | null = null;
       try {
@@ -48,8 +90,7 @@ scope.onmessage = (e: MessageEvents): void => {
         postSafe(parseError);
         return;
       }
-      const event: TdWorkerEvent = { kind: 'recv', payload: obj };
-      postSafe(event);
+      deliver(obj);
     });
   } else if (msg.kind === 'send') {
     testNapi.tdSend(msg.json ?? '');
