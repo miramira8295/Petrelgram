@@ -53,6 +53,48 @@ function clearClockCache(): void {
   clockCacheNext = 0;
 }
 
+// 日期族（星期/月日/全日期）的天级结果缓存。同一天的所有时间戳共享同一张
+// 标签，而每次发布/翻页都会对全部分组重算 dateLabel——cpuprofile 实测
+// （20260902T115345）monthDay 一族的 format() 在 15s 滚动里累计 ~80ms。
+// 与 clockCache 同一套 FIFO 思路：时间线单向走，插入序淘汰即可。
+const DAY_CACHE_CAPACITY = 512;
+
+class DayLabelCache {
+  private cache: Map<number, string> = new Map<number, string>();
+  private ring: number[] = [];
+  private next: number = 0;
+
+  get(key: number): string | undefined {
+    return this.cache.get(key);
+  }
+
+  put(key: number, text: string): void {
+    if (this.cache.size >= DAY_CACHE_CAPACITY) {
+      this.cache.delete(this.ring[this.next]);
+      this.ring[this.next] = key;
+    } else {
+      this.ring.push(key);
+    }
+    this.cache.set(key, text);
+    this.next = (this.next + 1) % DAY_CACHE_CAPACITY;
+  }
+
+  clear(): void {
+    this.cache = new Map<number, string>();
+    this.ring = [];
+    this.next = 0;
+  }
+}
+
+const weekdayCache: DayLabelCache = new DayLabelCache();
+const monthDayCache: DayLabelCache = new DayLabelCache();
+const fullDateCache: DayLabelCache = new DayLabelCache();
+
+// 本地日的整数身份（年/月/日各占一段位）。星期由日期唯一决定，同 key 可用。
+function dayKey(d: Date): number {
+  return d.getFullYear() * 512 + d.getMonth() * 32 + d.getDate();
+}
+
 function putClockCache(bucket: number, text: string): void {
   if (clockCache.size >= CLOCK_CACHE_CAPACITY) {
     clockCache.delete(clockCacheRing[clockCacheNext]);
@@ -117,6 +159,9 @@ export function refreshLocale(): void {
   monthDayTimeFmt = null;
   fullDateTimeFmt = null;
   clearClockCache();
+  weekdayCache.clear();
+  monthDayCache.clear();
+  fullDateCache.clear();
 }
 
 // Test seams: force a locale and a clock without a running platform.
@@ -171,6 +216,11 @@ export function clockTimeAt(unixSec: number): string {
 
 // zh-CN "周二", en-US "Tue".
 export function weekdayShort(d: Date): string {
+  const key: number = dayKey(d);
+  const cached: string | undefined = weekdayCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
   if (weekdayFmt === null) {
     try {
       const opts: Intl.DateTimeFormatOptions = { weekday: 'short' };
@@ -179,12 +229,19 @@ export function weekdayShort(d: Date): string {
       return '';
     }
   }
-  return weekdayFmt.format(d);
+  const text: string = weekdayFmt.format(d);
+  weekdayCache.put(key, text);
+  return text;
 }
 
 // month:'short' rather than 'numeric' — zh-CN renders numeric M/d as "7/6",
 // losing the 月/日 the app shows today; 'short' gives "7月6日" and "Jul 6".
 export function monthDay(d: Date): string {
+  const key: number = dayKey(d);
+  const cached: string | undefined = monthDayCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
   if (monthDayFmt === null) {
     try {
       const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
@@ -193,11 +250,18 @@ export function monthDay(d: Date): string {
       return `${d.getMonth() + 1}/${d.getDate()}`;
     }
   }
-  return monthDayFmt.format(d);
+  const text: string = monthDayFmt.format(d);
+  monthDayCache.put(key, text);
+  return text;
 }
 
 // zh-CN "2024年12月31日", en-US "Dec 31, 2024".
 export function fullDate(d: Date): string {
+  const key: number = dayKey(d);
+  const cached: string | undefined = fullDateCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
   if (fullDateFmt === null) {
     try {
       const opts: Intl.DateTimeFormatOptions = {
@@ -208,7 +272,9 @@ export function fullDate(d: Date): string {
       return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
     }
   }
-  return fullDateFmt.format(d);
+  const text: string = fullDateFmt.format(d);
+  fullDateCache.put(key, text);
+  return text;
 }
 
 // Date and time in one formatter rather than two joined by a space: the
