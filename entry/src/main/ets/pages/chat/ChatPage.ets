@@ -360,10 +360,14 @@ const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = false;
 const ANCHOR_AUDIT_DELAY_MS: number = 250;
 // 锚点补偿：量不到锚点行时下一帧再量，最多几次、每次隔多久（见 restoreScrollAnchor）。
 
-// Reuse-pool granularity for ReusableMessageBubble's reuseId. Provisional —
-// to be measured and tuned in P2 Task 3; 'medium' is a placeholder, not a
-// verified-best value.
-const REUSE_ID_LEVEL: ReuseIdLevel = 'medium';
+// Reuse-pool granularity for ReusableMessageBubble's reuseId.
+// 2026-09-02 从 'medium' 切到 'fine'（medium + mediaKind 六分）：Frame 录制
+// 20260902T102459 显示 medium 档下 rich 桶复用时有跨媒体类型的结构翻转——
+// 单次 BuildRecycle 里出现 LiveThumbImage Destroy ~6ms（photo/video 行被
+// 复用去画别的媒体形态）。fine 档按官方「按结构分桶」的方向消掉这类销毁。
+// 代价是桶数变多摊薄命中率——下一份录制对比 BuildRecycle 均价与 BuildItem
+// 冷建次数，若命中率塌了就回退这一行（这正是把档位做成参数的用意）。
+const REUSE_ID_LEVEL: ReuseIdLevel = 'fine';
 let nextChatPageReuseScope: number = 1;
 
 function allocateChatPageReuseScope(): number {
