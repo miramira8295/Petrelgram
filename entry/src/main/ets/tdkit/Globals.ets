@@ -29,6 +29,7 @@ import { StoryStore } from '../store/StoryStore';
 import { systemCallUi } from '../services/SystemCallUi';
 import { common } from '@kit.AbilityKit';
 import { TdObject, TdRequest } from './TdTypes';
+import { TdWorkerBridge } from './TdWorkerBridge';
 import {
   accountRegistry, TD_ACCOUNT_SWITCHING, TD_SESSION_EPOCH,
   TdAccountDirectories, TdAccountSummary
@@ -92,12 +93,38 @@ function repairTdTempDirectory(filesDirectory: string): void {
 
 type RuntimeStopMode = 'close' | 'destroy';
 
+// A 批 1 开关（勘探 docs/superpowers/specs/2026-09-02-tdlib-worker-survey.md）：
+// 开 = TDLib 收包 + JSON.parse 进 workers/TdWorker，跨线程投递解析对象。
+// **默认关**：libentry 在 worker 线程的可加载性（勘探问题 1/4）未经真机
+// spike。构造抛错时自动落回直连并记日志，所以开着也不至于起不来。
+// 账号切换（createRuntime 重入）复用同一个 worker，重发 init 即可——tdInit
+// 的回调注册在 NAPI 层是幂等换新。
+const TD_WORKER_BRIDGE_ENABLED: boolean = false;
+let workerBridge: TdWorkerBridge | undefined = undefined;
+
+function createTdClientWithBridge(): TdClient {
+  if (TD_WORKER_BRIDGE_ENABLED) {
+    try {
+      if (workerBridge === undefined) {
+        workerBridge = new TdWorkerBridge();
+      }
+      const created = new TdClient(workerBridge);
+      workerBridge.onParsed((obj: TdObject): void => { created.deliverParsed(obj); });
+      return created;
+    } catch (e) {
+      logE(`TdWorkerBridge unavailable, falling back to direct bridge: ${e}`);
+      workerBridge = undefined;
+    }
+  }
+  return new TdClient({ init: testNapi.tdInit, send: testNapi.tdSend });
+}
+
 function createRuntime(slotId: string): void {
   runtimeReady = false;
   const directories: TdAccountDirectories = accountRegistry.directories(baseFilesDir, slotId);
   activeTdFilesDirectory = directories.filesDirectory;
   repairTdTempDirectory(directories.filesDirectory);
-  client = new TdClient({ init: testNapi.tdInit, send: testNapi.tdSend });
+  client = createTdClientWithBridge();
   trackConnectionState(client);
   proxyAutoSwitchService.attach(client);
   auth = new AuthService(client, directories.databaseDirectory, directories.filesDirectory,

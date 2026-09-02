@@ -100,6 +100,34 @@ export default function tdClientTest() {
       expect(got).assertEqual('authorizationStateWaitPhoneNumber');
     });
 
+    it('deliverParsed_dispatches_without_parse', 0, () => {
+      // worker 桥路径（A 批 1）：对象在 worker 侧解析，UI 侧直接分发。
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      client.start();
+      let got: string = '';
+      client.onUpdate('updateX', (u: TdObject) => { got = u['v'] as string; });
+      const update = mkObj();
+      setField(update, '@type', 'updateX');
+      setField(update, 'v', 'from-worker');
+      client.deliverParsed(update);
+      expect(got).assertEqual('from-worker');
+    });
+
+    it('deliverParsed_resolves_pending_by_extra', 0, async () => {
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      client.start();
+      const p = client.send(mkReq('getMe'));
+      const sent = JSON.parse(bridge.sent[0]) as TdObject;
+      const reply = mkObj();
+      setField(reply, '@type', 'user');
+      setField(reply, '@extra', sent['@extra'] as string);
+      client.deliverParsed(reply);
+      const got = await p;
+      expect(got['@type'] as string).assertEqual('user');
+    });
+
     it('unsubscribe_stops_delivery', 0, () => {
       const bridge = new FakeBridge();
       const client = new TdClient(bridge);

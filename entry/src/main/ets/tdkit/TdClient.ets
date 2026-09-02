@@ -133,6 +133,12 @@ export class TdClient {
       logE(`TdClient: unparseable payload, skipped: ${json.substring(0, 120)}`);
       return;
     }
+    this.deliverParsed(obj);
+  }
+
+  // Worker 桥的投递口（A 批 1）：对象已在 worker 线程解析完，跳过本线程的
+  // JSON.parse；@extra 配对、超时清账、handler 分发与字符串路径完全一致。
+  deliverParsed(obj: TdObject): void {
     const extra = obj['@extra'] as string | undefined;
     if (extra !== undefined && this.pending.has(extra)) {
       const entry = this.pending.get(extra)!;
