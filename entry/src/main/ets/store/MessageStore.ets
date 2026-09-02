@@ -4,6 +4,7 @@ import { UserStore } from './UserStore';
 import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteraction, CommentInfo, reactionsFromInteraction, ReactionInfo, parseInlineKeyboard, refreshSystemUserLabel } from './MessageEntry';
 import { ReplyKeyboard, parseReplyKeyboard } from './ReplyKeyboard';
 import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChannel';
+import { scrollActiveNow } from '../util/scrollEffects';
 import { publishThumbPath } from '../util/mediaThumbChannel';
 import { inlineThumbEntryChanged } from '../util/inlineThumbUpdate';
 import { formatUserStatus } from '../util/formatUserStatus';
@@ -66,6 +67,9 @@ interface RepliedPreview {
 }
 // 一帧的量级：下载进度的发布合并到这个窗口里，见 notifySoon()。
 const NOTIFY_COALESCE_MS: number = 16;
+// 自定义 emoji 位图水合的合并窗与「滚动中顺延」上限，见 scheduleCustomEmojiHydrate。
+const HYDRATE_COALESCE_MS: number = 64;
+const HYDRATE_SCROLL_CAP_MS: number = 800;
 // 初始历史发布后的安置期。首页刚建好的这段时间里，头像回填、回复引用、缩略
 // 图会各到一批——16ms 的窗口把它们放成两三波，每波都是近乎整页的 CHANGE 重建
 // （实测每波 27-30 行、各吃一个掉帧）。安置期内的发布整体压到窗口末尾一次
@@ -480,6 +484,10 @@ export class MessageStore {
     if (this.initialPublicationTimer !== -1) {
       clearTimeout(this.initialPublicationTimer);
       this.initialPublicationTimer = -1;
+    }
+    if (this.hydrateTimer !== -1) {
+      clearTimeout(this.hydrateTimer);
+      this.hydrateTimer = -1;
     }
     this.initialPublicationReleaseAt = 0;
     this.initialPublicationKind = '';
@@ -3120,6 +3128,9 @@ export class MessageStore {
   // in mixed text use a static WEBP/thumbnail through ArkUI ImageSpan.
   private customEmojiRequested: Set<string> = new Set();
   private customEmojiFailed: Set<string> = new Set();
+  // 见 scheduleCustomEmojiHydrate。
+  private hydrateTimer: number = -1;
+  private hydrateDeferStart: number = 0;
 
   private resolveCustomEmojis(): void {
     this.hydrateCustomEmojiPaths();
@@ -3207,6 +3218,29 @@ export class MessageStore {
       return;
     }
     this.inlineCustomEmojiPathById.set(customEmojiId, path);
+    this.scheduleCustomEmojiHydrate();
+  }
+
+  // 自定义 emoji 位图到货是成批的，而 hydrateCustomEmojiPaths 是全表扫描
+  //（map + 差异行 clone）：每个文件到货都扫一遍，重滚动实测累计 ~60ms
+  //（cpuprofile 20260902T115345）。合并成一个 tick 一次；滚动进行中再顺延，
+  // 但最多多等 HYDRATE_SCROLL_CAP_MS——表情不能迟迟不上屏。
+  private scheduleCustomEmojiHydrate(): void {
+    if (this.hydrateTimer !== -1) {
+      return;
+    }
+    this.hydrateDeferStart = Date.now();
+    this.hydrateTimer = setTimeout((): void => { this.runScheduledHydrate(); },
+      HYDRATE_COALESCE_MS);
+  }
+
+  private runScheduledHydrate(): void {
+    if (scrollActiveNow() && Date.now() - this.hydrateDeferStart < HYDRATE_SCROLL_CAP_MS) {
+      this.hydrateTimer = setTimeout((): void => { this.runScheduledHydrate(); },
+        HYDRATE_COALESCE_MS);
+      return;
+    }
+    this.hydrateTimer = -1;
     this.hydrateCustomEmojiPaths();
   }
 
