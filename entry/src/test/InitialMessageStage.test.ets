@@ -196,6 +196,46 @@ export default function initialMessageStageTest() {
       expect(withName - without).assertEqual(22);
     });
 
+    // 行数启发式 v2：中文按全宽字符换行，caption 宽度跟媒体框走（批 2 校准）。
+    it('cjk_caption_estimates_more_lines_than_latin', 0, () => {
+      AppStorage.setOrCreate('msgTextSize', 16);
+      const cjk = groupOf(506);
+      cjk.head.contentType = 'photo';
+      cjk.photoPaths = ['a', 'b', 'c'];
+      cjk.photoRatios = [1.2, 0.8, 1.5];
+      cjk.showSenderName = false;
+      cjk.caption = '中'.repeat(96);
+      const latin = groupOf(507);
+      latin.head.contentType = 'photo';
+      latin.photoPaths = ['a', 'b', 'c'];
+      latin.photoRatios = [1.2, 0.8, 1.5];
+      latin.showSenderName = false;
+      latin.caption = 'x'.repeat(96);
+      const cjkH: number = initialMessagePlaceholderHeight(cjk, 400, false);
+      const latinH: number = initialMessagePlaceholderHeight(latin, 400, false);
+      // 全宽 16vp/字 vs 8.8vp/字，行数差一倍上下（280vp 宽：6 行 vs 4 行）。
+      expect(cjkH - latinH).assertEqual(2 * 22);
+    });
+
+    it('explicit_newlines_add_caption_lines', 0, () => {
+      AppStorage.setOrCreate('msgTextSize', 16);
+      const flat = groupOf(508);
+      flat.head.contentType = 'photo';
+      flat.photoPaths = ['a', 'b', 'c'];
+      flat.photoRatios = [1.2, 0.8, 1.5];
+      flat.showSenderName = false;
+      flat.caption = 'abc';
+      const broken = groupOf(509);
+      broken.head.contentType = 'photo';
+      broken.photoPaths = ['a', 'b', 'c'];
+      broken.photoRatios = [1.2, 0.8, 1.5];
+      broken.showSenderName = false;
+      broken.caption = 'a\nb\nc';
+      const flatH: number = initialMessagePlaceholderHeight(flat, 400, false);
+      const brokenH: number = initialMessagePlaceholderHeight(broken, 400, false);
+      expect(brokenH - flatH).assertEqual(2 * 22);
+    });
+
     // 键回归：同 rowId 不同媒体比例不得共享缓存高度（旧键会撞车）。
     it('different_ratios_do_not_share_cached_heights', 0, () => {
       const wide = groupOf(503);

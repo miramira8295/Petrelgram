@@ -1,5 +1,5 @@
 import { AlbumGroup } from './collapseAlbums';
-import { mediaBoxFor, mediaThumbWidth } from './mediaBox';
+import { inlineMaxWidth, mediaBoxFor, mediaThumbWidth } from './mediaBox';
 import { AlbumCell, packAlbumRows } from './packAlbumRows';
 
 export const INITIAL_EAGER_MESSAGE_ROWS: number = 1;
@@ -76,11 +76,32 @@ export function stageInitialMessageGroups(
   return staged;
 }
 
-// 文本行的「每行能装多少字」启发式（估计器与 caption 共用）。真实排版由
-// record 事后校正；这里只求别差出一个行数量级。
-function estimatedTextLines(textLength: number, screenWidth: number): number {
-  const charsPerLine: number = Math.max(12, Math.floor(screenWidth * 0.62 / 9));
-  return Math.max(1, Math.min(8, Math.ceil(textLength / charsPerLine)));
+// 文本行数启发式 v2（估计器与 caption 共用）。批 2 校准探针（09-02，42 条
+// rowHFix 样本）判明 v1 的三处系统性低估：每行字数按拉丁宽算（中文在 280vp
+// 相册宽里每行 ~16 字不是 30）、宽度基准用屏宽不是可用宽、8 行封顶把长
+// caption 一刀截断（520 字实差 413vp）。v2 按字符宽求和：CJK 全宽 = 字号，
+// 其余 ≈ 0.55 字号；显式换行逐段起新行。真实排版仍由 record 事后校正。
+// 字号走 AppStorage 字面量键（chatEnvMirror 同款惯例，避免 import
+// AppSettings 的循环依赖）。
+function estimatedCharWidth(code: number, fontSize: number): number {
+  const cjk: boolean = (code >= 0x2E80 && code <= 0x9FFF) ||
+    (code >= 0xAC00 && code <= 0xD7AF) || (code >= 0xF900 && code <= 0xFAFF) ||
+    (code >= 0xFF00 && code <= 0xFF60);
+  return cjk ? fontSize : fontSize * 0.55;
+}
+
+function estimatedTextLines(text: string, availWidth: number): number {
+  const fontSize: number = AppStorage.get<number>('msgTextSize') ?? 16;
+  const width: number = Math.max(40, availWidth);
+  let lines: number = 0;
+  for (const segment of text.split('\n')) {
+    let segWidth: number = 0;
+    for (let i = 0; i < segment.length; i++) {
+      segWidth += estimatedCharWidth(segment.charCodeAt(i), fontSize);
+    }
+    lines += Math.max(1, Math.ceil(segWidth / width));
+  }
+  return Math.max(1, Math.min(100, lines));
 }
 
 // 绘制面批 1：媒体行确定性几何。媒体框与真实布局共用同一批「布局前可算」的
@@ -93,6 +114,8 @@ const ALBUM_CELL_GAP: number = 2;
 function mediaRowBodyHeight(group: AlbumGroup, screenWidth: number): number {
   const msg = group.head;
   let media: number = 0;
+  // caption 的换行宽度 = 媒体框宽（竖视频会比相册窄，跟着框走）。
+  let captionWidth: number = mediaThumbWidth(screenWidth);
   if (group.photoRatios.length > 1) {
     // albumW() 与 mediaThumbWidth 同式：min(280, inlineMaxWidth)。
     const rows: AlbumCell[][] = packAlbumRows(
@@ -102,13 +125,15 @@ function mediaRowBodyHeight(group: AlbumGroup, screenWidth: number): number {
     }
     media += Math.max(0, rows.length - 1) * ALBUM_CELL_GAP;
   } else {
-    media = mediaBoxFor(screenWidth, msg.photoWidth, msg.photoHeight,
-      msg.contentType === 'video').height;
+    const box = mediaBoxFor(screenWidth, msg.photoWidth, msg.photoHeight,
+      msg.contentType === 'video');
+    media = box.height;
+    captionWidth = box.width;
   }
   let body: number = media + MEDIA_BUBBLE_CHROME;
   const caption: string = group.photoRatios.length > 1 ? group.caption : msg.text;
   if (caption !== '') {
-    body += 4 + estimatedTextLines(caption.length, screenWidth) * 22;
+    body += 4 + estimatedTextLines(caption, captionWidth) * 22;
   }
   if (msg.replyToMessageId !== 0) { body += 40; }
   if (group.showSenderName && !msg.isOutgoing) { body += 22; }
@@ -154,7 +179,7 @@ export function initialMessagePlaceholderHeight(
     group.photoPaths.length > 1) {
     body = mediaRowBodyHeight(group, screenWidth);
   } else if (msg.contentType === 'text') {
-    const lines: number = estimatedTextLines(msg.text.length, screenWidth);
+    const lines: number = estimatedTextLines(msg.text, inlineMaxWidth(screenWidth));
     body = Math.max(group.showAvatar ? 44 : 0, 22 + lines * 22);
     if (msg.replyToMessageId !== 0) { body += 40; }
     if (group.showSenderName && !msg.isOutgoing) { body += 20; }
