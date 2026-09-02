@@ -1630,6 +1630,10 @@ export struct MessageBubble {
     // 整条拉满气泡宽、上下各给 10：原来只有一行 13 号字加 6 的上内边距，
     // 热区不到 30 高，频道评论入口这么高频的动作点着费劲（用户点名要大）。
     .padding({ top: 10, bottom: 4 }).margin({ top: 6 })
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.commentsRowW = area.width as number;
+      rememberLabelWidth(`comments:${this.msg.commentCount}`, this.commentsRowW);
+    })
     .onClick(() => {
       if (this.gestureClaimed) { return; }
       this.onCommentTap(this.msg.id); });
@@ -2122,12 +2126,9 @@ export struct MessageBubble {
               .geometryTransition(`media_${this.albumMemberIdAt(cell.idx)}`)
               .accessibilityText((this.albumFailed[cell.idx] ?? false)
                 ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1))
-              .onVisibleAreaApproximateChange(
-                { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
-                  expectedUpdateInterval: 200 },
-                (_visible: boolean, _ratio: number): void => {
-                  // 相册竞选只看这一格是不是视频，图片格不上报
-                })
+              // 图片格不挂可见性监听：相册竞选只看视频格（那侧才注册），这里
+              // 原来挂着一个回调体为空的 onVisibleAreaApproximateChange——每个
+              // 图片格一份注册与逐帧近似计算，纯浪费（节点普查 09-02 目标 #1）。
               .onClick((e: ClickEvent) => {
                 if (this.gestureClaimed) { return; }
                 // Same as the single-media case: a failed cell offers retry.
@@ -3760,13 +3761,10 @@ export struct MessageBubble {
           minWidth: Math.min(this.inlineMaxW(), this.senderLabelShown() ? this.senderLabelW : 0)
         })
         if (this.commentsRowShown()) {
-          Column() {
-            this.commentsRow();
-          }
-          .onAreaChange((_old: Area, area: Area): void => {
-            this.commentsRowW = area.width as number;
-            rememberLabelWidth(`comments:${this.msg.commentCount}`, this.commentsRowW);
-          });
+          // 量宽回调直接挂在 commentsRow 自己的根 Row 上（builder 内），原来
+          // 只为挂 onAreaChange 包了一层 Column——频道每行省一个容器节点
+          // （节点普查 09-02 目标 #11）。
+          this.commentsRow();
         }
       }
       .alignItems(HorizontalAlign.Start)
