@@ -6,13 +6,9 @@ import { VideoBubbleSurface } from './VideoBubbleSurface';
 import { TdObject } from '../../tdkit/TdTypes';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { CachedImage } from '../common/CachedImage';
-import {
-  KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_REDUCE_ANIM, TEXT_SIZE_DEFAULT, RADIUS_DEFAULT,
-  KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_POWER_CHAT_EFFECTS,
-  KEY_POWER_EFFECT_MESSAGE, KEY_POWER_EFFECT_REACTION, KEY_POWER_EMOJI, KEY_POWER_EMOJI_CHAT,
-  KEY_POWER_EMOJI_REACTIONS, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY,
-  KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
-} from '../../store/AppSettings';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
+import { rememberLabelWidth, recallLabelWidth } from '../../util/labelWidthMemory';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
 import { SenderRoleTag } from './SenderRoleTag';
@@ -61,7 +57,7 @@ import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
 import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
@@ -72,22 +68,14 @@ import {
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 // 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
 import { probeGlassMeasure } from '../../util/tailFlipProbe';
-import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../../util/appearance';
-import { LINK_NAV_BUSY_KEY } from '../../util/linkTapGuard';
 import { ThumbReadyGate } from './ThumbReadyGate';
-import { GESTURE_CLASSIC, MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
-import { KEY_MSG_GESTURE } from '../../store/AppSettings';
-import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
+import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
 import { isLivePhotoVideo } from '../../util/livePhoto';
 // ⚠️ 临时探针，验完即删——见 util/avatarReuseProbe 的删除清单。
 import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
-import { reuseParam } from '../../util/reuseParams';
-import {
-  cancelNextFrame, enqueueNextFrame, nextFrameOwnerId
-} from '../../util/nextFrameQueue';
 import { probeHit } from '../../util/panelProbe';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
@@ -136,6 +124,64 @@ interface RichContentBuilderParams {
 
 // 群消息的发送者头像。路径经 senderAvatarChannel 旁路直达这里就地刷新，
 // 不触发行重建 —— 头像路径已从行的内容 key 里摘除。
+// —— P4 批 3c：成员 @Styles 迁出（V2 不支持成员 @Styles）——————————
+// 8 个无状态的直接迁全局；bubble/systemPill 两对按压样式读组件状态，改用
+// AttributeModifier 的多态样式（applyPressedAttribute），按条件挑双例之一，
+// 零每帧分配。
+@Styles
+function msgLinkCardNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
+
+@Styles
+function msgLinkCardPressedStyle() { .opacity(0.8).scale({ x: 0.986, y: 0.986 }) }
+
+@Styles
+function msgLinkRunNormalStyle() { .opacity(1) }
+
+@Styles
+function msgLinkRunPressedStyle() { .opacity(0.52) }
+
+@Styles
+function msgBotButtonNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
+
+@Styles
+function msgBotButtonPressedStyle() { .opacity(0.72).scale({ x: 0.975, y: 0.975 }) }
+
+@Styles
+function msgMenuActionNormalStyle() { .opacity(1).scale({ x: 1, y: 1 }) }
+
+@Styles
+function msgMenuActionPressedStyle() { .opacity(0.72).scale({ x: 0.97, y: 0.94 }) }
+
+// active=false 的实例按下不做任何变化（内联链接/语音/音频/文件卡自带按压
+// 反馈，整泡再暗一层会闪整条消息；不可点的系统丸同理）。
+class PressDimModifier implements AttributeModifier<CommonAttribute> {
+  private dimOpacity: number;
+  private dimScale: number;
+  private active: boolean;
+
+  constructor(dimOpacity: number, dimScale: number, active: boolean) {
+    this.dimOpacity = dimOpacity;
+    this.dimScale = dimScale;
+    this.active = active;
+  }
+
+  applyNormalAttribute(instance: CommonAttribute): void {
+    instance.opacity(1);
+    instance.scale({ x: 1, y: 1 });
+  }
+
+  applyPressedAttribute(instance: CommonAttribute): void {
+    instance.opacity(this.active ? this.dimOpacity : 1);
+    const s: number = this.active ? this.dimScale : 1;
+    instance.scale({ x: s, y: s });
+  }
+}
+
+const BUBBLE_PRESS_DIM: PressDimModifier = new PressDimModifier(0.84, 0.992, true);
+const BUBBLE_PRESS_NONE: PressDimModifier = new PressDimModifier(0.84, 0.992, false);
+const SYSTEM_PILL_PRESS_DIM: PressDimModifier = new PressDimModifier(0.72, 0.985, true);
+const SYSTEM_PILL_PRESS_NONE: PressDimModifier = new PressDimModifier(0.72, 0.985, false);
+
 // P4 批 3b：迁 @ComponentV2，配方与 LightweightSenderAvatar（批 1）完全一致，
 // 判读依据见 2026-09-02-p4-bubble-v2-survey.md 批 0.5 节（1370 真机样本）：
 // aboutToReuse 时 @Param 已是新值、@Local 已重置、@Monitor 复用期静默——
@@ -244,273 +290,251 @@ struct LiveSenderAvatar {
   }
 }
 
-@Component
+@ComponentV2
 export struct MessageBubble {
+
+  // P4 批 3c：主体迁 @ComponentV2（判读依据 survey 批 0.5 节；配方经批 1/2/3b
+  // 三轮真机验证）。全局环境值走 chatEnv 镜像（V2 无 @StorageProp），@Trace
+  // 读到即登记依赖；~60 个页面回调转 @Param（V2 禁止父层初始化无装饰器成员，
+  // 编译错误 10905324），页面持有的引用全生命周期稳定，每帧只多恒等比较。
+  private env: ChatEnvMirror = chatEnv;
 
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
-    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
+    return this.env.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
   }
 
-  // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
-  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
-  // @Watch fires whenever ChatPage hands down a new msg object (edits, status
+  // @Monitor fires whenever ChatPage hands down a new msg object (edits, status
   // changes, "replace media", etc.) — not once per frame — so the transition
   // check inside onMsgPropChanged is cheap and only fires onMediaGone on an
   // actual video→non-video flip (see onMsgPropChanged for why this matters).
-  @Prop @Watch('onMsgPropChanged') msg: MessageEntry;
-  @State private liveSendState: string = '';
+  // 复用路径它静默（批 0.5 实测），由 aboutToReuse 无条件重挂覆盖。
+  @Require @Param msg: MessageEntry;
+  @Local private liveSendState: string = '';
   private unsubSendState: (() => void) | null = null;
   // 6 个通道（发送勾 + 4 个下载进度 + 翻译态）当前挂在哪一条消息的 rowId 上。
   // P0-4（审计 3.2b）：这是本组件订阅自愈的唯一依据——「params 里的 msg 是新
   // 是旧」静态判不了，「订阅挂在哪」却是本地可判定的事实。0 = 未挂。
   private attachedRowId: number = 0;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
-  @Prop themeBubbleOut: string = '';
-  // 本地外观：epoch 一变，气泡底色/文字色（theme 里的活绑定）跟着重取。
-  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
-  // 气泡材质只给屏内气泡挂，离屏纯色；省电时也退回纯色。
-  @StorageProp(KEY_BUBBLE_MATERIAL_ON) bubbleMaterialOn: boolean = false;
+  @Param themeBubbleOut: string = '';
   // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
   // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
-  // 由回调负责在真正离屏时关掉——那一路是可靠的。
-  @State onScreen: boolean = true;
+  // 由回调负责在真正离屏时关掉——那一路是可靠的。@Local 复用重置回 true。
+  @Local onScreen: boolean = true;
   // 「尾巴 + 气泡」外层容器量到的尺寸，整块玻璃的裁剪路径靠它。只在材质开着时被读。
-  @State glassW: number = 0;
-  @State glassH: number = 0;
-  @Prop nowSec: number;
+  @Local glassW: number = 0;
+  @Local glassH: number = 0;
+  @Param nowSec: number = 0;
   // 本机正在共享实时位置的那条消息 id（0 = 没有共享）。
-  @Prop liveSharingId: number = 0;
-  onStopLiveLocation: () => void = (): void => {};
+  @Param liveSharingId: number = 0;
+  @Param onStopLiveLocation: () => void = (): void => {};
   // 身份标签按群区分（同一个人在别的群未必是管理员），所以标签通道的 key
   // 要带 chatId。MessageEntry 里没有这个字段，由页面传。
-  @Prop chatId: number = 0;
-  @Prop isGroup: boolean;
-  @Prop isChannel: boolean;
-  @Prop showUnreadDivider: boolean;
-  @Prop dividerIsResume: boolean = false;
-  @Prop dateLabel: string = ''; // date pill above this row when the day changes
-  @Prop albumPaths: string[];
-  @Prop albumFileIds: number[];
-  @Prop albumRatios: number[];
-  @Prop albumMemberIds: number[];
+  @Param chatId: number = 0;
+  @Param isGroup: boolean = false;
+  @Param isChannel: boolean = false;
+  @Param showUnreadDivider: boolean = false;
+  @Param dividerIsResume: boolean = false;
+  @Param dateLabel: string = ''; // date pill above this row when the day changes
+  @Param albumPaths: string[] = [];
+  @Param albumFileIds: number[] = [];
+  @Param albumRatios: number[] = [];
+  @Param albumMemberIds: number[] = [];
   // Same reasoning as msg above: fires on a new albumIsVideo array reference
   // from ChatPage, not per frame; onAlbumIsVideoChanged only emits when a
-  // specific cell actually flips true→false.
-  @Prop @Watch('onAlbumIsVideoChanged') albumIsVideo: boolean[];
-  // 相册里哪几格是实况（见 util/livePhoto）。不挂 @Watch：它只影响角标怎么画，
+  // specific cell actually flips true→false.（复用路径由 aboutToReuse 播种。）
+  @Param albumIsVideo: boolean[] = [];
+  // 相册里哪几格是实况（见 util/livePhoto）。不挂监视：它只影响角标怎么画，
   // 不参与播放位竞选。复用时并行数组是一条条重新播种的，读一律走带兜底的
   // 访问器——这些数组长度不同步曾经把进程搞崩过。
-  @Prop albumIsLive: boolean[];
-  @Prop albumProgress: number[];
-  @Prop albumFailed: boolean[];
+  @Param albumIsLive: boolean[] = [];
+  @Param albumProgress: number[] = [];
+  @Param albumFailed: boolean[] = [];
   // 相册视频格子的播放位数据源：缩略图（albumFileIds/albumPaths）不足以起播，
   // 播放位选中的那一格要挂 VideoBubbleSurface，需要真正的视频文件信息。
-  @Prop albumVideoFileIds: number[];
-  @Prop albumVideoFileSizes: number[];
-  @Prop albumVideoDurations: number[];
-  @Prop albumVideoMimeTypes: string[];
-  @Prop albumCaption: string;
-  @Prop albumCaptionEntities: TdObject[] = [];
-  // 读的是**内容列宽**，不是窗口宽——分栏下两者差一个左栏（issue #107）。
-  // 字段仍叫 screenW：下面十几处按它算宽的式子一个都不用动。
-  @StorageProp(CHAT_CONTENT_WIDTH_KEY) screenW: number = 360;
-  // 长按菜单要不要带预览。小窗（悬浮窗）里键盘一弹起，剩下的高度放不下
-  // "预览 + 菜单"，ArkUI 干脆不弹——用户报的就是这个（issue #114）。键盘在、或
-  // 窗口本来就很矮时改成无预览，菜单本身占的高度小得多。
-  @StorageProp('keyboardHeightVp') private menuKeyboardH: number = 0;
-  @StorageProp('screenHeightVp') private menuWindowH: number = 780;
-  // 手势方案（老交互 / 新交互），设置里改完立即生效，不用重进页面。
-  @StorageProp(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
-  // 正在解析中的链接 url（linkTapGuard 广播）。只在渲染链接段时读，因此
-  // 不含链接的气泡不会因为它变化而重建。
-  @StorageProp(LINK_NAV_BUSY_KEY) linkNavBusyUrl: string = '';
+  @Param albumVideoFileIds: number[] = [];
+  @Param albumVideoFileSizes: number[] = [];
+  @Param albumVideoDurations: number[] = [];
+  @Param albumVideoMimeTypes: string[] = [];
+  @Param albumCaption: string = '';
+  @Param albumCaptionEntities: TdObject[] = [];
+  // 内容列宽/键盘高/窗口高/手势方案/链接忙碌 url 等环境值全部走 this.env
+  // （chatEnv 镜像，批 0/3a 建的通道），原 @StorageProp 声明随迁移删除。
   // Measured width of the bubble (it shrinks to fit content) — the inline
   // keyboard below matches it exactly instead of the theoretical max width.
-  @State bubbleW: number = 0;
+  @Local bubbleW: number = 0;
   // 长按/点击的落点相对气泡中心的水平偏移，交给 bindContextMenu 的 offset。
   // 菜单默认贴着气泡排（ArkUI 按组件矩形算位置，与触点无关，实测同一条消息
   // 按左缘和按右缘弹出位置完全一样），这个值让它朝手指那一侧挪。
-  @State menuOffsetX: number = 0;
+  @Local menuOffsetX: number = 0;
   // 时间层要跟随"气泡里最宽的那个兄弟"（转发标签 / 发送者名 / 评论行），
   // 它们都在时间 Stack **外面**，所以测它们不构成环。
   // 曾经是拿 bubbleW 回灌的，那是 minWidth ← bubbleW ← minWidth 的循环，
   // 只能涨不能落：任何一次量到偏大的宽度都被固化，气泡再也缩不回去，
   // BottomEnd 随即把正文推到右侧、时间戳压到文字底下——就是那个偶发的
   // "气泡横贯整屏、文字靠右、时间戳不见了"。
-  // 这三个宽度**换消息/复用时不清零**，用的时候按「此刻显不显示」门控
-  // （timeLayerWidth.ets 的说明）。曾经是清零的：onAreaChange 只在面积变化时
-  // 触发，复用后名字行若和上一条一样宽，回调不来，宽度就一直是 0——时间停在
-  // 正文末尾、引用块够不到气泡边缘。
-  @State private forwardLabelW: number = 0;
-  @State private senderLabelW: number = 0;
-  @State private commentsRowW: number = 0;
-  @State revealedSpoilerKeys: string[] = [];
-  @State expandedQuoteKeys: string[] = [];
+  // 这三个宽度的「换消息/复用时不清零」不变量（timeLayerWidth.ets 的说明；
+  // 清零的话 onAreaChange 同宽不回调，宽度停在 0——时间停在正文末尾、引用块
+  // 够不到气泡边缘）在 V2 下改为按标签文本的进程级记忆兜底：@Local 复用必
+  // 重置，aboutToReuse 里按新行的标签文本播种（util/labelWidthMemory，批 2
+  // senderLabelW 同款配方），比 V1 拿上一行随机标签的宽更准。
+  @Local private forwardLabelW: number = 0;
+  @Local private senderLabelW: number = 0;
+  @Local private commentsRowW: number = 0;
+  @Local revealedSpoilerKeys: string[] = [];
+  @Local expandedQuoteKeys: string[] = [];
   // x/y are the tap's window coordinates (vp) — the fullscreen viewer uses them
   // as the anchor for its expand-from-tap / shrink-back-to-tap transition.
-  onMediaTap: (messageId: number, x: number, y: number) => void = (): void => {};
-  onLinkTap: (url: string) => void = (): void => {};
-  onCommentTap: (messageId: number) => void = (): void => {};
-  onBotCallback: (messageId: number, data: string) => void = (): void => {};
-  onAvatarTap: (userId: number) => void = (): void => {};
+  @Param onMediaTap: (messageId: number, x: number, y: number) => void = (): void => {};
+  @Param onLinkTap: (url: string) => void = (): void => {};
+  @Param onCommentTap: (messageId: number) => void = (): void => {};
+  @Param onBotCallback: (messageId: number, data: string) => void = (): void => {};
+  @Param onAvatarTap: (userId: number) => void = (): void => {};
   // Long press on a group message avatar → mention that sender in the composer.
-  onAvatarLongPress: (userId: number, name: string) => void =
+  @Param onAvatarLongPress: (userId: number, name: string) => void =
     (_userId: number, _name: string): void => {};
   // 第二个参数是"从哪条跳走的"。页面拿它当返回点——只用视口底部那条的话，
   // 引用块在屏幕靠上时返回位置会偏，跨屏的长消息尤其明显。
-  onReplyTap: (messageId: number, fromId: number) => void = (): void => {};
-  onFileTap: (messageId: number) => void = (): void => {};
-  onFileSave: (messageId: number) => void = (): void => {};
-  onFilePause: (messageId: number) => void = (): void => {};
-  onStickerRetry: (messageId: number) => void = (): void => {};
-  onLinkPreviewRetry: (messageId: number) => void = (): void => {};
-  onContactOpen: (userId: number, phone: string, vcard: string) => void =
+  @Param onReplyTap: (messageId: number, fromId: number) => void = (): void => {};
+  @Param onFileTap: (messageId: number) => void = (): void => {};
+  @Param onFileSave: (messageId: number) => void = (): void => {};
+  @Param onFilePause: (messageId: number) => void = (): void => {};
+  @Param onStickerRetry: (messageId: number) => void = (): void => {};
+  @Param onLinkPreviewRetry: (messageId: number) => void = (): void => {};
+  @Param onContactOpen: (userId: number, phone: string, vcard: string) => void =
     (_userId: number, _phone: string, _vcard: string): void => {};
-  onPhoneOpen: (phone: string) => void = (_phone: string): void => {};
-  onLocationOpen: (latitude: number, longitude: number, label: string, valid: boolean) => void =
+  @Param onPhoneOpen: (phone: string) => void = (_phone: string): void => {};
+  @Param onLocationOpen: (latitude: number, longitude: number, label: string, valid: boolean) => void =
     (_latitude: number, _longitude: number, _label: string, _valid: boolean): void => {};
-  onPollVote: (messageId: number, optionIds: number[]) => void =
+  @Param onPollVote: (messageId: number, optionIds: number[]) => void =
     (_messageId: number, _optionIds: number[]): void => {};
-  onGameOpen: (messageId: number) => void = (_messageId: number): void => {};
-  onGamePhotoRetry: (messageId: number) => void = (_messageId: number): void => {};
-  @Prop paidMediaPending: boolean = false;
-  onPaidMediaUnlock: (messageId: number) => void = (_messageId: number): void => {};
-  onPaidMediaOpen: (messageId: number) => void = (_messageId: number): void => {};
-  onSpecialPhotoRetry: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onGameOpen: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onGamePhotoRetry: (messageId: number) => void = (_messageId: number): void => {};
+  @Param paidMediaPending: boolean = false;
+  @Param onPaidMediaUnlock: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onPaidMediaOpen: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onSpecialPhotoRetry: (messageId: number) => void = (_messageId: number): void => {};
   // 视频缩略图/文件下载失败后的重试；和图片重试分开，走的是 downloadFile 而非缩略图。
-  onVideoRetry: (messageId: number) => void = (_messageId: number): void => {};
-  onGiftCodeCopy: (code: string) => void = (_code: string): void => {};
-  onGiveawayOpen: (chatId: number, messageId: number) => void =
+  @Param onVideoRetry: (messageId: number) => void = (_messageId: number): void => {};
+  @Param onGiftCodeCopy: (code: string) => void = (_code: string): void => {};
+  @Param onGiveawayOpen: (chatId: number, messageId: number) => void =
     (_chatId: number, _messageId: number): void => {};
-  onVoiceTap: (messageId: number) => void = (): void => {};
-  onVoicePlaybackStarted: (messageId: number) => void = (): void => {};
-  onAudioTap: (messageId: number) => void = (): void => {};
-  onAudioPrevious: (messageId: number) => void = (): void => {};
-  onAudioNext: (messageId: number) => void = (): void => {};
-  onAudioSeek: (messageId: number, fraction: number) => void =
+  @Param onVoiceTap: (messageId: number) => void = (): void => {};
+  @Param onVoicePlaybackStarted: (messageId: number) => void = (): void => {};
+  @Param onAudioTap: (messageId: number) => void = (): void => {};
+  @Param onAudioPrevious: (messageId: number) => void = (): void => {};
+  @Param onAudioNext: (messageId: number) => void = (): void => {};
+  @Param onAudioSeek: (messageId: number, fraction: number) => void =
     (_messageId: number, _fraction: number): void => {};
-  @Prop audioQueuePosition: number = 0;
-  @Prop audioQueueLength: number = 0;
-  @Prop audioHasPrevious: boolean = false;
-  @Prop audioHasNext: boolean = false;
-  onAutoplayVideoNeedDownload: (messageId: number) => void = (): void => {};
+  @Param audioQueuePosition: number = 0;
+  @Param audioQueueLength: number = 0;
+  @Param audioHasPrevious: boolean = false;
+  @Param audioHasNext: boolean = false;
+  @Param onAutoplayVideoNeedDownload: (messageId: number) => void = (): void => {};
   // 播放位竞选上报：可见比例变化 / 组件消失。albumIndex 为 -1 表示非相册整条消息，
   // 相册格子用该格自己在 albumMemberIds 里的下标。回调由 ChatPage 接（见 playSlot.ets）。
-  onMediaRatio: (messageId: number, albumIndex: number, ratio: number, centerY: number) => void =
+  @Param onMediaRatio: (messageId: number, albumIndex: number, ratio: number, centerY: number) => void =
     (_messageId: number, _albumIndex: number, _ratio: number, _centerY: number): void => {};
-  onMediaGone: (messageId: number, albumIndex: number) => void =
+  @Param onMediaGone: (messageId: number, albumIndex: number) => void =
     (_messageId: number, _albumIndex: number): void => {};
   // 当前播放位的 key（playSlot.slotKey 的输出），'' 表示没有播放位。
-  @Prop playSlotKey: string = '';
+  @Param playSlotKey: string = '';
   // 自动播放静音开关（KEY_AUTOPLAY_MUTED，由 ChatPage 用 @StorageProp 下发）。
-  @Prop autoplayMuted: boolean = true;
+  @Param autoplayMuted: boolean = true;
   // 播放位视频的播放进度：每 350ms 一次的高频回调，故意不接到 @State——接上去
   // 会让 ChatPage 每 350ms 重建整个消息列表。ChatPage 用普通 Map 接住（按
   // messageId 记录），供全屏查看器交接时读取。
-  onPlaySlotPositionChanged: (messageId: number, albumIndex: number, positionMs: number) => void =
+  @Param onPlaySlotPositionChanged: (messageId: number, albumIndex: number, positionMs: number) => void =
     (_messageId: number, _albumIndex: number, _positionMs: number): void => {};
   // 播放位视频播完或内嵌播放失败：这一条主动退位，让同屏其它候选重新竞选。
   // 不接的话播完的那条会永久霸占播放位，同屏另一条永远起不来。
-  onPlaySlotEnded: (messageId: number, albumIndex: number) => void =
+  @Param onPlaySlotEnded: (messageId: number, albumIndex: number) => void =
     (_messageId: number, _albumIndex: number): void => {};
   // 播放位起播位置（毫秒）。由 ChatPage 在换届时从气泡进度表查出并随
   // playSlotKey 一起下发——全屏查看器交还的进度就是靠这条路接上的。
-  @Prop playSlotStartMs: number = 0;
-  onAnimationTap: (messageId: number, isPlaying: boolean) => void =
+  @Param playSlotStartMs: number = 0;
+  @Param onAnimationTap: (messageId: number, isPlaying: boolean) => void =
     (_messageId: number, _isPlaying: boolean): void => {};
-  onAnimationPlaybackFailed: (messageId: number) => void = (): void => {};
-  @Prop animationPaused: boolean = false;
-  @Prop animationForcePlay: boolean = false;
-  @Prop animationPlaybackFailed: boolean = false;
+  @Param onAnimationPlaybackFailed: (messageId: number) => void = (): void => {};
+  @Param animationPaused: boolean = false;
+  @Param animationForcePlay: boolean = false;
+  @Param animationPlaybackFailed: boolean = false;
   // Long-press context menu actions.
   // emoji 参数其实是 reaction key：标准 emoji 原样，自定义 emoji 为 'ce:<id>'。
-  onSetReaction: (messageId: number, emoji: string, isChosen: boolean) => void = (): void => {};
-  onReplyTo: (messageId: number) => void = (): void => {};
+  @Param onSetReaction: (messageId: number, emoji: string, isChosen: boolean) => void = (): void => {};
+  @Param onReplyTo: (messageId: number) => void = (): void => {};
   // Blocks swipe-to-reply while the composer is in edit mode (avoids the two
   // states fighting over the reply/edit strip). Long-press → 回复 is unaffected.
-  @Prop editingActive: boolean = false;
-  onEditMsg: (messageId: number) => void = (): void => {};
-  onShowReactors: (messageId: number, emoji: string) => void = (): void => {};
-  onTranslateMsg: (messageId: number) => void = (): void => {};
-  onPinMsg: (messageId: number, unpin: boolean) => void = (): void => {};
-  onStopPoll: (messageId: number) => void = (): void => {};
-  onReplaceMedia: (messageId: number) => void = (): void => {};
-  onPollVoters: (messageId: number) => void = (): void => {};
-  onSetDefaultReaction: (emoji: string) => void = (): void => {};
-  @Prop isPinnedMsg: boolean = false;
-  onCopyText: (messageId: number) => void = (): void => {};
-  onCopyCode: (text: string) => void = (): void => {};
-  onCopyLink: (messageId: number) => void = (): void => {};
-  onForwardMsg: (messageIds: number[]) => void = (): void => {};
+  @Param editingActive: boolean = false;
+  @Param onEditMsg: (messageId: number) => void = (): void => {};
+  @Param onShowReactors: (messageId: number, emoji: string) => void = (): void => {};
+  @Param onTranslateMsg: (messageId: number) => void = (): void => {};
+  @Param onPinMsg: (messageId: number, unpin: boolean) => void = (): void => {};
+  @Param onStopPoll: (messageId: number) => void = (): void => {};
+  @Param onReplaceMedia: (messageId: number) => void = (): void => {};
+  @Param onPollVoters: (messageId: number) => void = (): void => {};
+  @Param onSetDefaultReaction: (emoji: string) => void = (): void => {};
+  @Param isPinnedMsg: boolean = false;
+  @Param onCopyText: (messageId: number) => void = (): void => {};
+  @Param onCopyCode: (text: string) => void = (): void => {};
+  @Param onCopyLink: (messageId: number) => void = (): void => {};
+  @Param onForwardMsg: (messageIds: number[]) => void = (): void => {};
   // 直接转发到收藏（和自己的会话），不弹选择面板。
-  onSaveToSaved: (messageIds: number[]) => void = (): void => {};
+  @Param onSaveToSaved: (messageIds: number[]) => void = (): void => {};
   // 转发回本会话——群里俗称"复读"。
-  onRepeatMsg: (messageIds: number[]) => void = (): void => {};
+  @Param onRepeatMsg: (messageIds: number[]) => void = (): void => {};
   // 在本会话里筛出这个发送者的全部消息。
-  onViewSenderHistory: (senderId: number) => void = (): void => {};
-  onReportMsg: (messageId: number) => void = (): void => {};
-  onSelectMsg: (messageIds: number[]) => void = (): void => {};
-  onDeleteMsg: (messageId: number) => void = (): void => {};
+  @Param onViewSenderHistory: (senderId: number) => void = (): void => {};
+  @Param onReportMsg: (messageId: number) => void = (): void => {};
+  @Param onSelectMsg: (messageIds: number[]) => void = (): void => {};
+  @Param onDeleteMsg: (messageId: number) => void = (): void => {};
   // "转发自 X" tapped: (originChatId, originMsgId, originUserId) — chat ids for a
   // channel/chat origin, user id for a user origin.
-  onForwardTap: (chatId: number, messageId: number, userId: number) => void = (): void => {};
-  onOpenReactions: (messageId: number) => void = (): void => {};
-  onRecognizeSpeech: (messageId: number) => void = (): void => {};
-  onVideoNoteDownload: (messageId: number) => void = (): void => {};
+  @Param onForwardTap: (chatId: number, messageId: number, userId: number) => void = (): void => {};
+  @Param onOpenReactions: (messageId: number) => void = (): void => {};
+  @Param onRecognizeSpeech: (messageId: number) => void = (): void => {};
+  @Param onVideoNoteDownload: (messageId: number) => void = (): void => {};
   // 整聊天翻译：点「隐藏译文/显示译文」的单条折叠开关，状态存在条目上。
-  onToggleTranslation: (messageId: number, hidden: boolean) => void = (): void => {};
-  onRetryTranslation: (messageId: number) => void = (): void => {};
-  @State private translationStatus: TranslationStatus | null = null;
+  @Param onToggleTranslation: (messageId: number, hidden: boolean) => void = (): void => {};
+  @Param onRetryTranslation: (messageId: number) => void = (): void => {};
+  @Local private translationStatus: TranslationStatus | null = null;
   private unsubTranslation: (() => void) | null = null;
-  @State private livePhotoProgress: number = 0;
-  @State private liveLinkPhotoProgress: number = 0;
-  @State private liveVideoProgress: number = 0;
-  @State private liveStickerProgress: number = 0;
+  @Local private livePhotoProgress: number = 0;
+  @Local private liveLinkPhotoProgress: number = 0;
+  @Local private liveVideoProgress: number = 0;
+  @Local private liveStickerProgress: number = 0;
   private unsubPhotoProgress: (() => void) | null = null;
   private unsubLinkPhotoProgress: (() => void) | null = null;
   private unsubVideoProgress: (() => void) | null = null;
   private unsubStickerProgress: (() => void) | null = null;
   // 圆形视频原地播放的开关，逐条独立。
-  @State private videoNotePlaying: boolean = false;
+  @Local private videoNotePlaying: boolean = false;
   // Chat's currently active video chat, if any (0 = none live) — lets a
   // "started" system pill know whether it's still tappable, and supplies the
   // id to hand off on tap. Sourced from ChatPage's existing updateChatVideoChat
   // subscription (see liveGroupCallId there) rather than re-subscribing here.
-  @Prop liveGroupCallId: number = 0;
-  onLiveStreamTap: (groupCallId: number) => void = (): void => {};
+  @Param liveGroupCallId: number = 0;
+  @Param onLiveStreamTap: (groupCallId: number) => void = (): void => {};
   // Live arrival: slide the bubble in from below (never set for history rows).
-  @Prop animateIn: boolean = false;
-  // 聊天设置 → 消息字号 / 消息圆角, applied live.
-  @StorageProp(KEY_TEXT_SIZE) msgTextSize: number = TEXT_SIZE_DEFAULT;
-  @StorageProp(KEY_BUBBLE_RADIUS) bubbleRadius: number = RADIUS_DEFAULT;
-  @StorageProp(KEY_REDUCE_ANIM) @Watch('onPlaybackPolicyChanged') reduceAnim: boolean = false;
-  @StorageProp(KEY_POWER_ACTIVE) @Watch('onPlaybackPolicyChanged') powerSaving: boolean = false;
-  @StorageProp('appIsForeground') appIsForeground: boolean = true;
-  @StorageProp(KEY_POWER_CHAT_EFFECTS) chatEffectsEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_MESSAGE) messageEffectsEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_REACTION) reactionEffectsEnabled: boolean = false;
-  @StorageProp(KEY_POWER_EMOJI) emojiEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_CHAT) emojiChatEnabled: boolean = true;
-  @StorageProp(KEY_POWER_EMOJI_REACTIONS) emojiReactionsEnabled: boolean = true;
-  @StorageProp(KEY_POWER_STICKERS) stickersEnabled: boolean = true;
-  @StorageProp(KEY_POWER_STICKER_AUTOPLAY) stickerAutoplay: boolean = true;
-  @StorageProp(KEY_POWER_AUTOPLAY_GIF) @Watch('onPlaybackPolicyChanged') autoplayGif: boolean = true;
-  @Prop showAvatar: boolean = true;     // last row of a same-sender run
-  @Prop showSenderName: boolean = true; // first row of a same-sender run
-  @State mediaVisible: boolean = true;
-  @State stickerPlaybackFailed: boolean = false;
-  @State linkPreviewOpening: boolean = false;
+  @Param animateIn: boolean = false;
+  // 字号/圆角/省电系等设置全部走 this.env（chatEnv 镜像）。V1 时代
+  // reduceAnim/powerSaving/autoplayGif 上的 @Watch('onPlaybackPolicyChanged')
+  // 改为 @Monitor 深层路径（@Trace 支持），见 onPlaybackPolicyChanged。
+  @Param showAvatar: boolean = true;     // last row of a same-sender run
+  @Param showSenderName: boolean = true; // first row of a same-sender run
+  @Local mediaVisible: boolean = true;
+  @Local stickerPlaybackFailed: boolean = false;
+  @Local linkPreviewOpening: boolean = false;
   // Controlled context-menu presentation — mirrors ChatRow's bubble-lift preview
   // (see ChatRow.ets bindContextMenu) so long-pressing a message bubble gets the
   // same lift/scale animation as long-pressing a chat-list row.
-  @State private msgContextMenuShown: boolean = false;
+  @Local private msgContextMenuShown: boolean = false;
   // Swipe-to-reply: live horizontal offset (vp, always <= 0 — the bubble only
   // drags leftward) applied as a translate on the bubble container while
   // dragging, then sprung back to 0 on release. onReplyTo fires once the drag
   // clears SWIPE_REPLY_TRIGGER; it never fires mid-drag.
-  @State private swipeReplyX: number = 0;
+  @Local private swipeReplyX: number = 0;
   // 这一次触摸已经被左滑或长按认领了。认领之后抬手时的点击必须吞掉，否则
   // 手指从一张图片上划走、或在链接上长按出多选，松手时那张图/那个链接还会
   // 被"点"一下。普通字段而不是 @State：没有任何界面依赖它。
@@ -525,13 +549,11 @@ export struct MessageBubble {
   private wasCompetingVideo: boolean = false;
   // 上一次已知的「相册第 idx 格是否参与竞选」状态，key 为 cell.idx。同样是普通 Map。
   private albumWasCompetingVideo: Map<number, boolean> = new Map<number, boolean>();
-  // 见 util/nextFrameQueue：本实例在共享「下一帧」队列里的序号。
-  private frameOwnerId: number = nextFrameOwnerId();
 
   // 见 menuKeyboardH 的说明。窗口矮的判据取 480vp：正常手机竖屏远大于此，悬浮
   // 小窗和分屏下半截才会落到这一档。
   private compactMenuContext(): boolean {
-    return menuPreviewCompact(this.menuKeyboardH, this.menuWindowH);
+    return menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp);
   }
 
   private isCompetingVideo(): boolean {
@@ -612,57 +634,25 @@ export struct MessageBubble {
   // 在 aboutToRecycle 里执行同一份。原来它只挂在 params 拿得到这个假设上，
   // 一旦走兜底分支，这 16 个值会以上一条消息的取值渲染一帧（剧透已揭开、
   // 引用已展开、圆形视频在播、气泡宽度是别人的）。
+  // P4 批 3c 之后这份清理只剩**无装饰器成员**（官方表格：复用不重置）。
+  // 原 A 类 16 个 @State（剧透揭开态/引用展开态/玻璃尺寸/滑动位移等，审计
+  // P0-3）已全部是 @Local，由框架在 aboutToReuse 之前统一重置（批 0.5 实测
+  // 1370/1370）；C 类 6 个通道值同理，且 attachMessageChannels 会同步重播种。
   private clearTransientState(): void {
-    // onAreaChange 量出来的尺寸。forwardLabelW / senderLabelW / commentsRowW
-    // 故意不在这里清（见声明处）。
-    this.bubbleW = 0;
-    this.menuOffsetX = 0;
-    // key 由本条消息的文本段算出，换消息后旧 key 可能碰撞 → 新消息的剧透
-    // 直接就是揭开的、引用直接就是展开的。
-    this.revealedSpoilerKeys = [];
-    this.expandedQuoteKeys = [];
-    this.mediaVisible = true;
-    this.stickerPlaybackFailed = false;
-    this.linkPreviewOpening = false;
-    this.msgContextMenuShown = false;
-    this.swipeReplyX = 0;
     this.gestureClaimed = false;
     this.mediaCenterY = 0;
     this.albumCellCenterY.clear();
     this.albumWasCompetingVideo.clear();
-    // M-1：按 P0-3 的判据（不依赖新参数就该无条件清）归到这里。清成 false 是
-    // 安全方向——它只用于「从参与竞选翻到不参与」的一次性补报，false 起步最多
-    // 少报一次，不会误报。拿得到新消息时 resetReusedState 会立刻覆盖成真值。
+    // M-1：清成 false 是安全方向——它只用于「从参与竞选翻到不参与」的一次性
+    // 补报，false 起步最多少报一次。aboutToReuse 里随即用新 msg 覆盖成真值。
     this.wasCompetingVideo = false;
-    this.videoNotePlaying = false;
-    // 玻璃层的尺寸是量出来的：复用成另一条消息后，旧尺寸算出的裁剪路径是错的，
-    // 清零等这一帧的 onAreaChange 重新给。onScreen 回到 true 的理由同它的声明处。
-    this.glassW = 0;
-    this.glassH = 0;
-    this.onScreen = true;
-  }
-
-  // C 类 6 个通道值（审计 3.2a）。它们同样不依赖新参数：清零最多空一帧，不清
-  // 则会用上一条消息的「发送中/已读」勾和下载百分比去渲染新消息。重新挂订阅
-  // 时 attachMessageChannels 会立刻重播种，所以这里放心清。
-  private clearChannelValues(): void {
-    this.liveSendState = '';
-    this.translationStatus = null;
-    this.livePhotoProgress = 0;
-    this.liveLinkPhotoProgress = 0;
-    this.liveVideoProgress = 0;
-    this.liveStickerProgress = 0;
-  }
-
-  // 剩下的两条是**依赖新参数**的，只能在拿得到新消息时做。
-  // 前提：调用方必须已经跑过 clearTransientState()。两个调用点都在
-  // aboutToReuse 里，而它开头就无条件跑了那一份（I-4：这里再跑一次是纯重复，
-  // 每复用一行多约 20 次 @State 写入，就在滚动热路径上）。
-  private resetReusedState(next: MessageEntry): void {
-    this.wasCompetingVideo = next.contentType === 'video' && !next.isAnimation;
   }
 
   aboutToAppear(): void {
+    // 首建也播种三个标签宽度：同文本行在别的实例量过就直接有底。
+    this.forwardLabelW = recallLabelWidth(`forward:${this.msg.forwardFrom}`);
+    this.senderLabelW = recallLabelWidth(`sender:${this.msg.senderName}`);
+    this.commentsRowW = recallLabelWidth(`comments:${this.msg.commentCount}`);
     this.attachMessageChannels(this.msg);
     this.requestAutoplayDownload();
     // 只记录初始状态，不在这里上报——上报的语义是「不再参与竞选」，首次挂载时
@@ -677,8 +667,6 @@ export struct MessageBubble {
   aboutToDisappear(): void {
     this.detachMessageChannels();
     this.reportCompetingMediaGone();
-    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
-    cancelNextFrame(this.frameOwnerId);
   }
 
   private reportCompetingMediaGone(): void {
@@ -693,100 +681,33 @@ export struct MessageBubble {
     }
   }
 
-  // Keep this cleanup defensive in case the component is hosted by a reusable
-  // parent elsewhere. ChatPage itself currently does not use that path.
   aboutToRecycle(): void {
-    // ── 复用钩子证据探针（F-5，**临时**，删除清单见本函数下方）─────────
-    //
-    // 这是整条复用链路上唯一还**没有任何运行时证据**的一环。
-    // util/reuseParams.ets 的文件头处理的是「params 取不到」，但更坏的一支
-    // 没人处理过：官方《@ReusableV2装饰器》只写「递归地调用所有子组件的
-    // aboutToReuse 回调（即使子组件未被标记可复用）」，**没写清递归到 V1 子
-    // 组件时到底走不走**。本组件是 V1，挂在 @ReusableV2 的 ReusableMessageBubble
-    // 之下。
-    //
-    // 后果是不对称的：下面的 clearTransientState() 清 16 项（剧透揭开态
-    // revealedSpoilerKeys、引用展开态 expandedQuoteKeys、glassW/glassH、
-    // swipeReplyX、mediaVisible 等），而唯一的自愈路径 onMsgPropChanged 只补
-    // 三项。钩子不触发 ⇒ 复用出来的行带着上一条消息的剧透已揭开、引用已展开、
-    // 错误的玻璃裁剪尺寸。
-    //
-    // 而支撑「钩子会触发」的那 820 个复用样本是 **P2 时期父级还是 V1
-    // @Reusable** 时采的（探针已在 ad3d4ab 下架），对当前形态**没有证据力**。
-    //
-    // 用 util/panelProbe 的聚合探针：只累加计数，每秒吐一行汇总，静止时一行
-    // 都不打，代价可忽略。上机判读：
-    //   recycle / reuse 两个计数都在涨 ⇒ 递归到 V1 子组件成立，本探针可删；
-    //   recycle 在涨、reuse 恒为 0     ⇒ 钩子**不触发**，clearTransientState
-    //                                    的 16 项必须换成 onMsgPropChanged
-    //                                    那条按 rowId 的自愈路径补全；
-    //   两个都恒为 0                   ⇒ 这一层根本没被回收（Repeat 的
-    //                                    reusable:false 之下由 @ReusableV2 承担
-    //                                    复用），回头查全局池的分桶计数。
+    // ⚠️ 临时计数（F-5 探针的 V2 续期）：V1 形态下 recycle/reuse 双涨已实测
+    // 确认（09-02 面板数据）；迁 @ComponentV2 后保留一轮，验证 V2 主体在
+    // @ReusableV2 壳下同样成立（批 2 的 plain 计数已证明同款）。判读后随
+    // avatarReuseProbe 删除清单一并摘除。
     probeHit('msgBubble.recycle');
     this.detachMessageChannels();
     this.reportCompetingMediaGone();
-    // 和 aboutToReuse 用同一份清理（P0-3 + 3.2a）：组件躺进复用池之前就把
-    // A 类 16 个和 6 个通道值全部归零，别让它带着上一条消息的剧透揭开态、
-    // 引用展开态、发送勾和下载百分比等下一次复用。
-    // （原来这里只清了 translationStatus 和 msgContextMenuShown 两个，
-    //   两者现在分别被 clearChannelValues / clearTransientState 覆盖。）
+    // 只剩无装饰器成员要手工清（@Local 由框架在下次复用前统一重置）。
     this.clearTransientState();
-    this.clearChannelValues();
-    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
-    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
-    cancelNextFrame(this.frameOwnerId);
   }
 
-  // ── F-5 探针删除清单（判读完成后一次删干净）────────────────────────
-  //   1. 本文件里的三处 probeHit（'msgBubble.recycle' / 'msgBubble.reuse' /
-  //      'msgBubble.reuse.noParams'）及其上面这两段说明；
-  //   2. 本文件顶部 `import { probeHit } from '../../util/panelProbe';`；
-  //   3. util/panelProbe.ets 本身——**只有在贴纸面板那轮标定也结束时才删**，
-  //      它是共用的（见该文件头「定位完整体删除」）。
-  aboutToReuse(params: Record<string, Object>): void {
+  aboutToReuse(): void {
     probeHit('msgBubble.reuse');
-    // 无条件前置（审计 S1 / P0-3）：不依赖新参数的清理跑在 params 判断之前。
-    // 父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，下面的
-    // setTimeout **已经是**唯一分支——这两行依然成立，最差是「空一帧」，
-    // 不会是「别人的一帧」。
-    // params 是 {} 还是 undefined 未定，两种都用 reuseParam 读，见
-    // util/reuseParams.ets（P3 批 2 第 0 项）。
+    // @Param 已是新值、@Local 已重置（批 0.5 判读，1370 样本）：全部同步做，
+    // V1 时代的 reuseParam 读参、params 兜底分支、nextFrameQueue 延帧整套
+    // 退役。三个测量宽度按标签文本播种（util/labelWidthMemory，声明处说明）。
     this.clearTransientState();
-    this.clearChannelValues();
-    const next: MessageEntry | undefined =
-      reuseParam(params, 'msg') as MessageEntry | undefined;
-    if (next === undefined) {
-      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：
-      // params 恒带 msg，present=0 一次都没出现——这条兜底分支当前**不可达**。
-      // **推导（不是实测）**：仍然不能删（I-3）。复用回同一条消息时 @Prop msg
-      // 没变化 → onMsgPropChanged 不触发 → P0-4 那条自愈也不跑；而
-      // aboutToRecycle 已经退订并把 attachedRowId 归零，那时这里是唯一的重挂
-      // 路径。父级**已经是** @ReusableV2（P3 批 1），aboutToReuse 没有入参，
-      // 这条**已经是**唯一分支。
-      // 这一支在 P2 的 820 个样本里一次都没出现过，但那份样本对当前形态没有
-      // 证据力（见 aboutToRecycle 的说明）。单独计数，好和总数对账。
-      probeHit('msgBubble.reuse.noParams');
-      // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-      enqueueNextFrame(this.frameOwnerId, (): void => {
-        this.resetReusedState(this.msg);
-        this.attachMessageChannels(this.msg);
-        this.requestAutoplayDownload();
-      });
-      return;
+    this.forwardLabelW = recallLabelWidth(`forward:${this.msg.forwardFrom}`);
+    this.senderLabelW = recallLabelWidth(`sender:${this.msg.senderName}`);
+    this.commentsRowW = recallLabelWidth(`comments:${this.msg.commentCount}`);
+    this.wasCompetingVideo = this.isCompetingVideo();
+    this.attachMessageChannels(this.msg);
+    for (let i = 0; i < this.albumIsVideo.length; i++) {
+      this.albumWasCompetingVideo.set(i, this.albumIsVideo[i]);
     }
-    this.resetReusedState(next);
-    this.attachMessageChannels(next);
-    const nextAlbum: boolean[] | undefined =
-      reuseParam(params, 'albumIsVideo') as boolean[] | undefined;
-    if (nextAlbum !== undefined) {
-      for (let i = 0; i < nextAlbum.length; i++) {
-        this.albumWasCompetingVideo.set(i, nextAlbum[i]);
-      }
-    }
-    // 合并进共享队列，语义不变（见 util/nextFrameQueue）。和上面那一支共用同一
-    // 个 ownerId，但两支互斥（那边 return 了），不会互相覆盖。
-    enqueueNextFrame(this.frameOwnerId, (): void => { this.requestAutoplayDownload(); });
+    this.requestAutoplayDownload();
   }
 
   // "替换媒体"（约 1511 行附近的菜单项）能在同一条消息 id 上把 contentType 从
@@ -795,7 +716,8 @@ export struct MessageBubble {
   // 已经不是视频的气泡。这里在 @Prop msg 每次被 ChatPage 换成新对象时（编辑、
   // 状态变化、替换媒体等，不是每帧）比较一次「参与竞选」状态，只在从 true 翻到
   // false 的那一次补发 onMediaGone，翻转之外什么也不做。
-  private onMsgPropChanged(): void {
+  @Monitor('msg')
+  onMsgPropChanged(): void {
     // P0-4（审计 3.2b）：按「订阅挂在哪个 rowId 上」自愈——不一致就整套重挂。
     // 担心的是 aboutToReuse 把 6 个通道挂在上一条消息的 rowId / fileId 上而
     // 后续无人纠正（审计当时无法静态排除这一点）。
@@ -829,7 +751,8 @@ export struct MessageBubble {
 
   // 同样的翻转检测，作用在相册每一格上：某格从「是视频」变成「不是视频」时补发
   // 一次 onMediaGone，只在那一次触发，不逐帧触发。
-  private onAlbumIsVideoChanged(): void {
+  @Monitor('albumIsVideo')
+  onAlbumIsVideoChanged(): void {
     for (let i = 0; i < this.albumIsVideo.length; i++) {
       const isVideo = this.albumIsVideoAt(i);
       const wasVideo = this.albumWasCompetingVideo.get(i) ?? false;
@@ -860,12 +783,15 @@ export struct MessageBubble {
     if (!this.msg.isAnimation) {
       return;
     }
-    if ((this.autoplayGif && !this.powerSaving && !this.reduceAnim) || this.animationForcePlay) {
+    if ((this.env.autoplayGif && !this.env.powerSaving && !this.env.reduceAnim) || this.animationForcePlay) {
       this.onAutoplayVideoNeedDownload(this.msg.id);
     }
   }
 
-  private onPlaybackPolicyChanged(): void {
+  // V1 时代挂在 reduceAnim/powerSaving/autoplayGif 三个 @StorageProp 上的
+  // @Watch；迁 env 后用 @Monitor 深层路径（@Trace 对象支持）。
+  @Monitor('env.reduceAnim', 'env.powerSaving', 'env.autoplayGif')
+  onPlaybackPolicyChanged(): void {
     this.requestAutoplayDownload();
   }
 
@@ -884,7 +810,7 @@ export struct MessageBubble {
   // max width on the outer shrink-to-fit Column can resolve differently from
   // the numeric caps used by text/media and cause a late first-layout reflow.
   private bubbleMaxW(): number {
-    return bubbleMaxWidth(this.screenW);
+    return bubbleMaxWidth(this.env.chatContentWidth);
   }
 
   private inlineMaxW(): number {
@@ -892,11 +818,11 @@ export struct MessageBubble {
   }
 
   private runCornerRadius(): number {
-    return Math.min(this.bubbleRadius, 7);
+    return Math.min(this.env.bubbleRadius, 7);
   }
 
   private tailCornerRadius(): number {
-    return Math.min(this.bubbleRadius, 2);
+    return Math.min(this.env.bubbleRadius, 2);
   }
 
   // A tail belongs only to the final bubble of a consecutive sender run.
@@ -926,7 +852,7 @@ export struct MessageBubble {
 
   private effectDuration(duration: number): number {
     return animationDurationFor(
-      this.chatEffectsEnabled && this.messageEffectsEnabled && !this.powerSaving,
+      this.env.chatEffects && this.env.messageEffects && !this.env.powerSaving,
       scrollActiveNow(), duration);
   }
 
@@ -937,20 +863,20 @@ export struct MessageBubble {
   // 气泡根节点已经不再使用它：那里现在完全不挂常驻动画（见 build 里的注释）。
   private persistentEffectDuration(duration: number): number {
     return persistentAnimationDurationFor(
-      this.chatEffectsEnabled, this.messageEffectsEnabled, this.powerSaving, duration);
+      this.env.chatEffects, this.env.messageEffects, this.env.powerSaving, duration);
   }
 
   private reactionDuration(duration: number): number {
     return animationDurationFor(
-      this.chatEffectsEnabled && this.reactionEffectsEnabled &&
-        this.emojiEnabled && this.emojiReactionsEnabled && !this.powerSaving,
+      this.env.chatEffects && this.env.reactionEffects &&
+        this.env.animatedEmoji && this.env.emojiReactions && !this.env.powerSaving,
       scrollActiveNow(), duration);
   }
 
   // Swipe-to-reply's snap-back/settle animation — degrades to an instant jump
   // under 省电模式/减少动效, matching the rest of the bubble's motion gating.
   private swipeReplyDuration(duration: number): number {
-    return this.powerSaving || this.reduceAnim ? 0 : duration;
+    return this.env.powerSaving || this.env.reduceAnim ? 0 : duration;
   }
 
   // 长按干什么由方案决定：老交互出菜单，新交互直接进多选并选中这一条。
@@ -972,8 +898,8 @@ export struct MessageBubble {
   private onLongPress(event: GestureEvent): void {
     // issue #114 诊断：小窗 + 键盘展开时长按调不出菜单。手势有没有到、走的哪一
     // 支、当时窗口和键盘多高、预览模式取哪种——报告人导日志就能对上。
-    logW(`[Menu114] longPress id=${this.msg.id} scheme=${this.gestureScheme}`
-      + ` kbd=${Math.round(this.menuKeyboardH)} winH=${Math.round(this.menuWindowH)}`
+    logW(`[Menu114] longPress id=${this.msg.id} scheme=${this.env.gestureScheme}`
+      + ` kbd=${Math.round(this.env.keyboardHeightVp)} winH=${Math.round(this.env.screenHeightVp)}`
       + ` compact=${this.compactMenuContext()} liveVideo=${this.hasLiveVideoSurface()}`
       + ` shown=${this.msgContextMenuShown}`);
     const fingers = event.fingerList;
@@ -981,7 +907,7 @@ export struct MessageBubble {
       this.recordMenuOffset(fingers[0].localX);
     }
     this.gestureClaimed = true;
-    const policy: MessageGesturePolicy = messageGesturePolicy(this.gestureScheme);
+    const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
     if (policy.longPressOpensMenu) {
       this.msgContextMenuShown = true;
       return;
@@ -1022,97 +948,23 @@ export struct MessageBubble {
 
   // Keep the bubble's own colors intact and dim the whole surface while held.
   // ArkUI's pressed state also cancels naturally when a list drag takes over.
-  @Styles
-  bubbleNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  bubblePressedStyle() {
-    // A tappable inline Span owns its own pressed feedback. Letting the parent
-    // bubble dim as well makes a tiny link tap flash the whole message. Voice
-    // controls also provide their own compact pressed feedback.
-    .opacity(this.hasInlineLink() || this.hasLinkPreview() || this.msg.contentType === 'voice' ||
-      this.msg.contentType === 'audio' || this.msg.contentType === 'file' ? 1 : 0.84)
-    .scale({
-      x: this.hasInlineLink() || this.hasLinkPreview() || this.msg.contentType === 'voice' ||
-        this.msg.contentType === 'audio' || this.msg.contentType === 'file' ? 1 : 0.992,
-      y: this.hasInlineLink() || this.hasLinkPreview() || this.msg.contentType === 'voice' ||
-        this.msg.contentType === 'audio' || this.msg.contentType === 'file' ? 1 : 0.992
-    })
-  }
-
-  @Styles
-  linkCardNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  linkCardPressedStyle() {
-    .opacity(0.8)
-    .scale({ x: 0.986, y: 0.986 })
+  // 成员 @Styles 已迁模块级（V2 不支持），见文件顶部。bubble 按压的抑制
+  // 条件收敛成这一个判据，AttributeModifier 双例按它挑。
+  private suppressBubblePressDim(): boolean {
+    return this.hasInlineLink() || this.hasLinkPreview() || this.msg.contentType === 'voice' ||
+      this.msg.contentType === 'audio' || this.msg.contentType === 'file';
   }
 
   // 链接底色。忙碌时换成 select_highlight——一层带透明度的主色调，浅色深色
   // 两套资源都已经定好，也不会被自定义强调色带跑。代码体的链接本来就有底色，
   // 忙碌时同样切到高亮色，才看得出变化。
   private linkRunBackground(run: RichRun): ResourceColor {
-    if (this.linkNavBusyUrl === run.url) {
+    if (this.env.linkNavBusy === run.url) {
       return $r('app.color.select_highlight');
     }
     return run.code ? $r('app.color.surface_alt') : Color.Transparent;
   }
 
-  @Styles
-  linkRunNormalStyle() {
-    .opacity(1)
-  }
-
-  @Styles
-  linkRunPressedStyle() {
-    .opacity(0.52)
-  }
-
-  @Styles
-  botButtonNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  botButtonPressedStyle() {
-    .opacity(0.72)
-    .scale({ x: 0.975, y: 0.975 })
-  }
-
-  @Styles
-  systemPillNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  systemPillPressedStyle() {
-    .opacity(this.liveVideoChatTappable() ? 0.72 : 1)
-    .scale({
-      x: this.liveVideoChatTappable() ? 0.985 : 1,
-      y: this.liveVideoChatTappable() ? 0.985 : 1
-    })
-  }
-
-  @Styles
-  menuActionNormalStyle() {
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
-  }
-
-  @Styles
-  menuActionPressedStyle() {
-    .opacity(0.72)
-    .scale({ x: 0.97, y: 0.94 })
-  }
 
   // albumIndex -1 表示非相册整条消息；相册格子传该格自己在 albumMemberIds
   // 里的下标（与上报给 PlaySlotRegistry 的 key 一致，见 onMediaRatio）。
@@ -1129,13 +981,13 @@ export struct MessageBubble {
   // 圆形视频消息（videoNote）走的是另一条独立分支，不受这里影响。
   private autoplayInlineVideo(): boolean {
     if (this.msg.contentType !== 'video' || !this.msg.isAnimation || this.msg.videoPath === '' ||
-      !this.mediaVisible || !this.appIsForeground || this.animationPlaybackFailed) {
+      !this.mediaVisible || !this.env.appIsForeground || this.animationPlaybackFailed) {
       return false;
     }
     if (this.animationPaused) {
       return false;
     }
-    return this.animationForcePlay || (!this.powerSaving && !this.reduceAnim && this.autoplayGif);
+    return this.animationForcePlay || (!this.env.powerSaving && !this.env.reduceAnim && this.env.autoplayGif);
   }
 
   private autoplayCategory(): string {
@@ -1145,7 +997,7 @@ export struct MessageBubble {
   private animationDownloadExpected(): boolean {
     return this.msg.isAnimation && this.msg.videoFileId !== 0 &&
       this.msg.videoPath === '' && !this.msg.videoFailed &&
-      (this.animationForcePlay || (!this.powerSaving && !this.reduceAnim && this.autoplayGif));
+      (this.animationForcePlay || (!this.env.powerSaving && !this.env.reduceAnim && this.env.autoplayGif));
   }
 
   // The link preview card adds its own 8+8 horizontal padding on top of the
@@ -1155,7 +1007,7 @@ export struct MessageBubble {
   }
 
   private mediaThumbW(): number {
-    return mediaThumbWidth(this.screenW);
+    return mediaThumbWidth(this.env.chatContentWidth);
   }
 
   private mediaMaxH(): number {
@@ -1233,7 +1085,7 @@ export struct MessageBubble {
   // Same helper the prefetcher uses — the two must agree exactly or the
   // prefetched bitmap lands under a key this bubble never asks for.
   private mediaBox(): MediaBox {
-    return mediaBoxFor(this.screenW, this.msg.photoWidth, this.msg.photoHeight,
+    return mediaBoxFor(this.env.chatContentWidth, this.msg.photoWidth, this.msg.photoHeight,
       this.msg.contentType === 'video');
   }
 
@@ -1413,7 +1265,7 @@ export struct MessageBubble {
   }
 
   private codeTextSize(): number {
-    return Math.max(12, this.msgTextSize - 2);
+    return Math.max(12, this.env.msgTextSize - 2);
   }
 
   private formattedTextHasLink(text: string, entities: TdObject[]): boolean {
@@ -1455,8 +1307,8 @@ export struct MessageBubble {
           this.revealSpoiler(run); });
     } else if (run.customEmojiId !== '' && this.inlineCustomEmojiPath(run.customEmojiId) !== '') {
       ImageSpan(this.inlineCustomEmojiSource(run.customEmojiId))
-        .width(this.msgTextSize + 3)
-        .height(this.msgTextSize + 3)
+        .width(this.env.msgTextSize + 3)
+        .height(this.env.msgTextSize + 3)
         .verticalAlign(ImageSpanAlignment.CENTER)
         .objectFit(ImageFit.Contain);
     } else if (run.url !== '') {
@@ -1464,7 +1316,7 @@ export struct MessageBubble {
       // 呼吸起来。链接是 Span，挂不了子组件也没有 opacity，能动的只有它自己
       // 的颜色和底色，所以加载态就画成一颗一明一暗的药丸。
       //
-      // this.linkNavBusyUrl 只在这条分支里读：不含链接的气泡从头到尾不碰
+      // this.env.linkNavBusy 只在这条分支里读：不含链接的气泡从头到尾不碰
       // 这个变量，也就不会因为别人点了链接而重建。
       Span(run.text)
         .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
@@ -1474,7 +1326,7 @@ export struct MessageBubble {
         .decoration({ type: this.richRunDecoration(run), color: this.accent() })
         .textBackgroundStyle({
           color: this.linkRunBackground(run),
-          radius: run.code || this.linkNavBusyUrl === run.url ? 3 : 0
+          radius: run.code || this.env.linkNavBusy === run.url ? 3 : 0
         })
         // iterations: -1 + Alternate —— 一次状态变化就能永远来回，不需要
         // 定时器逐帧改状态（那会把整个气泡按帧重建）。省电模式下
@@ -1482,13 +1334,10 @@ export struct MessageBubble {
         .animation({
           duration: this.persistentEffectDuration(620),
           curve: Curve.EaseInOut,
-          iterations: this.linkNavBusyUrl === run.url ? -1 : 1,
+          iterations: this.env.linkNavBusy === run.url ? -1 : 1,
           playMode: PlayMode.Alternate
         })
-        .stateStyles({
-          normal: this.linkRunNormalStyle,
-          pressed: this.linkRunPressedStyle
-        })
+        .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
         .animation({ duration: this.persistentEffectDuration(90), curve: Curve.EaseOut })
         .onClick(() => {
           if (this.gestureClaimed) { return; }
@@ -1533,8 +1382,8 @@ export struct MessageBubble {
         Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
       }
     }
-    .fontSize(this.msgTextSize)
-    .lineHeight(this.msgTextSize * 1.34)
+    .fontSize(this.env.msgTextSize)
+    .lineHeight(this.env.msgTextSize * 1.34)
     .wordBreak(WordBreak.BREAK_WORD)
     .constraintSize({ maxWidth: params.maxWidth });
   }
@@ -1557,8 +1406,8 @@ export struct MessageBubble {
       Span(this.msg.text).fontColor(bubbleTextFor(this.msg.isOutgoing));
       Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
     }
-    .fontSize(this.msgTextSize)
-    .lineHeight(this.msgTextSize * 1.34)
+    .fontSize(this.env.msgTextSize)
+    .lineHeight(this.env.msgTextSize * 1.34)
     .wordBreak(WordBreak.BREAK_WORD)
     .constraintSize({
       minWidth: this.measuredTimeLayerWidth(),
@@ -1612,10 +1461,7 @@ export struct MessageBubble {
                 .padding({ left: 8, right: 8 })
                 .borderRadius(13)
                 .backgroundColor('#10000000')
-                .stateStyles({
-                  normal: this.linkRunNormalStyle,
-                  pressed: this.linkRunPressedStyle
-                })
+                .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
                 .animation({ duration: this.effectDuration(90), curve: Curve.EaseOut })
                 .onClick((): void => {
                   if (this.gestureClaimed) { return; }
@@ -1653,8 +1499,8 @@ export struct MessageBubble {
                 Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
               }
             }
-            .fontSize(this.msgTextSize)
-            .lineHeight(this.msgTextSize * 1.34)
+            .fontSize(this.env.msgTextSize)
+            .lineHeight(this.env.msgTextSize * 1.34)
             .maxLines(seg.expandable && !this.quoteExpanded(seg) ? 4 : 10000)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .constraintSize({ maxWidth: params.maxWidth - 20 }).wordBreak(WordBreak.BREAK_WORD);
@@ -1662,10 +1508,7 @@ export struct MessageBubble {
               Text(this.quoteExpanded(seg) ? $r('app.string.mb_collapse_quote') : $r('app.string.mb_expand_quote'))
                 .fontSize(11).fontColor(this.accent()).fontWeight(FontWeight.Medium)
                 .margin({ top: 4 })
-                .stateStyles({
-                  normal: this.linkRunNormalStyle,
-                  pressed: this.linkRunPressedStyle
-                })
+                .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
                 .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
                 .onClick((): void => {
                   if (this.gestureClaimed) { return; }
@@ -1736,8 +1579,8 @@ export struct MessageBubble {
         .margin({ top: 6, bottom: 5 });
       if (!this.msg.translationHidden) {
         Text(this.msg.translatedText)
-          .fontSize(this.msgTextSize)
-          .lineHeight(this.msgTextSize * 1.34)
+          .fontSize(this.env.msgTextSize)
+          .lineHeight(this.env.msgTextSize * 1.34)
           .fontStyle(FontStyle.Italic)
           .fontColor(bubbleTextFor(this.msg.isOutgoing))
           .wordBreak(WordBreak.BREAK_WORD)
@@ -1827,10 +1670,7 @@ export struct MessageBubble {
                 .layoutWeight(1).height(36)
                 .backgroundColor(botButtonBg(btn.style, '#4d000000'))
                 .borderRadius(8)
-                .stateStyles({
-                  normal: this.botButtonNormalStyle,
-                  pressed: this.botButtonPressedStyle
-                })
+                .stateStyles({ normal: msgBotButtonNormalStyle, pressed: msgBotButtonPressedStyle })
                 .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
                 .onClick(() => {
                   if (this.gestureClaimed) { return; }
@@ -2121,14 +1961,14 @@ export struct MessageBubble {
   // instead of a hardcoded value.
   private bubbleCornerRadius(): BorderRadiuses {
     return {
-      topLeft: this.msg.isOutgoing ? this.bubbleRadius :
-        (this.showSenderName ? this.bubbleRadius : this.runCornerRadius()),
+      topLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
+        (this.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()),
       topRight: this.msg.isOutgoing ?
-        (this.showSenderName ? this.bubbleRadius : this.runCornerRadius()) : this.bubbleRadius,
-      bottomLeft: this.msg.isOutgoing ? this.bubbleRadius :
+        (this.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()) : this.env.bubbleRadius,
+      bottomLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
         (this.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()),
       bottomRight: this.msg.isOutgoing ?
-        (this.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()) : this.bubbleRadius
+        (this.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()) : this.env.bubbleRadius
     };
   }
 
@@ -2424,7 +2264,7 @@ export struct MessageBubble {
     .backgroundColor($r('app.color.surface_alt')).borderRadius(10)
     .border({ width: { left: 3 }, color: this.accent() })
     .padding({ left: 9, right: 9, top: 8, bottom: 8 }).margin({ top: 5 })
-    .stateStyles({ normal: this.linkCardNormalStyle, pressed: this.linkCardPressedStyle })
+    .stateStyles({ normal: msgLinkCardNormalStyle, pressed: msgLinkCardPressedStyle })
     .animation({ duration: this.effectDuration(120), curve: Curve.EaseOut })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 4 }))
@@ -2466,10 +2306,7 @@ export struct MessageBubble {
         // 半径取高度的一半（15 的内容 + 上下各 4 = 23），两端才是正圆弧。
         .borderRadius(12).padding({ left: 9, right: 9, top: 4, bottom: 4 })
         .margin({ right: 4, top: 4 })
-        .stateStyles({
-          normal: this.menuActionNormalStyle,
-          pressed: this.menuActionPressedStyle
-        })
+        .stateStyles({ normal: msgMenuActionNormalStyle, pressed: msgMenuActionPressedStyle })
         .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
         .onClick(() => {
           if (this.gestureClaimed) { return; }
@@ -2594,7 +2431,7 @@ export struct MessageBubble {
         .width(32).height(34).borderRadius(17)
         .justifyContent(FlexAlign.Center)
         .backgroundColor(this.reactionChosen(e) ? '#263391E8' : Color.Transparent)
-        .stateStyles({ normal: this.menuActionNormalStyle, pressed: this.menuActionPressedStyle })
+        .stateStyles({ normal: msgMenuActionNormalStyle, pressed: msgMenuActionPressedStyle })
         .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
         .onClick((): void => { this.onSetReaction(this.msg.id, e, this.reactionChosen(e)); })
         .gesture(LongPressGesture().onAction((): void => { this.onSetDefaultReaction(e); }));
@@ -2605,7 +2442,7 @@ export struct MessageBubble {
       }
       .width(30).height(30).borderRadius(15).backgroundColor('#0000000F')
       .justifyContent(FlexAlign.Center)
-      .stateStyles({ normal: this.menuActionNormalStyle, pressed: this.menuActionPressedStyle })
+      .stateStyles({ normal: msgMenuActionNormalStyle, pressed: msgMenuActionPressedStyle })
       .animation({ duration: this.reactionDuration(110), curve: Curve.EaseOut })
       .onClick((): void => { this.onOpenReactions(this.msg.id); });
     }
@@ -2789,8 +2626,8 @@ export struct MessageBubble {
             Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
           }
         }
-        .fontSize(this.msgTextSize)
-        .lineHeight(this.msgTextSize * 1.34);
+        .fontSize(this.env.msgTextSize)
+        .lineHeight(this.env.msgTextSize * 1.34);
       } else {
         this.richContent({
           text: this.msg.text,
@@ -3404,7 +3241,7 @@ export struct MessageBubble {
       Text() {
         Span(this.fallbackLabel()).fontColor(COLOR_TEXT_SECONDARY);
         Span(this.timeReserve()).fontSize(14).fontColor(Color.Transparent);
-      }.fontSize(this.msgTextSize);
+      }.fontSize(this.env.msgTextSize);
     }
   }
 
@@ -3443,13 +3280,13 @@ export struct MessageBubble {
     if (this.msg.stickerFormat !== 'tgs' && this.msg.stickerFormat !== 'webm') {
       return false;
     }
-    if (this.powerSaving || this.reduceAnim) {
+    if (this.env.powerSaving || this.env.reduceAnim) {
       return true;
     }
     if (this.msg.isEmojiSticker) {
-      return !this.emojiEnabled || !this.emojiChatEnabled;
+      return !this.env.animatedEmoji || !this.env.emojiChat;
     }
-    return !this.stickersEnabled || !this.stickerAutoplay;
+    return !this.env.stickers || !this.env.stickerAutoplay;
   }
 
   private locationLabel(): string {
@@ -3473,7 +3310,7 @@ export struct MessageBubble {
 
   // 气泡自身的填充色。叠压头像的间隙圈要取它，才能读作"挖空"而不是描边。
   private bubbleFillColor(): ResourceColor {
-    if (this.appearanceEpoch < 0) {
+    if (this.env.appearanceEpoch < 0) {
       return Color.Transparent; // 只为让 ArkUI 记下对 epoch 的依赖
     }
     if (this.msg.isOutgoing) {
@@ -3507,7 +3344,7 @@ export struct MessageBubble {
   }
 
   private bubbleMaterialLive(): boolean {
-    return this.bubbleMaterialOn && this.onScreen && !this.powerSaving;
+    return this.env.bubbleMaterialOn && this.onScreen && !this.env.powerSaving;
   }
 
   // 未量到外层尺寸时由本体临时画玻璃；完整轮廓就绪后本体透明，只留外层一份。
@@ -3731,13 +3568,13 @@ export struct MessageBubble {
         .fontColor(this.liveVideoChatTappable() ? this.accent() : COLOR_TEXT_SECONDARY)
         .fontWeight(this.liveVideoChatTappable() ? FontWeight.Medium : FontWeight.Regular)
         .textAlign(TextAlign.Center)
-        .constraintSize({ maxWidth: this.screenW * 0.68 });
+        .constraintSize({ maxWidth: this.env.chatContentWidth * 0.68 });
       if (this.liveVideoChatTappable()) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(10).fontColor([this.accent()]).width(10);
       }
     }
-    .constraintSize({ maxWidth: this.screenW * 0.82 })
+    .constraintSize({ maxWidth: this.env.chatContentWidth * 0.82 })
     .backgroundColor(this.liveVideoChatTappable() ? '#183478F6' : $r('app.color.system_pill'))
     .border({
       width: 0.5,
@@ -3745,10 +3582,7 @@ export struct MessageBubble {
     })
     .borderRadius(12)
     .padding({ left: 9, right: 9, top: 4, bottom: 4 })
-    .stateStyles({
-      normal: this.systemPillNormalStyle,
-      pressed: this.systemPillPressedStyle
-    })
+    .attributeModifier(this.liveVideoChatTappable() ? SYSTEM_PILL_PRESS_DIM : SYSTEM_PILL_PRESS_NONE)
     .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
     .onClick((): void => {
       if (this.gestureClaimed) { return; }
@@ -3870,6 +3704,7 @@ export struct MessageBubble {
             .constraintSize({ maxWidth: this.inlineMaxW() })
             .onAreaChange((_old: Area, area: Area): void => {
               this.forwardLabelW = area.width as number;
+              rememberLabelWidth(`forward:${this.msg.forwardFrom}`, this.forwardLabelW);
             })
             .onClick(() => {
               if (this.gestureClaimed) { return; }
@@ -3894,6 +3729,7 @@ export struct MessageBubble {
           .alignItems(VerticalAlign.Center)
           .onAreaChange((_old: Area, area: Area): void => {
             this.senderLabelW = area.width as number;
+            rememberLabelWidth(`sender:${this.msg.senderName}`, this.senderLabelW);
           });
         }
         // Inline timestamp: overlaid at the content's bottom-right, sharing the
@@ -3947,6 +3783,7 @@ export struct MessageBubble {
           }
           .onAreaChange((_old: Area, area: Area): void => {
             this.commentsRowW = area.width as number;
+            rememberLabelWidth(`comments:${this.msg.commentCount}`, this.commentsRowW);
           });
         }
       }
@@ -3969,10 +3806,7 @@ export struct MessageBubble {
       //
       // 刻意没有另加一层视觉包装节点：材质挂在上层 Row（bubbleGlassModifier）、
       // 手势与命中都挂在本节点，插节点会动到材质/裁剪/命中三者的相对关系。
-      .stateStyles({
-        normal: this.bubbleNormalStyle,
-        pressed: this.bubblePressedStyle
-      })
+      .attributeModifier(this.suppressBubblePressDim() ? BUBBLE_PRESS_NONE : BUBBLE_PRESS_DIM)
       .constraintSize({ maxWidth: this.bubbleMaxW() })
       .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
       .backdropBlur(this.glassBlur())
@@ -4006,7 +3840,7 @@ export struct MessageBubble {
       // 用它就会出现"点链接同时开链接和菜单"。
       .onClick((event: ClickEvent): void => {
         if (this.gestureClaimed) { return; }
-        if (messageGesturePolicy(this.gestureScheme).tapOpensMenu) {
+        if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
           // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
           this.recordMenuOffset(event.x);
           this.msgContextMenuShown = true;
@@ -4036,7 +3870,7 @@ export struct MessageBubble {
       .background(this.glassOutline(), { align: Alignment.TopStart })
       .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
         this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius(),
-        this.bubbleMaterialOn ? (w: number, h: number): void => {
+        this.env.bubbleMaterialOn ? (w: number, h: number): void => {
           probeGlassMeasure('rich', this.msg.id, w, h);
           this.glassW = w;
           this.glassH = h;
