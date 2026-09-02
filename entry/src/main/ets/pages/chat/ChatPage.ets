@@ -9613,6 +9613,9 @@ export struct ChatPage {
             this.timelineScrollActive = false;
             this.nextDidScrollIsUserDriven = false;
             setScrollActive(false);
+            // 滚动中冻结的 update 发布在这里冲刷（调度中枢批 1）。先于
+            // driveVisibleWork：让本轮可见性工作拿到冲刷后的最新行。
+            this.store?.flushScrollDeferredUpdate();
             this.resumeChatTgsAfterScroll();
             this.driveVisibleWork();
             this.armPlaySlotSettle();

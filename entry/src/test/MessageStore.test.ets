@@ -588,6 +588,40 @@ export default function messageStoreTest() {
       unsub();
       store.close();
     });
+    // 调度中枢批 1：滚动中 update 类发布冻结、停止冲刷；翻页类不受影响。
+    it('scroll_freezes_update_publishes_until_flush', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(10, 5, false, 'ready')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      let notifies: number = 0;
+      const unsub = store.subscribe((): void => { notifies++; });
+      // subscribe 会同步回放一次现值，冻结账从回放之后算起。
+      notifies = 0;
+      try {
+        AppStorage.setOrCreate('chatScrollActive', true);
+        pushNewMessage(b, textMessage(11, 5, false, 'arrives mid-scroll'));
+        // 要越过两层：16ms 发布合并窗 + 400ms 入页安置窗（notifySoon 会把
+        // update 压到安置期末尾才尝试发布，冻结检查在那之后才会命中）。
+        await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 460));
+        expect(notifies).assertEqual(0);
+      } finally {
+        // 断言失败也必须复位，否则冻结态会泄漏进后续所有用例。
+        AppStorage.setOrCreate('chatScrollActive', false);
+      }
+      store.flushScrollDeferredUpdate();
+      expect(notifies).assertEqual(1);
+      // 冲刷后的快照必须携带滚动期间到达的消息。
+      expect(store.getMessages().some((m: MessageEntry): boolean => m.id === 11)).assertTrue();
+      // pending 已清：重复冲刷不再发布。
+      store.flushScrollDeferredUpdate();
+      expect(notifies).assertEqual(1);
+      unsub();
+      store.close();
+    });
+
     it('closing_store_cancels_deferred_initial_publication', 0, async () => {
       const arr = setup(5, 1); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.deferInitialPublication(80);

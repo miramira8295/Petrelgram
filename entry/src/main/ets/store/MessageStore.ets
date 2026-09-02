@@ -72,6 +72,8 @@ interface RepliedPreview {
 }
 // 一帧的量级：下载进度的发布合并到这个窗口里，见 notifySoon()。
 const NOTIFY_COALESCE_MS: number = 16;
+// 滚动冻结 update 后安全网轮询的间隔（主冲刷路径是 onTimelineScrollStop）。
+const SCROLL_DEFER_FLUSH_MS: number = 600;
 // 自定义 emoji 位图水合的合并窗与「滚动中顺延」上限，见 scheduleCustomEmojiHydrate。
 const HYDRATE_COALESCE_MS: number = 64;
 const HYDRATE_SCROLL_CAP_MS: number = 800;
@@ -490,6 +492,11 @@ export class MessageStore {
       clearTimeout(this.initialPublicationTimer);
       this.initialPublicationTimer = -1;
     }
+    if (this.scrollDeferFlushTimer !== -1) {
+      clearTimeout(this.scrollDeferFlushTimer);
+      this.scrollDeferFlushTimer = -1;
+    }
+    this.scrollDeferredUpdate = false;
     if (this.hydrateTimer !== -1) {
       clearTimeout(this.hydrateTimer);
       this.hydrateTimer = -1;
@@ -3144,6 +3151,10 @@ export class MessageStore {
   private customEmojiFailed: Set<string> = new Set();
   // 见 scheduleCustomEmojiHydrate。
   private hydrateTimer: number = -1;
+  // 滚动中被冻结的 update 发布是否待冲刷（快照语义：pending 只是一位布尔，
+  // 不攒队列——最新一次冲刷天然携带全部状态）。
+  private scrollDeferredUpdate: boolean = false;
+  private scrollDeferFlushTimer: number = -1;
   private hydrateDeferStart: number = 0;
 
   private resolveCustomEmojis(): void {
@@ -5451,6 +5462,36 @@ export class MessageStore {
     }, remaining > 0 ? remaining : NOTIFY_COALESCE_MS);
   }
 
+  // 滚动冻结的 update 发布主冲刷路径：ChatPage.onTimelineScrollStop 调用。
+  // 页面在滚动中离开而没等到 stop 时靠下面的安全网定时器兜底。
+  flushScrollDeferredUpdate(): void {
+    if (!this.scrollDeferredUpdate) {
+      return;
+    }
+    this.scrollDeferredUpdate = false;
+    this.notify('update');
+  }
+
+  // 安全网：主路径没来（页面隐藏/回调丢失）时轮询到滚动结束再冲刷。轮询
+  // 间隔取 scrollEffects 看门狗（3s 上限）的零头即可，不追求及时——及时性
+  // 由 onTimelineScrollStop 的主路径负责。
+  private armScrollDeferFlush(): void {
+    if (this.scrollDeferFlushTimer !== -1) {
+      return;
+    }
+    this.scrollDeferFlushTimer = setTimeout((): void => {
+      this.scrollDeferFlushTimer = -1;
+      if (!this.scrollDeferredUpdate) {
+        return;
+      }
+      if (scrollActiveNow()) {
+        this.armScrollDeferFlush();
+        return;
+      }
+      this.flushScrollDeferredUpdate();
+    }, SCROLL_DEFER_FLUSH_MS);
+  }
+
   private notify(kind: string = 'update'): void {
     // openChat may emit updateNewMessage before the first getChatHistory page
     // returns (commonly just the newest message of a newly visited channel).
@@ -5467,10 +5508,23 @@ export class MessageStore {
     if (this.deferInitialNotify(kind)) {
       return;
     }
+    // 调度中枢批 1：滚动中冻结 update 类发布（TDLib 实时更新），停止即冲刷。
+    // 判读依据（批 0 探针，09-02 活跃频道实滚）：pub.scroll.update ~1/s、峰值
+    // 3/s，且同秒常伴 newer/paginationState 发布——update 那份是滚动帧上纯
+    // 多余的一轮全表 collapse/diff。发布是快照不是增量：晚发不丢数据，任何
+    // 后续发布都完整覆盖（所以发布成功时顺手清 pending）。翻页/初始/历史类
+    // 永不冻结——那是滚动自己要的数据。
+    if (kind === 'update' && scrollActiveNow()) {
+      this.scrollDeferredUpdate = true;
+      this.armScrollDeferFlush();
+      probeHit('pub.defer.update');
+      return;
+    }
     probeHit(`pub.${kind}`);
     if (scrollActiveNow()) {
       probeHit(`pub.scroll.${kind}`);
     }
+    this.scrollDeferredUpdate = false;
     this.currentNotifyKind = kind;
     try {
       for (const l of this.msgSubs) {
