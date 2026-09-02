@@ -697,6 +697,30 @@ export default function messageStoreTest() {
       expect(ids(store.getMessages()).join(',')).assertEqual('5,10,20,30');
       store.close();
     });
+    it('promoting_an_older_prefetch_twice_notifies_only_once', 0, async () => {
+      // jscrash 20260902143829 的回归钉：升级分支的 notify 是同步的，订阅回调
+      // 里的补页逻辑会立刻再调 loadOlder——重复通知就是同帧自激环直到爆栈。
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.prefetchOlder()).assertTrue();
+      let notifies: number = 0;
+      const unsub = store.subscribe((): void => { notifies++; });
+      const baseline: number = notifies;
+      expect(store.loadOlder()).assertTrue();
+      const afterFirst: number = notifies;
+      expect(afterFirst > baseline).assertTrue();
+      // 预取仍在飞时的第二、第三次调用：状态没变化，必须静默返回。
+      expect(store.loadOlder()).assertTrue();
+      expect(store.loadOlder()).assertTrue();
+      expect(notifies).assertEqual(afterFirst);
+      unsub();
+      store.close();
+    });
     it('jumping_away_clears_a_promoted_older_prefetch_state', 0, async () => {
       const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();

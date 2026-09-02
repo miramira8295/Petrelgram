@@ -969,9 +969,18 @@ export class MessageStore {
       this.olderPrefetchAnchorId === this.oldestId) {
       // The gesture arrived before the warm request completed. Promote that
       // same request to visible loading instead of starting a duplicate.
-      this.olderPrefetchDemanded = true;
-      this.olderLoadState = 'loading';
-      this.notify('paginationState');
+      //
+      // 幂等（jscrash 20260902143829 的爆栈修复）：升级只在**第一次**通知。
+      // 这里的 notify 是同步的，订阅回调里 fillViewportIfNeeded 看到行数
+      // 未变、守卫依旧成立，会立刻重新上膛再调 loadOlder——若每次都重复
+      // notify，就是 fillViewport → loadOlder → notify → fillViewport 的
+      // 同帧自激环，直到 Stack overflow（内容恰好一屏内 + 预取在飞时触发）。
+      // 已在 demanded/loading 态时静默返回 true 即可：状态没有变化，无事可报。
+      if (!this.olderPrefetchDemanded || this.olderLoadState !== 'loading') {
+        this.olderPrefetchDemanded = true;
+        this.olderLoadState = 'loading';
+        this.notify('paginationState');
+      }
       return true;
     }
     if (this.olderPending || this.olderLoadState === 'error' ||
