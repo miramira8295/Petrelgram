@@ -12,15 +12,10 @@ export interface ViewportGeometrySplice {
   sizes: number[];
 }
 
-function geometryFingerprint(value: string): number {
-  let hash: number = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
+// contentKey 直接进复合串，不再过 JS 哈希：原来的 FNV 逐字符循环是滚动热路径
+// （行模板的 .height()、每次测量回调、每次发布的 reconcile 都要算 key），一份
+// 15s 录制里累计 ~307ms 纯 JS 自身耗时（cpuprofile, 20260902T102459）。Map 的
+// 字符串比较在原生侧，比 JS 手搓摘要快；原串还天然无碰撞。
 export function viewportGeometryKey(
   chatId: number,
   conversationId: number,
@@ -31,7 +26,7 @@ export function viewportGeometryKey(
   showDivider: boolean
 ): string {
   return `${chatId}_${conversationId}|${rowId}|${Math.round(screenWidth)}` +
-    `|${langEpoch}|${showDivider ? 1 : 0}|${contentKey.length}_${geometryFingerprint(contentKey)}`;
+    `|${langEpoch}|${showDivider ? 1 : 0}|${contentKey}`;
 }
 
 export function planViewportGeometrySplice(
@@ -88,6 +83,11 @@ export function resetChatViewportGeometry(): void {
 // Per-List size table backed by a process-level cache of real visible row
 // heights. ChildrenMainSize is one-to-one with a List, so only the measured
 // values are shared between ChatPage instances; every page owns this adapter.
+interface CachedGeometryKey {
+  generation: number;
+  key: string;
+}
+
 export class ChatViewportGeometry {
   public readonly childrenMainSize: ChildrenMainSize =
     UIUtils.makeObserved(new ChildrenMainSize(DEFAULT_MESSAGE_ROW_HEIGHT));
@@ -98,9 +98,20 @@ export class ChatViewportGeometry {
   private screenWidth: number = 360;
   private langEpoch: number = 0;
   private dividerId: number = 0;
+  // keyOf 按 group 对象记忆：AlbumGroup 每次发布都是全新对象、发布后零原地
+  // 修改（见 ReusableMessageBubble 的 @Param 注释），对象身份即内容身份。
+  // 同一行的 key 在一次发布里要被要走多次（reconcile 里 nextKeys 和 rowHeight
+  // 各一次、行模板 .height()、每次测量回调），拼串只做第一次。
+  // generation：chatId/宽度/语言纪元/分隔线一变，旧账全部作废。
+  private keyCache: WeakMap<AlbumGroup, CachedGeometryKey> = new WeakMap<AlbumGroup, CachedGeometryKey>();
+  private keyGeneration: number = 0;
 
   private keyOf(group: AlbumGroup): string {
-    return viewportGeometryKey(
+    const cached: CachedGeometryKey | undefined = this.keyCache.get(group);
+    if (cached !== undefined && cached.generation === this.keyGeneration) {
+      return cached.key;
+    }
+    const key: string = viewportGeometryKey(
       this.chatId,
       this.conversationId,
       group.head.rowId,
@@ -109,6 +120,8 @@ export class ChatViewportGeometry {
       this.langEpoch,
       this.dividerId > 0 && group.memberIds.indexOf(this.dividerId) >= 0
     );
+    this.keyCache.set(group, { generation: this.keyGeneration, key: key });
+    return key;
   }
 
   public rowHeight(group: AlbumGroup): number {
@@ -127,6 +140,12 @@ export class ChatViewportGeometry {
     langEpoch: number,
     dividerId: number
   ): void {
+    // key 的上下文分量变了才作废记忆（滚动中的常态是全都没变）。
+    if (chatId !== this.chatId || conversationId !== this.conversationId ||
+      Math.round(screenWidth) !== Math.round(this.screenWidth) ||
+      langEpoch !== this.langEpoch || dividerId !== this.dividerId) {
+      this.keyGeneration++;
+    }
     this.chatId = chatId;
     this.conversationId = conversationId;
     this.screenWidth = screenWidth;
