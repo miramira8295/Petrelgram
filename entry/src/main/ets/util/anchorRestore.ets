@@ -65,6 +65,19 @@ export function shouldCapturePrependAnchor(input: PrependAnchorCaptureInput): bo
   return input.didInitialScroll && input.anchorIndexFresh && input.olderPageGrowth;
 }
 
+// When the user has stopped at the absolute history boundary, waiting for a
+// network page before restoring the anchor is visible: the prepended rows are
+// painted first and the later correction looks like a page jump. Prime only
+// this unambiguous state; an in-flight drag keeps the measured restore path.
+const PREPEND_HARD_TOP_EPSILON_VP: number = 1;
+
+export function shouldPrimePrependAnchor(
+  visibleIndex: number, itemY: number, headerChromeHeight: number, scrollActive: boolean
+): boolean {
+  return !scrollActive && visibleIndex === 0 &&
+    Math.abs(itemY - headerChromeHeight) <= PREPEND_HARD_TOP_EPSILON_VP;
+}
+
 // onDidScroll/onWillScroll report a positive offset when content moves upward.
 // The same row's y therefore decreases by that offset. Anchor correction runs
 // asynchronously after a page publication, so its target must include every

@@ -3,7 +3,7 @@ import {
   anchorYAfterUserScroll, canApplyAnchorRestore, planAnchorRestore, INVALID_ANCHOR_RECT,
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_FALLBACK, AnchorRectSnapshot,
   ANCHOR_RESTORE_ATTEMPTS, PrependAnchorCaptureInput, shouldCapturePrependAnchor,
-  shouldRetryAnchorRestore
+  shouldPrimePrependAnchor, shouldRetryAnchorRestore
 } from '../main/ets/util/anchorRestore';
 
 function prependInput(): PrependAnchorCaptureInput {
@@ -47,6 +47,21 @@ export default function anchorRestoreTest() {
 
     it('没有新的用户位移时保持原锚点', 0, (): void => {
       expect(anchorYAfterUserScroll(-20, 100, 100)).assertEqual(-20);
+    });
+  });
+
+  describe('shouldPrimePrependAnchor', () => {
+    it('静止在绝对顶部时发布前预定位', 0, (): void => {
+      expect(shouldPrimePrependAnchor(0, 152.857, 153, false)).assertTrue();
+    });
+
+    it('普通可见位置不走预定位', 0, (): void => {
+      expect(shouldPrimePrependAnchor(1, 153, 153, false)).assertFalse();
+      expect(shouldPrimePrependAnchor(0, 140, 153, false)).assertFalse();
+    });
+
+    it('拖动或惯性期间不抢滚动位置', 0, (): void => {
+      expect(shouldPrimePrependAnchor(0, 153, 153, true)).assertFalse();
     });
   });
 

@@ -19,51 +19,30 @@ import { chatContentWidth } from '../../util/chatContentWidth';
 //      容器，不是 LazyForEach。所以那一行一个字都没改。
 //      registerDataChangeListener / unregisterDataChangeListener **必须是真的**：
 //      Repeat 确实不调它们，但 BasicPrefetcher 调——见类尾那段注释。
-//   2. 几个纯函数：行 key 的内容指纹、跨快照的行对象复用。
+//   2. 几个纯函数：Repeat 行身份、跨快照的行对象复用。
 //      它们没有 UI 依赖，因此可以被单测直接覆盖。
 
-// Initial-page staging republishes the same row signatures across several
-// bounded batches. A 256-entry cache thrashed as soon as a long history held
-// 494 rows, so the same signatures were hashed again on the next publication.
-// 2048 covers several large windows while retaining a strict process-wide cap.
-const CONTENT_FINGERPRINT_CACHE_LIMIT: number = 2048;
-const contentFingerprintCache: Map<string, string> = new Map<string, string>();
-
-// Short fingerprint of a row's content signature, for embedding in the row key.
+// Repeat 的稳定且唯一的行身份。普通消息用 rowId，保证发送成功替换真实消息 id
+// 时不换节点。真正折叠成图片/视频网格的相册用 albumId + 最新成员 rowId：向上
+// 分页只会在相册前端补进更旧成员，最新成员不变，所以边界行仍是同一个节点；而
+// 同一 albumId 暂时被非媒体行/分页缺口拆成两段时，两段的最新成员不同，不会向
+// Repeat 提交重复 key。不能只看 head.albumId：TDLib 的文档/音频媒体组也带它们
+// 自己的 albumId，但当前 collapseAlbums 不把那些消息折叠成一行。
 //
-// Repeat's reuse machinery is entirely key-driven, same as LazyForEach's was:
-// a key built from identity alone would let a changed row keep an already
-// rendered node forever. Embedding the content fingerprint makes a changed
-// row's key a new key.
-//
-// g.key itself is the precise signature but runs to kilobytes (message text,
-// entity JSON, file paths); the framework stores and compares every key, so it
-// is hashed down. The identity prefix stays plaintext in the final key, so a
-// hash collision could at worst miss one rebuild of one row — it can never
-// mix two different rows.
-export function contentFingerprint(s: string): string {
-  const cached: string | undefined = contentFingerprintCache.get(s);
-  if (cached !== undefined) {
-    return cached;
+// 相册内容变化由新的 AlbumGroup 对象触发刷新，内部图片格继续按 memberId +
+// fileId 配对，避免重新出现图片、视频和文字错位。
+function rowIdentity(g: AlbumGroup): string {
+  if (g.head.albumId !== '' && g.photoPaths.length > 0) {
+    const newestRowId: number = g.rowMemberIds[g.rowMemberIds.length - 1];
+    return `album_${g.head.albumId}_${newestRowId}`;
   }
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
-  }
-  const fingerprint: string = h.toString(36);
-  if (contentFingerprintCache.size >= CONTENT_FINGERPRINT_CACHE_LIMIT) {
-    contentFingerprintCache.clear();
-  }
-  contentFingerprintCache.set(s, fingerprint);
-  return fingerprint;
+  return `message_${g.head.rowId}`;
 }
 
-// 行身份：和行 key 的前半段同源（rowId + rowMemberIds）。
-//
-// rowId / rowMemberIds 而不是 id / memberIds：发送成功时 TDLib 把临时 id 换成
-// 真实 id，用 id 拼身份会让那一行被当成新行销毁重建。
-function rowIdentity(g: AlbumGroup): string {
-  return `${g.head.rowId}_${g.rowMemberIds.join('_')}`;
+export function repeatRowKey(
+  group: AlbumGroup, langEpoch: number, rebuildEpoch: number
+): string {
+  return `message_group_${rowIdentity(group)}_${langEpoch}_${rebuildEpoch}`;
 }
 
 // 失败标记变了就不是同一份快照——哪怕行 key 一个字都没变。

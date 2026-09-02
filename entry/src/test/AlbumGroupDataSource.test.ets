@@ -5,9 +5,8 @@ import { UserStore } from '../main/ets/store/UserStore';
 import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store/MessageEntry';
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
-  AlbumGroupDataSource, clampPrefetchRange, contentFingerprint,
-  appendBreaksAnchor, PrefetchRange, prependBreaksAnchor, reuseUnchangedRows, sameRenderSnapshot,
-  sameRowArray
+  AlbumGroupDataSource, clampPrefetchRange, appendBreaksAnchor, PrefetchRange,
+  prependBreaksAnchor, repeatRowKey, reuseUnchangedRows, sameRenderSnapshot, sameRowArray
 } from '../main/ets/pages/chat/AlbumGroupDataSource';
 import { stageInitialMessageGroups } from '../main/ets/util/initialMessageStage';
 
@@ -67,13 +66,12 @@ function groupsOf(idsAndDates: number[][], users: UserStore): AlbumGroup[] {
 
 export default function albumGroupDataSourceTest() {
   describe('AlbumGroupDataSource', () => {
-    it('content_fingerprint_is_stable_and_short', 0, () => {
-      const a: string = contentFingerprint('hello world');
-      const b: string = contentFingerprint('hello world');
-      const c: string = contentFingerprint('hello worlds');
-      expect(a).assertEqual(b);
-      expect(a === c).assertFalse();
-      expect(a.length < 8).assertTrue();
+    it('repeat_row_key_tracks_identity_not_mutable_content', 0, () => {
+      const users = usersOf();
+      const before: AlbumGroup = groupsOf([[10, 100]], users)[0];
+      const edited: AlbumGroup = collapseAlbums([entry(10, 100, users, 'edited')])[0];
+      expect(repeatRowKey(before, 2, 3)).assertEqual(repeatRowKey(edited, 2, 3));
+      expect(repeatRowKey(before, 2, 3) === repeatRowKey(edited, 3, 3)).assertFalse();
     });
 
     it('same_render_snapshot_ignores_nothing_that_renders', 0, () => {

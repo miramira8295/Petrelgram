@@ -60,8 +60,8 @@ import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { actionMenuRow } from './ActionMenuRow';
 import {
-  AlbumGroupDataSource, appendBreaksAnchor, clampPrefetchRange, contentFingerprint,
-  PrefetchRange, reuseUnchangedRows, sameRowArray
+  AlbumGroupDataSource, appendBreaksAnchor, clampPrefetchRange, PrefetchRange,
+  repeatRowKey, reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
 import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
 // UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
@@ -101,7 +101,7 @@ import { stackFromEndWanted } from '../../util/stackFromEnd';
 import {
   ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_RETRY_MS, AnchorRectSnapshot, AnchorRestorePlan,
   anchorYAfterUserScroll, canApplyAnchorRestore,
-  shouldCapturePrependAnchor, shouldRetryAnchorRestore,
+  shouldCapturePrependAnchor, shouldPrimePrependAnchor, shouldRetryAnchorRestore,
   INVALID_ANCHOR_RECT, planAnchorRestore
 } from '../../util/anchorRestore';
 import {
@@ -480,23 +480,12 @@ export struct ChatPage {
   // 两个调用点：语言纪元变化、从后台回来的重新对齐。见 rebuildAllRows()。
   private listRebuildEpoch: number = 0;
 
-  // The ONE definition of a message row's LazyForEach key. Both the key
-  // generator below and the data source's operations go through this: the data
-  // source names the keys its ADD/CHANGE operations affect instead of leaving
-  // the framework to re-derive them, and two spellings of the format would put
-  // the two tables out of step with nothing to catch it.
-  //
-  // The content fingerprint is the load-bearing part: LazyForEach reuse is
-  // key-driven (reload's contract is "key unchanged -> original component
-  // reused"), so a key that doesn't change with the content resurrects stale
-  // nodes on every reload — see contentFingerprint. langEpoch is in the key so
-  // a language switch rebuilds every row exactly once; the alternative — a
-  // @StorageProp on MessageBubble — registers an AppStorage observer per ROW,
-  // paid on every mount and every scroll recycle, to serve something that
-  // changes once in a session.
+  // Repeat key identifies the logical row, not its current contents. Repeat
+  // refreshes a stable-key node when its item object changes; using content or
+  // album members here deletes the visible boundary row when an older page
+  // completes an album, which makes List lose its position anchor.
   private rowKeyOf: (g: AlbumGroup) => string = (g: AlbumGroup): string =>
-    `message_group_${g.head.rowId}_${g.rowMemberIds.join('_')}` +
-    `_${contentFingerprint(g.key)}_${this.langEpoch}_${this.listRebuildEpoch}`;
+    repeatRowKey(g, this.langEpoch, this.listRebuildEpoch);
 
   // Whether this page is currently visible (between onPageShow and onPageHide),
   // and whether the list dataset changed while it was not.
@@ -2578,6 +2567,7 @@ export struct ChatPage {
       let prependAnchorId: number = 0;
       let prependAnchorY: number = 0;
       let prependAnchorUserOffset: number = 0;
+      let primePrependAnchor: boolean = false;
       const olderPageGrowth: boolean = notifyKind === 'older' && list.length > this.messages.length;
       if (shouldCapturePrependAnchor({
         didInitialScroll: this.didInitialScroll,
@@ -2593,10 +2583,12 @@ export struct ChatPage {
             prependAnchorId = this.groups[visibleIndex].head.id;
             prependAnchorY = y;
             prependAnchorUserOffset = this.userScrollOffsetTotal;
+            primePrependAnchor = shouldPrimePrependAnchor(
+              visibleIndex, y, this.headerChromeHeight(), this.timelineScrollActive);
             this.captureAnchorOffset();
             logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
               ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
-              ` messages=${this.messages.length}->${list.length}`);
+              ` messages=${this.messages.length}->${list.length} prime=${primePrependAnchor}`);
           } else {
             logW(`[PrependAnchor] skip reason=measure idx=${visibleIndex}` +
               ` rows=${this.groups.length}->${groups.length}` +
@@ -2711,7 +2703,8 @@ export struct ChatPage {
       // 跳转/贴底这些更强的定位意图会把它作废。
       if (prependAnchorId > 0) {
         this.restorePrependAnchor(
-          this.groups, prependAnchorId, prependAnchorY, prependAnchorUserOffset);
+          this.groups, prependAnchorId, prependAnchorY, prependAnchorUserOffset,
+          primePrependAnchor);
       } else if (appendAnchorId > 0) {
         // 复位走的是和向上那侧同一个 restoreScrollAnchor：setTimeout(0) + 代次
         // 守卫，跳转/贴底这些更强的定位意图会把它作废。
@@ -4473,13 +4466,13 @@ export struct ChatPage {
   // loaded rows should only appear as they continue scrolling upward.
   private restorePrependAnchor(
     groups: AlbumGroup[], messageId: number, itemY: number,
-    userOffsetAtCapture: number = Number.NaN
+    userOffsetAtCapture: number = Number.NaN, primeBeforeLayout: boolean = false
   ): void {
     const targetIndex: number = groupIndexOf(groups, messageId);
     if (targetIndex < 0) {
       return;
     }
-    this.restoreScrollAnchor(targetIndex, itemY, userOffsetAtCapture);
+    this.restoreScrollAnchor(targetIndex, itemY, userOffsetAtCapture, primeBeforeLayout);
   }
 
   // A newer page is appended after the current window. The list is
@@ -4579,11 +4572,22 @@ export struct ChatPage {
   // 不依赖测量的定位——依据见 attemptAnchorRestore 里那段真机 A/B 数据。
   private restoreScrollAnchor(
     targetIndex: number, itemY: number,
-    userOffsetAtCapture: number = Number.NaN
+    userOffsetAtCapture: number = Number.NaN, primeBeforeLayout: boolean = false
   ): void {
     const capturedUserOffset: number = Number.isNaN(userOffsetAtCapture)
       ? this.userScrollOffsetTotal : userOffsetAtCapture;
     const seq: number = ++this.prependRestoreSeq;
+    if (primeBeforeLayout) {
+      const extra: number = -itemY + this.headerChromeHeight();
+      logW(`[AnchorRestore] prime idx=${targetIndex} y=${Math.round(itemY)}` +
+        ` extraOffset=${Math.round(extra)}`);
+      try {
+        this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START,
+          { extraOffset: LengthMetrics.vp(extra) });
+      } catch (e) {
+        logE(`ChatPage.primeAnchor failed: ${e}`);
+      }
+    }
     this.attemptAnchorRestore(seq, targetIndex, itemY, capturedUserOffset, 0);
   }
 

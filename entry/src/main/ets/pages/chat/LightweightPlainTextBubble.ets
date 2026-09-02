@@ -825,35 +825,22 @@ export struct LightweightPlainTextBubble {
   @Builder
   unreadDivider() {
     Row() {
-      if (this.dividerIsResume) {
-        Row() {
-          Text($r('app.string.mb_last_viewed_position'))
-            .fontSize(12)
-            .fontColor(COLOR_TEXT_SECONDARY)
-            .fontWeight(FontWeight.Medium);
-        }
+      Divider()
         .layoutWeight(1)
-        .height(22)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor($r('app.color.system_pill'))
-        .borderRadius(8);
-      } else {
-        Divider()
-          .layoutWeight(1)
-          .strokeWidth(1)
-          .color(COLOR_TEXT_SECONDARY)
-          .opacity(0.55);
-        Text($r('app.string.mb_unread'))
-          .fontSize(13)
-          .fontColor(this.accent())
-          .fontWeight(FontWeight.Medium)
-          .margin({ left: 10, right: 10 });
-        Divider()
-          .layoutWeight(1)
-          .strokeWidth(1)
-          .color(COLOR_TEXT_SECONDARY)
-          .opacity(0.55);
-      }
+        .strokeWidth(1)
+        .color(COLOR_TEXT_SECONDARY)
+        .opacity(0.55);
+      Text(this.dividerIsResume
+        ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
+        .fontSize(13)
+        .fontColor(this.accent())
+        .fontWeight(FontWeight.Medium)
+        .margin({ left: 10, right: 10 });
+      Divider()
+        .layoutWeight(1)
+        .strokeWidth(1)
+        .color(COLOR_TEXT_SECONDARY)
+        .opacity(0.55);
     }
     .width('100%')
     .height(26)

@@ -4,6 +4,9 @@ import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store/MessageEntry';
 import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
+import {
+  repeatRowKey, reuseUnchangedRows
+} from '../main/ets/pages/chat/AlbumGroupDataSource';
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void = (): void => {};
@@ -247,6 +250,51 @@ export default function collapseAlbumsKeyTest() {
       const b2: MessageEntry = cloneMessage(b);
       a2.id = 111; b2.id = 112;    // rowId 保持 11 / 12
       expect(collapseAlbums([a2, b2])[0].key === collapseAlbums([a, b])[0].key).assertFalse();
+    });
+
+    it('历史分页补全相册：外层行身份稳定，内容对象和内部成员必须刷新', 0, () => {
+      const u = usersOf();
+      const first: MessageEntry = media(11, 'cross-page', 201, '/data/a.jpg', u);
+      first.text = 'caption from older page';
+      const second: MessageEntry = media(12, 'cross-page', 202, '/data/b.jpg', u);
+      const partial: AlbumGroup = collapseAlbums([second])[0];
+      const complete: AlbumGroup = collapseAlbums([first, second])[0];
+
+      // List 仍能用同一个 key 保住位置；新 item 会让 Repeat 刷新气泡。
+      expect(repeatRowKey(partial, 0, 0)).assertEqual(repeatRowKey(complete, 0, 0));
+      expect(partial.key === complete.key).assertFalse();
+      const merged: AlbumGroup[] = reuseUnchangedRows([partial], [complete]);
+      expect(merged[0] === complete).assertTrue();
+      expect(merged[0].memberIds.join(',')).assertEqual('11,12');
+      expect(merged[0].caption).assertEqual('caption from older page');
+    });
+
+    it('同一 albumId 被拆成两段时 Repeat key 仍唯一', 0, () => {
+      const u = usersOf();
+      const separator: MessageEntry = baseEntry(12, u);
+      separator.text = 'separator';
+      const groups: AlbumGroup[] = collapseAlbums([
+        media(11, 'split-album', 201, '/data/a.jpg', u),
+        separator,
+        media(13, 'split-album', 203, '/data/c.jpg', u)
+      ]);
+
+      expect(groups.length).assertEqual(3);
+      expect(repeatRowKey(groups[0], 0, 0) === repeatRowKey(groups[2], 0, 0)).assertFalse();
+    });
+
+    it('非图片视频媒体组不能共用 albumId 作 Repeat key', 0, () => {
+      const u = usersOf();
+      const first: MessageEntry = baseEntry(21, u);
+      first.contentType = 'document';
+      first.albumId = 'document-album';
+      const second: MessageEntry = baseEntry(22, u);
+      second.contentType = 'document';
+      second.albumId = 'document-album';
+      const groups: AlbumGroup[] = collapseAlbums([first, second]);
+
+      expect(groups.length).assertEqual(2);
+      expect(repeatRowKey(groups[0], 0, 0) === repeatRowKey(groups[1], 0, 0)).assertFalse();
     });
   });
 }
