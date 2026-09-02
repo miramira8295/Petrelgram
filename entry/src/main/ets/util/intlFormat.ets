@@ -28,6 +28,8 @@ let weekdayFmt: Intl.DateTimeFormat | null = null;
 let monthDayFmt: Intl.DateTimeFormat | null = null;
 let fullDateFmt: Intl.DateTimeFormat | null = null;
 let monthDayTimeFmt: Intl.DateTimeFormat | null = null;
+const decimalFmts: Map<number, Intl.NumberFormat> = new Map<number, Intl.NumberFormat>();
+const decimalUpToFmts: Map<number, Intl.NumberFormat> = new Map<number, Intl.NumberFormat>();
 let fullDateTimeFmt: Intl.DateTimeFormat | null = null;
 
 // Message bubbles render the same clock string over and over: a timestamp is
@@ -162,6 +164,8 @@ export function refreshLocale(): void {
   weekdayCache.clear();
   monthDayCache.clear();
   fullDateCache.clear();
+  decimalFmts.clear();
+  decimalUpToFmts.clear();
 }
 
 // Test seams: force a locale and a clock without a running platform.
@@ -312,24 +316,40 @@ export function fullDateTime(d: Date): string {
 // reliably present in every ICU build's unit data, and CLDR's own short forms
 // ("532 byte") read worse than the symbols the app already uses. What Intl is
 // genuinely needed for here is the decimal separator — "1,2 MB" in German.
+//
+// 格式器按小数位数缓存：new Intl.NumberFormat 是走 NAPI 的重构造，录制
+// 20260902T171952 里每行 rebind 格式化文件大小把它烧到 350ms/19s（相册频道
+// 每个视频格一次）。小数位实际只有 0/1/2 三档，键控缓存后构造只发生一次。
+
 export function decimal(value: number, fractionDigits: number): string {
   try {
-    const opts: Intl.NumberFormatOptions = {
-      minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits
-    };
-    return new Intl.NumberFormat(currentLocale(), opts).format(value);
+    let fmt: Intl.NumberFormat | undefined = decimalFmts.get(fractionDigits);
+    if (fmt === undefined) {
+      const opts: Intl.NumberFormatOptions = {
+        minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits
+      };
+      fmt = new Intl.NumberFormat(currentLocale(), opts);
+      decimalFmts.set(fractionDigits, fmt);
+    }
+    return fmt.format(value);
   } catch (e) {
     return value.toFixed(fractionDigits);
   }
 }
 
 // Trailing zeros dropped rather than padded — "1.5 TON", not "1.500 TON".
+
 export function decimalUpTo(value: number, maxFractionDigits: number): string {
   try {
-    const opts: Intl.NumberFormatOptions = {
-      minimumFractionDigits: 0, maximumFractionDigits: maxFractionDigits
-    };
-    return new Intl.NumberFormat(currentLocale(), opts).format(value);
+    let fmt: Intl.NumberFormat | undefined = decimalUpToFmts.get(maxFractionDigits);
+    if (fmt === undefined) {
+      const opts: Intl.NumberFormatOptions = {
+        minimumFractionDigits: 0, maximumFractionDigits: maxFractionDigits
+      };
+      fmt = new Intl.NumberFormat(currentLocale(), opts);
+      decimalUpToFmts.set(maxFractionDigits, fmt);
+    }
+    return fmt.format(value);
   } catch (e) {
     return value.toFixed(maxFractionDigits).replace(/\.?0+$/, '');
   }

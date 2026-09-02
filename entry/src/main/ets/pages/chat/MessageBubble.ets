@@ -1124,6 +1124,24 @@ export struct MessageBubble {
     return Math.min(ALBUM_MAX_WIDTH, this.inlineMaxW());
   }
 
+  // 相册网格打包的实例级记忆：build 每次重跑（rebind/任意状态变化）都会
+  // 重算 packAlbumRows + 整表行键（cpuprofile 20260902T171952：相册频道里
+  // 这一族 ~178ms/19s）。ratios 是 @Param——换行/媒体更新必换引用，引用 +
+  // 宽度做键即可；无装饰器成员复用时不重置，靠键判失效。
+  private packedAlbumRatios: number[] | null = null;
+  private packedAlbumWidth: number = 0;
+  private packedAlbumRowsCache: AlbumCell[][] = [];
+
+  private albumRows(): AlbumCell[][] {
+    const width: number = this.albumW();
+    if (this.packedAlbumRatios !== this.albumRatios || this.packedAlbumWidth !== width) {
+      this.packedAlbumRowsCache = packAlbumRows(this.albumRatios, width);
+      this.packedAlbumRatios = this.albumRatios;
+      this.packedAlbumWidth = width;
+    }
+    return this.packedAlbumRowsCache;
+  }
+
   // Per-sender name color: the sender's Telegram accent color when known,
   // otherwise the avatar hash palette so name and avatar stay visually tied.
   private senderColor(): ResourceColor {
@@ -2080,7 +2098,7 @@ export struct MessageBubble {
   @Builder
   albumGrid() {
     Column({ space: 2 }) {
-      ForEach(packAlbumRows(this.albumRatios, this.albumW()), (row: AlbumCell[], rowIdx: number) => {
+      ForEach(this.albumRows(), (row: AlbumCell[], rowIdx: number) => {
         Row({ space: 2 }) {
           ForEach(row, (cell: AlbumCell) => {
             if (this.albumIsVideoAt(cell.idx)) {
