@@ -109,48 +109,31 @@ const EMPTY_ACTIONS: LightweightPlainTextActions = {
 
 // The avatar remains independently subscribed so an asynchronous avatar path
 // refreshes only this 38vp node, not the whole lightweight row.
-@Component
+//
+// P4 批 1：迁 @ComponentV2。判读依据（批 0.5，1370 个真机复用样本）：
+// aboutToRecycle/aboutToReuse 都触发；aboutToReuse 时 @Param 已是新值、
+// @Local 已重置——所以重挂订阅在 aboutToReuse 里**同步**做，V1 时代的
+// nextFrameQueue 延帧兜底、reuseParam 读参、按 recycledKey 保留 path
+// （issue #137 的修法）整套都不再需要：同步重播种的窗口是零帧，比"保留旧
+// 值等下一帧纠正"更不闪。收益本体：@Param 引用语义替掉 @Prop 深拷贝。
+// （原 struct 里的 appearanceEpoch/accent() 是死代码，build 从未引用，随迁移清掉。）
+@ComponentV2
 struct LightweightSenderAvatar {
-  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
-
-  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
-  private accent(): ResourceColor {
-    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
-  }
-
-  // @Watch（审计设计约束「订阅按 key 自愈」）：头像订阅的 key 就是 senderId。
-  // aboutToReuse 的 params 未必带得到新值，而父级 ReusableMessageBubble
-  // **已经是** @ReusableV2（P3 批 1），它的 aboutToReuse 没有入参。挂 @Watch
-  // 之后，senderId 只要
-  // **变了**，@Prop 无论何时落地订阅都会按新 key 自己纠正，不必依赖 params。
-  //
-  // **但它替代不了 aboutToReuse 里的 setTimeout 兜底，别删那条（I-3）。**
-  // @Watch 只在值**变化**时触发：同一个发送者连发几条时 senderId 不变，
-  // watch 根本不跑，而 aboutToRecycle 已经清了 path、退了订阅、把
-  // attachedKey 归零。那时 setTimeout 是唯一的复活路径，删掉会永久空白。
-  @Prop @Watch('onSenderChanged') senderId: number = 0;
-  @Prop @Watch('onSenderChanged') senderIsUser: boolean = true;
-  @Prop initialPath: string = '';
-  @Prop initials: string = '?';
-  @State private path: string = '';
+  @Param senderId: number = 0;
+  @Param senderIsUser: boolean = true;
+  @Param initialPath: string = '';
+  @Param initials: string = '?';
+  @Local path: string = '';
+  // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
   private unsub: (() => void) | null = null;
-
-  // 订阅当前挂在哪个发送者 key 上：既用于同 key 短路（审计 P1-1，一次复用会
-  // 经 aboutToReuse 和 @Watch 各挂一次），也让「订阅挂在哪」变成可判定的事实。
   private attachedKey: string = '';
-  // 回收时挂在哪个发送者上。复用时若还是同一个人，path 原样保留（issue #137）。
   private recycledKey: string = '';
-  // 见 util/nextFrameQueue：复用路径上的 setTimeout(0) 合并成一帧一个，这是本
-  // 实例在那个队列里的序号。无装饰器成员在复用时不重置，序号因此在整个实例生命
-  // 周期里稳定——后一次复用排的回调才盖得掉前一次的。
-  private frameOwnerId: number = nextFrameOwnerId();
 
   private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
     const known: string = senderAvatarFor(key);
     if (this.unsub !== null && this.attachedKey === key) {
-      // 同 key 短路：订阅不动，但 path 要重新播种——P0-2 让 aboutToRecycle /
-      // aboutToReuse 无条件清空了它，不补种会空一帧头像。
+      // 同 key 短路：订阅不动，只重新播种（@Local 复用时被框架清空）。
       this.path = known !== '' ? known : initialPath;
       return;
     }
@@ -160,12 +143,13 @@ struct LightweightSenderAvatar {
     this.unsub = subscribeSenderAvatar(key, (path: string): void => { this.path = path; });
   }
 
-  // 按 key 自愈：@Prop 落地时若发送者换了，把订阅重挂到新 key 上。
-  // 第三个参数刻意传 ''，不传 this.initialPath（I-2）：@Prop 逐个赋值，
-  // senderId 的 watch 回调触发时 this.initialPath 可能还是上一个发送者的路径，
-  // 而 attach 里「通道没缓存就用 initialPath」会在新面孔滚入时画出上一个人的
-  // 头像——就是这轮要修的「头像串行」换了条路径。传 '' 最差是先显示首字母。
-  private onSenderChanged(): void {
+  // 非复用路径上同一实例真的换了发送者时兜底重挂。复用路径靠 aboutToReuse
+  // ——批 0.5 实测 @Monitor 在复用期完全静默（453 次换行复用 0 触发），
+  // 这里永远替代不了 aboutToReuse 里的无条件重挂。
+  // 第三个参数传 ''：@Param 逐个落地，senderId 变化时 initialPath 可能还是
+  // 上一行的（I-2 的串行头像坑在非复用路径依旧成立），最差先显示首字母。
+  @Monitor('senderId', 'senderIsUser')
+  onSenderChanged(): void {
     this.attach(this.senderId, this.senderIsUser, '');
   }
 
@@ -180,58 +164,23 @@ struct LightweightSenderAvatar {
   aboutToAppear(): void { this.attach(this.senderId, this.senderIsUser, this.initialPath); }
   aboutToDisappear(): void {
     this.detach();
-    // 见 util/nextFrameQueue：撤掉本实例还没跑的那条过期回调。
-    cancelNextFrame(this.frameOwnerId);
   }
   aboutToRecycle(): void {
-    // 记下回收时挂在谁身上，detach 会把 attachedKey 归零。
+    // 记下回收时挂在谁身上——只为探针对账；detach 会把 attachedKey 归零。
     this.recycledKey = this.attachedKey;
     this.detach();
-    // path 不在这里清：见 MessageBubble.LiveSenderAvatar 同一处（issue #137）——
-    // 无条件清空让每次复用都必空一帧，翻消息时头像一闪一闪。复用时按 key 比对，
-    // 换了人才清。
-    // 躺进复用池期间别让上一次复用排的回调再把订阅挂回来——那时已经退订，
-    // 没人会再去退它。下一次 aboutToReuse 会重新排队，所以没有丢失。
-    cancelNextFrame(this.frameOwnerId);
   }
-  aboutToReuse(params: Record<string, Object>): void {
-    // reuseParam：params 是 {} 还是 undefined 都安全，取不到就落到 else 的
-    // setTimeout 兜底（P3 批 2 第 0 项，见 util/reuseParams.ets）。
-    const senderId: number | undefined = reuseParam(params, 'senderId') as number | undefined;
-    const senderIsUser: boolean | undefined =
-      reuseParam(params, 'senderIsUser') as boolean | undefined;
-    const initialPath: string | undefined =
-      reuseParam(params, 'initialPath') as string | undefined;
-    // 换了人才清 path（issue #137），理由见 MessageBubble.LiveSenderAvatar。
-    const nextKey: string = senderChannelKey(senderId ?? this.senderId, senderIsUser ?? this.senderIsUser);
-    const keptPath: boolean = nextKey === this.recycledKey;
-    if (!keptPath) {
-      this.path = '';
-    }
-    // ⚠️ 临时探针：头像那条修法本身不打日志，用户报「还是闪」时无从判断
-    // 是它还是视口位移。判读与删除清单见 util/avatarReuseProbe。
-    probeAvatarReuse('plain', this.recycledKey, nextKey, keptPath, senderId !== undefined);
+  aboutToReuse(): void {
+    // @Param 已是新值（批 0.5 判读 Q1b），直接同步重挂+重播种。initialPath
+    // 也是新行的值，V1 时代"watch 里不敢用 initialPath"的 I-2 坑在这条路
+    // 不存在。
+    const nextKey: string = senderChannelKey(this.senderId, this.senderIsUser);
+    // ⚠️ 临时探针（判读与删除清单见 util/avatarReuseProbe）：语义微调——
+    // kept 现在表示"通道在复用当口就有现成路径"（同步播种零闪的判据）。
+    probeAvatarReuse('plain', this.recycledKey, nextKey,
+      senderAvatarFor(nextKey) !== '', true);
     this.recycledKey = '';
-    if (senderId !== undefined && senderIsUser !== undefined) {
-      this.attach(senderId, senderIsUser, initialPath ?? '');
-    } else {
-      // **实测（2026-08-26 真机，820 个复用样本，P2-1 探针，已下架）**：params
-      // 恒带全 senderId/senderIsUser，present=0 一次都没出现，params 与此刻的
-      // @Prop 也从未不一致——这条分支在当前调用图下**不可达**。
-      // **推导（不是实测）**：仍然不能删（I-3）。@Watch 只在值变化时触发，连续
-      // 两条同一发送者的消息 senderId 不变 → onSenderChanged 不跑；而
-      // aboutToRecycle 已经清了 path、退了订阅、把 attachedKey 归零，那时这里是
-      // 唯一复活路径，删掉会得到永久空白头像。父级**已经是** @ReusableV2
-      // （P3 批 1），aboutToReuse 没有入参，这条**已经是**唯一分支。
-      //
-      // 官方没写清 @ReusableV2 递归调用 V1 子组件的 aboutToReuse 时，params
-      // 传的是 {} 还是 undefined。P3 批 2 第 0 项改用 reuseParam 读，两种都不抛，
-      // 都落到这条兜底。见 MessageBubble 同一处。
-      // 合并进共享队列，语义不变（见 util/nextFrameQueue）。
-      enqueueNextFrame(this.frameOwnerId, (): void => {
-        this.attach(this.senderId, this.senderIsUser, this.initialPath);
-      });
-    }
+    this.attach(this.senderId, this.senderIsUser, this.initialPath);
   }
 
   build() {
