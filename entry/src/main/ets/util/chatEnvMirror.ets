@@ -32,6 +32,13 @@ export class ChatEnvMirror {
   @Trace animatedEmoji: boolean = true;
   @Trace emojiReactions: boolean = true;
   @Trace gestureScheme: string = '';
+  // —— P4 批 3a 扩容（MessageBubble 迁移的读者预备）——
+  @Trace emojiChat: boolean = true;
+  @Trace stickers: boolean = true;
+  @Trace stickerAutoplay: boolean = true;
+  @Trace autoplayGif: boolean = true;
+  @Trace appIsForeground: boolean = true;
+  @Trace linkNavBusy: string = '';
 }
 
 export const chatEnv: ChatEnvMirror = new ChatEnvMirror();
@@ -42,7 +49,9 @@ const MIRRORED_KEYS: string[] = [
   'chatContentWidthVp', 'keyboardHeightVp', 'screenWidthVp', 'screenHeightVp',
   'msgTextSize', 'bubbleRadius', 'reduceAnimations', 'powerSavingActive',
   'powerChatEffects', 'powerEffectMessage', 'powerEffectReaction',
-  'powerAnimatedEmoji', 'powerEmojiReactions', 'msgGestureScheme'
+  'powerAnimatedEmoji', 'powerEmojiReactions', 'msgGestureScheme',
+  'powerEmojiChat', 'powerAnimatedStickers', 'powerStickerAutoplay',
+  'powerAutoplayGif', 'appIsForeground', 'linkNavBusyUrl'
 ];
 
 export function mirroredChatEnvKeys(): string[] {
@@ -71,6 +80,12 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
     case 'powerAnimatedEmoji': chatEnv.animatedEmoji = value as boolean; break;
     case 'powerEmojiReactions': chatEnv.emojiReactions = value as boolean; break;
     case 'msgGestureScheme': chatEnv.gestureScheme = value as string; break;
+    case 'powerEmojiChat': chatEnv.emojiChat = value as boolean; break;
+    case 'powerAnimatedStickers': chatEnv.stickers = value as boolean; break;
+    case 'powerStickerAutoplay': chatEnv.stickerAutoplay = value as boolean; break;
+    case 'powerAutoplayGif': chatEnv.autoplayGif = value as boolean; break;
+    case 'appIsForeground': chatEnv.appIsForeground = value as boolean; break;
+    case 'linkNavBusyUrl': chatEnv.linkNavBusy = value as string; break;
     default: break;
   }
 }

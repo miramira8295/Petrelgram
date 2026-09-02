@@ -78,6 +78,7 @@ export default class EntryAbility extends UIAbility {
     // reaches Ready (the UI/router aren't up yet here).
     this.stashDeepLink(want);
     AppStorage.setOrCreate('appIsForeground', false);
+    mirrorChatEnvKey('appIsForeground', false);
     AppStorage.setOrCreate('appForegroundEpoch', 0);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
@@ -336,6 +337,7 @@ export default class EntryAbility extends UIAbility {
     refreshPowerSavingState();
     refreshNetworkState(true);
     AppStorage.setOrCreate('appIsForeground', true);
+    mirrorChatEnvKey('appIsForeground', true);
     // 回前台：释放短时任务配额（下次切后台再申请）。
     backgroundGraceTask.end();
     AppStorage.setOrCreate('appForegroundEpoch', Date.now());
@@ -355,6 +357,7 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // Ability has back to background
     AppStorage.setOrCreate('appIsForeground', false);
+    mirrorChatEnvKey('appIsForeground', false);
     setTdOnlineState(false);
     // 申请短时任务：切后台后多存活几分钟，这段时间内新消息仍能实时收到并通知。
     backgroundGraceTask.begin();

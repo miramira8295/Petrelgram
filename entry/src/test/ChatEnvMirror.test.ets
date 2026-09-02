@@ -5,8 +5,11 @@ import {
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_REDUCE_ANIM, KEY_POWER_ACTIVE,
   KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MESSAGE, KEY_POWER_EFFECT_REACTION,
-  KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, KEY_MSG_GESTURE
+  KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, KEY_MSG_GESTURE,
+  KEY_POWER_EMOJI_CHAT, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY,
+  KEY_POWER_AUTOPLAY_GIF
 } from '../main/ets/store/AppSettings';
+import { LINK_NAV_BUSY_KEY } from '../main/ets/util/linkTapGuard';
 import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../main/ets/util/appearance';
 import { LANGUAGE_EPOCH } from '../main/ets/util/appLanguage';
 import { MATERIAL_EPOCH } from '../main/ets/util/overlayMaterial';
@@ -21,7 +24,9 @@ export default function chatEnvMirrorTest() {
         CHAT_CONTENT_WIDTH_KEY, 'keyboardHeightVp', 'screenWidthVp', 'screenHeightVp',
         KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_REDUCE_ANIM, KEY_POWER_ACTIVE,
         KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MESSAGE, KEY_POWER_EFFECT_REACTION,
-        KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, KEY_MSG_GESTURE
+        KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, KEY_MSG_GESTURE,
+        KEY_POWER_EMOJI_CHAT, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY,
+        KEY_POWER_AUTOPLAY_GIF, 'appIsForeground', LINK_NAV_BUSY_KEY
       ];
       expect(keys.length).assertEqual(constants.length);
       for (const constant of constants) {

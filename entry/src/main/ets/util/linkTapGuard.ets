@@ -1,3 +1,4 @@
+import { mirrorChatEnvKey } from './chatEnvMirror';
 // 消息里的 t.me 链接点下去之后要往返一次服务器（getMessageLinkInfo /
 // searchPublicChat / getInternalLinkType）才知道该开哪一页。网络一慢，
 // 用户看不到任何反馈，自然会再点——于是同一个群被开出好几层。
@@ -52,6 +53,7 @@ export const LINK_NAV_BUSY_KEY: string = 'linkNavBusyUrl';
 
 function publish(): void {
   AppStorage.setOrCreate(LINK_NAV_BUSY_KEY, gate.busyUrl());
+  mirrorChatEnvKey(LINK_NAV_BUSY_KEY, gate.busyUrl());
 }
 
 export function beginLinkNav(url: string): boolean {
