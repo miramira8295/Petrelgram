@@ -73,10 +73,7 @@ import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGe
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
 import { isLivePhotoVideo } from '../../util/livePhoto';
-// ⚠️ 临时探针，验完即删——见 util/avatarReuseProbe 的删除清单。
-import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
-import { probeHit } from '../../util/panelProbe';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -203,7 +200,6 @@ struct LiveSenderAvatar {
   // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
   private unsubAvatar: (() => void) | null = null;
   private attachedAvatarKey: string = '';
-  private recycledAvatarKey: string = '';
 
   private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
@@ -244,8 +240,6 @@ struct LiveSenderAvatar {
   }
 
   aboutToRecycle(): void {
-    // 记下回收时挂在谁身上——只为探针对账；detach 会把 attachedAvatarKey 归零。
-    this.recycledAvatarKey = this.attachedAvatarKey;
     this.detachAvatarChannel();
   }
 
@@ -254,12 +248,6 @@ struct LiveSenderAvatar {
     // 重播种即可。initialPath 也是新行的值，I-2 串头像坑在这条路不存在；
     // #137 的「按 key 保留 path」不再需要——同步重播种（通道现值或新行
     // initialPath）的窗口是零帧，比保留旧值更不闪。
-    const nextKey: string = senderChannelKey(this.senderId, this.senderIsUser);
-    // ⚠️ 临时探针（判读与删除清单见 util/avatarReuseProbe）：语义与批 2 对齐
-    // ——kept 表示"通道在复用当口就有现成路径"（同步播种零闪的判据）。
-    probeAvatarReuse('bubble', this.recycledAvatarKey, nextKey,
-      senderAvatarFor(nextKey) !== '', true);
-    this.recycledAvatarKey = '';
     this.attachAvatarChannel(this.senderId, this.senderIsUser, this.initialPath);
   }
 
@@ -682,11 +670,6 @@ export struct MessageBubble {
   }
 
   aboutToRecycle(): void {
-    // ⚠️ 临时计数（F-5 探针的 V2 续期）：V1 形态下 recycle/reuse 双涨已实测
-    // 确认（09-02 面板数据）；迁 @ComponentV2 后保留一轮，验证 V2 主体在
-    // @ReusableV2 壳下同样成立（批 2 的 plain 计数已证明同款）。判读后随
-    // avatarReuseProbe 删除清单一并摘除。
-    probeHit('msgBubble.recycle');
     this.detachMessageChannels();
     this.reportCompetingMediaGone();
     // 只剩无装饰器成员要手工清（@Local 由框架在下次复用前统一重置）。
@@ -694,7 +677,6 @@ export struct MessageBubble {
   }
 
   aboutToReuse(): void {
-    probeHit('msgBubble.reuse');
     // @Param 已是新值、@Local 已重置（批 0.5 判读，1370 样本）：全部同步做，
     // V1 时代的 reuseParam 读参、params 兜底分支、nextFrameQueue 延帧整套
     // 退役。三个测量宽度按标签文本播种（util/labelWidthMemory，声明处说明）。

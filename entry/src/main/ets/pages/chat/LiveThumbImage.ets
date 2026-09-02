@@ -1,16 +1,6 @@
 import { CachedImage } from '../common/CachedImage';
-import { logW } from '../../util/log';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { liveThumbPath } from '../../util/liveThumbPath';
-
-// [ThumbBlank] 探针（P4 批 4 语义更新）：原来那问「回调里的 fileId 是不是
-// 新值」已由批 0.5 判读（1370 样本）回答——@Param 在 aboutToReuse 时恒为新值，
-// 定时器已删。现在 kept 记「同步播种后有没有现成图」：kept=false 的条数 =
-// 真正要等解码/下载的空窗次数（固有代价），kept=true = 同步播种零闪。
-const REUSE_PROBE_LIMIT: number = 24;
-let reuseProbeLogged: number = 0;
-let reuseProbeSame: number = 0;
-let reuseProbeStale: number = 0;
 
 // 自己订阅、自己换图的缩略图。
 //
@@ -38,9 +28,6 @@ export struct LiveThumbImage {
   @Param fit: ImageFit = ImageFit.Cover;
   @BuilderParam placeholder: () => void;
   @Local private path: string = '';
-  // 回收时挂在哪个文件上。复用时若还是同一个文件，位图原样留着（issue #137 在
-  // 头像上的做法，这里是它漏掉的另一半）。-1 = 没有回收过；0 是合法值（无图）。
-  private recycledFileId: number = -1;
   private unsubThumb: (() => void) | null = null;
   // 订阅此刻挂在哪个文件上。两个用途：① 同 key 短路，让 attach 幂等；
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 到没到。
@@ -109,31 +96,15 @@ export struct LiveThumbImage {
   }
 
   aboutToRecycle(): void {
-    // 记下回收时挂在哪个文件上——只为 [ThumbBlank] 探针对账。
     // path 不清（翻页图片乱跳的根修之一）：@Local 由框架在下次复用前重置，
     // aboutToReuse 里同步播种，空窗只剩「通道确实没图」的固有情形。
-    this.recycledFileId = this.fileId;
     this.detach();
   }
 
   aboutToReuse(): void {
     // @Param 已是新值、@Local path 已被框架重置（批 0.5 判读）：同步重挂+
     // 播种。initialPath 也是新行的值，V1「不敢用 initialPath 兜底」的坑不在。
-    const hadRecycled: number = this.recycledFileId;
-    this.recycledFileId = -1;
     this.attach(this.fileId, this.initialPath);
-    // kept = 同步播种后有现成图（零空窗）；false = 要等下载/解码（固有代价）。
-    if (reuseProbeLogged < REUSE_PROBE_LIMIT) {
-      reuseProbeLogged++;
-      const kept: boolean = this.path !== '';
-      if (kept) {
-        reuseProbeSame++;
-      } else {
-        reuseProbeStale++;
-      }
-      logW(`[ThumbBlank] reuse file=${hadRecycled}->${this.fileId} kept=${kept}` +
-        ` params=true totals kept=${reuseProbeSame} cleared=${reuseProbeStale}`);
-    }
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ

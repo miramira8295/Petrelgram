@@ -37,8 +37,6 @@ import { probeHit } from '../../util/panelProbe';
 import { CachedImage } from '../common/CachedImage';
 import { SenderRoleTag } from './SenderRoleTag';
 import { logW } from '../../util/log';
-// ⚠️ 临时探针，验完即删——见 util/avatarReuseProbe 的删除清单。
-import { probeAvatarReuse } from '../../util/avatarReuseProbe';
 import { menuPreviewCompact } from '../../util/menuPreview';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
@@ -114,7 +112,6 @@ struct LightweightSenderAvatar {
   // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
   private unsub: (() => void) | null = null;
   private attachedKey: string = '';
-  private recycledKey: string = '';
 
   private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
@@ -149,32 +146,18 @@ struct LightweightSenderAvatar {
   }
 
   aboutToAppear(): void {
-    // ⚠️ 临时计数（随 avatarReuseProbe 一起删）：分辨第二层 V2 组件在父复用
-    // 时走的是「回调复用」还是「销毁重建」——[AvatarBlank] 零输出的归因。
-    probeHit('avatar.plain.mount');
     this.attach(this.senderId, this.senderIsUser, this.initialPath);
   }
   aboutToDisappear(): void {
-    probeHit('avatar.plain.unmount');
     this.detach();
   }
   aboutToRecycle(): void {
-    probeHit('avatar.plain.recycle');
-    // 记下回收时挂在谁身上——只为探针对账；detach 会把 attachedKey 归零。
-    this.recycledKey = this.attachedKey;
     this.detach();
   }
   aboutToReuse(): void {
-    probeHit('avatar.plain.reuse');
     // @Param 已是新值（批 0.5 判读 Q1b），直接同步重挂+重播种。initialPath
     // 也是新行的值，V1 时代"watch 里不敢用 initialPath"的 I-2 坑在这条路
     // 不存在。
-    const nextKey: string = senderChannelKey(this.senderId, this.senderIsUser);
-    // ⚠️ 临时探针（判读与删除清单见 util/avatarReuseProbe）：语义微调——
-    // kept 现在表示"通道在复用当口就有现成路径"（同步播种零闪的判据）。
-    probeAvatarReuse('plain', this.recycledKey, nextKey,
-      senderAvatarFor(nextKey) !== '', true);
-    this.recycledKey = '';
     this.attach(this.senderId, this.senderIsUser, this.initialPath);
   }
 
