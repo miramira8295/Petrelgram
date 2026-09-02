@@ -76,6 +76,19 @@ function deliver(obj: object): void {
 
 scope.onmessage = (e: MessageEvents): void => {
   const msg = e.data as TdWorkerCommand;
+  // td* 的 native 实现在 g_created 翻转窗口会抛 JS 异常（"tdSend before
+  // tdInit"/"tdInit called twice"——账号切换时 UI 线程 tdDestroy 与本线程
+  // 的消息处理存在竞争，napi_init.cpp 实测确认）。未捕获异常会杀死 worker
+  // 的消息循环，等于整条收包线路无声死亡——必须包住并回报。
+  try {
+    handleCommand(msg);
+  } catch (err) {
+    const failure: TdWorkerEvent = { kind: 'parse-error', head: `${msg.kind} failed: ${err}` };
+    postSafe(failure);
+  }
+};
+
+function handleCommand(msg: TdWorkerCommand): void {
   if (msg.kind === 'init') {
     // 账号切换会重发 init：清掉上一个运行时的积压。
     pendingCoalesced.clear();
@@ -95,4 +108,4 @@ scope.onmessage = (e: MessageEvents): void => {
   } else if (msg.kind === 'send') {
     testNapi.tdSend(msg.json ?? '');
   }
-};
+}
