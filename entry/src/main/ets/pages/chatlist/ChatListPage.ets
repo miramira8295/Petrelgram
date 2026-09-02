@@ -524,8 +524,10 @@ export struct ChatListPage {
     this.builtTabKeys.add(key);
     try {
       this.controller.preloadItems([index]).then((): void => {
-        // 另一侧邻居（如果也没建过）留给下一个空闲档，不连着吃两个 60ms。
-        this.scheduleTabPreload(TAB_PRELOAD_IDLE_MS);
+        // 另一侧邻居接力走快档：120ms 的间隔已保证两个 ~60ms 构建落在不同
+        // 帧里；原来留给 800ms 空闲档，另一侧长时间敞着——用户一个回头滑
+        // 就是首帧全量构建（录制里一帧测 3 棵树的另一半成因）。
+        this.scheduleTabPreload(TAB_PRELOAD_AFTER_SWITCH_MS);
       }).catch((e: Error): void => {
         // 失败就把账抹掉，下一个窗口还有机会重试。
         this.builtTabKeys.delete(key);
@@ -569,8 +571,10 @@ export struct ChatListPage {
         this.refreshUnread();
       }
       // 盖住期间被跳过的邻居预载（preloadNeighborTab 的 listRenderActive 闸）
-      // 在这里补排；邻居都建过时空转，只费一个定时器。
-      this.scheduleTabPreload(TAB_PRELOAD_IDLE_MS);
+      // 在这里补排。走快档不走空闲档：本定时器已经等完了 ~590ms 转场，再叠
+      // 800ms 就是 1.4s 无保护窗——Frame 录制 20260902T161959 里 206ms 的
+      // tab 甩动卡顿（一帧测 3 棵列表树）正发生在 onBackPress 后的这个窗口。
+      this.scheduleTabPreload(TAB_PRELOAD_AFTER_SWITCH_MS);
     }, CHAT_LIST_RETURN_SETTLE_MS);
   }
 
