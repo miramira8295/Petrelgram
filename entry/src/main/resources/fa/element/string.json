@@ -7373,6 +7373,10 @@
       "value": "کپی متن"
     },
     {
+      "name": "mb_select_text",
+      "value": "انتخاب متن"
+    },
+    {
       "name": "mb_translate",
       "value": "ترجمه"
     },

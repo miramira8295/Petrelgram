@@ -59,6 +59,7 @@ export interface MessageBubbleActions {
   onPollVoters: (messageId: number) => void;
   onSetDefaultReaction: (emoji: string) => void;
   onCopyText: (messageId: number) => void;
+  onSelectText: (messageId: number) => void;
   onCopyCode: (text: string) => void;
   onCopyLink: (messageId: number) => void;
   onForwardMessages: (messageIds: number[]) => void;
@@ -142,7 +143,8 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onPinMsg: (_id: number, _unpin: boolean): void => {},
   onStopPoll: (_id: number): void => {}, onReplaceMedia: (_id: number): void => {},
   onPollVoters: (_id: number): void => {}, onSetDefaultReaction: (_emoji: string): void => {},
-  onCopyText: (_id: number): void => {}, onCopyCode: (_text: string): void => {},
+  onCopyText: (_id: number): void => {}, onSelectText: (_id: number): void => {},
+  onCopyCode: (_text: string): void => {},
   onCopyLink: (_id: number): void => {}, onForwardMessages: (_ids: number[]): void => {},
   onSaveMessages: (_ids: number[]): void => {}, onRepeatMessages: (_ids: number[]): void => {},
   onViewSenderHistory: (_id: number): void => {}, onReportMsg: (_id: number): void => {},
@@ -378,6 +380,7 @@ export struct ReusableMessageBubble {
       onPollVoters: this.actions.onPollVoters,
       onSetDefaultReaction: this.actions.onSetDefaultReaction,
       onCopyText: this.actions.onCopyText,
+      onSelectText: this.actions.onSelectText,
       onCopyCode: this.actions.onCopyCode,
       onCopyLink: this.actions.onCopyLink,
       onForwardMsg: this.actions.onForwardMessages,

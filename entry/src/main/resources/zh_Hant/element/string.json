@@ -7373,6 +7373,10 @@
       "value": "複製文字"
     },
     {
+      "name": "mb_select_text",
+      "value": "選取文字"
+    },
+    {
       "name": "mb_translate",
       "value": "翻譯"
     },

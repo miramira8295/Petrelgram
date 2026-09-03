@@ -1,4 +1,5 @@
 import router from '@ohos.router';
+import { requestChatJump } from './chatJumpChannel';
 import { logE } from './log';
 import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
@@ -187,7 +188,13 @@ export function navigateToChat(
   // 这正是迁移前 findChatRouteIndex() 做的事（那时是 router.back(index)）。
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
   const decision: ChatPushDecision = decideChatPush(snap, target);
+  // **skip / popTo 这两条路不传参**：栈帧的 param 不会因为出栈而更新，已经挂在
+  // 树上的那个 ChatPage 不会重新吃一遍 pathInfo。所以 jumpTo 得走旁路交过去，
+  // 否则「资料页点媒体」「搜索到已打开会话里的消息」都只是回到那一页、停在
+  // 原来的位置（issue #80、#102）。push 那条不用管，它本来就把参数带进去了。
+  const jumpTo: number = numberField(params, 'jumpTo');
   if (decision.action === 'skip') {
+    requestChatJump(numberField(params, 'chatId'), jumpTo);
     return Promise.resolve();
   }
   if (decision.action === 'popTo') {
@@ -196,6 +203,8 @@ export function navigateToChat(
     for (let i = 0; i < decision.popCount; i++) {
       stack.pop(false);
     }
+    // 出栈之后再发：那一页这时才在眼前，滚动落点也才量得准。
+    requestChatJump(numberField(params, 'chatId'), jumpTo);
     return Promise.resolve();
   }
   // onNavBarStateChange(false) arrives after HdsNavigation has started the

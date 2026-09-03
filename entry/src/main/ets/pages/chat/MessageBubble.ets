@@ -465,6 +465,7 @@ export struct MessageBubble {
   @Param onSetDefaultReaction: (emoji: string) => void = (): void => {};
   @Param isPinnedMsg: boolean = false;
   @Param onCopyText: (messageId: number) => void = (): void => {};
+  @Param onSelectText: (messageId: number) => void = (): void => {};
   @Param onCopyCode: (text: string) => void = (): void => {};
   @Param onCopyLink: (messageId: number) => void = (): void => {};
   @Param onForwardMsg: (messageIds: number[]) => void = (): void => {};
@@ -2447,6 +2448,13 @@ export struct MessageBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
         content: $r('app.string.mb_copy_text')
       }).onClick((): void => { this.onCopyText(this.msg.id); });
+      // 「复制文本」是整条全选，这一项是 issue #94 要的"只copy其中一段"。
+      if (this.msg.text !== '') {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.character_textbox')),
+          content: $r('app.string.mb_select_text')
+        }).onClick((): void => { this.onSelectText(this.msg.id); });
+      }
       if (this.msg.text !== '') {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.translate')),

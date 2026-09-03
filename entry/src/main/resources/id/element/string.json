@@ -7373,6 +7373,10 @@
       "value": "Salin teks"
     },
     {
+      "name": "mb_select_text",
+      "value": "Pilih teks"
+    },
+    {
       "name": "mb_translate",
       "value": "Terjemahkan"
     },

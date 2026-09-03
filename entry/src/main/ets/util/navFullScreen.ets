@@ -24,3 +24,17 @@ export function fullScreenOverlayWinsAt(apiVersion: number): boolean {
 export function viewerFullScreenWanted(splitLayout: boolean, viewerOpen: boolean): boolean {
   return splitLayout && viewerOpen;
 }
+
+// 手机（单栏）下要不要主动把标题栏收起来。
+//
+// **为什么突然需要这一条**：顶栏迁进 HdsNavDestination 的标题栏之前，它和查看器
+// 是同一个 Stack 的两个兄弟节点，查看器排在后面就画在上面，顺手把顶栏盖住了，
+// 从来不用显式隐藏。标题栏交给框架之后，它是**框架层、永远画在内容区之上**，
+// 而单栏路径的查看器还在内容区里——于是全屏看图时顶栏浮在图上不走。
+//
+// 分栏那条不受影响：它走 bindContentCover，模态本来就在标题栏之上，再收一次
+// 只会在关闭时多一次无谓的重新出现。所以这条判据是 viewerFullScreenWanted 的
+// **补集**，两者在查看器开着时恰好一真一假。
+export function viewerHidesTitleBar(splitLayout: boolean, viewerOpen: boolean): boolean {
+  return !splitLayout && viewerOpen;
+}

@@ -7373,6 +7373,10 @@
       "value": "Metni kopyala"
     },
     {
+      "name": "mb_select_text",
+      "value": "Metni seç"
+    },
+    {
       "name": "mb_translate",
       "value": "Çevir"
     },

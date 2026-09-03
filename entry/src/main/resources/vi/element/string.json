@@ -7373,6 +7373,10 @@
       "value": "Sao chép văn bản"
     },
     {
+      "name": "mb_select_text",
+      "value": "Chọn văn bản"
+    },
+    {
       "name": "mb_translate",
       "value": "Dịch"
     },

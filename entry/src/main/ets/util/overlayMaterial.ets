@@ -408,6 +408,27 @@ export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
   return BLUR_STYLE_BY_INDEX[shiftedStyleIndex(4, thicknessOffset())];
 }
 
+// 框架容器面（菜单/弹窗）的 BlurStyle，**不看材质在不在**。
+//
+// 和 overlayBlur 的区别只有这一条，而依据来自官方《沉浸光感》最佳实践里
+// 「菜单栏适配沉浸光感」那段的原文写法：
+//
+//   promptAction.openMenu(node, { id }, MaterialUtil.getMaterialOptions<MenuOptions>(
+//     { mask: false, backgroundBlurStyle: BlurStyle.COMPONENT_THICK }) as MenuOptions)
+//
+// ——`backgroundBlurStyle` 是**基底、无条件给**，`systemMaterial` 由
+// getMaterialOptions 在 API≥26 且设备支持时**再叠上去**。两者不是互斥关系。
+// overlayBlur 在材质可用时返回 undefined（把观感整个让给材质）是我们自己的
+// 收紧，对材质**画得出来**的面成立，对画不出来的面就成了一块没有模糊的板。
+//
+// 档位仍然吃用户的厚度设置；用户把材质整个关掉时（materialOff）什么都不给。
+export function containerBlur(surface: OverlaySurface): BlurStyle | undefined {
+  if (materialOff() || !frameworkContainer(surface)) {
+    return undefined;
+  }
+  return BLUR_STYLE_BY_INDEX[shiftedStyleIndex(4, thicknessOffset())];
+}
+
 // The backdrop-blur radius a self-drawn glass surface uses before the material.
 // Zero means no blur, so this is safe to apply unconditionally at the call site.
 // 明确要高斯模糊、不要材质的面用这个。和 overlayBackdropBlur 不同：那个在

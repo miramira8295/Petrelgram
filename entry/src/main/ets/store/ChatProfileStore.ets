@@ -57,6 +57,22 @@ export interface ProfileContentItem {
   thumbPath: string;
   isVideo: boolean;
   duration: string;
+  // 主文件（文档 / 音乐）。只有这两类会在列表里直接下载和打开——图片视频
+  // 在聊天里看更合适，语音同理。fileId 为 0 的行右侧仍然是那个跳转箭头。
+  fileId: number;
+  filePath: string;
+  mimeType: string;
+  downloading: boolean;
+}
+
+// 已经下载完的本地路径；没下完返回空串。TDLib 的 local.path 在下载完成前
+// 就有值（那是目标路径），所以必须同时看 is_downloading_completed。
+function localPathOf(file: TdObject | undefined): string {
+  const local = file?.['local'] as TdObject | undefined;
+  const done = local !== undefined
+    ? ((local['is_downloading_completed'] as boolean | undefined) ?? false) : false;
+  const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+  return done ? path : '';
 }
 
 function durationLabel(totalSeconds: number): string {
@@ -116,6 +132,9 @@ export class ChatProfileStore {
   members: MemberItem[] = [];
   membersState: string = 'loading'; // loading | ready | restricted | error
   contentTab: string = PROFILE_TAB_MEMBERS;
+  // 页签内搜索词（issue #102）。**跨页签保留**：用户搜一个词想在媒体和文件
+  // 之间来回看是常事，切一次页签就清空反而要重打。
+  contentQuery: string = '';
   contentItems: ProfileContentItem[] = [];
   contentState: string = 'idle'; // idle | loading | ready | error
   contentErrorText: string = '';
@@ -380,6 +399,53 @@ export class ChatProfileStore {
     this.fetchContentPage(0, true, 0);
   }
 
+  // 换搜索词：清空当前页签的结果重新拉。空词就是"不过滤"，和以前一样。
+  setContentQuery(query: string): void {
+    const next = query.trim();
+    if (next === this.contentQuery) {
+      return;
+    }
+    this.contentQuery = next;
+    if (this.contentTab === PROFILE_TAB_MEMBERS) {
+      return;
+    }
+    this.contentSeq++;
+    this.contentItems = [];
+    this.contentState = 'loading';
+    this.contentErrorText = '';
+    this.contentHasMore = false;
+    this.contentPaging = false;
+    this.contentPagingError = false;
+    this.contentNextMessageId = 0;
+    this.notify();
+    this.fetchContentPage(0, true, 0);
+  }
+
+  // 列表里直接下载，不用先跳回聊天记录（issue #102 的第二条）。下载完成
+  // 由 applyFile 回调把路径填回那一行，行右边的图标随之从"下载"变成"打开"。
+  // 按 fileId 回填而不是 messageId：同一个文件可能在列表里出现多次（转发），
+  // 一次下载应该让它们一起变成"打开"。
+  downloadContentItem(messageId: number): void {
+    for (const item of this.contentItems) {
+      if (item.messageId !== messageId || item.fileId <= 0 ||
+        item.filePath !== '' || item.downloading) {
+        continue;
+      }
+      item.downloading = true;
+      const fileId = item.fileId;
+      this.notify();
+      this.download(fileId, (path: string): void => {
+        for (const row of this.contentItems) {
+          if (row.fileId === fileId) {
+            row.filePath = path;
+            row.downloading = false;
+          }
+        }
+      });
+      return;
+    }
+  }
+
   retryContent(): void {
     if (this.contentTab === PROFILE_TAB_MEMBERS || this.contentState === 'loading') {
       return;
@@ -457,7 +523,7 @@ export class ChatProfileStore {
     const limit = giftScan ? GIFT_SCAN_PAGE : CONTENT_PAGE;
     const req: TdRequest = { '@type': 'searchChatMessages' };
     req['chat_id'] = this.chatId;
-    req['query'] = '';
+    req['query'] = this.contentQuery;
     req['from_message_id'] = fromMessageId;
     req['offset'] = 0;
     req['limit'] = limit;
@@ -541,6 +607,9 @@ export class ChatProfileStore {
     let duration = 0;
     let thumbnailId = 0;
     let isVideo = false;
+    let mainFileId = 0;
+    let mainFilePath = '';
+    let mainMime = '';
 
     if (type === 'messagePhoto') {
       title = str('storage_photo');
@@ -575,6 +644,9 @@ export class ChatProfileStore {
       title = (document?.['file_name'] as string | undefined) ?? str('storage_file');
       detail = formattedText(content['caption'] as TdObject | undefined);
       size = fileSize(file);
+      mainFileId = (file?.['id'] as number | undefined) ?? 0;
+      mainFilePath = localPathOf(file);
+      mainMime = (document?.['mime_type'] as string | undefined) ?? '';
     } else if (type === 'messageAudio') {
       const audio = content['audio'] as TdObject | undefined;
       const file = audio?.['audio'] as TdObject | undefined;
@@ -584,6 +656,9 @@ export class ChatProfileStore {
       detail = (audio?.['performer'] as string | undefined) ?? '';
       duration = (audio?.['duration'] as number | undefined) ?? 0;
       size = fileSize(file);
+      mainFileId = (file?.['id'] as number | undefined) ?? 0;
+      mainFilePath = localPathOf(file);
+      mainMime = (audio?.['mime_type'] as string | undefined) ?? '';
       const cover = audio?.['album_cover_thumbnail'] as TdObject | undefined;
       const coverFile = cover?.['file'] as TdObject | undefined;
       thumbnailId = (coverFile?.['id'] as number | undefined) ?? 0;
@@ -659,7 +734,11 @@ export class ChatProfileStore {
       meta: metaParts.join(' · '),
       thumbPath: '',
       isVideo,
-      duration: duration > 0 ? durationLabel(duration) : ''
+      duration: duration > 0 ? durationLabel(duration) : '',
+      fileId: mainFileId,
+      filePath: mainFilePath,
+      mimeType: mainMime,
+      downloading: false
     };
     if (thumbnailId > 0) {
       this.download(thumbnailId, (path: string): void => {
@@ -673,7 +752,11 @@ export class ChatProfileStore {
             meta: existing.meta,
             thumbPath: path,
             isVideo: existing.isVideo,
-            duration: existing.duration
+            duration: existing.duration,
+            fileId: existing.fileId,
+            filePath: existing.filePath,
+            mimeType: existing.mimeType,
+            downloading: existing.downloading
           } : existing);
       });
     }

@@ -44,6 +44,9 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logI } from '../../util/log';
+import { common } from '@kit.AbilityKit';
+import { openLocalFile } from '../../util/openLocalFile';
+import { fileOpenMimeType } from '../../util/fileMessage';
 import { navigateToProfile } from '../../util/profileNav';
 import { mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
@@ -56,6 +59,8 @@ const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 const DETAIL_TAB_BAR_HEIGHT: number = 44;
 const DETAIL_TAB_INDICATOR_HEIGHT: number = 32;
+// 输入到真正下发搜索之间的防抖窗口。
+const CONTENT_QUERY_DEBOUNCE_MS: number = 250;
 
 interface ProfileTabItem {
   key: string;
@@ -161,6 +166,10 @@ export struct ChatProfilePage {
   private justJoined: boolean = false;
   private pendingMemberReload: boolean = false;
   private store: ChatProfileStore | null = null;
+  // 页签内搜索（issue #102）。输入框的字在本地，真正下发给 store 的动作防抖
+  // 250ms——每敲一个字就重拉一页会把 searchChatMessages 打满，也会让列表闪。
+  @State private contentQuery: string = '';
+  private contentQueryTimer: number = -1;
   private unsub: (() => void) | null = null;
   private tabScroller: Scroller = new Scroller();
   private detailTabXs: number[] = [];
@@ -697,6 +706,37 @@ export struct ChatProfilePage {
       this.selectTab(this.selectedTab + 1);
     } else {
       this.selectTab(this.selectedTab - 1);
+    }
+  }
+
+  private applyContentQuery(next: string): void {
+    this.contentQuery = next;
+    if (this.contentQueryTimer !== -1) {
+      clearTimeout(this.contentQueryTimer);
+    }
+    this.contentQueryTimer = setTimeout((): void => {
+      this.contentQueryTimer = -1;
+      if (this.store !== null) {
+        this.store.setContentQuery(next);
+      }
+    }, CONTENT_QUERY_DEBOUNCE_MS);
+  }
+
+  // 列表里直接下载 / 打开，不用先跳回聊天记录（issue #102）。
+  private onContentFileAction(item: ProfileContentItem): void {
+    if (item.filePath !== '') {
+      openLocalFile(getContext(this) as common.UIAbilityContext, item.filePath,
+        fileOpenMimeType(item.title, item.mimeType))
+        .then((ok: boolean): void => {
+          if (!ok) {
+            promptAction.showToast({ message: $r('app.string.cp_file_open_failed'), duration: 1800 });
+          }
+        })
+        .catch((e: Object): void => { logE(`ChatProfilePage.openLocalFile failed: ${e}`); });
+      return;
+    }
+    if (this.store !== null) {
+      this.store.downloadContentItem(item.messageId);
     }
   }
 
@@ -1625,6 +1665,39 @@ export struct ChatProfilePage {
     return 'sys.symbol.message';
   }
 
+  // 页签内搜索条（issue #102）。TDLib 的 searchChatMessages 本来就同时收
+  // query 和 filter，所以每个内容页签都能搜，不只是"文件"。
+  @Builder
+  contentSearchBar() {
+    Row({ space: 8 }) {
+      SymbolGlyph($r('sys.symbol.magnifyingglass'))
+        .fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
+      TextInput({ text: this.contentQuery, placeholder: $r('app.string.cp_search') })
+        .layoutWeight(1).height(40).fontSize(15)
+        .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
+        .placeholderColor(COLOR_TEXT_SECONDARY)
+        .caretColor(COLOR_PRIMARY)
+        .enterKeyType(EnterKeyType.Search)
+        .onChange((v: string): void => { this.applyContentQuery(v); });
+      if (this.contentQuery !== '') {
+        Row() {
+          SymbolGlyph($r('sys.symbol.xmark_circle'))
+            .fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
+        }
+        .width(30).height(30).borderRadius(15)
+        .justifyContent(FlexAlign.Center)
+        .onClick((): void => { this.applyContentQuery(''); })
+        .accessibilityText($r('app.string.clear_search'));
+      }
+    }
+    .width('calc(100% - 24vp)')
+    .height(46)
+    .margin({ left: 12, right: 12, top: 10 })
+    .padding({ left: 12, right: 8 })
+    .alignItems(VerticalAlign.Center)
+    .glassCard().clip(true);
+  }
+
   @Builder
   contentList() {
     Column() {
@@ -1654,8 +1727,29 @@ export struct ChatProfilePage {
                   .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
               }
             }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-            SymbolGlyph($r('sys.symbol.chevron_right'))
-              .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
+            // 文档和音乐给一个就地下载 / 打开的按钮；其余类型仍然只有跳转
+            // 箭头（图片视频在聊天里看更合适）。按钮自己吃掉点击，所以点它
+            // 不会连带触发整行的"跳回聊天记录"。
+            if (item.downloading) {
+              Row() {
+                LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
+              }
+              .width(34).height(34).justifyContent(FlexAlign.Center);
+            } else if (item.fileId > 0) {
+              Row() {
+                SymbolGlyph($r(item.filePath !== ''
+                  ? 'sys.symbol.arrow_up_right' : 'sys.symbol.arrow_down_circle'))
+                  .fontSize(18).fontColor([COLOR_PRIMARY]);
+              }
+              .width(34).height(34).borderRadius(17)
+              .justifyContent(FlexAlign.Center)
+              .onClick((): void => { this.onContentFileAction(item); })
+              .accessibilityText(item.filePath !== ''
+                ? $r('app.string.open') : $r('app.string.gs_downloads'));
+            } else {
+              SymbolGlyph($r('sys.symbol.chevron_right'))
+                .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
+            }
           }
           .width('100%').constraintSize({ minHeight: 64 })
           .padding({ left: 12, right: 10, top: 9, bottom: 9 })
@@ -1699,13 +1793,18 @@ export struct ChatProfilePage {
   selectedTabContent() {
     if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
       this.membersContent();
-    } else if (this.contentState === 'loading' || this.contentState === 'error' ||
-      (this.contentState === 'ready' && this.contentItems.length === 0)) {
-      this.contentPlaceholder();
-    } else if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
-      this.mediaContent();
     } else {
-      this.contentList();
+      // 搜索条画在分支**外面**：搜不到结果时下面是空态，搜索条要是跟着一起
+      // 消失，用户就没地方清空关键词了，只能退出去重进。
+      this.contentSearchBar();
+      if (this.contentState === 'loading' || this.contentState === 'error' ||
+        (this.contentState === 'ready' && this.contentItems.length === 0)) {
+        this.contentPlaceholder();
+      } else if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
+        this.mediaContent();
+      } else {
+        this.contentList();
+      }
     }
   }
 

@@ -7373,6 +7373,10 @@
       "value": "텍스트 복사"
     },
     {
+      "name": "mb_select_text",
+      "value": "텍스트 선택"
+    },
+    {
       "name": "mb_translate",
       "value": "번역"
     },

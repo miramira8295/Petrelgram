@@ -7373,6 +7373,10 @@
       "value": "テキストをコピー"
     },
     {
+      "name": "mb_select_text",
+      "value": "テキストを選択"
+    },
+    {
       "name": "mb_translate",
       "value": "翻訳"
     },

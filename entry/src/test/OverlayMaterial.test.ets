@@ -125,6 +125,7 @@ export default function overlayMaterialTest() {
       expect(overlayBlur('dialog')).assertEqual(BlurStyle.COMPONENT_ULTRA_THICK);
       // 自绘面永远不给 BlurStyle，给了就是一块死灰。
       expect(overlayBlur('bar')).assertUndefined();
+
       expect(overlayBlur('card')).assertUndefined();
     });
 

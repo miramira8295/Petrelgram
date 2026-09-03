@@ -46,6 +46,7 @@ import {
 import { PlaySlotRegistry } from './PlaySlotRegistry';
 import { shouldCompete, slotKey, slotKeyMessageId } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
+import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
 import { ChatTimelineHost } from './ChatTimelineHost';
 import { cacheDestPath, isVideoPath } from '../../util/mediaPick';
@@ -196,11 +197,12 @@ import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
 import { adminLabelOf } from '../../util/adminLabel';
 import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/senderRoleChannel';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { subscribeChatJump } from '../../util/chatJumpChannel';
+import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
 import { isSplitLayout } from '../../util/splitMetrics';
-import { viewerFullScreenWanted } from '../../util/navFullScreen';
+import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
 import {
-  HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationIconOptions,
-  HdsNavigationMenuItemOptions, TitleBarContentOptions
+  HdsNavDestination, HdsNavDestinationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
@@ -1280,6 +1282,7 @@ export struct ChatPage {
         },
         onReplyTo: (messageId: number): void => { this.startReply(messageId); },
         onCopyText: (messageId: number): void => { this.copyMessageText(messageId); },
+        onSelectText: (messageId: number): void => { this.openSelectText(messageId); },
         onCopyLink: (messageId: number): void => { this.copyMessageLink(messageId); },
         onForwardMessages: (messageIds: number[]): void => { this.openForwardPicker(messageIds); },
         onSaveMessages: (messageIds: number[]): void => { this.saveToSavedMessages(messageIds); },
@@ -1915,11 +1918,15 @@ export struct ChatPage {
   // is unit-tested there; this page only supplies the I/O.
   private musicQueue: MusicQueue = new MusicQueue({
     currentState: (): VoiceState => getVoicePlayback().current(),
+    // 起播的两个出口都在这里把曲目信息**送出页面**——底栏的迷你播放条要用，
+    // 而回到会话列表时本页已经销毁（见 util/nowPlayingChannel 的说明）。
     toggleMusic: (id: number, path: string, dur: number): void => {
       getVoicePlayback().toggleMusic(id, path, dur);
+      this.publishNowPlayingFor(id, path, dur);
     },
     startMusic: (id: number, path: string, dur: number): void => {
       getVoicePlayback().startMusic(id, path, dur);
+      this.publishNowPlayingFor(id, path, dur);
     },
     seek: (id: number, fraction: number): void => { getVoicePlayback().seek(id, fraction); },
     requestDownload: (id: number, failed: boolean): void => {
@@ -2391,6 +2398,10 @@ export struct ChatPage {
     this.refreshHeader();
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
       (u: TdObject): void => this.onChatAction(u)));
+    // 会话已经开着时，navigateToChat 只出栈不传参，跳转目标走旁路送进来
+    // （issue #80、#102，见 util/chatJumpChannel 的说明）。
+    this.subscriptions.set('jump', subscribeChatJump(this.chatId,
+      (messageId: number): void => { this.jumpToMessageId(messageId); }));
     // ForwardSheet subscribes to the chat list itself while it is open, so this
     // no longer has to push updates into it.
     this.subscriptions.set('chat', getChatStore().subscribe(() => {
@@ -3369,6 +3380,7 @@ export struct ChatPage {
     this.subscriptions.clear('playSlot');
     this.clearNowSecTimer();
     this.subscriptions.clear('chatAction');
+    this.subscriptions.clear('jump');
     if (this.typingTimer !== -1) {
       clearInterval(this.typingTimer);
       this.typingTimer = -1;
@@ -3427,7 +3439,17 @@ export struct ChatPage {
     this.autoSavePendingIds = [];
     this.autoSaveInFlight = false;
     getVoicePlayback().setMusicCompletionListener(null);
-    getVoicePlayback().stop();
+    // **音乐不随本页退场而停**——这是底栏迷你播放条的前提：退回会话列表后曲子
+    // 还得在放，否则那条播放条永远没东西可显示。VoicePlayback 本来就挂着
+    // mediaPlaybackKeepAlive（audioPlayback 后台任务），能力一直是有的，只是被
+    // 这一行无条件掐掉了。
+    //
+    // 语音（mode === 'voice'）维持原样立刻停：一条语音消息在你已经离开会话之后
+    // 还在念，是没人想要的。自动连播也确实随本页结束——它要整份 messages 数组
+    // （MusicQueue.next），页面一销毁就没有了，所以上面那行监听器照旧摘掉。
+    if (getVoicePlayback().current().mode !== 'music') {
+      getVoicePlayback().stop();
+    }
     this.subscriptions.clearInOrder([
       'messages', 'subtitle', 'chat', 'liveLocation', 'translatable', 'background'
     ]);
@@ -6879,11 +6901,9 @@ export struct ChatPage {
       canClearHistory: this.clearHistoryChoice() !== undefined,
       canLeaveChat: this.isGroup && this.membershipState === 'writable',
       onSearch: (): void => { this.enterSearch(); },
-      onProfile: (): void => { this.openProfile(); },
       onToggleMute: (): void => { this.toggleChatMute(); },
       onAddToFolder: (): void => { showChatFolderPicker(this.getUIContext(), this.chatId); },
       onAutoDelete: (): void => { this.chooseAutoDelete(); },
-      onScheduled: (): void => { this.openScheduledSheet(); },
       onJumpToDate: (): void => { this.pickJumpDate(); },
       onStopLocation: (): void => { confirmStopLiveLocation(); },
       onToggleTranslation: (): void => { this.toggleTranslatable(); },
@@ -7914,6 +7934,37 @@ export struct ChatPage {
       return;
     }
     copyPlainText(m.text, str('copied'));
+  }
+
+  // 「选择文本」：把这条消息另画到一个全屏浮层上，那一层的文字可以划选。
+  // 不给时间轴里的气泡开 copyOption——那会和长按菜单、左滑回复抢手势
+  // （#114 那一族）。判据和渲染都在 SelectTextOverlay 里，这里只开关。
+  // 把当前曲目送进全局通道。停止播放（toggleMusic 把同一条切成暂停不算停止，
+  // 底栏那条仍然要在、只是按钮变成"继续"）时由 clearNowPlaying 收尾。
+  private publishNowPlayingFor(messageId: number, path: string, durationSec: number): void {
+    const m = this.findMsg(messageId);
+    if (m === null) {
+      return;
+    }
+    const state: NowPlaying = {
+      chatId: this.chatId,
+      messageId,
+      title: m.audioTitle,
+      performer: m.audioPerformer,
+      coverPath: m.photoPath,
+      path,
+      durationSec
+    };
+    publishNowPlaying(state);
+  }
+
+  private openSelectText(messageId: number): void {
+    const m = this.findMsg(messageId);
+    if (m === null || (m.text === '' && m.translatedText === '')) {
+      promptAction.showToast({ message: $r('app.string.cp_nothing_to_copy'), duration: 1500 });
+      return;
+    }
+    openSelectTextOverlay(this.getUIContext(), selectTextPayload(m), this.topSafe);
   }
 
 
@@ -9395,6 +9446,10 @@ export struct ChatPage {
           isMuted: this.isMuted,
           muteUpdating: this.headerMuteUpdating,
           profileOpening: this.headerProfileOpening,
+          menuShow: this.headerMenuShow,
+          menuAnchorId: this.headerMenuId,
+          onBack: (): void => { this.goBack(); },
+          onMenuTap: (): void => { this.openHeaderMenu(); },
           onOpenProfile: (): void => { this.openProfile(); },
           onResolveIdentity: (): void => { this.resolveHeaderIdentity(); }
         });
@@ -9439,17 +9494,6 @@ export struct ChatPage {
     const content: TitleBarContentOptions = {
       stackBuilder: (): void => { this.chatTitleBar(); }
     };
-    if (this.initialMessageTransitionSettled && !this.selecting && !this.searchMode) {
-      const icon: HdsNavigationIconOptions = {
-        icon: $r('app.media.ic_header_menu'),
-        label: $r('app.string.cp_more_actions'),
-        isEnabled: this.chatId !== 0,
-        componentId: this.headerMenuId,
-        action: (): void => { this.openHeaderMenu(); }
-      };
-      const item: HdsNavigationMenuItemOptions = { content: icon };
-      content.menu = { value: [item] };
-    }
     const bannerHeight: number = this.topBannerHeight();
     if (this.initialMessageTransitionSettled && this.topCardShouldShow() && bannerHeight > 0) {
       content.bottomBuilder = {
@@ -9809,7 +9853,7 @@ export struct ChatPage {
       // Fullscreen media viewer. The page owns which message is open and the
       // hero transition anchored to the tapped thumbnail; the overlay owns
       // zoom/pan, paging, the filmstrip and the chrome layer.
-      if (this.viewerMsgId !== 0 && !isSplitLayout(this.screenW, this.screenH)) {
+      if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0)) {
         this.mediaViewer();
       }
     }
@@ -9829,8 +9873,16 @@ export struct ChatPage {
       content: this.chatTitleBarContent()
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
-    // 普通会话态使用 HDS 原生返回键；搜索/选择态由各自标题组件的关闭键接管。
-    .hideBackButton(!this.initialMessageTransitionSettled || this.selecting || this.searchMode)
+    // **HDS 自己的返回键和菜单一颗都不用**，三个胶囊全部由 stackBuilder 自绘
+    // ——理由见 ChatHeader 文件头（玻璃/按压/动画 HDS 那三个字段都给不了，
+    // 且把展开态接进 TitleBarContentOptions 会让整条栏按点击重建）。
+    // 首页 ChatListPage 早就是这个结构。
+    .hideBackButton(true)
+    // 单栏下查看器盖不住框架标题栏（判据与上面那个 if 同源，见 navFullScreen）。
+    // animated 取 true：查看器根节点是 300ms 的黑底渐入，第 0 帧直接摘掉顶栏会
+    // 在还透着的黑底上闪一下。
+    .hideTitleBar(viewerHidesTitleBar(
+      isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0), true)
     // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
     .bindToScrollable([this.scroller])
     // HdsNavDestination 没有 fullScreenOverlay。只在分栏中把查看器提升为应用内

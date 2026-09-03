@@ -7373,6 +7373,10 @@
       "value": "Text kopieren"
     },
     {
+      "name": "mb_select_text",
+      "value": "Text auswählen"
+    },
+    {
       "name": "mb_translate",
       "value": "Übersetzen"
     },

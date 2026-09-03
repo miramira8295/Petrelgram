@@ -7373,6 +7373,10 @@
       "value": "Скопіювати текст"
     },
     {
+      "name": "mb_select_text",
+      "value": "Виділити текст"
+    },
+    {
       "name": "mb_translate",
       "value": "Перекласти"
     },

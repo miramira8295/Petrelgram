@@ -7373,6 +7373,10 @@
       "value": "टेक्स्ट कॉपी करें"
     },
     {
+      "name": "mb_select_text",
+      "value": "टेक्स्ट चुनें"
+    },
+    {
       "name": "mb_translate",
       "value": "अनुवाद"
     },

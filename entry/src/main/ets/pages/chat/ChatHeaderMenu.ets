@@ -1,6 +1,6 @@
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { actionMenuRow } from './ActionMenuRow';
-import { overlayBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial } from '../../util/overlayMaterial';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
 
@@ -20,11 +20,9 @@ export interface ChatHeaderMenuParams {
   canClearHistory: boolean;
   canLeaveChat: boolean;
   onSearch: () => void;
-  onProfile: () => void;
   onToggleMute: () => void;
   onAddToFolder: () => void;
   onAutoDelete: () => void;
-  onScheduled: () => void;
   onJumpToDate: () => void;
   onStopLocation: () => void;
   onToggleTranslation: () => void;
@@ -43,11 +41,9 @@ struct ChatHeaderMenu {
   canClearHistory: boolean = false;
   canLeaveChat: boolean = false;
   onSearch: () => void = (): void => {};
-  onProfile: () => void = (): void => {};
   onToggleMute: () => void = (): void => {};
   onAddToFolder: () => void = (): void => {};
   onAutoDelete: () => void = (): void => {};
-  onScheduled: () => void = (): void => {};
   onJumpToDate: () => void = (): void => {};
   onStopLocation: () => void = (): void => {};
   onToggleTranslation: () => void = (): void => {};
@@ -56,9 +52,10 @@ struct ChatHeaderMenu {
 
   build() {
     Column() {
+      // **分隔线一律跟在它所分隔的那一组后面，条件项自带自己的那一条。**
+      // 原来是"每项之间无条件插一条"，于是非群聊时 if(isGroup) 两侧的两条会
+      // 并排出现，画成一条双线。
       actionMenuRow('sys.symbol.magnifyingglass', str('cp_search'), false, this.onSearch);
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow('sys.symbol.info_circle', str('cp_profile'), false, this.onProfile);
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
       actionMenuRow(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash',
         this.muteUpdating ? str('cp_updating_notifications') :
@@ -67,11 +64,10 @@ struct ChatHeaderMenu {
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
       if (this.isGroup) {
         actionMenuRow('sys.symbol.folder_badge_plus', str('cl_add_to_folder'), false, this.onAddToFolder);
+        Divider().color($r('app.color.divider')).strokeWidth(0.7);
       }
-      Divider().color($r('app.color.divider')).strokeWidth(0.7);
       actionMenuRow('sys.symbol.clock', str('cp_auto_delete'), false, this.onAutoDelete);
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
-      actionMenuRow('sys.symbol.calendar', str('sched_title'), false, this.onScheduled);
       actionMenuRow('sys.symbol.calendar_badge_clock', str('cp_jump_to_date'), false, this.onJumpToDate);
       if (this.liveLocationActive) {
         actionMenuRow('sys.symbol.stop_circle', str('cp_stop_location'), true, this.onStopLocation);
@@ -89,8 +85,15 @@ struct ChatHeaderMenu {
           this.isChannel ? str('cp_leave_channel') : str('cp_leave_group'), true, this.onLeaveChat);
       }
     }
-    .width(224)
-    .padding({ top: 6, bottom: 6 });
+    // 176 = 左右内边距 16×2 + 图标 19 + 图标与文字间距 14 + 最长中文标签 6 字
+    // ×16（「正在更新通知」「添加到文件夹」「清空聊天记录」都是 6 字）≈ 161，
+    // 再留 15 的余量。**224 是从消息长按菜单抄来的数**，那个菜单的条目更长；
+    // 搬到这里右边就空出一大片（用户报「弹出的菜单有点过于宽」）。
+    // 拉丁语系里最长的那两条（Updating notifications）本来在 224 上也放不下、
+    // 照样折行，所以这一刀没有让任何语言变差。
+    .width(176)
+    .padding({ top: 6, bottom: 6 })
+    .clip(true);
   }
 }
 
@@ -106,11 +109,9 @@ function chatHeaderMenuLayer(params: ChatHeaderMenuParams) {
     canClearHistory: params.canClearHistory,
     canLeaveChat: params.canLeaveChat,
     onSearch: params.onSearch,
-    onProfile: params.onProfile,
     onToggleMute: params.onToggleMute,
     onAddToFolder: params.onAddToFolder,
     onAutoDelete: params.onAutoDelete,
-    onScheduled: params.onScheduled,
     onJumpToDate: params.onJumpToDate,
     onStopLocation: params.onStopLocation,
     onToggleTranslation: params.onToggleTranslation,
@@ -148,9 +149,19 @@ export class ChatHeaderMenuController {
         // 明确从目标右下弹出，placement 已计入标题栏，只需再越过 bottomBuilder。
         placement: Placement.BottomRight,
         offset: { x: 0, y: topBannerHeight },
-        backgroundColor: Color.Transparent,
-        backgroundBlurStyle: overlayBlur('navigationMenu'),
-        systemMaterial: overlayMaterial('navigationMenu'),
+        // ── 照《沉浸光感》最佳实践「菜单栏适配沉浸光感」那段的原文写法 ──
+        //
+        //   { mask: false, backgroundBlurStyle: BlurStyle.COMPONENT_THICK }
+        //   再由 getMaterialOptions 在 API≥26 且设备支持时叠上 systemMaterial
+        //
+        // 两条要点，我们原来两条都错了：
+        //   1. **模糊是基底、无条件给**，不是"有材质就不给"（containerBlur 就是
+        //      为这一条加的，见 overlayMaterial）；
+        //   2. **官方那份里根本没有 backgroundColor 这一项**。我们显式给
+        //      Color.Transparent，很可能正是模糊出不来的原因——它把容器的
+        //      背景（模糊就画在那儿）清掉了。所以这里也不设。
+        backgroundBlurStyle: containerBlur('menu'),
+        systemMaterial: overlayMaterial('menu'),
         onDidDisappear: (): void => { this.finish(node); }
       }).catch((error: Object): void => {
         this.finish(node);
@@ -194,11 +205,9 @@ export class ChatHeaderMenuController {
       canClearHistory: params.canClearHistory,
       canLeaveChat: params.canLeaveChat,
       onSearch: (): void => { this.close(params.onSearch); },
-      onProfile: (): void => { this.close(params.onProfile); },
       onToggleMute: (): void => { this.close(params.onToggleMute); },
       onAddToFolder: (): void => { this.close(params.onAddToFolder); },
       onAutoDelete: (): void => { this.close(params.onAutoDelete); },
-      onScheduled: (): void => { this.close(params.onScheduled); },
       onJumpToDate: (): void => { this.close(params.onJumpToDate); },
       onStopLocation: (): void => { this.close(params.onStopLocation); },
       onToggleTranslation: (): void => { this.close(params.onToggleTranslation); },

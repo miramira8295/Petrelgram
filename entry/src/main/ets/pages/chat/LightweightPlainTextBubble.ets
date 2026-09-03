@@ -59,6 +59,7 @@ export interface LightweightPlainTextActions {
   onPinMsg: (messageId: number, unpin: boolean) => void;
   onSetDefaultReaction: (emoji: string) => void;
   onCopyText: (messageId: number) => void;
+  onSelectText: (messageId: number) => void;
   onCopyLink: (messageId: number) => void;
   onForwardMessages: (messageIds: number[]) => void;
   onSaveMessages: (messageIds: number[]) => void;
@@ -80,7 +81,8 @@ const EMPTY_ACTIONS: LightweightPlainTextActions = {
   onTranslateMsg: (_id: number): void => {},
   onPinMsg: (_id: number, _unpin: boolean): void => {},
   onSetDefaultReaction: (_emoji: string): void => {},
-  onCopyText: (_id: number): void => {}, onCopyLink: (_id: number): void => {},
+  onCopyText: (_id: number): void => {}, onSelectText: (_id: number): void => {},
+  onCopyLink: (_id: number): void => {},
   onForwardMessages: (_ids: number[]): void => {},
   onSaveMessages: (_ids: number[]): void => {},
   onRepeatMessages: (_ids: number[]): void => {},
@@ -688,6 +690,10 @@ export struct LightweightPlainTextBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
         content: $r('app.string.mb_copy_text')
       }).onClick((): void => { this.actions.onCopyText(this.msg.id); });
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.character_textbox')),
+        content: $r('app.string.mb_select_text')
+      }).onClick((): void => { this.actions.onSelectText(this.msg.id); });
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.translate')),
         content: $r('app.string.mb_translate')

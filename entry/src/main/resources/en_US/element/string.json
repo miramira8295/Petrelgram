@@ -7373,6 +7373,10 @@
       "value": "Copy text"
     },
     {
+      "name": "mb_select_text",
+      "value": "Select text"
+    },
+    {
       "name": "mb_translate",
       "value": "Translate"
     },

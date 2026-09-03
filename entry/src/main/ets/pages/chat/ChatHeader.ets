@@ -2,7 +2,7 @@ import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT,
-  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY, KEY_APP_DARK } from '../../util/theme';
+  COLOR_TEXT_ON_LIGHT, KEY_APP_DARK } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
@@ -11,8 +11,21 @@ import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 
-// HDS 标题栏里的会话身份内容。标题栏背板、返回键和右侧菜单都由
-// HdsNavDestination 负责；这里只有标准 title 无法表达的头像和动态状态。
+// 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。整条画在 HdsNavDestination 的
+// **stackBuilder** 里，HDS 只负责背板和滚动模糊。
+//
+// **两颗动作键为什么自绘，而不是用 HDS 的 backIconStyle / content.menu。**
+// 首页（ChatListPage.topAction）早就是这么做的，理由在这一页同样成立，而且更硬：
+//
+//   1. HdsNavigationIconItemStyle 只有 backgroundColor / iconColor / textColor，
+//      **没有模糊、没有材质**。顶栏浮在壁纸上，只靠一个底色画不出玻璃——深色模式
+//      下尤其明显（用户报「深色模式两个按钮玻璃样式没有了」）。自绘才能把
+//      overlayGlassFill + backdropBlur + 材质三层都挂上。
+//   2. 按压反馈（stateStyles 的缩放/透明度）HDS 也不给。
+//   3. **菜单展开时汉堡变叉这类高频状态，绝不能进 TitleBarContentOptions。**
+//      那个对象每次重建都会让 HDS 把整条标题栏（菜单 + stackBuilder +
+//      bottomBuilder）重画一遍——实测就是"点一下整条 bar 闪一下"。状态待在
+//      stackBuilder 的子树里，重画的才只有那一颗键。
 
 export const CHAT_HEADER_ACTION_SIZE: number = 42;
 export const CHAT_HEADER_RADIUS: number = 22;
@@ -49,8 +62,31 @@ export struct ChatHeader {
   @Prop isMuted: boolean;
   @Prop muteUpdating: boolean;
   @Prop profileOpening: boolean;
+  // 菜单展开态：只用来把汉堡切成叉。真正的开关在页面那边（ChatHeaderMenuController）。
+  @Prop menuShow: boolean;
+  // 菜单浮层的锚点。promptAction.openMenu 按组件 id 定位，所以这颗键要挂上它。
+  @Prop menuAnchorId: string;
+  onBack: () => void = (): void => {};
+  onMenuTap: () => void = (): void => {};
   onOpenProfile: () => void = (): void => {};
   onResolveIdentity: () => void = (): void => {};
+
+  // 低于 API 26 自己画玻璃时底色必须半透明，否则 backdropBlur 被盖死。
+  @Styles
+  actionNormalStyle() {
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+    .opacity(1)
+    .scale({ x: 1, y: 1 })
+  }
+
+  @Styles
+  actionPressedStyle() {
+    // 按下时也留在玻璃上：换成不透明的 surface_alt 会让玻璃"闪一下变实心"。
+    // 按压反馈由 opacity + scale 表达，不靠底色。
+    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
+    .opacity(0.72)
+    .scale({ x: 0.9, y: 0.9 })
+  }
 
   @Styles
   identityNormalStyle() {
@@ -105,13 +141,96 @@ export struct ChatHeader {
   }
 
   private fgSecondary(): ResourceColor {
-    // 亮底上没有"次级灰"可用：#8E8E93 在浅紫合成底上只有 1.5:1。副标题（成员数/
-    // 在线数）本来就短，宁可和主标题同色也别看不见。
-    return this.onLightBg ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_SECONDARY;
+    // **和主标题同色，深浅色模式都是。** 这条规则原本只在 onLightBg 那一支生效，
+    // 而 onLightBg 自己带着 `appDark &&` 的闸（见 ChatPage.chromeOnLightBg）——于是
+    // 浅色模式下这整套对比度机制是关着的：副标题拿到 #8E8E93，压在「25% 白胶囊 +
+    // 深色壁纸」的合成底上只有约 1:1，屏幕上就是一行看不见的字（真机
+    // 2026-09-03 截图，用户报「标题下面字体颜色根本看不清」）。
+    //
+    // 顶栏浮在用户自己挑的壁纸上，底色**事先不可知**，所以这一层就不该出现
+    // "次级灰"这种预设了底色的颜色。副标题（成员数/在线数）本来就短，和主标题
+    // 同色不会喧宾夺主——层次交给字号和字重（12 常规 vs 16 加粗）。
+    return this.fgPrimary();
+  }
+
+  @Builder
+  backButton() {
+    Row() {
+      SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([this.fgPrimary()]);
+    }
+    .width(CHAT_HEADER_ACTION_SIZE)
+    .height(CHAT_HEADER_ACTION_SIZE)
+    .borderRadius(CHAT_HEADER_RADIUS)
+    .justifyContent(FlexAlign.Center)
+    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+    .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
+    .animation({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+      curve: Curve.EaseOut
+    })
+    .backdropBlur(overlayBackdropBlur('bar'))
+    .attributeModifier(materialModifier('bar'))
+    .accessibilityText($r('app.string.cp_back_to_chat'))
+    .onClick((): void => { this.onBack(); });
+  }
+
+  @Builder
+  menuButton() {
+    Row() {
+      // 菜单展开时汉堡变叉。两个图标叠着做交叉淡入淡出 + 反向旋转，比直接
+      // 替换更像"同一个东西转过去了"。SVG 是位图路径、没法真正形变，这是
+      // 视觉上最接近的做法。
+      //
+      // 系统符号库里没有汉堡线条（list_bullet 带项目符号，不是一回事），
+      // 所以横线用自带的 SVG；fillColor 能染色，深浅色主题下跟其它图标一致。
+      Stack() {
+        Image($r('app.media.ic_header_menu'))
+          .width(18).height(18)
+          .fillColor(this.fgPrimary())
+          .draggable(false)
+          .opacity(this.menuShow ? 0 : 1)
+          .rotate({ angle: this.menuShow ? 90 : 0 })
+          // animation 必须挂在**属性发生变化的那个节点**上。挂在外层 Stack
+          // 上不会生效——隐式动画只作用于同一节点自身的属性变化。
+          .animation({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+            curve: Curve.EaseInOut
+          });
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(19).fontColor([this.fgPrimary()])
+          .opacity(this.menuShow ? 1 : 0)
+          .rotate({ angle: this.menuShow ? 0 : -90 })
+          .animation({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+            curve: Curve.EaseInOut
+          });
+      }
+      .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE);
+    }
+    .width(CHAT_HEADER_ACTION_SIZE)
+    .height(CHAT_HEADER_ACTION_SIZE)
+    .borderRadius(CHAT_HEADER_RADIUS)
+    .justifyContent(FlexAlign.Center)
+    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+    .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
+    .animation({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+      curve: Curve.EaseOut
+    })
+    // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
+    .backdropBlur(overlayBackdropBlur('bar'))
+    .attributeModifier(materialModifier('bar'))
+    // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
+    .id(this.menuAnchorId)
+    .enabled(this.chatId !== 0)
+    .accessibilityText($r('app.string.cp_more_actions'))
+    .onClick((): void => { this.onMenuTap(); });
   }
 
   build() {
-    Row({ space: 10 }) {
+    Row({ space: 8 }) {
+      this.backButton();
+      Row({ space: 10 }) {
       AvatarView({
         avatarPath: this.avatarPath,
         animPath: this.avatarAnimPath,
@@ -143,25 +262,31 @@ export struct ChatHeader {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start);
-    }
-    .width('calc(100% - 124vp)')
-    .height(CHAT_HEADER_ACTION_SIZE)
-    .padding({ left: 7, right: 12 })
-    .borderRadius(CHAT_HEADER_RADIUS)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .stateStyles({ normal: this.identityNormalStyle, pressed: this.identityPressedStyle })
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .attributeModifier(materialModifier('bar'))
-    .accessibilityText(str('cp_header_a11y', this.titleText, this.subtitleText))
-    .onClick((): void => {
-      if (this.headerState === 'error') {
-        this.onResolveIdentity();
-      } else {
-        this.onOpenProfile();
       }
-    })
-    // stackBuilder 覆盖整条标题栏，给 HDS 的原生返回键和菜单各留出一格。
-    .margin({ left: 62, right: 62, top: 8, bottom: 8 })
+      .layoutWeight(1)
+      .height(CHAT_HEADER_ACTION_SIZE)
+      .padding({ left: 7, right: 12 })
+      .borderRadius(CHAT_HEADER_RADIUS)
+      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+      .stateStyles({ normal: this.identityNormalStyle, pressed: this.identityPressedStyle })
+      // 顶栏的三个胶囊都浮在消息列表之上，正对「浮动工具栏」那一档。材质生效
+      // 时会把 stateStyles 的背景色清成透明并接管边框，按压反馈仍由 stateStyles
+      // 的缩放/透明度体现；'bar' 档的 applyShadow:false 让这里手调的阴影继续生效。
+      .backdropBlur(overlayBackdropBlur('bar'))
+      .attributeModifier(materialModifier('bar'))
+      .accessibilityText(str('cp_header_a11y', this.titleText, this.subtitleText))
+      .onClick((): void => {
+        if (this.headerState === 'error') {
+          this.onResolveIdentity();
+        } else {
+          this.onOpenProfile();
+        }
+      });
+      this.menuButton();
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12 })
+    .margin({ top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -5 }))

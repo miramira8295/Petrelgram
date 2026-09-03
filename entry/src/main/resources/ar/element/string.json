@@ -7373,6 +7373,10 @@
       "value": "نسخ النص"
     },
     {
+      "name": "mb_select_text",
+      "value": "تحديد النص"
+    },
+    {
       "name": "mb_translate",
       "value": "ترجمة"
     },
