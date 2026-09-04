@@ -4053,6 +4053,22 @@
       "value": "自動下載按當前網路與檔案大小執行；儲存到相簿由系統確認寫入。"
     },
     {
+      "name": "ds_download_location",
+      "value": "下載位置"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "預設下載路徑"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "儲存時選擇位置"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "預設下載路徑已更新"
+    },
+    {
       "name": "ct_added",
       "value": "已新增聯絡人「%1$s」"
     },

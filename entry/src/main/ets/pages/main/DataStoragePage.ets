@@ -23,6 +23,8 @@ import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { changeDownloadDirectory, getDownloadDirectoryPath } from '../../util/mediaSaver';
+import { common } from '@kit.AbilityKit';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -57,6 +59,8 @@ export struct DataStoragePage {
   @State autosaveChannel: boolean = false;
   @State autosaveSyncing: boolean = false;
   @State autosaveWarning: string = '';
+  @State downloadPath: string = '';
+  @State changingDownloadPath: boolean = false;
   private active: boolean = false;
   private loadSequence: number = 0;
   private lastLoadAt: number = 0;
@@ -95,12 +99,33 @@ export struct DataStoragePage {
     this.autosavePrivate = AppStorage.get<boolean>(KEY_AUTOSAVE_PRIVATE) ?? false;
     this.autosaveGroup = AppStorage.get<boolean>(KEY_AUTOSAVE_GROUP) ?? false;
     this.autosaveChannel = AppStorage.get<boolean>(KEY_AUTOSAVE_CHANNEL) ?? false;
+    this.refreshDownloadPath();
     this.load(true);
     prepareAutosaveSettings().then((): void => {
       this.autosavePrepared = true;
     }).catch((error: TdError): void => {
       logW(`DataStoragePage.prepareAutosave failed: ${error.message}`);
       if (this.active) { this.autosaveWarning = str('ms_album_sync_failed'); }
+    });
+  }
+
+  private refreshDownloadPath(): void {
+    this.downloadPath = getDownloadDirectoryPath(getContext(this) as common.UIAbilityContext);
+  }
+
+  private changeDownloadPath(): void {
+    if (this.changingDownloadPath) { return; }
+    this.changingDownloadPath = true;
+    changeDownloadDirectory(getContext(this) as common.UIAbilityContext).then((changed: boolean): void => {
+      this.changingDownloadPath = false;
+      if (changed) {
+        this.refreshDownloadPath();
+        promptAction.showToast({ message: $r('app.string.ds_download_path_changed'), duration: 1600 });
+      }
+    }).catch((error: Error): void => {
+      this.changingDownloadPath = false;
+      logE(`DataStoragePage.changeDownloadPath failed: ${error.message}`);
+      promptAction.showToast({ message: $r('app.string.media_cannot_open_location'), duration: 1800 });
     });
   }
 
@@ -386,6 +411,32 @@ export struct DataStoragePage {
   }
 
   @Builder
+  downloadPathCard() {
+    Row({ space: 12 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle({ width: 38, height: 38 }).fill('#163478F6');
+        SymbolGlyph($r('sys.symbol.folder_fill')).fontSize(20).fontColor([COLOR_PRIMARY]);
+      }
+      Column({ space: 3 }) {
+        Text($r('app.string.ds_download_path')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+        Text(this.downloadPath !== '' ? this.downloadPath : $r('app.string.ds_download_path_picker'))
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis });
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      if (this.changingDownloadPath) {
+        LoadingProgress().width(19).height(19).color(COLOR_PRIMARY);
+      } else {
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
+      }
+    }
+    .width('100%').padding({ left: 12, right: 12, top: 11, bottom: 11 })
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
+    .enabled(!this.changingDownloadPath)
+    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
+    .onClick((): void => this.changeDownloadPath());
+  }
+
+  @Builder
   autosaveWarningCard() {
     if (this.autosaveWarning !== '') {
       Row({ space: 8 }) {
@@ -458,6 +509,9 @@ export struct DataStoragePage {
       }) {
       Scroll(this.hdsScroller) {
         Column({ space: 12 }) {
+          Text($r('app.string.ds_download_location')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+            .width('100%').padding({ left: 4, top: 4 });
+          this.downloadPathCard();
           this.warningCard();
           if (this.storage === null && this.network === null &&
             (this.storageLoading || this.networkLoading)) {

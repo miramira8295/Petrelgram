@@ -4053,6 +4053,22 @@
       "value": "Auto-download follows the current network and file size. Saving to the gallery goes through the system's write confirmation."
     },
     {
+      "name": "ds_download_location",
+      "value": "Download location"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Default download path"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Choose a location when saving"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Default download path updated"
+    },
+    {
       "name": "ct_added",
       "value": "Added %1$s to your contacts"
     },

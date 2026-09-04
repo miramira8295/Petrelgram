@@ -17,9 +17,12 @@ import {
   COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
   COLOR_TAB_SELECTED,
   COLOR_TAB_UNSELECTED,
-  COLOR_TAB_PILL_BG
+  COLOR_TAB_PILL_BG,
+  mainCardFill, mainPageFill
 } from '../../util/theme';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import {
+  KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
+} from '../../store/AppSettings';
 import {
   DownloadCounts, DownloadEntry, DownloadPage, DownloadQuery, defaultDownloadQuery,
   downloadErrorMessage, emptyDownloadCounts, removeDownload, searchDownloads,
@@ -35,6 +38,8 @@ import {
 import { SEARCH_DEST_NAME } from '../../util/searchNav';
 import { logE, logI } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
+import { AppBackdrop } from '../common/AppBackdrop';
+import { isSplitLayout } from '../../util/splitMetrics';
 
 interface FoundItem {
   chatId: number;
@@ -138,10 +143,12 @@ export struct GlobalSearchPage {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把结果列拉满 2880px，头像贴最左、时间
   // 贴最右，眼睛要横扫整屏才读得完一行（设备截图实测）。
   @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp('screenHeightVp') screenH: number = 780;
   @State query: string = '';
   @State tab: number = 0;
   @State searchFocused: boolean = false;
@@ -218,12 +225,12 @@ export struct GlobalSearchPage {
 
   @Styles
   resultRowNormalStyle() {
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
   }
 
   @Styles
   resultRowPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, true))
   }
 
   @Styles
@@ -243,12 +250,12 @@ export struct GlobalSearchPage {
 
   @Styles
   landingActionPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, true))
   }
 
   @Styles
   retryActionNormalStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, true))
     .opacity(1)
   }
 
@@ -1520,7 +1527,7 @@ export struct GlobalSearchPage {
       .layoutWeight(1)
       .height(48)
       .padding({ left: 13, right: 8 })
-      .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(24)
       .border({
         width: this.searchFocused ? 1.5 : 0.5,
@@ -1644,7 +1651,7 @@ export struct GlobalSearchPage {
         this.ensureTabVisible(this.tab);
       });
     }
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(SEARCH_TAB_BAR_HEIGHT / 2)
     .clip(true)
     .margin({ top: 6 });
@@ -1745,7 +1752,7 @@ export struct GlobalSearchPage {
     }
     .width('calc(100% - 20vp)')
     .margin({ left: 10, right: 10, top: 8 })
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(18)
     .clip(true)
     .transition(TransitionEffect.OPACITY
@@ -1812,7 +1819,7 @@ export struct GlobalSearchPage {
     }
     .width('calc(100% - 20vp)')
     .margin({ left: 10, right: 10, top: 10, bottom: 10 })
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(18)
     .clip(true)
     .transition(TransitionEffect.OPACITY
@@ -1854,7 +1861,7 @@ export struct GlobalSearchPage {
     }
     .width('calc(100% - 20vp)')
     .margin({ left: 10, right: 10, top: 10, bottom: 10 })
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(18)
     .clip(true)
     .transition(TransitionEffect.OPACITY
@@ -1902,7 +1909,7 @@ export struct GlobalSearchPage {
     .height(214)
     .margin({ left: 12, right: 12, top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -1952,7 +1959,7 @@ export struct GlobalSearchPage {
     .height(220)
     .margin({ left: 12, right: 12, top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -2067,7 +2074,7 @@ export struct GlobalSearchPage {
     .height(214)
     .margin({ left: 12, right: 12, top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -2099,7 +2106,7 @@ export struct GlobalSearchPage {
     .height(194)
     .margin({ left: 12, right: 12, top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -2120,7 +2127,7 @@ export struct GlobalSearchPage {
             ForEach(this.joinedChannels, (r: SearchRow, idx: number) => {
               this.chatRow(r, idx > 0);
             }, (r: SearchRow) => `jc_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor($r('app.color.surface'));
+          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
         }
         if (this.similarChannels.length > 0) {
           this.sectionHeader(str('gs_similar_channels'));
@@ -2128,7 +2135,7 @@ export struct GlobalSearchPage {
             ForEach(this.similarChannels, (r: SearchRow, idx: number) => {
               this.chatRow(r, idx > 0);
             }, (r: SearchRow) => `sc_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor($r('app.color.surface'));
+          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
         }
         if (this.joinedChannels.length === 0 && this.similarChannels.length === 0) {
           if (!this.joinedLoaded || !this.similarLoaded) {
@@ -2205,7 +2212,7 @@ export struct GlobalSearchPage {
             (r: SearchRow, idx: number) => {
               this.appRow(r, idx > 0);
             }, (r: SearchRow) => `app_${r.userId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-        }.width('100%').backgroundColor($r('app.color.surface'));
+        }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
         if (this.filteredAppResults().length === 0 && this.query.trim() === '') {
           if (!this.appsLoaded || this.apps.some((row: SearchRow) => row.title === '')) {
             this.catalogLoadingState(str('gs_loading_apps'));
@@ -2417,7 +2424,7 @@ export struct GlobalSearchPage {
         ForEach(this.mergedDownloads(), (it: DownloadItem, idx: number) => {
           ListItem() {
             this.downloadRow(it, idx > 0);
-          }.backgroundColor($r('app.color.surface'));
+          }.backgroundColor(mainCardFill(this.appWallpaperOn, false));
         }, (it: DownloadItem) =>
           `dl_${it.fileId}_${it.path}_${it.progress}_${it.isPaused}_${it.sizeLabel}_${it.dateLabel}`);
         if (this.downloadsScanning && this.downloads.length === 0) {
@@ -2442,12 +2449,12 @@ export struct GlobalSearchPage {
     .layoutWeight(1)
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
     .clip(true)
     .bindSheet($$this.removeSheetShown, this.removeDownloadSheet(), {
       height: SheetSize.FIT_CONTENT,
-      backgroundColor: $r('app.color.surface'),
+      backgroundColor: mainCardFill(this.appWallpaperOn, false),
       onDisappear: () => { this.pendingRemoval = null; },
       blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
@@ -2480,7 +2487,7 @@ export struct GlobalSearchPage {
       bottom: compact ? 0 : 12
     })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(compact ? 0 : 20)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 3 }))
@@ -2536,7 +2543,7 @@ export struct GlobalSearchPage {
       bottom: compact ? 0 : 12
     })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(compact ? 0 : 20)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 3 }))
@@ -2715,13 +2722,13 @@ export struct GlobalSearchPage {
           (r: SearchRow, idx: number) => {
             ListItem() {
               this.chatRow(r, idx > 0);
-            }.backgroundColor($r('app.color.surface'));
+            }.backgroundColor(mainCardFill(this.appWallpaperOn, false));
           }, (r: SearchRow) => `res_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
       }
       .layoutWeight(1)
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-      .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true);
     }
@@ -2742,7 +2749,7 @@ export struct GlobalSearchPage {
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
       .justifyContent(FlexAlign.Center)
-      .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20);
     } else {
       Grid() {
@@ -2753,7 +2760,7 @@ export struct GlobalSearchPage {
                 Image(`file://${it.thumbPath}`).draggable(false)
                   .width('100%').height('100%').objectFit(ImageFit.Cover);
               } else {
-                Column().width('100%').height('100%').backgroundColor($r('app.color.surface_alt'));
+                Column().width('100%').height('100%').backgroundColor(mainCardFill(this.appWallpaperOn, true));
               }
               if (it.isVideo) {
                 Row({ space: 3 }) {
@@ -2789,7 +2796,7 @@ export struct GlobalSearchPage {
       .layoutWeight(1)
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-      .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true)
       .onReachEnd(() => {
@@ -2871,7 +2878,7 @@ export struct GlobalSearchPage {
               (r: SearchRow, idx: number) => {
                 this.appRow(r, idx > 0);
               }, (r: SearchRow) => `capp_${r.userId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor($r('app.color.surface'));
+          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
           if (this.filteredAppResults().length === 0 &&
             (!this.appsLoaded || this.appsFailed ||
               this.apps.some((row: SearchRow) => row.title === ''))) {
@@ -2886,7 +2893,7 @@ export struct GlobalSearchPage {
               (r: SearchRow, idx: number) => {
                 this.chatRow(r, idx > 0);
               }, (r: SearchRow) => `cres_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor($r('app.color.surface'));
+          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
           if (this.filteredChatResults().length === 0 &&
             (this.chatSearching || this.chatSearchFailed)) {
             this.chatSearchInlineState();
@@ -2925,7 +2932,7 @@ export struct GlobalSearchPage {
     .align(Alignment.Top)
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off)
-    .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
     .clip(true)
     .onReachEnd(() => {
@@ -2981,7 +2988,7 @@ export struct GlobalSearchPage {
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
       .justifyContent(FlexAlign.Center)
-      .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20);
     } else {
       List() {
@@ -3001,7 +3008,7 @@ export struct GlobalSearchPage {
       .layoutWeight(1)
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-      .backgroundColor($r('app.color.surface'))
+    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true)
       .divider({
@@ -3066,12 +3073,16 @@ export struct GlobalSearchPage {
     .onReady((context: NavDestinationContext): void => {
       this.navStack = context.pathStack;
     })
-    .width('100%').height('100%');
+    .width('100%').height('100%')
+    .backgroundColor(mainPageFill(this.appWallpaperOn));
   }
 
   @Builder
   body() {
     Stack({ alignContent: Alignment.TopStart }) {
+    // NavDestination 自带的页面层会隔断 MainScreen 的壁纸，和资料详情页一样在
+    // 当前目的页内重画一层；分栏时 AppBackdrop 会按统一规则自动停止绘制。
+    AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH) });
     Column() {
       Column() {
         // 搜索框和分类条跟着下面的结果列一起限宽、一起居中。它们语义上像标题栏
@@ -3130,14 +3141,16 @@ export struct GlobalSearchPage {
       .onChange((index: number) => { this.onTabSelected(index); });
     }
     .width('100%').height('100%')
-    .backgroundColor($r('app.color.page_bg'))
+    .backgroundColor(mainPageFill(this.appWallpaperOn))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
 
       if (this.previewItem !== null) {
         this.downloadPreviewOverlay(this.previewItem!);
       }
     }
-    .width('100%').height('100%');
+    .width('100%').height('100%')
+    .backgroundColor(mainPageFill(this.appWallpaperOn))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 
   @Builder

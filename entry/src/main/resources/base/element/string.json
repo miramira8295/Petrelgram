@@ -4081,6 +4081,22 @@
       "value": "自动下载按当前网络与文件大小执行；保存到相册由系统确认写入。"
     },
     {
+      "name": "ds_download_location",
+      "value": "下载位置"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "默认下载路径"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "保存时选择位置"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "默认下载路径已更新"
+    },
+    {
       "name": "ct_added",
       "value": "已添加联系人「%1$s」"
     },

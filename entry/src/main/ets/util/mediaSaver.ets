@@ -11,7 +11,7 @@ const COPY_BUF: number = 1024 * 1024;
 const DOWNLOAD_PREFS: string = 'download_location';
 const DOWNLOAD_DIRECTORY_URI: string = 'directory_uri';
 const DOWNLOAD_ROOT_URI: string = 'file://docs/storage/Users/currentUser/Download';
-const DOWNLOAD_APP_FOLDER: string = 'Petrelgram';
+const DOWNLOAD_APP_FOLDER: string = 'com.miramira8295.petrelgram';
 
 export interface FileSaveProgress {
   onSaving(percent: number): void;
@@ -197,6 +197,41 @@ async function selectDownloadDirectoryUri(context: common.UIAbilityContext): Pro
   return directoryUri;
 }
 
+function downloadDirectoryPath(directoryUri: string): string {
+  const authorizedDirectory: string = new fileUri.FileUri(directoryUri).path;
+  return authorizedDirectory.endsWith(`/${DOWNLOAD_APP_FOLDER}`)
+    ? authorizedDirectory : `${authorizedDirectory}/${DOWNLOAD_APP_FOLDER}`;
+}
+
+export function getDownloadDirectoryPath(context: common.UIAbilityContext): string {
+  if (context === undefined || !folderAuthorizationAvailable()) {
+    return '';
+  }
+  const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
+  const remembered: string = store.getSync(DOWNLOAD_DIRECTORY_URI, '') as string;
+  return downloadDirectoryPath(remembered !== '' ? remembered : DOWNLOAD_ROOT_URI);
+}
+
+export async function changeDownloadDirectory(context: common.UIAbilityContext): Promise<boolean> {
+  if (context === undefined || !folderAuthorizationAvailable()) {
+    return false;
+  }
+  const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
+  const previous: string = store.getSync(DOWNLOAD_DIRECTORY_URI, '') as string;
+  const selected: string = await selectDownloadDirectoryUri(context);
+  if (selected === '') {
+    return false;
+  }
+  if (previous !== '' && previous !== selected) {
+    try {
+      await fileShare.revokePermission([downloadPolicy(previous)]);
+    } catch (e) {
+      logE(`changeDownloadDirectory revoke old permission failed: ${JSON.stringify(e)}`);
+    }
+  }
+  return true;
+}
+
 async function resolveDownloadDirectoryUri(context: common.UIAbilityContext): Promise<string> {
   const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
   const remembered: string = store.getSync(DOWNLOAD_DIRECTORY_URI, '') as string;
@@ -232,9 +267,7 @@ async function copyToDownloadDirectory(
   srcPath: string, fileName: string, directoryUri: string,
   progress?: FileSaveProgress
 ): Promise<void> {
-  const authorizedDirectory: string = new fileUri.FileUri(directoryUri).path;
-  const directory: string = authorizedDirectory.endsWith(`/${DOWNLOAD_APP_FOLDER}`)
-    ? authorizedDirectory : `${authorizedDirectory}/${DOWNLOAD_APP_FOLDER}`;
+  const directory: string = downloadDirectoryPath(directoryUri);
   if (!fs.accessSync(directory)) {
     fs.mkdirSync(directory);
   }
