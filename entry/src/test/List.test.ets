@@ -54,6 +54,7 @@ import callSessionTest from './CallSession.test';
 import callPresentationTest from './CallPresentation.test';
 import notificationServiceTest from './NotificationService.test';
 import downloadNotifyTest from './DownloadNotify.test';
+import secretChatTest from './SecretChat.test';
 import storyStoreTest from './StoryStore.test';
 import linkNavTest from './LinkNav.test';
 import deepLinkTest from './DeepLink.test';
@@ -263,6 +264,7 @@ export default function testsuite() {
   callPresentationTest();
   notificationServiceTest();
   downloadNotifyTest();
+  secretChatTest();
   storyStoreTest();
   linkNavTest();
   deepLinkTest();

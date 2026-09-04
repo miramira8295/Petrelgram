@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Усе одно ввімкнути"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "Очікування, поки співрозмовник увійде та прийме чат"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Встановлення шифрування…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Секретний чат закрито"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "Очікує підтвердження"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Закрито"
     }
   ]
 }

@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "تفعيل على أي حال"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "في انتظار اتصاله وقبول الدردشة"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "جارٍ إنشاء التشفير…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "تم إغلاق الدردشة السرية"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "بانتظار القبول"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "مغلقة"
     }
   ]
 }

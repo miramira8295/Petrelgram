@@ -466,7 +466,14 @@ export class AuthService {
     request['database_directory'] = this.databaseDirectory;
     request['files_directory'] = this.filesDirectory;
     request['use_message_database'] = true;
-    request['use_secret_chats'] = false;
+    // **必须为 true**：资料页有「开始秘密聊天」入口，而 TDLib 的
+    // createNewSecretChat 那条路一个闸都没有（Requests.cpp →
+    // UserManager::create_new_secret_chat → SecretChatsManager::create_chat，
+    // 是该文件里唯一不检查 use_secret_chats_ 的创建函数）。关着它去创建，
+    // actor 会照建，一关闭就撞上 SecretChatsManager.cpp:455 的
+    // CHECK(use_secret_chats_) 直接 abort——线上崩溃 2026-09-04 08:14 就是它。
+    // 要改回 false，必须同时摘掉那个入口。
+    request['use_secret_chats'] = true;
     request['api_id'] = clientRev;
     request['api_hash'] = clientSig;
     request['system_language_code'] = 'zh-Hans';

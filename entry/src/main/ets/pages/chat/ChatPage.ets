@@ -97,6 +97,10 @@ import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
 } from '../../util/messageLinkAction';
 import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
+import {
+  SecretChatInfo, secretHeaderKey, secretMembershipState
+} from '../../util/secretChat';
+import { watchSecretChat } from '../../store/SecretChatWatch';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
 import {
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
@@ -1566,6 +1570,11 @@ export struct ChatPage {
     });
   }
   @Local subtitle: string = '';
+  // 密聊未就绪时顶栏显示什么。**单独一个字段**：this.subtitle 由 MessageStore
+  // 推（成员数/最后上线），两边抢同一个字段的话谁后到谁赢。
+  @Local secretSubtitle: string = '';
+  // 密聊是不是自己发起的——等待期两侧话术不同。
+  @Local secretOutbound: boolean = false;
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
   // header subtitle (see composerPlaceholder).
   @Local typingLabel: string = '';
@@ -4834,6 +4843,11 @@ export struct ChatPage {
     this.headerProfileOpening = false;
     this.headerMuteUpdating = false;
     this.subtitle = '';
+    // 换会话时把上一条密聊的订阅退掉：新会话不是密聊的话，没有任何一处会
+    // 再 set 同名订阅，它会一直挂着（回调里的 seq 闸让它无害，但仍是泄漏）。
+    this.subscriptions.clear('secretChat');
+    this.secretSubtitle = '';
+    this.secretOutbound = false;
     this.avatarPath = '';
     this.initials = '?';
     this.title = this.chatHeaderTitleNow('');
@@ -4922,25 +4936,36 @@ export struct ChatPage {
       this.headerKind = 'secret';
       this.isGroup = false;
       this.isChannel = false;
+      // 盯住状态而不是取一次：密聊建立是异步的，pending → ready 只由
+      // updateSecretChat 推（理由见 store/SecretChatWatch）。这一个订阅同时
+      // 喂三样：对方 user id、顶栏副标题、输入区形态。
       const secretId = (type!['secret_chat_id'] as number | undefined) ?? 0;
-      if (secretId > 0) {
-        const secretReq: TdRequest = { '@type': 'getSecretChat' };
-        secretReq['secret_chat_id'] = secretId;
-        getTdClient().send(secretReq).then((secret: TdObject): void => {
+      this.subscriptions.set('secretChat', watchSecretChat(secretId,
+        (info: SecretChatInfo): void => {
           if (seq !== this.headerResolveSeq) {
             return;
           }
-          this.headerPeerUserId = (secret['user_id'] as number | undefined) ?? 0;
-          this.headerIdentityResolved = this.headerPeerUserId > 0;
-          this.fetchHeaderEmojiStatus();
-        }).catch((error: TdError): void => {
-          logE(`ChatPage.getSecretChat header failed: ${error.message}`);
-        });
-      }
+          this.applySecretChat(info);
+        }));
     }
     this.commitTimelineSnapshot();
     this.headerState = resolvedTitle !== '' || this.title !== '' ? 'ready' : 'error';
     this.headerLoadError = this.headerState === 'error' ? str('cp_chat_unavailable') : '';
+    this.fetchHeaderEmojiStatus();
+  }
+
+  // 密聊状态落到三处 UI。判定全在 util/secretChat（有单测），这里只搬运。
+  private applySecretChat(info: SecretChatInfo): void {
+    this.headerPeerUserId = info.userId;
+    this.headerIdentityResolved = info.userId > 0;
+    this.secretOutbound = info.isOutbound;
+    const headerKey: string = secretHeaderKey(info);
+    this.secretSubtitle = headerKey !== '' ? str(headerKey) : '';
+    const bar: string = secretMembershipState(info);
+    this.membershipState = bar !== '' ? bar : 'writable';
+    if (membershipLosesComposer(this.membershipState)) {
+      this.applyComposerMode(idleComposer());
+    }
     this.fetchHeaderEmojiStatus();
   }
 
@@ -4971,7 +4996,7 @@ export struct ChatPage {
   private headerText(): ChatHeaderPresentation {
     return chatHeaderPresentation({
       title: this.title,
-      subtitle: this.subtitle,
+      subtitle: this.secretSubtitle !== '' ? this.secretSubtitle : this.subtitle,
       state: this.headerState,
       loadError: this.headerLoadError,
       kind: this.headerKind
@@ -5116,7 +5141,11 @@ export struct ChatPage {
       }
       this.membershipSupergroupId = 0;
       this.membershipBasicGroupId = 0;
-      this.membershipState = 'writable';
+      // 密聊的输入区形态由 applySecretChat 定（待建立/已关闭都不能发），
+      // 这里一律写 writable 会把它冲掉。
+      if (typeName !== 'chatTypeSecret') {
+        this.membershipState = 'writable';
+      }
     }).catch((e: TdError): void => {
       if (seq === this.membershipSeq) {
         // Don't leave private/secret chats with a permanently hidden composer
@@ -9086,6 +9115,7 @@ export struct ChatPage {
           state: this.composerSlot(),
           isMuted: this.isMuted,
           joining: this.joiningChat,
+          secretOutbound: this.secretOutbound,
           bottomGap: this.composerBottomGap(),
           onJoin: (): void => { this.joinCurrentChat(); },
           onToggleMute: (): void => { this.toggleChatMute(); },

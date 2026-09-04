@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "それでも有効にする"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "相手がオンラインになって承認するのを待っています"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "暗号化を確立しています…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "シークレットチャットは終了しました"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "承認待ち"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "終了済み"
     }
   ]
 }

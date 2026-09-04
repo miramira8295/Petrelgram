@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Activar igualmente"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "Esperando a que se conecte y acepte"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Estableciendo cifrado…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Chat secreto cerrado"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "Esperando aceptación"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Cerrado"
     }
   ]
 }

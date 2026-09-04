@@ -11803,6 +11803,26 @@
     {
       "name": "glass_warn_enable",
       "value": "仍要開啟"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "等待對方上線後接受密聊"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "正在建立加密連線…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "密聊已關閉"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "等待接受"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "已關閉"
     }
   ]
 }

@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "با این حال فعال کن"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "در انتظار آنلاین شدن و پذیرش گفتگو"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "در حال برقراری رمزنگاری…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "گفتگوی محرمانه بسته شد"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "در انتظار پذیرش"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "بسته شد"
     }
   ]
 }

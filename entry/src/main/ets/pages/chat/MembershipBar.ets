@@ -4,6 +4,10 @@ import {
 } from '../../util/membershipState';
 import { MEMBERSHIP_BOT_START } from '../../util/botStart';
 import {
+  MEMBERSHIP_SECRET_CLOSED, MEMBERSHIP_SECRET_PENDING, secretBarTextKey
+} from '../../util/secretChat';
+import { str } from '../../util/strings';
+import {
   MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
@@ -26,6 +30,8 @@ export struct MembershipBar {
   @Prop state: string;
   @Prop isMuted: boolean;
   @Prop joining: boolean;
+  // 密聊是不是自己发起的。等待期两侧话术不同（见 util/secretChat）。
+  @Prop secretOutbound: boolean;
   // 底部让出的高度，由页面按键盘/抽屉状态算好传进来。
   @Prop bottomGap: number;
 
@@ -50,6 +56,16 @@ export struct MembershipBar {
             .fontSize(17).fontColor([COLOR_PRIMARY]);
           Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'))
             .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+        } else if (this.state === MEMBERSHIP_SECRET_PENDING ||
+          this.state === MEMBERSHIP_SECRET_CLOSED) {
+          // 密聊未就绪。两种都只是说明，点了没有任何动作——所以下面那条
+          // enabled 的正面枚举里不列它们。
+          SymbolGlyph($r(this.state === MEMBERSHIP_SECRET_PENDING
+            ? 'sys.symbol.lock' : 'sys.symbol.lock_open'))
+            .fontSize(17).fontColor([COLOR_TEXT_SECONDARY]);
+          Text(str(secretBarTextKey(this.state, this.secretOutbound)))
+            .fontSize(15).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
         } else if (this.state === MEMBERSHIP_BOT_START) {
           Text($r('app.string.cp_bot_start'))
             .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);

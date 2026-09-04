@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Trotzdem aktivieren"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "Warten, bis der Kontakt online geht und annimmt"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Verschlüsselung wird aufgebaut …"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Geheimer Chat beendet"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "Wartet auf Annahme"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Beendet"
     }
   ]
 }

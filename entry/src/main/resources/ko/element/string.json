@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "그래도 켜기"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "상대방이 접속해 수락하기를 기다리는 중"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "암호화 설정 중…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "비밀 대화가 종료됨"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "수락 대기 중"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "종료됨"
     }
   ]
 }

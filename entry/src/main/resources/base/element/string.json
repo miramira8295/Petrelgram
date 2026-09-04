@@ -11835,6 +11835,26 @@
     {
       "name": "glass_warn_enable",
       "value": "仍要开启"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "等待对方上线后接受密聊"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "正在建立加密连接…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "密聊已关闭"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "等待接受"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "已关闭"
     }
   ]
 }

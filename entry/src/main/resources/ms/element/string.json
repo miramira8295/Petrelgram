@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Tetap hidupkan"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "Menunggu mereka dalam talian dan menerima"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Membina penyulitan…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Sembang rahsia ditutup"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "Menunggu penerimaan"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Ditutup"
     }
   ]
 }

@@ -493,6 +493,14 @@ export struct ChatRow {
       // 所以这一档不会把行撑高，只是把两行分开。
       Column({ space: 6 }) {
         Row() {
+          // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
+          // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
+          // 颜色用绿色而不是强调色——和 Telegram 各端一致，也不会随主题变淡。
+          if (this.chat.kind === 'secret') {
+            SymbolGlyph($r('sys.symbol.lock_fill'))
+              .fontSize(13).fontColor(['#31C48D'])
+              .margin({ right: 3 }).flexShrink(0);
+          }
           Text(this.chat.isSavedMessages
             ? $r('app.string.cl_saved_messages') : this.chat.title)
             .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)

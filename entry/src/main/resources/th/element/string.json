@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "เปิดใช้ต่อไป"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "รอให้อีกฝ่ายออนไลน์และยอมรับ"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "กำลังสร้างการเข้ารหัส…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "ปิดแชทลับแล้ว"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "รอการยอมรับ"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "ปิดแล้ว"
     }
   ]
 }

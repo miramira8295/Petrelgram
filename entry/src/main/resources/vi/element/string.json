@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Vẫn bật"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "Đang chờ đối phương trực tuyến và chấp nhận"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Đang thiết lập mã hoá…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Trò chuyện bí mật đã đóng"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "Đang chờ chấp nhận"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Đã đóng"
     }
   ]
 }

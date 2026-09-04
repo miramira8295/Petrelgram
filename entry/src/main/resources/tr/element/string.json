@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Yine de aç"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "Karşı tarafın çevrimiçi olup kabul etmesi bekleniyor"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Şifreleme kuruluyor…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Gizli sohbet kapatıldı"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "Kabul bekleniyor"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Kapatıldı"
     }
   ]
 }

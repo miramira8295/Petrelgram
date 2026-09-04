@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Activer quand même"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "En attente que le contact se connecte et accepte"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Établissement du chiffrement…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Discussion secrète fermée"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "En attente d’acceptation"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Fermée"
     }
   ]
 }

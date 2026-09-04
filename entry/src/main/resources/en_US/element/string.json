@@ -11807,6 +11807,26 @@
     {
       "name": "glass_warn_enable",
       "value": "Enable anyway"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "Waiting for them to come online and accept"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "Establishing encryption…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "Secret chat closed"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "Waiting to be accepted"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "Closed"
     }
   ]
 }

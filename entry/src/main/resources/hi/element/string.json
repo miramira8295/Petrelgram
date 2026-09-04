@@ -11787,6 +11787,26 @@
     {
       "name": "glass_warn_enable",
       "value": "फिर भी चालू करें"
+    },
+    {
+      "name": "cp_secret_pending_out",
+      "value": "उनके ऑनलाइन आकर स्वीकार करने की प्रतीक्षा"
+    },
+    {
+      "name": "cp_secret_pending_in",
+      "value": "एन्क्रिप्शन बनाया जा रहा है…"
+    },
+    {
+      "name": "cp_secret_closed",
+      "value": "गुप्त चैट बंद हो गई"
+    },
+    {
+      "name": "chat_header_secret_pending",
+      "value": "स्वीकृति की प्रतीक्षा"
+    },
+    {
+      "name": "chat_header_secret_closed",
+      "value": "बंद"
     }
   ]
 }

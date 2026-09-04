@@ -116,6 +116,15 @@ cd "$OUT_DIR"
 # 只留 VP9 解码器，产物才压得住体积。
 #
 # --enable-vp9-highbitdepth 不开：Telegram 贴纸是 8bit，开了平白多一份代码路径。
+#
+# **--enable-runtime-cpu-detect 不能关**（2026-09-04 用一条线上崩溃换来的）。
+# 关掉之后 libvpx 不是"只用基线 NEON"，而是把函数指针**静态绑到编译进来的最高档
+# SIMD 变体**——本 .a 里带着 i8mm 与 dotprod 两族（llvm-nm 数得到 22 个符号），
+# 于是在不支持 FEAT_I8MM（ARMv8.6）的核上，第一帧带亚像素运动的帧就是非法指令：
+#   SIGILL(ILL_ILLOPC) @ vpx_convolve8_vert_neon_i8mm+608
+# 关键帧走帧内预测碰不到 convolve8，所以贴纸能先播一会儿再崩，很像"偶发"。
+# 打开之后 aarch64+linux 走 getauxval(AT_HWCAP/HWCAP2) 查能力，OHOS 的 musl
+# 有这个符号；查不到就自然退回基线 NEON，安全方向是对的。
 log "configure"
 CC="$TOOL_WRAPPER_DIR/clang" \
 CXX="$TOOL_WRAPPER_DIR/clang++" \
@@ -138,7 +147,7 @@ CFLAGS="-O2 -fPIC" \
     --enable-static \
     --disable-shared \
     --enable-pic \
-    --disable-runtime-cpu-detect \
+    --enable-runtime-cpu-detect \
     > "$OUT_DIR/configure.log" 2>&1 || {
         tail -30 "$OUT_DIR/configure.log"
         [ ! -f "$OUT_DIR/config.log" ] || {
