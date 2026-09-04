@@ -50,6 +50,7 @@ import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
 import { ChatTimelineHost } from './ChatTimelineHost';
 import { cacheDestPath, isVideoPath } from '../../util/mediaPick';
+import { LivePhotoExport } from '../../util/movingPhotoPick';
 import {
   ChatBackgroundState, ChatBackgroundStore, emptyChatBackground
 } from '../../store/ChatBackgroundStore';
@@ -70,7 +71,7 @@ import { IReusePool, UIUtils } from '@kit.ArkUI';
 import { ChatBackdrop } from './ChatBackdrop';
 import { ChatHeader } from './ChatHeader';
 import {
-  ChatHeaderMenuController, ChatHeaderMenuParams, createChatHeaderMenuId
+  ChatHeaderMenuController, ChatHeaderMenuParams, PANEL_MAIN, createChatHeaderMenuId
 } from './ChatHeaderMenu';
 import { TopBanners } from './TopBanners';
 import { TranslateSheet } from './TranslateSheet';
@@ -81,7 +82,7 @@ import { firstRowBelowChrome, floatDateNeedsRescan } from '../../util/floatDateG
 import { isInteriorRowRemoval } from '../../util/rowRemoval';
 import {
   PENDING_MEDIA_MAX, PendingMediaAppend, PendingMediaItem, appendPendingMedia,
-  clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend,
+  clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend, toMediaSendItems,
   removePendingMedia
 } from '../../util/pendingMedia';
 import {
@@ -116,6 +117,7 @@ import {
   replyKeyboardVisible
 } from '../../util/composerChrome';
 import { replySnippetOf } from '../../util/replySnippet';
+import { replyThumbIsSticker, replyThumbOf } from '../../util/replyThumb';
 import {
   TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR, timelineStateMode
 } from '../../util/timelineState';
@@ -197,6 +199,7 @@ import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
 import { adminLabelOf } from '../../util/adminLabel';
 import { clearSenderRoles, publishSenderRole, senderRoleKey } from '../../util/senderRoleChannel';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { hasPrefetchedPage } from '../../util/chatPrefetch';
 import { subscribeChatJump } from '../../util/chatJumpChannel';
 import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
 import { isSplitLayout } from '../../util/splitMetrics';
@@ -1323,7 +1326,30 @@ export struct ChatPage {
 
   // Prepare the row once for this build invocation. `data` used to repeat all
   // of these derived lookups independently for every visible row.
+  // 这一行**自己**的播放位。不是本行拥有播放位时一律返回空串。
+  //
+  // 【为什么必须行局部化】播放位是全局单值，而 prepareMessageBubble 的缓存键
+  // 里原来放的是它的原值——于是播放位一变，整屏每一行的键同时变，缓存全作废，
+  // 每行都拿到一个新的 data 对象、每个气泡都重渲染一次。09-03 的 Frame 录制
+  // 里，每次向上翻页之后 100–250ms 内 15–33 个气泡同时更新（正常滚动是 1–3
+  // 个），就是这么来的：翻页 → driveVisibleWork → armPlaySlotSettle → 重新
+  // 竞选播放位 → 全屏作废。
+  //
+  // 气泡侧从来只拿它和**自己的**成员 id 比（MessageBubble.isPlaySlot /
+  // isAlbumCellPlaySlot），所以对不拥有播放位的行传空串与传原值完全等价。
+  private rowPlaySlotKey(g: AlbumGroup): string {
+    if (this.playSlotKey === '') {
+      return '';
+    }
+    return g.memberIds.indexOf(slotKeyMessageId(this.playSlotKey)) >= 0
+      ? this.playSlotKey : '';
+  }
+
   private prepareMessageBubble(g: AlbumGroup): PreparedMessageBubble {
+    // 行局部的播放位。起播位置同理：只有拥有播放位的那一行才谈得上续播位置，
+    // 其余行给 0——否则它一变，整屏的缓存又一起作废。
+    const rowSlot: string = this.rowPlaySlotKey(g);
+    const rowSlotStartMs: number = rowSlot === '' ? 0 : this.playSlotStartMs;
     const paused: boolean = this.animationPaused(g.head.id);
     const forcePlay: boolean = this.animationForcePlay(g.head.id);
     const playbackFailed: boolean = this.animationPlaybackFailed(g.head.id);
@@ -1353,7 +1379,7 @@ export struct ChatPage {
       `|anim${paused ? 1 : 0}${forcePlay ? 1 : 0}${playbackFailed ? 1 : 0}` +
       `|edit${editingActive ? 1 : 0}|fresh${animateIn ? 1 : 0}` +
       `|live${this.liveLocationMessageId}|call${liveGroupCallId}` +
-      `|slot${this.playSlotKey}|slotms${this.playSlotStartMs}` +
+      `|slot${rowSlot}|slotms${rowSlotStartMs}` +
       `|mute${this.autoplayMuted ? 1 : 0}|msg${audio ? this.messageListRevision : 0}` +
       `|bg${this.chatBackgroundRevision}|appearance${this.appearanceEpoch}` +
       `|material${this.materialEpoch}|dark${this.appDark ? 1 : 0}`;
@@ -1389,7 +1415,7 @@ export struct ChatPage {
         g.head.inlineCustomEmojiIds,
         g.head.inlineCustomEmojiPaths
       ),
-      playSlotActive: this.playSlotKey === slotKey(g.head.id, -1),
+      playSlotActive: rowSlot === slotKey(g.head.id, -1),
       animationPaused: paused,
       animationForcePlay: forcePlay,
       animationPlaybackFailed: playbackFailed,
@@ -1412,8 +1438,8 @@ export struct ChatPage {
       audioQueueLength,
       audioHasPrevious,
       audioHasNext,
-      playSlotKey: this.playSlotKey, autoplayMuted: this.autoplayMuted,
-      playSlotStartMs: this.playSlotStartMs,
+      playSlotKey: rowSlot, autoplayMuted: this.autoplayMuted,
+      playSlotStartMs: rowSlotStartMs,
       animationPaused: paused,
       animationForcePlay: forcePlay,
       animationPlaybackFailed: playbackFailed,
@@ -1618,6 +1644,8 @@ export struct ChatPage {
   @Local replyToId: number = 0;      // message being replied to (0 = none)
   @Local replyToName: string = '';
   @Local replyToText: string = '';
+  @Local replyToThumb: string = '';
+  @Local replyToThumbSticker: boolean = false;
   @Local editingId: number = 0;      // message being edited (0 = none)
   @Local editingPreview: string = '';
   @Local editingKind: string = 'text'; // 'text' | 'caption'
@@ -2496,8 +2524,12 @@ export struct ChatPage {
     const store = new MessageStore(
       getTdClient(), getUserStore(), this.chatId, this.threadRootId, 30,
       this.forumTopicId, this.directMessagesTopicId);
-    store.deferInitialPublication(isSplitLayout(this.screenW, this.screenH)
-      ? 0 : INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
+    // 预取在手时**不下围栏**：那道围栏防的是"页面滑到一半才闪出内容"，
+    // 而预取意味着首帧就已经有行了——页面是带着内容滑进来的，没有可闪的东西。
+    // 见 util/chatPrefetch。
+    store.deferInitialPublication(
+      (isSplitLayout(this.screenW, this.screenH) || hasPrefetchedPage(this.chatId))
+        ? 0 : INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
     this.store = store;
     if (!scrollResumeWaiting || this.groups.length === 0) {
       this.messageLoadState = 'loading';
@@ -6892,6 +6924,11 @@ export struct ChatPage {
       return;
     }
     const params: ChatHeaderMenuParams = {
+      chatId: this.chatId,
+      // 面板与切换由 ChatHeaderMenuController 自己接管（见那边的 swapPanel）。
+      panel: PANEL_MAIN,
+      onOpenFolders: (): void => {},
+      onBackToMain: (): void => {},
       isMuted: this.isMuted,
       muteUpdating: this.headerMuteUpdating,
       isGroup: this.isGroup,
@@ -7263,10 +7300,20 @@ export struct ChatPage {
     let skipped: number = 0;
     const ctx = getContext(this) as common.UIAbilityContext;
     for (const uri of uris) {
-      const motion: string = await exportLivePhotoMotion(
+      const live: LivePhotoExport = await exportLivePhotoMotion(
         ctx, uri, ctx.filesDir, `${Date.now()}_${++this.mediaCopySeq}`);
-      if (motion !== '') {
-        items.push({ path: motion, isVideo: true });
+      if (live.videoPath !== '') {
+        // 几何与封面都由导出那一步算好（见 util/movingPhotoPick）：静图给显示
+        // 宽高，另存的小图给 inputThumbnail。这里只负责搬运。
+        items.push({
+          path: live.videoPath,
+          isVideo: true,
+          thumbPath: live.thumbPath,
+          thumbWidth: live.thumbWidth,
+          thumbHeight: live.thumbHeight,
+          width: live.displayWidth,
+          height: live.displayHeight
+        });
         continue;
       }
       const path: string = this.copyUriToCache(uri);
@@ -7632,8 +7679,9 @@ export struct ChatPage {
     if (store === null || !hasPendingMedia(this.pendingMedia)) {
       return;
     }
-    const items: MediaSendItem[] = this.pendingMedia.map(
-      (item: PendingMediaItem): MediaSendItem => ({ path: item.path, isVideo: item.isVideo }));
+    // 搬运在 util/pendingMedia：这里曾经是个 `{ path, isVideo }` 字面量，
+    // 把实况导出时算好的封面与旋转后宽高在发送前丢了个干净。
+    const items: MediaSendItem[] = toMediaSendItems(this.pendingMedia);
     const captionSnapshot: string = this.draft;
     const caption: string = captionSnapshot.trim();
     const replyId: number = this.replyToId;
@@ -7766,6 +7814,8 @@ export struct ChatPage {
     this.replyToId = next.replyToId;
     this.replyToName = next.replyName;
     this.replyToText = next.replyText;
+    this.replyToThumb = next.replyThumb;
+    this.replyToThumbSticker = next.replyThumbSticker;
     this.editingId = next.editingId;
     this.editingKind = next.editingKind;
     this.editingPreview = next.editingPreview;
@@ -7793,7 +7843,12 @@ export struct ChatPage {
     ContextMenu.close();
     this.closeReactionSheet();
     this.applyComposerMode(enterReply(this.composerMode, messageId,
-      m.senderName !== '' ? m.senderName : this.title, this.replySnippet(m)));
+      m.senderName !== '' ? m.senderName : this.title, this.replySnippet(m),
+      replyThumbOf({
+        contentType: m.contentType, photoPath: m.photoPath,
+        paidMediaLocked: m.paidMediaLocked
+      }),
+      replyThumbIsSticker(m.contentType)));
     this.setEmojiPanel(false);
     this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
     setTimeout((): void => {
@@ -9049,6 +9104,8 @@ export struct ChatPage {
             replyToId: this.replyToId,
             replyToName: this.replyToName,
             replyToText: this.replyToText,
+            replyToThumb: this.replyToThumb,
+            replyToThumbSticker: this.replyToThumbSticker,
             botMenuAvailable: this.botMenuAvailable,
             commandMenuOpen: this.commandMenuOpen,
             showEmojiPanel: this.showEmojiPanel,
@@ -9869,7 +9926,8 @@ export struct ChatPage {
       avoidLayoutSafeArea: true,
       // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
       enableComponentSafeArea: false,
-      style: titleBarStyle(Color.Transparent),
+      // 第三个参数 false = 静态栏：滑动时不变（见 util/hdsTitleBar）。
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false),
       content: this.chatTitleBarContent()
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
@@ -9884,7 +9942,17 @@ export struct ChatPage {
     .hideTitleBar(viewerHidesTitleBar(
       isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0), true)
     // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
-    .bindToScrollable([this.scroller])
+    //
+    // **转场期间先不绑**（09-04 GPU trace）。这条绑定给 NavDestination 层挂了一个
+    // 覆盖整页的滤镜节点；推入动画期间 RS 要为整页开一张 1378×2832 的离屏缓存，
+    // 而滤镜缓存被动画反复判失效（`forceClearCache_:1, hashChange`），于是整页
+    // 内容被 CPU 重新光栅化两遍——实测两帧 98.7ms + 89.1ms，而同期 GPU 活跃度
+    // 只有 6%，是纯 CPU 打满。那 170ms 是整次进会话卡顿的绝对大头。
+    //
+    // 模糊本身很便宜（那 79.6ms 里 DrawFilter 只占 0.57ms），**贵的是它触发的
+    // 整页离屏缓存重建**。首屏揭幕之后再绑，那时页面已经静止，绑上不再有
+    // 转场动画去反复作废缓存。
+    .bindToScrollable(this.initialMessageTransitionSettled ? [this.scroller] : [])
     // HdsNavDestination 没有 fullScreenOverlay。只在分栏中把查看器提升为应用内
     // 顶层全模态，手机仍保留原来的页面内共享元素过渡。
     .bindContentCover(viewerFullScreenWanted(

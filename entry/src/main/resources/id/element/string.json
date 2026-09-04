@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d dtk"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "Buram antarmuka"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "Kaca buram di Kontak, Pengaturan, dan Profil, senada dengan bilah input. Dirender tiap frame — matikan bila tersendat."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "Tingkat buram"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "Mesin pemutaran"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "Gunakan pemutar sistem"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "Mendukung video HDR. Eksperimental — matikan untuk kembali"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "Video rentang dinamis tinggi"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "Tirai"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "Antarmuka"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "Daftar obrolan, kontak, dan pengaturan"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "Gelembung"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "Gelembung pesan — paling banyak dan paling boros"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "Baterai lebih boros"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "Blur dirender tiap frame: baterai dan panas naik jelas, dan bisa membuat frame turun saat menggulir. Jika perangkat panas atau tersendat, kembali ke sini dan pilih «Mati»."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "Tetap aktifkan"
     }
   ]
 }

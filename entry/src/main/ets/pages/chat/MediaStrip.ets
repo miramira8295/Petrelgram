@@ -1,6 +1,6 @@
 import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import { PendingMediaItem } from '../../util/pendingMedia';
+import { PendingMediaItem, pendingThumbSource } from '../../util/pendingMedia';
 import { plural } from '../../util/strings';
 
 // 输入框上方那一条：已经选好、还没发出去的媒体。
@@ -32,13 +32,22 @@ export struct MediaStrip {
   @Builder
   thumb(item: PendingMediaItem, index: number) {
     Stack({ alignContent: Alignment.TopEnd }) {
-      Image(`file://${item.path}`)
-        .draggable(false)
-        .width(THUMB).height(THUMB)
-        .objectFit(ImageFit.Cover)
-        .borderRadius(8);
+      // 拿哪张图见 util/pendingMedia.pendingThumbSource：视频喂 mp4 给 Image
+      // 是渲染不出来的，没有封面时画占位，别留一格空白。
+      if (pendingThumbSource(item) !== '') {
+        Image(`file://${pendingThumbSource(item)}`)
+          .draggable(false)
+          .width(THUMB).height(THUMB)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(8);
+      } else {
+        Column()
+          .width(THUMB).height(THUMB)
+          .borderRadius(8)
+          .backgroundColor($r('app.color.surface_alt'));
+      }
       if (item.isVideo) {
-        // 视频角标：缩略图是首帧，不标一下和图片分不出来。
+        // 视频角标：和图片分不出来，标一下。
         Row() {
           SymbolGlyph($r('sys.symbol.play_fill'))
             .fontSize(10).fontColor([Color.White]);

@@ -20,6 +20,11 @@ import {
 import {
   normalizeProxySwitchDelay, PROXY_SWITCH_DELAY_DEFAULT
 } from '../util/proxyAutoSwitch';
+import {
+  KEY_SURFACE_GLASS_LEVEL, KEY_BUBBLE_GLASS_LEVEL, KEY_SURFACE_GLASS_ON, KEY_BUBBLE_GLASS_ON,
+  BUBBLE_GLASS_ON_DEFAULT,
+  SURFACE_GLASS_LEVEL_DEFAULT, SURFACE_GLASS_ON_DEFAULT
+} from '../util/surfaceGlass';
 
 // User settings that outlive the process. Each one is mirrored into AppStorage
 // so any component can bind it with @StorageProp and re-render on change, while
@@ -100,6 +105,12 @@ export const KEY_CACHE_LIMIT: string = 'cacheLimit';
 // 厚度存的是**相对偏移**（-2..2，0 = 出厂手感），不是绝对档位：每个面的厚度
 // 是分别调过的，绝对档位会把弹窗和顶栏压成同一厚度。
 export const KEY_MATERIAL_THICKNESS: string = 'materialThickness';
+// 全局界面模糊质感（联系人/设置/我的，往后还有会话列表与气泡）。
+// 定义、默认值与取值范围都在 util/surfaceGlass，这里只负责落盘与镜像。
+export {
+  KEY_SURFACE_GLASS_ON, KEY_BUBBLE_GLASS_ON,
+  KEY_SURFACE_GLASS_LEVEL, KEY_BUBBLE_GLASS_LEVEL
+} from '../util/surfaceGlass';
 // 底栏是否显示「联系人」页签（交互设置）。关掉只是隐藏页签，联系人页本身还在。
 export const KEY_SHOW_CONTACTS_TAB: string = 'showContactsTab';
 // 会话行的左右滑操作（已读/静音/归档）。默认关：开着会吃掉横向手势，左右滑就
@@ -322,6 +333,18 @@ export const KEY_BG_PLAY_VOICE: string = 'bgPlayVoice';
 export const KEY_BG_PLAY_VIDEO: string = 'bgPlayVideo';
 export const KEY_BG_PLAY_LIVE: string = 'bgPlayLive';
 
+// 全屏播放引擎：打开=系统 AVPlayer，关闭=ijkplayer（默认）。
+//
+// 存在的理由是 HDR：打包的 ijkplayer 着色器只有 BT.601/709 两个 SDR 色彩矩阵、
+// 没有 PQ/HLG 传递函数、也从不给 surface 打 HDR 元数据，HDR 片源会被压成 SDR
+// 发灰。系统 AVPlayer 有 PlaybackStrategy.preferredHdr。
+//
+// **默认开**（09-04 改）。ijkplayer 从渲染层就没有 HDR 通路（着色器只有
+// BT.601/709、没有 PQ/HLG、从不给 surface 打 HDR 元数据），而 AVPlayer 有
+// PlaybackStrategy.preferredHdr。关掉开关即退回 ijk，退路一直在。
+// 只作用于全屏查看器；气泡内嵌播放位恒走 ijk（见 VideoPlayerHost）。
+export const KEY_VIDEO_ENGINE_AVPLAYER: string = 'videoEngineAvPlayer';
+
 // 崩溃上报。默认**开**——这一项存在的全部意义就是"应用打不开时也能知道为什么"，
 // 默认关等于没有。载荷里没有任何用户内容（见 services/crashReport），用户可以
 // 在设置里关掉。
@@ -336,7 +359,10 @@ const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
   // 音乐/语音/直播默认续播（符合平台惯例）；视频默认不续播。
   KEY_BG_PLAY_MUSIC,
   KEY_BG_PLAY_VOICE,
-  KEY_BG_PLAY_LIVE
+  KEY_BG_PLAY_LIVE,
+  // 全屏播放引擎默认走系统 AVPlayer。ijkplayer 那条只在关掉开关时才用，
+  // 留作退路（它的渲染层没有 HDR 通路，见 KEY_VIDEO_ENGINE_AVPLAYER 的说明）。
+  KEY_VIDEO_ENGINE_AVPLAYER
 ];
 
 const DATA_BOOLEAN_FALSE_DEFAULTS: string[] = [
@@ -467,6 +493,19 @@ export async function initSettings(context: common.Context): Promise<void> {
       normalizeListCachedCount(await s.get(KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT) as number));
     AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS,
       await s.get(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_SURFACE_GLASS_ON,
+      await s.get(KEY_SURFACE_GLASS_ON, SURFACE_GLASS_ON_DEFAULT) as boolean);
+    AppStorage.setOrCreate(KEY_BUBBLE_GLASS_ON,
+      await s.get(KEY_BUBBLE_GLASS_ON, BUBBLE_GLASS_ON_DEFAULT) as boolean);
+    mirrorChatEnvKey(KEY_BUBBLE_GLASS_ON,
+      AppStorage.get<boolean>(KEY_BUBBLE_GLASS_ON) ?? BUBBLE_GLASS_ON_DEFAULT);
+    // 气泡玻璃也读这个开关（见 util/chatEnvMirror 里 bubbleMaterialOn 那段）。
+    mirrorChatEnvKey(KEY_SURFACE_GLASS_ON,
+      AppStorage.get<boolean>(KEY_SURFACE_GLASS_ON) ?? SURFACE_GLASS_ON_DEFAULT);
+    AppStorage.setOrCreate(KEY_SURFACE_GLASS_LEVEL,
+      await s.get(KEY_SURFACE_GLASS_LEVEL, SURFACE_GLASS_LEVEL_DEFAULT) as number);
+    AppStorage.setOrCreate(KEY_BUBBLE_GLASS_LEVEL,
+      await s.get(KEY_BUBBLE_GLASS_LEVEL, SURFACE_GLASS_LEVEL_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_MATERIAL_LIGHT,
       await s.get(KEY_MATERIAL_LIGHT, LIGHT_DEFAULT) as string);
     AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS_DARK,

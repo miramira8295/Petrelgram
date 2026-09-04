@@ -13,6 +13,18 @@ export interface PendingMediaItem {
   // 已经拷进应用缓存的本地路径（copyUriToCache 的产物）。
   path: string;
   isVideo: boolean;
+  // ── 视频的附加信息。**只有实况照片那条路会填**（见 ChatPage.collectPickedMedia）。
+  //
+  // 为什么暂存项必须带着它们：选完图到点发送之间隔着用户打字，这段时间里
+  // 唯一活着的就是这个数组。以前它只有 path/isVideo，于是导出实况时算好的
+  // 封面与旋转后宽高在 sendPendingMedia 那一步被原地丢掉——接收端没有预览图、
+  // 竖拍视频还横过来（用户实测「依然不展示」）。字段在这里，就一路活到发送。
+  thumbPath?: string;
+  thumbWidth?: number;
+  thumbHeight?: number;
+  width?: number;
+  height?: number;
+  durationSec?: number;
 }
 
 // Telegram 一个相册最多九个成员，选择器那侧也是这个上限。
@@ -94,4 +106,40 @@ export function pendingMediaCanSend(
   current: PendingMediaItem[], draft: string
 ): boolean {
   return hasPendingMedia(current) || draft.trim() !== '';
+}
+
+// 暂存项 → 可发送项。
+//
+// 一比一的字段搬运，看着像废话，但它是**唯一**能保证"选择时算出来的视频元信息
+// 不在发送前掉队"的地方：曾经这一步写成 `{ path, isVideo }` 字面量，多出来的
+// 封面/宽高就那么无声消失了。放在这里是为了能被单测钉住。
+export function toMediaSendItems(current: PendingMediaItem[]): PendingMediaItem[] {
+  return current.map((item: PendingMediaItem): PendingMediaItem => ({
+    path: item.path,
+    isVideo: item.isVideo,
+    thumbPath: item.thumbPath,
+    thumbWidth: item.thumbWidth,
+    thumbHeight: item.thumbHeight,
+    width: item.width,
+    height: item.height,
+    durationSec: item.durationSec
+  }));
+}
+
+// 暂存条上这一格该拿哪张图去渲染。
+//
+// **视频不能直接喂给 Image。** MediaStrip 原来一律 `Image(file://item.path)`，
+// 旁边那个播放角标的注释还写着「缩略图是首帧」——这个假设不成立：ArkUI 的
+// Image 解不了 mp4，那一格从来就是空白的。实况照片把这件事暴露了出来
+// （用户实测：「我在文件发送的暂存区，也没有预览」）。
+//
+// 有封面就用封面（实况导出时顺手生成的 240x320 那张，见 util/sendThumb）；
+// 没有就返回空串，由调用方画占位而不是喂一个渲染不出来的路径。
+export function pendingThumbSource(item: PendingMediaItem): string {
+  const thumb: string = item.thumbPath ?? '';
+  if (thumb !== '') {
+    return thumb;
+  }
+  // 图片本身就是自己的预览；视频没有封面时给不出图。
+  return item.isVideo ? '' : item.path;
 }

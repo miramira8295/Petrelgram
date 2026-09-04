@@ -1,10 +1,6 @@
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
-import {
-  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
-} from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 
 // 删除消息的确认弹窗。用自定义弹窗而不是 promptAction.showDialog：后者只能排
@@ -26,7 +22,6 @@ export interface DeleteMessagesDialogParams {
 export struct DeleteMessagesDialog {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   peerName: string = '';
   onConfirm: (revoke: boolean) => void = (): void => {};
   onClose: () => void = (): void => {};
@@ -80,10 +75,20 @@ export struct DeleteMessagesDialog {
     .width('86%')
     .constraintSize({ maxWidth: 400 })
     .padding({ left: 20, right: 20, top: 22, bottom: 18 })
-    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
-    .borderRadius(18)
-    .backdropBlur(overlayBackdropBlur('dialog'))
-    .attributeModifier(materialModifier('dialog'));
+    // **这个弹窗不走玻璃/材质，用实底。**
+    //
+    // 走 overlayGlassFill('dialog', …) 时，设备自报支持沉浸材质就会拿到
+    // material_tint —— 那只是薄薄一层淡色，本意是叠在**真的渲染出来的**材质
+    // 之上。而这台机器（PLA-AL10 / OpenHarmony 7.0.0.105）实测材质挂了却不渲染
+    // （见 overlayMaterial.overlayGlassFill 里 08-29 那段记录），于是那层淡色
+    // 成了唯一的背板：顶栏压在均匀底上还行，**确认弹窗压在花花绿绿的消息上就是
+    // 一块透明的窟窿，文字和按钮都读不清**（用户实测截图）。
+    //
+    // 弹窗和栏的取舍不一样：栏可以为了通透牺牲一点对比，而**确认框必须在材质
+    // 完全不画的时候仍然可读**——它要用户做一个不可撤销的决定。所以这里不赌
+    // 材质，直接给实底。
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(18);
   }
 }
 

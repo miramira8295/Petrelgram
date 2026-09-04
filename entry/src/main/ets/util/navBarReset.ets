@@ -32,3 +32,28 @@ export function navBarVisibleOnAppear(splitLayout: boolean, stackDepth: number):
 export function navBarVisibleOnChange(_reported: boolean, splitLayout: boolean, stackDepth: number): boolean {
   return navBarVisibleOnAppear(splitLayout, stackDepth);
 }
+
+// dock（底部/侧边页签栏）该不该显示。**以取用那一刻的布局与栈深为准**，而不是
+// 相信各页签早先算好、存进 AppStorage 的那个布尔。
+//
+// 【为什么不能信那个布尔】它由各页签的 onNavBarStateChange 写入，而那个回调
+// **只在变化时触发**。它算出来的值依赖两个可能滞后的输入：
+//   · screenW / screenH —— 由 EntryAbility 的 windowSizeChange 另行刷新，
+//     两条路的先后无定（SettingsPage.onWindowResized 的注释里写过这一条）；
+//   · stack.size()     —— 出栈时框架是先报「navBar 可见」还是先更新栈，未定。
+// 任一个在那一帧是旧值，算出的 false 就**永久留在 AppStorage 里**——不会有第二
+// 次回调来纠正它（值没变，页面那边的写入还带着"同值不写"的闸）。用户下次点该
+// 页签，dock 就按这个陈旧的 false 消失了（用户实报「dock 的设置点击偶尔会消失」）。
+//
+// 现算就没有这个窗口：页签一切换就重新读一次真栈。
+//
+// stackDepth 为 undefined = 该页签还没被建过、栈尚未注册（Tabs 是懒建的），
+// 此时没有真值可读，只能用存下来的布尔兜底。
+export function dockVisibleForTab(
+  splitLayout: boolean, stackDepth: number | undefined, storedFlag: boolean
+): boolean {
+  if (stackDepth === undefined) {
+    return storedFlag;
+  }
+  return navBarVisibleOnAppear(splitLayout, stackDepth);
+}

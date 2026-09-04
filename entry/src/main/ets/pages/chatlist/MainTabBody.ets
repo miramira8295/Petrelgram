@@ -1,7 +1,16 @@
-import { router } from '@kit.ArkUI';
+import { curves, router } from '@kit.ArkUI';
+import { KEY_DOCK_AT_BOTTOM } from '../../util/splitMetrics';
+import {
+  archiveCardScale, archiveIconScale, archiveIconSpin, archiveRevealProgress
+} from '../../util/archiveReveal';
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
+import { KEY_APP_BG_ON } from '../../store/AppSettings';
+import { MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
+import { COLOR_DIVIDER, mainCardFill } from '../../util/theme';
+import { formatTime } from '../../util/formatTime';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, updateTouchHold } from './ChatListFreeze';
@@ -27,9 +36,25 @@ import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../s
 // 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
 // 长得和会话行一个个头，拉出来时才不显得是另一种东西。
 const ARCHIVE_ROW_HEIGHT: number = AVATAR_SIZE + ROW_PAD_V * 2;
+// 归档卡片与上方文件夹条之间的空当。
+const ARCHIVE_TOP_GAP: number = 8;
 // 归档行完全展开需要把顶部回弹拉多深（vp）。回弹带阻尼，这 96vp 对应一大段
 // 实打实的手指行程——"不好出现"的力度感全在这。要松就调小。
 const ARCHIVE_OVERPULL: number = 96;
+// 展开后滚多远自动收起。
+//
+// **只要开始滚，就收。** issue #186 的病根不是"谁盖谁"，而是"归档条和已经滚起来
+// 的列表同时在屏上"这件事本身：列表那边是 clip(false) + cachedCount(…, true) 的
+// 一对，滚出视口的行不回收、而且**故意画在列表边界之外**（好让标题栏底下的滚动
+// 模糊有东西可糊）。归档条正落在那条带里，于是两者必然重叠——先是聊天卡片盖住
+// 归档（原报告），把 zIndex 抬上去之后变成归档盖住聊天（用户："归档叠加在聊天
+// 上面了"）。翻个面不解决问题，**不让它们同时出现**才解决。
+//
+// 阈值取 8 而不是 0：从过拉松手后弹回 0 的过程里 yOffset 可能有几个像素的抖动，
+// 留一点余量，免得刚拉出来就自己收回去。滚过 8vp 说明用户确实在往下走了。
+//
+// 原值是 ARCHIVE_ROW_HEIGHT * 2（144vp）——那 144vp 就是重叠暴露的那段窗口。
+const ARCHIVE_COLLAPSE_SCROLL: number = 8;
 
 // 与 ChatListView 保持同一套滑动规格。主列表和文件夹列表是两个独立组件，
 // 交互设置必须分别接入，不能只在文件夹列表上挂 swipeAction。
@@ -43,6 +68,16 @@ const SWIPE_ARCHIVE_BG: string = '#F09A37';
 @Component
 export struct MainTabBody {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  @StorageProp(KEY_DOCK_AT_BOTTOM) private dockBottom: boolean = true;
+  // 归档入口要和会话卡片长一样，就得订阅同样这两个：壁纸开关决定给不给玻璃，
+  // 材质纪元让用户改厚度/光感后这一行跟着重绘（同 ChatRow）。
+  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
+  // 归档里最新的那条会话。**只在归档入口真正露出来时才算**——ChatStore.getChats
+  // 会把整桶拼成一个数组（排序结果本身是缓存的，拼数组不是），而这一行原本的
+  // 注释就写着「只需要一个失效信号，避免为了推导一个布尔值就把整个归档桶排一遍」。
+  // 所以这里守住同一条底线：没露出来时不算，露出来之后才跟着变化刷新。
+  @State private archiveTop: ChatEntry | null = null;
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
   // “所有”页使用独立列表组件，也要单独响应底栏重复点击（issue #35）。
   @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
@@ -174,6 +209,7 @@ export struct MainTabBody {
     // whole archive bucket for every update just to derive one boolean.
     this.unsubArchive = store.subscribeChanges(() => {
       this.showArchive = store.hasArchive();
+      this.refreshArchiveTop();
     });
     store.ensureLoaded('main');
     store.ensureLoaded('archive').then((success: boolean): void => {
@@ -286,6 +322,11 @@ export struct MainTabBody {
   }
 
   // 归档入口是否作为列表第 0 行存在。
+  // 下拉进度 0..1，驱动卡片与图标的形变（见 util/archiveReveal）。
+  private archiveProgress(): number {
+    return archiveRevealProgress(this.archivePullPx, ARCHIVE_ROW_HEIGHT, this.archiveRevealed);
+  }
+
   private archiveRowShown(): boolean {
     return this.showArchive || this.archiveLoadFailed;
   }
@@ -306,6 +347,43 @@ export struct MainTabBody {
   // 归档入口行。默认完全不存在；把顶部回弹拽到底才展开并停留（见 build 里的
   // 折叠容器与 onDidScroll）。曾经做成 Refresh（松手直接跳转，误触率高）和
   // 列表第 0 行（普通滚动一拉就 1:1 全露，毫无门槛），都被否了。
+  // ── 归档入口的卡片外观：**和普通会话行逐项一致** ──────────────────────
+  //
+  // 原来它是一条裸 Row，只有横向内边距——没有宽度收进、没有外边距、圆角、描边、
+  // 玻璃、按压态，所以拉出来之后和下面的会话卡片完全不是一路货。
+  //
+  // 这三个取值和 ChatRow 的 rowGlassEnabled / rowFill / rowBackdropBlur 逐字相同：
+  // 只有 APP 壁纸生效时才给玻璃（纯色页面上给玻璃没有视觉收益，还多一层合成），
+  // materialEpoch 不参与计算但必须读到，否则用户改厚度/光感这一行不重绘。
+  // 取归档里排第一的那条。入口没露出来时清空，别白算。
+  private refreshArchiveTop(): void {
+    if (!this.archiveRowShown() || (!this.archiveRevealed && this.archivePullPx <= 0)) {
+      this.archiveTop = null;
+      return;
+    }
+    const list: ChatEntry[] = getChatStore().getChats('archive');
+    this.archiveTop = list.length > 0 ? list[0] : null;
+  }
+
+  private archiveGlassOn(): boolean {
+    return this.appWallpaperOn && this.materialEpoch >= 0;
+  }
+
+  private archiveFill(pressed: boolean): ResourceColor {
+    const solid: ResourceColor = mainCardFill(this.appWallpaperOn, pressed);
+    return this.archiveGlassOn() ? overlayGlassFill('card', solid) : solid;
+  }
+
+  @Styles
+  archiveNormalStyle() {
+    .backgroundColor(this.archiveFill(false))
+  }
+
+  @Styles
+  archivePressedStyle() {
+    .backgroundColor(this.archiveFill(true))
+  }
+
   @Builder
   archiveHeader() {
     Row({ space: 12 }) {
@@ -314,18 +392,61 @@ export struct MainTabBody {
       Row() {
         SymbolGlyph(this.archiveLoadFailed
           ? $r('sys.symbol.exclamationmark_circle') : $r('sys.symbol.archivebox'))
-          .fontSize(26).fontColor([Color.White]);
+          .fontSize(26).fontColor([Color.White])
+          // 图标的形变比卡片夸张一档（-90°→0、0.6→1），成形感集中在这里。
+          // 出错态也照走：那时它是感叹号，转正同样说得通。
+          .rotate({ angle: archiveIconSpin(this.archiveProgress()) })
+          .scale({
+            x: archiveIconScale(this.archiveProgress()),
+            y: archiveIconScale(this.archiveProgress())
+          });
       }
       .width(AVATAR_SIZE).height(AVATAR_SIZE)
       .borderRadius(AVATAR_SIZE / 2)
       .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
       .backgroundColor(this.archiveLoadFailed ? '#E64646' : COLOR_MUTED_BADGE);
-      Text(this.archiveLoadFailed ? $r('app.string.cl_archive_failed_tap') : $r('app.string.ap_title'))
-        .fontSize(17).fontWeight(FontWeight.Medium)
-        .fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
+      // 标题 + 最新消息预览，字号/颜色与普通会话行逐项相同（17 中粗 / 14 次级，
+      // 发送者用强调色）。取不到最新一条时只有标题，行高不变。
+      Column({ space: 6 }) {
+        Text(this.archiveLoadFailed ? $r('app.string.cl_archive_failed_tap') : $r('app.string.ap_title'))
+          .fontSize(17).fontWeight(FontWeight.Medium)
+          .fontColor(COLOR_TEXT_PRIMARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        if (!this.archiveLoadFailed && this.archiveTop !== null) {
+          Row() {
+            Text(`${this.archiveTop?.title ?? ''}: `)
+              .fontSize(14).fontColor(COLOR_PRIMARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .flexShrink(0);
+            Text(this.archiveTop?.lastMessageText ?? '')
+              .fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1);
+          }.width('100%');
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1);
+      if (!this.archiveLoadFailed && this.archiveTop !== null) {
+        // 和普通会话行一样贴着标题那一行——外层 Row 是垂直居中的，只有这一个
+        // 元素时时间会跑到两行的正中间，看着和别的行错位。
+        Text(formatTime(this.archiveTop?.lastMessageDate ?? 0, Math.floor(Date.now() / 1000)))
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).flexShrink(0)
+          .alignSelf(ItemAlign.Start).margin({ top: 3 });
+      }
     }
-    .width('100%').height(ARCHIVE_ROW_HEIGHT)
+    // 与 ChatRow 的卡片同一套规格：同样的左右收进、外边距、圆角 16、0.5 描边、
+    // 玻璃与按压态。
+    .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
+    .margin({ left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
+    .height(ARCHIVE_ROW_HEIGHT)
     .padding({ left: ROW_PAD_H, right: ROW_PAD_H })
+    .borderRadius(16)
+    .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
+    .backdropBlur(this.archiveGlassOn() ? overlayBackdropBlur('card') : 0)
+    .attributeModifier(materialModifierWhen('card', this.archiveGlassOn()))
+    .clip(true)
+    .stateStyles({ normal: this.archiveNormalStyle, pressed: this.archivePressedStyle })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       if (this.archiveLoadFailed) { this.retryArchive(); } else { this.openArchive(); }
@@ -371,7 +492,8 @@ export struct MainTabBody {
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .enableScrollInteraction(!this.menuOpen)
     .scrollBar(BarState.Off)
-    .contentEndOffset(this.bottomSafe + 88)
+    // 侧边页签模式下 dock 不在底部，撤掉那 88 的避让（见 splitMetrics）。
+    .contentEndOffset(this.bottomSafe + (this.dockBottom ? 88 : 16))
     .contentStartOffset(this.contentTopInset)
     .onDidScroll((_offset: number, state: ScrollState): void => {
       const y: number = this.listScroller.currentOffset().yOffset;
@@ -383,14 +505,22 @@ export struct MainTabBody {
           -y * ARCHIVE_ROW_HEIGHT / ARCHIVE_OVERPULL);
         this.archivePullPx = pull;
         if (pull >= ARCHIVE_ROW_HEIGHT) {
-          this.archiveRevealed = true;
+          // 拉到底那一下用弹簧收尾：跟手段是线性的，锁定这一下给点回弹，
+          // 手上才有"咔哒一声到位"的反馈。**曲线走省电分组**——关掉平滑过渡
+          // 时 duration 会被压到 0，那时它就是原来的瞬时置位。
+          animateTo({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 260),
+            curve: curves.springMotion(0.34, 0.72)
+          }, (): void => {
+            this.archiveRevealed = true;
+          });
         }
       } else if (!this.archiveRevealed && this.archivePullPx > 0) {
         // 没拽到底就松手/惯性阶段：跟着回弹的衰减一起缩回去。
         this.archivePullPx = y < 0
           ? Math.min(ARCHIVE_ROW_HEIGHT, -y * ARCHIVE_ROW_HEIGHT / ARCHIVE_OVERPULL)
           : 0;
-      } else if (this.archiveRevealed && y > ARCHIVE_ROW_HEIGHT * 2) {
+      } else if (this.archiveRevealed && y > ARCHIVE_COLLAPSE_SCROLL) {
         // 已展开后往下滚一段，自动收起；下次要看还得再用力拉一次。
         animateTo({
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
@@ -425,8 +555,27 @@ export struct MainTabBody {
         }
         .width('100%')
         .height(this.archiveRevealed ? ARCHIVE_ROW_HEIGHT : this.archivePullPx)
+        // 文件夹条浮在内容之上、自身只留 2 的下外边距，归档卡片顶到它底下
+        // 看着像被压住（用户："归档感觉被挡住一点"）。这一档让它离开那条边。
+        .margin({ top: ARCHIVE_TOP_GAP })
         .clip(true)
-        .opacity(this.archiveRevealed ? 1 : this.archivePullPx / ARCHIVE_ROW_HEIGHT);
+        .opacity(this.archiveRevealed ? 1 : this.archivePullPx / ARCHIVE_ROW_HEIGHT)
+        // 跟手形变：卡片从 0.86 长到 1。高度是"露出多少"，缩放是"成形多少"，
+        // 两者一起才有被拉出来的手感（只有高度时像从缝里平推出来）。
+        .scale({
+          x: archiveCardScale(this.archiveProgress()),
+          y: archiveCardScale(this.archiveProgress())
+        })
+        // **收起必须靠 transition，不能只靠 animateTo。** 收起时
+        // `archiveRevealed || archivePullPx > 0` 直接变假，节点被 if 摘掉；
+        // 没有出场过渡的话它是瞬间消失的——外面那个 animateTo 包着的其实只有
+        // 状态赋值，画面上一帧都没动过。
+        .transition(TransitionEffect.OPACITY
+          .combine(TransitionEffect.scale({ x: 0.92, y: 0.86 }))
+          .animation({
+            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200),
+            curve: Curve.EaseOut
+          }));
       }
       this.chatList();
     }

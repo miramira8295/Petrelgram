@@ -1,6 +1,10 @@
 import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { str } from '../../util/strings';
+import { replyThumbSrc } from '../../util/replyThumb';
+
+// 回复条缩略图的边长：对齐左侧那根强调色竖条（34），有图没图条高一致。
+const REPLY_STRIP_THUMB: number = 34;
 
 // 输入框上方那一条：正在编辑某条，或正在回复某条。两者共用同一个位置，
 // 不可能同时出现（util/composerMode 的状态机保证，有单测）。
@@ -48,6 +52,10 @@ export struct EditStrip {
 export struct ReplyStrip {
   @Prop name: string;
   @Prop snippet: string;
+  // 被引用消息的缩略图（贴纸/图片/视频封面，见 util/replyThumb）。空串 = 无图，
+  // 整个不画，不留占位方块。
+  @Prop thumbPath: string;
+  @Prop thumbSticker: boolean;
   // 入场动画时长由页面按省电分组算好传进来（chatEffectDuration）。
   @Prop enterDuration: number;
 
@@ -71,6 +79,15 @@ export struct ReplyStrip {
   build() {
     Row({ space: 10 }) {
       Row().width(3).height(34).borderRadius(2).backgroundColor(COLOR_PRIMARY);
+      // 边长对齐左侧那根竖条（34），有图没图这一条都一样高。
+      if (this.thumbPath !== '') {
+        Image(replyThumbSrc(this.thumbPath)).draggable(false)
+          .width(REPLY_STRIP_THUMB)
+          .height(REPLY_STRIP_THUMB)
+          .borderRadius(this.thumbSticker ? 0 : 4)
+          .objectFit(this.thumbSticker ? ImageFit.Contain : ImageFit.Cover)
+          .interpolation(ImageInterpolation.Medium);
+      }
       Column({ space: 1 }) {
         Text(`${str('mb_reply')} ${this.name}`)
           .fontSize(13).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)

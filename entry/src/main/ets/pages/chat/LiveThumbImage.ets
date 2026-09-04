@@ -18,14 +18,29 @@ import { liveThumbPath } from '../../util/liveThumbPath';
 // aboutToReuse 时 @Param 已是新值 → 同步重挂+播种，V1 的延帧兜底/换文件才
 // 清图（#137 判据）整套退役；@Monitor 只兜非复用路径的自愈（「图配错文」
 // 的历史修复语义原样保留在 onFileIdChanged 的注释里）。
+// 一格缩略图要的全部参数，**打成一个对象下发**。
+//
+// 原来是 6 个独立 @Param。09-03 的相册真机对照里
+// `updateStateVars@LiveThumbImage` 是新包里 fireChange 的**头名**（126.3ms）——
+// 每个 @Param 赋值走一次 `updateParam → fireChange`，而每次 fireChange 都会
+// 同步排干一遍 ObserveV2 的 idle 队列。一格 6 次、一行 6–9 格。
+//
+// **这和 LightweightPlainTextBubble 那边刻意不合并不矛盾**，判据是同一条：
+// 合并省的是"逐个登记 + 每次排队列"，赔的是"整棵子树粗粒度失效"。本组件的
+// 子树只有一个 CachedImage 或一段占位——赔得起；纯文本气泡的子树是整条消息，
+// 赔不起。
+export interface LiveThumbSpec {
+  fileId: number;
+  initialPath: string;
+  boxWidth: number;
+  boxHeight: number;
+  radius: number;
+  fit: ImageFit;
+}
+
 @ComponentV2
 export struct LiveThumbImage {
-  @Param fileId: number = 0;
-  @Param initialPath: string = '';
-  @Param boxWidth: number = 0;
-  @Param boxHeight: number = 0;
-  @Param radius: number = 0;
-  @Param fit: ImageFit = ImageFit.Cover;
+  @Require @Param spec: LiveThumbSpec;
   @BuilderParam placeholder: () => void;
   @Local private path: string = '';
   private unsubThumb: (() => void) | null = null;
@@ -76,7 +91,7 @@ export struct LiveThumbImage {
   // 兜底等于把旧图画上去；通道现值本来就按新 fileId 查。
   @Monitor('fileId')
   onFileIdChanged(): void {
-    this.attach(this.fileId, '');
+    this.attach(this.spec.fileId, '');
   }
 
   // Same message, same fileId=0, but a local/full-size path was backfilled.
@@ -86,13 +101,13 @@ export struct LiveThumbImage {
   // pairing a new path with the previous row's fileId during reuse.
   @Monitor('initialPath')
   onInitialPathChanged(): void {
-    if (this.fileId === 0) {
-      this.attach(0, this.initialPath);
+    if (this.spec.fileId === 0) {
+      this.attach(0, this.spec.initialPath);
     }
   }
 
   aboutToAppear(): void {
-    this.attach(this.fileId, this.initialPath);
+    this.attach(this.spec.fileId, this.spec.initialPath);
   }
 
   aboutToRecycle(): void {
@@ -104,7 +119,7 @@ export struct LiveThumbImage {
   aboutToReuse(): void {
     // @Param 已是新值、@Local path 已被框架重置（批 0.5 判读）：同步重挂+
     // 播种。initialPath 也是新行的值，V1「不敢用 initialPath 兜底」的坑不在。
-    this.attach(this.fileId, this.initialPath);
+    this.attach(this.spec.fileId, this.spec.initialPath);
   }
 
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ
@@ -117,10 +132,10 @@ export struct LiveThumbImage {
     if (this.path !== '') {
       CachedImage({
         path: this.path,
-        boxWidth: this.boxWidth,
-        boxHeight: this.boxHeight,
-        radius: this.radius,
-        fit: this.fit
+        boxWidth: this.spec.boxWidth,
+        boxHeight: this.spec.boxHeight,
+        radius: this.spec.radius,
+        fit: this.spec.fit
       });
     } else {
       this.placeholder();

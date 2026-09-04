@@ -2,7 +2,7 @@ import { describe, expect, it } from '@ohos/hypium';
 import {
   PENDING_MEDIA_MAX, PendingMediaAppend, PendingMediaCounts, PendingMediaItem,
   appendPendingMedia, clearPendingMedia, hasPendingMedia, pendingMediaCanSend,
-  movePendingMedia, pendingMediaCounts, removePendingMedia
+  movePendingMedia, pendingMediaCounts, pendingThumbSource, removePendingMedia, toMediaSendItems
 } from '../main/ets/util/pendingMedia';
 
 function photo(name: string): PendingMediaItem {
@@ -100,6 +100,49 @@ export default function pendingMediaTest() {
       expect(movePendingMedia(three, 0, 3).length).assertEqual(3);
       movePendingMedia(three, 0, 2);
       expect(paths(three)).assertEqual('/cache/a.jpg,/cache/b.jpg,/cache/c.jpg');
+    });
+
+    // 实况照片导出时算好的封面与旋转后宽高，必须活到真正发送的那一刻。
+    // 这条断言钉的是一个真实回归：搬运曾经写成 `{ path, isVideo }` 字面量，
+    // 多出来的字段无声消失，接收端因此永远没有预览图。
+    it('搬运成可发送项：视频的封面与宽高不能掉队', 0, () => {
+      const live: PendingMediaItem = {
+        path: '/cache/PGLIVE_1.mp4', isVideo: true,
+        thumbPath: '/cache/live_1.jpg', width: 1080, height: 1920, durationSec: 3
+      };
+      const sent: PendingMediaItem[] = toMediaSendItems([photo('a'), live]);
+      expect(sent.length).assertEqual(2);
+      expect(sent[1].path).assertEqual('/cache/PGLIVE_1.mp4');
+      expect(sent[1].isVideo).assertTrue();
+      expect(sent[1].thumbPath).assertEqual('/cache/live_1.jpg');
+      expect(sent[1].width).assertEqual(1080);
+      expect(sent[1].height).assertEqual(1920);
+      expect(sent[1].durationSec).assertEqual(3);
+    });
+
+    it('搬运：普通图片没有这些字段时保持 undefined，且是新对象', 0, () => {
+      const one: PendingMediaItem[] = [photo('a')];
+      const sent: PendingMediaItem[] = toMediaSendItems(one);
+      expect(sent[0].thumbPath === undefined).assertTrue();
+      expect(sent[0].width === undefined).assertTrue();
+      expect(sent[0] === one[0]).assertFalse();
+    });
+
+    // 暂存条那一格拿哪张图。回归：视频原来一律把 mp4 喂给 Image，
+    // 渲染不出来，那一格从来是空白的。
+    it('暂存条取图：有封面用封面', 0, () => {
+      const live: PendingMediaItem = {
+        path: '/cache/PGLIVE_1.mp4', isVideo: true, thumbPath: '/cache/live_thumb_1.jpg'
+      };
+      expect(pendingThumbSource(live)).assertEqual('/cache/live_thumb_1.jpg');
+    });
+
+    it('暂存条取图：图片就是自己', 0, () => {
+      expect(pendingThumbSource(photo('a'))).assertEqual('/cache/a.jpg');
+    });
+
+    it('暂存条取图：没封面的视频给空串，由调用方画占位', 0, () => {
+      expect(pendingThumbSource(video('b'))).assertEqual('');
     });
   });
 }

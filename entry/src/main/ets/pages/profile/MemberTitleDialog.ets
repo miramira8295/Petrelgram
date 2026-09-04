@@ -1,16 +1,11 @@
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
-import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
-} from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
 
 // 群成员标签（chatMemberTag）的小弹窗。任何成员都能被打标、全员可见；
 // 留空即清除，不需要额外的删除按钮。上限 16 字符、不支持表情，超了服务端拒。
 @CustomDialog
 export struct MemberTitleDialog {
   // 材质档位改变时重绘。overlayMaterial 是 util，订阅不了 AppStorage。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   controller?: CustomDialogController;
   memberName: string = '';
   @State title: string = '';
@@ -49,9 +44,12 @@ export struct MemberTitleDialog {
       }.width('100%');
     }
     .width('88%').padding(20)
-    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('dialog'))
-    .attributeModifier(materialModifier('dialog'))
+    // 不走玻璃/材质，用实底。理由同 DeleteMessagesDialog：设备自报支持沉浸材质
+    // 时 overlayGlassFill 给的是 material_tint，那只是叠在**真的渲染出来的**材质
+    // 之上的一层淡色；而这台机器实测挂了材质却不渲染（见 overlayMaterial 里
+    // 08-29 那段），淡色就成了唯一背板，弹窗压在内容上直接读不清。
+    // 弹窗要的是可读，不是通透。
+    .backgroundColor($r('app.color.surface'))
     .borderRadius(20)
     .alignItems(HorizontalAlign.Start);
   }

@@ -1,4 +1,5 @@
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
+import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
 import { scopeMutedForKind } from '../../store/ScopeMuteStore';
 import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
@@ -28,6 +29,10 @@ import {
   overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
+import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
+  surfaceGlassBlurStyle, surfaceGlassFill, surfaceGlassOn
+} from '../../util/surfaceGlass';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logI } from '../../util/log';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
@@ -52,6 +57,9 @@ export struct ChatRow {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 全局界面模糊：开关和档位都要能立刻重绘（见 util/surfaceGlass）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlass: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
   // 由 MainScreen 算好写进 AppStorage 的「APP 壁纸生效中」，见 store/AppSettings。
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
   @Prop chat: ChatEntry;
@@ -333,17 +341,38 @@ export struct ChatRow {
   // 只有 APP 壁纸生效时才给每一行挂玻璃：普通纯色页面继续走实色 surface，
   // 避免在没有视觉收益时给滚动列表增加合成层。materialEpoch 虽然不参与数值
   // 计算，但必须在这里读到，用户改厚度/光感后可复用行才会重新应用材质修饰器。
+  // **只看「界面模糊质感」这一个开关。**
+  //
+  // 原来的判据是「应用壁纸开着」——那是把两件事绑在了一起：铺壁纸和要玻璃。
+  // 全局开关存在的意义就是让它成为唯一真相，所以壁纸那条不再单独开玻璃。
+  //
+  // 后果说清楚：**开着壁纸、但没打开新开关的用户，行会从玻璃变回实底。**
+  // 新开关默认关，所以升级后要自己去 设置 → 聊天 → 界面模糊质感 打开。
   private rowGlassEnabled(): boolean {
-    return this.appWallpaperOn && this.materialEpoch >= 0;
+    // `this.surfaceGlassEpoch >= 0` 恒真，**但不能删**：@StorageProp 只有在
+    // build 链路里被真正读到才建立依赖，光声明不读，改设置时这一行不会重绘
+    // （用户实测"开关打开了，不重建页面不生效"）。原来 materialEpoch 那一处
+    // 也是同一个套路，我把它删了才踩出这个坑。
+    return this.surfaceGlass && this.surfaceGlassEpoch >= 0;
   }
 
   private rowFill(pressed: boolean): ResourceColor {
-    const solid: ResourceColor = mainCardFill(this.appWallpaperOn, pressed);
-    return this.rowGlassEnabled() ? overlayGlassFill('card', solid) : solid;
+    if (!this.rowGlassEnabled()) {
+      // **不走玻璃就是实底。**
+      //
+      // 这里不能再用 mainCardFill(wallpaperOn, ...)：壁纸档那对颜色
+      // （card_on_wallpaper = #CCFFFFFF，80% 不透明）**是为玻璃配的**——半透是
+      // 为了让底下的 backdropBlur 透出来。开关关掉之后模糊没了，颜色还留在半透
+      // 档，壁纸上就是一层灰蒙蒙的纱（用户实测）。要么两样都有，要么两样都没有。
+      return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
+    }
+    // 玻璃档的底色由 surfaceGlass 统一决定，与传进去的实色无关
+    // （不透明底色会把 backdropBlur 完全盖住）。
+    return surfaceGlassFill(mainCardFill(this.appWallpaperOn, pressed));
   }
 
-  private rowBackdropBlur(): number {
-    return this.rowGlassEnabled() ? overlayBackdropBlur('card') : 0;
+  private rowBlurStyle(): BlurStyle | undefined {
+    return this.rowGlassEnabled() ? surfaceGlassBlurStyle() : undefined;
   }
 
   @Styles
@@ -459,7 +488,10 @@ export struct ChatRow {
         livePulseExpanded: this.livePulseExpanded,
         savedMessages: this.chat.isSavedMessages
       });
-      Column({ space: 4 }) {
+      // 标题与预览之间 6：4 太挤（用户实测）。行的 minHeight 是 72，而
+      // 17 号标题 + 14 号预览 + 6 + 上下各 8 的内边距 ≈ 64，仍在 72 以内，
+      // 所以这一档不会把行撑高，只是把两行分开。
+      Column({ space: 6 }) {
         Row() {
           Text(this.chat.isSavedMessages
             ? $r('app.string.cl_saved_messages') : this.chat.title)
@@ -529,8 +561,21 @@ export struct ChatRow {
     .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
     .margin({ left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
     .borderRadius(16)
-    .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
-    .backdropBlur(this.rowBackdropBlur())
+    // 描边跟着玻璃走，**颜色也要跟着换**。
+    //
+    // 原来是 `COLOR_DIVIDER`：行是不透明白卡片时它就是一条正常的灰细线；换成
+    // 半透玻璃之后，它在壁纸上成了一圈发暗的框，圆角处两条边的抗锯齿叠在一起
+    // 四角最明显（用户实测"四角黑边"）。而 divider 在**深色模式下是 #101921**，
+    // 几乎全黑，那一档更糟。
+    // GLASS_OUTLINE_COLOR（#4DFFFFFF，30% 白）是玻璃气泡描边用的同一个色，
+    // 专门为"玻璃边缘"配的，深浅两种模式下都是提亮而不是压暗。
+    .border({
+      width: this.rowGlassEnabled() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
+      color: this.rowGlassEnabled() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
+    })
+    // 用框架容器材质而不是 backdropBlur：后者在节点边缘有采样衰减，四角最明显
+    // （见 util/surfaceGlass.surfaceGlassBlurStyle 的说明）。
+    .backgroundBlurStyle(this.rowBlurStyle())
     .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled()))
     .clip(true)
     .constraintSize({ minHeight: 72 })

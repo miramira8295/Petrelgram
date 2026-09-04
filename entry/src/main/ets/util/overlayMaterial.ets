@@ -31,6 +31,8 @@ import { logW } from './log';
 import {
   LIGHT_DEFAULT, THICKNESS_DEFAULT, fallbackBlurRadius, interactiveOn,
   isThicknessOff, lightEffectOn, normalizeLightLevel, normalizeThickness, shiftedStyleIndex
+, hdsLevelIndexOf
+, fallbackBlurForIndex
 } from './materialTuning';
 import { KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, appIsDark } from './appearance';
 import { KEY_MATERIAL_LIGHT, KEY_MATERIAL_THICKNESS, KEY_POWER_ACTIVE } from '../store/AppSettings';
@@ -55,6 +57,14 @@ function thicknessOffset(): number {
 }
 
 // 用户把厚度调到「关闭」：所有面都不挂材质、不模糊，纯色兜底。
+// 交给 HDS 组件（HdsNavigation / HdsTabs 的 systemMaterialEffect）的材质等级。
+// 返回数值下标，枚举由调用方在版本闸内侧换——见 materialTuning.hdsLevelIndexOf。
+// 这样用户在「外观」里调的光感等级，对 HDS 自己画的栏也生效，而不是只作用在
+// 我们自绘的那些面上。
+export function hdsMaterialLevelIndex(): number {
+  return hdsLevelIndexOf(lightLevel());
+}
+
 export function materialOff(): boolean {
   return isThicknessOff(thicknessOffset());
 }
@@ -97,6 +107,12 @@ function styleByIndex(index: number): uiMaterial.ImmersiveStyle {
 }
 
 // 降级路径上框架容器吃的 BlurStyle，同样按 0..4 排。
+// 按档位下标取 BlurStyle。给 util/surfaceGlass 用——它不该重复一份这张表。
+export function blurStyleByIndex(index: number): BlurStyle {
+  const i: number = index < 0 ? 0 : (index > 4 ? 4 : index);
+  return BLUR_STYLE_BY_INDEX[i];
+}
+
 const BLUR_STYLE_BY_INDEX: BlurStyle[] = [
   BlurStyle.COMPONENT_ULTRA_THIN,
   BlurStyle.COMPONENT_THIN,
@@ -314,6 +330,8 @@ function baseStyleIndex(surface: OverlaySurface): number {
       return 1;
     // 控件比它所在的面板更靠前，用薄一档让它从面板里"浮"出来。官方建议
     // 浮动工具栏用 THIN。
+    // **改这一支要同步 util/surfaceGlass.SURFACE_GLASS_BASE_INDEX**：那边的
+    // 全局质感以输入栏为基准，抄的就是这个值。
     case 'control':
       return 1;
     // Bars sit over live content and have to stay see-through enough that a
@@ -433,8 +451,37 @@ export function containerBlur(surface: OverlaySurface): BlurStyle | undefined {
 // Zero means no blur, so this is safe to apply unconditionally at the call site.
 // 明确要高斯模糊、不要材质的面用这个。和 overlayBackdropBlur 不同：那个在
 // 材质可用时返回 0（把观感让给材质），这个无条件给出模糊半径。
-export function plainBackdropBlur(): number {
-  return materialOff() ? 0 : fallbackBlurRadius(thicknessOffset());
+// 自绘玻璃的**底色**那一半，和 plainBackdropBlur 成对使用。
+//
+// 与 overlayGlassFill 的区别只有一条：**它不把观感让给材质**。
+// overlayGlassFill 在材质可用时返回 material_tint（约 25%），那个淡度的前提是
+// 底下还有一层材质在画；而系统已经把**组件级**的沉浸材质收回了，只有 HDS
+// 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）还拿得到。
+// 组件级那条路上再按"材质会渲染"取值，结果就是既没有材质、也没有自己的玻璃。
+//
+// 所以明确"我自己画玻璃"的面用这一对。用户把厚度关掉时仍然退回实色。
+// 「这个面该不该有点光源 / 按压阴影」——给 hdsEffect 那条路用（见
+// util/hdsPointLight）。判据完全复用材质那套：面自身的角色（lightEffectBase /
+// interactionBase）+ 用户的光感四档 + 省电，唯独**不看材质在不在**——
+// 系统收回的是组件级 systemMaterial，而 visualEffect 是另一条通道。
+export function pointLightOn(surface: OverlaySurface): boolean {
+  return !materialOff() && usesLightEffect(surface);
+}
+
+export function pressShadowOn(surface: OverlaySurface): boolean {
+  return !materialOff() && usesInteraction(surface);
+}
+
+export function plainGlassFill(solid: ResourceColor): ResourceColor {
+  return materialOff() ? solid : $r('app.color.dock_glass');
+}
+
+export function plainBackdropBlur(surface: OverlaySurface): number {
+  // **按面分档**：顶栏胶囊超薄、输入框薄、菜单常规、弹窗超厚（见
+  // materialTuning 的 baseStyleIndex 那套次序），再整体吃用户的厚度偏移。
+  // 原来这里只吃偏移、不看面，所有面同一个半径——材质还在时看不出来，材质被
+  // 系统收回之后就露馅了：厚度调到「超薄」，输入框和弹窗仍然一样厚。
+  return materialOff() ? 0 : fallbackBlurForIndex(shiftedStyleIndex(baseStyleIndex(surface), thicknessOffset()));
 }
 
 export function overlayBackdropBlur(surface: OverlaySurface): number {
@@ -464,7 +511,8 @@ export function glassTailFill(): ResourceColor {
 // 材质在的时候 overlayBackdropBlur('bubble') 会返回 0（那时由材质负责），
 // 尾巴用不了材质，只能自己要一份非材质的模糊半径。
 export function glassTailBlur(): number {
-  return plainBackdropBlur();
+  // 尾巴属于气泡这一面，档位跟着 'bubble' 走——否则尾巴和气泡的糊度对不齐。
+  return plainBackdropBlur('bubble');
 }
 
 export function overlayGlassFill(surface: OverlaySurface, solid: ResourceColor): ResourceColor {

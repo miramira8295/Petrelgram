@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d с"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "Розмиття інтерфейсу"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "Матове скло на вкладках «Контакти», «Налаштування» та «Профіль» — як у поля вводу. Малюється щокадру: вимкніть, якщо підгальмовує."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "Рівень розмиття"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "Рушій відтворення"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "Системний програвач"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "Підтримка HDR. Експериментально — вимкніть, щоб повернутися"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "Відео з розширеним динамічним діапазоном"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "Вуаль"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "Інтерфейс"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "Список чатів, контакти, налаштування"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "Бульбашки"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "Бульбашки повідомлень — їх найбільше і вони найдорожчі"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "Більша витрата батареї"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "Розмиття малюється щокадру: помітно зростає витрата батареї та нагрів, можливі пропуски кадрів під час прокручування. Якщо пристрій гріється або гальмує — поверніться й виберіть «Вимк»."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "Усе одно ввімкнути"
     }
   ]
 }

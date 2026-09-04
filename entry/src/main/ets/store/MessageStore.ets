@@ -1,4 +1,5 @@
 import { TdClient } from '../tdkit/TdClient';
+import { viewMessageSourceType } from '../util/viewMessageSource';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { MessageEntry, cloneMessage, buildMessageEntry, commentInfoFromInteraction, CommentInfo, reactionsFromInteraction, ReactionInfo, parseInlineKeyboard, refreshSystemUserLabel } from './MessageEntry';
@@ -25,6 +26,16 @@ import { str } from '../util/strings';
 import { publishProgress } from '../util/mediaProgressChannel';
 import { publishSendState } from '../util/sendStateChannel';
 import { logE, logI, logW } from '../util/log';
+import { replySnippetOf } from '../util/replySnippet';
+import {
+  INITIAL_AROUND_LIMIT, INITIAL_LATEST_LIMIT, INITIAL_RESUME_LIMIT,
+  InitialPageRoute, ROUTE_AROUND,
+  canPrefetchChat, initialPageRoute, takePrefetchedPage
+} from '../util/chatPrefetch';
+import { replyThumbIsSticker, replyThumbOf } from '../util/replyThumb';
+import {
+  MEDIA_PREFETCH_PRIORITY, MEDIA_USER_PRIORITY, THUMBNAIL_PRIORITY, mediaDownloadPriority
+} from '../util/downloadPriority';
 import { animationShapeRejected } from '../util/animationShape';
 import { isAnimationPath } from '../util/mediaPick';
 import {
@@ -43,12 +54,6 @@ const NEWER_GAP_TOLERANCE: number = 5;
 // 接不上时从同一个锚点重问几次。TDLib 会在后台向服务端补，重问通常能拿到
 // 连续的那一段；用完还接不上就照旧合并，宁可有洞也别把消息卡住不显示。
 const NEWER_GAP_RETRIES: number = 2;
-// Visible bubble/header thumbnails should outrank silent video prefetch. The
-// bubble still requests the compact inline size; this only changes scheduling,
-// not image quality or transferred bytes.
-const THUMBNAIL_PRIORITY: number = 16;
-const MEDIA_PREFETCH_PRIORITY: number = 8;
-const MEDIA_USER_PRIORITY: number = 24;
 const REPLY_KB_PROBE_PAGE: number = 100;
 const REPLY_KB_PROBE_LIMIT: number = 500;
 // Re-request a still-missing thumbnail at most this often (stalled downloads
@@ -64,6 +69,9 @@ const THUMB_MAX_ACTIVE: number = 4;
 interface RepliedPreview {
   senderName: string;
   text: string;
+  // 引用块的缩略图。也进缓存：窗口整体重建后条目会丢掉它，不缓存就得重新拉。
+  thumbPath: string;
+  thumbSticker: boolean;
 }
 // 一帧的量级：下载进度的发布合并到这个窗口里，见 notifySoon()。
 const NOTIFY_COALESCE_MS: number = 16;
@@ -80,6 +88,14 @@ const INITIAL_SETTLE_WINDOW_MS: number = 400;
 // 首屏历史页的条数。30 条一帧建完是实测的首帧掉帧来源；12 条先铺满屏幕，
 // 剩余由短页补链/滚动分页在后续帧补齐。
 const INITIAL_FIRST_PAGE: number = 12;
+// **向上翻页**的每页条数。和 INITIAL_FIRST_PAGE 同一个道理，只是当时只治了首屏。
+//
+// 09-03 的 Frame 录制：6 次 applyOlderPage，每次合页那一帧要一次性建 ~15 行
+// （PAGE=30 条消息，相册折叠后约一半），单帧 87–126ms，而 120Hz 的预算是
+// 8.31ms。这 6 帧连同它们引出的重渲染帧占了全部超预算时间的 67.4%。
+// 减半不会减少总工作量，减少的是**峰值**——卡顿看的是峰值不是总量。
+// 预取（prefetchOlder）已经把下一页提前拿在手里，多一轮往返不进用户等待。
+const OLDER_PAGE: number = 15;
 
 function pollVoteErrorText(raw: string): string {
   const normalized = raw.trim().toUpperCase();
@@ -115,6 +131,18 @@ interface KeyboardMarkupHit {
 export interface MediaSendItem {
   path: string;
   isVideo: boolean;
+  // 视频封面（本地路径）。**TDLib 的 inputMessageVideo.thumbnail 是发送方提供
+  // 封面的唯一入口，不给接收端就没有预览图。** 空串 = 没有，按老行为发。
+  thumbPath?: string;
+  // 封面**自己**的宽高。inputThumbnail.width/height 说的是缩略图的尺寸，不是
+  // 视频的——填成视频尺寸等于声明了一张 1440x1920 的内联缩略图，越界。
+  thumbWidth?: number;
+  thumbHeight?: number;
+  // 视频的**显示**宽高（即旋转之后的）。不给的话接收侧按容器里旋转前的那对值
+  // 排版，竖着拍的视频会横过来。
+  width?: number;
+  height?: number;
+  durationSec?: number;
 }
 
 export class MessageStore {
@@ -165,6 +193,13 @@ export class MessageStore {
   // sticker is sent again. Keep completed paths independently from a message
   // id so a newly-created outgoing bubble can render immediately.
   private completedFilePaths: Map<number, string> = new Map();
+  // 自己发出去的视频的**本地封面**，按 videoFileId 记。
+  //
+  // 为什么要单独一张表：发送时 rememberLocalMedia 往 entry 上填的 photoPath，
+  // 会被随后的 TDLib 更新（send-succeeded / updateMessageContent）重建整条 entry
+  // 时冲掉——用户实测发完就是灰底。而 hydrateFromFileCache 是每次 upsert 都跑的
+  // 那道重新水合，把封面钉在那里才活得下来。
+  private localVideoPosters: Map<number, string> = new Map();
   // 贴纸本体下载的失败次数（fileId → 次数）。原来失败一次就永久放弃、只等用户
   // 点 ↻；缩略图那边一直是 3 次退避重试，贴纸没理由更脆。
   private stickerAttempts: Map<number, number> = new Map();
@@ -320,14 +355,15 @@ export class MessageStore {
 
   // getChatHistory, or getMessageThreadHistory when scoped to a comment thread
   // (same paging contract: from_message_id + offset + limit).
-  private historyRequest(fromId: number, offset: number): TdRequest {
+  private historyRequest(fromId: number, offset: number,
+    limit: number = this.historyPageSize): TdRequest {
     if (this.directMessagesTopicId > 0) {
       const topicReq: TdRequest = { '@type': 'getDirectMessagesChatTopicHistory' };
       topicReq['chat_id'] = this.chatId;
       topicReq['topic_id'] = this.directMessagesTopicId;
       topicReq['from_message_id'] = fromId;
       topicReq['offset'] = offset;
-      topicReq['limit'] = this.historyPageSize;
+      topicReq['limit'] = limit;
       return topicReq;
     }
     if (this.forumTopicId > 0) {
@@ -336,14 +372,14 @@ export class MessageStore {
       topicReq['forum_topic_id'] = this.forumTopicId;
       topicReq['from_message_id'] = fromId;
       topicReq['offset'] = offset;
-      topicReq['limit'] = this.historyPageSize;
+      topicReq['limit'] = limit;
       return topicReq;
     }
     const req: TdRequest = { '@type': this.threadRootId > 0 ? 'getMessageThreadHistory' : 'getChatHistory' };
     req['chat_id'] = this.chatId;
     req['from_message_id'] = fromId;
     req['offset'] = offset;
-    req['limit'] = this.historyPageSize;
+    req['limit'] = limit;
     if (this.threadRootId > 0) {
       req['message_id'] = this.threadRootId;
     } else {
@@ -842,6 +878,16 @@ export class MessageStore {
     return false;
   }
 
+  // 向上翻页要几条。
+  //
+  // 首屏补链（initialFillTries > 0）仍走整页：那几次的目标是尽快铺满一屏，
+  // 此时屏上还没有行要重建，分小页只是多几轮往返。真正要压峰值的是滚动翻页。
+  // historyPageSize 由调用方配置（可低于 OLDER_PAGE），所以取两者较小的。
+  private olderRequestLimit(): number {
+    return this.initialFillTries > 0
+      ? this.historyPageSize : Math.min(OLDER_PAGE, this.historyPageSize);
+  }
+
   private applyOlderPage(res: TdObject, anchorId: number): void {
     const arr = (res['messages'] as TdObject[] | undefined) ?? [];
     if (!this.olderPageHasEntry(res, anchorId)) {
@@ -881,7 +927,7 @@ export class MessageStore {
 
   private requestOlderPrefetch(anchorId: number, seq: number): void {
     this.olderPrefetchPending = true;
-    const req = this.historyRequest(anchorId, 0);
+    const req = this.historyRequest(anchorId, 0, this.olderRequestLimit());
     this.client.send(req).then((res: TdObject): void => {
       if (seq !== this.olderPrefetchSeq || anchorId !== this.oldestId) {
         return;
@@ -1013,7 +1059,7 @@ export class MessageStore {
     this.olderPending = true;
     this.olderLoadState = 'loading';
     this.notify('paginationState');
-    const req = this.historyRequest(anchorId, 0);
+    const req = this.historyRequest(anchorId, 0, this.olderRequestLimit());
     this.client.send(req).then((res: TdObject) => {
       this.olderPending = false;
       this.applyOlderPage(res, anchorId);
@@ -1937,8 +1983,60 @@ export class MessageStore {
     const content: TdObject = {
       '@type': item.isVideo ? 'inputMessageVideo' : 'inputMessagePhoto'
     };
-    content[item.isVideo ? 'video' : 'photo'] = MessageStore.wrapInputFile(
+    const mediaWrapper: TdObject = MessageStore.wrapInputFile(
       item.isVideo ? 'inputVideo' : 'inputPhoto', item.isVideo ? 'video' : 'photo', inputFile);
+    content[item.isVideo ? 'video' : 'photo'] = mediaWrapper;
+    if (item.isVideo) {
+      // 三样都是**发送方**的责任，缺一样接收端就少一样：
+      //   thumbnail  没有就没有预览图（气泡一片空白）
+      //   width/height  没有就按容器里旋转前的宽高排版，竖拍视频横过来
+      //   duration      没有就不显示时长
+      const thumb: string = item.thumbPath ?? '';
+      const w: number = item.width ?? 0;
+      const h: number = item.height ?? 0;
+      // ── 两处都写：这套 td_api 把媒体字段包进了 inputVideo，几何/封面很可能
+      // 也跟着搬进了包装里 ──────────────────────────────────────────────
+      //
+      // 实测（09-03，探针 [LivePoster] acked）：按标准写法把 thumbnail /
+      // width / height / duration / supports_streaming 挂在 inputMessageVideo
+      // 上，发送**成功**但服务端回来的 video 对象里
+      //   keys=[duration,width,height,file_name,mime_type,has_stickers,
+      //         supports_streaming,video]，thumbnail 和 minithumbnail 都没有。
+      // 也就是说这几个字段被**静默忽略**了——和 1.4.2 那次 GIF 的
+      // "InputFile is not specified" 是同一族问题：这套库的 schema 比我们假设的新，
+      // inputMessageXxx 的媒体字段是包装对象（见 wrapInputFile 的注释）。
+      //
+      // 未知字段这套解析器是直接丢弃、不报错的（上面那次发送就成功了），所以
+      // **两处都写是安全的**：哪一处对就哪一处生效，另一处被忽略。
+      const thumbInput: TdObject | null = thumb !== '' ? { '@type': 'inputThumbnail' } : null;
+      if (thumbInput !== null) {
+        thumbInput['thumbnail'] = MessageStore.localFile(thumb);
+        // 缩略图自己的宽高。给错（比如填视频的 1440x1920）等于声明了一张
+        // 越界的内联缩略图。
+        const tw: number = item.thumbWidth ?? 0;
+        const th: number = item.thumbHeight ?? 0;
+        if (tw > 0 && th > 0) {
+          thumbInput['width'] = tw;
+          thumbInput['height'] = th;
+        }
+        content['thumbnail'] = thumbInput;
+        mediaWrapper['thumbnail'] = thumbInput;
+      }
+      if (w > 0 && h > 0) {
+        content['width'] = w;
+        content['height'] = h;
+        mediaWrapper['width'] = w;
+        mediaWrapper['height'] = h;
+      }
+      const dur: number = item.durationSec ?? 0;
+      if (dur > 0) {
+        content['duration'] = dur;
+        mediaWrapper['duration'] = dur;
+      }
+      // 有宽高才谈得上边下边播；没有几何时保持老行为。
+      content['supports_streaming'] = w > 0 && h > 0;
+      mediaWrapper['supports_streaming'] = w > 0 && h > 0;
+    }
     if (caption !== '') {
       const ft: TdObject = { '@type': 'formattedText' };
       ft['text'] = caption;
@@ -1955,8 +2053,21 @@ export class MessageStore {
       hydrated.videoFailed = false;
       hydrated.mediaDownloadActive = false;
       if (hydrated.videoFileId > 0) {
+        // 播放用的是 mp4 本身。
         this.completedFilePaths.set(hydrated.videoFileId, item.path);
-        publishThumbPath(hydrated.videoFileId, item.path);
+        // **封面不能给 mp4。** 这里原来把 item.path（那段视频）当缩略图发布，
+        // 而缩略图那条通道的消费者是 Image——它渲染不了 mp4，于是自己发出去的
+        // 视频在本地回显里就是一块空白（用户实测："还是没有预览图"）。
+        // 有真封面（实况导出的静图）就用它；没有就维持原样，至少不比以前差。
+        const poster: string = item.thumbPath ?? '';
+        if (poster !== '') {
+          hydrated.photoPath = poster;
+          // 记进表里，之后每次重建 entry 都会被 hydrateFromFileCache 补回来。
+          this.localVideoPosters.set(hydrated.videoFileId, poster);
+          publishThumbPath(hydrated.videoFileId, poster);
+        } else {
+          publishThumbPath(hydrated.videoFileId, item.path);
+        }
       }
     } else {
       hydrated.photoPath = item.path;
@@ -2161,9 +2272,11 @@ export class MessageStore {
     // 构建 30 个 MessageBubble 本身。12 条铺满一屏出头；'latest' 的短页补链
     // （见 onHistory）随即用增量前插把整页补齐，mvcp 保锚点，肉眼无感。
     if (fromId === 0 && this.initialHistoryState === 'loading') {
-      req['limit'] = Math.min(INITIAL_FIRST_PAGE, this.historyPageSize);
+      req['limit'] = INITIAL_LATEST_LIMIT;
     }
-    this.client.send(req).then((res: TdObject) => this.onHistory(res, fromId === 0 ? 'latest' : 'history'))
+    this.client.send(req).then((res: TdObject) => {
+      this.onHistory(res, fromId === 0 ? 'latest' : 'history');
+    })
       .catch((e: TdError) => {
       const code = (e as TdError).code;
       if (code !== 404) {
@@ -2435,6 +2548,7 @@ export class MessageStore {
     const req: TdRequest = { '@type': 'viewMessages' };
     req['chat_id'] = this.chatId;
     req['message_ids'] = [messageId];
+    req['source'] = this.viewSource();
     req['force_read'] = true;
     this.client.send(req).then((): void => {
       this.initialJoinServiceReadPending = false;
@@ -2559,11 +2673,36 @@ export class MessageStore {
     if (carriedRowId !== 0) {
       arrived.rowId = carriedRowId;
     }
+    this.carryLocalVideoAssets(previous, arrived);
     publishSendState(arrived.rowId, arrived.sendState);
     this.upsert(arrived);
     this.resolveReplies();
     this.requestPhotos();
     this.notifySoon();
+  }
+
+  // 发送成功时 TDLib 把整条消息换成真实 id，**视频文件也换一个新的 fileId**
+  // （实测 14889 → 14928，消息 id 同时 11465129985 → 11466178560）。而按旧
+  // fileId 记的两张表不跟着改键就全部落空：
+  //   localVideoPosters   → 本地封面补不回来，自己发的视频从此是一块灰底
+  //                         （用户实测「我这没封面」）；
+  //   completedFilePaths  → 本地那份 mp4 认不出来，等于要重新下一遍自己刚发的视频。
+  // 两张表都在这里跨过替换。
+  private carryLocalVideoAssets(previous: MessageEntry | undefined,
+    arrived: MessageEntry): void {
+    if (previous === undefined || previous.videoFileId === 0 ||
+      arrived.videoFileId === 0 || previous.videoFileId === arrived.videoFileId) {
+      return;
+    }
+    const poster: string = this.localVideoPosters.get(previous.videoFileId) ?? '';
+    if (poster !== '') {
+      this.localVideoPosters.set(arrived.videoFileId, poster);
+      publishThumbPath(arrived.videoFileId, poster);
+    }
+    const localVideo: string = this.completedFilePaths.get(previous.videoFileId) ?? '';
+    if (localVideo !== '') {
+      this.completedFilePaths.set(arrived.videoFileId, localVideo);
+    }
   }
 
   private onSendFailed(u: TdObject): void {
@@ -3590,6 +3729,24 @@ export class MessageStore {
     }
   }
 
+  // 只提优先级，不碰任何本地状态。
+  //
+  // 前提是文件已经在下载中。TDLib 没有单独的「改优先级」方法，对同一个 file_id
+  // 再发一次 downloadFile 就是官方的重新定优先级方式：不会重头下，也不会丢掉
+  // 已下的那部分。刻意**不**重置 progress —— 重置会让进度条跳回 0%，看起来像
+  // 重新下载。失败无副作用，原来那次下载照常跑着。
+  private raiseFilePriority(fileId: number, priority: number): void {
+    if (fileId === 0) {
+      return;
+    }
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = fileId;
+    req['priority'] = priority;
+    this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
+      logW(`MessageStore raise priority ${fileId}: ${err.message}`);
+    });
+  }
+
   // On-demand full-resolution photo download (triggered by opening the fullscreen
   // viewer). The inline bubble only ever downloads photoFileId (a small size).
   requestFullPhoto(messageId: number, forceRetry: boolean = false,
@@ -3605,6 +3762,13 @@ export class MessageStore {
     if (forceRetry) {
       this.fullPhotoFileToMsg.delete(e.photoFullFileId);
     } else if (this.fullPhotoFileToMsg.has(e.photoFullFileId)) {
+      // 已经在下了。这里过去直接 return，于是「邻图预取以优先级 8 抢先注册、
+      // 用户随后划到这张」时，用户正盯着的大图永远留在预取档上——比后台缩略图
+      // (16) 还低。TDLib 重新定优先级的唯一手段就是对同一个 file_id 再发一次
+      // downloadFile，所以这里补发一次。
+      if (userInitiated) {
+        this.raiseFilePriority(e.photoFullFileId, MEDIA_USER_PRIORITY);
+      }
       return;
     }
     this.patch(messageId, (c: MessageEntry): void => {
@@ -3867,6 +4031,9 @@ export class MessageStore {
     if (this.videoFileToMsg.has(e.videoFileId) && !manage) {
       if (exempt) {
         this.userRequestedFiles.add(e.videoFileId);
+        // 同 requestFullPhoto：可见窗口的自动预取多半已用优先级 8 抢先注册，
+        // 补发一次把用户此刻要看的这个提上来。
+        this.raiseFilePriority(e.videoFileId, MEDIA_USER_PRIORITY);
       }
       return;
     }
@@ -3886,7 +4053,7 @@ export class MessageStore {
     });
     const req: TdRequest = { '@type': manage ? 'addFileToDownloads' : 'downloadFile' };
     req['file_id'] = e.videoFileId;
-    req['priority'] = manage ? MEDIA_USER_PRIORITY : MEDIA_PREFETCH_PRIORITY;
+    req['priority'] = mediaDownloadPriority(manage, exempt);
     if (manage) {
       req['chat_id'] = this.chatId;
       req['message_id'] = messageId;
@@ -4582,7 +4749,10 @@ export class MessageStore {
     //
     // 会话中途的跳转维持整页。
     const initial: boolean = this.initialHistoryState === 'loading';
-    const wanted: number = initial ? 14 : 30;
+    // 首屏那一发的条数与预取共用同一个常量——两边必须逐字段一致，否则
+    // sameRoute 判不上，预取白发一次（见 util/chatPrefetch）。
+    const wanted: number = initial
+      ? (initialAlignFromStart ? INITIAL_RESUME_LIMIT : INITIAL_AROUND_LIMIT) : 30;
     const offset: number = initial
       ? (initialAlignFromStart ? -(wanted - 1) : -7)
       : -15;
@@ -4791,6 +4961,59 @@ export class MessageStore {
     this.requestInitialPage();
   }
 
+  // 吃掉点击那一刻发出去的那一页。返回 true 表示首屏已经交给它了。
+  //
+  // **路由不一致就不吃**：期间可能来了新消息，未读数/已读水位变了，用旧的
+  // 那一页开窗会把未读分界线放错位置。那时按原路重发，只是白费一次请求。
+  private consumePrefetchedPage(): boolean {
+    if (!canPrefetchChat(this.chatId, this.threadRootId, this.forumTopicId,
+      this.directMessagesTopicId, this.requestedAroundMessageId > 0)) {
+      return false;
+    }
+    const route: InitialPageRoute = initialPageRoute(this.unreadCount, this.lastReadInboxId);
+    const hit: Promise<TdObject> | null = takePrefetchedPage(this.chatId, route);
+    if (hit === null) {
+      return false;
+    }
+    logW(`[InitialPage] route=prefetched kind=${route.kind} anchor=${route.fromMessageId}`);
+    // around 那一支还要把 hasMoreNewer 按锚点是否已在尾部定下来——这一步在
+    // loadAround 里做，绕过去就会退回"无条件为真"的老 bug（新消息不跟随、
+    // ↓ 走重装窗口）。所以这里显式重做一遍同样的判定。
+    if (route.kind === ROUTE_AROUND) {
+      const anchorAtTail: boolean = reachedLiveTail(route.fromMessageId, this.chatLastMessageId);
+      this.hasMoreNewer = !anchorAtTail;
+      this.newerLoadState = anchorAtTail ? 'end' : 'idle';
+    }
+    hit.then((res: TdObject): void => {
+      // **空结果绝不能交给 onHistory。**
+      //
+      // 预取带 only_local:true，本地没缓存的会话合法地返回 0 条；而 onHistory
+      // 把"空结果"读作"这个会话就是没有消息"（那对 only_local:false 是对的，
+      // 对本地查询是错的），于是整个群组显示成空的（用户实报）。
+      // 空了就当没预取过，按原路重来一次。
+      const arr = (res['messages'] as TdObject[] | undefined) ?? [];
+      if (arr.length === 0) {
+        logW('[InitialPage] prefetch empty (local miss), falling back');
+        if (route.kind === ROUTE_AROUND) {
+          this.loadAround(route.fromMessageId);
+        } else {
+          this.loadHistory(0);
+        }
+        return;
+      }
+      this.onHistory(res, route.kind === ROUTE_AROUND ? 'around' : 'latest');
+    }).catch((e: TdError): void => {
+      // 预取失败：按原路重来一次，用户看不出区别，只是没提速。
+      logW(`[InitialPage] prefetch rejected, falling back: ${e.message}`);
+      if (route.kind === ROUTE_AROUND) {
+        this.loadAround(route.fromMessageId);
+      } else {
+        this.loadHistory(0);
+      }
+    });
+    return true;
+  }
+
   private requestInitialPage(): void {
     // ⚠️ 临时探针 [InitialPage]（判读完连同 loadAround 里那两条一起删）：
     // "读到底了再进去还是落在中间"要能只看日志就分因——是 unreadCount 陈了
@@ -4816,6 +5039,11 @@ export class MessageStore {
     // are outgoing (sent by us) can have it sitting well behind the true tail —
     // loadAround there would miss the real end of the chat. Fully-read chats
     // always just load the newest page instead.
+    // 预取命中就直接吃在途的那一发，连 getChat 那程带历史那程一起省掉
+    // （见 util/chatPrefetch）。路由必须逐字段一致，否则宁可重发。
+    if (this.consumePrefetchedPage()) {
+      return;
+    }
     if (this.unreadCount > 0 && this.lastReadInboxId > 0) {
       logW(`[InitialPage] route=around-unread anchor=${this.lastReadInboxId}`);
       this.loadAround(this.lastReadInboxId);
@@ -4970,6 +5198,12 @@ export class MessageStore {
   // Mark messages read up to maxVisibleId. Because TDLib read state is a
   // high-water mark, we only ever send the highest id the user has actually
   // seen — so entering a chat without scrolling leaves the rest unread.
+  // 这个 store 服务的是哪一种作用域，决定 viewMessages 的 source。
+  private viewSource(): TdObject {
+    return { '@type': viewMessageSourceType(
+      this.threadRootId, this.forumTopicId, this.directMessagesTopicId) };
+  }
+
   markViewed(maxVisibleId: number): void {
     if (maxVisibleId <= this.viewedUpTo) {
       return;
@@ -4979,10 +5213,14 @@ export class MessageStore {
     const req: TdRequest = { '@type': 'viewMessages' };
     req['chat_id'] = this.chatId;
     req['message_ids'] = [maxVisibleId];
-    if (this.directMessagesTopicId > 0) {
-      req['source'] = { '@type': 'messageSourceDirectMessagesChatTopicHistory' } as TdObject;
-    }
+    // **source 必须显式给**，四种作用域各自一个值（见 util/viewMessageSource）。
+    // 原来只给私聊话题设，论坛话题和消息话题都留给 TDLib "按会话打开状态去猜"，
+    // 于是话题群组读完退出未读仍在（issue #190）。
+    req['source'] = this.viewSource();
     req['force_read'] = true;
+    // 【临时探针 #188/#190，验完就删】读到底发没发出去、作用域对不对。
+    logW(`[ReadDiag] view chat=${this.chatId} upTo=${maxVisibleId}` +
+      ` src=${viewMessageSourceType(this.threadRootId, this.forumTopicId, this.directMessagesTopicId)}`);
     this.client.send(req).catch((e: TdError) => {
       logE(`MessageStore.viewMessages failed: ${e.message}`);
     });
@@ -5165,6 +5403,8 @@ export class MessageStore {
           const restored = cloneMessage(e);
           restored.replySenderName = cached.senderName;
           restored.replyText = cached.text;
+          restored.replyThumbPath = cached.thumbPath;
+          restored.replyThumbSticker = cached.thumbSticker;
           return restored;
         }
         // 原消息不在已加载窗口里 —— 拉一次，否则引用块永远是空的。
@@ -5175,7 +5415,21 @@ export class MessageStore {
       }
       const c = cloneMessage(e);
       c.replySenderName = target.senderName;
-      c.replyText = target.contentType === 'text' ? target.text : (target.placeholderLabel !== '' ? target.placeholderLabel : str('ms_photo_bracket'));
+      // 气泡里的引用块和输入栏的回复条必须说同一句话。这里原来自己另写了一套
+      // 「不是纯文本就取 placeholderLabel、再没有就 [图片]」，于是贴纸被说成
+      // 「[图片]」（issue #191）——贴纸的 placeholderLabel 是空的，而那条兜底
+      // 默认「没标签的都是图片」。统一走 replySnippetOf（有单测）。
+      c.replyText = replySnippetOf({
+        text: target.text, placeholderLabel: target.placeholderLabel,
+        contentType: target.contentType, paidMediaLocked: target.paidMediaLocked
+      });
+      // 缩略图取的是**已经下到本地**的那张（target 就在窗口里，它自己的气泡
+      // 正显示着这张图）。没下完就是空串，引用块退回纯两行字，不占位、不闪。
+      c.replyThumbPath = replyThumbOf({
+        contentType: target.contentType, photoPath: target.photoPath,
+        paidMediaLocked: target.paidMediaLocked
+      });
+      c.replyThumbSticker = replyThumbIsSticker(target.contentType);
       return c;
     });
     for (const id of missing) {
@@ -5195,16 +5449,36 @@ export class MessageStore {
     req['message_id'] = messageId;
     this.client.send(req).then((res: TdObject): void => {
       const entry = buildMessageEntry(res, this.users);
-      const preview: string = entry.contentType === 'text'
-        ? entry.text
-        : (entry.placeholderLabel !== '' ? entry.placeholderLabel : str('ms_photo_bracket'));
-      if (preview === '' && entry.senderName === '') {
+      // 同上：按需拉回来的原消息也走同一套摘要。
+      const preview: string = replySnippetOf({
+        text: entry.text, placeholderLabel: entry.placeholderLabel,
+        contentType: entry.contentType, paidMediaLocked: entry.paidMediaLocked
+      });
+      // 「原消息不可用」的判据**不能**看 preview —— replySnippetOf 永远不返回
+      // 空串（兜底是"媒体消息"），照旧写 preview === '' 这条就再也不成立了，
+      // 已删除的原消息会显示成「媒体消息」而不是「消息不可用」。
+      //
+      // 改成等价的原始条件：改这行之前，preview 只有在「纯文本且文字为空」
+      // 时才可能是空的（另一支的兜底是 [图片]，同样非空）。
+      const emptyText: boolean = entry.contentType === 'text' && entry.text === '';
+      if (emptyText && entry.senderName === '') {
         this.markReplyUnavailable(messageId);
         return;
       }
       // Remember it: the window can be replaced (loadAround) any number of
       // times, and the fetch guard would refuse to ask again.
-      this.repliedPreview.set(messageId, { senderName: entry.senderName, text: preview });
+      // 窗口外拉回来的这条**多半还没下载**，photoPath 是空的——引用块就只有
+      // 两行字。不为它补一次下载：那是为了一张 30vp 的小图去排一个下载任务，
+      // 而用户正等着看的是别的东西（见 issue「点全屏加载很久」那轮的优先级账）。
+      const thumbPath: string = replyThumbOf({
+        contentType: entry.contentType, photoPath: entry.photoPath,
+        paidMediaLocked: entry.paidMediaLocked
+      });
+      const thumbSticker: boolean = replyThumbIsSticker(entry.contentType);
+      this.repliedPreview.set(messageId, {
+        senderName: entry.senderName, text: preview,
+        thumbPath: thumbPath, thumbSticker: thumbSticker
+      });
       this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
         if (e.replyToMessageId !== messageId || e.replyText !== '') {
           return e;
@@ -5212,6 +5486,8 @@ export class MessageStore {
         const c = cloneMessage(e);
         c.replySenderName = entry.senderName;
         c.replyText = preview;
+        c.replyThumbPath = thumbPath;
+        c.replyThumbSticker = thumbSticker;
         return c;
       });
       this.notifySoon();
@@ -5225,7 +5501,9 @@ export class MessageStore {
   // replyToMessageId 非 0 就画引用块——不落结果的话那块会永远空着。
   private markReplyUnavailable(messageId: number): void {
     const label: string = str('mb_reply_unavailable');
-    this.repliedPreview.set(messageId, { senderName: '', text: label });
+    this.repliedPreview.set(messageId, {
+      senderName: '', text: label, thumbPath: '', thumbSticker: false
+    });
     this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
       if (e.replyToMessageId !== messageId || e.replyText !== '') {
         return e;
@@ -5318,7 +5596,11 @@ export class MessageStore {
     // flashing an indefinite loading ring or downloading the same file again.
     if (entry.videoFileId !== 0 && entry.videoPath !== '') {
       this.completedFilePaths.set(entry.videoFileId, entry.videoPath);
-      publishThumbPath(entry.videoFileId, entry.videoPath);
+      // **有真封面就发布封面，没有才退回视频路径。** 缩略图那条通道的消费者是
+      // Image（LiveThumbImage / ThumbReadyGate），它渲染不了 mp4——原来无条件
+      // 发布 entry.videoPath，自己发的视频在气泡上就是一块灰。
+      const knownPoster: string = this.localVideoPosters.get(entry.videoFileId) ?? '';
+      publishThumbPath(entry.videoFileId, knownPoster !== '' ? knownPoster : entry.videoPath);
     }
     if (entry.photoFileId !== 0 && entry.photoPath !== '') {
       this.completedFilePaths.set(entry.photoFileId, entry.photoPath);
@@ -5367,6 +5649,21 @@ export class MessageStore {
         hydrated.stickerFailed = false;
         hydrated.stickerDownloadActive = false;
       }
+    }
+    // **自己发的视频：把本地封面补回去。**
+    //
+    // 发送时 rememberLocalMedia 往 entry 上填过 photoPath，但随后的 TDLib 更新
+    // （send-succeeded / updateMessageContent）会整条重建 entry 把它冲掉，于是
+    // 气泡落到「photoFileId === 0 且 photoPath === ''」那一支——灰底加播放键，
+    // 就是用户看到的样子。这里是每次 upsert 都会经过的水合点，补在这儿才活得下来。
+    const localPoster: string = hydrated.videoFileId !== 0
+      ? (this.localVideoPosters.get(hydrated.videoFileId) ?? '') : '';
+    if (localPoster !== '' && hydrated.photoPath === '') {
+      const withPoster: MessageEntry = cloneMessage(hydrated);
+      withPoster.photoPath = localPoster;
+      withPoster.photoProgress = 100;
+      withPoster.photoFailed = false;
+      return withPoster;
     }
     return hydrated;
   }

@@ -20,6 +20,9 @@ export interface ComposerMode {
   replyToId: number;
   replyName: string;
   replyText: string;
+  // 回复条左侧那张缩略图（贴纸/图片/视频封面，见 util/replyThumb）。空串 = 无图。
+  replyThumb: string;
+  replyThumbSticker: boolean;
   // 编辑：目标消息、'text' 还是 'caption'、条上显示的原文。
   editingId: number;
   editingKind: string;
@@ -32,6 +35,7 @@ export function idleComposer(): ComposerMode {
   return {
     kind: COMPOSER_IDLE,
     replyToId: 0, replyName: '', replyText: '',
+    replyThumb: '', replyThumbSticker: false,
     editingId: 0, editingKind: '', editingPreview: '',
     draftBeforeEdit: ''
   };
@@ -40,7 +44,8 @@ export function idleComposer(): ComposerMode {
 // 回复某条。若正在编辑，编辑先作废——两者共用同一条，同时存在必然有一个
 // 是隐形的。
 export function enterReply(
-  state: ComposerMode, messageId: number, name: string, snippet: string
+  state: ComposerMode, messageId: number, name: string, snippet: string,
+  thumb: string = '', thumbSticker: boolean = false
 ): ComposerMode {
   if (messageId <= 0) {
     return state;
@@ -48,6 +53,7 @@ export function enterReply(
   return {
     kind: COMPOSER_REPLY,
     replyToId: messageId, replyName: name, replyText: snippet,
+    replyThumb: thumb, replyThumbSticker: thumbSticker,
     editingId: 0, editingKind: '', editingPreview: '',
     draftBeforeEdit: ''
   };
@@ -73,6 +79,7 @@ export function enterEdit(
   return {
     kind: COMPOSER_EDIT,
     replyToId: 0, replyName: '', replyText: '',
+    replyThumb: '', replyThumbSticker: false,
     editingId: messageId, editingKind: editKind, editingPreview: preview,
     draftBeforeEdit: keepDraft
   };

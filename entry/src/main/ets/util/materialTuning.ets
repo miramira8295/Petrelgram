@@ -25,10 +25,24 @@ export const THICKNESS_DEFAULT: number = THICKNESS_REGULAR;
 const STYLE_MIN: number = 0;
 const STYLE_MAX: number = 4;
 
-// 降级路径（低于 API 26，没有材质）自绘玻璃的高斯模糊半径基准值与步长。
+// 自绘玻璃的高斯模糊半径基准值与步长。
 // 步长挑 6：22 上下各两档落在 10..34，10 已经能看出玻璃、34 还没糊成一块板。
 export const FALLBACK_BLUR_BASE: number = 22;
 const FALLBACK_BLUR_STEP: number = 6;
+// 按**档位下标**（0..4，即 ImmersiveStyle 的超薄..超厚）算半径，而不是只按用户
+// 偏移算。两者的区别是"这个面自己该多厚"要不要算进去：
+//
+//   fallbackBlurRadius(offset)          所有面同一个数
+//   fallbackBlurForIndex(styleIndex)    顶栏薄、输入框次之、菜单常规、弹窗最厚
+//
+// 以前只有材质那条路带面的分档（ImmersiveStyle），自绘那条一直是平的——材质
+// 还在时看不出来，材质被系统收回之后就露馅了：用户把厚度调到「超薄」，输入框
+// 和弹窗仍然一样厚。下标 0..4 映射到 10/16/22/28/34，中间那档正好是原来的 22。
+const FALLBACK_BLUR_MIN: number = FALLBACK_BLUR_BASE - FALLBACK_BLUR_STEP * 2;
+
+export function fallbackBlurForIndex(styleIndex: number): number {
+  return FALLBACK_BLUR_MIN + clampStyle(styleIndex) * FALLBACK_BLUR_STEP;
+}
 
 function clampStyle(index: number): number {
   return Math.max(STYLE_MIN, Math.min(STYLE_MAX, index));
@@ -128,4 +142,33 @@ export function interactiveOn(
     return false;
   }
   return surfaceDefault;
+}
+
+// ── 映射到 HDS 的材质等级 ──────────────────────────────────────────────
+//
+// HdsNavigation / HdsTabs 的 `systemMaterialEffect.materialLevel` 收的是
+// `hdsMaterial.MaterialLevel`，而它的四个取值和我们这四档**恰好一一对应**：
+//
+//   EXQUISITE = 0   GENTLE = 1   SMOOTH = 2   ADAPTIVE = 10
+//
+// 返回的是**数值下标**而不是枚举：那个枚举是 6.1.0(23) 起的，在这一层解引用
+// 会在低版本上加载即抛（见 util/hdsTitleBar 文件头记的 v1.3.6 启动崩溃）。
+// 由调用方在版本闸内侧换成枚举。
+export const HDS_LEVEL_EXQUISITE: number = 0;
+export const HDS_LEVEL_GENTLE: number = 1;
+export const HDS_LEVEL_SMOOTH: number = 2;
+export const HDS_LEVEL_ADAPTIVE: number = 10;
+
+export function hdsLevelIndexOf(level: string): number {
+  const lv: string = normalizeLightLevel(level);
+  if (lv === LIGHT_EXQUISITE) {
+    return HDS_LEVEL_EXQUISITE;
+  }
+  if (lv === LIGHT_GENTLE) {
+    return HDS_LEVEL_GENTLE;
+  }
+  if (lv === LIGHT_SMOOTH) {
+    return HDS_LEVEL_SMOOTH;
+  }
+  return HDS_LEVEL_ADAPTIVE;
 }

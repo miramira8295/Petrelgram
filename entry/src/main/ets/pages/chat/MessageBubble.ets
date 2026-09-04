@@ -66,14 +66,18 @@ import {
   glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
 } from '../../util/bubbleGlassPath';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
-// 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
-import { probeGlassMeasure } from '../../util/tailFlipProbe';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
+import { AlbumGroup } from '../../util/collapseAlbums';
+import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { isLivePhotoVideo } from '../../util/livePhoto';
+import { replyThumbSrc } from '../../util/replyThumb';
 import { menuPreviewCompact } from '../../util/menuPreview';
+// 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
+// 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
+import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -81,6 +85,10 @@ const REPLY_QUOTE_WIDTH_RATIO: number = 0.76;
 // 引用块每行的固定行高。12 号字的默认行高由字体度量决定，内容为空时那一行
 // 会塌成 0——锁死它，加载中的占位和加载完的内容才是同一个高度。
 const REPLY_QUOTE_LINE_H: number = 16;
+// 引用块缩略图的边长：正好等于两行文字（2 × REPLY_QUOTE_LINE_H），这样有图
+// 没图的引用块一样高，缩略图落地时不会把气泡顶高。
+const REPLY_THUMB_SIZE: number = 32;
+const REPLY_THUMB_GAP: number = 6;
 
 const ALBUM_MAX_WIDTH: number = 280;
 const STICKER_MAX: number = 160;
@@ -151,6 +159,14 @@ function msgMenuActionPressedStyle() { .opacity(0.72).scale({ x: 0.97, y: 0.94 }
 
 // active=false 的实例按下不做任何变化（内联链接/语音/音频/文件卡自带按压
 // 反馈，整泡再暗一层会闪整条消息；不可点的系统丸同理）。
+// 【别再往这个修饰器里塞 onAreaChange】2026-09-03 试过一版"按条件注册"：
+// 只给带 bot 内联键盘的行挂宽度回调，其余行一个 area-change 节点都不注册。
+// 动机是对的（注册数直接决定每帧 HandleOnAreaChangeEvent 的遍历成本），
+// **但实现基于一个错误假设：以为 applyNormalAttribute 里重复调
+// instance.onAreaChange 是覆盖。真机 trace 证明是叠加。**
+// applyNormalAttribute 每次复用、每次重渲染都会跑，于是注册数线性累积：
+// 注册增长率从 3.3 节点/秒涨到 6.0，超时帧 3.8% → 10.5%，超预算 884 → 1566ms。
+// 要重做条件注册，只能保证「每个节点只注册一次」，不能写在 apply*Attribute 里。
 class PressDimModifier implements AttributeModifier<CommonAttribute> {
   private dimOpacity: number;
   private dimScale: number;
@@ -305,7 +321,6 @@ export struct MessageBubble {
   // 是旧」静态判不了，「订阅挂在哪」却是本地可判定的事实。0 = 未挂。
   private attachedRowId: number = 0;
   // Chat-theme outgoing bubble color ('' = the standard theme resource color).
-  @Param themeBubbleOut: string = '';
   // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
   // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
   // 由回调负责在真正离屏时关掉——那一路是可靠的。@Local 复用重置回 true。
@@ -315,38 +330,40 @@ export struct MessageBubble {
   @Local glassH: number = 0;
   @Param nowSec: number = 0;
   // 本机正在共享实时位置的那条消息 id（0 = 没有共享）。
-  @Param liveSharingId: number = 0;
-  @Param onStopLiveLocation: () => void = (): void => {};
   // 身份标签按群区分（同一个人在别的群未必是管理员），所以标签通道的 key
   // 要带 chatId。MessageEntry 里没有这个字段，由页面传。
-  @Param chatId: number = 0;
-  @Param isGroup: boolean = false;
-  @Param isChannel: boolean = false;
-  @Param showUnreadDivider: boolean = false;
-  @Param dividerIsResume: boolean = false;
-  @Param dateLabel: string = ''; // date pill above this row when the day changes
-  @Param albumPaths: string[] = [];
-  @Param albumFileIds: number[] = [];
-  @Param albumRatios: number[] = [];
-  @Param albumMemberIds: number[] = [];
-  // Same reasoning as msg above: fires on a new albumIsVideo array reference
-  // from ChatPage, not per frame; onAlbumIsVideoChanged only emits when a
-  // specific cell actually flips true→false.（复用路径由 aboutToReuse 播种。）
-  @Param albumIsVideo: boolean[] = [];
-  // 相册里哪几格是实况（见 util/livePhoto）。不挂监视：它只影响角标怎么画，
-  // 不参与播放位竞选。复用时并行数组是一条条重新播种的，读一律走带兜底的
-  // 访问器——这些数组长度不同步曾经把进程搞崩过。
-  @Param albumIsLive: boolean[] = [];
-  @Param albumProgress: number[] = [];
-  @Param albumFailed: boolean[] = [];
-  // 相册视频格子的播放位数据源：缩略图（albumFileIds/albumPaths）不足以起播，
-  // 播放位选中的那一格要挂 VideoBubbleSurface，需要真正的视频文件信息。
-  @Param albumVideoFileIds: number[] = [];
-  @Param albumVideoFileSizes: number[] = [];
-  @Param albumVideoDurations: number[] = [];
-  @Param albumVideoMimeTypes: string[] = [];
-  @Param albumCaption: string = '';
-  @Param albumCaptionEntities: TdObject[] = [];
+  // 整行的数据源。**一个对象，不是拆成十七个 @Param。**
+  //
+  // 这里原来是 dateLabel / albumPaths / albumFileIds / albumRatios /
+  // albumMemberIds / albumIsVideo / albumIsLive / albumProgress / albumFailed
+  // / albumVideoFileIds / albumVideoFileSizes / albumVideoDurations /
+  // albumVideoMimeTypes / albumCaption / albumCaptionEntities / showAvatar /
+  // showSenderName 共 17 个 @Param，其中 12 个是**数组**。
+  //
+  // 代价在 ArkUI V2 的状态机里：每个 @Param 落地都要走一遍依赖登记，数组还要
+  // 深代理。09-03 的 Frame 录制里 addRef4IdInternal 316.3ms + autoProxyObject
+  // 249.8ms + addRef 247.6ms + get 178.6ms ≈ 全程 7.2%，调用者第一名就是
+  // `fireChange < updateParam < updateStateVars@MessageBubble`。而最差 12 帧的
+  // 自耗时里 CustomNode:BuildItem 26.2% + ExecuteJS 23.2% —— 一行有多贵，
+  // 决定了一帧能塞下几行（预算 8.31ms，复用一行 4.74ms、新建 7.03ms）。
+  //
+  // group 本身是**对象身份稳定**的：AlbumGroupDataSource.reuseUnchangedRows
+  // 会把内容没变的行还回上一份快照的同一个对象，所以传对象不会比传散字段
+  // 更容易触发刷新，反而更准——散字段里任何一个新数组引用都会各自触发一次。
+  @Require @Param group: AlbumGroup;
+  // 页面算好的整行渲染数据。**同样是一个对象，不是拆成二十二个 @Param。**
+  //
+  // 理由与 group 那条完全一样（V2 的 @Param 登记开销）。而且 data 本来就是
+  // ChatPage.preparedMessageCache 按 cacheKey 缓存出来的**同一个对象**——
+  // 内容没变时连引用都不换，比二十二个散字段更不容易触发刷新。
+  @Require @Param data: MessageBubbleRenderData;
+  // 页面级回调表。**同样是一个对象，不是拆成六十六个 @Param。**
+  //
+  // ReusableMessageBubble 那边早就把它当整体持有（注释里写着「actions is
+  // page-owned and stable」），却仍然逐个透传下来——六十六次依赖登记，
+  // 每建/复用一行都要走一遍。回调本身是页面创建时就固定的闭包，整体传下来
+  // 语义完全一样。
+  @Require @Param actions: MessageBubbleActions;
   // 内容列宽/键盘高/窗口高/手势方案/链接忙碌 url 等环境值全部走 this.env
   // （chatEnv 镜像，批 0/3a 建的通道），原 @StorageProp 声明随迁移删除。
   // Measured width of the bubble (it shrinks to fit content) — the inline
@@ -374,119 +391,31 @@ export struct MessageBubble {
   @Local expandedQuoteKeys: string[] = [];
   // x/y are the tap's window coordinates (vp) — the fullscreen viewer uses them
   // as the anchor for its expand-from-tap / shrink-back-to-tap transition.
-  @Param onMediaTap: (messageId: number, x: number, y: number) => void = (): void => {};
-  @Param onLinkTap: (url: string) => void = (): void => {};
-  @Param onCommentTap: (messageId: number) => void = (): void => {};
-  @Param onBotCallback: (messageId: number, data: string) => void = (): void => {};
-  @Param onAvatarTap: (userId: number) => void = (): void => {};
   // Long press on a group message avatar → mention that sender in the composer.
-  @Param onAvatarLongPress: (userId: number, name: string) => void =
-    (_userId: number, _name: string): void => {};
   // 第二个参数是"从哪条跳走的"。页面拿它当返回点——只用视口底部那条的话，
   // 引用块在屏幕靠上时返回位置会偏，跨屏的长消息尤其明显。
-  @Param onReplyTap: (messageId: number, fromId: number) => void = (): void => {};
-  @Param onFileTap: (messageId: number) => void = (): void => {};
-  @Param onFileSave: (messageId: number) => void = (): void => {};
-  @Param onFilePause: (messageId: number) => void = (): void => {};
-  @Param onStickerRetry: (messageId: number) => void = (): void => {};
-  @Param onLinkPreviewRetry: (messageId: number) => void = (): void => {};
-  @Param onContactOpen: (userId: number, phone: string, vcard: string) => void =
-    (_userId: number, _phone: string, _vcard: string): void => {};
-  @Param onPhoneOpen: (phone: string) => void = (_phone: string): void => {};
-  @Param onLocationOpen: (latitude: number, longitude: number, label: string, valid: boolean) => void =
-    (_latitude: number, _longitude: number, _label: string, _valid: boolean): void => {};
-  @Param onPollVote: (messageId: number, optionIds: number[]) => void =
-    (_messageId: number, _optionIds: number[]): void => {};
-  @Param onGameOpen: (messageId: number) => void = (_messageId: number): void => {};
-  @Param onGamePhotoRetry: (messageId: number) => void = (_messageId: number): void => {};
-  @Param paidMediaPending: boolean = false;
-  @Param onPaidMediaUnlock: (messageId: number) => void = (_messageId: number): void => {};
-  @Param onPaidMediaOpen: (messageId: number) => void = (_messageId: number): void => {};
-  @Param onSpecialPhotoRetry: (messageId: number) => void = (_messageId: number): void => {};
   // 视频缩略图/文件下载失败后的重试；和图片重试分开，走的是 downloadFile 而非缩略图。
-  @Param onVideoRetry: (messageId: number) => void = (_messageId: number): void => {};
-  @Param onGiftCodeCopy: (code: string) => void = (_code: string): void => {};
-  @Param onGiveawayOpen: (chatId: number, messageId: number) => void =
-    (_chatId: number, _messageId: number): void => {};
-  @Param onVoiceTap: (messageId: number) => void = (): void => {};
-  @Param onVoicePlaybackStarted: (messageId: number) => void = (): void => {};
-  @Param onAudioTap: (messageId: number) => void = (): void => {};
-  @Param onAudioPrevious: (messageId: number) => void = (): void => {};
-  @Param onAudioNext: (messageId: number) => void = (): void => {};
-  @Param onAudioSeek: (messageId: number, fraction: number) => void =
-    (_messageId: number, _fraction: number): void => {};
-  @Param audioQueuePosition: number = 0;
-  @Param audioQueueLength: number = 0;
-  @Param audioHasPrevious: boolean = false;
-  @Param audioHasNext: boolean = false;
-  @Param onAutoplayVideoNeedDownload: (messageId: number) => void = (): void => {};
   // 播放位竞选上报：可见比例变化 / 组件消失。albumIndex 为 -1 表示非相册整条消息，
   // 相册格子用该格自己在 albumMemberIds 里的下标。回调由 ChatPage 接（见 playSlot.ets）。
-  @Param onMediaRatio: (messageId: number, albumIndex: number, ratio: number, centerY: number) => void =
-    (_messageId: number, _albumIndex: number, _ratio: number, _centerY: number): void => {};
-  @Param onMediaGone: (messageId: number, albumIndex: number) => void =
-    (_messageId: number, _albumIndex: number): void => {};
   // 当前播放位的 key（playSlot.slotKey 的输出），'' 表示没有播放位。
-  @Param playSlotKey: string = '';
   // 自动播放静音开关（KEY_AUTOPLAY_MUTED，由 ChatPage 用 @StorageProp 下发）。
-  @Param autoplayMuted: boolean = true;
   // 播放位视频的播放进度：每 350ms 一次的高频回调，故意不接到 @State——接上去
   // 会让 ChatPage 每 350ms 重建整个消息列表。ChatPage 用普通 Map 接住（按
   // messageId 记录），供全屏查看器交接时读取。
-  @Param onPlaySlotPositionChanged: (messageId: number, albumIndex: number, positionMs: number) => void =
-    (_messageId: number, _albumIndex: number, _positionMs: number): void => {};
   // 播放位视频播完或内嵌播放失败：这一条主动退位，让同屏其它候选重新竞选。
   // 不接的话播完的那条会永久霸占播放位，同屏另一条永远起不来。
-  @Param onPlaySlotEnded: (messageId: number, albumIndex: number) => void =
-    (_messageId: number, _albumIndex: number): void => {};
   // 播放位起播位置（毫秒）。由 ChatPage 在换届时从气泡进度表查出并随
   // playSlotKey 一起下发——全屏查看器交还的进度就是靠这条路接上的。
-  @Param playSlotStartMs: number = 0;
-  @Param onAnimationTap: (messageId: number, isPlaying: boolean) => void =
-    (_messageId: number, _isPlaying: boolean): void => {};
-  @Param onAnimationPlaybackFailed: (messageId: number) => void = (): void => {};
-  @Param animationPaused: boolean = false;
-  @Param animationForcePlay: boolean = false;
-  @Param animationPlaybackFailed: boolean = false;
   // Long-press context menu actions.
   // emoji 参数其实是 reaction key：标准 emoji 原样，自定义 emoji 为 'ce:<id>'。
-  @Param onSetReaction: (messageId: number, emoji: string, isChosen: boolean) => void = (): void => {};
-  @Param onReplyTo: (messageId: number) => void = (): void => {};
   // Blocks swipe-to-reply while the composer is in edit mode (avoids the two
   // states fighting over the reply/edit strip). Long-press → 回复 is unaffected.
-  @Param editingActive: boolean = false;
-  @Param onEditMsg: (messageId: number) => void = (): void => {};
-  @Param onShowReactors: (messageId: number, emoji: string) => void = (): void => {};
-  @Param onTranslateMsg: (messageId: number) => void = (): void => {};
-  @Param onPinMsg: (messageId: number, unpin: boolean) => void = (): void => {};
-  @Param onStopPoll: (messageId: number) => void = (): void => {};
-  @Param onReplaceMedia: (messageId: number) => void = (): void => {};
-  @Param onPollVoters: (messageId: number) => void = (): void => {};
-  @Param onSetDefaultReaction: (emoji: string) => void = (): void => {};
-  @Param isPinnedMsg: boolean = false;
-  @Param onCopyText: (messageId: number) => void = (): void => {};
-  @Param onSelectText: (messageId: number) => void = (): void => {};
-  @Param onCopyCode: (text: string) => void = (): void => {};
-  @Param onCopyLink: (messageId: number) => void = (): void => {};
-  @Param onForwardMsg: (messageIds: number[]) => void = (): void => {};
   // 直接转发到收藏（和自己的会话），不弹选择面板。
-  @Param onSaveToSaved: (messageIds: number[]) => void = (): void => {};
   // 转发回本会话——群里俗称"复读"。
-  @Param onRepeatMsg: (messageIds: number[]) => void = (): void => {};
   // 在本会话里筛出这个发送者的全部消息。
-  @Param onViewSenderHistory: (senderId: number) => void = (): void => {};
-  @Param onReportMsg: (messageId: number) => void = (): void => {};
-  @Param onSelectMsg: (messageIds: number[]) => void = (): void => {};
-  @Param onDeleteMsg: (messageId: number) => void = (): void => {};
   // "转发自 X" tapped: (originChatId, originMsgId, originUserId) — chat ids for a
   // channel/chat origin, user id for a user origin.
-  @Param onForwardTap: (chatId: number, messageId: number, userId: number) => void = (): void => {};
-  @Param onOpenReactions: (messageId: number) => void = (): void => {};
-  @Param onRecognizeSpeech: (messageId: number) => void = (): void => {};
-  @Param onVideoNoteDownload: (messageId: number) => void = (): void => {};
   // 整聊天翻译：点「隐藏译文/显示译文」的单条折叠开关，状态存在条目上。
-  @Param onToggleTranslation: (messageId: number, hidden: boolean) => void = (): void => {};
-  @Param onRetryTranslation: (messageId: number) => void = (): void => {};
   @Local private translationStatus: TranslationStatus | null = null;
   private unsubTranslation: (() => void) | null = null;
   @Local private livePhotoProgress: number = 0;
@@ -503,15 +432,10 @@ export struct MessageBubble {
   // "started" system pill know whether it's still tappable, and supplies the
   // id to hand off on tap. Sourced from ChatPage's existing updateChatVideoChat
   // subscription (see liveGroupCallId there) rather than re-subscribing here.
-  @Param liveGroupCallId: number = 0;
-  @Param onLiveStreamTap: (groupCallId: number) => void = (): void => {};
   // Live arrival: slide the bubble in from below (never set for history rows).
-  @Param animateIn: boolean = false;
   // 字号/圆角/省电系等设置全部走 this.env（chatEnv 镜像）。V1 时代
   // reduceAnim/powerSaving/autoplayGif 上的 @Watch('onPlaybackPolicyChanged')
   // 改为 @Monitor 深层路径（@Trace 支持），见 onPlaybackPolicyChanged。
-  @Param showAvatar: boolean = true;     // last row of a same-sender run
-  @Param showSenderName: boolean = true; // first row of a same-sender run
   @Local mediaVisible: boolean = true;
   @Local stickerPlaybackFailed: boolean = false;
   @Local linkPreviewOpening: boolean = false;
@@ -648,7 +572,7 @@ export struct MessageBubble {
     // 谈不上「不再」。真正的上报发生在 aboutToDisappear（组件销毁）和
     // onMsgPropChanged / onAlbumIsVideoChanged（同一组件原地翻转）两条路径上。
     this.wasCompetingVideo = this.isCompetingVideo();
-    for (let i = 0; i < this.albumIsVideo.length; i++) {
+    for (let i = 0; i < this.group.photoIsVideo.length; i++) {
       this.albumWasCompetingVideo.set(i, this.albumIsVideoAt(i));
     }
   }
@@ -661,11 +585,11 @@ export struct MessageBubble {
   private reportCompetingMediaGone(): void {
     // LazyForEach 回收组件时若不上报，候选表里会留下永远不消失的幽灵条目。
     if (this.isCompetingVideo()) {
-      this.onMediaGone(this.msg.id, -1);
+      this.actions.onMediaGone(this.msg.id, -1);
     }
-    for (let i = 0; i < this.albumIsVideo.length; i++) {
+    for (let i = 0; i < this.group.photoIsVideo.length; i++) {
       if (this.albumIsVideoAt(i)) {
-        this.onMediaGone(this.albumMemberIdAt(i), i);
+        this.actions.onMediaGone(this.albumMemberIdAt(i), i);
       }
     }
   }
@@ -687,8 +611,8 @@ export struct MessageBubble {
     this.commentsRowW = recallLabelWidth(`comments:${this.msg.commentCount}`);
     this.wasCompetingVideo = this.isCompetingVideo();
     this.attachMessageChannels(this.msg);
-    for (let i = 0; i < this.albumIsVideo.length; i++) {
-      this.albumWasCompetingVideo.set(i, this.albumIsVideo[i]);
+    for (let i = 0; i < this.group.photoIsVideo.length; i++) {
+      this.albumWasCompetingVideo.set(i, this.group.photoIsVideo[i]);
     }
     this.requestAutoplayDownload();
   }
@@ -727,20 +651,22 @@ export struct MessageBubble {
     this.liveStickerProgress = progressForOr(this.msg.stickerFileId, this.msg.stickerProgress);
     const competing = this.isCompetingVideo();
     if (this.wasCompetingVideo && !competing) {
-      this.onMediaGone(this.msg.id, -1);
+      this.actions.onMediaGone(this.msg.id, -1);
     }
     this.wasCompetingVideo = competing;
   }
 
   // 同样的翻转检测，作用在相册每一格上：某格从「是视频」变成「不是视频」时补发
   // 一次 onMediaGone，只在那一次触发，不逐帧触发。
-  @Monitor('albumIsVideo')
+  // 整行换对象时检查一遍（原来盯的是 albumIsVideo 这一个数组，字段合并后
+  // 由行对象身份代劳——reuseUnchangedRows 保证内容没变就不换对象）。
+  @Monitor('group')
   onAlbumIsVideoChanged(): void {
-    for (let i = 0; i < this.albumIsVideo.length; i++) {
+    for (let i = 0; i < this.group.photoIsVideo.length; i++) {
       const isVideo = this.albumIsVideoAt(i);
       const wasVideo = this.albumWasCompetingVideo.get(i) ?? false;
       if (wasVideo && !isVideo) {
-        this.onMediaGone(this.albumMemberIdAt(i), i);
+        this.actions.onMediaGone(this.albumMemberIdAt(i), i);
       }
       this.albumWasCompetingVideo.set(i, isVideo);
     }
@@ -766,8 +692,8 @@ export struct MessageBubble {
     if (!this.msg.isAnimation) {
       return;
     }
-    if ((this.env.autoplayGif && !this.env.powerSaving && !this.env.reduceAnim) || this.animationForcePlay) {
-      this.onAutoplayVideoNeedDownload(this.msg.id);
+    if ((this.env.autoplayGif && !this.env.powerSaving && !this.env.reduceAnim) || this.data.animationForcePlay) {
+      this.actions.onAutoplayVideoNeedDownload(this.msg.id);
     }
   }
 
@@ -812,7 +738,7 @@ export struct MessageBubble {
   // showAvatar is the run-end flag for private chats too, even when no avatar
   // column is rendered there.
   private hasBubbleTail(): boolean {
-    return this.showAvatar && !this.isBareEmoji();
+    return this.group.showAvatar && !this.isBareEmoji();
   }
 
   // 头像和气泡之间那 7vp。有尾巴的行由三角 Polygon 占掉（宽 8、右边距 -1），
@@ -826,11 +752,11 @@ export struct MessageBubble {
   }
 
   private rowTopPadding(): number {
-    return this.showSenderName ? 3 : 1;
+    return this.group.showSenderName ? 3 : 1;
   }
 
   private rowBottomPadding(): number {
-    return this.showAvatar ? 3 : 1;
+    return this.group.showAvatar ? 3 : 1;
   }
 
   private effectDuration(duration: number): number {
@@ -872,10 +798,12 @@ export struct MessageBubble {
   //
   // 只动 x：y 方向的关系（菜单贴在被抬起的气泡下方）是抬起预览的一部分，动它
   // 会和 ArkUI 的预览布局打架。
-  private recordMenuOffset(localX: number): void {
-    const w: number = this.bubbleW;
-    // 首帧还没量到宽度时不猜，用 0 退化成原来的居中行为。
-    this.menuOffsetX = w > 0 ? localX - w / 2 : 0;
+  // 宽度从**事件**里取，不再依赖常驻 onAreaChange 量出来的 bubbleW。
+  // 与 LightweightPlainTextBubble 同一套办法、同一个理由：这个宽度只在弹菜单
+  // 那一刻要用，而 onAreaChange 是全局派发的，注册了就每帧参与一次遍历。
+  private recordMenuOffset(localX: number, width: number): void {
+    // 量不到宽度时不猜，用 0 退化成原来的居中行为。
+    this.menuOffsetX = width > 0 ? localX - width / 2 : 0;
   }
 
   private onLongPress(event: GestureEvent): void {
@@ -887,7 +815,7 @@ export struct MessageBubble {
       + ` shown=${this.msgContextMenuShown}`);
     const fingers = event.fingerList;
     if (fingers.length > 0) {
-      this.recordMenuOffset(fingers[0].localX);
+      this.recordMenuOffset(fingers[0].localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
     const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
@@ -896,14 +824,14 @@ export struct MessageBubble {
       return;
     }
     if (policy.longPressSelects) {
-      this.onSelectMsg(this.albumMemberIds);
+      this.actions.onSelectMessages(this.group.memberIds);
     }
   }
 
   private swipeReplyEligible(): boolean {
     // System/hidden rows carry no replyable message; editing owns the
     // reply/edit strip below and must not fight a concurrent swipe.
-    return !this.editingActive && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden';
+    return !this.data.editingActive && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden';
   }
 
   private onSwipeReplyUpdate(offsetX: number): void {
@@ -925,7 +853,7 @@ export struct MessageBubble {
       this.swipeReplyX = 0;
     });
     if (triggered) {
-      this.onReplyTo(this.msg.id);
+      this.actions.onReplyTo(this.msg.id);
     }
   }
 
@@ -955,8 +883,8 @@ export struct MessageBubble {
   // 停止上报新的 ratio，不会追溯撤回已经选中的候选，所以消息对象翻转的那
   // 一帧 playSlotKey 可能还没跟着变——这里兜一道，不让动图错挂流式播放器。
   private isPlaySlot(albumIndex: number): boolean {
-    return this.playSlotKey !== '' && !this.msg.isAnimation &&
-      this.playSlotKey === slotKey(this.msg.id, albumIndex);
+    return this.data.playSlotKey !== '' && !this.msg.isAnimation &&
+      this.data.playSlotKey === slotKey(this.msg.id, albumIndex);
   }
 
   // 普通视频的播放已经交给播放位机制（isPlaySlot → VideoBubbleSurface 分片流
@@ -964,13 +892,13 @@ export struct MessageBubble {
   // 圆形视频消息（videoNote）走的是另一条独立分支，不受这里影响。
   private autoplayInlineVideo(): boolean {
     if (this.msg.contentType !== 'video' || !this.msg.isAnimation || this.msg.videoPath === '' ||
-      !this.mediaVisible || !this.env.appIsForeground || this.animationPlaybackFailed) {
+      !this.mediaVisible || !this.env.appIsForeground || this.data.animationPlaybackFailed) {
       return false;
     }
-    if (this.animationPaused) {
+    if (this.data.animationPaused) {
       return false;
     }
-    return this.animationForcePlay || (!this.env.powerSaving && !this.env.reduceAnim && this.env.autoplayGif);
+    return this.data.animationForcePlay || (!this.env.powerSaving && !this.env.reduceAnim && this.env.autoplayGif);
   }
 
   private autoplayCategory(): string {
@@ -980,7 +908,7 @@ export struct MessageBubble {
   private animationDownloadExpected(): boolean {
     return this.msg.isAnimation && this.msg.videoFileId !== 0 &&
       this.msg.videoPath === '' && !this.msg.videoFailed &&
-      (this.animationForcePlay || (!this.env.powerSaving && !this.env.reduceAnim && this.env.autoplayGif));
+      (this.data.animationForcePlay || (!this.env.powerSaving && !this.env.reduceAnim && this.env.autoplayGif));
   }
 
   // The link preview card adds its own 8+8 horizontal padding on top of the
@@ -1038,7 +966,7 @@ export struct MessageBubble {
       if (this.videoFileUnavailable()) {
         return str('mb_gif_unavailable');
       }
-      if (this.msg.videoFailed || this.animationPlaybackFailed) {
+      if (this.msg.videoFailed || this.data.animationPlaybackFailed) {
         return str('mb_gif_failed');
       }
       if (this.videoDownloadActive() || this.animationDownloadExpected()) {
@@ -1100,7 +1028,7 @@ export struct MessageBubble {
 
   private openOrRetryLinkPreview(): void {
     if (this.msg.linkPhotoFailed) {
-      this.onLinkPreviewRetry(this.msg.id);
+      this.actions.onLinkPreviewRetry(this.msg.id);
       return;
     }
     const presentation: LinkPreviewPresentation = this.linkPresentation();
@@ -1108,7 +1036,7 @@ export struct MessageBubble {
       return;
     }
     this.linkPreviewOpening = true;
-    this.onLinkTap(this.msg.linkUrl);
+    this.actions.onLinkTap(this.msg.linkUrl);
     setTimeout((): void => {
       this.linkPreviewOpening = false;
     }, 650);
@@ -1177,7 +1105,7 @@ export struct MessageBubble {
   // 已就绪则切换播放态。
   private toggleVideoNote(): void {
     if (this.msg.videoPath === '') {
-      this.onVideoNoteDownload(this.msg.id);
+      this.actions.onVideoNoteDownload(this.msg.id);
       return;
     }
     this.videoNotePlaying = !this.videoNotePlaying;
@@ -1268,8 +1196,8 @@ export struct MessageBubble {
 
   private hasInlineLink(): boolean {
     return this.formattedTextHasLink(this.msg.text, this.msg.textEntities) ||
-      (this.albumCaption !== '' &&
-        this.formattedTextHasLink(this.albumCaption, this.albumCaptionEntities));
+      (this.group.caption !== '' &&
+        this.formattedTextHasLink(this.group.caption, this.group.captionEntities));
   }
 
   @Builder
@@ -1294,7 +1222,7 @@ export struct MessageBubble {
         .height(this.env.msgTextSize + 3)
         .verticalAlign(ImageSpanAlignment.CENTER)
         .objectFit(ImageFit.Contain);
-    } else if (run.url !== '') {
+    } else if (run.url !== '' && this.env.linkNavBusy === run.url) {
       // 这一段被点中、正在向服务器问"这个链接该开哪一页"的时候，文字自己
       // 呼吸起来。链接是 Span，挂不了子组件也没有 opacity，能动的只有它自己
       // 的颜色和底色，所以加载态就画成一颗一明一暗的药丸。
@@ -1307,24 +1235,46 @@ export struct MessageBubble {
         .fontFamily(run.code ? 'monospace' : '')
         .fontColor(this.accent())
         .decoration({ type: this.richRunDecoration(run), color: this.accent() })
-        .textBackgroundStyle({
-          color: this.linkRunBackground(run),
-          radius: run.code || this.env.linkNavBusy === run.url ? 3 : 0
-        })
+        .textBackgroundStyle({ color: this.linkRunBackground(run), radius: 3 })
         // iterations: -1 + Alternate —— 一次状态变化就能永远来回，不需要
         // 定时器逐帧改状态（那会把整个气泡按帧重建）。省电模式下
         // effectDuration 归零，退化成一个静止的暗色药丸，仍然看得出在忙。
         .animation({
           duration: this.persistentEffectDuration(620),
           curve: Curve.EaseInOut,
-          iterations: this.env.linkNavBusy === run.url ? -1 : 1,
+          iterations: -1,
           playMode: PlayMode.Alternate
         })
         .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
         .animation({ duration: this.persistentEffectDuration(90), curve: Curve.EaseOut })
         .onClick(() => {
           if (this.gestureClaimed) { return; }
-          this.onLinkTap(run.url); });
+          this.actions.onLinkTap(run.url); });
+    } else if (run.url !== '') {
+      // **闲着的链接：一个 .animation() 都不写。**
+      //
+      // 上面那条呼吸药丸只在"正在问服务器"时才有意义，可它原来是和普通链接
+      // 共用一支的——于是每条含链接的消息，每次 ExecuteRerender 都要建两个
+      // JSAnimation 上下文，各自同步 flush 一轮 FlushLayoutTask。09-03 的
+      // Frame 录制里 `duration:620` 出现 20 次、81.6ms、单次最大 25.32ms，
+      // 全部落在滚动段——而那段时间用户一个链接都没点。
+      //
+      // 下面那条注释（普通 run 为什么不挂 .animation()）解释了为什么
+      // duration:0 挡不住：唯一的办法就是不写修饰器。这一支就是照做。
+      Span(run.text)
+        .fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
+        .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
+        .fontFamily(run.code ? 'monospace' : '')
+        .fontColor(this.accent())
+        .decoration({ type: this.richRunDecoration(run), color: this.accent() })
+        .textBackgroundStyle({
+          color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
+          radius: run.code ? 3 : 0
+        })
+        .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
+        .onClick(() => {
+          if (this.gestureClaimed) { return; }
+          this.actions.onLinkTap(run.url); });
     } else {
       // 这里刻意不挂 .animation()：普通 run 是气泡里数量最多的节点，一条常驻
       // 属性动画会按 run 数线性放大更新开销。2026-08-27 11:57 的真机 trace 里，
@@ -1376,7 +1326,7 @@ export struct MessageBubble {
   // retained for links, formatting, replies, previews, translations and
   // reactions, so this changes layout work rather than message behaviour.
   private useDirectPlainText(): boolean {
-    return this.msg.contentType === 'text' && this.albumPaths.length <= 1 &&
+    return this.msg.contentType === 'text' && this.group.photoPaths.length <= 1 &&
       this.msg.reactions.length === 0 && this.msg.translatedText === '' &&
       this.translationStatus === null &&
       !this.hasLinkPreview() &&
@@ -1448,7 +1398,7 @@ export struct MessageBubble {
                 .animation({ duration: this.effectDuration(90), curve: Curve.EaseOut })
                 .onClick((): void => {
                   if (this.gestureClaimed) { return; }
-                  this.onCopyCode(seg.text); });
+                  this.actions.onCopyCode(seg.text); });
             }
             .width(params.maxWidth - 18)
             .alignItems(VerticalAlign.Center)
@@ -1554,7 +1504,7 @@ export struct MessageBubble {
         .constraintSize({ maxWidth: this.inlineMaxW() })
         .onClick((): void => {
           if (this.gestureClaimed) { return; }
-          this.onRetryTranslation(this.msg.id); });
+          this.actions.onRetryTranslation(this.msg.id); });
       }
     }
     if (this.msg.translatedText !== '') {
@@ -1583,7 +1533,7 @@ export struct MessageBubble {
       .margin({ top: 4 })
       .onClick((): void => {
         if (this.gestureClaimed) { return; }
-        this.onToggleTranslation(this.msg.id, !this.msg.translationHidden);
+        this.actions.onToggleTranslation(this.msg.id, !this.msg.translationHidden);
       });
     }
   }
@@ -1633,7 +1583,7 @@ export struct MessageBubble {
     .padding({ top: 10, bottom: 4 }).margin({ top: 6 })
     .onClick(() => {
       if (this.gestureClaimed) { return; }
-      this.onCommentTap(this.msg.id); });
+      this.actions.onCommentTap(this.msg.id); });
   }
 
   // Bot inline keyboard rendered below the bubble: translucent rounded buttons,
@@ -1658,11 +1608,11 @@ export struct MessageBubble {
                 .onClick(() => {
                   if (this.gestureClaimed) { return; }
                   if (btn.url !== '') {
-                    this.onLinkTap(btn.url);
+                    this.actions.onLinkTap(btn.url);
                   } else if (btn.callbackData !== '') {
-                    this.onBotCallback(this.msg.id, btn.callbackData);
+                    this.actions.onBotCallback(this.msg.id, btn.callbackData);
                   } else if (btn.isGame) {
-                    this.onGameOpen(this.msg.id);
+                    this.actions.onGameOpen(this.msg.id);
                   }
                 });
             // 点击目标、游戏分支和样式都属于组件身份，不能只看显示文字。
@@ -1682,7 +1632,7 @@ export struct MessageBubble {
     .padding({
       // Align with the bubble body; every row reserves the same 7vp tail
       // gutter so first/middle/last bubbles never shift horizontally.
-      left: 10 + (this.msg.isOutgoing ? 0 : (this.isGroup ? 38 : 0) +
+      left: 10 + (this.msg.isOutgoing ? 0 : (this.data.isGroup ? 38 : 0) +
         this.bubbleTailGutter()),
       right: 10 + (this.msg.isOutgoing ? this.bubbleTailGutter() : 0),
       top: 2, bottom: 2
@@ -1827,7 +1777,7 @@ export struct MessageBubble {
           .fontSize(size * 0.34).fontColor([Color.White]).margin({ left: 2 });
       } else if (this.msg.isAnimation && this.animationDownloadExpected()) {
         LoadingProgress().width(size * 0.62).height(size * 0.62).color(Color.White);
-      } else if (this.msg.videoFailed || this.animationPlaybackFailed) {
+      } else if (this.msg.videoFailed || this.data.animationPlaybackFailed) {
         SymbolGlyph($r('sys.symbol.arrow_clockwise'))
           .fontSize(size * 0.4).fontColor([Color.White]);
       } else if (this.videoFileUnavailable()) {
@@ -1860,40 +1810,40 @@ export struct MessageBubble {
   }
 
   private albumCellRetryable(index: number): boolean {
-    return this.albumPathAt(index) === '' && (this.albumFailed[index] ?? false) &&
-      (this.albumFileIds[index] ?? 0) !== 0;
+    return this.albumPathAt(index) === '' && (this.group.photoFailed[index] ?? false) &&
+      (this.group.photoFileIds[index] ?? 0) !== 0;
   }
 
   private albumPathAt(index: number): string {
-    return this.albumPaths[index] ?? '';
+    return this.group.photoPaths[index] ?? '';
   }
 
   private albumIsVideoAt(index: number): boolean {
-    return this.albumIsVideo[index] ?? false;
+    return this.group.photoIsVideo[index] ?? false;
   }
 
   private albumIsLiveAt(index: number): boolean {
-    return this.albumIsLive[index] ?? false;
+    return this.group.photoIsLive[index] ?? false;
   }
 
   private albumMemberIdAt(index: number): number {
-    return this.albumMemberIds[index] ?? 0;
+    return this.group.memberIds[index] ?? 0;
   }
 
   private albumVideoFileIdAt(index: number): number {
-    return this.albumVideoFileIds[index] ?? 0;
+    return this.group.videoFileIds[index] ?? 0;
   }
 
   private albumVideoFileSizeAt(index: number): number {
-    return this.albumVideoFileSizes[index] ?? 0;
+    return this.group.videoFileSizes[index] ?? 0;
   }
 
   private albumVideoDurationAt(index: number): number {
-    return this.albumVideoDurations[index] ?? 0;
+    return this.group.videoDurations[index] ?? 0;
   }
 
   private albumVideoMimeTypeAt(index: number): string {
-    return this.albumVideoMimeTypes[index] ?? '';
+    return this.group.videoMimeTypes[index] ?? '';
   }
 
   private albumVideoMetaText(index: number, cellWidth: number): string {
@@ -1911,8 +1861,8 @@ export struct MessageBubble {
   // 与 isPlaySlot() 同一道 !isAnimation 兜底：动图不参加竞选（spec §3.3），
   // 相册格子也不例外，否则相册里的动图会错挂流式播放器。
   private isAlbumCellPlaySlot(index: number): boolean {
-    return this.playSlotKey !== '' && !this.msg.isAnimation &&
-      this.playSlotKey === slotKey(this.albumMemberIdAt(index), index);
+    return this.data.playSlotKey !== '' && !this.msg.isAnimation &&
+      this.data.playSlotKey === slotKey(this.albumMemberIdAt(index), index);
   }
 
   // The play slot renders through StreamingVideoPlayer, whose XComponent is
@@ -1924,13 +1874,13 @@ export struct MessageBubble {
   // long-press menu falls back to the plain, preview-less presentation instead
   // of lying about what the frozen snapshot contains.
   private hasLiveVideoSurface(): boolean {
-    if (this.playSlotKey === '' || this.msg.isAnimation) {
+    if (this.data.playSlotKey === '' || this.msg.isAnimation) {
       return false;
     }
     if (this.isPlaySlot(-1) && this.msg.videoFileId !== 0) {
       return true;
     }
-    for (let i = 0; i < this.albumMemberIds.length; i++) {
+    for (let i = 0; i < this.group.memberIds.length; i++) {
       if (this.isAlbumCellPlaySlot(i) && this.albumVideoFileIdAt(i) !== 0) {
         return true;
       }
@@ -1945,13 +1895,13 @@ export struct MessageBubble {
   private bubbleCornerRadius(): BorderRadiuses {
     return {
       topLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
-        (this.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()),
+        (this.group.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()),
       topRight: this.msg.isOutgoing ?
-        (this.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()) : this.env.bubbleRadius,
+        (this.group.showSenderName ? this.env.bubbleRadius : this.runCornerRadius()) : this.env.bubbleRadius,
       bottomLeft: this.msg.isOutgoing ? this.env.bubbleRadius :
-        (this.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()),
+        (this.group.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()),
       bottomRight: this.msg.isOutgoing ?
-        (this.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()) : this.env.bubbleRadius
+        (this.group.showAvatar ? this.tailCornerRadius() : this.runCornerRadius()) : this.env.bubbleRadius
     };
   }
 
@@ -1968,11 +1918,11 @@ export struct MessageBubble {
     Stack() {
       Column().width(width).height(height).borderRadius(6)
         .backgroundColor(this.albumIsVideoAt(cellIdx) ? '#AEB6C0' : '#D7DCE2');
-      if (hasFile && !(this.albumFailed[cellIdx] ?? false)) {
+      if (hasFile && !(this.group.photoFailed[cellIdx] ?? false)) {
         this.mediaLoadState(
           Math.min(34, Math.min(width, height) * 0.4),
-          this.albumFileIds[cellIdx] ?? 0,
-          this.albumProgress[cellIdx] ?? 0,
+          this.group.photoFileIds[cellIdx] ?? 0,
+          this.group.photoProgress[cellIdx] ?? 0,
           false
         );
       } else if (!this.albumIsVideoAt(cellIdx)) {
@@ -1997,20 +1947,20 @@ export struct MessageBubble {
         fileSize: this.albumVideoFileSizeAt(cell.idx),
         mimeType: this.albumVideoMimeTypeAt(cell.idx),
         posterPath: this.albumPathAt(cell.idx),
-        muted: this.autoplayMuted,
-        startPositionMs: this.playSlotStartMs,
+        muted: this.data.autoplayMuted,
+        startPositionMs: this.data.playSlotStartMs,
         onPositionChanged: (positionMs: number): void => {
-          this.onPlaySlotPositionChanged(this.albumMemberIdAt(cell.idx), cell.idx, positionMs);
+          this.actions.onPlaySlotPositionChanged(this.albumMemberIdAt(cell.idx), cell.idx, positionMs);
         },
         onEnded: (): void => {
-          this.onPlaySlotEnded(this.albumMemberIdAt(cell.idx), cell.idx);
+          this.actions.onPlaySlotEnded(this.albumMemberIdAt(cell.idx), cell.idx);
         }
       })
         .width(cell.width).height(cell.height).clip(true)
         .borderRadius(6)
         // 同理：交给格子自己的 onClick 打开全屏查看器。
         .hitTestBehavior(HitTestMode.None);
-    } else if ((this.albumFileIds[cell.idx] ?? 0) !== 0 || this.albumPathAt(cell.idx) !== '') {
+    } else if ((this.group.photoFileIds[cell.idx] ?? 0) !== 0 || this.albumPathAt(cell.idx) !== '') {
       // No appear transition, for the same reason as the single-media
       // thumbnail: a row rebuild re-creates this node and would
       // replay the fade every time.
@@ -2023,14 +1973,16 @@ export struct MessageBubble {
       // for that entry, and losing the path there would regress an already
       // downloaded photo to a dead "retry" tile.
       LiveThumbImage({
-        fileId: this.albumFileIds[cell.idx] ?? 0,
-        initialPath: this.albumPathAt(cell.idx),
-        boxWidth: cell.width,
-        boxHeight: cell.height,
-        radius: 6,
-        fit: ImageFit.Cover,
+        spec: {
+          fileId: this.group.photoFileIds[cell.idx] ?? 0,
+          initialPath: this.albumPathAt(cell.idx),
+          boxWidth: cell.width,
+          boxHeight: cell.height,
+          radius: 6,
+          fit: ImageFit.Cover
+        },
         placeholder: (): void => {
-          this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, (this.albumFileIds[cell.idx] ?? 0) !== 0);
+          this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, (this.group.photoFileIds[cell.idx] ?? 0) !== 0);
         }
       });
     } else {
@@ -2038,13 +1990,14 @@ export struct MessageBubble {
       // don't leave an endless 0% spinner over that intentional state.
       this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, false);
     }
-    if (this.albumIsVideoAt(cell.idx) &&
+    // 相册格同理：实况格已经有 liveChip，不画播放钮。
+    if (this.albumIsVideoAt(cell.idx) && !this.albumIsLiveAt(cell.idx) &&
       !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0)) {
       // 同单图那处：缩略图到没到要问通道，albumPathAt 在旁路化之后不再回填。
       ThumbReadyGate({
-        fileId: this.albumFileIds[cell.idx] ?? 0,
+        fileId: this.group.photoFileIds[cell.idx] ?? 0,
         initialPath: this.albumPathAt(cell.idx),
-        ready: (this.albumFileIds[cell.idx] ?? 0) === 0 || (this.albumFailed[cell.idx] ?? false),
+        ready: (this.group.photoFileIds[cell.idx] ?? 0) === 0 || (this.group.photoFailed[cell.idx] ?? false),
         content: (): void => {
           this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
         }
@@ -2071,13 +2024,13 @@ export struct MessageBubble {
   // util/albumCellKey。
   private cellKeyAt(index: number): string {
     return albumCellKey(index, this.albumMemberIdAt(index),
-      this.albumFileIds[index] ?? 0, this.albumIsVideoAt(index));
+      this.group.photoFileIds[index] ?? 0, this.albumIsVideoAt(index));
   }
 
   @Builder
   albumGrid() {
     Column({ space: 2 }) {
-      ForEach(packAlbumRows(this.albumRatios, this.albumW()), (row: AlbumCell[], rowIdx: number) => {
+      ForEach(packAlbumRows(this.group.photoRatios, this.albumW()), (row: AlbumCell[], rowIdx: number) => {
         Row({ space: 2 }) {
           ForEach(row, (cell: AlbumCell) => {
             if (this.albumIsVideoAt(cell.idx)) {
@@ -2096,9 +2049,9 @@ export struct MessageBubble {
                 (_visible: boolean, ratio: number): void => {
                   const memberId = this.albumMemberIdAt(cell.idx);
                   if (ratio <= 0) {
-                    this.onMediaGone(memberId, cell.idx);
+                    this.actions.onMediaGone(memberId, cell.idx);
                   } else {
-                    this.onMediaRatio(memberId, cell.idx, ratio, this.albumCellCenterY.get(cell.idx) ?? 0);
+                    this.actions.onMediaRatio(memberId, cell.idx, ratio, this.albumCellCenterY.get(cell.idx) ?? 0);
                   }
                 })
               .onAreaChange((_old: Area, area: Area): void => {
@@ -2109,10 +2062,10 @@ export struct MessageBubble {
                 if (this.gestureClaimed) { return; }
                 // Same as the single-media case: a failed cell offers retry.
                 if (this.albumCellRetryable(cell.idx)) {
-                  this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
+                  this.actions.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
                   return;
                 }
-                this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
+                this.actions.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
               });
             } else {
               Stack() {
@@ -2121,22 +2074,29 @@ export struct MessageBubble {
               .width(cell.width).height(cell.height)
               // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
               .geometryTransition(`media_${this.albumMemberIdAt(cell.idx)}`)
-              .accessibilityText((this.albumFailed[cell.idx] ?? false)
+              .accessibilityText((this.group.photoFailed[cell.idx] ?? false)
                 ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1))
-              .onVisibleAreaApproximateChange(
-                { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
-                  expectedUpdateInterval: 200 },
-                (_visible: boolean, _ratio: number): void => {
-                  // 相册竞选只看这一格是不是视频，图片格不上报
-                })
+              // **图片格不挂 onVisibleAreaApproximateChange。**
+              //
+              // 这里原来挂着一个**空回调**——注释自己写着"图片格不上报"，可空
+              // 回调照样把这个节点注册进全局可见区派发表，成本在注册不在回调。
+              // 一行 6–9 格、窗口里几十行，全相册会话里就是两三百个白注册：
+              // 09-03 的真机 trace 里 HandleVisibleAreaChangeEvent 的 nodeCount
+              // 峰值 134、稳态还在以 3.49 节点/秒增长，而同一份录制里
+              // 379 行全是图片行。
+              //
+              // （a43553d 摘过一次，被 7b5b33f 那次批量回退带掉了——那次是在查
+              // 历史滚动跳页的回归，不是因为这一处有问题。现在有数据了，摘回来。）
+              // isVideo 进了格子的 key（见 util/albumCellKey），一格从图片变视频
+              // 会换 key 重建，不存在"少注册了导致视频格不上报"的窗口。
               .onClick((e: ClickEvent) => {
                 if (this.gestureClaimed) { return; }
                 // Same as the single-media case: a failed cell offers retry.
                 if (this.albumCellRetryable(cell.idx)) {
-                  this.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
+                  this.actions.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
                   return;
                 }
-                this.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
+                this.actions.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
               });
             }
           }, (cell: AlbumCell) => this.cellKeyAt(cell.idx));
@@ -2293,11 +2253,11 @@ export struct MessageBubble {
         .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
         .onClick(() => {
           if (this.gestureClaimed) { return; }
-          this.onSetReaction(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId), r.isChosen);
+          this.actions.onSetReaction(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId), r.isChosen);
         })
         // Long-press a chip to see who reacted with it.
         .gesture(LongPressGesture().onAction(() => {
-          this.onShowReactors(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId));
+          this.actions.onShowReactors(this.msg.id, reactionKeyFrom(r.emoji, r.customEmojiId));
         }))
         .transition(
           TransitionEffect.scale({ x: 0.6, y: 0.6 })
@@ -2416,8 +2376,8 @@ export struct MessageBubble {
         .backgroundColor(this.reactionChosen(e) ? '#263391E8' : Color.Transparent)
         .stateStyles({ normal: msgMenuActionNormalStyle, pressed: msgMenuActionPressedStyle })
         .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
-        .onClick((): void => { this.onSetReaction(this.msg.id, e, this.reactionChosen(e)); })
-        .gesture(LongPressGesture().onAction((): void => { this.onSetDefaultReaction(e); }));
+        .onClick((): void => { this.actions.onSetReaction(this.msg.id, e, this.reactionChosen(e)); })
+        .gesture(LongPressGesture().onAction((): void => { this.actions.onSetDefaultReaction(e); }));
       }, (e: string): string => e);
       Blank();
       Row() {
@@ -2427,7 +2387,7 @@ export struct MessageBubble {
       .justifyContent(FlexAlign.Center)
       .stateStyles({ normal: msgMenuActionNormalStyle, pressed: msgMenuActionPressedStyle })
       .animation({ duration: this.reactionDuration(110), curve: Curve.EaseOut })
-      .onClick((): void => { this.onOpenReactions(this.msg.id); });
+      .onClick((): void => { this.actions.onOpenReactions(this.msg.id); });
     }
     .width('100%')
     .alignItems(VerticalAlign.Center);
@@ -2442,24 +2402,24 @@ export struct MessageBubble {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
           content: this.msg.contentType === 'text' ? $r('app.string.edit') : $r('app.string.mb_edit_caption')
-        }).onClick((): void => { this.onEditMsg(this.msg.id); });
+        }).onClick((): void => { this.actions.onEditMsg(this.msg.id); });
       }
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
         content: $r('app.string.mb_copy_text')
-      }).onClick((): void => { this.onCopyText(this.msg.id); });
+      }).onClick((): void => { this.actions.onCopyText(this.msg.id); });
       // 「复制文本」是整条全选，这一项是 issue #94 要的"只copy其中一段"。
       if (this.msg.text !== '') {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.character_textbox')),
           content: $r('app.string.mb_select_text')
-        }).onClick((): void => { this.onSelectText(this.msg.id); });
+        }).onClick((): void => { this.actions.onSelectText(this.msg.id); });
       }
       if (this.msg.text !== '') {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.translate')),
           content: $r('app.string.mb_translate')
-        }).onClick((): void => { this.onTranslateMsg(this.msg.id); });
+        }).onClick((): void => { this.actions.onTranslateMsg(this.msg.id); });
       }
       if (messageUrls(this.msg.text, this.msg.textEntities).length > 0) {
         MenuItem({
@@ -2470,56 +2430,56 @@ export struct MessageBubble {
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrowshape_turn_up_right')),
         content: $r('app.string.mb_forward')
-      }).onClick((): void => { this.onForwardMsg(this.albumMemberIds); });
+      }).onClick((): void => { this.actions.onForwardMessages(this.group.memberIds); });
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bookmark')),
         content: $r('app.string.mb_save_to_saved')
-      }).onClick((): void => { this.onSaveToSaved(this.albumMemberIds); });
+      }).onClick((): void => { this.actions.onSaveMessages(this.group.memberIds); });
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.repeat')),
         content: $r('app.string.mb_repeat')
-      }).onClick((): void => { this.onRepeatMsg(this.albumMemberIds); });
-      if (this.isGroup && this.msg.senderIsUser && this.msg.senderId > 0) {
+      }).onClick((): void => { this.actions.onRepeatMessages(this.group.memberIds); });
+      if (this.data.isGroup && this.msg.senderIsUser && this.msg.senderId > 0) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person')),
           content: $r('app.string.mb_view_history')
-        }).onClick((): void => { this.onViewSenderHistory(this.msg.senderId); });
+        }).onClick((): void => { this.actions.onViewSenderHistory(this.msg.senderId); });
       }
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
-        content: this.isPinnedMsg ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
-      }).onClick((): void => { this.onPinMsg(this.msg.id, this.isPinnedMsg); });
+        content: this.data.isPinnedMsg ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
+      }).onClick((): void => { this.actions.onPinMsg(this.msg.id, this.data.isPinnedMsg); });
       if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800 &&
         (this.msg.contentType === 'photo' || this.msg.contentType === 'video')) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.picture')),
           content: $r('app.string.mb_replace_media')
-        }).onClick((): void => { this.onReplaceMedia(this.msg.id); });
+        }).onClick((): void => { this.actions.onReplaceMedia(this.msg.id); });
       }
       if (this.msg.contentType === 'poll' && this.msg.isOutgoing && !this.msg.pollIsClosed) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
           content: $r('app.string.mb_stop_poll')
-        }).onClick((): void => { this.onStopPoll(this.msg.id); });
+        }).onClick((): void => { this.actions.onStopPoll(this.msg.id); });
       }
       if (this.msg.contentType === 'poll' && !this.msg.pollIsAnonymous) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person_2')),
           content: $r('app.string.mb_view_voters')
-        }).onClick((): void => { this.onPollVoters(this.msg.id); });
+        }).onClick((): void => { this.actions.onPollVoters(this.msg.id); });
       }
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
         content: $r('app.string.mb_report')
-      }).onClick((): void => { this.onReportMsg(this.msg.id); });
+      }).onClick((): void => { this.actions.onReportMsg(this.msg.id); });
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
         content: $r('app.string.mb_select')
-      }).onClick((): void => { this.onSelectMsg(this.albumMemberIds); });
+      }).onClick((): void => { this.actions.onSelectMessages(this.group.memberIds); });
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')).fontColor([Color.Red]),
         content: $r('app.string.delete')
-      }).onClick((): void => { this.onDeleteMsg(this.msg.id); });
+      }).onClick((): void => { this.actions.onDeleteMsg(this.msg.id); });
     }
     // 百分比宽度的表情行会让未定宽的 Menu 采用整屏约束，随后屏幕边界夹取会
     // 吞掉手指落点带来的横向偏移。固定回原菜单宽度，菜单才能继续贴近落点。
@@ -2538,15 +2498,32 @@ export struct MessageBubble {
     // 等内容到了才画这一块，气泡就会在落地后凭空长高约 40vp——进聊天页时那次
     // 重排就是这么来的。两行都锁死行高，加载中和加载完是同一个高度。
     // 前提：拉不到原消息时 store 会填 mb_reply_unavailable，不会永远空着。
-    Column() {
-      Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
-        .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
-        .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
-      Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
-        .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
-        .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
+    Row({ space: REPLY_THUMB_GAP }) {
+      // 缩略图：贴纸显示贴纸本身、图片显示原图、视频显示封面（同一个
+      // photoPath，见 util/replyThumb）。路径为空就整个不画——**不留占位方块**，
+      // 否则没图的引用块会多出一块空白。
+      //
+      // 边长刚好是两行文字的总高，所以有没有这张图，引用块的高度都一样，
+      // 不会在缩略图落地时把气泡顶高（这一块的注释里那条"锁死行高"的约束）。
+      if (this.msg.replyThumbPath !== '') {
+        Image(replyThumbSrc(this.msg.replyThumbPath)).draggable(false)
+          .width(REPLY_THUMB_SIZE).height(REPLY_THUMB_SIZE)
+          .borderRadius(this.msg.replyThumbSticker ? 0 : 4)
+          .objectFit(this.msg.replyThumbSticker ? ImageFit.Contain : ImageFit.Cover)
+          .interpolation(ImageInterpolation.Medium);
+      }
+      Column() {
+        Text(this.msg.replySenderName).fontSize(12).fontColor(this.accent()).maxLines(1)
+          .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
+          .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(this.msg.replyText).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
+          .lineHeight(REPLY_QUOTE_LINE_H).height(REPLY_QUOTE_LINE_H)
+          .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1);
     }
-    .alignItems(HorizontalAlign.Start)
+    .alignItems(VerticalAlign.Center)
     // 整块染一层强调色的淡底，并撑满气泡的内宽——这样点击区域就是看得见的
     // 那一块，而不是只有文字那几个字宽。
     //
@@ -2566,7 +2543,7 @@ export struct MessageBubble {
     .onClick(() => {
       if (this.gestureClaimed) { return; }
       if (this.msg.replyToMessageId !== 0) {
-        this.onReplyTap(this.msg.replyToMessageId, this.msg.id);
+        this.actions.onReplyTap(this.msg.replyToMessageId, this.msg.id);
       }
     });
   }
@@ -2576,14 +2553,14 @@ export struct MessageBubble {
     if (this.msg.replyToMessageId !== 0) {
       this.replyQuote();
     }
-    if (this.albumPaths.length > 1) {
+    if (this.group.photoPaths.length > 1) {
       this.albumGrid();
-      if (this.albumCaption !== '') {
+      if (this.group.caption !== '') {
         // Rich caption: links/@mentions/#hashtags stay tappable in albums too.
         Column() {
           this.richContent({
-            text: this.albumCaption,
-            entities: this.albumCaptionEntities,
+            text: this.group.caption,
+            entities: this.group.captionEntities,
             maxWidth: this.inlineMaxW()
           });
           // 相册配文也要能翻译（issue #128）。和单张媒体那一支（见下面
@@ -2605,7 +2582,7 @@ export struct MessageBubble {
         maxWidth: this.inlineMaxW(),
         onOpenUrl: (url: string): void => {
           if (this.gestureClaimed) { return; }
-          this.onLinkTap(url);
+          this.actions.onLinkTap(url);
         }
       });
     } else if (this.msg.contentType === 'text') {
@@ -2640,13 +2617,13 @@ export struct MessageBubble {
             sourceWidth: this.msg.photoWidth,
             sourceHeight: this.msg.photoHeight,
             posterPath: this.msg.photoPath,
-            muted: this.autoplayMuted,
-            startPositionMs: this.playSlotStartMs,
+            muted: this.data.autoplayMuted,
+            startPositionMs: this.data.playSlotStartMs,
             onPositionChanged: (positionMs: number): void => {
-              this.onPlaySlotPositionChanged(this.msg.id, -1, positionMs);
+              this.actions.onPlaySlotPositionChanged(this.msg.id, -1, positionMs);
             },
             onEnded: (): void => {
-              this.onPlaySlotEnded(this.msg.id, -1);
+              this.actions.onPlaySlotEnded(this.msg.id, -1);
             }
           })
             .width(this.mediaBox().width).height(this.mediaBox().height)
@@ -2660,10 +2637,10 @@ export struct MessageBubble {
             boxWidth: this.mediaBox().width,
             boxHeight: this.mediaBox().height,
             powerCategory: this.autoplayCategory(),
-            forcePlay: this.msg.isAnimation && this.animationForcePlay,
+            forcePlay: this.msg.isAnimation && this.data.animationForcePlay,
             onPlaybackFailed: (): void => {
               if (this.msg.isAnimation) {
-                this.onAnimationPlaybackFailed(this.msg.id);
+                this.actions.onAnimationPlaybackFailed(this.msg.id);
               }
             }
           })
@@ -2691,12 +2668,14 @@ export struct MessageBubble {
           // be 0, and losing the path there would regress an already
           // downloaded photo to a dead "retry" tile.
           LiveThumbImage({
-            fileId: this.msg.photoFileId,
-            initialPath: this.msg.photoPath,
-            boxWidth: this.mediaBox().width,
-            boxHeight: this.mediaBox().height,
-            radius: 8,
-            fit: ImageFit.Cover,
+            spec: {
+              fileId: this.msg.photoFileId,
+              initialPath: this.msg.photoPath,
+              boxWidth: this.mediaBox().width,
+              boxHeight: this.mediaBox().height,
+              radius: 8,
+              fit: ImageFit.Cover
+            },
             placeholder: (): void => {
               this.singleMediaPlaceholder(this.msg.photoFileId !== 0);
             }
@@ -2704,7 +2683,11 @@ export struct MessageBubble {
         } else {
           this.singleMediaPlaceholder(false);
         }
-        if (this.msg.contentType === 'video' && !this.autoplayInlineVideo() &&
+          // **实况不画播放钮。** 它已经有自己的「实况」角标（liveChip），
+          // 交互也不是"点一下播放"而是长按即播（见 util/livePhoto 的协议约定），
+          // 再摆一个播放三角是在说一件不成立的事。普通视频不受影响。
+        if (this.msg.contentType === 'video' && !this.msgIsLivePhoto() &&
+          !this.autoplayInlineVideo() &&
           !(this.isPlaySlot(-1) && this.msg.videoFileId !== 0)) {
           // 不要和缩略图自己的加载圈叠成两个中心控件——所以要等缩略图到位。
           // 这个"到没到"必须问通道：路径旁路化之后 msg.photoPath 不再回填，
@@ -2755,9 +2738,9 @@ export struct MessageBubble {
             return; // 只有普通视频参与播放位竞选：GIF/动图仍走整文件循环播放
           }
           if (ratio <= 0) {
-            this.onMediaGone(this.msg.id, -1);
+            this.actions.onMediaGone(this.msg.id, -1);
           } else {
-            this.onMediaRatio(this.msg.id, -1, ratio, this.mediaCenterY);
+            this.actions.onMediaRatio(this.msg.id, -1, ratio, this.mediaCenterY);
           }
         })
       .onAreaChange((_old: Area, area: Area): void => {
@@ -2769,13 +2752,13 @@ export struct MessageBubble {
         // not intercept the whole media surface: ChatPage.openViewer can open
         // the streaming viewer and independently restart the file download.
         if (this.thumbnailRetryable()) {
-          this.onSpecialPhotoRetry(this.msg.id);
+          this.actions.onSpecialPhotoRetry(this.msg.id);
           return;
         }
         if (this.msg.isAnimation) {
-          this.onAnimationTap(this.msg.id, this.autoplayInlineVideo());
+          this.actions.onAnimationTap(this.msg.id, this.autoplayInlineVideo());
         } else {
-          this.onMediaTap(this.msg.id, e.windowX, e.windowY);
+          this.actions.onMediaTap(this.msg.id, e.windowX, e.windowY);
         }
       });
       // Media caption shown below the media, within the same bubble.
@@ -2858,9 +2841,9 @@ export struct MessageBubble {
         listened: this.msg.voiceListened,
         speechState: this.msg.speechState,
         speechText: this.msg.speechText,
-        onNeedDownload: (): void => { this.onVoiceTap(this.msg.id); },
-        onPlaybackStarted: (): void => { this.onVoicePlaybackStarted(this.msg.id); },
-        onRecognizeTap: (): void => { if (this.gestureClaimed) { return; } this.onRecognizeSpeech(this.msg.id); }
+        onNeedDownload: (): void => { this.actions.onVoiceTap(this.msg.id); },
+        onPlaybackStarted: (): void => { this.actions.onVoicePlaybackStarted(this.msg.id); },
+        onRecognizeTap: (): void => { if (this.gestureClaimed) { return; } this.actions.onRecognizeSpeech(this.msg.id); }
       });
     } else if (this.msg.contentType === 'audio') {
       // Music is intentionally distinct from a voice note: album artwork and
@@ -2881,15 +2864,15 @@ export struct MessageBubble {
         downloadProgress: this.liveVideoProgress,
         downloadFailed: this.msg.videoFailed,
         downloadActive: this.msg.mediaDownloadActive,
-        queuePosition: this.audioQueuePosition,
-        queueLength: this.audioQueueLength,
-        hasPrevious: this.audioHasPrevious,
-        hasNext: this.audioHasNext,
+        queuePosition: this.data.audioQueuePosition,
+        queueLength: this.data.audioQueueLength,
+        hasPrevious: this.data.audioHasPrevious,
+        hasNext: this.data.audioHasNext,
         maxWidth: this.inlineMaxW(),
-        onToggle: (): void => { if (this.gestureClaimed) { return; } this.onAudioTap(this.msg.id); },
-        onPrevious: (): void => { if (this.gestureClaimed) { return; } this.onAudioPrevious(this.msg.id); },
-        onNext: (): void => { if (this.gestureClaimed) { return; } this.onAudioNext(this.msg.id); },
-        onSeek: (fraction: number): void => { this.onAudioSeek(this.msg.id, fraction); }
+        onToggle: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioTap(this.msg.id); },
+        onPrevious: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioPrevious(this.msg.id); },
+        onNext: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioNext(this.msg.id); },
+        onSeek: (fraction: number): void => { this.actions.onAudioSeek(this.msg.id, fraction); }
       });
       if (this.msg.text !== '') {
         Column() {
@@ -2917,15 +2900,15 @@ export struct MessageBubble {
         // 早退只能在这层闭包里做——否则长按文件消息弹菜单的同时把下载也触发了。
         onOpen: (): void => {
           if (this.gestureClaimed) { return; }
-          this.onFileTap(this.msg.id);
+          this.actions.onFileTap(this.msg.id);
         },
         onSave: (): void => {
           if (this.gestureClaimed) { return; }
-          this.onFileSave(this.msg.id);
+          this.actions.onFileSave(this.msg.id);
         },
         onPause: (): void => {
           if (this.gestureClaimed) { return; }
-          this.onFilePause(this.msg.id);
+          this.actions.onFilePause(this.msg.id);
         }
       });
       if (this.msg.text !== '') {
@@ -2950,13 +2933,13 @@ export struct MessageBubble {
         maxWidth: this.inlineMaxW(),
         onOpen: (): void => {
           if (this.gestureClaimed) { return; }
-          this.onContactOpen(
+          this.actions.onContactOpen(
             this.msg.contactUserId,
             this.msg.contactPhone,
             this.msg.contactVcard
           );
         },
-        onCall: (): void => { if (this.gestureClaimed) { return; } this.onPhoneOpen(this.msg.contactPhone); }
+        onCall: (): void => { if (this.gestureClaimed) { return; } this.actions.onPhoneOpen(this.msg.contactPhone); }
       });
     } else if (this.msg.contentType === 'location' || this.msg.contentType === 'venue') {
       LocationBubble({
@@ -2973,11 +2956,11 @@ export struct MessageBubble {
         venueProvider: this.msg.venueProvider,
         proximityRadius: this.msg.locationProximityRadius,
         maxWidth: this.inlineMaxW(),
-        sharing: this.liveSharingId !== 0 && this.liveSharingId === this.msg.id,
-        onStopLive: (): void => { if (this.gestureClaimed) { return; } this.onStopLiveLocation(); },
+        sharing: this.data.liveSharingId !== 0 && this.data.liveSharingId === this.msg.id,
+        onStopLive: (): void => { if (this.gestureClaimed) { return; } this.actions.onStopLiveLocation(); },
         onOpen: (): void => {
           if (this.gestureClaimed) { return; }
-          this.onLocationOpen(
+          this.actions.onLocationOpen(
             this.msg.locationLatitude,
             this.msg.locationLongitude,
             this.locationLabel(),
@@ -3005,7 +2988,7 @@ export struct MessageBubble {
         maxWidth: this.inlineMaxW(),
         onVote: (messageId: number, optionIds: number[]): void => {
           if (this.gestureClaimed) { return; }
-          this.onPollVote(messageId, optionIds);
+          this.actions.onPollVote(messageId, optionIds);
         }
       });
     } else if (this.msg.contentType === 'dice') {
@@ -3029,8 +3012,8 @@ export struct MessageBubble {
         photoProgress: this.livePhotoProgress,
         photoFailed: this.msg.photoFailed,
         maxWidth: this.inlineMaxW(),
-        onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onGameOpen(messageId); },
-        onRetryPhoto: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onGamePhotoRetry(messageId); }
+        onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.actions.onGameOpen(messageId); },
+        onRetryPhoto: (messageId: number): void => { if (this.gestureClaimed) { return; } this.actions.onGamePhotoRetry(messageId); }
       });
     } else if (this.msg.contentType === 'paidMedia') {
       PaidMediaBubble({
@@ -3044,13 +3027,13 @@ export struct MessageBubble {
         photoFileId: this.msg.photoFileId,
         photoProgress: this.livePhotoProgress,
         photoFailed: this.msg.photoFailed,
-        pending: this.paidMediaPending,
+        pending: this.data.paidMediaPending,
         maxWidth: this.inlineMaxW(),
-        onUnlock: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onPaidMediaUnlock(messageId); },
-        onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.onPaidMediaOpen(messageId); },
+        onUnlock: (messageId: number): void => { if (this.gestureClaimed) { return; } this.actions.onPaidMediaUnlock(messageId); },
+        onOpen: (messageId: number): void => { if (this.gestureClaimed) { return; } this.actions.onPaidMediaOpen(messageId); },
         onRetryPhoto: (messageId: number): void => {
           if (this.gestureClaimed) { return; }
-          this.onSpecialPhotoRetry(messageId);
+          this.actions.onSpecialPhotoRetry(messageId);
         }
       });
     } else if (this.msg.contentType === 'gift') {
@@ -3070,9 +3053,9 @@ export struct MessageBubble {
         maxWidth: this.inlineMaxW(),
         onRetryPhoto: (messageId: number): void => {
           if (this.gestureClaimed) { return; }
-          this.onSpecialPhotoRetry(messageId);
+          this.actions.onSpecialPhotoRetry(messageId);
         },
-        onCopyCode: (code: string): void => { if (this.gestureClaimed) { return; } this.onGiftCodeCopy(code); }
+        onCopyCode: (code: string): void => { if (this.gestureClaimed) { return; } this.actions.onGiftCodeCopy(code); }
       });
     } else if (this.msg.contentType === 'giveaway') {
       GiveawayBubble({
@@ -3091,7 +3074,7 @@ export struct MessageBubble {
         maxWidth: this.inlineMaxW(),
         onOpenOriginal: (chatId: number, messageId: number): void => {
           if (this.gestureClaimed) { return; }
-          this.onGiveawayOpen(chatId, messageId);
+          this.actions.onGiveawayOpen(chatId, messageId);
         }
       });
     } else if (this.msg.contentType === 'emoji' || this.msg.contentType === 'customEmoji') {
@@ -3126,7 +3109,7 @@ export struct MessageBubble {
       .onClick(() => {
         if (this.gestureClaimed) { return; }
         if (this.msg.contentType === 'customEmoji' && this.msg.photoFailed) {
-          this.onStickerRetry(this.msg.id);
+          this.actions.onStickerRetry(this.msg.id);
         }
       })
       .accessibilityText(this.msg.contentType === 'customEmoji'
@@ -3205,7 +3188,7 @@ export struct MessageBubble {
           return;
         }
         if (this.msg.stickerFailed || this.msg.photoFailed) {
-          this.onStickerRetry(this.msg.id);
+          this.actions.onStickerRetry(this.msg.id);
         }
       })
       .accessibilityText(this.msg.stickerFailed || this.msg.photoFailed || this.stickerPlaybackFailed
@@ -3304,7 +3287,7 @@ export struct MessageBubble {
       return Color.Transparent; // 只为让 ArkUI 记下对 epoch 的依赖
     }
     if (this.msg.isOutgoing) {
-      return this.themeBubbleOut !== '' ? this.themeBubbleOut : COLOR_BUBBLE_OUT;
+      return this.data.themeBubbleOut !== '' ? this.data.themeBubbleOut : COLOR_BUBBLE_OUT;
     }
     return COLOR_BUBBLE_IN;
   }
@@ -3377,19 +3360,20 @@ export struct MessageBubble {
   // 白底。完整态由外层统一接管，本体的这两项归零。
   private glassBg(): ResourceColor {
     return this.glassBodyFallbackOn()
-      ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+      ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private glassBlur(): number {
-    return this.glassBodyFallbackOn() ? overlayBackdropBlur('bubble') : 0;
+  // 框架容器材质，不是 backdropBlur（后者节点边缘有采样衰减，四角最明显）。
+  private glassBlurStyle(): BlurStyle | undefined {
+    return this.glassBodyFallbackOn() ? bubbleGlassBlurStyle() : undefined;
   }
 
   private containerGlassBg(): ResourceColor {
-    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private containerGlassBlur(): number {
-    return this.glassReady() ? overlayBackdropBlur('bubble') : 0;
+  private containerGlassBlurStyle(): BlurStyle | undefined {
+    return this.glassReady() ? bubbleGlassBlurStyle() : undefined;
   }
 
   // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
@@ -3440,8 +3424,8 @@ export struct MessageBubble {
     if (this.msg.reactions.length > 0) {
       return false;
     }
-    if (this.albumPaths.length > 1) {
-      return this.albumCaption === '';
+    if (this.group.photoPaths.length > 1) {
+      return this.group.caption === '';
     }
     if (this.isBareEmoji()) {
       return true;
@@ -3473,11 +3457,11 @@ export struct MessageBubble {
   }
 
   private senderLabelShown(): boolean {
-    return this.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.showSenderName;
+    return this.data.isGroup && !this.msg.isOutgoing && this.msg.senderName !== '' && this.group.showSenderName;
   }
 
   private commentsRowShown(): boolean {
-    return this.isChannel && this.msg.commentCount > 0;
+    return this.data.isChannel && this.msg.commentCount > 0;
   }
 
   // Timestamp (+ send status) overlaid at the bubble's bottom-right, sharing
@@ -3518,7 +3502,7 @@ export struct MessageBubble {
   // pill is tappable — but only while the chat's video chat is still live —
   // and opens the live viewer with that call's id.
   private liveVideoChatTappable(): boolean {
-    return this.msg.isVideoChatStarted && this.liveGroupCallId > 0;
+    return this.msg.isVideoChatStarted && this.data.liveGroupCallId > 0;
   }
 
   private systemPillIcon(): string {
@@ -3577,7 +3561,7 @@ export struct MessageBubble {
     .onClick((): void => {
       if (this.gestureClaimed) { return; }
       if (this.liveVideoChatTappable()) {
-        this.onLiveStreamTap(this.liveGroupCallId);
+        this.actions.onLiveStreamTap(this.data.liveGroupCallId);
       }
     })
     .accessibilityText(this.liveVideoChatTappable()
@@ -3592,7 +3576,7 @@ export struct MessageBubble {
         .strokeWidth(1)
         .color(COLOR_TEXT_SECONDARY)
         .opacity(0.55);
-      Text(this.dividerIsResume
+      Text(this.data.dividerIsResume
         ? $r('app.string.mb_last_viewed_position') : $r('app.string.mb_unread'))
         .fontSize(13)
         .fontColor(this.accent())
@@ -3617,30 +3601,30 @@ export struct MessageBubble {
       Column().height(0);
     } else if (this.msg.contentType === 'system') {
       Column() {
-        if (this.dateLabel !== '') {
-          Text(this.dateLabel)
+        if (this.group.dateLabel !== '') {
+          Text(this.group.dateLabel)
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
             .backgroundColor($r('app.color.system_pill')).borderRadius(11)
             .padding({ left: 10, right: 10, top: 3, bottom: 3 })
             .margin({ bottom: 4 });
         }
-        if (this.showUnreadDivider) {
+        if (this.data.showUnreadDivider) {
           this.unreadDivider();
         }
         this.systemPill();
       }.width('100%').alignItems(HorizontalAlign.Center).padding({ top: 3, bottom: 3 });
     } else {
     Column() {
-      if (this.dateLabel !== '') {
+      if (this.group.dateLabel !== '') {
         // Day-change separator pill, centered ("7-6" / "2024-12-31").
         Row() {
-          Text(this.dateLabel)
+          Text(this.group.dateLabel)
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
             .backgroundColor($r('app.color.system_pill')).borderRadius(11)
             .padding({ left: 10, right: 10, top: 3, bottom: 3 });
         }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 5, bottom: 3 });
       }
-      if (this.showUnreadDivider) {
+      if (this.data.showUnreadDivider) {
         this.unreadDivider();
       }
       Row() {
@@ -3648,8 +3632,8 @@ export struct MessageBubble {
       // 抬起来的预览才是"头像 + 气泡"。绑到外面那层满宽的行上，浮起来的会是
       // 一条通栏横条，右边一大片空白也跟着抬。满宽那层继续负责左滑和对齐。
       Row() {
-      if (this.isGroup && !this.msg.isOutgoing) {
-        if (this.showAvatar) {
+      if (this.data.isGroup && !this.msg.isOutgoing) {
+        if (this.group.showAvatar) {
           // LiveSenderAvatar, not AvatarView directly: the path arrives via the
           // sender-avatar side channel and swaps in place — the row itself never
           // rebuilds for an avatar (see senderAvatarChannel).
@@ -3664,12 +3648,12 @@ export struct MessageBubble {
               if (this.gestureClaimed) { return; }
               // Group message avatar → that user's profile page.
               if (this.msg.senderIsUser && this.msg.senderId > 0) {
-                this.onAvatarTap(this.msg.senderId);
+                this.actions.onAvatarTap(this.msg.senderId);
               }
             })
             .gesture(LongPressGesture().onAction(() => {
               if (this.msg.senderIsUser && this.msg.senderId > 0) {
-                this.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
+                this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
               }
             }));
         } else {
@@ -3699,7 +3683,7 @@ export struct MessageBubble {
             .onClick(() => {
               if (this.gestureClaimed) { return; }
               if (this.msg.forwardOriginChatId !== 0 || this.msg.forwardOriginUserId !== 0) {
-                this.onForwardTap(this.msg.forwardOriginChatId, this.msg.forwardOriginMsgId,
+                this.actions.onForwardTap(this.msg.forwardOriginChatId, this.msg.forwardOriginMsgId,
                   this.msg.forwardOriginUserId);
               }
             });
@@ -3712,7 +3696,7 @@ export struct MessageBubble {
               .fontWeight(FontWeight.Medium)
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               .flexShrink(1);
-            SenderRoleTag({ chatId: this.chatId, senderId: this.msg.senderId,
+            SenderRoleTag({ chatId: this.data.chatId, senderId: this.msg.senderId,
               presetTag: this.msg.senderTag });
           }
           .margin({ bottom: 2 })
@@ -3797,9 +3781,10 @@ export struct MessageBubble {
       // 刻意没有另加一层视觉包装节点：材质挂在上层 Row（bubbleGlassModifier）、
       // 手势与命中都挂在本节点，插节点会动到材质/裁剪/命中三者的相对关系。
       .attributeModifier(this.suppressBubblePressDim() ? BUBBLE_PRESS_NONE : BUBBLE_PRESS_DIM)
+      .onAreaChange((_old: Area, area: Area) => { this.bubbleW = area.width as number; })
       .constraintSize({ maxWidth: this.bubbleMaxW() })
       .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
-      .backdropBlur(this.glassBlur())
+      .backgroundBlurStyle(this.glassBlurStyle())
       .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
         this.onScreen = visible;
       })
@@ -3807,9 +3792,13 @@ export struct MessageBubble {
       // the tight tail corner; a single-row run keeps the configured top arc.
       .borderRadius(this.bubbleCornerRadius())
       .padding(this.isBareEmoji() ? 0 : 8)
-      .shadow(this.isBareEmoji() ? { radius: 0, color: Color.Transparent, offsetX: 0, offsetY: 0 }
+      // **玻璃档下阴影归零**，和 LightweightPlainTextBubble 一致（那边一直是
+      // `this.glassBodyOn() ? 0 : 2`，这边漏了）。
+      // 气泡不透明时这道 #14000000 压在底下看不见；换成半透玻璃之后它就从边缘
+      // 透出来，成了一圈发暗的框——用户实测「以前玻璃失效的气泡没有黑边，现在有了」。
+      .shadow((this.isBareEmoji() || this.glassBodyOn())
+        ? { radius: 0, color: Color.Transparent, offsetX: 0, offsetY: 0 }
         : { radius: 2, color: '#14000000', offsetX: 0, offsetY: 1 })
-      .onAreaChange((_old: Area, area: Area) => { this.bubbleW = area.width as number; })
       // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
       // LongPressGesture in parallelGesture keeps the chat List's pan
       // recognizer alive while held (movement still cancels the long press),
@@ -3832,7 +3821,7 @@ export struct MessageBubble {
         if (this.gestureClaimed) { return; }
         if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
           // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
-          this.recordMenuOffset(event.x);
+          this.recordMenuOffset(event.x, Number(event.target.area.width));
           this.msgContextMenuShown = true;
         }
       })
@@ -3851,7 +3840,7 @@ export struct MessageBubble {
       // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
       // 透明，完整态始终只有外层这一份背景与模糊。
       .backgroundColor(this.containerGlassBg())
-      .backdropBlur(this.containerGlassBlur())
+      .backgroundBlurStyle(this.containerGlassBlurStyle())
       // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
       // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
       // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
@@ -3859,12 +3848,23 @@ export struct MessageBubble {
       .borderRadius(this.glassRadius())
       .background(this.glassOutline(), { align: Alignment.TopStart })
       .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
-        this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius(),
-        this.env.bubbleMaterialOn ? (w: number, h: number): void => {
-          probeGlassMeasure('rich', this.msg.id, w, h);
+        this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
+      // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
+      // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
+      // 同值不写：@Local 赋同一个数也会走一遍变更通知。
+      .onAreaChange((_old: Area, area: Area): void => {
+        if (!this.env.bubbleMaterialOn) {
+          return;
+        }
+        const w: number = Number(area.width);
+        const h: number = Number(area.height);
+        if (this.glassW !== w) {
           this.glassW = w;
+        }
+        if (this.glassH !== h) {
           this.glassH = h;
-        } : null))
+        }
+      })
       }
       .alignItems(VerticalAlign.Bottom)
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
@@ -3946,7 +3946,7 @@ export struct MessageBubble {
     }.width('100%')
     // A restrained message entrance: a short rise and fade feels responsive
     // without detaching the bubble from its final position.
-    .transition(this.animateIn
+    .transition(this.data.animateIn
       ? TransitionEffect.translate({ y: 16 })
         .combine(TransitionEffect.OPACITY)
         .animation({ duration: this.effectDuration(220), curve: Curve.FastOutSlowIn })

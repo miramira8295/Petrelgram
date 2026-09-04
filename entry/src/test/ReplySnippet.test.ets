@@ -15,8 +15,7 @@ export default function replySnippetTest() {
       expect(replySnippetOf(entry('你好', '', 'text', false))).assertEqual('你好');
       // 图片说明也算文字：比"图片"两个字有信息量。
       expect(replySnippetOf(entry('海边', '', 'photo', false))).assertEqual('海边');
-      // 连贴纸都让位——虽然贴纸的 text 通常是那个 emoji。
-      expect(replySnippetOf(entry('🎉', '', 'sticker', false))).assertEqual('🎉');
+      // 贴纸是例外，见下面那条单独的用例。
     });
 
     it('只有空白字符不算有文字', 0, () => {
@@ -33,8 +32,22 @@ export default function replySnippetTest() {
       expect(replySnippetOf(entry('', '  ', 'voice', false))).assertEqual('ns_voice_message');
     });
 
+    // issue #191：贴纸的 text 装的是它的 emoji，不是用户写的文字。当成文字用
+    // 就只剩一个光秃秃的 🤣，读者不知道被引用的是张贴纸。这条推翻了之前
+    // 「连贴纸都让位」的判断。
+    it('贴纸排在文字之前，带上 emoji 说明这是贴纸', 0, () => {
+      // 宿主 str() 带参时返回 `key(参数)`，断言因此连 emoji 一起对。
+      expect(replySnippetOf(entry('🎉', '', 'sticker', false)))
+        .assertEqual('preview_sticker_emoji(🎉)');
+      // 没有 emoji 的贴纸只说「贴纸」。
+      expect(replySnippetOf(entry('', '', 'sticker', false))).assertEqual('preview_sticker');
+      expect(replySnippetOf(entry('  ', '', 'sticker', false))).assertEqual('preview_sticker');
+      // 连 placeholderLabel 都压过——贴纸就是贴纸，没有更准的说法。
+      expect(replySnippetOf(entry('🎉', '已删除的消息', 'sticker', false)))
+        .assertEqual('preview_sticker_emoji(🎉)');
+    });
+
     it('按类型给通用词', 0, () => {
-      expect(replySnippetOf(entry('', '', 'sticker', false))).assertEqual('sticker_tab');
       expect(replySnippetOf(entry('', '', 'photo', false))).assertEqual('storage_photo');
       expect(replySnippetOf(entry('', '', 'video', false))).assertEqual('storage_video');
       expect(replySnippetOf(entry('', '', 'voice', false))).assertEqual('ns_voice_message');

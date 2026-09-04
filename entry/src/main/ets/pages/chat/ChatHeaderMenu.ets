@@ -1,16 +1,50 @@
 import { ComponentContent, UIContext } from '@kit.ArkUI';
 import { actionMenuRow } from './ActionMenuRow';
+import { FolderChoice, chatFolderChoices, toggleChatFolder } from '../../store/ChatActions';
 import { containerBlur, overlayMaterial } from '../../util/overlayMaterial';
+import { COLOR_BUBBLE_TEXT } from '../../util/theme';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { menuWidthFor } from '../../util/menuWidth';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
 
 let nextMenuId: number = 1;
+
+export const PANEL_MAIN: string = 'main';
+export const PANEL_FOLDERS: string = 'folders';
+
+// 子面板最高多少。23 个文件夹一行 44 左右，全展开会顶到屏幕外，所以设上限让它滚。
+const FOLDER_PANEL_MAX_H: number = 320;
+
+// 与 actionMenuRow 同一套按压反馈（那边是 @Styles，跨文件用不了，这里同参数复制）。
+@Styles
+function menuRowNormalStyle() {
+  .opacity(1)
+  .scale({ x: 1, y: 1 })
+}
+
+@Styles
+function menuRowPressedStyle() {
+  .opacity(0.72)
+  .scale({ x: 0.97, y: 0.94 })
+}
 
 export function createChatHeaderMenuId(): string {
   return `chat_header_menu_${nextMenuId++}`;
 }
 
 export interface ChatHeaderMenuParams {
+  chatId: number;
+  // 当前显示哪一面板。'folders' = 文件夹子菜单。
+  //
+  // **为什么是"换一个菜单"而不是就地展开**：菜单走的是 promptAction.openMenu +
+  // ComponentContent，弹出那一刻就把尺寸和位置量定了，之后内部 @State 让内容
+  // 变高**不会**让菜单跟着重新量——实测点下去 choices=23 都拿到了、folderOpen
+  // 也翻了，画面一行没多（被菜单容器裁掉）。所以子菜单只能靠关掉再开一次来
+  // 重新量尺寸。顺带也解决了 23 个文件夹塞进下拉菜单的问题：子面板自己滚。
+  panel: string;
+  onOpenFolders: () => void;
+  onBackToMain: () => void;
   isMuted: boolean;
   muteUpdating: boolean;
   isGroup: boolean;
@@ -32,6 +66,10 @@ export interface ChatHeaderMenuParams {
 
 @Component
 struct ChatHeaderMenu {
+  chatId: number = 0;
+  panel: string = 'main';
+  onOpenFolders: () => void = (): void => {};
+  onBackToMain: () => void = (): void => {};
   isMuted: boolean = false;
   muteUpdating: boolean = false;
   isGroup: boolean = false;
@@ -50,7 +88,122 @@ struct ChatHeaderMenu {
   onClearHistory: () => void = (): void => {};
   onLeaveChat: () => void = (): void => {};
 
+  // 文件夹子面板的勾选状态。面板是每次打开重建的，所以在 aboutToAppear 里播种。
+  @State private folderChoices: FolderChoice[] = [];
+
+  aboutToAppear(): void {
+    if (this.panel === PANEL_FOLDERS) {
+      this.folderChoices = chatFolderChoices(this.chatId);
+    }
+  }
+
+  private enterFolders(): void {
+    if (chatFolderChoices(this.chatId).length === 0) {
+      // 一个文件夹都没有时保持老路径：收菜单、由调用方提示「还没有文件夹」。
+      this.onAddToFolder();
+      return;
+    }
+    this.onOpenFolders();
+  }
+
+  // 勾选就地更新：切完不收面板，用户常要连着改好几个。
+  private onFolderTap(id: number): void {
+    const next: boolean = toggleChatFolder(this.chatId, id);
+    this.folderChoices = this.folderChoices.map((c: FolderChoice): FolderChoice =>
+      c.id === id ? { id: c.id, title: c.title, checked: next } : c);
+  }
+
+  // 带 ▸ 的父项。和 actionMenuRow 同一套尺寸，只多一个尾部箭头。
+  @Builder
+  folderParentRow() {
+    Row({ space: 14 }) {
+      SymbolGlyph($r('sys.symbol.folder_badge_plus')).fontSize(19).fontColor([COLOR_BUBBLE_TEXT]);
+      Text(str('cl_add_to_folder')).fontSize(16).fontColor(COLOR_BUBBLE_TEXT).layoutWeight(1);
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(14).fontColor([COLOR_BUBBLE_TEXT]).opacity(0.5);
+    }
+    .width('100%').padding({ left: 16, right: 16, top: 11, bottom: 11 })
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(10)
+    .stateStyles({ normal: menuRowNormalStyle, pressed: menuRowPressedStyle })
+    .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110), curve: Curve.EaseOut })
+    .onClick((): void => { this.enterFolders(); });
+  }
+
+  // 子面板的一行：勾选的带 ✓。
+  @Builder
+  folderChildRow(choice: FolderChoice) {
+    Row({ space: 14 }) {
+      Text(choice.title).fontSize(16).fontColor(COLOR_BUBBLE_TEXT)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+      SymbolGlyph($r('sys.symbol.checkmark')).fontSize(16)
+        .fontColor([COLOR_BUBBLE_TEXT])
+        .visibility(choice.checked ? Visibility.Visible : Visibility.Hidden);
+    }
+    .width('100%').padding({ left: 16, right: 16, top: 11, bottom: 11 })
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(10)
+    .stateStyles({ normal: menuRowNormalStyle, pressed: menuRowPressedStyle })
+    .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110), curve: Curve.EaseOut })
+    .onClick((): void => { this.onFolderTap(choice.id); });
+  }
+
+  // 文件夹子面板。23 个文件夹是真实数据（用户实测），所以必须能滚。
+  @Builder
+  folderPanel() {
+    Column() {
+      Row({ space: 14 }) {
+        SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(19).fontColor([COLOR_BUBBLE_TEXT]);
+        Text(str('cl_add_to_folder')).fontSize(16).fontColor(COLOR_BUBBLE_TEXT)
+          .fontWeight(FontWeight.Medium).layoutWeight(1);
+      }
+      .width('100%').padding({ left: 16, right: 16, top: 11, bottom: 11 })
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(10)
+      .stateStyles({ normal: menuRowNormalStyle, pressed: menuRowPressedStyle })
+      .onClick((): void => { this.onBackToMain(); });
+      Divider().color($r('app.color.divider')).strokeWidth(0.7);
+      Scroll() {
+        Column() {
+          ForEach(this.folderChoices, (choice: FolderChoice): void => {
+            this.folderChildRow(choice);
+          }, (choice: FolderChoice): string => `folder_${choice.id}`);
+        }
+        .width('100%');
+      }
+      .scrollBar(BarState.Off)
+      .constraintSize({ maxHeight: FOLDER_PANEL_MAX_H });
+    }
+  }
+
+  // 菜单里所有可能出现的标签，交给 menuWidthFor 取最宽的那条。
+  // 条件项也一并算进去：菜单宽度不该随着"这个会话是不是群"跳来跳去。
+  private menuWidth(): number {
+    return menuWidthFor([
+      str('cp_search'),
+      str('cp_updating_notifications'), str('cp_unmute'), str('cp_mute'),
+      str('cl_add_to_folder'), str('cp_auto_delete'), str('cp_jump_to_date'),
+      str('cp_stop_location'),
+      str('cp_translate_chat_off'), str('cp_translate_chat_on'),
+      str('cp_clear_history'), str('cp_leave_channel'), str('cp_leave_group')
+    ], true);
+  }
+
   build() {
+    if (this.panel === PANEL_FOLDERS) {
+      Column() {
+        this.folderPanel();
+      }
+      .width(this.menuWidth())
+      .padding({ top: 6, bottom: 6 })
+      .clip(true);
+    } else {
+      this.mainPanel();
+    }
+  }
+
+  @Builder
+  mainPanel() {
     Column() {
       // **分隔线一律跟在它所分隔的那一组后面，条件项自带自己的那一条。**
       // 原来是"每项之间无条件插一条"，于是非群聊时 if(isGroup) 两侧的两条会
@@ -63,7 +216,7 @@ struct ChatHeaderMenu {
         false, this.onToggleMute);
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
       if (this.isGroup) {
-        actionMenuRow('sys.symbol.folder_badge_plus', str('cl_add_to_folder'), false, this.onAddToFolder);
+        this.folderParentRow();
         Divider().color($r('app.color.divider')).strokeWidth(0.7);
       }
       actionMenuRow('sys.symbol.clock', str('cp_auto_delete'), false, this.onAutoDelete);
@@ -85,13 +238,11 @@ struct ChatHeaderMenu {
           this.isChannel ? str('cp_leave_channel') : str('cp_leave_group'), true, this.onLeaveChat);
       }
     }
-    // 176 = 左右内边距 16×2 + 图标 19 + 图标与文字间距 14 + 最长中文标签 6 字
-    // ×16（「正在更新通知」「添加到文件夹」「清空聊天记录」都是 6 字）≈ 161，
-    // 再留 15 的余量。**224 是从消息长按菜单抄来的数**，那个菜单的条目更长；
-    // 搬到这里右边就空出一大片（用户报「弹出的菜单有点过于宽」）。
-    // 拉丁语系里最长的那两条（Updating notifications）本来在 224 上也放不下、
-    // 照样折行，所以这一刀没有让任何语言变差。
-    .width(176)
+    // 宽度按**当前语言的实际标签**算，不再写死（见 util/menuWidth）。
+    // 写死的 176 是按中文六个字手算的，两个问题：拉丁语系最长的那几条本来就
+    // 折行；而「添加到文件夹」那行加了子菜单的 ▸ 之后多占 28，六个字也放不下了
+    // （用户实测折行）。上下限 176–280 保住了两头的观感。
+    .width(this.menuWidth())
     .padding({ top: 6, bottom: 6 })
     .clip(true);
   }
@@ -100,6 +251,10 @@ struct ChatHeaderMenu {
 @Builder
 function chatHeaderMenuLayer(params: ChatHeaderMenuParams) {
   ChatHeaderMenu({
+    chatId: params.chatId,
+    panel: params.panel,
+    onOpenFolders: params.onOpenFolders,
+    onBackToMain: params.onBackToMain,
     isMuted: params.isMuted,
     muteUpdating: params.muteUpdating,
     isGroup: params.isGroup,
@@ -125,6 +280,11 @@ export class ChatHeaderMenuController {
   private uiContext: UIContext | null = null;
   private pendingAction: (() => void) | null = null;
   private onVisibilityChange: (visible: boolean) => void = (): void => {};
+  // 换面板要把菜单关掉重开（尺寸只在弹出那一刻量一次，见 ChatHeaderMenuParams.panel
+  // 上的说明），所以打开时的这几个入参必须留着。
+  private lastTarget: string = '';
+  private lastBanner: number = 0;
+  private lastParams: ChatHeaderMenuParams | null = null;
 
   isOpen(): boolean {
     return this.content !== null;
@@ -135,6 +295,9 @@ export class ChatHeaderMenuController {
     if (this.content !== null) {
       return;
     }
+    this.lastTarget = targetId;
+    this.lastBanner = topBannerHeight;
+    this.lastParams = params;
     const wrapped: ChatHeaderMenuParams = this.wrapActions(params);
     try {
       const node: ComponentContent<ChatHeaderMenuParams> =
@@ -173,6 +336,27 @@ export class ChatHeaderMenuController {
     }
   }
 
+  // 切到另一面板：关掉再开一次，让菜单按新内容重新量尺寸。
+  //
+  // 不走 update()：ComponentContent.update 只换 params，菜单容器的尺寸是弹出
+  // 那一刻定死的，内容变高会被裁掉（实测：folderOpen 翻了、23 个选项也拿到了，
+  // 画面一行没多）。
+  private swapPanel(panel: string): void {
+    const base: ChatHeaderMenuParams | null = this.lastParams;
+    const uiContext: UIContext | null = this.uiContext;
+    const target: string = this.lastTarget;
+    const banner: number = this.lastBanner;
+    const visibility: (visible: boolean) => void = this.onVisibilityChange;
+    if (base === null || uiContext === null) {
+      return;
+    }
+    const next: ChatHeaderMenuParams = base;
+    next.panel = panel;
+    this.close((): void => {
+      this.open(uiContext, target, banner, next, visibility);
+    });
+  }
+
   close(action?: () => void): void {
     const node: ComponentContent<ChatHeaderMenuParams> | null = this.content;
     const uiContext: UIContext | null = this.uiContext;
@@ -196,6 +380,12 @@ export class ChatHeaderMenuController {
 
   private wrapActions(params: ChatHeaderMenuParams): ChatHeaderMenuParams {
     return {
+      chatId: params.chatId,
+      panel: params.panel,
+      // 面板切换不经过 close(action)：那条路是"收菜单再执行动作"，而这里要的是
+      // 换一面板继续开着。
+      onOpenFolders: (): void => { this.swapPanel(PANEL_FOLDERS); },
+      onBackToMain: (): void => { this.swapPanel(PANEL_MAIN); },
       isMuted: params.isMuted,
       muteUpdating: params.muteUpdating,
       isGroup: params.isGroup,

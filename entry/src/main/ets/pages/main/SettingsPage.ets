@@ -1,5 +1,9 @@
 import { ComponentContent, router, promptAction } from '@kit.ArkUI';
 import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
+  surfaceGlassBlurStyle, surfaceGlassFill
+} from '../../util/surfaceGlass';
+import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
@@ -40,6 +44,8 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainBarFill, mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 
+// 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
+// cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
@@ -226,6 +232,27 @@ export struct SettingsPage {
   // filter on them, which means they do not re-resolve by themselves. Observing
   // the epoch is what rebuilds this list when the language changes.
   @StorageProp(LANGUAGE_EPOCH) languageEpoch: number = 0;
+  // 全局界面模糊：开关和档位都要能立刻重绘。开关本身是 AppStorage 键，
+  // 档位走 epoch（surfaceGlass 是 util，订阅不了 AppStorage，同 MATERIAL_EPOCH 的做法）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlassOn: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
+
+  // `this.surfaceGlassEpoch >= 0` 恒真，**但不能删**：@StorageProp 只有在 build
+  // 链路里被真正读到才建立依赖，光声明不读，改设置时页面不会重绘。
+  private glassOn(): boolean {
+    return this.surfaceGlassOn && this.surfaceGlassEpoch >= 0;
+  }
+
+  private cardFill(): ResourceColor {
+    return this.glassOn() ? surfaceGlassFill(CARD_BG) : CARD_BG;
+  }
+
+  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显
+  // （见 util/surfaceGlass.surfaceGlassBlurStyle）。
+  private cardBlurStyle(): BlurStyle | undefined {
+    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
+  }
+
   @StorageLink('tdAccountRegistryEpoch') @Watch('onAccountRegistryEpoch')
   accountRegistryEpoch: number = 0;
   @State myId: number = 0;
@@ -1248,7 +1275,8 @@ export struct SettingsPage {
       }
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12 })
-      .backgroundColor(CARD_BG)
+      .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
       .clip(true);
 
@@ -1365,7 +1393,8 @@ export struct SettingsPage {
         }, (item: SettingItem): string => `${group.title}_${item.title}`);
       }
       .width('100%')
-      .backgroundColor(CARD_BG)
+      .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
       .clip(true);
     }
@@ -1421,7 +1450,8 @@ export struct SettingsPage {
         .height(194)
         .margin({ left: 12, right: 12, top: 12 })
         .justifyContent(FlexAlign.Center)
-        .backgroundColor(CARD_BG)
+        .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
         .borderRadius(CARD_RADIUS)
         .transition(TransitionEffect.OPACITY
           .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))

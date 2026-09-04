@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d ثانیه"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "محو رابط کاربری"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "شیشه مات در مخاطبین، تنظیمات و نمایه، هم‌سان با نوار نوشتن. در هر فریم رسم می‌شود؛ اگر کند شد خاموشش کنید."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "شدت محو"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "موتور پخش"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "استفاده از پخش‌کننده سیستم"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "از ویدیوی HDR پشتیبانی می‌کند. آزمایشی — برای بازگشت خاموش کنید"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "ویدیوی با دامنه دینامیکی بالا"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "حجاب"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "رابط"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "فهرست گفتگوها، مخاطبین و تنظیمات"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "حباب‌ها"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "حباب پیام‌ها — پرشمارترین و پرهزینه‌ترین"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "مصرف باتری بیشتر"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "محو در هر فریم رندر می‌شود: مصرف باتری و گرما به‌طور محسوس بیشتر می‌شود و ممکن است هنگام پیمایش فریم بیفتد. اگر دستگاه داغ یا کند شد، برگردید و «خاموش» را انتخاب کنید."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "با این حال فعال کن"
     }
   ]
 }

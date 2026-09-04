@@ -32,6 +32,55 @@
 // 「组件已经分栏了但代码还以为是手机」的半拉状态。
 export const SPLIT_BREAKPOINT_VP: number = 600;
 
+// 底部页签**挪去侧边**的断点，vp。**这是官方给的数，不是我们挑的**：
+// 《大屏应用UX体验标准》——「当应用窗口宽度达到或超过 840vp，横向断点为 lg 时，
+// 建议采用挪移布局，将底部导航栏变更为侧边导航栏。实现原理：导航页签使用 Tabs
+// 组件实现，窗口为 lg 断点时，页签位于页面左侧，此时 vertical=true，
+// barPosition=Start」。
+//
+// **和 SPLIT_BREAKPOINT_VP（600）是两条不同的线**，别合并：600 是
+// HdsNavigation 进双栏的断点，840 是底栏形态切换的断点。600–840 之间是
+// 「已经双栏、但底栏仍在底部」的区间。
+//
+// 为什么必须切而不是把悬浮胶囊挪到左栏：官方对悬浮样式写死了三个同时成立的
+// 条件——barOverlap=true、**vertical=false**、barPosition=End；而
+// barSideMargin 只有一个值、两侧同宽，胶囊必然按容器（整窗）居中。
+// 也就是说"固定在左栏"这个能力根本不存在，大屏下本来就不该有那颗胶囊。
+export const SIDE_TABS_BREAKPOINT_VP: number = 840;
+
+// 底栏该不该变成侧边竖排页签。
+export function useSideTabs(windowWidthVp: number): boolean {
+  return Number.isFinite(windowWidthVp) && windowWidthVp >= SIDE_TABS_BREAKPOINT_VP;
+}
+
+// 底栏该不该挪去侧边——**本应用真正该用的判据**。
+//
+// 官方那条 840vp 是给"单栏应用变宽了"写的：在它之下仍是一栏，底部横条没问题。
+// 但**本应用在 600vp 就分栏了**（isSplitLayout），于是 600–840 这一段是
+// "两栏 + 底部悬浮胶囊"，胶囊按整窗居中，正好落在两栏的分割线上——用户实测
+// 「dock 跑中间了」，把断点提到 840 之后这一段依旧原样。
+//
+// 而 HdsTabs 的悬浮样式给不了非对称边距（barSideMargin 是对称的，胶囊永远
+// 居中于容器），所以"把胶囊挪到左栏"这条路本身不存在。
+//
+// 判据因此不是宽度，是**布局形态**：只要分了栏，底部横条就跨着两栏，必须挪
+// 到侧边。840 那条仍然保留在 useSideTabs 里，给不分栏但很宽的场景用。
+export function sideTabsForLayout(windowWidthVp: number, windowHeightVp: number): boolean {
+  return isSplitLayout(windowWidthVp, windowHeightVp) || useSideTabs(windowWidthVp);
+}
+
+// 「dock 此刻是否还在底部」的单一真相，写进 AppStorage 由各列表读。
+//
+// 为什么不逐层传参：给列表留底部避让的地方分散在 ChatListView.endInset()、
+// MainTabBody 的 contentEndOffset、ChatPage 的 bottomChromeH 等处，中间隔着
+// 好几层组件。侧边模式下 dock 不在底部了，这些避让不撤就是一条空白
+// （用户问的正是这个）。用一个键比把 boolean 串下去可靠得多。
+export const KEY_DOCK_AT_BOTTOM: string = 'dockAtBottom';
+
+export function dockAtBottom(): boolean {
+  return AppStorage.get<boolean>(KEY_DOCK_AT_BOTTOM) ?? true;
+}
+
 // 当前窗口下 HdsNavigation 会不会分栏。喂的必须是**窗口尺寸**而不是屏幕尺寸
 // （AppStorage 的 'screenWidthVp' / 'screenHeightVp' 存的正是窗口宽高，分屏/
 // 悬浮窗/折叠屏改变窗口时由 EntryAbility 的 windowSizeChange 刷新），否则平板
@@ -113,4 +162,35 @@ export function splitNavMinWidth(windowWidthVp: number): number {
   // minWidth > maxWidth 是非法区间（文档：设置异常值时按默认值处理，等于本函数
   // 白算）。窗口 < 600vp 时压根不分栏，取不到这里，但兜住总比赌一把强。
   return Math.min(floored, max);
+}
+
+// ── 侧边竖排页签的纵向尺寸 ──────────────────────────────────────────────
+//
+// 侧边模式下三个页签是 layoutWeight(1) 均分**整条页签栏的高**，而栏高原本是
+// '100%'：于是图标相隔一屏的三分之一（真机 2026-09-04：约 154vp 一格，用户：
+// 「左边 dock 的上下图标能紧凑一点吗」）。
+//
+// 紧凑度因此**只由栏高决定**：栏收多高，一格就是它的三分之一。均分那条路
+// 反倒要留着——它是这个组件里唯一被实测证明"三格永远等距"的机制。
+//
+// 【两条实测记录，别再走回头路】
+//   · ExtendBarMode.HALF_SCREEN_FIXED：生效，但只把"均分整屏"压成"均分半屏"，
+//     一格仍有 154vp；键盘弹起时窗口变矮，它跟着缩成一格 35vp 并整个顶到状态栏
+//     底下（用户截图：「聊天」压在时钟上）。官方给它的第二条依赖「页签使用
+//     BottomTabBarStyle 样式」我们也不满足（自绘 builder）。
+//   · 给每格定高 + layoutWeight(0)：三格变成"前两格挨着、第三格掉在下面"的
+//     不等距（真机量出的间距 87px / 175px）。内部仍按 barHeight ÷ 页签数 分槽，
+//     定高的盒子落进槽里怎么对齐没有文档。**别再动 layoutWeight**。
+//
+// 栏高设定值之后组件把整条栏在竖直方向**居中**（真机验算：栏高 236vp、屏高
+// 2000px 时栏顶落在 742px，正是 (2000−515)/2）——所以不需要为状态栏留位。
+export const SIDE_DOCK_ITEM_H: number = 64;
+
+// 侧边页签栏的总高 = 页签数 × 一格。
+//
+// 64 的来历：图标 24 + 间距 2 + 文字行高约 14 = 40 的内容，上下各留 12 的呼吸。
+// 低于 48 就碰官方最小点击区域了。
+export function sideDockBarHeight(tabCount: number): number {
+  const n: number = Math.max(1, Math.round(Number.isFinite(tabCount) ? tabCount : 1));
+  return n * SIDE_DOCK_ITEM_H;
 }

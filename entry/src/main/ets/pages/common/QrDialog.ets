@@ -1,10 +1,6 @@
 import { generateBarcode, scanCore } from '@kit.ScanKit';
 import { image } from '@kit.ImageKit';
 import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import {
-  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
-} from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 
 // Shared QR dialog: renders a t.me link as a scannable code (ScanKit).
@@ -12,7 +8,6 @@ import { logE } from '../../util/log';
 export struct QrDialog {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   controller?: CustomDialogController;
   link: string = '';
   title: string = '';
@@ -58,10 +53,13 @@ export struct QrDialog {
         .textAlign(TextAlign.Center);
     }
     .padding(24)
-    .backgroundColor(overlayGlassFill('dialog', $r('app.color.surface')))
+    // 不走玻璃/材质，用实底。理由同 DeleteMessagesDialog：设备自报支持沉浸材质
+    // 时 overlayGlassFill 给的是 material_tint，那只是叠在**真的渲染出来的**材质
+    // 之上的一层淡色；而这台机器实测挂了材质却不渲染（见 overlayMaterial 里
+    // 08-29 那段），淡色就成了唯一背板，弹窗压在内容上直接读不清。
+    // 弹窗要的是可读，不是通透。
+    .backgroundColor($r('app.color.surface'))
     .borderRadius(16)
-    .alignItems(HorizontalAlign.Center)
-    .backdropBlur(overlayBackdropBlur('dialog'))
-    .attributeModifier(materialModifier('dialog'));
+    .alignItems(HorizontalAlign.Center);
   }
 }

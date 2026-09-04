@@ -19,8 +19,11 @@
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { LengthMetrics } from '@kit.ArkUI';
 import {
-  HdsNavigationTitleBarStyle, ScrollEffectType, TitleBarStyleOptions
+  BlurStrategy, HdsNavigationTitleBarStyle, ScrollEffectType, SystemMaterialParams,
+  TitleBarStyleOptions
 } from '@kit.UIDesignKit';
+import { hdsMaterialEffect } from './hdsMaterialLevel';
+import { hdsMaterialLevelIndex, materialOff } from './overlayMaterial';
 
 // IMMERSIVE_GRADIENT_BLUR 的起始 API 版本。hdsMaterial 的 MaterialType /
 // MaterialLevel 同样是 6.1.0(23) 起，共用这个门槛。
@@ -47,6 +50,24 @@ export function titleScrollEffectType(): ScrollEffectType {
 export const TITLE_BLUR_START_VP: number = 0;
 export const TITLE_BLUR_END_VP: number = 20;
 
+// 标题栏的沉浸光感（官方《沉浸光感》「整体框架适配」：HDS 组件通过
+// systemMaterialEffect 一个属性即可，且始终跟随最新规范）。
+//
+// **字段本身放着 undefined 无害**——它只是个对象属性，不是要在低版本上取方法。
+// 真正危险的是 hdsMaterial 的两个枚举（同样 6.1.0(23) 起），所以解引用收在
+// hdsMaterialLevel 里，且必须先过 immersiveGradientAvailable() 这道版本闸
+// （文件头写过：MaterialType / MaterialLevel 和 IMMERSIVE_GRADIENT_BLUR 共用
+// 23 这个门槛）。
+//
+// 用户把材质厚度调到「关闭」时不给：那个开关的语义是"所有面都不要材质"，
+// HDS 自己画的栏不该是例外。等级则接用户调的光感档（四档一一对应）。
+function titleMaterialEffect(immersive: boolean): SystemMaterialParams | undefined {
+  if (!immersiveGradientAvailable() || materialOff()) {
+    return undefined;
+  }
+  return hdsMaterialEffect(hdsMaterialLevelIndex(), immersive);
+}
+
 function barStyle(background: ResourceColor, mainTitleColor: ResourceColor): HdsNavigationTitleBarStyle {
   return {
     backgroundStyle: { backgroundColor: background },
@@ -68,11 +89,16 @@ function barStyle(background: ResourceColor, mainTitleColor: ResourceColor): Hds
 }
 
 // mainTitleColor：首页把应用名染成强调色，其它页默认正文色。
+// scrollEffect=false：**滑动时整条栏一动不动**——不随滚动量爬升模糊、也不换
+// 背板。观感全部由材质提供（因此 materialType 换成 IMMERSIVE，见
+// hdsMaterialEffect 的注释）。会话页用的是这一档：那一页的列表是贴底锚定的，
+// 用户往上滑是在翻历史，栏跟着变反而碍事。
 export function titleBarStyle(background: ResourceColor,
-  mainTitleColor: ResourceColor = $r('app.color.text_primary')): TitleBarStyleOptions {
+  mainTitleColor: ResourceColor = $r('app.color.text_primary'),
+  scrollEffect: boolean = true): TitleBarStyleOptions {
   return {
     scrollEffectOpts: {
-      enableScrollEffect: true,
+      enableScrollEffect: scrollEffect,
       // 有 IMMERSIVE_GRADIENT_BLUR（API 23+）就用，没有退到 GRADIENT_BLUR。
       scrollEffectType: titleScrollEffectType(),
       blurEffectiveStartOffset: LengthMetrics.vp(TITLE_BLUR_START_VP),
@@ -89,6 +115,24 @@ export function titleBarStyle(background: ResourceColor,
     // scrollEffect 要按滚动量换背板，最后整块发实，反而比不加还糟。剥回官方
     // 形状之后，滚动时的渐变模糊才是干净的。
     originalStyle: barStyle(background, mainTitleColor),
-    scrollEffectStyle: barStyle(Color.Transparent, mainTitleColor)
+    scrollEffectStyle: barStyle(Color.Transparent, mainTitleColor),
+    // **这次只加这一项，背板一个字没动。** 上一次失败是三改齐上（originalStyle
+    // 改透明 + systemMaterialEffect + blurStrategy），分不清是谁的锅。官方样例
+    // 里连 originalStyle / scrollEffectStyle 都不设、背板整个交给材质——那是
+    // 下一步要单独试的，先看这一刀本身够不够。
+    systemMaterialEffect: titleMaterialEffect(!scrollEffect),
+    // **模糊恒定，不随滑动变弱。**
+    //
+    // BlurStrategy 三档 ENABLE(0) / DISABLE(1) / ADAPTIVE(2)，不给时走的是
+    // 自适应——系统按性能/滚动状态自己把模糊调弱，用户报的「滑动的时候会变弱」
+    // 就是它。ENABLE 是钉死。
+    //
+    // 这个枚举和字段都是 6.0.0(20)，**不需要版本闸**（和 systemMaterialEffect
+    // 那两个 23+ 的枚举不同）。
+    //
+    // 历史注记：blurStrategy 在上一次失败的尝试里出现过，但那次是三改齐上
+    // （originalStyle 改透明 + 材质 + 它），分不清是谁的锅。这次背板没动，
+    // 只加这一项。
+    blurStrategy: BlurStrategy.ENABLE
   };
 }

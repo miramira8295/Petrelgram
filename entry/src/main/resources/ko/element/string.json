@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d초"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "화면 블러"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "연락처·설정·프로필에 입력창과 같은 질감의 젖빛 유리를 적용합니다. 매 프레임 렌더링되므로 버벅이면 끄세요."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "블러 강도"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "재생 엔진"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "시스템 플레이어 사용"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "HDR 비디오 지원. 실험적 기능이며 문제가 있으면 끄면 됩니다"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "하이 다이내믹 레인지 동영상"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "베일"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "인터페이스"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "채팅 목록, 연락처, 설정"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "말풍선"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "채팅 말풍선 — 가장 많고 비용도 큼"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "배터리 소모 증가"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "블러는 매 프레임 렌더링됩니다. 배터리 소모와 발열이 뚜렷이 늘고 스크롤 시 프레임이 떨어질 수 있습니다. 기기가 뜨겁거나 버벅이면 여기서 «끄기»를 선택하세요."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "그래도 켜기"
     }
   ]
 }

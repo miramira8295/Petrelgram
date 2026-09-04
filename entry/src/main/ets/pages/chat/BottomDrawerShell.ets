@@ -1,8 +1,8 @@
 import { BOTTOM_DRAWER_HEIGHT, drawerBottomInset } from '../../util/drawerMetrics';
 import {
-  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
+  plainBackdropBlur, plainGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
 
 // 底部抽屉（附件 / 表情贴纸）共用的那身外壳。
 //
@@ -23,19 +23,24 @@ export struct BottomDrawerShell {
 
   @Styles
   drawerCard() {
-    // 毛玻璃/沉浸光感走 'card' 档（和输入框胶囊同档）。这里有东西可透——
-    // 抽屉底下铺着自己画的那份聊天背景，模糊的正是它。
-    // 自绘玻璃的两半必须一起上：半透明底 + backdropBlur，不透明底会把模糊
-    // 完全盖住。材质接管时这两者自动让位（overlayGlassFill 交回实心色、
-    // overlayBackdropBlur 归 0）。
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('card'))
+    // 毛玻璃走 'card' 档（和输入框胶囊同档）。这里有东西可透——抽屉底下铺着
+    // 自己画的那份聊天背景，模糊的正是它。自绘玻璃的两半必须一起上：半透明底
+    // + backdropBlur，不透明底会把模糊完全盖住。
+    //
+    // **改用 plain* 那一对**：原来是 overlayGlassFill / overlayBackdropBlur，
+    // 它们在"材质可用"时会把模糊归 0、底色退成 25% 淡色，把观感让给材质——而
+    // 系统已经把**组件级**的沉浸材质收回了（只剩 HDS 导航级的栏还有），于是这块
+    // 面既没材质也没自己的玻璃。plain* 不看材质在不在，无条件自绘。
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .backdropBlur(plainBackdropBlur('card'))
     .border({ width: { top: 0.7 }, color: $r('app.color.divider') })
     // 四角都圆：卡片四周都有空当，浮在壁纸上。
     .borderRadius(18)
     .clip(true)
     .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: -2 })
-    .attributeModifier(materialModifier('card'))
+    // 光感走 hdsEffect 的另一条通道（visualEffect，6.0.0(20) 起，不受材质收回
+    // 影响）。'card' 档只给点光源、不给按压阴影——整块面板跟着手指变形很怪。
+    .visualEffect(hdsVisualEffect('card'))
   }
 
   build() {

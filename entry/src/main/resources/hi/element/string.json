@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d सेकंड"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "इंटरफ़ेस ब्लर"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "संपर्क, सेटिंग्स और प्रोफ़ाइल पर फ़्रॉस्टेड ग्लास, इनपुट बार जैसा। हर फ़्रेम रेंडर होता है — अटकने पर बंद करें।"
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "ब्लर स्तर"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "प्लेबैक इंजन"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "सिस्टम प्लेयर का उपयोग करें"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "HDR वीडियो का समर्थन करता है। प्रायोगिक — वापस जाने के लिए बंद करें"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "हाई डायनामिक रेंज वीडियो"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "आवरण"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "इंटरफ़ेस"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "चैट सूची, संपर्क और सेटिंग्स"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "बबल"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "चैट में मैसेज बबल — सबसे अधिक संख्या, सबसे अधिक खर्चीले"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "अधिक बैटरी खपत"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "ब्लर हर फ़्रेम पर रेंडर होता है: बैटरी खपत और गर्मी काफ़ी बढ़ती है, स्क्रॉल करते समय फ़्रेम गिर सकते हैं। डिवाइस गर्म या धीमा हो तो यहाँ आकर «बंद» चुनें।"
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "फिर भी चालू करें"
     }
   ]
 }

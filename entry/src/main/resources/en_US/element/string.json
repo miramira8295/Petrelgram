@@ -11747,6 +11747,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d s"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "Interface blur"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "Frosted glass on Contacts, Settings and Profile, matching the composer. Rendered every frame — turn it off if scrolling stutters."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "Blur level"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "Playback engine"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "Use system player"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "Supports HDR video. Experimental — turn off to switch back if playback misbehaves"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "High dynamic range video"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "Veil"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "Interface"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "Chat list, contacts and settings"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "Bubbles"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "Message bubbles in chats — the most numerous and costly"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "Higher battery use"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "The blur is rendered every frame. It noticeably increases battery drain and heat, and may cause dropped frames while scrolling. If the device gets hot or stutters, come back and choose Off."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "Enable anyway"
     }
   ]
 }

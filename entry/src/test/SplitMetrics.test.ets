@@ -1,7 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
   splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth,
-  isSplitLayout, SPLIT_BREAKPOINT_VP
+  isSplitLayout, SPLIT_BREAKPOINT_VP, SIDE_TABS_BREAKPOINT_VP, useSideTabs,
+  SIDE_DOCK_ITEM_H, sideDockBarHeight
 } from '../main/ets/util/splitMetrics';
 
 // 分栏起作用的最窄窗口（NavigationMode.Auto 的断点）。
@@ -137,6 +138,51 @@ export default function splitMetricsTest(): void {
       expect(isSplitLayout(1000, 0)).assertTrue();
       expect(isSplitLayout(1000, Number.NaN)).assertTrue();
       expect(isSplitLayout(400, 0)).assertFalse();
+    });
+
+    // 官方《大屏应用UX体验标准》：窗口宽 ≥840vp（lg 断点）时底栏挪去侧边。
+    // 这条线和分栏断点 600 是**两条不同的线**，用例一并钉住，防止哪天被合并。
+    it('侧边页签断点是 840，不是分栏断点 600', 0, () => {
+      expect(SIDE_TABS_BREAKPOINT_VP).assertEqual(840);
+      expect(SPLIT_BREAKPOINT_VP).assertEqual(600);
+      expect(useSideTabs(839)).assertFalse();
+      expect(useSideTabs(840)).assertTrue();
+      expect(useSideTabs(1280)).assertTrue();
+    });
+
+    it('600–840 之间：已经双栏，但底栏仍在底部', 0, () => {
+      expect(isSplitLayout(700, 900)).assertTrue();
+      expect(useSideTabs(700)).assertFalse();
+    });
+
+    it('野值不把页签甩到侧边', 0, () => {
+      expect(useSideTabs(Number.NaN)).assertFalse();
+      expect(useSideTabs(0)).assertFalse();
+      expect(useSideTabs(-1)).assertFalse();
+    });
+
+    // 侧边竖排页签的紧凑度。三格是 layoutWeight 均分栏高的，所以**栏高就是
+    // 唯一的旋钮**：一格 = 栏高 ÷ 页签数，这一组把那个除法钉住。
+    it('一格 64，栏高随页签数走', 0, (): void => {
+      expect(SIDE_DOCK_ITEM_H).assertEqual(64);
+      expect(sideDockBarHeight(3)).assertEqual(3 * 64);
+      expect(sideDockBarHeight(4)).assertEqual(4 * 64);
+      // 页签数一样就得到同一个栏高——函数签名里没有屏高也没有 topSafe，
+      // 这条是给未来改动看的：谁把它们加回参数表，这个用例就该改不动。
+      expect(sideDockBarHeight(3) / 3).assertEqual(SIDE_DOCK_ITEM_H);
+    });
+
+    it('栏高恒为正，页签数是野值也不塌', 0, (): void => {
+      expect(sideDockBarHeight(0)).assertEqual(64);
+      expect(sideDockBarHeight(-3)).assertEqual(64);
+      expect(sideDockBarHeight(Number.NaN)).assertEqual(64);
+    });
+
+    // 紧凑的定义：一屏（约 900vp）下三格加起来不到屏高的三分之一。
+    // 老行为是三格铺满整屏（一格 154vp），HALF_SCREEN_FIXED 也才压到半屏。
+    it('三格总高不到一屏的三分之一', 0, (): void => {
+      expect(sideDockBarHeight(3) < 900 / 3).assertTrue();
+      expect(sideDockBarHeight(4) < 900 / 3).assertTrue();
     });
   });
 }

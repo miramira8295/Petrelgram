@@ -1,6 +1,10 @@
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { mirrorChatEnvKey } from '../util/chatEnvMirror';
+import { clearOutlineCache } from '../util/bubbleTail';
 import { notificationManager } from '@kit.NotificationKit';
+import {
+  cancelLiveDownloadNotifications, clearStaleDownloadNotifications
+} from '../services/DownloadSaveNotification';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, KeyboardAvoidMode } from '@kit.ArkUI';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
@@ -191,6 +195,9 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    // 保存任务全吊在这个 ability 的 context 上，ability 一没它们就都是死的，
+    // 通知栏里那条进度不撤就永远停在原地（用户转述："总是停留在通知栏"）。
+    cancelLiveDownloadNotifications();
     setTdOnlineState(false);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
@@ -210,6 +217,9 @@ export default class EntryAbility extends UIAbility {
     }).catch((e: Error): void => {
       logE(`isNotificationEnabled failed: ${e.message}`);
     });
+    // 上一次运行残留的下载通知（进程被杀时停在半路的那些）在这里收尾——
+    // 只有启动这一个时机能认领它们，理由见函数上的注释。
+    clearStaleDownloadNotifications();
 
     try {
       this.windowStageRef = windowStage;
@@ -294,6 +304,9 @@ export default class EntryAbility extends UIAbility {
         hilog.info(DOMAIN, 'testTag',
           'windowSizeChange accepted: px=%{public}d vp=%{public}f density=%{public}f',
           size.width, candidate, derived);
+        // 密度可能跟着变了，气泡轮廓的 path 缓存按 vp 尺寸建键、不含密度，
+        // 这里清一次让它按新密度重建（见 util/bubbleTail.clearOutlineCache）。
+        clearOutlineCache();
         AppStorage.setOrCreate('screenWidthVp', candidate);
         AppStorage.setOrCreate('screenHeightVp', px2vp(size.height));
         mirrorChatEnvKey('screenWidthVp', candidate);

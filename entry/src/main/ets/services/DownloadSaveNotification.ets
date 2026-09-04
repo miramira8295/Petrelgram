@@ -10,22 +10,72 @@ import {
 import { progressFor, subscribeProgress } from '../util/mediaProgressChannel';
 import { publishProgress } from '../util/mediaProgressChannel';
 import { str } from '../util/strings';
+import {
+  NOTIFICATION_ID_START, isDownloadNotificationId, isTerminalPhase,
+  nextNotificationIdAfter
+} from '../util/downloadNotify';
 
 const PROGRESS_TEMPLATE: string = 'downloadTemplate';
-const NOTIFICATION_ID_START: number = 1800000000;
-const NOTIFICATION_ID_END: number = 1899999999;
 const UPDATE_INTERVAL_MS: number = 500;
+// 终态那一行在通知栏里停留多久。
+//
+// 之前是**不撤**：下载完成后 publish 一条「已保存到 X」就撒手，那一行永远留在
+// 通知栏等用户自己划掉（用户："通知栏下载不会回收"）。5 秒够读完文件名，再长
+// 就成了常驻行；失败那条走同一个时长，失败在应用内另有 toast，不靠通知栏留存。
+const TERMINAL_CLEAR_DELAY_MS: number = 5000;
 const DOWNLOAD_PRIORITY: number = 24;
 const TRANSFER_WANT_REQUEST_CODE: number = 8301;
 
 let nextNotificationId: number = NOTIFICATION_ID_START;
 let progressTemplateSupport: Promise<boolean> | null = null;
+// 本次进程里还"活着"的下载通知 id。启动时的清扫（clearStaleDownloadNotifications）
+// 要靠它避开正在更新的那几行——UIAbility 被销毁重建但进程还在时，模块状态是
+// 留着的，任务可能还在跑。
+const liveNotificationIds: Set<number> = new Set<number>();
 
 function allocateNotificationId(): number {
   const id: number = nextNotificationId;
-  nextNotificationId = nextNotificationId >= NOTIFICATION_ID_END
-    ? NOTIFICATION_ID_START : nextNotificationId + 1;
+  nextNotificationId = nextNotificationIdAfter(nextNotificationId);
   return id;
+}
+
+// 清掉上一次运行残留的下载通知。**启动时调一次**。
+//
+// 为什么非有不可：进度行靠"重复 publish 同一个 id"原地更新，终态行由实例自己
+// 延时撤掉——两条路都要求进程还活着。进程被杀（用户划掉后台卡片、系统回收、
+// 崩溃）时没有任何一方来收尾，那一行就永远停在 42% 上，重启应用也不会消失，
+// 因为通知是系统托管的。启动是唯一还能认领它们的时机。
+export async function clearStaleDownloadNotifications(): Promise<void> {
+  try {
+    const active: notificationManager.NotificationRequest[] =
+      await notificationManager.getActiveNotifications();
+    for (let i = 0; i < active.length; i++) {
+      const id: number = active[i].id ?? -1;
+      // 本进程正在用的那几个不能撤：任务还在跑，撤了就是把进度条抹掉。
+      if (isDownloadNotificationId(id) && !liveNotificationIds.has(id)) {
+        await notificationManager.cancel(id);
+        logI(`[DownloadNotify] cleared stale ${id}`);
+      }
+    }
+  } catch (e) {
+    const error = e as Error;
+    logE(`clearStaleDownloadNotifications failed: ${error.message}`);
+  }
+}
+
+// 撤掉本进程还挂着的下载通知。**Ability 被销毁时调**（用户从多任务里划掉
+// 应用卡片走的就是这条）。
+//
+// 为什么这时候就能撤：整套保存都吊在这个 UIAbility 的 context 上（后台任务、
+// 公共目录写入都要它），ability 一没，那几个任务就都是死的了——通知再留在那儿
+// 就是一条永远不会动的进度条。进程被硬杀时这里跑不到，那种由启动清扫兜底。
+export function cancelLiveDownloadNotifications(): void {
+  liveNotificationIds.forEach((id: number): void => {
+    notificationManager.cancel(id).catch((e: Error): void => {
+      logE(`cancelLiveDownloadNotifications(${id}) failed: ${e.message}`);
+    });
+  });
+  liveNotificationIds.clear();
 }
 
 function supportsProgressTemplate(): Promise<boolean> {
@@ -58,6 +108,7 @@ export class DownloadSaveNotification implements FileSaveProgress {
   private publishTimer: number = -1;
   private publishSeq: number = 0;
   private unsubscribeProgress: (() => void) | null = null;
+  private clearTimer: number = -1;
   private terminal: boolean = false;
   private cancelled: boolean = false;
   private onTerminal: (() => void) | null;
@@ -66,6 +117,7 @@ export class DownloadSaveNotification implements FileSaveProgress {
     onTerminal: (() => void) | null = null) {
     this.fileName = displayFileName(fileName);
     this.onTerminal = onTerminal;
+    liveNotificationIds.add(this.id);
     if (downloadFileId !== 0) {
       this.beginDownload(downloadFileId);
     }
@@ -118,6 +170,28 @@ export class DownloadSaveNotification implements FileSaveProgress {
         this.publishTimer = -1;
         this.publishNow();
       }, UPDATE_INTERVAL_MS - elapsed);
+    }
+  }
+
+  // 终态行发出去之后定时撤掉。**只在 publish 真的落地之后才排这个定时器**
+  // （见两处调用点都挂在 publish 的 then 上），否则撤销可能跑到发布前面。
+  private scheduleClear(): void {
+    if (this.clearTimer !== -1) {
+      clearTimeout(this.clearTimer);
+    }
+    this.clearTimer = setTimeout((): void => {
+      this.clearTimer = -1;
+      liveNotificationIds.delete(this.id);
+      notificationManager.cancel(this.id).catch((e: Error): void => {
+        logE(`DownloadSaveNotification.clear(${this.id}) failed: ${e.message}`);
+      });
+    }, TERMINAL_CLEAR_DELAY_MS);
+  }
+
+  private cancelClearTimer(): void {
+    if (this.clearTimer !== -1) {
+      clearTimeout(this.clearTimer);
+      this.clearTimer = -1;
     }
   }
 
@@ -179,7 +253,11 @@ export class DownloadSaveNotification implements FileSaveProgress {
           }
         };
       }
-      return notificationManager.publish(request);
+      return notificationManager.publish(request).then((): void => {
+        if (isTerminalPhase(phase)) {
+          this.scheduleClear();
+        }
+      });
     }).catch((e: Error): void => {
       logE(`DownloadSaveNotification.publish(${this.id}) failed: ${e.message}`);
     });
@@ -222,7 +300,9 @@ export class DownloadSaveNotification implements FileSaveProgress {
           data: { title: savedText, fileName: this.fileName, progressValue: 100 }
         };
       }
-      return notificationManager.publish(request);
+      return notificationManager.publish(request).then((): void => {
+        this.scheduleClear();
+      });
     }).catch((e: Error): void => {
       logE(`DownloadSaveNotification.complete(${this.id}) failed: ${e.message}`);
     });
@@ -257,7 +337,9 @@ export class DownloadSaveNotification implements FileSaveProgress {
     this.cancelled = true;
     this.detachDownload();
     this.clearPublishTimer();
+    this.cancelClearTimer();
     this.publishSeq++;
+    liveNotificationIds.delete(this.id);
     notificationManager.cancel(this.id).catch((): void => {});
     this.notifyTerminal();
   }

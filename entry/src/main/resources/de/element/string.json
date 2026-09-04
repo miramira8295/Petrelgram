@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d Sek."
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "Oberflächen-Unschärfe"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "Milchglas für Kontakte, Einstellungen und Profil – wie beim Eingabefeld. Wird in jedem Frame gerendert; bei Rucklern deaktivieren."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "Unschärfegrad"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "Wiedergabe-Engine"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "System-Player verwenden"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "Unterstützt HDR-Video. Experimentell – zum Zurückwechseln ausschalten"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "Video mit hohem Dynamikumfang"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "Schleier"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "Oberfläche"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "Chatliste, Kontakte, Einstellungen"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "Sprechblasen"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "Nachrichtenblasen im Chat – am zahlreichsten und teuersten"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "Höherer Akkuverbrauch"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "Die Unschärfe wird in jedem Frame gerendert: mehr Akkuverbrauch und Wärme, beim Scrollen sind Ruckler möglich. Wird das Gerät heiß oder träge, hier wieder „Aus“ wählen."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "Trotzdem aktivieren"
     }
   ]
 }

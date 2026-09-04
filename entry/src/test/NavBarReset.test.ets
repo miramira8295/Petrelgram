@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../main/ets/util/navBarReset';
+import {
+  dockVisibleForTab, navBarVisibleOnAppear, navBarVisibleOnChange
+} from '../main/ets/util/navBarReset';
 
 export default function navBarResetTest() {
   describe('navBarReset', () => {
@@ -55,5 +57,26 @@ export default function navBarResetTest() {
       // 分栏左侧 navBar 常驻，后台页签的临时 false 不能隐藏 dock。
       expect(navBarVisibleOnChange(false, true, 3)).assertTrue();
     });
+
+    // 用户实报「dock 的设置点击偶尔会消失」：存进 AppStorage 的那个布尔可能是
+    // 用滞后的输入算出来的，而且没有第二次回调来纠正。取用时现算就没这个窗口。
+    it('栈已注册时以真栈为准，不看存下来的陈旧布尔', 0, () => {
+      // 陈旧的 false，但真栈是空的 → 该显示。
+      expect(dockVisibleForTab(false, 0, false)).assertTrue();
+      // 反过来：陈旧的 true，但单栏下栈里压着子页 → 该藏。
+      expect(dockVisibleForTab(false, 1, true)).assertFalse();
+    });
+
+    it('分栏下恒显示，与栈深和陈旧布尔都无关', 0, () => {
+      expect(dockVisibleForTab(true, 3, false)).assertTrue();
+      expect(dockVisibleForTab(true, 0, false)).assertTrue();
+    });
+
+    // Tabs 是懒建的：没点过的页签还没有栈可读，只能用存下来的值兜底。
+    it('栈还没注册时才回落到存下来的布尔', 0, () => {
+      expect(dockVisibleForTab(false, undefined, true)).assertTrue();
+      expect(dockVisibleForTab(false, undefined, false)).assertFalse();
+    });
+
   });
 }

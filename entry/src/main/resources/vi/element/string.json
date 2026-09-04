@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d giây"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "Làm mờ giao diện"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "Kính mờ cho Danh bạ, Cài đặt và Hồ sơ, đồng bộ với thanh nhập. Vẽ lại mỗi khung hình — hãy tắt nếu bị giật."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "Mức làm mờ"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "Công cụ phát"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "Dùng trình phát hệ thống"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "Hỗ trợ video HDR. Thử nghiệm — tắt để quay lại trình phát cũ"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "Video dải động cao"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "Màn mỏng"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "Giao diện"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "Danh sách trò chuyện, danh bạ và cài đặt"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "Bong bóng"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "Bong bóng tin nhắn — nhiều nhất và tốn kém nhất"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "Hao pin hơn"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "Hiệu ứng mờ được vẽ lại mỗi khung hình: hao pin và nóng máy tăng rõ, có thể rớt khung khi cuộn. Nếu máy nóng hoặc giật, hãy quay lại và chọn «Tắt»."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "Vẫn bật"
     }
   ]
 }

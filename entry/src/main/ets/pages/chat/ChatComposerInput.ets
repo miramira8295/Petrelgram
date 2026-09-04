@@ -1,8 +1,8 @@
 import { ReplyKeyboard } from '../../store/ReplyKeyboard';
 import { PendingMediaItem, hasPendingMedia } from '../../util/pendingMedia';
 import { COLOR_ICON_SECONDARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
 import { ComposerSendButton } from './ComposerSendButton';
@@ -26,6 +26,8 @@ export struct ChatComposerInput {
   @Param replyToId: number = 0;
   @Param replyToName: string = '';
   @Param replyToText: string = '';
+  @Param replyToThumb: string = '';
+  @Param replyToThumbSticker: boolean = false;
   @Param botMenuAvailable: boolean = false;
   @Param commandMenuOpen: boolean = false;
   @Param showEmojiPanel: boolean = false;
@@ -136,9 +138,13 @@ export struct ChatComposerInput {
         .borderRadius(23)
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-        .backdropBlur(overlayBackdropBlur('card'))
-        .attributeModifier(materialModifier('card'))
+        // 玻璃自绘（plainGlassFill + plainBackdropBlur：明确不指望材质，
+        // 组件级 systemMaterial 已被系统收回），光感走 hdsEffect 的 visualEffect
+        // ——那是另一条通道，6.0.0(20) 起，见 util/hdsPointLight。
+        // 这颗是**控件**，走 'control' 档：只有那一档同时给点光源和按压阴影。
+        .backgroundColor(plainGlassFill($r('app.color.surface')))
+        .backdropBlur(plainBackdropBlur('control'))
+        .visualEffect(hdsVisualEffect('control'))
         .onClick((): void => { this.onToggleAttach(); });
       }
       Column() {
@@ -160,6 +166,8 @@ export struct ChatComposerInput {
           ReplyStrip({
             name: this.replyToName,
             snippet: this.replyToText,
+            thumbPath: this.replyToThumb,
+            thumbSticker: this.replyToThumbSticker,
             enterDuration: this.replyEffectDuration(180),
             onTapQuote: (): void => { this.onReplyTap(this.replyToId); },
             onCancel: (): void => { this.onClearReply(); }
@@ -301,10 +309,12 @@ export struct ChatComposerInput {
         .alignItems(VerticalAlign.Center);
       }
       .layoutWeight(1)
-      .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+      .backgroundColor(plainGlassFill($r('app.color.surface')))
       .borderRadius(24)
-      .backdropBlur(overlayBackdropBlur('card'))
-      .attributeModifier(materialModifier('card'));
+      .backdropBlur(plainBackdropBlur('card'))
+      // 'card' 档：给点光源、不给按压阴影——整块面板跟着手指变形很怪，
+      // 这条判据在 overlayMaterial.interactionBase 里，和材质那条路共用。
+      .visualEffect(hdsVisualEffect('card'));
     }
     .width('100%')
     .padding({

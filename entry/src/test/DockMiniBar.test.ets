@@ -4,6 +4,10 @@ import {
   dockShowsPlayer, dockShowsTabs, nowPlayingTitle
 } from '../main/ets/util/dockMiniBar';
 import {
+  HDS_LEVEL_ADAPTIVE, HDS_LEVEL_EXQUISITE, HDS_LEVEL_GENTLE, HDS_LEVEL_SMOOTH,
+  hdsLevelIndexOf, LIGHT_ADAPTIVE, LIGHT_EXQUISITE, LIGHT_GENTLE, LIGHT_SMOOTH
+} from '../main/ets/util/materialTuning';
+import {
   clearNowPlaying, currentNowPlaying, NowPlaying, publishNowPlaying,
   resetNowPlayingChannel, subscribeNowPlaying
 } from '../main/ets/util/nowPlayingChannel';
@@ -46,6 +50,20 @@ export default function dockMiniBarTest() {
       expect(dockShowsTabs(DOCK_EXPANDED)).assertFalse();
       expect(dockShowsAlbumBall(DOCK_EXPANDED)).assertFalse();
       expect(dockShowsPlayer(DOCK_EXPANDED)).assertTrue();
+    });
+
+    // HDS 的 systemMaterialEffect 只收 materialLevel，我们那四档和它一一对应；
+    // 接上之后用户在「外观」里调的光感等级对 HDS 自己画的栏也生效。
+    it('光感四档一一映射到 HDS 的材质等级', 0, (): void => {
+      expect(hdsLevelIndexOf(LIGHT_EXQUISITE)).assertEqual(HDS_LEVEL_EXQUISITE);
+      expect(hdsLevelIndexOf(LIGHT_GENTLE)).assertEqual(HDS_LEVEL_GENTLE);
+      expect(hdsLevelIndexOf(LIGHT_SMOOTH)).assertEqual(HDS_LEVEL_SMOOTH);
+      expect(hdsLevelIndexOf(LIGHT_ADAPTIVE)).assertEqual(HDS_LEVEL_ADAPTIVE);
+    });
+
+    it('非法档位落到自适应', 0, (): void => {
+      expect(hdsLevelIndexOf('')).assertEqual(HDS_LEVEL_ADAPTIVE);
+      expect(hdsLevelIndexOf('nonsense')).assertEqual(HDS_LEVEL_ADAPTIVE);
     });
 
     it('曲名兜底到文件名', 0, (): void => {

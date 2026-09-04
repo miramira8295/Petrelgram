@@ -5,7 +5,11 @@ import {
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { appWallpaperActive } from '../../util/localWallpaper';
-import { isSplitLayout } from '../../util/splitMetrics';
+import {
+  KEY_DOCK_AT_BOTTOM, dockAtBottom, isSplitLayout, sideTabsForLayout, sideDockBarHeight
+} from '../../util/splitMetrics';
+import { NavStackLike, TabKind, stackOf } from '../../util/navStacks';
+import { dockVisibleForTab } from '../../util/navBarReset';
 import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { CallSnapshot } from '../../services/CallSession';
@@ -22,22 +26,36 @@ import {
 import { MyProfilePage, PROFILE_NAV_BAR_VISIBLE_KEY } from './MyProfilePage';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
-  COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TAB_UNSELECTED, darkResourceMode
+  COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TAB_UNSELECTED, COLOR_TEXT_PRIMARY, darkResourceMode
 } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { updateChecker, STORAGE_UPDATE_AVAILABLE } from '../../services/UpdateChecker';
+import { HdsTabs, HdsTabsController } from '@kit.UIDesignKit';
+import { HdsTabsFloatingModifier } from '../../util/hdsTabsFloating';
+import { logicalTabIndex, physicalTabIndex } from '../../util/mainTabIndex';
+import { dockMiniBarLayer } from './DockMiniBar';
+import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { str } from '../../util/strings';
+import { getVoicePlayback, VoiceState } from '../../services/VoicePlayback';
+import { clearNowPlaying, NowPlaying, subscribeNowPlaying } from '../../util/nowPlayingChannel';
+import {
+  DOCK_EXPANDED, dockMiniBarState, dockShowsAlbumBall, dockShowsPlayer, dockShowsTabs,
+  nowPlayingTitle
+} from '../../util/dockMiniBar';
+import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { BG_PATTERN_DEFAULT, patternStrengthKey } from '../../store/AppSettings';
 import { ChatBackgroundState, preloadDefaultChatBackground } from '../../store/ChatBackgroundStore';
 import { rasterizeBackground, patternOpacity } from '../../util/chatBackgroundRaster';
 import { KEY_BG_BLUR, BG_BLUR_DEFAULT } from '../../store/AppSettings';
-import { overlayBackdropBlur, materialOff, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayGlassFill, materialOff, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { DOCK_SIDE_PADDING, dockSidePadding } from '../../util/mainTabsWidth';
 import { publishTabReTap } from '../../util/tabReTap';
 import { KEY_SHOW_CONTACTS_TAB } from '../../store/AppSettings';
-import { materialModifier } from '../../util/materialModifier';
+import { materialModifier, materialModifierWhen } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 import { TD_ACCOUNT_SWITCHING, TdAccountSummary, accountRegistry } from '../../tdkit/AccountRegistry';
 import { PopupRect, accountPopupRect, accountRowAt } from '../../util/accountSwitchLayout';
@@ -52,6 +70,22 @@ const UPDATE_DOT_BG: string = '#4CD964';
 // 56：图标 24 + 间距 2 + 文字 10 = 36，加上 item 自己的 5 上下内缩正好 46，
 // 余下 10 是胶囊的呼吸。原先 64 多出来的那 8 是空的。
 const DOCK_H: number = 56;      // capsule height
+// 侧边竖排页签栏的宽度（≥840vp 的 lg 断点下生效）。
+// HDS 那份文档给的经验值是「页签数 ≤3 时 76vp×个数，>600vp 时 80vp×个数」，
+// 但那是横排页签栏的**总宽**；竖排时每个页签自己占一列，96 能同时放下
+// 图标 + 一行中文标签，且不至于把左栏挤没。
+// 09-04 真机（平板分栏）收窄：96 → 76。约束是最长的那条标签「个人资料」四个
+// 汉字，10 号字约 44vp，76 留出两侧各 16 的余量已经够；96 那 20vp 纯粹是空的，
+// 而侧栏每一 vp 都是从左栏会话列表身上借的（用户："pad 左侧能紧凑一点吗"）。
+const SIDE_DOCK_W: number = 76;
+// 迷你播放条：折叠态那颗专辑球，和展开态里的封面。
+const MINI_BALL: number = 40;
+// 迷你条在场时胶囊两侧的留白。**必须比无播放时窄得多**：那一条里要同时排
+// 「页签栏 + 迷你栏」，留白按原来那套算法（三格时每侧约 85vp）胶囊就太窄，
+// 两块内容会叠在一起（真机 2026-09-03 截图：曲名压在「聊天」那格上）。
+// 官方示意图里带播放条的那条栏也是接近满宽的。
+const MINI_SIDE_MARGIN: number = 12;
+const MINI_COVER: number = 34;
 // 底距。一路试下来：bottomSafe + 12（太远）→ max(8, bottomSafe)（还是远）→
 // 半个 bottomSafe（太低）→ 现在取七成，落在后两者中间。别再往下：底部那条是
 // 系统的返回/主页手势带，胶囊下沿贴太近，下半截的点击会被系统先吃掉。
@@ -145,11 +179,38 @@ export struct MainScreen {
   @StorageProp(TD_ACCOUNT_SWITCHING) private accountSwitching: boolean = false;
   private pressX: number = 0;
   private pressY: number = 0;
-  private controller: TabsController = new TabsController();
+  // **HdsTabs 的控制器没有 changeIndex**（只有 applyHide/ShowAnimation、
+  // applyMiniBarStyle、bind/unbindScroller 四个，且那三个动画类的都是 6.1.0(23)）。
+  // 切页签因此完全靠 `index: this.tab` 这条状态绑定驱动——原来那两处
+  // changeIndex 是和 `this.tab = index` 成对写的，本来就是双保险。
+  // 类本身是 6.0.0(20)，构造安全。
+  private controller: HdsTabsController = new HdsTabsController();
   private store: ProfileStore | null = null;
   private unsubStore: (() => void) | null = null;
   private unsubUnread: (() => void) | null = null;
   private unsubCall: (() => void) | null = null;
+  // ── 底栏迷你播放条（官方「自适应悬浮导航」的自绘等价物）──────────────
+  //
+  // **为什么自绘而不是 HdsTabs 的 miniBar**：`barFloatingStyle` / `miniBar` /
+  // `applyHideAnimation` 全是 6.1.0(23) 起，而本工程底线是 6.0.0(20)。迁过去
+  // 要么底栏做两套（≥23 走 HDS、<23 留自绘），要么抬底线。而 HdsTabs 唯一
+  // 给得了、自绘给不了的只有 `adaptToHandedness`（智感握姿）——它本身也是
+  // 23+，也就是老设备两条路都拿不到。所以先一套自绘覆盖所有版本；握姿真需要
+  // 时再作为 ≥23 的增强单独加。
+  //
+  // 曲目信息走全局旁路通道：起播的那个 ChatPage 早就销毁了，见 nowPlayingChannel。
+  @State private nowPlaying: NowPlaying | null = null;
+  // 播放器的活状态另外订阅：通道只管"放的是哪首"，在不在放、暂停没暂停由
+  // VoicePlayback 说了算。播放一结束底栏靠它自己收回四格，不依赖谁来清通道。
+  @State private musicLive: boolean = false;
+  @State private musicPaused: boolean = false;
+  @State private playerExpanded: boolean = false;
+  private unsubNowPlaying: (() => void) | null = null;
+  private unsubVoice: (() => void) | null = null;
+  // miniBar 收的是 ComponentContent（脱离主树的子树），必须懒建一次并在页面
+  // 销毁时释放，否则那棵树泄漏。复用分栏空态那个持有者——它收的正是
+  // WrappedBuilder<[]>，而迷你条自己订阅通道、不需要传参。
+  private miniBarHolder: SplitPlaceholderHolder = new SplitPlaceholderHolder();
   private callPagePushed: boolean = false;
 
   private wallpaperSplit(): boolean {
@@ -163,6 +224,22 @@ export struct MainScreen {
 
   aboutToAppear(): void {
     this.syncWallpaperFlag();
+    this.unsubNowPlaying = subscribeNowPlaying((state: NowPlaying | null): void => {
+      this.nowPlaying = state;
+    });
+    this.unsubVoice = getVoicePlayback().subscribe((s: VoiceState): void => {
+      const live: boolean = s.mode === 'music' && s.playingId !== 0
+        && s.status !== 'idle' && s.status !== 'error';
+      this.musicPaused = s.paused || s.status === 'paused';
+      if (this.musicLive === live) {
+        return;
+      }
+      this.musicLive = live;
+      // 播放结束时把展开态一并复位：下次起播从折叠开始，而不是直接摊开。
+      if (!live) {
+        this.playerExpanded = false;
+      }
+    });
     // **先让 Tabs 与 mainTabIndex 对齐。**
     //
     // 本组件不是只在冷启动时建一次：账号切换（含"添加账号"和取消添加返回原
@@ -240,6 +317,9 @@ export struct MainScreen {
   }
 
   aboutToDisappear(): void {
+    this.miniBarHolder.dispose();
+    if (this.unsubNowPlaying !== null) { this.unsubNowPlaying(); this.unsubNowPlaying = null; }
+    if (this.unsubVoice !== null) { this.unsubVoice(); this.unsubVoice = null; }
     if (this.unsubUnread !== null) { this.unsubUnread(); this.unsubUnread = null; }
     if (this.unsubStore !== null) { this.unsubStore(); this.unsubStore = null; }
     if (this.unsubCall !== null) { this.unsubCall(); this.unsubCall = null; }
@@ -272,7 +352,6 @@ export struct MainScreen {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION),
       curve: Curve.EaseOut
     }, (): void => { this.tab = index; });
-    this.controller.changeIndex(index);
   }
 
   // AppStorage 侧被外部改写（返回键递退）时，把 Tabs 真正切过去。自己内部
@@ -280,7 +359,6 @@ export struct MainScreen {
   private onTabExternallyChanged(): void {
     if (this.tab !== this.appliedTab) {
       this.appliedTab = this.tab;
-      this.controller.changeIndex(this.tab);
     }
     // dockVisible() 也读 tab，所以切页签同样要重算一次。
     this.syncDock();
@@ -389,6 +467,8 @@ export struct MainScreen {
       Text(label).fontSize(10)
         .fontColor(this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED);
     }
+    // 横排均分胶囊宽、竖排均分页签栏高。**竖排的紧凑度不在这里调**，在
+    // barHeight（见 splitMetrics.sideDockBarHeight 那段的两条实测记录）。
     .layoutWeight(1).height('100%')
     .justifyContent(FlexAlign.Center)
     .borderRadius((DOCK_H - DOCK_ITEM_INSET * 2) / 2)
@@ -512,6 +592,18 @@ export struct MainScreen {
   // 手机（单栏）下量到的就是整屏宽，自然退化为改造前的行为；还没量到（0）时
   // 同样退化，不会先闪一下窄条。
   // 藏掉联系人页签后胶囊里只剩三格，两侧留白补上空出的那一格（issue #135）。
+  // 大屏是否把页签挪到侧边（官方 lg 断点 840vp，见 util/splitMetrics）。
+  private sideTabs(): boolean {
+    // 分栏就挪侧边——不是等到 840。理由见 splitMetrics.sideTabsForLayout。
+    const side: boolean = sideTabsForLayout(this.screenW, this.screenH);
+    // 各列表按这个键决定还要不要给底部 dock 留避让（见 splitMetrics）。
+    // 写在这里而不是 @Watch：sideTabs() 在 build 链路上被读，值一变必然经过。
+    if (dockAtBottom() === side) {
+      AppStorage.setOrCreate(KEY_DOCK_AT_BOTTOM, !side);
+    }
+    return side;
+  }
+
   private dockPadding(): number {
     const w: number = typeof this.dockWidth() === 'number'
       ? this.dockWidth() as number : this.screenW;
@@ -559,25 +651,247 @@ export struct MainScreen {
   // 进去），于是同一套判断要照做第四遍。它强制单栏，编辑页因此是**整页替换**、
   // 铺满整屏，dock 浮在它上面正好压住底部——手机平板都一样，这一支不像联系人
   // 那样在手机上恒为 true。
-  private dockVisible(): boolean {
-    if (this.tab === 0) {
+  //
+  // 【2026-09-04：改成现算】上面这一整套判断没变，变的是**数据从哪来**。
+  // 原来是直接返回各页签存进 AppStorage 的那个布尔；现在只把它当兜底，真值
+  // 从注册表里的**真栈**现读。理由见 util/navBarReset 的 dockVisibleForTab：
+  // 那个布尔由 onNavBarStateChange 写，而该回调只在变化时触发、算的时候读的
+  // 两个输入（屏幕尺寸、栈深）都可能滞后；写错一次就永久留在那里，没有第二次
+  // 回调来纠正。用户实报「dock 的设置点击偶尔会消失」就是踩到这个。
+  //
+  // 四个布尔仍然保留 @Watch —— 它们是**触发信号**（值一变就重算一次 dock），
+  // 只是不再是答案本身。
+  private tabKindOf(tab: number): TabKind | null {
+    if (tab === 0) {
+      return 'chat';
+    }
+    if (tab === 1) {
+      return 'contacts';
+    }
+    if (tab === 2) {
+      return 'settings';
+    }
+    if (tab === 3) {
+      return 'profile';
+    }
+    return null;
+  }
+
+  private storedNavBarFlag(tab: number): boolean {
+    if (tab === 0) {
       return this.chatNavBarVisible;
     }
-    if (this.tab === 1) {
+    if (tab === 1) {
       return this.contactsNavBarVisible;
     }
-    if (this.tab === 2) {
+    if (tab === 2) {
       return this.settingsNavBarVisible;
     }
-    if (this.tab === 3) {
+    if (tab === 3) {
       return this.profileNavBarVisible;
     }
     return true;
   }
 
+  private dockVisible(): boolean {
+    const kind: TabKind | null = this.tabKindOf(this.tab);
+    if (kind === null) {
+      return true;
+    }
+    const stack: NavStackLike | undefined = stackOf(kind);
+    return dockVisibleForTab(
+      isSplitLayout(this.screenW, this.screenH),
+      stack === undefined ? undefined : stack.size(),
+      this.storedNavBarFlag(this.tab)
+    );
+  }
+
   // Floating capsule: outer Column carries the horizontal padding + bottom
   // margin (width('100%') + horizontal margin conflict on the same node in
   // ArkUI), inner Row is the pill itself.
+  // **必须在这里读一次 materialEpoch**：overlayGlassFill / materialModifier 都是
+  // 普通函数，订阅不了设置变化；用户改厚度或光感后，只有读过这个纪元的子树才会
+  // 重新渲染、重新取修饰器实例（修饰器缓存也按 epoch 分代）。dock 的 dockBlur()
+  // 早就是这么写的，新加的这几个控件漏了——表现就是"厚度调了没反应"。
+  private controlFill(): ResourceColor {
+    return this.materialEpoch < 0
+      ? $r('app.color.surface_alt')
+      : overlayGlassFill('control', $r('app.color.surface_alt'));
+  }
+
+  private controlBlur(): number {
+    return this.materialEpoch < 0 ? 0 : overlayBackdropBlur('control');
+  }
+
+  private miniBarActive(): boolean {
+    return this.musicLive && this.nowPlaying !== null;
+  }
+
+  private miniState(): string {
+    return dockMiniBarState(this.nowPlaying !== null && this.musicLive, this.playerExpanded);
+  }
+
+  private toggleMiniPlayer(): void {
+    animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
+      curve: Curve.EaseOut
+    }, (): void => { this.playerExpanded = !this.playerExpanded; });
+  }
+
+  // 播放/暂停走 VoicePlayback 全局单例：通道里带了 path，所以不依赖任何页面。
+  private toggleMiniPlayback(): void {
+    const np: NowPlaying | null = this.nowPlaying;
+    if (np === null) {
+      return;
+    }
+    getVoicePlayback().toggleMusic(np.messageId, np.path, np.durationSec);
+  }
+
+  // 终止：整条收掉，底栏掉回四格。
+  private stopMiniPlayback(): void {
+    const np: NowPlaying | null = this.nowPlaying;
+    getVoicePlayback().stop();
+    if (np !== null) {
+      clearNowPlaying(np.messageId);
+    }
+    this.playerExpanded = false;
+  }
+
+  // 点信息区回到那条消息。navigateToChat 是所有会话入口的唯一漏斗，jumpTo
+  // 由它带进去（会话已经开着时走 chatJumpChannel 那条旁路）。
+  private openNowPlayingMessage(): void {
+    const np: NowPlaying | null = this.nowPlaying;
+    if (np === null || np.chatId === 0) {
+      return;
+    }
+    const params: Record<string, Object> = { 'chatId': np.chatId, 'jumpTo': np.messageId };
+    navigateToChat(params, 'navbar').catch(logChatNavFailure);
+  }
+
+  // 折叠态右侧那颗专辑球：点一下摊开成播放条。
+  @Builder
+  albumBall() {
+    Stack() {
+      if (this.nowPlaying !== null && this.nowPlaying.coverPath !== '') {
+        Image(this.nowPlaying.coverPath.startsWith('/')
+          ? `file://${this.nowPlaying.coverPath}` : this.nowPlaying.coverPath)
+          .draggable(false).width('100%').height('100%').objectFit(ImageFit.Cover);
+      } else {
+        SymbolGlyph($r('sys.symbol.music_note_list')).fontSize(18).fontColor([this.accent()]);
+      }
+    }
+    .width(MINI_BALL).height(MINI_BALL).borderRadius(MINI_BALL / 2)
+    // 'control' 那一档：它是唯一同时给 interactive（按压形变）和 lightEffect
+    // （触点流光）的面，也就是"光感"的来源——见 overlayMaterial 的
+    // interactionBase / lightEffectBase。写死 surface_alt 是一块不透明实心片，
+    // 材质和光感都挂不上（首页 ChatListPage.topAction 就是这一档的范本）。
+    .backgroundColor(this.controlFill())
+    .backdropBlur(this.controlBlur())
+    .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+    .clip(true)
+    .margin({ left: 6 })
+    .accessibilityText(str('tab_profile'))
+    .onClick((): void => { this.toggleMiniPlayer(); });
+  }
+
+  // 展开态：只留个人资料头像那一格（点它只收起播放条，**不跳转**）+ 播放条。
+  @Builder
+  collapsedProfileItem() {
+    Stack() {
+      AvatarView({ avatarPath: this.meAvatar, initials: this.meInitials, colorSeed: this.myId, avatarSize: 24 });
+    }
+    .width(28).height(28).borderRadius(14)
+    .border({ width: 2, color: COLOR_TAB_UNSELECTED })
+    .margin({ left: 4 })
+    .onClick((): void => { this.toggleMiniPlayer(); });
+  }
+
+  @Builder
+  miniPlayer() {
+    Row({ space: 8 }) {
+      Stack() {
+        if (this.nowPlaying !== null && this.nowPlaying.coverPath !== '') {
+          Image(this.nowPlaying.coverPath.startsWith('/')
+            ? `file://${this.nowPlaying.coverPath}` : this.nowPlaying.coverPath)
+            .draggable(false).width('100%').height('100%').objectFit(ImageFit.Cover);
+        } else {
+          SymbolGlyph($r('sys.symbol.music_note_list')).fontSize(16).fontColor([this.accent()]);
+        }
+      }
+      .width(MINI_COVER).height(MINI_COVER).borderRadius(MINI_COVER / 2)
+      .backgroundColor(this.controlFill())
+      .backdropBlur(this.controlBlur())
+      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+      .clip(true);
+      Column() {
+        Text(nowPlayingTitle(this.nowPlaying?.title ?? '', str('svc_playing')))
+          .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        if ((this.nowPlaying?.performer ?? '') !== '') {
+          Text(this.nowPlaying?.performer ?? '').fontSize(11).fontColor(COLOR_TAB_UNSELECTED)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      // 信息区整块可点：回到那条消息。播放/终止两颗键各自吃掉自己的点击。
+      .onClick((): void => { this.openNowPlayingMessage(); });
+      Row() {
+        SymbolGlyph($r(this.musicPaused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
+          .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
+      }
+      .width(32).height(32).borderRadius(16).justifyContent(FlexAlign.Center)
+      .backgroundColor(this.controlFill())
+      .backdropBlur(this.controlBlur())
+      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+      .clip(true)
+      .onClick((): void => { this.toggleMiniPlayback(); });
+      Row() {
+        SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TAB_UNSELECTED]);
+      }
+      .width(30).height(30).borderRadius(15).justifyContent(FlexAlign.Center)
+      .backgroundColor(this.controlFill())
+      .backdropBlur(this.controlBlur())
+      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+      .clip(true)
+      .margin({ right: 4 })
+      .onClick((): void => { this.stopMiniPlayback(); });
+    }
+    .layoutWeight(1).height('100%')
+    .alignItems(VerticalAlign.Center);
+  }
+
+  // ── HdsTabs 的四个页签项 ────────────────────────────────────────────
+  //
+  // `.tabBar()` 收 CustomBuilder（`tab_content.d.ts` 的重载里明写着），所以
+  // **头像、未读角标、长按切账号这些自绘内容全都能留**——官方样例用
+  // BottomTabBarStyle 只是它自己的选择，不是 HdsTabs 的约束。
+  //
+  // 「联系人」被关掉时**仍然保留它的 TabContent**，只是页签项画成空：四个
+  // 下标（0 会话 / 1 联系人 / 2 设置 / 3 我的）散落在 AppStorage、profileNav、
+  // chatNav 里，抽掉一个 TabContent 会让后面两个整体前移，那是另一场事故。
+  @Builder
+  tabBarChats() {
+    this.dockItem(0, 'sys.symbol.message_on_message_fill', $r('app.string.tab_chats'), 'tab_chats');
+  }
+
+  @Builder
+  tabBarContacts() {
+    if (this.showContactsTab) {
+      this.dockItem(1, 'sys.symbol.person_2_fill', $r('app.string.tab_contacts'), 'tab_contacts');
+    }
+  }
+
+  @Builder
+  tabBarSettings() {
+    this.dockItem(2, 'sys.symbol.gearshape', $r('app.string.settings_title'), 'settings_title');
+  }
+
+  @Builder
+  tabBarProfile() {
+    this.profileDockItem();
+  }
+
   @Builder
   dock() {
     Column() {
@@ -585,12 +899,24 @@ export struct MainScreen {
       // 不透明底色，正好压在材质上面。现在靠主色 + 图标自己的弹跳表示选中，
       // 外面那层 Stack（唯一作用是给药丸定位）也一并去掉了。
       Row() {
-        this.dockItem(0, 'sys.symbol.message_on_message_fill', $r('app.string.tab_chats'), 'tab_chats');
-        if (this.showContactsTab) {
-          this.dockItem(1, 'sys.symbol.person_2_fill', $r('app.string.tab_contacts'), 'tab_contacts');
+        // 三态：无播放=四格；在播放未展开=四格 + 专辑球；已展开=头像 + 播放条。
+        // 判据是纯函数，见 util/dockMiniBar。
+        if (dockShowsTabs(this.miniState())) {
+          this.dockItem(0, 'sys.symbol.message_on_message_fill', $r('app.string.tab_chats'), 'tab_chats');
+          if (this.showContactsTab) {
+            this.dockItem(1, 'sys.symbol.person_2_fill', $r('app.string.tab_contacts'), 'tab_contacts');
+          }
+          this.dockItem(2, 'sys.symbol.gearshape', $r('app.string.settings_title'), 'settings_title');
+          this.profileDockItem();
+        } else {
+          this.collapsedProfileItem();
         }
-        this.dockItem(2, 'sys.symbol.gearshape', $r('app.string.settings_title'), 'settings_title');
-        this.profileDockItem();
+        if (dockShowsAlbumBall(this.miniState())) {
+          this.albumBall();
+        }
+        if (dockShowsPlayer(this.miniState())) {
+          this.miniPlayer();
+        }
       }
       .alignItems(VerticalAlign.Center)
       .width('100%').height(DOCK_H)
@@ -604,7 +930,19 @@ export struct MainScreen {
       .clip(true)
       .border({ width: 0.5, color: COLOR_DIVIDER })
       .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 })
-      .attributeModifier(materialModifier('bar'))
+      // **有播放条时胶囊自己不挂材质。**
+      //
+      // 材质套材质会互相抵消/发实——首页那边早就避开了这件事（ChatListPage
+      // titleBar 的注释：「标题栏本身继续只负责滚动模糊，避免整栏与按钮材质
+      // 叠加后发实」，它是"栏不挂、按钮挂"）。我们这里原本是"胶囊挂、格子不挂"，
+      // 四个页签格子只有 stateStyles，所以一直没露馅；把播放条那几个控件塞进来
+      // 之后，里外两层材质撞上，表现就是控件上一点光感都没有（用户实测：首页
+      // 搜索键有流光/形变，这里没有）。
+      //
+      // 于是按播放条在不在切换承载者：没有播放条时维持原样（胶囊挂材质，
+      // 观感不变）；有播放条时胶囊让出来，材质交给里面的控件，光感才出得来。
+      .attributeModifier(materialModifierWhen('bar',
+        this.materialEpoch >= 0 && !dockShowsPlayer(this.miniState()) && !dockShowsAlbumBall(this.miniState())))
       ;
     }
     .width(this.dockWidth())
@@ -671,34 +1009,104 @@ export struct MainScreen {
       // index 显式跟住 mainTabIndex，Tabs 才不会在树重建后从 0 开始——
       // 见 aboutToAppear 里的说明。稳态下它与 controller.changeIndex 同值，
       // 重复驱动是幂等的。
-      Tabs({ controller: this.controller, index: this.tab }) {
+      // **喂物理下标**：联系人关掉时它的 TabContent 整个不渲染，后面两个
+      // 各前移一位；逻辑下标（0/1/2/3）是全应用契约，一个都不能动。
+      // 见 util/mainTabIndex。
+      HdsTabs({
+        controller: this.controller,
+        index: physicalTabIndex(this.tab, this.showContactsTab)
+      }) {
         TabContent() { ChatListPage(); }
-        TabContent() { ContactsPage(); }
+        .tabBar(this.tabBarChats());
+        if (this.showContactsTab) {
+          TabContent() { ContactsPage(); }
+          .tabBar(this.tabBarContacts());
+        }
         TabContent() { SettingsPage(); }
+        .tabBar(this.tabBarSettings());
         TabContent() {
           MyProfilePage({
             active: this.tab === 3,
             onOpenSettings: (): void => { this.select(2); }
           });
         }
+        .tabBar(this.tabBarProfile());
       }
-      .barHeight(0)
+      // 栏由 HdsTabs 自己画（官方《沉浸光感》「底部导航适配」那一节）：
+      // barOverlap 让它浮在内容之上（6.0.0(20) 就有），胶囊形态与沉浸光感在
+      // barFloatingStyle 里，那是 6.1.0(23) 起——所以只有它走版本闸的修饰器，
+      // 其余属性所有版本通用，不需要第二套实现。
+      // 大屏（≥840vp，官方 lg 断点）把底部页签**挪到侧边竖排**。
+      //
+      // 依据是《大屏应用UX体验标准》原文：「当应用窗口宽度达到或超过 840vp，
+      // 横向断点为 lg 时，建议采用挪移布局，将底部导航栏变更为侧边导航栏……
+      // 此时 vertical=true，barPosition=Start」。
+      //
+      // **为什么不是"把悬浮胶囊固定在左栏"**：官方对悬浮样式写死了三个同时
+      // 成立的条件（barOverlap=true / vertical=false / barPosition=End），而
+      // barSideMargin 只有一个值、两侧同宽，胶囊必然按容器居中——而容器是整窗，
+      // 于是它落在分栏的分割线上（用户实测「dock 跑中间了」）。非对称边距这个
+      // 能力不存在，大屏下本来就不该有那颗胶囊。
+      .barOverlap(!this.sideTabs())
+      .vertical(this.sideTabs())
+      // 【查证记录】侧边竖排的紧凑度先试过 ExtendBarMode.HALF_SCREEN_FIXED。
+      // 真机（平板，2026-09-04）：**生效了但没解决问题**——它把三格从"均分整
+      // 屏高"压到"占上半屏"，一格仍有约 154vp，图标之间照样隔着一大截。官方
+      // 对它写的第二条依赖「页签使用 BottomTabBarStyle 样式」我们也不满足
+      // （自绘 builder）。所以那条路整个放弃，回 BarMode.Fixed，紧凑度改由
+      // 「每格定高 + 栏收到那么高」两处一起保证（见 dockItem 与下面的 barHeight）。
+      .barMode(BarMode.Fixed)
+      .barPosition(this.sideTabs() ? BarPosition.Start : BarPosition.End)
+      // 进会话页等场景要收起底栏。横排收高度、竖排收宽度——两条都对所有版本成立。
+      // （23+ 另有 controller.applyHideAnimation 能带动画，等这一步验完再加。）
+      // 竖排时栏高收到「页签数 × 一格」，一格就是三分之一栏高——**这是竖排
+      // 紧凑度的唯一旋钮**。组件会把这条短栏在竖直方向居中，不需要为状态栏
+      // 留位（实测见 splitMetrics）。竖排的收起走 sideBarWidth=0（收宽）。
+      .barHeight(this.sideTabs()
+        ? sideDockBarHeight(this.showContactsTab ? 4 : 3)
+        : (this.dockShown ? DOCK_H : 0))
+      // **横排时一次都不设 barWidth**，交给修饰器按 sideBarWidth 决定。
+      // 依据见 HdsTabsFloatingOptions.sideBarWidth 里抄的官方两段。
+      .attributeModifier(new HdsTabsFloatingModifier({
+        bottomMargin: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)),
+        sideBarWidth: this.sideTabs() ? (this.dockShown ? SIDE_DOCK_W : 0) : null,
+        // 没有迷你条时复用迁移前那套留白算法（胶囊宽度回到原来的比例）；
+        // 有迷你条时放开，否则页签和播放条挤在一起会重叠。
+        sideMargin: this.miniBarActive() ? MINI_SIDE_MARGIN : this.dockPadding(),
+        // 有曲子在放才挂迷你条；停了就交 null，HdsTabs 自己收回普通页签。
+        miniBar: this.miniBarActive()
+          ? this.miniBarHolder.content(this.getUIContext(), wrapBuilder(dockMiniBarLayer))
+          : null,
+        // 宽屏上底栏跟随握持手左右移动（智感握姿）。
+        //
+        // 【查证记录】排查「胶囊只裹住右边两格」时一度怀疑是它，实测把它关掉
+        // **没有任何变化**，真凶是组件级的 barWidth（见 sideBarWidth）。官方对
+        // 这个字段也没有"仅宽屏"的限制，所以照原样保留。
+        adaptToHandedness: true,
+        // 竖排时整套悬浮样式不应用（见 HdsTabsFloatingOptions.floating）。
+        floating: !this.sideTabs(),
+        // 关掉 HdsTabs 默认那层浅色渐变遮罩：压在壁纸上是一大片白雾。
+        gradientMaskColor: Color.Transparent,
+        epoch: this.materialEpoch
+      }))
       .scrollable(false)
       .animationDuration(powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION))
       .onAnimationStart((_currentIndex: number, targetIndex: number) => {
-        if (this.tab !== targetIndex) {
+        const target: number = logicalTabIndex(targetIndex, this.showContactsTab);
+        if (this.tab !== target) {
           animateTo({
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_SWITCH_DURATION),
             curve: Curve.EaseOut
-          }, (): void => { this.tab = targetIndex; });
+          }, (): void => { this.tab = target; });
         }
       })
       .onChange((index: number) => {
         // Keep the dock synced if Tabs changes its final index after a rapid
-        // sequence of taps.
-        if (this.tab !== index) {
-          this.appliedTab = index;
-          this.tab = index;
+        // sequence of taps. index 是**物理**下标，换回逻辑再比。
+        const logical: number = logicalTabIndex(index, this.showContactsTab);
+        if (this.tab !== logical) {
+          this.appliedTab = logical;
+          this.tab = logical;
         }
       })
       .width('100%').height('100%');
@@ -707,7 +1115,6 @@ export struct MainScreen {
       // （见 dock() 末尾与 syncDock()）。这里**不能**用 `if`：条件渲染摘掉的子树
       // 在退场过渡期间不再重新构建，属性冻结在「还可点」的那一版上，于是有
       // 160ms 的空档能吃掉落在 ChatPage 输入区上的点击。
-      this.dock();
       if (this.switcherShown) {
         AccountSwitchPopup({
           accounts: this.switcherAccounts,

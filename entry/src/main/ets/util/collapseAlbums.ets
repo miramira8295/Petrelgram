@@ -112,7 +112,34 @@ function albumHead(members: MessageEntry[]): MessageEntry {
 // there means the row silently stops updating, which is worse than the cost of
 // rebuilding it. The rebuild frequency is bounded by coalescing notifies in
 // MessageStore instead.
+// mutableSig 的按对象缓存。
+//
+// 【为什么可以按对象缓存】MessageStore 从不就地改一条消息：`patch()` 先
+// `cloneMessage()` 再改，`upsert` / `hydrateFromFileCache` 也一律换新对象。
+// 所以**对象身份就是内容身份**——同一个对象，签名一定一样。
+//
+// 【为什么值得缓存】mutableSig 一次要拼七十多个字段，还要遍历 pollOptions /
+// reactions / inlineButtons / textEntities 四个数组，而它对**每条消息、每次
+// collapseAlbums 调用**都跑一遍。09-03 的相册对照里 collapseAlbums 的自耗时
+// 从 63.2ms 涨到 181.7ms（+187%）——那份录制里带 reactions 的行从 56% 涨到
+// 79%，每多一个 reaction 就多一轮字符串拼接。绝大多数行在两次发布之间一个字
+// 都没变，这些拼接是纯浪费。
+//
+// WeakMap：缓存项活得和消息一样久，消息被替换掉就自动回收，不需要淘汰策略。
+// 仓库里 util/richText.ets 和 util/chatViewportGeometry.ets 是同一套做法。
+const sigCache: WeakMap<MessageEntry, string> = new WeakMap<MessageEntry, string>();
+
 function mutableSig(m: MessageEntry): string {
+  const hit: string | undefined = sigCache.get(m);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const computed: string = computeMutableSig(m);
+  sigCache.set(m, computed);
+  return computed;
+}
+
+function computeMutableSig(m: MessageEntry): string {
   // videoPath: voice/file/video rows change rendering once the file lands.
   // senderName: chat-sender (posting-as-channel) names resolve async.
   //

@@ -182,6 +182,33 @@ export async function setInFolder(folderId: number, chatId: number, include: boo
   }
 }
 
+// 「添加到文件夹」那一项要展开的子菜单内容。
+//
+// 原来这一项弹的是系统 ActionSheet（底部动作面板），标题里拿 `✓` 拼字符串
+// 表示已在其中。桌面端 Telegram 的做法是**就地展开子菜单**、勾选项带 ✓，
+// 交互层级少一层，也不用把整个菜单收掉。这个函数只负责把"有哪些文件夹、
+// 这个会话在不在里面"算成一张表，画法留给菜单自己。
+export interface FolderChoice {
+  id: number;
+  title: string;
+  checked: boolean;
+}
+
+export function chatFolderChoices(chatId: number): FolderChoice[] {
+  return getFolderStore().getFolders().map((folder): FolderChoice => ({
+    id: folder.id,
+    title: folder.title,
+    checked: getChatStore().isInFolder(folder.id, chatId)
+  }));
+}
+
+// 就地切换：在里面就移出，不在就加入。返回切换之后的状态，调用方据此更新勾选。
+export function toggleChatFolder(chatId: number, folderId: number): boolean {
+  const next: boolean = !getChatStore().isInFolder(folderId, chatId);
+  setInFolder(folderId, chatId, next);
+  return next;
+}
+
 export function showChatFolderPicker(uiContext: UIContext, chatId: number): void {
   const folders = getFolderStore().getFolders();
   if (folders.length === 0) {

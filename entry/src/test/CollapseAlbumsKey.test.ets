@@ -296,5 +296,30 @@ export default function collapseAlbumsKeyTest() {
       expect(groups.length).assertEqual(2);
       expect(repeatRowKey(groups[0], 0, 0) === repeatRowKey(groups[1], 0, 0)).assertFalse();
     });
+
+    // mutableSig 现在按对象身份缓存（WeakMap）。缓存的正确性前提是
+    // 「MessageStore 从不就地改一条消息，一律 cloneMessage 换新对象」——
+    // 这两条用例把这个契约钉住：同一个对象 key 稳定，换了内容的克隆体 key 必须变。
+    it('签名缓存：同一个对象反复 collapse，key 稳定', 0, () => {
+      const users: UserStore = usersOf();
+      const e: MessageEntry = baseEntry(1, users);
+      const first: AlbumGroup[] = collapseAlbums([e]);
+      const second: AlbumGroup[] = collapseAlbums([e]);
+      const third: AlbumGroup[] = collapseAlbums([e]);
+      expect(first[0].key).assertEqual(second[0].key);
+      expect(second[0].key).assertEqual(third[0].key);
+    });
+
+    it('签名缓存：克隆体改了内容之后 key 必须变（缓存不能串味）', 0, () => {
+      const users: UserStore = usersOf();
+      const e: MessageEntry = baseEntry(1, users);
+      const before: string = collapseAlbums([e])[0].key;
+      const changed: MessageEntry = cloneMessage(e);
+      changed.editDate = 12345;
+      const after: string = collapseAlbums([changed])[0].key;
+      expect(before === after).assertFalse();
+      // 原对象的签名不受影响——两者是两个独立的缓存项。
+      expect(collapseAlbums([e])[0].key).assertEqual(before);
+    });
   });
 }

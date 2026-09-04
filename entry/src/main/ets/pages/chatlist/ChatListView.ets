@@ -1,4 +1,5 @@
 import { getChatStore } from '../../tdkit/Globals';
+import { KEY_DOCK_AT_BOTTOM } from '../../util/splitMetrics';
 import { ChatEntry } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
 import { ChatListDataSource } from './ChatListDataSource';
@@ -163,6 +164,8 @@ export struct ChatListView {
   @Prop listKey: string;
   // Folder tabs sit behind MainScreen's floating dock; ArchivePage does not.
   @Prop reserveDockSpace: boolean = true;
+  // dock 还在底部吗（见 splitMetrics.KEY_DOCK_AT_BOTTOM）。读一次才建立依赖。
+  @StorageProp(KEY_DOCK_AT_BOTTOM) private dockBottom: boolean = true;
   // Floating frosted folder bar overlays the list top — start content below
   // it while still letting rows scroll (blurred) underneath.
   // 顶部悬浮 chrome（顶栏 + 文件夹条）的总高度。改成数值是因为顶栏也浮起来
@@ -281,7 +284,9 @@ export struct ChatListView {
   }
 
   private endInset(): number {
-    return this.bottomSafe + (this.reserveDockSpace ? 88 : 16);
+    // 侧边页签模式下 dock 不在底部，这段避让必须撤掉，否则底下是一条空白。
+    const reserve: boolean = this.reserveDockSpace && this.dockBottom;
+    return this.bottomSafe + (reserve ? 88 : 16);
   }
 
   private flushBufferedChats(): void {

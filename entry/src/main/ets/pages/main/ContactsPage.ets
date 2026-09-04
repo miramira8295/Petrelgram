@@ -1,4 +1,8 @@
 import { getTdClient } from '../../tdkit/Globals';
+import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
+  surfaceGlassBlurStyle, surfaceGlassFill
+} from '../../util/surfaceGlass';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -13,7 +17,10 @@ import { searchPublicUsers } from '../../store/PublicUserSearch';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import {
+  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+} from '../../util/overlayMaterial';
+import { materialModifierWhen } from '../../util/materialModifier';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE, logW } from '../../util/log';
@@ -32,6 +39,8 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainBarFill, mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 
+// 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
+// cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
@@ -99,6 +108,33 @@ export struct ContactsPage {
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  // 全局界面模糊：开关和档位都要能立刻重绘。开关本身是 AppStorage 键，
+  // 档位走 epoch（surfaceGlass 是 util，订阅不了 AppStorage，同 MATERIAL_EPOCH 的做法）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlassOn: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
+
+  // `this.surfaceGlassEpoch >= 0` 恒真，**但不能删**：@StorageProp 只有在 build
+  // 链路里被真正读到才建立依赖，光声明不读，改设置时页面不会重绘。
+  private glassOn(): boolean {
+    return this.surfaceGlassOn && this.surfaceGlassEpoch >= 0;
+  }
+
+  private cardFill(): ResourceColor {
+    return this.glassOn() ? surfaceGlassFill(CARD_BG) : CARD_BG;
+  }
+
+  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显
+  // （见 util/surfaceGlass.surfaceGlassBlurStyle）。
+  private cardBlurStyle(): BlurStyle | undefined {
+    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
+  }
+
+  // 分组卡片**内部**的行底色。玻璃档透明（让容器那一块玻璃透上来），
+  // 实底档维持原来的白。
+  private rowInsideCardFill(): ResourceColor {
+    return this.glassOn() ? Color.Transparent : CARD_BG;
+  }
+
   private contactsScroller: Scroller = new Scroller();
   // 联系人页签的路由栈。平板（分栏）上点一个联系人会把 ProfilePage 推进这里，
   // 它就是右栏；手机（单栏）上这个栈恒为空——见 openContact 的断点分流。
@@ -171,9 +207,10 @@ export struct ContactsPage {
   private pendingLoading: boolean = false;
   private pendingLoadError: string = '';
 
+  // **常态不设 backgroundColor**：底色由上面的 overlayGlassFill 决定，
+  // 这里再刷一次透明就把那层玻璃盖掉了（和首页 actionNormalStyle 一致）。
   @Styles
   topActionNormalStyle() {
-    .backgroundColor(Color.Transparent)
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
@@ -783,6 +820,13 @@ export struct ContactsPage {
       .width(TOP_ACTION_SIZE).height(TOP_ACTION_SIZE)
       .borderRadius(TOP_ACTION_SIZE / 2)
       .justifyContent(FlexAlign.Center)
+      // 和首页那个顶栏按钮同一套底色逻辑（ChatListPage.topAction）：走 'control'
+      // 这一档的玻璃/材质。原来这里只有按下态、常态是裸透明，两个页面的同一个
+      // 位置长得不一样（用户实测）。
+      .backgroundColor(overlayGlassFill('control', $r('app.color.surface_alt')))
+      .backdropBlur(overlayBackdropBlur('control'))
+      .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
+      .clip(true)
       .stateStyles({
         normal: this.topActionNormalStyle,
         pressed: this.topActionPressedStyle
@@ -851,7 +895,8 @@ export struct ContactsPage {
     .width('calc(100% - 24vp)')
     .height(SEARCH_BAR_HEIGHT)
     .padding({ left: 13, right: 9 })
-    .backgroundColor(CARD_BG)
+    .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(SEARCH_BAR_HEIGHT / 2)
     .border({
       width: this.searchFocused ? 1.5 : 0.5,
@@ -947,7 +992,8 @@ export struct ContactsPage {
         );
       }
       .width('100%')
-      .backgroundColor(CARD_BG)
+      .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
       .padding(4)
       .clip(true);
@@ -1015,7 +1061,12 @@ export struct ContactsPage {
     .padding({ left: 10, right: 10, top: 7, bottom: 7 })
     .alignItems(VerticalAlign.Center)
     .borderRadius(CARD_RADIUS - 4)
-    .backgroundColor(this.pressedContactId === c.id ? $r('app.color.surface_alt') : CARD_BG)
+    // **行本身不上玻璃。** 外层分组卡片（contactsCard）已经铺了一整块，行再各
+    // 铺一块就是两层 backdropBlur 叠加——又重又灰，而且行与行之间的缝会把壁纸
+    // 露出来，一整块列表被切成一段段药片（用户实测"好丑"）。
+    // 玻璃档下行是透明的，让容器那块透上来；实底档维持原来的白卡片。
+    .backgroundColor(this.pressedContactId === c.id
+      ? $r('app.color.surface_alt') : this.rowInsideCardFill())
     .scale({
       x: this.pressedContactId === c.id ? 0.99 : 1,
       y: this.pressedContactId === c.id ? 0.985 : 1
@@ -1125,7 +1176,8 @@ export struct ContactsPage {
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 12 })
     .padding({ left: 4, right: 4, bottom: 4 })
-    .backgroundColor(CARD_BG)
+    .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
     .opacity(this.skeletonBright ? 0.56 : 0.92)
     .animation({
@@ -1160,7 +1212,8 @@ export struct ContactsPage {
     .height(190)
     .margin({ left: 12, right: 12, top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG)
+    .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -1210,7 +1263,8 @@ export struct ContactsPage {
     .height(220)
     .margin({ left: 12, right: 12, top: 12 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(CARD_BG)
+    .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 }))
@@ -1298,7 +1352,8 @@ export struct ContactsPage {
         }
       }
       .width('100%')
-      .backgroundColor(CARD_BG)
+      .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
       .padding({ left: 4, right: 4, bottom: 4 })
       .clip(true);
@@ -1478,7 +1533,8 @@ export struct ContactsPage {
       top: 6,
       bottom: Math.max(18, this.bottomSafe + 10)
     })
-    .backgroundColor(CARD_BG);
+    .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle());
   }
 
   // FAB 单侧留白。喂给 contentSideGutter 的必须是**FAB 所在那一栏**的宽度，不是

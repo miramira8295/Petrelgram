@@ -18,8 +18,6 @@ import {
   glassBodyFallbackPainted, glassBodyPainted, glassPaintReady, tailShapeCommands
 } from '../../util/bubbleGlassPath';
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
-// 【临时探针，验完就删】见 util/tailFlipProbe.ets 的删除清单。
-import { probeGlassMeasure } from '../../util/tailFlipProbe';
 import {
   senderAvatarFor, senderChannelKey, subscribeSenderAvatar
 } from '../../util/senderAvatarChannel';
@@ -38,6 +36,9 @@ import { CachedImage } from '../common/CachedImage';
 import { SenderRoleTag } from './SenderRoleTag';
 import { logW } from '../../util/log';
 import { menuPreviewCompact } from '../../util/menuPreview';
+// 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
+// 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
+import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 const SWIPE_REPLY_MAX: number = -56;
@@ -224,10 +225,27 @@ export struct LightweightPlainTextBubble {
   }
 
   @Require @Param msg: MessageEntry;
-  @Param nowSec: number = 0;
+  // **这里刻意不合并成 group/data 两个对象**，和 MessageBubble 相反。
+  //
+  // 09-03 两份真机对照把这条钉死了：合并省的是"逐个 @Param 登记 + 每次
+  // fireChange 同步排一遍 idle 队列"的固定开销，代价是"整棵子树被粗粒度失效"。
+  //   相册行（MessageBubble）：12 个数组下发、子树里还有 6–9 个 LiveThumbImage
+  //     各自一份 @Param —— 省的远大于赔的，复用 −48%、首建 −62%。
+  //   纯文本行（本组件）：本来就没几个 @Param —— 只赔不赚，复用 +38%。
+  // 所以这一支保留细粒度字段。**别为了"两边写法一致"把它合了。**
   @Param chatId: number = 0;
   @Param isGroup: boolean = false;
   @Param themeBubbleOut: string = '';
+  @Param showUnreadDivider: boolean = false;
+  @Param dividerIsResume: boolean = false;
+  @Param dateLabel: string = '';
+  @Param editingActive: boolean = false;
+  @Param isPinnedMsg: boolean = false;
+  @Param showAvatar: boolean = true;
+  @Param showSenderName: boolean = true;
+  @Param animateIn: boolean = false;
+  @Param memberIds: number[] = [];
+  @Param nowSec: number = 0;
   // 初值 true：行是在 LazyForEach 首批里建出来的，onVisibleAreaChange 的首帧
   // 回调常常不来，初值 false 会让玻璃层等到「滑动一下」才挂上（用户报的）。
   // 由回调负责在真正离屏时关掉——那一路是可靠的。@Local 复用时重置回 true，
@@ -298,19 +316,20 @@ export struct LightweightPlainTextBubble {
   // 见 MessageBubble 同一处：这里只是外层轮廓就绪前的本体玻璃兜底。
   private glassBg(): ResourceColor {
     return this.glassBodyFallbackOn()
-      ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+      ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private glassBlur(): number {
-    return this.glassBodyFallbackOn() ? overlayBackdropBlur('bubble') : 0;
+  // 框架容器材质，不是 backdropBlur（后者节点边缘有采样衰减，四角最明显）。
+  private glassBlurStyle(): BlurStyle | undefined {
+    return this.glassBodyFallbackOn() ? bubbleGlassBlurStyle() : undefined;
   }
 
   private containerGlassBg(): ResourceColor {
-    return this.glassReady() ? overlayGlassFill('bubble', this.bubbleFillColor()) : Color.Transparent;
+    return this.glassReady() ? bubbleGlassFill(this.bubbleFillColor()) : Color.Transparent;
   }
 
-  private containerGlassBlur(): number {
-    return this.glassReady() ? overlayBackdropBlur('bubble') : 0;
+  private containerGlassBlurStyle(): BlurStyle | undefined {
+    return this.glassReady() ? bubbleGlassBlurStyle() : undefined;
   }
 
   // 材质本体按节点的 borderRadius 画圆角，裁剪路径只管尾巴那一侧：尾巴侧的底角设 0。
@@ -338,15 +357,6 @@ export struct LightweightPlainTextBubble {
     }
   }
 
-  @Param showUnreadDivider: boolean = false;
-  @Param dividerIsResume: boolean = false;
-  @Param dateLabel: string = '';
-  @Param editingActive: boolean = false;
-  @Param isPinnedMsg: boolean = false;
-  @Param showAvatar: boolean = true;
-  @Param showSenderName: boolean = true;
-  @Param animateIn: boolean = false;
-  @Param memberIds: number[] = [];
   // V2 里无装饰器成员是纯本地常量、禁止外部构造传参（编译错误 10905324，
   // 见 ReusableMessageBubble 的同名注释）——必须 @Param。页面持有的引用全
   // 生命周期不变，每帧只多一次恒等比较。
@@ -358,7 +368,6 @@ export struct LightweightPlainTextBubble {
   @Local private translationStatus: TranslationStatus | null = null;
   @Local private menuShown: boolean = false;
   @Local private swipeX: number = 0;
-  private bubbleW: number = 0;
   // 名字行量出来的宽度。名字行比正文宽时，时间层要拿它兜最小宽度，时间戳才落在
   // 气泡右下角、引用块才能拉到气泡边缘。V1 靠「复用不清零」留住上一行的近似值；
   // V2 的 @Local 复用必重置，改为按名字文本进程级记忆（见 SENDER_LABEL_WIDTHS），
@@ -410,7 +419,6 @@ export struct LightweightPlainTextBubble {
   // @Local（menuShown/swipeX/通道值/玻璃尺寸/onScreen）由框架在 aboutToReuse
   // 之前统一重置（批 0.5 实测 1370/1370）。
   private resetTransient(): void {
-    this.bubbleW = 0;
     this.menuOffsetX = 0;
     this.gestureClaimed = false;
   }
@@ -492,13 +500,20 @@ export struct LightweightPlainTextBubble {
 
   private replyMaxW(): number { return Math.round(this.inlineMaxW() * REPLY_QUOTE_WIDTH_RATIO); }
 
-  private recordMenuOffset(localX: number): void {
-    this.menuOffsetX = this.bubbleW > 0 ? localX - this.bubbleW / 2 : 0;
+  // 气泡宽度从**事件**里取，不再常驻 onAreaChange。
+  //
+  // 这个宽度只有一个用途：菜单相对气泡中心的横向偏移，也就是只在长按/点击
+  // 那一刻需要。而 onAreaChange 是全局派发的——注册了就每帧参与一次遍历，
+  // 09-03 的 Frame 录制里 HandleOnAreaChangeEvent 每帧固定 1.07ms、注册节点
+  // 从 28 涨到 193 且滚动期间不回落。手势事件的 target.area 给的就是同一个
+  // 节点的尺寸，白拿。
+  private recordMenuOffset(localX: number, width: number): void {
+    this.menuOffsetX = width > 0 ? localX - width / 2 : 0;
   }
 
   private onLongPress(event: GestureEvent): void {
     if (event.fingerList.length > 0) {
-      this.recordMenuOffset(event.fingerList[0].localX);
+      this.recordMenuOffset(event.fingerList[0].localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
     const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
@@ -840,18 +855,17 @@ export struct LightweightPlainTextBubble {
           .stateStyles({ normal: plainBubbleNormalStyle, pressed: plainBubblePressedStyle })
           .constraintSize({ maxWidth: this.bubbleMaxW() })
           .backgroundColor(this.bubbleBg())
-          .backdropBlur(this.glassBlur())
+          .backgroundBlurStyle(this.glassBlurStyle())
           .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
             this.onScreen = visible;
           })
           .borderRadius(this.bubbleCorners()).padding(8)
           .shadow({ radius: this.glassBodyOn() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
-          .onAreaChange((_old: Area, area: Area): void => { this.bubbleW = area.width as number; })
           .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
             .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
           .onClick((event: ClickEvent): void => {
             if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
-              this.recordMenuOffset(event.x);
+              this.recordMenuOffset(event.x, Number(event.target.area.width));
               this.menuShown = true;
             }
           });
@@ -868,18 +882,29 @@ export struct LightweightPlainTextBubble {
           // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
           // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
           .backgroundColor(this.containerGlassBg())
-          .backdropBlur(this.containerGlassBlur())
+          .backgroundBlurStyle(this.containerGlassBlurStyle())
           // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
           // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
           .borderRadius(this.glassRadius())
           .background(this.glassOutline(), { align: Alignment.TopStart })
               .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
-            this.msg.isOutgoing, this.hasTail(), this.bubbleCorners(),
-            this.env.bubbleMaterialOn ? (w: number, h: number): void => {
-              probeGlassMeasure('plain', this.msg.id, w, h);
-              this.glassW = w;
-              this.glassH = h;
-            } : null))
+            this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
+      // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
+      // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
+      // 同值不写：@Local 赋同一个数也会走一遍变更通知。
+      .onAreaChange((_old: Area, area: Area): void => {
+        if (!this.env.bubbleMaterialOn) {
+          return;
+        }
+        const w: number = Number(area.width);
+        const h: number = Number(area.height);
+        if (this.glassW !== w) {
+          this.glassW = w;
+        }
+        if (this.glassH !== h) {
+          this.glassH = h;
+        }
+      })
         }
         .alignItems(VerticalAlign.Bottom)
         .bindContextMenu(this.menuShown, this.contextMenu(), {

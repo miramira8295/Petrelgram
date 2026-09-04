@@ -4,6 +4,9 @@ import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { MessageStore } from '../main/ets/store/MessageStore';
 import { MessageEntry } from '../main/ets/store/MessageEntry';
+// 两条落点用例取的页大小不同：requested/resume 走 RESUME，让位给未读边界
+// 之后走的是未读那条，取 AROUND。
+import { INITIAL_AROUND_LIMIT, INITIAL_RESUME_LIMIT } from '../main/ets/util/chatPrefetch';
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void = (): void => {};
@@ -352,8 +355,11 @@ export default function messageStoreTest() {
         .find((candidate: TdObject): boolean => candidate['@type'] === 'getChatHistory');
       expect(request !== undefined).assertTrue();
       expect(request !== undefined ? request['from_message_id'] : 0).assertEqual(500);
-      expect(request !== undefined ? request['offset'] : 0).assertEqual(-13);
-      expect(request !== undefined ? request['limit'] : 0).assertEqual(14);
+      // 从常量推导，别写死：首屏页大小调过一次（14 → 30），写死的期望值
+      // 会在下一次调整时再炸一遍。对齐到目标行开头时偏移量恒为 -(limit - 1)。
+      expect(request !== undefined ? request['offset'] : 0)
+        .assertEqual(-(INITIAL_RESUME_LIMIT - 1));
+      expect(request !== undefined ? request['limit'] : 0).assertEqual(INITIAL_RESUME_LIMIT);
       expect(store.isResumeLandingSelected()).assertTrue();
     });
     it('remembered_landing_yields_to_a_new_unread_boundary', 0, async () => {
@@ -379,7 +385,7 @@ export default function messageStoreTest() {
       expect(request !== undefined).assertTrue();
       expect(request !== undefined ? request['from_message_id'] : 0).assertEqual(200);
       expect(request !== undefined ? request['offset'] : 0).assertEqual(-7);
-      expect(request !== undefined ? request['limit'] : 0).assertEqual(14);
+      expect(request !== undefined ? request['limit'] : 0).assertEqual(INITIAL_AROUND_LIMIT);
       expect(store.isResumeLandingSelected()).assertFalse();
     });
     it('first_unread_skips_own_outgoing_messages', 0, async () => {

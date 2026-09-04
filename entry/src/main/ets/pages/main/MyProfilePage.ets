@@ -1,5 +1,9 @@
 import { promptAction, router } from '@kit.ArkUI';
 import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
+  surfaceGlassBlurStyle, surfaceGlassFill
+} from '../../util/surfaceGlass';
+import {
   HdsNavigation, HdsNavigationIconOptions, HdsNavigationMenuItemOptions,
   HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
@@ -39,6 +43,8 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainBarFill, mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 
+// 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
+// cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
 const PAGE_BG: ResourceColor = $r('app.color.page_bg');
@@ -89,6 +95,27 @@ export struct MyProfilePage {
   }
 
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
+  // 全局界面模糊：开关和档位都要能立刻重绘。开关本身是 AppStorage 键，
+  // 档位走 epoch（surfaceGlass 是 util，订阅不了 AppStorage，同 MATERIAL_EPOCH 的做法）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlassOn: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
+
+  // `this.surfaceGlassEpoch >= 0` 恒真，**但不能删**：@StorageProp 只有在 build
+  // 链路里被真正读到才建立依赖，光声明不读，改设置时页面不会重绘。
+  private glassOn(): boolean {
+    return this.surfaceGlassOn && this.surfaceGlassEpoch >= 0;
+  }
+
+  private cardFill(): ResourceColor {
+    return this.glassOn() ? surfaceGlassFill(CARD_BG) : CARD_BG;
+  }
+
+  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显
+  // （见 util/surfaceGlass.surfaceGlassBlurStyle）。
+  private cardBlurStyle(): BlurStyle | undefined {
+    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
+  }
+
   @Prop active: boolean = false;
   onOpenSettings: () => void = (): void => {};
   @StorageProp('topSafeHeight') topSafe: number = 0;
@@ -1115,7 +1142,8 @@ export struct MyProfilePage {
 
   @Styles
   topActionNormalStyle() {
-    .backgroundColor(CARD_BG)
+    .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
@@ -1170,7 +1198,8 @@ export struct MyProfilePage {
     .height(76)
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.pressedQuickAction === key
-      ? $r('app.color.surface_alt') : CARD_BG)
+      ? $r('app.color.surface_alt') : this.cardFill())
+      .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
     .border({ width: 0.5, color: $r('app.color.divider') })
     .shadow({
@@ -1341,7 +1370,8 @@ export struct MyProfilePage {
         .width(108)
         .height(108)
         .padding(4)
-        .backgroundColor(CARD_BG)
+        .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
         .borderRadius(54)
         .shadow({
           radius: this.avatarPressed ? 5 : 12,
@@ -1594,7 +1624,8 @@ export struct MyProfilePage {
         }
       }
       .width('100%')
-      .backgroundColor(CARD_BG)
+      .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
       .border({ width: 0.5, color: $r('app.color.divider') })
       .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 2 })
@@ -1677,7 +1708,8 @@ export struct MyProfilePage {
           .width(this.postIndicatorWidth())
           .height(40)
           .borderRadius(13)
-          .backgroundColor(CARD_BG)
+          .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
           .border({ width: 0.5, color: $r('app.color.divider') })
           .shadow({ radius: 4, color: '#16000000', offsetX: 0, offsetY: 2 })
           .position({ x: 3, y: 3 })

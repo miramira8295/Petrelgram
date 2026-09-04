@@ -11,7 +11,11 @@ import {
   KEY_POWER_AUTOPLAY_VIDEO
 } from '../main/ets/store/AppSettings';
 import { LINK_NAV_BUSY_KEY } from '../main/ets/util/linkTapGuard';
-import { APPEARANCE_EPOCH, KEY_BUBBLE_MATERIAL_ON } from '../main/ets/util/appearance';
+import { APPEARANCE_EPOCH } from '../main/ets/util/appearance';
+// 气泡玻璃的开关源头已从「气泡材质」换成「界面模糊质感」（见 chatEnvMirror
+// 里 bubbleMaterialOn 那段注释）。
+// 气泡走自己的开关：整体那一面（KEY_SURFACE_GLASS_ON）不进这条镜像。
+import { KEY_BUBBLE_GLASS_ON } from '../main/ets/util/surfaceGlass';
 import { LANGUAGE_EPOCH } from '../main/ets/util/appLanguage';
 import { MATERIAL_EPOCH } from '../main/ets/util/overlayMaterial';
 import { CHAT_CONTENT_WIDTH_KEY } from '../main/ets/util/chatContentWidth';
@@ -21,7 +25,7 @@ export default function chatEnvMirrorTest() {
     it('字面量键与真常量一致（镜像不引常量是为了免循环依赖，靠这里兜底）', 0, (): void => {
       const keys = mirroredChatEnvKeys();
       const constants: string[] = [
-        APPEARANCE_EPOCH, MATERIAL_EPOCH, LANGUAGE_EPOCH, KEY_BUBBLE_MATERIAL_ON,
+        APPEARANCE_EPOCH, MATERIAL_EPOCH, LANGUAGE_EPOCH, KEY_BUBBLE_GLASS_ON,
         CHAT_CONTENT_WIDTH_KEY, 'keyboardHeightVp', 'screenWidthVp', 'screenHeightVp',
         KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_REDUCE_ANIM, KEY_POWER_ACTIVE,
         KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MESSAGE, KEY_POWER_EFFECT_REACTION,

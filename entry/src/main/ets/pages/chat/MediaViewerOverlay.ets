@@ -8,7 +8,7 @@ import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { formatTime } from '../../util/formatTime';
-import { StreamingVideoPlayer } from './StreamingVideoPlayer';
+import { VideoPlayerHost } from './VideoPlayerHost';
 import { isLivePhotoVideo } from '../../util/livePhoto';
 import { extractFirstFrame, saveMovingPhoto } from '../../util/livePhotoSave';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -874,8 +874,19 @@ export struct MediaViewerOverlay {
   private async saveLiveToGallery(): Promise<void> {
     const video: string = this.videoLocalPath();
     if (video === '') {
-      // 还没下完就没有本地文件可存。
-      promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
+      // **还没下完就没有本地文件可存。**
+      //
+      // 这一支原来和真正的失败共用「保存失败」，而且一行日志都不打——用户报
+      // 「保存提示保存失败」时，日志里既没有 extractFirstFrame 也没有
+      // saveLiveToGallery，正是走的这里。现在换成「正在下载」并留一行日志，
+      // 两种失败一眼分得开。
+      //
+      // 不能"先下载完再自动保存"：这个方法必须跑在 SaveButton 的 onClick 里，
+      // 那份临时写权限只在这一次回调内有效，异步等下载回来就没有了。
+      logE('MediaViewer.saveLiveToGallery: video not downloaded yet');
+      promptAction.showToast({
+        message: str('transfer_downloading', 0), duration: 1800
+      });
       return;
     }
     const ctx = getContext(this) as common.UIAbilityContext;
@@ -959,7 +970,7 @@ export struct MediaViewerOverlay {
         Stack() {
           if (this.siblingIsVideo(id)) {
             if (id === this.viewerMsgId && this.videoFileId() !== 0) {
-              StreamingVideoPlayer({
+              VideoPlayerHost({
                 fileId: this.videoFileId(),
                 fileSize: this.videoFileSize(),
                 mimeType: this.videoMimeType(),

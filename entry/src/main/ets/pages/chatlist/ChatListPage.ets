@@ -1030,7 +1030,8 @@ export struct ChatListPage {
     }
     // 横条无独立外框，直接融入标题栏的统一玻璃背板；只有当前项保留胶囊。
     // 12vp 起始线同时对齐大标题与会话卡片，底部只留轻微呼吸空间。
-    .margin({ left: 12, right: 12, bottom: 2 })
+    // left 4vp 在mate 70上第一个胶囊和列表边缘保证其平
+    .margin({ left: 4, right: 12, bottom: 2 })
     .transition(
       TransitionEffect.OPACITY
         .combine(TransitionEffect.translate({ y: -4 }))
@@ -1187,6 +1188,7 @@ export struct ChatListPage {
         // 滚动模糊，避免整栏与按钮材质叠加后发实。
         style: titleBarStyle(mainBarFill(this.appWallpaperOn), this.accent()),
         content: this.titleBarContent()
+
       })
       // 状态栏图标色钉死在深浅色上。不设 systemBarStyle 时 HDS 会按标题栏的
       // 内容色自己推——应用名染了强调色，状态栏的时钟和图标跟着变色（用户报的）。

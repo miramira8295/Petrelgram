@@ -15,7 +15,7 @@ import {
 } from '../../util/theme';
 import {
   BUBBLE_HEX_KEYS, KEY_ACCENT_CUSTOM_ON, KEY_ACCENT_HEX, KEY_ACCENT_HEX_DARK, KEY_BUBBLE_IN_HEX,
-  KEY_BUBBLE_IN_HEX_DARK, KEY_BUBBLE_MATERIAL_ON, KEY_BUBBLE_OUT_HEX, KEY_BUBBLE_OUT_HEX_DARK,
+  KEY_BUBBLE_IN_HEX_DARK, KEY_BUBBLE_OUT_HEX, KEY_BUBBLE_OUT_HEX_DARK,
   KEY_STATUS_FOLLOW_TITLE, defaultHexFor, hexOrDefault, recomputeAppearance
 } from '../../util/appearance';
 import { setBoolean, setString } from '../../store/AppSettings';
@@ -292,57 +292,6 @@ export struct AccentColorCard {
 }
 
 // ---------- 气泡材质 ----------
-
-@Component
-export struct BubbleMaterialCard {
-  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
-  // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
-  private accent(): ResourceColor {
-    return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
-  }
-
-  @StorageProp(KEY_BUBBLE_MATERIAL_ON) on: boolean = false;
-
-  private setOn(v: boolean): void {
-    if (v === this.on) {
-      return;
-    }
-    setBoolean(KEY_BUBBLE_MATERIAL_ON, v);
-    bumpMaterialEpoch();
-    recomputeAppearance();
-  }
-
-  private options(): SelectOption[] {
-    return [
-      { value: str('bubble_material_standard') } as SelectOption,
-      { value: str('bubble_material_glass') } as SelectOption
-    ];
-  }
-
-  build() {
-    Column() {
-      Row({ space: 12 }) {
-        Column({ space: 2 }) {
-          Text($r('app.string.appearance_bubble_material')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
-          Text(immersiveMaterialAvailable()
-            ? $r('app.string.appearance_bubble_material_sub')
-            : $r('app.string.appearance_bubble_material_glass_only'))
-            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-        }
-        .layoutWeight(1).alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Center);
-        Select(this.options())
-          .selected(this.on ? 1 : 0)
-          .value(this.on ? str('bubble_material_glass') : str('bubble_material_standard'))
-          .font({ size: 15 }).fontColor(this.accent())
-          .onSelect((index: number): void => this.setOn(index === 1));
-      }
-      .width('100%').padding({ left: 16, right: 8, top: 10, bottom: 10 }).alignItems(VerticalAlign.Center);
-    }
-    .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
-  }
-}
-
-// ---------- 账号颜色（名字色 / 资料页色，原 AccentColorPage）----------
 
 @Component
 export struct AccountColorsCard {

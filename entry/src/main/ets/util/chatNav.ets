@@ -1,6 +1,9 @@
 import router from '@ohos.router';
 import { requestChatJump } from './chatJumpChannel';
 import { logE } from './log';
+import { canPrefetchChat, prefetchInitialPage } from './chatPrefetch';
+import { getChatStore } from '../tdkit/Globals';
+import { ChatEntry } from '../store/ChatEntry';
 import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 import { isSplitLayout } from './splitMetrics';
@@ -167,6 +170,9 @@ export function navigateToChat(
   params: Record<string, Object>,
   origin: PushOrigin = 'navbar'
 ): Promise<void> {
+  // 首屏预取：在页面还没建之前就把第一页要出来（见 util/chatPrefetch 的说明）。
+  // 这里是**十个入口唯一的漏斗**，挂一处就覆盖列表/搜索/通知/深链全部。
+  startInitialPagePrefetch(params);
   const stack: NavStackLike | undefined = stackOf('chat');
   if (stack === undefined) {
     // 回退走的是整页 router，不依赖页签，所以下面那句切页签不能提到这上面来。
@@ -218,4 +224,22 @@ export function navigateToChat(
   }
   stack.pushPath({ name: CHAT_DEST_NAME, param: params });
   return Promise.resolve();
+}
+
+// 预取的接线：从路由参数取会话，从会话列表取那三个决策输入。
+//
+// **拿不到列表条目就不预取**——那三个值是决策的全部依据，猜一个反而会开错窗。
+// 通知/深链进来的会话可能不在列表里，那时就走原路，行为与改动前相同。
+function startInitialPagePrefetch(params: Record<string, Object>): void {
+  const chatId: number = numberField(params, 'chatId');
+  const hasJump: boolean = params['jumpTo'] !== undefined;
+  if (!canPrefetchChat(chatId, numberField(params, 'threadRootId'),
+    numberField(params, 'forumTopicId'), numberField(params, 'directMessagesTopicId'), hasJump)) {
+    return;
+  }
+  const entry: ChatEntry | undefined = getChatStore().entryOf(chatId);
+  if (entry === undefined) {
+    return;
+  }
+  prefetchInitialPage(chatId, entry.unreadCount, entry.lastReadInboxId);
 }

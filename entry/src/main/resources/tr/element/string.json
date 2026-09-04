@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d sn"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "Arayüz bulanıklığı"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "Kişiler, Ayarlar ve Profil sayfalarına giriş çubuğuyla aynı buzlu cam dokusu. Her karede çizilir; takılma olursa kapatın."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "Bulanıklık düzeyi"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "Oynatma motoru"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "Sistem oynatıcısını kullan"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "HDR videoyu destekler. Deneysel — sorun olursa kapatıp geri dönün"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "Yüksek dinamik aralıklı video"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "Tül"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "Arayüz"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "Sohbet listesi, kişiler ve ayarlar"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "Baloncuklar"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "Mesaj baloncukları — en çok sayıda ve en maliyetli olan"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "Daha fazla pil tüketimi"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "Bulanıklık her karede yeniden çizilir: pil tüketimi ve ısınma belirgin artar, kaydırırken kare atlamaları olabilir. Cihaz ısınır veya takılırsa buraya dönüp «Kapalı» seçin."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "Yine de aç"
     }
   ]
 }

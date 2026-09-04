@@ -37,10 +37,16 @@ import {
 } from '../../util/appearance';
 import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overlayMaterial';
 import {
+  KEY_SURFACE_GLASS_LEVEL, KEY_BUBBLE_GLASS_LEVEL, KEY_SURFACE_GLASS_ON, KEY_BUBBLE_GLASS_ON,
+  BUBBLE_GLASS_ON_DEFAULT, SURFACE_GLASS_LEVEL_DEFAULT,
+  SURFACE_GLASS_LEVEL_VEIL,
+  SURFACE_GLASS_ON_DEFAULT, bumpSurfaceGlassEpoch
+} from '../../util/surfaceGlass';
+import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT, bubbleTextFor
 } from '../../util/theme';
 import {
-  AccentColorCard, AccountColorsCard, BubbleColorsCard, BubbleMaterialCard
+  AccentColorCard, AccountColorsCard, BubbleColorsCard
 } from './AppearanceCards';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -91,6 +97,20 @@ const THICKNESS_OPTIONS: MaterialThicknessOption[] = [
   { label: str('material_thickness_ultra_thick'), value: THICKNESS_ULTRA_THICK }
 ];
 
+// 全局界面模糊的档位候选：**去掉 OFF**——关不关由总开关负责，
+// 档位里再放一个"关"会出现"开关开着、档位是关"的自相矛盾状态。
+//
+// 头一档是「薄纱」：只有那层纱、不挂模糊（见 util/surfaceGlass 的
+// SURFACE_GLASS_LEVEL_VEIL）。它排第一是因为它最轻，也是打开开关后的默认档。
+// 整体 / 气泡各一个下拉，**档位里含「关闭」**——不再有独立开关：一个下拉
+// 就把"要不要"和"多浓"说完了，也不会出现"开关开着、档位是关"的自相矛盾。
+// 顺序：关闭 → 薄纱（最轻，也是打开后的默认）→ 超薄 … 超厚。
+const SURFACE_GLASS_OPTIONS: MaterialThicknessOption[] = [
+  { label: str('material_thickness_off'), value: THICKNESS_OFF } as MaterialThicknessOption,
+  { label: str('material_level_veil'), value: SURFACE_GLASS_LEVEL_VEIL } as MaterialThicknessOption
+].concat(THICKNESS_OPTIONS.filter(
+  (o: MaterialThicknessOption): boolean => o.value !== THICKNESS_OFF));
+
 // 从省到满，四档单调包含（单测钉着）。默认自适应。
 const LIGHT_OPTIONS: MaterialLightOption[] = [
   { label: str('material_light_smooth'), value: LIGHT_SMOOTH },
@@ -138,6 +158,29 @@ export struct ChatSettingsPage {
   @StorageLink(KEY_IN_APP_BROWSER) inAppBrowser: boolean = true;
   // 厚度/光感按浅色/深色各一份，两组并列展示；当前模式那份由 overlayMaterial 自己选。
   @StorageLink(KEY_MATERIAL_THICKNESS) materialThickness: number = THICKNESS_DEFAULT;
+  // **同一个键只能有一条 @StorageLink。** 这里原来还有第二条（带 @Watch 的），
+  // 两条双向绑定指向同一个键，页面重建时后初始化的那条会把自己的默认值 false
+  // 写回 AppStorage，把用户刚打开的开关冲掉（实测"退出回来开关就关闭了"）。
+  // @Watch 并到这一条上。
+  //
+  // 顶 epoch 的用途：util 里那些读开关的纯函数没有订阅，只订阅了 epoch 的读者
+  // 靠它重绘。
+  @Watch('onSurfaceGlassToggled') @StorageLink(KEY_SURFACE_GLASS_ON)
+  surfaceGlass: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @Watch('onSurfaceGlassToggled') @StorageLink(KEY_BUBBLE_GLASS_ON)
+  bubbleGlass: boolean = BUBBLE_GLASS_ON_DEFAULT;
+  @StorageLink(KEY_SURFACE_GLASS_LEVEL) surfaceGlassLevel: number = SURFACE_GLASS_LEVEL_DEFAULT;
+  @StorageLink(KEY_BUBBLE_GLASS_LEVEL) bubbleGlassLevel: number = SURFACE_GLASS_LEVEL_DEFAULT;
+  // 取消警告框之后把 Select 拨回原值用的**短暂覆盖**。
+  //
+  // ArkUI 的 Select 在 onSelect 之后会自己保持用户点的那一项；我们没写入
+  // AppStorage，绑定值就没变化，于是它一直显示新选项（用户实测「取消了弹窗，
+  // 按钮不会切回去，需要刷新页面」）。回拨必须制造一次**真实的变化**：先把
+  // selected 覆盖成一个不同的下标，下一帧再撤掉覆盖回到真实值。
+  // -1 = 不覆盖；key 用来只影响出事的那一行，另一行不受牵连。
+  // 本页是 V1 的 @Component，用 @State（@Local 只能在 @ComponentV2 里）。
+  @State private glassSelOverride: number = -1;
+  @State private glassSelOverrideKey: string = '';
   @StorageLink(KEY_MATERIAL_LIGHT) materialLight: string = LIGHT_DEFAULT;
   @StorageLink(KEY_MATERIAL_THICKNESS_DARK) materialThicknessDark: number = THICKNESS_DEFAULT;
   // 气泡色/文字色是 theme 里的活绑定，不是状态；预览读一次 epoch 让 ArkUI 记下依赖。
@@ -167,10 +210,20 @@ export struct ChatSettingsPage {
   // 每个开关都要在这里挂号。toggleRow 只拿到 key，读值只能靠这张表——
   // 漏一个不会报错，而是**静默读到兜底那一项**：新开关会显示别人的状态，
   // 点它又按别人的值取反写自己。inAppBrowser 就这么错过一次。
+  // toggleRow 的显示值与点击取反都走这里。
+  //
+  // **兜底不能再返回某个具体设置。** 原来最后一行是 `return this.sendByEnter`：
+  // 不认识的键不报错，静默返回"回车发送"的值——新加的开关于是显示成别人的状态、
+  // 点击写进去的也是别人的取反值（实测"界面模糊质感开关还是不行"，查了半天
+  // 持久化，其实读写的根本不是同一个东西）。
+  // 现在兜底读 AppStorage：值一定是对的。有 @StorageLink 字段的键仍然走字段，
+  // 因为那条路才会在值变化时触发重绘。
   private booleanValue(key: string): boolean {
     if (key === KEY_REDUCE_ANIM) { return this.reduceAnim; }
     if (key === KEY_IN_APP_BROWSER) { return this.inAppBrowser; }
-    return this.sendByEnter;
+    if (key === KEY_SEND_BY_ENTER) { return this.sendByEnter; }
+    if (key === KEY_SURFACE_GLASS_ON) { return this.surfaceGlass; }
+    return AppStorage.get<boolean>(key) ?? false;
   }
 
   @Styles
@@ -350,7 +403,150 @@ export struct ChatSettingsPage {
       this.thicknessSelectRow(false);
       Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
       this.thicknessSelectRow(true);
+      // 界面模糊质感并在这张卡里，而不是底下另起一张无标题的卡。
+      //
+      // 它和上面两行是**同一件事的两个面**：厚度管"浮层有多厚"，这一项管"要不要
+      // 把同一套玻璃铺到列表行/气泡这些数量巨大的节点上"。分成两张卡时下面那张
+      // 没有标题，读起来像一条无关的开关（用户："不应该写在模糊质感的开关里面吗，
+      // 作为一个质感引入"）。
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.surfaceGlassCard();
     }.width('100%');
+  }
+
+  // 全局界面模糊质感。总开关 + 档位，档位只在开着时才出现——关着时那一行
+  // 除了制造"调了没反应"的困惑之外没有任何用。
+  @Builder
+  surfaceGlassCard() {
+    Column() {
+      this.glassSelectRow(str('chat_settings_surface_glass_ui'),
+        str('chat_settings_surface_glass_ui_sub'),
+        this.surfaceGlass, this.surfaceGlassLevel,
+        KEY_SURFACE_GLASS_ON, KEY_SURFACE_GLASS_LEVEL);
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      this.glassSelectRow(str('chat_settings_bubble_glass'),
+        str('chat_settings_bubble_glass_sub'),
+        this.bubbleGlass, this.bubbleGlassLevel,
+        KEY_BUBBLE_GLASS_ON, KEY_BUBBLE_GLASS_LEVEL);
+    }.width('100%');
+  }
+
+  // 一面的档位行。**下拉是这一面的唯一写入口**：选「关闭」写 on=false，
+  // 选别的写 on=true + 档位。渲染侧订阅的仍是那个布尔（ChatRow / chatEnvMirror
+  // 都挂在它上面），它在这里被严格地当成"档位 !== 关闭"的缓存来维护。
+  @Builder
+  glassSelectRow(title: string, subtitle: string, on: boolean, level: number,
+    onKey: string, levelKey: string) {
+    Row({ space: 12 }) {
+      Column({ space: 2 }) {
+        Text(title).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+        Text(subtitle).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      .alignItems(HorizontalAlign.Start).layoutWeight(1);
+      Select(SURFACE_GLASS_OPTIONS.map(
+        (o: MaterialThicknessOption): SelectOption => ({ value: o.label } as SelectOption)))
+        .selected(this.glassSelectedIndex(onKey, on, level))
+        .value(SURFACE_GLASS_OPTIONS[this.glassSelectedIndex(onKey, on, level)].label)
+        .font({ size: 15 }).fontColor(this.accent())
+        .onSelect((index: number): void => {
+          const v: number = SURFACE_GLASS_OPTIONS[index].value;
+          if (v === THICKNESS_OFF) {
+            setBoolean(onKey, false);
+            bumpSurfaceGlassEpoch();
+            return;
+          }
+          // 非「关闭」的档位一律先弹警告，确认后才生效。这不是客套：模糊每帧
+          // 实时渲染，而这个开关覆盖的是全应用数量最多的那些节点（会话行、
+          // 气泡）——09-03 真机 trace 里滤镜缓存命中率只有 4.6%，GPU 活跃段
+          // p90 恒为 100%。用户有权在付这笔电费之前知道它。
+          this.confirmGlassLevel(onKey, levelKey, v);
+        });
+    }
+    // **右内边距必须是 8，和 thicknessSelectRow 一致**：Select 的右缘由它决定，
+    // 给 16 就会比上面两行厚度的下拉往里缩 8vp，四个下拉排下来肉眼可见地错开
+    // （用户实测「这几个下拉按钮文字还对不齐」）。
+    // 上下用 10 而不是固定 height(52)：这两行的标题带副标题，是两行文字。
+    .width('100%').padding({ left: 16, right: 8, top: 10, bottom: 10 })
+    .alignItems(VerticalAlign.Center);
+  }
+
+  // 弹一次耗电/发热/掉帧的确认。取消就什么都不写——`selected()` 绑的是
+  // AppStorage 推出来的下标，没写入时下一次 build 会把 Select 拨回原值，
+  // 不需要我们手动回滚。
+  private confirmGlassLevel(onKey: string, levelKey: string, level: number): void {
+    promptAction.showDialog({
+      title: str('glass_warn_title'),
+      message: str('glass_warn_body'),
+      // color 是**必填**，且只吃 string | Resource —— 主题里的 COLOR_* 是
+      // ResourceColor（可能是 Color 枚举），类型对不上，所以这里直接引资源。
+      buttons: [
+        { text: str('cancel'), color: $r('app.color.text_secondary') },
+        { text: str('glass_warn_enable'), color: $r('app.color.primary') }
+      ]
+    }).then((res: promptAction.ShowDialogSuccessResponse): void => {
+      if (res.index !== 1) {
+        this.revertGlassSelect(onKey, this.glassOptionIndex(
+          onKey === KEY_SURFACE_GLASS_ON ? this.surfaceGlass : this.bubbleGlass,
+          onKey === KEY_SURFACE_GLASS_ON ? this.surfaceGlassLevel : this.bubbleGlassLevel));
+        return;
+      }
+      setNumber(levelKey, level);
+      setBoolean(onKey, true);
+      bumpSurfaceGlassEpoch();
+    }).catch((e: Object): void => {
+      logE(`ChatSettingsPage.confirmGlassLevel failed: ${JSON.stringify(e)}`);
+    });
+  }
+
+  private glassSelectedIndex(onKey: string, on: boolean, level: number): number {
+    if (this.glassSelOverrideKey === onKey && this.glassSelOverride >= 0) {
+      return this.glassSelOverride;
+    }
+    return this.glassOptionIndex(on, level);
+  }
+
+  // 先覆盖成一个**不同**的下标制造变化，下一帧撤掉覆盖落回真实值。
+  // 覆盖值取"真实值以外的任意一项"：真实值是 0 就用 1，否则用 0。
+  private revertGlassSelect(onKey: string, trueIndex: number): void {
+    this.glassSelOverrideKey = onKey;
+    this.glassSelOverride = trueIndex === 0 ? 1 : 0;
+    setTimeout((): void => {
+      this.glassSelOverride = -1;
+      this.glassSelOverrideKey = '';
+    }, 0);
+  }
+
+  // 关着时恒指向「关闭」那一项，不管底下存的档位是什么。
+  private glassOptionIndex(on: boolean, level: number): number {
+    if (!on) {
+      return 0;
+    }
+    const idx: number = SURFACE_GLASS_OPTIONS.findIndex(
+      (o: MaterialThicknessOption): boolean => o.value === level);
+    return idx <= 0 ? 1 : idx;
+  }
+
+
+  private onSurfaceGlassToggled(): void {
+    // **开一次 = 回到默认质感（薄纱）。**
+    //
+    // 「打开后默认薄纱」原来只靠 SURFACE_GLASS_LEVEL_DEFAULT 兜着，而那个默认
+    // 值只在**从没存过**时生效——任何调过一次档位的用户（包括所有老用户）
+    // preferences 里都躺着一个旧值，再打开开关看到的还是旧档，永远见不到默认。
+    //
+    // 拨开关是用户唯一明确表达"我要这个质感"的动作，把它定义成"回到默认"
+    // 既解决了上面那件事，也给了一条不用清数据的复位路径：调乱了，关一下再开。
+    // 想要别的档位，开着的时候再选——那次选择照旧存住，直到下次拨开关。
+    // **这里不能再做"复位薄纱"**：下拉选完档位会写 on=true，@Watch 随即触发，
+    // 复位就会把用户刚选的档位改回薄纱。改成下拉之后也不需要它了——"关闭"
+    // 本来就是选项之一，档位不会再有"存了旧值看不到默认"那个问题。
+    bumpSurfaceGlassEpoch();
+  }
+
+  private surfaceGlassLevelIndex(): number {
+    const idx: number = SURFACE_GLASS_OPTIONS.findIndex(
+      (o: MaterialThicknessOption): boolean => o.value === this.surfaceGlassLevel);
+    return idx < 0 ? 0 : idx;
   }
 
   private thicknessOf(forDark: boolean): number {
@@ -863,7 +1059,6 @@ export struct ChatSettingsPage {
             this.nightModeCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
 
-          BubbleMaterialCard();
 
           Column() {
             this.materialThicknessCard();

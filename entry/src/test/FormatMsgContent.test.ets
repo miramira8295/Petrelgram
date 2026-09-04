@@ -805,5 +805,68 @@ export default function formatMsgContentTest() {
       expect(speechStateOf(undefined)).assertEqual('');
       expect(speechTextOf(undefined)).assertEqual('');
     });
+
+    // 缩略图挂在哪一层，不同 schema 不一样。发送侧已经因为这个吃过两次亏
+    // （1.4.2 的 GIF、09-03 的实况封面），接收侧不该假定只有一种形状。
+    it('视频缩略图：包装在 video.video.thumbnail 里也认得出来', 0, () => {
+      const thumbFile: TdObject = { '@type': 'file' };
+      thumbFile['id'] = 777;
+      const thumb: TdObject = { '@type': 'thumbnail' };
+      thumb['file'] = thumbFile;
+      thumb['width'] = 240;
+      thumb['height'] = 320;
+      // 文件与缩略图都搬进了内层包装，外层只剩几何。
+      const inner: TdObject = { '@type': 'video' };
+      inner['thumbnail'] = thumb;
+      const video: TdObject = { '@type': 'video' };
+      video['video'] = inner;
+      video['width'] = 1440;
+      video['height'] = 1920;
+      const content: TdObject = { '@type': 'messageVideo' };
+      content['video'] = video;
+      const msg: TdObject = { '@type': 'message' };
+      msg['content'] = content;
+
+      const parsed = formatMsgContent(msg);
+      expect(parsed.photoFileId).assertEqual(777);
+      expect(parsed.photoWidth).assertEqual(240);
+      expect(parsed.photoHeight).assertEqual(320);
+    });
+
+    it('视频缩略图：文件放在 thumbnail.photo 里也认得出来', 0, () => {
+      const thumbFile: TdObject = { '@type': 'file' };
+      thumbFile['id'] = 888;
+      const thumb: TdObject = { '@type': 'thumbnail' };
+      thumb['photo'] = thumbFile;
+      const video: TdObject = { '@type': 'video' };
+      video['thumbnail'] = thumb;
+      video['width'] = 640;
+      video['height'] = 480;
+      const content: TdObject = { '@type': 'messageVideo' };
+      content['video'] = video;
+      const msg: TdObject = { '@type': 'message' };
+      msg['content'] = content;
+
+      const parsed = formatMsgContent(msg);
+      expect(parsed.photoFileId).assertEqual(888);
+      // 缩略图自己没报宽高时退回视频的几何（原有行为，别改坏）。
+      expect(parsed.photoWidth).assertEqual(640);
+      expect(parsed.photoHeight).assertEqual(480);
+    });
+
+    it('视频缩略图：三处都没有时退回 0 + 视频几何', 0, () => {
+      const video: TdObject = { '@type': 'video' };
+      video['width'] = 1440;
+      video['height'] = 1920;
+      const content: TdObject = { '@type': 'messageVideo' };
+      content['video'] = video;
+      const msg: TdObject = { '@type': 'message' };
+      msg['content'] = content;
+
+      const parsed = formatMsgContent(msg);
+      expect(parsed.photoFileId).assertEqual(0);
+      expect(parsed.photoWidth).assertEqual(1440);
+      expect(parsed.photoHeight).assertEqual(1920);
+    });
   });
 }

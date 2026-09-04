@@ -17,6 +17,10 @@ export class ChatEnvMirror {
   @Trace appearanceEpoch: number = 0;
   @Trace materialEpoch: number = 0;
   @Trace langEpoch: number = 0;
+  // 气泡玻璃的总开关。**源头已经从「气泡材质」换成「界面模糊质感」**
+  // （KEY_SURFACE_GLASS_ON）——旧那个开关指望的是 systemMaterial，而系统收回了
+  // HdsNav 级别以外的材质，它在这台设备上永远画不出东西。字段名保留，
+  // 因为气泡侧读的就是这个名字，改名只会制造一次无意义的大 diff。
   @Trace bubbleMaterialOn: boolean = false;
   @Trace chatContentWidth: number = 360;
   @Trace keyboardHeightVp: number = 0;
@@ -48,7 +52,7 @@ export const chatEnv: ChatEnvMirror = new ChatEnvMirror();
 
 // 镜像列管的键。数值型与布尔/字符串分开写是为了免去逐字段的类型断言噪音。
 const MIRRORED_KEYS: string[] = [
-  'appearanceEpoch', 'materialEpoch', 'languageEpoch', 'bubbleMaterialOn',
+  'appearanceEpoch', 'materialEpoch', 'languageEpoch', 'bubbleGlassOn',
   'chatContentWidthVp', 'keyboardHeightVp', 'screenWidthVp', 'screenHeightVp',
   'msgTextSize', 'bubbleRadius', 'reduceAnimations', 'powerSavingActive',
   'powerChatEffects', 'powerEffectMessage', 'powerEffectReaction',
@@ -69,7 +73,8 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
     case 'appearanceEpoch': chatEnv.appearanceEpoch = value as number; break;
     case 'materialEpoch': chatEnv.materialEpoch = value as number; break;
     case 'languageEpoch': chatEnv.langEpoch = value as number; break;
-    case 'bubbleMaterialOn': chatEnv.bubbleMaterialOn = value as boolean; break;
+    // 气泡走自己的开关（KEY_BUBBLE_GLASS_ON）：整体那一面开不开与气泡无关。
+    case 'bubbleGlassOn': chatEnv.bubbleMaterialOn = value as boolean; break;
     case 'chatContentWidthVp': chatEnv.chatContentWidth = value as number; break;
     case 'keyboardHeightVp': chatEnv.keyboardHeightVp = value as number; break;
     case 'screenWidthVp': chatEnv.screenWidthVp = value as number; break;

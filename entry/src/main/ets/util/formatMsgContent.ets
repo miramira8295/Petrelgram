@@ -417,17 +417,56 @@ function captionText(content: TdObject): string {
 
 // A video's thumbnail image, used as its "photo" for grid/album/single display
 // (actual playback is out of scope — the thumbnail + a play overlay stands in).
+// 缩略图挂在哪一层，不同 schema 不一样。
+//
+// 这套 libtdjson 的 schema 比标准写法新：inputMessageXxx 的媒体字段是**包装
+// 对象**（inputVideo/inputPhoto/…），内部才是文件（见 MessageStore.wrapInputFile
+// 上那段注释，1.4.2 的 GIF 发不出去就是它）。发送侧踩过一次，接收侧没理由假定
+// 只有一种形状——所以三处都认：
+//   video.thumbnail        标准位置
+//   video.video.thumbnail  媒体属性搬进包装之后的位置
+//   video.thumb            某些旧构建的短名
+// 找不到就返回 undefined，调用方按"没有缩略图"处理（保持老行为）。
+function thumbnailObjectOf(media: TdObject): TdObject | undefined {
+  const direct = media['thumbnail'] as TdObject | undefined;
+  if (direct !== undefined) {
+    return direct;
+  }
+  const nested = media['video'] as TdObject | undefined;
+  if (nested !== undefined) {
+    const inner = nested['thumbnail'] as TdObject | undefined;
+    if (inner !== undefined) {
+      return inner;
+    }
+  }
+  return media['thumb'] as TdObject | undefined;
+}
+
+// 缩略图里的文件对象。标准是 thumbnail.file；包装那一族把文件放在与外层
+// 同名的字段里（photo/video），所以一并认。
+function thumbnailFileOf(thumb: TdObject): TdObject | undefined {
+  const file = thumb['file'] as TdObject | undefined;
+  if (file !== undefined) {
+    return file;
+  }
+  const photo = thumb['photo'] as TdObject | undefined;
+  if (photo !== undefined) {
+    return photo;
+  }
+  return thumb['thumbnail'] as TdObject | undefined;
+}
+
 function videoThumbnail(video: TdObject | undefined): PhotoSize {
   if (video === undefined) {
     return { fileId: 0, width: 0, height: 0 };
   }
   const sourceWidth = (video['width'] as number | undefined) ?? 0;
   const sourceHeight = (video['height'] as number | undefined) ?? 0;
-  const thumb = video['thumbnail'] as TdObject | undefined;
+  const thumb = thumbnailObjectOf(video);
   if (thumb === undefined) {
     return { fileId: 0, width: sourceWidth, height: sourceHeight };
   }
-  const file = thumb['file'] as TdObject | undefined;
+  const file = thumbnailFileOf(thumb);
   const thumbWidth = (thumb['width'] as number | undefined) ?? 0;
   const thumbHeight = (thumb['height'] as number | undefined) ?? 0;
   return {

@@ -10,6 +10,13 @@ import {
 import {
   MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
 } from '../../util/overlayMaterial';
+import { shouldShowPlayerStatus } from '../../util/playerStatusGate';
+import {
+  AUTO_RETRY_DELAYS_MS, CONTROL_ACCENT, CONTROL_BAR_BG, CONTROL_TEXT_SOFT,
+  CONTROL_TRACK, CONTROL_TRACK_SOFT, CONTROL_TRACK_SOFT_FILL, DEFAULT_SPEED_IDX,
+  HEADSET_DEVICE_TYPES, QUICK_SEEK_MS, SPEEDS, SPEED_LABELS, STATUS_DELAY_MS,
+  formatMs, formatSpeed
+} from '../../util/playerChrome';
 import { materialModifier } from '../../util/materialModifier';
 import {
   FOCUS_PAUSE, FOCUS_RESUME, FOCUS_STOP, acquireAudioFocus
@@ -24,61 +31,15 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
 
-const CONTROL_BAR_BG: string = '#6e3e3e40';
-// 出错后自动重试的间隔（ms），用完为止。第一次失败多半是文件刚开始下载
-// ijk 就去开的竞态（issue #127），几百毫秒后再开通常就好了。
-const AUTO_RETRY_DELAYS_MS: number[] = [300, 900, 2000];
-// **一律字面白，不跟主题。**
-//
-// 这里曾经改成跟主题走（commit 622b1fe），理由是"控制条换了沉浸材质，浅色
-// 模式下是亮玻璃，白字看不见"。那个前提现在没有了：'viewer' 这一面已经退出
-// 沉浸材质，底色固定成深色半透明（见 util/overlayMaterial 的
-// usesImmersiveMaterial）——身后是用户随便一张照片，没有任何自适应能成立。
-// 底既然恒暗，前景就该恒白，和压在视频画面上的那些元素统一。
-const CONTROL_ACCENT: ResourceColor = '#FFFFFF';
-const CONTROL_TEXT_SOFT: ResourceColor = '#EAEEF2';
-// Seek bar, back to front: unbuffered track → downloaded span → played span.
-const CONTROL_TRACK_SOFT: string = '#804C5259';       // unbuffered remainder
-const CONTROL_TRACK_SOFT_FILL: string = '#8E969E';  // downloaded but not played
-// 已播放段和拇指同色。
-const CONTROL_TRACK: ResourceColor = '#FFFFFF';
 
-// Output device types that count as "headphones": unplugging/disconnecting one
-// of these pauses playback instead of blasting the speaker.
-const HEADSET_DEVICE_TYPES: audio.DeviceType[] = [
-  audio.DeviceType.WIRED_HEADSET,
-  audio.DeviceType.WIRED_HEADPHONES,
-  audio.DeviceType.BLUETOOTH_SCO,
-  audio.DeviceType.BLUETOOTH_A2DP
-];
 
-const SPEEDS: string[] = ['0.5', '1.0', '1.5', '2.0'];
-const SPEED_LABELS: string[] = ['0.5x', '1.0x', '1.5x', '2.0x'];
-const DEFAULT_SPEED_IDX: number = 1;
-const QUICK_SEEK_MS: number = 15_000;
+// ijk 的 info 码：视频旋转角已知/改变，extra 就是角度。
+const MEDIA_INFO_VIDEO_ROTATION_CHANGED: number = 10001;
+
+
 let nextPlayerInstanceId: number = 1;
 
-// mm:ss (or h:mm:ss for videos over an hour) for the time labels.
-function formatMs(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const mm = h > 0 ? `${m}`.padStart(2, '0') : `${m}`;
-  const ss = `${s}`.padStart(2, '0');
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
 
-// Download throughput label (bytes/sec → "1.2 MB/s" / "340 KB/s").
-function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec >= 1024 * 1024) {
-    return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
-  }
-  if (bytesPerSec >= 1024) {
-    return `${Math.round(bytesPerSec / 1024)} KB/s`;
-  }
-  return `${Math.round(bytesPerSec)} B/s`;
-}
 
 @Component
 export struct StreamingVideoPlayer {
@@ -175,6 +136,9 @@ export struct StreamingVideoPlayer {
   private active: boolean = true;
   private readonly playerInstanceId: number = nextPlayerInstanceId++;
   @State status: string = str('player_buffering_dots');
+  // status 有内容 ≠ 立刻显示：起播前要先过 STATUS_DELAY_MS 那道门。
+  @State statusVisible: boolean = false;
+  private statusDelayTimer: number = -1;
   @State hasError: boolean = false;
   @State errorDetail: string = '';
   @State isPrepared: boolean = false;
@@ -193,6 +157,10 @@ export struct StreamingVideoPlayer {
   @State speedIdx: number = DEFAULT_SPEED_IDX;
   @State isCompleted: boolean = false;
   @State decodedAspectRatio: number = 0;
+  // 容器里的旋转角（0/90/180/270）。竖着拍的视频在文件里是横的 1920x1440，
+  // 真正的显示方向写在 display matrix 里；ijk 通过 info 10001 把它报上来。
+  // 不读它就会按 1920x1440 排版，画面横躺（用户实测「播放还是横向的」）。
+  @State videoRotationDeg: number = 0;
   @State viewportWidth: number = 1;
   @State viewportHeight: number = 1;
   @State seekFeedbackSide: number = 0; // -1 = rewind, 1 = forward
@@ -202,6 +170,7 @@ export struct StreamingVideoPlayer {
 
   aboutToAppear(): void {
     this.active = true;
+    this.armStatusDelay();
     if (this.surfaceContext !== null && this.player === null) {
       this.retryTimer = setTimeout((): void => {
         this.retryTimer = -1;
@@ -243,8 +212,27 @@ export struct StreamingVideoPlayer {
     this.release();
   }
 
+  // 重新上膛「延迟出现」的门：先藏起来，STATUS_DELAY_MS 之后仍未就绪才显示。
+  // 每次起播/换届都要调一次——不调的话上一条视频留下的 statusVisible=true 会
+  // 让下一条开局就把卡片画出来，正是这次要消掉的那一闪。
+  private armStatusDelay(): void {
+    this.statusVisible = false;
+    if (this.statusDelayTimer !== -1) {
+      clearTimeout(this.statusDelayTimer);
+    }
+    this.statusDelayTimer = setTimeout((): void => {
+      this.statusDelayTimer = -1;
+      // 这期间已经就绪 / 出错 / 状态被清掉 / 组件没了，就不必再冒出来。
+      if (!this.active || this.status === '' || this.hasError || this.isPrepared) {
+        return;
+      }
+      this.statusVisible = true;
+    }, STATUS_DELAY_MS);
+  }
+
   private resetReusedUi(): void {
     this.status = str('player_buffering_dots');
+    this.armStatusDelay();
     this.hasError = false;
     this.errorDetail = '';
     this.isPrepared = false;
@@ -259,6 +247,7 @@ export struct StreamingVideoPlayer {
     this.dragValueMs = 0;
     this.isCompleted = false;
     this.decodedAspectRatio = 0;
+    this.videoRotationDeg = 0;
     this.seekFeedbackVisible = false;
     this.speedFeedbackVisible = false;
   }
@@ -341,6 +330,10 @@ export struct StreamingVideoPlayer {
       clearTimeout(this.firstFrameTimer);
       this.firstFrameTimer = -1;
     }
+    if (this.statusDelayTimer !== -1) {
+      clearTimeout(this.statusDelayTimer);
+      this.statusDelayTimer = -1;
+    }
     if (this.progressUnsub !== null) {
       this.progressUnsub();
       this.progressUnsub = null;
@@ -407,6 +400,7 @@ export struct StreamingVideoPlayer {
     this.isPrepared = false;
     this.videoVisible = false;
     this.status = str('player_preparing');
+    this.armStatusDelay();
     this.bufferedPercent = this.localPath !== '' ? 100 : 0;
     this.downloadSpeed = 0;
     this.lastBufferedBytes = 0;
@@ -513,6 +507,15 @@ export struct StreamingVideoPlayer {
       };
       const infoListener: OnInfoListener = {
         onInfo: (what: number, extra: number): void => {
+          if (what === MEDIA_INFO_VIDEO_ROTATION_CHANGED) {
+            const deg: number = ((extra % 360) + 360) % 360;
+            logI(`[VideoRot] rotation=${deg} decoded=${this.decodedAspectRatio.toFixed(3)}` +
+              ` declared=${this.videoWidth}x${this.videoHeight}`);
+            if (this.videoRotationDeg !== deg) {
+              this.videoRotationDeg = deg;
+            }
+            return;
+          }
           if (what === 701) {
             this.status = str('player_buffering');
           } else if (what === 702 || what === 3) {
@@ -573,6 +576,9 @@ export struct StreamingVideoPlayer {
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'enable-accurate-seek', '1');
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'soundtouch', '1');
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'mediacodec-all-videos', '1');
+      // 不开 mediacodec-auto-rotate：这套移植版上它**不生效**（实测 info 10001
+      // 报了 rotation=90，出画仍是 1920x1440 横的），而万一哪天生效了，就会和
+      // 下面 ArkTS 侧的旋转叠成两次。旋转只在一个地方做。
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_FORMAT, 'timeout', '60000000');
       player.setDataSource(sourceUrl);
       player.prepareAsync();
@@ -897,14 +903,23 @@ export struct StreamingVideoPlayer {
     const pixelAspect = sarNum > 0 && sarDen > 0 ? sarNum / sarDen : 1;
     const aspect = (width * pixelAspect) / height;
     if (Number.isFinite(aspect) && aspect > 0 && Math.abs(aspect - this.decodedAspectRatio) > 0.001) {
+      logI(`[VideoRot] decoded=${width}x${height} sar=${sarNum}/${sarDen}` +
+        ` rot=${this.videoRotationDeg} declared=${this.videoWidth}x${this.videoHeight}`);
       this.decodedAspectRatio = aspect;
     }
   }
 
+  // 旋转 90/270 时，解码出来的宽高是**转置**的，直接拿来排版就会横躺。
+  private quarterTurned(): boolean {
+    return this.videoRotationDeg === 90 || this.videoRotationDeg === 270;
+  }
+
   private displayAspectRatio(): number {
     if (this.decodedAspectRatio > 0) {
-      return this.decodedAspectRatio;
+      return this.quarterTurned() ? 1 / this.decodedAspectRatio : this.decodedAspectRatio;
     }
+    // 服务端带来的 width/height 已经是**显示**尺寸（发送侧按静图的真实宽高填的，
+    // 见 MessageStore.mediaInputContent），所以这一支不需要再转置。
     if (this.videoWidth > 0 && this.videoHeight > 0) {
       return this.videoWidth / this.videoHeight;
     }
@@ -921,6 +936,18 @@ export struct StreamingVideoPlayer {
     const aspect = this.displayAspectRatio();
     const viewportAspect = this.viewportWidth / this.viewportHeight;
     return viewportAspect > aspect ? this.viewportHeight : this.viewportWidth / aspect;
+  }
+
+  // 渲染面**自己**的尺寸。解码器交出来的画面是未旋转的（横躺的 1920x1440），
+  // 所以节点要按那个方向给尺寸，再整体转 90°——转完正好落回 surfaceWidth ×
+  // surfaceHeight 那个竖着的框。只改 aspect 不转节点的话，横画面会被拉进竖框里
+  // （用户实测「还是横着的，但是拉伸了」）。
+  private surfaceNodeWidth(): number {
+    return this.quarterTurned() ? this.surfaceHeight() : this.surfaceWidth();
+  }
+
+  private surfaceNodeHeight(): number {
+    return this.quarterTurned() ? this.surfaceWidth() : this.surfaceHeight();
   }
 
   private posterSrc(): string {
@@ -1104,9 +1131,19 @@ export struct StreamingVideoPlayer {
           .opacity(this.hasError ? 0.54 : (this.liveMode ? 1 : 0.88));
       }
       XComponent({ id: this.componentId(), type: XComponentType.SURFACE, libraryname: 'ijkplayer_napi' })
-        .width(this.surfaceWidth()).height(this.surfaceHeight())
         .opacity(this.videoVisible ? 1 : 0)
         .animation({ duration: 180, curve: Curve.EaseOut })
+        // ── 下面这三样**故意写在 .animation() 之后**，不进动画 ──────────────
+        //
+        // .animation() 的作用域是它**上面**的属性。旋转角是首帧解出来之后
+        // （ijk 的 info 10001）才知道的，是一次 0 → 90 的跳变；写在动画上面
+        // 这一跳就被动画成 180ms 的转场，而那时画面还没解出来——屏幕上就是
+        // 一块黑色的面在转（用户实测「实况照片打开有个旋转的黑块」）。
+        // 尺寸同理：转 90° 时宽高要互换，跟着动画就是一块黑面边转边变形。
+        //
+        // 绕自身中心转（ArkUI 默认轴心就是中心），父级 Stack 居中，转完与框重合。
+        .width(this.surfaceNodeWidth()).height(this.surfaceNodeHeight())
+        .rotate({ angle: this.videoRotationDeg })
         .onLoad((context: object) => {
           this.surfaceContext = context;
           this.initPlayer(context);
@@ -1132,7 +1169,7 @@ export struct StreamingVideoPlayer {
       }
       // Actual prepare/stall state: centered and explicit, while the poster
       // remains visible underneath instead of flashing a featureless black frame.
-      if (this.status !== '' && !this.hasError) {
+      if (shouldShowPlayerStatus(this.status, this.hasError, this.statusVisible, this.isPrepared)) {
         if (this.embedded) {
           // Embedded (chat-bubble) buffering indicator: a plain ring centered
           // over the video — no percentage text, no dark card behind it, just

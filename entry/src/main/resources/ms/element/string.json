@@ -11727,6 +11727,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d saat"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "Kabur antara muka"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "Kaca kabur pada Kenalan, Tetapan dan Profil, sepadan dengan bar input. Dilukis setiap bingkai — matikan jika tersekat-sekat."
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "Tahap kabur"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "Enjin main balik"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "Guna pemain sistem"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "Menyokong video HDR. Eksperimen — matikan untuk kembali"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "Video julat dinamik tinggi"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "Tirai"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "Antara muka"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "Senarai sembang, kenalan dan tetapan"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "Gelembung"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "Gelembung mesej — paling banyak dan paling mahal"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "Bateri lebih cepat habis"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "Kabur dipaparkan setiap bingkai: penggunaan bateri dan haba meningkat ketara, dan bingkai boleh tergugur semasa menatal. Jika peranti panas atau tersekat, kembali dan pilih «Mati»."
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "Tetap hidupkan"
     }
   ]
 }

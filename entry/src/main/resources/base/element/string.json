@@ -11775,6 +11775,66 @@
     {
       "name": "px_auto_switch_seconds",
       "value": "%1$d 秒"
+    },
+    {
+      "name": "chat_settings_surface_glass",
+      "value": "界面模糊质感"
+    },
+    {
+      "name": "chat_settings_surface_glass_sub",
+      "value": "给联系人、设置、我的页面铺一层毛玻璃，质感与输入栏一致。每帧实时渲染，低端机或觉得卡时请关闭。"
+    },
+    {
+      "name": "chat_settings_surface_glass_level",
+      "value": "模糊档位"
+    },
+    {
+      "name": "ms_video_engine_group",
+      "value": "播放引擎"
+    },
+    {
+      "name": "ms_video_engine_system",
+      "value": "使用系统播放器"
+    },
+    {
+      "name": "ms_video_engine_system_sub",
+      "value": "支持 HDR 视频。实验中，播放异常可关闭此项切回原播放器"
+    },
+    {
+      "name": "player_hdr_a11y",
+      "value": "高动态范围视频"
+    },
+    {
+      "name": "material_level_veil",
+      "value": "薄纱"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui",
+      "value": "整体"
+    },
+    {
+      "name": "chat_settings_surface_glass_ui_sub",
+      "value": "会话列表、联系人、设置"
+    },
+    {
+      "name": "chat_settings_bubble_glass",
+      "value": "气泡"
+    },
+    {
+      "name": "chat_settings_bubble_glass_sub",
+      "value": "会话内的消息气泡。数量最多，最费电"
+    },
+    {
+      "name": "glass_warn_title",
+      "value": "开启后会更耗电"
+    },
+    {
+      "name": "glass_warn_body",
+      "value": "模糊质感每帧实时渲染，会明显增加耗电与发热，滚动时也可能掉帧。设备发烫或卡顿时，回到这里选「关闭」即可。"
+    },
+    {
+      "name": "glass_warn_enable",
+      "value": "仍要开启"
     }
   ]
 }

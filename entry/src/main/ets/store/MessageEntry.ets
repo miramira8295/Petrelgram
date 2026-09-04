@@ -56,6 +56,11 @@ export interface MessageEntry {
   replyToMessageId: number;
   replySenderName: string;
   replyText: string;
+  // 引用块左侧那张缩略图的本地路径（贴纸/图片/视频封面共用，见 util/replyThumb）。
+  // 空串 = 这条被引用的消息没有可画的图，引用块只有两行字。
+  replyThumbPath: string;
+  // 贴纸要 Contain + 透明底，图片视频要 Cover 铺满，靠这一位区分。
+  replyThumbSticker: boolean;
   sendState: string;
   albumId: string;
   textEntities: TdObject[];
@@ -252,7 +257,9 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     isUnsupportedMessage: m.isUnsupportedMessage,
     isVideoChatStarted: m.isVideoChatStarted,
     replyToMessageId: m.replyToMessageId,
-    replySenderName: m.replySenderName, replyText: m.replyText, sendState: m.sendState,
+    replySenderName: m.replySenderName, replyText: m.replyText,
+    replyThumbPath: m.replyThumbPath, replyThumbSticker: m.replyThumbSticker,
+    sendState: m.sendState,
     albumId: m.albumId, textEntities: m.textEntities,
     inlineCustomEmojiIds: m.inlineCustomEmojiIds.slice(),
     inlineCustomEmojiPaths: m.inlineCustomEmojiPaths.slice(),
@@ -1021,6 +1028,8 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     replyToMessageId: replyId(message),
     replySenderName: '',
     replyText: replyQuoteText(message),
+    replyThumbPath: '',
+    replyThumbSticker: false,
     sendState: isOutgoing ? outgoingState(message) : 'none',
     albumId: albumIdOf(message),
     textEntities: c.entities,

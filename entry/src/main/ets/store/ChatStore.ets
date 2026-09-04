@@ -640,6 +640,14 @@ export class ChatStore {
   private onReadInbox(update: TdObject): void {
     const id = update['chat_id'] as number;
     const e = this.chats.get(id);
+    // 【临时探针 #188，验完就删】三件事：更新到没到、会话在不在表里、
+    // 在不在归档桶里（不在桶里 flushNotify 就不会刷归档那份快照）。
+    logW(`[ReadDiag] readInbox chat=${id} known=${e !== undefined}` +
+      ` unread=${(update['unread_count'] as number | undefined) ?? -1}` +
+      ` lastRead=${(update['last_read_inbox_message_id'] as number | undefined) ?? -1}` +
+      ` lastMsg=${e !== undefined ? e.lastMessageId : -1}` +
+      ` inArchive=${this.positions.get('archive')?.has(id) === true}` +
+      ` inMain=${this.positions.get('main')?.has(id) === true}`);
     if (e === undefined) {
       return;
     }
