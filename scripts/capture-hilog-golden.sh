@@ -37,6 +37,22 @@
 #   压短之后拿全量缓冲交叉核对过：短式 72 行 = 全量里十二个标签的总行数 72，
 #   一条不漏（脚本每次开跑前也会自己再验一次，见下面的自检）。
 #
+# 【四】手动走的样本**不可复现**，所以有 --auto。
+#   黄金样本的全部用途是 diff：这一轮和上一轮比，多出来/少掉/顺序变了的打点
+#   就是回归的线索。可手动操作做不到两轮一致——每次滑动的幅度、停顿的时长、
+#   进的是哪个会话都不一样，diff 出来全是噪声，真正的回归反而被淹掉。
+#   更糟的是聊天列表**一直在重排**（这个账号里的群几秒就换序），按坐标点会
+#   进错会话——写这个脚本时就点错过一次。
+#   --auto 用两样东西把这件事变确定：
+#     · 进会话一律走深链接 `tg://openmessage?channel_id=..&msg_id=..`
+#       （应用注册了 tg:// scheme，见 module.json5 与 util/deepLink.ets），
+#       每轮进的都是同一个会话的同一条消息，且**完全不碰聊天列表**；
+#     · 步骤 3 的"引用跳转"也用深链接跳到指定消息——它走的是与点引用气泡
+#       完全相同的那条路（jumpToMessageId → 锚点 → 高亮闪烁），但不需要在
+#       消息内容上盲点，避免误触链接/媒体/长按菜单。
+#   全程只有一次坐标点击（右下角 ↓ 回底按钮，位置固定），其余全是深链接、
+#   固定像素的滑动、以及 HOME/返回键。
+#
 # 输出：docs/hilog-golden/<label>/NN-<step>.log + <label>/meta.txt
 # 这些是诊断产物、不是源码，默认落在 gitignore 的 docs/ 下面。
 
@@ -45,6 +61,7 @@ set -u
 LABEL=""
 DEVICE=""
 OUTROOT="docs/hilog-golden"
+AUTO=0
 DIFF_A=""
 DIFF_B=""
 
@@ -59,7 +76,10 @@ usage() {
   cat <<'EOF'
 用法:
   capture-hilog-golden.sh -l <label> [-t <device>] [-o <outdir>]
-      走一整轮场景，按步骤分段存下黄金样本。
+      手动模式：走一整轮场景，每步提示你在手机上操作。
+  capture-hilog-golden.sh -l <label> --auto [-t <device>]
+      自动模式：用 uinput/深链接自己驱动，**推荐**。理由见文件头【四】。
+      需要 <outdir>/targets.env（本机私有，不进仓库；格式见该文件注释）。
   capture-hilog-golden.sh --diff <labelA> <labelB> [-o <outdir>]
       把两轮样本逐步骤 diff（只比标签行，忽略时间戳与 pid）。
 
@@ -72,6 +92,7 @@ EOF
 while [ $# -gt 0 ]; do
   case "$1" in
     -l) LABEL="$2"; shift 2;;
+    --auto) AUTO=1; shift;;
     -t) DEVICE="$2"; shift 2;;
     -o) OUTROOT="$2"; shift 2;;
     --diff) DIFF_A="$2"; DIFF_B="$3"; shift 3;;
@@ -178,6 +199,135 @@ mkdir -p "$OUT"
   echo "tags:   $TAGS"
 } > "$OUT/meta.txt"
 
+# ── 自动模式：目标配置与动作原语 ──────────────────────────────────────
+TARGETS="$OUTROOT/targets.env"
+if [ "$AUTO" -eq 1 ]; then
+  if [ ! -f "$TARGETS" ]; then
+    echo "自动模式需要 $TARGETS，但它不存在。"
+    echo "它放的是本机账号里的会话 id / 消息 id（隐私，不进仓库），"
+    echo "首次使用要自己填一份——需要的字段与取法见 --help 或脚本注释。"
+    exit 1
+  fi
+  # shellcheck disable=SC1090
+  . "$TARGETS"
+  for V in CHAT_MAIN MSG_OLD MSG_NEW CHAT_UNREAD FAB_X FAB_Y; do
+    eval "VAL=\${$V:-}"
+    if [ -z "$VAL" ]; then echo "targets.env 缺字段：$V"; exit 1; fi
+  done
+fi
+
+# 等待。sleep 在个别 shell 下不可用，退回 ping 计时。
+nap() {
+  sleep "$1" 2>/dev/null || ping -n "$(( $1 + 1 ))" 127.0.0.1 >/dev/null 2>&1
+}
+
+# 深链接进会话。msg_id 传 0 表示只开会话、不跳消息（走未读分割线那条路）。
+open_chat() {
+  local channel="$1" msg="$2"
+  if [ "$msg" = "0" ]; then
+    HDC shell "aa start -U 'tg://openmessage?channel_id=$channel'" >/dev/null 2>&1
+  else
+    HDC shell "aa start -U 'tg://openmessage?channel_id=$channel&msg_id=$msg'" >/dev/null 2>&1
+  fi
+}
+
+# 往回翻一屏（手指从上往下拖 = 看更早的消息）。固定像素，保证每轮一致。
+swipe_older() {
+  HDC shell "uinput -T -m 660 900 660 2300 600" >/dev/null 2>&1
+}
+
+tap() { HDC shell "uinput -T -c $1 $2" >/dev/null 2>&1; }
+key_home() { HDC shell "uinput -K -d 1 -u 1" >/dev/null 2>&1; }
+key_back() { HDC shell "uinput -K -d 2 -u 2" >/dev/null 2>&1; }
+
+# ── 组合动作 ──────────────────────────────────────────────────────────
+# 冷进 = **真的冷启动**：先把应用整个停掉再深链接进去。
+#
+# 走过的两条弯路，都留在这儿免得再来一遍：
+#  · 直接深链接到"当前已经打开的那个会话"是无操作，一行日志都没有；
+#  · 改成"先按返回键退回列表再深链接"也不行——返回键并不总能把 ChatPage
+#    弹掉（会被置顶条之类先吃掉），于是深链接落到还活着的页面上，被当成
+#    **页内跳转**处理，raw.log 里看到的是 [Jump80] jumpToMessageId 而不是
+#    [InitialPage]。这一步要测的恰恰是首屏那条路，页内跳转不算数。
+# force-stop 之后 pid 会变，所以 PID 是在这一步跑完之后才解析的（见主流程）。
+do_cold_enter() { HDC shell "aa force-stop $PKG" >/dev/null 2>&1; nap 3; open_chat "$CHAT_MAIN" "$MSG_OLD"; }
+# 往回翻五屏。
+do_scroll5() { swipe_older; nap 1; swipe_older; nap 1; swipe_older; nap 1; swipe_older; nap 1; swipe_older; }
+# 切后台放 30 秒再回来。原方案写的是 3 分钟，缩短到 30 秒——超过缓冲上限的风险
+# 比多等两分半更实在，而"切后台再恢复"这条路径 30 秒已经足够走完。
+do_background() { key_home; nap 30; open_chat "$CHAT_MAIN" 0; }
+
+# ── 自动模式的采集骨架：全程只清一次、只 dump 一次，事后按时间戳切段 ──────
+#
+# 【为什么不是「每步清空 → 动作 → 等 → dump」】
+# 第一版就是那么写的，结果六步里总有两三步是空的或缺关键打点。原因是结构性的：
+# 应用处理深链接、跳转、翻页都是异步的，快一点慢一点，打点就落到**下一步**的
+# 窗口里去了——而且两个文件看起来都「有内容」，不逐条查根本发现不了。实测见过
+# 步骤 3 的 [Jump80] 出现在 04-jump-to-latest.log 的第一行。
+#
+# 改成：开跑前清一次缓冲，每步只记下**动作开始前的设备时刻**，六步跑完整段
+# dump 一次，再按这些时刻把行切进各自的文件。迟到的日志按它自己的时间戳落回
+# 正确的格子，这个失败模式整个消失。代价只是多存一份原始 dump（raw.log），
+# 那反而有用：切段切错了还能回去看。
+
+BOUNDS=""   # "名字|设备时刻" 每步一行
+
+dev_now() { HDC shell "date '+%m-%d %H:%M:%S.%3N'" 2>/dev/null | tr -d ''; }
+
+# 记边界 → 跑动作 → 等它稳定。不 dump。
+astep() {
+  local n="$1" name="$2" settle="$3"; shift 3
+  local t; t="$(dev_now)"
+  BOUNDS="$BOUNDS$(printf '%02d' "$n")-$name|$t
+"
+  echo "第 $n 步：$name（$t 起）"
+  "$@"
+  nap "$settle"
+}
+
+# 六步跑完之后：整段 dump，按边界切段，每段各自核对该有的打点。
+finish_auto() {
+  local raw="$OUT/raw.log"
+  HDC shell "hilog -x -P $PID -e '$TAGS'" 2>/dev/null | tr -d '' > "$raw"
+  echo
+  echo "整段 dump：$raw（$(wc -l <"$raw" | tr -d ' ') 行）"
+  echo "按时刻切段："
+  local prev_name="" prev_t=""
+  while IFS='|' read -r nm t; do
+    [ -z "$nm" ] && continue
+    if [ -n "$prev_name" ]; then split_one "$prev_name" "$prev_t" "$t"; fi
+    prev_name="$nm"; prev_t="$t"
+  done <<EOF
+$BOUNDS
+EOF
+  [ -n "$prev_name" ] && split_one "$prev_name" "$prev_t" "99-99 99:99:99.999"
+}
+
+# 把 raw.log 里时间戳落在 [from, to) 的行抽进这一步的文件。hilog 的时间戳是
+# "MM-DD HH:MM:SS.mmm"，同一天内按字符串比大小就是按时间比。
+split_one() {
+  local nm="$1" from="$2" to="$3"
+  local f="$OUT/$nm.log"
+  awk -v a="$from" -v b="$to" '{ ts = substr($0,1,18); if (ts >= a && ts < b) print }' \
+    "$OUT/raw.log" > "$f"
+  local lines; lines="$(wc -l <"$f" | tr -d ' ')"
+  local want=""
+  case "$nm" in
+    *cold-enter*)  want="InitialPage";;
+    *scroll-up*)   want="Anchor|NewerFire";;
+    *reply-jump*)  want="Jump80";;
+    *jump-to-latest*) want="JumpLatest|Bottom62|Jump80";;
+    *enter-unread*) want="InitialPage";;
+    *background*)  want="InitialPage|Anchor|NewerFire|Follow62";;
+  esac
+  if [ "$lines" -eq 0 ]; then
+    echo "  $nm: 0 行 ⚠ 这一步没触发任何打点"
+  elif [ -n "$want" ] && ! grep -qE "$want" "$f"; then
+    echo "  $nm: $lines 行 ⚠ 没有该有的 \"$want\"——动作可能没生效"
+  else
+    echo "  $nm: $lines 行"
+  fi
+}
 # ── 一步 = 清空缓冲 → 你操作 → 回车 → dump ───────────────────────────────
 step() {
   local n="$1"; shift
@@ -205,6 +355,38 @@ step() {
   fi
 }
 
+if [ "$AUTO" -eq 1 ]; then
+  cat <<EOF
+
+自动采集黄金样本：$LABEL
+输出目录：$OUT
+目标：会话 $CHAT_MAIN（锚点 $MSG_OLD，跳转 $MSG_NEW）、未读会话 $CHAT_UNREAD
+
+全程约 60 秒，不需要你动手。除了右下角 ↓ 按钮那一次点击，其余全是深链接、
+固定像素滑动和 HOME 键——不碰聊天列表、不点消息内容。
+EOF
+  # 全程只清这一次。之后六步只记边界、不 dump。
+  HDC shell "hilog -r" >/dev/null 2>&1
+  astep 1 cold-enter-large-chat 12 do_cold_enter
+  # 第 1 步做的是 force-stop + 冷启动，pid 变了，重新解析一次；后面所有步骤
+  # 与最终 dump 都用这个新 pid。第 1 步自己的日志也是这个进程打的，不会漏。
+  PID="$(HDC shell "pidof $PKG" 2>/dev/null | tr -d '' | awk '{print $1}')"
+  if [ -z "$PID" ]; then echo "冷启动后应用没起来，采集中止。"; exit 1; fi
+  echo "  （冷启动后新 pid: $PID）"
+  astep 2 scroll-up-3-pages      8 do_scroll5
+  astep 3 reply-jump            12 open_chat "$CHAT_MAIN" "$MSG_NEW"
+  astep 4 jump-to-latest         8 tap "$FAB_X" "$FAB_Y"
+  astep 5 enter-unread-chat     12 open_chat "$CHAT_UNREAD" 0
+  astep 6 background-resume     10 do_background
+  finish_auto
+  echo
+  echo "────────────────────────────────────────────────────────────"
+  echo "采完了：$OUT"
+  ls -1 "$OUT" | sed 's/^/  /'
+  echo
+  echo "下一步：改完某一批之后 -l after-xxx 重录，再 --diff $LABEL after-xxx。"
+  exit 0
+fi
 cat <<EOF
 
 采集黄金样本：$LABEL
