@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "Cerrado"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "Guardar archivos en la carpeta de descargas que elegiste necesita acceso permanente de lectura y escritura"
     }
   ]
 }

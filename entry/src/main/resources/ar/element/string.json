@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "مغلقة"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "يتطلب حفظ الملفات في مجلد التنزيل الذي اخترته إذن قراءة وكتابة دائمًا لهذا المجلد"
     }
   ]
 }

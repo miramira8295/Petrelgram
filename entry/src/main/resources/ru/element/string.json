@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "Закрыт"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "Для сохранения файлов в выбранную папку нужен постоянный доступ к ней на чтение и запись"
     }
   ]
 }

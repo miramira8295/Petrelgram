@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "Kapatıldı"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "Dosyaları seçtiğiniz indirme klasörüne kaydetmek, o klasöre kalıcı okuma ve yazma izni gerektirir"
     }
   ]
 }

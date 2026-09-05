@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "終了済み"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "選択したダウンロードフォルダーへのファイル保存には、そのフォルダーの読み書き権限を継続して保持する必要があります"
     }
   ]
 }

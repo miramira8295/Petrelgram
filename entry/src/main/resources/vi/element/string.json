@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "Đã đóng"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "Lưu tệp vào thư mục tải xuống bạn đã chọn cần quyền đọc và ghi lâu dài với thư mục đó"
     }
   ]
 }

@@ -11827,6 +11827,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "Closed"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "Saving files to the download folder you chose needs lasting read and write access to it"
     }
   ]
 }

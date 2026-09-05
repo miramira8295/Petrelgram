@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "Fermée"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "Enregistrer des fichiers dans le dossier de téléchargement choisi nécessite un accès durable en lecture et écriture"
     }
   ]
 }

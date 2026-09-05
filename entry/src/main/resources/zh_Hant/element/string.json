@@ -11823,6 +11823,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "已關閉"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "儲存檔案到你選擇的下載目錄需要長期保留該目錄的讀寫授權"
     }
   ]
 }

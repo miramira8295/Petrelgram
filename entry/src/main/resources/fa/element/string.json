@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "بسته شد"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "ذخیره فایل‌ها در پوشه دانلود انتخابی شما به دسترسی دائمی خواندن و نوشتن به آن پوشه نیاز دارد"
     }
   ]
 }

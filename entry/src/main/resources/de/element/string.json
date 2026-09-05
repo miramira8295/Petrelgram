@@ -11807,6 +11807,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "Beendet"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "Zum Speichern von Dateien im gewählten Download-Ordner ist dauerhafter Lese- und Schreibzugriff darauf nötig"
     }
   ]
 }

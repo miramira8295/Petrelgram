@@ -11855,6 +11855,10 @@
     {
       "name": "chat_header_secret_closed",
       "value": "已关闭"
+    },
+    {
+      "name": "FILE_ACCESS_PERSIST_reason",
+      "value": "保存文件到你选择的下载目录需要长期保留该目录的读写授权"
     }
   ]
 }
