@@ -10,11 +10,15 @@ import {
   CHAT_TOP_BANNER_BOTTOM_GAP, CHAT_TOP_BANNER_DIVIDER_HEIGHT, CHAT_TOP_BANNER_ROW_HEIGHT,
   ChatChromeGeometryInput, chatTopBannerHeight
 } from '../../util/ChatChromeGeometry';
+import { LiveTopCardController } from './LiveTopCardController';
 
 // 消息列表上方那张浮卡：置顶消息条 + 直播状态条，两条共用一张卡。
 //
-// 从 ChatPage 搬出来。它是纯展示——只有两个动作（点置顶条定位、点直播条进入），
-// 两者都要碰 store、scroller 和跳转守卫，留在页面里，这里只回调。
+// 从 ChatPage 搬出来。它是纯展示——只有两个动作（点置顶条定位、点直播条进入）。
+// B5 更正：这两个动作原来那句"留在页面里"已经不准了——它们连同整簇状态机搬进了
+// LiveTopCardController；页面只留下它们碰的那部分共享真源（scroller、
+// pendingJumpId）。本层的角色一个字没变：只发回调，@Event → ChatPage →
+// topCard.onPinnedTap() / topCard.onLiveStreamTap()。
 //
 // 进度格的滑动窗口算术搬去了 util/pinnedSegments，单测钉住了那几个边界。
 
@@ -30,6 +34,10 @@ const LIVE_ACCENT_PRESSED: string = '#E93652';
 // @Param（引用 + 单向同步）在这里是等价变换，零行为变更。
 // build() 里没有任何自定义子组件（全是内置组件），不触及「V2 普通组件挂 V1
 // @Reusable 子组件会静默不建节点」那个坑。
+//
+// B5 更正：上面那句"入参全是 string/number/boolean"说的是 B2 当时的形状。B5 之后
+// 那 13 个标量入参已被一个 LiveTopCardController 引用整体取代，只剩 materialEpoch
+// 还是标量；@Param 收控制器引用这件事本身仍是"引用 + 单向同步"，与 B2 结论一致。
 @ComponentV2
 export struct TopBanners {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
@@ -39,27 +47,34 @@ export struct TopBanners {
   // 组件构造传参。纪元变化的路径从「宿主自订阅」变成「ChatPageChrome → ChatPage
   // → 宿主」，多两次 === 比较，无行为差。
   @Param materialEpoch: number = 0;
-  // 下面 13 个入参在 B5 会被一个 @Require @Param topCard: LiveTopCardController
-  // 整体取代；本批只换装饰器体系，接口形状不动。
-  // 默认值是 V2 的要求（不带默认值的 @Param 必须配 @Require），取值对齐 ChatPage
-  // 侧同名字段的初值——调用点这 13 个实际上全都显式传了。
-  // 置顶条
-  @Param pinnedPreview: string = '';
-  @Param pinnedCount: number = 0;
-  @Param pinnedCycle: number = 0;
-  // 'loading' | 'ready' | 'error'
-  @Param pinnedLoadState: string = 'loading';
-  @Param pinnedJumpBusy: boolean = false;
-  // 直播条
-  @Param liveGroupCallId: number = 0;
-  @Param liveCallIsActive: boolean = false;
-  @Param liveCallIsRtmp: boolean = false;
-  @Param liveParticipantCount: number = 0;
-  @Param livePulseExpanded: boolean = false;
-  @Param liveDialogOpening: boolean = false;
-  @Param liveNavigationBusy: boolean = false;
-  // 两条都还没定下来时显示的同步态。
-  @Param topCardLoadingVisible: boolean = false;
+  // 这张卡的全部显示态，一个 @ObservedV2 控制器（B5 批）。置顶条读它的 pinned*
+  // 五个 @Trace、直播条读 live* 七个，另加一个 topCardLoadingVisible——字段名与取值
+  // 和搬之前的 13 个标量 @Param 一一对应，只是住的地方从 ChatPage 的 @Local 换成了
+  // 控制器上的 @Trace。原来挂在这两个字段上的注释一并留下：pinnedLoadState 的取值
+  // 是 'loading' | 'ready' | 'error'；topCardLoadingVisible 是"两条都还没定下来时
+  // 显示的同步态"。
+  //
+  // 【为什么值得换】改前这 13 个值住在页面里：任何一个变化都要先重跑 ChatPage 的
+  // chatTitleBarBottom 闭包，再逐个做 13 次 @Param 比较，最后才轮到本组件。最密的
+  // 那一个是 livePulseExpanded——直播条只要亮着就每 780ms 翻一次，一次呼吸动画的
+  // 代价是整页一轮依赖重算。改后本组件直接持有控制器引用、在自己的 build() 里读
+  // @Trace：翻转只刷新读到它的那几个节点（竖条的 opacity/scale + 那颗圆点），
+  // ChatPage 一个字都不读，13 次比较也一起消失。
+  // 只把字段搬进控制器、读点还留在页面的话，收益就只有行数——本层直读才是 B5 真正
+  // 缩小重渲染半径的地方。
+  //
+  // 【纪律】只能在 build()、本组件的 @Builder、以及被它们**同步调用**的私有方法里
+  // 读 this.topCard.xxx。@Trace 的订阅是在节点 build 的那一刻按"这次读过谁"记下来
+  // 的：一旦在 build 之外（生命周期回调、事件回调、字段初始化器）把值抄进局部变量
+  // 或普通字段，依赖就不会建立，值变了这里不刷新。下面的 hasContent / liveShowing /
+  // containerHeight / onlineText 都只从 build/@Builder 同步调用，读发生在 build 期
+  // 间，依赖照常收集。
+  //
+  // 不带默认值：@Require 已经保证调用点必须传（同 FloatingDateOverlay 的
+  // `@Require @Param state: FloatingDateState`）。引用由 ChatPage 的字段初始化器
+  // new 出来、全生命周期不变，所以 @Param 那层的 `!==` 永不成立，本组件不会因为
+  // 父组件重建而整体重刷。
+  @Require @Param topCard: LiveTopCardController;
 
   // 两个回调一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
   // 用 @Param 的话那个 `!==` 恒不相等会让本层跟着页面白刷；@Event 不具备观测
@@ -97,21 +112,21 @@ export struct TopBanners {
   }
 
   private hasContent(): boolean {
-    return this.pinnedPreview !== '' ||
-      (this.liveGroupCallId > 0 && this.liveCallIsActive);
+    return this.topCard.pinnedPreview !== '' ||
+      (this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive);
   }
 
   private liveShowing(): boolean {
-    return this.liveGroupCallId > 0 && this.liveCallIsActive;
+    return this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive;
   }
 
   private containerHeight(): number {
     const input: ChatChromeGeometryInput = {
       topSafe: 0,
       searchMode: false,
-      pinnedVisible: this.pinnedPreview !== '',
+      pinnedVisible: this.topCard.pinnedPreview !== '',
       liveVisible: this.liveShowing(),
-      loadingVisible: this.topCardLoadingVisible
+      loadingVisible: this.topCard.topCardLoadingVisible
     };
     // 外层的 bottom:2 margin 由父布局计算，不属于节点自己的 height。
     return chatTopBannerHeight(input) - CHAT_TOP_BANNER_BOTTOM_GAP;
@@ -120,8 +135,8 @@ export struct TopBanners {
   // 直播条上那句"多少人在线"。a11y 文案要把它拼进整句里，所以用 str/plural
   // 取字符串而不是 $r()——Resource 塞进模板串会变成 "[object Object]"。
   private onlineText(): string {
-    return this.liveParticipantCount > 0
-      ? plural('cp_n_online', this.liveParticipantCount, this.liveParticipantCount)
+    return this.topCard.liveParticipantCount > 0
+      ? plural('cp_n_online', this.topCard.liveParticipantCount, this.topCard.liveParticipantCount)
       : str('cp_live_in_progress');
   }
 
@@ -129,31 +144,31 @@ export struct TopBanners {
   pinnedBanner() {
     Row({ space: 10 }) {
       Column() {
-        ForEach(pinnedSegIndices(this.pinnedCount), (i: number) => {
+        ForEach(pinnedSegIndices(this.topCard.pinnedCount), (i: number) => {
           Column().width(3).layoutWeight(1)
-            .backgroundColor(i === pinnedActiveSeg(this.pinnedCycle, this.pinnedCount)
+            .backgroundColor(i === pinnedActiveSeg(this.topCard.pinnedCycle, this.topCard.pinnedCount)
               ? COLOR_PRIMARY : '#303E3E40')
             .borderRadius(1.5).margin({ top: 1, bottom: 1 });
-        }, (i: number) => `seg_${i}_${i === pinnedActiveSeg(this.pinnedCycle, this.pinnedCount)}`);
+        }, (i: number) => `seg_${i}_${i === pinnedActiveSeg(this.topCard.pinnedCycle, this.topCard.pinnedCount)}`);
       }.height(34).width(3);
       Column({ space: 2 }) {
         Row({ space: 6 }) {
           Text($r('app.string.cp_pinned_message')).fontSize(12)
             .fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-          if (this.pinnedCount > 1) {
-            Text(`${pinnedShownIndex(this.pinnedCycle, this.pinnedCount) + 1}/${this.pinnedCount}`)
+          if (this.topCard.pinnedCount > 1) {
+            Text(`${pinnedShownIndex(this.topCard.pinnedCycle, this.topCard.pinnedCount) + 1}/${this.topCard.pinnedCount}`)
               .fontSize(10)
               .fontColor(COLOR_TEXT_SECONDARY);
           }
-          if (this.pinnedLoadState === 'loading') {
+          if (this.topCard.pinnedLoadState === 'loading') {
             LoadingProgress().width(12).height(12).color(COLOR_PRIMARY);
           }
         }
-        Text(this.pinnedPreview).fontSize(13).fontColor(COLOR_TEXT_PRIMARY)
+        Text(this.topCard.pinnedPreview).fontSize(13).fontColor(COLOR_TEXT_PRIMARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
       }
       .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      if (this.pinnedJumpBusy) {
+      if (this.topCard.pinnedJumpBusy) {
         LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
       } else {
         SymbolGlyph($r('sys.symbol.chevron_right'))
@@ -170,8 +185,8 @@ export struct TopBanners {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
       curve: Curve.EaseOut
     })
-    .enabled(!this.pinnedJumpBusy)
-    .accessibilityText(str('cp_pinned_a11y', this.pinnedPreview))
+    .enabled(!this.topCard.pinnedJumpBusy)
+    .accessibilityText(str('cp_pinned_a11y', this.topCard.pinnedPreview))
     .onClick((): void => { this.onPinnedTap(); });
   }
 
@@ -182,8 +197,8 @@ export struct TopBanners {
     Row({ space: 10 }) {
       Column()
         .width(3).height(34).backgroundColor(LIVE_ACCENT).borderRadius(1.5)
-        .opacity(this.livePulseExpanded ? 1 : 0.62)
-        .scale({ x: 1, y: this.livePulseExpanded ? 1 : 0.82 })
+        .opacity(this.topCard.livePulseExpanded ? 1 : 0.62)
+        .scale({ x: 1, y: this.topCard.livePulseExpanded ? 1 : 0.82 })
         .animation({
           duration: powerAnimationDuration(KEY_POWER_PARTICLES, 720),
           curve: Curve.EaseInOut
@@ -192,14 +207,14 @@ export struct TopBanners {
         Row({ space: 6 }) {
           Text($r('app.string.cp_live_now')).fontSize(12)
             .fontColor(LIVE_ACCENT).fontWeight(FontWeight.Medium);
-          if (this.liveCallIsRtmp) {
+          if (this.topCard.liveCallIsRtmp) {
             Text($r('app.string.cp_one_way')).fontSize(9)
               .fontColor(Color.White).fontWeight(FontWeight.Bold)
               .padding({ left: 5, right: 5, top: 2, bottom: 2 })
               .backgroundColor(LIVE_ACCENT).borderRadius(6);
           }
           Circle({ width: 6, height: 6 }).fill(LIVE_ACCENT)
-            .opacity(this.livePulseExpanded ? 1 : 0.45);
+            .opacity(this.topCard.livePulseExpanded ? 1 : 0.45);
         }
         Text(this.onlineText())
           .fontSize(13).fontColor(COLOR_TEXT_PRIMARY)
@@ -208,10 +223,10 @@ export struct TopBanners {
       .alignItems(HorizontalAlign.Start).layoutWeight(1);
       Button() {
         Row({ space: 5 }) {
-          if (this.liveDialogOpening || this.liveNavigationBusy) {
+          if (this.topCard.liveDialogOpening || this.topCard.liveNavigationBusy) {
             LoadingProgress().width(13).height(13).color(Color.White);
           }
-          Text(this.liveNavigationBusy ? $r('app.string.cp_entering') : $r('app.string.cp_enter'))
+          Text(this.topCard.liveNavigationBusy ? $r('app.string.cp_entering') : $r('app.string.cp_enter'))
             .fontSize(12)
             .fontColor(Color.White)
             .fontWeight(FontWeight.Medium);
@@ -220,7 +235,7 @@ export struct TopBanners {
       .height(32).padding({ left: 12, right: 12 })
       .borderRadius(16)
       .stateStyles({ normal: this.liveEntryNormalStyle, pressed: this.liveEntryPressedStyle })
-      .enabled(!this.liveDialogOpening && !this.liveNavigationBusy)
+      .enabled(!this.topCard.liveDialogOpening && !this.topCard.liveNavigationBusy)
       .onClick((): void => { this.onLiveStreamTap(); });
     }
     .width('100%')
@@ -262,10 +277,10 @@ export struct TopBanners {
   build() {
     Column() {
       if (this.hasContent()) {
-        if (this.pinnedPreview !== '') {
+        if (this.topCard.pinnedPreview !== '') {
           this.pinnedBanner();
         }
-        if (this.pinnedPreview !== '' && this.liveShowing()) {
+        if (this.topCard.pinnedPreview !== '' && this.liveShowing()) {
           Divider()
             .strokeWidth(0.5)
             .height(CHAT_TOP_BANNER_DIVIDER_HEIGHT)
@@ -275,7 +290,7 @@ export struct TopBanners {
         if (this.liveShowing()) {
           this.liveStreamBanner();
         }
-      } else if (this.topCardLoadingVisible) {
+      } else if (this.topCard.topCardLoadingVisible) {
         this.loadingBanner();
       }
     }

@@ -212,6 +212,7 @@ import chatEffectsTest from './ChatEffects.test';
 import typingIndicatorTest from './TypingIndicator.test';
 import utilityActionGuardTest from './UtilityActionGuard.test';
 import locationActionsTest from './LocationActions.test';
+import liveTopCardControllerTest from './LiveTopCardController.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -429,4 +430,5 @@ export default function testsuite() {
   messageBubblePrepareTest();
   utilityActionGuardTest();
   locationActionsTest();
+  liveTopCardControllerTest();
 }

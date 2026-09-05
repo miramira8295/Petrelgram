@@ -1,4 +1,4 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
 import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
@@ -115,10 +115,6 @@ import {
   INVALID_ANCHOR_RECT, planAnchorRestore
 } from '../../util/anchorRestore';
 import {
-  PINNED_EMPTY, PINNED_IGNORE, PINNED_JUMP, PINNED_LATEST, PINNED_RETRY,
-  PinnedTap, pinnedTapAction
-} from '../../util/pinnedJump';
-import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
 } from '../../util/composerChrome';
@@ -134,7 +130,6 @@ import {
   TranslateToggle,
   toggleTranslation, translationActive as isTranslationActive
 } from '../../util/translationMode';
-import { pinnedShownIndex } from '../../util/pinnedSegments';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
 import {
   ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
@@ -154,11 +149,11 @@ import {
 } from '../../util/rowFadeGate';
 import {
   KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
-  KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
+  KEY_POWER_EFFECT_REPLY,
   KEY_POWER_SMOOTH_TRANSITIONS, setTranslateOptedIn,
   translateOptedIn,
   powerAnimationDuration,
-  powerFeatureEnabled, autosaveEnabled,
+  autosaveEnabled,
   translateOptedOut, setTranslateOptedOut
 } from '../../store/AppSettings';
 import {
@@ -185,7 +180,7 @@ import {
 } from '../../store/InputSuggestions';
 import { appendMention, mentionToken, mentionQueryOf } from '../../util/mentionDraft';
 import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
-import { floatingLiveWindow } from './LiveFloatingWindow';
+import { LiveTopCardController } from './LiveTopCardController';
 import { MUTE_LONG, setMute, showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
@@ -291,7 +286,7 @@ import {
   JUMP_LANDING_GRACE_MS, JUMP_RELOAD_THRESHOLD, KEYBOARD_SETTLE_MS,
   MENU_DISMISS_MS, NOW_SEC_TICK_MS, PREPARED_MESSAGE_CACHE_LIMIT,
   REUSE_CAP_MIN_INTERVAL_MS, SEARCH_ENTRY_DELAY_MS, STICKER_FLY_MS,
-  STICKER_GHOST_SIDE, TOP_CARD_ACTION_GUARD_MS, TOP_CARD_LOADING_DELAY_MS
+  STICKER_GHOST_SIDE
 } from '../../util/chatPageTuning';
 import { DICE_CHOICES, DiceChoice } from '../../util/diceChoices';
 import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind';
@@ -1218,7 +1213,7 @@ export struct ChatPage {
         onVideoNoteDownload: (messageId: number): void => {
           this.store?.requestVideoDownload(messageId, true);
         },
-        onLiveStreamTap: (_groupCallId: number): void => { this.onLiveStreamTap(); }
+        onLiveStreamTap: (_groupCallId: number): void => { this.topCard.onLiveStreamTap(); }
       };
     }
     return this.messageActionsCache;
@@ -1257,7 +1252,7 @@ export struct ChatPage {
     const paidMediaPending: boolean = this.paidMediaPending(g.head.id);
     const editingActive: boolean = this.editingId !== 0;
     const animateIn: boolean = this.freshSinceId !== 0 && g.head.id > this.freshSinceId;
-    const liveGroupCallId: number = this.liveCallIsActive ? this.liveGroupCallId : 0;
+    const liveGroupCallId: number = this.topCard.liveCallIsActive ? this.topCard.liveGroupCallId : 0;
     // nowSec changes every second, but only these two reuse decisions cross a
     // time boundary. Key the decisions instead of invalidating every prepared
     // row every second; the live clock itself is passed outside the cache.
@@ -1315,7 +1310,7 @@ export struct ChatPage {
       isPinnedMsg,
       liveSharing: this.liveLocationMessageId === g.head.id,
       paidMediaPending,
-      liveVideoChatTappable: g.head.isVideoChatStarted && this.liveCallIsActive,
+      liveVideoChatTappable: g.head.isVideoChatStarted && this.topCard.liveCallIsActive,
       audioQueuePosition,
       audioQueueLength,
       pollExpired
@@ -1338,7 +1333,7 @@ export struct ChatPage {
       animationPlaybackFailed: playbackFailed,
       editingActive,
       isPinnedMsg,
-      liveGroupCallId: this.liveCallIsActive ? this.liveGroupCallId : 0,
+      liveGroupCallId: this.topCard.liveCallIsActive ? this.topCard.liveGroupCallId : 0,
       animateIn,
       lightweightPlainText
     };
@@ -1572,29 +1567,27 @@ export struct ChatPage {
   // expand-from-tap open / shrink-back-to-tap close transition.
   @Local tapX: number = 0;
   @Local tapY: number = 0;
-  @Local pinnedPreview: string = '';
-  @Local pinnedCount: number = 0;
-  @Local pinnedLoadState: string = 'loading'; // loading | ready | error
-  @Local pinnedJumpBusy: boolean = false;
-  // 正在直播入口条:chat.video_chat.group_call_id > 0 时显示("正在直播").
-  @Local liveGroupCallId: number = 0;
-  @Local liveCallIsActive: boolean = false;
-  @Local liveCallIsRtmp: boolean = false;
-  @Local liveParticipantCount: number = 0;
-  @Local livePulseExpanded: boolean = false;
-  @Local liveLoadState: string = 'loading'; // loading | ready | error
-  @Local liveDialogOpening: boolean = false;
-  @Local liveNavigationBusy: boolean = false;
-  @Local topCardLoadingVisible: boolean = false;
-  private livePulseTimer: number = -1;
-  private liveStateRefreshTimer: number = -1;
-  private liveChatRefreshInFlight: boolean = false;
-  private liveGroupRefreshInFlight: boolean = false;
-  private liveChatResolveSeq: number = 0;
-  private liveGroupResolveSeq: number = 0;
-  private liveGroupRequestId: number = 0;
-  private topCardLoadingTimer: number = -1;
-  private topCardActionTimer: number = -1;
+  // 顶栏下挂那张浮卡（置顶消息条 + 直播/群通话条）的整套状态机（B5 批）。原来
+  // 摊在这里的 14 个 @Local（pinnedPreview/pinnedCount/pinnedLoadState/
+  // pinnedJumpBusy/pinnedCycle/liveGroupCallId/liveCallIsActive/liveCallIsRtmp/
+  // liveParticipantCount/livePulseExpanded/liveLoadState/liveDialogOpening/
+  // liveNavigationBusy/topCardLoadingVisible）与 9 个内部机件字段（4 个定时器
+  // 句柄、2 个在途标志、2 个序号守卫、1 个请求 id）全部住进了控制器，字段名和
+  // 初值一字未改，只是 @Local 变成了 @Trace。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空——TopBanners
+  // 拿 @Param 收它，引用不变，那层 `!==` 永不成立，页面重建不会让浮卡整体白刷。
+  // 禁止做成模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，每个都有
+  // 自己的 chatId、自己的 group call、自己的置顶轮转位置。
+  //
+  // 【收窄】livePulseExpanded 每 780ms 翻一次。搬之前那是本页的 @Local，于是每
+  // 780ms 都要重跑 chatTitleBarBottom 闭包 + 逐个比较 TopBanners 的 13 个 @Param；
+  // 现在 TopBanners 直接读控制器的 @Trace，翻转只刷新读到它的那几个节点，本页
+  // 一个字都不读。页面仍要读的只剩三处：chatTitleBarContent 的 shouldShow()、
+  // chromeGeometryInput 的三个几何输入、prepareMessageBubble cacheKey 里的
+  // liveCallIsActive/liveGroupCallId——都是 this.x → this.topCard.x 的逐处替换，
+  // 依赖粒度与搬之前一一对应。
+  private topCard: LiveTopCardController = new LiveTopCardController();
   private chatId: number = 0;
   private botCallbackPending: Set<string> = new Set();
   // >0: comment-thread view over the linked discussion group (see onCommentTap)
@@ -1748,9 +1741,6 @@ export struct ChatPage {
   // applyRouteParams 一次性守卫下只写一次，等价于拆分前那个局部量；不加 @Local——
   // 加了会让每次消息快照回调都触发一次页面 build。
   private routeResumeWaiting: boolean = false;
-  // @Local: the segment indicator renders from this — a plain field wouldn't
-  // trigger a re-render when scrolling/tapping moves the shown pinned index.
-  @Local pinnedCycle: number = 0;
   private pendingJumpId: number = 0;
   // A module-level remembered position is only a candidate until MessageStore
   // resolves the chat's authoritative unread count. Once selected it becomes
@@ -2177,6 +2167,29 @@ export struct ChatPage {
   }
 
   aboutToAppear(): void {
+    // 顶栏浮卡控制器接上宿主（B5）。全是箭头函数字段：前六个是取值器——控制器
+    // 不缓存页面的值，每次要用就现取；后五个是动作回调——共享的滚动/跳转真源
+    // （scroller、pendingJumpId）留在页面，控制器只把意图交回来。
+    // 必须在 applyRouteParams 之前绑好：那里会调 topCard.resetTopCardState()，
+    // 而它要读 threadRootId 决定置顶条的初始加载态。
+    this.topCard.bind({
+      chatId: (): number => this.chatId,
+      threadRootId: (): number => this.threadRootId,
+      title: (): string => this.title,
+      store: (): MessageStore | null => this.store,
+      groups: (): AlbumGroup[] => this.groups,
+      curStartIdx: (): number => this.curStartIdx,
+      prepareUserJump: (): void => { this.prepareUserJump(); },
+      scrollToLatest: (): void => { this.scrollToLatest(); },
+      // scroller 是页面独有的（不变量 10），所以这条动作回调把
+      // scrollToIndex(i, false, ScrollAlign.START) 这个细节挡在控制器之外，
+      // 顺带让 ArkUI 的滚动类型不必进那个文件。
+      scrollToIndex: (index: number): void => {
+        this.scroller.scrollToIndex(index, false, ScrollAlign.START);
+      },
+      flashAtIndex: (index: number): void => { this.flashAtIndex(index); },
+      jumpToPinned: (messageId: number): void => { this.jumpToPinned(messageId); }
+    });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
@@ -2199,6 +2212,8 @@ export struct ChatPage {
     //
     // 留在这里的两件事与路由参数无关（播放位订阅、秒表初值），时机保持原样：
     // 它们必须在任何一次行数组发布之前就绪。
+    // B5 更正：现在是三件——最前面那次 topCard.bind() 同样与路由参数无关，且
+    // 必须早于 applyRouteParams。
   }
 
   // 路由参数就绪后的初始化。这就是迁移前 aboutToAppear 的后半段，顺序一字未改，
@@ -2260,7 +2275,7 @@ export struct ChatPage {
     }
     const jumpTo = route.jumpTo;
     this.resetHeaderState(cachedChat);
-    this.resetTopCardState();
+    this.topCard.resetTopCardState();
     this.resolveHeaderIdentity();
     // Entered from global search: open directly on this chat's results for the
     // same query (the search header, the hit list and ∧/∨ navigation). With a
@@ -2389,43 +2404,29 @@ export struct ChatPage {
       }
     }));
     this.refreshMembership();
-    this.refreshVideoChat(true);
+    this.topCard.refreshVideoChat(true);
   }
 
   private subscribeLiveCallUpdatesAndTimers(): void {
     this.subscriptions.set('videoChat', getTdClient().onUpdate('updateChatVideoChat', (u: TdObject) => {
       if ((u['chat_id'] as number | undefined) === this.chatId) {
-        this.liveChatResolveSeq++;
-        this.liveChatRefreshInFlight = false;
-        this.liveLoadState = 'ready';
         const vc = u['video_chat'] as TdObject | undefined;
-        this.setLiveGroupCallId(vc !== undefined ? ((vc['group_call_id'] as number | undefined) ?? 0) : 0);
-        this.settleTopCardLoading();
+        this.topCard.applyVideoChatUpdate(
+          vc !== undefined ? ((vc['group_call_id'] as number | undefined) ?? 0) : 0);
       }
     }));
     this.subscriptions.set('groupCall', getTdClient().onUpdate('updateGroupCall', (u: TdObject) => {
       const groupCall = u['group_call'] as TdObject | undefined;
       if (groupCall !== undefined &&
-        ((groupCall['id'] as number | undefined) ?? 0) === this.liveGroupCallId) {
-        this.liveGroupResolveSeq++;
-        this.liveGroupRefreshInFlight = false;
-        this.liveGroupRequestId = 0;
-        this.applyLiveGroupCall(groupCall);
+        ((groupCall['id'] as number | undefined) ?? 0) === this.topCard.liveGroupCallId) {
+        this.topCard.applyGroupCallUpdate(groupCall);
       }
     }));
-    this.livePulseTimer = setInterval((): void => {
-      if (!this.liveCallIsActive || !powerFeatureEnabled(KEY_POWER_PARTICLES)) {
-        this.livePulseExpanded = false;
-        return;
-      }
-      this.livePulseExpanded = !this.livePulseExpanded;
-    }, 780);
-    // Updates remain the fast path. Polling is a small safety net for devices
-    // that resume this cached page after an update was delivered while its
-    // subscriptions were inactive.
-    this.liveStateRefreshTimer = setInterval((): void => {
-      this.refreshVideoChat();
-    }, 2000);
+    // 两个 setInterval（780ms 脉冲 / 2000ms 兜底轮询）随整簇搬进了控制器，
+    // 注册点仍是这里、仍在两个订阅之后，时机一字未改。两个订阅本身留在页面：
+    // 它们要 set 进 this.subscriptions，由 disposeSubscriptionsInOrder 按既定
+    // 顺序摘除。
+    this.topCard.open();
   }
 
   // this.store 必须在 store.subscribe() 之前赋值：subscribe 注册时会同步喂一次
@@ -2992,7 +2993,7 @@ export struct ChatPage {
         // 窗口里要先 loadAround，慢链路上一超时，刚压进返回栈的那层就被
         // syncReturnState 当成"手动滑过"弹掉了。
         this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
-        this.finishPinnedJump();
+        this.topCard.finishPinnedJump();
         this.scrollToTimelineIndexAtY(jg, itemY);
         // loadAround replaces the window wholesale (list RELOAD) — the
         // immediate scroll can be swallowed before the new rows lay out.
@@ -3057,16 +3058,11 @@ export struct ChatPage {
         this.replyKeyboardSendingKey = '';
       }
     }));
+    // 三个值仍在这里从**订阅时的那个 store 形参**现取（不是 this.store），再交给
+    // 控制器落库——控制器不去猜数据源是谁。夹紧 pinnedCycle、清空时收掉跳转闸门、
+    // 结算同步态这三步整体搬进了 applyPinned()（B5）。
     this.subscriptions.set('pinned', store.subscribePinned((s: string) => {
-      this.pinnedPreview = s;
-      this.pinnedCount = store.getPinnedIds().length;
-      this.pinnedLoadState = store.getPinnedLoadState();
-      this.pinnedCycle = Math.min(this.pinnedCycle, Math.max(0, this.pinnedCount - 1));
-      if (this.pinnedCount === 0) {
-        this.pinnedCycle = 0;
-        this.finishPinnedJump();
-      }
-      this.settleTopCardLoading();
+      this.topCard.applyPinned(s, store.getPinnedIds().length, store.getPinnedLoadState());
     }));
   }
 
@@ -3339,12 +3335,15 @@ export struct ChatPage {
       resyncListAfterHidden: (): void => { this.resyncListAfterHidden(); },
       setNowSec: (value: number): void => { this.nowSec = value; },
       armNowSecTimer: (): void => { this.armNowSecTimer(); },
-      clearLiveNavigationBusy: (): void => {
-        this.liveDialogOpening = false;
-        this.liveNavigationBusy = false;
-      },
+      // B5：清 liveDialogOpening/liveNavigationBusy 这两句原样搬进了
+      // topCard.onPageShown()。本批的任务书写的是「handleHidden 里清 → onPageHidden()」，
+      // 那是计划文档 B5 小节的笔误：handleHidden / handleWillHide 一个字都不碰这一簇，
+      // 清忙标志的一直是这里（handleShown → coordinateChatPageShown 的
+      // clearLiveNavigationBusy 钩子）。控制器因此只有 onPageShown()，没有 onPageHidden()——
+      // 凭空造一个「隐藏时清」会是真的行为变更（今天隐藏时不清，标志一直留到页面回来）。
+      clearLiveNavigationBusy: (): void => { this.topCard.onPageShown(); },
       chatId: (): number => this.chatId,
-      refreshVideoChat: (): void => { this.refreshVideoChat(); }
+      refreshVideoChat: (): void => { this.topCard.refreshVideoChat(); }
     });
     this.hiddenSinceMs = state.hiddenSinceMs;
     this.appWentBackground = state.appWentBackground;
@@ -3453,15 +3452,16 @@ export struct ChatPage {
     this.closeForwardSheet();
     this.headerProfileOpening = false;
     this.headerMuteUpdating = false;
-    this.liveChatResolveSeq++;
-    this.liveGroupResolveSeq++;
-    this.liveChatRefreshInFlight = false;
-    this.liveGroupRefreshInFlight = false;
-    this.liveGroupRequestId = 0;
-    this.liveDialogOpening = false;
-    this.liveNavigationBusy = false;
-    this.pinnedJumpBusy = false;
-    this.topCardLoadingVisible = false;
+    // 顶栏浮卡整簇的退场（B5）。位置就是原来那九句 live*/pinnedJumpBusy/
+    // topCardLoadingVisible 清理所在的位置，相对于 clearInOrder 三组退订的先后
+    // 一字未动；两个 clearTimeout（topCardLoadingTimer/topCardActionTimer）原本
+    // 在本方法靠后处，也一并进了 dispose()。
+    // 顺序在控制器里照搬：两个 seq++ 在最前（作废在途的 getChat/getGroupCall），
+    // 再清在途与忙标志，最后才清定时器句柄。
+    // 唯一的时序变化：两个 setInterval 原本是最后一步 closeStores 清的，现在提前
+    // 到这里。中间隔着的 stopVoicePlaybackKeepingMusic 与 disposeSubscriptionsInOrder
+    // 都不 await，定时器插不进去，等价。
+    this.topCard.dispose();
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
@@ -3471,14 +3471,6 @@ export struct ChatPage {
     if (this.headerNavigationTimer !== -1) {
       clearTimeout(this.headerNavigationTimer);
       this.headerNavigationTimer = -1;
-    }
-    if (this.topCardLoadingTimer !== -1) {
-      clearTimeout(this.topCardLoadingTimer);
-      this.topCardLoadingTimer = -1;
-    }
-    if (this.topCardActionTimer !== -1) {
-      clearTimeout(this.topCardActionTimer);
-      this.topCardActionTimer = -1;
     }
     this.cancelRecording();
     this.pendingGallerySaveId = 0;
@@ -3524,259 +3516,9 @@ export struct ChatPage {
   }
 
   private closeStores(): void {
-    if (this.livePulseTimer !== -1) { clearInterval(this.livePulseTimer); this.livePulseTimer = -1; }
-    if (this.liveStateRefreshTimer !== -1) {
-      clearInterval(this.liveStateRefreshTimer);
-      this.liveStateRefreshTimer = -1;
-    }
+    // 两个直播定时器（脉冲/轮询）的 clearInterval 随整簇进了 topCard.dispose()，
+    // 在本方法之前的 disposeTimersAndSeqGuards 里执行（B5）。
     if (this.store !== null) { this.store.close(); this.store = null; }
-  }
-
-  private resetTopCardState(): void {
-    this.liveChatResolveSeq++;
-    this.liveGroupResolveSeq++;
-    this.pinnedPreview = '';
-    this.pinnedCount = 0;
-    this.pinnedCycle = 0;
-    this.pinnedLoadState = this.threadRootId > 0 ? 'ready' : 'loading';
-    this.pinnedJumpBusy = false;
-    this.liveGroupCallId = 0;
-    this.liveCallIsActive = false;
-    this.liveCallIsRtmp = false;
-    this.liveParticipantCount = 0;
-    this.livePulseExpanded = false;
-    this.liveLoadState = 'loading';
-    this.liveDialogOpening = false;
-    this.liveNavigationBusy = false;
-    this.liveChatRefreshInFlight = false;
-    this.liveGroupRefreshInFlight = false;
-    this.liveGroupRequestId = 0;
-    this.topCardLoadingVisible = false;
-    if (this.topCardLoadingTimer !== -1) {
-      clearTimeout(this.topCardLoadingTimer);
-    }
-    this.topCardLoadingTimer = setTimeout((): void => {
-      this.topCardLoadingTimer = -1;
-      this.topCardLoadingVisible =
-        this.pinnedLoadState === 'loading' || this.liveLoadState === 'loading';
-    }, powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, TOP_CARD_LOADING_DELAY_MS));
-  }
-
-  private settleTopCardLoading(): void {
-    if (this.pinnedLoadState === 'loading' || this.liveLoadState === 'loading') {
-      return;
-    }
-    if (this.topCardLoadingTimer !== -1) {
-      clearTimeout(this.topCardLoadingTimer);
-      this.topCardLoadingTimer = -1;
-    }
-    this.topCardLoadingVisible = false;
-  }
-
-  private topCardShouldShow(): boolean {
-    // Pinned/live information is optional chrome. If its background probe
-    // fails while TDLib is reconnecting and there is no confirmed content,
-    // don't turn that transient transport problem into a persistent banner.
-    return this.pinnedPreview !== '' ||
-      (this.liveGroupCallId > 0 && this.liveCallIsActive) ||
-      this.topCardLoadingVisible;
-  }
-
-  // Resolve chat.video_chat first, then the referenced group call. Sequence
-  // guards make a late response from a previous call/chat unable to restore a
-  // banner that has already ended or changed identity.
-  private refreshVideoChat(showLoading: boolean = false): void {
-    if (this.chatId === 0) {
-      this.liveLoadState = 'error';
-      this.settleTopCardLoading();
-      return;
-    }
-    if (this.liveChatRefreshInFlight) {
-      return;
-    }
-    this.liveChatRefreshInFlight = true;
-    const seq: number = ++this.liveChatResolveSeq;
-    if (showLoading && !this.liveCallIsActive) {
-      this.liveLoadState = 'loading';
-    }
-    const req: TdRequest = { '@type': 'getChat' };
-    req['chat_id'] = this.chatId;
-    getTdClient().send(req).then((chat: TdObject): void => {
-      if (seq !== this.liveChatResolveSeq) {
-        return;
-      }
-      this.liveChatRefreshInFlight = false;
-      this.liveLoadState = 'ready';
-      const vc = chat['video_chat'] as TdObject | undefined;
-      this.setLiveGroupCallId(vc !== undefined ? ((vc['group_call_id'] as number | undefined) ?? 0) : 0);
-      this.settleTopCardLoading();
-    }).catch((e: TdError): void => {
-      if (seq !== this.liveChatResolveSeq) {
-        return;
-      }
-      this.liveChatRefreshInFlight = false;
-      // A transient refresh failure must not invalidate an active call already
-      // confirmed by ChatStore/updateGroupCall.
-      if (!this.liveCallIsActive) {
-        this.liveLoadState = 'error';
-      }
-      this.settleTopCardLoading();
-      logE(`ChatPage.refreshVideoChat getChat failed: ${e.message}`);
-    });
-  }
-
-  private setLiveGroupCallId(groupCallId: number): void {
-    const changed = groupCallId !== this.liveGroupCallId;
-    if (changed) {
-      this.liveGroupResolveSeq++;
-      this.liveGroupRefreshInFlight = false;
-      this.liveGroupRequestId = 0;
-      this.liveGroupCallId = groupCallId;
-      this.liveCallIsActive = false;
-      this.liveCallIsRtmp = false;
-      this.liveParticipantCount = 0;
-      this.livePulseExpanded = false;
-    }
-    if (groupCallId <= 0) {
-      this.liveLoadState = 'ready';
-      this.settleTopCardLoading();
-      return;
-    }
-    // An unchanged id still needs refreshing because a scheduled call may
-    // become active (or an active call end) without changing its identifier.
-    if (this.liveGroupRefreshInFlight && this.liveGroupRequestId === groupCallId) {
-      return;
-    }
-    const seq: number = ++this.liveGroupResolveSeq;
-    this.liveGroupRefreshInFlight = true;
-    this.liveGroupRequestId = groupCallId;
-    if (!this.liveCallIsActive) {
-      this.liveLoadState = 'loading';
-    }
-    const request: TdRequest = { '@type': 'getGroupCall' };
-    request['group_call_id'] = groupCallId;
-    getTdClient().send(request).then((groupCall: TdObject): void => {
-      if (seq !== this.liveGroupResolveSeq || this.liveGroupCallId !== groupCallId) {
-        return;
-      }
-      this.liveGroupRefreshInFlight = false;
-      this.liveGroupRequestId = 0;
-      this.applyLiveGroupCall(groupCall);
-    }).catch((error: TdError): void => {
-      if (seq !== this.liveGroupResolveSeq || this.liveGroupCallId !== groupCallId) {
-        return;
-      }
-      this.liveGroupRefreshInFlight = false;
-      this.liveGroupRequestId = 0;
-      if (!this.liveCallIsActive) {
-        this.liveLoadState = 'error';
-      }
-      this.settleTopCardLoading();
-      logE(`ChatPage.getGroupCall failed: ${error.message}`);
-    });
-  }
-
-  private applyLiveGroupCall(groupCall: TdObject): void {
-    this.liveCallIsActive = (groupCall['is_active'] as boolean | undefined) ?? false;
-    this.liveCallIsRtmp = (groupCall['is_rtmp_stream'] as boolean | undefined) ?? false;
-    this.liveParticipantCount = (groupCall['participant_count'] as number | undefined) ?? 0;
-    this.liveLoadState = 'ready';
-    if (!this.liveCallIsActive) {
-      this.livePulseExpanded = false;
-      this.liveDialogOpening = false;
-    }
-    this.settleTopCardLoading();
-  }
-
-  private enterLiveStream(groupCallId: number): void {
-    if (this.liveNavigationBusy) {
-      return;
-    }
-    if (groupCallId <= 0 || groupCallId !== this.liveGroupCallId ||
-      !this.liveCallIsActive || this.liveLoadState === 'error') {
-      promptAction.showToast({ message: $r('app.string.cp_live_ended'), duration: 1500 });
-      return;
-    }
-    const isRtmp: boolean = this.liveCallIsRtmp;
-    const params: Record<string, Object> = {
-      'groupCallId': groupCallId,
-      'chatId': this.chatId,
-      'initialTitle': this.title,
-      'initialParticipantCount': this.liveParticipantCount
-    };
-    this.liveNavigationBusy = true;
-    // Returning to the live stream that is already floating must hand the
-    // existing Session back to the viewer. Closing it here would briefly leave
-    // the call and force the page to join again.
-    if (floatingLiveWindow.isShowing(groupCallId, isRtmp)) {
-      floatingLiveWindow.restoreFullPage().finally((): void => {
-        this.liveNavigationBusy = false;
-      });
-      return;
-    }
-    floatingLiveWindow.prepareForOpeningFullPage().finally((): void => {
-      if (groupCallId !== this.liveGroupCallId || !this.liveCallIsActive) {
-        this.liveNavigationBusy = false;
-        promptAction.showToast({ message: $r('app.string.cp_live_ended'), duration: 1500 });
-        return;
-      }
-      router.pushUrl({
-        url: isRtmp
-          ? 'pages/chat/RtmpLiveStreamViewerPage' : 'pages/chat/LiveStreamViewerPage',
-        params: params
-      }).then((): void => {
-        // Busy only represents the route transition. Joining/recovery status
-        // belongs to the viewer and must not leak into the chat banner.
-        this.liveNavigationBusy = false;
-      }).catch((error: Error): void => {
-        this.liveNavigationBusy = false;
-        logE(`ChatPage.enterLiveStream failed: ${error.message}`);
-        promptAction.showToast({ message: $r('app.string.cp_live_join_failed'), duration: 1600 });
-      });
-    });
-  }
-
-  // All live entry points confirm before joining. The viewer itself joins
-  // muted, so the dialog can state the privacy behavior precisely.
-  private onLiveStreamTap(): void {
-    if (this.liveDialogOpening || this.liveNavigationBusy) {
-      return;
-    }
-    if (this.liveLoadState === 'loading') {
-      promptAction.showToast({ message: $r('app.string.cp_live_syncing'), duration: 1200 });
-      return;
-    }
-    if (this.liveLoadState === 'error') {
-      this.refreshVideoChat(true);
-      promptAction.showToast({ message: $r('app.string.cp_live_refetching'), duration: 1200 });
-      return;
-    }
-    if (this.liveGroupCallId <= 0 || !this.liveCallIsActive) {
-      promptAction.showToast({ message: $r('app.string.cp_live_ended'), duration: 1500 });
-      return;
-    }
-    const groupCallId = this.liveGroupCallId;
-    const onlineText = this.liveParticipantCount > 0 ? plural('cp_live_online_now', this.liveParticipantCount, this.liveParticipantCount) : '';
-    // str(), not $r(): this is concatenated into the dialog's message below, and
-    // a Resource in a template literal stringifies to "[object Object]".
-    const privacyText: string = this.liveCallIsRtmp
-      ? str('cp_live_one_way_body')
-      : str('cp_live_two_way_body');
-    this.liveDialogOpening = true;
-    promptAction.showDialog({
-      title: $r('app.string.cp_live_join_title'),
-      message: `${onlineText}${privacyText}`,
-      buttons: [
-        { text: $r('app.string.cancel'), color: '#8E8E93' },
-        { text: $r('app.string.cp_live_join'), color: '#FF405C' }
-      ]
-    }).then((result): void => {
-      this.liveDialogOpening = false;
-      if (result.index === 1) { this.enterLiveStream(groupCallId); }
-    }).catch((error: Object): void => {
-      this.liveDialogOpening = false;
-      logE(`ChatPage live confirmation failed: ${JSON.stringify(error)}`);
-    });
   }
 
   // True-bottom detection off the scroller's end edge, not the visible index
@@ -4301,108 +4043,30 @@ export struct ChatPage {
     this.cancelFlash();
   }
 
-  // The banner tracks the scroll position: it shows the newest pinned message
-  // strictly ABOVE the viewport top (the one a tap would jump to). Scrolling
-  // past a pinned message therefore switches the banner to its neighbor, and
-  // after a tap-jump lands this naturally advances to the next older one.
-  private updatePinnedFromScroll(start: number): void {
-    if (this.store === null || this.pinnedCount === 0 || start < 0 || start >= this.groups.length) {
-      return;
-    }
-    const ids: number[] = this.store.getPinnedIds(); // newest → oldest
-    const previews: string[] = this.store.getPinnedPreviews();
-    const topId: number = this.groups[start].head.id;
-    let idx = -1;
-    for (let i = 0; i < ids.length; i++) {
-      if (ids[i] < topId) {
-        idx = i;
-        break;
-      }
-    }
-    if (idx < 0) {
-      idx = ids.length - 1; // viewport is above every pinned message → nearest is the oldest
-    }
-    if (idx !== pinnedShownIndex(this.pinnedCycle, this.pinnedCount)) {
-      this.pinnedCycle = idx;
-      if (idx < previews.length) {
-        this.pinnedPreview = previews[idx];
-      }
-    }
-  }
-
-  // Tap the pinned banner: jump to the pinned message it currently shows.
-  // Once at/above the oldest pinned message, tapping wraps back to the bottom.
-  private onPinnedTap(): void {
-    const store = this.store;
+  // 点置顶条时目标不在当前窗口内，要先去取。这是 onPinnedTap 的 PINNED_LOAD
+  // 兜底分支原样搬过来的（B5 所有权裁决）：pendingJumpId 是整个跳转系统的共享
+  // 字段（landPendingJump / openStoreForRoute / resetOrPreserveScrollSession
+  // 都读写它），按不变量 10 留在页面，所以这条链也留在页面，由控制器经
+  // host.jumpToPinned(messageId) 发起。
+  // 取不到时复位 pendingJumpId、收掉跳转闸门、重拉置顶列表并弹提示；取到了则
+  // 由 landPendingJump 在行数组发布后落地（那里同样调 topCard.finishPinnedJump()）。
+  // 控制器侧在调进来之前已经上了一道 2500ms 的 busy 守卫——比另两支的
+  // TOP_CARD_ACTION_GUARD_MS 长，就是为了等这趟异步 loadAround。
+  private jumpToPinned(messageId: number): void {
+    const store: MessageStore | null = this.store;
     if (store === null) {
       return;
     }
-    // 这一下该做什么，判定在 util/pinnedJump（10 条测）——尤其是"转到最后
-    // 一条且已经滚过它就循环回最新"那条规则。
-    const action: PinnedTap = pinnedTapAction({
-      busy: this.pinnedJumpBusy,
-      loadState: this.pinnedLoadState,
-      pinnedIds: store.getPinnedIds(),
-      cycle: this.pinnedCycle,
-      topVisibleId: this.curStartIdx >= 0 && this.curStartIdx < this.groups.length
-        ? this.groups[this.curStartIdx].head.id : 0
-    }, (messageId: number): number => groupIndexOf(this.groups, messageId));
-
-    if (action.kind === PINNED_IGNORE) {
-      return;
-    }
-    if (action.kind === PINNED_RETRY) {
-      store.refreshPinned();
-      promptAction.showToast({ message: $r('app.string.cp_resyncing_pinned'), duration: 1200 });
-      return;
-    }
-    if (action.kind === PINNED_EMPTY) {
-      this.pinnedPreview = '';
-      this.pinnedCount = 0;
-      return;
-    }
-    this.startPinnedJumpGuard(2500);
-    this.prepareUserJump();
-    if (action.kind === PINNED_LATEST) {
-      this.scrollToLatest();
-      this.startPinnedJumpGuard(TOP_CARD_ACTION_GUARD_MS);
-      return;
-    }
-    if (action.kind === PINNED_JUMP) {
-      this.scroller.scrollToIndex(action.index, false, ScrollAlign.START);
-      this.flashAtIndex(action.index);
-      this.startPinnedJumpGuard(TOP_CARD_ACTION_GUARD_MS);
-      return;
-    }
-    const targetId: number = action.targetId;
+    const targetId: number = messageId;
     this.pendingJumpId = targetId;
     store.loadAround(targetId, (found: boolean): void => {
       if (!found && this.pendingJumpId === targetId) {
         this.pendingJumpId = 0;
-        this.finishPinnedJump();
+        this.topCard.finishPinnedJump();
         this.store?.refreshPinned();
         promptAction.showToast({ message: $r('app.string.cp_pinned_unavailable'), duration: 1500 });
       }
     });
-  }
-
-  private startPinnedJumpGuard(duration: number): void {
-    this.pinnedJumpBusy = true;
-    if (this.topCardActionTimer !== -1) {
-      clearTimeout(this.topCardActionTimer);
-    }
-    this.topCardActionTimer = setTimeout((): void => {
-      this.topCardActionTimer = -1;
-      this.pinnedJumpBusy = false;
-    }, duration);
-  }
-
-  private finishPinnedJump(): void {
-    this.pinnedJumpBusy = false;
-    if (this.topCardActionTimer !== -1) {
-      clearTimeout(this.topCardActionTimer);
-      this.topCardActionTimer = -1;
-    }
   }
 
   // Fire at most one loadOlder per arm (see olderArmed).
@@ -5019,31 +4683,8 @@ export struct ChatPage {
       if (e.background !== null) {
         this.bgStore?.applyKnownBackground(e.background);
       }
-      this.syncLiveFromChatEntry(e);
+      this.topCard.syncLiveFromChatEntry(e);
     }
-  }
-
-  // ChatStore already resolves updateChatVideoChat + updateGroupCall for the
-  // chat list. Reuse that confirmed state as the fast path when entering or
-  // resuming a chat instead of hiding the live banner until a second
-  // getChat/getGroupCall round trip finishes. The direct probe below remains
-  // authoritative and will still remove a call once TDLib confirms it ended.
-  private syncLiveFromChatEntry(entry: ChatEntry): void {
-    if (entry.liveGroupCallId <= 0) {
-      // A cache miss is not proof that a call ended: getChat may already have
-      // found a newer call which hasn't reached ChatStore yet.
-      return;
-    }
-    if (entry.liveGroupCallId !== this.liveGroupCallId) {
-      this.setLiveGroupCallId(entry.liveGroupCallId);
-    }
-    if (!entry.isLive || entry.liveGroupCallId !== this.liveGroupCallId) {
-      return;
-    }
-    this.liveCallIsActive = true;
-    this.liveCallIsRtmp = entry.isRtmpLive;
-    this.liveLoadState = 'ready';
-    this.settleTopCardLoading();
   }
 
   private refreshMembership(): void {
@@ -6990,9 +6631,9 @@ export struct ChatPage {
     return {
       topSafe: this.topSafe,
       searchMode: this.searchMode,
-      pinnedVisible: this.pinnedPreview !== '',
-      liveVisible: this.liveGroupCallId > 0 && this.liveCallIsActive,
-      loadingVisible: this.topCardLoadingVisible
+      pinnedVisible: this.topCard.pinnedPreview !== '',
+      liveVisible: this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive,
+      loadingVisible: this.topCard.topCardLoadingVisible
     };
   }
 
@@ -9463,23 +9104,15 @@ export struct ChatPage {
 
   @Builder
   chatTitleBarBottom() {
+    // 13 个标量 @Param 换成一个控制器引用（B5）。this.topCard 是字段初始化器
+    // new 出来的，引用全生命周期不变——@Param 那层的 `!==` 永不成立，本页重建
+    // 不会让浮卡整体白刷；显示态由 TopBanners 自己在 build() 里读 @Trace。
+    // 千万不要在这里现场 new 任何对象传下去，那会破坏引用稳定、让子组件每帧白刷。
     TopBanners({
       materialEpoch: this.materialEpoch,
-      pinnedPreview: this.pinnedPreview,
-      pinnedCount: this.pinnedCount,
-      pinnedCycle: this.pinnedCycle,
-      pinnedLoadState: this.pinnedLoadState,
-      pinnedJumpBusy: this.pinnedJumpBusy,
-      liveGroupCallId: this.liveGroupCallId,
-      liveCallIsActive: this.liveCallIsActive,
-      liveCallIsRtmp: this.liveCallIsRtmp,
-      liveParticipantCount: this.liveParticipantCount,
-      livePulseExpanded: this.livePulseExpanded,
-      liveDialogOpening: this.liveDialogOpening,
-      liveNavigationBusy: this.liveNavigationBusy,
-      topCardLoadingVisible: this.topCardLoadingVisible,
-      onPinnedTap: (): void => { this.onPinnedTap(); },
-      onLiveStreamTap: (): void => { this.onLiveStreamTap(); }
+      topCard: this.topCard,
+      onPinnedTap: (): void => { this.topCard.onPinnedTap(); },
+      onLiveStreamTap: (): void => { this.topCard.onLiveStreamTap(); }
     });
   }
 
@@ -9488,7 +9121,7 @@ export struct ChatPage {
       stackBuilder: (): void => { this.chatTitleBar(); }
     };
     const bannerHeight: number = this.topBannerHeight();
-    if (this.initialMessageTransitionSettled && this.topCardShouldShow() && bannerHeight > 0) {
+    if (this.initialMessageTransitionSettled && this.topCard.shouldShow() && bannerHeight > 0) {
       content.bottomBuilder = {
         builder: (): void => { this.chatTitleBarBottom(); },
         height: bannerHeight
@@ -9558,7 +9191,7 @@ export struct ChatPage {
     this.curBottomId = this.bottomVisibleId(end);
     this.syncReturnState();
     this.markVisibleRead(end);
-    this.updatePinnedFromScroll(start);
+    this.topCard.updatePinnedFromScroll(start);
     const visible: PrefetchRange | null =
       clampPrefetchRange(start, end, this.groupsData.totalCount());
     if (visible !== null) {
