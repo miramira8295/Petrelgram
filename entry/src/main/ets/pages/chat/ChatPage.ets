@@ -317,6 +317,26 @@ interface InitialMessageStageTarget {
   availableRows: number;
 }
 
+// applyRouteParams 的阶段间上下文：只在 A->C 之间传递的路由派生量。
+interface RouteApplyContext {
+  jumpTo: number | undefined;
+}
+
+// 向上翻页的锚点采样（与下面 append 那组是镜像判据，不是重复代码，不合并）。
+interface PrependAnchorSample {
+  id: number;
+  y: number;
+  userOffset: number;
+  prime: boolean;
+}
+
+// 向下翻页的锚点采样。
+interface AppendAnchorSample {
+  id: number;
+  y: number;
+  userOffset: number;
+}
+
 type InitialMessageReleaseResult = 'released' | 'waiting' | 'finished';
 
 // Emoji offered in the full reaction picker (opened from the long-press menu's
@@ -1725,6 +1745,9 @@ export struct ChatPage {
   private resumeScrollMessageId: number = 0;
   private resumeScrollItemY: number = 0;
   private resumeScrollAtBottom: boolean = true;
+  // applyRouteParams 一次性守卫下只写一次，等价于拆分前那个局部量；不加 @Local——
+  // 加了会让每次消息快照回调都触发一次页面 build。
+  private routeResumeWaiting: boolean = false;
   // @Local: the segment indicator renders from this — a plain field wouldn't
   // trigger a re-render when scrolling/tapping moves the shown pinned index.
   @Local pinnedCycle: number = 0;
@@ -2192,6 +2215,20 @@ export struct ChatPage {
     if (!this.navigationCoordinator.beginRouteApply()) {
       return;
     }
+    const ctx: RouteApplyContext = this.resolveRouteAndResetSession();
+    this.registerChatLevelSubscriptions();
+    const store: MessageStore = this.createMessageStore();
+    this.subscriptions.set('messages', store.subscribe((list: MessageEntry[]) => {
+      this.onMessagesSnapshot(store, list);
+    }));
+    this.registerHeaderDerivedSubscriptions(store);
+    this.openStoreForRoute(store, ctx);
+    this.scheduleEntrySearchIfNeeded();
+  }
+
+  // 阶段 A（前半）：路由解析、会话重置、头部/草稿/进入即搜索的初始状态。
+  // 语句顺序与拆分前逐行一致；jumpTo 经 RouteApplyContext 交给 openStoreForRoute。
+  private resolveRouteAndResetSession(): RouteApplyContext {
     const params = this.navParams;
     const route = parseChatRouteParams(params);
     this.chatId = route.chatId;
@@ -2213,27 +2250,7 @@ export struct ChatPage {
     getVoicePlayback().setMusicCompletionListener((messageId: number): void => {
       this.musicQueue.onCompleted(this.messages, messageId);
     });
-    let scrollResumeWaiting: boolean = this.resumeScrollPending &&
-      this.resumeScrollChatId === this.chatId &&
-      this.resumeScrollThreadId === conversationScopeId(
-        this.threadRootId, this.forumTopicId, this.directMessagesTopicId) &&
-      this.groups.length > 0;
-    if (!scrollResumeWaiting) {
-      this.resumeScrollPending = false;
-      this.resetScrollSession();
-      this.resetComposerSession();
-      this.resetMessageActionSession();
-    } else {
-      // Old rows remain visible until the replacement page has arrived. Clear
-      // transient overlays/actions, but preserve the captured viewport.
-      this.scrollActionSeq++;
-      this.jumpLayoutSeq++;
-      this.pendingJumpId = 0;
-      this.clearPendingScrollBottom('pageShowResume');
-      this.scrollToBottomBusy = false;
-      this.didInitialScroll = true;
-      this.clearFloatingDate();
-    }
+    this.resetOrPreserveScrollSession();
     const cachedChat: ChatEntry | undefined = getChatStore().entryOf(this.chatId);
     if (cachedChat !== undefined &&
       (cachedChat.kind === 'basicGroup' || cachedChat.kind === 'supergroup' || cachedChat.kind === 'channel')) {
@@ -2263,6 +2280,45 @@ export struct ChatPage {
       // Profile-page 搜索 button: open the chat with an empty, focused search.
       this.searchMode = true;
     }
+    const ctx: RouteApplyContext = { jumpTo: jumpTo };
+    return ctx;
+  }
+
+  // 会话重置决策。结果留在 routeResumeWaiting 字段上——拆分前它是 applyRouteParams
+  // 的局部量 scrollResumeWaiting，既被消息回调读写，也被 store.open 的分支读。
+  private resetOrPreserveScrollSession(): void {
+    this.routeResumeWaiting = this.resumeScrollPending &&
+      this.resumeScrollChatId === this.chatId &&
+      this.resumeScrollThreadId === conversationScopeId(
+        this.threadRootId, this.forumTopicId, this.directMessagesTopicId) &&
+      this.groups.length > 0;
+    if (!this.routeResumeWaiting) {
+      this.resumeScrollPending = false;
+      this.resetScrollSession();
+      this.resetComposerSession();
+      this.resetMessageActionSession();
+    } else {
+      // Old rows remain visible until the replacement page has arrived. Clear
+      // transient overlays/actions, but preserve the captured viewport.
+      this.scrollActionSeq++;
+      this.jumpLayoutSeq++;
+      this.pendingJumpId = 0;
+      this.clearPendingScrollBottom('pageShowResume');
+      this.scrollToBottomBusy = false;
+      this.didInitialScroll = true;
+      this.clearFloatingDate();
+    }
+  }
+
+  // 阶段 A（后半）：聊天级订阅与两个 setInterval。四个子阶段的相对顺序即原文顺序。
+  private registerChatLevelSubscriptions(): void {
+    this.subscribeChatLevelUpdates();
+    this.startChatBackgroundStore();
+    this.subscribeMembershipUpdates();
+    this.subscribeLiveCallUpdatesAndTimers();
+  }
+
+  private subscribeChatLevelUpdates(): void {
     this.refreshHeader();
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
       (u: TdObject): void => this.onChatAction(u)));
@@ -2290,6 +2346,9 @@ export struct ChatPage {
           this.isTranslatable = (u['is_translatable'] as boolean | undefined) ?? false;
         }
       }));
+  }
+
+  private startChatBackgroundStore(): void {
     // Background resolution and its four TDLib subscriptions now live in the
     // store; the page only mirrors its snapshot into state.
     this.bgStore = new ChatBackgroundStore(
@@ -2312,6 +2371,9 @@ export struct ChatPage {
       this.chatBackgroundRevision++;
     }));
     this.bgStore.open(this.chatId);
+  }
+
+  private subscribeMembershipUpdates(): void {
     this.subscriptions.set('membershipSupergroup', getTdClient().onUpdate('updateSupergroup', (u: TdObject) => {
       const supergroup = u['supergroup'] as TdObject | undefined;
       if (supergroup !== undefined &&
@@ -2328,6 +2390,9 @@ export struct ChatPage {
     }));
     this.refreshMembership();
     this.refreshVideoChat(true);
+  }
+
+  private subscribeLiveCallUpdatesAndTimers(): void {
     this.subscriptions.set('videoChat', getTdClient().onUpdate('updateChatVideoChat', (u: TdObject) => {
       if ((u['chat_id'] as number | undefined) === this.chatId) {
         this.liveChatResolveSeq++;
@@ -2361,6 +2426,11 @@ export struct ChatPage {
     this.liveStateRefreshTimer = setInterval((): void => {
       this.refreshVideoChat();
     }, 2000);
+  }
+
+  // this.store 必须在 store.subscribe() 之前赋值：subscribe 注册时会同步喂一次
+  // 监听器，那一趟回调体里读的就是 this.store。
+  private createMessageStore(): MessageStore {
     const store = new MessageStore(
       getTdClient(), getUserStore(), this.chatId, this.threadRootId, 30,
       this.forumTopicId, this.directMessagesTopicId);
@@ -2371,484 +2441,580 @@ export struct ChatPage {
       (isSplitLayout(this.screenW, this.screenH) || hasPrefetchedPage(this.chatId))
         ? 0 : INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
     this.store = store;
-    if (!scrollResumeWaiting || this.groups.length === 0) {
+    if (!this.routeResumeWaiting || this.groups.length === 0) {
       this.messageLoadState = 'loading';
     }
-    this.subscriptions.set('messages', store.subscribe((list: MessageEntry[]) => {
-      const historyState: string = store.getInitialHistoryState();
-      this.olderLoadState = store.getOlderLoadState();
-      this.newerLoadState = store.getNewerLoadState();
-      if (!(scrollResumeWaiting && this.groups.length > 0 && historyState === 'loading')) {
-        this.messageLoadState = historyState;
-        this.messageLoadError = store.getInitialHistoryError();
+    return store;
+  }
+
+  // 阶段 B：messages 订阅的回调体。store 逐层按参数传递（而不是读 this.store），
+  // scheduleNewerTailRefresh 里的 this.store === store 身份判定要靠它。
+  private onMessagesSnapshot(store: MessageStore, list: MessageEntry[]): void {
+    const historyState: string = store.getInitialHistoryState();
+    this.olderLoadState = store.getOlderLoadState();
+    this.newerLoadState = store.getNewerLoadState();
+    if (!(this.routeResumeWaiting && this.groups.length > 0 && historyState === 'loading')) {
+      this.messageLoadState = historyState;
+      this.messageLoadError = store.getInitialHistoryError();
+    }
+    // Do not turn an openChat real-time update into the first positioned
+    // timeline. MessageStore normally withholds these partial snapshots, and
+    // this page-side guard also protects cached-page resume and future data
+    // sources that may publish while their initial history is still loading.
+    if (historyState === 'loading') {
+      return;
+    }
+    // During a cached-page resume, hold the old viewport until a snapshot
+    // arrives that is actually a timeline rather than a fragment of one.
+    // 「碎片」的判据与它的成因见 util/chatResume.isResumeFragment。
+    const fragment: boolean = isResumeFragment(this.groups.length, list.length);
+    if (this.routeResumeWaiting && (list.length === 0 || fragment)) {
+      return;
+    }
+    const notifyKind: string = store.getCurrentNotifyKind();
+    const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
+    const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
+    const resumeLandingPrepared: boolean = this.resolveResumeLandingChoice(store, groups);
+    const firstMessageStage: boolean = !this.routeResumeWaiting && this.groups.length === 0 &&
+      (resumeLandingPrepared || !this.didInitialScroll);
+    // Transfer completion/failure and translation state keep the stable list
+    // key. Publish them directly to the mounted row before the data-source
+    // diff, so a key-equal snapshot still updates the one affected bubble.
+    publishMessageRowPresentations(this.chatId, groups);
+    const prependAnchor: PrependAnchorSample =
+      this.capturePrependAnchorSample(list, groups, notifyKind);
+    const appendAnchor: AppendAnchorSample =
+      this.captureAppendAnchorSample(store, groups, prependAnchor);
+    this.publishSnapshotAndChrome(store, list, groups, firstMessageStage);
+    this.restoreCapturedAnchors(prependAnchor, appendAnchor);
+    const positionHandled: boolean = this.applyResumeLanding(list, groups, maxId);
+    this.consumeLiveIncomingMediaAndCommands(store);
+    const fillPending: boolean = this.store !== null && this.store.isInitialFillPending();
+    this.applyInitialOrFollowLanding(
+      list, groups, maxId, notifyKind, positionHandled, fillPending);
+    this.consumeJumpToLatestIntent(list, groups, maxId);
+    this.scheduleNewerTailRefresh(store, notifyKind);
+    this.landPendingGallerySave(list);
+    this.landPendingFileOpen(list);
+    this.landPendingJump(groups);
+    // Empty/error chats never start message admission, while populated chats
+    // reach this call again after the staged release completes. The method's
+    // store/stage guards make both paths converge without a timer race.
+    this.scheduleComposerEditorMount();
+    if (this.didInitialScroll && list.length > 0) {
+      store.prefetchOlder();
+    }
+  }
+
+  private resolveResumeLandingChoice(store: MessageStore, groups: AlbumGroup[]): boolean {
+    // A remembered target is conditional: if getChat says new unread
+    // messages exist, MessageStore opened around the unread boundary instead.
+    // Resolve that choice BEFORE firstMessageStage is computed. Otherwise the
+    // same first snapshot is first staged/positioned as a fully-read bottom
+    // landing and then pulled to another anchor, which is the visible
+    // "bottom first, suddenly jump upward" reported on entry.
+    let resumeLandingPrepared: boolean = false;
+    if (!this.routeResumeWaiting && !this.didInitialScroll && this.pendingResumeId > 0) {
+      const rememberedId: number = this.pendingResumeId;
+      const rememberedIndex: number = groupIndexOf(groups, rememberedId);
+      if (store.isResumeLandingSelected() && rememberedIndex >= 0) {
+        this.didInitialScroll = true;
+        this.atBottom = false;
+        this.pendingJumpId = rememberedId;
+        this.resumeDividerId = groups[rememberedIndex].head.id;
+        this.resumeDividerItemY = this.pendingResumeItemY;
+        resumeLandingPrepared = true;
       }
-      // Do not turn an openChat real-time update into the first positioned
-      // timeline. MessageStore normally withholds these partial snapshots, and
-      // this page-side guard also protects cached-page resume and future data
-      // sources that may publish while their initial history is still loading.
-      if (historyState === 'loading') {
-        return;
-      }
-      // During a cached-page resume, hold the old viewport until a snapshot
-      // arrives that is actually a timeline rather than a fragment of one.
-      // 「碎片」的判据与它的成因见 util/chatResume.isResumeFragment。
-      const fragment: boolean = isResumeFragment(this.groups.length, list.length);
-      if (scrollResumeWaiting && (list.length === 0 || fragment)) {
-        return;
-      }
-      const notifyKind: string = store.getCurrentNotifyKind();
-      const maxId: number = list.length > 0 ? list[list.length - 1].id : 0;
-      const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(list);
-      // A remembered target is conditional: if getChat says new unread
-      // messages exist, MessageStore opened around the unread boundary instead.
-      // Resolve that choice BEFORE firstMessageStage is computed. Otherwise the
-      // same first snapshot is first staged/positioned as a fully-read bottom
-      // landing and then pulled to another anchor, which is the visible
-      // "bottom first, suddenly jump upward" reported on entry.
-      let resumeLandingPrepared: boolean = false;
-      if (!scrollResumeWaiting && !this.didInitialScroll && this.pendingResumeId > 0) {
-        const rememberedId: number = this.pendingResumeId;
-        const rememberedIndex: number = groupIndexOf(groups, rememberedId);
-        if (store.isResumeLandingSelected() && rememberedIndex >= 0) {
-          this.didInitialScroll = true;
-          this.atBottom = false;
-          this.pendingJumpId = rememberedId;
-          this.resumeDividerId = groups[rememberedIndex].head.id;
-          this.resumeDividerItemY = this.pendingResumeItemY;
-          resumeLandingPrepared = true;
-        }
-        // Whether selected or superseded by unread, the decision is final once
-        // the first ready history snapshot arrives.
-        this.pendingResumeId = 0;
-        this.pendingResumeItemY = 0;
-      }
-      const firstMessageStage: boolean = !scrollResumeWaiting && this.groups.length === 0 &&
-        (resumeLandingPrepared || !this.didInitialScroll);
-      // Transfer completion/failure and translation state keep the stable list
-      // key. Publish them directly to the mounted row before the data-source
-      // diff, so a key-equal snapshot still updates the one affected bubble.
-      publishMessageRowPresentations(this.chatId, groups);
-      // ── 向上翻页的锚点复位 ──────────────────────────────────────────
-      //
-      // API 20 起官方已经明确：maintainVisibleContentPosition(true) 支持 Repeat
-      // 的懒加载场景，但真机媒体相册推翻了“普通区外前插一定能保位”这个前提：
-      // older 页发布时旧首行 key 可以不变，甚至会跨页并入同一相册、旧身份直接
-      // 消失；Repeat 重排超高媒体行后，整个可见窗口仍会换位置。
-      //
-      // 因此判据改为 MessageStore 的事务语义：notifyKind 是 older，且原始消息窗口
-      // 确实增长。纯追加、编辑和空页都不复位。即使用户仍在滑也要记锚点；后面的
-      // userScrollOffset 会保留采样后的真实手势位移，只抵消数据/布局造成的跳动。
-      let prependAnchorId: number = 0;
-      let prependAnchorY: number = 0;
-      let prependAnchorUserOffset: number = 0;
-      let primePrependAnchor: boolean = false;
-      const olderPageGrowth: boolean = notifyKind === 'older' && list.length > this.messages.length;
-      if (shouldCapturePrependAnchor({
-        didInitialScroll: this.didInitialScroll,
-        anchorIndexFresh: this.anchorIndexFresh(),
-        olderPageGrowth: olderPageGrowth
-      })) {
-        const visibleIndex: number = this.curStartIdx;
-        if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
-          const y: number = this.anchorItemY(visibleIndex);
-          // 量不到就整个不记锚点：宁可不补，也不要拿一个假 0 去算 dy
-          // （见 anchorItemY 的说明）。
-          if (!Number.isNaN(y)) {
-            prependAnchorId = this.groups[visibleIndex].head.id;
-            prependAnchorY = y;
-            prependAnchorUserOffset = this.userScrollOffsetTotal;
-            primePrependAnchor = shouldPrimePrependAnchor(
-              visibleIndex, y, this.headerChromeHeight(), this.listTouchActive);
-            this.captureAnchorOffset();
-            logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
-              ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
-              ` messages=${this.messages.length}->${list.length} prime=${primePrependAnchor}` +
-              ` touch=${this.listTouchActive} active=${this.timelineScrollActive}`);
-          } else {
-            logW(`[PrependAnchor] skip reason=measure idx=${visibleIndex}` +
-              ` rows=${this.groups.length}->${groups.length}` +
-              ` messages=${this.messages.length}->${list.length}`);
-          }
+      // Whether selected or superseded by unread, the decision is final once
+      // the first ready history snapshot arrives.
+      this.pendingResumeId = 0;
+      this.pendingResumeItemY = 0;
+    }
+    return resumeLandingPrepared;
+  }
+
+  private capturePrependAnchorSample(list: MessageEntry[], groups: AlbumGroup[],
+    notifyKind: string): PrependAnchorSample {
+    // ── 向上翻页的锚点复位 ──────────────────────────────────────────
+    //
+    // API 20 起官方已经明确：maintainVisibleContentPosition(true) 支持 Repeat
+    // 的懒加载场景，但真机媒体相册推翻了“普通区外前插一定能保位”这个前提：
+    // older 页发布时旧首行 key 可以不变，甚至会跨页并入同一相册、旧身份直接
+    // 消失；Repeat 重排超高媒体行后，整个可见窗口仍会换位置。
+    //
+    // 因此判据改为 MessageStore 的事务语义：notifyKind 是 older，且原始消息窗口
+    // 确实增长。纯追加、编辑和空页都不复位。即使用户仍在滑也要记锚点；后面的
+    // userScrollOffset 会保留采样后的真实手势位移，只抵消数据/布局造成的跳动。
+    let prependAnchorId: number = 0;
+    let prependAnchorY: number = 0;
+    let prependAnchorUserOffset: number = 0;
+    let primePrependAnchor: boolean = false;
+    const olderPageGrowth: boolean = notifyKind === 'older' && list.length > this.messages.length;
+    if (shouldCapturePrependAnchor({
+      didInitialScroll: this.didInitialScroll,
+      anchorIndexFresh: this.anchorIndexFresh(),
+      olderPageGrowth: olderPageGrowth
+    })) {
+      const visibleIndex: number = this.curStartIdx;
+      if (visibleIndex >= 0 && visibleIndex < this.groups.length) {
+        const y: number = this.anchorItemY(visibleIndex);
+        // 量不到就整个不记锚点：宁可不补，也不要拿一个假 0 去算 dy
+        // （见 anchorItemY 的说明）。
+        if (!Number.isNaN(y)) {
+          prependAnchorId = this.groups[visibleIndex].head.id;
+          prependAnchorY = y;
+          prependAnchorUserOffset = this.userScrollOffsetTotal;
+          primePrependAnchor = shouldPrimePrependAnchor(
+            visibleIndex, y, this.headerChromeHeight(), this.listTouchActive);
+          this.captureAnchorOffset();
+          logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
+            ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
+            ` messages=${this.messages.length}->${list.length} prime=${primePrependAnchor}` +
+            ` touch=${this.listTouchActive} active=${this.timelineScrollActive}`);
         } else {
-          logW(`[PrependAnchor] skip reason=index idx=${visibleIndex}` +
+          logW(`[PrependAnchor] skip reason=measure idx=${visibleIndex}` +
             ` rows=${this.groups.length}->${groups.length}` +
             ` messages=${this.messages.length}->${list.length}`);
         }
-      } else if (olderPageGrowth && this.didInitialScroll) {
-        logW(`[PrependAnchor] skip reason=stale-index startIdx=${this.curStartIdx}` +
-          ` idxLen=${this.indexGroupsLen} rows=${this.groups.length}->${groups.length}` +
+      } else {
+        logW(`[PrependAnchor] skip reason=index idx=${visibleIndex}` +
+          ` rows=${this.groups.length}->${groups.length}` +
           ` messages=${this.messages.length}->${list.length}`);
       }
-      // ── 向下翻页的锚点复位 ──────────────────────────────────────────
-      //
-      // 上面那一段的镜像。底部锚定时末尾追加会把可见内容整体往上顶；顶部锚定
-      // 理论上应当不动，但 Repeat + 超高相册行在真机上仍会重排整个窗口。两侧都
-      // 记录同一可见消息；普通追加若已由框架守住，发布后 dy 自然为 0。判据与
-      // 真机证据见 util/appendAnchor。
-      //
-      // 额外那道闸判的是「**这次追加是不是用户主动向下翻页的结果**」，判据与
-      // 完整推导见 util/appendAnchor。
-      //
-      // 它原来是 `!this.atBottom`——那问的是另一件事（"用户此刻在不在会话实时
-      // 尾部"），而 atBottomVerdict 里带着 !hasMoreNewer，于是向下翻页的整个
-      // 过程中恒为真、闸恒开，每一次追加都把视口按回锚点。那正是真机上"进会话
-      // 落在中间之后持续闪、滑不动、↓ 按不下去"的动力来源。
-      let appendAnchorId: number = 0;
-      let appendAnchorY: number = 0;
-      let appendAnchorUserOffset: number = 0;
-      const appendsRows: boolean = appendBreaksAnchor(this.groups, groups);
-      // 标记**无条件**取走：一次请求最多影响一次发布，绝不跨页残留。用不用得
-      // 上再看这次发布有没有真的追加行。原来只在 appendsRows 为真时才取，于是
-      // "置了位却一行没追加"的请求（短页补链、缓存预热重问、整页丢弃——在
-      // loadNewer 的过滤下是常态）会把标记永久闩住，此后每一次追加都误判成用户
-      // 翻出来的。真机上 hold 40 / skip 0 就是这么来的。见 util/appendAnchor。
-      const appendMarkPending: boolean = store.consumeUserDrivenAppend();
-      const userDrivenAppend: boolean =
-        useUserDrivenAppendMark(appendMarkPending, appendsRows);
-      const holdAppendAnchor: boolean = shouldHoldAppendAnchor({
-        bypassed: APPEND_ANCHOR_RESTORE_BYPASSED,
-        didInitialScroll: this.didInitialScroll,
-        prependAnchorHeld: prependAnchorId !== 0,
-        appendBreaksAnchor: appendsRows,
-        atLiveTail: this.atBottom,
-        scrollIntentPending: this.pendingJumpId !== 0 || this.pendingScrollBottom
-      });
-      if (holdAppendAnchor && this.anchorIndexFresh()) {
-        const visibleIndex: number = this.curStartIdx;
-        const y: number = visibleIndex >= 0 && visibleIndex < this.groups.length
-          ? this.anchorItemY(visibleIndex) : Number.NaN;
-        if (!Number.isNaN(y)) {
-          appendAnchorId = this.groups[visibleIndex].head.id;
-          appendAnchorY = y;
-          appendAnchorUserOffset = this.userScrollOffsetTotal;
-          this.captureAnchorOffset();
-          logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
-            ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
-            ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
-        }
-      } else if (appendsRows && prependAnchorId === 0 && this.didInitialScroll) {
-        // 闸关上时也留一条：判读时要能看见「这一次追加本来会不会复位」。与 hold
-        // 那条同格式，随探针一起删。
-        logW(`[AppendAnchor] skip bypass=${APPEND_ANCHOR_RESTORE_BYPASSED}` +
+    } else if (olderPageGrowth && this.didInitialScroll) {
+      logW(`[PrependAnchor] skip reason=stale-index startIdx=${this.curStartIdx}` +
+        ` idxLen=${this.indexGroupsLen} rows=${this.groups.length}->${groups.length}` +
+        ` messages=${this.messages.length}->${list.length}`);
+    }
+    const sample: PrependAnchorSample = {
+      id: prependAnchorId,
+      y: prependAnchorY,
+      userOffset: prependAnchorUserOffset,
+      prime: primePrependAnchor
+    };
+    return sample;
+  }
+
+  private captureAppendAnchorSample(store: MessageStore, groups: AlbumGroup[],
+    prependAnchor: PrependAnchorSample): AppendAnchorSample {
+    // ── 向下翻页的锚点复位 ──────────────────────────────────────────
+    //
+    // 上面那一段的镜像。底部锚定时末尾追加会把可见内容整体往上顶；顶部锚定
+    // 理论上应当不动，但 Repeat + 超高相册行在真机上仍会重排整个窗口。两侧都
+    // 记录同一可见消息；普通追加若已由框架守住，发布后 dy 自然为 0。判据与
+    // 真机证据见 util/appendAnchor。
+    //
+    // 额外那道闸判的是「**这次追加是不是用户主动向下翻页的结果**」，判据与
+    // 完整推导见 util/appendAnchor。
+    //
+    // 它原来是 `!this.atBottom`——那问的是另一件事（"用户此刻在不在会话实时
+    // 尾部"），而 atBottomVerdict 里带着 !hasMoreNewer，于是向下翻页的整个
+    // 过程中恒为真、闸恒开，每一次追加都把视口按回锚点。那正是真机上"进会话
+    // 落在中间之后持续闪、滑不动、↓ 按不下去"的动力来源。
+    let appendAnchorId: number = 0;
+    let appendAnchorY: number = 0;
+    let appendAnchorUserOffset: number = 0;
+    const appendsRows: boolean = appendBreaksAnchor(this.groups, groups);
+    // 标记**无条件**取走：一次请求最多影响一次发布，绝不跨页残留。用不用得
+    // 上再看这次发布有没有真的追加行。原来只在 appendsRows 为真时才取，于是
+    // "置了位却一行没追加"的请求（短页补链、缓存预热重问、整页丢弃——在
+    // loadNewer 的过滤下是常态）会把标记永久闩住，此后每一次追加都误判成用户
+    // 翻出来的。真机上 hold 40 / skip 0 就是这么来的。见 util/appendAnchor。
+    const appendMarkPending: boolean = store.consumeUserDrivenAppend();
+    const userDrivenAppend: boolean =
+      useUserDrivenAppendMark(appendMarkPending, appendsRows);
+    const holdAppendAnchor: boolean = shouldHoldAppendAnchor({
+      bypassed: APPEND_ANCHOR_RESTORE_BYPASSED,
+      didInitialScroll: this.didInitialScroll,
+      prependAnchorHeld: prependAnchor.id !== 0,
+      appendBreaksAnchor: appendsRows,
+      atLiveTail: this.atBottom,
+      scrollIntentPending: this.pendingJumpId !== 0 || this.pendingScrollBottom
+    });
+    if (holdAppendAnchor && this.anchorIndexFresh()) {
+      const visibleIndex: number = this.curStartIdx;
+      const y: number = visibleIndex >= 0 && visibleIndex < this.groups.length
+        ? this.anchorItemY(visibleIndex) : Number.NaN;
+      if (!Number.isNaN(y)) {
+        appendAnchorId = this.groups[visibleIndex].head.id;
+        appendAnchorY = y;
+        appendAnchorUserOffset = this.userScrollOffsetTotal;
+        this.captureAnchorOffset();
+        logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
           ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
           ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
       }
-      this.isChannel = store.getIsChannel();
-      this.isGroup = store.getIsGroup();
-      this.messages = list;
-      this.messageListRevision++;
-      this.reconcileMessageActionTargets(list);
-      this.visibleGroupCount = groups.length;
-      if (this.viewerMsgId !== 0 &&
-        list.findIndex((m: MessageEntry): boolean => m.id === this.viewerMsgId) < 0) {
-        this.closeViewer();
-      }
-      if (firstMessageStage) {
-        this.publishInitialMessageGroups(groups);
-      } else {
-        this.publishMessageGroups(groups);
-      }
-      if (firstMessageStage && groups.length === 0) {
-        // There is no bubble that can drive the coordinated presentation.
-        // Reveal the resolved empty/error surface now. Non-empty histories are
-        // released only by scheduleInitialTimelinePresentation(), keeping the
-        // header, composer, and first real bubble in the same render frame.
-        this.cancelInitialMessageTransitionSettle();
-        this.initialMessageTransitionSettled = true;
-      } else if (!firstMessageStage && !this.initialMessageTransitionSettled &&
-        !this.initialMessageStageActive) {
-        // Message-link/search/thread entries set didInitialScroll before their
-        // around-target history arrives because pendingJumpId owns positioning.
-        // They intentionally bypass bottom/unread staging, so they also need a
-        // direct presentation completion path. Release chrome in the same
-        // state publication as the resolved timeline (including an empty/error
-        // result) without issuing another scroll that could override the jump.
-        this.cancelInitialMessageTransitionSettle();
-        this.initialMessageTransitionSettled = true;
-      }
-      // 翻译和媒体窗口原来只挂在 onScrollIndex 上 —— 进页面不滑动就永远不
-      // 触发（用户报的"这个页面不会自动翻译"），新消息到达也一样。数据一变
-      // 就按当前视口驱动一次；curStartIdx/curEndIdx 在首帧前是 -1，此时用
-      // 首屏兜底，滑动事件来了会立刻纠正。
-      this.driveVisibleWork();
-      this.fillViewportIfNeeded();
-      this.musicQueue.settlePending(list);
-      // 复位跑在发布之后：this.groups 此刻已经是新快照，按消息 id 找得到锚点行
-      // 的新下标。restorePrependAnchor 内部是一个 setTimeout(0) + 代次守卫，
-      // 跳转/贴底这些更强的定位意图会把它作废。
-      if (prependAnchorId > 0) {
-        this.restorePrependAnchor(
-          this.groups, prependAnchorId, prependAnchorY, prependAnchorUserOffset,
-          primePrependAnchor);
-      } else if (appendAnchorId > 0) {
-        // 复位走的是和向上那侧同一个 restoreScrollAnchor：setTimeout(0) + 代次
-        // 守卫，跳转/贴底这些更强的定位意图会把它作废。
-        this.restoreAppendAnchor(
-          this.groups, appendAnchorId, appendAnchorY, appendAnchorUserOffset);
-      }
-      let positionHandled: boolean = false;
-      if (scrollResumeWaiting && list.length > 0) {
-        scrollResumeWaiting = false;
-        this.resumeScrollPending = false;
-        this.didInitialScroll = true;
-        this.lastMaxId = maxId;
-        this.firstUnreadId = 0;
-        this.stayAtUnread = false;
-        positionHandled = true;
-        if (this.resumeScrollAtBottom) {
-          this.atBottom = false;
-          const actionSeq: number = ++this.scrollActionSeq;
-          this.glueBottom('L1153');
-          setTimeout((): void => {
-            if (actionSeq === this.scrollActionSeq) {
-              this.glueBottom('L1156');
-              this.refreshAtBottom();
-            }
-          }, 60);
-        } else {
-          const resumeIndex: number = groupIndexOf(groups, this.resumeScrollMessageId);
-          this.atBottom = false;
-          if (resumeIndex >= 0) {
-            this.restoreScrollAnchor(resumeIndex, this.resumeScrollItemY);
-          } else {
-            this.glueBottom('L1166');
-          }
-        }
-      }
-      // isChannel/isGroup were resolved before the timeline publication above,
-      // so the host receives row data and chat kind in the same snapshot.
-      const liveMediaIds: number[] = store.consumeLiveIncomingMediaIds();
-      const autoScope: string = this.isChannel ? 'channel' : (this.isGroup ? 'group' : 'private');
-      if (autosaveEnabled(autoScope)) {
-        for (const mediaId of liveMediaIds) {
-          if (this.autoSavePendingIds.indexOf(mediaId) < 0) {
-            this.autoSavePendingIds.push(mediaId);
-          }
-        }
-      }
-      // Private peer resolved: probe once for commands. The centralized loader
-      // also serves '/' autocomplete, so fast typing cannot start a competing
-      // request that overwrites a newer result.
-      if (this.commandLoadState === 'idle' && this.store !== null &&
-        this.store.getPeerUserId() > 0) {
-        this.ensureCommandsLoaded();
-      }
-      const fillPending: boolean = this.store !== null && this.store.isInitialFillPending();
-      if (!positionHandled && !this.didInitialScroll && list.length > 0) {
-        // First real page: jump to the first unread message (Android-style);
-        // fully-read chats land at the bottom. (Never anchor on
-        // last_read_inbox_message_id here — it only tracks incoming messages,
-        // so with an outgoing tail it points at a stale mid-history position.)
-        this.didInitialScroll = true;
-        this.lastMaxId = maxId;
-        const fu: number = this.store !== null ? this.store.getFirstUnreadId() : 0;
-        // 落点判定在 util/initialAnchor（6 条测），两个分支各自的理由写在那里。
-        const anchor: InitialAnchor = initialAnchorOf(
-          fu, fu > 0 ? groupIndexOf(groups, fu) : -1,
-          (index: number): number => groups[index].head.id);
-        this.firstUnreadId = anchor.dividerId;
-        // 首屏定位的落点诊断。**未读分支原来一条日志都没有**，只有底部分支
-        // 打 glueBottom，于是"没跳到未读"和"压根没落定"在日志上长得一模一样，
-        // 排查时分不开——正是这次浪费掉一轮的原因。
-        // 方向一（进会话落在中间）的落点侧证据：这里说的是"选了哪条落点路径"，
-        // 而 hasMoreNewer 说的是"贴的是已加载窗口的底还是真尾部"——两者要一起
-        // 看才分得清"没跳到未读"和"跳到了但窗口本身没够到尾部"。
-        const anchorHasMoreNewer: boolean =
-          this.store !== null && this.store.getHasMoreNewer();
-        logW(`[Anchor] latch fu=${fu} kind=${anchor.kind} index=${anchor.index}` +
-          ` rows=${groups.length} fillPending=${fillPending}` +
-          ` hasMoreNewer=${anchorHasMoreNewer}` +
-          ` windowLast=${list.length > 0 ? list[list.length - 1].id : 0}`);
-        const landSeq: number = this.scrollActionSeq;
+    } else if (appendsRows && prependAnchor.id === 0 && this.didInitialScroll) {
+      // 闸关上时也留一条：判读时要能看见「这一次追加本来会不会复位」。与 hold
+      // 那条同格式，随探针一起删。
+      logW(`[AppendAnchor] skip bypass=${APPEND_ANCHOR_RESTORE_BYPASSED}` +
+        ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
+        ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
+    }
+    const sample: AppendAnchorSample = {
+      id: appendAnchorId,
+      y: appendAnchorY,
+      userOffset: appendAnchorUserOffset
+    };
+    return sample;
+  }
+
+  private publishSnapshotAndChrome(store: MessageStore, list: MessageEntry[],
+    groups: AlbumGroup[], firstMessageStage: boolean): void {
+    this.isChannel = store.getIsChannel();
+    this.isGroup = store.getIsGroup();
+    this.messages = list;
+    this.messageListRevision++;
+    this.reconcileMessageActionTargets(list);
+    this.visibleGroupCount = groups.length;
+    if (this.viewerMsgId !== 0 &&
+      list.findIndex((m: MessageEntry): boolean => m.id === this.viewerMsgId) < 0) {
+      this.closeViewer();
+    }
+    if (firstMessageStage) {
+      this.publishInitialMessageGroups(groups);
+    } else {
+      this.publishMessageGroups(groups);
+    }
+    if (firstMessageStage && groups.length === 0) {
+      // There is no bubble that can drive the coordinated presentation.
+      // Reveal the resolved empty/error surface now. Non-empty histories are
+      // released only by scheduleInitialTimelinePresentation(), keeping the
+      // header, composer, and first real bubble in the same render frame.
+      this.cancelInitialMessageTransitionSettle();
+      this.initialMessageTransitionSettled = true;
+    } else if (!firstMessageStage && !this.initialMessageTransitionSettled &&
+      !this.initialMessageStageActive) {
+      // Message-link/search/thread entries set didInitialScroll before their
+      // around-target history arrives because pendingJumpId owns positioning.
+      // They intentionally bypass bottom/unread staging, so they also need a
+      // direct presentation completion path. Release chrome in the same
+      // state publication as the resolved timeline (including an empty/error
+      // result) without issuing another scroll that could override the jump.
+      this.cancelInitialMessageTransitionSettle();
+      this.initialMessageTransitionSettled = true;
+    }
+    // 翻译和媒体窗口原来只挂在 onScrollIndex 上 —— 进页面不滑动就永远不
+    // 触发（用户报的"这个页面不会自动翻译"），新消息到达也一样。数据一变
+    // 就按当前视口驱动一次；curStartIdx/curEndIdx 在首帧前是 -1，此时用
+    // 首屏兜底，滑动事件来了会立刻纠正。
+    this.driveVisibleWork();
+    this.fillViewportIfNeeded();
+    this.musicQueue.settlePending(list);
+  }
+
+  private restoreCapturedAnchors(prependAnchor: PrependAnchorSample,
+    appendAnchor: AppendAnchorSample): void {
+    // 复位跑在发布之后：this.groups 此刻已经是新快照，按消息 id 找得到锚点行
+    // 的新下标。restorePrependAnchor 内部是一个 setTimeout(0) + 代次守卫，
+    // 跳转/贴底这些更强的定位意图会把它作废。
+    if (prependAnchor.id > 0) {
+      this.restorePrependAnchor(
+        this.groups, prependAnchor.id, prependAnchor.y, prependAnchor.userOffset,
+        prependAnchor.prime);
+    } else if (appendAnchor.id > 0) {
+      // 复位走的是和向上那侧同一个 restoreScrollAnchor：setTimeout(0) + 代次
+      // 守卫，跳转/贴底这些更强的定位意图会把它作废。
+      this.restoreAppendAnchor(
+        this.groups, appendAnchor.id, appendAnchor.y, appendAnchor.userOffset);
+    }
+  }
+
+  private applyResumeLanding(list: MessageEntry[], groups: AlbumGroup[],
+    maxId: number): boolean {
+    let positionHandled: boolean = false;
+    if (this.routeResumeWaiting && list.length > 0) {
+      this.routeResumeWaiting = false;
+      this.resumeScrollPending = false;
+      this.didInitialScroll = true;
+      this.lastMaxId = maxId;
+      this.firstUnreadId = 0;
+      this.stayAtUnread = false;
+      positionHandled = true;
+      if (this.resumeScrollAtBottom) {
+        this.atBottom = false;
+        const actionSeq: number = ++this.scrollActionSeq;
+        this.glueBottom('L1153');
         setTimeout((): void => {
-          if (landSeq !== this.scrollActionSeq) {
-            logW(`[Anchor] landed stale seq=${landSeq} cur=${this.scrollActionSeq}`);
-            return;
-          }
-          logW(`[Anchor] landed kind=${anchor.kind} ${this.scrollStateProbe()}`);
-        }, 400);
-        if (anchor.kind === ANCHOR_UNREAD) {
-          // 两个标志必须一起动，各自挡一个已经发生过的问题，见 util 里的说明。
-          this.atBottom = false;
-          this.stayAtUnread = anchorLatchesBottom(anchor);
-          // The initial-message performance path has only just published
-          // placeholder rows here. An immediate scroll alone can be swallowed
-          // before List layout; beginInitialUnreadLanding reissues it after the
-          // real anchor row is laid out and recomputes the index after backfill.
-          this.beginInitialUnreadLanding();
-        } else {
-          this.glueBottom('L1220');
-        }
-      } else if (!positionHandled && this.didInitialScroll && maxId > this.lastMaxId) {
-        // Only follow to the bottom for genuinely new messages AND only when the
-        // user is already near the bottom — never yank them down while they read
-        // history or on photo/read-receipt updates.
-        // Mark the arrivals as fresh for a beat so their bubbles gently enter;
-        // rows rebuilt while scrolling history never animate.
-        if (notifyKind === 'update') {
-          this.freshSinceId = this.lastMaxId;
-          const clearSeq = ++this.freshClearSeq;
-          setTimeout(() => {
-            if (clearSeq === this.freshClearSeq) {
-              this.freshSinceId = 0;
-            }
-          }, 1500);
-        }
-        this.lastMaxId = maxId;
-        // Never follow while parked at the unread boundary (until the user
-        // touches) or while the fullscreen viewer is open — the chat should
-        // return to the same underlying message after the preview closes.
-        if (notifyKind === 'update') {
-          // 诊断（issue #62）：新消息到了，跟不跟随只取决于这三个标志。用户
-          // 报的现象是"手滑到底之后新消息不跟随，点箭头到底就跟随"——两条路
-          // 的差别一定落在这三个之一，打出来就不用猜了。
-          logW(`[Follow62] atBottom=${this.atBottom} stayAtUnread=${this.stayAtUnread}` +
-            ` viewerOpen=${this.viewerMsgId !== 0}` +
-            ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}` +
-            ` endIdx=${this.curEndIdx} rows=${this.groups.length}`);
-        }
-        // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
-        // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
-        // 顶是官方行为，不该被它挡住——真机日志：atBottom=true stayAtUnread=true 不跟随。
-        if (notifyKind === 'update' && this.atBottom && this.viewerMsgId === 0) {
-          this.stayAtUnread = false;
-          this.glueBottom('L1242');
-        }
-      } else if (this.didInitialScroll && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0
-        && (this.store === null || !this.store.getHasMoreNewer())) {
-        // In-place content growth (thumbnails, reply quotes, forward headers
-        // filling in async) changes row heights; when the user is at the
-        // bottom, stay glued there instead of letting the tail drift. Never
-        // glue while unloaded newer pages exist — being at the window's edge
-        // there is NOT the live tail, and gluing chain-loads every page.
-        // Also never move the underlying list while the media viewer is open.
-        this.glueBottom('L1252');
-      }
-      // jumpToLatest's newest page arrived — snap to the end. The dataset was
-      // just replaced wholesale, so scroll once now and once after the List has
-      // laid the new rows out: the immediate call alone lands at the top of the
-      // reloaded page because the final row heights aren't known yet.
-      if (this.pendingScrollBottom && list.length > 0) {
-        this.pendingScrollBottom = false;
-        this.lastMaxId = maxId;
-        this.atBottom = true;
-        const actionSeq: number = this.scrollActionSeq;
-        const probeSeq: number = this.jumpLatestSeq;
-        logW(`[JumpLatest] #${probeSeq} publish consume call=scrollEdge` +
-          ` rows=${groups.length} list=${list.length} ${this.scrollStateProbe()}`);
-        this.glueBottom('L1263');
-        setTimeout(() => {
-          if (actionSeq !== this.scrollActionSeq) {
-            logW(`[JumpLatest] #${probeSeq} publish settle stale actionSeq=${actionSeq}` +
-              ` cur=${this.scrollActionSeq}`);
-            return;
-          }
-          this.glueBottom('L1266');
-          this.refreshAtBottom();
-          logW(`[JumpLatest] #${probeSeq} landed ${this.scrollStateProbe()}`);
-        }, 60);
-      } else if (this.pendingScrollBottom) {
-        // 意图还挂着但这次发布没有内容可落——留着等下一次发布，别悄悄丢掉。
-        logW(`[JumpLatest] #${this.jumpLatestSeq} publish kept intent list=0` +
-          ` rows=${groups.length}`);
-      }
-      if (notifyKind === 'newer') {
-        // An empty newer page is the signal that this history window has
-        // reached the live tail. Re-evaluate after layout even when no visible
-        // index changed, otherwise the down button can remain stuck onscreen.
-        setTimeout((): void => {
-          if (this.store === store) {
+          if (actionSeq === this.scrollActionSeq) {
+            this.glueBottom('L1156');
             this.refreshAtBottom();
           }
-        }, 0);
+        }, 60);
+      } else {
+        const resumeIndex: number = groupIndexOf(groups, this.resumeScrollMessageId);
+        this.atBottom = false;
+        if (resumeIndex >= 0) {
+          this.restoreScrollAnchor(resumeIndex, this.resumeScrollItemY);
+        } else {
+          this.glueBottom('L1166');
+        }
       }
-      // A viewer item queued for gallery save finished downloading — always
-      // prefer the original photo rather than silently saving its thumbnail.
-      if (this.pendingGallerySaveId !== 0) {
-        const pe = list.find((m: MessageEntry) => m.id === this.pendingGallerySaveId);
-        if (pe !== undefined) {
-          if (mediaEntryIsVideo(pe) && pe.videoPath !== '') {
-            this.pendingGallerySaveId = 0;
-            const progress: DownloadSaveNotification | undefined =
-              this.pendingGallerySaveProgress ?? undefined;
-            this.pendingGallerySaveProgress = null;
-            this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.videoPath, true,
-              pe.videoFileName, false, progress);
-          } else if (mediaEntryIsVideo(pe) && pe.videoFailed) {
-            this.pendingGallerySaveId = 0;
-            this.pendingGallerySaveProgress?.downloadFailed();
-            this.pendingGallerySaveProgress = null;
-            promptAction.showToast({ message: $r('app.string.cp_video_download_failed'), duration: 1800 });
-          } else if (mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
-            this.pendingGallerySaveId = 0;
-            const progress: DownloadSaveNotification | undefined =
-              this.pendingGallerySaveProgress ?? undefined;
-            this.pendingGallerySaveProgress = null;
-            this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.photoFullPath, false,
-              '', false, progress);
-          } else if (mediaEntryIsPhoto(pe) && pe.photoFullFailed) {
-            this.pendingGallerySaveId = 0;
-            this.pendingGallerySaveProgress?.downloadFailed();
-            this.pendingGallerySaveProgress = null;
-            promptAction.showToast({ message: $r('app.string.cp_photo_download_failed'), duration: 1800 });
+    }
+    return positionHandled;
+  }
+
+  private consumeLiveIncomingMediaAndCommands(store: MessageStore): void {
+    // isChannel/isGroup were resolved before the timeline publication above,
+    // so the host receives row data and chat kind in the same snapshot.
+    const liveMediaIds: number[] = store.consumeLiveIncomingMediaIds();
+    const autoScope: string = this.isChannel ? 'channel' : (this.isGroup ? 'group' : 'private');
+    if (autosaveEnabled(autoScope)) {
+      for (const mediaId of liveMediaIds) {
+        if (this.autoSavePendingIds.indexOf(mediaId) < 0) {
+          this.autoSavePendingIds.push(mediaId);
+        }
+      }
+    }
+    // Private peer resolved: probe once for commands. The centralized loader
+    // also serves '/' autocomplete, so fast typing cannot start a competing
+    // request that overwrites a newer result.
+    if (this.commandLoadState === 'idle' && this.store !== null &&
+      this.store.getPeerUserId() > 0) {
+      this.ensureCommandsLoaded();
+    }
+  }
+
+  // 四条落点分支的互斥链：resume 已定位 / 首屏落点 / 新消息跟随 / 原地增高贴底。
+  // if / else-if 结构原样保留，只把两条长分支的方法体搬进各自的方法。
+  private applyInitialOrFollowLanding(list: MessageEntry[], groups: AlbumGroup[],
+    maxId: number, notifyKind: string, positionHandled: boolean, fillPending: boolean): void {
+    if (!positionHandled && !this.didInitialScroll && list.length > 0) {
+      this.applyFirstScreenLanding(list, groups, maxId, fillPending);
+    } else if (!positionHandled && this.didInitialScroll && maxId > this.lastMaxId) {
+      this.followNewTailIfAtBottom(maxId, notifyKind);
+    } else if (this.didInitialScroll && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0
+      && (this.store === null || !this.store.getHasMoreNewer())) {
+      // In-place content growth (thumbnails, reply quotes, forward headers
+      // filling in async) changes row heights; when the user is at the
+      // bottom, stay glued there instead of letting the tail drift. Never
+      // glue while unloaded newer pages exist — being at the window's edge
+      // there is NOT the live tail, and gluing chain-loads every page.
+      // Also never move the underlying list while the media viewer is open.
+      this.glueBottom('L1252');
+    }
+  }
+
+  private applyFirstScreenLanding(list: MessageEntry[], groups: AlbumGroup[],
+    maxId: number, fillPending: boolean): void {
+    // First real page: jump to the first unread message (Android-style);
+    // fully-read chats land at the bottom. (Never anchor on
+    // last_read_inbox_message_id here — it only tracks incoming messages,
+    // so with an outgoing tail it points at a stale mid-history position.)
+    this.didInitialScroll = true;
+    this.lastMaxId = maxId;
+    const fu: number = this.store !== null ? this.store.getFirstUnreadId() : 0;
+    // 落点判定在 util/initialAnchor（6 条测），两个分支各自的理由写在那里。
+    const anchor: InitialAnchor = initialAnchorOf(
+      fu, fu > 0 ? groupIndexOf(groups, fu) : -1,
+      (index: number): number => groups[index].head.id);
+    this.firstUnreadId = anchor.dividerId;
+    // 首屏定位的落点诊断。**未读分支原来一条日志都没有**，只有底部分支
+    // 打 glueBottom，于是"没跳到未读"和"压根没落定"在日志上长得一模一样，
+    // 排查时分不开——正是这次浪费掉一轮的原因。
+    // 方向一（进会话落在中间）的落点侧证据：这里说的是"选了哪条落点路径"，
+    // 而 hasMoreNewer 说的是"贴的是已加载窗口的底还是真尾部"——两者要一起
+    // 看才分得清"没跳到未读"和"跳到了但窗口本身没够到尾部"。
+    const anchorHasMoreNewer: boolean =
+      this.store !== null && this.store.getHasMoreNewer();
+    logW(`[Anchor] latch fu=${fu} kind=${anchor.kind} index=${anchor.index}` +
+      ` rows=${groups.length} fillPending=${fillPending}` +
+      ` hasMoreNewer=${anchorHasMoreNewer}` +
+      ` windowLast=${list.length > 0 ? list[list.length - 1].id : 0}`);
+    const landSeq: number = this.scrollActionSeq;
+    setTimeout((): void => {
+      if (landSeq !== this.scrollActionSeq) {
+        logW(`[Anchor] landed stale seq=${landSeq} cur=${this.scrollActionSeq}`);
+        return;
+      }
+      logW(`[Anchor] landed kind=${anchor.kind} ${this.scrollStateProbe()}`);
+    }, 400);
+    if (anchor.kind === ANCHOR_UNREAD) {
+      // 两个标志必须一起动，各自挡一个已经发生过的问题，见 util 里的说明。
+      this.atBottom = false;
+      this.stayAtUnread = anchorLatchesBottom(anchor);
+      // The initial-message performance path has only just published
+      // placeholder rows here. An immediate scroll alone can be swallowed
+      // before List layout; beginInitialUnreadLanding reissues it after the
+      // real anchor row is laid out and recomputes the index after backfill.
+      this.beginInitialUnreadLanding();
+    } else {
+      this.glueBottom('L1220');
+    }
+  }
+
+  private followNewTailIfAtBottom(maxId: number, notifyKind: string): void {
+    // Only follow to the bottom for genuinely new messages AND only when the
+    // user is already near the bottom — never yank them down while they read
+    // history or on photo/read-receipt updates.
+    // Mark the arrivals as fresh for a beat so their bubbles gently enter;
+    // rows rebuilt while scrolling history never animate.
+    if (notifyKind === 'update') {
+      this.freshSinceId = this.lastMaxId;
+      const clearSeq = ++this.freshClearSeq;
+      setTimeout(() => {
+        if (clearSeq === this.freshClearSeq) {
+          this.freshSinceId = 0;
+        }
+      }, 1500);
+    }
+    this.lastMaxId = maxId;
+    // Never follow while parked at the unread boundary (until the user
+    // touches) or while the fullscreen viewer is open — the chat should
+    // return to the same underlying message after the preview closes.
+    if (notifyKind === 'update') {
+      // 诊断（issue #62）：新消息到了，跟不跟随只取决于这三个标志。用户
+      // 报的现象是"手滑到底之后新消息不跟随，点箭头到底就跟随"——两条路
+      // 的差别一定落在这三个之一，打出来就不用猜了。
+      logW(`[Follow62] atBottom=${this.atBottom} stayAtUnread=${this.stayAtUnread}` +
+        ` viewerOpen=${this.viewerMsgId !== 0}` +
+        ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}` +
+        ` endIdx=${this.curEndIdx} rows=${this.groups.length}`);
+    }
+    // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
+    // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
+    // 顶是官方行为，不该被它挡住——真机日志：atBottom=true stayAtUnread=true 不跟随。
+    if (notifyKind === 'update' && this.atBottom && this.viewerMsgId === 0) {
+      this.stayAtUnread = false;
+      this.glueBottom('L1242');
+    }
+  }
+
+  private consumeJumpToLatestIntent(list: MessageEntry[], groups: AlbumGroup[],
+    maxId: number): void {
+    // jumpToLatest's newest page arrived — snap to the end. The dataset was
+    // just replaced wholesale, so scroll once now and once after the List has
+    // laid the new rows out: the immediate call alone lands at the top of the
+    // reloaded page because the final row heights aren't known yet.
+    if (this.pendingScrollBottom && list.length > 0) {
+      this.pendingScrollBottom = false;
+      this.lastMaxId = maxId;
+      this.atBottom = true;
+      const actionSeq: number = this.scrollActionSeq;
+      const probeSeq: number = this.jumpLatestSeq;
+      logW(`[JumpLatest] #${probeSeq} publish consume call=scrollEdge` +
+        ` rows=${groups.length} list=${list.length} ${this.scrollStateProbe()}`);
+      this.glueBottom('L1263');
+      setTimeout(() => {
+        if (actionSeq !== this.scrollActionSeq) {
+          logW(`[JumpLatest] #${probeSeq} publish settle stale actionSeq=${actionSeq}` +
+            ` cur=${this.scrollActionSeq}`);
+          return;
+        }
+        this.glueBottom('L1266');
+        this.refreshAtBottom();
+        logW(`[JumpLatest] #${probeSeq} landed ${this.scrollStateProbe()}`);
+      }, 60);
+    } else if (this.pendingScrollBottom) {
+      // 意图还挂着但这次发布没有内容可落——留着等下一次发布，别悄悄丢掉。
+      logW(`[JumpLatest] #${this.jumpLatestSeq} publish kept intent list=0` +
+        ` rows=${groups.length}`);
+    }
+  }
+
+  private scheduleNewerTailRefresh(store: MessageStore, notifyKind: string): void {
+    if (notifyKind === 'newer') {
+      // An empty newer page is the signal that this history window has
+      // reached the live tail. Re-evaluate after layout even when no visible
+      // index changed, otherwise the down button can remain stuck onscreen.
+      setTimeout((): void => {
+        if (this.store === store) {
+          this.refreshAtBottom();
+        }
+      }, 0);
+    }
+  }
+
+  private landPendingGallerySave(list: MessageEntry[]): void {
+    // A viewer item queued for gallery save finished downloading — always
+    // prefer the original photo rather than silently saving its thumbnail.
+    if (this.pendingGallerySaveId !== 0) {
+      const pe = list.find((m: MessageEntry) => m.id === this.pendingGallerySaveId);
+      if (pe !== undefined) {
+        if (mediaEntryIsVideo(pe) && pe.videoPath !== '') {
+          this.pendingGallerySaveId = 0;
+          const progress: DownloadSaveNotification | undefined =
+            this.pendingGallerySaveProgress ?? undefined;
+          this.pendingGallerySaveProgress = null;
+          this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.videoPath, true,
+            pe.videoFileName, false, progress);
+        } else if (mediaEntryIsVideo(pe) && pe.videoFailed) {
+          this.pendingGallerySaveId = 0;
+          this.pendingGallerySaveProgress?.downloadFailed();
+          this.pendingGallerySaveProgress = null;
+          promptAction.showToast({ message: $r('app.string.cp_video_download_failed'), duration: 1800 });
+        } else if (mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
+          this.pendingGallerySaveId = 0;
+          const progress: DownloadSaveNotification | undefined =
+            this.pendingGallerySaveProgress ?? undefined;
+          this.pendingGallerySaveProgress = null;
+          this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.photoFullPath, false,
+            '', false, progress);
+        } else if (mediaEntryIsPhoto(pe) && pe.photoFullFailed) {
+          this.pendingGallerySaveId = 0;
+          this.pendingGallerySaveProgress?.downloadFailed();
+          this.pendingGallerySaveProgress = null;
+          promptAction.showToast({ message: $r('app.string.cp_photo_download_failed'), duration: 1800 });
+        }
+      }
+    }
+    this.processAutomaticGallerySave(list);
+  }
+
+  private landPendingFileOpen(list: MessageEntry[]): void {
+    // A document queued for "save as" finished downloading — open the picker.
+    if (this.pendingFileOpenId !== 0) {
+      const openEntry: MessageEntry | undefined =
+        list.find((m: MessageEntry): boolean => m.id === this.pendingFileOpenId);
+      if (openEntry === undefined || openEntry.contentType !== 'file') {
+        this.pendingFileOpenId = 0;
+      } else if (openEntry.videoFailed) {
+        this.pendingFileOpenId = 0;
+        promptAction.showToast({ message: $r('app.string.cp_file_download_failed'), duration: 1800 });
+      } else if (openEntry.videoPath !== '') {
+        this.pendingFileOpenId = 0;
+        this.openDownloadedFile(openEntry);
+      }
+    }
+  }
+
+  private landPendingJump(groups: AlbumGroup[]): void {
+    // A pinned/quoted jump target that had to be loaded has now arrived — scroll to it.
+    if (this.pendingJumpId !== 0) {
+      const jumpTargetId: number = this.pendingJumpId;
+      const jg: number = groupIndexOf(groups, jumpTargetId);
+      logW(`[Jump80] pending land target=${jumpTargetId} idx=${jg} rows=${groups.length}`);
+      if (jg >= 0) {
+        const itemY: number = jumpTargetId === this.resumeDividerId
+          ? this.resumeDividerItemY : 0;
+        this.pendingJumpId = 0;
+        // 落地宽限从**此刻**起算（issue #51）：原来只在点击时上了 900ms，目标不在
+        // 窗口里要先 loadAround，慢链路上一超时，刚压进返回栈的那层就被
+        // syncReturnState 当成"手动滑过"弹掉了。
+        this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
+        this.finishPinnedJump();
+        this.scrollToTimelineIndexAtY(jg, itemY);
+        // loadAround replaces the window wholesale (list RELOAD) — the
+        // immediate scroll can be swallowed before the new rows lay out.
+        // Re-issue once layout settles (index recomputed: prepends may have
+        // shifted it) and flash after that.
+        const jumpSeq: number = ++this.jumpLayoutSeq;
+        setTimeout(() => {
+          if (jumpSeq !== this.jumpLayoutSeq) {
+            return;
           }
-        }
+          const jg2: number = groupIndexOf(this.groups, jumpTargetId);
+          if (jg2 >= 0) {
+            this.scrollToTimelineIndexAtY(jg2, itemY);
+            this.flashAtIndex(jg2, jumpTargetId);
+          }
+        }, 80);
       }
-      this.processAutomaticGallerySave(list);
-      // A document queued for "save as" finished downloading — open the picker.
-      if (this.pendingFileOpenId !== 0) {
-        const openEntry: MessageEntry | undefined =
-          list.find((m: MessageEntry): boolean => m.id === this.pendingFileOpenId);
-        if (openEntry === undefined || openEntry.contentType !== 'file') {
-          this.pendingFileOpenId = 0;
-        } else if (openEntry.videoFailed) {
-          this.pendingFileOpenId = 0;
-          promptAction.showToast({ message: $r('app.string.cp_file_download_failed'), duration: 1800 });
-        } else if (openEntry.videoPath !== '') {
-          this.pendingFileOpenId = 0;
-          this.openDownloadedFile(openEntry);
-        }
-      }
-      // A pinned/quoted jump target that had to be loaded has now arrived — scroll to it.
-      if (this.pendingJumpId !== 0) {
-        const jumpTargetId: number = this.pendingJumpId;
-        const jg: number = groupIndexOf(groups, jumpTargetId);
-        logW(`[Jump80] pending land target=${jumpTargetId} idx=${jg} rows=${groups.length}`);
-        if (jg >= 0) {
-          const itemY: number = jumpTargetId === this.resumeDividerId
-            ? this.resumeDividerItemY : 0;
-          this.pendingJumpId = 0;
-          // 落地宽限从**此刻**起算（issue #51）：原来只在点击时上了 900ms，目标不在
-          // 窗口里要先 loadAround，慢链路上一超时，刚压进返回栈的那层就被
-          // syncReturnState 当成"手动滑过"弹掉了。
-          this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
-          this.finishPinnedJump();
-          this.scrollToTimelineIndexAtY(jg, itemY);
-          // loadAround replaces the window wholesale (list RELOAD) — the
-          // immediate scroll can be swallowed before the new rows lay out.
-          // Re-issue once layout settles (index recomputed: prepends may have
-          // shifted it) and flash after that.
-          const jumpSeq: number = ++this.jumpLayoutSeq;
-          setTimeout(() => {
-            if (jumpSeq !== this.jumpLayoutSeq) {
-              return;
-            }
-            const jg2: number = groupIndexOf(this.groups, jumpTargetId);
-            if (jg2 >= 0) {
-              this.scrollToTimelineIndexAtY(jg2, itemY);
-              this.flashAtIndex(jg2, jumpTargetId);
-            }
-          }, 80);
-        }
-      }
-      // Empty/error chats never start message admission, while populated chats
-      // reach this call again after the staged release completes. The method's
-      // store/stage guards make both paths converge without a timer race.
-      this.scheduleComposerEditorMount();
-      if (this.didInitialScroll && list.length > 0) {
-        store.prefetchOlder();
-      }
-    }));
+    }
+  }
+
+  // 阶段 C：store 派生订阅、五路互斥的 open、进入即搜索。
+  private registerHeaderDerivedSubscriptions(store: MessageStore): void {
     this.subscriptions.set('subtitle', store.subscribeSubtitle((s: string) => {
       this.subtitle = s;
       this.fetchHeaderEmojiStatus();
@@ -2902,7 +3068,13 @@ export struct ChatPage {
       }
       this.settleTopCardLoading();
     }));
-    if (scrollResumeWaiting) {
+  }
+
+  // 五路互斥分支整体留在同一个方法里：它们共享 didInitialScroll / pendingJumpId /
+  // pendingResumeId 的选择逻辑，拆开就可能同时命中两支。
+  private openStoreForRoute(store: MessageStore, ctx: RouteApplyContext): void {
+    const jumpTo: number | undefined = ctx.jumpTo;
+    if (this.routeResumeWaiting) {
       // Re-open around the captured row unless the old viewport was already
       // at the true live tail, in which case the newest page is sufficient.
       store.open(this.resumeScrollAtBottom || this.resumeScrollMessageId <= 0
@@ -2940,6 +3112,9 @@ export struct ChatPage {
         store.open();
       }
     }
+  }
+
+  private scheduleEntrySearchIfNeeded(): void {
     if (this.searchMode && this.searchQuery !== '') {
       // Let the initial history land first — runSearch jumps to the newest hit,
       // and that jump would otherwise be undone by the initial scroll-to-bottom.
@@ -3206,6 +3381,16 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    this.disposeInitialStageAndTgs();
+    this.disposePlaybackAndSlots();
+    this.persistDraftAndViewport();
+    this.disposeTimersAndSeqGuards();
+    this.stopVoicePlaybackKeepingMusic();
+    this.disposeSubscriptionsInOrder();
+    this.closeStores();
+  }
+
+  private disposeInitialStageAndTgs(): void {
     // Invalidate the staged-row and composer frame callbacks. The page may be
     // popped while either delayed task is queued.
     this.initialMessageStageSeq++;
@@ -3226,6 +3411,9 @@ export struct ChatPage {
     this.syncChatTgsGate();
     this.composerMountSeq++;
     this.composerMountScheduled = false;
+  }
+
+  private disposePlaybackAndSlots(): void {
     // 退出会话时播放器可能还开着（返回手势不走 closeViewer），为播放拉起的
     // 下载得在这里也停掉，否则回到列表页它还在后台跑。
     this.releasePlaybackRequests();
@@ -3242,6 +3430,9 @@ export struct ChatPage {
       clearInterval(this.typingTimer);
       this.typingTimer = -1;
     }
+  }
+
+  private persistDraftAndViewport(): void {
     // Sync the composer draft to the account (other devices see it). While an
     // edit is in progress the real draft is the stashed pre-edit text.
     this.store?.saveDraft(
@@ -3249,6 +3440,9 @@ export struct ChatPage {
     );
     this.exitViewerLandscape();
     this.captureScrollResume();
+  }
+
+  private disposeTimersAndSeqGuards(): void {
     this.bottomChromeLayoutSeq++;
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
@@ -3295,6 +3489,9 @@ export struct ChatPage {
     this.musicQueue.reset();
     this.autoSavePendingIds = [];
     this.autoSaveInFlight = false;
+  }
+
+  private stopVoicePlaybackKeepingMusic(): void {
     getVoicePlayback().setMusicCompletionListener(null);
     // **音乐不随本页退场而停**——这是底栏迷你播放条的前提：退回会话列表后曲子
     // 还得在放，否则那条播放条永远没东西可显示。VoicePlayback 本来就挂着
@@ -3307,6 +3504,9 @@ export struct ChatPage {
     if (getVoicePlayback().current().mode !== 'music') {
       getVoicePlayback().stop();
     }
+  }
+
+  private disposeSubscriptionsInOrder(): void {
     this.subscriptions.clearInOrder([
       'messages', 'subtitle', 'chat', 'liveLocation', 'translatable', 'background'
     ]);
@@ -3321,6 +3521,9 @@ export struct ChatPage {
     this.subscriptions.clearInOrder([
       'membershipSupergroup', 'membershipBasicGroup', 'videoChat', 'groupCall'
     ]);
+  }
+
+  private closeStores(): void {
     if (this.livePulseTimer !== -1) { clearInterval(this.livePulseTimer); this.livePulseTimer = -1; }
     if (this.liveStateRefreshTimer !== -1) {
       clearInterval(this.liveStateRefreshTimer);
@@ -5121,27 +5324,7 @@ export struct ChatPage {
 
   private onLinkTap(url: string, openConfirmed: boolean = false): void {
     const action: LinkAction = linkActionOf(url);
-    if (action.kind === LINK_NONE) {
-      return;
-    }
-    if (action.kind === LINK_COMMAND) {
-      this.sendBotCommand(action.text);
-      return;
-    }
-    if (action.kind === LINK_COPY) {
-      copyPlainText(action.text, str('cp_number_copied'));
-      return;
-    }
-    if (action.kind === LINK_HASHTAG) {
-      const params: Record<string, Object> = { 'query': action.text };
-      navigateToSearch(params);
-      return;
-    }
-    if (action.kind === LINK_USER) {
-      const params: Record<string, Object> = { 'userId': action.userId };
-      // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
-      // NavDestination 并从 main_pages.json 摘出后整页路由跳不动，走漏斗。
-      navigateToProfile(params);
+    if (this.handleLocalLinkAction(action)) {
       return;
     }
     // Telegram 内链（t.me/@名/tg://）应用内直接解析，不弹「打开/复制」层
@@ -5156,32 +5339,70 @@ export struct ChatPage {
     if (!beginLinkNav(url)) {
       return;
     }
+    if (this.openKnownTelegramLink(url)) {
+      return;
+    }
+    this.resolveMessageLink(url);
+  }
+
+  private handleLocalLinkAction(action: LinkAction): boolean {
+    if (action.kind === LINK_NONE) {
+      return true;
+    }
+    if (action.kind === LINK_COMMAND) {
+      this.sendBotCommand(action.text);
+      return true;
+    }
+    if (action.kind === LINK_COPY) {
+      copyPlainText(action.text, str('cp_number_copied'));
+      return true;
+    }
+    if (action.kind === LINK_HASHTAG) {
+      const params: Record<string, Object> = { 'query': action.text };
+      navigateToSearch(params);
+      return true;
+    }
+    if (action.kind === LINK_USER) {
+      const params: Record<string, Object> = { 'userId': action.userId };
+      // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
+      // NavDestination 并从 main_pages.json 摘出后整页路由跳不动，走漏斗。
+      navigateToProfile(params);
+      return true;
+    }
+    return false;
+  }
+
+  private openKnownTelegramLink(url: string): boolean {
     const folderInvite = chatFolderInviteLinkOf(url);
     if (folderInvite !== '') {
       openChatFolderInviteLink(folderInvite);
-      return;
+      return true;
     }
     const stickerSet = stickerSetLinkOf(url);
     if (stickerSet !== null) {
       openStickerSetLink(stickerSet);
-      return;
+      return true;
     }
     // Private invite link: preview → confirm → join in-app.
     const invite = inviteLinkOf(url);
     if (invite !== '') {
       openInviteLink(getContext(this) as common.UIAbilityContext, invite, url);
-      return;
+      return true;
     }
     const linkAction = chatLinkActionOf(url);
     if (linkAction !== null) {
       openChatLinkAction(getContext(this) as common.UIAbilityContext, linkAction, url, true);
-      return;
+      return true;
     }
     const bareName = bareUsernameOf(url);
     if (bareName !== '') {
       openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
-      return;
+      return true;
     }
+    return false;
+  }
+
+  private resolveMessageLink(url: string): void {
     const tgUrl = normalizeTelegramLink(url);
     if (tgUrl === '') {
       openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
@@ -5202,23 +5423,7 @@ export struct ChatPage {
       // that duplication was why repeat taps looked like they did nothing.
       if (chatId === this.chatId) {
         if (msgId !== undefined && msgId > 0) {
-          this.prepareUserJump();
-          const gidx = groupIndexOf(this.groups, msgId);
-          if (gidx >= 0) {
-            this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-            this.flashAtIndex(gidx, msgId);
-          } else {
-            this.pendingJumpId = msgId;
-            if (this.store !== null) {
-              const targetId: number = msgId;
-              this.store.loadAround(targetId, (found: boolean): void => {
-                if (!found && this.pendingJumpId === targetId) {
-                  this.pendingJumpId = 0;
-                  promptAction.showToast({ message: $r('app.string.cp_cannot_locate'), duration: 1500 });
-                }
-              });
-            }
-          }
+          this.jumpToLinkedMessageInThisChat(msgId);
         }
         endLinkNavIf(url);
         return;
@@ -5233,6 +5438,26 @@ export struct ChatPage {
       logE(`ChatPage.getMessageLinkInfo failed: ${e.message}`);
       openTelegramLink(getContext(this) as common.UIAbilityContext, url, true);
     });
+  }
+
+  private jumpToLinkedMessageInThisChat(messageId: number): void {
+    this.prepareUserJump();
+    const gidx = groupIndexOf(this.groups, messageId);
+    if (gidx >= 0) {
+      this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
+      this.flashAtIndex(gidx, messageId);
+    } else {
+      this.pendingJumpId = messageId;
+      if (this.store !== null) {
+        const targetId: number = messageId;
+        this.store.loadAround(targetId, (found: boolean): void => {
+          if (!found && this.pendingJumpId === targetId) {
+            this.pendingJumpId = 0;
+            promptAction.showToast({ message: $r('app.string.cp_cannot_locate'), duration: 1500 });
+          }
+        });
+      }
+    }
   }
 
 
@@ -8757,152 +8982,11 @@ export struct ChatPage {
         // its reserved list inset so messages expand naturally into the space.
         Column().width('100%').height(0);
       } else if (this.searchMode) {
-        SearchBottomBar({
-          query: this.searchQuery,
-          loadedCount: this.searchResults.length,
-          total: this.searchTotal,
-          currentIndex: this.searchIdx,
-          bottomGap: this.composerBottomGap(),
-          onOlder: (): void => { this.searchOlder(); },
-          onNewer: (): void => { this.searchNewer(); }
-        });
+        this.searchDock();
       } else if (this.composerSlot() !== 'writable') {
-        MembershipBar({
-          materialEpoch: this.materialEpoch,
-          state: this.composerSlot(),
-          isMuted: this.isMuted,
-          joining: this.joiningChat,
-          secretOutbound: this.secretOutbound,
-          bottomGap: this.composerBottomGap(),
-          onJoin: (): void => { this.joinCurrentChat(); },
-          onToggleMute: (): void => { this.toggleChatMute(); },
-          onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); },
-          onHeightChange: (height: number): void => { this.inputBarH = height; }
-        });
+        this.membershipDock();
       } else {
-        Column() {
-          ChatComposerInput({
-            isRecording: this.isRecording,
-            attachPanelOpen: this.attachPanelOpen,
-            pendingMedia: this.pendingMedia,
-            editingId: this.editingId,
-            editingKind: this.editingKind,
-            editingPreview: this.editingPreview,
-            replyToId: this.replyToId,
-            replyToName: this.replyToName,
-            replyToText: this.replyToText,
-            replyToThumb: this.replyToThumb,
-            replyToThumbSticker: this.replyToThumbSticker,
-            botMenuAvailable: this.botMenuAvailable,
-            commandMenuOpen: this.commandMenuOpen,
-            showEmojiPanel: this.showEmojiPanel,
-            composerEditorReady: this.composerEditorReady,
-            draft: this.draft,
-            composerPlaceholder: this.composerPlaceholder(),
-            composerController: this.composerController,
-            composerEditorHeight: this.composerEditorHeight(),
-            sendByEnter: this.sendByEnter,
-            replyKeyboard: this.replyKeyboard,
-            replyKbCollapsed: this.replyKbCollapsed,
-            botMiniAppUrlValue: this.botMiniAppUrlValue,
-            recordingStarting: this.recordingStarting,
-            composerSending: this.composerSending,
-            replyKeyboardVisible: this.replyKbVisible(),
-            bottomGap: this.composerBottomGap(),
-            hasDraft: pendingMediaCanSend(this.pendingMedia, this.draft),
-            accentColor: this.accent(),
-            chromeIconColor: this.chromeIcon(),
-            onToggleAttach: (): void => { this.toggleAttachPanel(); },
-            onRemoveMedia: (index: number): void => {
-              this.pendingMedia = removePendingMedia(this.pendingMedia, index);
-            },
-            onMoveMedia: (from: number, to: number): void => {
-              this.pendingMedia = movePendingMedia(this.pendingMedia, from, to);
-            },
-            onClearMedia: (): void => { this.pendingMedia = clearPendingMedia(); },
-            onCancelEdit: (): void => { this.cancelEdit(); },
-            onReplyTap: (messageId: number): void => { this.onReplyTap(messageId); },
-            onClearReply: (): void => { this.clearReply(); },
-            onCancelRecording: (): void => { this.cancelRecording(); },
-            onFinishRecording: (): void => { this.finishRecording(); },
-            onToggleBotMenu: (): void => { this.toggleBotMenu(); },
-            onEmojiButtonArea: (centerX: number): void => { this.emojiBtnCx = centerX; },
-            onEmojiButtonTap: (): void => {
-              this.setEmojiPanel(!this.showEmojiPanel);
-              this.mentionItems = [];
-              this.commandItems = [];
-              this.commandMenuOpen = false;
-            },
-            onEditorWidthChange: (width: number): void => {
-              if (Math.abs(width - this.composerEditorW) > 0.5) {
-                this.composerEditorW = width;
-              }
-            },
-            onDraftChange: (value: string): void => {
-              this.draft = value;
-              this.updateSuggestions(value);
-              if (value.trim() !== '' && this.editingId === 0) {
-                this.store?.notifyTyping();
-              }
-            },
-            onSubmit: (): void => {
-              if (this.sendByEnter) {
-                this.doSend();
-              }
-            },
-            onEditorFocus: (): void => {
-              this.imeTailPinned = this.atBottom && this.viewerMsgId === 0 &&
-                !this.stayAtUnread;
-              this.composerFocused = true;
-              holdPlayerJobs(KEYBOARD_SETTLE_MS);
-              this.setEmojiPanel(false);
-              this.applyBottomSlot(closeAllSlots());
-              this.commandMenuOpen = false;
-              if (this.keyboardH > 0) {
-                this.syncTailOnImeFrame();
-              }
-            },
-            onEditorBlur: (): void => { this.composerFocused = false; },
-            onActivateEditor: (): void => { this.activateComposerEditor(); },
-            onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
-            onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },
-            onOpenMiniApp: (): void => { this.openBotMiniApp(); },
-            onRecord: (): void => { this.startRecording(); },
-            onSend: (): void => { this.doSend(); },
-            onSendOptions: (): void => { this.showSendOptions(); },
-            onInputBarHeightChange: (height: number): void => { this.inputBarH = height; },
-            menuEffectDuration: (duration: number): number =>
-              this.chatEffectDuration(KEY_POWER_EFFECT_MENU, duration),
-            replyEffectDuration: (duration: number): number =>
-              this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, duration),
-            smoothEffectDuration: (duration: number): number =>
-              powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, duration),
-            recordingSecondsLabel: this.formatRecSeconds()
-          });
-          if (this.replyKbVisible()) {
-            ReplyKeyboardPanel({
-            rows: this.replyKeyboard!.rows,
-            sendingKey: this.replyKeyboardSendingKey,
-            resize: this.replyKeyboard!.resize,
-            bottomGap: this.composerBottomGap(),
-            enterDuration: this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190),
-            onTap: (btn: KeyboardBtn, key: string): void => {
-              this.onReplyKeyboardTap(btn, key);
-            }
-          });
-          }
-          // 抽屉是 dock 的一部分，不是自定义键盘。这样它和聊天内容共享同一个
-          // 页面背景——壁纸就在它后面，不需要再画副本去对齐（那条路走了很久，
-          // 副本永远接不上）。输入框被它自然顶高，列表的避让也自动跟上：
-          // dock 的 onAreaChange → bottomChromeH → List.contentEndOffset 这条
-          // 链路本来就在为回复预览条服务。
-          // 试过"关面板只隐藏、不卸载"：Grid 的虚拟化会因为容器尺寸变 0 把
-          // 所有格子当成划出视口回收掉，节点根本留不住，白搭一层复杂度。
-          if (this.bottomPanelOpen()) {
-            this.bottomDrawer();
-          }
-        }
-        .width('100%');
+        this.composerDock();
       }
     }
     .width('100%')
@@ -8917,6 +9001,166 @@ export struct ChatPage {
       dragBar: false,
       blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
+  }
+
+  // 搜索态底栏：结果计数 + 上一条/下一条导航。
+  @Builder
+  private searchDock() {
+    SearchBottomBar({
+      query: this.searchQuery,
+      loadedCount: this.searchResults.length,
+      total: this.searchTotal,
+      currentIndex: this.searchIdx,
+      bottomGap: this.composerBottomGap(),
+      onOlder: (): void => { this.searchOlder(); },
+      onNewer: (): void => { this.searchNewer(); }
+    });
+  }
+
+  // 不可写态底栏：入群 / 静音开关 / 启动 bot 的成员资格条。
+  @Builder
+  private membershipDock() {
+    MembershipBar({
+      materialEpoch: this.materialEpoch,
+      state: this.composerSlot(),
+      isMuted: this.isMuted,
+      joining: this.joiningChat,
+      secretOutbound: this.secretOutbound,
+      bottomGap: this.composerBottomGap(),
+      onJoin: (): void => { this.joinCurrentChat(); },
+      onToggleMute: (): void => { this.toggleChatMute(); },
+      onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); },
+      onHeightChange: (height: number): void => { this.inputBarH = height; }
+    });
+  }
+
+  // 可写态底栏：输入框 + 回复键盘 + 抽屉。ChatComposerInput 只在这一支出现
+  // 一次，换态时不会跨分支重建、不丢焦点。
+  @Builder
+  private composerDock() {
+    Column() {
+      ChatComposerInput({
+        isRecording: this.isRecording,
+        attachPanelOpen: this.attachPanelOpen,
+        pendingMedia: this.pendingMedia,
+        editingId: this.editingId,
+        editingKind: this.editingKind,
+        editingPreview: this.editingPreview,
+        replyToId: this.replyToId,
+        replyToName: this.replyToName,
+        replyToText: this.replyToText,
+        replyToThumb: this.replyToThumb,
+        replyToThumbSticker: this.replyToThumbSticker,
+        botMenuAvailable: this.botMenuAvailable,
+        commandMenuOpen: this.commandMenuOpen,
+        showEmojiPanel: this.showEmojiPanel,
+        composerEditorReady: this.composerEditorReady,
+        draft: this.draft,
+        composerPlaceholder: this.composerPlaceholder(),
+        composerController: this.composerController,
+        composerEditorHeight: this.composerEditorHeight(),
+        sendByEnter: this.sendByEnter,
+        replyKeyboard: this.replyKeyboard,
+        replyKbCollapsed: this.replyKbCollapsed,
+        botMiniAppUrlValue: this.botMiniAppUrlValue,
+        recordingStarting: this.recordingStarting,
+        composerSending: this.composerSending,
+        replyKeyboardVisible: this.replyKbVisible(),
+        bottomGap: this.composerBottomGap(),
+        hasDraft: pendingMediaCanSend(this.pendingMedia, this.draft),
+        accentColor: this.accent(),
+        chromeIconColor: this.chromeIcon(),
+        onToggleAttach: (): void => { this.toggleAttachPanel(); },
+        onRemoveMedia: (index: number): void => {
+          this.pendingMedia = removePendingMedia(this.pendingMedia, index);
+        },
+        onMoveMedia: (from: number, to: number): void => {
+          this.pendingMedia = movePendingMedia(this.pendingMedia, from, to);
+        },
+        onClearMedia: (): void => { this.pendingMedia = clearPendingMedia(); },
+        onCancelEdit: (): void => { this.cancelEdit(); },
+        onReplyTap: (messageId: number): void => { this.onReplyTap(messageId); },
+        onClearReply: (): void => { this.clearReply(); },
+        onCancelRecording: (): void => { this.cancelRecording(); },
+        onFinishRecording: (): void => { this.finishRecording(); },
+        onToggleBotMenu: (): void => { this.toggleBotMenu(); },
+        onEmojiButtonArea: (centerX: number): void => { this.emojiBtnCx = centerX; },
+        onEmojiButtonTap: (): void => {
+          this.setEmojiPanel(!this.showEmojiPanel);
+          this.mentionItems = [];
+          this.commandItems = [];
+          this.commandMenuOpen = false;
+        },
+        onEditorWidthChange: (width: number): void => {
+          if (Math.abs(width - this.composerEditorW) > 0.5) {
+            this.composerEditorW = width;
+          }
+        },
+        onDraftChange: (value: string): void => {
+          this.draft = value;
+          this.updateSuggestions(value);
+          if (value.trim() !== '' && this.editingId === 0) {
+            this.store?.notifyTyping();
+          }
+        },
+        onSubmit: (): void => {
+          if (this.sendByEnter) {
+            this.doSend();
+          }
+        },
+        onEditorFocus: (): void => {
+          this.imeTailPinned = this.atBottom && this.viewerMsgId === 0 &&
+            !this.stayAtUnread;
+          this.composerFocused = true;
+          holdPlayerJobs(KEYBOARD_SETTLE_MS);
+          this.setEmojiPanel(false);
+          this.applyBottomSlot(closeAllSlots());
+          this.commandMenuOpen = false;
+          if (this.keyboardH > 0) {
+            this.syncTailOnImeFrame();
+          }
+        },
+        onEditorBlur: (): void => { this.composerFocused = false; },
+        onActivateEditor: (): void => { this.activateComposerEditor(); },
+        onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
+        onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },
+        onOpenMiniApp: (): void => { this.openBotMiniApp(); },
+        onRecord: (): void => { this.startRecording(); },
+        onSend: (): void => { this.doSend(); },
+        onSendOptions: (): void => { this.showSendOptions(); },
+        onInputBarHeightChange: (height: number): void => { this.inputBarH = height; },
+        menuEffectDuration: (duration: number): number =>
+          this.chatEffectDuration(KEY_POWER_EFFECT_MENU, duration),
+        replyEffectDuration: (duration: number): number =>
+          this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, duration),
+        smoothEffectDuration: (duration: number): number =>
+          powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, duration),
+        recordingSecondsLabel: this.formatRecSeconds()
+      });
+      if (this.replyKbVisible()) {
+        ReplyKeyboardPanel({
+        rows: this.replyKeyboard!.rows,
+        sendingKey: this.replyKeyboardSendingKey,
+        resize: this.replyKeyboard!.resize,
+        bottomGap: this.composerBottomGap(),
+        enterDuration: this.chatEffectDuration(KEY_POWER_EFFECT_MENU, 190),
+        onTap: (btn: KeyboardBtn, key: string): void => {
+          this.onReplyKeyboardTap(btn, key);
+        }
+      });
+      }
+      // 抽屉是 dock 的一部分，不是自定义键盘。这样它和聊天内容共享同一个
+      // 页面背景——壁纸就在它后面，不需要再画副本去对齐（那条路走了很久，
+      // 副本永远接不上）。输入框被它自然顶高，列表的避让也自动跟上：
+      // dock 的 onAreaChange → bottomChromeH → List.contentEndOffset 这条
+      // 链路本来就在为回复预览条服务。
+      // 试过"关面板只隐藏、不卸载"：Grid 的虚拟化会因为容器尺寸变 0 把
+      // 所有格子当成划出视口回收掉，节点根本留不住，白搭一层复杂度。
+      if (this.bottomPanelOpen()) {
+        this.bottomDrawer();
+      }
+    }
+    .width('100%');
   }
 
   // pendingScrollBottom 是"点了 ↓，等页回来就贴底"这个意图。它在往返期间被谁
@@ -9290,6 +9534,105 @@ export struct ChatPage {
     });
   }
 
+  private handleTimelineTouch(e: TouchEvent): void {
+    if (e.type === TouchType.Down) {
+      this.finishInitialMessageStageForInteraction();
+      this.imeTailPinned = false;
+      this.imeLayoutSeq++;
+      this.listTouchActive = true;
+      this.olderArmed = true;
+      this.cancelFlash();
+      this.closeBottomPanels();
+    } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+      this.listTouchActive = false;
+    }
+  }
+
+  private handleTimelineScrollIndex(start: number, end: number): void {
+    this.armPlaySlotSettle();
+    this.refreshAtBottom();
+    this.curStartIdx = start;
+    this.curEndIdx = end;
+    this.indexGroupsLen = this.groups.length;
+    this.fillViewportIfNeeded();
+    this.curBottomId = this.bottomVisibleId(end);
+    this.syncReturnState();
+    this.markVisibleRead(end);
+    this.updatePinnedFromScroll(start);
+    const visible: PrefetchRange | null =
+      clampPrefetchRange(start, end, this.groupsData.totalCount());
+    if (visible !== null) {
+      this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
+    }
+    if (!this.chatTgsScrollActive) {
+      this.driveTranslations(start, end);
+    }
+    this.syncMediaWindow(start, end);
+    if (start > 4) {
+      this.olderArmed = true;
+    } else {
+      this.maybeLoadOlder();
+    }
+    if (reachedNewerPageTrigger(end, this.groups.length)) {
+      this.maybeLoadNewer(end);
+    }
+  }
+
+  private handleTimelineWillScroll(_offset: number, _state: ScrollState, source: ScrollSource): void {
+    this.nextDidScrollIsUserDriven = source !== ScrollSource.SCROLLER &&
+      source !== ScrollSource.SCROLLER_ANIMATION;
+  }
+
+  private handleTimelineDidScroll(offset: number, state: ScrollState): void {
+    if (this.nextDidScrollIsUserDriven && state !== ScrollState.Idle) {
+      this.userScrollOffsetTotal += offset;
+    }
+    this.nextDidScrollIsUserDriven = false;
+    this.refreshAtBottom();
+    this.syncFlashRect();
+    if (state === ScrollState.Scroll) {
+      this.accumulateNewerDrag(offset);
+    }
+    if (this.listTouchActive) {
+      if (this.stayAtUnread) {
+        this.stayAtUnread = false;
+      }
+      if (!this.listUserScrollActive) {
+        this.listUserScrollActive = true;
+      }
+    }
+    if (this.listUserScrollActive) {
+      this.updateFloatDate(this.curStartIdx);
+    }
+  }
+
+  private handleTimelineScrollStart(): void {
+    this.timelineScrollActive = true;
+    setScrollActive(true);
+    this.finishInitialMessageStageForInteraction();
+    this.pauseChatTgsForScroll();
+    this.dismissKeyboardOnUserScroll();
+  }
+
+  private handleTimelineScrollStop(): void {
+    this.timelineScrollActive = false;
+    this.nextDidScrollIsUserDriven = false;
+    setScrollActive(false);
+    // 滚动中冻结的 update 发布在这里冲刷（调度中枢批 1）。先于
+    // driveVisibleWork：让本轮可见性工作拿到冲刷后的最新行。
+    this.store?.flushScrollDeferredUpdate();
+    this.resumeChatTgsAfterScroll();
+    this.driveVisibleWork();
+    this.armPlaySlotSettle();
+    this.capMessageReuseBuckets();
+  }
+
+  private handleTimelineAreaChange(area: Area): void {
+    const y: number = area.globalPosition.y as number;
+    const height: number = area.height as number;
+    this.playSlots.setViewportCenter(y + height / 2);
+  }
+
   // The flattened background, once it exists. Until then the layered version
   // below renders, so the chat never waits on the raster.
   build() {
@@ -9326,98 +9669,17 @@ export struct ChatPage {
           timelineRow: (ri: RepeatItem<AlbumGroup>): void => { this.timelineRow(ri); },
           rowKey: (group: AlbumGroup): string => this.rowKeyOf(group),
           onTimelineReachStart: (): void => { this.maybeLoadOlder(); },
-          onTimelineTouch: (e: TouchEvent): void => {
-            if (e.type === TouchType.Down) {
-              this.finishInitialMessageStageForInteraction();
-              this.imeTailPinned = false;
-              this.imeLayoutSeq++;
-              this.listTouchActive = true;
-              this.olderArmed = true;
-              this.cancelFlash();
-              this.closeBottomPanels();
-            } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
-              this.listTouchActive = false;
-            }
-          },
-          onTimelineScrollIndex: (start: number, end: number): void => {
-            this.armPlaySlotSettle();
-            this.refreshAtBottom();
-            this.curStartIdx = start;
-            this.curEndIdx = end;
-            this.indexGroupsLen = this.groups.length;
-            this.fillViewportIfNeeded();
-            this.curBottomId = this.bottomVisibleId(end);
-            this.syncReturnState();
-            this.markVisibleRead(end);
-            this.updatePinnedFromScroll(start);
-            const visible: PrefetchRange | null =
-              clampPrefetchRange(start, end, this.groupsData.totalCount());
-            if (visible !== null) {
-              this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
-            }
-            if (!this.chatTgsScrollActive) {
-              this.driveTranslations(start, end);
-            }
-            this.syncMediaWindow(start, end);
-            if (start > 4) {
-              this.olderArmed = true;
-            } else {
-              this.maybeLoadOlder();
-            }
-            if (reachedNewerPageTrigger(end, this.groups.length)) {
-              this.maybeLoadNewer(end);
-            }
-          },
+          onTimelineTouch: (e: TouchEvent): void => { this.handleTimelineTouch(e); },
+          onTimelineScrollIndex: (start: number, end: number): void => { this.handleTimelineScrollIndex(start, end); },
           onTimelineWillScroll: (_offset: number, _state: ScrollState, source: ScrollSource): void => {
-            this.nextDidScrollIsUserDriven = source !== ScrollSource.SCROLLER &&
-              source !== ScrollSource.SCROLLER_ANIMATION;
+            this.handleTimelineWillScroll(_offset, _state, source);
           },
           onTimelineDidScroll: (offset: number, state: ScrollState): void => {
-            if (this.nextDidScrollIsUserDriven && state !== ScrollState.Idle) {
-              this.userScrollOffsetTotal += offset;
-            }
-            this.nextDidScrollIsUserDriven = false;
-            this.refreshAtBottom();
-            this.syncFlashRect();
-            if (state === ScrollState.Scroll) {
-              this.accumulateNewerDrag(offset);
-            }
-            if (this.listTouchActive) {
-              if (this.stayAtUnread) {
-                this.stayAtUnread = false;
-              }
-              if (!this.listUserScrollActive) {
-                this.listUserScrollActive = true;
-              }
-            }
-            if (this.listUserScrollActive) {
-              this.updateFloatDate(this.curStartIdx);
-            }
+            this.handleTimelineDidScroll(offset, state);
           },
-          onTimelineScrollStart: (): void => {
-            this.timelineScrollActive = true;
-            setScrollActive(true);
-            this.finishInitialMessageStageForInteraction();
-            this.pauseChatTgsForScroll();
-            this.dismissKeyboardOnUserScroll();
-          },
-          onTimelineScrollStop: (): void => {
-            this.timelineScrollActive = false;
-            this.nextDidScrollIsUserDriven = false;
-            setScrollActive(false);
-            // 滚动中冻结的 update 发布在这里冲刷（调度中枢批 1）。先于
-            // driveVisibleWork：让本轮可见性工作拿到冲刷后的最新行。
-            this.store?.flushScrollDeferredUpdate();
-            this.resumeChatTgsAfterScroll();
-            this.driveVisibleWork();
-            this.armPlaySlotSettle();
-            this.capMessageReuseBuckets();
-          },
-          onTimelineAreaChange: (area: Area): void => {
-            const y: number = area.globalPosition.y as number;
-            const height: number = area.height as number;
-            this.playSlots.setViewportCenter(y + height / 2);
-          },
+          onTimelineScrollStart: (): void => { this.handleTimelineScrollStart(); },
+          onTimelineScrollStop: (): void => { this.handleTimelineScrollStop(); },
+          onTimelineAreaChange: (area: Area): void => { this.handleTimelineAreaChange(area); },
           onEmptyRetry: (): void => { this.store?.retryInitialHistory(); },
           onTimelinePillRetry: (): void => {
             this.timelineStateRetry(this.timelinePillMode());
