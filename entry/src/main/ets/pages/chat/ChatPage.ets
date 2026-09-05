@@ -113,20 +113,15 @@ import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
 } from '../../util/composerChrome';
-import { replySnippetOf } from '../../util/replySnippet';
-import { replyThumbIsSticker, replyThumbOf } from '../../util/replyThumb';
 import {
   TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR, timelineStateMode
 } from '../../util/timelineState';
 import { forwardableIds } from '../../util/messageSelection';
-import {
-  TranslateToggle,
-  toggleTranslation, translationActive as isTranslationActive
-} from '../../util/translationMode';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
-import {
-  ComposerMode, cancelEdit, clearReply, draftToRestore, enterEdit, enterReply, idleComposer
-} from '../../util/composerMode';
+// cancelEdit/draftToRestore：commitEdit（留页面）用来把编辑态摊回 idle。
+// ComposerMode/clearReply/enterEdit/enterReply/idleComposer 随 composerMode
+// 七字段状态机整体搬进了 ComposerSession（B9 批），页面不再需要。
+import { cancelEdit, draftToRestore } from '../../util/composerMode';
 import {
   SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, claimIfFree, closeAllSlots, closeSlot,
   openSlot, toggleSlot
@@ -140,15 +135,13 @@ import {
 import {
   KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY,
-  KEY_POWER_SMOOTH_TRANSITIONS, setTranslateOptedIn,
-  translateOptedIn,
+  KEY_POWER_SMOOTH_TRANSITIONS,
   powerAnimationDuration,
-  autosaveEnabled,
-  translateOptedOut, setTranslateOptedOut
+  autosaveEnabled
 } from '../../store/AppSettings';
-import {
-  getTranslationService, looksLikeTargetLanguage, resolveTranslateTarget
-} from '../../services/TranslationService';
+// setTranslateOptedIn/translateOptedIn/translateOptedOut/setTranslateOptedOut
+// 与 getTranslationService/looksLikeTargetLanguage/resolveTranslateTarget 随
+// 整簇翻译判定/驱动搬进了 TranslationDriver（B10 批），页面不再直接引用。
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, darkResourceMode
 } from '../../util/theme';
@@ -173,6 +166,9 @@ import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { LiveTopCardController } from './LiveTopCardController';
 import { SearchSession } from './SearchSession';
 import { SelectionSession } from './SelectionSession';
+import { ComposerSession } from './ComposerSession';
+import { TranslationDriver } from './TranslationDriver';
+import { TypingIndicatorState } from './TypingIndicatorState';
 import { showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
@@ -222,9 +218,9 @@ import {
 } from '../../util/locationActions';
 import { utilityActionAllowedAt } from '../../util/utilityActionGuard';
 import { albumReuseShape, rowPlaySlotKey } from '../../util/messageBubblePrepare';
-import {
-  applyTypingUpdate, pruneExpiredTyping, typingLabelOf
-} from '../../util/typingIndicator';
+// applyTypingUpdate/pruneExpiredTyping/typingLabelOf 随 typingSenders/
+// typingTimer/typingLabel 整套搬进了 TypingIndicatorState（B10 批），页面不再
+// 直接引用。
 import { logE, logI, logW } from '../../util/log';
 import { LengthMetrics } from '@kit.ArkUI';
 import {
@@ -1156,7 +1152,7 @@ export struct ChatPage {
         onForwardTap: (originChatId: number, messageId: number, userId: number): void => {
           openForwardOrigin(originChatId, messageId, userId);
         },
-        onEditMsg: (messageId: number): void => { this.startEdit(messageId); },
+        onEditMsg: (messageId: number): void => { this.composer.startEdit(messageId); },
         onShowReactors: (messageId: number, emoji: string): void => {
           this.showReactors(messageId, emoji);
         },
@@ -1164,10 +1160,10 @@ export struct ChatPage {
           this.translateMessage(messageId);
         },
         onToggleTranslation: (messageId: number, hidden: boolean): void => {
-          this.toggleTranslationHidden(messageId, hidden);
+          this.translation.toggleHidden(messageId, hidden);
         },
         onRetryTranslation: (messageId: number): void => {
-          this.translateInline(messageId);
+          this.translation.translateInline(messageId);
         },
         onPinMsg: (messageId: number, unpin: boolean): void => {
           this.togglePinMessage(messageId, unpin);
@@ -1179,7 +1175,7 @@ export struct ChatPage {
         onSetReaction: (messageId: number, emoji: string, chosen: boolean): void => {
           this.toggleReaction(messageId, emoji, chosen);
         },
-        onReplyTo: (messageId: number): void => { this.startReply(messageId); },
+        onReplyTo: (messageId: number): void => { this.composer.startReply(messageId); },
         onCopyText: (messageId: number): void => { this.copyMessageText(messageId); },
         onSelectText: (messageId: number): void => { this.openSelectText(messageId); },
         onCopyLink: (messageId: number): void => { this.copyMessageLink(messageId); },
@@ -1237,10 +1233,10 @@ export struct ChatPage {
     const showResumeDivider: boolean = this.resumeDividerId !== 0 &&
       g.memberIds.indexOf(this.resumeDividerId) >= 0;
     const showTimelineDivider: boolean = showUnreadDivider || showResumeDivider;
-    const translationActive: boolean = this.translationActive();
+    const translationActive: boolean = this.translation.active(this.translateChatsEnabled);
     const isPinnedMsg: boolean = (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0;
     const paidMediaPending: boolean = this.paidMediaPending(g.head.id);
-    const editingActive: boolean = this.editingId !== 0;
+    const editingActive: boolean = this.composer.isEditing();
     const animateIn: boolean = this.freshSinceId !== 0 && g.head.id > this.freshSinceId;
     const liveGroupCallId: number = this.topCard.liveCallIsActive ? this.topCard.liveGroupCallId : 0;
     // nowSec changes every second, but only these two reuse decisions cross a
@@ -1443,11 +1439,14 @@ export struct ChatPage {
           rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, CHAT_PAGE_REUSE_ID_LEVEL)
     });
   }
-  // "×× 正在输入…" — shown as the composer placeholder while live, not in the
-  // header subtitle (see composerPlaceholder).
-  @Local typingLabel: string = '';
-  private typingSenders: Map<number, number> = new Map(); // senderId -> expiry ms
-  private typingTimer: number = -1;
+  // "×× 正在输入…" 提示的状态与轮询定时器整套搬进了 TypingIndicatorState
+  // （B10 批）：composerPlaceholder 改读 this.typing.label（原 @Local
+  // typingLabel），到期表与定时器句柄收进了控制器的私有普通字段。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自会话的输入
+  // 提示互不相干。
+  private typing: TypingIndicatorState = new TypingIndicatorState();
   private subscriptions: ChatPageSubscriptionRegistry = new ChatPageSubscriptionRegistry();
   @Local draft: string = '';
   // 聊天设置 → 回车键发送.
@@ -1494,15 +1493,18 @@ export struct ChatPage {
     return chromeTextColorOf(this.chromeOnLightBg());
   }
   private bgStore: ChatBackgroundStore | null = null;
-  @Local replyToId: number = 0;      // message being replied to (0 = none)
-  @Local replyToName: string = '';
-  @Local replyToText: string = '';
-  @Local replyToThumb: string = '';
-  @Local replyToThumbSticker: boolean = false;
-  @Local editingId: number = 0;      // message being edited (0 = none)
-  @Local editingPreview: string = '';
-  @Local editingKind: string = 'text'; // 'text' | 'caption'
-  private draftBeforeEdit: string = ''; // composer text stashed while editing
+  // 输入框上方那一条（普通输入 / 回复某条 / 编辑某条）的状态机整套搬进了
+  // ComposerSession（B9 批）：9 个 @Local（replyToId/replyToName/replyToText/
+  // replyToThumb/replyToThumbSticker/editingId/editingKind/editingPreview 与
+  // 内部机件 draftBeforeEdit）全部住进了控制器，变成 @Trace（draftBeforeEdit
+  // 仍是不带 @Trace 的私有字段），字段名与初值一字未改。ChatComposerInput
+  // 还没有改成直读控制器（本轮任务范围未触达该文件），页面继续把
+  // this.composer.xxx 当标量转手传给它，依赖粒度与搬之前一一对应。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自的回复/编辑态
+  // 互不相干。
+  private composer: ComposerSession = new ComposerSession();
   @Local showReactionSheet: boolean = false; // full emoji reaction picker
   @Local reactionTargetId: number = 0;
   // The allowed-emoji list and custom-emoji thumbnails live in ReactionSheet,
@@ -1657,9 +1659,19 @@ export struct ChatPage {
   // 早先只认服务端那个字段，它对没碰过的会话默认 false，结果开了总开关每个群
   // 还得手动点一次才翻，实际不可用。
   @Local isTranslatable: boolean = false;
-  @Local translateChatOptOut: boolean = false;
-  // 总开关关着时，本地记下的"这个会话开了翻译"。见 translationMode 的说明。
-  @Local translateChatOptIn: boolean = false;
+  // 会话级排除/加入名单（原 translateChatOptOut/translateChatOptIn 两个
+  // @Local）连同三态判定、批量翻译驱动、单条重译/隐藏、会话级开关切换整套
+  // 搬进了 TranslationDriver（B10 批），变成控制器的 optOut/optIn 两个
+  // @Trace。isTranslatable 按 B8 的所有权裁决留在页面（被 cacheKey、成员资格
+  // 状态机、ScrollFab 未读徽标等身份簇之外的多个域共同读写），控制器经
+  // host.isTranslatable()/setIsTranslatable() 现取现写，不存影子拷贝；
+  // translateChatsEnabled（@Param）同样不进控制器，由每个需要它的调用点
+  // 显式传参。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，每个会话的翻译
+  // 开关互不相干。
+  private translation: TranslationDriver = new TranslationDriver();
   @Require @Param translateChatsEnabled: boolean = false;
   // 是否正在共享实时位置（全局单例状态，不限于当前会话）。
   @Local liveLocationActive: boolean = false;
@@ -1876,8 +1888,9 @@ export struct ChatPage {
   private composerMountSeq: number = 0;
   private composerController: TextAreaController = new TextAreaController();
   private mediaPickerOpen: boolean = false;
-  // 选好但还没发出去的媒体。和 replyToId 正交——回复某条 + 附图 + 配文是
-  // 一次完整操作，所以不进 composerMode 那个互斥状态机（见 util/pendingMedia）。
+  // 选好但还没发出去的媒体。和 composer.replyToId 正交——回复某条 + 附图 +
+  // 配文是一次完整操作，所以不进 ComposerSession 那个互斥状态机（B9 批搬迁
+  // 前叫 composerMode，见 util/pendingMedia）。
   @Local private pendingMedia: PendingMediaItem[] = [];
 
   private mediaCopySeq: number = 0;
@@ -1903,9 +1916,6 @@ export struct ChatPage {
   // 不动，仍留在页面（HeaderIdentitySession.reset() 里仍会调用
   // host.closeHeaderMenu() 转发给它们）。
   private header: HeaderIdentitySession = new HeaderIdentitySession();
-  // 输入框上方那一条的当前状态。字段仍在（读取处很多），但**只由
-  // applyComposerMode 写**，转换逻辑在 util/composerMode。
-  @Local composerMode: ComposerMode = idleComposer();
   // 输入框下面那块高度归谁（none / attach / emoji / replyKeyboard）。
   // 三个既有字段仍在（读取处很多），但**只由 applyBottomSlot 写**。
   @Local bottomSlot: string = SLOT_NONE;
@@ -2046,7 +2056,7 @@ export struct ChatPage {
     // 整个清成普通输入，而不是只 clearReply()。clearReply 按设计只处理回复态，
     // 编辑态下是空操作——换会话时编辑态因此能活下来，editingId 还指着上一个
     // 会话的消息，下一次提交就编辑到别的会话去了。
-    this.applyComposerMode(idleComposer());
+    this.composer.reset();
   }
 
   private resetMessageActionSession(): void {
@@ -2216,7 +2226,7 @@ export struct ChatPage {
         this.bgStore?.applyKnownBackground(background);
       },
       commitTimelineSnapshot: (): void => { this.commitTimelineSnapshot(); },
-      onMembershipLosesComposer: (): void => { this.applyComposerMode(idleComposer()); },
+      onMembershipLosesComposer: (): void => { this.composer.reset(); },
       closeHeaderMenu: (): void => { this.closeHeaderMenu(); },
       clearSecretChatSubscription: (): void => { this.subscriptions.clear('secretChat'); },
       // chatTypeSecret 分支的订阅登记转交页面：订阅表是页面字段。回调只做一件
@@ -2246,6 +2256,45 @@ export struct ChatPage {
       chatTgsScrollActive: (): boolean => this.chatTgsScrollActive,
       closeReactionSheet: (): void => { this.closeReactionSheet(); },
       setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); }
+    });
+    // 输入框上方那一条（回复/编辑）控制器接上宿主（B9）。headerTitle 是
+    // HeaderIdentitySession（B8）title 的转发——控制器之间不互相持有引用，
+    // 只经页面这个宿主中转；draft/pendingMedia 等留页面的字段只经取值器/
+    // setter 读写，本类不存影子拷贝。
+    this.composer.bind({
+      headerTitle: (): string => this.header.title,
+      store: (): MessageStore | null => this.store,
+      findMsg: (messageId: number): MessageEntry | null => this.findMsg(messageId),
+      pendingMedia: (): PendingMediaItem[] => this.pendingMedia,
+      draft: (): string => this.draft,
+      setDraft: (value: string): void => { this.draft = value; },
+      closeReactionSheet: (): void => { this.closeReactionSheet(); },
+      setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); },
+      closeReplyKeyboardSlot: (): void => {
+        this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
+      }
+    });
+    // 会话翻译驱动接上宿主（B10）。isTranslatable 的所有权裁决留页面（B8），
+    // 控制器经 isTranslatable()/setIsTranslatable() 现取现写，不存影子拷贝；
+    // driveVisibleWork 是翻译/媒体窗口/播放位三件事的汇合点，留页面作协调器，
+    // 控制器只经这条回调触发页面那份完整协调。
+    this.translation.bind({
+      chatId: (): number => this.chatId,
+      store: (): MessageStore | null => this.store,
+      groups: (): AlbumGroup[] => this.groups,
+      isTranslatable: (): boolean => this.isTranslatable,
+      setIsTranslatable: (value: boolean): void => { this.isTranslatable = value; },
+      driveVisibleWork: (): void => { this.driveVisibleWork(); }
+    });
+    // "正在输入…" 提示控制器接上宿主（B10）。currentKind 转发 B8
+    // HeaderIdentitySession.currentKind()——本类不得直接持有 header 控制器的
+    // 引用，也不得用 isGroup 之类的近似值顶替。
+    this.typing.bind({
+      chatId: (): number => this.chatId,
+      threadRootId: (): number => this.threadRootId,
+      forumTopicId: (): number => this.forumTopicId,
+      directMessagesTopicId: (): number => this.directMessagesTopicId,
+      currentKind: (): string => this.header.currentKind()
     });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
@@ -2315,9 +2364,9 @@ export struct ChatPage {
     this.topicName = route.topicName;
     this.forumTopicId = route.forumTopicId;
     this.directMessagesTopicId = route.directMessagesTopicId;
-    // 排除名单是本地的，chatId 一确定就能读，不用等 getChat 回来。
-    this.translateChatOptOut = translateOptedOut(this.chatId);
-    this.translateChatOptIn = translateOptedIn(this.chatId);
+    // 会话翻译驱动的会话重置（B10）：排除/加入名单都是本地的，chatId 一确定
+    // 就能读，不用等 getChat 回来。
+    this.translation.load(this.chatId);
     if (route.showJoinedNotice && this.clientJoinNoticeRouteChatId !== this.chatId) {
       this.clientJoinNoticeRouteChatId = this.chatId;
       this.clientJoinNoticeVisible = true;
@@ -2392,7 +2441,7 @@ export struct ChatPage {
   private subscribeChatLevelUpdates(): void {
     this.header.refresh();
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
-      (u: TdObject): void => this.onChatAction(u)));
+      (u: TdObject): void => this.typing.onChatAction(u)));
     // 会话已经开着时，navigateToChat 只出栈不传参，跳转目标走旁路送进来
     // （issue #80、#102，见 util/chatJumpChannel 的说明）。
     this.subscriptions.set('jump', subscribeChatJump(this.chatId,
@@ -3456,18 +3505,15 @@ export struct ChatPage {
     this.clearNowSecTimer();
     this.subscriptions.clear('chatAction');
     this.subscriptions.clear('jump');
-    if (this.typingTimer !== -1) {
-      clearInterval(this.typingTimer);
-      this.typingTimer = -1;
-    }
+    // "正在输入…" 控制器的退场（B10）。本簇没有序号守卫，dispose() 只清
+    // 1500ms 轮询定时器句柄——原来这三行 clearInterval 就放在这个位置。
+    this.typing.dispose();
   }
 
   private persistDraftAndViewport(): void {
     // Sync the composer draft to the account (other devices see it). While an
     // edit is in progress the real draft is the stashed pre-edit text.
-    this.store?.saveDraft(
-      this.editingId !== 0 ? this.draftBeforeEdit : this.draft, this.replyToId
-    );
+    this.store?.saveDraft(this.composer.draftToPersist(this.draft), this.composer.replyToId);
     this.exitViewerLandscape();
     this.captureScrollResume();
   }
@@ -3506,6 +3552,16 @@ export struct ChatPage {
     // active/ids——与其余控制器统一 bind/dispose 生命周期，同样没有对应的
     // 旧清理位置可循，放在这一组里。
     this.selection.dispose();
+    // 输入框上方那一条控制器的退场（B9）。本簇没有异步在途请求要守（commitEdit
+    // 的 TDLib 请求留页面自己管），只清 startReply 那一次 setTimeout(0) 的句柄
+    // ——与其余控制器统一 bind/dispose 生命周期，同样没有对应的旧清理位置
+    // 可循，放在这一组里。
+    this.composer.dispose();
+    // 会话翻译驱动的退场（B10）。本簇没有需要在换会话/页面销毁时作废的异步
+    // 在途请求或定时器句柄（批量翻译/单条重译各自靠调用时刻捕获的
+    // this.store === store 判陈旧），dispose() 是空实现，仅为与其余控制器
+    // 统一 bind/dispose 生命周期而保留、调用。
+    this.translation.dispose();
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
@@ -4555,7 +4611,7 @@ export struct ChatPage {
     this.mentionItems = [];
     this.commandItems = [];
     this.commandMenuOpen = false;
-    this.applyComposerMode(idleComposer());
+    this.composer.reset();
     if (this.isRecording) {
       this.cancelRecording();
     }
@@ -4703,12 +4759,12 @@ export struct ChatPage {
     if (store === null || this.composerSending) {
       return;
     }
-    const replyId = this.replyToId;
+    const replyId = this.composer.replyToId;
     this.atBottom = true;
     this.stayAtUnread = false;
     this.withSendLock((): Promise<void> => store.sendAsync(command, replyId).then((): void => {
-      if (this.replyToId === replyId) {
-        this.clearReply();
+      if (this.composer.replyToId === replyId) {
+        this.composer.clearReply();
       }
     }).catch((e: TdError): void => {
       logE(`ChatPage.botCommand failed: ${e.message}`);
@@ -5517,12 +5573,12 @@ export struct ChatPage {
 
   private pickInlineResult(row: InlineResultRow): void {
     if (this.inlineQueryId === '') { return; }
-    const replyId = this.replyToId;
+    const replyId = this.composer.replyToId;
     sendInlineResult(this.chatId, this.inlineQueryId, row.resultId, replyId).then((): void => {
       this.draft = '';
       this.inlineResults = [];
       this.inlineQueryId = '';
-      this.clearReply();
+      this.composer.clearReply();
       this.atBottom = true;
     }).catch((e: TdError): void => {
       logE(`ChatPage.sendInlineResult failed: ${e.message}`);
@@ -6103,7 +6159,7 @@ export struct ChatPage {
       isGroup: this.isGroup,
       isChannel: this.isChannel,
       liveLocationActive: this.liveLocationActive,
-      translationActive: this.translationActive(),
+      translationActive: this.translation.active(this.translateChatsEnabled),
       canClearHistory: this.clearHistoryChoice() !== undefined,
       canLeaveChat: this.isGroup && this.membershipState === 'writable',
       onSearch: (): void => { this.search.enter(); },
@@ -6112,7 +6168,7 @@ export struct ChatPage {
       onAutoDelete: (): void => { this.chooseAutoDelete(); },
       onJumpToDate: (): void => { this.pickJumpDate(); },
       onStopLocation: (): void => { confirmStopLiveLocation(); },
-      onToggleTranslation: (): void => { this.toggleTranslatable(); },
+      onToggleTranslation: (): void => { this.translation.toggleTranslatable(this.translateChatsEnabled); },
       onClearHistory: (): void => { this.confirmClearHistory(); },
       onLeaveChat: (): void => { this.confirmLeaveChat(); }
     };
@@ -6853,7 +6909,7 @@ export struct ChatPage {
     const items: MediaSendItem[] = toMediaSendItems(this.pendingMedia);
     const captionSnapshot: string = this.draft;
     const caption: string = captionSnapshot.trim();
-    const replyId: number = this.replyToId;
+    const replyId: number = this.composer.replyToId;
     this.commandMenuOpen = false;
     this.atBottom = true;
     this.stayAtUnread = false;
@@ -6863,8 +6919,8 @@ export struct ChatPage {
         this.draft = '';
         this.pendingNameMentions = [];
       }
-      if (this.replyToId === replyId) {
-        this.clearReply();
+      if (this.composer.replyToId === replyId) {
+        this.composer.clearReply();
       }
     }).catch((e: TdError): void => {
       logE(`ChatPage.sendMedia failed: ${e.message}`);
@@ -6873,7 +6929,7 @@ export struct ChatPage {
   }
 
   private doSend(): void {
-    if (this.editingId !== 0) {
+    if (this.composer.editingId !== 0) {
       this.commitEdit();
       return;
     }
@@ -6896,7 +6952,7 @@ export struct ChatPage {
     if (text === '' || store === null) {
       return;
     }
-    const replyId: number = this.replyToId;
+    const replyId: number = this.composer.replyToId;
     const mentionsSnapshot: NameMention[] = this.pendingNameMentions;
     this.commandMenuOpen = false;
     this.atBottom = true;
@@ -6909,8 +6965,8 @@ export struct ChatPage {
     // 立刻就有一条 pending 的气泡。
     this.draft = '';
     this.pendingNameMentions = [];
-    if (this.replyToId === replyId) {
-      this.clearReply();
+    if (this.composer.replyToId === replyId) {
+      this.composer.clearReply();
     }
     this.mentionItems = [];
     this.commandItems = [];
@@ -6941,7 +6997,7 @@ export struct ChatPage {
       return;
     }
     const store: MessageStore = this.store;
-    const replyId: number = this.replyToId;
+    const replyId: number = this.composer.replyToId;
     const keyboardId: number = this.replyKeyboard !== null ? this.replyKeyboard.messageId : 0;
     const oneTime: boolean = this.replyKeyboard !== null && this.replyKeyboard.oneTime;
     this.replyKeyboardSendingKey = key;
@@ -6949,8 +7005,8 @@ export struct ChatPage {
     this.stayAtUnread = false;
     store.sendAsync(btn.text, replyId).then((): void => {
       this.replyKeyboardSendingKey = '';
-      if (this.replyToId === replyId) {
-        this.clearReply();
+      if (this.composer.replyToId === replyId) {
+        this.composer.clearReply();
       }
       // one_time keyboards fold only after TDLib accepts the message. A failed
       // tap leaves the controls visible so the user can retry.
@@ -6974,56 +7030,10 @@ export struct ChatPage {
     return null;
   }
 
-  // 输入框上方那一条的状态机在 util/composerMode（有单测）。所有写入都经过
-  // 这里：转换函数算出新状态，这里摊到字段上。**不要再单独改那七个字段**——
-  // 回复和编辑共用同一条，分开改必然出现"编辑条盖住回复条、回复却仍生效"
-  // 那类互相不知道的状态。
-  private applyComposerMode(next: ComposerMode): void {
-    this.composerMode = next;
-    this.replyToId = next.replyToId;
-    this.replyToName = next.replyName;
-    this.replyToText = next.replyText;
-    this.replyToThumb = next.replyThumb;
-    this.replyToThumbSticker = next.replyThumbSticker;
-    this.editingId = next.editingId;
-    this.editingKind = next.editingKind;
-    this.editingPreview = next.editingPreview;
-    this.draftBeforeEdit = next.draftBeforeEdit;
-  }
-
-  private clearReply(): void {
-    this.applyComposerMode(clearReply(this.composerMode));
-  }
-
-  private replySnippet(m: MessageEntry): string {
-    return replySnippetOf({
-      text: m.text, placeholderLabel: m.placeholderLabel,
-      contentType: m.contentType, paidMediaLocked: m.paidMediaLocked
-    });
-  }
-
-  // Long-press menu: reply. Populates the reply preview above the input bar;
-  // doSend() then attaches reply_to.
-  private startReply(messageId: number): void {
-    const m = this.findMsg(messageId);
-    if (m === null) {
-      return;
-    }
-    ContextMenu.close();
-    this.closeReactionSheet();
-    this.applyComposerMode(enterReply(this.composerMode, messageId,
-      m.senderName !== '' ? m.senderName : this.header.title, this.replySnippet(m),
-      replyThumbOf({
-        contentType: m.contentType, photoPath: m.photoPath,
-        paidMediaLocked: m.paidMediaLocked
-      }),
-      replyThumbIsSticker(m.contentType)));
-    this.setEmojiPanel(false);
-    this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
-    setTimeout((): void => {
-      focusControl.requestFocus('chat_composer');
-    }, 0);
-  }
+  // applyComposerMode（composerMode 九字段唯一写入口）/clearReply/
+  // replySnippet/startReply 整套搬进了 ComposerSession（B9 批）：调用点改
+  // this.composer.apply(...)/this.composer.clearReply()/
+  // this.composer.startReply(messageId)。
 
   // --- multi-select ---
   // 整簇状态机（enterSelect/animateSelection/exitSelect/clearSelectionState/
@@ -7289,98 +7299,15 @@ export struct ChatPage {
     });
   }
 
-  // 可见范围（外扩几行缓冲）内还没有当前目标语言译文的消息，交给
-  // TranslationService 排队。结果回来经 store.applyTranslation 写入条目，
-  // 内容签名变化触发 CHANGE，气泡里长出译文块。
-  // 这个会话此刻到底翻不翻。总开关是"默认值"，会话级那一项是对默认值的反转：
-  // 开着就是排除名单，关着就是白名单。
-  // 同名的纯函数以 isTranslationActive 引入：裸名 translationActive 在方法体里
-  // 解析到的是导入而不是这个方法（方法必须带 this.），两个名字并存太容易读错。
-  private translationActive(): boolean {
-    return isTranslationActive(
-      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable,
-      this.translateChatOptIn);
-  }
-
-  // 总开关在设置页被改动后，当前页要立刻跟上：开了就把可见范围补翻，
-  // 关了就把已经渲染出来的译文收走（服务的缓存留着，再开秒回）。
+  // translationActive/driveTranslations/translateInline/
+  // toggleTranslationHidden/toggleTranslatable/afterTranslationToggled 整套
+  // 搬进了 TranslationDriver（B10 批）。@Monitor('translateChatsEnabled') 装饰器
+  // 留在页面（类中 @Monitor 解注册依赖 GC，销毁时机不可靠；且它本来就只能监听
+  // 本 struct 自己的 @Param/@Local/@Trace），方法体改一行转发，显式传
+  // this.translateChatsEnabled——驱动器不缓存这个 @Param。
   @Monitor('translateChatsEnabled')
   private onTranslateSettingChanged(): void {
-    if (this.translationActive()) {
-      this.driveVisibleWork();
-    } else {
-      this.store?.clearTranslations();
-    }
-  }
-
-  private driveTranslations(startIdx: number, endIdx: number): void {
-    const store = this.store;
-    if (!this.translationActive() || store === null || this.groups.length === 0) {
-      return;
-    }
-    const lang: string = resolveTranslateTarget();
-    const from: number = Math.max(0, startIdx - 3);
-    const to: number = Math.min(this.groups.length - 1, endIdx + 3);
-    if (from > to) {
-      return;
-    }
-    const fromId: number = this.groups[from].head.id;
-    const toGroup: AlbumGroup = this.groups[to];
-    const toId: number = toGroup.memberIds[toGroup.memberIds.length - 1];
-    const service = getTranslationService(getTdClient());
-    for (const m of store.translationCandidates(fromId, toId, lang)) {
-      // 已经是目标语言（按文字系统判定）就不发请求。拉丁字母目标语言判不了，
-      // 仍交给服务器（结果按内容版本缓存，只花一次往返）。
-      if (looksLikeTargetLanguage(m.text, lang)) {
-        continue;
-      }
-      const hit: string | null = service.cached(this.chatId, m.id, m.editDate, lang);
-      if (hit !== null) {
-        // 译文与原文相同（同语言消息）就什么都不写，气泡不长翻译块。
-        if (hit !== '' && hit !== m.text) {
-          store.applyTranslation(m.id, lang, hit);
-        }
-        continue;
-      }
-      const requestedId: number = m.id;
-      const originalText: string = m.text;
-      service.request(this.chatId, m.id, m.editDate, lang, (text: string | null): void => {
-        if (text !== null && text !== '' && text !== originalText && this.store === store) {
-          store.applyTranslation(requestedId, lang, text);
-        }
-      });
-    }
-  }
-
-  // 就地翻译一条消息：长按菜单的「翻译」和失败行上的「重试」共用。
-  //
-  // 先调 service.retry() 清掉失败冷却：TranslationService 失败后有 60 秒静默
-  // 期，不清掉的话紧接着的 request() 会被直接挡下、界面上什么都不会发生。
-  // 对从没失败过的消息，这一步是无副作用的空操作。
-  private translateInline(messageId: number): void {
-    const store = this.store;
-    if (store === null) {
-      return;
-    }
-    const target: MessageEntry | undefined =
-      store.getMessages().find((e: MessageEntry): boolean => e.id === messageId);
-    if (target === undefined) {
-      return;
-    }
-    const lang: string = resolveTranslateTarget();
-    const service = getTranslationService(getTdClient());
-    service.retry(this.chatId, messageId, target.editDate, lang);
-    const originalText: string = target.text;
-    service.request(this.chatId, messageId, target.editDate, lang,
-      (text: string | null): void => {
-        if (text !== null && text !== '' && text !== originalText && this.store === store) {
-          store.applyTranslation(messageId, lang, text);
-        }
-      });
-  }
-
-  private toggleTranslationHidden(messageId: number, hidden: boolean): void {
-    this.store?.setTranslationHidden(messageId, hidden);
+    this.translation.onSettingChanged(this.translateChatsEnabled);
   }
 
   // 翻译 + 媒体窗口的统一驱动。滑动时由 onScrollIndex 带着真实区间调用，
@@ -7393,7 +7320,7 @@ export struct ChatPage {
     // （聊天默认停在底部，所以取末尾一屏），滑动事件到了会立刻纠正。
     const range: VisibleRange = visibleRangeOrFallback(
       this.curStartIdx, this.curEndIdx, this.groups.length, this.listCachedCount);
-    this.driveTranslations(range.start, range.end);
+    this.translation.drive(this.translateChatsEnabled, range.start, range.end);
     this.syncMediaWindow(range.start, range.end);
     // 同一个道理：数据一变（新消息到达、翻页、被查看器等场景清空候选表后
     // 恢复）就补一次播放位判定，不指望用户正好在这一刻滚动。
@@ -7419,51 +7346,6 @@ export struct ChatPage {
     if (w.valid) {
       store.setMediaWindow(w.fromId, w.toId);
     }
-  }
-
-  // 菜单里那一项永远是"把当前状态反过来"，但落到哪个开关上取决于总开关：
-  // 总开关开着时写本地排除名单（纯本地，不会失败）；总开关关着时才走
-  // 服务端的 toggleChatIsTranslatable，跟官方客户端保持同一份状态。
-  private toggleTranslatable(): void {
-    const decision: TranslateToggle = toggleTranslation(
-      this.translateChatsEnabled, this.translateChatOptOut, this.isTranslatable,
-      this.translateChatOptIn);
-    const next: boolean = decision.active;
-    if (decision.writesOptOut) {
-      this.translateChatOptOut = decision.optOut;
-      setTranslateOptedOut(this.chatId, decision.optOut);
-      this.afterTranslationToggled(next);
-      return;
-    }
-    const previous: boolean = this.isTranslatable;
-    this.isTranslatable = decision.translatable;
-    // 本地也记一份：服务端那次写未必落盘（见 translationMode 的说明），
-    // 只靠它的话用户下次进来又得手动开一遍。
-    this.translateChatOptIn = next;
-    setTranslateOptedIn(this.chatId, next);
-    this.afterTranslationToggled(next);
-    const req: TdRequest = { '@type': 'toggleChatIsTranslatable' };
-    req['chat_id'] = this.chatId;
-    req['is_translatable'] = next;
-    getTdClient().send(req).catch((e: TdError): void => {
-      this.isTranslatable = previous;
-      logE(`ChatPage.toggleTranslatable failed: ${e.message}`);
-      promptAction.showToast({ message: str('cp_setting_failed_msg', e.message), duration: 1800 });
-    });
-  }
-
-  private afterTranslationToggled(active: boolean): void {
-    if (active) {
-      this.driveVisibleWork();
-    } else {
-      // 关掉时立刻把已渲染的译文收走；服务的缓存保留，再开秒回。
-      this.store?.clearTranslations();
-    }
-    promptAction.showToast({
-      message: active
-        ? $r('app.string.cp_auto_translate_enabled') : $r('app.string.cp_auto_translate_disabled'),
-      duration: 1500
-    });
   }
 
   private recognizeSpeech(messageId: number): void {
@@ -7580,7 +7462,7 @@ export struct ChatPage {
 
   // Long-press the send button: schedule or send silently.
   private showSendOptions(): void {
-    if (this.draft.trim() === '' || this.editingId !== 0) { return; }
+    if (this.draft.trim() === '' || this.composer.editingId !== 0) { return; }
     const labels: string[] = [str('cp_send_silently'), str('cp_send_in_1h'), str('cp_send_tomorrow_9')];
     promptAction.showActionMenu({
       title: $r('app.string.cp_send_options'),
@@ -7605,10 +7487,10 @@ export struct ChatPage {
         return;
       }
       const text = this.draft.trim();
-      const replyId = this.replyToId;
+      const replyId = this.composer.replyToId;
       this.store?.sendScheduledAsync(text, replyId, sendDate, silent).then((): void => {
         this.draft = '';
-        this.clearReply();
+        this.composer.clearReply();
         promptAction.showToast({
           message: sendDate > 0 ? $r('app.string.cp_scheduled') : $r('app.string.cp_sent_silently'), duration: 1600
         });
@@ -7636,46 +7518,11 @@ export struct ChatPage {
     });
   }
 
-  // Live "typing…" from peers (updateChatAction). Entries expire after 6s —
-  // TDLib sends chatActionCancel, but a dropped cancel must not stick forever.
-  //
-  // 过滤/到期/文案三段纯逻辑在 util/typingIndicator.ets（由
-  // entry/src/test/TypingIndicator.test.ets 钉住）；留在这里的是副作用：
-  // getUserStore().ensure、1500ms 轮询定时器、写 @Local typingLabel。
-  // typingSenders 这张 Map 仍是页面字段，**按引用**传进纯函数由它就地修改——
-  // 这是刻意的「传入可变容器」，不是纯函数破例：不复制 Map 才能让页面这一侧
-  // 继续持有唯一真源，也避免每条 chatAction 都新建一张表。
-  private onChatAction(update: TdObject): void {
-    const uid: number = applyTypingUpdate(this.typingSenders, update, Date.now(),
-      this.chatId, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
-    if (uid === 0) { return; }
-    // 记下了一次输入（不是 cancel）才去补用户资料——顺序同原实现：set 之后、
-    // 重建文案之前。
-    if (this.typingSenders.has(uid)) {
-      getUserStore().ensure(uid);
-    }
-    this.rebuildTypingLabel();
-    if (this.typingTimer === -1 && this.typingSenders.size > 0) {
-      this.typingTimer = setInterval((): void => {
-        if (pruneExpiredTyping(this.typingSenders, Date.now())) { this.rebuildTypingLabel(); }
-        if (this.typingSenders.size === 0 && this.typingTimer !== -1) {
-          clearInterval(this.typingTimer);
-          this.typingTimer = -1;
-        }
-      }, 1500);
-    }
-  }
-
-  // typingLabelOf 用 headerKind 分两档：'private'/'secret' 走简单的「正在输入…」，
-  // 其余（group/channel/''）走人数/姓名那两档。字段随 B8 迁进
-  // HeaderIdentitySession 成了 private kind，这里经 currentKind() 原样取回——
-  // 迁移中途曾用 `isGroup ? 'group' : 'private'` 顶替，那个判据在 identity 首次
-  // 解析之前会把默认档从「群」翻成「私聊」，取值器把这点差异消掉了。
-  private rebuildTypingLabel(): void {
-    this.typingLabel = typingLabelOf(this.header.currentKind(),
-      Array.from(this.typingSenders.keys()),
-      (uid: number): string => getUserStore().displayName(uid));
-  }
+  // "正在输入…" 提示的状态与轮询定时器整套搬进了 TypingIndicatorState
+  // （B10 批）：onChatAction/rebuildTypingLabel 与 typingSenders/typingTimer/
+  // typingLabel 一起住进了控制器，页面只在 subscribeChatLevelUpdates() 里转发
+  // updateChatAction 给 this.typing.onChatAction(u)，composerPlaceholder 改读
+  // this.typing.label（详见 TypingIndicatorState.ets）。
 
   // Pick up the draft synced from other devices (chat.draft_message). Only
   // fills an empty composer — never overwrites what the user is typing.
@@ -7710,7 +7557,7 @@ export struct ChatPage {
       promptAction.showToast({ message: $r('app.string.cp_nothing_to_translate'), duration: 1600 });
       return;
     }
-    this.translateInline(messageId);
+    this.translation.translateInline(messageId);
   }
 
   // Long-press on a reaction chip: who reacted with it.
@@ -7847,54 +7694,29 @@ export struct ChatPage {
   // made the mode look like an accessory instead of navigation state.
   // Suggestion panel above the input bar: group members for a trailing '@',
   // bot commands for a leading '/'.
-  private startEdit(messageId: number): void {
-    // 编辑改的是旧消息，发媒体是发新消息，发送键做哪件事说不清。宁可拒绝，
-    // 也不静默丢掉用户刚挑好的九张图（对照 enterEdit 会清掉待回复——那里
-    // 丢的只是一个引用）。
-    if (hasPendingMedia(this.pendingMedia)) {
-      promptAction.showToast({
-        message: $r('app.string.cp_pending_media_blocks_edit'), duration: 2000
-      });
-      return;
-    }
-    const msg = this.store?.getMessages().find(
-      (m: MessageEntry): boolean => m.id === messageId);
-    const captionTypes: string[] = ['photo', 'video', 'file', 'audio', 'voice'];
-    if (msg === undefined || !msg.isOutgoing ||
-      (msg.contentType !== 'text' && captionTypes.indexOf(msg.contentType) < 0)) {
-      return;
-    }
-    const editKind: string = msg.contentType === 'text' ? 'text' : 'caption';
-    const preview: string = msg.text !== '' ? msg.text
-      : (editKind === 'caption' ? str('cp_no_caption') : '');
-    this.applyComposerMode(
-      enterEdit(this.composerMode, messageId, editKind, preview, this.draft));
-    this.draft = msg.text;
-  }
-
-  private cancelEdit(): void {
-    if (this.editingId === 0) { return; }
-    const restored: string = draftToRestore(this.composerMode);
-    this.applyComposerMode(cancelEdit(this.composerMode));
-    this.draft = restored;
-  }
-
+  // startEdit/cancelEdit 整套搬进了 ComposerSession（B9 批）：调用点改
+  // this.composer.startEdit(messageId)/this.composer.cancelEdit()。
+  //
+  // commitEdit 依赖 withSendLock/store（页面留存的发送闸门与 TDLib 客户端），
+  // 按所有权裁决整个留页面；只经 composer.editingId/editingKind 两个 @Trace
+  // 直读，成功回调里改调 this.composer.apply(cancelEdit(this.composer.mode))
+  // 走回 ComposerSession 唯一写入口。
   private commitEdit(): void {
     const store = this.store;
-    const editId = this.editingId;
+    const editId = this.composer.editingId;
     const text = this.draft.trim();
     // Captions may be cleared (empty); message text may not.
     if (store === null || editId === 0 || this.composerSending ||
-      (text === '' && this.editingKind === 'text')) {
+      (text === '' && this.composer.editingKind === 'text')) {
       return;
     }
-    const editKind: string = this.editingKind;
+    const editKind: string = this.composer.editingKind;
     this.withSendLock((): Promise<void> => (editKind === 'caption'
       ? store.editCaptionAsync(editId, text) : store.editTextAsync(editId, text)
     ).then((): void => {
-      if (this.editingId === editId) {
-        const restored: string = draftToRestore(this.composerMode);
-        this.applyComposerMode(cancelEdit(this.composerMode));
+      if (this.composer.editingId === editId) {
+        const restored: string = draftToRestore(this.composer.mode);
+        this.composer.apply(cancelEdit(this.composer.mode));
         this.draft = restored;
       }
     }).catch((e: TdError): void => {
@@ -7913,7 +7735,7 @@ export struct ChatPage {
   }
 
   private composerPlaceholder(): string {
-    return placeholderOf(this.typingLabel, this.replyKbVisible(),
+    return placeholderOf(this.typing.label, this.replyKbVisible(),
       this.replyKeyboard !== null ? this.replyKeyboard.placeholder : '');
   }
 
@@ -8141,14 +7963,14 @@ export struct ChatPage {
         isRecording: this.isRecording,
         attachPanelOpen: this.attachPanelOpen,
         pendingMedia: this.pendingMedia,
-        editingId: this.editingId,
-        editingKind: this.editingKind,
-        editingPreview: this.editingPreview,
-        replyToId: this.replyToId,
-        replyToName: this.replyToName,
-        replyToText: this.replyToText,
-        replyToThumb: this.replyToThumb,
-        replyToThumbSticker: this.replyToThumbSticker,
+        editingId: this.composer.editingId,
+        editingKind: this.composer.editingKind,
+        editingPreview: this.composer.editingPreview,
+        replyToId: this.composer.replyToId,
+        replyToName: this.composer.replyToName,
+        replyToText: this.composer.replyToText,
+        replyToThumb: this.composer.replyToThumb,
+        replyToThumbSticker: this.composer.replyToThumbSticker,
         botMenuAvailable: this.botMenuAvailable,
         commandMenuOpen: this.commandMenuOpen,
         showEmojiPanel: this.showEmojiPanel,
@@ -8176,9 +7998,9 @@ export struct ChatPage {
           this.pendingMedia = movePendingMedia(this.pendingMedia, from, to);
         },
         onClearMedia: (): void => { this.pendingMedia = clearPendingMedia(); },
-        onCancelEdit: (): void => { this.cancelEdit(); },
+        onCancelEdit: (): void => { this.composer.cancelEdit(); },
         onReplyTap: (messageId: number): void => { this.onReplyTap(messageId); },
-        onClearReply: (): void => { this.clearReply(); },
+        onClearReply: (): void => { this.composer.clearReply(); },
         onCancelRecording: (): void => { this.cancelRecording(); },
         onFinishRecording: (): void => { this.finishRecording(); },
         onToggleBotMenu: (): void => { this.toggleBotMenu(); },
@@ -8197,7 +8019,7 @@ export struct ChatPage {
         onDraftChange: (value: string): void => {
           this.draft = value;
           this.updateSuggestions(value);
-          if (value.trim() !== '' && this.editingId === 0) {
+          if (value.trim() !== '' && this.composer.editingId === 0) {
             this.store?.notifyTyping();
           }
         },
@@ -8647,7 +8469,7 @@ export struct ChatPage {
       this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
     }
     if (!this.chatTgsScrollActive) {
-      this.driveTranslations(start, end);
+      this.translation.drive(this.translateChatsEnabled, start, end);
     }
     this.syncMediaWindow(start, end);
     if (start > 4) {

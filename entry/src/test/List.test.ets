@@ -215,6 +215,9 @@ import locationActionsTest from './LocationActions.test';
 import liveTopCardControllerTest from './LiveTopCardController.test';
 import selectionSessionTest from './SelectionSession.test';
 import headerIdentitySessionTest from './HeaderIdentitySession.test';
+import composerSessionTest from './ComposerSession.test';
+import translationDriverTest from './TranslationDriver.test';
+import typingIndicatorStateTest from './TypingIndicatorState.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -435,4 +438,7 @@ export default function testsuite() {
   liveTopCardControllerTest();
   selectionSessionTest();
   headerIdentitySessionTest();
+  composerSessionTest();
+  translationDriverTest();
+  typingIndicatorStateTest();
 }
