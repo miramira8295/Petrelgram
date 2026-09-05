@@ -8843,6 +8843,7 @@ export struct ChatPage {
         });
       } else if (this.composerSlot() !== 'writable') {
         MembershipBar({
+          materialEpoch: this.materialEpoch,
           state: this.composerSlot(),
           isMuted: this.isMuted,
           joining: this.joiningChat,
@@ -9233,6 +9234,7 @@ export struct ChatPage {
     Column() {
       if (this.selecting) {
         SelectionHeader({
+          materialEpoch: this.materialEpoch,
           selectedCount: this.selectedIds.length,
           topSafe: 0,
           onExit: (): void => { this.exitSelect(); },
@@ -9250,7 +9252,10 @@ export struct ChatPage {
         });
       } else {
         ChatHeader({
+          appearanceEpoch: this.appearanceEpoch,
+          materialEpoch: this.materialEpoch,
           onLightBg: this.chromeOnLightBg(),
+          appDark: this.appDark,
           titleText: this.headerText().titleText,
           subtitleText: this.headerText().subtitleText,
           headerState: this.headerState,
@@ -9290,6 +9295,7 @@ export struct ChatPage {
   @Builder
   chatTitleBarBottom() {
     TopBanners({
+      materialEpoch: this.materialEpoch,
       pinnedPreview: this.pinnedPreview,
       pinnedCount: this.pinnedCount,
       pinnedCycle: this.pinnedCycle,

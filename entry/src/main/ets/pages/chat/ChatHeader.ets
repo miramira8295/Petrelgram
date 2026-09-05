@@ -2,14 +2,11 @@ import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT,
-  COLOR_TEXT_ON_LIGHT, KEY_APP_DARK } from '../../util/theme';
+  COLOR_TEXT_ON_LIGHT } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import {
-  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
-} from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
-import { APPEARANCE_EPOCH } from '../../util/appearance';
 
 // 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。整条画在 HdsNavDestination 的
 // **stackBuilder** 里，HDS 只负责背板和滚动模糊。
@@ -30,9 +27,26 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 export const CHAT_HEADER_ACTION_SIZE: number = 42;
 export const CHAT_HEADER_RADIUS: number = 22;
 
-@Component
+// 状态管理 V2（B2 批：六个 V1 宿主迁 @ComponentV2）。迁移本身不为性能——它是
+// **前置**：V1 @Component 既不能声明 @Param，也订阅不了 @ObservedV2 类上的
+// @Trace，后面「宿主接收控制器实例、在自己的 build() 里读 @Trace」那一整套
+// （B5–B13，唯一能真正缩小 ChatPage 重渲染半径的做法）落不了地。配方照既有
+// 先例 25d3797（MediaViewerOverlay / ReactionSheet 那次）。
+// 本文件的 @Prop 全是 string/number/boolean，V1 的「深拷贝」与 V2 的「引用
+// 传递」在基本类型上等价，所以这一批是零行为变更的。
+//
+// 子组件都过了「V2 普通组件 → V1 **复用**组件不支持」这一关（官方混用支持表；
+// 本仓实测是运行时静默失败、连编译告警都没有，整块子树一个节点都不建）：
+// AvatarView 是 V1 **普通**组件（V2 → V1 普通组件：支持），TgsStickerView /
+// WebmStickerView 早在 P4 批 6b 就是 @ComponentV2 了。
+@ComponentV2
 export struct ChatHeader {
-  @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // V2 没有 @StorageProp 的等价物（官方：V2 组件不提供 @StorageProp/@StorageLink）。
+  // 三个全局键（外观纪元 / 材质纪元 / 深色模式）改由 ChatPage 透传——页面自己
+  // 就持有这三个 @Param（来自 V1 外壳 ChatPageEntry）。纪元变化的路径从「本层
+  // 自订阅 AppStorage」变成「ChatPageChrome → ChatPage → 本层」，多两次 ===
+  // 比较，无行为差。（B2 迁移）
+  @Param appearanceEpoch: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -40,36 +54,43 @@ export struct ChatHeader {
 
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // B2 迁移：原来是 @StorageProp(MATERIAL_EPOCH) private，见上面那条——改成由
+  // ChatPage 透传的 @Param，private 去掉（@Param 要由父组件构造传参）。
+  @Param materialEpoch: number = 0;
   // 顶栏浮在聊天壁纸上：深色模式 + 浅色壁纸时它其实坐在亮底上，白色前景会掉到
   // 2.22:1。由 ChatPage 算好传进来（判据见 util/chatChrome），这里只按它选前景。
-  @Prop onLightBg: boolean = false;
-  @StorageProp(KEY_APP_DARK) appDark: boolean = false;
-  @Prop titleText: string;
-  @Prop subtitleText: string;
+  @Param onLightBg: boolean = false;
+  // B2 迁移前是 @StorageProp(KEY_APP_DARK)，同样改成 ChatPage 透传。
+  @Param appDark: boolean = false;
+  @Param titleText: string = '';
+  @Param subtitleText: string = '';
   // 'ready' | 'loading' | 'error'——error 时副标题变红，点击是重试而不是进资料页。
-  @Prop headerState: string;
-  @Prop avatarPath: string;
+  @Param headerState: string = 'loading';
+  @Param avatarPath: string = '';
   // 动态头像（MP4 小循环）。'' 表示没有或没取到，AvatarView 自己退回静态图。
-  @Prop avatarAnimPath: string = '';
-  @Prop initials: string;
+  @Param avatarAnimPath: string = '';
+  @Param initials: string = '';
   // 「我的收藏」：头像位画书签而不是自己的头像（issue #8）。
-  @Prop savedMessages: boolean = false;
-  @Prop chatId: number;
+  @Param savedMessages: boolean = false;
+  @Param chatId: number = 0;
   // 名字后面的 emoji 状态：'tgs' 动画、'webm' 视频、其余当静态图。
-  @Prop emojiPath: string;
-  @Prop emojiFormat: string;
-  @Prop isMuted: boolean;
-  @Prop muteUpdating: boolean;
-  @Prop profileOpening: boolean;
+  @Param emojiPath: string = '';
+  @Param emojiFormat: string = '';
+  @Param isMuted: boolean = false;
+  @Param muteUpdating: boolean = false;
+  @Param profileOpening: boolean = false;
   // 菜单展开态：只用来把汉堡切成叉。真正的开关在页面那边（ChatHeaderMenuController）。
-  @Prop menuShow: boolean;
+  @Param menuShow: boolean = false;
   // 菜单浮层的锚点。promptAction.openMenu 按组件 id 定位，所以这颗键要挂上它。
-  @Prop menuAnchorId: string;
-  onBack: () => void = (): void => {};
-  onMenuTap: () => void = (): void => {};
-  onOpenProfile: () => void = (): void => {};
-  onResolveIdentity: () => void = (): void => {};
+  @Param menuAnchorId: string = '';
+  // 四个回调一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
+  // 若用 @Param，那个 `!==` 恒不相等会让本层跟着页面的每一次重建白刷一遍；
+  // @Event 不具备观测能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。
+  // 空实现默认值是仓库惯例（让组件能脱离父组件独立预览）。（B2 迁移）
+  @Event onBack: () => void = (): void => {};
+  @Event onMenuTap: () => void = (): void => {};
+  @Event onOpenProfile: () => void = (): void => {};
+  @Event onResolveIdentity: () => void = (): void => {};
 
   // 低于 API 26 自己画玻璃时底色必须半透明，否则 backdropBlur 被盖死。
   @Styles

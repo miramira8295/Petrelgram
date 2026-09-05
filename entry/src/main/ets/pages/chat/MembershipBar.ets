@@ -7,9 +7,7 @@ import {
   MEMBERSHIP_SECRET_CLOSED, MEMBERSHIP_SECRET_PENDING, secretBarTextKey
 } from '../../util/secretChat';
 import { str } from '../../util/strings';
-import {
-  MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
-} from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 
 // 没有发言权时，输入区的位置放什么。
@@ -20,25 +18,37 @@ import { materialModifier } from '../../util/materialModifier';
 //
 // 高度要上报给页面：它决定消息列表底部留多少空，和输入框走的是同一个字段。
 
-@Component
+// 状态管理 V2（B2 批：六个 V1 宿主迁 @ComponentV2）。迁的理由不是统一风格，而是
+// 前置条件：后面几批要让这个宿主直接接收 @ObservedV2 控制器实例、在 build() 里
+// 读 @Trace，V1 @Component 既不能声明 @Param 也订阅不了 @Trace。本批只换体系，
+// 零行为变更。
+@ComponentV2
 export struct MembershipBar {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
-  // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // AppStorage，只能由调用方订阅——B2 迁移更正：V2 没有 @StorageProp 的等价物，
+  // 所以这里不再自订阅 MATERIAL_EPOCH，改由 ChatPage 透传（页面自己持有这个
+  // 纪元 @Param，来自 V1 外壳 ChatPageEntry）。链路多两次 === 比较，无行为差。
+  @Param materialEpoch: number = 0;
   // util/membershipState 的取值，外加 util/botStart 的 botStart；
   // writable 时页面根本不挂这个组件。
-  @Prop state: string;
-  @Prop isMuted: boolean;
-  @Prop joining: boolean;
+  // B2 迁移更正：原来是 @Prop（对复杂类型深拷贝），现在是 @Param（引用传递）。
+  // 这五个都是 string/number/boolean，两者等价；@Param 只读，本组件从头到尾
+  // 也没写过它们。
+  @Param state: string = '';
+  @Param isMuted: boolean = false;
+  @Param joining: boolean = false;
   // 密聊是不是自己发起的。等待期两侧话术不同（见 util/secretChat）。
-  @Prop secretOutbound: boolean;
+  @Param secretOutbound: boolean = false;
   // 底部让出的高度，由页面按键盘/抽屉状态算好传进来。
-  @Prop bottomGap: number;
+  @Param bottomGap: number = 0;
 
-  onJoin: () => void = (): void => {};
-  onStartBot: () => void = (): void => {};
-  onToggleMute: () => void = (): void => {};
-  onHeightChange: (height: number) => void = (): void => {};
+  // 一律 @Event：调用点传的是内联箭头函数，每次页面重建都是新闭包，@Param 的
+  // !== 恒不相等会让本层白刷；@Event 不具备观测能力，正好复现迁移前普通字段的
+  // 行为。空实现默认值让组件能脱离父组件独立预览。
+  @Event onJoin: () => void = (): void => {};
+  @Event onStartBot: () => void = (): void => {};
+  @Event onToggleMute: () => void = (): void => {};
+  @Event onHeightChange: (height: number) => void = (): void => {};
 
   build() {
     Column() {

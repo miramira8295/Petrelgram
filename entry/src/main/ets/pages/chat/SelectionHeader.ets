@@ -1,9 +1,7 @@
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { CHAT_HEADER_ACTION_SIZE, CHAT_HEADER_RADIUS } from './ChatHeader';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import {
-  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
-} from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
 import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
@@ -18,18 +16,30 @@ import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 
 const DESTRUCTIVE: ResourceColor = '#FF3B30';
 
-@Component
+// 状态管理 V2（B2 批）。迁的理由不在本层的性能：V1 的 @Component 既不能声明
+// @Param、也订阅不了 @ObservedV2 对象的 @Trace，而后续批次要把多选态收进一个
+// SelectionSession 控制器、让这个宿主自己在 build() 里直读它——不先换体系就无从
+// 谈起。本次迁移本身零行为变更。
+@ComponentV2
 export struct SelectionHeader {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
-  @Prop selectedCount: number;
-  @Prop topSafe: number;
+  // B2 迁移时更正：V2 没有 @StorageProp / @StorageLink 的等价物，改由 ChatPage
+  // 透传（页面自己就持有这个纪元，来自 V1 外壳 ChatPageEntry 的订阅）。
+  // 去掉了 private：@Param 要由父组件构造传参。
+  @Param materialEpoch: number = 0;
+  // @Prop → @Param：V1 的 @Prop 对复杂类型是深拷贝、@Param 是引用传递，这两个
+  // 都是 number，两者等价。本组件内部一处也没写过它们，所以不需要 @Once。
+  @Param selectedCount: number = 0;
+  @Param topSafe: number = 0;
 
-  onExit: () => void = (): void => {};
-  onForward: () => void = (): void => {};
-  onCopy: () => void = (): void => {};
-  onDelete: () => void = (): void => {};
+  // @Event 而不是 @Param：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
+  // @Param 的 `!==` 恒不相等会让本层白刷一遍。@Event 不具备观测能力，正好复现
+  // 迁移前普通字段的行为。空实现默认值保留，让组件能脱离父组件独立预览。
+  @Event onExit: () => void = (): void => {};
+  @Event onForward: () => void = (): void => {};
+  @Event onCopy: () => void = (): void => {};
+  @Event onDelete: () => void = (): void => {};
 
   @Styles
   actionNormalStyle() {

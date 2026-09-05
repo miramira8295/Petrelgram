@@ -2,9 +2,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import {
   KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import {
-  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
-} from '../../util/overlayMaterial';
+import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { pinnedActiveSeg, pinnedSegIndices, pinnedShownIndex } from '../../util/pinnedSegments';
 import { plural, str } from '../../util/strings';
@@ -23,31 +21,52 @@ import {
 const LIVE_ACCENT: string = '#FF405C';
 const LIVE_ACCENT_PRESSED: string = '#E93652';
 
-@Component
+// 状态管理 V2（B2 批）。这一步本身不求性能收益，它是后续批次的前置：V1 的
+// @Component 既不能声明 @Param、也订阅不了 @ObservedV2 类上的 @Trace，而
+// 「宿主接控制器实例、在自己的 build() 里直读 @Trace」是唯一能真正缩小 ChatPage
+// 重渲染半径的做法。配方照 25d3797（MediaViewerOverlay / ReactionSheet 那次）。
+//
+// 本层的入参全是 string/number/boolean，@Prop（复杂类型深拷贝 + 单向同步）换成
+// @Param（引用 + 单向同步）在这里是等价变换，零行为变更。
+// build() 里没有任何自定义子组件（全是内置组件），不触及「V2 普通组件挂 V1
+// @Reusable 子组件会静默不建节点」那个坑。
+@ComponentV2
 export struct TopBanners {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
-  @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // B2 迁移更正：V2 没有 @StorageProp/@StorageLink 的等价物，材质纪元改由
+  // ChatPage 透传（页面自己就持有这个键）；同时去掉 private——@Param 要能被父
+  // 组件构造传参。纪元变化的路径从「宿主自订阅」变成「ChatPageChrome → ChatPage
+  // → 宿主」，多两次 === 比较，无行为差。
+  @Param materialEpoch: number = 0;
+  // 下面 13 个入参在 B5 会被一个 @Require @Param topCard: LiveTopCardController
+  // 整体取代；本批只换装饰器体系，接口形状不动。
+  // 默认值是 V2 的要求（不带默认值的 @Param 必须配 @Require），取值对齐 ChatPage
+  // 侧同名字段的初值——调用点这 13 个实际上全都显式传了。
   // 置顶条
-  @Prop pinnedPreview: string;
-  @Prop pinnedCount: number;
-  @Prop pinnedCycle: number;
+  @Param pinnedPreview: string = '';
+  @Param pinnedCount: number = 0;
+  @Param pinnedCycle: number = 0;
   // 'loading' | 'ready' | 'error'
-  @Prop pinnedLoadState: string;
-  @Prop pinnedJumpBusy: boolean;
+  @Param pinnedLoadState: string = 'loading';
+  @Param pinnedJumpBusy: boolean = false;
   // 直播条
-  @Prop liveGroupCallId: number;
-  @Prop liveCallIsActive: boolean;
-  @Prop liveCallIsRtmp: boolean;
-  @Prop liveParticipantCount: number;
-  @Prop livePulseExpanded: boolean;
-  @Prop liveDialogOpening: boolean;
-  @Prop liveNavigationBusy: boolean;
+  @Param liveGroupCallId: number = 0;
+  @Param liveCallIsActive: boolean = false;
+  @Param liveCallIsRtmp: boolean = false;
+  @Param liveParticipantCount: number = 0;
+  @Param livePulseExpanded: boolean = false;
+  @Param liveDialogOpening: boolean = false;
+  @Param liveNavigationBusy: boolean = false;
   // 两条都还没定下来时显示的同步态。
-  @Prop topCardLoadingVisible: boolean;
+  @Param topCardLoadingVisible: boolean = false;
 
-  onPinnedTap: () => void = (): void => {};
-  onLiveStreamTap: () => void = (): void => {};
+  // 两个回调一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
+  // 用 @Param 的话那个 `!==` 恒不相等会让本层跟着页面白刷；@Event 不具备观测
+  // 能力，正好复现迁移前普通字段的行为。空实现默认值保留（仓库惯例：组件要能
+  // 脱离父组件独立预览）。
+  @Event onPinnedTap: () => void = (): void => {};
+  @Event onLiveStreamTap: () => void = (): void => {};
 
   @Styles
   rowNormalStyle() {
