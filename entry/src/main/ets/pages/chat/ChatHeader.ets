@@ -1,12 +1,13 @@
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT,
-  COLOR_TEXT_ON_LIGHT } from '../../util/theme';
+import { COLOR_PRIMARY } from '../../util/theme';
+import { chromeIconColorOf, chromeTextColorOf } from '../../util/chatChrome';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
+import { HeaderIdentitySession } from './HeaderIdentitySession';
 
 // 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。整条画在 HdsNavDestination 的
 // **stackBuilder** 里，HDS 只负责背板和滚动模糊。
@@ -62,23 +63,22 @@ export struct ChatHeader {
   @Param onLightBg: boolean = false;
   // B2 迁移前是 @StorageProp(KEY_APP_DARK)，同样改成 ChatPage 透传。
   @Param appDark: boolean = false;
-  @Param titleText: string = '';
-  @Param subtitleText: string = '';
-  // 'ready' | 'loading' | 'error'——error 时副标题变红，点击是重试而不是进资料页。
-  @Param headerState: string = 'loading';
-  @Param avatarPath: string = '';
-  // 动态头像（MP4 小循环）。'' 表示没有或没取到，AvatarView 自己退回静态图。
-  @Param avatarAnimPath: string = '';
-  @Param initials: string = '';
-  // 「我的收藏」：头像位画书签而不是自己的头像（issue #8）。
-  @Param savedMessages: boolean = false;
+  // B8：titleText/subtitleText/headerState/avatarPath/avatarAnimPath/initials/
+  // savedMessages/emojiPath/emojiFormat/isMuted/muteUpdating/profileOpening 这
+  // 12 个标量 @Param 换成一个控制器引用——本组件直接持有 HeaderIdentitySession、
+  // 在自己的 build()/@Builder 里读它的 @Trace。
+  //
+  // 副标题是这一步唯一改变"谁读"的地方：改前页面用 this.headerText().
+  // subtitleText 把 subtitle/secretSubtitle 拼好再传进来，页面 build 因此订阅了
+  // 这两个字段——对方在线/输入中每次翻转 subtitle，都要重跑一遍页面的
+  // chatTitleBar 闭包。改后本组件在 build 里自己调 this.header.subtitleTextOf()，
+  // 页面不再算 subtitleText、也就不再读 subtitle/secretSubtitle；页面仍然会算
+  // titleText（confirmLeaveChat/openDeleteConfirm 等簇外读者也要用），但那是
+  // 通过控制器的 titleTextOf() 现取，不再经这个组件的 @Param 转手。
+  // 引用由 ChatPage 的字段初始化器 new 出来、全生命周期不变，@Require 已保证
+  // 调用点必须传，不带默认值（同 TopBanners.topCard / ChatSearchBars 的写法）。
+  @Require @Param header: HeaderIdentitySession;
   @Param chatId: number = 0;
-  // 名字后面的 emoji 状态：'tgs' 动画、'webm' 视频、其余当静态图。
-  @Param emojiPath: string = '';
-  @Param emojiFormat: string = '';
-  @Param isMuted: boolean = false;
-  @Param muteUpdating: boolean = false;
-  @Param profileOpening: boolean = false;
   // 菜单展开态：只用来把汉堡切成叉。真正的开关在页面那边（ChatHeaderMenuController）。
   @Param menuShow: boolean = false;
   // 菜单浮层的锚点。promptAction.openMenu 按组件 id 定位，所以这颗键要挂上它。
@@ -125,41 +125,35 @@ export struct ChatHeader {
 
   @Builder
   titleAccessory() {
-    if (this.headerState === 'loading' || this.profileOpening) {
+    if (this.header.state === 'loading' || this.header.profileOpening) {
       LoadingProgress().width(15).height(15).color(this.accent()).margin({ left: 5 });
-    } else if (this.emojiPath !== '') {
-      if (this.emojiFormat === 'tgs') {
+    } else if (this.header.emojiPath !== '') {
+      if (this.header.emojiFormat === 'tgs') {
         TgsStickerView({
-          tgsPath: this.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
+          tgsPath: this.header.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
         }).margin({ left: 4 });
-      } else if (this.emojiFormat === 'webm') {
+      } else if (this.header.emojiFormat === 'webm') {
         WebmStickerView({
-          webmPath: this.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
+          webmPath: this.header.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
         }).margin({ left: 4 });
       } else {
-        Image(`file://${this.emojiPath}`).draggable(false)
+        Image(`file://${this.header.emojiPath}`).draggable(false)
           .width(18).height(18).objectFit(ImageFit.Contain).margin({ left: 4 });
       }
     }
-    if (this.muteUpdating) {
+    if (this.header.muteUpdating) {
       LoadingProgress().width(14).height(14).color(this.fgSecondary()).margin({ left: 4 });
-    } else if (this.isMuted) {
+    } else if (this.header.isMuted) {
       SymbolGlyph($r('sys.symbol.bell_slash'))
-        .fontSize(14).fontColor([this.fgIcon()]).margin({ left: 4 });
+        .fontSize(14).fontColor([chromeIconColorOf(this.onLightBg, this.appDark)]).margin({ left: 4 });
     }
   }
 
-  private fgPrimary(): ResourceColor {
-    return this.onLightBg ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_PRIMARY;
-  }
-
-  private fgIcon(): ResourceColor {
-    if (this.onLightBg) {
-      return COLOR_ICON_ON_LIGHT;
-    }
-    // 和输入栏同一套：顶栏浮在壁纸上，深色下用亮白，浅色下用次级灰。
-    return this.appDark ? COLOR_ICON_ON_DARK : COLOR_ICON_SECONDARY;
-  }
+  // B8（顺手去重，记在 B3 抽出 chromeTextColorOf/chromeIconColorOf 时留下的账）：
+  // 这两个方法原来在这里各自重写了一遍 util/chatChrome 里同名纯函数逐字相同的
+  // if/else——B3 把判据抽出去时漏了这一处调用点。现在直接调
+  // chromeTextColorOf(this.onLightBg) / chromeIconColorOf(this.onLightBg,
+  // this.appDark) 取代，本文件不再维护第二份判据。
 
   private fgSecondary(): ResourceColor {
     // **和主标题同色，深浅色模式都是。** 这条规则原本只在 onLightBg 那一支生效，
@@ -171,13 +165,14 @@ export struct ChatHeader {
     // 顶栏浮在用户自己挑的壁纸上，底色**事先不可知**，所以这一层就不该出现
     // "次级灰"这种预设了底色的颜色。副标题（成员数/在线数）本来就短，和主标题
     // 同色不会喧宾夺主——层次交给字号和字重（12 常规 vs 16 加粗）。
-    return this.fgPrimary();
+    return chromeTextColorOf(this.onLightBg);
   }
 
   @Builder
   backButton() {
     Row() {
-      SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22).fontColor([this.fgPrimary()]);
+      SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22)
+        .fontColor([chromeTextColorOf(this.onLightBg)]);
     }
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
@@ -207,7 +202,7 @@ export struct ChatHeader {
       Stack() {
         Image($r('app.media.ic_header_menu'))
           .width(18).height(18)
-          .fillColor(this.fgPrimary())
+          .fillColor(chromeTextColorOf(this.onLightBg))
           .draggable(false)
           .opacity(this.menuShow ? 0 : 1)
           .rotate({ angle: this.menuShow ? 90 : 0 })
@@ -218,7 +213,7 @@ export struct ChatHeader {
             curve: Curve.EaseInOut
           });
         SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(19).fontColor([this.fgPrimary()])
+          .fontSize(19).fontColor([chromeTextColorOf(this.onLightBg)])
           .opacity(this.menuShow ? 1 : 0)
           .rotate({ angle: this.menuShow ? 0 : -90 })
           .animation({
@@ -253,20 +248,22 @@ export struct ChatHeader {
       this.backButton();
       Row({ space: 10 }) {
       AvatarView({
-        avatarPath: this.avatarPath,
-        animPath: this.avatarAnimPath,
-        initials: this.initials,
+        avatarPath: this.header.avatarPath,
+        animPath: this.header.avatarAnimPath,
+        initials: this.header.initials,
         colorSeed: this.chatId,
         avatarSize: 38,
-        savedMessages: this.savedMessages
+        // 「我的收藏」判定不读任何 @Trace（现查 ChatStore），本来就该在 build
+        // 期间现取；不再由页面算好经 @Param 传入。
+        savedMessages: this.header.isSavedMessages()
       })
         .margin({ left: -4, right: 0 });
       Column() {
         Row() {
-          Text(this.titleText)
+          Text(this.header.titleTextOf())
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
-            .fontColor(this.fgPrimary())
+            .fontColor(chromeTextColorOf(this.onLightBg))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .flexShrink(1);
@@ -274,9 +271,14 @@ export struct ChatHeader {
         }
         .width('100%')
         .alignItems(VerticalAlign.Center);
-        Text(this.subtitleText)
+        // B8：副标题不再由页面用 headerText().subtitleText 算好传入——那样页面
+        // build 就订阅了 subtitle/secretSubtitle，对方在线/输入中每次翻转都要
+        // 重跑一遍页面的 chatTitleBar 闭包。本组件直接持有控制器引用，这里现读
+        // 它的 @Trace 自己合成，翻转只刷新这一个 Text 节点，页面一个字都不读——
+        // 这是本批性能收益的关键。
+        Text(this.header.subtitleTextOf())
           .fontSize(12)
-          .fontColor(this.headerState === 'error' ? '#E64646' : this.fgSecondary())
+          .fontColor(this.header.state === 'error' ? '#E64646' : this.fgSecondary())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 1 });
@@ -295,9 +297,9 @@ export struct ChatHeader {
       // 的缩放/透明度体现；'bar' 档的 applyShadow:false 让这里手调的阴影继续生效。
       .backdropBlur(overlayBackdropBlur('bar'))
       .attributeModifier(materialModifier('bar'))
-      .accessibilityText(str('cp_header_a11y', this.titleText, this.subtitleText))
+      .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.header.subtitleTextOf()))
       .onClick((): void => {
-        if (this.headerState === 'error') {
+        if (this.header.state === 'error') {
           this.onResolveIdentity();
         } else {
           this.onOpenProfile();

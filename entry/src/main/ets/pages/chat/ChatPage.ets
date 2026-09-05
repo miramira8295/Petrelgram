@@ -4,7 +4,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { setScrollActive } from '../../util/scrollEffects';
 import { getStickersForEmoji, rememberRecentSticker } from '../../store/StickerApi';
-import { botMiniAppUrl, openMiniApp } from '../../store/BotApi';
+import { openMiniApp } from '../../store/BotApi';
 import {
   InlineQueryPage, InlineResultRow, getInlineResults, sendInlineResult
 } from '../../store/BotApi';
@@ -17,7 +17,6 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { fileOpenMimeType } from '../../util/fileMessage';
-import { resolveEmojiStatus } from '../../util/emojiStatus';
 import { holdPlayerJobs } from './WebmStickerView';
 import { setChatTgsSuspended } from './TgsStickerView';
 import { EmojiPanel } from './EmojiPanel';
@@ -40,7 +39,7 @@ import {
   messageRowViewportRows, reuseBucketMaxCount
 } from '../../util/messageReusePool';
 import { ReplyKeyboard, KeyboardBtn, KB_TEXT } from '../../store/ReplyKeyboard';
-import { ChatEntry, computeInitials, isMutedFrom } from '../../store/ChatEntry';
+import { ChatEntry } from '../../store/ChatEntry';
 import { ClearHistoryOption, clearHistoryOptions } from '../../store/ClearHistoryOptions';
 import {
   MessageBubbleActions, MessageBubbleRenderData, ReusableMessageBubble
@@ -56,9 +55,6 @@ import { LivePhotoExport } from '../../util/movingPhotoPick';
 import {
   ChatBackgroundState, ChatBackgroundStore, emptyChatBackground
 } from '../../store/ChatBackgroundStore';
-import {
-  chatHeaderPresentation, chatHeaderTitle, ChatHeaderPresentation
-} from '../../util/chatHeaderPresentation';
 import { MusicQueue } from '../../services/MusicQueue';
 import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
@@ -72,6 +68,7 @@ import { BasicPrefetcher } from '@kit.ArkUI';
 import { IReusePool, UIUtils } from '@kit.ArkUI';
 import { ChatBackdrop } from './ChatBackdrop';
 import { ChatHeader } from './ChatHeader';
+import { HeaderIdentitySession, ResolvedChatKind } from './HeaderIdentitySession';
 import {
   ChatHeaderMenuController, ChatHeaderMenuParams, PANEL_MAIN, createChatHeaderMenuId
 } from './ChatHeaderMenu';
@@ -98,9 +95,7 @@ import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
 } from '../../util/messageLinkAction';
 import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
-import {
-  SecretChatInfo, secretHeaderKey, secretMembershipState
-} from '../../util/secretChat';
+import { SecretChatInfo } from '../../util/secretChat';
 import { watchSecretChat } from '../../store/SecretChatWatch';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
 import {
@@ -178,7 +173,7 @@ import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { LiveTopCardController } from './LiveTopCardController';
 import { SearchSession } from './SearchSession';
 import { SelectionSession } from './SelectionSession';
-import { MUTE_LONG, setMute, showChatFolderPicker } from '../../store/ChatActions';
+import { showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
 import {
@@ -274,7 +269,7 @@ import { ChatPageSubscriptionRegistry } from '../../util/ChatPageSubscriptionReg
 // 以下五组是 B1 从本文件顶部搬走的模块级声明，现在从 util 导入。
 import { chatEffectDurationOf } from '../../util/chatEffects';
 import {
-  CHAT_HEADER_NAV_GUARD_MS, INITIAL_BOTTOM_PRESENT_MIN_MS,
+  INITIAL_BOTTOM_PRESENT_MIN_MS,
   INITIAL_MESSAGE_RELEASE_DELAY_MS, INITIAL_MESSAGE_TRANSITION_SETTLE_MS,
   INITIAL_TIMELINE_PRESENT_MIN_MS, INITIAL_TIMELINE_REVEAL_ROW_LIMIT,
   INITIAL_TIMELINE_ROW_FADE_MS, INITIAL_TIMELINE_ROW_STAGGER_MS,
@@ -1448,25 +1443,12 @@ export struct ChatPage {
           rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, CHAT_PAGE_REUSE_ID_LEVEL)
     });
   }
-  @Local subtitle: string = '';
-  // 密聊未就绪时顶栏显示什么。**单独一个字段**：this.subtitle 由 MessageStore
-  // 推（成员数/最后上线），两边抢同一个字段的话谁后到谁赢。
-  @Local secretSubtitle: string = '';
-  // 密聊是不是自己发起的——等待期两侧话术不同。
-  @Local secretOutbound: boolean = false;
   // "×× 正在输入…" — shown as the composer placeholder while live, not in the
   // header subtitle (see composerPlaceholder).
   @Local typingLabel: string = '';
   private typingSenders: Map<number, number> = new Map(); // senderId -> expiry ms
   private typingTimer: number = -1;
   private subscriptions: ChatPageSubscriptionRegistry = new ChatPageSubscriptionRegistry();
-  @Local title: string = '';
-  @Local avatarPath: string = '';
-  // 聊天页头部的动态头像（MP4 循环）。issue #63：资料页会动、对话里不动——
-  // 头部一直只拿静态图。动画文件挂在 full info 的 chatPhoto.animation 里，
-  // getChat 的 chatPhotoInfo 只有 has_animation 标志，必须多要一次。
-  @Local headerAvatarAnimPath: string = '';
-  @Local initials: string = '?';
   @Local draft: string = '';
   // 聊天设置 → 回车键发送.
   @Require @Param sendByEnter: boolean = false;
@@ -1668,7 +1650,6 @@ export struct ChatPage {
   private slotTickTimer: number = -1;
   private lastMaxId: number = 0;
   @Local atBottom: boolean = true;
-  @Local isMuted: boolean = false;
   // 整聊天翻译有两层，菜单里的那一项在两层之间切换含义：
   //   总开关开着 —— 默认所有会话都翻，菜单是"关掉这个会话"（本地排除名单）。
   //   总开关关着 —— 默认都不翻，菜单是"只翻这个会话"（服务端 is_translatable，
@@ -1842,7 +1823,6 @@ export struct ChatPage {
   @Local mentionItems: MentionItem[] = [];
   @Local stickerSuggestions: StickerSuggestion[] = []; // emoji-typed sticker hints
   private stickerSuggestSeq: number = 0;
-  @Local botMiniAppUrlValue: string = ''; // bot menu-button Mini App ('' = none)
   @Local inlineResults: InlineResultRow[] = [];  // @bot query results
   private inlineQueryId: string = '';
   private inlineSeq: number = 0;
@@ -1904,17 +1884,25 @@ export struct ChatPage {
   @Local headerMenuShow: boolean = false; // header ⋮ dropdown
   private headerMenuId: string = createChatHeaderMenuId();
   private headerMenuController: ChatHeaderMenuController = new ChatHeaderMenuController();
-  // Header state is kept separate from message-history state. getChat can
-  // resolve before history, fail independently, or arrive after a cached row.
-  @Local headerState: string = 'loading'; // loading | ready | error
-  @Local headerLoadError: string = '';
-  @Local headerProfileOpening: boolean = false;
-  @Local headerMuteUpdating: boolean = false;
-  private headerPeerUserId: number = 0;
-  private headerKind: string = '';
-  private headerIdentityResolved: boolean = false;
-  private headerResolveSeq: number = 0;
-  private headerNavigationTimer: number = -1;
+  // 顶栏身份解析与展示态（标题/头像/静音/密聊副标题/表情状态/资料跳转/Mini App
+  // 入口）的整套状态机（B8 批）。原来摊在这里的 15 个 @Local（title/avatarPath/
+  // headerAvatarAnimPath/initials/subtitle/secretSubtitle/secretOutbound/
+  // headerState/headerLoadError/headerProfileOpening/headerMuteUpdating/
+  // isMuted/headerEmojiPath/headerEmojiFormat/botMiniAppUrlValue）与 6 个内部
+  // 机件字段（headerPeerUserId/headerKind/headerIdentityResolved/
+  // headerResolveSeq/headerEmojiFetched/headerNavigationTimer）全部住进了
+  // 控制器，字段名做了瘦身重命名（如 headerState → state），前者变成 @Trace，
+  // 后者仍是 private 的普通字段。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空——
+  // ChatHeader 拿 @Require @Param 收它，直接在自己的 build() 里读 @Trace，
+  // 页面不再算 titleText/subtitleText 经 @Param 转手。禁止做成模块级单例：
+  // 平板分栏/导航栈多层时同时活着多个 ChatPage，各自的顶栏身份解析进度互不相干。
+  //
+  // headerMenuShow/headerMenuId/headerMenuController 三个头部菜单域字段本轮
+  // 不动，仍留在页面（HeaderIdentitySession.reset() 里仍会调用
+  // host.closeHeaderMenu() 转发给它们）。
+  private header: HeaderIdentitySession = new HeaderIdentitySession();
   // 输入框上方那一条的当前状态。字段仍在（读取处很多），但**只由
   // applyComposerMode 写**，转换逻辑在 util/composerMode。
   @Local composerMode: ComposerMode = idleComposer();
@@ -1945,10 +1933,6 @@ export struct ChatPage {
   // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自的多选态
   // 互不相干。
   private selection: SelectionSession = new SelectionSession();
-  // Peer's premium emoji status (private chats) shown beside the header title.
-  @Local headerEmojiPath: string = '';
-  @Local headerEmojiFormat: string = '';
-  private headerEmojiFetched: boolean = false;
 
   private clearFloatingDate(): void {
     // 定时器与两个显示态一起归 FloatingDateState 管；clear() 不回调 onHidden，
@@ -2177,7 +2161,7 @@ export struct ChatPage {
     this.topCard.bind({
       chatId: (): number => this.chatId,
       threadRootId: (): number => this.threadRootId,
-      title: (): string => this.title,
+      title: (): string => this.header.title,
       store: (): MessageStore | null => this.store,
       groups: (): AlbumGroup[] => this.groups,
       curStartIdx: (): number => this.curStartIdx,
@@ -2191,6 +2175,57 @@ export struct ChatPage {
       },
       flashAtIndex: (index: number): void => { this.flashAtIndex(index); },
       jumpToPinned: (messageId: number): void => { this.jumpToPinned(messageId); }
+    });
+    // 顶栏身份解析控制器接上宿主（B8）。前九个是取值器——控制器不缓存页面的
+    // 值，每次要用就现取；isGroup/isChannel/isBotChat/isTranslatable/
+    // membershipState/unreadBadge 六个字段的所有权裁决留在页面（被 cacheKey/
+    // 成员资格状态机/翻译总开关/ScrollFab 未读徽标等身份簇之外的多个域共同
+    // 读写），控制器算出新值后经 onChatKindResolved 一次性回传。必须在
+    // applyRouteParams 之前绑好：那里会调 header.reset()/header.resolveIdentity()。
+    this.header.bind({
+      chatId: (): number => this.chatId,
+      store: (): MessageStore | null => this.store,
+      topicName: (): string => this.topicName,
+      forumTopicId: (): number => this.forumTopicId,
+      directMessagesTopicId: (): number => this.directMessagesTopicId,
+      threadRootId: (): number => this.threadRootId,
+      isTranslatable: (): boolean => this.isTranslatable,
+      membershipState: (): string => this.membershipState,
+      unreadBadge: (): number => this.unreadBadge,
+      // **必须先写 isGroup 再调 refreshAdminLabels**：这是早年的 bug（
+      // refreshAdminLabels 读 isGroup 时它还没被赋新值，普通群的管理员标签
+      // 从来没取到过）——原来钉在 applyResolvedHeaderChat 的 chatTypeBasicGroup
+      // 分支里，B8 搬迁后这条顺序改钉在这个回调里。refreshAdminLabels 自己开头
+      // 按 !isGroup 早退，refreshIsBot/applySecretChat/chatTypePrivate/
+      // chatTypeSecret 触发的调用都是无害的早退，多来几次不发请求。
+      onChatKindResolved: (k: ResolvedChatKind): void => {
+        this.isGroup = k.isGroup;
+        this.isChannel = k.isChannel;
+        this.isBotChat = k.isBotChat;
+        this.isTranslatable = k.isTranslatable;
+        this.membershipState = k.membershipState;
+        this.unreadBadge = k.unreadBadge;
+        this.refreshAdminLabels();
+      },
+      // header.refresh()（原 refreshHeader）对未读徽标的写入单独一条通道，不
+      // 经 onChatKindResolved——它由消息/会话列表更新驱动，触发频率远高于一次
+      // 身份解析，见 HeaderIdentitySession.ets 的说明。
+      onUnreadCount: (count: number): void => { this.unreadBadge = count; },
+      onLiveEntry: (entry: ChatEntry): void => { this.topCard.syncLiveFromChatEntry(entry); },
+      onKnownBackground: (background: TdObject): void => {
+        this.bgStore?.applyKnownBackground(background);
+      },
+      commitTimelineSnapshot: (): void => { this.commitTimelineSnapshot(); },
+      onMembershipLosesComposer: (): void => { this.applyComposerMode(idleComposer()); },
+      closeHeaderMenu: (): void => { this.closeHeaderMenu(); },
+      clearSecretChatSubscription: (): void => { this.subscriptions.clear('secretChat'); },
+      // chatTypeSecret 分支的订阅登记转交页面：订阅表是页面字段。回调只做一件
+      // 事——把 seq 和推送内容原样转交回 applySecretChat，过期比对仍在控制器
+      // 内部完成（resolveSeq 本身不出户）。
+      subscribeSecretChat: (secretChatId: number, seq: number): void => {
+        this.subscriptions.set('secretChat', watchSecretChat(secretChatId,
+          (info: SecretChatInfo): void => { this.header.applySecretChat(seq, info); }));
+      }
     });
     // 会话内搜索控制器接上宿主（B6）。前四个是取值器；jumpToMessage 命中后交回
     // 页面走 onReplyTap（压回返回栈、滚动、两拍高亮闪烁，与点引用块/点置顶条
@@ -2239,6 +2274,9 @@ export struct ChatPage {
     // B6/B7 更正：现在是五件——search.bind()/selection.bind() 与 topCard.bind()
     // 同理，都必须早于 applyRouteParams（seedFromRoute/scheduleEntrySearch 会
     // 用到 search 的 host）。
+    // B8 更正：现在是六件——header.bind() 同理必须早于 applyRouteParams，
+    // resolveRouteAndResetSession() 里紧跟着就会调 header.reset()/
+    // header.resolveIdentity()。
   }
 
   // 路由参数就绪后的初始化。这就是迁移前 aboutToAppear 的后半段，顺序一字未改，
@@ -2299,9 +2337,9 @@ export struct ChatPage {
       this.membershipState = 'checking';
     }
     const jumpTo = route.jumpTo;
-    this.resetHeaderState(cachedChat);
+    this.header.reset(cachedChat);
     this.topCard.resetTopCardState();
-    this.resolveHeaderIdentity();
+    this.header.resolveIdentity();
     // Entered from global search: open directly on this chat's results for the
     // same query (the search header, the hit list and ∧/∨ navigation). With a
     // message hit, that message is the jump target and becomes the current hit
@@ -2352,7 +2390,7 @@ export struct ChatPage {
   }
 
   private subscribeChatLevelUpdates(): void {
-    this.refreshHeader();
+    this.header.refresh();
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
       (u: TdObject): void => this.onChatAction(u)));
     // 会话已经开着时，navigateToChat 只出栈不传参，跳转目标走旁路送进来
@@ -2362,7 +2400,7 @@ export struct ChatPage {
     // ForwardSheet subscribes to the chat list itself while it is open, so this
     // no longer has to push updates into it.
     this.subscriptions.set('chat', getChatStore().subscribe(() => {
-      this.refreshHeader();
+      this.header.refresh();
     }, 'main'));
     // Chat backgrounds have their own TDLib update and can change without a
     // title/message update. Listen directly so setting or clearing one is
@@ -3035,30 +3073,13 @@ export struct ChatPage {
   // 阶段 C：store 派生订阅、五路互斥的 open、进入即搜索。
   private registerHeaderDerivedSubscriptions(store: MessageStore): void {
     this.subscriptions.set('subtitle', store.subscribeSubtitle((s: string) => {
-      this.subtitle = s;
-      this.fetchHeaderEmojiStatus();
+      this.header.applySubtitle(s);
     }));
     this.subscriptions.set('headerTitle', store.subscribeHeaderTitle((t: string) => {
-      // Fallback header for chats not yet in ChatStore (e.g. opened by t.me link).
-      if (t !== '') {
-        if (this.threadRootId === 0 && this.forumTopicId === 0 &&
-          this.directMessagesTopicId === 0) {
-          this.title = this.headerTitleFor(t);
-        }
-        this.initials = computeInitials(t);
-        this.headerState = 'ready';
-        this.headerLoadError = '';
-      }
+      this.header.applyTitle(t);
     }));
     this.subscriptions.set('headerAvatar', store.subscribeHeaderAvatar((p: string) => {
-      if (p !== '') {
-        this.avatarPath = p;
-        // MessageStore resolves the chat photo independently of ChatStore/FileService
-        // (e.g. for a channel only ever surfaced under a folder tab, whose avatar
-        // download may never have fired/retried there) — backfill the list entry too,
-        // so the chat list shows the avatar without depending on that separate path.
-        getChatStore().setAvatarPath(this.chatId, p);
-      }
+      this.header.applyAvatar(p);
     }));
     this.subscriptions.set('replyKeyboard', store.subscribeReplyKeyboard((kb: ReplyKeyboard | null) => {
       const prevId = this.replyKeyboard !== null ? this.replyKeyboard.messageId : 0;
@@ -3455,13 +3476,17 @@ export struct ChatPage {
     this.bottomChromeLayoutSeq++;
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
-    this.headerResolveSeq++;
     this.closeHeaderMenu();
     this.showReactionSheet = false;
     this.reactionTargetId = 0;
     this.closeForwardSheet();
-    this.headerProfileOpening = false;
-    this.headerMuteUpdating = false;
+    // 顶栏身份解析控制器的退场（B8）。resolveSeq++/profileOpening/
+    // muteUpdating/navigationTimer 清理整簇搬进了 header.dispose()——原来这四样
+    // 分两处（这里一处，openProfile 定时器那里一处），控制器统一收口到
+    // dispose() 里，顺序仍是 ++resolveSeq 在最前。closeHeaderMenu() 不在
+    // dispose() 里：头部菜单域本轮不动，仍由页面自己在这里直接调用（就是上面
+    // 这一句）。
+    this.header.dispose();
     // 顶栏浮卡整簇的退场（B5）。位置就是原来那九句 live*/pinnedJumpBusy/
     // topCardLoadingVisible 清理所在的位置，相对于 clearInOrder 三组退订的先后
     // 一字未动；两个 clearTimeout（topCardLoadingTimer/topCardActionTimer）原本
@@ -3487,10 +3512,6 @@ export struct ChatPage {
     this.scrollToBottomBusy = false;
     this.clearPendingScrollBottom('pageHide');
     this.clearFloatingDate();
-    if (this.headerNavigationTimer !== -1) {
-      clearTimeout(this.headerNavigationTimer);
-      this.headerNavigationTimer = -1;
-    }
     this.cancelRecording();
     this.pendingGallerySaveId = 0;
     this.pendingGallerySaveProgress?.dispose();
@@ -3878,38 +3899,6 @@ export struct ChatPage {
       return true;
     }
     return false;
-  }
-
-  // Private chat: the peer's emoji status appears beside the header title.
-  private fetchHeaderEmojiStatus(): void {
-    if (this.headerEmojiFetched) {
-      return;
-    }
-    const uid = this.headerPeerUserId > 0
-      ? this.headerPeerUserId : (this.store !== null ? this.store.getPeerUserId() : 0);
-    if (uid <= 0) {
-      return;
-    }
-    const resolveSeq = this.headerResolveSeq;
-    this.headerEmojiFetched = true;
-    const req: TdRequest = { '@type': 'getUser' };
-    req['user_id'] = uid;
-    getTdClient().send(req).then((user: TdObject) => {
-      resolveEmojiStatus(user['emoji_status'] as TdObject | undefined, (path: string, format: string) => {
-        const currentUid = this.headerPeerUserId > 0
-          ? this.headerPeerUserId : (this.store !== null ? this.store.getPeerUserId() : 0);
-        if (resolveSeq !== this.headerResolveSeq || uid !== currentUid) {
-          return;
-        }
-        this.headerEmojiPath = path;
-        this.headerEmojiFormat = format;
-      });
-    }).catch((e: TdError) => {
-      if (resolveSeq === this.headerResolveSeq) {
-        this.headerEmojiFetched = false;
-      }
-      logE(`ChatPage.fetchHeaderEmojiStatus failed: ${e.message}`);
-    });
   }
 
   // Refresh the floating date chip from the topmost visible row and (re)arm
@@ -4469,241 +4458,6 @@ export struct ChatPage {
         this.scroller.scrollBy(0, plan.dy);
       }
     }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
-  }
-
-  private resetHeaderState(cached: ChatEntry | undefined): void {
-    this.headerResolveSeq++;
-    this.headerState = 'loading';
-    this.headerLoadError = '';
-    this.headerPeerUserId = 0;
-    this.headerKind = '';
-    this.headerIdentityResolved = false;
-    this.headerEmojiPath = '';
-    this.headerEmojiFormat = '';
-    this.headerEmojiFetched = false;
-    this.closeHeaderMenu();
-    this.headerProfileOpening = false;
-    this.headerMuteUpdating = false;
-    this.subtitle = '';
-    // 换会话时把上一条密聊的订阅退掉：新会话不是密聊的话，没有任何一处会
-    // 再 set 同名订阅，它会一直挂着（回调里的 seq 闸让它无害，但仍是泄漏）。
-    this.subscriptions.clear('secretChat');
-    this.secretSubtitle = '';
-    this.secretOutbound = false;
-    this.avatarPath = '';
-    this.initials = '?';
-    this.title = this.chatHeaderTitleNow('');
-    this.isMuted = false;
-    if (cached !== undefined) {
-      this.title = this.chatHeaderTitleNow(cached.title);
-      this.initials = cached.initials;
-      this.avatarPath = cached.avatarPath;
-      this.isMuted = cached.isMuted;
-      if (cached.kind === 'private') {
-        // TDLib private-chat identifiers equal the peer user identifier.
-        this.headerKind = 'private';
-        this.headerPeerUserId = cached.id;
-        this.headerIdentityResolved = true;
-      } else if (cached.kind === 'basicGroup' || cached.kind === 'supergroup' ||
-        cached.kind === 'channel') {
-        this.headerKind = cached.kind === 'channel' ? 'channel' : 'group';
-        this.headerIdentityResolved = true;
-      } else {
-        this.headerKind = 'secret';
-      }
-      if (cached.title !== '') {
-        this.headerState = 'ready';
-      }
-    }
-  }
-
-  private applyResolvedHeaderChat(chat: TdObject, seq: number): void {
-    if (seq !== this.headerResolveSeq) {
-      return;
-    }
-    const resolvedTitle = (chat['title'] as string | undefined) ?? '';
-    if (resolvedTitle !== '') {
-      if (this.threadRootId === 0 && this.forumTopicId === 0 &&
-        this.directMessagesTopicId === 0) {
-        this.title = this.headerTitleFor(resolvedTitle);
-      }
-      this.initials = computeInitials(resolvedTitle);
-    }
-    const settings = chat['notification_settings'] as TdObject | undefined;
-    if (settings !== undefined && !this.headerMuteUpdating) {
-      this.isMuted = isMutedFrom(settings);
-      this.isTranslatable = (chat['is_translatable'] as boolean | undefined) ?? false;
-    }
-    const photo = chat['photo'] as TdObject | undefined;
-    const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
-    const local = small !== undefined ? (small['local'] as TdObject | undefined) : undefined;
-    const localPath = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
-    const localReady = local !== undefined
-      ? ((local['is_downloading_completed'] as boolean | undefined) ?? false) : false;
-    if (localReady && localPath !== '') {
-      this.avatarPath = localPath;
-    }
-    const type = chat['type'] as TdObject | undefined;
-    const typeName = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
-    if (typeName === 'chatTypePrivate') {
-      this.headerKind = 'private';
-      this.headerPeerUserId = (type!['user_id'] as number | undefined) ?? this.chatId;
-      this.headerIdentityResolved = this.headerPeerUserId > 0;
-      this.isGroup = false;
-      this.isChannel = false;
-      this.refreshBotMiniApp(this.headerPeerUserId);
-      this.refreshIsBot(this.headerPeerUserId, seq);
-      this.refreshHeaderAvatarAnimation(type);
-    } else if (typeName === 'chatTypeBasicGroup') {
-      this.isBotChat = false;
-      this.headerKind = 'group';
-      this.headerIdentityResolved = true;
-      this.isGroup = true;
-      this.isChannel = false;
-      this.refreshHeaderAvatarAnimation(type);
-      // 必须在 isGroup 赋值**之后**：refreshAdminLabels 开头就按 !isGroup 早退，
-      // 原来这行在赋值之前，普通群（非超级群）的管理员标签从来没取到过。
-      this.refreshAdminLabels();
-    } else if (typeName === 'chatTypeSupergroup') {
-      this.isBotChat = false;
-      this.isChannel = (type!['is_channel'] as boolean | undefined) ?? false;
-      this.headerKind = this.isChannel ? 'channel' : 'group';
-      this.headerIdentityResolved = true;
-      this.isGroup = true;
-      this.refreshAdminLabels();
-      this.refreshHeaderAvatarAnimation(type);
-    } else if (typeName === 'chatTypeSecret') {
-      // 密聊对面不可能是机器人。
-      this.isBotChat = false;
-      this.headerKind = 'secret';
-      this.isGroup = false;
-      this.isChannel = false;
-      // 盯住状态而不是取一次：密聊建立是异步的，pending → ready 只由
-      // updateSecretChat 推（理由见 store/SecretChatWatch）。这一个订阅同时
-      // 喂三样：对方 user id、顶栏副标题、输入区形态。
-      const secretId = (type!['secret_chat_id'] as number | undefined) ?? 0;
-      this.subscriptions.set('secretChat', watchSecretChat(secretId,
-        (info: SecretChatInfo): void => {
-          if (seq !== this.headerResolveSeq) {
-            return;
-          }
-          this.applySecretChat(info);
-        }));
-    }
-    this.commitTimelineSnapshot();
-    this.headerState = resolvedTitle !== '' || this.title !== '' ? 'ready' : 'error';
-    this.headerLoadError = this.headerState === 'error' ? str('cp_chat_unavailable') : '';
-    this.fetchHeaderEmojiStatus();
-  }
-
-  // 密聊状态落到三处 UI。判定全在 util/secretChat（有单测），这里只搬运。
-  private applySecretChat(info: SecretChatInfo): void {
-    this.headerPeerUserId = info.userId;
-    this.headerIdentityResolved = info.userId > 0;
-    this.secretOutbound = info.isOutbound;
-    const headerKey: string = secretHeaderKey(info);
-    this.secretSubtitle = headerKey !== '' ? str(headerKey) : '';
-    const bar: string = secretMembershipState(info);
-    this.membershipState = bar !== '' ? bar : 'writable';
-    if (membershipLosesComposer(this.membershipState)) {
-      this.applyComposerMode(idleComposer());
-    }
-    this.fetchHeaderEmojiStatus();
-  }
-
-  // Header title/subtitle wording lives in chatHeaderPresentation, where the
-  // "cached title beats a pending load" and error-fallback rules are tested.
-  // 和自己的私聊就是「我的收藏」。TDLib 对它没有任何标记，标题是自己的昵称、
-  // 头像是自己的头像；判据只能是 chat.id === 自己的 user id（见 ChatStore）。
-  private isSavedMessagesChat(): boolean {
-    const entry = getChatStore().entryOf(this.chatId);
-    return entry !== undefined && entry.isSavedMessages;
-  }
-
-  // 标题的统一出口：三处赋值都先过这里，「我的收藏」在这一处换掉就够了。
-  private headerTitleFor(chatTitle: string): string {
-    return this.isSavedMessagesChat() ? str('cl_saved_messages') : chatTitle;
-  }
-
-  private chatHeaderTitleNow(chatTitle: string): string {
-    return chatHeaderTitle({
-      chatTitle: this.headerTitleFor(chatTitle),
-      topicName: this.topicName,
-      forumTopicId: this.forumTopicId,
-      directMessagesTopicId: this.directMessagesTopicId,
-      threadRootId: this.threadRootId
-    });
-  }
-
-  private headerText(): ChatHeaderPresentation {
-    return chatHeaderPresentation({
-      title: this.title,
-      subtitle: this.secretSubtitle !== '' ? this.secretSubtitle : this.subtitle,
-      state: this.headerState,
-      loadError: this.headerLoadError,
-      kind: this.headerKind
-    });
-  }
-
-  private resolveHeaderIdentity(): void {
-    if (this.chatId === 0) {
-      this.headerState = 'error';
-      this.headerLoadError = str('cp_chat_params_invalid');
-      return;
-    }
-    const seq = ++this.headerResolveSeq;
-    if (this.title === '') {
-      this.headerState = 'loading';
-      this.headerLoadError = '';
-    }
-    const request: TdRequest = { '@type': 'getChat' };
-    request['chat_id'] = this.chatId;
-    getTdClient().send(request).then((chat: TdObject): void => {
-      this.applyResolvedHeaderChat(chat, seq);
-    }).catch((error: TdError): void => {
-      if (seq !== this.headerResolveSeq) {
-        return;
-      }
-      if (this.title === '') {
-        this.headerState = 'error';
-        this.headerLoadError = str('cp_chat_load_failed');
-      }
-      logE(`ChatPage.resolveHeaderIdentity failed: ${error.message}`);
-    });
-  }
-
-  private refreshHeader(): void {
-    const e: ChatEntry | undefined = getChatStore().entryOf(this.chatId);
-    // A topic/thread view keeps its own name; the rest of the header still
-    // shows the underlying chat's avatar and mute state.
-    this.title = this.chatHeaderTitleNow(e !== undefined ? e.title : this.title);
-    if (e !== undefined) {
-      // Don't clobber a MessageStore-resolved avatar (channels/folders) with an empty one.
-      if (e.avatarPath !== '') { this.avatarPath = e.avatarPath; }
-      this.initials = e.initials;
-      if (!this.headerMuteUpdating) {
-        this.isMuted = e.isMuted;
-      }
-      this.unreadBadge = e.unreadCount; // live unread count for the scroll-to-bottom badge
-      if (e.title !== '') {
-        this.headerState = 'ready';
-        this.headerLoadError = '';
-      }
-      if (!this.headerIdentityResolved) {
-        if (e.kind === 'private') {
-          this.headerKind = 'private';
-          this.headerPeerUserId = e.id;
-          this.headerIdentityResolved = true;
-        } else if (e.kind === 'basicGroup' || e.kind === 'supergroup' || e.kind === 'channel') {
-          this.headerKind = e.kind === 'channel' ? 'channel' : 'group';
-          this.headerIdentityResolved = true;
-        }
-      }
-      if (e.background !== null) {
-        this.bgStore?.applyKnownBackground(e.background);
-      }
-      this.topCard.syncLiveFromChatEntry(e);
-    }
   }
 
   private refreshMembership(): void {
@@ -5623,55 +5377,6 @@ export struct ChatPage {
     navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
-  // Header avatar/title tap → detail page: users/bots get the personal
-  // profile, groups/channels the chat profile.
-  private openProfile(): void {
-    if (this.headerProfileOpening) {
-      return;
-    }
-    if (this.headerState === 'error') {
-      this.resolveHeaderIdentity();
-      return;
-    }
-    const storeUid = this.store !== null ? this.store.getPeerUserId() : 0;
-    const uid = this.headerPeerUserId > 0 ? this.headerPeerUserId : storeUid;
-    // 曾经是一个 url 字符串变量 + 末尾一次 router.pushUrl；两张资料页都迁成了
-    // NavDestination，改成用 openUserProfile 记住该开哪一张，末尾分发到对应
-    // 漏斗。分支条件与参数一字未改。
-    let openUserProfile: boolean = false;
-    let params: Record<string, Object>;
-    if (uid > 0) {
-      openUserProfile = true;
-      params = { 'userId': uid };
-    } else if (this.headerIdentityResolved ||
-      (this.store !== null && this.store.getIsGroup())) {
-      openUserProfile = false;
-      params = { 'chatId': this.chatId };
-    } else {
-      promptAction.showToast({ message: $r('app.string.cp_profile_loading'), duration: 1200 });
-      this.resolveHeaderIdentity();
-      return;
-    }
-    this.headerProfileOpening = true;
-    if (this.headerNavigationTimer !== -1) {
-      clearTimeout(this.headerNavigationTimer);
-    }
-    this.headerNavigationTimer = setTimeout((): void => {
-      this.headerNavigationTimer = -1;
-      this.headerProfileOpening = false;
-    }, CHAT_HEADER_NAV_GUARD_MS);
-    // 迁移前这里是 router.pushUrl(...).catch(...)：失败时提前解掉防连点闸门并
-    // 弹「打不开资料页」。漏斗是同步 void，推进一个已注册的栈不会失败，那个
-    // catch 分支因此不再可达——闸门仍由上面那个 CHAT_HEADER_NAV_GUARD_MS 的
-    // 定时器按时解掉，行为与「跳转成功」那一路完全一致。栈没注册时的回退路径
-    // 由 profileNav 内部记日志。
-    if (openUserProfile) {
-      navigateToProfile(params);
-    } else {
-      navigateToChatProfile(params);
-    }
-  }
-
   // Refresh the '@' mention / '/' command suggestion panels for the new draft.
   private updateSuggestions(v: string): void {
     this.commandMenuOpen = false;
@@ -5705,62 +5410,6 @@ export struct ChatPage {
   // 否则名单到货会让整页每行的 key 都变、列表整体重建。
   //
   // 频道不取：频道消息的署名走的是 author_signature，不是成员身份。
-  // 头部动态头像。full info 的 photo 是 chatPhoto，可选的 animation 是一小段
-  // MP4；有就下下来交给 AvatarView（它自己看省电开关决定放不放）。
-  private refreshHeaderAvatarAnimation(type: TdObject | undefined): void {
-    this.headerAvatarAnimPath = '';
-    const chatId: number = this.chatId;
-    const typeName: string = type !== undefined
-      ? ((type['@type'] as string | undefined) ?? '') : '';
-    let req: TdRequest | null = null;
-    if (typeName === 'chatTypePrivate') {
-      req = { '@type': 'getUserFullInfo' };
-      req['user_id'] = (type!['user_id'] as number | undefined) ?? 0;
-    } else if (typeName === 'chatTypeSupergroup') {
-      req = { '@type': 'getSupergroupFullInfo' };
-      req['supergroup_id'] = (type!['supergroup_id'] as number | undefined) ?? 0;
-    } else if (typeName === 'chatTypeBasicGroup') {
-      req = { '@type': 'getBasicGroupFullInfo' };
-      req['basic_group_id'] = (type!['basic_group_id'] as number | undefined) ?? 0;
-    }
-    if (req === null) {
-      return;
-    }
-    getTdClient().send(req, 15000).then((full: TdObject): void => {
-      if (this.chatId !== chatId) {
-        return; // 期间换了会话
-      }
-      const photo = (full['photo'] as TdObject | undefined)
-        ?? (full['personal_photo'] as TdObject | undefined)
-        ?? (full['public_photo'] as TdObject | undefined);
-      const anim = photo !== undefined ? (photo['animation'] as TdObject | undefined) : undefined;
-      const file = anim !== undefined ? (anim['file'] as TdObject | undefined) : undefined;
-      const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
-      if (fileId <= 0) {
-        return;
-      }
-      const dl: TdRequest = { '@type': 'downloadFile' };
-      dl['file_id'] = fileId;
-      dl['priority'] = 2;
-      dl['synchronous'] = true;
-      getTdClient().send(dl, 30000).then((f: TdObject): void => {
-        if (this.chatId !== chatId) {
-          return;
-        }
-        const local = f['local'] as TdObject | undefined;
-        const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
-        if (path !== '') {
-          this.headerAvatarAnimPath = path;
-        }
-      }).catch((e: TdError): void => {
-        logE(`ChatPage.headerAvatarAnimation download failed: ${e.message}`);
-      });
-    }).catch((e: TdError): void => {
-      // 拿不到 full info 就保持静态头像，不打扰。
-      logE(`ChatPage.headerAvatarAnimation fullInfo failed: ${e.message}`);
-    });
-  }
-
   private refreshAdminLabels(): void {
     if (this.chatId === 0 || !this.isGroup || this.isChannel) {
       return;
@@ -5783,37 +5432,21 @@ export struct ChatPage {
     });
   }
 
-  private refreshIsBot(userId: number, seq: number): void {
-    this.isBotChat = false;
-    if (userId <= 0) {
-      return;
-    }
-    const req: TdRequest = { '@type': 'getUser' };
-    req['user_id'] = userId;
-    getTdClient().send(req).then((user: TdObject): void => {
-      if (seq !== this.headerResolveSeq) {
-        return;
-      }
-      const type = user['type'] as TdObject | undefined;
-      const typeName: string = type !== undefined ? ((type['@type'] as string | undefined) ?? '') : '';
-      this.isBotChat = typeName === 'userTypeBot';
-    }).catch((error: TdError): void => {
-      logE(`ChatPage.getUser isBot failed: ${error.message}`);
-    });
-  }
-
-  private refreshBotMiniApp(userId: number): void {
-    this.botMiniAppUrlValue = '';
-    if (userId <= 0) { return; }
-    botMiniAppUrl(userId).then((url: string): void => {
-      if (this.headerPeerUserId === userId) { this.botMiniAppUrlValue = url; }
-    }).catch((): void => {});
-  }
-
+  // B8 issue（未在四条"不能碰"里，也不在 HeaderIdentitySession 的 15 个迁移
+  // 方法之列，需要复核）：openBotMiniApp 原来直接读页面的 headerPeerUserId——
+  // 迁移后那是控制器内部的 private peerUserId，没有任何 host getter 或公开
+  // 方法能取到它。这里改用 this.store?.getPeerUserId()，和 openProfile 迁移前
+  // 就已经在用的同一个回退取值一致：MessageStore 对 chatTypePrivate 的
+  // peerUserId 解析读的是同一个 getChat 响应的 type.user_id，值恒等；唯一的
+  // 差异是两次 getChat 各自独立发出，理论上存在极短的时间窗——
+  // header.botMiniAppUrl 已经落地但 store.getPeerUserId() 还没跟上——这个窗口
+  // 里点开 Mini App 入口会被这里的 `<= 0` 挡住，原实现不会。这是行为改变，
+  // 需要确认是否可接受，或者要不要把 openBotMiniApp 也一并搬进控制器。
   private openBotMiniApp(): void {
-    const url = this.botMiniAppUrlValue;
-    if (url === '' || this.headerPeerUserId <= 0) { return; }
-    openMiniApp(this.chatId, this.headerPeerUserId, url).then((resolved: string): void => {
+    const url = this.header.botMiniAppUrl;
+    const uid = this.header.currentPeerUserId();
+    if (url === '' || uid <= 0) { return; }
+    openMiniApp(this.chatId, uid, url).then((resolved: string): void => {
       if (resolved === '') {
         promptAction.showToast({ message: $r('app.string.cp_cannot_open_miniapp'), duration: 1600 });
         return;
@@ -6382,24 +6015,6 @@ export struct ChatPage {
   }
 
   // --- header "more" menu actions ---
-  private toggleChatMute(): void {
-    if (this.headerMuteUpdating) {
-      return;
-    }
-    const previous = this.isMuted;
-    const next = !previous;
-    this.headerMuteUpdating = true;
-    this.isMuted = next;
-    // setMute 会先读取完整通知设置，所以在 TDLib 接受修改前保持更新锁；
-    // 否则任意一次聊天刷新都会立刻用 ChatStore 的旧值覆盖乐观状态。
-    setMute(this.chatId, next ? MUTE_LONG : 0).then((success: boolean): void => {
-      if (!success) {
-        this.isMuted = previous;
-      }
-      this.headerMuteUpdating = false;
-    });
-  }
-
   // 清空历史的可行方式由 chat 的两个能力位决定（见 ClearHistoryOptions）。
   // 这里的确认框只有一个执行按钮，所以取破坏性最小的那个可行选项：私聊/普通
   // 群拿到 revoke=false（和以前一样），只能为所有人清的会话（群主的超级群、
@@ -6450,7 +6065,7 @@ export struct ChatPage {
 
   private confirmLeaveChat(): void {
     AlertDialog.show({
-      message: str('cp_leave_confirm', this.title),
+      message: str('cp_leave_confirm', this.header.title),
       autoCancel: true,
       primaryButton: {
         value: $r('app.string.cancel'),
@@ -6483,8 +6098,8 @@ export struct ChatPage {
       panel: PANEL_MAIN,
       onOpenFolders: (): void => {},
       onBackToMain: (): void => {},
-      isMuted: this.isMuted,
-      muteUpdating: this.headerMuteUpdating,
+      isMuted: this.header.isMuted,
+      muteUpdating: this.header.muteUpdating,
       isGroup: this.isGroup,
       isChannel: this.isChannel,
       liveLocationActive: this.liveLocationActive,
@@ -6492,7 +6107,7 @@ export struct ChatPage {
       canClearHistory: this.clearHistoryChoice() !== undefined,
       canLeaveChat: this.isGroup && this.membershipState === 'writable',
       onSearch: (): void => { this.search.enter(); },
-      onToggleMute: (): void => { this.toggleChatMute(); },
+      onToggleMute: (): void => { this.header.toggleMute(); },
       onAddToFolder: (): void => { showChatFolderPicker(this.getUIContext(), this.chatId); },
       onAutoDelete: (): void => { this.chooseAutoDelete(); },
       onJumpToDate: (): void => { this.pickJumpDate(); },
@@ -7397,7 +7012,7 @@ export struct ChatPage {
     ContextMenu.close();
     this.closeReactionSheet();
     this.applyComposerMode(enterReply(this.composerMode, messageId,
-      m.senderName !== '' ? m.senderName : this.title, this.replySnippet(m),
+      m.senderName !== '' ? m.senderName : this.header.title, this.replySnippet(m),
       replyThumbOf({
         contentType: m.contentType, photoPath: m.photoPath,
         paidMediaLocked: m.paidMediaLocked
@@ -7465,7 +7080,7 @@ export struct ChatPage {
   // CustomDialogController：后者官方明写只在状态管理 V1 中使用，而本页要迁 V2。
   private openDeleteConfirm(ids: number[]): void {
     openDeleteMessagesDialog(this.getUIContext(),
-      this.isGroup || this.isChannel ? '' : this.headerText().titleText,
+      this.isGroup || this.isChannel ? '' : this.header.titleTextOf(),
       (revoke: boolean): void => { this.doDeleteMessages(ids, revoke); });
   }
 
@@ -8051,8 +7666,14 @@ export struct ChatPage {
     }
   }
 
+  // typingLabelOf 用 headerKind 分两档：'private'/'secret' 走简单的「正在输入…」，
+  // 其余（group/channel/''）走人数/姓名那两档。字段随 B8 迁进
+  // HeaderIdentitySession 成了 private kind，这里经 currentKind() 原样取回——
+  // 迁移中途曾用 `isGroup ? 'group' : 'private'` 顶替，那个判据在 identity 首次
+  // 解析之前会把默认档从「群」翻成「私聊」，取值器把这点差异消掉了。
   private rebuildTypingLabel(): void {
-    this.typingLabel = typingLabelOf(this.headerKind, Array.from(this.typingSenders.keys()),
+    this.typingLabel = typingLabelOf(this.header.currentKind(),
+      Array.from(this.typingSenders.keys()),
       (uid: number): string => getUserStore().displayName(uid));
   }
 
@@ -8500,12 +8121,12 @@ export struct ChatPage {
     MembershipBar({
       materialEpoch: this.materialEpoch,
       state: this.composerSlot(),
-      isMuted: this.isMuted,
+      isMuted: this.header.isMuted,
       joining: this.joiningChat,
-      secretOutbound: this.secretOutbound,
+      secretOutbound: this.header.secretOutbound,
       bottomGap: this.composerBottomGap(),
       onJoin: (): void => { this.joinCurrentChat(); },
-      onToggleMute: (): void => { this.toggleChatMute(); },
+      onToggleMute: (): void => { this.header.toggleMute(); },
       onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); },
       onHeightChange: (height: number): void => { this.inputBarH = height; }
     });
@@ -8539,7 +8160,7 @@ export struct ChatPage {
         sendByEnter: this.sendByEnter,
         replyKeyboard: this.replyKeyboard,
         replyKbCollapsed: this.replyKbCollapsed,
-        botMiniAppUrlValue: this.botMiniAppUrlValue,
+        botMiniAppUrlValue: this.header.botMiniAppUrl,
         recordingStarting: this.recordingStarting,
         composerSending: this.composerSending,
         replyKeyboardVisible: this.replyKbVisible(),
@@ -8902,25 +8523,17 @@ export struct ChatPage {
           materialEpoch: this.materialEpoch,
           onLightBg: this.chromeOnLightBg(),
           appDark: this.appDark,
-          titleText: this.headerText().titleText,
-          subtitleText: this.headerText().subtitleText,
-          headerState: this.headerState,
-          avatarPath: this.avatarPath,
-          avatarAnimPath: this.headerAvatarAnimPath,
-          initials: this.initials,
-          savedMessages: this.isSavedMessagesChat(),
+          // B8：上面那 12 个标量 @Param 换成一个控制器引用——ChatHeader 直接
+          // 持有 header、在自己的 build()/@Builder 里读 @Trace，本页不再算
+          // titleText/subtitleText 等经 @Param 转手。
+          header: this.header,
           chatId: this.chatId,
-          emojiPath: this.headerEmojiPath,
-          emojiFormat: this.headerEmojiFormat,
-          isMuted: this.isMuted,
-          muteUpdating: this.headerMuteUpdating,
-          profileOpening: this.headerProfileOpening,
           menuShow: this.headerMenuShow,
           menuAnchorId: this.headerMenuId,
           onBack: (): void => { this.goBack(); },
           onMenuTap: (): void => { this.openHeaderMenu(); },
-          onOpenProfile: (): void => { this.openProfile(); },
-          onResolveIdentity: (): void => { this.resolveHeaderIdentity(); }
+          onOpenProfile: (): void => { this.header.openProfile(); },
+          onResolveIdentity: (): void => { this.header.resolveIdentity(); }
         });
       }
     }
@@ -8992,7 +8605,7 @@ export struct ChatPage {
       tapX: this.tapX,
       tapY: this.tapY,
       store: this.store,
-      chatTitle: this.title,
+      chatTitle: this.header.title,
       nowSec: this.nowSec,
       effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
       isVideoEntry: (entry: MessageEntry): boolean => mediaEntryIsVideo(entry),

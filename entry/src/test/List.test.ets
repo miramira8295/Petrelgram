@@ -214,6 +214,7 @@ import utilityActionGuardTest from './UtilityActionGuard.test';
 import locationActionsTest from './LocationActions.test';
 import liveTopCardControllerTest from './LiveTopCardController.test';
 import selectionSessionTest from './SelectionSession.test';
+import headerIdentitySessionTest from './HeaderIdentitySession.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -433,4 +434,5 @@ export default function testsuite() {
   locationActionsTest();
   liveTopCardControllerTest();
   selectionSessionTest();
+  headerIdentitySessionTest();
 }
