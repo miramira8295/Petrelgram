@@ -16,6 +16,13 @@
 export const KEY_DEBUG_LIST_CACHED: string = 'debugListCachedCount';
 
 // 默认档位。**不要改这个值** —— 它就是 P4/P5 时期写死的那个 6。
+//
+// 这个值为什么是静态的（原注释留在 ChatPage.ets 顶部成了孤儿，2026-09-05 瘦身
+// 批 B1 搬到这里，因为值住在这一行）：固定预建两行，不再用状态变量从 1 延迟涨
+// 到 4——后者会在进页面约 450ms 后让整个可见消息区重跑 build，Insight 里对应两次
+// 约 25ms 的帧峰值。A short-message viewport commonly contains 10-16 rows;
+// HarmonyOS long-list guidance recommends keeping roughly half a viewport ready.
+// Keep this static so changing the value never invalidates every visible row.
 export const LIST_CACHED_COUNT_DEFAULT: number = 6;
 
 // 可选档位。A/B 的三档；顺序即界面上从左到右的顺序。

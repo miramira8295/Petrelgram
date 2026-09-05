@@ -205,6 +205,9 @@ import inlineButtonKeyTest from './InlineButtonKey.test';
 import liveThumbPathTest from './LiveThumbPath.test';
 import messageTopicScopeTest from './MessageTopicScope.test';
 import chatTimelineSnapshotTest from './ChatTimelineSnapshot.test';
+import chatPageTuningTest from './ChatPageTuning.test';
+import mediaEntryKindTest from './MediaEntryKind.test';
+import chatEffectsTest from './ChatEffects.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -415,4 +418,7 @@ export default function testsuite() {
   liveThumbPathTest();
   messageTopicScopeTest();
   chatTimelineSnapshotTest();
+  chatPageTuningTest();
+  mediaEntryKindTest();
+  chatEffectsTest();
 }

@@ -53,3 +53,28 @@ export function newerPageIsUserDriven(gateArmedByUser: boolean): boolean {
 export function useUserDrivenAppendMark(markPending: boolean, appendsRows: boolean): boolean {
   return markPending && appendsRows;
 }
+
+// 以下止血开关从 pages/chat/ChatPage.ets 顶部（原 345–365 行）搬来。放这里是因为它
+// 守护的判据 shouldHoldAppendAnchor 就在本文件里——「改回 false 即完全恢复」的止血
+// 语义和被它关掉的判据必须放在一起，才不会日后各走各的。注释逐字保留。
+// ⚠️ 止血开关（可单独回退）：向下翻页追加时的**手动**锚点复位（260e497）整条
+// 旁路掉。true = 旁路（不记锚点、不复位），false = 恢复 260e497 的行为。
+//
+// 【为什么】真机现象四条：静止/滑动时列表每帧重建（闪）、视口纹丝不动、点右下角
+// ↓ 要点好几次才下得去、读到底再进会话仍落在中间。它们指向同一条路径：
+// applyMessages 里那道 `!this.atBottom` 闸。atBottomVerdict（util/atBottom）在
+// hasMoreNewer 为真时**恒返回 NO**——也就是说只要窗口还没取到会话实时尾部，这道
+// 闸就一直开着。于是每次向下翻页的发布都会 scrollToIndex 把视口拽回锚点，视口被
+// 按住 → 可见区间不变 → 边界行每帧建了又拆；等窗口终于取到尾部、hasMoreNewer
+// 翻假，闸关上，拉锯自行结束——正是用户说的「闪完之后位置会动，然后就正常了」。
+// ↓ 按钮那一条同源：restoreScrollAnchor 的 setTimeout 里有
+// `this.pendingScrollBottom` 守卫，点 ↓ 恰好是唯一能压过复位的意图。
+//
+// 【为什么是旁路而不是删】260e497 治的是真问题（stackFromEnd 下追加把可见内容
+// 顶走）。这个常量只是把它整条摘出去，好让用户一次装机就能证实/证伪「是不是它
+// 按住了列表」。原代码与全部单测（AlbumGroupDataSource.test 里 appendBreaksAnchor
+// 那两条）一字未动，改回 false 即完全恢复。
+//
+// 【结论落地后】若坐实：正确修法不是留着这个常量，而是把 `!this.atBottom` 换成
+// 一条真正表达「这次追加是用户主动向下翻页的结果」的判据（见交付说明）。
+export const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = false;

@@ -5,7 +5,7 @@ import { TdClient } from '../main/ets/tdkit/TdClient';
 import { UserStore } from '../main/ets/store/UserStore';
 import { MessageBubbleRenderData } from '../main/ets/pages/chat/ReusableMessageBubble';
 import { AlbumGroup } from '../main/ets/util/collapseAlbums';
-import { ReuseIdLevel, rowReuseId } from '../main/ets/util/rowReuseId';
+import { allocateChatPageReuseScope, CHAT_PAGE_REUSE_ID_LEVEL, nextReuseScopeAfter, ReuseIdLevel, rowReuseId } from '../main/ets/util/rowReuseId';
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void = (): void => {};
@@ -392,6 +392,51 @@ export default function rowReuseIdTest() {
         expect(rowReuseId(data, groupOf(first), level))
           .assertEqual(rowReuseId(data, groupOf(second), level));
       }
+    });
+  });
+
+  // 复用 scope 分配器：B1 批次从 ChatPage.ets 搬到 util/rowReuseId.ets 的那三段
+  // （原 373-388 行）。这里钉的不是"计数器会加一"这种废话，而是它为什么必须是
+  // 模块单例、为什么要回绕、以及档位为什么停在 fine。
+  describe('ChatPageReuseScope', () => {
+    // 回绕点写死在 2147483647（int32 上限）：scope 号会被拼进 reuseId 字符串，
+    // 越过 int32 之后的取值在真机上没有意义，所以到顶就回到 1 而不是继续加。
+    // 纯函数形式存在的唯一理由就是让这条边界不依赖模块变量当时的取值。
+    it('scope_wraps_at_int32_max_back_to_one', 0, (): void => {
+      expect(nextReuseScopeAfter(1)).assertEqual(2);
+      expect(nextReuseScopeAfter(2147483646)).assertEqual(2147483647);
+      // 到顶回 1，不是 0、不是 2147483648：0 会和"未分配"混淆。
+      expect(nextReuseScopeAfter(2147483647)).assertEqual(1);
+    });
+
+    // 【这条在防什么】两个同时活着的 ChatPage 实例（平板分栏、导航栈里压了多层
+    // 会话页）必须各自拿到不同的 scope。API 26 的复用池被所有活着的 ChatPage
+    // 共享，scope 号是把桶 id 钉死在某一个页面实例上的唯一手段；一旦两个页面
+    // 拿到同一个 scope，它们就会互借复用节点——真机上表现为 changing parent /
+    // unsafe operation，以及气泡串会话（A 会话的行拿去画 B 会话的消息）。
+    // 计数器是模块级的，跨用例会累加，所以这里只断言相对关系，不写死绝对值。
+    it('two_live_chat_pages_never_share_a_scope', 0, (): void => {
+      const first: number = allocateChatPageReuseScope();
+      const second: number = allocateChatPageReuseScope();
+      expect(first === second).assertFalse();
+      // 严格递增一格；写成 nextReuseScopeAfter(first) 而不是 first + 1，
+      // 这样恰好跨回绕点的那一次分配也照样成立。
+      expect(second).assertEqual(nextReuseScopeAfter(first));
+      const third: number = allocateChatPageReuseScope();
+      expect(third).assertEqual(nextReuseScopeAfter(second));
+      expect(third === first).assertFalse();
+    });
+
+    // 档位 2026-09-02 从 'medium' 切到 'fine'：Frame 录制 20260902T102459 显示
+    // medium 档下 rich 桶复用时有跨媒体类型的结构翻转（单次 BuildRecycle 里
+    // LiveThumbImage Destroy ~6ms）。代价是桶数变多摊薄命中率，所以"把这一行
+    // 改回 'medium'"是有意保留的退路——这条断言不是禁止回退，而是保证回退必须
+    // 是显式动作（改常量 + 改这条测试），不会被顺手改掉而没人发现。
+    it('reuse_id_level_is_pinned_to_fine', 0, (): void => {
+      expect(CHAT_PAGE_REUSE_ID_LEVEL).assertEqual('fine');
+      // 顺带钉住它确实是 rowReuseId 认得的三档之一。
+      const levels: ReuseIdLevel[] = ['coarse', 'medium', 'fine'];
+      expect(levels.includes(CHAT_PAGE_REUSE_ID_LEVEL)).assertTrue();
     });
   });
 }

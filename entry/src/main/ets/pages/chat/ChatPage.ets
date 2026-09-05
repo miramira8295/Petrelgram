@@ -32,7 +32,9 @@ import {
 import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
-import { ReuseIdLevel, rowReuseId } from '../../util/rowReuseId';
+import {
+  allocateChatPageReuseScope, CHAT_PAGE_REUSE_ID_LEVEL, rowReuseId
+} from '../../util/rowReuseId';
 import {
   MIN_MESSAGE_ROW_HEIGHT_VP, capReuseBuckets, globalReusePoolAvailable,
   messageRowViewportRows, reuseBucketMaxCount
@@ -64,7 +66,7 @@ import {
   AlbumGroupDataSource, appendBreaksAnchor, clampPrefetchRange, PrefetchRange,
   repeatRowKey, reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
-import { BasicPrefetcher, FrameCallback } from '@kit.ArkUI';
+import { BasicPrefetcher } from '@kit.ArkUI';
 // UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
 // 调用点在 capMessageReuseBuckets 的版本闸门之后。IReusePool 只是类型。
 import { IReusePool, UIUtils } from '@kit.ArkUI';
@@ -74,7 +76,6 @@ import {
   ChatHeaderMenuController, ChatHeaderMenuParams, PANEL_MAIN, createChatHeaderMenuId
 } from './ChatHeaderMenu';
 import { TopBanners } from './TopBanners';
-import { TranslateSheet } from './TranslateSheet';
 import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
 import { FloatingDateState } from './FloatingDateOverlay';
@@ -103,6 +104,7 @@ import {
 import { watchSecretChat } from '../../store/SecretChatWatch';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
 import {
+  APPEND_ANCHOR_RESTORE_BYPASSED,
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
 } from '../../util/appendAnchor';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
@@ -129,8 +131,8 @@ import {
   forwardableIds, pruneSelection, rowSelectable, rowSelected, toggleRow
 } from '../../util/messageSelection';
 import {
-  TRANSLATE_DONE, TRANSLATE_LOADING, TranslateToggle,
-  sheetStateOf, toggleTranslation, translationActive as isTranslationActive
+  TranslateToggle,
+  toggleTranslation, translationActive as isTranslationActive
 } from '../../util/translationMode';
 import { pinnedShownIndex } from '../../util/pinnedSegments';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
@@ -149,18 +151,16 @@ import { publishMessageRowPresentations } from '../../util/messageRowPresentatio
 import { shouldFillViewport } from '../../util/viewportFill';
 import { RowFadeTransition, rowFadeAnimationActive, rowFadeTransition } from '../../util/rowFadeGate';
 import {
-  KEY_POWER_CHAT_EFFECTS,
   KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
   KEY_POWER_SMOOTH_TRANSITIONS, setTranslateOptedIn,
   translateOptedIn,
   powerAnimationDuration,
-  powerFeatureEnabled, powerGroupAnimationDuration, autosaveEnabled,
+  powerFeatureEnabled, autosaveEnabled,
   translateOptedOut, setTranslateOptedOut
 } from '../../store/AppSettings';
 import {
-  getTranslationService, languageDisplayName, looksLikeTargetLanguage, resolveTranslateTarget,
-  TRANSLATE_LANG_CODES
+  getTranslationService, looksLikeTargetLanguage, resolveTranslateTarget
 } from '../../services/TranslationService';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK,
@@ -269,6 +269,22 @@ import {
   ChatPageNavigationCoordinator, parseChatRouteParams
 } from '../../util/ChatPageNavigationCoordinator';
 import { ChatPageSubscriptionRegistry } from '../../util/ChatPageSubscriptionRegistry';
+// 以下五组是 B1 从本文件顶部搬走的模块级声明，现在从 util 导入。
+import { chatEffectDurationOf } from '../../util/chatEffects';
+import {
+  CHAT_HEADER_NAV_GUARD_MS, INITIAL_BOTTOM_PRESENT_MIN_MS,
+  INITIAL_MESSAGE_RELEASE_DELAY_MS, INITIAL_MESSAGE_TRANSITION_SETTLE_MS,
+  INITIAL_TIMELINE_PRESENT_MIN_MS, INITIAL_TIMELINE_REVEAL_ROW_LIMIT,
+  INITIAL_TIMELINE_ROW_FADE_MS, INITIAL_TIMELINE_ROW_STAGGER_MS,
+  JUMP_LANDING_GRACE_MS, JUMP_RELOAD_THRESHOLD, KEYBOARD_SETTLE_MS,
+  MENU_DISMISS_MS, NOW_SEC_TICK_MS, PREPARED_MESSAGE_CACHE_LIMIT,
+  REUSE_CAP_MIN_INTERVAL_MS, SEARCH_ENTRY_DELAY_MS, STICKER_FLY_MS,
+  STICKER_GHOST_SIDE, TOP_CARD_ACTION_GUARD_MS, TOP_CARD_LOADING_DELAY_MS
+} from '../../util/chatPageTuning';
+import { DICE_CHOICES, DiceChoice } from '../../util/diceChoices';
+import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind';
+// 别名保持原类名，4 处 new ChatPageFrameCallback(...) 调用点一字未动。
+import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
 
 // collectPickedMedia 的返回：可发送项 + 读不出来被跳过的张数。
 interface PickedMedia {
@@ -276,121 +292,7 @@ interface PickedMedia {
   skipped: number;
 }
 
-// Scroll-to-bottom FAB: beyond this many groups from the end, reload the newest
-// page instead of scrolling row by row through the loaded history.
-const JUMP_RELOAD_THRESHOLD: number = 40;
-// Grace period before an entered-from-global-search chat runs its in-chat search.
-const SEARCH_ENTRY_DELAY_MS: number = 400;
-// 等上下文菜单收起再弹确认框：菜单是独立子窗口，收起过程中弹出的
-// 对话框会挂死（Promise 既不 resolve 也不 reject）。
-const MENU_DISMISS_MS: number = 150;
-const NOW_SEC_TICK_MS: number = 30000;
-const STICKER_FLY_MS: number = 260;
-const STICKER_GHOST_SIDE: number = 92;
-// 实时位置的上报间隔。Telegram 官方客户端也是分钟级——秒级上报既费电又没有
-// 实际意义，收到的一方看到的地图精度远达不到那个粒度。
-
-// cachedCount 的取值理由（原写死常量处的注释，值本身搬去了
-// util/debugListPerf.ets 的 LIST_CACHED_COUNT_DEFAULT，仍然是 6）：
-// 固定预建两行：不再用状态变量从 1 延迟涨到 4。后者会在进页面约 450ms 后让
-// 整个可见消息区重跑 build，Insight 里对应两次约 25ms 的帧峰值。
-// A short-message viewport commonly contains 10-16 rows. HarmonyOS long-list
-// guidance recommends keeping roughly half a viewport ready; two rows were
-// exhausted by a single fast 90 Hz fling in the 10:43 device trace. Keep this
-// static so changing the value never invalidates every visible row.
-// ⚠️ 临时（P6 标定）：档位现在可以在设置 → 日志与诊断里临时切成 4/8。没有人
-// 动那个开关时行为与写死 6 的时期逐字节相同。
-// 全局复用池按桶封顶的最小间隔。封顶本身只是遍历一个个位数长度的数组，但
-// 每次给 maxCount 赋值都会让框架做一次异步清理，没必要在连续 fling 的每次
-// 停手上都跑一遍。
-const REUSE_CAP_MIN_INTERVAL_MS: number = 1000;
-const PREPARED_MESSAGE_CACHE_LIMIT: number = 1024;
-
-const CHAT_HEADER_NAV_GUARD_MS: number = 700;
-const TOP_CARD_LOADING_DELAY_MS: number = 180;
-const TOP_CARD_ACTION_GUARD_MS: number = 650;
-// A delayed frame callback cannot be drained again inside the same VSync. On
-// the measured 90 Hz device, 12 ms crosses one 11.1 ms frame boundary and lets
-// the row admitted by the previous callback complete layout before the next.
-const INITIAL_MESSAGE_RELEASE_DELAY_MS: number = 12;
-// Do not flash a ready one-row timeline in the first instant of the destination
-// push. Bottom landings now wait for a stable lower slice, so they need a much
-// shorter floor than an unread anchor whose complete visible window is prepared.
-const INITIAL_TIMELINE_PRESENT_MIN_MS: number = 80;
-const INITIAL_BOTTOM_PRESENT_MIN_MS: number = 48;
-// The data is already complete and anchored when these animations start. Only
-// render transforms are staggered; no row is inserted or resized here.
-const INITIAL_TIMELINE_ROW_FADE_MS: number = 90;
-const INITIAL_TIMELINE_ROW_STAGGER_MS: number = 14;
-const INITIAL_TIMELINE_REVEAL_ROW_LIMIT: number = 8;
-// Reveal only after real rows cover the complete visible message viewport.
-// Older offscreen rows may continue staging after the page is visible, but
-// visible placeholder replacement must not trigger repeated height correction.
-// NavDestination.onShown is emitted near the beginning of a push, not when the
-// spring has settled. This duration fences the first ready message publication
-// and also remains the empty-timeline watchdog below. The trace shows onReady
-// can lead the system page-switch animation by about 50-75 ms, so leave enough
-// room for the measured ~600 ms transition plus a couple of render frames.
-const INITIAL_MESSAGE_TRANSITION_SETTLE_MS: number = 760;
-
-// Composer geometry. These three have to agree with the TextArea's own
-// lineHeight/padding: the editor height is computed from them, and a mismatch
-// clips the last line instead of scrolling to it.
-// 系统键盘从请求到落定的大致时间。摁住播放器销毁队列用这个数——量到的
-// 键盘弹出被拖到 1859ms，其中绝大部分是销毁占的主线程。
-const KEYBOARD_SETTLE_MS: number = 700;
-// 跳转落地后多久才允许"用户自己滚回最新"的判定重新生效。
-const JUMP_LANDING_GRACE_MS: number = 900;
-
-// ⚠️ 止血开关（可单独回退）：向下翻页追加时的**手动**锚点复位（260e497）整条
-// 旁路掉。true = 旁路（不记锚点、不复位），false = 恢复 260e497 的行为。
-//
-// 【为什么】真机现象四条：静止/滑动时列表每帧重建（闪）、视口纹丝不动、点右下角
-// ↓ 要点好几次才下得去、读到底再进会话仍落在中间。它们指向同一条路径：
-// applyMessages 里那道 `!this.atBottom` 闸。atBottomVerdict（util/atBottom）在
-// hasMoreNewer 为真时**恒返回 NO**——也就是说只要窗口还没取到会话实时尾部，这道
-// 闸就一直开着。于是每次向下翻页的发布都会 scrollToIndex 把视口拽回锚点，视口被
-// 按住 → 可见区间不变 → 边界行每帧建了又拆；等窗口终于取到尾部、hasMoreNewer
-// 翻假，闸关上，拉锯自行结束——正是用户说的「闪完之后位置会动，然后就正常了」。
-// ↓ 按钮那一条同源：restoreScrollAnchor 的 setTimeout 里有
-// `this.pendingScrollBottom` 守卫，点 ↓ 恰好是唯一能压过复位的意图。
-//
-// 【为什么是旁路而不是删】260e497 治的是真问题（stackFromEnd 下追加把可见内容
-// 顶走）。这个常量只是把它整条摘出去，好让用户一次装机就能证实/证伪「是不是它
-// 按住了列表」。原代码与全部单测（AlbumGroupDataSource.test 里 appendBreaksAnchor
-// 那两条）一字未动，改回 false 即完全恢复。
-//
-// 【结论落地后】若坐实：正确修法不是留着这个常量，而是把 `!this.atBottom` 换成
-// 一条真正表达「这次追加是用户主动向下翻页的结果」的判据（见交付说明）。
-const APPEND_ANCHOR_RESTORE_BYPASSED: boolean = false;
-
-// ⚠️ 临时探针 [AnchorAudit]：尘埃落定之后再量一次锚点，回答「用户最后停在哪」。
-// 250ms 是折中——够长，等得到布局与图片解码；又够短，多数情况下用户还没来得及
-// 再滑一把（滑了就靠 offDelta 认出来）。删除清单见 auditAnchorRestore 的注释。
-const ANCHOR_AUDIT_DELAY_MS: number = 250;
 // 锚点补偿：量不到锚点行时下一帧再量，最多几次、每次隔多久（见 restoreScrollAnchor）。
-
-// Reuse-pool granularity for ReusableMessageBubble's reuseId.
-// 2026-09-02 从 'medium' 切到 'fine'（medium + mediaKind 六分）：Frame 录制
-// 20260902T102459 显示 medium 档下 rich 桶复用时有跨媒体类型的结构翻转——
-// 单次 BuildRecycle 里出现 LiveThumbImage Destroy ~6ms（photo/video 行被
-// 复用去画别的媒体形态）。fine 档按官方「按结构分桶」的方向消掉这类销毁。
-// 代价是桶数变多摊薄命中率——下一份录制对比 BuildRecycle 均价与 BuildItem
-// 冷建次数，若命中率塌了就回退这一行（这正是把档位做成参数的用意）。
-const REUSE_ID_LEVEL: ReuseIdLevel = 'fine';
-let nextChatPageReuseScope: number = 1;
-
-function allocateChatPageReuseScope(): number {
-  const scope: number = nextChatPageReuseScope;
-  nextChatPageReuseScope = nextChatPageReuseScope >= 2147483647
-    ? 1 : nextChatPageReuseScope + 1;
-  return scope;
-}
-
-interface DiceChoice {
-  emoji: string;
-  label: ResourceStr;
-}
 
 interface PreparedMessageBubble {
   group: AlbumGroup;
@@ -405,31 +307,6 @@ interface InitialMessageStageTarget {
 
 type InitialMessageReleaseResult = 'released' | 'waiting' | 'finished';
 
-// One-shot UI frame task shared by initial-message staging and the deferred
-// composer mount. The caller uses postDelayedFrameCallback so callbacks queued
-// by adjacent state notifications cannot drain into the same VSync.
-class ChatPageFrameCallback extends FrameCallback {
-  private task: () => void;
-
-  constructor(task: () => void) {
-    super();
-    this.task = task;
-  }
-
-  onFrame(_frameTimeInNano: number): void {
-    this.task();
-  }
-}
-
-// 六个骰子表情。原先是 showActionMenu 的按钮上限刚好装得下，现在是 3×2 的格子。
-const DICE_CHOICES: DiceChoice[] = [
-  { emoji: '🎲', label: $r('app.string.cp_dice_die') },
-  { emoji: '🎯', label: $r('app.string.cp_dice_darts') },
-  { emoji: '🏀', label: $r('app.string.cp_dice_basketball') },
-  { emoji: '⚽', label: $r('app.string.cp_dice_football') },
-  { emoji: '🎳', label: $r('app.string.cp_dice_bowling') },
-  { emoji: '🎰', label: $r('app.string.cp_dice_slots') }
-];
 // Emoji offered in the full reaction picker (opened from the long-press menu's
 // chevron). Ordered roughly like the official client's reaction sheet.
 @ComponentV2
@@ -1115,13 +992,6 @@ export struct ChatPage {
     this.hiddenNewestId = 0;
     // 迁 Repeat 之前这里是 groupsData.reload()。等价物见 rebuildAllRows()。
     this.rebuildAllRows();
-    // 再打一次：此时框架已经渲染完，屏幕上如果是错的，这一份就是"数据本来
-    // 长什么样"的对照。
-    const dumpSeq: number = this.scrollActionSeq;
-    setTimeout((): void => {
-      if (dumpSeq === this.scrollActionSeq) {
-      }
-    }, 2500);
     const newestNow: number = this.groups.length > 0
       ? this.groups[this.groups.length - 1].head.id : 0;
     if (anchorId > 0 && wasAtBottom && newestBefore > 0 && newestNow === newestBefore) {
@@ -1526,7 +1396,7 @@ export struct ChatPage {
   // ⚠️ 官方《复用选项》对 reuseId 有一条版本相关的行为差，调研没有覆盖到：
   // 「在 API 版本 26.0.0 之前，当 reuseId 不是**显式返回字符串字面量**的回调
   // 方法时，实际的复用标识 id 为该自定义组件的名称」。下面这个回调不是字面量，
-  // 所以在旧行为下会被降级成单一的 'ReusableMessageBubble'，REUSE_ID_LEVEL 的
+  // 所以在旧行为下会被降级成单一的 'ReusableMessageBubble'，CHAT_PAGE_REUSE_ID_LEVEL 的
   // 分档静默失效、所有行共用一个池。
   //
   // 走的是哪一侧，看编译产物就知道——ets-loader 把它编成了运行时判断：
@@ -1566,7 +1436,7 @@ export struct ChatPage {
     }).reuse({
       reuseId: (): string =>
         `chatPage${this.reusePageScope}_` +
-          rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, REUSE_ID_LEVEL)
+          rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, CHAT_PAGE_REUSE_ID_LEVEL)
     });
   }
   @Local subtitle: string = '';
@@ -2951,26 +2821,26 @@ export struct ChatPage {
       if (this.pendingGallerySaveId !== 0) {
         const pe = list.find((m: MessageEntry) => m.id === this.pendingGallerySaveId);
         if (pe !== undefined) {
-          if (this.mediaEntryIsVideo(pe) && pe.videoPath !== '') {
+          if (mediaEntryIsVideo(pe) && pe.videoPath !== '') {
             this.pendingGallerySaveId = 0;
             const progress: DownloadSaveNotification | undefined =
               this.pendingGallerySaveProgress ?? undefined;
             this.pendingGallerySaveProgress = null;
             this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.videoPath, true,
               pe.videoFileName, false, progress);
-          } else if (this.mediaEntryIsVideo(pe) && pe.videoFailed) {
+          } else if (mediaEntryIsVideo(pe) && pe.videoFailed) {
             this.pendingGallerySaveId = 0;
             this.pendingGallerySaveProgress?.downloadFailed();
             this.pendingGallerySaveProgress = null;
             promptAction.showToast({ message: $r('app.string.cp_video_download_failed'), duration: 1800 });
-          } else if (this.mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
+          } else if (mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
             this.pendingGallerySaveId = 0;
             const progress: DownloadSaveNotification | undefined =
               this.pendingGallerySaveProgress ?? undefined;
             this.pendingGallerySaveProgress = null;
             this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.photoFullPath, false,
               '', false, progress);
-          } else if (this.mediaEntryIsPhoto(pe) && pe.photoFullFailed) {
+          } else if (mediaEntryIsPhoto(pe) && pe.photoFullFailed) {
             this.pendingGallerySaveId = 0;
             this.pendingGallerySaveProgress?.downloadFailed();
             this.pendingGallerySaveProgress = null;
@@ -3864,11 +3734,10 @@ export struct ChatPage {
     }
   }
 
+  // 换算规则整条搬到 util/chatEffects.ets 的 chatEffectDurationOf（注释也在那边）；
+  // 这里只补上 this.reduceAnimations 这一个参数，十余处调用点保持原样。
   private chatEffectDuration(key: string, duration: number): number {
-    if (this.reduceAnimations || !powerFeatureEnabled(KEY_POWER_SMOOTH_TRANSITIONS)) {
-      return 0;
-    }
-    return powerGroupAnimationDuration(KEY_POWER_CHAT_EFFECTS, key, duration);
+    return chatEffectDurationOf(this.reduceAnimations, key, duration);
   }
 
   private animationPaused(messageId: number): boolean {
@@ -3930,19 +3799,6 @@ export struct ChatPage {
     }
   }
 
-  private mediaEntryIsPhoto(entry: MessageEntry): boolean {
-    return entry.contentType === 'photo' ||
-      (entry.contentType === 'paidMedia' && !entry.paidMediaLocked &&
-        entry.paidMediaKind === 'photo');
-  }
-
-  private mediaEntryIsVideo(entry: MessageEntry): boolean {
-    // 圆形视频不进全屏查看器——它在气泡里原地播放（见 MessageBubble）。
-    return entry.contentType === 'video' ||
-      (entry.contentType === 'paidMedia' && !entry.paidMediaLocked &&
-        entry.paidMediaKind === 'video');
-  }
-
   // Open/close wrapped in animateTo so the viewer's own transition remains
   // smooth without moving/re-parenting the chat thumbnail Image node.
   private openViewer(messageId: number): void {
@@ -3957,20 +3813,20 @@ export struct ChatPage {
       this.onPaidMediaUnlock(messageId);
       return;
     }
-    if (!this.mediaEntryIsPhoto(entry) && !this.mediaEntryIsVideo(entry)) {
+    if (!mediaEntryIsPhoto(entry) && !mediaEntryIsVideo(entry)) {
       return;
     }
-    if (this.mediaEntryIsPhoto(entry) && entry.photoPath === '' && entry.photoFailed) {
+    if (mediaEntryIsPhoto(entry) && entry.photoPath === '' && entry.photoFailed) {
       this.store?.retryPhoto(messageId);
       promptAction.showToast({ message: $r('app.string.cp_reloading_thumb'), duration: 1200 });
       return;
     }
-    if (this.mediaEntryIsPhoto(entry) && entry.photoPath === '' &&
+    if (mediaEntryIsPhoto(entry) && entry.photoPath === '' &&
       entry.photoFullPath === '' && entry.photoFileId === 0 && entry.photoFullFileId === 0) {
       promptAction.showToast({ message: $r('app.string.cp_photo_unavailable'), duration: 1500 });
       return;
     }
-    if (this.mediaEntryIsVideo(entry)) {
+    if (mediaEntryIsVideo(entry)) {
       if (entry.videoFileId === 0 && entry.videoPath === '') {
         promptAction.showToast({ message: $r('app.string.cp_video_unavailable'), duration: 1500 });
         return;
@@ -4761,7 +4617,6 @@ export struct ChatPage {
         } catch (e) {
           logE(`ChatPage.repositionAnchor failed: ${e}`);
         }
-        this.auditAnchorRestore(seq, targetIndex, targetY, 'reposition', extra);
         return;
       }
       // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。
@@ -4781,52 +4636,7 @@ export struct ChatPage {
       if (plan.dy !== 0) {
         this.scroller.scrollBy(0, plan.dy);
       }
-      this.auditAnchorRestore(seq, targetIndex, targetY,
-        plan.dy !== 0 ? 'applied' : 'noop', plan.dy);
     }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
-  }
-
-  // ⚠️ **临时探针，验完即删**（用户 2026-08-29：「preview5 好像也闪或者是抖了几下」）。
-  //
-  // [AnchorRestore] 只记了"补的那一刻发生了什么"，没记**用户最后停在哪**：
-  //   · dy≠0    内容真的跳了，我们在一两帧之后把它拽回来——观感就是闪一下；
-  //   · gaveup  量不到、一点没补，跳了就留在那儿；
-  //   · dy=0    框架自己守住了，什么都没发生。
-  // 三种在日志里长得差不多，但屏幕上完全不同。这条在尘埃落定之后再量一次，
-  // 直接回答"最终偏了多少"。**只诊断，不滚动。**
-  //
-  // 判读：residual 只有在 offDelta≈0 时才可信——用户自己滑动同样会改变 rect.y，
-  // 两者混在一起。所以先看 offDelta，再看 residual：
-  //   · offDelta≈0 且 residual≈0        → 这次是干净的，用户没被挪动；
-  //   · offDelta≈0 且 residual 明显不为 0 → 我们把用户留在了错的位置，这就是"抖"；
-  //   · offDelta 很大                    → 用户自己在滑，这条样本作废。
-  //
-  // 删除清单：本方法、ANCHOR_AUDIT_DELAY_MS、以及 attemptAnchorRestore 里那两处调用。
-  private auditAnchorRestore(seq: number, targetIndex: number, itemY: number,
-    outcome: string, applied: number): void {
-    const offAtRestore: number = this.currentAnchorOffset();
-    setTimeout((): void => {
-      // 期间又落了一页分页 ⇒ 这个下标早已易主，这条样本作废。
-      if (seq !== this.prependRestoreSeq) {
-        return;
-      }
-      let rect: AnchorRectSnapshot = INVALID_ANCHOR_RECT;
-      try {
-        const measured = this.scroller.getItemRect(targetIndex);
-        rect = { width: measured.width, height: measured.height, y: measured.y };
-      } catch (e) {
-        rect = INVALID_ANCHOR_RECT;
-      }
-      const ok: boolean = rect.width > 0 && rect.height > 0;
-      const nowOff: number = this.currentAnchorOffset();
-      const offDelta: number = Number.isNaN(offAtRestore) || Number.isNaN(nowOff)
-        ? Number.NaN : nowOff - offAtRestore;
-      const settled: string = ok ? `${Math.round(rect.y)}` : 'n/a';
-      const residual: string = ok ? `${Math.round(rect.y - itemY)}` : 'n/a';
-      logW(`[AnchorAudit] ${outcome} idx=${targetIndex} applied=${Math.round(applied)}` +
-        ` oldY=${Math.round(itemY)} settledY=${settled} residual=${residual}` +
-        ` offDelta=${Math.round(offDelta)} measurable=${ok}`);
-    }, ANCHOR_AUDIT_DELAY_MS);
   }
 
   private resetHeaderState(cached: ChatEntry | undefined): void {
@@ -5778,10 +5588,10 @@ export struct ChatPage {
       return;
     }
     const m = this.messages[idx];
-    if (!this.mediaEntryIsPhoto(m) && !this.mediaEntryIsVideo(m)) {
+    if (!mediaEntryIsPhoto(m) && !mediaEntryIsVideo(m)) {
       return;
     }
-    if (this.mediaEntryIsPhoto(m)) {
+    if (mediaEntryIsPhoto(m)) {
       this.store.requestFullPhoto(messageId);
     }
     // 交接:取气泡播放位记录的进度，必须在 playSlots.suspend() 让气泡播放器
@@ -6578,7 +6388,7 @@ export struct ChatPage {
       return;
     }
     const ctx = getContext(this) as common.UIAbilityContext;
-    if (this.mediaEntryIsVideo(e)) {
+    if (mediaEntryIsVideo(e)) {
       const displayName: string = e.videoFileName.trim() !== ''
         ? e.videoFileName : str('storage_video');
       if (e.videoPath !== '') {
@@ -8627,23 +8437,12 @@ export struct ChatPage {
     });
   }
 
-  // Translate a message's text/caption into the system language and show the
-  // result in place (dialog). TDLib needs an explicit ISO 639-1 target code.
-  // 单条翻译改半模态面板（可上拉全屏）：原文/译文对照、复制、快速换目标语言。
-  // 此前是 promptAction.showDialog 小弹窗，长文没法读。
-  @Local translateSheetOpen: boolean = false;
-  @Local translateSheetOriginal: string = '';
-  @Local translateSheetText: string = '';
-  @Local translateSheetState: string = TRANSLATE_LOADING;
-  @Local translateSheetLang: string = '';
-  private translateSheetMsgId: number = 0;
-  private translateSheetEditDate: number = 0;
-  private translateSheetSeq: number = 0;
-
   // 长按菜单里的「翻译」。原来会弹一个 sheet 单独展示译文，现在改成就地
   // 翻译：进行中/失败/译文都长在气泡里（见 translationChannel 与
   // MessageBubble.translationBlock），和整聊天翻译是同一条路径、同一套缓存。
-  // sheet 相关状态与 runSheetTranslation 暂时保留，翻译面板的入口还在用。
+  // 那张 sheet（TranslateSheet + translateSheet* 状态 + runSheetTranslation 一族）
+  // 已在 B1 连同 pages/chat/TranslateSheet.ets 一并删除：它的开关 translateSheetOpen
+  // 全仓零处赋 true，是打不开的孤儿状态机。这里是「翻译」现在唯一的活入口。
   private translateMessage(messageId: number): void {
     const entry: MessageEntry | undefined =
       this.messages.find((m: MessageEntry): boolean => m.id === messageId);
@@ -8652,74 +8451,6 @@ export struct ChatPage {
       return;
     }
     this.translateInline(messageId);
-  }
-
-  private runSheetTranslation(lang: string): void {
-    const seq: number = ++this.translateSheetSeq;
-    this.translateSheetLang = lang;
-    this.translateSheetText = '';
-    this.translateSheetState = TRANSLATE_LOADING;
-    const service = getTranslationService(getTdClient());
-    const msgId: number = this.translateSheetMsgId;
-    const editDate: number = this.translateSheetEditDate;
-    const original: string = this.translateSheetOriginal;
-    const settle = (text: string | null): void => {
-      if (seq !== this.translateSheetSeq) {
-        return;
-      }
-      const next: string = sheetStateOf(text, original);
-      if (next === TRANSLATE_DONE) {
-        this.translateSheetText = text as string;
-      }
-      this.translateSheetState = next;
-    };
-    service.request(this.chatId, msgId, editDate, lang, (text: string | null): void => {
-      if (text !== null) {
-        settle(text);
-        return;
-      }
-      // null 也可能是"同一条消息正被整聊天翻译在途"——稍后从缓存补一次再定失败。
-      setTimeout((): void => {
-        settle(service.cached(this.chatId, msgId, editDate, lang));
-      }, 2500);
-    });
-  }
-
-  private pickTranslateSheetLang(): void {
-    const codes: string[] = TRANSLATE_LANG_CODES;
-    const names: string[] = codes.map((c: string): string => languageDisplayName(c));
-    TextPickerDialog.show({
-      range: names,
-      selected: Math.max(0, codes.indexOf(this.translateSheetLang)),
-      onAccept: (value: TextPickerResult): void => {
-        const idx: number = value.index as number;
-        if (idx >= 0 && idx < codes.length) {
-          this.runSheetTranslation(codes[idx]);
-        }
-      }
-    });
-  }
-
-  // bindSheet 只吃 @Builder，所以留一层薄壳把组件包进去。
-  @Builder
-  translateSheetBody() {
-    TranslateSheet({
-      original: this.translateSheetOriginal,
-      translated: this.translateSheetText,
-      state: this.translateSheetState,
-      lang: this.translateSheetLang,
-      bottomSafe: this.bottomSafe,
-      onPickLang: (): void => { this.pickTranslateSheetLang(); },
-      onRetry: (): void => { this.runSheetTranslation(this.translateSheetLang); },
-      onCopy: (): void => { this.copySheetTranslation(); }
-    });
-  }
-
-  private copySheetTranslation(): void {
-    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.translateSheetText);
-    pasteboard.getSystemPasteboard().setData(data).then((): void => {
-      promptAction.showToast({ message: $r('app.string.copied'), duration: 1300 });
-    }).catch((): void => {});
   }
 
   // Long-press on a reaction chip: who reacted with it.
@@ -9620,7 +9351,7 @@ export struct ChatPage {
       chatTitle: this.title,
       nowSec: this.nowSec,
       effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
-      isVideoEntry: (entry: MessageEntry): boolean => this.mediaEntryIsVideo(entry),
+      isVideoEntry: (entry: MessageEntry): boolean => mediaEntryIsVideo(entry),
       onRequestClose: (): void => { this.closeViewer(); },
       onSaveMedia: (): void => { this.saveViewerMedia(false); },
       onSaveMediaToFiles: (): void => { this.saveViewerMedia(true); },
@@ -9944,13 +9675,7 @@ export struct ChatPage {
         this.mediaViewer();
       }
     }
-    .width('100%').height('100%')
-    .bindSheet($$this.translateSheetOpen, this.translateSheetBody(), {
-      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-      backgroundColor: $r('app.color.surface'),
-      dragBar: true,
-      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
-    });
+    .width('100%').height('100%');
     }
     .titleBar({
       avoidLayoutSafeArea: true,

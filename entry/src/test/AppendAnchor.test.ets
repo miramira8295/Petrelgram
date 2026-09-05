@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  AppendAnchorInput, newerPageIsUserDriven, shouldHoldAppendAnchor,
-  useUserDrivenAppendMark
+  APPEND_ANCHOR_RESTORE_BYPASSED, AppendAnchorInput, newerPageIsUserDriven,
+  shouldHoldAppendAnchor, useUserDrivenAppendMark
 } from '../main/ets/util/appendAnchor';
 
 function input(bypassed: boolean, didInitialScroll: boolean, prependAnchorHeld: boolean,
@@ -61,6 +61,12 @@ export default function appendAnchorTest() {
     it('who_pulled_the_trigger_no_longer_decides_the_hold', 0, () => {
       expect(useUserDrivenAppendMark(false, true)).assertFalse();
       expect(shouldHoldAppendAnchor(input(false, true, false, true))).assertTrue();
+    });
+    // 止血开关默认必须是关的：它被改成 true 意味着向下翻页的锚点复位被整条旁路，
+    // 只应在排查时临时开启。上面所有 bypassed=false 的断言都建立在这个默认值上——
+    // 真机上一旦被留成 true，往下翻页时可见内容会被追加的新页顶走，而单测全绿。
+    it('止血开关默认关闭：留成 true 等于整条旁路向下翻页的锚点复位', 0, (): void => {
+      expect(APPEND_ANCHOR_RESTORE_BYPASSED).assertFalse();
     });
   });
 }

@@ -242,3 +242,39 @@ export function rowReuseId(data: MessageBubbleRenderData, group: AlbumGroup, lev
   }
   return fineBucket(data, group);
 }
+
+// ---------------------------------------------------------------------------
+// 以下三段从 ChatPage.ets 搬来（原 373-388 行）。
+// ---------------------------------------------------------------------------
+
+// Reuse-pool granularity for ReusableMessageBubble's reuseId.
+// 2026-09-02 从 'medium' 切到 'fine'（medium + mediaKind 六分）：Frame 录制
+// 20260902T102459 显示 medium 档下 rich 桶复用时有跨媒体类型的结构翻转——
+// 单次 BuildRecycle 里出现 LiveThumbImage Destroy ~6ms（photo/video 行被
+// 复用去画别的媒体形态）。fine 档按官方「按结构分桶」的方向消掉这类销毁。
+// 代价是桶数变多摊薄命中率——下一份录制对比 BuildRecycle 均价与 BuildItem
+// 冷建次数，若命中率塌了就回退这一行（这正是把档位做成参数的用意）。
+export const CHAT_PAGE_REUSE_ID_LEVEL: ReuseIdLevel = 'fine';
+
+// 【为什么必须是模块级变量】ES module 单例语义：整个应用只有这一份计数器。
+// API 26 的复用池被导航栈里所有还活着的 ChatPage 共享，scope 号是把桶 id 钉死
+// 在某一个具体页面实例上的唯一手段。平板分栏、导航栈多层时同时活着两个以上
+// ChatPage，它们必须各自拿到互不相同的 scope；一旦这个计数器变成某个 class 的
+// 字段、或每个调用方各持一份，两个活着的会话页就会拿到同一个 scope 而互借复用
+// 节点——真机上表现为 changing parent / unsafe operation。
+// 因此：不许把它挪进 class、不许改成实例字段、不许在别的文件再声明一份。
+let nextChatPageReuseScope: number = 1;
+
+// 回绕逻辑单独抽成纯函数，好让单测直接钉住边界（2147483647 回绕到 1）而不必
+// 依赖模块变量当时的取值。
+export function nextReuseScopeAfter(prev: number): number {
+  return prev >= 2147483647 ? 1 : prev + 1;
+}
+
+// 返回的是自增**前**的值：每个 ChatPage 实例在字段初始化器里调一次，拿到自己
+// 独占的 scope 号。
+export function allocateChatPageReuseScope(): number {
+  const scope: number = nextChatPageReuseScope;
+  nextChatPageReuseScope = nextReuseScopeAfter(nextChatPageReuseScope);
+  return scope;
+}

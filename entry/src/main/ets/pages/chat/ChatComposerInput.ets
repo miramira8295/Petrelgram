@@ -8,6 +8,11 @@ import { MediaStrip } from './MediaStrip';
 import { ComposerSendButton } from './ComposerSendButton';
 
 // Shared geometry for the editor and its height measurement in ChatPage.
+//
+// These three have to agree with the TextArea's own lineHeight/padding: the
+// editor height is computed from them, and a mismatch clips the last line
+// instead of scrolling to it. (原注释留在 ChatPage.ets 顶部成了孤儿——那三个
+// 常量搬到这个文件时它没跟来，2026-09-05 瘦身批 B1 归位。)
 export const COMPOSER_LINE_HEIGHT: number = 22;
 export const COMPOSER_EDITOR_PADDING: number = 9;
 export const COMPOSER_MAX_LINES: number = 4;
