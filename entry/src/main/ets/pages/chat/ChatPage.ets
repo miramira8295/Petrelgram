@@ -86,7 +86,6 @@ import { ReplyKeyboardPanel } from './ReplyKeyboardPanel';
 import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
 } from '../../util/messageLinkAction';
-import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
 import { SecretChatInfo } from '../../util/secretChat';
 import { watchSecretChat } from '../../store/SecretChatWatch';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
@@ -164,6 +163,7 @@ import { VoiceRecordingState } from './VoiceRecordingState';
 // bind 里 newRecorder 取值器的返回类型（等价于搬之前那句 new VoiceRecorder()）。
 import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { MediaSaveState } from './MediaSaveState';
+import { MembershipSession } from './MembershipSession';
 import { showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
@@ -1575,9 +1575,12 @@ export struct ChatPage {
   private clientJoinNoticeDate: number = 0;
   private clientJoinNoticeEntryCache: MessageEntry | null = null;
   private clientJoinNoticeRouteChatId: number = 0;
-  private membershipSupergroupId: number = 0;
-  private membershipBasicGroupId: number = 0;
-  private membershipSeq: number = 0;
+  // 成员资格状态机控制器（第二轮 R2-A 批）：refreshMembership/
+  // applyMembershipStatus 连同 membershipSupergroupId/membershipBasicGroupId/
+  // membershipSeq 三个记账字段一并搬入。membershipState 本身按 B8 的所有权
+  // 裁决留在上面（@Local membershipState），只经 setMembershipState 这个
+  // setter 被写；详见 MembershipSession.ets 文件头【甲】节。
+  private membership: MembershipSession = new MembershipSession();
   private store: MessageStore | null = null;
   private scroller: Scroller = new Scroller();
   private didInitialScroll: boolean = false;
@@ -2414,6 +2417,32 @@ export struct ChatPage {
         this.messages.find((x: MessageEntry): boolean => x.id === messageId),
       latestMessages: (): MessageEntry[] => this.messages
     });
+    // 成员资格状态机接上宿主（第二轮 R2-A 批）。isChannel 是双重用途取值器
+    // （refresh() 的 supergroup 分支拿它当 is_channel 缺省回退值，
+    // applyStatus() 拼 membershipStateOf 入参再读一次），两处都现取不缓存。
+    // membershipState 按 B8 裁决留在页面，控制器只经 setMembershipState 写它。
+    // client() 恒为 () => getTdClient()，是本批的注入缝（见
+    // MembershipSession.ets 文件头【client() 注入缝】节）。本批一共两处刻意
+    // 偏离逐字搬迁：这条缝，以及三条 logE 的前缀改名（见那边文件头）。
+    this.membership.bind({
+      chatId: (): number => this.chatId,
+      isChannel: (): boolean => this.isChannel,
+      setMembershipState: (next: string): void => { this.membershipState = next; },
+      setIsGroup: (value: boolean): void => { this.isGroup = value; },
+      setIsChannel: (value: boolean): void => { this.isChannel = value; },
+      commitTimelineSnapshot: (): void => { this.commitTimelineSnapshot(); },
+      setJoiningChat: (value: boolean): void => { this.joiningChat = value; },
+      closeComposerSurfaces: (): void => {
+        this.setEmojiPanel(false);
+        this.mention.clear();
+        this.command.closePanel();
+        this.composer.reset();
+        if (this.recording.isRecording) {
+          this.recording.cancel();
+        }
+      },
+      client: (): TdClient => getTdClient()
+    });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
@@ -2615,18 +2644,18 @@ export struct ChatPage {
     this.subscriptions.set('membershipSupergroup', getTdClient().onUpdate('updateSupergroup', (u: TdObject) => {
       const supergroup = u['supergroup'] as TdObject | undefined;
       if (supergroup !== undefined &&
-        ((supergroup['id'] as number | undefined) ?? 0) === this.membershipSupergroupId) {
-        this.applyMembershipStatus(supergroup['status'] as TdObject | undefined);
+        ((supergroup['id'] as number | undefined) ?? 0) === this.membership.supergroupId()) {
+        this.membership.applyStatus(supergroup['status'] as TdObject | undefined);
       }
     }));
     this.subscriptions.set('membershipBasicGroup', getTdClient().onUpdate('updateBasicGroup', (u: TdObject) => {
       const basicGroup = u['basic_group'] as TdObject | undefined;
       if (basicGroup !== undefined &&
-        ((basicGroup['id'] as number | undefined) ?? 0) === this.membershipBasicGroupId) {
-        this.applyMembershipStatus(basicGroup['status'] as TdObject | undefined);
+        ((basicGroup['id'] as number | undefined) ?? 0) === this.membership.basicGroupId()) {
+        this.membership.applyStatus(basicGroup['status'] as TdObject | undefined);
       }
     }));
-    this.refreshMembership();
+    this.membership.refresh();
     this.topCard.refreshVideoChat(true);
   }
 
@@ -3715,7 +3744,10 @@ export struct ChatPage {
     this.subscriptions.clearInOrder([
       'pinned', 'headerAvatar', 'headerTitle', 'replyKeyboard'
     ]);
-    this.membershipSeq++;
+    // 成员资格状态机的退场（第二轮 R2-A 批）：dispose() 只做原来这里那一行
+    // membershipSeq++，作废在途的三层异步（getChat/getSupergroup/
+    // getBasicGroup），紧邻退订下面这两个推送监听器之前，位置未动。
+    this.membership.dispose();
     this.subscriptions.clearInOrder([
       'membershipSupergroup', 'membershipBasicGroup', 'videoChat', 'groupCall'
     ]);
@@ -4626,106 +4658,15 @@ export struct ChatPage {
     }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
   }
 
-  private refreshMembership(): void {
-    const seq: number = ++this.membershipSeq;
-    const req: TdRequest = { '@type': 'getChat' };
-    req['chat_id'] = this.chatId;
-    getTdClient().send(req).then((chat: TdObject): void => {
-      if (seq !== this.membershipSeq) {
-        return;
-      }
-      const type = chat['type'] as TdObject | undefined;
-      const typeName = (type?.['@type'] as string | undefined) ?? '';
-      if (typeName === 'chatTypeSupergroup') {
-        this.membershipSupergroupId = (type?.['supergroup_id'] as number | undefined) ?? 0;
-        this.membershipBasicGroupId = 0;
-        this.isGroup = true;
-        this.isChannel = (type?.['is_channel'] as boolean | undefined) ?? this.isChannel;
-        this.commitTimelineSnapshot();
-        this.membershipState = 'checking';
-        const groupReq: TdRequest = { '@type': 'getSupergroup' };
-        groupReq['supergroup_id'] = this.membershipSupergroupId;
-        getTdClient().send(groupReq).then((supergroup: TdObject): void => {
-          if (seq === this.membershipSeq) {
-            this.applyMembershipStatus(supergroup['status'] as TdObject | undefined);
-          }
-        }).catch((e: TdError): void => {
-          if (seq === this.membershipSeq) {
-            this.membershipState = 'writable';
-          }
-          logE(`ChatPage.getSupergroup membership failed: ${e.message}`);
-        });
-        return;
-      }
-      if (typeName === 'chatTypeBasicGroup') {
-        this.membershipBasicGroupId = (type?.['basic_group_id'] as number | undefined) ?? 0;
-        this.membershipSupergroupId = 0;
-        this.isGroup = true;
-        this.isChannel = false;
-        this.commitTimelineSnapshot();
-        this.membershipState = 'checking';
-        const groupReq: TdRequest = { '@type': 'getBasicGroup' };
-        groupReq['basic_group_id'] = this.membershipBasicGroupId;
-        getTdClient().send(groupReq).then((basicGroup: TdObject): void => {
-          if (seq === this.membershipSeq) {
-            this.applyMembershipStatus(basicGroup['status'] as TdObject | undefined);
-          }
-        }).catch((e: TdError): void => {
-          if (seq === this.membershipSeq) {
-            this.membershipState = 'writable';
-          }
-          logE(`ChatPage.getBasicGroup membership failed: ${e.message}`);
-        });
-        return;
-      }
-      this.membershipSupergroupId = 0;
-      this.membershipBasicGroupId = 0;
-      // 密聊的输入区形态由 applySecretChat 定（待建立/已关闭都不能发），
-      // 这里一律写 writable 会把它冲掉。
-      if (typeName !== 'chatTypeSecret') {
-        this.membershipState = 'writable';
-      }
-    }).catch((e: TdError): void => {
-      if (seq === this.membershipSeq) {
-        // Don't leave private/secret chats with a permanently hidden composer
-        // if the supplementary status request fails.
-        this.membershipState = 'writable';
-      }
-      logE(`ChatPage.getChat membership failed: ${e.message}`);
-    });
-  }
-
-  private applyMembershipStatus(status: TdObject | undefined): void {
-    const type: string = (status?.['@type'] as string | undefined) ?? '';
-    if (type === '') {
-      return;
-    }
-    const rights = status?.['rights'] as TdObject | undefined;
-    // 判定本身在 util/membershipState（有单测）：几条规则都不直观——被限制但
-    // 仍在群里照样能发言、频道订阅者只读、频道管理员还要看有没有发帖权。
-    const next: string = membershipStateOf({
-      statusType: type,
-      isMember: (status?.['is_member'] as boolean | undefined) ?? false,
-      isChannel: this.isChannel,
-      canPostMessages: (rights?.['can_post_messages'] as boolean | undefined) ?? false
-    });
-    this.membershipState = next;
-    if (!membershipLosesComposer(next)) {
-      this.joiningChat = false;
-      return;
-    }
-    // A membership update can arrive while the cached page still has composer
-    // UI open. Close every composer-owned surface before replacing the bar.
-    this.joiningChat = false;
-    this.setEmojiPanel(false);
-    this.mention.clear();
-    this.command.closePanel();
-    this.composer.reset();
-    if (this.recording.isRecording) {
-      this.recording.cancel();
-    }
-  }
-
+  // refreshMembership/applyMembershipStatus 逐字搬进了 MembershipSession
+  // （第二轮 R2-A 批，见文件头字段声明处的注释与该类文件头）。此处只留
+  // joinCurrentChat：它除了读写页面自留的 membershipState/joiningChat 之外
+  // 还要调页面自己的 showClientJoinNotice()，不是"整方法体搬迁"的候选，见
+  // MembershipSession.ets 文件头【本批未迁移的两处】节。
+  // 这里对 membershipState/joiningChat 的写**全部保持页面直写**（HEAD 就是
+  // 这样）：它们是页面自留 @Local，setMembershipState 只是控制器回调页面的
+  // 入口，页面自己写自己的字段不绕道。本批只把 this.refreshMembership()
+  // 那一行改成了 this.membership.refresh()。
   private joinCurrentChat(): void {
     if (this.joiningChat || this.membershipState !== 'joinable') {
       return;
@@ -4739,7 +4680,7 @@ export struct ChatPage {
       // eagerly keeps the UI responsive even if that update is delayed.
       this.membershipState = 'writable';
       this.showClientJoinNotice(this.isChannel);
-      this.refreshMembership();
+      this.membership.refresh();
     }).catch((e: TdError): void => {
       this.joiningChat = false;
       logE(`ChatPage.joinChat failed: ${e.message}`);

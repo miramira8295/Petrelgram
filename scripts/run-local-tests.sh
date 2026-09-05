@@ -21,7 +21,7 @@ set -u
 #
 # 新增测试后请把这个数字调高；**永远不要为了让脚本通过而调低**（真要临时排查，
 # 用环境变量覆盖一次，别改这里的默认值）。
-MIN_TESTS="${MIN_TESTS:-2127}"
+MIN_TESTS="${MIN_TESTS:-2145}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,
