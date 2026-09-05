@@ -8,6 +8,7 @@ import { MediaStrip } from './MediaStrip';
 import { ComposerSendButton } from './ComposerSendButton';
 import { ComposerSession } from './ComposerSession';
 import { CommandSuggestionState } from './ComposerSuggestionState';
+import { VoiceRecordingState } from './VoiceRecordingState';
 
 // Shared geometry for the editor and its height measurement in ChatPage.
 //
@@ -24,7 +25,6 @@ export const COMPOSER_MAX_LINES: number = 4;
 // the tree and forwards UI events.
 @ComponentV2
 export struct ChatComposerInput {
-  @Param isRecording: boolean = false;
   @Param attachPanelOpen: boolean = false;
   @Param pendingMedia: PendingMediaItem[] = [];
   // 输入条上方那一条（编辑态/回复态）的八个字段原来是八个标量 @Param，由
@@ -43,6 +43,15 @@ export struct ChatComposerInput {
   // composer 那次改造之前的样子）。B14 把它们的持有者搬进了 CommandSuggestionState，
   // 这里跟着直接接控制器本身，两个读点下沉到本组件自己的 build 里，理由同 composer。
   @Require @Param commandSuggestion: CommandSuggestionState;
+  // isRecording/recordingStarting/recordingSecondsLabel 原来是三个标量
+  // @Param，由 ChatPage 在 build 里逐个转手（isRecording/recordingStarting
+  // 是页面 @Local，recordingSecondsLabel 是页面每次 build 现算的
+  // formatRecSeconds() 字符串）——同一个"页面订阅、组件收益停在行数"的形状
+  // 第三次出现（侦察报告 3）。改接控制器本身：isRecording/recordingStarting
+  // 两个读点、以及 recordingSecondsLabel 改为本组件自己调
+  // `this.recording.secondsLabel()`，全部下沉到本组件自己的 build 里，理由
+  // 同 composer/commandSuggestion。
+  @Require @Param recording: VoiceRecordingState;
   @Param showEmojiPanel: boolean = false;
   @Param composerEditorReady: boolean = false;
   @Param draft: string = '';
@@ -53,7 +62,6 @@ export struct ChatComposerInput {
   @Param replyKeyboard: ReplyKeyboard | null = null;
   @Param replyKbCollapsed: boolean = false;
   @Param botMiniAppUrlValue: string = '';
-  @Param recordingStarting: boolean = false;
   @Param composerSending: boolean = false;
   @Param replyKeyboardVisible: boolean = false;
   @Param bottomGap: number = 0;
@@ -92,7 +100,6 @@ export struct ChatComposerInput {
     (duration: number): number => duration;
   @Event smoothEffectDuration: (duration: number) => number =
     (duration: number): number => duration;
-  @Param recordingSecondsLabel: string = '';
 
   @Styles
   composerIconNormalStyle() {
@@ -125,7 +132,7 @@ export struct ChatComposerInput {
   build() {
     Row({ space: 6 }) {
       // The attachment action stays outside the growing text capsule.
-      if (!this.isRecording) {
+      if (!this.recording.isRecording) {
         Stack() {
           SymbolGlyph($r('sys.symbol.paperclip'))
             .fontSize(23)
@@ -187,10 +194,10 @@ export struct ChatComposerInput {
           });
         }
         Row({ space: 6 }) {
-          if (this.isRecording) {
+          if (this.recording.isRecording) {
             Row({ space: 7 }) {
               Circle({ width: 8, height: 8 }).fill('#FF3B30');
-              Text(this.recordingSecondsLabel).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
+              Text(this.recording.secondsLabel()).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
               Text($r('app.string.cp_recording')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
             }.layoutWeight(1).alignItems(VerticalAlign.Center);
             Button($r('app.string.cancel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
@@ -308,7 +315,7 @@ export struct ChatComposerInput {
             }
             ComposerSendButton({
               hasDraft: this.hasDraft,
-              recordingStarting: this.recordingStarting,
+              recordingStarting: this.recording.recordingStarting,
               sending: this.composerSending,
               onRecord: (): void => { this.onRecord(); },
               onSend: (): void => { this.onSend(); },

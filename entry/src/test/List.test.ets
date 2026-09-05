@@ -221,6 +221,8 @@ import typingIndicatorStateTest from './TypingIndicatorState.test';
 import chatOverlayStateTest from './ChatOverlayState.test';
 import jumpFlashStateTest from './JumpFlashState.test';
 import composerSuggestionStateTest from './ComposerSuggestionState.test';
+import voiceRecordingStateTest from './VoiceRecordingState.test';
+import mediaSaveStateTest from './MediaSaveState.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -448,4 +450,6 @@ export default function testsuite() {
   chatOverlayStateTest();
   jumpFlashStateTest();
   composerSuggestionStateTest();
+  voiceRecordingStateTest();
+  mediaSaveStateTest();
 }

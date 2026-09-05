@@ -9,9 +9,7 @@ import { InlineResultRow, sendInlineResult } from '../../store/BotApi';
 import { common } from '@kit.AbilityKit';
 import { PickedContact } from './ContactPickerSheet';
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { formatDateSeparator } from '../../util/formatDateSeparator';
-import { fileOpenMimeType } from '../../util/fileMessage';
 import { holdPlayerJobs } from './WebmStickerView';
 import { setChatTgsSuspended } from './TgsStickerView';
 import { EmojiPanel } from './EmojiPanel';
@@ -19,10 +17,6 @@ import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
 import { getVoicePlayback } from '../../services/VoicePlayback';
 import { openLocalFile } from '../../util/openLocalFile';
-import { FileSaveProgress, saveMediaToGallery } from '../../util/mediaSaver';
-import {
-  DownloadSaveNotification, downloadSaveService
-} from '../../services/DownloadSaveNotification';
 import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 // B14 的四个建议控制器经宿主取值器拿 TDLib 客户端（缝的理由见
 // ComposerSuggestionState.ets 文件里 client 取值器上方那段），这里只需要类型。
@@ -134,8 +128,7 @@ import {
   KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY,
   KEY_POWER_SMOOTH_TRANSITIONS,
-  powerAnimationDuration,
-  autosaveEnabled
+  powerAnimationDuration
 } from '../../store/AppSettings';
 // setTranslateOptedIn/translateOptedIn/translateOptedOut/setTranslateOptedOut
 // 与 getTranslationService/looksLikeTargetLanguage/resolveTranslateTarget 随
@@ -167,6 +160,10 @@ import {
 import { TranslationDriver } from './TranslationDriver';
 import { TypingIndicatorState } from './TypingIndicatorState';
 import { JumpFlashState } from './JumpFlashState';
+import { VoiceRecordingState } from './VoiceRecordingState';
+// bind 里 newRecorder 取值器的返回类型（等价于搬之前那句 new VoiceRecorder()）。
+import { VoiceRecorder } from '../../services/VoiceRecorder';
+import { MediaSaveState } from './MediaSaveState';
 import { showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
@@ -1066,8 +1063,8 @@ export struct ChatPage {
         onReplyTap: (messageId: number, fromId: number): void => {
           this.onReplyTap(messageId, fromId);
         },
-        onFileTap: (messageId: number): void => { this.onFileTap(messageId); },
-        onFileSave: (messageId: number): void => { this.onFileSave(messageId); },
+        onFileTap: (messageId: number): void => { this.mediaSave.onFileTap(messageId); },
+        onFileSave: (messageId: number): void => { this.mediaSave.onFileSave(messageId); },
         onFilePause: (messageId: number): void => { this.store?.pauseFileDownload(messageId); },
         onStickerRetry: (messageId: number): void => { this.store?.retrySticker(messageId); },
         onContactOpen: (userId: number, phone: string, vcard: string): void => {
@@ -1767,15 +1764,13 @@ export struct ChatPage {
   private imeTailPinned: boolean = false;
   private imeLayoutSeq: number = 0;
   private lastKeyboardH: number = 0;
-  // Message id of a video waiting to be saved to the gallery once downloaded.
-  private pendingGallerySaveId: number = 0;
-  private pendingGallerySaveProgress: DownloadSaveNotification | null = null;
-  private autoSavePendingIds: number[] = [];
-  private autoSaveInFlight: boolean = false;
-  // Separate intents keep "tap to open" and the explicit save action honest:
-  // a completed download performs exactly the action the user requested.
-  private pendingFileOpenId: number = 0;
-  private fileOpenInFlightId: number = 0;
+  // 媒体保存/下载簇（查看器"保存到相册"单槽等待 + 新消息自动保存队列 + 文档
+  // 下载后自动打开）整体搬进 MediaSaveState（B15 批），原六个字段
+  // （pendingGallerySaveId/pendingGallerySaveProgress/autoSavePendingIds/
+  // autoSaveInFlight/pendingFileOpenId/fileOpenInFlightId）随之搬走，原有的
+  // 两段解释性注释一并带走，此处不再重复。字段初始化器 new：per-ChatPage
+  // 实例，不做模块级单例。
+  private mediaSave: MediaSaveState = new MediaSaveState();
   private utilityActionAtMs: number = 0;
   // A tapped music message starts automatically once its on-demand download
   // completes. Only the latest tap owns this slot, so rapid track changes
@@ -1844,13 +1839,12 @@ export struct ChatPage {
   // after use). A NEW keyboard from the bot un-collapses automatically.
   @Local replyKbCollapsed: boolean = false;
   @Local replyKeyboardSendingKey: string = '';
-  // Voice recording state.
-  @Local isRecording: boolean = false;
-  @Local recordingStarting: boolean = false;
-  @Local recordSeconds: number = 0;
-  private recordTimer: number = -1;
-  private voiceRec: VoiceRecorder | null = null;
-  private recordingSeq: number = 0;
+  // 麦克风录音状态机（isRecording/recordingStarting/recordSeconds/
+  // recordTimer/voiceRec/recordingSeq 六个字段 + start/finish/cancel/
+  // secondsLabel 逻辑）整体搬进 VoiceRecordingState（B15 批），原
+  // "Voice recording state." 注释随字段一并带走，此处不再重复。字段初始化器
+  // new：per-ChatPage 实例，不做模块级单例。
+  private recording: VoiceRecordingState = new VoiceRecordingState();
   @Local composerSending: boolean = false;
   @Local composerFocused: boolean = false;
   // TextArea creation loads the stylus service and performs its first paragraph
@@ -1974,8 +1968,11 @@ export struct ChatPage {
     this.pendingResumeItemY = 0;
     this.resumeDividerId = 0;
     this.resumeDividerItemY = 0;
-    this.pendingFileOpenId = 0;
-    this.fileOpenInFlightId = 0;
+    // 原 `this.pendingFileOpenId = 0; this.fileOpenInFlightId = 0;` 两行（B15）。
+    // 这是本簇六个字段里**只有这一对**会在换会话时单独清空的地方，另外四个在这
+    // 条路径上从来不动——所以 MediaSaveState 单开了 resetFileOpenIntent()，
+    // 不能用 dispose() 顶替（理由写在那个方法上方）。
+    this.mediaSave.resetFileOpenIntent();
     this.musicQueue.reset();
     this.olderArmed = true;
     this.newerGate = armedPageGate();
@@ -2000,10 +1997,22 @@ export struct ChatPage {
   }
 
   private resetComposerSession(): void {
-    this.recordingSeq++;
-    if (this.voiceRec !== null || this.isRecording || this.recordingStarting) {
-      this.cancelRecording();
-    }
+    // 原文四行 `this.recordingSeq++; if (this.voiceRec !== null ||
+    // this.isRecording || this.recordingStarting) { this.cancelRecording();
+    // }` 收成这一次 `this.recording.cancel()` 调用——voiceRec/recordingSeq
+    // 现在是控制器私有字段，页面读不到，无法逐字保留这个三项判据。改成
+    // 无条件调用是经证明的等价简化，不是近似值：cancel() 内部本来就会
+    // `recordingSeq++`，原文那一次判据为假时的额外自增本身就是空操作
+    // （没有任何在途 Promise 会去比较它——voiceRec 为 null 意味着没有
+    // start() 仍在等待落地）；判据为真时原文会自增两次，但两次自增和一次
+    // 自增对"seq !== recordingSeq"这个不等式判断没有任何可观察差异；
+    // cancel() 在 rec===null、各标志已是初值时的其余步骤
+    // （voiceRec=null/recordingStarting=false/stopTimer()/isRecording=false）
+    // 也都是各自的空操作。与页面别处已有的无条件转发写法
+    // （disposeTimersAndSeqGuards 里的 `this.cancelRecording();`、
+    // AttachActions host 的 `cancelRecording: () => this.cancelRecording()`）
+    // 是同一种模式。
+    this.recording.cancel();
     this.panelReadySeq++;
     this.showEmojiPanel = false;
     this.panelContentReady = false;
@@ -2310,7 +2319,7 @@ export struct ChatPage {
       closeAttachPanel: (): void => { this.closeAttachPanel(); },
       stopEditing: (): void => { this.composerController.stopEditing(); },
       setComposerFocused: (value: boolean): void => { this.composerFocused = value; },
-      cancelRecording: (): void => { this.cancelRecording(); },
+      cancelRecording: (): void => { this.recording.cancel(); },
       setSheet: (kind: ChatOverlaySheetKind, show: boolean): void => {
         this.overlayState.setSheet(kind, show);
       },
@@ -2360,6 +2369,50 @@ export struct ChatPage {
     });
     this.sticker.bind({
       client: (): TdClient => getTdClient()
+    });
+    // 麦克风录音状态机接上宿主（B15）。context 是"控制器不缓存页面值"这条
+    // 铁律的既有例外，用法与 attach.bind 那条一致：这里把
+    // getContext(this) 求值一次、闭包成常量传进去。beforeStart 打包
+    // start()（原 startRecording）开头五条真连续的跨簇语句——
+    // setEmojiPanel(false)/applyBottomSlot(closeSlot(...))/mention.clear()/
+    // command.closePanel()/composerController.stopEditing()（原
+    // 6218-6222 行，侦察报告 (B) 核实过真的连续）；紧接着的
+    // `this.composerFocused = false;`（原 6223 行，页面自留字段，方案 6.9
+    // 节裁决不进任何控制器）单独经 setComposerFocused 转发，不并入
+    // beforeStart；afterSent 对应 finish()（原 finishRecording）发送成功后
+    // 的 `this.atBottom = true;`（页面自留字段，跨簇写）。
+    const recordingContext = getContext(this) as common.UIAbilityContext;
+    this.recording.bind({
+      store: (): MessageStore | null => this.store,
+      context: (): common.UIAbilityContext => recordingContext,
+      beforeStart: (): void => {
+        this.setEmojiPanel(false);
+        this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
+        this.mention.clear();
+        this.command.closePanel();
+        this.composerController.stopEditing();
+      },
+      setComposerFocused: (value: boolean): void => { this.composerFocused = value; },
+      afterSent: (): void => { this.atBottom = true; },
+      // 与搬之前 start() 里那句 `new VoiceRecorder()` 逐字等价；开成宿主取值器
+      // 只是为了让单测能注入一个可手动兑现的假录音器，把 recordingSeq 那道
+      // 守卫钉住（理由写在 VoiceRecordingState 的接口上方）。
+      newRecorder: (): VoiceRecorder => new VoiceRecorder()
+    });
+    // 媒体保存/下载簇接上宿主（B15）。context 同上一条的一次性求值例外。
+    // viewerEntry/findMsg/latestMessages 对应原文三种不同的"查消息"方式——
+    // `this.entryById(this.viewerMsgId)`/`this.messages.find(...)`/
+    // `this.messages` 本身，返回类型（null 还是 undefined）逐字保留，不
+    // 合并成一个万能取值器（理由见 MediaSaveState.ets 文件头）。
+    const mediaSaveContext = getContext(this) as common.UIAbilityContext;
+    this.mediaSave.bind({
+      context: (): common.UIAbilityContext => mediaSaveContext,
+      store: (): MessageStore | null => this.store,
+      chatId: (): number => this.chatId,
+      viewerEntry: (): MessageEntry | null => this.entryById(this.viewerMsgId),
+      findMsg: (messageId: number): MessageEntry | undefined =>
+        this.messages.find((x: MessageEntry): boolean => x.id === messageId),
+      latestMessages: (): MessageEntry[] => this.messages
     });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
@@ -2659,14 +2712,26 @@ export struct ChatPage {
     this.publishSnapshotAndChrome(store, list, groups, firstMessageStage);
     this.restoreCapturedAnchors(prependAnchor, appendAnchor);
     const positionHandled: boolean = this.applyResumeLanding(list, groups, maxId);
-    this.consumeLiveIncomingMediaAndCommands(store);
+    this.consumeLiveIncomingMediaAndCommands();
     const fillPending: boolean = this.store !== null && this.store.isInitialFillPending();
     this.applyInitialOrFollowLanding(
       list, groups, maxId, notifyKind, positionHandled, fillPending);
     this.consumeJumpToLatestIntent(list, groups, maxId);
     this.scheduleNewerTailRefresh(store, notifyKind);
-    this.landPendingGallerySave(list);
-    this.landPendingFileOpen(list);
+    // B15 批注：原 `this.landPendingGallerySave(list); this.landPendingFileOpen
+    // (list);` 两行、连同原 consumeLiveIncomingMediaAndCommands 里与本簇相关
+    // 的 autoScope 计算 + 入队那一段（原注释随之带下来，逐字未改），一并收进
+    // 这一次 `this.mediaSave.onSnapshot(...)` 调用——三段各自的内部顺序、
+    // 判据、分支在 MediaSaveState.onSnapshot 里逐字未改，只是把入队这一段
+    // 挪到了 applyInitialOrFollowLanding/consumeJumpToLatestIntent/
+    // scheduleNewerTailRefresh 三次调用之后（原来在之前）；这三次调用都不读
+    // 写这六个字段，挪动顺序不可观察（见 MediaSaveState.ets 文件头专项
+    // 说明）。
+    //
+    // isChannel/isGroup were resolved before the timeline publication above,
+    // so the host receives row data and chat kind in the same snapshot.
+    const autoScope: string = this.isChannel ? 'channel' : (this.isGroup ? 'group' : 'private');
+    this.mediaSave.onSnapshot(list, store, autoScope);
     this.landPendingJump(groups);
     // Empty/error chats never start message admission, while populated chats
     // reach this call again after the staged release completes. The method's
@@ -2925,18 +2990,13 @@ export struct ChatPage {
     return positionHandled;
   }
 
-  private consumeLiveIncomingMediaAndCommands(store: MessageStore): void {
-    // isChannel/isGroup were resolved before the timeline publication above,
-    // so the host receives row data and chat kind in the same snapshot.
-    const liveMediaIds: number[] = store.consumeLiveIncomingMediaIds();
-    const autoScope: string = this.isChannel ? 'channel' : (this.isGroup ? 'group' : 'private');
-    if (autosaveEnabled(autoScope)) {
-      for (const mediaId of liveMediaIds) {
-        if (this.autoSavePendingIds.indexOf(mediaId) < 0) {
-          this.autoSavePendingIds.push(mediaId);
-        }
-      }
-    }
+  // B15 批注：原方法体前半段（liveMediaIds 拉取 + autoScope 计算 +
+  // autoSavePendingIds 入队循环）整体搬进了 MediaSaveState.onSnapshot——那
+  // 部分是媒体保存簇自己的入队逻辑，与本方法剩下的这半段（command 面板加载
+  // 探测）不相干，是 B14 的控制器。方法名保留未改：调用点未变，剩下的这半段
+  // 仍是原文件里"consumeLiveIncomingMediaAndCommands"这一步该做的事的
+  // 后半截。
+  private consumeLiveIncomingMediaAndCommands(): void {
     // Private peer resolved: probe once for commands. The centralized loader
     // also serves '/' autocomplete, so fast typing cannot start a competing
     // request that overwrites a newer result.
@@ -3096,58 +3156,10 @@ export struct ChatPage {
     }
   }
 
-  private landPendingGallerySave(list: MessageEntry[]): void {
-    // A viewer item queued for gallery save finished downloading — always
-    // prefer the original photo rather than silently saving its thumbnail.
-    if (this.pendingGallerySaveId !== 0) {
-      const pe = list.find((m: MessageEntry) => m.id === this.pendingGallerySaveId);
-      if (pe !== undefined) {
-        if (mediaEntryIsVideo(pe) && pe.videoPath !== '') {
-          this.pendingGallerySaveId = 0;
-          const progress: DownloadSaveNotification | undefined =
-            this.pendingGallerySaveProgress ?? undefined;
-          this.pendingGallerySaveProgress = null;
-          this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.videoPath, true,
-            pe.videoFileName, false, progress);
-        } else if (mediaEntryIsVideo(pe) && pe.videoFailed) {
-          this.pendingGallerySaveId = 0;
-          this.pendingGallerySaveProgress?.downloadFailed();
-          this.pendingGallerySaveProgress = null;
-          promptAction.showToast({ message: $r('app.string.cp_video_download_failed'), duration: 1800 });
-        } else if (mediaEntryIsPhoto(pe) && pe.photoFullPath !== '') {
-          this.pendingGallerySaveId = 0;
-          const progress: DownloadSaveNotification | undefined =
-            this.pendingGallerySaveProgress ?? undefined;
-          this.pendingGallerySaveProgress = null;
-          this.saveMediaTo(getContext(this) as common.UIAbilityContext, pe.photoFullPath, false,
-            '', false, progress);
-        } else if (mediaEntryIsPhoto(pe) && pe.photoFullFailed) {
-          this.pendingGallerySaveId = 0;
-          this.pendingGallerySaveProgress?.downloadFailed();
-          this.pendingGallerySaveProgress = null;
-          promptAction.showToast({ message: $r('app.string.cp_photo_download_failed'), duration: 1800 });
-        }
-      }
-    }
-    this.processAutomaticGallerySave(list);
-  }
-
-  private landPendingFileOpen(list: MessageEntry[]): void {
-    // A document queued for "save as" finished downloading — open the picker.
-    if (this.pendingFileOpenId !== 0) {
-      const openEntry: MessageEntry | undefined =
-        list.find((m: MessageEntry): boolean => m.id === this.pendingFileOpenId);
-      if (openEntry === undefined || openEntry.contentType !== 'file') {
-        this.pendingFileOpenId = 0;
-      } else if (openEntry.videoFailed) {
-        this.pendingFileOpenId = 0;
-        promptAction.showToast({ message: $r('app.string.cp_file_download_failed'), duration: 1800 });
-      } else if (openEntry.videoPath !== '') {
-        this.pendingFileOpenId = 0;
-        this.openDownloadedFile(openEntry);
-      }
-    }
-  }
+  // B15 批注：landPendingGallerySave(list)/landPendingFileOpen(list) 两个
+  // 方法体（连同 processAutomaticGallerySave/saveMediaTo/openDownloadedFile
+  // 三个私有方法）整体搬进了 MediaSaveState.onSnapshot/内部私有方法，逐字
+  // 未改；调用点见 onMessagesSnapshot 里的 `this.mediaSave.onSnapshot(...)`。
 
   private landPendingJump(groups: AlbumGroup[]): void {
     // A pinned/quoted jump target that had to be loaded has now arrived — scroll to it.
@@ -3661,15 +3673,20 @@ export struct ChatPage {
     this.scrollToBottomBusy = false;
     this.clearPendingScrollBottom('pageHide');
     this.clearFloatingDate();
-    this.cancelRecording();
-    this.pendingGallerySaveId = 0;
-    this.pendingGallerySaveProgress?.dispose();
-    this.pendingGallerySaveProgress = null;
-    this.pendingFileOpenId = 0;
-    this.fileOpenInFlightId = 0;
+    // 麦克风录音状态机的退场（B15）。原裸调 `this.cancelRecording();` 改经
+    // `this.recording.dispose()`——控制器自己的 dispose() 逐字等价为
+    // cancel()，不新增、不少做（见 VoiceRecordingState.ets 文件头）。
+    this.recording.dispose();
+    // 媒体保存/下载簇的退场（B15）。原 `pendingGallerySaveId=0 →
+    // pendingGallerySaveProgress.dispose() → 置空 → pendingFileOpenId=0 →
+    // fileOpenInFlightId=0 → (musicQueue.reset()) → autoSavePendingIds=[] →
+    // autoSaveInFlight=false` 八行里，除 musicQueue.reset() 外的七行原样
+    // 收进 `this.mediaSave.dispose()`；musicQueue.reset() 操作的是页面另一个
+    // 字段，不属于本簇，继续原地留在页面（顺序上从"夹在中间"挪到
+    // "mediaSave.dispose() 之后"，两者互不读写对方的状态，不可观察，见
+    // MediaSaveState.ets 文件头「dispose() 的 8 行 vs 7 行」一节）。
+    this.mediaSave.dispose();
     this.musicQueue.reset();
-    this.autoSavePendingIds = [];
-    this.autoSaveInFlight = false;
   }
 
   private stopVoicePlaybackKeepingMusic(): void {
@@ -4704,8 +4721,8 @@ export struct ChatPage {
     this.mention.clear();
     this.command.closePanel();
     this.composer.reset();
-    if (this.isRecording) {
-      this.cancelRecording();
+    if (this.recording.isRecording) {
+      this.recording.cancel();
     }
   }
 
@@ -5567,191 +5584,11 @@ export struct ChatPage {
     this.doSend();
   }
 
-  // Viewer "保存到相册": photos save right away (full-res preferred); a video
-  // that isn't fully local yet starts its download and saves automatically on
-  // completion (see the pendingGallerySaveId check in the store subscription).
-  // 保存到相册还是任意文件夹，由菜单里点的是哪一项决定（issue #97/#65）。
-  private saveMediaTo(ctx: common.UIAbilityContext, path: string, isVideo: boolean,
-    fileName: string, toFiles: boolean, progress?: FileSaveProgress): void {
-    if (toFiles) {
-      const name: string = fileName.trim() !== ''
-        ? fileName : path.substring(path.lastIndexOf('/') + 1);
-      downloadSaveService.saveDownloadedFile(ctx, path, name);
-      return;
-    }
-    saveMediaToGallery(ctx, path, isVideo, progress);
-  }
-
-  private saveViewerMedia(toFiles: boolean): void {
-    const e = this.entryById(this.viewerMsgId);
-    if (e === null) {
-      return;
-    }
-    const ctx = getContext(this) as common.UIAbilityContext;
-    if (mediaEntryIsVideo(e)) {
-      const displayName: string = e.videoFileName.trim() !== ''
-        ? e.videoFileName : str('storage_video');
-      if (e.videoPath !== '') {
-        this.saveMediaTo(ctx, e.videoPath, true, e.videoFileName, toFiles,
-          toFiles ? undefined : new DownloadSaveNotification(displayName));
-      } else {
-        if (toFiles) {
-          downloadSaveService.saveRemoteFile(
-            ctx, e.videoFileId, this.chatId, e.id, displayName);
-          promptAction.showToast({
-            message: $r('app.string.cp_video_downloading_save'), duration: 2500
-          });
-          return;
-        }
-        this.pendingGallerySaveProgress?.dispose();
-        this.pendingGallerySaveProgress =
-          new DownloadSaveNotification(displayName, e.videoFileId);
-        this.pendingGallerySaveId = e.id;
-        if (this.store !== null) {
-          this.store.requestVideoDownload(e.id, true, e.videoFailed);
-        }
-        promptAction.showToast({ message: $r('app.string.cp_video_downloading_save'), duration: 2500 });
-      }
-      return;
-    }
-    if (e.photoFullPath !== '') {
-      this.saveMediaTo(ctx, e.photoFullPath, false, '', toFiles,
-        toFiles ? undefined : new DownloadSaveNotification(str('storage_photo')));
-      return;
-    }
-    if (e.photoFullFileId !== 0) {
-      if (toFiles) {
-        downloadSaveService.saveRemoteFile(
-          ctx, e.photoFullFileId, this.chatId, e.id, str('storage_photo'));
-        promptAction.showToast({
-          message: $r('app.string.cp_photo_downloading_save'), duration: 2200
-        });
-        return;
-      }
-      this.pendingGallerySaveProgress?.dispose();
-      this.pendingGallerySaveProgress =
-        new DownloadSaveNotification(str('storage_photo'), e.photoFullFileId);
-      this.pendingGallerySaveId = e.id;
-      if (this.store !== null) {
-        this.store.requestFullPhoto(e.id, e.photoFullFailed);
-      }
-      promptAction.showToast({ message: $r('app.string.cp_photo_downloading_save'), duration: 2200 });
-      return;
-    }
-    if (e.photoPath !== '') {
-      this.saveMediaTo(ctx, e.photoPath, false, '', toFiles,
-        toFiles ? undefined : new DownloadSaveNotification(str('storage_photo')));
-    } else {
-      promptAction.showToast({ message: $r('app.string.cp_photo_not_available'), duration: 1800 });
-    }
-  }
-
-  private processAutomaticGallerySave(list: MessageEntry[]): void {
-    if (this.autoSaveInFlight || this.autoSavePendingIds.length === 0) { return; }
-    let target: MessageEntry | undefined = undefined;
-    let path: string = '';
-    let video: boolean = false;
-    for (const messageId of this.autoSavePendingIds) {
-      const entry = list.find((item: MessageEntry): boolean => item.id === messageId);
-      if (entry === undefined || entry.isOutgoing ||
-        (entry.contentType !== 'photo' && entry.contentType !== 'video')) {
-        this.autoSavePendingIds = this.autoSavePendingIds.filter((id: number): boolean => id !== messageId);
-        continue;
-      }
-      if (entry.contentType === 'video') {
-        if (entry.videoFailed) {
-          this.autoSavePendingIds = this.autoSavePendingIds.filter((id: number): boolean => id !== messageId);
-          continue;
-        }
-        if (entry.videoPath !== '') { target = entry; path = entry.videoPath; video = true; break; }
-      } else {
-        if (entry.photoFullFailed) {
-          this.autoSavePendingIds = this.autoSavePendingIds.filter((id: number): boolean => id !== messageId);
-          continue;
-        }
-        if (entry.photoFullPath !== '') { target = entry; path = entry.photoFullPath; break; }
-        if (entry.photoFullFileId === 0 && entry.photoPath !== '') {
-          target = entry; path = entry.photoPath; break;
-        }
-      }
-    }
-    if (target === undefined || path === '') { return; }
-    const id = target.id;
-    this.autoSavePendingIds = this.autoSavePendingIds.filter((value: number): boolean => value !== id);
-    this.autoSaveInFlight = true;
-    saveMediaToGallery(getContext(this) as common.UIAbilityContext, path, video).then((): void => {
-      this.autoSaveInFlight = false;
-      this.processAutomaticGallerySave(this.messages);
-    }).catch((): void => {
-      this.autoSaveInFlight = false;
-      this.processAutomaticGallerySave(this.messages);
-    });
-  }
-
-  private openDownloadedFile(message: MessageEntry): void {
-    if (message.videoPath === '' || this.fileOpenInFlightId !== 0) {
-      return;
-    }
-    const messageId: number = message.id;
-    this.fileOpenInFlightId = messageId;
-    openLocalFile(
-      getContext(this) as common.UIAbilityContext,
-      message.videoPath,
-      fileOpenMimeType(message.videoFileName, message.videoMimeType)
-    ).then((opened: boolean): void => {
-      if (this.fileOpenInFlightId === messageId) {
-        this.fileOpenInFlightId = 0;
-      }
-      if (!opened) {
-        promptAction.showToast({
-          message: $r('app.string.cp_no_app_for_file'),
-          duration: 2200
-        });
-      }
-    }).catch((caught: Object): void => {
-      if (this.fileOpenInFlightId === messageId) {
-        this.fileOpenInFlightId = 0;
-      }
-      logE(`ChatPage.openDownloadedFile failed: ${JSON.stringify(caught)}`);
-      promptAction.showToast({ message: $r('app.string.cp_file_open_failed'), duration: 1800 });
-    });
-  }
-
-  // Document card tap: an on-demand download retains the open intent, so the
-  // file launches immediately when TDLib reports completion.
-  private onFileTap(messageId: number): void {
-    const m = this.messages.find((x: MessageEntry) => x.id === messageId);
-    if (m === undefined || m.contentType !== 'file' || this.store === null) {
-      return;
-    }
-    // Opening is page-scoped. Explicit saves are owned by downloadSaveService
-    // and can continue independently if the page disappears.
-    if (m.videoPath !== '') {
-      this.pendingFileOpenId = 0;
-      this.openDownloadedFile(m);
-      return;
-    }
-    if (m.videoFileId === 0) {
-      this.pendingFileOpenId = 0;
-      promptAction.showToast({ message: $r('app.string.cp_file_unavailable'), duration: 1600 });
-      return;
-    }
-    if (m.mediaDownloadActive) {
-      // 下载中再点一下 = 暂停（issue #45 子项：下载开始后没法暂停取消）。
-      // 已下的部分留着，下次点从断点继续。
-      this.pendingFileOpenId = 0;
-      this.store.pauseFileDownload(messageId);
-      promptAction.showToast({ message: $r('app.string.cp_file_paused'), duration: 1500 });
-      return;
-    }
-    this.pendingFileOpenId = messageId;
-    this.store.requestVideoDownload(messageId, true, m.videoFailed);
-    promptAction.showToast({
-      message: m.videoFailed ? $r('app.string.cp_redownloading_file')
-        : $r('app.string.cp_file_download_started'),
-      duration: 1700
-    });
-  }
+  // B15 批注：saveMediaTo/saveViewerMedia/processAutomaticGallerySave/
+  // openDownloadedFile/onFileTap 五个方法整体搬进了 MediaSaveState（连同
+  // saveViewerMedia 上方那两段原有注释，逐字带走）。saveViewerMedia/onFileTap
+  // 的调用点分别改经 `this.mediaSave.saveViewerMedia(...)`/
+  // `this.mediaSave.onFileTap(...)`。
 
   // 联系人卡片 / 拨号 / 打开位置三个动作共用的防连点闸。判据（含「一把闸不是
   // 三把」的理由）在 util/utilityActionGuard.ets，由
@@ -5839,33 +5676,9 @@ export struct ChatPage {
     });
   }
 
-  // Document card save arrow: first asks for a public directory grant, then
-  // exports into its Petrelgram child folder. Download and copy share one
-  // progress notification so the hand-off is visible rather than a silent gap.
-  private onFileSave(messageId: number): void {
-    const m = this.messages.find((x: MessageEntry) => x.id === messageId);
-    if (m === undefined || m.contentType !== 'file' || this.store === null) {
-      return;
-    }
-    this.pendingFileOpenId = 0;
-    if (m.videoPath !== '') {
-      downloadSaveService.saveDownloadedFile(
-        getContext(this) as common.UIAbilityContext, m.videoPath, m.videoFileName);
-      return;
-    }
-    if (m.videoFileId === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_file_unavailable'), duration: 1600 });
-      return;
-    }
-    downloadSaveService.saveRemoteFile(
-      getContext(this) as common.UIAbilityContext,
-      m.videoFileId, this.chatId, messageId, m.videoFileName);
-    promptAction.showToast({
-      message: m.videoFailed ? $r('app.string.cp_redownload_then_save')
-        : $r('app.string.cp_downloading_then_save'),
-      duration: 2200
-    });
-  }
+  // B15 批注：onFileSave 方法体（连同上方原有的 "Document card save arrow"
+  // 注释，逐字带走）整体搬进了 MediaSaveState。调用点改经
+  // `this.mediaSave.onFileSave(...)`。
 
   // --- header "more" menu actions ---
   // 清空历史的可行方式由 chat 的两个能力位决定（见 ClearHistoryOptions）。
@@ -6210,88 +6023,15 @@ export struct ChatPage {
     this.store?.markVoiceListened(messageId);
   }
 
-  // --- voice recording (mic button) ---
-  private startRecording(): void {
-    if (this.recordingStarting || this.isRecording || this.store === null) {
-      return;
-    }
-    this.setEmojiPanel(false);
-    this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
-    this.mention.clear();
-    this.command.closePanel();
-    this.composerController.stopEditing();
-    this.composerFocused = false;
-    this.recordingStarting = true;
-    const seq: number = ++this.recordingSeq;
-    const rec = new VoiceRecorder();
-    this.voiceRec = rec;
-    rec.start(getContext(this) as common.UIAbilityContext).then((ok: boolean) => {
-      if (seq !== this.recordingSeq) {
-        rec.cancel();
-        return;
-      }
-      this.recordingStarting = false;
-      if (!ok) {
-        this.voiceRec = null;
-        promptAction.showToast({ message: $r('app.string.cp_record_failed_permission'), duration: 2500 });
-        return;
-      }
-      this.isRecording = true;
-      this.recordSeconds = 0;
-      this.recordTimer = setInterval(() => { this.recordSeconds += 1; }, 1000);
-    }).catch((e: Object): void => {
-      if (seq !== this.recordingSeq) {
-        return;
-      }
-      this.recordingStarting = false;
-      this.voiceRec = null;
-      logE(`ChatPage.startRecording failed: ${JSON.stringify(e)}`);
-      promptAction.showToast({ message: $r('app.string.cp_record_failed'), duration: 1800 });
-    });
-  }
-
-  private stopRecordTimer(): void {
-    if (this.recordTimer !== -1) {
-      clearInterval(this.recordTimer);
-      this.recordTimer = -1;
-    }
-  }
-
-  private finishRecording(): void {
-    this.recordingSeq++;
-    const rec = this.voiceRec;
-    this.voiceRec = null;
-    this.recordingStarting = false;
-    this.stopRecordTimer();
-    this.isRecording = false;
-    if (rec === null) {
-      return;
-    }
-    rec.stop().then((duration: number) => {
-      if (rec.path !== '' && this.store !== null) {
-        this.atBottom = true;
-        this.store.sendVoiceNote(rec.path, duration);
-      }
-    });
-  }
-
-  private cancelRecording(): void {
-    this.recordingSeq++;
-    const rec = this.voiceRec;
-    this.voiceRec = null;
-    this.recordingStarting = false;
-    this.stopRecordTimer();
-    this.isRecording = false;
-    if (rec !== null) {
-      rec.cancel();
-    }
-  }
-
-  private formatRecSeconds(): string {
-    const m = Math.floor(this.recordSeconds / 60);
-    const s = this.recordSeconds % 60;
-    return `${m}:${`${s}`.padStart(2, '0')}`;
-  }
+  // B15 批注：startRecording/stopRecordTimer/finishRecording/
+  // cancelRecording/formatRecSeconds 五个方法（连同上方原有的
+  // "--- voice recording (mic button) ---" 分节注释，逐字带走）整体搬进了
+  // VoiceRecordingState，按方案改名为 start/stopTimer/finish/cancel/
+  // secondsLabel。调用点改经 `this.recording.start()`/`.finish()`/
+  // `.cancel()`；`this.formatRecSeconds()` 原来的唯一调用点（composerDock()
+  // 传 recordingSecondsLabel）随三个标量 @Param 一并被 ChatComposerInput 侧
+  // 改成整个 `recording: this.recording` 控制器引用，组件自己内部调
+  // `this.recording.secondsLabel()`，页面不再需要转手这一步。
 
   @Builder
   diceSheet() {
@@ -7281,7 +7021,6 @@ export struct ChatPage {
   private composerDock() {
     Column() {
       ChatComposerInput({
-        isRecording: this.isRecording,
         attachPanelOpen: this.attachPanelOpen,
         pendingMedia: this.pendingMedia,
         // 控制器整个交过去，不再逐个转手八个标量（B9b）：在这里读
@@ -7295,6 +7034,10 @@ export struct ChatPage {
         // （与上面 composer 那次改造同一模式）：ChatComposerInput 侧改名接收
         // 为 commandSuggestion。
         commandSuggestion: this.command,
+        // isRecording/recordingStarting/recordingSecondsLabel 原来是三个标量
+        // @Param，由页面逐个转手（B15 之前，见侦察报告 3）；现在整个控制器
+        // 交过去，理由与上面 composer/commandSuggestion 两次改造同一模式。
+        recording: this.recording,
         showEmojiPanel: this.showEmojiPanel,
         composerEditorReady: this.composerEditorReady,
         draft: this.draft,
@@ -7305,7 +7048,6 @@ export struct ChatPage {
         replyKeyboard: this.replyKeyboard,
         replyKbCollapsed: this.replyKbCollapsed,
         botMiniAppUrlValue: this.header.botMiniAppUrl,
-        recordingStarting: this.recordingStarting,
         composerSending: this.composerSending,
         replyKeyboardVisible: this.replyKbVisible(),
         bottomGap: this.composerBottomGap(),
@@ -7323,8 +7065,8 @@ export struct ChatPage {
         onCancelEdit: (): void => { this.composer.cancelEdit(); },
         onReplyTap: (messageId: number): void => { this.onReplyTap(messageId); },
         onClearReply: (): void => { this.composer.clearReply(); },
-        onCancelRecording: (): void => { this.cancelRecording(); },
-        onFinishRecording: (): void => { this.finishRecording(); },
+        onCancelRecording: (): void => { this.recording.cancel(); },
+        onFinishRecording: (): void => { this.recording.finish(); },
         onToggleBotMenu: (): void => { this.toggleBotMenu(); },
         onEmojiButtonArea: (centerX: number): void => { this.emojiBtnCx = centerX; },
         onEmojiButtonTap: (): void => {
@@ -7366,7 +7108,7 @@ export struct ChatPage {
         onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
         onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },
         onOpenMiniApp: (): void => { this.openBotMiniApp(); },
-        onRecord: (): void => { this.startRecording(); },
+        onRecord: (): void => { this.recording.start(); },
         onSend: (): void => { this.doSend(); },
         onSendOptions: (): void => { this.showSendOptions(); },
         onInputBarHeightChange: (height: number): void => { this.inputBarH = height; },
@@ -7375,8 +7117,7 @@ export struct ChatPage {
         replyEffectDuration: (duration: number): number =>
           this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, duration),
         smoothEffectDuration: (duration: number): number =>
-          powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, duration),
-        recordingSecondsLabel: this.formatRecSeconds()
+          powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, duration)
       });
       if (this.replyKbVisible()) {
         ReplyKeyboardPanel({
@@ -7753,8 +7494,8 @@ export struct ChatPage {
       effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
       isVideoEntry: (entry: MessageEntry): boolean => mediaEntryIsVideo(entry),
       onRequestClose: (): void => { this.closeViewer(); },
-      onSaveMedia: (): void => { this.saveViewerMedia(false); },
-      onSaveMediaToFiles: (): void => { this.saveViewerMedia(true); },
+      onSaveMedia: (): void => { this.mediaSave.saveViewerMedia(false); },
+      onSaveMediaToFiles: (): void => { this.mediaSave.saveViewerMedia(true); },
       onPositionChanged: (positionMs: number): void => { this.viewerPositionMs = positionMs; }
     });
   }
