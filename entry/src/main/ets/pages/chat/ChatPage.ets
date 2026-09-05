@@ -3,11 +3,9 @@ import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { setScrollActive } from '../../util/scrollEffects';
-import { getStickersForEmoji, rememberRecentSticker } from '../../store/StickerApi';
+import { rememberRecentSticker } from '../../store/StickerApi';
 import { openMiniApp } from '../../store/BotApi';
-import {
-  InlineQueryPage, InlineResultRow, getInlineResults, sendInlineResult
-} from '../../store/BotApi';
+import { InlineResultRow, sendInlineResult } from '../../store/BotApi';
 import { common } from '@kit.AbilityKit';
 import { PickedContact } from './ContactPickerSheet';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -26,6 +24,9 @@ import {
   DownloadSaveNotification, downloadSaveService
 } from '../../services/DownloadSaveNotification';
 import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
+// B14 的四个建议控制器经宿主取值器拿 TDLib 客户端（缝的理由见
+// ComposerSuggestionState.ets 文件里 client 取值器上方那段），这里只需要类型。
+import { TdClient } from '../../tdkit/TdClient';
 import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import {
@@ -153,15 +154,16 @@ import { openUrl } from '../../util/openUrl';
 import { setDefaultReaction } from '../../util/reactions';
 import { openWebUrl } from '../../util/webBrowserNav';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
-import {
-  searchMentions, mentionOfUser, loadBotCommands, MentionItem, CommandItem
-} from '../../store/InputSuggestions';
-import { appendMention, mentionToken, mentionQueryOf } from '../../util/mentionDraft';
+import { MentionItem, CommandItem } from '../../store/InputSuggestions';
+import { mentionQueryOf } from '../../util/mentionDraft';
 import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { LiveTopCardController } from './LiveTopCardController';
 import { SearchSession } from './SearchSession';
 import { SelectionSession } from './SelectionSession';
 import { ComposerSession } from './ComposerSession';
+import {
+  MentionSuggestionState, CommandSuggestionState, InlineQueryState, StickerSuggestionState
+} from './ComposerSuggestionState';
 import { TranslationDriver } from './TranslationDriver';
 import { TypingIndicatorState } from './TypingIndicatorState';
 import { JumpFlashState } from './JumpFlashState';
@@ -195,7 +197,7 @@ import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav'
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
-import { InlineResultsBar, StickerSuggestion, StickerSuggestionBar } from './ComposerStrips';
+import { InlineResultsBar, StickerSuggestionBar } from './ComposerStrips';
 import { copyPlainText } from '../../util/clipboard';
 import {
   clientJoinNoticeRaw, hasRealClientJoinNotice, tagClientJoinNoticeGroup
@@ -1806,23 +1808,21 @@ export struct ChatPage {
   @Local freshSinceId: number = 0;
   private freshClearSeq: number = 0;
   private prependRestoreSeq: number = 0;
-  // '@' mention / '/' command suggestion panels above the input bar.
-  @Local mentionItems: MentionItem[] = [];
-  @Local stickerSuggestions: StickerSuggestion[] = []; // emoji-typed sticker hints
-  private stickerSuggestSeq: number = 0;
-  @Local inlineResults: InlineResultRow[] = [];  // @bot query results
-  private inlineQueryId: string = '';
-  private inlineSeq: number = 0;
-  private inlineTimer: number = -1;
-  @Local commandItems: CommandItem[] = [];
-  private allCommands: CommandItem[] = [];
-  @Local commandLoadState: string = 'idle'; // idle | loading | ready | error
-  @Local commandLoadError: string = '';
-  @Local commandMenuOpen: boolean = false;
-  private commandLoadSeq: number = 0;
-  private mentionSeq: number = 0; // drops stale searchChatMembers responses
-  // Bot "菜单" pill (private bot chats with registered commands).
-  @Local botMenuAvailable: boolean = false;
+  // 输入条上方三块建议面板（'@' 成员 / '/' 命令 / "@bot query" 内联结果 /
+  // 纯 emoji 贴纸建议）的状态与并发守卫整簇搬进了 ComposerSuggestionState.ets
+  // 四个类——MentionSuggestionState/CommandSuggestionState/InlineQueryState/
+  // StickerSuggestionState（B14 批），字段名与初值一字未改，原有注释随字段
+  // 一并搬进该文件，此处不再重复。页面侧统一经 this.mention/this.command/
+  // this.inline/this.sticker 读写；updateSuggestions 作为唯一路由入口留在
+  // 页面，本批未改动它内部三条分支（command/mention/inline+sticker）的顺序。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自会话的输入
+  // 建议互不相干。
+  private mention: MentionSuggestionState = new MentionSuggestionState();
+  private command: CommandSuggestionState = new CommandSuggestionState();
+  private inline: InlineQueryState = new InlineQueryState();
+  private sticker: StickerSuggestionState = new StickerSuggestionState();
   // Emoji panel above the input bar.
   @Local showEmojiPanel: boolean = false;
   // 附件抽屉是否打开。它是 dock 里的一段布局，不是自定义键盘——后者虽然让
@@ -2020,14 +2020,8 @@ export struct ChatPage {
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
     this.lastKeyboardH = this.keyboardH;
-    this.mentionItems = [];
-    this.commandItems = [];
-    this.allCommands = [];
-    this.commandLoadSeq++;
-    this.commandLoadState = 'idle';
-    this.commandLoadError = '';
-    this.commandMenuOpen = false;
-    this.botMenuAvailable = false;
+    this.mention.clear();
+    this.command.clear();
     this.replyKeyboard = null;
     this.applyBottomSlot(closeAllSlots());
     this.replyKeyboardSendingKey = '';
@@ -2329,6 +2323,43 @@ export struct ChatPage {
       scroller: (): Scroller => this.scroller,
       groups: (): AlbumGroup[] => this.groups,
       effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
+    });
+    // 输入条上方四块建议面板的控制器接上宿主（B14）。applyDraft 是
+    // MentionSuggestionHost 里唯一的动作回调而非取值器：mentionSender 内部是
+    // mentionOfUser(...).then() 异步回调，算出新草稿时早已不在原调用点上，
+    // 只能靠这个回调把"赋 this.draft"与原来那句
+    // `setTimeout(() => focusControl.requestFocus('chat_composer'), 0)`
+    // 一并交回页面执行。
+    //
+    // 【这里确实改了语句顺序，如实记下来】原 mentionSender 里这两句**不**紧挨：
+    //   this.draft = appendMention(...);      ← 第 1 句
+    //   this.rememberNameMention(item, ...);  ← 第 2 句
+    //   this.mentionItems = [];               ← 第 3 句
+    //   setTimeout(... requestFocus ...);     ← 第 4 句
+    // 现在 applyDraft 把第 4 句提到了第 2、3 句之前。0ms 是宏任务，要等当前
+    // 同步段跑完才执行，那时第 2、3 句早已完成——可观察行为不变，但"顺序没动"
+    // 这句话是不对的，不能这么写。
+    this.mention.bind({
+      chatId: (): number => this.chatId,
+      draft: (): string => this.draft,
+      applyDraft: (next: string): void => {
+        this.draft = next;
+        setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
+      },
+      client: (): TdClient => getTdClient()
+    });
+    this.command.bind({
+      chatId: (): number => this.chatId,
+      store: (): MessageStore | null => this.store,
+      draft: (): string => this.draft,
+      client: (): TdClient => getTdClient()
+    });
+    this.inline.bind({
+      chatId: (): number => this.chatId,
+      client: (): TdClient => getTdClient()
+    });
+    this.sticker.bind({
+      client: (): TdClient => getTdClient()
     });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
@@ -2909,9 +2940,9 @@ export struct ChatPage {
     // Private peer resolved: probe once for commands. The centralized loader
     // also serves '/' autocomplete, so fast typing cannot start a competing
     // request that overwrites a newer result.
-    if (this.commandLoadState === 'idle' && this.store !== null &&
+    if (this.command.commandLoadState === 'idle' && this.store !== null &&
       this.store.getPeerUserId() > 0) {
-      this.ensureCommandsLoaded();
+      this.command.ensureCommandsLoaded();
     }
   }
 
@@ -3612,6 +3643,18 @@ export struct ChatPage {
     // 失效，页面随实例整体丢弃。dispose() 是空实现，仅为与其余控制器统一
     // bind/dispose 生命周期而保留、调用，不替原代码编造一份清理逻辑。
     this.flash.dispose();
+    // 输入条上方四块建议面板控制器的退场（B14）。逐字核对过原
+    // aboutToDisappear 全链路（含本方法），对 mentionItems/pendingNameMentions/
+    // mentionSeq、commandItems/allCommands/commandLoadState/commandLoadError/
+    // commandMenuOpen/botMenuAvailable/commandLoadSeq、inlineResults/
+    // inlineQueryId/inlineSeq/inlineTimer、stickerSuggestions/
+    // stickerSuggestSeq 这四簇字段一个匹配都没有——包括那个眼看着像该清的
+    // 320ms 内联查询防抖定时器。四个 dispose() 都是空实现，仅为与其余控制器
+    // 统一 bind/dispose 生命周期而保留、调用，不替原代码编造一份清理逻辑。
+    this.mention.dispose();
+    this.command.dispose();
+    this.inline.dispose();
+    this.sticker.dispose();
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
@@ -4658,9 +4701,8 @@ export struct ChatPage {
     // UI open. Close every composer-owned surface before replacing the bar.
     this.joiningChat = false;
     this.setEmojiPanel(false);
-    this.mentionItems = [];
-    this.commandItems = [];
-    this.commandMenuOpen = false;
+    this.mention.clear();
+    this.command.closePanel();
     this.composer.reset();
     if (this.isRecording) {
       this.cancelRecording();
@@ -5377,24 +5419,24 @@ export struct ChatPage {
 
   // Refresh the '@' mention / '/' command suggestion panels for the new draft.
   private updateSuggestions(v: string): void {
-    this.commandMenuOpen = false;
+    this.command.closeMenu();
     const cmd = v.match(/^\/([a-zA-Z0-9_]*)(?:@([a-zA-Z0-9_]*))?$/);
     if (cmd !== null) {
-      this.mentionItems = [];
-      this.refreshCommands();
+      this.mention.clear();
+      this.command.refreshCommands();
       return;
     }
-    this.commandItems = [];
+    this.command.clearItems();
     // 判定在 util/mentionDraft（mentionQueryOf，9 条测）：那里说明了为什么放宽
     // 到非 ASCII，以及 @ 的位置和终止条件各自挡的是什么（issue #95）。
     const at: string | null = mentionQueryOf(v);
     if (at !== null && this.isGroup && !this.isChannel) {
-      this.refreshMentions(at);
+      this.mention.refreshMentions(at);
       return;
     }
-    this.mentionItems = [];
-    this.refreshInlineQuery(v);
-    this.refreshStickerSuggestions(v);
+    this.mention.clear();
+    this.inline.refreshInlineQuery(v);
+    this.sticker.refreshStickerSuggestions(v);
   }
 
   // Bots can expose a Mini App on their menu button — surface it as a composer
@@ -5456,70 +5498,17 @@ export struct ChatPage {
     });
   }
 
-  // "@bot query" in the composer runs an inline query and shows the bot's
-  // results above the input bar (tap one to send it).
-  private refreshInlineQuery(v: string): void {
-    const match = v.match(/^@([A-Za-z0-9_]{3,32})\s+(.*)$/);
-    if (match === null) {
-      if (this.inlineResults.length > 0) {
-        this.inlineResults = [];
-        this.inlineQueryId = '';
-      }
-      return;
-    }
-    const username = match[1];
-    const query = match[2];
-    const seq = ++this.inlineSeq;
-    if (this.inlineTimer !== -1) { clearTimeout(this.inlineTimer); }
-    this.inlineTimer = setTimeout((): void => {
-      this.inlineTimer = -1;
-      const req: TdRequest = { '@type': 'searchPublicChat' };
-      req['username'] = username;
-      getTdClient().send(req, 10000).then((chat: TdObject): Promise<InlineQueryPage> => {
-        const type = chat['type'] as TdObject | undefined;
-        const botId = type !== undefined ? ((type['user_id'] as number | undefined) ?? 0) : 0;
-        if (botId === 0) { return Promise.reject(new TdError(404, 'not a bot')); }
-        return getInlineResults(botId, this.chatId, query);
-      }).then((page: InlineQueryPage): void => {
-        if (seq !== this.inlineSeq) { return; }
-        this.inlineQueryId = page.queryId;
-        this.inlineResults = page.rows.slice(0, 24);
-        for (const row of this.inlineResults) { this.downloadInlineThumb(row, seq); }
-      }).catch((): void => {
-        if (seq !== this.inlineSeq) { return; }
-        this.inlineResults = [];
-        this.inlineQueryId = '';
-      });
-    }, 320);
-  }
-
-  private downloadInlineThumb(row: InlineResultRow, seq: number): void {
-    if (row.thumbFileId === 0) { return; }
-    const req: TdRequest = { '@type': 'downloadFile' };
-    req['file_id'] = row.thumbFileId;
-    req['priority'] = 2;
-    req['synchronous'] = true;
-    getTdClient().send(req, 15000).then((file: TdObject): void => {
-      if (seq !== this.inlineSeq) { return; }
-      const local = file['local'] as TdObject | undefined;
-      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
-      if (path === '') { return; }
-      this.inlineResults = this.inlineResults.map(
-        (it: InlineResultRow): InlineResultRow => it.resultId === row.resultId
-          ? {
-            resultId: it.resultId, title: it.title, description: it.description,
-            thumbFileId: it.thumbFileId, thumbPath: path, kind: it.kind
-          } : it);
-    }).catch((): void => {});
-  }
-
+  // pickInlineResult（涉及 sendInlineResult 与 composer.clearReply，方案点名
+  // 留页面）：refreshInlineQuery/downloadInlineThumb 整簇搬进了
+  // InlineQueryState（B14 批），this.inlineQueryId 换成只读取值器
+  // this.inline.queryId()，两处清空换成 this.inline.clear()（原样两行
+  // `this.inlineResults = []; this.inlineQueryId = '';`，见该方法注释）。
   private pickInlineResult(row: InlineResultRow): void {
-    if (this.inlineQueryId === '') { return; }
+    if (this.inline.queryId() === '') { return; }
     const replyId = this.composer.replyToId;
-    sendInlineResult(this.chatId, this.inlineQueryId, row.resultId, replyId).then((): void => {
+    sendInlineResult(this.chatId, this.inline.queryId(), row.resultId, replyId).then((): void => {
       this.draft = '';
-      this.inlineResults = [];
-      this.inlineQueryId = '';
+      this.inline.clear();
       this.composer.clearReply();
       this.atBottom = true;
     }).catch((e: TdError): void => {
@@ -5528,187 +5517,53 @@ export struct ChatPage {
     });
   }
 
-
-  // Typing a bare emoji offers matching stickers above the composer, as the
-  // official clients do.
-  private refreshStickerSuggestions(v: string): void {
-    const text = v.trim();
-    // Only a short pure-emoji draft qualifies (no letters/digits/spaces).
-    const isEmojiOnly = text.length > 0 && text.length <= 8 &&
-      !/[A-Za-z0-9\s]/.test(text);
-    if (!isEmojiOnly) {
-      if (this.stickerSuggestions.length > 0) { this.stickerSuggestions = []; }
-      return;
-    }
-    const seq = ++this.stickerSuggestSeq;
-    getStickersForEmoji(text).then((raw: TdObject[]): void => {
-      if (seq !== this.stickerSuggestSeq) { return; }
-      const items: StickerSuggestion[] = [];
-      for (const st of raw.slice(0, 12)) {
-        const file = st['sticker'] as TdObject | undefined;
-        const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
-        const thumb = st['thumbnail'] as TdObject | undefined;
-        const thumbFile = thumb !== undefined ? (thumb['file'] as TdObject | undefined) : undefined;
-        const thumbId = thumbFile !== undefined ? ((thumbFile['id'] as number | undefined) ?? 0) : 0;
-        if (fileId === 0) { continue; }
-        items.push({ fileId, thumbId, thumbPath: '' });
-      }
-      this.stickerSuggestions = items;
-      for (const item of items) { this.downloadSuggestionThumb(item, seq); }
-    }).catch((): void => {});
-  }
-
-  private downloadSuggestionThumb(item: StickerSuggestion, seq: number): void {
-    if (item.thumbId === 0) { return; }
-    const req: TdRequest = { '@type': 'downloadFile' };
-    req['file_id'] = item.thumbId;
-    req['priority'] = 2;
-    req['synchronous'] = true;
-    getTdClient().send(req, 15000).then((file: TdObject): void => {
-      if (seq !== this.stickerSuggestSeq) { return; }
-      const local = file['local'] as TdObject | undefined;
-      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
-      if (path === '') { return; }
-      this.stickerSuggestions = this.stickerSuggestions.map(
-        (row: StickerSuggestion): StickerSuggestion => row.fileId === item.fileId
-          ? { fileId: row.fileId, thumbId: row.thumbId, thumbPath: path } : row);
-    }).catch((): void => {});
-  }
-
+  // sendSuggestedSticker（调用 this.store?.sendSticker(...)，方案点名留
+  // 页面）：refreshStickerSuggestions/downloadSuggestionThumb 整簇搬进了
+  // StickerSuggestionState（B14 批）。原样两行
+  // `this.stickerSuggestions = []; this.stickerSuggestSeq++;` 换成
+  // this.sticker.clearAfterSend()——两个字段现在都是私有的，打包成这一个方法。
   private sendSuggestedSticker(fileId: number): void {
     this.store?.sendSticker(fileId, 512, 512);
     rememberRecentSticker(fileId);
     this.draft = '';
-    this.stickerSuggestions = [];
-    this.stickerSuggestSeq++;
+    this.sticker.clearAfterSend();
   }
 
-
-  private refreshCommands(): void {
-    this.ensureCommandsLoaded();
-    this.applyCommandFilter();
-  }
-
-  private ensureCommandsLoaded(force: boolean = false): void {
-    if (!force && (this.commandLoadState === 'loading' || this.commandLoadState === 'ready')) {
-      return;
-    }
-    const seq: number = ++this.commandLoadSeq;
-    const chatId: number = this.chatId;
-    const peer: number = this.store !== null ? this.store.getPeerUserId() : 0;
-    this.commandLoadState = 'loading';
-    this.commandLoadError = '';
-    loadBotCommands(getTdClient(), chatId, peer).then((items: CommandItem[]) => {
-      if (seq !== this.commandLoadSeq || chatId !== this.chatId) {
-        return;
-      }
-      this.allCommands = items;
-      this.commandLoadState = 'ready';
-      this.commandLoadError = '';
-      // Telegram's persistent 菜单 pill belongs to a private bot chat. Group
-      // commands remain available through '/' and include @bot usernames.
-      this.botMenuAvailable = peer > 0 && items.length > 0;
-      this.applyCommandFilter();
-    }).catch((e: TdError) => {
-      if (seq !== this.commandLoadSeq || chatId !== this.chatId) {
-        return;
-      }
-      logE(`ChatPage.loadBotCommands failed: ${e.message}`);
-      this.allCommands = [];
-      this.commandItems = [];
-      this.commandLoadState = 'error';
-      this.commandLoadError = str('cp_commands_failed');
-      this.botMenuAvailable = false;
-    });
-  }
-
-  private commandPanelActive(): boolean {
-    return this.commandMenuOpen ||
-      this.draft.match(/^\/([a-zA-Z0-9_]*)(?:@([a-zA-Z0-9_]*))?$/) !== null;
-  }
-
-  // Filter against the CURRENT draft, so a slow catalog load can't show stale results.
-  private applyCommandFilter(): void {
-    if (this.commandMenuOpen) {
-      this.commandItems = this.commandLoadState === 'ready' ? this.allCommands.slice(0, 20) : [];
-      return;
-    }
-    const m = this.draft.match(/^\/([a-zA-Z0-9_]*)(?:@([a-zA-Z0-9_]*))?$/);
-    if (m === null) {
-      this.commandItems = [];
-      return;
-    }
-    if (this.commandLoadState !== 'ready') {
-      this.commandItems = [];
-      return;
-    }
-    const q = m[1].toLowerCase();
-    const botQuery = (m[2] ?? '').toLowerCase();
-    this.commandItems = this.allCommands.filter((c: CommandItem): boolean =>
-      c.command.toLowerCase().startsWith(q) &&
-      (botQuery === '' || c.botUsername.toLowerCase().startsWith(botQuery))).slice(0, 20);
-  }
-
-  private refreshMentions(query: string): void {
-    const seq = ++this.mentionSeq;
-    searchMentions(getTdClient(), this.chatId, query).then((items: MentionItem[]) => {
-      // Drop the response if a newer query fired or the '@' trigger is gone.
-      // 和上面共用同一个判定——两边不一致会出现「面板该弹却把结果丢掉」。
-      if (seq !== this.mentionSeq || mentionQueryOf(this.draft) === null) {
-        return;
-      }
-      this.mentionItems = items;
-    });
-  }
-
-  // 本次草稿里"按名字"提及过的成员。没有用户名的人，@ 出去只是一串普通
-  // 文字，服务器识别不了、对方收不到提及通知——发送时要靠这份记录补上
-  // textEntityTypeMentionName 实体（见 mentionEntities）。
-  private pendingNameMentions: NameMention[] = [];
-
-  // 记下一次"按名字"的提及。有用户名的走 @username，服务器自己认得，不必记。
-  private rememberNameMention(item: MentionItem, name: string): void {
-    if (item.username !== '' || name === '' || item.userId <= 0) {
-      return;
-    }
-    const known: boolean = this.pendingNameMentions.some(
-      (m: NameMention): boolean => m.userId === item.userId && m.name === name);
-    if (!known) {
-      this.pendingNameMentions = [...this.pendingNameMentions, { name, userId: item.userId }];
-    }
-  }
+  // refreshCommands/ensureCommandsLoaded/commandPanelActive/applyCommandFilter
+  // 整簇搬进了 CommandSuggestionState（B14 批），调用点改经 this.command，
+  // 本页不再重复方法体。
 
   // Replace the trailing '@token' with the chosen member.
+  //
+  // refreshMentions/rememberNameMention 整簇搬进了 MentionSuggestionState
+  // （B14 批）。pickMention 原来直接写 this.draft 并在 0ms 之后
+  // focusControl.requestFocus('chat_composer')。控制器不碰宿主字段，因此
+  // 改成返回新草稿串，这里赋 this.draft 并补回原来紧跟着的那一行 setTimeout，
+  // 顺序与原来一致（方案 249 行"pick 类方法返回新草稿字符串由页面写
+  // this.draft"）。
   private pickMention(item: MentionItem): void {
-    const idx = this.draft.lastIndexOf('@');
-    const head = idx >= 0 ? this.draft.substring(0, idx) : this.draft;
-    this.draft = `${head}${mentionToken(item.name, item.username)} `;
-    this.rememberNameMention(item, item.name.trim());
-    this.mentionItems = [];
+    this.draft = this.mention.pickMention(item);
     setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
   }
 
   // Long press on a group message avatar → append that sender's mention to the
   // draft. The message entry has the sender's name but not their username, so
   // the username is fetched here; the name is the fallback if it has none.
+  //
+  // 本方法内部是异步回调，没法像 pickMention 那样直接返回新草稿串给一个早已
+  // return 过的调用点，因此整个方法体搬进了 MentionSuggestionState（B14
+  // 批），经 aboutToAppear 里注入的 host.applyDraft 回调在异步回调触发的当下
+  // 写 this.draft 并补上那一行 setTimeout（效果与原方法两行紧挨着执行一致，
+  // 见 bind() 处注释）。这里保留一个同名同签名的转发方法，是因为调用点在
+  // messageActions() 那个单例闭包（不变量#1保护，禁止改动结构）里，转发法
+  // 让闭包体内那一行 `this.mentionSender(userId, name)` 一个字都不用改。
   private mentionSender(userId: number, fallbackName: string): void {
-    mentionOfUser(getTdClient(), userId).then((item: MentionItem): void => {
-      const name = item.name !== '' ? item.name : fallbackName;
-      const token = mentionToken(name, item.username);
-      if (token === '') {
-        return;
-      }
-      this.draft = appendMention(this.draft, token);
-      this.rememberNameMention(item, name.trim());
-      this.mentionItems = [];
-      setTimeout((): void => { focusControl.requestFocus('chat_composer'); }, 0);
-    });
+    this.mention.mentionSender(userId, fallbackName);
   }
 
   private pickCommand(item: CommandItem): void {
     this.draft = commandLabel(item);
-    this.commandItems = [];
-    this.commandMenuOpen = false;
+    this.command.closePanel();
     this.doSend();
   }
 
@@ -6247,9 +6102,8 @@ export struct ChatPage {
     }
     const openingCustom: boolean = this.replyKbCollapsed;
     this.setEmojiPanel(false);
-    this.mentionItems = [];
-    this.commandItems = [];
-    this.commandMenuOpen = false;
+    this.mention.clear();
+    this.command.closePanel();
     if (openingCustom) {
       this.composerController.stopEditing();
       this.composerFocused = false;
@@ -6316,16 +6170,15 @@ export struct ChatPage {
 
   // 菜单 pill: toggle the full bot-command catalog in the suggestion panel.
   private toggleBotMenu(): void {
-    if (this.commandMenuOpen) {
-      this.commandMenuOpen = false;
-      this.commandItems = [];
+    if (this.command.commandMenuOpen) {
+      this.command.closePanel();
     } else {
-      this.mentionItems = [];
+      this.mention.clear();
       this.setEmojiPanel(false);
       this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
-      this.commandMenuOpen = true;
-      this.ensureCommandsLoaded();
-      this.applyCommandFilter();
+      this.command.commandMenuOpen = true;
+      this.command.ensureCommandsLoaded();
+      this.command.applyCommandFilter();
     }
   }
 
@@ -6364,9 +6217,8 @@ export struct ChatPage {
     }
     this.setEmojiPanel(false);
     this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
-    this.mentionItems = [];
-    this.commandItems = [];
-    this.commandMenuOpen = false;
+    this.mention.clear();
+    this.command.closePanel();
     this.composerController.stopEditing();
     this.composerFocused = false;
     this.recordingStarting = true;
@@ -6511,14 +6363,14 @@ export struct ChatPage {
     const captionSnapshot: string = this.draft;
     const caption: string = captionSnapshot.trim();
     const replyId: number = this.composer.replyToId;
-    this.commandMenuOpen = false;
+    this.command.closeMenu();
     this.atBottom = true;
     this.stayAtUnread = false;
     this.withSendLock((): Promise<void> => store.sendMedia(items, caption, replyId).then((): void => {
       this.pendingMedia = clearPendingMedia();
       if (this.draft === captionSnapshot) {
         this.draft = '';
-        this.pendingNameMentions = [];
+        this.mention.clearPendingNameMentions();
       }
       if (this.composer.replyToId === replyId) {
         this.composer.clearReply();
@@ -6554,30 +6406,30 @@ export struct ChatPage {
       return;
     }
     const replyId: number = this.composer.replyToId;
-    const mentionsSnapshot: NameMention[] = this.pendingNameMentions;
-    this.commandMenuOpen = false;
+    const mentionsSnapshot: NameMention[] = this.mention.readPendingNameMentions();
+    this.command.closeMenu();
     this.atBottom = true;
     this.stayAtUnread = false;
     // 按名字提及的实体在这里生成：偏移必须相对**实际发出去的那串文本**，
     // 所以用 trim 之后的 text，不是原始草稿。
-    const entities: TdObject[] = buildMentionEntities(text, this.pendingNameMentions);
+    const entities: TdObject[] = buildMentionEntities(text, this.mention.readPendingNameMentions());
     // 清空放在**发送之前**，不等应答。消息本身不用我们伪造回显：TDLib 会先
     // 发 updateNewMessage（自己发的消息在 onNewMessage 里是放行的），列表那边
     // 立刻就有一条 pending 的气泡。
     this.draft = '';
-    this.pendingNameMentions = [];
+    this.mention.clearPendingNameMentions();
     if (this.composer.replyToId === replyId) {
       this.composer.clearReply();
     }
-    this.mentionItems = [];
-    this.commandItems = [];
+    this.mention.clear();
+    this.command.clearItems();
     store.sendAsync(text, replyId, entities).catch((e: TdError): void => {
       logE(`ChatPage.doSend failed: ${e.message}`);
       // 提示语说的是"草稿已保留"，那就真的还回去。但用户可能已经开始写下
       // 一条了——那种情况不覆盖他的输入，只报错。
       if (this.draft === '') {
         this.draft = draftSnapshot;
-        this.pendingNameMentions = mentionsSnapshot;
+        this.mention.restorePendingNameMentions(mentionsSnapshot);
       }
       promptAction.showToast({ message: $r('app.string.cp_send_failed_kept'), duration: 1800 });
     });
@@ -7438,8 +7290,11 @@ export struct ChatPage {
         // 引用恒定，读它不建立任何依赖，八个 @Trace 的读点全在
         // ChatComposerInput 自己的 build 里。
         composer: this.composer,
-        botMenuAvailable: this.botMenuAvailable,
-        commandMenuOpen: this.commandMenuOpen,
+        // botMenuAvailable/commandMenuOpen 原来是两个标量 @Param，随 B14
+        // 搬进了 CommandSuggestionState 的持有者也一并改成整个控制器引用交过去
+        // （与上面 composer 那次改造同一模式）：ChatComposerInput 侧改名接收
+        // 为 commandSuggestion。
+        commandSuggestion: this.command,
         showEmojiPanel: this.showEmojiPanel,
         composerEditorReady: this.composerEditorReady,
         draft: this.draft,
@@ -7474,9 +7329,8 @@ export struct ChatPage {
         onEmojiButtonArea: (centerX: number): void => { this.emojiBtnCx = centerX; },
         onEmojiButtonTap: (): void => {
           this.setEmojiPanel(!this.showEmojiPanel);
-          this.mentionItems = [];
-          this.commandItems = [];
-          this.commandMenuOpen = false;
+          this.mention.clear();
+          this.command.closePanel();
         },
         onEditorWidthChange: (width: number): void => {
           if (Math.abs(width - this.composerEditorW) > 0.5) {
@@ -7502,7 +7356,7 @@ export struct ChatPage {
           holdPlayerJobs(KEYBOARD_SETTLE_MS);
           this.setEmojiPanel(false);
           this.applyBottomSlot(closeAllSlots());
-          this.commandMenuOpen = false;
+          this.command.closeMenu();
           if (this.keyboardH > 0) {
             this.syncTailOnImeFrame();
           }
@@ -8059,32 +7913,32 @@ export struct ChatPage {
           // the whole dock with a decorative shell made the first tap a no-op.
           if (this.initialMessageTransitionSettled) {
             if (this.membershipState === 'writable' && !this.showEmojiPanel && !this.replyKbVisible() &&
-              (this.mentionItems.length > 0 || this.commandPanelActive())) {
+              (this.mention.mentionItems.length > 0 || this.command.commandPanelActive())) {
               SuggestionPanel({
-                commandMode: this.commandPanelActive(),
-                commands: this.commandItems,
-                mentions: this.mentionItems,
-                loadState: this.commandLoadState,
-                loadError: this.commandLoadError,
-                catalogSize: this.allCommands.length,
+                commandMode: this.command.commandPanelActive(),
+                commands: this.command.commandItems,
+                mentions: this.mention.mentionItems,
+                loadState: this.command.commandLoadState,
+                loadError: this.command.commandLoadError,
+                catalogSize: this.command.catalogSize(),
                 onPickCommand: (it: CommandItem): void => { this.pickCommand(it); },
                 onPickMention: (it: MentionItem): void => { this.pickMention(it); },
-                onRetryCommands: (): void => { this.ensureCommandsLoaded(true); }
+                onRetryCommands: (): void => { this.command.ensureCommandsLoaded(true); }
               });
             }
             if (this.membershipState === 'writable' && !this.showEmojiPanel &&
-              this.mentionItems.length === 0 && !this.commandPanelActive() &&
-              this.inlineResults.length > 0) {
+              this.mention.mentionItems.length === 0 && !this.command.commandPanelActive() &&
+              this.inline.inlineResults.length > 0) {
               InlineResultsBar({
-                results: this.inlineResults,
+                results: this.inline.inlineResults,
                 onPick: (row: InlineResultRow): void => { this.pickInlineResult(row); }
               });
             }
             if (this.membershipState === 'writable' && !this.showEmojiPanel &&
-              this.mentionItems.length === 0 && !this.commandPanelActive() &&
-              this.inlineResults.length === 0 && this.stickerSuggestions.length > 0) {
+              this.mention.mentionItems.length === 0 && !this.command.commandPanelActive() &&
+              this.inline.inlineResults.length === 0 && this.sticker.stickerSuggestions.length > 0) {
               StickerSuggestionBar({
-                suggestions: this.stickerSuggestions,
+                suggestions: this.sticker.stickerSuggestions,
                 onPick: (fileId: number): void => { this.sendSuggestedSticker(fileId); }
               });
             }

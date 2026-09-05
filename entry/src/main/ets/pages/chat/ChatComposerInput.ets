@@ -7,6 +7,7 @@ import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
 import { ComposerSendButton } from './ComposerSendButton';
 import { ComposerSession } from './ComposerSession';
+import { CommandSuggestionState } from './ComposerSuggestionState';
 
 // Shared geometry for the editor and its height measurement in ChatPage.
 //
@@ -38,8 +39,10 @@ export struct ChatComposerInput {
   // 单例会让平板分栏时两个会话串味），漏传必须是编译期错误，而不是静默拿到一个
   // 谁也不会更新的空壳。
   @Require @Param composer: ComposerSession;
-  @Param botMenuAvailable: boolean = false;
-  @Param commandMenuOpen: boolean = false;
+  // botMenuAvailable/commandMenuOpen 原来也是两个标量 @Param（同上一段注释里
+  // composer 那次改造之前的样子）。B14 把它们的持有者搬进了 CommandSuggestionState，
+  // 这里跟着直接接控制器本身，两个读点下沉到本组件自己的 build 里，理由同 composer。
+  @Require @Param commandSuggestion: CommandSuggestionState;
   @Param showEmojiPanel: boolean = false;
   @Param composerEditorReady: boolean = false;
   @Param draft: string = '';
@@ -208,11 +211,11 @@ export struct ChatComposerInput {
             .animation({ duration: this.smoothEffectDuration(120), curve: Curve.EaseOut })
             .onClick((): void => { this.onFinishRecording(); });
           } else {
-            if (this.botMenuAvailable) {
+            if (this.commandSuggestion.botMenuAvailable) {
               Row({ space: 4 }) {
-                SymbolGlyph($r(this.commandMenuOpen ? 'sys.symbol.xmark' : 'sys.symbol.line_3_horizontal'))
+                SymbolGlyph($r(this.commandSuggestion.commandMenuOpen ? 'sys.symbol.xmark' : 'sys.symbol.line_3_horizontal'))
                   .fontSize(15).fontColor([Color.White]);
-                Text(this.commandMenuOpen ? $r('app.string.close') : $r('app.string.cp_menu'))
+                Text(this.commandSuggestion.commandMenuOpen ? $r('app.string.close') : $r('app.string.cp_menu'))
                   .fontSize(13).fontColor(Color.White);
               }
               .padding({ left: 9, right: 10, top: 6, bottom: 6 })
