@@ -49,6 +49,7 @@ import { shouldCompete, slotKey, slotKeyMessageId } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
+import { ChatOverlayState } from './ChatOverlayState';
 import { ChatTimelineHost } from './ChatTimelineHost';
 import { cacheDestPath, isVideoPath } from '../../util/mediaPick';
 import { LivePhotoExport } from '../../util/movingPhotoPick';
@@ -153,9 +154,7 @@ import {
   openTelegramLink, openInviteLink, openChatLinkAction, openChatFolderInviteLink, openStickerSetLink
 } from '../../util/openTelegramLink';
 import { openUrl } from '../../util/openUrl';
-import {
-  AvailableReactionSet, canonicalReactionEmoji, parseAvailableReactions, reactionDisplayLabel, reactionTypeOf, setDefaultReaction
-} from '../../util/reactions';
+import { setDefaultReaction } from '../../util/reactions';
 import { openWebUrl } from '../../util/webBrowserNav';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
@@ -1154,7 +1153,7 @@ export struct ChatPage {
         },
         onEditMsg: (messageId: number): void => { this.composer.startEdit(messageId); },
         onShowReactors: (messageId: number, emoji: string): void => {
-          this.showReactors(messageId, emoji);
+          this.overlayState.showReactors(messageId, emoji);
         },
         onTranslateMsg: (messageId: number): void => {
           this.translateMessage(messageId);
@@ -1173,7 +1172,7 @@ export struct ChatPage {
         onPollVoters: (messageId: number): void => { this.showPollVoters(messageId); },
         onSetDefaultReaction: (emoji: string): void => { setDefaultReaction(emoji); },
         onSetReaction: (messageId: number, emoji: string, chosen: boolean): void => {
-          this.toggleReaction(messageId, emoji, chosen);
+          this.overlayState.toggleReaction(messageId, emoji, chosen);
         },
         onReplyTo: (messageId: number): void => { this.composer.startReply(messageId); },
         onCopyText: (messageId: number): void => { this.copyMessageText(messageId); },
@@ -1188,7 +1187,7 @@ export struct ChatPage {
         },
         onSelectMessages: (messageIds: number[]): void => { this.selection.enter(messageIds); },
         onDeleteMsg: (messageId: number): void => { this.deleteMessage(messageId); },
-        onOpenReactions: (messageId: number): void => { this.openReactionSheet(messageId); },
+        onOpenReactions: (messageId: number): void => { this.overlayState.openReactionSheet(messageId); },
         onLinkPreviewRetry: (messageId: number): void => {
           this.store?.retryLinkPreviewPhoto(messageId);
         },
@@ -1505,24 +1504,18 @@ export struct ChatPage {
   // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自的回复/编辑态
   // 互不相干。
   private composer: ComposerSession = new ComposerSession();
-  @Local showReactionSheet: boolean = false; // full emoji reaction picker
-  @Local reactionTargetId: number = 0;
-  // The allowed-emoji list and custom-emoji thumbnails live in ReactionSheet,
-  // which fetches them per open. Only the in-flight key stays here: the quick
-  // reaction row on each bubble issues the same request and shares the guard.
-  @Local reactionPendingKey: string = '';
+  // 反应弹层（showReactionSheet/reactionTargetId/reactionPendingKey）、转发
+  // 弹层（showForwardSheet/forwardMessageIds）、投票/联系人/录像笔记/定时消息
+  // 四个弹层开关，以及贴纸"飞出"残影动画（stickerGhostPath/X/Y/Fly/Timer）
+  // 整簇搬进了 ChatOverlayState（B11 批），字段名与初值一字未改，原有注释随
+  // 字段一并搬进 ChatOverlayState.ets，此处不再重复。页面侧统一经
+  // this.overlayState.xxx 读写。`paidMediaPendingIds` 不属于本簇，原地留在页面。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自会话的弹层
+  // 状态互不相干。
+  private overlayState: ChatOverlayState = new ChatOverlayState();
   @Local paidMediaPendingIds: number[] = [];
-  // Forwarding is deliberately kept as an in-page sheet: leaving ChatPage to
-  // pick a destination used to discard the long-press/selection context.
-  @Local showForwardSheet: boolean = false;
-  @Local showPollSheet: boolean = false;
-  @Local showContactSheet: boolean = false;
-  @Local showVideoNoteRecorder: boolean = false;
-  // The list itself lives in ScheduledSheet and reloads on each open.
-  @Local showScheduledSheet: boolean = false;
-  // Which messages the picker will forward. The picker's own list/query/send
-  // state lives in ForwardSheet and resets with it on each open.
-  private forwardMessageIds: number[] = [];
   @Local nowSec: number = 0;
   private nowSecTimer: number = -1;
   @Local viewerMsgId: number = 0;
@@ -1676,14 +1669,9 @@ export struct ChatPage {
   // 是否正在共享实时位置（全局单例状态，不限于当前会话）。
   @Local liveLocationActive: boolean = false;
   @Local liveLocationMessageId: number = 0;
-  // 贴纸"飞出"动画：从点击处向上收缩淡出，动画收尾时才关面板 —— 关面板要
-  // 同步卸载整个贴纸网格并触发全页重排（实测 51ms），压在点击那一帧就是可感
-  // 的顿挫；挪到运动尾声则被动作本身盖住。
-  @Local stickerGhostPath: string = '';
-  @Local stickerGhostX: number = 0;
-  @Local stickerGhostY: number = 0;
-  @Local stickerGhostFly: boolean = false;
-  private stickerGhostTimer: number = -1;
+  // 贴纸"飞出"残影（stickerGhostPath/X/Y/Fly）与其收尾定时器句柄
+  // （stickerGhostTimer）搬进了 ChatOverlayState（B11 批），原注释随字段一并
+  // 搬走，页面侧改经 this.overlayState.stickerGhostXxx / this.overlayState.flyStickerGhost()。
   @Local unreadBadge: number = 0;
   private firstUnreadId: number = 0;
   // Set once the initial scroll parks on the unread boundary; suppresses every
@@ -1754,7 +1742,7 @@ export struct ChatPage {
   // 内容铺不满一屏时主动补页的上限。到这个行数还说"整份都可见"，说明判据
   // 本身出了问题，停手比无限拉更安全。
   private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
-  // Jump-target highlight: a translucent overlay over the target row that
+  // Jump-target highlight: a translucent overlayState over the target row that
   // gently blinks twice after a reply/pinned/link jump lands.
   @Local flashTop: number = 0;
   @Local flashHeight: number = 0;
@@ -2061,11 +2049,13 @@ export struct ChatPage {
 
   private resetMessageActionSession(): void {
     this.selection.reset();
-    this.showReactionSheet = false;
-    this.reactionTargetId = 0;
-    this.reactionPendingKey = '';
+    // 原 showReactionSheet=false; reactionTargetId=0; reactionPendingKey='' 三行
+    // 搬进了 this.overlayState.resetSession()（B11 批）。第四行 closeForwardSheet()
+    // 也是本簇的，但它在原文里排在 paidMediaPendingIds 之后——不并进
+    // resetSession()，就是为了不动这个顺序（理由写在 ChatOverlayState 那边）。
+    this.overlayState.resetSession();
     this.paidMediaPendingIds = [];
-    this.closeForwardSheet();
+    this.overlayState.closeForwardSheet();
   }
 
 
@@ -2254,7 +2244,7 @@ export struct ChatPage {
     // enter() 触达。
     this.selection.bind({
       chatTgsScrollActive: (): boolean => this.chatTgsScrollActive,
-      closeReactionSheet: (): void => { this.closeReactionSheet(); },
+      closeReactionSheet: (): void => { this.overlayState.closeReactionSheet(); },
       setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); }
     });
     // 输入框上方那一条（回复/编辑）控制器接上宿主（B9）。headerTitle 是
@@ -2268,11 +2258,22 @@ export struct ChatPage {
       pendingMedia: (): PendingMediaItem[] => this.pendingMedia,
       draft: (): string => this.draft,
       setDraft: (value: string): void => { this.draft = value; },
-      closeReactionSheet: (): void => { this.closeReactionSheet(); },
+      closeReactionSheet: (): void => { this.overlayState.closeReactionSheet(); },
       setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); },
       closeReplyKeyboardSlot: (): void => {
         this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
       }
+    });
+    // 反应/转发/投票/联系人/录像笔记/定时消息弹层控制器接上宿主（B11）。
+    // messages/store/chatId 留页面的会话级状态，经取值器现取；setEmojiPanel/
+    // effectDuration 是伸到弹层簇之外的页面子系统（表情面板域、性能开关），
+    // 仅由 flyStickerGhost/openForwardPicker 触达。
+    this.overlayState.bind({
+      store: (): MessageStore | null => this.store,
+      chatId: (): number => this.chatId,
+      findMsg: (messageId: number): MessageEntry | null => this.findMsg(messageId),
+      setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); },
+      effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
     });
     // 会话翻译驱动接上宿主（B10）。isTranslatable 的所有权裁决留页面（B8），
     // 控制器经 isTranslatable()/setIsTranslatable() 现取现写，不存影子拷贝；
@@ -3523,9 +3524,12 @@ export struct ChatPage {
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
     this.closeHeaderMenu();
-    this.showReactionSheet = false;
-    this.reactionTargetId = 0;
-    this.closeForwardSheet();
+    // 原 showReactionSheet=false; reactionTargetId=0; closeForwardSheet() 三行
+    // 搬进了 this.overlayState.dispose()（B11 批）——与 resetSession() 字段集合不
+    // 对称，原代码在这条路径上就没有清 reactionPendingKey，如实保留，没有
+    // 补齐。dispose() 额外清 stickerGhostTimer，是本批新增的加固：原
+    // aboutToDisappear 全链路对这个定时器没有任何清理动作，不是逐字搬迁。
+    this.overlayState.dispose();
     // 顶栏身份解析控制器的退场（B8）。resolveSeq++/profileOpening/
     // muteUpdating/navigationTimer 清理整簇搬进了 header.dispose()——原来这四样
     // 分两处（这里一处，openProfile 定时器那里一处），控制器统一收口到
@@ -3922,20 +3926,20 @@ export struct ChatPage {
   // if it's open, rather than popping all the way back to the chat list.
   private handleBackPressed(): boolean {
     // 录制浮层盖住整页，返回键必须先关它（组件退场时会取消录制并删掉临时文件）。
-    if (this.showVideoNoteRecorder) {
-      this.showVideoNoteRecorder = false;
+    if (this.overlayState.showVideoNoteRecorder) {
+      this.overlayState.showVideoNoteRecorder = false;
       return true;
     }
     if (this.headerMenuShow) {
       this.closeHeaderMenu();
       return true;
     }
-    if (this.showForwardSheet) {
-      this.closeForwardSheet();
+    if (this.overlayState.showForwardSheet) {
+      this.overlayState.closeForwardSheet();
       return true;
     }
-    if (this.showReactionSheet) {
-      this.closeReactionSheet();
+    if (this.overlayState.showReactionSheet) {
+      this.overlayState.closeReactionSheet();
       return true;
     }
     if (this.viewerMsgId !== 0) {
@@ -6320,33 +6324,10 @@ export struct ChatPage {
     }
   }
 
-  // Show/hide the emoji/sticker panel without resizing the message viewport.
-  // 发出去之后的收尾。残影是独立浮层，和面板收起**并行**跑：先前把关面板
-  // 排在飞出动画之后，串行等待让面板要一秒多才下去，感觉像卡住了。
-  private finishStickerSend(thumbPath: string, x: number, y: number): void {
-    if (this.stickerGhostTimer !== -1) {
-      clearTimeout(this.stickerGhostTimer);
-      this.stickerGhostTimer = -1;
-    }
-    // 立刻开始收面板（内部已把卸载与动画分帧）。
-    this.setEmojiPanel(false);
-    const duration: number = this.chatEffectDuration(KEY_POWER_EFFECT_MENU, STICKER_FLY_MS);
-    if (duration === 0 || thumbPath === '') {
-      this.stickerGhostPath = '';
-      return;
-    }
-    this.stickerGhostPath = thumbPath;
-    this.stickerGhostX = x;
-    this.stickerGhostY = y;
-    this.stickerGhostFly = false;
-    // 起始态先落地一帧，否则终态和初始态在同一帧里，动画不会跑。
-    setTimeout((): void => { this.stickerGhostFly = true; }, 16);
-    this.stickerGhostTimer = setTimeout((): void => {
-      this.stickerGhostTimer = -1;
-      this.stickerGhostPath = '';
-      this.stickerGhostFly = false;
-    }, duration + 40);
-  }
+  // finishStickerSend 整体搬进了 ChatOverlayState（B11 批），改名为
+  // flyStickerGhost（任务书指定新名，方法体逐字未改）；setEmojiPanel/
+  // chatEffectDuration 经 host 转发。调用点改为
+  // this.overlayState.flyStickerGhost(path, x, y)。
 
   private setEmojiPanel(show: boolean): void {
     if (this.showEmojiPanel === show) {
@@ -6661,11 +6642,11 @@ export struct ChatPage {
   // Loading and the send-now/delete actions live in ScheduledSheet, which
   // fetches on mount.
   private openScheduledSheet(): void {
-    this.showScheduledSheet = true;
+    this.overlayState.showScheduledSheet = true;
   }
 
   private openPollComposer(): void {
-    this.showPollSheet = true;
+    this.overlayState.showPollSheet = true;
   }
 
   // 圆形视频走附件菜单而不是麦克风按钮：麦克风已经是"点一下开始录音"的
@@ -6678,11 +6659,11 @@ export struct ChatPage {
     this.cancelRecording();
     this.composerController.stopEditing();
     this.composerFocused = false;
-    this.showVideoNoteRecorder = true;
+    this.overlayState.showVideoNoteRecorder = true;
   }
 
   private openContactPicker(): void {
-    this.showContactSheet = true;
+    this.overlayState.showContactSheet = true;
   }
 
   // 音乐：文件选择器按音频后缀过滤，复制沙箱后按音频消息发送。
@@ -7043,9 +7024,9 @@ export struct ChatPage {
 
   private reconcileMessageActionTargets(list: MessageEntry[]): void {
     this.selection.reconcile(list);
-    if (this.showReactionSheet && this.reactionTargetId !== 0 &&
-      list.findIndex((m: MessageEntry): boolean => m.id === this.reactionTargetId) < 0) {
-      this.closeReactionSheet();
+    if (this.overlayState.showReactionSheet && this.overlayState.reactionTargetId !== 0 &&
+      list.findIndex((m: MessageEntry): boolean => m.id === this.overlayState.reactionTargetId) < 0) {
+      this.overlayState.closeReactionSheet();
     }
   }
 
@@ -7164,74 +7145,10 @@ export struct ChatPage {
     });
   }
 
-  // reactionKey：标准 emoji 原样，自定义 emoji 为 'ce:<custom_emoji_id>'。
-  // 本会话允许的表情（服务端的规范写法）。我们内置的快捷表情带变体选择符，
-  // 服务端的可能不带，差一个码位 TDLib 就判 REACTION_INVALID——所以发之前先换成
-  // 它认的那一个。拉一次缓存在页面上，失败就当没有（不拦着用户发）。
-  private allowedReactions: string[] = [];
-  private allowedReactionsTask: Promise<string[]> | null = null;
-
-  // **要等它回来再发**：第一次点的时候列表还是空的，直接发就等于发我们内置的
-  // 原串（带 U+FE0F），必被判 REACTION_INVALID——用户看到的是「第一个表情第一次
-  // 永远失败，再点才行」。拉一次缓存在页面上，之后都是同步命中。
-  private ensureAllowedReactions(messageId: number): Promise<string[]> {
-    if (this.allowedReactions.length > 0) {
-      return Promise.resolve(this.allowedReactions);
-    }
-    const running: Promise<string[]> | null = this.allowedReactionsTask;
-    if (running !== null) {
-      return running;
-    }
-    const req: TdRequest = { '@type': 'getMessageAvailableReactions' };
-    req['chat_id'] = this.chatId;
-    req['message_id'] = messageId;
-    req['row_size'] = 8;
-    const task: Promise<string[]> = getTdClient().send(req).then((result: TdObject): string[] => {
-      const set: AvailableReactionSet = parseAvailableReactions(result);
-      this.allowedReactions = set.emojis;
-      this.allowedReactionsTask = null;
-      return this.allowedReactions;
-    }).catch((e: TdError): string[] => {
-      // 拉不到就按原串发（可能成功，也可能报错——总比拦着用户强）。
-      this.allowedReactionsTask = null;
-      logE(`ChatPage.getMessageAvailableReactions failed: ${e.message}`);
-      return [];
-    });
-    this.allowedReactionsTask = task;
-    return task;
-  }
-
-  private toggleReaction(messageId: number, reactionKey: string, isChosen: boolean): void {
-    const store: MessageStore | null = this.store;
-    const key: string = `${messageId}_${reactionKey}`;
-    if (store === null || this.reactionPendingKey !== '') {
-      return;
-    }
-    ContextMenu.close();
-    this.reactionPendingKey = key;
-    // 自定义表情（'ce:' 前缀）不做映射：它按 id 走，不涉及变体选择符。
-    const custom: boolean = reactionKey.startsWith('ce:');
-    const ready: Promise<string[]> = custom
-      ? Promise.resolve(this.allowedReactions) : this.ensureAllowedReactions(messageId);
-    let sendKey: string = reactionKey;
-    ready.then((allowed: string[]): Promise<void> => {
-      sendKey = custom ? reactionKey : canonicalReactionEmoji(reactionKey, allowed);
-      return store.setReaction(messageId, sendKey, isChosen);
-    }).then((): void => {
-      if (this.reactionPendingKey === key) {
-        this.reactionPendingKey = '';
-      }
-    }).catch((e: TdError): void => {
-      if (this.reactionPendingKey === key) {
-        this.reactionPendingKey = '';
-      }
-      logE(`ChatPage.toggleReaction(${sendKey}) failed: ${e.message}`);
-      // 带上服务端的原因：光说「失败」用户没法反馈，我们也查不动。
-      promptAction.showToast({
-        message: `${str('cp_reaction_failed')} · ${e.message}`, duration: 2200
-      });
-    });
-  }
+  // allowedReactions/allowedReactionsTask 缓存字段、ensureAllowedReactions、
+  // toggleReaction 整套搬进了 ChatOverlayState（B11 批）：原注释随代码一并
+  // 搬走，reactionPendingKey 互斥锁的两处 ===key 比较逐字保留。调用点改为
+  // this.overlayState.toggleReaction(...)。
 
   // 语音转文字。Premium 功能，非会员会被服务端拒绝，这里把原始错误呈现出来
   // 而不是笼统说"失败"——用户能据此判断是要开会员还是网络问题。
@@ -7359,14 +7276,8 @@ export struct ChatPage {
     });
   }
 
-  private openReactionSheet(messageId: number): void {
-    ContextMenu.close();
-    if (this.findMsg(messageId) === null) {
-      return;
-    }
-    this.reactionTargetId = messageId;
-    this.showReactionSheet = true;
-  }
+  // openReactionSheet 整体搬进了 ChatOverlayState（B11 批），经
+  // host.findMsg 转发；调用点改为 this.overlayState.openReactionSheet(messageId)。
 
   private showMenuConfirm(
     options: promptAction.ShowDialogOptions, what: string,
@@ -7560,47 +7471,9 @@ export struct ChatPage {
     this.translation.translateInline(messageId);
   }
 
-  // Long-press on a reaction chip: who reacted with it.
-  private showReactors(messageId: number, reactionKey: string): void {
-    const req: TdRequest = { '@type': 'getMessageAddedReactions' };
-    req['chat_id'] = this.chatId;
-    req['message_id'] = messageId;
-    req['reaction_type'] = reactionTypeOf(reactionKey);
-    req['offset'] = '';
-    req['limit'] = 50;
-    getTdClient().send(req, 10000).then((result: TdObject): void => {
-      const rows = (result['reactions'] as TdObject[] | undefined) ?? [];
-      const total = (result['total_count'] as number | undefined) ?? rows.length;
-      const names: string[] = [];
-      for (const row of rows) {
-        const sender = row['sender_id'] as TdObject | undefined;
-        if (sender === undefined) { continue; }
-        if (sender['@type'] === 'messageSenderUser') {
-          const uid = (sender['user_id'] as number | undefined) ?? 0;
-          const name = getUserStore().displayName(uid);
-          if (name === '') { getUserStore().ensure(uid); }
-          names.push(name !== '' ? name : str('cp_user_id', uid));
-        } else {
-          const cid = (sender['chat_id'] as number | undefined) ?? 0;
-          const entry = getChatStore().entryOf(cid);
-          names.push(entry !== undefined ? entry.title : str('cp_anonymous'));
-        }
-      }
-      promptAction.showDialog({
-        title: str('cp_reaction_total', reactionDisplayLabel(reactionKey), total),
-        message: names.length > 0 ? names.join('\n') : $r('app.string.cp_no_details'),
-        buttons: [{ text: $r('app.string.close'), color: '#3390EC' }]
-      }).catch((): void => {});
-    }).catch((e: TdError): void => {
-      logE(`ChatPage.showReactors failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_no_reaction_details'), duration: 1600 });
-    });
-  }
-
-  private closeReactionSheet(): void {
-    this.showReactionSheet = false;
-    this.reactionTargetId = 0;
-  }
+  // showReactors、closeReactionSheet 整体搬进了 ChatOverlayState（B11 批），
+  // 经 host.chatId 转发；调用点分别改为 this.overlayState.showReactors(...)、
+  // this.overlayState.closeReactionSheet()。
 
   private forwardableMessageIds(ids: number[]): number[] {
     // 查不到的消息给一个不可选的类型，等价于过滤掉——原来的写法是
@@ -7659,16 +7532,15 @@ export struct ChatPage {
       promptAction.showToast({ message: $r('app.string.cp_cannot_forward'), duration: 1500 });
       return;
     }
-    this.closeReactionSheet();
-    this.setEmojiPanel(false);
-    this.forwardMessageIds = validIds;
-    this.showForwardSheet = true;
+    // 尾段（closeReactionSheet/setEmojiPanel(false)/写 forwardMessageIds+
+    // showForwardSheet）搬进了 this.overlayState.openForwardPicker()（B11 批）；
+    // 前面的过滤与空列表提前返回依赖页面的 this.messages/this.findMsg，留在
+    // 这里。
+    this.overlayState.openForwardPicker(validIds);
   }
 
-  private closeForwardSheet(): void {
-    this.showForwardSheet = false;
-    this.forwardMessageIds = [];
-  }
+  // closeForwardSheet 整体搬进了 ChatOverlayState（B11 批）；调用点改为
+  // this.overlayState.closeForwardSheet()。
 
   @Styles
   headerMenuRowNormalStyle() {
@@ -7789,21 +7661,21 @@ export struct ChatPage {
           if (this.store !== null) {
             this.atBottom = true;
             this.store.sendCustomEmoji(e, ceId);
-            this.finishStickerSend('', 0, 0);
+            this.overlayState.flyStickerGhost('', 0, 0);
           }
         },
         onPickSticker: (s: StickerItem, x: number, y: number): void => {
           if (this.store !== null) {
             this.atBottom = true;
             this.store.sendSticker(s.fileId, s.width, s.height);
-            this.finishStickerSend(s.thumbPath, x, y);
+            this.overlayState.flyStickerGhost(s.thumbPath, x, y);
           }
         },
         onPickGif: (g: GifItem): void => {
           if (this.store !== null) {
             this.atBottom = true;
             this.store.sendAnimation(g.fileId, g.width, g.height, g.duration);
-            this.finishStickerSend('', 0, 0);
+            this.overlayState.flyStickerGhost('', 0, 0);
           }
         }
       });
@@ -8661,69 +8533,67 @@ export struct ChatPage {
       .backgroundColor(Color.Transparent);
 
       // 贴纸飞出的残影。叠在最外层、不参与命中测试，纯视觉。
-      if (this.stickerGhostPath !== '') {
-        Image(this.stickerGhostPath)
+      if (this.overlayState.stickerGhostPath !== '') {
+        Image(this.overlayState.stickerGhostPath)
           .width(STICKER_GHOST_SIDE).height(STICKER_GHOST_SIDE)
           .objectFit(ImageFit.Contain)
           .draggable(false)
           .position({
-            x: this.stickerGhostX - STICKER_GHOST_SIDE / 2,
-            y: this.stickerGhostY - STICKER_GHOST_SIDE / 2
+            x: this.overlayState.stickerGhostX - STICKER_GHOST_SIDE / 2,
+            y: this.overlayState.stickerGhostY - STICKER_GHOST_SIDE / 2
           })
           .scale({
-            x: this.stickerGhostFly ? 0.34 : 1,
-            y: this.stickerGhostFly ? 0.34 : 1
+            x: this.overlayState.stickerGhostFly ? 0.34 : 1,
+            y: this.overlayState.stickerGhostFly ? 0.34 : 1
           })
-          .translate({ y: this.stickerGhostFly ? -170 : 0 })
-          .opacity(this.stickerGhostFly ? 0 : 0.95)
+          .translate({ y: this.overlayState.stickerGhostFly ? -170 : 0 })
+          .opacity(this.overlayState.stickerGhostFly ? 0 : 0.95)
           .animation({ duration: STICKER_FLY_MS, curve: Curve.FastOutSlowIn })
           .hitTestBehavior(HitTestMode.None);
       }
 
-      if (this.showReactionSheet || this.showForwardSheet || this.showScheduledSheet ||
-        this.showPollSheet || this.showContactSheet || this.showVideoNoteRecorder) {
+      // 【B11】9 个标量 @Param（showReactionSheet/showForwardSheet/
+      // showScheduledSheet/showPollSheet/showContactSheet/
+      // showVideoNoteRecorder/reactionTargetId/reactionPendingKey/
+      // forwardMessageIds）收口成 overlayState: this.overlayState 一个 @Param；
+      // onReactionShowChange/onForwardShowChange/onScheduledShowChange 三个
+      // @Event 被 ChatOverlayHost 内部收掉（直接调 this.overlayState.setSheet），
+      // 不再需要在这里转发。外层 if 判据、其余 @Param/@Event 逐字对应原样，
+      // 只是字段前缀改成 this.overlayState.xxx。
+      if (this.overlayState.showReactionSheet || this.overlayState.showForwardSheet ||
+        this.overlayState.showScheduledSheet || this.overlayState.showPollSheet ||
+        this.overlayState.showContactSheet || this.overlayState.showVideoNoteRecorder) {
         ChatOverlayHost({
-          showReactionSheet: this.showReactionSheet,
-          showForwardSheet: this.showForwardSheet,
-          showScheduledSheet: this.showScheduledSheet,
-          showPollSheet: this.showPollSheet,
-          showContactSheet: this.showContactSheet,
-          showVideoNoteRecorder: this.showVideoNoteRecorder,
+          overlayState: this.overlayState,
           messages: this.messages,
-          reactionTargetId: this.reactionTargetId,
-          reactionPendingKey: this.reactionPendingKey,
           chatId: this.chatId,
           threadRootId: this.threadRootId,
-          forwardMessageIds: this.forwardMessageIds,
           bottomSafe: this.bottomSafe,
           keyboardH: this.keyboardH,
-          onReactionShowChange: (show: boolean): void => { this.showReactionSheet = show; },
           onReactionPick: (reactionKey: string, chosen: boolean): void => {
-            const targetId: number = this.reactionTargetId;
-            this.closeReactionSheet();
-            this.toggleReaction(targetId, reactionKey, chosen);
+            const targetId: number = this.overlayState.reactionTargetId;
+            this.overlayState.closeReactionSheet();
+            this.overlayState.toggleReaction(targetId, reactionKey, chosen);
           },
-          onForwardShowChange: (show: boolean): void => { this.showForwardSheet = show; },
           onForwardSent: (): void => {
-            this.forwardMessageIds = [];
+            this.overlayState.forwardMessageIds = [];
             if (this.selection.active) {
               this.selection.exit();
             }
           },
-          onScheduledShowChange: (show: boolean): void => { this.showScheduledSheet = show; },
           onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
             isQuiz: boolean, correctOptionId: number): void => {
-            this.showPollSheet = false;
+            this.overlayState.showPollSheet = false;
             if (this.store !== null) {
               this.atBottom = true;
               this.store.sendPoll(question, options, isAnonymous, isQuiz, correctOptionId);
             }
           },
           onPollClose: (): void => {
-            this.showPollSheet = false;
+            this.overlayState.showPollSheet = false;
           },
           onContactPick: (contact: PickedContact): void => {
-            this.showContactSheet = false;
+            this.overlayState.showContactSheet = false;
             if (this.store !== null) {
               this.atBottom = true;
               this.store.sendContact(
@@ -8731,7 +8601,7 @@ export struct ChatPage {
             }
           },
           onContactClose: (): void => {
-            this.showContactSheet = false;
+            this.overlayState.showContactSheet = false;
           },
           onVideoCaptured: (path: string, durationSec: number, length: number): void => {
             if (this.store !== null) {
@@ -8740,7 +8610,7 @@ export struct ChatPage {
             }
           },
           onVideoClose: (): void => {
-            this.showVideoNoteRecorder = false;
+            this.overlayState.showVideoNoteRecorder = false;
           },
           effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
         });
@@ -8764,7 +8634,7 @@ export struct ChatPage {
       }
 
       // Fullscreen media viewer. The page owns which message is open and the
-      // hero transition anchored to the tapped thumbnail; the overlay owns
+      // hero transition anchored to the tapped thumbnail; the overlayState owns
       // zoom/pan, paging, the filmstrip and the chrome layer.
       if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0)) {
         this.mediaViewer();

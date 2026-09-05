@@ -1,4 +1,5 @@
 import { MessageEntry } from '../../store/MessageEntry';
+import { ChatOverlayState } from './ChatOverlayState';
 import { ReactionSheet } from './ReactionSheet';
 import { ForwardSheet } from './ForwardSheet';
 import { ScheduledSheet } from './ScheduledSheet';
@@ -9,30 +10,31 @@ import { VideoNoteRecorderView } from './VideoNoteRecorderView';
 // Presentation host for the transient chat overlays. ChatPage retains the
 // state and business actions; this component only wires values and events into
 // the existing sheets.
+//
+// 【B11】showReactionSheet/showForwardSheet/showScheduledSheet/showPollSheet/
+// showContactSheet/showVideoNoteRecorder/reactionTargetId/reactionPendingKey/
+// forwardMessageIds 这 9 个标量 @Param 收口成一个 @Require @Param
+// overlayState: ChatOverlayState——组件内所有读点相应改成 this.overlayState.xxx。
+// messages/chatId/threadRootId/bottomSafe/keyboardH 不属于 overlay 簇（页面
+// 持有的会话级/视口状态），原样保留标量 @Param。
 @ComponentV2
 export struct ChatOverlayHost {
-  @Param showReactionSheet: boolean = false;
-  @Param showForwardSheet: boolean = false;
-  @Param showScheduledSheet: boolean = false;
-  @Param showPollSheet: boolean = false;
-  @Param showContactSheet: boolean = false;
-  @Param showVideoNoteRecorder: boolean = false;
+  @Require @Param overlayState: ChatOverlayState;
 
   @Param messages: MessageEntry[] = [];
-  @Param reactionTargetId: number = 0;
-  @Param reactionPendingKey: string = '';
   @Param chatId: number = 0;
   @Param threadRootId: number = 0;
-  @Param forwardMessageIds: number[] = [];
   @Param bottomSafe: number = 0;
   @Param keyboardH: number = 0;
 
-  @Event onReactionShowChange: (show: boolean) => void = (): void => {};
+  // onReactionShowChange/onForwardShowChange/onScheduledShowChange 三个
+  // @Event 在 B11 之前把 show 值再转发回页面去写 this.showXxx；现在这三个
+  // sheet 的 show/onShowChange 直接落在 this.overlayState.setSheet(kind, show)
+  // 上（见下方 build() 里三处 onShowChange），组件自己就能收窄这段重渲染依
+  // 赖，不再需要绕页面一趟——因此这三个 @Event 字段本身被收掉，不是漏写。
   @Event onReactionPick: (reactionKey: string, chosen: boolean) => void =
     (): void => {};
-  @Event onForwardShowChange: (show: boolean) => void = (): void => {};
   @Event onForwardSent: () => void = (): void => {};
-  @Event onScheduledShowChange: (show: boolean) => void = (): void => {};
   @Event onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
     isQuiz: boolean, correctOptionId: number) => void = (): void => {};
   @Event onPollClose: () => void = (): void => {};
@@ -46,14 +48,14 @@ export struct ChatOverlayHost {
 
   build() {
     Stack() {
-      if (this.showReactionSheet) {
+      if (this.overlayState.showReactionSheet) {
         ReactionSheet({
-          show: this.showReactionSheet,
-          onShowChange: (show: boolean): void => { this.onReactionShowChange(show); },
+          show: this.overlayState.showReactionSheet,
+          onShowChange: (show: boolean): void => { this.overlayState.setSheet('reaction', show); },
           messages: this.messages,
-          targetId: this.reactionTargetId,
+          targetId: this.overlayState.reactionTargetId,
           chatId: this.chatId,
-          pendingKey: this.reactionPendingKey,
+          pendingKey: this.overlayState.reactionPendingKey,
           // ReactionSheet no longer reads V1 storage props for these values.
           bottomSafe: this.bottomSafe,
           keyboardH: this.keyboardH,
@@ -63,25 +65,25 @@ export struct ChatOverlayHost {
           }
         });
       }
-      if (this.showForwardSheet) {
+      if (this.overlayState.showForwardSheet) {
         ForwardSheet({
-          show: this.showForwardSheet,
-          onShowChange: (show: boolean): void => { this.onForwardShowChange(show); },
-          messageIds: this.forwardMessageIds,
+          show: this.overlayState.showForwardSheet,
+          onShowChange: (show: boolean): void => { this.overlayState.setSheet('forward', show); },
+          messageIds: this.overlayState.forwardMessageIds,
           sourceChatId: this.chatId,
           threadRootId: this.threadRootId,
           effectDuration: (key: string, ms: number): number => this.effectDuration(key, ms),
           onSent: (): void => { this.onForwardSent(); }
         });
       }
-      if (this.showScheduledSheet) {
+      if (this.overlayState.showScheduledSheet) {
         ScheduledSheet({
-          show: this.showScheduledSheet,
-          onShowChange: (show: boolean): void => { this.onScheduledShowChange(show); },
+          show: this.overlayState.showScheduledSheet,
+          onShowChange: (show: boolean): void => { this.overlayState.setSheet('scheduled', show); },
           chatId: this.chatId
         });
       }
-      if (this.showPollSheet) {
+      if (this.overlayState.showPollSheet) {
         PollComposeSheet({
           onSubmit: (question: string, options: string[], isAnonymous: boolean,
             isQuiz: boolean, correctOptionId: number): void => {
@@ -90,13 +92,13 @@ export struct ChatOverlayHost {
           onClose: (): void => { this.onPollClose(); }
         });
       }
-      if (this.showContactSheet) {
+      if (this.overlayState.showContactSheet) {
         ContactPickerSheet({
           onPick: (contact: PickedContact): void => { this.onContactPick(contact); },
           onClose: (): void => { this.onContactClose(); }
         });
       }
-      if (this.showVideoNoteRecorder) {
+      if (this.overlayState.showVideoNoteRecorder) {
         VideoNoteRecorderView({
           onCaptured: (path: string, durationSec: number, length: number): void => {
             this.onVideoCaptured(path, durationSec, length);
