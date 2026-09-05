@@ -219,6 +219,7 @@ import composerSessionTest from './ComposerSession.test';
 import translationDriverTest from './TranslationDriver.test';
 import typingIndicatorStateTest from './TypingIndicatorState.test';
 import chatOverlayStateTest from './ChatOverlayState.test';
+import jumpFlashStateTest from './JumpFlashState.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -444,4 +445,5 @@ export default function testsuite() {
   translationDriverTest();
   typingIndicatorStateTest();
   chatOverlayStateTest();
+  jumpFlashStateTest();
 }

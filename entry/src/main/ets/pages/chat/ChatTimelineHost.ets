@@ -7,6 +7,7 @@ import {
   ChatTimelineSnapshot, emptyChatTimelineSnapshot
 } from '../../util/chatTimelineSnapshot';
 import { TL_NONE, timelineStateMode, timelineStateText } from '../../util/timelineState';
+import { JumpFlashState } from './JumpFlashState';
 
 const CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S: number = 4200;
 
@@ -28,10 +29,7 @@ export struct ChatTimelineHost {
   @Param langEpoch: number = 0;
   @Param floatDateState: FloatingDateState = new FloatingDateState();
   @Param materialEpoch: number = 0;
-  @Param flashShown: boolean = false;
-  @Param flashTop: number = 0;
-  @Param flashHeight: number = 0;
-  @Param flashAlpha: number = 0;
+  @Require @Param flash: JumpFlashState;
   @Param timelineTopMargin: number = 0;
 
   @BuilderParam timelineRow: (ri: RepeatItem<AlbumGroup>) => void;
@@ -136,13 +134,13 @@ export struct ChatTimelineHost {
         });
       }
 
-      if (this.flashShown) {
+      if (this.flash.shown) {
         Column()
-          .width('100%').height(this.flashHeight)
+          .width('100%').height(this.flash.height)
           .backgroundColor('#4D67A0DC')
           .borderRadius(8)
-          .opacity(this.flashAlpha)
-          .position({ x: 0, y: this.flashTop })
+          .opacity(this.flash.alpha)
+          .position({ x: 0, y: this.flash.top })
           .hitTestBehavior(HitTestMode.None);
       }
 

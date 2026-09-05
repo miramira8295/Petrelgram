@@ -164,6 +164,7 @@ import { SelectionSession } from './SelectionSession';
 import { ComposerSession } from './ComposerSession';
 import { TranslationDriver } from './TranslationDriver';
 import { TypingIndicatorState } from './TypingIndicatorState';
+import { JumpFlashState } from './JumpFlashState';
 import { showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
@@ -1730,18 +1731,16 @@ export struct ChatPage {
   // 内容铺不满一屏时主动补页的上限。到这个行数还说"整份都可见"，说明判据
   // 本身出了问题，停手比无限拉更安全。
   private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
-  // Jump-target highlight: a translucent overlayState over the target row that
-  // gently blinks twice after a reply/pinned/link jump lands.
-  @Local flashTop: number = 0;
-  @Local flashHeight: number = 0;
-  @Local flashAlpha: number = 0;
-  @Local flashShown: boolean = false;
-  private flashSeq: number = 0;
-  // 高亮当前钉着的行。高亮层是按视口坐标定位的，行高一变（链接预览、缩略图、
-  // 翻译状态异步到货把上面的行撑开）它就和句子错开——用户看到的是「高亮在
-  // 句子上方」（issue #80）。闪烁期间每一拍都按这两个重新对一次位置。
-  private flashTargetIdx: number = -1;
-  private flashTargetId: number = 0;
+  // 跳转目标高亮（回复/置顶/链接跳转落地后闪烁两拍）整簇搬进了 JumpFlashState
+  // （B13 批），字段名与初值一字未改（四个 @Local 变成 @Trace，去掉了在类名里
+  // 已经说过一遍的 flash 前缀：top/height/alpha/shown；三个普通私有字段
+  // flashSeq/flashTargetIdx/flashTargetId 原名照抄），原有注释随字段一并搬进
+  // JumpFlashState.ets，此处不再重复。页面侧统一经 this.flash.xxx 读写。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自的跳转高亮
+  // 互不相干。
+  private flash: JumpFlashState = new JumpFlashState();
   // Floating date chip: shows the topmost visible message's date while the
   // list scrolls, fades out shortly after scrolling stops (the in-list date
   // pills stay — this is the always-visible companion).
@@ -1985,7 +1984,7 @@ export struct ChatPage {
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
     this.lastKeyboardH = this.keyboardH;
-    this.cancelFlash();
+    this.flash.cancelFlash();
     this.clearFloatingDate();
     this.messages = [];
     this.messageListRevision++;
@@ -2164,7 +2163,7 @@ export struct ChatPage {
       scrollToIndex: (index: number): void => {
         this.scroller.scrollToIndex(index, false, ScrollAlign.START);
       },
-      flashAtIndex: (index: number): void => { this.flashAtIndex(index); },
+      flashAtIndex: (index: number): void => { this.flash.flashAtIndex(index); },
       jumpToPinned: (messageId: number): void => { this.jumpToPinned(messageId); }
     });
     // 顶栏身份解析控制器接上宿主（B8）。前九个是取值器——控制器不缓存页面的
@@ -2228,7 +2227,7 @@ export struct ChatPage {
       forumTopicId: (): number => this.forumTopicId,
       directMessagesTopicId: (): number => this.directMessagesTopicId,
       jumpToMessage: (messageId: number): void => { this.onReplyTap(messageId); },
-      cancelFlash: (): void => { this.cancelFlash(); }
+      cancelFlash: (): void => { this.flash.cancelFlash(); }
     });
     // 多选控制器接上宿主（B7）。chatTgsScrollActive 是取值器；
     // closeReactionSheet/setEmojiPanel 是伸到多选簇之外的页面子系统，仅由
@@ -2322,6 +2321,14 @@ export struct ChatPage {
         this.overlayState.setSheet(kind, show);
       },
       setDiceSheetOpen: (open: boolean): void => { this.diceSheetOpen = open; }
+    });
+    // 跳转目标高亮控制器接上宿主（B13）。scroller/groups 是页面独有/共享滚动
+    // 真源，只经取值器只读现取，不缓存；effectDuration 转发
+    // this.chatEffectDuration，是伸到本簇之外的页面子系统（省电/特效开关）。
+    this.flash.bind({
+      scroller: (): Scroller => this.scroller,
+      groups: (): AlbumGroup[] => this.groups,
+      effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
     });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
@@ -3139,7 +3146,7 @@ export struct ChatPage {
           const jg2: number = groupIndexOf(this.groups, jumpTargetId);
           if (jg2 >= 0) {
             this.scrollToTimelineIndexAtY(jg2, itemY);
-            this.flashAtIndex(jg2, jumpTargetId);
+            this.flash.flashAtIndex(jg2, jumpTargetId);
           }
         }, 80);
       }
@@ -3598,6 +3605,13 @@ export struct ChatPage {
     // 其余控制器统一 bind/dispose 生命周期而保留、调用，不替原代码编造一份
     // 清理逻辑。
     this.attach.dispose();
+    // 跳转目标高亮控制器的退场（B13）。侦察确认过原 aboutToDisappear 全链路
+    // 对 flashSeq/flashShown/flashTop/flashHeight/flashAlpha/flashTargetIdx/
+    // flashTargetId 或 cancelFlash/syncFlashRect/runBlink/flashAtIndex 从来
+    // 没有任何清理——裸露的 setTimeout 句柄从未存储，靠 flashSeq 比较自然
+    // 失效，页面随实例整体丢弃。dispose() 是空实现，仅为与其余控制器统一
+    // bind/dispose 生命周期而保留、调用，不替原代码编造一份清理逻辑。
+    this.flash.dispose();
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
@@ -4140,7 +4154,7 @@ export struct ChatPage {
     this.clearFloatingDate();
     this.stayAtUnread = false;
     this.jumpLayoutSeq++;
-    this.cancelFlash();
+    this.flash.cancelFlash();
   }
 
   // 点置顶条时目标不在当前窗口内，要先去取。这是 onPinnedTap 的 PINNED_LOAD
@@ -4951,7 +4965,7 @@ export struct ChatPage {
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-      this.flashAtIndex(gidx, messageId);
+      this.flash.flashAtIndex(gidx, messageId);
     } else {
       this.pendingJumpId = messageId;
       if (this.store !== null) {
@@ -4989,7 +5003,7 @@ export struct ChatPage {
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-      this.flashAtIndex(gidx, messageId);
+      this.flash.flashAtIndex(gidx, messageId);
     } else if (this.store !== null) {
       this.pendingJumpId = messageId;
       this.store.loadAround(messageId, (found: boolean): void => {
@@ -5001,119 +5015,11 @@ export struct ChatPage {
     }
   }
 
-  // Gently blink the row at gidx twice — visual confirmation of where a
-  // reply/pinned/link jump landed. Waits a beat for the scroll to settle so
-  // getItemRect sees the laid-out row.
-  //
-  // targetId：这一跳要照亮的那条消息。下标是**现在**算出来的，而矩形要等
-  // 150ms 布局稳了才取——这中间往上补进一页历史，同一个下标就指向别人了
-  // （issue #80 的视频里，高亮框落在目标上方五行的另一条上）。给了 id 就在
-  // 取矩形前重新解析一次下标；没有 id（置顶跳转那种只有下标的调用）沿用旧行为。
-  private flashAtIndex(gidx: number, targetId: number = 0): void {
-    const seq = ++this.flashSeq;
-    setTimeout(() => {
-      if (seq !== this.flashSeq) {
-        return;
-      }
-      let idx = gidx;
-      if (targetId > 0) {
-        const re: number = groupIndexOf(this.groups, targetId);
-        if (re < 0) {
-          return;
-        }
-        idx = re;
-      }
-      let top = 0;
-      let height = 0;
-      try {
-        const rect = this.scroller.getItemRect(idx);
-        top = rect.y;
-        height = rect.height;
-      } catch (e) {
-        return; // row not laid out (jump superseded) — skip the highlight
-      }
-      if (height <= 0) {
-        return;
-      }
-      logW(`[Jump80] flash idx=${idx} target=${targetId} top=${Math.round(top)} h=${Math.round(height)} rows=${this.groups.length}`);
-      this.flashTargetIdx = idx;
-      this.flashTargetId = targetId;
-      this.flashTop = top;
-      this.flashHeight = height;
-      this.flashShown = true;
-      this.flashAlpha = 0;
-      this.runBlink(seq, 2);
-    }, 150);
-  }
-
-  // 把高亮层重新对到目标行上。行还在就跟着它走；找不到（被滚出窗口、数据换了）
-  // 就收掉，别留一条悬空的色带。有 id 就按 id 重解下标——prepend 会让下标漂移。
-  private syncFlashRect(): void {
-    if (!this.flashShown) {
-      return;
-    }
-    let idx: number = this.flashTargetIdx;
-    if (this.flashTargetId > 0) {
-      idx = groupIndexOf(this.groups, this.flashTargetId);
-    }
-    if (idx < 0) {
-      this.cancelFlash();
-      return;
-    }
-    let top: number = 0;
-    let height: number = 0;
-    try {
-      const rect = this.scroller.getItemRect(idx);
-      top = rect.y;
-      height = rect.height;
-    } catch (e) {
-      this.cancelFlash();
-      return;
-    }
-    if (height <= 0) {
-      return;
-    }
-    if (Math.abs(top - this.flashTop) > 0.5 || Math.abs(height - this.flashHeight) > 0.5) {
-      this.flashTop = top;
-      this.flashHeight = height;
-    }
-  }
-
-  private runBlink(seq: number, remaining: number): void {
-    if (seq !== this.flashSeq) {
-      return;
-    }
-    if (remaining <= 0) {
-      this.flashShown = false;
-      this.flashAlpha = 0;
-      return;
-    }
-    // 每一拍开始前先对一次位置（issue #80）。
-    this.syncFlashRect();
-    animateTo({
-      duration: this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, 320), curve: Curve.EaseInOut
-    }, () => { this.flashAlpha = 1; });
-    setTimeout(() => {
-      if (seq !== this.flashSeq) {
-        return;
-      }
-      this.syncFlashRect();
-      animateTo({
-        duration: this.chatEffectDuration(KEY_POWER_EFFECT_REPLY, 320), curve: Curve.EaseInOut
-      }, () => { this.flashAlpha = 0; });
-      setTimeout(() => { this.runBlink(seq, remaining - 1); }, 340);
-    }, 340);
-  }
-
-  // Any new touch cancels the highlight: it is viewport-anchored, and while a
-  // programmatic shift is re-synced by syncFlashRect, a user drag moves faster
-  // than the blink cadence and the band would visibly lag the row.
-  private cancelFlash(): void {
-    this.flashSeq++;
-    this.flashShown = false;
-    this.flashAlpha = 0;
-  }
-
+  // flashAtIndex/syncFlashRect/runBlink/cancelFlash 四个方法整簇搬进了
+  // JumpFlashState（B13 批），原有注释随方法一并搬进 JumpFlashState.ets，此处
+  // 不再重复。调用方改走 this.flash.flashAtIndex()/this.flash.cancelFlash()/
+  // this.flash.syncFlashRect()；runBlink 是纯内部递归，无外部调用点，留在
+  // JumpFlashState 内部，页面不再持有同名方法。
 
   private onCommentTap(messageId: number): void {
     const req: TdRequest = { '@type': 'getMessageThread' };
@@ -6918,7 +6824,7 @@ export struct ChatPage {
     logW(`[Jump80] jumpToMessageId target=${targetId} idxInLoaded=${gidx} rows=${this.groups.length}`);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
-      this.flashAtIndex(gidx, targetId);
+      this.flash.flashAtIndex(gidx, targetId);
       return;
     }
     this.pendingJumpId = targetId;
@@ -8006,7 +7912,7 @@ export struct ChatPage {
       this.imeLayoutSeq++;
       this.listTouchActive = true;
       this.olderArmed = true;
-      this.cancelFlash();
+      this.flash.cancelFlash();
       this.closeBottomPanels();
     } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
       this.listTouchActive = false;
@@ -8054,7 +7960,7 @@ export struct ChatPage {
     }
     this.nextDidScrollIsUserDriven = false;
     this.refreshAtBottom();
-    this.syncFlashRect();
+    this.flash.syncFlashRect();
     if (state === ScrollState.Scroll) {
       this.accumulateNewerDrag(offset);
     }
@@ -8126,10 +8032,7 @@ export struct ChatPage {
           langEpoch: this.langEpoch,
           floatDateState: this.floatDateState,
           materialEpoch: this.materialEpoch,
-          flashShown: this.flashShown,
-          flashTop: this.flashTop,
-          flashHeight: this.flashHeight,
-          flashAlpha: this.flashAlpha,
+          flash: this.flash,
           timelineTopMargin: this.headerChromeHeight() + 8,
           timelineRow: (ri: RepeatItem<AlbumGroup>): void => { this.timelineRow(ri); },
           rowKey: (group: AlbumGroup): string => this.rowKeyOf(group),
@@ -8325,7 +8228,7 @@ export struct ChatPage {
       }
 
       // Fullscreen media viewer. The page owns which message is open and the
-      // hero transition anchored to the tapped thumbnail; the overlayState owns
+      // hero transition anchored to the tapped thumbnail; the overlay owns
       // zoom/pan, paging, the filmstrip and the chrome layer.
       if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0)) {
         this.mediaViewer();
