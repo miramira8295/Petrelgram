@@ -7747,63 +7747,69 @@ export struct ChatPage {
       // forwardMessageIds）收口成 overlayState: this.overlayState 一个 @Param；
       // onReactionShowChange/onForwardShowChange/onScheduledShowChange 三个
       // @Event 被 ChatOverlayHost 内部收掉（直接调 this.overlayState.setSheet），
-      // 不再需要在这里转发。外层 if 判据、其余 @Param/@Event 逐字对应原样，
-      // 只是字段前缀改成 this.overlayState.xxx。
-      if (this.overlayState.showReactionSheet || this.overlayState.showForwardSheet ||
-        this.overlayState.showScheduledSheet || this.overlayState.showPollSheet ||
-        this.overlayState.showContactSheet || this.overlayState.showVideoNoteRecorder) {
-        ChatOverlayHost({
-          overlayState: this.overlayState,
-          messages: this.messages,
-          chatId: this.chatId,
-          threadRootId: this.threadRootId,
-          bottomSafe: this.bottomSafe,
-          keyboardH: this.keyboardH,
-          onReactionPick: (reactionKey: string, chosen: boolean): void => {
-            const targetId: number = this.overlayState.reactionTargetId;
-            this.overlayState.closeReactionSheet();
-            this.overlayState.toggleReaction(targetId, reactionKey, chosen);
-          },
-          onForwardSent: (): void => {
-            this.overlayState.forwardMessageIds = [];
-            if (this.selection.active) {
-              this.selection.exit();
-            }
-          },
-          onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
-            isQuiz: boolean, correctOptionId: number): void => {
-            this.overlayState.showPollSheet = false;
-            if (this.store !== null) {
-              this.atBottom = true;
-              this.store.sendPoll(question, options, isAnonymous, isQuiz, correctOptionId);
-            }
-          },
-          onPollClose: (): void => {
-            this.overlayState.showPollSheet = false;
-          },
-          onContactPick: (contact: PickedContact): void => {
-            this.overlayState.showContactSheet = false;
-            if (this.store !== null) {
-              this.atBottom = true;
-              this.store.sendContact(
-                contact.phone, contact.firstName, contact.lastName, contact.userId);
-            }
-          },
-          onContactClose: (): void => {
-            this.overlayState.showContactSheet = false;
-          },
-          onVideoCaptured: (path: string, durationSec: number, length: number): void => {
-            if (this.store !== null) {
-              this.atBottom = true;
-              this.store.sendVideoNote(path, durationSec, length);
-            }
-          },
-          onVideoClose: (): void => {
-            this.overlayState.showVideoNoteRecorder = false;
-          },
-          effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
-        });
-      }
+      // 不再需要在这里转发。其余 @Param/@Event 逐字对应原样。
+      //
+      // 【B11b：外层那道 if 判据也收进组件了，本组件现在常驻挂载】
+      // B11 保留了 HEAD 就有的那道 `if (showReactionSheet || ... )` 外层判据，
+      // 于是页面 build 仍然订阅着这六个 @Trace——开合任意一个 sheet 都要重跑
+      // 整页 build，方案给 B11 定的 perf 目标（开关反应面板 10 次页面 update
+      // 20→0）拿不到 0，只拿到了 reactionTargetId/reactionPendingKey/
+      // forwardMessageIds 那三个字段的收窄。
+      // B11b 把判据搬进 ChatOverlayHost.anyOpen()，页面这里只传一个引用常量，
+      // 一个 @Trace 都不读。代价是那个 width/height 100% 的根 Stack 一直挂着，
+      // 命中测试要按开合切——处理在 ChatOverlayHost.build() 末尾的
+      // hitTestBehavior 那一行，改动那一行之前先读它上面的说明。
+      ChatOverlayHost({
+        overlayState: this.overlayState,
+        messages: this.messages,
+        chatId: this.chatId,
+        threadRootId: this.threadRootId,
+        bottomSafe: this.bottomSafe,
+        keyboardH: this.keyboardH,
+        onReactionPick: (reactionKey: string, chosen: boolean): void => {
+          const targetId: number = this.overlayState.reactionTargetId;
+          this.overlayState.closeReactionSheet();
+          this.overlayState.toggleReaction(targetId, reactionKey, chosen);
+        },
+        onForwardSent: (): void => {
+          this.overlayState.forwardMessageIds = [];
+          if (this.selection.active) {
+            this.selection.exit();
+          }
+        },
+        onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
+          isQuiz: boolean, correctOptionId: number): void => {
+          this.overlayState.showPollSheet = false;
+          if (this.store !== null) {
+            this.atBottom = true;
+            this.store.sendPoll(question, options, isAnonymous, isQuiz, correctOptionId);
+          }
+        },
+        onPollClose: (): void => {
+          this.overlayState.showPollSheet = false;
+        },
+        onContactPick: (contact: PickedContact): void => {
+          this.overlayState.showContactSheet = false;
+          if (this.store !== null) {
+            this.atBottom = true;
+            this.store.sendContact(
+              contact.phone, contact.firstName, contact.lastName, contact.userId);
+          }
+        },
+        onContactClose: (): void => {
+          this.overlayState.showContactSheet = false;
+        },
+        onVideoCaptured: (path: string, durationSec: number, length: number): void => {
+          if (this.store !== null) {
+            this.atBottom = true;
+            this.store.sendVideoNote(path, durationSec, length);
+          }
+        },
+        onVideoClose: (): void => {
+          this.overlayState.showVideoNoteRecorder = false;
+        },
+        effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
+      });
       // The latest-message FAB belongs to the chat layer. Keeping it visible
       // while the media panel is open puts it above (and blocks) the GIF tab.
       // 显隐跟着"有没有可返回的位置"走，而不是"在不在底部"：站在最新消息上
