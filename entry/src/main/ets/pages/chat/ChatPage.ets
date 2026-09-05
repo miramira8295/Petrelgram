@@ -7963,14 +7963,12 @@ export struct ChatPage {
         isRecording: this.isRecording,
         attachPanelOpen: this.attachPanelOpen,
         pendingMedia: this.pendingMedia,
-        editingId: this.composer.editingId,
-        editingKind: this.composer.editingKind,
-        editingPreview: this.composer.editingPreview,
-        replyToId: this.composer.replyToId,
-        replyToName: this.composer.replyToName,
-        replyToText: this.composer.replyToText,
-        replyToThumb: this.composer.replyToThumb,
-        replyToThumbSticker: this.composer.replyToThumbSticker,
+        // 控制器整个交过去，不再逐个转手八个标量（B9b）：在这里读
+        // this.composer.editingId 之类的 @Trace，建立的是**页面**对它们的依赖，
+        // 编辑/回复一开一关就重跑整页 build。this.composer 是普通私有字段、
+        // 引用恒定，读它不建立任何依赖，八个 @Trace 的读点全在
+        // ChatComposerInput 自己的 build 里。
+        composer: this.composer,
         botMenuAvailable: this.botMenuAvailable,
         commandMenuOpen: this.commandMenuOpen,
         showEmojiPanel: this.showEmojiPanel,

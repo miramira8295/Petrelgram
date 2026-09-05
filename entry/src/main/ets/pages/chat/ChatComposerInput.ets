@@ -6,6 +6,7 @@ import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
 import { ComposerSendButton } from './ComposerSendButton';
+import { ComposerSession } from './ComposerSession';
 
 // Shared geometry for the editor and its height measurement in ChatPage.
 //
@@ -25,14 +26,18 @@ export struct ChatComposerInput {
   @Param isRecording: boolean = false;
   @Param attachPanelOpen: boolean = false;
   @Param pendingMedia: PendingMediaItem[] = [];
-  @Param editingId: number = 0;
-  @Param editingKind: string = 'text';
-  @Param editingPreview: string = '';
-  @Param replyToId: number = 0;
-  @Param replyToName: string = '';
-  @Param replyToText: string = '';
-  @Param replyToThumb: string = '';
-  @Param replyToThumbSticker: boolean = false;
+  // 输入条上方那一条（编辑态/回复态）的八个字段原来是八个标量 @Param，由
+  // ChatPage 在 build 里逐个转手——那等于让**页面**订阅这八个 @Trace，编辑/回复
+  // 一开一关就重跑整个页面的 build，本组件想要的「只重渲染这一条」根本拿不到
+  //（B9 只把字段搬进了控制器，收益停在行数上）。改成直接接控制器本身（B9b）：
+  // 页面 build 里只读 this.composer 这个普通私有字段（引用恒定、不是 @Trace，
+  // 不建立依赖），八个 @Trace 的读点全部下沉到本组件自己的 build 里，翻转只脏
+  // 本组件这一棵子树。
+  //
+  // @Require：没有合理的默认实例可给（控制器是 per-ChatPage 的，做成模块级
+  // 单例会让平板分栏时两个会话串味），漏传必须是编译期错误，而不是静默拿到一个
+  // 谁也不会更新的空壳。
+  @Require @Param composer: ComposerSession;
   @Param botMenuAvailable: boolean = false;
   @Param commandMenuOpen: boolean = false;
   @Param showEmojiPanel: boolean = false;
@@ -161,20 +166,20 @@ export struct ChatComposerInput {
             onCancel: (): void => { this.onClearMedia(); }
           });
         }
-        if (this.editingId !== 0) {
+        if (this.composer.editingId !== 0) {
           EditStrip({
-            editingKind: this.editingKind,
-            preview: this.editingPreview,
+            editingKind: this.composer.editingKind,
+            preview: this.composer.editingPreview,
             onCancel: (): void => { this.onCancelEdit(); }
           });
-        } else if (this.replyToId !== 0) {
+        } else if (this.composer.replyToId !== 0) {
           ReplyStrip({
-            name: this.replyToName,
-            snippet: this.replyToText,
-            thumbPath: this.replyToThumb,
-            thumbSticker: this.replyToThumbSticker,
+            name: this.composer.replyToName,
+            snippet: this.composer.replyToText,
+            thumbPath: this.composer.replyToThumb,
+            thumbSticker: this.composer.replyToThumbSticker,
             enterDuration: this.replyEffectDuration(180),
-            onTapQuote: (): void => { this.onReplyTap(this.replyToId); },
+            onTapQuote: (): void => { this.onReplyTap(this.composer.replyToId); },
             onCancel: (): void => { this.onClearReply(); }
           });
         }
