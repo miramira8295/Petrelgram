@@ -5,6 +5,7 @@ import {
   canStepNewer, canStepOlder, searchCounterText, searchLabelKind
 } from '../../util/searchPaging';
 import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
+import { SearchSession } from './SearchSession';
 
 // 会话内搜索的两条：顶上的输入框、底下的计数与上下翻。
 //
@@ -25,14 +26,30 @@ import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 // 任何改动）。两个 build() 里渲染的全是内置组件（Row / TextInput / SymbolGlyph
 // / Text / Blank），一个自定义子组件都没有，因此不触碰「V2 普通组件 → V1
 // @Reusable 复用组件」那条会**静默失败**（整块 UI 一个节点都不建）的混用禁区。
+//
+// 【B6 落地】上一段说的"后面那一步"就是这次：query/loadedCount/total/
+// currentIndex 四个标量 @Param 收成一个 `@Require @Param search: SearchSession`
+// 引用，两个 build() 直接读 this.search.xxx。topSafe/bottomGap 不属于搜索簇
+// （几何/键盘让位相关），全部 @Event（跨簇动作回调，恒新闭包、不具备观测能力）
+// 原样保留，都不进这次替换。
+//
+// 【为什么值得换】改前这四个值住在 ChatPage 的 @Local 里：搜索框敲一个字，先要
+// 重跑页面 chatTitleBar 闭包把 query/loadedCount/total/currentIndex 都重新算
+// 一遍，再逐个做 4 次 @Param 比较，才轮到这两条本身重绘。改后本组件直接持有
+// SearchSession 控制器引用、在自己的 build()/@Builder 里读 @Trace：敲一个字
+// 只刷新这里读到它的那个 TextInput 或计数/翻页节点，ChatPage 一个字都不读，
+// 4 次比较也一起消失——只把字段搬进控制器、读点还留在页面的话收益就只有行数，
+// 这两个 struct 必须改成直读才是真正缩小重渲染半径的地方。
 
 @ComponentV2
 export struct SearchHeader {
-  // @Prop → @Param：两个都是基本类型，V1 @Prop 的深拷贝与 @Param 的引用传递在
-  // 基本类型上完全等价。搜索框走的是 `text: this.query` 单向绑定 + onChange 把
-  // 新值交回页面，**不是** $$ 双向绑定，组件内部从不写 this.query——所以裸
-  // @Param 就够，既不需要 @Once，也不需要改成 @Local。
-  @Param query: string = '';
+  // B6：query 不再是独立的标量 @Param，改成读 search.query（引用型
+  // @Require @Param，见下面 search 字段）。搜索框仍然是
+  // `text: this.search.query` 单向绑定 + onChange 把新值交回页面（页面调
+  // this.search.updateQuery(v)），**不是** $$ 双向绑定——本组件从不写
+  // this.search.query，这条约束原样保留，只是住的地方从裸标量换成了控制器上的
+  // @Trace。
+  @Require @Param search: SearchSession;
   @Param topSafe: number = 0;
 
   // 函数型入参一律 @Event：调用点传的是内联箭头函数，页面每重建一次都是一个新
@@ -71,7 +88,7 @@ export struct SearchHeader {
       })
       .onClick((): void => { this.onExit(); })
       .accessibilityText($r('app.string.cp_back_to_chat'));
-      TextInput({ text: this.query, placeholder: $r('app.string.cp_search_messages') })
+      TextInput({ text: this.search.query, placeholder: $r('app.string.cp_search_messages') })
         .layoutWeight(1).height(40).fontSize(16)
         .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
         .placeholderColor(COLOR_TEXT_SECONDARY)
@@ -80,7 +97,7 @@ export struct SearchHeader {
         .defaultFocus(true)
         .onChange((v: string): void => { this.onQueryChange(v); })
         .onSubmit((): void => { this.onSubmit(); });
-      if (this.query !== '') {
+      if (this.search.query !== '') {
         Row() {
           SymbolGlyph($r('sys.symbol.xmark_circle'))
             .fontSize(19).fontColor([COLOR_ICON_SECONDARY]);
@@ -116,12 +133,15 @@ export struct SearchHeader {
 
 // 同上，B2 批迁 @ComponentV2。五个入参全是基本类型，@Prop → @Param 在基本类型
 // 上等价；本组件同样一次都没写过自己的入参，裸 @Param 即可。
+//
+// B6：query/loadedCount/total/currentIndex 四个标量 @Param 收进一个
+// `@Require @Param search: SearchSession` 引用——分别对应 search.query /
+// search.results.length / search.total / search.idx，字段名与取值和搬之前
+// 一一对应，只是住的地方从裸标量换成了控制器上的 @Trace。bottomGap 不属于
+// 搜索簇（键盘/抽屉让位的几何量），原样保留。
 @ComponentV2
 export struct SearchBottomBar {
-  @Param query: string = '';
-  @Param loadedCount: number = 0;
-  @Param total: number = 0;
-  @Param currentIndex: number = 0;
+  @Require @Param search: SearchSession;
   // 输入区底部让出的高度，由页面按键盘/抽屉状态算好传进来。
   @Param bottomGap: number = 0;
 
@@ -133,10 +153,10 @@ export struct SearchBottomBar {
   label() {
     // 三种情形分开：有结果显示计数；查过了没结果显示空白（提示语再挂着会像
     // 没反应过）；还没查才显示提示语。
-    if (searchLabelKind(this.loadedCount, this.total, this.query) === SEARCH_LABEL_COUNTER) {
-      Text(searchCounterText(this.currentIndex, this.total))
+    if (searchLabelKind(this.search.results.length, this.search.total, this.search.query) === SEARCH_LABEL_COUNTER) {
+      Text(searchCounterText(this.search.idx, this.search.total))
         .fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
-    } else if (searchLabelKind(this.loadedCount, this.total, this.query) === SEARCH_LABEL_NONE) {
+    } else if (searchLabelKind(this.search.results.length, this.search.total, this.search.query) === SEARCH_LABEL_NONE) {
       Text('').fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
     } else {
       Text($r('app.string.cp_search_placeholder'))
@@ -148,19 +168,19 @@ export struct SearchBottomBar {
     Row() {
       this.label();
       Blank().layoutWeight(1);
-      if (this.loadedCount > 0) {
+      if (this.search.results.length > 0) {
         Row() {
           SymbolGlyph($r('sys.symbol.chevron_up')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
         }
         .width(42).height(42).justifyContent(FlexAlign.Center)
-        .opacity(canStepOlder(this.loadedCount, this.currentIndex, this.total) ? 1 : 0.4)
+        .opacity(canStepOlder(this.search.results.length, this.search.idx, this.search.total) ? 1 : 0.4)
         .onClick((): void => { this.onOlder(); });
         Row() {
           SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
             .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         }
         .width(42).height(42).justifyContent(FlexAlign.Center)
-        .opacity(canStepNewer(this.currentIndex) ? 1 : 0.4)
+        .opacity(canStepNewer(this.search.idx) ? 1 : 0.4)
         .onClick((): void => { this.onNewer(); });
       }
     }

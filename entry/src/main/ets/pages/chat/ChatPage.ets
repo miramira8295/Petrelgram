@@ -123,9 +123,7 @@ import { replyThumbIsSticker, replyThumbOf } from '../../util/replyThumb';
 import {
   TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR, timelineStateMode
 } from '../../util/timelineState';
-import {
-  forwardableIds, pruneSelection, rowSelectable, rowSelected, toggleRow
-} from '../../util/messageSelection';
+import { forwardableIds } from '../../util/messageSelection';
 import {
   TranslateToggle,
   toggleTranslation, translationActive as isTranslationActive
@@ -138,9 +136,6 @@ import {
   SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, claimIfFree, closeAllSlots, closeSlot,
   openSlot, toggleSlot
 } from '../../util/bottomSlot';
-import {
-  AnchorMerge, SEARCH_FETCH, SEARCH_JUMP, SearchStep, mergeAnchorHit, stepNewer, stepOlder
-} from '../../util/searchPaging';
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import { shouldFillViewport } from '../../util/viewportFill';
@@ -181,6 +176,8 @@ import {
 import { appendMention, mentionToken, mentionQueryOf } from '../../util/mentionDraft';
 import { buildMentionEntities, NameMention } from '../../util/mentionEntities';
 import { LiveTopCardController } from './LiveTopCardController';
+import { SearchSession } from './SearchSession';
+import { SelectionSession } from './SelectionSession';
 import { MUTE_LONG, setMute, showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
@@ -247,9 +244,7 @@ import {
 import {
   RememberedChatViewport, isResumeFragment, rememberChatPosition, rememberedChatViewport
 } from '../../util/chatResume';
-import {
-  applyMessageTopicScope, conversationScopeId
-} from '../../util/messageTopicScope';
+import { conversationScopeId } from '../../util/messageTopicScope';
 import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
 import { getActiveTdUserId } from '../../tdkit/Globals';
@@ -285,7 +280,7 @@ import {
   INITIAL_TIMELINE_ROW_FADE_MS, INITIAL_TIMELINE_ROW_STAGGER_MS,
   JUMP_LANDING_GRACE_MS, JUMP_RELOAD_THRESHOLD, KEYBOARD_SETTLE_MS,
   MENU_DISMISS_MS, NOW_SEC_TICK_MS, PREPARED_MESSAGE_CACHE_LIMIT,
-  REUSE_CAP_MIN_INTERVAL_MS, SEARCH_ENTRY_DELAY_MS, STICKER_FLY_MS,
+  REUSE_CAP_MIN_INTERVAL_MS, STICKER_FLY_MS,
   STICKER_GHOST_SIDE
 } from '../../util/chatPageTuning';
 import { DICE_CHOICES, DiceChoice } from '../../util/diceChoices';
@@ -1196,11 +1191,11 @@ export struct ChatPage {
         onForwardMessages: (messageIds: number[]): void => { this.openForwardPicker(messageIds); },
         onSaveMessages: (messageIds: number[]): void => { this.saveToSavedMessages(messageIds); },
         onRepeatMessages: (messageIds: number[]): void => { this.repeatMessages(messageIds); },
-        onViewSenderHistory: (senderId: number): void => { this.viewSenderHistory(senderId); },
+        onViewSenderHistory: (senderId: number): void => { this.search.enterForSender(senderId); },
         onReportMsg: (_messageId: number): void => {
           promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 });
         },
-        onSelectMessages: (messageIds: number[]): void => { this.enterSelect(messageIds); },
+        onSelectMessages: (messageIds: number[]): void => { this.selection.enter(messageIds); },
         onDeleteMsg: (messageId: number): void => { this.deleteMessage(messageId); },
         onOpenReactions: (messageId: number): void => { this.openReactionSheet(messageId); },
         onLinkPreviewRetry: (messageId: number): void => {
@@ -1920,28 +1915,36 @@ export struct ChatPage {
   private headerIdentityResolved: boolean = false;
   private headerResolveSeq: number = 0;
   private headerNavigationTimer: number = -1;
-  // In-chat message search (search-mode header + result navigation).
   // 输入框上方那一条的当前状态。字段仍在（读取处很多），但**只由
   // applyComposerMode 写**，转换逻辑在 util/composerMode。
   @Local composerMode: ComposerMode = idleComposer();
   // 输入框下面那块高度归谁（none / attach / emoji / replyKeyboard）。
   // 三个既有字段仍在（读取处很多），但**只由 applyBottomSlot 写**。
   @Local bottomSlot: string = SLOT_NONE;
-  @Local searchMode: boolean = false;
+  // 会话内搜索（关键词 / 按发送者筛选 + 结果导航）的整套状态机（B6 批）。原来
+  // 摊在这里的 6 个 @Local（searchMode/searchQuery/searchResults/searchTotal/
+  // searchIdx/searchSenderId）与 2 个内部机件字段（searchAnchorId/searchSeq）
+  // 全部住进了控制器，字段名和初值一字未改，只是 @Local 变成了 @Trace。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，每个都有自己的
+  // 搜索关键词、自己的结果列表、自己的请求 seq。
+  //
+  // 页面仍要读的只剩 mode 一处判据，散在 bottomDock/chatTitleBar/
+  // chromeGeometryInput/ScrollFab 显隐/handleBackPressed 五个调用点——都是
+  // this.x → this.search.x 的逐处替换，依赖粒度与搬之前一一对应。
+  private search: SearchSession = new SearchSession();
   // Multi-select mode (entered via the long-press menu's 选择 item).
-  @Local selecting: boolean = false;
-  @Local selectedIds: number[] = [];
-  @Local searchQuery: string = '';
-  @Local searchResults: number[] = []; // message ids, newest → oldest
-  @Local searchTotal: number = 0;
-  @Local searchIdx: number = 0;        // 0-based index into searchResults
-  // Message id the chat was opened on from global search — becomes the current
-  // hit instead of the search jumping to the newest one. 0 = no anchor.
-  private searchAnchorId: number = 0;
-  private searchSeq: number = 0;
-  // 「查看历史」筛的那个发送者；0 = 不按发送者筛（普通关键词搜索）。
-  // 按发送者筛时 query 允许为空——TDLib 支持"空 query + sender_id"列出此人全部消息。
-  @Local private searchSenderId: number = 0;       // drops stale responses
+  // 消息多选状态机（B7 批）。原来的 2 个 @Local（selecting/selectedIds）住进
+  // 了控制器，变成 @Trace，字段名与初值一字未改。页面（chatTitleBar/
+  // bottomDock/timelineRow）仍直读 this.selection.active/this.selection.ids，
+  // 依赖粒度与搬之前一一对应——本簇没有像 B5 的 TopBanners 那样把宿主也改成
+  // 直读控制器，只是把状态和判定收进一个能单测的对象。
+  //
+  // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
+  // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自的多选态
+  // 互不相干。
+  private selection: SelectionSession = new SelectionSession();
   // Peer's premium emoji status (private chats) shown beside the header title.
   @Local headerEmojiPath: string = '';
   @Local headerEmojiFormat: string = '';
@@ -2063,8 +2066,7 @@ export struct ChatPage {
   }
 
   private resetMessageActionSession(): void {
-    this.selecting = false;
-    this.selectedIds = [];
+    this.selection.reset();
     this.showReactionSheet = false;
     this.reactionTargetId = 0;
     this.reactionPendingKey = '';
@@ -2190,6 +2192,26 @@ export struct ChatPage {
       flashAtIndex: (index: number): void => { this.flashAtIndex(index); },
       jumpToPinned: (messageId: number): void => { this.jumpToPinned(messageId); }
     });
+    // 会话内搜索控制器接上宿主（B6）。前四个是取值器；jumpToMessage 命中后交回
+    // 页面走 onReplyTap（压回返回栈、滚动、两拍高亮闪烁，与点引用块/点置顶条
+    // 同一条路径）；cancelFlash 是搬之前 exit()/updateQuery() 就顺手碰的、与
+    // 搜索簇本身无关的高亮闪烁子系统。
+    this.search.bind({
+      chatId: (): number => this.chatId,
+      threadRootId: (): number => this.threadRootId,
+      forumTopicId: (): number => this.forumTopicId,
+      directMessagesTopicId: (): number => this.directMessagesTopicId,
+      jumpToMessage: (messageId: number): void => { this.onReplyTap(messageId); },
+      cancelFlash: (): void => { this.cancelFlash(); }
+    });
+    // 多选控制器接上宿主（B7）。chatTgsScrollActive 是取值器；
+    // closeReactionSheet/setEmojiPanel 是伸到多选簇之外的页面子系统，仅由
+    // enter() 触达。
+    this.selection.bind({
+      chatTgsScrollActive: (): boolean => this.chatTgsScrollActive,
+      closeReactionSheet: (): void => { this.closeReactionSheet(); },
+      setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); }
+    });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
@@ -2214,6 +2236,9 @@ export struct ChatPage {
     // 它们必须在任何一次行数组发布之前就绪。
     // B5 更正：现在是三件——最前面那次 topCard.bind() 同样与路由参数无关，且
     // 必须早于 applyRouteParams。
+    // B6/B7 更正：现在是五件——search.bind()/selection.bind() 与 topCard.bind()
+    // 同理，都必须早于 applyRouteParams（seedFromRoute/scheduleEntrySearch 会
+    // 用到 search 的 host）。
   }
 
   // 路由参数就绪后的初始化。这就是迁移前 aboutToAppear 的后半段，顺序一字未改，
@@ -2238,7 +2263,7 @@ export struct ChatPage {
     }));
     this.registerHeaderDerivedSubscriptions(store);
     this.openStoreForRoute(store, ctx);
-    this.scheduleEntrySearchIfNeeded();
+    this.search.scheduleEntrySearch();
   }
 
   // 阶段 A（前半）：路由解析、会话重置、头部/草稿/进入即搜索的初始状态。
@@ -2280,21 +2305,14 @@ export struct ChatPage {
     // Entered from global search: open directly on this chat's results for the
     // same query (the search header, the hit list and ∧/∨ navigation). With a
     // message hit, that message is the jump target and becomes the current hit
-    // — searchAnchorId keeps the search from jumping somewhere else.
+    // — seedFromRoute's anchorId keeps the search from jumping somewhere else.
     // Deep links like t.me/<name>?text=… open the chat with a prefilled draft.
     if (route.draftText !== '') {
       this.draft = route.draftText;
     } else {
       this.restoreServerDraft();
     }
-    if (route.searchQuery !== '') {
-      this.searchMode = true;
-      this.searchQuery = route.searchQuery;
-      this.searchAnchorId = jumpTo !== undefined ? jumpTo : 0;
-    } else if (route.startSearch) {
-      // Profile-page 搜索 button: open the chat with an empty, focused search.
-      this.searchMode = true;
-    }
+    this.search.seedFromRoute(route.searchQuery, route.startSearch, jumpTo !== undefined ? jumpTo : 0);
     const ctx: RouteApplyContext = { jumpTo: jumpTo };
     return ctx;
   }
@@ -3081,7 +3099,7 @@ export struct ChatPage {
       //
       // issue #80 诊断：搜索结果点进来落点不对，而这条链一个埋点都没有，报告人
       // 导的日志看不出断在哪一步。开→加载→落点→高亮各记一行。
-      logW(`[Jump80] open chat=${this.chatId} jumpTo=${jumpTo} search=${this.searchMode}`);
+      logW(`[Jump80] open chat=${this.chatId} jumpTo=${jumpTo} search=${this.search.mode}`);
       this.didInitialScroll = true;
       this.pendingJumpId = jumpTo;
       store.open(jumpTo);
@@ -3110,17 +3128,9 @@ export struct ChatPage {
     }
   }
 
-  private scheduleEntrySearchIfNeeded(): void {
-    if (this.searchMode && this.searchQuery !== '') {
-      // Let the initial history land first — runSearch jumps to the newest hit,
-      // and that jump would otherwise be undone by the initial scroll-to-bottom.
-      setTimeout(() => {
-        if (this.searchMode) {
-          this.runSearch(0, 0);
-        }
-      }, SEARCH_ENTRY_DELAY_MS);
-    }
-  }
+  // scheduleEntrySearchIfNeeded 搬进了 SearchSession.scheduleEntrySearch()
+  // （B6 批）；applyRouteParams 阶段 A 收尾时的调用点改走 this.search.
+  // scheduleEntrySearch()。
 
   // nowSec 驱动实时位置的倒计时和"已结束"判定，以及消息时间的相对显示。
   // 以前只在 aboutToAppear 赋值一次，于是共享结束后必须重进会话才看得出来。
@@ -3462,6 +3472,15 @@ export struct ChatPage {
     // 到这里。中间隔着的 stopVoicePlaybackKeepingMusic 与 disposeSubscriptionsInOrder
     // 都不 await，定时器插不进去，等价。
     this.topCard.dispose();
+    // 会话内搜索控制器的退场（B6）。原来的 search* 字段一直没有对应的
+    // aboutToDisappear 清理——整个 ChatPage 实例随导航栈弹出一起丢弃。搬进
+    // entryTimer 这个真句柄之后就需要一处收口，与 topCard 同放一组：先
+    // ++seq 作废在途的 searchChatMessages 响应，再清 entryTimer。
+    this.search.dispose();
+    // 多选控制器的退场（B7）。本簇没有定时器/序号守卫，dispose() 只是裸清
+    // active/ids——与其余控制器统一 bind/dispose 生命周期，同样没有对应的
+    // 旧清理位置可循，放在这一组里。
+    this.selection.dispose();
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
@@ -3850,12 +3869,12 @@ export struct ChatPage {
       this.closeViewer();
       return true;
     }
-    if (this.selecting) {
-      this.exitSelect();
+    if (this.selection.active) {
+      this.selection.exit();
       return true;
     }
-    if (this.searchMode) {
-      this.exitSearch();
+    if (this.search.mode) {
+      this.search.exit();
       return true;
     }
     return false;
@@ -5105,128 +5124,11 @@ export struct ChatPage {
   // Reply-quote tap: jump to the quoted original message (same in-place scroll
   // as a same-chat link jump).
   // --- in-chat search ---
-  private enterSearch(): void {
-    this.searchMode = true;
-    this.searchQuery = '';
-    this.searchResults = [];
-    this.searchTotal = 0;
-    this.searchIdx = 0;
-  }
-
-  private exitSearch(): void {
-    this.searchMode = false;
-    this.searchQuery = '';
-    // 发送者过滤必须跟着一起清：留着的话下一次普通关键词搜索会被悄悄限定在
-    // 那个人身上，用户完全看不出为什么搜不到。
-    this.searchSenderId = 0;
-    this.searchResults = [];
-    this.searchTotal = 0;
-    this.searchIdx = 0;
-    this.searchSeq++;
-    this.cancelFlash();
-  }
-
-  private updateSearchQuery(value: string): void {
-    if (value === this.searchQuery) {
-      return;
-    }
-    this.searchQuery = value;
-    this.searchResults = [];
-    this.searchTotal = 0;
-    this.searchIdx = 0;
-    this.searchSeq++;
-    this.cancelFlash();
-  }
-
-  // Run a search page. fromMsgId 0 = fresh search; otherwise fetch the page
-  // older than that message (pagination for the ∧ button past the first 50).
-  private runSearch(fromMsgId: number, thenJumpTo: number): void {
-    const q = this.searchQuery.trim();
-    // 关键词为空时通常没什么可搜的，但**按发送者筛是例外**：空 query + sender_id
-    // 正是 TDLib 列出"此人在本会话的全部消息"的用法（「查看历史」走这条）。
-    if (q === '' && this.searchSenderId === 0) {
-      return;
-    }
-    const seq = ++this.searchSeq;
-    const req: TdRequest = { '@type': 'searchChatMessages' };
-    req['chat_id'] = this.chatId;
-    req['query'] = q;
-    applyMessageTopicScope(
-      req, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
-    if (this.searchSenderId > 0) {
-      const sender: TdObject = { '@type': 'messageSenderUser' };
-      sender['user_id'] = this.searchSenderId;
-      req['sender_id'] = sender;
-    }
-    req['from_message_id'] = fromMsgId;
-    req['offset'] = 0;
-    req['limit'] = 50;
-    getTdClient().send(req).then((res: TdObject) => {
-      if (seq !== this.searchSeq || !this.searchMode) {
-        return;
-      }
-      const msgs = (res['messages'] as TdObject[] | undefined) ?? [];
-      const ids: number[] = [];
-      for (const m of msgs) {
-        const id = (m['id'] as number | undefined) ?? 0;
-        if (id > 0) {
-          ids.push(id);
-        }
-      }
-      this.searchTotal = (res['total_count'] as number | undefined) ?? ids.length;
-      this.searchResults = fromMsgId === 0 ? ids : [...this.searchResults, ...ids];
-      if (this.searchResults.length === 0) {
-        promptAction.showToast({ message: $r('app.string.cp_no_messages_found'), duration: 1500 });
-        return;
-      }
-      // 从全局搜索点某条消息进来：那一条就是跳转目标，已经落到位了，这次
-      // 搜索只是为了把 ∧/∨ 的列表填上——**任何情况下都不再跳**。
-      //
-      // 原来是 indexOf 找不到锚点就 jumpToResult(0)。两边匹配口径不同时这就
-      // 会把用户刚落对的位置甩开（issue #80：全局搜索命中「opengram，还有最近
-      // 那个」，会话内搜索用同一串词只回了另一条含 "opengram" 的消息，页面
-      // 于是自己滑走）。锚点是用户的选择，按 id 序插进结果里，不推翻它。
-      if (this.searchAnchorId !== 0) {
-        const merged: AnchorMerge = mergeAnchorHit(this.searchResults, this.searchAnchorId);
-        this.searchAnchorId = 0;
-        this.searchResults = merged.results;
-        this.searchIdx = merged.index;
-        if (merged.inserted) {
-          this.searchTotal = this.searchTotal + 1;
-        }
-        return;
-      }
-      this.jumpToResult(thenJumpTo);
-    }).catch((e: TdError) => {
-      logE(`ChatPage.searchChatMessages failed: ${e.message}`);
-    });
-  }
-
-  private jumpToResult(idx: number): void {
-    if (idx < 0 || idx >= this.searchResults.length) {
-      return;
-    }
-    this.searchIdx = idx;
-    this.onReplyTap(this.searchResults[idx]); // same jump + double-blink flash
-  }
-
-  // ∧ / ∨ 的决策交给纯函数（util/searchPaging，有单测）：下标越界、总数为 0、
-  // 已加载等于总数、空结果集——这几个边界混在异步回调之间最容易写错。
-  private applySearchStep(step: SearchStep): void {
-    if (step.action === SEARCH_JUMP) {
-      this.jumpToResult(step.index);
-    } else if (step.action === SEARCH_FETCH) {
-      this.runSearch(step.fromMessageId, step.index);
-    }
-  }
-
-  private searchOlder(): void {
-    this.applySearchStep(stepOlder(this.searchResults, this.searchIdx, this.searchTotal));
-  }
-
-  private searchNewer(): void {
-    this.applySearchStep(stepNewer(this.searchIdx));
-  }
+  // 整簇状态机（enterSearch/exitSearch/updateSearchQuery/runSearch/
+  // jumpToResult/applySearchStep/searchOlder/searchNewer）搬进了
+  // SearchSession（B6 批）；调用方改走 this.search.enter()/exit()/
+  // updateQuery()/run()/older()/newer()。SearchSession.jumpToMessage host
+  // 回调仍是 this.onReplyTap，与搬之前同一条跳转路径。
 
   // 点引用块：先把"跳走之前在哪"压进返回栈，再跳。
   // 返回点取**被点的那条消息**，不是视口底部那条：引用块可能在屏幕靠上，
@@ -6589,7 +6491,7 @@ export struct ChatPage {
       translationActive: this.translationActive(),
       canClearHistory: this.clearHistoryChoice() !== undefined,
       canLeaveChat: this.isGroup && this.membershipState === 'writable',
-      onSearch: (): void => { this.enterSearch(); },
+      onSearch: (): void => { this.search.enter(); },
       onToggleMute: (): void => { this.toggleChatMute(); },
       onAddToFolder: (): void => { showChatFolderPicker(this.getUIContext(), this.chatId); },
       onAutoDelete: (): void => { this.chooseAutoDelete(); },
@@ -6630,7 +6532,7 @@ export struct ChatPage {
   private chromeGeometryInput(): ChatChromeGeometryInput {
     return {
       topSafe: this.topSafe,
-      searchMode: this.searchMode,
+      searchMode: this.search.mode,
       pinnedVisible: this.topCard.pinnedPreview !== '',
       liveVisible: this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive,
       loadingVisible: this.topCard.topCardLoadingVisible
@@ -7509,67 +7411,13 @@ export struct ChatPage {
   }
 
   // --- multi-select ---
-  // 从消息菜单进多选：选中的是**整行**，不是被长按的那一条。
-  //
-  // messageSelection 开篇写明的不变量是"一行要么整体选中、要么整体不选"，而
-  // 这里原来只放被长按消息的 id。相册行被长按时，那是相册的头一条：行在 UI 上
-  // 显示为选中（rowSelected 是"沾上就算"），计数却是 1，接着转发也只发出这一
-  // 张——九图相册转发成一张。
-  private enterSelect(memberIds: number[]): void {
-    ContextMenu.close();
-    this.closeReactionSheet();
-    this.setEmojiPanel(false);
-    this.animateSelection((): void => {
-      this.selecting = true;
-      this.selectedIds = toggleRow([], memberIds);
-    });
-  }
-
-  // 行底色的 150ms 淡入淡出。原来是消息行上一条常驻的 .animation()，现在在
-  // 改动发生的那一刻显式驱动一次——时长与曲线照搬，包括滑动中给 0 那一支。
-  private animateSelection(apply: () => void): void {
-    animateTo({
-      duration: this.chatTgsScrollActive ? 0 :
-        powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 150),
-      curve: Curve.EaseOut
-    }, apply);
-  }
-
-  private exitSelect(): void {
-    this.animateSelection((): void => { this.clearSelectionState(); });
-  }
-
-  // 不带动画的裸改，供已经在 animateSelection 闭包里的调用点用。
-  private clearSelectionState(): void {
-    this.selecting = false;
-    this.selectedIds = [];
-  }
-
-  private rowSelected(g: AlbumGroup): boolean {
-    return rowSelected(this.selectedIds, g.memberIds);
-  }
-
-  // Toggle a whole display row (an album row selects all its members).
-  private toggleSelectRow(g: AlbumGroup): void {
-    if (!rowSelectable(g.head.contentType)) {
-      return;
-    }
-    this.animateSelection((): void => {
-      this.selectedIds = toggleRow(this.selectedIds, g.memberIds);
-      if (this.selectedIds.length === 0) {
-        this.clearSelectionState();
-      }
-    });
-  }
+  // 整簇状态机（enterSelect/animateSelection/exitSelect/clearSelectionState/
+  // rowSelected/toggleSelectRow）搬进了 SelectionSession（B7 批）；
+  // reconcileMessageActionTargets 的 selecting/selectedIds 半边一并搬走，
+  // reactionSheet 半边（与多选无关）仍在这里自己清。
 
   private reconcileMessageActionTargets(list: MessageEntry[]): void {
-    if (this.selecting) {
-      this.selectedIds = pruneSelection(this.selectedIds,
-        list.map((m: MessageEntry): number => m.id));
-      if (this.selectedIds.length === 0) {
-        this.exitSelect();
-      }
-    }
+    this.selection.reconcile(list);
     if (this.showReactionSheet && this.reactionTargetId !== 0 &&
       list.findIndex((m: MessageEntry): boolean => m.id === this.reactionTargetId) < 0) {
       this.closeReactionSheet();
@@ -7577,7 +7425,7 @@ export struct ChatPage {
   }
 
   private copySelected(): void {
-    const sorted = [...this.selectedIds].sort((a: number, b: number) => a - b);
+    const sorted = [...this.selection.ids].sort((a: number, b: number) => a - b);
     const parts: string[] = [];
     for (const id of sorted) {
       const m = this.findMsg(id);
@@ -7592,14 +7440,14 @@ export struct ChatPage {
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, parts.join('\n\n'));
     pasteboard.getSystemPasteboard().setData(data).then(() => {
       promptAction.showToast({ message: plural('cp_copied_n', parts.length, parts.length), duration: 1200 });
-      this.exitSelect();
+      this.selection.exit();
     }).catch((e: Object) => { logE(`ChatPage.copySelected failed: ${JSON.stringify(e)}`); });
   }
 
   // "同时为对方删除"是一个开关，不是第三个按钮：做成三按钮时用户要在两个
   // 红色危险项之间辨认，容易点错。所以用带复选框的自定义弹窗。
   private deleteSelected(): void {
-    const ids: number[] = [...this.selectedIds];
+    const ids: number[] = [...this.selection.ids];
     if (ids.length === 0) {
       return;
     }
@@ -7607,8 +7455,8 @@ export struct ChatPage {
   }
 
   // 长按菜单里的单条删除：复用 deleteSelected() 的弹窗逻辑，只是目标 id 只有一个。
-  // 不处于多选模式时 doDeleteMessages 内部的 exitSelect() 只是把已经为 false/[]
-  // 的 selecting/selectedIds 再赋一次同样的值，是无害的空操作。
+  // 不处于多选模式时 doDeleteMessages 内部的 exit() 只是把已经为 false/[]
+  // 的 active/ids 再赋一次同样的值，是无害的空操作。
   private deleteMessage(messageId: number): void {
     this.openDeleteConfirm([messageId]);
   }
@@ -7627,7 +7475,7 @@ export struct ChatPage {
     req['message_ids'] = ids;
     req['revoke'] = revoke;
     getTdClient().send(req).then(() => {
-      this.exitSelect();
+      this.selection.exit();
     }).catch((e: TdError) => {
       logE(`ChatPage.deleteMessages failed: ${e.message}`);
       promptAction.showToast({ message: str('cp_delete_failed_msg', e.message), duration: 2000 });
@@ -8331,19 +8179,10 @@ export struct ChatPage {
       });
   }
 
-  // 「查看历史」：在本会话里筛出这个人的全部消息。
-  //
-  // 复用会话内搜索的整套界面（结果计数、上/下一条、跳转高亮），只是把
-  // sender_id 填上、query 留空——TDLib 支持这种组合。
-  private viewSenderHistory(senderId: number): void {
-    if (senderId <= 0) {
-      return;
-    }
-    this.searchSenderId = senderId;
-    this.searchQuery = '';
-    this.searchMode = true;
-    this.runSearch(0, 0);
-  }
+  // 「查看历史」：在本会话里筛出这个人的全部消息，复用会话内搜索的整套界面
+  // （结果计数、上/下一条、跳转高亮）。搬进了 SearchSession.enterForSender()
+  // （B6 批）；长按菜单的 onViewSenderHistory 直接调 this.search.
+  // enterForSender(senderId)。
 
   private openForwardPicker(ids: number[]): void {
     const validIds: number[] = this.forwardableMessageIds(ids);
@@ -8618,11 +8457,11 @@ export struct ChatPage {
   @Builder
   bottomDock() {
     Column() {
-      if (this.selecting) {
+      if (this.selection.active) {
         // Selection owns the header actions; removing the composer also drops
         // its reserved list inset so messages expand naturally into the space.
         Column().width('100%').height(0);
-      } else if (this.searchMode) {
+      } else if (this.search.mode) {
         this.searchDock();
       } else if (this.composerSlot() !== 'writable') {
         this.membershipDock();
@@ -8648,13 +8487,10 @@ export struct ChatPage {
   @Builder
   private searchDock() {
     SearchBottomBar({
-      query: this.searchQuery,
-      loadedCount: this.searchResults.length,
-      total: this.searchTotal,
-      currentIndex: this.searchIdx,
+      search: this.search,
       bottomGap: this.composerBottomGap(),
-      onOlder: (): void => { this.searchOlder(); },
-      onNewer: (): void => { this.searchNewer(); }
+      onOlder: (): void => { this.search.older(); },
+      onNewer: (): void => { this.search.newer(); }
     });
   }
 
@@ -8988,10 +8824,10 @@ export struct ChatPage {
         Stack({ alignContent: Alignment.Start }) {
           // Selection mode shifts the row right into a left check gutter.
           Row() {
-            if (this.selecting && ri.item.head.contentType !== 'system' &&
+            if (this.selection.active && ri.item.head.contentType !== 'system' &&
               ri.item.head.contentType !== 'hidden') {
               Column() {
-                if (this.rowSelected(ri.item)) {
+                if (this.selection.isRowSelected(ri.item)) {
                   SymbolGlyph($r('sys.symbol.checkmark_circle'))
                     .fontSize(22).fontColor([this.accent()]);
                 } else {
@@ -9009,17 +8845,17 @@ export struct ChatPage {
             }
             .layoutWeight(1)
             // BLOCK_DESCENDANTS keeps the outer List draggable in selection mode.
-            .hitTestBehavior(this.selecting && ri.item.head.contentType !== 'system' &&
+            .hitTestBehavior(this.selection.active && ri.item.head.contentType !== 'system' &&
               ri.item.head.contentType !== 'hidden'
               ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
-          .backgroundColor(this.selecting && this.rowSelected(ri.item)
+          .backgroundColor(this.selection.active && this.selection.isRowSelected(ri.item)
             ? $r('app.color.select_highlight') : Color.Transparent)
           .onClick((): void => {
-            if (this.selecting) {
-              this.toggleSelectRow(ri.item);
+            if (this.selection.active) {
+              this.selection.toggleRow(ri.item);
             }
           });
         }
@@ -9034,7 +8870,7 @@ export struct ChatPage {
         ri.index,
         ri.item,
         area.height as number,
-        ri.item.initialDeferred !== true && !this.selecting
+        ri.item.initialDeferred !== true && !this.selection.active
       );
     });
   }
@@ -9042,23 +8878,23 @@ export struct ChatPage {
   @Builder
   chatTitleBar() {
     Column() {
-      if (this.selecting) {
+      if (this.selection.active) {
         SelectionHeader({
           materialEpoch: this.materialEpoch,
-          selectedCount: this.selectedIds.length,
+          selection: this.selection,
           topSafe: 0,
-          onExit: (): void => { this.exitSelect(); },
-          onForward: (): void => { this.openForwardPicker(this.selectedIds); },
+          onExit: (): void => { this.selection.exit(); },
+          onForward: (): void => { this.openForwardPicker(this.selection.ids); },
           onCopy: (): void => { this.copySelected(); },
           onDelete: (): void => { this.deleteSelected(); }
         });
-      } else if (this.searchMode) {
+      } else if (this.search.mode) {
         SearchHeader({
-          query: this.searchQuery,
+          search: this.search,
           topSafe: 0,
-          onExit: (): void => { this.exitSearch(); },
-          onQueryChange: (v: string): void => { this.updateSearchQuery(v); },
-          onSubmit: (): void => { this.runSearch(0, 0); }
+          onExit: (): void => { this.search.exit(); },
+          onQueryChange: (v: string): void => { this.search.updateQuery(v); },
+          onSubmit: (): void => { this.search.run(0, 0); }
         });
       } else {
         ChatHeader({
@@ -9437,8 +9273,8 @@ export struct ChatPage {
           onForwardShowChange: (show: boolean): void => { this.showForwardSheet = show; },
           onForwardSent: (): void => {
             this.forwardMessageIds = [];
-            if (this.selecting) {
-              this.exitSelect();
+            if (this.selection.active) {
+              this.selection.exit();
             }
           },
           onScheduledShowChange: (show: boolean): void => { this.showScheduledSheet = show; },
@@ -9480,7 +9316,7 @@ export struct ChatPage {
       // while the media panel is open puts it above (and blocks) the GIF tab.
       // 显隐跟着"有没有可返回的位置"走，而不是"在不在底部"：站在最新消息上
       // 但引用链还没退完时，箭头仍然该在。
-      if (this.returnTarget().kind !== RETURN_NONE && !this.searchMode && !this.showEmojiPanel) {
+      if (this.returnTarget().kind !== RETURN_NONE && !this.search.mode && !this.showEmojiPanel) {
         Column() {
           ScrollFab({
             unreadCount: this.unreadBadge,

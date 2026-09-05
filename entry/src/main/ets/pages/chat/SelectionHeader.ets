@@ -5,6 +5,7 @@ import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMateria
 import { materialModifier } from '../../util/materialModifier';
 import { str } from '../../util/strings';
 import { CHAT_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
+import { SelectionSession } from './SelectionSession';
 
 // 多选态的顶栏：✕ 退出、已选计数、转发 / 复制 / 删除。
 //
@@ -20,6 +21,13 @@ const DESTRUCTIVE: ResourceColor = '#FF3B30';
 // @Param、也订阅不了 @ObservedV2 对象的 @Trace，而后续批次要把多选态收进一个
 // SelectionSession 控制器、让这个宿主自己在 build() 里直读它——不先换体系就无从
 // 谈起。本次迁移本身零行为变更。
+//
+// B7 更正：上面预告的那一步已经落地——selectedCount 这个 @Param number 已被
+// `selection: SelectionSession` 引用整体取代，本组件改在 build() 里直读
+// `this.selection.count()`。@Require 而不带默认值：调用点（ChatPage）必须传，
+// 引用由页面的字段初始化器 new 出来、全生命周期不变，所以 @Param 那层的
+// `!==` 永不成立，本组件不会因为父组件重建而整体重刷——只在 count() 依赖的
+// `this.selection.ids` 这个 @Trace 翻转时才重算。
 @ComponentV2
 export struct SelectionHeader {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
@@ -30,8 +38,13 @@ export struct SelectionHeader {
   @Param materialEpoch: number = 0;
   // @Prop → @Param：V1 的 @Prop 对复杂类型是深拷贝、@Param 是引用传递，这两个
   // 都是 number，两者等价。本组件内部一处也没写过它们，所以不需要 @Once。
-  @Param selectedCount: number = 0;
   @Param topSafe: number = 0;
+  // selectedCount: number → selection: SelectionSession（B7）。原来的标量在
+  // 每次多选集合变化时都要先在 ChatPage 里重算一遍、再靠 @Param 的 `!==`
+  // 传下来；现在直接收控制器引用，本组件自己在 build() 里读
+  // `this.selection.count()`（对 `this.selection.ids` 这个 @Trace 的同步取值，
+  // 依赖照常建立，同 TopBanners 的 hasContent()/liveShowing() 写法）。
+  @Require @Param selection: SelectionSession;
 
   // @Event 而不是 @Param：调用点传的是内联箭头函数，页面每重建一次都是新闭包，
   // @Param 的 `!==` 恒不相等会让本层白刷一遍。@Event 不具备观测能力，正好复现
@@ -79,7 +92,7 @@ export struct SelectionHeader {
   build() {
     Row({ space: 8 }) {
       this.capsule('sys.symbol.xmark', COLOR_TEXT_PRIMARY, (): void => { this.onExit(); });
-      Text(str('cp_selected_n', this.selectedCount))
+      Text(str('cp_selected_n', this.selection.count()))
         .fontSize(16).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1).margin({ left: 6 });
       this.capsule('sys.symbol.arrowshape_turn_up_right', COLOR_TEXT_PRIMARY,
