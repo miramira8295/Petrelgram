@@ -74,3 +74,33 @@ export function openAtMessageId(jumpTo: number, hasUnread: boolean, remembered: 
   }
   return remembered > 0 ? remembered : 0;
 }
+
+// ── 缓存页 resume 时，这一份快照是不是「整条时间线的一个碎片」────────────
+//
+// 判的是**数量级坍缩**，不是「非空」。原始注释逐字保留：
+//
+//   The empty-snapshot case is not the only fragment. openChat makes TDLib
+//   push the newest message immediately, and its first getChatHistory reply
+//   may legally contain fewer messages than asked for — and onHistory marks
+//   the store 'ready' the moment that reply lands. So a one-message,
+//   already-'ready' snapshot reached this point and replaced 34 rows with
+//   one, which the log shows the list then rebuilding back to thirty. That
+//   collapse and rebuild is the "messages scrambled after coming back from
+//   the background" report.
+//
+//   The test is a size collapse, not emptiness: a fragment is an order of
+//   magnitude smaller than what is on screen, while messages deleted in the
+//   background shrink the list by a few rows. The halving threshold draws
+//   that line. It errs by holding a stale viewport for one update if more
+//   than half a chat is deleted while backgrounded; the next snapshot
+//   clears it.
+//
+// 2:1 是业务 hack，不是可调参数：改成别的比例、或者退化成 `nextRows === 0`，
+// 都会改变行为（前者挪动「几行删除」与「坍缩」的分界线，后者把上面那条
+// 一条消息压掉 34 行的真机案例重新放进来）。
+//
+// prevRows = 当前屏上的行数（this.groups.length），nextRows = 新快照的条数
+// （list.length）。prevRows 为 0 时永远不是碎片：屏上没东西可保。
+export function isResumeFragment(prevRows: number, nextRows: number): boolean {
+  return prevRows > 0 && nextRows * 2 < prevRows;
+}

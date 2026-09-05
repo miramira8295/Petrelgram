@@ -68,3 +68,59 @@ export function rowFadeTransition(
   }
   return { enabled: true, duration: duration, delay: delay };
 }
+
+// ── 首屏逐行揭示的 stagger 延迟 ──────────────────────────────────────────
+//
+// 上面那道闩决定「这一行要不要做入场动画」，这里决定「第几个做」。返回的是
+// **未经 powerAnimationDuration 换算**的裸毫秒；「动效强度」的倍率由调用方
+// 在外面套（powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, …)），因为
+// 那要读 AppStorage，不属于纯函数。换算对 0 是幂等的（powerAnimationDuration
+// 关掉时返回 0，开着时原样返回），所以外面无条件套一层与原方法等价。
+//
+// 热路径：首屏每一行 .transition() 求值时都会调一次，所以是位置参数、返回
+// number，全程零分配。
+//
+// 参数（全部由页面侧薄包装从字段里读出来再传）：
+//   index      当前行在 groups 里的下标；
+//   first/last 可见窗口（curStartIdx / curEndIdx）。窗口还没量出来时（first<0、
+//              last<first、last 越界）下面按落点自己推一段；
+//   groupsLen  groups.length；
+//   anchorIndex 本次是**锚点落点**（未读 / 续读）时传夹紧后的锚点行下标，
+//              也就是 Math.max(0, groupIndexOf(groups, startAnchorId))；本次
+//              是底部落点时传 -1。
+//              ⚠️ 负数在这里是「不是锚点落点」的哨兵，**不是**「groupIndexOf
+//              没找到」：原方法里 groupIndexOf 返回 -1 时仍走锚点分支并夹到 0，
+//              所以调用方必须先按 (stayAtUnread && firstUnreadId > 0) ||
+//              resumeDividerId > 0 判分支，再决定传夹紧值还是 -1；
+//   anchorFromTop stagger 方向，页面侧是 stayAtUnread || resumeDividerId > 0。
+//              注意它与上面选分支的判据**不是同一个条件**（少了 firstUnreadId
+//              > 0 那一半），两者在原方法里就各管各的，不要合并；
+//   rowLimit   INITIAL_TIMELINE_REVEAL_ROW_LIMIT；
+//   staggerMs  INITIAL_TIMELINE_ROW_STAGGER_MS。
+//
+// 窗口外的行返回 0（不排队，直接跟上），这一条也不走上面的换算。
+export function initialRowRevealDelay(
+  index: number, first: number, last: number, groupsLen: number,
+  anchorIndex: number, anchorFromTop: boolean,
+  rowLimit: number, staggerMs: number
+): number {
+  let lo: number = first;
+  let hi: number = last;
+  if (lo < 0 || hi < lo || hi >= groupsLen) {
+    if (anchorIndex >= 0) {
+      lo = anchorIndex;
+      hi = Math.min(groupsLen - 1, lo + rowLimit - 1);
+    } else {
+      hi = groupsLen - 1;
+      lo = Math.max(0, hi - rowLimit + 1);
+    }
+  }
+  if (index < lo || index > hi) {
+    return 0;
+  }
+  // Bottom landings read naturally from the composer upward. An unread
+  // landing starts at its top anchor and flows down into the unread block.
+  const visualRank: number = anchorFromTop ? index - lo : hi - index;
+  const cappedRank: number = Math.min(rowLimit - 1, Math.max(0, visualRank));
+  return cappedRank * staggerMs;
+}

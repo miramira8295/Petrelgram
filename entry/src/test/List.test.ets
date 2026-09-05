@@ -194,6 +194,7 @@ import scrollEffectsTest from './ScrollEffects.test';
 import anchorRestoreTest from './AnchorRestore.test';
 import floatDateGateTest from './FloatDateGate.test';
 import albumCellKeyTest from './AlbumCellKey.test';
+import messageBubblePrepareTest from './MessageBubblePrepare.test';
 import mediaGridTest from './MediaGrid.test';
 import tdRequestTimeoutTest from './TdRequestTimeout.test';
 import notifyRateTest from './NotifyRate.test';
@@ -208,6 +209,9 @@ import chatTimelineSnapshotTest from './ChatTimelineSnapshot.test';
 import chatPageTuningTest from './ChatPageTuning.test';
 import mediaEntryKindTest from './MediaEntryKind.test';
 import chatEffectsTest from './ChatEffects.test';
+import typingIndicatorTest from './TypingIndicator.test';
+import utilityActionGuardTest from './UtilityActionGuard.test';
+import locationActionsTest from './LocationActions.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -421,4 +425,8 @@ export default function testsuite() {
   chatPageTuningTest();
   mediaEntryKindTest();
   chatEffectsTest();
+  typingIndicatorTest();
+  messageBubblePrepareTest();
+  utilityActionGuardTest();
+  locationActionsTest();
 }

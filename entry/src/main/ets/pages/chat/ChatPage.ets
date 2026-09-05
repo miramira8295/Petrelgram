@@ -149,7 +149,9 @@ import {
 import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import { shouldFillViewport } from '../../util/viewportFill';
-import { RowFadeTransition, rowFadeAnimationActive, rowFadeTransition } from '../../util/rowFadeGate';
+import {
+  RowFadeTransition, initialRowRevealDelay, rowFadeAnimationActive, rowFadeTransition
+} from '../../util/rowFadeGate';
 import {
   KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY, KEY_POWER_PARTICLES,
@@ -163,9 +165,7 @@ import {
   getTranslationService, looksLikeTargetLanguage, resolveTranslateTarget
 } from '../../services/TranslationService';
 import {
-  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_ICON_ON_DARK,
-  COLOR_ICON_ON_LIGHT,
-  COLOR_TEXT_ON_LIGHT, COLOR_TEXT_SECONDARY, darkResourceMode
+  COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, darkResourceMode
 } from '../../util/theme';
 import {
   normalizeTelegramLink, bareUsernameOf, inviteLinkOf, chatLinkActionOf,
@@ -218,7 +218,9 @@ import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
 import { InlineResultsBar, StickerSuggestion, StickerSuggestionBar } from './ComposerStrips';
 import { copyPlainText } from '../../util/clipboard';
-import { isRealClientJoinNotice } from '../../util/joinNotice';
+import {
+  clientJoinNoticeRaw, hasRealClientJoinNotice, tagClientJoinNoticeGroup
+} from '../../util/joinNotice';
 import {
   ANCHOR_UNREAD, InitialAnchor, anchorLatchesBottom, initialAnchorOf
 } from '../../util/initialAnchor';
@@ -227,10 +229,20 @@ import {
   MediaWindow, VisibleRange, mediaWindowRange, visibleRangeOrFallback
 } from '../../util/visibleWindow';
 import { openForwardOrigin } from '../../util/chatNavigation';
-import { confirmStopLiveLocation, withLocationPermission } from '../../util/locationActions';
+import {
+  confirmStopLiveLocation, normalizePhoneForDial, SharedLocationUris, sharedLocationUris,
+  withLocationPermission
+} from '../../util/locationActions';
+import { utilityActionAllowedAt } from '../../util/utilityActionGuard';
+import { albumReuseShape, rowPlaySlotKey } from '../../util/messageBubblePrepare';
+import {
+  applyTypingUpdate, pruneExpiredTyping, typingLabelOf
+} from '../../util/typingIndicator';
 import { logE, logI, logW } from '../../util/log';
 import { LengthMetrics } from '@kit.ArkUI';
-import { chromeSitsOnLight } from '../../util/chatChrome';
+import {
+  chromeDarkMaskOf, chromeIconColorOf, chromeOnLightBgOf, chromeTextColorOf
+} from '../../util/chatChrome';
 import { exportLivePhotoMotion } from '../../util/movingPhotoPick';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
@@ -238,10 +250,10 @@ import {
   PAGE_GATE_REARM_DRAG_VP, PageGate, pageGateShotIsUserDriven, reachedNewerPageTrigger
 } from '../../util/pageGate';
 import {
-  RememberedChatViewport, rememberChatPosition, rememberedChatViewport
+  RememberedChatViewport, isResumeFragment, rememberChatPosition, rememberedChatViewport
 } from '../../util/chatResume';
 import {
-  applyMessageTopicScope, conversationScopeId, messageOutsideTopicScope
+  applyMessageTopicScope, conversationScopeId
 } from '../../util/messageTopicScope';
 import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
@@ -340,6 +352,11 @@ export struct ChatPage {
   // 订阅后作为 @Param 传下来（materialEpoch / appDark 都是这么走的）。
   @Require @Param localBgEpoch: number = 0;
   // 聊天壁纸的三根滑杆。由 ChatPageChrome 订阅后传下来（V2 用不了 @StorageProp）。
+  //
+  // 模糊度这一根（KEY_BG_BLUR）拖动时要立即重算离屏合成图，否则拖完滑块背景看
+  // 起来没反应（命中旧签名的缓存图）。这句原本是 366df3e 写在字段上方的两行注释，
+  // 字段搬去 ChatPageChrome 时上半句跟着走了、下半句被落在 autoplayVideo 后面成了
+  // 没有上文的「否则…」，2026-09-05 瘦身批 B3 归位。
   @Require @Param chatBgBlur: number = 0;
   @Require @Param chatBgPattern: number = 0;
   @Require @Param chatBgDim: number = 0;
@@ -1187,38 +1204,20 @@ export struct ChatPage {
     return this.messageActionsCache;
   }
 
+  // 两个形状串的算法住在 util/messageBubblePrepare.ets（连同它们的【为什么】
+  // 注释），由 entry/src/test/MessageBubblePrepare.test.ets 钉住。这里只剩最薄
+  // 的一层：读 this.playSlotKey 传进去，不新建对象、不打日志——每行每帧各调
+  // 一次，是消息行的热路径。
   private albumReuseShape(g: AlbumGroup): string {
-    let shape: string = `${g.photoPaths.length}`;
-    for (let i = 0; i < g.photoPaths.length; i++) {
-      const memberId: number = g.memberIds[i] ?? 0;
-      shape += `:${g.photoIsVideo[i] ? 'v' : 'p'}` +
-        `${g.photoPaths[i] !== '' ? 'r' : 'n'}${g.photoFileIds[i] !== 0 ? 'f' : 'z'}` +
-        `${g.photoFailed[i] ? 'e' : 'o'}${this.playSlotKey === slotKey(memberId, i) ? 's' : 'i'}`;
-    }
-    return shape;
+    return albumReuseShape(g, this.playSlotKey);
+  }
+
+  private rowPlaySlotKey(g: AlbumGroup): string {
+    return rowPlaySlotKey(g, this.playSlotKey);
   }
 
   // Prepare the row once for this build invocation. `data` used to repeat all
   // of these derived lookups independently for every visible row.
-  // 这一行**自己**的播放位。不是本行拥有播放位时一律返回空串。
-  //
-  // 【为什么必须行局部化】播放位是全局单值，而 prepareMessageBubble 的缓存键
-  // 里原来放的是它的原值——于是播放位一变，整屏每一行的键同时变，缓存全作废，
-  // 每行都拿到一个新的 data 对象、每个气泡都重渲染一次。09-03 的 Frame 录制
-  // 里，每次向上翻页之后 100–250ms 内 15–33 个气泡同时更新（正常滚动是 1–3
-  // 个），就是这么来的：翻页 → driveVisibleWork → armPlaySlotSettle → 重新
-  // 竞选播放位 → 全屏作废。
-  //
-  // 气泡侧从来只拿它和**自己的**成员 id 比（MessageBubble.isPlaySlot /
-  // isAlbumCellPlaySlot），所以对不拥有播放位的行传空串与传原值完全等价。
-  private rowPlaySlotKey(g: AlbumGroup): string {
-    if (this.playSlotKey === '') {
-      return '';
-    }
-    return g.memberIds.indexOf(slotKeyMessageId(this.playSlotKey)) >= 0
-      ? this.playSlotKey : '';
-  }
-
   private prepareMessageBubble(g: AlbumGroup): PreparedMessageBubble {
     // 行局部的播放位。起播位置同理：只有拥有播放位的那一行才谈得上续播位置，
     // 其余行给 0——否则它一变，整屏的缓存又一起作废。
@@ -1473,7 +1472,6 @@ export struct ChatPage {
   @Require @Param reduceAnimations: boolean = false;
   // 「自动播放视频」开关。播放位竞选的总闸门之一，见 playSlotsEnabled()。
   @Require @Param autoplayVideo: boolean = true;
-  // 否则拖完滑块背景看起来没反应（命中旧签名的缓存图）。
   // TDLib per-chat wallpaper. Solid/gradient fills render immediately;
   // wallpaper and pattern documents appear as soon as downloadFile completes.
   // One snapshot in place of the nine background state variables this replaces.
@@ -1483,41 +1481,25 @@ export struct ChatPage {
 
   // ── chrome 的前景要跟着**壁纸**翻，不是跟着深浅色模式 ───────────────────
   //
-  // 顶栏/置顶条/输入栏浮在聊天壁纸上，玻璃只是薄薄一层。用户在深色模式下设了
-  // 一张浅色壁纸时，这几条栏其实坐在**亮底**上——真机实测合成底 RGB(174,172,196)，
-  // 图标 1.13:1、连纯白主文字也只有 2.22:1，整条栏不可读。加厚玻璃救不了
-  // （要 alpha≈0.90 才够，那就不是玻璃了），只能翻前景。判据见 util/chatChrome。
-  //
-  // **只在深色模式下才翻**：浅色模式的前景本来就是给亮底挑的，不用动，也就
-  // 保证了这次改动对浅色模式零影响。
+  // 判据、叠加公式与真机对比度数字全部住在 util/chatChrome.ets，由
+  // entry/src/test/ChatChrome.test.ets 钉住；这里只剩「读字段 → 调纯函数」的
+  // 薄包装。glassTintHex(true) 留在页面侧：玻璃厚度是设备态（依赖
+  // immersiveMaterialAvailable()），不能进纯函数。
   private chromeOnLightBg(): boolean {
-    return this.appDark &&
-      chromeSitsOnLight(this.chatBg.colors, glassTintHex(true), false, this.chromeDarkMask());
+    return chromeOnLightBgOf(this.appDark, this.chatBg.colors, glassTintHex(true),
+      this.chromeDarkMask());
   }
 
-  // 深色模式下压在整层壁纸上的黑，两层叠加：壁纸自带的 dark_theme_dimming（服务端
-  // 下发）和用户那根遮罩滑杆。ChatBackdrop 是分两层画的，所以这里按不透明度叠加
-  // 公式合成，而不是简单相加。
-  //
-  // 漏掉这一项就是用户报的那个错：图案壁纸的填充色常常是浅的，只看填充会判成
-  // 亮底、把前景翻成深色，而屏幕上其实是深的。
   private chromeDarkMask(): number {
-    const server: number = Math.max(0, Math.min(1, this.chatBg.dimming));
-    const user: number = Math.max(0, Math.min(1, this.chatBgDim));
-    return 1 - (1 - server) * (1 - user);
+    return chromeDarkMaskOf(this.chatBg.dimming, this.chatBgDim);
   }
 
   private chromeIcon(): ResourceColor {
-    if (this.chromeOnLightBg()) {
-      return COLOR_ICON_ON_LIGHT;
-    }
-    // 深色模式下这两条栏浮在暗壁纸上，用亮白；浅色模式保持原来的次级灰——白色在
-    // 浅色底上等于没有。
-    return this.appDark ? COLOR_ICON_ON_DARK : COLOR_ICON_SECONDARY;
+    return chromeIconColorOf(this.chromeOnLightBg(), this.appDark);
   }
 
   private chromeText(): ResourceColor {
-    return this.chromeOnLightBg() ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_PRIMARY;
+    return chromeTextColorOf(this.chromeOnLightBg());
   }
   private bgStore: ChatBackgroundStore | null = null;
   @Local replyToId: number = 0;      // message being replied to (0 = none)
@@ -2082,29 +2064,14 @@ export struct ChatPage {
     if (this.clientJoinNoticeEntryCache !== null) {
       return this.clientJoinNoticeEntryCache;
     }
-    const content: TdObject = this.clientJoinNoticeIsChannel
-      ? { '@type': 'messageCustomServiceAction', 'text': str('cp_joined_channel') }
-      : { '@type': 'messageChatJoinByLink' };
-    const raw: TdObject = {
-      '@type': 'message',
-      // The row is page-local and memberIds is cleared below. A negative id
-      // also makes accidental lookup/action matching impossible.
-      'id': -1,
-      'chat_id': this.chatId,
-      'date': this.clientJoinNoticeDate,
-      'is_outgoing': true,
-      'content': content
-    };
+    const raw: TdObject = clientJoinNoticeRaw(
+      this.chatId, this.clientJoinNoticeDate, this.clientJoinNoticeIsChannel);
     this.clientJoinNoticeEntryCache = buildMessageEntry(raw, getUserStore());
     return this.clientJoinNoticeEntryCache;
   }
 
   private groupsWithClientJoinNotice(list: MessageEntry[]): AlbumGroup[] {
-    if (this.clientJoinNoticeVisible &&
-      list.some((message: MessageEntry): boolean => isRealClientJoinNotice({
-        contentType: message.contentType, isOutgoing: message.isOutgoing,
-        placeholderLabel: message.placeholderLabel, systemType: message.systemType
-      }))) {
+    if (this.clientJoinNoticeVisible && hasRealClientJoinNotice(list)) {
       // Replace the local row atomically when TDLib eventually supplies the
       // canonical service message, avoiding a one-frame duplicate.
       this.clientJoinNoticeVisible = false;
@@ -2116,13 +2083,7 @@ export struct ChatPage {
     const displayList: MessageEntry[] = list.slice();
     displayList.push(this.clientJoinNoticeEntry());
     const groups: AlbumGroup[] = collapseAlbums(displayList);
-    if (groups.length > 0) {
-      const notice: AlbumGroup = groups[groups.length - 1];
-      if (notice.head.id === -1) {
-        notice.memberIds = [];
-        notice.key = `client_join_${this.chatId}_${this.clientJoinNoticeDate}`;
-      }
-    }
+    tagClientJoinNoticeGroup(groups, this.chatId, this.clientJoinNoticeDate);
     return groups;
   }
 
@@ -2430,23 +2391,8 @@ export struct ChatPage {
       }
       // During a cached-page resume, hold the old viewport until a snapshot
       // arrives that is actually a timeline rather than a fragment of one.
-      //
-      // The empty-snapshot case is not the only fragment. openChat makes TDLib
-      // push the newest message immediately, and its first getChatHistory reply
-      // may legally contain fewer messages than asked for — and onHistory marks
-      // the store 'ready' the moment that reply lands. So a one-message,
-      // already-'ready' snapshot reached this point and replaced 34 rows with
-      // one, which the log shows the list then rebuilding back to thirty. That
-      // collapse and rebuild is the "messages scrambled after coming back from
-      // the background" report.
-      //
-      // The test is a size collapse, not emptiness: a fragment is an order of
-      // magnitude smaller than what is on screen, while messages deleted in the
-      // background shrink the list by a few rows. The halving threshold draws
-      // that line. It errs by holding a stale viewport for one update if more
-      // than half a chat is deleted while backgrounded; the next snapshot
-      // clears it.
-      const fragment: boolean = this.groups.length > 0 && list.length * 2 < this.groups.length;
+      // 「碎片」的判据与它的成因见 util/chatResume.isResumeFragment。
+      const fragment: boolean = isResumeFragment(this.groups.length, list.length);
       if (scrollResumeWaiting && (list.length === 0 || fragment)) {
         return;
       }
@@ -6553,9 +6499,13 @@ export struct ChatPage {
     });
   }
 
+  // 联系人卡片 / 拨号 / 打开位置三个动作共用的防连点闸。判据（含「一把闸不是
+  // 三把」的理由）在 util/utilityActionGuard.ets，由
+  // entry/src/test/UtilityActionGuard.test.ets 钉住；这里只保留时间戳字段和
+  // 「判定通过才刷新」的写入顺序——拒绝时不刷新，连点不会把闸无限续期。
   private utilityActionAllowed(): boolean {
-    const now = Date.now();
-    if (now - this.utilityActionAtMs < 550) {
+    const now: number = Date.now();
+    if (!utilityActionAllowedAt(this.utilityActionAtMs, now)) {
       return false;
     }
     this.utilityActionAtMs = now;
@@ -6601,7 +6551,7 @@ export struct ChatPage {
     if (!skipGuard && !this.utilityActionAllowed()) {
       return;
     }
-    const normalized = phone.trim().replace(/[^0-9+*#]/g, '');
+    const normalized: string = normalizePhoneForDial(phone);
     if (normalized === '') {
       promptAction.showToast({ message: $r('app.string.cp_contact_no_phone'), duration: 1500 });
       return;
@@ -6620,19 +6570,16 @@ export struct ChatPage {
     if (!this.utilityActionAllowed()) {
       return;
     }
-    const cleanLabel = label.trim();
-    if (!valid && cleanLabel === '') {
+    // 拼串在 util/locationActions.sharedLocationUris。空 geoUri = 「坐标无效且
+    // 标签也是空的」，原实现在这一步直接弹「无位置信息」并 return，判断顺序
+    // （防连点闸 → 空判 → 拉起）不变。
+    const uris: SharedLocationUris = sharedLocationUris(latitude, longitude, label, valid);
+    if (uris.geoUri === '') {
       promptAction.showToast({ message: $r('app.string.cp_no_location'), duration: 1500 });
       return;
     }
-    const coordinate = `${latitude},${longitude}`;
-    const query = encodeURIComponent(cleanLabel !== '' ? cleanLabel : coordinate);
-    const geoUri = valid ? `geo:${latitude},${longitude}?q=${query}` : `geo:0,0?q=${query}`;
-    const webFallback = valid
-      ? `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=16/${latitude}/${longitude}`
-      : `https://www.openstreetmap.org/search?query=${query}`;
-    openUrl(getContext(this) as common.UIAbilityContext, geoUri, (): void => {
-      openUrl(getContext(this) as common.UIAbilityContext, webFallback, (): void => {
+    openUrl(getContext(this) as common.UIAbilityContext, uris.geoUri, (): void => {
+      openUrl(getContext(this) as common.UIAbilityContext, uris.webFallback, (): void => {
         promptAction.showToast({ message: $r('app.string.cp_no_map_app'), duration: 1700 });
       });
     });
@@ -8362,35 +8309,26 @@ export struct ChatPage {
 
   // Live "typing…" from peers (updateChatAction). Entries expire after 6s —
   // TDLib sends chatActionCancel, but a dropped cancel must not stick forever.
+  //
+  // 过滤/到期/文案三段纯逻辑在 util/typingIndicator.ets（由
+  // entry/src/test/TypingIndicator.test.ets 钉住）；留在这里的是副作用：
+  // getUserStore().ensure、1500ms 轮询定时器、写 @Local typingLabel。
+  // typingSenders 这张 Map 仍是页面字段，**按引用**传进纯函数由它就地修改——
+  // 这是刻意的「传入可变容器」，不是纯函数破例：不复制 Map 才能让页面这一侧
+  // 继续持有唯一真源，也避免每条 chatAction 都新建一张表。
   private onChatAction(update: TdObject): void {
-    if (((update['chat_id'] as number | undefined) ?? 0) !== this.chatId) { return; }
-    if ((this.forumTopicId > 0 || this.directMessagesTopicId > 0) &&
-      messageOutsideTopicScope(
-        update, this.threadRootId, this.forumTopicId, this.directMessagesTopicId)) { return; }
-    const sender = update['sender_id'] as TdObject | undefined;
-    if (sender === undefined || sender['@type'] !== 'messageSenderUser') { return; }
-    const uid = (sender['user_id'] as number | undefined) ?? 0;
-    if (uid <= 0) { return; }
-    const action = update['action'] as TdObject | undefined;
-    const actionType = action !== undefined ? ((action['@type'] as string | undefined) ?? '') : '';
-    if (actionType === 'chatActionCancel') {
-      this.typingSenders.delete(uid);
-    } else {
-      this.typingSenders.set(uid, Date.now() + 6000);
+    const uid: number = applyTypingUpdate(this.typingSenders, update, Date.now(),
+      this.chatId, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
+    if (uid === 0) { return; }
+    // 记下了一次输入（不是 cancel）才去补用户资料——顺序同原实现：set 之后、
+    // 重建文案之前。
+    if (this.typingSenders.has(uid)) {
       getUserStore().ensure(uid);
     }
     this.rebuildTypingLabel();
     if (this.typingTimer === -1 && this.typingSenders.size > 0) {
       this.typingTimer = setInterval((): void => {
-        const now = Date.now();
-        let changed = false;
-        for (const key of Array.from(this.typingSenders.keys())) {
-          if ((this.typingSenders.get(key) ?? 0) < now) {
-            this.typingSenders.delete(key);
-            changed = true;
-          }
-        }
-        if (changed) { this.rebuildTypingLabel(); }
+        if (pruneExpiredTyping(this.typingSenders, Date.now())) { this.rebuildTypingLabel(); }
         if (this.typingSenders.size === 0 && this.typingTimer !== -1) {
           clearInterval(this.typingTimer);
           this.typingTimer = -1;
@@ -8400,21 +8338,8 @@ export struct ChatPage {
   }
 
   private rebuildTypingLabel(): void {
-    const ids = Array.from(this.typingSenders.keys());
-    if (ids.length === 0) {
-      this.typingLabel = '';
-      return;
-    }
-    if (this.headerKind === 'private' || this.headerKind === 'secret') {
-      this.typingLabel = str('cp_typing');
-      return;
-    }
-    if (ids.length > 1) {
-      this.typingLabel = plural('cp_n_typing', ids.length, ids.length);
-      return;
-    }
-    const name = getUserStore().displayName(ids[0]);
-    this.typingLabel = str('cp_someone_typing', name !== '' ? name.split(' ')[0] : str('cp_someone'));
+    this.typingLabel = typingLabelOf(this.headerKind, Array.from(this.typingSenders.keys()),
+      (uid: number): string => getUserStore().displayName(uid));
   }
 
   // Pick up the draft synced from other devices (chat.draft_message). Only
@@ -9121,32 +9046,32 @@ export struct ChatPage {
     );
   }
 
+  // stagger 的算法在 util/rowFadeGate.initialRowRevealDelay（返回裸毫秒），
+  // 「动效强度」换算读 AppStorage，所以留在这里外面套一层。
+  //
+  // ⚠️ anchorIndex 用负数当「本次不是锚点落点」的哨兵，**不是**「groupIndexOf
+  // 没找到」：命中锚点分支时才传 Math.max(0, groupIndexOf(...))（找不到就夹到
+  // 0，同原实现），否则传 -1。另外选分支用的判据带着 firstUnreadId > 0 那一半，
+  // 而 stagger 方向用的没有——两者在原方法里就各管各的，不要合并。
   private initialTimelineRowRevealDelay(index: number): number {
-    let first: number = this.curStartIdx;
-    let last: number = this.curEndIdx;
-    if (first < 0 || last < first || last >= this.groups.length) {
-      if ((this.stayAtUnread && this.firstUnreadId > 0) || this.resumeDividerId > 0) {
-        const startAnchorId: number = this.resumeDividerId > 0
-          ? this.resumeDividerId : this.firstUnreadId;
-        first = Math.max(0, groupIndexOf(this.groups, startAnchorId));
-        last = Math.min(this.groups.length - 1,
-          first + INITIAL_TIMELINE_REVEAL_ROW_LIMIT - 1);
-      } else {
-        last = this.groups.length - 1;
-        first = Math.max(0, last - INITIAL_TIMELINE_REVEAL_ROW_LIMIT + 1);
-      }
+    // 只有窗口还没量出来时纯函数才会用到 anchorIndex，而 groupIndexOf 是一次
+    // 线性扫描、这里每行每帧都会走一遍——所以这道 windowValid 闸必须留着，
+    // 与原实现「groupIndexOf 只在 fallback 分支里跑」一致。窗口有效时传 -1，
+    // 纯函数根本不看它。
+    const windowValid: boolean = this.curStartIdx >= 0 && this.curEndIdx >= this.curStartIdx &&
+      this.curEndIdx < this.groups.length;
+    const anchored: boolean = (this.stayAtUnread && this.firstUnreadId > 0) ||
+      this.resumeDividerId > 0;
+    let anchorIndex: number = -1;
+    if (!windowValid && anchored) {
+      const startAnchorId: number = this.resumeDividerId > 0
+        ? this.resumeDividerId : this.firstUnreadId;
+      anchorIndex = Math.max(0, groupIndexOf(this.groups, startAnchorId));
     }
-    if (index < first || index > last) {
-      return 0;
-    }
-    // Bottom landings read naturally from the composer upward. An unread
-    // landing starts at its top anchor and flows down into the unread block.
-    const visualRank: number = (this.stayAtUnread || this.resumeDividerId > 0)
-      ? index - first : last - index;
-    const cappedRank: number = Math.min(
-      INITIAL_TIMELINE_REVEAL_ROW_LIMIT - 1, Math.max(0, visualRank));
-    return powerAnimationDuration(
-      KEY_POWER_SMOOTH_TRANSITIONS, cappedRank * INITIAL_TIMELINE_ROW_STAGGER_MS);
+    return powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, initialRowRevealDelay(
+      index, this.curStartIdx, this.curEndIdx, this.groups.length,
+      anchorIndex, this.stayAtUnread || this.resumeDividerId > 0,
+      INITIAL_TIMELINE_REVEAL_ROW_LIMIT, INITIAL_TIMELINE_ROW_STAGGER_MS));
   }
 
   private timelineStateRetry(mode: string): void {

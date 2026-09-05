@@ -1,4 +1,6 @@
 import { relativeLuminance } from './colorMath';
+import { COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT, COLOR_ICON_SECONDARY, COLOR_TEXT_ON_LIGHT,
+  COLOR_TEXT_PRIMARY } from './theme';
 
 // 聊天页的 chrome（顶栏 / 置顶条 / 输入栏）**浮在用户的聊天壁纸上**，玻璃层只是
 // 薄薄一色。所以它们实际坐在亮底还是暗底，取决于**壁纸**，而不是 app 的深浅色模式。
@@ -90,4 +92,53 @@ export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
     hex2(a * tint[2] + (1 - a) * wg) +
     hex2(a * tint[3] + (1 - a) * wb);
   return relativeLuminance(mixed) > LIGHT_THRESHOLD;
+}
+
+// ── chrome 的前景要跟着**壁纸**翻，不是跟着深浅色模式 ───────────────────
+//
+// 下面四个是 ChatPage 的 chromeDarkMask/chromeOnLightBg/chromeIcon/chromeText
+// 原样下沉（B3）。页面侧只剩「读字段 → 调这里 → 交给组件」的薄包装，判据全在
+// 本文件，由 entry/src/test/ChatChrome.test.ets 钉住。
+
+// 深色模式下压在整层壁纸上的黑，两层叠加：壁纸自带的 dark_theme_dimming（服务端
+// 下发）和用户那根遮罩滑杆。ChatBackdrop 是分两层画的，所以这里按不透明度叠加
+// 公式合成，而不是简单相加。
+//
+// 漏掉这一项就是用户报的那个错：图案壁纸的填充色常常是浅的，只看填充会判成
+// 亮底、把前景翻成深色，而屏幕上其实是深的。
+export function chromeDarkMaskOf(serverDimming: number, userDim: number): number {
+  const server: number = Math.max(0, Math.min(1, serverDimming));
+  const user: number = Math.max(0, Math.min(1, userDim));
+  return 1 - (1 - server) * (1 - user);
+}
+
+// 顶栏/置顶条/输入栏浮在聊天壁纸上，玻璃只是薄薄一层。用户在深色模式下设了
+// 一张浅色壁纸时，这几条栏其实坐在**亮底**上——真机实测合成底 RGB(174,172,196)，
+// 图标 1.13:1、连纯白主文字也只有 2.22:1，整条栏不可读。加厚玻璃救不了
+// （要 alpha≈0.90 才够，那就不是玻璃了），只能翻前景。判据见上面的
+// chromeSitsOnLight。
+//
+// **只在深色模式下才翻**：浅色模式的前景本来就是给亮底挑的，不用动，也就
+// 保证了这次改动对浅色模式零影响。
+//
+// 除了这道 appDark 闸，本函数就是 chromeSitsOnLight 的一层薄封装：
+// tintArgb 由调用方给（页面传 glassTintHex(true)——玻璃厚度是设备态，不能进
+// 纯函数），darkMask 由调用方先过 chromeDarkMaskOf。取不到壁纸颜色时的
+// fallback 恒为 false：这条路径只在深色模式下走得到，暗底就是它的旧行为。
+export function chromeOnLightBgOf(appDark: boolean, wallpaperColors: string[],
+  tintArgb: string, darkMask: number): boolean {
+  return appDark && chromeSitsOnLight(wallpaperColors, tintArgb, false, darkMask);
+}
+
+export function chromeIconColorOf(onLight: boolean, appDark: boolean): ResourceColor {
+  if (onLight) {
+    return COLOR_ICON_ON_LIGHT;
+  }
+  // 深色模式下这两条栏浮在暗壁纸上，用亮白；浅色模式保持原来的次级灰——白色在
+  // 浅色底上等于没有。
+  return appDark ? COLOR_ICON_ON_DARK : COLOR_ICON_SECONDARY;
+}
+
+export function chromeTextColorOf(onLight: boolean): ResourceColor {
+  return onLight ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_PRIMARY;
 }

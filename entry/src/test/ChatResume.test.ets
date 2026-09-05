@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  RememberedChatViewport, forgetChatPosition, openAtMessageId, rememberChatPosition,
-  rememberedChatPosition, rememberedChatViewport, resetChatPositions, resumeKeyOf
+  RememberedChatViewport, forgetChatPosition, isResumeFragment, openAtMessageId,
+  rememberChatPosition, rememberedChatPosition, rememberedChatViewport,
+  resetChatPositions, resumeKeyOf
 } from '../main/ets/util/chatResume';
 
 export default function chatResumeTest() {
@@ -55,6 +56,39 @@ export default function chatResumeTest() {
       }
       expect(rememberedChatPosition(1, 0)).assertEqual(0);
       expect(rememberedChatPosition(70, 0)).assertEqual(700);
+    });
+  });
+
+  // ── 缓存页 resume 时那一份快照是不是碎片（原 applyRouteParams 里的
+  //    `list.length * 2 < this.groups.length`）───────────────────────────
+  describe('isResumeFragment', () => {
+    it('2:1 是分界线：判的是数量级坍缩', 0, (): void => {
+      // 屏上 100 行、新快照 49 条 → 是碎片，扣住旧视口先不发布。
+      expect(isResumeFragment(100, 49)).assertTrue();
+      // 50 条就不是了。这个比例是业务 hack，不是可调参数：挪动它就等于挪动
+      // "后台删了几行"与"首个 getChatHistory 只回了一小段"的分界线。
+      expect(isResumeFragment(100, 50)).assertFalse();
+      expect(isResumeFragment(100, 51)).assertFalse();
+    });
+
+    it('判的不是非空：一条压掉 34 行的真机案例必须命中', 0, (): void => {
+      // openChat 会让 TDLib 立刻推最新一条，而首个 getChatHistory 回包可以
+      // 合法地少于请求条数，onHistory 一落地就把 store 标成 ready。退化成
+      // `nextRows === 0` 会把这个案例重新放进来——就是"从后台切回来消息乱了"。
+      expect(isResumeFragment(34, 1)).assertTrue();
+      expect(isResumeFragment(30, 0)).assertTrue();
+    });
+
+    it('屏上没东西时永远不是碎片：没什么可保的', 0, (): void => {
+      expect(isResumeFragment(0, 0)).assertFalse();
+      expect(isResumeFragment(0, 5)).assertFalse();
+    });
+
+    it('后台删掉几行不算碎片', 0, (): void => {
+      // 只有被删掉一半以上才会误判，而下一次快照就会解除。
+      expect(isResumeFragment(40, 37)).assertFalse();
+      expect(isResumeFragment(40, 20)).assertFalse();
+      expect(isResumeFragment(40, 19)).assertTrue();
     });
   });
 }
