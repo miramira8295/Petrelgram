@@ -1,4 +1,4 @@
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, UIContext } from '@kit.ArkUI';
 import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
@@ -8,12 +8,9 @@ import { openMiniApp } from '../../store/BotApi';
 import {
   InlineQueryPage, InlineResultRow, getInlineResults, sendInlineResult
 } from '../../store/BotApi';
-import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
-import { geoLocationManager } from '@kit.LocationKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 import { PickedContact } from './ContactPickerSheet';
-import { picker, fileIo as fs } from '@kit.CoreFileKit';
-import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { fileOpenMimeType } from '../../util/fileMessage';
@@ -49,10 +46,9 @@ import { shouldCompete, slotKey, slotKeyMessageId } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
-import { ChatOverlayState } from './ChatOverlayState';
+import { ChatOverlayState, ChatOverlaySheetKind } from './ChatOverlayState';
 import { ChatTimelineHost } from './ChatTimelineHost';
-import { cacheDestPath, isVideoPath } from '../../util/mediaPick';
-import { LivePhotoExport } from '../../util/movingPhotoPick';
+import { AttachActions } from './AttachActions';
 import {
   ChatBackgroundState, ChatBackgroundStore, emptyChatBackground
 } from '../../store/ChatBackgroundStore';
@@ -80,7 +76,7 @@ import { FloatingDateState } from './FloatingDateOverlay';
 import { firstRowBelowChrome, floatDateNeedsRescan } from '../../util/floatDateGate';
 import { isInteriorRowRemoval } from '../../util/rowRemoval';
 import {
-  PENDING_MEDIA_MAX, PendingMediaAppend, PendingMediaItem, appendPendingMedia,
+  PendingMediaAppend, PendingMediaItem, appendPendingMedia,
   clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend, toMediaSendItems,
   removePendingMedia
 } from '../../util/pendingMedia';
@@ -212,8 +208,7 @@ import {
 } from '../../util/visibleWindow';
 import { openForwardOrigin } from '../../util/chatNavigation';
 import {
-  confirmStopLiveLocation, normalizePhoneForDial, SharedLocationUris, sharedLocationUris,
-  withLocationPermission
+  confirmStopLiveLocation, normalizePhoneForDial, SharedLocationUris, sharedLocationUris
 } from '../../util/locationActions';
 import { utilityActionAllowedAt } from '../../util/utilityActionGuard';
 import { albumReuseShape, rowPlaySlotKey } from '../../util/messageBubblePrepare';
@@ -225,7 +220,6 @@ import { LengthMetrics } from '@kit.ArkUI';
 import {
   chromeDarkMaskOf, chromeIconColorOf, chromeOnLightBgOf, chromeTextColorOf
 } from '../../util/chatChrome';
-import { exportLivePhotoMotion } from '../../util/movingPhotoPick';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
@@ -277,12 +271,6 @@ import { DICE_CHOICES, DiceChoice } from '../../util/diceChoices';
 import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind';
 // 别名保持原类名，4 处 new ChatPageFrameCallback(...) 调用点一字未动。
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
-
-// collectPickedMedia 的返回：可发送项 + 读不出来被跳过的张数。
-interface PickedMedia {
-  items: MediaSendItem[];
-  skipped: number;
-}
 
 // 锚点补偿：量不到锚点行时下一帧再量，最多几次、每次隔多久（见 restoreScrollAnchor）。
 
@@ -1168,7 +1156,7 @@ export struct ChatPage {
           this.togglePinMessage(messageId, unpin);
         },
         onStopPoll: (messageId: number): void => { this.stopPoll(messageId); },
-        onReplaceMedia: (messageId: number): void => { this.replaceMedia(messageId); },
+        onReplaceMedia: (messageId: number): void => { this.attach.replaceMedia(messageId); },
         onPollVoters: (messageId: number): void => { this.showPollVoters(messageId); },
         onSetDefaultReaction: (emoji: string): void => { setDefaultReaction(emoji); },
         onSetReaction: (messageId: number, emoji: string, chosen: boolean): void => {
@@ -1875,13 +1863,16 @@ export struct ChatPage {
   private composerMountScheduled: boolean = false;
   private composerMountSeq: number = 0;
   private composerController: TextAreaController = new TextAreaController();
-  private mediaPickerOpen: boolean = false;
   // 选好但还没发出去的媒体。和 composer.replyToId 正交——回复某条 + 附图 +
   // 配文是一次完整操作，所以不进 ComposerSession 那个互斥状态机（B9 批搬迁
   // 前叫 composerMode，见 util/pendingMedia）。
   @Local private pendingMedia: PendingMediaItem[] = [];
 
-  private mediaCopySeq: number = 0;
+  // 附件面板分发（媒体/文件/音频/位置/骰子/联系人/投票/录像笔记）与长按气泡
+  // 「替换媒体」整簇（B12）。普通类，不驱动 UI 重渲染——mediaCopySeq/
+  // mediaPickerOpen 两个原页面字段变成了它的私有并发闸门，全仓核实过只在本簇
+  // 内引用，页面不再需要读它们。
+  private attach: AttachActions = new AttachActions();
   @Local headerMenuShow: boolean = false; // header ⋮ dropdown
   private headerMenuId: string = createChatHeaderMenuId();
   private headerMenuController: ChatHeaderMenuController = new ChatHeaderMenuController();
@@ -2296,6 +2287,41 @@ export struct ChatPage {
       forumTopicId: (): number => this.forumTopicId,
       directMessagesTopicId: (): number => this.directMessagesTopicId,
       currentKind: (): string => this.header.currentKind()
+    });
+    // 附件面板分发簇接上宿主（B12）。context 是"控制器不缓存页面值"这条铁律
+    // 的唯一例外：这里把 getContext(this) 求值一次、闭包成常量传进去——
+    // UIAbilityContext 在同一个 Ability 生命周期内本来就是稳定值，且任何会
+    // 触发 picker 的用户操作都严格晚于这里（组件树先要 build 完，用户还要先
+    // 手动点开附件抽屉）。uiContext 不具备这条"同生命周期内稳定"的依据，
+    // 所以是逐次现取。pendingMedia/atBottom/diceSheetOpen/composerFocused/
+    // draft/composerSending 等留页面的字段只经这里的取值器/回调读写，本类不
+    // 存影子拷贝；overlayState 的四个 sheet 开关经 setSheet 转发，控制器之间
+    // 不互相持有引用（B8 起立的规矩）。
+    const attachContext = getContext(this) as common.UIAbilityContext;
+    this.attach.bind({
+      context: (): common.UIAbilityContext => attachContext,
+      uiContext: (): UIContext => this.getUIContext(),
+      chatId: (): number => this.chatId,
+      store: (): MessageStore | null => this.store,
+      findMsg: (messageId: number): MessageEntry | null => this.findMsg(messageId),
+      pendingMediaCount: (): number => this.pendingMedia.length,
+      appendPendingMedia: (items: MediaSendItem[]): number => {
+        const merged: PendingMediaAppend = appendPendingMedia(this.pendingMedia, items);
+        this.pendingMedia = merged.items;
+        return merged.dropped;
+      },
+      composerSending: (): boolean => this.composerSending,
+      draftText: (): string => this.draft,
+      clearDraft: (): void => { this.draft = ''; },
+      setAtBottom: (value: boolean): void => { this.atBottom = value; },
+      closeAttachPanel: (): void => { this.closeAttachPanel(); },
+      stopEditing: (): void => { this.composerController.stopEditing(); },
+      setComposerFocused: (value: boolean): void => { this.composerFocused = value; },
+      cancelRecording: (): void => { this.cancelRecording(); },
+      setSheet: (kind: ChatOverlaySheetKind, show: boolean): void => {
+        this.overlayState.setSheet(kind, show);
+      },
+      setDiceSheetOpen: (open: boolean): void => { this.diceSheetOpen = open; }
     });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
@@ -3566,6 +3592,12 @@ export struct ChatPage {
     // this.store === store 判陈旧），dispose() 是空实现，仅为与其余控制器
     // 统一 bind/dispose 生命周期而保留、调用。
     this.translation.dispose();
+    // 附件面板分发簇的退场（B12）。逐行核对过原 aboutToDisappear 全链路七个
+    // 子方法，对 mediaPickerOpen/mediaCopySeq 从来没有任何清理——两个字段随
+    // 页面实例一起被丢弃，不产生可观察副作用。dispose() 是空实现，仅为与
+    // 其余控制器统一 bind/dispose 生命周期而保留、调用，不替原代码编造一份
+    // 清理逻辑。
+    this.attach.dispose();
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
     this.prependRestoreSeq++;
@@ -6396,23 +6428,6 @@ export struct ChatPage {
     this.updateSuggestions(this.draft);
   }
 
-  // Copy a picker URI into the sandbox so TDLib can read it; '' on failure.
-  // Single copy path for every picker (media, document, audio): they used to
-  // inline three near-copies of this, two of them without the sequence counter.
-  private copyUriToCache(uri: string): string {
-    try {
-      const cacheDir = (getContext(this) as common.UIAbilityContext).cacheDir;
-      const dest = cacheDestPath(cacheDir, uri, ++this.mediaCopySeq, Date.now());
-      const src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-      fs.copyFileSync(src.fd, dest);
-      fs.closeSync(src);
-      return dest;
-    } catch (e) {
-      logE(`ChatPage.copyUriToCache failed: ${e}`);
-      return '';
-    }
-  }
-
   // Voice bubble asked for its file (eager download hasn't landed yet).
   private onVoiceTap(messageId: number): void {
     const entry: MessageEntry | null = this.entryById(messageId);
@@ -6434,123 +6449,6 @@ export struct ChatPage {
 
   private onVoicePlaybackStarted(messageId: number): void {
     this.store?.markVoiceListened(messageId);
-  }
-
-  private replaceMedia(messageId: number): void {
-    const msg = this.findMsg(messageId);
-    const store = this.store;
-    if (msg === null || store === null || this.mediaPickerOpen) { return; }
-    this.mediaPickerOpen = true;
-    const photoPicker = new photoAccessHelper.PhotoViewPicker();
-    const opts = new photoAccessHelper.PhotoSelectOptions();
-    opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
-    opts.maxSelectNumber = 1;
-    photoPicker.select(opts).then((res: photoAccessHelper.PhotoSelectResult): void => {
-      this.mediaPickerOpen = false;
-      if (res.photoUris.length === 0) { return; }
-      const path = this.copyUriToCache(res.photoUris[0]);
-      if (path === '') {
-        promptAction.showToast({ message: $r('app.string.cp_cannot_read_file'), duration: 1600 });
-        return;
-      }
-      store.editMediaAsync(messageId, path, isVideoPath(path), msg.text).then((): void => {
-        promptAction.showToast({ message: $r('app.string.cp_media_replaced'), duration: 1500 });
-      }).catch((e: TdError): void => {
-        logE(`ChatPage.replaceMedia failed: ${e.message}`);
-        promptAction.showToast({ message: $r('app.string.cp_replace_failed'), duration: 1700 });
-      });
-    }).catch((): void => { this.mediaPickerOpen = false; });
-  }
-
-  private pickMedia(): void {
-    if (this.mediaPickerOpen || this.composerSending || this.store === null) {
-      return;
-    }
-    // 选择器自己就按"还能再放几张"限制，好过让用户挑满九张再被截断。
-    const room: number = PENDING_MEDIA_MAX - this.pendingMedia.length;
-    if (room <= 0) {
-      promptAction.showToast({
-        message: str('cp_pending_media_full', PENDING_MEDIA_MAX, 0), duration: 2000
-      });
-      return;
-    }
-    this.mediaPickerOpen = true;
-    const photoPicker = new photoAccessHelper.PhotoViewPicker();
-    const opts = new photoAccessHelper.PhotoSelectOptions();
-    opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
-    opts.maxSelectNumber = room;
-    photoPicker.select(opts).then((res: photoAccessHelper.PhotoSelectResult) => {
-      this.mediaPickerOpen = false;
-      if (res.photoUris.length === 0 || this.store === null) {
-        return;
-      }
-      // 实况照片要先把动态部分导出来（异步），所以收集这一步整体是异步的。
-      this.collectPickedMedia(res.photoUris).then((picked: PickedMedia): void => {
-        this.applyPickedMedia(picked.items, picked.skipped);
-      });
-    }).catch((e: Object) => {
-      this.mediaPickerOpen = false;
-      logE(`ChatPage.pickMedia failed: ${JSON.stringify(e)}`);
-      promptAction.showToast({ message: $r('app.string.cp_cannot_open_picker'), duration: 1800 });
-    });
-  }
-
-  // 选中的每一项 → 可发送项。实况照片发它的**动态部分**（带音轨的 mp4，文件名
-  // 带标记）：别的客户端收到就是一段普通有声视频、照常播放，PG 靠文件名把它认回
-  // 实况。协议约定见 util/livePhoto，导出见 util/movingPhotoPick。
-  //
-  // 逐个 await 而不是并发：requestMovingPhoto 背后是媒体库的解码与落盘，一次挑
-  // 九张全并发只会互相抢资源；而一次选择里通常只有一两张是实况。
-  private async collectPickedMedia(uris: string[]): Promise<PickedMedia> {
-    const items: MediaSendItem[] = [];
-    let skipped: number = 0;
-    const ctx = getContext(this) as common.UIAbilityContext;
-    for (const uri of uris) {
-      const live: LivePhotoExport = await exportLivePhotoMotion(
-        ctx, uri, ctx.filesDir, `${Date.now()}_${++this.mediaCopySeq}`);
-      if (live.videoPath !== '') {
-        // 几何与封面都由导出那一步算好（见 util/movingPhotoPick）：静图给显示
-        // 宽高，另存的小图给 inputThumbnail。这里只负责搬运。
-        items.push({
-          path: live.videoPath,
-          isVideo: true,
-          thumbPath: live.thumbPath,
-          thumbWidth: live.thumbWidth,
-          thumbHeight: live.thumbHeight,
-          width: live.displayWidth,
-          height: live.displayHeight
-        });
-        continue;
-      }
-      const path: string = this.copyUriToCache(uri);
-      if (path === '') {
-        skipped++;
-        continue;
-      }
-      items.push({ path, isVideo: isVideoPath(path) });
-    }
-    return { items, skipped };
-  }
-
-  private applyPickedMedia(items: MediaSendItem[], skipped: number): void {
-    if (items.length === 0) {
-      promptAction.showToast({ message: $r('app.string.cp_media_read_failed'), duration: 1800 });
-      return;
-    }
-    if (skipped > 0) {
-      promptAction.showToast({ message: plural('cp_media_skipped', skipped, skipped), duration: 1800 });
-    }
-    // 不直接发：先攒到输入框上方那一条，等用户配完文字再一起发。
-    // 追加而不是替换——用户分几次从不同相册挑图是常见操作。超出九张
-    // （Telegram 相册上限）时截断并**明确告知截了几张**，不静默丢弃。
-    const merged: PendingMediaAppend = appendPendingMedia(this.pendingMedia, items);
-    this.pendingMedia = merged.items;
-    if (merged.dropped > 0) {
-      promptAction.showToast({
-        message: str('cp_pending_media_full', PENDING_MEDIA_MAX, merged.dropped),
-        duration: 2200
-      });
-    }
   }
 
   // --- voice recording (mic button) ---
@@ -6637,165 +6535,6 @@ export struct ChatPage {
     return `${m}:${`${s}`.padStart(2, '0')}`;
   }
 
-  // --- 定时消息管理 ---
-
-  // Loading and the send-now/delete actions live in ScheduledSheet, which
-  // fetches on mount.
-  private openScheduledSheet(): void {
-    this.overlayState.showScheduledSheet = true;
-  }
-
-  private openPollComposer(): void {
-    this.overlayState.showPollSheet = true;
-  }
-
-  // 圆形视频走附件菜单而不是麦克风按钮：麦克风已经是"点一下开始录音"的
-  // 单击语义，再叠一个长按会和录音的起录竞争，误触率高；附件菜单里它和
-  // 照片/文件是同一类"选一种内容发出去"的入口，心智更一致。
-  private openVideoNoteRecorder(): void {
-    if (this.store === null) {
-      return;
-    }
-    this.cancelRecording();
-    this.composerController.stopEditing();
-    this.composerFocused = false;
-    this.overlayState.showVideoNoteRecorder = true;
-  }
-
-  private openContactPicker(): void {
-    this.overlayState.showContactSheet = true;
-  }
-
-  // 音乐：文件选择器按音频后缀过滤，复制沙箱后按音频消息发送。
-  private pickAndSendAudio(): void {
-    const docPicker = new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext);
-    const opts = new picker.DocumentSelectOptions();
-    opts.maxSelectNumber = 1;
-    opts.fileSuffixFilters = ['.mp3', '.m4a', '.flac', '.ogg', '.wav', '.aac'];
-    docPicker.select(opts).then((uris: string[]) => {
-      if (uris.length === 0) {
-        return;
-      }
-      const dest = this.copyUriToCache(uris[0]);
-      if (dest === '') {
-        promptAction.showToast({ message: $r('app.string.cp_audio_read_failed'), duration: 2000 });
-        return;
-      }
-      if (this.store !== null) {
-        this.atBottom = true;
-        this.store.sendAudio(dest, this.draft.trim());
-        this.draft = '';
-      }
-    }).catch((e: Object) => {
-      logE(`ChatPage.pickAndSendAudio select failed: ${JSON.stringify(e)}`);
-    });
-  }
-
-  // 位置入口：先问是发静态点还是实时共享。
-  private chooseLocationKind(): void {
-    this.getUIContext().getPromptAction().showActionMenu({
-      title: $r('app.string.cp_send_location'),
-      buttons: [
-        { text: $r('app.string.cp_current_location'), color: COLOR_TEXT_PRIMARY as string },
-        { text: $r('app.string.cp_live_15m'), color: COLOR_TEXT_PRIMARY as string },
-        { text: $r('app.string.cp_live_1h'), color: COLOR_TEXT_PRIMARY as string },
-        { text: $r('app.string.cp_live_8h'), color: COLOR_TEXT_PRIMARY as string }
-      ]
-    }).then((res: promptAction.ActionMenuSuccessResponse): void => {
-      const periods: number[] = [0, 15 * 60, 3600, 8 * 3600];
-      const period: number = periods[res.index] ?? 0;
-      if (period === 0) {
-        this.sendCurrentLocation();
-      } else {
-        this.startLiveLocation(period);
-      }
-    }).catch((): void => {});
-  }
-
-  // 实时位置：发出后按固定间隔用新坐标 editMessageLiveLocation。TDLib 不会
-  // 替我们采集位置，更新完全由客户端驱动，所以这里自己维护定时器；页面销毁
-  // 或时长到期就停，避免后台一直定位耗电。
-  private startLiveLocation(periodSec: number): void {
-    withLocationPermission(getContext(this) as common.UIAbilityContext, (): void => {
-      this.currentLocation(10000).then((loc: geoLocationManager.Location): void => {
-        const store = this.store;
-        if (store === null) { return; }
-        this.atBottom = true;
-        store.sendLiveLocation(loc.latitude, loc.longitude, periodSec)
-          .then((messageId: number): void => {
-            if (messageId === 0) {
-              promptAction.showToast({ message: $r('app.string.cp_live_location_failed'), duration: 1800 });
-              return;
-            }
-            // 交给独立服务：退出会话、切后台都要继续共享。
-            liveLocation.start(this.chatId, messageId, periodSec);
-            promptAction.showToast({ message: $r('app.string.cp_live_location_started'), duration: 1600 });
-          });
-      }).catch((): void => {
-        promptAction.showToast({ message: $r('app.string.cp_location_failed'), duration: 2000 });
-      });
-    });
-  }
-
-
-  private currentLocation(timeoutMs: number): Promise<geoLocationManager.Location> {
-    const request: geoLocationManager.SingleLocationRequest = {
-      locatingPriority: geoLocationManager.LocatingPriority.PRIORITY_LOCATING_SPEED,
-      locatingTimeoutMs: timeoutMs
-    };
-    return geoLocationManager.getCurrentLocation(request);
-  }
-
-  // 位置：申请定位权限 → 取当前坐标 → 发送。无地图选点（Map Kit 需 AGC 凭据）。
-  private sendCurrentLocation(): void {
-    const context = getContext(this) as common.UIAbilityContext;
-    const permissions: Permissions[] =
-      ['ohos.permission.APPROXIMATELY_LOCATION', 'ohos.permission.LOCATION'];
-    abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions)
-      .then((result): void => {
-        const granted: boolean = result.authResults.length > 0 && result.authResults[0] === 0;
-        if (!granted) {
-          promptAction.showToast({ message: $r('app.string.cp_needs_location'), duration: 1800 });
-          return;
-        }
-        promptAction.showToast({ message: $r('app.string.cp_getting_location'), duration: 1200 });
-        const request: geoLocationManager.SingleLocationRequest = {
-          locatingPriority: geoLocationManager.LocatingPriority.PRIORITY_LOCATING_SPEED,
-          locatingTimeoutMs: 10000
-        };
-        geoLocationManager.getCurrentLocation(request)
-          .then((location: geoLocationManager.Location): void => {
-            if (this.store !== null) {
-              this.atBottom = true;
-              this.store.sendLocation(location.latitude, location.longitude);
-            }
-          })
-          .catch((e: BusinessError): void => {
-            logE(`ChatPage.sendCurrentLocation failed: ${e.message}`);
-            promptAction.showToast({ message: $r('app.string.cp_location_failed'), duration: 2000 });
-          });
-      })
-      .catch((e: BusinessError): void => {
-        logE(`ChatPage location permission failed: ${e.message}`);
-      });
-  }
-
-  // 骰子六选一。原来走 promptAction.showActionMenu，那是系统弹窗，外观完全
-  // 由系统定——ActionMenuOptions 里没有模糊或材质字段，套不上玻璃。改成自绘
-  // 的 sheet，和翻译面板同一套 blurStyle + systemMaterial。
-  // 🎰 老虎机由 DiceBubble 叠 5 层 TGS 渲染。
-  private showDiceMenu(): void {
-    this.diceSheetOpen = true;
-  }
-
-  private sendDiceEmoji(emoji: string): void {
-    this.diceSheetOpen = false;
-    if (this.store !== null) {
-      this.atBottom = true;
-      this.store.sendDice(emoji);
-    }
-  }
-
   @Builder
   diceSheet() {
     Column() {
@@ -6813,7 +6552,7 @@ export struct ChatPage {
             .justifyContent(FlexAlign.Center)
             .borderRadius(14)
             .backgroundColor($r('app.color.surface_alt'))
-            .onClick((): void => { this.sendDiceEmoji(d.emoji); });
+            .onClick((): void => { this.attach.sendDiceEmoji(d.emoji); });
           }
         }, (d: DiceChoice) => d.emoji);
       }
@@ -6825,31 +6564,6 @@ export struct ChatPage {
     // 顶部这 44 是给 bindSheet 自带的关闭按钮让位——它浮在右上角，内容从
     // 顶端开始排就会压在它下面。
     .padding({ left: 16, right: 16, top: 44, bottom: 16 });
-  }
-
-  // Paperclip: pick a document, copy it into the app sandbox (TDLib can't read
-  // picker URIs), then send it as a document message.
-  private pickAndSendFile(): void {
-    const docPicker = new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext);
-    const opts = new picker.DocumentSelectOptions();
-    opts.maxSelectNumber = 1;
-    docPicker.select(opts).then((uris: string[]) => {
-      if (uris.length === 0) {
-        return;
-      }
-      const dest = this.copyUriToCache(uris[0]);
-      if (dest === '') {
-        promptAction.showToast({ message: $r('app.string.cp_file_read_failed'), duration: 2000 });
-        return;
-      }
-      if (this.store !== null) {
-        this.atBottom = true;
-        this.store.sendDocument(dest, this.draft.trim());
-        this.draft = '';
-      }
-    }).catch((e: Object) => {
-      logE(`ChatPage.pickAndSendFile select failed: ${JSON.stringify(e)}`);
-    });
   }
 
   // 发送闸门：同一时刻只允许一个发送在途，**且无论成败都必须放行**。
@@ -7644,7 +7358,7 @@ export struct ChatPage {
   attachDrawerContent() {
     AttachPanel({
       actions: attachActions(this.isGroup, this.isChannel),
-      onPick: (key: string): void => { this.runAttachAction(key); },
+      onPick: (key: string): void => { this.attach.runAttachAction(key); },
       effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
     })
   }
@@ -7734,29 +7448,6 @@ export struct ChatPage {
 
   private closeAttachPanel(): void {
     this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_ATTACH));
-  }
-
-  // 面板只说"点了哪一格"，这里说"那一格做什么"。两边靠 key 对上，
-  // AttachActions.test 钉住了不会出现分发表之外的 key。
-  private runAttachAction(key: string): void {
-    this.closeAttachPanel();
-    if (key === 'media') {
-      this.pickMedia();
-    } else if (key === 'file') {
-      this.pickAndSendFile();
-    } else if (key === 'audio') {
-      this.pickAndSendAudio();
-    } else if (key === 'videoNote') {
-      this.openVideoNoteRecorder();
-    } else if (key === 'location') {
-      this.chooseLocationKind();
-    } else if (key === 'contact') {
-      this.openContactPicker();
-    } else if (key === 'poll') {
-      this.openPollComposer();
-    } else if (key === 'dice') {
-      this.showDiceMenu();
-    }
   }
 
   // 表情/贴纸抽屉。和附件抽屉同一套机制（dock 里的一段布局），两者在同一块

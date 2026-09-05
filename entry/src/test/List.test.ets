@@ -133,7 +133,7 @@ import navStacksTest from './NavStacks.test';
 import settingsNavTest from './SettingsNav.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
-import attachActionsTest from './AttachActions.test';
+import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
 import imageSwapTest from './ImageSwap.test';
 import mediaBoxTest from './MediaBox.test';
 import messageGesturesTest from './MessageGestures.test';
@@ -358,6 +358,7 @@ export default function testsuite() {
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();
+  attachActionsControllerTest();
   imageSwapTest();
   mediaBoxTest();
   messageGesturesTest();
