@@ -69,6 +69,34 @@ export function classifyVideoError(code: number): VideoErrorKind {
   return 'fatal';
 }
 
+// ── 静默卡死：报不出错的那一类"解不了" ──────────────────────────────────
+//
+// 【它修的是什么】用户报「Pad 上自己发的视频点开是黑屏，也不转圈」。
+// 上面那套分类是**基于错误码**的，前提是 AVPlayer 会报错。但还有一类失败它
+// 不报：prepare 成功、状态机走到 playing、然后一帧也解不出来。AvVideoPlayer
+// 在 'prepared' 里就无条件把封面撤掉（showFirstFrameOnPrepare 的前提是真有
+// 首帧），于是屏幕上只剩一张空 Surface——纯黑。
+//
+// 【为什么连圈都不转】本地文件那条路 bufferedPercent 直接置 100（没有下载
+// 阶段），状态卡片又因为 isPrepared 已经为真而不再出现。三件事叠在一起，
+// 用户看到的就是一块什么都没有的黑。
+//
+// 【判据为什么是这三个】
+//   playing             —— 播放器自己说在播（暂停/实况静止态不该被误判）
+//   bufferedPercent≥100 —— 数据是齐的。**这一条把网络卡顿整个排除掉**：
+//                          缓冲不足导致的停顿有自己的重试路径，不该换引擎。
+//   位置多久没动         —— 数据齐、说在播、位置却不走，只剩"解码器没出帧"
+//                          这一种解释。
+// 三条同时成立才判定，任何一条不满足都不动——宁可漏判（用户仍看到黑屏，与
+// 改动前一样），也不能误判（把本来能放的视频踢去 ijk）。
+export const STALL_FALLBACK_MS: number = 4000;
+
+export function playbackStalled(
+  playing: boolean, bufferedPercent: number, msSinceProgress: number
+): boolean {
+  return playing && bufferedPercent >= 100 && msSinceProgress >= STALL_FALLBACK_MS;
+}
+
 // 该不该走自动重试。**只有 transient 才重试**——这是本次改动的实质：
 // 原来对所有错误码一视同仁地重试，于是"格式不支持"这种确定性失败也要先转几轮
 // "重连中…"才报错，比直接失败更难受。

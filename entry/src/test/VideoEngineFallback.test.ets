@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   AV_ERR_UNSUPPORT_CAPABILITY, AV_ERR_UNSUPPORT_FORMAT, classifyVideoError,
-  isEngineUnsupportedError, isTransientError, shouldAutoRetry
+  isEngineUnsupportedError, isTransientError, playbackStalled, shouldAutoRetry,
+  STALL_FALLBACK_MS
 } from '../main/ets/util/videoEngineFallback';
 
 // 全屏播放引擎失败分流判据的测试。
@@ -96,6 +97,37 @@ export default function videoEngineFallbackTest() {
       expect(classifyVideoError(0)).assertEqual('fatal');
       expect(classifyVideoError(999999)).assertEqual('fatal');
       expect(classifyVideoError(-1)).assertEqual('fatal');
+    });
+  });
+
+  // ——— 静默卡死：AVPlayer 一个错都不报，就是不出帧 ———
+  //
+  // 用户报「Pad 上自己发的视频点开是黑屏，也不转圈」。错误码那条路对这类
+  // 失败完全无效，因为压根没有错误码。
+  describe('playbackStalled', () => {
+    it('数据齐 + 说在播 + 位置不动够久 ⇒ 换引擎', 0, () => {
+      expect(playbackStalled(true, 100, STALL_FALLBACK_MS)).assertTrue();
+      expect(playbackStalled(true, 100, STALL_FALLBACK_MS + 5000)).assertTrue();
+    });
+
+    it('没到时限不动手', 0, () => {
+      expect(playbackStalled(true, 100, STALL_FALLBACK_MS - 1)).assertFalse();
+      expect(playbackStalled(true, 100, 0)).assertFalse();
+    });
+
+    it('没在播就不算卡死（暂停、实况停在首帧）', 0, () => {
+      expect(playbackStalled(false, 100, STALL_FALLBACK_MS * 10)).assertFalse();
+    });
+
+    // 这一条是整个判据里最要紧的一道闸：缓冲不足导致的停顿有自己的重试路径，
+    // 把它误判成"解不了"会让网络一卡就换引擎。
+    it('数据没齐一律不换引擎——那是网络卡顿不是解码失败', 0, () => {
+      expect(playbackStalled(true, 99, STALL_FALLBACK_MS * 10)).assertFalse();
+      expect(playbackStalled(true, 0, STALL_FALLBACK_MS * 10)).assertFalse();
+    });
+
+    it('时限是 4 秒——改这个数会直接改变误判率，钉住它', 0, () => {
+      expect(STALL_FALLBACK_MS).assertEqual(4000);
     });
   });
 }

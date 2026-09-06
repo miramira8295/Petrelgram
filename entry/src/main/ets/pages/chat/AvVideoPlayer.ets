@@ -46,7 +46,9 @@ import { VideoStreamSession } from '../../services/VideoStreamSession';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI, logW } from '../../util/log';
-import { classifyVideoError, VideoErrorKind } from '../../util/videoEngineFallback';
+import {
+  classifyVideoError, playbackStalled, STALL_FALLBACK_MS, VideoErrorKind
+} from '../../util/videoEngineFallback';
 
 let nextAvPlayerInstanceId: number = 1;
 
@@ -119,6 +121,10 @@ export struct AvVideoPlayer {
   private speedFeedbackTimer: number = -1;
   private retryTimer: number = -1;
   private statusDelayTimer: number = -1;
+  // 静默卡死看门狗（见 util/videoEngineFallback.playbackStalled）。
+  // lastProgressMs 是「位置最后一次真的动了」的时间戳；0 表示看门狗没在跑。
+  private stallTimer: number = -1;
+  private lastProgressMs: number = 0;
   private autoRetries: number = 0;
   private surfaceId: string = '';
   private active: boolean = true;
@@ -297,6 +303,46 @@ export struct AvVideoPlayer {
       clearTimeout(this.statusDelayTimer);
       this.statusDelayTimer = -1;
     }
+    this.stopStallWatch();
+  }
+
+  // 看门狗每秒问一次。**不用 setTimeout 自续**：这里要的是「持续观察」，
+  // 而每次位置一动就重排一个定时器等于播放期间每秒建一个新定时器。
+  private startStallWatch(): void {
+    this.lastProgressMs = Date.now();
+    if (this.stallTimer !== -1) {
+      return;
+    }
+    this.stallTimer = setInterval((): void => {
+      // 拖进度条时位置由手指驱动、timeUpdate 被忽略，这段不算卡死。
+      if (!this.active || this.dragging) {
+        this.lastProgressMs = Date.now();
+        return;
+      }
+      if (!playbackStalled(this.isPlaying, this.bufferedPercent,
+        Date.now() - this.lastProgressMs)) {
+        return;
+      }
+      // 数据齐、说在播、位置不动 ⇒ 这台设备的 AVPlayer 解不了这个片源，而且
+      // 它不会报错。和错误码那条路同一个出口：交给宿主切 ijk。
+      //
+      // 这条打点和 fallback-to-ijk 那条分开写：那条有错误码，这条没有——真机
+      // 日志里要能一眼看出是哪一类把引擎换掉的。
+      logW('[VideoEngine] fallback-to-ijk reason=stalled' +
+        ` mime=${this.mimeType} size=${this.videoWidth}x${this.videoHeight}` +
+        ` bytes=${this.fileSize} local=${this.localPath !== ''}` +
+        ` afterMs=${STALL_FALLBACK_MS}`);
+      this.stopStallWatch();
+      this.onEngineUnsupported();
+    }, 1000);
+  }
+
+  private stopStallWatch(): void {
+    if (this.stallTimer !== -1) {
+      clearInterval(this.stallTimer);
+      this.stallTimer = -1;
+    }
+    this.lastProgressMs = 0;
   }
 
   private release(): void {
@@ -466,7 +512,13 @@ export struct AvVideoPlayer {
       if (this.player !== player || this.dragging) {
         return;
       }
-      this.currentTimeMs = Math.max(0, time);
+      const next: number = Math.max(0, time);
+      // 只有**真的动了**才算进展。AVPlayer 在解不出帧时仍会按节拍回调
+      // timeUpdate，值却一直是同一个——无条件盖时间戳会让看门狗永远不触发。
+      if (next !== this.currentTimeMs) {
+        this.lastProgressMs = Date.now();
+      }
+      this.currentTimeMs = next;
       this.onPositionChanged(this.currentTimeMs);
     });
     player.on('durationUpdate', (duration: number): void => {
@@ -539,10 +591,12 @@ export struct AvVideoPlayer {
     if (state === 'playing') {
       this.isPlaying = true;
       this.videoVisible = true;
+      this.startStallWatch();
       return;
     }
     if (state === 'paused') {
       this.isPlaying = false;
+      this.stopStallWatch();
       return;
     }
     if (state === 'completed') {
