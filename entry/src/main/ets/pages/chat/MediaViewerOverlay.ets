@@ -198,9 +198,18 @@ export struct MediaViewerOverlay {
   // 不具备观测能力，值只在本层 build 时现取；直读 AppStorage 与之**行为等价**，
   // 且省掉一个每次页面重建都要重新捕获的闭包。
   //
-  // 直读而不是走 util/chatEnvMirror 的 @Trace 镜像：那个镜像目前全仓零消费者
-  // （chatEnv 的任何字段都没有页面在读），S1 是"编译即校验"的批次，不适合当
-  // 它的第一个用户。本文件已有两处直读先例：networkMetered() 与 :861 的
+  // 直读而不是走 util/chatEnvMirror 的 @Trace 镜像。
+  //
+  // 【更正】S1 落地时这里写的理由是"那个镜像全仓零消费者"——**那句是错的**，
+  // 当时 grep 的是 `chatEnv.`，而消费方的写法是先起别名
+  // （`private env: ChatEnvMirror = chatEnv`）再读 `this.env.xxx`，所以搜漏了。
+  // 实际至少有 5 个消费者：MessageBubble、TgsStickerView、WebmStickerView、
+  // LightweightPlainTextBubble、SelectTextOverlay。镜像机制是成立且在用的。
+  //
+  // 保持直读的真实理由：本函数是**非响应式取值**——原来的 @Event effectDuration
+  // 也不具备观测能力，值只在本层 build 时现取，直读与之行为等价。改走镜像会
+  // 让它变得比改动前更响应（多登记一处 @Trace 依赖），那是行为变化而不是等价
+  // 替换。本文件已有两处同样的直读先例：networkMetered() 与 :861 的
   // powerAnimationDuration。
   private effectDuration(key: string, ms: number): number {
     return chatEffectDurationOf(AppStorage.get<boolean>(KEY_REDUCE_ANIM) ?? false, key, ms);
