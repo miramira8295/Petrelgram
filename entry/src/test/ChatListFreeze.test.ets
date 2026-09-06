@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged
+  CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged,
+  contentOnlyUpdate
 } from '../main/ets/pages/chatlist/ChatListFreeze';
 import { ChatEntry } from '../main/ets/store/ChatEntry';
 
@@ -105,6 +106,69 @@ export default function chatListFreezeTest() {
     it('同一批 id 换了位置但长度相同 ⇒ 仍然算变了', 0, (): void => {
       // 只比长度会漏掉这一档，钉住逐项比较。
       expect(chatOrderUnchanged(chats([1, 2]), chats([2, 1]))).assertFalse();
+    });
+  });
+
+  // 用户报「有的时候聊天数字消失得快，有的时候又要等一会」。快慢的分岔是：
+  // 顺序一变，整份快照被扣住等闸开，刚清零的角标也跟着等。这组用例钉住
+  // "内容和顺序拆开走"。
+  describe('contentOnlyUpdate', () => {
+    it('顺序变了也照样把新内容贴到旧顺序上', 0, (): void => {
+      const current = chats([7, 8, 9]);
+      // 新快照里 8 冒到最前（别的会话来了新消息），同时 9 的角标清零了。
+      const next = chats([8, 7, 9]);
+      next[2].revision = 1;
+      next[2].unreadCount = 0;
+      const merged = contentOnlyUpdate(current, next);
+      expect(merged !== null).assertTrue();
+      const out = merged as ChatEntry[];
+      // 顺序仍是旧的 7,8,9——重排留给闸开。
+      expect(out[0].id).assertEqual(7);
+      expect(out[1].id).assertEqual(8);
+      expect(out[2].id).assertEqual(9);
+      // 但 9 换成了新的那份，角标已经是 0。
+      expect(out[2].revision).assertEqual(1);
+      expect(out[2].unreadCount).assertEqual(0);
+    });
+
+    it('没有任何内容变化 ⇒ null，不做无谓的发布', 0, (): void => {
+      // 只是顺序变了（别人来了新消息，但我关心的那几行内容没动）。
+      expect(contentOnlyUpdate(chats([7, 8, 9]), chats([9, 8, 7])) === null).assertTrue();
+    });
+
+    it('revision 没动的行原样留着（同一个对象）', 0, (): void => {
+      const current = chats([7, 8]);
+      const next = chats([8, 7]);
+      next[1].revision = 5;
+      const out = contentOnlyUpdate(current, next) as ChatEntry[];
+      // 7 换成了新的（revision 变了），8 还是原来那个。
+      expect(out[0].revision).assertEqual(5);
+      expect(out[1] === current[1]).assertTrue();
+    });
+
+    it('不在新快照里的会话原样留着，不被删掉', 0, (): void => {
+      const current = chats([7, 8, 9]);
+      const next = chats([8, 9]);
+      next[0].revision = 3;
+      const out = contentOnlyUpdate(current, next) as ChatEntry[];
+      expect(out.length).assertEqual(3);
+      expect(out[0].id).assertEqual(7);
+      // 8 是新的那份。
+      expect(out[1].revision).assertEqual(3);
+    });
+
+    it('新快照里多出来的会话这一轮不进来——那属于重排，等闸开', 0, (): void => {
+      const current = chats([7]);
+      const next = chats([99, 7]);
+      next[1].revision = 2;
+      const out = contentOnlyUpdate(current, next) as ChatEntry[];
+      expect(out.length).assertEqual(1);
+      expect(out[0].id).assertEqual(7);
+    });
+
+    it('任一侧为空 ⇒ null（首帧还没有行可贴）', 0, (): void => {
+      expect(contentOnlyUpdate([], chats([7])) === null).assertTrue();
+      expect(contentOnlyUpdate(chats([7]), []) === null).assertTrue();
     });
   });
 }

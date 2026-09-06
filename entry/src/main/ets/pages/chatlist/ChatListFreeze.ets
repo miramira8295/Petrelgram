@@ -64,6 +64,47 @@ export function chatOrderUnchanged(current: ChatEntry[], next: ChatEntry[]): boo
   return true;
 }
 
+// 把新快照的**内容**贴到当前顺序上，返回可以立刻发布的那一份；没有内容变化
+// 时返回 null。
+//
+// 【为什么需要它】用户报「有的时候聊天数字消失得快，有的时候又要等一会」。
+// 返回转场里的旁路原来是"整份快照要么发、要么不发"：顺序变了就整份扣住等闸开。
+// 可角标是**内容**，重排是**顺序**，它们只是碰巧坐在同一份快照里——你在 A 群
+// 读完消息退出来，只要这期间任何一个别的会话来了条新消息，列表顺序就变了，
+// 于是 A 群那个已经清零的角标也跟着一起等 640ms。快慢的分岔就在这里。
+//
+// 拆开之后：内容立刻发（角标马上消失），重排仍旧等闸开（那才是会掉帧的部分）。
+//
+// 【按 revision 判断有没有变】它是行 key 的组成部分（见 ChatListView.rowKey），
+// cloneEntry 每次改动都会把它加一。用它而不是逐字段比：判据和"列表会不会重画
+// 这一行"天然一致，不会出现"我认为没变、LazyForEach 却重画了"的偏差。
+//
+// 【不在 next 里的会话原样留着】离开的会话、翻页掉出去的会话，在这一小段里
+// 仍然显示旧行——闸一开就会被真快照纠正。宁可留一行旧的，也不要为了它把
+// 角标再扣住半秒。
+export function contentOnlyUpdate(current: ChatEntry[], next: ChatEntry[]): ChatEntry[] | null {
+  if (current.length === 0 || next.length === 0) {
+    return null;
+  }
+  const byId: Map<number, ChatEntry> = new Map<number, ChatEntry>();
+  for (let i = 0; i < next.length; i++) {
+    byId.set(next[i].id, next[i]);
+  }
+  const out: ChatEntry[] = [];
+  let changed: boolean = false;
+  for (let i = 0; i < current.length; i++) {
+    const cur: ChatEntry = current[i];
+    const fresh: ChatEntry | undefined = byId.get(cur.id);
+    if (fresh !== undefined && fresh.revision !== cur.revision) {
+      changed = true;
+      out.push(fresh);
+    } else {
+      out.push(cur);
+    }
+  }
+  return changed ? out : null;
+}
+
 // List.onTouch 用：Down 关闸，Up/**Cancel 都**开闸——横滑被 Swiper 抢走手势
 // 时列表收到的是 Cancel，漏了它闸就永远卡死。双指场景一指抬起会提前开闸，
 // 列表上双指按住是极冷门场景，不为它数指头。

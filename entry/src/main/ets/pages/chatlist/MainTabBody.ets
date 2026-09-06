@@ -13,7 +13,7 @@ import { COLOR_DIVIDER, mainCardFill } from '../../util/theme';
 import { formatTime } from '../../util/formatTime';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged, updateTouchHold } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
@@ -199,8 +199,15 @@ export struct MainTabBody {
     this.drainContentOnly();
   }
 
-  // 把缓冲里那份快照发出去，但只发内容变更。顺序变了的放回缓冲等闸开——
-  // 那种要带 180ms 重排动画，而"别在转场里重排"正是这道闸存在的理由。
+  // 把缓冲里那份快照发出去，但只发内容变更。
+  //
+  // 顺序变了时**不再整份扣住**：先把新内容贴到当前顺序上发出去（角标就在内容
+  // 里，用户等的就是它），再把原快照放回缓冲，等闸开了做真正的重排——那一下
+  // 要带 180ms 动画，"别在转场里重排"正是这道闸存在的理由。
+  //
+  // 拆开之前，只要退出会话这期间**任何一个别的会话**来了条新消息，列表顺序
+  // 就变了，你刚读完那个群的角标也跟着一起等 640ms。用户报的"有时候快有时候
+  // 要等一会"就是这个分岔。
   private drainContentOnly(): void {
     const next = this.updateGate.flush();
     if (next === null) {
@@ -208,9 +215,13 @@ export struct MainTabBody {
     }
     if (chatOrderUnchanged(this.chats, next)) {
       this.publishChats(next);
-    } else {
-      this.updateGate.accept(next, false);
+      return;
     }
+    const merged: ChatEntry[] | null = contentOnlyUpdate(this.chats, next);
+    if (merged !== null) {
+      this.publishChats(merged);
+    }
+    this.updateGate.accept(next, false);
   }
 
   aboutToAppear(): void {
