@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { MEDIA_PREFETCH_PRIORITY, MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
 import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import {
@@ -226,7 +227,7 @@ export struct MediaViewerOverlay {
       if (this.siblingIsVideo(id)) {
         continue;
       }
-      this.store.requestFullPhoto(id, false, false);
+      this.store.requestFullPhoto(id, false, MEDIA_PREFETCH_PRIORITY);
     }
   }
 
@@ -698,7 +699,10 @@ export struct MediaViewerOverlay {
     this.viewerMsgId = id;
     this.onViewerMsgIdChange(id);
     if (this.store !== null && !this.siblingIsVideo(id)) {
-      this.store.requestFullPhoto(id);
+      // 翻到的这一张就是用户此刻正盯着的那一个文件——最高档，压过邻图预取(8)
+      // 与后台缩略图(16)。这张多半是刚才以 8 预取过的，store 会补发一次
+      // downloadFile 把它提上来（见 requestFullPhoto 里的说明）。
+      this.store.requestFullPhoto(id, false, MEDIA_VIEWING_PRIORITY);
     }
     this.prefetchNeighbours(index);
     // 组内翻页也把缩略图条带过去：不然翻到第七张时高亮的那一格还在条外面。

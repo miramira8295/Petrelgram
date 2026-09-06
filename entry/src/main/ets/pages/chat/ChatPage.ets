@@ -1,4 +1,5 @@
 import { promptAction, UIContext } from '@kit.ArkUI';
+import { MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
 import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
@@ -4784,7 +4785,8 @@ export struct ChatPage {
       return;
     }
     if (mediaEntryIsPhoto(m)) {
-      this.store.requestFullPhoto(messageId);
+      // 用户刚点开这张图，它就是"现在就要看到"的那一个——最高档。
+      this.store.requestFullPhoto(messageId, false, MEDIA_VIEWING_PRIORITY);
     }
     // 交接:取气泡播放位记录的进度，必须在 playSlots.suspend() 让气泡播放器
     // 卸载之前完成——bubblePositionMs 本身不受 suspend() 影响，但卸载之后

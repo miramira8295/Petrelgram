@@ -34,7 +34,8 @@ import {
 } from '../util/chatPrefetch';
 import { replyThumbIsSticker, replyThumbOf } from '../util/replyThumb';
 import {
-  MEDIA_PREFETCH_PRIORITY, MEDIA_USER_PRIORITY, THUMBNAIL_PRIORITY, mediaDownloadPriority
+  MEDIA_PREFETCH_PRIORITY, MEDIA_USER_PRIORITY, MEDIA_VIEWING_PRIORITY, THUMBNAIL_PRIORITY,
+  mediaDownloadPriority
 } from '../util/downloadPriority';
 import { animationShapeRejected } from '../util/animationShape';
 import { isAnimationPath } from '../util/mediaPick';
@@ -3749,8 +3750,17 @@ export class MessageStore {
 
   // On-demand full-resolution photo download (triggered by opening the fullscreen
   // viewer). The inline bubble only ever downloads photoFileId (a small size).
+  //
+  // 【第三个参数为什么是优先级而不是布尔】原来是 `userInitiated: boolean`，只能
+  // 分出"用户要"与"预取"两档，而调用点实际有三种意图：
+  //   · 查看器里当前这张图 —— 用户正盯着，MEDIA_VIEWING_PRIORITY(32)
+  //   · 保存到相册 / 气泡上点重试 —— 用户主动要但没在盯着，MEDIA_USER_PRIORITY(24)
+  //   · 查看器左右邻图预取 —— MEDIA_PREFETCH_PRIORITY(8)
+  // 布尔挤不下第三种，硬挤的结果就是 downloadPriority.ets 文件头记的那次事故：
+  // 判据挑错了从代码上完全看不出来。默认值保持 24，与改动前的 userInitiated
+  // 默认真值等价，所以没有显式传参的调用点行为不变。
   requestFullPhoto(messageId: number, forceRetry: boolean = false,
-    userInitiated: boolean = true): void {
+    priority: number = MEDIA_USER_PRIORITY): void {
     const idx = this.indexOf(messageId);
     if (idx < 0) {
       return;
@@ -3766,8 +3776,11 @@ export class MessageStore {
       // 用户随后划到这张」时，用户正盯着的大图永远留在预取档上——比后台缩略图
       // (16) 还低。TDLib 重新定优先级的唯一手段就是对同一个 file_id 再发一次
       // downloadFile，所以这里补发一次。
-      if (userInitiated) {
-        this.raiseFilePriority(e.photoFullFileId, MEDIA_USER_PRIORITY);
+      //
+      // 这条路径正是"划到这张"的入口，也是 32 那一档最主要的受益点：邻图当初
+      // 以 8 注册，划过来之后必须真的抢到带宽，否则用户盯着一张转圈的图。
+      if (priority > MEDIA_PREFETCH_PRIORITY) {
+        this.raiseFilePriority(e.photoFullFileId, priority);
       }
       return;
     }
@@ -3778,7 +3791,7 @@ export class MessageStore {
     this.fullPhotoFileToMsg.set(e.photoFullFileId, messageId);
     const req: TdRequest = { '@type': 'downloadFile' };
     req['file_id'] = e.photoFullFileId;
-    req['priority'] = userInitiated ? MEDIA_USER_PRIORITY : MEDIA_PREFETCH_PRIORITY;
+    req['priority'] = priority;
     this.client.send(req).then((f: TdObject) => this.applyFile(f)).catch((err: TdError) => {
       this.fullPhotoFileToMsg.delete(e.photoFullFileId);
       this.patch(messageId, (c: MessageEntry): void => {

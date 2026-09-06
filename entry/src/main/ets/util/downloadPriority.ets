@@ -2,8 +2,9 @@
 //
 // TDLib 的 downloadFile 用 1..32 排队，数字大的先拿带宽。分档必须一眼能对上
 // 「谁在等」：
-//   32  正在播的视频分片（VideoStreamSession，不在本文件里）
-//   24  用户此刻正盯着的东西：点开的全屏图、点开要看的视频、存进下载管理器
+//   32  用户此刻正盯着的**那一个**文件：全屏查看器里当前这张图、正在播的
+//       视频分片。只给"现在就要看到"的那一个，给多了这一档就不再是抢占。
+//   24  用户主动要、但不是正盯着看的：存进下载管理器、保存到相册、气泡上点重试
 //   16  可见窗口里的缩略图
 //    8  静默预取：邻图、可见窗口里的自动播放视频
 //
@@ -15,6 +16,11 @@
 export const MEDIA_PREFETCH_PRIORITY: number = 8;
 export const THUMBNAIL_PRIORITY: number = 16;
 export const MEDIA_USER_PRIORITY: number = 24;
+// 最高档。**本文件之外还有两处也在用 32**，它们各自持有自己的字面量、本次
+// 没有改动，但含义与这一档相同，改档位时要一并考虑：
+//   · services/VideoStreamSession.ets 的 STREAM_PRIORITY（正在播的视频分片）
+//   · pages/story/StoryViewerPage.ets 打开故事时的 download['priority']
+export const MEDIA_VIEWING_PRIORITY: number = 32;
 
 // manage：进 TDLib 下载管理器，用户要「留下」这个文件。
 // exempt：豁免可见窗口的自动取消，用户此刻正在「看」这个文件。
