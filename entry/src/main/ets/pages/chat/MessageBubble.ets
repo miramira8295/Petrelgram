@@ -1,6 +1,7 @@
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import {
-  isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER
+  isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER,
+  SWIPE_SELECT_MAX, SWIPE_SELECT_TRIGGER
 } from '../../util/swipeReplyGesture';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { MessageEntry, ReactionInfo, InlineBtn } from '../../store/MessageEntry';
@@ -845,22 +846,28 @@ export struct MessageBubble {
     if (!this.swipeReplyEligible()) {
       return;
     }
-    // Leftward-only, clamped to SWIPE_REPLY_MAX (both negative).
-    this.swipeReplyX = Math.max(SWIPE_REPLY_MAX, Math.min(0, offsetX));
+    // 两个方向都跟手：向左（负）回复，向右（正）进多选，各自钳到自己的上限。
+    this.swipeReplyX = Math.max(SWIPE_REPLY_MAX, Math.min(SWIPE_SELECT_MAX, offsetX));
     // 真的滑动起来了才算认领。PanGesture 的 distance 已经是 8，这里再确认
     // 一次位移，避免"手指抖了一下"就把一次正常点击吃掉。
-    if (this.swipeReplyX < 0) {
+    if (this.swipeReplyX !== 0) {
       this.gestureClaimed = true;
     }
   }
 
   private onSwipeReplyEnd(): void {
-    const triggered: boolean = this.swipeReplyEligible() && this.swipeReplyX <= SWIPE_REPLY_TRIGGER;
+    const eligible: boolean = this.swipeReplyEligible();
+    const reply: boolean = eligible && this.swipeReplyX <= SWIPE_REPLY_TRIGGER;
+    // 右滑进多选，动作与长按选择完全一致（同一个 onSelectMessages 入口，
+    // 传整组 memberIds——相册要整组一起选，和长按那条保持一致）。
+    const select: boolean = eligible && this.swipeReplyX >= SWIPE_SELECT_TRIGGER;
     animateTo({ duration: this.swipeReplyDuration(180), curve: Curve.EaseOut }, (): void => {
       this.swipeReplyX = 0;
     });
-    if (triggered) {
+    if (reply) {
       this.actions.onReplyTo(this.msg.id);
+    } else if (select) {
+      this.actions.onSelectMessages(this.group.memberIds);
     }
   }
 
@@ -3940,7 +3947,9 @@ export struct MessageBubble {
         // 被 onSwipeReplyUpdate 的 Math.min(0, offsetX) 夹成 0、看不到位移，
         // 认它纯属多余；更糟的是**右滑正是从左边缘返回的方向**，认领之后
         // gestureClaimed 被置位，后续点击会被静默吞掉。
-        PanGesture({ fingers: 1, direction: PanDirection.Left, distance: 8 })
+        // 双向：左滑回复、右滑多选。曾经为了躲系统边缘返回收成过 Left，
+        // 现在由 36vp 的边缘死区兜底（见 util/swipeReplyGesture），可以放开。
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
           .onActionUpdate((event: GestureEvent): void => { this.onSwipeReplyUpdate(event.offsetX); })
           .onActionEnd((): void => { this.onSwipeReplyEnd(); })
           .onActionCancel((): void => { this.onSwipeReplyEnd(); })

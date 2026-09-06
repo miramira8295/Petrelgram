@@ -1,6 +1,7 @@
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import {
-  isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER
+  isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER,
+  SWIPE_SELECT_MAX, SWIPE_SELECT_TRIGGER
 } from '../../util/swipeReplyGesture';
 import { MessageEntry } from '../../store/MessageEntry';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
@@ -536,18 +537,24 @@ export struct LightweightPlainTextBubble {
 
   private onSwipeUpdate(offsetX: number): void {
     if (this.editingActive || this.swipeFromEdge) { return; }
-    this.swipeX = Math.max(SWIPE_REPLY_MAX, Math.min(0, offsetX));
-    if (this.swipeX < 0) { this.gestureClaimed = true; }
+    // 两个方向都跟手：向左（负）回复，向右（正）进多选。
+    this.swipeX = Math.max(SWIPE_REPLY_MAX, Math.min(SWIPE_SELECT_MAX, offsetX));
+    if (this.swipeX !== 0) { this.gestureClaimed = true; }
   }
 
   private onSwipeEnd(): void {
-    const reply: boolean = !this.editingActive && !this.swipeFromEdge
-      && this.swipeX <= SWIPE_REPLY_TRIGGER;
+    const usable: boolean = !this.editingActive && !this.swipeFromEdge;
+    const reply: boolean = usable && this.swipeX <= SWIPE_REPLY_TRIGGER;
+    const select: boolean = usable && this.swipeX >= SWIPE_SELECT_TRIGGER;
     animateTo({
       duration: this.env.powerSaving || this.env.reduceAnim ? 0 : 180,
       curve: Curve.EaseOut
     }, (): void => { this.swipeX = 0; });
-    if (reply) { this.actions.onReplyTo(this.msg.id); }
+    if (reply) {
+      this.actions.onReplyTo(this.msg.id);
+    } else if (select) {
+      this.actions.onSelectMessages(this.memberIds);
+    }
   }
 
   @Builder
@@ -950,7 +957,8 @@ export struct LightweightPlainTextBubble {
       .alignItems(VerticalAlign.Bottom).translate({ x: this.swipeX })
       // 只认左滑：右滑本来就被 Math.min(0, offsetX) 夹成 0，而右滑正是从左边缘
       // 返回的方向，认领之后 gestureClaimed 置位会把后续点击静默吞掉。
-      .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Left, distance: 8 })
+      // 双向：左滑回复、右滑多选。边缘冲突由 36vp 死区兜底。
+      .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
         .onActionUpdate((event: GestureEvent): void => { this.onSwipeUpdate(event.offsetX); })
         .onActionEnd((): void => { this.onSwipeEnd(); })
         .onActionCancel((): void => { this.onSwipeEnd(); }))
