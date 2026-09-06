@@ -17,6 +17,22 @@ export default function chatPrefetchTest() {
       expect(r.limit).assertEqual(INITIAL_AROUND_LIMIT);
     });
 
+    // 【issue #101 的另一半】cb0c5b8 让 getFirstUnreadId() 跳过自己发的消息，
+    // 但它扫的是**已加载窗口**，而窗口在水位之上留几个位置由这个 offset 决定。
+    // 原值 -7 意味着自己连发 ≥7 条之后收到的新消息落在窗口外，判定拿不到它，
+    // 首屏退成"贴底"——贴的还是自己发的那条，分界线也不画。
+    //
+    // 这条钉的是**语义而不是数值**：水位之上要留够位置，覆盖一次连发。
+    // 谁要把它调小，先回答"连发这么多条时分界线还找得到吗"。
+    it('未读锚点在水位之上留够余量，覆盖一次连发（issue #101）', 0, () => {
+      const r: InitialPageRoute = initialPageRoute(3, 12269387776);
+      const headroom: number = -r.offset;
+      // 至少要能容下一次十来条的连发，再加上那条真正的未读。
+      expect(headroom >= 15).assertTrue();
+      // 但不能吃掉整页——水位之下还得留下上下文，否则分界线上方是空的。
+      expect(headroom <= r.limit / 2).assertTrue();
+    });
+
     it('没有未读 → 取最新一页', 0, () => {
       const r: InitialPageRoute = initialPageRoute(0, 12269387776);
       expect(r.kind).assertEqual(ROUTE_LATEST);

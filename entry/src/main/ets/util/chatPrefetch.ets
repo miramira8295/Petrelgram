@@ -46,8 +46,31 @@ export const INITIAL_AROUND_LIMIT: number = 30;
 // 而调大的收益只属于未读/最新那两条（首页铺不满才触发补页），跳转这条根本
 // 不走预取（见 canPrefetchChat），白吃副作用。
 export const INITIAL_RESUME_LIMIT: number = 14;
-// 未读锚点要保留上下文：目标之上 7 条、之下 6 条。
-export const INITIAL_AROUND_OFFSET: number = -7;
+// 未读锚点的窗口怎么切：offset 是"水位之上留几个位置"，其余给水位之下的历史
+// （limit 30 时，-15 就是上 15、下 15）。
+//
+// 【为什么从 -7 提到 -15】issue #101 只修了一半。cb0c5b8 让 getFirstUnreadId()
+// 跳过自己发的消息（官方查法 mid > ? AND out = 0），判定本身对了；但它扫的是
+// **已加载窗口**，而窗口只在水位之上留 7 个位置。
+//
+// 自己连发 N 条之后才收到新消息时，真正的第一条未读排在第 N+1 位：
+//   · N ≤ 6  → 在窗口里，分界线和落点都对（原报场景，已好）
+//   · N ≥ 7  → 不在窗口里 → getFirstUnreadId() 返回 0 → initialAnchorOf 退成
+//              ANCHOR_BOTTOM、dividerId=0 → 贴到已加载窗口的底，**还是自己发的
+//              那条**，分界线也不画
+// cb0c5b8 的提交信息其实已经写出了病根（"首屏窗口围着它开，新消息甚至不在窗口
+// 里"），只是那次没动开窗这一步。
+//
+// 提到 15 覆盖"连发 14 条以内"，代价是水位之下的历史上下文从 22 条降到 15 条
+// ——分界线上方仍有大半屏可看，不够时 loadOlder 本来就上着膛。
+//
+// **没有走"检测到落空再拉一页重新定锚"那条路**：那要动首屏状态机，而不变量 3
+// 冻结了首屏时序（一行一 VSync），那条路也有回归史。留余量是同样效果里风险
+// 最低的做法。
+//
+// 残留边界：连发 ≥15 条之后才来新消息，仍会退成贴底。真要根治得让开窗知道
+// "水位之后有多少条是自己发的"，那是另一次改动。
+export const INITIAL_AROUND_OFFSET: number = -15;
 
 export const ROUTE_AROUND: string = 'around';
 export const ROUTE_LATEST: string = 'latest';
