@@ -223,6 +223,7 @@ import jumpFlashStateTest from './JumpFlashState.test';
 import composerSuggestionStateTest from './ComposerSuggestionState.test';
 import voiceRecordingStateTest from './VoiceRecordingState.test';
 import mediaSaveStateTest from './MediaSaveState.test';
+import scrollAnchorControllerTest from './ScrollAnchorController.test';
 import membershipSessionTest from './MembershipSession.test';
 
 export default function testsuite() {
@@ -454,4 +455,5 @@ export default function testsuite() {
   voiceRecordingStateTest();
   mediaSaveStateTest();
   membershipSessionTest();
+  scrollAnchorControllerTest();
 }

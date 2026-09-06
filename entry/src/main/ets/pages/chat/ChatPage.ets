@@ -94,12 +94,7 @@ import {
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
 } from '../../util/appendAnchor';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
-import {
-  ANCHOR_RESTORE_DELTA, ANCHOR_RESTORE_RETRY_MS, AnchorRectSnapshot, AnchorRestorePlan,
-  anchorYAfterUserScroll, canApplyAnchorRestore,
-  shouldCapturePrependAnchor, shouldPrimePrependAnchor, shouldRetryAnchorRestore,
-  INVALID_ANCHOR_RECT, planAnchorRestore
-} from '../../util/anchorRestore';
+import { shouldCapturePrependAnchor, shouldPrimePrependAnchor } from '../../util/anchorRestore';
 import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
@@ -164,6 +159,7 @@ import { VoiceRecordingState } from './VoiceRecordingState';
 import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { MediaSaveState } from './MediaSaveState';
 import { MembershipSession } from './MembershipSession';
+import { ScrollAnchorController } from './ScrollAnchorController';
 import { showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
@@ -216,7 +212,6 @@ import { albumReuseShape, rowPlaySlotKey } from '../../util/messageBubblePrepare
 // typingTimer/typingLabel 整套搬进了 TypingIndicatorState（B10 批），页面不再
 // 直接引用。
 import { logE, logI, logW } from '../../util/log';
-import { LengthMetrics } from '@kit.ArkUI';
 import {
   chromeDarkMaskOf, chromeIconColorOf, chromeOnLightBgOf, chromeTextColorOf
 } from '../../util/chatChrome';
@@ -1018,7 +1013,7 @@ export struct ChatPage {
       // 来了新消息——后者按 3ff77fc 的有意设计仍然停在原位，新消息留在下方由
       // 「↓」带未读数指回去，不自动甩到最新。
       this.atBottom = false;
-      this.restorePrependAnchor(this.groups, anchorId, anchorY);
+      this.anchor.restorePrependAnchor(this.groups, anchorId, anchorY);
     } else if (this.atBottom && this.didInitialScroll) {
       const actionSeq: number = ++this.scrollActionSeq;
       setTimeout((): void => {
@@ -1805,7 +1800,10 @@ export struct ChatPage {
   // 0 disables, so rows created while scrolling history never animate).
   @Local freshSinceId: number = 0;
   private freshClearSeq: number = 0;
-  private prependRestoreSeq: number = 0;
+  // 锚点复位簇（前插/追加/恢复落位三条路径的"把那一行按回原来的 y"）整簇
+  // 搬进了 ScrollAnchorController（第二轮 R2-B）。原来的 prependRestoreSeq 代次
+  // 守卫是它的内部机件，页面只经 invalidate() 作废，见该文件文件头。
+  private anchor: ScrollAnchorController = new ScrollAnchorController();
   // 输入条上方三块建议面板（'@' 成员 / '/' 命令 / "@bot query" 内联结果 /
   // 纯 emoji 贴纸建议）的状态与并发守卫整簇搬进了 ComposerSuggestionState.ets
   // 四个类——MentionSuggestionState/CommandSuggestionState/InlineQueryState/
@@ -1932,7 +1930,7 @@ export struct ChatPage {
   private resetScrollSession(): void {
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
-    this.prependRestoreSeq++;
+    this.anchor.invalidate();
     this.bottomChromeLayoutSeq++;
     this.initialUnreadLayoutSeq++;
     this.initialTimelinePresentationSeq++;
@@ -2443,6 +2441,18 @@ export struct ChatPage {
       },
       client: (): TdClient => getTdClient()
     });
+    // 锚点复位簇（R2-B）。七个取值器全部只读，没有动作回调——本控制器对页面
+    // 状态零写入，只借 scroller 发滚动指令。位置放在最后一批 bind 之后即可：
+    // 它没有 reset/resolve 类方法，不参与 applyRouteParams 的时序。
+    this.anchor.bind({
+      scroller: (): Scroller => this.scroller,
+      userScrollOffsetTotal: (): number => this.userScrollOffsetTotal,
+      timelineScrollActive: (): boolean => this.timelineScrollActive,
+      pendingJumpId: (): number => this.pendingJumpId,
+      pendingScrollBottom: (): boolean => this.pendingScrollBottom,
+      headerChromeHeight: (): number => this.headerChromeHeight(),
+      appendGateProbe: (groups: AlbumGroup[]): string => this.appendAnchorGateProbe(groups)
+    });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
@@ -2831,7 +2841,7 @@ export struct ChatPage {
           prependAnchorUserOffset = this.userScrollOffsetTotal;
           primePrependAnchor = shouldPrimePrependAnchor(
             visibleIndex, y, this.headerChromeHeight(), this.listTouchActive);
-          this.captureAnchorOffset();
+          this.anchor.captureAnchorOffset();
           logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
             ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
             ` messages=${this.messages.length}->${list.length} prime=${primePrependAnchor}` +
@@ -2904,7 +2914,7 @@ export struct ChatPage {
         appendAnchorId = this.groups[visibleIndex].head.id;
         appendAnchorY = y;
         appendAnchorUserOffset = this.userScrollOffsetTotal;
-        this.captureAnchorOffset();
+        this.anchor.captureAnchorOffset();
         logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
           ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
           ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
@@ -2974,13 +2984,13 @@ export struct ChatPage {
     // 的新下标。restorePrependAnchor 内部是一个 setTimeout(0) + 代次守卫，
     // 跳转/贴底这些更强的定位意图会把它作废。
     if (prependAnchor.id > 0) {
-      this.restorePrependAnchor(
+      this.anchor.restorePrependAnchor(
         this.groups, prependAnchor.id, prependAnchor.y, prependAnchor.userOffset,
         prependAnchor.prime);
     } else if (appendAnchor.id > 0) {
       // 复位走的是和向上那侧同一个 restoreScrollAnchor：setTimeout(0) + 代次
       // 守卫，跳转/贴底这些更强的定位意图会把它作废。
-      this.restoreAppendAnchor(
+      this.anchor.restoreAppendAnchor(
         this.groups, appendAnchor.id, appendAnchor.y, appendAnchor.userOffset);
     }
   }
@@ -3010,7 +3020,7 @@ export struct ChatPage {
         const resumeIndex: number = groupIndexOf(groups, this.resumeScrollMessageId);
         this.atBottom = false;
         if (resumeIndex >= 0) {
-          this.restoreScrollAnchor(resumeIndex, this.resumeScrollItemY);
+          this.anchor.restoreScrollAnchor(resumeIndex, this.resumeScrollItemY);
         } else {
           this.glueBottom('L1166');
         }
@@ -3698,7 +3708,7 @@ export struct ChatPage {
     this.sticker.dispose();
     this.scrollActionSeq++;
     this.jumpLayoutSeq++;
-    this.prependRestoreSeq++;
+    this.anchor.invalidate();
     this.scrollToBottomBusy = false;
     this.clearPendingScrollBottom('pageHide');
     this.clearFloatingDate();
@@ -4159,36 +4169,6 @@ export struct ChatPage {
   // `try { y = getItemRect(i).y } catch { y = 0 }` —— 非法下标和"行正好贴在
   // 视口顶端(y=0)"取到的是同一个 0，分不开。而 anchorRestore 的
   // dy = rect.y - itemY 会把这个假 0 当成真位置，补出整行级别的位移。
-  // 锚点采样那一刻的滚动偏移。**只用于诊断，不参与 dy 的计算**。
-  //
-  // 为什么不直接拿它做修正项：anchorRestore 的 dy = rect.y - itemY 里确实缺一个
-  // 「采样到测量之间用户自己滑了多少」的项（翻页本来就是滑动触发的，这段时间列表
-  // 在动），补上它才不会把用户的位移反向抵消。但 currentOffset() 在**前插**场景
-  // 下不可信：官方对未提供 childrenMainSize 的懒加载 List 明确注明总偏移量
-  // 是估算值，前插一页会把新行的估算高度混进 yOffset。这里刻意不把动态媒体
-  // 高度绑定回 List（见 ChatTimelineHost），所以锚点恢复沿用 onDidScroll 累计的
-  // 真实手势位移：它天然排除了数据发布造成的位置变化，语义更窄。
-  //
-  // 所以这一版只把两次读数打进 [AnchorRestore]：真机上先看 dOff 与 dy 的关系，
-  // 再决定修正项该怎么取（或者改用 onDidScroll 累计位移）。行为一个字没改。
-  private anchorCaptureOffset: number = Number.NaN;
-
-  private captureAnchorOffset(): void {
-    try {
-      this.anchorCaptureOffset = this.scroller.currentOffset().yOffset;
-    } catch (e) {
-      this.anchorCaptureOffset = Number.NaN;
-    }
-  }
-
-  private currentAnchorOffset(): number {
-    try {
-      return this.scroller.currentOffset().yOffset;
-    } catch (e) {
-      return Number.NaN;
-    }
-  }
-
   private anchorItemY(index: number): number {
     try {
       const rect = this.scroller.getItemRect(index);
@@ -4408,37 +4388,6 @@ export struct ChatPage {
     return count;
   }
 
-  // A history page is inserted before the current window. Keep the exact
-  // message and its partial row offset under the user's finger; the newly
-  // loaded rows should only appear as they continue scrolling upward.
-  private restorePrependAnchor(
-    groups: AlbumGroup[], messageId: number, itemY: number,
-    userOffsetAtCapture: number = Number.NaN, primeBeforeLayout: boolean = false
-  ): void {
-    const targetIndex: number = groupIndexOf(groups, messageId);
-    if (targetIndex < 0) {
-      return;
-    }
-    this.restoreScrollAnchor(targetIndex, itemY, userOffsetAtCapture, primeBeforeLayout);
-  }
-
-  // A newer page is appended after the current window. The list is
-  // end-anchored (stackFromEnd), so the append alone pushes the visible content
-  // upward; put the same message back under the user's finger.
-  private restoreAppendAnchor(
-    groups: AlbumGroup[], messageId: number, itemY: number,
-    userOffsetAtCapture: number = Number.NaN
-  ): void {
-    const targetIndex: number = groupIndexOf(groups, messageId);
-    if (targetIndex < 0) {
-      logW(`[AppendAnchor] lost id=${messageId} rows=${groups.length}` +
-        ` ${this.appendAnchorGateProbe(groups)}`);
-      return;
-    }
-    logW(`[AppendAnchor] restore id=${messageId} idx=${targetIndex} y=${itemY}` +
-      ` rows=${groups.length} ${this.appendAnchorGateProbe(groups)}`);
-    this.restoreScrollAnchor(targetIndex, itemY, userOffsetAtCapture);
-  }
 
   // ⚠️ 临时探针（随 APPEND_ANCHOR_RESTORE_BYPASSED 一起删）：把决定这道闸开合的
   // 全部输入打在同一行上——旧判据（hasMoreNewer/atBottom/verdict）留着，好和新
@@ -4498,165 +4447,6 @@ export struct ChatPage {
       ` pendingJumpId=${this.pendingJumpId} busy=${this.scrollToBottomBusy}`;
   }
 
-  // 把锚点行按回 itemY。两级，判据是纯函数 util/anchorRestore.planAnchorRestore：
-  //
-  //   · 行还在显示区（getItemRect 给得出有效矩形）→ 只补一次 scrollBy(0, dy)，
-  //     dy = 新量到的 y - 记下的 y。**不调 scrollToIndex**：那一句会让 List 从
-  //     给定下标起全量重测，真机 Frame trace 里 ScrollToIndex(index=9) 对应的
-  //     正是录制中最大的那几个尖峰。
-  //   · 取不到有效矩形（行已滑出显示区）→ 重试三次后用一次带 extraOffset 的
-  //     scrollToIndex(START) 定位，避免旧路径两步滚动造成可见闪动。
-  //
-  // 时机沿用原来的 setTimeout(0)：数据已发布、框架也已经跑完一次布局，此时
-  // getItemRect 量到的才是新快照下的位置。prependRestoreSeq 代次守卫不动——一
-  // 次分页最多修正一次，跳转/贴底这类更强的定位意图仍然作废它。
-  //
-  // **量不到时别急着兜底。** 真机上往上翻历史，setTimeout(0) 那一刻新快照还没排版，
-  // getItemRect 拿到全 0，每次都走了 scrollToIndex+scrollBy 兜底；它按 List 顶端对齐，
-  // 没算 contentStartOffset 那段顶栏留白，把视口往下推了一截（用户：18:00 → 18:05）。
-  // 而框架（maintainVisibleContentPosition / stackFromEnd）其实已经把位置保住了。
-  // 现在量到就补差值，量不到就下一帧再量（最多三次），用尽仍量不到再做一次
-  // 不依赖测量的定位——依据见 attemptAnchorRestore 里那段真机 A/B 数据。
-  private restoreScrollAnchor(
-    targetIndex: number, itemY: number,
-    userOffsetAtCapture: number = Number.NaN, primeBeforeLayout: boolean = false
-  ): void {
-    const capturedUserOffset: number = Number.isNaN(userOffsetAtCapture)
-      ? this.userScrollOffsetTotal : userOffsetAtCapture;
-    const seq: number = ++this.prependRestoreSeq;
-    if (primeBeforeLayout) {
-      const extra: number = -itemY + this.headerChromeHeight();
-      logW(`[AnchorRestore] prime idx=${targetIndex} y=${Math.round(itemY)}` +
-        ` extraOffset=${Math.round(extra)}`);
-      try {
-        this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START,
-          { extraOffset: LengthMetrics.vp(extra) });
-      } catch (e) {
-        logE(`ChatPage.primeAnchor failed: ${e}`);
-      }
-    }
-    this.attemptAnchorRestore(seq, targetIndex, itemY, capturedUserOffset, 0);
-  }
-
-  private attemptAnchorRestore(
-    seq: number,
-    targetIndex: number,
-    itemY: number,
-    userOffsetAtCapture: number,
-    attempt: number
-  ): void {
-    setTimeout((): void => {
-      if (seq !== this.prependRestoreSeq || this.pendingJumpId !== 0 || this.pendingScrollBottom) {
-        return;
-      }
-      const userDelta: number = this.userScrollOffsetTotal - userOffsetAtCapture;
-      if (!canApplyAnchorRestore(this.timelineScrollActive, userDelta)) {
-        logW(`[AnchorRestore] skip reason=user-scroll idx=${targetIndex}` +
-          ` active=${this.timelineScrollActive} userDelta=${Math.round(userDelta)}`);
-        return;
-      }
-      const targetY: number = anchorYAfterUserScroll(
-        itemY, userOffsetAtCapture, this.userScrollOffsetTotal);
-      // 非法下标返回全 0 矩形（faqs-arkui-572），异常按同样处理——两条都落到
-      // planAnchorRestore 的 fallback 支。
-      let rect: AnchorRectSnapshot = INVALID_ANCHOR_RECT;
-      try {
-        const measured = this.scroller.getItemRect(targetIndex);
-        rect = { width: measured.width, height: measured.height, y: measured.y };
-      } catch (e) {
-        rect = INVALID_ANCHOR_RECT;
-      }
-      const plan: AnchorRestorePlan = planAnchorRestore(rect, targetY);
-      // 量不到就下一帧再量，最多 ANCHOR_RESTORE_ATTEMPTS 次；用尽仍量不到才
-      // 进入下面的一步式 scrollToIndex 定位。判据与完整推导见 util/anchorRestore
-      // 的 shouldRetryAnchorRestore。
-      //
-      // 【这里曾经只量一次，是个回归】ecce2fd 依据一场会话「attempt=0 成功
-      // 83/90、非零 dy 全在重试支」判定「能量到时没用、量不到时有害」，于是删掉
-      // 重试。2026-08-29 的真机日志推翻了这个前提：那份日志跨了两个构建、分界
-      // 干净，等于一次天然 A/B ——
-      //   · 有重试的那半：60 次复位一次都没落空（量到 47 / 重试后量到 11 / 兜底 2）；
-      //   · 只量一次的那半：31 次复位里**放弃 22，占 71%**，且 attempt=0 的成功率
-      //     从 78% 掉到 29%。
-      // 差别在场景轻重：媒体重的频道排版慢，setTimeout(0) 那一刻新快照还没排完
-      // 版，getItemRect 必然全 0（ca5bde9 查明的现象）。用户在后半段报「刚点进新
-      // 频道动一动就跳了好几下，进来看的消息也找不到了」——一次向上翻页连灌 6 页
-      // 30 行，六次前插的补偿全部放弃。
-      //
-      // ca5bde9 证实旧的两步兜底没算 contentStartOffset，会把视口整体往下推；
-      // 下面的一步式定位会同时补上实时的顶部留白。
-      if (shouldRetryAnchorRestore(plan.mode, attempt)) {
-        logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex}` +
-          ` oldY=${Math.round(itemY)}`);
-        this.attemptAnchorRestore(seq, targetIndex, itemY, userOffsetAtCapture, attempt + 1);
-        return;
-      }
-      if (plan.mode !== ANCHOR_RESTORE_DELTA) {
-        // ── 量不到时**不能放弃**，改用不依赖测量的定位 ─────────────────────
-        //
-        // API 20 起 maintainVisibleContentPosition 已支持 Repeat.virtualScroll，
-        // 普通区外前插由框架保位；能走到这里的是边界可见行因 key 改变而被替换的
-        // 兜底。若期间用户开始拖动，targetY 已扣除捕获锚点后的真实用户滚动量，
-        // 因此只修正数据刷新造成的位移，不会把手势或惯性滚动拉回去。
-        //
-        // 真机 [AnchorAudit] 也把这件事钉死了：五次 give-up 的 offDelta 分别是
-        // 8/-2/41/0/126（用户没在滑），而 250ms 后锚点行**仍然不在屏上**——滚动
-        // 偏移原地不动、内容却在它上面插进了 30 行。那就是用户看到的"乱跳"。
-        //
-        // 【为什么用 scrollToIndex + extraOffset】量不到恰恰是因为视口已经跑掉、
-        // 那一行不在显示区里；再重试多少次也量不回来（三次尝试后依旧 w=0 h=0）。
-        // 这个重载（API 12+）不需要先量：直接把第 idx 行按 START 对齐，再偏移
-        // extraOffset。一次调用完成，不像旧兜底那样 scrollToIndex 再 scrollBy 分两步
-        // 走（那一步之间是看得见的）。
-        //
-        // 【extraOffset 取 -targetY 的依据】旧兜底那两句是
-        //   scrollToIndex(idx, false, START); scrollBy(0, -targetY);
-        // START 之后行的 y 是 0，要把它挪回 targetY 正是 scrollBy(0, -targetY)。
-        // targetY 已包含捕获后的用户滚动量，这里把两步合成一步。
-        //
-        // 【+ headerChromeHeight() 是量出来的，不是推的】ScrollAlign.START 按 List
-        // 的顶端对齐，而顶部 chrome 是用 contentStartOffset 让出来的一段留白
-        // （见 .contentStartOffset(this.headerChromeHeight())），START 不算它，行就
-        // 落低了整整那一段——ca5bde9 当年"视口被往下推了一截"就是这个。
-        //
-        // 上一版故意没加这个修正，改由 [AnchorAudit] 的 residual 去量。2026-08-30
-        // 的真机日志给出答案：四次 reposition 的 residual 是 153/153/153/770，
-        // 前三次**精确等于**当时的顶栏高度（同份日志里 [Jump80] flash 的 top 也一直
-        // 是 153），符号是"行落得偏低"，所以往回补正的量。第四次 770 是顶栏更高的
-        // 状态（置顶条/通话条会把它撑高），所以这里取**实时值**而不是常数。
-        const extra: number = -targetY + this.headerChromeHeight();
-        logW(`[AnchorRestore] reposition attempt=${attempt} idx=${targetIndex}` +
-          ` oldY=${Math.round(itemY)} targetY=${Math.round(targetY)}` +
-          ` userDelta=${Math.round(this.userScrollOffsetTotal - userOffsetAtCapture)}` +
-          ` extraOffset=${Math.round(extra)}` +
-          ` chrome=${Math.round(this.headerChromeHeight())}`);
-        try {
-          this.scroller.scrollToIndex(targetIndex, false, ScrollAlign.START,
-            { extraOffset: LengthMetrics.vp(extra) });
-        } catch (e) {
-          logE(`ChatPage.repositionAnchor failed: ${e}`);
-        }
-        return;
-      }
-      // capOff/nowOff/dOff 只是诊断：dOff 是采样到本次测量之间滚动偏移的变化。
-      // 它同时混着「用户自己滑的」和「插入内容的估算高度」，**不参与 dy**，
-      // 用途是回答「dy 里到底有多少是在抵消用户的滑动」。见 anchorCaptureOffset。
-      const nowOff: number = this.currentAnchorOffset();
-      const dOff: number = Number.isNaN(this.anchorCaptureOffset) || Number.isNaN(nowOff)
-        ? Number.NaN : nowOff - this.anchorCaptureOffset;
-      logW(`[AnchorRestore] mode=${plan.mode} attempt=${attempt} idx=${targetIndex}` +
-        ` oldY=${Math.round(itemY)} targetY=${Math.round(targetY)}` +
-        ` userDelta=${Math.round(this.userScrollOffsetTotal - userOffsetAtCapture)}` +
-        ` newY=${Math.round(rect.y)}` +
-        ` w=${Math.round(rect.width)} h=${Math.round(rect.height)}` +
-        ` dy=${Math.round(plan.dy)}` +
-        ` capOff=${Math.round(this.anchorCaptureOffset)} nowOff=${Math.round(nowOff)}` +
-        ` dOff=${Math.round(dOff)}`);
-      if (plan.dy !== 0) {
-        this.scroller.scrollBy(0, plan.dy);
-      }
-    }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
-  }
 
   // refreshMembership/applyMembershipStatus 逐字搬进了 MembershipSession
   // （第二轮 R2-A 批，见文件头字段声明处的注释与该类文件头）。此处只留
