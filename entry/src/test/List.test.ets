@@ -223,6 +223,7 @@ import jumpFlashStateTest from './JumpFlashState.test';
 import composerSuggestionStateTest from './ComposerSuggestionState.test';
 import voiceRecordingStateTest from './VoiceRecordingState.test';
 import mediaSaveStateTest from './MediaSaveState.test';
+import videoEngineFallbackTest from './VideoEngineFallback.test';
 import mediaViewerChannelTest from './MediaViewerChannel.test';
 import albumSiblingsTest from './AlbumSiblings.test';
 import playSlotDriverTest from './PlaySlotDriver.test';
@@ -462,4 +463,5 @@ export default function testsuite() {
   playSlotDriverTest();
   albumSiblingsTest();
   mediaViewerChannelTest();
+  videoEngineFallbackTest();
 }

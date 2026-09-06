@@ -45,7 +45,8 @@ import { VideoRangeServer } from '../../services/VideoRangeServer';
 import { VideoStreamSession } from '../../services/VideoStreamSession';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { logE, logI } from '../../util/log';
+import { logE, logI, logW } from '../../util/log';
+import { classifyVideoError, VideoErrorKind } from '../../util/videoEngineFallback';
 
 let nextAvPlayerInstanceId: number = 1;
 
@@ -100,6 +101,10 @@ export struct AvVideoPlayer {
   onPositionChanged: (positionMs: number) => void =
     (_positionMs: number): void => {};
   onEnded: () => void = (): void => {};
+  // 这台设备的 AVPlayer 解不了这个片源时通知宿主换引擎（见
+  // util/videoEngineFallback 与 VideoPlayerHost）。默认空实现——内嵌播放位那条
+  // 不走分流，没有宿主接这个回调。
+  onEngineUnsupported: () => void = (): void => {};
   onFailed: () => void = (): void => {};
 
   private player: media.AVPlayer | null = null;
@@ -581,9 +586,23 @@ export struct AvVideoPlayer {
 
   private onNativeError(err: BusinessError): void {
     this.isPlaying = false;
-    logE(`AvVideoPlayer error: code=${err.code} msg=${err.message}` +
+    const kind: VideoErrorKind = classifyVideoError(err.code);
+    logE(`AvVideoPlayer error: code=${err.code} kind=${kind} msg=${err.message}` +
       ` autoRetries=${this.autoRetries}`);
-    if (this.autoRetries < AUTO_RETRY_DELAYS_MS.length && this.active) {
+    // 【换引擎】这台设备的 AVPlayer 就是解不了这个片源，重试多少次都一样。
+    // 立刻交给宿主切 ijkplayer（FFmpeg 吃格式广），不要让用户先看几轮"重连中…"。
+    //
+    // 这条 [VideoEngine] 打点是用来**量真实分布**的：我们只知道 AVPlayer 比
+    // FFmpeg 窄，不知道窄在哪（H.265 某些 profile？VP9？AV1？老 MPEG-4？）。
+    // 跑一阵子看日志，再决定要不要做"开播前预判"那套（需要 NAPI 桥接
+    // OH_AVCodec_GetCapability + AVMetadataExtractor）。
+    if (kind === 'engine-unsupported') {
+      logW(`[VideoEngine] fallback-to-ijk code=${err.code} mime=${this.mimeType}` +
+        ` size=${this.videoWidth}x${this.videoHeight} bytes=${this.fileSize}`);
+      this.onEngineUnsupported();
+      return;
+    }
+    if (kind === 'transient' && this.autoRetries < AUTO_RETRY_DELAYS_MS.length && this.active) {
       const delay: number = AUTO_RETRY_DELAYS_MS[this.autoRetries];
       this.autoRetries++;
       this.status = str('player_reconnecting');
