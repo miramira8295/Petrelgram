@@ -46,7 +46,14 @@ export struct ChatTimelineHost {
   @Event onTimelineScrollStop: () => void = (): void => {};
   @Event onTimelineAreaChange: (area: Area) => void = (): void => {};
   @Event onEmptyRetry: () => void = (): void => {};
-  @Event onTimelinePillRetry: () => void = (): void => {};
+  // 【第二轮第 12 项】签名从 `() => void` 改成带 mode。
+  // 原来页面收到这个事件之后**自己重算一遍** timelinePillMode()，但它读的是
+  // 页面的活字段，而用户看到的这枚 pill 是本组件按 @Param 进来的 timeline
+  // 快照渲染的——两者会分叉（onMessagesSnapshot 在 historyState===loading
+  // 那条早退路径上写了 loadState 却不 commit 快照）。分叉时用户点"重试"，
+  // 页面算出来已经不是 error，三个分支一个都不进，按钮点了没反应。
+  // 现在由本组件把**它显示时算出的那个 mode** 一起传上去，页面直接用。
+  @Event onTimelinePillRetry: (mode: string) => void = (): void => {};
 
   private timelinePillMode(): string {
     return timelineStateMode(
@@ -130,7 +137,7 @@ export struct ChatTimelineHost {
           topInset: this.headerStartOffset,
           mode: this.timelinePillMode(),
           label: this.timelinePillLabel(),
-          onRetry: (): void => { this.onTimelinePillRetry(); }
+          onRetry: (): void => { this.onTimelinePillRetry(this.timelinePillMode()); }
         });
       }
 

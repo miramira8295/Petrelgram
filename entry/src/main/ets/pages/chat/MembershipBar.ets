@@ -48,7 +48,6 @@ export struct MembershipBar {
   @Event onJoin: () => void = (): void => {};
   @Event onStartBot: () => void = (): void => {};
   @Event onToggleMute: () => void = (): void => {};
-  @Event onHeightChange: (height: number) => void = (): void => {};
 
   build() {
     Column() {
@@ -118,9 +117,6 @@ export struct MembershipBar {
     }
     .width('100%')
     .padding({ left: 14, right: 14, top: 6, bottom: this.bottomGap })
-    .alignItems(HorizontalAlign.Center)
-    .onAreaChange((_old: Area, area: Area): void => {
-      this.onHeightChange(area.height as number);
-    });
+    .alignItems(HorizontalAlign.Center);
   }
 }

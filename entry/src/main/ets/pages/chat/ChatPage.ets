@@ -105,7 +105,7 @@ import {
   replyKeyboardVisible
 } from '../../util/composerChrome';
 import {
-  TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR, timelineStateMode
+  TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR
 } from '../../util/timelineState';
 import { forwardableIds } from '../../util/messageSelection';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
@@ -5731,11 +5731,11 @@ export struct ChatPage {
     this.headerMenuController.close();
   }
 
-  // Horizontal center (vp, window coords) of the smiley button — the anchor
-  // the emoji panel scales out of / back into.
-  private emojiBtnCx: number = 48;
-  @Local inputBarH: number = 64;
-  @Local listViewportH: number = 0;
+  // 这里原来有三个只写不读的字段（emojiBtnCx / inputBarH / listViewportH），
+  // 连同喂它们的三条 @Event 链一起删了（第二轮第 11 项）。判据不是 grep 命中数：
+  // listViewportH 是有一处“读”的，但那处只是 `Math.abs(h - this.listViewportH)
+  // > 0.5` 给它自己的写做去抖，值没有任何第三方消费者——按命中数会误判成
+  // “有读点不能删”。
   // Height of every persistent bottom surface (composer/reply/Bot keyboard or
   // membership/search bar). The List uses it only as END offset: rows still
   // travel behind the floating input, while the final row can clear it.
@@ -6951,8 +6951,7 @@ export struct ChatPage {
       bottomGap: this.composerBottomGap(),
       onJoin: (): void => { this.joinCurrentChat(); },
       onToggleMute: (): void => { this.header.toggleMute(); },
-      onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); },
-      onHeightChange: (height: number): void => { this.inputBarH = height; }
+      onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); }
     });
   }
 
@@ -7009,7 +7008,6 @@ export struct ChatPage {
         onCancelRecording: (): void => { this.recording.cancel(); },
         onFinishRecording: (): void => { this.recording.finish(); },
         onToggleBotMenu: (): void => { this.toggleBotMenu(); },
-        onEmojiButtonArea: (centerX: number): void => { this.emojiBtnCx = centerX; },
         onEmojiButtonTap: (): void => {
           this.setEmojiPanel(!this.showEmojiPanel);
           this.mention.clear();
@@ -7052,7 +7050,6 @@ export struct ChatPage {
         onRecord: (): void => { this.recording.start(); },
         onSend: (): void => { this.doSend(); },
         onSendOptions: (): void => { this.showSendOptions(); },
-        onInputBarHeightChange: (height: number): void => { this.inputBarH = height; },
         menuEffectDuration: (duration: number): number =>
           this.chatEffectDuration(KEY_POWER_EFFECT_MENU, duration),
         replyEffectDuration: (duration: number): number =>
@@ -7156,11 +7153,6 @@ export struct ChatPage {
     }, 60);
   }
 
-  private timelinePillMode(): string {
-    return timelineStateMode(this.visibleGroupCount, this.messageLoadState,
-      this.olderLoadState, this.newerLoadState);
-  }
-
   // masked / initialDeferred 期间持续续期，揭示之后再放行一个窗口。
   // 读的同时续期，所以每一次 build 都会把闩推到当前帧。
   private initialRowFadeArmed(rowDeferred: boolean): boolean {
@@ -7241,6 +7233,15 @@ export struct ChatPage {
       INITIAL_TIMELINE_REVEAL_ROW_LIMIT, INITIAL_TIMELINE_ROW_STAGGER_MS));
   }
 
+  // mode 由 ChatTimelineHost 传进来，**页面不再自己算**（第二轮第 12 项）。
+  //
+  // 原来两边各有一份逐字相同的 timelinePillMode()，但读的不是同一份数据：
+  // 宿主读 @Param 进来的 timelineSnapshot（也就是用户眼前那枚 pill 的来源），
+  // 页面读自己的活字段。onMessagesSnapshot 先写 olderLoadState/newerLoadState，
+  // 再在 `historyState === 'loading'` 那条路上早退——**那条路不 commit 快照**。
+  // 于是 pill 还显示着"加载更早失败"，而活字段已经不是 error 了；用户点重试，
+  // 页面算出来三个分支一个都不进，按钮点了没反应。
+  // 现在只有一个算的地方（宿主），重试永远作用在用户真正看到的那个状态上。
   private timelineStateRetry(mode: string): void {
     if (this.store === null) {
       return;
@@ -7585,8 +7586,11 @@ export struct ChatPage {
           onTimelineScrollStop: (): void => { this.handleTimelineScrollStop(); },
           onTimelineAreaChange: (area: Area): void => { this.handleTimelineAreaChange(area); },
           onEmptyRetry: (): void => { this.store?.retryInitialHistory(); },
-          onTimelinePillRetry: (): void => {
-            this.timelineStateRetry(this.timelinePillMode());
+          // mode 由宿主传上来——它是**用户实际看到的那枚 pill** 算出来的。
+          // 页面自己重算过一版，读的是活字段而不是发布出去的快照，两者会分叉
+          // （见 timelineStateRetry 上方的说明），分叉时这个按钮点了没反应。
+          onTimelinePillRetry: (mode: string): void => {
+            this.timelineStateRetry(mode);
           }
         });
         Column() {
@@ -7648,11 +7652,10 @@ export struct ChatPage {
         // RESIZE changes this viewport in step with the system keyboard. The
         // area callback runs after the new List height is known, so pinning
         // here keeps message and composer motion visually locked together.
-        .onAreaChange((_old: Area, area: Area) => {
-          const h: number = area.height as number;
-          if (Math.abs(h - this.listViewportH) > 0.5) {
-            this.listViewportH = h;
-          }
+        .onAreaChange((_old: Area, _area: Area) => {
+          // 这里原来还把 area.height 去抖后存进 listViewportH，那个字段没有任何
+          // 消费者，已随第 11 项删除；这个回调保留是因为下面这半——IME 期间
+          // 视口每帧变化时把尾部重新贴住。
           if (this.keyboardH > 0 && this.imeTailPinned) {
             this.syncTailOnImeFrame();
           }

@@ -79,7 +79,6 @@ export struct ChatComposerInput {
   @Event onCancelRecording: () => void = (): void => {};
   @Event onFinishRecording: () => void = (): void => {};
   @Event onToggleBotMenu: () => void = (): void => {};
-  @Event onEmojiButtonArea: (centerX: number) => void = (): void => {};
   @Event onEmojiButtonTap: () => void = (): void => {};
   @Event onEditorWidthChange: (width: number) => void = (): void => {};
   @Event onDraftChange: (value: string) => void = (): void => {};
@@ -93,7 +92,6 @@ export struct ChatComposerInput {
   @Event onRecord: () => void = (): void => {};
   @Event onSend: () => void = (): void => {};
   @Event onSendOptions: () => void = (): void => {};
-  @Event onInputBarHeightChange: (height: number) => void = (): void => {};
   @Event menuEffectDuration: (duration: number) => number =
     (duration: number): number => duration;
   @Event replyEffectDuration: (duration: number) => number =
@@ -237,10 +235,6 @@ export struct ChatComposerInput {
             SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.face_smiling_fill' : 'sys.symbol.face_smiling'))
               .fontSize(24)
               .fontColor([this.showEmojiPanel ? this.accentColor : this.chromeIconColor])
-              .onAreaChange((_old: Area, area: Area): void => {
-                const gx: number = area.globalPosition.x as number;
-                this.onEmojiButtonArea(gx + (area.width as number) / 2);
-              })
               .onClick((): void => { this.onEmojiButtonTap(); });
             if (this.composerEditorReady) {
               TextArea({
@@ -343,9 +337,6 @@ export struct ChatComposerInput {
       top: 6,
       bottom: this.replyKeyboardVisible ? 8 : this.bottomGap
     })
-    .alignItems(VerticalAlign.Center)
-    .onAreaChange((_old: Area, area: Area): void => {
-      this.onInputBarHeightChange(area.height as number);
-    });
+    .alignItems(VerticalAlign.Center);
   }
 }
