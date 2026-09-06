@@ -342,6 +342,15 @@ export struct ChatListPage {
       // 先把缓冲里的内容变更刷出去（未读角标之类），再等过渡结束开闸
       // （issue #159）。见 util/chatListRenderGate.requestChatListFlush。
       requestChatListFlush();
+      // 【issue #159 的第三条缺口】页签上的数字角标原来完全没接进这条旁路：
+      // refreshUnread() 在闸关时只置 unreadRefreshPending 就 return，唯一的补刷
+      // 在 640ms 定时器里。于是列表行的角标（走 requestChatListFlush）已经更新了，
+      // 而文件夹页签上那个数字还挂着，慢半拍的观感只解决了一半。
+      //
+      // 在转场里刷它是安全的：角标走 util/folderBadges 的旁路模型
+      // （setFolderBadge），只有值真的变了的那个 chip 自己重渲染，
+      // 整页和标题栏都不牵动——这正是当初把它做成旁路的目的。
+      this.flushFolderBadges();
       this.resumeListRenderingAfterTransition();
     }
     if (AppStorage.get<boolean>(CHAT_NAV_BAR_VISIBLE_KEY) !== isVisible) {
@@ -616,6 +625,18 @@ export struct ChatListPage {
       return;
     }
     this.unreadRefreshPending = false;
+    this.writeFolderBadges();
+  }
+
+  // 绕过 listRenderActive 闸直接写一次角标。**只给返回转场那条路用**
+  // （见 onNavBarStateChange 里的说明）：闸关着的其余场景（被别的页面盖住）
+  // 仍然走 refreshUnread 的延后语义，不在这里放行。
+  private flushFolderBadges(): void {
+    this.unreadRefreshPending = false;
+    this.writeFolderBadges();
+  }
+
+  private writeFolderBadges(): void {
     for (const spec of this.tabs()) {
       setFolderBadge(spec.key, this.computeUnread(spec.key));
     }

@@ -13,7 +13,7 @@ import { COLOR_DIVIDER, mainCardFill } from '../../util/theme';
 import { formatTime } from '../../util/formatTime';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
-import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, updateTouchHold } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
@@ -115,6 +115,8 @@ export struct MainTabBody {
   @State showArchive: boolean = false;
   @State archiveLoadFailed: boolean = false;
   private updateGate: ChatListFreeze = new ChatListFreeze();
+  // 返回转场那扇窗是否开着（issue #159）。由 onFlushRequested 开、闸开时关。
+  private flushBypass: boolean = false;
   private unsubscribe: (() => void) | null = null;
   private unsubArchive: (() => void) | null = null;
   // 归档行的展开高度（0..行高），只由顶部回弹深度驱动。
@@ -174,22 +176,37 @@ export struct MainTabBody {
   }
 
   private onRenderGateChanged(): void {
+    // 闸开了就关窗：往后走正常路（含重排动画），不再需要旁路。
+    if (this.renderActive) {
+      this.flushBypass = false;
+    }
     this.flushBufferedChats();
   }
 
-  // 闸还关着时的一次性刷新（issue #159，见 util/chatListRenderGate）：只发内容
-  // 变更（身份顺序没变），顺序变了的放回缓冲等闸开。闸开着时走正常路。
+  // 闸还关着时的旁路（issue #159，见 util/chatListRenderGate）：只发内容变更
+  // （身份顺序没变），顺序变了的放回缓冲等闸开。闸开着时走正常路。
+  //
+  // 【为什么是"一段窗口"而不是"一次刷新"】第一版只在纪元 bump 的那一刻刷一次。
+  // 但返回转场有 ~640ms，而群未读清零真正到账靠的是 TDLib 回来的
+  // updateChatReadInbox——它多半**晚于**那一下 bump。那份快照被 accept 收进
+  // 缓冲，照旧要等闸开才出来，"慢半拍"于是只修掉了运气好的一半。
+  // 所以 bump 改成开一扇窗：窗开着的期间内容变更随到随发，闸开时关窗。
   private onFlushRequested(): void {
     if (this.menuOpen || this.renderActive) {
       return;
     }
+    this.flushBypass = true;
+    this.drainContentOnly();
+  }
+
+  // 把缓冲里那份快照发出去，但只发内容变更。顺序变了的放回缓冲等闸开——
+  // 那种要带 180ms 重排动画，而"别在转场里重排"正是这道闸存在的理由。
+  private drainContentOnly(): void {
     const next = this.updateGate.flush();
     if (next === null) {
       return;
     }
-    const sameOrder: boolean = this.chats.length === next.length &&
-      this.chats.every((item: ChatEntry, index: number): boolean => item.id === next[index].id);
-    if (sameOrder) {
+    if (chatOrderUnchanged(this.chats, next)) {
       this.publishChats(next);
     } else {
       this.updateGate.accept(next, false);
@@ -202,6 +219,9 @@ export struct MainTabBody {
       const next = this.updateGate.accept(list, this.renderActive);
       if (next !== null) {
         this.applyChats(next);
+      } else if (this.flushBypass && !this.menuOpen && !this.touchHold) {
+        // 转场窗口里到货的内容变更：accept 已经把它收进缓冲了，这里立刻取出来发。
+        this.drainContentOnly();
       }
     }, 'main');
     this.showArchive = store.hasArchive();
@@ -223,8 +243,7 @@ export struct MainTabBody {
   }
 
   private applyChats(next: ChatEntry[]): void {
-    const structureChanged = this.chats.length !== next.length ||
-      this.chats.some((item: ChatEntry, index: number): boolean => item.id !== next[index]?.id);
+    const structureChanged: boolean = !chatOrderUnchanged(this.chats, next);
     if (structureChanged && this.chats.length > 0) {
       animateTo({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
