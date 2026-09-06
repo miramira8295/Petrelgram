@@ -2389,16 +2389,20 @@ export struct ChatPage {
       newRecorder: (): VoiceRecorder => new VoiceRecorder()
     });
     // 媒体保存/下载簇接上宿主（B15）。context 同上一条的一次性求值例外。
-    // viewerEntry/findMsg/latestMessages 对应原文三种不同的"查消息"方式——
-    // `this.entryById(this.viewerMsgId)`/`this.messages.find(...)`/
-    // `this.messages` 本身，返回类型（null 还是 undefined）逐字保留，不
-    // 合并成一个万能取值器（理由见 MediaSaveState.ets 文件头）。
+    // findMsg/latestMessages 对应原文两种不同的"查消息"方式——
+    // `this.messages.find(...)`/`this.messages` 本身，返回类型（null 还是
+    // undefined）逐字保留，不合并成一个万能取值器（理由见 MediaSaveState.ets
+    // 文件头）。
+    //
+    // 原来还有第三个 viewerEntry（= `this.entryById(this.viewerMsgId)`），
+    // S2 删掉了：它是整簇唯一一条跨域读，改由调用方把 entry 传进
+    // saveMediaEntry()。**这是删掉三种之一，不是把三种合并**，上面那条纪律
+    // 仍然成立。
     const mediaSaveContext = getContext(this) as common.UIAbilityContext;
     this.mediaSave.bind({
       context: (): common.UIAbilityContext => mediaSaveContext,
       store: (): MessageStore | null => this.store,
       chatId: (): number => this.chatId,
-      viewerEntry: (): MessageEntry | null => this.entryById(this.viewerMsgId),
       findMsg: (messageId: number): MessageEntry | undefined =>
         this.messages.find((x: MessageEntry): boolean => x.id === messageId),
       latestMessages: (): MessageEntry[] => this.messages
@@ -3965,6 +3969,19 @@ export struct ChatPage {
   @Monitor('viewerMsgId')
   private onViewerTargetChanged(): void {
     this.viewerPositionMs = 0;
+  }
+
+  // 查看器上点"保存"：entry 在这里取，取不到就不调。
+  //
+  // 原来是 MediaSaveState 经宿主取值器 viewerEntry() 自己现读 viewerMsgId
+  // （整簇唯一一条跨域读）。S2 把取值这一步收回页面，MediaSaveState 从此不需要
+  // 知道 viewerMsgId 或 entryById 的存在——理由见该文件 saveMediaEntry 上方。
+  private saveCurrentViewerMedia(toFiles: boolean): void {
+    const e: MessageEntry | null = this.entryById(this.viewerMsgId);
+    if (e === null) {
+      return;
+    }
+    this.mediaSave.saveMediaEntry(e, toFiles);
   }
 
   private closeViewer(): void {
@@ -7084,8 +7101,10 @@ export struct ChatPage {
       chatTitle: this.header.title,
       nowSec: this.nowSec,
       onRequestClose: (): void => { this.closeViewer(); },
-      onSaveMedia: (): void => { this.mediaSave.saveViewerMedia(false); },
-      onSaveMediaToFiles: (): void => { this.mediaSave.saveViewerMedia(true); },
+      // S2：entry 由页面在这里取好传进去，MediaSaveState 不再经宿主取值器
+      // 现读 viewerMsgId（见该文件 saveMediaEntry 上方的说明）。
+      onSaveMedia: (): void => { this.saveCurrentViewerMedia(false); },
+      onSaveMediaToFiles: (): void => { this.saveCurrentViewerMedia(true); },
       onPositionChanged: (positionMs: number): void => { this.viewerPositionMs = positionMs; }
     });
   }

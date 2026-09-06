@@ -121,9 +121,6 @@ export interface MediaSaveStateHost {
   // 当前会话 id。saveViewerMedia/onFileSave 里 `downloadSaveService.
   // saveRemoteFile(ctx, fileId, this.chatId, ...)` 用它。
   chatId: () => number;
-  // 对应原 `this.entryById(this.viewerMsgId)`——查看器当前展示的那条消息，
-  // 找不到回 null。仅 saveViewerMedia 使用。
-  viewerEntry: () => MessageEntry | null;
   // 对应原 `this.messages.find((x) => x.id === messageId)`——按 id 在页面
   // 当前消息列表里查一条，找不到回 undefined（与数组 `.find` 原生返回类型
   // 一致，不改成 null）。onFileTap/onFileSave 使用。
@@ -156,7 +153,6 @@ export class MediaSaveState {
     context: (): common.UIAbilityContext => ({} as common.UIAbilityContext),
     store: (): MessageStore | null => null,
     chatId: (): number => 0,
-    viewerEntry: (): MessageEntry | null => null,
     findMsg: (_messageId: number): MessageEntry | undefined => undefined,
     latestMessages: (): MessageEntry[] => []
   };
@@ -181,11 +177,19 @@ export class MediaSaveState {
     saveMediaToGallery(ctx, path, isVideo, progress);
   }
 
-  saveViewerMedia(toFiles: boolean): void {
-    const e = this.host.viewerEntry();
-    if (e === null) {
-      return;
-    }
+  // 【S2：从 host.viewerEntry() 改成由调用方传 entry】
+  // 本类原来经宿主取值器现读"查看器当前展示的那条消息"，那是整簇里唯一一条
+  // 跨域读。查看器将来要独立成页（见 docs/media-viewer-page-plan.md），那条读
+  // 会变成跨页读；而本簇**绝不能跟着查看器走**——MessageStore
+  // .consumeLiveIncomingMediaIds()（MessageStore.ets:559-562）是**排干式读取**
+  // （slice 之后立刻清空），两份 onSnapshot 必然互偷 id，自动保存到相册会随机
+  // 丢件**且无任何报错**；pendingGallerySaveId/Progress 又由 ChatPage 的
+  // onMessagesSnapshot 兑现、由它的 aboutToDisappear 清理。
+  //
+  // 所以这里不搬逻辑，只把取值这一步交还给调用方：本类从此不需要知道
+  // viewerMsgId 或 entryById 的存在。这是"删掉三种查消息方式之一"，不是合并，
+  // 文件头那条"三种查消息方式各自对应一个取值器、不合并"的纪律仍然成立。
+  saveMediaEntry(e: MessageEntry, toFiles: boolean): void {
     const ctx = this.host.context();
     if (mediaEntryIsVideo(e)) {
       const displayName: string = e.videoFileName.trim() !== ''

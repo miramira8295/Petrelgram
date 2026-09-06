@@ -19,9 +19,14 @@ set -u
 # 时它会被静默跳过 —— 编译不报错、hvigor 照样打 BUILD SUCCESSFUL、这里也照样
 # 打 PASS。拿总数当下界就把"少跑了"变成一次显式失败。
 #
+# 2026-09-06 从 2170 降到 2169：S2 批**故意删除**了一条已失效的用例
+# （MediaSaveState 的 'viewerEntry() 为 null 时直接返回'——saveMediaEntry 改成
+# 收非空 entry 入参之后，控制器里不再有那个分支，判据搬到了 ChatPage）。
+# 这是本说明里「确实删了用例」那一档，不是为了让脚本变绿。
+#
 # 新增测试后请把这个数字调高；**永远不要为了让脚本通过而调低**（真要临时排查，
 # 用环境变量覆盖一次，别改这里的默认值）。
-MIN_TESTS="${MIN_TESTS:-2170}"
+MIN_TESTS="${MIN_TESTS:-2169}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

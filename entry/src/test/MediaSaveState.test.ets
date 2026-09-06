@@ -80,7 +80,6 @@ class FakeHost implements MediaSaveStateHost {
   contextValue: common.UIAbilityContext = {} as common.UIAbilityContext;
   storeValue: MessageStore | null = null;
   chatIdValue: number = 0;
-  viewerEntryValue: MessageEntry | null = null;
   findMsgResult: MessageEntry | undefined = undefined;
   latestMessagesValue: MessageEntry[] = [];
 
@@ -95,10 +94,6 @@ class FakeHost implements MediaSaveStateHost {
   chatId: () => number = (): number => {
     this.callOrder.push('chatId');
     return this.chatIdValue;
-  };
-  viewerEntry: () => MessageEntry | null = (): MessageEntry | null => {
-    this.callOrder.push('viewerEntry');
-    return this.viewerEntryValue;
   };
   findMsg: (messageId: number) => MessageEntry | undefined = (messageId: number): MessageEntry | undefined => {
     this.callOrder.push(`findMsg:${messageId}`);
@@ -278,23 +273,19 @@ function singleSizePhotoMessage(id: number, chatId: number, fileId: number): TdO
 export default function mediaSaveStateTest() {
   describe('MediaSaveState', () => {
 
-    // ================= saveViewerMedia =================
+    // ================= saveMediaEntry =================
 
-    // 防的回归：viewerEntry()===null 这道早退判据被删掉。
-    it('saveViewerMedia: host.viewerEntry() 为 null 时直接返回，不碰 host.context()', 0, (): void => {
-      const host: FakeHost = new FakeHost();
-      host.viewerEntryValue = null;
-      const controller: MediaSaveState = controllerOn(host);
-
-      controller.saveViewerMedia(false);
-
-      expect(host.callOrder).assertDeepEquals(['viewerEntry']);
-    });
+    // 【S2 删掉了一条用例，这里记下为什么】
+    // 原有 'host.viewerEntry() 为 null 时直接返回' 那条，防的是控制器里的
+    // null 早退判据被删。S2 之后 saveMediaEntry(e, toFiles) 的 e 是非空入参，
+    // 控制器里**不再有这个分支**——判据搬到了 ChatPage.saveCurrentViewerMedia()，
+    // 由它取 entryById(viewerMsgId)、为 null 就不调。
+    // 在这里保留一条测不到东西的用例比删掉更坏（会让人以为还有防线）。
 
     // 防的回归：四条 if 都判空之后那个 else 分支（"没有任何可保存内容"）被
     // 漏掉或误触发别的分支。这条完全不碰 saveMediaTo/downloadSaveService，
     // 见文件头，可以安全测。
-    it('saveViewerMedia: 照片四条分支全部落空时，只经 host.context()，弹"不可用"提示，不碰 store', 0, (): void => {
+    it('saveMediaEntry: 照片四条分支全部落空时，只经 host.context()，弹"不可用"提示，不碰 store', 0, (): void => {
       const wired: WiredStore = newWiredStore(1);
       pushNewMessage(wired.bridge, singleSizePhotoMessage(10, 1, 500));
       const entry: MessageEntry = wired.store.getMessages()[0];
@@ -303,31 +294,29 @@ export default function mediaSaveStateTest() {
       expect(entry.photoPath).assertEqual(''); // 前置条件：缩略图也还没下载下来
 
       const host: FakeHost = new FakeHost();
-      host.viewerEntryValue = entry;
       const controller: MediaSaveState = controllerOn(host);
 
-      controller.saveViewerMedia(false);
+      controller.saveMediaEntry(entry, false);
 
-      expect(host.callOrder).assertDeepEquals(['viewerEntry', 'context']);
+      expect(host.callOrder).assertDeepEquals(['context']);
     });
 
     // 防的回归：视频"还没下载完，toFiles=false"这条分支漏调
     // store.requestVideoDownload，或者把 register 参数写死成 false（该分支
     // 原文固定传 true——用户点了保存，理应进 TDLib 下载管理器，跨页面持续）。
-    it('saveViewerMedia: 视频远程待下载（toFiles=false）经 host.store() 调 requestVideoDownload(register=true)', 0, (): void => {
+    it('saveMediaEntry: 视频远程待下载（toFiles=false）经 host.store() 调 requestVideoDownload(register=true)', 0, (): void => {
       const wired: WiredStore = newWiredStore(9);
       pushNewMessage(wired.bridge, videoMessage(5, 9, 777, 778));
       const entry: MessageEntry = wired.store.getMessages()[0];
       expect(entry.videoPath).assertEqual(''); // 前置条件：确实还没下载完
 
       const host: FakeHost = new FakeHost();
-      host.viewerEntryValue = entry;
       host.storeValue = wired.store;
       const controller: MediaSaveState = controllerOn(host);
 
-      controller.saveViewerMedia(false);
+      controller.saveMediaEntry(entry, false);
 
-      expect(host.callOrder).assertDeepEquals(['viewerEntry', 'context', 'store']);
+      expect(host.callOrder).assertDeepEquals(['context', 'store']);
       const sent: TdObject[] = wired.bridge.sent.map((json: string): TdObject => JSON.parse(json) as TdObject);
       const req: TdObject | undefined =
         sent.find((o: TdObject): boolean => o['@type'] === 'addFileToDownloads');
@@ -337,7 +326,7 @@ export default function mediaSaveStateTest() {
 
     // 同上，图片远程待下载分支，经 requestFullPhoto 发 downloadFile（不进
     // 下载管理器——这条原文没传 register，是普通的按需高清下载）。
-    it('saveViewerMedia: 图片远程待下载（toFiles=false）经 host.store() 调 requestFullPhoto', 0, (): void => {
+    it('saveMediaEntry: 图片远程待下载（toFiles=false）经 host.store() 调 requestFullPhoto', 0, (): void => {
       const wired: WiredStore = newWiredStore(9);
       pushNewMessage(wired.bridge, photoMessage(6, 9, 900, 901));
       const entry: MessageEntry = wired.store.getMessages()[0];
@@ -345,13 +334,12 @@ export default function mediaSaveStateTest() {
       expect(entry.photoFullPath).assertEqual(''); // 前置条件：高清版确实还没取回
 
       const host: FakeHost = new FakeHost();
-      host.viewerEntryValue = entry;
       host.storeValue = wired.store;
       const controller: MediaSaveState = controllerOn(host);
 
-      controller.saveViewerMedia(false);
+      controller.saveMediaEntry(entry, false);
 
-      expect(host.callOrder).assertDeepEquals(['viewerEntry', 'context', 'store']);
+      expect(host.callOrder).assertDeepEquals(['context', 'store']);
       const sent: TdObject[] = wired.bridge.sent.map((json: string): TdObject => JSON.parse(json) as TdObject);
       const req: TdObject | undefined =
         sent.find((o: TdObject): boolean => o['@type'] === 'downloadFile' && o['file_id'] === 901);
@@ -680,18 +668,23 @@ export default function mediaSaveStateTest() {
     // ================= 实例独立性 =================
 
     it('两个实例互不影响（防的回归：host 字段被误改成模块级共享）', 0, (): void => {
+      // S2 后 saveMediaEntry 的第一次跨界调用是 host.context()，用它当探针。
+      // entry 用"四条分支全部落空"的那一种：只会走到 context() + 弹提示，
+      // 不碰 store、不碰 saveMediaTo/downloadSaveService（见文件头的环境限制）。
+      const wired: WiredStore = newWiredStore(1);
+      pushNewMessage(wired.bridge, singleSizePhotoMessage(10, 1, 500));
+      const entry: MessageEntry = wired.store.getMessages()[0];
+
       const hostA: FakeHost = new FakeHost();
-      hostA.viewerEntryValue = null;
       const a: MediaSaveState = controllerOn(hostA);
-      a.saveViewerMedia(false);
-      expect(hostA.callOrder).assertDeepEquals(['viewerEntry']);
+      a.saveMediaEntry(entry, false);
+      expect(hostA.callOrder).assertDeepEquals(['context']);
 
       const hostB: FakeHost = new FakeHost();
-      hostB.viewerEntryValue = null;
       const b: MediaSaveState = controllerOn(hostB);
-      b.saveViewerMedia(false);
-      expect(hostB.callOrder).assertDeepEquals(['viewerEntry']);
-      expect(hostA.callOrder).assertDeepEquals(['viewerEntry']); // a 没被 b 的绑定波及
+      b.saveMediaEntry(entry, false);
+      expect(hostB.callOrder).assertDeepEquals(['context']);
+      expect(hostA.callOrder).assertDeepEquals(['context']); // a 没被 b 的绑定波及
     });
 
     // ================= 验收时补的：dispose() 与自动保存整簇 =================
