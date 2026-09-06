@@ -3053,7 +3053,7 @@ export struct ChatPage {
       this.applyFirstScreenLanding(list, groups, maxId, fillPending);
     } else if (!positionHandled && this.didInitialScroll && maxId > this.lastMaxId) {
       this.followNewTailIfAtBottom(maxId, notifyKind);
-    } else if (this.didInitialScroll && this.atBottom && !this.stayAtUnread && this.viewerMsgId === 0
+    } else if (this.didInitialScroll && this.atBottom && !this.stayAtUnread && !this.viewerOpen()
       && (this.store === null || !this.store.getHasMoreNewer())) {
       // In-place content growth (thumbnails, reply quotes, forward headers
       // filling in async) changes row heights; when the user is at the
@@ -3137,14 +3137,14 @@ export struct ChatPage {
       // 报的现象是"手滑到底之后新消息不跟随，点箭头到底就跟随"——两条路
       // 的差别一定落在这三个之一，打出来就不用猜了。
       logW(`[Follow62] atBottom=${this.atBottom} stayAtUnread=${this.stayAtUnread}` +
-        ` viewerOpen=${this.viewerMsgId !== 0}` +
+        ` viewerOpen=${this.viewerOpen()}` +
         ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}` +
         ` endIdx=${this.curEndIdx} rows=${this.groups.length}`);
     }
     // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
     // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
     // 顶是官方行为，不该被它挡住——真机日志：atBottom=true stayAtUnread=true 不跟随。
-    if (notifyKind === 'update' && this.atBottom && this.viewerMsgId === 0) {
+    if (notifyKind === 'update' && this.atBottom && !this.viewerOpen()) {
       this.stayAtUnread = false;
       this.glueBottom('L1242');
     }
@@ -3728,10 +3728,10 @@ export struct ChatPage {
   // 判定本身在 util/atBottom（10 条测）：那里记着两条上线过的 bug——
   // isAtEnd() 瞬时误报导致把用户从中间拽到最新，以及拿陈旧行号否决导致的自锁死。
   private refreshAtBottom(): void {
-    const scrollerAtEnd: boolean = this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd();
+    const scrollerAtEnd: boolean = this.viewerOpen() ? false : this.scroller.isAtEnd();
     const hasMoreNewer: boolean = this.store !== null && this.store.getHasMoreNewer();
     const verdict: string = atBottomVerdict({
-      viewerOpen: this.viewerMsgId !== 0,
+      viewerOpen: this.viewerOpen(),
       imeTailPinned: this.imeTailPinned,
       scrollerAtEnd: scrollerAtEnd,
       visibleEndIdx: this.curEndIdx,
@@ -3756,7 +3756,7 @@ export struct ChatPage {
   }
 
   private syncTailAfterImeResize(releaseAfter: boolean = false): void {
-    if (!this.imeTailPinned || this.viewerMsgId !== 0) {
+    if (!this.imeTailPinned || this.viewerOpen()) {
       return;
     }
     const seq: number = ++this.imeLayoutSeq;
@@ -3782,7 +3782,7 @@ export struct ChatPage {
   }
 
   private syncTailOnImeFrame(): void {
-    if (!this.imeTailPinned || this.viewerMsgId !== 0) {
+    if (!this.imeTailPinned || this.viewerOpen()) {
       return;
     }
     this.atBottom = true;
@@ -3796,7 +3796,7 @@ export struct ChatPage {
     const visible: boolean = this.keyboardH > 0;
     if (!wasVisible && visible && !this.imeTailPinned) {
       this.imeTailPinned = this.composerFocused && this.atBottom &&
-        this.viewerMsgId === 0 && !this.stayAtUnread;
+        !this.viewerOpen() && !this.stayAtUnread;
     }
     this.lastKeyboardH = this.keyboardH;
     if (this.imeTailPinned) {
@@ -3984,8 +3984,24 @@ export struct ChatPage {
     this.mediaSave.saveMediaEntry(e, toFiles);
   }
 
+  // 查看器是否开着。**19 处闸门的唯一判据**，它们一律不直接读 viewerMsgId。
+  //
+  // 【为什么要这一层】今天 viewerMsgId 在 onMediaTap 的 animateTo 闭包里同步落下，
+  // 所以 `!== 0` 就是正确且零窗口的判据。但查看器要独立成页之后（S6），开合会
+  // 变成 pushPath/pop 的异步过程，从用户点图到框架回调之间有一段无界窗口——
+  // 那段时间里 handleTimelineScrollIndex → playSlot.armSettle() 是可达的，
+  // 而 armSettle 第一件事就是 playSlots.resume()，会抹掉 handoffToViewer 里
+  // suspend() 留下的唯一保护（PlaySlotDriver.ets 那段"三重闸门缺一不可"的注释
+  // 点名的正是这个故障：同一个文件两个播放器互抢下载分片）。
+  //
+  // 到那时这里会改成读一个**同步置位的布尔闩**，而 19 个调用点一个都不用动。
+  // 本批（S5）只做收敛，判据本身一个字没变。
+  private viewerOpen(): boolean {
+    return this.viewerMsgId !== 0;
+  }
+
   private closeViewer(): void {
-    if (this.viewerMsgId === 0 || this.viewerClosing) {
+    if (!this.viewerOpen() || this.viewerClosing) {
       return;
     }
     // ⚠️ [Viewer] 探针（S4）：查看器这一簇此前在 hilog 黄金样本里一个标签都没有，
@@ -4050,7 +4066,7 @@ export struct ChatPage {
       this.overlayState.closeReactionSheet();
       return true;
     }
-    if (this.viewerMsgId !== 0) {
+    if (this.viewerOpen()) {
       if (this.viewerVideoLandscape) {
         this.exitViewerLandscape();
         return true;
@@ -4360,12 +4376,12 @@ export struct ChatPage {
     const hasMoreNewer: boolean = this.store !== null && this.store.getHasMoreNewer();
     let scrollerAtEnd: boolean = false;
     try {
-      scrollerAtEnd = this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd();
+      scrollerAtEnd = this.viewerOpen() ? false : this.scroller.isAtEnd();
     } catch (e) {
       scrollerAtEnd = false;
     }
     const verdict: string = atBottomVerdict({
-      viewerOpen: this.viewerMsgId !== 0,
+      viewerOpen: this.viewerOpen(),
       imeTailPinned: this.imeTailPinned,
       scrollerAtEnd: scrollerAtEnd,
       visibleEndIdx: this.curEndIdx,
@@ -4388,12 +4404,12 @@ export struct ChatPage {
     const hasMoreNewer: boolean = this.store !== null && this.store.getHasMoreNewer();
     let scrollerAtEnd: boolean = false;
     try {
-      scrollerAtEnd = this.viewerMsgId !== 0 ? false : this.scroller.isAtEnd();
+      scrollerAtEnd = this.viewerOpen() ? false : this.scroller.isAtEnd();
     } catch (e) {
       scrollerAtEnd = false;
     }
     const verdict: string = atBottomVerdict({
-      viewerOpen: this.viewerMsgId !== 0,
+      viewerOpen: this.viewerOpen(),
       imeTailPinned: this.imeTailPinned,
       scrollerAtEnd: scrollerAtEnd,
       visibleEndIdx: this.curEndIdx,
@@ -5525,7 +5541,7 @@ export struct ChatPage {
     if (height <= 0 || Math.abs(height - this.bottomChromeH) < 0.5) {
       return;
     }
-    const keepTailVisible: boolean = this.atBottom && this.viewerMsgId === 0;
+    const keepTailVisible: boolean = this.atBottom && !this.viewerOpen();
     this.bottomChromeH = height;
     if (keepTailVisible) {
       const seq: number = ++this.bottomChromeLayoutSeq;
@@ -6712,7 +6728,7 @@ export struct ChatPage {
           }
         },
         onEditorFocus: (): void => {
-          this.imeTailPinned = this.atBottom && this.viewerMsgId === 0 &&
+          this.imeTailPinned = this.atBottom && !this.viewerOpen() &&
             !this.stayAtUnread;
           this.composerFocused = true;
           holdPlayerJobs(KEYBOARD_SETTLE_MS);
@@ -7453,7 +7469,7 @@ export struct ChatPage {
       // Fullscreen media viewer. The page owns which message is open and the
       // hero transition anchored to the tapped thumbnail; the overlay owns
       // zoom/pan, paging, the filmstrip and the chrome layer.
-      if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0)) {
+      if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH), this.viewerOpen())) {
         this.mediaViewer();
       }
     }
@@ -7477,7 +7493,7 @@ export struct ChatPage {
     // animated 取 true：查看器根节点是 300ms 的黑底渐入，第 0 帧直接摘掉顶栏会
     // 在还透着的黑底上闪一下。
     .hideTitleBar(viewerHidesTitleBar(
-      isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0), true)
+      isSplitLayout(this.screenW, this.screenH), this.viewerOpen()), true)
     // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
     //
     // **转场期间先不绑**（09-04 GPU trace）。这条绑定给 NavDestination 层挂了一个
@@ -7493,7 +7509,7 @@ export struct ChatPage {
     // HdsNavDestination 没有 fullScreenOverlay。只在分栏中把查看器提升为应用内
     // 顶层全模态，手机仍保留原来的页面内共享元素过渡。
     .bindContentCover(viewerFullScreenWanted(
-      isSplitLayout(this.screenW, this.screenH), this.viewerMsgId !== 0), this.mediaViewer(), {
+      isSplitLayout(this.screenW, this.screenH), this.viewerOpen()), this.mediaViewer(), {
       modalTransition: ModalTransition.NONE,
       backgroundColor: Color.Black,
       enableSafeArea: false,
