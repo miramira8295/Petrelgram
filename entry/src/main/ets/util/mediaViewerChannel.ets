@@ -41,6 +41,7 @@
 
 import { AlbumGroup } from './collapseAlbums';
 import { MessageEntry } from '../store/MessageEntry';
+import { MessageStore } from '../store/MessageStore';
 
 // 查看器关闭时交回的东西。albumIndex 用 playSlot 的语义：整条消息 -1，
 // 相册成员是该格在 memberIds 里的下标。
@@ -48,6 +49,40 @@ export interface MediaViewerResult {
   messageId: number;
   albumIndex: number;
   positionMs: number;
+}
+
+// 打开查看器页时一次性递过去的东西。
+//
+// **为什么不走 pathInfo.param**：store 是活对象（MessageStore 实例），而 nav 的
+// param 是 Record<string, Object>，官方对它是否会被序列化/在状态恢复时重建没有
+// 承诺。这里用一个模块级单槽手递手：push 之前 put，页面 aboutToAppear 里 take
+// （取走即清）。栈顶同时只可能有一个查看器页，所以单槽够用。
+//
+// store 之所以能安全跨页递：它在一次会话里**身份从不改变**
+// （ChatPage 的字段初始化只 new 一次），所以接收方不需要任何观测能力。
+// 而 messages/groups 不能这样递——上游是整表换引用，递过去的会是一份冻结的旧
+// 引用，必须走 data 通道持续多播。
+export interface MediaViewerSession {
+  chatId: number;
+  messageId: number;
+  initIdx: number;
+  startPositionMs: number;
+  chatTitle: string;
+  store: MessageStore;
+}
+
+let pending: MediaViewerSession | null = null;
+
+export function putViewerSession(session: MediaViewerSession): void {
+  pending = session;
+}
+
+// 取走即清。取不到返回 null——页面遇到这种情况应当立刻退栈（不该发生，
+// 但比拿一份陈旧的 session 渲染要好）。
+export function takeViewerSession(): MediaViewerSession | null {
+  const s: MediaViewerSession | null = pending;
+  pending = null;
+  return s;
 }
 
 type DataListener = (messages: MessageEntry[], groups: AlbumGroup[]) => void;
@@ -161,6 +196,7 @@ export function requestViewerHistory(chatId: number, dir: number): void {
 
 // 只给单测用：模块级 Map 在同一个进程里跨用例活着（照 chatJumpChannel）。
 export function resetMediaViewerChannel(): void {
+  pending = null;
   dataSubs.clear();
   resultSubs.clear();
   saveSubs.clear();
