@@ -67,10 +67,10 @@ DIFF_B=""
 
 # 要留的标签。ChatPage 里实际存在的滚动/跳转/首屏打点，2026-09-06 逐个 grep
 # 核过（方案 §5 那张清单里的 [InitialStage] 在代码里**不存在**，别照抄）。
-# 必须 ≤127 字符，理由见文件头【三】。当前 74。
-TAGS='Anchor|Jump|NewerFire|Follow62|Bottom62|InitialPage|FillViewport|ReusePool'
-# 自检用：上面那个短式应当与这十二个标签的全量匹配数**完全相等**。
-TAGS_FULL='\[(AnchorRestore|PrependAnchor|AppendAnchor|JumpLatest|Anchor|Jump80|NewerFire|Follow62|Bottom62|InitialPage|FillViewport|ReusePool)\]'
+# 必须 ≤127 字符，理由见文件头【三】。当前 84。
+TAGS='Anchor|Jump|NewerFire|Follow62|Bottom62|InitialPage|FillViewport|ReusePool|PlaySlot'
+# 自检用：上面那个短式应当与这十三个标签的全量匹配数**完全相等**。
+TAGS_FULL='\[(AnchorRestore|PrependAnchor|AppendAnchor|JumpLatest|Anchor|Jump80|NewerFire|Follow62|Bottom62|InitialPage|FillViewport|ReusePool|PlaySlot)\]'
 
 usage() {
   cat <<'EOF'

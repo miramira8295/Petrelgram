@@ -36,8 +36,8 @@ import { ClearHistoryOption, clearHistoryOptions } from '../../store/ClearHistor
 import {
   MessageBubbleActions, MessageBubbleRenderData, ReusableMessageBubble
 } from './ReusableMessageBubble';
-import { PlaySlotRegistry } from './PlaySlotRegistry';
-import { shouldCompete, slotKey, slotKeyMessageId } from './playSlot';
+import { PlaySlotDriver } from './PlaySlotDriver';
+import { shouldCompete, slotKey } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
@@ -1106,24 +1106,17 @@ export struct ChatPage {
         },
         onMediaRatio: (messageId: number, albumIndex: number, ratio: number,
           centerY: number): void => {
-          if (this.viewerMsgId !== 0 || !this.pageVisible || !this.playSlotsEnabled()) {
-            return;
-          }
-          const now: number = Date.now();
-          this.playSlots.report(messageId, albumIndex, ratio, centerY, now);
-          this.maybeScheduleNextSlotCheck(now);
+          this.playSlot.reportMedia(messageId, albumIndex, ratio, centerY);
         },
         onMediaGone: (messageId: number, albumIndex: number): void => {
-          this.playSlots.drop(messageId, albumIndex);
+          this.playSlot.dropMedia(messageId, albumIndex);
         },
         onPlaySlotPositionChanged: (messageId: number, _albumIndex: number,
           positionMs: number): void => {
-          this.bubblePositionMs.set(messageId, positionMs);
+          this.playSlot.recordPosition(messageId, positionMs);
         },
         onPlaySlotEnded: (messageId: number, albumIndex: number): void => {
-          const now: number = Date.now();
-          this.playSlots.retire(messageId, albumIndex, now);
-          this.maybeScheduleNextSlotCheck(now);
+          this.playSlot.retire(messageId, albumIndex);
         },
         onAnimationTap: (messageId: number, playing: boolean): void => {
           this.onAnimationTap(messageId, playing);
@@ -1607,8 +1600,10 @@ export struct ChatPage {
   private chatTgsScrollActive: boolean = false;
   private chatTgsStageSettling: boolean = false;
   private chatTgsResumeTimer: number = -1;
-  // 播放位竞选：滚动停下后选出唯一播放/下载的视频气泡（见 PlaySlotRegistry）。
-  private playSlots: PlaySlotRegistry = new PlaySlotRegistry();
+  // 播放位竞选簇整簇搬进了 PlaySlotDriver（第二轮 R2-C）：候选表、定时器闭环、
+  // 气泡进度表与两处查看器交接都在那边，页面只留下面两个 @Local（它们的读点在
+  // prepareMessageBubble 的热路径上，搬走没有半径收益、只有一跳开销）。
+  private playSlot: PlaySlotDriver = new PlaySlotDriver();
   @Local playSlotKey: string = '';
   // 新上位的播放位从哪一毫秒起播。换届时从 bubblePositionMs 查一次（见
   // subscribe 回调），随 playSlotKey 一起下发给气泡——查看器交还的进度就是
@@ -1616,19 +1611,12 @@ export struct ChatPage {
   @Local playSlotStartMs: number = 0;
   // 缓存设置 → 自动播放静音开关，唯一消费点：下发给气泡播放器的 muted。
   @Require @Param autoplayMuted: boolean = true;
-  // 气泡播放位的播放进度，按 messageId 记录。onPlaySlotPositionChanged 是
-  // 350ms 一次的高频回调，故意用普通 Map 而不是 @Local/AppStorage——
-  // 写状态会让消息列表每 350ms 重建一次。打开全屏查看器时读它作为
-  // startPositionMs，关闭查看器时把最终进度写回。整个会话关闭时清空
-  // （见 aboutToDisappear），避免无界增长。
-  private bubblePositionMs: Map<number, number> = new Map<number, number>();
   // 全屏查看器当前播放进度：只在查看器打开期间被 onPositionChanged 回调更新，
   // 关闭时读一次写回 bubblePositionMs，同样是普通字段，不驱动渲染。
   private viewerPositionMs: number = 0;
   // 打开查看器那一刻从 bubblePositionMs 取到的起播位置，一次性字段，供
   // MediaViewerOverlay 构造时读取（与 viewerInitIdx 同一模式）。
   private viewerStartPositionMs: number = 0;
-  private slotTickTimer: number = -1;
   private lastMaxId: number = 0;
   @Local atBottom: boolean = true;
   // 整聊天翻译有两层，菜单里的那一项在两层之间切换含义：
@@ -2457,12 +2445,20 @@ export struct ChatPage {
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
     this.syncChatTgsGate();
-    this.subscriptions.set('playSlot', this.playSlots.subscribe((key: string): void => {
-      // 起播位置必须在 playSlotKey 之前落下：气泡是靠 playSlotKey 的变化才
-      // 挂载 VideoBubbleSurface 的，晚一步这条播放器就已经从 0 开始了。
-      this.playSlotStartMs = key === '' ? 0 : (this.bubblePositionMs.get(slotKeyMessageId(key)) ?? 0);
-      this.playSlotKey = key;
-    }));
+    this.playSlot.bind({
+      viewerMsgId: (): number => this.viewerMsgId,
+      pageVisible: (): boolean => this.pageVisible,
+      competeEnabled: (): boolean => this.playSlotsEnabled(),
+      applySlot: (key: string, startMs: number): void => {
+        // 起播位置必须在 playSlotKey 之前落下：气泡是靠 playSlotKey 的变化才
+        // 挂载 VideoBubbleSurface 的，晚一步这条播放器就已经从 0 开始了。
+        // 这两句是这条顺序契约的**唯一**落点，PlaySlotHost.applySlot 之所以
+        // 是一个动作而不是两个 setter，就是为了把它封在这里。
+        this.playSlotStartMs = startMs;
+        this.playSlotKey = key;
+      }
+    });
+    this.subscriptions.set('playSlot', this.playSlot.subscribe());
     this.nowSec = Math.floor(Date.now() / 1000);
     // 日期条隐藏的那一刻 listUserScrollActive 必须跟着翻假——原来它和显隐写在
     // 同一个定时器体里，定时器下沉之后靠这个回调保住同一时刻。
@@ -3338,50 +3334,6 @@ export struct ChatPage {
   }
 
 
-  // 驻留判定是逐候选的，onVisibleAreaApproximateChange 只在跨阈值时触发——
-  // 一条视频稳稳停着反而不再有任何回调，所以判定不能只靠回调推动。这里用
-  // PlaySlotRegistry.nextCheckDelay() 查询"还有候选没攒满 PLAY_SLOT_DWELL_MS"，
-  // 有就排一个一次性定时器，到点再 tick() 一次；没有就什么也不做。
-  // scheduleSlotTick 只留一个在途定时器，重复调用安全。
-  private scheduleSlotTick(delayMs: number): void {
-    this.clearSlotTick();
-    this.slotTickTimer = setTimeout((): void => {
-      this.slotTickTimer = -1;
-      const now = Date.now();
-      this.playSlots.tick(now);
-      this.maybeScheduleNextSlotCheck(now);
-    }, delayMs + 10);
-  }
-
-  private clearSlotTick(): void {
-    if (this.slotTickTimer !== -1) {
-      clearTimeout(this.slotTickTimer);
-      this.slotTickTimer = -1;
-    }
-  }
-
-  // nextCheckDelay() < 0 表示没有候选正在攒驻留（要么无候选达标，要么都已
-  // 达标或已经是现任/被 pin），此时什么也不用排。
-  private maybeScheduleNextSlotCheck(now: number): void {
-    const delay = this.playSlots.nextCheckDelay(now);
-    if (delay >= 0) {
-      this.scheduleSlotTick(delay);
-    }
-  }
-
-  // 幂等的"补一次判定"：可以随便重复调用，不需要一次性 flag 挡着。立即跑
-  // 一次 tick（用于候选表在此刻已经攒够驻留、只是没有新的可见区回调触发
-  // 判定的情况，比如 onPageShow/closeViewer 这类没有新 ratio 上报的恢复路
-  // 径），再排一次后续检查。调用点见 driveVisibleWork()/onScrollIndex()/
-  // onPageShow()/closeViewer()——任何一次因为候选表还没填满（消息还没到、
-  // ratio 还没上报、被查看器盖住清空过）而选不出播放位，都会被下一次自然
-  // 发生的调用或已排的定时器补上，不会永久卡死。
-  //
-  // 守卫：查看器开着，或页面本身不可见时，直接不喂——List/气泡全程挂载，
-  // 这两种状态下即便候选表被后台悄悄填回来，也绝不能真的选出播放位去挂
-  // 播放器/拉下载（分别是 Critical-2 和 Important-3 的核心不变量）。
-  // closeViewer()/onPageShow() 这两条恢复路径都是先把状态改回"已关闭/
-  // 可见"再调这个方法，守卫在它们那次调用里天然放行。
   // 手动滑动消息列表就收起键盘。
   //
   // 判据是 listTouchActive（手指正按在列表上），不是"发生了滚动"——程序性
@@ -3448,20 +3400,6 @@ export struct ChatPage {
     setTimeout((): void => { action(); }, 0);
   }
 
-  private armPlaySlotSettle(): void {
-    if (this.viewerMsgId !== 0 || !this.pageVisible || !this.playSlotsEnabled()) {
-      return;
-    }
-    const now = Date.now();
-    // 恢复路径（closeViewer / onPageShow）走到这里时候选表还在（suspend()
-    // 保留了它），只是驻留计时被清了；resume() 按此刻重新起算，之后正常
-    // 攒满 PLAY_SLOT_DWELL_MS 就能自然选出播放位，不需要用户手动滑一下。
-    // 非恢复路径上 resume() 是空操作（见 PlaySlotRegistry.resume）。
-    this.playSlots.resume(now);
-    this.playSlots.tick(now);
-    this.maybeScheduleNextSlotCheck(now);
-  }
-
   // 播放位竞选的总闸门：「自动播放视频」关掉、省电模式开启、减少动效开启，
   // 三者任一成立就完全不竞选 —— 不挂播放器，更不发起任何分片下载。
   // 判定本身是纯函数 shouldCompete()（见 playSlot.ets），这里只是把三个
@@ -3478,12 +3416,14 @@ export struct ChatPage {
   // 播放和下载一起停）；重新打开则补一次判定让它自然重新选出来。
   @Monitor('powerSaving', 'reduceAnimations', 'autoplayVideo')
   private onAutoplayPolicyChanged(): void {
+    // 装饰器与这具 if/else 骨架必须留在页面：@Monitor 只能监听页面自己的
+    // @Param/@Local，且不在 @ObservedV2 类里新增（不变量 7）。仿 B10 的
+    // @Monitor('translateChatsEnabled') 先例。
     if (!this.playSlotsEnabled()) {
-      this.clearSlotTick();
-      this.playSlots.reset();
+      this.playSlot.onPolicyDisabled();
       return;
     }
-    this.armPlaySlotSettle();
+    this.playSlot.armSettle();
   }
 
   private handleHidden(): void {
@@ -3498,8 +3438,8 @@ export struct ChatPage {
         this.captureHiddenAnchor();
       },
       clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
-      clearSlotTick: (): void => { this.clearSlotTick(); },
-      suspendPlaySlots: (): void => { this.playSlots.suspend(); }
+      clearSlotTick: (): void => { this.playSlot.clearTick(); },
+      suspendPlaySlots: (): void => { this.playSlot.suspend(); }
     });
   }
 
@@ -3510,8 +3450,8 @@ export struct ChatPage {
       setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
       syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
       clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
-      clearSlotTick: (): void => { this.clearSlotTick(); },
-      suspendPlaySlots: (): void => { this.playSlots.suspend(); }
+      clearSlotTick: (): void => { this.playSlot.clearTick(); },
+      suspendPlaySlots: (): void => { this.playSlot.suspend(); }
     });
   }
 
@@ -3527,7 +3467,7 @@ export struct ChatPage {
       scheduleInitialTimelinePresentation: (): void => { this.scheduleInitialTimelinePresentation(); },
       scheduleChatTgsResume: (): void => { this.scheduleChatTgsResume(); },
       endLinkNavigation: (): void => { endLinkNav(); },
-      armPlaySlotSettle: (): void => { this.armPlaySlotSettle(); },
+      armPlaySlotSettle: (): void => { this.playSlot.armSettle(); },
       resyncListAfterHidden: (): void => { this.resyncListAfterHidden(); },
       setNowSec: (value: number): void => { this.nowSec = value; },
       armNowSecTimer: (): void => { this.armNowSecTimer(); },
@@ -3612,11 +3552,7 @@ export struct ChatPage {
     // 退出会话时播放器可能还开着（返回手势不走 closeViewer），为播放拉起的
     // 下载得在这里也停掉，否则回到列表页它还在后台跑。
     this.releasePlaybackRequests();
-    this.clearSlotTick();
-    this.playSlots.reset();
-    // 进度表只在这一次会话内有意义（交接回全屏查看器/回到播放位），会话
-    // 结束就清空，避免长会话里随刷屏无界增长。
-    this.bubblePositionMs.clear();
+    this.playSlot.dispose();
     this.subscriptions.clear('playSlot');
     this.clearNowSecTimer();
     this.subscriptions.clear('chatAction');
@@ -4041,10 +3977,10 @@ export struct ChatPage {
     // 用户刚看完的这条回到列表后应当继续播。取值/计算都要在 viewerMsgId 被
     // animateTo 里的回调清零之前完成。
     const viewerMessageId = this.viewerMsgId;
-    this.bubblePositionMs.set(viewerMessageId, this.viewerPositionMs);
-    // pin 是有时效的（PLAY_SLOT_PIN_TTL_MS）：只为「刚看完的这条回到列表后
-    // 接着播」服务，过期后它跟别的候选一样要重新攒够驻留才能当选。
-    this.playSlots.pin(viewerMessageId, this.albumIndexForViewer(viewerMessageId), Date.now());
+    // **这一句必须留在 animateTo 之前**：@Monitor('viewerMsgId') 会在
+    // viewerMsgId 归零那一刻同步把 viewerPositionMs 清成 0，挪到后面就永远记 0。
+    this.playSlot.handoffFromViewer(viewerMessageId,
+      this.albumIndexForViewer(viewerMessageId), this.viewerPositionMs);
     const duration: number = this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 260);
     this.viewerClosing = true;
     animateTo({ duration, curve: Curve.Friction }, () => {
@@ -4057,7 +3993,7 @@ export struct ChatPage {
     // 那就先选不出来——下一次真正的滚动/新消息到达会用同一个幂等方法再补
     // 一次，不会永久卡住。pin() 记的目标在候选表补上之前一样选不出来，
     // 是同一个幂等收敛，不需要额外处理。
-    this.armPlaySlotSettle();
+    this.playSlot.armSettle();
     setTimeout((): void => { this.viewerClosing = false; }, Math.max(80, duration));
   }
 
@@ -4854,15 +4790,7 @@ export struct ChatPage {
     // 卸载之前完成——bubblePositionMs 本身不受 suspend() 影响，但卸载之后
     // 气泡播放器不会再有新的 onPositionChanged，读早读晚不影响这一次的值；
     // 保险起见仍然按“先取、后卸载”的顺序写。
-    this.viewerStartPositionMs = this.bubblePositionMs.get(messageId) ?? 0;
-    // 全屏查看器是页内叠层，不是新页面，不会触发 onPageHide——List 和气泡
-    // 照样挂着，onVisibleAreaApproximateChange 只算几何不算遮挡，ratio 不
-    // 变就不会自己释放播放位。不在这里主动停掉，播放位气泡的播放器会和
-    // 查看器自己的播放器同时跑、同一个文件还可能互抢下载分片。
-    // 用 suspend() 而不是 reset()：候选表要留着，否则关闭查看器后几何没变、
-    // 没有任何新的 ratio 上报，列表就再也选不出播放位（“哑掉”）。
-    this.clearSlotTick();
-    this.playSlots.suspend();
+    this.viewerStartPositionMs = this.playSlot.handoffToViewer(messageId);
     // Position the viewer Swiper on the tapped album member.
     const sib = this.siblingIdsFor(messageId);
     this.viewerInitIdx = Math.max(0, sib.indexOf(messageId));
@@ -6184,7 +6112,7 @@ export struct ChatPage {
     this.syncMediaWindow(range.start, range.end);
     // 同一个道理：数据一变（新消息到达、翻页、被查看器等场景清空候选表后
     // 恢复）就补一次播放位判定，不指望用户正好在这一刻滚动。
-    this.armPlaySlotSettle();
+    this.playSlot.armSettle();
   }
 
   // 把可见行区间换算成消息 id 区间交给 store。外扩几行做缓冲，滑动时不会
@@ -7247,7 +7175,7 @@ export struct ChatPage {
   }
 
   private handleTimelineScrollIndex(start: number, end: number): void {
-    this.armPlaySlotSettle();
+    this.playSlot.armSettle();
     this.refreshAtBottom();
     this.curStartIdx = start;
     this.curEndIdx = end;
@@ -7321,14 +7249,14 @@ export struct ChatPage {
     this.store?.flushScrollDeferredUpdate();
     this.resumeChatTgsAfterScroll();
     this.driveVisibleWork();
-    this.armPlaySlotSettle();
+    this.playSlot.armSettle();
     this.capMessageReuseBuckets();
   }
 
   private handleTimelineAreaChange(area: Area): void {
     const y: number = area.globalPosition.y as number;
     const height: number = area.height as number;
-    this.playSlots.setViewportCenter(y + height / 2);
+    this.playSlot.setViewportCenter(y + height / 2);
   }
 
   // The flattened background, once it exists. Until then the layered version
