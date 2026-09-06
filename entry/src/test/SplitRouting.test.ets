@@ -129,5 +129,59 @@ export default function splitRoutingTest(): void {
       expect(d.action).assertEqual('popTo');
       expect(d.popCount).assertEqual(1);
     });
+
+    // ——— 分栏（平板）：从左栏选会话是**替换右栏**，不是叠加 ———
+    //
+    // 平板左栏一直露着，用户能一个接一个点会话。手机上撞不到这个：详情页盖住
+    // 列表，想点下一个必须先返回，返回本身就弹掉了上一层。
+
+    it('split_navbar_replaces_instead_of_stacking', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0')];
+      const d = decideChatPush(stack, f('ChatPage', '20:0'), true);
+      expect(d.action).assertEqual('clearAndPush');
+      expect(d.popCount).assertEqual(0);
+    });
+
+    it('split_navbar_replace_keeps_the_right_pane_at_one_layer', 0, () => {
+      // 连点三个会话：每一次都是替换，右栏永远只有一层。
+      const first = decideChatPush([], f('ChatPage', '10:0'), true);
+      expect(first.action).assertEqual('clearAndPush');
+      const second = decideChatPush([f('ChatPage', '10:0')], f('ChatPage', '20:0'), true);
+      expect(second.action).assertEqual('clearAndPush');
+      const third = decideChatPush([f('ChatPage', '20:0')], f('ChatPage', '30:0'), true);
+      expect(third.action).assertEqual('clearAndPush');
+    });
+
+    // 点自己已经开着的那一个：**必须是空操作**。清空再推等于把同一页拆了重建，
+    // 白闪一下，滚动位置、草稿、正在播的语音全丢。
+    it('split_navbar_still_skips_the_chat_already_on_top', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '20:0')];
+      const d = decideChatPush(stack, f('ChatPage', '20:0'), true);
+      expect(d.action).assertEqual('skip');
+    });
+
+    // 目标在更深处时走 popTo 而不是 clearAndPush：结果一样（右栏只剩目标那层），
+    // 但出栈能复用那一页，不重建、不丢滚动位置。
+    it('split_navbar_pops_back_rather_than_rebuilding', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0'), f('ChatPage', '20:0')];
+      const d = decideChatPush(stack, f('ChatPage', '10:0'), true);
+      expect(d.action).assertEqual('popTo');
+      expect(d.popCount).assertEqual(1);
+    });
+
+    // 分栏下从**右栏内部**跳（消息里的群链接、资料页「发消息」）仍然叠加：
+    // 那是"再往里走一层"，返回要回到上一个会话。
+    it('split_content_origin_still_stacks', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0')];
+      const d = decideChatPush(stack, f('ChatPage', '20:0'), false);
+      expect(d.action).assertEqual('push');
+    });
+
+    // 手机（replaceRightPane=false）逐字不变——这是上面那批用例的默认参数，
+    // 这条只是把"默认值确实是 false"钉住，免得哪天改签名把手机也带进替换。
+    it('phone_default_is_still_stacking', 0, () => {
+      const stack: StackFrame[] = [f('ChatPage', '10:0')];
+      expect(decideChatPush(stack, f('ChatPage', '20:0')).action).assertEqual('push');
+    });
   });
 }

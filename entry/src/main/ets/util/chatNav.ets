@@ -163,9 +163,12 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 代价是每个调用点都得接住——除 ChatListPage（return 进了自己的链）和
 // NewGroupPage（自己处理）外，其余 26 处统一 .catch(logChatNavFailure)。
 // 新增调用点时别忘了跟上，否则是未捕获的 Promise rejection。
-// origin 参数保留但**已不参与决策**——去重规则现在只看"这个会话是不是已经
-// 开着"，与从哪一栏点的无关。留着签名是为了不动 10 个调用点，也为了将来若要
-// 恢复"从列表选会话就替换"的行为时有现成的入口。
+// **origin 现在只在分栏下参与决策**（见 splitRouting.decideChatPush 的
+// replaceRightPane）：平板左栏一直露着，用户能一个接一个点会话，"一律叠加"
+// 于是没有刹车——点十个右栏就叠十层（用户报：「Pad 左侧频道点击多个会话，
+// 右侧会启动多个页面」）。手机保持叠加不变：详情页盖住列表，想点下一个必须
+// 先返回，返回本身就弹掉了上一层，同时"从会话里点进另一个会话，返回回到上
+// 一个"这条链才成立。
 export function navigateToChat(
   params: Record<string, Object>,
   origin: PushOrigin = 'navbar'
@@ -190,10 +193,16 @@ export function navigateToChat(
     key: chatKey(numberField(params, 'chatId'), routeTopicId(params))
   };
   // 允许同时开多个会话窗口，但同一个会话只能有一个——规则在 splitRouting 的
-  // decideChatPush（7 条测）。已经开着的会话不再新开一层，而是出栈回到它，
+  // decideChatPush。已经开着的会话不再新开一层，而是出栈回到它，
   // 这正是迁移前 findChatRouteIndex() 做的事（那时是 router.back(index)）。
+  //
+  // 分栏 + 从左栏选会话 = 替换右栏，不叠加（见上面 origin 那段）。窗口尺寸在
+  // 这里读一次，下面关渲染闸也用同一对值。
+  const screenW: number = AppStorage.get<number>('screenWidthVp') ?? 0;
+  const screenH: number = AppStorage.get<number>('screenHeightVp') ?? 0;
+  const split: boolean = isSplitLayout(screenW, screenH);
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
-  const decision: ChatPushDecision = decideChatPush(snap, target);
+  const decision: ChatPushDecision = decideChatPush(snap, target, split && origin === 'navbar');
   // **skip / popTo 这两条路不传参**：栈帧的 param 不会因为出栈而更新，已经挂在
   // 树上的那个 ChatPage 不会重新吃一遍 pathInfo。所以 jumpTo 得走旁路交过去，
   // 否则「资料页点媒体」「搜索到已打开会话里的消息」都只是回到那一页、停在
@@ -217,10 +226,14 @@ export function navigateToChat(
   // push. Close the render gate synchronously first so read/revision updates
   // caused by opening the chat cannot publish into the covered LazyForEach in
   // that gap. Split layouts keep the list visible and therefore stay active.
-  const screenW: number = AppStorage.get<number>('screenWidthVp') ?? 0;
-  const screenH: number = AppStorage.get<number>('screenHeightVp') ?? 0;
-  if (!isSplitLayout(screenW, screenH)) {
+  if (!split) {
     setChatListRenderActive(false);
+  }
+  // clearAndPush：先把右栏清空再推，右栏于是恒为一层。**animated=false**——
+  // 清空动画和紧接着的推入动画会在同一帧里打架，看到的是旧会话先滑走再滑入
+  // 新的；替换的观感应当是直接换掉。
+  if (decision.action === 'clearAndPush') {
+    stack.clear(false);
   }
   stack.pushPath({ name: CHAT_DEST_NAME, param: params });
   return Promise.resolve();

@@ -62,13 +62,29 @@ export function decidePush(
 // 去重按 (name, key) 二元组：同一个群的不同话题 key 不同，是两个窗口，
 // 互不去重——它们本来就是两个会话界面。
 export interface ChatPushDecision {
-  // 'skip' | 'popTo' | 'push'
+  // 'skip' | 'popTo' | 'push' | 'clearAndPush'
   action: string;
   // popTo 时要出栈几层（目标之上压着多少层）；其余为 0。
   popCount: number;
 }
 
-export function decideChatPush(stack: StackFrame[], target: StackFrame): ChatPushDecision {
+// replaceRightPane —— **分栏专用**。
+//
+// 【它修的是什么】平板上左栏会话列表**一直露着**，用户可以一个接一个点。上面
+// 那条"一律叠加"的规则于是没有刹车：点十个会话右栏就叠十层，返回要按十次，
+// 用户看到的是「右侧会启动多个页面」。手机上撞不到这个——详情页盖住了列表，
+// 想点下一个会话必须先返回，返回本身就把上一层弹掉了。
+//
+// 【为什么不干脆全局恢复"从列表选会话就替换"】手机端的叠加是**要保留的行为**
+// （用户明确确认过）：从会话里点进另一个会话再返回，得回到上一个会话。判据
+// 因此不是 origin 一个人说了算，而是 origin='navbar' **且**当前是分栏。
+//
+// 【为什么 skip 仍然优先】栈顶已经是目标时清空再推等于把同一页拆了重建：
+// 白闪一下，滚动位置、草稿、正在播的语音全丢。点自己已经开着的那个会话是很
+// 常见的一下（想回到它），必须是空操作。
+export function decideChatPush(
+  stack: StackFrame[], target: StackFrame, replaceRightPane: boolean = false
+): ChatPushDecision {
   const depth: number = stack.length;
   for (let i = depth - 1; i >= 0; i--) {
     if (!sameFrame(stack[i], target)) {
@@ -76,9 +92,15 @@ export function decideChatPush(stack: StackFrame[], target: StackFrame): ChatPus
     }
     // 找到了。在栈顶就什么都不做，否则把压在它上面的那些层出掉。
     const above: number = depth - 1 - i;
-    return above === 0
-      ? { action: 'skip', popCount: 0 }
-      : { action: 'popTo', popCount: above };
+    if (above === 0) {
+      return { action: 'skip', popCount: 0 };
+    }
+    // 分栏替换语义下"目标在更深处"和"目标不在栈里"是同一件事：右栏最后只剩
+    // 目标这一层。走 popTo 而不是 clearAndPush，是因为出栈能复用那一页——
+    // 结果一样，代价更小（不重建、不丢滚动位置）。
+    return { action: 'popTo', popCount: above };
   }
-  return { action: 'push', popCount: 0 };
+  return replaceRightPane
+    ? { action: 'clearAndPush', popCount: 0 }
+    : { action: 'push', popCount: 0 };
 }
