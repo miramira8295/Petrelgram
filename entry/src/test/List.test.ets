@@ -223,6 +223,7 @@ import jumpFlashStateTest from './JumpFlashState.test';
 import composerSuggestionStateTest from './ComposerSuggestionState.test';
 import voiceRecordingStateTest from './VoiceRecordingState.test';
 import mediaSaveStateTest from './MediaSaveState.test';
+import patchNotifyGateTest from './PatchNotifyGate.test';
 import videoEngineFallbackTest from './VideoEngineFallback.test';
 import mediaViewerChannelTest from './MediaViewerChannel.test';
 import albumSiblingsTest from './AlbumSiblings.test';
@@ -464,4 +465,5 @@ export default function testsuite() {
   albumSiblingsTest();
   mediaViewerChannelTest();
   videoEngineFallbackTest();
+  patchNotifyGateTest();
 }

@@ -8,6 +8,7 @@ import { publishSenderAvatar, senderChannelKey } from '../util/senderAvatarChann
 import { scrollActiveNow } from '../util/scrollEffects';
 import { publishThumbPath } from '../util/mediaThumbChannel';
 import { inlineThumbEntryChanged } from '../util/inlineThumbUpdate';
+import { patchNeedsNotify, PatchSignature } from '../util/patchNotifyGate';
 import { formatUserStatus } from '../util/formatUserStatus';
 import {
   decideNewerTail, liveArrivalContiguous, liveArrivalStep, NewerPageOutcome,
@@ -3219,6 +3220,18 @@ export class MessageStore {
     });
   }
 
+  // 【只有非进度字段变了才发快照】每次 notifySoon 都让 ChatPage 把**整个已加载
+  // 窗口**重新 collapseAlbums 一遍（mediaProgressChannel 文件头的真机实测：
+  // 421 条时 8–20ms 主线程 JS，滑动中每秒 10 次），而 messages 只增不减，
+  // 这条开销随停留时长线性增长。
+  //
+  // 进度根本不在行 key 里——它走 mediaProgressChannel 旁路直达进度环——所以
+  // 「进度从 40 跳到 41」触发的那次全窗重建，产生的可见变化恰好是零。
+  // 行内缩略图那一支早就用 inlineThumbEntryChanged 守着（并注明"这一支因此
+  // 一律不再发 notifySoon()"），这里是同一件事漏掉的地方。
+  //
+  // 判据保守：**路径落地/失败翻转/活跃态翻转一律照发**，只跳过"仅进度变化"。
+  // 漏发路径会让内容永远不显示，那个后果比多发几次严重得多。
   private patchLinkPreviewEntries(fileId: number, fn: (entry: MessageEntry) => void): void {
     let changed: boolean = false;
     this.messages = this.messages.map((message: MessageEntry): MessageEntry => {
@@ -3226,9 +3239,19 @@ export class MessageStore {
         return message;
       }
       const next: MessageEntry = cloneMessage(message);
+      const before: PatchSignature = {
+        path: message.linkPhotoPath, failed: message.linkPhotoFailed,
+        active: message.linkPhotoDownloadActive
+      };
       fn(next);
       publishProgress(next.linkPhotoFileId, next.linkPhotoProgress);
-      changed = true;
+      const after: PatchSignature = {
+        path: next.linkPhotoPath, failed: next.linkPhotoFailed,
+        active: next.linkPhotoDownloadActive
+      };
+      if (patchNeedsNotify(before, after)) {
+        changed = true;
+      }
       return next;
     });
     if (changed) {
@@ -3845,6 +3868,18 @@ export class MessageStore {
     }
   }
 
+  // 【只有非进度字段变了才发快照】每次 notifySoon 都让 ChatPage 把**整个已加载
+  // 窗口**重新 collapseAlbums 一遍（mediaProgressChannel 文件头的真机实测：
+  // 421 条时 8–20ms 主线程 JS，滑动中每秒 10 次），而 messages 只增不减，
+  // 这条开销随停留时长线性增长。
+  //
+  // 进度根本不在行 key 里——它走 mediaProgressChannel 旁路直达进度环——所以
+  // 「进度从 40 跳到 41」触发的那次全窗重建，产生的可见变化恰好是零。
+  // 行内缩略图那一支早就用 inlineThumbEntryChanged 守着（并注明"这一支因此
+  // 一律不再发 notifySoon()"），这里是同一件事漏掉的地方。
+  //
+  // 判据保守：**路径落地/失败翻转/活跃态翻转一律照发**，只跳过"仅进度变化"。
+  // 漏发路径会让内容永远不显示，那个后果比多发几次严重得多。
   private patchStickerEntries(fileId: number, fn: (c: MessageEntry) => void): void {
     let changed = false;
     this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
@@ -3852,9 +3887,17 @@ export class MessageStore {
         return m;
       }
       const c = cloneMessage(m);
+      const before: PatchSignature = {
+        path: m.stickerPath, failed: m.stickerFailed, active: m.stickerDownloadActive
+      };
       fn(c);
       publishProgress(c.stickerFileId, c.stickerProgress);
-      changed = true;
+      const after: PatchSignature = {
+        path: c.stickerPath, failed: c.stickerFailed, active: c.stickerDownloadActive
+      };
+      if (patchNeedsNotify(before, after)) {
+        changed = true;
+      }
       return c;
     });
     if (changed) {
@@ -4166,7 +4209,13 @@ export class MessageStore {
 
     // A sticker source id can belong to many messages. Keep source progress,
     // completion and paused state in sync for every matching bubble.
-    if (this.messages.some((m: MessageEntry): boolean => m.stickerFileId === id)) {
+    // 先查反向表、未命中再扫。**谓词结果与只扫描时完全等价**（`||` 短路），
+    // 但常见路径（表命中）不再做一次全窗口线性扫描。
+    // 不直接换成只查表：表由 requestStickerSource 那一条路填，若某条消息进了
+    // 窗口而 fileId 没进表，只查表就会静默丢一次更新（表现为缩略图不刷新）。
+    // 保留扫描当兜底，是这条优化能零风险落地的原因。
+    if (this.stickerFileToMsg.has(id) ||
+      this.messages.some((m: MessageEntry): boolean => m.stickerFileId === id)) {
       const percent = done && path !== '' ? 100 : this.downloadPercent(file, local);
       const active = !done &&
         ((local['is_downloading_active'] as boolean | undefined) ?? false);
@@ -4187,7 +4236,8 @@ export class MessageStore {
 
     // A Telegram preview thumbnail can be reused by several messages. Patch
     // every matching card rather than the first message that requested it.
-    if (this.messages.some((m: MessageEntry): boolean => m.linkPhotoFileId === id)) {
+    if (this.linkFileToMsg.has(id) ||
+      this.messages.some((m: MessageEntry): boolean => m.linkPhotoFileId === id)) {
       const percent: number = done && path !== '' ? 100 : this.downloadPercent(file, local);
       const active: boolean = !done &&
         ((local['is_downloading_active'] as boolean | undefined) ?? false);
@@ -4224,9 +4274,12 @@ export class MessageStore {
       });
       return;
     }
+    // hasVideoEntry 原来是**无条件先算**的，于是每一条 updateFile 都要扫一遍
+    // 全窗口——而它只在 videoTracked 为假、且这次是"下载完成"时才会被用到。
+    // 改成惰性：表命中就根本不扫。
     const videoTracked = this.videoFileToMsg.has(id);
-    const hasVideoEntry = this.messages.some((m: MessageEntry): boolean => m.videoFileId === id);
-    if (videoTracked || (done && path !== '' && hasVideoEntry)) {
+    if (videoTracked || (done && path !== '' &&
+      this.messages.some((m: MessageEntry): boolean => m.videoFileId === id))) {
       const percent = done && path !== '' ? 100 : this.downloadPercent(file, local);
       this.patchVideoEntries(id, (c: MessageEntry): void => {
         if (done && path !== '') {
@@ -4245,7 +4298,8 @@ export class MessageStore {
     }
     // Inline thumbnail: progress while downloading, path on completion (drives
     // the in-bubble loading ring).
-    if (this.messages.some((m: MessageEntry): boolean => m.photoFileId === id)) {
+    if (this.fileToMsg.has(id) ||
+      this.messages.some((m: MessageEntry): boolean => m.photoFileId === id)) {
       const percent = this.downloadPercent(file, local);
       const landed: boolean = done && path !== '';
       this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
@@ -5738,9 +5792,19 @@ export class MessageStore {
         return m;
       }
       const c = cloneMessage(m);
+      // 判据同 patchStickerEntries 上方的说明。视频这一支的活跃态字段叫
+      // mediaDownloadActive（不是 videoDownloadActive）。
+      const before: PatchSignature = {
+        path: m.videoPath, failed: m.videoFailed, active: m.mediaDownloadActive
+      };
       fn(c);
       publishProgress(c.videoFileId, c.videoProgress);
-      changed = true;
+      const after: PatchSignature = {
+        path: c.videoPath, failed: c.videoFailed, active: c.mediaDownloadActive
+      };
+      if (patchNeedsNotify(before, after)) {
+        changed = true;
+      }
       return c;
     });
     if (changed) {
