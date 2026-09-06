@@ -3730,16 +3730,34 @@ export class MessageStore {
     }
   }
 
-  // 只提优先级，不碰任何本地状态。
+  // 每个 file_id 上一次发出去的优先级。**只为"只升不降"这条不变量存在。**
+  //
+  // TDLib 没有"查当前优先级"的接口，所以只能自己记。会话结束随 store 一起走，
+  // 无需清理（同一 file_id 在一次会话里最多几次升档）。
+  private sentFilePriority: Map<number, number> = new Map();
+
+  // **只提优先级，绝不降低**，不碰任何本地状态。
   //
   // 前提是文件已经在下载中。TDLib 没有单独的「改优先级」方法，对同一个 file_id
   // 再发一次 downloadFile 就是官方的重新定优先级方式：不会重头下，也不会丢掉
   // 已下的那部分。刻意**不**重置 progress —— 重置会让进度条跳回 0%，看起来像
   // 重新下载。失败无副作用，原来那次下载照常跑着。
+  //
+  // 【为什么必须挡住降档】函数名叫 raise，但它实际发的是一条会**覆盖**当前
+  // 优先级的 downloadFile。查看器把某张图提到 32 之后，用户在查看器里点
+  // "保存到相册"，保存那条路走的是 24（"用户主动要但没在盯着"那一档）——
+  // 于是正在下的图被打回 24，用户明明还盯着它。
+  // 这个降档是 8b66453（把点开的图提到 32）引入的：在那之前查看器与保存
+  // 同为 24，重发是空操作，问题不存在。
   private raiseFilePriority(fileId: number, priority: number): void {
     if (fileId === 0) {
       return;
     }
+    const sent: number = this.sentFilePriority.get(fileId) ?? 0;
+    if (priority <= sent) {
+      return;
+    }
+    this.sentFilePriority.set(fileId, priority);
     const req: TdRequest = { '@type': 'downloadFile' };
     req['file_id'] = fileId;
     req['priority'] = priority;
@@ -3789,6 +3807,9 @@ export class MessageStore {
       c.photoFullProgress = 0;
     });
     this.fullPhotoFileToMsg.set(e.photoFullFileId, messageId);
+    // 记账：首次下载也要进 sentFilePriority，否则后续 raiseFilePriority 会
+    // 拿 sent=0 去比，任何档位都能放行，"只升不降"就形同虚设。
+    this.sentFilePriority.set(e.photoFullFileId, priority);
     const req: TdRequest = { '@type': 'downloadFile' };
     req['file_id'] = e.photoFullFileId;
     req['priority'] = priority;

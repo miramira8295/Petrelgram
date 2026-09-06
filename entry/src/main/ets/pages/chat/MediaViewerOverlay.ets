@@ -663,12 +663,23 @@ export struct MediaViewerOverlay {
   }
 
   // Best available image for a viewer page: full-res once downloaded, else thumbnail.
+  // 【为什么要问 mediaThumbChannel】页面快照里的 entry 可能是**陈旧的**：
+  // MessageStore 的行内缩略图那一支明写"这一支因此一律不再发 notifySoon()"
+  // ——缩略图落地走旁路通道直达气泡的 LiveThumbImage，不触发快照发布。于是
+  // 气泡里图好好的，查看器手里那份 entry 仍然 photoPath === ''，只能干转圈。
+  //
+  // 隔壁的 siblingPath() 早就是"先问通道、再退回行对象"（见上），本函数没跟上
+  // ——那是上一次「图片组放大后预览图不展示」只修了一半留下的不对称。
+  // 这一条也是"点开半天不出图"最省事的一半解法：不改 store 的发布节奏
+  // （给那一支补 notify 会把发布风暴引进来），只在读侧多问一句。
   private photoSrcFor(id: number): string {
     const e = this.entryById(id);
     if (e === null) {
       return '';
     }
-    const p = e.photoFullPath !== '' ? e.photoFullPath : e.photoPath;
+    const live: string = e.photoFileId !== 0 ? thumbPathFor(e.photoFileId) : '';
+    const p = e.photoFullPath !== ''
+      ? e.photoFullPath : (e.photoPath !== '' ? e.photoPath : live);
     return p.startsWith('/') ? `file://${p}` : p;
   }
 
@@ -1396,11 +1407,17 @@ export struct MediaViewerOverlay {
     // mounted and decoded underneath, so closing can never leave that cell
     // as a grey/background placeholder or an empty Image node.
     // 只留不透明度：几何过渡已经交给 geometryTransition（气泡 ↔ 全屏图），
-    // 这里再叠一套"从点击点缩放"就是两套几何动画抢同一个节点。tapX/tapY
-    // 仍然保留着，回退到这套转场时不用重新接线。
+    // 这里再叠一套"从点击点缩放"就是两套几何动画抢同一个节点。
+    //
+    // 【tapX/tapY 已于 S1(2650ac3) 删除】原注释说它们"仍然保留着，回退到这套
+    // 转场时不用重新接线"——那句现在不成立了。真要回退，从那个提交里取。
+    //
+    // 时长与页面侧的开合同闸（KEY_POWER_SMOOTH_TRANSITIONS），不再挂
+    // EFFECT_BLUR：那个键默认关，会让这层淡入与一镜到底一起变成硬切。
+    // 理由详见 ChatPage.openViewer 里的说明。
     .transition(
       TransitionEffect.OPACITY
-        .animation({ duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 300), curve: Curve.Friction })
+        .animation({ duration: this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction })
     );
   }
 }

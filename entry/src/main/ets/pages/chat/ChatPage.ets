@@ -120,7 +120,7 @@ import {
   RowFadeTransition, initialRowRevealDelay, rowFadeAnimationActive, rowFadeTransition
 } from '../../util/rowFadeGate';
 import {
-  KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
+  KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY,
   KEY_POWER_SMOOTH_TRANSITIONS,
   powerAnimationDuration
@@ -3932,7 +3932,21 @@ export struct ChatPage {
         this.store?.requestVideoDownload(messageId, false, true);
       }
     }
-    animateTo({ duration: this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 300), curve: Curve.Friction }, () => {
+    // 【为什么是 SMOOTH_TRANSITIONS 而不是 EFFECT_BLUR】
+    // 气泡↔全屏的一镜到底（geometryTransition）时长原本挂在
+    // KEY_POWER_EFFECT_BLUR 上，而那个键在 AppSettings 的
+    // POWER_BOOLEAN_FALSE_DEFAULTS 里——**出厂默认就是关的**，于是 duration 恒为 0，
+    // 几何过渡没有时间可跑，表现是硬切。这套动画自 a118a87(2026-08-18) 落地起，
+    // 在默认设置下**从来没生效过**，用户报的"没有定点放大缩小动画"就是这个。
+    //
+    // 换到 KEY_POWER_SMOOTH_TRANSITIONS（默认 true）也更符合文案：设置里那一项
+    // 叫「模糊与缩放效果」，指的是毛玻璃那一档；用户为省电关掉模糊，不该静默
+    // 失去一镜到底且毫无提示。省电模式激活时仍然归零（powerFeatureEnabled 里
+    // 的 && !powerSavingActive()），这条没变。
+    //
+    // 查看器**内部**那 9 处动画（chrome 淡入、缩放复位等）仍留在 EFFECT_BLUR 下
+    // ——它们确实属于"模糊与缩放效果"。
+    animateTo({ duration: this.chatEffectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction }, () => {
       this.onMediaTap(messageId);
     });
   }
@@ -4021,7 +4035,8 @@ export struct ChatPage {
     logW(`[Viewer] handoff dir=from-viewer id=${viewerMessageId}` +
       ` albumIndex=${handoffAlbumIdx} posMs=${Math.round(this.viewerPositionMs)}`);
     this.playSlot.handoffFromViewer(viewerMessageId, handoffAlbumIdx, this.viewerPositionMs);
-    const duration: number = this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 260);
+    // 与打开同一把闸，理由见 openViewer 里那段说明。
+    const duration: number = this.chatEffectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 260);
     this.viewerClosing = true;
     animateTo({ duration, curve: Curve.Friction }, () => {
       this.viewerMsgId = 0;
@@ -4842,7 +4857,7 @@ export struct ChatPage {
     // 改变绑定节点的存在性时才会做几何过渡，直接赋值就是瞬间出现（关闭那侧
     // 早就这么写了，见 closeViewer）。
     animateTo({
-      duration: this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 300),
+      duration: this.chatEffectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300),
       curve: Curve.Friction
     }, (): void => {
       this.viewerMsgId = messageId;
