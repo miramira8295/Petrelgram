@@ -19,7 +19,10 @@ let nextWebmStickerId: number = 1;
 //   · 下界 16ms —— 一帧，再小就等于不提前，EOF 卡顿会回来；
 //   · 上界 40ms —— 1 秒贴纸也只丢 4%，肉眼基本看不出。
 // 轮询降到 16ms 是为了让粒度不再主导误差（原来 50ms 粒度比提前量的一半还大）。
-const LOOP_POLL_MS: number = 16;
+// 唤醒的下界：算出来的剩余时间再短也不至于忙等。
+const LOOP_MIN_SLEEP_MS: number = 32;
+// 位置没推进（暂停、缓冲、被系统降频）时的退避间隔。
+const LOOP_STALL_SLEEP_MS: number = 250;
 const LOOP_REWIND_MIN_MS: number = 16;
 const LOOP_REWIND_MAX_MS: number = 40;
 // 时长的百分之二：短贴纸拿下界，长贴纸也不会超过上界。
@@ -132,6 +135,9 @@ export struct WebmStickerView {
   private player: IjkMediaPlayer | null = null;
   private readonly instanceId: number = nextWebmStickerId++;
   private loopTimer: number = -1;
+  // 上一次醒来时读到的播放位置，用来判断"位置有没有推进"（见 armLoopWatch）。
+  // -1 表示本轮还没读过。
+  private lastLoopPos: number = -1;
   private durationMs: number = 0;
   // 本片源的提前回卷量，拿到 duration 之后算一次（见上方常量的说明）。
   private rewindAheadMs: number = LOOP_REWIND_MAX_MS;
@@ -177,30 +183,74 @@ export struct WebmStickerView {
   // Seamless loop: jump back to 0 shortly BEFORE the end, so playback never
   // hits EOF — ijk's own loop path (EOF → buffering state → seek) visibly
   // hitches even with packet-buffering disabled.
+  //
+  // 【2026-09-06：从"定时轮询"改成"算准了到点再醒"】
+  // 上一版是 setInterval(16ms)，也就是每个可见的 webm 播放器**每秒 60 次**
+  // 跨 NAPI 调 getCurrentPosition()。贴纸抽屉一屏十几个，就是每秒近千次跨语言
+  // 调用，而其中 99% 的答案是"还没到，接着等"——纯粹的空转，前台耗电与发热
+  // 的一份贡献。
+  //
+  // 现在改成自续的 setTimeout：读一次位置，算出**离回卷点还有多久**，睡那么久
+  // 再醒。1.5 秒的贴纸每圈从约 94 次轮询降到 1~2 次。
+  //
+  // 【为什么醒来还要再读一次位置，而不是直接 seek】
+  // 睡眠时长是按"1 倍速正常播放"推的，而现实里会偏：缓冲、系统降频、
+  // 用户滚动导致的 pause、seek。所以醒来先核对——没到就按剩余时间重排，
+  // 到了才 seek。这条自校正让预测出错时只是多睡一觉，不会砍错位置。
+  //
+  // 【位置不推进时退避】暂停/缓冲时剩余时间恒定不变，若仍按剩余时间重排会
+  // 变成固定频率的空转。检测到位置没动就退到 LOOP_STALL_SLEEP_MS，
+  // 播放恢复后第一次醒来就会回到正常节奏。
   private startLoopWatch(): void {
     this.stopLoopWatch();
     if (!this.loopEnabled()) {
       return;
     }
-    this.loopTimer = setInterval(() => {
-      const p = this.player;
-      if (p === null || this.durationMs <= 0) {
+    this.lastLoopPos = -1;
+    this.armLoopWatch();
+  }
+
+  private armLoopWatch(): void {
+    const p = this.player;
+    if (p === null || this.destroyed || this.durationMs <= 0 || !this.loopEnabled()) {
+      return;
+    }
+    let pos: number = 0;
+    try {
+      pos = p.getCurrentPosition();
+    } catch (e) {
+      logE(`WebmStickerView loop watch failed: ${e}`);
+      return;
+    }
+    const target: number = this.durationMs - this.rewindAheadMs;
+    let sleep: number;
+    if (pos >= target) {
+      try {
+        p.seekTo('0');
+      } catch (e) {
+        logE(`WebmStickerView loop rewind failed: ${e}`);
         return;
       }
-      try {
-        const pos = p.getCurrentPosition();
-        if (pos >= this.durationMs - this.rewindAheadMs) {
-          p.seekTo('0');
-        }
-      } catch (e) {
-        logE(`WebmStickerView loop watch failed: ${e}`);
-      }
-    }, LOOP_POLL_MS);
+      // 刚回到 0，下一次回卷点就是一整圈之后。
+      sleep = target;
+      this.lastLoopPos = 0;
+    } else if (this.lastLoopPos >= 0 && pos <= this.lastLoopPos) {
+      // 位置没推进：暂停、缓冲、或被系统降频。退避，别空转。
+      sleep = LOOP_STALL_SLEEP_MS;
+      this.lastLoopPos = pos;
+    } else {
+      sleep = target - pos;
+      this.lastLoopPos = pos;
+    }
+    this.loopTimer = setTimeout((): void => {
+      this.loopTimer = -1;
+      this.armLoopWatch();
+    }, Math.max(LOOP_MIN_SLEEP_MS, Math.round(sleep)));
   }
 
   private stopLoopWatch(): void {
     if (this.loopTimer !== -1) {
-      clearInterval(this.loopTimer);
+      clearTimeout(this.loopTimer);
       this.loopTimer = -1;
     }
   }
