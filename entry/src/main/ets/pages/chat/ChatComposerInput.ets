@@ -1,4 +1,5 @@
 import { ReplyKeyboard } from '../../store/ReplyKeyboard';
+import { logE } from '../../util/log';
 import { PendingMediaItem, hasPendingMedia } from '../../util/pendingMedia';
 import { COLOR_ICON_SECONDARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
@@ -10,7 +11,7 @@ import { ComposerSession } from './ComposerSession';
 import { CommandSuggestionState } from './ComposerSuggestionState';
 import { VoiceRecordingState } from './VoiceRecordingState';
 
-// Shared geometry for the editor and its height measurement in ChatPage.
+// Shared geometry for the editor and its height measurement, both in this file.
 //
 // These three have to agree with the TextArea's own lineHeight/padding: the
 // editor height is computed from them, and a mismatch clips the last line
@@ -57,7 +58,11 @@ export struct ChatComposerInput {
   @Param draft: string = '';
   @Param composerPlaceholder: string = '';
   @Param composerController: TextAreaController = new TextAreaController();
-  @Param composerEditorHeight: number = COMPOSER_LINE_HEIGHT + COMPOSER_EDITOR_PADDING * 2;
+  // 输入框的真实宽度，editorHeight() 拿它做排版约束。原来是绕一圈的：本组件
+  // onAreaChange 量到 → @Event 送回 ChatPage 存进 @Local composerEditorW →
+  // 页面算好高度 → 再作为 @Param composerEditorHeight 传回本组件。中间那一圈
+  // 页面什么也没做，第二轮第 9 项把它收回原地（三个几何常量本来就定义在本文件）。
+  @Local private editorW: number = 0;
   @Param sendByEnter: boolean = false;
   @Param replyKeyboard: ReplyKeyboard | null = null;
   @Param replyKbCollapsed: boolean = false;
@@ -80,7 +85,6 @@ export struct ChatComposerInput {
   @Event onFinishRecording: () => void = (): void => {};
   @Event onToggleBotMenu: () => void = (): void => {};
   @Event onEmojiButtonTap: () => void = (): void => {};
-  @Event onEditorWidthChange: (width: number) => void = (): void => {};
   @Event onDraftChange: (value: string) => void = (): void => {};
   @Event onSubmit: () => void = (): void => {};
   @Event onEditorFocus: () => void = (): void => {};
@@ -125,6 +129,51 @@ export struct ChatComposerInput {
     .backgroundColor('#287BC8')
     .opacity(0.84)
     .scale({ x: 0.92, y: 0.92 })
+  }
+
+  // TextArea's intrinsic minimum is taller than the old 48vp input capsule on
+  // some phones/font scales. Give it an explicit content-driven height so the
+  // empty composer keeps the original silhouette and only grows after typing.
+  //
+  // The cap is derived from the real line box rather than a round number: at
+  // lineHeight 22 and 9+9 padding, four lines need 106vp. The old cap of 104
+  // was six short, so the fourth line was already clipped — and past the cap
+  // the TextArea has to scroll internally, which it can only do if nothing
+  // truncates the layout (see the removed maxLines at the call site).
+  private editorHeight(): number {
+    const oneLine: number = COMPOSER_LINE_HEIGHT + COMPOSER_EDITOR_PADDING * 2;
+    const cap: number = COMPOSER_LINE_HEIGHT * COMPOSER_MAX_LINES + COMPOSER_EDITOR_PADDING * 2;
+    if (this.draft === '' || this.editorW <= 0) {
+      return oneLine;
+    }
+    // 真实测量，不再按"每行 18 个字"硬估。
+    //
+    // 那个 18 是拍的：一行能装多少字取决于屏宽、字号缩放和中英文混排，在宽屏
+    // 上实际只装得下约 15 个，于是第 16 个字文本已经换行、而 ceil(16/18) 仍是
+    // 1，盒子要等到第 19 个字才长高——表现为"输到第二行第 4 个字才展开"
+    // （Mate 80 Pro Max 稳定复现）。
+    //
+    // TextArea 本身是自适应内容高度的（不设 height 时），这里之所以还锁着
+    // 高度，是因为它的固有最小高度在某些机型/字号下比一行还高，空输入框会
+    // 变胖（见下方 .height 调用点的原注释）。所以保留显式高度，只把估算换成
+    // measureTextSize —— 它按给定的约束宽度做真实排版，返回的高度已经算好了
+    // 换行。
+    let measured: number = oneLine;
+    try {
+      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
+        textContent: this.draft,
+        fontSize: 15,
+        lineHeight: COMPOSER_LINE_HEIGHT,
+        // 左右各 3 的内边距要从可用宽度里扣掉，否则会少算一行。
+        constraintWidth: Math.max(1, this.editorW - 6)
+      });
+      // measureTextSize 返回的是 px。
+      measured = px2vp(size.height as number) + COMPOSER_EDITOR_PADDING * 2;
+    } catch (e) {
+      // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
+      logE(`editorHeight measure failed: ${(e as Error).message}`);
+    }
+    return Math.max(oneLine, Math.min(cap, Math.ceil(measured)));
   }
 
   build() {
@@ -243,7 +292,7 @@ export struct ChatComposerInput {
                 controller: this.composerController
               })
                 .layoutWeight(1)
-                .height(this.composerEditorHeight)
+                .height(this.editorHeight())
                 .maxLength(4096)
                 .fontSize(15)
                 .lineHeight(COMPOSER_LINE_HEIGHT)
@@ -258,7 +307,10 @@ export struct ChatComposerInput {
                 .key('chat_composer')
                 .onAreaChange((_old: Area, area: Area): void => {
                   const next: number = area.width as number;
-                  this.onEditorWidthChange(next);
+                  // 0.5vp 以内的抖动不写：宽度是排版约束，写一次就要重算一次高度。
+                  if (Math.abs(next - this.editorW) > 0.5) {
+                    this.editorW = next;
+                  }
                 })
                 .onChange((value: string): void => { this.onDraftChange(value); })
                 .enterKeyType(this.sendByEnter ? EnterKeyType.Send : EnterKeyType.NEW_LINE)
@@ -268,7 +320,7 @@ export struct ChatComposerInput {
             } else {
               Text(this.draft !== '' ? this.draft : this.composerPlaceholder)
                 .layoutWeight(1)
-                .height(this.composerEditorHeight)
+                .height(this.editorHeight())
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .fontSize(15)

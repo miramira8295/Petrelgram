@@ -13,7 +13,8 @@
 //
 // 【为什么 draft/composerSending/composerFocused/composerEditorReady/
 // pendingMedia/bottomSlot 都不搬】
-// draft 有 42 处引用、每键入一次写、`composerEditorHeight()` 在 build 里量它；
+// draft 有 42 处引用、每键入一次写、ChatComposerInput 的 `editorHeight()` 在
+// 它自己的 build 里量它（第二轮第 9 项之前这一句量在 ChatPage.build 里）；
 // composerSending 是 4 条发送路径共享的一把锁（withSendLock），单独复制一份
 // 会打破"同一时刻只有一次在途发送"这条不变量；pendingMedia/bottomSlot 分别是
 // 相册暂存与底部面板互斥槽两个不相关的域，各自已有自己的唯一写入口。这些字段

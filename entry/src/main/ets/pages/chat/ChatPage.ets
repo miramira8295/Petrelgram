@@ -75,9 +75,7 @@ import {
   clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend, toMediaSendItems,
   removePendingMedia
 } from '../../util/pendingMedia';
-import {
-  ChatComposerInput, COMPOSER_EDITOR_PADDING, COMPOSER_LINE_HEIGHT, COMPOSER_MAX_LINES
-} from './ChatComposerInput';
+import { ChatComposerInput } from './ChatComposerInput';
 import { ScrollFab } from './ScrollFab';
 import { MembershipBar } from './MembershipBar';
 import { BottomDrawerShell } from './BottomDrawerShell';
@@ -5446,8 +5444,6 @@ export struct ChatPage {
   private bottomChromeLayoutSeq: number = 0;
   // Measured bot-keyboard height; with the input bar it makes up the bottom
   // chrome the scroll-to-bottom FAB has to clear.
-  // 输入框的真实宽度，composerEditorHeight() 拿它做排版约束。
-  @Local composerEditorW: number = 0;
   // "Fake" animation: the open/close transition flies an empty white shell;
   // the real panel content (hundreds of emoji + sticker players) mounts only
   // after the animation lands, so frames stay cheap.
@@ -5492,50 +5488,10 @@ export struct ChatPage {
     return bottomGapOf(this.keyboardH, this.bottomPanelOpen(), this.bottomSafe);
   }
 
-  // TextArea's intrinsic minimum is taller than the old 48vp input capsule on
-  // some phones/font scales. Give it an explicit content-driven height so the
-  // empty composer keeps the original silhouette and only grows after typing.
-  //
-  // The cap is derived from the real line box rather than a round number: at
-  // lineHeight 22 and 9+9 padding, four lines need 106vp. The old cap of 104
-  // was six short, so the fourth line was already clipped — and past the cap
-  // the TextArea has to scroll internally, which it can only do if nothing
-  // truncates the layout (see the removed maxLines at the call site).
-  private composerEditorHeight(): number {
-    const oneLine: number = COMPOSER_LINE_HEIGHT + COMPOSER_EDITOR_PADDING * 2;
-    const cap: number = COMPOSER_LINE_HEIGHT * COMPOSER_MAX_LINES + COMPOSER_EDITOR_PADDING * 2;
-    if (this.draft === '' || this.composerEditorW <= 0) {
-      return oneLine;
-    }
-    // 真实测量，不再按"每行 18 个字"硬估。
-    //
-    // 那个 18 是拍的：一行能装多少字取决于屏宽、字号缩放和中英文混排，在宽屏
-    // 上实际只装得下约 15 个，于是第 16 个字文本已经换行、而 ceil(16/18) 仍是
-    // 1，盒子要等到第 19 个字才长高——表现为"输到第二行第 4 个字才展开"
-    // （Mate 80 Pro Max 稳定复现）。
-    //
-    // TextArea 本身是自适应内容高度的（不设 height 时），这里之所以还锁着
-    // 高度，是因为它的固有最小高度在某些机型/字号下比一行还高，空输入框会
-    // 变胖（见下方 .height 调用点的原注释）。所以保留显式高度，只把估算换成
-    // measureTextSize —— 它按给定的约束宽度做真实排版，返回的高度已经算好了
-    // 换行。
-    let measured: number = oneLine;
-    try {
-      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
-        textContent: this.draft,
-        fontSize: 15,
-        lineHeight: COMPOSER_LINE_HEIGHT,
-        // 左右各 3 的内边距要从可用宽度里扣掉，否则会少算一行。
-        constraintWidth: Math.max(1, this.composerEditorW - 6)
-      });
-      // measureTextSize 返回的是 px。
-      measured = px2vp(size.height as number) + COMPOSER_EDITOR_PADDING * 2;
-    } catch (e) {
-      // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
-      logE(`composerEditorHeight measure failed: ${(e as Error).message}`);
-    }
-    return Math.max(oneLine, Math.min(cap, Math.ceil(measured)));
-  }
+  // 输入框高度的测量整段下沉到了 ChatComposerInput（第二轮第 9 项）：三个几何
+  // 常量本来就定义在那个文件里，宽度也是它自己 onAreaChange 量的，绕经页面
+  // 存一个 @Local composerEditorW 再把结果作为 @Param 传回去，是一圈无谓的往返。
+  // 随之删掉的还有 @Event onEditorWidthChange 与 @Param composerEditorHeight。
 
   private updateBottomChromeHeight(height: number): void {
     if (height <= 0 || Math.abs(height - this.bottomChromeH) < 0.5) {
@@ -6686,7 +6642,6 @@ export struct ChatPage {
         draft: this.draft,
         composerPlaceholder: this.composerPlaceholder(),
         composerController: this.composerController,
-        composerEditorHeight: this.composerEditorHeight(),
         sendByEnter: this.sendByEnter,
         replyKeyboard: this.replyKeyboard,
         replyKbCollapsed: this.replyKbCollapsed,
@@ -6715,11 +6670,6 @@ export struct ChatPage {
           this.setEmojiPanel(!this.showEmojiPanel);
           this.mention.clear();
           this.command.closePanel();
-        },
-        onEditorWidthChange: (width: number): void => {
-          if (Math.abs(width - this.composerEditorW) > 0.5) {
-            this.composerEditorW = width;
-          }
         },
         onDraftChange: (value: string): void => {
           this.draft = value;
