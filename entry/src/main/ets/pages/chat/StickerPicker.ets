@@ -53,6 +53,17 @@ interface FlatEntry {
 
 // Minimal IDataSource so the grid virtualizes (only visible cells mount their
 // Lottie canvases — a full set would otherwise run 100+ animations at once).
+// 一格内容的"到达状态"令牌。**模块级函数**，因为它同时被两处用到：
+// StickerDataSource.renderKeyOf（决定发不发 CHANGE）与 build 里 LazyForEach 的
+// keyGenerator（决定 ArkUI 认不认这是新组件）。两处必须同源——各写一遍迟早漂移，
+// 而漂移的后果是静默的（格子刷不出来，没人报错）。
+function stickerArrivalToken(sticker: StickerItem): string {
+  if (sticker.srcPath !== '') {
+    return 's';
+  }
+  return sticker.thumbPath !== '' ? 't' : '0';
+}
+
 class StickerDataSource implements IDataSource {
   private items: FlatEntry[] = [];
   private listeners: DataChangeListener[] = [];
@@ -102,7 +113,75 @@ class StickerDataSource implements IDataSource {
       }
     }
 
+    // 纯尾部追加：往下滚触发 loadNextSet，加载完一个贴纸包就多出一个 header
+    // 加一整包贴纸（20~50 张）。原来长度一变就整表 RELOAD，而本类文件头那段
+    // 注释自己写着 RELOAD「tears down every visible native player」——
+    // **每往下滚几行就把满屏正在播的贴纸全部拆掉重建一次**，这正是"没播完又从头"
+    // 的一个成因。同仓的 ChatListDataSource 早就为翻页加了这条 notifyInsert。
+    //
+    // 判据故意收得很紧：只认"前 previous.length 项 identity 逐个相同"的纯追加。
+    // 前插（loadQuickSections）、重排、删除一律不认，继续走 RELOAD——那些场景
+    // 下每个下标坐着的是**另一个**条目，报成 ADD/CHANGE 会让 key 注册到错误的
+    // 下标上（ChatListDataSource:102-106 记着这个坑的症状）。
+    if (next.length > previous.length && previous.length > 0) {
+      let pureAppend: boolean = true;
+      const changes: DataOperation[] = [];
+      for (let i = 0; i < previous.length; i++) {
+        if (this.identityOf(previous[i]) !== this.identityOf(next[i])) {
+          pureAppend = false;
+          break;
+        }
+        if (this.renderKeyOf(previous[i]) !== this.renderKeyOf(next[i])) {
+          changes.push({ type: DataOperationType.CHANGE, index: i } as DataChangeOperation);
+        }
+      }
+      if (pureAppend) {
+        // **结构通知与内容通知分两批发。** 混在一批里，ADD 会一边移动后续下标、
+        // CHANGE 又按原下标定位，落点取决于框架的应用顺序——
+        // ChatListDataSource:119-121 记着 AlbumGroupDataSource 为此翻过车。
+        // 这里是纯尾部追加，前段下标不移动，所以内容通知的下标与结构变化前后
+        // 相同；仍然分批，是为了不依赖"下标恰好没变"这个偶然。
+        //
+        // 不带 key：DataAddOperation.key 是可选的（key?: string | Array<string>），
+        // 不给就由框架去问 keyGenerator。而真正的 key 是 build 里
+        // guardKey('stickers', ...) 包出来的，在这里复刻一遍等于新造一个
+        // "两处必须一致"的漂移源——已经有一个 arrivalToken 要维护了，不再加第二个。
+        this.notify([{
+          type: DataOperationType.ADD,
+          index: previous.length,
+          count: next.length - previous.length
+        } as DataAddOperation]);
+        if (changes.length > 0) {
+          this.notify(changes);
+        }
+        return;
+      }
+    }
+
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
+  }
+
+  // 一格内容的"到达状态"：还没有任何文件 / 只有缩略图 / 已有动画源。
+  //
+  // **这个令牌同时进 LazyForEach 的 key 与 renderKeyOf，两处必须同源**——
+  // 各写一遍迟早漂移，而漂移的后果是静默的（格子刷不出来，没人报错）。
+  //
+  // 【为什么要把它放回 key】ArkUI 的契约：keyGenerator 生成的键值不变 ⇒
+  // 对应组件**不会被更新**；而 DataChangeOperation 的 key 字段"默认使用原键值"。
+  // 本文件发的 CHANGE 不带 key（见 update()），key 又只由 setIdx/pos/fileId 组成，
+  // 所以 srcPath 到达时那次 CHANGE **打不出刷新**——格子拿不到新路径，只能等一次
+  // RELOAD 或者滚出去再滚回来才顺带捡到。
+  //
+  // 785af67 之前的 key 是 `..._${thumbPath}_${srcPath}`，上面还写着注释
+  // 「the paths stay in so the cell still rebuilds as its files arrive」——
+  // 当年是**故意**拿路径当刷新通道的。那次改动把路径从 key 里拿掉、改发不带 key
+  // 的 CHANGE，等于把通道一起掐了。
+  //
+  // 现在放回来的是**三值令牌**而不是完整路径：一格一生最多重建 2 次
+  // （'0'→'t'→'s'），两次都发生在还没有播放器的时候，**不可能打断正在播的动画**；
+  // 而完整路径会让"晚到的缩略图"在动画已经起播之后再顶一次 key，正是要避免的。
+  private arrivalToken(sticker: StickerItem): string {
+    return stickerArrivalToken(sticker);
   }
 
   private identityOf(entry: FlatEntry): string {
@@ -121,7 +200,9 @@ class StickerDataSource implements IDataSource {
       return '';
     }
     const sticker: StickerItem = entry.sticker;
-    return `${sticker.thumbPath}|${sticker.srcPath}|${sticker.emoji}|${sticker.format}`;
+    // 与 key 同源（见 arrivalToken）。emoji/format 也在里面：它们变了这一格的
+    // 渲染分支就变了，但它们在一格的生命周期里基本不变，不会造成额外重建。
+    return `${this.arrivalToken(sticker)}|${sticker.emoji}|${sticker.format}`;
   }
 
   private notify(operations: DataOperation[]): void {
@@ -900,7 +981,17 @@ export struct StickerPicker {
   }
 
   private requestVisibleSources(): void {
-    if (!this.playbackEnabled() || this.searchQuery.trim() !== '' || this.flatEntries.length === 0) {
+    if (!this.playbackEnabled() || this.flatEntries.length === 0) {
+      return;
+    }
+    // 搜索态走另一条：搜索结果不在 sets 里（setIdx 恒为 -1），patch 的目标是
+    // searchItems 而不是 sets，所以不能复用下面那段。
+    //
+    // 【这里原来是直接 return 的】于是搜出来的贴纸永远拿不到 srcPath，而
+    // stickerCell 的 tgs/webm 分支条件是 srcPath !== ''——**搜索结果里的动态贴纸
+    // 永远不会动**，只显示缩略图。downloadSearchThumb 只补 thumbPath，补不了这个。
+    if (this.searchQuery.trim() !== '') {
+      this.requestVisibleSearchSources();
       return;
     }
     const first: number = Math.max(0, this.visibleFirst);
@@ -918,6 +1009,62 @@ export struct StickerPicker {
         this.downloadSource(this.sets[entry.setIdx].id, sticker.fileId);
       }
     }
+  }
+
+  // 搜索结果的源文件下载。与 requestVisibleSources 同样**只对可视窗口**发起
+  // （一次搜索最多 60 条，全下会把 TDLib 队列塞满，而贴纸下载是最低优先级 1，
+  // 本来就是被饿死的一方），并复用 sourceLoading 去重。
+  private requestVisibleSearchSources(): void {
+    const first: number = Math.max(0, this.visibleFirst);
+    const last: number = Math.min(this.flatEntries.length - 1,
+      Math.max(this.visibleLast, first + 16) + 8);
+    for (let i = first; i <= last; i++) {
+      const entry: FlatEntry = this.flatEntries[i];
+      if (entry.sticker === null) {
+        continue;
+      }
+      const sticker: StickerItem = entry.sticker;
+      if ((sticker.format === 'tgs' || sticker.format === 'webm') && sticker.srcPath === '' &&
+        !this.sourceLoading.has(sticker.fileId)) {
+        this.downloadSearchSource(sticker.fileId, this.searchSeq);
+      }
+    }
+  }
+
+  // 形状照 downloadSearchThumb：patch 的是 searchItems，且带 searchSeq 守卫
+  // （换了搜索词之后旧请求的回包必须作废，否则会把上一次的结果塞进新列表）。
+  private downloadSearchSource(stickerFileId: number, seq: number): void {
+    if (this.sourceLoading.has(stickerFileId)) {
+      return;
+    }
+    this.sourceLoading.add(stickerFileId);
+    const req: TdRequest = { '@type': 'downloadFile' };
+    req['file_id'] = stickerFileId;
+    req['priority'] = 1;
+    req['synchronous'] = true;
+    getTdClient().send(req).then((f: TdObject) => {
+      this.sourceLoading.delete(stickerFileId);
+      if (this.disposed || seq !== this.searchSeq) {
+        return;
+      }
+      const local = f['local'] as TdObject | undefined;
+      const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
+      if (path === '') {
+        return;
+      }
+      this.searchItems = this.searchItems.map((it: StickerItem): StickerItem => it.fileId === stickerFileId
+        ? {
+          fileId: it.fileId, width: it.width, height: it.height,
+          thumbPath: it.thumbPath, thumbFileId: it.thumbFileId, emoji: it.emoji,
+          format: it.format, srcPath: path, customEmojiId: it.customEmojiId
+        } : it);
+      if (this.searchQuery.trim() !== '') {
+        this.refreshGrid();
+      }
+    }).catch((e: TdError) => {
+      this.sourceLoading.delete(stickerFileId);
+      logE(`StickerPicker.downloadSearchSource failed: ${e.message}`);
+    });
   }
 
   // Sticker source download (small) → animate the grid cell (Lottie / ijk).
@@ -1236,7 +1383,10 @@ export struct StickerPicker {
             }, (e: FlatEntry, index: number) => guardKey('stickers', index,
               e.kind === 'header'
                 ? `h_${e.setIdx}`
-                : `s_${e.setIdx}_${e.pos}_${e.sticker!.fileId}`));
+                // 末尾的到达状态令牌是**刷新通道**：不带它的话，srcPath 落地时
+                // 发出的 CHANGE 打不出更新（ArkUI：键值不变则组件不更新），
+                // 格子会一直停在缩略图上。见 stickerArrivalToken 的说明。
+                : `s_${e.setIdx}_${e.pos}_${e.sticker!.fileId}_${stickerArrivalToken(e.sticker!)}`));
           }
           .columnsTemplate(this.stickerType === 'custom_emoji'
             ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr 1fr')
