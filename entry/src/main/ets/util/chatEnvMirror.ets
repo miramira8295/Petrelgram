@@ -66,38 +66,101 @@ export function mirroredChatEnvKeys(): string[] {
   return MIRRORED_KEYS.slice();
 }
 
+// 【每个 case 都先比再写】看着啰嗦，但这条短路是必要的：
+// store/AppSettings.applyPowerState 在**每一次** COMMON_EVENT_BATTERY_CHANGED 上
+// 都无条件重写省电键并调本函数，而充电中电量变化是很频繁的。裸赋值意味着
+// 每次都动一下 @Trace 字段——若 ArkUI V2 对同值赋值不短路，下游那些
+// @Monitor('env.powerSaving', ...) 就会被无谓地叫醒。
+// TgsStickerView 的 onPowerChanged 正是这样一个订阅者，它被叫醒时会重启动画
+// （贴纸播到一半跳回开头的成因之一）。
+// 官方没有承诺 @Trace 的同值短路行为，与其赌，不如在写入侧自己挡掉。
+//
 // 写入点旁路：AppStorage.setOrCreate 的同时调它一次。未列管的 key 静默忽略
 // ——设置漏斗（setNumber/setBoolean/setString）会把所有设置键都送过来。
 export function mirrorChatEnvKey(key: string, value: number | boolean | string): void {
   switch (key) {
-    case 'appearanceEpoch': chatEnv.appearanceEpoch = value as number; break;
-    case 'materialEpoch': chatEnv.materialEpoch = value as number; break;
-    case 'languageEpoch': chatEnv.langEpoch = value as number; break;
+    case 'appearanceEpoch':
+      if (chatEnv.appearanceEpoch !== (value as number)) { chatEnv.appearanceEpoch = value as number; }
+      break;
+    case 'materialEpoch':
+      if (chatEnv.materialEpoch !== (value as number)) { chatEnv.materialEpoch = value as number; }
+      break;
+    case 'languageEpoch':
+      if (chatEnv.langEpoch !== (value as number)) { chatEnv.langEpoch = value as number; }
+      break;
     // 气泡走自己的开关（KEY_BUBBLE_GLASS_ON）：整体那一面开不开与气泡无关。
-    case 'bubbleGlassOn': chatEnv.bubbleMaterialOn = value as boolean; break;
-    case 'chatContentWidthVp': chatEnv.chatContentWidth = value as number; break;
-    case 'keyboardHeightVp': chatEnv.keyboardHeightVp = value as number; break;
-    case 'screenWidthVp': chatEnv.screenWidthVp = value as number; break;
-    case 'screenHeightVp': chatEnv.screenHeightVp = value as number; break;
-    case 'msgTextSize': chatEnv.msgTextSize = value as number; break;
-    case 'bubbleRadius': chatEnv.bubbleRadius = value as number; break;
-    case 'reduceAnimations': chatEnv.reduceAnim = value as boolean; break;
-    case 'powerSavingActive': chatEnv.powerSaving = value as boolean; break;
-    case 'powerChatEffects': chatEnv.chatEffects = value as boolean; break;
-    case 'powerEffectMessage': chatEnv.messageEffects = value as boolean; break;
-    case 'powerEffectReaction': chatEnv.reactionEffects = value as boolean; break;
-    case 'powerAnimatedEmoji': chatEnv.animatedEmoji = value as boolean; break;
-    case 'powerEmojiReactions': chatEnv.emojiReactions = value as boolean; break;
-    case 'msgGestureScheme': chatEnv.gestureScheme = value as string; break;
-    case 'powerEmojiChat': chatEnv.emojiChat = value as boolean; break;
-    case 'powerAnimatedStickers': chatEnv.stickers = value as boolean; break;
-    case 'powerStickerAutoplay': chatEnv.stickerAutoplay = value as boolean; break;
-    case 'powerAutoplayGif': chatEnv.autoplayGif = value as boolean; break;
-    case 'powerAutoplayVideo': chatEnv.autoplayVideo = value as boolean; break;
-    case 'powerStickerLoop': chatEnv.stickerLoop = value as boolean; break;
-    case 'powerEmojiStatus': chatEnv.emojiStatus = value as boolean; break;
-    case 'appIsForeground': chatEnv.appIsForeground = value as boolean; break;
-    case 'linkNavBusyUrl': chatEnv.linkNavBusy = value as string; break;
+    case 'bubbleGlassOn':
+      if (chatEnv.bubbleMaterialOn !== (value as boolean)) { chatEnv.bubbleMaterialOn = value as boolean; }
+      break;
+    case 'chatContentWidthVp':
+      if (chatEnv.chatContentWidth !== (value as number)) { chatEnv.chatContentWidth = value as number; }
+      break;
+    case 'keyboardHeightVp':
+      if (chatEnv.keyboardHeightVp !== (value as number)) { chatEnv.keyboardHeightVp = value as number; }
+      break;
+    case 'screenWidthVp':
+      if (chatEnv.screenWidthVp !== (value as number)) { chatEnv.screenWidthVp = value as number; }
+      break;
+    case 'screenHeightVp':
+      if (chatEnv.screenHeightVp !== (value as number)) { chatEnv.screenHeightVp = value as number; }
+      break;
+    case 'msgTextSize':
+      if (chatEnv.msgTextSize !== (value as number)) { chatEnv.msgTextSize = value as number; }
+      break;
+    case 'bubbleRadius':
+      if (chatEnv.bubbleRadius !== (value as number)) { chatEnv.bubbleRadius = value as number; }
+      break;
+    case 'reduceAnimations':
+      if (chatEnv.reduceAnim !== (value as boolean)) { chatEnv.reduceAnim = value as boolean; }
+      break;
+    case 'powerSavingActive':
+      if (chatEnv.powerSaving !== (value as boolean)) { chatEnv.powerSaving = value as boolean; }
+      break;
+    case 'powerChatEffects':
+      if (chatEnv.chatEffects !== (value as boolean)) { chatEnv.chatEffects = value as boolean; }
+      break;
+    case 'powerEffectMessage':
+      if (chatEnv.messageEffects !== (value as boolean)) { chatEnv.messageEffects = value as boolean; }
+      break;
+    case 'powerEffectReaction':
+      if (chatEnv.reactionEffects !== (value as boolean)) { chatEnv.reactionEffects = value as boolean; }
+      break;
+    case 'powerAnimatedEmoji':
+      if (chatEnv.animatedEmoji !== (value as boolean)) { chatEnv.animatedEmoji = value as boolean; }
+      break;
+    case 'powerEmojiReactions':
+      if (chatEnv.emojiReactions !== (value as boolean)) { chatEnv.emojiReactions = value as boolean; }
+      break;
+    case 'msgGestureScheme':
+      if (chatEnv.gestureScheme !== (value as string)) { chatEnv.gestureScheme = value as string; }
+      break;
+    case 'powerEmojiChat':
+      if (chatEnv.emojiChat !== (value as boolean)) { chatEnv.emojiChat = value as boolean; }
+      break;
+    case 'powerAnimatedStickers':
+      if (chatEnv.stickers !== (value as boolean)) { chatEnv.stickers = value as boolean; }
+      break;
+    case 'powerStickerAutoplay':
+      if (chatEnv.stickerAutoplay !== (value as boolean)) { chatEnv.stickerAutoplay = value as boolean; }
+      break;
+    case 'powerAutoplayGif':
+      if (chatEnv.autoplayGif !== (value as boolean)) { chatEnv.autoplayGif = value as boolean; }
+      break;
+    case 'powerAutoplayVideo':
+      if (chatEnv.autoplayVideo !== (value as boolean)) { chatEnv.autoplayVideo = value as boolean; }
+      break;
+    case 'powerStickerLoop':
+      if (chatEnv.stickerLoop !== (value as boolean)) { chatEnv.stickerLoop = value as boolean; }
+      break;
+    case 'powerEmojiStatus':
+      if (chatEnv.emojiStatus !== (value as boolean)) { chatEnv.emojiStatus = value as boolean; }
+      break;
+    case 'appIsForeground':
+      if (chatEnv.appIsForeground !== (value as boolean)) { chatEnv.appIsForeground = value as boolean; }
+      break;
+    case 'linkNavBusyUrl':
+      if (chatEnv.linkNavBusy !== (value as string)) { chatEnv.linkNavBusy = value as string; }
+      break;
     default: break;
   }
 }

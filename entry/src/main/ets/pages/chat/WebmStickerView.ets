@@ -8,11 +8,22 @@ import { logE, logW } from '../../util/log';
 
 let nextWebmStickerId: number = 1;
 // Pre-EOF rewind: poll the position and seek to 0 this far before the end.
-const LOOP_POLL_MS: number = 50;
-// Keep this small: every loop cycle drops this much tail, so a large value
-// visibly "speeds up" short stickers. 100ms is enough to dodge the EOF hitch
-// (packet-buffering=0 does the heavy lifting).
-const LOOP_REWIND_AHEAD_MS: number = 100;
+//
+// 【2026-09-06：这两个常量本身就是"贴纸没播完就从头 / 看着变快"的根因】
+// 原值 poll=50 / ahead=100：轮询粒度叠在提前量上，**每一圈最坏丢 150ms**。
+// Telegram 视频贴纸多在 1~2 秒，那是 5%~15%，而且砍掉的正是结尾的收势动作。
+// 上一版注释自己就写着「a large value visibly "speeds up" short stickers」,
+// 只是没意识到 100 对 1 秒的贴纸**已经是那个 large value**。
+//
+// 现在提前量按时长自适应（见 rewindAheadMs），常量只留边界：
+//   · 下界 16ms —— 一帧，再小就等于不提前，EOF 卡顿会回来；
+//   · 上界 40ms —— 1 秒贴纸也只丢 4%，肉眼基本看不出。
+// 轮询降到 16ms 是为了让粒度不再主导误差（原来 50ms 粒度比提前量的一半还大）。
+const LOOP_POLL_MS: number = 16;
+const LOOP_REWIND_MIN_MS: number = 16;
+const LOOP_REWIND_MAX_MS: number = 40;
+// 时长的百分之二：短贴纸拿下界，长贴纸也不会超过上界。
+const LOOP_REWIND_RATIO: number = 0.02;
 
 // Native player setup/teardown scheduler. A sticker-grid tab switch destroys
 // and creates ~15 ijkplayer instances at once; each native_setup/release is
@@ -122,6 +133,8 @@ export struct WebmStickerView {
   private readonly instanceId: number = nextWebmStickerId++;
   private loopTimer: number = -1;
   private durationMs: number = 0;
+  // 本片源的提前回卷量，拿到 duration 之后算一次（见上方常量的说明）。
+  private rewindAheadMs: number = LOOP_REWIND_MAX_MS;
   private surfaceContext: object | null = null;
 
   private componentId(): string {
@@ -176,7 +189,7 @@ export struct WebmStickerView {
       }
       try {
         const pos = p.getCurrentPosition();
-        if (pos >= this.durationMs - LOOP_REWIND_AHEAD_MS) {
+        if (pos >= this.durationMs - this.rewindAheadMs) {
           p.seekTo('0');
         }
       } catch (e) {
@@ -229,6 +242,11 @@ export struct WebmStickerView {
           player.start();
           this.onWorking();
           this.durationMs = Math.max(0, player.getDuration());
+          // 提前量按本片源时长定：短贴纸丢得少，长贴纸也够躲开 EOF 卡顿。
+          this.rewindAheadMs = this.durationMs > 0
+            ? Math.min(LOOP_REWIND_MAX_MS,
+              Math.max(LOOP_REWIND_MIN_MS, Math.round(this.durationMs * LOOP_REWIND_RATIO)))
+            : LOOP_REWIND_MAX_MS;
           this.startLoopWatch();
         }
       };

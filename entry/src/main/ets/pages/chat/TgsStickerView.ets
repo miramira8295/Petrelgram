@@ -119,7 +119,19 @@ export struct TgsStickerView {
     if (this.powerSuspended()) {
       this.loadSeq++;
       this.stopAnim();
-    } else if (this.canvasReady && this.visible && !this.chatGateSuspended) {
+    } else if (this.canvasReady && this.visible && !this.chatGateSuspended
+      && (this.budgetDeferred || this.anim === null)) {
+      // 【`budgetDeferred || anim === null` 这个守卫是补上的】
+      // 这个分支的意思是"名额/闸门放开了，叫醒之前没能起来的"，而不是"重启everything"。
+      // 隔壁处理滚动闸门的分支（见 aboutToAppear 里的 subscribeChatTgsGate 回调）
+      // 早就带着这个守卫，注释写的是「只叫醒没在播的，正在播的别重启」——
+      // 同一件事，这里当初漏了。
+      //
+      // 后果是实打实的：scheduleStart → startAnimation 开头无条件 stopAnim()，
+      // 于是 9 个省电键任一变化都会把正在播的贴纸重新 loadAnimation、回到第 0 帧。
+      // 而 applyPowerState 在每次电量变化时都会重写省电键（已在
+      // util/chatEnvMirror 加了同值短路，但守卫该有还是要有——两道防线针对的是
+      // 不同的失败：那边防"值没变也通知"，这里防"值真变了但不该重启在播的"）。
       this.scheduleStart();
     }
   }
