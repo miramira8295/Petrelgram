@@ -363,3 +363,33 @@ export function groupIndexOf(groups: AlbumGroup[], messageId: number): number {
   }
   return -1;
 }
+
+// 一条消息在全屏查看器里的"同伴"：它所在相册的全部成员 id。
+//
+// 不是相册成员（或那一组只有它自己）时返回 `[messageId]`——查看器的 Swiper
+// 因此永远拿得到一个非空数组，单条消息就是只有一页。`memberIds.length > 1`
+// 这个判据不能省：collapseAlbums 给单条消息也建一个 group，memberIds 里就它
+// 一个，若不判长度，单条消息会被当成"相册的第 0 格"。
+//
+// 从 ChatPage 上移（第二轮第 6 项）。它对 groups 是纯读，没有任何页面状态，
+// 待在页面里只是因为当初顺手读了 this.groups；上移之后才有单测能钉住它。
+export function albumSiblingIds(groups: AlbumGroup[], messageId: number): number[] {
+  for (const g of groups) {
+    if (g.memberIds.indexOf(messageId) >= 0 && g.memberIds.length > 1) {
+      return g.memberIds;
+    }
+  }
+  return [messageId];
+}
+
+// playSlot 的 albumIndex 语义：整条消息传 -1，相册成员传该格在 memberIds
+// 里的下标。查看器交接（closeViewer 里的 pin）用这个把 viewerMsgId 换算
+// 回同一套坐标。
+//
+// **-1 不是"没找到"**，是"整条消息"这个合法取值——PlaySlotRegistry 的 slotKey
+// 就是靠它区分"整条"与"相册第 n 格"的。找不到的那条也回 -1，两者同义：不在
+// 相册里的消息本来就该按整条记。
+export function albumIndexOfMember(groups: AlbumGroup[], messageId: number): number {
+  const sib: number[] = albumSiblingIds(groups, messageId);
+  return sib.length > 1 ? sib.indexOf(messageId) : -1;
+}

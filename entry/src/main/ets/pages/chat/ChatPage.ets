@@ -112,7 +112,9 @@ import {
   SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, claimIfFree, closeAllSlots, closeSlot,
   openSlot, toggleSlot
 } from '../../util/bottomSlot';
-import { collapseAlbums, groupIndexOf, AlbumGroup } from '../../util/collapseAlbums';
+import {
+  collapseAlbums, groupIndexOf, AlbumGroup, albumSiblingIds, albumIndexOfMember
+} from '../../util/collapseAlbums';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import { shouldFillViewport } from '../../util/viewportFill';
 import {
@@ -3980,7 +3982,7 @@ export struct ChatPage {
     // **这一句必须留在 animateTo 之前**：@Monitor('viewerMsgId') 会在
     // viewerMsgId 归零那一刻同步把 viewerPositionMs 清成 0，挪到后面就永远记 0。
     this.playSlot.handoffFromViewer(viewerMessageId,
-      this.albumIndexForViewer(viewerMessageId), this.viewerPositionMs);
+      albumIndexOfMember(this.groups, viewerMessageId), this.viewerPositionMs);
     const duration: number = this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 260);
     this.viewerClosing = true;
     animateTo({ duration, curve: Curve.Friction }, () => {
@@ -4792,7 +4794,7 @@ export struct ChatPage {
     // 保险起见仍然按“先取、后卸载”的顺序写。
     this.viewerStartPositionMs = this.playSlot.handoffToViewer(messageId);
     // Position the viewer Swiper on the tapped album member.
-    const sib = this.siblingIdsFor(messageId);
+    const sib = albumSiblingIds(this.groups, messageId);
     this.viewerInitIdx = Math.max(0, sib.indexOf(messageId));
     // 挂载查看器必须在 animateTo 闭包里：geometryTransition 只在动画闭包中
     // 改变绑定节点的存在性时才会做几何过渡，直接赋值就是瞬间出现（关闭那侧
@@ -4810,23 +4812,6 @@ export struct ChatPage {
 
   // Album member ids for an arbitrary message (single-element list when the
   // message isn't part of a multi-item album).
-  private siblingIdsFor(messageId: number): number[] {
-    for (const g of this.groups) {
-      if (g.memberIds.indexOf(messageId) >= 0 && g.memberIds.length > 1) {
-        return g.memberIds;
-      }
-    }
-    return [messageId];
-  }
-
-  // playSlot 的 albumIndex 语义：整条消息传 -1，相册成员传该格在 memberIds
-  // 里的下标。查看器交接（closeViewer 里的 pin）用这个把 viewerMsgId 换算
-  // 回同一套坐标。
-  private albumIndexForViewer(messageId: number): number {
-    const sib = this.siblingIdsFor(messageId);
-    return sib.length > 1 ? sib.indexOf(messageId) : -1;
-  }
-
   // 见 appDark 的说明：store 注入的 isDarkMode 回调是实时读的，
 
   // 所以这里只要让它重新解析一次就够，不必重新订阅。

@@ -223,6 +223,7 @@ import jumpFlashStateTest from './JumpFlashState.test';
 import composerSuggestionStateTest from './ComposerSuggestionState.test';
 import voiceRecordingStateTest from './VoiceRecordingState.test';
 import mediaSaveStateTest from './MediaSaveState.test';
+import albumSiblingsTest from './AlbumSiblings.test';
 import playSlotDriverTest from './PlaySlotDriver.test';
 import scrollAnchorControllerTest from './ScrollAnchorController.test';
 import membershipSessionTest from './MembershipSession.test';
@@ -458,4 +459,5 @@ export default function testsuite() {
   membershipSessionTest();
   scrollAnchorControllerTest();
   playSlotDriverTest();
+  albumSiblingsTest();
 }
