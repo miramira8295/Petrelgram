@@ -130,20 +130,20 @@ export default function splitRoutingTest(): void {
       expect(d.popCount).assertEqual(1);
     });
 
-    // ——— 分栏（平板）：从左栏选会话是**替换右栏**，不是叠加 ———
+    // ——— 「选一个会话来看」这条路只保留一个详情页 ———
     //
-    // 平板左栏一直露着，用户能一个接一个点会话。手机上撞不到这个：详情页盖住
-    // 列表，想点下一个必须先返回，返回本身就弹掉了上一层。
+    // 用户要的是「点击会话列表进入的详情只保留一个，其他路径不变」。判据是
+    // **从哪条路进来的**（origin='navbar'）而不是屏幕多宽，手机平板一致。
 
-    it('split_navbar_replaces_instead_of_stacking', 0, () => {
+    it('navbar_replaces_instead_of_stacking', 0, () => {
       const stack: StackFrame[] = [f('ChatPage', '10:0')];
       const d = decideChatPush(stack, f('ChatPage', '20:0'), true);
       expect(d.action).assertEqual('clearAndPush');
       expect(d.popCount).assertEqual(0);
     });
 
-    it('split_navbar_replace_keeps_the_right_pane_at_one_layer', 0, () => {
-      // 连点三个会话：每一次都是替换，右栏永远只有一层。
+    it('navbar_keeps_exactly_one_detail_page', 0, () => {
+      // 连点三个会话：每一次都是替换，详情永远只有一层。
       const first = decideChatPush([], f('ChatPage', '10:0'), true);
       expect(first.action).assertEqual('clearAndPush');
       const second = decideChatPush([f('ChatPage', '10:0')], f('ChatPage', '20:0'), true);
@@ -154,32 +154,33 @@ export default function splitRoutingTest(): void {
 
     // 点自己已经开着的那一个：**必须是空操作**。清空再推等于把同一页拆了重建，
     // 白闪一下，滚动位置、草稿、正在播的语音全丢。
-    it('split_navbar_still_skips_the_chat_already_on_top', 0, () => {
+    it('navbar_still_skips_the_chat_already_on_top', 0, () => {
       const stack: StackFrame[] = [f('ChatPage', '20:0')];
       const d = decideChatPush(stack, f('ChatPage', '20:0'), true);
       expect(d.action).assertEqual('skip');
     });
 
-    // 目标在更深处时走 popTo 而不是 clearAndPush：结果一样（右栏只剩目标那层），
+    // 目标在更深处时走 popTo 而不是 clearAndPush：结果一样（只剩目标那一层），
     // 但出栈能复用那一页，不重建、不丢滚动位置。
-    it('split_navbar_pops_back_rather_than_rebuilding', 0, () => {
+    it('navbar_pops_back_rather_than_rebuilding', 0, () => {
       const stack: StackFrame[] = [f('ChatPage', '10:0'), f('ChatPage', '20:0')];
       const d = decideChatPush(stack, f('ChatPage', '10:0'), true);
       expect(d.action).assertEqual('popTo');
       expect(d.popCount).assertEqual(1);
     });
 
-    // 分栏下从**右栏内部**跳（消息里的群链接、资料页「发消息」）仍然叠加：
-    // 那是"再往里走一层"，返回要回到上一个会话。
-    it('split_content_origin_still_stacks', 0, () => {
+    // **「其他路径不变」的那一半**：从会话里点群链接/@提及/转发来源/资料页
+    // 「发消息」进另一个会话仍然叠加。这就是"手机端允许多个会话详情叠加"说的
+    // 那条路——返回必须回到上一个会话（1.4.0 的回归正是把这条也清了）。
+    it('content_origin_still_stacks', 0, () => {
       const stack: StackFrame[] = [f('ChatPage', '10:0')];
       const d = decideChatPush(stack, f('ChatPage', '20:0'), false);
       expect(d.action).assertEqual('push');
     });
 
-    // 手机（replaceRightPane=false）逐字不变——这是上面那批用例的默认参数，
-    // 这条只是把"默认值确实是 false"钉住，免得哪天改签名把手机也带进替换。
-    it('phone_default_is_still_stacking', 0, () => {
+    // 默认值必须是 false（= 叠加）。省略第三参的调用点若哪天多起来，默认值
+    // 一旦翻成 true 就会静默地把 content 那条路也拖进替换。
+    it('default_is_still_stacking', 0, () => {
       const stack: StackFrame[] = [f('ChatPage', '10:0')];
       expect(decideChatPush(stack, f('ChatPage', '20:0')).action).assertEqual('push');
     });

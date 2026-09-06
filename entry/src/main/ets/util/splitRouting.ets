@@ -68,22 +68,29 @@ export interface ChatPushDecision {
   popCount: number;
 }
 
-// replaceRightPane —— **分栏专用**。
+// replaceExisting —— **"选一个会话来看"这条路只保留一个详情页**。
 //
-// 【它修的是什么】平板上左栏会话列表**一直露着**，用户可以一个接一个点。上面
-// 那条"一律叠加"的规则于是没有刹车：点十个会话右栏就叠十层，返回要按十次，
-// 用户看到的是「右侧会启动多个页面」。手机上撞不到这个——详情页盖住了列表，
-// 想点下一个会话必须先返回，返回本身就把上一层弹掉了。
+// 【它修的是什么】用户报：Pad 左栏点多个会话，右栏叠出多个页面，返回要按很
+// 多次。平板上左栏会话列表一直露着，"一律叠加"于是没有刹车。
 //
-// 【为什么不干脆全局恢复"从列表选会话就替换"】手机端的叠加是**要保留的行为**
-// （用户明确确认过）：从会话里点进另一个会话再返回，得回到上一个会话。判据
-// 因此不是 origin 一个人说了算，而是 origin='navbar' **且**当前是分栏。
+// 【为什么不只在分栏下生效】用户明确要的是「点击会话列表进入的详情只保留一
+// 个，其他路径不变」——判据是**从哪条路进来的**，不是屏幕多宽。手机上从列表
+// 选会话同样该只有一个：那条路的语义本来就是"换一个会话看"。
+//
+// 【那"手机端允许多个会话详情叠加"呢】保留，它走的是另一条路：origin='content'
+// ——从会话里点群链接/@提及/转发来源/资料页「发消息」进另一个会话。那是"再往
+// 里走一层"，返回必须回到上一个会话（1.4.0 的回归就是把这条也清了）。
+// 两句话不矛盾：一条说 navbar，一条说 content。
+//
+// 【调用方按什么传】origin='navbar' 的入口是：会话列表、归档以外的行、通知、
+// 深链、搜索结果、通话记录、联系人、dock 迷你条。origin='content' 的入口在
+// ChatPage / ForumTopicsPage / ProfilePage / ChatProfilePage 里，共 9 处。
 //
 // 【为什么 skip 仍然优先】栈顶已经是目标时清空再推等于把同一页拆了重建：
 // 白闪一下，滚动位置、草稿、正在播的语音全丢。点自己已经开着的那个会话是很
 // 常见的一下（想回到它），必须是空操作。
 export function decideChatPush(
-  stack: StackFrame[], target: StackFrame, replaceRightPane: boolean = false
+  stack: StackFrame[], target: StackFrame, replaceExisting: boolean = false
 ): ChatPushDecision {
   const depth: number = stack.length;
   for (let i = depth - 1; i >= 0; i--) {
@@ -95,12 +102,12 @@ export function decideChatPush(
     if (above === 0) {
       return { action: 'skip', popCount: 0 };
     }
-    // 分栏替换语义下"目标在更深处"和"目标不在栈里"是同一件事：右栏最后只剩
-    // 目标这一层。走 popTo 而不是 clearAndPush，是因为出栈能复用那一页——
-    // 结果一样，代价更小（不重建、不丢滚动位置）。
+    // 替换语义下"目标在更深处"和"目标不在栈里"是同一件事：最后只剩目标这一
+    // 层。走 popTo 而不是 clearAndPush，是因为出栈能复用那一页——结果一样，
+    // 代价更小（不重建、不丢滚动位置）。
     return { action: 'popTo', popCount: above };
   }
-  return replaceRightPane
+  return replaceExisting
     ? { action: 'clearAndPush', popCount: 0 }
     : { action: 'push', popCount: 0 };
 }

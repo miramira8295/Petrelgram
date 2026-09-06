@@ -163,12 +163,13 @@ function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> 
 // 代价是每个调用点都得接住——除 ChatListPage（return 进了自己的链）和
 // NewGroupPage（自己处理）外，其余 26 处统一 .catch(logChatNavFailure)。
 // 新增调用点时别忘了跟上，否则是未捕获的 Promise rejection。
-// **origin 现在只在分栏下参与决策**（见 splitRouting.decideChatPush 的
-// replaceRightPane）：平板左栏一直露着，用户能一个接一个点会话，"一律叠加"
-// 于是没有刹车——点十个右栏就叠十层（用户报：「Pad 左侧频道点击多个会话，
-// 右侧会启动多个页面」）。手机保持叠加不变：详情页盖住列表，想点下一个必须
-// 先返回，返回本身就弹掉了上一层，同时"从会话里点进另一个会话，返回回到上
-// 一个"这条链才成立。
+// **origin 重新参与决策**（见 splitRouting.decideChatPush 的 replaceExisting）：
+//   'navbar'  —— 只保留一个详情页。用户报：Pad 左栏点多个会话，右栏叠出多个
+//                页面，返回要按很多次。判据是**从哪条路进来的**而不是屏幕多宽，
+//                所以手机同样只留一个——那条路的语义本来就是"换一个会话看"。
+//   'content' —— 照旧叠加。"手机端允许多个会话详情叠加"说的是这一条：从会话里
+//                点进另一个会话，返回必须回到上一个（1.4.0 的回归就是把这条
+//                也清了）。
 export function navigateToChat(
   params: Record<string, Object>,
   origin: PushOrigin = 'navbar'
@@ -196,13 +197,13 @@ export function navigateToChat(
   // decideChatPush。已经开着的会话不再新开一层，而是出栈回到它，
   // 这正是迁移前 findChatRouteIndex() 做的事（那时是 router.back(index)）。
   //
-  // 分栏 + 从左栏选会话 = 替换右栏，不叠加（见上面 origin 那段）。窗口尺寸在
-  // 这里读一次，下面关渲染闸也用同一对值。
+  // 「选一个会话来看」这条路只保留一个详情页（见上面 origin 那段）。窗口尺寸
+  // 与这个判断无关，读它是给下面关渲染闸用的。
   const screenW: number = AppStorage.get<number>('screenWidthVp') ?? 0;
   const screenH: number = AppStorage.get<number>('screenHeightVp') ?? 0;
   const split: boolean = isSplitLayout(screenW, screenH);
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
-  const decision: ChatPushDecision = decideChatPush(snap, target, split && origin === 'navbar');
+  const decision: ChatPushDecision = decideChatPush(snap, target, origin === 'navbar');
   // **skip / popTo 这两条路不传参**：栈帧的 param 不会因为出栈而更新，已经挂在
   // 树上的那个 ChatPage 不会重新吃一遍 pathInfo。所以 jumpTo 得走旁路交过去，
   // 否则「资料页点媒体」「搜索到已打开会话里的消息」都只是回到那一页、停在
