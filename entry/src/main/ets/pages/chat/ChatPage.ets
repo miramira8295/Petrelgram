@@ -7098,6 +7098,7 @@ export struct ChatPage {
       initIdx: this.viewerInitIdx,
       initStartPositionMs: this.viewerStartPositionMs,
       store: this.store,
+      chatId: this.chatId,
       chatTitle: this.header.title,
       nowSec: this.nowSec,
       onRequestClose: (): void => { this.closeViewer(); },

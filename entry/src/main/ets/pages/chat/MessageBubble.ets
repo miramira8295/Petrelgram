@@ -2073,7 +2073,7 @@ export struct MessageBubble {
               }
               .width(cell.width).height(cell.height)
               // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
-              .geometryTransition(`media_${this.albumMemberIdAt(cell.idx)}`)
+              .geometryTransition(`media_${this.data.chatId}_${this.albumMemberIdAt(cell.idx)}`)
               .accessibilityText((this.group.photoFailed[cell.idx] ?? false)
                 ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1))
               // **图片格不挂 onVisibleAreaApproximateChange。**
@@ -2716,7 +2716,14 @@ export struct MessageBubble {
       // 一镜到底：和全屏查看器里同一条消息的图绑同一个 id，打开/关闭时由系统
       // 把两者的宽高与位置对齐过渡（见 MediaViewerOverlay）。气泡在查看器打开
       // 期间仍然挂在列表里，所以出场节点一直存在，动画不会半路断掉。
-      .geometryTransition(`media_${this.msg.id}`)
+      //
+      // 【id 必须带 chatId】TDLib 的 message id 是**会话内 id**，跨会话高度重合；
+      // 而本仓明确允许多个 ChatPage 同时活在栈里（见 ChatPageEntry.ets 的说明）。
+      // 只用 msg.id 的话，两个活着的会话页各带一个 media_1048576，已经踩在官方
+      // 「同一个 id 只能有两个组件绑定」的红线上。今天靠"查看器只有一个、且和
+      // 其中一个配上了"侥幸没出事。**编译器不校验三处 id 的配对**，所以改动时
+      // 三处（本行、相册格那行、MediaViewerOverlay 那行）必须逐字一致。
+      .geometryTransition(`media_${this.data.chatId}_${this.msg.id}`)
       .accessibilityText(this.msg.contentType === 'video'
         ? this.videoAccessibilityText()
         : (this.msg.photoFailed ? str('mb_photo_failed') : str('mb_open_photo')))

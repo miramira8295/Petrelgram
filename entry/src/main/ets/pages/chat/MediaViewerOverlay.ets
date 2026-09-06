@@ -109,6 +109,11 @@ export struct MediaViewerOverlay {
   // this session.
   @Param initStartPositionMs: number = 0;
   @Param store: MessageStore | null = null;
+  // 会话 id。**只用于 geometryTransition 的 id 作用域**（见 :1064 那行的说明）：
+  // TDLib 的 message id 是会话内 id，跨会话重合，而本仓允许多个 ChatPage 同时
+  // 活着。MessageStore.chatId 是私有的，所以由页面传。
+  // 页面化之后这个值会从 pathInfo.param 里来，本入参形状不变。
+  @Param chatId: number = 0;
   @Param chatTitle: string = '';
   @Param nowSec: number = 0;
 
@@ -1061,7 +1066,9 @@ export struct MediaViewerOverlay {
             //
             // 静态之后每个 id 恰好一对节点：相册里的那一格 + 查看器里的那一页，
             // 正是 geometryTransition 要求的形状，动画仍由节点的出现/消失驱动。
-            .geometryTransition(`media_${id}`)
+            // id 三处必须逐字一致（本行 + MessageBubble 的单图与相册格两行），
+            // 而**编译器不校验配对**，漏一端只在真机上表现为落点错。
+            .geometryTransition(`media_${this.chatId}_${id}`)
             // Parallel, not Exclusive. Exclusive has to hold the single tap
             // back until the double-tap window expires, and since a single tap
             // at 1x now closes the viewer, that wait showed up as a stall
