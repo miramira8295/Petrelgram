@@ -69,7 +69,9 @@ import { TopBanners } from './TopBanners';
 import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
 import { FloatingDateState } from './FloatingDateOverlay';
-import { firstRowBelowChrome, floatDateNeedsRescan } from '../../util/floatDateGate';
+import {
+  firstRowBelowChrome, floatDateNeedsRescan, floatDateScrollMovedEnough
+} from '../../util/floatDateGate';
 import { isInteriorRowRemoval } from '../../util/rowRemoval';
 import {
   PendingMediaAppend, PendingMediaItem, appendPendingMedia,
@@ -1741,6 +1743,9 @@ export struct ChatPage {
   // 知道哪一行真正露在标题栏下面，而 onDidScroll 每帧都来——下标没变就连量都
   // 不量，见 updateFloatDate。
   private floatDateStartIdx: number = -1;
+  // 上一次真正重算 chrome 跳过时的累计手势位移。与 floatDateStartIdx 一起
+  // 构成那道早退闸的两个键（见 updateFloatDate）。
+  private floatDateScrollAt: number = 0;
   private listTouchActive: boolean = false;
   private listUserScrollActive: boolean = false;
   // RESIZE shortens the List while the IME animates in. Preserve the live-tail
@@ -1942,6 +1947,9 @@ export struct ChatPage {
     this.curEndIdx = -1;
     this.indexGroupsLen = -1;
     this.userScrollOffsetTotal = 0;
+    // 与 userScrollOffsetTotal 同源，必须一起清：不清的话新会话第一帧的差值
+    // 是个大数，白多算一次 chrome 跳过（不算错，但没必要留这种不一致）。
+    this.floatDateScrollAt = 0;
     this.nextDidScrollIsUserDriven = false;
     this.timelineScrollActive = false;
     // 「↓」的返回关系和"底部看到的是哪条"同样是会话级的。消息 id 在每个会话
@@ -4119,13 +4127,25 @@ export struct ChatPage {
     // at a coarse cadence so a long drag keeps the chip visible.
     //
     // **这道早退必须排在下面那次量布局之前**：firstRowBelowChrome 要 getItemRect
-    // （布局查询，每帧最多三次），而顶行下标没变时它的结果一定和上次一样。原来
-    // 这里是拿 start 直接比的，加了 chrome 让位之后仍然拿 start 当第一道闸。
-    if (start === this.floatDateStartIdx && this.floatDateIndex >= 0) {
+    // （布局查询，每帧最多三次）。
+    //
+    // 【为什么不能只拿 start 当键 —— issue #163 的另一半】上一版写的是"顶行
+    // 下标没变时结果一定和上次一样"，那句不成立：start 在顶行的整段行程里恒定，
+    // 而这期间那一行会一点点滑到标题栏底下，chrome 跳过的结果本该跟着变。
+    // 闸看的自变量是"系统上报的下标"，现象的自变量是"那一行相对标题栏滑了多远"
+    // ——两者对不上，于是跳过结果被冻在每个下标区间开头那一帧的答案上，
+    // 区间末尾就显示成上面那一天。
+    //
+    // 现在下标没变**且**位移不够时才跳过。位移判据见
+    // util/floatDateGate.floatDateScrollMovedEnough。
+    const scrolledSince: number = this.userScrollOffsetTotal - this.floatDateScrollAt;
+    if (start === this.floatDateStartIdx && this.floatDateIndex >= 0
+      && !floatDateScrollMovedEnough(scrolledSince)) {
       this.floatDateState.keepAlive(now);
       return;
     }
     this.floatDateStartIdx = start;
+    this.floatDateScrollAt = this.userScrollOffsetTotal;
     // start 是 List「显示区」的第一行，包括已经滚到浮动标题栏底下的那一行；
     // 日期条要报的是用户看得见的第一行，见 util/floatDateGate.firstRowBelowChrome。
     const top: number = firstRowBelowChrome(start, this.groups.length,
