@@ -3988,6 +3988,11 @@ export struct ChatPage {
     if (this.viewerMsgId === 0 || this.viewerClosing) {
       return;
     }
+    // ⚠️ [Viewer] 探针（S4）：查看器这一簇此前在 hilog 黄金样本里一个标签都没有，
+    // S5/S6 改的是生命周期与挂载方式，本地单测证不了——这三条打点是那两批唯一的
+    // 验收证据。删除条件：S6 落地并通过黄金样本 diff 之后，随第二轮 §8 的探针
+    // 收尾批一起清。
+    logW(`[Viewer] close id=${this.viewerMsgId} posMs=${Math.round(this.viewerPositionMs)}`);
     this.releasePlaybackRequests();
     this.exitViewerLandscape();
     // 交接:把查看器最终播放到的位置写回气泡进度表，并把这条 pin 成播放位——
@@ -3996,8 +4001,10 @@ export struct ChatPage {
     const viewerMessageId = this.viewerMsgId;
     // **这一句必须留在 animateTo 之前**：@Monitor('viewerMsgId') 会在
     // viewerMsgId 归零那一刻同步把 viewerPositionMs 清成 0，挪到后面就永远记 0。
-    this.playSlot.handoffFromViewer(viewerMessageId,
-      albumIndexOfMember(this.groups, viewerMessageId), this.viewerPositionMs);
+    const handoffAlbumIdx: number = albumIndexOfMember(this.groups, viewerMessageId);
+    logW(`[Viewer] handoff dir=from-viewer id=${viewerMessageId}` +
+      ` albumIndex=${handoffAlbumIdx} posMs=${Math.round(this.viewerPositionMs)}`);
+    this.playSlot.handoffFromViewer(viewerMessageId, handoffAlbumIdx, this.viewerPositionMs);
     const duration: number = this.chatEffectDuration(KEY_POWER_EFFECT_BLUR, 260);
     this.viewerClosing = true;
     animateTo({ duration, curve: Curve.Friction }, () => {
@@ -4809,6 +4816,9 @@ export struct ChatPage {
     // 气泡播放器不会再有新的 onPositionChanged，读早读晚不影响这一次的值；
     // 保险起见仍然按“先取、后卸载”的顺序写。
     this.viewerStartPositionMs = this.playSlot.handoffToViewer(messageId);
+    // ⚠️ [Viewer] 探针（S4）。删除条件见 closeViewer 里那条。
+    logW(`[Viewer] open id=${messageId}` +
+      ` startMs=${Math.round(this.viewerStartPositionMs)}`);
     // Position the viewer Swiper on the tapped album member.
     const sib = albumSiblingIds(this.groups, messageId);
     this.viewerInitIdx = Math.max(0, sib.indexOf(messageId));
