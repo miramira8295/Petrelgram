@@ -1,4 +1,7 @@
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
+import {
+  isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER
+} from '../../util/swipeReplyGesture';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { MessageEntry, ReactionInfo, InlineBtn } from '../../store/MessageEntry';
 import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO, slotKey } from './playSlot';
@@ -99,10 +102,8 @@ const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '�
 // Media whose caption can be replaced via editMessageCaption.
 const EDITABLE_CAPTION_TYPES: string[] = ['photo', 'video', 'file', 'audio', 'voice'];
 // Swipe-to-reply: how far (vp) the bubble can be dragged left, and how far it
-// must travel before release commits to a reply (both negative — drag is
-// leftward-only).
-const SWIPE_REPLY_MAX: number = -56;
-const SWIPE_REPLY_TRIGGER: number = -40;
+// 左滑回复的几何与边缘判据统一在 util/swipeReplyGesture——本文件与
+// LightweightPlainTextBubble 两套实现共用，避免"两处必须一致"的漂移。
 
 // @Builder 的动态参数必须整体装进一个对象字面量再传。ArkUI 官方约束是：
 // 按引用传递只在「单参数 + 调用处直接传对象字面量」时支持内部 UI 刷新；多个
@@ -448,6 +449,10 @@ export struct MessageBubble {
   // dragging, then sprung back to 0 on release. onReplyTo fires once the drag
   // clears SWIPE_REPLY_TRIGGER; it never fires mid-drag.
   @Local private swipeReplyX: number = 0;
+  // 这一次按下是不是落在边缘死区里。在 TouchType.Down 时判定一次，整个手势
+  // 期间沿用——**不能每帧重判**：手指从边缘滑进来之后 windowX 就离开死区了，
+  // 逐帧判会让手势滑到一半突然"复活"。
+  private swipeFromEdge: boolean = false;
   // 这一次触摸已经被左滑或长按认领了。认领之后抬手时的点击必须吞掉，否则
   // 手指从一张图片上划走、或在链接上长按出多选，松手时那张图/那个链接还会
   // 被"点"一下。普通字段而不是 @State：没有任何界面依赖它。
@@ -831,7 +836,9 @@ export struct MessageBubble {
   private swipeReplyEligible(): boolean {
     // System/hidden rows carry no replyable message; editing owns the
     // reply/edit strip below and must not fight a concurrent swipe.
-    return !this.data.editingActive && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden';
+    // swipeFromEdge：这一下起手在窗口边缘，让给系统的返回手势（见常量说明）。
+    return !this.swipeFromEdge && !this.data.editingActive
+      && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden';
   }
 
   private onSwipeReplyUpdate(offsetX: number): void {
@@ -3929,7 +3936,11 @@ export struct MessageBubble {
       // 仍然是 parallelGesture：与祖先 List 的 pan 识别器并行，纵向拖动不满足
       // PanDirection.Horizontal，直接落到 List 去滚动，不受影响。
       .parallelGesture(
-        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
+        // 【只认左滑】原来是 PanDirection.Horizontal——左右都认，而右滑本来就
+        // 被 onSwipeReplyUpdate 的 Math.min(0, offsetX) 夹成 0、看不到位移，
+        // 认它纯属多余；更糟的是**右滑正是从左边缘返回的方向**，认领之后
+        // gestureClaimed 被置位，后续点击会被静默吞掉。
+        PanGesture({ fingers: 1, direction: PanDirection.Left, distance: 8 })
           .onActionUpdate((event: GestureEvent): void => { this.onSwipeReplyUpdate(event.offsetX); })
           .onActionEnd((): void => { this.onSwipeReplyEnd(); })
           .onActionCancel((): void => { this.onSwipeReplyEnd(); })
@@ -3939,6 +3950,12 @@ export struct MessageBubble {
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {
           this.gestureClaimed = false;
+          // 按下这一刻判一次落点是否在边缘死区里，整个手势期间沿用。
+          // 用 windowX 而不是 displayX：分栏/自由窗口下要的是**窗口**边缘，
+          // 而 screenWidthVp 存的正是 windowRect.width（见 EntryAbility）。
+          const touches: TouchObject[] = event.touches;
+          this.swipeFromEdge = touches.length > 0
+            && isEdgeSwipeStart(touches[0].windowX, this.env.screenWidthVp);
         }
       });
       // 认领之后，消息表面上的每个 onClick 都会自己早退（搜 gestureClaimed）。

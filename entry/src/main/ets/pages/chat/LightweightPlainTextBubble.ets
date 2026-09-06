@@ -1,4 +1,7 @@
 import { SymbolGlyphModifier } from '@kit.ArkUI';
+import {
+  isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER
+} from '../../util/swipeReplyGesture';
 import { MessageEntry } from '../../store/MessageEntry';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
@@ -41,8 +44,7 @@ import { menuPreviewCompact } from '../../util/menuPreview';
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
-const SWIPE_REPLY_MAX: number = -56;
-const SWIPE_REPLY_TRIGGER: number = -40;
+// 左滑回复的几何与边缘判据见 util/swipeReplyGesture（与 MessageBubble 共用）。
 const REPLY_QUOTE_WIDTH_RATIO: number = 0.76;
 const REPLY_QUOTE_LINE_H: number = 16;
 
@@ -368,6 +370,9 @@ export struct LightweightPlainTextBubble {
   @Local private translationStatus: TranslationStatus | null = null;
   @Local private menuShown: boolean = false;
   @Local private swipeX: number = 0;
+  // 这一次按下是不是落在窗口边缘死区里（见 util/swipeReplyGesture）。
+  // 在 TouchType.Down 判定一次、整个手势期间沿用。
+  private swipeFromEdge: boolean = false;
   // 名字行量出来的宽度。名字行比正文宽时，时间层要拿它兜最小宽度，时间戳才落在
   // 气泡右下角、引用块才能拉到气泡边缘。V1 靠「复用不清零」留住上一行的近似值；
   // V2 的 @Local 复用必重置，改为按名字文本进程级记忆（见 SENDER_LABEL_WIDTHS），
@@ -530,13 +535,14 @@ export struct LightweightPlainTextBubble {
   }
 
   private onSwipeUpdate(offsetX: number): void {
-    if (this.editingActive) { return; }
+    if (this.editingActive || this.swipeFromEdge) { return; }
     this.swipeX = Math.max(SWIPE_REPLY_MAX, Math.min(0, offsetX));
     if (this.swipeX < 0) { this.gestureClaimed = true; }
   }
 
   private onSwipeEnd(): void {
-    const reply: boolean = !this.editingActive && this.swipeX <= SWIPE_REPLY_TRIGGER;
+    const reply: boolean = !this.editingActive && !this.swipeFromEdge
+      && this.swipeX <= SWIPE_REPLY_TRIGGER;
     animateTo({
       duration: this.env.powerSaving || this.env.reduceAnim ? 0 : 180,
       curve: Curve.EaseOut
@@ -942,12 +948,19 @@ export struct LightweightPlainTextBubble {
       })
       .justifyContent(this.msg.isOutgoing ? FlexAlign.End : FlexAlign.Start)
       .alignItems(VerticalAlign.Bottom).translate({ x: this.swipeX })
-      .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 8 })
+      // 只认左滑：右滑本来就被 Math.min(0, offsetX) 夹成 0，而右滑正是从左边缘
+      // 返回的方向，认领之后 gestureClaimed 置位会把后续点击静默吞掉。
+      .parallelGesture(PanGesture({ fingers: 1, direction: PanDirection.Left, distance: 8 })
         .onActionUpdate((event: GestureEvent): void => { this.onSwipeUpdate(event.offsetX); })
         .onActionEnd((): void => { this.onSwipeEnd(); })
         .onActionCancel((): void => { this.onSwipeEnd(); }))
       .onTouch((event: TouchEvent): void => {
-        if (event.type === TouchType.Down) { this.gestureClaimed = false; }
+        if (event.type === TouchType.Down) {
+          this.gestureClaimed = false;
+          const touches: TouchObject[] = event.touches;
+          this.swipeFromEdge = touches.length > 0
+            && isEdgeSwipeStart(touches[0].windowX, this.env.screenWidthVp);
+        }
       });
     }
     .width('100%')
