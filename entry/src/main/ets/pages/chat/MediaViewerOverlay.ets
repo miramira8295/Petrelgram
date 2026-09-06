@@ -18,8 +18,11 @@ import { logE } from '../../util/log';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { thumbPathFor } from '../../util/mediaThumbChannel';
 import {
-  KEY_CURRENT_NETWORK_TYPE, KEY_POWER_EFFECT_BLUR, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
+  KEY_CURRENT_NETWORK_TYPE, KEY_POWER_EFFECT_BLUR, KEY_POWER_SMOOTH_TRANSITIONS,
+  KEY_REDUCE_ANIM, powerAnimationDuration
 } from '../../store/AppSettings';
+import { chatEffectDurationOf } from '../../util/chatEffects';
+import { mediaEntryIsVideo } from '../../util/mediaEntryKind';
 import { str } from '../../util/strings';
 import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
 
@@ -55,9 +58,12 @@ interface ViewerFit {
 // 事）。V2 的 @Param 是引用传递，这笔债到此还清。
 @ComponentV2
 export struct MediaViewerOverlay {
-  // V2 没有 @StorageProp 的等价物，三个全局键（语言纪元 / 材质纪元 / 顶部安全区）
-  // 改由页面透传——页面自己就持有它们。
-  @Param langEpoch: number = 0;
+  // V2 没有 @StorageProp 的等价物，顶部安全区由页面透传——页面自己就持有它。
+  //
+  // 语言纪元与材质纪元曾经也在这里透传，但**组件从来没读过它们**（全文件
+  // this.langEpoch / this.materialEpoch 各 0 处命中）：材质是
+  // overlayGlassFill / overlayBackdropBlur / materialModifier('viewer') 现读的，
+  // 语言是 $r() 资源本身跟随的。两个纪元连同 tapX/tapY 一起删于 S1。
   // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面已经是
   // 状态管理 V2，接不上。翻页/关闭时先改本地副本，再把新值交给页面，页面回灌
   // 同一个值，语义与双向同步等价。
@@ -73,9 +79,6 @@ export struct MediaViewerOverlay {
   @Param @Once chromeVisible: boolean = true;
   @Event onChromeVisibleChange: (visible: boolean) => void = (): void => {};
   // 材质档位是设置里的用户偏好，而 overlayMaterial 那几个是普通函数、订阅不了
-  // AppStorage。跟着这个纪元走，用户改了厚度/光感这一层才会重绘（和别处一样）。
-  // 去掉了 private：@Param 要由父组件构造传参。
-  @Param materialEpoch: number = 0;
   // @Param（不是普通字段）：普通字段会冻结在构造时的值，历史加载进来之后查看器
   // 就翻不动相册了。@Param 走引用，不再有 @Prop 的整表深拷贝。
   @Param messages: MessageEntry[] = [];
@@ -94,8 +97,6 @@ export struct MediaViewerOverlay {
   // their inserted/removed children, not for custom-component instances. The
   // page's `if` removing this component still triggers it, because removal
   // recursively fires the transitions of everything being removed.
-  @Param tapX: number = 0;
-  @Param tapY: number = 0;
 
   // Set once at construction by the page (index of the tapped album member).
   // @Param 而不是无装饰器成员：V2 里无装饰器成员是纯本地常量，父组件初始化它
@@ -116,9 +117,6 @@ export struct MediaViewerOverlay {
   // `!==` 恒不相等，本层就会跟着页面的每一次重建白刷一遍。@Event 不具备观测
   // 能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。官方《@Event》：
   // 「@Event 装饰的回调方法中参数以及返回值由开发者决定」——带返回值是允许的。
-  @Event effectDuration: (key: string, ms: number) => number =
-    (_key: string, ms: number): number => ms;
-  @Event isVideoEntry: (entry: MessageEntry) => boolean = (): boolean => false;
   @Event onRequestClose: () => void = (): void => {};
   @Event onSaveMedia: () => void = (): void => {};
   // 保存到文件（首次授权 Download，之后保存到 Download/Petrelgram）——issue #97/#65。
@@ -188,6 +186,19 @@ export struct MediaViewerOverlay {
     if (this.videoLandscape) {
       setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false);
     }
+  }
+
+  // 动效时长自服务。原来是 @Event effectDuration 回调进 ChatPage 拿
+  // this.reduceAnimations 再调 chatEffectDurationOf——但那条回调是查询型 @Event、
+  // 不具备观测能力，值只在本层 build 时现取；直读 AppStorage 与之**行为等价**，
+  // 且省掉一个每次页面重建都要重新捕获的闭包。
+  //
+  // 直读而不是走 util/chatEnvMirror 的 @Trace 镜像：那个镜像目前全仓零消费者
+  // （chatEnv 的任何字段都没有页面在读），S1 是"编译即校验"的批次，不适合当
+  // 它的第一个用户。本文件已有两处直读先例：networkMetered() 与 :861 的
+  // powerAnimationDuration。
+  private effectDuration(key: string, ms: number): number {
+    return chatEffectDurationOf(AppStorage.get<boolean>(KEY_REDUCE_ANIM) ?? false, key, ms);
   }
 
   private networkMetered(): boolean {
@@ -457,7 +468,7 @@ export struct MediaViewerOverlay {
   private groupIsMedia(index: number): boolean {
     const g = this.groups[index];
     return g !== undefined &&
-      (g.head.contentType === 'photo' || this.isVideoEntry(g.head));
+      (g.head.contentType === 'photo' || mediaEntryIsVideo(g.head));
   }
 
   private currentGroupIndex(): number {
@@ -564,7 +575,7 @@ export struct MediaViewerOverlay {
     if (e === null) {
       return this.chatTitle;
     }
-    if (this.isVideoEntry(e) && e.videoFileName !== '') {
+    if (mediaEntryIsVideo(e) && e.videoFileName !== '') {
       return e.videoFileName;
     }
     return e.senderName !== '' ? e.senderName : this.chatTitle;
@@ -643,7 +654,7 @@ export struct MediaViewerOverlay {
 
   private siblingIsVideo(id: number): boolean {
     const idx = this.messages.findIndex((m: MessageEntry) => m.id === id);
-    return idx >= 0 && this.isVideoEntry(this.messages[idx]);
+    return idx >= 0 && mediaEntryIsVideo(this.messages[idx]);
   }
 
   // Best available image for a viewer page: full-res once downloaded, else thumbnail.
@@ -711,7 +722,7 @@ export struct MediaViewerOverlay {
 
   private isVideo(): boolean {
     const e = this.entry();
-    return e !== null && this.isVideoEntry(e);
+    return e !== null && mediaEntryIsVideo(e);
   }
 
   private videoLocalPath(): string {
@@ -744,7 +755,7 @@ export struct MediaViewerOverlay {
       return false;
     }
     const e: MessageEntry = this.messages[idx];
-    return this.isVideoEntry(e) && isLivePhotoVideo(e.videoFileName, e.videoDuration);
+    return mediaEntryIsVideo(e) && isLivePhotoVideo(e.videoFileName, e.videoDuration);
   }
 
   private isLiveNow(): boolean {

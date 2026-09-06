@@ -1039,9 +1039,12 @@ export struct ChatPage {
     if (this.messageActionsCache === null) {
       this.messageActionsCache = {
         onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
-        onMediaTap: (messageId: number, x: number, y: number): void => {
-          this.tapX = x;
-          this.tapY = y;
+        // 形参 x/y 保留但不再存：几何过渡已全交给 geometryTransition，查看器
+        // 那两个 @Param 从来没被读过（S1 已删）。**签名不改**——MessageBubble
+        // 的三处调用点（:2068/:2099/:2761）传的是 e.windowX/windowY，改签名
+        // 就要动跨组件契约，而将来若要回退到"从点击点缩放"那套转场，这两个值
+        // 还得从这里取。
+        onMediaTap: (messageId: number, _x: number, _y: number): void => {
           this.openViewer(messageId);
         },
         onAvatarTap: (userId: number): void => {
@@ -1512,10 +1515,6 @@ export struct ChatPage {
   // has already been set by onMediaTap.
   private viewerInitIdx: number = 0;
   @Local swipeDir: number = 1; // 1 = advancing forward (next), -1 = going back — drives the slide direction
-  // Window coordinates (vp) of the tap that opened the viewer — anchor for its
-  // expand-from-tap open / shrink-back-to-tap close transition.
-  @Local tapX: number = 0;
-  @Local tapY: number = 0;
   // 顶栏下挂那张浮卡（置顶消息条 + 直播/群通话条）的整套状态机（B5 批）。原来
   // 摊在这里的 14 个 @Local（pinnedPreview/pinnedCount/pinnedLoadState/
   // pinnedJumpBusy/pinnedCycle/liveGroupCallId/liveCallIsActive/liveCallIsRtmp/
@@ -7063,8 +7062,6 @@ export struct ChatPage {
   @Builder
   mediaViewer() {
     MediaViewerOverlay({
-      langEpoch: this.langEpoch,
-      materialEpoch: this.materialEpoch,
       topSafe: this.topSafe,
       viewerMsgId: this.viewerMsgId,
       onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; },
@@ -7083,13 +7080,9 @@ export struct ChatPage {
       },
       initIdx: this.viewerInitIdx,
       initStartPositionMs: this.viewerStartPositionMs,
-      tapX: this.tapX,
-      tapY: this.tapY,
       store: this.store,
       chatTitle: this.header.title,
       nowSec: this.nowSec,
-      effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms),
-      isVideoEntry: (entry: MessageEntry): boolean => mediaEntryIsVideo(entry),
       onRequestClose: (): void => { this.closeViewer(); },
       onSaveMedia: (): void => { this.mediaSave.saveViewerMedia(false); },
       onSaveMediaToFiles: (): void => { this.mediaSave.saveViewerMedia(true); },
