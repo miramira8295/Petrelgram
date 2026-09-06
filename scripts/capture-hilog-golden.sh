@@ -271,6 +271,7 @@ do_background() { key_home; nap 30; open_chat "$CHAT_MAIN" 0; }
 # 那反而有用：切段切错了还能回去看。
 
 BOUNDS=""   # "名字|设备时刻" 每步一行
+CAPTURE_FAILED=0
 
 dev_now() { HDC shell "date '+%m-%d %H:%M:%S.%3N'" 2>/dev/null | tr -d ''; }
 
@@ -301,6 +302,14 @@ finish_auto() {
 $BOUNDS
 EOF
   [ -n "$prev_name" ] && split_one "$prev_name" "$prev_t" "99-99 99:99:99.999"
+  if [ "$CAPTURE_FAILED" -ne 0 ]; then
+    echo
+    echo "✗ 这一轮采集**不合格**：上面标 ✗ 的步骤没抓到该有的打点。"
+    echo "  别拿它当基线——后面几批要靠它做 diff，基线缺一段就等于那部分没有证据。"
+    echo "  常见原因：目标消息落在会话尾部导致 ↓ 按钮不渲染（第 4 步点了个空）；"
+    echo "  或者稳定窗口太短。修 targets.env 或加长 settle 之后重录。"
+    return 1
+  fi
 }
 
 # 把 raw.log 里时间戳落在 [from, to) 的行抽进这一步的文件。hilog 的时间戳是
@@ -313,6 +322,10 @@ split_one() {
   local lines; lines="$(wc -l <"$f" | tr -d ' ')"
   local want=""
   case "$nm" in
+    # ⚠ [InitialPage] 实际打在 store/MessageStore.ets，**不在 ChatPage 里**。
+    # hilog 按 pid 抓、两边同进程，所以它能匹配上——但它证明的是 store 侧的
+    # 路由决策没变，**不代表 ChatPage 侧被覆盖到**。判断某一批的证据够不够时
+    # 别把它算进 ChatPage 的覆盖里。
     *cold-enter*)  want="InitialPage";;
     *scroll-up*)   want="Anchor|NewerFire";;
     *reply-jump*)  want="Jump80";;
@@ -320,10 +333,16 @@ split_one() {
     *enter-unread*) want="InitialPage";;
     *background*)  want="InitialPage|Anchor|NewerFire|Follow62";;
   esac
+  # 【这里必须是 fail 而不是 warn】
+  # 第一版只 echo 一个 ⚠ 就过去了，结果一整轮采集"成功"，而 04-jump-to-latest.log
+  # 是 0 字节、raw.log 里一行 [JumpLatest] 都没有——直到有人去读那份样本才发现。
+  # 一个抓不到东西还报成功的验收仪器，比没有更坏：它会让你以为后面几批有证据兜底。
   if [ "$lines" -eq 0 ]; then
-    echo "  $nm: 0 行 ⚠ 这一步没触发任何打点"
+    echo "  $nm: 0 行 ✗ 这一步没触发任何打点"
+    CAPTURE_FAILED=1
   elif [ -n "$want" ] && ! grep -qE "$want" "$f"; then
-    echo "  $nm: $lines 行 ⚠ 没有该有的 \"$want\"——动作可能没生效"
+    echo "  $nm: $lines 行 ✗ 没有该有的 \"$want\"——动作没生效"
+    CAPTURE_FAILED=1
   else
     echo "  $nm: $lines 行"
   fi
@@ -378,14 +397,14 @@ EOF
   astep 4 jump-to-latest         8 tap "$FAB_X" "$FAB_Y"
   astep 5 enter-unread-chat     12 open_chat "$CHAT_UNREAD" 0
   astep 6 background-resume     10 do_background
-  finish_auto
+  if ! finish_auto; then RC=1; else RC=0; fi
   echo
   echo "────────────────────────────────────────────────────────────"
   echo "采完了：$OUT"
   ls -1 "$OUT" | sed 's/^/  /'
   echo
   echo "下一步：改完某一批之后 -l after-xxx 重录，再 --diff $LABEL after-xxx。"
-  exit 0
+  exit $RC
 fi
 cat <<EOF
 
