@@ -63,5 +63,35 @@ export default function proxyMirrorTest() {
       expect(missing[0].server).assertEqual('b.test');
       expect(missingFromAccount(mirror, []).length).assertEqual(2);
     });
+    // ── issue #195：删掉的代理不能被镜像补回来 ──────────────────────────
+    // 现象「提示删除成功，但是仍旧显示，即使杀掉后台重新进入」的机理：删掉
+    // **最后一个**代理后账号清单为空，而 ProxyPage.restoreMirrored() 正是拿
+    // "清单为空"当作"这个账号还没继承过代理"，于是把镜像里的全部条目加回来。
+    // 修法是删除时同步把它从镜像里摘掉；这里钉住摘掉之后的不变式。
+
+    it('删掉最后一个之后，镜像里也没有了——空账号不会被补回任何东西', 0, (): void => {
+      const only: ProxyEntry = entry('only.test', 1080);
+      // 删之前：账号空、镜像有一条 → 会被补回来（这正是 bug 的形状）
+      const mirrorBefore: ProxyEntry[] = syncableOf([only], []);
+      expect(missingFromAccount(mirrorBefore, []).length).assertEqual(1);
+      // 删之后：镜像按"剩下的"重写 → 空账号不再被补
+      const mirrorAfter: ProxyEntry[] = syncableOf([], []);
+      expect(mirrorAfter.length).assertEqual(0);
+      expect(missingFromAccount(mirrorAfter, []).length).assertEqual(0);
+    });
+
+    it('删掉多个里的一个，其余仍留在镜像里', 0, (): void => {
+      const a: ProxyEntry = entry('a.test', 1080);
+      const b: ProxyEntry = entry('b.test', 1081);
+      const remaining: ProxyEntry[] = [a];  // 删掉了 b
+      const mirrorAfter: ProxyEntry[] = syncableOf(remaining, []);
+      expect(mirrorAfter.length).assertEqual(1);
+      expect(mirrorAfter[0].server).assertEqual('a.test');
+      // 换个空账号进来时只会补回 a，不会把删掉的 b 带过去
+      const missing: ProxyEntry[] = missingFromAccount(mirrorAfter, []);
+      expect(missing.length).assertEqual(1);
+      expect(missing[0].server).assertEqual('a.test');
+    });
+
   });
 }

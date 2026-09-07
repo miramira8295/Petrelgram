@@ -336,6 +336,21 @@ export default function albumGroupDataSourceTest() {
       expect(listener.reloaded).assertEqual(1);
     });
 
+    it('prefetch_layout_context_invalidates_only_when_geometry_changes', 0, () => {
+      const ds = new AlbumGroupDataSource();
+      const listener = new CountingListener();
+      ds.registerDataChangeListener(listener);
+
+      ds.setLayoutContext(360, false);
+      expect(listener.reloaded).assertEqual(0);
+      ds.setLayoutContext(360, true);
+      expect(listener.reloaded).assertEqual(1);
+      ds.setLayoutContext(360, true);
+      expect(listener.reloaded).assertEqual(1);
+      ds.setLayoutContext(720, true);
+      expect(listener.reloaded).assertEqual(2);
+    });
+
     it('listener_registration_dedupes_and_unregister_stops_notifications', 0, () => {
       const users = usersOf();
       const ds = new AlbumGroupDataSource();

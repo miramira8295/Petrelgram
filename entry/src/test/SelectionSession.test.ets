@@ -73,11 +73,15 @@ class FakeHost implements SelectionSessionHost {
   scrollActiveValue: boolean = false;
   closeReactionSheetCount: number = 0;
   emojiPanelCalls: boolean[] = [];
+  activeCalls: boolean[] = [];
 
   chatTgsScrollActive: () => boolean = (): boolean => this.scrollActiveValue;
   closeReactionSheet: () => void = (): void => { this.closeReactionSheetCount++; };
   setEmojiPanel: (show: boolean) => void = (show: boolean): void => {
     this.emojiPanelCalls.push(show);
+  };
+  onActiveChange: (active: boolean) => void = (active: boolean): void => {
+    this.activeCalls.push(active);
   };
 }
 
@@ -250,11 +254,13 @@ export default function selectionSessionTest() {
     // 只把工具栏收起来、选中集合却留在内存里，导致下次进多选时残留上次的
     // 选中 id。
     it('exit() 清空 active 与 ids', 0, (): void => {
-      const session: SelectionSession = sessionOn(new FakeHost());
+      const host: FakeHost = new FakeHost();
+      const session: SelectionSession = sessionOn(host);
       session.enter([111, 112]);
       session.exit();
       expect(session.active).assertFalse();
       expect(session.ids.length).assertEqual(0);
+      expect(host.activeCalls).assertDeepEquals([true, false]);
     });
   });
 }

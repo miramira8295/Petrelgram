@@ -79,6 +79,7 @@ import { logW } from '../../util/log';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
 import { isLivePhotoVideo } from '../../util/livePhoto';
+import { editableCached, ensureEditable } from '../../util/messageEditable';
 import { replyThumbSrc } from '../../util/replyThumb';
 import { menuPreviewCompact } from '../../util/menuPreview';
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
@@ -727,7 +728,7 @@ export struct MessageBubble {
   // max width on the outer shrink-to-fit Column can resolve differently from
   // the numeric caps used by text/media and cause a late first-layout reflow.
   private bubbleMaxW(): number {
-    return bubbleMaxWidth(this.env.chatContentWidth);
+    return bubbleMaxWidth(this.data.contentWidth);
   }
 
   private inlineMaxW(): number {
@@ -826,6 +827,7 @@ export struct MessageBubble {
       this.recordMenuOffset(fingers[0].localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
+    this.askEditable();
     const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
     if (policy.longPressOpensMenu) {
       this.msgContextMenuShown = true;
@@ -934,7 +936,7 @@ export struct MessageBubble {
   }
 
   private mediaThumbW(): number {
-    return mediaThumbWidth(this.env.chatContentWidth);
+    return mediaThumbWidth(this.data.contentWidth);
   }
 
   private mediaMaxH(): number {
@@ -1012,7 +1014,7 @@ export struct MessageBubble {
   // Same helper the prefetcher uses — the two must agree exactly or the
   // prefetched bitmap lands under a key this bubble never asks for.
   private mediaBox(): MediaBox {
-    return mediaBoxFor(this.env.chatContentWidth, this.msg.photoWidth, this.msg.photoHeight,
+    return mediaBoxFor(this.data.contentWidth, this.msg.photoWidth, this.msg.photoHeight,
       this.msg.contentType === 'video');
   }
 
@@ -2297,6 +2299,34 @@ export struct MessageBubble {
 
   // 反应条的自然宽度（vp），见 util/reactionsWidth。按内容签名缓存：同一条消息
   // 每次 build 都重测是白烧，反应变了签名才变。
+  // 「能不能编辑」到货后用它触发菜单重绘。答案本身在 util/messageEditable 的
+  // 会话级缓存里，这里只需要一个变了就重绘的信号。
+  @Local private editableTick: number = 0;
+
+  // 菜单里「编辑」「替换媒体」显不显示。**权威答案优先，拿不到才退回启发式**
+  // （issue #179「过早的消息无法编辑」）。
+  //
+  // 旧的启发式（isOutgoing && 48 小时内）至少三种情形是错的，理由写在
+  // util/messageEditable 的文件头。保留它只是为了"答案还没到货"的那一瞬——
+  // 那时行为与现状完全一致，绝不让菜单等。
+  private canEditNow(): boolean {
+    // editableTick 必须在这一支里被**读到**，否则 V2 不会把它登记成依赖，
+    // 答案到货时菜单就不会重绘。它自身不参与判断，只当"缓存可能变了"的信号。
+    const known: boolean | undefined =
+      this.editableTick >= 0 ? editableCached(this.msg.id) : undefined;
+    if (known !== undefined) {
+      return known;
+    }
+    return this.msg.isOutgoing && this.nowSec - this.msg.date < 172800;
+  }
+
+  // 菜单要弹了：问一次权威答案。已知或在途的由 ensureEditable 自己挡掉。
+  private askEditable(): void {
+    ensureEditable(this.data.chatId, this.msg.id, (): void => {
+      this.editableTick = this.editableTick + 1;
+    });
+  }
+
   private rxWidthSig: string = '';
   private rxWidthCache: number = 0;
 
@@ -2423,7 +2453,7 @@ export struct MessageBubble {
   msgContextMenu() {
     Menu() {
       MenuItem(this.messageReactionMenuItem);
-      if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800 &&
+      if (this.canEditNow() &&
         (this.msg.contentType === 'text' || EDITABLE_CAPTION_TYPES.indexOf(this.msg.contentType) >= 0)) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
@@ -2485,7 +2515,7 @@ export struct MessageBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
         content: this.data.isPinnedMsg ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
       }).onClick((): void => { this.actions.onPinMsg(this.msg.id, this.data.isPinnedMsg); });
-      if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800 &&
+      if (this.canEditNow() &&
         (this.msg.contentType === 'photo' || this.msg.contentType === 'video')) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.picture')),
@@ -2673,6 +2703,9 @@ export struct MessageBubble {
             boxWidth: this.mediaBox().width,
             boxHeight: this.mediaBox().height,
             powerCategory: this.autoplayCategory(),
+            // 滑动时暂停而不是卸载（用户报"滑动时 GIF 闪一下"）。会话内的
+            // GIF 跟贴纸走同一道闸，见 SmartLoopVideo.scrollGated。
+            scrollGated: true,
             forcePlay: this.msg.isAnimation && this.data.animationForcePlay,
             onPlaybackFailed: (): void => {
               if (this.msg.isAnimation) {
@@ -3596,13 +3629,13 @@ export struct MessageBubble {
         .fontColor(this.liveVideoChatTappable() ? this.accent() : COLOR_TEXT_SECONDARY)
         .fontWeight(this.liveVideoChatTappable() ? FontWeight.Medium : FontWeight.Regular)
         .textAlign(TextAlign.Center)
-        .constraintSize({ maxWidth: this.env.chatContentWidth * 0.68 });
+        .constraintSize({ maxWidth: this.data.contentWidth * 0.68 });
       if (this.liveVideoChatTappable()) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(10).fontColor([this.accent()]).width(10);
       }
     }
-    .constraintSize({ maxWidth: this.env.chatContentWidth * 0.82 })
+    .constraintSize({ maxWidth: this.data.contentWidth * 0.82 })
     .backgroundColor(this.liveVideoChatTappable() ? '#183478F6' : $r('app.color.system_pill'))
     .border({
       width: 0.5,
@@ -3876,6 +3909,7 @@ export struct MessageBubble {
         if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
           // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
           this.recordMenuOffset(event.x, Number(event.target.area.width));
+          this.askEditable();
           this.msgContextMenuShown = true;
         }
       })

@@ -21,13 +21,12 @@ import {
 import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
 import { effectiveMuted } from '../../store/ChatEntry';
 import { scopeMutedForKind } from '../../store/ScopeMuteStore';
-
-// 滑动操作的按钮宽度与触发距离（vp），以及三个动作的底色。
-const SWIPE_BUTTON_VP: number = 76;
-const SWIPE_TRIGGER_VP: number = 76;
-const SWIPE_READ_BG: string = '#3390EC';
-const SWIPE_MUTE_BG: string = '#8E8E93';
-const SWIPE_ARCHIVE_BG: string = '#F09A37';
+import {
+  CHAT_SWIPE_ACTION_HEIGHT, CHAT_SWIPE_BUTTON_VP, CHAT_SWIPE_COMMIT_DELAY_MS, CHAT_SWIPE_EDGE_EFFECT,
+  CHAT_SWIPE_RADIUS_VP, CHAT_SWIPE_TRIGGER_VP, CHAT_SWIPE_VERTICAL_GUTTER_VP,
+  ChatSwipeActionVisual,
+  archiveSwipeVisual, muteSwipeVisual, readSwipeVisual
+} from '../../util/chatListSwipe';
 
 @Component
 export struct ChatListView {
@@ -99,54 +98,74 @@ export struct ChatListView {
     setMute(chat.id, this.rowMuted(chat) ? 0 : MUTE_LONG);
   }
 
+  private commitSwipeAction(action: () => void): void {
+    setTimeout((): void => {
+      action();
+      this.listScroller.closeAllSwipeActions();
+    }, CHAT_SWIPE_COMMIT_DELAY_MS);
+  }
+
   // 右滑（从左边拉出）：已读 / 标记未读。
   @Builder
   readSwipe(chat: ChatEntry) {
     Row() {
       this.swipeButton(
         this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
-        this.rowUnread(chat) ? 'sys.symbol.checkmark_circle' : 'sys.symbol.circle_badge',
-        SWIPE_READ_BG,
+        readSwipeVisual(this.rowUnread(chat)),
         (): void => this.toggleRead(chat));
     }
     // ChatRow 是左右 12vp、上下 3vp 的真卡片；滑动动作也必须落在同一轮廓里，
     // 否则卡片滑走后会露出一块贴屏边的整行矩形。
-    .height('calc(100% - 6vp)')
-    .margin({ left: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
-    .borderRadius(16)
+    .height(CHAT_SWIPE_ACTION_HEIGHT)
+    .margin({
+      left: CHAT_ROW_SIDE_GUTTER,
+      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+    })
+    // ACTIONING 会强制扩宽 builder 顶层；底色和圆角必须在同一节点。
+    .backgroundColor(readSwipeVisual(this.rowUnread(chat)).background)
+    .borderRadius(CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
-  // 左滑（从右边拉出）：静音开关 + 归档 / 取消归档。滑到底触发的是归档那一个。
+  // 左滑（从右边拉出）：展示静音开关 + 归档 / 取消归档，点击相应按钮执行。
   @Builder
   endSwipe(chat: ChatEntry) {
     Row() {
       this.swipeButton(
         this.rowMuted(chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
-        this.rowMuted(chat) ? 'sys.symbol.bell' : 'sys.symbol.bell_slash',
-        SWIPE_MUTE_BG,
+        muteSwipeVisual(this.rowMuted(chat)),
         (): void => this.toggleMute(chat));
       this.swipeButton(
         this.rowArchived() ? $r('app.string.cl_unarchive') : $r('app.string.cl_archive'),
-        'sys.symbol.archivebox',
-        SWIPE_ARCHIVE_BG,
+        archiveSwipeVisual(this.rowArchived()),
         (): void => this.toggleArchive(chat));
     }
-    .height('calc(100% - 6vp)')
-    .margin({ right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
-    .borderRadius(16)
+    .height(CHAT_SWIPE_ACTION_HEIGHT)
+    .margin({
+      right: CHAT_ROW_SIDE_GUTTER,
+      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+    })
+    // 长滑的主动作是最外侧归档，因此扩出的整块区域使用归档色。
+    .backgroundColor(archiveSwipeVisual(this.rowArchived()).background)
+    .borderRadius(CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
   @Builder
-  swipeButton(label: ResourceStr, icon: string, background: ResourceColor, action: () => void) {
+  swipeButton(label: ResourceStr, visual: ChatSwipeActionVisual, action: () => void) {
     Column({ space: 4 }) {
-      SymbolGlyph($r(icon)).fontSize(20).fontColor([Color.White]);
-      Text(label).fontSize(11).fontColor(Color.White).maxLines(1);
+      SymbolGlyph($r(visual.symbol)).fontSize(20).fontColor([Color.White]);
+      Text(label)
+        .width('100%')
+        .fontSize(11).fontColor(Color.White)
+        .textAlign(TextAlign.Center)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .width(SWIPE_BUTTON_VP).height('100%')
+    .width(CHAT_SWIPE_BUTTON_VP).height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(background)
+    .backgroundColor(visual.background)
     .onClick((): void => {
       this.listScroller.closeAllSwipeActions();
       action();
@@ -466,14 +485,19 @@ export struct ChatListView {
           .swipeAction(this.rowSwipeEnabled ? {
             start: {
               builder: (): void => { this.readSwipe(item); },
-              actionAreaDistance: SWIPE_TRIGGER_VP,
-              onAction: (): void => { this.toggleRead(item); }
+              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+              onAction: (): void => {
+                this.commitSwipeAction((): void => this.toggleRead(item));
+              }
             },
             end: {
               builder: (): void => { this.endSwipe(item); },
-              actionAreaDistance: SWIPE_TRIGGER_VP,
-              onAction: (): void => { this.toggleArchive(item); }
-            }
+              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+              onAction: (): void => {
+                this.commitSwipeAction((): void => this.toggleArchive(item));
+              }
+            },
+            edgeEffect: CHAT_SWIPE_EDGE_EFFECT
           } as SwipeActionOptions : {} as SwipeActionOptions)
           .transition(
             TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 12 })).animation({

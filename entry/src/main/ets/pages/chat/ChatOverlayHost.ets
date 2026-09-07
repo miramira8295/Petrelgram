@@ -6,6 +6,7 @@ import { ScheduledSheet } from './ScheduledSheet';
 import { PollComposeSheet } from './PollComposeSheet';
 import { ContactPickerSheet, PickedContact } from './ContactPickerSheet';
 import { VideoNoteRecorderView } from './VideoNoteRecorderView';
+import { selectionHasRemovableForwardCaption } from '../../util/forwardMessagesRequest';
 
 // Presentation host for the transient chat overlays. ChatPage retains the
 // state and business actions; this component only wires values and events into
@@ -60,6 +61,11 @@ export struct ChatOverlayHost {
       this.overlayState.showContactSheet || this.overlayState.showVideoNoteRecorder;
   }
 
+  private forwardHasRemovableCaption(): boolean {
+    return selectionHasRemovableForwardCaption(
+      this.messages, this.overlayState.forwardMessageIds);
+  }
+
   build() {
     Stack() {
       if (this.overlayState.showReactionSheet) {
@@ -86,6 +92,7 @@ export struct ChatOverlayHost {
           messageIds: this.overlayState.forwardMessageIds,
           sourceChatId: this.chatId,
           threadRootId: this.threadRootId,
+          canRemoveCaption: this.forwardHasRemovableCaption(),
           effectDuration: (key: string, ms: number): number => this.effectDuration(key, ms),
           onSent: (): void => { this.onForwardSent(); }
         });

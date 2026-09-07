@@ -14,6 +14,7 @@ import {
   KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS,
 } from '../../store/AppSettings';
 import { KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
+import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
 // 本模块并调用它，页面因此不再需要进 main_pages.json。
@@ -59,6 +60,7 @@ struct ChatPageChrome {
   @StorageProp('appIsForeground') appIsForeground: boolean = true;
   @StorageProp(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp(CHAT_CONTENT_WIDTH_KEY) chatContentWidth: number = 360;
   @StorageProp('screenHeightVp') screenH: number = 780;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
@@ -92,6 +94,7 @@ struct ChatPageChrome {
       appIsForeground: this.appIsForeground,
       sendByEnter: this.sendByEnter,
       screenW: this.screenW,
+      chatContentWidth: this.chatContentWidth,
       screenH: this.screenH,
       powerSaving: this.powerSaving,
       powerChatEffects: this.powerChatEffects,

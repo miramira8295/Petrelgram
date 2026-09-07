@@ -8,6 +8,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
 import { bubbleMaxWidth } from '../../util/mediaBox';
+import { editableCached, ensureEditable } from '../../util/messageEditable';
 import {
   animationDurationFor, scrollActiveNow
 } from '../../util/scrollEffects';
@@ -237,6 +238,10 @@ export struct LightweightPlainTextBubble {
   //   纯文本行（本组件）：本来就没几个 @Param —— 只赔不赚，复用 +38%。
   // 所以这一支保留细粒度字段。**别为了"两边写法一致"把它合了。**
   @Param chatId: number = 0;
+  @Param contentWidth: number = 360;
+  // 「能不能编辑」到货后触发菜单重绘。判据与理由和 MessageBubble 完全一致，
+  // 见 util/messageEditable 文件头（issue #179）。
+  @Local private editableTick: number = 0;
   @Param isGroup: boolean = false;
   @Param themeBubbleOut: string = '';
   @Param showUnreadDivider: boolean = false;
@@ -456,7 +461,7 @@ export struct LightweightPlainTextBubble {
   @Monitor('msg')
   onMessageChanged(): void { this.attachChannels(this.msg); }
 
-  private bubbleMaxW(): number { return bubbleMaxWidth(this.env.chatContentWidth); }
+  private bubbleMaxW(): number { return bubbleMaxWidth(this.contentWidth); }
   private inlineMaxW(): number { return this.bubbleMaxW() - 16; }
   private runRadius(): number { return Math.min(this.env.bubbleRadius, 7); }
   private tailRadius(): number { return Math.min(this.env.bubbleRadius, 2); }
@@ -517,11 +522,27 @@ export struct LightweightPlainTextBubble {
     this.menuOffsetX = width > 0 ? localX - width / 2 : 0;
   }
 
+  private canEditNow(): boolean {
+    const known: boolean | undefined =
+      this.editableTick >= 0 ? editableCached(this.msg.id) : undefined;
+    if (known !== undefined) {
+      return known;
+    }
+    return this.msg.isOutgoing && this.nowSec - this.msg.date < 172800;
+  }
+
+  private askEditable(): void {
+    ensureEditable(this.chatId, this.msg.id, (): void => {
+      this.editableTick = this.editableTick + 1;
+    });
+  }
+
   private onLongPress(event: GestureEvent): void {
     if (event.fingerList.length > 0) {
       this.recordMenuOffset(event.fingerList[0].localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
+    this.askEditable();
     const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
     // 诊断（issue #114）：和 MessageBubble 那条 [Menu114] 对照。报告人 1.4.2 的日志
     // 里一条菜单相关的行都没有，正是因为长按落在本组件、而本组件什么都不记。
@@ -708,7 +729,7 @@ export struct LightweightPlainTextBubble {
   contextMenu() {
     Menu() {
       MenuItem(this.messageReactionMenuItem);
-      if (this.msg.isOutgoing && this.nowSec - this.msg.date < 172800) {
+      if (this.canEditNow()) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
           content: $r('app.string.edit')

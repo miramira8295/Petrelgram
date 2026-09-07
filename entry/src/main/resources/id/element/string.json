@@ -11839,6 +11839,14 @@
     {
       "name": "gif_section_trending",
       "value": "GIF Populer"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "Sembunyikan sumber (kirim sebagai salinan)"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "Hapus keterangan"
     }
   ]
 }

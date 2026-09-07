@@ -10,6 +10,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
+import { buildForwardMessagesRequest } from '../../util/forwardMessagesRequest';
 
 // "Forward to…" chat picker, extracted from ChatPage.
 //
@@ -32,6 +33,7 @@ export struct ForwardSheet {
   messageIds: number[] = [];
   sourceChatId: number = 0;
   threadRootId: number = 0;
+  @Prop canRemoveCaption: boolean = false;
 
   // Read directly rather than passed down — same source the page uses, so the
   // padding still tracks the keyboard while the search box has focus.
@@ -47,6 +49,8 @@ export struct ForwardSheet {
   @State query: string = '';
   @State loadState: string = 'ready'; // loading | ready | error
   @State sendingChatId: number = 0;
+  @State sendCopy: boolean = false;
+  @State removeCaption: boolean = false;
 
   // Guards async continuations against a sheet that has since been closed or
   // reopened. Kept even though the component is destroyed on close: a request
@@ -144,22 +148,22 @@ export struct ForwardSheet {
     if (this.sendingChatId !== 0 || this.messageIds.length === 0) {
       return;
     }
-    // 必须升序且不重复：TDLib 对 forwardMessages 的原话是"Message identifiers
-    // must be in a strictly increasing order"，多选是按点击顺序攒的，从下往上
-    // 选就是递减，请求直接被拒。单条永远"有序"，所以这个坑只在多条时露出来。
-    // 排序放在这里而不是选择那侧：这里是和 TDLib 的边界，任何调用方都得过。
-    const ids: number[] = [...this.messageIds]
-      .sort((a: number, b: number): number => a - b)
-      .filter((id: number, i: number, arr: number[]): boolean => i === 0 || id !== arr[i - 1]);
+    const req: TdRequest | null = buildForwardMessagesRequest({
+      toChatId: chat.id,
+      fromChatId: this.sourceChatId,
+      messageIds: this.messageIds,
+      threadRootId: this.threadRootId,
+      sendCopy: this.sendCopy,
+      removeCaption: this.removeCaption,
+      canRemoveCaption: this.canRemoveCaption
+    });
+    if (req === null) {
+      return;
+    }
+    // The request builder owns TDLib's strict ascending/unique-id boundary.
+    const ids: number[] = req['message_ids'] as number[];
     const seq: number = this.seq;
     this.sendingChatId = chat.id;
-    const req: TdRequest = { '@type': 'forwardMessages' };
-    req['chat_id'] = chat.id;
-    req['message_thread_id'] = chat.id === this.sourceChatId ? this.threadRootId : 0;
-    req['from_chat_id'] = this.sourceChatId;
-    req['message_ids'] = ids;
-    req['send_copy'] = false;
-    req['remove_caption'] = false;
     getTdClient().send(req).then((result: TdObject): void => {
       // 诊断：反馈"多图消息转发过去变成一张一张"。相册要么在请求这一侧就没
       // 成组，要么 TDLib 成了组而我们没渲染成组——两者的修法完全不同，靠读
@@ -206,6 +210,25 @@ export struct ForwardSheet {
     .scale({ x: 0.985, y: 0.96 })
   }
 
+  @Builder
+  forwardOptionRow(label: ResourceStr, isOn: boolean, enabled: boolean,
+    onChange: (next: boolean) => void) {
+    Row() {
+      Text(label)
+        .fontSize(14)
+        .fontColor(COLOR_TEXT_PRIMARY)
+        .layoutWeight(1)
+        .maxLines(2);
+      Toggle({ type: ToggleType.Switch, isOn: isOn })
+        .selectedColor(COLOR_PRIMARY)
+        .enabled(enabled)
+        .onChange((next: boolean): void => onChange(next));
+    }
+    .width('100%')
+    .height(42)
+    .opacity(enabled ? 1 : 0.45);
+  }
+
   build() {
     Column() {
       Column().layoutWeight(1)
@@ -241,6 +264,24 @@ export struct ForwardSheet {
           .padding({ left: 14, right: 14 })
           .backgroundColor($r('app.color.surface_alt')).borderRadius(20)
           .onChange((value: string): void => { this.query = value; });
+        Column() {
+          this.forwardOptionRow($r('app.string.fw_send_copy'), this.sendCopy, true,
+            (next: boolean): void => {
+              this.sendCopy = next;
+              if (!next) {
+                this.removeCaption = false;
+              }
+            });
+          if (this.canRemoveCaption) {
+            Divider().strokeWidth(0.5).color($r('app.color.divider'));
+            this.forwardOptionRow($r('app.string.fw_remove_caption'), this.removeCaption,
+              this.sendCopy, (next: boolean): void => { this.removeCaption = next; });
+          }
+        }
+        .width('100%')
+        .padding({ left: 12, right: 8 })
+        .backgroundColor($r('app.color.surface_alt'))
+        .borderRadius(12);
         if (this.loadState === 'loading') {
           Column({ space: 10 }) {
             LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);

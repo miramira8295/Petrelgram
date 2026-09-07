@@ -2,7 +2,7 @@ import { IDataSourcePrefetching } from '@kit.ArkUI';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { mediaBoxFor } from '../../util/mediaBox';
 import { cancelPixelMap, loadPixelMap, PixelRequest } from '../../util/pixelCache';
-import { chatContentWidth } from '../../util/chatContentWidth';
+import { messageSelectionContentWidth } from '../../util/messageSelection';
 
 // 图片预取源 —— **不再是 LazyForEach 的数据源**（P4：列表已换成 Repeat）。
 //
@@ -251,6 +251,11 @@ export function clampPrefetchRange(start: number, end: number, total: number): P
 // 部分——它现在只是 BasicPrefetcher 的数据面，不再是列表的数据源。
 export class AlbumGroupDataSource implements IDataSourcePrefetching {
   private groups: AlbumGroup[] = [];
+  private contentWidth: number = 360;
+  private selectionActive: boolean = false;
+  // cancel() must use the exact key prefetch() loaded. A selection/resize
+  // relayout changes the derived size before BasicPrefetcher cancels old work.
+  private activeRequests: Map<number, PixelRequest> = new Map<number, PixelRequest>();
 
   // BasicPrefetcher 注册进来的变更监听器。
   //
@@ -303,6 +308,18 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
     }
   }
 
+  // Page-owned geometry. A changed layout invalidates BasicPrefetcher's fetched
+  // index ledger so upcoming rows are decoded at the same size as the bubbles.
+  setLayoutContext(contentWidth: number, selectionActive: boolean): void {
+    const nextWidth: number = contentWidth > 0 ? contentWidth : this.contentWidth;
+    if (nextWidth === this.contentWidth && selectionActive === this.selectionActive) {
+      return;
+    }
+    this.contentWidth = nextWidth;
+    this.selectionActive = selectionActive;
+    this.notifyReloaded();
+  }
+
   private notifyReloaded(): void {
     // 先拿快照再遍历：监听器在回调里注销自己是允许的。
     const current: DataChangeListener[] = this.listeners;
@@ -333,27 +350,42 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       (head.contentType !== 'photo' && head.contentType !== 'video')) {
       return null;
     }
-    // 内容列宽而不是窗口宽：必须和 MessageBubble 算出同一个尺寸，像素缓存按
-    // 尺寸建 key，差一像素就是两份解码（见 util/mediaBox 文件头）。
-    const screenW = chatContentWidth();
-    if (screenW <= 0) {
+    // 内容列宽还要扣掉多选复选框槽位：必须和 MessageBubble 算出同一个尺寸，
+    // 像素缓存按尺寸建 key，差一像素就是两份解码（见 util/mediaBox 文件头）。
+    const availableWidth: number = messageSelectionContentWidth(
+      this.contentWidth, this.selectionActive, head.contentType);
+    if (availableWidth <= 0) {
       return null;
     }
-    const box = mediaBoxFor(screenW, head.photoWidth, head.photoHeight,
+    const box = mediaBoxFor(availableWidth, head.photoWidth, head.photoHeight,
       head.contentType === 'video');
     return { path: head.photoPath, width: vp2px(box.width), height: vp2px(box.height) };
   }
 
+  private sameRequest(a: PixelRequest, b: PixelRequest): boolean {
+    return a.path === b.path && a.width === b.width && a.height === b.height;
+  }
+
   prefetch(index: number): void {
-    const req = this.imageRequestFor(index);
+    const req: PixelRequest | null = this.imageRequestFor(index);
+    const previous: PixelRequest | undefined = this.activeRequests.get(index);
+    if (previous !== undefined && req !== null && this.sameRequest(previous, req)) {
+      return;
+    }
+    if (previous !== undefined) {
+      cancelPixelMap(previous);
+      this.activeRequests.delete(index);
+    }
     if (req !== null) {
+      this.activeRequests.set(index, req);
       loadPixelMap(req);
     }
   }
 
   cancel(index: number): void {
-    const req = this.imageRequestFor(index);
-    if (req !== null) {
+    const req: PixelRequest | undefined = this.activeRequests.get(index);
+    this.activeRequests.delete(index);
+    if (req !== undefined) {
       cancelPixelMap(req);
     }
   }

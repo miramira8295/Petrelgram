@@ -11839,6 +11839,14 @@
     {
       "name": "gif_section_trending",
       "value": "Популярні GIF"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "Приховати джерело (надіслати копію)"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "Видалити підпис"
     }
   ]
 }

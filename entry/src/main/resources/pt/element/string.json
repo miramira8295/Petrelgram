@@ -11839,6 +11839,14 @@
     {
       "name": "gif_section_trending",
       "value": "GIFs em alta"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "Ocultar origem (enviar como cópia)"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "Remover legenda"
     }
   ]
 }

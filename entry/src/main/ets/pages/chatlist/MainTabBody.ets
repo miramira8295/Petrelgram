@@ -32,6 +32,12 @@ import {
   RETAP_SMOOTH_SPAN, smoothJumpStage
 } from '../../util/tabReTap';
 import { markAsRead, markUnread, setArchived, setMute, MUTE_LONG } from '../../store/ChatActions';
+import {
+  CHAT_SWIPE_ACTION_HEIGHT, CHAT_SWIPE_BUTTON_VP, CHAT_SWIPE_COMMIT_DELAY_MS, CHAT_SWIPE_EDGE_EFFECT,
+  CHAT_SWIPE_RADIUS_VP, CHAT_SWIPE_TRIGGER_VP, CHAT_SWIPE_VERTICAL_GUTTER_VP,
+  ChatSwipeActionVisual,
+  archiveSwipeVisual, muteSwipeVisual, readSwipeVisual
+} from '../../util/chatListSwipe';
 
 // 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
 // 长得和会话行一个个头，拉出来时才不显得是另一种东西。
@@ -55,14 +61,6 @@ const ARCHIVE_OVERPULL: number = 96;
 //
 // 原值是 ARCHIVE_ROW_HEIGHT * 2（144vp）——那 144vp 就是重叠暴露的那段窗口。
 const ARCHIVE_COLLAPSE_SCROLL: number = 8;
-
-// 与 ChatListView 保持同一套滑动规格。主列表和文件夹列表是两个独立组件，
-// 交互设置必须分别接入，不能只在文件夹列表上挂 swipeAction。
-const SWIPE_BUTTON_VP: number = 76;
-const SWIPE_TRIGGER_VP: number = 76;
-const SWIPE_READ_BG: string = '#3390EC';
-const SWIPE_MUTE_BG: string = '#8E8E93';
-const SWIPE_ARCHIVE_BG: string = '#F09A37';
 
 @Preview
 @Component
@@ -301,18 +299,29 @@ export struct MainTabBody {
     setMute(chat.id, this.rowMuted(chat) ? 0 : MUTE_LONG);
   }
 
+  private commitSwipeAction(action: () => void): void {
+    setTimeout((): void => {
+      action();
+      this.listScroller.closeAllSwipeActions();
+    }, CHAT_SWIPE_COMMIT_DELAY_MS);
+  }
+
   @Builder
   readSwipe(chat: ChatEntry) {
     Row() {
       this.swipeButton(
         this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
-        this.rowUnread(chat) ? 'sys.symbol.checkmark_circle' : 'sys.symbol.circle_badge',
-        SWIPE_READ_BG,
+        readSwipeVisual(this.rowUnread(chat)),
         (): void => this.toggleRead(chat));
     }
-    .height('calc(100% - 6vp)')
-    .margin({ left: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
-    .borderRadius(16)
+    .height(CHAT_SWIPE_ACTION_HEIGHT)
+    .margin({
+      left: CHAT_ROW_SIDE_GUTTER,
+      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+    })
+    .backgroundColor(readSwipeVisual(this.rowUnread(chat)).background)
+    .borderRadius(CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
@@ -321,30 +330,37 @@ export struct MainTabBody {
     Row() {
       this.swipeButton(
         this.rowMuted(chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
-        this.rowMuted(chat) ? 'sys.symbol.bell' : 'sys.symbol.bell_slash',
-        SWIPE_MUTE_BG,
+        muteSwipeVisual(this.rowMuted(chat)),
         (): void => this.toggleMute(chat));
       this.swipeButton(
         $r('app.string.cl_archive'),
-        'sys.symbol.archivebox',
-        SWIPE_ARCHIVE_BG,
+        archiveSwipeVisual(false),
         (): void => this.toggleArchive(chat));
     }
-    .height('calc(100% - 6vp)')
-    .margin({ right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
-    .borderRadius(16)
+    .height(CHAT_SWIPE_ACTION_HEIGHT)
+    .margin({
+      right: CHAT_ROW_SIDE_GUTTER,
+      top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
+      bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
+    })
+    .backgroundColor(archiveSwipeVisual(false).background)
+    .borderRadius(CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
   @Builder
-  swipeButton(label: ResourceStr, icon: string, background: ResourceColor, action: () => void) {
+  swipeButton(label: ResourceStr, visual: ChatSwipeActionVisual, action: () => void) {
     Column({ space: 4 }) {
-      SymbolGlyph($r(icon)).fontSize(20).fontColor([Color.White]);
-      Text(label).fontSize(11).fontColor(Color.White).maxLines(1);
+      SymbolGlyph($r(visual.symbol)).fontSize(20).fontColor([Color.White]);
+      Text(label)
+        .width('100%')
+        .fontSize(11).fontColor(Color.White)
+        .textAlign(TextAlign.Center)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
     }
-    .width(SWIPE_BUTTON_VP).height('100%')
+    .width(CHAT_SWIPE_BUTTON_VP).height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(background)
+    .backgroundColor(visual.background)
     .onClick((): void => {
       this.listScroller.closeAllSwipeActions();
       action();
@@ -496,14 +512,19 @@ export struct MainTabBody {
           .swipeAction(this.rowSwipeEnabled ? {
             start: {
               builder: (): void => { this.readSwipe(item); },
-              actionAreaDistance: SWIPE_TRIGGER_VP,
-              onAction: (): void => { this.toggleRead(item); }
+              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+              onAction: (): void => {
+                this.commitSwipeAction((): void => this.toggleRead(item));
+              }
             },
             end: {
               builder: (): void => { this.endSwipe(item); },
-              actionAreaDistance: SWIPE_TRIGGER_VP,
-              onAction: (): void => { this.toggleArchive(item); }
-            }
+              actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
+              onAction: (): void => {
+                this.commitSwipeAction((): void => this.toggleArchive(item));
+              }
+            },
+            edgeEffect: CHAT_SWIPE_EDGE_EFFECT
           } as SwipeActionOptions : {} as SwipeActionOptions)
       }, (item: ChatEntry, index: number) =>
         guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));

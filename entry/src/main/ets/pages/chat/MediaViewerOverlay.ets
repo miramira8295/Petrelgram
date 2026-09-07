@@ -11,6 +11,7 @@ import { AlbumGroup } from '../../util/collapseAlbums';
 import { formatTime } from '../../util/formatTime';
 import { VideoPlayerHost } from './VideoPlayerHost';
 import { isLivePhotoVideo } from '../../util/livePhoto';
+import { extractLiveStill } from '../../util/livePhotoEmbed';
 import { extractFirstFrame, saveMovingPhoto } from '../../util/livePhotoSave';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { promptAction } from '@kit.ArkUI';
@@ -124,6 +125,16 @@ export struct MediaViewerOverlay {
   // 「@Event 装饰的回调方法中参数以及返回值由开发者决定」——带返回值是允许的。
   @Event onRequestClose: () => void = (): void => {};
   @Event onSaveMedia: () => void = (): void => {};
+  // 实况打开时把整段视频**下全**。
+  //
+  // 【为什么必须提前下】播放走的是 StreamingVideoPlayer 流式，不需要本地文件，
+  // 所以 entry.videoPath 一直是空；而存回图库要真实文件（抽帧/取夹带都要）。
+  // 结果就是保存按钮永远弹「正在下载」而没有任何人去下载它——死路（真机实测
+  // 2026-09-07：日志里只有 saveLiveToGallery: video not downloaded yet）。
+  //
+  // 又不能在保存回调里边下边等：那份写权限只在 SaveButton 的这一次 onClick 内
+  // 有效（见 util/livePhotoSave 文件头）。所以只能在**打开的时候**就下。
+  @Event onEnsureLiveDownload: (messageId: number) => void = (): void => {};
   // 保存到文件（首次授权 Download，之后保存到 Download/Petrelgram）——issue #97/#65。
   @Event onSaveMediaToFiles: () => void = (): void => {};
   // Viewer→bubble handoff (the other direction): the page samples this on
@@ -555,6 +566,7 @@ export struct MediaViewerOverlay {
     this.livePlaying = false;
     this.viewerMsgId = landing;
     this.onViewerMsgIdChange(landing);
+    this.ensureLiveDownload(landing);
     this.pageIdx = dir > 0 ? 0 : g.memberIds.length - 1;
     this.prefetchNeighbours(this.pageIdx);
     // 缩略图条的内容随 viewerMsgId 自动换掉，但滚动偏移不会——手动带回去。
@@ -734,6 +746,7 @@ export struct MediaViewerOverlay {
     this.pageIdx = index;
     this.viewerMsgId = id;
     this.onViewerMsgIdChange(id);
+    this.ensureLiveDownload(id);
     if (this.store !== null && !this.siblingIsVideo(id)) {
       // 翻到的这一张就是用户此刻正盯着的那一个文件——最高档，压过邻图预取(8)
       // 与后台缩略图(16)。这张多半是刚才以 8 预取过的，store 会补发一次
@@ -773,6 +786,22 @@ export struct MediaViewerOverlay {
   // **只改这个初值没有用**——播放器一 start 就会经 onPlayStateChanged 把它翻回
   // 来，必须和 StreamingVideoPlayer 侧的 liveMode 分支配套。
   @Local private livePlaying: boolean = false;
+
+  // 只对实况、且还没有本地文件的那条发一次下载请求。已经下过或正在下的由
+  // MessageStore 自己去重，这里只挡住"每次翻页都重复喊一遍"。
+  private liveDownloadAsked: number = 0;
+
+  private ensureLiveDownload(id: number): void {
+    if (id <= 0 || !this.isLiveEntry(id) || this.liveDownloadAsked === id) {
+      return;
+    }
+    const idx: number = this.messages.findIndex((m: MessageEntry) => m.id === id);
+    if (idx < 0 || this.messages[idx].videoPath !== '') {
+      return;
+    }
+    this.liveDownloadAsked = id;
+    this.onEnsureLiveDownload(id);
+  }
 
   private isLiveEntry(id: number): boolean {
     const idx: number = this.messages.findIndex((m: MessageEntry) => m.id === id);
@@ -934,8 +963,20 @@ export struct MediaViewerOverlay {
     try {
       // 静图那一半从视频里抽首帧，而不是拿 TDLib 的缩略图——缩略图只有几百像素
       // 宽，而这张就是用户之后在图库里看到的照片。
-      const ok: boolean = await extractFirstFrame(
-        video, still, this.videoWidth(), this.videoHeight());
+      //
+      // **不再把消息声明的宽高传进去**（issue #193）：实况这条路上那对值被填成了
+      // 静图尺寸（全传感器几千万像素），抽帧会把 1080p 的视频帧放大上去，存进
+      // 图库就是糊的。抽帧一律按原生分辨率，见 extractFirstFrame 的注释。
+      //
+      // 先试夹带的原图：PG 发的实况在 mp4 尾部藏了全尺寸静图（util/livePhotoBox）。
+      // 取到就用它——那才是真正的原图；取不到（对方不是 PG 发的、或者服务端没有
+      // 原样保存字节）就退回抽帧，行为和以前一致。
+      // ⚠️ 这也是「字节存活实验」的观测点：日志 [LiveBox] found / no embedded
+      // 直接回答"夹带能不能活着回来"。
+      let ok: boolean = await extractLiveStill(video, still);
+      if (!ok) {
+        ok = await extractFirstFrame(video, still);
+      }
       if (!ok) {
         promptAction.showToast({ message: str('media_save_failed'), duration: 1800 });
         return;

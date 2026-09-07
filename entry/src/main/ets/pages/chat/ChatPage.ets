@@ -7,6 +7,7 @@ import { setScrollActive } from '../../util/scrollEffects';
 import { rememberRecentSticker } from '../../store/StickerApi';
 import { openMiniApp } from '../../store/BotApi';
 import { InlineResultRow, sendInlineResult } from '../../store/BotApi';
+import { clearEditableCache } from '../../util/messageEditable';
 import { common } from '@kit.AbilityKit';
 import { PickedContact } from './ContactPickerSheet';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -103,7 +104,9 @@ import {
 import {
   TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR
 } from '../../util/timelineState';
-import { forwardableIds } from '../../util/messageSelection';
+import {
+  forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth, rowSelectable
+} from '../../util/messageSelection';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
 // cancelEdit/draftToRestore：commitEdit（留页面）用来把编辑态摊回 idle。
 // ComposerMode/clearReply/enterEdit/enterReply/idleComposer 随 composerMode
@@ -1226,6 +1229,8 @@ export struct ChatPage {
     // row every second; the live clock itself is passed outside the cache.
     const menuEditable: boolean = g.head.isOutgoing && this.nowSec - g.head.date < 172800;
     const pollExpired: boolean = g.head.pollCloseDate > 0 && this.nowSec >= g.head.pollCloseDate;
+    const contentWidth: number = messageSelectionContentWidth(
+      this.chatContentWidth, this.selection.active, g.head.contentType);
     const cacheKey: string = `${this.rowKeyOf(g)}|c${this.chatId}` +
       `|g${this.isGroup ? 1 : 0}${this.isChannel ? 1 : 0}` +
       `|u${showUnreadDivider ? 1 : 0}|r${showResumeDivider ? 1 : 0}` +
@@ -1238,7 +1243,8 @@ export struct ChatPage {
       `|slot${rowSlot}|slotms${rowSlotStartMs}` +
       `|mute${this.autoplayMuted ? 1 : 0}|msg${audio ? this.messageListRevision : 0}` +
       `|bg${this.chatBackgroundRevision}|appearance${this.appearanceEpoch}` +
-      `|material${this.materialEpoch}|dark${this.appDark ? 1 : 0}`;
+      `|material${this.materialEpoch}|dark${this.appDark ? 1 : 0}` +
+      `|select${this.selection.active ? 1 : 0}|width${contentWidth}`;
     const cached: PreparedMessageBubble | undefined = this.preparedMessageCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
@@ -1285,7 +1291,7 @@ export struct ChatPage {
     };
     const lightweightPlainText: boolean = canRenderLightweightPlainText(g.head, context);
     const data: MessageBubbleRenderData = {
-      chatId: this.chatId, isGroup: this.isGroup, isChannel: this.isChannel,
+      chatId: this.chatId, contentWidth, isGroup: this.isGroup, isChannel: this.isChannel,
       liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
       showUnreadDivider: showTimelineDivider,
       dividerIsResume: showResumeDivider,
@@ -1434,6 +1440,7 @@ export struct ChatPage {
   // 聊天设置 → 回车键发送.
   @Require @Param sendByEnter: boolean = false;
   @Require @Param screenW: number = 360;
+  @Require @Param chatContentWidth: number = 360;
   private lastScreenW: number = 0;
   @Require @Param screenH: number = 780;
   @Require @Param powerSaving: boolean = false;
@@ -1984,6 +1991,9 @@ export struct ChatPage {
     this.messages = [];
     this.messageListRevision++;
     this.preparedMessageCache.clear();
+    // 「能不能编辑」的答案按 messageId 缓存，而 messageId 在别的会话里是另一条
+    // 消息——换会话必须清，否则会把上一个会话的判断带过来（issue #179）。
+    clearEditableCache();
     this.messageLoadError = '';
     this.olderLoadState = 'idle';
     this.newerLoadState = 'idle';
@@ -2236,8 +2246,12 @@ export struct ChatPage {
     this.selection.bind({
       chatTgsScrollActive: (): boolean => this.chatTgsScrollActive,
       closeReactionSheet: (): void => { this.overlayState.closeReactionSheet(); },
-      setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); }
+      setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); },
+      onActiveChange: (active: boolean): void => {
+        this.groupsData.setLayoutContext(this.chatContentWidth, active);
+      }
     });
+    this.groupsData.setLayoutContext(this.chatContentWidth, this.selection.active);
     // 输入框上方那一条（回复/编辑）控制器接上宿主（B9）。headerTitle 是
     // HeaderIdentitySession（B8）title 的转发——控制器之间不互相持有引用，
     // 只经页面这个宿主中转；draft/pendingMedia 等留页面的字段只经取值器/
@@ -3732,6 +3746,11 @@ export struct ChatPage {
       this.lastScreenW = this.screenW;
     }
     this.replaceTimelineGroups(this.groups);
+  }
+
+  @Monitor('chatContentWidth')
+  private onChatContentWidthChanged(): void {
+    this.groupsData.setLayoutContext(this.chatContentWidth, this.selection.active);
   }
 
   // 判定本身在 util/atBottom（10 条测）：那里记着两条上线过的 bug——
@@ -7038,8 +7057,7 @@ export struct ChatPage {
         Stack({ alignContent: Alignment.Start }) {
           // Selection mode shifts the row right into a left check gutter.
           Row() {
-            if (this.selection.active && ri.item.head.contentType !== 'system' &&
-              ri.item.head.contentType !== 'hidden') {
+            if (this.selection.active && rowSelectable(ri.item.head.contentType)) {
               Column() {
                 if (this.selection.isRowSelected(ri.item)) {
                   SymbolGlyph($r('sys.symbol.checkmark_circle'))
@@ -7050,7 +7068,7 @@ export struct ChatPage {
                     .border({ width: 1.5, color: '#8E8E93' });
                 }
               }
-              .width(34)
+              .width(MESSAGE_SELECTION_GUTTER_VP)
               .justifyContent(FlexAlign.Center)
               .alignItems(HorizontalAlign.Center);
             }
@@ -7059,8 +7077,7 @@ export struct ChatPage {
             }
             .layoutWeight(1)
             // BLOCK_DESCENDANTS keeps the outer List draggable in selection mode.
-            .hitTestBehavior(this.selection.active && ri.item.head.contentType !== 'system' &&
-              ri.item.head.contentType !== 'hidden'
+            .hitTestBehavior(this.selection.active && rowSelectable(ri.item.head.contentType)
               ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
           }
           .width('100%')
@@ -7201,6 +7218,14 @@ export struct ChatPage {
       // S2：entry 由页面在这里取好传进去，MediaSaveState 不再经宿主取值器
       // 现读 viewerMsgId（见该文件 saveMediaEntry 上方的说明）。
       onSaveMedia: (): void => { this.saveCurrentViewerMedia(false); },
+      // 实况打开即下全片：存回图库要真实文件，而流式播放不会产生它。
+      // 理由见 MediaViewerOverlay.onEnsureLiveDownload 的注释。
+      onEnsureLiveDownload: (messageId: number): void => {
+        const entry = this.entryById(messageId);
+        if (entry !== null && this.store !== null) {
+          this.store.requestVideoDownload(messageId, true, entry.videoFailed);
+        }
+      },
       onSaveMediaToFiles: (): void => { this.saveCurrentViewerMedia(true); },
       onPositionChanged: (positionMs: number): void => { this.viewerPositionMs = positionMs; }
     });

@@ -53,3 +53,9 @@ export function membershipStateOf(input: MemberStatusInput): string {
 export function membershipLosesComposer(state: string): boolean {
   return state !== MEMBERSHIP_WRITABLE;
 }
+
+// 只读频道的静音开关是一个短动作，视觉上收成内容宽胶囊；其余状态承载的是
+// 加入进度或说明文字，继续使用整行底板。未知状态也走整行，避免新状态被意外压窄。
+export function membershipBarUsesCompactSurface(state: string): boolean {
+  return state === MEMBERSHIP_READONLY;
+}

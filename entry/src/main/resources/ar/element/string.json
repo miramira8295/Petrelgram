@@ -11839,6 +11839,14 @@
     {
       "name": "gif_section_trending",
       "value": "صور GIF الرائجة"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "إخفاء المصدر (إرسال كنسخة)"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "إزالة التسمية التوضيحية"
     }
   ]
 }

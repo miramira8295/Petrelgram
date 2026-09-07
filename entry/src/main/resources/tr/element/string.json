@@ -11839,6 +11839,14 @@
     {
       "name": "gif_section_trending",
       "value": "Popüler GIF'ler"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "Kaynağı gizle (kopya olarak gönder)"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "Açıklamayı kaldır"
     }
   ]
 }

@@ -45,7 +45,7 @@ export struct ScrollFab {
 
   build() {
     Stack() {
-      Button() {
+      Button({ type: ButtonType.Circle }) {
         if (this.busy) {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
         } else {
@@ -54,14 +54,15 @@ export struct ScrollFab {
             .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         }
       }
-      .width(46).height(46).borderRadius(23)
+      .width(46).height(46)
+      .border({ width: 0.7, color: $r('app.color.divider') })
+      .borderRadius(23)
       .stateStyles({ normal: this.fabNormalStyle, pressed: this.fabPressedStyle })
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
         curve: Curve.EaseOut
       })
       .backdropBlur(overlayBackdropBlur('card'))
-      .border({ width: 0.7, color: $r('app.color.divider') })
       .attributeModifier(materialModifier('card'))
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
       .enabled(!this.busy)

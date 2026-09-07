@@ -71,6 +71,7 @@ export interface SelectionSessionHost {
   // 面板、收起底部表情/贴纸抽屉。
   closeReactionSheet: () => void;
   setEmojiPanel: (show: boolean) => void;
+  onActiveChange: (active: boolean) => void;
 }
 
 @ObservedV2
@@ -86,7 +87,8 @@ export class SelectionSession {
   private host: SelectionSessionHost = {
     chatTgsScrollActive: (): boolean => false,
     closeReactionSheet: (): void => {},
-    setEmojiPanel: (_show: boolean): void => {}
+    setEmojiPanel: (_show: boolean): void => {},
+    onActiveChange: (_active: boolean): void => {}
   };
 
   // ChatPage.aboutToAppear 里调一次。
@@ -116,8 +118,8 @@ export class SelectionSession {
     this.host.closeReactionSheet();
     this.host.setEmojiPanel(false);
     this.animateSelection((): void => {
-      this.active = true;
       this.ids = toggleRow([], memberIds);
+      this.setActive(true);
     });
   }
 
@@ -138,8 +140,16 @@ export class SelectionSession {
   // 不带动画的裸改，供已经在 animateSelection 闭包里的调用点用（原
   // clearSelectionState）。
   private clearState(): void {
-    this.active = false;
     this.ids = [];
+    this.setActive(false);
+  }
+
+  private setActive(active: boolean): void {
+    if (this.active === active) {
+      return;
+    }
+    this.active = active;
+    this.host.onActiveChange(active);
   }
 
   // resetMessageActionSession 里 selecting/selectedIds 那半的搬迁落点（B7）。

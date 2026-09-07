@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  forwardableIds, pruneSelection, rowSelectable, rowSelected, toggleRow
+  forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth,
+  pruneSelection, rowSelectable, rowSelected, toggleRow
 } from '../main/ets/util/messageSelection';
 
 // 选中的单位是"行"不是消息：相册行整体选中或整体不选。
@@ -77,6 +78,20 @@ export default function messageSelectionTest() {
 
     it('未知 id 当作可转发，由上层去查真伪', 0, () => {
       expect(forwardableIds([42], (_id: number): string => 'text')).assertDeepEquals([42]);
+    });
+
+    it('多选消息宽度扣除与复选框相同的槽位', 0, () => {
+      expect(messageSelectionContentWidth(360, true, 'photo'))
+        .assertEqual(360 - MESSAGE_SELECTION_GUTTER_VP);
+      expect(messageSelectionContentWidth(960, true, 'text'))
+        .assertEqual(960 - MESSAGE_SELECTION_GUTTER_VP);
+    });
+
+    it('正常态和不可选行保留完整内容宽度', 0, () => {
+      expect(messageSelectionContentWidth(360, false, 'video')).assertEqual(360);
+      expect(messageSelectionContentWidth(360, true, 'system')).assertEqual(360);
+      expect(messageSelectionContentWidth(360, true, 'hidden')).assertEqual(360);
+      expect(messageSelectionContentWidth(20, true, 'photo')).assertEqual(0);
     });
   });
 }

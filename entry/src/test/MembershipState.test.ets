@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  MEMBERSHIP_BLOCKED, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY, MEMBERSHIP_WRITABLE,
-  MemberStatusInput, membershipLosesComposer, membershipStateOf
+  MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY,
+  MEMBERSHIP_WRITABLE, MemberStatusInput, membershipBarUsesCompactSurface,
+  membershipLosesComposer, membershipStateOf
 } from '../main/ets/util/membershipState';
 
 function input(
@@ -73,6 +74,19 @@ export default function membershipStateTest() {
       expect(membershipLosesComposer(MEMBERSHIP_JOINABLE)).assertTrue();
       expect(membershipLosesComposer(MEMBERSHIP_BLOCKED)).assertTrue();
       expect(membershipLosesComposer(MEMBERSHIP_READONLY)).assertTrue();
+    });
+
+    it('只有只读频道的静音动作使用紧凑底板', 0, () => {
+      expect(membershipBarUsesCompactSurface(MEMBERSHIP_READONLY)).assertTrue();
+      expect(membershipBarUsesCompactSurface(MEMBERSHIP_WRITABLE)).assertFalse();
+      expect(membershipBarUsesCompactSurface(MEMBERSHIP_JOINABLE)).assertFalse();
+      expect(membershipBarUsesCompactSurface(MEMBERSHIP_BLOCKED)).assertFalse();
+      expect(membershipBarUsesCompactSurface(MEMBERSHIP_CHECKING)).assertFalse();
+      // bot、密聊和未来新增的说明态都必须保留整行，未知值不能误收窄。
+      expect(membershipBarUsesCompactSurface('botStart')).assertFalse();
+      expect(membershipBarUsesCompactSurface('secretPending')).assertFalse();
+      expect(membershipBarUsesCompactSurface('secretClosed')).assertFalse();
+      expect(membershipBarUsesCompactSurface('futureState')).assertFalse();
     });
   });
 }

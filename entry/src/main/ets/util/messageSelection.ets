@@ -12,8 +12,21 @@
 // 系统消息和被隐藏的消息不参与多选——它们没有可转发/可复制的内容。
 const UNSELECTABLE: string[] = ['system', 'hidden'];
 
+// The checkbox lives beside the message renderer, so every width-derived
+// surface inside that renderer must use the remaining content width. Keeping
+// the value here prevents the row slot, bubbles and media prefetcher drifting.
+export const MESSAGE_SELECTION_GUTTER_VP: number = 34;
+
 export function rowSelectable(contentType: string): boolean {
   return UNSELECTABLE.indexOf(contentType) < 0;
+}
+
+export function messageSelectionContentWidth(
+  contentWidth: number, selectionActive: boolean, contentType: string
+): number {
+  const inset: number = selectionActive && rowSelectable(contentType)
+    ? MESSAGE_SELECTION_GUTTER_VP : 0;
+  return Math.max(0, contentWidth - inset);
 }
 
 // 这一行有没有被选中。任意一个 member 在集合里就算整行选中——半选状态在

@@ -671,6 +671,20 @@ export struct ProxyPage {
       if (!this.active || sequence !== this.operationSequence) { return; }
       this.actionKey = '';
       if (this.preferredProxyId === entry.id) { this.preferredProxyId = 0; }
+      // **删除必须同时把它从镜像里摘掉，而且要赶在 load() 之前**（issue #195：
+      // 「提示删除成功，但是仍旧显示，即使杀掉后台重新进入」）。
+      //
+      // 链条是这样的：删掉**最后一个**代理后 listProxies() 返回空数组，
+      // restoreMirrored() 正是拿"清单为空"当作"这个账号还没继承过代理"的信号，
+      // 于是把镜像里的全部条目 addProxy 加回来；load() 收尾又用补回来之后的清单
+      // 重写镜像，于是镜像永远清不掉、每次进页面都重演。删除提示本身是诚实的
+      // ——TDLib 那一侧确实删掉了，只是同一次刷新里被我们自己加了回去。
+      //
+      // 镜像的本意是"换账号时继承你的代理"，它分不清"这个账号从来没有过"和
+      // "用户刚刚全删了"。用户的删除是明确意图，必须落到镜像上。
+      const remaining: ProxyEntry[] =
+        before.filter((item: ProxyEntry): boolean => item.id !== entry.id);
+      setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(remaining, this.syncOff())));
       promptAction.showToast({ message: $r('app.string.px_deleted'), duration: 1300 });
       this.load(false);
     } catch (caught) {

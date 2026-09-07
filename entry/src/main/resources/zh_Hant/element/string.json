@@ -11855,6 +11855,14 @@
     {
       "name": "gif_section_trending",
       "value": "熱門 GIF"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "隱藏來源（作為副本）"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "移除說明文字"
     }
   ]
 }

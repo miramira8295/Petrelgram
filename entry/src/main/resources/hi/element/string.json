@@ -11839,6 +11839,14 @@
     {
       "name": "gif_section_trending",
       "value": "ट्रेंडिंग GIF"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "स्रोत छिपाएँ (कॉपी के रूप में भेजें)"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "कैप्शन हटाएँ"
     }
   ]
 }

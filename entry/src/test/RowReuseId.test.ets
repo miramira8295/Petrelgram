@@ -54,6 +54,7 @@ interface RenderDataOverrides {
 function renderData(over: RenderDataOverrides = {}): MessageBubbleRenderData {
   return {
     chatId: 1,
+    contentWidth: 360,
     isGroup: over.isGroup ?? false,
     isChannel: false,
     liveSharingId: 0,

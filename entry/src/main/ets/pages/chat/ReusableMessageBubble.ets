@@ -82,6 +82,9 @@ export interface MessageBubbleActions {
 
 export interface MessageBubbleRenderData {
   chatId: number;
+  // Actual row width after page-local chrome such as the multi-select gutter.
+  // Media, albums and both bubble renderers derive every cap from this value.
+  contentWidth: number;
   isGroup: boolean;
   isChannel: boolean;
   liveSharingId: number;
@@ -283,6 +286,7 @@ export struct ReusableMessageBubble {
         msg: this.currentGroup().head,
         nowSec: this.nowSec,
         chatId: this.data.chatId,
+        contentWidth: this.data.contentWidth,
         isGroup: this.data.isGroup,
         themeBubbleOut: this.data.themeBubbleOut,
         showUnreadDivider: this.data.showUnreadDivider,

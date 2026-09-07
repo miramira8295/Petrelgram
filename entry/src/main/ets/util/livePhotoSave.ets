@@ -30,8 +30,23 @@ export const MOVING_PHOTO_MAX_SECONDS: number = 10;
 // 【为什么不用现成的缩略图】TDLib 给的视频缩略图只有几百像素宽，而动态照片的
 // 静图就是用户在图库里看到的那张——低清的存回去等于毁了这张照片。抽首帧拿到的
 // 是原始分辨率。
-export async function extractFirstFrame(videoPath: string, destJpg: string,
-  width: number, height: number): Promise<boolean> {
+//
+// 【为什么一律按原生尺寸抽，不再接受调用方给的宽高】（issue #193：「保存的动态
+// 图片分辨率会降低，特模糊，感觉不是同一个图片一样」）
+//
+// 原来这里把调用方传的 width/height 交给 fetchFrameByTime，而调用方
+// （MediaViewerOverlay.saveLiveToGallery）传的是**消息里声明的**视频宽高。
+// 那对值在实况这条路上被填成了**静图的尺寸**——华为实况的静图是全传感器分辨率
+// （几千万像素），动态部分只有 1080p 级别。于是这里把 1080p 的帧**放大**到
+// 4096×3072 存进图库，就是用户看到的糊。
+//
+// 用户的历史观察正好印证：早期缩略图过大被 TDLib 拒掉、消息里没有那对宽高时，
+// 这里走的是 -1（原生），"那时候保存是正常的"。
+//
+// 抽帧的用途只有一个——**要一张和视频等清晰度的静图**，永远不需要放大，也不需要
+// 缩小。原生就是唯一正确的答案，所以参数整个去掉，免得下一个调用方再传错。
+// 顺带：原生尺寸由解码器给出，朝向也由它处理，不会和容器里旋转前的宽高打架。
+export async function extractFirstFrame(videoPath: string, destJpg: string): Promise<boolean> {
   let src: fileIo.File | null = null;
   let dest: fileIo.File | null = null;
   let generator: media.AVImageGenerator | null = null;
@@ -43,7 +58,8 @@ export async function extractFirstFrame(videoPath: string, destJpg: string,
     // CLOSEST 会去解码非关键帧，慢且没必要。
     const frame: image.PixelMap = await generator.fetchFrameByTime(
       0, media.AVImageQueryOptions.AV_IMAGE_QUERY_NEXT_SYNC,
-      { width: width > 0 ? width : -1, height: height > 0 ? height : -1 });
+      // -1/-1 = 原生尺寸（见函数头那段）。
+      { width: -1, height: -1 });
     dest = await fileIo.open(destJpg,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     const packer: image.ImagePacker = image.createImagePacker();

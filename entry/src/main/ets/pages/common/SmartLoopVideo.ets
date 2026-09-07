@@ -1,6 +1,7 @@
 import { AvLoopVideo } from './AvLoopVideo';
 import { WebmStickerView } from '../chat/WebmStickerView';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
+import { subscribeChatTgsGate } from '../chat/TgsStickerView';
 import { logW } from '../../util/log';
 
 // One-time probe verdict for VP9/WEBM on the system AVPlayer:
@@ -24,6 +25,14 @@ export struct SmartLoopVideo {
   // or when the app enters the background.
   @Param forcePlay: boolean = false;
   @Param onPlaybackFailed: () => void = (): void => {};
+  // 参与聊天列表的滑动闸（贴纸那套）。**只有会话内的 GIF 传 true**——面板里的
+  // GIF/贴纸不在那条列表上，跟着聊天页的滚动停播毫无道理。
+  //
+  // 滑动时**暂停，不换成缩略图**：换 subtree 会让播放器 surface 消失一帧，
+  // 那正是用户报的"滑动时 GIF 闪一下"。暂停把最后一帧留在原地。
+  @Param scrollGated: boolean = false;
+  @Local private scrollPaused: boolean = false;
+  private unsubGate: (() => void) | null = null;
   private env: ChatEnvMirror = chatEnv;
   // 透明素材必须走 ijk，见 aboutToAppear。这里的初值只管非透明那一类。
   @Local useIjk: boolean = avWebmVerdict === -1;
@@ -41,10 +50,21 @@ export struct SmartLoopVideo {
     if (this.isTransparentAsset()) {
       this.useIjk = true;
     }
+    if (this.scrollGated && this.unsubGate === null) {
+      this.unsubGate = subscribeChatTgsGate((suspended: boolean): void => {
+        if (this.scrollPaused !== suspended) {
+          this.scrollPaused = suspended;
+        }
+      });
+    }
   }
 
   aboutToDisappear(): void {
     this.resetPlaybackState();
+    if (this.unsubGate !== null) {
+      this.unsubGate();
+      this.unsubGate = null;
+    }
   }
 
   aboutToRecycle(): void {
@@ -162,6 +182,7 @@ export struct SmartLoopVideo {
             videoPath: this.videoPath,
             boxWidth: this.boxWidth, boxHeight: this.boxHeight,
             loop: this.loopEnabled(),
+            paused: this.scrollPaused,
             onFailed: (): void => {
               if (avWebmVerdict === 0) {
                 logW('SmartLoopVideo: AVPlayer cannot play this webm — falling back to ijkplayer');

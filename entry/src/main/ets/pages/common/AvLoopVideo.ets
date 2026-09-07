@@ -15,6 +15,11 @@ export struct AvLoopVideo {
   @Param boxWidth: number = 100;
   @Param boxHeight: number = 100;
   @Param loop: boolean = true;
+  // 滑动期间暂停。**暂停而不是卸载**：卸载会让 surface 一起消失，重新挂上去
+  // 有一帧空白，表现就是"滑动时 GIF 闪一下"（用户 2026-09-07 报）。暂停则把
+  // 最后一帧留在 surface 上，肉眼看不出中断。
+  // 同一条道理见 issue #164 的修复：贴纸的滑动闸也是 pause 不 destroy。
+  @Param paused: boolean = false;
   // 圆形视频是"点一下放一遍并出声"，和贴纸/GIF 的静音循环不是一回事。
   @Param muted: boolean = true;
   @Param onFinished: () => void = (): void => {};
@@ -76,6 +81,29 @@ export struct AvLoopVideo {
     }
   }
 
+  // paused 翻转就直接操作播放器，不重建：重建等于卸载，闪的就是它。
+  // 播放器还没到 prepared 之前不动它——那时 play() 本来也还没发出去。
+  @Monitor('paused')
+  private onPausedChanged(): void {
+    const p: media.AVPlayer | null = this.player;
+    if (p === null) {
+      return;
+    }
+    if (this.paused) {
+      if (p.state === 'playing') {
+        p.pause().catch((e: Object) => { logE(`AvLoopVideo.pause failed: ${JSON.stringify(e)}`); });
+      }
+      return;
+    }
+    // **'prepared' 必须和 'paused' 一起认。** 滑动期间新挂上来的那些行，播放器
+    // 从来没播过——prepare() 完成时 paused 已经是 true，起播那一步被跳过了，
+    // 状态停在 'prepared' 而不是 'paused'。只认 'paused' 的话，松手之后这些
+    // GIF 会永远定格在首帧（滑久了新加载的那一批全中招）。
+    if (p.state === 'paused' || p.state === 'prepared') {
+      p.play().catch((e: Object) => { logE(`AvLoopVideo.resume failed: ${JSON.stringify(e)}`); });
+    }
+  }
+
   @Monitor('videoPath')
   onVideoPathChanged(): void {
     this.playerSeq++;
@@ -118,6 +146,10 @@ export struct AvLoopVideo {
           // FIT_CROP 与底层缩略图的 ImageFit.Cover 行为一致，切换无跳变。
           p.videoScaleType = media.VideoScaleType.VIDEO_SCALE_TYPE_FIT_CROP;
           p.setVolume(this.muted ? 0 : 1);
+          // 进来时就在滑动：直接停在首帧，别播一下再被暂停（那也是一次闪）。
+          if (this.paused) {
+            return;
+          }
           p.play().catch((e: Object) => {
             logE(`AvLoopVideo.play failed: ${JSON.stringify(e)}`);
             this.onFailed();

@@ -52,7 +52,10 @@ function notifyChatTgsSlotFreed(): void {
   }
 }
 
-function subscribeChatTgsGate(listener: ChatTgsGateListener): () => void {
+// 导出给 SmartLoopVideo 用：GIF 也要跟着滑动闸暂停（用户 2026-09-07：
+// 「GIF 在滑动的时候应该和贴纸一样，暂停」）。
+// TODO 这道闸其实已经不只属于贴纸了，将来该搬进 util/chatScrollGate。
+export function subscribeChatTgsGate(listener: ChatTgsGateListener): () => void {
   chatTgsGateListeners = [...chatTgsGateListeners, listener];
   listener(chatTgsSuspended);
   return (): void => {

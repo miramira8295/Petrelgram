@@ -160,6 +160,7 @@ import bottomSlotTest from './BottomSlot.test';
 import pinnedSegmentsTest from './PinnedSegments.test';
 import translationModeTest from './TranslationMode.test';
 import messageSelectionTest from './MessageSelection.test';
+import forwardMessagesRequestTest from './ForwardMessagesRequest.test';
 import timelineStateTest from './TimelineState.test';
 import emptyHistoryTest from './EmptyHistory.test';
 import replySnippetTest from './ReplySnippet.test';
@@ -224,6 +225,9 @@ import composerSuggestionStateTest from './ComposerSuggestionState.test';
 import voiceRecordingStateTest from './VoiceRecordingState.test';
 import mediaSaveStateTest from './MediaSaveState.test';
 import patchNotifyGateTest from './PatchNotifyGate.test';
+import videoDisplaySizeTest from './VideoDisplaySize.test';
+import livePhotoBoxTest from './LivePhotoBox.test';
+import chatListSwipeTest from './ChatListSwipe.test';
 import videoEngineFallbackTest from './VideoEngineFallback.test';
 import mediaViewerChannelTest from './MediaViewerChannel.test';
 import albumSiblingsTest from './AlbumSiblings.test';
@@ -396,6 +400,7 @@ export default function testsuite() {
   pinnedSegmentsTest();
   translationModeTest();
   messageSelectionTest();
+  forwardMessagesRequestTest();
   timelineStateTest();
   emptyHistoryTest();
   replySnippetTest();
@@ -466,4 +471,7 @@ export default function testsuite() {
   mediaViewerChannelTest();
   videoEngineFallbackTest();
   patchNotifyGateTest();
+  videoDisplaySizeTest();
+  livePhotoBoxTest();
+  chatListSwipeTest();
 }

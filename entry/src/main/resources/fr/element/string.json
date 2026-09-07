@@ -11839,6 +11839,14 @@
     {
       "name": "gif_section_trending",
       "value": "GIF tendance"
+    },
+    {
+      "name": "fw_send_copy",
+      "value": "Masquer la source (envoyer une copie)"
+    },
+    {
+      "name": "fw_remove_caption",
+      "value": "Supprimer la légende"
     }
   ]
 }
