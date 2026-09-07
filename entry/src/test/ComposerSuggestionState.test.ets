@@ -281,7 +281,10 @@ function sentinelCommandItems(): CommandItem[] {
 }
 
 function inlineRow(resultId: string, thumbFileId: number = 0): InlineResultRow {
-  return { resultId, title: '', description: '', thumbFileId, thumbPath: '', kind: 'article' };
+  return {
+    resultId, title: '', description: '', thumbFileId, thumbPath: '',
+    kind: 'article', animationFileId: 0
+  };
 }
 
 function stickerSuggestion(fileId: number, thumbId: number = 0): StickerSuggestion {

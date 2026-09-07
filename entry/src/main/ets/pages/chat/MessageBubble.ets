@@ -72,7 +72,9 @@ import {
 import { timeLayerMinWidth } from '../../util/timeLayerWidth';
 import { ThumbReadyGate } from './ThumbReadyGate';
 import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
-import { CHIP_ICON_VP, reactionChipWidth, reactionsRowWidth } from '../../util/reactionsWidth';
+import {
+  CHIP_ICON_VP, reactionChipWidth, reactionsRowMaxWidth, reactionsRowWidth, timeOverlayWidth
+} from '../../util/reactionsWidth';
 import { logW } from '../../util/log';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
@@ -2299,8 +2301,11 @@ export struct MessageBubble {
   private rxWidthCache: number = 0;
 
   private reactionsRowWidth(): number {
+    // 签名里必须带上影响时间戳宽度的三样（时刻文本、已编辑、自己发的），
+    // 否则同一条消息被编辑过之后仍拿着旧的上限。
     const sig: string = this.msg.reactions
-      .map((r: ReactionInfo): string => `${r.emoji}|${r.customEmojiId}|${r.count}`).join(',');
+      .map((r: ReactionInfo): string => `${r.emoji}|${r.customEmojiId}|${r.count}`).join(',') +
+      `#${this.messageTimeText()}|${this.msg.editDate > 0}|${this.msg.isOutgoing}`;
     if (sig === this.rxWidthSig && this.rxWidthCache > 0) {
       return this.rxWidthCache;
     }
@@ -2310,8 +2315,15 @@ export struct MessageBubble {
       const icon: number = r.customEmojiId !== '' ? CHIP_ICON_VP : this.measureTextVp(r.emoji, 13);
       chips.push(reactionChipWidth(icon, this.measureTextVp(`${r.count}`, 12)));
     }
+    // 时间戳和反应条同处一行，先把它要占的位扣掉再封顶——不扣的话反应条会
+    // 顶满 inlineMaxW，把时间戳挤到气泡外面（见 util/reactionsWidth 的说明）。
+    const timeVp: number = timeOverlayWidth(
+      this.measureTextVp(this.messageTimeText(), 11),
+      this.msg.editDate > 0 ? this.measureTextVp(str('mb_edited'), 10.5) : 0,
+      this.msg.editDate > 0, this.msg.isOutgoing);
     this.rxWidthSig = sig;
-    this.rxWidthCache = reactionsRowWidth(chips, this.inlineMaxW());
+    this.rxWidthCache = reactionsRowWidth(chips,
+      reactionsRowMaxWidth(this.inlineMaxW(), timeVp));
     return this.rxWidthCache;
   }
 
@@ -2449,6 +2461,16 @@ export struct MessageBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bookmark')),
         content: $r('app.string.mb_save_to_saved')
       }).onClick((): void => { this.actions.onSaveMessages(this.group.memberIds); });
+      // 动图专有：存进账号的 saved animations，之后从输入栏的 GIF 面板取用。
+      // 判据用 isAnimation 而不是 contentType——GIF 在本应用里 contentType 就是
+      // 'video'（messageAnimation 走视频管线，见 util/formatMsgContent），
+      // 只有这个标志能把动图和普通视频分开。
+      if (this.msg.isAnimation && this.msg.videoFileId !== 0) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
+          content: $r('app.string.mb_add_to_gifs')
+        }).onClick((): void => { this.actions.onAddToGifs(this.msg.id); });
+      }
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.repeat')),
         content: $r('app.string.mb_repeat')
@@ -2777,7 +2799,18 @@ export struct MessageBubble {
           return;
         }
         if (this.msg.isAnimation) {
-          this.actions.onAnimationTap(this.msg.id, this.autoplayInlineVideo());
+          // 正在播的 GIF 点一下**出气泡菜单**，不再开全屏播放器（用户 2026-09-07
+          // 定的交互）。理由：GIF 在气泡里本来就在循环播放，"点开看大的"没什么
+          // 可看；而它需要的动作（转发、保存、添加到 GIF）全在菜单里。全屏那条
+          // 是修 #105 时定的——那次要解决的是「能动了但点不开」，菜单同样解决。
+          //
+          // 没在播的那条分支不动：点一下先起播（自动播放关着时这就是"点一下播"）。
+          if (this.autoplayInlineVideo()) {
+            this.recordMenuOffset(e.x, Number(e.target.area.width));
+            this.msgContextMenuShown = true;
+          } else {
+            this.actions.onAnimationTap(this.msg.id, false);
+          }
         } else {
           this.actions.onMediaTap(this.msg.id, e.windowX, e.windowY);
         }

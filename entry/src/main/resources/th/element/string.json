@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "การบันทึกไฟล์ไปยังโฟลเดอร์ดาวน์โหลดที่คุณเลือกต้องใช้สิทธิ์อ่านและเขียนโฟลเดอร์นั้นแบบถาวร"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "ค้นหาในโพสต์สาธารณะ"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "บันทึกลงใน GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "บันทึกลงใน GIF แล้ว"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "ค้นหา GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "ไม่พบ GIF"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "GIF ที่บันทึกไว้"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "GIF ยอดนิยม"
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from '@ohos/hypium';
 import {
   registerStack, stackOf, clearAllStacks, resetStacksForTest, snapshotOf,
-  NavStackLike, NavPathInfoLike
+  NavStackLike, NavPathInfoLike, lastParamOfDest
 } from '../main/ets/util/navStacks';
 import { StackFrame } from '../main/ets/util/splitRouting';
 
@@ -135,6 +135,42 @@ export default function navStacksTest(): void {
       expect(snap[0].key).assertEqual('10');
       expect(snap[1].name).assertEqual('ProfilePage');
       expect(snap[1].key).assertEqual('20');
+    });
+
+    // ── lastParamOfDest：目的页在 aboutToAppear 里拿不到自己的栈时的取参数路子 ──
+    // 真实事故见 util/navStacks 里该函数的注释（#话题标签进搜索页不自动搜）。
+
+    it('取同名目的地里最靠上的那个的 param', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'GlobalSearchPage', param: { 'query': 'first' } as Record<string, Object> });
+      s.pushPath({ name: 'ChatPage', param: { 'chatId': 7 } as Record<string, Object> });
+      s.pushPath({ name: 'GlobalSearchPage', param: { 'query': 'second' } as Record<string, Object> });
+      const got = lastParamOfDest(s, 'GlobalSearchPage') as Record<string, Object>;
+      // 后推的那个才是本次进来的：从搜索结果进会话、再点标签又推一个搜索页。
+      expect(got['query'] as string).assertEqual('second');
+    });
+
+    it('只有一个时就取它', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'GlobalSearchPage', param: { 'query': '#tag' } as Record<string, Object> });
+      const got = lastParamOfDest(s, 'GlobalSearchPage') as Record<string, Object>;
+      expect(got['query'] as string).assertEqual('#tag');
+    });
+
+    it('栈里没有这个目的地就是 undefined', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'ChatPage', param: { 'chatId': 7 } as Record<string, Object> });
+      expect(lastParamOfDest(s, 'GlobalSearchPage') === undefined).assertTrue();
+    });
+
+    it('空栈也不炸', 0, (): void => {
+      expect(lastParamOfDest(new FakeStack(), 'GlobalSearchPage') === undefined).assertTrue();
+    });
+
+    it('推进去时没带 param 的，取到 undefined 而不是抛', 0, (): void => {
+      const s: FakeStack = new FakeStack();
+      s.pushPath({ name: 'GlobalSearchPage' });
+      expect(lastParamOfDest(s, 'GlobalSearchPage') === undefined).assertTrue();
     });
 
   });

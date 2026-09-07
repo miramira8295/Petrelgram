@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Menyimpan fail ke folder muat turun pilihan anda perlukan akses baca dan tulis kekal ke folder itu"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "Cari dalam siaran awam"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "Simpan ke GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "Disimpan ke GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "Cari GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "Tiada GIF dijumpai"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "GIF Disimpan"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "GIF Popular"
     }
   ]
 }

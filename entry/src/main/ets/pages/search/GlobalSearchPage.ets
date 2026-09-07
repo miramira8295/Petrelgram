@@ -36,6 +36,7 @@ import {
   SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
 } from '../../util/searchSession';
 import { SEARCH_DEST_NAME } from '../../util/searchNav';
+import { NavStackLike, lastParamOfDest, stackOf } from '../../util/navStacks';
 import { logE, logI } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
 import { AppBackdrop } from '../common/AppBackdrop';
@@ -1256,17 +1257,32 @@ export struct GlobalSearchPage {
     }).catch(logChatNavFailure);
   }
 
-  // 进来时带的参数（话题标签跳转会带 query）。栈没给就当没有。
+  // 进来时带的参数（话题标签跳转会带 query）。
+  //
+  // 【三条路的顺序不能变】唯一的调用点在 aboutToAppear 里，而**那时 this.navStack
+  // 还是 null**：官方生命周期写明「aboutToAppear 在 build() 执行之前调用」，
+  // 而 navStack 是 build 里 NavDestination.onReady() 才交过来的。
+  // 78026c9 把搜索页从 router.pushUrl 改成 tab 栈的 pushPath 之后，这里就只剩
+  // router.getParams() 那条兜底——它读的是 router 的参数，pushPath 根本不往那儿
+  // 放，于是 `#话题标签` 跳进来关键词丢了、进页面不自动搜（1.4.3 起，用户报
+  // 「点击搜索标签，跳转到搜索页面不会自动搜索了」）。
+  // 中间这条从全局注册表取同一个栈：它在 pushPath 之前就注册好了，拿得到。
   private entryParams(): Record<string, Object> | undefined {
     const stack: NavPathStack | null = this.navStack;
-    if (stack === null) {
-      return router.getParams() as Record<string, Object> | undefined;
+    if (stack !== null) {
+      const param: Object[] = stack.getParamByName(SEARCH_DEST_NAME) as Object[];
+      return param.length === 0
+        ? undefined : param[param.length - 1] as Record<string, Object>;
     }
-    const param: Object[] = stack.getParamByName(SEARCH_DEST_NAME) as Object[];
-    if (param.length === 0) {
-      return undefined;
+    const registered: NavStackLike | undefined = stackOf('chat');
+    if (registered !== undefined) {
+      const fromStack: Object | undefined = lastParamOfDest(registered, SEARCH_DEST_NAME);
+      if (fromStack !== undefined) {
+        return fromStack as Record<string, Object>;
+      }
     }
-    return param[param.length - 1] as Record<string, Object>;
+    // 整页路由那条路（stackOf('chat') 还没注册时 searchNav 会退回 pushUrl）。
+    return router.getParams() as Record<string, Object> | undefined;
   }
 
   // 关闭自己：栈里就弹一层，退回整页路由的那种情况才用 router.back()。

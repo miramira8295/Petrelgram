@@ -519,7 +519,8 @@ export class InlineQueryState {
         (it: InlineResultRow): InlineResultRow => it.resultId === row.resultId
           ? {
             resultId: it.resultId, title: it.title, description: it.description,
-            thumbFileId: it.thumbFileId, thumbPath: path, kind: it.kind
+            thumbFileId: it.thumbFileId, thumbPath: path, kind: it.kind,
+            animationFileId: it.animationFileId
           } : it);
     }).catch((): void => {});
   }

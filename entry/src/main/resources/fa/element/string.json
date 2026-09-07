@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "ذخیره فایل‌ها در پوشه دانلود انتخابی شما به دسترسی دائمی خواندن و نوشتن به آن پوشه نیاز دارد"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "جستجو در پست‌های عمومی"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "افزودن به گیف‌ها"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "به گیف‌ها افزوده شد"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "جستجوی گیف"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "گیفی پیدا نشد"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "گیف‌های ذخیره‌شده"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "گیف‌های پرطرفدار"
     }
   ]
 }

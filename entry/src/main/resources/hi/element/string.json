@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "आपके चुने डाउनलोड फ़ोल्डर में फ़ाइलें सहेजने के लिए उस फ़ोल्डर तक स्थायी पढ़ने-लिखने की अनुमति चाहिए"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "सार्वजनिक पोस्ट में खोजें"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "GIF में सहेजें"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "GIF में सहेजा गया"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "GIF खोजें"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "कोई GIF नहीं मिला"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "सहेजे गए GIF"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "ट्रेंडिंग GIF"
     }
   ]
 }

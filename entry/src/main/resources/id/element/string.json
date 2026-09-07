@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Menyimpan file ke folder unduhan pilihan Anda perlu akses baca dan tulis permanen ke folder itu"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "Cari di pos publik"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "Simpan ke GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "Disimpan ke GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "Cari GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "GIF tidak ditemukan"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "GIF Tersimpan"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "GIF Populer"
     }
   ]
 }

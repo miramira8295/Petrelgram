@@ -2,9 +2,10 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_NONE,
-  canStepNewer, canStepOlder, searchCounterText, searchLabelKind
+  canStepNewer, canStepOlder, hashtagQueryOf, searchCounterText, searchLabelKind
 } from '../../util/searchPaging';
 import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
+import { str } from '../../util/strings';
 import { SearchSession } from './SearchSession';
 
 // 会话内搜索的两条：顶上的输入框、底下的计数与上下翻。
@@ -148,6 +149,8 @@ export struct SearchBottomBar {
   // 两个翻页动作同样一律 @Event（理由见 SearchHeader）。
   @Event onOlder: () => void = (): void => {};
   @Event onNewer: () => void = (): void => {};
+  // 「在公开帖子中搜索」：跳全局搜索的帖子页签。要碰导航栈，所以同样交给页面。
+  @Event onPublicPosts: (tag: string) => void = (_tag: string): void => {};
 
   @Builder
   label() {
@@ -164,8 +167,36 @@ export struct SearchBottomBar {
     }
   }
 
+  // 标签搜索的升级入口。只在关键词是 `#话题` / `$代码` 时出现——普通关键词
+  // 走不了 TDLib 的公开帖子接口，那行摆着也点不出东西。
+  //
+  // 点标签现在先搜本会话（SearchSession.enterForQuery），"看全网"从这里走。
+  @Builder
+  publicPostsRow(tag: string) {
+    Row({ space: 6 }) {
+      SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(15).fontColor([COLOR_PRIMARY]);
+      // str() 而不是 $r()：$r 返回的是 Resource 对象，插进模板串会渲染成
+      // [object Object]。
+      Text(`${str('cp_search_public_posts')} ${tag}`)
+        .fontSize(14).fontColor(COLOR_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1);
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([COLOR_PRIMARY]);
+    }
+    .width('100%').height(40)
+    .padding({ left: 20, right: 14 })
+    .alignItems(VerticalAlign.Center)
+    // 分隔线画在下边：上边那条由外层 Column 统一出，免得两条叠在一起。
+    .border({ width: { bottom: 0.7 }, color: $r('app.color.divider') })
+    .onClick((): void => { this.onPublicPosts(tag); });
+  }
+
   build() {
-    Row() {
+    Column() {
+      if (hashtagQueryOf(this.search.query) !== '') {
+        this.publicPostsRow(hashtagQueryOf(this.search.query));
+      }
+      Row() {
       this.label();
       Blank().layoutWeight(1);
       if (this.search.results.length > 0) {
@@ -183,10 +214,13 @@ export struct SearchBottomBar {
         .opacity(canStepNewer(this.search.idx) ? 1 : 0.4)
         .onClick((): void => { this.onNewer(); });
       }
+      }
+      .width('100%').height(52 + this.bottomGap)
+      .padding({ left: 20, right: 10, bottom: this.bottomGap })
+      .alignItems(VerticalAlign.Center);
     }
-    .width('100%').height(52 + this.bottomGap)
-    .padding({ left: 20, right: 10, bottom: this.bottomGap })
-    .alignItems(VerticalAlign.Center)
+    // 底色与顶部那条分隔线提到外层：标签那一行在时，两者要把它一起罩住。
+    .width('100%')
     .backgroundColor($r('app.color.surface'))
     .border({ width: { top: 0.7 }, color: $r('app.color.divider') });
   }

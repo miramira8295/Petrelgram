@@ -91,6 +91,8 @@ export struct EmojiPanel {
   onPickCustomEmoji: (emoji: string, customEmojiId: string) => void = (): void => {};
   onPickSticker: (s: StickerItem, x: number, y: number) => void = (): void => {};
   onPickGif: (g: GifItem) => void = (): void => {};
+  // GIF 搜索/热门要发内联查询，协议要求带上当前会话 id。
+  @Prop chatId: number;
   // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面迁到
   // 状态管理 V2 之后就接不上了。这里的写回照旧先改本地副本（@Prop 允许），
   // 再把新值交给页面，页面回灌同一个值，语义与双向同步等价。
@@ -196,6 +198,7 @@ export struct EmojiPanel {
           Column() {
             GifPicker({
               active: this.tab === 2,
+              chatId: this.chatId,
               onPick: (g: GifItem): void => { this.onPickGif(g); }
             });
           }

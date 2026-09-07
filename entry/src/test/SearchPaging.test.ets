@@ -3,7 +3,7 @@ import {
   SEARCH_FETCH, SEARCH_JUMP, SEARCH_STAY, SearchStep,
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_HINT, SEARCH_LABEL_NONE,
   AnchorMerge, canStepNewer, canStepOlder, mergeAnchorHit, searchCounterText,
-  searchLabelKind, stepNewer, stepOlder
+  hashtagQueryOf, searchLabelKind, stepNewer, stepOlder
 } from '../main/ets/util/searchPaging';
 
 // 结果按新→旧排列：∧ 往更旧（下标 +1），∨ 往更新（下标 -1）。
@@ -128,5 +128,34 @@ export default function searchPagingTest() {
       mergeAnchorHit(src, 80);
       expect(src.join(',')).assertEqual('90,70');
     });
+    // ── hashtagQueryOf：搜索底栏那行「在公开帖子中搜索」显不显示 ──
+    // 点 #标签现在先搜本会话，全网那条从这一行升级过去。
+
+    it('#话题 与 $代码 都算标签', 0, (): void => {
+      expect(hashtagQueryOf('#tag')).assertEqual('#tag');
+      expect(hashtagQueryOf('$TSLA')).assertEqual('$TSLA');
+      expect(hashtagQueryOf('#中文标签')).assertEqual('#中文标签');
+    });
+
+    it('前后空白不影响判定，返回去掉空白的那一份', 0, (): void => {
+      expect(hashtagQueryOf('  #tag  ')).assertEqual('#tag');
+    });
+
+    it('普通关键词不算——那行不该出现', 0, (): void => {
+      expect(hashtagQueryOf('tag')).assertEqual('');
+      expect(hashtagQueryOf('')).assertEqual('');
+      expect(hashtagQueryOf('   ')).assertEqual('');
+    });
+
+    it('光一个 # 或 $ 不算（后面得有字）', 0, (): void => {
+      expect(hashtagQueryOf('#')).assertEqual('');
+      expect(hashtagQueryOf('$')).assertEqual('');
+      expect(hashtagQueryOf('  #  ')).assertEqual('');
+    });
+
+    it('中间带空格的不算——那是关键词搜索，不是标签', 0, (): void => {
+      expect(hashtagQueryOf('#tag more')).assertEqual('');
+    });
+
   });
 }

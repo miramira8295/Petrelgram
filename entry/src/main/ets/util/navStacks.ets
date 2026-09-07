@@ -50,6 +50,31 @@ export function stackOf(tab: TabKind): NavStackLike | undefined {
   return stacks.get(tab);
 }
 
+// 栈里**最靠上**的那个同名目的地带的 param，没有就 undefined。
+//
+// 【为什么需要它】目的页在 `aboutToAppear` 里拿不到自己的栈：官方生命周期写明
+// 「aboutToAppear 在 build() 执行之前调用」，而栈是 `NavDestination.onReady()`
+// 交过来的，onReady 在 build 里——那一刻 `this.navStack` 必然还是 null
+// （官方同处还写着「不建议在 aboutToAppear 中使用栈操作，此时页面还未构建完成」）。
+// 于是「带参数进来、进页面就自动跑一次」这类逻辑必须另有取参数的路子：全局注册表
+// 里的栈是同一个，而且在 pushPath 之前就注册好了。
+//
+// 真实事故：话题标签 `#tag` 点进全局搜索，78026c9 把搜索页从 router.pushUrl 改成
+// tab 栈的 pushPath 之后，搜索页只剩 `router.getParams()` 这条兜底——那是 router
+// 的参数，pushPath 根本不往那儿放，于是关键词丢了、进去不自动搜（1.4.3 起）。
+//
+// 取最靠上的一个而不是第一个：同名目的地可以叠多层（从搜索结果进会话、再点标签
+// 又推一个搜索页），后推的那个才是本次进来的。
+export function lastParamOfDest(stack: NavStackLike, name: string): Object | undefined {
+  const names: string[] = stack.getAllPathName();
+  for (let i: number = names.length - 1; i >= 0; i--) {
+    if (names[i] === name) {
+      return stack.getParamByIndex(i);
+    }
+  }
+  return undefined;
+}
+
 // 账号切换时用：旧账号的 chatId 在新账号下是另一个会话，栈里留着就是错的。
 export function clearAllStacks(): void {
   stacks.forEach((s: NavStackLike): void => { s.clear(false); });

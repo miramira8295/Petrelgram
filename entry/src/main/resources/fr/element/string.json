@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Enregistrer des fichiers dans le dossier de téléchargement choisi nécessite un accès durable en lecture et écriture"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "Rechercher dans les publications publiques"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "Enregistrer dans les GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "Enregistré dans les GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "Rechercher des GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "Aucun GIF trouvé"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "GIF enregistrés"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "GIF tendance"
     }
   ]
 }

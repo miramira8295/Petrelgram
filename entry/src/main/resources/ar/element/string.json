@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "يتطلب حفظ الملفات في مجلد التنزيل الذي اخترته إذن قراءة وكتابة دائمًا لهذا المجلد"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "البحث في المنشورات العامة"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "الحفظ في صور GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "تم الحفظ في صور GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "البحث عن صور GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "لم يتم العثور على صور GIF"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "صور GIF المحفوظة"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "صور GIF الرائجة"
     }
   ]
 }

@@ -1127,6 +1127,7 @@ export struct ChatPage {
         onAnimationTap: (messageId: number, playing: boolean): void => {
           this.onAnimationTap(messageId, playing);
         },
+        onAddToGifs: (messageId: number): void => { this.onAddToGifs(messageId); },
         onAnimationPlaybackFailed: (messageId: number): void => {
           this.onAnimationPlaybackFailed(messageId);
         },
@@ -3843,6 +3844,21 @@ export struct ChatPage {
     return ids.filter((id: number): boolean => id !== messageId);
   }
 
+  // 菜单里的「添加到 GIF」。存的是这条消息的动图文件 id，之后从输入栏的
+  // GIF 面板取用。失败不静默：TDLib 会因为文件已过期/不可引用而拒。
+  private onAddToGifs(messageId: number): void {
+    const entry = this.entryById(messageId);
+    if (entry === null || !entry.isAnimation || entry.videoFileId === 0 || this.store === null) {
+      promptAction.showToast({ message: $r('app.string.cp_gif_unavailable'), duration: 1500 });
+      return;
+    }
+    this.store.addSavedAnimation(entry.videoFileId).then((): void => {
+      promptAction.showToast({ message: $r('app.string.mb_added_to_gifs'), duration: 1500 });
+    }).catch((): void => {
+      promptAction.showToast({ message: $r('app.string.cp_gif_unavailable'), duration: 1500 });
+    });
+  }
+
   private onAnimationTap(messageId: number, isPlaying: boolean): void {
     const entry = this.entryById(messageId);
     if (entry === null || !entry.isAnimation) {
@@ -4679,8 +4695,11 @@ export struct ChatPage {
       return true;
     }
     if (action.kind === LINK_HASHTAG) {
-      const params: Record<string, Object> = { 'query': action.text };
-      navigateToSearch(params);
+      // 先搜**本会话**，不再整页跳全局：用户点标签的意图基本是"这儿还有哪些
+      // 这个标签的"，而跳走要付出丢失阅读位置的代价。全网那条从搜索底栏的
+      // 「在公开帖子中搜索」进（见 ChatSearchBars.publicPostsRow）。
+      // 逻辑在 SearchSession.enterForQuery，本页只接线。
+      this.search.enterForQuery(action.text);
       return true;
     }
     if (action.kind === LINK_USER) {
@@ -6546,6 +6565,7 @@ export struct ChatPage {
     if (this.panelContentReady) {
       EmojiPanel({
         tab: this.emojiPanelTab,
+        chatId: this.chatId,
         onTabChange: (tab: number): void => { this.emojiPanelTab = tab; },
         onPick: (e: string): void => { this.insertEmoji(e); },
         onPickCustomEmoji: (e: string, ceId: string): void => {
@@ -6563,11 +6583,23 @@ export struct ChatPage {
           }
         },
         onPickGif: (g: GifItem): void => {
-          if (this.store !== null) {
-            this.atBottom = true;
-            this.store.sendAnimation(g.fileId, g.width, g.height, g.duration);
-            this.overlayState.flyStickerGhost('', 0, 0);
+          if (this.store === null) {
+            return;
           }
+          this.atBottom = true;
+          if (g.resultId !== '') {
+            // 搜索/热门那半：内联结果只能用 sendInlineQueryResultMessage 发，
+            // 它还没进过本账号的文件表，没有可引用的 file id。
+            // hideViaBot=true：GIF 搜索机器人是 td_api 允许隐藏的三个之一，
+            // 官方客户端也不带「通过 @gif」那行。
+            sendInlineResult(this.chatId, g.queryId, g.resultId, 0, true)
+              .catch((e: TdError): void => {
+                logE(`ChatPage.sendInlineGif failed: ${e.message}`);
+              });
+          } else {
+            this.store.sendAnimation(g.fileId, g.width, g.height, g.duration);
+          }
+          this.overlayState.flyStickerGhost('', 0, 0);
         }
       });
     } else if (!this.emojiPanelClosing) {
@@ -6673,7 +6705,10 @@ export struct ChatPage {
       search: this.search,
       bottomGap: this.composerBottomGap(),
       onOlder: (): void => { this.search.older(); },
-      onNewer: (): void => { this.search.newer(); }
+      onNewer: (): void => { this.search.newer(); },
+      onPublicPosts: (tag: string): void => {
+        navigateToSearch({ 'query': tag } as Record<string, Object>);
+      }
     });
   }
 

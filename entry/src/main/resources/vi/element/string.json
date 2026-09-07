@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Lưu tệp vào thư mục tải xuống bạn đã chọn cần quyền đọc và ghi lâu dài với thư mục đó"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "Tìm trong bài đăng công khai"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "Lưu vào GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "Đã lưu vào GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "Tìm GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "Không tìm thấy GIF"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "GIF đã lưu"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "GIF thịnh hành"
     }
   ]
 }

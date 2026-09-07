@@ -127,3 +127,26 @@ export function mergeAnchorHit(ids: number[], anchorId: number): AnchorMerge {
     inserted: true
   };
 }
+
+// 会话内搜索的这一条关键词是不是「标签」（#话题 / $股票代码）。
+//
+// 用途：点消息里的 `#标签` 现在**先在本会话里搜**（意图基本都是"这儿还有哪些
+// 这个标签的"，而不是"全网谁在用这个词"），会话内搜索的底栏据此多出一行
+// 「在公开帖子中搜索」，想看全网的从那儿升级过去。普通关键词搜索不显示那行
+// ——TDLib 的公开帖子接口本来也只认标签。
+//
+// 判据只看首字符 + 后面至少还有一个字，不校验标签内容：TDLib 那边会再判一次，
+// 这里的职责只是「要不要显示那一行」。前后空白由调用方之外的输入框保证不了，
+// 所以自己 trim。
+export function hashtagQueryOf(query: string): string {
+  const trimmed: string = query.trim();
+  if (trimmed.length < 2) {
+    return '';
+  }
+  const head: string = trimmed.charAt(0);
+  if (head !== '#' && head !== '$') {
+    return '';
+  }
+  // 光一个 '#' 后面跟空格之类的不算。
+  return trimmed.indexOf(' ') >= 0 ? '' : trimmed;
+}

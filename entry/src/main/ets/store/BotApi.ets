@@ -11,6 +11,9 @@ export interface InlineResultRow {
   thumbFileId: number;
   thumbPath: string;
   kind: string; // 'article' | 'photo' | 'sticker' | 'animation' | 'other'
+  // 动图本体的文件 id（kind==='animation' 时才有，其余为 0）。GIF 搜索要拿它
+  // 下载 mp4 做循环预览——只有缩略图的话搜索结果全是静止的。
+  animationFileId: number;
 }
 
 export interface InlineQueryPage {
@@ -39,6 +42,15 @@ function thumbFileIdOf(result: TdObject): number {
   return 0;
 }
 
+// 动图结果里 mp4 本体的文件 id。inlineQueryResultAnimation.animation 是
+// Animation 对象，它的 animation 字段才是文件（和 messageAnimation 同一形状）。
+function animationFileIdOf(result: TdObject): number {
+  const anim = result['animation'] as TdObject | undefined;
+  if (anim === undefined) { return 0; }
+  const file = anim['animation'] as TdObject | undefined;
+  return file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+}
+
 function rowOf(result: TdObject): InlineResultRow | null {
   const typeName = (result['@type'] as string | undefined) ?? '';
   const id = (result['id'] as string | undefined) ?? '';
@@ -54,7 +66,8 @@ function rowOf(result: TdObject): InlineResultRow | null {
     description: (result['description'] as string | undefined) ?? '',
     thumbFileId: thumbFileIdOf(result),
     thumbPath: '',
-    kind
+    kind,
+    animationFileId: kind === 'animation' ? animationFileIdOf(result) : 0
   };
 }
 
@@ -75,14 +88,22 @@ export async function getInlineResults(
   return { queryId: `${result['inline_query_id'] ?? ''}`, rows };
 }
 
+// hideViaBot：去掉气泡上那行「通过 @xxx」。
+//
+// **只有三个搜索机器人允许这么做**（td_api 原文：Can be used only for bots
+// getOption("animation_search_bot_username"), photo_search_bot_username 和
+// venue_search_bot_username）——对普通 @bot 内联结果传 true 会被拒，所以默认
+// 仍是 false，只有 GIF 面板那条路显式传 true。官方客户端搜 GIF 发出去也不带
+// 这个标记，用户报「热门发出来显示通过 @gif」。
 export async function sendInlineResult(
-  chatId: number, queryId: string, resultId: string, replyToId: number
+  chatId: number, queryId: string, resultId: string, replyToId: number,
+  hideViaBot: boolean = false
 ): Promise<void> {
   const request: TdRequest = { '@type': 'sendInlineQueryResultMessage' };
   request['chat_id'] = chatId;
   request['query_id'] = queryId;
   request['result_id'] = resultId;
-  request['hide_via_bot'] = false;
+  request['hide_via_bot'] = hideViaBot;
   if (replyToId !== 0) {
     const replyTo: TdObject = { '@type': 'inputMessageReplyToMessage' };
     replyTo['message_id'] = replyToId;

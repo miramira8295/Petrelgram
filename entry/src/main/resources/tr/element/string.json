@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Dosyaları seçtiğiniz indirme klasörüne kaydetmek, o klasöre kalıcı okuma ve yazma izni gerektirir"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "Herkese açık gönderilerde ara"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "GIF'lere kaydet"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "GIF'lere kaydedildi"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "GIF ara"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "GIF bulunamadı"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "Kaydedilen GIF'ler"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "Popüler GIF'ler"
     }
   ]
 }

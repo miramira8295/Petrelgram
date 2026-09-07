@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Щоб зберігати файли в обрану папку, потрібен постійний доступ до неї на читання й запис"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "Шукати в публічних дописах"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "Додати до GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "Додано до GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "Пошук GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "GIF не знайдено"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "Збережені GIF"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "Популярні GIF"
     }
   ]
 }

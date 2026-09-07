@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "선택한 다운로드 폴더에 파일을 저장하려면 해당 폴더에 대한 읽기·쓰기 권한을 계속 유지해야 합니다"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "공개 게시물에서 검색"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "GIF에 저장"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "GIF에 저장됨"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "GIF 검색"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "GIF를 찾을 수 없음"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "저장된 GIF"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "인기 GIF"
     }
   ]
 }

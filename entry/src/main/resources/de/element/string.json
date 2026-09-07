@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Zum Speichern von Dateien im gewählten Download-Ordner ist dauerhafter Lese- und Schreibzugriff darauf nötig"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "In öffentlichen Beiträgen suchen"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "Zu GIFs hinzufügen"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "Zu GIFs hinzugefügt"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "GIFs suchen"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "Keine GIFs gefunden"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "Gespeicherte GIFs"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "Beliebte GIFs"
     }
   ]
 }

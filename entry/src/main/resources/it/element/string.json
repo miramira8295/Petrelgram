@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "Salvare i file nella cartella download scelta richiede accesso permanente in lettura e scrittura"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "Cerca nei post pubblici"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "Salva nelle GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "Salvato nelle GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "Cerca GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "Nessuna GIF trovata"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "GIF salvate"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "GIF di tendenza"
     }
   ]
 }

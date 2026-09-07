@@ -2202,15 +2202,59 @@ export class MessageStore {
   }
 
   // Send a saved GIF (server-side file, referenced by id).
+  //
+  // **形状和本地 GIF 那条完全一样**：inputMessageAnimation.animation 要包装成
+  // inputAnimation{animation:InputFile}，裸 InputFile 会被回 "InputFile is not
+  // specified"（issue #105 的成因，见 animationInputContent 上面那段）。
+  // 修 #105 时只改了本地文件那条路（sendOneAnimation），**这条按 id 发的漏了**
+  // ——于是从 GIF 面板发出去的一律失败，而 sendContent 把错误吞进日志不提示，
+  // 界面上就是"点了没反应"。
+  //
+  // 同样保留裸的回退：这套 libtdjson 是半新半旧的 schema，不单押一边。
   sendAnimation(fileId: number, width: number, height: number, durationSec: number): void {
+    this.sendSavedAnimation(fileId, width, height, durationSec, true);
+  }
+
+  private sendSavedAnimation(fileId: number, width: number, height: number,
+    durationSec: number, wrapped: boolean): void {
     const inputFile: TdObject = { '@type': 'inputFileId' };
     inputFile['id'] = fileId;
     const content: TdObject = { '@type': 'inputMessageAnimation' };
-    content['animation'] = inputFile;
+    content['animation'] = wrapped
+      ? MessageStore.wrapInputFile('inputAnimation', 'animation', inputFile) : inputFile;
     content['width'] = width;
     content['height'] = height;
     content['duration'] = durationSec;
-    this.sendContent(content, 'sendAnimation');
+    const req: TdRequest = { '@type': 'sendMessage' };
+    req['chat_id'] = this.chatId;
+    req['input_message_content'] = content;
+    this.applyTopicScope(req);
+    this.client.send(req).then((m: TdObject): void => {
+      this.upsert(buildMessageEntry(m, this.users));
+      this.requestPhotos();
+      this.notifySoon();
+    }).catch((e: TdError): void => {
+      if (wrapped && animationShapeRejected(e.message)) {
+        logW(`MessageStore.sendAnimation wrapped rejected (${e.message}), retrying bare`);
+        this.sendSavedAnimation(fileId, width, height, durationSec, false);
+        return;
+      }
+      logE(`MessageStore.sendAnimation failed: ${e.message}`);
+    });
+  }
+
+  // 「添加到 GIF」：把一条动图消息里的文件存进账号的 saved animations。
+  // TDLib 收 InputFile，服务端文件用 inputFileId 即可（本地路径那种走
+  // inputFileLocal，这里用不到——菜单只在收到的动图消息上出现）。
+  addSavedAnimation(fileId: number): Promise<void> {
+    const inputFile: TdObject = { '@type': 'inputFileId' };
+    inputFile['id'] = fileId;
+    const req: TdRequest = { '@type': 'addSavedAnimation' };
+    req['animation'] = inputFile;
+    return this.client.send(req).then((): void => {}).catch((e: TdError): Promise<void> => {
+      logE(`MessageStore.addSavedAnimation failed: ${e.message}`);
+      return Promise.reject(e);
+    });
   }
 
   sendVoiceNote(path: string, durationSec: number): void {

@@ -289,6 +289,27 @@ export class SearchSession {
     this.run(0, 0);
   }
 
+  // 点消息里的 `#标签`：**先在本会话里搜**，与 enterForSender 同一个形状。
+  //
+  // 【为什么不再跳全局】原来这一下走的是 navigateToSearch()，整页跳到全局搜索
+  // 并直接落在「帖子」页签——人被弹出会话、阅读位置也丢了，而用户点标签的意图
+  // 基本是"**这儿**还有哪些这个标签的"，不是"全网谁在用这个词"。会话内搜索还
+  // 自带结果计数、上一条/下一条、跳转高亮，正是翻同一标签需要的操作。
+  //
+  // 全网那条没有取消，升级入口挪到了搜索底栏那一行（见 util/searchPaging 的
+  // hashtagQueryOf 与 ChatSearchBars.SearchBottomBar）。
+  //
+  // 私聊也一视同仁：规则简单、可预期；搜不到就是 0 条，再点那一行去全网。
+  enterForQuery(query: string): void {
+    if (query === '') {
+      return;
+    }
+    this.senderId = 0;
+    this.query = query;
+    this.mode = true;
+    this.run(0, 0);
+  }
+
   // 路由参数就绪后的初值。搬之前是 resolveRouteAndResetSession() 里的三行
   // 直接字段赋值（route.searchQuery !== '' 分支 / route.startSearch 分支），
   // 判据顺序原样保留，**包括"没有 else 分支复位 mode=false"这条既有语义**：

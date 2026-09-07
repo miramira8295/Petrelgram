@@ -11859,6 +11859,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "保存文件到你选择的下载目录需要长期保留该目录的读写授权"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "在公开帖子中搜索"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "添加到 GIF"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "已添加到 GIF"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "搜索 GIF"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "没有找到 GIF"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "已保存的 GIF"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "热门 GIF"
     }
   ]
 }

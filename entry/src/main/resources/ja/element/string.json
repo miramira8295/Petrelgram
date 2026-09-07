@@ -11811,6 +11811,34 @@
     {
       "name": "FILE_ACCESS_PERSIST_reason",
       "value": "選択したダウンロードフォルダーへのファイル保存には、そのフォルダーの読み書き権限を継続して保持する必要があります"
+    },
+    {
+      "name": "cp_search_public_posts",
+      "value": "公開投稿から検索"
+    },
+    {
+      "name": "mb_add_to_gifs",
+      "value": "GIF に保存"
+    },
+    {
+      "name": "mb_added_to_gifs",
+      "value": "GIF に保存しました"
+    },
+    {
+      "name": "gif_search_hint",
+      "value": "GIF を検索"
+    },
+    {
+      "name": "gif_search_none",
+      "value": "GIF が見つかりません"
+    },
+    {
+      "name": "gif_section_saved",
+      "value": "保存した GIF"
+    },
+    {
+      "name": "gif_section_trending",
+      "value": "人気の GIF"
     }
   ]
 }
