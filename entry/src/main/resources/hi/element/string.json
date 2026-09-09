@@ -1017,6 +1017,34 @@
       "value": "गैलरी में सहेजा गया"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "डाउनलोड विफल"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "डाउनलोड हो रहा है %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "गैलरी"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "सहेजना विफल"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "%1$s में सहेजा गया"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "सहेजा जा रहा है %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "चयनित स्थान"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "वॉइस संदेश भेजने और लाइव बोलने के लिए माइक्रोफ़ोन की ज़रूरत है"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "स्वतः डाउनलोड वर्तमान नेटवर्क और फ़ाइल आकार के अनुसार होता है; गैलरी में सेव सिस्टम पुष्टि पर निर्भर है।"
+    },
+    {
+      "name": "ds_download_location",
+      "value": "डाउनलोड स्थान"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "डिफ़ॉल्ट डाउनलोड पथ"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "सहेजते समय स्थान चुनें"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "डिफ़ॉल्ट डाउनलोड पथ अपडेट हुआ"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "चालू करने पर चैट मेनू में पूरी चैट का अनुवाद किया जा सकता है"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "मूल टेक्स्ट को अनुवाद से बदलें"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "अनुवाद तैयार होने पर केवल अनुवाद दिखाएँ"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "टेक्स्ट में बदलना Telegram Premium सुविधा है"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "दोनों के लिए साफ़ करें"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "सभी के लिए साफ़ करें"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "कैप्शन हटाएँ"
+    },
+    {
+      "name": "share_to",
+      "value": "इसे साझा करें"
+    },
+    {
+      "name": "share_preparing",
+      "value": "तैयार हो रहा है…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "ऐप में चुनें…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "हाल की चैट यहाँ दिखाने के लिए ऐप एक बार खोलें"
+    },
+    {
+      "name": "share_failed",
+      "value": "साझा सामग्री पढ़ी नहीं जा सकी"
+    },
+    {
+      "name": "share_staged",
+      "value": "संदेश बॉक्स में जोड़ा गया — जाँचें और भेजें"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "तुरंत भेजें"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "पहले चैट खोलें"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "%1$s को भेजा गया"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "भेजा नहीं जा सका — सामग्री संदेश बॉक्स में रखी है"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "त्वरित साझा"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "कोई मिलता-जुलता संदेश नहीं"
     }
   ]
 }

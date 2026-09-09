@@ -13,7 +13,13 @@ export const NATIVE_PIXEL_CACHE_MAX_BYTES: number =
 // Upper bound for component-holder PixelMap releases in one event-loop turn.
 // Keeping this next to the byte budgets makes both native-memory limits explicit
 // and host-testable without loading ImageKit.
-export const IMAGE_HOLDER_RELEASE_BATCH: number = 3;
+//
+// ⚠️ 别再调回 3。drainHolderReleases 在队列非空时会 `setTimeout(..., 0)` 自我重排，
+// 所以这个值必须**高于滚动时的到达速率**，否则队列永远排不空、定时器就变成一个
+// 常驻的每帧定时器。2026-09-09 的 Frame 录制量到过这个后果：改成异步释放之后
+// setTimeout 的 self 反而从 28.9ms 涨到 32.3ms（归一化 +65%），因为调用频次从
+// 「每次解码一次」变成了「每帧一次」。16 对实测到达速率有约 5 倍余量。
+export const IMAGE_HOLDER_RELEASE_BATCH: number = 16;
 
 export interface NativePixelBudget {
   imageBytes: number;

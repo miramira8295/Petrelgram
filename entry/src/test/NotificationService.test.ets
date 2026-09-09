@@ -25,6 +25,19 @@ class FakePublisher implements NotificationPublisher {
   cancelAll(): void {}
 }
 
+// 已加入的会话在 TDLib 里必然带 position。**用例里不能给空数组**——那模拟的是
+// 「路过点进去、没有加入」的群，而通知那边现在正是靠"一个 position 都没有"
+// 把它挡掉的（用户 2026-09-09：「路过点进去的群没有加入，但是之后有新消息
+// 也会推送过来」）。
+function joinedPositions(): TdObject[] {
+  const list: TdObject = { '@type': 'chatListMain' };
+  const p: TdObject = { '@type': 'chatPosition' };
+  p['list'] = list;
+  p['order'] = '100';
+  p['is_pinned'] = false;
+  return [p];
+}
+
 interface Env {
   bridge: FakeBridge;
   publisher: FakePublisher;
@@ -45,7 +58,7 @@ function setup(): Env {
   const chat: TdObject = { '@type': 'chat' };
   chat['id'] = 5;
   chat['title'] = '工作群';
-  chat['positions'] = [];
+  chat['positions'] = joinedPositions();
   chat['unread_count'] = 0;
   const newChat: TdObject = { '@type': 'updateNewChat' };
   newChat['chat'] = chat;
@@ -124,7 +137,7 @@ function setupGroup(): GroupEnv {
   chat['id'] = 5;
   chat['title'] = '技术群';
   chat['type'] = type;
-  chat['positions'] = [];
+  chat['positions'] = joinedPositions();
   chat['unread_count'] = 0;
   const newChat: TdObject = { '@type': 'updateNewChat' };
   newChat['chat'] = chat;
@@ -205,6 +218,26 @@ export default function notificationServiceTest() {
       expect(notice.title).assertEqual('工作群');
       expect(notice.text.indexOf('晚上开会') >= 0).assertTrue();
       expect(notice.isCall).assertFalse();
+    });
+    // 「路过点进去的群没有加入，但是之后有新消息也会推送过来」（用户 2026-09-09）。
+    // 没加入的会话在 TDLib 里一个 position 都没有——它不属于任何 chat list，
+    // 这是唯一可靠的"我没加入"信号（is_member 只有部分 chat type 才有）。
+    it('previewed_chat_without_positions_never_notifies', 0, () => {
+      const env = setup();
+      env.foreground = false;
+      // 另造一个会话：chat 对象有（点进去过，所以 TDLib 推过 updateNewChat），
+      // 但 positions 是空的——没加入。
+      const bare: TdObject = { '@type': 'chat' };
+      bare['id'] = 6;
+      bare['title'] = '路过的群';
+      bare['positions'] = [];
+      bare['unread_count'] = 0;
+      const upd: TdObject = { '@type': 'updateNewChat' };
+      upd['chat'] = bare;
+      env.bridge.onReceive(JSON.stringify(upd));
+
+      feedNewMessage(env.bridge, 6, 4194304, '晚上开会', false);
+      expect(env.publisher.published.length).assertEqual(0);
     });
     // 群消息的通知头像应该是发信人的，不是会话的 —— 一屏全是同一个群头像
     // 认不出谁在说话。头像还没下完时先回退会话头像并把它拉下来。

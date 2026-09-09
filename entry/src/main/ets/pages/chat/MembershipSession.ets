@@ -218,6 +218,14 @@ export class MembershipSession {
   // this.host.client()、this.chatId→this.host.chatId()、
   // this.isGroup/isChannel/membershipState 的读写全部经宿主转发，逻辑分支、
   // 判据、语句顺序未改一处。
+  // 群的默认权限（chat.permissions.can_send_basic_messages），由 refresh() 从
+  // getChat 的应答里存一份。
+  //
+  // **为什么要存**：applyStatus 还有另外两个调用点在 ChatPage 的 updateSupergroup
+  // 推送监听里，那里只拿得到 supergroup、拿不到 chat。不存的话，一次成员状态推送
+  // 就会把锁群又翻回可写——用户重新看到那个发不出去的输入框。
+  private chatCanSendBasic: boolean = true;
+
   refresh(): void {
     const seq: number = ++this.membershipSeq;
     const req: TdRequest = { '@type': 'getChat' };
@@ -228,6 +236,11 @@ export class MembershipSession {
       }
       const type = chat['type'] as TdObject | undefined;
       const typeName = (type?.['@type'] as string | undefined) ?? '';
+      // 群的**默认权限**，管的是普通成员。"只有管理员能发言"的锁群把它设成
+      // false，而成员状态仍然是 chatMemberStatusMember——只看状态判不出来。
+      const chatPerms = chat['permissions'] as TdObject | undefined;
+      this.chatCanSendBasic =
+        (chatPerms?.['can_send_basic_messages'] as boolean | undefined) ?? true;
       if (typeName === 'chatTypeSupergroup') {
         this.membershipSupergroupId = (type?.['supergroup_id'] as number | undefined) ?? 0;
         this.membershipBasicGroupId = 0;
@@ -300,11 +313,18 @@ export class MembershipSession {
     const rights = status?.['rights'] as TdObject | undefined;
     // 判定本身在 util/membershipState（有单测）：几条规则都不直观——被限制但
     // 仍在群里照样能发言、频道订阅者只读、频道管理员还要看有没有发帖权。
+    // 被禁言者自己那份权限（chatMemberStatusRestricted 才有）。
+    const selfPerms = status?.['permissions'] as TdObject | undefined;
     const next: string = membershipStateOf({
       statusType: type,
       isMember: (status?.['is_member'] as boolean | undefined) ?? false,
       isChannel: this.host.isChannel(),
-      canPostMessages: (rights?.['can_post_messages'] as boolean | undefined) ?? false
+      canPostMessages: (rights?.['can_post_messages'] as boolean | undefined) ?? false,
+      // 两个权限字段**缺失时一律按放行**：兜底方向与本文件其余分支一致
+      // （查不到就别把输入框藏了，最多发送时报错）。
+      chatCanSendBasic: this.chatCanSendBasic,
+      restrictedCanSendBasic:
+        (selfPerms?.['can_send_basic_messages'] as boolean | undefined) ?? true
     });
     this.host.setMembershipState(next);
     if (!membershipLosesComposer(next)) {

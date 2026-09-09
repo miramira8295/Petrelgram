@@ -22,11 +22,12 @@ import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
   COLOR_DIVIDER, COLOR_MUTED_BADGE, mainCardFill, ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
+import { A11Y_EPOCH, screenReaderOn } from '../../util/a11yState';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { folderColor } from '../../util/FolderVisuals';
 import { plural, str } from '../../util/strings';
 import {
-  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 import {
@@ -49,6 +50,11 @@ export const CHAT_ROW_SIDE_GUTTER: number = 12;
 @Component
 export struct ChatRow {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 读屏开关的纪元。必须在 build 链路里**被真正读到**才建立依赖——见下面
+  // rowGlassEnabled() 里 surfaceGlassEpoch 那段（同一个坑，有用户实测背书：
+  // "开关打开了，不重建页面不生效"）。所以 accessibilitySummary() 里那句
+  // `this.a11yEpoch >= 0` 恒真但**不能删**。
+  @StorageProp(A11Y_EPOCH) private a11yEpoch: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -177,7 +183,17 @@ export struct ChatRow {
     return effectiveMuted(this.chat, scopeMutedForKind(this.chat.kind));
   }
 
+  // 读屏关着时不拼这段话——它每行每次渲染都要求值，里面还有一次 plural()
+  // 的 NAPI，2026-09-09 的 Frame 录制量到它占 ChatRow 复用体的 **63%**
+  // （38.07 / 60.33ms）。关着的时候这段话没有任何人读。
+  //
+  // a11yEpoch 让"运行期间打开读屏"也能生效：翻转时纪元 +1，本行按
+  // @StorageProp 订阅它，整表重刷一次（见 util/a11yState）。
   private accessibilitySummary(): string {
+    // `this.a11yEpoch >= 0` 恒真但不能删，理由见该字段的声明处。
+    if (this.a11yEpoch >= 0 && !screenReaderOn()) {
+      return '';
+    }
     const parts: string[] = [this.chat.title];
     if (this.isPinned()) {
       parts.push(str('cl_pinned'));
@@ -372,7 +388,22 @@ export struct ChatRow {
   }
 
   private rowBlurStyle(): BlurStyle | undefined {
-    return this.rowGlassEnabled() ? surfaceGlassBlurStyle() : undefined;
+    if (!this.rowGlassEnabled()) {
+      return undefined;
+    }
+    // **背后没有壁纸就不挂模糊。**
+    //
+    // 行背后此时是一整块纯色（页面底色），而**模糊一块纯色得到的还是同一块
+    // 纯色**——观感一模一样，代价却是实打实的：2026-09-09 的 Frame 录制里，
+    // 会话行的 backdrop 模糊做了 8431 次快照、435ms CPU，占滤镜总开销的 48%，
+    // 缓存命中率只有 2.9%（行在滚、节点位置每帧都变，缓存必然失效）。
+    //
+    // 半透明的纱色（rowFill 里的 surfaceGlassFill）照旧留着，所以开着玻璃开关
+    // 的用户在没有壁纸时看到的东西和以前**一个像素都不差**。
+    if (!this.appWallpaperOn) {
+      return undefined;
+    }
+    return surfaceGlassBlurStyle();
   }
 
   @Styles
@@ -673,7 +704,7 @@ export struct ChatRow {
       },
       borderRadius: 16,
       backgroundColor: Color.Transparent,
-      backgroundBlurStyle: overlayBlur('menu'),
+      backgroundBlurStyle: containerBlur('menu'),
       systemMaterial: overlayMaterial('menu'),
       transition: TransitionEffect.OPACITY
         .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))

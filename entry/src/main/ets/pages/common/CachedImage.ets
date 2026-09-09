@@ -1,7 +1,7 @@
 import { image } from '@kit.ImageKit';
 import {
   cachedPixelMap, cancelPixelMap, loadPixelMap, PixelHandle, PixelRequest,
-  pinPixelMap, releasePixelMap, retainPixelMap
+  pinPixelMap, pinPixelMapBounded, releasePixelMap, retainPixelMap
 } from '../../util/pixelCache';
 import {
   isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode
@@ -29,6 +29,10 @@ export struct CachedImage {
   @Param fit: ImageFit = ImageFit.Cover;
   // Keep the decoded bitmap for the whole session (see pinPixelMap).
   @Param pin: boolean = false;
+  // 有上限的钉：只保最近 N 张，超出还给 LRU（见 util/boundedPins）。
+  // 给「便宜但到处复用、数量随内容增长」的那一类用——头像就是典型：不钉会被
+  // 大图挤掉、回滚时重解码露出首字母圆底（issue #137「翻消息时头像会闪」）。
+  @Param pinBounded: boolean = false;
   // 位图第一次真正交给 Image 的那一刻。调用方据此决定什么时候撤掉自己的兜底层
   // ——解码失败时这个回调永远不来，兜底层就一直留着（issue #90）。
   @Param onReady: () => void = (): void => {};
@@ -129,6 +133,8 @@ export struct CachedImage {
     this.onReady();
     if (this.pin) {
       pinPixelMap(handle);
+    } else if (this.pinBounded) {
+      pinPixelMapBounded(req, handle);
     }
     if (previous !== null) {
       releasePixelMap(previous);

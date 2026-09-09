@@ -41,8 +41,11 @@ export default function performanceBudgetsTest() {
       expect(full.imageBytes + full.alphaBytes).assertEqual(NATIVE_PIXEL_CACHE_MAX_BYTES);
     });
 
+    // 这个值必须**高于滚动时的到达速率**：drainHolderReleases 在队列非空时会
+    // setTimeout(...,0) 自我重排，值太小就排不空，定时器变成常驻的每帧定时器
+    // （2026-09-09 Frame 录制实测，3 那一版的 setTimeout 开销归一化涨了 65%）。
     it('bounds component image releases per event-loop turn', 0, (): void => {
-      expect(IMAGE_HOLDER_RELEASE_BATCH).assertEqual(3);
+      expect(IMAGE_HOLDER_RELEASE_BATCH).assertEqual(16);
     });
 
     it('shrinks progressively and drops background caches', 0, (): void => {

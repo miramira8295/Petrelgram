@@ -1,5 +1,6 @@
 import {
-  HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationMenuItemOptions,
+  HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationIconOptions,
+  HdsNavigationMenuItemOptions,
   TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
@@ -53,12 +54,28 @@ export struct HdsSubDestination {
   // 只剩 Index 一层，弹掉的就是 Index，现象是**点返回箭头直接退到桌面**
   // （Task 7 修复轮 1 在设备上实测过）。所以这里必须出 Navigation 栈。
   onBack: () => void = (): void => { this.popSelf(); };
-  // 右上角的图标按钮，最多三个（HDS 自己会把多的收进"更多"）。
+  // 右上角的图标按钮。
   //
-  // 必须是 @Prop：调用页会按自己的状态重新算这组菜单项（AccountEditPage 的保存
-  // 勾在 loading 期间禁用、加载完再启用）。没有装饰器的成员只在构造时从父组件
-  // 拿一次值、之后再不同步，勾就永远停在第一帧的禁用态（issue #165）。
-  @Prop menuItems: HdsNavigationMenuItemOptions[] = [];
+  // 【为什么不是「调用页拼好一个数组传进来」——两次都栽在这上面】
+  //
+  // 第一版是普通成员：没有装饰器的成员只在构造时取一次值、之后再不同步，勾就
+  // 永远停在第一帧的禁用态（issue #165）。
+  //
+  // 第二版改成 `@Prop menuItems: HdsNavigationMenuItemOptions[]`：V1 的 @Prop
+  // 对对象**做深拷贝**，而菜单项里装着一个闭包（`action`）。闭包过不了深拷贝，
+  // 拷出来的项是残缺的，HDS 干脆什么都不画——从"一直灰着"变成了"根本没有"
+  // （用户 2026-09-08 实测：「账号设置中，没有保存按钮」）。
+  //
+  // 所以现在**不让带闭包的对象穿过 @Prop**：跨边界的只有基本类型（图标资源、
+  // 可用与否）和一个普通成员回调（普通成员承载函数是安全的，它只在构造时赋值
+  // 一次，而回调本身不需要跟着状态变——变的是 enabled）。菜单项由外壳自己拼，
+  // 拼的地方就在 titleBarContent()，每次重绘都会重新求值。
+  //
+  // 图标为空资源时不显示任何菜单项。
+  @Prop actionIcon: ResourceStr = '';
+  @Prop actionLabel: ResourceStr = '';
+  @Prop actionEnabled: boolean = true;
+  onAction: () => void = (): void => {};
 
   // ┌──────────────────────────────────────────────────────────────────────┐
   // │ router 页生命周期 / 入参的转发入口                                     │
@@ -140,8 +157,22 @@ export struct HdsSubDestination {
     return {
       title: { mainTitle: this.title, subTitle: this.subTitle },
       backIcon: { action: (): void => { this.onBack(); } },
-      menu: { value: this.menuItems }
+      menu: { value: this.menuValue() }
     };
+  }
+
+  // 菜单项在这里拼，不从外面接。理由见 actionIcon 那组字段的说明。
+  private menuValue(): HdsNavigationMenuItemOptions[] {
+    if (this.actionIcon === '') {
+      return [];
+    }
+    const icon: HdsNavigationIconOptions = {
+      icon: this.actionIcon,
+      label: this.actionLabel,
+      isEnabled: this.actionEnabled,
+      action: (): void => { this.onAction(); }
+    };
+    return [{ content: icon }];
   }
 
   build() {

@@ -11,7 +11,7 @@ import {
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
@@ -516,7 +516,7 @@ struct CallsPage {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: overlayBlur('menu'),
+        backgroundBlurStyle: containerBlur('menu'),
         systemMaterial: overlayMaterial('menu'),
         mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
         modalMode: ModalMode.TARGET_WINDOW,

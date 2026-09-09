@@ -1017,6 +1017,34 @@
       "value": "In der Galerie gespeichert"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "Download fehlgeschlagen"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "Wird geladen %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Galerie"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Speichern fehlgeschlagen"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "In %1$s gespeichert"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Wird gespeichert %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Gewählter Ort"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "Zum Senden von Sprachnachrichten und Sprechen im Livestream wird das Mikrofon benötigt"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "Der automatische Download erfolgt abhängig vom aktuellen Netzwerk und der Dateigröße; das Speichern in der Galerie wird vom System bestätigt."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "Download-Ort"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Standard-Downloadpfad"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Beim Speichern Ort wählen"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Standard-Downloadpfad aktualisiert"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "Wenn aktiviert, kannst du im Chat-Menü den gesamten Chat übersetzen"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Originaltext durch Übersetzung ersetzen"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Nur die Übersetzung anzeigen, sobald sie fertig ist"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "Umwandlung in Text ist eine Telegram-Premium-Funktion"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "Auch für den Kontakt löschen"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "Für alle löschen"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Beschriftung entfernen"
+    },
+    {
+      "name": "share_to",
+      "value": "Teilen mit"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Wird vorbereitet…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "In der App wählen…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Öffne die App einmal, damit deine letzten Chats hier erscheinen"
+    },
+    {
+      "name": "share_failed",
+      "value": "Geteilter Inhalt konnte nicht gelesen werden"
+    },
+    {
+      "name": "share_staged",
+      "value": "Ins Eingabefeld eingefügt – prüfen und senden"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Sofort senden"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Chat zuerst öffnen"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "An %1$s gesendet"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "Senden fehlgeschlagen – Inhalt bleibt im Eingabefeld"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Schnell teilen"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "Keine passenden Nachrichten"
     }
   ]
 }

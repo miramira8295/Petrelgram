@@ -1017,6 +1017,34 @@
       "value": "アルバムに保存しました"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "ダウンロードに失敗しました"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "ダウンロード中 %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "ギャラリー"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "保存に失敗しました"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "%1$s に保存しました"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "保存中 %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "選択した場所"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "音声メッセージの送信と配信での発言にはマイクの使用が必要です"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "自動ダウンロードは現在のネットワークとファイルサイズに従って実行されます。アルバムへの保存はシステムの書き込み確認に従います。"
+    },
+    {
+      "name": "ds_download_location",
+      "value": "ダウンロード先"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "既定のダウンロード先"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "保存時に場所を選ぶ"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "既定のダウンロード先を更新しました"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "オンにすると、チャットメニューでチャット全体を翻訳できます"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "原文を翻訳で置き換える"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "翻訳が完了したら翻訳文のみを表示"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "文字起こしは Telegram Premium の機能です"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "相手側でもクリア"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "全員のために削除"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "キャプションを削除"
+    },
+    {
+      "name": "share_to",
+      "value": "共有先"
+    },
+    {
+      "name": "share_preparing",
+      "value": "準備中…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "アプリで選択…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "アプリを一度開くと、最近のチャットがここに表示されます"
+    },
+    {
+      "name": "share_failed",
+      "value": "共有された内容を読み取れませんでした"
+    },
+    {
+      "name": "share_staged",
+      "value": "入力欄に追加しました。確認して送信してください"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "すぐ送信"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "チャットを開く"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "%1$s に送信しました"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "送信できませんでした。内容は入力欄に残しています"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "クイック共有"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "一致するメッセージはありません"
     }
   ]
 }

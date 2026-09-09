@@ -24,6 +24,9 @@ import {
   COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
+import { translationReplacesOriginal } from '../../util/translationMode';
+
+const EMPTY_TRANSLATION_ENTITIES: TdObject[] = [];
 
 // 遮罩。比长按菜单的背板浅一档：那一层要把整页推远，这一层只需要让气泡
 // 从背景里浮出来，用户还得看得见自己在哪条消息上。
@@ -99,6 +102,19 @@ export struct SelectTextOverlay {
 
   private codeSize(): number {
     return Math.max(12, this.textSize() - 2);
+  }
+
+  private replacementTranslationShown(): boolean {
+    // selectTextPayload 已经在 translationHidden=true 时清空译文。
+    return translationReplacesOriginal(this.env.translateReplaceOriginal, this.data.translatedText, false);
+  }
+
+  private displayedText(): string {
+    return this.replacementTranslationShown() ? this.data.translatedText : this.data.text;
+  }
+
+  private displayedEntities(): TdObject[] {
+    return this.replacementTranslationShown() ? EMPTY_TRANSLATION_ENTITIES : this.data.entities;
   }
 
   private inlineCustomEmojiSource(customEmojiId: string): string {
@@ -233,11 +249,11 @@ export struct SelectTextOverlay {
       if (this.data.hasReply) {
         this.replyQuote();
       }
-      ForEach(parseFormattedText(this.data.text, this.data.entities),
+      ForEach(parseFormattedText(this.displayedText(), this.displayedEntities()),
         (seg: RichSegment, idx: number) => {
           this.segment(seg);
         }, (seg: RichSegment, idx: number) => richSegmentKey(idx, seg));
-      if (this.data.translatedText !== '') {
+      if (this.data.translatedText !== '' && !this.replacementTranslationShown()) {
         this.translation();
       }
     }

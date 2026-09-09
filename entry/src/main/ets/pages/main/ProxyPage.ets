@@ -28,7 +28,7 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
@@ -1475,7 +1475,7 @@ export struct ProxyPage {
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .bindSheet($$this.sheetOpen, this.proxyFormSheet(), {
-      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      height: '82%', backgroundColor: COLOR_PAGE_BG, dragBar: !this.saving, blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

@@ -19,6 +19,7 @@ import { registerMessageSyncWork } from '../services/MessageSyncWork';
 import { WebPushConfig, registerWebPush, validateWebPushConfig } from '../services/WebPushRegistration';
 import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
 import { resetScopeMute } from '../store/ScopeMuteStore';
+import { resetScopePreview } from '../store/ScopePreviewStore';
 import { CHAT_TAB_INDEX, KEY_MAIN_TAB } from '../util/chatNav';
 import { resetChatPositions } from '../util/chatResume';
 import { resetChatViewportGeometry } from '../util/chatViewportGeometry';
@@ -356,6 +357,7 @@ async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
   // 分类默认静音是**按账号**的：上一个账号把频道整类静音了，新账号未必。
   // 它住在模块级的 Map 里，不随运行时一起销毁，必须显式清。
   resetScopeMute();
+  resetScopePreview();
   // 页签回到聊天。运行时停掉时整棵主屏会重建，Tabs 从 0 起；而 mainTabIndex
   // 还留着切换前的下标（多半是「设置」——切账号的入口就在那儿），于是底栏高亮
   // 在设置、内容却是聊天列表（issue #131）。两边只能有一个真相，取聊天。

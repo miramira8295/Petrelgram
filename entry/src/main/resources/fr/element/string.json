@@ -1017,6 +1017,34 @@
       "value": "Enregistré dans la galerie"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "Échec du téléchargement"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "Téléchargement %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Galerie"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Échec de l'enregistrement"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "Enregistré dans %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Enregistrement %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Emplacement choisi"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "L'envoi de messages vocaux et la prise de parole en direct nécessitent le micro"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "Le téléchargement automatique suit le réseau actuel et la taille des fichiers ; l'enregistrement dans la galerie est confirmé par le système."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "Emplacement des téléchargements"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Chemin de téléchargement par défaut"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Choisir l'emplacement lors de l'enregistrement"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Chemin de téléchargement par défaut mis à jour"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "Une fois activé, la discussion entière peut être traduite depuis le menu de la discussion"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Remplacer le texte original par la traduction"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Afficher uniquement la traduction lorsqu’elle est prête"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "La transcription est une fonctionnalité Telegram Premium"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "Effacer aussi pour l'autre"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "Effacer pour tous"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Supprimer la légende"
+    },
+    {
+      "name": "share_to",
+      "value": "Partager avec"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Préparation…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "Choisir dans l'app…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Ouvrez l'app une fois pour voir vos discussions récentes ici"
+    },
+    {
+      "name": "share_failed",
+      "value": "Impossible de lire le contenu partagé"
+    },
+    {
+      "name": "share_staged",
+      "value": "Ajouté à la zone de saisie — vérifiez et envoyez"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Envoyer direct"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Ouvrir la discussion"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "Envoyé à %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "Échec de l'envoi — contenu conservé dans la zone de saisie"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Partage rapide"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "Aucun message correspondant"
     }
   ]
 }

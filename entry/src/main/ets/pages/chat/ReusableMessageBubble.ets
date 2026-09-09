@@ -3,6 +3,14 @@ import {
   messageRowPresentationFor, subscribeMessageRowPresentation
 } from '../../util/messageRowPresentationChannel';
 import { probeHit } from '../../util/panelProbe';
+import { TranslationPresentation, translationLanded } from '../../util/translationLanding';
+import { takeTranslationInstant } from '../../util/translationAnchor';
+import {
+  TRANSLATION_FADE_IN_MS, TRANSLATION_FADE_LOW, TRANSLATION_FADE_OUT_MS
+} from '../../util/deferredTranslation';
+import {
+  KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
+} from '../../store/AppSettings';
 import { LightweightPlainTextBubble } from './LightweightPlainTextBubble';
 import { MessageBubble } from './MessageBubble';
 
@@ -81,6 +89,11 @@ export interface MessageBubbleActions {
 }
 
 export interface MessageBubbleRenderData {
+  // 这个会话此刻能不能发言。只读频道、未加入、被封禁、机器人还没「开始」时
+  // 输入框根本不在（membershipLosesComposer），此时左滑回复不该有反应
+  // ——滑了也只是把一条回复挂到一个不存在的输入框上
+  // （用户 2026-09-09：「这个频道应该没有回复消息的能力呀」）。
+  canReply: boolean;
   chatId: number;
   // Actual row width after page-local chrome such as the multi-select gutter.
   // Media, albums and both bubble renderers derive every cap from this value.
@@ -231,9 +244,75 @@ export struct ReusableMessageBubble {
     this.unsubPresentation = subscribeMessageRowPresentation(
       this.data.chatId,
       group.head.rowId,
-      (next: AlbumGroup): void => { this.liveGroup = next; }
+      (next: AlbumGroup): void => { this.applyPresentation(next); }
     );
   }
+
+  // 旁路更新落到界面上。
+  //
+  // 【为什么这里可以做动画，而气泡里不行】译文**不进行签名**（见
+  // util/collapseAlbums 的头注释），是从这条通道直达的——这句赋值就在我们自己
+  // 的闭包里，`animateTo` 包得住它引起的布局变化，气泡拉长因此能补间。
+  // 而气泡内部拿到的已经是变完的值，那时再动画就晚了。
+  //
+  // 【为什么只给译文动画】这条通道是**所有**展示态更新的公共入口：下载完成、
+  // 缩略图路径、发送态都走它。整条包进 animateTo 的话，一次下载进度跳动也会
+  // 让气泡跟着动一下。判据在 util/translationLanding（纯函数、有单测）。
+  //
+  // 【为什么不是给气泡加 .animation()】常驻动画会建立动画上下文，把同一刷新
+  // 周期里的列表脏节点一起拖进动画布局——2026-08-27 真机 trace 量过，最重的
+  // 一帧从 210ms 涨到 463ms（见 MessageBubble 气泡根节点上那段长注释，那里
+  // 点名了「翻译态」）。animateTo 是一次性的，不留上下文。
+  private applyPresentation(next: AlbumGroup): void {
+    const before: TranslationPresentation = this.translationOf(this.liveGroup);
+    const after: TranslationPresentation = this.translationOf(next);
+    if (!translationLanded(before, after)) {
+      this.liveGroup = next;
+      return;
+    }
+    // 被点名"直接落"的不做动画：那是视口**上方**的行，它变高会把用户正在看的
+    // 内容往下推，页面要靠一次滚动补偿吃掉这个位移，而补偿只有布局落定才量得到
+    // ——动画会让内容先漂再被拽回来，比硬切更难看。那些行本来也看不见。
+    // 判据与点名见 util/translationAnchor。
+    if (takeTranslationInstant(next.head.id)) {
+      this.liveGroup = next;
+      return;
+    }
+    // 先淡出、换内容、再淡入。
+    //
+    // 【为什么必须有这一层，光靠高度补间不够】**替换模式**（译文顶掉原文）下
+    // 气泡高度往往几乎不变，只有字变了，用户看到的就还是硬切
+    // （2026-09-09：「原文翻译替换好像看不太出来动画呢」）。而正文那一层的
+    // ForEach 键里含内容指纹，节点确实是销毁重建的——但**不能在那里挂
+    // transition**：行复用时键同样会变，那样每滚过一行都会淡入一次。
+    // 所以淡入淡出放在行外壳上，只在译文落地这一刻发生。
+    //
+    // opacity 直接挂在子组件调用上，不额外包一层容器——每行多一个节点在这个
+    // 列表上是要还的。
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, TRANSLATION_FADE_OUT_MS),
+      curve: Curve.EaseOut,
+      onFinish: (): void => {
+        this.getUIContext().animateTo({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, TRANSLATION_FADE_IN_MS),
+          curve: Curve.FastOutSlowIn
+        }, (): void => {
+          this.liveGroup = next;
+          this.translationFade = 1;
+        });
+      }
+    }, (): void => { this.translationFade = TRANSLATION_FADE_LOW; });
+  }
+
+  private translationOf(group: AlbumGroup | null): TranslationPresentation {
+    if (group === null) {
+      return { text: '', hidden: false };
+    }
+    return { text: group.head.translatedText, hidden: group.head.translationHidden };
+  }
+
+  // 译文换字时的淡入淡出。1 = 常态。
+  @Local private translationFade: number = 1;
 
   private detachPresentation(): void {
     if (this.unsubPresentation !== null) {
@@ -299,7 +378,8 @@ export struct ReusableMessageBubble {
         animateIn: this.data.animateIn,
         memberIds: this.currentGroup().memberIds,
         actions: this.actions
-      });
+      })
+        .opacity(this.translationFade);
     } else {
       MessageBubble({
       // 整行一个对象下发，不再拆成十七个 @Param（理由见 MessageBubble.group）。
@@ -311,7 +391,8 @@ export struct ReusableMessageBubble {
       actions: this.actions,
       // `actions` is page-owned and stable. Passing its functions through directly avoids
       // allocating a fresh forwarding closure for every callback of every visible row.
-      });
+      })
+        .opacity(this.translationFade);
     }
   }
 }

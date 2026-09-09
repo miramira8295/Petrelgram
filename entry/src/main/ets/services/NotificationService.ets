@@ -12,6 +12,8 @@ import {
 import { str } from '../util/strings';
 import { logE } from '../util/log';
 import { scopeMuted, scopeOfTdType, setScopeMuted } from '../store/ScopeMuteStore';
+import { scopePreviewForKind, setScopePreview } from '../store/ScopePreviewStore';
+import { NotificationBody, notificationBody } from '../util/notificationText';
 
 // 来电通知固定 id（TDLib notification id 为正整数，取远离区间的常量）。
 export const CALL_NOTIFICATION_ID: number = 999001;
@@ -95,6 +97,10 @@ export class NotificationService {
         const scopeKey: string = scopeOfTdType(typeName);
         if (scopeKey !== '') {
           setScopeMuted(scopeKey, muted);
+          // 「消息预览」开关。以前这里只取 mute_for，show_preview 拿到手就扔了，
+          // 于是本地通知从来不遵守它（见 store/ScopePreviewStore 的说明）。
+          setScopePreview(scopeKey, settings !== undefined
+            ? ((settings['show_preview'] as boolean | undefined) ?? true) : true);
         }
       }));
     // 会话级通知设置：记录它是否覆盖了分类默认。
@@ -194,11 +200,12 @@ export class NotificationService {
     if (typeName === 'notificationTypeNewMessage') {
       const message = type!['message'] as TdObject | undefined;
       const preview: string = formatPreview(message ?? null);
-      const text: string = preview !== '' ? preview : str('ns_new_message_body');
       const who: string = message !== undefined ? this.senderPrefix(message, chatId) : '';
+      const body: NotificationBody = notificationBody(title, who, preview,
+        this.previewAllowed(chatId), str('ns_new_message'), str('ns_new_message_body'));
       return {
         id: id, groupId: groupId, chatId: chatId,
-        title: title, text: who !== '' ? `${who}: ${text}` : text, isCall: false,
+        title: body.title, text: body.text, isCall: false,
         messageId: message !== undefined ? ((message['id'] as number | undefined) ?? 0) : 0,
         avatarPath: message !== undefined
           ? this.senderAvatarPath(message, chatId)
@@ -234,6 +241,22 @@ export class NotificationService {
   // chatId → 该会话是否使用分类默认值 / 自身 mute_for（来自 updateChat*）。
   private chatUsesDefaultMute: Map<number, boolean> = new Map();
   private chatOwnMuted: Map<number, boolean> = new Map();
+
+  // 这个会话在不在我的会话列表里。
+  //
+  // 路过点进去看了一眼、**没有加入**的公开群，TDLib 照样会把新消息推过来
+  // （chat 是打开过的），于是我们一直给它发通知——用户实测：「路过点进去的群
+  // 没有加入，但是之后有新消息也会推送过来」。判据是**它一个 position 都没有**
+  // （见 ChatStore.inAnyChatList）。
+  //
+  // **会话还不认识时放行**：那时只是 chat 对象还没到，按"不在列表里"处理会
+  // 把真正该响的通知吞掉。宁可多响一次，不可漏一条。
+  private inMyChatList(chatId: number): boolean {
+    if (this.chats.entryOf(chatId) === undefined) {
+      return true;
+    }
+    return this.chats.inAnyChatList(chatId);
+  }
 
   private scopeKeyOf(chatId: number): string {
     const entry = this.chats.entryOf(chatId);
@@ -292,10 +315,19 @@ export class NotificationService {
       this.client.send(req).then((res: TdObject): void => {
         const muted: boolean = ((res['mute_for'] as number | undefined) ?? 0) > 0;
         setScopeMuted(key, muted);
+        setScopePreview(key, (res['show_preview'] as boolean | undefined) ?? true);
       }).catch((e: TdError): void => {
         logE(`NotificationService.getScopeNotificationSettings(${key}): ${e.message}`);
       });
     }
+  }
+
+  // 这个会话的通知能不能带内容。按会话类型落到对应的分类开关上
+  // （单会话覆盖暂不支持，理由见 store/ScopePreviewStore）。
+  // 会话还不认识时按"能"——与 TDLib 默认一致。
+  private previewAllowed(chatId: number): boolean {
+    const entry = this.chats.entryOf(chatId);
+    return entry === undefined ? true : scopePreviewForKind(entry.kind);
   }
 
   private considerFallbackNotice(message: TdObject | undefined, chatId: number,
@@ -303,8 +335,8 @@ export class NotificationService {
     if (message === undefined || outgoing || chatId === 0 || this.isForeground()) {
       return;
     }
-    // 判定顺序：本机类型开关 → 服务端（会话/分类）静音状态。
-    if (!this.typeAllowed(chatId) || this.isChatMuted(chatId)) {
+    // 判定顺序：会话在不在我的列表里 → 本机类型开关 → 服务端（会话/分类）静音。
+    if (!this.inMyChatList(chatId) || !this.typeAllowed(chatId) || this.isChatMuted(chatId)) {
       return;
     }
     const entry = this.chats.entryOf(chatId);
@@ -320,12 +352,16 @@ export class NotificationService {
     }
     const preview: string = formatPreview(message);
     const who: string = this.senderPrefix(message, chatId);
+    const body: NotificationBody = notificationBody(
+      entry !== undefined && entry.title !== '' ? entry.title : str('ns_new_message'),
+      who, preview, this.previewAllowed(chatId),
+      str('ns_new_message'), str('ns_new_message_body'));
     this.publisher.publish({
       id: noticeId,
       groupId: 0,
       chatId: chatId,
-      title: entry !== undefined && entry.title !== '' ? entry.title : str('ns_new_message'),
-      text: who !== '' ? `${who}: ${preview}` : preview,
+      title: body.title,
+      text: body.text,
       isCall: false,
       messageId: messageId,
       avatarPath: this.senderAvatarPath(message, chatId)

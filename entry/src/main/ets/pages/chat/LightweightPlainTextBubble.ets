@@ -14,7 +14,7 @@ import {
 } from '../../util/scrollEffects';
 import { MessageGesturePolicy, messageGesturePolicy } from '../../util/messageGestures';
 import {
-  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+  overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
@@ -174,7 +174,10 @@ struct LightweightSenderAvatar {
         .fill(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length]);
       Text(this.initials).fontColor(Color.White).fontSize(15.2).fontWeight(FontWeight.Medium);
       CachedImage({
-        path: this.path, boxWidth: 38, boxHeight: 38, radius: 19, fit: ImageFit.Cover
+        path: this.path, boxWidth: 38, boxHeight: 38, radius: 19, fit: ImageFit.Cover,
+        // 和 LiveSenderAvatar 同一理由：头像被大图挤出 LRU 后重解码会闪
+        // （issue #137）。两处要一起开，否则纯文本行的头像仍然会闪。
+        pinBounded: true
       }).visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
     }.width(38).height(38);
   }
@@ -622,7 +625,12 @@ export struct LightweightPlainTextBubble {
   @Builder
   translationState() {
     if (this.translationStatus !== null) {
-      Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
+      // Divider 在收缩布局里会按父级上限取宽；空 Row 只在正文定宽后拉伸。
+      Row()
+        .height(0.6)
+        .alignSelf(ItemAlign.Stretch)
+        .backgroundColor(COLOR_TEXT_SECONDARY)
+        .opacity(0.3)
         .margin({ top: 6, bottom: 5 });
       if (this.translationStatus?.phase === 'loading') {
         Row({ space: 5 }) {
@@ -957,7 +965,7 @@ export struct LightweightPlainTextBubble {
           },
           borderRadius: 16,
           backgroundColor: Color.Transparent,
-          backgroundBlurStyle: overlayBlur('menu'),
+          backgroundBlurStyle: containerBlur('menu'),
           systemMaterial: overlayMaterial('menu'),
           transition: TransitionEffect.OPACITY
             .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))

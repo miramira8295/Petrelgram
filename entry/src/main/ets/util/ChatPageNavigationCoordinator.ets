@@ -10,6 +10,12 @@ export interface ChatRouteParams {
   draftText: string;
   searchQuery: string;
   startSearch: boolean;
+  // 系统分享把内容送进来了，等着放进这个会话。载荷本身不走路由参数（里面
+  // 有一串路径和长文本，而路由参数会被序列化进导航栈），只有这个标志走；
+  // 内容由 ChatPage 从 services/ShareInbox 取。
+  sharePending: boolean;
+  // 「直接发送」那一档：不落输入框，进来就发（见 util/shareSendMode）。
+  shareAutoSend: boolean;
 }
 
 function numberParam(params: Record<string, Object> | undefined, key: string,
@@ -48,7 +54,9 @@ export function parseChatRouteParams(params: Record<string, Object> | undefined)
     jumpTo: params !== undefined ? (params['jumpTo'] as number | undefined) : undefined,
     draftText: stringParam(params, 'draftText'),
     searchQuery: stringParam(params, 'searchQuery'),
-    startSearch: boolParam(params, 'startSearch')
+    startSearch: boolParam(params, 'startSearch'),
+    sharePending: boolParam(params, 'sharePending'),
+    shareAutoSend: boolParam(params, 'shareAutoSend')
   };
 }
 

@@ -23,6 +23,7 @@
     "pages/call/CallPage",
     "pages/story/StoryViewerPage",
     "pages/profile/MemberRestrictPage",
-    "pages/profile/MemberPromotePage"
+    "pages/profile/MemberPromotePage",
+    "pages/share/SharePanel"
   ]
 }

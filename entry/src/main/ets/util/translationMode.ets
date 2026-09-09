@@ -24,6 +24,14 @@ export const TRANSLATE_DONE: string = 'done';
 export const TRANSLATE_FAILED: string = 'failed';
 export const TRANSLATE_EMPTY: string = 'empty';
 
+// “替换原文”只在译文真实可见时生效：翻译未完成仍显示原文，用户点“隐藏译文”
+// 也必须恢复原文。原文数据本身从不改写。
+export function translationReplacesOriginal(
+  enabled: boolean, translatedText: string, translationHidden: boolean
+): boolean {
+  return enabled && translatedText !== '' && !translationHidden;
+}
+
 // chatIsTranslatable 仍在签名里：调用方拿着这个服务端位，去掉参数只会让
 // 调用点自己再判一次。判定本身不看它——见上面的说明。
 export function translationActive(

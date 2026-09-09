@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { TdClient } from '../main/ets/tdkit/TdClient';
+import { TdClient, TimerFns } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { ChatStore } from '../main/ets/store/ChatStore';
@@ -14,6 +14,77 @@ class FakeBridge implements TdBridge {
   send(json: string): void { this.sent.push(json); }
 }
 
+interface ManualTimerTask {
+  id: number;
+  dueAt: number;
+  callback: () => void;
+}
+
+class ManualTimer implements TimerFns {
+  private nextId: number = 0;
+  private nowMs: number = 0;
+  private tasks: ManualTimerTask[] = [];
+
+  setTimeout(callback: () => void, ms: number): number {
+    this.nextId += 1;
+    this.tasks.push({ id: this.nextId, dueAt: this.nowMs + Math.max(0, ms), callback });
+    return this.nextId;
+  }
+
+  clearTimeout(id: number): void {
+    this.tasks = this.tasks.filter((task: ManualTimerTask): boolean => task.id !== id);
+  }
+
+  runNext(): void {
+    const index = this.nextTaskIndex();
+    if (index < 0) {
+      return;
+    }
+    const task = this.tasks.splice(index, 1)[0];
+    this.nowMs = task.dueAt;
+    task.callback();
+  }
+
+  advanceBy(ms: number): void {
+    const target = this.nowMs + Math.max(0, ms);
+    let index = this.nextTaskIndex();
+    while (index >= 0 && this.tasks[index].dueAt <= target) {
+      const task = this.tasks.splice(index, 1)[0];
+      this.nowMs = task.dueAt;
+      task.callback();
+      index = this.nextTaskIndex();
+    }
+    this.nowMs = target;
+  }
+
+  runAll(): void {
+    let remaining: number = 20;
+    while (this.tasks.length > 0 && remaining > 0) {
+      remaining -= 1;
+      this.runNext();
+    }
+    if (this.tasks.length > 0) {
+      throw new Error('ManualTimer did not settle');
+    }
+  }
+
+  pendingCount(): number {
+    return this.tasks.length;
+  }
+
+  private nextTaskIndex(): number {
+    let bestIndex: number = -1;
+    for (let i = 0; i < this.tasks.length; i += 1) {
+      if (bestIndex < 0 || this.tasks[i].dueAt < this.tasks[bestIndex].dueAt ||
+        (this.tasks[i].dueAt === this.tasks[bestIndex].dueAt &&
+          this.tasks[i].id < this.tasks[bestIndex].id)) {
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
+  }
+}
+
 function mainPos(order: string, pinned: boolean): TdObject {
   const list: TdObject = { '@type': 'chatListMain' };
   const p: TdObject = { '@type': 'chatPosition' };
@@ -21,19 +92,22 @@ function mainPos(order: string, pinned: boolean): TdObject {
   return p;
 }
 
-function textMessage(text: string, date: number): TdObject {
+function textMessage(text: string, date: number, outgoing?: boolean): TdObject {
   const ft: TdObject = { '@type': 'formattedText' }; ft['text'] = text;
   const content: TdObject = { '@type': 'messageText' }; content['text'] = ft;
   const m: TdObject = { '@type': 'message' };
   m['content'] = content; m['date'] = date;
+  if (outgoing !== undefined) { m['is_outgoing'] = outgoing; }
   return m;
 }
 
 function pushNewChat(bridge: FakeBridge, id: number, title: string,
-    positions: TdObject[], lastMsg: TdObject | null, unread: number): void {
+    positions: TdObject[], lastMsg: TdObject | null, unread: number,
+    lastReadInboxId: number = 0): void {
   const chat: TdObject = { '@type': 'chat' };
   chat['id'] = id; chat['title'] = title; chat['positions'] = positions;
   chat['unread_count'] = unread;
+  chat['last_read_inbox_message_id'] = lastReadInboxId;
   if (lastMsg !== null) { chat['last_message'] = lastMsg; }
   const u: TdObject = { '@type': 'updateNewChat' }; u['chat'] = chat;
   bridge.onReceive(JSON.stringify(u));
@@ -61,6 +135,24 @@ function pushPosition(bridge: FakeBridge, id: number, pos: TdObject): void {
   bridge.onReceive(JSON.stringify(u));
 }
 
+function pushLastMessage(bridge: FakeBridge, chatId: number, message: TdObject | null,
+    positions?: TdObject[]): void {
+  const update: TdObject = { '@type': 'updateChatLastMessage' };
+  update['chat_id'] = chatId;
+  if (message !== null) { update['last_message'] = message; }
+  if (positions !== undefined) { update['positions'] = positions; }
+  bridge.onReceive(JSON.stringify(update));
+}
+
+function pushReadInbox(bridge: FakeBridge, chatId: number, unread: number,
+    lastReadInboxId: number): void {
+  const update: TdObject = { '@type': 'updateChatReadInbox' };
+  update['chat_id'] = chatId;
+  update['unread_count'] = unread;
+  update['last_read_inbox_message_id'] = lastReadInboxId;
+  bridge.onReceive(JSON.stringify(update));
+}
+
 function folderPos(fid: number, order: string, pinned: boolean): TdObject {
   const list: TdObject = { '@type': 'chatListFolder' }; list['chat_folder_id'] = fid;
   const p: TdObject = { '@type': 'chatPosition' };
@@ -78,15 +170,39 @@ function ids(chats: ChatEntry[]): number[] {
   return chats.map((c: ChatEntry) => c.id);
 }
 
-function make(): ChatStore {
+interface RowSyncHarness {
+  store: ChatStore;
+  bridge: FakeBridge;
+  timer: ManualTimer;
+  snapshots: ChatEntry[][];
+}
+
+function make(timer?: TimerFns): ChatStore {
   const bridge = new FakeBridge();
   const client = new TdClient(bridge);
   const users = new UserStore(client);
-  const store = new ChatStore(client, users);
+  const store = new ChatStore(client, users, timer);
   client.start();
   // stash bridge on store for test access
   (store as object)['__bridge'] = bridge;
   return store;
+}
+
+function rowSyncHarness(initialUnread: number = 0,
+    lastReadInboxId: number = 100): RowSyncHarness {
+  const timer = new ManualTimer();
+  const store = make(timer);
+  const bridge = bridgeOf(store);
+  const old = textMessage('old', 1783512000, false);
+  old['id'] = 100;
+  pushNewChat(bridge, 1, 'A', [mainPos('100', false)], old,
+    initialUnread, lastReadInboxId);
+  pushNewChat(bridge, 2, 'B', [mainPos('200', false)], null, 0);
+  timer.runAll();
+  const snapshots: ChatEntry[][] = [];
+  store.subscribe((chats: ChatEntry[]): void => { snapshots.push(chats); });
+  snapshots.splice(0, snapshots.length);
+  return { store, bridge, timer, snapshots };
 }
 
 function bridgeOf(store: ChatStore): FakeBridge {
@@ -184,6 +300,31 @@ export default function chatStoreTest() {
       // pinned (3) first, then 2 (300) > 1 (100)
       expect(ids(store.getChats()).join(',')).assertEqual('3,2,1');
     });
+    // 「路过点进去、没加入的群」：chat 对象拿得到，但一个 position 都没有。
+    // 通知那边靠这个判据挡掉"没加入的群还一直推消息"（用户 2026-09-09 实测）。
+    it('未加入的会话不在任何列表里', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, '路过的群', [], null, 0); // 没有任何 position
+      expect(store.entryOf(1) !== undefined).assertTrue(); // 认识它
+      expect(store.inAnyChatList(1)).assertFalse();        // 但不在我的列表里
+    });
+    it('主列表里的会话算在列表里', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [mainPos('100', false)], null, 0);
+      expect(store.inAnyChatList(1)).assertTrue();
+    });
+    it('归档的会话仍然算在列表里——归档不等于退出', 0, () => {
+      const store = make();
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [mainPos('100', false)], null, 0);
+      pushPosition(b, 1, mainPos('0', false)); // 挪出主列表
+      expect(store.getChats().length).assertEqual(0);
+      // 归档桶里还有没有它，取决于这条 update 带没带归档 position；
+      // 这里只钉住"主列表被清空之后判据不会误判成还在主列表"。
+      expect(store.inAnyChatList(999)).assertFalse();
+    });
     it('excludes_order_zero', 0, () => {
       const store = make();
       const b = bridgeOf(store);
@@ -238,7 +379,8 @@ export default function chatStoreTest() {
     // 幽灵未读抑制会把 1 抹成 0；换上新末条后必须重算，否则"会话上浮但角标
     // 不出现"。
     it('unread_survives_read_inbox_before_last_message', 0, () => {
-      const store = make();
+      const timer = new ManualTimer();
+      const store = make(timer);
       const b = bridgeOf(store);
       const read = textMessage('old', 1783512000);
       read['id'] = 100;
@@ -255,12 +397,333 @@ export default function chatStoreTest() {
       ri['chat_id'] = 1; ri['unread_count'] = 1;
       ri['last_read_inbox_message_id'] = 100;
       b.onReceive(JSON.stringify(ri));
-      const fresh = textMessage('new', 1783512100);
+      const fresh = textMessage('new', 1783512100, false);
       fresh['id'] = 101;
       const lm: TdObject = { '@type': 'updateChatLastMessage' };
       lm['chat_id'] = 1; lm['last_message'] = fresh;
       b.onReceive(JSON.stringify(lm));
+      timer.advanceBy(16);
       expect(store.getChats()[0].unreadCount).assertEqual(1);
+    });
+    it('subscriber_publishes_incoming_last_and_unread_as_one_snapshot', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+
+      // TDLib can hold the read update for roughly 100ms. The staged tail must
+      // remain invisible throughout that interval.
+      h.timer.advanceBy(100);
+      expect(h.snapshots.length).assertEqual(0);
+
+      pushReadInbox(h.bridge, 1, 1, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+      const row = h.snapshots[0][0];
+      expect(row.id).assertEqual(1);
+      expect(row.lastMessageId).assertEqual(101);
+      expect(row.lastMessageText).assertEqual('new');
+      expect(row.unreadCount).assertEqual(1);
+    });
+    it('subscriber_also_pairs_unread_when_it_arrives_first', 0, () => {
+      const h = rowSyncHarness();
+      pushReadInbox(h.bridge, 1, 1, 100);
+
+      // The count increase alone must not reach the row with its old preview.
+      h.timer.advanceBy(100);
+      expect(h.snapshots.length).assertEqual(0);
+
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+      const row = h.snapshots[0][0];
+      expect(row.lastMessageText).assertEqual('new');
+      expect(row.unreadCount).assertEqual(1);
+    });
+    it('unmatched_incoming_last_times_out_and_late_unread_is_not_held_again', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      h.timer.advanceBy(159);
+      expect(h.snapshots.length).assertEqual(0);
+      h.timer.advanceBy(1); // bounded per-chat wait
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageText).assertEqual('new');
+      expect(h.snapshots[0][0].unreadCount).assertEqual(0);
+
+      pushReadInbox(h.bridge, 1, 1, 100);
+      h.timer.advanceBy(16); // late counterpart only uses the short settle window
+      expect(h.snapshots.length).assertEqual(2);
+      expect(h.snapshots[1][0].unreadCount).assertEqual(1);
+      expect(h.timer.pendingCount()).assertEqual(0);
+    });
+    it('read_watermark_ahead_pairs_even_when_raw_unread_stays_zero', 0, () => {
+      const h = rowSyncHarness();
+      pushReadInbox(h.bridge, 1, 0, 101);
+      h.timer.advanceBy(100);
+      expect(h.snapshots.length).assertEqual(0);
+
+      const fresh = textMessage('visible while open', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageText).assertEqual('visible while open');
+      expect(h.snapshots[0][0].unreadCount).assertEqual(0);
+    });
+    it('multi_message_burst_commits_the_latest_preview_and_count_once', 0, () => {
+      const h = rowSyncHarness();
+      const first = textMessage('first', 1783512100, false);
+      first['id'] = 101;
+      const second = textMessage('second', 1783512101, false);
+      second['id'] = 102;
+      pushLastMessage(h.bridge, 1, first, [mainPos('300', false)]);
+      pushLastMessage(h.bridge, 1, second, [mainPos('301', false)]);
+      pushReadInbox(h.bridge, 1, 1, 100);
+      pushReadInbox(h.bridge, 1, 2, 100);
+      h.timer.advanceBy(16);
+
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageId).assertEqual(102);
+      expect(h.snapshots[0][0].lastMessageText).assertEqual('second');
+      expect(h.snapshots[0][0].unreadCount).assertEqual(2);
+    });
+    it('staggered_multi_message_burst_never_publishes_a_partial_pair', 0, () => {
+      const h = rowSyncHarness();
+      const first = textMessage('first', 1783512100, false);
+      first['id'] = 101;
+      const second = textMessage('second', 1783512101, false);
+      second['id'] = 102;
+      pushLastMessage(h.bridge, 1, first, [mainPos('300', false)]);
+      h.timer.advanceBy(5);
+      pushLastMessage(h.bridge, 1, second, [mainPos('301', false)]);
+      h.timer.advanceBy(95);
+      pushReadInbox(h.bridge, 1, 1, 100);
+      h.timer.advanceBy(20);
+      expect(h.snapshots.length).assertEqual(0);
+
+      pushReadInbox(h.bridge, 1, 2, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageId).assertEqual(102);
+      expect(h.snapshots[0][0].unreadCount).assertEqual(2);
+    });
+    it('unread_first_multi_message_waits_for_the_latest_tail', 0, () => {
+      const h = rowSyncHarness();
+      pushReadInbox(h.bridge, 1, 2, 100);
+      const first = textMessage('first', 1783512100, false);
+      first['id'] = 101;
+      pushLastMessage(h.bridge, 1, first, [mainPos('300', false)]);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(0);
+
+      const second = textMessage('second', 1783512101, false);
+      second['id'] = 102;
+      pushLastMessage(h.bridge, 1, second, [mainPos('301', false)]);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageId).assertEqual(102);
+      expect(h.snapshots[0][0].unreadCount).assertEqual(2);
+    });
+    it('duplicate_read_does_not_pair_with_a_staged_tail', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      pushReadInbox(h.bridge, 1, 0, 100);
+      h.timer.advanceBy(100);
+      expect(h.snapshots.length).assertEqual(0);
+
+      pushReadInbox(h.bridge, 1, 1, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageId).assertEqual(101);
+      expect(h.snapshots[0][0].unreadCount).assertEqual(1);
+    });
+    it('late_generation_debt_is_not_spent_on_the_next_tail', 0, () => {
+      const h = rowSyncHarness();
+      const first = textMessage('first', 1783512100, false);
+      first['id'] = 101;
+      pushLastMessage(h.bridge, 1, first, [mainPos('300', false)]);
+      h.timer.advanceBy(160);
+      expect(h.snapshots.length).assertEqual(1);
+
+      const second = textMessage('second', 1783512101, false);
+      second['id'] = 102;
+      pushLastMessage(h.bridge, 1, second, [mainPos('301', false)]);
+      pushReadInbox(h.bridge, 1, 1, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+
+      pushReadInbox(h.bridge, 1, 2, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(2);
+      expect(h.snapshots[1][0].lastMessageId).assertEqual(102);
+      expect(h.snapshots[1][0].unreadCount).assertEqual(2);
+    });
+    it('duplicate_read_does_not_consume_a_timed_out_tail', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      h.timer.advanceBy(160);
+      expect(h.snapshots.length).assertEqual(1);
+
+      pushReadInbox(h.bridge, 1, 0, 100);
+      h.timer.advanceBy(100);
+      expect(h.snapshots.length).assertEqual(1);
+      pushReadInbox(h.bridge, 1, 1, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(2);
+      expect(h.snapshots[1][0].unreadCount).assertEqual(1);
+    });
+    it('local_read_does_not_clear_an_unread_first_generation', 0, () => {
+      const h = rowSyncHarness(2, 98);
+      pushReadInbox(h.bridge, 1, 3, 98);
+      h.store.markReadLocally(1, 100);
+      const committed = h.store.entryOf(1) as ChatEntry;
+      expect(committed.unreadCount).assertEqual(2);
+      expect(h.snapshots.length).assertEqual(0);
+
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].unreadCount).assertEqual(3);
+    });
+    it('unread_first_releases_on_outgoing_edit_and_delete', 0, () => {
+      const outgoing = rowSyncHarness();
+      pushReadInbox(outgoing.bridge, 1, 1, 100);
+      const mine = textMessage('mine', 1783512100, true);
+      mine['id'] = 101;
+      pushLastMessage(outgoing.bridge, 1, mine, [mainPos('300', false)]);
+      outgoing.timer.advanceBy(0);
+      expect(outgoing.snapshots.length).assertEqual(1);
+      expect(outgoing.snapshots[0][0].lastMessageText).assertEqual('mine');
+      expect(outgoing.snapshots[0][0].unreadCount).assertEqual(1);
+
+      const edited = rowSyncHarness();
+      pushReadInbox(edited.bridge, 1, 1, 100);
+      const edit = textMessage('old edited', 1783512000, false);
+      edit['id'] = 100;
+      pushLastMessage(edited.bridge, 1, edit);
+      edited.timer.advanceBy(0);
+      expect(edited.snapshots.length).assertEqual(1);
+      expect(edited.snapshots[0][1].lastMessageText).assertEqual('old edited');
+      expect(edited.snapshots[0][1].unreadCount).assertEqual(0);
+      const afterEdit = textMessage('new after edit', 1783512100, false);
+      afterEdit['id'] = 101;
+      pushLastMessage(edited.bridge, 1, afterEdit, [mainPos('300', false)]);
+      edited.timer.advanceBy(16);
+      expect(edited.snapshots.length).assertEqual(2);
+      expect(edited.snapshots[1][0].lastMessageText).assertEqual('new after edit');
+      expect(edited.snapshots[1][0].unreadCount).assertEqual(1);
+
+      const deleted = rowSyncHarness();
+      pushReadInbox(deleted.bridge, 1, 1, 100);
+      pushLastMessage(deleted.bridge, 1, null);
+      deleted.timer.advanceBy(0);
+      expect(deleted.snapshots.length).assertEqual(1);
+      expect(deleted.snapshots[0][1].lastMessageId).assertEqual(0);
+      expect(deleted.snapshots[0][1].unreadCount).assertEqual(1);
+    });
+    it('pending_row_does_not_hold_an_unrelated_chat_refresh', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+
+      const title: TdObject = { '@type': 'updateChatTitle' };
+      title['chat_id'] = 2;
+      title['title'] = 'B updated';
+      h.bridge.onReceive(JSON.stringify(title));
+      h.timer.advanceBy(80);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].id).assertEqual(2);
+      expect(h.snapshots[0][0].title).assertEqual('B updated');
+      expect(h.snapshots[0][1].lastMessageText).assertEqual('old');
+
+      pushReadInbox(h.bridge, 1, 1, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(2);
+      expect(h.snapshots[1][0].id).assertEqual(1);
+      expect(h.snapshots[1][0].lastMessageText).assertEqual('new');
+      expect(h.snapshots[1][0].unreadCount).assertEqual(1);
+    });
+    it('new_subscriber_replays_the_last_complete_row_while_a_half_is_pending', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('new', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+
+      let replay: ChatEntry[] = [];
+      const unsubscribe = h.store.subscribe((rows: ChatEntry[]): void => { replay = rows; });
+      expect(replay[1].id).assertEqual(1);
+      expect(replay[1].lastMessageText).assertEqual('old');
+      expect(replay[1].unreadCount).assertEqual(0);
+      unsubscribe();
+    });
+    it('a_new_incoming_tail_after_timeout_starts_a_fresh_pair', 0, () => {
+      const h = rowSyncHarness();
+      const first = textMessage('first', 1783512100, false);
+      first['id'] = 101;
+      pushLastMessage(h.bridge, 1, first, [mainPos('300', false)]);
+      h.timer.advanceBy(160);
+      expect(h.snapshots.length).assertEqual(1);
+
+      const second = textMessage('second', 1783512200, false);
+      second['id'] = 102;
+      pushLastMessage(h.bridge, 1, second, [mainPos('400', false)]);
+      h.timer.advanceBy(100);
+      expect(h.snapshots.length).assertEqual(1);
+      pushReadInbox(h.bridge, 1, 2, 100);
+      h.timer.advanceBy(16);
+      expect(h.snapshots.length).assertEqual(2);
+      expect(h.snapshots[1][0].lastMessageText).assertEqual('second');
+      expect(h.snapshots[1][0].unreadCount).assertEqual(2);
+    });
+    it('explicit_null_last_message_is_applied_without_crashing', 0, () => {
+      const h = rowSyncHarness();
+      h.bridge.onReceive('{"@type":"updateChatLastMessage","chat_id":1,"last_message":null}');
+      h.timer.advanceBy(80);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][1].lastMessageId).assertEqual(0);
+      expect(h.snapshots[0][1].lastMessageText).assertEqual('');
+    });
+    it('local_read_at_live_tail_joins_the_staged_row', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('already visible', 1783512100, false);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      h.store.markReadLocally(1, 101);
+      h.timer.advanceBy(16);
+
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageText).assertEqual('already visible');
+      expect(h.snapshots[0][0].unreadCount).assertEqual(0);
+    });
+    it('outgoing_last_message_keeps_the_normal_publication_window', 0, () => {
+      const h = rowSyncHarness();
+      const fresh = textMessage('mine', 1783512100, true);
+      fresh['id'] = 101;
+      pushLastMessage(h.bridge, 1, fresh, [mainPos('300', false)]);
+      h.timer.advanceBy(80);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][0].lastMessageText).assertEqual('mine');
+      expect(h.timer.pendingCount()).assertEqual(0);
+    });
+    it('read_to_zero_keeps_the_normal_publication_window', 0, () => {
+      const h = rowSyncHarness(3, 97);
+      pushReadInbox(h.bridge, 1, 0, 100);
+      h.timer.advanceBy(80);
+      expect(h.snapshots.length).assertEqual(1);
+      expect(h.snapshots[0][1].id).assertEqual(1);
+      expect(h.snapshots[0][1].unreadCount).assertEqual(0);
+      expect(h.timer.pendingCount()).assertEqual(0);
     });
     it('visible_last_message_clears_stuck_unread_optimistically', 0, () => {
       const store = make();

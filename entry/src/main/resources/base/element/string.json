@@ -8645,6 +8645,14 @@
       "value": "打开后可在会话菜单中翻译整个聊天"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "译文替换原文"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "翻译完成后仅显示译文"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "转文字是 Telegram Premium 功能"
     },
@@ -11895,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "移除说明文字"
+    },
+    {
+      "name": "share_to",
+      "value": "分享到"
+    },
+    {
+      "name": "share_preparing",
+      "value": "正在准备…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "在应用中选择…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "先打开一次应用，这里才会出现常用会话"
+    },
+    {
+      "name": "share_failed",
+      "value": "分享内容读取失败"
+    },
+    {
+      "name": "share_staged",
+      "value": "已放入输入框，确认后发送"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "直接发送"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "进会话编辑"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "已发送到 %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "发送失败，内容已留在输入框"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "快速分享"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "没有找到相关消息"
     }
   ]
 }

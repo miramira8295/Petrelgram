@@ -6,6 +6,12 @@ import { logE } from './log';
 import {
   IMAGE_HOLDER_RELEASE_BATCH, IMAGE_PIXEL_CACHE_MAX_BYTES
 } from './NativePixelBudget';
+import { PinUpdate, updateBoundedPins } from './boundedPins';
+
+// 有上限地钉住几张。头像是 38vp 见方，一张解码后约 20KB（38×3 ≈ 114px 见方、
+// RGBA），48 张不到 1MB——相对 48MB 的图片预算可以忽略，却足够覆盖一个会话里
+// 反复出现的那些发送者。
+const BOUNDED_PIN_MAX: number = 48;
 
 // Decode local images ourselves instead of handing a file path to Image.
 //
@@ -277,7 +283,11 @@ async function decode(req: PixelRequest, key: string): Promise<PixelHandle | und
     // call is about to return. Dropped once the caller has had its chance.
     entry.refs++;
     evictDownTo(budgetBytes);
-    setTimeout((): void => { decRef(entry); }, 0);
+    // 交接引用的释放并进**同一条**排空队列，而不是每次解码各排一个 0ms 定时器。
+    // 2026-09-09 的 Frame 录制里，这一句的 setTimeout NAPI 在 12.3s 内累计
+    // **28.89ms**——单次极便宜，但它是按解码次数走的。releasePixelMap 本来就是
+    // "下一拍把引用还掉"，语义一致，且它只有一个共享定时器。
+    releasePixelMap(entry);
     return entry;
   } catch (e) {
     logE(`pixelCache decode(${req.path}) failed: ${e}`);
@@ -309,6 +319,47 @@ export function pinPixelMap(handle: PixelHandle): void {
     handle.pinned = true;
     handle.refs++;
   }
+}
+
+function unpinPixelMap(handle: PixelHandle): void {
+  if (!handle.pinned) {
+    return;
+  }
+  handle.pinned = false;
+  // pin 时 refs++ 过一次，松开就还回去。还回去之后它就是普通的 LRU 条目，
+  // 该被挤掉时正常挤掉。
+  releasePixelMap(handle);
+}
+
+// 有上限的钉。给"便宜但到处复用、且数量随内容增长"的那一类用——头像就是
+// 典型：不钉会被大图挤掉，一路钉下去又会随发送者数量涨（issue #137）。
+// 顺序逻辑在 util/boundedPins（纯函数、有单测），这里只负责把 key 换成句柄。
+const boundedPinned: Map<string, PixelHandle> = new Map<string, PixelHandle>();
+let boundedPinOrder: string[] = [];
+
+export function pinPixelMapBounded(req: PixelRequest, handle: PixelHandle,
+  cap: number = BOUNDED_PIN_MAX): void {
+  const key: string = keyOf(req);
+  const update: PinUpdate = updateBoundedPins(boundedPinOrder, key, cap);
+  boundedPinOrder = update.next;
+  if (!boundedPinned.has(key)) {
+    pinPixelMap(handle);
+    boundedPinned.set(key, handle);
+  }
+  for (const stale of update.released) {
+    const victim: PixelHandle | undefined = boundedPinned.get(stale);
+    if (victim !== undefined) {
+      boundedPinned.delete(stale);
+      unpinPixelMap(victim);
+    }
+  }
+}
+
+// 切账号/清缓存时全部松开。
+export function clearBoundedPins(): void {
+  boundedPinned.forEach((handle: PixelHandle): void => { unpinPixelMap(handle); });
+  boundedPinned.clear();
+  boundedPinOrder = [];
 }
 
 // 收紧后，新完成的解码也按新上限入账，防止切后台时在途任务把缓存重新灌满。

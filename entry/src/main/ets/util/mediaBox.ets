@@ -52,20 +52,19 @@ export function mediaBoxFor(
   const maxW = mediaThumbWidth(screenW);
   const maxH = maxW * MEDIA_MAX_HEIGHT_RATIO;
   const ratio = mediaRatio(photoW, photoH, isVideo);
-  // 照片：宽度钉死在气泡宽度，横竖一视同仁。
+  // **宽度钉死在气泡宽度，横竖、照片视频一视同仁。** 多出来的高度交给
+  // ImageFit.Cover 裁掉——官方客户端也是这么做的，点开就是完整画面。
   //
-  // 原来超高时是「压高度 + 按比例缩宽度」，结果竖图只占气泡宽度的 67%，
-  // 同一屏里比横图窄一截。多出来的高度交给 ImageFit.Cover 裁掉——这也是
-  // 官方客户端的做法，点开就是完整图。
+  // 【视频为什么也这样了】原来视频是例外：高度顶到上限时把宽度按比例收回来，
+  // 理由是"播放器不会裁画面，框比视频扁就左右留黑边"。后果是一条 9:19.5 的
+  // 竖视频只有 153vp 宽，而同一条消息的气泡被长配文撑到 277vp，媒体缩在气泡
+  // 左边一小块（用户 2026-09-09 截图："媒体应该和气泡一样宽吧"）。
   //
-  // 视频：**不能这么办**。播放器不会裁画面，只会把视频按真实比例塞进这个框，
-  // 框比视频扁就左右留黑边，缩略图那侧又被 Cover 裁掉上下——用户看到的就是
-  // 「缩略图被拉伸、一播放两边黑」。所以竖视频宁可窄一点，也要让框和画面
-  // 同比例：高度顶到上限时，把宽度按比例一起收回来。
-  const width = maxW;
-  const height = Math.min(width / ratio, maxH);
-  if (isVideo && height < width / ratio - 0.001) {
-    return { width: height * ratio, height };
-  }
-  return { width, height };
+  // 既然选了裁，就得**从头裁到尾**：内嵌播放位的渲染面同步改成 Cover
+  // （StreamingVideoPlayer.surfaceWidth/Height，只在 embedded 下），否则静态
+  // 缩略图是裁的、一点播放变回留黑边，尺寸当场跳一下——那正是上一版注释
+  // 要避开的东西，只是解法从"收窄框"换成了"播放也裁"。
+  // 全屏播放器不受影响：那一侧永远按真实比例留黑边，不裁。
+  // 宽度一律钉死气泡宽度，横竖、图片视频一视同仁；超出的高度交给 Cover 裁掉。
+  return { width: maxW, height: Math.min(maxW / ratio, maxH) };
 }

@@ -184,5 +184,45 @@ export default function splitRoutingTest(): void {
       const stack: StackFrame[] = [f('ChatPage', '10:0')];
       expect(decideChatPush(stack, f('ChatPage', '20:0')).action).assertEqual('push');
     });
+    // ——— origin='search'：返回必须回到搜索页（2026-09-08 用户反馈）———
+    //
+    // 用户报「我在搜索找一个资源点进去后退出来怎么是文件夹 tab 页……有些可以回到
+    // 搜索结果，有些会退回到文件夹」。原因是搜索原本按 navbar 走：会话没开过就
+    // clearAndPush（整条栈连搜索页一起清），开过就 popTo（把压在目标之上的搜索页
+    // 弹掉）——两条路都保不住搜索页，而走哪条取决于"之前开没开过"，所以时灵时不灵。
+
+    it('search_push_keeps_the_stack_even_when_target_is_absent', 0, () => {
+      // 第四个参数 allowDuplicate=true 就是 origin='search'
+      const stack: StackFrame[] = [f('GlobalSearchPage', 's')];
+      const d = decideChatPush(stack, f('ChatPage', '30:0'), false, true);
+      expect(d.action).assertEqual('push');
+      expect(d.popCount).assertEqual(0);
+    });
+
+    it('search_push_does_not_pop_when_target_is_already_deeper', 0, () => {
+      // 这一条是"有些退回文件夹"的那一半：目标之前开过、搜索页压在它上面。
+      const stack: StackFrame[] = [f('ChatPage', '30:0'), f('GlobalSearchPage', 's')];
+      const d = decideChatPush(stack, f('ChatPage', '30:0'), false, true);
+      expect(d.action).assertEqual('push');
+      expect(d.popCount).assertEqual(0);
+    });
+
+    it('search_push_never_clears_even_with_replaceExisting', 0, () => {
+      // allowDuplicate 优先于 replaceExisting：搜索这条路任何情况都不清栈。
+      const stack: StackFrame[] = [f('ChatPage', '10:0'), f('GlobalSearchPage', 's')];
+      expect(decideChatPush(stack, f('ChatPage', '20:0'), true, true).action).assertEqual('push');
+    });
+
+    it('navbar_and_content_behaviour_is_unchanged', 0, () => {
+      // 回归护栏：新参数默认 false，旧两种 origin 的判定一个字都不能变。
+      const stack: StackFrame[] = [f('ChatPage', '30:0'), f('ChatPage', '40:0')];
+      // navbar：目标在更深处 → 出栈回到它
+      expect(decideChatPush(stack, f('ChatPage', '30:0'), true).action).assertEqual('popTo');
+      // content：同样去重（"已经开着的不再新开一层"）
+      expect(decideChatPush(stack, f('ChatPage', '30:0'), false).action).assertEqual('popTo');
+      // navbar 且目标不在栈里 → 清栈只留目标
+      expect(decideChatPush(stack, f('ChatPage', '50:0'), true).action).assertEqual('clearAndPush');
+    });
+
   });
 }

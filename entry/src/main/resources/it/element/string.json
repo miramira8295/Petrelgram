@@ -1017,6 +1017,34 @@
       "value": "Salvato nella galleria"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "Download non riuscito"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "Download %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Galleria"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Salvataggio non riuscito"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "Salvato in %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Salvataggio %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Posizione selezionata"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "Il microfono serve per inviare messaggi vocali e parlare in diretta"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "Il download automatico segue la rete e la dimensione del file correnti; il salvataggio in galleria è confermato dal sistema."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "Posizione download"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Percorso download predefinito"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Scegli la posizione al salvataggio"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Percorso download predefinito aggiornato"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "Se attivata, puoi tradurre l'intera chat dal menu della chat"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Sostituisci il testo originale con la traduzione"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Mostra solo la traduzione quando è pronta"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "La trascrizione è una funzione di Telegram Premium"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "Cancella anche per l'altra persona"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "Svuota per tutti"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Rimuovi didascalia"
+    },
+    {
+      "name": "share_to",
+      "value": "Condividi con"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Preparazione…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "Scegli nell'app…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Apri l'app una volta per vedere qui le chat recenti"
+    },
+    {
+      "name": "share_failed",
+      "value": "Impossibile leggere il contenuto condiviso"
+    },
+    {
+      "name": "share_staged",
+      "value": "Aggiunto alla casella messaggi: controlla e invia"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Invia subito"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Apri prima la chat"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "Inviato a %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "Invio non riuscito: contenuto lasciato nella casella messaggi"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Condivisione rapida"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "Nessun messaggio corrispondente"
     }
   ]
 }

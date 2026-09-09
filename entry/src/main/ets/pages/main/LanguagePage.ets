@@ -1,7 +1,8 @@
 import { common, Want } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import {
-  KEY_APP_LANGUAGE, KEY_TRANSLATE_CHATS, KEY_TRANSLATE_TARGET, setBoolean, setString
+  KEY_APP_LANGUAGE, KEY_TRANSLATE_CHATS, KEY_TRANSLATE_REPLACE_ORIGINAL,
+  KEY_TRANSLATE_TARGET, setBoolean, setString
 } from '../../store/AppSettings';
 import { AppLanguage, LANGUAGE_SYSTEM, appLanguages, applyAppLanguage, labelForTag, requiresRestart, systemMatchedLanguage, LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
@@ -39,6 +40,7 @@ export struct LanguagePage {
   // 「翻译此聊天」入口只在它打开时出现。
   @StorageLink(KEY_TRANSLATE_TARGET) translateTarget: string = '';
   @StorageLink(KEY_TRANSLATE_CHATS) translateChats: boolean = false;
+  @StorageLink(KEY_TRANSLATE_REPLACE_ORIGINAL) translateReplaceOriginal: boolean = false;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
   // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
   // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
@@ -207,6 +209,21 @@ export struct LanguagePage {
         Toggle({ type: ToggleType.Switch, isOn: this.translateChats })
           .selectedColor(COLOR_PRIMARY)
           .onChange((on: boolean): void => { setBoolean(KEY_TRANSLATE_CHATS, on); });
+      }
+      .width('100%').padding({ left: 16, right: 12, top: 10, bottom: 10 });
+      Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+      Row() {
+        Column({ space: 2 }) {
+          Text($r('app.string.language_translate_replace_original'))
+            .fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+          Text($r('app.string.language_translate_replace_original_hint'))
+            .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+        }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+        Toggle({ type: ToggleType.Switch, isOn: this.translateReplaceOriginal })
+          .selectedColor(COLOR_PRIMARY)
+          .onChange((on: boolean): void => {
+            setBoolean(KEY_TRANSLATE_REPLACE_ORIGINAL, on);
+          });
       }
       .width('100%').padding({ left: 16, right: 12, top: 10, bottom: 10 });
     }

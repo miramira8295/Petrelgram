@@ -10,7 +10,7 @@ import {
 import { LoginHero } from './LoginHero';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logW } from '../../util/log';
 import { authErrorText } from '../../util/authErrorText';
 import { submitPhoneWithRecovery, AUTH_RESET_NOTICE } from '../../util/loginFlow';
@@ -351,7 +351,7 @@ export struct PhoneNumberPage {
       height: '82%',
       backgroundColor: $r('app.color.surface'),
       dragBar: true,
-      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

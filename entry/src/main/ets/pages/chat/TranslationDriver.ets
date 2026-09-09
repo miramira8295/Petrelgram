@@ -100,6 +100,10 @@ import {
   TranslationService, getTranslationService, looksLikeTargetLanguage, resolveTranslateTarget
 } from '../../services/TranslationService';
 import { str } from '../../util/strings';
+import {
+  PendingTranslation, queueTranslation, translationLandDelay, trimPendingTranslations
+} from '../../util/deferredTranslation';
+import { markTranslationInstant } from '../../util/translationAnchor';
 import { logE } from '../../util/log';
 
 // 宿主（ChatPage）暴露给控制器的那一小片接口，全是箭头函数字段——取值器读页面
@@ -133,6 +137,15 @@ export interface TranslationDriverHost {
   // 和播放位判定（driveVisibleWork 是三者的汇合点，留页面作协调器，见文件头
   // 说明），本类不越权只调用自己那一路。
   driveVisibleWork: () => void;
+  // 译文即将落到某一行上。页面据此在**变高之前**记下当前阅读位置，落定后
+  // 按回去——顶部锚定时行变高会把下面的内容往下推（见 util/translationAnchor）。
+  holdAnchor: () => void;
+  // 列表此刻在不在动（手指按着或还在惯性里）。在动就把译文攒起来，等停稳再落
+  // ——译文改的是布局，滑动中改就是"边滑边跳"（见 util/deferredTranslation）。
+  listMoving: () => boolean;
+  // 首个可见行的行号。视口**上方**的行变高会把用户正在看的内容往下推，
+  // 那几条要直接落、不做动画（见 util/translationAnchor）。
+  visibleStartIndex: () => number;
 }
 
 @ObservedV2
@@ -157,10 +170,129 @@ export class TranslationDriver {
     groups: (): AlbumGroup[] => [],
     isTranslatable: (): boolean => false,
     setIsTranslatable: (_value: boolean): void => {},
-    driveVisibleWork: (): void => {}
+    driveVisibleWork: (): void => {},
+    holdAnchor: (): void => {},
+    listMoving: (): boolean => false,
+    visibleStartIndex: (): number => 0
   };
 
   // ChatPage.aboutToAppear 里调一次。
+  // 攒下来还没落的译文。滑动期间只进不出，停稳时一次性落。
+  private pending: PendingTranslation[] = [];
+
+  // 译文落地的**唯一出口**。
+  //
+  // 列表在动就先攒着：译文改的是布局，滑动中改就是用户报的"边滑边跳"。
+  // 停稳了才真落，并且落之前让页面记一次阅读位置（顶部锚定时行变高会把
+  // 下面的内容往下推，见 util/translationAnchor）。
+  private land(_store: MessageStore, item: PendingTranslation): void {
+    // **一律先入队，不当场落。**
+    //
+    // 第一版只有"滑动中"才入队，停着的时候当场落——可 drive() 里命中缓存的那些
+    // 是在**一个循环里**逐条到达的，于是又变成整批同一帧一起变高，动画看不出来
+    // （用户 2026-09-09：「开启翻译……看不太出来动画」）。入队 + 统一错开落地
+    // 是唯一一条路，两种来路才有同样的节奏。
+    this.pending = trimPendingTranslations(queueTranslation(this.pending, item));
+    this.scheduleFlush();
+  }
+
+  // 不在滑动就尽快落（下一拍，好把同一轮里到达的都收进同一批再错开）；
+  // 在滑动就什么都不做，等 onFloatDateHidden 那一刻由页面来调 flushPending。
+  private scheduleFlush(): void {
+    if (this.host.listMoving() || this.flushTimer !== -1) {
+      return;
+    }
+    this.flushTimer = setTimeout((): void => {
+      this.flushTimer = -1;
+      this.flushPending();
+    }, 0);
+  }
+
+  private flushTimer: number = -1;
+
+  // 列表停稳时由页面调（onFloatDateHidden——翻页闸读的也是这个时刻）。
+  // 只记一次锚点，整批落完再补偿，而不是每条补一次。
+  flushPending(): void {
+    if (this.pending.length === 0) {
+      return;
+    }
+    const store: MessageStore | null = this.host.store();
+    const batch: PendingTranslation[] = this.pending;
+    this.pending = [];
+    if (store === null) {
+      return;
+    }
+    // **按序错开，不要一次全落。** 一次全落 = 所有气泡在同一帧一起变高，
+    // N 个 animateTo 同时起跑，观感和"一起闪"没有区别（用户实测原话）。
+    // 延迟表在 util/deferredTranslation，前几条依次错开、其余归并到上限那一刻
+    // ——那些几乎必然在视野之外。
+    for (let i = 0; i < batch.length; i++) {
+      const item: PendingTranslation = batch[i];
+      const delay: number = translationLandDelay(i);
+      if (delay === 0) {
+        this.landNow(store, item);
+        continue;
+      }
+      const timer: number = setTimeout((): void => {
+        this.landTimers.delete(timer);
+        // 这段延迟里可能换了会话/关了翻译，store 得重新问一次。
+        const current: MessageStore | null = this.host.store();
+        if (current === store) {
+          this.landNow(store, item);
+        }
+      }, delay);
+      this.landTimers.add(timer);
+    }
+  }
+
+  // 真正写进 store 的那一步。落之前让页面记一次阅读位置——顶部锚定时行变高
+  // 会把下面的内容往下推（见 util/translationAnchor）。
+  private landNow(store: MessageStore, item: PendingTranslation): void {
+    // 视口上方的行：点名"直接落"。它变高会把用户正在看的内容往下推，
+    // 位移交给页面的滚动补偿吃掉；而它本来就看不见，动画毫无意义。
+    if (this.aboveViewport(item.messageId)) {
+      markTranslationInstant(item.messageId);
+    }
+    this.host.holdAnchor();
+    store.applyTranslation(item.messageId, item.lang, item.text);
+  }
+
+  // 这条消息所在的行是不是排在首个可见行之前。找不到（已经被裁掉）按"不在
+  // 上方"处理——那时它多半也不在列表里，落地不会移动任何东西。
+  private aboveViewport(messageId: number): boolean {
+    const start: number = this.host.visibleStartIndex();
+    if (start <= 0) {
+      return false;
+    }
+    const groups: AlbumGroup[] = this.host.groups();
+    const limit: number = Math.min(start, groups.length);
+    for (let i = 0; i < limit; i++) {
+      if (groups[i].memberIds.indexOf(messageId) >= 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 错开落地用的定时器。换会话/销毁时必须全撤——否则回调会往上一个会话的
+  // store 里写（那里已经有 store 比对兜底，但定时器本身也不该留着）。
+  private landTimers: Set<number> = new Set<number>();
+
+  private cancelLandTimers(): void {
+    this.landTimers.forEach((t: number): void => { clearTimeout(t); });
+    this.landTimers.clear();
+  }
+
+  // 换会话/关翻译时丢掉：那批译文属于上一个会话或已经不该显示。
+  clearPending(): void {
+    this.pending = [];
+    if (this.flushTimer !== -1) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = -1;
+    }
+    this.cancelLandTimers();
+  }
+
   bind(host: TranslationDriverHost): void {
     this.host = host;
   }
@@ -237,7 +369,7 @@ export class TranslationDriver {
       if (hit !== null) {
         // 译文与原文相同（同语言消息）就什么都不写，气泡不长翻译块。
         if (hit !== '' && hit !== m.text) {
-          store.applyTranslation(m.id, lang, hit);
+          this.land(store, { messageId: m.id, lang: lang, text: hit });
         }
         continue;
       }
@@ -245,7 +377,7 @@ export class TranslationDriver {
       const originalText: string = m.text;
       service.request(this.host.chatId(), m.id, m.editDate, lang, (text: string | null): void => {
         if (text !== null && text !== '' && text !== originalText && this.host.store() === store) {
-          store.applyTranslation(requestedId, lang, text);
+          this.land(store, { messageId: requestedId, lang: lang, text: text });
         }
       });
     }

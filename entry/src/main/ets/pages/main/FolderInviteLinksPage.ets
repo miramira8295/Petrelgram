@@ -14,7 +14,7 @@ import {
 import { AvatarView } from '../chatlist/AvatarView';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { contentSideGutter } from '../../util/contentWidth';
 import { SHEET_CLOSE_RESERVE_VP } from '../../util/sheetChrome';
@@ -406,10 +406,10 @@ struct FolderInviteLinksPage {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe })
       .bindSheet($$this.editorOpen, this.linkEditorSheet(), {
-        height: '82%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+        height: '82%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       })
       .bindSheet($$this.newChatsOpen, this.newChatsSheet(), {
-        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       });
   }
 }

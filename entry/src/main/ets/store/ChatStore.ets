@@ -1,4 +1,4 @@
-import { TdClient } from '../tdkit/TdClient';
+import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { ChatEntry, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, effectiveMuted, isMutedFrom, usesDefaultMuteFrom, chatKindOf } from './ChatEntry';
@@ -14,6 +14,16 @@ const MAIN: string = 'main';
 // per update stalls the UI thread, so notifications are coalesced into one
 // flush per window.
 const NOTIFY_COALESCE_MS: number = 80;
+// A received message changes the row through two independent TDLib updates.
+// TDLib can deliberately hold updateChatReadInbox for about 100ms, so stage a
+// lone half per chat and publish it only after the counterpart or this bound.
+const ROW_SYNC_WAIT_MS: number = 160;
+// Let back-to-back TDLib updates from a multi-message burst settle before the
+// staged row is committed. The hard wait above still caps the total latency.
+const ROW_SYNC_SETTLE_MS: number = 16;
+// A counterpart arriving just after the hard bound belongs to the row we just
+// released, not to a new pair. Keep that association briefly, then expire it.
+const ROW_SYNC_LATE_MATCH_MS: number = 320;
 // 分组列表最多连翻多少页。分组通常只有几十个会话，这个上限只是防呆——
 // 真被撞上会打日志，不会悄悄截断（见 ensureFullyLoaded）。
 const MAX_FULL_LOAD_PAGES: number = 20;
@@ -21,6 +31,34 @@ const MAX_FULL_LOAD_PAGES: number = 20;
 interface Sub {
   listKey: string;
   listener: (chats: ChatEntry[]) => void;
+}
+
+type RowSyncHalf = 'lastMessage' | 'unread';
+
+interface PendingRowSync {
+  hasLastMessage: boolean;
+  lastMessage: TdObject | null;
+  positionUpdates: TdObject[];
+  affectsPositions: boolean;
+  hasUnread: boolean;
+  baseRawUnreadCount: number;
+  rawUnreadCount: number;
+  lastReadInboxId: number;
+  clearMarkedUnread: boolean;
+  sawIncomingLast: boolean;
+  latestIncomingLastId: number;
+  incomingTailCount: number;
+  unreadCreditCount: number;
+  unreadAdvanceCount: number;
+  timeoutTimer: number;
+  settleTimer: number;
+}
+
+interface LateRowSync {
+  half: RowSyncHalf;
+  units: number;
+  lastMessageId: number;
+  expiryTimer: number;
 }
 
 export class ChatStore {
@@ -53,13 +91,20 @@ export class ChatStore {
   private defaultBackgroundDark: TdObject | null = null;
   private defaultBackgroundLightKnown: boolean = false;
   private defaultBackgroundDarkKnown: boolean = false;
+  private timer: TimerFns;
   private notifyTimer: number = -1;
+  private pendingRowSync: Map<number, PendingRowSync> = new Map();
+  private lateRowSync: Map<number, LateRowSync> = new Map();
   private dirtyAllLists: boolean = false;
   private dirtyChatIds: Set<number> = new Set();
 
-  constructor(client: TdClient, users: UserStore) {
+  constructor(client: TdClient, users: UserStore, timer?: TimerFns) {
     this.client = client;
     this.users = users;
+    this.timer = timer ?? {
+      setTimeout: (cb: () => void, ms: number): number => setTimeout(cb, ms),
+      clearTimeout: (id: number): void => clearTimeout(id)
+    };
     client.onUpdate('updateOption', (u: TdObject) => this.onOption(u));
     client.onUpdate('updateNewChat', (u: TdObject) => this.onNewChat(u));
     client.onUpdate('updateSupergroup', (u: TdObject) => this.onSupergroup(u));
@@ -226,6 +271,40 @@ export class ChatStore {
     return this.positions.get(`folder:${folderId}`)?.has(chatId) === true;
   }
 
+  // 这个会话在不在**任何一个**会话列表里（主列表 / 归档 / 任意文件夹）。
+  //
+  // 【它等价于"在不在我的会话列表中"】TDLib 只给**属于某个列表**的会话下发
+  // position。路过点进去看了一眼、没有加入的公开群，chat 对象拿得到（所以
+  // entryOf 有值），但它一个 position 都没有。
+  //
+  // 通知那边靠它挡掉"没加入的群还一直推消息"（用户 2026-09-09 实测）。
+  // **会话不认识时不要用它下结论**：那时我们只是还没收到 chat 对象，
+  // 按"不在列表里"处理会把真正该响的通知也吞掉。
+  inAnyChatList(chatId: number): boolean {
+    let found: boolean = false;
+    this.positions.forEach((bucket: Map<number, PositionInfo>): void => {
+      if (!found && bucket.has(chatId)) {
+        found = true;
+      }
+    });
+    return found;
+  }
+
+  // 至少出现在一个**非归档**列表里（主列表或任意文件夹）。
+  //
+  // 「分享到…」的候选集判据（用户定的规则）：在任何文件夹里的都该搜得到，
+  // 只躺在归档里、不属于任何文件夹的不该出现。文件夹可以收录归档会话，所以
+  // 不能写成 `!isArchived()`——那会把"归档 + 在文件夹里"的一起否掉。
+  inNonArchiveList(chatId: number): boolean {
+    let found: boolean = false;
+    this.positions.forEach((bucket: Map<number, PositionInfo>, listKey: string): void => {
+      if (!found && listKey !== 'archive' && bucket.has(chatId)) {
+        found = true;
+      }
+    });
+    return found;
+  }
+
   hasArchive(): boolean {
     const b = this.positions.get('archive');
     return b !== undefined && b.size > 0;
@@ -273,6 +352,26 @@ export class ChatStore {
   // edge case where that update can otherwise stay at unread_count = 1).
   markReadLocally(chatId: number, readThroughId: number): void {
     const entry = this.chats.get(chatId);
+    const pending = this.pendingRowSync.get(chatId);
+    const newestKnownId: number = pending !== undefined && pending.latestIncomingLastId > 0
+      ? pending.latestIncomingLastId : (entry?.lastMessageId ?? 0);
+    if (entry !== undefined && pending !== undefined && pending.sawIncomingLast &&
+      readThroughId > 0 &&
+      newestKnownId > 0 && readThroughId >= newestKnownId) {
+      // The chat page has already displayed the staged tail. Fold that local
+      // read into the same transaction instead of exposing either half first.
+      pending.hasUnread = true;
+      pending.rawUnreadCount = 0;
+      pending.lastReadInboxId = Math.max(pending.lastReadInboxId, readThroughId);
+      pending.clearMarkedUnread = true;
+      this.scheduleRowSyncSettle(chatId, pending);
+      return;
+    }
+    if (pending !== undefined) {
+      // A pending unread-first update already proves that the committed badge
+      // is stale. Likewise, an older visible id must not clear a staged tail.
+      return;
+    }
     if (entry === undefined || readThroughId <= 0 || entry.lastMessageId <= 0 ||
       readThroughId < entry.lastMessageId ||
       (entry.unreadCount === 0 && !entry.isMarkedUnread)) {
@@ -282,6 +381,7 @@ export class ChatStore {
     next.unreadCount = 0;
     next.isMarkedUnread = false;
     this.chats.set(chatId, next);
+    this.clearLateRowSync(chatId);
     this.notify(chatId);
   }
 
@@ -513,6 +613,10 @@ export class ChatStore {
       return;
     }
     const id = chat['id'] as number;
+    // A full chat is authoritative for both halves. Do not let an older staged
+    // incremental update overwrite it when its timeout fires.
+    this.discardPendingRowSync(id);
+    this.clearLateRowSync(id);
     // 话题群识别需要 chatId → supergroupId 映射（is_forum 在 supergroup 上）。
     const chatType = chat['type'] as TdObject | undefined;
     if (chatType !== undefined && (chatType['@type'] as string | undefined) === 'chatTypeSupergroup') {
@@ -524,7 +628,9 @@ export class ChatStore {
     const previous = this.chats.get(id);
     const previousGroupCallId = previous?.liveGroupCallId ?? 0;
     const title = (chat['title'] as string | undefined) ?? '';
-    const lastMsg = chat['last_message'] as TdObject | undefined;
+    const rawLastMessage = chat['last_message'];
+    const lastMsg: TdObject | null = rawLastMessage !== undefined && rawLastMessage !== null
+      ? rawLastMessage as TdObject : null;
     const groupCallId = this.videoChatId(chat['video_chat'] as TdObject | undefined);
     const photoFileId = this.smallPhotoId(chat['photo'] as TdObject | undefined);
     const samePhoto = previous !== undefined && previous.photoFileId === photoFileId;
@@ -538,13 +644,13 @@ export class ChatStore {
       unreadCount: ChatStore.effectiveUnread(
         (chat['unread_count'] as number | undefined) ?? 0,
         (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
-        lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0),
+        this.messageIdOf(lastMsg)),
       rawUnreadCount: (chat['unread_count'] as number | undefined) ?? 0,
       lastReadInboxId: (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
-      lastMessageText: formatPreview(lastMsg ?? null),
-      lastMessageDate: lastMsg !== undefined ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
-      lastMessageId: lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0,
-      lastSenderName: this.senderName(lastMsg),
+      lastMessageText: formatPreview(lastMsg),
+      lastMessageDate: lastMsg !== null ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
+      lastMessageId: this.messageIdOf(lastMsg),
+      lastSenderName: this.senderName(lastMsg ?? undefined),
       photoFileId,
       // getChat/updateNewChat may refresh a chat after its avatar has already
       // completed. Preserve the resolved path when the photo itself is unchanged.
@@ -588,6 +694,11 @@ export class ChatStore {
       return;
     }
     this.selfId = id;
+    // Saved Messages can contain forwarded messages reported as incoming but
+    // never gains an unread counterpart. Release such a staged tail now that
+    // the self-chat identity is known.
+    this.commitPendingRowSync(id);
+    this.clearLateRowSync(id);
     const existing = this.chats.get(id);
     if (existing === undefined || existing.isSavedMessages) {
       return;
@@ -604,6 +715,12 @@ export class ChatStore {
     if (pos === undefined) {
       return;
     }
+    const pending = this.pendingRowSync.get(id);
+    if (pending !== undefined) {
+      pending.positionUpdates.push(pos);
+      pending.affectsPositions = true;
+      return;
+    }
     this.applyPositions(id, [pos]);
     this.notify();
   }
@@ -614,50 +731,128 @@ export class ChatStore {
     if (e === undefined) {
       return;
     }
-    const lastMsg = update['last_message'] as TdObject | undefined;
-    const c = cloneEntry(e);
-    c.lastMessageText = formatPreview(lastMsg ?? null);
-    c.lastMessageDate = lastMsg !== undefined ? ((lastMsg['date'] as number | undefined) ?? 0) : 0;
-    c.lastMessageId = lastMsg !== undefined ? ((lastMsg['id'] as number | undefined) ?? 0) : 0;
-    c.lastSenderName = this.senderName(lastMsg);
-    // 末条 id 变了必须重算未读。竞态：刚读完的会话来新消息时，TDLib 的
-    // updateChatReadInbox（unread=1）可能先于本更新到达——那一刻仓里的末条
-    // 还是旧的、水位恰好盖住它，effectiveUnread 会把 1 当幽灵未读抹成 0。
-    // 这里换上新 id 后用原始值重算，被误抹的未读数才找得回来（用户报的
-    // "会话上浮但角标不出现"就是这条竞态）。
-    c.unreadCount = ChatStore.effectiveUnread(
-      c.rawUnreadCount, c.lastReadInboxId, c.lastMessageId);
-    this.chats.set(id, c);
+    const rawLastMessage = update['last_message'];
+    const lastMsg: TdObject | null = rawLastMessage !== undefined && rawLastMessage !== null
+      ? rawLastMessage as TdObject : null;
     const positions = update['positions'] as TdObject[] | undefined;
-    if (positions !== undefined) {
-      this.applyPositions(id, positions);
-      this.notify();
-    } else {
-      this.notify(id);
+    let pending = this.pendingRowSync.get(id);
+    const baselineLastId: number = pending !== undefined && pending.latestIncomingLastId > 0
+      ? pending.latestIncomingLastId : e.lastMessageId;
+    const freshIncoming: boolean = this.isFreshIncomingTail(e, baselineLastId, lastMsg);
+    const nextLastMessageId: number = this.messageIdOf(lastMsg);
+
+    if (pending === undefined && freshIncoming) {
+      if (e.lastReadInboxId >= nextLastMessageId) {
+        // The read half was committed before this tail became known (for
+        // example while the chat is open). The watermark proves the pair is
+        // already complete, so no fallback timer is needed.
+        this.clearLateRowSync(id);
+        this.applyLastMessage(id, e, lastMsg, positions, true);
+        return;
+      }
+      const late = this.lateRowSync.get(id);
+      pending = late !== undefined
+        ? this.takeLateRowSync(id, e)
+        : this.createPendingRowSync(id, e.rawUnreadCount, e.lastReadInboxId);
     }
+
+    if (pending !== undefined) {
+      const updatesStagedIncoming: boolean = pending.sawIncomingLast &&
+        nextLastMessageId > 0 && nextLastMessageId === pending.latestIncomingLastId;
+      this.stagePendingLastMessage(pending, lastMsg, positions);
+      if (freshIncoming) {
+        pending.sawIncomingLast = true;
+        pending.latestIncomingLastId = nextLastMessageId;
+        pending.incomingTailCount += 1;
+      } else if (!updatesStagedIncoming) {
+        // An outgoing tail, deletion or backtrack supersedes the staged
+        // preview. Publish it now. Preserve only a real outstanding side: an
+        // edit of the committed row can still be followed by the unread-first
+        // tail, while a staged incoming can still receive its delayed count.
+        const sameCommittedIdentity: boolean = nextLastMessageId === e.lastMessageId;
+        this.commitPendingRowSync(id,
+          pending.sawIncomingLast || sameCommittedIdentity);
+        return;
+      }
+      this.scheduleRowSyncSettle(id, pending);
+      return;
+    }
+
+    const late = this.lateRowSync.get(id);
+    if (late !== undefined && nextLastMessageId !== e.lastMessageId) {
+      // A different authoritative tail supersedes an unmatched unread-first
+      // generation. It must not credit some future incoming message.
+      this.clearLateRowSync(id);
+    }
+    this.applyLastMessage(id, e, lastMsg, positions, false);
   }
 
   private onReadInbox(update: TdObject): void {
     const id = update['chat_id'] as number;
     const e = this.chats.get(id);
-    // 【临时探针 #188，验完就删】三件事：更新到没到、会话在不在表里、
-    // 在不在归档桶里（不在桶里 flushNotify 就不会刷归档那份快照）。
-    logW(`[ReadDiag] readInbox chat=${id} known=${e !== undefined}` +
-      ` unread=${(update['unread_count'] as number | undefined) ?? -1}` +
-      ` lastRead=${(update['last_read_inbox_message_id'] as number | undefined) ?? -1}` +
-      ` lastMsg=${e !== undefined ? e.lastMessageId : -1}` +
-      ` inArchive=${this.positions.get('archive')?.has(id) === true}` +
-      ` inMain=${this.positions.get('main')?.has(id) === true}`);
     if (e === undefined) {
       return;
     }
-    const c = cloneEntry(e);
-    c.rawUnreadCount = (update['unread_count'] as number | undefined) ?? 0;
-    c.lastReadInboxId = (update['last_read_inbox_message_id'] as number | undefined) ?? 0;
-    c.unreadCount = ChatStore.effectiveUnread(
-      c.rawUnreadCount, c.lastReadInboxId, e.lastMessageId);
-    this.chats.set(id, c);
-    this.notify(id);
+    const nextRawUnread: number = (update['unread_count'] as number | undefined) ?? 0;
+    const nextLastReadInboxId: number =
+      (update['last_read_inbox_message_id'] as number | undefined) ?? 0;
+    const unreadAdvanced: boolean = nextRawUnread > e.rawUnreadCount ||
+      (nextLastReadInboxId > e.lastReadInboxId && nextLastReadInboxId > e.lastMessageId);
+    let pending = this.pendingRowSync.get(id);
+    if (pending === undefined) {
+      const late = this.lateRowSync.get(id);
+      if (late !== undefined) {
+        const matchesLateLast: boolean = late.half === 'lastMessage' &&
+          (nextRawUnread > e.rawUnreadCount ||
+            (late.lastMessageId > 0 && nextLastReadInboxId >= late.lastMessageId));
+        if (matchesLateLast || (late.half === 'unread' && unreadAdvanced)) {
+          pending = this.takeLateRowSync(id, e);
+        } else {
+          // A duplicate or an ordinary read must not consume an unmatched
+          // generation. Keep the marker for its actual counterpart.
+          if (nextRawUnread !== e.rawUnreadCount ||
+            nextLastReadInboxId !== e.lastReadInboxId) {
+            this.applyReadInbox(id, e, nextRawUnread, nextLastReadInboxId, false);
+          }
+          return;
+        }
+      } else if (unreadAdvanced) {
+        pending = this.createPendingRowSync(id, e.rawUnreadCount, e.lastReadInboxId);
+      } else {
+        this.applyReadInbox(id, e, nextRawUnread, nextLastReadInboxId, false);
+        return;
+      }
+    }
+
+    const rawAdvance: number = Math.max(0,
+      nextRawUnread - pending.baseRawUnreadCount);
+    const previousReadInboxId: number = pending.lastReadInboxId;
+    const coversStagedTail: boolean = pending.latestIncomingLastId > 0 &&
+      nextLastReadInboxId >= pending.latestIncomingLastId;
+    const watermarkAddsUnit: boolean = rawAdvance === 0 &&
+      nextLastReadInboxId > previousReadInboxId &&
+      nextLastReadInboxId > e.lastMessageId;
+    const contributesToPair: boolean = rawAdvance > 0 || coversStagedTail || watermarkAddsUnit;
+    if (contributesToPair || pending.hasUnread) {
+      pending.hasUnread = true;
+      pending.rawUnreadCount = nextRawUnread;
+      pending.lastReadInboxId = nextLastReadInboxId;
+      pending.unreadAdvanceCount = Math.max(pending.unreadAdvanceCount, rawAdvance);
+      if (watermarkAddsUnit) {
+        pending.unreadAdvanceCount += 1;
+      }
+      this.scheduleRowSyncSettle(id, pending);
+      return;
+    }
+
+    // This update only changes the already committed side. Apply it through
+    // the normal 80ms window and rebase the still-pending generation.
+    if (nextRawUnread !== e.rawUnreadCount || nextLastReadInboxId !== e.lastReadInboxId) {
+      this.applyReadInbox(id, e, nextRawUnread, nextLastReadInboxId, false);
+    }
+    pending.baseRawUnreadCount = nextRawUnread;
+    pending.rawUnreadCount = nextRawUnread;
+    pending.lastReadInboxId = nextLastReadInboxId;
   }
 
   private onTitle(update: TdObject): void {
@@ -814,6 +1009,245 @@ export class ChatStore {
     return suppressed ? 0 : unread;
   }
 
+  private messageIdOf(message: TdObject | null): number {
+    return message !== null ? ((message['id'] as number | undefined) ?? 0) : 0;
+  }
+
+  // Only a strictly newer received tail needs an unread counterpart. TDLib's
+  // direction flag is required here: an absent flag must not turn an edit or a
+  // partially constructed test object into a received message.
+  private isFreshIncomingTail(entry: ChatEntry, baselineLastId: number,
+    lastMessage: TdObject | null): boolean {
+    if (lastMessage === null || entry.isSavedMessages ||
+      (lastMessage['is_outgoing'] as boolean | undefined) !== false) {
+      return false;
+    }
+    const sendingState = lastMessage['sending_state'];
+    const schedulingState = lastMessage['scheduling_state'];
+    if ((sendingState !== undefined && sendingState !== null) ||
+      (schedulingState !== undefined && schedulingState !== null)) {
+      return false;
+    }
+    const nextLastMessageId = this.messageIdOf(lastMessage);
+    return Number.isSafeInteger(nextLastMessageId) && nextLastMessageId > 0 &&
+      nextLastMessageId > baselineLastId;
+  }
+
+  private createPendingRowSync(chatId: number, baseRawUnreadCount: number,
+    baseLastReadInboxId: number): PendingRowSync {
+    const pending: PendingRowSync = {
+      hasLastMessage: false,
+      lastMessage: null,
+      positionUpdates: [],
+      affectsPositions: false,
+      hasUnread: false,
+      baseRawUnreadCount,
+      rawUnreadCount: baseRawUnreadCount,
+      lastReadInboxId: baseLastReadInboxId,
+      clearMarkedUnread: false,
+      sawIncomingLast: false,
+      latestIncomingLastId: 0,
+      incomingTailCount: 0,
+      unreadCreditCount: 0,
+      unreadAdvanceCount: 0,
+      timeoutTimer: -1,
+      settleTimer: -1
+    };
+    this.pendingRowSync.set(chatId, pending);
+    pending.timeoutTimer = this.timer.setTimeout((): void => {
+      if (this.pendingRowSync.get(chatId) !== pending) {
+        return;
+      }
+      this.commitPendingRowSync(chatId, true);
+    }, ROW_SYNC_WAIT_MS);
+    return pending;
+  }
+
+  private takeLateRowSync(chatId: number, entry: ChatEntry): PendingRowSync {
+    const late = this.lateRowSync.get(chatId);
+    this.clearLateRowSync(chatId);
+    const pending = this.createPendingRowSync(
+      chatId, entry.rawUnreadCount, entry.lastReadInboxId);
+    if (late === undefined) {
+      return pending;
+    }
+    if (late.half === 'lastMessage') {
+      pending.sawIncomingLast = true;
+      pending.latestIncomingLastId = late.lastMessageId;
+      pending.incomingTailCount = late.units;
+    } else {
+      // This unread state is already canonical; only its unmatched pairing
+      // credit needs to cross into the next bounded generation.
+      pending.unreadCreditCount = late.units;
+    }
+    return pending;
+  }
+
+  private stagePendingLastMessage(pending: PendingRowSync,
+    lastMessage: TdObject | null, positions: TdObject[] | undefined): void {
+    pending.hasLastMessage = true;
+    pending.lastMessage = lastMessage;
+    if (positions === undefined) {
+      return;
+    }
+    for (const position of positions) {
+      pending.positionUpdates.push(position);
+    }
+    pending.affectsPositions = true;
+  }
+
+  private scheduleRowSyncSettle(chatId: number, pending: PendingRowSync): void {
+    const unreadUnits: number = pending.unreadCreditCount + pending.unreadAdvanceCount;
+    const watermarkCoversTail: boolean = pending.hasUnread &&
+      pending.latestIncomingLastId > 0 &&
+      pending.lastReadInboxId >= pending.latestIncomingLastId;
+    const ready: boolean = pending.sawIncomingLast &&
+      (watermarkCoversTail ||
+        (unreadUnits > 0 && unreadUnits === pending.incomingTailCount));
+    if (!ready) {
+      if (pending.settleTimer !== -1) {
+        this.timer.clearTimeout(pending.settleTimer);
+        pending.settleTimer = -1;
+      }
+      return;
+    }
+    if (pending.settleTimer !== -1) {
+      return;
+    }
+    pending.settleTimer = this.timer.setTimeout((): void => {
+      if (this.pendingRowSync.get(chatId) === pending) {
+        this.commitPendingRowSync(chatId);
+      }
+    }, ROW_SYNC_SETTLE_MS);
+  }
+
+  private discardPendingRowSync(chatId: number): void {
+    const pending = this.pendingRowSync.get(chatId);
+    if (pending === undefined) {
+      return;
+    }
+    this.pendingRowSync.delete(chatId);
+    this.timer.clearTimeout(pending.timeoutTimer);
+    if (pending.settleTimer !== -1) {
+      this.timer.clearTimeout(pending.settleTimer);
+    }
+  }
+
+  private commitPendingRowSync(chatId: number,
+    rememberOutstanding: boolean = false): void {
+    const pending = this.pendingRowSync.get(chatId);
+    if (pending === undefined) {
+      return;
+    }
+    let lateHalf: RowSyncHalf | undefined = undefined;
+    let lateUnits: number = 0;
+    const unreadUnits: number = pending.unreadCreditCount + pending.unreadAdvanceCount;
+    const watermarkCoversTail: boolean = pending.hasUnread &&
+      pending.latestIncomingLastId > 0 &&
+      pending.lastReadInboxId >= pending.latestIncomingLastId;
+    if (rememberOutstanding && !watermarkCoversTail) {
+      if (pending.incomingTailCount > unreadUnits) {
+        lateHalf = 'lastMessage';
+        lateUnits = pending.incomingTailCount - unreadUnits;
+      } else if (unreadUnits > pending.incomingTailCount) {
+        lateHalf = 'unread';
+        lateUnits = unreadUnits - pending.incomingTailCount;
+      }
+    }
+    this.discardPendingRowSync(chatId);
+    const entry = this.chats.get(chatId);
+    if (entry === undefined) {
+      return;
+    }
+    const next = cloneEntry(entry);
+    if (pending.hasLastMessage) {
+      next.lastMessageText = formatPreview(pending.lastMessage);
+      next.lastMessageDate = pending.lastMessage !== null
+        ? ((pending.lastMessage['date'] as number | undefined) ?? 0) : 0;
+      next.lastMessageId = this.messageIdOf(pending.lastMessage);
+      next.lastSenderName = this.senderName(pending.lastMessage ?? undefined);
+    }
+    if (pending.hasUnread) {
+      next.rawUnreadCount = pending.rawUnreadCount;
+      next.lastReadInboxId = pending.lastReadInboxId;
+    }
+    if (pending.clearMarkedUnread) {
+      next.isMarkedUnread = false;
+    }
+    // Recompute only after both staged fields are present. This also preserves
+    // the existing phantom-unread recovery when the read half arrived first.
+    next.unreadCount = ChatStore.effectiveUnread(
+      next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
+    this.chats.set(chatId, next);
+    if (pending.affectsPositions) {
+      this.applyPositions(chatId, pending.positionUpdates);
+    }
+    if (lateHalf !== undefined && lateUnits > 0) {
+      this.rememberLateRowSync(
+        chatId, lateHalf, lateUnits, pending.latestIncomingLastId);
+    }
+    this.notifySoon(pending.affectsPositions ? undefined : chatId);
+  }
+
+  private rememberLateRowSync(chatId: number, half: RowSyncHalf,
+    units: number, lastMessageId: number): void {
+    this.clearLateRowSync(chatId);
+    const late: LateRowSync = { half, units, lastMessageId, expiryTimer: -1 };
+    this.lateRowSync.set(chatId, late);
+    late.expiryTimer = this.timer.setTimeout((): void => {
+      if (this.lateRowSync.get(chatId) === late) {
+        this.lateRowSync.delete(chatId);
+      }
+    }, ROW_SYNC_LATE_MATCH_MS);
+  }
+
+  private clearLateRowSync(chatId: number): void {
+    const late = this.lateRowSync.get(chatId);
+    if (late === undefined) {
+      return;
+    }
+    this.lateRowSync.delete(chatId);
+    this.timer.clearTimeout(late.expiryTimer);
+  }
+
+  private applyLastMessage(chatId: number, entry: ChatEntry,
+    lastMessage: TdObject | null, positions: TdObject[] | undefined,
+    immediately: boolean): void {
+    const next = cloneEntry(entry);
+    next.lastMessageText = formatPreview(lastMessage);
+    next.lastMessageDate = lastMessage !== null
+      ? ((lastMessage['date'] as number | undefined) ?? 0) : 0;
+    next.lastMessageId = this.messageIdOf(lastMessage);
+    next.lastSenderName = this.senderName(lastMessage ?? undefined);
+    next.unreadCount = ChatStore.effectiveUnread(
+      next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
+    this.chats.set(chatId, next);
+    if (positions !== undefined) {
+      this.applyPositions(chatId, positions);
+    }
+    const dirtyChatId: number | undefined = positions !== undefined ? undefined : chatId;
+    if (immediately) {
+      this.notifySoon(dirtyChatId);
+    } else {
+      this.notify(dirtyChatId);
+    }
+  }
+
+  private applyReadInbox(chatId: number, entry: ChatEntry, rawUnreadCount: number,
+    lastReadInboxId: number, immediately: boolean): void {
+    const next = cloneEntry(entry);
+    next.rawUnreadCount = rawUnreadCount;
+    next.lastReadInboxId = lastReadInboxId;
+    next.unreadCount = ChatStore.effectiveUnread(
+      next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
+    this.chats.set(chatId, next);
+    if (immediately) {
+      this.notifySoon(chatId);
+    } else {
+      this.notify(chatId);
+    }
+  }
+
   // Mark lists dirty and schedule one coalesced flush. A field-only change
   // passes its chat id so only lists actually containing that chat rebuild;
   // membership/order changes (positions) omit it and dirty every list.
@@ -828,10 +1262,31 @@ export class ChatStore {
     }
     // Trailing throttle, deliberately NOT re-armed by further updates: a
     // continuous update storm still flushes every window instead of starving.
-    this.notifyTimer = setTimeout((): void => {
+    this.scheduleNotify(NOTIFY_COALESCE_MS);
+  }
+
+  private notifySoon(chatId?: number): void {
+    if (chatId === undefined) {
+      this.dirtyAllLists = true;
+    } else {
+      this.dirtyChatIds.add(chatId);
+    }
+    if (this.notifyTimer !== -1) {
+      this.timer.clearTimeout(this.notifyTimer);
       this.notifyTimer = -1;
-      this.flushNotify();
-    }, NOTIFY_COALESCE_MS);
+    }
+    this.scheduleNotify(0);
+  }
+
+  private scheduleNotify(delayMs: number): void {
+    this.notifyTimer = this.timer.setTimeout((): void => {
+      this.notifyTimer = -1;
+      this.onNotifyTimer();
+    }, delayMs);
+  }
+
+  private onNotifyTimer(): void {
+    this.flushNotify();
   }
 
   private flushNotify(): void {

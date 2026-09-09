@@ -62,6 +62,16 @@ class FakeHost implements TranslationDriverHost {
     this.setIsTranslatableCalls.push(value);
   };
   driveVisibleWork: () => void = (): void => { this.driveVisibleWorkCount++; };
+  // 译文落地前页面要记一次阅读位置（顶部锚定时行变高会把内容往下推，
+  // 见 util/translationAnchor）。这里只计数，控制器不该关心页面怎么实现。
+  holdAnchorCount: number = 0;
+  holdAnchor: () => void = (): void => { this.holdAnchorCount++; };
+  // 列表在不在动。默认「不动」，让既有用例的行为不变（译文当场落地）。
+  listMovingValue: boolean = false;
+  listMoving: () => boolean = (): boolean => this.listMovingValue;
+  // 首个可见行。默认 0 = 视野从头开始，没有"视口上方"的行。
+  visibleStartValue: number = 0;
+  visibleStartIndex: () => number = (): number => this.visibleStartValue;
 }
 
 function controllerOn(host: FakeHost): TranslationDriver {

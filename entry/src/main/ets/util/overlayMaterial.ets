@@ -417,6 +417,16 @@ export function usesImmersiveMaterial(surface: OverlaySurface): boolean {
 
 // The blur a framework-managed container used before the material. Returning it
 // solely while the material is unavailable is what keeps the two from stacking.
+// ⚠️ **框架容器面（菜单/弹窗/sheet）不要用这个，用 containerBlur。**
+//
+// 它在材质可用时返回 undefined，把观感整个让给材质。而系统已经把组件级材质
+// 收回了：设备自报支持（`types=[101] queried=true material=true`）却根本不画。
+// 于是 `blurStyle: overlayBlur(...)` + `systemMaterial: overlayMaterial(...)`
+// 这一对下来，sheet 既没有模糊、也没有材质，背景还被让成透明——**整个弹窗
+// 能看穿到底下的页面**（issue #175，pad 上的「添加代理」「设备详情」两张截图）。
+//
+// 2026-09-09 已把全部 18 处框架容器调用点换成 containerBlur。这个函数暂时留着
+// 是因为它对**材质真的画得出来**的面仍然正确；但新代码基本不该再用到它。
 export function overlayBlur(surface: OverlaySurface): BlurStyle | undefined {
   if (materialOff() || materialAvailable() || !frameworkContainer(surface)) {
     return undefined;

@@ -1017,6 +1017,34 @@
       "value": "Guardado en la galería"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "Error al descargar"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "Descargando %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Galería"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Error al guardar"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "Guardado en %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Guardando %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Ubicación seleccionada"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "Para enviar mensajes de voz y hablar en transmisiones en vivo se necesita usar el micrófono"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "La descarga automática sigue la red actual y el tamaño de archivo; el guardado en la galería lo confirma el sistema."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "Ubicación de descargas"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Ruta de descarga predeterminada"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Elegir ubicación al guardar"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Ruta de descarga predeterminada actualizada"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "Al activarlo, podrás traducir chats completos desde el menú del chat"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Reemplazar el texto original por la traducción"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Mostrar solo la traducción cuando esté lista"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "La transcripción es una función de Telegram Premium"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "Borrar también para la otra persona"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "Vaciar para todos"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Eliminar pie de foto"
+    },
+    {
+      "name": "share_to",
+      "value": "Compartir con"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Preparando…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "Elegir en la app…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Abre la app una vez para ver aquí tus chats recientes"
+    },
+    {
+      "name": "share_failed",
+      "value": "No se pudo leer el contenido compartido"
+    },
+    {
+      "name": "share_staged",
+      "value": "Añadido al cuadro de mensaje: revisa y envía"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Enviar ya"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Abrir el chat"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "Enviado a %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "No se pudo enviar: el contenido queda en el cuadro de mensaje"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Compartir rápido"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "No hay mensajes coincidentes"
     }
   ]
 }

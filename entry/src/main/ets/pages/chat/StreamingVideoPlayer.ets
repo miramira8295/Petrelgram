@@ -30,6 +30,7 @@ import { VideoStreamSession } from '../../services/VideoStreamSession';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
+import { VideoGestureLayer } from './VideoGestureLayer';
 
 
 
@@ -926,16 +927,32 @@ export struct StreamingVideoPlayer {
     return 16 / 9;
   }
 
+  // 内嵌播放位（气泡里）**填满并裁掉溢出**，全屏**塞进去并留黑边**。
+  //
+  // 【为什么分两档】气泡里的媒体框宽度钉死气泡宽，超高的部分由缩略图的
+  // ImageFit.Cover 裁掉（见 util/mediaBox）。播放面若还按 Contain 塞进去，
+  // 一点播放画面就缩小、两侧冒黑边，尺寸当场跳一下——静态和播放必须同一种
+  // 取景。外层已经有 .clip(true)（相册格与单媒体两处都有），所以溢出裁得掉。
+  //
+  // 全屏那一侧绝不能裁：用户点开就是要看完整画面，黑边是对的。
+  private surfaceFillsViewport(): boolean {
+    return this.embedded;
+  }
+
   private surfaceWidth(): number {
     const aspect = this.displayAspectRatio();
     const viewportAspect = this.viewportWidth / this.viewportHeight;
-    return viewportAspect > aspect ? this.viewportHeight * aspect : this.viewportWidth;
+    const heightBound: boolean = this.surfaceFillsViewport()
+      ? viewportAspect <= aspect : viewportAspect > aspect;
+    return heightBound ? this.viewportHeight * aspect : this.viewportWidth;
   }
 
   private surfaceHeight(): number {
     const aspect = this.displayAspectRatio();
     const viewportAspect = this.viewportWidth / this.viewportHeight;
-    return viewportAspect > aspect ? this.viewportHeight : this.viewportWidth / aspect;
+    const heightBound: boolean = this.surfaceFillsViewport()
+      ? viewportAspect <= aspect : viewportAspect > aspect;
+    return heightBound ? this.viewportHeight : this.viewportWidth / aspect;
   }
 
   // 渲染面**自己**的尺寸。解码器交出来的画面是未旋转的（横躺的 1920x1440），
@@ -1277,25 +1294,6 @@ export struct StreamingVideoPlayer {
       // `!this.liveMode`：这一块既没有 !embedded 也没有 showControls 守卫（对比
       // 下面的控制栏），而实况正是靠关掉 showControls 给左下角那枚胶囊让位的。
       // 不挡的话播完那一刻中央一个「重播」、左下角一个播放键，两个入口同时在场。
-      if (this.isCompleted && !this.liveMode) {
-        Stack() {
-          Row({ space: 8 }) {
-            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(25).fontColor([Color.White]);
-            Text($r('app.string.player_replay')).fontSize(18).fontColor(Color.White).fontWeight(FontWeight.Medium);
-          }
-          .padding({ left: 20, right: 20, top: 14, bottom: 14 })
-          .backgroundColor(CONTROL_BAR_BG)
-          .borderRadius(20);
-        }
-        .constraintSize({ minWidth: 140, minHeight: 64 })
-        .stateStyles({
-          normal: this.controlNormalStyle,
-          pressed: this.controlPressedStyle
-        })
-        .animation({ duration: 120, curve: Curve.EaseOut })
-        .onClick(() => { this.replay(); });
-      }
       if (!this.embedded && this.showControls && !this.hasError) {
         Column() {
           Row() {
@@ -1392,6 +1390,41 @@ export struct StreamingVideoPlayer {
         .height('100%')
         .transition(TransitionEffect.OPACITY
           .animation({ duration: 160, curve: Curve.EaseOut }));
+      }
+      // **重播按钮必须排在控制条后面**（Stack 里后面的是上层）。
+      // 控制条的根 Column 是 width/height 100%，里面那两个 tapZone 用
+      // layoutWeight(1) 铺满上半屏、各自挂着点击手势——排在前面就整片盖住
+      // 重播按钮，把点击吃掉（用户 2026-09-09："控制器显示的时候重播按钮
+      // 点击不到"）。命中测试按兄弟顺序走，所以顺序就是修法。
+      if (this.isCompleted && !this.liveMode) {
+        Stack() {
+          Row({ space: 8 }) {
+            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+              .fontSize(25).fontColor([Color.White]);
+            Text($r('app.string.player_replay')).fontSize(18).fontColor(Color.White).fontWeight(FontWeight.Medium);
+          }
+          .padding({ left: 20, right: 20, top: 14, bottom: 14 })
+          .backgroundColor(CONTROL_BAR_BG)
+          .borderRadius(20);
+        }
+        .constraintSize({ minWidth: 140, minHeight: 64 })
+        .stateStyles({
+          normal: this.controlNormalStyle,
+          pressed: this.controlPressedStyle
+        })
+        .animation({ duration: 120, curve: Curve.EaseOut })
+        .onClick(() => { this.replay(); });
+      }
+      // 竖拖手势层：左半屏亮度、右半屏音量。**排在最后 = 最上层**，否则控制条
+      // 可见时手势被它整片吃掉（重播按钮就栽过这个，见上面那段注释）。
+      // 它是 HitTestMode.Transparent，不阻塞下面的单击/双击。
+      // 实况不挂：那一路的界面是另一套胶囊，没有可调的东西。
+      if (!this.embedded && !this.liveMode) {
+        VideoGestureLayer({
+          viewportW: this.viewportWidth,
+          viewportH: this.viewportHeight,
+          controlsVisible: this.showControls && !this.hasError
+        });
       }
     }
     .width('100%').height('100%').backgroundColor(Color.Black)

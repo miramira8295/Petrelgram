@@ -1,13 +1,15 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { albumCellKey, albumRowKey } from '../main/ets/util/albumCellKey';
+import { AlbumCellGeometry, albumCellKey, albumRowKey } from '../main/ets/util/albumCellKey';
 
 // 一整块相册（每行的格子键）。真机上的 bug 就是两块不同的相册算出了同一串键。
 function gridKeys(memberIds: number[], fileIds: number[], video: boolean[]): string[] {
   const cells: string[] = [];
+  const geometry: AlbumCellGeometry[] = [];
   for (let i = 0; i < memberIds.length; i++) {
     cells.push(albumCellKey(i, memberIds[i], fileIds[i], video[i]));
+    geometry.push({ width: 120 + i, height: 100 });
   }
-  return [albumRowKey(0, cells)].concat(cells);
+  return [albumRowKey(0, cells, geometry)].concat(cells);
 }
 
 export default function albumCellKeyTest() {
@@ -50,9 +52,20 @@ export default function albumCellKeyTest() {
     // 行键必须跟着格子变：外层键不变时 ForEach 连行的构建函数都不会重跑，
     // 内层那个 ForEach 根本没有机会被重新求值。
     it('the_row_key_follows_its_cells', 0, () => {
-      const one: string = albumRowKey(0, [albumCellKey(0, 101, 7001, false)]);
-      const two: string = albumRowKey(0, [albumCellKey(0, 202, 8002, false)]);
+      const geometry: AlbumCellGeometry[] = [{ width: 120, height: 100 }];
+      const one: string = albumRowKey(0, [albumCellKey(0, 101, 7001, false)], geometry);
+      const two: string = albumRowKey(0, [albumCellKey(0, 202, 8002, false)], geometry);
       expect(one === two).assertFalse();
+    });
+
+    // 多选栏、分栏和窗口缩放都会改变同一相册的格子尺寸。外层 key 必须跟着换，
+    // 否则 ForEach 不重跑 itemGenerator，图片仍拿进入多选前的旧宽高。
+    it('the_row_key_follows_layout_geometry', 0, () => {
+      const cells: string[] = [albumCellKey(0, 101, 7001, false)];
+      const wide: string = albumRowKey(0, cells, [{ width: 277.28, height: 160.25 }]);
+      const narrow: string = albumRowKey(0, cells, [{ width: 250.76, height: 145.5 }]);
+      expect(wide === narrow).assertFalse();
+      expect(wide).assertEqual(albumRowKey(0, cells, [{ width: 277.28, height: 160.25 }]));
     });
   });
 }

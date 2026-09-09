@@ -79,6 +79,12 @@ import {
   clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend, toMediaSendItems,
   removePendingMedia
 } from '../../util/pendingMedia';
+import { ShareArrivalHost, applyShareArrival, sendShareDirectly } from '../../util/shareArrival';
+import {
+  ShareMediaGeometry, UpgradedShare, upgradeLivePhotos
+} from '../../util/shareLivePhoto';
+import { SharedPayload } from '../../util/sharedContent';
+import { onShareTargeted, takePendingShare } from '../../services/ShareInbox';
 import { ChatComposerInput } from './ChatComposerInput';
 import { ScrollFab } from './ScrollFab';
 import { MembershipBar } from './MembershipBar';
@@ -91,6 +97,10 @@ import {
 import { SecretChatInfo } from '../../util/secretChat';
 import { watchSecretChat } from '../../store/SecretChatWatch';
 import { AT_BOTTOM_KEEP, AT_BOTTOM_YES, atBottomVerdict } from '../../util/atBottom';
+import { membershipLosesComposer } from '../../util/membershipState';
+import {
+  TRANSLATION_ANCHOR_SETTLE_MS, clearTranslationInstant, shouldHoldTranslationAnchor
+} from '../../util/translationAnchor';
 import {
   APPEND_ANCHOR_RESTORE_BYPASSED,
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
@@ -176,7 +186,7 @@ import {
 } from '../../util/readingReturn';
 import { audioQueueApplies } from '../../util/audioQueueGate';
 import {
-  glassTintHex, overlayBlur, overlayMaterial
+  glassTintHex, containerBlur, overlayMaterial
 } from '../../util/overlayMaterial';
 import { BOT_START_COMMAND, composerSlotState } from '../../util/botStart';
 import { getAdministrators, AdminRow } from '../../store/ChatAdminApi';
@@ -289,6 +299,9 @@ interface InitialMessageStageTarget {
 // applyRouteParams 的阶段间上下文：只在 A->C 之间传递的路由派生量。
 interface RouteApplyContext {
   jumpTo: number | undefined;
+  // 系统分享送进来的内容等着落到这个会话。**必须等 store 建好之后再消费**
+  // （见 applyRouteParams 里那句调用的说明）。
+  sharePending: boolean;
 }
 
 // 向上翻页的锚点采样（与下面 append 那组是镜像判据，不是重复代码，不合并）。
@@ -365,6 +378,24 @@ export struct ChatPage {
   // 占位副本，长度一样，所以两者此刻仍然相等；将来若有别的分级形状，这个计数
   // 要跟着"用户最终会看到多少行"走。它驱动的是空/加载中的时间线提示。
   private visibleGroupCount: number = 0;
+  // composerSlot() 的两个入参——messageLoadState 与 visibleGroupCount——都是**普通
+  // 字段**，V2 里改了不触发任何重绘。于是机器人会话发出 /start、历史不再为空之后，
+  // 输入区不会重新求值，「开始」按钮一直留着换不回输入框（用户 2026-09-07 报）。
+  //
+  // 进会话时按钮能正常出现，只是因为那一刻 membershipState 这类 @Local 恰好也在变、
+  // 顺带把输入区重绘了一次——纯属搭便车，不是机制。
+  //
+  // 这里放一个可观测的镜像，只装**归属可能改变**的那两位（加载态 + 空不空），
+  // 而不是把 visibleGroupCount 本身变成 @Local：后者每次发布都会变，等于每翻一页
+  // 就重绘一次输入区。
+  @Local private composerSlotKey: string = '';
+
+  private syncComposerSlot(): void {
+    const key: string = `${this.messageLoadState}|${this.visibleGroupCount > 0 ? 1 : 0}`;
+    if (this.composerSlotKey !== key) {
+      this.composerSlotKey = key;
+    }
+  }
   // 消息列表的内部真相。Repeat 和 MediaViewerOverlay 不直接订阅这个普通字段；
   // publishGroupsNow 把它连同加载/分页状态一次性装进 timelineSnapshot 发布。
   private groups: AlbumGroup[] = [];
@@ -1160,7 +1191,14 @@ export struct ChatPage {
         onSetReaction: (messageId: number, emoji: string, chosen: boolean): void => {
           this.overlayState.toggleReaction(messageId, emoji, chosen);
         },
-        onReplyTo: (messageId: number): void => { this.composer.startReply(messageId); },
+        onReplyTo: (messageId: number): void => {
+          // 兜底：输入框都不在的时候不接受回复。手势那边已经按 data.canReply
+          // 拦过一道，这里是唯一的漏斗，再拦一次，免得将来新增入口漏掉。
+          if (membershipLosesComposer(this.membershipState)) {
+            return;
+          }
+          this.composer.startReply(messageId);
+        },
         onCopyText: (messageId: number): void => { this.copyMessageText(messageId); },
         onSelectText: (messageId: number): void => { this.openSelectText(messageId); },
         onCopyLink: (messageId: number): void => { this.copyMessageLink(messageId); },
@@ -1244,7 +1282,10 @@ export struct ChatPage {
       `|mute${this.autoplayMuted ? 1 : 0}|msg${audio ? this.messageListRevision : 0}` +
       `|bg${this.chatBackgroundRevision}|appearance${this.appearanceEpoch}` +
       `|material${this.materialEpoch}|dark${this.appDark ? 1 : 0}` +
-      `|select${this.selection.active ? 1 : 0}|width${contentWidth}`;
+      `|select${this.selection.active ? 1 : 0}|width${contentWidth}` +
+      // 发言权变了要重建：左滑回复的可用性挂在它上面。翻转很罕见
+      // （加入/退出频道、被禁言），不会带来滚动期的重建。
+      `|reply${membershipLosesComposer(this.membershipState) ? 0 : 1}`;
     const cached: PreparedMessageBubble | undefined = this.preparedMessageCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
@@ -1292,6 +1333,7 @@ export struct ChatPage {
     const lightweightPlainText: boolean = canRenderLightweightPlainText(g.head, context);
     const data: MessageBubbleRenderData = {
       chatId: this.chatId, contentWidth, isGroup: this.isGroup, isChannel: this.isChannel,
+      canReply: !membershipLosesComposer(this.membershipState),
       liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
       showUnreadDivider: showTimelineDivider,
       dividerIsResume: showResumeDivider,
@@ -1998,6 +2040,7 @@ export struct ChatPage {
     this.olderLoadState = 'idle';
     this.newerLoadState = 'idle';
     this.visibleGroupCount = 0;
+    this.syncComposerSlot();
     this.publishGroups([]);
     this.pausedAnimationIds = [];
     this.forcedAnimationIds = [];
@@ -2094,6 +2137,7 @@ export struct ChatPage {
     this.clientJoinNoticeEntryCache = null;
     const groups: AlbumGroup[] = this.groupsWithClientJoinNotice(this.messages);
     this.visibleGroupCount = groups.length;
+    this.syncComposerSlot();
     this.publishGroups(groups);
     if (this.didInitialScroll && this.atBottom) {
       const actionSeq: number = ++this.scrollActionSeq;
@@ -2133,6 +2177,11 @@ export struct ChatPage {
   // 官方文档写 onReady 在「即将构建子组件之前」触发，但 aboutToAppear 比它更早，
   // 所以 aboutToAppear 里读不到 navParams。用参数的那一段因此整体挪进了
   // applyRouteParams()，由 onReady 存完 navParams 之后立即调用。
+  // 译文到货的锚点保持。-1 = 这一轮还没记过位置。
+  private translationAnchorIdx: number = -1;
+  private translationAnchorY: number = 0;
+  private translationAnchorTimer: number = -1;
+
   private navParams: Record<string, Object> | undefined = undefined;
   private navigationCoordinator: ChatPageNavigationCoordinator =
     new ChatPageNavigationCoordinator();
@@ -2153,7 +2202,20 @@ export struct ChatPage {
     }
   }
 
+  // 分享目标广播的退订钩子。会话已经开着时路由参数不会重跑，靠它认领
+  // （见 services/ShareInbox 的那条旁路）。
+  private offShareTargeted: (() => void) | null = null;
+  // 这次分享要不要"进来就发"。由路由参数带进来，见 util/shareSendMode。
+  private shareAutoSend: boolean = false;
+
   aboutToAppear(): void {
+    // 目标会话正是自己时把分享取走。放在最前：它只是登记一个回调，
+    // 不依赖下面任何初始化。
+    this.offShareTargeted = onShareTargeted((chatId: number): void => {
+      if (chatId === this.chatId) {
+        this.consumeSharedContent();
+      }
+    });
     // 顶栏浮卡控制器接上宿主（B5）。全是箭头函数字段：前六个是取值器——控制器
     // 不缓存页面的值，每次要用就现取；后五个是动作回调——共享的滚动/跳转真源
     // （scroller、pendingJumpId）留在页面，控制器只把意图交回来。
@@ -2290,8 +2352,18 @@ export struct ChatPage {
       groups: (): AlbumGroup[] => this.groups,
       isTranslatable: (): boolean => this.isTranslatable,
       setIsTranslatable: (value: boolean): void => { this.isTranslatable = value; },
-      driveVisibleWork: (): void => { this.driveVisibleWork(); }
+      driveVisibleWork: (): void => { this.driveVisibleWork(); },
+      holdAnchor: (): void => { this.holdAnchorForTranslation(); },
+      // 手指按着、或列表还在惯性里都算"在动"。listUserScrollActive 在列表停稳后
+      // 还会保持 820ms（见 onFloatDateHidden 的说明）——对"等停下来再改布局"
+      // 这个用途，滞后反而是优点：宁可晚一点落，也不要在惯性期改布局。
+      listMoving: (): boolean => this.listTouchActive || this.listUserScrollActive,
+      // 首个可见行的行号。驱动据此点名"在视口上方"的那几条——它们变高会把
+      // 用户正在看的内容往下推，得直接落 + 靠补偿吃掉位移（见 util/translationAnchor）。
+      visibleStartIndex: (): number => this.curStartIdx
     });
+    // 上一批点名（"这几条直接落、不做动画"）不该跨会话留着。
+    clearTranslationInstant();
     // "正在输入…" 提示控制器接上宿主（B10）。currentKind 转发 B8
     // HeaderIdentitySession.currentKind()——本类不得直接持有 header 控制器的
     // 引用，也不得用 isGroup 之类的近似值顶替。
@@ -2530,6 +2602,12 @@ export struct ChatPage {
     }));
     this.registerHeaderDerivedSubscriptions(store);
     this.openStoreForRoute(store, ctx);
+    // 系统分享送进来的内容。**必须放在这里，不能放进 resolveRouteAndResetSession**
+    // ——那一步跑在 createMessageStore 之前，那时 this.store 还是 null（或上一个
+    // 会话的），载荷会被取走又丢掉，现象就是"点了分享只进会话、什么都没有"。
+    if (ctx.sharePending) {
+      this.consumeSharedContent();
+    }
     this.search.scheduleEntrySearch();
   }
 
@@ -2579,9 +2657,98 @@ export struct ChatPage {
     } else {
       this.restoreServerDraft();
     }
+
     this.search.seedFromRoute(route.searchQuery, route.startSearch, jumpTo !== undefined ? jumpTo : 0);
-    const ctx: RouteApplyContext = { jumpTo: jumpTo };
+    this.shareAutoSend = route.shareAutoSend;
+    const ctx: RouteApplyContext = { jumpTo: jumpTo, sharePending: route.sharePending };
     return ctx;
+  }
+
+  // 系统分享送进来的内容落到本会话。**取走式**：ShareInbox 里那份是一次性的，
+  // 取过就没了——否则回退再进同一个会话会把同一批图再放一遍。
+  private consumeSharedContent(): void {
+    const store: MessageStore | null = this.store;
+    if (store === null) {
+      // **不能在这之前 takePendingShare()**：取走是破坏性的，store 还没建好时
+      // 取了就等于把这次分享丢了（真机复现过）。
+      logW('[Share] chat page not ready, leaving payload for the next attempt');
+      return;
+    }
+    const payload: SharedPayload | null = takePendingShare();
+    if (payload === null) {
+      return;
+    }
+    logI(`[Share] staging into chat ${this.chatId}: ` +
+      `${payload.media.length} media, caption ${payload.caption.length}ch`);
+    // 实况照片的动态部分要现去媒体库取（秒级），所以整条落地是异步的。
+    // 取不到就原样按静图发，见 util/shareLivePhoto。
+    upgradeLivePhotos(getContext(this) as common.Context, payload)
+      .then((upgraded: UpgradedShare): void => {
+        this.stageSharedPayload(upgraded, store);
+      }).catch((e: Object): void => {
+        logE(`[Share] live photo upgrade failed: ${e}`);
+        this.stageSharedPayload(
+          { payload: payload, geometry: new Map<string, ShareMediaGeometry>() }, store);
+      });
+  }
+
+  // 真正把分享落到输入框/发送链上。决策在 util/shareStaging（纯函数、有单测），
+  // 这里只是把页面的几个落点接上去。
+  private stageSharedPayload(upgraded: UpgradedShare, store: MessageStore): void {
+    if (this.shareAutoSend) {
+      this.sendSharedDirectly(upgraded, store);
+      return;
+    }
+    this.stageSharedPayloadInComposer(upgraded, store);
+  }
+
+  // 分享落地要用到的页面能力。两档共用一份。
+  private shareHost(store: MessageStore): ShareArrivalHost {
+    return {
+      appendMedia: (items: MediaSendItem[]): number => {
+        const merged: PendingMediaAppend = appendPendingMedia(this.pendingMedia, items);
+        this.pendingMedia = merged.items;
+        return merged.dropped;
+      },
+      setDraft: (text: string): void => { this.draft = text; },
+      draftText: (): string => this.draft,
+      sendDocument: (path: string, caption: string): void => store.sendDocument(path, caption),
+      sendAudio: (path: string, caption: string): void => store.sendAudio(path, caption),
+      sendMedia: (items: MediaSendItem[], caption: string): Promise<void> =>
+        store.sendMedia(items, caption),
+      sendText: (text: string): void => { store.send(text); },
+      scrollToBottom: (): void => { this.atBottom = true; }
+    };
+  }
+
+  // 「直接发送」那一档（分享面板上选的，见 util/shareSendMode）：不落输入框，
+  // 当场发出去，然后把应用退回后台——用户人还在图库里，看到的是"闪了一下"。
+  //
+  // 失败就**留在前台并落进输入框**：内容不能丢，而且用户得看见失败。
+  private sendSharedDirectly(upgraded: UpgradedShare, store: MessageStore): void {
+    const host: ShareArrivalHost = this.shareHost(store);
+    sendShareDirectly(upgraded.payload, host, upgraded.geometry).then((): void => {
+      promptAction.showToast({
+        message: str('share_sent_to', this.header.titleTextOf()), duration: 1600
+      });
+      // 请求已被 TDLib 收下，上传在后台继续（dataTransfer 长时任务）。
+      const ctx = getContext(this) as common.UIAbilityContext;
+      ctx.moveAbilityToBackground().catch((e: Object): void => {
+        // 退不回去不算失败，消息已经发出去了，用户留在会话里也说得通。
+        logW(`[Share] moveAbilityToBackground failed: ${e}`);
+      });
+    }).catch((e: Object): void => {
+      logE(`[Share] direct send failed: ${e}`);
+      promptAction.showToast({
+        message: $r('app.string.share_send_failed'), duration: 2400
+      });
+      applyShareArrival(upgraded.payload, host, this.pendingMedia.length, upgraded.geometry);
+    });
+  }
+
+  private stageSharedPayloadInComposer(upgraded: UpgradedShare, store: MessageStore): void {
+    applyShareArrival(upgraded.payload, this.shareHost(store),
+      this.pendingMedia.length, upgraded.geometry);
   }
 
   // 会话重置决策。结果留在 routeResumeWaiting 字段上——拆分前它是 applyRouteParams
@@ -2729,6 +2896,7 @@ export struct ChatPage {
     this.store = store;
     if (!this.routeResumeWaiting || this.groups.length === 0) {
       this.messageLoadState = 'loading';
+      this.syncComposerSlot();
     }
     return store;
   }
@@ -2741,6 +2909,7 @@ export struct ChatPage {
     this.newerLoadState = store.getNewerLoadState();
     if (!(this.routeResumeWaiting && this.groups.length > 0 && historyState === 'loading')) {
       this.messageLoadState = historyState;
+      this.syncComposerSlot();
       this.messageLoadError = store.getInitialHistoryError();
     }
     // Do not turn an openChat real-time update into the first positioned
@@ -2965,6 +3134,7 @@ export struct ChatPage {
     this.messageListRevision++;
     this.reconcileMessageActionTargets(list);
     this.visibleGroupCount = groups.length;
+    this.syncComposerSlot();
     if (this.viewerMsgId !== 0 &&
       list.findIndex((m: MessageEntry): boolean => m.id === this.viewerMsgId) < 0) {
       this.closeViewer();
@@ -3543,6 +3713,10 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    if (this.offShareTargeted !== null) {
+      this.offShareTargeted();
+      this.offShareTargeted = null;
+    }
     this.disposeInitialStageAndTgs();
     this.disposePlaybackAndSlots();
     this.persistDraftAndViewport();
@@ -4215,6 +4389,57 @@ export struct ChatPage {
   // `try { y = getItemRect(i).y } catch { y = 0 }` —— 非法下标和"行正好贴在
   // 视口顶端(y=0)"取到的是同一个 0，分不开。而 anchorRestore 的
   // dy = rect.y - itemY 会把这个假 0 当成真位置，补出整行级别的位移。
+  // 译文到货前先记下当前首个可见行的位置，落定后把它按回去。
+  //
+  // 顶部锚定时行变高会把下面的内容往下推，用户正在看的那条跟着漂
+  // （用户 2026-09-09：「顶部确实定不住」）。maintainVisibleContentPosition
+  // 管的是插入/删除，不管行变高——判据与取舍见 util/translationAnchor。
+  //
+  // 一次可见范围里可能连着落好几条译文，所以**合并**：只记第一次的位置，
+  // 后面每次都把落定的时刻往后推，最后统一补一次。
+  private holdAnchorForTranslation(): void {
+    if (!shouldHoldTranslationAnchor(this.atBottom, this.anchorIndexFresh())) {
+      return;
+    }
+    if (this.translationAnchorIdx < 0) {
+      const y: number = this.anchorItemY(this.curStartIdx);
+      if (Number.isNaN(y)) {
+        return;
+      }
+      this.translationAnchorIdx = this.curStartIdx;
+      this.translationAnchorY = y;
+    }
+    if (this.translationAnchorTimer !== -1) {
+      clearTimeout(this.translationAnchorTimer);
+    }
+    this.translationAnchorTimer = setTimeout((): void => {
+      this.translationAnchorTimer = -1;
+      this.applyTranslationAnchor();
+    }, TRANSLATION_ANCHOR_SETTLE_MS);
+  }
+
+  private applyTranslationAnchor(): void {
+    const idx: number = this.translationAnchorIdx;
+    const y0: number = this.translationAnchorY;
+    this.translationAnchorIdx = -1;
+    if (idx < 0 || this.atBottom) {
+      return;
+    }
+    const y1: number = this.anchorItemY(idx);
+    if (Number.isNaN(y1)) {
+      return;
+    }
+    const dy: number = y1 - y0;
+    if (Math.abs(dy) < 0.5) {
+      return;
+    }
+    // 诊断：这条补偿到底有没有活干。上一轮同类补偿在**插入/删除**场景下 90 次
+    // 里 83 次 dy=0（mVCP 已经管了），而行变高是 mVCP 不管的那一类，这里应当
+    // 是非零的。真机上验完就删。
+    logW(`[TransAnchor] idx=${idx} dy=${dy.toFixed(1)}`);
+    this.scroller.scrollBy(0, dy);
+  }
+
   private anchorItemY(index: number): number {
     try {
       const rect = this.scroller.getItemRect(index);
@@ -4266,6 +4491,10 @@ export struct ChatPage {
     this.listUserScrollActive = false;
     this.floatDateIndex = -1;
     this.floatDateStartIdx = -1;
+    // 列表停稳了：把滑动期间攒下的译文一次性落。译文改的是布局，滑动中改
+    // 就是"边滑边跳"（用户 2026-09-09 实测），见 util/deferredTranslation。
+    // 放在翻假**之后**：flushPending 会经 land() 再问一次 listMoving()。
+    this.translation.flushPending();
   }
 
   private prepareUserJump(): void {
@@ -5592,11 +5821,18 @@ export struct ChatPage {
   // 输入框那块位置归谁：空的机器人会话给「开始」，其余交回成员状态。
   // 判定在 util/botStart（有单测），这里只把当前字段喂进去。
   private composerSlot(): string {
+    // **加载态与空态从镜像里取**，不直接读 messageLoadState / visibleGroupCount：
+    // 那两个是普通字段，V2 不会因为它们变化而重算这一支（见镜像的声明处）。
+    // 镜像还没初始化时退回直读，行为与以前一致。
+    const parts: string[] = this.composerSlotKey.split('|');
+    const loadState: string = parts.length > 1 ? parts[0] : this.messageLoadState;
+    const hasRows: boolean = parts.length > 1
+      ? parts[1] === '1' : this.visibleGroupCount > 0;
     return composerSlotState({
       isBot: this.isBotChat,
       membershipState: this.membershipState,
-      loadState: this.messageLoadState,
-      visibleGroupCount: this.visibleGroupCount,
+      loadState: loadState,
+      visibleGroupCount: hasRows ? 1 : 0,
       threadRootId: this.threadRootId
     });
   }
@@ -6713,7 +6949,7 @@ export struct ChatPage {
       height: 320,
       backgroundColor: Color.Transparent,
       dragBar: false,
-      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 

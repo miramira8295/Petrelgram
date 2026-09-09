@@ -30,7 +30,7 @@ import {
 } from '../../store/DownloadApi';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import {
   SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
@@ -1235,25 +1235,24 @@ export struct GlobalSearchPage {
     this.hashtagPosts = this.hashtagPosts.map((it: FoundItem): FoundItem => it.chatId === chatId ? fn(it) : it);
   }
 
-  // 会话被推进的是**聊天页签的栈**，而本页是 router 页、整个盖在那条栈上面：
-  // 只推不关，用户看到的是"什么都没发生"。形状取自 NewGroupPage.openCreatedGroup
-  // ——漏斗成功之后再把本页弹掉，露出下面已经切到聊天页签的会话。
-  // router.back() 是同步 void、正常失败不抛，所以它不需要自己的 try/catch；
-  // 真正会失败的是 navigateToChat（栈未注册时回退整页路由），由 catch 收尾，
-  // 此时本页留在原地，防连点闸门由 beginResultOpening 的 900ms 定时器解开。
-  // closingSearch 是"取消"按钮那条路已经调过 router.back() 的标记：那 650ms 窗口
-  // 里再弹一次会把下面的页面一起弹掉，所以要挡；反过来本路径也要立起这个标记，
-  // 免得成功之后又被一次点击弹第二层。
+  // 点搜索结果打开会话。**本页留在栈上，返回就回到搜索结果。**
+  //
+  // 【origin='search' 而不是默认的 navbar】navbar 的语义是"换一个会话看"，它既
+  // 清栈、又对已在栈里的会话做去重出栈——两条都会把压在下面的本页一起弹掉，
+  // 于是返回落到文件夹 tab。而"之前开没开过那个会话"决定走清栈还是出栈，两条
+  // 又恰好一条能保住本页一条不能，用户看到的就是「有些可以回到搜索结果，有些
+  // 会退回到文件夹」（2026-09-08 反馈）。判据与取舍见 util/splitRouting。
+  //
+  // 【不再自己弹本页】原来这里跟着一句 closingSearch = true，那是本页还是 router
+  // 页、盖在聊天栈之上时的做法（弹掉自己才能露出会话）。改进 tab 栈之后它只剩
+  // 副作用：这个标记没人复位，返回搜索页后「取消」按钮会被它挡住恒不生效。
+  // 防连点由 beginResultOpening 的 900ms 定时器负责，不需要它。
+  //
+  // rememberSearchSession 保留：它管的是**另一条路**——用户按取消离开搜索、
+  // 稍后再点搜索时把上次的关键词端回来（issue #129），和返回栈无关。
   private openChatAndClose(params: Record<string, Object>): void {
-    navigateToChat(params).then((): void => {
-      if (this.closingSearch) {
-        return;
-      }
-      // 关键词和分页记一笔：从会话返回后再点搜索，直接回到这次的结果，不用重搜
-      // （issue #129）。本页是 router 页、点开结果必须弹掉，只能这样接。
+    navigateToChat(params, 'search').then((): void => {
       rememberSearchSession(this.query, this.tab, Date.now());
-      // 退出这个会话时把搜索页带回来（issue #129）。
-      this.closingSearch = true;
     }).catch(logChatNavFailure);
   }
 
@@ -2472,7 +2471,7 @@ export struct GlobalSearchPage {
       height: SheetSize.FIT_CONTENT,
       backgroundColor: mainCardFill(this.appWallpaperOn, false),
       onDisappear: () => { this.pendingRemoval = null; },
-      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 

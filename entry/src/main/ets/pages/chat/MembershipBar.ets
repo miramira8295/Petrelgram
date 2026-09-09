@@ -1,15 +1,25 @@
+// 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
+// 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
+// 还拿得到。继续用 overlayGlassFill + overlayBackdropBlur 的面会两头落空——
+// 前者按"底下还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，
+// 结果既没有材质也没有自己的玻璃，就是一块平板（用户 2026-09-07：
+// 「会话详情底下的几个控制条实现样式和输入框不太一样」）。
+// 输入框（ChatComposerInput）早已迁到 plainGlassFill + plainBackdropBlur +
+// hdsVisualEffect 这一套，这里跟上，三者的档位保持各自原有的 surface 不变。
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY,
-  membershipBarUsesCompactSurface
 } from '../../util/membershipState';
 import { MEMBERSHIP_BOT_START } from '../../util/botStart';
 import {
   MEMBERSHIP_SECRET_CLOSED, MEMBERSHIP_SECRET_PENDING, secretBarTextKey
 } from '../../util/secretChat';
 import { str } from '../../util/strings';
-import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
+import {
+  BOTTOM_PILL_HEIGHT, BOTTOM_PILL_PADDING, bottomPillRadius
+} from '../../util/bottomPill';
 
 // 没有发言权时，输入区的位置放什么。
 //
@@ -50,33 +60,31 @@ export struct MembershipBar {
   @Event onStartBot: () => void = (): void => {};
   @Event onToggleMute: () => void = (): void => {};
 
+  // 底部这一层的**唯一一副轮廓**：按内容收紧的胶囊。
+  //
+  // 【为什么不再按状态分两种】原来只有"只读（取消静音）"那一档是收紧的胶囊，
+  // 其余六档都是 `width('100%')` 的整条——同一个位置、同一种东西，宽度却随状态
+  // 跳来跳去。现在统一（用户 2026-09-08：「统一样式包裹内容即可，不需要横向
+  // 一整个屏幕」）。几何只写一份，内容才按状态分支。
+  //
+  // 点击层仍然占满底栏（见 build()），胶囊变窄不牺牲可点范围。
+  //
+  // 玻璃走 plainGlassFill / plainBackdropBlur / hdsVisualEffect 这三件套，
+  // 它们本来就吃设置里的「样式强度 / 关闭」：关掉时回落实色 + 模糊 0，厚度
+  // 走 thicknessOffset()。所以这里不需要自己判断开关。
   @Builder
-  private readonlySurface() {
+  private surface() {
     Row({ space: 8 }) {
-      SymbolGlyph($r(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash'))
-        .fontSize(17).fontColor([COLOR_PRIMARY]).width(17);
-      Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'))
-        .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
-        // 17vp icon + 8vp gap + 28vp horizontal padding must fit beside the
-        // label; constraining only the parent does not activate TextOverflow.
-        .constraintSize({ maxWidth: 'calc(100% - 53vp)' })
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-    }
-    // 胶囊按内容收紧；maxWidth + 单行省略兜住长本地化文案和窄屏。
-    .constraintSize({ minHeight: 36, maxWidth: '100%' })
-    .padding({ left: 14, right: 14, top: 4, bottom: 4 })
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .borderRadius(18)
-    .backdropBlur(overlayBackdropBlur('card'))
-    .attributeModifier(materialModifier('card'));
-  }
-
-  @Builder
-  private fullWidthSurface() {
-    Row({ space: 8 }) {
-      if (this.state === MEMBERSHIP_CHECKING) {
+      if (this.state === MEMBERSHIP_READONLY) {
+        SymbolGlyph($r(this.isMuted ? 'sys.symbol.bell' : 'sys.symbol.bell_slash'))
+          .fontSize(17).fontColor([COLOR_PRIMARY]).width(17);
+        Text(this.isMuted ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'))
+          .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+          // 17vp icon + 8vp gap + 32vp horizontal padding must fit beside the
+          // label; constraining only the parent does not activate TextOverflow.
+          .constraintSize({ maxWidth: 'calc(100% - 57vp)' })
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      } else if (this.state === MEMBERSHIP_CHECKING) {
         LoadingProgress()
           .width(20).height(20).color(COLOR_PRIMARY);
         Text($r('app.string.cp_fetching_membership'))
@@ -106,26 +114,21 @@ export struct MembershipBar {
           .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
       }
     }
-    .width('100%')
-    // 非只读状态维持原来的整行输入区轮廓和内部留白。
-    .constraintSize({ minHeight: 48 })
-    .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+    // 几何来自 util/bottomPill，底部各条共用同一副（见那个文件的说明）。
+    .constraintSize({ minHeight: BOTTOM_PILL_HEIGHT, maxWidth: '100%' })
+    .padding({ left: BOTTOM_PILL_PADDING, right: BOTTOM_PILL_PADDING, top: 4, bottom: 4 })
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
-    .borderRadius(24)
-    .backdropBlur(overlayBackdropBlur('card'))
-    .attributeModifier(materialModifier('card'));
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .borderRadius(bottomPillRadius())
+    .backdropBlur(plainBackdropBlur('card'))
+    .visualEffect(hdsVisualEffect('card'));
   }
 
   build() {
     Column() {
       Row() {
-        if (membershipBarUsesCompactSurface(this.state)) {
-          this.readonlySurface();
-        } else {
-          this.fullWidthSurface();
-        }
+        this.surface();
       }
       // 点击层仍占满底栏，视觉胶囊变窄后也不牺牲可点范围。
       .width('100%')

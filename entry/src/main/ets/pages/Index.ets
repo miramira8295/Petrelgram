@@ -20,6 +20,13 @@ import { TdObject } from '../tdkit/TdTypes';
 import { logE } from '../util/log';
 import { StartupSplash } from './common/StartupSplash';
 import { isStartupStage } from '../util/startupStage';
+import { ShareTargetSheet } from './share/ShareTargetSheet';
+import {
+  hasPendingShare, notifyShareTargeted, peekPendingShare
+} from '../services/ShareInbox';
+import { resetShareTargets } from '../services/ShareTargetService';
+import { clearRecentOutgoing } from '../util/recentOutgoing';
+import { SharedPayload, previewOf } from '../util/sharedContent';
 
 // 冷启动时等连接就绪的上限。超过就照常放行——离线时压着链接不处理更糟。
 const DEEP_LINK_CONNECT_WAIT_MS: number = 8000;
@@ -40,6 +47,16 @@ struct Index {
   @StorageLink('pendingNotifyChatId') @Watch('onNotifyChat') pendingNotifyChatId: number = 0;
   // 同一次点击带来的目标消息（EntryAbility 在 chatId 之前写入），>0 时走 jumpTo 定位。
   @StorageLink('pendingNotifyMessageId') pendingNotifyMessageId: number = 0;
+  // 别的应用分享东西过来（EntryAbility 写入，登录就绪后消费）。epoch 是
+  // 清零-再置位的触发器，chatId 是分享面板里已经选好的目标（0 = 还没选）。
+  @StorageLink('pendingShareEpoch') @Watch('onShare') pendingShareEpoch: number = 0;
+  @StorageLink('pendingShareChatId') pendingShareChatId: number = 0;
+  // 面板上选的那一档：true = 进会话就发、发完退回后台（见 util/shareSendMode）。
+  @StorageLink('pendingShareAutoSend') pendingShareAutoSend: boolean = false;
+  // 选择器开着。载荷本身在 ShareInbox 里，这里只管界面。
+  @State private showShareSheet: boolean = false;
+  // 本进程里到达过 Ready。分享名单的清理要靠它区分"换账号"和"刚开机"。
+  private hadReadySession: boolean = false;
   private offAuth: (() => void) | null = null;
   // 深链要等的是**连接**就绪，不是登录就绪。见 consumeDeepLink 的说明。
   private offConn: (() => void) | null = null;
@@ -79,6 +96,17 @@ struct Index {
     // Account switching replaces the TDLib client while the Ability can stay in
     // foreground. Republish the current bearer to the new client immediately.
     refreshNetworkState(true);
+    // 换账号 = 换了一整套会话 id。分享目标名单和"最近主动聊过"都是上一个
+    // 账号的，留着会把陌生人的名字显示在分享面板里（快照还落在磁盘上，
+    // 连没登录都能被读到）。
+    //
+    // **只在本进程真的登录过之后才清**：冷启动时这个 epoch 也会跳一次，
+    // 那时候清等于每次开机都把攒好的名单丢掉，用户不打开应用就永远没有推荐。
+    if (this.hadReadySession) {
+      this.hadReadySession = false;
+      resetShareTargets();
+      clearRecentOutgoing();
+    }
   }
 
   private bindAuthService(): void {
@@ -94,6 +122,16 @@ struct Index {
       // A link that arrived (or waited) through cold start / login flow.
       this.consumeDeepLink();
       this.consumeNotifyChat();
+      this.consumeShare();
+      if (s === AuthStage.Ready) {
+        this.hadReadySession = true;
+      } else if (s === AuthStage.LoggedOut) {
+        // 真退登：无条件抹掉磁盘上的名单。这里不能只靠"本进程写过"——
+        // 退登后杀进程再开机分享，读到的会是上一个账号的联系人。
+        this.hadReadySession = false;
+        resetShareTargets(true);
+        clearRecentOutgoing();
+      }
     });
   }
 
@@ -104,6 +142,52 @@ struct Index {
 
   private onNotifyChat(): void {
     this.consumeNotifyChat();
+  }
+
+  private onShare(): void {
+    this.consumeShare();
+  }
+
+  // 分享进来的内容。目标已经在分享面板里选好了就直接进那个会话；没选就弹
+  // 选择器。**只等登录就绪**，不像深链那样还要等连接——内容全在本地，
+  // 进会话之后由发送链自己排队重试。
+  private consumeShare(): void {
+    if (this.stage !== AuthStage.Ready || this.pendingShareEpoch === 0) {
+      return;
+    }
+    if (!hasPendingShare()) {
+      // 载荷解析失败（文件读不了、格式不认）。标志清掉，什么都不做。
+      this.pendingShareEpoch = 0;
+      return;
+    }
+    this.pendingShareEpoch = 0;
+    const chatId: number = this.pendingShareChatId;
+    const autoSend: boolean = this.pendingShareAutoSend;
+    this.pendingShareChatId = 0;
+    this.pendingShareAutoSend = false;
+    if (chatId !== 0) {
+      this.openShareTarget(chatId, autoSend);
+      return;
+    }
+    this.showShareSheet = true;
+  }
+
+  // 进目标会话。载荷留在 ShareInbox 里，由 ChatPage 在应用路由参数时取走
+  // （见 util/shareStaging）——不走路由参数是因为里面有一串路径和长文本，
+  // 而路由参数会被序列化进导航栈。
+  private openShareTarget(chatId: number, autoSend: boolean = false): void {
+    this.showShareSheet = false;
+    // 先广播：目标会话可能已经开在栈顶，那时 navigateToChat 会 skip，
+    // 路由参数不会被重新应用（见 ShareInbox 里那条旁路的说明）。
+    notifyShareTargeted(chatId);
+    const params: Record<string, Object> =
+      { 'chatId': chatId, 'sharePending': true, 'shareAutoSend': autoSend };
+    navigateToChat(params).catch(logChatNavFailure);
+  }
+
+  private sharePreview(): string {
+    const payload: SharedPayload | null = peekPendingShare();
+    return payload === null ? '' : previewOf(payload);
   }
 
   private consumeNotifyChat(): void {
@@ -195,6 +279,13 @@ struct Index {
   private lastBackAt: number = 0;
 
   onBackPress(): boolean {
+    // 分享选择器开着时先吃掉返回键。它是画在 Index 这一层的浮层，不在
+    // Navigation 的栈里——不拦的话返回键会去弹 Navigation 的目的地，
+    // 抽屉留在原地不动（用户实测"不受返回键控制"）。
+    if (this.showShareSheet) {
+      this.showShareSheet = false;
+      return true;
+    }
     if (this.isAddingAccount()) {
       this.returnToOriginalAccount();
       return true;
@@ -254,6 +345,14 @@ struct Index {
       .width('100%')
       .height('100%')
       .justifyContent(FlexAlign.Center);
+
+      if (this.showShareSheet) {
+        ShareTargetSheet({
+          preview: this.sharePreview(),
+          onPick: (chatId: number): void => this.openShareTarget(chatId),
+          onCancel: (): void => { this.showShareSheet = false; }
+        })
+      }
 
       if (this.isAddingAccount() && !this.tdAccountSwitching) {
         Row({ space: 5 }) {

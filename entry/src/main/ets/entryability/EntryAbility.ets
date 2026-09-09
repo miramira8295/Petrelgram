@@ -26,6 +26,16 @@ import { updateChecker } from '../services/UpdateChecker';
 import { liveLocation } from '../services/LiveLocationService';
 import { setInlinePhotoTargetPx } from '../util/formatMsgContent';
 import { trimPixelCache } from '../util/pixelCache';
+import { startShareTargetService } from '../services/ShareTargetService';
+import {
+  contactChatIdOf, isShareWant, parseShareWant, stashPendingShare
+} from '../services/ShareInbox';
+import { initShareHandoff, takeShareHandoff } from '../services/ShareHandoff';
+import { initShareSendMode, readShareSendMode } from '../services/ShareSendModeStore';
+import { isAutoSend } from '../util/shareSendMode';
+import { ShareHandoff } from '../util/sharedContent';
+import { SharedPayload } from '../util/sharedContent';
+import { initA11yState } from '../util/a11yState';
 import { logE, logW } from '../util/log';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
@@ -78,9 +88,21 @@ export default class EntryAbility extends UIAbility {
     updateChecker.init(this.context).catch((): void => {});
     setUiAbilityContext(this.context);
     beginNetworkMonitoring();
+    // 读屏开没开查一次并订阅变更。会话行的无障碍文本按它短路——那段话每行
+    // 每次渲染都要拼，而读屏关着时没人读（见 util/a11yState）。
+    initA11yState();
     // Cold start via a tg:// deep link — stash it; Index routes it once auth
     // reaches Ready (the UI/router aren't up yet here).
     this.stashDeepLink(want);
+    // 分享目标名单：主应用平时就把"发给谁"的候选写到磁盘，分享面板里那个
+    // 独立进程只能读这份快照（见 services/ShareTargetService）。
+    // 必须用应用级 filesDir——两个进程要解析到同一个文件。
+    startShareTargetService(this.context.getApplicationContext().filesDir, this.context);
+    initShareHandoff(this.context.getApplicationContext().filesDir);
+    initShareSendMode(this.context.getApplicationContext().filesDir);
+    // 冷启动就是被系统分享拉起来的。和 tg:// 一样先存着，等 Index 里认证
+    // 到 Ready 再路由（这里 UI 和路由都还没起来）。
+    this.stashShare(want);
     AppStorage.setOrCreate('appIsForeground', false);
     mirrorChatEnvKey('appIsForeground', false);
     AppStorage.setOrCreate('appForegroundEpoch', 0);
@@ -91,6 +113,69 @@ export default class EntryAbility extends UIAbility {
   // tg:// link arrives. Index's @Watch picks up the new value and routes it.
   onNewWant(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
     this.stashDeepLink(want);
+    this.stashShare(want);
+  }
+
+  // 别的应用分享东西过来。两条来路：
+  //
+  //   A. 用户在系统分享面板里点了「Petrelgram」——want 带着 sendData 和数据，
+  //      这里现场解析（含把文件复制进沙箱），目标会话未定，进应用自己挑；
+  //   B. 用户在分享面板里就地点了某个头像——那块界面在独立进程里（见
+  //      shareextension/ShareTargetAbility），它已经把内容和选中的会话写进
+  //      交接文件，这里只要读回来。
+  //
+  // 两条都是异步之后才置位标志：Index 看到标志时载荷一定已经就位，
+  // 不会拿到半份数据。
+  private stashShare(want: Want): void {
+    if (this.stashHandoffShare(want)) {
+      return;
+    }
+    if (!isShareWant(want)) {
+      return;
+    }
+    // 用户可能是点了分享面板上那一排推荐头像中的一个（那一排由意图框架画，
+    // 见 services/ShareContactDonation）。是的话 want 里带着我们捐献时写进去
+    // 的 chatId，直接进那个会话；拿不到就是 0，进应用自己挑。
+    const target: Promise<number> = contactChatIdOf(want);
+    parseShareWant(want, this.context.cacheDir).then(
+      (payload: SharedPayload | null): void => {
+        if (payload === null) {
+          return;
+        }
+        stashPendingShare(payload);
+        // 意图框架推荐的联系人：用户在系统面板上直接点了某个头像，意图与
+        // 面板里点头像一致，按记住的那一档走。
+        target.then((chatId: number): void =>
+          this.publishShare(chatId, chatId !== 0 && isAutoSend(readShareSendMode())));
+      });
+  }
+
+  // 来路 B。返回 true 表示这个 want 是面板交接，不要再走解析那条路。
+  private stashHandoffShare(want: Want): boolean {
+    const flagged: boolean = want.parameters !== undefined &&
+      (want.parameters['shareHandoff'] as boolean | undefined) === true;
+    if (!flagged) {
+      return false;
+    }
+    const handoff: ShareHandoff | null = takeShareHandoff();
+    if (handoff === null) {
+      // 交接文件读不到（被清过、格式坏了）。当成没有分享，什么都不做——
+      // 用户看到的是应用正常打开，比弹一句看不懂的错误好。
+      return true;
+    }
+    stashPendingShare(handoff.payload);
+    this.publishShare(handoff.chatId, handoff.autoSend);
+    return true;
+  }
+
+  // 清零-再置位，与 pendingDeepLink 同一套路：连着分享两次同样的东西
+  // 也要能各触发一次路由。chatId 必须在 epoch 之前写：Index 监听的是 epoch，
+  // 翻到它的那一刻两个值都得就位（与 stashNotifyTarget 同一顺序约束）。
+  private publishShare(chatId: number, autoSend: boolean): void {
+    AppStorage.setOrCreate('pendingShareAutoSend', autoSend);
+    AppStorage.setOrCreate('pendingShareChatId', chatId);
+    AppStorage.setOrCreate('pendingShareEpoch', 0);
+    AppStorage.setOrCreate('pendingShareEpoch', Date.now());
   }
 
   // Fires when the system language (or colour mode, font scale, …) changes

@@ -8,7 +8,10 @@
 // 跳转从哪一栏发起。
 //   navbar  左栏（会话列表、通知、深链——凡是"选一个会话"的语义都算）
 //   content 右栏内部（会话里点「查看群资料」这种）
-export type PushOrigin = 'navbar' | 'content';
+//   search  全局搜索页里点结果。**它和 navbar 的区别只有一条：返回要回到搜索页。**
+//           所以既不清栈、也不去重——去重那一支会把压在目标之上的搜索页一起弹掉，
+//           正是用户报的「有些能回到搜索结果、有些退回文件夹 tab」。
+export type PushOrigin = 'navbar' | 'content' | 'search';
 
 // 决策结果。
 //   skip          栈顶已经是同一个目标，什么都不做
@@ -83,16 +86,29 @@ export interface ChatPushDecision {
 // 两句话不矛盾：一条说 navbar，一条说 content。
 //
 // 【调用方按什么传】origin='navbar' 的入口是：会话列表、归档以外的行、通知、
-// 深链、搜索结果、通话记录、联系人、dock 迷你条。origin='content' 的入口在
+// 深链、通话记录、联系人、dock 迷你条。origin='content' 的入口在
 // ChatPage / ForumTopicsPage / ProfilePage / ChatProfilePage 里，共 9 处。
+// origin='search' 只有全局搜索页点结果这一处——它原来归在 navbar，2026-09-08
+// 按用户要求改掉：「我在搜索找一个资源点进去后退出来怎么是文件夹 tab 页，
+// 想要都可以返回上个页面」。
 //
 // 【为什么 skip 仍然优先】栈顶已经是目标时清空再推等于把同一页拆了重建：
 // 白闪一下，滚动位置、草稿、正在播的语音全丢。点自己已经开着的那个会话是很
 // 常见的一下（想回到它），必须是空操作。
 export function decideChatPush(
-  stack: StackFrame[], target: StackFrame, replaceExisting: boolean = false
+  stack: StackFrame[], target: StackFrame, replaceExisting: boolean = false,
+  allowDuplicate: boolean = false
 ): ChatPushDecision {
   const depth: number = stack.length;
+  // allowDuplicate：**跳过整段去重**，无条件叠一层（origin='search' 专用）。
+  //
+  // 去重那一支（popTo）不看 origin：只要栈里有同一个会话，就把压在它上面的全弹掉
+  // ——从搜索点进一个**之前开过**的会话时，被弹掉的正是搜索页自己。于是同样一个
+  // 「点结果 → 返回」，会话没开过就回得到搜索、开过就回不到，用户看到的就是
+  // "有时行有时不行"。搜索这条路允许同一个会话在栈上出现两次，换来返回语义确定。
+  if (allowDuplicate) {
+    return { action: 'push', popCount: 0 };
+  }
   for (let i = depth - 1; i >= 0; i--) {
     if (!sameFrame(stack[i], target)) {
       continue;

@@ -27,6 +27,7 @@ import { str } from '../util/strings';
 import { publishProgress } from '../util/mediaProgressChannel';
 import { publishSendState } from '../util/sendStateChannel';
 import { logE, logI, logW } from '../util/log';
+import { noteOutgoingChat } from '../util/recentOutgoing';
 import { replySnippetOf } from '../util/replySnippet';
 import {
   INITIAL_AROUND_LIMIT, INITIAL_LATEST_LIMIT, INITIAL_RESUME_LIMIT,
@@ -1470,6 +1471,8 @@ export class MessageStore {
   // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
   // 其余实体仍由服务器扫文本自行识别，这里不接管。
   sendAsync(text: string, replyToId: number = 0, entities: TdObject[] = []): Promise<void> {
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
     const ft: TdObject = { '@type': 'formattedText' };
     ft['text'] = text;
     if (entities.length > 0) {
@@ -1796,6 +1799,8 @@ export class MessageStore {
 
   // Shared sendMessage plumbing for media content types.
   private sendContent(content: TdObject, tag: string, replyToId: number = 0): Promise<number> {
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
     const req: TdRequest = { '@type': 'sendMessage' };
     req['chat_id'] = this.chatId;
     req['input_message_content'] = content;
@@ -2095,6 +2100,8 @@ export class MessageStore {
     if (items.length === 0) {
       return Promise.resolve();
     }
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
     // **GIF 要单独走。** 相册（sendMessageAlbum）只收 photo/video，塞进
     // inputMessageAnimation 会被拒；而混选时把 GIF 也按 photo 发就是把它压成
     // 静态图（issue #105）。所以先把 GIF 摘出来，各自一条 sendMessage 发。
@@ -2164,6 +2171,8 @@ export class MessageStore {
   // wrapped=true 发包装形状，被库拒了（旧 schema 不认 inputAnimation）再裸发一次。
   private sendOneAnimation(item: MediaSendItem, caption: string, replyToId: number,
     wrapped: boolean): Promise<void> {
+    // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
+    noteOutgoingChat(this.chatId);
     const req: TdRequest = { '@type': 'sendMessage' };
     req['chat_id'] = this.chatId;
     req['input_message_content'] = this.animationInputContent(item, caption, wrapped);
@@ -5350,9 +5359,6 @@ export class MessageStore {
     // 于是话题群组读完退出未读仍在（issue #190）。
     req['source'] = this.viewSource();
     req['force_read'] = true;
-    // 【临时探针 #188/#190，验完就删】读到底发没发出去、作用域对不对。
-    logW(`[ReadDiag] view chat=${this.chatId} upTo=${maxVisibleId}` +
-      ` src=${viewMessageSourceType(this.threadRootId, this.forumTopicId, this.directMessagesTopicId)}`);
     this.client.send(req).catch((e: TdError) => {
       logE(`MessageStore.viewMessages failed: ${e.message}`);
     });

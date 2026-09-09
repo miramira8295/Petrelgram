@@ -57,6 +57,7 @@ function renderData(over: RenderDataOverrides = {}): MessageBubbleRenderData {
     contentWidth: 360,
     isGroup: over.isGroup ?? false,
     isChannel: false,
+  canReply: true,
     liveSharingId: 0,
     themeBubbleOut: '',
     showUnreadDivider: over.showUnreadDivider ?? false,

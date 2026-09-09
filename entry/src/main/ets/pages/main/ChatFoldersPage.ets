@@ -20,7 +20,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 
@@ -612,7 +612,7 @@ export struct ChatFoldersPage {
     }.width('100%').height('100%')
       // bindSheet 留在最外层：页面级浮层，不属于标题栏管辖的内容区。
       .bindSheet($$this.deleteSheetOpen, this.leaveSheet(), {
-        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+        height: '72%', backgroundColor: COLOR_SURFACE, dragBar: true, blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
       });
   }
 }

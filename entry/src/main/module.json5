@@ -141,6 +141,32 @@
                 "scheme": "tg"
               }
             ]
+          },
+          {
+            // 系统分享面板里的入口：拉起应用，进应用内的会话选择器。
+            //
+            // 【uris 为什么每一条都带 scheme】schema 把 scheme 列为必填
+            // （modulecheck/module.json 的 required: ["scheme"]），而分享匹配
+            // 实际看的是 utd —— scheme 在这里是占位的保留字段，不参与匹配。
+            //
+            // 【maxFileSupported 必须显式写】它的默认值是 0，意思是"这个类型
+            // 一个都收不了"。漏掉它的效果不是报错，而是应用**根本不出现在
+            // 分享面板里**，最难查的那一种。
+            //
+            // utd 填的是中间类型：general.image 覆盖 jpeg/png/heif/…，
+            // 分享方给的具体叶子类型会按 UTD 的继承关系匹配上来。
+            // general.object 是所有类型的根，兜底收下其它一切（当文件发）。
+            "actions": [
+              "ohos.want.action.sendData"
+            ],
+            "uris": [
+              { "scheme": "file", "utd": "general.image", "maxFileSupported": 20 },
+              { "scheme": "file", "utd": "general.video", "maxFileSupported": 20 },
+              { "scheme": "file", "utd": "general.audio", "maxFileSupported": 20 },
+              { "scheme": "file", "utd": "general.plain-text", "maxFileSupported": 1 },
+              { "scheme": "file", "utd": "general.hyperlink", "maxFileSupported": 1 },
+              { "scheme": "file", "utd": "general.object", "maxFileSupported": 20 }
+            ]
           }
         ]
       }
@@ -172,6 +198,39 @@
         "srcEntry": "./ets/workability/MessageSyncWorkAbility.ets",
         "type": "workScheduler",
         "exported": false
+      },
+      {
+        // 分享面板里就地选人的那一小块界面（不跳出面板）。
+        //
+        // ⚠️ **这是独立进程**：没有登录态、没有 TDLib、AppStorage 是空的。
+        // 它只做两件事——读主应用落盘的候选名单（services/ShareTargetSnapshot）、
+        // 把用户选中的目标连同分享内容交回主应用去发。别在这里加任何依赖
+        // ChatStore / TDLib 的代码。
+        //
+        // 与上面 EntryAbility 的 sendData 技能**并存**：系统会把两者都显示出来，
+        // 面板内选人走这里，点开应用走那边。
+        "name": "ShareTargetAbility",
+        "srcEntry": "./ets/shareextension/ShareTargetAbility.ets",
+        "type": "share",
+        // 分享面板里这一条的名字。**不能沿用 EntryAbility_label**：那是桌面上
+        // 应用的名字，两条入口都用它，用户在面板里看到的就是两个一模一样的
+        // "Petrelgram"，分不出哪个是就地选人、哪个是打开应用。
+        // EntryAbility 那一条只能保持应用名（改它等于改桌面图标名）。
+        "label": "$string:share_panel_label",
+        // 图标用 foreground 而不是 layered_image：分层图标是给桌面的自适应
+        // 图标遮罩用的，分享面板不套那层遮罩，两条入口就长得不一样。
+        "icon": "$media:foreground",
+        "exported": true
+        // 【skills 已刻意摘掉：面板里这条入口暂不展示】
+        //
+        // 两条入口都必须唤起应用（发送要走 TDLib，TDLib 数据库单进程独占，
+        // 只活在主进程），而面板内那条能选的只有缓存下来的 12 个常用会话，
+        // 想发给别人还是要跳进应用。留一条更清楚——用户定的是留"打开应用"那条。
+        //
+        // ⚠️ **代码一律保留**（shareextension/ShareTargetAbility、
+        // pages/share/SharePanel、services/ShareHandoff、ShareTargetSnapshot、
+        // ShareTargetService）：想把面板放出来，只要把下面这段 skills 加回去。
+        // 别当死代码清掉。
       }
     ]
   }

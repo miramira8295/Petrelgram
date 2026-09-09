@@ -18,7 +18,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WID
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import {
-  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
+  overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -1117,7 +1117,7 @@ export struct ContactsPage {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: overlayBlur('menu'),
+        backgroundBlurStyle: containerBlur('menu'),
         systemMaterial: overlayMaterial('menu'),
         transition: TransitionEffect.OPACITY
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
@@ -1808,7 +1808,7 @@ export struct ContactsPage {
       dragBar: true,
       // 同 BlockedUsersPage：面板自绘的 × 会被系统的那个盖住。
       showClose: false,
-      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

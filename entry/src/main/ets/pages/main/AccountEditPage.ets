@@ -13,9 +13,7 @@ import {
 import { materialModifier } from '../../util/materialModifier';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import {
-  HdsNavigationIconOptions, HdsNavigationMenuItemOptions
-} from '@kit.UIDesignKit';
+import { birthdayPickerDate } from '../../util/birthdayPicker';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -125,6 +123,10 @@ export struct AccountEditPage {
       if (birthdate !== undefined) {
         const day = (birthdate['day'] as number | undefined) ?? 0;
         const month = (birthdate['month'] as number | undefined) ?? 0;
+        // **年份也要留着。** 保存时是连年一起发上去的，可原来读回来只取了
+        // 月日，于是选择器没有已存值可用，只能停在写死的默认日期上。
+        // 界面仍然只显示月日（生日的惯例），年份只喂给选择器。
+        this.rememberBirthday(day, month, (birthdate['year'] as number | undefined) ?? 0);
         // A birthday has no year, but Intl needs a Date; the year is arbitrary
         // and never shown. Formatting this by hand would give "3月5日" in
         // English too — the month/day order itself is locale business.
@@ -132,6 +134,7 @@ export struct AccountEditPage {
           ? monthDay(new Date(2000, month - 1, day)) : '';
       } else {
         this.birthday = '';
+        this.rememberBirthday(0, 0, 0);
       }
       this.origFirst = this.firstName;
       this.origLast = this.lastName;
@@ -645,11 +648,27 @@ export struct AccountEditPage {
   }
 
   // --- birthday edit ---
+  // 已经存过的生日（含年份），只给选择器用。界面显示的是 this.birthday
+  // 那个只含月日的字符串。
+  private birthDay: number = 0;
+  private birthMonth: number = 0;
+  private birthYear: number = 0;
+
+  private rememberBirthday(day: number, month: number, year: number): void {
+    this.birthDay = day;
+    this.birthMonth = month;
+    this.birthYear = year;
+  }
+
   private pickBirthday(): void {
+    // 转盘停在已经存过的那一天；没存过才退回默认日期。原来这里写死
+    // 2000-01-01，存完再点开还是它，用户以为没存上。
+    const saved: Date | null =
+      birthdayPickerDate(this.birthDay, this.birthMonth, this.birthYear);
     DatePickerDialog.show({
       start: new Date('1900-01-01'),
       end: new Date(),
-      selected: new Date('2000-01-01'),
+      selected: saved !== null ? saved : new Date('2000-01-01'),
       onDateAccept: (d: Date) => {
         const req: TdRequest = { '@type': 'setBirthdate' };
         const bd: TdObject = { '@type': 'birthdate' };
@@ -659,6 +678,8 @@ export struct AccountEditPage {
         req['birthdate'] = bd;
         getTdClient().send(req).then(() => {
           this.birthday = monthDay(d);
+          // 不等下次进页面重新拉——本次会话里再点开就该是新值。
+          this.rememberBirthday(d.getDate(), d.getMonth() + 1, d.getFullYear());
           promptAction.showToast({ message: $r('app.string.ae_birthday_updated'), duration: 1500 });
         }).catch((e: TdError) => {
           promptAction.showToast({ message: str('ae_change_failed', e.message), duration: 2000 });
@@ -667,16 +688,13 @@ export struct AccountEditPage {
     });
   }
 
-  // 标题栏右上角的保存键。禁用条件照搬原来那个对勾。
-  private saveMenuItem(): HdsNavigationMenuItemOptions {
-    const icon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.checkmark'),
-      label: $r('app.string.ae_save_profile'),
-      isEnabled: !this.loading && this.loadError === '' &&
-        !this.leavingPage && !this.discardDialogOpen,
-      action: (): void => { this.save(); }
-    };
-    return { content: icon };
+  // 保存键什么时候可点。禁用条件照搬原来那个对勾。
+  //
+  // 只交出这一个布尔值，不再自己拼菜单项对象——带闭包的对象穿不过外壳那道
+  // @Prop 的深拷贝，勾会整个消失（见 HdsSubDestination 里那段说明）。
+  private saveEnabled(): boolean {
+    return !this.loading && this.loadError === '' &&
+      !this.leavingPage && !this.discardDialogOpen;
   }
 
   build() {
@@ -691,7 +709,12 @@ export struct AccountEditPage {
       scroller: this.hdsScroller,
       onBack: (): void => { this.requestBack(); },
       onNavStack: (stack: NavPathStack): void => { this.navStack = stack; },
-      menuItems: this.saving ? [] : [this.saveMenuItem()]
+      // 保存中时不给菜单项：HDS 的菜单项只能放图标，放不下 LoadingProgress，
+      // 进度改由上面的副标题「保存中」表达。
+      actionIcon: this.saving ? '' : $r('sys.symbol.checkmark'),
+      actionLabel: $r('app.string.ae_save_profile'),
+      actionEnabled: this.saveEnabled(),
+      onAction: (): void => { this.save(); }
     }) {
       Column() {
 

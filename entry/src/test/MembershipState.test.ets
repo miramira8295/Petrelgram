@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY,
-  MEMBERSHIP_WRITABLE, MemberStatusInput, membershipBarUsesCompactSurface,
+  MEMBERSHIP_WRITABLE, MemberStatusInput,
   membershipLosesComposer, membershipStateOf
 } from '../main/ets/util/membershipState';
 
@@ -9,7 +9,18 @@ function input(
   statusType: string, isMember: boolean, isChannel: boolean, canPost: boolean
 ): MemberStatusInput {
   return { statusType: statusType, isMember: isMember,
-    isChannel: isChannel, canPostMessages: canPost };
+    isChannel: isChannel, canPostMessages: canPost,
+    // 两个新入参默认放行，老用例的语义因此一个字都不变。
+    chatCanSendBasic: true, restrictedCanSendBasic: true };
+}
+
+// 带权限的入参：锁群、以及被禁言的成员。
+function withPerm(
+  statusType: string, isMember: boolean, chatCanSend: boolean, selfCanSend: boolean
+): MemberStatusInput {
+  return { statusType: statusType, isMember: isMember, isChannel: false,
+    canPostMessages: false,
+    chatCanSendBasic: chatCanSend, restrictedCanSendBasic: selfCanSend };
 }
 
 export default function membershipStateTest() {
@@ -76,17 +87,47 @@ export default function membershipStateTest() {
       expect(membershipLosesComposer(MEMBERSHIP_READONLY)).assertTrue();
     });
 
-    it('只有只读频道的静音动作使用紧凑底板', 0, () => {
-      expect(membershipBarUsesCompactSurface(MEMBERSHIP_READONLY)).assertTrue();
-      expect(membershipBarUsesCompactSurface(MEMBERSHIP_WRITABLE)).assertFalse();
-      expect(membershipBarUsesCompactSurface(MEMBERSHIP_JOINABLE)).assertFalse();
-      expect(membershipBarUsesCompactSurface(MEMBERSHIP_BLOCKED)).assertFalse();
-      expect(membershipBarUsesCompactSurface(MEMBERSHIP_CHECKING)).assertFalse();
-      // bot、密聊和未来新增的说明态都必须保留整行，未知值不能误收窄。
-      expect(membershipBarUsesCompactSurface('botStart')).assertFalse();
-      expect(membershipBarUsesCompactSurface('secretPending')).assertFalse();
-      expect(membershipBarUsesCompactSurface('secretClosed')).assertFalse();
-      expect(membershipBarUsesCompactSurface('futureState')).assertFalse();
+    // 「不能聊天但是显示聊天输入框」（用户 2026-09-09，从首页进的会话）。
+    //
+    // 判据原来只看 ChatMemberStatus，**从来没看过 chat.permissions**——于是
+    // "只有管理员能发言"的锁群里，普通成员状态就是 chatMemberStatusMember，
+    // 一路判成 writable，输入框照出，打完字发送才被 TDLib 驳回
+    // （真机日志：Need administrator rights in the channel chat）。
+    it('锁群里的普通成员是只读', 0, () => {
+      expect(membershipStateOf(withPerm('chatMemberStatusMember', true, false, true)))
+        .assertEqual(MEMBERSHIP_READONLY);
+    });
+
+    it('普通群的普通成员照旧能发言', 0, () => {
+      expect(membershipStateOf(withPerm('chatMemberStatusMember', true, true, true)))
+        .assertEqual(MEMBERSHIP_WRITABLE);
+    });
+
+    // 创建者和管理员不受群默认权限约束——锁群本来就是给他们用的。
+    it('锁群不挡创建者和管理员', 0, () => {
+      expect(membershipStateOf(withPerm('chatMemberStatusCreator', true, false, true)))
+        .assertEqual(MEMBERSHIP_WRITABLE);
+      expect(membershipStateOf(withPerm('chatMemberStatusAdministrator', true, false, true)))
+        .assertEqual(MEMBERSHIP_WRITABLE);
+    });
+
+    // 被禁言的成员看自己那份 permissions，不看群默认的：群里别人能说话，
+    // 不代表他能。原来这一支无条件返回 writable。
+    it('被禁言的成员是只读', 0, () => {
+      expect(membershipStateOf(withPerm('chatMemberStatusRestricted', true, true, false)))
+        .assertEqual(MEMBERSHIP_READONLY);
+    });
+
+    it('只被限制了别的项、仍能发文字的成员照旧能发言', 0, () => {
+      expect(membershipStateOf(withPerm('chatMemberStatusRestricted', true, true, true)))
+        .assertEqual(MEMBERSHIP_WRITABLE);
+    });
+
+    // 兜底方向不变：权限字段缺失时按放行处理（调用方传 true），
+    // 状态查不到时把输入框藏起来用户就彻底没救了。
+    it('拿不到状态时仍然放行', 0, () => {
+      expect(membershipStateOf(withPerm('', false, false, false)))
+        .assertEqual(MEMBERSHIP_WRITABLE);
     });
   });
 }

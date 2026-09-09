@@ -5,6 +5,11 @@ import {
   canStepNewer, canStepOlder, hashtagQueryOf, searchCounterText, searchLabelKind
 } from '../../util/searchPaging';
 import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
+import {
+  BOTTOM_PILL_GAP, BOTTOM_PILL_HEIGHT, BOTTOM_PILL_PADDING, bottomPillRadius
+} from '../../util/bottomPill';
 import { str } from '../../util/strings';
 import { SearchSession } from './SearchSession';
 
@@ -118,9 +123,19 @@ export struct SearchHeader {
     .width('calc(100% - 24vp)').height(CHAT_SEARCH_HEADER_BASE_HEIGHT - 16)
     .padding({ left: 3, right: 6 })
     .margin({ left: 12, right: 12, top: this.topSafe + 8, bottom: 8 })
-    .backgroundColor($r('app.color.surface'))
+    // 【和下面那条控制条同一副材质】上一轮只迁了 SearchBottomBar，这条顶栏
+    // 还留着实心底色——真机上底下透、上面不透，一眼就看得出不是一路
+    // （用户 2026-09-08：「搜索的顶部搜索条还是标准的，不是 HDS 的光感」）。
+    // 玻璃走自绘那一对，理由见 MembershipBar 文件头。
+    //
+    // ⚠️ **border 必须写在 borderRadius 之前**：`.border({width,color})` 不带
+    // radius 时会把先前设过的 borderRadius 重置成 0（ScrollFab 那次真机事故就
+    // 是这条），顺序反了整条会变成直角方块。
     .border({ width: 0.5, color: $r('app.color.divider') })
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
     .borderRadius(23)
+    .backdropBlur(plainBackdropBlur('card'))
+    .visualEffect(hdsVisualEffect('card'))
     .shadow({ radius: 5, color: '#16000000', offsetX: 0, offsetY: 1 })
     .alignItems(VerticalAlign.Center)
     .transition(TransitionEffect.OPACITY
@@ -152,15 +167,24 @@ export struct SearchBottomBar {
   // 「在公开帖子中搜索」：跳全局搜索的帖子页签。要碰导航栈，所以同样交给页面。
   @Event onPublicPosts: (tag: string) => void = (_tag: string): void => {};
 
+  // 胶囊里显示什么。三种情形各有一句话，**没有"什么都不显示"这一档**：
+  //
+  //   有结果   → 「第 n / 共 m 条」
+  //   没结果   → 「没有找到相关消息」
+  //   还没搜   → 「输入关键词搜索」
+  //
+  // 原来"没结果"那一支渲染的是 `Text('')`。在整条铺满的控制栏里看不出来；改成
+  // 胶囊之后，空文本外面还裹着玻璃和内边距，就成了一颗悬在那儿的**空胶囊**
+  // （用户 2026-09-08 实测）。给它一句明确的话，比留白或者整颗撤掉都好：
+  // 撤掉的话用户分不清"搜完没有"和"还没开始搜"。
   @Builder
   label() {
-    // 三种情形分开：有结果显示计数；查过了没结果显示空白（提示语再挂着会像
-    // 没反应过）；还没查才显示提示语。
     if (searchLabelKind(this.search.results.length, this.search.total, this.search.query) === SEARCH_LABEL_COUNTER) {
       Text(searchCounterText(this.search.idx, this.search.total))
         .fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
     } else if (searchLabelKind(this.search.results.length, this.search.total, this.search.query) === SEARCH_LABEL_NONE) {
-      Text('').fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
+      Text($r('app.string.cp_search_no_result'))
+        .fontSize(15).fontColor(COLOR_TEXT_SECONDARY);
     } else {
       Text($r('app.string.cp_search_placeholder'))
         .fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
@@ -191,37 +215,76 @@ export struct SearchBottomBar {
     .onClick((): void => { this.onPublicPosts(tag); });
   }
 
+  // 一颗圆钮。两个翻页键长得一样，只有图标/可用性/回调不同。
+  @Builder
+  stepButton(icon: Resource, enabled: boolean, bounce: boolean, action: () => void) {
+    Row() {
+      if (bounce) {
+        SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+          .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
+      } else {
+        SymbolGlyph(icon).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+      }
+    }
+    .width(BOTTOM_PILL_HEIGHT).height(BOTTOM_PILL_HEIGHT)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .borderRadius(bottomPillRadius())
+    .backdropBlur(plainBackdropBlur('card'))
+    .visualEffect(hdsVisualEffect('card'))
+    .opacity(enabled ? 1 : 0.4)
+    .onClick((): void => { action(); });
+  }
+
   build() {
-    Column() {
+    Column({ space: BOTTOM_PILL_GAP }) {
+      // 标签搜索那一行仍然是整条——它是一句可点的话，切成胶囊会很怪。
       if (hashtagQueryOf(this.search.query) !== '') {
-        this.publicPostsRow(hashtagQueryOf(this.search.query));
-      }
-      Row() {
-      this.label();
-      Blank().layoutWeight(1);
-      if (this.search.results.length > 0) {
         Row() {
-          SymbolGlyph($r('sys.symbol.chevron_up')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY]);
+          this.publicPostsRow(hashtagQueryOf(this.search.query));
         }
-        .width(42).height(42).justifyContent(FlexAlign.Center)
-        .opacity(canStepOlder(this.search.results.length, this.search.idx, this.search.total) ? 1 : 0.4)
-        .onClick((): void => { this.onOlder(); });
+        .width('100%')
+        .backgroundColor(plainGlassFill($r('app.color.surface')))
+        .borderRadius(22)
+        .backdropBlur(plainBackdropBlur('card'))
+        .visualEffect(hdsVisualEffect('card'))
+        .clip(true);
+      }
+      // 【为什么不再是一整条平板】原来计数和两个箭头共处一条铺满的控制栏里，
+      // 视觉上是块"板"。改成**内容宽的计数胶囊 + 两颗独立圆钮**：胶囊只占它
+      // 需要的宽度，右边两颗圆钮各自成形，中间留空让壁纸透出来
+      // （用户 2026-09-08：「显示总结果数量和定位，右侧两个圆形按钮上下跳转」）。
+      Row({ space: BOTTOM_PILL_GAP }) {
         Row() {
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
+          this.label();
         }
-        .width(42).height(42).justifyContent(FlexAlign.Center)
-        .opacity(canStepNewer(this.search.idx) ? 1 : 0.4)
-        .onClick((): void => { this.onNewer(); });
+        .height(BOTTOM_PILL_HEIGHT)
+        .padding({ left: BOTTOM_PILL_PADDING, right: BOTTOM_PILL_PADDING })
+        .backgroundColor(plainGlassFill($r('app.color.surface')))
+        .borderRadius(bottomPillRadius())
+        .backdropBlur(plainBackdropBlur('card'))
+        .visualEffect(hdsVisualEffect('card'))
+        .alignItems(VerticalAlign.Center);
+
+        Blank().layoutWeight(1);
+
+        if (this.search.results.length > 0) {
+          this.stepButton($r('sys.symbol.chevron_up'),
+            canStepOlder(this.search.results.length, this.search.idx, this.search.total),
+            false, (): void => { this.onOlder(); });
+          this.stepButton($r('sys.symbol.chevron_down'),
+            canStepNewer(this.search.idx),
+            true, (): void => { this.onNewer(); });
+        }
       }
-      }
-      .width('100%').height(52 + this.bottomGap)
-      .padding({ left: 20, right: 10, bottom: this.bottomGap })
+      .width('100%')
       .alignItems(VerticalAlign.Center);
     }
-    // 底色与顶部那条分隔线提到外层：标签那一行在时，两者要把它一起罩住。
-    .width('100%')
-    .backgroundColor($r('app.color.surface'))
-    .border({ width: { top: 0.7 }, color: $r('app.color.divider') });
+    // **不能写 width('100%') + 左右 margin**：ArkUI 先按父容器 100% 算宽再加
+    // 外边距，整条会比可用宽度还宽、两侧顶死（GifPicker 的搜索框上踩过；
+    // SearchHeader 也是用 calc 解决的）。
+    .width('calc(100% - 28vp)')
+    .margin({ left: 14, right: 14 })
+    .padding({ bottom: this.bottomGap });
   }
 }

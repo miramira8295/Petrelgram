@@ -49,6 +49,7 @@ import { logE, logI, logW } from '../../util/log';
 import {
   classifyVideoError, playbackStalled, STALL_FALLBACK_MS, VideoErrorKind
 } from '../../util/videoEngineFallback';
+import { VideoGestureLayer } from './VideoGestureLayer';
 
 let nextAvPlayerInstanceId: number = 1;
 
@@ -1264,6 +1265,14 @@ export struct AvVideoPlayer {
         .borderRadius(19)
         .hitTestBehavior(HitTestMode.None);
       }
+      if (!this.embedded && this.showControls && !this.hasError) {
+        this.controlBar();
+      }
+      // **重播按钮必须排在控制条后面**（Stack 里后面的是上层）。
+      // 控制条的根 Column 是 width/height 100%，里面那两个 tapZone 用
+      // layoutWeight(1) 铺满上半屏、各自挂着点击手势——排在前面就整片盖住
+      // 重播按钮，把点击吃掉（用户 2026-09-09："控制器显示的时候重播按钮
+      // 点击不到"）。命中测试按兄弟顺序走，所以顺序就是修法。
       if (this.isCompleted && !this.liveMode) {
         Stack() {
           Row({ space: 8 }) {
@@ -1280,8 +1289,16 @@ export struct AvVideoPlayer {
         .animation({ duration: 120, curve: Curve.EaseOut })
         .onClick(() => { this.replay(); });
       }
-      if (!this.embedded && this.showControls && !this.hasError) {
-        this.controlBar();
+      // 竖拖手势层：左半屏亮度、右半屏音量。**排在最后 = 最上层**，否则控制条
+      // 可见时手势被它整片吃掉（重播按钮就栽过这个，见上面那段注释）。
+      // 它是 HitTestMode.Transparent，不阻塞下面的单击/双击。
+      // 实况不挂：那一路的界面是另一套胶囊，没有可调的东西。
+      if (!this.embedded && !this.liveMode) {
+        VideoGestureLayer({
+          viewportW: this.viewportWidth,
+          viewportH: this.viewportHeight,
+          controlsVisible: this.showControls && !this.hasError
+        });
       }
     }
     .width('100%').height('100%').backgroundColor(Color.Black)

@@ -26,7 +26,11 @@ set -u
 #
 # 新增测试后请把这个数字调高；**永远不要为了让脚本通过而调低**（真要临时排查，
 # 用环境变量覆盖一次，别改这里的默认值）。
-MIN_TESTS="${MIN_TESTS:-2276}"
+# 2026-09-08 从 2378 降到 2377：底部各条状态条统一成"按内容收紧的胶囊"之后，
+# `membershipBarUsesCompactSurface`（判断哪一档用紧凑底板）**没有调用方了**，
+# 判据本身失效，连同它那条用例一起删。与上面 MediaSaveState 那次同一档：
+# 确实删了用例，不是为了让脚本变绿。
+MIN_TESTS="${MIN_TESTS:-2454}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

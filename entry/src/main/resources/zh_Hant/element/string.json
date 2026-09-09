@@ -1017,6 +1017,34 @@
       "value": "已儲存到相簿"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "下載失敗"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "正在下載 %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "相簿"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "儲存失敗"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "已儲存到 %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "正在儲存 %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "所選位置"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "傳送語音訊息和直播發言需要使用麥克風"
     },
@@ -8617,6 +8645,14 @@
       "value": "開啟後可在會話選單中翻譯整個聊天"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "譯文取代原文"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "翻譯完成後僅顯示譯文"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "轉文字是 Telegram Premium 功能"
     },
@@ -10011,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "同時為對方清空"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "為所有人清空"
     },
     {
       "name": "cl_delete_and_block",
@@ -11863,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "移除說明文字"
+    },
+    {
+      "name": "share_to",
+      "value": "分享到"
+    },
+    {
+      "name": "share_preparing",
+      "value": "正在準備…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "在應用中選擇…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "先開啟一次應用，這裡才會出現常用會話"
+    },
+    {
+      "name": "share_failed",
+      "value": "分享內容讀取失敗"
+    },
+    {
+      "name": "share_staged",
+      "value": "已放入輸入框，確認後傳送"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "直接傳送"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "進對話編輯"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "已傳送到 %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "傳送失敗，內容已留在輸入框"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "快速分享"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "找不到相關訊息"
     }
   ]
 }

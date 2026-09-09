@@ -8,7 +8,7 @@ import {
   KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, KEY_MSG_GESTURE,
   KEY_POWER_EMOJI_CHAT, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY,
   KEY_POWER_AUTOPLAY_GIF, KEY_POWER_STICKER_LOOP, KEY_POWER_EMOJI_STATUS,
-  KEY_POWER_AUTOPLAY_VIDEO
+  KEY_POWER_AUTOPLAY_VIDEO, KEY_TRANSLATE_REPLACE_ORIGINAL
 } from '../main/ets/store/AppSettings';
 import { LINK_NAV_BUSY_KEY } from '../main/ets/util/linkTapGuard';
 import { APPEARANCE_EPOCH } from '../main/ets/util/appearance';
@@ -32,7 +32,7 @@ export default function chatEnvMirrorTest() {
         KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, KEY_MSG_GESTURE,
         KEY_POWER_EMOJI_CHAT, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY,
         KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_STICKER_LOOP, KEY_POWER_EMOJI_STATUS,
-        'appIsForeground', LINK_NAV_BUSY_KEY
+        KEY_TRANSLATE_REPLACE_ORIGINAL, 'appIsForeground', LINK_NAV_BUSY_KEY
       ];
       expect(keys.length).assertEqual(constants.length);
       for (const constant of constants) {
@@ -46,6 +46,8 @@ export default function chatEnvMirrorTest() {
       expect(chatEnv.powerSaving).assertTrue();
       mirrorChatEnvKey(KEY_MSG_GESTURE, 'classic');
       expect(chatEnv.gestureScheme).assertEqual('classic');
+      mirrorChatEnvKey(KEY_TRANSLATE_REPLACE_ORIGINAL, true);
+      expect(chatEnv.translateReplaceOriginal).assertTrue();
       mirrorChatEnvKey(APPEARANCE_EPOCH, 7);
       expect(chatEnv.appearanceEpoch).assertEqual(7);
       // 未列管的键静默忽略，不抛不写。

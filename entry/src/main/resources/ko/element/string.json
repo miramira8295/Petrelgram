@@ -1017,6 +1017,34 @@
       "value": "갤러리에 저장됨"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "다운로드 실패"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "다운로드 중 %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "갤러리"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "저장 실패"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "%1$s에 저장했습니다"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "저장 중 %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "선택한 위치"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "음성 메시지 전송 및 라이브 방송 발언을 위해 마이크가 필요합니다"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "자동 다운로드는 현재 네트워크와 파일 크기에 따라 실행돼요. 갤러리 저장은 시스템에서 쓰기를 확인해요."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "다운로드 위치"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "기본 다운로드 경로"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "저장할 때 위치 선택"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "기본 다운로드 경로를 업데이트했습니다"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "켜면 채팅 메뉴에서 전체 채팅을 번역할 수 있습니다"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "원문을 번역문으로 대체"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "번역이 완료되면 번역문만 표시"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "텍스트 변환은 Telegram Premium 기능입니다"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "상대방에게도 함께 삭제"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "모두에게서 삭제"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "설명 삭제"
+    },
+    {
+      "name": "share_to",
+      "value": "공유 대상"
+    },
+    {
+      "name": "share_preparing",
+      "value": "준비 중…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "앱에서 선택…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "앱을 한 번 열면 최근 대화가 여기에 표시됩니다"
+    },
+    {
+      "name": "share_failed",
+      "value": "공유된 콘텐츠를 읽지 못했습니다"
+    },
+    {
+      "name": "share_staged",
+      "value": "입력창에 추가했습니다. 확인 후 보내세요"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "바로 보내기"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "대화 열기"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "%1$s(으)로 보냈습니다"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "보내지 못했습니다. 내용은 입력창에 남겨두었습니다"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "빠른 공유"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "일치하는 메시지가 없습니다"
     }
   ]
 }

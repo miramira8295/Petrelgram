@@ -60,8 +60,9 @@ import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
+import { translationReplacesOriginal } from '../../util/translationMode';
 import {
-  overlayBackdropBlur, overlayBlur, overlayGlassFill, overlayMaterial
+  overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial
 } from '../../util/overlayMaterial';
 import {
   GLASS_OUTLINE_COLOR, GLASS_OUTLINE_WIDTH, TAIL_H, TAIL_W, bubbleGlassModifier, glassOutlineCommands
@@ -96,7 +97,6 @@ const REPLY_QUOTE_LINE_H: number = 16;
 // 没图的引用块一样高，缩略图落地时不会把气泡顶高。
 const REPLY_THUMB_SIZE: number = 32;
 const REPLY_THUMB_GAP: number = 6;
-
 const ALBUM_MAX_WIDTH: number = 280;
 const STICKER_MAX: number = 160;
 const LINK_PREVIEW_HEIGHT_RATIO: number = 0.62;
@@ -291,7 +291,11 @@ struct LiveSenderAvatar {
         boxWidth: this.avatarSize,
         boxHeight: this.avatarSize,
         radius: this.avatarSize / 2,
-        fit: ImageFit.Cover
+        fit: ImageFit.Cover,
+        // 头像有上限地钉住：它和大图挤在同一个 LRU 预算里，滑过图多的会话就
+        // 被挤掉，回滚时重新解码，那一两帧露出下面的首字母圆底——用户报的
+        // 「翻消息的时候对话头像会闪」（issue #137）。
+        pinBounded: true
       })
         .visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
     }
@@ -307,6 +311,9 @@ export struct MessageBubble {
   // 读到即登记依赖；~60 个页面回调转 @Param（V2 禁止父层初始化无装饰器成员，
   // 编译错误 10905324），页面持有的引用全生命周期稳定，每帧只多恒等比较。
   private env: ChatEnvMirror = chatEnv;
+  // parseFormattedText 以 entities 数组身份做缓存。每个复用气泡保留一份空数组，
+  // 译文既不会误套原文实体，也不会和屏幕上其它译文争用同一个缓存槽。
+  private translationEntities: TdObject[] = [];
 
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
@@ -842,7 +849,9 @@ export struct MessageBubble {
     // System/hidden rows carry no replyable message; editing owns the
     // reply/edit strip below and must not fight a concurrent swipe.
     // swipeFromEdge：这一下起手在窗口边缘，让给系统的返回手势（见常量说明）。
-    return !this.swipeFromEdge && !this.data.editingActive
+    // canReply=false（只读频道、未加入、被封禁、机器人没「开始」）时输入框
+    // 根本不在，滑了也只是把回复挂到一个不存在的输入框上。
+    return this.data.canReply && !this.swipeFromEdge && !this.data.editingActive
       && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden';
   }
 
@@ -1351,6 +1360,23 @@ export struct MessageBubble {
       isUnformattedPlainText(this.msg.text, this.msg.textEntities);
   }
 
+  private replacementTranslationShown(): boolean {
+    return translationReplacesOriginal(
+      this.env.translateReplaceOriginal,
+      this.msg.translatedText,
+      this.msg.translationHidden
+    );
+  }
+
+  private displayedMessageText(original: string): string {
+    return this.replacementTranslationShown() ? this.msg.translatedText : original;
+  }
+
+  private displayedMessageEntities(original: TdObject[]): TdObject[] {
+    // TDLib 的实体偏移属于原文，不能套到另一段译文上。
+    return this.replacementTranslationShown() ? this.translationEntities : original;
+  }
+
   @Builder
   directPlainTextBody() {
     Text() {
@@ -1489,14 +1515,32 @@ export struct MessageBubble {
   }
 
   // 整聊天翻译块：原文之下分隔线 + 斜体译文 + 「已翻译成X · 隐藏译文」小字。
-  // 原文永远保留（对照式，不是替换式），隐藏只折叠译文本体，脚注变为
-  // 「显示译文」。存在译文时时间戳的占位挪到脚注行（见 timeReserveInText）。
+  // 默认保留原文做对照；开启“译文替换原文”后，译文移到正文位置，本块仍保留
+  // 分隔线与脚注。隐藏译文会恢复原文，脚注变为「显示译文」。存在译文时时间戳
+  // 的占位挪到脚注行（见 timeReserveInText）。
+  @Builder
+  translationSeparator() {
+    // Divider 即便 alignSelf(Stretch)，在当前 ArkUI 上仍会先按父级 maxWidth
+    // 参与固有尺寸测量，把短气泡撑满。空 Row 的固有宽度为 0，父列先由文字
+    // 定宽，再在交叉轴上拉伸它，视觉相同但不会反向决定气泡宽度。
+    Row()
+      .height(0.6)
+      .alignSelf(ItemAlign.Stretch)
+      .backgroundColor(COLOR_TEXT_SECONDARY)
+      .opacity(0.3)
+      .margin({ top: 6, bottom: 5 })
+      // 和译文同一条曲线一起淡入。分隔线不跟着淡的话会先硬出现、字再淡入，
+      // 看着是两步。
+      .transition(TransitionEffect.OPACITY.animation({
+        duration: this.effectDuration(260), curve: Curve.FastOutSlowIn
+      }));
+  }
+
   @Builder
   translationBlock() {
     // 译文还没到：显示瞬时态。分隔线沿用译文那条，让三种状态占同一个位置。
     if (this.msg.translatedText === '' && this.translationStatus !== null) {
-      Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
-        .margin({ top: 6, bottom: 5 });
+      this.translationSeparator();
       if (this.translationStatus?.phase === 'loading') {
         Row({ space: 5 }) {
           LoadingProgress().width(12).height(12).color(COLOR_ICON_SECONDARY);
@@ -1526,16 +1570,27 @@ export struct MessageBubble {
       }
     }
     if (this.msg.translatedText !== '') {
-      Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
-        .margin({ top: 6, bottom: 5 });
-      if (!this.msg.translationHidden) {
+      this.translationSeparator();
+      if (!this.msg.translationHidden && !this.replacementTranslationShown()) {
         Text(this.msg.translatedText)
           .fontSize(this.env.msgTextSize)
           .lineHeight(this.env.msgTextSize * 1.34)
           .fontStyle(FontStyle.Italic)
           .fontColor(bubbleTextFor(this.msg.isOutgoing))
           .wordBreak(WordBreak.BREAK_WORD)
-          .constraintSize({ maxWidth: this.inlineMaxW() });
+          .constraintSize({ maxWidth: this.inlineMaxW() })
+          // 译文到货时淡入 + 轻微上移，不再是硬切（用户 2026-09-09：
+          // 「现在是闪过去的」）。
+          //
+          // ⚠️ **必须是 transition，不能给气泡加 .animation()。** 常驻动画会让
+          // ArkUI 在组件更新时建立动画上下文，把同一刷新周期里的列表脏节点一起
+          // 拖进动画布局——2026-08-27 的真机 trace 量过，最重的一帧从 210ms
+          // 涨到 463ms，而**翻译态**正是那条注释点名的、必须落在动画上下文之外的
+          // 数据更新之一（见本文件气泡根节点上那段长注释）。
+          // transition 只作用在这个节点的出现/消失上，不建立那种上下文。
+          .transition(TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: -6 }))
+            .animation({ duration: this.effectDuration(260), curve: Curve.FastOutSlowIn }));
       }
       Row({ space: 4 }) {
         Text(str('mb_translated_into', languageDisplayName(this.msg.translatedLang)))
@@ -2120,7 +2175,7 @@ export struct MessageBubble {
           }, (cell: AlbumCell) => this.cellKeyAt(cell.idx));
         }
       }, (row: AlbumCell[], rowIdx: number) => albumRowKey(rowIdx,
-        row.map((c: AlbumCell): string => this.cellKeyAt(c.idx))));
+        row.map((c: AlbumCell): string => this.cellKeyAt(c.idx)), row));
     }.alignItems(HorizontalAlign.Start).width(this.albumW()).constraintSize({ maxWidth: this.albumW() });
   }
 
@@ -2587,7 +2642,9 @@ export struct MessageBubble {
           .constraintSize({ maxWidth: this.replyQuoteMaxW() }).textOverflow({ overflow: TextOverflow.Ellipsis });
       }
       .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
+      // Weight 会让未定宽 Row 直接吃满主轴上限，短正文一旦带引用就被撑到
+      // 气泡最大宽度。这里只需在引用过长时收缩，整块宽度仍由正文决定。
+      .flexShrink(1);
     }
     .alignItems(VerticalAlign.Center)
     // 整块染一层强调色的淡底，并撑满气泡的内宽——这样点击区域就是看得见的
@@ -2621,12 +2678,12 @@ export struct MessageBubble {
     }
     if (this.group.photoPaths.length > 1) {
       this.albumGrid();
-      if (this.group.caption !== '') {
+      if (this.displayedMessageText(this.group.caption) !== '') {
         // Rich caption: links/@mentions/#hashtags stay tappable in albums too.
         Column() {
           this.richContent({
-            text: this.group.caption,
-            entities: this.group.captionEntities,
+            text: this.displayedMessageText(this.group.caption),
+            entities: this.displayedMessageEntities(this.group.captionEntities),
             maxWidth: this.inlineMaxW()
           });
           // 相册配文也要能翻译（issue #128）。和单张媒体那一支（见下面
@@ -2641,18 +2698,27 @@ export struct MessageBubble {
         }.margin({ top: 6 });
       }
     } else if (this.msg.contentType === 'richMessage') {
-      // 富文本长帖单独一个组件，见 RichMessageView。这个文件已经够大，
-      // 那套按块渲染（标题分档、引用竖条、列表符号）不往里塞。
-      RichMessageView({
-        rawBlocks: this.msg.richBlocks ?? [],
-        maxWidth: this.inlineMaxW(),
-        onOpenUrl: (url: string): void => {
-          if (this.gestureClaimed) { return; }
-          this.actions.onLinkTap(url);
-        }
-      });
+      if (this.replacementTranslationShown()) {
+        // TDLib 返回的是纯文本译文，没有可映射回页面块的结构；替换时按普通正文画。
+        this.richContent({
+          text: this.displayedMessageText(this.msg.text),
+          entities: this.displayedMessageEntities(this.msg.textEntities),
+          maxWidth: this.inlineMaxW()
+        });
+      } else {
+        // 原文仍用块渲染，保留标题分档、引用竖条和列表符号。
+        RichMessageView({
+          rawBlocks: this.msg.richBlocks ?? [],
+          maxWidth: this.inlineMaxW(),
+          onOpenUrl: (url: string): void => {
+            if (this.gestureClaimed) { return; }
+            this.actions.onLinkTap(url);
+          }
+        });
+      }
+      this.translationBlock();
     } else if (this.msg.contentType === 'text') {
-      if (this.msg.text.trim() === '') {
+      if (this.displayedMessageText(this.msg.text).trim() === '') {
         Text() {
           Span($r('app.string.mb_empty')).fontColor(COLOR_TEXT_SECONDARY);
           if (this.timeReserveInText()) {
@@ -2663,8 +2729,8 @@ export struct MessageBubble {
         .lineHeight(this.env.msgTextSize * 1.34);
       } else {
         this.richContent({
-          text: this.msg.text,
-          entities: this.msg.textEntities,
+          text: this.displayedMessageText(this.msg.text),
+          entities: this.displayedMessageEntities(this.msg.textEntities),
           maxWidth: this.inlineMaxW()
         });
       }
@@ -2693,6 +2759,10 @@ export struct MessageBubble {
             }
           })
             .width(this.mediaBox().width).height(this.mediaBox().height)
+            // 渲染面在内嵌档是 Cover（填满并溢出，见 StreamingVideoPlayer
+            // .surfaceFillsViewport），没有 clip 就会画到气泡外面去。
+            // 相册格那处本来就有，这里是补的。
+            .clip(true)
             // 播放位没有手势层，但底层 XComponent 会默认吃掉点击——和下面
             // SmartLoopVideo 同理，交给外层 Stack 的 onClick 打开全屏查看器。
             .hitTestBehavior(HitTestMode.None);
@@ -2849,11 +2919,11 @@ export struct MessageBubble {
         }
       });
       // Media caption shown below the media, within the same bubble.
-      if (this.msg.text !== '') {
+      if (this.displayedMessageText(this.msg.text) !== '') {
         Column() {
           this.richContent({
-            text: this.msg.text,
-            entities: this.msg.textEntities,
+            text: this.displayedMessageText(this.msg.text),
+            entities: this.displayedMessageEntities(this.msg.textEntities),
             maxWidth: this.inlineMaxW()
           });
           // 配文也要能翻译。translationCandidates 一直把带配文的媒体收进去，
@@ -2961,11 +3031,11 @@ export struct MessageBubble {
         onNext: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioNext(this.msg.id); },
         onSeek: (fraction: number): void => { this.actions.onAudioSeek(this.msg.id, fraction); }
       });
-      if (this.msg.text !== '') {
+      if (this.displayedMessageText(this.msg.text) !== '') {
         Column() {
           this.richContent({
-            text: this.msg.text,
-            entities: this.msg.textEntities,
+            text: this.displayedMessageText(this.msg.text),
+            entities: this.displayedMessageEntities(this.msg.textEntities),
             maxWidth: this.inlineMaxW()
           });
           // 见上：配文的译文原来无处可显示。
@@ -2998,11 +3068,11 @@ export struct MessageBubble {
           this.actions.onFilePause(this.msg.id);
         }
       });
-      if (this.msg.text !== '') {
+      if (this.displayedMessageText(this.msg.text) !== '') {
         Column() {
           this.richContent({
-            text: this.msg.text,
-            entities: this.msg.textEntities,
+            text: this.displayedMessageText(this.msg.text),
+            entities: this.displayedMessageEntities(this.msg.textEntities),
             maxWidth: this.inlineMaxW()
           });
           // 见上：配文的译文原来无处可显示。
@@ -3109,7 +3179,7 @@ export struct MessageBubble {
         starCount: this.msg.paidMediaStarCount,
         mediaCount: this.msg.paidMediaCount,
         mediaKind: this.msg.paidMediaKind,
-        caption: this.msg.text,
+        caption: this.displayedMessageText(this.msg.text),
         photoPath: this.msg.photoPath,
         photoFileId: this.msg.photoFileId,
         photoProgress: this.livePhotoProgress,
@@ -3123,6 +3193,7 @@ export struct MessageBubble {
           this.actions.onSpecialPhotoRetry(messageId);
         }
       });
+      this.translationBlock();
     } else if (this.msg.contentType === 'gift') {
       GiftBubble({
         messageId: this.msg.id,
@@ -3130,7 +3201,7 @@ export struct MessageBubble {
         title: this.msg.giftTitle,
         value: this.msg.giftValue,
         status: this.msg.giftStatus,
-        text: this.msg.text,
+        text: this.displayedMessageText(this.msg.text),
         code: this.msg.giftCode,
         refunded: this.msg.giftRefunded,
         photoPath: this.msg.photoPath,
@@ -3144,6 +3215,7 @@ export struct MessageBubble {
         },
         onCopyCode: (code: string): void => { if (this.gestureClaimed) { return; } this.actions.onGiftCodeCopy(code); }
       });
+      this.translationBlock();
     } else if (this.msg.contentType === 'giveaway') {
       GiveawayBubble({
         messageId: this.msg.id,
@@ -3978,7 +4050,7 @@ export struct MessageBubble {
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
-        backgroundBlurStyle: overlayBlur('menu'),
+        backgroundBlurStyle: containerBlur('menu'),
         systemMaterial: overlayMaterial('menu'),
         transition: TransitionEffect.OPACITY
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))

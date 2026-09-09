@@ -8,6 +8,7 @@ import { CACHE_LIMIT_DEFAULT } from './CacheLimit';
 import { GESTURE_CLASSIC } from '../util/messageGestures';
 import { logE } from '../util/log';
 import { KEY_PROXY_MIRROR, KEY_PROXY_SYNC_OFF } from '../util/proxyMirror';
+import { KEY_RECENT_OUTGOING, initRecentOutgoing } from '../util/recentOutgoing';
 // ⚠️ 临时（P6 标定）：cachedCount 档位调试项，标定结束后删除，清单见
 // util/debugListPerf.ets 文件末尾。
 import {
@@ -221,6 +222,9 @@ export const KEY_MEOW_NICKNAME: string = 'meowNickname';
 // 不出现整聊天翻译入口（单条翻译不受它控制）。
 export const KEY_TRANSLATE_TARGET: string = 'translateTargetLang';
 export const KEY_TRANSLATE_CHATS: string = 'translateEntireChats';
+// 显示译文时，用译文占据原文正文的位置；隐藏译文会立即恢复原文。
+// 只改变呈现，MessageEntry 里的原文与实体始终保留。
+export const KEY_TRANSLATE_REPLACE_ORIGINAL: string = 'translateReplaceOriginal';
 // 整聊天翻译打开后是全局生效的，这里存的是**例外**：被用户明确关掉翻译的
 // 会话 id，逗号分隔。做成排除名单而不是白名单，是因为白名单意味着每进一个
 // 新群都要手动点一次。纯本地设置，不占服务端的 is_translatable 字段。
@@ -324,7 +328,8 @@ const DATA_STRING_KEYS: string[] = [
   KEY_MEOW_NICKNAME,
   KEY_TRANSLATE_TARGET,
   KEY_TRANSLATE_OPT_OUT,
-  KEY_TRANSLATE_OPT_IN
+  KEY_TRANSLATE_OPT_IN,
+  KEY_RECENT_OUTGOING
 ];
 
 // 后台播放：各媒体类别切后台是否继续播放（audioPlayback 长时任务）。
@@ -375,7 +380,8 @@ const DATA_BOOLEAN_FALSE_DEFAULTS: string[] = [
   KEY_AUTOSAVE_GROUP,
   KEY_AUTOSAVE_CHANNEL,
   KEY_PROXY_AUTO_SWITCH,
-  KEY_TRANSLATE_CHATS
+  KEY_TRANSLATE_CHATS,
+  KEY_TRANSLATE_REPLACE_ORIGINAL
 ];
 
 function applyPowerState(percent: number): void {
@@ -525,6 +531,10 @@ export async function initSettings(context: common.Context): Promise<void> {
     for (const key of DATA_STRING_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
     }
+    // 「最近我主动聊过谁」的名单：从落盘值灌进内存，并把写回的钩子交出去。
+    // 系统分享的目标排序要用它（见 util/recentOutgoing）。
+    initRecentOutgoing(AppStorage.get<string>(KEY_RECENT_OUTGOING) ?? '',
+      (value: string): void => setString(KEY_RECENT_OUTGOING, value));
     AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, 'other');
     AppStorage.setOrCreate(KEY_POWER_ACTIVE, false);
     AppStorage.setOrCreate(KEY_BATTERY_PERCENT, 100);

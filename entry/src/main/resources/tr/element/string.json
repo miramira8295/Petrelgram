@@ -1017,6 +1017,34 @@
       "value": "Galeriye kaydedildi"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "İndirme başarısız"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "İndiriliyor %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Galeri"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Kaydedilemedi"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "%1$s konumuna kaydedildi"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Kaydediliyor %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Seçilen konum"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "Sesli mesaj göndermek ve canlı yayında konuşmak için mikrofon gerekir"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "Otomatik indirme, geçerli ağa ve dosya boyutuna göre yapılır; galeriye kaydetme sistem onayıyla gerçekleşir."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "İndirme konumu"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Varsayılan indirme yolu"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Kaydederken konum seç"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Varsayılan indirme yolu güncellendi"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "Açıldığında sohbet menüsünden tüm sohbeti çevirebilirsiniz"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Orijinal metni çeviriyle değiştir"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Çeviri hazır olduğunda yalnızca çeviriyi göster"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "Metne dönüştürme, Telegram Premium özelliğidir"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "Karşı taraf için de temizle"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "Herkes için temizle"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Açıklamayı kaldır"
+    },
+    {
+      "name": "share_to",
+      "value": "Şununla paylaş"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Hazırlanıyor…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "Uygulamada seç…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Son sohbetlerin burada görünmesi için uygulamayı bir kez açın"
+    },
+    {
+      "name": "share_failed",
+      "value": "Paylaşılan içerik okunamadı"
+    },
+    {
+      "name": "share_staged",
+      "value": "Mesaj kutusuna eklendi — kontrol edip gönderin"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Hemen gönder"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Önce sohbeti aç"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "%1$s kişisine gönderildi"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "Gönderilemedi — içerik mesaj kutusunda kaldı"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Hızlı paylaş"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "Eşleşen mesaj yok"
     }
   ]
 }

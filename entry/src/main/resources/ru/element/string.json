@@ -1017,6 +1017,34 @@
       "value": "Сохранено в галерею"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "Ошибка загрузки"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "Загрузка %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Галерея"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Не удалось сохранить"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "Сохранено в %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Сохранение %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Выбранная папка"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "Для голосовых сообщений и выступлений в эфире нужен микрофон"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "Автозагрузка учитывает текущую сеть и размер файла; сохранение в галерею подтверждается системой."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "Папка загрузок"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Папка по умолчанию"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Выбирать папку при сохранении"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Папка по умолчанию обновлена"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "После включения весь чат можно перевести из меню чата"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Заменять оригинал переводом"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Показывать только перевод, когда он будет готов"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "Расшифровка в текст — функция Telegram Premium"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "Очистить и у собеседника"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "Очистить у всех"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Удалить подпись"
+    },
+    {
+      "name": "share_to",
+      "value": "Поделиться с"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Подготовка…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "Выбрать в приложении…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Откройте приложение, чтобы здесь появились недавние чаты"
+    },
+    {
+      "name": "share_failed",
+      "value": "Не удалось прочитать содержимое"
+    },
+    {
+      "name": "share_staged",
+      "value": "Добавлено в поле ввода — проверьте и отправьте"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Отправить сразу"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Открыть чат"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "Отправлено: %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "Не удалось отправить — содержимое осталось в поле ввода"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Быстрая отправка"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "Совпадений не найдено"
     }
   ]
 }

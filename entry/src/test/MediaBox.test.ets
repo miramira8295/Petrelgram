@@ -61,27 +61,31 @@ export default function mediaBoxTest() {
       expect(a.height).assertEqual(b.height);
     });
 
-    // 视频不能裁：框必须和画面同比例，否则播放时左右留黑。
-    it('keeps a tall video in its true aspect instead of cropping', 0, () => {
-      // 9:16 竖屏视频。照片会被压到高度上限并靠 Cover 裁掉多余部分；
-      // 视频不行——播放器只会留黑边，所以宽度要跟着收。
-      const box = mediaBoxFor(SCREEN, 900, 1600, true);
-      const boxRatio: number = box.width / box.height;
-      expect(Math.abs(boxRatio - 900 / 1600) < 0.02).assertTrue();
-    });
-
-    it('a tall video is narrower than the bubble, a tall photo is not', 0, () => {
+    // **视频和照片一样钉死气泡宽度，超高就裁。**（用户 2026-09-09：「媒体应该
+    // 和气泡一样宽吧」）
+    //
+    // 原来视频是"高度顶到上限就把宽度按比例收回来"，于是一条 9:19.5 的竖视频
+    // 只有 153vp 宽，而同一条消息的气泡被长配文撑到 277vp，媒体缩在气泡左边
+    // 一小块。用户要的是两者齐平。
+    //
+    // 代价说清楚：裁了就得**从头裁到尾**——内嵌播放位的渲染面也改成 Cover
+    // （StreamingVideoPlayer.surfaceWidth/Height，只在 embedded 下），否则静态
+    // 缩略图是裁的、一点播放变成留黑边，尺寸当场跳一下。全屏播放器不受影响，
+    // 那一侧永远按真实比例留黑边。
+    it('a tall video fills the bubble width just like a photo', 0, () => {
       const video = mediaBoxFor(SCREEN, 900, 1600, true);
       const photo = mediaBoxFor(SCREEN, 900, 1600, false);
-      expect(photo.width).assertEqual(mediaThumbWidth(SCREEN));
-      expect(video.width < photo.width).assertTrue();
+      expect(video.width).assertEqual(mediaThumbWidth(SCREEN));
+      expect(video.width).assertEqual(photo.width);
+      expect(video.height).assertEqual(photo.height);
     });
 
     it('a landscape video still fills the bubble width', 0, () => {
-      // 高度没到上限，不需要收宽度。
+      // 高度没到上限，本来就是满宽。
       expect(mediaBoxFor(SCREEN, 1600, 900, true).width).assertEqual(mediaThumbWidth(SCREEN));
     });
 
+    // 比例夹取仍然分开：视频夹得松是为了**高度**更贴近真实比例，少裁一点。
     it('video ratio clamp is looser than the photo one', 0, () => {
       // 极端竖屏 1:3。照片夹到 0.56，视频夹到 0.4——视频更贴近真实比例。
       expect(mediaRatio(1000, 3000, false) > mediaRatio(1000, 3000, true)).assertTrue();

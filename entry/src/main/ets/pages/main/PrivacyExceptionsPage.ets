@@ -10,7 +10,7 @@ import {
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
 import { SHEET_CLOSE_RESERVE_VP } from '../../util/sheetChrome';
@@ -402,7 +402,7 @@ struct PrivacyExceptionsPage {
       height: SheetSize.LARGE,
       backgroundColor: COLOR_SURFACE,
       dragBar: true,
-      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

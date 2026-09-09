@@ -1017,6 +1017,34 @@
       "value": "در گالری ذخیره شد"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "دانلود ناموفق بود"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "در حال دانلود %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "گالری"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "ذخیره ناموفق بود"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "در %1$s ذخیره شد"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "در حال ذخیره %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "محل انتخاب‌شده"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "برای ارسال پیام صوتی و صحبت در لایو به میکروفون نیاز است"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "دانلود خودکار بر اساس شبکه فعلی و اندازه فایل انجام می‌شود؛ ذخیره در گالری با تأیید نوشتن سیستم همراه است."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "محل دانلود"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "مسیر پیش‌فرض دانلود"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "هنگام ذخیره، محل را انتخاب کن"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "مسیر پیش‌فرض دانلود به‌روزرسانی شد"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "پس از فعال‌سازی، می‌توانید کل گفتگو را از منوی گفتگو ترجمه کنید"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "جایگزینی متن اصلی با ترجمه"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "پس از آماده شدن ترجمه، فقط ترجمه نمایش داده شود"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "تبدیل به متن یک قابلیت Telegram Premium است"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "پاک کردن هم‌زمان برای طرف مقابل"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "پاک کردن برای همه"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "حذف زیرنویس"
+    },
+    {
+      "name": "share_to",
+      "value": "هم‌رسانی با"
+    },
+    {
+      "name": "share_preparing",
+      "value": "در حال آماده‌سازی…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "انتخاب در برنامه…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "یک بار برنامه را باز کنید تا گفتگوهای اخیر اینجا ظاهر شوند"
+    },
+    {
+      "name": "share_failed",
+      "value": "خواندن محتوای هم‌رسانی‌شده ناموفق بود"
+    },
+    {
+      "name": "share_staged",
+      "value": "به کادر پیام افزوده شد — بررسی و ارسال کنید"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "ارسال فوری"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "ابتدا گفتگو را باز کن"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "به %1$s ارسال شد"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "ارسال ناموفق بود — محتوا در کادر پیام ماند"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "هم‌رسانی سریع"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "پیامی یافت نشد"
     }
   ]
 }

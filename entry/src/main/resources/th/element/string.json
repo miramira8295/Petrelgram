@@ -1017,6 +1017,34 @@
       "value": "บันทึกลงอัลบั้มแล้ว"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "ดาวน์โหลดไม่สำเร็จ"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "กำลังดาวน์โหลด %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "แกลเลอรี"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "บันทึกไม่สำเร็จ"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "บันทึกไปยัง %1$s แล้ว"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "กำลังบันทึก %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "ตำแหน่งที่เลือก"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "การส่งข้อความเสียงและการพูดในไลฟ์จำเป็นต้องใช้ไมโครโฟน"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "การดาวน์โหลดอัตโนมัติดำเนินการตามเครือข่ายและขนาดไฟล์ปัจจุบัน การบันทึกลงอัลบั้มต้องยืนยันการเขียนจากระบบ"
+    },
+    {
+      "name": "ds_download_location",
+      "value": "ตำแหน่งดาวน์โหลด"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "เส้นทางดาวน์โหลดเริ่มต้น"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "เลือกตำแหน่งเมื่อบันทึก"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "อัปเดตเส้นทางดาวน์โหลดเริ่มต้นแล้ว"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "เมื่อเปิด สามารถแปลทั้งแชทในเมนูแชทได้"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "แทนที่ข้อความต้นฉบับด้วยคำแปล"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "แสดงเฉพาะคำแปลเมื่อแปลเสร็จแล้ว"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "การแปลงเป็นข้อความเป็นฟีเจอร์ Telegram Premium"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "ล้างสำหรับอีกฝ่ายพร้อมกัน"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "ล้างสำหรับทุกคน"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "ลบคำบรรยาย"
+    },
+    {
+      "name": "share_to",
+      "value": "แชร์ไปยัง"
+    },
+    {
+      "name": "share_preparing",
+      "value": "กำลังเตรียม…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "เลือกในแอป…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "เปิดแอปสักครั้งเพื่อให้แชทล่าสุดแสดงที่นี่"
+    },
+    {
+      "name": "share_failed",
+      "value": "อ่านเนื้อหาที่แชร์ไม่ได้"
+    },
+    {
+      "name": "share_staged",
+      "value": "เพิ่มลงในกล่องข้อความแล้ว — ตรวจสอบแล้วส่ง"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "ส่งทันที"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "เปิดแชทก่อน"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "ส่งไปยัง %1$s แล้ว"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "ส่งไม่สำเร็จ — เนื้อหายังอยู่ในกล่องข้อความ"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "แชร์ด่วน"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "ไม่พบข้อความที่ตรงกัน"
     }
   ]
 }

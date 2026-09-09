@@ -1017,6 +1017,34 @@
       "value": "تم الحفظ في الألبوم"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "فشل التنزيل"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "جارٍ التنزيل %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "المعرض"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "فشل الحفظ"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "تم الحفظ في %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "جارٍ الحفظ %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "الموقع المحدد"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "يتطلب إرسال الرسائل الصوتية والتحدث في البث استخدام الميكروفون"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "يتم التنزيل التلقائي وفق الشبكة الحالية وحجم الملف؛ ويتأكد النظام من كتابة الحفظ في الألبوم."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "موقع التنزيل"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "مسار التنزيل الافتراضي"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "اختيار الموقع عند الحفظ"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "تم تحديث مسار التنزيل الافتراضي"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "عند تفعيله، يمكنك ترجمة المحادثة كاملة من قائمة المحادثة"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "استبدال النص الأصلي بالترجمة"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "عرض الترجمة فقط بعد أن تصبح جاهزة"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "التحويل إلى نص ميزة من Telegram Premium"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "مسح للطرف الآخر أيضًا"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "المسح للجميع"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "إزالة التسمية التوضيحية"
+    },
+    {
+      "name": "share_to",
+      "value": "مشاركة مع"
+    },
+    {
+      "name": "share_preparing",
+      "value": "جارٍ التحضير…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "الاختيار في التطبيق…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "افتح التطبيق مرة واحدة لتظهر محادثاتك الأخيرة هنا"
+    },
+    {
+      "name": "share_failed",
+      "value": "تعذّرت قراءة المحتوى المشارك"
+    },
+    {
+      "name": "share_staged",
+      "value": "أُضيف إلى مربع الرسالة — راجعه ثم أرسله"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "إرسال فوري"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "افتح المحادثة أولاً"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "أُرسل إلى %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "تعذّر الإرسال — بقي المحتوى في مربع الرسالة"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "مشاركة سريعة"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "لا توجد رسائل مطابقة"
     }
   ]
 }

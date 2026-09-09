@@ -203,7 +203,8 @@ export function navigateToChat(
   const screenH: number = AppStorage.get<number>('screenHeightVp') ?? 0;
   const split: boolean = isSplitLayout(screenW, screenH);
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
-  const decision: ChatPushDecision = decideChatPush(snap, target, origin === 'navbar');
+  const decision: ChatPushDecision =
+    decideChatPush(snap, target, origin === 'navbar', origin === 'search');
   // **skip / popTo 这两条路不传参**：栈帧的 param 不会因为出栈而更新，已经挂在
   // 树上的那个 ChatPage 不会重新吃一遍 pathInfo。所以 jumpTo 得走旁路交过去，
   // 否则「资料页点媒体」「搜索到已打开会话里的消息」都只是回到那一页、停在

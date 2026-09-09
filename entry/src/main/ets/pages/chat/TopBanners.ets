@@ -1,9 +1,17 @@
+// 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
+// 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
+// 还拿得到。继续用 overlayGlassFill + overlayBackdropBlur 的面会两头落空——
+// 前者按"底下还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，
+// 结果既没有材质也没有自己的玻璃，就是一块平板（用户 2026-09-07：
+// 「会话详情底下的几个控制条实现样式和输入框不太一样」）。
+// 输入框（ChatComposerInput）早已迁到 plainGlassFill + plainBackdropBlur +
+// hdsVisualEffect 这一套，这里跟上，三者的档位保持各自原有的 surface 不变。
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { pinnedActiveSeg, pinnedSegIndices, pinnedShownIndex } from '../../util/pinnedSegments';
 import { plural, str } from '../../util/strings';
 import {
@@ -299,14 +307,14 @@ export struct TopBanners {
     // 置顶消息条和直播状态条共用这一张卡，它浮在消息列表之上、消息从下面
     // 滚过去——和顶栏胶囊、dock 是同一种角色，所以走同一档 'bar' 玻璃。
     // 自绘玻璃的两半要一起上：半透明底 + backdropBlur（不透明底会把模糊盖死）。
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-    .backdropBlur(overlayBackdropBlur('bar'))
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
+    .backdropBlur(plainBackdropBlur('bar'))
     .borderRadius(14)
     .margin({ left: 12, right: 12, bottom: 2 })
     // 'bar' 档自带阴影关闭，这条浮卡的阴影保持自己的。
     .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 1 })
     .clip(true)
-    .attributeModifier(materialModifier('bar'))
+    .visualEffect(hdsVisualEffect('bar'))
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({

@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   TRANSLATE_DONE, TRANSLATE_EMPTY, TRANSLATE_FAILED,
-  TranslateToggle, sheetStateOf, toggleTranslation, translationActive
+  TranslateToggle, sheetStateOf, toggleTranslation, translationActive,
+  translationReplacesOriginal
 } from '../main/ets/util/translationMode';
 
 // 两个真相来源、极性相反，全靠总开关选路。
@@ -74,6 +75,13 @@ export default function translationModeTest() {
     it('原文为空时，任何非空译文仍算成功', 0, () => {
       expect(sheetStateOf('something', '')).assertEqual(TRANSLATE_DONE);
       expect(sheetStateOf('', '')).assertEqual(TRANSLATE_EMPTY);
+    });
+
+    it('替换原文只在开关开启且译文可见时生效', 0, () => {
+      expect(translationReplacesOriginal(false, '译文', false)).assertFalse();
+      expect(translationReplacesOriginal(true, '', false)).assertFalse();
+      expect(translationReplacesOriginal(true, '译文', true)).assertFalse();
+      expect(translationReplacesOriginal(true, '译文', false)).assertTrue();
     });
   });
 }

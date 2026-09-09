@@ -1,11 +1,19 @@
+// 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
+// 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
+// 还拿得到。继续用 overlayGlassFill + overlayBackdropBlur 的面会两头落空——
+// 前者按"底下还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，
+// 结果既没有材质也没有自己的玻璃，就是一块平板（用户 2026-09-07：
+// 「会话详情底下的几个控制条实现样式和输入框不太一样」）。
+// 输入框（ChatComposerInput）早已迁到 plainGlassFill + plainBackdropBlur +
+// hdsVisualEffect 这一套，这里跟上，三者的档位保持各自原有的 surface 不变。
 import { AvatarView } from '../chatlist/AvatarView';
 import { TgsStickerView } from './TgsStickerView';
 import { WebmStickerView } from './WebmStickerView';
 import { COLOR_PRIMARY } from '../../util/theme';
 import { chromeIconColorOf, chromeTextColorOf } from '../../util/chatChrome';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { str } from '../../util/strings';
 import { HeaderIdentitySession } from './HeaderIdentitySession';
 
@@ -95,7 +103,7 @@ export struct ChatHeader {
   // 低于 API 26 自己画玻璃时底色必须半透明，否则 backdropBlur 被盖死。
   @Styles
   actionNormalStyle() {
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
@@ -104,21 +112,21 @@ export struct ChatHeader {
   actionPressedStyle() {
     // 按下时也留在玻璃上：换成不透明的 surface_alt 会让玻璃"闪一下变实心"。
     // 按压反馈由 opacity + scale 表达，不靠底色。
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
+    .backgroundColor(plainGlassFill($r('app.color.surface_alt')))
     .opacity(0.72)
     .scale({ x: 0.9, y: 0.9 })
   }
 
   @Styles
   identityNormalStyle() {
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
   @Styles
   identityPressedStyle() {
-    .backgroundColor(overlayGlassFill('bar', $r('app.color.surface_alt')))
+    .backgroundColor(plainGlassFill($r('app.color.surface_alt')))
     .opacity(0.78)
     .scale({ x: 0.985, y: 0.96 })
   }
@@ -184,8 +192,8 @@ export struct ChatHeader {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
       curve: Curve.EaseOut
     })
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .attributeModifier(materialModifier('bar'))
+    .backdropBlur(plainBackdropBlur('bar'))
+    .visualEffect(hdsVisualEffect('bar'))
     .accessibilityText($r('app.string.cp_back_to_chat'))
     .onClick((): void => { this.onBack(); });
   }
@@ -234,8 +242,8 @@ export struct ChatHeader {
       curve: Curve.EaseOut
     })
     // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
-    .backdropBlur(overlayBackdropBlur('bar'))
-    .attributeModifier(materialModifier('bar'))
+    .backdropBlur(plainBackdropBlur('bar'))
+    .visualEffect(hdsVisualEffect('bar'))
     // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
     .id(this.menuAnchorId)
     .enabled(this.chatId !== 0)
@@ -295,8 +303,8 @@ export struct ChatHeader {
       // 顶栏的三个胶囊都浮在消息列表之上，正对「浮动工具栏」那一档。材质生效
       // 时会把 stateStyles 的背景色清成透明并接管边框，按压反馈仍由 stateStyles
       // 的缩放/透明度体现；'bar' 档的 applyShadow:false 让这里手调的阴影继续生效。
-      .backdropBlur(overlayBackdropBlur('bar'))
-      .attributeModifier(materialModifier('bar'))
+      .backdropBlur(plainBackdropBlur('bar'))
+      .visualEffect(hdsVisualEffect('bar'))
       .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.header.subtitleTextOf()))
       .onClick((): void => {
         if (this.header.state === 'error') {

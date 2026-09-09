@@ -36,6 +36,7 @@ export class ChatEnvMirror {
   @Trace animatedEmoji: boolean = true;
   @Trace emojiReactions: boolean = true;
   @Trace gestureScheme: string = '';
+  @Trace translateReplaceOriginal: boolean = false;
   // —— P4 批 3a 扩容（MessageBubble 迁移的读者预备）——
   @Trace emojiChat: boolean = true;
   @Trace stickers: boolean = true;
@@ -57,6 +58,7 @@ const MIRRORED_KEYS: string[] = [
   'msgTextSize', 'bubbleRadius', 'reduceAnimations', 'powerSavingActive',
   'powerChatEffects', 'powerEffectMessage', 'powerEffectReaction',
   'powerAnimatedEmoji', 'powerEmojiReactions', 'msgGestureScheme',
+  'translateReplaceOriginal',
   'powerEmojiChat', 'powerAnimatedStickers', 'powerStickerAutoplay',
   'powerAutoplayGif', 'powerAutoplayVideo', 'powerStickerLoop', 'powerEmojiStatus',
   'appIsForeground', 'linkNavBusyUrl'
@@ -133,6 +135,11 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
       break;
     case 'msgGestureScheme':
       if (chatEnv.gestureScheme !== (value as string)) { chatEnv.gestureScheme = value as string; }
+      break;
+    case 'translateReplaceOriginal':
+      if (chatEnv.translateReplaceOriginal !== (value as boolean)) {
+        chatEnv.translateReplaceOriginal = value as boolean;
+      }
       break;
     case 'powerEmojiChat':
       if (chatEnv.emojiChat !== (value as boolean)) { chatEnv.emojiChat = value as boolean; }

@@ -13,7 +13,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import { plural, str } from '../../util/strings';
 import { clockTime, fullDate, monthDayTime } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { overlayBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 
@@ -1197,7 +1197,7 @@ export struct ActiveSessionsPage {
       height: '78%',
       backgroundColor: $r('app.color.surface'),
       dragBar: true,
-      blurStyle: overlayBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
   }
 }

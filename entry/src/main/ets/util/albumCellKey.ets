@@ -20,6 +20,17 @@
 // LiveThumbImage），图落地时**不该**重建这一行——那正是旁路通道存在的理由。
 // 进 key 的三样都不随下载进度变化。
 
+export interface AlbumCellGeometry {
+  width: number;
+  height: number;
+}
+
+// packAlbumRows 会产出小数 vp。保留 0.01vp 已远高于屏幕像素精度，同时避免浮点
+// 末位噪声让 ForEach 在同一布局下反复换 key。
+function geometryKey(cell: AlbumCellGeometry): string {
+  return `${Math.round(cell.width * 100)}x${Math.round(cell.height * 100)}`;
+}
+
 // 一格的身份：属于哪条消息、缩略图是哪个文件、是视频还是图片。
 // 视频与图片在 albumGrid 里走的是两棵完全不同的子树，所以它也是身份的一部分。
 export function albumCellKey(
@@ -28,10 +39,19 @@ export function albumCellKey(
   return `cell_${index}_${memberId}_${fileId}_${isVideo ? 'v' : 'p'}`;
 }
 
-// 一行的身份 = 位置 + 这一行所有格子的身份。
+// 一行的身份 = 位置 + 这一行所有格子的身份 + 当前布局几何。
 //
 // **外层也必须带身份**：外层键不变时 ForEach 连行的构建函数都不会重跑，内层
 // 那个 ForEach 根本没有机会被重新求值——只修内层是修不动的。
-export function albumRowKey(rowIndex: number, cellKeys: string[]): string {
-  return `row_${rowIndex}_${cellKeys.join('|')}`;
+// 几何同样必须进入外层 key：多选栏、分栏或窗口尺寸变化后，packAlbumRows 虽然
+// 算出了新的 width/height，旧 key 却会让格子继续拿旧尺寸，表现成气泡缩了而图片
+// 溢出。只在几何真变时重建这一行，不影响下载路径和进度的旁路刷新。
+export function albumRowKey(
+  rowIndex: number, cellKeys: string[], geometry: AlbumCellGeometry[]
+): string {
+  const geometryKeys: string[] = [];
+  for (const cell of geometry) {
+    geometryKeys.push(geometryKey(cell));
+  }
+  return `row_${rowIndex}_${geometryKeys.join('|')}_${cellKeys.join('|')}`;
 }

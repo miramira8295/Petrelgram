@@ -16,6 +16,15 @@ import { navigateToSetting } from './settingsNav';
 import { logE } from './log';
 import { navigateToSearch } from './searchNav';
 
+// **一律 'content'。** 这条路上的每一次跳转，用户都是"在内容里点了什么"——
+// 消息里的链接、资料页简介里的链接、内置浏览器里的链接。navigateToChat 的默认
+// origin 是 'navbar'，那条语义是"换一个会话看"，会 clearAndPush 把当前详情页
+// 清掉：从会话 A 里点链接进会话 B，A 就没了，返回直接落回列表
+// （用户 2026-09-09："会话详情内点开链接到新会话详情，原来会话关闭了"）。
+// 这与 1.4.0 那次回归是同一个根因，见 util/chatNav 里 origin 那段说明。
+//
+// 副作用说清楚：deepLink 也经由本文件，所以**外部深链现在同样是叠加**。
+// 不会无限堆——decideChatPush 对"已经开着的会话"走 popTo/skip 而不是再推一层。
 function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     joinedNoticeIsChannel: boolean = false): void {
   const params: Record<string, Object> = { 'chatId': chatId };
@@ -23,7 +32,7 @@ function openChatPage(chatId: number, showJoinedNotice: boolean = false,
     params['showJoinedNotice'] = true;
     params['joinedNoticeIsChannel'] = joinedNoticeIsChannel;
   }
-  navigateToChat(params).catch(logChatNavFailure);
+  navigateToChat(params, 'content').catch(logChatNavFailure);
 }
 
 // A link that couldn't be resolved in-app. For a tapped in-message link we hand
@@ -68,7 +77,7 @@ function openProfileForChat(chat: TdObject, draftText: string = '', openProfile:
     navigateToChatProfile(params);
     return;
   }
-  navigateToChat(params).catch(logChatNavFailure);
+  navigateToChat(params, 'content').catch(logChatNavFailure);
 }
 
 function resolvePublicChat(context: common.UIAbilityContext, username: string, draftText: string,
@@ -107,7 +116,7 @@ function openMessageLink(context: common.UIAbilityContext, link: string, origina
     if (msgId > 0) {
       params['jumpTo'] = msgId;
     }
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
   }).catch((error: TdError): void => {
     logE(`openTelegramLink.getMessageLinkInfo failed: ${error.message}`);
     onLinkUnresolved(context, original, allowBrowser);
@@ -239,7 +248,7 @@ function openPhoneNumberUser(context: common.UIAbilityContext, type: TdObject, o
         if (draftText !== '') {
           params['draftText'] = draftText;
         }
-        navigateToChat(params).catch(logChatNavFailure);
+        navigateToChat(params, 'content').catch(logChatNavFailure);
       }
     }).catch((error: TdError): void => {
       logE(`openTelegramLink.createPhoneChat failed: ${error.message}`);
@@ -679,7 +688,7 @@ export function openChatLinkAction(context: common.UIAbilityContext, action: Cha
     if (action.draftText !== '') {
       params['draftText'] = action.draftText;
     }
-    navigateToChat(params).catch(logChatNavFailure);
+    navigateToChat(params, 'content').catch(logChatNavFailure);
     if (action.startParam === '') {
       return;
     }

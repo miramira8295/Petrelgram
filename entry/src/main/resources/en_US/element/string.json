@@ -1017,6 +1017,34 @@
       "value": "Saved to gallery"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "Download failed"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "Downloading %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Gallery"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Save failed"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "Saved to %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Saving %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Selected location"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "Sending voice messages and speaking in a live stream needs the microphone"
     },
@@ -8617,6 +8645,14 @@
       "value": "Adds a translate option to chat menus"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Replace original text"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Show only the translation after it is ready"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "Transcription is a Telegram Premium feature"
     },
@@ -11867,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Remove caption"
+    },
+    {
+      "name": "share_to",
+      "value": "Share to"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Preparing…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "Choose in app…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Open the app once so your recent chats appear here"
+    },
+    {
+      "name": "share_failed",
+      "value": "Couldn't read the shared content"
+    },
+    {
+      "name": "share_staged",
+      "value": "Added to the message box — review and send"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Send now"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Open chat first"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "Sent to %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "Couldn't send — content kept in the message box"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Quick share"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "No matching messages"
     }
   ]
 }

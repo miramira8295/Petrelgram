@@ -1017,6 +1017,34 @@
       "value": "Збережено в галереї"
     },
     {
+      "name": "transfer_download_failed",
+      "value": "Помилка завантаження"
+    },
+    {
+      "name": "transfer_downloading",
+      "value": "Завантаження %1$d%%"
+    },
+    {
+      "name": "transfer_gallery",
+      "value": "Галерея"
+    },
+    {
+      "name": "transfer_save_failed",
+      "value": "Не вдалося зберегти"
+    },
+    {
+      "name": "transfer_saved_to",
+      "value": "Збережено в %1$s"
+    },
+    {
+      "name": "transfer_saving",
+      "value": "Збереження %1$d%%"
+    },
+    {
+      "name": "transfer_selected_location",
+      "value": "Вибране розташування"
+    },
+    {
       "name": "mic_permission_reason",
       "value": "Для надсилання голосових повідомлень і коментарів у стрімі потрібен доступ до мікрофона"
     },
@@ -4051,6 +4079,22 @@
     {
       "name": "ds_note",
       "value": "Автозавантаження залежить від поточної мережі та розміру файлів; збереження в галерею підтверджує система."
+    },
+    {
+      "name": "ds_download_location",
+      "value": "Папка завантажень"
+    },
+    {
+      "name": "ds_download_path",
+      "value": "Типовий шлях завантаження"
+    },
+    {
+      "name": "ds_download_path_picker",
+      "value": "Обирати теку під час збереження"
+    },
+    {
+      "name": "ds_download_path_changed",
+      "value": "Типовий шлях завантаження оновлено"
     },
     {
       "name": "ct_added",
@@ -8601,6 +8645,14 @@
       "value": "Після ввімкнення весь чат можна перекладати через меню чату"
     },
     {
+      "name": "language_translate_replace_original",
+      "value": "Замінювати оригінал перекладом"
+    },
+    {
+      "name": "language_translate_replace_original_hint",
+      "value": "Показувати лише переклад, коли він буде готовий"
+    },
+    {
       "name": "cp_transcribe_premium",
       "value": "Розшифрування голосових — функція Telegram Premium"
     },
@@ -9995,6 +10047,10 @@
     {
       "name": "cl_clear_for_both",
       "value": "Очистити також у співрозмовника"
+    },
+    {
+      "name": "cl_clear_for_everyone",
+      "value": "Очистити для всіх"
     },
     {
       "name": "cl_delete_and_block",
@@ -11847,6 +11903,54 @@
     {
       "name": "fw_remove_caption",
       "value": "Видалити підпис"
+    },
+    {
+      "name": "share_to",
+      "value": "Поділитися з"
+    },
+    {
+      "name": "share_preparing",
+      "value": "Підготовка…"
+    },
+    {
+      "name": "share_open_app",
+      "value": "Вибрати в застосунку…"
+    },
+    {
+      "name": "share_no_targets",
+      "value": "Відкрийте застосунок, щоб тут з'явилися нещодавні чати"
+    },
+    {
+      "name": "share_failed",
+      "value": "Не вдалося прочитати вміст"
+    },
+    {
+      "name": "share_staged",
+      "value": "Додано в поле вводу — перевірте й надішліть"
+    },
+    {
+      "name": "share_mode_send",
+      "value": "Надіслати одразу"
+    },
+    {
+      "name": "share_mode_edit",
+      "value": "Відкрити чат"
+    },
+    {
+      "name": "share_sent_to",
+      "value": "Надіслано: %1$s"
+    },
+    {
+      "name": "share_send_failed",
+      "value": "Не вдалося надіслати — вміст залишився в полі вводу"
+    },
+    {
+      "name": "share_panel_label",
+      "value": "Швидке надсилання"
+    },
+    {
+      "name": "cp_search_no_result",
+      "value": "Збігів не знайдено"
     }
   ]
 }
