@@ -26,8 +26,6 @@ import {
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { translationReplacesOriginal } from '../../util/translationMode';
 
-const EMPTY_TRANSLATION_ENTITIES: TdObject[] = [];
-
 // 遮罩。比长按菜单的背板浅一档：那一层要把整页推远，这一层只需要让气泡
 // 从背景里浮出来，用户还得看得见自己在哪条消息上。
 const SCRIM: string = '#66000000';
@@ -46,6 +44,8 @@ export interface SelectTextPayload {
   text: string;
   entities: TdObject[];
   translatedText: string;
+  // 译文自己的实体；译文被隐藏时和 translatedText 一起清空。
+  translatedEntities: TdObject[];
   isOutgoing: boolean;
   hasReply: boolean;
   replySenderName: string;
@@ -55,7 +55,7 @@ export interface SelectTextPayload {
 }
 
 export const EMPTY_SELECT_TEXT: SelectTextPayload = {
-  text: '', entities: [], translatedText: '', isOutgoing: false,
+  text: '', entities: [], translatedText: '', translatedEntities: [], isOutgoing: false,
   hasReply: false, replySenderName: '', replyText: '',
   emojiIds: [], emojiPaths: []
 };
@@ -66,6 +66,7 @@ export function selectTextPayload(entry: MessageEntry): SelectTextPayload {
     text: entry.text,
     entities: entry.textEntities,
     translatedText: entry.translationHidden ? '' : entry.translatedText,
+    translatedEntities: entry.translationHidden ? [] : entry.translatedEntities,
     isOutgoing: entry.isOutgoing,
     hasReply: entry.replyToMessageId !== 0,
     replySenderName: entry.replySenderName,
@@ -114,7 +115,9 @@ export struct SelectTextOverlay {
   }
 
   private displayedEntities(): TdObject[] {
-    return this.replacementTranslationShown() ? EMPTY_TRANSLATION_ENTITIES : this.data.entities;
+    // 与气泡同源：译文用译文自己的实体，不再退化成空数组（那样会丢掉加粗、
+    // 代码块和可折叠引用）。
+    return this.replacementTranslationShown() ? this.data.translatedEntities : this.data.entities;
   }
 
   private inlineCustomEmojiSource(customEmojiId: string): string {

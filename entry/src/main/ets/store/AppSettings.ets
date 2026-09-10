@@ -91,7 +91,7 @@ export const KEY_POWER_EFFECT_BLUR: string = 'powerEffectBlur';
 export const KEY_POWER_EFFECT_BACKGROUND: string = 'powerEffectBackground';
 // Data & storage. The current network is supplied by NetworkStateService and
 // is intentionally kept in AppStorage only; user choices below are persisted.
-export const KEY_CURRENT_NETWORK_TYPE: string = 'currentNetworkType'; // none | wifi | mobile | roaming | other
+export const KEY_CURRENT_NETWORK_TYPE: string = 'currentNetworkType'; // none | wifi | mobile | roaming | vpn | other
 export const KEY_PROXY_AUTO_SWITCH: string = 'proxyAutoSwitch';
 export const KEY_PROXY_SWITCH_DELAY_SEC: string = 'proxySwitchDelaySec';
 export const KEY_AUTOSAVE_PRIVATE: string = 'autosavePrivate';
@@ -255,8 +255,8 @@ export const KEY_LOCAL_BG_EPOCH: string = 'localChatBgEpoch';
 // 它们更难读。深浅色各一张，理由同 util/localWallpaper。
 export const KEY_APP_BG_LIGHT: string = 'appBgLight';
 export const KEY_APP_BG_DARK: string = 'appBgDark';
-// 这张图自己的模糊与暗化，和聊天壁纸那两根滑杆各管各的：两张图的观感诉求不同，
-// 共用一个值会让调一边毁另一边。
+// 旧键继续分别作为 APP 浅色模糊、APP 深色暗度使用，避免升级后丢掉现有观感。
+// 另一主题的对应参数在下面的四槽位区域补独立键。
 export const KEY_APP_BG_BLUR: string = 'appBgBlur';
 export const KEY_APP_BG_DIM: string = 'appBgDim';
 // 「APP 壁纸此刻生效中」。由 MainScreen 算一次写进来（它同时知道分栏和路径），
@@ -271,7 +271,11 @@ export const KEY_APP_BG_ON: string = 'appBgOn';
 // AppBackdrop 直接复用 ChatBackdrop 画它，不必再写一套渲染。
 export const KEY_APP_BG_STATE_LIGHT: string = 'appBgStateLight';
 export const KEY_APP_BG_STATE_DARK: string = 'appBgStateDark';
-// APP 槽位的纹理（图案浓度）。模糊与遮罩沿用上面已有的 KEY_APP_BG_BLUR / DIM。
+// APP 模糊原来浅深共用 KEY_APP_BG_BLUR；旧键留给浅色，深色首次启动时复制旧值。
+export const KEY_APP_BG_BLUR_DARK: string = 'appBgBlurDark';
+// APP 暗度过去只在深色生效，因此 KEY_APP_BG_DIM 继续归深色；浅色键只用于保持
+// 四槽位读写闭环，当前不会参与浅色渲染。
+export const KEY_APP_BG_DIM_LIGHT: string = 'appBgDimLight';
 export const KEY_APP_BG_PATTERN_LIGHT: string = 'appBgPatternLight';
 export const KEY_APP_BG_PATTERN_DARK: string = 'appBgPatternDark';
 // 聊天槽位的模糊此前是**浅深共用一个键**（KEY_BG_BLUR），四槽位下必须拆开。
@@ -297,7 +301,9 @@ export const WALLPAPER_NUMBER_SETTINGS: WallpaperNumberSetting[] = [
   { key: KEY_CHAT_DIM, defaultValue: 0 },
   { key: KEY_CHAT_DIM_LIGHT, defaultValue: 0 },
   { key: KEY_APP_BG_BLUR, defaultValue: BG_BLUR_DEFAULT },
+  { key: KEY_APP_BG_BLUR_DARK, defaultValue: BG_BLUR_DEFAULT },
   { key: KEY_APP_BG_DIM, defaultValue: 0 },
+  { key: KEY_APP_BG_DIM_LIGHT, defaultValue: 0 },
   { key: KEY_APP_BG_PATTERN_LIGHT, defaultValue: BG_PATTERN_DEFAULT },
   { key: KEY_APP_BG_PATTERN_DARK, defaultValue: BG_PATTERN_DEFAULT }
 ];
@@ -523,6 +529,22 @@ export async function initSettings(context: common.Context): Promise<void> {
     for (const key of APPEARANCE_HEX_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
     }
+    // 旧版本的聊天与 APP 模糊都是浅深共用。新深色键只在不存在时从旧键播种，
+    // 已经单独调整过的深色值必须原样保留。
+    let migratedWallpaperBlur: boolean = false;
+    if (!s.hasSync(KEY_BG_BLUR_DARK)) {
+      await s.put(KEY_BG_BLUR_DARK,
+        await s.get(KEY_BG_BLUR, BG_BLUR_DEFAULT) as number);
+      migratedWallpaperBlur = true;
+    }
+    if (!s.hasSync(KEY_APP_BG_BLUR_DARK)) {
+      await s.put(KEY_APP_BG_BLUR_DARK,
+        await s.get(KEY_APP_BG_BLUR, BG_BLUR_DEFAULT) as number);
+      migratedWallpaperBlur = true;
+    }
+    if (migratedWallpaperBlur) {
+      await s.flush();
+    }
     for (const setting of WALLPAPER_NUMBER_SETTINGS) {
       AppStorage.setOrCreate(setting.key,
         await s.get(setting.key, setting.defaultValue) as number);
@@ -535,7 +557,13 @@ export async function initSettings(context: common.Context): Promise<void> {
     // 系统分享的目标排序要用它（见 util/recentOutgoing）。
     initRecentOutgoing(AppStorage.get<string>(KEY_RECENT_OUTGOING) ?? '',
       (value: string): void => setString(KEY_RECENT_OUTGOING, value));
-    AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, 'other');
+    // **只播种，不覆盖。** 这个键的所有权在 NetworkStateService：beginNetworkMonitoring()
+    // 在 EntryAbility 里比本函数的 await 更早跑完并写入真值，这里若无条件写 'other'
+    // 就把它盖掉了；之后网络不变就再没有事件来纠正——2026-09-09 真机上视频预取
+    // 53/53 被 network=other 拒、TDLib 也一直被告知 networkTypeOther，就是这个竞争。
+    if (!AppStorage.has(KEY_CURRENT_NETWORK_TYPE)) {
+      AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, 'other');
+    }
     AppStorage.setOrCreate(KEY_POWER_ACTIVE, false);
     AppStorage.setOrCreate(KEY_BATTERY_PERCENT, 100);
     const night = await s.get(KEY_NIGHT_MODE, NIGHT_SYSTEM) as string;
@@ -588,7 +616,13 @@ export async function initSettings(context: common.Context): Promise<void> {
     for (const setting of WALLPAPER_NUMBER_SETTINGS) {
       AppStorage.setOrCreate(setting.key, setting.defaultValue);
     }
-    AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, 'other');
+    // **只播种，不覆盖。** 这个键的所有权在 NetworkStateService：beginNetworkMonitoring()
+    // 在 EntryAbility 里比本函数的 await 更早跑完并写入真值，这里若无条件写 'other'
+    // 就把它盖掉了；之后网络不变就再没有事件来纠正——2026-09-09 真机上视频预取
+    // 53/53 被 network=other 拒、TDLib 也一直被告知 networkTypeOther，就是这个竞争。
+    if (!AppStorage.has(KEY_CURRENT_NETWORK_TYPE)) {
+      AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, 'other');
+    }
     AppStorage.setOrCreate(KEY_POWER_ACTIVE, false);
     AppStorage.setOrCreate(KEY_BATTERY_PERCENT, 100);
     refreshPowerSavingState();

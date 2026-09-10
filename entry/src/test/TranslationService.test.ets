@@ -1,7 +1,9 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
-import { TranslationService, looksLikeTargetLanguage } from '../main/ets/services/TranslationService';
+import {
+  TranslatedText, TranslationService, looksLikeTargetLanguage
+} from '../main/ets/services/TranslationService';
 
 class FakeBridge implements TdBridge {
   onReceive: (json: string) => void = (): void => {};
@@ -38,27 +40,40 @@ function fail(b: FakeBridge, extra: string, message: string): void {
   b.onReceive(JSON.stringify(res));
 }
 
-function answer(b: FakeBridge, extra: string, text: string): void {
+function answer(
+  b: FakeBridge, extra: string, text: string, entities: TdObject[] = []
+): void {
   const res: TdObject = { '@type': 'formattedText' };
   res['text'] = text;
+  res['entities'] = entities;
   res['@extra'] = extra;
   b.onReceive(JSON.stringify(res));
+}
+
+// translateMessageText 回的是 formattedText，实体和文本是一对。
+function quoteEntity(offset: number, length: number): TdObject {
+  const type: TdObject = { '@type': 'textEntityTypeExpandableBlockQuote' };
+  const e: TdObject = { '@type': 'textEntity' };
+  e['offset'] = offset;
+  e['length'] = length;
+  e['type'] = type;
+  return e;
 }
 
 export default function translationServiceTest() {
   describe('TranslationService', () => {
     it('translates_and_caches_per_content_version', 0, async () => {
       const arr = setup(); const b = arr[0] as FakeBridge; const svc = arr[1] as TranslationService;
-      let got: string | null = null;
-      svc.request(5, 100, 0, 'zh', (text: string | null): void => { got = text; });
+      let got: TranslatedText | null = null;
+      svc.request(5, 100, 0, 'zh', (r: TranslatedText | null): void => { got = r; });
       answer(b, pendingTranslateRequests(b)[0], '你好');
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
-      expect(got).assertEqual('你好');
-      expect(svc.cached(5, 100, 0, 'zh')).assertEqual('你好');
+      expect((got as TranslatedText | null)?.text ?? '').assertEqual('你好');
+      expect(svc.cached(5, 100, 0, 'zh')?.text ?? '').assertEqual('你好');
       // Same content version again: served from cache, no second TDLib call.
-      let again: string | null = null;
-      svc.request(5, 100, 0, 'zh', (text: string | null): void => { again = text; });
-      expect(again).assertEqual('你好');
+      let again: TranslatedText | null = null;
+      svc.request(5, 100, 0, 'zh', (r: TranslatedText | null): void => { again = r; });
+      expect((again as TranslatedText | null)?.text ?? '').assertEqual('你好');
       expect(pendingTranslateRequests(b).length).assertEqual(1);
       // An edit (new editDate) is a different version and asks again.
       svc.request(5, 100, 7, 'zh', (): void => {});
@@ -109,6 +124,60 @@ export default function translationServiceTest() {
       expect(looksLikeTargetLanguage('Bonjour tout le monde', 'en')).assertFalse();
       // Nothing translatable at all — pure emoji/digits never go out.
       expect(looksLikeTargetLanguage('👍👍 123', 'en')).assertTrue();
+    });
+
+    // 2026-09-10 用户报「翻译后可折叠引用被强制展开、样式被破坏」：服务只取了
+    // formattedText 的 text，entities 整个扔掉，译文于是变成没有任何结构的白板。
+    // 折叠态是 textEntityTypeExpandableBlockQuote 撑着的，实体丢了就没得折叠。
+    it('carries_entities_alongside_the_translated_text', 0, async () => {
+      const arr = setup(); const b = arr[0] as FakeBridge; const svc = arr[1] as TranslationService;
+      let got: TranslatedText | null = null;
+      svc.request(9, 200, 0, 'zh', (r: TranslatedText | null): void => { got = r; });
+      answer(b, pendingTranslateRequests(b)[0], '标题\n引用正文', [quoteEntity(3, 4)]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      const done = got as TranslatedText | null;
+      expect(done?.entities.length ?? 0).assertEqual(1);
+      const type = done?.entities[0]['type'] as TdObject;
+      expect(type['@type'] as string).assertEqual('textEntityTypeExpandableBlockQuote');
+      // 缓存命中那一路也要带着实体，否则第二次上屏又变白板。
+      expect(svc.cached(9, 200, 0, 'zh')?.entities.length ?? 0).assertEqual(1);
+    });
+
+    // 2026-09-10 真机回归：一条"中文标题 + 六条短链"的机器人消息被判成拉丁文，
+    // 白翻一遍，还把消息样式冲掉。URL 里的 165 个拉丁字母把汉字占比压到 0.26。
+    it('links_do_not_vote_in_the_script_census', 0, () => {
+      // 形状照搬真机那条（中文标题 + 四条长链），但链接换成 example 域名——
+      // 判据只看"拉丁字符压过汉字"这个比例，没必要把第三方推广地址写进仓库。
+      const withLinks: string =
+        '中文标题：这条消息本身是中文，但正文里塞满了链接\n' +
+        '【资源一】https://example.com/a-fairly-long-path\n' +
+        '【资源二】https://www.example.org/another-long-path\n' +
+        '【资源三】https://cdn.example.net/channel/AbCdEfGhIjKlMnOpQrStUv/join\n' +
+        '【资源四】https://example.com/xYzAbC';
+      // 没有实体也要靠正则兜底认出来。
+      expect(looksLikeTargetLanguage(withLinks, 'zh')).assertTrue();
+      // 有实体时走实体，结论一致。
+      const ents: TdObject[] = [];
+      let at: number = withLinks.indexOf('https://');
+      while (at >= 0) {
+        let end: number = withLinks.indexOf('\n', at);
+        if (end < 0) { end = withLinks.length; }
+        const type: TdObject = { '@type': 'textEntityTypeUrl' };
+        const e: TdObject = { '@type': 'textEntity' };
+        e['offset'] = at;
+        e['length'] = end - at;
+        e['type'] = type;
+        ents.push(e);
+        at = withLinks.indexOf('https://', end);
+      }
+      expect(ents.length).assertEqual(4);
+      expect(looksLikeTargetLanguage(withLinks, 'zh', ents)).assertTrue();
+      // 摘链接不能把"真的是外文"也一并放过：正文换成英文就该继续翻。
+      const englishBody: string =
+        'Free setup guide for everyone\nMore: https://example.com/a-fairly-long-path';
+      expect(looksLikeTargetLanguage(englishBody, 'zh')).assertFalse();
+      // 纯链接消息没什么可翻的。
+      expect(looksLikeTargetLanguage('https://example.com/23618.html', 'zh')).assertTrue();
     });
   });
 }

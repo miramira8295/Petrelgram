@@ -51,35 +51,57 @@ export default function anchorRestoreTest() {
   });
 
   describe('shouldPrimePrependAnchor', () => {
-    it('静止在绝对顶部时发布前预定位', 0, (): void => {
-      expect(shouldPrimePrependAnchor(0, 152.857, 153, false)).assertTrue();
-    });
-
-    it('松手后的顶部回弹仍然预定位', 0, (): void => {
-      expect(shouldPrimePrependAnchor(0, 159.342, 153, false)).assertTrue();
-    });
-
-    it('普通可见位置不走预定位', 0, (): void => {
-      expect(shouldPrimePrependAnchor(1, 153, 153, false)).assertFalse();
-      expect(shouldPrimePrependAnchor(0, 140, 153, false)).assertFalse();
-      expect(shouldPrimePrependAnchor(0, 166, 153, false)).assertFalse();
+    // 【判据按滚动态分档，2026-09-10】曾被整个关成 return false，代价是每次上翻
+    // 都走"重试两次量不到 → reposition 硬拉回"，真机日志 7 次上翻 7 次可见跳动
+    // （petrelgram-log-2026-09-10-0824：hold idx=0 y=152.857 prime=false →
+    // retry ×2 → reposition extraOffset=0，位置最终正确、过程可见）。
+    // 静止时没有惯性可打断，同帧预定位零风险，这一档恢复。
+    it('静止时发布前预定位', 0, (): void => {
+      // 真机 7/7 的那一档：停在顶部、手指已抬起、列表已停稳
+      expect(shouldPrimePrependAnchor(0, 152.857, 153, false, false)).assertTrue();
+      // 静止时不限定"绝对顶部"：任意锚点行都同帧定位
+      expect(shouldPrimePrependAnchor(1, -60, 153, false, false)).assertTrue();
+      expect(shouldPrimePrependAnchor(4, -35, 153, false, false)).assertTrue();
     });
 
     it('手指仍按着时不抢滚动位置', 0, (): void => {
-      expect(shouldPrimePrependAnchor(0, 153, 153, true)).assertFalse();
+      expect(shouldPrimePrependAnchor(0, 153, 153, true, false)).assertFalse();
+      expect(shouldPrimePrependAnchor(0, 153, 153, true, true)).assertFalse();
+    });
+
+    // 【惯性与回弹期也预定位】三格对照里位置唯一不飘的那格，见判据实现处。
+    // 不 prime 的那版实测 5 次全 mode=fallback：锚点行被推出可视区，连补偿量
+    // 都测不到，位置直接飘掉。
+    it('惯性与回弹期也预定位', 0, (): void => {
+      expect(shouldPrimePrependAnchor(0, 159.342, 153, false, true)).assertTrue();
+      expect(shouldPrimePrependAnchor(0, 152.857, 153, false, true)).assertTrue();
+      expect(shouldPrimePrependAnchor(1, 153, 153, false, true)).assertTrue();
+      expect(shouldPrimePrependAnchor(4, -35, 153, false, true)).assertTrue();
     });
   });
 
   describe('canApplyAnchorRestore', () => {
-    it('静止列表允许修正布局残差', 0, (): void => {
-      expect(canApplyAnchorRestore(false, 0)).assertTrue();
-      expect(canApplyAnchorRestore(false, 0.49)).assertTrue();
+    const VP: number = 900;
+
+    it('静止列表补回数据造成的残差', 0, (): void => {
+      expect(canApplyAnchorRestore(false, 0, 12, VP)).assertTrue();
+      expect(canApplyAnchorRestore(false, 0.49, 12, VP)).assertTrue();
+      // 捕获之后用户自己滑过一段、但列表已经停下：userDelta 已折进 targetY，照补。
+      expect(canApplyAnchorRestore(false, 1200, 42, VP)).assertTrue();
+      // 静止时不设幅度上限：真要差一屏也补，没有惯性可打断。
+      expect(canApplyAnchorRestore(false, 0, VP * 3, VP)).assertTrue();
     });
 
-    it('拖动或惯性期间不让程序滚动抢位置', 0, (): void => {
-      expect(canApplyAnchorRestore(true, 0)).assertFalse();
-      expect(canApplyAnchorRestore(false, 1)).assertFalse();
-      expect(canApplyAnchorRestore(false, 2467)).assertFalse();
+    // 【判据又改了，2026-09-10】曾按"修正量 ≤ 一屏"在滑动中放行。位置补对了，
+    // 但 scrollBy 是程序性滚动，会打断正在跑的滚动动画——同一天在 prime 上
+    // 实测到的"页面被拉住一下"就是它。现在惯性期间的位置全交给
+    // maintainVisibleContentPosition，一次程序性滚动都不发。
+    // 滚动中 prime 已经同帧按回去了，这里只补它之后的小残差；多屏的仍然不补。
+    it('滚动中只补一屏以内的残差', 0, (): void => {
+      expect(canApplyAnchorRestore(true, 0, 12, VP)).assertTrue();
+      expect(canApplyAnchorRestore(true, 1141, 120, VP)).assertTrue();
+      expect(canApplyAnchorRestore(true, 0, VP + 1, VP)).assertFalse();
+      expect(canApplyAnchorRestore(true, 0, 12, 0)).assertFalse();
     });
   });
 

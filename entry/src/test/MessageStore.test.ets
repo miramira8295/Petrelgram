@@ -719,6 +719,91 @@ export default function messageStoreTest() {
       expect(ids(store.getMessages()).join(',')).assertEqual('5,10,20,30');
       store.close();
     });
+    it('older_prefetch_keeps_two_pages_hidden_and_consumes_them_separately', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.prefetchOlder()).assertTrue();
+      const requests: number = requestCount(b, 'getChatHistory');
+      // pageSize=3: two pages share their boundary, so one idle request returns 5 rows.
+      feedHistory(b, [textMessage(10, 5, false, 'a'), textMessage(9, 5, false, 'p1'),
+        textMessage(8, 5, false, 'p1'), textMessage(7, 5, false, 'p2'),
+        textMessage(6, 5, false, 'p2')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(ids(store.getMessages()).join(',')).assertEqual('10,20,30');
+
+      expect(store.loadOlder()).assertTrue();
+      expect(ids(store.getMessages()).join(',')).assertEqual('8,9,10,20,30');
+      // The second page was already cached; promoting it must not start a request.
+      expect(requestCount(b, 'getChatHistory')).assertEqual(requests);
+      expect(store.loadOlder()).assertTrue();
+      expect(ids(store.getMessages()).join(',')).assertEqual('6,7,8,9,10,20,30');
+      store.close();
+    });
+    // 停稳时两页**合成一次发布**：一次前插、一次锚点、一次 prime。
+    // 连发两次会让第二页撞上 anchorIndexFresh 的空窗（stale-index）而完全不补偿。
+    it('two_staged_pages_publish_as_one_prepend', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.prefetchOlder()).assertTrue();
+      const requests: number = requestCount(b, 'getChatHistory');
+      // pageSize=3，一次预取回 5 条 → 切成 [10,9,8] 与 [8,7,6]（共用边界那条）
+      feedHistory(b, [textMessage(10, 5, false, 'a'), textMessage(9, 5, false, 'p1'),
+        textMessage(8, 5, false, 'p1'), textMessage(7, 5, false, 'p2'),
+        textMessage(6, 5, false, 'p2')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+
+      let notifies: number = 0;
+      const unsub = store.subscribe((): void => { notifies++; });
+      const baseline: number = notifies;
+      expect(store.loadOlderMerged()).assertTrue();
+      // 两页内容一次到齐，边界那条不重复，且**只发布一次**
+      expect(ids(store.getMessages()).join(',')).assertEqual('6,7,8,9,10,20,30');
+      expect(notifies - baseline).assertEqual(1);
+      expect(requestCount(b, 'getChatHistory')).assertEqual(requests + 1);
+      unsub();
+      store.close();
+    });
+
+    it('merged_load_falls_back_to_a_single_page', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(store.prefetchOlder()).assertTrue();
+      feedHistory(b, [textMessage(10, 5, false, 'a'), textMessage(9, 5, false, 'only')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+
+      expect(store.loadOlderMerged()).assertTrue();
+      expect(ids(store.getMessages()).join(',')).assertEqual('9,10,20,30');
+      store.close();
+    });
+
+    it('merged_load_without_a_staged_page_still_requests', 0, async () => {
+      const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 5);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(30, 5, false, 'c'), textMessage(20, 5, false, 'b'),
+        textMessage(10, 5, false, 'a')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      const before: number = requestCount(b, 'getChatHistory');
+      expect(store.loadOlderMerged()).assertTrue();
+      expect(requestCount(b, 'getChatHistory')).assertEqual(before + 1);
+      store.close();
+    });
     it('older_prefetch_is_promoted_when_the_user_reaches_top_while_loading', 0, async () => {
       const arr = setup(5, 3); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();

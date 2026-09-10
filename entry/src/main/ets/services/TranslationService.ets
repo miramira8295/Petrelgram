@@ -5,6 +5,7 @@ import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import {
   clearTranslationStatus, publishTranslating, publishTranslationFailed
 } from '../util/translationChannel';
+import { linguisticTextOf } from '../util/linguisticText';
 import { logE } from '../util/log';
 
 // Whole-chat translation engine.
@@ -126,8 +127,14 @@ function countScripts(text: string): ScriptCounts {
 // server decide (its identical-result answer is cached, so it's one round trip
 // per content version, not per render). Kana vetoes the zh match because
 // Japanese text is typically han + kana mixed.
-export function looksLikeTargetLanguage(text: string, lang: string): boolean {
-  const c = countScripts(text);
+// entities 是这条消息的 TDLib 实体数组。URL / @提及 / #话题 / 代码片段里的
+// 字母不代表用户说的语言，先摘掉再数——不摘的话一条"中文标题 + 一串 YouTube
+// 链接"的消息会被判成拉丁文，白翻一遍（2026-09-10 真机：0.26 vs 门槛 0.5）。
+// 参数可省，省了就退化成旧行为，老调用点不必一起改。
+export function looksLikeTargetLanguage(
+  text: string, lang: string, entities: TdObject[] = []
+): boolean {
+  const c = countScripts(linguisticTextOf(text, entities));
   if (c.total === 0) {
     return true; // nothing translatable: pure emoji/digits/links
   }
@@ -157,12 +164,22 @@ export function looksLikeTargetLanguage(text: string, lang: string): boolean {
   return false;
 }
 
+// 一次翻译的完整结果。**entities 必须跟着 text 一起走**：translateMessageText
+// 回的是 formattedText，加粗、链接、代码块、可折叠引用全在 entities 里。
+// 早先这里只取了 text 一个字符串，于是译文一上屏就是一段没有任何结构的白板——
+// 2026-09-10 用户报的「可折叠引用被强制展开、样式被破坏」就是这么来的：
+// 折叠态是 textEntityTypeExpandableBlockQuote 撑着的，实体丢了就没得折叠。
+export interface TranslatedText {
+  text: string;
+  entities: TdObject[];
+}
+
 interface Job {
   key: string;
   chatId: number;
   messageId: number;
   lang: string;
-  resolvers: Array<(text: string | null) => void>;
+  resolvers: Array<(result: TranslatedText | null) => void>;
 }
 
 // 并发上限是自适应的：平时跑 MAX_ACTIVE_FAST，一旦撞上 flood-wait 就降到
@@ -177,9 +194,9 @@ const FAILURE_HOLD_MS: number = 60_000;
 
 export class TranslationService {
   private client: TdClient;
-  // '' means "translated, nothing to show" (result equals the original) —
-  // cached like any other result so the row is never re-requested.
-  private cache: Map<string, string> = new Map();
+  // 空 text 表示"翻了，但没什么可展示的"（结果与原文相同）——照常入缓存，
+  // 那一行就不会被反复请求。
+  private cache: Map<string, TranslatedText> = new Map();
   private failedAt: Map<string, number> = new Map();
   private queue: Job[] = [];
   private queued: Set<string> = new Set();
@@ -201,14 +218,14 @@ export class TranslationService {
 
   // Synchronous cache probe: null = no result yet (never requested, in flight,
   // or held after a failure).
-  cached(chatId: number, messageId: number, editDate: number, lang: string): string | null {
+  cached(chatId: number, messageId: number, editDate: number, lang: string): TranslatedText | null {
     return this.cache.get(keyOf(chatId, messageId, editDate, lang)) ?? null;
   }
 
   // Idempotent: repeated requests for the same content version collapse into
   // one TDLib call, and everyone gets the same callback.
   request(chatId: number, messageId: number, editDate: number, lang: string,
-    onDone: (text: string | null) => void): void {
+    onDone: (result: TranslatedText | null) => void): void {
     const key = keyOf(chatId, messageId, editDate, lang);
     const hit = this.cache.get(key);
     if (hit !== undefined) {
@@ -262,8 +279,12 @@ export class TranslationService {
     req['message_id'] = job.messageId;
     req['to_language_code'] = job.lang;
     this.client.send(req, 20000).then((result: TdObject): void => {
-      const text = (result['text'] as string | undefined) ?? '';
-      this.finish(job, text);
+      // formattedText：text 和 entities 是一对，分开取就等于把格式扔了。
+      const translated: TranslatedText = {
+        text: (result['text'] as string | undefined) ?? '',
+        entities: (result['entities'] as TdObject[] | undefined) ?? []
+      };
+      this.finish(job, translated);
     }).catch((e: TdError): void => {
       // "Too Many Requests: retry after N" — quiet the whole queue, not just
       // this message; every queued request goes to the same rate bucket.
@@ -284,11 +305,11 @@ export class TranslationService {
     });
   }
 
-  private finish(job: Job, text: string | null, requeue: boolean = false): void {
+  private finish(job: Job, result: TranslatedText | null, requeue: boolean = false): void {
     this.active--;
     this.queued.delete(job.key);
-    if (text !== null) {
-      this.cache.set(job.key, text);
+    if (result !== null) {
+      this.cache.set(job.key, result);
       clearTranslationStatus(job.messageId);
     }
     if (requeue) {
@@ -297,7 +318,7 @@ export class TranslationService {
       this.queue.unshift(job);
     } else {
       for (const resolve of job.resolvers) {
-        resolve(text);
+        resolve(result);
       }
     }
     this.pump();

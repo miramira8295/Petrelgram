@@ -258,16 +258,22 @@ export class MessageStore {
   private initialHistoryState: string = 'loading'; // loading | ready | error
   private initialHistoryError: string = '';
   private olderPending: boolean = false;
-  // One older page is fetched after the first viewport settles, but kept as
+  // Two older pages are fetched after the first viewport settles, but kept as
   // raw TDLib data until the user reaches the top. Parsing/publishing it here
   // would rebuild media rows during the first scroll and recreate the jump the
   // prefetch is meant to avoid.
   private olderPrefetchPending: boolean = false;
   private olderPrefetchAnchorId: number = 0;
   private olderPrefetchResult: TdObject | null = null;
+  private olderPrefetchRemainderAnchorId: number = 0;
+  private olderPrefetchRemainder: TdObject | null = null;
   private olderPrefetchDemanded: boolean = false;
   private olderPrefetchEmptyRetries: number = OLDER_EMPTY_RETRIES;
   private olderPrefetchSeq: number = 0;
+  // onHistory notifies subscribers synchronously. While one cached page is
+  // being consumed, keep those callbacks from starting a duplicate prefetch
+  // before the second cached page has been promoted into the primary slot.
+  private olderPrefetchPromotionActive: boolean = false;
   private newerPending: boolean = false;
   // chat.last_message captured at open. TDLib can hang a LOCAL service message
   // (e.g. "您已加入此群组") off chat.last_message that getChatHistory never
@@ -863,6 +869,8 @@ export class MessageStore {
     this.olderPrefetchPending = false;
     this.olderPrefetchAnchorId = 0;
     this.olderPrefetchResult = null;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
     this.olderPrefetchDemanded = false;
     this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
     if (resetPromotedLoad) {
@@ -881,6 +889,78 @@ export class MessageStore {
     return false;
   }
 
+  private oldestMessageId(arr: TdObject[]): number {
+    let oldestId: number = 0;
+    for (const message of arr) {
+      const id: number = (message['id'] as number | undefined) ?? 0;
+      if (id > 0 && (oldestId === 0 || id < oldestId)) {
+        oldestId = id;
+      }
+    }
+    return oldestId;
+  }
+
+  private historyPageSlice(res: TdObject, messages: TdObject[]): TdObject {
+    const page: TdObject = { '@type': 'messages' };
+    page['messages'] = messages;
+    const totalCount: number | undefined = res['total_count'] as number | undefined;
+    if (totalCount !== undefined) {
+      page['total_count'] = totalCount;
+    }
+    return page;
+  }
+
+  private stageOlderPrefetch(res: TdObject, anchorId: number): void {
+    const arr: TdObject[] = (res['messages'] as TdObject[] | undefined) ?? [];
+    const pageSize: number = this.olderRequestLimit();
+    this.olderPrefetchAnchorId = anchorId;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
+    if (pageSize <= 1 || arr.length <= pageSize) {
+      this.olderPrefetchResult = res;
+      return;
+    }
+    const first: TdObject[] = arr.slice(0, pageSize);
+    const remainder: TdObject[] = arr.slice(pageSize - 1);
+    const remainderAnchorId: number = this.oldestMessageId(first);
+    this.olderPrefetchResult = this.historyPageSlice(res, first);
+    if (remainderAnchorId > 0) {
+      const remainderPage: TdObject = this.historyPageSlice(res, remainder);
+      if (this.olderPageHasEntry(remainderPage, remainderAnchorId)) {
+        this.olderPrefetchRemainderAnchorId = remainderAnchorId;
+        this.olderPrefetchRemainder = remainderPage;
+      }
+    }
+  }
+
+  private consumeStagedOlderPrefetch(): boolean {
+    if (this.olderPrefetchResult === null ||
+      this.olderPrefetchAnchorId !== this.oldestId) {
+      return false;
+    }
+    const anchorId: number = this.olderPrefetchAnchorId;
+    const res: TdObject = this.olderPrefetchResult;
+    const remainderAnchorId: number = this.olderPrefetchRemainderAnchorId;
+    const remainder: TdObject | null = this.olderPrefetchRemainder;
+    this.olderPrefetchAnchorId = 0;
+    this.olderPrefetchResult = null;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
+    this.olderPrefetchDemanded = false;
+    this.olderPrefetchPromotionActive = true;
+    this.applyOlderPage(res, anchorId);
+    this.olderPrefetchPromotionActive = false;
+    if (remainder !== null && remainderAnchorId === this.oldestId && this.hasMoreOlder) {
+      this.olderPrefetchAnchorId = remainderAnchorId;
+      this.olderPrefetchResult = remainder;
+      logI(`[StoreDiag] older prefetch promoted second anchor=${remainderAnchorId}` +
+        ` got=${((remainder['messages'] as TdObject[] | undefined) ?? []).length}`);
+    } else if (this.hasMoreOlder && this.initialFillTries === 0) {
+      this.prefetchOlder();
+    }
+    return true;
+  }
+
   // 向上翻页要几条。
   //
   // 首屏补链（initialFillTries > 0）仍走整页：那几次的目标是尽快铺满一屏，
@@ -889,6 +969,12 @@ export class MessageStore {
   private olderRequestLimit(): number {
     return this.initialFillTries > 0
       ? this.historyPageSize : Math.min(OLDER_PAGE, this.historyPageSize);
+  }
+
+  private olderPrefetchRequestLimit(): number {
+    const page: number = this.olderRequestLimit();
+    // 两页共享一条边界消息，所以 15 + 15 只需取 29 条。
+    return page > 1 ? page * 2 - 1 : page;
   }
 
   private applyOlderPage(res: TdObject, anchorId: number): void {
@@ -930,7 +1016,7 @@ export class MessageStore {
 
   private requestOlderPrefetch(anchorId: number, seq: number): void {
     this.olderPrefetchPending = true;
-    const req = this.historyRequest(anchorId, 0, this.olderRequestLimit());
+    const req = this.historyRequest(anchorId, 0, this.olderPrefetchRequestLimit());
     this.client.send(req).then((res: TdObject): void => {
       if (seq !== this.olderPrefetchSeq || anchorId !== this.oldestId) {
         return;
@@ -953,16 +1039,15 @@ export class MessageStore {
       }
       this.olderPrefetchPending = false;
       this.olderPrefetchEmptyRetries = OLDER_EMPTY_RETRIES;
+      this.stageOlderPrefetch(res, anchorId);
       if (this.olderPrefetchDemanded) {
-        this.olderPrefetchDemanded = false;
-        this.olderPrefetchAnchorId = 0;
         this.olderLoadState = 'idle';
-        this.applyOlderPage(res, anchorId);
+        this.consumeStagedOlderPrefetch();
         return;
       }
-      this.olderPrefetchResult = res;
       logI(`[StoreDiag] older prefetch ready anchor=${anchorId}` +
-        ` got=${((res['messages'] as TdObject[] | undefined) ?? []).length}`);
+        ` got=${((res['messages'] as TdObject[] | undefined) ?? []).length}` +
+        ` pages=${this.olderPrefetchRemainder === null ? 1 : 2}`);
     }).catch((e: TdError): void => {
       if (seq !== this.olderPrefetchSeq) {
         return;
@@ -984,9 +1069,12 @@ export class MessageStore {
     });
   }
 
-  // Warm one older page without changing the observable timeline. Repeated
+  // Warm two older pages without changing the observable timeline. Repeated
   // calls are cheap; ChatPage invokes this after its first anchor is latched.
   prefetchOlder(): boolean {
+    if (this.olderPrefetchPromotionActive) {
+      return true;
+    }
     if (this.olderPrefetchAnchorId !== 0 &&
       this.olderPrefetchAnchorId !== this.oldestId) {
       this.clearOlderPrefetch();
@@ -1006,6 +1094,51 @@ export class MessageStore {
     return true;
   }
 
+  // 把**已经取回、还没发布**的两页合成一次前插发布。停稳时用它代替 loadOlder()，
+  // 少撞一次"顶到头干等"的墙（真机实测那段等待 835~1187ms）。
+  //
+  // 【为什么必须合并，不能连发两次】连发的写法在真机上会跳页（2026-09-10）：
+  // 第一页发布后行数变了，而 onScrollIndex 还没来得及再上报，第二页的
+  // anchorIndexFresh 判据失败 → [PrependAnchor] skip reason=stale-index →
+  // 那一页毫无补偿地插在上面，内容整屏下推。
+  //
+  // 试过让第二页也能记锚点（发布后就地推进已上报下标），逻辑成立但真机上"更乱"，
+  // 已放弃——两页本来就来自**同一个请求**：stageOlderPrefetch 按 pageSize 把它切成
+  // first + remainder，且两者共用边界那一条（remainder = arr.slice(pageSize-1)）。
+  // 合回去时去掉重复的那一条，就还原成原始那一页。一次前插、一次锚点、一次 prime，
+  // 和单页路径完全同构。
+  //
+  // 手上没有两页时退化成普通 loadOlder()（含"一页都没预取"这种情况）。
+  loadOlderMerged(): boolean {
+    const first: TdObject | null = this.olderPrefetchResult;
+    const second: TdObject | null = this.olderPrefetchRemainder;
+    if (first === null || second === null || this.olderPrefetchAnchorId !== this.oldestId) {
+      return this.loadOlder();
+    }
+    const anchorId: number = this.olderPrefetchAnchorId;
+    const firstArr: TdObject[] = (first['messages'] as TdObject[] | undefined) ?? [];
+    const secondArr: TdObject[] = (second['messages'] as TdObject[] | undefined) ?? [];
+    // slice(1)：去掉与 first 末条重复的边界那一条。
+    const merged: TdObject[] = firstArr.concat(secondArr.slice(1));
+    const page: TdObject = this.historyPageSlice(first, merged);
+    this.olderPrefetchAnchorId = 0;
+    this.olderPrefetchResult = null;
+    this.olderPrefetchRemainderAnchorId = 0;
+    this.olderPrefetchRemainder = null;
+    this.olderPrefetchDemanded = false;
+    logI(`[StoreDiag] older merged anchor=${anchorId} got=${merged.length}` +
+      ` (${firstArr.length}+${secondArr.length}-1)`);
+    // 与 consumeStagedOlderPrefetch 同样的护栏：applyOlderPage 里的 notify 是同步的，
+    // 订阅回调会立刻再调 loadOlder——不挡住就是同帧自激环（jscrash 20260902143829）。
+    this.olderPrefetchPromotionActive = true;
+    this.applyOlderPage(page, anchorId);
+    this.olderPrefetchPromotionActive = false;
+    if (this.hasMoreOlder && this.initialFillTries === 0) {
+      this.prefetchOlder();
+    }
+    return true;
+  }
+
   loadOlder(): boolean {
     if (this.olderPrefetchAnchorId !== 0 &&
       this.olderPrefetchAnchorId !== this.oldestId) {
@@ -1013,13 +1146,7 @@ export class MessageStore {
     }
     if (this.olderPrefetchResult !== null &&
       this.olderPrefetchAnchorId === this.oldestId) {
-      const anchorId: number = this.olderPrefetchAnchorId;
-      const res: TdObject = this.olderPrefetchResult;
-      this.olderPrefetchAnchorId = 0;
-      this.olderPrefetchResult = null;
-      this.olderPrefetchDemanded = false;
-      this.applyOlderPage(res, anchorId);
-      return true;
+      return this.consumeStagedOlderPrefetch();
     }
     if (this.olderPrefetchPending &&
       this.olderPrefetchAnchorId === this.oldestId) {
@@ -2490,9 +2617,14 @@ export class MessageStore {
   // content signature (mutableSig), so a translation landing rebuilds exactly
   // that row.
 
-  applyTranslation(messageId: number, lang: string, text: string): void {
+  // entities 与 text 同来同去：译文的格式只能由译文自己的实体描述，套原文的
+  // 偏移会串位（见 MessageEntry.translatedEntities）。
+  applyTranslation(
+    messageId: number, lang: string, text: string, entities: TdObject[]
+  ): void {
     this.patch(messageId, (c: MessageEntry): void => {
       c.translatedText = text;
+      c.translatedEntities = entities;
       c.translatedLang = lang;
     });
   }
@@ -2513,6 +2645,7 @@ export class MessageStore {
       }
       const c = cloneMessage(m);
       c.translatedText = '';
+      c.translatedEntities = [];
       c.translatedLang = '';
       c.translationHidden = false;
       changed = true;
@@ -4125,6 +4258,18 @@ export class MessageStore {
       c.mediaDownloadActive = false;
       c.videoProgress = 0;
     });
+  }
+
+  // 这个视频文件是不是已经有人在管：正在为播放/查看下载（videoFileToMsg）、
+  // 用户点过下载（userRequestedFiles）、或进了下载管理器（managedFiles）。
+  //
+  // 供 services/VideoHeadPrefetcher 判"能不能碰"：带 limit 的 downloadFile 会
+  // **覆盖**同一文件在途下载的参数，播放器正在整份下的时候预取一发就把它夹成
+  // 2MB；反过来预取划走时若把被认领的文件取消，就掐断了用户正在看的东西。
+  // 所以被认领的既不能发预取、也不能取消。
+  isVideoFileClaimed(fileId: number): boolean {
+    return this.videoFileToMsg.has(fileId) || this.userRequestedFiles.has(fileId) ||
+      this.managedFiles.has(fileId);
   }
 
   // manage：进 TDLib 的下载管理器（用户要"留下"这个文件）。

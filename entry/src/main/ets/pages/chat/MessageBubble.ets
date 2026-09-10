@@ -100,6 +100,10 @@ const REPLY_THUMB_GAP: number = 6;
 const ALBUM_MAX_WIDTH: number = 280;
 const STICKER_MAX: number = 160;
 const LINK_PREVIEW_HEIGHT_RATIO: number = 0.62;
+// 频道/邀请卡片的小圆头像边长。
+const LINK_PREVIEW_THUMB: number = 58;
+// 链接预览卡片自己吃掉的横向空间：padding 左右各 9 + border-left 3。
+const LINK_CARD_CHROME_W: number = 21;
 // Quick reactions shown in the long-press menu's top row (tap the chevron to
 // open the full emoji picker).
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
@@ -311,9 +315,6 @@ export struct MessageBubble {
   // 读到即登记依赖；~60 个页面回调转 @Param（V2 禁止父层初始化无装饰器成员，
   // 编译错误 10905324），页面持有的引用全生命周期稳定，每帧只多恒等比较。
   private env: ChatEnvMirror = chatEnv;
-  // parseFormattedText 以 entities 数组身份做缓存。每个复用气泡保留一份空数组，
-  // 译文既不会误套原文实体，也不会和屏幕上其它译文争用同一个缓存槽。
-  private translationEntities: TdObject[] = [];
 
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
@@ -938,10 +939,12 @@ export struct MessageBubble {
       (this.data.animationForcePlay || (!this.env.powerSaving && !this.env.reduceAnim && this.env.autoplayGif));
   }
 
-  // The link preview card adds its own 8+8 horizontal padding on top of the
-  // bubble's, so content inside it needs a narrower cap than inlineMaxW().
+  // 卡片容器实测是 padding 左右各 9 + border({ width: { left: 3 } })，
+  // 内容盒 = inlineMaxW - 21。原来写的是 -16（注释说的 "8+8"，和真实的
+  // padding 对不上），大图因此常年压掉右侧 5vp 内边距——2026-09-10 探针里
+  // 那批 overflow=-5/-4 就是它。
   private cardMaxW(): number {
-    return this.inlineMaxW() - 16;
+    return this.inlineMaxW() - LINK_CARD_CHROME_W;
   }
 
   private mediaThumbW(): number {
@@ -1373,8 +1376,15 @@ export struct MessageBubble {
   }
 
   private displayedMessageEntities(original: TdObject[]): TdObject[] {
-    // TDLib 的实体偏移属于原文，不能套到另一段译文上。
-    return this.replacementTranslationShown() ? this.translationEntities : original;
+    // TDLib 的实体偏移属于原文，不能套到另一段译文上——译文用译文自己那份。
+    // 这里曾经返回一个**恒为空**的数组，于是译文一上屏就丢掉全部格式：加粗、
+    // 代码块，以及撑着"展开引用"的 textEntityTypeExpandableBlockQuote。
+    // 用户 2026-09-10 报的「翻译后被强制展开、样式被破坏」就是它。
+    // 服务端没给实体时这里仍是空数组，渲染层照旧自动识别链接（richText 的
+    // AUTO_LINK_RE 只在 entities 为空时才上场），和从前一致。
+    // 数组身份稳定（挂在 MessageEntry 上，每条消息一份），parseFormattedText
+    // 的按身份缓存不会串槽。
+    return this.replacementTranslationShown() ? this.msg.translatedEntities : original;
   }
 
   @Builder
@@ -2207,39 +2217,75 @@ export struct MessageBubble {
     .layoutWeight(compact ? 1 : 0);
   }
 
+  // 【为什么是两个零参 builder，而不是一个带宽高参数的】
+  // 原来是 linkPreviewImage(width, height, compact)。三个参数的 @Builder 走
+  // **按值传递**，官方原话：「按引用传递只在传入一个参数且该参数直接传入对象
+  // 字面量时生效，有多个参数时不支持 @Builder 函数内 UI 组件刷新」。
+  // 后果（2026-09-10 真机探针实测）：多选进出时卡片自己跟着 contentWidth 变
+  // 277→251，而这里的图片冻在首次求值的 261 —— 21 次采样宽度一次没变过，右缘
+  // 捅出卡片 22vp。零参 builder 没有参数可冻，直接内联进 linkPreviewCard 的
+  // 渲染域，跟着一起重算。
+  // 同一个坑本文件踩过一次：mediaLoadState 的 initialPercent（那次的解法是让
+  // LiveProgressRing 自己订阅）。albumMediaPlaceholder 是同一族，见下方注释。
+  //
+  // 小圆头像：58 定值，与 contentWidth 无关，所以这一支本来就不会越界。
   @Builder
-  linkPreviewImage(width: number, height: number, compact: boolean) {
+  linkPreviewThumb() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.msg.linkPhotoPath !== '') {
         Image(this.msg.linkPhotoPath.startsWith('/')
           ? `file://${this.msg.linkPhotoPath}` : this.msg.linkPhotoPath).draggable(false)
-          .width(width).height(height).objectFit(ImageFit.Cover)
+          .width(LINK_PREVIEW_THUMB).height(LINK_PREVIEW_THUMB).objectFit(ImageFit.Cover)
           .transition(TransitionEffect.OPACITY.animation({
             duration: this.effectDuration(180), curve: Curve.EaseOut
           }));
       } else {
         Column({ space: 5 }) {
           if (this.msg.linkPhotoFailed) {
-            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-              .fontSize(compact ? 20 : 24).fontColor([this.accent()]);
-            if (!compact) {
-              Text($r('app.string.mb_photo_load_failed')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-            }
+            SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(20).fontColor([this.accent()]);
           } else {
-            LoadingProgress()
-              .width(compact ? 22 : 26).height(compact ? 22 : 26).color(this.accent());
-            if (!compact && this.liveLinkPhotoProgress > 0 && this.liveLinkPhotoProgress < 100) {
+            LoadingProgress().width(22).height(22).color(this.accent());
+          }
+        }
+        .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+        .width(LINK_PREVIEW_THUMB).height(LINK_PREVIEW_THUMB)
+        .backgroundColor($r('app.color.surface_alt'));
+      }
+    }
+    .width(LINK_PREVIEW_THUMB).height(LINK_PREVIEW_THUMB)
+    .borderRadius(LINK_PREVIEW_THUMB / 2).clip(true);
+  }
+
+  // 大图：宽度必须跟着 cardMaxW() 走，所以一个参数都不能收。
+  @Builder
+  linkPreviewHero() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.msg.linkPhotoPath !== '') {
+        Image(this.msg.linkPhotoPath.startsWith('/')
+          ? `file://${this.msg.linkPhotoPath}` : this.msg.linkPhotoPath).draggable(false)
+          .width(this.cardMaxW()).height(this.linkPreviewH()).objectFit(ImageFit.Cover)
+          .transition(TransitionEffect.OPACITY.animation({
+            duration: this.effectDuration(180), curve: Curve.EaseOut
+          }));
+      } else {
+        Column({ space: 5 }) {
+          if (this.msg.linkPhotoFailed) {
+            SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(24).fontColor([this.accent()]);
+            Text($r('app.string.mb_photo_load_failed')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+          } else {
+            LoadingProgress().width(26).height(26).color(this.accent());
+            if (this.liveLinkPhotoProgress > 0 && this.liveLinkPhotoProgress < 100) {
               Text(`${this.liveLinkPhotoProgress}%`).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
             }
           }
         }
         .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
-        .width(width).height(height).backgroundColor($r('app.color.surface_alt'));
+        .width(this.cardMaxW()).height(this.linkPreviewH())
+        .backgroundColor($r('app.color.surface_alt'));
       }
     }
-    .width(width).height(height)
-    .borderRadius(compact ? Math.floor(width / 2) : 8)
-    .clip(true);
+    .width(this.cardMaxW()).height(this.linkPreviewH())
+    .borderRadius(8).clip(true);
   }
 
   // URL / Telegram preview card: compact avatar treatment for channel/invite
@@ -2251,13 +2297,13 @@ export struct MessageBubble {
       if (this.compactTelegramPreview()) {
         Row({ space: 10 }) {
           this.linkPreviewMeta(true);
-          this.linkPreviewImage(58, 58, true);
+          this.linkPreviewThumb();
         }
         .width(this.cardMaxW()).alignItems(VerticalAlign.Center);
       } else {
         this.linkPreviewMeta(false);
         if (this.msg.linkPhotoFileId !== 0) {
-          this.linkPreviewImage(this.cardMaxW(), this.linkPreviewH(), false);
+          this.linkPreviewHero();
           Blank().height(6);
         }
       }

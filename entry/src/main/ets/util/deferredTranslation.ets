@@ -1,3 +1,4 @@
+import { TdObject } from '../tdkit/TdTypes';
 // 滑动期间攒下来的译文，等列表停稳再落。纯函数式的小队列，无 IO。
 //
 // 【为什么要攒】译文让气泡变高，也就是**改布局**。手指还在滑或者列表还在惯性
@@ -12,6 +13,8 @@ export interface PendingTranslation {
   messageId: number;
   lang: string;
   text: string;
+  // 译文自己的实体，和 text 同来同去（见 MessageEntry.translatedEntities）。
+  entities: TdObject[];
 }
 
 // 加入/覆盖一条。不可变——返回新表。

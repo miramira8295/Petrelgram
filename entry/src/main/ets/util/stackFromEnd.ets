@@ -1,16 +1,27 @@
-// 聊天列表什么时候用底部锚定（List.stackFromEnd）。
+// List.stackFromEnd 同时做两件事：短内容底部对齐，以及插入 ListItem 时保持
+// "离末尾的距离"。第二件事不能用于可滚动的消息历史。官方 List API 明确写着，
+// stackFromEnd=true 时插入 ListItem 会把其上方的可见项整体往上移动；这正是用户
+// 停在末尾附近、底部收到新消息时整屏气泡闪动/移位的来源。
 //
-// stackFromEnd 的语义是"保住离底部的距离"。官方给它的场景是直播评论/即时聊天：
-// 底部插入一条，内容自动上滚把它露出来。这对**实时新消息**正好，对**往下翻历史**
-// 正好相反：用户停在已加载窗口的末尾触发翻页，追加 28 行进来，"离底部的距离 = 0"
-// 被保住，视口就跟着跑到新的末尾——真机上「往下拉新消息进度条很快到底、然后刷出
-// 一屏、进度条依然在最底下」就是它。手动补偿也救不了：补偿量到的是重排前的
-// 矩形（[AnchorRestore] dy=0），重排在那之后。
+// 因此它只服务于第一件事：上一份有效布局里所有行都同时可见，说明内容尚未铺满
+// 一屏，可以继续底部对齐。长列表即使正贴着实时末尾也关闭它；真正的实时跟随由
+// ChatPage 在 atBottom=true 时显式、延后到布局完成后 scrollEdge(Bottom)。
 //
-// 所以按「窗口有没有取到实时尾部」切换：
-//   还有更新的页（hasMoreNewer）→ 顶部锚定，两个方向的翻页都交给
-//     maintainVisibleContentPosition 保位置；
-//   已到实时尾部 → 底部锚定，新消息自动上滚、短会话贴底对齐。
-export function stackFromEndWanted(hasMoreNewer: boolean): boolean {
-  return !hasMoreNewer;
+// 这里故意读取 indexGroupsLen 描述的上一份布局，而不要求它等于刚发布的新长度：
+// 尾部追加的同一帧里 onScrollIndex 还没上报新长度，旧布局恰好才是判断“追加之前
+// 是否已经可滚动”的可靠证据。
+export function stackFromEndWanted(
+  hasMoreNewer: boolean,
+  visibleStartIdx: number,
+  visibleEndIdx: number,
+  indexGroupsLen: number
+): boolean {
+  if (hasMoreNewer) {
+    return false;
+  }
+  if (visibleStartIdx < 0 || visibleEndIdx < 0 || indexGroupsLen <= 0) {
+    // 首次布局仍从末尾开始；首屏落点逻辑随后会覆盖需要停在中段的场景。
+    return true;
+  }
+  return visibleStartIdx === 0 && visibleEndIdx >= indexGroupsLen - 1;
 }

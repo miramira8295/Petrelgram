@@ -39,6 +39,7 @@ import {
   MessageBubbleActions, MessageBubbleRenderData, ReusableMessageBubble
 } from './ReusableMessageBubble';
 import { PlaySlotDriver } from './PlaySlotDriver';
+import { VideoHeadPrefetcher, VideoRef } from '../../services/VideoHeadPrefetcher';
 import { shouldCompete, slotKey } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
@@ -137,8 +138,10 @@ import {
 import {
   KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY,
+  KEY_CURRENT_NETWORK_TYPE,
   KEY_POWER_SMOOTH_TRANSITIONS,
-  powerAnimationDuration
+  powerAnimationDuration,
+  powerSavingActive
 } from '../../store/AppSettings';
 // setTranslateOptedIn/translateOptedIn/translateOptedOut/setTranslateOptedOut
 // 与 getTranslationService/looksLikeTargetLanguage/resolveTranslateTarget 随
@@ -282,6 +285,10 @@ import { DICE_CHOICES, DiceChoice } from '../../util/diceChoices';
 import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind';
 // 别名保持原类名，4 处 new ChatPageFrameCallback(...) 调用点一字未动。
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
+import { bottomFollowShouldApply, bottomFollowShouldSchedule } from '../../util/bottomFollow';
+import { OLDER_TRIGGER_ROWS, olderTriggerHit } from '../../util/olderPaging';
+
+const CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S: number = 4200;
 
 // 锚点补偿：量不到锚点行时下一帧再量，最多几次、每次隔多久（见 restoreScrollAnchor）。
 
@@ -1147,9 +1154,11 @@ export struct ChatPage {
         onMediaRatio: (messageId: number, albumIndex: number, ratio: number,
           centerY: number): void => {
           this.playSlot.reportMedia(messageId, albumIndex, ratio, centerY);
+          this.videoPrefetch.reportMedia(messageId, albumIndex, ratio);
         },
         onMediaGone: (messageId: number, albumIndex: number): void => {
           this.playSlot.dropMedia(messageId, albumIndex);
+          this.videoPrefetch.dropMedia(messageId, albumIndex);
         },
         onPlaySlotPositionChanged: (messageId: number, _albumIndex: number,
           positionMs: number): void => {
@@ -1656,6 +1665,9 @@ export struct ChatPage {
   // 气泡进度表与两处查看器交接都在那边，页面只留下面两个 @Local（它们的读点在
   // prepareMessageBubble 的热路径上，搬走没有半径收益、只有一跳开销）。
   private playSlot: PlaySlotDriver = new PlaySlotDriver();
+  // 视频气泡出现即预取第一块、划走即暂停（见 services/VideoHeadPrefetcher）。
+  // 信号与播放位共用 onMediaRatio / onMediaGone，各取所需。
+  private videoPrefetch: VideoHeadPrefetcher = new VideoHeadPrefetcher();
   @Local playSlotKey: string = '';
   // 新上位的播放位从哪一毫秒起播。换届时从 bubblePositionMs 查一次（见
   // subscribe 回调），随 playSlotKey 一起下发给气泡——查看器交还的进度就是
@@ -1716,6 +1728,13 @@ export struct ChatPage {
   // A pending anchor correction yields while the list is still moving. This
   // keeps an in-flight page response from racing the active drag/fling.
   private timelineScrollActive: boolean = false;
+  // 新快照赋给父页面后，ChatTimelineHost/Repeat 要到后续布局帧才看见新长度。
+  // 用代次合并贴底请求，避免每条更新都对旧 totalCount 执行 scrollEdge。
+  private bottomLayoutFollowSeq: number = 0;
+  // 有一次贴底跟随排了还没点火。在途期间来的新消息要视为仍在底——那一刻
+  // atBottom 是假的，是因为上一条还没贴过去，不是用户离开了底部
+  //（判据与真机证据见 util/bottomFollow）。
+  private bottomFollowPending: boolean = false;
   // onScrollIndex 上报那一刻的 groups.length。行号只有配上它才有意义。
   private indexGroupsLen: number = -1;
   // 右下角「↓」的去向状态。它不是"回到底部"，而是"回到该继续看的地方"：
@@ -1753,10 +1772,16 @@ export struct ChatPage {
   private resumeDividerItemY: number = 0;
   private jumpLayoutSeq: number = 0;
   // One-shot gate for loading older pages: a fast fling to the very top used to
-  // chain-load page after page (the list stays pinned at the edge, so the
-  // trigger zone never clears). Re-armed when the user scrolls clear of the
-  // top zone or starts a new touch gesture.
+  // chain-load page after page. A prepend itself moves start out of the trigger
+  // zone, so re-arming there mistakes layout movement for user movement. Only a
+  // new touch gesture (or the short-content fill path) re-arms this gate.
   private olderArmed: boolean = true;
+  // 触顶发生在拖动/惯性期间时只预取，不立刻发布。顶插会重排 Repeat 的整份
+  // 下标表；等 List 停稳后再消费预取页，避免框架保位和手工锚点补偿夹在滚动帧里。
+  private olderLoadQueued: boolean = false;
+  // fillViewport 只解决首次内容短到无法滚动的场景。用户一旦实际碰过列表，后续
+  // onScrollIndex 的瞬态全范围值不能再借它重新上膛，否则一次手势又会连灌多页。
+  private initialViewportFillEnabled: boolean = true;
   // 向下分页的一次性闸，语义和上面的 olderArmed 一致：打一发就下膛，只有
   // 真实用户输入才重新上膛（见 util/pageGate）。
   //
@@ -2022,6 +2047,8 @@ export struct ChatPage {
     this.mediaSave.resetFileOpenIntent();
     this.musicQueue.reset();
     this.olderArmed = true;
+    this.olderLoadQueued = false;
+    this.initialViewportFillEnabled = true;
     this.newerGate = armedPageGate();
     this.freshSinceId = 0;
     this.freshClearSeq++;
@@ -2535,15 +2562,39 @@ export struct ChatPage {
       scroller: (): Scroller => this.scroller,
       userScrollOffsetTotal: (): number => this.userScrollOffsetTotal,
       timelineScrollActive: (): boolean => this.timelineScrollActive,
+      touchActive: (): boolean => this.listTouchActive,
       pendingJumpId: (): number => this.pendingJumpId,
       pendingScrollBottom: (): boolean => this.pendingScrollBottom,
       headerChromeHeight: (): number => this.headerChromeHeight(),
+      // 整屏高度而不是 List 的实测高度——和 :1384 那处同一个取舍，
+      // 这里只用来给"滑动中允许多大的修正"定一个数量级的尺。
+      viewportHeight: (): number => this.screenH,
       appendGateProbe: (groups: AlbumGroup[]): string => this.appendAnchorGateProbe(groups)
     });
     // The navigation/build frame owns the main thread; chat stickers can start
     // only after the initial row gate has settled.
     this.chatTgsStageSettling = true;
     this.syncChatTgsGate();
+    this.videoPrefetch.bind({
+      client: (): TdClient => getTdClient(),
+      videoAt: (messageId: number, _albumIndex: number): VideoRef | null => {
+        const m = this.messages.find((e: MessageEntry): boolean => e.id === messageId);
+        // GIF/动图走自己的自动播放路径，整份都会下，不归预取管。
+        if (m === undefined || m.videoFileId === 0 || m.isAnimation) {
+          return null;
+        }
+        return { fileId: m.videoFileId, fileSize: m.videoFileSize, local: m.videoPath !== '' };
+      },
+      // store 还没就绪就当作已被认领：宁可不预取，也别夹了别人的下载。
+      // 查看器当前那条的视频也算已认领：它的流式下载走 VideoStreamSession 自己的
+      // downloadFile，不经过 MessageStore 的归属集合，光靠 store 判不出来。
+      fileClaimed: (fileId: number): boolean =>
+        (this.store?.isVideoFileClaimed(fileId) ?? true) ||
+        this.messages.some((e: MessageEntry): boolean =>
+          e.id === this.viewerMsgId && e.videoFileId === fileId),
+      network: (): string => AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other',
+      powerSaving: (): boolean => powerSavingActive()
+    });
     this.playSlot.bind({
       viewerMsgId: (): number => this.viewerMsgId,
       pageVisible: (): boolean => this.pageVisible,
@@ -3032,7 +3083,8 @@ export struct ChatPage {
           prependAnchorY = y;
           prependAnchorUserOffset = this.userScrollOffsetTotal;
           primePrependAnchor = shouldPrimePrependAnchor(
-            visibleIndex, y, this.headerChromeHeight(), this.listTouchActive);
+            visibleIndex, y, this.headerChromeHeight(), this.listTouchActive,
+            this.timelineScrollActive);
           this.anchor.captureAnchorOffset();
           logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
             ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
@@ -3246,7 +3298,8 @@ export struct ChatPage {
       this.applyFirstScreenLanding(list, groups, maxId, fillPending);
     } else if (!positionHandled && this.didInitialScroll && maxId > this.lastMaxId) {
       this.followNewTailIfAtBottom(maxId, notifyKind);
-    } else if (this.didInitialScroll && this.atBottom && !this.stayAtUnread && !this.viewerOpen()
+    } else if (this.didInitialScroll && (this.atBottom || this.bottomFollowPending) &&
+      !this.stayAtUnread && !this.viewerOpen()
       && (this.store === null || !this.store.getHasMoreNewer())) {
       // In-place content growth (thumbnails, reply quotes, forward headers
       // filling in async) changes row heights; when the user is at the
@@ -3254,7 +3307,7 @@ export struct ChatPage {
       // glue while unloaded newer pages exist — being at the window's edge
       // there is NOT the live tail, and gluing chain-loads every page.
       // Also never move the underlying list while the media viewer is open.
-      this.glueBottom('L1252');
+      this.scheduleBottomAfterLayout('L1252');
     }
   }
 
@@ -3337,10 +3390,49 @@ export struct ChatPage {
     // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
     // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
     // 顶是官方行为，不该被它挡住——真机日志：atBottom=true stayAtUnread=true 不跟随。
-    if (notifyKind === 'update' && this.atBottom && !this.viewerOpen()) {
+    if (notifyKind === 'update' &&
+      bottomFollowShouldSchedule(this.atBottom, this.bottomFollowPending, this.viewerOpen())) {
       this.stayAtUnread = false;
-      this.glueBottom('L1242');
+      this.scheduleBottomAfterLayout('L1242');
     }
+  }
+
+  private scheduleBottomAfterLayout(tag: string): void {
+    const seq: number = ++this.bottomLayoutFollowSeq;
+    this.bottomFollowPending = true;
+    setTimeout((): void => {
+      const superseded: boolean = seq !== this.bottomLayoutFollowSeq;
+      if (!superseded) {
+        // 被取代的那次不清标志：标志归最新的那次排期管。
+        this.bottomFollowPending = false;
+      }
+      // **点火时不问 atBottom**：它翻假正是这次追加造成的——新行落在视口下方，
+      // isAtEnd() 立刻变假——恰恰是要跟随的那件事。原来这里多一个
+      // `!this.atBottom`，真机上全程没有一条 apply tag=L1242，视口卡在 31 行、
+      // 行数涨到 42（用户："消息在最底下，但是不会往上顶消息列表了"）。
+      if (!bottomFollowShouldApply({
+        superseded: superseded,
+        touchActive: this.listTouchActive,
+        scrollActive: this.timelineScrollActive,
+        viewerOpen: this.viewerOpen(),
+        hasMoreNewer: this.store !== null && this.store.getHasMoreNewer()
+      })) {
+        if (!superseded) {
+          logW(`[BottomFollow] skip tag=${tag} touch=${this.listTouchActive}` +
+            ` scroll=${this.timelineScrollActive} viewer=${this.viewerOpen()}` +
+            ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}`);
+        }
+        return;
+      }
+      logW(`[BottomFollow] apply tag=${tag} endIdx=${this.curEndIdx}` +
+        ` idxLen=${this.indexGroupsLen} rows=${this.groups.length}`);
+      this.glueBottom(tag);
+      setTimeout((): void => {
+        if (seq === this.bottomLayoutFollowSeq) {
+          this.refreshAtBottom();
+        }
+      }, 60);
+    }, 32);
   }
 
   private consumeJumpToLatestIntent(list: MessageEntry[], groups: AlbumGroup[],
@@ -3636,7 +3728,7 @@ export struct ChatPage {
       },
       clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
       clearSlotTick: (): void => { this.playSlot.clearTick(); },
-      suspendPlaySlots: (): void => { this.playSlot.suspend(); }
+      suspendPlaySlots: (): void => { this.playSlot.suspend(); this.videoPrefetch.suspend(); }
     });
   }
 
@@ -3648,11 +3740,12 @@ export struct ChatPage {
       syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
       clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
       clearSlotTick: (): void => { this.playSlot.clearTick(); },
-      suspendPlaySlots: (): void => { this.playSlot.suspend(); }
+      suspendPlaySlots: (): void => { this.playSlot.suspend(); this.videoPrefetch.suspend(); }
     });
   }
 
   private handleShown(): void {
+    this.videoPrefetch.resume();
     const state: ChatPageShownState = {
       hiddenSinceMs: this.hiddenSinceMs,
       appWentBackground: this.appWentBackground,
@@ -3754,6 +3847,7 @@ export struct ChatPage {
     // 下载得在这里也停掉，否则回到列表页它还在后台跑。
     this.releasePlaybackRequests();
     this.playSlot.dispose();
+    this.videoPrefetch.dispose();
     this.subscriptions.clear('playSlot');
     this.clearNowSecTimer();
     this.subscriptions.clear('chatAction');
@@ -4252,6 +4346,7 @@ export struct ChatPage {
     logW(`[Viewer] handoff dir=from-viewer id=${viewerMessageId}` +
       ` albumIndex=${handoffAlbumIdx} posMs=${Math.round(this.viewerPositionMs)}`);
     this.playSlot.handoffFromViewer(viewerMessageId, handoffAlbumIdx, this.viewerPositionMs);
+    this.videoPrefetch.resume();
     // 与打开同一把闸，理由见 openViewer 里那段说明。
     const duration: number = this.chatEffectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 260);
     this.viewerClosing = true;
@@ -4534,11 +4629,56 @@ export struct ChatPage {
   private maybeLoadOlder(): void {
     // 诊断：用户报"999+ 却滑不动"，而日志里 loadOlder 一次都没被调用过——
     // 需要看清是没被叫、还是被 olderArmed 挡住、还是 store 拒绝。
-    if (this.olderArmed && this.store !== null) {
-      const started = this.store.loadOlder();
-      if (started || !this.store.getHasMoreOlder()) {
-        this.olderArmed = false;
-      }
+    const store: MessageStore | null = this.store;
+    if (!this.olderArmed || store === null) {
+      return;
+    }
+    if (this.timelineScrollActive || this.listTouchActive) {
+      this.olderArmed = false;
+      this.olderLoadQueued = true;
+      // 保留网络提前量，但 prefetchOlder 不会发布消息快照。
+      store.prefetchOlder();
+      logW(`[OlderGate] queued active=${this.timelineScrollActive}` +
+        ` touch=${this.listTouchActive} start=${this.curStartIdx}` +
+        ` rows=${this.groups.length}`);
+      return;
+    }
+    // 停稳：两页在手就**合成一次**前插发布（见 MessageStore.loadOlderMerged）。
+    // 连发两次会让第二页撞上 stale-index、整页无补偿地插进来——那正是跳页。
+    const started: boolean = store.loadOlderMerged();
+    if (started || !store.getHasMoreOlder()) {
+      this.olderArmed = false;
+    }
+  }
+
+  // **松手即发**，不等惯性跑完（2026-09-10）。
+  //
+  // 等停稳的代价是白等整个惯性时长：真机实测撞顶到历史出现 835 / 1053 / 1187ms，
+  // 数据其实早在手上（older prefetch ready），纯粹被这道闸压着——用户报"卡在那"。
+  //
+  // 【惯性中一次程序性滚动都不发】试过在惯性里 prime：位置全对（dy=0），
+  // 但 scrollToIndex 会打断正在跑的滚动动画，用户报"页面被拉住一下"。
+  // 所以现在惯性中既不 prime、也不做事后补偿，**位置全交给框架的
+  // maintainVisibleContentPosition**——同一轮的漂移探针支持这么赌：
+  // 用户静止时 drift 恒为 0，框架在这条路上没有失手。
+  // 惯性结束后 onScrollStop 仍会走一次静止路径，那时该补的还能补上。
+  //
+  // 手指仍按着时**照旧不发**：那时用户正在主动控制位置，任何程序性滚动都是抢。
+  private flushQueuedOlderLoad(): void {
+    if (!this.olderLoadQueued || this.listTouchActive) {
+      return;
+    }
+    this.olderLoadQueued = false;
+    const store: MessageStore | null = this.store;
+    if (store === null) {
+      return;
+    }
+    const started: boolean = store.loadOlderMerged();
+    logW(`[OlderGate] flush started=${started} start=${this.curStartIdx}` +
+      ` rows=${this.groups.length}`);
+    if (!started && store.getHasMoreOlder()) {
+      // 请求若被另一条在途事务拒绝，下一次手势仍可重试。
+      this.olderArmed = true;
     }
   }
 
@@ -4555,7 +4695,7 @@ export struct ChatPage {
   // 用户停在底部时也会一路往上补页，正是"带未读进会话立刻下滑却滑不动"的直接
   // 成因之一。
   private fillViewportIfNeeded(): void {
-    if (this.store === null) {
+    if (this.store === null || !this.initialViewportFillEnabled) {
       return;
     }
     const fill: boolean = shouldFillViewport({
@@ -4801,7 +4941,12 @@ export struct ChatPage {
   }
 
   private stackFromEndWanted(): boolean {
-    return stackFromEndWanted(this.store !== null && this.store.getHasMoreNewer());
+    return stackFromEndWanted(
+      this.store !== null && this.store.getHasMoreNewer(),
+      this.curStartIdx,
+      this.curEndIdx,
+      this.indexGroupsLen
+    );
   }
 
   private onScrollFabTap(): void {
@@ -7278,9 +7423,66 @@ export struct ChatPage {
     }
   }
 
+  // Repeat and the reusable row must belong to the same custom-component owner.
+  // ChatTimelineHost used to own List/Repeat while this page-owned @Builder
+  // created each row. On array updates ArkUI then tried to recycle a ChatPage
+  // child through ChatTimelineHost, producing "changing parent (unsafe
+  // operation)", stale child ids, and a visible whole-window flash.
+  //
+  // Keep the complete List subtree in one @LocalBuilder. ChatTimelineHost calls
+  // it only as an overlay slot; @LocalBuilder pins the component/state parent to
+  // ChatPage even though the call site lives in that child component.
+  @LocalBuilder
+  timelineList() {
+    List({ scroller: this.scroller }) {
+      Repeat<AlbumGroup>(this.timelineSnapshot.groups)
+        .each((ri: RepeatItem<AlbumGroup>) => {
+          this.timelineRow(ri);
+        })
+        .key((group: AlbumGroup): string => this.rowKeyOf(group))
+        // Repeat owns the ListItem root, so let it reuse that complete subtree.
+        // Forcing reusable=false delegates scrolling reuse to the nested
+        // @ReusableV2 bubble. During a history prepend that bubble is then
+        // detached from one Repeat node and attached to another, which ArkUI
+        // reports as setChild/changing-parent and renders as a row flash.
+        // Repeat reuse updates the complete RepeatItem binding; the bubble's
+        // @Monitor('group') reattaches its presentation subscription.
+        .virtualScroll({ totalCount: this.timelineSnapshot.groups.length, reusable: true });
+    }
+    .width('100%').height('100%')
+    .opacity(this.initialTimelineMasked ? 0 : 1)
+    .contentStartOffset(this.headerChromeHeight())
+    .contentEndOffset(this.bottomChromeH + 8)
+    .cachedCount(this.listCachedCount)
+    // Media-heavy frames can make a short release look like an 8-9k vp/s
+    // fling. Cap only the inertial phase; direct finger tracking is unchanged.
+    .flingSpeedLimit(CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S)
+    // maintainVisibleContentPosition only protects insertions above the visible
+    // area. stackFromEndWanted separately disables end anchoring once the list
+    // is scrollable, so tail appends cannot move a parked viewport.
+    .maintainVisibleContentPosition(true)
+    .stackFromEnd(this.stackFromEndWanted())
+    .onReachStart((): void => { this.maybeLoadOlder(); })
+    .onTouch((event: TouchEvent): void => { this.handleTimelineTouch(event); })
+    .onScrollIndex((start: number, end: number): void => {
+      this.handleTimelineScrollIndex(start, end);
+    })
+    .onWillScroll((offset: number, state: ScrollState, source: ScrollSource): void => {
+      this.handleTimelineWillScroll(offset, state, source);
+    })
+    .onDidScroll((offset: number, state: ScrollState): void => {
+      this.handleTimelineDidScroll(offset, state);
+    })
+    .onScrollStart((): void => { this.handleTimelineScrollStart(); })
+    .onScrollStop((): void => { this.handleTimelineScrollStop(); })
+    .onAreaChange((_old: Area, area: Area): void => {
+      this.handleTimelineAreaChange(area);
+    });
+  }
+
   // Repeat supplies the complete item metadata here. Keeping the row builder
   // on the page preserves the existing message-bubble/reuse and selection
-  // behavior while ChatTimelineHost owns only the scrolling shell.
+  // behavior.
   @Builder
   timelineRow(ri: RepeatItem<AlbumGroup>) {
     ListItem() {
@@ -7469,6 +7671,9 @@ export struct ChatPage {
 
   private handleTimelineTouch(e: TouchEvent): void {
     if (e.type === TouchType.Down) {
+      this.bottomLayoutFollowSeq++;
+      this.bottomFollowPending = false;
+      this.initialViewportFillEnabled = false;
       this.finishInitialMessageStageForInteraction();
       this.imeTailPinned = false;
       this.imeLayoutSeq++;
@@ -7478,6 +7683,9 @@ export struct ChatPage {
       this.closeBottomPanels();
     } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
       this.listTouchActive = false;
+      // 到达绝对顶部后的剩余 active 是边缘回弹。此时 shouldPrimePrependAnchor
+      // 会在发布前按住首行，可立即消费已预取页，不必再等完整个回弹周期。
+      setTimeout((): void => { this.flushQueuedOlderLoad(); }, 0);
     }
   }
 
@@ -7501,9 +7709,7 @@ export struct ChatPage {
       this.translation.drive(this.translateChatsEnabled, start, end);
     }
     this.syncMediaWindow(start, end);
-    if (start > 4) {
-      this.olderArmed = true;
-    } else {
+    if (olderTriggerHit(start, OLDER_TRIGGER_ROWS)) {
       this.maybeLoadOlder();
     }
     if (reachedNewerPageTrigger(end, this.groups.length)) {
@@ -7558,6 +7764,9 @@ export struct ChatPage {
     this.driveVisibleWork();
     this.playSlot.armSettle();
     this.capMessageReuseBuckets();
+    // MessageStore may consume a ready prefetch synchronously. Do not publish
+    // that snapshot from inside ArkUI's scroll callback/update pass.
+    setTimeout((): void => { this.flushQueuedOlderLoad(); }, 0);
   }
 
   private handleTimelineAreaChange(area: Area): void {
@@ -7582,12 +7791,9 @@ export struct ChatPage {
         Stack() {
         ChatTimelineHost({
           timeline: this.timelineSnapshot,
-          scroller: this.scroller,
           initialTimelineMasked: this.initialTimelineMasked,
           headerStartOffset: this.headerChromeHeight(),
           bottomChromeH: this.bottomChromeH,
-          listCachedCount: this.listCachedCount,
-          stackFromEnd: this.stackFromEndWanted(),
           threadRootId: this.threadRootId,
           membershipState: this.membershipState,
           screenW: this.screenW,
@@ -7596,20 +7802,7 @@ export struct ChatPage {
           materialEpoch: this.materialEpoch,
           flash: this.flash,
           timelineTopMargin: this.headerChromeHeight() + 8,
-          timelineRow: (ri: RepeatItem<AlbumGroup>): void => { this.timelineRow(ri); },
-          rowKey: (group: AlbumGroup): string => this.rowKeyOf(group),
-          onTimelineReachStart: (): void => { this.maybeLoadOlder(); },
-          onTimelineTouch: (e: TouchEvent): void => { this.handleTimelineTouch(e); },
-          onTimelineScrollIndex: (start: number, end: number): void => { this.handleTimelineScrollIndex(start, end); },
-          onTimelineWillScroll: (_offset: number, _state: ScrollState, source: ScrollSource): void => {
-            this.handleTimelineWillScroll(_offset, _state, source);
-          },
-          onTimelineDidScroll: (offset: number, state: ScrollState): void => {
-            this.handleTimelineDidScroll(offset, state);
-          },
-          onTimelineScrollStart: (): void => { this.handleTimelineScrollStart(); },
-          onTimelineScrollStop: (): void => { this.handleTimelineScrollStop(); },
-          onTimelineAreaChange: (area: Area): void => { this.handleTimelineAreaChange(area); },
+          timelineList: this.timelineList,
           onEmptyRetry: (): void => { this.store?.retryInitialHistory(); },
           // mode 由宿主传上来——它是**用户实际看到的那枚 pill** 算出来的。
           // 页面自己重算过一版，读的是活字段而不是发布出去的快照，两者会分叉

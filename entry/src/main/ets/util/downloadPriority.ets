@@ -15,6 +15,10 @@
 
 export const MEDIA_PREFETCH_PRIORITY: number = 8;
 export const THUMBNAIL_PRIORITY: number = 16;
+// 视频气泡出现即预取的头块/尾块：与缩略图同档（用户 2026-09-09："提高一下优先级吧，
+// 和缩略图一样"）。原来是 8，蜂窝下等到轮到它时用户早点开了。仍低于 24/32，
+// 不会抢用户主动要的和正在看的。
+export const VIDEO_HEAD_PREFETCH_PRIORITY: number = THUMBNAIL_PRIORITY;
 export const MEDIA_USER_PRIORITY: number = 24;
 // 最高档。**本文件之外还有两处也在用 32**，它们各自持有自己的字面量、本次
 // 没有改动，但含义与这一档相同，改档位时要一并考虑：

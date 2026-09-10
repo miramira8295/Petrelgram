@@ -65,21 +65,46 @@ export function shouldCapturePrependAnchor(input: PrependAnchorCaptureInput): bo
   return input.didInitialScroll && input.anchorIndexFresh && input.olderPageGrowth;
 }
 
-// When the user has stopped at the absolute history boundary, waiting for a
-// network page before restoring the anchor is visible: the prepended rows are
-// painted first and the later correction looks like a page jump. Prime only
-// this unambiguous state. ArkUI keeps scrollActive=true during the edge spring
-// after the finger is released, so gate on an actual touch instead. The device
-// trace shows the resting first row at 152.857vp and the spring at 159.342vp.
-const PREPEND_TOP_UNDERTRAVEL_VP: number = 1;
-const PREPEND_TOP_OVERTRAVEL_VP: number = 12;
-
+// 发布前**同帧预定位**（prime）：不等新快照排完版再量，直接
+// scrollToIndex(idx, START, extraOffset = -itemY + chrome) 把锚点行按回原位。
+// 用户看不到中间态。
+//
+// 【为什么必须有它】不 prime 就只能事后量，而 older 页前插 15 行 ≈ 一屏，
+// 锚点行被推出可视区，getItemRect 量不到（真机 7/8 走 fallback），两次重试
+// 白等 ~150ms 后落到 reposition 硬拉回来——位置最终正确，过程可见。
+// 2026-09-10 的真机日志（petrelgram-log-…-0824）里 7 次上翻 7 次是这个形状：
+//   hold idx=0 y=152.857 prime=false → retry ×2 → reposition extraOffset=0
+// 用户报"上翻历史还是跳/闪一下"，指的就是它。
+//
+// 【为什么曾被整个关掉】担心 scrollToIndex 在惯性中是硬跳。顾虑对，但一刀切
+// 连静止那一档也关了——而静止时根本没有惯性可打断，且现在的替代路径
+// （reposition）用的是同一个 scrollToIndex，只是晚 150ms 发，等于把"看不见"
+// 换成了"看得见"。所以按滚动态分档，不再一刀切。
+//
+// 【只影响历史分支】全仓唯一调用点是 ChatPage.capturePrependAnchorSample；
+// primeBeforeLayout 只流经 restorePrependAnchor，restoreAppendAnchor 不传。
 export function shouldPrimePrependAnchor(
-  visibleIndex: number, itemY: number, headerChromeHeight: number, touchActive: boolean
+  _visibleIndex: number, _itemY: number, _headerChromeHeight: number,
+  touchActive: boolean, scrollActive: boolean
 ): boolean {
-  return !touchActive && visibleIndex === 0 &&
-    itemY >= headerChromeHeight - PREPEND_TOP_UNDERTRAVEL_VP &&
-    itemY <= headerChromeHeight + PREPEND_TOP_OVERTRAVEL_VP;
+  // 手指还按在列表上：绝不抢滚动位置。
+  if (touchActive) {
+    return false;
+  }
+  // 【手指抬起之后一律 prime，含惯性与顶部回弹】
+  //
+  // 2026-09-10 把三种组合全试了一遍，这是位置唯一不飘的那种：
+  //   停稳发布 + 静止 prime  → 位置✅ 手感✅，但要白等惯性跑完（真机 835~1187ms）
+  //   松手发布 + 惯性 prime  → 位置✅ 手感⚠（"页面被拉住一下"）← 现在这版
+  //   松手发布 + 零程序滚动  → 位置❌（"飘 / 甩页"）手感✅
+  //     那一版实测：5 次全部 mode=fallback——不 prime，锚点行被 29 行推出可视区，
+  //     两次重试也量不回来，连补偿量都测不到；userDelta 达 551/1033。
+  //     指望 maintainVisibleContentPosition 自己兜住，落空了。
+  //
+  // 物理上没有第四种：29 行插在上面就是一屏多的位移，不补就在，补就得动。
+  // prime 的好处是**同帧、不依赖测量**——位移由发布前记下的 itemY 算出来，
+  // 惯性中同样成立；代价是 scrollToIndex 会打断正在跑的滚动动画。
+  return true;
 }
 
 // onDidScroll/onWillScroll report a positive offset when content moves upward.
@@ -92,13 +117,54 @@ export function anchorYAfterUserScroll(
   return capturedY - (userOffsetNow - userOffsetAtCapture);
 }
 
-// A controller correction must never race a live drag/fling. Even when the
-// target includes the user's offset, applying a multi-screen scrollBy in one
-// layout frame turns smooth inertia into a visible page jump. Older-page loads
-// are normally deferred until scroll stop; this guard covers an already
-// in-flight request that happens to publish while the list is moving.
-export function canApplyAnchorRestore(scrollActive: boolean, userDelta: number): boolean {
-  return !scrollActive && Math.abs(userDelta) < 0.5;
+// 能不能把这次锚点修正应用下去。
+//
+// 【判据按修正量，不按"用户在不在滑"】原来是 `!scrollActive && |userDelta|<0.5`
+// ——滑动中一律拒绝。那把采样侧的意图整个作废了：
+// ChatPage.capturePrependAnchorSample 的注释写着"即使用户仍在滑也要记锚点；
+// 后面的 userScrollOffset 会保留采样后的真实手势位移，只抵消数据/布局造成的
+// 跳动"。两处一个记一个扔，等于白记。
+//
+// userDelta 早就被 anchorYAfterUserScroll 折进 targetY 了，所以传进来的
+// correction（= planAnchorRestore 算出的 dy）**纯粹是数据/布局造成的残差**，
+// 拦它就是放任跳动。2026-09-09 真机 hilog 里同一形状出现三次：
+//
+//   [StoreDiag]     onHistory kind=older got=15 rowsBefore=46
+//   [PrependAnchor] hold idx=4 y=-35.3 rows=44->58 active=true
+//   [AnchorRestore] skip reason=user-scroll active=true userDelta=0
+//
+// 往上插 15 行把视口内容整体下推，补偿被跳过——用户报"滑动过程中跳消息"。
+// 第三行的 userDelta=0 尤其说明问题：用户其实一点没动，只是列表还在惯性里。
+//
+// 【原来那个顾虑仍然成立】所以保留它，只是换了维度：滑动中只做一屏以内的修正。
+// 另外**滑动中只放行 delta 支**——fallback 那支走的是 scrollToIndex，
+// 一步定位在惯性中就是硬跳，调用方负责不把它传进来。
+//
+// 【为什么不怕重复补偿】框架的 maintainVisibleContentPosition 若已经保住了位置，
+// planAnchorRestore 量到的 rect.y 就等于 targetY，correction ≈ 0，这里放行也是
+// 个空操作。它只在框架没保住时才真的动（媒体相册跨页并入那种，见
+// ChatPage.capturePrependAnchorSample 的说明）。
+// 滚动中允许的最大修正量（相对视口高度）。一屏以内补回去看不出接缝；
+// 多屏的多半是采样过期的病态值，那种情况下补偿本身就是一次可见的整页跳。
+const SCROLLING_CORRECTION_MAX_RATIO: number = 1;
+
+export function canApplyAnchorRestore(
+  scrollActive: boolean, userDelta: number,
+  correction: number, viewportHeight: number
+): boolean {
+  // 静止：userDelta 已被 anchorYAfterUserScroll 折进 targetY，剩下的纯粹是
+  // 数据/布局造成的残差，一律补，不设幅度上限（没有惯性可打断）。
+  if (!scrollActive) {
+    return true;
+  }
+  // 滚动中：prime 已经在同帧把位置按回去了，这里只补 prime 之后的小残差。
+  // 幅度封顶仍然保留——一次多屏的 scrollBy 在惯性中就是看得见的整页跳
+  // （2026-09-10 试过"滚动中一律不补"，结果是位置飘/甩页，见
+  //  shouldPrimePrependAnchor 的三格对照）。
+  if (viewportHeight <= 0) {
+    return false;
+  }
+  return Math.abs(correction) <= viewportHeight * SCROLLING_CORRECTION_MAX_RATIO;
 }
 
 // 小于半个 vp 的残差不值得发一次滚动指令：它在屏幕上不可见，却会白白走一遍

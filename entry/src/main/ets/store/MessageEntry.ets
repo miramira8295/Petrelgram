@@ -118,6 +118,10 @@ export interface MessageEntry {
   // 译文属于展示层缓存而非消息内容，消息被编辑后由 editDate 变化使其失效
   // （TranslationService 的缓存键含 editDate）。
   translatedText: string;
+  // 译文自己的实体。TDLib 的 translateMessageText 回的是 formattedText，
+  // 加粗/链接/代码/可折叠引用都在这里；原文的实体偏移**不能**套到译文上，
+  // 所以译文必须自带一份。空数组 = 服务端没给格式，渲染层会照常自动识别链接。
+  translatedEntities: TdObject[];
   translatedLang: string;       // 译文对应的目标语言码，防止切目标语言后误用
   translationHidden: boolean;
   audioTitle: string;           // music metadata; '' falls back to file name
@@ -284,7 +288,8 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     mediaDownloadActive: m.mediaDownloadActive,
     voiceWaveform: m.voiceWaveform, voiceListened: m.voiceListened,
     speechState: m.speechState, speechText: m.speechText,
-    translatedText: m.translatedText, translatedLang: m.translatedLang,
+    translatedText: m.translatedText, translatedEntities: m.translatedEntities,
+    translatedLang: m.translatedLang,
     translationHidden: m.translationHidden,
     audioTitle: m.audioTitle, audioPerformer: m.audioPerformer,
     stickerFileId: m.stickerFileId, stickerFormat: m.stickerFormat,
@@ -1082,6 +1087,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     // buildMessageEntry 重建条目（内容更新/发送成功）时译文清空，由可见范围
     // 驱动器按新内容重新翻译。
     translatedText: '',
+    translatedEntities: [],
     translatedLang: '',
     translationHidden: false,
     audioTitle: c.audioTitle ?? '',

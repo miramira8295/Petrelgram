@@ -8,7 +8,7 @@ import {
 // 译文让气泡变高就是改布局，滑动中改必然跳。
 
 function t(id: number, text: string = 'x'): PendingTranslation {
-  return { messageId: id, lang: 'zh', text: text };
+  return { messageId: id, lang: 'zh', text: text, entities: [] };
 }
 
 function ids(list: PendingTranslation[]): string {

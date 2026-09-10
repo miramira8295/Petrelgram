@@ -6,9 +6,13 @@ import { logE, logW } from '../util/log';
 const STREAM_PRIORITY: number = 32;
 const CHUNK_SIZE: number = 1024 * 1024;
 const LOW_WATER_BYTES: number = 2 * CHUNK_SIZE;
-const HIGH_WATER_BYTES: number = 6 * CHUNK_SIZE;
-const PREPARE_HEAD_BYTES: number = 2 * CHUNK_SIZE;
-const PREPARE_TAIL_BYTES: number = CHUNK_SIZE;
+// **导出**给 util/videoPrefetchPolicy：start() 起手就 ensureRange(0, HIGH_WATER)，
+// 预取的头块对齐到它，起播的整个请求集才都命中本地。
+export const HIGH_WATER_BYTES: number = 6 * CHUNK_SIZE;
+// **导出**给 util/videoPrefetchPolicy：气泡出现时预取的就是这两块，两边必须
+// 是同一个数——复制一份早晚漂移，漂了预取就白做。
+export const PREPARE_HEAD_BYTES: number = 2 * CHUNK_SIZE;
+export const PREPARE_TAIL_BYTES: number = CHUNK_SIZE;
 const STREAM_REQUEST_TIMEOUT_MS: number = 60000;
 const MAX_REQUEST_RETRIES: number = 5;
 

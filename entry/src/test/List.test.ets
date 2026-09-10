@@ -246,6 +246,11 @@ import scrollAnchorControllerTest from './ScrollAnchorController.test';
 import membershipSessionTest from './MembershipSession.test';
 import videoGesturesTest from './VideoGestures.test';
 import systemVolumeTest from './SystemVolume.test';
+import videoPrefetchPolicyTest from './VideoPrefetchPolicy.test';
+import videoHeadPrefetcherTest from './VideoHeadPrefetcher.test';
+import bottomFollowTest from './BottomFollow.test';
+import olderPagingTest from './OlderPaging.test';
+import netBearerTest from './NetBearer.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -489,6 +494,11 @@ export default function testsuite() {
   membershipSessionTest();
   videoGesturesTest();
   systemVolumeTest();
+  videoPrefetchPolicyTest();
+  videoHeadPrefetcherTest();
+  bottomFollowTest();
+  olderPagingTest();
+  netBearerTest();
   scrollAnchorControllerTest();
   playSlotDriverTest();
   albumSiblingsTest();

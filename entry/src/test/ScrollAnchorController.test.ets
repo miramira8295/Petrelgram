@@ -92,6 +92,7 @@ class FakeHost implements ScrollAnchorHost {
   scrollerValue: FakeScroller = new FakeScroller();
   userOffset: number = 0;
   scrollActive: boolean = false;
+  touch: boolean = false;
   jumpId: number = 0;
   bottomPending: boolean = false;
   chromeH: number = 153;
@@ -100,9 +101,12 @@ class FakeHost implements ScrollAnchorHost {
   scroller: () => Scroller = (): Scroller => this.scrollerValue;
   userScrollOffsetTotal: () => number = (): number => this.userOffset;
   timelineScrollActive: () => boolean = (): boolean => this.scrollActive;
+  touchActive: () => boolean = (): boolean => this.touch;
   pendingJumpId: () => number = (): number => this.jumpId;
   pendingScrollBottom: () => boolean = (): boolean => this.bottomPending;
   headerChromeHeight: () => number = (): number => this.chromeH;
+  viewportH: number = 900;
+  viewportHeight = (): number => this.viewportH;
   appendGateProbe: (groups: AlbumGroup[]) => string = (_groups: AlbumGroup[]): string => {
     this.gateProbeCalls++;
     return 'probe';
@@ -162,7 +166,14 @@ export default function scrollAnchorControllerTest() {
     });
 
     // 【3】用户正在滑就让路——不把手势或惯性滚动拉回去。
-    it('用户正在拖动时不发任何滚动指令', 0, async () => {
+    // 【3】【滚动中一次程序性滚动都不发】（2026-09-10 起）
+    //
+    // 判据在这一天被翻过两次：先从"滑动中一律不修"改成"按修正量拦"（治的是
+    // 滑动中前插不补偿导致的跳），当天又改回"滚动中一律不发"——因为
+    // scrollBy / scrollToIndex 都是程序性滚动，会打断正在跑的滚动动画，
+    // 真机上表现为"页面被拉住一下"。现在惯性期间的位置全交给
+    // List.maintainVisibleContentPosition，补偿留到 onScrollStop 之后。
+    it('拖动中补回一屏以内的残差', 0, async () => {
       const host: FakeHost = new FakeHost();
       host.scrollerValue.rect = { x: 0, y: 40, width: 300, height: 60 };
       const c: ScrollAnchorController = controllerOn(host);
@@ -171,7 +182,22 @@ export default function scrollAnchorControllerTest() {
       c.restoreScrollAnchor(7, 10);
       await sleep(40);
 
-      expect(host.scrollerValue.untouched()).assertTrue();
+      // dy = 40 - 10 = 30，一屏（900）以内，补。
+      expect(host.scrollerValue.byCalls.length).assertEqual(1);
+    });
+
+    it('拖动中不做多屏级别的修正', 0, async () => {
+      const host: FakeHost = new FakeHost();
+      host.viewportH = 100;
+      host.scrollerValue.rect = { x: 0, y: 4000, width: 300, height: 60 };
+      const c: ScrollAnchorController = controllerOn(host);
+
+      host.scrollActive = true;
+      c.restoreScrollAnchor(7, 10);
+      await sleep(40);
+
+      expect(host.scrollerValue.byCalls.length).assertEqual(0);
+      expect(host.scrollerValue.indexCalls.length).assertEqual(0);
     });
 
     // 【4】量得到就只补差值：scrollBy(0, dy)，**不碰 scrollToIndex**。
@@ -218,14 +244,27 @@ export default function scrollAnchorControllerTest() {
       expect(call.extraOffset).assertEqual(143);
     });
 
-    // 【6】捕获之后用户自己滑动过，就整轮让路。
+    it('滚动已停但手指仍按着时不走 fallback 定位', 0, async () => {
+      const host: FakeHost = new FakeHost();
+      host.touch = true;
+      host.scrollerValue.rect = { x: 0, y: 0, width: 0, height: 0 };
+      const c: ScrollAnchorController = controllerOn(host);
+
+      c.restoreScrollAnchor(7, 10);
+      await sleep(80);
+
+      expect(host.scrollerValue.rectCalls.length).assertEqual(3);
+      expect(host.scrollerValue.byCalls.length).assertEqual(0);
+      expect(host.scrollerValue.indexCalls.length).assertEqual(0);
+    });
+
+    // 【6】捕获之后用户自己滑动过，**列表已经停下**：照样补。
     //
-    // 判据是 canApplyAnchorRestore = `!scrollActive && Math.abs(userDelta) < 0.5`
-    // ——**闸门比修正项更严**。所以"用户滑了一段"的正常结局不是"把 targetY 调整
-    // 一下再补"，而是**一个指令都不发**：在一个布局帧里补一次跨屏的 scrollBy，
-    // 会把顺滑的惯性变成看得见的跳页。这条和【3】是同一道闸的两个入口
-    // （那条走 scrollActive，这条走 userDelta）。
-    it('捕获之后用户滑过一段距离时整轮让路', 0, async () => {
+    // 旧契约是"整轮让路"，理由写作"闸门比修正项更严"。那个理由站不住：
+    // anchorYAfterUserScroll 已经把用户滚动量折进 targetY，剩下的 dy 纯粹是
+    // 数据/布局造成的残差。旧写法的副作用是让那个修正项变成近乎死代码
+    // ——【6b】的注释自己承认"唯一能被执行到的场合"是亚像素位移。
+    it('捕获之后用户滑过一段距离，停下后仍然补', 0, async () => {
       const host: FakeHost = new FakeHost();
       host.scrollerValue.rect = { x: 0, y: 40, width: 300, height: 60 };
       const c: ScrollAnchorController = controllerOn(host);
@@ -234,8 +273,9 @@ export default function scrollAnchorControllerTest() {
       host.userOffset = 12;
       await sleep(40);
 
-      expect(host.scrollerValue.byCalls.length).assertEqual(0);
-      expect(host.scrollerValue.indexCalls.length).assertEqual(0);
+      // targetY = 10 - 12 = -2，dy = 40 - (-2) = 42：补的是数据造成的那 42，
+      // 用户自己滑的 12 已经被扣掉了。
+      expect(host.scrollerValue.byCalls.length).assertEqual(1);
     });
 
     // 【6b】亚像素位移（< 0.5）不触发让路，此时 targetY 才真的会被扣减。

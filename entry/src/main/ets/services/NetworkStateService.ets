@@ -4,6 +4,9 @@ import { getTdClient, isReady } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { KEY_CURRENT_NETWORK_TYPE } from '../store/AppSettings';
 import { logW } from '../util/log';
+import {
+  BearerIds, NET_KIND_CELLULAR, NET_KIND_VPN, NET_KIND_WIFI, bearerKindOf, resolveThroughVpn
+} from '../util/netBearer';
 
 let monitor: connection.NetConnection | null = null;
 let lastPublished: string = '';
@@ -18,8 +21,10 @@ function tdNetworkTypeOf(network: string): TdObject {
 }
 
 function publish(network: string, forceTd: boolean = false): void {
+  // 'vpn' = 默认网络是 VPN、且底下的物理承载没找到。留着这个值而不是并进 'other'：
+  // 预取策略要区分"未知网络"和"VPN 之下不知是 Wi-Fi 还是蜂窝"（后者放行）。
   const normalized = network === 'wifi' || network === 'mobile' || network === 'roaming' ||
-    network === 'none' ? network : 'other';
+    network === 'none' || network === 'vpn' ? network : 'other';
   const changed = normalized !== lastPublished;
   lastPublished = normalized;
   AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, normalized);
@@ -41,13 +46,48 @@ async function cellularType(): Promise<string> {
   }
 }
 
-async function classify(capabilities: connection.NetCapabilities): Promise<string> {
-  const bearers: connection.NetBearType[] = capabilities.bearerTypes ?? [];
-  if (bearers.indexOf(connection.NetBearType.BEARER_WIFI) >= 0) { return 'wifi'; }
-  if (bearers.indexOf(connection.NetBearType.BEARER_CELLULAR) >= 0) {
-    return cellularType();
+const BEARER_IDS: BearerIds = {
+  wifi: connection.NetBearType.BEARER_WIFI as number,
+  cellular: connection.NetBearType.BEARER_CELLULAR as number,
+  vpn: connection.NetBearType.BEARER_VPN as number
+};
+
+function kindOfCapabilities(capabilities: connection.NetCapabilities): string {
+  const bearers: number[] = (capabilities.bearerTypes ?? []).map(
+    (b: connection.NetBearType): number => b as number);
+  return bearerKindOf(bearers, BEARER_IDS);
+}
+
+// 默认网络是 VPN 时，在全部可用网络里找物理承载（判定见 util/netBearer）。
+// 用户状态栏常年挂着 VPN，原来这里一律 'other'：视频预取 30/30 被拒、TDLib 也
+// 一直被告知 networkTypeOther（2026-09-09 真机日志）。
+async function physicalKindUnderVpn(): Promise<string> {
+  try {
+    const handles: connection.NetHandle[] = await connection.getAllNets();
+    const kinds: string[] = [];
+    for (const handle of handles) {
+      if (handle.netId === 0) { continue; }
+      try {
+        kinds.push(kindOfCapabilities(await connection.getNetCapabilities(handle)));
+      } catch (caught) {
+        logW(`NetworkStateService.getNetCapabilities(${handle.netId}) failed: ${caught}`);
+      }
+    }
+    return resolveThroughVpn(NET_KIND_VPN, kinds);
+  } catch (caught) {
+    logW(`NetworkStateService.getAllNets failed: ${caught}`);
+    return NET_KIND_VPN;
   }
-  return bearers.length > 0 ? 'other' : 'none';
+}
+
+async function classify(capabilities: connection.NetCapabilities): Promise<string> {
+  let kind: string = kindOfCapabilities(capabilities);
+  if (kind === NET_KIND_VPN) {
+    kind = await physicalKindUnderVpn();
+  }
+  if (kind === NET_KIND_WIFI) { return 'wifi'; }
+  if (kind === NET_KIND_CELLULAR) { return cellularType(); }
+  return kind; // 'vpn' | 'other' | 'none'
 }
 
 export function refreshNetworkState(forceTd: boolean = false): void {

@@ -97,7 +97,8 @@ import {
   toggleTranslation, translationActive as isTranslationActive
 } from '../../util/translationMode';
 import {
-  TranslationService, getTranslationService, looksLikeTargetLanguage, resolveTranslateTarget
+  TranslatedText, TranslationService, getTranslationService, looksLikeTargetLanguage,
+  resolveTranslateTarget
 } from '../../services/TranslationService';
 import { str } from '../../util/strings';
 import {
@@ -254,7 +255,7 @@ export class TranslationDriver {
       markTranslationInstant(item.messageId);
     }
     this.host.holdAnchor();
-    store.applyTranslation(item.messageId, item.lang, item.text);
+    store.applyTranslation(item.messageId, item.lang, item.text, item.entities);
   }
 
   // 这条消息所在的行是不是排在首个可见行之前。找不到（已经被裁掉）按"不在
@@ -362,22 +363,26 @@ export class TranslationDriver {
     for (const m of store.translationCandidates(fromId, toId, lang)) {
       // 已经是目标语言（按文字系统判定）就不发请求。拉丁字母目标语言判不了，
       // 仍交给服务器（结果按内容版本缓存，只花一次往返）。
-      if (looksLikeTargetLanguage(m.text, lang)) {
+      if (looksLikeTargetLanguage(m.text, lang, m.textEntities)) {
         continue;
       }
-      const hit: string | null = service.cached(this.host.chatId(), m.id, m.editDate, lang);
+      const hit: TranslatedText | null =
+        service.cached(this.host.chatId(), m.id, m.editDate, lang);
       if (hit !== null) {
         // 译文与原文相同（同语言消息）就什么都不写，气泡不长翻译块。
-        if (hit !== '' && hit !== m.text) {
-          this.land(store, { messageId: m.id, lang: lang, text: hit });
+        if (hit.text !== '' && hit.text !== m.text) {
+          this.land(store,
+            { messageId: m.id, lang: lang, text: hit.text, entities: hit.entities });
         }
         continue;
       }
       const requestedId: number = m.id;
       const originalText: string = m.text;
-      service.request(this.host.chatId(), m.id, m.editDate, lang, (text: string | null): void => {
-        if (text !== null && text !== '' && text !== originalText && this.host.store() === store) {
-          this.land(store, { messageId: requestedId, lang: lang, text: text });
+      service.request(this.host.chatId(), m.id, m.editDate, lang,
+        (r: TranslatedText | null): void => {
+        if (r !== null && r.text !== '' && r.text !== originalText && this.host.store() === store) {
+          this.land(store,
+            { messageId: requestedId, lang: lang, text: r.text, entities: r.entities });
         }
       });
     }
@@ -406,9 +411,9 @@ export class TranslationDriver {
     service.retry(this.host.chatId(), id, target.editDate, lang);
     const originalText: string = target.text;
     service.request(this.host.chatId(), id, target.editDate, lang,
-      (text: string | null): void => {
-        if (text !== null && text !== '' && text !== originalText && this.host.store() === store) {
-          store.applyTranslation(id, lang, text);
+      (r: TranslatedText | null): void => {
+        if (r !== null && r.text !== '' && r.text !== originalText && this.host.store() === store) {
+          store.applyTranslation(id, lang, r.text, r.entities);
         }
       });
   }

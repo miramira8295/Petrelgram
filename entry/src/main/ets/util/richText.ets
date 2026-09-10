@@ -41,7 +41,9 @@ function isBlock(t: string): boolean {
     || t === 'textEntityTypeBlockQuote' || t === 'textEntityTypeExpandableBlockQuote';
 }
 
-function isLink(t: string): boolean {
+// 导出给 linguisticText.ets：判定语种时要把链接类片段摘掉，那边不该再抄一份
+// 类型清单——TDLib 加了新的链接实体时，两处会一起吃到。
+export function isLinkEntityType(t: string): boolean {
   return t === 'textEntityTypeTextUrl' || t === 'textEntityTypeUrl'
     || t === 'textEntityTypeMention' || t === 'textEntityTypeMentionName'
     || t === 'textEntityTypeHashtag' || t === 'textEntityTypeCashtag'
@@ -176,7 +178,7 @@ function styleAt(pos: number, ents: Ent[]): RichRun {
         spoiler = true;
       } else if (e.type === 'textEntityTypeCustomEmoji') {
         customEmojiId = e.customEmojiId;
-      } else if (isLink(e.type)) {
+      } else if (isLinkEntityType(e.type)) {
         link = true;
       }
     }
@@ -202,7 +204,7 @@ function styleAt(pos: number, ents: Ent[]): RichRun {
 // '' means the run is styled as a link but has no openable target.
 function linkTargetFor(pos: number, text: string, ents: Ent[]): string {
   for (const e of ents) {
-    if (isBlock(e.type) || !isLink(e.type)) {
+    if (isBlock(e.type) || !isLinkEntityType(e.type)) {
       continue;
     }
     if (pos >= e.offset && pos < e.offset + e.length) {

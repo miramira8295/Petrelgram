@@ -1,6 +1,8 @@
 import { CachedImage } from '../common/CachedImage';
 import { subscribeThumbPath, thumbPathFor } from '../../util/mediaThumbChannel';
 import { liveThumbPath } from '../../util/liveThumbPath';
+import { shouldReattachThumb } from '../../util/liveThumbAttach';
+import { warnStaleThumbAttach } from '../../util/thumbAttachGuard';
 
 // 自己订阅、自己换图的缩略图。
 //
@@ -86,24 +88,24 @@ export struct LiveThumbImage {
     this.attachedFileId = -1;
   }
 
-  // 非复用路径的自愈（「图配错文」的历史修法）：fileId 真变化时按新值重挂。
-  // 第二个参数传 ''：@Param 逐个落地时 initialPath 可能还是上一条的，拿它
-  // 兜底等于把旧图画上去；通道现值本来就按新 fileId 查。
-  @Monitor('fileId')
-  onFileIdChanged(): void {
-    this.attach(this.spec.fileId, '');
-  }
-
-  // Same message, same fileId=0, but a local/full-size path was backfilled.
-  // No channel event and no fileId @Watch fires in that case, so initialPath
-  // must drive the image directly. For non-zero IDs the file-scoped channel is
-  // authoritative; ignoring their independently-landed @Prop also avoids
-  // pairing a new path with the previous row's fileId during reuse.
-  @Monitor('initialPath')
-  onInitialPathChanged(): void {
-    if (this.spec.fileId === 0) {
-      this.attach(0, this.spec.initialPath);
+  // 自愈：spec 换了之后按新值重挂。**唯一**能兜住"复用时 @Param 比
+  // aboutToReuse 晚落地"的地方。
+  //
+  // ⚠️ 监听的是 spec 整体，不是 'fileId' / 'initialPath'。那两个名字是 6 个
+  // @Param 合并成 spec 之前的写法，合并时被落下了；组件里没有这两个成员，
+  // ArkUI 既不报编译错也不打告警，于是自愈静默失效——2026-09-10 真机实测
+  // 50 次 attach 里这两个回调触发 0 次，同一次滑动抓到 7 次挂错行。
+  // 判据见 util/liveThumbAttach（纯函数，有回归测试）。
+  @Monitor('spec')
+  onSpecChanged(): void {
+    if (!shouldReattachThumb(this.spec.fileId, this.spec.initialPath,
+      this.attachedFileId, this.path)) {
+      return;
     }
+    // fileId ≠ 0 时第二个参数传 ''：@Param 逐个落地时 initialPath 可能还是
+    // 上一条的，拿它兜底等于把旧图画上去；通道现值本来就按新 fileId 查。
+    this.attach(this.spec.fileId,
+      this.spec.fileId === 0 ? this.spec.initialPath : '');
   }
 
   aboutToAppear(): void {
@@ -128,8 +130,16 @@ export struct LiveThumbImage {
     this.detach();
   }
 
+  // 不变量检查挂在**分支条件**上：build 里不能放语句，而这里同样是拿当前
+  // @Param 求值的——不受"参数什么时候落地"影响。返回值就是要画的路径。
+  // 顺带读一次 spec.fileId，让这个渲染域把它登记成依赖。见 util/thumbAttachGuard。
+  private drawPath(): string {
+    warnStaleThumbAttach(this.attachedFileId, this.spec.fileId, this.path);
+    return this.path;
+  }
+
   build() {
-    if (this.path !== '') {
+    if (this.drawPath() !== '') {
       CachedImage({
         path: this.path,
         boxWidth: this.spec.boxWidth,

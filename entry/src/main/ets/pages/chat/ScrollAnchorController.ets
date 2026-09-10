@@ -67,6 +67,9 @@ export interface ScrollAnchorHost {
   userScrollOffsetTotal: () => number;
   // 用户此刻是否正在拖动/惯性滚动。canApplyAnchorRestore 的第一个入参。
   timelineScrollActive: () => boolean;
+  // 手指是否仍按在时间线上。onScrollStop 可能先于 TouchType.Up 到达；仅看
+  // timelineScrollActive 会让 fallback 在这段空窗里发 scrollToIndex。
+  touchActive: () => boolean;
   // 更强的定位意图：有待处理的跳转目标。非 0 时本簇让路（早退）。
   pendingJumpId: () => number;
   // 更强的定位意图：有待处理的"回到底部"。true 时本簇让路（早退）。
@@ -79,6 +82,13 @@ export interface ScrollAnchorHost {
   // reposition 分支的 extraOffset 要实时值，不能取常数——依据是 2026-08-30
   // 真机日志里 residual 153/153/153/770 那组数（见 attemptAnchorRestore）。
   headerChromeHeight: () => number;
+  // 时间线视口的高度。canApplyAnchorRestore 用它给"滑动中允许多大的修正"定尺：
+  // 一屏以内的残差补回去看不出接缝，多屏的会把惯性打断成整页跳。
+  //
+  // **走 host 而不是直接读 AppStorage**：读全局会让本类的单测依赖执行顺序
+  // （别的用例先跑过才有 screenHeightVp），拿不到就退化成"滑动中一律不修"，
+  // 那等于悄悄回到旧行为还测不出来。
+  viewportHeight: () => number;
   // 对应页面的 appendAnchorGateProbe(groups)。**让探针连同它自己那 10 处读点
   // 整体留在页面**，是这份接口能停在 7 个的关键：不这么切的话
   // viewerMsgId / imeTailPinned / curStartIdx / curEndIdx / indexGroupsLen /
@@ -129,8 +139,11 @@ export class ScrollAnchorController {
     scroller: (): Scroller => new Scroller(),
     userScrollOffsetTotal: (): number => 0,
     timelineScrollActive: (): boolean => false,
+    touchActive: (): boolean => false,
     pendingJumpId: (): number => 0,
     pendingScrollBottom: (): boolean => false,
+    // 0 = 量不到，canApplyAnchorRestore 因此在滑动中一律不修（最保守）。
+    viewportHeight: (): number => 0,
     headerChromeHeight: (): number => 0,
     appendGateProbe: (_groups: AlbumGroup[]): string => ''
   };
@@ -211,7 +224,8 @@ export class ScrollAnchorController {
     if (primeBeforeLayout) {
       const extra: number = -itemY + this.host.headerChromeHeight();
       logW(`[AnchorRestore] prime idx=${targetIndex} y=${Math.round(itemY)}` +
-        ` extraOffset=${Math.round(extra)}`);
+        ` extraOffset=${Math.round(extra)}` +
+        ` active=${this.host.timelineScrollActive()} touch=${this.host.touchActive()}`);
       try {
         this.host.scroller().scrollToIndex(targetIndex, false, ScrollAlign.START,
           { extraOffset: LengthMetrics.vp(extra) });
@@ -234,11 +248,6 @@ export class ScrollAnchorController {
         return;
       }
       const userDelta: number = this.host.userScrollOffsetTotal() - userOffsetAtCapture;
-      if (!canApplyAnchorRestore(this.host.timelineScrollActive(), userDelta)) {
-        logW(`[AnchorRestore] skip reason=user-scroll idx=${targetIndex}` +
-          ` active=${this.host.timelineScrollActive()} userDelta=${Math.round(userDelta)}`);
-        return;
-      }
       const targetY: number = anchorYAfterUserScroll(
         itemY, userOffsetAtCapture, this.host.userScrollOffsetTotal());
       // 非法下标返回全 0 矩形（faqs-arkui-572），异常按同样处理——两条都落到
@@ -273,6 +282,32 @@ export class ScrollAnchorController {
         logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex}` +
           ` oldY=${Math.round(itemY)}`);
         this.attemptAnchorRestore(seq, targetIndex, itemY, userOffsetAtCapture, attempt + 1);
+        return;
+      }
+      // ── 能不能真的动 ────────────────────────────────────────────────
+      //
+      // **闸在这里，不在函数开头**：判据是"这次要修多少"，而修多少要等
+      // planAnchorRestore 算完才知道。原来在开头按"用户在不在滑"拦，把采样侧
+      // "即使用户仍在滑也要记锚点"的意图整个作废了（见 util/anchorRestore
+      // 的 canApplyAnchorRestore 与真机证据）。
+      //
+      // fallback 支给 Infinity：它走的是 scrollToIndex 一步定位，惯性中就是硬跳，
+      // 所以滑动时一律不做；静止时不受限制（canApplyAnchorRestore 里 !scrollActive
+      // 直接放行）。
+      const correction: number = plan.mode === ANCHOR_RESTORE_DELTA
+        ? plan.dy : Number.POSITIVE_INFINITY;
+      const viewportH: number = this.host.viewportHeight();
+      if (plan.mode !== ANCHOR_RESTORE_DELTA && this.host.touchActive()) {
+        logW(`[AnchorRestore] skip reason=touch-fallback idx=${targetIndex}` +
+          ` active=${this.host.timelineScrollActive()} userDelta=${Math.round(userDelta)}` +
+          ` correction=${Math.round(plan.dy)} viewportH=${Math.round(viewportH)}`);
+        return;
+      }
+      if (!canApplyAnchorRestore(
+        this.host.timelineScrollActive(), userDelta, correction, viewportH)) {
+        logW(`[AnchorRestore] skip reason=too-large-while-scrolling idx=${targetIndex}` +
+          ` active=${this.host.timelineScrollActive()} userDelta=${Math.round(userDelta)}` +
+          ` mode=${plan.mode} correction=${Math.round(plan.dy)} viewportH=${Math.round(viewportH)}`);
         return;
       }
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
@@ -340,4 +375,5 @@ export class ScrollAnchorController {
         this.host.scroller().scrollBy(0, plan.dy);
       }
     }, attempt === 0 ? 0 : ANCHOR_RESTORE_RETRY_MS);
-  }}
+  }
+}
