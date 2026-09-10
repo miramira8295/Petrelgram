@@ -106,8 +106,18 @@ export struct CachedImage {
 
   // 非复用路径上源/尺寸真变化时重启动；复用路径由 aboutToReuse 覆盖
   // （@Monitor 复用期静默，批 0.5 实测）。
+  // 【两条复用路径都要覆盖】aboutToReuse 只在 @ReusableV2 那条路上触发；打开
+  // Repeat 自己的复用（virtualScroll reusable:true）时它**不会被调用**（官方：
+  // 「Repeat 自身能够进行复用，不会走到自定义组件复用的生命周期」）。而
+  // @ReusableV2 复用的重置期间 @Monitor 又是静默的——两者互补，缺一不可。
   @Monitor('path', 'boxWidth', 'boxHeight')
   onSourceChanged(): void {
+    // 与 aboutToReuse 同样先 drop 再 start：换了源文件就得把旧位图的引用还回去，
+    // 否则它一直被 retain 着，白占 LRU 预算（显示本身由 start() 里的
+    // shouldBlankBeforeDecode 兜住，这里修的是资源不是画面）。
+    if (this.heldReq !== null && this.heldReq.path !== this.path) {
+      this.drop();
+    }
     this.start();
   }
 

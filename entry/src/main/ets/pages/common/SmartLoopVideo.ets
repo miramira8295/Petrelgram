@@ -71,8 +71,21 @@ export struct SmartLoopVideo {
     this.resetPlaybackState();
   }
 
+  // 【两条复用路径都要覆盖】aboutToReuse 只在 @ReusableV2 那条路上触发；打开
+  // Repeat 自己的复用（virtualScroll reusable:true）时它**不会被调用**（官方：
+  // 「Repeat 自身能够进行复用，不会走到自定义组件复用的生命周期」）。而
+  // @ReusableV2 复用的重置期间 @Monitor 又是静默的——两者互补，缺一不可。
+  @Monitor('videoPath')
+  onVideoSourceChanged(): void {
+    this.resetForNewSource();
+  }
+
   aboutToReuse(): void {
     // @Param 已是新值（批 0.5 判读）：直接按新素材类别判定。
+    this.resetForNewSource();
+  }
+
+  private resetForNewSource(): void {
     this.resetPlaybackState();
     this.useIjk = this.isTransparentAsset() || avWebmVerdict === -1;
   }

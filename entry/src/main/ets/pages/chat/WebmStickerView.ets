@@ -164,8 +164,22 @@ export struct WebmStickerView {
     this.failed = false;
   }
 
+  // 【两条复用路径都要覆盖】aboutToReuse 只在 @ReusableV2 那条路上触发；
+  // 打开 Repeat 自己的复用（virtualScroll reusable:true）时它**不会被调用**
+  // （官方：「Repeat 自身能够进行复用，不会走到自定义组件复用的生命周期」）。
+  // 所以同一份重挂逻辑必须再挂一个 @Monitor。反过来，@ReusableV2 复用重置期间
+  // @Monitor 是静默的，两者互补，缺一不可。
+  @Monitor('webmPath')
+  onWebmSourceChanged(): void {
+    this.resetForNewSource();
+  }
+
   aboutToReuse(): void {
     // @Param 已是新值（批 0.5 判读）：V1 时代写回 @Prop 的整段退役。
+    this.resetForNewSource();
+  }
+
+  private resetForNewSource(): void {
     this.destroyed = false;
     this.failed = false;
     this.durationMs = 0;

@@ -77,6 +77,15 @@ export struct GameBubble {
     this.resetTransientState();
   }
 
+  // 【两条复用路径都要覆盖】aboutToReuse 只在 @ReusableV2 那条路上触发；打开
+  // Repeat 自己的复用（virtualScroll reusable:true）时它**不会被调用**（官方：
+  // 「Repeat 自身能够进行复用，不会走到自定义组件复用的生命周期」）。而
+  // @ReusableV2 复用的重置期间 @Monitor 又是静默的——两者互补，缺一不可。
+  @Monitor('messageId')
+  onMessageChanged(): void {
+    this.resetTransientState();
+  }
+
   aboutToReuse(): void {
     // @Local opening 由框架重置；只剩无装饰器的定时器与时间戳要手工归零。
     this.resetTransientState();

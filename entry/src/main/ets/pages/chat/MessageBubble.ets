@@ -657,6 +657,13 @@ export struct MessageBubble {
     // ReusableMessageBubble.onGroupChanged 拉平。
     // 重挂本身带重播种，下面几行只对 rowId 未变的真·原地更新起作用（幂等）。
     if (this.msg.rowId !== this.attachedRowId) {
+      // 换了行身份：瞬时态也要跟着清，否则手势认领、媒体中心 y、相册格几何
+      // 会沿用上一行的值。aboutToReuse 里做的是同一件事——但那条路只在
+      // @ReusableV2 复用时触发，打开 Repeat 自己的复用时不会被调用（官方：
+      // 「Repeat 自身能够进行复用，不会走到自定义组件复用的生命周期」）。
+      // **只在身份变化的分支里清**：msg 对象在编辑/状态更新时也会换，那时清
+      // gestureClaimed 会打断正在进行的手势。
+      this.clearTransientState();
       this.attachMessageChannels(this.msg);
     }
     const known: string = sendStateFor(this.msg.rowId);

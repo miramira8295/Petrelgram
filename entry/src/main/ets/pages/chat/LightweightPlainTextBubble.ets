@@ -461,8 +461,18 @@ export struct LightweightPlainTextBubble {
 
   // 非复用路径上同一实例换消息时兜底重挂；复用路径靠 aboutToReuse（@Monitor
   // 复用期静默，批 0.5 实测 0 触发）。
+  // 换了行身份时瞬时态也要清（菜单弹出位置、手势认领），否则沿用上一行的值。
+  // aboutToReuse 里做的是同一件事——但那条路只在 @ReusableV2 复用时触发，打开
+  // Repeat 自己的复用时不会被调用（官方：「Repeat 自身能够进行复用，不会走到
+  // 自定义组件复用的生命周期」）。**只在身份变化时清**：msg 对象在编辑/状态
+  // 更新时也会换，那时清 gestureClaimed 会打断正在进行的手势。
   @Monitor('msg')
-  onMessageChanged(): void { this.attachChannels(this.msg); }
+  onMessageChanged(): void {
+    if (this.attachedKey !== `${this.msg.rowId}:${this.msg.id}`) {
+      this.resetTransient();
+    }
+    this.attachChannels(this.msg);
+  }
 
   private bubbleMaxW(): number { return bubbleMaxWidth(this.contentWidth); }
   private inlineMaxW(): number { return this.bubbleMaxW() - 16; }

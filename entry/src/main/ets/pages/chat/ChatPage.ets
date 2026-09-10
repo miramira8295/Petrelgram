@@ -7470,7 +7470,12 @@ export struct ChatPage {
         // reports as setChild/changing-parent and renders as a row flash.
         // Repeat reuse updates the complete RepeatItem binding; the bubble's
         // @Monitor('group') reattaches its presentation subscription.
-        // ⚠️ **reusable 必须是 false，别再改回 true。** 2026-09-10 真机定案。
+        // ⚠️ **reusable 必须是 false，别再改回 true。** 2026-09-10 两轮真机定案。
+        //
+        // 第二轮（补齐 6 处「只有 aboutToReuse、没有等效 @Monitor」的组件之后
+        // 再开 true）**重复依然复现**——所以那 6 处不是根因，已从嫌疑里排除。
+        // 那一版的手感确实变好（外壳不再每次重建、震颤明显减轻），但正确性
+        // 压过流畅度。
         //
         // 【症状】往上翻历史时，每隔一个复用池容量就出现一条"比上下都新"的
         // 消息——同一条消息在列表里重复出现，相册的位置画成文本、不该有图的
