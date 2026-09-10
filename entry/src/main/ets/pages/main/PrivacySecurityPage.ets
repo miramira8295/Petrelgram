@@ -12,7 +12,7 @@ import {
 import { PrivacyRuleParams } from './PrivacyRulePage';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -374,7 +374,7 @@ export struct PrivacySecurityPage {
       Text($r('app.string.ps_load_failed')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text($r('app.string.ps_no_default_substitute')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
         .textAlign(TextAlign.Center);
-      Button($r('app.string.settings_reload')).fontSize(15).fontColor(Color.White).backgroundColor(COLOR_PRIMARY)
+      Button($r('app.string.settings_reload')).fontSize(15).fontColor(COLOR_ON_PRIMARY).backgroundColor(COLOR_PRIMARY)
         .height(42).padding({ left: 22, right: 22 }).borderRadius(21)
         .onClick((): void => { this.store?.refresh(); });
     }

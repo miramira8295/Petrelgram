@@ -9,7 +9,7 @@ import {
 } from '../../store/FolderApi';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { AvatarView } from '../chatlist/AvatarView';
 import { plural, str } from '../../util/strings';
@@ -380,7 +380,7 @@ struct FolderInviteLinksPage {
         }, (chat: FolderChatSummary): string => `new_${chat.id}`);
       }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
       Text(plural('fl_add_chats', this.selectedNewChatIds.length, this.selectedNewChatIds.length)).fontSize(16).fontWeight(FontWeight.Medium)
-        .fontColor(Color.White).textAlign(TextAlign.Center)
+        .fontColor(COLOR_ON_PRIMARY).textAlign(TextAlign.Center)
         // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在
         // 外部，总宽 = 父宽 + left + right，右端会被裁掉。宽度改用 calc 扣掉左右 margin。
         .width('calc(100% - 32vp)')

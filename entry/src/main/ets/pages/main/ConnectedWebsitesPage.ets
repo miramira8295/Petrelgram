@@ -5,7 +5,7 @@ import {
 } from '../../store/PrivacyApi';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -136,7 +136,7 @@ struct ConnectedWebsitesPage {
     Row({ space: 12 }) {
       Stack({ alignContent: Alignment.Center }) {
         Text(row.domain !== '' ? row.domain.substring(0, 1).toUpperCase() : 'W')
-          .fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White);
+          .fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_ON_PRIMARY);
       }.width(46).height(46).borderRadius(23).backgroundColor(COLOR_PRIMARY);
       Column({ space: 3 }) {
         Text(row.domain !== '' ? row.domain : $r('app.string.cw_unknown_site')).fontSize(16).fontWeight(FontWeight.Medium)

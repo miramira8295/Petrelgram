@@ -3,7 +3,7 @@ import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { formatPreview } from '../../util/formatPreview';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -394,7 +394,7 @@ export struct ForumTopicsPage {
       .alignItems(HorizontalAlign.Start).layoutWeight(1);
       if (row.unreadCount > 0) {
         Text(row.unreadCount > 99 ? '99+' : `${row.unreadCount}`)
-          .fontSize(12).fontColor(Color.White)
+          .fontSize(12).fontColor(COLOR_ON_PRIMARY)
           .padding({ left: 7, right: 7, top: 2, bottom: 2 })
           .borderRadius(10).backgroundColor(COLOR_PRIMARY);
       }

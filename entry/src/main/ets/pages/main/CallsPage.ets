@@ -8,7 +8,7 @@ import { callClockLabel, callDayKey, callSectionLabel } from '../../util/CallHis
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
@@ -393,7 +393,7 @@ struct CallsPage {
       Text($r('app.string.calls_load_failed')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text($r('app.string.calls_load_failed_sub'))
         .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
-      Text($r('app.string.settings_reload')).fontSize(15).fontColor(Color.White).fontWeight(FontWeight.Medium)
+      Text($r('app.string.settings_reload')).fontSize(15).fontColor(COLOR_ON_PRIMARY).fontWeight(FontWeight.Medium)
         .padding({ left: 22, right: 22, top: 10, bottom: 10 })
         .backgroundColor(COLOR_PRIMARY).borderRadius(18)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })

@@ -3,7 +3,8 @@ import { ChatEntry } from '../../store/ChatEntry';
 import { AvatarView } from '../chatlist/AvatarView';
 import { getChatStore, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+} from '../../util/theme';
 import {
   KEY_POWER_EFFECT_REPLY, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
@@ -294,7 +295,7 @@ export struct ForwardSheet {
               .fontSize(28).fontColor([COLOR_ICON_SECONDARY]);
             Text($r('app.string.fw_load_failed')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
             Button($r('app.string.settings_retry'))
-              .fontSize(14).fontColor(Color.White)
+              .fontSize(14).fontColor(COLOR_ON_PRIMARY)
               .height(36).padding({ left: 20, right: 20 })
               .backgroundColor(COLOR_PRIMARY).borderRadius(18)
               .onClick(() => { this.retryChats(); });

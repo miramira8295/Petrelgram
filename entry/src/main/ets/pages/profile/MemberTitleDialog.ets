@@ -1,4 +1,5 @@
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+} from '../../util/theme';
 import { str } from '../../util/strings';
 
 // 群成员标签（chatMemberTag）的小弹窗。任何成员都能被打标、全员可见；
@@ -34,7 +35,7 @@ export struct MemberTitleDialog {
           .borderRadius(22).layoutWeight(1).height(44)
           .onClick((): void => { this.controller?.close(); });
         Button($r('app.string.save'))
-          .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White)
+          .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY)
           .backgroundColor(COLOR_PRIMARY)
           .borderRadius(22).layoutWeight(1).height(44)
           .onClick((): void => {

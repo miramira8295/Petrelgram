@@ -23,7 +23,8 @@ import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../.
 // B14 的四个建议控制器经宿主取值器拿 TDLib 客户端（缝的理由见
 // ComposerSuggestionState.ets 文件里 client 取值器上方那段），这里只需要类型。
 import { TdClient } from '../../tdkit/TdClient';
-import { MessageStore, MediaSendItem } from '../../store/MessageStore';
+import { MessageStore, MediaSendItem, MESSAGE_WINDOW_CAP
+} from '../../store/MessageStore';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import {
   allocateChatPageReuseScope, CHAT_PAGE_REUSE_ID_LEVEL, rowReuseId
@@ -60,7 +61,7 @@ import {
 import { BasicPrefetcher } from '@kit.ArkUI';
 // UIUtils 本身从 API 12 起就有；这里用到的 getCustomComponentContext 是 26 起，
 // 调用点在 capMessageReuseBuckets 的版本闸门之后。IReusePool 只是类型。
-import { IReusePool, UIUtils } from '@kit.ArkUI';
+import { IReusePool, LengthMetrics, UIUtils } from '@kit.ArkUI';
 import { ChatBackdrop } from './ChatBackdrop';
 import { ChatHeader } from './ChatHeader';
 import { HeaderIdentitySession, ResolvedChatKind } from './HeaderIdentitySession';
@@ -287,6 +288,28 @@ import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind'
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
 import { bottomFollowShouldApply, bottomFollowShouldSchedule } from '../../util/bottomFollow';
 import { OLDER_TRIGGER_ROWS, olderTriggerHit } from '../../util/olderPaging';
+
+// 裁剪时可见区两侧至少保留的行数。必须远大于 List 的 cachedCount，否则会把
+// 框架正预备的缓存行删掉，滑回去就是一片空白。
+const TRIM_MIN_MARGIN_ROWS: number = 60;
+
+// 攒到这个行数才动手裁剪，砍到 MESSAGE_WINDOW_CAP 为止。
+//
+// 【为什么需要滞后】第一版是"超过 400 就砍到可见区+两侧余量(~225)"，只剩
+// 175 行余量。真机实测（2026-09-10）这会变成踏步：往下翻 54 秒里
+// **14 次 onHistory kind=newer（每次 30 条）+ 2 次裁剪**——刚扔掉的历史立刻
+// 又被一页页拉回来，每页都要重建实体 + 发布一次。用户报的"上翻结束后往下
+// 翻时卡"就是它。
+//
+// 【触发线必须跟着上限一起降】决定卡顿的是**峰值**不是均值：触发线是多少，
+// 一次发布最贵的时候就有多少行。第一版 800 触发 / 400 目标时，真机 avgRows
+// 稳在 512、峰值 984，用户的观感是"根本没砍"——因为绝大多数时间窗口就是
+// 四五百行。
+//
+// 500 触发 / 200 目标 = 300 行余量。峰值 500 行时一次发布约 6ms（1930 行时
+// 是 57ms），余量仍是第一版"400 触发/砍到 225"那个踏步版本的近两倍。
+const TRIM_TRIGGER_ROWS: number = 500;
+
 
 const CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S: number = 4200;
 
@@ -7447,7 +7470,31 @@ export struct ChatPage {
         // reports as setChild/changing-parent and renders as a row flash.
         // Repeat reuse updates the complete RepeatItem binding; the bubble's
         // @Monitor('group') reattaches its presentation subscription.
-        .virtualScroll({ totalCount: this.timelineSnapshot.groups.length, reusable: true });
+        // ⚠️ **reusable 必须是 false，别再改回 true。** 2026-09-10 真机定案。
+        //
+        // 【症状】往上翻历史时，每隔一个复用池容量就出现一条"比上下都新"的
+        // 消息——同一条消息在列表里重复出现，相册的位置画成文本、不该有图的
+        // 气泡长出图、滑动中显示 a 停稳后变 b，全是这一个 bug 的不同切面。
+        //
+        // 【数据侧全部清白】[OrderGuard] 窗口严格升序 0 告警；[Visible] 打出的
+        // 可见区 id 严格递增且相邻（差恒为 1048576）；[MergeGuard] 两页合并的
+        // 边界假设成立。**模型从头到尾是对的，错的只有屏幕。**
+        //
+        // 【怎么锁定到复用池】重复的周期跟着 List 的 cachedCount 走：
+        // cachedCount=4 时每 21 条重复一次，改成 8 之后变成 27
+        // （周期 ≈ 可视行数 + 2×cachedCount，正是一次最坏回收潮的池子容量）。
+        // 这个判据来自设备本身，不依赖任何探针参照物。
+        //
+        // 【为什么是这一层】这里叠了两层复用：Repeat 复用整个 ListItem 子树，
+        // 气泡又有自己的 @ReusableV2 池（.reuse({reuseId})）。把本行改成 false
+        // 之后重复完全消失（用户实测长时间翻阅无一例），说明壳没更新发生在
+        // Repeat 这一层。
+        //
+        // 【代价，已知并接受】false **不等于不复用**——滚动复用交回给内层的
+        // @ReusableV2 气泡，贵的那部分子树照常复用。原注释记录的代价是：前插时
+        // 气泡会在两个 Repeat 节点之间搬家，ArkUI 报 setChild/changing-parent，
+        // 表现为行闪一下。拿"偶尔闪一下"换"消息不再重复"，值。
+        .virtualScroll({ totalCount: this.timelineSnapshot.groups.length, reusable: false });
     }
     .width('100%').height('100%')
     .opacity(this.initialTimelineMasked ? 0 : 1)
@@ -7685,7 +7732,10 @@ export struct ChatPage {
       this.listTouchActive = false;
       // 到达绝对顶部后的剩余 active 是边缘回弹。此时 shouldPrimePrependAnchor
       // 会在发布前按住首行，可立即消费已预取页，不必再等完整个回弹周期。
-      setTimeout((): void => { this.flushQueuedOlderLoad(); }, 0);
+      setTimeout((): void => {
+        this.flushQueuedOlderLoad();
+        this.maybeTrimWindow();
+      }, 0);
     }
   }
 
@@ -7753,6 +7803,111 @@ export struct ChatPage {
     this.dismissKeyboardOnUserScroll();
   }
 
+  // 窗口裁剪：**只在这里调**。停稳 + 手指抬起是唯一允许改行数的时刻，
+  // 滑动热路径里动行数等于在用户手底下抽地板。判据与实现见
+  // MessageStore.trimWindowTo。
+  private maybeTrimWindow(): void {
+    const store: MessageStore | null = this.store;
+    if (store === null || this.listTouchActive || this.timelineScrollActive) {
+      return;
+    }
+    const groups: AlbumGroup[] = this.groups;
+    if (groups.length < TRIM_TRIGGER_ROWS) {
+      return;
+    }
+    const start: number = this.curStartIdx;
+    const end: number = this.curEndIdx;
+    if (start < 0 || end < start || end >= groups.length) {
+      return;
+    }
+    // **只砍掉超出上限的那部分**，不是砍到"可见区+余量"。后者会把窗口一路
+    // 削到 225 行，余量太薄，往回翻立刻又要重取（见 TRIM_TRIGGER_ROWS 的注释）。
+    //
+    // 两侧都必须给可见区留够 TRIM_MIN_MARGIN_ROWS：那个下限远大于 List 的
+    // cachedCount，否则会把框架正预备的缓存行删掉，滑回去就是一片空白。
+    // 优先砍余量大的那一侧——它离视口更远，也更不容易马上被翻回来。
+    let excess: number = groups.length - MESSAGE_WINDOW_CAP;
+    const spareAbove: number = Math.max(0, start - TRIM_MIN_MARGIN_ROWS);
+    const spareBelow: number = Math.max(0, (groups.length - 1 - end) - TRIM_MIN_MARGIN_ROWS);
+    let cutAbove: number = 0;
+    let cutBelow: number = 0;
+    if (spareAbove >= spareBelow) {
+      cutAbove = Math.min(excess, spareAbove);
+      excess -= cutAbove;
+      cutBelow = Math.min(excess, spareBelow);
+    } else {
+      cutBelow = Math.min(excess, spareBelow);
+      excess -= cutBelow;
+      cutAbove = Math.min(excess, spareAbove);
+    }
+    if (cutAbove === 0 && cutBelow === 0) {
+      return;
+    }
+    const first: number = cutAbove;
+    const last: number = groups.length - 1 - cutBelow;
+    // 相册行代表多条消息：老端取该行最老的成员，新端取最新的。
+    const lastMembers: number[] = groups[last].memberIds;
+    const firstKeepId: number = groups[first].memberIds[0];
+    const lastKeepId: number = lastMembers[lastMembers.length - 1];
+    // ⚠️ 临时漂移探针：裁剪唯一的风险是"屏幕上的内容动了"。记下可见首行的
+    // id 和它当下的 y，下一帧按同一条消息重新量一次。drift 不为 0 就说明
+    // maintainVisibleContentPosition 在纯删除这条路上也不可靠，得回退。
+    const anchorId: number = groups[start].head.id;
+    const beforeRect: RectResult = this.scroller.getItemRect(start);
+    const beforeY: number = beforeRect.y as number;
+    const beforeH: number = beforeRect.height as number;
+    const beforeOff: number = this.scroller.currentOffset().yOffset;
+    if (!store.trimWindowTo(firstKeepId, lastKeepId)) {
+      return;
+    }
+    // 150ms 而不是 0：getItemRect 要等布局落定，onScrollIndex 也要等它才会
+    // 重报可见范围。0ms 那版每次都读到全零哨兵，等于没量。
+    setTimeout((): void => {
+      // 【砍老端必须补偿位置】删掉视口**上方**的行，剩下的内容会整体上移——
+      // maintainVisibleContentPosition 在这条路上没兜住。2026-09-10 真机
+      // 4/4 全部 MOVED，视口被推走 5~70 行，用户报"往下翻时画面顶上来"。
+      // 砍新端（视口下方）不需要补，实测 drift=0。
+      // 算式照搬 ScrollAnchorController 的 prime 分支：同一个诉求（把锚点行
+      // 放回它原来的 y），同一套坐标。
+      if (cutAbove > 0) {
+        const back: number = groupIndexOf(this.groups, anchorId);
+        if (back >= 0) {
+          const extra: number = -beforeY + this.headerChromeHeight();
+          try {
+            this.scroller.scrollToIndex(back, false, ScrollAlign.START,
+              { extraOffset: LengthMetrics.vp(extra) });
+          } catch (e) {
+            logE(`ChatPage.trimRestore failed: ${e}`);
+          }
+        }
+      }
+      // **最硬的判据**：砍完之后屏幕最上面那一行还是不是同一条消息。
+      // 它只依赖 onScrollIndex 重报的可见范围，不碰 getItemRect 的哨兵。
+      const topIdx: number = this.curStartIdx;
+      const topId: number = topIdx >= 0 && topIdx < this.groups.length
+        ? this.groups[topIdx].head.id : 0;
+      logW(`[Trim] top anchor=${anchorId} nowTop=${topId}` +
+        ` ${topId === anchorId ? 'SAME' : 'MOVED'} idx=${topIdx}`);
+      const idx: number = groupIndexOf(this.groups, anchorId);
+      if (idx < 0) {
+        logW(`[Trim] drift anchor=${anchorId} gone`);
+        return;
+      }
+      const after: RectResult = this.scroller.getItemRect(idx);
+      const afterY: number = after.y as number;
+      const afterH: number = after.height as number;
+      const afterOff: number = this.scroller.currentOffset().yOffset;
+      // h=0 是 getItemRect 对"不在显示区内"的全零哨兵（faqs-arkui-572），
+      // 不是真坐标——这种情况下 y 的差值毫无意义，必须标出来。
+      const bogus: boolean = beforeH <= 0 || afterH <= 0;
+      logW(`[Trim] drift anchor=${anchorId} idx=${start}->${idx}` +
+        ` y=${Math.round(beforeY)}->${Math.round(afterY)}` +
+        ` h=${Math.round(beforeH)}->${Math.round(afterH)}` +
+        ` off=${Math.round(beforeOff)}->${Math.round(afterOff)}` +
+        ` drift=${Math.round(afterY - beforeY)}${bogus ? ' RECT-SENTINEL' : ''}`);
+    }, 150);
+  }
+
   private handleTimelineScrollStop(): void {
     this.timelineScrollActive = false;
     this.nextDidScrollIsUserDriven = false;
@@ -7760,6 +7915,7 @@ export struct ChatPage {
     // 滚动中冻结的 update 发布在这里冲刷（调度中枢批 1）。先于
     // driveVisibleWork：让本轮可见性工作拿到冲刷后的最新行。
     this.store?.flushScrollDeferredUpdate();
+    this.maybeTrimWindow();
     this.resumeChatTgsAfterScroll();
     this.driveVisibleWork();
     this.playSlot.armSettle();

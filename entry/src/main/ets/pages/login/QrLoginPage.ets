@@ -3,7 +3,8 @@ import { image } from '@kit.ImageKit';
 import {
   canReturnToPreviousTdAccount, getAuthService, returnToPreviousTdAccount
 } from '../../tdkit/Globals';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+} from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
@@ -148,7 +149,7 @@ export struct QrLoginPage {
           ForEach(this.steps, (step: QrLoginStep) => {
             Row({ space: 12 }) {
               Text(step.index)
-                .fontSize(14).fontWeight(FontWeight.Medium).fontColor(Color.White)
+                .fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY)
                 .width(24).height(24).textAlign(TextAlign.Center)
                 .backgroundColor(COLOR_PRIMARY).borderRadius(12);
               Text(step.text)

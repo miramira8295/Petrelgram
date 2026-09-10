@@ -7,7 +7,7 @@ import { formatTime } from '../../util/formatTime';
 import { logE } from '../../util/log';
 import {
   COLOR_DIVIDER, COLOR_MUTED_BADGE, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 
 const AVATAR_COLORS: string[] = [
@@ -175,7 +175,7 @@ export struct DirectMessagesTopicsPage {
             Text(row.unreadCount > 99 ? '99+' : `${row.unreadCount}`)
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
-              .fontColor(Color.White)
+              .fontColor(COLOR_ON_PRIMARY)
               .constraintSize({ minWidth: 22 })
               .height(22)
               .padding({ left: 7, right: 7 })

@@ -73,7 +73,49 @@ export function applyAccentPrimary(hex: string): void {
   const next: ResourceColor = hex !== '' ? hex : $r('app.color.primary');
   COLOR_PRIMARY = next;
   COLOR_TAB_SELECTED = next;
+  COLOR_ON_PRIMARY = onPrimaryOf(next);
 }
+
+// 压在强调色**之上**的前景色（按钮文字、图标）。
+//
+// 【为什么不能写死白色】强调色是用户自由取的——ColorPickerSheet 不是固定色板，
+// 任意 hex 都能选。写死 Color.White 的地方一旦碰上浅色强调色就是白底白字：
+// 2026-09-10 用户截图里删除确认框的确认按钮成了一块纯白空按钮，标签完全看不见，
+// 而它要用户做一个**不可撤销**的决定。全仓当时 35 处这么写。
+//
+// 【判据是"救不可读"，不是"取最大对比"】按纯 WCAG 取黑白里对比高的那个，
+// 阈值会落在 L≈0.179，连默认蓝 #3390EC(L=0.267) 都会翻成黑字——那等于顺手把
+// 整个默认外观改了。所以只在**白字确实读不出来**时才换黑。
+//
+// 阈值 0.40 是这么定的：默认强调色 #3390EC(0.267) / #57A8F2(0.364) 必须留在
+// 白字这一侧，否则用户手动选一个和默认同色的强调色，观感会和默认不一致。
+// 越过 0.40 的是纯白(1.0)、浅灰(0.91)、亮黄(0.68)、亮绿(0.58) 这类，白字在
+// 上面本来就没法看。
+const ON_PRIMARY_WHITE_MAX_L: number = 0.40;
+
+export let COLOR_ON_PRIMARY: ResourceColor = Color.White;
+
+function channelLuminance(v: number): number {
+  const c: number = v / 255;
+  return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+// Resource 形态（用户没自定义）一律白色：那是默认主题里和白字一起调好的。
+export function onPrimaryOf(primary: ResourceColor): ResourceColor {
+  if (typeof primary !== 'string' || primary.length !== 7 || !primary.startsWith('#')) {
+    return Color.White;
+  }
+  const r: number = parseInt(primary.substring(1, 3), 16);
+  const g: number = parseInt(primary.substring(3, 5), 16);
+  const b: number = parseInt(primary.substring(5, 7), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) {
+    return Color.White;
+  }
+  const l: number = 0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) +
+    0.0722 * channelLuminance(b);
+  return l <= ON_PRIMARY_WHITE_MAX_L ? Color.White : Color.Black;
+}
+
 export const COLOR_TEXT_PRIMARY: ResourceColor = $r('app.color.text_primary');
 export const COLOR_TEXT_SECONDARY: ResourceColor = $r('app.color.text_secondary');
 // 次级**图标**专用。和 text_secondary 在浅色下同值，深色下明显更亮：

@@ -16,7 +16,7 @@ import {
 import { folderColor, folderSymbol } from '../../util/FolderVisuals';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -365,7 +365,7 @@ export struct ChatFoldersPage {
       Text('📁').fontSize(44);
       Text($r('app.string.cf_sync_failed')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text($r('app.string.cf_sync_failed_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-      Text($r('app.string.settings_reload')).fontSize(15).fontColor(Color.White).fontWeight(FontWeight.Medium)
+      Text($r('app.string.settings_reload')).fontSize(15).fontColor(COLOR_ON_PRIMARY).fontWeight(FontWeight.Medium)
         .padding({ left: 22, right: 22, top: 10, bottom: 10 })
         .backgroundColor(COLOR_PRIMARY).borderRadius(18)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })

@@ -231,6 +231,47 @@ export default function rowReuseIdTest() {
         rowReuseId(data, groupOf(linkedByPhotoOnly), 'medium')).assertFalse();
     });
 
+    // 2026-09-10 用户报「气泡不该有图片却渲染出来了」，自己给的判断是"带图的
+    // 气泡被复用之后图没被消除"——查下来确实如此：hasLinkPreview 在桶里只是
+    // 一个布尔，而链接预览卡有**带图**（紧凑圆头像或大图，都有 Image 节点）和
+    // **纯文字**（一个图节点都没有）两种结构。共桶 ⇒ 带图的壳拿去画纯文字卡，
+    // 那张图留在原地。rowReuseId 自己的注释管这叫 structural-mismatch，只是
+    // 当初漏了链接预览这一支。
+    it('link_preview_with_and_without_photo_never_share_a_bucket', 0, () => {
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const base: MessageEntry = textEntry(82);
+      base.linkUrl = 'https://example.com';
+      base.linkTitle = 'Example';
+
+      const withPhoto: MessageEntry = cloneMessage(base);
+      withPhoto.linkPhotoFileId = 777;
+      // 两者都是"有链接预览"，但一个有 Image 节点、一个没有。
+      expect(rowReuseId(data, groupOf(base), 'medium') ===
+        rowReuseId(data, groupOf(withPhoto), 'medium')).assertFalse();
+      expect(rowReuseId(data, groupOf(base), 'fine') ===
+        rowReuseId(data, groupOf(withPhoto), 'fine')).assertFalse();
+      // 没有链接预览的行仍然要和这两者都分开。
+      const plain: MessageEntry = textEntry(83);
+      expect(rowReuseId(data, groupOf(plain), 'fine') ===
+        rowReuseId(data, groupOf(base), 'fine')).assertFalse();
+    });
+
+    // 同一类的第二个口子：回复块里 replyThumbPath 为空时**整个不画**那张小图
+    // （MessageBubble 明写"不留占位方块"），而 hasReplyBlock 也只是一个布尔。
+    it('reply_with_and_without_thumb_never_share_a_bucket', 0, () => {
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const noReply: MessageEntry = textEntry(84);
+      const reply: MessageEntry = cloneMessage(noReply);
+      reply.replyToMessageId = 4242;
+      const replyWithThumb: MessageEntry = cloneMessage(reply);
+      replyWithThumb.replyThumbPath = '/data/reply-thumb.jpg';
+
+      expect(rowReuseId(data, groupOf(noReply), 'fine') ===
+        rowReuseId(data, groupOf(reply), 'fine')).assertFalse();
+      expect(rowReuseId(data, groupOf(reply), 'fine') ===
+        rowReuseId(data, groupOf(replyWithThumb), 'fine')).assertFalse();
+    });
+
     // Fix wave: the first cut of this file derived "has avatar"/"has sender
     // name" from data.isGroup + msg.isOutgoing (a structural proxy) because
     // the signature only took MessageEntry. That conflated mid-run rows with

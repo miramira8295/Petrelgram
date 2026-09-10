@@ -8,7 +8,7 @@ import { ChatEntry } from '../../store/ChatEntry';
 import { TdError } from '../../tdkit/TdTypes';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
@@ -168,7 +168,7 @@ struct StorageUsagePage {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(34).fontColor([DANGER]);
       Text($r('app.string.storage_load_failed')).fontSize(18).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text(this.loadError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-      Text($r('app.string.settings_reload')).fontSize(14).fontColor(Color.White).padding({ left: 17, right: 17, top: 10, bottom: 10 })
+      Text($r('app.string.settings_reload')).fontSize(14).fontColor(COLOR_ON_PRIMARY).padding({ left: 17, right: 17, top: 10, bottom: 10 })
         .backgroundColor(COLOR_PRIMARY).borderRadius(20).onClick((): void => this.load(true));
     }.width('100%').padding({ top: 54, bottom: 54 }).backgroundColor(COLOR_SURFACE)
       .borderRadius(CARD_RADIUS);

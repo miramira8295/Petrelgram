@@ -6,7 +6,7 @@ import {
 } from '../../store/PrivacyApi';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
@@ -161,7 +161,7 @@ struct PrivacyRulePage {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle')).fontSize(46).fontColor([COLOR_ICON_SECONDARY]);
       Text($r('app.string.privacy_rule_unreadable')).fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
       Text($r('app.string.privacy_rule_no_overwrite')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-      Button($r('app.string.settings_reload')).height(42).borderRadius(21).fontColor(Color.White).backgroundColor(COLOR_PRIMARY)
+      Button($r('app.string.settings_reload')).height(42).borderRadius(21).fontColor(COLOR_ON_PRIMARY).backgroundColor(COLOR_PRIMARY)
         .onClick((): void => { this.load(); });
     }
     .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);

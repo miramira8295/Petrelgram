@@ -21,7 +21,7 @@ import {
 } from '../../store/AppSettings';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
@@ -1207,8 +1207,8 @@ export struct ProxyPage {
         .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center)
         .constraintSize({ maxWidth: 290 });
       Row({ space: 6 }) {
-        SymbolGlyph($r('sys.symbol.plus')).fontSize(15).fontColor([Color.White]);
-        Text($r('app.string.px_add')).fontSize(15).fontWeight(FontWeight.Medium).fontColor(Color.White);
+        SymbolGlyph($r('sys.symbol.plus')).fontSize(15).fontColor([COLOR_ON_PRIMARY]);
+        Text($r('app.string.px_add')).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY);
       }
       .height(42).padding({ left: 18, right: 19 }).borderRadius(21).backgroundColor(COLOR_PRIMARY)
       .margin({ top: 5 }).stateStyles({
@@ -1233,8 +1233,8 @@ export struct ProxyPage {
         .fontColor(COLOR_TEXT_PRIMARY);
       Text(this.loadError).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center);
       Row({ space: 6 }) {
-        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14).fontColor([Color.White]);
-        Text($r('app.string.settings_reload')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(Color.White);
+        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14).fontColor([COLOR_ON_PRIMARY]);
+        Text($r('app.string.settings_reload')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY);
       }
       .height(40).padding({ left: 16, right: 17 }).borderRadius(20).backgroundColor(COLOR_PRIMARY)
       .stateStyles({ normal: this.primaryNormalStyle, pressed: this.primaryPressedStyle })
@@ -1412,7 +1412,7 @@ export struct ProxyPage {
           Row({ space: 6 }) {
             if (this.saving) { LoadingProgress().width(16).height(16).color(Color.White); }
             Text(this.saving ? $r('app.string.saving') : (this.editingId > 0 ? $r('app.string.save_changes') : $r('app.string.px_add')))
-              .fontSize(15).fontWeight(FontWeight.Medium).fontColor(Color.White);
+              .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY);
           }
           .layoutWeight(1).height(44).justifyContent(FlexAlign.Center)
           .backgroundColor(COLOR_PRIMARY).borderRadius(12)

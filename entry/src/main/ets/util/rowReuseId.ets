@@ -93,6 +93,21 @@ function hasLinkPreview(msg: MessageEntry): boolean {
     msg.linkPhotoFileId !== 0;
 }
 
+// 链接预览卡有两种结构：带图的（紧凑圆头像或大图，都有一个 Image 节点）和
+// 纯文字的（**一个图节点都没有**）。原来这两种共用一个 'link-preview' 桶，
+// 于是带图的壳被复用去画纯文字卡时，那张图不会被消除——2026-09-10 用户报的
+// 「气泡不该有图片却渲染出来了」就是它。
+//
+// 只看 linkPhotoFileId，不调 linkPreviewPresentation：复用 id 是每行都要算的
+// 热路径，那个函数要 trim + 解析 URL，不值得。紧凑与大图之间只是尺寸差异，
+// 两者都有 Image 节点，复用不会留下多余的东西。
+function linkPreviewShape(msg: MessageEntry): string {
+  if (!hasLinkPreview(msg)) {
+    return 'no-link-preview';
+  }
+  return msg.linkPhotoFileId !== 0 ? 'link-preview-photo' : 'link-preview-text';
+}
+
 // AlbumGroup.dateLabel is '' unless this row is the first of a new day, in
 // which case MessageBubble.ets (~3420) inserts a centered date-pill Text
 // above the bubble — an extra node that changes the row's child count/shape.
@@ -110,8 +125,14 @@ function hasUnreadDivider(data: MessageBubbleRenderData): boolean {
   return data.showUnreadDivider;
 }
 
-function hasReplyBlock(msg: MessageEntry): boolean {
-  return msg.replyToMessageId !== 0;
+// 回复块**有没有那张小图**是结构差异，不是样式差异：MessageBubble 在
+// replyThumbPath 为空时整个不画那个 Image（"不留占位方块"）。只用一个布尔
+// 分桶，带图的壳会被拿去装不带图的回复——图就留在那儿了。
+function replyShape(msg: MessageEntry): string {
+  if (msg.replyToMessageId === 0) {
+    return 'no-reply';
+  }
+  return msg.replyThumbPath !== '' ? 'reply-thumb' : 'reply';
 }
 
 function hasForwardHeader(msg: MessageEntry): boolean {
@@ -141,13 +162,13 @@ function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string 
   const avatar: string = hasAvatarBranch(group) ? 'avatar' : 'no-avatar';
   const senderName: string = hasSenderNameBranch(group) ? 'sender' : 'no-sender';
   const outgoing: string = isOutgoingBranch(group) ? 'out' : 'in';
-  const reply: string = hasReplyBlock(msg) ? 'reply' : 'no-reply';
+  const reply: string = replyShape(msg);
   const forward: string = hasForwardHeader(msg) ? 'forward' : 'no-forward';
   const reactions: string = hasReactionBar(msg) ? 'reactions' : 'no-reactions';
   const dateSep: string = hasDateSeparator(group) ? 'date' : 'no-date';
   const unread: string = hasUnreadDivider(data) ? 'unread' : 'no-unread';
   const translated: string = hasTranslation(msg) ? 'translated' : 'no-translated';
-  const linkPreview: string = hasLinkPreview(msg) ? 'link-preview' : 'no-link-preview';
+  const linkPreview: string = linkPreviewShape(msg);
   // 裸表情/贴纸/圆形视频没有气泡面：不上玻璃、不画轮廓、不带尾巴。它们和文本行
   // 共池时，一个带玻璃轮廓+尾巴的文本行被复用去画表情，.background() 里那条
   // 轮廓路径不跟着刷新，表情就套着一圈边框（真机报的「表情/贴纸带边框」）。

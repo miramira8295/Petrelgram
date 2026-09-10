@@ -1,4 +1,5 @@
 import { AlbumGroup } from '../../util/collapseAlbums';
+import { checkRenderedGroup } from '../../util/rowIdentityGuard';
 import {
   messageRowPresentationFor, subscribeMessageRowPresentation
 } from '../../util/messageRowPresentationChannel';
@@ -219,6 +220,9 @@ export struct ReusableMessageBubble {
 
   private currentGroup(): AlbumGroup {
     if (this.liveGroup !== null && this.liveGroup.head.rowId === this.group.head.rowId) {
+      // 常驻不变量：旁路快照压过 @Param 时，两者描述的必须是同一条消息。
+      // rowId 相等只保证"同一行"，不保证"同一份内容版本"。见 util/rowIdentityGuard。
+      checkRenderedGroup(this.group.head.id, this.liveGroup.head.id, this.group.head.rowId);
       return this.liveGroup;
     }
     return this.group;

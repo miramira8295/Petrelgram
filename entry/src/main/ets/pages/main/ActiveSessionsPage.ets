@@ -9,7 +9,8 @@ import {
   activeSessionError, freshSessionSeconds, inactiveSessionTtlLabel,
   sessionDeviceType, sessionWaitText
 } from '../../util/ActiveSessionPresentation';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+} from '../../util/theme';
 import { plural, str } from '../../util/strings';
 import { clockTime, fullDate, monthDayTime } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -624,7 +625,7 @@ export struct ActiveSessionsPage {
     Row({ space: 13 }) {
       Stack({ alignContent: Alignment.Center }) {
         SymbolGlyph($r('sys.symbol.qrcode'))
-          .fontSize(25).fontColor([Color.White]);
+          .fontSize(25).fontColor([COLOR_ON_PRIMARY]);
       }
       .width(46).height(46).borderRadius(14).backgroundColor(COLOR_PRIMARY);
       Column({ space: 3 }) {
@@ -978,7 +979,7 @@ export struct ActiveSessionsPage {
               ? $r('app.string.as_confirming')
               : $r('app.string.as_confirm_device'))
               .width('calc(100% - 32vp)').height(50)
-              .fontSize(16).fontColor(Color.White)
+              .fontSize(16).fontColor(COLOR_ON_PRIMARY)
               .backgroundColor(COLOR_PRIMARY).borderRadius(25)
               .margin({ left: 16, right: 16, top: 16 })
               .enabled(this.actionKey === '')
@@ -1070,7 +1071,7 @@ export struct ActiveSessionsPage {
         .lineHeight(19).textAlign(TextAlign.Center).width('78%');
       Button($r('app.string.settings_reload'))
         .height(42).padding({ left: 24, right: 24 })
-        .fontSize(15).fontColor(Color.White).backgroundColor(COLOR_PRIMARY).borderRadius(21)
+        .fontSize(15).fontColor(COLOR_ON_PRIMARY).backgroundColor(COLOR_PRIMARY).borderRadius(21)
         .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
         .onClick((): void => { this.load(true); });
     }

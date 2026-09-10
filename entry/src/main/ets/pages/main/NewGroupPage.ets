@@ -5,7 +5,8 @@ import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
 } from '../../store/AppSettings';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+} from '../../util/theme';
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   PublicUserSearchResult, searchPublicUsersDetailed
@@ -691,8 +692,8 @@ struct NewGroupPage {
         .textAlign(TextAlign.Center).constraintSize({ maxWidth: 280 });
       if (retryKind !== '') {
         Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14).fontColor([Color.White]);
-          Text($r('app.string.settings_reload')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(Color.White);
+          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(14).fontColor([COLOR_ON_PRIMARY]);
+          Text($r('app.string.settings_reload')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY);
         }
         .height(38).padding({ left: 15, right: 16 }).borderRadius(19)
         .backgroundColor(COLOR_PRIMARY)

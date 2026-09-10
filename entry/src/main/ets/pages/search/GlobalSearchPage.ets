@@ -18,7 +18,7 @@ import {
   COLOR_TAB_SELECTED,
   COLOR_TAB_UNSELECTED,
   COLOR_TAB_PILL_BG,
-  mainCardFill, mainPageFill
+  mainCardFill, mainPageFill, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
   KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
@@ -2195,7 +2195,7 @@ export struct GlobalSearchPage {
           if (this.resultOpeningKey === `app:${r.userId}`) {
             LoadingProgress().width(16).height(16).color(Color.White);
           } else {
-            Text($r('app.string.open')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(Color.White);
+            Text($r('app.string.open')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY);
           }
         }
         .width(58).height(30)
@@ -2263,7 +2263,7 @@ export struct GlobalSearchPage {
         } else {
           Row() {
             SymbolGlyph($r(it.kind === 'video' ? 'sys.symbol.play_fill' : 'sys.symbol.doc_text'))
-              .fontSize(20).fontColor([Color.White]);
+              .fontSize(20).fontColor([COLOR_ON_PRIMARY]);
           }
           .width(48).height(48).borderRadius(8).backgroundColor(COLOR_PRIMARY)
           .justifyContent(FlexAlign.Center);
@@ -2416,7 +2416,7 @@ export struct GlobalSearchPage {
         Button($r('app.string.cancel')).fontSize(15).fontColor(COLOR_TEXT_SECONDARY)
           .backgroundColor(COLOR_TAB_PILL_BG).layoutWeight(1).height(42)
           .onClick(() => { this.removeSheetShown = false; });
-        Button($r('app.string.gs_action_remove')).fontSize(15).fontColor(Color.White)
+        Button($r('app.string.gs_action_remove')).fontSize(15).fontColor(COLOR_ON_PRIMARY)
           .backgroundColor(COLOR_PRIMARY).layoutWeight(1).height(42)
           .onClick(() => {
             const target = this.pendingRemoval;
@@ -2966,12 +2966,12 @@ export struct GlobalSearchPage {
         .fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
       if (this.query.trim() !== '') {
         Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(16).fontColor([Color.White]);
+          SymbolGlyph($r('sys.symbol.magnifyingglass')).fontSize(16).fontColor([COLOR_ON_PRIMARY]);
           Text(str('gs_search_for', this.query.trim()))
-            .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White)
+            .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .constraintSize({ maxWidth: 200 });
-          SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(14).fontColor([Color.White]);
+          SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(14).fontColor([COLOR_ON_PRIMARY]);
         }
         .backgroundColor(COLOR_PRIMARY).borderRadius(24)
         .padding({ left: 22, right: 22, top: 12, bottom: 12 })

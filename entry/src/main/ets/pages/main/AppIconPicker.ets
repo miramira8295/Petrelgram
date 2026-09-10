@@ -1,7 +1,8 @@
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
+} from '../../util/theme';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
 import {
@@ -115,7 +116,7 @@ export struct AppIconPicker {
           // 选中标记压在右下角，而不是盖住中间——用户要同时看清选中的是哪一张。
           Row() {
             SymbolGlyph($r('sys.symbol.checkmark'))
-              .fontSize(13).fontColor([Color.White]);
+              .fontSize(13).fontColor([COLOR_ON_PRIMARY]);
           }
           .width(22).height(22).borderRadius(11)
           .backgroundColor(COLOR_PRIMARY)

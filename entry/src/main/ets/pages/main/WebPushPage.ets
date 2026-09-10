@@ -2,7 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { TdError } from '../../tdkit/TdTypes';
 import { getTdClient } from '../../tdkit/Globals';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
   KEY_MEOW_NICKNAME, KEY_MEOW_SECRET, KEY_WEBPUSH_ACCEPTED, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED,
@@ -420,7 +420,7 @@ struct WebPushPage {
           .backgroundColor(COLOR_PAGE_BG).fontColor(COLOR_TEXT_PRIMARY)
           .onClick((): void => { this.consentShown = false; });
         Button($r('app.string.wp_accept')).fontSize(15).layoutWeight(1)
-          .backgroundColor(COLOR_PRIMARY).fontColor(Color.White)
+          .backgroundColor(COLOR_PRIMARY).fontColor(COLOR_ON_PRIMARY)
           .onClick((): void => this.acceptConsent());
       }.width('100%').margin({ top: 4 });
     }
@@ -484,13 +484,13 @@ struct WebPushPage {
                 } else if (this.meowPendingId === '') {
                   Button(this.meowBusy ? $r('app.string.processing') : $r('app.string.meow_request_code'))
                     .fontSize(15).width('100%').height(44)
-                    .backgroundColor(COLOR_PRIMARY).fontColor(Color.White)
+                    .backgroundColor(COLOR_PRIMARY).fontColor(COLOR_ON_PRIMARY)
                     .enabled(!this.meowBusy)
                     .onClick((): void => this.meowRequestCode());
                 } else {
                   Button(this.meowBusy ? $r('app.string.processing') : $r('app.string.meow_confirm'))
                     .fontSize(15).width('100%').height(44)
-                    .backgroundColor(COLOR_PRIMARY).fontColor(Color.White)
+                    .backgroundColor(COLOR_PRIMARY).fontColor(COLOR_ON_PRIMARY)
                     .enabled(!this.meowBusy)
                     .onClick((): void => this.meowConfirmCode());
                   Button($r('app.string.cancel'))
@@ -563,7 +563,7 @@ struct WebPushPage {
             Column({ space: 8 }) {
               Button(this.busy ? $r('app.string.processing') : $r('app.string.wp_save_register'))
                 .fontSize(15).width('100%').height(44)
-                .backgroundColor(COLOR_PRIMARY).fontColor(Color.White)
+                .backgroundColor(COLOR_PRIMARY).fontColor(COLOR_ON_PRIMARY)
                 .enabled(!this.busy)
                 .onClick((): void => this.saveAndRegister());
               // 注销入口独立出来：关开关也会注销，但换地址时用户想的是

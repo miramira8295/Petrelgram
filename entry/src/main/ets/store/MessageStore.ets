@@ -100,6 +100,10 @@ const INITIAL_FIRST_PAGE: number = 12;
 // 预取（prefetchOlder）已经把下一页提前拿在手里，多一轮往返不进用户等待。
 const OLDER_PAGE: number = 15;
 
+// 消息窗口的行数上限。攒到 ChatPage 的触发线之后，停稳时砍回这个数。
+// 数字来自真机实测，理由写在 MessageStore.trimWindowTo 的注释里。
+export const MESSAGE_WINDOW_CAP: number = 200;
+
 function pollVoteErrorText(raw: string): string {
   const normalized = raw.trim().toUpperCase();
   if (normalized.indexOf('POLL_MEMBER_RESTRICTED') >= 0) {
@@ -1119,7 +1123,25 @@ export class MessageStore {
     const firstArr: TdObject[] = (first['messages'] as TdObject[] | undefined) ?? [];
     const secondArr: TdObject[] = (second['messages'] as TdObject[] | undefined) ?? [];
     // slice(1)：去掉与 first 末条重复的边界那一条。
-    const merged: TdObject[] = firstArr.concat(secondArr.slice(1));
+    //
+    // 【这条假设必须被验证，不能默认成立】两页来自同一次预取的连续请求，第二页
+    // 的第一条**应当**就是第一页的最后一条（共用边界）。假设不成立时 slice(1)
+    // 会**吞掉一条真消息**，而且正好吞在接缝上——表现就是"某条消息凭空消失、
+    // 相册整个不见"。2026-09-10 用户怀疑"前插插错数据"，这里是唯一有此风险的
+    // 地方，所以把它变成可判定的事实而不是注释里的一句话。
+    const firstLast: number = firstArr.length > 0
+      ? ((firstArr[firstArr.length - 1]['id'] as number | undefined) ?? 0) : 0;
+    const secondFirst: number = secondArr.length > 0
+      ? ((secondArr[0]['id'] as number | undefined) ?? 0) : 0;
+    const boundaryShared: boolean = firstLast !== 0 && firstLast === secondFirst;
+    if (!boundaryShared && secondArr.length > 0) {
+      logW(`[MergeGuard] older pages do not share a boundary:` +
+        ` firstLast=${firstLast} secondFirst=${secondFirst}` +
+        ` first=${firstArr.length} second=${secondArr.length} anchor=${anchorId}`);
+    }
+    // 边界不共用时**不能** slice——那会吞掉第二页的第一条。
+    const merged: TdObject[] = firstArr.concat(
+      boundaryShared ? secondArr.slice(1) : secondArr);
     const page: TdObject = this.historyPageSlice(first, merged);
     this.olderPrefetchAnchorId = 0;
     this.olderPrefetchResult = null;
@@ -1136,6 +1158,75 @@ export class MessageStore {
     if (this.hasMoreOlder && this.initialFillTries === 0) {
       this.prefetchOlder();
     }
+    return true;
+  }
+
+  // ── 窗口裁剪 ────────────────────────────────────────────────────
+  //
+  // 【为什么必须有】消息窗口原本没有任何上限。真机实测（2026-09-10）：一路
+  // 往上翻到 1430 行时，**每一次发布**要 15ms——约两帧——而发布很频繁
+  // （下载心跳、缩略图落地、译文落地）。发布这条路上的三段
+  // （collapseAlbums 整表重建 / 逐行发通道 / reuseUnchangedRows）**全是
+  // O(行数)**，且在 1200+ 行时三段一样贵（6/6/4ms），抠单段已无出路：就算把
+  // 最贵那段做成 O(1)，15ms 也只降到 9ms，仍然超帧。真正的自变量是行数本身。
+  //
+  // 400 行时按线性推约 4~5ms，一步进预算。
+  //
+  // 【谁来调】ChatPage，且**只在停稳且手指抬起**时——滑动热路径里绝不改行数。
+  // 保留范围由调用方按可见区 ± 余量给出，屏幕上的行一根都不许被删。
+  //
+  // 【位置为什么不会飘】删的是可见区外很远的行，且剩下的行身份一个不变，属于
+  // List.maintainVisibleContentPosition(true) 明确支持的纯删除。它在本项目里
+  // 失手过一次，但那是"相册跨页合并导致旧行身份消失"，和这里不是一回事
+  // （见 capturePrependAnchorSample 的注释）。ChatPage 那侧配了漂移探针盯着。
+  //
+  // 【砍完要能拉回来】砍了老的一端就把 hasMoreOlder 重新置真、清掉预取（预取
+  // 锚点是按 oldestId 记的，砍完就失效了）；砍了新的一端就把 hasMoreNewer 置
+  // 真——新端分页本来就为跳转场景存在，往回滑会经 loadNewer 重新取。
+  trimWindowTo(firstKeepId: number, lastKeepId: number): boolean {
+    const msgs: MessageEntry[] = this.messages;
+    // 门槛交给调用方（ChatPage 有滞后策略，还知道视口在哪）；这里只挡住
+    // 空区间这种明显错误的请求。
+    if (firstKeepId > lastKeepId) {
+      return false;
+    }
+    let from: number = 0;
+    while (from < msgs.length && msgs[from].id < firstKeepId) {
+      from++;
+    }
+    let to: number = msgs.length - 1;
+    while (to >= 0 && msgs[to].id > lastKeepId) {
+      to--;
+    }
+    // 保留区必须非空，而且真有东西可砍。
+    if (to < from || (from === 0 && to === msgs.length - 1)) {
+      // ⚠️ 临时：查"裁剪不触发"。msgs 是**消息**不是行，两者可能差很多。
+      logW(`[Trim] refused msgs=${msgs.length} from=${from} to=${to}` +
+        ` keep=${firstKeepId}..${lastKeepId}` +
+        ` msgFirst=${msgs[0].id} msgLast=${msgs[msgs.length - 1].id}`);
+      return false;
+    }
+    const cutOlder: number = from;
+    const cutNewer: number = msgs.length - 1 - to;
+    this.messages = msgs.slice(from, to + 1);
+    if (cutOlder > 0) {
+      this.hasMoreOlder = true;
+      this.olderLoadState = 'idle';
+      this.olderEmptyRetries = OLDER_EMPTY_RETRIES;
+      this.clearOlderPrefetch();
+      this.oldestId = this.messages[0].id;
+    }
+    if (cutNewer > 0) {
+      this.hasMoreNewer = true;
+      this.newerLoadState = 'idle';
+      this.newerEmptyAnchor = 0;
+      this.newerEmptyStreak = 0;
+    }
+    logW(`[Trim] rows=${msgs.length}->${this.messages.length}` +
+      ` cutOlder=${cutOlder} cutNewer=${cutNewer}` +
+      ` keep=${firstKeepId}..${lastKeepId}` +
+      ` hasMoreOlder=${this.hasMoreOlder} hasMoreNewer=${this.hasMoreNewer}`);
+    this.notify('trim');
     return true;
   }
 
@@ -6077,7 +6168,35 @@ export class MessageStore {
     }, SCROLL_DEFER_FLUSH_MS);
   }
 
+  // 常驻不变量：**窗口必须严格按 id 升序**。
+  //
+  // 2026-09-10 用户对着官方端截图发现"本该是相册的位置变成了一条更晚的文本"。
+  // 缺口解释不了这个——缺口只会让消息少，不会让 09:37 排到 02:00 前面。所以
+  // 只可能是两种：窗口顺序真乱了（store 的合并/裁剪问题），或者顺序是对的、
+  // 那一行画错了（渲染/复用问题）。两者修法完全不同，靠看图分不出来。
+  //
+  // 这一趟是 O(行数) 的整数比较，几百行的量级可以忽略；报一次就闭嘴，
+  // 免得刷屏。**不是探针，别删**——顺序是时间线的地基，坏了什么都不对。
+  private orderBrokenReported: boolean = false;
+
+  private checkWindowOrder(kind: string): void {
+    if (this.orderBrokenReported) {
+      return;
+    }
+    for (let i = 1; i < this.messages.length; i++) {
+      if (this.messages[i].id <= this.messages[i - 1].id) {
+        this.orderBrokenReported = true;
+        logW(`[OrderGuard] window not ascending at idx=${i} kind=${kind}` +
+          ` rows=${this.messages.length}` +
+          ` prev=${this.messages[i - 1].id}(${this.messages[i - 1].contentType})` +
+          ` cur=${this.messages[i].id}(${this.messages[i].contentType})`);
+        return;
+      }
+    }
+  }
+
   private notify(kind: string = 'update'): void {
+    this.checkWindowOrder(kind);
     // openChat may emit updateNewMessage before the first getChatHistory page
     // returns (commonly just the newest message of a newly visited channel).
     // Keep those updates in `messages`, but publish the initial timeline only

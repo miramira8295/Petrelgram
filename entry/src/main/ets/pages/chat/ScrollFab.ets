@@ -1,4 +1,5 @@
-import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY } from '../../util/theme';
+import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ON_PRIMARY
+} from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
@@ -73,7 +74,7 @@ export struct ScrollFab {
       if (this.unreadCount > 0) {
         Row() {
           Text(unreadBadgeText(this.unreadCount))
-            .fontSize(12).fontColor(Color.White).fontWeight(FontWeight.Medium)
+            .fontSize(12).fontColor(COLOR_ON_PRIMARY).fontWeight(FontWeight.Medium)
             .maxLines(1).textAlign(TextAlign.Center);
         }
         .width(unreadBadgeWidth(this.unreadCount)).height(BADGE_HEIGHT)

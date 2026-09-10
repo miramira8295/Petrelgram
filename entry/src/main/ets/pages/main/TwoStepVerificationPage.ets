@@ -6,7 +6,7 @@ import {
 } from '../../store/PrivacyApi';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -309,7 +309,7 @@ struct TwoStepVerificationPage {
         .backgroundColor($r('app.color.surface_alt')).borderRadius(12).padding({ left: 14, right: 14 })
         .onChange((value: string): void => { this.code = value; this.errorText = ''; });
       Button(this.saving ? $r('app.string.verifying') : $r('app.string.tsv_confirm_email_button')).width('100%').height(46).borderRadius(23)
-        .fontColor(Color.White).backgroundColor(COLOR_PRIMARY).enabled(!this.saving && this.code.trim() !== '')
+        .fontColor(COLOR_ON_PRIMARY).backgroundColor(COLOR_PRIMARY).enabled(!this.saving && this.code.trim() !== '')
         .onClick((): void => { this.verifyEmail(); });
       Row() {
         Text($r('app.string.resend')).fontSize(14).fontColor(COLOR_PRIMARY).onClick((): void => { this.resendCode(); });

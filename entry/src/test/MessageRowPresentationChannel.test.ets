@@ -81,5 +81,45 @@ export default function messageRowPresentationChannelTest() {
         .assertEqual('hello');
       unsub();
     });
+    // 2026-09-10：这一趟是发布流水线里最贵的一段（1368 行 7ms）。改成数字键的
+    // 嵌套表 + head 引用快速路径之后，语义必须一个字不变——下面钉的就是那些。
+    it('head 引用没变时不唤醒订阅者，但换了内容照样定点更新', 0, () => {
+      const chatId: number = 990002;
+      const entry: MessageEntry = media(880002);
+      const first: AlbumGroup = collapseAlbums([entry])[0];
+      publishMessageRowPresentations(chatId, [first]);
+
+      const seen: AlbumGroup[] = [];
+      const unsub = subscribeMessageRowPresentation(
+        chatId, first.head.rowId, (group: AlbumGroup): void => { seen.push(group); });
+
+      // 同一个 head 对象再发一次（稳态下绝大多数行就是这样）：一次都不该唤醒。
+      publishMessageRowPresentations(chatId, [collapseAlbums([entry])[0]]);
+      publishMessageRowPresentations(chatId, [collapseAlbums([entry])[0]]);
+      expect(seen.length).assertEqual(0);
+
+      // 换了 head 且内容真的变了：照旧定点唤醒。
+      const landed: MessageEntry = cloneMessage(entry);
+      landed.photoPath = '/data/thumb-880002.jpg';
+      publishMessageRowPresentations(chatId, [collapseAlbums([landed])[0]]);
+      expect(seen.length).assertEqual(1);
+      expect(seen[0].head.photoPath).assertEqual('/data/thumb-880002.jpg');
+      unsub();
+    });
+
+    // 离屏行稍后上屏时要能拿到最新快照——换成按会话嵌套之后这条最容易被改坏。
+    it('换过几个会话之后，旧会话的快照仍然读得到', 0, () => {
+      const chatId: number = 990003;
+      const entry: MessageEntry = media(880003);
+      entry.photoPath = '/data/keep-me.jpg';
+      publishMessageRowPresentations(chatId, [collapseAlbums([entry])[0]]);
+      // 中间穿插几个别的会话（不超过会话表上限）。
+      for (let i = 0; i < 4; i++) {
+        publishMessageRowPresentations(990100 + i, [collapseAlbums([media(880100 + i)])[0]]);
+      }
+      expect(messageRowPresentationFor(chatId, collapseAlbums([entry])[0].head.rowId)
+        ?.head.photoPath ?? '').assertEqual('/data/keep-me.jpg');
+    });
+
   });
 }
