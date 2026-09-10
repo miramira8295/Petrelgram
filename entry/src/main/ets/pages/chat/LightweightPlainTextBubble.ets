@@ -144,6 +144,16 @@ struct LightweightSenderAvatar {
     this.attach(this.senderId, this.senderIsUser, '');
   }
 
+  // 与 LiveSenderAvatar 同一处理：上面传 '' 是为了不画上一个人的头像，代价是
+  // 通道没缓存时会空一下（Repeat 外壳复用打开后走的正是这条路，那一闪就显出来
+  // 了）。这里**只在 path 为空时**补种，两头都不吃亏。
+  @Monitor('initialPath')
+  onInitialPathArrived(): void {
+    if (this.path === '' && this.initialPath !== '') {
+      this.path = this.initialPath;
+    }
+  }
+
   private detach(): void {
     if (this.unsub !== null) {
       this.unsub();

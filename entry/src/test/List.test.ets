@@ -251,6 +251,7 @@ import videoHeadPrefetcherTest from './VideoHeadPrefetcher.test';
 import bottomFollowTest from './BottomFollow.test';
 import olderPagingTest from './OlderPaging.test';
 import netBearerTest from './NetBearer.test';
+import rowTemplateIdTest from './RowTemplateId.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -499,6 +500,7 @@ export default function testsuite() {
   bottomFollowTest();
   olderPagingTest();
   netBearerTest();
+  rowTemplateIdTest();
   scrollAnchorControllerTest();
   playSlotDriverTest();
   albumSiblingsTest();

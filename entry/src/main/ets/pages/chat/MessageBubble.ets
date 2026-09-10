@@ -252,6 +252,22 @@ struct LiveSenderAvatar {
     this.attachAvatarChannel(this.senderId, this.senderIsUser, '');
   }
 
+  // 【补空窗，但不画错人】onSenderChanged 传 '' 是故意的（见那边注释）：@Param
+  // 逐个落地时 initialPath 可能还是上一行的，拿它兜底就是"图配错人"。代价是
+  // 通道没缓存时 path 变空、露一下首字母圆底——Repeat 自己的外壳复用打开之后
+  // 走的正是 @Monitor 这条路，这一闪就显出来了（用户 2026-09-10：「会闪一下
+  // 头像」）。
+  //
+  // 这里**只在 path 为空时**用 initialPath 补种：到这一刻 initialPath 已经是
+  // 本行自己的值（它变了才会触发本回调），既不会画上一个人的头像，也不留空窗。
+  @Monitor('initialPath')
+  onInitialPathArrived(): void {
+    if (this.path === '' && this.initialPath !== '') {
+      this.path = this.initialPath;
+    }
+  }
+
+
   private detachAvatarChannel(): void {
     if (this.unsubAvatar !== null) {
       this.unsubAvatar();

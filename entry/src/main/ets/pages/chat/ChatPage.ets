@@ -30,6 +30,11 @@ import {
   allocateChatPageReuseScope, CHAT_PAGE_REUSE_ID_LEVEL, rowReuseId
 } from '../../util/rowReuseId';
 import {
+  ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_SEL,
+  ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_SEL, rowTemplateId
+} from '../../util/rowTemplateId';
+import { MessageRowHost } from './MessageRowHost';
+import {
   MIN_MESSAGE_ROW_HEIGHT_VP, capReuseBuckets, globalReusePoolAvailable,
   messageRowViewportRows, reuseBucketMaxCount
 } from '../../util/messageReusePool';
@@ -309,6 +314,25 @@ const TRIM_MIN_MARGIN_ROWS: number = 60;
 // 500 触发 / 200 目标 = 300 行余量。峰值 500 行时一次发布约 6ms（1930 行时
 // 是 57ms），余量仍是第一版"400 触发/砍到 225"那个踏步版本的近两倍。
 const TRIM_TRIGGER_ROWS: number = 500;
+
+// Repeat 自身的外壳复用开关。
+//
+// **必须是 false。2026-09-10 三轮真机，官方处方的完整形态也没治好。**
+//
+// 试过并排除的（按顺序，别再重走）：
+//   1. 修 rowReuseId 的结构分桶 —— reusable:true 下内层 reuseId 池根本不被用
+//   2. 补 6 处「只有 aboutToReuse、没有等效 @Monitor」的组件 —— 是真缺口，
+//      已修保留，但补完开 true 仍然重复
+//   3. **官方处方的完整形态**：垫一层普通 V2 组件（MessageRowHost）+ 可枚举的
+//      templateId 分外壳池（五档全注册）—— **仍然重复**
+//
+// 也就是说，Repeat 自身的外壳复用与本项目这种「每行结构差异极大的消息流」
+// 存在一个尚未定位的不兼容点，官方文档给的两条处置都盖不住。
+// 开着的那几版手感确实更好（外壳不再每帧重建、震颤明显减轻），但正确性优先。
+//
+// 薄壳与 templateId 都留着：它们本身符合官方对结构的要求，无害；真要再试第四
+// 次时省掉重新搭台的功夫。
+const REPEAT_ROW_REUSE: boolean = false;
 
 
 const CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S: number = 4200;
@@ -1488,18 +1512,28 @@ export struct ChatPage {
   // 进行传参，组件才能监听到数据变化」，反例正是按值传 ri.item —— 那样 Repeat
   // 更新这一行时（它只换 RepeatItem 里的 item，不重跑 .each()）这个 @Builder
   // 里的 UI 不会刷新。所以 ri 一路传到这里，group/data 都在本作用域内现取。
+  // 气泡外面垫一层普通 V2 组件（MessageRowHost）：官方明写 V2 复用组件不支持
+  // 直接用于 Repeat 的 template 中，只能放在 template 里的普通 V2 组件之下。
+  // 薄壳只做转发，reuseId 在里面挂给内层气泡。
   @Builder
   private preparedMessageBubble(ri: RepeatItem<AlbumGroup>) {
-    ReusableMessageBubble({
+    MessageRowHost({
       group: ri.item,
       nowSec: this.nowSec,
       data: this.prepareMessageBubble(ri.item).data,
-      actions: this.messageActions()
-    }).reuse({
-      reuseId: (): string =>
-        `chatPage${this.reusePageScope}_` +
-          rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, CHAT_PAGE_REUSE_ID_LEVEL)
+      actions: this.messageActions(),
+      bubbleReuseId: `chatPage${this.reusePageScope}_` +
+        rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, CHAT_PAGE_REUSE_ID_LEVEL)
     });
+  }
+
+  // Repeat 的模板名。分的是**外壳**的池，必须可枚举（见 util/rowTemplateId）。
+  private rowTemplateIdOf(group: AlbumGroup): string {
+    const data: MessageBubbleRenderData = this.prepareMessageBubble(group).data;
+    const lightweight: boolean =
+      data.lightweightPlainText && group.head.translatedText === '';
+    const gutter: boolean = this.selection.active && rowSelectable(group.head.contentType);
+    return rowTemplateId(group, lightweight, gutter);
   }
   // "×× 正在输入…" 提示的状态与轮询定时器整套搬进了 TypingIndicatorState
   // （B10 批）：composerPlaceholder 改读 this.typing.label（原 @Local
@@ -7462,6 +7496,26 @@ export struct ChatPage {
         .each((ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
         })
+        // 五个模板**共用同一个 builder**：templateId 只负责把外壳的缓存池按结构
+        // 分开，渲染逻辑一份就够。少注册一个，那一档就退回 .each 的默认池，
+        // 等于没分——所以遍历 ROW_TEMPLATE_IDS 注册，不手写五遍。
+        .templateId((group: AlbumGroup, _index: number): string =>
+          this.rowTemplateIdOf(group))
+        .template(ROW_TEMPLATE_DEFERRED, (ri: RepeatItem<AlbumGroup>) => {
+          this.timelineRow(ri);
+        }, { cachedCount: 4 })
+        .template(ROW_TEMPLATE_PLAIN, (ri: RepeatItem<AlbumGroup>) => {
+          this.timelineRow(ri);
+        }, { cachedCount: 8 })
+        .template(ROW_TEMPLATE_PLAIN_SEL, (ri: RepeatItem<AlbumGroup>) => {
+          this.timelineRow(ri);
+        }, { cachedCount: 4 })
+        .template(ROW_TEMPLATE_RICH, (ri: RepeatItem<AlbumGroup>) => {
+          this.timelineRow(ri);
+        }, { cachedCount: 8 })
+        .template(ROW_TEMPLATE_RICH_SEL, (ri: RepeatItem<AlbumGroup>) => {
+          this.timelineRow(ri);
+        }, { cachedCount: 4 })
         .key((group: AlbumGroup): string => this.rowKeyOf(group))
         // Repeat owns the ListItem root, so let it reuse that complete subtree.
         // Forcing reusable=false delegates scrolling reuse to the nested
@@ -7499,7 +7553,7 @@ export struct ChatPage {
         // @ReusableV2 气泡，贵的那部分子树照常复用。原注释记录的代价是：前插时
         // 气泡会在两个 Repeat 节点之间搬家，ArkUI 报 setChild/changing-parent，
         // 表现为行闪一下。拿"偶尔闪一下"换"消息不再重复"，值。
-        .virtualScroll({ totalCount: this.timelineSnapshot.groups.length, reusable: false });
+        .virtualScroll({ totalCount: this.timelineSnapshot.groups.length, reusable: REPEAT_ROW_REUSE });
     }
     .width('100%').height('100%')
     .opacity(this.initialTimelineMasked ? 0 : 1)
