@@ -13,6 +13,19 @@ export const HIGH_WATER_BYTES: number = 6 * CHUNK_SIZE;
 // 是同一个数——复制一份早晚漂移，漂了预取就白做。
 export const PREPARE_HEAD_BYTES: number = 2 * CHUNK_SIZE;
 export const PREPARE_TAIL_BYTES: number = CHUNK_SIZE;
+// 一次 downloadFile 的 limit 上限。
+//
+// 【为什么必须远大于 CHUNK_SIZE —— 2026-09-11 读 TDLib 源码得出】
+// TDLib 的 PartsManager.get_estimated_extra() 在流式模式下**用 streaming_limit_
+// （就是我们传的 limit）给向 ResourceManager 的申请量封顶**
+// （PartsManager.cpp:425-450 → ResourceManager.cpp:103-120）。而它的分片是
+// 64KB（250MB 以内的文件，PartsManager.cpp:132-135），在飞预算是 2MB
+// （FileDownloadManager.h:70）。
+//   limit = 1MB  ⇒ 在飞最多 16 片，**池子只用了一半**
+//   limit ≥ 2MB  ⇒ 不再被 limit 卡住，能吃满 32 片
+// 取 HIGH_WATER_BYTES：那本来就是"我们想缓冲到多远"，一次要到位，别让 TDLib
+// 下完 1MB 就空转等我们发下一个。
+const STREAM_REQUEST_LIMIT_BYTES: number = HIGH_WATER_BYTES;
 const STREAM_REQUEST_TIMEOUT_MS: number = 60000;
 const MAX_REQUEST_RETRIES: number = 5;
 
@@ -34,6 +47,10 @@ export class VideoStreamSession {
   private requestLengths: Map<number, number> = new Map();
   private requestAttempts: Map<number, number> = new Map();
   private activeStart: number = -1;
+  // 当前在途请求覆盖到哪（抢占判据用）。
+  private activeEnd: number = -1;
+  // 抢占计数：seek 之后旧请求的回调要认得出自己已经作废。
+  private requestSeq: number = 0;
   private closed: boolean = false;
   private readHead: number = 0;
   private prefetching: boolean = false;
@@ -259,19 +276,64 @@ export class VideoStreamSession {
     this.requestLengths.set(offset, length);
     if (urgent) {
       this.requestQueue.unshift(offset);
+      this.preemptIfOutsideWindow(offset);
     } else {
       this.requestQueue.push(offset);
     }
     this.pumpQueue();
   }
 
+  // seek / 读未命中时抢占当前在途请求。
+  //
+  // TDLib 对同一文件只保留一组 offset/limit，发一个新的即取代旧的——td_api 自己
+  // 写明 synchronous 请求会在"收到 offset/limit 不同的新请求"时结束。所以抢占
+  // 不需要先 cancelDownloadFile（那会真的停掉下载），也不会丢已下好的分片：
+  // 已完成的分片记在 PartialLocalFileLocation 的 bitmask 里，跨 offset 变更保留
+  // （FileDownloader.cpp:458-476 只取消"窗口外仍在飞"的请求）。
+  //
+  // 【为什么非有不可】limit 放大到 6MB 之后，一个在途请求可能要跑好几秒。原来
+  // pumpQueue 在 activeStart >= 0 时一律早退，seek 就得排在它后面——窗口越大越
+  // 难受。现在落在当前窗口内的等它，落在窗口外的立刻取代。
+  private preemptIfOutsideWindow(offset: number): void {
+    if (this.activeStart < 0) {
+      return;
+    }
+    if (offset >= this.activeStart && offset < this.activeEnd) {
+      return;
+    }
+    this.requestSeq++;
+    this.activeStart = -1;
+    this.activeEnd = -1;
+  }
+
   private pumpQueue(): void {
-    if (this.closed || this.activeStart >= 0 || this.requestQueue.length === 0) {
+    if (this.closed || this.activeStart >= 0) {
+      return;
+    }
+    // 窗口放大之后一次请求常常顺手把后面几块也带下来了，把已到手的从队首丢掉。
+    while (this.requestQueue.length > 0) {
+      const head: number = this.requestQueue[0];
+      const headLen: number = this.requestLengths.get(head) ?? 0;
+      if (headLen > 0 && !this.hasRange(head, headLen)) {
+        break;
+      }
+      this.requestQueue.shift();
+      this.pendingStarts.delete(head);
+      this.requestLengths.delete(head);
+      this.requestAttempts.delete(head);
+    }
+    if (this.requestQueue.length === 0) {
       return;
     }
     const offset = this.requestQueue.shift() as number;
-    const length = this.requestLengths.get(offset) ?? 0;
+    const chunkLength = this.requestLengths.get(offset) ?? 0;
+    // 记账仍按 1MB 一块（对齐细、seek 时少重下），但**请求本身要到 6MB**，
+    // 理由见 STREAM_REQUEST_LIMIT_BYTES。
+    const length = Math.max(chunkLength,
+      this.limitEnd(offset + STREAM_REQUEST_LIMIT_BYTES) - offset);
+    const seq: number = this.requestSeq;
     this.activeStart = offset;
+    this.activeEnd = offset + length;
     const req: TdRequest = { '@type': 'downloadFile' };
     req['file_id'] = this.fileId;
     req['priority'] = STREAM_PRIORITY;
@@ -279,15 +341,28 @@ export class VideoStreamSession {
     req['limit'] = length;
     req['synchronous'] = true;
     this.client.send(req, STREAM_REQUEST_TIMEOUT_MS).then((f: TdObject) => {
-      this.activeStart = -1;
       this.pendingStarts.delete(offset);
       this.requestLengths.delete(offset);
       this.requestAttempts.delete(offset);
+      // **不再盲目 addRange(offset, offset+length)**：请求被 seek 取代时它照样
+      // 会结束，那时窗口里多半只下了一部分，标满就是骗自己。真实到手的字节由
+      // applyFile 从 downloaded_prefix_size 增量推进（起播就绪判据本来也只看它）。
       this.applyFile(f);
-      this.addRange(offset, this.limitEnd(offset + length));
+      if (seq !== this.requestSeq) {
+        return;   // 已被抢占：新请求自己会推进队列
+      }
+      this.activeStart = -1;
+      this.activeEnd = -1;
       this.pumpQueue();
     }).catch((e: TdError) => {
+      if (seq !== this.requestSeq) {
+        this.pendingStarts.delete(offset);
+        this.requestLengths.delete(offset);
+        this.requestAttempts.delete(offset);
+        return;
+      }
       this.activeStart = -1;
+      this.activeEnd = -1;
       if (this.closed) {
         this.pendingStarts.delete(offset);
         this.requestLengths.delete(offset);
