@@ -205,7 +205,6 @@ import scrollEffectsTest from './ScrollEffects.test';
 import anchorRestoreTest from './AnchorRestore.test';
 import splicePublishTest from './SplicePublish.test';
 import floatDateGateTest from './FloatDateGate.test';
-import albumCellKeyTest from './AlbumCellKey.test';
 import messageBubblePrepareTest from './MessageBubblePrepare.test';
 import mediaGridTest from './MediaGrid.test';
 import tdRequestTimeoutTest from './TdRequestTimeout.test';
@@ -464,7 +463,6 @@ export default function testsuite() {
   anchorRestoreTest();
   splicePublishTest();
   floatDateGateTest();
-  albumCellKeyTest();
   mediaGridTest();
   tdRequestTimeoutTest();
   notifyRateTest();

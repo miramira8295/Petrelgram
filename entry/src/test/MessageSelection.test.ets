@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth,
-  pruneSelection, rowSelectable, rowSelected, toggleRow
+  memberSelected, pruneSelection, rowSelectable, rowSelected, toggleMember, toggleRow
 } from '../main/ets/util/messageSelection';
 
 // 选中的单位是"行"不是消息：相册行整体选中或整体不选。
@@ -92,6 +92,31 @@ export default function messageSelectionTest() {
       expect(messageSelectionContentWidth(360, true, 'system')).assertEqual(360);
       expect(messageSelectionContentWidth(360, true, 'hidden')).assertEqual(360);
       expect(messageSelectionContentWidth(20, true, 'photo')).assertEqual(0);
+    });
+
+    // 相册逐格勾选。集合本来就是逐条 id 的平表，所以只是两个新的读写口，
+    // 不引入新结构；整行切换（toggleRow）照旧并存。
+    it('单条切换：不在就加、在就去，与同行其它成员无关', 0, () => {
+      expect(toggleMember([], 7)).assertDeepEquals([7]);
+      expect(toggleMember([7], 7)).assertDeepEquals([]);
+      expect(toggleMember([5, 7, 9], 7)).assertDeepEquals([5, 9]);
+      expect(toggleMember([5, 9], 7)).assertDeepEquals([5, 9, 7]);
+    });
+
+    it('单条切换不产生重复，也不接受 0（合成行的哨兵 id）', 0, () => {
+      expect(toggleMember([7], 0)).assertDeepEquals([7]);
+      const once: number[] = toggleMember([], 7);
+      expect(toggleMember(toggleMember(once, 7), 7)).assertDeepEquals([7]);
+    });
+
+    it('单条切换保持 toggleRow 的"沾上就算"语义仍然成立', 0, () => {
+      // 相册 [1,2,3] 里只勾了 2：整行按"沾上就算"算作已选中，
+      // 再点整行（toggleRow）应当把这一行清空——既有不变量不能被逐格勾选破坏。
+      const partial: number[] = toggleMember([], 2);
+      expect(rowSelected(partial, [1, 2, 3])).assertTrue();
+      expect(memberSelected(partial, 2)).assertTrue();
+      expect(memberSelected(partial, 1)).assertFalse();
+      expect(toggleRow(partial, [1, 2, 3])).assertDeepEquals([]);
     });
   });
 }

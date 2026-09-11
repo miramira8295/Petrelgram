@@ -30,8 +30,8 @@ import {
   allocateChatPageReuseScope, CHAT_PAGE_REUSE_ID_LEVEL, rowReuseId
 } from '../../util/rowReuseId';
 import {
-  ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_SEL,
-  ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_SEL, rowTemplateId
+  ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_GUTTER,
+  ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_GUTTER, rowTemplateId
 } from '../../util/rowTemplateId';
 import { MessageRowHost } from './MessageRowHost';
 import {
@@ -1492,6 +1492,10 @@ export struct ChatPage {
           promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 });
         },
         onSelectMessages: (messageIds: number[]): void => { this.selection.enter(messageIds); },
+        // 相册逐格勾选：只切这一条。已经在多选态才有意义，非多选态由长按进入。
+        onToggleSelectedMessage: (messageId: number): void => {
+          this.selection.toggleMember(messageId);
+        },
         onDeleteMsg: (messageId: number): void => { this.deleteMessage(messageId); },
         onOpenReactions: (messageId: number): void => { this.overlayState.openReactionSheet(messageId); },
         onLinkPreviewRetry: (messageId: number): void => {
@@ -1551,6 +1555,12 @@ export struct ChatPage {
     const pollExpired: boolean = g.head.pollCloseDate > 0 && this.nowSec >= g.head.pollCloseDate;
     const contentWidth: number = messageSelectionContentWidth(
       this.chatContentWidth, this.selection.active, g.head.contentType);
+    // 本行已选中的成员（相册逐格勾选用）。**只算本行**：把整个选择集放进 data
+    // 会让每点一下就把所有行的 prepare 缓存键打翻。非多选态直接给空数组，
+    // 平时零成本。
+    const selectedMemberIds: number[] = this.selection.active
+      ? g.memberIds.filter((id: number): boolean => this.selection.isMemberSelected(id))
+      : [];
     const cacheKey: string = `${this.rowKeyOf(g)}|c${this.chatId}` +
       `|g${this.isGroup ? 1 : 0}${this.isChannel ? 1 : 0}` +
       `|u${showUnreadDivider ? 1 : 0}|r${showResumeDivider ? 1 : 0}` +
@@ -1565,6 +1575,7 @@ export struct ChatPage {
       `|bg${this.chatBackgroundRevision}|appearance${this.appearanceEpoch}` +
       `|material${this.materialEpoch}|dark${this.appDark ? 1 : 0}` +
       `|select${this.selection.active ? 1 : 0}|width${contentWidth}` +
+      `|selm${selectedMemberIds.join(',')}` +
       // 发言权变了要重建：左滑回复的可用性挂在它上面。翻转很罕见
       // （加入/退出频道、被禁言），不会带来滚动期的重建。
       `|reply${membershipLosesComposer(this.membershipState) ? 0 : 1}`;
@@ -1616,6 +1627,8 @@ export struct ChatPage {
     const data: MessageBubbleRenderData = {
       chatId: this.chatId, contentWidth, isGroup: this.isGroup, isChannel: this.isChannel,
       canReply: !membershipLosesComposer(this.membershipState),
+      selectionActive: this.selection.active,
+      selectedMemberIds,
       liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
       showUnreadDivider: showTimelineDivider,
       dividerIsResume: showResumeDivider,
@@ -1769,7 +1782,9 @@ export struct ChatPage {
     const lightweight: boolean = canRenderLightweightPlainTextRow(
       group.head, group.memberIds.length, group.photoPaths.length) &&
       group.head.translatedText === '';
-    const gutter: boolean = this.selection.active && rowSelectable(group.head.contentType);
+    // 【只看内容类型，不看多选开没开】进出多选若换模板，Repeat 会销毁重建整行，
+    // SelectionSession 那 150ms 的 animateTo 就没有东西可插值（见 rowTemplateId）。
+    const gutter: boolean = rowSelectable(group.head.contentType);
     return rowTemplateId(group, lightweight, gutter);
   }
   // "×× 正在输入…" 提示的状态与轮询定时器整套搬进了 TypingIndicatorState
@@ -7734,13 +7749,13 @@ export struct ChatPage {
         .template(ROW_TEMPLATE_PLAIN, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
         }, { cachedCount: 10 })
-        .template(ROW_TEMPLATE_PLAIN_SEL, (ri: RepeatItem<AlbumGroup>) => {
+        .template(ROW_TEMPLATE_PLAIN_GUTTER, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
         }, { cachedCount: 8 })
         .template(ROW_TEMPLATE_RICH, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
         }, { cachedCount: 10 })
-        .template(ROW_TEMPLATE_RICH_SEL, (ri: RepeatItem<AlbumGroup>) => {
+        .template(ROW_TEMPLATE_RICH_GUTTER, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
         }, { cachedCount: 8 })
         .key((group: AlbumGroup): string => this.rowKeyOf(group))
@@ -7828,27 +7843,58 @@ export struct ChatPage {
         Stack({ alignContent: Alignment.Start }) {
           // Selection mode shifts the row right into a left check gutter.
           Row() {
-            if (this.selection.active && rowSelectable(ri.item.head.contentType)) {
+            // 【让位栏必须是常驻节点，不能是结构 if】
+            // 结构 if 是凭空插入/移除节点，插值不出来——所以进出多选是"闪过去"
+            // 的，哪怕 SelectionSession.animateSelection 早就用 animateTo 包着
+            // active 的翻转。改成常驻、宽度 0↔34，那 150ms 才有东西可插。
+            // 条件换成 rowSelectable（内容类型决定，不随多选翻转），这个节点在
+            // 与不在于是变成**静态**的，模板池也就不必再按多选分档。
+            // 里面的勾选图标仍按 active 条件建：不在多选态时不付图标的钱，常驻
+            // 的只是一个零宽空 Column。
+            if (rowSelectable(ri.item.head.contentType)) {
               Column() {
-                if (this.selection.isRowSelected(ri.item)) {
-                  SymbolGlyph($r('sys.symbol.checkmark_circle'))
-                    .fontSize(22).fontColor([this.accent()]);
-                } else {
-                  Row()
-                    .width(20).height(20).borderRadius(10)
-                    .border({ width: 1.5, color: '#8E8E93' });
+                // 相册行也画这个勾：它是**整组**的开关（沾上就算选中，点它整组
+                // 清空），而每一格右上角那个是**单张**的（见 AlbumCellView）。
+                // 两者分工清楚，缺了整组开关的话，长按进多选默认整组选中之后
+                // 用户只能一张一张取消。
+                if (this.selection.active) {
+                  if (this.selection.isRowSelected(ri.item)) {
+                    SymbolGlyph($r('sys.symbol.checkmark_circle'))
+                      .fontSize(22).fontColor([this.accent()]);
+                  } else {
+                    Row()
+                      .width(20).height(20).borderRadius(10)
+                      .border({ width: 1.5, color: '#8E8E93' });
+                  }
                 }
               }
-              .width(MESSAGE_SELECTION_GUTTER_VP)
+              .width(this.selection.active ? MESSAGE_SELECTION_GUTTER_VP : 0)
+              .opacity(this.selection.active ? 1 : 0)
+              // 宽度收到 0 的过程中图标会溢出压到气泡上，必须裁掉。
+              .clip(true)
               .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center);
+              .alignItems(HorizontalAlign.Center)
+              // 相册行的**行点击**不再切整行（见下方 onClick），所以整组开关要有
+              // 自己的点击。非相册行由行点击兜住，这里重复触发也无妨：ArkUI 的
+              // onClick 会冒泡，但相册行那边的行点击已经早退。
+              .onClick((): void => {
+                if (this.selection.active) {
+                  this.selection.toggleRow(ri.item);
+                }
+              });
             }
             Column() {
               this.preparedMessageBubble(ri);
             }
             .layoutWeight(1)
             // BLOCK_DESCENDANTS keeps the outer List draggable in selection mode.
-            .hitTestBehavior(this.selection.active && rowSelectable(ri.item.head.contentType)
+            //
+            // **相册行例外（2026-09-11）**：屏蔽后代的话相册格子在多选态下根本
+            // 收不到触摸，每一格自己的 onClick 永远不跑，所有点击都落到行的
+            // toggleRow 上——用户看到的就是"取消一张，整组全没了"。
+            // 格子上只有 onClick（拖动不会触发），所以放开它不影响列表拖动。
+            .hitTestBehavior(this.selection.active &&
+              rowSelectable(ri.item.head.contentType) && ri.item.memberIds.length <= 1
               ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
           }
           .width('100%')
@@ -7856,9 +7902,15 @@ export struct ChatPage {
           .backgroundColor(this.selection.active && this.selection.isRowSelected(ri.item)
             ? $r('app.color.select_highlight') : Color.Transparent)
           .onClick((): void => {
-            if (this.selection.active) {
-              this.selection.toggleRow(ri.item);
+            if (!this.selection.active) {
+              return;
             }
+            // 相册行早退：整组开关在让位栏上，单张开关在每个格子上。这里再切一次
+            // 会把格子刚做的单张切换整行撤销（onClick 会冒泡到这里）。
+            if (ri.item.memberIds.length > 1) {
+              return;
+            }
+            this.selection.toggleRow(ri.item);
           });
         }
       }

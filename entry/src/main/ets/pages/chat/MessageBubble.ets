@@ -1,4 +1,6 @@
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
+import { AlbumCellView, AlbumCellHooks } from './AlbumCellView';
+import { formatMediaDuration } from '../../util/mediaDuration';
 import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
 import {
   isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER,
@@ -41,8 +43,7 @@ import {
   isUnformattedPlainText, messageUrls, parseFormattedText, richSegmentKey,
   RichSegment, RichRun
 } from '../../util/richText';
-import { packAlbumRows, AlbumCell } from '../../util/packAlbumRows';
-import { albumCellKey, albumRowKey } from '../../util/albumCellKey';
+import { packAlbumRows, AlbumCell, ALBUM_ROW_SLOTS } from '../../util/packAlbumRows';
 import { inlineButtonKey, inlineButtonRowKey } from '../../util/inlineButtonKey';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
@@ -749,13 +750,7 @@ export struct MessageBubble {
 
   // mm:ss (or h:mm:ss for long videos) duration badge text.
   private formatDuration(totalSeconds: number): string {
-    const safeSeconds = Math.max(0, Math.floor(totalSeconds));
-    const h = Math.floor(safeSeconds / 3600);
-    const m = Math.floor((safeSeconds % 3600) / 60);
-    const s = safeSeconds % 60;
-    const mm = h > 0 ? `${m}`.padStart(2, '0') : `${m}`;
-    const ss = `${s}`.padStart(2, '0');
-    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+    return formatMediaDuration(totalSeconds);
   }
 
   // Keep all shell/content measurements on the same concrete cap. A percentage
@@ -872,22 +867,34 @@ export struct MessageBubble {
     }
   }
 
-  private swipeReplyEligible(): boolean {
-    // System/hidden rows carry no replyable message; editing owns the
-    // reply/edit strip below and must not fight a concurrent swipe.
-    // swipeFromEdge：这一下起手在窗口边缘，让给系统的返回手势（见常量说明）。
-    // canReply=false（只读频道、未加入、被封禁、机器人没「开始」）时输入框
-    // 根本不在，滑了也只是把回复挂到一个不存在的输入框上。
-    return this.data.canReply && !this.swipeFromEdge && !this.data.editingActive
+  // 两个方向共同的前提。**不含 canReply**——见下一个方法。
+  //
+  // System/hidden rows carry no replyable message; editing owns the
+  // reply/edit strip below and must not fight a concurrent swipe.
+  // swipeFromEdge：这一下起手在窗口边缘，让给系统的返回手势（见常量说明）。
+  private swipeGestureEligible(): boolean {
+    return !this.swipeFromEdge && !this.data.editingActive
       && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden';
   }
 
+  // 只有**左滑回复**要问 canReply。
+  //
+  // 【2026-09-11 修】原来 canReply 是两个方向共用的前提，于是只读频道里
+  // （canReply=false：输入框根本不在）**右滑多选也一起失效了**——而多选跟发言
+  // 权限毫无关系，频道里照样要能选中转发/复制。用户报"左滑回复、右滑多选都不
+  // 生效"，就是在这类频道上。
+  private swipeReplyAllowed(): boolean {
+    return this.swipeGestureEligible() && this.data.canReply;
+  }
+
   private onSwipeReplyUpdate(offsetX: number): void {
-    if (!this.swipeReplyEligible()) {
+    if (!this.swipeGestureEligible()) {
       return;
     }
     // 两个方向都跟手：向左（负）回复，向右（正）进多选，各自钳到自己的上限。
-    this.swipeReplyX = Math.max(SWIPE_REPLY_MAX, Math.min(SWIPE_SELECT_MAX, offsetX));
+    // 不能回复的会话（只读频道等）把左边界收到 0：右滑照常，左滑不跟手。
+    const lowerBound: number = this.data.canReply ? SWIPE_REPLY_MAX : 0;
+    this.swipeReplyX = Math.max(lowerBound, Math.min(SWIPE_SELECT_MAX, offsetX));
     // 真的滑动起来了才算认领。PanGesture 的 distance 已经是 8，这里再确认
     // 一次位移，避免"手指抖了一下"就把一次正常点击吃掉。
     if (this.swipeReplyX !== 0) {
@@ -896,11 +903,13 @@ export struct MessageBubble {
   }
 
   private onSwipeReplyEnd(): void {
-    const eligible: boolean = this.swipeReplyEligible();
-    const reply: boolean = eligible && this.swipeReplyX <= SWIPE_REPLY_TRIGGER;
+    const reply: boolean = this.swipeReplyAllowed() &&
+      this.swipeReplyX <= SWIPE_REPLY_TRIGGER;
     // 右滑进多选，动作与长按选择完全一致（同一个 onSelectMessages 入口，
     // 传整组 memberIds——相册要整组一起选，和长按那条保持一致）。
-    const select: boolean = eligible && this.swipeReplyX >= SWIPE_SELECT_TRIGGER;
+    // 判据是 swipeGestureEligible 而不是 swipeReplyAllowed：多选与发言权无关。
+    const select: boolean = this.swipeGestureEligible() &&
+      this.swipeReplyX >= SWIPE_SELECT_TRIGGER;
     animateTo({ duration: this.swipeReplyDuration(180), curve: Curve.EaseOut }, (): void => {
       this.swipeReplyX = 0;
     });
@@ -1109,6 +1118,85 @@ export struct MessageBubble {
       return str('mb_reload_preview');
     }
     return this.linkPreviewOpening ? str('opening_dots') : this.linkPresentation().actionLabel;
+  }
+
+  // 相册格子本体搬去 AlbumCellView 之后，这里只留下**气泡自己仍要用**的四个：
+  // 竞选媒体的上报（aboutToDisappear / @Monitor('group')）和"这一行有没有活着的
+  // 播放位"。其余取值器都随格子一起走了。
+  // 【这三个必须是**成员** @Builder，不能提成全局函数】
+  // 2026-09-11 试过提到 pages/chat/mediaBadges.ets 做全局 @Builder，真机一进会话
+  // 就崩：
+  //     TypeError: Cannot read property observeComponentCreation2 of undefined
+  //     #09 at playBadge (mediaBadges.ets:46)
+  //     #10 at content   (AlbumCellView.ets:198)
+  //     #15 at anonymous (ThumbReadyGate.ets:73)
+  // 因为它们是从传给 ThumbReadyGate / LiveThumbImage 的**闭包**里调的，那时"当前
+  // 视图"是那两个组件，全局 builder 生成的代码拿不到它需要的 this。
+  // 成员 builder 走 `this.` 就没有这个问题。代价是消息气泡与相册格子各存一份。
+
+  // Loading ring shown centered on a media placeholder while its thumbnail
+  // downloads — same style as the fullscreen viewer's (percent inside the ring).
+  @Builder
+  mediaLoadState(size: number, fileId: number, initialPercent: number, failed: boolean) {
+    if (failed) {
+      Column({ space: 3 }) {
+        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(Math.max(17, size * 0.5))
+          .fontColor([Color.White]);
+        Text($r('app.string.settings_retry')).fontSize(11).fontColor(Color.White).fontWeight(FontWeight.Medium);
+      }
+      .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+      .backgroundColor('#80000000').borderRadius(18);
+    } else {
+      // 进度不进 key，环自己订阅自己更新（见 LiveProgressRing / collapseAlbums）。
+      LiveProgressRing({ fileId: fileId, initialPercent: initialPercent, ringSize: size });
+    }
+  }
+
+  // 实况角标。缩略图上（单图与相册格子都用它）标出「这条是实况」——和查看器
+  // 左下角那枚胶囊同一套元素：同心圆的 sys.symbol.livephoto + LIVE 文案。
+  //
+  // 位置固定在左上角：左下角被时长/大小那条 meta 占着（单图），中心是播放钮，
+  // 只有左上角是空的，相册格子同理。
+  @Builder
+  liveChip() {
+    Row({ space: 3 }) {
+      SymbolGlyph($r('sys.symbol.livephoto')).fontSize(12).fontColor([Color.White]);
+      Text($r('app.string.cp_live_photo'))
+        .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
+    }
+    .height(18)
+    .padding({ left: 5, right: 6 })
+    .backgroundColor('#66000000')
+    .borderRadius(9)
+    .position({ x: 6, y: 6 });
+  }
+
+  // Centered play-triangle badge, overlaid on video thumbnails.
+  @Builder
+  playBadge(size: number) {
+    Stack() {
+      Circle({ width: size, height: size }).fill('#73000000')
+        .stroke('#24FFFFFF').strokeWidth(1);
+      SymbolGlyph($r('sys.symbol.play_fill')).fontSize(size * 0.42).fontColor([Color.White]).margin({ left: 2 });
+    }.width(size).height(size);
+  }
+
+  private albumIsVideoAt(index: number): boolean {
+    return this.group.photoIsVideo[index] ?? false;
+  }
+
+  private albumMemberIdAt(index: number): number {
+    return this.group.memberIds[index] ?? 0;
+  }
+
+  private albumVideoFileIdAt(index: number): number {
+    return this.group.videoFileIds[index] ?? 0;
+  }
+
+  // 与 isPlaySlot() 同一道 !isAnimation 兜底：动图不参加竞选（spec §3.3）。
+  private isAlbumCellPlaySlot(index: number): boolean {
+    return this.data.playSlotKey !== '' && !this.msg.isAnimation &&
+      this.data.playSlotKey === slotKey(this.albumMemberIdAt(index), index);
   }
 
   private albumW(): number {
@@ -1735,8 +1823,8 @@ export struct MessageBubble {
           }.width('100%');
         // 行键也得带内容。**只修内层的按钮键是修不动的**：外层键不变时 ForEach
       // 连行的构建函数都不会重跑，内层那个 ForEach 拿的还是上一条消息的
-      // `row`，按钮文字于是停在上一条上——与相册格子同一个机理，
-      // 见 util/albumCellKey。
+      // `row`，按钮文字于是停在上一条上——与相册格子当年同一个机理，推导见
+      // albumGrid 上方那段（相册已改成固定槽位，不再靠键）。
       }, (row: InlineBtn[], rowIdx: number) => inlineButtonRowKey(rowIdx, row));
       }
       // Match the bubble's MEASURED width (it shrinks to fit its content), so
@@ -1755,23 +1843,6 @@ export struct MessageBubble {
     .justifyContent(this.msg.isOutgoing ? FlexAlign.End : FlexAlign.Start);
   }
 
-  // Loading ring shown centered on a media placeholder while its thumbnail
-  // downloads — same style as the fullscreen viewer's (percent inside the ring).
-  @Builder
-  mediaLoadState(size: number, fileId: number, initialPercent: number, failed: boolean) {
-    if (failed) {
-      Column({ space: 3 }) {
-        SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(Math.max(17, size * 0.5))
-          .fontColor([Color.White]);
-        Text($r('app.string.settings_retry')).fontSize(11).fontColor(Color.White).fontWeight(FontWeight.Medium);
-      }
-      .padding({ left: 10, right: 10, top: 7, bottom: 7 })
-      .backgroundColor('#80000000').borderRadius(18);
-    } else {
-      // 进度不进 key，环自己订阅自己更新（见 LiveProgressRing / collapseAlbums）。
-      LiveProgressRing({ fileId: fileId, initialPercent: initialPercent, ringSize: size });
-    }
-  }
 
   // Shared by both the LiveThumbImage placeholder (hasFile === true, only
   // reached once this message has a photoFileId) and the no-fileId fallback
@@ -1843,39 +1914,12 @@ export struct MessageBubble {
     }
   }
 
-  // 实况角标。缩略图上（单图与相册格子都用它）标出「这条是实况」——和查看器
-  // 左下角那枚胶囊同一套元素：同心圆的 sys.symbol.livephoto + LIVE 文案。
-  //
-  // 位置固定在左上角：左下角被时长/大小那条 meta 占着（单图），中心是播放钮，
-  // 只有左上角是空的，相册格子同理。
-  @Builder
-  liveChip() {
-    Row({ space: 3 }) {
-      SymbolGlyph($r('sys.symbol.livephoto')).fontSize(12).fontColor([Color.White]);
-      Text($r('app.string.cp_live_photo'))
-        .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
-    }
-    .height(18)
-    .padding({ left: 5, right: 6 })
-    .backgroundColor('#66000000')
-    .borderRadius(9)
-    .position({ x: 6, y: 6 });
-  }
 
   private msgIsLivePhoto(): boolean {
     return this.msg.contentType === 'video' &&
       isLivePhotoVideo(this.msg.videoFileName, this.msg.videoDuration);
   }
 
-  // Centered play-triangle badge, overlaid on video thumbnails.
-  @Builder
-  playBadge(size: number) {
-    Stack() {
-      Circle({ width: size, height: size }).fill('#73000000')
-        .stroke('#24FFFFFF').strokeWidth(1);
-      SymbolGlyph($r('sys.symbol.play_fill')).fontSize(size * 0.42).fontColor([Color.White]).margin({ left: 2 });
-    }.width(size).height(size);
-  }
 
   // One unambiguous center control for video states. Thumbnail loading owns
   // the center until it finishes; after that this control changes between
@@ -1924,61 +1968,16 @@ export struct MessageBubble {
     return this.msg.photoPath === '' && this.msg.photoFailed && this.msg.photoFileId !== 0;
   }
 
-  private albumCellRetryable(index: number): boolean {
-    return this.albumPathAt(index) === '' && (this.group.photoFailed[index] ?? false) &&
-      (this.group.photoFileIds[index] ?? 0) !== 0;
-  }
 
-  private albumPathAt(index: number): string {
-    return this.group.photoPaths[index] ?? '';
-  }
 
-  private albumIsVideoAt(index: number): boolean {
-    return this.group.photoIsVideo[index] ?? false;
-  }
 
-  private albumIsLiveAt(index: number): boolean {
-    return this.group.photoIsLive[index] ?? false;
-  }
 
-  private albumMemberIdAt(index: number): number {
-    return this.group.memberIds[index] ?? 0;
-  }
 
-  private albumVideoFileIdAt(index: number): number {
-    return this.group.videoFileIds[index] ?? 0;
-  }
 
-  private albumVideoFileSizeAt(index: number): number {
-    return this.group.videoFileSizes[index] ?? 0;
-  }
 
-  private albumVideoDurationAt(index: number): number {
-    return this.group.videoDurations[index] ?? 0;
-  }
 
-  private albumVideoMimeTypeAt(index: number): string {
-    return this.group.videoMimeTypes[index] ?? '';
-  }
 
-  private albumVideoMetaText(index: number, cellWidth: number): string {
-    const size: string = this.albumVideoFileSizeAt(index) > 0
-      ? formatFileSize(this.albumVideoFileSizeAt(index)) : '';
-    const durationSec: number = this.albumVideoDurationAt(index);
-    if (durationSec <= 0) {
-      return size;
-    }
-    const duration: string = this.formatDuration(durationSec);
-    // 三列等窄格优先保证 issue #93 要求的文件大小可见；宽格与单视频一致。
-    return size !== '' && cellWidth >= 112 ? `${duration} · ${size}` : (size !== '' ? size : duration);
-  }
 
-  // 与 isPlaySlot() 同一道 !isAnimation 兜底：动图不参加竞选（spec §3.3），
-  // 相册格子也不例外，否则相册里的动图会错挂流式播放器。
-  private isAlbumCellPlaySlot(index: number): boolean {
-    return this.data.playSlotKey !== '' && !this.msg.isAnimation &&
-      this.data.playSlotKey === slotKey(this.albumMemberIdAt(index), index);
-  }
 
   // The play slot renders through StreamingVideoPlayer, whose XComponent is
   // XComponentType.SURFACE (see StreamingVideoPlayer.ets) — that surface is
@@ -2020,206 +2019,310 @@ export struct MessageBubble {
     };
   }
 
-  // Shared by both the LiveThumbImage placeholder (hasFile reflects the real
-  // fileId, since that branch can now also be entered via a bare path — see
-  // albumCellBody) and the no-fileId-no-path fallback (hasFile === false) so
-  // the two never drift apart.
-  // Wrapped in its own Stack: LiveThumbImage.build() mounts this as its own
-  // component root when path is empty, and without the wrapper the Column +
-  // mediaLoadState would be two sibling root nodes instead of one stacked on
-  // the other — the progress ring would stop sitting on top of the tint.
-  @Builder
-  albumMediaPlaceholder(cellIdx: number, width: number, height: number, hasFile: boolean) {
-    Stack() {
-      Column().width(width).height(height).borderRadius(6)
-        .backgroundColor(this.albumIsVideoAt(cellIdx) ? '#AEB6C0' : '#D7DCE2');
-      if (hasFile && !(this.group.photoFailed[cellIdx] ?? false)) {
-        this.mediaLoadState(
-          Math.min(34, Math.min(width, height) * 0.4),
-          this.group.photoFileIds[cellIdx] ?? 0,
-          this.group.photoProgress[cellIdx] ?? 0,
-          false
-        );
-      } else if (!this.albumIsVideoAt(cellIdx)) {
-        this.mediaLoadState(
-          Math.min(34, Math.min(width, height) * 0.4),
-          0,
-          0,
-          true
-        );
+
+
+  // 相册的行分桶。packAlbumRows 是纯函数，但下面的固定槽位会按行取多次，所以按
+  // (group 对象身份, 宽度) 记一次——AlbumGroup 每次发布都是全新对象、发布后零
+  // 原地修改，对象身份即内容身份（同 chatViewportGeometry 的 keyCache 惯例）。
+  // 交给格子的回调表。**字段初始化器 new 一次，引用全生命周期恒定**——每次
+  // build 现 new 会让每个格子的 @Param 每帧都变。
+  private albumCellHooks: AlbumCellHooks = {
+    onCenterY: (index: number, centerY: number): void => {
+      this.albumCellCenterY.set(index, centerY);
+    },
+    centerYOf: (index: number): number => this.albumCellCenterY.get(index) ?? 0,
+    isClaimed: (): boolean => this.gestureClaimed,
+    onToggleMember: (messageId: number): void => {
+      this.actions.onToggleSelectedMessage(messageId);
+    }
+  };
+
+  private albumRowsGroup: AlbumGroup | null = null;
+  private albumRowsWidth: number = -1;
+  private albumRowsCache: AlbumCell[][] = [];
+
+  private albumRows(): AlbumCell[][] {
+    const width: number = this.albumW();
+    if (this.albumRowsGroup !== this.group ||
+      Math.abs(this.albumRowsWidth - width) > 0.01) {
+      this.albumRowsGroup = this.group;
+      this.albumRowsWidth = width;
+      this.albumRowsCache = packAlbumRows(this.group.photoRatios, width);
+      if (this.albumRowsCache.length > ALBUM_ROW_SLOTS) {
+        logW(`[Album] ${this.albumRowsCache.length} rows > ${ALBUM_ROW_SLOTS} slots,` +
+          ` tail not rendered (album=${this.group.head.albumId})`);
       }
-    }.width(width).height(height);
+    }
+    return this.albumRowsCache;
   }
 
-  // Body shared by both attribute variants below, so the only difference
-  // between them stays confined to whether onAreaChange is attached.
-  @Builder
-  albumCellBody(cell: AlbumCell) {
-    if (this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0) {
-      // 播放位选中这一格：挂播放器而不是静态封面。
-      VideoBubbleSurface({
-        fileId: this.albumVideoFileIdAt(cell.idx),
-        fileSize: this.albumVideoFileSizeAt(cell.idx),
-        mimeType: this.albumVideoMimeTypeAt(cell.idx),
-        posterPath: this.albumPathAt(cell.idx),
-        muted: this.data.autoplayMuted,
-        startPositionMs: this.data.playSlotStartMs,
-        onPositionChanged: (positionMs: number): void => {
-          this.actions.onPlaySlotPositionChanged(this.albumMemberIdAt(cell.idx), cell.idx, positionMs);
-        },
-        onEnded: (): void => {
-          this.actions.onPlaySlotEnded(this.albumMemberIdAt(cell.idx), cell.idx);
-        }
-      })
-        .width(cell.width).height(cell.height).clip(true)
-        .borderRadius(6)
-        // 同理：交给格子自己的 onClick 打开全屏查看器。
-        .hitTestBehavior(HitTestMode.None);
-    } else if ((this.group.photoFileIds[cell.idx] ?? 0) !== 0 || this.albumPathAt(cell.idx) !== '') {
-      // No appear transition, for the same reason as the single-media
-      // thumbnail: a row rebuild re-creates this node and would
-      // replay the fade every time.
-      // desiredSize matters most here: a cell is a few tens of vp
-      // wide while the file behind it is the conversation-wide size.
-      // Self-subscribing: the row key no longer carries the path, so
-      // this node must react to the thumbnail landing on its own.
-      // The condition can't be fileId-only: MessageStore backfills
-      // photoPath from the full-size download while fileId can still be 0
-      // for that entry, and losing the path there would regress an already
-      // downloaded photo to a dead "retry" tile.
-      LiveThumbImage({
-        spec: {
-          fileId: this.group.photoFileIds[cell.idx] ?? 0,
-          initialPath: this.albumPathAt(cell.idx),
-          boxWidth: cell.width,
-          boxHeight: cell.height,
-          radius: 6,
-          fit: ImageFit.Cover
-        },
-        placeholder: (): void => {
-          this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, (this.group.photoFileIds[cell.idx] ?? 0) !== 0);
-        }
-      });
-    } else {
-      // A video without a downloadable thumbnail remains playable;
-      // don't leave an endless 0% spinner over that intentional state.
-      this.albumMediaPlaceholder(cell.idx, cell.width, cell.height, false);
-    }
-    // 相册格同理：实况格已经有 liveChip，不画播放钮。
-    if (this.albumIsVideoAt(cell.idx) && !this.albumIsLiveAt(cell.idx) &&
-      !(this.isAlbumCellPlaySlot(cell.idx) && this.albumVideoFileIdAt(cell.idx) !== 0)) {
-      // 同单图那处：缩略图到没到要问通道，albumPathAt 在旁路化之后不再回填。
-      ThumbReadyGate({
-        fileId: this.group.photoFileIds[cell.idx] ?? 0,
-        initialPath: this.albumPathAt(cell.idx),
-        ready: (this.group.photoFileIds[cell.idx] ?? 0) === 0 || (this.group.photoFailed[cell.idx] ?? false),
-        content: (): void => {
-          this.playBadge(Math.min(40, Math.min(cell.width, cell.height) * 0.46));
-        }
-      })
-    }
-    if (this.albumIsLiveAt(cell.idx)) {
-      this.liveChip();
-    }
-    if (this.albumIsVideoAt(cell.idx) && this.albumVideoMetaText(cell.idx, cell.width) !== '') {
-      Text(this.albumVideoMetaText(cell.idx, cell.width))
-        .fontSize(10.5)
-        .fontColor(Color.White)
-        .backgroundColor('#00000066')
-        .borderRadius(4)
-        .padding({ left: 4, right: 4, top: 1, bottom: 1 })
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: Math.max(24, cell.width - 12) })
-        .position({ x: 6, y: Math.max(6, cell.height - 23) });
-    }
-  }
-
-  // 这一格的 ForEach 键。**纯位置的键会让配图配错文**，完整推导见
-  // util/albumCellKey。
-  private cellKeyAt(index: number): string {
-    return albumCellKey(index, this.albumMemberIdAt(index),
-      this.group.photoFileIds[index] ?? 0, this.albumIsVideoAt(index));
-  }
-
+  // 相册网格。**刻意不用 ForEach**：每行、每格都是 build 树上的固定槽位。
+  //
+  // 【为什么（2026-09-11）】ForEach 的契约是「键值不变就复用已有组件、**不重新
+  // 执行子构建函数**」。格子的宽高来自 packAlbumRows、按值捕获进子构建函数，连
+  // 里面的 `this.` 读也一样拿不到新值。
+  //
+  // 当年"配图配错文"（一行画完相册 A 被复用去画相册 B，只要张数相同，两层键就
+  // 完全一样 ⇒ ForEach 判定没变化 ⇒ 格子里的图还挂在 A 的 fileId 上，而正文/时间/
+  // 表态都更新成了 B）正是这条契约的后果；当时的解法是把身份**和几何**一起塞进
+  // 键、逼它重建。
+  //
+  // 代价到 2026-09-11 才显形：多选把 albumW() 变窄 ⇒ 几何变 ⇒ 键变 ⇒ **整行销毁
+  // 重建**，图片成了全新节点，SelectionSession 那 150ms 的 animateTo 没有东西可
+  // 插值——用户看到相册"很尴尬地跳过去"。
+  //
+  // 固定槽位一次解掉两件事：
+  //   · 槽位是常驻节点，每次渲染都重新求值 ⇒ 拿得到新几何 ⇒ 跟着气泡一起形变；
+  //   · 根本没有"按键复用"这回事 ⇒ 配图配错文从构造上不可能，几何也不必再进任何
+  //     键（util/albumCellKey 因此整个删掉）。
+  //
+  // 槽位数见 ALBUM_ROW_SLOTS（packAlbumRows 里有单测钉住上限）。
   @Builder
   albumGrid() {
     Column({ space: 2 }) {
-      ForEach(packAlbumRows(this.group.photoRatios, this.albumW()), (row: AlbumCell[], rowIdx: number) => {
+      if (this.albumRows().length > 0) {
         Row({ space: 2 }) {
-          ForEach(row, (cell: AlbumCell) => {
-            if (this.albumIsVideoAt(cell.idx)) {
-              // Video cells alone feed the play-slot center-y election, so
-              // onAreaChange is only mounted here — profiling showed every
-              // cell reporting geometry at 2100-2300/s when it was unconditional,
-              // and pure image cells never consumed that data.
-              Stack() {
-                this.albumCellBody(cell);
-              }
-              .width(cell.width).height(cell.height)
-              .accessibilityText(str('mb_album_item_video', cell.idx + 1))
-              .onVisibleAreaApproximateChange(
-                { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
-                  expectedUpdateInterval: 200 },
-                (_visible: boolean, ratio: number): void => {
-                  const memberId = this.albumMemberIdAt(cell.idx);
-                  if (ratio <= 0) {
-                    this.actions.onMediaGone(memberId, cell.idx);
-                  } else {
-                    this.actions.onMediaRatio(memberId, cell.idx, ratio, this.albumCellCenterY.get(cell.idx) ?? 0);
-                  }
-                })
-              .onAreaChange((_old: Area, area: Area): void => {
-                this.albumCellCenterY.set(cell.idx,
-                  (area.globalPosition.y as number) + (area.height as number) / 2);
-              })
-              .onClick((e: ClickEvent) => {
-                if (this.gestureClaimed) { return; }
-                // Same as the single-media case: a failed cell offers retry.
-                if (this.albumCellRetryable(cell.idx)) {
-                  this.actions.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
-                  return;
-                }
-                this.actions.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
-              });
-            } else {
-              Stack() {
-                this.albumCellBody(cell);
-              }
-              .width(cell.width).height(cell.height)
-              // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
-              .geometryTransition(`media_${this.data.chatId}_${this.albumMemberIdAt(cell.idx)}`)
-              .accessibilityText((this.group.photoFailed[cell.idx] ?? false)
-                ? str('mb_photo_failed') : str('mb_album_item', cell.idx + 1))
-              // **图片格不挂 onVisibleAreaApproximateChange。**
-              //
-              // 这里原来挂着一个**空回调**——注释自己写着"图片格不上报"，可空
-              // 回调照样把这个节点注册进全局可见区派发表，成本在注册不在回调。
-              // 一行 6–9 格、窗口里几十行，全相册会话里就是两三百个白注册：
-              // 09-03 的真机 trace 里 HandleVisibleAreaChangeEvent 的 nodeCount
-              // 峰值 134、稳态还在以 3.49 节点/秒增长，而同一份录制里
-              // 379 行全是图片行。
-              //
-              // （a43553d 摘过一次，被 7b5b33f 那次批量回退带掉了——那次是在查
-              // 历史滚动跳页的回归，不是因为这一处有问题。现在有数据了，摘回来。）
-              // isVideo 进了格子的 key（见 util/albumCellKey），一格从图片变视频
-              // 会换 key 重建，不存在"少注册了导致视频格不上报"的窗口。
-              .onClick((e: ClickEvent) => {
-                if (this.gestureClaimed) { return; }
-                // Same as the single-media case: a failed cell offers retry.
-                if (this.albumCellRetryable(cell.idx)) {
-                  this.actions.onSpecialPhotoRetry(this.albumMemberIdAt(cell.idx));
-                  return;
-                }
-                this.actions.onMediaTap(this.albumMemberIdAt(cell.idx), e.windowX, e.windowY);
-              });
-            }
-          }, (cell: AlbumCell) => this.cellKeyAt(cell.idx));
+          if (this.albumRows()[0].length > 0) {
+            AlbumCellView({
+              cell: this.albumRows()[0][0],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(0, 0)
+            });
+          }
+          if (this.albumRows()[0].length > 1) {
+            AlbumCellView({
+              cell: this.albumRows()[0][1],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(0, 1)
+            });
+          }
+          if (this.albumRows()[0].length > 2) {
+            AlbumCellView({
+              cell: this.albumRows()[0][2],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(0, 2)
+            });
+          }
         }
-      }, (row: AlbumCell[], rowIdx: number) => albumRowKey(rowIdx,
-        row.map((c: AlbumCell): string => this.cellKeyAt(c.idx)), row));
-    }.alignItems(HorizontalAlign.Start).width(this.albumW()).constraintSize({ maxWidth: this.albumW() });
+      }
+      if (this.albumRows().length > 1) {
+        Row({ space: 2 }) {
+          if (this.albumRows()[1].length > 0) {
+            AlbumCellView({
+              cell: this.albumRows()[1][0],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(1, 0)
+            });
+          }
+          if (this.albumRows()[1].length > 1) {
+            AlbumCellView({
+              cell: this.albumRows()[1][1],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(1, 1)
+            });
+          }
+          if (this.albumRows()[1].length > 2) {
+            AlbumCellView({
+              cell: this.albumRows()[1][2],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(1, 2)
+            });
+          }
+        }
+      }
+      if (this.albumRows().length > 2) {
+        Row({ space: 2 }) {
+          if (this.albumRows()[2].length > 0) {
+            AlbumCellView({
+              cell: this.albumRows()[2][0],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(2, 0)
+            });
+          }
+          if (this.albumRows()[2].length > 1) {
+            AlbumCellView({
+              cell: this.albumRows()[2][1],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(2, 1)
+            });
+          }
+          if (this.albumRows()[2].length > 2) {
+            AlbumCellView({
+              cell: this.albumRows()[2][2],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(2, 2)
+            });
+          }
+        }
+      }
+      if (this.albumRows().length > 3) {
+        Row({ space: 2 }) {
+          if (this.albumRows()[3].length > 0) {
+            AlbumCellView({
+              cell: this.albumRows()[3][0],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(3, 0)
+            });
+          }
+          if (this.albumRows()[3].length > 1) {
+            AlbumCellView({
+              cell: this.albumRows()[3][1],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(3, 1)
+            });
+          }
+          if (this.albumRows()[3].length > 2) {
+            AlbumCellView({
+              cell: this.albumRows()[3][2],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(3, 2)
+            });
+          }
+        }
+      }
+      if (this.albumRows().length > 4) {
+        Row({ space: 2 }) {
+          if (this.albumRows()[4].length > 0) {
+            AlbumCellView({
+              cell: this.albumRows()[4][0],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(4, 0)
+            });
+          }
+          if (this.albumRows()[4].length > 1) {
+            AlbumCellView({
+              cell: this.albumRows()[4][1],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(4, 1)
+            });
+          }
+          if (this.albumRows()[4].length > 2) {
+            AlbumCellView({
+              cell: this.albumRows()[4][2],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(4, 2)
+            });
+          }
+        }
+      }
+      if (this.albumRows().length > 5) {
+        Row({ space: 2 }) {
+          if (this.albumRows()[5].length > 0) {
+            AlbumCellView({
+              cell: this.albumRows()[5][0],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(5, 0)
+            });
+          }
+          if (this.albumRows()[5].length > 1) {
+            AlbumCellView({
+              cell: this.albumRows()[5][1],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(5, 1)
+            });
+          }
+          if (this.albumRows()[5].length > 2) {
+            AlbumCellView({
+              cell: this.albumRows()[5][2],
+              group: this.group,
+              data: this.data,
+              actions: this.actions,
+              hooks: this.albumCellHooks,
+              selectionActive: this.data.selectionActive,
+              selected: this.memberSelected(5, 2)
+            });
+          }
+        }
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width(this.albumW())
+    .constraintSize({ maxWidth: this.albumW() });
   }
+
+  // 这一格选没选中。逐格勾选的数据面本来就有——selection.ids 是逐条消息 id 的
+  // 平表，相册成员就是那些独立 id（见 util/messageSelection）。页面把本行已选中
+  // 的成员算好放进 data.selectedMemberIds，这里只做包含判断。
+  private memberSelected(rowIdx: number, cellIdx: number): boolean {
+    const rows: AlbumCell[][] = this.albumRows();
+    if (rowIdx >= rows.length || cellIdx >= rows[rowIdx].length) {
+      return false;
+    }
+    const memberId: number = this.group.memberIds[rows[rowIdx][cellIdx].idx] ?? 0;
+    return this.data.selectedMemberIds.indexOf(memberId) >= 0;
+  }
+
+
+
+
 
   @Builder
   linkPreviewMeta(compact: boolean) {
@@ -2417,7 +2520,7 @@ export struct MessageBubble {
         );
         // key 里带上路径，位图下载完成后 chip 才会重建并显示图片。
       // count 与 isChosen 必须进键：它们是这枚 chip 上**唯一会变的两样**，而键不变
-      // 时 ForEach 不重跑子构建函数（同 util/albumCellKey 那段推导）——点赞数会停在
+      // 时 ForEach 不重跑子构建函数（同 albumGrid 上方那段推导）——点赞数会停在
       // 上一条消息、或者停在自己点之前的那个数上。
       }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}` +
         `_${r.customEmojiPath}_${r.count}_${r.isChosen ? 'y' : 'n'}`);

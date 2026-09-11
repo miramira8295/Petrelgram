@@ -51,7 +51,7 @@
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageEntry } from '../../store/MessageEntry';
 import {
-  pruneSelection, rowSelectable, rowSelected, toggleRow
+  memberSelected, pruneSelection, rowSelectable, rowSelected, toggleMember, toggleRow
 } from '../../util/messageSelection';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 
@@ -161,6 +161,21 @@ export class SelectionSession {
   // 仍由页面在同一个调用点自己清。
   reset(): void {
     this.clearState();
+  }
+
+  // 单条是否选中（相册逐格勾选）。
+  isMemberSelected(messageId: number): boolean {
+    return memberSelected(this.ids, messageId);
+  }
+
+  // 只切一条，不动同一行的其它成员。选空了就退出多选，语义与 toggleRow 一致。
+  toggleMember(messageId: number): void {
+    this.animateSelection((): void => {
+      this.ids = toggleMember(this.ids, messageId);
+      if (this.ids.length === 0) {
+        this.clearState();
+      }
+    });
   }
 
   isRowSelected(g: AlbumGroup): boolean {

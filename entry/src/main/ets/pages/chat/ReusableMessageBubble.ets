@@ -77,6 +77,8 @@ export interface MessageBubbleActions {
   onViewSenderHistory: (senderId: number) => void;
   onReportMsg: (messageId: number) => void;
   onSelectMessages: (messageIds: number[]) => void;
+  // 相册逐格勾选：只切这一条。整行切换仍走 onSelectMessages / 行点击。
+  onToggleSelectedMessage: (messageId: number) => void;
   onDeleteMsg: (messageId: number) => void;
   onForwardTap: (chatId: number, messageId: number, userId: number) => void;
   onOpenReactions: (messageId: number) => void;
@@ -95,6 +97,11 @@ export interface MessageBubbleRenderData {
   // ——滑了也只是把一条回复挂到一个不存在的输入框上
   // （用户 2026-09-09：「这个频道应该没有回复消息的能力呀」）。
   canReply: boolean;
+  // 多选态，以及**本行**已选中的成员 id。相册格子各自据此打勾。
+  // 只放本行的成员，不放整个选择集：整个集合会让每次点选都把所有行的
+  // prepare 缓存键打翻。
+  selectionActive: boolean;
+  selectedMemberIds: number[];
   chatId: number;
   // Actual row width after page-local chrome such as the multi-select gutter.
   // Media, albums and both bubble renderers derive every cap from this value.
@@ -167,7 +174,8 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onCopyLink: (_id: number): void => {}, onForwardMessages: (_ids: number[]): void => {},
   onSaveMessages: (_ids: number[]): void => {}, onRepeatMessages: (_ids: number[]): void => {},
   onViewSenderHistory: (_id: number): void => {}, onReportMsg: (_id: number): void => {},
-  onSelectMessages: (_ids: number[]): void => {}, onDeleteMsg: (_id: number): void => {},
+  onSelectMessages: (_ids: number[]): void => {},
+  onToggleSelectedMessage: (_id: number): void => {}, onDeleteMsg: (_id: number): void => {},
   onForwardTap: (_chatId: number, _id: number, _userId: number): void => {},
   onOpenReactions: (_id: number): void => {}, onRecognizeSpeech: (_id: number): void => {},
   onVideoNoteDownload: (_id: number): void => {},

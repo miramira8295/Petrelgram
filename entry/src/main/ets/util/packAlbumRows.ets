@@ -10,6 +10,13 @@ export interface AlbumCell {
 
 const CELL_GAP: number = 2;
 
+// 渲染侧给相册留的固定行槽位数（见 MessageBubble.albumGrid —— 它刻意不用
+// ForEach）。Telegram 相册上限 10 张，presets 最多排到 4 行；fallback 分支每行
+// 也最多 3 格。6 是留给意外的余量，不是策略。
+export const ALBUM_ROW_SLOTS: number = 6;
+// 一行最多几格（presets 与 fallback 都是 3）。
+export const ALBUM_ROW_MAX_CELLS: number = 3;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }

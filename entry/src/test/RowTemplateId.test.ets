@@ -1,8 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
-  ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_SEL,
-  ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_SEL, ROW_TEMPLATE_IDS, rowTemplateId
+  ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_GUTTER,
+  ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_GUTTER, ROW_TEMPLATE_IDS, rowTemplateId
 } from '../main/ets/util/rowTemplateId';
 
 interface GroupShape {
@@ -40,9 +40,9 @@ export default function rowTemplateIdTest() {
       }
       expect(ids[0]).assertEqual(ROW_TEMPLATE_DEFERRED);
       expect(ids[1]).assertEqual(ROW_TEMPLATE_PLAIN);
-      expect(ids[2]).assertEqual(ROW_TEMPLATE_PLAIN_SEL);
+      expect(ids[2]).assertEqual(ROW_TEMPLATE_PLAIN_GUTTER);
       expect(ids[3]).assertEqual(ROW_TEMPLATE_RICH);
-      expect(ids[4]).assertEqual(ROW_TEMPLATE_RICH_SEL);
+      expect(ids[4]).assertEqual(ROW_TEMPLATE_RICH_GUTTER);
     });
 
     // 首屏占位行只画一个定高 Column，多选让位栏对它没有意义——不该因为多选

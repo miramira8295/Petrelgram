@@ -58,6 +58,8 @@ function renderData(over: RenderDataOverrides = {}): MessageBubbleRenderData {
     isGroup: over.isGroup ?? false,
     isChannel: false,
   canReply: true,
+  selectionActive: false,
+  selectedMemberIds: [],
     liveSharingId: 0,
     themeBubbleOut: '',
     showUnreadDivider: over.showUnreadDivider ?? false,

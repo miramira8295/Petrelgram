@@ -40,6 +40,24 @@ export function rowSelected(selectedIds: number[], memberIds: number[]): boolean
   return false;
 }
 
+// 单条：在不在集合里。相册逐格勾选用它——集合本来就是逐条 id，不需要新结构。
+export function memberSelected(selectedIds: number[], messageId: number): boolean {
+  return selectedIds.indexOf(messageId) >= 0;
+}
+
+// 单条切换。与 toggleRow 并列而不是替代它：整行点击（文字气泡、相册的说明文字）
+// 仍然按行整体切，只有相册格子按单条切。
+export function toggleMember(selectedIds: number[], messageId: number): number[] {
+  if (messageId === 0) {
+    return selectedIds;
+  }
+  const at: number = selectedIds.indexOf(messageId);
+  if (at < 0) {
+    return [...selectedIds, messageId];
+  }
+  return selectedIds.filter((id: number): boolean => id !== messageId);
+}
+
 // 点一行：选中的整行移除，未选中的整行加入。半选（比如相册在选中之后又收到
 // 新 member）走的是"已选中"那一支，结果是整行清空——一次点击后状态干净，
 // 好过让用户在半选里反复横跳。

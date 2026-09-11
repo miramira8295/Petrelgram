@@ -11,33 +11,44 @@ import { AlbumGroup } from './collapseAlbums';
 //
 // 【外壳到底有几种形状】timelineRow 里真正影响外壳结构的只有三件事：
 //   ① 是不是首屏占位行（deferred：只画一个定高 Column，别的都没有）
-//   ② 多选让位栏在不在（多一列 20vp 的勾选框）
+//   ② 有没有多选让位栏那一列
 //   ③ 里面是轻量文本气泡还是富气泡（两条完全不同的子树）
-// 三者组合共 5 种（占位行不受多选影响），全部枚举得出来。
+// 三者组合共 5 种（占位行不受 ② 影响），全部枚举得出来。
+//
+// 【② 问的是「这一行可不可选」，不是「多选开没开」（2026-09-11 改）】
+// 原来第三个参数传的是 `selection.active && rowSelectable(...)`，于是**进出多选
+// 会让每一行换模板**——Repeat 换模板就是销毁旧节点、从另一个池子取新节点，而被
+// 销毁的节点没有"变形"可言：SelectionSession 外面那 150ms 的 animateTo 从来没有
+// 东西可插值，用户看到的就是"闪过去"。
+// 现在让位栏是常驻节点（宽度 0↔34 动画，见 ChatPage.timelineRow），在与不在只
+// 由内容类型决定 ⇒ 这一维变成**静态**的，进出多选不再换池子。
 //
 // 【漏一个的后果】装过富气泡的壳被拿去装轻量文本行——正是要治的那类串行。
 // 所以新增结构分支时**必须同步加模板名**，宁可多分一档也不要合并。
 
 export const ROW_TEMPLATE_DEFERRED: string = 'deferred';
 export const ROW_TEMPLATE_PLAIN: string = 'plain';
-export const ROW_TEMPLATE_PLAIN_SEL: string = 'plain-sel';
+// 带让位栏那一列的外壳（行本身可选，与多选开没开无关）。
+export const ROW_TEMPLATE_PLAIN_GUTTER: string = 'plain-gutter';
 export const ROW_TEMPLATE_RICH: string = 'rich';
-export const ROW_TEMPLATE_RICH_SEL: string = 'rich-sel';
+export const ROW_TEMPLATE_RICH_GUTTER: string = 'rich-gutter';
 
 // 注册用的全集。调用方遍历它逐个 .template()，避免"加了枚举忘了注册"。
 export const ROW_TEMPLATE_IDS: string[] = [
-  ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_SEL,
-  ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_SEL
+  ROW_TEMPLATE_DEFERRED, ROW_TEMPLATE_PLAIN, ROW_TEMPLATE_PLAIN_GUTTER,
+  ROW_TEMPLATE_RICH, ROW_TEMPLATE_RICH_GUTTER
 ];
 
+// hasGutterColumn：这一行有没有让位栏那一列（= rowSelectable(contentType)）。
+// **不要**把 selection.active 传进来，理由见文件头 ② 那段。
 export function rowTemplateId(
-  group: AlbumGroup, lightweight: boolean, selectionGutter: boolean
+  group: AlbumGroup, lightweight: boolean, hasGutterColumn: boolean
 ): string {
   if (group.initialDeferred === true) {
     return ROW_TEMPLATE_DEFERRED;
   }
   if (lightweight) {
-    return selectionGutter ? ROW_TEMPLATE_PLAIN_SEL : ROW_TEMPLATE_PLAIN;
+    return hasGutterColumn ? ROW_TEMPLATE_PLAIN_GUTTER : ROW_TEMPLATE_PLAIN;
   }
-  return selectionGutter ? ROW_TEMPLATE_RICH_SEL : ROW_TEMPLATE_RICH;
+  return hasGutterColumn ? ROW_TEMPLATE_RICH_GUTTER : ROW_TEMPLATE_RICH;
 }
