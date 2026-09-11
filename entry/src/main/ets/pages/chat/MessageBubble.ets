@@ -1,4 +1,5 @@
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
+import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
 import {
   isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER,
   SWIPE_SELECT_MAX, SWIPE_SELECT_TRIGGER
@@ -402,6 +403,8 @@ export struct MessageBubble {
   // 菜单默认贴着气泡排（ArkUI 按组件矩形算位置，与触点无关，实测同一条消息
   // 按左缘和按右缘弹出位置完全一样），这个值让它朝手指那一侧挪。
   @Local menuOffsetX: number = 0;
+  // 长按菜单的两条动效链，按实例缓存（普通字段，写它不该惊动任何节点）。
+  private menuFx: MessageMenuTransitions = new MessageMenuTransitions();
   // 时间层要跟随"气泡里最宽的那个兄弟"（转发标签 / 发送者名 / 评论行），
   // 它们都在时间 Stack **外面**，所以测它们不构成环。
   // 曾经是拿 bubbleW 回灌的，那是 minWidth ← bubbleW ← minWidth 的循环，
@@ -924,7 +927,13 @@ export struct MessageBubble {
     if (this.env.linkNavBusy === run.url) {
       return $r('app.color.select_highlight');
     }
-    return run.code ? $r('app.color.surface_alt') : Color.Transparent;
+    // 【代码体底色必须是半透明叠加，不能是不透明底色】
+    // 原来用的是 surface_alt——那是**页面级**底色（深色 #2B3A4C），而气泡底是
+    // bubble_in #182533 / bubble_out #2B5278，三个色值互不相干。不透明底盖上去
+    // 明度差一眼看得出，于是标签"浮"在气泡上，用户原话：像打了个补丁。
+    // code_surface 是 6% 黑 / 10% 白的叠加层，落在哪种气泡上都只是薄薄提亮/压暗
+    // 一档，跟着气泡走。
+    return run.code ? $r('app.color.code_surface') : Color.Transparent;
   }
 
 
@@ -1321,7 +1330,7 @@ export struct MessageBubble {
         .fontColor(this.accent())
         .decoration({ type: this.richRunDecoration(run), color: this.accent() })
         .textBackgroundStyle({
-          color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
+          color: run.code ? $r('app.color.code_surface') : Color.Transparent,
           radius: run.code ? 3 : 0
         })
         .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
@@ -1350,7 +1359,7 @@ export struct MessageBubble {
           color: run.link ? this.accent() : bubbleTextFor(this.msg.isOutgoing)
         })
         .textBackgroundStyle({
-          color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
+          color: run.code ? $r('app.color.code_surface') : Color.Transparent,
           radius: run.code ? 3 : 0
         });
     }
@@ -4108,25 +4117,16 @@ export struct MessageBubble {
         preview: (this.hasLiveVideoSurface() || this.compactMenuContext())
           ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
         previewBorderRadius: this.bubbleCornerRadius(),
+        // 两条动效链按实例缓存，不在复用路径上现建（见 util/messageMenuTransitions）。
         previewAnimationOptions: {
           scale: [0.98, 1.035],
-          transition: TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.FastOutSlowIn
-            })
+          transition: this.menuFx.preview()
         },
         borderRadius: 16,
         backgroundColor: Color.Transparent,
         backgroundBlurStyle: containerBlur('menu'),
         systemMaterial: overlayMaterial('menu'),
-        transition: TransitionEffect.OPACITY
-          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.FastOutSlowIn
-          }),
+        transition: this.menuFx.menu(),
         mask: {
           color: '#52000000',
           backgroundBlurStyle: BlurStyle.BACKGROUND_THIN

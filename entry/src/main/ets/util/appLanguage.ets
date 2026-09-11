@@ -2,6 +2,7 @@ import { i18n } from '@kit.LocalizationKit';
 import { mirrorChatEnvKey } from './chatEnvMirror';
 import { refreshLocale } from './intlFormat';
 import { invalidateStringCache, str } from './strings';
+import { clearLinkPreviewPresentationCache } from './linkPreview';
 import { logE } from './log';
 
 // The platform owns the app's language: setAppPreferredLanguage() switches the
@@ -110,6 +111,8 @@ export function applyAppLanguage(tag: string): boolean {
   // Resources reload themselves; the Intl formatters do not, and would keep
   // rendering dates in the language the user just left.
   invalidateStringCache();
+  // 链接预览的呈现表里存着 str() 的结果，同一拍清掉。
+  clearLinkPreviewPresentationCache();
   refreshLocale();
   bumpLanguageEpoch();
   return true;

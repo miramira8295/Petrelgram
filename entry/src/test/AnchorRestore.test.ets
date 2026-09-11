@@ -34,6 +34,7 @@ export default function anchorRestoreTest() {
       staleIndex.anchorIndexFresh = false;
       expect(shouldCapturePrependAnchor(staleIndex)).assertFalse();
     });
+
   });
 
   describe('anchorYAfterUserScroll', () => {

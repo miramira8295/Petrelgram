@@ -3,15 +3,41 @@ import { logE } from '../util/log';
 
 export const DEFAULT_TIMEOUT_MS: number = 15000;
 
+// 回调比它「计划的触发时刻」晚了多少，才算这段时间进程根本没在跑。
+//
+// 【为什么需要这个】deadlineMs 是墙钟（Date.now() + timeoutMs）。应用切到后台
+// 后系统会冻住进程：setTimeout 停摆，墙钟照走。解冻那一刻定时器补火，看到
+// 所有 deadline 都过了，就把**全部**在途请求一次判成 'request timeout'——
+// TDLib 其实好好的，应答也在路上。紧接着真应答到达 deliverParsed，@extra 已经
+// 不在 pending 里了，于是被静默丢弃。
+//
+// 真机日志（20260910，SGT-AL10）3/3 命中：每一条 request timeout 都紧跟在
+// `windowStatus 3`（切后台）之后，其中一条是 getChat——对非 bot 那是离线请求，
+// 读本地库，跑满 15s 运行时间不可能，只能是被这个定时器打死的。
+//
+// 门槛取 2s：正常 setTimeout 抖动是毫秒到几十毫秒量级（真机实测标称 16ms 的
+// 跳实际 ~74ms），冻结是秒级，两者不会混。主线程被长卡顿堵住超过 2s 也会走
+// 这条路——那同样是对的，那段时间我们照样没法处理应答。
+export const FROZEN_SLACK_MS: number = 2000;
+
+// 超时是**我们自己**判的，不是 TDLib 的答复码（TDLib 的错误码是正数）。调用方
+// 靠它把「没答复」和「答复说不行」分开——前者请求多半已经生效了。
+export const TIMEOUT_ERROR_CODE: number = -1;
+
 export interface TimerFns {
   setTimeout: (cb: () => void, ms: number) => number;
   clearTimeout: (id: number) => void;
+  // 可选，缺省走 Date.now。单测靠它把「冻结」演出来：手动定时器能决定回调何时
+  // 跑，但决定不了跑的时候墙钟是几点，而冻结判据问的正是后者。
+  now?: () => number;
 }
 
 interface Pending {
   resolve: (value: TdObject) => void;
   reject: (reason: TdError) => void;
   deadlineMs: number;
+  // 冻结之后要按**这个请求自己的**窗口重新起算，所以得记着它。
+  timeoutMs: number;
 }
 
 export class TdClient {
@@ -33,6 +59,11 @@ export class TdClient {
     };
   }
 
+  private nowMs(): number {
+    const clock: (() => number) | undefined = this.timer.now;
+    return clock !== undefined ? clock() : Date.now();
+  }
+
   start(): void {
     this.bridge.init((json: string) => this.onReceive(json));
   }
@@ -49,8 +80,9 @@ export class TdClient {
     }
     requestObj['@extra'] = extra;
     return new Promise<TdObject>((resolve, reject) => {
-      const deadlineMs: number = Date.now() + Math.max(0, timeoutMs);
-      this.pending.set(extra, { resolve, reject, deadlineMs });
+      const window: number = Math.max(0, timeoutMs);
+      const deadlineMs: number = this.nowMs() + window;
+      this.pending.set(extra, { resolve, reject, deadlineMs, timeoutMs: window });
       this.scheduleTimeoutTimer();
       this.bridge.send(JSON.stringify(requestObj));
     });
@@ -86,6 +118,22 @@ export class TdClient {
       const expiredThrough: number = this.timeoutDeadlineMs;
       this.timeoutTimerId = -1;
       this.timeoutDeadlineMs = 0;
+      // 冻结检测必须排在清账之前：这段墙钟时间进程没在跑，谁都不该因此超时。
+      //
+      // 【为什么是「重新起算一整个窗口」而不是「按超射量平移」】能量到的超射
+      // 是 now - expiredThrough，它比真实的冻结时长**少了整整一个 timeoutMs**
+      // （定时器是在 deadline 才计划触发的，冻结从哪一刻开始我们看不见）。按它
+      // 平移，那种「刚发出去就被冻住」的请求平移完 deadline 恰好还是现在，原地
+      // 判死——那正是要修的那一类。宁可宽：真挂死的请求在解冻后照样跑满一个
+      // 窗口再超时。
+      if (this.pending.size > 0 && this.nowMs() - expiredThrough > FROZEN_SLACK_MS) {
+        const resumedAt: number = this.nowMs();
+        this.pending.forEach((entry: Pending): void => {
+          entry.deadlineMs = resumedAt + entry.timeoutMs;
+        });
+        this.scheduleTimeoutTimer();
+        return;
+      }
       const expired: Pending[] = [];
       const expiredExtras: string[] = [];
       this.pending.forEach((entry: Pending, extra: string): void => {
@@ -101,10 +149,10 @@ export class TdClient {
         }
       }
       for (const entry of expired) {
-        entry.reject(new TdError(-1, 'request timeout'));
+        entry.reject(new TdError(TIMEOUT_ERROR_CODE, 'request timeout'));
       }
       this.scheduleTimeoutTimer();
-    }, Math.max(0, nearest - Date.now()));
+    }, Math.max(0, nearest - this.nowMs()));
   }
 
   onUpdate(type: string, handler: (update: TdObject) => void): () => void {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { backgroundBlurRadius } from '../main/ets/util/chatBackgroundRaster';
+import { backgroundBlurRadius, combineDimming } from '../main/ets/util/chatBackgroundRaster';
 
 // backgroundBlurRadius(path, isPattern, blurred, userBlur) — userBlur is the
 // user's own Chat Background slider setting (KEY_BG_BLUR, AppSettings.ets,
@@ -39,6 +39,12 @@ export default function backgroundBlurTest() {
     });
     it('a_pure_gradient_stays_sharp_even_with_blurred_flag_and_a_nonzero_setting', 0, (): void => {
       expect(backgroundBlurRadius('', false, true, 20)).assertEqual(0);
+    });
+    it('successive_dark_masks_flatten_to_the_same_opacity', 0, (): void => {
+      expect(Math.round(combineDimming(0.2, 0.3) * 100)).assertEqual(44);
+    });
+    it('flattened_dark_masks_clamp_invalid_inputs', 0, (): void => {
+      expect(combineDimming(-1, 2)).assertEqual(1);
     });
   });
 }

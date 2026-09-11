@@ -4,7 +4,7 @@ import {
   slotHasDim, slotIsApp, slotIsDark, wallpaperSlotKeys, WallpaperSlotKeys
 } from '../main/ets/util/wallpaperSlot';
 import {
-  WALLPAPER_NUMBER_SETTINGS, WallpaperNumberSetting
+  KEY_APP_BG_BLUR, KEY_BG_BLUR, WALLPAPER_NUMBER_SETTINGS, WallpaperNumberSetting
 } from '../main/ets/store/AppSettings';
 
 function sliderKeyInitialised(key: string): boolean {
@@ -41,21 +41,33 @@ export default function wallpaperSlotTest() {
     // 这是这张表存在的全部理由：四个槽位的每一根滑杆都必须落在**不同**的键上，
     // 否则会出现"调了浅色、深色跟着变"这种极难查的错。
     it('no_two_slots_share_a_slider_key', 0, (): void => {
-      const seen: string[] = [];
+      const blurKeys: string[] = [];
+      const patternKeys: string[] = [];
+      const dimKeys: string[] = [];
       for (const slot of WALLPAPER_SLOTS) {
         const k: WallpaperSlotKeys = wallpaperSlotKeys(slot);
-        // 遮罩只在深色槽位参与渲染，两个 APP 槽位共用同一个遮罩/模糊键是有意的
-        // （见 wallpaperSlotKeys 的注释），所以这里只断言**纹理**互不相同。
-        expect(seen.indexOf(k.pattern) < 0).assertTrue();
-        seen.push(k.pattern);
+        expect(blurKeys.indexOf(k.blur) < 0).assertTrue();
+        expect(patternKeys.indexOf(k.pattern) < 0).assertTrue();
+        expect(dimKeys.indexOf(k.dim) < 0).assertTrue();
+        blurKeys.push(k.blur);
+        patternKeys.push(k.pattern);
+        dimKeys.push(k.dim);
       }
-      expect(seen.length).assertEqual(4);
+      expect(blurKeys.length).assertEqual(4);
+      expect(patternKeys.length).assertEqual(4);
+      expect(dimKeys.length).assertEqual(4);
     });
 
     // 聊天两侧的模糊必须是两个键——旧版共用一个，四槽位下会串。
     it('chat_light_and_dark_blur_are_separate', 0, (): void => {
       expect(wallpaperSlotKeys(SLOT_CHAT_LIGHT).blur === wallpaperSlotKeys(SLOT_CHAT_DARK).blur)
         .assertFalse();
+    });
+
+    // 兼容旧设置：原来的共用模糊值继续归浅色槽位，深色由启动迁移复制后再独立。
+    it('legacy_blur_keys_remain_on_light_slots', 0, (): void => {
+      expect(wallpaperSlotKeys(SLOT_APP_LIGHT).blur).assertEqual(KEY_APP_BG_BLUR);
+      expect(wallpaperSlotKeys(SLOT_CHAT_LIGHT).blur).assertEqual(KEY_BG_BLUR);
     });
 
     it('dim_only_matters_for_dark_slots', 0, (): void => {

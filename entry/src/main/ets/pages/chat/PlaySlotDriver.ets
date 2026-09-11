@@ -91,7 +91,6 @@ export class PlaySlotDriver {
     return this.playSlots.subscribe((key: string): void => {
       const startMs: number = key === ''
         ? 0 : (this.bubblePositionMs.get(slotKeyMessageId(key)) ?? 0);
-      logW(`[PlaySlot] apply key=${key === '' ? '(none)' : key} startMs=${Math.round(startMs)}`);
       // 一个动作，顺序封在页面那一侧的实现里。见 PlaySlotHost.applySlot。
       this.host.applySlot(key, startMs);
     });
@@ -225,8 +224,6 @@ export class PlaySlotDriver {
   // 没有任何新的 ratio 上报，列表就再也选不出播放位（"哑掉"）。
   handoffToViewer(messageId: number): number {
     const startPositionMs: number = this.bubblePositionMs.get(messageId) ?? 0;
-    logW(`[PlaySlot] handoff dir=to-viewer id=${messageId}` +
-      ` positionMs=${Math.round(startPositionMs)}`);
     this.clearTick();
     this.playSlots.suspend();
     return startPositionMs;
@@ -243,8 +240,6 @@ export class PlaySlotDriver {
   // pin 是有时效的（PLAY_SLOT_PIN_TTL_MS）：只为「刚看完的这条回到列表后
   // 接着播」服务，过期后它跟别的候选一样要重新攒够驻留才能当选。
   handoffFromViewer(messageId: number, albumIndex: number, positionMs: number): void {
-    logW(`[PlaySlot] handoff dir=from-viewer id=${messageId}` +
-      ` albumIndex=${albumIndex} positionMs=${Math.round(positionMs)}`);
     this.bubblePositionMs.set(messageId, positionMs);
     this.playSlots.pin(messageId, albumIndex, Date.now());
   }

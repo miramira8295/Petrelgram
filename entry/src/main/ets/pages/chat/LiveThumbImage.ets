@@ -40,6 +40,7 @@ export interface LiveThumbSpec {
   fit: ImageFit;
 }
 
+
 @ComponentV2
 export struct LiveThumbImage {
   @Require @Param spec: LiveThumbSpec;

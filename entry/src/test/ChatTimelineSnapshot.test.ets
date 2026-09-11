@@ -6,8 +6,7 @@ import {
 
 function snapshotWith(groups: AlbumGroup[], loadState: string = 'loading'): ChatTimelineSnapshot {
   return {
-    groups: groups,
-    visibleGroupCount: groups.length,
+    hasVisibleRows: groups.length > 0,
     messageLoadState: loadState,
     messageLoadError: '',
     olderLoadState: 'idle',
@@ -37,14 +36,16 @@ export default function chatTimelineSnapshotTest() {
       expect(merged.messageLoadState).assertEqual('ready');
     });
 
-    it('a new row-array identity is a real host publication', 0, () => {
+    // 行数组换了身份但标量没变时，宿主**不该**被惊动：Repeat 绑的是 ChatPage
+    // 自己的 @Local timelineRows，快照里已经没有 groups 了。这条正是修掉
+    // 「每次发布都重跑一遍 ChatPage.build()」的判据。
+    it('a new row-array identity alone is not a host publication', 0, () => {
       const firstRows: AlbumGroup[] = [];
       const secondRows: AlbumGroup[] = [];
       const current: ChatTimelineSnapshot = snapshotWith(firstRows, 'ready');
       const merged: ChatTimelineSnapshot = coalesceChatTimelineSnapshot(
         current, snapshotWith(secondRows, 'ready'));
-      expect(merged === current).assertFalse();
-      expect(merged.groups === secondRows).assertTrue();
+      expect(merged === current).assertTrue();
     });
   });
 }

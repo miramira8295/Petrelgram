@@ -199,9 +199,38 @@ function computeMutableSig(m: MessageEntry): string {
   return s;
 }
 
+// 让「向上翻页」变成对 List 而言的**纯插入**所需要的两条提示。
+//
+// 【为什么需要】官方对 List.maintainVisibleContentPosition 的承诺只覆盖"显示区域
+// 之外插入/删除数据"，Repeat 文档另有一句写明**高度变化**不在内、要自己用
+// scrollToIndex 兜。而接缝行（前一次窗口的第一行）恰好每次前插都会改高度：
+//   · 它作为"窗口首行"拿到的日期胶囊被新来的前驱抢走 → 掉 30vp；
+//   · 它第一次有了 prev，同族的话昵称被回收 → 掉 22vp。
+// 于是每一页老历史都必然走手动补位，而那一下非动画 scrollToIndex 会打断惯性
+// ——用户的说法是"得再拽一下"。这两条提示就是去掉这两次高度变化。
+export interface RunHeadHints {
+  // 上面还有没加载的历史。为真时窗口首行不画日期胶囊：那个胶囊标的不是
+  // 「这天开始了」，而是「再往上还没加载」——它是 prevDate === 0 的副产物，
+  // 而且几乎不可能被看见（滑到快看见它时翻页已经触发，它随即消失）。
+  moreOlderAbove: boolean;
+  // 当过窗口首行的行（按 head.rowId）。它们的昵称一旦画出来就不再回收。
+  //
+  // 只会**多**画一个昵称，绝不会少画——所以不存在"该有名字却没有"。代价是
+  // 接缝处同一个人的昵称可能连着出现两次；而在频道里 senderName 为空、昵称
+  // 节点根本不渲染（见 rowReuseId.hasSenderNameBranch），那边零代价。
+  stickyRunHeads: Set<number>;
+  // 扣不扣「半个相册」（见第二遍扫描前那段）。**首屏落点和跳转期间必须为 false**：
+  // 那两条路要靠 groupIndexOf 找目标行，被扣掉的成员会让它返回 -1，落点就丢了。
+  // 前插只发生在首屏落定之后，所以这道闸不影响本来要治的场景。
+  withholdPartialAlbum: boolean;
+}
+
 // Collapse consecutive photo messages that share a non-empty media_album_id into
 // one AlbumGroup. Everything else passes through as a single-member group.
-export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
+export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): AlbumGroup[] {
+  const moreOlderAbove: boolean = hints !== undefined && hints.moreOlderAbove;
+  const stickyRunHeads: Set<number> | null = hints !== undefined ? hints.stickyRunHeads : null;
+  const withholdPartialAlbum: boolean = hints !== undefined && hints.withholdPartialAlbum;
   const groups: AlbumGroup[] = [];
   let i = 0;
   let prevDate = 0;
@@ -214,8 +243,11 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
       i += 1;
       continue;
     }
-    // Date pill above the first row of each calendar day (and the window's first row).
-    const dateLabel: string = (prevDate === 0 || !sameDay(m.date, prevDate)) ? formatDateSeparator(m.date) : '';
+    // Date pill above the first row of each calendar day. 窗口首行只有在**真的
+    // 到了会话开头**时才画——上面还有历史时画出来的那个是假胶囊，见 RunHeadHints。
+    const windowFirst: boolean = prevDate === 0;
+    const dayChanged: boolean = windowFirst ? !moreOlderAbove : !sameDay(m.date, prevDate);
+    const dateLabel: string = dayChanged ? formatDateSeparator(m.date) : '';
     prevDate = m.date;
     if (m.albumId !== '' && (m.contentType === 'photo' || m.contentType === 'video')) {
       const memberIds: number[] = [];
@@ -341,6 +373,35 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
       i += 1;
     }
   }
+  // 半个相册不发布。
+  //
+  // 相册在协议层是 N 条独立消息（同一个 media_album_id），而 getChatHistory 按
+  // **条数**分页——页边界落在相册中间是常态，媒体频道里几乎每页都是。窗口于是
+  // 停在相册的后半截上，渲染成一个缺格的九宫格；等下一页把缺的成员带回来，
+  // 它们与之连上折成同一行，这一行从 7 格变 10 格。
+  //
+  // 那是一次**高度变化**而不是插入：行身份是 `album_<albumId>_<最新成员>`，补进来
+  // 的都是更老的成员，最新那个没变 ⇒ Repeat 眼里是同一行原地更新，
+  // maintainVisibleContentPosition 的承诺不覆盖它（Repeat 文档明写高度变化要自己
+  // 用 scrollToIndex 兜）。于是又一次触发手动补位、又一次打断惯性。
+  //
+  // 判据是精确的，不是保守估计：**相册行只要不是第一行，它就一定是完整的**——
+  // 它上面还有行，说明有更老的消息已加载；那条消息若是同一个 albumId，早就被
+  // 折进同一组、不会单独成行。所以"可能缺成员" ⟺ "它是首行且上面还有历史"。
+  //
+  // 扣住的那几条只是暂不显示，仍在 store 里、仍参与分页（oldestId 取自
+  // MessageStore.messages，不看这里），下一页一到它就不再是首行，随插入一起
+  // 出现在视口上方——那条路 maintainVisibleContentPosition 是管的。
+  //
+  // groups.length > 1 是兜底：整个窗口只剩这一行时扣掉就是白屏。
+  if (withholdPartialAlbum && groups.length > 1) {
+    const first: MessageEntry = groups[0].head;
+    if (first.albumId !== '' &&
+      (first.contentType === 'photo' || first.contentType === 'video')) {
+      groups.shift();
+    }
+  }
+
   // Second pass: mark run boundaries (a date pill between rows breaks the run).
   // The flags join the key so a row re-renders when a same-sender neighbor
   // arrives and its avatar/name visibility flips.
@@ -348,7 +409,11 @@ export function collapseAlbums(list: MessageEntry[]): AlbumGroup[] {
     const next = k + 1 < groups.length ? groups[k + 1] : null;
     const prev = k - 1 >= 0 ? groups[k - 1] : null;
     groups[k].showAvatar = !(next !== null && next.dateLabel === '' && sameRun(groups[k].head, next.head));
-    groups[k].showSenderName = !(prev !== null && groups[k].dateLabel === '' && sameRun(prev.head, groups[k].head));
+    // 粘滞：当过窗口首行的行不再回收昵称（见 RunHeadHints.stickyRunHeads）。
+    const stickyHead: boolean =
+      stickyRunHeads !== null && stickyRunHeads.has(groups[k].head.rowId);
+    groups[k].showSenderName = stickyHead ||
+      !(prev !== null && groups[k].dateLabel === '' && sameRun(prev.head, groups[k].head));
     groups[k].key += `_${groups[k].showAvatar ? 'A' : 'a'}${groups[k].showSenderName ? 'N' : 'n'}`;
   }
   return groups;

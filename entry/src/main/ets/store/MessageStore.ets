@@ -1,4 +1,4 @@
-import { TdClient } from '../tdkit/TdClient';
+import { TdClient, TIMEOUT_ERROR_CODE } from '../tdkit/TdClient';
 import { viewMessageSourceType } from '../util/viewMessageSource';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
@@ -957,8 +957,6 @@ export class MessageStore {
     if (remainder !== null && remainderAnchorId === this.oldestId && this.hasMoreOlder) {
       this.olderPrefetchAnchorId = remainderAnchorId;
       this.olderPrefetchResult = remainder;
-      logI(`[StoreDiag] older prefetch promoted second anchor=${remainderAnchorId}` +
-        ` got=${((remainder['messages'] as TdObject[] | undefined) ?? []).length}`);
     } else if (this.hasMoreOlder && this.initialFillTries === 0) {
       this.prefetchOlder();
     }
@@ -1049,9 +1047,6 @@ export class MessageStore {
         this.consumeStagedOlderPrefetch();
         return;
       }
-      logI(`[StoreDiag] older prefetch ready anchor=${anchorId}` +
-        ` got=${((res['messages'] as TdObject[] | undefined) ?? []).length}` +
-        ` pages=${this.olderPrefetchRemainder === null ? 1 : 2}`);
     }).catch((e: TdError): void => {
       if (seq !== this.olderPrefetchSeq) {
         return;
@@ -1148,8 +1143,6 @@ export class MessageStore {
     this.olderPrefetchRemainderAnchorId = 0;
     this.olderPrefetchRemainder = null;
     this.olderPrefetchDemanded = false;
-    logI(`[StoreDiag] older merged anchor=${anchorId} got=${merged.length}` +
-      ` (${firstArr.length}+${secondArr.length}-1)`);
     // 与 consumeStagedOlderPrefetch 同样的护栏：applyOlderPage 里的 notify 是同步的，
     // 订阅回调会立刻再调 loadOlder——不挡住就是同帧自激环（jscrash 20260902143829）。
     this.olderPrefetchPromotionActive = true;
@@ -1578,9 +1571,6 @@ export class MessageStore {
       if (contiguous.length === 0 && sorted.length > 0) {
         logW(`[StoreDiag] newer page all behind a gap: taking ${sorted.length}` +
           ` as-is to avoid stalling (newest=${newestId})`);
-        logW(`[NewerFire] page got=${arr.length} newer=${sorted.length}` +
-          ` merged=${sorted.length} windowLast=${newestId}` +
-          ` chatLast=${this.chatLastMessageId} verdict=taken-as-is-behind-gap`);
         this.newerEmptyAnchor = 0;
         this.newerEmptyStreak = 0;
         // **这一句漏了就是"正在加载较新消息"关不掉。**本分支是三条合并路径里
@@ -1598,9 +1588,6 @@ export class MessageStore {
       if (dropped > 0) {
         logW(`[StoreDiag] newer page had inner gap: kept=${contiguous.length}` +
           ` dropped=${dropped} lastKept=${prevId}`);
-        logW(`[NewerFire] page got=${arr.length} newer=${sorted.length}` +
-          ` merged=${contiguous.length} windowLast=${newestId}` +
-          ` chatLast=${this.chatLastMessageId} verdict=inner-gap-trimmed`);
         this.newerEmptyAnchor = 0;
         this.newerEmptyStreak = 0;
         // 丢掉了后半段，说明更新的消息还在，别把分页关掉。
@@ -1648,17 +1635,10 @@ export class MessageStore {
         const tail: NewerTailVerdict = decideNewerTail(outcome);
         this.hasMoreNewer = tail.hasMoreNewer;
         this.newerLoadState = tail.state;
-        logW(`[NewerFire] page got=${arr.length} newer=0 merged=0` +
-          ` windowLast=${newestId} chatLast=${this.chatLastMessageId}` +
-          ` streak=${this.newerEmptyStreak} verdict=${tail.reason}` +
-          ` hasMoreNewer=${tail.hasMoreNewer} state=${tail.state}`);
       } else {
         this.newerEmptyAnchor = 0;
         this.newerEmptyStreak = 0;
         this.newerLoadState = 'idle';
-        logW(`[NewerFire] page got=${arr.length} newer=${sorted.length}` +
-          ` merged=${sorted.length} windowLast=${newestId}` +
-          ` chatLast=${this.chatLastMessageId} verdict=merged-rows`);
       }
       // 一行都没合进来时不置标记：置了也只是被下一次发布无条件丢掉（见
       // util/appendAnchor 的一次性配对），不如根本不置。
@@ -1682,8 +1662,40 @@ export class MessageStore {
 
   send(text: string, replyToId: number = 0): void {
     this.sendAsync(text, replyToId).catch((e: TdError) => {
-      logE(`MessageStore.send failed: ${e.message}`);
+      logE(`MessageStore.send failed code=${e.code}: ${e.message}`);
+      this.reconcileAfterUnknownSend(e);
     });
+  }
+
+  // 发送超时 ≠ 没发出去。
+  //
+  // 'request timeout' 是 **TdClient 自己的定时器**判的，不是 TDLib 的答复：请求
+  // 多半早已交给 TDLib、消息也已经发到服务器，只是应答没能在窗口内回到 UI
+  // 线程。最常见的成因是切后台被冻住（见 TdClient 的 FROZEN_SLACK_MS）。
+  //
+  // 一旦判了超时，那条气泡就再也进不来了：
+  //   · sendAsync 的 .then 没跑过 ⇒ upsert 没执行 ⇒ 窗口里没有这条消息；
+  //   · 迟到的真应答会被 TdClient.deliverParsed 丢掉——@extra 早从 pending 摘了；
+  //   · 冻结期间送达的消息 TDLib **不会**补发 updateNewMessage（见
+  //     resumeOpenChat 上方那段真机结论）。
+  // 于是用户看到的就是「我自己发的消息看不到，退出再进就有了」。
+  //
+  // 唯一的出路是重新取一次最新页，让真正落地的那条自己回到窗口里——也就是把
+  // 用户手动「退出再进」做的事就地做掉。
+  //
+  // 闸与 resumeOpenChat 保持一致：窗口没停在实时尾部时不动它。那种情况下用户
+  // 本来就不在底部，硬拉一页只会搅乱视口，而消息并没有丢——往下翻页会带回来。
+  private reconcileAfterUnknownSend(e: TdError): void {
+    if (e.code !== TIMEOUT_ERROR_CODE) {
+      return;
+    }
+    if (this.initialHistoryState !== 'ready' || this.hasMoreNewer) {
+      logW(`[StoreDiag] send timed out, tail refetch skipped` +
+        ` state=${this.initialHistoryState} hasMoreNewer=${this.hasMoreNewer}`);
+      return;
+    }
+    logW(`[StoreDiag] send timed out, refetching newest page rows=${this.messages.length}`);
+    this.loadHistory(0);
   }
 
   // entities 目前只用于按 user_id 提及没有用户名的成员（见 mentionEntities）。
@@ -2943,7 +2955,11 @@ export class MessageStore {
     const startedAt: number = this.sendStartedAt.get(oldId) ?? 0;
     if (startedAt !== 0) {
       this.sendStartedAt.delete(oldId);
-      console.warn(`[SendDiag] serverAck=${Date.now() - startedAt}ms rows=${this.messages.length}`);
+      // logW 而不是 console.warn：util/log **不劫持 console**（ArkTS 不许覆写
+      // 对象方法，那边文件头写着），console.* 一个字都进不了诊断环形缓冲。这条
+      // 探针本来就是为了查"发消息慢/发出去看不到"，却从来没在任何一份用户日志
+      // 里出现过——2026-09-10 那份 30837 行的日志里 [SendDiag] 零命中。
+      logW(`[SendDiag] serverAck=${Date.now() - startedAt}ms rows=${this.messages.length}`);
     }
     const previous = this.messages.find((e: MessageEntry): boolean => e.id === oldId);
     const carriedRowId: number = previous !== undefined ? previous.rowId : 0;
@@ -3614,12 +3630,19 @@ export class MessageStore {
   // 已下载的位图路径同时回填到「文本内联自定义 emoji」和「自定义 emoji 反应」，
   // 一次遍历一次 notify，避免两条路径各自刷新列表。
   private hydrateCustomEmojiPaths(): void {
-    let changed = false;
-    this.messages = this.messages.map((m: MessageEntry): MessageEntry => {
+    // 惰性建新数组：没有任何一行要改时（滚动中的常态）连一次全表 map 的分配
+    // 都不做，this.messages 原样留着。改了才 slice 一份新的——仍然是"换新对象"
+    // 而不是原地改。
+    let next: MessageEntry[] | null = null;
+    for (let i = 0; i < this.messages.length; i++) {
+      const m: MessageEntry = this.messages[i];
       const inlinePaths: string[] | null = this.updatedInlineCustomEmojiPaths(m);
       const reactions: ReactionInfo[] | null = this.updatedReactionCustomEmojiPaths(m);
       if (inlinePaths === null && reactions === null) {
-        return m;
+        continue;
+      }
+      if (next === null) {
+        next = this.messages.slice();
       }
       const c = cloneMessage(m);
       if (inlinePaths !== null) {
@@ -3628,10 +3651,10 @@ export class MessageStore {
       if (reactions !== null) {
         c.reactions = reactions;
       }
-      changed = true;
-      return c;
-    });
-    if (changed) {
+      next[i] = c;
+    }
+    if (next !== null) {
+      this.messages = next;
       this.notifySoon();
     }
   }
@@ -3654,6 +3677,20 @@ export class MessageStore {
   }
 
   private updatedReactionCustomEmojiPaths(m: MessageEntry): ReactionInfo[] | null {
+    // 【先看有没有自定义 emoji 反应再 map】(2026-09-11 帧 trace) 这个函数占
+    // 110.7ms，而绝大多数消息压根没有反应、或反应里没有自定义 emoji——却每次
+    // 都要 new 一个同长数组出来。没有任何 customEmojiId 时 differs 恒为 false、
+    // 返回 null，所以提前退出与原结果等价。
+    if (m.reactions.length === 0) {
+      return null;
+    }
+    let hasCustom: boolean = false;
+    for (const r of m.reactions) {
+      if (r.customEmojiId !== '') { hasCustom = true; break; }
+    }
+    if (!hasCustom) {
+      return null;
+    }
     let differs = false;
     const next: ReactionInfo[] = m.reactions.map((r: ReactionInfo): ReactionInfo => {
       if (r.customEmojiId === '') {
@@ -3976,10 +4013,22 @@ export class MessageStore {
       // MediaPolicy.decideMedia 的注释）。全屏查看器自己对当前图与左右
       // 邻图调 requestFullPhoto 驱动高清下载。stream 留给二期的播放位
       // 控制器，一期不会产出。
-      const intents: MediaIntent[] = decideMedia(subjectOfEntry(e), this.mediaContextFor(e));
-      for (const intent of intents) {
-        if (intent === 'explicit') {
-          this.requestVideoDownload(e.id); // deduped via videoFileToMsg
+      // 【先判据再造对象】(2026-09-11 帧 trace) 这一整段原先对**每一条**已加载
+      // 消息都跑一遍 subjectOfEntry + mediaContextFor + decideMedia，而
+      // requestPhotos 在滚动中会被反复调用：mediaContextFor 自己就占 196.7ms
+      // （每条 new 一个对象，还带两次 AppStorage 读）。
+      //
+      // 下面这个前置判据与结果**等价**，不是近似：
+      //   · decideMedia 在 !ctx.inWindow 时直接返回空；
+      //   · 窗口内若 !needsVideo，它最多产出 'thumb'，而这里只消费 'explicit'
+      //     （'thumb' 的真正入队在本循环上半段，MediaPolicy 注释里写明了）。
+      // 两者任一不成立，这一段本来就什么都不做。
+      if (e.videoFileId !== 0 && e.videoPath === '' && this.inMediaWindow(e.id)) {
+        const intents: MediaIntent[] = decideMedia(subjectOfEntry(e), this.mediaContextFor(e));
+        for (const intent of intents) {
+          if (intent === 'explicit') {
+            this.requestVideoDownload(e.id); // deduped via videoFileToMsg
+          }
         }
       }
       // Animated (TGS) sticker source file — small (<64KB), download eagerly so

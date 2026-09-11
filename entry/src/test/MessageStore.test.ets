@@ -1457,5 +1457,43 @@ export default function messageStoreTest() {
       expect(topic['@type']).assertEqual('messageTopicDirectMessages');
       expect(topic['direct_messages_chat_topic_id']).assertEqual(77);
     });
+    // ── 发送超时后去尾部对账 ─────────────────────────────────────────────
+    //
+    // 'request timeout' 是 TdClient 自己的定时器判的，不是 TDLib 的答复：消息多半
+    // 已经发到服务器了，只是应答没在窗口内回来（切后台冻结是最常见的成因）。
+    // 这时 sendAsync 的 .then 没跑过 ⇒ upsert 没执行 ⇒ 窗口里没有那条气泡，
+    // 用户看到的就是「我自己发的消息看不到，退出再进就有了」。重取一次最新页，
+    // 把「退出再进」就地做掉。
+    it('send_timeout_refetches_the_newest_page', 0, async () => {
+      const arr = setup(7); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 7);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(100, 7, false, 'hi')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      const before: number = requestCount(b, 'getChatHistory');
+      store.send('hello');
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedRequestError(b, 'sendMessage', -1, 'request timeout');
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(requestCount(b, 'getChatHistory')).assertEqual(before + 1);
+    });
+
+    it('send_rejected_by_tdlib_does_not_refetch', 0, async () => {
+      // TDLib 明确答复"不行"（正数错误码）时消息**没有**发出去，重取最新页
+      // 既救不回什么，还会平白搅动视口。只有我们自己判的超时才对账。
+      const arr = setup(8); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open();
+      feedChat(b, 8);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedHistory(b, [textMessage(100, 8, false, 'hi')]);
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      const before: number = requestCount(b, 'getChatHistory');
+      store.send('hello');
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      feedRequestError(b, 'sendMessage', 400, 'CHAT_WRITE_FORBIDDEN');
+      await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
+      expect(requestCount(b, 'getChatHistory')).assertEqual(before);
+    });
   });
 }

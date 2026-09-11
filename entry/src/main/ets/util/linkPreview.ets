@@ -72,7 +72,40 @@ function isTelegramMessageLink(url: string, previewType: string): boolean {
   return isPositiveInteger(parts[parts.length - 1]);
 }
 
+// 结果记忆表。
+//
+// 【为什么】(2026-09-11 帧 trace) linkPreviewCard 一次构建里 linkPresentation()
+// 被调 11 次（compactTelegramPreview、动作图标、动作文案、accessibilityText、
+// enabled…各要一次），每次都重跑一遍 URL 解析 + 若干次 str() + new 一个对象，
+// 合计 56.3ms。同一条消息的三个入参在它整个生命周期里一个字都不会变。
+//
+// 语言切换会改 str() 的结果，所以 appLanguage 在调 invalidateStringCache() 的
+// 同一句里清这张表（clearLinkPreviewPresentationCache）。
+const PRESENTATION_CACHE_LIMIT: number = 512;
+const presentationCache: Map<string, LinkPreviewPresentation> =
+  new Map<string, LinkPreviewPresentation>();
+
+export function clearLinkPreviewPresentationCache(): void {
+  presentationCache.clear();
+}
+
 export function linkPreviewPresentation(url: string, previewType: string,
+    siteName: string): LinkPreviewPresentation {
+  const cacheKey: string = `${url}\u0000${previewType}\u0000${siteName}`;
+  const hit: LinkPreviewPresentation | undefined = presentationCache.get(cacheKey);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const computed: LinkPreviewPresentation =
+    computeLinkPreviewPresentation(url, previewType, siteName);
+  if (presentationCache.size >= PRESENTATION_CACHE_LIMIT) {
+    presentationCache.clear();
+  }
+  presentationCache.set(cacheKey, computed);
+  return computed;
+}
+
+function computeLinkPreviewPresentation(url: string, previewType: string,
     siteName: string): LinkPreviewPresentation {
   const raw: string = url.trim();
   const explicitSite: string = siteName.trim();

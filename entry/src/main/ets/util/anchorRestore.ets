@@ -61,6 +61,37 @@ export interface PrependAnchorCaptureInput {
 // signal is the store transaction itself: an `older` publication that grew the
 // raw message window. The caller preserves movement made after capture
 // separately and subtracts only the layout/data displacement.
+//
+// ── 2026-09-11：接上 anchorBroken → 真机失败 → 已回退 ────────────────
+//
+// **以下是观测，不是机理结论。**（第一版注释把单次观测写成了"框架就是不保位、
+// 别再试第二次"，那是越界的，已改。）
+//
+// 做了什么：探针量到 23 次前插里 21 次接缝行 key 逐字节未变，另 2 次唯一差异是
+// replyText（引用块两行锁死行高，不改几何）。据此把 anchorBroken 接进本判据，
+// 想让"几何没变就不补位"。
+//
+// 观测到什么：**每一页都被灌到最老那条，进度条顶死不回来。** 日志形状是
+//   [PrependAnchor] hold 整段消失（闸关上了）
+//   [OlderGate] start=0 rows=162 → 189 → 218 → …
+//   onHistory kind=older 连着落：46→75→104→133→162→189→218→…→423
+// 即 start 塌到 0 之后再没起来，older 翻页闸被自己没补偿的前插持续满足——
+// 与 [[anchor-gate-refuted-2026-09-09]] 记的自激环同形。
+//
+// 能确定的：**把补位整条关掉之后，可见窗口没有被保住**（prime 也在同一个 if
+// 里，一起关了）。所以补位是承重的，不能仅凭"key 没变"就撤。
+//
+// 不能确定的：为什么没保住。key 不变却仍然移位，候选至少有 stackFromEnd 的
+// 锚定语义、被扣住的半个相册让 index 0 换了行、Repeat 对超高媒体行的重排。
+// 没有区分实验，别把其中任何一条当成已知。
+//
+// 下一步该问的也不是"要不要补位"，而是"补位怎么才看不见"。
+// 前插锚点整套（prime / retry / reposition）的总开关。2026-09-11 起为 false：位置由
+// splice 发布 + maintainVisibleContentPosition 保住；prime 的非动画 scrollToIndex 会
+// 掐断惯性（三档固定行高实验 47/49），是"翻历史拧一下"的直接原因。
+// **只能与 util/splicePublish 的 SPLICE_PUBLISH_ENABLED 同向改**：splice 关、锚点开。
+export const PREPEND_ANCHOR_ENABLED: boolean = false;
+
 export function shouldCapturePrependAnchor(input: PrependAnchorCaptureInput): boolean {
   return input.didInitialScroll && input.anchorIndexFresh && input.olderPageGrowth;
 }

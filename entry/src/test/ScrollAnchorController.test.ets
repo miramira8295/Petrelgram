@@ -312,9 +312,9 @@ export default function scrollAnchorControllerTest() {
     });
 
     // 【8】找不到锚点行时不发指令。groups 传空数组 → groupIndexOf 回 -1 → 早退。
-    // 两侧的差别也一并钉住：append 的 lost 分支要打 appendAnchorGateProbe，
-    // prepend 的早退分支不打。
-    it('锚点消息不在当前 groups 里时直接放弃，append 侧仍打探针', 0, async () => {
+    // （2026-09-11 之前这里还钉着"append 的 lost 分支要打 appendAnchorGateProbe"，
+    // 那条 [AppendAnchor] 探针已随热路径日志一并砍掉，只剩行为断言。）
+    it('锚点消息不在当前 groups 里时两侧都直接放弃、不发指令', 0, async () => {
       const host: FakeHost = new FakeHost();
       const c: ScrollAnchorController = controllerOn(host);
 
@@ -323,7 +323,6 @@ export default function scrollAnchorControllerTest() {
       await sleep(40);
 
       expect(host.scrollerValue.untouched()).assertTrue();
-      expect(host.gateProbeCalls).assertEqual(1);
     });
   });
 }

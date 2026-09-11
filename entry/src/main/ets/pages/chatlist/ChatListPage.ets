@@ -60,11 +60,11 @@ const FOLDER_CHIP_HEIGHT: number = 28;
 const FOLDER_SWITCH_DURATION: number = 250;
 // 邻居页签预载（见 util/tabPreload 的说明）的两个延时。preloadItems 是调用即
 // 一次性构建（单个页签实测 ~60ms），时机全靠这里挑：
-//   切页后：切页/回弹动画在 Render Service 侧独立播，UI 线程这 60ms 藏在动画
-//   后面，用户抬手到下一次触摸的间隙（实测 ≥300ms）足够盖住它。
+//   切页后：等 onAnimationEnd 确认动画落定，再留 120ms 给尾帧和图片交接；不能
+//   把 ~60ms 的同步构建塞进 250ms 切页动画里。
 //   空闲档：冷启动文件夹就绪、从会话页退回来这类时点，躲开首帧和转场余波，
 //   800ms 后一般已静止而横滑还没开始。
-const TAB_PRELOAD_AFTER_SWITCH_MS: number = 120;
+const TAB_PRELOAD_AFTER_SETTLE_MS: number = 120;
 const TAB_PRELOAD_IDLE_MS: number = 800;
 // Tabs 默认建过的页签永久保活：连滑 9 个页签后 Swiper 里挂了 ~10 棵整页列表
 // 树，横滑期间每帧 Measure[Swiper] 实测 ~5ms（160 次共 837ms），随保活数线性
@@ -246,6 +246,14 @@ export struct ChatListPage {
   // 会漂移，子树却跟着 ForEach 的 key 走。见 util/tabPreload。
   private builtTabKeys: Set<string> = new Set<string>();
   private tabPreloadTimer: number = -1;
+  // onGestureSwipe 到 onAnimationEnd 之间不允许 preloadItems 同步构建页签内容。
+  // 同一个标志同时覆盖手势跟手、松手回弹和点按切换动画。
+  private tabAnimationActive: boolean = false;
+  private pageActive: boolean = false;
+  // 空闲时预热相邻页的头像与玻璃；若用户早于预热开始横滑，companion 兜底让
+  // 已经进入视口的页面立刻补齐视觉。横滑结束后由 warmedVisualTabKeys 接管。
+  @State private companionImageTabIndex: number = -1;
+  @State private warmedVisualTabKeys: string[] = [];
 
   @Styles
   actionNormalStyle() {
@@ -376,6 +384,7 @@ export struct ChatListPage {
   }
 
   aboutToAppear(): void {
+    this.pageActive = true;
     // 深链、通知点击、账号切换都在页面之外触发跳转，拿不到组件上下文，
     // 只能靠全局注册表取栈。见 util/navStacks.ets 的说明。
     registerStack('chat', this.chatStack as NavStackLike);
@@ -499,8 +508,14 @@ export struct ChatListPage {
 
   private scheduleTabPreload(delay: number): void {
     this.cancelTabPreload();
+    if (!this.pageActive || this.tabAnimationActive || !this.listRenderActive) {
+      return;
+    }
     this.tabPreloadTimer = setTimeout((): void => {
       this.tabPreloadTimer = -1;
+      if (!this.pageActive || this.tabAnimationActive || !this.listRenderActive) {
+        return;
+      }
       this.preloadNeighborTab();
     }, delay);
   }
@@ -512,7 +527,7 @@ export struct ChatListPage {
   private preloadNeighborTab(): void {
     // 被会话页盖住时不做：构建结果虽然照样有效，但那 60ms 会挤占转场和
     // 详情页的帧。退回来时 resumeListRenderingAfterTransition 会重新排。
-    if (!this.listRenderActive) {
+    if (!this.pageActive || !this.listRenderActive || this.tabAnimationActive) {
       return;
     }
     const specs = this.tabs();
@@ -525,6 +540,27 @@ export struct ChatListPage {
     // 否则预载会跳过已释放的页签，滑回去又是首帧全量构建。
     this.builtTabKeys = pruneBuiltKeys(keys, this.selectedIndex, this.builtTabKeys, TAB_KEEP_RANGE);
     this.builtTabKeys.add(currentKey);
+    const warmLo: number = Math.max(0, this.selectedIndex - 1);
+    const warmHi: number = Math.min(keys.length - 1, this.selectedIndex + 1);
+    const keptWarm: string[] = this.warmedVisualTabKeys.filter((key: string): boolean => {
+      const index: number = keys.indexOf(key);
+      return index >= warmLo && index <= warmHi;
+    });
+    if (keptWarm.length !== this.warmedVisualTabKeys.length) {
+      this.warmedVisualTabKeys = keptWarm;
+    }
+    // 页签树先预载，头像解码和玻璃节点再隔一个静止窗口启动，避免两笔重活
+    // 落在同一帧。一次只处理一个邻居，右侧优先，与页面预载顺序一致。
+    const warmCandidates: number[] = [this.selectedIndex + 1, this.selectedIndex - 1];
+    for (const warmIndex of warmCandidates) {
+      const warmKey: string | undefined = keys[warmIndex];
+      if (warmKey !== undefined && this.builtTabKeys.has(warmKey) &&
+        this.warmedVisualTabKeys.indexOf(warmKey) < 0) {
+        this.warmedVisualTabKeys = [...this.warmedVisualTabKeys, warmKey];
+        this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
+        return;
+      }
+    }
     const index = nextTabPreloadIndex(keys, this.selectedIndex, this.builtTabKeys);
     if (index < 0) {
       return;
@@ -533,10 +569,8 @@ export struct ChatListPage {
     this.builtTabKeys.add(key);
     try {
       this.controller.preloadItems([index]).then((): void => {
-        // 另一侧邻居接力走快档：120ms 的间隔已保证两个 ~60ms 构建落在不同
-        // 帧里；原来留给 800ms 空闲档，另一侧长时间敞着——用户一个回头滑
-        // 就是首帧全量构建（录制里一帧测 3 棵树的另一半成因）。
-        this.scheduleTabPreload(TAB_PRELOAD_AFTER_SWITCH_MS);
+        // 下一静止窗口先为刚建好的页签补头像和玻璃，再继续另一侧邻居。
+        this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
       }).catch((e: Error): void => {
         // 失败就把账抹掉，下一个窗口还有机会重试。
         this.builtTabKeys.delete(key);
@@ -583,7 +617,7 @@ export struct ChatListPage {
       // 在这里补排。走快档不走空闲档：本定时器已经等完了 ~590ms 转场，再叠
       // 800ms 就是 1.4s 无保护窗——Frame 录制 20260902T161959 里 206ms 的
       // tab 甩动卡顿（一帧测 3 棵列表树）正发生在 onBackPress 后的这个窗口。
-      this.scheduleTabPreload(TAB_PRELOAD_AFTER_SWITCH_MS);
+      this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
     }, CHAT_LIST_RETURN_SETTLE_MS);
   }
 
@@ -620,7 +654,7 @@ export struct ChatListPage {
   // 整页和标题栏不再牵动。While a destination covers the nav bar, collapse any
   // number of notifications into one pending refresh（延后语义保持原样）。
   private refreshUnread(): void {
-    if (!this.listRenderActive) {
+    if (!this.listRenderActive || this.tabAnimationActive) {
       this.unreadRefreshPending = true;
       return;
     }
@@ -643,6 +677,7 @@ export struct ChatListPage {
   }
 
   aboutToDisappear(): void {
+    this.pageActive = false;
     this.cancelListRenderResume();
     this.cancelTabPreload();
     if (this.unsubFolders !== null) { this.unsubFolders(); this.unsubFolders = null; }
@@ -673,6 +708,17 @@ export struct ChatListPage {
       key: 'main', title: $r('app.string.cl_all'), plainTitle: str('cl_all')
     });
     return specs;
+  }
+
+  private tabVisualsActive(key: string): boolean {
+    const specs = this.tabs();
+    return specs[this.selectedIndex]?.key === key ||
+      specs[this.companionImageTabIndex]?.key === key ||
+      this.warmedVisualTabKeys.indexOf(key) >= 0;
+  }
+
+  private tabUpdatesActive(key: string): boolean {
+    return !this.tabAnimationActive && this.tabs()[this.selectedIndex]?.key === key;
   }
 
   private openSavedMessages(): void {
@@ -1099,13 +1145,19 @@ export struct ChatListPage {
                   // 让位整个交给标题栏的 enableComponentSafeArea——横条现在挂在
                   // bottomBuilder 上，也算标题栏的一部分，这里再算一次就是重复。
                   contentTopInset: 0,
-                  listScroller: this.scrollerFor(spec.key)
+                  listScroller: this.scrollerFor(spec.key),
+                  effectsActive: this.tabVisualsActive(spec.key),
+                  imagesActive: this.tabVisualsActive(spec.key),
+                  updatesActive: this.tabUpdatesActive(spec.key)
                 });
               } else {
                 ChatListView({
                   listKey: spec.key,
                   contentTopInset: 0,
-                  listScroller: this.scrollerFor(spec.key)
+                  listScroller: this.scrollerFor(spec.key),
+                  effectsActive: this.tabVisualsActive(spec.key),
+                  imagesActive: this.tabVisualsActive(spec.key),
+                  updatesActive: this.tabUpdatesActive(spec.key)
                 });
               }
             }
@@ -1145,6 +1197,12 @@ export struct ChatListPage {
       .onGestureSwipe((index: number, event: TabsAnimationEvent) => {
         // 手指还在页签上拖：这一帧本来就紧，别让排好的预载凑热闹。
         this.cancelTabPreload();
+        this.tabAnimationActive = true;
+        const companionIndex: number = event.currentOffset > 0 ? index - 1 : index + 1;
+        if (companionIndex >= 0 && companionIndex < this.tabs().length &&
+          this.companionImageTabIndex !== companionIndex) {
+          this.companionImageTabIndex = companionIndex;
+        }
         if (this.tabsWidth > 0) {
           this.moveIndicatorTo(index - event.currentOffset / this.tabsWidth);
         }
@@ -1152,6 +1210,12 @@ export struct ChatListPage {
       // Finger released / tab tapped: settle the pill on the target tab and
       // scroll the strip if that tab sits outside the visible range.
       .onAnimationStart((_index: number, targetIndex: number) => {
+        this.cancelTabPreload();
+        // 省电设置可能把动画压到 0；这时 SDK 不触发 onAnimationEnd，onChange
+        // 会直接走下面的无动画兜底。
+        this.tabAnimationActive =
+          powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION) > 0;
+        this.companionImageTabIndex = this.tabAnimationActive ? _index : -1;
         this.folderLayoutPending = false;
         this.appliedFolder = targetIndex;
         this.selectedIndex = targetIndex;
@@ -1160,9 +1224,18 @@ export struct ChatListPage {
           curve: Curve.EaseOut
         }, () => { this.moveIndicatorTo(targetIndex); });
         this.ensureTabVisible(targetIndex);
-        // selectedIndex 已指向目标页签：趁切页动画（RS 侧独立播）把它的邻居
-        // 建出来，动画结束前就绪。
-        this.scheduleTabPreload(TAB_PRELOAD_AFTER_SWITCH_MS);
+      })
+      .onAnimationEnd((_index: number) => {
+        this.tabAnimationActive = false;
+        const companionKey: string | undefined = this.tabs()[this.companionImageTabIndex]?.key;
+        if (companionKey !== undefined && this.warmedVisualTabKeys.indexOf(companionKey) < 0) {
+          this.warmedVisualTabKeys = [...this.warmedVisualTabKeys, companionKey];
+        }
+        this.companionImageTabIndex = -1;
+        if (this.unreadRefreshPending) {
+          this.refreshUnread();
+        }
+        this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
       })
       .onChange((index: number) => {
         // onAnimationStart already drives animated changes. Avoid starting the
@@ -1178,9 +1251,15 @@ export struct ChatListPage {
           this.moveIndicatorTo(index);
         }
         this.ensureTabVisible(index);
-        // onAnimationStart 那次预载被中途手势取消掉的话，这里兜底再排一次；
-        // 邻居都建过时是空转。
-        this.scheduleTabPreload(TAB_PRELOAD_AFTER_SWITCH_MS);
+        // 无动画 changeIndex / 省电关闭动画时没有 onAnimationEnd，在这里兜底。
+        // 正常动画仍由 onAnimationEnd 排，避免重复改写计时器。
+        if (!this.tabAnimationActive) {
+          this.companionImageTabIndex = -1;
+          if (this.unreadRefreshPending) {
+            this.refreshUnread();
+          }
+          this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
+        }
       })
       .width('100%').height('100%')
       .clip(false)

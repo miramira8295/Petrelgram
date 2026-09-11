@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { CachedImage } from '../common/CachedImage';
 import {
-  BackgroundRasterParams, backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedRaster,
+  BackgroundRasterParams, backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedRaster, combineDimming,
   NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground
 } from '../../util/chatBackgroundRaster';
 import { PatternTileLayer } from './PatternTileLayer';
@@ -71,11 +71,11 @@ export struct ChatBackdrop {
   @Prop @Watch('onParamsChanged') bgBlur: number = BG_BLUR_DEFAULT;
   @Prop @Watch('onParamsChanged') bgPattern: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_APP_DARK) @Watch('onParamsChanged') appDark: boolean = false;
-  @Prop chatDim: number = 0;
-  @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
-  @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
-  @StorageProp(KEY_POWER_EFFECT_BACKGROUND) powerBackgroundEffect: boolean = false;
-  @StorageProp(KEY_POWER_PARTICLES) powerParticles: boolean = true;
+  @Prop @Watch('onParamsChanged') chatDim: number = 0;
+  @StorageProp(KEY_POWER_ACTIVE) @Watch('onParamsChanged') powerSaving: boolean = false;
+  @StorageProp(KEY_POWER_CHAT_EFFECTS) @Watch('onParamsChanged') powerChatEffects: boolean = true;
+  @StorageProp(KEY_POWER_EFFECT_BACKGROUND) @Watch('onParamsChanged') powerBackgroundEffect: boolean = false;
+  @StorageProp(KEY_POWER_PARTICLES) @Watch('onParamsChanged') powerParticles: boolean = true;
   @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
 
   @State private rasterPath: string = '';
@@ -136,12 +136,24 @@ export struct ChatBackdrop {
     return patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.patternStrength());
   }
 
+  // The final mask also darkens ambience and particles. Bake it only when
+  // there is no live decoration above the wallpaper, preserving the current
+  // appearance while removing the common full-screen blend.
+  private canBakeDarkMask(): boolean {
+    return !this.ambientEnabled() && !this.particlesEnabled();
+  }
+
+  private rasterDimming(): number {
+    return combineDimming(this.chatBg.dimming,
+      this.canBakeDarkMask() ? this.darkMaskOpacity() : 0);
+  }
+
   private rasterParams(): BackgroundRasterParams {
     return {
       colors: this.chatBg.colors, angle: this.chatBg.angle, path: this.chatBg.path,
       isPattern: this.chatBg.isPattern,
       imageOpacity: this.imageOpacity(),
-      dimming: this.chatBg.dimming, blurred: this.chatBg.blurred, userBlur: this.bgBlur,
+      dimming: this.rasterDimming(), blurred: this.chatBg.blurred, userBlur: this.bgBlur,
       width: this.screenW, height: this.screenH
     };
   }
@@ -208,18 +220,23 @@ export struct ChatBackdrop {
     return !this.chatBg.custom && !this.powerSaving && this.powerParticles;
   }
 
-  // 深色下的黑色遮罩。放在整层的末尾而不是壁纸层里面，是为了一处覆盖三种情况：
-  // 光栅缓存路径、实时绘制路径、以及上面那两颗氛围光斑。气泡和文字画在这整层
-  // 之上，所以只压暗背景，不影响可读性。
-  //
-  // 也没有并进 chatBg.dimming：那个值是服务端按会话下发的（dark_theme_dimming），
-  // 且已经烘进了光栅缓存的签名。把用户的这一份混进去会让每次调滑杆都作废整张
-  // 缓存图，而单独一层是纯合成，不触发任何重新栅格化。
+  // 深色下的用户遮罩。没有动态背景装饰时，它会与服务端下发的
+  // dark_theme_dimming 合并并烘进最终光栅；缓存生成期间仍由实时层兜底。
   private darkMaskOpacity(): number {
     if (!this.appDark) {
       return 0;
     }
     return Math.max(0, Math.min(CHAT_DIM_MAX, this.chatDim));
+  }
+
+  private liveDarkMaskOpacity(): number {
+    const opacity: number = this.darkMaskOpacity();
+    if (opacity <= 0) {
+      return 0;
+    }
+    // The layered fallback has not baked the user's mask. Remove this node
+    // only after the matching cached image has actually decoded on screen.
+    return this.canBakeDarkMask() && this.rasterShown ? 0 : opacity;
   }
 
   @Builder
@@ -365,10 +382,10 @@ export struct ChatBackdrop {
             });
         }, (id: number): string => `power_particle_${id}`);
       }
-      if (this.darkMaskOpacity() > 0) {
+      if (this.liveDarkMaskOpacity() > 0) {
         Column().width('100%').height('100%')
           .backgroundColor(Color.Black)
-          .opacity(this.darkMaskOpacity())
+          .opacity(this.liveDarkMaskOpacity())
           .hitTestBehavior(HitTestMode.None);
       }
     }

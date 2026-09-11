@@ -82,14 +82,30 @@ export class FloatingDateState {
     }
   }
 
+  // 【定时器只建一次，到点再看要不要续】(2026-09-11 帧 trace)
+  // 原来每次续期都是 clearTimeout + setTimeout 一对 NAPI 往返，而滚动中每滑
+  // 24vp 就续一次（FLOAT_DATE_RESCAN_SCROLL_VP），trace 里 cancelHide 累计
+  // 138.7ms。现在续期只写 armedAt；定时器烧到底时若发现被续过，就按剩余时间
+  // 再睡一觉。触发时刻仍是"最后一次续期 + 820ms"，与原来等价。
   private armHide(now: number): void {
     this.armedAt = now;
-    this.cancelHide();
+    if (this.hideTimer !== -1) {
+      return;
+    }
+    this.scheduleHide(FLOAT_DATE_HIDE_MS);
+  }
+
+  private scheduleHide(delayMs: number): void {
     this.hideTimer = setTimeout((): void => {
       this.hideTimer = -1;
+      const remaining: number = this.armedAt + FLOAT_DATE_HIDE_MS - Date.now();
+      if (remaining > 1) {
+        this.scheduleHide(remaining);
+        return;
+      }
       this.shown = false;
       this.hiddenCallback();
-    }, FLOAT_DATE_HIDE_MS);
+    }, Math.max(0, delayMs));
   }
 }
 

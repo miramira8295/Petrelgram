@@ -58,6 +58,14 @@ export function patternOpacity(
   return Math.max(0.04, Math.min(1, imageOpacity * strength));
 }
 
+// Two successive black overlays can be flattened into one without changing
+// the resulting pixels: 1 - (1 - base) * (1 - overlay).
+export function combineDimming(base: number, overlay: number): number {
+  const a: number = Math.max(0, Math.min(1, base));
+  const b: number = Math.max(0, Math.min(1, overlay));
+  return 1 - (1 - a) * (1 - b);
+}
+
 export function backgroundBlurRadius(
   path: string, isPattern: boolean, blurred: boolean, userBlur: number
 ): number {
@@ -183,6 +191,10 @@ const inFlight: Set<string> = new Set();
 const SNAPSHOT_DELAY_MS: number = 320;
 
 export function rasterSignature(p: BackgroundRasterParams): string {
+  // v7: dimming may now be the composition of the wallpaper's server value
+  // and the user's dark-mode mask. Keep four decimal places so neighbouring
+  // slider steps cannot alias to the same cached bitmap.
+  //
   // v6: the blur radius that PATTERN_BLUR_RADIUS/WALLPAPER_BLURRED_RADIUS used
   // to hardcode is now the user's own KEY_BG_BLUR setting (ChatBackgroundPage's
   // slider) — the same colors/path/etc. can now composite to a different bitmap
@@ -200,8 +212,8 @@ export function rasterSignature(p: BackgroundRasterParams): string {
   // v3: photo wallpapers always carried some blur instead of only the
   // blurred ones (superseded by v5 above).
   const radius: number = backgroundBlurRadius(p.path, p.isPattern, p.blurred, p.userBlur);
-  return `v6_${p.colors.join('-')}_${p.angle}_${p.path}_${p.isPattern ? 'p' : 'w'}` +
-    `_${Math.round(p.imageOpacity * 100)}_${Math.round(p.dimming * 100)}` +
+  return `v7_${p.colors.join('-')}_${p.angle}_${p.path}_${p.isPattern ? 'p' : 'w'}` +
+    `_${Math.round(p.imageOpacity * 100)}_dim${Math.round(p.dimming * 10000)}` +
     `_blur${radius}_${Math.round(p.width)}x${Math.round(p.height)}`;
 }
 

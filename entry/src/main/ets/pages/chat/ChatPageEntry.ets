@@ -6,8 +6,8 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { KEY_APP_DARK } from '../../util/theme';
 import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_AUTOPLAY_MUTED, KEY_BG_BLUR,
-  KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM,
+  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_AUTOPLAY_MUTED, KEY_BG_BLUR, KEY_BG_BLUR_DARK,
+  KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM, KEY_CHAT_DIM_LIGHT,
   KEY_LOCAL_BG_EPOCH, KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_VIDEO,
   KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EMOJI,
   KEY_POWER_EMOJI_REACTIONS, KEY_POWER_PARTICLES, KEY_REDUCE_ANIM,
@@ -18,7 +18,7 @@ import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
 // 本模块并调用它，页面因此不再需要进 main_pages.json。
-// V1 外壳组件：只做一件事——订阅 AppStorage，把 21 个全局单值透传给 V2 的
+// V1 外壳组件：只做一件事——订阅 AppStorage，把全局单值透传给 V2 的
 // ChatPage。
 //
 // 为什么需要它：@StorageProp / @StorageLink 是状态管理 V1 独有的装饰器，
@@ -37,7 +37,7 @@ import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
 // 组件：支持」。基本类型不需要 UIUtils.enableV2Compatibility 桥接——那个接口
 // 「不支持非 object 类型」，对 number/boolean 调了也只是返回入参自身。
 //
-// 代价：某个 epoch 变一次，这一层就重跑一次 build()，把 21 个 @Param 重新交给
+// 代价：某个 epoch 变一次，这一层就重跑一次 build()，把这些 @Param 重新交给
 // ChatPage。@Param 只在值真的变化（===）时才向下传播刷新，所以代价是一次
 // 参数比较，不是一次页面重建。
 @Preview
@@ -48,12 +48,13 @@ struct ChatPageChrome {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp(KEY_LOCAL_BG_EPOCH) localBgEpoch: number = 0;
-  // 聊天壁纸的三根滑杆：纹理按深浅色分两个键（既有行为），模糊与遮罩暂时仍是
-  // 单键——四槽位独立化是下一步，这里先把"由谁来读"这件事挪对位置。
-  @StorageProp(KEY_BG_BLUR) chatBgBlur: number = BG_BLUR_DEFAULT;
+  // 四个槽位各自拥有模糊、纹理和暗度键；这里按当前主题只把聊天槽位的一套下传。
+  @StorageProp(KEY_BG_BLUR) chatBgBlurLight: number = BG_BLUR_DEFAULT;
+  @StorageProp(KEY_BG_BLUR_DARK) chatBgBlurDark: number = BG_BLUR_DEFAULT;
   @StorageProp(KEY_BG_PATTERN) chatBgPatternLight: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_BG_PATTERN_DARK) chatBgPatternDark: number = BG_PATTERN_DEFAULT;
-  @StorageProp(KEY_CHAT_DIM) chatBgDim: number = 0;
+  @StorageProp(KEY_CHAT_DIM_LIGHT) chatBgDimLight: number = 0;
+  @StorageProp(KEY_CHAT_DIM) chatBgDimDark: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @StorageProp('keyboardHeightVp') keyboardH: number = 0;
@@ -83,9 +84,9 @@ struct ChatPageChrome {
       appearanceEpoch: this.appearanceEpoch,
       materialEpoch: this.materialEpoch,
       localBgEpoch: this.localBgEpoch,
-      chatBgBlur: this.chatBgBlur,
+      chatBgBlur: this.appDark ? this.chatBgBlurDark : this.chatBgBlurLight,
       chatBgPattern: this.appDark ? this.chatBgPatternDark : this.chatBgPatternLight,
-      chatBgDim: this.chatBgDim,
+      chatBgDim: this.appDark ? this.chatBgDimDark : this.chatBgDimLight,
       langEpoch: this.langEpoch,
       appDark: this.appDark,
       topSafe: this.topSafe,

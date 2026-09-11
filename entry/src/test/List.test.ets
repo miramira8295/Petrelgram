@@ -203,6 +203,7 @@ import paragraphCacheTest from './ParagraphCache.test';
 import stringsTest from './Strings.test';
 import scrollEffectsTest from './ScrollEffects.test';
 import anchorRestoreTest from './AnchorRestore.test';
+import splicePublishTest from './SplicePublish.test';
 import floatDateGateTest from './FloatDateGate.test';
 import albumCellKeyTest from './AlbumCellKey.test';
 import messageBubblePrepareTest from './MessageBubblePrepare.test';
@@ -461,6 +462,7 @@ export default function testsuite() {
   stringsTest();
   scrollEffectsTest();
   anchorRestoreTest();
+  splicePublishTest();
   floatDateGateTest();
   albumCellKeyTest();
   mediaGridTest();

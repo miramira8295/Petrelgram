@@ -33,6 +33,9 @@ export struct ChatListView {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   // 行滑动操作的开关（交互设置）。关着时不挂 swipeAction，横向手势留给切文件夹。
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
+  @Prop effectsActive: boolean = true;
+  @Prop imagesActive: boolean = true;
+  @Prop @Watch('onUpdatesActiveChanged') updatesActive: boolean = true;
   // 底栏点「聊天」页签（已选中）时递增，见 util/tabReTap。
   @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
   // 列表首行是否可见：没有未静音未读时，决定是否需要回顶。
@@ -216,6 +219,47 @@ export struct ChatListView {
   private chatsData: ChatListDataSource = new ChatListDataSource();
   private unsubscribe: (() => void) | null = null;
   private active: boolean = false;
+  // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
+  private listMoving: boolean = false;
+  private scrollSettleTimer: number = -1;
+
+  private updateScrollActivity(state: ScrollState): void {
+    if (state !== ScrollState.Idle) {
+      if (this.scrollSettleTimer !== -1) {
+        clearTimeout(this.scrollSettleTimer);
+        this.scrollSettleTimer = -1;
+      }
+      this.listMoving = true;
+      return;
+    }
+    if (!this.listMoving || this.scrollSettleTimer !== -1) {
+      return;
+    }
+    this.scrollSettleTimer = setTimeout((): void => {
+      this.scrollSettleTimer = -1;
+      this.listMoving = false;
+      if (this.flushBypass && !this.renderActive) {
+        this.drainContentOnly();
+      } else {
+        this.flushBufferedChats();
+      }
+    }, 120);
+  }
+
+  private liveEffects(): boolean {
+    // 滚动薄纱降级暂时停用；listMoving 现在只冻结数据发布。
+    return this.effectsActive;
+  }
+
+  private publishingActive(): boolean {
+    return this.renderActive && this.updatesActive && !this.listMoving;
+  }
+
+  private onUpdatesActiveChanged(): void {
+    if (this.updatesActive) {
+      this.flushBufferedChats();
+    }
+  }
 
   // 行 key 里带着 langEpoch。ForEach 时它一变就等于所有行改名、整表重建；
   // 换成 LazyForEach 之后没人会替我们做这件事，得显式告诉数据源。
@@ -240,10 +284,17 @@ export struct ChatListView {
     this.active = true;
     const store = getChatStore();
     this.unsubscribe = store.subscribe((list: ChatEntry[]) => {
-      const next = this.updateGate.accept(list, this.renderActive);
+      // A preloaded hidden tab needs one complete initial snapshot before it
+      // becomes static. It may be constructed while the global finger-down
+      // gate is closed, so the first non-empty snapshot explicitly bypasses
+      // that gate; all later updates remain frozen as before.
+      const forceInitial: boolean = this.chats.length === 0 && list.length > 0;
+      const next = this.updateGate.accept(list,
+        this.publishingActive() || this.loading, forceInitial);
       if (next !== null) {
         this.applyChats(next);
-      } else if (this.flushBypass && !this.menuOpen && !this.touchHold) {
+      } else if (this.updatesActive && this.flushBypass && !this.menuOpen && !this.touchHold &&
+        !this.listMoving) {
         // 转场窗口里到货的内容变更：accept 已经把它收进缓冲了，这里立刻取出来发。
         this.drainContentOnly();
       }
@@ -260,7 +311,10 @@ export struct ChatListView {
       // TDLib normally emits the positions before resolving loadChats. Read
       // the bucket once here as well so the empty state can't flash while the
       // coalesced store notification is still waiting for the next frame.
-    const next = this.updateGate.accept(store.getChats(this.listKey), this.renderActive);
+      const loaded: ChatEntry[] = store.getChats(this.listKey);
+      const forceInitial: boolean = this.chats.length === 0 && loaded.length > 0;
+      const next = this.updateGate.accept(loaded,
+        this.publishingActive() || this.loading, forceInitial);
       if (next !== null) { this.applyChats(next); }
       this.loading = false;
       this.loadFailed = !success;
@@ -313,7 +367,7 @@ export struct ChatListView {
   }
 
   private flushBufferedChats(): void {
-    if (this.menuOpen || this.touchHold || !this.renderActive) {
+    if (this.menuOpen || this.touchHold || this.listMoving || !this.renderActive || !this.updatesActive) {
       return;
     }
     const next = this.updateGate.flush();
@@ -351,7 +405,9 @@ export struct ChatListView {
       return;
     }
     this.flushBypass = true;
-    this.drainContentOnly();
+    if (!this.listMoving) {
+      this.drainContentOnly();
+    }
   }
 
   // 把缓冲里那份快照发出去，但只发内容变更。
@@ -381,6 +437,11 @@ export struct ChatListView {
 
   aboutToDisappear(): void {
     this.active = false;
+    if (this.scrollSettleTimer !== -1) {
+      clearTimeout(this.scrollSettleTimer);
+      this.scrollSettleTimer = -1;
+    }
+    this.listMoving = false;
     if (this.unsubscribe !== null) {
       this.unsubscribe();
       this.unsubscribe = null;
@@ -478,7 +539,12 @@ export struct ChatListView {
         // 上面那个 .cachedCount(8) 配 ForEach 本来是空转的，现在才真正生效。
         LazyForEach(this.chatsData, (item: ChatEntry) => {
           ListItem() {
-            ChatRow({ chat: item, listKey: this.listKey });
+            ChatRow({
+              chat: item,
+              listKey: this.listKey,
+              liveEffects: this.liveEffects(),
+              loadImages: this.imagesActive
+            });
           }
           // 左右滑快捷操作（issue #96/#132）。动作都是聊天菜单里现成的那几个，
           // 不放删除：滑动误触的代价太大，删除留在长按菜单里。
@@ -528,7 +594,7 @@ export struct ChatListView {
       .layoutWeight(1).width('100%')
       // Keep enough painted cache for the floating title blur without asking
       // every hidden/adjacent tab to prepare a full extra screen of ChatRows.
-      .cachedCount(4, true)
+      .cachedCount(2, true)
       // cachedCount 的第二个参数 true 与这里的 clip(false) 是一对：前者让滚出
       // 视口的行不被回收，后者让它画得出来。官方《设置动态模糊样式》点名过——
       // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有
@@ -543,6 +609,9 @@ export struct ChatListView {
       .contentEndOffset(this.endInset())
       .contentStartOffset(this.contentTopInset)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      .onDidScroll((_offset: number, state: ScrollState): void => {
+        this.updateScrollActivity(state);
+      })
       // 指尖按下就关发布闸（抬手/被抢手势即开）：长按窗口里来更新不再挪行，
       // 重排动画顺延到抬手后。数据订阅照常流动。
       .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); })

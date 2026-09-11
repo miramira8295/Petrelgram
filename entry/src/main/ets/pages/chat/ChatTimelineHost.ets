@@ -41,7 +41,7 @@ export struct ChatTimelineHost {
 
   private timelinePillMode(): string {
     return timelineStateMode(
-      this.timeline.visibleGroupCount,
+      this.timeline.hasVisibleRows ? 1 : 0,
       this.timeline.messageLoadState,
       this.timeline.olderLoadState,
       this.timeline.newerLoadState
@@ -58,7 +58,7 @@ export struct ChatTimelineHost {
     Stack({ alignContent: Alignment.TopStart }) {
       this.timelineList();
 
-      if (!this.initialTimelineMasked && this.timeline.visibleGroupCount === 0 &&
+      if (!this.initialTimelineMasked && !this.timeline.hasVisibleRows &&
         this.timeline.messageLoadState !== 'loading') {
         Column() {
           MessageListStateCard({

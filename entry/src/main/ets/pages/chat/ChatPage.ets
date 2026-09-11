@@ -60,7 +60,7 @@ import { MusicQueue } from '../../services/MusicQueue';
 import { VoiceState } from '../../services/VoicePlayback';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import {
-  AlbumGroupDataSource, appendBreaksAnchor, clampPrefetchRange, PrefetchRange,
+  AlbumGroupDataSource, appendBreaksAnchor, prependBreaksAnchor, clampPrefetchRange, PrefetchRange, rowIdentity,
   repeatRowKey, reuseUnchangedRows, sameRowArray
 } from './AlbumGroupDataSource';
 import { BasicPrefetcher } from '@kit.ArkUI';
@@ -113,7 +113,7 @@ import {
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
 } from '../../util/appendAnchor';
 import { stackFromEndWanted } from '../../util/stackFromEnd';
-import { shouldCapturePrependAnchor, shouldPrimePrependAnchor } from '../../util/anchorRestore';
+import { PREPEND_ANCHOR_ENABLED, shouldCapturePrependAnchor, shouldPrimePrependAnchor } from '../../util/anchorRestore';
 import {
   composerBottomGap as bottomGapOf, composerPlaceholder as placeholderOf,
   replyKeyboardVisible
@@ -134,8 +134,12 @@ import {
   openSlot, toggleSlot
 } from '../../util/bottomSlot';
 import {
-  collapseAlbums, groupIndexOf, AlbumGroup, albumSiblingIds, albumIndexOfMember
+  collapseAlbums, groupIndexOf, AlbumGroup, albumSiblingIds, albumIndexOfMember, RunHeadHints
 } from '../../util/collapseAlbums';
+import {
+  planEdgeSpliceRows, EdgeSplicePlan, patchIndicesAfterPrepend, SPLICE_PUBLISH_ENABLED,
+  SPLICE_PATCH_PUBLISH_ENABLED
+} from '../../util/splicePublish';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import { shouldFillViewport } from '../../util/viewportFill';
 import {
@@ -208,7 +212,8 @@ import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPl
 import { isSplitLayout } from '../../util/splitMetrics';
 import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
 import {
-  HdsNavDestination, HdsNavDestinationTitleMode, TitleBarContentOptions
+  HdsNavDestination, HdsNavDestinationTitleMode, TitleBarContentOptions,
+  HdsNavigationTitleBarOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
@@ -253,12 +258,13 @@ import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
 import { getActiveTdUserId } from '../../tdkit/Globals';
 import {
-  canRenderLightweightPlainText, formattedTextReuseShape,
+  canRenderLightweightPlainText, canRenderLightweightPlainTextRow, formattedTextReuseShape,
   MessageBubbleReuseContext
 } from '../../util/messageBubbleReuse';
 import { chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight } from '../../util/ChatChromeGeometry';
 import {
-  initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups
+  initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups,
+  initialTailRevealTarget
 } from '../../util/initialMessageStage';
 import {
   ChatTimelineSnapshot, coalesceChatTimelineSnapshot, emptyChatTimelineSnapshot
@@ -266,7 +272,9 @@ import {
 import { ChatViewportGeometry } from '../../util/chatViewportGeometry';
 // ⚠️ 临时（P6 标定）：cachedCount 档位调试项。标定结束后按
 // util/debugListPerf.ets 末尾的清单删除。
-import { LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
+import {
+  LIST_CACHED_COUNT_DEFAULT
+} from '../../util/debugListPerf';
 import {
   ChatPageHiddenHooks, ChatPageShownHooks, ChatPageShownState, ChatPageWillHideHooks,
   coordinateChatPageHidden, coordinateChatPageShown, coordinateChatPageWillHide,
@@ -342,6 +350,10 @@ const CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S: number = 4200;
 interface PreparedMessageBubble {
   group: AlbumGroup;
   data: MessageBubbleRenderData;
+  // 行的复用桶 id。和 data 一起在缓存未命中那一次算好、之后整份复用——原先它
+  // 在 @Builder 里现算，而那意味着每行每次渲染都要再跑一遍 prepare（只为拿
+  // data）+ rowReuseId。prepare 只有真要渲染的行才会走到，所以这里不必惰性。
+  reuseId: string;
 }
 
 interface InitialMessageStageTarget {
@@ -453,6 +465,10 @@ export struct ChatPage {
   // 消息列表的内部真相。Repeat 和 MediaViewerOverlay 不直接订阅这个普通字段；
   // publishGroupsNow 把它连同加载/分页状态一次性装进 timelineSnapshot 发布。
   private groups: AlbumGroup[] = [];
+  // Repeat 的数据源。**与 this.groups 逐项同对象**，区别只在更新方式：纯前插时
+  // 在这同一个 @Local 数组上 splice（让 MVCP 的"显示区外前插保位"真正触发），
+  // 其余发布整份换引用。理由与真机对照见 util/splicePublish 文件头。
+  @Local private timelineRows: AlbumGroup[] = [];
   @Local private timelineSnapshot: ChatTimelineSnapshot = emptyChatTimelineSnapshot();
   private viewportGeometry: ChatViewportGeometry = new ChatViewportGeometry();
   // 只剩图片预取源，不再是列表的数据源（见 AlbumGroupDataSource 文件头）。
@@ -468,6 +484,33 @@ export struct ChatPage {
   // completes an album, which makes List lose its position anchor.
   private rowKeyOf: (g: AlbumGroup) => string = (g: AlbumGroup): string =>
     repeatRowKey(g, this.langEpoch, this.listRebuildEpoch);
+
+  // 当过窗口首行的行。见 util/collapseAlbums 的 RunHeadHints——这是把「向上翻页」
+  // 变成纯插入的另一半，另一半是首行日期胶囊按 hasMoreOlder 决定。
+  //
+  // 整表重建（rebuildAllRows）时清空：那时窗口本来就要全部删旧插新，没有
+  // 「接缝」可言，留着只会让跳转落地后的中间行平白多一个昵称。
+  private stickyRunHeads: Set<number> = new Set<number>();
+
+
+  private runHeadHints(): RunHeadHints {
+    const moreOlder: boolean = this.store !== null && this.store.getHasMoreOlder();
+    return {
+      moreOlderAbove: moreOlder,
+      stickyRunHeads: this.stickyRunHeads,
+      // 首屏还没落定、或者有待落地的跳转时不扣行——那两条路要按 groupIndexOf
+      // 找目标，扣掉的成员会让它返回 -1。
+      withholdPartialAlbum: moreOlder && this.didInitialScroll && this.pendingJumpId === 0
+    };
+  }
+
+  // 发布之后记账：这一次的首行，下一次前插时就是接缝行。
+  private noteRunHead(groups: AlbumGroup[]): AlbumGroup[] {
+    if (groups.length > 0) {
+      this.stickyRunHeads.add(groups[0].head.rowId);
+    }
+    return groups;
+  }
 
   // Whether this page is currently visible (between onPageShow and onPageHide),
   // and whether the list dataset changed while it was not.
@@ -531,11 +574,143 @@ export struct ChatPage {
       this.timelineGeometryDividerId()
     );
     this.groups = groups;
+    this.timelineRows = groups;
+  }
+
+  // 纯前插：在**同一个** @Local 数组上 splice，再把内容变了的旧行按下标原地换掉。
+  // 之后 timelineRows 与 next 逐项同对象（不变量：与 this.groups 一致）。
+  private splicePrependGroups(next: AlbumGroup[], head: number): void {
+    this.viewportGeometry.reconcile(
+      this.chatId,
+      conversationScopeId(this.threadRootId, this.forumTopicId, this.directMessagesTopicId),
+      next,
+      this.screenW,
+      this.langEpoch,
+      this.timelineGeometryDividerId()
+    );
+    const prev: AlbumGroup[] = this.groups;
+    const patches: number[] = patchIndicesAfterPrepend(prev, next, head);
+    this.timelineRows.splice(0, 0, ...next.slice(0, head));
+    for (const i of patches) {
+      this.timelineRows[i] = next[i];
+    }
+    this.groups = next;
+    // 不变量：timelineRows 与 next **逐项同对象**。任何一处不同（漏行、重复行、
+    // 旧对象残留）都退回整份替换——宁可丢一次保位，也不能让两份数组分叉。
+    // O(n) 引用比较，和 reuseUnchangedRows 同量级。
+    let mismatchAt: number = -1;
+    if (this.timelineRows.length !== next.length) {
+      mismatchAt = Math.min(this.timelineRows.length, next.length);
+    } else {
+      for (let i = 0; i < next.length; i++) {
+        if (this.timelineRows[i] !== next[i]) {
+          mismatchAt = i;
+          break;
+        }
+      }
+    }
+    if (mismatchAt >= 0) {
+      logW(`[SplicePublish] invariant broken at=${mismatchAt}` +
+        ` rows=${this.timelineRows.length}/${next.length} head=${head}, fallback to replace`);
+      this.timelineRows = next;
+      return;
+    }
+  }
+
+  // 等长原地补丁 / 尾部追加：数组引用**不动**，只按下标换对象、或在尾部 splice
+  // 进新行。
+  //
+  // 【为什么这条路最值钱】首屏分帧揭示每帧只把一行从占位换成真行，行身份序列
+  // 一个字都没变。旧代码认不出这个形状，退回 `this.timelineRows = groups`——换
+  // 引用就等于给 @Local 发通知，ChatPage.build() 整个重跑（首屏 trace 抓到 11
+  // 次 / 62.1ms，其中还连带 20+ 次 ResourceManager::GetXxxById）。换成原地赋值
+  // 后，只有 Repeat 里那一个 RepeatItem 被通知。
+  //
+  // 不变量与 splicePrependGroups 相同：完事后 timelineRows 与 next 逐项同对象，
+  // 不同就整份回退。
+  private spliceAppendGroups(next: AlbumGroup[], appended: number): void {
+    this.viewportGeometry.reconcile(
+      this.chatId,
+      conversationScopeId(this.threadRootId, this.forumTopicId, this.directMessagesTopicId),
+      next,
+      this.screenW,
+      this.langEpoch,
+      this.timelineGeometryDividerId()
+    );
+    const prev: AlbumGroup[] = this.groups;
+    for (let i = 0; i < prev.length; i++) {
+      if (next[i] !== prev[i]) {
+        this.timelineRows[i] = next[i];
+      }
+    }
+    if (appended > 0) {
+      this.timelineRows.splice(this.timelineRows.length, 0, ...next.slice(prev.length));
+    }
+    this.groups = next;
+    let mismatchAt: number = -1;
+    if (this.timelineRows.length !== next.length) {
+      mismatchAt = Math.min(this.timelineRows.length, next.length);
+    } else {
+      for (let i = 0; i < next.length; i++) {
+        if (this.timelineRows[i] !== next[i]) { mismatchAt = i; break; }
+      }
+    }
+    if (mismatchAt >= 0) {
+      logW(`[SplicePublish] ${appended > 0 ? 'append' : 'patch'} invariant broken` +
+        ` at=${mismatchAt} rows=${this.timelineRows.length}/${next.length}` +
+        ` appended=${appended}, fallback to replace`);
+      this.timelineRows = next;
+      return;
+    }
+  }
+
+  // 窗口裁剪：从头或从尾砍掉若干行，同样在**同一个** @Local 数组上 splice，让
+  // MVCP 的"显示区外删除保位"真正触发（整份换数组时它不认，12/30 次 Trim 顶行
+  // MOVED 就是这么来的）。留下的行若内容变了（例如砍头后新首行拿到粘滞昵称），
+  // 按下标原地换对象。不变量与 splicePrependGroups 相同：逐项同对象，否则回退。
+  private spliceDropGroups(next: AlbumGroup[], kind: string, count: number): void {
+    this.viewportGeometry.reconcile(
+      this.chatId,
+      conversationScopeId(this.threadRootId, this.forumTopicId, this.directMessagesTopicId),
+      next,
+      this.screenW,
+      this.langEpoch,
+      this.timelineGeometryDividerId()
+    );
+    const prev: AlbumGroup[] = this.groups;
+    if (kind === 'dropHead') {
+      this.timelineRows.splice(0, count);
+    } else {
+      this.timelineRows.splice(this.timelineRows.length - count, count);
+    }
+    const offset: number = kind === 'dropHead' ? count : 0;
+    let patched: number = 0;
+    for (let i = 0; i < next.length; i++) {
+      if (next[i] !== prev[offset + i]) {
+        this.timelineRows[i] = next[i];
+        patched++;
+      }
+    }
+    this.groups = next;
+    let mismatchAt: number = -1;
+    if (this.timelineRows.length !== next.length) {
+      mismatchAt = Math.min(this.timelineRows.length, next.length);
+    } else {
+      for (let i = 0; i < next.length; i++) {
+        if (this.timelineRows[i] !== next[i]) { mismatchAt = i; break; }
+      }
+    }
+    if (mismatchAt >= 0) {
+      logW(`[SplicePublish] ${kind} invariant broken at=${mismatchAt}` +
+        ` rows=${this.timelineRows.length}/${next.length} count=${count}, fallback to replace`);
+      this.timelineRows = next;
+      return;
+    }
   }
 
   private commitTimelineSnapshot(): void {
     const next: ChatTimelineSnapshot = coalesceChatTimelineSnapshot(this.timelineSnapshot, {
-      groups: this.groups, visibleGroupCount: this.visibleGroupCount,
+      hasVisibleRows: this.visibleGroupCount > 0,
       messageLoadState: this.messageLoadState, messageLoadError: this.messageLoadError,
       olderLoadState: this.olderLoadState, newerLoadState: this.newerLoadState,
       isChannel: this.isChannel, isGroup: this.isGroup
@@ -552,6 +727,30 @@ export struct ChatPage {
   // 不还原没变过的行就等于每次发布都刷新整个可见窗口。
   private publishGroupsNow(groups: AlbumGroup[]): void {
     const next: AlbumGroup[] = reuseUnchangedRows(this.groups, groups);
+    // 【顺序（2026-09-11，两次 jscrash 之后）】预取数据面**必须先于** UI 面更新。
+    // splice 发布让 List 同步长行、同步回调 onScrollIndex；那时若 groupsData
+    // 还是旧长度，BasicPrefetcher 内部的旧区间与新下标对不上，IndexRange 抛
+    // "Invalid range"（jscrash 20260911100232 / 100238，均落在
+    // handleTimelineScrollIndex 的 visibleAreaChanged）。新数组时代 Repeat 的更
+    // 新经微任务延后，回调总在 setRows 之后到，所以从未撞上。
+    //
+    // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
+    // 必须不同，这不是笔误。
+    //
+    // photoPaths / head.photoPath **刻意不进行 key**（collapseAlbums.ets 里
+    // mutableSig 只带 photoFileId），因为缩略图落地要走 mediaThumbChannel 旁路
+    // 直达气泡，不该拖着整行重建。代价是：缩略图/原图落地那一次发布里行 key
+    // 一个字没变 ⇒ sameRenderSnapshot 为真 ⇒ reuseUnchangedRows 还回**上一份
+    // 快照的对象** ⇒ 那一行的 photoPath 在 next 里**永远停在 ''**。
+    //
+    // 给 Repeat 用的 this.groups 必须是 next（对象身份不变才不会白刷新一整屏），
+    // 但 AlbumGroupDataSource.imageRequestFor 是按 head.photoPath 决定预不预取的：
+    // 喂它 next，它对这些行 `return null`，BasicPrefetcher 一次都不会预取——
+    // 预取整条静默失效。所以数据面喂原始那份，UI 面喂合并那份。
+    //
+    // 这一行**在 changed 之外**，故意的：合并那份逐项相同（changed === false）
+    // 恰恰是「只有旁路字段变了」的那次发布，而那正是预取源唯一需要的更新。
+    this.groupsData.setRows(groups);
     const changed: boolean = !sameRowArray(this.groups, next);
     // 全等的一次发布不换数组引用：@Local 的通知是按引用发的，换一个逐项相同
     // 的新数组照样通知 ⇒ Repeat 照样跑一遍 diff。changed 本来就算好了，用上。
@@ -572,26 +771,25 @@ export struct ChatPage {
           this.commitTimelineSnapshot();
         });
       } else {
-        this.replaceTimelineGroups(next);
+        // 对象优先的形状判定：只有对象不同的那几行才去算 rowIdentity
+        // （原先每次发布都要拼 2N 个身份串，揭示期每帧一次）。
+        const plan: EdgeSplicePlan | null = SPLICE_PUBLISH_ENABLED
+          ? planEdgeSpliceRows(this.groups, next,
+              (row: Object): string => rowIdentity(row as AlbumGroup))
+          : null;
+        const patchShape: boolean = plan !== null &&
+          (plan.kind === 'patch' || plan.kind === 'append');
+        if (plan !== null && plan.kind === 'prepend') {
+          this.splicePrependGroups(next, plan.count);
+        } else if (patchShape && SPLICE_PATCH_PUBLISH_ENABLED) {
+          this.spliceAppendGroups(next, plan!.count);
+        } else if (plan !== null && !patchShape) {
+          this.spliceDropGroups(next, plan.kind, plan.count);
+        } else {
+          this.replaceTimelineGroups(next);
+        }
       }
     }
-    // ⚠️ 预取源拿的是 **groups（原始那份）**，不是 next（合并那份）——两者
-    // 必须不同，这不是笔误。
-    //
-    // photoPaths / head.photoPath **刻意不进行 key**（collapseAlbums.ets 里
-    // mutableSig 只带 photoFileId），因为缩略图落地要走 mediaThumbChannel 旁路
-    // 直达气泡，不该拖着整行重建。代价是：缩略图/原图落地那一次发布里行 key
-    // 一个字没变 ⇒ sameRenderSnapshot 为真 ⇒ reuseUnchangedRows 还回**上一份
-    // 快照的对象** ⇒ 那一行的 photoPath 在 next 里**永远停在 ''**。
-    //
-    // 给 Repeat 用的 this.groups 必须是 next（对象身份不变才不会白刷新一整屏），
-    // 但 AlbumGroupDataSource.imageRequestFor 是按 head.photoPath 决定预不预取的：
-    // 喂它 next，它对这些行 `return null`，BasicPrefetcher 一次都不会预取——
-    // 预取整条静默失效。所以数据面喂原始那份，UI 面喂合并那份。
-    //
-    // 这一行**在 changed 之外**，故意的：合并那份逐项相同（changed === false）
-    // 恰恰是「只有旁路字段变了」的那次发布，而那正是预取源唯一需要的更新。
-    this.groupsData.setRows(groups);
     if (!this.pageVisible && changed) {
       this.hiddenListDirty = true;
     }
@@ -608,6 +806,7 @@ export struct ChatPage {
   // 成新 key ⇒ 全部删旧插新。行对象本身原样复用，内容一个字都没动。
   private rebuildAllRows(): void {
     this.listRebuildEpoch++;
+    this.stickyRunHeads.clear();
     this.replaceTimelineGroups(this.groups.slice());
     this.commitTimelineSnapshot();
     // 这里**不碰** groupsData：它持有的是上一次发布的原始快照（见
@@ -728,6 +927,7 @@ export struct ChatPage {
     this.initialMessageStageActive = false;
     this.initialMessagePendingGroups = null;
     this.initialMessageRevealCount = 0;
+    this.initialTailTarget = 0;
     this.initialMessageStageScheduledSeq = 0;
     // Keep Lottie startup out of the final placeholder replacement frame.
     this.scheduleChatTgsResume();
@@ -767,30 +967,20 @@ export struct ChatPage {
     this.initialTimelinePresentationSeq++;
     this.initialTimelinePresentationScheduledSeq = 0;
     this.initialTimelineReadyToPresent = false;
+    this.initialTailTarget = 0;
     this.settleInitialTimelineAnchor();
     this.cancelInitialMessageTransitionSettle();
     this.initialMessageTransitionSettled = true;
     this.revealInitialTimeline();
   }
 
-  // 遮罩掀开的那一下。
-  //
-  // 逐行的淡入由行自己的 transition 负责（visibility 由 Hidden 翻 Visible 是它
-  // 的触发条件之一，stagger 一并保住）。这里再包一次 animateTo，是给整层
-  // List 的 opacity 一个兜底的淡入：万一某一帧行的 transition 没能起跑，用户
-  // 看到的仍是一次 90ms 的整屏淡入，而不是硬跳。时长与曲线同为
-  // INITIAL_TIMELINE_ROW_FADE_MS / EaseOut。
-  //
-  // 只包这一句：initialMessageTransitionSettled 归底部 dock 自己的动画管，
-  // 一起包进来会变成双重动画。
+  // 遮罩掀开只做一次同步状态切换。这里不能再包 animateTo：首屏 trace 显示
+  // 它会在 JSAnimateTo 内同步触发 FlushLayoutTask（约 30ms），把本来已经
+  // 分帧完成的首屏重新合并成一个超预算帧。行自己的 transition 仍负责逐行淡入。
   private revealInitialTimeline(): void {
-    animateTo({
-      duration: powerAnimationDuration(
-        KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-      curve: Curve.EaseOut
-    }, (): void => {
-      this.initialTimelineMasked = false;
-    });
+    this.initialTimelineMasked = false;
+    // 旁路可见性工作在首屏稳定后统一启动一次。
+    this.driveVisibleWork();
   }
 
   private applyInitialUnreadLanding(seq: number): void {
@@ -927,6 +1117,17 @@ export struct ChatPage {
       if (fillPending) {
         return 'waiting';
       }
+      // 视口已就位、遮罩已在撤除路上，但**别**在这里把剩余行一次性转真：List 的
+      // 缓存窗（cachedCount 8/10）里那几行会在同一帧里全部构建。按同样的一行一
+      // 帧把缓存窗铺完，再发最后一份完整快照。
+      const tailNext: number = nextInitialMessageRevealCount(
+        this.initialMessageRevealCount, this.initialTailTarget);
+      if (tailNext > this.initialMessageRevealCount) {
+        this.initialMessageRevealCount = tailNext;
+        this.publishGroupsNow(stageInitialMessageGroups(
+          groups, target.anchorIndex, target.alignFromStart, tailNext));
+        return 'released';
+      }
       this.finishInitialMessageStage(groups);
       return 'finished';
     }
@@ -966,8 +1167,13 @@ export struct ChatPage {
     if (!this.initialTimelineReadyToPresent && nextRevealCount >= presentRows &&
       (!fillPending || presentRows > 0)) {
       this.initialTimelineReadyToPresent = true;
+      this.initialTailTarget = initialTailRevealTarget(presentRows, target.availableRows);
       this.scheduleInitialTimelinePresentation();
       if (!fillPending) {
+        // 缓存窗还没铺完就继续一行一帧（分支在上面那个 readyToPresent 里）。
+        if (nextRevealCount < this.initialTailTarget) {
+          return 'released';
+        }
         this.finishInitialMessageStage(groups);
         return 'finished';
       }
@@ -1032,6 +1238,7 @@ export struct ChatPage {
     const stageSeq: number = ++this.initialMessageStageSeq;
     this.initialTimelineMasked = true;
     this.initialTimelineReadyToPresent = false;
+    this.initialTailTarget = 0;
     this.initialTimelinePresentationSeq++;
     this.initialTimelinePresentationScheduledSeq = 0;
     this.initialTimelineEarliestAt = Date.now() + (target.alignFromStart
@@ -1094,7 +1301,6 @@ export struct ChatPage {
       // 不改成"还原完再补判一次"：还原本身跑在 setTimeout 里、量不到还会重试
       // （attemptAnchorRestore），补判会插在中间，用一个还没落位的 isAtEnd 下
       // 结论，反而可能把用户从还原点拽到底部。
-      logW(`[Follow62] resume kept atBottom rows=${this.groups.length} newest=${newestNow}`);
     } else if (anchorId > 0) {
       // 先松开贴底：还原发起到 onScrollIndex 回调落地之间，atBottom 还是隐藏
       // 前那个 true，这期间任何一条到达通知都会走"在底部就跟随"那一支
@@ -1411,7 +1617,9 @@ export struct ChatPage {
     };
     const prepared: PreparedMessageBubble = {
       group: g,
-      data
+      data,
+      reuseId: `chatPage${this.reusePageScope}_` +
+        rowReuseId(data, g, CHAT_PAGE_REUSE_ID_LEVEL)
     };
     if (this.preparedMessageCache.size >= PREPARED_MESSAGE_CACHE_LIMIT) {
       this.preparedMessageCache.clear();
@@ -1512,26 +1720,35 @@ export struct ChatPage {
   // 进行传参，组件才能监听到数据变化」，反例正是按值传 ri.item —— 那样 Repeat
   // 更新这一行时（它只换 RepeatItem 里的 item，不重跑 .each()）这个 @Builder
   // 里的 UI 不会刷新。所以 ri 一路传到这里，group/data 都在本作用域内现取。
+  // 行的复用桶 id。跟着 prepared 一起被缓存，不在渲染路径上现算。
+  private rowBubbleReuseId(g: AlbumGroup): string {
+    return this.prepareMessageBubble(g).reuseId;
+  }
+
   // 气泡外面垫一层普通 V2 组件（MessageRowHost）：官方明写 V2 复用组件不支持
   // 直接用于 Repeat 的 template 中，只能放在 template 里的普通 V2 组件之下。
   // 薄壳只做转发，reuseId 在里面挂给内层气泡。
   @Builder
   private preparedMessageBubble(ri: RepeatItem<AlbumGroup>) {
+    // prepare 一次两处用：命中缓存也得先拼那条 25 段 cacheKey，白拼第二遍。
     MessageRowHost({
       group: ri.item,
       nowSec: this.nowSec,
       data: this.prepareMessageBubble(ri.item).data,
       actions: this.messageActions(),
-      bubbleReuseId: `chatPage${this.reusePageScope}_` +
-        rowReuseId(this.prepareMessageBubble(ri.item).data, ri.item, CHAT_PAGE_REUSE_ID_LEVEL)
+      bubbleReuseId: this.rowBubbleReuseId(ri.item)
     });
   }
 
   // Repeat 的模板名。分的是**外壳**的池，必须可枚举（见 util/rowTemplateId）。
   private rowTemplateIdOf(group: AlbumGroup): string {
-    const data: MessageBubbleRenderData = this.prepareMessageBubble(group).data;
-    const lightweight: boolean =
-      data.lightweightPlainText && group.head.translatedText === '';
+    // 【不要在这里调 prepareMessageBubble】它为了查缓存要先拼一条 25 段的
+    // cacheKey，而 Repeat 每决定一次模板都会调这里。首屏 JS profile 里
+    // prepareMessageBubble 的 605.8ms 有 284.9ms 是从这条路进来的，换回来的只是
+    // 一个布尔——而那个布尔只依赖行对象本身（见 canRenderLightweightPlainTextRow）。
+    const lightweight: boolean = canRenderLightweightPlainTextRow(
+      group.head, group.memberIds.length, group.photoPaths.length) &&
+      group.head.translatedText === '';
     const gutter: boolean = this.selection.active && rowSelectable(group.head.contentType);
     return rowTemplateId(group, lightweight, gutter);
   }
@@ -1710,6 +1927,8 @@ export struct ChatPage {
   // 自己变化不该引起重渲染（那正是要治的病）。见 util/rowFadeGate。
   private initialRowFadeArmedAt: number = 0;
   private initialTimelineReadyToPresent: boolean = false;
+  // 视口铺满之后继续一行一帧铺到第几行（见 initialTailRevealTarget）。0 = 收尾。
+  private initialTailTarget: number = 0;
   private initialTimelinePresentationSeq: number = 0;
   private initialTimelinePresentationScheduledSeq: number = 0;
   private initialTimelineEarliestAt: number = 0;
@@ -2062,6 +2281,7 @@ export struct ChatPage {
     this.initialTimelinePresentationScheduledSeq = 0;
     this.initialTimelineMasked = false;
     this.initialTimelineReadyToPresent = false;
+    this.initialTailTarget = 0;
     this.initialTimelineEarliestAt = 0;
     this.initialMessageTransitionSettled = false;
     this.cancelInitialMessageTransitionSettle();
@@ -2205,11 +2425,11 @@ export struct ChatPage {
       this.clientJoinNoticeEntryCache = null;
     }
     if (!this.clientJoinNoticeVisible) {
-      return collapseAlbums(list);
+      return this.noteRunHead(collapseAlbums(list, this.runHeadHints()));
     }
     const displayList: MessageEntry[] = list.slice();
     displayList.push(this.clientJoinNoticeEntry());
-    const groups: AlbumGroup[] = collapseAlbums(displayList);
+    const groups: AlbumGroup[] = this.noteRunHead(collapseAlbums(displayList, this.runHeadHints()));
     tagClientJoinNoticeGroup(groups, this.chatId, this.clientJoinNoticeDate);
     return groups;
   }
@@ -3125,7 +3345,11 @@ export struct ChatPage {
     let prependAnchorUserOffset: number = 0;
     let primePrependAnchor: boolean = false;
     const olderPageGrowth: boolean = notifyKind === 'older' && list.length > this.messages.length;
-    if (shouldCapturePrependAnchor({
+    // 前插锚点（prime / retry / reposition）**默认整个不做**：位置由 splice 发布 +
+    // maintainVisibleContentPosition 保住（util/splicePublish 文件头有真机对照）。
+    // 两个常量必须同向：splice 关掉时锚点必须回来，否则重演"翻页自激灌到最老"。
+    const anchorSuppressed: boolean = !PREPEND_ANCHOR_ENABLED && SPLICE_PUBLISH_ENABLED;
+    if (!anchorSuppressed && shouldCapturePrependAnchor({
       didInitialScroll: this.didInitialScroll,
       anchorIndexFresh: this.anchorIndexFresh(),
       olderPageGrowth: olderPageGrowth
@@ -3143,24 +3367,11 @@ export struct ChatPage {
             visibleIndex, y, this.headerChromeHeight(), this.listTouchActive,
             this.timelineScrollActive);
           this.anchor.captureAnchorOffset();
-          logW(`[PrependAnchor] hold id=${prependAnchorId} idx=${visibleIndex}` +
-            ` y=${prependAnchorY} rows=${this.groups.length}->${groups.length}` +
-            ` messages=${this.messages.length}->${list.length} prime=${primePrependAnchor}` +
-            ` touch=${this.listTouchActive} active=${this.timelineScrollActive}`);
         } else {
-          logW(`[PrependAnchor] skip reason=measure idx=${visibleIndex}` +
-            ` rows=${this.groups.length}->${groups.length}` +
-            ` messages=${this.messages.length}->${list.length}`);
         }
       } else {
-        logW(`[PrependAnchor] skip reason=index idx=${visibleIndex}` +
-          ` rows=${this.groups.length}->${groups.length}` +
-          ` messages=${this.messages.length}->${list.length}`);
       }
     } else if (olderPageGrowth && this.didInitialScroll) {
-      logW(`[PrependAnchor] skip reason=stale-index startIdx=${this.curStartIdx}` +
-        ` idxLen=${this.indexGroupsLen} rows=${this.groups.length}->${groups.length}` +
-        ` messages=${this.messages.length}->${list.length}`);
     }
     const sample: PrependAnchorSample = {
       id: prependAnchorId,
@@ -3216,16 +3427,10 @@ export struct ChatPage {
         appendAnchorY = y;
         appendAnchorUserOffset = this.userScrollOffsetTotal;
         this.anchor.captureAnchorOffset();
-        logW(`[AppendAnchor] hold id=${appendAnchorId} idx=${visibleIndex} y=${appendAnchorY}` +
-          ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
-          ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
       }
     } else if (appendsRows && prependAnchor.id === 0 && this.didInitialScroll) {
       // 闸关上时也留一条：判读时要能看见「这一次追加本来会不会复位」。与 hold
       // 那条同格式，随探针一起删。
-      logW(`[AppendAnchor] skip bypass=${APPEND_ANCHOR_RESTORE_BYPASSED}` +
-        ` mark=${appendMarkPending} userDrivenAppend=${userDrivenAppend}` +
-        ` rows=${this.groups.length}->${groups.length} ${this.appendAnchorGateProbe(groups)}`);
     }
     const sample: AppendAnchorSample = {
       id: appendAnchorId,
@@ -3275,7 +3480,12 @@ export struct ChatPage {
     // 触发（用户报的"这个页面不会自动翻译"），新消息到达也一样。数据一变
     // 就按当前视口驱动一次；curStartIdx/curEndIdx 在首帧前是 -1，此时用
     // 首屏兜底，滑动事件来了会立刻纠正。
-    this.driveVisibleWork();
+    // 首屏逐行放行时不要每一行都驱动翻译、媒体窗口和播放位；这些旁路
+    // 状态会回流到 ChatPage，抵消分帧首屏的收益。首屏稳定后由最终发布或
+    // presentation callback 统一驱动一次。
+    if (!firstMessageStage || !this.initialMessageStageActive) {
+      this.driveVisibleWork();
+    }
     this.fillViewportIfNeeded();
     this.musicQueue.settlePending(list);
   }
@@ -3390,17 +3600,11 @@ export struct ChatPage {
     // 看才分得清"没跳到未读"和"跳到了但窗口本身没够到尾部"。
     const anchorHasMoreNewer: boolean =
       this.store !== null && this.store.getHasMoreNewer();
-    logW(`[Anchor] latch fu=${fu} kind=${anchor.kind} index=${anchor.index}` +
-      ` rows=${groups.length} fillPending=${fillPending}` +
-      ` hasMoreNewer=${anchorHasMoreNewer}` +
-      ` windowLast=${list.length > 0 ? list[list.length - 1].id : 0}`);
     const landSeq: number = this.scrollActionSeq;
     setTimeout((): void => {
       if (landSeq !== this.scrollActionSeq) {
-        logW(`[Anchor] landed stale seq=${landSeq} cur=${this.scrollActionSeq}`);
         return;
       }
-      logW(`[Anchor] landed kind=${anchor.kind} ${this.scrollStateProbe()}`);
     }, 400);
     if (anchor.kind === ANCHOR_UNREAD) {
       // 两个标志必须一起动，各自挡一个已经发生过的问题，见 util 里的说明。
@@ -3439,10 +3643,6 @@ export struct ChatPage {
       // 诊断（issue #62）：新消息到了，跟不跟随只取决于这三个标志。用户
       // 报的现象是"手滑到底之后新消息不跟随，点箭头到底就跟随"——两条路
       // 的差别一定落在这三个之一，打出来就不用猜了。
-      logW(`[Follow62] atBottom=${this.atBottom} stayAtUnread=${this.stayAtUnread}` +
-        ` viewerOpen=${this.viewerOpen()}` +
-        ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}` +
-        ` endIdx=${this.curEndIdx} rows=${this.groups.length}`);
     }
     // 新消息到达且最后一条已在底部可见：跟随，并解除未读闩。闩防的是缩略图
     // 这类原地通知把分界线贴底滑走（下面那一支仍受它约束）；新消息把内容往上
@@ -3475,14 +3675,9 @@ export struct ChatPage {
         hasMoreNewer: this.store !== null && this.store.getHasMoreNewer()
       })) {
         if (!superseded) {
-          logW(`[BottomFollow] skip tag=${tag} touch=${this.listTouchActive}` +
-            ` scroll=${this.timelineScrollActive} viewer=${this.viewerOpen()}` +
-            ` hasMoreNewer=${this.store !== null && this.store.getHasMoreNewer()}`);
         }
         return;
       }
-      logW(`[BottomFollow] apply tag=${tag} endIdx=${this.curEndIdx}` +
-        ` idxLen=${this.indexGroupsLen} rows=${this.groups.length}`);
       this.glueBottom(tag);
       setTimeout((): void => {
         if (seq === this.bottomLayoutFollowSeq) {
@@ -4101,9 +4296,6 @@ export struct ChatPage {
       // 会自动跟随；自己手滑到底就不会。两条路的差别只可能落在这四个输入之一，
       // 但光看代码分不出是哪个。**只在翻转时打**，稳态不打：那是每次滚动帧都
       // 会走的路，逐次记会把环形缓冲刷满。
-      logW(`[Bottom62] ${this.atBottom}->${next} scrollerAtEnd=${scrollerAtEnd}` +
-        ` endIdx=${this.curEndIdx} idxLen=${this.indexGroupsLen} rows=${this.groups.length}` +
-        ` hasMoreNewer=${hasMoreNewer} imePinned=${this.imeTailPinned}`);
       this.atBottom = next;
     }
   }
@@ -4390,7 +4582,6 @@ export struct ChatPage {
     // S5/S6 改的是生命周期与挂载方式，本地单测证不了——这三条打点是那两批唯一的
     // 验收证据。删除条件：S6 落地并通过黄金样本 diff 之后，随第二轮 §8 的探针
     // 收尾批一起清。
-    logW(`[Viewer] close id=${this.viewerMsgId} posMs=${Math.round(this.viewerPositionMs)}`);
     this.releasePlaybackRequests();
     this.exitViewerLandscape();
     // 交接:把查看器最终播放到的位置写回气泡进度表，并把这条 pin 成播放位——
@@ -4400,8 +4591,6 @@ export struct ChatPage {
     // **这一句必须留在 animateTo 之前**：@Monitor('viewerMsgId') 会在
     // viewerMsgId 归零那一刻同步把 viewerPositionMs 清成 0，挪到后面就永远记 0。
     const handoffAlbumIdx: number = albumIndexOfMember(this.groups, viewerMessageId);
-    logW(`[Viewer] handoff dir=from-viewer id=${viewerMessageId}` +
-      ` albumIndex=${handoffAlbumIdx} posMs=${Math.round(this.viewerPositionMs)}`);
     this.playSlot.handoffFromViewer(viewerMessageId, handoffAlbumIdx, this.viewerPositionMs);
     this.videoPrefetch.resume();
     // 与打开同一把闸，理由见 openViewer 里那段说明。
@@ -4690,24 +4879,58 @@ export struct ChatPage {
     if (!this.olderArmed || store === null) {
       return;
     }
-    if (this.timelineScrollActive || this.listTouchActive) {
+    // 手指**物理按着**时仍旧只排队、不发布。
+    //
+    // 【2026-09-11 真机回归，用户报"有时会往前跳一页"】这是拆闸时开的洞：
+    //   · ScrollAnchorController 在 touchActive 时**只跳过 fallback 那一支**
+    //     （reason=touch-fallback）；
+    //   · 而 29 行的前插必然把锚点行推出可视区，getItemRect 返回全零哨兵，
+    //     算出来的 mode 恰恰就是 fallback；
+    //   · 老设计里两者永远撞不上——flushQueuedOlderLoad 明确「手指按着不发」。
+    // 删掉排队之后，手指按着时发布 → 需要补位 → 补位被 touch 闸挡掉 → 一次都
+    // 不补 → 内容整页飞走。
+    //
+    // 惯性那半边保留（延迟收益主要在那儿：撞顶到历史出现原本要等 835~1187ms）。
+    // 惯性中没有手指在控制位置，fallback 也不会被 touch 闸挡。
+    if (this.listTouchActive) {
       this.olderArmed = false;
       this.olderLoadQueued = true;
-      // 保留网络提前量，但 prefetchOlder 不会发布消息快照。
+      // 保留网络提前量，但 prefetchOlder 不发布消息快照。
       store.prefetchOlder();
-      logW(`[OlderGate] queued active=${this.timelineScrollActive}` +
-        ` touch=${this.listTouchActive} start=${this.curStartIdx}` +
-        ` rows=${this.groups.length}`);
       return;
     }
-    // 停稳：两页在手就**合成一次**前插发布（见 MessageStore.loadOlderMerged）。
-    // 连发两次会让第二页撞上 stale-index、整页无补偿地插进来——那正是跳页。
+    // **不再等停稳**（2026-09-10）。
+    //
+    // 这道闸原来的理由是"发布会让内容动，动就得补位，补位在惯性中是抢"。
+    // 三处几何跳变修掉之后（首行假胶囊、接缝行昵称回收、半个相册补齐，见
+    // util/collapseAlbums 的 RunHeadHints），前插对 List 而言已经是**纯插入**，
+    // 位置由 maintainVisibleContentPosition 自己保住，一次程序性滚动都不需要
+    // ——没有可抢的东西，也就没有等的必要。
+    //
+    // 等待的代价是实打实的：真机实测撞顶到历史出现 835 / 1053 / 1187ms，数据
+    // 其实早就在手上（`older prefetch ready`），纯粹被这道闸压着，用户报"卡在那"、
+    // "得再拽一下"。
+    //
+    // ⚠️ 更正（2026-09-11，真机 71/71 打脸）：这里原本写着"几何不变时补位闸
+    // 自己会返回 false"——**那是错的**。向上这侧的判据是 shouldCapturePrependAnchor，
+    // 它只看 `notifyKind==='older' && 消息窗口变长`，从不问 key 变没变；
+    // prependBreaksAnchor 除了单测没有任何生产调用方（向下那侧的
+    // appendBreaksAnchor 才是接着的）。所以只要翻一页历史就必然补位一次。
+    // 2026-09-11 之后前插锚点整体默认不做（见 PREPEND_ANCHOR_ENABLED），此段仅作历史。
+    //
+    // 两页在手时仍然**合成一次**发布（loadOlderMerged）：连发两次会让第二页
+    // 撞上 stale-index、整页无补偿地插进来，那是另一回事，与等不等手势无关。
     const started: boolean = store.loadOlderMerged();
     if (started || !store.getHasMoreOlder()) {
       this.olderArmed = false;
     }
   }
 
+  // ⚠️ 更正（2026-09-11）：下面这段里「惯性中既不 prime、也不做事后补偿」在
+  // 写下时就与代码不符——anchorRestore.shouldPrimePrependAnchor 明写"手指抬起之后
+  // 一律 prime，含惯性"，日志里 prime=true active=true 出现过 81 次。现在前插锚点
+  // 默认整个关掉（见 NO_PREPEND_ANCHOR_DEFAULT），位置由 splice 发布 + MVCP 保。
+  //
   // **松手即发**，不等惯性跑完（2026-09-10）。
   //
   // 等停稳的代价是白等整个惯性时长：真机实测撞顶到历史出现 835 / 1053 / 1187ms，
@@ -4721,6 +4944,8 @@ export struct ChatPage {
   // 惯性结束后 onScrollStop 仍会走一次静止路径，那时该补的还能补上。
   //
   // 手指仍按着时**照旧不发**：那时用户正在主动控制位置，任何程序性滚动都是抢。
+  //
+  // 手指抬起时把按着期间攒下的那一发打出去（maybeLoadOlder 的排队分支）。
   private flushQueuedOlderLoad(): void {
     if (!this.olderLoadQueued || this.listTouchActive) {
       return;
@@ -4766,9 +4991,6 @@ export struct ChatPage {
     if (!fill) {
       return;
     }
-    logW(`[FillViewport] fill rows=${this.groups.length}` +
-      ` start=${this.curStartIdx} end=${this.curEndIdx}` +
-      ` idxLen=${this.indexGroupsLen} maxRows=${ChatPage.FILL_VIEWPORT_MAX_ROWS}`);
     this.olderArmed = true;
     this.maybeLoadOlder();
   }
@@ -4790,14 +5012,6 @@ export struct ChatPage {
       this.newerFireLoggedEnd = end;
       const blockedBy: string = canFire
         ? 'none' : (gate.armed ? 'weakGate' : 'disarmed');
-      logW(`[NewerFire] end=${end} rows=${this.groups.length} firedAt=${gate.firedAtEnd}` +
-        ` armed=${gate.armed} byUser=${gate.armedByUser}` +
-        ` dragSinceFire=${Math.round(gate.dragSinceFire)}/${PAGE_GATE_REARM_DRAG_VP}` +
-        ` canFire=${canFire} blockedBy=${blockedBy}` +
-        ` touch=${this.listTouchActive} userScroll=${this.listUserScrollActive}` +
-        ` hasMoreNewer=${this.store.getHasMoreNewer()}` +
-        ` newerState=${this.store.getNewerLoadState()}` +
-        ` deferredLeft=${this.countDeferredRows()}`);
     }
     if (!canFire) {
       return;
@@ -4809,9 +5023,6 @@ export struct ChatPage {
     // 和上膛条件同源，会让 skip 结构上不可达（见 util/appendAnchor）。
     const userDriven: boolean = newerPageIsUserDriven(pageGateShotIsUserDriven(gate));
     const started: boolean = this.store.loadNewer(userDriven);
-    logW(`[NewerFire] request end=${end} started=${started} userDriven=${userDriven}` +
-      ` hasMoreNewer=${this.store.getHasMoreNewer()}` +
-      ` newerState=${this.store.getNewerLoadState()} rows=${this.groups.length}`);
     if (started || !this.store.getHasMoreNewer()) {
       this.newerGate = firedPageGate(gate, end);
     }
@@ -4838,8 +5049,6 @@ export struct ChatPage {
     if (!after.armed) {
       return;
     }
-    logW(`[NewerFire] rearm reason=drag end=${this.curEndIdx} rows=${this.groups.length}` +
-      ` byUser=${after.armedByUser} thresholdVp=${PAGE_GATE_REARM_DRAG_VP}`);
     if (reachedNewerPageTrigger(this.curEndIdx, this.groups.length)) {
       this.maybeLoadNewer(this.curEndIdx);
     }
@@ -5337,8 +5546,6 @@ export struct ChatPage {
     // 保险起见仍然按“先取、后卸载”的顺序写。
     this.viewerStartPositionMs = this.playSlot.handoffToViewer(messageId);
     // ⚠️ [Viewer] 探针（S4）。删除条件见 closeViewer 里那条。
-    logW(`[Viewer] open id=${messageId}` +
-      ` startMs=${Math.round(this.viewerStartPositionMs)}`);
     // Position the viewer Swiper on the tapped album member.
     const sib = albumSiblingIds(this.groups, messageId);
     this.viewerInitIdx = Math.max(0, sib.indexOf(messageId));
@@ -7492,7 +7699,7 @@ export struct ChatPage {
   @LocalBuilder
   timelineList() {
     List({ scroller: this.scroller }) {
-      Repeat<AlbumGroup>(this.timelineSnapshot.groups)
+      Repeat<AlbumGroup>(this.timelineRows)
         .each((ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
         })
@@ -7503,19 +7710,19 @@ export struct ChatPage {
           this.rowTemplateIdOf(group))
         .template(ROW_TEMPLATE_DEFERRED, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
-        }, { cachedCount: 4 })
+        }, { cachedCount: 8 })
         .template(ROW_TEMPLATE_PLAIN, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
-        }, { cachedCount: 8 })
+        }, { cachedCount: 10 })
         .template(ROW_TEMPLATE_PLAIN_SEL, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
-        }, { cachedCount: 4 })
+        }, { cachedCount: 8 })
         .template(ROW_TEMPLATE_RICH, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
-        }, { cachedCount: 8 })
+        }, { cachedCount: 10 })
         .template(ROW_TEMPLATE_RICH_SEL, (ri: RepeatItem<AlbumGroup>) => {
           this.timelineRow(ri);
-        }, { cachedCount: 4 })
+        }, { cachedCount: 8 })
         .key((group: AlbumGroup): string => this.rowKeyOf(group))
         // Repeat owns the ListItem root, so let it reuse that complete subtree.
         // Forcing reusable=false delegates scrolling reuse to the nested
@@ -7553,7 +7760,7 @@ export struct ChatPage {
         // @ReusableV2 气泡，贵的那部分子树照常复用。原注释记录的代价是：前插时
         // 气泡会在两个 Repeat 节点之间搬家，ArkUI 报 setChild/changing-parent，
         // 表现为行闪一下。拿"偶尔闪一下"换"消息不再重复"，值。
-        .virtualScroll({ totalCount: this.timelineSnapshot.groups.length, reusable: REPEAT_ROW_REUSE });
+        .virtualScroll({ totalCount: this.timelineRows.length, reusable: REPEAT_ROW_REUSE });
     }
     .width('100%').height('100%')
     .opacity(this.initialTimelineMasked ? 0 : 1)
@@ -7640,11 +7847,24 @@ export struct ChatPage {
       ? Visibility.Hidden : Visibility.Visible)
     .transition(this.initialRowFadeTransition(
       ri.index, ri.item.initialDeferred === true))
-    .onAreaChange((_old: Area, area: Area): void => {
+    // 【为什么是 onSizeChange 不是 onAreaChange】(2026-09-11 帧 trace)
+    // onAreaChange 的「area」含**位置**：滚动中每一行每一帧位置都在变，于是每行
+    // 每帧都回调一次。trace 实测 HandleOnAreaChangeEvent 每帧派发 ~48 次 JS 回
+    // 调、合计 1.20ms——而一个正常帧总共才 4.16ms（29%）。可这里要的只有高度，
+    // 那 48 次里绝大多数报的是同一个高度。
+    // onSizeChange（API 12，远低于底线 20）只在尺寸真的变了才回调，滚动稳态下
+    // 基本不触发。
+    // SizeOptions.height 的静态类型是 Length（number|string|Resource），运行时
+    // ArkUI 给的是 vp 数值；非数值一律丢弃，record 本身也再挡一道有限性检查。
+    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+      const raw: Length | undefined = size.height;
+      if (typeof raw !== 'number') {
+        return;
+      }
       this.viewportGeometry.record(
         ri.index,
         ri.item,
-        area.height as number,
+        raw as number,
         ri.item.initialDeferred !== true && !this.selection.active
       );
     });
@@ -7719,17 +7939,62 @@ export struct ChatPage {
     });
   }
 
+  // 传给 HdsNavDestination 的 .titleBar()。**引用必须稳定。**
+  //
+  // 【为什么】(2026-09-11 帧 trace) 原来这里每次 ChatPage.build() 都现 new 一个
+  // options、外带一个新的 stackBuilder 闭包交给 HDS，于是整条标题栏跟着销毁重建：
+  // ChatHeader 4.05ms + TopBanners 2.15ms + AvatarView + CachedImage，一次录制里
+  // **22 次，其中 17 次落在卡顿帧上**。chatTitleBarBottom 上面那句「千万不要在这里
+  // 现场 new 任何对象传下去」说的就是这件事，只是漏了它自己这一层。
+  //
+  // 栏里的内容照样会更新：两个 builder 的**函数体**在各自的渲染上下文里读
+  // selection/search/topCard 这些 @Trace，值变了由它们自己刷新，与外面这个 options
+  // 对象的身份无关。这里只在**结构**真的变了（横幅出现/消失/改高）时才换新对象。
+  private titleBarContentCache: TitleBarContentOptions | null = null;
+  private titleBarBannerHeight: number = -1;
+
+  // 整份 titleBar 选项也缓存：style 里那三个字面量是常量，而 $r() 每调一次都
+  // 是一个新 Resource 对象，光稳住 content 还不够。结构变了（content 换新）
+  // 才重建。
+  private titleBarOptionsCache: HdsNavigationTitleBarOptions | null = null;
+
+  private chatTitleBarOptions(): HdsNavigationTitleBarOptions {
+    const content: TitleBarContentOptions = this.chatTitleBarContent();
+    const cached: HdsNavigationTitleBarOptions | null = this.titleBarOptionsCache;
+    if (cached !== null && cached.content === content) {
+      return cached;
+    }
+    const options: HdsNavigationTitleBarOptions = {
+      avoidLayoutSafeArea: true,
+      // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
+      enableComponentSafeArea: false,
+      // 第三个参数 false = 静态栏：滑动时不变（见 util/hdsTitleBar）。
+      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false),
+      content: content
+    };
+    this.titleBarOptionsCache = options;
+    return options;
+  }
+
   private chatTitleBarContent(): TitleBarContentOptions {
+    const bannerHeight: number =
+      this.initialMessageTransitionSettled && this.topCard.shouldShow()
+        ? this.topBannerHeight() : 0;
+    const cached: TitleBarContentOptions | null = this.titleBarContentCache;
+    if (cached !== null && this.titleBarBannerHeight === bannerHeight) {
+      return cached;
+    }
     const content: TitleBarContentOptions = {
       stackBuilder: (): void => { this.chatTitleBar(); }
     };
-    const bannerHeight: number = this.topBannerHeight();
-    if (this.initialMessageTransitionSettled && this.topCard.shouldShow() && bannerHeight > 0) {
+    if (bannerHeight > 0) {
       content.bottomBuilder = {
         builder: (): void => { this.chatTitleBarBottom(); },
         height: bannerHeight
       };
     }
+    this.titleBarContentCache = content;
+    this.titleBarBannerHeight = bannerHeight;
     return content;
   }
 
@@ -7744,7 +8009,7 @@ export struct ChatPage {
       videoLandscape: this.viewerVideoLandscape,
       onVideoLandscapeChange: (landscape: boolean): void => { this.viewerVideoLandscape = landscape; },
       messages: this.messages,
-      groups: this.timelineSnapshot.groups,
+      groups: this.timelineRows,
       onNeedHistory: (dir: number): void => {
         if (dir < 0) {
           this.store?.loadOlder();
@@ -7812,7 +8077,14 @@ export struct ChatPage {
     const visible: PrefetchRange | null =
       clampPrefetchRange(start, end, this.groupsData.totalCount());
     if (visible !== null) {
-      this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
+      // 预取器的区间校验会抛（jscrash 20260911 ×2："Invalid range"）。预取只是
+      // 锦上添花，任何一次失败都不该带走整个应用；打一行日志留证据即可。
+      try {
+        this.imagePrefetcher.visibleAreaChanged(visible.start, visible.end);
+      } catch (e) {
+        logE(`[Prefetch] visibleAreaChanged(${visible.start},${visible.end})` +
+          ` total=${this.groupsData.totalCount()} rows=${this.groups.length} failed: ${e}`);
+      }
     }
     if (!this.chatTgsScrollActive) {
       this.translation.drive(this.translateChatsEnabled, start, end);
@@ -7908,63 +8180,11 @@ export struct ChatPage {
     const lastMembers: number[] = groups[last].memberIds;
     const firstKeepId: number = groups[first].memberIds[0];
     const lastKeepId: number = lastMembers[lastMembers.length - 1];
-    // ⚠️ 临时漂移探针：裁剪唯一的风险是"屏幕上的内容动了"。记下可见首行的
-    // id 和它当下的 y，下一帧按同一条消息重新量一次。drift 不为 0 就说明
-    // maintainVisibleContentPosition 在纯删除这条路上也不可靠，得回退。
-    const anchorId: number = groups[start].head.id;
-    const beforeRect: RectResult = this.scroller.getItemRect(start);
-    const beforeY: number = beforeRect.y as number;
-    const beforeH: number = beforeRect.height as number;
-    const beforeOff: number = this.scroller.currentOffset().yOffset;
-    if (!store.trimWindowTo(firstKeepId, lastKeepId)) {
-      return;
-    }
-    // 150ms 而不是 0：getItemRect 要等布局落定，onScrollIndex 也要等它才会
-    // 重报可见范围。0ms 那版每次都读到全零哨兵，等于没量。
-    setTimeout((): void => {
-      // 【砍老端必须补偿位置】删掉视口**上方**的行，剩下的内容会整体上移——
-      // maintainVisibleContentPosition 在这条路上没兜住。2026-09-10 真机
-      // 4/4 全部 MOVED，视口被推走 5~70 行，用户报"往下翻时画面顶上来"。
-      // 砍新端（视口下方）不需要补，实测 drift=0。
-      // 算式照搬 ScrollAnchorController 的 prime 分支：同一个诉求（把锚点行
-      // 放回它原来的 y），同一套坐标。
-      if (cutAbove > 0) {
-        const back: number = groupIndexOf(this.groups, anchorId);
-        if (back >= 0) {
-          const extra: number = -beforeY + this.headerChromeHeight();
-          try {
-            this.scroller.scrollToIndex(back, false, ScrollAlign.START,
-              { extraOffset: LengthMetrics.vp(extra) });
-          } catch (e) {
-            logE(`ChatPage.trimRestore failed: ${e}`);
-          }
-        }
-      }
-      // **最硬的判据**：砍完之后屏幕最上面那一行还是不是同一条消息。
-      // 它只依赖 onScrollIndex 重报的可见范围，不碰 getItemRect 的哨兵。
-      const topIdx: number = this.curStartIdx;
-      const topId: number = topIdx >= 0 && topIdx < this.groups.length
-        ? this.groups[topIdx].head.id : 0;
-      logW(`[Trim] top anchor=${anchorId} nowTop=${topId}` +
-        ` ${topId === anchorId ? 'SAME' : 'MOVED'} idx=${topIdx}`);
-      const idx: number = groupIndexOf(this.groups, anchorId);
-      if (idx < 0) {
-        logW(`[Trim] drift anchor=${anchorId} gone`);
-        return;
-      }
-      const after: RectResult = this.scroller.getItemRect(idx);
-      const afterY: number = after.y as number;
-      const afterH: number = after.height as number;
-      const afterOff: number = this.scroller.currentOffset().yOffset;
-      // h=0 是 getItemRect 对"不在显示区内"的全零哨兵（faqs-arkui-572），
-      // 不是真坐标——这种情况下 y 的差值毫无意义，必须标出来。
-      const bogus: boolean = beforeH <= 0 || afterH <= 0;
-      logW(`[Trim] drift anchor=${anchorId} idx=${start}->${idx}` +
-        ` y=${Math.round(beforeY)}->${Math.round(afterY)}` +
-        ` h=${Math.round(beforeH)}->${Math.round(afterH)}` +
-        ` off=${Math.round(beforeOff)}->${Math.round(afterOff)}` +
-        ` drift=${Math.round(afterY - beforeY)}${bogus ? ' RECT-SENTINEL' : ''}`);
-    }, 150);
+    // 位置由 splice 发布 + maintainVisibleContentPosition 保住：裁剪走的是同一数组上的
+    // 原地删除（util/splicePublish 的 dropHead / dropTail）。真机 2026-09-11：砍 891 行
+    // 后顶行 SAME、y 不变。此前整份换数组时 12/30 次顶行 MOVED，那一版还有一发
+    // scrollToIndex 补偿与漂移探针，都已随之删除。
+    store.trimWindowTo(firstKeepId, lastKeepId);
   }
 
   private handleTimelineScrollStop(): void {
@@ -8214,14 +8434,7 @@ export struct ChatPage {
     }
     .width('100%').height('100%');
     }
-    .titleBar({
-      avoidLayoutSafeArea: true,
-      // 消息 List 自己用 contentStartOffset 保留稳定锚点；这里不重复挤内容区。
-      enableComponentSafeArea: false,
-      // 第三个参数 false = 静态栏：滑动时不变（见 util/hdsTitleBar）。
-      style: titleBarStyle(Color.Transparent, $r('app.color.text_primary'), false),
-      content: this.chatTitleBarContent()
-    })
+    .titleBar(this.chatTitleBarOptions())
     .titleMode(HdsNavDestinationTitleMode.MINI)
     // **HDS 自己的返回键和菜单一颗都不用**，三个胶囊全部由 stackBuilder 自绘
     // ——理由见 ChatHeader 文件头（玻璃/按压/动画 HDS 那三个字段都给不了，

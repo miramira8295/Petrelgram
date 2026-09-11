@@ -79,6 +79,15 @@ export default function chatListFreezeTest() {
       expect(gate.accept(snapshot(), false) === null).assertTrue();
       expect(gate.flush() !== null).assertTrue();
     });
+    it('相邻页首份非空内容可穿过渲染闸和触摸闸', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      const gate = new ChatListFreeze();
+      const initial = chats([7, 8]);
+      expect(gate.accept(initial, false, true) === initial).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+      openAllGates();
+    });
   });
 
   // issue #159 的返回转场旁路要靠这个判断决定"能不能在闸关着时放行"：

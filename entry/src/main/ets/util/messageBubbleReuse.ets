@@ -321,12 +321,21 @@ export function canReusePlainTextBubble(
 // stays on MessageBubble. Reply quotes, transient translation status and the
 // ordinary group-chat chrome are intentionally allowed because they are common
 // in the first visible screen and the lightweight renderer implements them.
-export function canRenderLightweightPlainText(
+// 只依赖「行对象自己」的那一半判据。
+//
+// 【为什么单独拎出来】完整版要一个 MessageBubbleReuseContext，而 Repeat 的
+// .templateId() 回调为了拿它，原先要跑一遍 ChatPage.prepareMessageBubble()——
+// 那里面要拼一条 25 段的 cacheKey 才去查缓存。首屏 JS profile：
+// prepareMessageBubble 总计 605.8ms，其中 **284.9ms 是从 rowTemplateIdOf 进来
+// 的**。而真正被用到的只有 lightweightPlainText 一个布尔，它用到的上下文字段
+// 又只有 memberCount / albumItemCount 两个计数，两个都能从 AlbumGroup 直接读。
+export function canRenderLightweightPlainTextRow(
   msg: MessageEntry,
-  ctx: MessageBubbleReuseContext
+  memberCount: number,
+  albumItemCount: number
 ): boolean {
   if (msg.contentType !== 'text' || msg.isUnsupportedMessage ||
-    ctx.memberCount !== 1 || ctx.albumItemCount > 1) {
+    memberCount !== 1 || albumItemCount > 1) {
     return false;
   }
   if (!isUnformattedPlainText(msg.text, msg.textEntities) ||
@@ -338,6 +347,13 @@ export function canRenderLightweightPlainText(
   return msg.linkUrl === '' && msg.linkSiteName === '' && msg.linkTitle === '' &&
     msg.linkDescription === '' && msg.linkDescriptionEntities.length === 0 &&
     msg.linkPhotoFileId === 0 && msg.linkPhotoPath === '' && msg.linkPreviewType === '';
+}
+
+export function canRenderLightweightPlainText(
+  msg: MessageEntry,
+  ctx: MessageBubbleReuseContext
+): boolean {
+  return canRenderLightweightPlainTextRow(msg, ctx.memberCount, ctx.albumItemCount);
 }
 
 // reuseId describes structure only. Message identity must never enter it: doing

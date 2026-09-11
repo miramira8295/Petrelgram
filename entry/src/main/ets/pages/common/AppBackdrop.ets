@@ -1,6 +1,7 @@
 import {
-  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_APP_BG_BLUR, KEY_APP_BG_DIM, KEY_APP_BG_PATTERN_DARK,
-  KEY_APP_BG_PATTERN_LIGHT, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
+  BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, KEY_APP_BG_BLUR, KEY_APP_BG_BLUR_DARK,
+  KEY_APP_BG_DIM, KEY_APP_BG_DIM_LIGHT, KEY_APP_BG_PATTERN_DARK, KEY_APP_BG_PATTERN_LIGHT,
+  KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { appWallpaperActive } from '../../util/localWallpaper';
@@ -29,8 +30,10 @@ export struct AppBackdrop {
   @StorageProp(KEY_APP_DARK) appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) stateLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) stateDark: string = '';
-  @StorageProp(KEY_APP_BG_BLUR) blurAmount: number = BG_BLUR_DEFAULT;
-  @StorageProp(KEY_APP_BG_DIM) dimAmount: number = 0;
+  @StorageProp(KEY_APP_BG_BLUR) blurLight: number = BG_BLUR_DEFAULT;
+  @StorageProp(KEY_APP_BG_BLUR_DARK) blurDark: number = BG_BLUR_DEFAULT;
+  @StorageProp(KEY_APP_BG_DIM_LIGHT) dimLight: number = 0;
+  @StorageProp(KEY_APP_BG_DIM) dimDark: number = 0;
   @StorageProp(KEY_APP_BG_PATTERN_LIGHT) patternLight: number = BG_PATTERN_DEFAULT;
   @StorageProp(KEY_APP_BG_PATTERN_DARK) patternDark: number = BG_PATTERN_DEFAULT;
   @StorageProp('screenWidthVp') screenW: number = 360;
@@ -55,6 +58,14 @@ export struct AppBackdrop {
     return this.appDark ? this.patternDark : this.patternLight;
   }
 
+  private blurNow(): number {
+    return this.appDark ? this.blurDark : this.blurLight;
+  }
+
+  private dimNow(): number {
+    return this.appDark ? this.dimDark : this.dimLight;
+  }
+
   build() {
     Stack() {
       if (this.wallpaperOn()) {
@@ -62,9 +73,9 @@ export struct AppBackdrop {
           chatBg: this.slotState(),
           screenW: this.screenW,
           screenH: this.screenH,
-          bgBlur: this.blurAmount,
+          bgBlur: this.blurNow(),
           bgPattern: this.patternNow(),
-          chatDim: this.dimAmount
+          chatDim: this.dimNow()
         });
       }
     }

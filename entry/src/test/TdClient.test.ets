@@ -1,5 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { TdClient, TimerFns } from '../main/ets/tdkit/TdClient';
+import {
+  TdClient, TimerFns, DEFAULT_TIMEOUT_MS, FROZEN_SLACK_MS, TIMEOUT_ERROR_CODE
+} from '../main/ets/tdkit/TdClient';
 import { TdObject, TdRequest, TdBridge, TdError } from '../main/ets/tdkit/TdTypes';
 
 class FakeBridge implements TdBridge {
@@ -199,6 +201,79 @@ export default function tdClientTest() {
       client.send({ '@type': 'getOption' }).catch((): void => {});
       expect(scheduled).assertEqual(1);
       client.dispose();
+    });
+    // ── 切后台被冻住时不许判超时 ────────────────────────────────────────
+    //
+    // deadlineMs 是墙钟。进程冻结时 setTimeout 停摆、墙钟照走，解冻那一刻定时器
+    // 补火就会把全部在途请求一次判死——TDLib 其实好好的。真机日志 3/3 命中，
+    // 详见 TdClient 里 FROZEN_SLACK_MS 的注释。
+    //
+    // now 是注入的：手动定时器能决定回调**何时**跑，决定不了跑的时候墙钟几点，
+    // 而冻结判据问的正是后者。
+    it('frozen_stretch_does_not_expire_pending', 0, () => {
+      let fired: (() => void) | null = null;
+      let clock: number = 1000;
+      const timer: TimerFns = {
+        setTimeout: (cb: () => void, _ms: number): number => { fired = cb; return 1; },
+        clearTimeout: (_id: number): void => { fired = null; },
+        now: (): number => clock
+      };
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge, timer);
+      client.start();
+      let rejectedCode = 0;
+      client.send({ '@type': 'loadChats' }).catch((e: TdError) => { rejectedCode = e.code; });
+      // 冻结：回调直到墙钟越过 deadline 很久之后才补火。
+      clock += DEFAULT_TIMEOUT_MS + FROZEN_SLACK_MS + 1;
+      fired!();
+      return Promise.resolve().then(() => { expect(rejectedCode).assertEqual(0); });
+    });
+
+    it('frozen_stretch_restarts_the_window_then_expires', 0, () => {
+      // 冻结那一枪不判超时，但请求不是从此免死：解冻后重新跑满一整个窗口
+      // 仍然没有应答，照样超时。
+      let fired: (() => void) | null = null;
+      let clock: number = 1000;
+      const timer: TimerFns = {
+        setTimeout: (cb: () => void, _ms: number): number => { fired = cb; return 1; },
+        clearTimeout: (_id: number): void => { fired = null; },
+        now: (): number => clock
+      };
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge, timer);
+      client.start();
+      let rejectedCode = 0;
+      client.send({ '@type': 'loadChats' }).catch((e: TdError) => { rejectedCode = e.code; });
+      clock += DEFAULT_TIMEOUT_MS + FROZEN_SLACK_MS + 1;
+      fired!();                       // 冻结：重新上膛，不判死
+      expect(rejectedCode).assertEqual(0);
+      clock += DEFAULT_TIMEOUT_MS;    // 解冻后又跑满一个窗口，仍无应答
+      fired!();
+      return Promise.resolve().then(() => {
+        expect(rejectedCode).assertEqual(TIMEOUT_ERROR_CODE);
+      });
+    });
+
+    it('late_but_within_slack_still_expires', 0, () => {
+      // 门槛的下边界：晚 FROZEN_SLACK_MS - 1 仍算正常抖动，该超时就得超时。
+      // 没有这一条，把门槛写大写小都测不出来。
+      let fired: (() => void) | null = null;
+      let clock: number = 1000;
+      const timer: TimerFns = {
+        setTimeout: (cb: () => void, _ms: number): number => { fired = cb; return 1; },
+        clearTimeout: (_id: number): void => { fired = null; },
+        now: (): number => clock
+      };
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge, timer);
+      client.start();
+      let rejectedCode = 0;
+      client.send({ '@type': 'loadChats' }).catch((e: TdError) => { rejectedCode = e.code; });
+      clock += DEFAULT_TIMEOUT_MS + FROZEN_SLACK_MS - 1;
+      fired!();
+      return Promise.resolve().then(() => {
+        expect(rejectedCode).assertEqual(TIMEOUT_ERROR_CODE);
+      });
     });
   });
 }

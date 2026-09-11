@@ -19,6 +19,24 @@ export function nextInitialMessageRevealCount(current: number, available: number
   return Math.min(current + 1, available);
 }
 
+// 视口铺满之后，还要按同样的「一行一帧」再铺几行才收尾。
+//
+// 【为什么不是 0】旧代码在视口铺满那一刻直接 finishInitialMessageStage()，把
+// **全部**剩余行一次性转真。List 的 cachedCount 是 8/10，缓存窗里那几行会在同
+// 一帧里一起从占位换成真气泡——首屏 trace 抓到一帧建 3 行、44.66ms，而它恰好
+// 落在遮罩撤除前后，是用户能看见的那一下。取 List 最大的那档 cachedCount，让
+// 缓存窗也按一行一帧铺完。
+//
+// 代价是 composer 编辑器挂载、Lottie 恢复这些收尾动作晚 ~10 帧；手指一碰列表
+// finishInitialMessageStageForInteraction 会立刻把所有权交出去，所以不阻塞交互。
+// 设为 0 即回到旧行为。
+export const INITIAL_TAIL_REVEAL_ROWS: number = 10;
+
+export function initialTailRevealTarget(presentRows: number, availableRows: number): number {
+  return Math.min(Math.max(0, availableRows),
+    Math.max(0, presentRows) + INITIAL_TAIL_REVEAL_ROWS);
+}
+
 function deferredCopy(group: AlbumGroup): AlbumGroup {
   return {
     // The placeholder is the same LazyForEach item as the real row. Keep the

@@ -71,6 +71,9 @@ export struct MainTabBody {
   // 材质纪元让用户改厚度/光感后这一行跟着重绘（同 ChatRow）。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
+  @Prop effectsActive: boolean = true;
+  @Prop imagesActive: boolean = true;
+  @Prop @Watch('onUpdatesActiveChanged') updatesActive: boolean = true;
   // 归档里最新的那条会话。**只在归档入口真正露出来时才算**——ChatStore.getChats
   // 会把整桶拼成一个数组（排序结果本身是缓存的，拼数组不是），而这一行原本的
   // 注释就写着「只需要一个失效信号，避免为了推导一个布尔值就把整个归档桶排一遍」。
@@ -121,6 +124,56 @@ export struct MainTabBody {
   @State private archivePullPx: number = 0;
   // 拽到全展开后锁定；再往下滚一段自动收起。
   @State private archiveRevealed: boolean = false;
+  // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
+  private listMoving: boolean = false;
+  private scrollSettleTimer: number = -1;
+  private archiveRefreshPending: boolean = false;
+
+  private updateScrollActivity(state: ScrollState): void {
+    if (state !== ScrollState.Idle) {
+      if (this.scrollSettleTimer !== -1) {
+        clearTimeout(this.scrollSettleTimer);
+        this.scrollSettleTimer = -1;
+      }
+      this.listMoving = true;
+      return;
+    }
+    if (!this.listMoving || this.scrollSettleTimer !== -1) {
+      return;
+    }
+    this.scrollSettleTimer = setTimeout((): void => {
+      this.scrollSettleTimer = -1;
+      this.listMoving = false;
+      if (this.flushBypass && !this.renderActive) {
+        this.drainContentOnly();
+      } else {
+        this.flushBufferedChats();
+      }
+      if (this.archiveRefreshPending) {
+        this.archiveRefreshPending = false;
+        this.refreshArchiveState();
+      }
+    }, 120);
+  }
+
+  private liveEffects(): boolean {
+    // 滚动薄纱降级暂时停用；listMoving 现在只冻结数据发布。
+    return this.effectsActive;
+  }
+
+  private publishingActive(): boolean {
+    return this.renderActive && this.updatesActive && !this.listMoving;
+  }
+
+  private onUpdatesActiveChanged(): void {
+    if (this.updatesActive) {
+      this.flushBufferedChats();
+      if (this.archiveRefreshPending) {
+        this.archiveRefreshPending = false;
+        this.refreshArchiveState();
+      }
+    }
+  }
 
   private onTabReTap(): void {
     if ((AppStorage.get<number>(TAB_RETAP_INDEX) ?? 0) !== 0) {
@@ -156,7 +209,7 @@ export struct MainTabBody {
   }
 
   private flushBufferedChats(): void {
-    if (this.menuOpen || this.touchHold || !this.renderActive) {
+    if (this.menuOpen || this.touchHold || this.listMoving || !this.renderActive || !this.updatesActive) {
       return;
     }
     const next = this.updateGate.flush();
@@ -194,7 +247,9 @@ export struct MainTabBody {
       return;
     }
     this.flushBypass = true;
-    this.drainContentOnly();
+    if (!this.listMoving) {
+      this.drainContentOnly();
+    }
   }
 
   // 把缓冲里那份快照发出去，但只发内容变更。
@@ -225,10 +280,16 @@ export struct MainTabBody {
   aboutToAppear(): void {
     const store = getChatStore();
     this.unsubscribe = store.subscribe((list: ChatEntry[]) => {
-      const next = this.updateGate.accept(list, this.renderActive);
+      // “所有”可被服务器配置到非首位，并作为隐藏页首次预载。先允许它发布
+      // 一份非空初始快照，即使此刻横滑的全局触摸闸仍关着；之后再按
+      // updatesActive 保持静态。
+      const forceInitial: boolean = this.chats.length === 0 && list.length > 0;
+      const next = this.updateGate.accept(list,
+        this.publishingActive() || this.chats.length === 0, forceInitial);
       if (next !== null) {
         this.applyChats(next);
-      } else if (this.flushBypass && !this.menuOpen && !this.touchHold) {
+      } else if (this.updatesActive && this.flushBypass && !this.menuOpen && !this.touchHold &&
+        !this.listMoving) {
         // 转场窗口里到货的内容变更：accept 已经把它收进缓冲了，这里立刻取出来发。
         this.drainContentOnly();
       }
@@ -237,8 +298,11 @@ export struct MainTabBody {
     // The archive shortcut only needs an invalidation signal. Avoid sorting the
     // whole archive bucket for every update just to derive one boolean.
     this.unsubArchive = store.subscribeChanges(() => {
-      this.showArchive = store.hasArchive();
-      this.refreshArchiveTop();
+      if (this.listMoving || !this.updatesActive) {
+        this.archiveRefreshPending = true;
+        return;
+      }
+      this.refreshArchiveState();
     });
     store.ensureLoaded('main');
     store.ensureLoaded('archive').then((success: boolean): void => {
@@ -247,6 +311,12 @@ export struct MainTabBody {
   }
 
   aboutToDisappear(): void {
+    if (this.scrollSettleTimer !== -1) {
+      clearTimeout(this.scrollSettleTimer);
+      this.scrollSettleTimer = -1;
+    }
+    this.listMoving = false;
+    this.archiveRefreshPending = false;
     if (this.unsubscribe !== null) { this.unsubscribe(); this.unsubscribe = null; }
     if (this.unsubArchive !== null) { this.unsubArchive(); this.unsubArchive = null; }
   }
@@ -411,6 +481,11 @@ export struct MainTabBody {
     this.archiveTop = list.length > 0 ? list[0] : null;
   }
 
+  private refreshArchiveState(): void {
+    this.showArchive = getChatStore().hasArchive();
+    this.refreshArchiveTop();
+  }
+
   private archiveGlassOn(): boolean {
     return this.appWallpaperOn && this.materialEpoch >= 0;
   }
@@ -489,8 +564,8 @@ export struct MainTabBody {
     .padding({ left: ROW_PAD_H, right: ROW_PAD_H })
     .borderRadius(16)
     .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
-    .backdropBlur(this.archiveGlassOn() ? overlayBackdropBlur('card') : 0)
-    .attributeModifier(materialModifierWhen('card', this.archiveGlassOn()))
+    .backdropBlur(this.archiveGlassOn() && this.liveEffects() ? overlayBackdropBlur('card') : 0)
+    .attributeModifier(materialModifierWhen('card', this.archiveGlassOn() && this.liveEffects()))
     .clip(true)
     .stateStyles({ normal: this.archiveNormalStyle, pressed: this.archivePressedStyle })
     .alignItems(VerticalAlign.Center)
@@ -508,7 +583,14 @@ export struct MainTabBody {
       // a real account meant hundreds of live ChatRow components for the eight
       // that are visible.
       LazyForEach(this.chatsData, (item: ChatEntry) => {
-        ListItem() { ChatRow({ chat: item, listKey: 'main' }); }
+        ListItem() {
+          ChatRow({
+            chat: item,
+            listKey: 'main',
+            liveEffects: this.liveEffects(),
+            loadImages: this.imagesActive
+          });
+        }
           .swipeAction(this.rowSwipeEnabled ? {
             start: {
               builder: (): void => { this.readSwipe(item); },
@@ -530,10 +612,9 @@ export struct MainTabBody {
         guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));
     }
     .layoutWeight(1).width('100%')
-    // One screen contains roughly eight rows. Four follows the framework's
-    // n/2 guidance while preserving enough painted cache for the frosted title
-    // bar; eight caused hidden tab lists to prebuild ChatRows during chat push.
-    .cachedCount(4, true)
+    // Keep only two painted rows beyond the viewport. The title blur still has
+    // enough source content while fast scrolling prepares fewer glass rows.
+    .cachedCount(2, true)
     // cachedCount 的第二个参数 true 与这里的 clip(false) 是一对：前者让滚出
     // 视口的行不被回收，后者让它画得出来。官方《设置动态模糊样式》点名过——
     // 列表穿透到标题栏下方时缺了任一个，标题栏底下就是空的，渐变模糊没有
@@ -547,6 +628,7 @@ export struct MainTabBody {
     .contentEndOffset(this.bottomSafe + (this.dockBottom ? 88 : 16))
     .contentStartOffset(this.contentTopInset)
     .onDidScroll((_offset: number, state: ScrollState): void => {
+      this.updateScrollActivity(state);
       const y: number = this.listScroller.currentOffset().yOffset;
       if (!this.archiveRevealed && this.archiveRowShown() && y < 0 &&
         state === ScrollState.Scroll) {

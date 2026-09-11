@@ -72,6 +72,9 @@ export struct ChatRow {
   // The list this row is being shown in — pinning is per-list, and the menu
   // offers 取消归档 instead of 归档 inside the archive.
   @Prop listKey: string;
+  // 隐藏页签可暂停实时滤镜；当前页滚动时始终保持完整玻璃效果。
+  @Prop liveEffects: boolean = true;
+  @Prop loadImages: boolean = true;
   @StorageProp(CHAT_LIST_NOW) nowSec: number = Math.floor(Date.now() / 1000);
   // 聊天设置 → 聊天列表视图: the preview line wraps to two lines in 三行 mode.
   @StorageProp(KEY_THREE_LINES) threeLines: boolean = false;
@@ -388,7 +391,7 @@ export struct ChatRow {
   }
 
   private rowBlurStyle(): BlurStyle | undefined {
-    if (!this.rowGlassEnabled()) {
+    if (!this.rowGlassEnabled() || !this.liveEffects) {
       return undefined;
     }
     // **背后没有壁纸就不挂模糊。**
@@ -517,7 +520,8 @@ export struct ChatRow {
         autoDeleteTime: this.chat.autoDeleteTime,
         isLive: this.chat.isLive,
         livePulseExpanded: this.livePulseExpanded,
-        savedMessages: this.chat.isSavedMessages
+        savedMessages: this.chat.isSavedMessages,
+        loadImage: this.loadImages
       });
       // 标题与预览之间 6：4 太挤（用户实测）。行的 minHeight 是 72，而
       // 17 号标题 + 14 号预览 + 6 + 上下各 8 的内边距 ≈ 64，仍在 72 以内，
@@ -615,7 +619,9 @@ export struct ChatRow {
     // 用框架容器材质而不是 backdropBlur：后者在节点边缘有采样衰减，四角最明显
     // （见 util/surfaceGlass.surfaceGlassBlurStyle 的说明）。
     .backgroundBlurStyle(this.rowBlurStyle())
-    .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled()))
+    // 无壁纸时保持原来的系统材质表现；隐藏页签才暂停壁纸背后的实时采样。
+    .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled() &&
+      (!this.appWallpaperOn || this.liveEffects)))
     .clip(true)
     .constraintSize({ minHeight: 72 })
     .padding({ left: ROW_PAD_H, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })

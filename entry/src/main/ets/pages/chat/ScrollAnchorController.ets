@@ -187,12 +187,8 @@ export class ScrollAnchorController {
   ): void {
     const targetIndex: number = groupIndexOf(groups, messageId);
     if (targetIndex < 0) {
-      logW(`[AppendAnchor] lost id=${messageId} rows=${groups.length}` +
-        ` ${this.host.appendGateProbe(groups)}`);
       return;
     }
-    logW(`[AppendAnchor] restore id=${messageId} idx=${targetIndex} y=${itemY}` +
-      ` rows=${groups.length} ${this.host.appendGateProbe(groups)}`);
     this.restoreScrollAnchor(targetIndex, itemY, userOffsetAtCapture);
   }
   // 把锚点行按回 itemY。两级，判据是纯函数 util/anchorRestore.planAnchorRestore：
@@ -223,9 +219,6 @@ export class ScrollAnchorController {
     const seq: number = ++this.prependRestoreSeq;
     if (primeBeforeLayout) {
       const extra: number = -itemY + this.host.headerChromeHeight();
-      logW(`[AnchorRestore] prime idx=${targetIndex} y=${Math.round(itemY)}` +
-        ` extraOffset=${Math.round(extra)}` +
-        ` active=${this.host.timelineScrollActive()} touch=${this.host.touchActive()}`);
       try {
         this.host.scroller().scrollToIndex(targetIndex, false, ScrollAlign.START,
           { extraOffset: LengthMetrics.vp(extra) });
@@ -279,8 +272,6 @@ export class ScrollAnchorController {
       // ca5bde9 证实旧的两步兜底没算 contentStartOffset，会把视口整体往下推；
       // 下面的一步式定位会同时补上实时的顶部留白。
       if (shouldRetryAnchorRestore(plan.mode, attempt)) {
-        logW(`[AnchorRestore] retry attempt=${attempt + 1} idx=${targetIndex}` +
-          ` oldY=${Math.round(itemY)}`);
         this.attemptAnchorRestore(seq, targetIndex, itemY, userOffsetAtCapture, attempt + 1);
         return;
       }
@@ -298,16 +289,10 @@ export class ScrollAnchorController {
         ? plan.dy : Number.POSITIVE_INFINITY;
       const viewportH: number = this.host.viewportHeight();
       if (plan.mode !== ANCHOR_RESTORE_DELTA && this.host.touchActive()) {
-        logW(`[AnchorRestore] skip reason=touch-fallback idx=${targetIndex}` +
-          ` active=${this.host.timelineScrollActive()} userDelta=${Math.round(userDelta)}` +
-          ` correction=${Math.round(plan.dy)} viewportH=${Math.round(viewportH)}`);
         return;
       }
       if (!canApplyAnchorRestore(
         this.host.timelineScrollActive(), userDelta, correction, viewportH)) {
-        logW(`[AnchorRestore] skip reason=too-large-while-scrolling idx=${targetIndex}` +
-          ` active=${this.host.timelineScrollActive()} userDelta=${Math.round(userDelta)}` +
-          ` mode=${plan.mode} correction=${Math.round(plan.dy)} viewportH=${Math.round(viewportH)}`);
         return;
       }
       if (plan.mode !== ANCHOR_RESTORE_DELTA) {
@@ -344,11 +329,11 @@ export class ScrollAnchorController {
         // 是 153），符号是"行落得偏低"，所以往回补正的量。第四次 770 是顶栏更高的
         // 状态（置顶条/通话条会把它撑高），所以这里取**实时值**而不是常数。
         const extra: number = -targetY + this.host.headerChromeHeight();
-        logW(`[AnchorRestore] reposition attempt=${attempt} idx=${targetIndex}` +
-          ` oldY=${Math.round(itemY)} targetY=${Math.round(targetY)}` +
-          ` userDelta=${Math.round(this.host.userScrollOffsetTotal() - userOffsetAtCapture)}` +
-          ` extraOffset=${Math.round(extra)}` +
-          ` chrome=${Math.round(this.host.headerChromeHeight())}`);
+        // RepoProbe 的 net 指标已摘除（2026-09-11 被驳回，驳得对）：它拿
+        // currentOffset() 的前后差做判据，而官方明说懒加载 List 未提供
+        // childrenMainSize 时总偏移量是估算值，本文件 109 行的注释早就记着
+        // 「currentOffset() 在前插场景下不可信」。后续判读用的是可见首行的
+        // **消息身份轨迹**（临时探针，已删；结论见记忆 mvcp-splice-publish-root-cause）。
         try {
           this.host.scroller().scrollToIndex(targetIndex, false, ScrollAlign.START,
             { extraOffset: LengthMetrics.vp(extra) });
@@ -363,14 +348,6 @@ export class ScrollAnchorController {
       const nowOff: number = this.currentAnchorOffset();
       const dOff: number = Number.isNaN(this.anchorCaptureOffset) || Number.isNaN(nowOff)
         ? Number.NaN : nowOff - this.anchorCaptureOffset;
-      logW(`[AnchorRestore] mode=${plan.mode} attempt=${attempt} idx=${targetIndex}` +
-        ` oldY=${Math.round(itemY)} targetY=${Math.round(targetY)}` +
-        ` userDelta=${Math.round(this.host.userScrollOffsetTotal() - userOffsetAtCapture)}` +
-        ` newY=${Math.round(rect.y)}` +
-        ` w=${Math.round(rect.width)} h=${Math.round(rect.height)}` +
-        ` dy=${Math.round(plan.dy)}` +
-        ` capOff=${Math.round(this.anchorCaptureOffset)} nowOff=${Math.round(nowOff)}` +
-        ` dOff=${Math.round(dOff)}`);
       if (plan.dy !== 0) {
         this.host.scroller().scrollBy(0, plan.dy);
       }

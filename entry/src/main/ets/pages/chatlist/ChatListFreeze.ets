@@ -27,9 +27,15 @@ export class ChatListFreeze {
   // chat list uses the same newest-snapshot buffer as an open context menu:
   // subscriptions remain authoritative, but no @State/DataSource publication
   // reaches the hidden LazyForEach until the navigation transition has settled.
-  accept(list: ChatEntry[], renderActive: boolean = true): ChatEntry[] | null {
-    if (!renderActive || AppStorage.get<boolean>(CHAT_MENU_OPEN) === true
-      || AppStorage.get<boolean>(CHAT_LIST_TOUCH_HOLD) === true) {
+  accept(list: ChatEntry[], renderActive: boolean = true,
+    forceInitialContent: boolean = false): ChatEntry[] | null {
+    // A neighbouring tab can be created while the finger-down gate is still
+    // closed. Its first non-empty snapshot must paint once; otherwise the tab
+    // enters the viewport as an empty list and only fills after swipe settle.
+    // Callers only set this for an empty view receiving non-empty content, so
+    // established lists still freeze every structural/content update.
+    if (!forceInitialContent && (!renderActive || AppStorage.get<boolean>(CHAT_MENU_OPEN) === true
+      || AppStorage.get<boolean>(CHAT_LIST_TOUCH_HOLD) === true)) {
       this.pending = list;
       return null;
     }

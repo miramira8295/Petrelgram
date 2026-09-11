@@ -6,8 +6,11 @@ import {
 
 export default function debugListPerfTest() {
   describe('DebugListPerf', () => {
-    it('默认档位是 6 —— 这个开关不改变现状', 0, () => {
-      expect(LIST_CACHED_COUNT_DEFAULT).assertEqual(6);
+    // 2026-09-10 由 6 抬到 8：前插改成纯插入、发布不再等松手之后，预建得多
+    // 意味着惯性途中现建得少（理由写在 debugListPerf 的常量上方）。
+    // 这条仍然钉着值——改它必须是有意的。
+    it('默认档位是 8', 0, () => {
+      expect(LIST_CACHED_COUNT_DEFAULT).assertEqual(8);
     });
 
     it('默认档在候选列表里，且候选列表是 4/6/8 升序', 0, () => {
@@ -52,5 +55,6 @@ export default function debugListPerfTest() {
       expect(normalizeListCachedCount(Number.POSITIVE_INFINITY)).assertEqual(LIST_CACHED_COUNT_DEFAULT);
       expect(normalizeListCachedCount(Number.NEGATIVE_INFINITY)).assertEqual(LIST_CACHED_COUNT_DEFAULT);
     });
+
   });
 }

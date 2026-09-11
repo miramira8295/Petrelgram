@@ -1,4 +1,5 @@
 import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
 import {
   isEdgeSwipeStart, SWIPE_REPLY_MAX, SWIPE_REPLY_TRIGGER,
   SWIPE_SELECT_MAX, SWIPE_SELECT_TRIGGER
@@ -273,6 +274,8 @@ export struct LightweightPlainTextBubble {
   // 语义与 V1 的手工赋值一致。
   @Local onScreen: boolean = true;
   @Local glassW: number = 0;
+  // 长按菜单的两条动效链，按实例缓存（普通字段，写它不该惊动任何节点）。
+  private menuFx: MessageMenuTransitions = new MessageMenuTransitions();
   @Local glassH: number = 0;
 
   private bubbleFillColor(): ResourceColor {
@@ -974,25 +977,16 @@ export struct LightweightPlainTextBubble {
           preview: menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp)
             ? MenuPreviewMode.NONE : MenuPreviewMode.IMAGE,
           previewBorderRadius: this.bubbleCorners(),
+          // 两条动效链按实例缓存（见 util/messageMenuTransitions）。
           previewAnimationOptions: {
             scale: [0.98, 1.035],
-            transition: TransitionEffect.OPACITY
-              .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
-              .animation({
-                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-                curve: Curve.FastOutSlowIn
-              })
+            transition: this.menuFx.preview()
           },
           borderRadius: 16,
           backgroundColor: Color.Transparent,
           backgroundBlurStyle: containerBlur('menu'),
           systemMaterial: overlayMaterial('menu'),
-          transition: TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.FastOutSlowIn
-            }),
+          transition: this.menuFx.menu(),
           mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
           modalMode: ModalMode.TARGET_WINDOW,
           hapticFeedbackMode: HapticFeedbackMode.AUTO,

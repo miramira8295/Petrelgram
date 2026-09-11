@@ -6,7 +6,8 @@ import { TdClient } from '../main/ets/tdkit/TdClient';
 import { AlbumGroup } from '../main/ets/util/collapseAlbums';
 import {
   initialMessagePlaceholderHeight, initialMessageViewportRows,
-  nextInitialMessageRevealCount, stageInitialMessageGroups
+  nextInitialMessageRevealCount, stageInitialMessageGroups,
+  initialTailRevealTarget, INITIAL_TAIL_REVEAL_ROWS
 } from '../main/ets/util/initialMessageStage';
 import { mediaBoxFor, mediaThumbWidth } from '../main/ets/util/mediaBox';
 import { AlbumCell, packAlbumRows } from '../main/ets/util/packAlbumRows';
@@ -253,6 +254,18 @@ export default function initialMessageStageTest() {
       const wideH: number = initialMessagePlaceholderHeight(wide, 400, false);
       const tallH: number = initialMessagePlaceholderHeight(tall, 400, false);
       expect(wideH !== tallH).assertTrue();
+    });
+
+    // 视口铺满之后还要按一行一帧把 List 的缓存窗铺完，否则收尾那一发会把剩下
+    // 的行一次性转真（首屏 trace：一帧建 3 行、44.66ms）。
+    it('收尾目标 = 视口行数 + 缓存窗，但不超过可用行数', 0, () => {
+      expect(initialTailRevealTarget(6, 100)).assertEqual(6 + INITIAL_TAIL_REVEAL_ROWS);
+      // 可用行数封顶：短会话不会因此空转。
+      expect(initialTailRevealTarget(6, 8)).assertEqual(8);
+      expect(initialTailRevealTarget(0, 0)).assertEqual(0);
+      // 负数入参按 0 处理，不产生负目标。
+      expect(initialTailRevealTarget(-3, 5)).assertEqual(5);
+      expect(initialTailRevealTarget(2, -1)).assertEqual(0);
     });
   });
 }

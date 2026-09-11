@@ -11,6 +11,7 @@ import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
 import { recomputeAppearance } from '../util/appearance';
 import { initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
 import { installStringsFromContext, invalidateStringCache } from '../util/strings';
+import { clearLinkPreviewPresentationCache } from '../util/linkPreview';
 import { refreshLocale } from '../util/intlFormat';
 import { bumpLanguageEpoch } from '../util/appLanguage';
 import { backgroundGraceTask } from '../services/BackgroundGraceTask';
@@ -194,6 +195,7 @@ export default class EntryAbility extends UIAbility {
     if (language !== this.lastLanguage) {
       this.lastLanguage = language;
       invalidateStringCache();
+      clearLinkPreviewPresentationCache();
       bumpLanguageEpoch();
     }
     // 深浅色切换时状态栏的图标要跟着反色，否则白图标留在浅色页面上会看不见。

@@ -105,7 +105,6 @@ export class VideoHeadPrefetcher {
       // 时需要知道信号到底走没走到这里——打一次即可。
       if (!this.skipLogged) {
         this.skipLogged = true;
-        logW(`[VideoPrefetch] signal alive; first non-video key=${key}`);
       }
       return;
     }
@@ -227,12 +226,10 @@ export class VideoHeadPrefetcher {
     if (reason !== '') {
       // 'local' 是常态（看过的视频），不打；其余原因都值得留痕。
       if (reason !== 'local') {
-        logW(`[VideoPrefetch] refuse file=${ref.fileId} reason=${reason}`);
       }
       return;
     }
     if (this.active.size >= MAX_CONCURRENT_VIDEO_PREFETCH) {
-      logW(`[VideoPrefetch] queue file=${ref.fileId} active=${this.active.size}`);
       this.queue.push(ref.fileId);
       return;
     }
@@ -246,9 +243,6 @@ export class VideoHeadPrefetcher {
     this.active.add(ref.fileId);
     const seq: number = this.bumpSeq(ref.fileId);
     const ranges: VideoPrefetchRange[] = prefetchRanges(ref.fileSize);
-    logW(`[VideoPrefetch] start file=${ref.fileId} size=${ref.fileSize}` +
-      ` ranges=${ranges.map((r: VideoPrefetchRange): string => `${r.offset}+${r.limit}`).join(',')}` +
-      ` active=${this.active.size}`);
     this.issueRange(ref.fileId, ranges, 0, seq);
   }
 
@@ -271,7 +265,6 @@ export class VideoHeadPrefetcher {
         return;
       }
       if (index + 1 < ranges.length) {
-        logW(`[VideoPrefetch] tail file=${fileId} offset=${ranges[index + 1].offset}`);
         this.issueRange(fileId, ranges, index + 1, seq);
       }
     }).catch((e: TdError): void => {
@@ -298,7 +291,6 @@ export class VideoHeadPrefetcher {
     if (this.host === null || this.host.fileClaimed(fileId)) {
       return;
     }
-    logW(`[VideoPrefetch] pause file=${fileId}`);
     const req: TdRequest = { '@type': 'cancelDownloadFile' };
     req['file_id'] = fileId;
     req['only_if_pending'] = false;

@@ -82,7 +82,8 @@ export struct RichMessageView {
       }
       .padding(8)
       .borderRadius(8)
-      .backgroundColor($r('app.color.surface_alt'))
+      // 整段代码块和行内代码同一套底色：叠加层，不是不透明底。
+      .backgroundColor($r('app.color.code_surface'))
       .constraintSize({ maxWidth: this.maxWidth });
     } else if (b.kind === RB_QUOTE) {
       Column({ space: 4 }) {

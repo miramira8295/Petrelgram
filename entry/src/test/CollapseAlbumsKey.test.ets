@@ -3,7 +3,7 @@ import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
 import { UserStore } from '../main/ets/store/UserStore';
 import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store/MessageEntry';
-import { collapseAlbums, AlbumGroup } from '../main/ets/util/collapseAlbums';
+import { collapseAlbums, AlbumGroup, RunHeadHints } from '../main/ets/util/collapseAlbums';
 import {
   repeatRowKey, reuseUnchangedRows
 } from '../main/ets/pages/chat/AlbumGroupDataSource';
@@ -70,6 +70,10 @@ function albumVideo(id: number, albumId: string, fileId: number, size: number,
   e.videoFileSize = size;
   e.videoDuration = duration;
   return e;
+}
+
+function hints(moreOlder: boolean, sticky: Set<number>, withhold: boolean): RunHeadHints {
+  return { moreOlderAbove: moreOlder, stickyRunHeads: sticky, withholdPartialAlbum: withhold };
 }
 
 export default function collapseAlbumsKeyTest() {
@@ -320,6 +324,81 @@ export default function collapseAlbumsKeyTest() {
       expect(before === after).assertFalse();
       // 原对象的签名不受影响——两者是两个独立的缓存项。
       expect(collapseAlbums([e])[0].key).assertEqual(before);
+    });
+    // ── 让向上翻页变成「纯插入」的三条 ──────────────────────────────────
+    //
+    // 官方对 List.maintainVisibleContentPosition 的承诺只覆盖显示区外的插入/删除；
+    // Repeat 文档另有一句写明**高度变化**不在内。接缝行每次前插都改高度，于是每
+    // 一页老历史都要手动 scrollToIndex 补位，那一下打断惯性 = 用户说的"得再拽一下"。
+
+    it('窗口首行的日期胶囊只在真的到了会话开头时才画', 0, () => {
+      const users = usersOf();
+      const list: MessageEntry[] = [baseEntry(10, users), baseEntry(20, users)];
+      const empty = new Set<number>();
+      // 上面还有历史：首行那个胶囊标的不是"这天开始了"，是"还没加载完"。
+      const more: AlbumGroup[] = collapseAlbums(list, hints(true, empty, false));
+      expect(more[0].dateLabel).assertEqual('');
+      // 到顶了：这条真的是会话第一条，胶囊该画。
+      const top: AlbumGroup[] = collapseAlbums(list, hints(false, empty, false));
+      expect(top[0].dateLabel !== '').assertTrue();
+    });
+
+    it('前插之后接缝行不再回收昵称', 0, () => {
+      const users = usersOf();
+      const before: MessageEntry[] = [baseEntry(30, users), baseEntry(40, users)];
+      const empty = new Set<number>();
+      const first: AlbumGroup[] = collapseAlbums(before, hints(true, empty, false));
+      // 首行天然是一段 run 的开头（没有 prev）。
+      expect(first[0].showSenderName).assertTrue();
+      const seamRowId: number = first[0].head.rowId;
+
+      // 前插一页：同一个人、同一天 —— 不加粘滞的话昵称会被收走，行掉 22vp。
+      const after: MessageEntry[] = [baseEntry(10, users), baseEntry(20, users)].concat(before);
+      const plain: AlbumGroup[] = collapseAlbums(after, hints(true, empty, false));
+      const seamPlain: AlbumGroup =
+        plain.filter((g: AlbumGroup): boolean => g.head.rowId === seamRowId)[0];
+      expect(seamPlain.showSenderName).assertFalse();
+
+      // 记过账之后：保住，几何不变。
+      const sticky = new Set<number>();
+      sticky.add(seamRowId);
+      const kept: AlbumGroup[] = collapseAlbums(after, hints(true, sticky, false));
+      const seamKept: AlbumGroup =
+        kept.filter((g: AlbumGroup): boolean => g.head.rowId === seamRowId)[0];
+      expect(seamKept.showSenderName).assertTrue();
+    });
+
+    it('窗口最老那一行是相册时先扣住不发', 0, () => {
+      const users = usersOf();
+      const empty = new Set<number>();
+      // 页边界切在相册中间：窗口只拿到 a1 的后两张。
+      const cut: MessageEntry[] = [
+        media(10, 'a1', 1, '/1.jpg', users), media(20, 'a1', 2, '/2.jpg', users),
+        baseEntry(30, users)
+      ];
+      const held: AlbumGroup[] = collapseAlbums(cut, hints(true, empty, true));
+      expect(held.length).assertEqual(1);
+      expect(held[0].head.id).assertEqual(30);
+
+      // 下一页把缺的成员带回来 ⇒ 相册不再是首行 ⇒ 一定完整 ⇒ 照常渲染。
+      const whole: MessageEntry[] = [baseEntry(5, users)].concat(cut);
+      const shown: AlbumGroup[] = collapseAlbums(whole, hints(true, empty, true));
+      expect(shown.length).assertEqual(3);
+      expect(shown[1].memberIds.length).assertEqual(2);
+    });
+
+    it('扣行的三道闸：到顶、只剩一行、首屏未落定，都不扣', 0, () => {
+      const users = usersOf();
+      const empty = new Set<number>();
+      const cut: MessageEntry[] = [
+        media(10, 'a1', 1, '/1.jpg', users), media(20, 'a1', 2, '/2.jpg', users),
+        baseEntry(30, users)
+      ];
+      // 首屏落点/跳转期间：groupIndexOf 要能找到目标，一行都不许扣。
+      expect(collapseAlbums(cut, hints(true, empty, false)).length).assertEqual(2);
+      // 只剩这一行时扣掉就是白屏。
+      const only: MessageEntry[] = [media(10, 'a1', 1, '/1.jpg', users)];
+      expect(collapseAlbums(only, hints(true, empty, true)).length).assertEqual(1);
     });
   });
 }

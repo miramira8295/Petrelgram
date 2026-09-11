@@ -33,6 +33,10 @@
       "value": "#2B3A4C"
     },
     {
+      "name": "code_surface",
+      "value": "#1AFFFFFF"
+    },
+    {
       "name": "card_on_wallpaper",
       "value": "#CC232E3C"
     },

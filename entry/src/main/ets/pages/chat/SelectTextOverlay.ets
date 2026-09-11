@@ -159,7 +159,8 @@ export struct SelectTextOverlay {
           color: run.link || run.url !== '' ? this.accent() : this.textColor()
         })
         .textBackgroundStyle({
-          color: run.code ? $r('app.color.surface_alt') : Color.Transparent,
+          // 与气泡同款：半透明叠加，不是不透明底（见 MessageBubble.linkRunBackground）。
+          color: run.code ? $r('app.color.code_surface') : Color.Transparent,
           radius: run.code ? 3 : 0
         });
     }
@@ -176,7 +177,7 @@ export struct SelectTextOverlay {
         .copyOption(CopyOptions.LocalDevice)
         .width('100%')
         .padding(8)
-        .backgroundColor($r('app.color.surface_alt'))
+        .backgroundColor($r('app.color.code_surface'))
         .borderRadius(6)
         .margin({ top: 4, bottom: 4 });
     } else if (seg.kind === 'quote') {

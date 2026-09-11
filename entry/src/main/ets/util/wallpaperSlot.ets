@@ -1,7 +1,8 @@
 import {
-  KEY_APP_BG_BLUR, KEY_APP_BG_DIM, KEY_APP_BG_PATTERN_DARK, KEY_APP_BG_PATTERN_LIGHT,
-  KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT, KEY_BG_BLUR, KEY_BG_BLUR_DARK,
-  KEY_BG_PATTERN, KEY_BG_PATTERN_DARK, KEY_CHAT_DIM, KEY_CHAT_DIM_LIGHT
+  KEY_APP_BG_BLUR, KEY_APP_BG_BLUR_DARK, KEY_APP_BG_DIM, KEY_APP_BG_DIM_LIGHT,
+  KEY_APP_BG_PATTERN_DARK, KEY_APP_BG_PATTERN_LIGHT, KEY_APP_BG_STATE_DARK,
+  KEY_APP_BG_STATE_LIGHT, KEY_BG_BLUR, KEY_BG_BLUR_DARK, KEY_BG_PATTERN,
+  KEY_BG_PATTERN_DARK, KEY_CHAT_DIM, KEY_CHAT_DIM_LIGHT
 } from '../store/AppSettings';
 
 // 壁纸的四个槽位：APP 浅色 / APP 深色 / 聊天浅色 / 聊天深色。
@@ -47,13 +48,13 @@ export function wallpaperSlotKeys(slot: string): WallpaperSlotKeys {
   if (slot === SLOT_APP_LIGHT) {
     return {
       state: KEY_APP_BG_STATE_LIGHT, pattern: KEY_APP_BG_PATTERN_LIGHT,
-      blur: KEY_APP_BG_BLUR, dim: KEY_APP_BG_DIM
+      blur: KEY_APP_BG_BLUR, dim: KEY_APP_BG_DIM_LIGHT
     };
   }
   if (slot === SLOT_APP_DARK) {
     return {
       state: KEY_APP_BG_STATE_DARK, pattern: KEY_APP_BG_PATTERN_DARK,
-      blur: KEY_APP_BG_BLUR, dim: KEY_APP_BG_DIM
+      blur: KEY_APP_BG_BLUR_DARK, dim: KEY_APP_BG_DIM
     };
   }
   if (slot === SLOT_CHAT_DARK) {

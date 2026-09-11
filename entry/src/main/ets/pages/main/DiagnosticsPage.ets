@@ -12,7 +12,6 @@ import { DiagUploadResult, diagUploadConfigured, uploadDiagLog } from '../../ser
 import { common } from '@kit.AbilityKit';
 import { exportDiagLog, diagLogStamp } from '../../util/diagLogExport';
 // ⚠️ 临时：Repeat 渲染验证页的入口，验完连同本行 import 一起删除（见
-import { navigateToSetting } from '../../util/settingsNav';
 // ⚠️ 临时（P6 标定）：cachedCount 档位切换器，标定结束后连同本行 import 一起
 // 删除（清单见 util/debugListPerf.ets 文件末尾）。
 import {

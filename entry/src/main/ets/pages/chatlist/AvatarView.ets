@@ -18,6 +18,8 @@ export struct AvatarView {
   // 「我的收藏」：和自己的私聊。画书签而不是自己的头像——用户在列表里要一眼
   // 认出它，Telegram 各端都是这么处理的（issue #8）。
   @Prop savedMessages: boolean = false;
+  // 预载/隐藏页签先画首字母占位，真正成为当前页后再启动图片或视频解码。
+  @Prop loadImage: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_ANIMATED_AVATAR) animatedAvatar: boolean = true;
   avatarSize: number = AVATAR_SIZE;
@@ -36,7 +38,7 @@ export struct AvatarView {
   // 别处的边界本来就是对的（MessageStore 里 isAnimation ? GIF : VIDEO），
   // 只有头像这一处错了。
   private shouldAnimate(): boolean {
-    return this.animPath !== '' && this.animatedAvatar && !this.powerSaving;
+    return this.loadImage && this.animPath !== '' && this.animatedAvatar && !this.powerSaving;
   }
 
   @Builder
@@ -74,13 +76,15 @@ export struct AvatarView {
         // The initials sit underneath so a pending decode shows the coloured
         // circle rather than a hole.
         this.initialsCircle();
-        CachedImage({
-          path: this.avatarPath,
-          boxWidth: this.avatarSize,
-          boxHeight: this.avatarSize,
-          radius: this.avatarSize / 2,
-          fit: ImageFit.Cover
-        });
+        if (this.loadImage) {
+          CachedImage({
+            path: this.avatarPath,
+            boxWidth: this.avatarSize,
+            boxHeight: this.avatarSize,
+            radius: this.avatarSize / 2,
+            fit: ImageFit.Cover
+          });
+        }
       }
       .width(this.avatarSize).height(this.avatarSize);
     } else {

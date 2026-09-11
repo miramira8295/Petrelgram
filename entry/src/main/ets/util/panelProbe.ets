@@ -1,46 +1,13 @@
-import { logE } from './log';
-// 面板性能探针（诊断用，定位完整体删除）。
+// 面板/气泡挂载计数器 —— **已停用**（2026-09-11，用户要求砍掉热路径探针）。
 //
-// 为什么要聚合：贴纸网格一屏几十格，逐格打一行日志会把 hilog 刷爆，光是
-// 打印本身就够改变被测对象的行为。这里只累加计数，每秒吐一行汇总，静止时
-// 一行都不打。
-//
-// 用法：在关心的点上调 probeHit('cell.build')，滑动一段时间后看日志里的
-// [probe] 行，把各项速率和系统的 jank 事件按时间戳对齐。
-
-const counts: Map<string, number> = new Map();
-const FLUSH_MS: number = 1000;
-let timer: number = -1;
-let windowStart: number = 0;
-
-function flush(): void {
-  if (counts.size === 0) {
-    // 静止了就把定时器收掉，别留一个永远在转的空转任务。
-    if (timer !== -1) {
-      clearInterval(timer);
-      timer = -1;
-    }
-    return;
-  }
-  const elapsed: number = Date.now() - windowStart;
-  const parts: string[] = [];
-  counts.forEach((n: number, k: string): void => { parts.push(`${k}=${n}`); });
-  parts.sort();
-  logE(`[probe] ${elapsed}ms ${parts.join(' ')}`);
-  counts.clear();
-  windowStart = Date.now();
+// 原实现：每次 probeHit 累加计数，一个 1s 的 setInterval 把计数用 logE 打成
+// `[probe] 1001ms message.mount=… message.plain.reuse=…`。它是常驻的：每秒一次
+// 字符串拼接 + 写诊断缓冲，即使用户什么都不做。上一份设备日志里 2986 行。
+// 保留两个导出的函数签名让 4 个调用方（TgsStickerView / WebmStickerView /
+// ReusableMessageBubble / LightweightPlainTextBubble）不用改；需要时再把
+// git 里的实现接回来。
+export function probeHit(_name: string, _times: number = 1): void {
 }
 
-export function probeHit(name: string, times: number = 1): void {
-  counts.set(name, (counts.get(name) ?? 0) + times);
-  if (timer === -1) {
-    windowStart = Date.now();
-    timer = setInterval((): void => { flush(); }, FLUSH_MS);
-  }
-}
-
-// 一次性的、需要看具体数值的事件（比如整表 RELOAD 带了多少条），直接打出来。
-// 这类事件本身应当是低频的——如果它高频到刷屏，那件事本身就是要找的问题。
-export function probeEvent(name: string, detail: string): void {
-  logE(`[probe] ${name} ${detail}`);
+export function probeEvent(_name: string, _detail: string): void {
 }

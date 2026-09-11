@@ -31,7 +31,7 @@ import { messageSelectionContentWidth } from '../../util/messageSelection';
 //
 // 相册内容变化由新的 AlbumGroup 对象触发刷新，内部图片格继续按 memberId +
 // fileId 配对，避免重新出现图片、视频和文字错位。
-function rowIdentity(g: AlbumGroup): string {
+export function rowIdentity(g: AlbumGroup): string {
   if (g.head.albumId !== '' && g.photoPaths.length > 0) {
     const newestRowId: number = g.rowMemberIds[g.rowMemberIds.length - 1];
     return `album_${g.head.albumId}_${newestRowId}`;

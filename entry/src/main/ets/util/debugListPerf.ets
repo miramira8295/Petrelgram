@@ -15,7 +15,13 @@
 // AppStorage / Preferences 的键。debug 前缀表明它不是用户设置。
 export const KEY_DEBUG_LIST_CACHED: string = 'debugListCachedCount';
 
-// 默认档位。**不要改这个值** —— 它就是 P4/P5 时期写死的那个 6。
+// 默认档位。2026-09-10 由 6 抬到 8（档位表里已验证过的上限）。
+//
+// 【为什么这次可以抬】原来的理由是"cachedCount 越大 predict 要提前建的行越多"，
+// 那时向上翻页每一页都要手动补位，预建得多反而把成本堆在同一帧。现在前插已经
+// 是纯插入（见 util/collapseAlbums 的 RunHeadHints），发布也不再等松手——预建
+// 的行越多，惯性途中需要现建的就越少，方向反过来了。
+// 再往上（10+）要先放宽 LIST_CACHED_COUNT_OPTIONS，且未经标定，暂不做。
 //
 // 这个值为什么是静态的（原注释留在 ChatPage.ets 顶部成了孤儿，2026-09-05 瘦身
 // 批 B1 搬到这里，因为值住在这一行）：固定预建两行，不再用状态变量从 1 延迟涨
@@ -23,7 +29,7 @@ export const KEY_DEBUG_LIST_CACHED: string = 'debugListCachedCount';
 // 约 25ms 的帧峰值。A short-message viewport commonly contains 10-16 rows;
 // HarmonyOS long-list guidance recommends keeping roughly half a viewport ready.
 // Keep this static so changing the value never invalidates every visible row.
-export const LIST_CACHED_COUNT_DEFAULT: number = 6;
+export const LIST_CACHED_COUNT_DEFAULT: number = 8;
 
 // 可选档位。A/B 的三档；顺序即界面上从左到右的顺序。
 //
@@ -61,3 +67,4 @@ export function listCachedCount(): number {
 //    listCachedCount、以及三处 this.listCachedCount 改回常量；
 // 4. DiagnosticsPage.ets 里的 listCachedCard() 及其 import；
 // 5. 资源里的 diag_list_cached / diag_list_cached_sub 两个键（base + 19 语言）。
+

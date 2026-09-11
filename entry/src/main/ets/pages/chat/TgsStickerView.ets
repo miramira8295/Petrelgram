@@ -34,7 +34,6 @@ export function setChatTgsSuspended(suspended: boolean): void {
     return;
   }
   chatTgsSuspended = suspended;
-  logW(`[TgsGate] suspended=${suspended} live=${liveTgs}/${MAX_LIVE_TGS} chat=${liveChatTgs}/${MAX_LIVE_CHAT_TGS} listeners=${chatTgsGateListeners.length}`);
   for (const listener of chatTgsGateListeners) {
     listener(suspended);
   }
@@ -263,7 +262,6 @@ export struct TgsStickerView {
       return;
     }
     if (liveTgs >= MAX_LIVE_TGS || (this.chatTimeline && liveChatTgs >= MAX_LIVE_CHAT_TGS)) {
-      logW(`[TgsGate] deferred live=${liveTgs}/${MAX_LIVE_TGS} chat=${liveChatTgs}/${MAX_LIVE_CHAT_TGS} thumb=${this.thumbPath !== ''}`);
       this.budgetDeferred = true; // over budget — static thumbnail instead
       return;
     }
