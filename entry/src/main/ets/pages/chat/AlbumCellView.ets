@@ -274,6 +274,25 @@ export struct AlbumCellView {
     }
   }
 
+  // 勾选标记的定位层。
+  //
+  // 【为什么要单独套一层，而不是把外层 Stack 设成 TopEnd】(2026-09-11 用户报)
+  // 外层 Stack 的 alignContent 作用在**每一个**没有显式定位的孩子身上。设成
+  // TopEnd 之后，播放钮（ThumbReadyGate 里那枚，本该居中）也被一起甩到了右上角。
+  // liveChip 和时长角标用的是 .position()，所以当时没露馅。
+  // 外层保持默认居中，勾单独放进一个填满格子的 Stack 里去贴右上。
+  @Builder
+  selectionOverlay() {
+    if (this.selectionActive) {
+      Stack({ alignContent: Alignment.TopEnd }) {
+        this.selectionMark();
+      }
+      .width(this.cell.width).height(this.cell.height)
+      // 只是个定位容器，别把格子的点击吃掉。
+      .hitTestBehavior(HitTestMode.None);
+    }
+  }
+
   // 多选态下每格右上角那枚勾。**图标名照抄整行让位栏那枚**
   // （sys.symbol.checkmark_circle），不另猜名字。
   @Builder
@@ -313,11 +332,9 @@ export struct AlbumCellView {
     if (this.isVideo()) {
       // 只有视频格参与播放位的中心 y 竞选，所以 onAreaChange 只挂在这一支上——
       // 无条件挂的时候实测每秒 2100-2300 次上报，而图片格从来不消费这个数据。
-      Stack({ alignContent: Alignment.TopEnd }) {
+      Stack() {
         this.cellBody();
-        if (this.selectionActive) {
-          this.selectionMark();
-        }
+        this.selectionOverlay();
       }
       .width(this.cell.width).height(this.cell.height)
       .accessibilityText(str('mb_album_item_video', this.idx() + 1))
@@ -338,11 +355,9 @@ export struct AlbumCellView {
       })
       .onClick((e: ClickEvent): void => { this.onCellTap(e); });
     } else {
-      Stack({ alignContent: Alignment.TopEnd }) {
+      Stack() {
         this.cellBody();
-        if (this.selectionActive) {
-          this.selectionMark();
-        }
+        this.selectionOverlay();
       }
       .width(this.cell.width).height(this.cell.height)
       // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。

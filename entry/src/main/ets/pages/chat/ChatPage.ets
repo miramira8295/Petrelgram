@@ -259,7 +259,7 @@ import { navigateToSearch } from '../../util/searchNav';
 import { forwardDirect } from '../../store/ForwardDirect';
 import { getActiveTdUserId } from '../../tdkit/Globals';
 import {
-  canRenderLightweightPlainText, canRenderLightweightPlainTextRow, formattedTextReuseShape,
+  canRenderLightweightPlainTextRow, formattedTextReuseShape,
   MessageBubbleReuseContext
 } from '../../util/messageBubbleReuse';
 import { chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight } from '../../util/ChatChromeGeometry';
@@ -351,10 +351,6 @@ const CHAT_TIMELINE_FLING_SPEED_LIMIT_VP_S: number = 4200;
 interface PreparedMessageBubble {
   group: AlbumGroup;
   data: MessageBubbleRenderData;
-  // 行的复用桶 id。和 data 一起在缓存未命中那一次算好、之后整份复用——原先它
-  // 在 @Builder 里现算，而那意味着每行每次渲染都要再跑一遍 prepare（只为拿
-  // data）+ rowReuseId。prepare 只有真要渲染的行才会走到，所以这里不必惰性。
-  reuseId: string;
 }
 
 interface InitialMessageStageTarget {
@@ -1561,7 +1557,21 @@ export struct ChatPage {
     const selectedMemberIds: number[] = this.selection.active
       ? g.memberIds.filter((id: number): boolean => this.selection.isMemberSelected(id))
       : [];
-    const cacheKey: string = `${this.rowKeyOf(g)}|c${this.chatId}` +
+    // 【必须进 cacheKey】它决定 ReusableMessageBubble 派发到轻量气泡还是完整
+    // 气泡，而**轻量那条不画表情行**。
+    //
+    // cacheKey 的其余部分全是「行身份 + 页面状态」——身份走 rowIdentity
+    // （`message_${rowId}`），内容变化本来靠换 AlbumGroup 对象传递，不进键。
+    // 可这一个是**从内容算出来的渲染决策**：不进键的话，给一条纯文本消息加上
+    // 第一个表情时键一个字不变 ⇒ 命中缓存 ⇒ 派发冻在轻量那一支 ⇒ 表情要退出
+    // 重进才出现（2026-09-11 真机定案：store / 旁路通道 / 气泡三处探针都显示
+    // 数据已经到位，唯独派发走错了分支）。1→2 个表情不受影响，那时已在完整气泡里。
+    //
+    // 往这个键里加东西前先分清它属于哪一类：身份、页面状态、还是**从内容算出
+    // 来的渲染决策**。第三类必须进。
+    const lightweightRow: boolean = canRenderLightweightPlainTextRow(
+      g.head, g.memberIds.length, g.photoPaths.length);
+    const cacheKey: string = `${this.rowKeyOf(g)}|c${this.chatId}|lw${lightweightRow ? 1 : 0}` +
       `|g${this.isGroup ? 1 : 0}${this.isChannel ? 1 : 0}` +
       `|u${showUnreadDivider ? 1 : 0}|r${showResumeDivider ? 1 : 0}` +
       `|tr${translationActive ? 1 : 0}` +
@@ -1623,7 +1633,9 @@ export struct ChatPage {
       audioQueueLength,
       pollExpired
     };
-    const lightweightPlainText: boolean = canRenderLightweightPlainText(g.head, context);
+    // 与 cacheKey 里用的是同一个值（canRenderLightweightPlainText 只是把
+    // context 的两个计数转发给 …Row，结果必然一致），别再算第二遍。
+    const lightweightPlainText: boolean = lightweightRow;
     const data: MessageBubbleRenderData = {
       chatId: this.chatId, contentWidth, isGroup: this.isGroup, isChannel: this.isChannel,
       canReply: !membershipLosesComposer(this.membershipState),
@@ -1650,9 +1662,7 @@ export struct ChatPage {
     };
     const prepared: PreparedMessageBubble = {
       group: g,
-      data,
-      reuseId: `chatPage${this.reusePageScope}_` +
-        rowReuseId(data, g, CHAT_PAGE_REUSE_ID_LEVEL)
+      data
     };
     if (this.preparedMessageCache.size >= PREPARED_MESSAGE_CACHE_LIMIT) {
       this.preparedMessageCache.clear();
@@ -1753,9 +1763,22 @@ export struct ChatPage {
   // 进行传参，组件才能监听到数据变化」，反例正是按值传 ri.item —— 那样 Repeat
   // 更新这一行时（它只换 RepeatItem 里的 item，不重跑 .each()）这个 @Builder
   // 里的 UI 不会刷新。所以 ri 一路传到这里，group/data 都在本作用域内现取。
-  // 行的复用桶 id。跟着 prepared 一起被缓存，不在渲染路径上现算。
+  // 行的复用桶 id。**必须每次现算，不能跟着 prepared 一起缓存。**
+  //
+  // 【2026-09-11 回归，1.4.7 已发】用户报「点表情回复要退出重进才显示；已经有
+  // 表情行的则不用」。根因就在这里：
+  //   · rowReuseId 的中档桶里有 `hasReactionBar(msg) ? 'reactions' : 'no-reactions'`
+  //     ——有没有表情行**是结构的一部分**，0→1 必须换桶（1→2 不换，所以那种
+  //     情况一直是好的）。
+  //   · 而 prepared 的 cacheKey 以 rowKeyOf(g) 打头，它走的是 rowIdentity
+  //     （`message_${rowId}`），**不含 mutableSig**。加第一个表情时 cacheKey
+  //     一个字不变 ⇒ 命中缓存 ⇒ reuseId 被冻在 'no-reactions' 那一档 ⇒ 框架
+  //     发一个没有表情行的壳过来。
+  // 省下的是 rowReuseId 一次调用（整段 trace 里 16.1ms），换来的是结构错配——
+  // 不值。要再优化只能让缓存键跟着结构走，别把身份和内容混在一个键上。
   private rowBubbleReuseId(g: AlbumGroup): string {
-    return this.prepareMessageBubble(g).reuseId;
+    return `chatPage${this.reusePageScope}_` +
+      rowReuseId(this.prepareMessageBubble(g).data, g, CHAT_PAGE_REUSE_ID_LEVEL);
   }
 
   // 气泡外面垫一层普通 V2 组件（MessageRowHost）：官方明写 V2 复用组件不支持
