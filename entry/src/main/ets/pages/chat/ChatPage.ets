@@ -138,7 +138,8 @@ import {
 } from '../../util/collapseAlbums';
 import {
   planEdgeSpliceRows, EdgeSplicePlan, patchIndicesAfterPrepend, SPLICE_PUBLISH_ENABLED,
-  SPLICE_PATCH_PUBLISH_ENABLED
+  SPLICE_PATCH_PUBLISH_ENABLED, PUBLISH_DUPLICATE_SCAN, DuplicateRowReport,
+  findDuplicateIdentities
 } from '../../util/splicePublish';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import { shouldFillViewport } from '../../util/viewportFill';
@@ -779,6 +780,10 @@ export struct ChatPage {
           : null;
         const patchShape: boolean = plan !== null &&
           (plan.kind === 'patch' || plan.kind === 'append');
+        // 临时探针：见 splicePublish 末尾。揭示期那种每帧一次的 patch 不扫。
+        if (PUBLISH_DUPLICATE_SCAN && !(plan !== null && plan.kind === 'patch')) {
+          this.reportDuplicateRows(next, plan === null ? 'replace' : plan.kind);
+        }
         if (plan !== null && plan.kind === 'prepend') {
           this.splicePrependGroups(next, plan.count);
         } else if (patchShape && SPLICE_PATCH_PUBLISH_ENABLED) {
@@ -796,6 +801,21 @@ export struct ChatPage {
     // Loading/paging flags and rows become visible to ChatTimelineHost through
     // one immutable publication, after this whole transaction is complete.
     this.commitTimelineSnapshot();
+  }
+
+  // 临时探针（2026-09-11）：发布的这一份里有没有两行同身份。见 splicePublish 末尾。
+  private reportDuplicateRows(rows: AlbumGroup[], kind: string): void {
+    const dups: DuplicateRowReport[] = findDuplicateIdentities(
+      rows, (row: Object): string => rowIdentity(row as AlbumGroup));
+    for (const d of dups) {
+      const a: AlbumGroup = rows[d.firstIndex];
+      const b: AlbumGroup = rows[d.secondIndex];
+      logW(`[DupRow] ${kind} rows=${rows.length} id=${d.identity}` +
+        ` at=${d.firstIndex}/${d.secondIndex}` +
+        ` msgIds=${a.head.id}/${b.head.id} rowIds=${a.head.rowId}/${b.head.rowId}` +
+        ` albums=${a.head.albumId}/${b.head.albumId}` +
+        ` members=${a.memberIds.length}/${b.memberIds.length}`);
+    }
   }
 
   // 让 Repeat 整表重建：每一行的 key 都换掉。

@@ -146,3 +146,53 @@ export function planEdgeSpliceRows(
 export function planEdgeSplice(prevIds: string[], nextIds: string[]): EdgeSplicePlan | null {
   return planEdgeSpliceRows(prevIds, nextIds, (row: Object): string => row as string);
 }
+
+// ── 临时探针（2026-09-11）。查清 Repeat 的 duplicate key 来自哪一侧后删掉 ──
+//
+// 真机日志（13:06:45.858–.902）里连续 14 条：
+//   AceStateMgmt: __RepeatVirtualScroll2Impl: Detected duplicate key for index 43!
+// 落在一次 29 行前插之后 8ms，而同一段里另外三次同样的前插一条都没有。
+//
+// 行 key 是 `message_group_${rowIdentity}_${langEpoch}_${rebuildEpoch}`，后两个
+// 分量全表一致 ⇒ key 重复 ⟺ rowIdentity 重复。发布那一刻扫一遍就能判：
+//   · 扫到  → 数据真有两行同身份（看两行的 id/rowId 能进一步分清是 rowId
+//            继承出岔子，还是相册身份撞了）
+//   · 扫不到 → 是 Repeat 在 splice 之后重整内部 key→index 表的误报
+export const PUBLISH_DUPLICATE_SCAN: boolean = true;
+
+export interface DuplicateRowReport {
+  identity: string;
+  firstIndex: number;
+  secondIndex: number;
+}
+
+// 只扫表头这么多行。
+//
+// 【为什么要有上限】这个探针做的正是本轮刚从发布热路径上删掉的那件事——给每
+// 一行拼一次 rowIdentity。列表能到上千行，全扫一遍是 ~0.2-0.3ms，而它恰好落在
+// 前插那一帧上（那是本来就重的一帧）。观测到的重复在下标 43–56、前插是 29 行，
+// 全在表头附近，512 行的窗口留了十几倍余量，代价压到 ~0.1ms 以内。
+export const DUPLICATE_SCAN_MAX_ROWS: number = 512;
+
+// 最多报前 limit 组，够定性即可。返回空数组 = 扫过的窗口里没有同身份行。
+export function findDuplicateIdentities(
+  rows: Object[], identity: (row: Object) => string, limit: number = 3,
+  maxRows: number = DUPLICATE_SCAN_MAX_ROWS
+): DuplicateRowReport[] {
+  const seen: Map<string, number> = new Map<string, number>();
+  const out: DuplicateRowReport[] = [];
+  const end: number = Math.min(rows.length, Math.max(0, maxRows));
+  for (let i = 0; i < end; i++) {
+    const id: string = identity(rows[i]);
+    const first: number | undefined = seen.get(id);
+    if (first === undefined) {
+      seen.set(id, i);
+      continue;
+    }
+    out.push({ identity: id, firstIndex: first, secondIndex: i });
+    if (out.length >= limit) {
+      return out;
+    }
+  }
+  return out;
+}

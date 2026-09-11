@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
   planPrependSplice, patchIndicesAfterPrepend, planEdgeSplice, planEdgeSpliceRows,
-  MAX_SPLICE_INSERT
+  MAX_SPLICE_INSERT, findDuplicateIdentities, DuplicateRowReport
 } from '../main/ets/util/splicePublish';
 
 class Row {
@@ -93,6 +93,27 @@ export default function splicePublishTest() {
       expect(p5 !== null && p5.kind === 'dropTail' && p5.count === 2).assertTrue();
       // 等长但身份变了
       expect(planEdgeSpliceRows([a, b], [a, x], idOf) === null).assertTrue();
+    });
+
+    // 临时探针（查清 Repeat 的 duplicate key 来自哪一侧后连同实现一起删）。
+    it('同身份扫描：报出下标对，无重复时返回空，且封顶', 0, (): void => {
+      const a: Row = new Row('a'); const b: Row = new Row('b');
+      const a2: Row = new Row('a');   // 不同对象、同身份
+      const idOf = (row: Object): string => (row as Row).k;
+      expect(findDuplicateIdentities([a, b], idOf).length).assertEqual(0);
+      const d: DuplicateRowReport[] = findDuplicateIdentities([a, b, a2], idOf);
+      expect(d.length).assertEqual(1);
+      expect(d[0].identity).assertEqual('a');
+      expect(d[0].firstIndex).assertEqual(0);
+      expect(d[0].secondIndex).assertEqual(2);
+      // 同一个对象出现两次同样算重复（Repeat 看到的就是同一个 key）。
+      expect(findDuplicateIdentities([a, a], idOf).length).assertEqual(1);
+      // 封顶：只报前 limit 组。
+      const many: Row[] = [a, b, a2, new Row('b'), new Row('a')];
+      expect(findDuplicateIdentities(many, idOf, 2).length).assertEqual(2);
+      // 行数上限：窗口外的重复不算——这是为了不把「全表拼身份」重新放回发布热路径。
+      expect(findDuplicateIdentities([a, b, a2], idOf, 3, 2).length).assertEqual(0);
+      expect(findDuplicateIdentities([a, b, a2], idOf, 3, 3).length).assertEqual(1);
     });
 
     it('插入行数超过上限就退回整份替换（splice 展开实参会撑爆调用栈）', 0, (): void => {
