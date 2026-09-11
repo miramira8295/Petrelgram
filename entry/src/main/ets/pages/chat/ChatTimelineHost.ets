@@ -6,7 +6,6 @@ import {
   ChatTimelineSnapshot, emptyChatTimelineSnapshot
 } from '../../util/chatTimelineSnapshot';
 import { TL_NONE, timelineStateMode, timelineStateText } from '../../util/timelineState';
-import { JumpFlashState } from './JumpFlashState';
 
 // Timeline presentation host. ChatPage owns the scroller, row data, paging,
 // media/translation work, and every scroll-side effect. The List itself is a
@@ -24,7 +23,6 @@ export struct ChatTimelineHost {
   @Param langEpoch: number = 0;
   @Param floatDateState: FloatingDateState = new FloatingDateState();
   @Param materialEpoch: number = 0;
-  @Require @Param flash: JumpFlashState;
   @Param timelineTopMargin: number = 0;
 
   @BuilderParam timelineList: () => void;
@@ -85,16 +83,6 @@ export struct ChatTimelineHost {
           label: this.timelinePillLabel(),
           onRetry: (): void => { this.onTimelinePillRetry(this.timelinePillMode()); }
         });
-      }
-
-      if (this.flash.shown) {
-        Column()
-          .width('100%').height(this.flash.height)
-          .backgroundColor('#4D67A0DC')
-          .borderRadius(8)
-          .opacity(this.flash.alpha)
-          .position({ x: 0, y: this.flash.top })
-          .hitTestBehavior(HitTestMode.None);
       }
 
       FloatingDateOverlay({

@@ -360,6 +360,7 @@ export struct MessageBubble {
   @Local glassW: number = 0;
   @Local glassH: number = 0;
   @Param nowSec: number = 0;
+  @Param jumpFocus: number = 0;
   // 本机正在共享实时位置的那条消息 id（0 = 没有共享）。
   // 身份标签按群区分（同一个人在别的群未必是管理员），所以标签通道的 key
   // 要带 chatId。MessageEntry 里没有这个字段，由页面传。
@@ -4181,6 +4182,11 @@ export struct MessageBubble {
       // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
       // 透明，完整态始终只有外层这一份背景与模糊。
       .backgroundColor(this.containerGlassBg())
+      // Transform the bubble and tail without moving avatar/date or list geometry.
+      // The jump controller owns the one-shot animation; no resident .animation().
+      .scale({ x: 1 + this.jumpFocus * 0.018, y: 1 + this.jumpFocus * 0.018,
+        centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+      .brightness(1 + this.jumpFocus * 0.10)
       .backgroundBlurStyle(this.containerGlassBlurStyle())
       // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
       // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——

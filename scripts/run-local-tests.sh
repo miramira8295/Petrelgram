@@ -30,7 +30,7 @@ set -u
 # `membershipBarUsesCompactSurface`（判断哪一档用紧凑底板）**没有调用方了**，
 # 判据本身失效，连同它那条用例一起删。与上面 MediaSaveState 那次同一档：
 # 确实删了用例，不是为了让脚本变绿。
-MIN_TESTS="${MIN_TESTS:-2454}"
+MIN_TESTS="${MIN_TESTS:-2459}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

@@ -1350,6 +1350,7 @@ export struct ChatPage {
   private messageActions(): MessageBubbleActions {
     if (this.messageActionsCache === null) {
       this.messageActionsCache = {
+        bubbleFocus: this.flash.focus,
         onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
         // 形参 x/y 保留但不再存：几何过渡已全交给 geometryTransition，查看器
         // 那两个 @Param 从来没被读过（S1 已删）。**签名不改**——MessageBubble
@@ -2127,11 +2128,7 @@ export struct ChatPage {
   // 内容铺不满一屏时主动补页的上限。到这个行数还说"整份都可见"，说明判据
   // 本身出了问题，停手比无限拉更安全。
   private static readonly FILL_VIEWPORT_MAX_ROWS: number = 80;
-  // 跳转目标高亮（回复/置顶/链接跳转落地后闪烁两拍）整簇搬进了 JumpFlashState
-  // （B13 批），字段名与初值一字未改（四个 @Local 变成 @Trace，去掉了在类名里
-  // 已经说过一遍的 flash 前缀：top/height/alpha/shown；三个普通私有字段
-  // flashSeq/flashTargetIdx/flashTargetId 原名照抄），原有注释随字段一并搬进
-  // JumpFlashState.ets，此处不再重复。页面侧统一经 this.flash.xxx 读写。
+  // 跳转落点通过行级通道驱动气泡呼吸，不再覆盖整行蓝色色带。
   //
   // 字段初始化器 new：首帧前就已存在、引用全生命周期稳定、类型非空。禁止做成
   // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自的跳转高亮
@@ -4228,12 +4225,7 @@ export struct ChatPage {
     // 其余控制器统一 bind/dispose 生命周期而保留、调用，不替原代码编造一份
     // 清理逻辑。
     this.attach.dispose();
-    // 跳转目标高亮控制器的退场（B13）。侦察确认过原 aboutToDisappear 全链路
-    // 对 flashSeq/flashShown/flashTop/flashHeight/flashAlpha/flashTargetIdx/
-    // flashTargetId 或 cancelFlash/syncFlashRect/runBlink/flashAtIndex 从来
-    // 没有任何清理——裸露的 setTimeout 句柄从未存储，靠 flashSeq 比较自然
-    // 失效，页面随实例整体丢弃。dispose() 是空实现，仅为与其余控制器统一
-    // bind/dispose 生命周期而保留、调用，不替原代码编造一份清理逻辑。
+    // 退场时取消气泡呼吸和延迟落点，避免旧页面回调继续写消息行。
     this.flash.dispose();
     // 输入条上方四块建议面板控制器的退场（B14）。逐字核对过原
     // aboutToDisappear 全链路（含本方法），对 mentionItems/pendingNameMentions/
@@ -5552,11 +5544,7 @@ export struct ChatPage {
     }
   }
 
-  // flashAtIndex/syncFlashRect/runBlink/cancelFlash 四个方法整簇搬进了
-  // JumpFlashState（B13 批），原有注释随方法一并搬进 JumpFlashState.ets，此处
-  // 不再重复。调用方改走 this.flash.flashAtIndex()/this.flash.cancelFlash()/
-  // this.flash.syncFlashRect()；runBlink 是纯内部递归，无外部调用点，留在
-  // JumpFlashState 内部，页面不再持有同名方法。
+  // 跳转反馈的落点校验、动画时序和取消由 JumpFlashState 统一管理。
 
   private onCommentTap(messageId: number): void {
     const req: TdRequest = { '@type': 'getMessageThread' };
@@ -6828,8 +6816,7 @@ export struct ChatPage {
   }
 
   // 跳到指定消息：已在当前页就直接滚动并高亮，否则围绕它重新拉一页。
-  // 高亮就是那两下蓝色闪烁（flashAtIndex），「↓」的返回也走这里，所以返回
-  // 落点同样会闪一下，和点引用跳过去的观感一致。
+  // 定位后让目标气泡轻轻呼吸一次；「↓」返回与引用跳转共用这个反馈。
   private jumpToMessageId(targetId: number): void {
     this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
     const gidx: number = groupIndexOf(this.groups, targetId);
@@ -8330,7 +8317,6 @@ export struct ChatPage {
           langEpoch: this.langEpoch,
           floatDateState: this.floatDateState,
           materialEpoch: this.materialEpoch,
-          flash: this.flash,
           timelineTopMargin: this.headerChromeHeight() + 8,
           timelineList: this.timelineList,
           onEmptyRetry: (): void => { this.store?.retryInitialHistory(); },

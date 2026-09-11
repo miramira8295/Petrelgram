@@ -1,4 +1,5 @@
 import { AlbumGroup } from '../../util/collapseAlbums';
+import { BubbleFocusChannel } from '../../util/bubbleFocusChannel';
 import { checkRenderedGroup } from '../../util/rowIdentityGuard';
 import {
   messageRowPresentationFor, subscribeMessageRowPresentation
@@ -18,6 +19,7 @@ import { MessageBubble } from './MessageBubble';
 // One stable controller belongs to the ChatPage. The wrapper only forwards
 // ids/current arrays, so no callback retains the AlbumGroup that created a row.
 export interface MessageBubbleActions {
+  bubbleFocus: BubbleFocusChannel;
   onStopLiveLocation: () => void;
   onMediaTap: (messageId: number, x: number, y: number) => void;
   onLinkTap: (url: string) => void;
@@ -133,6 +135,7 @@ export interface MessageBubbleRenderData {
 }
 
 const EMPTY_ACTIONS: MessageBubbleActions = {
+  bubbleFocus: new BubbleFocusChannel(),
   onStopLiveLocation: (): void => {},
   onMediaTap: (_id: number, _x: number, _y: number): void => {},
   onLinkTap: (_url: string): void => {}, onCommentTap: (_id: number): void => {},
@@ -224,6 +227,8 @@ export struct ReusableMessageBubble {
   // @Param 每帧只多一次 === 比较，比较结果恒为相等，不会触发任何刷新。
   @Param actions: MessageBubbleActions = EMPTY_ACTIONS;
   @Local private liveGroup: AlbumGroup | null = null;
+  @Local private jumpFocus: number = 0;
+  private unsubFocus: (() => void) | null = null;
   private unsubPresentation: (() => void) | null = null;
 
   private currentGroup(): AlbumGroup {
@@ -248,10 +253,13 @@ export struct ReusableMessageBubble {
       // 已挂在同一行上：订阅原样保留，只重新取一次现值（aboutToRecycle 会把
       // liveGroup 置 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
       this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
+      this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
       return;
     }
     this.detachPresentation();
     this.attachedKey = key;
+    this.unsubFocus = this.actions.bubbleFocus.subscribe(group.head.rowId,
+      (strength: number): void => { this.jumpFocus = strength; });
     this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
     this.unsubPresentation = subscribeMessageRowPresentation(
       this.data.chatId,
@@ -327,6 +335,11 @@ export struct ReusableMessageBubble {
   @Local private translationFade: number = 1;
 
   private detachPresentation(): void {
+    if (this.unsubFocus !== null) {
+      this.unsubFocus();
+      this.unsubFocus = null;
+    }
+    this.jumpFocus = 0;
     if (this.unsubPresentation !== null) {
       this.unsubPresentation();
       this.unsubPresentation = null;
@@ -374,6 +387,7 @@ export struct ReusableMessageBubble {
   build() {
     if (this.data.lightweightPlainText && this.currentGroup().head.translatedText === '') {
       LightweightPlainTextBubble({
+        jumpFocus: this.jumpFocus,
         msg: this.currentGroup().head,
         nowSec: this.nowSec,
         chatId: this.data.chatId,
@@ -394,6 +408,7 @@ export struct ReusableMessageBubble {
         .opacity(this.translationFade);
     } else {
       MessageBubble({
+      jumpFocus: this.jumpFocus,
       // 整行一个对象下发，不再拆成十七个 @Param（理由见 MessageBubble.group）。
       group: this.currentGroup(),
       msg: this.currentGroup().head, nowSec: this.nowSec,

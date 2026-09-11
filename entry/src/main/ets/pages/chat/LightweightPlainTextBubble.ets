@@ -232,6 +232,7 @@ function plainMenuPressedStyle() { .opacity(0.72).scale({ x: 0.94, y: 0.94 }) }
 // 整套重灌的大头）；延帧兜底（nextFrameQueue/reuseParam）整套退役。
 @ComponentV2
 export struct LightweightPlainTextBubble {
+  @Param jumpFocus: number = 0;
 
   // 全局环境值走 chatEnv 镜像（批 0 建的，V2 没有 @StorageProp）。@Trace
   // 字段在 build 里读到即登记依赖，写入点双写保证跟手。
@@ -947,6 +948,9 @@ export struct LightweightPlainTextBubble {
           // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
           // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
           .backgroundColor(this.containerGlassBg())
+          .scale({ x: 1 + this.jumpFocus * 0.018, y: 1 + this.jumpFocus * 0.018,
+            centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+          .brightness(1 + this.jumpFocus * 0.10)
           .backgroundBlurStyle(this.containerGlassBlurStyle())
           // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
           // 不设圆角就是个直角框，裁剪之后剩下半条亮线。

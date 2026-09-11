@@ -6,45 +6,11 @@ import { UserStore } from '../main/ets/store/UserStore';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { TdBridge, TdObject } from '../main/ets/tdkit/TdTypes';
 import { KEY_POWER_EFFECT_REPLY } from '../main/ets/store/AppSettings';
+import { BubbleFocusChannel } from '../main/ets/util/bubbleFocusChannel';
 
-// 跳转目标高亮控制器（flash 簇，B13 从 ChatPage 整体搬出）的测试。写法照抄
-// ChatOverlayState.test.ets：FakeHost + sleep() 真实等待 + 文件头先讲环境限制。
-//
-// 【环境限制 1：假 scroller 是子类化，不是对象字面量】
-// JumpFlashStateHost.scroller() 的返回类型是 ArkUI 的 `Scroller`——
-// component/scroll.d.ts 里的 `declare class Scroller`，是 class 不是
-// interface。ArkTS 对 class 类型走名义类型（nominal typing），一个只实现了
-// `getItemRect` 的对象字面量不能直接当 `Scroller` 用；本仓其余控制器测试
-// 遇到的都是自定义的小 Host 接口（interface，结构类型可以直接用对象字面量
-// 顶），这是本仓第一次需要假冒一个 ArkUI 内置控制器类，没有先例可抄。这里
-// 用 `class FakeScroller extends Scroller`，只覆写 `getItemRect`，不调用
-// `super.getItemRect()`——真正的原生绑定实现完全不会被触达。构造函数走
-// `Scroller` 自带的无参构造：本仓所有页面都是在字段初始化器里
-// `new Scroller()`、从不传参，且 SDK 文档原文写的是 "Scroller APIs cannot
-// be called effectively" before binding（暗示对象本身能造出来，只是未绑定
-// 组件时调用方法会报错）——这正是 flashAtIndex/syncFlashRect 那两处
-// try/catch 要接住的异常，也是下面"抛异常"那条用例的依据。
-//
-// 【环境限制 2：animateTo 的回调是否同步执行，借用 SelectionSession 的既有证据】
-// runBlink 用 `animateTo({...}, () => { this.alpha = ... })` 包住 alpha 翻转。
-// 本仓没有在真机上专门验证过 animateTo 在没有渲染树的本地单元测试环境下是否
-// 同步执行回调，但 SelectionSession.test.ets 已经有等价证据：
-// `session.enter([301, 302, 303])`（内部 animateSelection 用 animateTo 包住
-// active/ids 翻转）后面紧跟不等待的同步断言
-// `expect(session.ids.length).assertEqual(3)`，而那个文件是绿的——说明
-// animateTo 的回调在这套本地单元测试运行时里就是同步执行的。为了不让下面
-// 的用例绑死在这条环境结论上，凡是经由 animateTo 才会翻转的字段（alpha 变
-// 成 1/0 那两步），本文件一律不断言具体数值，只断言不经过 animateTo 的
-// shown/top/height 三个字段；effectDuration 的转发验证也只看"有没有被调用
-// 到"，不依赖 animateTo 回调本身是否已经跑完。
-//
-// 【真实定时器，等的是真时间】
-// flashAtIndex 的 150ms、runBlink 内部的两个 340ms 都是写死在源码里的常量，
-// 不经过 host 转发，测试没法把它们调快。下面的用例只等第一拍落地需要的
-// 150ms（留一点余量等到 170ms），不追等后续的 340ms 两拍闭环——追等一次要
-// 多等约 1.5 秒，用例数一多会显著拖慢整个套件，而两拍本身唯一的分支判据
-// （flashSeq 比较）已经被"连续两次调用"和"cancelFlash 之后"那两条用例覆盖
-// 到了，详见文件末尾 skippedAreas 的说明。
+// Landing geometry and cancellation use a fake Scroller and real timers.
+// The row channel is pure state; visual easing still requires device review.
+// Tests wait through the 150ms layout settling delay, then cancel the pulse.
 
 function sleep(ms: number): Promise<void> {
   return new Promise<void>((resolve: () => void): void => { setTimeout(resolve, ms); });
@@ -75,6 +41,7 @@ class FakeHost implements JumpFlashStateHost {
   groupsValue: AlbumGroup[] = [];
   groupsCalls: number = 0;
   effectDurationCalls: string[] = [];
+  motionEnabled: boolean = true;
 
   scroller: () => Scroller = (): Scroller => {
     this.scrollerCalls++;
@@ -86,7 +53,7 @@ class FakeHost implements JumpFlashStateHost {
   };
   effectDuration: (key: string, ms: number) => number = (key: string, ms: number): number => {
     this.effectDurationCalls.push(key);
-    return ms;
+    return this.motionEnabled ? ms : 0;
   };
 }
 
@@ -139,6 +106,82 @@ function groupsWithMessage(id: number): AlbumGroup[] {
 export default function jumpFlashStateTest() {
   describe('JumpFlashState', () => {
 
+    it('focus changes only the target row and resets the previous target', 0, () => {
+      const channel: BubbleFocusChannel = new BubbleFocusChannel();
+      const first: number[] = [];
+      const second: number[] = [];
+      const stopFirst = channel.subscribe(11, (value: number): void => { first.push(value); });
+      const stopSecond = channel.subscribe(22, (value: number): void => { second.push(value); });
+      channel.set(11, 1);
+      expect(first).assertDeepEquals([0, 1]);
+      expect(second).assertDeepEquals([0]);
+      channel.set(22, 1);
+      expect(first).assertDeepEquals([0, 1, 0]);
+      expect(second).assertDeepEquals([0, 1]);
+      channel.clear();
+      expect(second).assertDeepEquals([0, 1, 0]);
+      stopFirst();
+      stopSecond();
+    });
+
+    it('recycled rows unsubscribe and a new page cannot inherit focus', 0, () => {
+      const channel: BubbleFocusChannel = new BubbleFocusChannel();
+      const otherPage: BubbleFocusChannel = new BubbleFocusChannel();
+      channel.set(11, 1);
+      let current: number = -1;
+      const stop = channel.subscribe(11, (value: number): void => { current = value; });
+      expect(current).assertEqual(1);
+      expect(otherPage.value(11)).assertEqual(0);
+      stop();
+      channel.clear();
+      expect(current).assertEqual(1);
+      const rebound: number[] = [];
+      const stopRebound = channel.subscribe(22, (value: number): void => { rebound.push(value); });
+      channel.set(11, 1);
+      expect(rebound).assertDeepEquals([0]);
+      stopRebound();
+    });
+
+    it('index-only jumps retain identity when history is prepended during settling', 0,
+      async (): Promise<void> => {
+        const host: FakeHost = new FakeHost();
+        host.groupsValue = groupsWithMessage(77);
+        host.scrollerValue.rect = { x: 0, y: 10, width: 100, height: 40 };
+        const controller: JumpFlashState = controllerOn(host);
+        controller.flashAtIndex(0);
+        host.groupsValue = groupsWithMessage(66).concat(host.groupsValue);
+        await sleep(170);
+        expect(host.scrollerValue.calls[0]).assertEqual(1);
+        controller.cancelFlash();
+      });
+
+    it('dispose cancels a pending landing and clears active row feedback', 0,
+      async (): Promise<void> => {
+        const host: FakeHost = new FakeHost();
+        host.groupsValue = groupsWithMessage(77);
+        host.scrollerValue.rect = { x: 0, y: 10, width: 100, height: 40 };
+        const controller: JumpFlashState = controllerOn(host);
+        controller.focus.set(77, 1);
+        controller.flashAtIndex(0);
+        controller.dispose();
+        await sleep(170);
+        expect(controller.focus.value(77)).assertEqual(0);
+        expect(controller.shown).assertFalse();
+        expect(host.scrollerValue.calls.length).assertEqual(0);
+      });
+
+    it('disabled motion does not leave an enlarged target', 0, async (): Promise<void> => {
+      const host: FakeHost = new FakeHost();
+      host.motionEnabled = false;
+      host.groupsValue = groupsWithMessage(77);
+      host.scrollerValue.rect = { x: 0, y: 10, width: 100, height: 40 };
+      const controller: JumpFlashState = controllerOn(host);
+      controller.flashAtIndex(0, 77);
+      await sleep(170);
+      expect(controller.shown).assertFalse();
+      expect(controller.focus.value(host.groupsValue[0].head.rowId)).assertEqual(0);
+    });
+
     // 防的回归：flashAtIndex 的 150ms 延迟回调算 top/height 的那一段被删掉、
     // 或者算完了不写 shown。假 scroller 返回一个可控的矩形，等 150ms 过去，
     // 三个字段应该原样落到 flashAtIndex 传下来的矩形上。
@@ -154,12 +197,12 @@ export default function jumpFlashStateTest() {
       expect(controller.top).assertEqual(42);
       expect(controller.height).assertEqual(64);
       expect(host.scrollerValue.calls.indexOf(4) >= 0).assertTrue();
-      // 顺带证明 effectDuration 确实被 runBlink 用正确的 key 转发过——host
+      // 顺带证明 effectDuration 确实被 runPulse 用正确的 key 转发过——host
       // 转手有没有接对，这一步就是全部证据（不依赖 animateTo 回调本身是否
       // 已经跑完，见文件头环境限制 2）。
       expect(host.effectDurationCalls.indexOf(KEY_POWER_EFFECT_REPLY) >= 0).assertTrue();
 
-      controller.cancelFlash(); // 收尾：别让后续两拍的 340ms 定时器悬到后面的用例里
+      controller.cancelFlash(); // 收尾：取消后续回弹定时器
     });
 
     // 防的回归：flashAtIndex 拿到的矩形 height<=0（行还没排好版）时不该点
@@ -392,33 +435,4 @@ export default function jumpFlashStateTest() {
   });
 }
 
-// 【skippedAreas —— 没写测试的方法/分支，各自的原因】
-//
-// 【验收时的更正】这份清单最初漏了 syncFlashRect 的四条分支：按 id 重解下标、
-// idx<0 收掉高亮、getItemRect 抛异常收掉高亮、|Δtop|>0.5 才重定位。它们既没有
-// 用例、也没有出现在下面的清单里——等于用沉默代替了理由，而其中两条正是
-// issue #80 的本体（下标漂移、滚动中错位），是这一簇存在的全部意义。四条全都
-// 是同步的、用现成的 FakeHost/FakeScroller 就能测，不受下面任何一条环境限制
-// 影响。验收时补了三条用例覆盖它们（见上方"以下三条是验收时补的"那一段）。
-// 教训：清单只列"我想到的"，等于没列；写清单时应当把被测方法的每条分支过一遍。
-//
-// - runBlink()：private，没有公开访问点，只能通过 flashAtIndex 间接触发。
-//   它内部的令牌失效判据（seq !== this.flashSeq）已经被"连续两次调用"和
-//   "cancelFlash 之后"两条用例间接覆盖到；但两拍 340ms 的完整闭环——第二拍
-//   的 syncFlashRect/animateTo、recursion 到 remaining=0 时把
-//   shown/alpha 收尾复位——没有端到端跑满。原因：每条用例要多等约 1.5 秒
-//   才能看到 remaining<=0 的收尾，而这段代码唯一的分支判据（同一处
-//   flashSeq 比较）已经被更短的用例覆盖，追加收益有限、拖慢套件。
-// - dispose()：源码注释明确写"有意留空"（对照 aboutToDisappear 全链路核实
-//   过原代码在这一簇上没有任何清理）。当前没有任何字段变化或副作用可断
-//   言，写一条"调用后什么都没变"的用例价值有限，故未写；如后续这里改成真
-//   的做清理（加固），再补对应用例钉住新行为。
-// - bind()：只有一行 `this.host = host;` 赋值，没有分支逻辑，已经在
-//   controllerOn() 辅助函数里被本文件所有其它用例间接跑到，不必单独立一条。
-// - logW 的具体日志文案格式：全局工具函数，不依赖任何页面/控制器状态，超
-//   出本控制器职责范围（与其它控制器测试对 logE/logW 的处理一致，见
-//   ChatOverlayState.test.ets）。
-// - animateTo 的视觉过渡效果本身（是否真的渐显/渐隐、曲线是否正确）：本地
-//   单元测试没有真实渲染树，只能验证回调触发后的字段翻转，过渡效果的视觉
-//   正确性需要真机验收（与 SelectionSession.test.ets 文件头记录的环境限制
-//   一致）。
+// Visual scale/brightness interpolation is checked on device, not in the host runner.
