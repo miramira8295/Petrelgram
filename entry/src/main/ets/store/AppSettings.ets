@@ -376,6 +376,10 @@ const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
   KEY_VIDEO_ENGINE_AVPLAYER
 ];
 
+// 平板/宽屏强制单栏（用户要求）：分栏那条路上的媒体查看器走全模态、标题栏不收，
+// 平板上有已知问题（issue #201）；给一个出口，也照顾"就想要手机版式"的人。
+export const KEY_FORCE_SINGLE_COLUMN: string = 'forceSingleColumn';
+
 const DATA_BOOLEAN_FALSE_DEFAULTS: string[] = [
   KEY_STATUS_FOLLOW_TITLE,
   KEY_ROW_SWIPE_ACTIONS,
@@ -387,7 +391,8 @@ const DATA_BOOLEAN_FALSE_DEFAULTS: string[] = [
   KEY_AUTOSAVE_CHANNEL,
   KEY_PROXY_AUTO_SWITCH,
   KEY_TRANSLATE_CHATS,
-  KEY_TRANSLATE_REPLACE_ORIGINAL
+  KEY_TRANSLATE_REPLACE_ORIGINAL,
+  KEY_FORCE_SINGLE_COLUMN
 ];
 
 function applyPowerState(percent: number): void {

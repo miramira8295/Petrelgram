@@ -184,5 +184,13 @@ export default function splitMetricsTest(): void {
       expect(sideDockBarHeight(3) < 900 / 3).assertTrue();
       expect(sideDockBarHeight(4) < 900 / 3).assertTrue();
     });
+
+    // 设置里的「强制单栏」：几何再宽也不分栏（用户要求，平板可用手机版式）。
+    it('force single column wins over geometry', 0, (): void => {
+      expect(isSplitLayout(1280, 800, true)).assertFalse();
+      expect(isSplitLayout(1280, 800, false)).assertTrue();
+      expect(isSplitLayout(1280, 800)).assertTrue();
+      expect(isSplitLayout(376, 809, true)).assertFalse();
+    });
   });
 }

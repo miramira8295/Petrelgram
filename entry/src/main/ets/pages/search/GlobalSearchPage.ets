@@ -21,7 +21,7 @@ import {
   mainCardFill, mainPageFill, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
-  KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
+  KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import {
   DownloadCounts, DownloadEntry, DownloadPage, DownloadQuery, defaultDownloadQuery,
@@ -149,6 +149,8 @@ export struct GlobalSearchPage {
   // 窗口宽（不是屏幕宽），限宽用。平板上把结果列拉满 2880px，头像贴最左、时间
   // 贴最右，眼睛要横扫整屏才读得完一行（设备截图实测）。
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 设置里的「强制单栏」（宽屏也当手机用）。
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') screenH: number = 780;
   @State query: string = '';
   @State tab: number = 0;
@@ -3097,7 +3099,7 @@ export struct GlobalSearchPage {
     Stack({ alignContent: Alignment.TopStart }) {
     // NavDestination 自带的页面层会隔断 MainScreen 的壁纸，和资料详情页一样在
     // 当前目的页内重画一层；分栏时 AppBackdrop 会按统一规则自动停止绘制。
-    AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH) });
+    AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) });
     Column() {
       Column() {
         // 搜索框和分类条跟着下面的结果列一起限宽、一起居中。它们语义上像标题栏

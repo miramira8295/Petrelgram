@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "모든 미디어 보기"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "단일 열 강제"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "태블릿과 넓은 화면에서도 휴대폰 레이아웃 사용"
     }
   ]
 }

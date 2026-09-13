@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "Tampilkan semua media"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "Paksa satu kolom"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "Gunakan tata letak ponsel di tablet dan layar lebar"
     }
   ]
 }

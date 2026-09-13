@@ -94,7 +94,13 @@ export function dockAtBottom(): boolean {
 // 取两边的较小值，等价于 Android 的 smallestScreenWidthDp——它描述的是设备
 // 类别而不是当前姿势，横竖屏切换不会改变结论。折叠屏也因此天然正确：展开后
 // 短边约 720vp 进分栏，合上约 380vp 回单栏，不需要额外判断机型。
-export function isSplitLayout(windowWidthVp: number, windowHeightVp: number): boolean {
+// forceSingleColumn：设置里的「强制单栏」。用户说了算，几何再宽也不分栏。
+// 默认 false，不传的调用点行为逐字不变。
+export function isSplitLayout(windowWidthVp: number, windowHeightVp: number,
+  forceSingleColumn: boolean = false): boolean {
+  if (forceSingleColumn) {
+    return false;
+  }
   if (!(windowWidthVp >= SPLIT_BREAKPOINT_VP)) {
     return false;
   }

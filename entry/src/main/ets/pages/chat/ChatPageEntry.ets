@@ -11,7 +11,7 @@ import {
   KEY_LOCAL_BG_EPOCH, KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_VIDEO,
   KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_EMOJI,
   KEY_POWER_EMOJI_REACTIONS, KEY_POWER_PARTICLES, KEY_REDUCE_ANIM,
-  KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS,
+  KEY_SEND_BY_ENTER, KEY_TRANSLATE_CHATS, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { KEY_DEBUG_LIST_CACHED, LIST_CACHED_COUNT_DEFAULT } from '../../util/debugListPerf';
 import { CHAT_CONTENT_WIDTH_KEY } from '../../util/chatContentWidth';
@@ -61,6 +61,7 @@ struct ChatPageChrome {
   @StorageProp('appIsForeground') appIsForeground: boolean = true;
   @StorageProp(KEY_SEND_BY_ENTER) sendByEnter: boolean = false;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   @StorageProp(CHAT_CONTENT_WIDTH_KEY) chatContentWidth: number = 360;
   @StorageProp('screenHeightVp') screenH: number = 780;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
@@ -95,6 +96,7 @@ struct ChatPageChrome {
       appIsForeground: this.appIsForeground,
       sendByEnter: this.sendByEnter,
       screenW: this.screenW,
+      forceSingleColumn: this.forceSingleColumn,
       chatContentWidth: this.chatContentWidth,
       screenH: this.screenH,
       powerSaving: this.powerSaving,

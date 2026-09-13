@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "عرض كل الوسائط"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "فرض عمود واحد"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "استخدام تخطيط الهاتف على الأجهزة اللوحية والشاشات العريضة"
     }
   ]
 }

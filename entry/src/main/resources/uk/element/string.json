@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "Показати всі медіа"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "Одна колонка"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "Телефонний макет на планшетах і широких екранах"
     }
   ]
 }

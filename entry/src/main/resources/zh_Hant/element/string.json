@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "顯示所有圖片"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "強制單欄"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "平板和寬螢幕也用手機版面，不左右分欄"
     }
   ]
 }

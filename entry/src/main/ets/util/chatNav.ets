@@ -1,3 +1,4 @@
+import { KEY_FORCE_SINGLE_COLUMN } from '../store/AppSettings';
 import router from '@ohos.router';
 import { requestChatJump } from './chatJumpChannel';
 import { logE } from './log';
@@ -201,7 +202,8 @@ export function navigateToChat(
   // 与这个判断无关，读它是给下面关渲染闸用的。
   const screenW: number = AppStorage.get<number>('screenWidthVp') ?? 0;
   const screenH: number = AppStorage.get<number>('screenHeightVp') ?? 0;
-  const split: boolean = isSplitLayout(screenW, screenH);
+  const split: boolean = isSplitLayout(screenW, screenH,
+    AppStorage.get<boolean>(KEY_FORCE_SINGLE_COLUMN) ?? false);
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
   const decision: ChatPushDecision =
     decideChatPush(snap, target, origin === 'navbar', origin === 'search');

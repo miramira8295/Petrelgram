@@ -26,7 +26,8 @@ import {
   COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_TAB_PILL_BG
 } from '../../util/theme';
 import { AppBackdrop } from '../common/AppBackdrop';
-import { KEY_APP_BG_ON } from '../../store/AppSettings';
+import { KEY_APP_BG_ON, KEY_FORCE_SINGLE_COLUMN
+} from '../../store/AppSettings';
 import { isSplitLayout } from '../../util/splitMetrics';
 import { ExpandableText } from './ExpandableText';
 import { openUrl } from '../../util/openUrl';
@@ -104,6 +105,8 @@ export struct ProfilePage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 设置里的「强制单栏」（宽屏也当手机用）。
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') screenH: number = 780;
   // APP 壁纸此刻生不生效。本页是压在主界面之上的 NavDestination，**下面那层壁纸
   // 透不过来**（HdsNavDestination 自带不透明底，Scroll 又铺了一层 page_bg），
@@ -1453,7 +1456,7 @@ export struct ProfilePage {
     Stack() {
       // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
       // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
-      AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH) });
+      AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) });
       Scroll() {
         Column() {
           if (!this.profileContentReady) {

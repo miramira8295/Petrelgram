@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "Tüm medyayı göster"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "Tek sütunu zorla"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "Tablet ve geniş ekranlarda telefon düzenini kullan"
     }
   ]
 }

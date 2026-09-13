@@ -13,7 +13,7 @@ import { titleBarStyle } from '../../util/hdsTitleBar';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
 import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -196,6 +196,8 @@ export struct ChatListPage {
   // 聊天页的右上角去（issue #146）。
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
   @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
+  // 设置里的「强制单栏」（宽屏也当手机用）。
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
   @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
@@ -381,7 +383,7 @@ export struct ChatListPage {
   // 值没变时 applyNavBarVisible 是幂等的，所以这条路平时什么都不做。
   private onWindowResized(): void {
     this.applyNavBarVisible(navBarVisibleOnAppear(
-      isSplitLayout(this.screenW, this.screenH), this.chatStack.size()));
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.chatStack.size()));
   }
 
   aboutToAppear(): void {
@@ -400,7 +402,7 @@ export struct ChatListPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     this.navBarVisible = navBarVisibleOnAppear(
-      isSplitLayout(this.screenW, this.screenH), this.chatStack.size());
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.chatStack.size());
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, this.navBarVisible);
     this.listRenderActive = this.navBarVisible;
     setChatListRenderActive(this.listRenderActive);
@@ -1193,7 +1195,7 @@ export struct ChatListPage {
         if (AppStorage.get<number>(NAV_BAR_WIDTH_KEY) !== this.tabsWidth) {
           AppStorage.setOrCreate<number>(NAV_BAR_WIDTH_KEY, this.tabsWidth);
           // 拖过分割线就记下来，下次启动复原（issue #106）。
-          rememberSplitNavWidth(this.tabsWidth, isSplitLayout(this.screenW, this.screenH));
+          rememberSplitNavWidth(this.tabsWidth, isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn));
         }
       })
       // Content swipe in progress: convert the swipe offset into a fractional
@@ -1330,7 +1332,7 @@ export struct ChatListPage {
       // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
       // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
-      .mode(isSplitLayout(this.screenW, this.screenH) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
       .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
@@ -1343,7 +1345,7 @@ export struct ChatListPage {
       .onNavBarStateChange((reported: boolean): void => {
         // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
         this.applyNavBarVisible(navBarVisibleOnChange(reported,
-          isSplitLayout(this.screenW, this.screenH), this.chatStack.size()));
+          isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.chatStack.size()));
       })
       .enableDragBar(true)
       // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶

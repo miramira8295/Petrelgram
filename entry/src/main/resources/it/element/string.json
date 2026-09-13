@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "Mostra tutti i media"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "Forza colonna singola"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "Usa il layout del telefono su tablet e schermi larghi"
     }
   ]
 }

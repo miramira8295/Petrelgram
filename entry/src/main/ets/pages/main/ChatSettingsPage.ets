@@ -6,7 +6,7 @@ import {
   BG_BLUR_DEFAULT, BG_BLUR_MAX, BG_BLUR_MIN, BG_PATTERN_DEFAULT, BG_PATTERN_MIN,
   CHAT_DIM_MAX,
   KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT, KEY_LOCAL_BG_DARK, KEY_LOCAL_BG_EPOCH,
-  KEY_LOCAL_BG_LIGHT
+  KEY_LOCAL_BG_LIGHT, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import {
   ChatBackgroundState, defaultChatBackgroundSnapshot, emptyChatBackground,
@@ -655,6 +655,8 @@ export struct ChatSettingsPage {
   }
 
   @StorageProp('screenWidthVp') private appBgScreenW: number = 360;
+  // 「强制单栏」开关：本页自己也用它（壁纸预览的版式），行的显隐用几何判据。
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') private appBgScreenH: number = 780;
   @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('rebuildSlotStates') private appBgLight: string = '';
@@ -676,7 +678,7 @@ export struct ChatSettingsPage {
   @State enlargedDim: number = 0;
 
   private appBgSplit(): boolean {
-    return isSplitLayout(this.appBgScreenW, this.appBgScreenH);
+    return isSplitLayout(this.appBgScreenW, this.appBgScreenH, this.forceSingleColumn);
   }
 
   private appBgKey(): string {
@@ -1077,6 +1079,14 @@ export struct ChatSettingsPage {
             Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
             this.toggleRow(str('chat_settings_in_app_browser'),
               str('chat_settings_in_app_browser_sub'), KEY_IN_APP_BROWSER);
+            // 只有真能分栏的窗口才给这个开关——手机上它永远没作用，摆着是噪音。
+            // 判据传 false：问的是"这个窗口够不够宽"，不是"现在分没分栏"，否则
+            // 开关一打开自己就消失了。
+            if (isSplitLayout(this.appBgScreenW, this.appBgScreenH, false)) {
+              Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+              this.toggleRow(str('chat_settings_force_single'),
+                str('chat_settings_force_single_sub'), KEY_FORCE_SINGLE_COLUMN);
+            }
           }
           .width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
           .padding({ top: 4, bottom: 4 });

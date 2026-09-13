@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "सभी मीडिया दिखाएँ"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "एकल कॉलम बाध्य करें"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "टैबलेट और चौड़ी स्क्रीन पर फ़ोन लेआउट इस्तेमाल करें"
     }
   ]
 }

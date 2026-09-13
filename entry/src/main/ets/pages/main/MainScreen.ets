@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { AppBackdrop } from '../common/AppBackdrop';
 import {
-  KEY_APP_BG_ON, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT
+  KEY_APP_BG_ON, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { appWallpaperActive } from '../../util/localWallpaper';
@@ -117,6 +117,8 @@ export struct MainScreen {
   // 分栏下左栏 dock 比右栏输入框高出 0.7×bottomSafe−6（issue #150）。
   @StorageProp('keyboardHeightVp') private keyboardH: number = 0;
   @StorageProp('screenWidthVp') @Watch('syncWallpaperFlag') screenW: number = 360;
+  // 设置里的「强制单栏」（宽屏也当手机用）。
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   // 聊天页签分栏时左栏的实际宽度（vp，0 = 还没量到）。由 ChatListPage 在自己的
   // 布局回调里写入——HdsNavigation 不回调宽度，拖分割线又会改它，只能这么拿。
   @StorageProp(NAV_BAR_WIDTH_KEY) private navBarWidth: number = 0;
@@ -214,7 +216,7 @@ export struct MainScreen {
   private callPagePushed: boolean = false;
 
   private wallpaperSplit(): boolean {
-    return isSplitLayout(this.screenW, this.screenH);
+    return isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn);
   }
 
   private syncWallpaperFlag(): void {
@@ -700,7 +702,7 @@ export struct MainScreen {
     }
     const stack: NavStackLike | undefined = stackOf(kind);
     return dockVisibleForTab(
-      isSplitLayout(this.screenW, this.screenH),
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn),
       stack === undefined ? undefined : stack.size(),
       this.storedNavBarFlag(this.tab)
     );

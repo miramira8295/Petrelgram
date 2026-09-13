@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "ดูสื่อทั้งหมด"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "บังคับคอลัมน์เดียว"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "ใช้เลย์เอาต์โทรศัพท์บนแท็บเล็ตและจอกว้าง"
     }
   ]
 }

@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "Показать все медиа"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "Одна колонка"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "Телефонная раскладка на планшетах и широких экранах"
     }
   ]
 }

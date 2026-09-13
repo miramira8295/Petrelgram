@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "すべてのメディアを表示"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "1カラム表示を強制"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "タブレットや広い画面でもスマホ表示にする"
     }
   ]
 }

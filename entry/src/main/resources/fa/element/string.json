@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "نمایش همه رسانه‌ها"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "اجبار به تک‌ستونی"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "استفاده از چیدمان گوشی در تبلت و نمایشگر عریض"
     }
   ]
 }

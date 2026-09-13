@@ -14,7 +14,7 @@ import {
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { searchPublicUsers } from '../../store/PublicUserSearch';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_SPLIT_NAV_WIDTH, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import {
@@ -154,6 +154,8 @@ export struct ContactsPage {
   // 平板上不把一列内容拉满整屏——见 util/contentWidth。窗口宽（不是屏幕宽），
   // 分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的 windowSizeChange 会刷新它。
   @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
+  // 设置里的「强制单栏」（宽屏也当手机用）。
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
   @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
@@ -248,7 +250,7 @@ export struct ContactsPage {
   // aboutToAppear 的复位同一个判据（util/navBarReset），值没变时不写。
   private onWindowResized(): void {
     const isVisible: boolean = navBarVisibleOnAppear(
-      isSplitLayout(this.screenW, this.screenH), this.contactsStack.size());
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.contactsStack.size());
     if (AppStorage.get<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
       AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, isVisible);
     }
@@ -270,7 +272,7 @@ export struct ContactsPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH), this.contactsStack.size()));
+      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.contactsStack.size()));
     this.releaseActionLock();
     const store = new ContactsStore(getTdClient());
     this.store = store;
@@ -570,7 +572,7 @@ export struct ContactsPage {
   //   分栏但还没量到（navBarW <= 0，首帧）→ 退回 '100%'，与改动前同。下一帧
   //     onAreaChange 一到就归位。
   private topMenuAnchorX(): Length {
-    if (!isSplitLayout(this.screenW, this.screenH)) {
+    if (!isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn)) {
       return '100%';
     }
     const w: number = this.navBarW;
@@ -611,7 +613,7 @@ export struct ContactsPage {
   // 不是屏幕宽（AppStorage 'screenWidthVp'，见字段处的注释），分屏/悬浮窗下才不会
   // 与组件实际的单双栏状态相反。
   private openContact(contact: ContactItem): void {
-    if (!isSplitLayout(this.screenW, this.screenH)) {
+    if (!isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn)) {
       this.openChatWith(contact.id);
       return;
     }
@@ -1555,7 +1557,7 @@ export struct ContactsPage {
     if (this.navBarW > 0) {
       return contentSideGutter(this.navBarW);
     }
-    if (isSplitLayout(this.screenW, this.screenH)) {
+    if (isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn)) {
       return contentSideGutter(splitNavMinWidth(this.screenW));
     }
     return contentSideGutter(this.screenW);
@@ -1698,7 +1700,7 @@ export struct ContactsPage {
             if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
               AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
               // 三个页签共用一个记忆值，哪个页签拖的都算（issue #106）。
-              rememberSplitNavWidth(w, isSplitLayout(this.screenW, this.screenH));
+              rememberSplitNavWidth(w, isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn));
             }
           })
           // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
@@ -1753,7 +1755,7 @@ export struct ContactsPage {
       // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
       // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
-      .mode(isSplitLayout(this.screenW, this.screenH) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
       .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
@@ -1766,7 +1768,7 @@ export struct ContactsPage {
       .onNavBarStateChange((reported: boolean): void => {
         // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
         const isVisible: boolean = navBarVisibleOnChange(reported,
-          isSplitLayout(this.screenW, this.screenH), this.contactsStack.size());
+          isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.contactsStack.size());
         if (AppStorage.get<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
           AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, isVisible);
         }

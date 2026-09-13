@@ -1840,6 +1840,8 @@ export struct ChatPage {
   // 聊天设置 → 回车键发送.
   @Require @Param sendByEnter: boolean = false;
   @Require @Param screenW: number = 360;
+  // 设置里的「强制单栏」。V2 读不了 AppStorage，由 ChatPageEntry 透传。
+  @Require @Param forceSingleColumn: boolean = false;
   @Require @Param chatContentWidth: number = 360;
   private lastScreenW: number = 0;
   @Require @Param screenH: number = 780;
@@ -3317,7 +3319,7 @@ export struct ChatPage {
     // 而预取意味着首帧就已经有行了——页面是带着内容滑进来的，没有可闪的东西。
     // 见 util/chatPrefetch。
     store.deferInitialPublication(
-      (isSplitLayout(this.screenW, this.screenH) || hasPrefetchedPage(this.chatId))
+      (isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) || hasPrefetchedPage(this.chatId))
         ? 0 : INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
     this.store = store;
     if (!this.routeResumeWaiting || this.groups.length === 0) {
@@ -4540,7 +4542,7 @@ export struct ChatPage {
     // 平板黑屏 / 顶栏横幅（#201 第 1 条）没有设备可复现，先把「走的哪条路」记下来：
     // 分栏 → bindContentCover 全模态且标题栏不收；单栏 → 内联 + 收标题栏。
     // 两个症状都指向分栏那条，但缺一份平板日志才能定死。
-    const split: boolean = isSplitLayout(this.screenW, this.screenH);
+    const split: boolean = isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn);
     logW(`[ViewerPath] split=${split} path=${split ? 'contentCover' : 'inline'}` +
       ` hidesTitleBar=${!split} api=${deviceInfo.sdkApiVersion}` +
       ` win=${Math.round(this.screenW)}x${Math.round(this.screenH)}`);
@@ -8637,7 +8639,7 @@ export struct ChatPage {
       // Fullscreen media viewer. The page owns which message is open and the
       // hero transition anchored to the tapped thumbnail; the overlay owns
       // zoom/pan, paging, the filmstrip and the chrome layer.
-      if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH), this.viewerOpen())) {
+      if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen())) {
         this.mediaViewer();
       }
     }
@@ -8654,7 +8656,7 @@ export struct ChatPage {
     // animated 取 true：查看器根节点是 300ms 的黑底渐入，第 0 帧直接摘掉顶栏会
     // 在还透着的黑底上闪一下。
     .hideTitleBar(viewerHidesTitleBar(
-      isSplitLayout(this.screenW, this.screenH), this.viewerOpen()), true)
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen()), true)
     // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
     //
     // **转场期间先不绑**（09-04 GPU trace）。这条绑定给 NavDestination 层挂了一个
@@ -8670,7 +8672,7 @@ export struct ChatPage {
     // HdsNavDestination 没有 fullScreenOverlay。只在分栏中把查看器提升为应用内
     // 顶层全模态，手机仍保留原来的页面内共享元素过渡。
     .bindContentCover(viewerFullScreenWanted(
-      isSplitLayout(this.screenW, this.screenH), this.viewerOpen()), this.mediaViewer(), {
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen()), this.mediaViewer(), {
       modalTransition: ModalTransition.NONE,
       backgroundColor: Color.Black,
       enableSafeArea: false,

@@ -25,7 +25,8 @@ import { WebmStickerView } from '../chat/WebmStickerView';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { publicLink } from '../../util/telegramLink';
-import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
+} from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import {
@@ -123,6 +124,8 @@ export struct MyProfilePage {
   // 窗口宽（不是屏幕宽），分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的
   // windowSizeChange 会刷新它。平板上用来给内容限宽——见 util/contentWidth。
   @StorageProp('screenWidthVp') screenW: number = 360;
+  // 设置里的「强制单栏」（宽屏也当手机用）。
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
   @StorageProp('screenHeightVp') screenH: number = 780;
@@ -196,7 +199,7 @@ export struct MyProfilePage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH), this.profileStack.size()));
+      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.profileStack.size()));
     this.loadProfile();
   }
 
@@ -2142,7 +2145,7 @@ export struct MyProfilePage {
     .onNavBarStateChange((reported: boolean): void => {
       // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
       const isVisible: boolean = navBarVisibleOnChange(reported,
-        isSplitLayout(this.screenW, this.screenH), this.profileStack.size());
+        isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.profileStack.size());
       if (AppStorage.get<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY) !== isVisible) {
         AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
       }

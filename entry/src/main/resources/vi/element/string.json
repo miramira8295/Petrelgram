@@ -12055,6 +12055,14 @@
     {
       "name": "mv_show_all_media",
       "value": "Xem tất cả phương tiện"
+    },
+    {
+      "name": "chat_settings_force_single",
+      "value": "Buộc một cột"
+    },
+    {
+      "name": "chat_settings_force_single_sub",
+      "value": "Dùng bố cục điện thoại trên máy tính bảng và màn hình rộng"
     }
   ]
 }
