@@ -8,6 +8,8 @@
 @Observed
 export class FolderBadge {
   count: number = 0;
+  // 有未静音的未读才蓝，全静音灰（issue #155）。
+  hasUnmuted: boolean = true;
 }
 
 const badges: Map<string, FolderBadge> = new Map<string, FolderBadge>();
@@ -24,10 +26,13 @@ export function folderBadge(key: string): FolderBadge {
 }
 
 // 值没变不写：对 @Observed 字段的每次赋值都是一次该角标的重渲染。
-export function setFolderBadge(key: string, count: number): void {
+export function setFolderBadge(key: string, count: number, hasUnmuted: boolean = true): void {
   const badge = folderBadge(key);
   if (badge.count !== count) {
     badge.count = count;
+  }
+  if (badge.hasUnmuted !== hasUnmuted) {
+    badge.hasUnmuted = hasUnmuted;
   }
 }
 

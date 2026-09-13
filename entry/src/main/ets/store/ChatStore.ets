@@ -1,3 +1,4 @@
+import { foldUnreadBadge, UnreadBadgeCounts, UnreadBadgeSource } from '../util/unreadBadgeRule';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
@@ -320,23 +321,25 @@ export class ChatStore {
   // chats. Used for folder tab badges (TDLib's updateUnreadChatCount is emitted
   // only for the main and archive lists, not for chat folders).
   unreadChatCount(listKey: string): number {
+    return this.unreadChatBadge(listKey).unmuted;
+  }
+
+  // 角标口径（issue #155）：total = 有未读的会话数（含静音），unmuted = 其中未静音的。
+  // 数字用 total，颜色看 unmuted——与 Telegram 同口径；主列表两个数由 TDLib 直接给
+  // （UnreadCountStore），文件夹从已加载的会话里数，两边口径必须一致。
+  unreadChatBadge(listKey: string): UnreadBadgeCounts {
     const bucket = this.positions.get(listKey);
     if (bucket === undefined) {
-      return 0;
+      return { total: 0, unmuted: 0 };
     }
-    let count = 0;
+    const sources: UnreadBadgeSource[] = [];
     bucket.forEach((_pos: PositionInfo, id: number) => {
       const e = this.chats.get(id);
-      // 只数有未读消息的会话，"手动标记为未读"不计入——与「全部」角标读的
-      // unread_unmuted_count 同一个口径（见 UnreadCountStore）。
-      // 静音判定要过分类默认：整类静音的会话在这里也不该计入"未静音未读"
-      // （issue #110 的同一根因）。
-      if (e !== undefined && e.unreadCount > 0 &&
-        !effectiveMuted(e, scopeMutedForKind(e.kind))) {
-        count += 1;
+      if (e !== undefined) {
+        sources.push({ unreadCount: e.unreadCount, muted: effectiveMuted(e, scopeMutedForKind(e.kind)) });
       }
     });
-    return count;
+    return foldUnreadBadge(sources);
   }
 
   photoFileIdOf(chatId: number): number {

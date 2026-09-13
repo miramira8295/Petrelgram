@@ -4,6 +4,8 @@ import { listKeyOf } from './ListKey';
 
 export class UnreadCountStore {
   private counts: Map<string, number> = new Map();
+  // 全部未读会话数（含静音），角标数字用它；颜色看上面的未静音数（issue #155）。
+  private totals: Map<string, number> = new Map();
   private listeners: Array<() => void> = [];
 
   constructor(client: TdClient) {
@@ -12,6 +14,10 @@ export class UnreadCountStore {
 
   getUnread(listKey: string): number {
     return this.counts.get(listKey) ?? 0;
+  }
+
+  getUnreadTotal(listKey: string): number {
+    return this.totals.get(listKey) ?? 0;
   }
 
   subscribe(listener: () => void): () => void {
@@ -36,6 +42,7 @@ export class UnreadCountStore {
     // 数有未读消息的（ChatStore.unreadChatCount），两边必须同一个口径，否则
     // 同一批会话在两个标签上显示不同的数字。
     this.counts.set(key, (update['unread_unmuted_count'] as number | undefined) ?? 0);
+    this.totals.set(key, (update['unread_count'] as number | undefined) ?? 0);
     for (const l of this.listeners) {
       l();
     }

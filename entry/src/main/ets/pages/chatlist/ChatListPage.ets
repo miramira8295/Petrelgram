@@ -1,3 +1,4 @@
+import { UnreadBadgeCounts } from '../../util/unreadBadgeRule';
 import { getFolderStore, getUnreadCountStore, getChatStore, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { FolderInfo } from '../../store/FolderStore';
@@ -643,11 +644,13 @@ export struct ChatListPage {
   }
 
   // Main uses TDLib's authoritative unread count; folders derive it from loaded chats.
-  private computeUnread(key: string): number {
+  // 数字 = 全部未读会话数（含静音），颜色看未静音数（issue #155，Telegram 同口径）。
+  private computeBadge(key: string): UnreadBadgeCounts {
     if (key === 'main') {
-      return getUnreadCountStore().getUnread('main');
+      const store = getUnreadCountStore();
+      return { total: store.getUnreadTotal('main'), unmuted: store.getUnread('main') };
     }
-    return getChatStore().unreadChatCount(key);
+    return getChatStore().unreadChatBadge(key);
   }
 
   // 逐 chip 写入旁路模型（util/folderBadges），只有值变了的角标各自重渲染，
@@ -672,7 +675,8 @@ export struct ChatListPage {
 
   private writeFolderBadges(): void {
     for (const spec of this.tabs()) {
-      setFolderBadge(spec.key, this.computeUnread(spec.key));
+      const counts: UnreadBadgeCounts = this.computeBadge(spec.key);
+      setFolderBadge(spec.key, counts.total, counts.unmuted > 0);
     }
   }
 
@@ -1408,7 +1412,9 @@ struct FolderChipBadge {
         .constraintSize({ minWidth: 16 })
         .height(16).padding({ left: 4, right: 4 })
         .align(Alignment.Center).textAlign(TextAlign.Center)
+        // 全静音的角标压暗一档（COLOR_BADGE_BG 本就是灰底，靠透明度区分）。
         .backgroundColor(this.selected ? COLOR_TAB_SELECTED : COLOR_BADGE_BG)
+        .opacity(this.badge.hasUnmuted ? 1 : 0.55)
         .borderRadius(8)
         .accessibilityText(str('cl_tab_unread_a11y', this.plainTitle,
           badgeLabel(this.badge.count, TAB_BADGE_MAX)));

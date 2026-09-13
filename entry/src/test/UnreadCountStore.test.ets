@@ -10,11 +10,13 @@ class FakeBridge implements TdBridge {
   send(json: string): void { this.sent.push(json); }
 }
 
-function pushUnread(bridge: FakeBridge, listType: string, unmuted: number, markedUnmuted: number = 0): void {
+function pushUnread(bridge: FakeBridge, listType: string, unmuted: number, markedUnmuted: number = 0,
+  total: number = -1): void {
   const cl: TdObject = { '@type': listType };
   const u: TdObject = { '@type': 'updateUnreadChatCount' };
   u['chat_list'] = cl;
   u['unread_unmuted_count'] = unmuted;
+  u['unread_count'] = total < 0 ? unmuted : total;
   u['marked_as_unread_unmuted_count'] = markedUnmuted;
   bridge.onReceive(JSON.stringify(u));
 }
@@ -74,6 +76,18 @@ export default function unreadCountStoreTest() {
       u['unread_unmuted_count'] = 4;
       bridge.onReceive(JSON.stringify(u));
       expect(store.getUnread('main')).assertEqual(4);
+    });
+
+    // issue #155：主列表角标要数全部未读会话（含静音），颜色再看未静音数。
+    it('stores_total_alongside_unmuted', 0, () => {
+      const bridge = new FakeBridge();
+      const client = new TdClient(bridge);
+      const store = new UnreadCountStore(client);
+      client.start();
+      pushUnread(bridge, 'chatListMain', 2, 0, 9);
+      expect(store.getUnread('main')).assertEqual(2);
+      expect(store.getUnreadTotal('main')).assertEqual(9);
+      expect(store.getUnreadTotal('archive')).assertEqual(0);
     });
   });
 }
