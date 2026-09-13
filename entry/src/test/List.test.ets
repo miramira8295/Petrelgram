@@ -151,6 +151,7 @@ import forwardFoldersTest from './ForwardFolders.test';
 import configChangeTest from './ConfigChange.test';
 import pixelSyncPolicyTest from './PixelSyncPolicy.test';
 import unreadBadgeRuleTest from './UnreadBadgeRule.test';
+import rowLeaveChannelTest from './RowLeaveChannel.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
@@ -418,6 +419,7 @@ export default function testsuite() {
   configChangeTest();
   pixelSyncPolicyTest();
   unreadBadgeRuleTest();
+  rowLeaveChannelTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();

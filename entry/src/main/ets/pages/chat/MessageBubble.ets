@@ -367,6 +367,8 @@ export struct MessageBubble {
   @Local glassH: number = 0;
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
+  // 1 = 这一行正在被删除，淡出等 TDLib 的删除到达（issue #149）。
+  @Param leaving: number = 0;
   // 本机正在共享实时位置的那条消息 id（0 = 没有共享）。
   // 身份标签按群区分（同一个人在别的群未必是管理员），所以标签通道的 key
   // 要带 chatId。MessageEntry 里没有这个字段，由页面传。
@@ -4227,8 +4229,10 @@ export struct MessageBubble {
       .backgroundColor(this.containerGlassBg())
       // Transform the bubble and tail without moving avatar/date or list geometry.
       // The jump controller owns the one-shot animation; no resident .animation().
-      .scale({ x: 1 + this.jumpFocus * 0.018, y: 1 + this.jumpFocus * 0.018,
+      .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+        y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
         centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+      .opacity(1 - this.leaving)
       .brightness(1 + this.jumpFocus * 0.10)
       .backgroundBlurStyle(this.containerGlassBlurStyle())
       // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角

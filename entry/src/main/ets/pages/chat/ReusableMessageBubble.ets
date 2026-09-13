@@ -1,5 +1,6 @@
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { BubbleFocusChannel } from '../../util/bubbleFocusChannel';
+import { RowLeaveChannel } from '../../util/rowLeaveChannel';
 import { checkRenderedGroup } from '../../util/rowIdentityGuard';
 import {
   messageRowPresentationFor, subscribeMessageRowPresentation
@@ -20,6 +21,8 @@ import { MessageBubble } from './MessageBubble';
 // ids/current arrays, so no callback retains the AlbumGroup that created a row.
 export interface MessageBubbleActions {
   bubbleFocus: BubbleFocusChannel;
+  // 删除动画（issue #149）：删之前把要走的行标出来淡出。
+  rowLeave: RowLeaveChannel;
   onStopLiveLocation: () => void;
   onMediaTap: (messageId: number, x: number, y: number) => void;
   onLinkTap: (url: string) => void;
@@ -138,6 +141,7 @@ export interface MessageBubbleRenderData {
 
 const EMPTY_ACTIONS: MessageBubbleActions = {
   bubbleFocus: new BubbleFocusChannel(),
+  rowLeave: new RowLeaveChannel(),
   onStopLiveLocation: (): void => {},
   onMediaTap: (_id: number, _x: number, _y: number): void => {},
   onLinkTap: (_url: string): void => {}, onCommentTap: (_id: number): void => {},
@@ -230,7 +234,9 @@ export struct ReusableMessageBubble {
   @Param actions: MessageBubbleActions = EMPTY_ACTIONS;
   @Local private liveGroup: AlbumGroup | null = null;
   @Local private jumpFocus: number = 0;
+  @Local private leaving: number = 0;
   private unsubFocus: (() => void) | null = null;
+  private unsubLeave: (() => void) | null = null;
   private unsubPresentation: (() => void) | null = null;
 
   private currentGroup(): AlbumGroup {
@@ -256,12 +262,15 @@ export struct ReusableMessageBubble {
       // liveGroup 置 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
       this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
       this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
+      this.leaving = this.actions.rowLeave.value(group.head.rowId);
       return;
     }
     this.detachPresentation();
     this.attachedKey = key;
     this.unsubFocus = this.actions.bubbleFocus.subscribe(group.head.rowId,
       (strength: number): void => { this.jumpFocus = strength; });
+    this.unsubLeave = this.actions.rowLeave.subscribe(group.head.rowId,
+      (strength: number): void => { this.leaving = strength; });
     this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
     this.unsubPresentation = subscribeMessageRowPresentation(
       this.data.chatId,
@@ -341,7 +350,12 @@ export struct ReusableMessageBubble {
       this.unsubFocus();
       this.unsubFocus = null;
     }
+    if (this.unsubLeave !== null) {
+      this.unsubLeave();
+      this.unsubLeave = null;
+    }
     this.jumpFocus = 0;
+    this.leaving = 0;
     if (this.unsubPresentation !== null) {
       this.unsubPresentation();
       this.unsubPresentation = null;
@@ -390,6 +404,7 @@ export struct ReusableMessageBubble {
     if (this.data.lightweightPlainText && this.currentGroup().head.translatedText === '') {
       LightweightPlainTextBubble({
         jumpFocus: this.jumpFocus,
+        leaving: this.leaving,
         msg: this.currentGroup().head,
         nowSec: this.nowSec,
         chatId: this.data.chatId,
@@ -412,6 +427,7 @@ export struct ReusableMessageBubble {
     } else {
       MessageBubble({
       jumpFocus: this.jumpFocus,
+      leaving: this.leaving,
       // 整行一个对象下发，不再拆成十七个 @Param（理由见 MessageBubble.group）。
       group: this.currentGroup(),
       msg: this.currentGroup().head, nowSec: this.nowSec,

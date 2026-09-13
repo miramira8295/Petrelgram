@@ -1,3 +1,4 @@
+import { RowLeaveChannel } from '../../util/rowLeaveChannel';
 import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
 import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActionBarActions';
 import { ReportTarget, runReportFlow } from '../../util/reportFlow';
@@ -390,6 +391,10 @@ type InitialMessageReleaseResult = 'released' | 'waiting' | 'finished';
 
 // Emoji offered in the full reaction picker (opened from the long-press menu's
 // chevron). Ordered roughly like the official client's reaction sheet.
+// 删除时那几行淡出的时长（issue #149）。比 publishGroupsNow 里塌陷动画的 200ms
+// 略短，好让"先淡出、后收拢"读起来是一个连续动作。
+const ROW_LEAVE_FADE_MS: number = 160;
+
 @ComponentV2
 export struct ChatPage {
   // The API 26 pool is shared by every ChatPage still in the navigation stack.
@@ -1355,6 +1360,7 @@ export struct ChatPage {
     if (this.messageActionsCache === null) {
       this.messageActionsCache = {
         bubbleFocus: this.flash.focus,
+        rowLeave: this.rowLeave,
         onStopLiveLocation: (): void => { confirmStopLiveLocation(); },
         // 形参 x/y 保留但不再存：几何过渡已全交给 geometryTransition，查看器
         // 那两个 @Param 从来没被读过（S1 已删）。**签名不改**——MessageBubble
@@ -2049,6 +2055,9 @@ export struct ChatPage {
   @Require @Param translateChatsEnabled: boolean = false;
   // 是否正在共享实时位置（全局单例状态，不限于当前会话）。
   @Local liveLocationActive: boolean = false;
+  // 删除动画的旁路通道（issue #149）。不做模块级单例：平板分栏时多个 ChatPage
+  // 同时活着，各自的淡出不能互相影响。
+  private rowLeave: RowLeaveChannel = new RowLeaveChannel();
   // 会话操作条（issue #201 第 8 条），从 ChatEntry 镜像过来，空串 = 没有。
   @Local actionBarKind: string = '';
   @Local actionBarCanUnarchive: boolean = false;
@@ -6750,6 +6759,11 @@ export struct ChatPage {
   }
 
   private doDeleteMessages(ids: number[], revoke: boolean): void {
+    // 先让要走的那几行淡出（issue #149）：ArkUI 的 disappear transition 没法在
+    // 删除发生之后补挂（被删的节点不会再 rebuild），常驻又会让滚出屏幕的行也淡
+    // 一下。所以顺序反过来——这里标记，~200ms 后 TDLib 的删除到达，
+    // publishGroupsNow 里现成的 isInteriorRowRemoval + animateTo 把下面的行收上来。
+    this.markRowsLeaving(ids);
     const req: TdRequest = { '@type': 'deleteMessages' };
     req['chat_id'] = this.chatId;
     req['message_ids'] = ids;
@@ -6757,9 +6771,29 @@ export struct ChatPage {
     getTdClient().send(req).then(() => {
       this.selection.exit();
     }).catch((e: TdError) => {
+      // 删不掉就把淡出撤回来，别留一行半透明的幽灵。
+      this.rowLeave.clear();
       logE(`ChatPage.deleteMessages failed: ${e.message}`);
       promptAction.showToast({ message: str('cp_delete_failed_msg', e.message), duration: 2000 });
     });
+  }
+
+  // 消息 id → 行 id（相册整组共用一个 rowId）；标记包在 animateTo 里，透明度滑过去。
+  private markRowsLeaving(ids: number[]): void {
+    const rowIds: number[] = [];
+    for (const id of ids) {
+      const m: MessageEntry | null = this.findMsg(id);
+      if (m !== null && rowIds.indexOf(m.rowId) < 0) {
+        rowIds.push(m.rowId);
+      }
+    }
+    if (rowIds.length === 0) {
+      return;
+    }
+    animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, ROW_LEAVE_FADE_MS),
+      curve: Curve.EaseOut
+    }, (): void => { this.rowLeave.mark(rowIds); });
   }
 
   private copyMessageText(messageId: number): void {
