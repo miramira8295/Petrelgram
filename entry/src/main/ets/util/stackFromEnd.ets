@@ -14,9 +14,12 @@ export function stackFromEndWanted(
   hasMoreNewer: boolean,
   visibleStartIdx: number,
   visibleEndIdx: number,
-  indexGroupsLen: number
+  indexGroupsLen: number,
+  // 评论/话题页（issue #162）：帖子在最上、评论往下长，Telegram 也是顶部对齐；
+  // 整窗可见时也不从底部堆。普通会话不传，行为不变。
+  isThread: boolean = false
 ): boolean {
-  if (hasMoreNewer) {
+  if (hasMoreNewer || isThread) {
     return false;
   }
   if (visibleStartIdx < 0 || visibleEndIdx < 0 || indexGroupsLen <= 0) {

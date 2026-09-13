@@ -5293,7 +5293,8 @@ export struct ChatPage {
       this.store !== null && this.store.getHasMoreNewer(),
       this.curStartIdx,
       this.curEndIdx,
-      this.indexGroupsLen
+      this.indexGroupsLen,
+      this.threadRootId > 0
     );
   }
 

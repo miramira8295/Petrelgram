@@ -29,5 +29,14 @@ export default function stackFromEndTest() {
       // 不是整份同时可见，就必须在这次追加布局前关掉 stackFromEnd。
       expect(stackFromEndWanted(false, 80, 99, 100)).assertFalse();
     });
+
+    // issue #162：评论/话题页顶部对齐——帖子在最上、评论往下长（Telegram 亦然），
+    // 整窗可见时也不从底部堆。普通会话行为不变。
+    it('thread pages never stack from end, even when the whole window is visible', 0, (): void => {
+      expect(stackFromEndWanted(false, 0, 1, 2, true)).assertFalse();
+      expect(stackFromEndWanted(false, -1, -1, 0, true)).assertFalse();
+      expect(stackFromEndWanted(false, 0, 1, 2, false)).assertTrue();
+      expect(stackFromEndWanted(false, 0, 1, 2)).assertTrue();
+    });
   });
 }
