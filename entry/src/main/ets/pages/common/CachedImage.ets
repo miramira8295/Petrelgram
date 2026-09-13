@@ -38,6 +38,10 @@ export struct CachedImage {
   @Param onReady: () => void = (): void => {};
   // 小图同步解码（#137）：未命中缓存时在主线程解一次，首帧就有图。准入见 pixelSyncPolicy。
   @Param syncSmall: boolean = false;
+  // 源身份（issue #188）：同一身份下换路径视为"同图升级"，旧位图保留到新图解完；
+  // 不传就按路径判（老行为）。LiveThumbImage 传缩略图 fileId。
+  @Param sourceKey: string = '';
+  private heldKey: string = '';
   @Local pixelMap: image.PixelMap | undefined = undefined;
   // The handle currently retained, so it can be released even after path has
   // already been overwritten by a reuse — and even if the LRU has since
@@ -72,10 +76,17 @@ export struct CachedImage {
     // @Param 已是新值（批 0.5 判读）：换源判定直接同步做。换了源先 drop——
     // 复用出来的行绝不能画着上一条消息的图等新解码；同源保留位图，
     // start() 里补种（@Local 已被框架重置）。
-    if (this.heldReq !== null && this.heldReq.path !== this.path) {
+    if (this.sourceChanged()) {
       this.drop();
     }
     this.start();
+  }
+
+  // 是否真的换了源（按身份，没身份按路径）。同源升级不 drop：旧位图留着当占位，
+  // swapTo 换上新图时再把旧引用还回去。
+  private sourceChanged(): boolean {
+    return this.heldReq !== null &&
+      shouldBlankBeforeDecode(this.heldReq.path, this.path, this.heldKey, this.sourceKey);
   }
 
   private request(): PixelRequest {
@@ -103,6 +114,7 @@ export struct CachedImage {
       this.held = null;
       this.heldReq = null;
     }
+    this.heldKey = '';
     this.pixelMap = undefined;
   }
 
@@ -117,7 +129,7 @@ export struct CachedImage {
     // 与 aboutToReuse 同样先 drop 再 start：换了源文件就得把旧位图的引用还回去，
     // 否则它一直被 retain 着，白占 LRU 预算（显示本身由 start() 里的
     // shouldBlankBeforeDecode 兜住，这里修的是资源不是画面）。
-    if (this.heldReq !== null && this.heldReq.path !== this.path) {
+    if (this.sourceChanged()) {
       this.drop();
     }
     this.start();
@@ -141,6 +153,7 @@ export struct CachedImage {
     retainPixelMap(handle);
     this.held = handle;
     this.heldReq = req;
+    this.heldKey = this.sourceKey;
     this.pixelMap = handle.pixelMap;
     this.onReady();
     if (this.pin) {
@@ -164,7 +177,8 @@ export struct CachedImage {
     // 同一个源文件仅仅是解码目标尺寸变了（photoWidth/photoHeight 这类元数据晚到，
     // boxHeight 先给错后修正）时**不再清空**——老位图和新位图画的是同一张图,
     // 中间那段空窗纯属白送，用户看到的就是图闪一下。新位图由 swapTo 到手再换。
-    if (shouldBlankBeforeDecode(this.heldReq !== null ? this.heldReq.path : '', req.path)) {
+    if (shouldBlankBeforeDecode(this.heldReq !== null ? this.heldReq.path : '', req.path,
+      this.heldKey, this.sourceKey)) {
       this.pixelMap = undefined;
     }
     if (this.sameAsHeld(req)) {

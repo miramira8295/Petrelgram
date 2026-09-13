@@ -38,6 +38,19 @@ export function shouldStartDecode(
 // 反过来，同一个源文件只是解码目标尺寸变了（例如 photoWidth/photoHeight 元数据
 // 晚到，boxHeight 从错值修正到对值），清空就是纯亏：老位图和新位图画的是同一张
 // 图，中间那段空窗完全没有必要，用户看到的就是「图闪一下」。
-export function shouldBlankBeforeDecode(heldPath: string, nextPath: string): boolean {
-  return heldPath !== '' && heldPath !== nextPath;
+//
+// 【issue #188 补充】"另一个源文件"原来是按**路径**判的，但同一条消息自己也会换路径：
+// 视频海报换成真缩略图、贴纸换清晰档、元数据晚到重解——这些场景 A、B 画的是同一张图，
+// 清空就是在制造闪烁（行复用已关掉，路径变化几乎全是这类升级）。所以判定改按
+// **源身份**：调用方传了 key 就比 key（同源保留旧图当占位，直到新图解完——官方 alt
+// 占位的语义），没传就退回路径规则，老调用点逐字不变。
+export function shouldBlankBeforeDecode(heldPath: string, nextPath: string,
+  heldKey: string = '', nextKey: string = ''): boolean {
+  if (heldPath === '') {
+    return false;
+  }
+  if (heldKey !== '' && nextKey !== '') {
+    return heldKey !== nextKey;
+  }
+  return heldPath !== nextPath;
 }

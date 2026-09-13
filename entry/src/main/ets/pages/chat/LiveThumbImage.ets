@@ -146,7 +146,9 @@ export struct LiveThumbImage {
         boxWidth: this.spec.boxWidth,
         boxHeight: this.spec.boxHeight,
         radius: this.spec.radius,
-        fit: this.spec.fit
+        fit: this.spec.fit,
+        // 同一缩略图 fileId 下换路径（海报 → 真缩略图）保留旧图当占位（issue #188）。
+        sourceKey: this.spec.fileId > 0 ? `f${this.spec.fileId}` : ''
       });
     } else {
       this.placeholder();

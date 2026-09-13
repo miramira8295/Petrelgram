@@ -62,5 +62,14 @@ export default function imageSwapTest() {
     it('nothing held means nothing to blank', 0, () => {
       expect(shouldBlankBeforeDecode('', PATH_A)).assertFalse();
     });
+
+    // issue #188：同一条消息自己的路径升级（海报 → 真缩略图、元数据晚到重解）不该
+    // 清空——旧图当占位直到新图解完。判定改按源身份：传了 key 就比 key，没传退回路径。
+    it('same source key keeps the old bitmap even when the path changes', 0, () => {
+      expect(shouldBlankBeforeDecode(PATH_A, PATH_B, 'f1', 'f1')).assertFalse();
+      expect(shouldBlankBeforeDecode(PATH_A, PATH_B, 'f1', 'f2')).assertTrue();
+      expect(shouldBlankBeforeDecode(PATH_A, PATH_B, '', 'f2')).assertTrue();   // 没有旧身份：退回路径规则
+      expect(shouldBlankBeforeDecode('', PATH_B, '', 'f2')).assertFalse();
+    });
   });
 }
