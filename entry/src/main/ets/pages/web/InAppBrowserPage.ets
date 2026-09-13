@@ -8,7 +8,8 @@ import { webBrowserTarget } from '../../util/webBrowserNav';
 import { normalizeTelegramLink } from '../../util/linkNav';
 import { openTelegramLink } from '../../util/openTelegramLink';
 import {
-  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
+  COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY,
+  KEY_APP_DARK
 } from '../../util/theme';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
@@ -31,6 +32,9 @@ struct InAppBrowserPage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // Web 深色跟 App 的深浅色走（issue #181）：KEY_APP_DARK 由 EntryAbility 在颜色模式变化时写，
+  // 系统深色和 App 内「夜间模式」都覆盖。
+  @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @State pageTitle: string = '';
@@ -158,6 +162,13 @@ struct InAppBrowserPage {
       }
       Stack({ alignContent: Alignment.Center }) {
         Web({ src: this.initialUrl, controller: this.controller })
+          // ArkWeb 深色默认关闭（官方《Web 深色模式适配》）。On 时网页的
+          // @media(prefers-color-scheme: dark) 生效；forceDarkAccess 只在深色开启时起作用，
+          // 对没写深色样式的网页做反色，已声明 color-scheme: dark 的网页不会被改。
+          // 背景色跟着切，旋转/改尺寸时漏出来的底不再是白的。
+          .darkMode(this.appDark ? WebDarkMode.On : WebDarkMode.Off)
+          .forceDarkAccess(true)
+          .backgroundColor(COLOR_PAGE_BG)
           .domStorageAccess(true)
           // 百度系站点按 UA 分流，认不出的 UA 直接给错误页/白页。ArkWeb 默认
           // UA 带着 ArkWeb 标识，不在它们的白名单里——去掉自有标识、对齐主流
