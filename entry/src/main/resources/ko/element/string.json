@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "입력창에 넣기"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "길게 눌러 빨리 감기"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "길게 눌러 되감기"
     }
   ]
 }

@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "ใส่ในช่องข้อความ"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "กดค้างเพื่อกรอไปข้างหน้า"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "กดค้างเพื่อกรอกลับ"
     }
   ]
 }

@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "إدراج في مربع الرسالة"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "اضغط مطولًا للتقديم"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "اضغط مطولًا للإرجاع"
     }
   ]
 }

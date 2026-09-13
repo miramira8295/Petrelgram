@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "درج در کادر پیام"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "برای جلو رفتن نگه دارید"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "برای عقب رفتن نگه دارید"
     }
   ]
 }

@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "Inserir na caixa de mensagem"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "Segure para avançar"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "Segure para retroceder"
     }
   ]
 }

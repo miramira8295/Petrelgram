@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "入力欄に挿入"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "長押しで早送り"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "長押しで巻き戻し"
     }
   ]
 }

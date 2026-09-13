@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "Insertar en el cuadro de mensaje"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "Mantén para avanzar"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "Mantén para retroceder"
     }
   ]
 }

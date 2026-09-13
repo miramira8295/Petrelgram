@@ -14,7 +14,7 @@ import { shouldShowPlayerStatus } from '../../util/playerStatusGate';
 import {
   AUTO_RETRY_DELAYS_MS, CONTROL_ACCENT, CONTROL_BAR_BG, CONTROL_TEXT_SOFT,
   CONTROL_TRACK, CONTROL_TRACK_SOFT, CONTROL_TRACK_SOFT_FILL, DEFAULT_SPEED_IDX,
-  HEADSET_DEVICE_TYPES, QUICK_SEEK_MS, SPEEDS, SPEED_LABELS, STATUS_DELAY_MS,
+  HEADSET_DEVICE_TYPES, LONG_PRESS_SEEK_MS, QUICK_SEEK_MS, SPEEDS, SPEED_LABELS, STATUS_DELAY_MS,
   formatMs, formatSpeed
 } from '../../util/playerChrome';
 import { materialModifier } from '../../util/materialModifier';
@@ -1000,9 +1000,16 @@ export struct StreamingVideoPlayer {
         .width('50%')
         .height('100%')
         .backgroundColor(Color.Transparent)
-        .accessibilityText(forward ? $r('app.string.player_double_tap_forward') : $r('app.string.player_double_tap_back'))
+        .accessibilityText(forward
+          ? $r('app.string.player_hold_forward') : $r('app.string.player_hold_back'))
         .gesture(
+          // 互斥组：先被识别的那个赢。快按抬手 → 单击/双击；按住不放 →
+          // 到 LONG_PRESS_SEEK_MS 时长按胜出，之后每隔同样的时长再回调一次
+          // （repeat: true），每次跳 QUICK_SEEK_MS——和双击同一个步长，
+          // 所以复用同一个 ±15 秒的反馈角标（issue #160）。
           GestureGroup(GestureMode.Exclusive,
+            LongPressGesture({ fingers: 1, repeat: true, duration: LONG_PRESS_SEEK_MS })
+              .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
             TapGesture({ count: 2, fingers: 1 })
               .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
             TapGesture({ count: 1, fingers: 1 })

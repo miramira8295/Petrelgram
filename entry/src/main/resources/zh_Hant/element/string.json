@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "填入輸入框"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "長按快進"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "長按快退"
     }
   ]
 }

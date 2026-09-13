@@ -32,6 +32,10 @@ export const DEFAULT_SPEED_IDX: number = 1;
 // 双击左右半屏的跳转量。
 export const QUICK_SEEK_MS: number = 15_000;
 
+// 长按快退/快进（issue #160）：按住这么久算长按，之后每隔同样的时长再跳一次
+// QUICK_SEEK_MS。500 是系统默认值，取小一点更跟手；再小会和双击抢。
+export const LONG_PRESS_SEEK_MS: number = 400;
+
 // 状态文字「延迟出现」的门槛。见 util/playerStatusGate（issue #192）。
 export const STATUS_DELAY_MS: number = 350;
 

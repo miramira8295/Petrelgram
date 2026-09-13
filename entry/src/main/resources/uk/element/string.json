@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "Вставити в поле вводу"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "Утримуйте для перемотки вперед"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "Утримуйте для перемотки назад"
     }
   ]
 }

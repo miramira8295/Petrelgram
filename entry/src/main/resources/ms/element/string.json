@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "Masukkan ke kotak mesej"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "Tahan untuk pantas ke depan"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "Tahan untuk undur"
     }
   ]
 }

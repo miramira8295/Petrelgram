@@ -12039,6 +12039,14 @@
     {
       "name": "cp_command_fill_a11y",
       "value": "संदेश बॉक्स में डालें"
+    },
+    {
+      "name": "player_hold_forward",
+      "value": "आगे बढ़ाने के लिए दबाए रखें"
+    },
+    {
+      "name": "player_hold_back",
+      "value": "पीछे करने के लिए दबाए रखें"
     }
   ]
 }
