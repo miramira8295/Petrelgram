@@ -51,6 +51,8 @@ export struct LiveThumbImage {
   // ② 让「订阅挂在哪」成为可判定的事实，而不是靠推断 params 到没到。
   // -1 = 没挂；0 表示只有 initialPath、没有可订阅的缩略图文件。
   private attachedFileId: number = -1;
+  // 最后一次 detach 的由头，只给 [ThumbGuard] 判读用（见 util/thumbAttachGuard）。
+  private detachPhase: string = 'init';
   private attach(fileId: number, initialPath: string): void {
     // fileId=0 cannot publish through mediaThumbChannel. In this path-only
     // mode initialPath is the source identity, so changing it must replace an
@@ -81,7 +83,8 @@ export struct LiveThumbImage {
     });
   }
 
-  private detach(): void {
+  private detach(phase: string = 'swap'): void {
+    this.detachPhase = phase;
     if (this.unsubThumb !== null) {
       this.unsubThumb();
       this.unsubThumb = null;
@@ -116,7 +119,7 @@ export struct LiveThumbImage {
   aboutToRecycle(): void {
     // path 不清（翻页图片乱跳的根修之一）：@Local 由框架在下次复用前重置，
     // aboutToReuse 里同步播种，空窗只剩「通道确实没图」的固有情形。
-    this.detach();
+    this.detach('recycle');
   }
 
   aboutToReuse(): void {
@@ -128,14 +131,14 @@ export struct LiveThumbImage {
   // 不退订会让箭头函数一直持有本组件实例，组件无法释放（官方状态管理 FAQ
   // 明确点过这个泄漏）。
   aboutToDisappear(): void {
-    this.detach();
+    this.detach('disappear');
   }
 
   // 不变量检查挂在**分支条件**上：build 里不能放语句，而这里同样是拿当前
   // @Param 求值的——不受"参数什么时候落地"影响。返回值就是要画的路径。
   // 顺带读一次 spec.fileId，让这个渲染域把它登记成依赖。见 util/thumbAttachGuard。
   private drawPath(): string {
-    warnStaleThumbAttach(this.attachedFileId, this.spec.fileId, this.path);
+    warnStaleThumbAttach(this.attachedFileId, this.spec.fileId, this.path, this.detachPhase);
     return this.path;
   }
 

@@ -16,8 +16,16 @@ import { logW } from './log';
 const seen: Set<string> = new Set<string>();
 const MAX_KEYS: number = 200;
 
+// phase：这一刻**为什么**没挂着（'init' 还没挂过 / 'recycle' 回收过 /
+// 'disappear' 已销毁 / 'swap' 换文件的那一瞬）。
+//
+// 2026-09-13 用户日志里出现过两条 `drawing file=-1 … path=非空`，而按设计
+// aboutToRecycle 是**故意不清 path** 的（清 path 正是翻页图片乱跳的根因，
+// 见记忆 paging-image-jump-root-cause）。也就是说 -1 这一支到底是"回收后
+// 还没重挂的正常一帧"还是"销毁后仍在画"，光看原来那行日志分不出来——补一个
+// 阶段字段，下次日志直接能判。
 export function warnStaleThumbAttach(
-  attachedFileId: number, specFileId: number, drawing: string
+  attachedFileId: number, specFileId: number, drawing: string, phase: string = ''
 ): void {
   if (attachedFileId === specFileId) {
     return;
@@ -27,7 +35,7 @@ export function warnStaleThumbAttach(
   if (attachedFileId === -1 && drawing === '') {
     return;
   }
-  const key: string = `${attachedFileId}:${specFileId}`;
+  const key: string = `${attachedFileId}:${specFileId}:${phase}`;
   if (seen.has(key)) {
     return;
   }
@@ -36,5 +44,5 @@ export function warnStaleThumbAttach(
   }
   seen.add(key);
   logW(`[ThumbGuard] stale attach: drawing file=${attachedFileId} but row wants` +
-    ` file=${specFileId} (path=${drawing})`);
+    ` file=${specFileId} phase=${phase} (path=${drawing})`);
 }
