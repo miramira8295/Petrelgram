@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Чернетка: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s стікерів"
+    },
+    {
+      "name": "ss_add",
+      "value": "Додати стікери"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Видалити стікери"
+    },
+    {
+      "name": "ss_added",
+      "value": "Набір стікерів додано"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Набір стікерів видалено"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "Не вдалося виконати, спробуйте пізніше"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Не вдалося завантажити набір стікерів"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "Переглянути набір стікерів"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "До обраного"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Прибрати з обраного"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Додано до обраного"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Прибрано з обраного"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Не вдалося оновити обране"
     }
   ]
 }

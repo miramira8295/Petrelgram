@@ -1,4 +1,5 @@
 import { TdClient, TIMEOUT_ERROR_CODE } from '../tdkit/TdClient';
+import { stickerSetIdOf } from '../util/stickerSetItems';
 import { viewMessageSourceType } from '../util/viewMessageSource';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
@@ -3103,6 +3104,7 @@ export class MessageStore {
       c.audioPerformer = rebuilt.audioPerformer;
       c.stickerFileId = rebuilt.stickerFileId;
       c.stickerFormat = rebuilt.stickerFormat;
+      c.stickerSetId = rebuilt.stickerSetId;
       c.isEmojiSticker = rebuilt.isEmojiSticker;
       c.stickerPath = sameStickerFile ? c.stickerPath : rebuilt.stickerPath;
       c.stickerProgress = sameStickerFile ? c.stickerProgress : rebuilt.stickerProgress;
@@ -3843,6 +3845,8 @@ export class MessageStore {
         const c = cloneMessage(m);
         c.contentType = 'sticker';
         c.stickerFormat = format;
+        // 自定义表情解析回来也带合集（长按能看"这个表情属于哪一包"）。
+        c.stickerSetId = stickerSetIdOf(st);
         c.isEmojiSticker = true;
         c.photoWidth = 100;
         c.photoHeight = 100;

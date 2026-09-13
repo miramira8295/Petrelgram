@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "مسودة: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s ملصقات"
+    },
+    {
+      "name": "ss_add",
+      "value": "إضافة ملصقات"
+    },
+    {
+      "name": "ss_remove",
+      "value": "إزالة الملصقات"
+    },
+    {
+      "name": "ss_added",
+      "value": "تمت إضافة مجموعة الملصقات"
+    },
+    {
+      "name": "ss_removed",
+      "value": "تمت إزالة مجموعة الملصقات"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "فشل الإجراء، حاول لاحقًا"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "تعذّر تحميل مجموعة الملصقات"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "عرض مجموعة الملصقات"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "إضافة إلى المفضلة"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "إزالة من المفضلة"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "أُضيف إلى المفضلة"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "أُزيل من المفضلة"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "تعذّر تحديث المفضلة"
     }
   ]
 }

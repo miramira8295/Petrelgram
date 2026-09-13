@@ -2,11 +2,15 @@
 // 设置页和页签栏的长按菜单都走这里；页面自己的忙碌态/错误态仍由页面管。
 import { promptAction } from '@kit.ArkUI';
 import { floatingLiveWindow } from '../pages/chat/LiveFloatingWindow';
+import { resetFavoriteStickers } from '../store/FavoriteStickers';
 import { switchTdAccount } from '../tdkit/Globals';
 import { logE } from './log';
 import { str } from './strings';
 
 export function switchAccountWithLiveWindow(slotId: string): Promise<void> {
+  // 账号级缓存必须在切之前清掉：收藏贴纸表是按账号的，留着会让新账号的
+  // 长按菜单显示上一个账号的收藏状态。
+  resetFavoriteStickers();
   return floatingLiveWindow.closeForAccountSwitch()
     .then((): Promise<void> => switchTdAccount(slotId));
 }

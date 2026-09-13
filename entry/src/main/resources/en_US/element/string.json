@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Draft: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s stickers"
+    },
+    {
+      "name": "ss_add",
+      "value": "Add stickers"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Remove stickers"
+    },
+    {
+      "name": "ss_added",
+      "value": "Sticker set added"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Sticker set removed"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "Action failed, try again later"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Failed to load sticker set"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "View sticker set"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "Add to favorites"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Remove from favorites"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Added to favorites"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Removed from favorites"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Couldn't update favorites"
     }
   ]
 }

@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Bản nháp: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s nhãn dán"
+    },
+    {
+      "name": "ss_add",
+      "value": "Thêm nhãn dán"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Xoá nhãn dán"
+    },
+    {
+      "name": "ss_added",
+      "value": "Đã thêm bộ nhãn dán"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Đã xoá bộ nhãn dán"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "Thao tác thất bại, thử lại sau"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Không tải được bộ nhãn dán"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "Xem bộ nhãn dán"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "Thêm vào yêu thích"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Bỏ khỏi yêu thích"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Đã thêm vào yêu thích"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Đã bỏ khỏi yêu thích"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Không cập nhật được yêu thích"
     }
   ]
 }

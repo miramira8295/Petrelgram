@@ -1,4 +1,6 @@
 import { pillSegments, PillSegment } from '../../util/systemPillLinks';
+import { isFavoriteSticker } from '../../store/FavoriteStickers';
+import { stickerSourceFileId } from '../../util/stickerSetItems';
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { AlbumCellView, AlbumCellHooks } from './AlbumCellView';
 import { formatMediaDuration } from '../../util/mediaDuration';
@@ -2746,6 +2748,21 @@ export struct MessageBubble {
       // 判据用 isAnimation 而不是 contentType——GIF 在本应用里 contentType 就是
       // 'video'（messageAnimation 走视频管线，见 util/formatMsgContent），
       // 只有这个标志能把动图和普通视频分开。
+      // 贴纸专有两项（issue 反馈①②）：看合集、收藏/取消收藏。
+      if (this.msg.contentType === 'sticker' && this.msg.stickerSetId !== '') {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_grid_2x2')),
+          content: $r('app.string.mb_view_sticker_set')
+        }).onClick((): void => { this.actions.onViewStickerSet(this.msg.id); });
+      }
+      if (this.stickerFileForFavorite() !== 0) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier(isFavoriteSticker(this.stickerFileForFavorite())
+            ? $r('sys.symbol.star_fill') : $r('sys.symbol.star')),
+          content: isFavoriteSticker(this.stickerFileForFavorite())
+            ? $r('app.string.mb_remove_favorite_sticker') : $r('app.string.mb_add_favorite_sticker')
+        }).onClick((): void => { this.actions.onToggleFavoriteSticker(this.msg.id); });
+      }
       if (this.msg.isAnimation && this.msg.videoFileId !== 0) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.plus_square_on_square')),
@@ -3558,6 +3575,12 @@ export struct MessageBubble {
         }
         if (this.msg.stickerFailed || this.msg.photoFailed) {
           this.actions.onStickerRetry(this.msg.id);
+          return;
+        }
+        // 正常状态下点贴纸 = 看它属于哪个合集（官方端的行为）。不属于任何
+        // 合集的贴纸（set_id 为 0）点了没有面板可开，保持原来的"无反应"。
+        if (this.msg.stickerSetId !== '') {
+          this.actions.onViewStickerSet(this.msg.id);
         }
       })
       .accessibilityText(this.msg.stickerFailed || this.msg.photoFailed || this.stickerPlaybackFailed
@@ -3616,6 +3639,12 @@ export struct MessageBubble {
     const w = this.msg.photoWidth > 0 ? this.msg.photoWidth : 512;
     const h = this.msg.photoHeight > 0 ? this.msg.photoHeight : 512;
     return h >= w ? STICKER_MAX : Math.round(STICKER_MAX * (h / w));
+  }
+
+  // 这条贴纸消息里可收藏的源文件（0 = 不是贴纸或源文件还没到）。
+  private stickerFileForFavorite(): number {
+    return stickerSourceFileId(
+      this.msg.contentType, this.msg.stickerFileId, this.msg.photoFileId, this.msg.stickerFormat);
   }
 
   private stickerAnimationSuspended(): boolean {

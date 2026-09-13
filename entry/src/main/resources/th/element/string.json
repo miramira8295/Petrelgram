@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "ฉบับร่าง: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s สติกเกอร์"
+    },
+    {
+      "name": "ss_add",
+      "value": "เพิ่มสติกเกอร์"
+    },
+    {
+      "name": "ss_remove",
+      "value": "ลบสติกเกอร์"
+    },
+    {
+      "name": "ss_added",
+      "value": "เพิ่มชุดสติกเกอร์แล้ว"
+    },
+    {
+      "name": "ss_removed",
+      "value": "ลบชุดสติกเกอร์แล้ว"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "ดำเนินการไม่สำเร็จ ลองใหม่ภายหลัง"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "โหลดชุดสติกเกอร์ไม่สำเร็จ"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "ดูชุดสติกเกอร์"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "เพิ่มในรายการโปรด"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "นำออกจากรายการโปรด"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "เพิ่มในรายการโปรดแล้ว"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "นำออกจากรายการโปรดแล้ว"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "อัปเดตรายการโปรดไม่สำเร็จ"
     }
   ]
 }

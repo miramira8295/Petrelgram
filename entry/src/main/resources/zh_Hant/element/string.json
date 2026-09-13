@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "草稿: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s 個貼圖"
+    },
+    {
+      "name": "ss_add",
+      "value": "新增貼圖"
+    },
+    {
+      "name": "ss_remove",
+      "value": "移除貼圖"
+    },
+    {
+      "name": "ss_added",
+      "value": "已新增貼圖包"
+    },
+    {
+      "name": "ss_removed",
+      "value": "已移除貼圖包"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "操作失敗，請稍後再試"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "貼圖包載入失敗"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "查看貼圖包"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "加入收藏"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "取消收藏"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "已加入收藏"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "已取消收藏"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "收藏失敗，請稍後再試"
     }
   ]
 }

@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Draf: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s stiker"
+    },
+    {
+      "name": "ss_add",
+      "value": "Tambah stiker"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Hapus stiker"
+    },
+    {
+      "name": "ss_added",
+      "value": "Set stiker ditambahkan"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Set stiker dihapus"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "Tindakan gagal, coba lagi nanti"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Gagal memuat set stiker"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "Lihat set stiker"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "Tambah ke favorit"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Hapus dari favorit"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Ditambahkan ke favorit"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Dihapus dari favorit"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Gagal memperbarui favorit"
     }
   ]
 }

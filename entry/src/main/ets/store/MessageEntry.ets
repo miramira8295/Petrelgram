@@ -132,6 +132,7 @@ export interface MessageEntry {
   stickerFileId: number;        // animated (TGS) sticker source file id, 0 otherwise
   customEmojiId: string;        // single custom-emoji message, pending sticker resolution
   stickerFormat: string;        // 'webp' | 'tgs' | 'webm', '' for non-stickers
+  stickerSetId: string;         // 所属贴纸合集 id，'' = 不属于任何合集（点了不弹面板）
   isEmojiSticker: boolean;      // obeys chat Emoji playback policy
   stickerPath: string;          // local path of the downloaded TGS/WEBM source
   stickerProgress: number;      // 0-100 source download progress
@@ -296,7 +297,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     translatedLang: m.translatedLang,
     translationHidden: m.translationHidden,
     audioTitle: m.audioTitle, audioPerformer: m.audioPerformer,
-    stickerFileId: m.stickerFileId, stickerFormat: m.stickerFormat,
+    stickerFileId: m.stickerFileId, stickerFormat: m.stickerFormat, stickerSetId: m.stickerSetId,
     isEmojiSticker: m.isEmojiSticker, stickerPath: m.stickerPath,
     stickerProgress: m.stickerProgress, stickerFailed: m.stickerFailed,
     stickerDownloadActive: m.stickerDownloadActive,
@@ -1129,6 +1130,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     audioPerformer: c.audioPerformer ?? '',
     stickerFileId: c.stickerFileId ?? 0,
     stickerFormat: c.stickerFormat ?? '',
+    stickerSetId: c.stickerSetId ?? '',
     isEmojiSticker: c.isEmojiSticker ?? false,
     stickerPath: c.stickerLocalPath ?? '',
     stickerProgress: c.stickerLocalPath !== undefined && c.stickerLocalPath !== ''

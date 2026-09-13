@@ -94,6 +94,9 @@ export interface MessageBubbleActions {
   onLiveStreamTap: (groupCallId: number) => void;
   // 「添加到 GIF」：动图消息专有，把这条的动图文件存进账号的 saved animations。
   onAddToGifs: (messageId: number) => void;
+  // 贴纸专有：看它属于哪个合集 / 收藏与取消收藏。
+  onViewStickerSet: (messageId: number) => void;
+  onToggleFavoriteSticker: (messageId: number) => void;
 }
 
 export interface MessageBubbleRenderData {
@@ -190,7 +193,9 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onVideoNoteDownload: (_id: number): void => {},
   onToggleTranslation: (_id: number, _hidden: boolean): void => {},
   onRetryTranslation: (_id: number): void => {}, onLiveStreamTap: (_id: number): void => {},
-  onAddToGifs: (_id: number): void => {}
+  onAddToGifs: (_id: number): void => {},
+  onViewStickerSet: (_id: number): void => {},
+  onToggleFavoriteSticker: (_id: number): void => {}
 };
 
 // The reuse pool this @ReusableV2 declares lives on the PARENT custom component

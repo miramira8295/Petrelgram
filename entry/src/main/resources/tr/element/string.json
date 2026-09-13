@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Taslak: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s çıkartma"
+    },
+    {
+      "name": "ss_add",
+      "value": "Çıkartmaları ekle"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Çıkartmaları kaldır"
+    },
+    {
+      "name": "ss_added",
+      "value": "Çıkartma seti eklendi"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Çıkartma seti kaldırıldı"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "İşlem başarısız, sonra tekrar deneyin"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Çıkartma seti yüklenemedi"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "Çıkartma setini gör"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "Favorilere ekle"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Favorilerden çıkar"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Favorilere eklendi"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Favorilerden çıkarıldı"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Favoriler güncellenemedi"
     }
   ]
 }

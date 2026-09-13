@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Draf: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s pelekat"
+    },
+    {
+      "name": "ss_add",
+      "value": "Tambah pelekat"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Buang pelekat"
+    },
+    {
+      "name": "ss_added",
+      "value": "Set pelekat ditambah"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Set pelekat dibuang"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "Tindakan gagal, cuba lagi nanti"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Gagal memuatkan set pelekat"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "Lihat set pelekat"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "Tambah ke kegemaran"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Buang dari kegemaran"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Ditambah ke kegemaran"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Dibuang dari kegemaran"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Gagal mengemas kini kegemaran"
     }
   ]
 }

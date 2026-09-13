@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "下書き: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s 個のスタンプ"
+    },
+    {
+      "name": "ss_add",
+      "value": "スタンプを追加"
+    },
+    {
+      "name": "ss_remove",
+      "value": "スタンプを削除"
+    },
+    {
+      "name": "ss_added",
+      "value": "スタンプセットを追加しました"
+    },
+    {
+      "name": "ss_removed",
+      "value": "スタンプセットを削除しました"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "操作に失敗しました。後でもう一度お試しください"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "スタンプセットを読み込めませんでした"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "スタンプセットを見る"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "お気に入りに追加"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "お気に入りから削除"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "お気に入りに追加しました"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "お気に入りから削除しました"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "お気に入りを更新できませんでした"
     }
   ]
 }

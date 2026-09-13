@@ -1,4 +1,10 @@
 import { bumpDraftEpoch, localDraft, rememberLocalDraft } from '../../store/DraftStore';
+import { StickerSetSheet } from './StickerSetSheet';
+import { StickerSetItem } from '../../util/stickerSetItems';
+import {
+  stickerSetIdForMessage, toggleFavoriteForMessage
+} from './StickerMessageActions';
+import { primeFavoriteStickers } from '../../store/FavoriteStickers';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
@@ -1454,6 +1460,10 @@ export struct ChatPage {
           this.onAnimationTap(messageId, playing);
         },
         onAddToGifs: (messageId: number): void => { this.onAddToGifs(messageId); },
+        onViewStickerSet: (messageId: number): void => { this.openStickerSet(messageId); },
+        onToggleFavoriteSticker: (messageId: number): void => {
+          this.toggleFavoriteSticker(messageId);
+        },
         onAnimationPlaybackFailed: (messageId: number): void => {
           this.onAnimationPlaybackFailed(messageId);
         },
@@ -2251,6 +2261,9 @@ export struct ChatPage {
   // 副本去对齐，那条路走了很久也接不上。
   @Local attachPanelOpen: boolean = false;
   @Local diceSheetOpen: boolean = false;
+  // 贴纸合集面板（点消息里的贴纸弹出来的那张）。
+  @Local stickerSetSheetOpen: boolean = false;
+  @Local stickerSetSheetId: string = '';
 
   // 当前打开的底部抽屉占据的高度（附件或表情，两者互斥）。supportAvoidance
   // 只保证输入框不被挡，列表内容它不管——官方《自定义键盘》文档明说这一段
@@ -4105,6 +4118,9 @@ export struct ChatPage {
 
   private handleShown(): void {
     this.videoPrefetch.resume();
+    // 收藏贴纸表：长按菜单要在构建那一刻就知道该写"收藏"还是"取消收藏"，
+    // 等不了一次往返。拉一次，之后走本地那份（见 store/FavoriteStickers）。
+    primeFavoriteStickers();
     const state: ChatPageShownState = {
       hiddenSinceMs: this.hiddenSinceMs,
       appWentBackground: this.appWentBackground,
@@ -4500,6 +4516,45 @@ export struct ChatPage {
     }).catch((): void => {
       promptAction.showToast({ message: $r('app.string.cp_gif_unavailable'), duration: 1500 });
     });
+  }
+
+  // ① 点贴纸/长按「查看贴纸合集」：弹合集面板。逻辑在 StickerMessageActions，
+  // 这里只负责把面板打开。
+  private openStickerSet(messageId: number): void {
+    const setId: string = stickerSetIdForMessage(this.entryById(messageId));
+    if (setId === '') {
+      return;
+    }
+    this.stickerSetSheetId = setId;
+    this.stickerSetSheetOpen = true;
+  }
+
+  // ② 收藏/取消收藏这张贴纸。
+  private toggleFavoriteSticker(messageId: number): void {
+    toggleFavoriteForMessage(this.entryById(messageId)).then((favorite: boolean): void => {
+      promptAction.showToast({
+        message: favorite ? $r('app.string.mb_favorite_added') : $r('app.string.mb_favorite_removed'),
+        duration: 1500
+      });
+    }).catch((e: Error): void => {
+      logW(`toggleFavoriteSticker failed: ${e.message}`);
+      promptAction.showToast({ message: $r('app.string.mb_favorite_failed'), duration: 1800 });
+    });
+  }
+
+  @Builder
+  private stickerSetSheet() {
+    // 每次打开都重建：合集内容与"已添加"状态都得重新问一遍服务端。
+    if (this.stickerSetSheetOpen) {
+      StickerSetSheet({
+        setId: this.stickerSetSheetId,
+        onPick: (item: StickerSetItem): void => {
+          this.atBottom = true;
+          this.store?.sendSticker(item.fileId, item.width, item.height);
+          this.stickerSetSheetOpen = false;
+        }
+      });
+    }
   }
 
   private onAnimationTap(messageId: number, isPlaying: boolean): void {
@@ -8660,7 +8715,17 @@ export struct ChatPage {
         this.mediaViewer();
       }
     }
-    .width('100%').height('100%');
+    .width('100%').height('100%')
+    // 贴纸合集面板挂在页面根 Stack 上：这个节点还没有别的 bindSheet（骰子那张
+    // 挂 dock，查看器走 NavDestination 的 bindContentCover），同一节点上串两个
+    // 只有最后一个生效。
+    .bindSheet($$this.stickerSetSheetOpen, this.stickerSetSheet(), {
+      height: 420,
+      backgroundColor: Color.Transparent,
+      dragBar: false,
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
+      onDisappear: (): void => { this.stickerSetSheetId = ''; }
+    });
     }
     .titleBar(this.chatTitleBarOptions())
     .titleMode(HdsNavDestinationTitleMode.MINI)

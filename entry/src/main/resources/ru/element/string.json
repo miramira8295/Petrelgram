@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Черновик: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s стикеров"
+    },
+    {
+      "name": "ss_add",
+      "value": "Добавить стикеры"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Удалить стикеры"
+    },
+    {
+      "name": "ss_added",
+      "value": "Набор стикеров добавлен"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Набор стикеров удалён"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "Не удалось выполнить, попробуйте позже"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Не удалось загрузить набор стикеров"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "Открыть набор стикеров"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "В избранное"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Убрать из избранного"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Добавлено в избранное"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Убрано из избранного"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Не удалось обновить избранное"
     }
   ]
 }

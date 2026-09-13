@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "پیش‌نویس: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s استیکر"
+    },
+    {
+      "name": "ss_add",
+      "value": "افزودن استیکر"
+    },
+    {
+      "name": "ss_remove",
+      "value": "حذف استیکرها"
+    },
+    {
+      "name": "ss_added",
+      "value": "مجموعه استیکر افزوده شد"
+    },
+    {
+      "name": "ss_removed",
+      "value": "مجموعه استیکر حذف شد"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "عملیات ناموفق بود، بعداً تلاش کنید"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "بارگیری مجموعه استیکر ناموفق بود"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "مشاهده مجموعه استیکر"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "افزودن به موردعلاقه‌ها"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "حذف از موردعلاقه‌ها"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "به موردعلاقه‌ها افزوده شد"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "از موردعلاقه‌ها حذف شد"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "به‌روزرسانی موردعلاقه‌ها ناموفق بود"
     }
   ]
 }

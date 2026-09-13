@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "草稿: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s 个贴纸"
+    },
+    {
+      "name": "ss_add",
+      "value": "添加贴纸"
+    },
+    {
+      "name": "ss_remove",
+      "value": "移除贴纸"
+    },
+    {
+      "name": "ss_added",
+      "value": "已添加贴纸合集"
+    },
+    {
+      "name": "ss_removed",
+      "value": "已移除贴纸合集"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "操作失败，请稍后再试"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "贴纸合集加载失败"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "查看贴纸合集"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "添加到收藏"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "取消收藏"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "已添加到收藏"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "已取消收藏"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "收藏失败，请稍后再试"
     }
   ]
 }

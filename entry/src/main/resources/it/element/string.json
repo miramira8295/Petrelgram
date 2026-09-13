@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "Bozza: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s sticker"
+    },
+    {
+      "name": "ss_add",
+      "value": "Aggiungi sticker"
+    },
+    {
+      "name": "ss_remove",
+      "value": "Rimuovi sticker"
+    },
+    {
+      "name": "ss_added",
+      "value": "Set di sticker aggiunto"
+    },
+    {
+      "name": "ss_removed",
+      "value": "Set di sticker rimosso"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "Azione non riuscita, riprova più tardi"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "Impossibile caricare il set di sticker"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "Vedi set di sticker"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "Aggiungi ai preferiti"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "Rimuovi dai preferiti"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "Aggiunto ai preferiti"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "Rimosso dai preferiti"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "Impossibile aggiornare i preferiti"
     }
   ]
 }

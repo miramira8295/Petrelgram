@@ -12071,6 +12071,58 @@
     {
       "name": "cl_draft_prefix",
       "value": "ड्राफ़्ट: "
+    },
+    {
+      "name": "ss_count",
+      "value": "%s स्टिकर"
+    },
+    {
+      "name": "ss_add",
+      "value": "स्टिकर जोड़ें"
+    },
+    {
+      "name": "ss_remove",
+      "value": "स्टिकर हटाएँ"
+    },
+    {
+      "name": "ss_added",
+      "value": "स्टिकर सेट जोड़ा गया"
+    },
+    {
+      "name": "ss_removed",
+      "value": "स्टिकर सेट हटाया गया"
+    },
+    {
+      "name": "ss_action_failed",
+      "value": "कार्रवाई विफल, बाद में पुनः प्रयास करें"
+    },
+    {
+      "name": "ss_load_failed",
+      "value": "स्टिकर सेट लोड नहीं हो सका"
+    },
+    {
+      "name": "mb_view_sticker_set",
+      "value": "स्टिकर सेट देखें"
+    },
+    {
+      "name": "mb_add_favorite_sticker",
+      "value": "पसंदीदा में जोड़ें"
+    },
+    {
+      "name": "mb_remove_favorite_sticker",
+      "value": "पसंदीदा से हटाएँ"
+    },
+    {
+      "name": "mb_favorite_added",
+      "value": "पसंदीदा में जोड़ा गया"
+    },
+    {
+      "name": "mb_favorite_removed",
+      "value": "पसंदीदा से हटाया गया"
+    },
+    {
+      "name": "mb_favorite_failed",
+      "value": "पसंदीदा अपडेट नहीं हो सके"
     }
   ]
 }
