@@ -545,6 +545,8 @@ export struct AvVideoPlayer {
   }
 
   private onStateChange(player: media.AVPlayer, state: string): void {
+    // 第二个岔口：状态机到底走到哪一步就不动了（黑屏时最常见的是停在 prepared）。
+    logW(`[VideoState] ${state} surface=${this.surfaceId !== '' ? 'yes' : 'EMPTY'} mime=${this.mimeType}`);
     if (state === 'initialized') {
       player.surfaceId = this.surfaceId;
       player.prepare().catch((err: BusinessError): void => {
@@ -1214,6 +1216,10 @@ export struct AvVideoPlayer {
         .height('100%')
         .onLoad((): void => {
           this.surfaceId = this.xController.getXComponentSurfaceId();
+          // 平板黑屏（#201 第 1 条）的第一个岔口：surface 到底建没建、尺寸多大。
+          logW(`[VideoSurface] created id=${this.surfaceId !== '' ? 'yes' : 'EMPTY'}` +
+            ` viewport=${Math.round(this.viewportWidth)}x${Math.round(this.viewportHeight)}` +
+            ` embedded=${this.embedded}`);
           this.initPlayer();
         })
         .onDestroy((): void => {

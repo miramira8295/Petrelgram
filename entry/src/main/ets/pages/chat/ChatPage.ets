@@ -1,3 +1,4 @@
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
 import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
@@ -4536,6 +4537,13 @@ export struct ChatPage {
     if (this.viewerClosing) {
       return;
     }
+    // 平板黑屏 / 顶栏横幅（#201 第 1 条）没有设备可复现，先把「走的哪条路」记下来：
+    // 分栏 → bindContentCover 全模态且标题栏不收；单栏 → 内联 + 收标题栏。
+    // 两个症状都指向分栏那条，但缺一份平板日志才能定死。
+    const split: boolean = isSplitLayout(this.screenW, this.screenH);
+    logW(`[ViewerPath] split=${split} path=${split ? 'contentCover' : 'inline'}` +
+      ` hidesTitleBar=${!split} api=${deviceInfo.sdkApiVersion}` +
+      ` win=${Math.round(this.screenW)}x${Math.round(this.screenH)}`);
     const entry = this.entryById(messageId);
     if (entry === null) {
       return;
