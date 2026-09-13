@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "找不到相關訊息"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "補充說明"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "請描述具體問題"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · 正在上傳"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · 正在上傳 %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "封鎖"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "檢舉垃圾訊息"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "分享電話號碼"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "移出封存"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "封鎖 %1$s？"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "對方將無法再傳訊息或致電給你。"
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "同時刪除對話"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "把你的電話號碼分享給 %1$s？"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "已封鎖"
+    },
+    {
+      "name": "ab_shared",
+      "value": "已分享電話號碼"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "清除設定"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "此裝置不支援選擇下載目錄"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "已選擇目錄，但此裝置無法長期保留授權，僅本次執行有效"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "已開始儲存 %1$d 項"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "所選訊息沒有可儲存的媒體"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "保留來源"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "隱藏來源並移除說明文字"
     }
   ]
 }

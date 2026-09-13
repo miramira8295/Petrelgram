@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "ไม่พบข้อความที่ตรงกัน"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "เพิ่มรายละเอียด"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "อธิบายปัญหา"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · กำลังอัปโหลด"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · กำลังอัปโหลด %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "บล็อก"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "รายงานสแปม"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "แชร์เบอร์โทร"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "เลิกเก็บถาวร"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "บล็อก %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "อีกฝ่ายจะไม่สามารถส่งข้อความหรือโทรหาคุณได้"
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "ลบแชทนี้ด้วย"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "แชร์เบอร์โทรของคุณกับ %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "บล็อกแล้ว"
+    },
+    {
+      "name": "ab_shared",
+      "value": "แชร์เบอร์โทรแล้ว"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "ล้างการตั้งค่า"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "อุปกรณ์นี้ไม่รองรับการเลือกโฟลเดอร์"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "เลือกโฟลเดอร์แล้ว แต่สิทธิ์จะมีผลจนกว่าจะปิดแอป"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "กำลังบันทึก %1$d รายการ"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "ไม่มีสิ่งที่บันทึกได้ในข้อความที่เลือก"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "แสดงผู้ส่ง"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "ซ่อนผู้ส่งและลบคำบรรยาย"
     }
   ]
 }

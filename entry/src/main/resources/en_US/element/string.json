@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "No matching messages"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Add details"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Describe the problem"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · uploading"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · uploading %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Block"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Report spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Share phone number"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Unarchive"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Block %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "They won't be able to message or call you."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Also delete this chat"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Share your phone number with %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Blocked"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Phone number shared"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Clear configuration"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "This device can't pick a download folder"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Folder chosen, but this device can't keep the permission — valid until the app closes"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Saving %1$d items"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Nothing to save in the selected messages"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Keep sender"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Hide sender and remove captions"
     }
   ]
 }

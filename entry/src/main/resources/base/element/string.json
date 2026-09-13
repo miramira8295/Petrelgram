@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "没有找到相关消息"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "补充说明"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "请描述具体问题"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · 正在上传"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · 正在上传 %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "屏蔽"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "举报垃圾信息"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "分享手机号"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "移出归档"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "屏蔽 %1$s？"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "对方将无法再给你发消息或打电话。"
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "同时删除对话"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "把你的手机号分享给 %1$s？"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "已屏蔽"
+    },
+    {
+      "name": "ab_shared",
+      "value": "已分享手机号"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "清除配置"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "此设备不支持选择下载目录"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "已选择目录，但此设备无法长期保留授权，仅本次运行有效"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "已开始保存 %1$d 项"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "所选消息没有可保存的媒体"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "保留来源"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "隐藏来源并移除说明文字"
     }
   ]
 }

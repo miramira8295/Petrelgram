@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "No hay mensajes coincidentes"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Añadir detalles"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Describe el problema"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · subiendo"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · subiendo %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Bloquear"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Denunciar spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Compartir número"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Desarchivar"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "¿Bloquear a %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "No podrá enviarte mensajes ni llamarte."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Eliminar también este chat"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "¿Compartir tu número con %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Bloqueado"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Número compartido"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Borrar configuración"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Este dispositivo no permite elegir carpeta"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Carpeta elegida, pero el permiso solo dura hasta cerrar la app"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Guardando %1$d elementos"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "No hay nada que guardar en los mensajes seleccionados"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Mostrar remitente"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Ocultar remitente y quitar descripciones"
     }
   ]
 }

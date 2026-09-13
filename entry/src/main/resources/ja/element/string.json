@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "一致するメッセージはありません"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "詳細を追加"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "問題の内容を入力"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · アップロード中"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · アップロード中 %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "ブロック"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "スパムを報告"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "電話番号を共有"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "アーカイブ解除"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "%1$s をブロックしますか？"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "相手はあなたにメッセージや通話ができなくなります。"
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "このチャットも削除"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "%1$s に電話番号を共有しますか？"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "ブロックしました"
+    },
+    {
+      "name": "ab_shared",
+      "value": "電話番号を共有しました"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "設定を消去"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "この端末ではダウンロード先を選べません"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "フォルダは選択しましたが、権限はアプリ終了まで有効です"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "%1$d 件を保存中"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "選択したメッセージに保存できるものがありません"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "送信者を表示"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "送信者を隠しキャプションを削除"
     }
   ]
 }

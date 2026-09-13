@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "پیامی یافت نشد"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "افزودن جزئیات"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "مشکل را شرح دهید"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · در حال بارگذاری"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · در حال بارگذاری %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "مسدود کردن"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "گزارش هرزنامه"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "اشتراک شماره تلفن"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "خروج از بایگانی"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "%1$s مسدود شود؟"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "دیگر نمی‌تواند به شما پیام دهد یا تماس بگیرد."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "این گفتگو هم حذف شود"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "شماره تلفن شما با %1$s به اشتراک گذاشته شود؟"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "مسدود شد"
+    },
+    {
+      "name": "ab_shared",
+      "value": "شماره تلفن به اشتراک گذاشته شد"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "پاک کردن پیکربندی"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "این دستگاه از انتخاب پوشه دانلود پشتیبانی نمی‌کند"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "پوشه انتخاب شد، اما مجوز فقط تا بسته شدن برنامه معتبر است"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "در حال ذخیره %1$d مورد"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "در پیام‌های انتخاب‌شده چیزی برای ذخیره نیست"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "نمایش فرستنده"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "پنهان کردن فرستنده و حذف توضیحات"
     }
   ]
 }

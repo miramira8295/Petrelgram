@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Tiada mesej sepadan"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Tambah butiran"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Terangkan masalah"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · memuat naik"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · memuat naik %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Sekat"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Lapor spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Kongsi nombor telefon"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Nyahakib"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Sekat %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Mereka tidak dapat menghantar mesej atau menghubungi anda lagi."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Padam sembang ini juga"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Kongsi nombor telefon anda dengan %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Disekat"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Nombor telefon dikongsi"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Kosongkan konfigurasi"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Peranti ini tidak menyokong pemilihan folder"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Folder dipilih, tetapi kebenaran hanya sah sehingga apl ditutup"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Menyimpan %1$d item"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Tiada apa untuk disimpan dalam mesej terpilih"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Tunjukkan pengirim"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Sembunyikan pengirim dan buang kapsyen"
     }
   ]
 }

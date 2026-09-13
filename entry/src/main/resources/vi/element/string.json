@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Không có tin nhắn phù hợp"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Thêm chi tiết"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Mô tả vấn đề"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · đang tải lên"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · đang tải lên %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Chặn"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Báo cáo spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Chia sẻ số điện thoại"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Bỏ lưu trữ"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Chặn %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Họ sẽ không thể nhắn tin hoặc gọi cho bạn nữa."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Đồng thời xóa cuộc trò chuyện này"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Chia sẻ số điện thoại của bạn với %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Đã chặn"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Đã chia sẻ số điện thoại"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Xóa cấu hình"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Thiết bị này không hỗ trợ chọn thư mục tải về"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Đã chọn thư mục, nhưng quyền chỉ có hiệu lực đến khi đóng ứng dụng"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Đang lưu %1$d mục"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Không có gì để lưu trong các tin nhắn đã chọn"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Hiện người gửi"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Ẩn người gửi và bỏ chú thích"
     }
   ]
 }

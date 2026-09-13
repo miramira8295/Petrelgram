@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "कोई मिलता-जुलता संदेश नहीं"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "विवरण जोड़ें"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "समस्या का वर्णन करें"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · अपलोड हो रहा है"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · अपलोड %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "ब्लॉक करें"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "स्पैम की रिपोर्ट करें"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "फ़ोन नंबर साझा करें"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "संग्रह से हटाएँ"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "%1$s को ब्लॉक करें?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "वे आपको संदेश या कॉल नहीं कर पाएँगे।"
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "यह चैट भी हटाएँ"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "%1$s के साथ अपना फ़ोन नंबर साझा करें?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "ब्लॉक किया गया"
+    },
+    {
+      "name": "ab_shared",
+      "value": "फ़ोन नंबर साझा किया गया"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "कॉन्फ़िगरेशन साफ़ करें"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "यह डिवाइस डाउनलोड फ़ोल्डर चुनने का समर्थन नहीं करता"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "फ़ोल्डर चुना गया, पर अनुमति ऐप बंद होने तक ही रहेगी"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "%1$d आइटम सहेजे जा रहे हैं"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "चयनित संदेशों में सहेजने के लिए कुछ नहीं"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "प्रेषक दिखाएँ"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "प्रेषक छिपाएँ और कैप्शन हटाएँ"
     }
   ]
 }

@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Eşleşen mesaj yok"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Ayrıntı ekle"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Sorunu açıklayın"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · yükleniyor"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · yükleniyor %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Engelle"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Spam bildir"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Telefon numarasını paylaş"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Arşivden çıkar"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "%1$s engellensin mi?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Size mesaj gönderemez veya arayamaz."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Bu sohbeti de sil"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Telefon numaranız %1$s ile paylaşılsın mı?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Engellendi"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Telefon numarası paylaşıldı"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Yapılandırmayı temizle"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Bu cihaz klasör seçimini desteklemiyor"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Klasör seçildi, ancak izin yalnızca uygulama kapanana kadar geçerli"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "%1$d öğe kaydediliyor"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Seçili mesajlarda kaydedilecek bir şey yok"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Göndereni göster"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Göndereni gizle ve açıklamaları kaldır"
     }
   ]
 }

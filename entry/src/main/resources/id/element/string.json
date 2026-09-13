@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Tidak ada pesan yang cocok"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Tambahkan detail"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Jelaskan masalahnya"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · mengunggah"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · mengunggah %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Blokir"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Laporkan spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Bagikan nomor telepon"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Keluarkan dari arsip"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Blokir %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Mereka tidak bisa lagi mengirim pesan atau menelepon Anda."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Hapus juga obrolan ini"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Bagikan nomor telepon Anda dengan %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Diblokir"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Nomor telepon dibagikan"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Hapus konfigurasi"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Perangkat ini tidak bisa memilih folder unduhan"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Folder dipilih, tetapi izin hanya berlaku sampai aplikasi ditutup"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Menyimpan %1$d item"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Tidak ada yang bisa disimpan dari pesan terpilih"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Tampilkan pengirim"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Sembunyikan pengirim dan hapus keterangan"
     }
   ]
 }

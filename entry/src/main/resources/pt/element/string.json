@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Nenhuma mensagem correspondente"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Adicionar detalhes"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Descreva o problema"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · enviando"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · enviando %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Bloquear"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Denunciar spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Compartilhar número"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Desarquivar"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Bloquear %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Essa pessoa não poderá mais enviar mensagens ou ligar para você."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Excluir também esta conversa"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Compartilhar seu número com %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Bloqueado"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Número compartilhado"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Limpar configuração"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Este aparelho não permite escolher a pasta"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Pasta escolhida, mas a permissão vale só até fechar o app"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Salvando %1$d itens"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Nada para salvar nas mensagens selecionadas"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Mostrar remetente"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Ocultar remetente e remover legendas"
     }
   ]
 }

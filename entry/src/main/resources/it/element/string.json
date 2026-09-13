@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Nessun messaggio corrispondente"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Aggiungi dettagli"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Descrivi il problema"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · caricamento"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · caricamento %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Blocca"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Segnala spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Condividi numero"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Rimuovi dall'archivio"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Bloccare %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Non potrà più scriverti né chiamarti."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Elimina anche questa chat"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Condividere il tuo numero con %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Bloccato"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Numero condiviso"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Cancella configurazione"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Questo dispositivo non consente di scegliere la cartella"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Cartella scelta, ma il permesso vale solo finché l'app resta aperta"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Salvataggio di %1$d elementi"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Niente da salvare nei messaggi selezionati"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Mostra mittente"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Nascondi mittente e rimuovi didascalie"
     }
   ]
 }

@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Збігів не знайдено"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Додати подробиці"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Опишіть проблему"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · надсилання"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · надсилання %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Заблокувати"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Поскаржитися на спам"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Поділитися номером"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "З архіву"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Заблокувати %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Ця людина більше не зможе писати чи дзвонити вам."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Також видалити цей чат"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Поділитися номером з %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Заблоковано"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Номер надіслано"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Очистити налаштування"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Цей пристрій не підтримує вибір теки"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Теку вибрано, але дозвіл діє лише до закриття застосунку"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Зберігається: %1$d"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "У вибраних повідомленнях нема що зберігати"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Показувати відправника"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Сховати відправника і прибрати підписи"
     }
   ]
 }

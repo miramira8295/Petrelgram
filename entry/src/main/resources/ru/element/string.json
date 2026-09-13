@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Совпадений не найдено"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Добавить подробности"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Опишите проблему"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · отправка"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · отправка %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Заблокировать"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Пожаловаться на спам"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Поделиться номером"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Из архива"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Заблокировать %1$s?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Этот пользователь больше не сможет писать и звонить вам."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Также удалить этот чат"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Поделиться номером с %1$s?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Заблокирован"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Номер отправлен"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Очистить настройки"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Это устройство не поддерживает выбор папки"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Папка выбрана, но разрешение действует только до закрытия приложения"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Сохраняется: %1$d"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "В выбранных сообщениях нечего сохранять"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Показывать отправителя"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Скрыть отправителя и убрать подписи"
     }
   ]
 }

@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Aucun message correspondant"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Ajouter des détails"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Décrivez le problème"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · envoi en cours"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · envoi %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Bloquer"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Signaler comme spam"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Partager le numéro"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Désarchiver"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "Bloquer %1$s ?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Cette personne ne pourra plus vous écrire ni vous appeler."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Supprimer aussi cette discussion"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Partager votre numéro avec %1$s ?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Bloqué"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Numéro partagé"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Effacer la configuration"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Cet appareil ne permet pas de choisir un dossier"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Dossier choisi, mais l'autorisation n'est conservée que jusqu'à la fermeture de l'app"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "Enregistrement de %1$d éléments"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "Rien à enregistrer dans les messages sélectionnés"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Afficher l'expéditeur"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Masquer l'expéditeur et retirer les légendes"
     }
   ]
 }

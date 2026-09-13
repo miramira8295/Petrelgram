@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "لا توجد رسائل مطابقة"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "أضف تفاصيل"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "صف المشكلة"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · جارٍ الرفع"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · جارٍ الرفع %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "حظر"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "الإبلاغ عن رسائل مزعجة"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "مشاركة رقم الهاتف"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "إلغاء الأرشفة"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "حظر %1$s؟"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "لن يتمكن من مراسلتك أو الاتصال بك."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "حذف هذه الدردشة أيضًا"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "مشاركة رقم هاتفك مع %1$s؟"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "تم الحظر"
+    },
+    {
+      "name": "ab_shared",
+      "value": "تمت مشاركة رقم الهاتف"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "مسح الإعدادات"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "لا يدعم هذا الجهاز اختيار مجلد التنزيل"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "تم اختيار المجلد، لكن الجهاز لا يحتفظ بالإذن — صالح حتى إغلاق التطبيق"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "جارٍ حفظ %1$d عناصر"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "لا يوجد ما يمكن حفظه في الرسائل المحددة"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "إظهار المرسل"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "إخفاء المرسل وإزالة التعليقات"
     }
   ]
 }

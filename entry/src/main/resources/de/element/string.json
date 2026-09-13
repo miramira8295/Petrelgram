@@ -11951,6 +11951,90 @@
     {
       "name": "cp_search_no_result",
       "value": "Keine passenden Nachrichten"
+    },
+    {
+      "name": "rf_text_title",
+      "value": "Details hinzufügen"
+    },
+    {
+      "name": "rf_text_hint",
+      "value": "Beschreibe das Problem"
+    },
+    {
+      "name": "file_uploading",
+      "value": "%1$s · wird hochgeladen"
+    },
+    {
+      "name": "file_uploading_pct",
+      "value": "%1$s · wird hochgeladen %2$d%%"
+    },
+    {
+      "name": "ab_block",
+      "value": "Blockieren"
+    },
+    {
+      "name": "ab_report_spam",
+      "value": "Spam melden"
+    },
+    {
+      "name": "ab_share_phone",
+      "value": "Telefonnummer teilen"
+    },
+    {
+      "name": "ab_unarchive",
+      "value": "Aus Archiv holen"
+    },
+    {
+      "name": "ab_block_title",
+      "value": "%1$s blockieren?"
+    },
+    {
+      "name": "ab_block_hint",
+      "value": "Diese Person kann dir nicht mehr schreiben oder dich anrufen."
+    },
+    {
+      "name": "ab_block_delete",
+      "value": "Diesen Chat auch löschen"
+    },
+    {
+      "name": "ab_share_title",
+      "value": "Deine Telefonnummer mit %1$s teilen?"
+    },
+    {
+      "name": "ab_blocked",
+      "value": "Blockiert"
+    },
+    {
+      "name": "ab_shared",
+      "value": "Telefonnummer geteilt"
+    },
+    {
+      "name": "wp_clear_config",
+      "value": "Konfiguration löschen"
+    },
+    {
+      "name": "ds_download_picker_unsupported",
+      "value": "Dieses Gerät unterstützt keine Ordnerauswahl"
+    },
+    {
+      "name": "ds_download_persist_unavailable",
+      "value": "Ordner gewählt, aber die Berechtigung bleibt nur bis zum Schließen der App erhalten"
+    },
+    {
+      "name": "cp_save_selected_started",
+      "value": "%1$d Elemente werden gespeichert"
+    },
+    {
+      "name": "cp_nothing_to_save",
+      "value": "In den ausgewählten Nachrichten gibt es nichts zu speichern"
+    },
+    {
+      "name": "fw_keep_source",
+      "value": "Absender anzeigen"
+    },
+    {
+      "name": "fw_copy_no_caption",
+      "value": "Absender verbergen und Beschriftungen entfernen"
     }
   ]
 }
