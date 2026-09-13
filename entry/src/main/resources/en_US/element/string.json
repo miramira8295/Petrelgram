@@ -12047,6 +12047,14 @@
     {
       "name": "player_hold_back",
       "value": "Hold to rewind"
+    },
+    {
+      "name": "mv_show_in_chat",
+      "value": "Show in chat"
+    },
+    {
+      "name": "mv_show_all_media",
+      "value": "Show all media"
     }
   ]
 }

@@ -142,6 +142,7 @@ export struct ChatProfilePage {
   @State members: MemberItem[] = [];
   @State membersState: string = 'loading';
   @State selectedTab: number = 0;
+  private pendingTabKey: string = '';
   @State contentItems: ProfileContentItem[] = [];
   // 媒体网格那张玻璃卡的内容宽，由 onAreaChange 量得；0 = 还没量到。
   @State private mediaRowW: number = 0;
@@ -223,6 +224,10 @@ export struct ChatProfilePage {
       ? ((params['draftText'] as string | undefined) ?? '') : '';
     this.pendingJumpTo = params !== undefined
       ? ((params['jumpTo'] as number | undefined) ?? 0) : 0;
+    // 首次进来要落到哪个页签（issue #166 的「显示所有图片」）。用一次即清，
+    // 之后由用户自己切。
+    this.pendingTabKey = params !== undefined
+      ? ((params['tab'] as string | undefined) ?? '') : '';
     if (this.chatId !== 0) {
       this.startStore();
     } else if (this.inviteLink !== '') {
@@ -307,8 +312,12 @@ export struct ChatProfilePage {
     this.tabsState = s.tabsState;
     const nextTabs = this.visibleTabs();
     if (nextTabs.length > 0) {
-      const nextIndex = beforeKey !== ''
-        ? nextTabs.findIndex((tab: ProfileTabItem): boolean => tab.key === beforeKey) : -1;
+      const wantedKey: string = this.pendingTabKey !== '' ? this.pendingTabKey : beforeKey;
+      const nextIndex = wantedKey !== ''
+        ? nextTabs.findIndex((tab: ProfileTabItem): boolean => tab.key === wantedKey) : -1;
+      if (this.pendingTabKey !== '' && nextIndex >= 0) {
+        this.pendingTabKey = '';
+      }
       this.selectedTab = nextIndex >= 0 ? nextIndex : 0;
       const selectedKey = nextTabs[this.selectedTab].key;
       if (s.contentTab !== selectedKey) {

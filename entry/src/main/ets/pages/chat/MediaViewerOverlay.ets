@@ -137,6 +137,10 @@ export struct MediaViewerOverlay {
   @Event onEnsureLiveDownload: (messageId: number) => void = (): void => {};
   // 保存到文件（首次授权 Download，之后保存到 Download/Petrelgram）——issue #97/#65。
   @Event onSaveMediaToFiles: () => void = (): void => {};
+  // 右上角菜单的两个跳转（issue #166）：回到这条消息在时间线里的位置 /
+  // 打开资料页的「媒体」页签看全部。
+  @Event onShowInChat: () => void = (): void => {};
+  @Event onShowAllMedia: () => void = (): void => {};
   // Viewer→bubble handoff (the other direction): the page samples this on
   // every tick and writes it back to bubblePositionMs when the viewer closes.
   // 350ms-ish cadence from StreamingVideoPlayer, same "plain field, no @State"
@@ -1347,6 +1351,12 @@ export struct MediaViewerOverlay {
           curve: Curve.EaseOut
         })
         .bindMenu([{
+          value: $r('app.string.mv_show_in_chat'),
+          action: (): void => { this.onShowInChat(); }
+        } as MenuElement, {
+          value: $r('app.string.mv_show_all_media'),
+          action: (): void => { this.onShowAllMedia(); }
+        } as MenuElement, {
           value: $r('app.string.ms_save_to_gallery'),
           action: (): void => { this.onSaveMedia(); }
         } as MenuElement, {

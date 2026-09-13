@@ -12047,6 +12047,14 @@
     {
       "name": "player_hold_back",
       "value": "长按快退"
+    },
+    {
+      "name": "mv_show_in_chat",
+      "value": "在聊天中查看"
+    },
+    {
+      "name": "mv_show_all_media",
+      "value": "显示所有图片"
     }
   ]
 }

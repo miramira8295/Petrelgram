@@ -1,3 +1,4 @@
+import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
 import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
 import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActionBarActions';
@@ -4641,6 +4642,29 @@ export struct ChatPage {
   // 原来是 MediaSaveState 经宿主取值器 viewerEntry() 自己现读 viewerMsgId
   // （整簇唯一一条跨域读）。S2 把取值这一步收回页面，MediaSaveState 从此不需要
   // 知道 viewerMsgId 或 entryById 的存在——理由见该文件 saveMediaEntry 上方。
+  // 查看器右上角「在聊天中查看」（issue #166）：关掉查看器、跳到那条消息。
+  private showViewerMediaInChat(): void {
+    const messageId: number = this.viewerMsgId;
+    this.closeViewer();
+    if (messageId > 0) {
+      this.jumpToMessageId(messageId);
+    }
+  }
+
+  // 「显示所有图片」：打开资料页并直接落到「媒体」页签。私聊开个人资料页，
+  // 群/频道开群资料页，两边都收 tab 参数。
+  private showAllChatMedia(): void {
+    this.closeViewer();
+    const userId: number = this.header.currentPeerUserId();
+    if (!this.isGroup && !this.isChannel && userId > 0) {
+      const params: Record<string, Object> = { 'userId': userId, 'tab': PROFILE_TAB_MEDIA };
+      navigateToProfile(params);
+      return;
+    }
+    const params: Record<string, Object> = { 'chatId': this.chatId, 'tab': PROFILE_TAB_MEDIA };
+    navigateToChatProfile(params);
+  }
+
   private saveCurrentViewerMedia(toFiles: boolean): void {
     const e: MessageEntry | null = this.entryById(this.viewerMsgId);
     if (e === null) {
@@ -8211,6 +8235,8 @@ export struct ChatPage {
         }
       },
       onSaveMediaToFiles: (): void => { this.saveCurrentViewerMedia(true); },
+      onShowInChat: (): void => { this.showViewerMediaInChat(); },
+      onShowAllMedia: (): void => { this.showAllChatMedia(); },
       onPositionChanged: (positionMs: number): void => { this.viewerPositionMs = positionMs; }
     });
   }

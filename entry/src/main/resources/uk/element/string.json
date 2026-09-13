@@ -12047,6 +12047,14 @@
     {
       "name": "player_hold_back",
       "value": "Утримуйте для перемотки назад"
+    },
+    {
+      "name": "mv_show_in_chat",
+      "value": "Показати в чаті"
+    },
+    {
+      "name": "mv_show_all_media",
+      "value": "Показати всі медіа"
     }
   ]
 }

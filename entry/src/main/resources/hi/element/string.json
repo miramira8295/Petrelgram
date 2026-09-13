@@ -12047,6 +12047,14 @@
     {
       "name": "player_hold_back",
       "value": "पीछे करने के लिए दबाए रखें"
+    },
+    {
+      "name": "mv_show_in_chat",
+      "value": "चैट में देखें"
+    },
+    {
+      "name": "mv_show_all_media",
+      "value": "सभी मीडिया दिखाएँ"
     }
   ]
 }

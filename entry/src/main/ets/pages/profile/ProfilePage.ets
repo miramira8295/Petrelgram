@@ -110,6 +110,7 @@ export struct ProfilePage {
   // 所以和 ChatPage 一样自己画一层——用户实报"点频道/群组/其他人详情看不到壁纸"。
   @StorageProp(KEY_APP_BG_ON) appWallpaperOn: boolean = false;
   @State profTab: number = 0;
+  private pendingTabKey: string = '';
   @State name: string = '';
   @State initials: string = '?';
   @State avatarPath: string = '';
@@ -221,6 +222,9 @@ export struct ProfilePage {
       ? ((params['startParam'] as string | undefined) ?? '') : '';
     this.pendingJumpTo = params !== undefined
       ? ((params['jumpTo'] as number | undefined) ?? 0) : 0;
+    // 首次进来要落到哪个页签（issue #166 的「显示所有图片」），用一次即清。
+    this.pendingTabKey = params !== undefined
+      ? ((params['tab'] as string | undefined) ?? '') : '';
     const store = new ProfileStore(getTdClient(), this.userId);
     this.store = store;
     this.unsub = store.subscribe((): void => { this.onProfileStoreChanged(); });
@@ -355,8 +359,12 @@ export struct ProfilePage {
       this.profTab = 0;
       return;
     }
-    const found = preferredKey !== ''
-      ? tabs.findIndex((tab: UserProfileTab): boolean => tab.key === preferredKey) : -1;
+    const wantedKey: string = this.pendingTabKey !== '' ? this.pendingTabKey : preferredKey;
+    const found = wantedKey !== ''
+      ? tabs.findIndex((tab: UserProfileTab): boolean => tab.key === wantedKey) : -1;
+    if (this.pendingTabKey !== '' && found >= 0) {
+      this.pendingTabKey = '';
+    }
     this.profTab = found >= 0 ? found : 0;
     const selectedKey = tabs[this.profTab].key;
     if (this.isSharedProfileTab(selectedKey) && this.sharedStore !== null &&
