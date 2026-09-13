@@ -1,5 +1,5 @@
 import { logE } from './log';
-import { decidePush, StackAction, StackFrame } from './splitRouting';
+import { decidePush, PushOrigin, StackAction, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 import { KEY_MAIN_TAB } from './chatNav';
 
@@ -53,7 +53,12 @@ export function settingFrameKey(name: string, param: Object | undefined): string
 // param 只有 tg://proxy 深链会传（预填代理表单用），其余调用方一律省略——
 // 省略时行为与加这个参数之前逐字一致：pushPath 不带 param，settingFrameKey
 // 返回空串。
-export function navigateToSetting(dest: string, param?: Object): boolean {
+// origin 决定入栈方式：'navbar'（默认）= 列表/深链语义，清栈再推，右栏是替换；
+// 'content' = **子页里再进一层**，叠在当前页之上，返回回到上一页。第一个用它
+// 的是隐私与安全 → 活跃设备（issue #203）。
+export function navigateToSetting(
+  dest: string, param?: Object, origin: PushOrigin = 'navbar'
+): boolean {
   const stack: NavStackLike | undefined = stackOf('settings');
   if (stack === undefined) {
     logE(`navigateToSetting(${dest}): settings stack not registered`);
@@ -66,12 +71,11 @@ export function navigateToSetting(dest: string, param?: Object): boolean {
     AppStorage.setOrCreate<number>(KEY_MAIN_TAB, SETTINGS_TAB_INDEX);
   }
   const target: StackFrame = { name: dest, key: settingFrameKey(dest, param) };
-  // origin 恒为 'navbar'：设置子页要么从左栏那张列表点进来，要么从深链进来，
-  // 两者的语义都是「换一个右栏内容」，所以 decidePush 给的是 clearAndPush——
-  // 右栏是替换不是叠加。由此设置栈的深度恒为 1。将来若出现「子页里再点进下
-  // 一层」的入口，那一处该传 'content'。
+  // 列表与深链传 'navbar'：两者的语义都是「换一个右栏内容」，decidePush 给的是
+  // clearAndPush——右栏是替换不是叠加，设置栈深度为 1。子页里再点进下一层传
+  // 'content'，叠上去，深度变 2，返回键回到上一层子页。
   const snap: StackFrame[] = snapshotOf(stack, settingFrameKey);
-  const action: StackAction = decidePush(snap, 'navbar', target);
+  const action: StackAction = decidePush(snap, origin, target);
   if (action === 'skip') {
     return true;
   }

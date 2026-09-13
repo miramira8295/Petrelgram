@@ -1,5 +1,18 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { settingFrameKey } from '../main/ets/util/settingsNav';
+import { describe, it, expect, beforeEach } from '@ohos/hypium';
+import { navigateToSetting, settingFrameKey } from '../main/ets/util/settingsNav';
+import { NavPathInfoLike, NavStackLike, registerStack, resetStacksForTest } from '../main/ets/util/navStacks';
+
+// 设置栈的最小替身：只记名字，够 navigateToSetting 判定与落栈用。
+class FakeSettingsStack implements NavStackLike {
+  names: string[] = [];
+  cleared: number = 0;
+  clear(_animated?: boolean): void { this.cleared++; this.names = []; }
+  pushPath(info: NavPathInfoLike): void { this.names.push(info.name); }
+  pop(_animated?: boolean): void { this.names.pop(); }
+  size(): number { return this.names.length; }
+  getAllPathName(): string[] { return this.names.slice(); }
+  getParamByIndex(_index: number): Object | undefined { return undefined; }
+}
 
 // tg://proxy 深链交给 navigateToSetting 的那组参数的形状。
 function proxyParam(server: string, port: number): Object {
@@ -13,6 +26,41 @@ function proxyParam(server: string, port: number): Object {
 
 export default function settingsNavTest(): void {
   describe('settingsNav', (): void => {
+    beforeEach((): void => { resetStacksForTest(); });
+
+    // issue #203：隐私与安全 → 活跃设备。ActiveSessionsPage 第 4 批迁成
+    // NavDestination 后已不在 main_pages.json，隐私页里那行 router.pushUrl 必失败
+    // （toast「页面打开失败」）。改走设置栈，且是**叠在隐私页之上**——返回要回到
+    // 隐私页，不能像列表/深链那样把栈清掉。
+    it('子页里再进一层（origin=content）：叠在当前页上、不清栈', 0, (): void => {
+      const stack: FakeSettingsStack = new FakeSettingsStack();
+      stack.names = ['PrivacySecurityPage'];
+      registerStack('settings', stack);
+      expect(navigateToSetting('ActiveSessionsPage', undefined, 'content')).assertTrue();
+      expect(stack.cleared).assertEqual(0);
+      expect(stack.names.join('>')).assertEqual('PrivacySecurityPage>ActiveSessionsPage');
+    });
+
+    it('省略 origin 仍是列表/深链语义：先清栈再推（行为不变）', 0, (): void => {
+      const stack: FakeSettingsStack = new FakeSettingsStack();
+      stack.names = ['PrivacySecurityPage'];
+      registerStack('settings', stack);
+      expect(navigateToSetting('ActiveSessionsPage')).assertTrue();
+      expect(stack.cleared).assertEqual(1);
+      expect(stack.names.join('>')).assertEqual('ActiveSessionsPage');
+    });
+
+    it('栈顶已是目标页时 skip，不重复入栈', 0, (): void => {
+      const stack: FakeSettingsStack = new FakeSettingsStack();
+      stack.names = ['PrivacySecurityPage', 'ActiveSessionsPage'];
+      registerStack('settings', stack);
+      expect(navigateToSetting('ActiveSessionsPage', undefined, 'content')).assertTrue();
+      expect(stack.names.length).assertEqual(2);
+    });
+
+    it('设置栈未注册时返回 false（调用方据此提示，不回退 router）', 0, (): void => {
+      expect(navigateToSetting('ActiveSessionsPage', undefined, 'content')).assertFalse();
+    });
 
     it('无参数的设置子页键恒为空串（单例语义）', 0, (): void => {
       expect(settingFrameKey('PowerUsagePage', undefined)).assertEqual('');

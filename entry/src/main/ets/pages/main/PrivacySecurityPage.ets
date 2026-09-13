@@ -19,6 +19,7 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { navigateToSetting } from '../../util/settingsNav';
 
 const CARD_RADIUS: number = 16;
 const COLOR_WARNING: string = '#D98914';
@@ -187,6 +188,22 @@ export struct PrivacySecurityPage {
     this.canIgnoreSensitive = store.canIgnoreSensitive;
     this.ignoreSensitive = store.ignoreSensitive;
     this.isPremium = store.isPremium;
+  }
+
+  // 活跃设备页第 4 批已迁成 NavDestination（47132ae），不在 main_pages.json 里，
+  // 走 route() 的 router.pushUrl 必失败——就是 issue #203 那条「页面打开失败」。
+  // 本页自己也在设置栈上，所以按 'content' 叠上去，返回仍回到本页。
+  // 同页其余四个入口的目标页还是 router 页，照旧走 route()。
+  private openActiveSessions(): void {
+    if (this.navigationLocked || this.actionKey !== '') { return; }
+    this.navigationLocked = true;
+    if (!navigateToSetting('ActiveSessionsPage', undefined, 'content')) {
+      this.navigationLocked = false;
+      logE('PrivacySecurityPage.openActiveSessions: settings stack not registered');
+      promptAction.showToast({ message: $r('app.string.page_open_failed'), duration: 1700 });
+      return;
+    }
+    setTimeout((): void => { this.navigationLocked = false; }, 700);
   }
 
   private route(url: string, params?: Object): void {
@@ -415,7 +432,7 @@ export struct PrivacySecurityPage {
           }
           .width('100%').constraintSize({ minHeight: 50 }).padding({ left: 16, right: 14 })
           .borderRadius(12).stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-          .onClick((): void => { this.route('pages/main/ActiveSessionsPage'); });
+          .onClick((): void => { this.openActiveSessions(); });
           this.divider();
           Row({ space: 10 }) {
             Text($r('app.string.cw_title')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
