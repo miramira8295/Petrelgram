@@ -60,3 +60,27 @@ export function buildForwardMessagesRequest(input: ForwardMessagesRequestInput):
   req['remove_caption'] = input.sendCopy && input.canRemoveCaption && input.removeCaption;
   return req;
 }
+
+// TDLib 单次 forwardMessages 最多 100 条（超了在发送时才报错，issue #189 追加 3）。
+// 按 100 一批切开，顺序不变、每批字段一致；调用方顺序发送。
+export const FORWARD_BATCH_MAX: number = 100;
+
+export function buildForwardMessagesRequests(input: ForwardMessagesRequestInput): TdRequest[] {
+  const whole: TdRequest | null = buildForwardMessagesRequest(input);
+  if (whole === null) {
+    return [];
+  }
+  const ids: number[] = whole['message_ids'] as number[];
+  const out: TdRequest[] = [];
+  for (let start = 0; start < ids.length; start += FORWARD_BATCH_MAX) {
+    const batch: TdRequest = { '@type': 'forwardMessages' };
+    batch['chat_id'] = whole['chat_id'];
+    batch['message_thread_id'] = whole['message_thread_id'];
+    batch['from_chat_id'] = whole['from_chat_id'];
+    batch['message_ids'] = ids.slice(start, start + FORWARD_BATCH_MAX);
+    batch['send_copy'] = whole['send_copy'];
+    batch['remove_caption'] = whole['remove_caption'];
+    out.push(batch);
+  }
+  return out;
+}

@@ -1,7 +1,11 @@
+import { FolderInfo } from '../../store/FolderStore';
+import {
+  ALL_FOLDER_ID, forwardColumnsTemplate, forwardFolderChips, forwardGridColumns, forwardListKey, ForwardFolderChip
+} from '../../util/forwardFolders';
 import { promptAction } from '@kit.ArkUI';
 import { ChatEntry } from '../../store/ChatEntry';
 import { AvatarView } from '../chatlist/AvatarView';
-import { getChatStore, getTdClient } from '../../tdkit/Globals';
+import { getChatStore, getFolderStore, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
@@ -11,7 +15,7 @@ import {
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
-import { buildForwardMessagesRequest } from '../../util/forwardMessagesRequest';
+import { buildForwardMessagesRequests } from '../../util/forwardMessagesRequest';
 
 // "Forward to…" chat picker, extracted from ChatPage.
 //
@@ -21,6 +25,11 @@ import { buildForwardMessagesRequest } from '../../util/forwardMessagesRequest';
 // and the forwardMessages request itself — lives here. The page's
 // `if (showForwardSheet)` branch creates and destroys this component, so the
 // query box and in-flight send state reset per open without explicit teardown.
+// 转发模式三选一（原来是两个互相牵制的开关）。
+const MODE_ORIGINAL: string = 'original';
+const MODE_COPY: string = 'copy';
+const MODE_COPY_NO_CAPTION: string = 'copyNoCaption';
+
 @Component
 export struct ForwardSheet {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
@@ -47,6 +56,12 @@ export struct ForwardSheet {
   onSent: () => void = (): void => {};
 
   @State chats: ChatEntry[] = [];
+  // 文件夹页签（issue #200）：0 = 全部；列表键随之在 'main' / folder:<id> 之间切。
+  @State folderId: number = ALL_FOLDER_ID;
+  // 网格列数按面板可用宽度自适应（见 forwardGridColumns）。
+  @StorageProp('screenWidthVp') screenW: number = 360;
+  @State folders: FolderInfo[] = [];
+  private unsubFolders: (() => void) | null = null;
   @State query: string = '';
   @State loadState: string = 'ready'; // loading | ready | error
   @State sendingChatId: number = 0;
@@ -60,14 +75,10 @@ export struct ForwardSheet {
   private unsubChats: (() => void) | null = null;
 
   aboutToAppear(): void {
-    // Live subscription rather than a one-shot read: the main list reorders as
-    // messages arrive and rows gain avatars as those downloads finish, and an
-    // open picker has to track that. ChatPage used to push these updates in
-    // from its own subscription; owning it here keeps that behaviour without
-    // the page needing to know the sheet exists.
-    this.unsubChats = getChatStore().subscribe((list: ChatEntry[]): void => {
-      this.applyChats(list);
-    }, 'main'); // fires immediately with the currently cached list
+    this.unsubFolders = getFolderStore().subscribe((folders: FolderInfo[]): void => {
+      this.folders = folders;
+    });
+    this.bindChats();
     this.loadChats();
   }
 
@@ -77,11 +88,45 @@ export struct ForwardSheet {
       this.unsubChats();
       this.unsubChats = null;
     }
+    if (this.unsubFolders !== null) {
+      this.unsubFolders();
+      this.unsubFolders = null;
+    }
   }
 
-  // Empirically tuned on device: with the keyboard up the sheet needs lifting
-  // clear of the IME edge; without it the layout already sits above the gesture
-  // bar, so only minimal padding applies.
+  // 面板宽 = 屏宽 − 两侧各 8 − 内边距各 12。
+  private gridColumnsTemplate(): string {
+    return forwardColumnsTemplate(forwardGridColumns(this.screenW - 16 - 24));
+  }
+
+  private listKey(): string {
+    return forwardListKey(this.folderId);
+  }
+
+  private chips(): ForwardFolderChip[] {
+    return forwardFolderChips(this.folders);
+  }
+
+  // 订阅当前页签对应的那个分桶；切页签时换订阅。回调会立刻给一次缓存里的列表。
+  private bindChats(): void {
+    if (this.unsubChats !== null) {
+      this.unsubChats();
+    }
+    this.unsubChats = getChatStore().subscribe((list: ChatEntry[]): void => {
+      this.applyChats(list);
+    }, this.listKey());
+  }
+
+  private selectFolder(id: number): void {
+    if (id === this.folderId) {
+      return;
+    }
+    this.folderId = id;
+    this.chats = [];
+    this.bindChats();
+    this.loadChats();
+  }
+
   private bottomInset(): number {
     return this.keyboardH > 0 ? Math.max(this.bottomSafe, 12) : this.bottomSafe;
   }
@@ -101,11 +146,11 @@ export struct ForwardSheet {
   private loadChats(): void {
     this.loadState = this.chats.length > 0 ? 'ready' : 'loading';
     const seq: number = ++this.seq;
-    getChatStore().ensureLoaded('main').then((success: boolean): void => {
+    getChatStore().ensureLoaded(this.listKey()).then((success: boolean): void => {
       if (seq !== this.seq) {
         return;
       }
-      this.applyChats(getChatStore().getChats('main'));
+      this.applyChats(getChatStore().getChats(this.listKey()));
       if (!success && this.chats.length === 0) {
         this.loadState = 'error';
       } else {
@@ -120,11 +165,11 @@ export struct ForwardSheet {
     }
     this.loadState = 'loading';
     const seq: number = ++this.seq;
-    getChatStore().loadMore('main').then((): void => {
+    getChatStore().loadMore(this.listKey()).then((): void => {
       if (seq !== this.seq) {
         return;
       }
-      this.applyChats(getChatStore().getChats('main'));
+      this.applyChats(getChatStore().getChats(this.listKey()));
       this.loadState = this.chats.length > 0 ? 'ready' : 'error';
     });
   }
@@ -149,7 +194,9 @@ export struct ForwardSheet {
     if (this.sendingChatId !== 0 || this.messageIds.length === 0) {
       return;
     }
-    const req: TdRequest | null = buildForwardMessagesRequest({
+    // The request builder owns TDLib's strict ascending/unique-id boundary,
+    // and splits anything over 100 ids into ordered batches (TDLib's per-call cap).
+    const reqs: TdRequest[] = buildForwardMessagesRequests({
       toChatId: chat.id,
       fromChatId: this.sourceChatId,
       messageIds: this.messageIds,
@@ -158,29 +205,15 @@ export struct ForwardSheet {
       removeCaption: this.removeCaption,
       canRemoveCaption: this.canRemoveCaption
     });
-    if (req === null) {
+    if (reqs.length === 0) {
       return;
     }
-    // The request builder owns TDLib's strict ascending/unique-id boundary.
-    const ids: number[] = req['message_ids'] as number[];
     const seq: number = this.seq;
     this.sendingChatId = chat.id;
-    getTdClient().send(req).then((result: TdObject): void => {
-      // 诊断：反馈"多图消息转发过去变成一张一张"。相册要么在请求这一侧就没
-      // 成组，要么 TDLib 成了组而我们没渲染成组——两者的修法完全不同，靠读
-      // 代码分不出来。forwardMessages 回的是 Messages，把每条的 media_album_id
-      // 打出来即可定论：都相同且非 0 = TDLib 成了组，问题在渲染侧；各不相同
-      // 或缺失 = 问题在请求侧。
-      //
-      // 只打 id 和相册号，不含任何消息内容——与 StoreDiag 同一口径。
-      const forwarded: TdObject[] = (result['messages'] as TdObject[] | undefined) ?? [];
-      const albums: string[] = forwarded.map((m: TdObject): string =>
-        `${(m['id'] as number | undefined) ?? 0}:${m['media_album_id'] ?? '-'}`);
-      logI(`[FwdDiag] sent=${ids.length} got=${forwarded.length} ${albums.join(' ')}`);
+    this.sendBatches(reqs).then((count: number): void => {
       if (seq !== this.seq) {
         return;
       }
-      const count: number = ids.length;
       this.close();
       this.onSent();
       promptAction.showToast({
@@ -197,6 +230,21 @@ export struct ForwardSheet {
     });
   }
 
+  // 一批发完再发下一批：TDLib 按到达顺序落时间线，并行发会乱序。返回总条数。
+  private async sendBatches(reqs: TdRequest[]): Promise<number> {
+    let count: number = 0;
+    for (let i = 0; i < reqs.length; i++) {
+      const ids: number[] = reqs[i]['message_ids'] as number[];
+      const result: TdObject = await getTdClient().send(reqs[i]);
+      const forwarded: TdObject[] = (result['messages'] as TdObject[] | undefined) ?? [];
+      const albums: string[] = forwarded.map((m: TdObject): string =>
+        `${(m['id'] as number | undefined) ?? 0}:${m['media_album_id'] ?? '-'}`);
+      logI(`[FwdDiag] batch=${i + 1}/${reqs.length} sent=${ids.length} got=${forwarded.length} ${albums.join(' ')}`);
+      count += ids.length;
+    }
+    return count;
+  }
+
   @Styles
   rowNormalStyle() {
     .backgroundColor(Color.Transparent)
@@ -211,23 +259,58 @@ export struct ForwardSheet {
     .scale({ x: 0.985, y: 0.96 })
   }
 
+  private forwardMode(): string {
+    if (!this.sendCopy) {
+      return MODE_ORIGINAL;
+    }
+    return this.removeCaption ? MODE_COPY_NO_CAPTION : MODE_COPY;
+  }
+
+  private setForwardMode(mode: string): void {
+    this.sendCopy = mode !== MODE_ORIGINAL;
+    this.removeCaption = mode === MODE_COPY_NO_CAPTION;
+  }
+
   @Builder
-  forwardOptionRow(label: ResourceStr, isOn: boolean, enabled: boolean,
-    onChange: (next: boolean) => void) {
+  forwardModeRow(label: ResourceStr, mode: string) {
     Row() {
       Text(label)
         .fontSize(14)
         .fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1)
         .maxLines(2);
-      Toggle({ type: ToggleType.Switch, isOn: isOn })
-        .selectedColor(COLOR_PRIMARY)
-        .enabled(enabled)
-        .onChange((next: boolean): void => onChange(next));
+      Radio({ value: mode, group: 'forwardMode' })
+        .checked(this.forwardMode() === mode)
+        .radioStyle({ checkedBackgroundColor: COLOR_PRIMARY })
+        .width(20).height(20)
+        .onChange((checked: boolean): void => { if (checked) { this.setForwardMode(mode); } });
     }
     .width('100%')
     .height(42)
-    .opacity(enabled ? 1 : 0.45);
+    .onClick((): void => { this.setForwardMode(mode); });
+  }
+  // 文件夹页签：横向可滚的一排胶囊，「全部」在首位。没有文件夹时整排不出现。
+  @Builder
+  folderChipsRow() {
+    Scroll() {
+      Row({ space: 8 }) {
+        ForEach(this.chips(), (chip: ForwardFolderChip) => {
+          Text(chip.isAll ? $r('app.string.filter_all') : chip.title)
+            .fontSize(13)
+            .fontWeight(chip.id === this.folderId ? FontWeight.Medium : FontWeight.Regular)
+            .fontColor(chip.id === this.folderId ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: 140 })
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(16)
+            .backgroundColor(chip.id === this.folderId ? '#1A3390EC' : $r('app.color.surface_alt'))
+            .onClick((): void => { this.selectFolder(chip.id); });
+        }, (chip: ForwardFolderChip): string => `chip_${chip.id}`);
+      }
+      .padding({ left: 2, right: 2 });
+    }
+    .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
+    .width('100%').align(Alignment.Start);
   }
 
   build() {
@@ -265,18 +348,18 @@ export struct ForwardSheet {
           .padding({ left: 14, right: 14 })
           .backgroundColor($r('app.color.surface_alt')).borderRadius(20)
           .onChange((value: string): void => { this.query = value; });
+        if (this.chips().length > 1) {
+          this.folderChipsRow();
+        }
+        // 「去掉说明」只在「作为副本」时有意义，两个开关其实是一个三选一，
+        // 用单选组表达（两个 Toggle 互相牵制，用户实测觉得丑也难懂）。
         Column() {
-          this.forwardOptionRow($r('app.string.fw_send_copy'), this.sendCopy, true,
-            (next: boolean): void => {
-              this.sendCopy = next;
-              if (!next) {
-                this.removeCaption = false;
-              }
-            });
+          this.forwardModeRow($r('app.string.fw_keep_source'), MODE_ORIGINAL);
+          Divider().strokeWidth(0.5).color($r('app.color.divider'));
+          this.forwardModeRow($r('app.string.fw_send_copy'), MODE_COPY);
           if (this.canRemoveCaption) {
             Divider().strokeWidth(0.5).color($r('app.color.divider'));
-            this.forwardOptionRow($r('app.string.fw_remove_caption'), this.removeCaption,
-              this.sendCopy, (next: boolean): void => { this.removeCaption = next; });
+            this.forwardModeRow($r('app.string.fw_copy_no_caption'), MODE_COPY_NO_CAPTION);
           }
         }
         .width('100%')
@@ -310,35 +393,32 @@ export struct ForwardSheet {
           }
           .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
         } else {
-          List() {
+          // 头像网格（issue #200）：转发时用户找的是"人"，四列一屏能看 16 个。
+          // 昵称固定两行高，行与行对齐。
+          Grid() {
             ForEach(this.filteredChats(), (chat: ChatEntry) => {
-              ListItem() {
-                Row({ space: 12 }) {
-                  AvatarView({
-                    avatarPath: chat.avatarPath,
-                    initials: chat.initials,
-                    colorSeed: chat.id,
-                    avatarSize: 42
-                  });
-                  Column({ space: 3 }) {
-                    Text(chat.title).fontSize(15).fontWeight(FontWeight.Medium)
-                      .fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis });
-                    Text(chat.id === this.sourceChatId ? $r('app.string.fw_current_chat') :
-                      (chat.lastMessageText !== '' ? chat.lastMessageText : $r('app.string.fw_tap_forward')))
-                      .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis });
+              GridItem() {
+                Column({ space: 6 }) {
+                  Stack() {
+                    AvatarView({
+                      avatarPath: chat.avatarPath,
+                      initials: chat.initials,
+                      colorSeed: chat.id,
+                      avatarSize: 56
+                    });
+                    if (this.sendingChatId === chat.id) {
+                      Column().width(56).height(56).borderRadius(28).backgroundColor('#66000000');
+                      LoadingProgress().width(24).height(24).color(Color.White);
+                    }
                   }
-                  .alignItems(HorizontalAlign.Start).layoutWeight(1);
-                  if (this.sendingChatId === chat.id) {
-                    LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
-                  } else {
-                    SymbolGlyph($r('sys.symbol.paperplane'))
-                      .fontSize(18).fontColor([COLOR_PRIMARY]);
-                  }
+                  .width(56).height(56);
+                  Text(chat.title)
+                    .fontSize(12).lineHeight(16).fontColor(COLOR_TEXT_PRIMARY)
+                    .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .textAlign(TextAlign.Center).width('100%').height(32);
                 }
-                .width('100%').padding({ left: 6, right: 6, top: 8, bottom: 8 })
-                .alignItems(VerticalAlign.Center)
+                .width('100%').padding({ top: 6, bottom: 4, left: 2, right: 2 })
+                .borderRadius(12)
                 .opacity(this.sendingChatId === 0 || this.sendingChatId === chat.id ? 1 : 0.45)
                 .stateStyles({
                   normal: this.rowNormalStyle,
@@ -352,13 +432,14 @@ export struct ForwardSheet {
               }
             }, (chat: ChatEntry): string => `forward_${chat.id}_${chat.revision}`);
           }
+          .columnsTemplate(this.gridColumnsTemplate())
+          .rowsGap(4).columnsGap(4)
           .layoutWeight(1).width('100%')
-          .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 60, endMargin: 6 })
           .scrollBar(BarState.Auto)
-          .onReachEnd((): void => { getChatStore().loadMore('main'); });
+          .onReachEnd((): void => { getChatStore().loadMore(this.listKey()); });
         }
       }
-      .width('calc(100% - 16vp)').height('64%')
+      .width('calc(100% - 16vp)').height('86%')
       .padding({ left: 12, right: 12, top: 10, bottom: 12 + this.bottomInset() })
       .backgroundColor($r('app.color.surface')).borderRadius(20)
       .shadow({ radius: 12, color: '#26000000', offsetX: 0, offsetY: -2 })

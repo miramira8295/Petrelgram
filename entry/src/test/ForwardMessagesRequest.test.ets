@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  buildForwardMessagesRequest, forwardCaptionRemovable, ForwardCaptionCandidate,
+  buildForwardMessagesRequest, buildForwardMessagesRequests, FORWARD_BATCH_MAX, forwardCaptionRemovable, ForwardCaptionCandidate,
   ForwardMessagesRequestInput, selectionHasRemovableForwardCaption
 } from '../main/ets/util/forwardMessagesRequest';
 import { TdRequest } from '../main/ets/tdkit/TdTypes';
@@ -79,6 +79,28 @@ export default function forwardMessagesRequestTest() {
       empty.messageIds = [1];
       empty.toChatId = 0;
       expect(buildForwardMessagesRequest(empty) === null).assertTrue();
+    });
+
+    // issue #189 追加 3：TDLib 单次 forwardMessages 上限 100，超了只在发送时报错。
+    // 改成按 100 一批顺序发：顺序不乱、每批字段一致、≤100 仍是一条请求。
+    it('splits more than 100 ids into ordered batches of at most 100', 0, () => {
+      const many: ForwardMessagesRequestInput = inputOf();
+      const ids: number[] = [];
+      for (let i = 1; i <= 250; i++) { ids.push(i * 1048576); }
+      many.messageIds = ids;
+      const reqs: TdRequest[] = buildForwardMessagesRequests(many);
+      expect(reqs.length).assertEqual(3);
+      expect((reqs[0]['message_ids'] as number[]).length).assertEqual(FORWARD_BATCH_MAX);
+      expect((reqs[2]['message_ids'] as number[]).length).assertEqual(50);
+      expect((reqs[0]['message_ids'] as number[])[0]).assertEqual(1048576);
+      expect((reqs[2]['message_ids'] as number[])[49]).assertEqual(250 * 1048576);
+      expect(reqs[1]['chat_id']).assertEqual(reqs[0]['chat_id']);
+      expect(reqs[1]['send_copy']).assertEqual(reqs[0]['send_copy']);
+      const few: ForwardMessagesRequestInput = inputOf();
+      few.messageIds = [3, 1, 2];
+      expect(buildForwardMessagesRequests(few).length).assertEqual(1);
+      few.messageIds = [];
+      expect(buildForwardMessagesRequests(few).length).assertEqual(0);
     });
   });
 }
