@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "पसंदीदा अपडेट नहीं हो सके"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "फ़ुल-स्क्रीन संपादक"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "छोटा करें"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "हो गया"
     }
   ]
 }

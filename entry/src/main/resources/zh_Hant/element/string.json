@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "收藏失敗，請稍後再試"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "全螢幕編輯"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "收合"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "完成"
     }
   ]
 }

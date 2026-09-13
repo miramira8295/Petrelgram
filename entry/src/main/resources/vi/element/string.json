@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "Không cập nhật được yêu thích"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "Trình soạn toàn màn hình"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "Thu gọn"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "Xong"
     }
   ]
 }

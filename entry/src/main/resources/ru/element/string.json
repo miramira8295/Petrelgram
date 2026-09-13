@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "Не удалось обновить избранное"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "Полноэкранный редактор"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "Свернуть"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "Готово"
     }
   ]
 }

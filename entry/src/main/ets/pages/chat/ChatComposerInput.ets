@@ -1,11 +1,13 @@
 import { caretAfterExternalEdit, pasteFitsLimit } from '../../util/composerText';
+import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
+import { shouldOfferFullscreenEdit } from '../../util/composerExpand';
 import { promptAction } from '@kit.ArkUI';
 import { str } from '../../util/strings';
 import { ReplyKeyboard } from '../../store/ReplyKeyboard';
 import { logE } from '../../util/log';
 import { PendingMediaItem, hasPendingMedia } from '../../util/pendingMedia';
 import { COLOR_ICON_SECONDARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { containerBlur, overlayMaterial, plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { EditStrip, ReplyStrip } from './ComposerStrip';
 import { MediaStrip } from './MediaStrip';
@@ -80,6 +82,9 @@ export struct ChatComposerInput {
   @Local private editorW: number = 0;
   // TextArea 自己报的真实行数（0 = 还没问到）。见 refreshEditorLines。
   @Local private editorLines: number = 0;
+  // 全屏编辑面板。挂在本组件而不是页面：它编辑的就是这里的草稿，页面只通过
+  // 已有的 onDraftChange / onSend 收结果。
+  @Local private fullscreenOpen: boolean = false;
   private linesRefreshTimer: number = -1;
   @Param sendByEnter: boolean = false;
   @Param replyKeyboard: ReplyKeyboard | null = null;
@@ -534,6 +539,22 @@ export struct ChatComposerInput {
                 ? $r('app.string.cp_open_bot_keyboard') : $r('app.string.cp_switch_to_text'))
               .onClick((): void => { this.onToggleReplyKeyboard(); });
             }
+            // 全屏编辑入口：只在这段文字已经在小框里看不全时出现
+            // （判据见 util/composerExpand）。
+            if (this.composerEditorReady && shouldOfferFullscreenEdit(this.draft, this.editorLines)) {
+              Row() {
+                SymbolGlyph($r('sys.symbol.arrow_up_left_and_arrow_down_right'))
+                  .fontSize(19).fontColor([COLOR_ICON_SECONDARY]);
+              }
+              .width(34).height(34).borderRadius(17)
+              .justifyContent(FlexAlign.Center)
+              .stateStyles({
+                normal: this.composerIconNormalStyle,
+                pressed: this.composerIconPressedStyle
+              })
+              .accessibilityText($r('app.string.cp_fullscreen_edit'))
+              .onClick((): void => { this.fullscreenOpen = true; });
+            }
             if (this.botMiniAppUrlValue !== '') {
               SymbolGlyph($r('sys.symbol.square_grid_2x2'))
                 .fontSize(22).fontColor([this.accentColor])
@@ -573,6 +594,34 @@ export struct ChatComposerInput {
       top: 6,
       bottom: this.replyKeyboardVisible ? 8 : this.bottomGap
     })
-    .alignItems(VerticalAlign.Center);
+    .alignItems(VerticalAlign.Center)
+    .bindSheet($$this.fullscreenOpen, this.fullscreenEditor(), {
+      height: SheetSize.LARGE,
+      backgroundColor: Color.Transparent,
+      dragBar: false,
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+    });
+  }
+
+  @Builder
+  private fullscreenEditor() {
+    // 每次打开都重建：面板内部持有编辑中的文本，重建才能拿到当前草稿。
+    if (this.fullscreenOpen) {
+      ComposerFullscreenSheet({
+        initialText: this.draft,
+        placeholder: this.composerPlaceholder,
+        maxLength: COMPOSER_MAX_LENGTH,
+        accentColor: this.accentColor,
+        onCommit: (text: string): void => {
+          this.lastDraftSeen = text;
+          this.onDraftChange(text);
+        },
+        onClose: (): void => { this.fullscreenOpen = false; },
+        onSend: (): void => {
+          this.fullscreenOpen = false;
+          this.onSend();
+        }
+      });
+    }
   }
 }

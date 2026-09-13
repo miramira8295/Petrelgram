@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "อัปเดตรายการโปรดไม่สำเร็จ"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "ตัวแก้ไขเต็มจอ"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "ย่อ"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "เสร็จสิ้น"
     }
   ]
 }

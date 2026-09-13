@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "تعذّر تحديث المفضلة"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "محرر ملء الشاشة"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "طي"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "تم"
     }
   ]
 }

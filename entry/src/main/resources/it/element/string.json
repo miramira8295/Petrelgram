@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "Impossibile aggiornare i preferiti"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "Editor a schermo intero"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "Comprimi"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "Fatto"
     }
   ]
 }

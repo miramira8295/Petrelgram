@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "즐겨찾기를 업데이트하지 못했습니다"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "전체 화면 편집기"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "접기"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "완료"
     }
   ]
 }

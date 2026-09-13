@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "Favoriler güncellenemedi"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "Tam ekran düzenleyici"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "Daralt"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "Bitti"
     }
   ]
 }

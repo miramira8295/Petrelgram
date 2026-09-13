@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "お気に入りを更新できませんでした"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "全画面エディタ"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "折りたたむ"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "完了"
     }
   ]
 }

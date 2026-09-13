@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "Gagal mengemas kini kegemaran"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "Penyunting skrin penuh"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "Runtuhkan"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "Selesai"
     }
   ]
 }

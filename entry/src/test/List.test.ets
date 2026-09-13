@@ -157,6 +157,7 @@ import composerCaretTest from './ComposerCaret.test';
 import draftCacheTest from './DraftCache.test';
 import stickerSetItemsTest from './StickerSetItems.test';
 import favoriteStickerCacheTest from './FavoriteStickerCache.test';
+import composerExpandTest from './ComposerExpand.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
@@ -430,6 +431,7 @@ export default function testsuite() {
   draftCacheTest();
   stickerSetItemsTest();
   favoriteStickerCacheTest();
+  composerExpandTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();

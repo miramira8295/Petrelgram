@@ -12123,6 +12123,18 @@
     {
       "name": "mb_favorite_failed",
       "value": "به‌روزرسانی موردعلاقه‌ها ناموفق بود"
+    },
+    {
+      "name": "cp_fullscreen_edit",
+      "value": "ویرایشگر تمام‌صفحه"
+    },
+    {
+      "name": "cp_fullscreen_collapse",
+      "value": "جمع کردن"
+    },
+    {
+      "name": "cp_fullscreen_done",
+      "value": "انجام شد"
     }
   ]
 }
