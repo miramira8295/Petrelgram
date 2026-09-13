@@ -15,6 +15,8 @@ export struct FileBubble {
   @Param downloadProgress: number = 0;
   @Param downloadFailed: boolean = false;
   @Param downloadActive: boolean = false;
+  // 出站发送中：图块画上传环，点击不打开也不暂停，右侧箭头朝上。
+  @Param uploading: boolean = false;
   @Param maxWidth: number = 250;
   @Param onOpen: () => void = (): void => {};
   @Param onSave: () => void = (): void => {};
@@ -60,7 +62,8 @@ export struct FileBubble {
       this.fileSize,
       this.downloadActive,
       this.downloadProgress,
-      this.downloadFailed
+      this.downloadFailed,
+      this.uploading
     );
   }
 
@@ -81,7 +84,23 @@ export struct FileBubble {
         .width(48).height(48)
         .borderRadius(13)
         .backgroundColor(this.sourceUnavailable() ? '#AEB6BF' : this.visual().color);
-      if (this.downloadActive) {
+      if (this.uploading) {
+        // 一个 Progress 兼任转圈与百分比：没有字节时 LOADING（系统自带的不确定
+        // 态动效），有百分比后切回 PROGRESSING，不用在两个节点之间换来换去。
+        Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
+          .width(40).height(40)
+          .color(Color.White)
+          .style({
+            strokeWidth: 2,
+            status: this.downloadProgress > 0 ? ProgressStatus.PROGRESSING : ProgressStatus.LOADING
+          });
+        if (this.downloadProgress > 0) {
+          Text(`${this.downloadProgress}`)
+            .fontSize(9)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Color.White);
+        }
+      } else if (this.downloadActive) {
         if (this.downloadProgress > 0) {
           Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
             .width(40).height(40)
@@ -157,7 +176,7 @@ export struct FileBubble {
       })
       .animation({ duration: 110, curve: Curve.EaseOut })
       .onClick((): void => {
-        if (this.sourceUnavailable()) {
+        if (this.sourceUnavailable() || this.uploading) {
           return;
         }
         if (this.downloadActive) {
@@ -169,8 +188,8 @@ export struct FileBubble {
       Stack() {
         Circle({ width: 30, height: 30 })
           .fill(this.filePath !== '' ? '#143390EC' : '#0D000000');
-        SymbolGlyph($r(this.filePath !== ''
-          ? 'sys.symbol.arrow_down_circle' : 'sys.symbol.arrow_down'))
+        SymbolGlyph($r(this.uploading ? 'sys.symbol.arrow_up'
+          : (this.filePath !== '' ? 'sys.symbol.arrow_down_circle' : 'sys.symbol.arrow_down')))
           .fontSize(this.filePath !== '' ? 20 : 16)
           .fontColor([this.sourceUnavailable() ? '#9EA6AF' : COLOR_ICON_SECONDARY]);
       }

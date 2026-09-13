@@ -514,6 +514,11 @@ export class HeaderIdentitySession {
 
   // 和自己的私聊就是「我的收藏」。TDLib 对它没有任何标记，标题是自己的昵称、
   // 头像是自己的头像；判据只能是 chat.id === 自己的 user id（见 ChatStore）。
+  // 密聊里没有可举报的服务端消息（TDLib 对 secret chat 的 reportChat 直接报错）。
+  isSecretChat(): boolean {
+    return this.kind === 'secret';
+  }
+
   isSavedMessages(): boolean {
     const entry = getChatStore().entryOf(this.host.chatId());
     return entry !== undefined && entry.isSavedMessages;

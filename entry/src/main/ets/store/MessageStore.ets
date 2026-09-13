@@ -25,6 +25,7 @@ import { PollOptionInfo } from '../util/formatMsgContent';
 import { reactionTypeOf } from '../util/reactions';
 import { str } from '../util/strings';
 import { publishProgress } from '../util/mediaProgressChannel';
+import { uploadPercentOf } from '../util/uploadProgress';
 import { publishSendState } from '../util/sendStateChannel';
 import { logE, logI, logW } from '../util/log';
 import { noteOutgoingChat } from '../util/recentOutgoing';
@@ -4523,6 +4524,13 @@ export class MessageStore {
     const id = file['id'] as number | undefined;
     if (id === undefined) {
       return;
+    }
+    // 出站上传进度（issue #201 第 6 条）：只发到 mediaProgressChannel，**不碰
+    // messages**——气泡按 fileId 订阅通道，环自己刷新，时间线不会因为每个上传
+    // tick 被重发一遍。发送中/发完的形态切换由 sendState 决定，不需要这里 patch。
+    const uploadPercent: number = uploadPercentOf(file);
+    if (uploadPercent >= 0) {
+      publishProgress(id, uploadPercent);
     }
     const local = file['local'] as TdObject | undefined;
     if (local === undefined) {

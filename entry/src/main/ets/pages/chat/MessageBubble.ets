@@ -1,3 +1,4 @@
+import { pillSegments, PillSegment } from '../../util/systemPillLinks';
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { AlbumCellView, AlbumCellHooks } from './AlbumCellView';
 import { formatMediaDuration } from '../../util/mediaDuration';
@@ -1267,6 +1268,12 @@ export struct MessageBubble {
     const m: number = Math.floor(total / 60);
     const sec: number = total % 60;
     return `${m}:${`${sec}`.padStart(2, '0')}`;
+  }
+
+  // 系统药丸里点到的人：复用头像点击那条路（ChatPage 里就是 navigateToProfile）。
+  private openSystemPillUser(userId: number): void {
+    if (this.gestureClaimed || userId <= 0) { return; }
+    this.actions.onAvatarTap(userId);
   }
 
   private fallbackLabel(): string {
@@ -2771,10 +2778,13 @@ export struct MessageBubble {
           content: $r('app.string.mb_view_voters')
         }).onClick((): void => { this.actions.onPollVoters(this.msg.id); });
       }
-      MenuItem({
-        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
-        content: $r('app.string.mb_report')
-      }).onClick((): void => { this.actions.onReportMsg(this.msg.id); });
+      // 自己发的、密聊、我的收藏：没有可举报对象，不出这一项。
+      if (this.data.canReport && !this.msg.isOutgoing) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
+          content: $r('app.string.mb_report')
+        }).onClick((): void => { this.actions.onReportMsg(this.msg.id); });
+      }
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
         content: $r('app.string.mb_select')
@@ -3004,10 +3014,20 @@ export struct MessageBubble {
         } else {
           this.singleMediaPlaceholder(false);
         }
+        // 出站发送中：图上叠一个上传环（LiveProgressRing 按 fileId 自己订阅通道，
+        // 0% 时转圈）。照片上传的是照片文件本身，视频上传的是视频文件。
+        if (this.liveSendState === 'sending') {
+          LiveProgressRing({
+            fileId: this.msg.contentType === 'video' ? this.msg.videoFileId : this.msg.photoFileId,
+            initialPercent: 0,
+            ringSize: Math.min(44, Math.min(this.mediaBox().width, this.mediaBox().height) * 0.3)
+          });
+        }
           // **实况不画播放钮。** 它已经有自己的「实况」角标（liveChip），
           // 交互也不是"点一下播放"而是长按即播（见 util/livePhoto 的协议约定），
           // 再摆一个播放三角是在说一件不成立的事。普通视频不受影响。
         if (this.msg.contentType === 'video' && !this.msgIsLivePhoto() &&
+          this.liveSendState !== 'sending' &&
           !this.autoplayInlineVideo() &&
           !(this.isPlaySlot(-1) && this.msg.videoFileId !== 0)) {
           // 不要和缩略图自己的加载圈叠成两个中心控件——所以要等缩略图到位。
@@ -3234,6 +3254,7 @@ export struct MessageBubble {
         downloadProgress: this.liveVideoProgress,
         downloadFailed: this.msg.videoFailed,
         downloadActive: this.msg.mediaDownloadActive,
+        uploading: this.liveSendState === 'sending',
         maxWidth: this.inlineMaxW(),
         // 长按弹菜单/左滑回复会认领手势；FileBubble 是子组件、看不到认领标记，
         // 早退只能在这层闭包里做——否则长按文件消息弹菜单的同时把下载也触发了。
@@ -3878,12 +3899,28 @@ export struct MessageBubble {
         .fontSize(12.5)
         .fontColor([this.liveVideoChatTappable() ? this.accent() : COLOR_ICON_SECONDARY])
         .width(14);
-      Text(this.fallbackLabel())
-        .fontSize(12)
-        .fontColor(this.liveVideoChatTappable() ? this.accent() : COLOR_TEXT_SECONDARY)
-        .fontWeight(this.liveVideoChatTappable() ? FontWeight.Medium : FontWeight.Regular)
-        .textAlign(TextAlign.Center)
+      if (this.msg.systemLinks.length > 0 && !this.liveVideoChatTappable()) {
+        // 人名可点（issue #201 第 3 条）：逐段 Span，名字落在人身上，其余文字落在
+        // 文案里最先出现的人（pillSegments 已经把默认人填进非名字段）。区间是
+        // 对着 placeholderLabel 算的，这里必须用同一个字符串切段。
+        Text() {
+          ForEach(pillSegments(this.msg.placeholderLabel, this.msg.systemLinks),
+            (seg: PillSegment) => {
+              Span(seg.text)
+                .fontWeight(seg.isName ? FontWeight.Medium : FontWeight.Regular)
+                .onClick((): void => { this.openSystemPillUser(seg.userId); });
+            }, (seg: PillSegment, index: number): string => `${index}_${seg.userId}_${seg.text}`);
+        }
+        .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).textAlign(TextAlign.Center)
         .constraintSize({ maxWidth: this.data.contentWidth * 0.68 });
+      } else {
+        Text(this.fallbackLabel())
+          .fontSize(12)
+          .fontColor(this.liveVideoChatTappable() ? this.accent() : COLOR_TEXT_SECONDARY)
+          .fontWeight(this.liveVideoChatTappable() ? FontWeight.Medium : FontWeight.Regular)
+          .textAlign(TextAlign.Center)
+          .constraintSize({ maxWidth: this.data.contentWidth * 0.68 });
+      }
       if (this.liveVideoChatTappable()) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(10).fontColor([this.accent()]).width(10);
@@ -3897,7 +3934,8 @@ export struct MessageBubble {
     })
     .borderRadius(12)
     .padding({ left: 9, right: 9, top: 4, bottom: 4 })
-    .attributeModifier(this.liveVideoChatTappable() ? SYSTEM_PILL_PRESS_DIM : SYSTEM_PILL_PRESS_NONE)
+    .attributeModifier(this.liveVideoChatTappable() || this.msg.systemLinks.length > 0
+      ? SYSTEM_PILL_PRESS_DIM : SYSTEM_PILL_PRESS_NONE)
     .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
     .onClick((): void => {
       if (this.gestureClaimed) { return; }

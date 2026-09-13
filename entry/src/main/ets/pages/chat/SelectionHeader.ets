@@ -51,6 +51,8 @@ export struct SelectionHeader {
   // 迁移前普通字段的行为。空实现默认值保留，让组件能脱离父组件独立预览。
   @Event onExit: () => void = (): void => {};
   @Event onForward: () => void = (): void => {};
+  // 多选保存（issue #199）：照片/视频进相册、文件进下载目录。
+  @Event onSave: () => void = (): void => {};
   @Event onCopy: () => void = (): void => {};
   @Event onDelete: () => void = (): void => {};
 
@@ -95,6 +97,8 @@ export struct SelectionHeader {
       Text(str('cp_selected_n', this.selection.count()))
         .fontSize(16).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1).margin({ left: 6 });
+      this.capsule('sys.symbol.arrow_down_circle', COLOR_TEXT_PRIMARY,
+        (): void => { this.onSave(); });
       this.capsule('sys.symbol.arrowshape_turn_up_right', COLOR_TEXT_PRIMARY,
         (): void => { this.onForward(); });
       this.capsule('sys.symbol.plus_square_on_square', COLOR_TEXT_PRIMARY,

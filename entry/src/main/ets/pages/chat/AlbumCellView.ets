@@ -170,6 +170,11 @@ export struct AlbumCellView {
 
   // 占位底。两个变体只差 hasFile 一个条件，但**必须各自是零参 @Builder**——
   // 带参 builder 的参数不更新（见文件头），格子一缩它就停在旧尺寸上。
+  // 相册整组一起发，头条的发送态就是整组的。
+  private uploading(): boolean {
+    return this.group.head.sendState === 'sending';
+  }
+
   @Builder
   placeholderWithFile() {
     Stack() {
@@ -245,8 +250,15 @@ export struct AlbumCellView {
       // 没有可下载缩略图的视频照样能播；别在那上面留一个永远 0% 的转圈。
       this.placeholderNoFile();
     }
+    // 出站发送中：每格叠一个上传环（同 MessageBubble 的单媒体分支）。
+    if (this.uploading()) {
+      this.mediaLoadState(
+        Math.min(34, Math.min(this.cell.width, this.cell.height) * 0.4),
+        this.isVideo() ? this.videoFileId() : this.fileId(), 0, false);
+    }
     // 相册格同理：实况格已经有 liveChip，不画播放钮。
-    if (this.isVideo() && !this.isLive() && !(this.isPlaySlot() && this.videoFileId() !== 0)) {
+    if (this.isVideo() && !this.isLive() && !this.uploading() &&
+      !(this.isPlaySlot() && this.videoFileId() !== 0)) {
       // 同单图那处：缩略图到没到要问通道，pathAt 在旁路化之后不再回填。
       ThumbReadyGate({
         fileId: this.fileId(),

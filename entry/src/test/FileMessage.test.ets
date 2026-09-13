@@ -37,5 +37,16 @@ export default function fileMessageTest() {
       expect(fileStatusText(7, '/data/a.bin', 1024, false, 100, false))
         .assertEqual('file_tap_open(size_kb(1.0))');
     });
+    // 出站文件（issue #201 第 6 条）：本地路径一直在，靠 uploading 区分"发送中"
+    // 和"发完"；百分比复用 progress 形参（通道里此时装的是上传进度）。
+    it('describes_upload_states', 0, () => {
+      expect(fileStatusText(7, '/data/a.bin', 1024, false, 0, false, true))
+        .assertEqual('file_uploading(size_kb(1.0))');
+      expect(fileStatusText(7, '/data/a.bin', 1024, false, 45, false, true))
+        .assertEqual('file_uploading_pct(size_kb(1.0),45)');
+      // 上传结束后（uploading=false）回到"点击打开"，不会卡在上传态。
+      expect(fileStatusText(7, '/data/a.bin', 1024, false, 100, false, false))
+        .assertEqual('file_tap_open(size_kb(1.0))');
+    });
   });
 }

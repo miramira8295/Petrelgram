@@ -1,3 +1,5 @@
+import { ReportTarget, runReportFlow } from '../../util/reportFlow';
+import { reportFlowUiFor } from '../common/ReportPrompts';
 import { PromptAction, router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { banMember, deleteMessagesFromSender, removeMember, setMemberTag } from '../../store/ChatAdminApi';
@@ -442,54 +444,11 @@ export struct ChatProfilePage {
 
   // TDLib's report flow is iterative: an empty option first, then the server
   // returns the reason list; picking one either finishes or asks for text.
-  private reportChat(optionId: string): void {
-    const req: TdRequest = { '@type': 'reportChat' };
-    req['chat_id'] = this.chatId;
-    req['option_id'] = optionId;
-    req['message_ids'] = [];
-    req['text'] = '';
-    getTdClient().send(req, 15000).then((result: TdObject): void => {
-      const typeName = (result['@type'] as string | undefined) ?? '';
-      if (typeName === 'reportChatResultOk') {
-        promptAction.showToast({ message: $r('app.string.cpp_report_sent'), duration: 1700 });
-        return;
-      }
-      if (typeName === 'reportChatResultTextRequired') {
-        // Optional-comment step: submit without extra text.
-        const nextId = (result['option_id'] as string | undefined) ?? '';
-        if (((result['is_optional'] as boolean | undefined) ?? false) && nextId !== optionId) {
-          this.reportChat(nextId);
-        } else {
-          promptAction.showToast({ message: $r('app.string.cpp_report_needs_text'), duration: 2000 });
-        }
-        return;
-      }
-      if (typeName === 'reportChatResultOptionRequired') {
-        const options = (result['options'] as TdObject[] | undefined) ?? [];
-        if (options.length === 0) {
-          promptAction.showToast({ message: $r('app.string.cpp_report_unsupported'), duration: 1800 });
-          return;
-        }
-        const shown = options.slice(0, 6);
-        promptAction.showActionMenu({
-          title: (result['title'] as string | undefined) ?? $r('app.string.cpp_report_reason'),
-          buttons: shown.map((option: TdObject): promptAction.Button =>
-            ({ text: (option['text'] as string | undefined) ?? '', color: '#E5484D' } as promptAction.Button)) as
-            [promptAction.Button, promptAction.Button?, promptAction.Button?,
-              promptAction.Button?, promptAction.Button?, promptAction.Button?]
-        }).then((chosen): void => {
-          const option = shown[chosen.index];
-          if (option !== undefined) {
-            this.reportChat((option['id'] as string | undefined) ?? '');
-          }
-        }).catch((): void => {});
-        return;
-      }
-      promptAction.showToast({ message: $r('app.string.cpp_report_step_unsupported'), duration: 1800 });
-    }).catch((error: TdError): void => {
-      logE(`ChatProfilePage.report failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.cpp_report_failed'), duration: 1800 });
-    });
+  // 举报流程与消息菜单共用（util/reportFlow），这里只接 UI。
+  private reportChat(): void {
+    runReportFlow((req: TdRequest): Promise<TdObject> => getTdClient().send(req, 15000),
+      { chatId: this.chatId, messageIds: [] } as ReportTarget,
+      reportFlowUiFor(this.getUIContext()));
   }
 
   private loadInvitePreview(): void {
@@ -1118,7 +1077,7 @@ export struct ChatProfilePage {
             });
           }
           this.actionButton('sys.symbol.bolt', str('cpp_boost'), () => { this.boostChat(); });
-          this.actionButton('sys.symbol.flag', str('mb_report'), () => { this.reportChat(''); });
+          this.actionButton('sys.symbol.flag', str('mb_report'), () => { this.reportChat(); });
         }.width('100%');
       }
     }

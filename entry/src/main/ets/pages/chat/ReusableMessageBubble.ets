@@ -99,6 +99,8 @@ export interface MessageBubbleRenderData {
   // ——滑了也只是把一条回复挂到一个不存在的输入框上
   // （用户 2026-09-09：「这个频道应该没有回复消息的能力呀」）。
   canReply: boolean;
+  // 会话级：密聊和「我的收藏」没有可举报对象。消息级（自己发的）由气泡自己判。
+  canReport: boolean;
   // 多选态，以及**本行**已选中的成员 id。相册格子各自据此打勾。
   // 只放本行的成员，不放整个选择集：整个集合会让每次点选都把所有行的
   // prepare 缓存键打翻。
@@ -399,6 +401,7 @@ export struct ReusableMessageBubble {
         dateLabel: this.currentGroup().dateLabel,
         editingActive: this.data.editingActive,
         isPinnedMsg: this.data.isPinnedMsg,
+        canReport: this.data.canReport,
         showAvatar: this.currentGroup().showAvatar,
         showSenderName: this.currentGroup().showSenderName,
         animateIn: this.data.animateIn,

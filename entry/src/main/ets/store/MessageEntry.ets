@@ -1,3 +1,4 @@
+import { linkNamesInLabel, NamedUser, SystemPillLink } from '../util/systemPillLinks';
 import { TdObject } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { buttonStyleOf } from './ReplyKeyboard';
@@ -46,6 +47,8 @@ export interface MessageEntry {
   // without retaining the full raw TDLib message.
   systemType: string;
   systemUserIds: number[];
+  // 药丸文案里可点的人名区间（util/systemPillLinks），与 placeholderLabel 同步算。
+  systemLinks: SystemPillLink[];
   // Unknown/future TDLib content stays a normal left/right bubble, but gets a
   // deliberate readable fallback instead of a blank or raw type name.
   isUnsupportedMessage: boolean;
@@ -258,6 +261,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     photoWidth: m.photoWidth, photoHeight: m.photoHeight,
     placeholderLabel: m.placeholderLabel, richBlocks: m.richBlocks, systemKind: m.systemKind,
     systemType: m.systemType, systemUserIds: m.systemUserIds.slice(),
+    systemLinks: m.systemLinks.slice(),
     isUnsupportedMessage: m.isUnsupportedMessage,
     isVideoChatStarted: m.isVideoChatStarted,
     replyToMessageId: m.replyToMessageId,
@@ -428,6 +432,8 @@ export function commentInfoFromInteraction(ii: TdObject | undefined): CommentInf
 interface SystemMessageInfo {
   label: string;
   kind: string;
+  // 文案里出现的人（按出现顺序），只有人名可点的几类系统消息会填。
+  people?: NamedUser[];
 }
 
 function emptySystemMessage(): SystemMessageInfo {
@@ -440,6 +446,18 @@ function actorName(message: TdObject, users: UserStore): string {
   }
   const actor = senderName(message, users);
   return actor !== '' ? actor : str('cp_someone');
+}
+
+// 药丸里可点的人。自己（"你"）不算：那不是一个可以打开的别人。
+function actorPerson(message: TdObject, users: UserStore): NamedUser {
+  if ((message['is_outgoing'] as boolean | undefined) ?? false) {
+    return { userId: 0, name: '' };
+  }
+  return { userId: senderIdOf(message), name: senderName(message, users) };
+}
+
+function namedUsers(ids: number[], users: UserStore): NamedUser[] {
+  return ids.map((id: number): NamedUser => ({ userId: id, name: users.displayName(id) } as NamedUser));
 }
 
 function userNames(ids: number[], users: UserStore): string {
@@ -479,24 +497,32 @@ export function refreshSystemUserLabel(entry: MessageEntry, users: UserStore): M
     return entry;
   }
   const who = entry.isOutgoing ? str('sm_you') : (entry.senderName !== '' ? entry.senderName : str('cp_someone'));
+  const actor: NamedUser = entry.isOutgoing
+    ? { userId: 0, name: '' } as NamedUser
+    : { userId: entry.senderId, name: entry.senderName } as NamedUser;
+  let people: NamedUser[] = [];
   let nextLabel = entry.placeholderLabel;
   if (entry.systemType === 'messageChatAddMembers') {
     if (entry.systemUserIds.length === 1 && entry.systemUserIds[0] === entry.senderId) {
       nextLabel = str('sm_joined_group', who);
+      people = [actor];
     } else {
       const names = userNames(entry.systemUserIds, users);
       nextLabel = names !== '' ? str('sm_invited_names', who, names) : str('sm_invited_members', who);
+      people = [actor].concat(namedUsers(entry.systemUserIds, users));
     }
   } else if (entry.systemType === 'messageChatDeleteMember') {
     const targetId = entry.systemUserIds[0];
     if (targetId === entry.senderId) {
       nextLabel = str('sm_left_group', who);
+      people = [actor];
     } else {
       const name = users.displayName(targetId);
       if (name === '') {
         users.ensure(targetId);
       }
       nextLabel = name !== '' ? str('sm_removed_name', who, name) : str('sm_removed_member', who);
+      people = [actor, { userId: targetId, name } as NamedUser];
     }
   } else if (entry.systemType === 'messageInviteVideoChatParticipants') {
     const names = userNames(entry.systemUserIds, users);
@@ -507,6 +533,7 @@ export function refreshSystemUserLabel(entry: MessageEntry, users: UserStore): M
   }
   const next = cloneMessage(entry);
   next.placeholderLabel = nextLabel;
+  next.systemLinks = linkNamesInLabel(nextLabel, people);
   return next;
 }
 
@@ -624,29 +651,36 @@ function systemMessageInfo(message: TdObject, users: UserStore): SystemMessageIn
   if (type === 'messageChatAddMembers') {
     const ids = (content['member_user_ids'] as number[] | undefined) ?? [];
     const actorId = senderIdOf(message);
+    const actor: NamedUser = actorPerson(message, users);
     if (ids.length === 1 && actorId > 0 && ids[0] === actorId) {
       return {
         label: ((message['is_outgoing'] as boolean | undefined) ?? false)
           ? str('cp_joined_group') : str('sm_joined_group', who),
-        kind
+        kind, people: [actor]
       };
     }
     const names = userNames(ids, users);
-    return { label: names !== '' ? str('sm_invited_names', who, names) : str('sm_invited_members', who), kind };
+    return {
+      label: names !== '' ? str('sm_invited_names', who, names) : str('sm_invited_members', who),
+      kind, people: [actor].concat(namedUsers(ids, users))
+    };
   }
   if (type === 'messageChatDeleteMember') {
     const uid = content['user_id'] as number | undefined;
     const name = uid !== undefined ? users.displayName(uid) : '';
     if (uid !== undefined && uid > 0 && uid === senderIdOf(message)) {
-      return { label: str('sm_left_group', who), kind };
+      return { label: str('sm_left_group', who), kind, people: [actorPerson(message, users)] };
     }
-    return { label: name !== '' ? str('sm_removed_name', who, name) : str('sm_removed_member', who), kind };
+    return {
+      label: name !== '' ? str('sm_removed_name', who, name) : str('sm_removed_member', who),
+      kind, people: [actorPerson(message, users), { userId: uid ?? 0, name } as NamedUser]
+    };
   }
   if (type === 'messageChatJoinByLink') {
     return {
       label: ((message['is_outgoing'] as boolean | undefined) ?? false)
         ? str('cp_joined_group') : str('sm_joined_by_link', who),
-      kind
+      kind, people: [actorPerson(message, users)]
     };
   }
   if (type === 'messageChatSetMessageAutoDeleteTime') {
@@ -1028,6 +1062,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     systemKind: sys.kind,
     systemType: sys.label !== '' ? rawType : '',
     systemUserIds: sys.label !== '' ? systemUserIdsOf(rawContent, rawType) : [],
+    systemLinks: sys.label !== '' ? linkNamesInLabel(sys.label, sys.people ?? []) : [],
     isUnsupportedMessage: unsupported,
     isVideoChatStarted,
     replyToMessageId: replyId(message),

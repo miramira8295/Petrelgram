@@ -163,10 +163,18 @@ export function fileStatusText(
   fileSize: number,
   downloadActive: boolean,
   downloadProgress: number,
-  downloadFailed: boolean
+  downloadFailed: boolean,
+  // 出站文件（issue #201 第 6 条）：本地路径从一开始就在，靠这个标志区分
+  // "发送中"和"发完"；百分比复用 downloadProgress（通道里此时是上传进度）。
+  uploading: boolean = false
 ): string {
   const size: string = formatFileSize(fileSize);
   const sizeLabel: string = size !== '' ? size : str('file_unknown_size');
+  if (uploading) {
+    return downloadProgress > 0
+      ? str('file_uploading_pct', sizeLabel, downloadProgress)
+      : str('file_uploading', sizeLabel);
+  }
   if (filePath !== '') {
     return str('file_tap_open', sizeLabel);
   }

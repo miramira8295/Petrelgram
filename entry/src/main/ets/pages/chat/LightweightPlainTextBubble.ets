@@ -264,6 +264,7 @@ export struct LightweightPlainTextBubble {
   @Param dateLabel: string = '';
   @Param editingActive: boolean = false;
   @Param isPinnedMsg: boolean = false;
+  @Param canReport: boolean = true;
   @Param showAvatar: boolean = true;
   @Param showSenderName: boolean = true;
   @Param animateIn: boolean = false;
@@ -801,10 +802,12 @@ export struct LightweightPlainTextBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
         content: this.isPinnedMsg ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
       }).onClick((): void => { this.actions.onPinMsg(this.msg.id, this.isPinnedMsg); });
-      MenuItem({
-        symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
-        content: $r('app.string.mb_report')
-      }).onClick((): void => { this.actions.onReportMsg(this.msg.id); });
+      if (this.canReport && !this.msg.isOutgoing) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.exclamationmark_circle')).fontColor([Color.Red]),
+          content: $r('app.string.mb_report')
+        }).onClick((): void => { this.actions.onReportMsg(this.msg.id); });
+      }
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')),
         content: $r('app.string.mb_select')

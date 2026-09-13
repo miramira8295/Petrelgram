@@ -1,3 +1,7 @@
+import { saveableEntries, SaveablePlan } from '../../util/selectionSave';
+import { ActionBarContext, dismissActionBar, handleActionBar } from './ChatActionBarActions';
+import { ReportTarget, runReportFlow } from '../../util/reportFlow';
+import { reportFlowUiFor } from '../common/ReportPrompts';
 import { promptAction, UIContext } from '@kit.ArkUI';
 import { MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
 import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
@@ -1485,8 +1489,11 @@ export struct ChatPage {
         onSaveMessages: (messageIds: number[]): void => { this.saveToSavedMessages(messageIds); },
         onRepeatMessages: (messageIds: number[]): void => { this.repeatMessages(messageIds); },
         onViewSenderHistory: (senderId: number): void => { this.search.enterForSender(senderId); },
-        onReportMsg: (_messageId: number): void => {
-          promptAction.showToast({ message: $r('app.string.cp_report_wip'), duration: 1500 });
+        onReportMsg: (messageId: number): void => {
+          // 与会话页共用 util/reportFlow；UI 三件套见 pages/common/ReportPrompts。
+          runReportFlow((req: TdRequest): Promise<TdObject> => getTdClient().send(req, 15000),
+            { chatId: this.chatId, messageIds: [messageId] } as ReportTarget,
+            reportFlowUiFor(this.getUIContext()));
         },
         onSelectMessages: (messageIds: number[]): void => { this.selection.enter(messageIds); },
         // 相册逐格勾选：只切这一条。已经在多选态才有意义，非多选态由长按进入。
@@ -1640,6 +1647,7 @@ export struct ChatPage {
     const data: MessageBubbleRenderData = {
       chatId: this.chatId, contentWidth, isGroup: this.isGroup, isChannel: this.isChannel,
       canReply: !membershipLosesComposer(this.membershipState),
+      canReport: !this.header.isSecretChat() && !this.header.isSavedMessages(),
       selectionActive: this.selection.active,
       selectedMemberIds,
       liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
@@ -2041,6 +2049,9 @@ export struct ChatPage {
   @Require @Param translateChatsEnabled: boolean = false;
   // 是否正在共享实时位置（全局单例状态，不限于当前会话）。
   @Local liveLocationActive: boolean = false;
+  // 会话操作条（issue #201 第 8 条），从 ChatEntry 镜像过来，空串 = 没有。
+  @Local actionBarKind: string = '';
+  @Local actionBarCanUnarchive: boolean = false;
   @Local liveLocationMessageId: number = 0;
   // 贴纸"飞出"残影（stickerGhostPath/X/Y/Fly）与其收尾定时器句柄
   // （stickerGhostTimer）搬进了 ChatOverlayState（B11 批），原注释随字段一并
@@ -2551,6 +2562,25 @@ export struct ChatPage {
   //
   // Task 6 迁移本页时 leaveChat 成功回调原样留了 router.back()，是漏改，
   // 不是有意为之。标题栏返回键现在由 HDS 自己弹出同一条 Navigation 栈。
+  // 会话操作条：从 ChatEntry 镜像两个标量；同值不写，免得惊动 TopBanners。
+  private syncActionBar(): void {
+    const e: ChatEntry | undefined = getChatStore().entryOf(this.chatId);
+    const kind: string = e !== undefined ? e.actionBar : '';
+    const canUnarchive: boolean = e !== undefined ? e.actionBarCanUnarchive : false;
+    if (kind !== this.actionBarKind) { this.actionBarKind = kind; }
+    if (canUnarchive !== this.actionBarCanUnarchive) { this.actionBarCanUnarchive = canUnarchive; }
+  }
+
+  private onActionBar(id: string): void {
+    handleActionBar(id, {
+      chatId: this.chatId,
+      peerUserId: this.header.currentPeerUserId(),
+      peerTitle: this.header.titleTextOf(),
+      ui: this.getUIContext(),
+      onChatRemoved: (): void => { this.goBack(); }
+    } as ActionBarContext);
+  }
+
   private goBack(): void {
     if (!this.navigationCoordinator.pop()) {
       // navStack 由 onReady(ctx.pathStack) 填，而 onReady 必先于本页可见，所以
@@ -3180,7 +3210,9 @@ export struct ChatPage {
     // no longer has to push updates into it.
     this.subscriptions.set('chat', getChatStore().subscribe(() => {
       this.header.refresh();
+      this.syncActionBar();
     }, 'main'));
+    this.syncActionBar();
     // Chat backgrounds have their own TDLib update and can change without a
     // title/message update. Listen directly so setting or clearing one is
     // visible while the conversation is open.
@@ -6257,7 +6289,8 @@ export struct ChatPage {
       searchMode: this.search.mode,
       pinnedVisible: this.topCard.pinnedPreview !== '',
       liveVisible: this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive,
-      loadingVisible: this.topCard.topCardLoadingVisible
+      loadingVisible: this.topCard.topCardLoadingVisible,
+      actionBarVisible: this.actionBarKind !== ''
     };
   }
 
@@ -6648,6 +6681,20 @@ export struct ChatPage {
       list.findIndex((m: MessageEntry): boolean => m.id === this.overlayState.reactionTargetId) < 0) {
       this.overlayState.closeReactionSheet();
     }
+  }
+
+  // 多选保存（issue #199）。挑选与分类是纯函数，下载与落盘在 MediaSaveState。
+  private saveSelected(): void {
+    const plan: SaveablePlan = saveableEntries(this.messages, this.selection.ids);
+    if (plan.entries.length === 0) {
+      promptAction.showToast({ message: $r('app.string.cp_nothing_to_save'), duration: 1600 });
+      return;
+    }
+    this.mediaSave.saveEntries(plan.entries);
+    promptAction.showToast({
+      message: str('cp_save_selected_started', plan.entries.length), duration: 1800
+    });
+    this.selection.exit();
   }
 
   private copySelected(): void {
@@ -7962,6 +8009,7 @@ export struct ChatPage {
           topSafe: 0,
           onExit: (): void => { this.selection.exit(); },
           onForward: (): void => { this.openForwardPicker(this.selection.ids); },
+          onSave: (): void => { this.saveSelected(); },
           onCopy: (): void => { this.copySelected(); },
           onDelete: (): void => { this.deleteSelected(); }
         });
@@ -8017,7 +8065,11 @@ export struct ChatPage {
       materialEpoch: this.materialEpoch,
       topCard: this.topCard,
       onPinnedTap: (): void => { this.topCard.onPinnedTap(); },
-      onLiveStreamTap: (): void => { this.topCard.onLiveStreamTap(); }
+      onLiveStreamTap: (): void => { this.topCard.onLiveStreamTap(); },
+      actionBarKind: this.actionBarKind,
+      actionBarCanUnarchive: this.actionBarCanUnarchive,
+      onActionBarAction: (id: string): void => { this.onActionBar(id); },
+      onActionBarDismiss: (): void => { dismissActionBar(this.chatId); }
     });
   }
 

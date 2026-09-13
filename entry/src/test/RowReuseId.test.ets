@@ -57,7 +57,7 @@ function renderData(over: RenderDataOverrides = {}): MessageBubbleRenderData {
     contentWidth: 360,
     isGroup: over.isGroup ?? false,
     isChannel: false,
-  canReply: true,
+  canReply: true, canReport: true,
   selectionActive: false,
   selectedMemberIds: [],
     liveSharingId: 0,

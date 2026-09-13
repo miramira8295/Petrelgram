@@ -1,3 +1,4 @@
+import { SaveableEntry } from '../../util/selectionSave';
 // 媒体保存/下载簇：查看器"保存到相册"单槽等待 + 新消息自动保存队列 + 文档
 // 下载后自动打开/另存。saveMediaTo/saveViewerMedia/processAutomaticGallerySave
 // /openDownloadedFile/onFileTap/onFileSave 六个方法，连同 B4「原地分相」拆出
@@ -139,6 +140,8 @@ export class MediaSaveState {
   private pendingGallerySaveProgress: DownloadSaveNotification | null = null;
   // 新消息自动保存到相册的队列 + in-flight 闸门。
   private autoSavePendingIds: number[] = [];
+  // 多选保存（issue #199）手动排进相册队列的 id：这些不受「只存收到的」限制。
+  private manualGalleryIds: Set<number> = new Set<number>();
   private autoSaveInFlight: boolean = false;
   // 文档下载后自动打开的等待句柄 + in-flight 闸门。
   private pendingFileOpenId: number = 0;
@@ -258,12 +261,13 @@ export class MediaSaveState {
     let video: boolean = false;
     for (const messageId of this.autoSavePendingIds) {
       const entry = list.find((item: MessageEntry): boolean => item.id === messageId);
-      if (entry === undefined || entry.isOutgoing ||
-        (entry.contentType !== 'photo' && entry.contentType !== 'video')) {
+      if (entry === undefined || (entry.isOutgoing && !this.manualGalleryIds.has(messageId)) ||
+        (entry.contentType !== 'photo' && entry.contentType !== 'video' &&
+          entry.contentType !== 'videoNote')) {
         this.autoSavePendingIds = this.autoSavePendingIds.filter((id: number): boolean => id !== messageId);
         continue;
       }
-      if (entry.contentType === 'video') {
+      if (entry.contentType === 'video' || entry.contentType === 'videoNote') {
         if (entry.videoFailed) {
           this.autoSavePendingIds = this.autoSavePendingIds.filter((id: number): boolean => id !== messageId);
           continue;
@@ -283,6 +287,7 @@ export class MediaSaveState {
     if (target === undefined || path === '') { return; }
     const id = target.id;
     this.autoSavePendingIds = this.autoSavePendingIds.filter((value: number): boolean => value !== id);
+    this.manualGalleryIds.delete(id);
     this.autoSaveInFlight = true;
     saveMediaToGallery(this.host.context(), path, video).then((): void => {
       this.autoSaveInFlight = false;
@@ -362,10 +367,42 @@ export class MediaSaveState {
   // Document card save arrow: first asks for a public directory grant, then
   // exports into its Petrelgram child folder. Download and copy share one
   // progress notification so the hand-off is visible rather than a silent gap.
-  onFileSave(messageId: number): void {
+  // 多选保存（issue #199）：照片/视频/视频消息排进相册保存队列——缺文件的先请求
+  // 下载，落地后由 onSnapshot 驱动的队列逐个保存；文件/音乐走 onFileSave 的下载
+  // 目录路径。quiet：批量时不弹每条的"正在下载"提示，调用方给一条汇总。
+  saveEntries(entries: SaveableEntry[]): void {
+    const store = this.host.store();
+    for (const item of entries) {
+      const m = this.host.findMsg(item.id);
+      if (m === undefined) {
+        continue;
+      }
+      if (item.toFiles) {
+        this.onFileSave(item.id, true);
+        continue;
+      }
+      this.manualGalleryIds.add(item.id);
+      if (this.autoSavePendingIds.indexOf(item.id) < 0) {
+        this.autoSavePendingIds.push(item.id);
+      }
+      if (store === null) {
+        continue;
+      }
+      if (m.contentType === 'video' || m.contentType === 'videoNote') {
+        if (m.videoPath === '') {
+          store.requestVideoDownload(item.id, true, m.videoFailed);
+        }
+      } else if (m.photoFullFileId !== 0 && m.photoFullPath === '') {
+        store.requestFullPhoto(item.id, m.photoFullFailed);
+      }
+    }
+    this.processAutomaticGallerySave(this.host.latestMessages());
+  }
+
+  onFileSave(messageId: number, quiet: boolean = false): void {
     const m = this.host.findMsg(messageId);
     const store = this.host.store();
-    if (m === undefined || m.contentType !== 'file' || store === null) {
+    if (m === undefined || (m.contentType !== 'file' && m.contentType !== 'audio') || store === null) {
       return;
     }
     this.pendingFileOpenId = 0;
@@ -381,6 +418,9 @@ export class MediaSaveState {
     downloadSaveService.saveRemoteFile(
       this.host.context(),
       m.videoFileId, this.host.chatId(), messageId, m.videoFileName);
+    if (quiet) {
+      return;
+    }
     promptAction.showToast({
       message: m.videoFailed ? $r('app.string.cp_redownload_then_save')
         : $r('app.string.cp_downloading_then_save'),
@@ -468,6 +508,7 @@ export class MediaSaveState {
     this.pendingFileOpenId = 0;
     this.fileOpenInFlightId = 0;
     this.autoSavePendingIds = [];
+    this.manualGalleryIds.clear();
     this.autoSaveInFlight = false;
   }
 
