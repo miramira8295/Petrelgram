@@ -23,7 +23,7 @@ import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { changeDownloadDirectory, getDownloadDirectoryPath } from '../../util/mediaSaver';
+import { changeDownloadDirectory, FOLDER_PICKER_UNSUPPORTED, getDownloadDirectoryPath } from '../../util/mediaSaver';
 import { common } from '@kit.AbilityKit';
 
 const CARD_RADIUS: number = 14;
@@ -125,7 +125,11 @@ export struct DataStoragePage {
     }).catch((error: Error): void => {
       this.changingDownloadPath = false;
       logE(`DataStoragePage.changeDownloadPath failed: ${error.message}`);
-      promptAction.showToast({ message: $r('app.string.media_cannot_open_location'), duration: 1800 });
+      promptAction.showToast({
+        message: error.message === FOLDER_PICKER_UNSUPPORTED
+          ? $r('app.string.ds_download_picker_unsupported') : $r('app.string.media_cannot_open_location'),
+        duration: 2000
+      });
     });
   }
 

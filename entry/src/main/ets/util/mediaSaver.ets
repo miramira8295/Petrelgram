@@ -5,7 +5,7 @@ import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { preferences } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { logE } from './log';
+import { logE, logW } from './log';
 
 const COPY_BUF: number = 1024 * 1024;
 const DOWNLOAD_PREFS: string = 'download_location';
@@ -190,7 +190,13 @@ async function selectDownloadDirectoryUri(context: common.UIAbilityContext): Pro
     return '';
   }
   const directoryUri: string = uris[0];
-  await fileShare.persistPermission([downloadPolicy(directoryUri)]);
+  // 长期授权按能力走：没有 FolderAuthorization 的设备选完目录只在本次运行有效，
+  // 提示一句而不是整个入口不响应（issue #189 追加 4）。
+  if (folderAuthorizationAvailable()) {
+    await fileShare.persistPermission([downloadPolicy(directoryUri)]);
+  } else {
+    promptAction.showToast({ message: str('ds_download_persist_unavailable'), duration: 2600 });
+  }
   const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
   store.putSync(DOWNLOAD_DIRECTORY_URI, directoryUri);
   await store.flush();
@@ -203,8 +209,11 @@ function downloadDirectoryPath(directoryUri: string): string {
     ? authorizedDirectory : `${authorizedDirectory}/${DOWNLOAD_APP_FOLDER}`;
 }
 
+// 选择器本身不可用（FOLDER 模式抛错）时给调用方一个能识别的错误，页面据此提示。
+export const FOLDER_PICKER_UNSUPPORTED: string = 'FOLDER_PICKER_UNSUPPORTED';
+
 export function getDownloadDirectoryPath(context: common.UIAbilityContext): string {
-  if (context === undefined || !folderAuthorizationAvailable()) {
+  if (context === undefined) {
     return '';
   }
   const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
@@ -213,12 +222,23 @@ export function getDownloadDirectoryPath(context: common.UIAbilityContext): stri
 }
 
 export async function changeDownloadDirectory(context: common.UIAbilityContext): Promise<boolean> {
-  if (context === undefined || !folderAuthorizationAvailable()) {
+  if (context === undefined) {
     return false;
   }
+  // 原来这里按 canIUse 直接 return false——用户点了什么都不发生、什么都不说
+  // （issue #189 追加 4）。选择器（DocumentViewPicker FOLDER 模式）本身不看这两个
+  // 能力位，只有长期授权才看。把能力位记进日志，下次能看出缺的是哪一个。
+  logW(`[DownloadDir] folderSelection=${canIUse('SystemCapability.FileManagement.UserFileService.FolderSelection')} ` +
+    `folderAuthorization=${canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')}`);
   const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
   const previous: string = store.getSync(DOWNLOAD_DIRECTORY_URI, '') as string;
-  const selected: string = await selectDownloadDirectoryUri(context);
+  let selected: string = '';
+  try {
+    selected = await selectDownloadDirectoryUri(context);
+  } catch (e) {
+    logE(`changeDownloadDirectory picker failed: ${JSON.stringify(e)}`);
+    throw new Error(FOLDER_PICKER_UNSUPPORTED);
+  }
   if (selected === '') {
     return false;
   }
