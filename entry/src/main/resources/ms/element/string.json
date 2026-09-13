@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "Had %1$d aksara dicapai; tampalan dipotong"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "Draf: "
     }
   ]
 }

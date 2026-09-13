@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "已達單則 %1$d 字上限，貼上內容被截斷"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "草稿: "
     }
   ]
 }

@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "Raggiunto il limite di %1$d caratteri; il testo incollato è stato troncato"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "Bozza: "
     }
   ]
 }

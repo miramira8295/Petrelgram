@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "Nachrichtenlimit von %1$d Zeichen erreicht; Einfügung wurde gekürzt"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "Entwurf: "
     }
   ]
 }

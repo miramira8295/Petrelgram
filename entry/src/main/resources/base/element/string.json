@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "已达单条 %1$d 字上限，粘贴内容被截断"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "草稿: "
     }
   ]
 }

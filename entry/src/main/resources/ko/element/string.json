@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "메시지당 %1$d자 제한에 도달해 붙여넣기가 잘렸습니다"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "임시 보관: "
     }
   ]
 }

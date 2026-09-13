@@ -1,3 +1,4 @@
+import { bumpDraftEpoch, localDraft, rememberLocalDraft } from '../../store/DraftStore';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { PROFILE_TAB_MEDIA } from '../../store/ChatProfileStore';
 import { RowLeaveChannel } from '../../util/rowLeaveChannel';
@@ -3081,6 +3082,12 @@ export struct ChatPage {
     if (route.draftText !== '') {
       this.draft = route.draftText;
     } else {
+      // 本地那份先顶上（同步、无往返），服务端的再回来补（restoreServerDraft
+      // 里本来就有"本地非空就不覆盖"的判断）。
+      const local: string = localDraft(this.chatId);
+      if (local !== '') {
+        this.draft = local;
+      }
       this.restoreServerDraft();
     }
 
@@ -4212,7 +4219,12 @@ export struct ChatPage {
   private persistDraftAndViewport(): void {
     // Sync the composer draft to the account (other devices see it). While an
     // edit is in progress the real draft is the stashed pre-edit text.
-    this.store?.saveDraft(this.composer.draftToPersist(this.draft), this.composer.replyToId);
+    const draftText: string = this.composer.draftToPersist(this.draft);
+    // 本地先落一份：服务端那条是 fire-and-forget，"返回再进来"这条最快的往返会
+    // 抢在草稿落地之前（真机日志 1.4.7.2：save len=3 → 同一会话 restore serverLen=0）。
+    rememberLocalDraft(this.chatId, draftText);
+    bumpDraftEpoch();
+    this.store?.saveDraft(draftText, this.composer.replyToId);
     this.exitViewerLandscape();
     this.captureScrollResume();
   }
@@ -7190,7 +7202,12 @@ export struct ChatPage {
       // [Draft] 探针：serverLen 是服务端记的草稿长度，localLen 是此刻输入框里的。
       logW(`[Draft] restore chat=${this.chatId} serverLen=${text.length} localLen=${this.draft.length}`);
       if (this.draft !== '') { return; }
-      if (text !== '') { this.draft = text; }
+      if (text !== '') {
+        this.draft = text;
+        // 服务端那份（别的端写的）也进本地缓存，列表跟着显示。
+        rememberLocalDraft(this.chatId, text);
+        bumpDraftEpoch();
+      }
     }).catch((e: TdError): void => {
       logW(`[Draft] restore chat=${this.chatId} failed: ${e.message}`);
     });

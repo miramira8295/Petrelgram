@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "Limite de %1$d caractères atteinte ; le collage a été tronqué"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "Brouillon : "
     }
   ]
 }

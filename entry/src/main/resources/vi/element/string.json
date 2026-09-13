@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "Đã đạt giới hạn %1$d ký tự; nội dung dán bị cắt"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "Bản nháp: "
     }
   ]
 }

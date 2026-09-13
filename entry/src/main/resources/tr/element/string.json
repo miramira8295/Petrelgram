@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "%1$d karakter sınırına ulaşıldı; yapıştırılan metin kısaltıldı"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "Taslak: "
     }
   ]
 }

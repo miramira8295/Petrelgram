@@ -313,6 +313,10 @@ export function bumpLocalWallpaperEpoch(): void {
     (AppStorage.get<number>(KEY_LOCAL_BG_EPOCH) ?? 0) + 1);
 }
 
+// 本地草稿缓存（util/draftCache 序列化后的 JSON）。服务端那份 setChatDraftMessage
+// 照发，本地这份只为"返回再进来"这条最快的往返兜底。
+export const KEY_DRAFT_CACHE: string = 'draftCache';
+
 const DATA_STRING_KEYS: string[] = [
   KEY_PROXY_MIRROR,
   KEY_PROXY_SYNC_OFF,
@@ -335,7 +339,8 @@ const DATA_STRING_KEYS: string[] = [
   KEY_TRANSLATE_TARGET,
   KEY_TRANSLATE_OPT_OUT,
   KEY_TRANSLATE_OPT_IN,
-  KEY_RECENT_OUTGOING
+  KEY_RECENT_OUTGOING,
+  KEY_DRAFT_CACHE
 ];
 
 // 后台播放：各媒体类别切后台是否继续播放（audioPlayback 长时任务）。

@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "Limite de %1$d caracteres atingido; a colagem foi cortada"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "Rascunho: "
     }
   ]
 }

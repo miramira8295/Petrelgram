@@ -154,6 +154,7 @@ import unreadBadgeRuleTest from './UnreadBadgeRule.test';
 import rowLeaveChannelTest from './RowLeaveChannel.test';
 import notifySlotTest from './NotifySlot.test';
 import composerCaretTest from './ComposerCaret.test';
+import draftCacheTest from './DraftCache.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
@@ -424,6 +425,7 @@ export default function testsuite() {
   rowLeaveChannelTest();
   notifySlotTest();
   composerCaretTest();
+  draftCacheTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();

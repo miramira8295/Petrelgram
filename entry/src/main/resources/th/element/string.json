@@ -12067,6 +12067,10 @@
     {
       "name": "cp_paste_trimmed",
       "value": "ถึงขีดจำกัด %1$d อักขระ ข้อความที่วางถูกตัด"
+    },
+    {
+      "name": "cl_draft_prefix",
+      "value": "ฉบับร่าง: "
     }
   ]
 }

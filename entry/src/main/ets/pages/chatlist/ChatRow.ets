@@ -1,4 +1,5 @@
 import { CHATLIST_PREVIEW_THUMB_ENABLED, stripPreviewIcon } from '../../util/formatPreview';
+import { DRAFT_EPOCH, localDraftPreview } from '../../store/DraftStore';
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
@@ -56,6 +57,9 @@ export struct ChatRow {
   // "开关打开了，不重建页面不生效"）。所以 accessibilitySummary() 里那句
   // `this.a11yEpoch >= 0` 恒真但**不能删**。
   @StorageProp(A11Y_EPOCH) private a11yEpoch: number = 0;
+  // 草稿纪元：本地草稿一变，列表行重算预览（同 a11yEpoch 的手法，必须在 build
+  // 链路里被真正读到才建立依赖——draftPreview() 里读了它）。
+  @StorageProp(DRAFT_EPOCH) private draftEpoch: number = 0;
   // 强调色是 theme 里的活绑定，读一次 epoch 让 ArkUI 记下依赖，用户改色后即时重绘。
   private accent(): ResourceColor {
     return this.appearanceEpoch < 0 ? Color.Transparent : COLOR_PRIMARY;
@@ -165,6 +169,11 @@ export struct ChatRow {
 
   private isPinned(): boolean {
     return getChatStore().isPinned(this.listKey, this.chat.id);
+  }
+
+  // 这一行的草稿预览（空串 = 没有草稿）。读一下 draftEpoch 才会建立依赖。
+  private draftPreview(): string {
+    return this.draftEpoch >= 0 ? localDraftPreview(this.chat.id) : '';
   }
 
   private isArchived(): boolean {
@@ -561,7 +570,12 @@ export struct ChatRow {
           }
         }.width('100%');
         Row() {
-          if (this.chat.lastSenderName !== '') {
+          // 有草稿就顶掉"谁说了什么"（Telegram 各端都是这样）。
+          if (this.draftPreview() !== '') {
+            Text($r('app.string.cl_draft_prefix'))
+              .fontSize(14).fontColor('#E5484D')
+              .maxLines(1).flexShrink(0);
+          } else if (this.chat.lastSenderName !== '') {
             Text(`${this.chat.lastSenderName}: `)
               .fontSize(14).fontColor(this.accent())
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -574,8 +588,9 @@ export struct ChatRow {
               .sourceSize({ width: 54, height: 54 }).autoResize(true)
               .margin({ right: 5, top: 1 }).flexShrink(0);
           }
-          Text(CHATLIST_PREVIEW_THUMB_ENABLED && this.chat.lastMessageThumb !== ''
-            ? stripPreviewIcon(this.chat.lastMessageText) : this.chat.lastMessageText)
+          Text(this.draftPreview() !== '' ? this.draftPreview()
+            : (CHATLIST_PREVIEW_THUMB_ENABLED && this.chat.lastMessageThumb !== ''
+              ? stripPreviewIcon(this.chat.lastMessageText) : this.chat.lastMessageText))
             .fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(this.threeLines ? 2 : 1)
             .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
