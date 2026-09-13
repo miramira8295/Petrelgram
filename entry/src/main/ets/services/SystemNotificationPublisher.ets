@@ -1,3 +1,4 @@
+import { accountRegistry } from '../tdkit/AccountRegistry';
 import { notificationManager } from '@kit.NotificationKit';
 import { wantAgent } from '@kit.AbilityKit';
 import { NotificationPublisher, LocalNotice } from './NotificationService';
@@ -113,7 +114,13 @@ export class SystemNotificationPublisher implements NotificationPublisher {
   private buildAgent(chatId: number, messageId: number): Promise<object> {
     // requestCode 按会话取，UPDATE_PRESENT_FLAG 让同一会话后来的通知覆盖参数——
     // 点任何一条都定位到该会话最新被通知的那条，和官方一致。
-    const params: Record<string, Object> = { 'notifyChatId': chatId, 'notifyMessageId': messageId };
+    // 带上发布这条通知时的账号槽位（util/notifySlot）：用户切到另一个账号之后
+    // 再点这条通知，不能拿这个 chatId 去当前账号里开——那个 id 在别的库里要么
+    // 不存在、要么是另一个会话。
+    const params: Record<string, Object> = {
+      'notifyChatId': chatId, 'notifyMessageId': messageId,
+      'notifySlotId': accountRegistry.activeSlotId()
+    };
     const info: wantAgent.WantAgentInfo = {
       wants: [{
         bundleName: this.bundleName,

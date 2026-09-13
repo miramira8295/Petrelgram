@@ -314,6 +314,9 @@ export default class EntryAbility extends UIAbility {
       ? (want.parameters['notifyMessageId'] as number | undefined) ?? 0 : 0;
     // 消息 id 先写：Index 监听的是 chatId，翻到它的那一刻两个值都得就位。
     AppStorage.setOrCreate('pendingNotifyMessageId', messageId);
+    // 槽位先落，chatId 最后落——Index 那边 @Watch 的是 chatId，它一变就消费。
+    AppStorage.setOrCreate('pendingNotifySlotId', want.parameters !== undefined
+      ? ((want.parameters['notifySlotId'] as string | undefined) ?? '') : '');
     AppStorage.setOrCreate('pendingNotifyChatId', 0);
     AppStorage.setOrCreate('pendingNotifyChatId', chatId);
   }

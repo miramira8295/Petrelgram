@@ -152,6 +152,7 @@ import configChangeTest from './ConfigChange.test';
 import pixelSyncPolicyTest from './PixelSyncPolicy.test';
 import unreadBadgeRuleTest from './UnreadBadgeRule.test';
 import rowLeaveChannelTest from './RowLeaveChannel.test';
+import notifySlotTest from './NotifySlot.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
@@ -420,6 +421,7 @@ export default function testsuite() {
   pixelSyncPolicyTest();
   unreadBadgeRuleTest();
   rowLeaveChannelTest();
+  notifySlotTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();

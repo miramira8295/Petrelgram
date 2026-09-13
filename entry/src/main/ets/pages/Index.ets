@@ -1,3 +1,6 @@
+import { accountRegistry, TdAccountSummary } from '../tdkit/AccountRegistry';
+import { notifySlotAction, NOTIFY_DROP, NOTIFY_SWITCH } from '../util/notifySlot';
+import { switchAccountWithLiveWindow } from '../util/accountSwitch';
 import { common } from '@kit.AbilityKit';
 import { str } from '../util/strings';
 import { promptAction, router } from '@kit.ArkUI';
@@ -17,7 +20,7 @@ import { refreshNetworkState } from '../services/NetworkStateService';
 import { logChatNavFailure, navigateToChat } from '../util/chatNav';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject } from '../tdkit/TdTypes';
-import { logE } from '../util/log';
+import { logE, logW } from '../util/log';
 import { StartupSplash } from './common/StartupSplash';
 import { isStartupStage } from '../util/startupStage';
 import { ShareTargetSheet } from './share/ShareTargetSheet';
@@ -47,6 +50,7 @@ struct Index {
   @StorageLink('pendingNotifyChatId') @Watch('onNotifyChat') pendingNotifyChatId: number = 0;
   // 同一次点击带来的目标消息（EntryAbility 在 chatId 之前写入），>0 时走 jumpTo 定位。
   @StorageLink('pendingNotifyMessageId') pendingNotifyMessageId: number = 0;
+  @StorageLink('pendingNotifySlotId') pendingNotifySlotId: string = '';
   // 别的应用分享东西过来（EntryAbility 写入，登录就绪后消费）。epoch 是
   // 清零-再置位的触发器，chatId 是分享面板里已经选好的目标（0 = 还没选）。
   @StorageLink('pendingShareEpoch') @Watch('onShare') pendingShareEpoch: number = 0;
@@ -196,8 +200,32 @@ struct Index {
     }
     const chatId: number = this.pendingNotifyChatId;
     const messageId: number = this.pendingNotifyMessageId;
+    const slotId: string = this.pendingNotifySlotId;
     this.pendingNotifyChatId = 0;
     this.pendingNotifyMessageId = 0;
+    this.pendingNotifySlotId = '';
+    // 这条通知属于哪个账号（util/notifySlot）。切过账号之后再点旧通知，不能把
+    // 那个 chatId 丢给当前账号——它在别的库里是另一个会话，或者根本不存在。
+    const known: string[] = accountRegistry.all()
+      .map((a: TdAccountSummary): string => a.slotId);
+    const action: string = notifySlotAction(slotId, accountRegistry.activeSlotId(), known);
+    if (action === NOTIFY_DROP) {
+      logW(`[Notify] dropped: slot ${slotId} is gone (chat ${chatId})`);
+      return;
+    }
+    if (action === NOTIFY_SWITCH) {
+      // 先切回发通知的那个账号，切成了再把这条通知重新投一次（登录就绪后消费）。
+      logW(`[Notify] switching to slot ${slotId} before opening chat ${chatId}`);
+      switchAccountWithLiveWindow(slotId).then((): void => {
+        AppStorage.setOrCreate('pendingNotifyMessageId', messageId);
+        AppStorage.setOrCreate('pendingNotifySlotId', slotId);
+        AppStorage.setOrCreate('pendingNotifyChatId', 0);
+        AppStorage.setOrCreate('pendingNotifyChatId', chatId);
+      }).catch((e: Error): void => {
+        logE(`[Notify] account switch failed: ${e.message}`);
+      });
+      return;
+    }
     const params: Record<string, Object> = { 'chatId': chatId };
     if (messageId > 0) {
       params['jumpTo'] = messageId;
