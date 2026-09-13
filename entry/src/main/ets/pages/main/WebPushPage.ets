@@ -11,7 +11,7 @@ import {
 } from '../../store/AppSettings';
 import {
   ParsedSubscription, SUBSCRIPTION_JSON_HINT, WebPushConfig, WebPushValidation,
-  deregisterWebPush, parseSubscriptionJson, registerWebPush, validateWebPushConfig
+  deregisterWebPush, forgetWebPushConfig, parseSubscriptionJson, registerWebPush, validateWebPushConfig
 } from '../../services/WebPushRegistration';
 import {
   MeowDeregisterOutcome, MeowRegisterOutcome, confirmMeowRegistration, deregisterMeowPush,
@@ -265,6 +265,23 @@ struct WebPushPage {
         : (result.token !== '' ? str('wp_register_failed', `${result.errorCode}`) : '');
       this.hwErrorLine = result.success ? '' : result.errorMessage;
       this.hwBusy = false;
+    });
+  }
+
+  // 注销 + 抹掉三项 + 清空输入框。不弹确认：三行字符串丢了随时能再粘。
+  private clearConfig(): void {
+    if (this.busy) {
+      return;
+    }
+    this.busy = true;
+    forgetWebPushConfig();
+    this.endpoint = '';
+    this.p256dh = '';
+    this.auth = '';
+    deregisterWebPush(getTdClient()).then((): void => {
+      this.statusOk = false;
+      this.statusText = str('wp_disabled');
+      this.busy = false;
     });
   }
 
@@ -573,6 +590,12 @@ struct WebPushPage {
                 .backgroundColor(COLOR_PAGE_BG).fontColor('#FF3B30')
                 .enabled(!this.busy)
                 .onClick((): void => this.deregister());
+              // 「注销」保留三项，「清除配置」才是"我不要了"（issue #198）。
+              Button($r('app.string.wp_clear_config'))
+                .fontSize(15).width('100%').height(44)
+                .backgroundColor(COLOR_PAGE_BG).fontColor('#FF3B30')
+                .enabled(!this.busy)
+                .onClick((): void => this.clearConfig());
               if (this.statusText !== '') {
                 Text(this.statusText)
                   .fontSize(12).lineHeight(17)

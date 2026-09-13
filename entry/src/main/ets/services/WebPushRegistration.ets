@@ -2,6 +2,9 @@ import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { str } from '../util/strings';
 import { logE } from '../util/log';
+import {
+  KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH, setBoolean, setString
+} from '../store/AppSettings';
 
 // 自定义 Web Push 中转通道的注册。
 //
@@ -179,4 +182,16 @@ export function deregisterWebPush(client: TdClient): Promise<void> {
       // 注销失败不该阻塞用户关开关，记录即可。
       logE(`WebPushRegistration.deregister failed: ${e.message}`);
     });
+}
+
+// 彻底忘掉自定义 WebPush 的三项配置（issue #198）。
+//
+// 「注销」有意保留三项——多数人注销是为了换地址重注册；但用户手动清空输入框
+// 没有任何保存路径，下次进页面又从存储回填，"删不掉"。这里给一个明确的出口：
+// 三项 + 开关一起抹掉。TDLib 侧的注销由调用方先做（deregisterWebPush）。
+export function forgetWebPushConfig(): void {
+  setString(KEY_WEBPUSH_ENDPOINT, '');
+  setString(KEY_WEBPUSH_P256DH, '');
+  setString(KEY_WEBPUSH_AUTH, '');
+  setBoolean(KEY_WEBPUSH_ENABLED, false);
 }

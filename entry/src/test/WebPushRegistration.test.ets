@@ -3,8 +3,9 @@ import { TdObject } from '../main/ets/tdkit/TdTypes';
 import {
   buildDeregisterRequest, buildRegisterRequest, endpointHost, parseReceiverId,
   parseSubscriptionJson,
-  validateWebPushConfig
+  validateWebPushConfig, forgetWebPushConfig
 } from '../main/ets/services/WebPushRegistration';
+import { KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH } from '../main/ets/store/AppSettings';
 
 const GOOD_ENDPOINT: string = 'https://push.example.com/webpush/abc123';
 const GOOD_KEY: string = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkQ';
@@ -147,6 +148,20 @@ export default function webPushRegistrationTest() {
       res['id'] = '1234567890';
       expect(parseReceiverId(res)).assertEqual('1234567890');
       expect(parseReceiverId({ '@type': 'pushReceiverId' })).assertEqual('');
+    });
+
+    // issue #198：「注销」有意保留三项好换地址重注册，缺一个"我就是不想要了"的出口。
+    // forgetWebPushConfig 把三项 + 开关一起抹掉，页面回填时才不会又冒出来。
+    it('forgetWebPushConfig clears the three fields and the switch', 0, (): void => {
+      AppStorage.setOrCreate(KEY_WEBPUSH_ENDPOINT, 'https://push.example/x');
+      AppStorage.setOrCreate(KEY_WEBPUSH_P256DH, 'p256');
+      AppStorage.setOrCreate(KEY_WEBPUSH_AUTH, 'auth');
+      AppStorage.setOrCreate(KEY_WEBPUSH_ENABLED, true);
+      forgetWebPushConfig();
+      expect(AppStorage.get<string>(KEY_WEBPUSH_ENDPOINT)).assertEqual('');
+      expect(AppStorage.get<string>(KEY_WEBPUSH_P256DH)).assertEqual('');
+      expect(AppStorage.get<string>(KEY_WEBPUSH_AUTH)).assertEqual('');
+      expect(AppStorage.get<boolean>(KEY_WEBPUSH_ENABLED)).assertFalse();
     });
   });
 }
