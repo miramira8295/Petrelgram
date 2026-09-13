@@ -12035,6 +12035,10 @@
     {
       "name": "fw_copy_no_caption",
       "value": "Hide sender and remove captions"
+    },
+    {
+      "name": "cp_command_fill_a11y",
+      "value": "Insert into the message box"
     }
   ]
 }

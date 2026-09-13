@@ -1,3 +1,4 @@
+import { str } from '../../util/strings';
 import { AvatarView } from '../chatlist/AvatarView';
 import { CommandItem, MentionItem } from '../../store/InputSuggestions';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -29,6 +30,9 @@ export struct SuggestionPanel {
   @Prop catalogSize: number;
 
   onPickCommand: (item: CommandItem) => void = (): void => {};
+  // 右侧那颗按钮：把命令填进输入框（后跟一个空格）而不是直接发出去，
+  // 用户要补参数时用（issue #183）。
+  onFillCommand: (item: CommandItem) => void = (): void => {};
   onPickMention: (item: MentionItem) => void = (): void => {};
   onRetryCommands: () => void = (): void => {};
 
@@ -116,6 +120,17 @@ export struct SuggestionPanel {
                 }
               }
               .alignItems(HorizontalAlign.Start).layoutWeight(1);
+              // 点整行 = 直接发；点这颗 = 只填进输入框，好补参数（issue #183）。
+              // 命中区做到 32×32，比图标本身大，免得点不中。
+              Row() {
+                SymbolGlyph($r('sys.symbol.square_and_pencil'))
+                  .fontSize(15).fontColor([COLOR_ICON_SECONDARY]);
+              }
+              .width(32).height(32).borderRadius(10)
+              .justifyContent(FlexAlign.Center)
+              .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
+              .accessibilityText(str('cp_command_fill_a11y'))
+              .onClick((): void => { this.onFillCommand(it); });
               SymbolGlyph($r('sys.symbol.paperplane'))
                 .fontSize(14).fontColor([COLOR_ICON_SECONDARY]);
             }

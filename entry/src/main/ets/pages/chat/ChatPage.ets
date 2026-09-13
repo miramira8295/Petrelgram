@@ -6060,6 +6060,12 @@ export struct ChatPage {
     this.doSend();
   }
 
+  // 面板右侧那颗按钮：只填进输入框，末尾补一个空格好接着打参数（issue #183）。
+  private fillCommand(item: CommandItem): void {
+    this.draft = `${commandLabel(item)} `;
+    this.command.closePanel();
+  }
+
   // B15 批注：saveMediaTo/saveViewerMedia/processAutomaticGallerySave/
   // openDownloadedFile/onFileTap 五个方法整体搬进了 MediaSaveState（连同
   // saveViewerMedia 上方那两段原有注释，逐字带走）。saveViewerMedia/onFileTap
@@ -8395,6 +8401,7 @@ export struct ChatPage {
                 loadError: this.command.commandLoadError,
                 catalogSize: this.command.catalogSize(),
                 onPickCommand: (it: CommandItem): void => { this.pickCommand(it); },
+                onFillCommand: (it: CommandItem): void => { this.fillCommand(it); },
                 onPickMention: (it: MentionItem): void => { this.pickMention(it); },
                 onRetryCommands: (): void => { this.command.ensureCommandsLoaded(true); }
               });

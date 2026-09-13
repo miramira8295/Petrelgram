@@ -12035,6 +12035,10 @@
     {
       "name": "fw_copy_no_caption",
       "value": "Absender verbergen und Beschriftungen entfernen"
+    },
+    {
+      "name": "cp_command_fill_a11y",
+      "value": "In das Eingabefeld einfügen"
     }
   ]
 }

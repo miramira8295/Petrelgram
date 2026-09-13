@@ -12035,6 +12035,10 @@
     {
       "name": "fw_copy_no_caption",
       "value": "隐藏来源并移除说明文字"
+    },
+    {
+      "name": "cp_command_fill_a11y",
+      "value": "填入输入框"
     }
   ]
 }

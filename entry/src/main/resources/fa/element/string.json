@@ -12035,6 +12035,10 @@
     {
       "name": "fw_copy_no_caption",
       "value": "پنهان کردن فرستنده و حذف توضیحات"
+    },
+    {
+      "name": "cp_command_fill_a11y",
+      "value": "درج در کادر پیام"
     }
   ]
 }

@@ -12035,6 +12035,10 @@
     {
       "name": "fw_copy_no_caption",
       "value": "प्रेषक छिपाएँ और कैप्शन हटाएँ"
+    },
+    {
+      "name": "cp_command_fill_a11y",
+      "value": "संदेश बॉक्स में डालें"
     }
   ]
 }
