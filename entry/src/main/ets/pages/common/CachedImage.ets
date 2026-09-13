@@ -1,6 +1,6 @@
 import { image } from '@kit.ImageKit';
 import {
-  cachedPixelMap, cancelPixelMap, loadPixelMap, PixelHandle, PixelRequest,
+  cachedPixelMap, cancelPixelMap, loadPixelMap, loadPixelMapSync, PixelHandle, PixelRequest,
   pinPixelMap, pinPixelMapBounded, releasePixelMap, retainPixelMap
 } from '../../util/pixelCache';
 import {
@@ -36,6 +36,8 @@ export struct CachedImage {
   // 位图第一次真正交给 Image 的那一刻。调用方据此决定什么时候撤掉自己的兜底层
   // ——解码失败时这个回调永远不来，兜底层就一直留着（issue #90）。
   @Param onReady: () => void = (): void => {};
+  // 小图同步解码（#137）：未命中缓存时在主线程解一次，首帧就有图。准入见 pixelSyncPolicy。
+  @Param syncSmall: boolean = false;
   @Local pixelMap: image.PixelMap | undefined = undefined;
   // The handle currently retained, so it can be released even after path has
   // already been overwritten by a reuse — and even if the LRU has since
@@ -181,6 +183,13 @@ export struct CachedImage {
     if (hit !== undefined) {
       this.swapTo(req, hit);
       return;
+    }
+    if (this.syncSmall) {
+      const sync = loadPixelMapSync(req);
+      if (sync !== undefined) {
+        this.swapTo(req, sync);
+        return;
+      }
     }
     this.awaiting = req;
     loadPixelMap(req).then((handle: PixelHandle | undefined): void => {

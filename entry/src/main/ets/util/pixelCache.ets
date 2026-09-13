@@ -3,6 +3,7 @@ import { sendableImage } from '@kit.ImageKit';
 import { taskpool } from '@kit.ArkTS';
 import { decodeSendable } from './pixelDecodeTask';
 import { logE } from './log';
+import { syncDecodeEligible } from './pixelSyncPolicy';
 import {
   IMAGE_HOLDER_RELEASE_BATCH, IMAGE_PIXEL_CACHE_MAX_BYTES
 } from './NativePixelBudget';
@@ -272,29 +273,72 @@ async function decode(req: PixelRequest, key: string): Promise<PixelHandle | und
     }
     const pixelMap: image.PixelMap = sendableImage.convertToPixelMap(sendablePixelMap);
     const decoded = await pixelMap.getImageInfo();
-    // stride, not width: DMA rows are padded to a hardware alignment, and the
-    // padding is real memory this budget has to account for.
-    const bytes = Math.max(1, decoded.stride) * Math.max(1, decoded.size.height);
-    const entry = new PixelHandle(pixelMap, bytes);
-    cache.set(key, entry);
-    usedBytes += bytes;
-    // The extra reference covers the hand-off: eviction below (or any eviction
-    // before the caller retains) would otherwise free the entry that this very
-    // call is about to return. Dropped once the caller has had its chance.
-    entry.refs++;
-    evictDownTo(budgetBytes);
-    // 交接引用的释放并进**同一条**排空队列，而不是每次解码各排一个 0ms 定时器。
-    // 2026-09-09 的 Frame 录制里，这一句的 setTimeout NAPI 在 12.3s 内累计
-    // **28.89ms**——单次极便宜，但它是按解码次数走的。releasePixelMap 本来就是
-    // "下一拍把引用还掉"，语义一致，且它只有一个共享定时器。
-    releasePixelMap(entry);
-    return entry;
+    return insertDecoded(key, pixelMap, decoded);
   } catch (e) {
     logE(`pixelCache decode(${req.path}) failed: ${e}`);
     return undefined;
   }
-  // No ImageSource to release here any more — it is created and released inside
-  // the TaskPool worker, on the thread that actually used it.
+}
+
+// 解码结果入缓存：异步（taskpool）与同步（loadPixelMapSync）两条路共用。
+function insertDecoded(key: string, pixelMap: image.PixelMap, decoded: image.ImageInfo): PixelHandle {
+  // stride, not width: DMA rows are padded to a hardware alignment, and the
+  // padding is real memory this budget has to account for.
+  const bytes = Math.max(1, decoded.stride) * Math.max(1, decoded.size.height);
+  const entry = new PixelHandle(pixelMap, bytes);
+  cache.set(key, entry);
+  usedBytes += bytes;
+  // The extra reference covers the hand-off: eviction below (or any eviction
+  // before the caller retains) would otherwise free the entry that this very
+  // call is about to return. Dropped once the caller has had its chance.
+  entry.refs++;
+  evictDownTo(budgetBytes);
+  // 交接引用的释放并进**同一条**排空队列，而不是每次解码各排一个 0ms 定时器。
+  // 2026-09-09 的 Frame 录制里，这一句的 setTimeout NAPI 在 12.3s 内累计
+  // **28.89ms**——单次极便宜，但它是按解码次数走的。releasePixelMap 本来就是
+  // "下一拍把引用还掉"，语义一致，且它只有一个共享定时器。
+  releasePixelMap(entry);
+  return entry;
+}
+
+// 小图同步解码（#137，准入见 util/pixelSyncPolicy）：命中缓存直接给；否则在主线程
+// createPixelMapSync 一次，结果同样入缓存。同一 key 若已有异步任务在排队且还没开跑，
+// 把它从队列摘掉、用同步结果喂它的等待者，免得再解一遍。
+export function loadPixelMapSync(req: PixelRequest): PixelHandle | undefined {
+  if (req.path === '' || !syncDecodeEligible(req.width, req.height)) {
+    return undefined;
+  }
+  const key = keyOf(req);
+  const hit = cache.get(key);
+  if (hit !== undefined) {
+    touch(key, hit);
+    return hit;
+  }
+  let source: image.ImageSource | null = null;
+  try {
+    source = image.createImageSource(req.path);
+    const pixelMap: image.PixelMap = source.createPixelMapSync({
+      desiredSize: { width: req.width, height: req.height }
+    });
+    const decoded: image.ImageInfo = pixelMap.getImageInfoSync();
+    const entry = insertDecoded(key, pixelMap, decoded);
+    const task = pending.get(key);
+    if (task !== undefined && !task.started) {
+      const at = queue.indexOf(task);
+      if (at >= 0) {
+        queue.splice(at, 1);
+      }
+      settle(task, entry);
+    }
+    return entry;
+  } catch (e) {
+    logE(`pixelCache loadPixelMapSync(${req.path}) failed: ${e}`);
+    return undefined;
+  } finally {
+    if (source !== null) {
+      source.release();
+    }
+  }
 }
 
 // A component that has put a PixelMap on screen retains it, and releases when

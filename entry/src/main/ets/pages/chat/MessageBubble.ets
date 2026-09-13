@@ -307,8 +307,11 @@ struct LiveSenderAvatar {
     Stack() {
       Circle({ width: this.avatarSize, height: this.avatarSize })
         .fill(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length]);
+      // 字母只在真没头像时画；有路径但图还没到（极少数走异步的情况）就是纯色圆，
+      // 色块→照片比字母→照片柔和得多。
       Text(this.initials)
-        .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium);
+        .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium)
+        .visibility(this.path === '' ? Visibility.Visible : Visibility.None);
       CachedImage({
         path: this.path,
         boxWidth: this.avatarSize,
@@ -318,7 +321,9 @@ struct LiveSenderAvatar {
         // 头像有上限地钉住：它和大图挤在同一个 LRU 预算里，滑过图多的会话就
         // 被挤掉，回滚时重新解码，那一两帧露出下面的首字母圆底——用户报的
         // 「翻消息的时候对话头像会闪」（issue #137）。
-        pinBounded: true
+        pinBounded: true,
+        // 首帧就要有图（#137）：头像很小，未命中缓存时同步解一次，不再先露首字母。
+        syncSmall: true
       })
         .visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
     }

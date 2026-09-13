@@ -149,6 +149,7 @@ import chatActionBarTest from './ChatActionBar.test';
 import selectionSaveTest from './SelectionSave.test';
 import forwardFoldersTest from './ForwardFolders.test';
 import configChangeTest from './ConfigChange.test';
+import pixelSyncPolicyTest from './PixelSyncPolicy.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
@@ -414,6 +415,7 @@ export default function testsuite() {
   selectionSaveTest();
   forwardFoldersTest();
   configChangeTest();
+  pixelSyncPolicyTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();

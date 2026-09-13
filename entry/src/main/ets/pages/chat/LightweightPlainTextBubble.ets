@@ -183,12 +183,14 @@ struct LightweightSenderAvatar {
     Stack() {
       Circle({ width: 38, height: 38 })
         .fill(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length]);
-      Text(this.initials).fontColor(Color.White).fontSize(15.2).fontWeight(FontWeight.Medium);
+      Text(this.initials).fontColor(Color.White).fontSize(15.2).fontWeight(FontWeight.Medium)
+        .visibility(this.path === '' ? Visibility.Visible : Visibility.None);
       CachedImage({
         path: this.path, boxWidth: 38, boxHeight: 38, radius: 19, fit: ImageFit.Cover,
         // 和 LiveSenderAvatar 同一理由：头像被大图挤出 LRU 后重解码会闪
         // （issue #137）。两处要一起开，否则纯文本行的头像仍然会闪。
-        pinBounded: true
+        pinBounded: true,
+        syncSmall: true
       }).visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
     }.width(38).height(38);
   }
