@@ -6,6 +6,8 @@ import { deviceInfo } from '@kit.BasicServicesKit';
 import { bundleManager } from '@kit.AbilityKit';
 import { diagLogText, logE } from './log';
 import { DiagEnvironment, diagLogHeader } from './diagLogHeader';
+import { crashSummaryLines } from './configChange';
+import { crashRecords } from '../services/crashRecordStore';
 import { str } from './strings';
 
 // 把诊断日志另存为文件。
@@ -59,7 +61,10 @@ export function exportDiagLog(context: common.UIAbilityContext, stamp: string): 
     return;
   }
   // 抬头在最前面：用户把日志贴到 issue 里时往往只贴开头几屏。
-  const text: string = `${diagLogHeader(currentEnvironment())}${body}`;
+  // 抬头之后附最近 5 条崩溃（#194：导出里没有崩溃信息，冷启只能猜）。
+  const crashes: string[] = crashSummaryLines(crashRecords(), 5);
+  const crashBlock: string = crashes.length > 0 ? `${crashes.join('\n')}\n\n` : '';
+  const text: string = `${diagLogHeader(currentEnvironment())}${crashBlock}${body}`;
   const name: string = diagLogFileName(stamp);
   const tmpPath: string = `${context.cacheDir}/${name}`;
   try {

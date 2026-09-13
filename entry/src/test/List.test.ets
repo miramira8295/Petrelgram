@@ -148,6 +148,7 @@ import thumbBatchTest from './ThumbBatch.test';
 import chatActionBarTest from './ChatActionBar.test';
 import selectionSaveTest from './SelectionSave.test';
 import forwardFoldersTest from './ForwardFolders.test';
+import configChangeTest from './ConfigChange.test';
 import chatNavTest from './ChatNav.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
@@ -412,6 +413,7 @@ export default function testsuite() {
   chatActionBarTest();
   selectionSaveTest();
   forwardFoldersTest();
+  configChangeTest();
   chatNavTest();
   linkTapGuardTest();
   attachActionsTest();

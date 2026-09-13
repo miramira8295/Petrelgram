@@ -25,6 +25,14 @@
       {
         "name": "client_id",
         "value": ""
+      },
+      // 深浅色切换走增量流程（API 20 起，#194）：默认是全量重绘、开销随 UI 复杂度线性
+      // 增加。前提是属性里没有"现查系统颜色模式的函数返回值"——我们的深浅色都经
+      // KEY_APP_DARK / APPEARANCE_EPOCH 状态量驱动，满足。HDS 导航三件 API 26 前不吃这条
+      // 快路，EntryAbility 在颜色模式变化时 bump 材质 epoch 兜底。
+      {
+        "name": "configColorModeChangePerformanceInArkUI",
+        "value": "true"
       }
     ],
     "requestPermissions": [

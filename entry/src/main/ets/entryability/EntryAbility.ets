@@ -1,3 +1,4 @@
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { mirrorChatEnvKey } from '../util/chatEnvMirror';
 import { clearOutlineCache } from '../util/bubbleTail';
@@ -38,6 +39,8 @@ import { ShareHandoff } from '../util/sharedContent';
 import { SharedPayload } from '../util/sharedContent';
 import { initA11yState } from '../util/a11yState';
 import { logE, logW } from '../util/log';
+import { COLOR_MODE_UNKNOWN, colorModeChanged } from '../util/configChange';
+import { bumpMaterialEpoch } from '../util/overlayMaterial';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
 const BUBBLE_MEDIA_MAX_VP: number = 280;
@@ -52,6 +55,9 @@ export default class EntryAbility extends UIAbility {
   private uiDensity: number = 0;
   // 上一次见到的系统语言，用来判断配置变更里语言到底变没变。
   private lastLanguage: string = '';
+  // 上一次见到的颜色模式（#194）：只有它真变了才走深浅色重算，字号/转屏/回前台不再全量重绘。
+  private lastColorMode: number = COLOR_MODE_UNKNOWN;
+  private lastConfigAt: number = 0;
   private windowStageRef: window.WindowStage | null = null;
   // loadContent 回调之前窗口还没有内容，setWindowBackgroundColor 必失败
   // （"This window state is abnormal"）——原来每次冷启动都在诊断日志里留一行。
@@ -199,7 +205,23 @@ export default class EntryAbility extends UIAbility {
       bumpLanguageEpoch();
     }
     // 深浅色切换时状态栏的图标要跟着反色，否则白图标留在浅色页面上会看不见。
+    // 但只在颜色模式**真变了**时做（官方 onConfigurationUpdate 范式）：这一步会写
+    // KEY_APP_DARK、重算主色/气泡色并 bump 外观 epoch，整条时间线和首页都会重绘。
+    const now: number = Date.now();
+    const changed: boolean = colorModeChanged(this.lastColorMode, config.colorMode);
+    logW(`[Config] colorMode ${this.lastColorMode}->${config.colorMode ?? -1} lang=${language}` +
+      ` changed=${changed} +${this.lastConfigAt > 0 ? now - this.lastConfigAt : 0}ms`);
+    this.lastConfigAt = now;
+    if (!changed) {
+      return;
+    }
+    this.lastColorMode = config.colorMode ?? -1;
     this.applyImmersiveStatusBar();
+    // HdsNavigation / HdsNavDestination / HdsTabs 从 API 26 起才支持高性能切换流程；
+    // 之前的版本要靠我们自己驱动它们的颜色属性——bump 材质 epoch 让壳层重挂一遍。
+    if (deviceInfo.sdkApiVersion < 26) {
+      bumpMaterialEpoch();
+    }
   }
 
   // 状态栏沉浸。
@@ -225,7 +247,18 @@ export default class EntryAbility extends UIAbility {
     if (this.windowStageRef === null) {
       return;
     }
-    const win = this.windowStageRef.getMainWindowSync();
+    // getMainWindowSync 在窗口销毁流程里会抛（窗口错误码文档明写）；这个方法从
+    // onConfigurationUpdate 进来时没有任何 try/catch，抛了就是进程死（#194 的 9 次冷启
+    // 没有退后台痕迹，这里是唯一的裸同步系统调用）。
+    // 启动时的几次调用也走这里：顺手记下当前模式，onConfigurationUpdate 才有基准可比。
+    this.lastColorMode = this.context.config.colorMode ?? -1;
+    let win: window.Window;
+    try {
+      win = this.windowStageRef.getMainWindowSync();
+    } catch (e) {
+      logE(`applyImmersiveStatusBar getMainWindowSync failed: ${(e as Error).message}`);
+      return;
+    }
     const dark: boolean = darkResourceMode(this.context);
     // 界面侧用 @StorageProp(KEY_APP_DARK) 订阅。这里是全应用唯一一处真正知道
     // 模式变了的地方（onConfigurationUpdate 也会走到这个函数）。
@@ -240,14 +273,18 @@ export default class EntryAbility extends UIAbility {
     // 不用 getColorSync 从资源里取：那条路在本项目实测会在深色模式下仍然
     // 返回浅色值（theme.ets:31 的注释记着这个坑）。
     this.applyWindowBackground(win, dark);
-    win.setWindowSystemBarProperties({
-      statusBarColor: '#00000000',
-      statusBarContentColor: dark ? '#FFFFFF' : '#000000',
-      navigationBarColor: '#00000000',
-      navigationBarContentColor: dark ? '#FFFFFF' : '#000000'
-    }).catch((e: Error): void => {
-      logE(`setWindowSystemBarProperties failed: ${e.message}`);
-    });
+    try {
+      win.setWindowSystemBarProperties({
+        statusBarColor: '#00000000',
+        statusBarContentColor: dark ? '#FFFFFF' : '#000000',
+        navigationBarColor: '#00000000',
+        navigationBarContentColor: dark ? '#FFFFFF' : '#000000'
+      }).catch((e: Error): void => {
+        logE(`setWindowSystemBarProperties failed: ${e.message}`);
+      });
+    } catch (e) {
+      logE(`setWindowSystemBarProperties threw: ${(e as Error).message}`);
+    }
   }
 
   // Publish the launch URI for the UI layer. Cleared to '' first so re-opening
