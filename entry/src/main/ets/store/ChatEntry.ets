@@ -20,6 +20,8 @@ export interface ChatEntry {
   rawUnreadCount: number;
   lastReadInboxId: number;
   lastMessageText: string;
+  // 预览小图（data URL，空串 = 没有），见 formatPreview.previewThumbOf。
+  lastMessageThumb: string;
   lastMessageDate: number;
   lastMessageId: number;   // newest message — 标记为已读 reads up to it
   lastSenderName: string;
@@ -29,6 +31,9 @@ export interface ChatEntry {
   autoDeleteTime: number;
   kind: ChatKind;
   isMarkedUnread: boolean; // manually flagged unread (unread_count may be 0)
+  // 会话操作条（chat.action_bar 的 @type，空串 = 没有）与 can_unarchive。
+  actionBar: string;
+  actionBarCanUnarchive: boolean;
   // deleteChatHistory 的两个前置能力位，直接来自 TDLib 的 chat 对象。不能由
   // kind 推导：活跃密聊只能为双方清空，公开超级群/频道两种都不行。TDLib 没有
   // 针对这两位的增量 update（updateChat* 里没有对应的类），它们只随完整的
@@ -56,11 +61,13 @@ export function cloneEntry(e: ChatEntry): ChatEntry {
     title: e.title, isMuted: e.isMuted, usesDefaultMute: e.usesDefaultMute,
     unreadCount: e.unreadCount,
     rawUnreadCount: e.rawUnreadCount, lastReadInboxId: e.lastReadInboxId,
-    lastMessageText: e.lastMessageText, lastMessageDate: e.lastMessageDate,
+    lastMessageText: e.lastMessageText, lastMessageThumb: e.lastMessageThumb,
+    lastMessageDate: e.lastMessageDate,
     lastMessageId: e.lastMessageId,
     lastSenderName: e.lastSenderName, photoFileId: e.photoFileId,
     avatarPath: e.avatarPath, initials: e.initials, autoDeleteTime: e.autoDeleteTime,
     kind: e.kind, isMarkedUnread: e.isMarkedUnread,
+    actionBar: e.actionBar, actionBarCanUnarchive: e.actionBarCanUnarchive,
     canDeleteOnlyForSelf: e.canDeleteOnlyForSelf,
     canDeleteForAllUsers: e.canDeleteForAllUsers,
     isSavedMessages: e.isSavedMessages,

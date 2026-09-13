@@ -1,10 +1,11 @@
+import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { ChatEntry, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, effectiveMuted, isMutedFrom, usesDefaultMuteFrom, chatKindOf } from './ChatEntry';
 import { scopeMutedForKind } from './ScopeMuteStore';
 import { listKeyOf, chatListOf } from './ListKey';
-import { formatPreview } from '../util/formatPreview';
+import { formatPreview, previewThumbOf } from '../util/formatPreview';
 import { logE, logI, logW } from '../util/log';
 
 const PAGE_LIMIT: number = 30;
@@ -116,6 +117,7 @@ export class ChatStore {
     client.onUpdate('updateChatNotificationSettings', (u: TdObject) => this.onNotify(u));
     client.onUpdate('updateChatMessageAutoDeleteTime', (u: TdObject) => this.onAutoDelete(u));
     client.onUpdate('updateChatIsMarkedAsUnread', (u: TdObject) => this.onMarkedUnread(u));
+    client.onUpdate('updateChatActionBar', (u: TdObject) => this.onActionBar(u));
     client.onUpdate('updateChatBackground', (u: TdObject) => this.onBackground(u));
     client.onUpdate('updateChatTheme', (u: TdObject) => this.onTheme(u));
     client.onUpdate('updateDefaultBackground', (u: TdObject) => this.onDefaultBackground(u));
@@ -648,6 +650,7 @@ export class ChatStore {
       rawUnreadCount: (chat['unread_count'] as number | undefined) ?? 0,
       lastReadInboxId: (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
       lastMessageText: formatPreview(lastMsg),
+      lastMessageThumb: previewThumbOf(lastMsg),
       lastMessageDate: lastMsg !== null ? ((lastMsg['date'] as number | undefined) ?? 0) : 0,
       lastMessageId: this.messageIdOf(lastMsg),
       lastSenderName: this.senderName(lastMsg ?? undefined),
@@ -659,6 +662,8 @@ export class ChatStore {
       autoDeleteTime: (chat['message_auto_delete_time'] as number | undefined) ?? 0,
       kind: chatKindOf(chat['type'] as TdObject | undefined),
       isMarkedUnread: (chat['is_marked_as_unread'] as boolean | undefined) ?? false,
+      actionBar: actionBarKindOf(chat['action_bar'] as TdObject | undefined),
+      actionBarCanUnarchive: actionBarCanUnarchiveOf(chat['action_bar'] as TdObject | undefined),
       // deleteChatHistory 的两个前置能力位。TDLib 没有针对它们的增量 update
       // （updateChat* 里没有对应的类），只随完整 chat 对象到达，所以这里是
       // 唯一的写入点；缺省取 false —— 宁可少给一个入口，也不要给一个必然
@@ -892,6 +897,21 @@ export class ChatStore {
     const ns = update['notification_settings'] as TdObject | undefined;
     c.isMuted = isMutedFrom(ns);
     c.usesDefaultMute = usesDefaultMuteFrom(ns);
+    this.chats.set(id, c);
+    this.notify(id);
+  }
+
+  // 会话操作条变化（举报/屏蔽/加联系人之后服务端会撤掉它）。
+  private onActionBar(update: TdObject): void {
+    const id = update['chat_id'] as number;
+    const e = this.chats.get(id);
+    if (e === undefined) {
+      return;
+    }
+    const c = cloneEntry(e);
+    const bar = update['action_bar'] as TdObject | undefined;
+    c.actionBar = actionBarKindOf(bar);
+    c.actionBarCanUnarchive = actionBarCanUnarchiveOf(bar);
     this.chats.set(id, c);
     this.notify(id);
   }
@@ -1162,6 +1182,7 @@ export class ChatStore {
     const next = cloneEntry(entry);
     if (pending.hasLastMessage) {
       next.lastMessageText = formatPreview(pending.lastMessage);
+      next.lastMessageThumb = previewThumbOf(pending.lastMessage);
       next.lastMessageDate = pending.lastMessage !== null
         ? ((pending.lastMessage['date'] as number | undefined) ?? 0) : 0;
       next.lastMessageId = this.messageIdOf(pending.lastMessage);
@@ -1215,6 +1236,7 @@ export class ChatStore {
     immediately: boolean): void {
     const next = cloneEntry(entry);
     next.lastMessageText = formatPreview(lastMessage);
+    next.lastMessageThumb = previewThumbOf(lastMessage);
     next.lastMessageDate = lastMessage !== null
       ? ((lastMessage['date'] as number | undefined) ?? 0) : 0;
     next.lastMessageId = this.messageIdOf(lastMessage);

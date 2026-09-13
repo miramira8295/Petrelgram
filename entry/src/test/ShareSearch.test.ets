@@ -12,9 +12,9 @@ function chat(id: number, title: string, date: number, last: string = ''): ChatE
   return {
     id: id, revision: 0, title: title, isMuted: false, usesDefaultMute: true,
     unreadCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
-    lastMessageText: last, lastMessageDate: date, lastMessageId: 0,
+    lastMessageText: last, lastMessageThumb: '', lastMessageDate: date, lastMessageId: 0,
     lastSenderName: '', photoFileId: 0, avatarPath: '', initials: title.substring(0, 1),
-    autoDeleteTime: 0, kind: 'private', isMarkedUnread: false,
+    autoDeleteTime: 0, kind: 'private', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false,
     canDeleteOnlyForSelf: true, canDeleteForAllUsers: false,
     isSavedMessages: false, background: null, themeName: '',
     liveGroupCallId: 0, isLive: false, isRtmpLive: false

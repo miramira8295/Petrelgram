@@ -121,9 +121,9 @@ function entryOf(groupCallId: number, isLive: boolean, isRtmp: boolean): ChatEnt
   return {
     id: 5, revision: 0, title: 't', isMuted: false, usesDefaultMute: true,
     unreadCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
-    lastMessageText: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
+    lastMessageText: '', lastMessageThumb: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
     photoFileId: 0, avatarPath: '', initials: '', autoDeleteTime: 0,
-    kind: 'supergroup', isMarkedUnread: false, isSavedMessages: false,
+    kind: 'supergroup', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false, isSavedMessages: false,
     background: null, themeName: '',
     liveGroupCallId: groupCallId, isLive: isLive, isRtmpLive: isRtmp,
     canDeleteOnlyForSelf: false, canDeleteForAllUsers: false

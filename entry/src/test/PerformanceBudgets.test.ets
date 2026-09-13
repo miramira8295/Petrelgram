@@ -60,5 +60,25 @@ export default function performanceBudgetsTest() {
       const background = pressuredNativePixelBudget(0, false);
       expect(background.imageBytes + background.alphaBytes).assertEqual(0);
     });
+
+    // issue #201 第 8 条：会话操作条占一行，和置顶/直播横幅同高，叠加计数；
+    // 单独存在时也算一行（不像加载态那样只在没内容时占位）。
+    it('action_bar_counts_as_one_banner_row', 0, (): void => {
+      const base: ChatChromeGeometryInput = {
+        topSafe: 0, searchMode: false, pinnedVisible: false, liveVisible: false, loadingVisible: false,
+        actionBarVisible: true
+      };
+      expect(chatTopBannerRows(base)).assertEqual(1);
+      const withPinned: ChatChromeGeometryInput = {
+        topSafe: 0, searchMode: false, pinnedVisible: true, liveVisible: false, loadingVisible: false,
+        actionBarVisible: true
+      };
+      expect(chatTopBannerRows(withPinned)).assertEqual(2);
+      const loadingOnly: ChatChromeGeometryInput = {
+        topSafe: 0, searchMode: false, pinnedVisible: false, liveVisible: false, loadingVisible: true,
+        actionBarVisible: true
+      };
+      expect(chatTopBannerRows(loadingOnly)).assertEqual(1);
+    });
   });
 }

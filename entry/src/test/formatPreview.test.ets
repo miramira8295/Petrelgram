@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { formatPreview } from '../main/ets/util/formatPreview';
+import { formatPreview, previewThumbOf, stripPreviewIcon } from '../main/ets/util/formatPreview';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
 function msg(content: TdObject): TdObject {
@@ -112,6 +112,34 @@ export default function formatPreviewTest() {
     it('video_chat_scheduled', 0, () => {
       const c: TdObject = { '@type': 'messageVideoChatScheduled' };
       expect(formatPreview(msg(c))).assertEqual('service_video_chat_scheduled');
+    });
+
+    // issue #202：会话列表预览用 minithumbnail（内联 base64 JPEG）当小图，有图时去掉开头的 emoji。
+    it('previewThumbOf: minithumbnail → data URL for photo/video/animation/document, else empty', 0, () => {
+      const mini: TdObject = { '@type': 'minithumbnail' };
+      mini['width'] = 40; mini['height'] = 30; mini['data'] = 'AAAA';
+      const photo: TdObject = { '@type': 'photo' }; photo['minithumbnail'] = mini;
+      const content: TdObject = { '@type': 'messagePhoto' }; content['photo'] = photo;
+      const msg: TdObject = { '@type': 'message' }; msg['content'] = content;
+      expect(previewThumbOf(msg)).assertEqual('data:image/jpeg;base64,AAAA');
+      const video: TdObject = { '@type': 'video' }; video['minithumbnail'] = mini;
+      const vc: TdObject = { '@type': 'messageVideo' }; vc['video'] = video;
+      const vm: TdObject = { '@type': 'message' }; vm['content'] = vc;
+      expect(previewThumbOf(vm)).assertEqual('data:image/jpeg;base64,AAAA');
+      const doc: TdObject = { '@type': 'document' };   // 没有 minithumbnail
+      const dc: TdObject = { '@type': 'messageDocument' }; dc['document'] = doc;
+      const dm: TdObject = { '@type': 'message' }; dm['content'] = dc;
+      expect(previewThumbOf(dm)).assertEqual('');
+      const tm: TdObject = { '@type': 'message' }; tm['content'] = { '@type': 'messageText' } as TdObject;
+      expect(previewThumbOf(tm)).assertEqual('');
+      expect(previewThumbOf(null)).assertEqual('');
+    });
+    it('stripPreviewIcon drops only a leading media emoji', 0, () => {
+      expect(stripPreviewIcon('📷 照片')).assertEqual('照片');
+      expect(stripPreviewIcon('📹 看这个')).assertEqual('看这个');
+      expect(stripPreviewIcon('📎 report.pdf')).assertEqual('report.pdf');
+      expect(stripPreviewIcon('普通文本 📷')).assertEqual('普通文本 📷');
+      expect(stripPreviewIcon('')).assertEqual('');
     });
   });
 }

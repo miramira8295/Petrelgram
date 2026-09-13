@@ -262,3 +262,44 @@ export function formatPreview(message: TdObject | null): string {
   }
   return str('preview_unsupported');
 }
+
+// ── 会话列表预览小图（issue #202）──
+// TDLib 的 photo / video / animation / document 都带 minithumbnail：一张 ~40px 的
+// JPEG，base64 内联在消息 JSON 里，不用下载。ArkUI 的 Image 直接吃 data URL。
+// 一键回退：首页对每行多一个节点敏感（见记忆 chatlist-jank-root-cause），
+// 上机 trace 不理想就关掉这个常量，不用回滚代码。
+export const CHATLIST_PREVIEW_THUMB_ENABLED: boolean = true;
+
+const MINITHUMB_HOLDERS: string[] = ['photo', 'video', 'animation', 'document'];
+
+export function previewThumbOf(message: TdObject | null): string {
+  if (message === null) {
+    return '';
+  }
+  const content = message['content'] as TdObject | undefined;
+  if (content === undefined) {
+    return '';
+  }
+  for (const key of MINITHUMB_HOLDERS) {
+    const holder = content[key] as TdObject | undefined;
+    if (holder === undefined) {
+      continue;
+    }
+    const mini = holder['minithumbnail'] as TdObject | undefined;
+    const data: string = mini !== undefined ? ((mini['data'] as string | undefined) ?? '') : '';
+    return data !== '' ? `data:image/jpeg;base64,${data}` : '';
+  }
+  return '';
+}
+
+// 有了小图，开头那个媒体 emoji 就重复了。只去掉 mediaLabel 用过的那几个、且只在开头。
+const PREVIEW_ICONS: string[] = ['📎', '📷', '📹'];
+
+export function stripPreviewIcon(text: string): string {
+  for (const icon of PREVIEW_ICONS) {
+    if (text.startsWith(icon + ' ')) {
+      return text.substring(icon.length + 1);
+    }
+  }
+  return text;
+}

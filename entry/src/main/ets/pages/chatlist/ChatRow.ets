@@ -1,3 +1,4 @@
+import { CHATLIST_PREVIEW_THUMB_ENABLED, stripPreviewIcon } from '../../util/formatPreview';
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
@@ -566,7 +567,15 @@ export struct ChatRow {
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               .constraintSize({ maxWidth: 112 });
           }
-          Text(this.chat.lastMessageText)
+          // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
+          if (CHATLIST_PREVIEW_THUMB_ENABLED && this.chat.lastMessageThumb !== '') {
+            Image(this.chat.lastMessageThumb).draggable(false)
+              .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
+              .sourceSize({ width: 54, height: 54 }).autoResize(true)
+              .margin({ right: 5, top: 1 }).flexShrink(0);
+          }
+          Text(CHATLIST_PREVIEW_THUMB_ENABLED && this.chat.lastMessageThumb !== ''
+            ? stripPreviewIcon(this.chat.lastMessageText) : this.chat.lastMessageText)
             .fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(this.threeLines ? 2 : 1)
             .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);

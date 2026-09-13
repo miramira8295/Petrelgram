@@ -16,6 +16,8 @@ export interface ChatChromeGeometryInput {
   pinnedVisible: boolean;
   liveVisible: boolean;
   loadingVisible: boolean;
+  // 会话操作条（issue #201 第 8 条）。可选：老调用点不传就是没有。
+  actionBarVisible?: boolean;
 }
 
 export function chatTopBannerRows(input: ChatChromeGeometryInput): number {
@@ -24,6 +26,9 @@ export function chatTopBannerRows(input: ChatChromeGeometryInput): number {
     rows++;
   }
   if (input.liveVisible) {
+    rows++;
+  }
+  if (input.actionBarVisible ?? false) {
     rows++;
   }
   // 加载态只在没有已确认内容时占一行。

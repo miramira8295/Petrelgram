@@ -1,3 +1,4 @@
+import { ChatActionBarView } from './ChatActionBarView';
 // 【自绘玻璃，不走组件级系统材质】系统已经把**组件级**的 systemMaterial 收回，
 // 只有 HDS 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）
 // 还拿得到。继续用 overlayGlassFill + overlayBackdropBlur 的面会两头落空——
@@ -90,6 +91,12 @@ export struct TopBanners {
   // 脱离父组件独立预览）。
   @Event onPinnedTap: () => void = (): void => {};
   @Event onLiveStreamTap: () => void = (): void => {};
+  // 会话操作条（issue #201 第 8 条）：空串 = 没有。按钮 id 由 ChatPage 转给
+  // ChatActionBarActions，本层照旧只发回调。
+  @Param actionBarKind: string = '';
+  @Param actionBarCanUnarchive: boolean = false;
+  @Event onActionBarAction: (id: string) => void = (_id: string): void => {};
+  @Event onActionBarDismiss: () => void = (): void => {};
 
   @Styles
   rowNormalStyle() {
@@ -120,7 +127,7 @@ export struct TopBanners {
   }
 
   private hasContent(): boolean {
-    return this.topCard.pinnedPreview !== '' ||
+    return this.actionBarKind !== '' || this.topCard.pinnedPreview !== '' ||
       (this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive);
   }
 
@@ -134,7 +141,8 @@ export struct TopBanners {
       searchMode: false,
       pinnedVisible: this.topCard.pinnedPreview !== '',
       liveVisible: this.liveShowing(),
-      loadingVisible: this.topCard.topCardLoadingVisible
+      loadingVisible: this.topCard.topCardLoadingVisible,
+      actionBarVisible: this.actionBarKind !== ''
     };
     // 外层的 bottom:2 margin 由父布局计算，不属于节点自己的 height。
     return chatTopBannerHeight(input) - CHAT_TOP_BANNER_BOTTOM_GAP;
@@ -285,6 +293,14 @@ export struct TopBanners {
   build() {
     Column() {
       if (this.hasContent()) {
+        if (this.actionBarKind !== '') {
+          ChatActionBarView({
+            kind: this.actionBarKind,
+            canUnarchive: this.actionBarCanUnarchive,
+            onAction: (id: string): void => { this.onActionBarAction(id); },
+            onDismiss: (): void => { this.onActionBarDismiss(); }
+          });
+        }
         if (this.topCard.pinnedPreview !== '') {
           this.pinnedBanner();
         }
