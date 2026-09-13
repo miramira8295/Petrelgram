@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "平板和寬螢幕也用手機版面，不左右分欄"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "已達單則 %1$d 字上限，貼上內容被截斷"
     }
   ]
 }

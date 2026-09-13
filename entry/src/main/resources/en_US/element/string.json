@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Use the phone layout on tablets and wide screens"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "Message limit of %1$d characters reached; the paste was trimmed"
     }
   ]
 }

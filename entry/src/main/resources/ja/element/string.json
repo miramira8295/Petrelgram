@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "タブレットや広い画面でもスマホ表示にする"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "1 通あたり %1$d 文字の上限に達したため、貼り付けが切り詰められました"
     }
   ]
 }

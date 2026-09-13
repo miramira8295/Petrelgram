@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Guna susun atur telefon pada tablet dan skrin lebar"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "Had %1$d aksara dicapai; tampalan dipotong"
     }
   ]
 }

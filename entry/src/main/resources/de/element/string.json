@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Auf Tablets und breiten Bildschirmen das Telefon-Layout verwenden"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "Nachrichtenlimit von %1$d Zeichen erreicht; Einfügung wurde gekürzt"
     }
   ]
 }

@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Usa il layout del telefono su tablet e schermi larghi"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "Raggiunto il limite di %1$d caratteri; il testo incollato è stato troncato"
     }
   ]
 }

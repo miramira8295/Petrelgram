@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Usar o layout de celular em tablets e telas largas"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "Limite de %1$d caracteres atingido; a colagem foi cortada"
     }
   ]
 }

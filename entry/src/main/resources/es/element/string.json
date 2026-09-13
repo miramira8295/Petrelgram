@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Usar el diseño de teléfono en tabletas y pantallas anchas"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "Se alcanzó el límite de %1$d caracteres; se recortó lo pegado"
     }
   ]
 }

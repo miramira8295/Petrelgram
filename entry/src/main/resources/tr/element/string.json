@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Tablet ve geniş ekranlarda telefon düzenini kullan"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "%1$d karakter sınırına ulaşıldı; yapıştırılan metin kısaltıldı"
     }
   ]
 }

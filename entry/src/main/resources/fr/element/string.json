@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "Utiliser la mise en page téléphone sur tablette et grand écran"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "Limite de %1$d caractères atteinte ; le collage a été tronqué"
     }
   ]
 }

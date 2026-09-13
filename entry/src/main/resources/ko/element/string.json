@@ -12063,6 +12063,10 @@
     {
       "name": "chat_settings_force_single_sub",
       "value": "태블릿과 넓은 화면에서도 휴대폰 레이아웃 사용"
+    },
+    {
+      "name": "cp_paste_trimmed",
+      "value": "메시지당 %1$d자 제한에 도달해 붙여넣기가 잘렸습니다"
     }
   ]
 }

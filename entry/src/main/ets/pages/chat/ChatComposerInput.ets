@@ -1,3 +1,6 @@
+import { caretAfterExternalEdit, pasteFitsLimit } from '../../util/composerText';
+import { promptAction } from '@kit.ArkUI';
+import { str } from '../../util/strings';
 import { ReplyKeyboard } from '../../store/ReplyKeyboard';
 import { logE } from '../../util/log';
 import { PendingMediaItem, hasPendingMedia } from '../../util/pendingMedia';
@@ -10,6 +13,9 @@ import { ComposerSendButton } from './ComposerSendButton';
 import { ComposerSession } from './ComposerSession';
 import { CommandSuggestionState } from './ComposerSuggestionState';
 import { VoiceRecordingState } from './VoiceRecordingState';
+
+// Telegram 单条文本消息的上限。
+const COMPOSER_MAX_LENGTH: number = 4096;
 
 // Shared geometry for the editor and its height measurement, both in this file.
 //
@@ -60,6 +66,11 @@ export struct ChatComposerInput {
   @Param showEmojiPanel: boolean = false;
   @Param composerEditorReady: boolean = false;
   @Param draft: string = '';
+  // ⑤ 光标乱跳：TextArea 是受控写法，外部重新给 text 赋值时组件把光标丢到末尾
+  // （@提及补全、读回草稿、表情插入都会整段改写 draft）。记住上一次的文本与
+  // 光标，外部改写后用 caretAfterExternalEdit 推出新位置再 caretPosition 放回去。
+  private lastDraftSeen: string = '';
+  private caretSeen: number = 0;
   @Param composerPlaceholder: string = '';
   @Param composerController: TextAreaController = new TextAreaController();
   // 输入框的真实宽度，editorHeight() 拿它做排版约束。原来是绕一圈的：本组件
@@ -260,6 +271,39 @@ export struct ChatComposerInput {
   //
   // 顺带解决输入法**候选中的字**：那些字不在 this.draft 里（measureTextSize 因此
   // 一定漏算），但它们已经被 TextArea 排进去了，问组件就问得到。
+  // 外部（页面）整段改写了 draft：把光标放回改动之后，而不是让它跑到末尾。
+  // V2 用 @Monitor（@Watch 只在 V1 里有），名字必须是本 struct 的真实成员。
+  @Monitor('draft')
+  onDraftReplacedOutside(): void {
+    if (this.draft === this.lastDraftSeen) {
+      return;
+    }
+    const next: number = caretAfterExternalEdit(this.lastDraftSeen, this.draft, this.caretSeen);
+    this.lastDraftSeen = this.draft;
+    this.caretSeen = next;
+    // 等这一帧的文本落地再挪光标，否则挪的是旧内容上的位置。
+    setTimeout((): void => { this.composerController.caretPosition(next); }, 0);
+  }
+
+  // ⑥ 粘贴只进来一半：maxLength 会把超出的部分静默截掉。这里自己接管——放得下
+  // 就照常走系统粘贴；放不下就按剩余空间插入并明确提示被截断，而不是不吭声地丢。
+  private onComposerPaste(content: string, event: PasteEvent): void {
+    if (pasteFitsLimit(this.draft.length, content.length, COMPOSER_MAX_LENGTH)) {
+      return;
+    }
+    if (event.preventDefault !== undefined) {
+      event.preventDefault();
+    }
+    const room: number = Math.max(0, COMPOSER_MAX_LENGTH - this.draft.length);
+    const head: number = Math.max(0, Math.min(this.caretSeen, this.draft.length));
+    const merged: string = this.draft.substring(0, head) + content.substring(0, room) +
+      this.draft.substring(head);
+    this.onDraftChange(merged.substring(0, COMPOSER_MAX_LENGTH));
+    promptAction.showToast({
+      message: str('cp_paste_trimmed', COMPOSER_MAX_LENGTH), duration: 2600
+    });
+  }
+
   private scheduleLinesRefresh(): void {
     if (this.linesRefreshTimer !== -1) {
       return;
@@ -408,7 +452,7 @@ export struct ChatComposerInput {
               })
                 .layoutWeight(1)
                 .height(this.editorHeight())
-                .maxLength(4096)
+                .maxLength(COMPOSER_MAX_LENGTH)
                 .fontSize(15)
                 // 【不规定行高】(2026-09-11 真机截图定位)
                 // 原来这里写死 .lineHeight(22)。系统换成手写体之后，a/g/p/q/y
@@ -438,7 +482,14 @@ export struct ChatComposerInput {
                     this.refreshEditorLines();
                   }
                 })
+                .onTextSelectionChange((start: number, _end: number): void => {
+                  this.caretSeen = start;
+                })
+                .onPaste((content: string, event: PasteEvent): void => {
+                  this.onComposerPaste(content, event);
+                })
                 .onChange((value: string): void => {
+                  this.lastDraftSeen = value;
                   this.onDraftChange(value);
                   // 当场问一次（拿到的是上一拍的），再隔一帧问一次拿真值。
                   this.refreshEditorLines();
