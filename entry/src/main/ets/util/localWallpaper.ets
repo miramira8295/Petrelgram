@@ -73,5 +73,16 @@ export function wallpaperFileStillUsed(path: string, paths: string[]): boolean {
 
 // 是不是本应用上传的壁纸文件（聊天的或 APP 的）。用来从沙箱里列出"已上传"那一排。
 export function isUploadedWallpaperFile(name: string): boolean {
+  if (name.endsWith(THUMB_SUFFIX)) {
+    return false;   // 另存的小缩略图不是一张独立的上传壁纸
+  }
   return isLocalWallpaperFile(name) || name.startsWith('app_bg_');
+}
+
+// 上传壁纸旁边那份 ≤512px 缩略图的路径（issue #201 第 7 条）：
+// local_bg_light_123.jpg → local_bg_light_123.thumb.jpg。
+const THUMB_SUFFIX: string = '.thumb.jpg';
+
+export function uploadedThumbPath(path: string): string {
+  return path.endsWith('.jpg') ? `${path.substring(0, path.length - 4)}${THUMB_SUFFIX}` : `${path}${THUMB_SUFFIX}`;
 }

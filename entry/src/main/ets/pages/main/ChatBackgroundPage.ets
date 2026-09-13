@@ -1,3 +1,6 @@
+import { ThumbBatch } from '../../util/thumbBatch';
+import { uploadedThumbPath } from '../../util/localWallpaper';
+import { writeUploadedThumb } from '../../util/wallpaperThumb';
 import { router, promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -84,6 +87,11 @@ struct ChatBackgroundPage {
   // 重传（用户："上传的壁纸互相区域之间应该可以显示，不需要重新传"）。
   @State uploaded: string[] = [];
   @State thumbPaths: Map<string, string> = new Map();
+  // 缩略图到达合批：先攒进 ThumbBatch，50ms 一次落进 thumbPaths（见 util/thumbBatch）。
+  private thumbBatch: ThumbBatch = new ThumbBatch();
+  private thumbFlushTimer: number = -1;
+  // 已上传壁纸 → 它旁边那份小缩略图（有才记；没有就退回原图 + sourceSize）。
+  private uploadedThumbs: Map<string, string> = new Map();
   // 0 = account default mode; non-zero = one chat only. Group/channel chat
   // ids are NEGATIVE — never gate the per-chat branch on chatId > 0.
   private chatId: number = 0;
@@ -107,6 +115,11 @@ struct ChatBackgroundPage {
   aboutToDisappear(): void {
     this.active = false;
     this.sequence++;
+    this.thumbBatch.clear();
+    if (this.thumbFlushTimer !== -1) {
+      clearTimeout(this.thumbFlushTimer);
+      this.thumbFlushTimer = -1;
+    }
   }
 
   private load(): void {
@@ -141,9 +154,15 @@ struct ChatBackgroundPage {
       if (fileId <= 0) { continue; }
       downloadFileToPath(fileId).then((path: string): void => {
         if (!this.active || sequence !== this.sequence || path === '') { return; }
-        const next = new Map(this.thumbPaths);
-        next.set(row.preview.backgroundId, path);
-        this.thumbPaths = next;
+        if (this.thumbBatch.add(row.preview.backgroundId, path)) {
+          this.thumbFlushTimer = setTimeout((): void => {
+            this.thumbFlushTimer = -1;
+            if (!this.active || sequence !== this.sequence) { this.thumbBatch.clear(); return; }
+            const next = new Map(this.thumbPaths);
+            this.thumbBatch.drain().forEach((p: string, k: string): void => { next.set(k, p); });
+            this.thumbPaths = next;
+          }, 50);
+        }
       }).catch((error: TdError): void => {
         logE(`ChatBackgroundPage.thumb ${fileId} failed: ${error.message}`);
       });
@@ -157,6 +176,7 @@ struct ChatBackgroundPage {
     this.loadSlotValues();
     this.loadLocal();
     this.loadUploaded();
+    this.thumbBatch.clear();
     this.thumbPaths = new Map();
     this.load();
   }
@@ -263,11 +283,19 @@ struct ChatBackgroundPage {
       const dir: string = (getContext(this) as common.UIAbilityContext).filesDir;
       const names: string[] = fs.listFileSync(dir);
       const out: string[] = [];
+      const thumbs: Map<string, string> = new Map();
       for (const name of names) {
         if (isUploadedWallpaperFile(name)) {
-          out.push(`${dir}/${name}`);
+          const full: string = `${dir}/${name}`;
+          out.push(full);
+          // 旁边那份 ≤512px 缩略图（导入时另存的；老壁纸没有，退回原图 + sourceSize）。
+          const thumbName: string = uploadedThumbPath(name);
+          if (names.indexOf(thumbName) >= 0) {
+            thumbs.set(full, `${dir}/${thumbName}`);
+          }
         }
       }
+      this.uploadedThumbs = thumbs;
       // 文件名带时间戳，倒序就是"最近上传的排前面"。
       this.uploaded = out.sort().reverse();
     } catch (error) {
@@ -301,7 +329,10 @@ struct ChatBackgroundPage {
       Scroll() {
         Row({ space: 8 }) {
           ForEach(this.uploaded, (path: string) => {
-            Image(`file://${path}`).draggable(false)
+            // 原图是相机原片；有小缩略图用小缩略图，没有也只按 52vp×3 解码
+            // （autoResize 默认 false，不设就是全分辨率解码——闪退根源）。
+            Image(`file://${this.uploadedThumbs.get(path) ?? path}`).draggable(false)
+              .sourceSize({ width: 156, height: 156 }).autoResize(true)
               .width(52).height(52).borderRadius(8).clip(true)
               .objectFit(ImageFit.Cover)
               .border({
@@ -372,6 +403,9 @@ struct ChatBackgroundPage {
       fs.closeSync(src);
       const previous: string = this.localPath;
       this.loadUploaded();
+      writeUploadedThumb(dest).then((thumb: string): void => {
+        if (thumb !== '' && this.active) { this.loadUploaded(); }
+      });
       if (slotIsApp(this.effectiveSlot())) {
         // APP 槽位和聊天槽位存的是同一种数据（序列化的 ChatBackgroundState），
         // 这样原生壁纸和本机图走的是同一条渲染路径。blurred 恒为 true 的理由见
@@ -432,6 +466,11 @@ struct ChatBackgroundPage {
       fs.unlinkSync(path);
     } catch (error) {
       logE(`ChatBackgroundPage.removeQuietly failed: ${error}`);
+    }
+    try {
+      fs.unlinkSync(uploadedThumbPath(path));
+    } catch (_error) {
+      // 老壁纸没有缩略图，删不到是常态。
     }
   }
 
@@ -634,6 +673,7 @@ struct ChatBackgroundPage {
       if (row.preview.kind === 'wallpaper') {
         if ((this.thumbPaths.get(row.preview.backgroundId) ?? '') !== '') {
           Image(`file://${this.thumbPaths.get(row.preview.backgroundId)}`).draggable(false)
+            .autoResize(true)
             .width('100%').height('100%').objectFit(ImageFit.Cover);
         } else {
           Column() {

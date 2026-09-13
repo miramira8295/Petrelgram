@@ -1,8 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   appWallpaperActive, appWallpaperFileName, isLocalWallpaperFile, isUploadedWallpaperFile,
-  localWallpaperFileName, localWallpaperWins, wallpaperFileStillUsed
-} from '../main/ets/util/localWallpaper';
+  localWallpaperFileName, localWallpaperWins, wallpaperFileStillUsed, uploadedThumbPath } from '../main/ets/util/localWallpaper';
 
 export default function localWallpaperTest() {
   describe('localWallpaper', () => {
@@ -70,6 +69,18 @@ export default function localWallpaperTest() {
       expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', false)).assertTrue();
       expect(appWallpaperActive('/data/x/app_bg_dark_1.jpg', true)).assertFalse();
       expect(appWallpaperActive('', false)).assertFalse();
+    });
+
+    // issue #201 第 7 条：上传壁纸另存一份小缩略图，供「已上传」那排显示；
+    // 缩略图不能被当成一张独立的上传壁纸列出来。
+    it('uploaded wallpaper thumb: sibling file, never listed as a wallpaper', 0, () => {
+      expect(uploadedThumbPath('/data/files/local_bg_light_123.jpg'))
+        .assertEqual('/data/files/local_bg_light_123.thumb.jpg');
+      expect(uploadedThumbPath('/data/files/app_bg_dark_9.jpg'))
+        .assertEqual('/data/files/app_bg_dark_9.thumb.jpg');
+      expect(isUploadedWallpaperFile('local_bg_light_123.jpg')).assertTrue();
+      expect(isUploadedWallpaperFile('local_bg_light_123.thumb.jpg')).assertFalse();
+      expect(isUploadedWallpaperFile('app_bg_dark_9.thumb.jpg')).assertFalse();
     });
   });
 }
