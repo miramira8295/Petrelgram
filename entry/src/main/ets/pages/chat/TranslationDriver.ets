@@ -106,6 +106,24 @@ import {
 } from '../../util/deferredTranslation';
 import { markTranslationInstant } from '../../util/translationAnchor';
 import { logE } from '../../util/log';
+import { flushHeldTranslationStatus, pushTranslationStatusHold } from '../../util/translationChannel';
+
+// 翻译的滑动闸总开关（2026-09-14）。false = 回到加闸之前：滑动中照常发请求、
+// 「翻译中/失败」照常当场显示。真机上有问题改这一个常量即可。
+//
+// 为什么要闸：瞬时态会让气泡多一行/少一行，行高一变 List 就重排整个可视窗口；
+// 滑动中请求陆续回来，气泡"长高又缩回"，整屏跟着重测（见 util/translationChannel
+// 文件头的证据）。闸有两半，缺一不可：
+//   · 滑动中不起新请求——drive() 只记下最新区间，停稳后补跑；
+//   · 滑动中不改瞬时态的显示——挡的是"滑动前发出、滑动中回来"的那些。
+export const TRANSLATION_SCROLL_HOLD_ENABLED: boolean = true;
+
+// 滑动中被挡下的那次 drive()：只留最新的区间，停稳后补跑一次。
+interface DeferredDrive {
+  enabled: boolean;
+  startIdx: number;
+  endIdx: number;
+}
 
 // 宿主（ChatPage）暴露给控制器的那一小片接口，全是箭头函数字段——取值器读页面
 // 当下的真值，动作回调把副作用交回页面执行。仿 HeaderIdentitySession 的
@@ -210,6 +228,28 @@ export class TranslationDriver {
   }
 
   private flushTimer: number = -1;
+  // 滑动中挡下的那次 drive（只留最新区间）；停稳后在 onListSettled 里补跑。
+  private deferredDrive: DeferredDrive | null = null;
+  // 瞬时态滑动闸的摘除函数：bind 时挂上，dispose 时摘下（摘下会放出攒着的）。
+  private releaseStatusHold: (() => void) | null = null;
+
+  // 列表停稳（或按下又抬起、中间没滑）时由页面调。顺序有讲究：
+  //   1) 先放出滑动中攒下的瞬时态——气泡在停稳后才长出/收起「翻译中」；
+  //   2) 再补跑滑动中挡下的那次 drive（最新区间），新请求停稳后才发；
+  //   3) 最后落攒下的译文（原有逻辑）。
+  // 仍在动（比如刚停又按下）就什么都不做，下一次停稳再来。
+  onListSettled(): void {
+    if (this.host.listMoving()) {
+      return;
+    }
+    flushHeldTranslationStatus();
+    const deferred: DeferredDrive | null = this.deferredDrive;
+    this.deferredDrive = null;
+    if (deferred !== null) {
+      this.drive(deferred.enabled, deferred.startIdx, deferred.endIdx);
+    }
+    this.flushPending();
+  }
 
   // 列表停稳时由页面调（onFloatDateHidden——翻页闸读的也是这个时刻）。
   // 只记一次锚点，整批落完再补偿，而不是每条补一次。
@@ -296,6 +336,9 @@ export class TranslationDriver {
 
   bind(host: TranslationDriverHost): void {
     this.host = host;
+    if (TRANSLATION_SCROLL_HOLD_ENABLED && this.releaseStatusHold === null) {
+      this.releaseStatusHold = pushTranslationStatusHold((): boolean => this.host.listMoving());
+    }
   }
 
   // ——— 会话重置：路由参数就绪后的初值 ———
@@ -345,6 +388,14 @@ export class TranslationDriver {
   // driveVisibleWork()/handleTimelineScrollIndex()）显式传入
   // this.translateChatsEnabled，本类不缓存这个 @Param。
   drive(enabled: boolean, startIdx: number, endIdx: number): void {
+    // 滑动中不起新请求：请求一发出去，pump() 就会立刻发布「翻译中」，气泡
+    // 当场长高一行。只记下最新区间，停稳后由 onListSettled 补跑。
+    // 快速滑过的区间也就不再白发请求。
+    if (TRANSLATION_SCROLL_HOLD_ENABLED && this.host.listMoving()) {
+      this.deferredDrive = { enabled: enabled, startIdx: startIdx, endIdx: endIdx };
+      return;
+    }
+    this.deferredDrive = null;
     const store: MessageStore | null = this.host.store();
     const groups: AlbumGroup[] = this.host.groups();
     if (!this.active(enabled) || store === null || groups.length === 0) {
@@ -479,5 +530,11 @@ export class TranslationDriver {
   // aboutToDisappear 也确实没有任何 translate* 字段的清理语句。这个方法仍然
   // 保留、仍然被调用，只是为了让本类的 bind/dispose 成对出现，与仓库里其余
   // @ObservedV2 控制器的生命周期约定保持一致。
-  dispose(): void {}
+  dispose(): void {
+    this.deferredDrive = null;
+    if (this.releaseStatusHold !== null) {
+      this.releaseStatusHold();
+      this.releaseStatusHold = null;
+    }
+  }
 }

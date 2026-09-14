@@ -5045,7 +5045,8 @@ export struct ChatPage {
     // 列表停稳了：把滑动期间攒下的译文一次性落。译文改的是布局，滑动中改
     // 就是"边滑边跳"（用户 2026-09-09 实测），见 util/deferredTranslation。
     // 放在翻假**之后**：flushPending 会经 land() 再问一次 listMoving()。
-    this.translation.flushPending();
+    // onListSettled = 放出滑动中攒下的「翻译中/失败」 + 补跑挡下的 drive + 落译文。
+    this.translation.onListSettled();
   }
 
   private prepareUserJump(): void {
@@ -8355,6 +8356,11 @@ export struct ChatPage {
       this.closeBottomPanels();
     } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
       this.listTouchActive = false;
+      // 按下又抬起、中间根本没滑（listUserScrollActive 没翻真）：不会有
+      // onFloatDateHidden，按住那一会儿被翻译滑动闸攒下的状态得在这里放出。
+      if (!this.listUserScrollActive) {
+        this.translation.onListSettled();
+      }
       // 到达绝对顶部后的剩余 active 是边缘回弹。此时 shouldPrimePrependAnchor
       // 会在发布前按住首行，可立即消费已预取页，不必再等完整个回弹周期。
       setTimeout((): void => {
