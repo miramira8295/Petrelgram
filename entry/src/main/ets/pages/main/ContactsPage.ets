@@ -1,4 +1,5 @@
 import { getTdClient } from '../../tdkit/Globals';
+import { flushPendingNavs } from '../../util/pendingNavFlush';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
   surfaceGlassBlurStyle, surfaceGlassFill
@@ -261,6 +262,10 @@ export struct ContactsPage {
     // （openContact），但注册进去之后 profileNav 才能按 tab 参数推进来，
     // 也才有可能在页面之外触发（将来的「联系人」深链）。
     registerStack('contacts', this.contactsStack as NavStackLike);
+    // 栈没注册时被挂起的跳转（冷启动点通知、登录前的深链）在这里放出去。
+    // **延一拍**：官方明确"不建议在 aboutToAppear 中操作栈，此时页面还未构建
+    // 完成"，而这里正是 aboutToAppear。见 util/pendingNav 的事故说明。
+    setTimeout((): void => { flushPendingNavs('contacts'); }, 0);
     // 复位一次再挂树。**复位值取自栈的真实状态，不能一律写 true。**
     //
     // 需要复位是因为 onNavBarStateChange 只在**变化**时触发，不会在页面重建时

@@ -1,4 +1,5 @@
 import { router } from '@kit.ArkUI';
+import { queuePendingNav } from './pendingNav';
 import { NavStackLike, snapshotOf, stackOf, TabKind } from './navStacks';
 import { decidePush, PushOrigin, StackAction, StackFrame } from './splitRouting';
 import { CHAT_TAB_INDEX, KEY_MAIN_TAB } from './chatNav';
@@ -67,15 +68,23 @@ function tabIndexOf(tab: TabKind): number {
 // tab 曾经硬编码成 'chat'。联系人页签自己也成了路由容器之后，平板上「点一个
 // 联系人」要把资料页开在联系人页签的右栏里，而不是切到聊天页签去——同一个
 // 目的地、同一套去重规则，只是落在哪个栈上不同，所以是加参数而不是抄一份。
+export function replayProfileNav(
+  destName: string, params: Record<string, Object>, origin: PushOrigin, tab: TabKind
+): void {
+  pushInto(destName, '', params, origin, tab);
+}
+
 function pushInto(destName: string, fallbackUrl: string,
     params: Record<string, Object> | undefined, origin: PushOrigin, tab: TabKind): void {
   const stack: NavStackLike | undefined = stackOf(tab);
   if (stack === undefined) {
-    // 栈还没注册（冷启动早期，ChatListPage 尚未挂树）时的回退。这四个页面
-    // 已从 main_pages.json 摘出，整页路由多半也跳不动——保留这一支不是指望它
-    // 成功，而是不让失败变成静默无操作：日志里能看见。
-    router.pushUrl({ url: fallbackUrl, params: params }).catch((e: Error): void => {
-      logE(`profileNav fallback pushUrl ${fallbackUrl} failed: ${e.message}`);
+    // 栈还没注册（冷启动早期，页面尚未挂树）。这四个页面都已从 main_pages.json
+    // 摘出，原来那句 router.pushUrl 不是"多半跳不动"而是**必然**跳不动，且会让
+    // 系统弹一句"无法识别的链接"。改成挂起，等对应页签的栈注册好再重放。
+    AppStorage.setOrCreate<number>(KEY_MAIN_TAB, tabIndexOf(tab));
+    queuePendingNav({
+      tab: tab, kind: `profile:${destName}`, dest: destName,
+      params: params ?? {} as Record<string, Object>, origin: origin
     });
     return;
   }

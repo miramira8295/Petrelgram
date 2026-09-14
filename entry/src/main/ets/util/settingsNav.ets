@@ -1,4 +1,5 @@
-import { logE } from './log';
+import { logE, logW } from './log';
+import { queuePendingNav } from './pendingNav';
 import { decidePush, PushOrigin, StackAction, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 import { KEY_MAIN_TAB } from './chatNav';
@@ -61,8 +62,17 @@ export function navigateToSetting(
 ): boolean {
   const stack: NavStackLike | undefined = stackOf('settings');
   if (stack === undefined) {
-    logE(`navigateToSetting(${dest}): settings stack not registered`);
-    return false;
+    // 设置页签的栈要等 SettingsPage 挂树才注册（Tabs 的子页是首次显示时才建），
+    // 所以登录前/冷启动早期的深链会落到这里。原来只能返回 false 让调用方提示
+    // "请从底部栏进设置"；现在挂起 + 把页签切过去，页面一挂树就重放。
+    logW(`navigateToSetting(${dest}): settings stack not registered, queued`);
+    AppStorage.setOrCreate<number>(KEY_MAIN_TAB, SETTINGS_TAB_INDEX);
+    queuePendingNav({
+      tab: 'settings', kind: `settings:${dest}`, dest: dest,
+      params: param !== undefined ? { 'param': param } : {} as Record<string, Object>,
+      origin: origin
+    });
+    return true;
   }
   // 推进去的是**设置页签的栈**，所以必须先确保设置页签是当前页签——否则子页
   // 推进去了却在屏幕外（深链可能在任何页签上被点开）。同值不写：setOrCreate

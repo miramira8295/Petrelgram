@@ -1,4 +1,5 @@
 import { UnreadBadgeCounts } from '../../util/unreadBadgeRule';
+import { flushPendingNavs } from '../../util/pendingNavFlush';
 import { getFolderStore, getUnreadCountStore, getChatStore, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { FolderInfo } from '../../store/FolderStore';
@@ -391,6 +392,10 @@ export struct ChatListPage {
     // 深链、通知点击、账号切换都在页面之外触发跳转，拿不到组件上下文，
     // 只能靠全局注册表取栈。见 util/navStacks.ets 的说明。
     registerStack('chat', this.chatStack as NavStackLike);
+    // 栈没注册时被挂起的跳转（冷启动点通知、登录前的深链）在这里放出去。
+    // **延一拍**：官方明确"不建议在 aboutToAppear 中操作栈，此时页面还未构建
+    // 完成"，而这里正是 aboutToAppear。见 util/pendingNav 的事故说明。
+    setTimeout((): void => { flushPendingNavs('chat'); }, 0);
     // 复位一次再挂树。**复位值取自栈的真实状态，不能一律写 true。**
     //
     // 需要复位是因为 onNavBarStateChange 只在**变化**时触发，不会在页面重建时

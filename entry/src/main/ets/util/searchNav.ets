@@ -9,6 +9,7 @@
 // 形状与 util/chatNav、util/profileNav 一致：拿不到栈就退回整页路由（那种情况
 // 只有页签树还没建好，比如从通知冷启动直接进来）。
 import { router } from '@kit.ArkUI';
+import { queuePendingNav } from './pendingNav';
 import { NavStackLike, stackOf } from './navStacks';
 import { CHAT_TAB_INDEX, KEY_MAIN_TAB } from './chatNav';
 import { logE } from './log';
@@ -19,8 +20,12 @@ export const SEARCH_PAGE_URL: string = 'pages/search/GlobalSearchPage';
 export function navigateToSearch(params?: Record<string, Object>): void {
   const stack: NavStackLike | undefined = stackOf('chat');
   if (stack === undefined) {
-    router.pushUrl({ url: SEARCH_PAGE_URL, params: params }).catch((e: Object): void => {
-      logE(`searchNav.pushUrl failed: ${JSON.stringify(e)}`);
+    // 同 chatNav：GlobalSearchPage 已从 main_pages.json 摘出，整页路由跳不动。
+    // 挂起，等聊天页签的栈注册好再重放。
+    AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
+    queuePendingNav({
+      tab: 'chat', kind: 'search', dest: SEARCH_DEST_NAME,
+      params: params ?? {} as Record<string, Object>, origin: 'navbar'
     });
     return;
   }

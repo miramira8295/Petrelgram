@@ -1,5 +1,5 @@
 import { KEY_FORCE_SINGLE_COLUMN } from '../store/AppSettings';
-import router from '@ohos.router';
+import { queuePendingNav } from './pendingNav';
 import { requestChatJump } from './chatJumpChannel';
 import { logE } from './log';
 import { canPrefetchChat, prefetchInitialPage } from './chatPrefetch';
@@ -11,16 +11,14 @@ import { isSplitLayout } from './splitMetrics';
 import { setChatListRenderActive } from './chatListRenderGate';
 import { routeTopicId } from './messageTopicScope';
 
-// 聊天详情页的路由地址。此前十个调用点各自写了一遍这个字符串，也各自
-// 直接 pushUrl——谁也不检查栈里是否已经有一个同会话的详情页，于是通知、
-// 消息里的群组链接、搜索结果三条路都能把同一个群叠出好几层。
-export const CHAT_PAGE_URL: string = 'pages/chat/ChatPage';
-const CHAT_PAGE_NAME: string = 'ChatPage';
-
-// 路由表（router_map.json）里注册的名字。与 CHAT_PAGE_NAME 同值不是巧合：
-// router 时代的页面名和 NavDestination 名都取自同一个文件名，但两者的用途
-// 不同（一个是 router 栈里的 name，一个是路由表条目），分开写以免哪天改一个
-// 就把另一个也带歪。
+// 聊天详情页目的地的名字。此前十个调用点各自写了一遍这个字符串、各自直接
+// pushUrl——谁也不检查栈里是否已经有一个同会话的详情页，于是通知、消息里的
+// 群组链接、搜索结果三条路都能把同一个群叠出好几层。
+//
+// 2026-09-14：router 时代的那一半（CHAT_PAGE_URL / snapshotRoutes /
+// findChatRouteIndex / navigateToChatViaRouter）连同"栈没注册就整页路由"的
+// 回退一起退役了——ChatPage 早已从 main_pages.json 摘出，那条回退必然失败。
+// 现在走挂起重放，见 util/pendingNav。
 export const CHAT_DEST_NAME: string = 'ChatPage';
 
 // MainScreen 的当前页签下标，@StorageLink('mainTabIndex') 双向绑定，外部写入由
@@ -31,36 +29,11 @@ export const KEY_MAIN_TAB: string = 'mainTabIndex';
 // SettingsPage / MyProfilePage。
 export const CHAT_TAB_INDEX: number = 0;
 
-// 不关心跳转结果的调用点用它收尾。navigateToChat 现在**会 reject**（回退的
-// 整页路由真失败时），而 ArkTS 里被丢弃的 rejection 会冒到全局去，所以每个
+// 不关心跳转结果的调用点用它收尾。navigateToChat 的签名仍是 Promise（26 个
+// 调用点接着它），而 ArkTS 里被丢弃的 rejection 会冒到全局去，所以每个
 // 即发即忘的调用点都必须显式收掉——收法只有这一种，抽出来省得抄二十几遍。
 export function logChatNavFailure(e: Error): void {
   logE(`navigateToChat failed: ${e.message}`);
-}
-
-// 路由栈的一层，抽成纯数据是为了让去重规则可以脱离 router 单测。
-export interface RouteSnapshot {
-  index: number;
-  name: string;
-  path: string;
-  chatId: number;
-  topicId: number;
-}
-
-// 栈里承载该会话的详情页下标，0 表示没有——router 的下标从 1 开始，所以
-// 0 是个安全的"无"。有多层匹配时返回最靠上的一层：回退到更深的一层会把
-// 中间那些页面一起弹掉。
-export function findChatRouteIndex(stack: RouteSnapshot[], chatId: number, topicId: number): number {
-  let found: number = 0;
-  for (const r of stack) {
-    if (r.name !== CHAT_PAGE_NAME || r.chatId !== chatId || r.topicId !== topicId) {
-      continue;
-    }
-    if (r.index > found) {
-      found = r.index;
-    }
-  }
-  return found;
 }
 
 function numberField(params: Object | undefined, key: string): number {
@@ -72,29 +45,6 @@ function numberField(params: Object | undefined, key: string): number {
   return raw === undefined ? 0 : raw;
 }
 
-// 当前路由栈的快照。getLength 返回的是字符串（不是笔误，SDK 就这么定义的），
-// 且 getStateByIndex 对越界返回 undefined，两处都得防。
-function snapshotRoutes(): RouteSnapshot[] {
-  const out: RouteSnapshot[] = [];
-  const depth = Number(router.getLength());
-  if (!Number.isFinite(depth) || depth <= 0) {
-    return out;
-  }
-  for (let i = 1; i <= depth; i++) {
-    const st = router.getStateByIndex(i);
-    if (st === undefined) {
-      continue;
-    }
-    out.push({
-      index: st.index,
-      name: st.name,
-      path: st.path,
-      chatId: numberField(st.params, 'chatId'),
-      topicId: routeTopicId(st.params as Record<string, Object> | undefined)
-    });
-  }
-  return out;
-}
 
 // 会话的实例键：param 里塞的是 chatId / forumTopicId 两个数字。注意话题字段
 // 叫 forumTopicId 而不是 topicId——十来个调用点塞的都是这个名字，别改。
@@ -104,32 +54,6 @@ function chatFrameKey(name: string, param: Object | undefined): string {
   }
   return chatKey(numberField(param, 'chatId'),
     routeTopicId(param as Record<string, Object> | undefined));
-}
-
-// 迁移前的整页路由回退。栈还没注册时（冷启动早期，ChatListPage 尚未挂树）
-// 走这条，行为与迁移前完全一致——含 findChatRouteIndex 的同会话去重。
-function navigateToChatViaRouter(params: Record<string, Object>): Promise<void> {
-  const chatId = numberField(params, 'chatId');
-  const topicId = routeTopicId(params);
-  if (chatId !== 0) {
-    let existing: number = 0;
-    try {
-      existing = findChatRouteIndex(snapshotRoutes(), chatId, topicId);
-    } catch (e) {
-      // 路由栈读不到不该连累跳转本身——退化成老行为（新开一页）即可。
-      const err = e as Error;
-      logE(`chatNav.snapshot failed: ${err.message}`);
-    }
-    if (existing > 0) {
-      // back 带上新参数，已经在栈里的那一页可以据此跳到指定消息。
-      router.back(existing, params);
-      return Promise.resolve();
-    }
-  }
-  // 这里**不再**吞掉失败：整页路由跳不动是真正的"会话打不开"，调用方
-  // （比如 NewGroupPage 建完群要据此决定是弹掉自己还是报错）需要知道。
-  // 即发即忘的调用点用 logChatNavFailure 自行收尾。
-  return router.pushUrl({ url: CHAT_PAGE_URL, params: params });
 }
 
 // 打开会话详情页。这是**所有**会话入口的唯一漏斗（通知、深链、搜索结果、
@@ -180,8 +104,17 @@ export function navigateToChat(
   startInitialPagePrefetch(params);
   const stack: NavStackLike | undefined = stackOf('chat');
   if (stack === undefined) {
-    // 回退走的是整页 router，不依赖页签，所以下面那句切页签不能提到这上面来。
-    return navigateToChatViaRouter(params);
+    // 栈还没注册（冷启动那一瞬：Index 在 stage 刚变 Ready 的同一拍就消费通知，
+    // 而 MainScreen 只画在 Ready 分支里，ChatListPage 还没挂树）。
+    //
+    // **不再退回整页 router**：ChatPage 已从 main_pages.json 摘出，那条路必然
+    // 失败，而且是系统弹一句"无法识别的链接"——用户报的正是这个。挂起，等
+    // ChatListPage 注册完栈再重放（util/pendingNav）。
+    AppStorage.setOrCreate<number>(KEY_MAIN_TAB, CHAT_TAB_INDEX);
+    queuePendingNav({
+      tab: 'chat', kind: 'chat', dest: CHAT_DEST_NAME, params: params, origin: origin
+    });
+    return Promise.resolve();
   }
   // 推进去的是**聊天页签的栈**，所以必须先确保聊天页签是当前页签——否则会话
   // 推进去了却在屏幕外。从联系人页签建群（ContactsPage → NewGroupPage）、停在

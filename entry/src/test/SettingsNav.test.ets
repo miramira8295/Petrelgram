@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from '@ohos/hypium';
 import { navigateToSetting, settingFrameKey } from '../main/ets/util/settingsNav';
+import { clearPendingNavs, takePendingNavs, PendingNav } from '../main/ets/util/pendingNav';
 import { NavPathInfoLike, NavStackLike, registerStack, resetStacksForTest } from '../main/ets/util/navStacks';
 
 // 设置栈的最小替身：只记名字，够 navigateToSetting 判定与落栈用。
@@ -58,8 +59,16 @@ export default function settingsNavTest(): void {
       expect(stack.names.length).assertEqual(2);
     });
 
-    it('设置栈未注册时返回 false（调用方据此提示，不回退 router）', 0, (): void => {
-      expect(navigateToSetting('ActiveSessionsPage', undefined, 'content')).assertFalse();
+    // 2026-09-14 契约变更：栈没注册不再算失败。目标页早就不在 main_pages.json
+    // 里，回退 router 必然失败（系统弹"无法识别的链接"）；现在挂起 + 切页签，
+    // SettingsPage 一挂树就重放，所以返回 true 并且队列里多一条。
+    it('设置栈未注册时挂起而不是失败', 0, (): void => {
+      clearPendingNavs();
+      expect(navigateToSetting('ActiveSessionsPage', undefined, 'content')).assertTrue();
+      const queued: PendingNav[] = takePendingNavs('settings');
+      expect(queued.length).assertEqual(1);
+      expect(queued[0].dest).assertEqual('ActiveSessionsPage');
+      expect(queued[0].origin).assertEqual('content');
     });
 
     it('无参数的设置子页键恒为空串（单例语义）', 0, (): void => {
