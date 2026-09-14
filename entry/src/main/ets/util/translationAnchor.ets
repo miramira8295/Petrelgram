@@ -1,9 +1,9 @@
 // 译文到货时怎么保住阅读位置。判据在这里，位移计算复用 util/anchorRestore。
 //
-// 【问题】译文让气泡变高。列表的锚定方式由 util/stackFromEnd 决定：
+// 【问题】译文让气泡变高，而行在视口里变高推的是它**下面**的内容：
 //
-//   · 已到实时尾部（底部锚定）→ 行变高时上方内容自然上移、**底部钉住**，
-//     正是想要的；
+//   · 已到实时尾部 → 要的是底部钉住、气泡向上长。可滚动列表不开 stackFromEnd，
+//     列表自己不会钉——由 util/translationGrowthPin 在变高的那一次刷新里钉；
 //   · 停在未读/上次阅读位置（顶部锚定，hasMoreNewer=true）→ 行变高是把**它
 //     下面的**内容往下推。视口上方那些行一变高，用户正在看的那条就往下漂。
 //
@@ -15,7 +15,7 @@
 // 220ms 的 animateTo 长出来的，那 220ms 里内容一直在往下漂，补偿只能在结束时
 // 才把它拽回来——先漂后弹，比原来的硬切更难看。所以两种情形各用各的办法：
 //
-//   底部锚定 → 动画（本来就没有锚点问题，补间纯赚）
+//   贴底     → 动画，钉底与行高补间在同一次布局里（util/translationGrowthPin）
 //   顶部锚定 → 即时应用 + 下一帧抵消（位移在同一帧被吃掉，看不见）
 
 // 哪些消息这一次要「不做动画、直接落」。
@@ -51,7 +51,7 @@ export function clearTranslationInstant(): void {
 }
 
 // 该不该为这次译文到货保锚点。
-// 底部锚定不需要（列表自己就是对的）；行号不新鲜时不做（拿旧行号去量会量错行，
+// 贴底时不在这里保（钉底归 util/translationGrowthPin）；行号不新鲜时不做（拿旧行号去量会量错行，
 // 与 anchorIndexFresh 的既有守卫同一理由）。
 export function shouldHoldTranslationAnchor(atBottom: boolean, indexFresh: boolean): boolean {
   return !atBottom && indexFresh;

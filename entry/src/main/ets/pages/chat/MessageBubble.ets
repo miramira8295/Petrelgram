@@ -65,6 +65,7 @@ import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
+import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import { translationReplacesOriginal } from '../../util/translationMode';
 import {
   overlayBackdropBlur, containerBlur, overlayGlassFill, overlayMaterial
@@ -556,7 +557,11 @@ export struct MessageBubble {
     // 所以行不会因为它们重建——这里自己订阅自己更新。
     this.translationStatus = translationStatusFor(message.id);
     this.unsubTranslation = subscribeTranslationStatus(message.id,
-      (next: TranslationStatus | null): void => { this.translationStatus = next; });
+      (next: TranslationStatus | null): void => {
+        this.translationStatus = next;
+        // 「翻译中」一行出现/消失会改行高：贴底时同一帧钉住底部（util/translationGrowthPin）。
+        pinForTranslationGrowth(this.data.chatId);
+      });
     this.livePhotoProgress = progressForOr(message.photoFileId, message.photoProgress);
     this.liveLinkPhotoProgress = progressForOr(
       message.linkPhotoFileId, message.linkPhotoProgress);

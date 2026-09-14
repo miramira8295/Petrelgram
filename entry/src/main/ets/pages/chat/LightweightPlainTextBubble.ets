@@ -32,6 +32,7 @@ import { str } from '../../util/strings';
 import {
   subscribeTranslationStatus, TranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
+import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import {
   accentSoft, AVATAR_PALETTE, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT,
   COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, bubbleTextFor
@@ -447,7 +448,11 @@ export struct LightweightPlainTextBubble {
     this.unsubSend = subscribeSendState(message.rowId,
       (state: string): void => { this.liveSendState = state; });
     this.unsubTranslation = subscribeTranslationStatus(message.id,
-      (next: TranslationStatus | null): void => { this.translationStatus = next; });
+      (next: TranslationStatus | null): void => {
+        this.translationStatus = next;
+        // 「翻译中」一行出现/消失会改行高：贴底时同一帧钉住底部（util/translationGrowthPin）。
+        pinForTranslationGrowth(this.chatId);
+      });
   }
 
   // 先读通道现值，没有才用 @Prop 带来的初值（滚回历史消息时不会有新的发布）。

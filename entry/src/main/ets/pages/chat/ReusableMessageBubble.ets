@@ -8,6 +8,7 @@ import {
 import { probeHit } from '../../util/panelProbe';
 import { TranslationPresentation, translationLanded } from '../../util/translationLanding';
 import { takeTranslationInstant } from '../../util/translationAnchor';
+import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import {
   TRANSLATION_FADE_IN_MS, TRANSLATION_FADE_LOW, TRANSLATION_FADE_OUT_MS
 } from '../../util/deferredTranslation';
@@ -318,6 +319,7 @@ export struct ReusableMessageBubble {
     // 判据与点名见 util/translationAnchor。
     if (takeTranslationInstant(next.head.id)) {
       this.liveGroup = next;
+      pinForTranslationGrowth(this.data.chatId);
       return;
     }
     // 先淡出、换内容、再淡入。
@@ -341,6 +343,9 @@ export struct ReusableMessageBubble {
         }, (): void => {
           this.liveGroup = next;
           this.translationFade = 1;
+          // 贴底时就在这一次布局里钉住底部：行高补间和列表跳到末尾走同一条
+          // 曲线，气泡向上长（util/translationGrowthPin）。
+          pinForTranslationGrowth(this.data.chatId);
         });
       }
     }, (): void => { this.translationFade = TRANSLATION_FADE_LOW; });

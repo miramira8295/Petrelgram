@@ -124,6 +124,7 @@ import { membershipLosesComposer } from '../../util/membershipState';
 import {
   TRANSLATION_ANCHOR_SETTLE_MS, clearTranslationInstant, shouldHoldTranslationAnchor
 } from '../../util/translationAnchor';
+import { registerTranslationGrowthPin, translationGrowthPinWanted } from '../../util/translationGrowthPin';
 import {
   APPEND_ANCHOR_RESTORE_BYPASSED,
   newerPageIsUserDriven, shouldHoldAppendAnchor, useUserDrivenAppendMark
@@ -2625,6 +2626,8 @@ export struct ChatPage {
   private translationAnchorIdx: number = -1;
   private translationAnchorY: number = 0;
   private translationAnchorTimer: number = -1;
+  // 译文让行变高时的钉底分发（util/translationGrowthPin）；aboutToDisappear 摘掉。
+  private unregisterTranslationGrowthPin: (() => void) | null = null;
 
   private navParams: Record<string, Object> | undefined = undefined;
   private navigationCoordinator: ChatPageNavigationCoordinator =
@@ -2837,6 +2840,13 @@ export struct ChatPage {
     });
     // 上一批点名（"这几条直接落、不做动画"）不该跨会话留着。
     clearTranslationInstant();
+    // 停在最底下时译文/「翻译中」让行变高：行在变高的那一次刷新里叫这里钉底，
+    // 气泡向上长（为什么现有的贴底跟随接不住，见 util/translationGrowthPin）。
+    if (this.unregisterTranslationGrowthPin === null) {
+      this.unregisterTranslationGrowthPin = registerTranslationGrowthPin((chatId: number): void => {
+        this.pinBottomForTranslationGrowth(chatId);
+      });
+    }
     // "正在输入…" 提示控制器接上宿主（B10）。currentKind 转发 B8
     // HeaderIdentitySession.currentKind()——本类不得直接持有 header 控制器的
     // 引用，也不得用 isGroup 之类的近似值顶替。
@@ -4349,6 +4359,10 @@ export struct ChatPage {
     // this.store === store 判陈旧），dispose() 是空实现，仅为与其余控制器
     // 统一 bind/dispose 生命周期而保留、调用。
     this.translation.dispose();
+    if (this.unregisterTranslationGrowthPin !== null) {
+      this.unregisterTranslationGrowthPin();
+      this.unregisterTranslationGrowthPin = null;
+    }
     // 头插分批的续发定时器（util/prependChunker）。
     this.prependChunker.dispose();
     // 附件面板分发簇的退场（B12）。逐行核对过原 aboutToDisappear 全链路七个
@@ -5041,6 +5055,24 @@ export struct ChatPage {
     // 是非零的。真机上验完就删。
     logW(`[TransAnchor] idx=${idx} dy=${dy.toFixed(1)}`);
     this.scroller.scrollBy(0, dy);
+  }
+
+  // 贴底时行因翻译变高：同一次刷新里钉住底部（判据在 util/translationGrowthPin）。
+  private pinBottomForTranslationGrowth(chatId: number): void {
+    if (chatId !== this.chatId || !translationGrowthPinWanted({
+      pageVisible: this.pageVisible,
+      didInitialScroll: this.didInitialScroll,
+      atBottom: this.atBottom,
+      followPending: this.bottomFollowPending,
+      stayAtUnread: this.stayAtUnread,
+      touchActive: this.listTouchActive,
+      scrollActive: this.timelineScrollActive,
+      viewerOpen: this.viewerOpen(),
+      hasMoreNewer: this.store !== null && this.store.getHasMoreNewer()
+    })) {
+      return;
+    }
+    this.glueBottom('translationGrowth');
   }
 
   private anchorItemY(index: number): number {

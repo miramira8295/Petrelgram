@@ -45,7 +45,7 @@ export default function translationAnchorTest() {
       expect(takeTranslationInstant(1)).assertFalse();
     });
 
-    it('贴底时不保锚点，交给列表自己', 0, (): void => {
+    it('贴底时不保锚点，钉底另有人管', 0, (): void => {
       expect(shouldHoldTranslationAnchor(true, true)).assertFalse();
     });
 
