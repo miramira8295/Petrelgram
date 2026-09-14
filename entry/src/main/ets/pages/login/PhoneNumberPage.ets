@@ -1,4 +1,5 @@
 import { router } from '@kit.ArkUI';
+import { logE } from '../../util/log';
 import {
   canReturnToPreviousTdAccount, getAuthService, returnToPreviousTdAccount, waitForConnection
 } from '../../tdkit/Globals';
@@ -321,7 +322,11 @@ export struct PhoneNumberPage {
         .justifyContent(FlexAlign.Center)
         .enabled(!this.busy)
         .onClick((): void => {
-          router.pushUrl({ url: 'pages/main/ProxyPage' });
+          // ProxyPage 已经是 NavDestination，登录阶段没有任何 Navigation 能
+          // 承载它——走 LoginProxyPage 这个外壳（见那个文件的说明）。
+          router.pushUrl({ url: 'pages/login/LoginProxyPage' }).catch((e: Error): void => {
+            logE(`PhoneNumberPage.openProxy failed: ${e.message}`);
+          });
         });
 
         if (canReturnToPreviousTdAccount()) {

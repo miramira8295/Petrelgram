@@ -24,6 +24,7 @@
     "pages/story/StoryViewerPage",
     "pages/profile/MemberRestrictPage",
     "pages/profile/MemberPromotePage",
-    "pages/share/SharePanel"
+    "pages/share/SharePanel",
+    "pages/login/LoginProxyPage"
   ]
 }
