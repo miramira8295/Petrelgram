@@ -1,5 +1,10 @@
 import lottie, { AnimationItem } from '@ohos/lottie';
 import { gunzipTgs } from '../../util/gunzipTgs';
+import { tgsPowerSuspended } from '../../util/tgsPowerGate';
+import {
+  subscribeChatAnimationGate, setChatAnimationSuspended, wakeChatAnimationListeners
+} from '../../util/chatAnimationGate';
+import { TgsNativeStickerView } from './TgsNativeStickerView';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { probeHit } from '../../util/panelProbe';
 import { logE, logW } from '../../util/log';
@@ -8,6 +13,11 @@ import { logE, logW } from '../../util/log';
 // cells (40+) redrawing canvases every frame stutters badly. Cells over the
 // cap render their static thumbnail; scrolling releases slots so fresh cells
 // animate again.
+// 总开关：TGS 走原生渲染（rlottie，见 TgsNativeStickerView）。
+// 一键回退到下面这整套 lottie 实现——真机上万一有问题，改这一个常量即可，
+// 不必回滚代码。原生那支自己失败时也会退回来（onFailed）。
+export const TGS_NATIVE_ENABLED: boolean = true;
+
 const MAX_LIVE_TGS: number = 14;
 // A chat row is much larger than a picker cell and competes with message-list
 // layout. Four live canvases cover a normal viewport while keeping Lottie's
@@ -21,47 +31,6 @@ let tgsNextStartAt: number = 0;
 
 let liveTgs: number = 0;
 let liveChatTgs: number = 0;
-
-type ChatTgsGateListener = (suspended: boolean) => void;
-let chatTgsSuspended: boolean = false;
-let chatTgsGateListeners: ChatTgsGateListener[] = [];
-
-// ChatPage drives this directly from navigation, initial row staging and list
-// scrolling. A tiny module channel avoids putting a high-frequency scroll flag
-// into every MessageBubble's @Prop tree.
-export function setChatTgsSuspended(suspended: boolean): void {
-  if (chatTgsSuspended === suspended) {
-    return;
-  }
-  chatTgsSuspended = suspended;
-  for (const listener of chatTgsGateListeners) {
-    listener(suspended);
-  }
-}
-
-// 名额腾出来了：叫醒因为超预算被推迟的视图。没有这一步，第 MAX_LIVE_CHAT_TGS+1
-// 张起的贴纸会一直停在「推迟」——没缩略图就是空白加转圈，只有重进聊天页才重来。
-// 只在门开着时广播；各视图的监听器自己判断"正在播的不动、推迟的才重试"。
-function notifyChatTgsSlotFreed(): void {
-  if (chatTgsSuspended) {
-    return;
-  }
-  for (const listener of chatTgsGateListeners) {
-    listener(false);
-  }
-}
-
-// 导出给 SmartLoopVideo 用：GIF 也要跟着滑动闸暂停（用户 2026-09-07：
-// 「GIF 在滑动的时候应该和贴纸一样，暂停」）。
-// TODO 这道闸其实已经不只属于贴纸了，将来该搬进 util/chatScrollGate。
-export function subscribeChatTgsGate(listener: ChatTgsGateListener): () => void {
-  chatTgsGateListeners = [...chatTgsGateListeners, listener];
-  listener(chatTgsSuspended);
-  return (): void => {
-    chatTgsGateListeners = chatTgsGateListeners.filter(
-      (candidate: ChatTgsGateListener): boolean => candidate !== listener);
-  };
-}
 
 // Plays a Telegram TGS sticker (gzipped Lottie JSON) on a Canvas via
 // @ohos/lottie. On any decode failure it renders the raster thumbnail instead.
@@ -87,6 +56,8 @@ export struct TgsStickerView {
   private env: ChatEnvMirror = chatEnv;
   @Local failed: boolean = false;
   @Local private budgetDeferred: boolean = false;
+  // 原生渲染那支报了失败：本组件退回 lottie。一次性的，不再往回切。
+  @Local private nativeFailed: boolean = false;
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private anim: AnimationItem | null = null;
@@ -147,7 +118,7 @@ export struct TgsStickerView {
     if (this.holdsChatSlot) {
       liveChatTgs--;
       this.holdsChatSlot = false;
-      notifyChatTgsSlotFreed();
+      wakeChatAnimationListeners();
     }
     if (this.anim !== null) {
       this.anim.destroy();
@@ -159,7 +130,7 @@ export struct TgsStickerView {
     probeHit('tgs.mount');
     this.disposed = false;
     if (this.chatTimeline && this.unsubChatGate === null) {
-      this.unsubChatGate = subscribeChatTgsGate((suspended: boolean): void => {
+      this.unsubChatGate = subscribeChatAnimationGate((suspended: boolean): void => {
         this.chatGateSuspended = suspended;
         if (suspended) {
           // 滑动期间只暂停、不销毁（issue #164）。原来走 stopAnim() → destroy()，
@@ -299,23 +270,9 @@ export struct TgsStickerView {
     }
   }
 
+  // 判据搬到了 util/tgsPowerGate：原生渲染那支要用同一份。
   private powerSuspended(): boolean {
-    if (this.env.powerSaving || this.env.reduceAnim) {
-      return true;
-    }
-    if (this.powerCategory === 'emojiPicker') {
-      return !this.env.animatedEmoji;
-    }
-    if (this.powerCategory === 'emojiStatus' || this.powerCategory === 'emoji') {
-      return !this.env.animatedEmoji || !this.env.emojiStatus;
-    }
-    if (this.powerCategory === 'emojiReaction') {
-      return !this.env.animatedEmoji || !this.env.emojiReactions;
-    }
-    if (this.powerCategory === 'emojiChat') {
-      return !this.env.animatedEmoji || !this.env.emojiChat;
-    }
-    return !this.env.stickers || !this.env.stickerAutoplay;
+    return tgsPowerSuspended(this.env, this.powerCategory);
   }
 
   private animationSuspended(): boolean {
@@ -323,9 +280,31 @@ export struct TgsStickerView {
       (this.chatTimeline && this.chatGateSuspended);
   }
 
+  private useNative(): boolean {
+    return TGS_NATIVE_ENABLED && !this.nativeFailed;
+  }
+
   build() {
     Stack() {
-      if (this.powerSuspended()) {
+      if (this.useNative() && !this.powerSuspended()) {
+        // 原生渲染。lottie 那套（名额、错峰、gunzip+JSON.parse）整个不参与：
+        // 下面所有 scheduleStart 的调用点都以 canvasReady 为前提，而那块
+        // Canvas 在这一支里根本不挂树。
+        TgsNativeStickerView({
+          tgsPath: this.tgsPath,
+          thumbPath: this.thumbPath,
+          boxWidth: this.boxWidth,
+          boxHeight: this.boxHeight,
+          powerCategory: this.powerCategory,
+          chatTimeline: this.chatTimeline,
+          playOnce: this.playOnce,
+          loop: this.playOnce ? false : (this.powerCategory === 'sticker' ? this.env.stickerLoop : true),
+          onFailed: (): void => {
+            logW('TgsStickerView: native render failed, falling back to lottie');
+            this.nativeFailed = true;
+          }
+        });
+      } else if (this.powerSuspended()) {
         if (this.thumbPath !== '') {
           Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
             .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);

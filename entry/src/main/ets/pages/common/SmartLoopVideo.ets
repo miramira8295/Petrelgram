@@ -1,7 +1,7 @@
 import { AvLoopVideo } from './AvLoopVideo';
 import { WebmStickerView } from '../chat/WebmStickerView';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
-import { subscribeChatTgsGate } from '../chat/TgsStickerView';
+import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
 import { logW } from '../../util/log';
 
 // One-time probe verdict for VP9/WEBM on the system AVPlayer:
@@ -51,7 +51,7 @@ export struct SmartLoopVideo {
       this.useIjk = true;
     }
     if (this.scrollGated && this.unsubGate === null) {
-      this.unsubGate = subscribeChatTgsGate((suspended: boolean): void => {
+      this.unsubGate = subscribeChatAnimationGate((suspended: boolean): void => {
         if (this.scrollPaused !== suspended) {
           this.scrollPaused = suspended;
         }

@@ -331,7 +331,12 @@ export function demuxWebmAlpha(data: Uint8Array): WebmAlphaClip | null {
       }
     }
   }
-  if (track === null || !track.hasAlpha || !track.isVp9) {
+  // **不带 alpha 的也收**（2026-09-14）：原来这里一律退回 ijkplayer，理由是
+  // "不透明贴纸在播放器上画得没错"。代价是每张不透明贴纸常驻一个原生播放器
+  // 实例（一次面板切换要销毁+新建十几个，注释见 WebmStickerView）。现在解码
+  // 链路对两者是同一条，只是 alpha 平面恒 255，于是贴纸统一走帧序列。
+  // 不是 VP9 的仍然退回：随包的 libvpx 只编了 VP9 解码器。
+  if (track === null || !track.isVp9) {
     return null;
   }
   let scaleNs = DEFAULT_TIMESTAMP_SCALE;
@@ -362,9 +367,12 @@ export function demuxWebmAlpha(data: Uint8Array): WebmAlphaClip | null {
   if (frames.length === 0) {
     return null;
   }
-  // 每一帧都必须带 alpha：缺一帧就意味着那一帧要用不透明兜底，画面会闪。
+  // **要么每一帧都带 alpha，要么一帧都不带。** 混着来就意味着有几帧要拿不
+  // 透明兜底，画面会闪——那种整段回退给播放器。
+  // 判据取自轨道声明（AlphaMode=1）：声明了却缺帧是文件坏了；没声明就是一段
+  // 普通的不透明 VP9，照样走帧序列（alpha 恒 255，见 webm_alpha.cpp）。
   for (const f of frames) {
-    if (f.alpha === null) {
+    if ((f.alpha !== null) !== track.hasAlpha) {
       return null;
     }
   }
@@ -406,22 +414,33 @@ export function packAlphaStreams(frames: WebmAlphaFrame[], frameStep: number): A
   if (frames.length === 0 || frameStep < 1) {
     return null;
   }
+  // 第一帧有没有 alpha 决定整段怎么打包。**中途变卦的不收**：半段带 alpha
+  // 半段不带，两路的帧数就对不上，原生按序号配对会错位。
+  const hasAlpha: boolean = frames[0].alpha !== null && frames[0].alpha.length > 0;
   const color: Uint8Array[] = [];
   const alpha: Uint8Array[] = [];
   const keptTimesMs: number[] = [];
   for (let i = 0; i < frames.length; i++) {
     const f = frames[i];
-    if (f.alpha === null || f.color.length === 0 || f.alpha.length === 0) {
+    if (f.color.length === 0) {
+      return null;
+    }
+    const frameHasAlpha: boolean = f.alpha !== null && f.alpha.length > 0;
+    if (frameHasAlpha !== hasAlpha) {
       return null;
     }
     color.push(f.color);
-    alpha.push(f.alpha);
+    if (hasAlpha) {
+      alpha.push(f.alpha as Uint8Array);
+    }
     if (i % frameStep === 0) {
       keptTimesMs.push(f.timeMs);
     }
   }
   const packedColor = packStream(color);
-  const packedAlpha = packStream(alpha);
+  // 不透明：两块 alpha 缓冲传空的过去，原生据此走 opaque 分支（alpha 恒 255）。
+  const packedAlpha: ArrayBuffer[] = hasAlpha
+    ? packStream(alpha) : [new ArrayBuffer(0), new ArrayBuffer(0)];
   return {
     colorData: packedColor[0], colorLengths: packedColor[1],
     alphaData: packedAlpha[0], alphaLengths: packedAlpha[1],

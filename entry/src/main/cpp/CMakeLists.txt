@@ -21,7 +21,8 @@ endif()
 include_directories(${NATIVERENDER_ROOT_PATH}
                     ${NATIVERENDER_ROOT_PATH}/include)
 
-add_library(entry SHARED napi_init.cpp webm_alpha.cpp webm_alpha_napi.cpp)
+add_library(entry SHARED napi_init.cpp webm_alpha.cpp webm_alpha_napi.cpp sticker_frame_cache.cpp
+    tgs_render.cpp tgs_napi.cpp)
 
 add_library(tdjson SHARED IMPORTED)
 set_target_properties(tdjson PROPERTIES IMPORTED_LOCATION
@@ -41,6 +42,18 @@ if(NOT EXISTS ${LIBVPX_DIR}/${OHOS_ARCH}/libvpx.a)
     message(FATAL_ERROR
         "缺 libvpx：先跑 bash scripts/build-libvpx-ohos.sh（产物不进版本库）")
 endif()
+# rlottie：TGS 贴纸的原生渲染（产物由 scripts/build-rlottie-ohos.sh 生成，
+# 不进版本库，同 libvpx）。换掉 @ohos/lottie 那条"每帧在 UI 线程上重算形状"的路。
+set(RLOTTIE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/rlottie-ohos)
+if(NOT EXISTS ${RLOTTIE_DIR}/${OHOS_ARCH}/librlottie.a)
+    message(FATAL_ERROR
+        "缺 rlottie：先跑 bash scripts/build-rlottie-ohos.sh（产物不进版本库）")
+endif()
+add_library(rlottie STATIC IMPORTED)
+set_target_properties(rlottie PROPERTIES IMPORTED_LOCATION
+    ${RLOTTIE_DIR}/${OHOS_ARCH}/librlottie.a)
+target_include_directories(entry PRIVATE ${RLOTTIE_DIR}/include)
+
 add_library(vpx STATIC IMPORTED)
 set_target_properties(vpx PROPERTIES IMPORTED_LOCATION
     ${LIBVPX_DIR}/${OHOS_ARCH}/libvpx.a)
@@ -48,5 +61,6 @@ target_include_directories(entry PRIVATE ${LIBVPX_DIR}/include)
 
 # libpixelmap 仍要：合成出来的 RGBA 要交给 PixelMap。
 # libnative_media_* 三个已经摘掉——换成 libvpx 之后不再碰系统解码器。
+# libz：解码后的帧落盘前压一遍（见 sticker_frame_cache.cpp 的说明）。NDK 自带。
 target_link_libraries(entry PUBLIC libace_napi.z.so tdjson tgcalls_ohos libhilog_ndk.z.so
-    vpx libpixelmap.so)
+    vpx rlottie libpixelmap.so libz.so)

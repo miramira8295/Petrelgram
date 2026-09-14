@@ -27,7 +27,7 @@ import { PickedContact } from './ContactPickerSheet';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { holdPlayerJobs } from './WebmStickerView';
-import { setChatTgsSuspended } from './TgsStickerView';
+import { setChatAnimationSuspended } from '../../util/chatAnimationGate';
 import { EmojiPanel } from './EmojiPanel';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
@@ -850,7 +850,7 @@ export struct ChatPage {
   }
 
   private syncChatTgsGate(): void {
-    setChatTgsSuspended(!this.pageVisible || this.initialMessageStageActive ||
+    setChatAnimationSuspended(!this.pageVisible || this.initialMessageStageActive ||
       this.chatTgsScrollActive || this.chatTgsStageSettling);
   }
 

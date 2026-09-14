@@ -186,7 +186,14 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
                          int32_t dstW, int32_t dstH, int32_t frameStep,
                          std::vector<RgbaFrame> &out) {
     out.clear();
-    if (colorPackets.empty() || colorPackets.size() != alphaPackets.size() || frameStep <= 0) {
+    // alphaPackets 为空 = 这段贴纸本来就不透明（普通 VP9，没有 BlockAdditional
+    // 那一路）。走同一条解码链路，只是 alpha 平面恒为 255——这样"贴纸一律解成
+    // 帧序列"，不必为不透明的那些再养一个播放器实例。
+    const bool opaque = alphaPackets.empty();
+    if (colorPackets.empty() || frameStep <= 0) {
+        return false;
+    }
+    if (!opaque && colorPackets.size() != alphaPackets.size()) {
         return false;
     }
     if (srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0 || srcW > kMaxDim || srcH > kMaxDim ||
@@ -207,7 +214,7 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
     alphaPlanes.reserve(keepCount);
     bool alphaFull = false;
     size_t alphaSeen = 0;
-    const bool alphaOk = DecodeStream(alphaPackets, [&](const FrameInfo &f) {
+    const bool alphaOk = opaque ? true : DecodeStream(alphaPackets, [&](const FrameInfo &f) {
         const size_t seen = alphaSeen++;
         if (seen % step != 0 || alphaPlanes.size() >= keepCount) {
             return;
@@ -219,7 +226,7 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
                     plane.data(), dstW, dstH);
         alphaPlanes.push_back(std::move(plane));
     });
-    if (!alphaOk || alphaPlanes.empty()) {
+    if (!alphaOk || (!opaque && alphaPlanes.empty())) {
         return false;
     }
 
@@ -232,7 +239,7 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
         // 两路是同一段时间轴、同样的帧数，按解出的序号配对；留哪几帧也用
         // 同一个 step，所以 index 一定对得上。
         const size_t index = seen / step;
-        if (seen % step != 0 || index >= alphaPlanes.size()) {
+        if (seen % step != 0 || index >= (opaque ? keepCount : alphaPlanes.size())) {
             return;
         }
         const int32_t picW = std::min(f.picW, srcW);
@@ -242,7 +249,7 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
         ResizePlane(f.plane[0], f.stride[0], 1, picW, picH, luma.data(), dstW, dstH);
         ResizePlane(f.plane[1], f.stride[1], 1, picW / 2, picH / 2, chromaU.data(), dstW, dstH);
         ResizePlane(f.plane[2], f.stride[2], 1, picW / 2, picH / 2, chromaV.data(), dstW, dstH);
-        const std::vector<uint8_t> &alpha = alphaPlanes[index];
+        const std::vector<uint8_t> *alpha = opaque ? nullptr : &alphaPlanes[index];
         RgbaFrame frame(frameBytes, 0);
         for (size_t p = 0; p < planeBytes; ++p) {
             // BT.601。VP9 贴纸不带色彩描述，ffmpeg 与各家播放器对这类小尺寸
@@ -253,7 +260,7 @@ bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
             frame[p * 4 + 0] = Clamp255(y + (91881 * v >> 16));
             frame[p * 4 + 1] = Clamp255(y - ((22554 * u + 46802 * v) >> 16));
             frame[p * 4 + 2] = Clamp255(y + (116130 * u >> 16));
-            frame[p * 4 + 3] = ExpandRange(alpha[p], alphaFull);
+            frame[p * 4 + 3] = alpha == nullptr ? 255 : ExpandRange((*alpha)[p], alphaFull);
         }
         out.push_back(std::move(frame));
     });

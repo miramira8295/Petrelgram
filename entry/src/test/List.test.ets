@@ -159,6 +159,8 @@ import stickerSetItemsTest from './StickerSetItems.test';
 import favoriteStickerCacheTest from './FavoriteStickerCache.test';
 import composerExpandTest from './ComposerExpand.test';
 import pendingNavTest from './PendingNav.test';
+import stickerFrameCacheTest from './StickerFrameCache.test';
+import tgsPlaybackTest from './TgsPlayback.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
 import imageSwapTest from './ImageSwap.test';
@@ -433,6 +435,8 @@ export default function testsuite() {
   favoriteStickerCacheTest();
   composerExpandTest();
   pendingNavTest();
+  stickerFrameCacheTest();
+  tgsPlaybackTest();
   linkTapGuardTest();
   attachActionsTest();
   attachActionsControllerTest();

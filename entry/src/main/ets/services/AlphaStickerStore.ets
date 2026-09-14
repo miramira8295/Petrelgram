@@ -4,6 +4,10 @@ import nativeWebm from 'libentry.so';
 import { ALPHA_TOTAL_MAX_BYTES, AlphaDecodePlan, planAlphaDecode } from '../util/webm/AlphaStickerBudget';
 import { demuxWebmAlpha, packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
 import { ALPHA_STICKER_CACHE_MAX_BYTES } from '../util/NativePixelBudget';
+import {
+  FRAME_CACHE_DIR, FRAME_CACHE_MAX_BYTES, FrameCacheEntry, frameCacheFileName, planFrameCachePrune
+} from '../util/stickerFrameCache';
+import { appFilesDir } from '../tdkit/Globals';
 
 // 透明 webm 贴纸的解码结果仓库。
 //
@@ -13,6 +17,15 @@ import { ALPHA_STICKER_CACHE_MAX_BYTES } from '../util/NativePixelBudget';
 // 反复出现）、全局字节预算 + LRU 回收、以及一次只解一张的排队。
 //
 // 任何一环失败都返回 null，调用方原样回退到 ijkplayer（白底，但不崩）。
+
+// 原生 stickerFramesLoad 的回包形状。
+export interface CachedStickerFrames {
+  frames: image.PixelMap[];
+  timesMs: number[];
+  width: number;
+  height: number;
+  durationMs: number;
+}
 
 export interface AlphaClip {
   key: string;
@@ -62,6 +75,86 @@ let frameReleaseTimer: number = -1;
 // 也会让工作线程互相抢 CPU。串行反而更快出第一张。
 let decodeChain: Promise<void> = Promise.resolve();
 let nativeSupported: boolean | null = null;
+
+// ── 磁盘帧缓存 ────────────────────────────────────────────────────────
+//
+// 内存那份只够两三段；面板一屏几十张，LRU 一抖就要重走「读文件 → 拆 WebM →
+// libvpx 逐帧软解」。落盘之后第二次只剩「读文件 → 解压」。写在原生侧（帧还是
+// 裸 RGBA 的那一刻，见 cpp/sticker_frame_cache.cpp），这里只管路径与淘汰。
+let frameCacheDir: string = '';
+let frameCacheDirReady: boolean = false;
+let prunePending: boolean = false;
+
+function ensureFrameCacheDir(): string {
+  if (frameCacheDirReady) {
+    return frameCacheDir;
+  }
+  frameCacheDirReady = true;
+  const base: string = appFilesDir();
+  if (base === '') {
+    return '';
+  }
+  frameCacheDir = `${base}/${FRAME_CACHE_DIR}`;
+  try {
+    if (!fileIo.accessSync(frameCacheDir)) {
+      fileIo.mkdirSync(frameCacheDir);
+    }
+  } catch (e) {
+    console.error(`AlphaStickerStore: frame cache dir failed: ${e}`);
+    frameCacheDir = '';
+  }
+  return frameCacheDir;
+}
+
+function frameCachePathFor(path: string, fileSize: number, bucketPx: number): string {
+  const dir: string = ensureFrameCacheDir();
+  return dir === '' ? '' : `${dir}/${frameCacheFileName(path, fileSize, bucketPx)}`;
+}
+
+// 写过缓存之后收一次尾。**去抖**：一屏贴纸会连着写几十次，每次都去 listFile +
+// stat 一遍等于把省下来的又花掉。
+function scheduleFrameCachePrune(): void {
+  if (prunePending) {
+    return;
+  }
+  prunePending = true;
+  setTimeout((): void => {
+    prunePending = false;
+    pruneFrameCache();
+  }, 30000);
+}
+
+async function pruneFrameCache(): Promise<void> {
+  const dir: string = ensureFrameCacheDir();
+  if (dir === '') {
+    return;
+  }
+  try {
+    const names: string[] = await fileIo.listFile(dir);
+    const entries: FrameCacheEntry[] = [];
+    for (const name of names) {
+      try {
+        const st = await fileIo.stat(`${dir}/${name}`);
+        entries.push({ name: name, bytes: st.size, mtimeMs: st.mtime * 1000 });
+      } catch (e) {
+        // 刚被别人删掉的，跳过
+      }
+    }
+    const doomed: string[] = planFrameCachePrune(entries, FRAME_CACHE_MAX_BYTES);
+    for (const name of doomed) {
+      try {
+        await fileIo.unlink(`${dir}/${name}`);
+      } catch (e) {
+        console.error(`AlphaStickerStore: prune unlink failed: ${e}`);
+      }
+    }
+    if (doomed.length > 0) {
+      console.warn(`[AlphaDiag] frame cache pruned ${doomed.length} file(s)`);
+    }
+  } catch (e) {
+    console.error(`AlphaStickerStore: prune failed: ${e}`);
+  }
+}
 
 function nativeAvailable(): boolean {
   if (nativeSupported === null) {
@@ -234,20 +327,37 @@ function outcome(clip: AlphaClip | null, permanent: boolean): DecodeOutcome {
 // 拆开会有一个很难查的洞：两张贴纸同时算预算，会各自看到"还有 56MB"，加起来
 // 就超了。入账也必须在这里，不能等调用方 await 回来再记——那时下一个任务
 // 可能已经开算了。
-async function decodeReserved(clip: WebmAlphaClip, key: string): Promise<DecodeOutcome> {
+async function decodeReserved(clip: WebmAlphaClip, key: string,
+  sourcePath: string, sourceSize: number): Promise<DecodeOutcome> {
+  const free: number = alphaStickerFreeBytes();
   const plan: AlphaDecodePlan = planAlphaDecode(
-    clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, alphaStickerFreeBytes());
+    clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, free);
   if (!plan.accept) {
+    // 临时探针（2026-09-14）：判读完回退率的构成后连同这行删。
+    console.warn(`[AlphaDiag] no-plan free=${free} total=${totalBytes} budget=${budgetBytes}` +
+      ` src=${clip.track.width}x${clip.track.height} frames=${clip.frames.length}`);
     return outcome(null, false); // 只是这一刻没预算，别永久拉黑
   }
   const payload = packAlphaStreams(clip.frames, plan.frameStep);
   if (payload === null) {
     return outcome(null, true);
   }
+  // 时间戳表打包成 Int32 交过去：原生落盘时要把它一起写进缓存头，否则命中
+  // 缓存那条路没有拆包过程，拿不到每帧的呈现时刻。
+  const times: Int32Array = new Int32Array(payload.keptTimesMs.length);
+  for (let i = 0; i < payload.keptTimesMs.length; i++) {
+    times[i] = Math.round(payload.keptTimesMs[i]);
+  }
+  const cachePath: string = frameCachePathFor(sourcePath, sourceSize, bucketOf(key));
   const frames: image.PixelMap[] = await nativeWebm.webmAlphaDecode(
     payload.colorData, payload.colorLengths, payload.alphaData, payload.alphaLengths,
-    clip.track.width, clip.track.height, plan.targetW, plan.targetH, plan.frameStep);
+    clip.track.width, clip.track.height, plan.targetW, plan.targetH, plan.frameStep,
+    cachePath, times.buffer as ArrayBuffer, Math.round(clip.durationMs));
+  if (cachePath !== '' && frames.length > 0) {
+    scheduleFrameCachePrune();
+  }
   if (frames.length === 0) {
+    console.warn('[AlphaDiag] native decode returned 0 frames');
     // 原生失败的原因分不清是文件还是设备，按暂时处理：拉黑的代价是这张贴纸
     // 永远白底，重试的代价只是多一次几十毫秒的解码。
     return outcome(null, false);
@@ -264,6 +374,7 @@ async function decodeReserved(clip: WebmAlphaClip, key: string): Promise<DecodeO
   // 预算可能在原生解码期间因为切后台/低内存回调而收紧。不能把旧计划的结果
   // 强行塞回去；立即释放这批帧并让调用方走现有降级链路。
   if (totalBytes + bytes > budgetBytes) {
+    console.warn(`[AlphaDiag] budget shrank mid-decode need=${bytes} total=${totalBytes}`);
     releaseFrames(frames);
     return outcome(null, false);
   }
@@ -272,19 +383,65 @@ async function decodeReserved(clip: WebmAlphaClip, key: string): Promise<DecodeO
   return outcome(decoded, false);
 }
 
+// 磁盘命中这条路：不读 webm、不拆包、不解码，只把压缩帧解出来建 PixelMap。
+// 仍然排在同一条队列里——它同样要占内存预算，两条路一起算账才不会超。
+async function loadCachedReserved(cachePath: string, key: string): Promise<DecodeOutcome> {
+  const free: number = alphaStickerFreeBytes();
+  if (free <= 0) {
+    return outcome(null, false);
+  }
+  const loaded: CachedStickerFrames | null =
+    await nativeWebm.stickerFramesLoad(cachePath, free);
+  if (loaded === null || loaded.frames.length === 0) {
+    return outcome(null, false);
+  }
+  const bytes: number = loaded.width * loaded.height * 4 * loaded.frames.length;
+  evictUntilFits(bytes);
+  if (totalBytes + bytes > budgetBytes) {
+    releaseFrames(loaded.frames);
+    return outcome(null, false);
+  }
+  const decoded: AlphaClip = {
+    key: key, frames: loaded.frames, timesMs: loaded.timesMs.slice(0, loaded.frames.length),
+    durationMs: loaded.durationMs, width: loaded.width, height: loaded.height
+  };
+  totalBytes += bytes;
+  cache.set(key, { clip: decoded, bytes: bytes, refs: 0, lastUsed: Date.now() });
+  console.warn(`[AlphaDiag] disk hit frames=${loaded.frames.length} bytes=${bytes}`);
+  return outcome(decoded, false);
+}
+
 async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
+  // 先看磁盘。stat 一次就能拼出身份（文件名+字节数+尺寸桶），比读整个文件
+  // 再拆包便宜得多；命中就完全跳过软解。
+  let sourceSize: number = 0;
+  try {
+    const st = await fileIo.stat(path);
+    sourceSize = st.size;
+  } catch (e) {
+    return outcome(null, true);
+  }
+  const cachePath: string = frameCachePathFor(path, sourceSize, bucketOf(key));
+  if (cachePath !== '') {
+    const hit: DecodeOutcome = await serialize(
+      (): Promise<DecodeOutcome> => loadCachedReserved(cachePath, key));
+    if (hit.clip !== null) {
+      return hit;
+    }
+  }
   const bytes = await readFileBytes(path);
   if (bytes === null) {
     return outcome(null, true);
   }
   const clip: WebmAlphaClip | null = demuxWebmAlpha(bytes);
   if (clip === null) {
+    console.warn(`[AlphaDiag] demux refused ${path.substring(path.lastIndexOf('/') + 1)}`);
     // 不带 alpha、不是 VP9、或者容器里有我们不处理的写法——文件不会变，拉黑。
     return outcome(null, true);
   }
   // 读文件和拆包**不**排队：绝大多数 webm 贴纸在上面这一步就被判成"不带
   // alpha"了，让它们排在别人的解码后面才回退，等于白等一轮。
-  return serialize((): Promise<DecodeOutcome> => decodeReserved(clip, key));
+  return serialize((): Promise<DecodeOutcome> => decodeReserved(clip, key, path, sourceSize));
 }
 
 function serialize(job: () => Promise<DecodeOutcome>): Promise<DecodeOutcome> {

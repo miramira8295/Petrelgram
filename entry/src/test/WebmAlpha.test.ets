@@ -206,9 +206,38 @@ export default function webmAlphaTest() {
       expect(clip!.durationMs).assertEqual(76);
     });
 
-    it('refuses a clip whose blocks carry no alpha at all', 0, () => {
+    // 轨道声明了 AlphaMode=1 却一帧 alpha 都没有 = 文件坏了，整段退回播放器。
+    it('refuses a clip that claims alpha but carries none', 0, () => {
       const frames: FakeFrame[] = [{ relTime: 0, color: [1, 2], alpha: null, flags: 0x80 }];
       expect(demuxWebmAlpha(buildWebm(frames, true, 'V_VP9')) === null).assertTrue();
+    });
+
+    // 2026-09-14 契约变更：不透明贴纸也走帧序列（alpha 恒 255），不再为它们
+    // 各养一个原生播放器实例。
+    it('accepts an opaque VP9 clip and packs it with empty alpha streams', 0, () => {
+      const frames: FakeFrame[] = [
+        { relTime: 0, color: [1, 2], alpha: null, flags: 0x80 },
+        { relTime: 33, color: [3, 4, 5], alpha: null, flags: 0x00 }
+      ];
+      const clip = demuxWebmAlpha(buildWebm(frames, false, 'V_VP9'));
+      expect(clip !== null).assertTrue();
+      expect(clip!.track.hasAlpha).assertFalse();
+      expect(clip!.frames.length).assertEqual(2);
+      const payload = packAlphaStreams(clip!.frames, 1);
+      expect(payload !== null).assertTrue();
+      expect(payload!.colorData.byteLength).assertEqual(5);
+      // 两块 alpha 缓冲为空 = 原生走 opaque 分支。
+      expect(payload!.alphaData.byteLength).assertEqual(0);
+      expect(payload!.alphaLengths.byteLength).assertEqual(0);
+      expect(payload!.keptTimesMs.length).assertEqual(2);
+    });
+
+    it('refuses a mixed clip at pack time too', 0, () => {
+      const mixed: WebmAlphaFrame[] = [
+        { timeMs: 0, color: new Uint8Array([1]), alpha: new Uint8Array([2]) },
+        { timeMs: 33, color: new Uint8Array([3]), alpha: null }
+      ];
+      expect(packAlphaStreams(mixed, 1) === null).assertTrue();
     });
 
     it('refuses a clip where only some blocks carry alpha', 0, () => {
@@ -220,8 +249,8 @@ export default function webmAlphaTest() {
       expect(demuxWebmAlpha(buildWebm(frames, true, 'V_VP9')) === null).assertTrue();
     });
 
-    it('leaves non-alpha and non-VP9 clips to the existing player', 0, () => {
-      expect(demuxWebmAlpha(buildWebm(sampleFrames(), false, 'V_VP9')) === null).assertTrue();
+    // 非 VP9 仍然退回播放器：随包的 libvpx 只编了 VP9 解码器。
+    it('leaves non-VP9 clips to the existing player', 0, () => {
       expect(demuxWebmAlpha(buildWebm(sampleFrames(), true, 'V_VP8')) === null).assertTrue();
     });
 
@@ -255,9 +284,11 @@ export default function webmAlphaTest() {
 
     it('rejects an empty or malformed frame list', 0, () => {
       expect(packAlphaStreams([], 1) === null).assertTrue();
-      const broken: WebmAlphaFrame[] = [{ timeMs: 0, color: new Uint8Array([1]), alpha: null }];
+      // 空的色彩包才是真坏：alpha 为 null 现在是合法的"不透明"，见上面那条。
+      const broken: WebmAlphaFrame[] = [{ timeMs: 0, color: new Uint8Array(0), alpha: null }];
       expect(packAlphaStreams(broken, 1) === null).assertTrue();
-      expect(packAlphaStreams(broken, 0) === null).assertTrue();
+      const opaque: WebmAlphaFrame[] = [{ timeMs: 0, color: new Uint8Array([1]), alpha: null }];
+      expect(packAlphaStreams(opaque, 0) === null).assertTrue();
     });
 
     // --- 内存预算 -----------------------------------------------------------

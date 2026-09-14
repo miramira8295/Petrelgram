@@ -75,9 +75,48 @@ export const webmAlphaAvailable: () => boolean;
 // 码流按"拼接字节 + int32 长度表"两块 ArrayBuffer 传，只跨一次 NAPI。
 // frameStep 是保留步长：VP9 帧间预测，包必须全喂，只是解出来每 step 帧留一帧。
 // 失败时 resolve 成空数组，调用方据此回退到 ijkplayer。
+// cachePath 非空时，解出来的帧会压成一份磁盘缓存（zlib，见
+// cpp/sticker_frame_cache.cpp）；timesMs 是每帧呈现时刻的 Int32 缓冲，要一并
+// 写进缓存头——命中缓存那条路没有拆包过程，时间戳只能从缓存里取。
 export const webmAlphaDecode: (
   colorData: ArrayBuffer, colorLengths: ArrayBuffer,
   alphaData: ArrayBuffer, alphaLengths: ArrayBuffer,
   srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
-  frameStep: number
+  frameStep: number, cachePath: string, timesMs: ArrayBuffer, durationMs: number
 ) => Promise<image.PixelMap[]>;
+
+// 读一份磁盘帧缓存。没有 / 坏了 / 解出来超过 maxBytes 都 resolve null，
+// 调用方照常去解码。
+export const stickerFramesLoad: (cachePath: string, maxBytes: number) => Promise<{
+  frames: image.PixelMap[];
+  timesMs: number[];
+  width: number;
+  height: number;
+  durationMs: number;
+} | null>;
+
+// --- TGS 贴纸的原生渲染（rlottie） ---
+//
+// 为什么不继续用 @ohos/lottie：它的 renderer 只能是 'canvas'，每帧在 UI 线程上
+// 重算形状再画一遍——会话同时只允许 4 张动起来、面板 14 张，超出的是静态图。
+// 这里改成 native 按帧渲染：UI 线程只负责把一张已经渲好的 PixelMap 画出去。
+//
+// 打开一个 .tgs（读文件 + gunzip + 解析 JSON 全在 worker 上）。
+// width/height 是**渲染尺寸**，内存按它的平方走，不要传贴纸原生的 512。
+// 失败返回 null。
+export const tgsOpen: (path: string, width: number, height: number) => Promise<{
+  handle: number;
+  totalFrames: number;
+  frameRate: number;
+  width: number;
+  height: number;
+} | null>;
+
+// 渲染第 frameIndex 帧（越界自动取模）。失败返回 null。
+export const tgsRenderFrame: (handle: number, frameIndex: number) => Promise<image.PixelMap | null>;
+
+// 关掉。**必须配对调用**，否则解析后的模型会一直留在 native。
+export const tgsClose: (handle: number) => void;
+
+// 还开着几个（诊断用）。
+export const tgsOpenCount: () => number;

@@ -17,6 +17,8 @@
 entry/libs/
 # 原生产物一律不进版本库，由 scripts/build-*.sh 构建（同 entry/libs/）。
 third_party/libvpx-ohos/
+# rlottie 同理：由 scripts/build-rlottie-ohos.sh 生成（1.1MB 静态库 + 头文件）。
+third_party/rlottie-ohos/
 # Local MCP config (machine-specific absolute paths)
 .mcp.json
 # Internal docs & AI tooling — not published

@@ -10,8 +10,10 @@
 // 拆掉之后运行期唯一的条件是原生模块加载成功，见 AlphaStickerStore 的
 // nativeAvailable()。
 
-// 带 alpha 的素材只有贴纸和各类表情。GIF、视频本来就不透明，让它们也去试一次
-// 自解封装只是白花一次读文件 + 拆包。
+// 走帧序列的只有贴纸和各类表情。GIF、视频不在其列：它们动辄几十秒、全屏尺寸，
+// 预解码成 RGBA 常驻是按 GB 算的，那种就该用播放器流式播。
+// （2026-09-14 之前这里的判据还叫"带 alpha 的素材"——那时不透明贴纸也走播放器，
+// 现在两者统一走帧序列，只是不透明那条的 alpha 平面恒 255。）
 export function alphaStickerCandidate(powerCategory: string): boolean {
   return powerCategory === 'sticker' || powerCategory === 'emojiChat'
     || powerCategory === 'emojiPicker' || powerCategory === 'emoji'

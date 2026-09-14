@@ -1,4 +1,5 @@
 #include "napi/native_api.h"
+#include "tgs_napi.h"
 #include "webm_alpha_napi.h"
 #include <hilog/log.h>
 #include <atomic>
@@ -1296,6 +1297,7 @@ static napi_value Init(napi_env env, napi_value exports) {
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     WebmAlphaRegister(env, exports);
+    TgsRegister(env, exports);
     return exports;
 }
 EXTERN_C_END

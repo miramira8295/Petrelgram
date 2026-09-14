@@ -58,6 +58,13 @@ let switchInFlight: Promise<void> | null = null;
 let desiredOnline: boolean = false;
 let runtimeReady: boolean = false;
 
+// 应用沙箱的 files 目录。**不是账号目录**——按账号分的那份在
+// accountRegistry.directories 里。贴纸帧缓存这类"跨账号可共用、丢了也只是
+// 重算"的东西放这里。空串表示 initTdKit 还没跑过。
+export function appFilesDir(): string {
+  return baseFilesDir;
+}
+
 export function initTdKit(context: common.Context): void {
   if (client !== undefined) {
     return;
