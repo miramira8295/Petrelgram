@@ -1,4 +1,5 @@
 import { image } from '@kit.ImageKit';
+import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
 import { acquireAlphaSticker, AlphaClip, releaseAlphaSticker } from '../../services/AlphaStickerStore';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 
@@ -34,6 +35,15 @@ export struct AlphaWebmStickerView {
   @Param boxHeight: number = 160;
   @Param powerCategory: string = 'sticker';
   @Param forcePlay: boolean = false;
+  // 在不在会话时间线上（常量）。为真就自己订阅滑动闸——**不能让上层把
+  // paused 逐层传下来**：那会在每次开合闸时重渲染 SmartLoopVideo，而它的
+  // 重渲染会进动画上下文、同步 flush 整棵树（2026-09-14 trace：单次 47.8ms）。
+  //
+  // 这道闸以前没有：那时只有少数透明贴纸走帧序列，看不出来；2026-09-14 不透明
+  // webm 并进来之后，一屏十几张全在按 setInterval 往 Canvas 上画，滑动直接掉帧。
+  @Param chatTimeline: boolean = false;
+  @Local private scrollPaused: boolean = false;
+  private unsubGate: (() => void) | null = null;
   // 这条链路走不通时通知父组件切回 ijkplayer。只会调用一次。
   @Param onFallback: () => void = (): void => {};
   @Param onWorking: () => void = (): void => {};
@@ -63,10 +73,20 @@ export struct AlphaWebmStickerView {
 
   aboutToAppear(): void {
     this.disposed = false;
+    if (this.chatTimeline && this.unsubGate === null) {
+      // 订阅时会立刻回调一次当前值：挂载在滑动中途的行不能默认"门是开的"。
+      this.unsubGate = subscribeChatAnimationGate((suspended: boolean): void => {
+        this.onGateChanged(suspended);
+      });
+    }
   }
 
   aboutToDisappear(): void {
     this.disposePlayback();
+    if (this.unsubGate !== null) {
+      this.unsubGate();
+      this.unsubGate = null;
+    }
   }
 
   aboutToRecycle(): void {
@@ -100,6 +120,18 @@ export struct AlphaWebmStickerView {
     }
   }
 
+  private onGateChanged(suspended: boolean): void {
+    if (this.scrollPaused === suspended) {
+      return;
+    }
+    this.scrollPaused = suspended;
+    if (suspended) {
+      this.stopTicker();     // 定格在当前帧，不清画布
+    } else if (this.sequence !== null && !this.powerSuspended()) {
+      this.startTicker();
+    }
+  }
+
   @Monitor('env.powerSaving', 'env.stickers', 'env.animatedEmoji', 'env.stickerAutoplay',
     'env.emojiChat', 'env.emojiReactions', 'env.emojiStatus', 'env.reduceAnim')
   onPowerChanged(): void {
@@ -119,7 +151,7 @@ export struct AlphaWebmStickerView {
 
   private startTicker(): void {
     this.stopTicker();
-    if (this.sequence === null || this.disposed) {
+    if (this.sequence === null || this.disposed || this.scrollPaused) {
       return;
     }
     this.startedAt = Date.now();

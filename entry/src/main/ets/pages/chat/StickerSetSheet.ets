@@ -139,7 +139,12 @@ export struct StickerSetSheet {
               .width('100%').aspectRatio(1)
               .onClick((): void => { this.onPick(item); });
             }
-          }, (item: StickerSetItem): string => `${item.fileId}`);
+            // **key 必须带上缩略图是否到位**。缩略图是逐张异步下载、到一张换
+            // 一次 items 数组的；key 只有 fileId 的话，ArkUI 判定这一格没变、
+            // 不重建，于是第一次打开面板全是 emoji 占位，退出再进才正常
+            // （那时文件已在本地，parse 出来就带路径）。同一条教训在消息行上
+            // 踩过：字段不进 key 就会被复用丢掉。
+          }, (item: StickerSetItem): string => `${item.fileId}_${item.thumbPath !== '' ? 1 : 0}`);
         }
         .columnsTemplate('1fr 1fr 1fr 1fr')
         .rowsGap(6).columnsGap(6)

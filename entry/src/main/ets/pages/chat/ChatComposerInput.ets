@@ -1,6 +1,7 @@
 import { caretAfterExternalEdit, pasteFitsLimit } from '../../util/composerText';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
 import { shouldOfferFullscreenEdit } from '../../util/composerExpand';
+import { pushSheetDismiss } from '../../util/sheetDismissStack';
 import { promptAction } from '@kit.ArkUI';
 import { str } from '../../util/strings';
 import { ReplyKeyboard } from '../../store/ReplyKeyboard';
@@ -553,7 +554,13 @@ export struct ChatComposerInput {
                 pressed: this.composerIconPressedStyle
               })
               .accessibilityText($r('app.string.cp_fullscreen_edit'))
-              .onClick((): void => { this.fullscreenOpen = true; });
+              .onClick((): void => {
+                this.fullscreenOpen = true;
+                // 返回键先收面板，而不是退出会话页（见 util/sheetDismissStack）。
+                this.fullscreenOff = pushSheetDismiss((): void => {
+                  this.fullscreenOpen = false;
+                });
+              });
             }
             if (this.botMiniAppUrlValue !== '') {
               SymbolGlyph($r('sys.symbol.square_grid_2x2'))
@@ -599,9 +606,17 @@ export struct ChatComposerInput {
       height: SheetSize.LARGE,
       backgroundColor: Color.Transparent,
       dragBar: false,
-      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
+      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
+      onDisappear: (): void => {
+        if (this.fullscreenOff !== null) {
+          this.fullscreenOff();
+          this.fullscreenOff = null;
+        }
+      }
     });
   }
+
+  private fullscreenOff: (() => void) | null = null;
 
   @Builder
   private fullscreenEditor() {

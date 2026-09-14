@@ -107,7 +107,15 @@ export struct SmartLoopVideo {
     // is exposed during the hand-off.
     this.firstFrameTimer = setTimeout((): void => {
       this.firstFrameTimer = -1;
-      this.videoReady = true;
+      // **不能用声明式 `.animation({duration:140})`**（2026-09-14 Frame trace）：
+      // 那个修饰器挂在节点上，本组件**每次重渲染都会进一次动画上下文**，而进
+      // 动画上下文会同步 flush 整棵树——实测一次 47.8ms，里面是 Measure
+      // [Navigation] 11.3ms + Measure[List] 14.6ms + 布局/提交。11 次更新合计
+      // 105ms，全落在卡顿帧里。animateTo 只在这一刻进一次，值不变就没有动画
+      // 上下文。
+      animateTo({ duration: 140, curve: Curve.EaseOut }, (): void => {
+        this.videoReady = true;
+      });
     }, 80);
   }
 
@@ -185,11 +193,11 @@ export struct SmartLoopVideo {
             boxWidth: this.boxWidth, boxHeight: this.boxHeight,
             powerCategory: this.powerCategory,
             forcePlay: this.forcePlay,
+            chatTimeline: this.scrollGated,
             onWorking: (): void => { this.onVideoWorking(); },
             onFailed: (): void => { this.onPlaybackFailed(); }
           })
-            .opacity(this.videoReady ? 1 : 0)
-            .animation({ duration: 140, curve: Curve.EaseOut });
+            .opacity(this.videoReady ? 1 : 0);
         } else {
           AvLoopVideo({
             videoPath: this.videoPath,
@@ -209,8 +217,7 @@ export struct SmartLoopVideo {
               this.onVideoWorking();
             }
           })
-            .opacity(this.videoReady ? 1 : 0)
-            .animation({ duration: 140, curve: Curve.EaseOut });
+            .opacity(this.videoReady ? 1 : 0);
         }
       }
       .width(this.boxWidth).height(this.boxHeight)

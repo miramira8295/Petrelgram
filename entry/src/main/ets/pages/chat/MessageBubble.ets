@@ -3524,6 +3524,10 @@ export struct MessageBubble {
           SmartLoopVideo({ videoPath: this.msg.stickerPath, thumbPath: this.msg.photoPath,
             boxWidth: this.stickerW(), boxHeight: this.stickerH(),
             powerCategory: this.msg.isEmojiSticker ? 'emojiChat' : 'sticker',
+            // 会话里的 webm 贴纸跟 TGS 一样吃滑动闸。以前没传：那时它们全走
+            // ijkplayer（独立 surface，不占 UI 线程），而现在走帧序列，一屏
+            // 十几张同时往 Canvas 上画，滑动必卡。
+            scrollGated: true,
             onPlaybackFailed: (): void => { this.stickerPlaybackFailed = true; } })
             .hitTestBehavior(HitTestMode.None);
         } else if (this.msg.photoPath !== '') {

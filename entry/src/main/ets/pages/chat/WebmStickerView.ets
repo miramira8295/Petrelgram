@@ -111,9 +111,15 @@ function enqueueInit(job: PlayerJob): void {
 // TEXTURE XComponent (composites within ArkUI, unlike SURFACE). Falls back to
 // the raster thumbnail if playback fails.
 //
-// 真带透明通道的贴纸走 AlphaWebmStickerView（自解封装 + 系统 VP9 + 自绘），
+// 贴纸/表情走 AlphaWebmStickerView（自解封装 + 随包 libvpx + 自绘帧序列），
 // 那条路走不通时原样退回下面的 ijk 播放器——所有调用点都经过这里，所以判定
 // 只在这一个地方做。
+//
+// **2026-09-14：不透明的也走那条了。** 原来只有带 alpha 的才走（那条链路本
+// 来是为修"透明贴纸变白底"立的），不透明的一律用播放器，代价是每张常驻一个
+// 原生播放器实例——一次面板切换就要销毁+新建十几个，主线程重到得靠下面那个
+// 30ms 一个的任务队列摊。现在解码链路对两者是同一条（alpha 恒 255），播放器
+// 只剩"解码真失败"这一个用途。
 // P4 批 6b：迁 @ComponentV2（配方同批 1~6a）。11 个省电键走 chatEnv 镜像；
 // 复用同步化（@Param 已是新值，V1 写回 @Prop 的做法退役）。
 @ComponentV2
@@ -124,6 +130,11 @@ export struct WebmStickerView {
   @Param boxHeight: number = 160;
   @Param powerCategory: string = 'sticker';
   @Param forcePlay: boolean = false;
+  // 在不在会话时间线上。**常量**：帧序列那支据此自己去订阅滑动闸，而不是
+  // 由上面逐层把 paused 传下来——那样每次开合闸都会让这三层组件重渲染一遍，
+  // 而 SmartLoopVideo 的重渲染会踩到动画上下文的同步 flush（2026-09-14 trace
+  // 实测单次 47.8ms）。ijk 那支是独立 surface，不占 UI 线程，不用管。
+  @Param chatTimeline: boolean = false;
   private env: ChatEnvMirror = chatEnv;
   @Param onWorking: () => void = (): void => {};
   @Param onFailed: () => void = (): void => {};
@@ -409,6 +420,7 @@ export struct WebmStickerView {
         boxWidth: this.boxWidth, boxHeight: this.boxHeight,
         powerCategory: this.powerCategory,
         forcePlay: this.forcePlay,
+        chatTimeline: this.chatTimeline,
         onWorking: (): void => { this.onWorking(); },
         onFallback: (): void => {
           console.warn('[AlphaDiag] fallback to ijkplayer');

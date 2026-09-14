@@ -1,4 +1,6 @@
 import { bumpDraftEpoch, localDraft, rememberLocalDraft } from '../../store/DraftStore';
+import { initialAvatarPaths, warmSenderAvatars } from '../../util/avatarWarm';
+import { dismissTopSheet, pushSheetDismiss } from '../../util/sheetDismissStack';
 import { StickerSetSheet } from './StickerSetSheet';
 import { StickerSetItem } from '../../util/stickerSetItems';
 import {
@@ -1281,6 +1283,11 @@ export struct ChatPage {
     this.syncChatTgsGate();
     this.initialMessagePendingGroups = groups;
     this.initialMessageRevealCount = firstRevealCount;
+    // 首屏那几行的发送者头像先异步解出来（见 util/avatarWarm）。这一刻是最好的
+    // 时机：占位行已经发布、真行还没揭示，主线程正空着。等行真挂上来时
+    // CachedImage 直接命中内存，#137 那条同步解码的支路根本不会被走到
+    // （2026-09-14 trace：那条支路在进会话那一秒里占 19.9ms）。
+    warmSenderAvatars(initialAvatarPaths(groups, target.anchorIndex));
     this.publishGroupsNow(staged);
     this.postInitialMessageFrame(stageSeq);
   }
@@ -4527,7 +4534,13 @@ export struct ChatPage {
     }
     this.stickerSetSheetId = setId;
     this.stickerSetSheetOpen = true;
+    // 登记给返回键（见 util/sheetDismissStack）。onDisappear 里注销。
+    this.stickerSheetOff = pushSheetDismiss((): void => {
+      this.stickerSetSheetOpen = false;
+    });
   }
+
+  private stickerSheetOff: (() => void) | null = null;
 
   // ② 收藏/取消收藏这张贴纸。
   private toggleFavoriteSticker(messageId: number): void {
@@ -4814,6 +4827,11 @@ export struct ChatPage {
   // System back (gesture/hardware button): close the fullscreen viewer first
   // if it's open, rather than popping all the way back to the chat list.
   private handleBackPressed(): boolean {
+    // 别人用 bindSheet 弹的面板（贴纸合集、输入框全屏编辑…）自己登记在这里。
+    // 必须排在最前：面板盖在所有浮层之上，返回键该先收它。
+    if (dismissTopSheet()) {
+      return true;
+    }
     // 录制浮层盖住整页，返回键必须先关它（组件退场时会取消录制并删掉临时文件）。
     if (this.overlayState.showVideoNoteRecorder) {
       this.overlayState.showVideoNoteRecorder = false;
@@ -8724,7 +8742,13 @@ export struct ChatPage {
       backgroundColor: Color.Transparent,
       dragBar: false,
       blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
-      onDisappear: (): void => { this.stickerSetSheetId = ''; }
+      onDisappear: (): void => {
+        this.stickerSetSheetId = '';
+        if (this.stickerSheetOff !== null) {
+          this.stickerSheetOff();
+          this.stickerSheetOff = null;
+        }
+      }
     });
     }
     .titleBar(this.chatTitleBarOptions())

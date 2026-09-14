@@ -161,6 +161,8 @@ import composerExpandTest from './ComposerExpand.test';
 import pendingNavTest from './PendingNav.test';
 import stickerFrameCacheTest from './StickerFrameCache.test';
 import tgsPlaybackTest from './TgsPlayback.test';
+import sheetDismissStackTest from './SheetDismissStack.test';
+import avatarWarmTest from './AvatarWarm.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
 import imageSwapTest from './ImageSwap.test';
@@ -437,6 +439,8 @@ export default function testsuite() {
   pendingNavTest();
   stickerFrameCacheTest();
   tgsPlaybackTest();
+  sheetDismissStackTest();
+  avatarWarmTest();
   linkTapGuardTest();
   attachActionsTest();
   attachActionsControllerTest();
