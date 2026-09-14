@@ -48,8 +48,19 @@ if [ ! -d "$SRC_DIR/.git" ]; then
 fi
 git -C "$SRC_DIR" rev-parse --verify -q "$PIN_RLOTTIE^{commit}" >/dev/null \
     || git -C "$SRC_DIR" fetch origin
+# 先还原上一次打过的补丁，否则同一提交上重复执行时 apply 会失败、换提交时 checkout 会拒绝。
+git -C "$SRC_DIR" checkout -q -- .
 git -C "$SRC_DIR" checkout -q --detach "$PIN_RLOTTIE"
 log "已切到 $PIN_RLOTTIE"
+
+# 三处补丁：内容预算吞图层（贴纸缺头/后半程空白）、出点多画一帧（重影）、总帧数配套。
+# 数据和理由写在补丁文件头里。**打不上就停**——上游改了这几行时必须重新核对，不能静默
+# 编出一份没打补丁的库。
+PATCH_FILE="$SCRIPT_DIR/rlottie-tgs-fixes.patch"
+git -C "$SRC_DIR" apply --check "$PATCH_FILE" \
+    || die "补丁打不上：$PATCH_FILE（上游这几行变了，先按补丁头的说明重新核对）"
+git -C "$SRC_DIR" apply "$PATCH_FILE"
+log "已打补丁 $(basename "$PATCH_FILE")"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"

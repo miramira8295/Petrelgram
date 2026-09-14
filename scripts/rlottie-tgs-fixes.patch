@@ -1,0 +1,57 @@
+rlottie（Samsung master 683bbaa3）给 TGS 贴纸打的三处补丁。由 scripts/build-rlottie-ohos.sh
+在 checkout 之后 `git apply`；打不上就中止构建，不静默跳过。
+
+【起因】2026-09-14 真机：贴纸「缺了脑袋」、动几帧后整张变空，刚滑进来那一帧（静态缩略图）
+是完整的。离线用同一提交在 macOS 上渲，与 TelegramMessenger/rlottie（Telegram 客户端自用的
+那份）逐帧对照，定位到下面前两处；第三处是第二处的配套。
+
+1) kMaxShapeContentBudget 15000 → 1500000
+   上游近期加的防放大预算：**每条带动画的路径一律按 1024 点计费**，全合成共用一份，花完之后
+   的形状内容直接丢弃（"dropping content item"）。设备上 498 个真实 .tgs 实测用量：
+   p50 23,608 / p90 62,878 / p99 252,044 / max 288,565，**356 个（71%）超过 15000**。
+   同一个 precomp 被引用两次的贴纸（循环衔接的常见做法）第二份拿到的预算是 0 → 后半程空白。
+   1500000 ≈ 实测最大值的 5 倍：真实贴纸全部放得下，恶意文件的放大仍有上限。
+
+2) Layer::visible() 出点改为不含（frameNo < outFrame）
+   Lottie 语义里 op 是开区间，Telegram 那份也是 `<`。上游写成 `<=`，逐帧换图层的贴纸在
+   交接那一帧新旧两层同时画 → 轮廓重影（498 个里 13 个可见）。
+
+3) totalFrame() 改为 op - ip（去掉 +1）
+   与 Telegram 那份一致。只改 2) 不改它的话，最后一个下标正好落在出点上、整帧不可见，
+   循环播放每圈闪一次空白。
+
+验证（macOS 离线，498 个贴纸 × 全部帧，64px 轮廓签名对比 Telegram 那份）：
+打补丁前差异帧 214/84910（预算放宽后）→ 打补丁后 182/84910，剩余 8 个文件肉眼逐帧对照
+一致（7 个是渐变填充的抗锯齿边缘）。总帧数 498 个全部对齐。
+
+--- a/src/lottie/lottieitem.cpp
++++ b/src/lottie/lottieitem.cpp
+@@ -94,7 +94,7 @@
+ // bounds nested repeaters (repeater whose content contains another
+ // repeater), since every copy at every nesting level draws from the same
+ // shared budget.
+-static constexpr size_t kMaxShapeContentBudget = 15000;
++static constexpr size_t kMaxShapeContentBudget = 1500000;
+ 
+ static renderer::Layer *createLayerItem(model::Layer *layerData,
+                                         VArenaAlloc *allocator, int depth,
+@@ -494,7 +494,7 @@
+ bool renderer::Layer::visible() const
+ {
+     return (frameNo() >= mLayerData->inFrame() &&
+-            frameNo() <= mLayerData->outFrame());
++            frameNo() < mLayerData->outFrame());
+ }
+ 
+ void renderer::Layer::preprocess(const VRect &clip)
+--- a/src/lottie/lottiemodel.h
++++ b/src/lottie/lottiemodel.h
+@@ -548,7 +548,7 @@
+     {
+         return long(frameAtPos(timeInSec / duration()));
+     }
+-    size_t totalFrame() const { return mEndFrame - mStartFrame + 1; }
++    size_t totalFrame() const { return mEndFrame - mStartFrame; }
+     long   frameDuration() const { return mEndFrame - mStartFrame; }
+     float  frameRate() const { return mFrameRate; }
+     size_t startFrame() const { return mStartFrame; }
