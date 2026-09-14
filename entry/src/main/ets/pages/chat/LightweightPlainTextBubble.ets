@@ -110,6 +110,16 @@ const EMPTY_ACTIONS: LightweightPlainTextActions = {
 // （issue #137 的修法）整套都不再需要：同步重播种的窗口是零帧，比"保留旧
 // 值等下一帧纠正"更不闪。收益本体：@Param 引用语义替掉 @Prop 深拷贝。
 // （原 struct 里的 appearanceEpoch/accent() 是死代码，build 从未引用，随迁移清掉。）
+// 占位用的内边距（第四刀，2026-09-14）：原来这两个位置各垫一个定宽空 Column，每行白付
+// 一个节点、一层测量和一份复用时要重跑的更新。换成所在容器的内边距，占的宽度逐像素不变。
+// 没有尾巴时给尾巴留的 7vp 位（原来的空 Column 就写死 7；尾巴节点本身宽 TAIL_W=8，
+// 靠负外边距往气泡里压），见 tailGutterPadding。
+const TAIL_GUTTER_LEFT: Padding = { left: 7 };
+const TAIL_GUTTER_RIGHT: Padding = { right: 7 };
+// 群聊来信不显示头像时给头像留的 44vp 位（头像 38 + 右边距 6），见 avatarGutterPadding。
+const AVATAR_GUTTER: Padding = { left: 44 };
+const NO_GUTTER: Padding = {};
+
 @ComponentV2
 struct LightweightSenderAvatar {
   @Param senderId: number = 0;
@@ -181,10 +191,13 @@ struct LightweightSenderAvatar {
 
   build() {
     Stack() {
-      Circle({ width: 38, height: 38 })
-        .fill(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length]);
-      Text(this.initials).fontColor(Color.White).fontSize(15.2).fontWeight(FontWeight.Medium)
-        .visibility(this.path === '' ? Visibility.Visible : Visibility.None);
+      // 底色圆和首字母合成一个 Text（背景色 + 19 圆角 = 原来的 Circle），头像少一个节点。
+      // 有图时只清空文字、不藏背景：解码到手之前垫着的仍是原来的彩色圆底。
+      Text(this.path === '' ? this.initials : '')
+        .width(38).height(38).borderRadius(19)
+        .backgroundColor(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length])
+        .textAlign(TextAlign.Center).align(Alignment.Center)
+        .fontColor(Color.White).fontSize(15.2).fontWeight(FontWeight.Medium);
       CachedImage({
         path: this.path, boxWidth: 38, boxHeight: 38, radius: 19, fit: ImageFit.Cover,
         // 和 LiveSenderAvatar 同一理由：头像被大图挤出 LRU 后重解码会闪
@@ -283,6 +296,11 @@ export struct LightweightPlainTextBubble {
   // 长按菜单的两条动效链，按实例缓存（普通字段，写它不该惊动任何节点）。
   private menuFx: MessageMenuTransitions = new MessageMenuTransitions();
   @Local glassH: number = 0;
+  // glassW/glassH 的量值影子。@Local 复用时被框架重置成 0，而 onSizeChange 在复用后
+  // 尺寸没变时不会再回调；无装饰器成员复用时不重置，节点上次上报的尺寸恰好就是它，
+  // aboutToReuse 用它回填。
+  private measuredGlassW: number = 0;
+  private measuredGlassH: number = 0;
 
   private bubbleFillColor(): ResourceColor {
     if (this.env.appearanceEpoch < 0) {
@@ -475,6 +493,9 @@ export struct LightweightPlainTextBubble {
     // V1 时代的 reuseParam 读参和 nextFrameQueue 延帧兜底整套退役。
     this.resetTransient();
     this.senderLabelW = SENDER_LABEL_WIDTHS.get(this.msg.senderName) ?? 0;
+    // 见 measuredGlassW：复用后尺寸没变时 onSizeChange 不再回调，这里回填。
+    this.glassW = this.measuredGlassW;
+    this.glassH = this.measuredGlassH;
     this.attachChannels(this.msg);
   }
 
@@ -498,6 +519,19 @@ export struct LightweightPlainTextBubble {
   private runRadius(): number { return Math.min(this.env.bubbleRadius, 7); }
   private tailRadius(): number { return Math.min(this.env.bubbleRadius, 2); }
   private hasTail(): boolean { return this.showAvatar; }
+  // 尾巴位：有尾巴时由尾巴节点自己占；没有时由「尾巴 + 气泡」容器的内边距占（原来是
+  // bubbleCluster 里的定宽空 Column）。容器尺寸不变，玻璃的量值与裁剪轮廓也就不变。
+  private tailGutterPadding(): Padding {
+    if (this.hasTail()) {
+      return NO_GUTTER;
+    }
+    return this.msg.isOutgoing ? TAIL_GUTTER_RIGHT : TAIL_GUTTER_LEFT;
+  }
+  // 头像位：群聊来信不显示头像时由挂菜单的那层 Row 的内边距占（原来是定宽空 Column）。
+  // 那层 Row 是长按菜单预览截图的范围，原来就包着这块透明的 44vp，截图边界不变。
+  private avatarGutterPadding(): Padding {
+    return this.isGroup && !this.msg.isOutgoing && !this.showAvatar ? AVATAR_GUTTER : NO_GUTTER;
+  }
   private rowTopPadding(): number { return this.showSenderName ? 3 : 1; }
   private rowBottomPadding(): number { return this.showAvatar ? 3 : 1; }
   private effectDuration(ms: number): number {
@@ -852,139 +886,176 @@ export struct LightweightPlainTextBubble {
     .alignItems(VerticalAlign.Center);
   }
 
+  // 「尾巴 + 气泡本体」。build() 里材质开/关两支容器共用这一份（见那里的分支说明）；
+  // 无参 @Builder，碰不到「参数按值传不刷新」的坑。
+  @Builder
+  bubbleCluster() {
+    // 没有尾巴时的 7vp 尾巴位由容器内边距占（见 tailGutterPadding），不再垫定宽空 Column。
+    if (!this.msg.isOutgoing && this.hasTail()) {
+      this.bubbleTail(false);
+    }
+    Column() {
+      if (this.senderLabelShown()) {
+        Row({ space: 5 }) {
+          Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
+            .fontWeight(FontWeight.Medium).maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
+          SenderRoleTag({
+            chatId: this.chatId, senderId: this.msg.senderId,
+            presetTag: this.msg.senderTag
+          });
+        }
+        .margin({ bottom: 2 }).alignItems(VerticalAlign.Center)
+        // onSizeChange 而不是 onAreaChange：后者每帧对所有注册节点逐个比对
+        // （PipelineContext::HandleOnAreaChangeEvent，15:25 trace 翻页段每帧约 0.9ms），
+        // 这里只要宽度。复用后尺寸没变就不会回调——那种情况 aboutToReuse 已按名字
+        // 从 SENDER_LABEL_WIDTHS 播种，值就是同一个。
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          const w: Length | undefined = size.width;
+          if (typeof w === 'number') {
+            this.senderLabelW = w as number;
+            rememberSenderLabelW(this.msg.senderName, w as number);
+          }
+        });
+      }
+      Stack({ alignContent: Alignment.BottomEnd }) {
+        this.body();
+        this.timeOverlay();
+      }
+      // 名字行比正文宽时时间戳停在正文末尾、够不到气泡右边缘（用户报的），
+      // 拿量到的名字行宽度兜一个最小宽度。
+      .constraintSize({ maxWidth: this.inlineMaxW(), minWidth: this.measuredTimeLayerWidth() });
+    }
+    .alignItems(HorizontalAlign.Start)
+    // 与 MessageBubble 同一策略、同一理由（见那边的长注释）：气泡根节点上
+    // 不挂常驻 .animation()，按下态直接切换。真机 trace 已证明换位置留不住
+    // 动画边界，只有节点上完全没有常驻动画，普通数据更新才不会进入动画
+    // 上下文、连带整张消息 List 的重测。两支气泡必须同改。
+    .stateStyles({ normal: plainBubbleNormalStyle, pressed: plainBubblePressedStyle })
+    .constraintSize({ maxWidth: this.bubbleMaxW() })
+    .backgroundColor(this.bubbleBg())
+    .backgroundBlurStyle(this.glassBlurStyle())
+    .borderRadius(this.bubbleCorners()).padding(8)
+    .shadow({ radius: this.glassBodyOn() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
+    .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+      .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
+    .onClick((event: ClickEvent): void => {
+      if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
+        this.recordMenuOffset(event.x, Number(event.target.area.width));
+        this.menuShown = true;
+      }
+    });
+    if (this.msg.isOutgoing && this.hasTail()) {
+      this.bubbleTail(true);
+    }
+  }
+
   build() {
     Column() {
       if (this.dateLabel !== '') {
-        Row() {
-          Text(this.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-            .fontWeight(FontWeight.Medium).backgroundColor($r('app.color.system_pill'))
-            .borderRadius(11).padding({ left: 10, right: 10, top: 3, bottom: 3 });
-        }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 5, bottom: 3 });
+        // 日期胶囊直接挂在根 Column 里（Column 默认水平居中）。原来外面那层满宽 Row 只负责
+        // 居中和上下 5/3 的留白，换成胶囊自己的外边距，占的高度一样（首屏估高里的 +30）。
+        Text(this.dateLabel).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+          .fontWeight(FontWeight.Medium).backgroundColor($r('app.color.system_pill'))
+          .borderRadius(11).padding({ left: 10, right: 10, top: 3, bottom: 3 })
+          .margin({ top: 5, bottom: 3 });
       }
       if (this.showUnreadDivider) {
         this.unreadDivider();
       }
       Row() {
         Row() {
-          if (this.isGroup && !this.msg.isOutgoing) {
-            if (this.showAvatar) {
-              LightweightSenderAvatar({
-                senderId: this.msg.senderId,
-                senderIsUser: this.msg.senderIsUser,
-                initialPath: this.msg.senderAvatarPath,
-                initials: this.msg.senderInitials
+          // 群聊来信不显示头像时，头像位由这层 Row 的内边距占（avatarGutterPadding），
+          // 不再垫定宽空 Column；两层 if 也并成一层。
+          if (this.isGroup && !this.msg.isOutgoing && this.showAvatar) {
+            LightweightSenderAvatar({
+              senderId: this.msg.senderId,
+              senderIsUser: this.msg.senderIsUser,
+              initialPath: this.msg.senderAvatarPath,
+              initials: this.msg.senderInitials
+            })
+              .margin({ right: 6 })
+              .onClick((): void => {
+                if (!this.gestureClaimed && this.msg.senderIsUser && this.msg.senderId > 0) {
+                  this.actions.onAvatarTap(this.msg.senderId);
+                }
               })
-                .margin({ right: 6 })
-                .onClick((): void => {
-                  if (!this.gestureClaimed && this.msg.senderIsUser && this.msg.senderId > 0) {
-                    this.actions.onAvatarTap(this.msg.senderId);
-                  }
-                })
-                .gesture(LongPressGesture().onAction((): void => {
-                  if (this.msg.senderIsUser && this.msg.senderId > 0) {
-                    this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
-                  }
-                }));
-            } else {
-              Column().width(44);
+              .gesture(LongPressGesture().onAction((): void => {
+                if (this.msg.senderIsUser && this.msg.senderId > 0) {
+                  this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
+                }
+              }));
+          }
+          // 【按材质开关分两支容器，2026-09-14】玻璃关着（默认）时，下面这串玻璃属性的值
+          // 全是空的——透明底、无模糊、不裁剪、描边不画——却在每次更新和复用时照样把
+          // glassReady() 那一串重算一遍、new 一个修饰器、建一次描边背景，外加一个每帧参与
+          // 全局遍历的可见区回调（15:25 trace 翻页段 30 个节点每帧 0.2ms）。关着的那一支
+          // 只留与材质无关的几个属性；切换开关时这一块整体重建一次。两支气泡必须同改。
+          if (this.env.bubbleMaterialOn) {
+            Row() {
+              this.bubbleCluster();
             }
-          }
-          Row() {
-          if (!this.msg.isOutgoing && this.hasTail()) {
-            this.bubbleTail(false);
-          } else if (!this.msg.isOutgoing) {
-            Column().width(7);
-          }
-          Column() {
-            if (this.senderLabelShown()) {
-              Row({ space: 5 }) {
-                Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
-                  .fontWeight(FontWeight.Medium).maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
-                SenderRoleTag({
-                  chatId: this.chatId, senderId: this.msg.senderId,
-                  presetTag: this.msg.senderTag
-                });
+            // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
+            // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
+            // 不存在「一边材质一边普通渲染」对不齐的问题。
+            .alignItems(VerticalAlign.Bottom)
+            .padding(this.tailGutterPadding())
+            // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
+            // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
+            .backgroundColor(this.containerGlassBg())
+            .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+              y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+              centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+            .opacity(1 - this.leaving)
+            .brightness(1 + this.jumpFocus * 0.10)
+            .backgroundBlurStyle(this.containerGlassBlurStyle())
+            // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
+            // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
+            .borderRadius(this.glassRadius())
+            .background(this.glassOutline(), { align: Alignment.TopStart })
+            .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+              this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
+            // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
+            // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
+            // onSizeChange 而不是 onAreaChange：后者每帧参与一次全局遍历（HandleOnAreaChangeEvent）。
+            // 复用后尺寸没变不会回调，由 aboutToReuse 用 measuredGlassW/H 回填。
+            // 同值不写：@Local 赋同一个数也会走一遍变更通知。
+            .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+              const w: Length | undefined = size.width;
+              const h: Length | undefined = size.height;
+              if (typeof w !== 'number' || typeof h !== 'number') {
+                return;
               }
-              .margin({ bottom: 2 }).alignItems(VerticalAlign.Center)
-              .onAreaChange((_old: Area, area: Area): void => {
-                this.senderLabelW = area.width as number;
-                rememberSenderLabelW(this.msg.senderName, this.senderLabelW);
-              });
+              this.measuredGlassW = w as number;
+              this.measuredGlassH = h as number;
+              if (this.glassW !== this.measuredGlassW) {
+                this.glassW = this.measuredGlassW;
+              }
+              if (this.glassH !== this.measuredGlassH) {
+                this.glassH = this.measuredGlassH;
+              }
+            })
+            // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
+            // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
+            .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
+              this.onScreen = visible;
+            })
+          } else {
+            Row() {
+              this.bubbleCluster();
             }
-            Stack({ alignContent: Alignment.BottomEnd }) {
-              this.body();
-              this.timeOverlay();
-            }
-            // 名字行比正文宽时时间戳停在正文末尾、够不到气泡右边缘（用户报的），
-            // 拿量到的名字行宽度兜一个最小宽度。
-            .constraintSize({ maxWidth: this.inlineMaxW(), minWidth: this.measuredTimeLayerWidth() });
+            // 玻璃关：只留与材质无关的这几个。
+            .alignItems(VerticalAlign.Bottom)
+            .padding(this.tailGutterPadding())
+            .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+              y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+              centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+            .opacity(1 - this.leaving)
+            .brightness(1 + this.jumpFocus * 0.10)
           }
-          .alignItems(HorizontalAlign.Start)
-          // 与 MessageBubble 同一策略、同一理由（见那边的长注释）：气泡根节点上
-          // 不挂常驻 .animation()，按下态直接切换。真机 trace 已证明换位置留不住
-          // 动画边界，只有节点上完全没有常驻动画，普通数据更新才不会进入动画
-          // 上下文、连带整张消息 List 的重测。两支气泡必须同改。
-          .stateStyles({ normal: plainBubbleNormalStyle, pressed: plainBubblePressedStyle })
-          .constraintSize({ maxWidth: this.bubbleMaxW() })
-          .backgroundColor(this.bubbleBg())
-          .backgroundBlurStyle(this.glassBlurStyle())
-          .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-            this.onScreen = visible;
-          })
-          .borderRadius(this.bubbleCorners()).padding(8)
-          .shadow({ radius: this.glassBodyOn() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
-          .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-            .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
-          .onClick((event: ClickEvent): void => {
-            if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
-              this.recordMenuOffset(event.x, Number(event.target.area.width));
-              this.menuShown = true;
-            }
-          });
-          if (this.msg.isOutgoing && this.hasTail()) {
-            this.bubbleTail(true);
-          } else if (this.msg.isOutgoing) {
-            Column().width(7);
-          }
-          }
-          // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
-          // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
-          // 不存在「一边材质一边普通渲染」对不齐的问题。
-          .alignItems(VerticalAlign.Bottom)
-          // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
-          // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
-          .backgroundColor(this.containerGlassBg())
-          .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-            y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-            centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-          .opacity(1 - this.leaving)
-          .brightness(1 + this.jumpFocus * 0.10)
-          .backgroundBlurStyle(this.containerGlassBlurStyle())
-          // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
-          // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
-          .borderRadius(this.glassRadius())
-          .background(this.glassOutline(), { align: Alignment.TopStart })
-              .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
-            this.msg.isOutgoing, this.hasTail(), this.bubbleCorners()))
-      // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
-      // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
-      // 同值不写：@Local 赋同一个数也会走一遍变更通知。
-      .onAreaChange((_old: Area, area: Area): void => {
-        if (!this.env.bubbleMaterialOn) {
-          return;
-        }
-        const w: number = Number(area.width);
-        const h: number = Number(area.height);
-        if (this.glassW !== w) {
-          this.glassW = w;
-        }
-        if (this.glassH !== h) {
-          this.glassH = h;
-        }
-      })
         }
         .alignItems(VerticalAlign.Bottom)
+        .padding(this.avatarGutterPadding())
         .bindContextMenu(this.menuShown, this.contextMenu(), {
           offset: { x: this.menuOffsetX, y: 0 },
           preview: menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp)

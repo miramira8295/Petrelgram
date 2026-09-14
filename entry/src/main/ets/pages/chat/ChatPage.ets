@@ -256,6 +256,7 @@ import {
 } from '../../util/locationActions';
 import { utilityActionAllowedAt } from '../../util/utilityActionGuard';
 import { albumReuseShape, rowPlaySlotKey } from '../../util/messageBubblePrepare';
+import { buildRowPageInputs, RowPageInputs } from '../../util/rowPageInputs';
 // applyTypingUpdate/pruneExpiredTyping/typingLabelOf 随 typingSenders/
 // typingTimer/typingLabel 整套搬进了 TypingIndicatorState（B10 批），页面不再
 // 直接引用。
@@ -1567,36 +1568,38 @@ export struct ChatPage {
   // Prepare the row once for this build invocation. `data` used to repeat all
   // of these derived lookups independently for every visible row.
   private prepareMessageBubble(g: AlbumGroup): PreparedMessageBubble {
+    // 页面级输入一次读完（见 rowPageInputs：只收状态、且每行无条件读的那部分）。
+    const page: RowPageInputs = this.rowPageInputs;
     // 行局部的播放位。起播位置同理：只有拥有播放位的那一行才谈得上续播位置，
     // 其余行给 0——否则它一变，整屏的缓存又一起作废。
-    const rowSlot: string = this.rowPlaySlotKey(g);
+    const rowSlot: string = rowPlaySlotKey(g, page.playSlotKey);
     const rowSlotStartMs: number = rowSlot === '' ? 0 : this.playSlotStartMs;
-    const paused: boolean = this.animationPaused(g.head.id);
-    const forcePlay: boolean = this.animationForcePlay(g.head.id);
-    const playbackFailed: boolean = this.animationPlaybackFailed(g.head.id);
+    const paused: boolean = page.pausedIds.has(g.head.id);
+    const forcePlay: boolean = page.forcedIds.has(g.head.id);
+    const playbackFailed: boolean = page.failedIds.has(g.head.id);
     const audio: boolean = audioQueueApplies(g.head.contentType);
     const showUnreadDivider: boolean = this.firstUnreadId !== 0 &&
       g.memberIds.indexOf(this.firstUnreadId) >= 0;
     const showResumeDivider: boolean = this.resumeDividerId !== 0 &&
       g.memberIds.indexOf(this.resumeDividerId) >= 0;
     const showTimelineDivider: boolean = showUnreadDivider || showResumeDivider;
-    const translationActive: boolean = this.translation.active(this.translateChatsEnabled);
+    const translationActive: boolean = page.translationActive;
     const isPinnedMsg: boolean = (this.store?.getPinnedIds() ?? []).indexOf(g.head.id) >= 0;
-    const paidMediaPending: boolean = this.paidMediaPending(g.head.id);
-    const editingActive: boolean = this.composer.isEditing();
-    const animateIn: boolean = this.freshSinceId !== 0 && g.head.id > this.freshSinceId;
-    const liveGroupCallId: number = this.topCard.liveCallIsActive ? this.topCard.liveGroupCallId : 0;
+    const paidMediaPending: boolean = page.paidMediaPendingIds.has(g.head.id);
+    const editingActive: boolean = page.editingActive;
+    const animateIn: boolean = page.freshSinceId !== 0 && g.head.id > page.freshSinceId;
+    const liveGroupCallId: number = page.liveGroupCallId;
     // nowSec changes every second, but only these two reuse decisions cross a
     // time boundary. Key the decisions instead of invalidating every prepared
     // row every second; the live clock itself is passed outside the cache.
     const menuEditable: boolean = g.head.isOutgoing && this.nowSec - g.head.date < 172800;
     const pollExpired: boolean = g.head.pollCloseDate > 0 && this.nowSec >= g.head.pollCloseDate;
     const contentWidth: number = messageSelectionContentWidth(
-      this.chatContentWidth, this.selection.active, g.head.contentType);
+      page.chatContentWidth, page.selectionActive, g.head.contentType);
     // 本行已选中的成员（相册逐格勾选用）。**只算本行**：把整个选择集放进 data
     // 会让每点一下就把所有行的 prepare 缓存键打翻。非多选态直接给空数组，
     // 平时零成本。
-    const selectedMemberIds: number[] = this.selection.active
+    const selectedMemberIds: number[] = page.selectionActive
       ? g.memberIds.filter((id: number): boolean => this.selection.isMemberSelected(id))
       : [];
     // 【必须进 cacheKey】它决定 ReusableMessageBubble 派发到轻量气泡还是完整
@@ -1614,23 +1617,19 @@ export struct ChatPage {
     const lightweightRow: boolean = canRenderLightweightPlainTextRow(
       g.head, g.memberIds.length, g.photoPaths.length);
     const cacheKey: string = `${this.rowKeyOf(g)}|c${this.chatId}|lw${lightweightRow ? 1 : 0}` +
-      `|g${this.isGroup ? 1 : 0}${this.isChannel ? 1 : 0}` +
       `|u${showUnreadDivider ? 1 : 0}|r${showResumeDivider ? 1 : 0}` +
-      `|tr${translationActive ? 1 : 0}` +
       `|editable${menuEditable ? 1 : 0}|poll${pollExpired ? 1 : 0}` +
       `|pin${isPinnedMsg ? 1 : 0}|paid${paidMediaPending ? 1 : 0}` +
       `|anim${paused ? 1 : 0}${forcePlay ? 1 : 0}${playbackFailed ? 1 : 0}` +
-      `|edit${editingActive ? 1 : 0}|fresh${animateIn ? 1 : 0}` +
-      `|live${this.liveLocationMessageId}|call${liveGroupCallId}` +
+      `|fresh${animateIn ? 1 : 0}` +
       `|slot${rowSlot}|slotms${rowSlotStartMs}` +
-      `|mute${this.autoplayMuted ? 1 : 0}|msg${audio ? this.messageListRevision : 0}` +
-      `|bg${this.chatBackgroundRevision}|appearance${this.appearanceEpoch}` +
-      `|material${this.materialEpoch}|dark${this.appDark ? 1 : 0}` +
-      `|select${this.selection.active ? 1 : 0}|width${contentWidth}` +
+      `|msg${audio ? this.messageListRevision : 0}` +
+      `|bg${this.chatBackgroundRevision}|width${contentWidth}` +
       `|selm${selectedMemberIds.join(',')}` +
-      // 发言权变了要重建：左滑回复的可用性挂在它上面。翻转很罕见
-      // （加入/退出频道、被禁言），不会带来滚动期的重建。
-      `|reply${membershipLosesComposer(this.membershipState) ? 0 : 1}`;
+      // 页面级各段（g / tr / edit / live / call / mute / appearance / material / dark /
+      // select / reply）由 rowPageInputs 算好，取值与原来逐段相同。发言权（reply）变了
+      // 要重建：左滑回复的可用性挂在它上面；翻转很罕见，不会带来滚动期的重建。
+      page.keyPart;
     const cached: PreparedMessageBubble | undefined = this.preparedMessageCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
@@ -1650,8 +1649,8 @@ export struct ChatPage {
       memberCount: g.memberIds.length,
       hasDateSeparator: g.dateLabel !== '',
       showUnreadDivider: showTimelineDivider,
-      isGroup: this.isGroup,
-      isChannel: this.isChannel,
+      isGroup: page.isGroup,
+      isChannel: page.isChannel,
       showAvatar: g.showAvatar,
       showSenderName: g.showSenderName,
       translationActive,
@@ -1668,9 +1667,9 @@ export struct ChatPage {
       animationForcePlay: forcePlay,
       animationPlaybackFailed: playbackFailed,
       isPinnedMsg,
-      liveSharing: this.liveLocationMessageId === g.head.id,
+      liveSharing: page.liveLocationMessageId === g.head.id,
       paidMediaPending,
-      liveVideoChatTappable: g.head.isVideoChatStarted && this.topCard.liveCallIsActive,
+      liveVideoChatTappable: g.head.isVideoChatStarted && page.liveCallActive,
       audioQueuePosition,
       audioQueueLength,
       pollExpired
@@ -1679,12 +1678,12 @@ export struct ChatPage {
     // context 的两个计数转发给 …Row，结果必然一致），别再算第二遍。
     const lightweightPlainText: boolean = lightweightRow;
     const data: MessageBubbleRenderData = {
-      chatId: this.chatId, contentWidth, isGroup: this.isGroup, isChannel: this.isChannel,
-      canReply: !membershipLosesComposer(this.membershipState),
+      chatId: this.chatId, contentWidth, isGroup: page.isGroup, isChannel: page.isChannel,
+      canReply: page.canReply,
       canReport: !this.header.isSecretChat() && !this.header.isSavedMessages(),
-      selectionActive: this.selection.active,
+      selectionActive: page.selectionActive,
       selectedMemberIds,
-      liveSharingId: this.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
+      liveSharingId: page.liveLocationMessageId, themeBubbleOut: this.chatBg.bubbleOutColor,
       showUnreadDivider: showTimelineDivider,
       dividerIsResume: showResumeDivider,
       paidMediaPending,
@@ -1692,14 +1691,14 @@ export struct ChatPage {
       audioQueueLength,
       audioHasPrevious,
       audioHasNext,
-      playSlotKey: rowSlot, autoplayMuted: this.autoplayMuted,
+      playSlotKey: rowSlot, autoplayMuted: page.autoplayMuted,
       playSlotStartMs: rowSlotStartMs,
       animationPaused: paused,
       animationForcePlay: forcePlay,
       animationPlaybackFailed: playbackFailed,
       editingActive,
       isPinnedMsg,
-      liveGroupCallId: this.topCard.liveCallIsActive ? this.topCard.liveGroupCallId : 0,
+      liveGroupCallId,
       animateIn,
       lightweightPlainText
     };
@@ -2368,6 +2367,39 @@ export struct ChatPage {
   // 模块级单例：平板分栏/导航栈多层时同时活着多个 ChatPage，各自的多选态
   // 互不相干。
   private selection: SelectionSession = new SelectionSession();
+
+  // 每行 prepare 都要读的页面级状态，收成一个计算属性（逻辑在 util/rowPageInputs）。
+  // 每行只读这一个，依赖不再逐行逐个登记；四个 id 数组也在这里转成普通 Set，每行不再
+  // 在代理数组上跑 indexOf。只在其中某个状态变了时重算。
+  // 【只收"状态 + 每行无条件读"的】普通字段（firstUnreadId / chatId / messageListRevision
+  // …）变了不会让它重算；只有部分行才读的（nowSec、playSlotStartMs）放进来会把所有行
+  // 一起拖着重跑。两类都留在 prepareMessageBubble 里逐行读。
+  // 【声明在它用到的状态与控制器之后】@Computed 在组件创建时就计算一次。
+  @Computed
+  get rowPageInputs(): RowPageInputs {
+    return buildRowPageInputs({
+      isGroup: this.isGroup,
+      isChannel: this.isChannel,
+      translationActive: this.translation.active(this.translateChatsEnabled),
+      editingActive: this.composer.isEditing(),
+      liveCallActive: this.topCard.liveCallIsActive,
+      liveGroupCallId: this.topCard.liveCallIsActive ? this.topCard.liveGroupCallId : 0,
+      liveLocationMessageId: this.liveLocationMessageId,
+      autoplayMuted: this.autoplayMuted,
+      appearanceEpoch: this.appearanceEpoch,
+      materialEpoch: this.materialEpoch,
+      appDark: this.appDark,
+      selectionActive: this.selection.active,
+      chatContentWidth: this.chatContentWidth,
+      canReply: !membershipLosesComposer(this.membershipState),
+      playSlotKey: this.playSlotKey,
+      freshSinceId: this.freshSinceId,
+      pausedAnimationIds: this.pausedAnimationIds,
+      forcedAnimationIds: this.forcedAnimationIds,
+      failedAnimationIds: this.failedAnimationIds,
+      paidMediaPendingIds: this.paidMediaPendingIds
+    });
+  }
 
   private clearFloatingDate(): void {
     // 定时器与两个显示态一起归 FloatingDateState 管；clear() 不回调 onHidden，
@@ -8083,79 +8115,79 @@ export struct ChatPage {
           .height(this.viewportGeometry.rowHeight(ri.item))
           .hitTestBehavior(HitTestMode.None);
       } else {
-        Stack({ alignContent: Alignment.Start }) {
-          // Selection mode shifts the row right into a left check gutter.
-          Row() {
-            // 【让位栏必须是常驻节点，不能是结构 if】
-            // 结构 if 是凭空插入/移除节点，插值不出来——所以进出多选是"闪过去"
-            // 的，哪怕 SelectionSession.animateSelection 早就用 animateTo 包着
-            // active 的翻转。改成常驻、宽度 0↔34，那 150ms 才有东西可插。
-            // 条件换成 rowSelectable（内容类型决定，不随多选翻转），这个节点在
-            // 与不在于是变成**静态**的，模板池也就不必再按多选分档。
-            // 里面的勾选图标仍按 active 条件建：不在多选态时不付图标的钱，常驻
-            // 的只是一个零宽空 Column。
-            if (rowSelectable(ri.item.head.contentType)) {
-              Column() {
-                // 相册行也画这个勾：它是**整组**的开关（沾上就算选中，点它整组
-                // 清空），而每一格右上角那个是**单张**的（见 AlbumCellView）。
-                // 两者分工清楚，缺了整组开关的话，长按进多选默认整组选中之后
-                // 用户只能一张一张取消。
-                if (this.selection.active) {
-                  if (this.selection.isRowSelected(ri.item)) {
-                    SymbolGlyph($r('sys.symbol.checkmark_circle'))
-                      .fontSize(22).fontColor([this.accent()]);
-                  } else {
-                    Row()
-                      .width(20).height(20).borderRadius(10)
-                      .border({ width: 1.5, color: '#8E8E93' });
-                  }
+        // 这里原来还套着一层 Stack({ alignContent: Start })：单子节点、零属性，每行白付
+        // 一个节点和一层测量，已去掉（2026-09-14）。
+        // Selection mode shifts the row right into a left check gutter.
+        Row() {
+          // 【让位栏必须是常驻节点，不能是结构 if】
+          // 结构 if 是凭空插入/移除节点，插值不出来——所以进出多选是"闪过去"
+          // 的，哪怕 SelectionSession.animateSelection 早就用 animateTo 包着
+          // active 的翻转。改成常驻、宽度 0↔34，那 150ms 才有东西可插。
+          // 条件换成 rowSelectable（内容类型决定，不随多选翻转），这个节点在
+          // 与不在于是变成**静态**的，模板池也就不必再按多选分档。
+          // 里面的勾选图标仍按 active 条件建：不在多选态时不付图标的钱，常驻
+          // 的只是一个零宽空 Column。
+          if (rowSelectable(ri.item.head.contentType)) {
+            Column() {
+              // 相册行也画这个勾：它是**整组**的开关（沾上就算选中，点它整组
+              // 清空），而每一格右上角那个是**单张**的（见 AlbumCellView）。
+              // 两者分工清楚，缺了整组开关的话，长按进多选默认整组选中之后
+              // 用户只能一张一张取消。
+              if (this.selection.active) {
+                if (this.selection.isRowSelected(ri.item)) {
+                  SymbolGlyph($r('sys.symbol.checkmark_circle'))
+                    .fontSize(22).fontColor([this.accent()]);
+                } else {
+                  Row()
+                    .width(20).height(20).borderRadius(10)
+                    .border({ width: 1.5, color: '#8E8E93' });
                 }
               }
-              .width(this.selection.active ? MESSAGE_SELECTION_GUTTER_VP : 0)
-              .opacity(this.selection.active ? 1 : 0)
-              // 宽度收到 0 的过程中图标会溢出压到气泡上，必须裁掉。
-              .clip(true)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-              // 相册行的**行点击**不再切整行（见下方 onClick），所以整组开关要有
-              // 自己的点击。非相册行由行点击兜住，这里重复触发也无妨：ArkUI 的
-              // onClick 会冒泡，但相册行那边的行点击已经早退。
-              .onClick((): void => {
-                if (this.selection.active) {
-                  this.selection.toggleRow(ri.item);
-                }
-              });
             }
-            Column() {
-              this.preparedMessageBubble(ri);
-            }
-            .layoutWeight(1)
-            // BLOCK_DESCENDANTS keeps the outer List draggable in selection mode.
-            //
-            // **相册行例外（2026-09-11）**：屏蔽后代的话相册格子在多选态下根本
-            // 收不到触摸，每一格自己的 onClick 永远不跑，所有点击都落到行的
-            // toggleRow 上——用户看到的就是"取消一张，整组全没了"。
-            // 格子上只有 onClick（拖动不会触发），所以放开它不影响列表拖动。
-            .hitTestBehavior(this.selection.active &&
-              rowSelectable(ri.item.head.contentType) && ri.item.memberIds.length <= 1
-              ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
+            .width(this.selection.active ? MESSAGE_SELECTION_GUTTER_VP : 0)
+            .opacity(this.selection.active ? 1 : 0)
+            // 宽度收到 0 的过程中图标会溢出压到气泡上，必须裁掉。
+            .clip(true)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            // 相册行的**行点击**不再切整行（见下方 onClick），所以整组开关要有
+            // 自己的点击。非相册行由行点击兜住，这里重复触发也无妨：ArkUI 的
+            // onClick 会冒泡，但相册行那边的行点击已经早退。
+            .onClick((): void => {
+              if (this.selection.active) {
+                this.selection.toggleRow(ri.item);
+              }
+            });
           }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .backgroundColor(this.selection.active && this.selection.isRowSelected(ri.item)
-            ? $r('app.color.select_highlight') : Color.Transparent)
-          .onClick((): void => {
-            if (!this.selection.active) {
-              return;
-            }
-            // 相册行早退：整组开关在让位栏上，单张开关在每个格子上。这里再切一次
-            // 会把格子刚做的单张切换整行撤销（onClick 会冒泡到这里）。
-            if (ri.item.memberIds.length > 1) {
-              return;
-            }
-            this.selection.toggleRow(ri.item);
-          });
+          Column() {
+            this.preparedMessageBubble(ri);
+          }
+          .layoutWeight(1)
+          // BLOCK_DESCENDANTS keeps the outer List draggable in selection mode.
+          //
+          // **相册行例外（2026-09-11）**：屏蔽后代的话相册格子在多选态下根本
+          // 收不到触摸，每一格自己的 onClick 永远不跑，所有点击都落到行的
+          // toggleRow 上——用户看到的就是"取消一张，整组全没了"。
+          // 格子上只有 onClick（拖动不会触发），所以放开它不影响列表拖动。
+          .hitTestBehavior(this.selection.active &&
+            rowSelectable(ri.item.head.contentType) && ri.item.memberIds.length <= 1
+            ? HitTestMode.BLOCK_DESCENDANTS : HitTestMode.Default);
         }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(this.selection.active && this.selection.isRowSelected(ri.item)
+          ? $r('app.color.select_highlight') : Color.Transparent)
+        .onClick((): void => {
+          if (!this.selection.active) {
+            return;
+          }
+          // 相册行早退：整组开关在让位栏上，单张开关在每个格子上。这里再切一次
+          // 会把格子刚做的单张切换整行撤销（onClick 会冒泡到这里）。
+          if (ri.item.memberIds.length > 1) {
+            return;
+          }
+          this.selection.toggleRow(ri.item);
+        });
       }
     }
     .visibility(this.initialTimelineMasked || ri.item.initialDeferred === true

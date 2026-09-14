@@ -165,6 +165,7 @@ import sheetDismissStackTest from './SheetDismissStack.test';
 import avatarWarmTest from './AvatarWarm.test';
 import translationStatusHubTest from './TranslationStatusHub.test';
 import prependChunkerTest from './PrependChunker.test';
+import rowPageInputsTest from './RowPageInputs.test';
 import linkTapGuardTest from './LinkTapGuard.test';
 import attachActionsTest, { attachActionsControllerTest } from './AttachActions.test';
 import imageSwapTest from './ImageSwap.test';
@@ -445,6 +446,7 @@ export default function testsuite() {
   avatarWarmTest();
   translationStatusHubTest();
   prependChunkerTest();
+  rowPageInputsTest();
   linkTapGuardTest();
   attachActionsTest();
   attachActionsControllerTest();

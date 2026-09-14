@@ -216,6 +216,17 @@ const SYSTEM_PILL_PRESS_NONE: PressDimModifier = new PressDimModifier(0.72, 0.98
 // path（#137 修法）整套退役。批 2 已在真机验证过同款（avatar.plain.reuse
 // 满速 + kept=true 连串）。原 struct 的 appearanceEpoch/accent() 是从未被
 // build 引用的死代码，随迁移清掉。
+// 占位用的内边距（第五刀，2026-09-14，与 LightweightPlainTextBubble 第四刀同一做法）：
+// 原来这两个位置各垫一个定宽空 Column，每行白付一个节点、一层测量和一份复用时要重跑的
+// 更新。换成所在容器的内边距，占的宽度逐像素不变。
+// 没有尾巴时给尾巴留的位，见 bubbleTailGutter / tailGutterPadding。
+const TAIL_GUTTER_VP: number = 7;
+const TAIL_GUTTER_LEFT: Padding = { left: TAIL_GUTTER_VP };
+const TAIL_GUTTER_RIGHT: Padding = { right: TAIL_GUTTER_VP };
+// 群聊来信不显示头像时给头像留的 44vp 位（头像 38 + 右边距 6），见 avatarGutterPadding。
+const AVATAR_GUTTER: Padding = { left: 44 };
+const NO_GUTTER: Padding = {};
+
 @ComponentV2
 struct LiveSenderAvatar {
   @Param senderId: number = 0;
@@ -307,13 +318,14 @@ struct LiveSenderAvatar {
     // shell that both defeated reuse and accounted for 110 ms of build/destroy
     // work in the captured scroll trace.
     Stack() {
-      Circle({ width: this.avatarSize, height: this.avatarSize })
-        .fill(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length]);
+      // 底色圆和首字母合成一个 Text（背景色 + 半径圆角 = 原来的 Circle），头像少一个节点。
       // 字母只在真没头像时画；有路径但图还没到（极少数走异步的情况）就是纯色圆，
-      // 色块→照片比字母→照片柔和得多。
-      Text(this.initials)
-        .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium)
-        .visibility(this.path === '' ? Visibility.Visible : Visibility.None);
+      // 色块→照片比字母→照片柔和得多——所以有图时只清空文字、不藏背景。
+      Text(this.path === '' ? this.initials : '')
+        .width(this.avatarSize).height(this.avatarSize).borderRadius(this.avatarSize / 2)
+        .backgroundColor(AVATAR_PALETTE[Math.abs(this.senderId) % AVATAR_PALETTE.length])
+        .textAlign(TextAlign.Center).align(Alignment.Center)
+        .fontColor(Color.White).fontSize(this.avatarSize * 0.4).fontWeight(FontWeight.Medium);
       CachedImage({
         path: this.path,
         boxWidth: this.avatarSize,
@@ -367,6 +379,11 @@ export struct MessageBubble {
   // 「尾巴 + 气泡」外层容器量到的尺寸，整块玻璃的裁剪路径靠它。只在材质开着时被读。
   @Local glassW: number = 0;
   @Local glassH: number = 0;
+  // glassW/glassH 的量值影子。@Local 复用时被框架重置成 0，而 onSizeChange 在复用后
+  // 尺寸没变时不会再回调；无装饰器成员复用时不重置，节点上次上报的尺寸恰好就是它，
+  // aboutToReuse 用它回填。
+  private measuredGlassW: number = 0;
+  private measuredGlassH: number = 0;
   @Param nowSec: number = 0;
   @Param jumpFocus: number = 0;
   // 1 = 这一行正在被删除，淡出等 TDLib 的删除到达（issue #149）。
@@ -411,6 +428,10 @@ export struct MessageBubble {
   // Measured width of the bubble (it shrinks to fit content) — the inline
   // keyboard below matches it exactly instead of the theoretical max width.
   @Local bubbleW: number = 0;
+  // bubbleW 的量值影子。@Local 复用时会被框架重置成 0，而 onSizeChange 在复用后尺寸
+  // 没变时不会再回调；无装饰器成员复用时不重置，节点上次上报的尺寸恰好就是它，
+  // aboutToReuse 用它回填。**不要**放进 clearTransientState。
+  private measuredBubbleW: number = 0;
   // 长按/点击的落点相对气泡中心的水平偏移，交给 bindContextMenu 的 offset。
   // 菜单默认贴着气泡排（ArkUI 按组件矩形算位置，与触点无关，实测同一条消息
   // 按左缘和按右缘弹出位置完全一样），这个值让它朝手指那一侧挪。
@@ -657,6 +678,11 @@ export struct MessageBubble {
     this.forwardLabelW = recallLabelWidth(`forward:${this.msg.forwardFrom}`);
     this.senderLabelW = recallLabelWidth(`sender:${this.msg.senderName}`);
     this.commentsRowW = recallLabelWidth(`comments:${this.msg.commentCount}`);
+    // 见 measuredBubbleW：复用后尺寸没变时 onSizeChange 不再回调，这里回填。
+    this.bubbleW = this.measuredBubbleW;
+    // 见 measuredGlassW：复用后尺寸没变时 onSizeChange 不再回调，这里回填。
+    this.glassW = this.measuredGlassW;
+    this.glassH = this.measuredGlassH;
     this.wasCompetingVideo = this.isCompetingVideo();
     this.attachMessageChannels(this.msg);
     for (let i = 0; i < this.group.photoIsVideo.length; i++) {
@@ -797,7 +823,21 @@ export struct MessageBubble {
   // 但这一槽的作用是**横向对齐**，和有没有气泡无关：不占就比上下的文字气泡
   // 整整左移 7vp，正是 issue #81 里那条歪掉的贴纸。
   private bubbleTailGutter(): number {
-    return 7;
+    return TAIL_GUTTER_VP;
+  }
+  // 尾巴位：有尾巴时由尾巴节点自己占；没有时由「尾巴 + 气泡」容器的内边距占（原来是
+  // bubbleCluster 里的定宽空 Column）。容器尺寸不变，玻璃的量值与裁剪轮廓也就不变。
+  private tailGutterPadding(): Padding {
+    if (this.hasBubbleTail()) {
+      return NO_GUTTER;
+    }
+    return this.msg.isOutgoing ? TAIL_GUTTER_RIGHT : TAIL_GUTTER_LEFT;
+  }
+  // 头像位：群聊来信不显示头像时由挂菜单的那层 Row 的内边距占（原来是定宽空 Column）。
+  // 那层 Row 是长按菜单预览截图的范围，原来就包着这块透明的 44vp，截图边界不变。
+  private avatarGutterPadding(): Padding {
+    return this.data.isGroup && !this.msg.isOutgoing && !this.group.showAvatar
+      ? AVATAR_GUTTER : NO_GUTTER;
   }
 
   private rowTopPadding(): number {
@@ -4014,6 +4054,197 @@ export struct MessageBubble {
     .alignItems(VerticalAlign.Center);
   }
 
+  // 「尾巴 + 气泡本体」。build() 里材质开/关两支容器共用这一份（见那里的分支说明）；
+  // 无参 @Builder，碰不到「参数按值传不刷新」的坑。
+  @Builder
+  bubbleCluster() {
+    // 没有尾巴时的尾巴位由容器内边距占（见 tailGutterPadding），不再垫定宽空 Column。
+    if (!this.msg.isOutgoing && this.hasBubbleTail()) {
+      this.bubbleTail(false);
+    }
+    Column() {
+      if (this.forwardLabelShown()) {
+        // Tappable when the origin is known — opens the original post, or the
+        // author's chat. A hidden-origin forward carries no ids and stays inert.
+        Text(str('mb_forwarded_from', this.msg.forwardFrom)).fontSize(13).fontColor(this.accent())
+          .fontWeight(FontWeight.Medium).margin({ bottom: 2 })
+          .constraintSize({ maxWidth: this.inlineMaxW() })
+          // onSizeChange 而不是 onAreaChange：后者每帧对所有注册节点逐个比对
+          // （PipelineContext::HandleOnAreaChangeEvent，15:25 trace 翻页段每帧约 0.9ms），
+          // 这里只要宽度；复用后尺寸没变不回调时，aboutToReuse 已按标签文本播种。
+          .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+            const w: Length | undefined = size.width;
+            if (typeof w === 'number') {
+              this.forwardLabelW = w as number;
+              rememberLabelWidth(`forward:${this.msg.forwardFrom}`, w as number);
+            }
+          })
+          .onClick(() => {
+            if (this.gestureClaimed) { return; }
+            if (this.msg.forwardOriginChatId !== 0 || this.msg.forwardOriginUserId !== 0) {
+              this.actions.onForwardTap(this.msg.forwardOriginChatId, this.msg.forwardOriginMsgId,
+                this.msg.forwardOriginUserId);
+            }
+          });
+      }
+      if (this.senderLabelShown()) {
+        // 名字和身份标签同一行。标签自订阅（见 SenderRoleTag），名单到货时
+        // 只有那一枚小标签换字，不会牵动整行重建。
+        Row({ space: 5 }) {
+          Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1);
+          SenderRoleTag({ chatId: this.data.chatId, senderId: this.msg.senderId,
+            presetTag: this.msg.senderTag });
+        }
+        .margin({ bottom: 2 })
+        .alignItems(VerticalAlign.Center)
+        // 同上：只要宽度，复用由 aboutToReuse 按文本播种。
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          const w: Length | undefined = size.width;
+          if (typeof w === 'number') {
+            this.senderLabelW = w as number;
+            rememberLabelWidth(`sender:${this.msg.senderName}`, w as number);
+          }
+        });
+      }
+      // Inline timestamp: overlaid at the content's bottom-right, sharing the
+      // last text line (which reserves invisible tail space for it).
+      Stack({ alignContent: Alignment.BottomEnd }) {
+        // minWidth 挂在**正文 Column 上**，不是挂在 Stack 上。
+        //
+        // 挂在 Stack 上时，Stack 的 alignContent 作用在每一个孩子身上、不只是
+        // 时间戳：标签比正文宽而把 Stack 撑开之后，BottomEnd 会把正文这个
+        // Column 一起推到右边，正好压在时间戳上——正文靠右、和时间叠字。
+        //
+        // 挂在 Column 上则是 Column 自己变宽，而它的 alignItems(Start) 让正文
+        // 留在左边；Stack 的宽度仍由这个最宽的孩子决定，BottomEnd 摆的就只剩
+        // 时间戳，落点还是气泡真正的右下角。
+        //
+        // 注意别用「给时间戳套一层 width('100%') 的 Row」那种写法：百分比宽度
+        // 的孩子会让 Stack 直接取到 maxWidth，每条气泡都被撑成整屏宽。
+        if (this.useDirectPlainText()) {
+          this.directPlainText();
+        } else {
+          Column() {
+            this.content();
+            if (this.msg.reactions.length > 0) {
+              // 有反应时时间跟在反应行末尾（官方也是这样）：时间浮层原本贴
+              // 气泡右下角，而反应行正好占住那一块，两者会叠在一起（issue #100）。
+              Row({ space: 6 }) {
+                this.reactionsRow();
+                this.timeOverlay();
+              }
+              .alignItems(VerticalAlign.Bottom)
+              .constraintSize({ maxWidth: this.inlineMaxW() });
+            }
+          }
+          .alignItems(HorizontalAlign.Start)
+          .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
+        }
+        if (this.msg.reactions.length === 0) {
+          this.timeOverlay();
+        }
+      }
+      // 时间贴的是这个 Stack 的右下角，而 Stack 按正文宽度排：正文比「昵称+
+      // 标签」短时，时间就停在正文末尾、够不到气泡右边缘（用户报的）。昵称行
+      // 的宽度已经量过（senderLabelW），拿它兜一个最小宽度，两行右边缘就对齐了。
+      .constraintSize({
+        maxWidth: this.inlineMaxW(),
+        minWidth: Math.min(this.inlineMaxW(), this.senderLabelShown() ? this.senderLabelW : 0)
+      })
+      if (this.commentsRowShown()) {
+        Column() {
+          this.commentsRow();
+        }
+        // 同上：只要宽度，复用由 aboutToReuse 按文本播种。
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          const w: Length | undefined = size.width;
+          if (typeof w === 'number') {
+            this.commentsRowW = w as number;
+            rememberLabelWidth(`comments:${this.msg.commentCount}`, w as number);
+          }
+        });
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    // 气泡根节点上**没有**常驻 .animation()：按下态的 opacity/scale 直接切换，
+    // 不做过渡。
+    //
+    // 曾经这里挂着 110ms 的常驻 .animation()。第一次尝试是把它从属性链末尾
+    // 提到紧跟 stateStyles 之后，指望作用域语义把几何与材质属性排除在外；
+    // 2026-08-27 的真机 trace 否定了这个假设：fling 窗口内 duration:110 的
+    // 切片只从 1329 降到 1261（-5.1%），duration:110 -> FlushLayoutTask ->
+    // Measure[List] 这条链路仍在，最重的一帧反而从 210ms 涨到 463ms。
+    // 换句话说，只要节点上挂着常驻动画，ArkUI 在组件更新时仍会建立动画
+    // 上下文，并把同一刷新周期里的列表脏节点一起带进动画布局。所以复用重绑、
+    // 宽度回写、发送态、下载进度、翻译态这些普通数据更新必须落在任何动画
+    // 上下文之外——唯一可靠的办法是节点上根本不存在常驻动画。
+    //
+    // 平滑按压反馈如需恢复，只能由真实的 Down/Up/Cancel 触摸事件驱动一次
+    // 显式 animateTo，不要再加回常驻 .animation()。
+    //
+    // 刻意没有另加一层视觉包装节点：材质挂在上层 Row（bubbleGlassModifier）、
+    // 手势与命中都挂在本节点，插节点会动到材质/裁剪/命中三者的相对关系。
+    .attributeModifier(this.suppressBubblePressDim() ? BUBBLE_PRESS_NONE : BUBBLE_PRESS_DIM)
+    // 只给 inlineKeyboard 对齐宽度用，却挂在每条富气泡上。
+    // onSizeChange 而不是 onAreaChange：后者每帧对所有注册节点逐个比对
+    // （PipelineContext::HandleOnAreaChangeEvent，15:25 trace 翻页段每帧约 0.9ms）。
+    // 复用后尺寸没变不会回调、@Local 又被重置成 0，由 aboutToReuse 用 measuredBubbleW 回填。
+    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+      const w: Length | undefined = size.width;
+      if (typeof w === 'number') {
+        this.measuredBubbleW = w as number;
+        this.bubbleW = w as number;
+      }
+    })
+    .constraintSize({ maxWidth: this.bubbleMaxW() })
+    .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
+    .backgroundBlurStyle(this.glassBlurStyle())
+    // Adjacent rows share a restrained 7vp corner. Only the final row gets
+    // the tight tail corner; a single-row run keeps the configured top arc.
+    .borderRadius(this.bubbleCornerRadius())
+    .padding(this.isBareEmoji() ? 0 : 8)
+    // **玻璃档下阴影归零**，和 LightweightPlainTextBubble 一致（那边一直是
+    // `this.glassBodyOn() ? 0 : 2`，这边漏了）。
+    // 气泡不透明时这道 #14000000 压在底下看不见；换成半透玻璃之后它就从边缘
+    // 透出来，成了一圈发暗的框——用户实测「以前玻璃失效的气泡没有黑边，现在有了」。
+    .shadow((this.isBareEmoji() || this.glassBodyOn())
+      ? { radius: 0, color: Color.Transparent, offsetX: 0, offsetY: 0 }
+      : { radius: 2, color: '#14000000', offsetX: 0, offsetY: 1 })
+    // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
+    // LongPressGesture in parallelGesture keeps the chat List's pan
+    // recognizer alive while held (movement still cancels the long press),
+    // and drives the same "lift the bubble" preview animation as a
+    // chat-list row long-press. The swipe-to-reply PanGesture joins the same
+    // group in Exclusive mode (only one of long-press/swipe wins per
+    // gesture), still parallel to the ancestor List so vertical scrolling
+    // is untouched — PanDirection.Horizontal means a vertical drag simply
+    // never satisfies this recognizer and falls through to the List.
+    .parallelGesture(
+      LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+        .onAction((event: GestureEvent): void => { this.onLongPress(event); })
+    )
+    // 单击出菜单只在新交互下挂。用 .onClick 而不是塞进上面那个
+    // parallelGesture：官方文档明写父子都绑点击手势时**子组件优先、父组件
+    // 不触发**，正是我们要的——点链接、点图片、点内联按钮各归各，只有落在
+    // 气泡空白处的点击才轮到菜单。而 parallelGesture 是例外，它父子都会触发，
+    // 用它就会出现"点链接同时开链接和菜单"。
+    .onClick((event: ClickEvent): void => {
+      if (this.gestureClaimed) { return; }
+      if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
+        // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
+        this.recordMenuOffset(event.x, Number(event.target.area.width));
+        this.askEditable();
+        this.msgContextMenuShown = true;
+      }
+    })
+    if (this.msg.isOutgoing && this.hasBubbleTail()) {
+      this.bubbleTail(true);
+    }
+  }
+
   build() {
     if (this.msg.contentType === 'hidden') {
       // Filtered service notice (e.g. channel paid-DM price) — render nothing.
@@ -4036,12 +4267,13 @@ export struct MessageBubble {
     Column() {
       if (this.group.dateLabel !== '') {
         // Day-change separator pill, centered ("7-6" / "2024-12-31").
-        Row() {
-          Text(this.group.dateLabel)
-            .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
-            .backgroundColor($r('app.color.system_pill')).borderRadius(11)
-            .padding({ left: 10, right: 10, top: 3, bottom: 3 });
-        }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 5, bottom: 3 });
+        // 胶囊直接挂在根 Column 里（默认水平居中）：原来外面那层满宽 Row 只负责居中和上下
+        // 5/3 的留白，换成胶囊自己的外边距，占的高度一样（与系统消息那一支写法一致）。
+        Text(this.group.dateLabel)
+          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium)
+          .backgroundColor($r('app.color.system_pill')).borderRadius(11)
+          .padding({ left: 10, right: 10, top: 3, bottom: 3 })
+          .margin({ top: 5, bottom: 3 });
       }
       if (this.data.showUnreadDivider) {
         this.unreadDivider();
@@ -4051,249 +4283,109 @@ export struct MessageBubble {
       // 抬起来的预览才是"头像 + 气泡"。绑到外面那层满宽的行上，浮起来的会是
       // 一条通栏横条，右边一大片空白也跟着抬。满宽那层继续负责左滑和对齐。
       Row() {
-      if (this.data.isGroup && !this.msg.isOutgoing) {
-        if (this.group.showAvatar) {
-          // LiveSenderAvatar, not AvatarView directly: the path arrives via the
-          // sender-avatar side channel and swaps in place — the row itself never
-          // rebuilds for an avatar (see senderAvatarChannel).
-          LiveSenderAvatar({
-            senderId: this.msg.senderId,
-            senderIsUser: this.msg.senderIsUser,
-            initialPath: this.msg.senderAvatarPath,
-            initials: this.msg.senderInitials
+      // 群聊来信不显示头像时，头像位由这层 Row 的内边距占（avatarGutterPadding），
+      // 不再垫定宽空 Column（原注释：mid-run row keeps the avatar column's width so
+      // bubbles stay aligned）；两层 if 也并成一层。
+      if (this.data.isGroup && !this.msg.isOutgoing && this.group.showAvatar) {
+        // LiveSenderAvatar, not AvatarView directly: the path arrives via the
+        // sender-avatar side channel and swaps in place — the row itself never
+        // rebuilds for an avatar (see senderAvatarChannel).
+        LiveSenderAvatar({
+          senderId: this.msg.senderId,
+          senderIsUser: this.msg.senderIsUser,
+          initialPath: this.msg.senderAvatarPath,
+          initials: this.msg.senderInitials
+        })
+          .margin({ right: 6 })
+          .onClick(() => {
+            if (this.gestureClaimed) { return; }
+            // Group message avatar → that user's profile page.
+            if (this.msg.senderIsUser && this.msg.senderId > 0) {
+              this.actions.onAvatarTap(this.msg.senderId);
+            }
           })
-            .margin({ right: 6 })
-            .onClick(() => {
-              if (this.gestureClaimed) { return; }
-              // Group message avatar → that user's profile page.
-              if (this.msg.senderIsUser && this.msg.senderId > 0) {
-                this.actions.onAvatarTap(this.msg.senderId);
-              }
-            })
-            .gesture(LongPressGesture().onAction(() => {
-              if (this.msg.senderIsUser && this.msg.senderId > 0) {
-                this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
-              }
-            }));
-        } else {
-          // Mid-run row: keep the avatar column's width so bubbles stay aligned.
-          Column().width(44);
-        }
+          .gesture(LongPressGesture().onAction(() => {
+            if (this.msg.senderIsUser && this.msg.senderId > 0) {
+              this.actions.onAvatarLongPress(this.msg.senderId, this.msg.senderName);
+            }
+          }));
       }
       // Telegram-style bubble tail poking out of the bottom corner (left for
       // incoming, right for outgoing); the adjacent bubble corner is squared off.
-      Row() {
-      if (!this.msg.isOutgoing && this.hasBubbleTail()) {
-        this.bubbleTail(false);
-      } else if (!this.msg.isOutgoing) {
-        Column().width(this.bubbleTailGutter());
-      }
-      Column() {
-        if (this.forwardLabelShown()) {
-          // Tappable when the origin is known — opens the original post, or the
-          // author's chat. A hidden-origin forward carries no ids and stays inert.
-          Text(str('mb_forwarded_from', this.msg.forwardFrom)).fontSize(13).fontColor(this.accent())
-            .fontWeight(FontWeight.Medium).margin({ bottom: 2 })
-            .constraintSize({ maxWidth: this.inlineMaxW() })
-            .onAreaChange((_old: Area, area: Area): void => {
-              this.forwardLabelW = area.width as number;
-              rememberLabelWidth(`forward:${this.msg.forwardFrom}`, this.forwardLabelW);
-            })
-            .onClick(() => {
-              if (this.gestureClaimed) { return; }
-              if (this.msg.forwardOriginChatId !== 0 || this.msg.forwardOriginUserId !== 0) {
-                this.actions.onForwardTap(this.msg.forwardOriginChatId, this.msg.forwardOriginMsgId,
-                  this.msg.forwardOriginUserId);
-              }
-            });
+      // 【按材质开关分两支容器，2026-09-14】理由见 LightweightPlainTextBubble 同一处：
+      // 玻璃关着时这串属性全是空值，却每次更新/复用都重算、new 修饰器、建描边背景，
+      // 外加一个每帧参与全局遍历的可见区回调。两支气泡必须同改。
+      if (this.env.bubbleMaterialOn) {
+        Row() {
+          this.bubbleCluster();
         }
-        if (this.senderLabelShown()) {
-          // 名字和身份标签同一行。标签自订阅（见 SenderRoleTag），名单到货时
-          // 只有那一枚小标签换字，不会牵动整行重建。
-          Row({ space: 5 }) {
-            Text(this.msg.senderName).fontSize(14).fontColor(this.senderColor())
-              .fontWeight(FontWeight.Medium)
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-              .flexShrink(1);
-            SenderRoleTag({ chatId: this.data.chatId, senderId: this.msg.senderId,
-              presetTag: this.msg.senderTag });
+        // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
+        // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
+        // 不存在「一边材质一边普通渲染」对不齐的问题。
+        .alignItems(VerticalAlign.Bottom)
+        .padding(this.tailGutterPadding())
+        // 容器跨着那 7vp 尾巴留白，形状**只**由 clipShape 给。所以它必须等量到
+        // 尺寸才上色，否则没裁剪的一帧会把留白一起涂满、左边缘外扩 7vp。
+        // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
+        // 透明，完整态始终只有外层这一份背景与模糊。
+        .backgroundColor(this.containerGlassBg())
+        // Transform the bubble and tail without moving avatar/date or list geometry.
+        // The jump controller owns the one-shot animation; no resident .animation().
+        .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+          y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+          centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+        .opacity(1 - this.leaving)
+        .brightness(1 + this.jumpFocus * 0.10)
+        .backgroundBlurStyle(this.containerGlassBlurStyle())
+        // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
+        // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
+        // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
+        // 重合（尾巴那侧仍由裁剪负责）。
+        .borderRadius(this.glassRadius())
+        .background(this.glassOutline(), { align: Alignment.TopStart })
+        .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
+          this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
+        // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
+        // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
+        // onSizeChange 而不是 onAreaChange：后者每帧参与一次全局遍历（HandleOnAreaChangeEvent）。
+        // 复用后尺寸没变不会回调，由 aboutToReuse 用 measuredGlassW/H 回填。
+        // 同值不写：@Local 赋同一个数也会走一遍变更通知。
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          const w: Length | undefined = size.width;
+          const h: Length | undefined = size.height;
+          if (typeof w !== 'number' || typeof h !== 'number') {
+            return;
           }
-          .margin({ bottom: 2 })
-          .alignItems(VerticalAlign.Center)
-          .onAreaChange((_old: Area, area: Area): void => {
-            this.senderLabelW = area.width as number;
-            rememberLabelWidth(`sender:${this.msg.senderName}`, this.senderLabelW);
-          });
-        }
-        // Inline timestamp: overlaid at the content's bottom-right, sharing the
-        // last text line (which reserves invisible tail space for it).
-        Stack({ alignContent: Alignment.BottomEnd }) {
-          // minWidth 挂在**正文 Column 上**，不是挂在 Stack 上。
-          //
-          // 挂在 Stack 上时，Stack 的 alignContent 作用在每一个孩子身上、不只是
-          // 时间戳：标签比正文宽而把 Stack 撑开之后，BottomEnd 会把正文这个
-          // Column 一起推到右边，正好压在时间戳上——正文靠右、和时间叠字。
-          //
-          // 挂在 Column 上则是 Column 自己变宽，而它的 alignItems(Start) 让正文
-          // 留在左边；Stack 的宽度仍由这个最宽的孩子决定，BottomEnd 摆的就只剩
-          // 时间戳，落点还是气泡真正的右下角。
-          //
-          // 注意别用「给时间戳套一层 width('100%') 的 Row」那种写法：百分比宽度
-          // 的孩子会让 Stack 直接取到 maxWidth，每条气泡都被撑成整屏宽。
-          if (this.useDirectPlainText()) {
-            this.directPlainText();
-          } else {
-            Column() {
-              this.content();
-              if (this.msg.reactions.length > 0) {
-                // 有反应时时间跟在反应行末尾（官方也是这样）：时间浮层原本贴
-                // 气泡右下角，而反应行正好占住那一块，两者会叠在一起（issue #100）。
-                Row({ space: 6 }) {
-                  this.reactionsRow();
-                  this.timeOverlay();
-                }
-                .alignItems(VerticalAlign.Bottom)
-                .constraintSize({ maxWidth: this.inlineMaxW() });
-              }
-            }
-            .alignItems(HorizontalAlign.Start)
-            .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
+          this.measuredGlassW = w as number;
+          this.measuredGlassH = h as number;
+          if (this.glassW !== this.measuredGlassW) {
+            this.glassW = this.measuredGlassW;
           }
-          if (this.msg.reactions.length === 0) {
-            this.timeOverlay();
+          if (this.glassH !== this.measuredGlassH) {
+            this.glassH = this.measuredGlassH;
           }
-        }
-        // 时间贴的是这个 Stack 的右下角，而 Stack 按正文宽度排：正文比「昵称+
-        // 标签」短时，时间就停在正文末尾、够不到气泡右边缘（用户报的）。昵称行
-        // 的宽度已经量过（senderLabelW），拿它兜一个最小宽度，两行右边缘就对齐了。
-        .constraintSize({
-          maxWidth: this.inlineMaxW(),
-          minWidth: Math.min(this.inlineMaxW(), this.senderLabelShown() ? this.senderLabelW : 0)
         })
-        if (this.commentsRowShown()) {
-          Column() {
-            this.commentsRow();
-          }
-          .onAreaChange((_old: Area, area: Area): void => {
-            this.commentsRowW = area.width as number;
-            rememberLabelWidth(`comments:${this.msg.commentCount}`, this.commentsRowW);
-          });
+        // onScreen 只给材质用（bubbleMaterialLive），所以可见区回调只在这一支挂；容器与本体
+        // 是同一块，阈值 0.01 下的判定与原来挂在本体上一致。
+        .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
+          this.onScreen = visible;
+        })
+      } else {
+        Row() {
+          this.bubbleCluster();
         }
+        // 玻璃关：只留与材质无关的这几个。
+        .alignItems(VerticalAlign.Bottom)
+        .padding(this.tailGutterPadding())
+        .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+          y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+          centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
+        .opacity(1 - this.leaving)
+        .brightness(1 + this.jumpFocus * 0.10)
       }
-      .alignItems(HorizontalAlign.Start)
-      // 气泡根节点上**没有**常驻 .animation()：按下态的 opacity/scale 直接切换，
-      // 不做过渡。
-      //
-      // 曾经这里挂着 110ms 的常驻 .animation()。第一次尝试是把它从属性链末尾
-      // 提到紧跟 stateStyles 之后，指望作用域语义把几何与材质属性排除在外；
-      // 2026-08-27 的真机 trace 否定了这个假设：fling 窗口内 duration:110 的
-      // 切片只从 1329 降到 1261（-5.1%），duration:110 -> FlushLayoutTask ->
-      // Measure[List] 这条链路仍在，最重的一帧反而从 210ms 涨到 463ms。
-      // 换句话说，只要节点上挂着常驻动画，ArkUI 在组件更新时仍会建立动画
-      // 上下文，并把同一刷新周期里的列表脏节点一起带进动画布局。所以复用重绑、
-      // 宽度回写、发送态、下载进度、翻译态这些普通数据更新必须落在任何动画
-      // 上下文之外——唯一可靠的办法是节点上根本不存在常驻动画。
-      //
-      // 平滑按压反馈如需恢复，只能由真实的 Down/Up/Cancel 触摸事件驱动一次
-      // 显式 animateTo，不要再加回常驻 .animation()。
-      //
-      // 刻意没有另加一层视觉包装节点：材质挂在上层 Row（bubbleGlassModifier）、
-      // 手势与命中都挂在本节点，插节点会动到材质/裁剪/命中三者的相对关系。
-      .attributeModifier(this.suppressBubblePressDim() ? BUBBLE_PRESS_NONE : BUBBLE_PRESS_DIM)
-      .onAreaChange((_old: Area, area: Area) => { this.bubbleW = area.width as number; })
-      .constraintSize({ maxWidth: this.bubbleMaxW() })
-      .backgroundColor(this.isBareEmoji() ? Color.Transparent : this.bubbleBg())
-      .backgroundBlurStyle(this.glassBlurStyle())
-      .onVisibleAreaChange([0, 0.01], (visible: boolean): void => {
-        this.onScreen = visible;
-      })
-      // Adjacent rows share a restrained 7vp corner. Only the final row gets
-      // the tight tail corner; a single-row run keeps the configured top arc.
-      .borderRadius(this.bubbleCornerRadius())
-      .padding(this.isBareEmoji() ? 0 : 8)
-      // **玻璃档下阴影归零**，和 LightweightPlainTextBubble 一致（那边一直是
-      // `this.glassBodyOn() ? 0 : 2`，这边漏了）。
-      // 气泡不透明时这道 #14000000 压在底下看不见；换成半透玻璃之后它就从边缘
-      // 透出来，成了一圈发暗的框——用户实测「以前玻璃失效的气泡没有黑边，现在有了」。
-      .shadow((this.isBareEmoji() || this.glassBodyOn())
-        ? { radius: 0, color: Color.Transparent, offsetX: 0, offsetY: 0 }
-        : { radius: 2, color: '#14000000', offsetX: 0, offsetY: 1 })
-      // Controlled mode (mirrors ChatRow.ets bindContextMenu): a manual
-      // LongPressGesture in parallelGesture keeps the chat List's pan
-      // recognizer alive while held (movement still cancels the long press),
-      // and drives the same "lift the bubble" preview animation as a
-      // chat-list row long-press. The swipe-to-reply PanGesture joins the same
-      // group in Exclusive mode (only one of long-press/swipe wins per
-      // gesture), still parallel to the ancestor List so vertical scrolling
-      // is untouched — PanDirection.Horizontal means a vertical drag simply
-      // never satisfies this recognizer and falls through to the List.
-      .parallelGesture(
-        LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
-          .onAction((event: GestureEvent): void => { this.onLongPress(event); })
-      )
-      // 单击出菜单只在新交互下挂。用 .onClick 而不是塞进上面那个
-      // parallelGesture：官方文档明写父子都绑点击手势时**子组件优先、父组件
-      // 不触发**，正是我们要的——点链接、点图片、点内联按钮各归各，只有落在
-      // 气泡空白处的点击才轮到菜单。而 parallelGesture 是例外，它父子都会触发，
-      // 用它就会出现"点链接同时开链接和菜单"。
-      .onClick((event: ClickEvent): void => {
-        if (this.gestureClaimed) { return; }
-        if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
-          // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
-          this.recordMenuOffset(event.x, Number(event.target.area.width));
-          this.askEditable();
-          this.msgContextMenuShown = true;
-        }
-      })
-      if (this.msg.isOutgoing && this.hasBubbleTail()) {
-        this.bubbleTail(true);
-      } else if (this.msg.isOutgoing) {
-        Column().width(this.bubbleTailGutter());
-      }
-      }
-      // 「尾巴 + 气泡」整块由**上层**渲染：材质挂在这一层，形状由整体轮廓裁剪
-      // 给出（圆角矩形 + 三角尾巴）。尾巴在布局里只占位——两者天生一体，
-      // 不存在「一边材质一边普通渲染」对不齐的问题。
-      .alignItems(VerticalAlign.Bottom)
-      // 容器跨着那 7vp 尾巴留白，形状**只**由 clipShape 给。所以它必须等量到
-      // 尺寸才上色，否则没裁剪的一帧会把留白一起涂满、左边缘外扩 7vp。
-      // 没量到时它全透明，这一帧的玻璃由气泡本体自己扛；量到后本体同步退为
-      // 透明，完整态始终只有外层这一份背景与模糊。
-      .backgroundColor(this.containerGlassBg())
-      // Transform the bubble and tail without moving avatar/date or list geometry.
-      // The jump controller owns the one-shot animation; no resident .animation().
-      .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-        y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-        centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
-      .opacity(1 - this.leaving)
-      .brightness(1 + this.jumpFocus * 0.10)
-      .backgroundBlurStyle(this.containerGlassBlurStyle())
-      // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
-      // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
-      // 真机上就是用户报的「气泡描边不对」。设成气泡自己的圆角，这条边框就和轮廓
-      // 重合（尾巴那侧仍由裁剪负责）。
-      .borderRadius(this.glassRadius())
-      .background(this.glassOutline(), { align: Alignment.TopStart })
-      .attributeModifier(bubbleGlassModifier(this.glassReady(), this.glassW, this.glassH,
-        this.msg.isOutgoing, this.hasBubbleTail(), this.bubbleCornerRadius()))
-      // 玻璃尺寸从属性链上量，**不要搬回修饰器里**（理由见 BubbleGlassModifier
-      // 上的长注释：apply*Attribute 里注册是叠加，会把注册表撑爆）。
-      // 同值不写：@Local 赋同一个数也会走一遍变更通知。
-      .onAreaChange((_old: Area, area: Area): void => {
-        if (!this.env.bubbleMaterialOn) {
-          return;
-        }
-        const w: number = Number(area.width);
-        const h: number = Number(area.height);
-        if (this.glassW !== w) {
-          this.glassW = w;
-        }
-        if (this.glassH !== h) {
-          this.glassH = h;
-        }
-      })
       }
       .alignItems(VerticalAlign.Bottom)
+      .padding(this.avatarGutterPadding())
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
         onAppear: (): void => {
           logW(`[Menu114] menu appear id=${this.msg.id}`);

@@ -244,7 +244,13 @@ export struct ReusableMessageBubble {
   private unsubLeave: (() => void) | null = null;
   private unsubPresentation: (() => void) | null = null;
 
-  private currentGroup(): AlbumGroup {
+  // 旁路快照优先的"当前这一行"。@Computed（2026-09-14 第三刀）：build 里要读 6 次
+  // （纯文本分支的判定 + 5 个入参），原来是 6 次方法调用、每次都读 liveGroup / group
+  // 两个状态并核对一次身份；现在依赖只登记在计算属性上，只在两者之一变了时重算。
+  // 【必须声明在 group / liveGroup 之后】@ReusableV2 复用时按声明顺序重置，计算属性
+  // 用到的变量要先重置完，否则会拿重置前的值算一次（官方《@ReusableV2》重置表）。
+  @Computed
+  get shownGroup(): AlbumGroup {
     if (this.liveGroup !== null && this.liveGroup.head.rowId === this.group.head.rowId) {
       // 常驻不变量：旁路快照压过 @Param 时，两者描述的必须是同一条消息。
       // rowId 相等只保证"同一行"，不保证"同一份内容版本"。见 util/rowIdentityGuard。
@@ -263,8 +269,8 @@ export struct ReusableMessageBubble {
   private attachPresentation(group: AlbumGroup): void {
     const key: string = `${this.data.chatId}:${group.head.rowId}`;
     if (this.unsubPresentation !== null && this.attachedKey === key) {
-      // 已挂在同一行上：订阅原样保留，只重新取一次现值（aboutToRecycle 会把
-      // liveGroup 置 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
+      // 已挂在同一行上：订阅原样保留，只重新取一次现值（复用时框架会把
+      // liveGroup 重置回 null，短路分支不补种会让这一帧退回 @Prop 的快照）。
       this.liveGroup = messageRowPresentationFor(this.data.chatId, group.head.rowId) ?? group;
       this.jumpFocus = this.actions.bubbleFocus.value(group.head.rowId);
       this.leaving = this.actions.rowLeave.value(group.head.rowId);
@@ -388,10 +394,13 @@ export struct ReusableMessageBubble {
     // detachPresentation() 不能因为「V2 会自动重置」而删掉：重置表最后一行
     // 「常量：包括 readonly 的常量，不重置」，而 attachedKey / unsubPresentation
     // 都是无装饰器成员，V2 视作常量——不退订就会漏订阅。
-    // liveGroup 这一次赋值在 V2 下不会刷新 UI（回收期间组件被冻结），但赋值
-    // 本身生效，且 @Local 复用时也会被自动重置回 null。语义等价，保留更安全。
+    //
+    // 【liveGroup 不在这里置 null（2026-09-14）】它是 @Local，框架在 aboutToReuse
+    // 之前统一重置回初值 null（批 0.5 实测 1370/1370），aboutToReuse 里的
+    // attachPresentation 随即重新取现值——这里再赋一次纯属重复。而这一次赋值并不
+    // 便宜：13:52 profile 里 aboutToRecycle 的 117ms 有 110ms 落在 @Local 的 setter
+    // 上（要通知所有读过 liveGroup 的绑定），每次回收约 0.18ms。
     this.detachPresentation();
-    this.liveGroup = null;
   }
 
   aboutToReuse(): void {
@@ -406,11 +415,11 @@ export struct ReusableMessageBubble {
   }
 
   build() {
-    if (this.data.lightweightPlainText && this.currentGroup().head.translatedText === '') {
+    if (this.data.lightweightPlainText && this.shownGroup.head.translatedText === '') {
       LightweightPlainTextBubble({
         jumpFocus: this.jumpFocus,
         leaving: this.leaving,
-        msg: this.currentGroup().head,
+        msg: this.shownGroup.head,
         nowSec: this.nowSec,
         chatId: this.data.chatId,
         contentWidth: this.data.contentWidth,
@@ -418,14 +427,14 @@ export struct ReusableMessageBubble {
         themeBubbleOut: this.data.themeBubbleOut,
         showUnreadDivider: this.data.showUnreadDivider,
         dividerIsResume: this.data.dividerIsResume === true,
-        dateLabel: this.currentGroup().dateLabel,
+        dateLabel: this.shownGroup.dateLabel,
         editingActive: this.data.editingActive,
         isPinnedMsg: this.data.isPinnedMsg,
         canReport: this.data.canReport,
-        showAvatar: this.currentGroup().showAvatar,
-        showSenderName: this.currentGroup().showSenderName,
+        showAvatar: this.shownGroup.showAvatar,
+        showSenderName: this.shownGroup.showSenderName,
         animateIn: this.data.animateIn,
-        memberIds: this.currentGroup().memberIds,
+        memberIds: this.shownGroup.memberIds,
         actions: this.actions
       })
         .opacity(this.translationFade);
@@ -434,8 +443,8 @@ export struct ReusableMessageBubble {
       jumpFocus: this.jumpFocus,
       leaving: this.leaving,
       // 整行一个对象下发，不再拆成十七个 @Param（理由见 MessageBubble.group）。
-      group: this.currentGroup(),
-      msg: this.currentGroup().head, nowSec: this.nowSec,
+      group: this.shownGroup,
+      msg: this.shownGroup.head, nowSec: this.nowSec,
       // 同理：整份渲染数据一个对象下发（见 MessageBubble.data）。
       data: this.data,
       // 回调表也整体下发（见 MessageBubble.actions）。
