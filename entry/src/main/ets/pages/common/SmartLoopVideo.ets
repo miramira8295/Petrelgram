@@ -107,15 +107,12 @@ export struct SmartLoopVideo {
     // is exposed during the hand-off.
     this.firstFrameTimer = setTimeout((): void => {
       this.firstFrameTimer = -1;
-      // **不能用声明式 `.animation({duration:140})`**（2026-09-14 Frame trace）：
-      // 那个修饰器挂在节点上，本组件**每次重渲染都会进一次动画上下文**，而进
-      // 动画上下文会同步 flush 整棵树——实测一次 47.8ms，里面是 Measure
-      // [Navigation] 11.3ms + Measure[List] 14.6ms + 布局/提交。11 次更新合计
-      // 105ms，全落在卡顿帧里。animateTo 只在这一刻进一次，值不变就没有动画
-      // 上下文。
-      animateTo({ duration: 140, curve: Curve.EaseOut }, (): void => {
-        this.videoReady = true;
-      });
+      // **这里不进动画上下文**（2026-09-14 两份 trace 的结论）：
+      // 声明式 `.animation()` 是每次重渲染进一次（实测单次 47.8ms）；换成
+      // animateTo 之后次数降了一半，但从这个 setTimeout 里进的那一次撞上
+      // 58.7ms 的 Measure 待办，涨到 81.7ms——只要在 JS 里进，就要给当时积压的
+      // 布局买单。淡出改由海报节点的组件内转场表达（见 build），框架驱动。
+      this.videoReady = true;
     }, 80);
   }
 
@@ -174,19 +171,6 @@ export struct SmartLoopVideo {
       }
     } else {
       Stack() {
-        // Keep the thumbnail mounted below the texture. Download progress can
-        // update the parent row without flashing an empty player surface.
-        if (this.thumbPath !== '') {
-          Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-            .width(this.boxWidth).height(this.boxHeight)
-            .objectFit(this.isTransparentAsset() ? ImageFit.Contain : ImageFit.Cover);
-        } else {
-          Stack() {
-            LoadingProgress().width(28).height(28).color(Color.White);
-          }
-          .width(this.boxWidth).height(this.boxHeight)
-          .backgroundColor(this.isTransparentAsset() ? Color.Transparent : '#AEB6C0');
-        }
         if (this.useIjk) {
           WebmStickerView({
             webmPath: this.videoPath, thumbPath: this.thumbPath,
@@ -196,8 +180,7 @@ export struct SmartLoopVideo {
             chatTimeline: this.scrollGated,
             onWorking: (): void => { this.onVideoWorking(); },
             onFailed: (): void => { this.onPlaybackFailed(); }
-          })
-            .opacity(this.videoReady ? 1 : 0);
+          });
         } else {
           AvLoopVideo({
             videoPath: this.videoPath,
@@ -216,8 +199,36 @@ export struct SmartLoopVideo {
               avWebmVerdict = 1;
               this.onVideoWorking();
             }
-          })
-            .opacity(this.videoReady ? 1 : 0);
+          });
+        }
+        // 海报**盖在播放器上面**，就绪时整个移除——交给组件内转场淡出。
+        //
+        // 【为什么不是"播放器淡入"】原来是海报垫在下面、播放器
+        // `.opacity(videoReady?1:0)` 淡入，那需要在 JS 里进一次动画上下文，
+        // 而**进动画上下文会同步 flush 整棵树**：2026-09-14 两份 trace 分别量到
+        // 47.8ms（挂 .animation() 修饰器，每次重渲染都进）和 81.7ms（改成
+        // animateTo 之后次数降了，但从 setTimeout 里进那一次撞上 58.7ms 的
+        // Measure 待办）。转场是框架在节点移除时驱动的，不进 JS 动画上下文。
+        //
+        // 进场不要动画（asymmetric 的第一支给 IDENTITY）：海报的职责是**立刻**
+        // 盖住还没出首帧的播放面，淡入等于让黑面露出来一瞬。
+        if (!this.videoReady) {
+          if (this.thumbPath !== '') {
+            Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath)
+              .draggable(false)
+              .width(this.boxWidth).height(this.boxHeight)
+              .objectFit(this.isTransparentAsset() ? ImageFit.Contain : ImageFit.Cover)
+              .transition(TransitionEffect.asymmetric(TransitionEffect.IDENTITY,
+                TransitionEffect.OPACITY.animation({ duration: 140, curve: Curve.EaseOut })));
+          } else {
+            Stack() {
+              LoadingProgress().width(28).height(28).color(Color.White);
+            }
+            .width(this.boxWidth).height(this.boxHeight)
+            .backgroundColor(this.isTransparentAsset() ? Color.Transparent : '#AEB6C0')
+            .transition(TransitionEffect.asymmetric(TransitionEffect.IDENTITY,
+              TransitionEffect.OPACITY.animation({ duration: 140, curve: Curve.EaseOut })));
+          }
         }
       }
       .width(this.boxWidth).height(this.boxHeight)
