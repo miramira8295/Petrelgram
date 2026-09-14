@@ -157,6 +157,7 @@ import {
   SPLICE_PATCH_PUBLISH_ENABLED, PUBLISH_DUPLICATE_SCAN, DuplicateRowReport,
   findDuplicateIdentities
 } from '../../util/splicePublish';
+import { PrependChunker, PREPEND_CHUNK_ENABLED } from '../../util/prependChunker';
 import { publishMessageRowPresentations } from '../../util/messageRowPresentationChannel';
 import { shouldFillViewport } from '../../util/viewportFill';
 import {
@@ -548,6 +549,10 @@ export struct ChatPage {
   // framework's table from the (correct) dataset, and the viewport is restored
   // around the anchor row.
   private pageVisible: boolean = true;
+  // 头插分批（方案 A）：翻历史一次插 29 行会让 Repeat 把可视区整屏新建，这里把
+  // 头插拆成每批不超过 List.cachedCount 行。逻辑全在 util/prependChunker。
+  private prependChunker: PrependChunker<AlbumGroup> = new PrependChunker<AlbumGroup>(
+    (g: AlbumGroup): string => rowIdentity(g), PREPEND_CHUNK_ENABLED);
   private hiddenListDirty: boolean = false;
   private hiddenSinceMs: number = 0;
   // 应用整个进过后台（熄屏、回桌面），而不只是本页被应用内的另一页盖住。
@@ -742,7 +747,10 @@ export struct ChatPage {
   // reuseUnchangedRows 是这里唯一的"聪明"步骤，理由写在它自己的注释里：
   // collapseAlbums 每次都产出全新对象，而 Repeat 按 item 引用判断要不要刷新，
   // 不还原没变过的行就等于每次发布都刷新整个可见窗口。
-  private publishGroupsNow(groups: AlbumGroup[]): void {
+  private publishGroupsNow(target: AlbumGroup[]): void {
+    // 头插超过 List.cachedCount 行时只放出紧贴已显示内容的那一批，其余到点续发
+    // （util/prependChunker）。下面整段拿到的就是这一批的快照，预取源与行数组同批推进。
+    const groups: AlbumGroup[] = this.prependChunker.shape(this.groups, target);
     const next: AlbumGroup[] = reuseUnchangedRows(this.groups, groups);
     // 【顺序（2026-09-11，两次 jscrash 之后）】预取数据面**必须先于** UI 面更新。
     // splice 发布让 List 同步长行、同步回调 onScrollIndex；那时若 groupsData
@@ -2785,6 +2793,16 @@ export struct ChatPage {
       // 用户正在看的内容往下推，得直接落 + 靠补偿吃掉位移（见 util/translationAnchor）。
       visibleStartIndex: (): number => this.curStartIdx
     });
+    this.prependChunker.bind({
+      chunkRows: (): number => this.listCachedCount,
+      allowed: (): boolean => this.pageVisible && !this.initialMessageStageActive,
+      republish: (): void => {
+        const target: AlbumGroup[] | null = this.prependChunker.latestTarget();
+        if (target !== null && this.store !== null) {
+          this.publishGroupsNow(target);
+        }
+      }
+    });
     // 上一批点名（"这几条直接落、不做动画"）不该跨会话留着。
     clearTranslationInstant();
     // "正在输入…" 提示控制器接上宿主（B10）。currentKind 转发 B8
@@ -4299,6 +4317,8 @@ export struct ChatPage {
     // this.store === store 判陈旧），dispose() 是空实现，仅为与其余控制器
     // 统一 bind/dispose 生命周期而保留、调用。
     this.translation.dispose();
+    // 头插分批的续发定时器（util/prependChunker）。
+    this.prependChunker.dispose();
     // 附件面板分发簇的退场（B12）。逐行核对过原 aboutToDisappear 全链路七个
     // 子方法，对 mediaPickerOpen/mediaCopySeq 从来没有任何清理——两个字段随
     // 页面实例一起被丢弃，不产生可观察副作用。dispose() 是空实现，仅为与
