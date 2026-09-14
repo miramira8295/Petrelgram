@@ -37,8 +37,8 @@ let liveChatTgs: number = 0;
 // Do not mark this child @Reusable: a reusable ancestor would create a nested
 // cache, while a normal ancestor cannot preserve this cache across row teardown.
 // P4 批 6b：迁 @ComponentV2（配方同批 1~6a）。9 个省电键走 chatEnv 镜像，
-// onPowerChanged 用 @Monitor 深层路径一次挂 9 条。本组件无复用钩子（不进
-// 复用池的门控自绘），@Watch→@Monitor 即完成。
+// onPowerChanged 用 @Monitor 深层路径一次挂 9 条。它随 @ReusableV2 消息行
+// 一起复用，复用钩子见 aboutToRecycle（2026-09-14 补，之前漏了会串台）。
 @ComponentV2
 export struct TgsStickerView {
   @Param tgsPath: string = '';
@@ -175,6 +175,18 @@ export struct TgsStickerView {
       this.unsubChatGate();
       this.unsubChatGate = null;
     }
+  }
+
+  // 行复用（@ReusableV2）：@Param 已是新贴纸，重置期间 @Monitor('tgsPath') 静默
+  // ——lottie 这支不接住就会接着播上一张（原生那支同一个坑，见
+  // TgsNativeStickerView.aboutToRecycle）。visible 同样不动，理由也在那里。
+  aboutToRecycle(): void {
+    this.loadSeq++;
+    this.stopAnim();
+  }
+
+  aboutToReuse(): void {
+    this.onTgsPathChanged();
   }
 
   private onVisibleAreaChanged(isVisible: boolean, currentRatio: number): void {

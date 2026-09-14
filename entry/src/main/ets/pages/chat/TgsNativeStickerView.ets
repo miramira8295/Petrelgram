@@ -87,12 +87,50 @@ export struct TgsNativeStickerView {
 
   @Monitor('tgsPath')
   onPathChanged(): void {
+    this.resetForNewSource();
+  }
+
+  // 【行复用必须接住，否则贴纸串台】这个组件挂在 @ReusableV2 的消息行里。复用时
+  // @Param 已经换成新贴纸，但重置期间 @Monitor('tgsPath') 是静默的：旧 handle 不关、
+  // open() 看到 handle≠0 直接返回，pump 继续画上一张；@Local painted 却被重置成
+  // false，新缩略图又垫在旧画面底下——就是「残留上个贴纸内容、并且叠加」
+  // （用户 2026-09-14）。webm 那几支（SmartLoopVideo/WebmStickerView/
+  // AlphaWebmStickerView）早就挂了这对钩子，这支是 09-14 管线重做时漏的。
+  //
+  // 回收时就关：进了复用池的行不该还攥着 native 模型、还在渲帧。
+  // **visible 不动**：滚动时回收和复用常在同一帧里发生，节点摘下又挂上、中间没有
+  // 一次可见性结算，框架不会再报一次 true（只有节点销毁才强制报消失）——手动置
+  // false 会让复用后的贴纸一直停在缩略图上。
+  aboutToRecycle(): void {
     this.seq++;
     this.stopPump();
     this.close();
+    this.clearCanvas();
+    this.startedAt = 0;
+  }
+
+  aboutToReuse(): void {
+    this.resetForNewSource();
+  }
+
+  private resetForNewSource(): void {
+    this.seq++;
+    this.stopPump();
+    this.close();
+    this.clearCanvas();
+    // 新贴纸从第 0 帧起播，不接着上一张的进度。
+    this.startedAt = 0;
     this.painted = false;
     this.failed = false;
     this.open();
+  }
+
+  private clearCanvas(): void {
+    try {
+      this.ctx.clearRect(0, 0, this.boxWidth, this.boxHeight);
+    } catch (e) {
+      logE(`TgsNativeStickerView clear failed: ${e}`);
+    }
   }
 
   @Monitor('env.powerSaving', 'env.stickers', 'env.animatedEmoji', 'env.stickerAutoplay',
@@ -135,6 +173,9 @@ export struct TgsNativeStickerView {
       this.sourceFps = info.frameRate > 0 ? info.frameRate : 60;
       this.maybeStart();
     }).catch((e: Error): void => {
+      if (this.disposed || token !== this.seq) {
+        return;   // 换过贴纸：旧的那次失败与新贴纸无关，别让它触发回退
+      }
       logE(`TgsNativeStickerView open failed: ${e.message}`);
       this.failed = true;
       this.onFailed();
@@ -198,6 +239,9 @@ export struct TgsNativeStickerView {
         if (frame !== null) {
           frame.release();
         }
+        // 这一帧在途时换了贴纸：新 handle 可能已经开好、却被 rendering 拦在
+        // maybeStart 外面——补叫一次，否则新贴纸停在缩略图上不动。
+        this.maybeStart();
         return;
       }
       if (frame === null) {
@@ -213,6 +257,10 @@ export struct TgsNativeStickerView {
       }
     }).catch((e: Error): void => {
       this.rendering = false;
+      if (this.disposed || token !== this.seq) {
+        this.maybeStart();
+        return;
+      }
       logE(`TgsNativeStickerView render failed: ${e.message}`);
       this.failed = true;
       this.onFailed();
