@@ -17,7 +17,8 @@ function idleAtBottom(): TranslationGrowthPinInput {
     touchActive: false,
     scrollActive: false,
     viewerOpen: false,
-    hasMoreNewer: false
+    hasMoreNewer: false,
+    jumpLanding: false
   };
 }
 
@@ -38,6 +39,13 @@ export default function translationGrowthPinTest() {
     it('不在底：不钉——往上翻着时行往下长是对的', 0, (): void => {
       const input: TranslationGrowthPinInput = idleAtBottom();
       input.atBottom = false;
+      expect(translationGrowthPinWanted(input)).assertFalse();
+    });
+
+    // 跳转刚落地的那几百毫秒里位置归跳转所有：这时钉底就是把用户从目标拽走。
+    it('跳转刚落地：不钉', 0, (): void => {
+      const input: TranslationGrowthPinInput = idleAtBottom();
+      input.jumpLanding = true;
       expect(translationGrowthPinWanted(input)).assertFalse();
     });
 

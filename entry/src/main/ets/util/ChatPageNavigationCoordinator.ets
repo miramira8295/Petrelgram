@@ -78,6 +78,14 @@ export class ChatPageNavigationCoordinator {
     return true;
   }
 
+  // 原地重跑路由流水线（切话题）。这道闸本来是"每个目的地只允许应用一次参数"，
+  // 防的是重入把订阅叠两份；而切话题恰恰要**有意重跑一次**：改写 navParams 里的
+  // forumTopicId/topicName，再走同一条 applyRouteParams，不 push 新页面。
+  // 只复位这一个字段——navStack 不能动，它是这一层唯一的外部依赖。
+  resetRouteApply(): void {
+    this.paramsApplied = false;
+  }
+
   pop(): boolean {
     if (this.navStack === undefined) {
       return false;

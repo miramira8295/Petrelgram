@@ -1,4 +1,5 @@
 import { TdClient, TIMEOUT_ERROR_CODE } from '../tdkit/TdClient';
+import { isBackgroundCaching } from './CacheRegistry';
 import { stickerSetIdOf } from '../util/stickerSetItems';
 import { viewMessageSourceType } from '../util/viewMessageSource';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
@@ -472,6 +473,8 @@ export class MessageStore {
     this.unsubs.push(this.client.onUpdate('updateChatReadOutbox', (u: TdObject) => this.onReadOutbox(u)));
     this.unsubs.push(this.client.onUpdate('updateDirectMessagesChatTopic',
       (u: TdObject) => this.onDirectMessagesTopic(u)));
+    this.unsubs.push(this.client.onUpdate('updateForumTopic',
+      (u: TdObject) => this.onForumTopic(u)));
     this.unsubs.push(this.client.onUpdate('updateFile', (u: TdObject) => this.onFile(u)));
     this.unsubs.push(this.client.onUpdate('updateUserStatus', (u: TdObject) => this.onUserStatus(u)));
     this.unsubs.push(this.client.onUpdate('updateBasicGroup', (u: TdObject) => this.onGroup(u)));
@@ -491,7 +494,13 @@ export class MessageStore {
     this.unsubs.push(this.client.onUpdate('updateChatReplyMarkup', (u: TdObject) => this.onChatReplyMarkup(u)));
     // 会话最后一条变了：可能因此已经追到尾部，重新判一次。
     this.unsubs.push(this.client.onUpdate('updateChatLastMessage', (u: TdObject) => {
-      if (this.directMessagesTopicId > 0 ||
+      // 【话题作用域下必须整条忽略】chat.last_message 是**会话级**的，在论坛话题 /
+      // 评论线程 / 私信话题里它多半属于**别的**话题，拿它当本窗口的尾巴会导致：
+      // 窗口永远追不上它 → 向下翻页的闸永不关闭 → "在最底下"永不成立 → 角标不清、
+      // 已读推不到底 → 每次进来又按同一个未读锚点落位（用户 2026-09-16 实测：
+      // 频道每次进入都固定位置、未读一直挂着）。
+      // 原来这里只排除了私信话题，论坛话题和评论线程漏了——同一个问题只修了三分之一。
+      if (this.inTopicScope() ||
         (u['chat_id'] as number | undefined) !== this.chatId) {
         return;
       }
@@ -2800,6 +2809,12 @@ export class MessageStore {
     // 诊断：这里是唯一会把一条"远期"消息硬接在窗口尾巴上的地方，观测到的
     // 空洞形状（一段连续的旧消息 + 孤零零一条最新的）正好是它的产物。
     // id 与 newestId 的差值就是被跳过的消息条数（TDLib 的 id 每条加 2^20）。
+    // 【不许跨话题】这条是从 chat.last_message 来的，在话题作用域下它可能属于
+    // **别的**话题——硬接上去，用户在第一个话题滑到底再翻页就会看到一条别的话题的
+    // 消息（2026-09-16 实测）。作用域判据与实时更新过滤共用同一个纯函数。
+    if (this.outsideTopicScope(m)) {
+      return;
+    }
     const skipped: number = Math.round((id - newestId) / 1048576);
     if (skipped > 1) {
       logW(`[StoreDiag] inject tail id=${id} newestId=${newestId}` +
@@ -3971,7 +3986,8 @@ export class MessageStore {
       if (idx >= 0 && this.messages[idx].videoPath !== '') {
         continue;
       }
-      if (this.userRequestedFiles.has(fileId) || this.liveArrivals.has(messageId)) {
+      // 用户点过「后台缓存」的也不动（services/BackgroundCache）。
+      if (this.userRequestedFiles.has(fileId) || this.liveArrivals.has(messageId) || isBackgroundCaching(fileId)) {
         continue;
       }
       this.videoFileToMsg.delete(fileId);
@@ -4391,7 +4407,7 @@ export class MessageStore {
       return;
     }
     this.userRequestedFiles.delete(fileId);
-    if (e.videoPath !== '' || this.managedFiles.has(fileId)) {
+    if (e.videoPath !== '' || this.managedFiles.has(fileId) || isBackgroundCaching(fileId)) {
       return;
     }
     this.videoFileToMsg.delete(fileId);
@@ -4414,7 +4430,7 @@ export class MessageStore {
   // 所以被认领的既不能发预取、也不能取消。
   isVideoFileClaimed(fileId: number): boolean {
     return this.videoFileToMsg.has(fileId) || this.userRequestedFiles.has(fileId) ||
-      this.managedFiles.has(fileId);
+      this.managedFiles.has(fileId) || isBackgroundCaching(fileId);
   }
 
   // manage：进 TDLib 的下载管理器（用户要"留下"这个文件）。
@@ -5339,10 +5355,80 @@ export class MessageStore {
     this.resolveSenderAvatars();
     if (this.directMessagesTopicId > 0) {
       this.resolveDirectMessagesTopic();
+    } else if (this.forumTopicId > 0) {
+      // 与私信话题对称：先拿到**本话题**的 last_message / 已读位置 / 未读数，
+      // 再开始加载。代价是首屏多一个网络往返，换来的是尾部与未读判定是准的。
+      this.resolveForumTopic(true);
     } else {
       this.startInitialLoad();
       this.flushInitial();
     }
+  }
+
+  // 论坛话题 / 评论线程 / 私信话题。这三种作用域下，会话级的 chat.last_message
+  // 都**不是**本窗口的尾巴（见 updateChatLastMessage 订阅处的说明）。
+  private inTopicScope(): boolean {
+    return this.forumTopicId > 0 || this.threadRootId > 0 || this.directMessagesTopicId > 0;
+  }
+
+  // 取本话题自己的尾巴与未读。startAfter=true 时兼做首屏加载的前置。
+  private resolveForumTopic(startAfter: boolean): void {
+    const request: TdRequest = { '@type': 'getForumTopic' };
+    request['chat_id'] = this.chatId;
+    request['forum_topic_id'] = this.forumTopicId;
+    this.client.send(request).then((topic: TdObject): void => {
+      if (this.applyForumTopic(topic)) {
+        this.syncTailFromChatLast();
+        this.notifySoon();
+      }
+      if (startAfter) {
+        this.startInitialLoad();
+        this.flushInitial();
+      }
+    }).catch((error: TdError): void => {
+      // 查不到也必须把首屏放出去：宁可退回会话级的旧行为，也不能让页面空着。
+      logE(`MessageStore.getForumTopic failed: ${error.message}`);
+      if (startAfter) {
+        this.startInitialLoad();
+        this.flushInitial();
+      }
+    });
+  }
+
+  // updateForumTopic 是**扁平推送**（只带 chat_id / forum_topic_id / is_pinned 这类），
+  // 不含完整 topic 对象——与私信话题那条带 u['topic'] 的推送**不对称**，不能照抄
+  // apply，只能重查一次。
+  private onForumTopic(update: TdObject): void {
+    if (this.forumTopicId <= 0 ||
+      ((update['chat_id'] as number | undefined) ?? 0) !== this.chatId ||
+      ((update['forum_topic_id'] as number | undefined) ?? 0) !== this.forumTopicId) {
+      return;
+    }
+    this.resolveForumTopic(false);
+  }
+
+  private applyForumTopic(topic: TdObject): boolean {
+    const info = topic['info'] as TdObject | undefined;
+    if (info === undefined ||
+      ((info['chat_id'] as number | undefined) ?? 0) !== this.chatId ||
+      ((info['forum_topic_id'] as number | undefined) ?? 0) !== this.forumTopicId) {
+      return false;
+    }
+    const last = topic['last_message'] as TdObject | undefined;
+    this.pendingLastMessage = last ?? null;
+    this.chatLastMessageId = last !== undefined
+      ? ((last['id'] as number | undefined) ?? 0) : 0;
+    // 字段缺失时保留原值而不是清零：宁可沿用会话级的旧值，也不要把已读位置抹掉。
+    this.lastReadInboxId =
+      (topic['last_read_inbox_message_id'] as number | undefined) ?? this.lastReadInboxId;
+    this.lastReadOutboxId =
+      (topic['last_read_outbox_message_id'] as number | undefined) ?? this.lastReadOutboxId;
+    this.unreadCount = (topic['unread_count'] as number | undefined) ?? this.unreadCount;
+    if (this.unreadCount > 0 && this.chatLastMessageId > 0 &&
+      this.lastReadInboxId >= this.chatLastMessageId) {
+      this.unreadCount = 0;
+    }
+    return true;
   }
 
   private resolveDirectMessagesTopic(): void {

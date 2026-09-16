@@ -28,11 +28,19 @@ export interface BottomFollowFireInput {
   scrollActive: boolean; // 列表在滚（拖动或惯性）
   viewerOpen: boolean;
   hasMoreNewer: boolean; // 窗口还没到实时尾部
+  // 跳转刚落地，位置归这次跳转所有（util/jumpLandingOwner）。
+  //
+  // 【为什么这条也要问】排期发生在 applyInitialOrFollowLanding，而它跑在
+  // landPendingJump **之前**——排期那一刻用的是跳转前的 atBottom，看到的是"用户
+  // 在底部"。等 32ms 后点火时，跳转其实已经落地了，这一发 scrollEdge(Bottom) 就
+  // 把用户从目标拽回底部。用户 2026-09-16 报的"第一次像是过去了又被抓去了别的
+  // 地方"，这是四个嫌疑之一。
+  jumpLanding: boolean;
 }
 
 export function bottomFollowShouldApply(input: BottomFollowFireInput): boolean {
   return !input.superseded && !input.touchActive && !input.scrollActive &&
-    !input.viewerOpen && !input.hasMoreNewer;
+    !input.viewerOpen && !input.hasMoreNewer && !input.jumpLanding;
 }
 
 export function bottomFollowShouldSchedule(

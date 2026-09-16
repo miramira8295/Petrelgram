@@ -60,6 +60,8 @@ import { ClearHistoryOption, clearHistoryOptions } from '../../store/ClearHistor
 import {
   MessageBubbleActions, MessageBubbleRenderData, ReusableMessageBubble
 } from './ReusableMessageBubble';
+import { cacheMessagesInBackground } from '../../services/chatBackgroundCache';
+import { selectionHasCacheableVideo } from '../../util/backgroundCacheEligibility';
 import { PlaySlotDriver } from './PlaySlotDriver';
 import { VideoHeadPrefetcher, VideoRef } from '../../services/VideoHeadPrefetcher';
 import { shouldCompete, slotKey } from './playSlot';
@@ -148,7 +150,7 @@ import { SuggestionPanel, commandLabel } from './SuggestionPanel';
 import { cancelEdit, draftToRestore } from '../../util/composerMode';
 import {
   SLOT_ATTACH, SLOT_EMOJI, SLOT_NONE, SLOT_REPLY_KB, claimIfFree, closeAllSlots, closeSlot,
-  openSlot, toggleSlot
+  openSlot, slotIsDrawer, toggleSlot
 } from '../../util/bottomSlot';
 import {
   collapseAlbums, groupIndexOf, AlbumGroup, albumSiblingIds, albumIndexOfMember, RunHeadHints
@@ -230,6 +232,7 @@ import { subscribeChatJump } from '../../util/chatJumpChannel';
 import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
 import { isSplitLayout } from '../../util/splitMetrics';
 import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
+import { publishViewerCoversWindow } from '../../util/viewerWindowCover';
 import {
   HdsNavDestination, HdsNavDestinationTitleMode, TitleBarContentOptions,
   HdsNavigationTitleBarOptions
@@ -281,7 +284,13 @@ import {
   canRenderLightweightPlainTextRow, formattedTextReuseShape,
   MessageBubbleReuseContext
 } from '../../util/messageBubbleReuse';
-import { chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight } from '../../util/ChatChromeGeometry';
+import {
+  chatChromeHeight, ChatChromeGeometryInput, chatTopBannerHeight, chatTopicBarHeight
+} from '../../util/ChatChromeGeometry';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { ForumTopicsStore } from '../../store/ForumTopicsStore';
+import { ForumTopicRow } from '../../util/forumTopicModel';
+import { ChatTopicBar } from './ChatTopicBar';
 import {
   initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups,
   initialTailRevealTarget
@@ -321,6 +330,9 @@ import { mediaEntryIsPhoto, mediaEntryIsVideo } from '../../util/mediaEntryKind'
 import { OneShotFrameCallback as ChatPageFrameCallback } from '../../util/oneShotFrameCallback';
 import { bottomFollowShouldApply, bottomFollowShouldSchedule } from '../../util/bottomFollow';
 import { OLDER_TRIGGER_ROWS, olderTriggerHit } from '../../util/olderPaging';
+import {
+  NO_JUMP_LANDING, chunkPrependAllowed, jumpLandingDeadline, jumpLandingHolds
+} from '../../util/jumpLandingOwner';
 
 // 裁剪时可见区两侧至少保留的行数。必须远大于 List 的 cachedCount，否则会把
 // 框架正预备的缓存行删掉，滑回去就是一片空白。
@@ -1414,6 +1426,9 @@ export struct ChatPage {
         onFileTap: (messageId: number): void => { this.mediaSave.onFileTap(messageId); },
         onFileSave: (messageId: number): void => { this.mediaSave.onFileSave(messageId); },
         onFilePause: (messageId: number): void => { this.store?.pauseFileDownload(messageId); },
+        onBackgroundCache: (messageIds: number[]): void => {
+          cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.messages, messageIds, this.chatId);
+        },
         onStickerRetry: (messageId: number): void => { this.store?.retrySticker(messageId); },
         onContactOpen: (userId: number, phone: string, vcard: string): void => {
           this.openSharedContact(userId, phone, vcard);
@@ -1531,7 +1546,7 @@ export struct ChatPage {
             { chatId: this.chatId, messageIds: [messageId] } as ReportTarget,
             reportFlowUiFor(this.getUIContext()));
         },
-        onSelectMessages: (messageIds: number[]): void => { this.selection.enter(messageIds); },
+        onSelectMessages: (messageIds: number[]): void => { this.selection.selectRow(messageIds); },
         // 相册逐格勾选：只切这一条。已经在多选态才有意义，非多选态由长按进入。
         onToggleSelectedMessage: (messageId: number): void => {
           this.selection.toggleMember(messageId);
@@ -2009,6 +2024,14 @@ export struct ChatPage {
   private membership: MembershipSession = new MembershipSession();
   private store: MessageStore | null = null;
   private scroller: Scroller = new Scroller();
+  // 顶栏话题横条（2026-09-16）。三个都在字段初始化器里 new：titleBar 的 builder
+  // **绝不能现场 new 对象**（见 chatTitleBarBottom 的注释），引用必须全生命周期不变。
+  private topicsStore: ForumTopicsStore = new ForumTopicsStore(getTdClient());
+  private topicRowsData: KeyedListDataSource<ForumTopicRow> =
+    new KeyedListDataSource<ForumTopicRow>('chat-topics');
+  private topicBarScroller: Scroller = new Scroller();
+  // 横条有没有内容 —— 顶栏高度与下挂槽的结构缓存都看它，所以必须可观测。
+  @Local private topicBarCount: number = 0;
   private didInitialScroll: boolean = false;
   // Invalidates delayed initial-unread layout confirmations when the page is
   // reset or another landing supersedes the current one.
@@ -2131,6 +2154,10 @@ export struct ChatPage {
   // 跳转落地的宽限期。跳到贴近尾部的引用时视口会短暂判为"在最新"，若不设防
   // 就会把返回栈当成"用户自己滚回来了"清掉，一步都退不回去。
   private jumpLandingUntil: number = 0;
+  // 落地所有权窗口：跳转刚落地的这几百毫秒里，位置归这次跳转所有——贴底跟随、
+  // 追加侧补位、再取一页历史、窗口裁剪四位都得让路。判据与四个嫌疑的来龙去脉
+  // 见 util/jumpLandingOwner（与上面那条 900ms 各管一件事：那条管返回栈）。
+  private jumpLandingSettleUntil: number = NO_JUMP_LANDING;
   private pendingScrollBottom: boolean = false; // snap to the end once jumpToLatest's page arrives
   // ⚠️ 临时探针 [JumpLatest] 用：↓ 的点击序号，把同一次点击的日志串起来。
   private jumpLatestSeq: number = 0;
@@ -2451,6 +2478,7 @@ export struct ChatPage {
     this.returnState = emptyReturnState();
     this.curBottomId = 0;
     this.jumpLandingUntil = 0;
+    this.jumpLandingSettleUntil = NO_JUMP_LANDING;
     this.clearPendingScrollBottom('resetScrollSession');
     this.scrollToBottomBusy = false;
     this.pendingJumpId = 0;
@@ -2830,7 +2858,12 @@ export struct ChatPage {
     });
     this.prependChunker.bind({
       chunkRows: (): number => this.listCachedCount,
-      allowed: (): boolean => this.pageVisible && !this.initialMessageStageActive,
+      // 跳转落地期间整份发布，不扣头部：目标行被扣着时 landPendingJump 按完整
+      // 快照算出的下标指向的是另一条消息（真机 [JumpLand] 实测，判据见
+      // util/jumpLandingOwner.chunkPrependAllowed）。
+      allowed: (): boolean => chunkPrependAllowed(
+        this.pageVisible && !this.initialMessageStageActive,
+        this.pendingJumpId !== 0, this.jumpLandingHolding()),
       republish: (): void => {
         const target: AlbumGroup[] | null = this.prependChunker.latestTarget();
         if (target !== null && this.store !== null) {
@@ -3128,6 +3161,7 @@ export struct ChatPage {
     // 话题模式（从 ForumTopicsPage 进入）：标题显示话题名而非"评论"。
     this.topicName = route.topicName;
     this.forumTopicId = route.forumTopicId;
+    this.openTopicBar();
     this.directMessagesTopicId = route.directMessagesTopicId;
     // 会话翻译驱动的会话重置（B10）：排除/加入名单都是本地的，chatId 一确定
     // 就能读，不用等 getChat 回来。
@@ -3603,7 +3637,8 @@ export struct ChatPage {
       prependAnchorHeld: prependAnchor.id !== 0,
       appendBreaksAnchor: appendsRows,
       atLiveTail: this.atBottom,
-      scrollIntentPending: this.pendingJumpId !== 0 || this.pendingScrollBottom
+      scrollIntentPending: this.pendingJumpId !== 0 || this.pendingScrollBottom ||
+        this.jumpLandingHolding()
     });
     if (holdAppendAnchor && this.anchorIndexFresh()) {
       const visibleIndex: number = this.curStartIdx;
@@ -3859,7 +3894,8 @@ export struct ChatPage {
         touchActive: this.listTouchActive,
         scrollActive: this.timelineScrollActive,
         viewerOpen: this.viewerOpen(),
-        hasMoreNewer: this.store !== null && this.store.getHasMoreNewer()
+        hasMoreNewer: this.store !== null && this.store.getHasMoreNewer(),
+        jumpLanding: this.jumpLandingHolding()
       })) {
         if (!superseded) {
         }
@@ -3938,6 +3974,9 @@ export struct ChatPage {
         // 窗口里要先 loadAround，慢链路上一超时，刚压进返回栈的那层就被
         // syncReturnState 当成"手动滑过"弹掉了。
         this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
+        // 异步落地这条路才是被抢的那条：pendingJumpId 上一行刚清零，所有
+        // 「让路给跳转」的判据同时失效（util/jumpLandingOwner 文件头）。
+        this.beginJumpLanding();
         this.topCard.finishPinnedJump();
         this.scrollToTimelineIndexAtY(jg, itemY);
         // loadAround replaces the window wholesale (list RELOAD) — the
@@ -4248,6 +4287,8 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    // 查看器开着时页面就没了（换账号、栈被清）：别让左栏和侧边页签一直收着。
+    publishViewerCoversWindow(false);
     if (this.offShareTargeted !== null) {
       this.offShareTargeted();
       this.offShareTargeted = null;
@@ -4423,6 +4464,17 @@ export struct ChatPage {
   }
 
   private disposeSubscriptionsInOrder(): void {
+    this.disposeConversationSubscriptions();
+    // 话题横条跨话题存活，只在**页面真正退场**时才拆。
+    this.subscriptions.clear('topics');
+  }
+
+  // 一个会话（话题）的订阅退场。切话题与页面退场共用这**唯一一份**——复制成两份
+  // 必然漂移（日后有人加一个键，另一份不会跟着改），而漏拆一个就是订阅泄漏。
+  //
+  // 三段 clearInOrder 之间夹着 bgStore.close() 与 membership.dispose()，这个**交错
+  // 顺序是原有的、有意为之**（见下面那段注释），合并时一并保留，没有拉平成一段。
+  private disposeConversationSubscriptions(): void {
     this.subscriptions.clearInOrder([
       'messages', 'subtitle', 'chat', 'liveLocation', 'translatable', 'background'
     ]);
@@ -4445,6 +4497,11 @@ export struct ChatPage {
   private closeStores(): void {
     // 两个直播定时器（脉冲/轮询）的 clearInterval 随整簇进了 topCard.dispose()，
     // 在本方法之前的 disposeTimersAndSeqGuards 里执行（B5）。
+    this.closeMessageStore();
+    this.topicsStore.close();
+  }
+
+  private closeMessageStore(): void {
     if (this.store !== null) { this.store.close(); this.store = null; }
   }
 
@@ -4685,12 +4742,11 @@ export struct ChatPage {
     if (this.viewerClosing) {
       return;
     }
-    // 平板黑屏 / 顶栏横幅（#201 第 1 条）没有设备可复现，先把「走的哪条路」记下来：
-    // 分栏 → bindContentCover 全模态且标题栏不收；单栏 → 内联 + 收标题栏。
-    // 两个症状都指向分栏那条，但缺一份平板日志才能定死。
+    // 平板黑屏 / 顶栏横幅（#201）：查看器现在单栏、分栏都在页面内；分栏时另外收左栏和
+    // 侧边页签盖满窗口（见 util/viewerWindowCover）。打点保留，对照下一份平板日志用。
     const split: boolean = isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn);
-    logW(`[ViewerPath] split=${split} path=${split ? 'contentCover' : 'inline'}` +
-      ` hidesTitleBar=${!split} api=${deviceInfo.sdkApiVersion}` +
+    logW(`[ViewerPath] split=${split} path=inline coversWindow=${split}` +
+      ` api=${deviceInfo.sdkApiVersion}` +
       ` win=${Math.round(this.screenW)}x${Math.round(this.screenH)}`);
     const entry = this.entryById(messageId);
     if (entry === null) {
@@ -4791,6 +4847,9 @@ export struct ChatPage {
   @Monitor('viewerMsgId')
   private onViewerTargetChanged(): void {
     this.viewerPositionMs = 0;
+    // 分栏下查看器开着：收左栏和侧边页签，让页面内的查看器盖满窗口（见 util/viewerWindowCover）。
+    publishViewerCoversWindow(viewerFullScreenWanted(
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen()));
   }
 
   // 查看器上点"保存"：entry 在这里取，取不到就不调。
@@ -4921,6 +4980,12 @@ export struct ChatPage {
         return true;
       }
       this.closeViewer();
+      return true;
+    }
+    // 表情/贴纸抽屉、附件抽屉开着：返回先收抽屉，不直接退出会话——和系统键盘弹着时
+    // 返回先收键盘是同一个手感。排在查看器之后：查看器盖在抽屉上面，要先收它。
+    if (slotIsDrawer(this.bottomSlot)) {
+      this.closeBottomPanels();
       return true;
     }
     if (this.selection.active) {
@@ -5068,7 +5133,8 @@ export struct ChatPage {
       touchActive: this.listTouchActive,
       scrollActive: this.timelineScrollActive,
       viewerOpen: this.viewerOpen(),
-      hasMoreNewer: this.store !== null && this.store.getHasMoreNewer()
+      hasMoreNewer: this.store !== null && this.store.getHasMoreNewer(),
+      jumpLanding: this.jumpLandingHolding()
     })) {
       return;
     }
@@ -5138,6 +5204,15 @@ export struct ChatPage {
     this.stayAtUnread = false;
     this.jumpLayoutSeq++;
     this.flash.cancelFlash();
+  }
+
+  // 跳转落地的所有权窗口：开窗与问询各一行，判据全在 util/jumpLandingOwner。
+  private beginJumpLanding(): void {
+    this.jumpLandingSettleUntil = jumpLandingDeadline(Date.now());
+  }
+
+  private jumpLandingHolding(): boolean {
+    return jumpLandingHolds(this.jumpLandingSettleUntil, Date.now());
   }
 
   // 点置顶条时目标不在当前窗口内，要先去取。这是 onPinnedTap 的 PINNED_LOAD
@@ -5737,6 +5812,7 @@ export struct ChatPage {
 
   private jumpToLinkedMessageInThisChat(messageId: number): void {
     this.prepareUserJump();
+    this.beginJumpLanding();
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
@@ -5775,6 +5851,7 @@ export struct ChatPage {
     this.returnState = pushJump(this.returnState, fromId > 0 ? fromId : this.curBottomId);
     this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
     this.prepareUserJump();
+    this.beginJumpLanding();
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
       this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
@@ -6503,6 +6580,71 @@ export struct ChatPage {
   @Local panelContentReady: boolean = false;
   private panelReadySeq: number = 0;
 
+  // 话题横条：只有论坛群才有。判据用现成的 ChatStore.isForum（ChatRow 决定
+  // 「点进去是话题列表还是消息流」用的也是它，两处同源）。
+  private openTopicBar(): void {
+    if (!getChatStore().isForum(this.chatId)) {
+      this.topicsStore.close();
+      this.topicBarCount = 0;
+      return;
+    }
+    // 切话题会重跑整条路由流水线，于是这里也会被再调一次。同一个会话、横条已经
+    // 有内容时直接返回：否则每切一次话题就白发一次 getForumTopics。
+    if (this.topicsStore.getChatId() === this.chatId && this.topicBarCount > 0) {
+      return;
+    }
+    // set 会先拆同名订阅，所以换会话时不会叠两份；'topics' 在页面退场时单独拆。
+    this.subscriptions.set('topics', this.topicsStore.subscribe((): void => {
+      this.syncTopicBar();
+    }));
+    this.topicsStore.open(this.chatId);
+  }
+
+  private syncTopicBar(): void {
+    const rows: ForumTopicRow[] = this.topicsStore.getRows();
+    this.topicRowsData.update(rows,
+      rows.map((row: ForumTopicRow): string => `${row.threadId}`),
+      rows.map((row: ForumTopicRow): string =>
+        `${row.threadId}|${row.name}|${row.unreadCount}|${row.isPinned}`));
+    if (this.topicBarCount !== rows.length) {
+      this.topicBarCount = rows.length;
+    }
+    // 论坛群是直接进详情页的（会话列表不再经话题列表那一层）。进来时还不知道
+    // 落哪个话题——列表回来了就落到**第一个**（排序已是置顶优先，与横条一致）。
+    if (this.forumTopicId === 0 && rows.length > 0 && getChatStore().isForum(this.chatId)) {
+      this.switchTopic(rows[0].threadId, rows[0].name);
+    }
+  }
+
+  // 原地切话题：不 push 新页面，改写路由参数后重跑同一条 applyRouteParams。
+  //
+  // 【为什么能整条复用】resolveRouteAndResetSession 会按 conversationScopeId 判定
+  // 会话是否变了，话题一换它就走 resetScrollSession()，滚动/输入/选择态全部重置；
+  // 订阅侧 subscriptions.set 自带同名先拆。所以这里只需要把**上一个话题**的东西
+  // 收干净：草稿与浏览位置先落盘，会话级订阅与消息 store 拆掉，横条留着。
+  private switchTopic(threadId: number, name: string): void {
+    const params: Record<string, Object> | undefined = this.navParams;
+    if (params === undefined || threadId === this.forumTopicId) {
+      return;
+    }
+    this.persistDraftAndViewport();
+    // 会话级退场走**同一份**清单（含 bgStore 与成员状态机），不在这里另抄一遍。
+    this.disposeConversationSubscriptions();
+    this.closeMessageStore();
+    params['forumTopicId'] = threadId;
+    params['topicName'] = name;
+    this.navigationCoordinator.resetRouteApply();
+    this.applyRouteParams();
+  }
+
+  // 点横条切话题：原地切，不 push 新页面。
+  private onTopicBarSelect(threadId: number): void {
+    const rows: ForumTopicRow[] = this.topicsStore.getRows();
+    const hit: ForumTopicRow | undefined =
+      rows.find((row: ForumTopicRow): boolean => row.threadId === threadId);
+    this.switchTopic(threadId, hit !== undefined ? hit.name : '');
+  }
+
   private chromeGeometryInput(): ChatChromeGeometryInput {
     return {
       topSafe: this.topSafe,
@@ -6510,7 +6652,8 @@ export struct ChatPage {
       pinnedVisible: this.topCard.pinnedPreview !== '',
       liveVisible: this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive,
       loadingVisible: this.topCard.topCardLoadingVisible,
-      actionBarVisible: this.actionBarKind !== ''
+      actionBarVisible: this.actionBarKind !== '',
+      topicBarVisible: this.topicBarCount > 0
     };
   }
 
@@ -7111,6 +7254,7 @@ export struct ChatPage {
   // 定位后让目标气泡轻轻呼吸一次；「↓」返回与引用跳转共用这个反馈。
   private jumpToMessageId(targetId: number): void {
     this.jumpLandingUntil = Date.now() + JUMP_LANDING_GRACE_MS;
+    this.beginJumpLanding();
     const gidx: number = groupIndexOf(this.groups, targetId);
     logW(`[Jump80] jumpToMessageId target=${targetId} idxInLoaded=${gidx} rows=${this.groups.length}`);
     if (gidx >= 0) {
@@ -7956,11 +8100,15 @@ export struct ChatPage {
   // 出场一律 IDENTITY：虚拟滚动每帧都在拆行，给出场挂效果等于把节点的销毁往后
   // 拖，那是纯粹的负收益。
   private initialRowFadeTransition(index: number, rowDeferred: boolean): TransitionEffect {
+    // 先求闩（会续期 armedAt，有副作用，每行都得走），再看这一行在不在揭示窗口里：窗口外的行
+    // 不做入场动画（见 util/rowFadeGate.ROW_OUTSIDE_REVEAL_WINDOW）。
+    const armed: boolean = this.initialRowFadeArmed(rowDeferred);
+    const delay: number = this.initialTimelineRowRevealDelay(index);
     const plan: RowFadeTransition = rowFadeTransition(
       this.chatTgsScrollActive,
-      this.initialRowFadeArmed(rowDeferred),
+      armed && delay >= 0,
       powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, INITIAL_TIMELINE_ROW_FADE_MS),
-      this.initialTimelineRowRevealDelay(index)
+      Math.max(0, delay)
     );
     if (!plan.enabled) {
       return TransitionEffect.IDENTITY;
@@ -8000,10 +8148,12 @@ export struct ChatPage {
         ? this.resumeDividerId : this.firstUnreadId;
       anchorIndex = Math.max(0, groupIndexOf(this.groups, startAnchorId));
     }
-    return powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, initialRowRevealDelay(
+    const raw: number = initialRowRevealDelay(
       index, this.curStartIdx, this.curEndIdx, this.groups.length,
       anchorIndex, this.stayAtUnread || this.resumeDividerId > 0,
-      INITIAL_TIMELINE_REVEAL_ROW_LIMIT, INITIAL_TIMELINE_ROW_STAGGER_MS));
+      INITIAL_TIMELINE_REVEAL_ROW_LIMIT, INITIAL_TIMELINE_ROW_STAGGER_MS);
+    // 窗口外（负数）原样透传，由 initialRowFadeTransition 摘掉动画；不能进换算——关动效时它会被抹成 0。
+    return raw < 0 ? raw : powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, raw);
   }
 
   // mode 由 ChatTimelineHost 传进来，**页面不再自己算**（第二轮第 12 项）。
@@ -8117,7 +8267,11 @@ export struct ChatPage {
     // is scrollable, so tail appends cannot move a parked viewport.
     .maintainVisibleContentPosition(true)
     .stackFromEnd(this.stackFromEndWanted())
-    .onReachStart((): void => { this.maybeLoadOlder(); })
+    .onReachStart((): void => {
+      if (!this.jumpLandingHolding()) {
+        this.maybeLoadOlder();
+      }
+    })
     .onTouch((event: TouchEvent): void => { this.handleTimelineTouch(event); })
     .onScrollIndex((start: number, end: number): void => {
       this.handleTimelineScrollIndex(start, end);
@@ -8260,6 +8414,12 @@ export struct ChatPage {
           onExit: (): void => { this.selection.exit(); },
           onForward: (): void => { this.openForwardPicker(this.selection.ids); },
           onSave: (): void => { this.saveSelected(); },
+          canBackgroundCache: selectionHasCacheableVideo(this.messages, this.selection.ids),
+          onBackgroundCache: (): void => {
+            cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.messages, this.selection.ids,
+              this.chatId);
+            this.selection.exit();
+          },
           onCopy: (): void => { this.copySelected(); },
           onDelete: (): void => { this.deleteSelected(); }
         });
@@ -8311,7 +8471,17 @@ export struct ChatPage {
     // new 出来的，引用全生命周期不变——@Param 那层的 `!==` 永不成立，本页重建
     // 不会让浮卡整体白刷；显示态由 TopBanners 自己在 build() 里读 @Trace。
     // 千万不要在这里现场 new 任何对象传下去，那会破坏引用稳定、让子组件每帧白刷。
-    TopBanners({
+    Column() {
+      if (this.topicBarCount > 0) {
+        ChatTopicBar({
+          source: this.topicRowsData,
+          selectedThreadId: this.forumTopicId,
+          rowCount: this.topicBarCount,
+          scroller: this.topicBarScroller,
+          onSelect: (threadId: number): void => { this.onTopicBarSelect(threadId); }
+        });
+      }
+      TopBanners({
       materialEpoch: this.materialEpoch,
       topCard: this.topCard,
       onPinnedTap: (): void => { this.topCard.onPinnedTap(); },
@@ -8320,7 +8490,9 @@ export struct ChatPage {
       actionBarCanUnarchive: this.actionBarCanUnarchive,
       onActionBarAction: (id: string): void => { this.onActionBar(id); },
       onActionBarDismiss: (): void => { dismissActionBar(this.chatId); }
-    });
+      });
+    }
+    .width('100%');
   }
 
   // 传给 HdsNavDestination 的 .titleBar()。**引用必须稳定。**
@@ -8364,21 +8536,24 @@ export struct ChatPage {
     const bannerHeight: number =
       this.initialMessageTransitionSettled && this.topCard.shouldShow()
         ? this.topBannerHeight() : 0;
+    // 槽里现在装两样：话题横条（在上）+ 置顶/直播/操作条（在下）。缓存键必须用
+    // **两者之和**，否则话题出现或消失时槽不会重新量高，横条会被裁掉或留下空白。
+    const slotHeight: number = chatTopicBarHeight(this.chromeGeometryInput()) + bannerHeight;
     const cached: TitleBarContentOptions | null = this.titleBarContentCache;
-    if (cached !== null && this.titleBarBannerHeight === bannerHeight) {
+    if (cached !== null && this.titleBarBannerHeight === slotHeight) {
       return cached;
     }
     const content: TitleBarContentOptions = {
       stackBuilder: (): void => { this.chatTitleBar(); }
     };
-    if (bannerHeight > 0) {
+    if (slotHeight > 0) {
       content.bottomBuilder = {
         builder: (): void => { this.chatTitleBarBottom(); },
-        height: bannerHeight
+        height: slotHeight
       };
     }
     this.titleBarContentCache = content;
-    this.titleBarBannerHeight = bannerHeight;
+    this.titleBarBannerHeight = slotHeight;
     return content;
   }
 
@@ -8482,7 +8657,12 @@ export struct ChatPage {
     }
     this.syncMediaWindow(start, end);
     if (olderTriggerHit(start, OLDER_TRIGGER_ROWS)) {
-      this.maybeLoadOlder();
+      // 落地后的 start 天然贴着触发线：loadAround 只在目标上方放 15 行，而
+      // ScrollAlign.START 不算 contentStartOffset。这一页取回来就是一次前插。
+      // olderArmed 不动，用户下一次滑动照样能取。
+      if (!this.jumpLandingHolding()) {
+        this.maybeLoadOlder();
+      }
     }
     if (reachedNewerPageTrigger(end, this.groups.length)) {
       this.maybeLoadNewer(end);
@@ -8531,6 +8711,11 @@ export struct ChatPage {
   private maybeTrimWindow(): void {
     const store: MessageStore | null = this.store;
     if (store === null || this.listTouchActive || this.timelineScrollActive) {
+      return;
+    }
+    // 刚落地时 curStartIdx/curEndIdx 可能还是跳转前那一份，按它下刀会把目标
+    // 行本身裁掉。等窗口放手再裁——裁剪本来就只在停稳时做，晚几百毫秒无损。
+    if (this.jumpLandingHolding()) {
       return;
     }
     const groups: AlbumGroup[] = this.groups;
@@ -8754,6 +8939,7 @@ export struct ChatPage {
         threadRootId: this.threadRootId,
         bottomSafe: this.bottomSafe,
         keyboardH: this.keyboardH,
+        topInset: this.headerChromeHeight(),
         onReactionPick: (reactionKey: string, chosen: boolean): void => {
           const targetId: number = this.overlayState.reactionTargetId;
           this.overlayState.closeReactionSheet();
@@ -8819,14 +9005,13 @@ export struct ChatPage {
       // Fullscreen media viewer. The page owns which message is open and the
       // hero transition anchored to the tapped thumbnail; the overlay owns
       // zoom/pan, paging, the filmstrip and the chrome layer.
-      if (viewerHidesTitleBar(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen())) {
+      if (this.viewerOpen()) {
         this.mediaViewer();
       }
     }
     .width('100%').height('100%')
     // 贴纸合集面板挂在页面根 Stack 上：这个节点还没有别的 bindSheet（骰子那张
-    // 挂 dock，查看器走 NavDestination 的 bindContentCover），同一节点上串两个
-    // 只有最后一个生效。
+    // 挂 dock），同一节点上串两个只有最后一个生效。
     .bindSheet($$this.stickerSetSheetOpen, this.stickerSetSheet(), {
       height: 420,
       backgroundColor: Color.Transparent,
@@ -8848,11 +9033,10 @@ export struct ChatPage {
     // 且把展开态接进 TitleBarContentOptions 会让整条栏按点击重建）。
     // 首页 ChatListPage 早就是这个结构。
     .hideBackButton(true)
-    // 单栏下查看器盖不住框架标题栏（判据与上面那个 if 同源，见 navFullScreen）。
+    // 查看器在内容区里，盖不住框架标题栏：开着就收（见 navFullScreen.viewerHidesTitleBar）。
     // animated 取 true：查看器根节点是 300ms 的黑底渐入，第 0 帧直接摘掉顶栏会
     // 在还透着的黑底上闪一下。
-    .hideTitleBar(viewerHidesTitleBar(
-      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen()), true)
+    .hideTitleBar(viewerHidesTitleBar(this.viewerOpen()), true)
     // HDS 的标题栏模糊必须绑定实际滚动的同一个 Scroller。
     //
     // **转场期间先不绑**（09-04 GPU trace）。这条绑定给 NavDestination 层挂了一个
@@ -8865,15 +9049,8 @@ export struct ChatPage {
     // 整页离屏缓存重建**。首屏揭幕之后再绑，那时页面已经静止，绑上不再有
     // 转场动画去反复作废缓存。
     .bindToScrollable(this.initialMessageTransitionSettled ? [this.scroller] : [])
-    // HdsNavDestination 没有 fullScreenOverlay。只在分栏中把查看器提升为应用内
-    // 顶层全模态，手机仍保留原来的页面内共享元素过渡。
-    .bindContentCover(viewerFullScreenWanted(
-      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen()), this.mediaViewer(), {
-      modalTransition: ModalTransition.NONE,
-      backgroundColor: Color.Black,
-      enableSafeArea: false,
-      onWillDismiss: (): void => { this.closeViewer(); }
-    })
+    // 查看器**不走 bindContentCover**：全模态里视频画面显示不出来（#201，平板分栏黑屏）。
+    // 分栏下盖满窗口改由收左栏 + 侧边页签实现，见 util/viewerWindowCover。
     // 入参：router 时代是 aboutToAppear 里 router.getParams() 现取，现在从
     // NavDestinationContext 的 pathInfo 里取——而 onReady 实测晚于 aboutToAppear，
     // 所以吃参数的初始化也在这里触发，不能留在 aboutToAppear。

@@ -9,7 +9,8 @@ function fire(over: Partial<BottomFollowFireInput>): BottomFollowFireInput {
     touchActive: over.touchActive ?? false,
     scrollActive: over.scrollActive ?? false,
     viewerOpen: over.viewerOpen ?? false,
-    hasMoreNewer: over.hasMoreNewer ?? false
+    hasMoreNewer: over.hasMoreNewer ?? false,
+    jumpLanding: over.jumpLanding ?? false
   };
 }
 
@@ -30,6 +31,13 @@ export default function bottomFollowTest() {
     it('yields_to_stronger_intents', 0, () => {
       expect(bottomFollowShouldApply(fire({ viewerOpen: true }))).assertFalse();
       expect(bottomFollowShouldApply(fire({ hasMoreNewer: true }))).assertFalse();
+    });
+
+    // 跳转刚落地的那几百毫秒里，位置归这次跳转所有。不让路的后果是：落地
+    // 之后 32ms，排在跳转之前的那次贴底点火，scrollEdge(Bottom) 把用户从
+    // 目标拽回底部——用户报"第一次像是过去了又被抓去了别的地方"。
+    it('yields_while_a_jump_is_landing', 0, () => {
+      expect(bottomFollowShouldApply(fire({ jumpLanding: true }))).assertFalse();
     });
 
     // 排期之后又排了更新的一次：旧的那次让路，由新的去贴。

@@ -2,6 +2,7 @@ import { CHATLIST_PREVIEW_THUMB_ENABLED, stripPreviewIcon } from '../../util/for
 import { DRAFT_EPOCH, localDraftPreview } from '../../store/DraftStore';
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
+import { HOME_CARD_INSET_VP, HOME_CARD_MARGIN_VP } from '../../util/listCardGeometry';
 import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
 import { scopeMutedForKind } from '../../store/ScopeMuteStore';
 import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
@@ -17,7 +18,7 @@ import {
   KEY_THREE_LINES, powerAnimationDuration
 } from '../../store/AppSettings';
 import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
-import { navigateToDirectMessagesTopics, navigateToForumTopics } from '../../util/profileNav';
+import { navigateToDirectMessagesTopics } from '../../util/profileNav';
 import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
 import {
@@ -43,8 +44,9 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
 const MENU_DISMISS_MS: number = 150;
-// 与首页 HDS 大标题的 12vp 起始线对齐；滑动操作背景也复用这一个值。
-export const CHAT_ROW_SIDE_GUTTER: number = 12;
+// 卡片外沿离屏幕边（头像再内缩 HOME_CARD_INSET_VP，落在顶部标题的起始线上，见 util/listCardGeometry）；
+// 滑动操作背景也复用这一个值。
+export const CHAT_ROW_SIDE_GUTTER: number = HOME_CARD_MARGIN_VP;
 
 // Reused across list rows. Every chat row is the same shape, so there is no
 // reuseId to split: one pool serves the whole list.
@@ -622,7 +624,8 @@ export struct ChatRow {
         }
       }.alignItems(HorizontalAlign.End);
     }
-    // 真卡片左边沿与首页大标题的起始线对齐。壁纸生效时卡片交给现有 'card'
+    // 真卡片外沿 8vp，头像内缩 8vp，与首页大标题起始线（16vp）对齐（2026-09-15 用户：一行一张卡片，
+    // 头像对齐顶部 Petrelgram，8+8 四周留白均匀）。壁纸生效时卡片交给现有 'card'
     // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
     // overlayGlassFill 会自然退回原来的可读性实底。
     .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
@@ -648,7 +651,7 @@ export struct ChatRow {
       (!this.appWallpaperOn || this.liveEffects)))
     .clip(true)
     .constraintSize({ minHeight: 72 })
-    .padding({ left: ROW_PAD_H, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
+    .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
     .alignItems(VerticalAlign.Center)
     .stateStyles({
       normal: this.rowNormalStyle,
@@ -660,19 +663,10 @@ export struct ChatRow {
         this.pressConsumedByMenu = false;
         return;
       }
-      // 话题群进话题列表，普通聊天进消息流。
-      if (getChatStore().isForum(this.chat.id)) {
-        const forumParams: Record<string, Object> = {
-          'chatId': this.chat.id, 'title': this.chat.title
-        };
-        // 曾经是 router.pushUrl('pages/chat/ForumTopicsPage')——话题列表已迁成
-        // HdsNavDestination 并从 main_pages.json 摘出，整页路由跳不动，走漏斗。
-        // 同一段代码跑在两个上下文里：会话列表（左栏）和归档页（栈里的一层）。
-        // 从归档进话题列表要**叠**在归档之上，否则返回时归档页已被清掉
-        // （issue #117）。listKey 正好能区分。
-        navigateToForumTopics(forumParams, this.listKey === 'archive' ? 'content' : 'navbar');
-        return;
-      }
+      // 话题群**直接进消息流**（2026-09-16）：话题列表那一层去掉了，话题改由
+      // 详情页顶栏的横条切换（pages/chat/ChatTopicBar）。这里不带 forumTopicId，
+      // 页面拿到话题列表后自己落到第一个话题（ChatPage.syncTopicBar）。
+      // 话题列表页本身保留，仍可从别处进入。
       if (getChatStore().isAdministeredDirectMessagesGroup(this.chat.id)) {
         const directParams: Record<string, Object> = {
           'chatId': this.chat.id, 'title': this.chat.title

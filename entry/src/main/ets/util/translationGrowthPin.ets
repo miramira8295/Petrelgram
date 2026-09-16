@@ -58,6 +58,9 @@ export interface TranslationGrowthPinInput {
   scrollActive: boolean;
   viewerOpen: boolean;
   hasMoreNewer: boolean;     // 窗口没到实时尾部：那是已加载窗口的底，不是真尾部
+  // 跳转刚落地：位置归这次跳转所有（util/jumpLandingOwner）。钉底也是一次
+  // 程序性定位，落地窗口内同样要让路。
+  jumpLanding: boolean;
 }
 
 // 与页面「原地变高时贴住底」（applyInitialOrFollowLanding 的 L1252 分支）同一组
@@ -74,6 +77,7 @@ export function translationGrowthPinWanted(input: TranslationGrowthPinInput): bo
     touchActive: input.touchActive,
     scrollActive: input.scrollActive,
     viewerOpen: input.viewerOpen,
-    hasMoreNewer: input.hasMoreNewer
+    hasMoreNewer: input.hasMoreNewer,
+    jumpLanding: input.jumpLanding
   });
 }

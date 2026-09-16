@@ -3,6 +3,10 @@ import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { formatPreview } from '../../util/formatPreview';
 import {
+  ForumTopicRow as TopicRow, applyTopicInfoUpdate, applyTopicUpdate, parseForumTopic,
+  sortTopicRows
+} from '../../util/forumTopicModel';
+import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { plural, str } from '../../util/strings';
@@ -10,23 +14,15 @@ import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { HdsNavDestination } from '@kit.UIDesignKit';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 
 const CARD_RADIUS: number = 14;
-// forumTopicIcon.color 的取值集合（TDLib 固定的六色）。
-const TOPIC_COLORS: Map<number, string> = new Map([
-  [0x6FB9F0, '#6FB9F0'], [0xFFD67E, '#FFD67E'], [0xCB86DB, '#CB86DB'],
-  [0x8EEE98, '#8EEE98'], [0xFF93B2, '#FF93B2'], [0xFB6F5F, '#FB6F5F']
-]);
 
-interface TopicRow {
-  threadId: number;
-  name: string;
-  iconColor: string;
-  isGeneral: boolean;
-  isClosed: boolean;
-  isPinned: boolean;
-  unreadCount: number;
-  lastMessageText: string;
+// 行 key 带上所有显示用到的字段：LazyForEach 只在 key 变了时重建那一行。
+function topicRowKey(row: TopicRow): string {
+  return `${row.threadId}_${row.name}_${row.iconColor}_${row.isGeneral}_${row.isClosed}_${row.isPinned}` +
+    `_${row.unreadCount}_${row.lastMessageText}`;
 }
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载
@@ -54,13 +50,15 @@ export struct ForumTopicsPage {
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   @State title: string = str('ft_topics');
-  @State rows: TopicRow[] = [];
+  @State @Watch('syncRowsData') rows: TopicRow[] = [];
   @State loadState: string = 'loading'; // loading | ready | error
   @State creating: boolean = false;
   private chatId: number = 0;
   private active: boolean = false;
 
   private unsubs: Array<() => void> = [];
+  // 话题列表的 LazyForEach 数据源（见 syncRowsData）。
+  private rowsData: KeyedListDataSource<TopicRow> = new KeyedListDataSource<TopicRow>('forum-topics');
 
   aboutToAppear(): void {
     // 留在这里的只有这一行：它与路由参数无关，且必须早于任何 load() 的回调
@@ -117,56 +115,25 @@ export struct ForumTopicsPage {
     this.unsubs = [];
   }
 
+  // 两条实时更新的判据与就地改行都在 util/forumTopicModel（纯函数、有单测）。
+  // 不是本会话的更新会原样返回同一个数组引用，这里据此跳过一次无谓的发布。
   private onTopicInfoUpdate(u: TdObject): void {
-    const info = u['info'] as TdObject | undefined;
-    if (info === undefined ||
-      ((info['chat_id'] as number | undefined) ?? 0) !== this.chatId) {
-      return;
+    const next: TopicRow[] = applyTopicInfoUpdate(this.rows, this.chatId, u);
+    if (next !== this.rows) {
+      this.rows = next;
     }
-    const topicId: number = (info['forum_topic_id'] as number | undefined) ?? 0;
-    this.rows = this.sortRows(this.rows.map((row: TopicRow): TopicRow => {
-      if (row.threadId !== topicId) {
-        return row;
-      }
-      const next: TopicRow = {
-        threadId: row.threadId,
-        name: (info['name'] as string | undefined) ?? row.name,
-        iconColor: row.iconColor,
-        isGeneral: row.isGeneral,
-        isClosed: (info['is_closed'] as boolean | undefined) ?? row.isClosed,
-        isPinned: row.isPinned,
-        unreadCount: row.unreadCount,
-        lastMessageText: row.lastMessageText
-      };
-      return next;
-    }));
   }
 
   private onTopicUpdate(u: TdObject): void {
-    if (((u['chat_id'] as number | undefined) ?? 0) !== this.chatId) {
-      return;
+    const next: TopicRow[] = applyTopicUpdate(this.rows, this.chatId, u);
+    if (next !== this.rows) {
+      this.rows = next;
     }
-    const topicId: number = (u['forum_topic_id'] as number | undefined) ?? 0;
-    const isPinned: boolean = (u['is_pinned'] as boolean | undefined) ?? false;
-    this.rows = this.sortRows(this.rows.map((row: TopicRow): TopicRow => {
-      if (row.threadId !== topicId) {
-        return row;
-      }
-      const next: TopicRow = {
-        threadId: row.threadId, name: row.name, iconColor: row.iconColor,
-        isGeneral: row.isGeneral, isClosed: row.isClosed,
-        isPinned: isPinned,
-        unreadCount: row.unreadCount, lastMessageText: row.lastMessageText
-      };
-      return next;
-    }));
   }
 
   // 置顶话题排前（服务器 order 之上的本地稳定排序）。
   private sortRows(rows: TopicRow[]): TopicRow[] {
-    const pinned: TopicRow[] = rows.filter((row: TopicRow): boolean => row.isPinned);
-    const rest: TopicRow[] = rows.filter((row: TopicRow): boolean => !row.isPinned);
-    return [...pinned, ...rest];
+    return sortTopicRows(rows);
   }
 
   // 迁移前是 onPageShow，方法体一字未动，改由 HdsNavDestination.onShown() 触发。
@@ -206,28 +173,11 @@ export struct ForumTopicsPage {
     });
   }
 
+  // 解析在 util/forumTopicModel；str() 与 formatPreview() 留在这里——纯函数不读资源、
+  // 也不依赖另一层的格式化，那是它能被单测的前提。
   private parseTopic(topic: TdObject): TopicRow {
-    const info = topic['info'] as TdObject | undefined;
-    const threadId: number = info !== undefined
-      ? ((info['forum_topic_id'] as number | undefined) ?? 0) : 0;
-    const name: string = info !== undefined
-      ? ((info['name'] as string | undefined) ?? '') : '';
-    const icon = info !== undefined ? info['icon'] as TdObject | undefined : undefined;
-    const colorValue: number = icon !== undefined
-      ? ((icon['color'] as number | undefined) ?? 0) : 0;
-    const lastMessage = topic['last_message'] as TdObject | undefined;
-    return {
-      threadId: threadId,
-      name: name !== '' ? name : str('ft_topics'),
-      iconColor: TOPIC_COLORS.get(colorValue) ?? '#6FB9F0',
-      isGeneral: info !== undefined
-        ? ((info['is_general'] as boolean | undefined) ?? false) : false,
-      isClosed: info !== undefined
-        ? ((info['is_closed'] as boolean | undefined) ?? false) : false,
-      isPinned: (topic['is_pinned'] as boolean | undefined) ?? false,
-      unreadCount: (topic['unread_count'] as number | undefined) ?? 0,
-      lastMessageText: formatPreview(lastMessage ?? null)
-    };
+    return parseForumTopic(topic, str('ft_topics'),
+      formatPreview(topic['last_message'] as TdObject | undefined ?? null));
   }
 
   // --- 话题管理（长按菜单） ---
@@ -334,6 +284,13 @@ export struct ForumTopicsPage {
     navigateToChat(params, 'content').catch(logChatNavFailure);
   }
 
+  // 话题列表变了（加载、未读 / 最后一条更新、改名、删除）：交给 LazyForEach。
+  private syncRowsData(): void {
+    this.rowsData.update(this.rows,
+      this.rows.map((row: TopicRow): string => `${row.threadId}`),
+      this.rows.map((row: TopicRow): string => topicRowKey(row)));
+  }
+
   private createTopic(name: string): void {
     if (this.creating || name.trim() === '') {
       return;
@@ -362,49 +319,6 @@ export struct ForumTopicsPage {
 
   @State showNameInput: boolean = false;
   @State pendingTopicName: string = '';
-
-  @Builder
-  topicRowView(row: TopicRow) {
-    Row({ space: 12 }) {
-      Row() {
-        Text(row.isGeneral ? '#' : row.name.substring(0, 1).toUpperCase())
-          .fontSize(17).fontWeight(FontWeight.Bold).fontColor(Color.White);
-      }
-      .width(44).height(44).borderRadius(12)
-      .backgroundColor(row.iconColor)
-      .justifyContent(FlexAlign.Center);
-      Column({ space: 4 }) {
-        Row({ space: 6 }) {
-          Text(row.name).fontSize(16).fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-          if (row.isPinned) {
-            SymbolGlyph($r('sys.symbol.pin_fill')).fontSize(12).fontColor([COLOR_ICON_SECONDARY]);
-          }
-          if (row.isClosed) {
-            SymbolGlyph($r('sys.symbol.lock_fill')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
-          }
-        }
-        .width('100%');
-        Text(row.lastMessageText !== '' ? row.lastMessageText : $r('app.string.ft_no_messages'))
-          .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%');
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      if (row.unreadCount > 0) {
-        Text(row.unreadCount > 99 ? '99+' : `${row.unreadCount}`)
-          .fontSize(12).fontColor(COLOR_ON_PRIMARY)
-          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
-          .borderRadius(10).backgroundColor(COLOR_PRIMARY);
-      }
-    }
-    .width('100%').padding({ left: 14, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
-    .onClick((): void => this.openTopic(row))
-    .gesture(LongPressGesture({ fingers: 1, repeat: false })
-      .onAction((): void => this.showTopicMenu(row)));
-  }
 
   build() {
     HdsNavDestination() {
@@ -446,14 +360,22 @@ export struct ForumTopicsPage {
         .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center);
       } else {
         List({ space: 8 }) {
-          ForEach(this.rows, (row: TopicRow) => {
+          // LazyForEach + 复用行（TopicRowView）：大话题群有上百个话题，原来 ForEach 一次全建。
+          // 点击和长按挂在 ListItem 上，闭包随行 key 重建。
+          LazyForEach(this.rowsData, (row: TopicRow) => {
             ListItem() {
-              this.topicRowView(row);
+              TopicRowView({
+                name: row.name, iconColor: row.iconColor, isGeneral: row.isGeneral, isClosed: row.isClosed,
+                isPinned: row.isPinned, unreadCount: row.unreadCount, lastMessageText: row.lastMessageText
+              });
             }
-          }, (row: TopicRow): string =>
-            `topic_${row.threadId}_${row.unreadCount}_${row.lastMessageText}`);
+            .onClick((): void => this.openTopic(row))
+            .gesture(LongPressGesture({ fingers: 1, repeat: false })
+              .onAction((): void => this.showTopicMenu(row)));
+          }, (row: TopicRow, index: number): string =>
+            guardKey(this.rowsData.keyTableId, index, topicRowKey(row)));
         }
-        .width('100%').layoutWeight(1)
+        .width('100%').layoutWeight(1).cachedCount(4)
         .padding({ left: 12, right: 12, bottom: this.bottomSafe + 12 });
       }
       if (this.showNameInput) {
@@ -509,5 +431,57 @@ export struct ForumTopicsPage {
     })
     .onShown((): void => { this.handleShown(); })
     .width('100%').height('100%');
+  }
+}
+
+// 话题列表的一行（原 topicRowView）。复用组件；只画，点击和长按在页面的 ListItem 上。
+@Reusable
+@Component
+struct TopicRowView {
+  @Prop name: string = '';
+  @Prop iconColor: string = '';
+  @Prop isGeneral: boolean = false;
+  @Prop isClosed: boolean = false;
+  @Prop isPinned: boolean = false;
+  @Prop unreadCount: number = 0;
+  @Prop lastMessageText: string = '';
+
+  build() {
+    Row({ space: 12 }) {
+      Row() {
+        Text(this.isGeneral ? '#' : this.name.substring(0, 1).toUpperCase())
+          .fontSize(17).fontWeight(FontWeight.Bold).fontColor(Color.White);
+      }
+      .width(44).height(44).borderRadius(12)
+      .backgroundColor(this.iconColor)
+      .justifyContent(FlexAlign.Center);
+      Column({ space: 4 }) {
+        Row({ space: 6 }) {
+          Text(this.name).fontSize(16).fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT_PRIMARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+          if (this.isPinned) {
+            SymbolGlyph($r('sys.symbol.pin_fill')).fontSize(12).fontColor([COLOR_ICON_SECONDARY]);
+          }
+          if (this.isClosed) {
+            SymbolGlyph($r('sys.symbol.lock_fill')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
+          }
+        }
+        .width('100%');
+        Text(this.lastMessageText !== '' ? this.lastMessageText : $r('app.string.ft_no_messages'))
+          .fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%');
+      }
+      .alignItems(HorizontalAlign.Start).layoutWeight(1);
+      if (this.unreadCount > 0) {
+        Text(this.unreadCount > 99 ? '99+' : `${this.unreadCount}`)
+          .fontSize(12).fontColor(COLOR_ON_PRIMARY)
+          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+          .borderRadius(10).backgroundColor(COLOR_PRIMARY);
+      }
+    }
+    .width('100%').padding({ left: 14, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 }

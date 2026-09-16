@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  chatChromeHeight, ChatChromeGeometryInput, chatTopBannerRows
+  CHAT_TOPIC_BAR_HEIGHT, chatChromeHeight, ChatChromeGeometryInput, chatTopBannerRows,
+  chatTopicBarHeight
 } from '../main/ets/util/ChatChromeGeometry';
 import {
   ALPHA_STICKER_CACHE_MAX_BYTES, IMAGE_HOLDER_RELEASE_BATCH, IMAGE_PIXEL_CACHE_MAX_BYTES,
@@ -25,6 +26,32 @@ export default function performanceBudgetsTest() {
       expect(chatChromeHeight(chrome(true))).assertEqual(86);
       expect(chatChromeHeight(chrome(false, true))).assertEqual(138);
       expect(chatChromeHeight(chrome(false, true, true))).assertEqual(192.5);
+    });
+
+    // 话题横条（2026-09-16）：论坛群在顶栏标题行下面多挂一条可横向滚的话题胶囊。
+    //
+    // 做成**可选字段**是刻意的：上面那四条断言的入参根本不传它，所以老行为
+    // 一个数字都不会变——非论坛会话的顶栏高度必须和以前逐像素一致。
+    it('topic bar adds its own row only when present', 0, (): void => {
+      expect(chatTopicBarHeight(chrome())).assertEqual(0);
+      const withBar: ChatChromeGeometryInput = chrome();
+      withBar.topicBarVisible = true;
+      expect(chatTopicBarHeight(withBar)).assertEqual(CHAT_TOPIC_BAR_HEIGHT);
+      expect(chatChromeHeight(withBar)).assertEqual(82 + CHAT_TOPIC_BAR_HEIGHT);
+    });
+
+    // 话题横条与置顶/直播横幅可以同时存在：两段高度相加，谁都不能吃掉谁。
+    it('topic bar stacks with the banners', 0, (): void => {
+      const both: ChatChromeGeometryInput = chrome(false, true, true);
+      both.topicBarVisible = true;
+      expect(chatChromeHeight(both)).assertEqual(192.5 + CHAT_TOPIC_BAR_HEIGHT);
+    });
+
+    // 搜索态顶栏更高，话题横条照样叠在它下面。
+    it('topic bar survives search mode', 0, (): void => {
+      const searching: ChatChromeGeometryInput = chrome(true);
+      searching.topicBarVisible = true;
+      expect(chatChromeHeight(searching)).assertEqual(86 + CHAT_TOPIC_BAR_HEIGHT);
     });
 
     it('uses loading as a fallback row instead of an extra banner', 0, (): void => {
