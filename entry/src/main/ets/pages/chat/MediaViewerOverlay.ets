@@ -18,6 +18,13 @@ import { promptAction } from '@kit.ArkUI';
 import { logE } from '../../util/log';
 import { setMediaViewerOrientation } from './LiveViewerUi';
 import { thumbPathFor } from '../../util/mediaThumbChannel';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { ViewerFilmstripCell } from './ViewerFilmstripCell';
+import {
+  FilmCellVM, buildFilmCells, cellKeys, filmCellIds, idIndexMap, indexOfId
+} from '../../util/viewerFilmstrip';
+import { guardKey } from '../../util/keyGuard';
+import { posterFor, requestPoster } from '../../util/videoPosterStore';
 import {
   KEY_CURRENT_NETWORK_TYPE, KEY_POWER_EFFECT_BLUR, KEY_POWER_SMOOTH_TRANSITIONS,
   KEY_REDUCE_ANIM, powerAnimationDuration
@@ -25,6 +32,10 @@ import {
 import { chatEffectDurationOf } from '../../util/chatEffects';
 import { mediaEntryIsVideo } from '../../util/mediaEntryKind';
 import { str } from '../../util/strings';
+import { startBackgroundCache } from '../../services/BackgroundCache';
+import { ensureCacheRegistry, noteCachedMedia } from '../../store/CacheRegistry';
+import { CacheRecord } from '../../util/cacheRegistryModel';
+import { DC_KIND_PHOTO, DC_KIND_VIDEO } from '../../util/downloadCenterModel';
 import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
 
 // 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
@@ -116,6 +127,13 @@ export struct MediaViewerOverlay {
   // 页面化之后这个值会从 pathInfo.param 里来，本入参形状不变。
   @Param chatId: number = 0;
   @Param chatTitle: string = '';
+  // 从下载中心打开（pages/main/DownloadPreviewPage）：成员是下载中心拼的临时相册，id 是 1…N 的临时编号、chatId 为 0。
+  // 这时「所有媒体」「后台缓存」没有意义，缓存登记也必须跳过——否则会按临时 id 往 CacheRegistry 里写假记录。
+  @Param downloadsMode: boolean = false;
+  // 这一条能不能「在聊天中显示」。判据与列表长按菜单一致（downloadCenterRowVM 的
+  // canJump：chatId !== 0 && messageId !== 0）——下载中心磁盘扫出来的条目两者都是 0，
+  // 菜单还照常列出来的话，点了就是**静默无反应**（用户 2026-09-16 报）。
+  @Param canShowInChat: boolean = true;
   @Param nowSec: number = 0;
 
   // 全部函数型入参一律 @Event，包括这两个「查询型」的。理由是观测能力：调用点
@@ -193,12 +211,24 @@ export struct MediaViewerOverlay {
   // viewerMsgId 推出来），但横向偏移不会自动回位——往前切落在新组的最后一张
   // 时，那张会停在屏幕右边看不见的地方。
   private filmScroller: Scroller = new Scroller();
+  // 缩略图条与大图层的懒加载数据源（2026-09-16）。**一份源喂两个 LazyForEach**：
+  // KeyedListDataSource 自己维护 listeners 数组，两处各注册各的。
+  // 原来两处都是 ForEach(siblingIds())：n 张就建 n 棵子树 + n 个 Swiper 页。聊天里
+  // 相册最多十张，下载中心把整个页签当一个相册（util/downloadViewerSet 无上限）。
+  private filmCells: FilmCellVM[] = [];
+  private filmSource: KeyedListDataSource<FilmCellVM> =
+    new KeyedListDataSource<FilmCellVM>('viewer-film');
+  // id → 下标两张表：memberIndex 对当前相册成员，messageIndex 对 this.messages。
+  private memberIndex: Map<number, number> = new Map<number, number>();
+  private messageIndex: Map<number, number> = new Map<number, number>();
   private swiperCtrl: SwiperController = new SwiperController();
 
   aboutToAppear(): void {
+    this.rebuildViewerSources();
     this.pageIdx = this.initIdx;
     this.initialViewerMsgId = this.viewerMsgId;
     this.prefetchNeighbours(this.pageIdx);
+    this.noteViewedVideo();
   }
 
   // Leaving the viewer in landscape would strand the chat page sideways.
@@ -571,6 +601,7 @@ export struct MediaViewerOverlay {
     this.viewerMsgId = landing;
     this.onViewerMsgIdChange(landing);
     this.ensureLiveDownload(landing);
+    this.noteViewedVideo();
     this.pageIdx = dir > 0 ? 0 : g.memberIds.length - 1;
     this.prefetchNeighbours(this.pageIdx);
     // 缩略图条的内容随 viewerMsgId 自动换掉，但滚动偏移不会——手动带回去。
@@ -591,9 +622,61 @@ export struct MediaViewerOverlay {
     return p !== '' && p.startsWith('/') ? `file://${p}` : p;
   }
 
+  // messages / groups / viewerMsgId 任一变化都重算数据源与两张下标表。
+  //
+  // ⚠️ @Monitor 的名字必须与 @Param 逐字一致：写错既不报编译错也不告警，自愈会
+  // 静默失效（本仓踩过——LiveThumbImage 的 fileId/initialPath 那次，50 次 attach
+  // 触发 0 次）。这里三个名字与上面的 @Param 声明逐字对齐。
+  //
+  // 选中态**不依赖**这个回调：高亮走 ViewerFilmstripCell 的 current @Param，
+  // 万一本回调哪天失灵，坏的也只是跨组切换，不是每次翻页。
+  @Monitor('messages', 'groups', 'viewerMsgId')
+  onViewerDataChanged(): void {
+    this.rebuildViewerSources();
+  }
+
+  private rebuildViewerSources(): void {
+    this.messageIndex = idIndexMap(this.messages.map((m: MessageEntry): number => m.id));
+    const g: AlbumGroup | null = this.group();
+    const ids: number[] = this.siblingIds();
+    this.memberIndex = idIndexMap(ids);
+    // 取值顺序与 siblingPath 一致：先相册行（通道的 fileId 在这儿），再退回 entry。
+    const paths: string[] = [];
+    const fileIds: number[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const gPath: string = g !== null && i < g.photoPaths.length ? g.photoPaths[i] : '';
+      const gFile: number = g !== null && i < g.photoFileIds.length ? g.photoFileIds[i] : 0;
+      if (gFile !== 0 || gPath !== '') {
+        paths.push(gPath);
+        fileIds.push(gFile);
+        continue;
+      }
+      const e: MessageEntry | null = this.entryById(ids[i]);
+      paths.push(e !== null ? e.photoPath : '');
+      fileIds.push(e !== null ? e.photoFileId : 0);
+    }
+    this.filmCells = buildFilmCells(ids, paths, fileIds,
+      (id: number): boolean => this.siblingIsVideo(id),
+      (id: number): string => {
+        // 只有「本地文件在、又没有 TDLib 缩略图」的视频才需要我们自己抽首帧。
+        // 聊天里的视频有 photoFileId（缩略图），走原来的通道，这里返回空串。
+        const e: MessageEntry | null = this.entryById(id);
+        return e !== null && e.photoFileId === 0 ? e.videoPath : '';
+      });
+    for (const cell of this.filmCells) {
+      if (cell.videoPath !== '') {
+        const e: MessageEntry | null = this.entryById(cell.id);
+        // mtime 按**整秒**传：列表那侧拿的是毫秒，两边不一致会算出两个签名、白抽两次。
+        requestPoster(cell.videoPath, e !== null ? e.videoFileSize : 0,
+          (e !== null ? e.date : 0) * 1000);
+      }
+    }
+    this.filmSource.update(this.filmCells, filmCellIds(this.filmCells), cellKeys(this.filmCells));
+  }
+
   private entryById(id: number): MessageEntry | null {
-    const idx = this.messages.findIndex((m: MessageEntry) => m.id === id);
-    return idx >= 0 ? this.messages[idx] : null;
+    const idx: number = indexOfId(this.messageIndex, id);
+    return idx >= 0 && idx < this.messages.length ? this.messages[idx] : null;
   }
 
   private entry(): MessageEntry | null {
@@ -659,7 +742,7 @@ export struct MediaViewerOverlay {
   private siblingPath(id: number): string {
     const g = this.group();
     if (g !== null) {
-      const idx = g.memberIds.indexOf(id);
+      const idx: number = indexOfId(this.memberIndex, id);
       if (idx >= 0 && idx < g.photoPaths.length) {
         const fileId: number = idx < g.photoFileIds.length ? g.photoFileIds[idx] : 0;
         const live: string = fileId !== 0 ? thumbPathFor(fileId) : '';
@@ -679,12 +762,19 @@ export struct MediaViewerOverlay {
     }
     const entry: MessageEntry = this.messages[idx2];
     const live: string = entry.photoFileId !== 0 ? thumbPathFor(entry.photoFileId) : '';
-    return live !== '' ? live : entry.photoPath;
+    if (live !== '') {
+      return live;
+    }
+    if (entry.photoPath !== '') {
+      return entry.photoPath;
+    }
+    // 下载中心的本地视频：没有 TDLib 缩略图，用我们自己抽的首帧（按路径索引）。
+    return entry.videoPath !== '' ? posterFor(entry.videoPath) : '';
   }
 
   private siblingIsVideo(id: number): boolean {
-    const idx = this.messages.findIndex((m: MessageEntry) => m.id === id);
-    return idx >= 0 && mediaEntryIsVideo(this.messages[idx]);
+    const e: MessageEntry | null = this.entryById(id);
+    return e !== null && mediaEntryIsVideo(e);
   }
 
   // Best available image for a viewer page: full-res once downloaded, else thumbnail.
@@ -720,7 +810,7 @@ export struct MediaViewerOverlay {
 
   // Filmstrip tap: page the Swiper to the tapped album member.
   private jumpToSibling(id: number): void {
-    const i = this.siblingIds().indexOf(id);
+    const i: number = indexOfId(this.memberIndex, id);
     if (i >= 0) {
       this.swiperCtrl.changeIndex(i, true);
     }
@@ -751,6 +841,7 @@ export struct MediaViewerOverlay {
     this.viewerMsgId = id;
     this.onViewerMsgIdChange(id);
     this.ensureLiveDownload(id);
+    this.noteViewedVideo();
     if (this.store !== null && !this.siblingIsVideo(id)) {
       // 翻到的这一张就是用户此刻正盯着的那一个文件——最高档，压过邻图预取(8)
       // 与后台缩略图(16)。这张多半是刚才以 8 预取过的，store 会补发一次
@@ -760,6 +851,98 @@ export struct MediaViewerOverlay {
     this.prefetchNeighbours(index);
     // 组内翻页也把缩略图条带过去：不然翻到第七张时高亮的那一格还在条外面。
     this.scrollFilmstripTo(index);
+  }
+
+  // 当前这一项的缓存记录（services/BackgroundCache、store/CacheRegistry）。视频取整段视频文件，图片取原图。
+  private cacheRecordForCurrent(background: boolean): CacheRecord | null {
+    if (this.downloadsMode) {
+      return null;
+    }
+    const e: MessageEntry | null = this.entry();
+    if (e === null) {
+      return null;
+    }
+    const video: boolean = mediaEntryIsVideo(e);
+    const fileId: number = video ? e.videoFileId : (e.photoFullFileId !== 0 ? e.photoFullFileId : e.photoFileId);
+    if (fileId === 0) {
+      return null;
+    }
+    return {
+      fileId: fileId, chatId: this.chatId, messageId: e.id,
+      kind: video ? DC_KIND_VIDEO : DC_KIND_PHOTO,
+      name: video ? e.videoFileName : '', size: video ? e.videoFileSize : 0,
+      mimeType: video ? e.videoMimeType : '', preview: e.text, background: background, addedAt: Date.now()
+    };
+  }
+
+  private currentAlreadyCached(): boolean {
+    const e: MessageEntry | null = this.entry();
+    if (e === null) {
+      return false;
+    }
+    if (mediaEntryIsVideo(e)) {
+      return e.videoPath !== '';
+    }
+    return e.photoFullFileId !== 0 ? e.photoFullPath !== '' : e.photoPath !== '';
+  }
+
+  // 右上角「⋮」菜单。从下载中心打开时去掉「所有媒体」「后台缓存」：前者没有会话可去，后者本来就在下载中心里。
+  private chromeMenu(): MenuElement[] {
+    const showInChat: MenuElement = {
+      value: $r('app.string.mv_show_in_chat'),
+      action: (): void => { this.onShowInChat(); }
+    };
+    const allMedia: MenuElement = {
+      value: $r('app.string.mv_show_all_media'),
+      action: (): void => { this.onShowAllMedia(); }
+    };
+    const toGallery: MenuElement = {
+      value: $r('app.string.ms_save_to_gallery'),
+      action: (): void => { this.onSaveMedia(); }
+    };
+    const toFiles: MenuElement = {
+      value: $r('app.string.ms_save_to_files'),
+      action: (): void => { this.onSaveMediaToFiles(); }
+    };
+    const backgroundCache: MenuElement = {
+      value: $r('app.string.dc_background_cache'),
+      action: (): void => { this.cacheCurrentInBackground(); }
+    };
+    return this.downloadsMode
+      ? (this.canShowInChat ? [showInChat, toGallery, toFiles] : [toGallery, toFiles])
+      : [showInChat, allMedia, toGallery, toFiles, backgroundCache];
+  }
+
+  // 右上角菜单「后台缓存」（2026-09-15）：走 downloadFile 缓存进 TDLib，不存相册、不进下载管理器；
+  // 进度在「设置 › 下载中心」看。关掉查看器、滑出可见窗口都不会把它取消（见 MessageStore 里的 isBackgroundCaching）。
+  private cacheCurrentInBackground(): void {
+    if (this.currentAlreadyCached()) {
+      promptAction.showToast({ message: str('dc_background_cache_done'), duration: 1600 });
+      return;
+    }
+    const rec: CacheRecord | null = this.cacheRecordForCurrent(true);
+    if (rec === null) {
+      promptAction.showToast({ message: str('dc_background_cache_failed'), duration: 1600 });
+      return;
+    }
+    startBackgroundCache(getContext(this) as common.UIAbilityContext, rec).then((): void => {
+      promptAction.showToast({ message: str('dc_background_cache_started'), duration: 2000 });
+    }).catch((e: Object): void => {
+      logE(`MediaViewer.cacheCurrentInBackground failed: ${JSON.stringify(e)}`);
+      promptAction.showToast({ message: str('dc_background_cache_failed'), duration: 1800 });
+    });
+  }
+
+  // 看过的视频登记进缓存记录：边看边缓存的那部分，下载中心才找得到（TDLib 没有列出缓存文件的接口）。
+  private noteViewedVideo(): void {
+    if (!this.isVideo()) {
+      return;
+    }
+    const rec: CacheRecord | null = this.cacheRecordForCurrent(false);
+    if (rec === null) {
+      return;
+    }
+    ensureCacheRegistry(getContext(this) as common.UIAbilityContext).then((): void => { noteCachedMedia(rec); });
   }
 
   private isVideo(): boolean {
@@ -1051,10 +1234,15 @@ export struct MediaViewerOverlay {
   @Builder
   viewerContent() {
     Swiper(this.swiperCtrl) {
-      ForEach(this.siblingIds(), (id: number) => {
+      LazyForEach(this.filmSource, (vm: FilmCellVM) => {
         Stack() {
-          if (this.siblingIsVideo(id)) {
-            if (id === this.viewerMsgId && this.videoFileId() !== 0) {
+          if (this.siblingIsVideo(vm.id)) {
+            // 本地文件在就挂播放器，不能只认 fileId：下载中心磁盘扫出来的视频
+            // fileId 恒为 0（TDLib 没有「路径 → fileId」的接口），而两个引擎的取源
+            // 顺序都是 localPath 优先（AvVideoPlayer / StreamingVideoPlayer）。
+            // 只认 fileId 的后果是这一页只画海报、播不了（用户 2026-09-16）。
+            if (vm.id === this.viewerMsgId &&
+              (this.videoFileId() !== 0 || this.videoLocalPath() !== '')) {
               VideoPlayerHost({
                 fileId: this.videoFileId(),
                 fileSize: this.videoFileSize(),
@@ -1062,10 +1250,10 @@ export struct MediaViewerOverlay {
                 videoWidth: this.videoWidth(),
                 videoHeight: this.videoHeight(),
                 localPath: this.videoLocalPath(),
-                posterPath: this.siblingPath(id),
+                posterPath: this.siblingPath(vm.id),
                 // 实况走自己的胶囊，标准控制栏（进度条/倍速）让位。
-                showControls: this.chromeVisible && !this.isLiveEntry(id),
-                liveMode: this.isLiveEntry(id),
+                showControls: this.chromeVisible && !this.isLiveEntry(vm.id),
+                liveMode: this.isLiveEntry(vm.id),
                 liveToggleSeq: this.liveToggleSeq,
                 onPlayStateChanged: (playing: boolean): void => { this.livePlaying = playing; },
                 landscape: this.videoLandscape,
@@ -1073,7 +1261,7 @@ export struct MediaViewerOverlay {
                 muted: false,
                 // 实况恒从 0 起。续播位是给普通视频的——从一条播到一半的实况
                 // 气泡点进来，停在中途那一帧当「静态照片」是不对的。
-                startPositionMs: (id === this.initialViewerMsgId && !this.isLiveEntry(id))
+                startPositionMs: (vm.id === this.initialViewerMsgId && !this.isLiveEntry(vm.id))
                   ? this.initStartPositionMs : 0,
                 onPositionChanged: (positionMs: number): void => { this.onPositionChanged(positionMs); },
                 onBackgroundTap: () => { this.toggleChrome(); },
@@ -1084,9 +1272,9 @@ export struct MediaViewerOverlay {
                 }
               });
             } else {
-              if (this.siblingPath(id) !== '') {
-                Image(this.siblingPath(id).startsWith('/')
-                  ? `file://${this.siblingPath(id)}` : this.siblingPath(id)).draggable(false)
+              if (this.siblingPath(vm.id) !== '') {
+                Image(this.siblingPath(vm.id).startsWith('/')
+                  ? `file://${this.siblingPath(vm.id)}` : this.siblingPath(vm.id)).draggable(false)
                   .objectFit(ImageFit.Contain).width('100%').height('100%');
               }
               Stack() {
@@ -1100,40 +1288,40 @@ export struct MediaViewerOverlay {
             // scaled space, which made panning lag the finger by the zoom
             // factor. The Image only carries the scale/translate transform.
             Stack() {
-              if (this.photoSrcFor(id) !== '') {
-                Image(this.photoSrcFor(id)).draggable(false)
+              if (this.photoSrcFor(vm.id) !== '') {
+                Image(this.photoSrcFor(vm.id)).draggable(false)
                   .objectFit(ImageFit.Contain).width('100%').height('100%')
                   .scale({
-                    x: id === this.viewerMsgId ? this.photoScale : VIEWER_MIN_SCALE,
-                    y: id === this.viewerMsgId ? this.photoScale : VIEWER_MIN_SCALE
+                    x: vm.id === this.viewerMsgId ? this.photoScale : VIEWER_MIN_SCALE,
+                    y: vm.id === this.viewerMsgId ? this.photoScale : VIEWER_MIN_SCALE
                   })
                   .translate({
-                    x: id === this.viewerMsgId ? this.photoOffsetX : 0,
-                    y: id === this.viewerMsgId ? this.photoOffsetY : 0
+                    x: vm.id === this.viewerMsgId ? this.photoOffsetX : 0,
+                    y: vm.id === this.viewerMsgId ? this.photoOffsetY : 0
                   });
               }
             }
             .width('100%').height('100%')
-            // 一镜到底的落点：与气泡里同一条消息的媒体框绑同一个 id，系统负责
+            // 一镜到底的落点：与气泡里同一条消息的媒体框绑同一个 vm.id，系统负责
             // 把宽高和位置从缩略图过渡到全屏。
             //
-            // 只有当前页绑真实 id——同一时刻一个 id 只能有一对节点，左右邻页
+            // 只有当前页绑真实 vm.id——同一时刻一个 vm.id 只能有一对节点，左右邻页
             // 若也绑上，系统就不知道该跟谁配对了。内层 Image 身上挂着捏合缩放
             // 与拖动的 scale/translate，所以绑在外层这个不带变换的 Stack 上，
             // 两套变换才不会打架（官方要求绑定节点的宽高动画不能有跳变）。
-            // 每一页永久绑自己的 id，**绝不在活节点上改 id**。
+            // 每一页永久绑自己的 vm.id，**绝不在活节点上改 vm.id**。
             //
-            // 原来是「只有当前页绑真 id，其余绑 media_idle_<id>」，翻页时同一个
-            // 活节点的 id 会来回改。日志证实这一侧的取值全程正确（当前页总是
-            // 真 id，关闭时也对得上），可退出动画的落点仍然错——说明框架的配对
-            // 登记不跟着活节点的 id 走，退场时按最初登记的那一页去找落点，
+            // 原来是「只有当前页绑真 vm.id，其余绑 media_idle_<vm.id>」，翻页时同一个
+            // 活节点的 vm.id 会来回改。日志证实这一侧的取值全程正确（当前页总是
+            // 真 vm.id，关闭时也对得上），可退出动画的落点仍然错——说明框架的配对
+            // 登记不跟着活节点的 vm.id 走，退场时按最初登记的那一页去找落点，
             // 于是翻过页就落在第一张的位置上。不翻页正好没暴露。
             //
-            // 静态之后每个 id 恰好一对节点：相册里的那一格 + 查看器里的那一页，
+            // 静态之后每个 vm.id 恰好一对节点：相册里的那一格 + 查看器里的那一页，
             // 正是 geometryTransition 要求的形状，动画仍由节点的出现/消失驱动。
-            // id 三处必须逐字一致（本行 + MessageBubble 的单图与相册格两行），
+            // vm.id 三处必须逐字一致（本行 + MessageBubble 的单图与相册格两行），
             // 而**编译器不校验配对**，漏一端只在真机上表现为落点错。
-            .geometryTransition(`media_${this.chatId}_${id}`)
+            .geometryTransition(`media_${this.chatId}_${vm.id}`)
             // Parallel, not Exclusive. Exclusive has to hold the single tap
             // back until the double-tap window expires, and since a single tap
             // at 1x now closes the viewer, that wait showed up as a stall
@@ -1181,10 +1369,13 @@ export struct MediaViewerOverlay {
             );
           }
         }.width('100%').height('100%');
-      }, (id: number) => `vm_${id}`);
+      }, (vm: FilmCellVM, index: number): string =>
+        guardKey(this.filmSource.keyTableId, index, `vm_${vm.id}|${vm.fileId}`));
     }
     .indicator(false)
     .loop(false)
+    // 懒加载之后仍要左右各预建一页，翻页手感不变；再多就回到「整册都建」了。
+    .cachedCount(1)
     .index(this.pageIdx)
     // While enlarged, one-finger movement must not page the album out from
     // under the zoomed photo. Resetting to 1x re-enables normal paging.
@@ -1251,14 +1442,21 @@ export struct MediaViewerOverlay {
   // Thumbnail strip for the current message's album (photo/video list) —
   // tap a thumbnail to switch the viewer to that item.
   // 把第 index 张缩略图滚到可视范围中间。
-  // 52 的缩略图 + 6 的间距 = 每格 58；左边还有 12 的内边距。
+  //
+  // 改 List 之后用 scrollToIndex(…, Center)，不再自己算像素：原来那段
+  // `12 + index * 58 + 26 - areaW / 2` 把「每格 52 + 间距 6 + 左内边距 12」写死在
+  // 算术里，任何一个数字改了都得同步改这里；而懒加载下未建出来的格子本来就没有
+  // 真实宽度可算。
   private scrollFilmstripTo(index: number): void {
     if (index < 0) {
       return;
     }
-    const target: number = Math.max(0, 12 + index * 58 + 26 - this.areaW / 2);
     try {
-      this.filmScroller.scrollTo({ xOffset: target, yOffset: 0, animation: true });
+      // **不能用 smooth**：懒加载列表上带动画的 scrollToIndex 要一项项走过去才知道
+      // 尺寸，屏幕上就是「从头滚到尾」（用户 2026-09-16 实测：停在最后一张时每次
+      // 左右滑都重演一遍）。官方在 scroll.d.ts 自己写了这条：要平滑得先无动画跳到
+      // 目标附近再平滑一小段。这里只要「当前格居中」，一步到位即可。
+      this.filmScroller.scrollToIndex(index, false, ScrollAlign.CENTER);
     } catch (e) {
       // 条还没挂上（切组的同一帧）时会抛，下一次 onPageChange 会再来一次。
     }
@@ -1266,33 +1464,33 @@ export struct MediaViewerOverlay {
 
   @Builder
   viewerFilmstrip() {
-    Scroll(this.filmScroller) {
-      Row({ space: 6 }) {
-        ForEach(this.siblingIds(), (id: number) => {
-          Stack() {
-            if (this.siblingPath(id) !== '') {
-              Image(this.siblingPath(id).startsWith('/') ? `file://${this.siblingPath(id)}` : this.siblingPath(id)).draggable(false)
-                .width(52).height(52).borderRadius(6).objectFit(ImageFit.Cover);
-            } else {
-              Column().width(52).height(52).borderRadius(6).backgroundColor('#333333');
-            }
-            if (this.siblingIsVideo(id)) {
-              Text('▶').fontSize(14).fontColor(Color.White);
-            }
-          }
-          .width(52).height(52)
-          .border({ width: id === this.viewerMsgId ? 2 : 0, color: Color.White })
-          .borderRadius(6)
-          .opacity(id === this.viewerMsgId ? 1 : 0.68)
-          .scale({ x: id === this.viewerMsgId ? 1 : 0.92, y: id === this.viewerMsgId ? 1 : 0.92 })
-          .animation({
-            duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 160),
-            curve: Curve.EaseOut
+    // 横向 List + LazyForEach + @ReusableV2 单元格：只建可视区 + cachedCount 那几格。
+    // 与 pages/main/DownloadCenterList 同一套做法（那边是竖向）。
+    List({ space: 6, scroller: this.filmScroller }) {
+      LazyForEach(this.filmSource, (vm: FilmCellVM) => {
+        ListItem() {
+          ViewerFilmstripCell({
+            cell: vm,
+            current: vm.id === this.viewerMsgId,
+            effectMs: this.effectDuration(KEY_POWER_EFFECT_BLUR, 160)
           })
-          .onClick(() => { this.jumpToSibling(id); });
-        }, (id: number) => `film_${id}`);
-      }.padding({ left: 12, right: 12 });
-    }.scrollable(ScrollDirection.Horizontal).width('100%');
+            .reuse({ reuseId: (): string => 'film' });
+        }
+        .onClick(() => { this.jumpToSibling(vm.id); });
+      }, (vm: FilmCellVM, index: number): string =>
+        guardKey(this.filmSource.keyTableId, index, `${vm.id}|${vm.fileId}`));
+    }
+    .listDirection(Axis.Horizontal)
+    .width('100%').height(56)
+    .padding({ left: 12, right: 12 })
+    .scrollBar(BarState.Off)
+    .cachedCount(4)
+    // 控制层是 `if (this.chromeVisible …)`：隐藏再显示、以及切组，都会把这条整块
+    // 重建，偏移随之归零——不在这里补一次，回来看到的就是第一张而不是当前这张
+    // （用户 2026-09-16 实测）。下一帧再滚：这一帧行还没排版，量不到位置。
+    .onAppear((): void => {
+      setTimeout((): void => { this.scrollFilmstripTo(this.pageIdx); }, 0);
+    });
   }
 
   @Builder
@@ -1350,19 +1548,7 @@ export struct MediaViewerOverlay {
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
           curve: Curve.EaseOut
         })
-        .bindMenu([{
-          value: $r('app.string.mv_show_in_chat'),
-          action: (): void => { this.onShowInChat(); }
-        } as MenuElement, {
-          value: $r('app.string.mv_show_all_media'),
-          action: (): void => { this.onShowAllMedia(); }
-        } as MenuElement, {
-          value: $r('app.string.ms_save_to_gallery'),
-          action: (): void => { this.onSaveMedia(); }
-        } as MenuElement, {
-          value: $r('app.string.ms_save_to_files'),
-          action: (): void => { this.onSaveMediaToFiles(); }
-        } as MenuElement]);
+        .bindMenu(this.chromeMenu());
       }
       .width('100%').height(CHROME_BAR_ROW_H)
       .padding({ left: 6, right: 6 })
