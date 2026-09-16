@@ -58,7 +58,15 @@ export struct CachedImage {
   }
 
   aboutToDisappear(): void {
-    this.drop();
+    // 组件要被销毁了：只还引用、撤掉在等的解码，**不写 @Local**（2026-09-15）。drop() 里那句
+    // pixelMap = undefined 在销毁路径上没有意义，却要走一遍 V2 的变更通知——退出会话后整页销毁的那一帧里，
+    // 19 个 CachedImage 的 aboutToDisappear 合计 6.4ms，是整页销毁里最贵的一项（trace 20260915T174809）。
+    this.cancelPending();
+    if (this.held !== null) {
+      releasePixelMap(this.held);
+      this.held = null;
+      this.heldReq = null;
+    }
   }
 
   // Recycling cancels work in flight but keeps a bitmap that is already

@@ -53,6 +53,9 @@ export struct SelectionHeader {
   @Event onForward: () => void = (): void => {};
   // 多选保存（issue #199）：照片/视频进相册、文件进下载目录。
   @Event onSave: () => void = (): void => {};
+  // 选中的消息里有还没下完的视频才出「后台缓存」（services/chatBackgroundCache）。
+  @Param canBackgroundCache: boolean = false;
+  @Event onBackgroundCache: () => void = (): void => {};
   @Event onCopy: () => void = (): void => {};
   @Event onDelete: () => void = (): void => {};
 
@@ -99,6 +102,10 @@ export struct SelectionHeader {
         .layoutWeight(1).margin({ left: 6 });
       this.capsule('sys.symbol.arrow_down_circle', COLOR_TEXT_PRIMARY,
         (): void => { this.onSave(); });
+      if (this.canBackgroundCache) {
+        this.capsule('sys.symbol.arrow_down_to_line', COLOR_TEXT_PRIMARY,
+          (): void => { this.onBackgroundCache(); });
+      }
       this.capsule('sys.symbol.arrowshape_turn_up_right', COLOR_TEXT_PRIMARY,
         (): void => { this.onForward(); });
       this.capsule('sys.symbol.plus_square_on_square', COLOR_TEXT_PRIMARY,

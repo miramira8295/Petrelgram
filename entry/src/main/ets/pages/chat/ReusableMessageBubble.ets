@@ -98,6 +98,8 @@ export interface MessageBubbleActions {
   // 贴纸专有：看它属于哪个合集 / 收藏与取消收藏。
   onViewStickerSet: (messageId: number) => void;
   onToggleFavoriteSticker: (messageId: number) => void;
+  // 视频专有：后台缓存（services/chatBackgroundCache）。相册传整组成员 id。
+  onBackgroundCache: (messageIds: number[]) => void;
 }
 
 export interface MessageBubbleRenderData {
@@ -196,7 +198,8 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onRetryTranslation: (_id: number): void => {}, onLiveStreamTap: (_id: number): void => {},
   onAddToGifs: (_id: number): void => {},
   onViewStickerSet: (_id: number): void => {},
-  onToggleFavoriteSticker: (_id: number): void => {}
+  onToggleFavoriteSticker: (_id: number): void => {},
+  onBackgroundCache: (_ids: number[]): void => {}
 };
 
 // The reuse pool this @ReusableV2 declares lives on the PARENT custom component

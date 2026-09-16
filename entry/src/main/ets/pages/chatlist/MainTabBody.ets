@@ -13,6 +13,7 @@ import { COLOR_DIVIDER, mainCardFill } from '../../util/theme';
 import { formatTime } from '../../util/formatTime';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
+import { HOME_CARD_INSET_VP } from '../../util/listCardGeometry';
 import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import {
@@ -556,12 +557,12 @@ export struct MainTabBody {
           .alignSelf(ItemAlign.Start).margin({ top: 3 });
       }
     }
-    // 与 ChatRow 的卡片同一套规格：同样的左右收进、外边距、圆角 16、0.5 描边、
+    // 与 ChatRow 的卡片同一套规格：同样的左右收进、外边距、头像内缩（对齐顶部标题）、圆角 16、0.5 描边、
     // 玻璃与按压态。
     .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
     .margin({ left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
     .height(ARCHIVE_ROW_HEIGHT)
-    .padding({ left: ROW_PAD_H, right: ROW_PAD_H })
+    .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H })
     .borderRadius(16)
     .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
     .backdropBlur(this.archiveGlassOn() && this.liveEffects() ? overlayBackdropBlur('card') : 0)

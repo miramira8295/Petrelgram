@@ -1,7 +1,11 @@
 import { getTdClient } from '../../tdkit/Globals';
 import { guardKey } from '../../util/keyGuard';
-import { TgsStickerView } from './TgsStickerView';
-import { SmartLoopVideo } from '../common/SmartLoopVideo';
+import { StickerGridCell } from './StickerGridCell';
+import {
+  pauseStickerPanelForScroll, resetStickerPanelGate, resumeStickerPanelAfterScroll
+} from '../../util/stickerPanelGate';
+import { StickerPoster } from '../common/StickerPoster';
+import { ChangeDrainQueue } from '../../util/changeDrainQueue';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_EMOJI, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY, KEY_REDUCE_ANIM
@@ -64,9 +68,20 @@ function stickerArrivalToken(sticker: StickerItem): string {
   return sticker.thumbPath !== '' ? 't' : '0';
 }
 
+// 内容变化（缩略图/动画源到达）每帧最多报这么多格：一次十几个 CHANGE 会让它们挤在
+// 同一个 VSync 里重建、建图、重测 Grid（见 util/changeDrainQueue）。
+const CHANGES_PER_FRAME: number = 3;
+const CHANGE_DRAIN_INTERVAL_MS: number = 16;
+
 class StickerDataSource implements IDataSource {
   private items: FlatEntry[] = [];
   private listeners: DataChangeListener[] = [];
+  private changeQueue: ChangeDrainQueue = new ChangeDrainQueue();
+  private drainTimer: number = -1;
+  private disposed: boolean = false;
+  // 优先报的下标范围：可视区加上下各一行预加载（由 Grid 的 onScrollIndex 喂进来）。
+  private priorityFirst: number = 0;
+  private priorityLast: number = -1;
 
   totalCount(): number {
     return this.items.length;
@@ -106,9 +121,7 @@ class StickerDataSource implements IDataSource {
         }
       }
       if (!identityChanged) {
-        if (changes.length > 0) {
-          this.notify(changes);
-        }
+        this.enqueueChanges(changes);
         return;
       }
     }
@@ -151,13 +164,13 @@ class StickerDataSource implements IDataSource {
           index: previous.length,
           count: next.length - previous.length
         } as DataAddOperation]);
-        if (changes.length > 0) {
-          this.notify(changes);
-        }
+        this.enqueueChanges(changes);
         return;
       }
     }
 
+    // 整表重载：排着的 CHANGE 下标对新数组没有意义了。
+    this.cancelChanges();
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
   }
 
@@ -182,6 +195,61 @@ class StickerDataSource implements IDataSource {
   // 而完整路径会让"晚到的缩略图"在动画已经起播之后再顶一次 key，正是要避免的。
   private arrivalToken(sticker: StickerItem): string {
     return stickerArrivalToken(sticker);
+  }
+
+  // 单格内容到达的快路（见 StickerPicker.patchFlatEntries）：换掉这一格，渲染键变了才排 CHANGE。
+  patchAt(index: number, previous: FlatEntry, next: FlatEntry): void {
+    if (index < 0 || index >= this.items.length) {
+      return;
+    }
+    this.items[index] = next;
+    if (this.renderKeyOf(previous) !== this.renderKeyOf(next)) {
+      this.enqueueChanges([{ type: DataOperationType.CHANGE, index: index } as DataChangeOperation]);
+    }
+  }
+
+  setPriorityRange(first: number, last: number): void {
+    this.priorityFirst = Math.max(0, first);
+    this.priorityLast = last;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.cancelChanges();
+  }
+
+  // 第一批当场报（到达的格子不多时和原来一样快），剩下的每帧报一小批。
+  private enqueueChanges(changes: DataOperation[]): void {
+    for (const op of changes) {
+      this.changeQueue.add((op as DataChangeOperation).index);
+    }
+    if (this.drainTimer === -1 && this.changeQueue.size() > 0) {
+      this.drainChanges();
+    }
+  }
+
+  private drainChanges(): void {
+    this.drainTimer = -1;
+    if (this.disposed) {
+      return;
+    }
+    const batch: number[] = this.changeQueue.takeBatch(this.priorityFirst, this.priorityLast, CHANGES_PER_FRAME)
+      .filter((index: number): boolean => index < this.items.length);
+    if (batch.length > 0) {
+      this.notify(batch.map((index: number): DataOperation =>
+        ({ type: DataOperationType.CHANGE, index: index } as DataChangeOperation)));
+    }
+    if (this.changeQueue.size() > 0) {
+      this.drainTimer = setTimeout((): void => { this.drainChanges(); }, CHANGE_DRAIN_INTERVAL_MS);
+    }
+  }
+
+  private cancelChanges(): void {
+    if (this.drainTimer !== -1) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = -1;
+    }
+    this.changeQueue.clear();
   }
 
   private identityOf(entry: FlatEntry): string {
@@ -245,6 +313,11 @@ export struct StickerPicker {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   // 正在被按住的格子（setIdx_pos）。空串表示没有。
   @State private pressedCell: string = '';
+  // 贴纸包标题整行占位。用 GridLayoutOptions 声明，而不是在标题的 GridItem 上写
+  // columnStart/columnEnd：后者让 Grid 在跳转、推算位置时从头逐个遍历子节点（官方 GridItem
+  // 文档与 Code Linter 都点了名），包越加越多越慢。数组要整体换成新对象才生效（官方 Grid
+  // 示例 3「通过备份对象整体赋值，强制 layoutOptions 刷新」），见 syncGridLayout。
+  @State private gridLayout: GridLayoutOptions = { regularSize: [1, 1], irregularIndexes: [] };
   onPick: (s: StickerItem, x: number, y: number) => void = (): void => {};
   @Prop @Watch('onPlaybackSettingsChanged') active: boolean = true;
   // 能不能显示搜索框。挂在自定义键盘里时必须关掉：
@@ -302,6 +375,8 @@ export struct StickerPicker {
 
   aboutToDisappear(): void {
     this.disposed = true;
+    resetStickerPanelGate();
+    this.gridData.dispose();
     this.loadSeq++;
     this.searchSeq++;
     this.sourceLoading.clear();
@@ -729,14 +804,15 @@ export struct StickerPicker {
       if (path === '') {
         return;
       }
-      this.searchItems = this.searchItems.map((it: StickerItem): StickerItem => it.fileId === stickerFileId
-        ? {
-          fileId: it.fileId, width: it.width, height: it.height,
-          thumbPath: path, thumbFileId: it.thumbFileId, emoji: it.emoji,
-          format: it.format, srcPath: it.srcPath, customEmojiId: it.customEmojiId
-        } : it);
+      const patch = (it: StickerItem): StickerItem => ({
+        fileId: it.fileId, width: it.width, height: it.height,
+        thumbPath: path, thumbFileId: it.thumbFileId, emoji: it.emoji,
+        format: it.format, srcPath: it.srcPath, customEmojiId: it.customEmojiId
+      });
+      this.searchItems = this.searchItems.map((it: StickerItem): StickerItem =>
+        it.fileId === stickerFileId ? patch(it) : it);
       if (this.searchQuery.trim() !== '') {
-        this.refreshGrid();
+        this.patchFlatEntries(-1, stickerFileId, patch);
       }
     }).catch((e: TdError) => {
       logE(`StickerPicker.downloadSearchThumb failed: ${e.message}`);
@@ -748,6 +824,9 @@ export struct StickerPicker {
   // at the top of the viewport. Tapping a tab re-anchors the grid there.
   private anchor: number = 0;
   private flatEntries: FlatEntry[] = [];
+  // （所属包下标:fileId）→ 它在 flatEntries 里的下标。整表重排时重建（refreshGrid）；缩略图/动画源
+  // 单格到达时靠它直接改那几格，不再整表 flatten + 逐项比对（包多了以后每 80ms 一遍 O(N)）。
+  private flatIndex: Map<string, number[]> = new Map();
   private gridScroller: Scroller = new Scroller();
   @State loadingSet: boolean = false;
   private visibleFirst: number = 0;
@@ -795,6 +874,7 @@ export struct StickerPicker {
   private onGridScrolled(first: number, last: number): void {
     this.visibleFirst = first;
     this.visibleLast = last;
+    this.gridData.setPriorityRange(first - this.gridColumns(), last + this.gridColumns());
     this.requestVisibleSources();
     if (this.searchQuery.trim() !== '') {
       return;
@@ -956,7 +1036,57 @@ export struct StickerPicker {
         loaded: t.loaded, failed: t.failed, stickers
       };
     });
-    this.refreshGrid();
+    if (this.searchQuery.trim() === '') {
+      const setIdx: number = this.sets.findIndex((t: StickerSetTab): boolean => t.id === setId);
+      this.patchFlatEntries(setIdx, stickerFileId, patch);
+    }
+  }
+
+  private flatKey(setIdx: number, fileId: number): string {
+    return `${setIdx}:${fileId}`;
+  }
+
+  private rebuildFlatIndex(entries: FlatEntry[]): void {
+    const index: Map<string, number[]> = new Map();
+    for (let i = 0; i < entries.length; i++) {
+      const sticker: StickerItem | null = entries[i].sticker;
+      if (sticker === null) {
+        continue;
+      }
+      const key: string = this.flatKey(entries[i].setIdx, sticker.fileId);
+      const positions: number[] | undefined = index.get(key);
+      if (positions === undefined) {
+        index.set(key, [i]);
+      } else {
+        positions.push(i);
+      }
+    }
+    this.flatIndex = index;
+  }
+
+  // 单格到达（sets / searchItems 已经改好）：直接改平铺列表里对应的格子。
+  // 已经排着整表刷新时交给它——它会从 sets / searchItems 重新平铺，快路再做一遍是重复劳动。
+  private patchFlatEntries(setIdx: number, fileId: number, patch: (s: StickerItem) => StickerItem): void {
+    if (this.refreshTimer !== -1) {
+      return;
+    }
+    const positions: number[] | undefined = this.flatIndex.get(this.flatKey(setIdx, fileId));
+    if (positions === undefined) {
+      return;   // 不在当前平铺范围里（包还没加载到、或者不连续），格子上没有它
+    }
+    for (const i of positions) {
+      const previous: FlatEntry | undefined = this.flatEntries[i];
+      if (previous === undefined || previous.sticker === null || previous.sticker.fileId !== fileId) {
+        this.refreshGrid();   // 索引和数组对不上：退回整表刷新，别改错格子
+        return;
+      }
+      const next: FlatEntry = {
+        kind: previous.kind, title: previous.title, setIdx: previous.setIdx, pos: previous.pos,
+        sticker: patch(previous.sticker)
+      };
+      this.flatEntries[i] = next;
+      this.gridData.patchAt(i, previous, next);
+    }
   }
 
   private refreshTimer: number = -1;
@@ -975,9 +1105,27 @@ export struct StickerPicker {
       } else {
         this.flatEntries = this.flatten();
       }
+      this.rebuildFlatIndex(this.flatEntries);
+      this.syncGridLayout(this.flatEntries);
       this.gridData.update(this.flatEntries);
       this.requestVisibleSources();
     }, 80);
+  }
+
+  // 标题下标变了才换新对象：同一份布局选项反复赋值也会让 Grid 重新布局。
+  private syncGridLayout(entries: FlatEntry[]): void {
+    const headers: number[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].kind === 'header') {
+        headers.push(i);
+      }
+    }
+    const current: number[] = this.gridLayout.irregularIndexes ?? [];
+    if (current.length === headers.length &&
+      current.every((v: number, i: number): boolean => v === headers[i])) {
+      return;
+    }
+    this.gridLayout = { regularSize: [1, 1], irregularIndexes: headers };
   }
 
   private requestVisibleSources(): void {
@@ -1052,14 +1200,15 @@ export struct StickerPicker {
       if (path === '') {
         return;
       }
-      this.searchItems = this.searchItems.map((it: StickerItem): StickerItem => it.fileId === stickerFileId
-        ? {
-          fileId: it.fileId, width: it.width, height: it.height,
-          thumbPath: it.thumbPath, thumbFileId: it.thumbFileId, emoji: it.emoji,
-          format: it.format, srcPath: path, customEmojiId: it.customEmojiId
-        } : it);
+      const patch = (it: StickerItem): StickerItem => ({
+        fileId: it.fileId, width: it.width, height: it.height,
+        thumbPath: it.thumbPath, thumbFileId: it.thumbFileId, emoji: it.emoji,
+        format: it.format, srcPath: path, customEmojiId: it.customEmojiId
+      });
+      this.searchItems = this.searchItems.map((it: StickerItem): StickerItem =>
+        it.fileId === stickerFileId ? patch(it) : it);
       if (this.searchQuery.trim() !== '') {
-        this.refreshGrid();
+        this.patchFlatEntries(-1, stickerFileId, patch);
       }
     }).catch((e: TdError) => {
       this.sourceLoading.delete(stickerFileId);
@@ -1098,6 +1247,10 @@ export struct StickerPicker {
     });
   }
 
+  private gridColumns(): number {
+    return this.stickerType === 'custom_emoji' ? 8 : 5;
+  }
+
   // Emoji grids use smaller cells (8 columns) to keep the picker dense.
   private cellPx(): number {
     return this.stickerType === 'custom_emoji' ? 38 : 62;
@@ -1131,35 +1284,13 @@ export struct StickerPicker {
   @Builder
   stickerCell(s: StickerItem, cellKey: string) {
     Stack() {
-      if (this.active && this.animate && s.format === 'tgs' && s.srcPath !== '') {
-        Column() {
-          TgsStickerView({
-            tgsPath: s.srcPath, thumbPath: s.thumbPath,
-            boxWidth: this.cellPx(), boxHeight: this.cellPx(),
-            powerCategory: this.playbackCategory()
-          });
-        }
-        .width('100%').height('100%')
-        .justifyContent(FlexAlign.Center);
-      } else if (this.active && this.animate && s.format === 'webm' && s.srcPath !== '') {
-        Column() {
-          SmartLoopVideo({
-            videoPath: s.srcPath, thumbPath: s.thumbPath,
-            boxWidth: this.cellPx(), boxHeight: this.cellPx(),
-            powerCategory: this.playbackCategory()
-          });
-        }
-        .width('100%').height('100%')
-        .justifyContent(FlexAlign.Center);
-      } else if (s.thumbPath !== '') {
-        Image(`file://${s.thumbPath}`).draggable(false)
-          .width('100%').height('100%').objectFit(ImageFit.Contain);
-      } else {
-        Text(s.emoji)
-          .fontSize(this.stickerType === 'custom_emoji' ? 26 : 30)
-          .textAlign(TextAlign.Center)
-          .width('100%').height('100%');
-      }
+      // 画的部分见 StickerGridCell；点击、长按、按压反馈留在这一层。
+      StickerGridCell({
+        format: s.format, srcPath: s.srcPath, thumbPath: s.thumbPath, emoji: s.emoji,
+        animate: this.active && this.animate, cellPx: this.cellPx(),
+        category: this.playbackCategory(),
+        emojiFontSize: this.stickerType === 'custom_emoji' ? 26 : 30
+      });
     }
     .width('100%').aspectRatio(1)
     // 这里**不挂材质**。每格挂一层 THIN 材质之后，每个 emoji 都变成一块独立
@@ -1238,8 +1369,7 @@ export struct StickerPicker {
                 ForEach(this.sets, (t: StickerSetTab, idx: number) => {
                   Column() {
                     if (t.iconPath !== '') {
-                      Image(`file://${t.iconPath}`).draggable(false)
-                        .width(30).height(30).objectFit(ImageFit.Contain);
+                      StickerPoster({ path: t.iconPath, boxWidth: 30, boxHeight: 30 });
                     } else if (t.iconText !== '') {
                       Text(t.iconText).fontSize(22);
                     } else {
@@ -1363,7 +1493,7 @@ export struct StickerPicker {
           }
           .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
         } else {
-          Grid(this.gridScroller) {
+          Grid(this.gridScroller, this.gridLayout) {
             // LazyForEach: only visible cells mount, so at most a screenful of
             // Lottie canvases animate at once.
             LazyForEach(this.gridData, (e: FlatEntry) => {
@@ -1374,7 +1504,6 @@ export struct StickerPicker {
                     .width('100%')
                     .padding({ top: 8, bottom: 2 });
                 }
-                .columnStart(0).columnEnd(this.stickerType === 'custom_emoji' ? 7 : 4);
               } else if (e.sticker !== null) {
                 GridItem() {
                   this.stickerCell(e.sticker, `${e.setIdx}_${e.pos}`);
@@ -1391,9 +1520,14 @@ export struct StickerPicker {
           .columnsTemplate(this.stickerType === 'custom_emoji'
             ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr 1fr')
           .columnsGap(6).rowsGap(6)
+          // 预加载只留上下各一行（默认是一整屏的行数，最多 16）：屏外挂着的格子一样在建图、开动画。
+          .cachedCount(1)
           .padding({ left: 10, right: 10, top: 4, bottom: 10 })
           .layoutWeight(1).width('100%')
-          .onScrollIndex((first: number, last: number) => { this.onGridScrolled(first, last); });
+          .onScrollIndex((first: number, last: number) => { this.onGridScrolled(first, last); })
+          // 滑动时整屏定格，停稳后屏幕上的先放、逐个起播（util/stickerPanelGate）。
+          .onScrollStart((): void => { pauseStickerPanelForScroll(); })
+          .onScrollStop((): void => { resumeStickerPanelAfterScroll(); });
         }
       }
     }

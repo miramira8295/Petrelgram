@@ -85,6 +85,7 @@ import {
 import { logW } from '../../util/log';
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageBubbleActions, MessageBubbleRenderData } from './ReusableMessageBubble';
+import { canBackgroundCache } from '../../util/backgroundCacheEligibility';
 import { isLivePhotoVideo } from '../../util/livePhoto';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
 import { replyThumbSrc } from '../../util/replyThumb';
@@ -912,6 +913,13 @@ export struct MessageBubble {
       this.recordMenuOffset(fingers[0].localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
+    // 已在多选：长按就是"选这一行"（相册 = 整组媒体），不弹菜单、也不重进多选。
+    // 单条行在多选态下气泡整个不收触摸（ChatPage 行外层 BLOCK_DESCENDANTS），
+    // 能走到这里的是相册行——它为了逐格勾选放开了命中。
+    if (this.data.selectionActive) {
+      this.actions.onSelectMessages(this.group.memberIds);
+      return;
+    }
     this.askEditable();
     const policy: MessageGesturePolicy = messageGesturePolicy(this.env.gestureScheme);
     if (policy.longPressOpensMenu) {
@@ -1080,12 +1088,20 @@ export struct MessageBubble {
         : 'GIF';
     }
     // 时长和大小一起显示（issue #93）：只有时长时看不出这条视频要下多少。
-    const size: string = this.msg.videoFileSize > 0 ? formatFileSize(this.msg.videoFileSize) : '';
+    // 大小的位置再换成缓存状态（2026-09-15）：下完了写「已缓存」，正在下写百分比——后台缓存的进度
+    // 也经 mediaProgressChannel 到这里（services/BackgroundCache）。
+    const parts: string[] = [];
     if (this.msg.videoDuration > 0) {
-      const duration: string = this.formatDuration(this.msg.videoDuration);
-      return size !== '' ? `${duration} · ${size}` : duration;
+      parts.push(this.formatDuration(this.msg.videoDuration));
     }
-    return size;
+    if (this.msg.videoPath !== '') {
+      parts.push(str('mb_video_cached'));
+    } else if (this.videoDownloadActive()) {
+      parts.push(`${this.liveVideoProgress}%`);
+    } else if (this.msg.videoFileSize > 0) {
+      parts.push(formatFileSize(this.msg.videoFileSize));
+    }
+    return parts.join(' · ');
   }
 
   private videoAccessibilityText(): string {
@@ -2789,6 +2805,13 @@ export struct MessageBubble {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bookmark')),
         content: $r('app.string.mb_save_to_saved')
       }).onClick((): void => { this.actions.onSaveMessages(this.group.memberIds); });
+      // 视频专有：后台缓存（不存相册，进度在通知栏和「设置 › 下载中心」）。
+      if (canBackgroundCache(this.msg)) {
+        MenuItem({
+          symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.arrow_down_circle')),
+          content: $r('app.string.dc_background_cache')
+        }).onClick((): void => { this.actions.onBackgroundCache(this.group.memberIds); });
+      }
       // 动图专有：存进账号的 saved animations，之后从输入栏的 GIF 面板取用。
       // 判据用 isAnimation 而不是 contentType——GIF 在本应用里 contentType 就是
       // 'video'（messageAnimation 走视频管线，见 util/formatMsgContent），
@@ -4238,6 +4261,8 @@ export struct MessageBubble {
     // 用它就会出现"点链接同时开链接和菜单"。
     .onClick((event: ClickEvent): void => {
       if (this.gestureClaimed) { return; }
+      // 多选态下点击归格子 / 让位栏去勾选，气泡空白处不出菜单（同上，只有相册行走得到）。
+      if (this.data.selectionActive) { return; }
       if (messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
         // 单击出菜单的方案下同样跟手。ClickEvent.x 已经是局部坐标。
         this.recordMenuOffset(event.x, Number(event.target.area.width));

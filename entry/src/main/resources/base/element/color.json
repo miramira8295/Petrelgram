@@ -115,6 +115,38 @@
     {
       "name": "bubble_glass_tail",
       "value": "#59FFFFFF"
+    },
+    {
+      "name": "dc_chip",
+      "value": "#1216212C"
+    },
+    {
+      "name": "dc_line",
+      "value": "#1716212C"
+    },
+    {
+      "name": "dc_ok",
+      "value": "#2FA96C"
+    },
+    {
+      "name": "dc_ok_soft",
+      "value": "#242FA96C"
+    },
+    {
+      "name": "dc_warn",
+      "value": "#C9821A"
+    },
+    {
+      "name": "dc_warn_soft",
+      "value": "#26D98B1F"
+    },
+    {
+      "name": "dc_err",
+      "value": "#D9534F"
+    },
+    {
+      "name": "dc_err_soft",
+      "value": "#21D9534F"
     }
   ]
 }

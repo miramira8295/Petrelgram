@@ -98,7 +98,12 @@ export function rowFadeTransition(
 //   rowLimit   INITIAL_TIMELINE_REVEAL_ROW_LIMIT；
 //   staggerMs  INITIAL_TIMELINE_ROW_STAGGER_MS。
 //
-// 窗口外的行返回 0（不排队，直接跟上），这一条也不走上面的换算。
+// 窗口外的行返回 ROW_OUTSIDE_REVEAL_WINDOW（-1）：这些行**不做入场动画**，调用方据此挂 IDENTITY。
+// 原来返回 0（不排队、照样淡入）。2026-09-15 trace：窗口外的缓存行、尾部逐帧补铺的老消息每次进会话
+// 挂 28–49 个 90ms 淡入（×opacity/translate/scale 三个属性），RS 在 0.5s 内持续整页重绘，每 100ms
+// 45–85 次模糊缓存失效——而这些行根本不在屏上。
+export const ROW_OUTSIDE_REVEAL_WINDOW: number = -1;
+
 export function initialRowRevealDelay(
   index: number, first: number, last: number, groupsLen: number,
   anchorIndex: number, anchorFromTop: boolean,
@@ -116,7 +121,7 @@ export function initialRowRevealDelay(
     }
   }
   if (index < lo || index > hi) {
-    return 0;
+    return ROW_OUTSIDE_REVEAL_WINDOW;
   }
   // Bottom landings read naturally from the composer upward. An unread
   // landing starts at its top anchor and flows down into the unread block.

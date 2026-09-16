@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
   rowFadeAnimationActive, rowFadeTransition, initialRowRevealDelay,
-  INITIAL_ROW_FADE_WINDOW_MS, RowFadeTransition
+  INITIAL_ROW_FADE_WINDOW_MS, RowFadeTransition, ROW_OUTSIDE_REVEAL_WINDOW
 } from '../main/ets/util/rowFadeGate';
 import {
   INITIAL_TIMELINE_REVEAL_ROW_LIMIT, INITIAL_TIMELINE_ROW_STAGGER_MS,
@@ -100,11 +100,11 @@ export default function rowFadeGateTest() {
       expect(anchorHead).assertEqual(0);
     });
 
-    it('窗口外的行不排队，直接跟上', 0, (): void => {
+    it('窗口外的行不做入场动画：返回 ROW_OUTSIDE_REVEAL_WINDOW', 0, (): void => {
       // 0 在这里是"不排队"，与"窗口内的第一名"同值但含义不同：同一次窗口里
       // 窗口内的 10 号行是 98，窗口外的 9 号行才是 0。
-      expect(initialRowRevealDelay(9, 10, 17, 20, -1, false, 8, 14)).assertEqual(0);
-      expect(initialRowRevealDelay(18, 10, 17, 20, -1, false, 8, 14)).assertEqual(0);
+      expect(initialRowRevealDelay(9, 10, 17, 20, -1, false, 8, 14)).assertEqual(ROW_OUTSIDE_REVEAL_WINDOW);
+      expect(initialRowRevealDelay(18, 10, 17, 20, -1, false, 8, 14)).assertEqual(ROW_OUTSIDE_REVEAL_WINDOW);
       expect(initialRowRevealDelay(10, 10, 17, 20, -1, false, 8, 14)).assertEqual(98);
     });
 
@@ -120,11 +120,11 @@ export default function rowFadeGateTest() {
       // first/last 还是首帧前的 -1：底部落点从末行往回取 8 行 → [12,19]。
       expect(initialRowRevealDelay(19, -1, -1, 20, -1, false, 8, 14)).assertEqual(0);
       expect(initialRowRevealDelay(12, -1, -1, 20, -1, false, 8, 14)).assertEqual(98);
-      expect(initialRowRevealDelay(11, -1, -1, 20, -1, false, 8, 14)).assertEqual(0);
+      expect(initialRowRevealDelay(11, -1, -1, 20, -1, false, 8, 14)).assertEqual(ROW_OUTSIDE_REVEAL_WINDOW);
       // 锚点落点从锚点往下取 8 行 → [3,10]。
       expect(initialRowRevealDelay(3, -1, -1, 20, 3, true, 8, 14)).assertEqual(0);
       expect(initialRowRevealDelay(10, -1, -1, 20, 3, true, 8, 14)).assertEqual(98);
-      expect(initialRowRevealDelay(11, -1, -1, 20, 3, true, 8, 14)).assertEqual(0);
+      expect(initialRowRevealDelay(11, -1, -1, 20, 3, true, 8, 14)).assertEqual(ROW_OUTSIDE_REVEAL_WINDOW);
     });
 
     it('anchorIndex 的负数是"不是锚点落点"的哨兵，不是"没找到"', 0, (): void => {
@@ -133,7 +133,8 @@ export default function rowFadeGateTest() {
       // groupIndexOf 结果（找不到时也是 -1）直接丢进来，锚点落点会静默退化
       // 成底部落点：窗口从 [0,7] 变成 [12,19]。
       expect(initialRowRevealDelay(7, -1, -1, 20, 0, true, 8, 14)).assertEqual(98);
-      expect(initialRowRevealDelay(7, -1, -1, 20, -1, true, 8, 14)).assertEqual(0);
+      // 退化成底部落点后第 7 行落在窗口 [12,19] 之外：不做入场动画（2026-09-15 起返回哨兵，原来是 0）。
+      expect(initialRowRevealDelay(7, -1, -1, 20, -1, true, 8, 14)).assertEqual(ROW_OUTSIDE_REVEAL_WINDOW);
     });
 
     it('选分支的判据与定方向的判据不是同一个条件，不许合并', 0, (): void => {

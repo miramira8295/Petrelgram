@@ -6,6 +6,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import {
   cancelLiveDownloadNotifications, clearStaleDownloadNotifications
 } from '../services/DownloadSaveNotification';
+import { stashDownloadCenterWant } from '../util/downloadCenterWant';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, KeyboardAvoidMode } from '@kit.ArkUI';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
@@ -291,6 +292,7 @@ export default class EntryAbility extends UIAbility {
   // the SAME link still registers as a change and re-triggers routing.
   private stashDeepLink(want: Want): void {
     this.stashNotifyTarget(want);
+    stashDownloadCenterWant(want);
     const uri = want.uri ?? '';
     // 诊断：用户报浏览器点 t.me 链接进来提示"无法识别"，而日志里连一次解析
     // 尝试都没有。先看 want 到底带了什么——uri 为空的话这里就静默 return 了，

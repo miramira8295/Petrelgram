@@ -107,6 +107,30 @@ export default function messageRowPresentationChannelTest() {
       unsub();
     });
 
+    // 2026-09-15：刚发出去的贴纸不会动。发送成功时 MessageStore 把临时 id 换成真实 id、rowId 继承，
+    // 展示字段（路径 / 失败 / 译文）一个没变——旧实现据此判「没变」，快照停在临时那条，挂着的气泡
+    // 一直优先画旧快照（[RowGuard] param=真实 id rendered=临时 id）。
+    it('同一行换了消息身份（id 变、展示字段不变）时，快照换掉并定点通知', 0, () => {
+      const chatId: number = 990004;
+      const pending: MessageEntry = media(880004);
+      pending.photoPath = '/data/sticker-thumb-880004.jpg';
+      const first: AlbumGroup = collapseAlbums([pending])[0];
+      publishMessageRowPresentations(chatId, [first]);
+
+      const seen: AlbumGroup[] = [];
+      const unsub = subscribeMessageRowPresentation(
+        chatId, first.head.rowId, (group: AlbumGroup): void => { seen.push(group); });
+
+      const sent: MessageEntry = cloneMessage(pending);
+      sent.id = 880004 + 1048576;
+      const landed: AlbumGroup = collapseAlbums([sent])[0];
+      expect(landed.head.rowId).assertEqual(first.head.rowId);
+      publishMessageRowPresentations(chatId, [landed]);
+      expect(seen.length).assertEqual(1);
+      expect(messageRowPresentationFor(chatId, first.head.rowId)?.head.id ?? 0).assertEqual(sent.id);
+      unsub();
+    });
+
     // 离屏行稍后上屏时要能拿到最新快照——换成按会话嵌套之后这条最容易被改坏。
     it('换过几个会话之后，旧会话的快照仍然读得到', 0, () => {
       const chatId: number = 990003;

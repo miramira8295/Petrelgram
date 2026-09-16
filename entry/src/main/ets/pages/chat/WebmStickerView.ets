@@ -1,4 +1,5 @@
 import { IjkMediaPlayer, OnPreparedListener, OnErrorListener, OnCompletionListener } from '@ohos/ijkplayer';
+import { StickerPoster } from '../common/StickerPoster';
 import { AlphaWebmStickerView } from '../common/AlphaWebmStickerView';
 import { alphaStickerPipelineAvailable } from '../../services/AlphaStickerStore';
 import { alphaStickerCandidate } from '../../util/webm/alphaStickerGate';
@@ -135,6 +136,8 @@ export struct WebmStickerView {
   // 而 SmartLoopVideo 的重渲染会踩到动画上下文的同步 flush（2026-09-14 trace
   // 实测单次 47.8ms）。ijk 那支是独立 surface，不占 UI 线程，不用管。
   @Param chatTimeline: boolean = false;
+  // 贴纸抽屉里的格子：透传给帧序列那支，由它订阅抽屉那道闸（见 util/stickerPanelGate）。
+  @Param panelGated: boolean = false;
   private env: ChatEnvMirror = chatEnv;
   @Param onWorking: () => void = (): void => {};
   @Param onFailed: () => void = (): void => {};
@@ -161,8 +164,6 @@ export struct WebmStickerView {
   aboutToAppear(): void {
     probeHit('webm.mount');
     this.useAlpha = alphaStickerCandidate(this.powerCategory) && alphaStickerPipelineAvailable();
-    console.warn(`[AlphaDiag] gate cat=${this.powerCategory}` +
-      ` candidate=${alphaStickerCandidate(this.powerCategory)} useAlpha=${this.useAlpha}`);
   }
 
   aboutToDisappear(): void {
@@ -406,14 +407,12 @@ export struct WebmStickerView {
   build() {
     if (this.powerSuspended()) {
       if (this.thumbPath !== '') {
-        Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-          .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+        StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
       } else {
         Stack().width(this.boxWidth).height(this.boxHeight);
       }
     } else if (this.failed && this.thumbPath !== '') {
-      Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-        .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+      StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
     } else if (this.useAlpha) {
       AlphaWebmStickerView({
         webmPath: this.webmPath, thumbPath: this.thumbPath,
@@ -421,8 +420,16 @@ export struct WebmStickerView {
         powerCategory: this.powerCategory,
         forcePlay: this.forcePlay,
         chatTimeline: this.chatTimeline,
+        panelGated: this.panelGated,
         onWorking: (): void => { this.onWorking(); },
         onFallback: (): void => {
+          if (this.chatTimeline || this.panelGated) {
+            // 滚动容器里不开 ijk：格子随滑动频繁增删，正撞 ijkplayer 2.0.9 回调引用的竞态
+            // （见 AlphaWebmStickerView 文件头「不再退回 ijkplayer」那段注释）。静态缩略图兜底。
+            console.warn('[AlphaDiag] fallback to thumbnail (scroll container)');
+            this.failed = true;
+            return;
+          }
           console.warn('[AlphaDiag] fallback to ijkplayer');
           this.useAlpha = false;
         }

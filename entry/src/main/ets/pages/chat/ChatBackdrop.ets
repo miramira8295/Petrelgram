@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { CachedImage } from '../common/CachedImage';
+import { cachedPixelMap } from '../../util/pixelCache';
 import {
   BackgroundRasterParams, backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedRaster, combineDimming,
   NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground
@@ -199,7 +200,16 @@ export struct ChatBackdrop {
     if (next === this.rasterPath) {
       return;
     }
-    this.rasterShown = false;
+    // 位图已经解码在内存里（这张整屏光栅 pin 住、所有会话共用）就直接算"已上屏"：CachedImage 首帧会同步命中
+    // （start() 的 cachedPixelMap 分支），分层实时版（渐变 + SVG 图案平铺 + 模糊）一次都不必建（2026-09-15）。
+    // 原来一律先置 false：每次进会话第一帧都把 SVG 图案铺一遍，等 onReady 再撤——转场第一帧 RS 要把这些路径
+    // 画进整页离屏缓存，实测 85ms（trace 20260915T174809：UpdateCacheSurface + PATH_MASK_CACHE ×11）。
+    // 请求尺寸必须和 CachedImage.request() 逐位一致（同一个 layerW/layerH、同一个 vp2px），否则 key 对不上。
+    this.rasterShown = next !== '' && cachedPixelMap({
+      path: next,
+      width: vp2px(this.layerW()),
+      height: vp2px(this.layerH())
+    }) !== undefined;
     this.rasterPath = next;
   }
 

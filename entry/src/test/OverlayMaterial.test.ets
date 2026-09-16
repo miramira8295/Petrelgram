@@ -43,9 +43,9 @@ export default function overlayMaterialTest() {
       expect(immersiveTypeSupported([0, 100])).assertFalse();
     });
 
-    it('查不到（空数组）当作「不知道」，维持按版本的老判断', 0, (): void => {
-      // 宁可保持现状，也不要在材质本来好好的设备上把它关掉。
-      expect(immersiveTypeSupported([])).assertTrue();
+    it('查到了但一个都没报（空数组）就是不支持，走自绘玻璃', 0, (): void => {
+      // 接口抛异常才算「不知道」，那一支在 materialAvailable 里按版本判，不经过这里。
+      expect(immersiveTypeSupported([])).assertFalse();
     });
   });
 

@@ -159,6 +159,9 @@ function settingGroups(): SettingGroup[] {
   {
     title: str('settings_group_storage'),
     items: [
+      { icon: 'sys.symbol.arrow_down_circle', bg: '#34C759', title: str('dc_title'),
+        subtitle: str('dc_settings_sub'), page: 'pages/main/DownloadCenterPage',
+        dest: 'DownloadCenterPage' },
       { icon: 'sys.symbol.data_proportion', bg: '#007AFF', title: str('settings_data'),
         subtitle: str('settings_data_sub'), page: 'pages/main/DataStoragePage',
         dest: 'DataStoragePage' },

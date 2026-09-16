@@ -29,7 +29,7 @@ import { VideoRangeServer } from '../../services/VideoRangeServer';
 import { VideoStreamSession } from '../../services/VideoStreamSession';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { logE, logI } from '../../util/log';
+import { logE, logI, logW } from '../../util/log';
 import { VideoGestureLayer } from './VideoGestureLayer';
 
 
@@ -456,6 +456,9 @@ export struct StreamingVideoPlayer {
           this.status = '';
           this.hasError = false;
           this.isPrepared = true;
+          // 第二个岔口（#201）：ijk 走到哪一步就不动了。prepared 之后紧接着 start()。
+          logW(`[VideoState] prepared engine=ijk embedded=${this.embedded}` +
+            ` viewport=${Math.round(this.viewportWidth)}x${Math.round(this.viewportHeight)}`);
           this.durationMs = Math.max(0, player.getDuration());
           player.setSpeed(SPEEDS[this.speedIdx]);
           this.applyMutedVolume();
@@ -519,8 +522,18 @@ export struct StreamingVideoPlayer {
           }
           if (what === 701) {
             this.status = str('player_buffering');
+            if (!this.embedded) {
+              logW('[VideoState] buffering engine=ijk embedded=false');
+            }
           } else if (what === 702 || what === 3) {
             this.status = '';
+            if (what === 3) {
+              // 渲染开始：之后 80ms 才把 XComponent 显出来。黑屏时有没有这一条是分水岭——
+              // 有：画面解出来了、是 surface 没显示；没有：卡在解码/数据之前。
+              logW(`[VideoState] rendering-start engine=ijk embedded=${this.embedded}`);
+            } else if (!this.embedded) {
+              logW('[VideoState] buffering-end engine=ijk embedded=false');
+            }
             if (what === 3 && this.firstFrameTimer === -1) {
               // IJK's rendering-start event can arrive one compositor frame
               // before the Surface contains the decoded image. Leave the
@@ -1169,6 +1182,10 @@ export struct StreamingVideoPlayer {
         .width(this.surfaceNodeWidth()).height(this.surfaceNodeHeight())
         .rotate({ angle: this.videoRotationDeg })
         .onLoad((context: object) => {
+          // 平板分栏黑屏（#201）的第一个岔口，与 AvVideoPlayer 同名同格式：surface 建没建、视口多大。
+          // 那两条探针原来只在 AVPlayer 那一路，09-14 的平板日志走的是 ijk，一条都没打到。
+          logW(`[VideoSurface] created engine=ijk viewport=${Math.round(this.viewportWidth)}x` +
+            `${Math.round(this.viewportHeight)} embedded=${this.embedded}`);
           this.surfaceContext = context;
           this.initPlayer(context);
         })
@@ -1438,6 +1455,10 @@ export struct StreamingVideoPlayer {
     .onAreaChange((_old: Area, area: Area): void => {
       const width = area.width as number;
       const height = area.height as number;
+      if (!this.embedded && (Math.abs(width - this.viewportWidth) >= 1 || Math.abs(height - this.viewportHeight) >= 1)) {
+        // 全屏播放器的视口（#201）：全模态里如果量出 0 或者一直是初值 1x1，黑屏就在布局上。
+        logW(`[VideoSurface] viewport engine=ijk ${Math.round(width)}x${Math.round(height)} embedded=false`);
+      }
       if (width > 0 && height > 0) {
         this.viewportWidth = width;
         this.viewportHeight = height;

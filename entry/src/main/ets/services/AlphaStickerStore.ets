@@ -2,7 +2,8 @@ import { fileIo } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 import nativeWebm from 'libentry.so';
 import { ALPHA_TOTAL_MAX_BYTES, AlphaDecodePlan, planAlphaDecode } from '../util/webm/AlphaStickerBudget';
-import { demuxWebmAlpha, packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
+import { packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
+import { demuxWebmAlphaOffThread } from '../util/webm/webmDemuxTask';
 import { ALPHA_STICKER_CACHE_MAX_BYTES } from '../util/NativePixelBudget';
 import {
   FRAME_CACHE_DIR, FRAME_CACHE_MAX_BYTES, FrameCacheEntry, frameCacheFileName, planFrameCachePrune
@@ -16,7 +17,8 @@ import { appFilesDir } from '../tdkit/Globals';
 // 代价是内存，所以这里同时管三件事：按路径+显示尺寸复用（面板里同一张贴纸
 // 反复出现）、全局字节预算 + LRU 回收、以及一次只解一张的排队。
 //
-// 任何一环失败都返回 null，调用方原样回退到 ijkplayer（白底，但不崩）。
+// 失败分两类（见 AlphaAcquireStatus）：文件/设备走不了这条路的，调用方才回退；
+// 只是这一刻内存预算不够的，调用方等着，别回退。
 
 // 原生 stickerFramesLoad 的回包形状。
 export interface CachedStickerFrames {
@@ -43,6 +45,19 @@ export interface AlphaClip {
 interface DecodeOutcome {
   clip: AlphaClip | null;
   permanent: boolean;
+  // 这一刻内存预算不够（不是文件的问题）：调用方该等，不该回退。
+  busy: boolean;
+}
+
+// 调用方拿到的结局。busy：内存预算这一刻被在播的占满了，等别人还掉再试；
+// unsupported：这个文件或这台设备这次走不了这条路。
+// **只有 unsupported 才值得退回播放器**——busy 也回退的话，预算一满每个新格子
+// 都会各开一个 ijk 播放器（2026-09-15 第二次崩溃：预算只剩 1KB，半秒 40 个）。
+export type AlphaAcquireStatus = 'ok' | 'busy' | 'unsupported';
+
+export interface AlphaAcquireResult {
+  clip: AlphaClip | null;
+  status: AlphaAcquireStatus;
 }
 
 interface CacheEntry {
@@ -62,6 +77,8 @@ const MAX_BUCKET: number = 256;
 const MAX_REJECTED: number = 400;
 // 一段贴纸可能有 90 多张 PixelMap；低内存回调里整段同步 release 仍会卡主线程。
 const RELEASE_BATCH_FRAMES: number = 8;
+// 最小一帧（MIN_DIM 见 AlphaStickerBudget）占的字节。预算剩得比这还少，什么都解不了。
+const MIN_DECODE_BYTES: number = 96 * 96 * 4;
 
 const cache: Map<string, CacheEntry> = new Map();
 const inFlight: Map<string, Promise<DecodeOutcome>> = new Map();
@@ -318,8 +335,12 @@ async function readFileBytes(path: string): Promise<Uint8Array | null> {
   }
 }
 
-function outcome(clip: AlphaClip | null, permanent: boolean): DecodeOutcome {
-  return { clip: clip, permanent: permanent };
+function outcome(clip: AlphaClip | null, permanent: boolean, busy: boolean = false): DecodeOutcome {
+  return { clip: clip, permanent: permanent, busy: busy };
+}
+
+function acquired(clip: AlphaClip | null, status: AlphaAcquireStatus): AlphaAcquireResult {
+  return { clip: clip, status: status };
 }
 
 // 预算 -> 解码 -> 入账，整段在排队里做。
@@ -333,10 +354,7 @@ async function decodeReserved(clip: WebmAlphaClip, key: string,
   const plan: AlphaDecodePlan = planAlphaDecode(
     clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, free);
   if (!plan.accept) {
-    // 临时探针（2026-09-14）：判读完回退率的构成后连同这行删。
-    console.warn(`[AlphaDiag] no-plan free=${free} total=${totalBytes} budget=${budgetBytes}` +
-      ` src=${clip.track.width}x${clip.track.height} frames=${clip.frames.length}`);
-    return outcome(null, false); // 只是这一刻没预算，别永久拉黑
+    return outcome(null, false, true); // 只是这一刻没预算，别永久拉黑
   }
   const payload = packAlphaStreams(clip.frames, plan.frameStep);
   if (payload === null) {
@@ -376,7 +394,7 @@ async function decodeReserved(clip: WebmAlphaClip, key: string,
   if (totalBytes + bytes > budgetBytes) {
     console.warn(`[AlphaDiag] budget shrank mid-decode need=${bytes} total=${totalBytes}`);
     releaseFrames(frames);
-    return outcome(null, false);
+    return outcome(null, false, true);
   }
   totalBytes += bytes;
   cache.set(key, { clip: decoded, bytes: bytes, refs: 0, lastUsed: Date.now() });
@@ -388,7 +406,7 @@ async function decodeReserved(clip: WebmAlphaClip, key: string,
 async function loadCachedReserved(cachePath: string, key: string): Promise<DecodeOutcome> {
   const free: number = alphaStickerFreeBytes();
   if (free <= 0) {
-    return outcome(null, false);
+    return outcome(null, false, true);
   }
   const loaded: CachedStickerFrames | null =
     await nativeWebm.stickerFramesLoad(cachePath, free);
@@ -399,7 +417,7 @@ async function loadCachedReserved(cachePath: string, key: string): Promise<Decod
   evictUntilFits(bytes);
   if (totalBytes + bytes > budgetBytes) {
     releaseFrames(loaded.frames);
-    return outcome(null, false);
+    return outcome(null, false, true);
   }
   const decoded: AlphaClip = {
     key: key, frames: loaded.frames, timesMs: loaded.timesMs.slice(0, loaded.frames.length),
@@ -407,11 +425,15 @@ async function loadCachedReserved(cachePath: string, key: string): Promise<Decod
   };
   totalBytes += bytes;
   cache.set(key, { clip: decoded, bytes: bytes, refs: 0, lastUsed: Date.now() });
-  console.warn(`[AlphaDiag] disk hit frames=${loaded.frames.length} bytes=${bytes}`);
   return outcome(decoded, false);
 }
 
 async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
+  // 预算已经见底：连最小的一帧都放不下，就别去读文件、拆包（读整个文件、占一个 worker）。
+  // 排队等内存的格子每轮到一次就重试一次，这条短路让重试几乎不花钱。
+  if (alphaStickerFreeBytes() < MIN_DECODE_BYTES) {
+    return outcome(null, false, true);
+  }
   // 先看磁盘。stat 一次就能拼出身份（文件名+字节数+尺寸桶），比读整个文件
   // 再拆包便宜得多；命中就完全跳过软解。
   let sourceSize: number = 0;
@@ -425,15 +447,16 @@ async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
   if (cachePath !== '') {
     const hit: DecodeOutcome = await serialize(
       (): Promise<DecodeOutcome> => loadCachedReserved(cachePath, key));
-    if (hit.clip !== null) {
-      return hit;
+    if (hit.clip !== null || hit.busy) {
+      return hit;   // busy：磁盘上有，只是内存不够——再去软解一遍也一样不够
     }
   }
   const bytes = await readFileBytes(path);
   if (bytes === null) {
     return outcome(null, true);
   }
-  const clip: WebmAlphaClip | null = demuxWebmAlpha(bytes);
+  // 拆包在 TaskPool 上跑（见 util/webm/webmDemuxTask）。
+  const clip: WebmAlphaClip | null = await demuxWebmAlphaOffThread(bytes);
   if (clip === null) {
     console.warn(`[AlphaDiag] demux refused ${path.substring(path.lastIndexOf('/') + 1)}`);
     // 不带 alpha、不是 VP9、或者容器里有我们不处理的写法——文件不会变，拉黑。
@@ -452,29 +475,27 @@ function serialize(job: () => Promise<DecodeOutcome>): Promise<DecodeOutcome> {
 }
 
 // 取一段可播的透明贴纸。拿到之后必须配对调用 releaseAlphaSticker。
-export async function acquireAlphaSticker(path: string, boxPx: number): Promise<AlphaClip | null> {
-  console.warn(`[AlphaDiag] acquire path=${path.substring(path.lastIndexOf('/') + 1)}` +
-    ` box=${boxPx} pipeline=${alphaStickerPipelineAvailable()} rejected=${rejected.has(path)}`);
+export async function acquireAlphaSticker(path: string, boxPx: number): Promise<AlphaAcquireResult> {
   if (path === '' || !alphaStickerPipelineAvailable() || rejected.has(path)) {
-    return null;
+    return acquired(null, 'unsupported');
   }
   const key = alphaStickerCacheKey(path, boxPx);
   const cached = cache.get(key);
   if (cached !== undefined) {
     cached.refs++;
     cached.lastUsed = Date.now();
-    return cached.clip;
+    return acquired(cached.clip, 'ok');
   }
   const pending = inFlight.get(key);
   if (pending !== undefined) {
     await pending;
     const entry = cache.get(key);
     if (entry === undefined) {
-      return null;
+      return acquired(null, 'busy');   // 别人解的那份没进缓存或刚被回收
     }
     entry.refs++;
     entry.lastUsed = Date.now();
-    return entry.clip;
+    return acquired(entry.clip, 'ok');
   }
   const task = decodeClip(path, key);
   inFlight.set(key, task);
@@ -489,16 +510,16 @@ export async function acquireAlphaSticker(path: string, boxPx: number): Promise<
     if (result.permanent) {
       markRejected(path);
     }
-    return null;
+    return acquired(null, result.busy ? 'busy' : 'unsupported');
   }
   // 入账已经在 decodeReserved 里做完了，这里只认领引用。
   const entry = cache.get(key);
   if (entry === undefined) {
-    return null; // 极端情况下刚解完就被回收了，让调用方回退
+    return acquired(null, 'busy'); // 极端情况下刚解完就被回收了：内存紧，让调用方等
   }
   entry.refs++;
   entry.lastUsed = Date.now();
-  return entry.clip;
+  return acquired(entry.clip, 'ok');
 }
 
 export function releaseAlphaSticker(clip: AlphaClip | null): void {

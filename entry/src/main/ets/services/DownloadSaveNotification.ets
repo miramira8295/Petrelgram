@@ -39,6 +39,26 @@ function allocateNotificationId(): number {
   return id;
 }
 
+// 给同一号段里的其它通知用（services/BackgroundCacheNotifier）：分配 id、登记「本进程还活着」——
+// 启动清扫与 ability 销毁时的撤销据此处理它们。
+export function allocateDownloadNotificationId(): number {
+  return allocateNotificationId();
+}
+
+export function markDownloadNotificationLive(id: number, live: boolean): void {
+  if (live) {
+    liveNotificationIds.add(id);
+  } else {
+    liveNotificationIds.delete(id);
+  }
+}
+
+export function downloadProgressTemplateSupported(): Promise<boolean> {
+  return supportsProgressTemplate();
+}
+
+export const DOWNLOAD_PROGRESS_TEMPLATE: string = PROGRESS_TEMPLATE;
+
 // 清掉上一次运行残留的下载通知。**启动时调一次**。
 //
 // 为什么非有不可：进度行靠"重复 publish 同一个 id"原地更新，终态行由实例自己
@@ -270,15 +290,19 @@ export class DownloadSaveNotification implements FileSaveProgress {
   }
 
   onSaved(destination: string): void {
+    this.finishWith('saved', str('transfer_saved_to', destination));
+  }
+
+  // 成功终态：100% 发一次，落地之后定时撤掉。
+  private finishWith(phase: string, savedText: string): void {
     if (this.cancelled || this.terminal) {
       return;
     }
     this.detachDownload();
     this.clearPublishTimer();
-    this.phase = 'saved';
+    this.phase = phase;
     this.percent = 100;
     this.terminal = true;
-    const savedText: string = str('transfer_saved_to', destination);
     const seq: number = ++this.publishSeq;
     this.lastPublishAt = Date.now();
     supportsProgressTemplate().then((supported: boolean): Promise<void> | void => {
@@ -418,6 +442,18 @@ class DownloadTransferKeepAlive {
   }
 }
 
+// 全应用只有一个数据传输长时任务：显式保存（DownloadSaveService）和后台缓存（services/BackgroundCache）共用这一份
+// 引用计数。各建一个实例会互相顶掉——同一个 ability 只能开一个长时任务，先停的那个会把另一个也停了。
+const transferKeepAlive: DownloadTransferKeepAlive = new DownloadTransferKeepAlive();
+
+export function acquireTransferKeepAlive(context: common.UIAbilityContext): number {
+  return transferKeepAlive.acquire(context);
+}
+
+export function releaseTransferKeepAlive(token: number): void {
+  transferKeepAlive.release(token);
+}
+
 interface PendingDownloadSave {
   fileId: number;
   context: common.UIAbilityContext;
@@ -431,7 +467,7 @@ class DownloadSaveService {
   private tasks: Map<number, PendingDownloadSave> = new Map<number, PendingDownloadSave>();
   private preparing: Set<number> = new Set<number>();
   private unsubscribeFile: (() => void) | null = null;
-  private keepAlive: DownloadTransferKeepAlive = new DownloadTransferKeepAlive();
+  private keepAlive: DownloadTransferKeepAlive = transferKeepAlive;
 
   saveDownloadedFile(context: common.UIAbilityContext, path: string, fileName: string): void {
     this.beginLocalSave(context, path, fileName).catch((error: Error): void => {

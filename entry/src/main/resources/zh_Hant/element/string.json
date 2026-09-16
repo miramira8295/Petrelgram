@@ -11901,6 +11901,10 @@
       "value": "隱藏來源（作為副本）"
     },
     {
+      "name": "fw_hide_source",
+      "value": "隱藏來源"
+    },
+    {
       "name": "fw_remove_caption",
       "value": "移除說明文字"
     },
@@ -12135,6 +12139,298 @@
     {
       "name": "cp_fullscreen_done",
       "value": "完成"
+    },
+    {
+      "name": "dc_title",
+      "value": "下載中心"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "下載進度、TDLib 快取內容"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "全部"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "影片"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "圖片"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "音樂"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "語音"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "檔案"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "搜尋檔名或來源對話"
+    },
+    {
+      "name": "dc_loading",
+      "value": "正在讀取下載與快取…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "背景快取"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "已開始背景快取，可在「設定 › 下載中心」查看"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "已經快取完成"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "背景快取失敗"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "刪除快取"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "已刪除快取"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "儲存空間占用"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "清理快取"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "清理"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "將刪除快取中的媒體和檔案，已存到本機的副本不受影響。"
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "已清理 %1$s 快取"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "快取 %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "已存本機 %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "裝置可用 %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "進行中 · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "已完成 · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "全部暫停"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "全部開始"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/s · 剩餘 %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "下載中 · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "已暫停 · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "排隊中 · 等待前面的任務完成"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "下載失敗 · 網路中斷，請重試"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "僅快取"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "已存本機"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "暫停"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "繼續"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "重試"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "儲存到本機"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "開啟"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "操作失敗，請重試"
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "已取消「%1$s」"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "已刪除快取（本機副本保留）"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "選擇"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "完成"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "已選 %1$d 項"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "存本機"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "刪除"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "已儲存 %1$d 項到本機"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "已刪除 %1$d 項"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "沒有找到相關下載"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "換個關鍵詞或切換類型試試"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "背景快取中 %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "背景快取 %1$d 個"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "等待 Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "等待網路 · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "用行動數據繼續"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "用流量"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "定位到訊息"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "僅在 Wi‑Fi 下背景快取"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "行動網路下自動暫停，單項可選擇用流量繼續"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "按時間"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "按大小"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "其他快取 · %1$d 項"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "來源不明的快取檔案，共 %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "全選"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "取消全選"
+    },
+    {
+      "name": "dc_undo",
+      "value": "復原"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "已快取"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "已開始背景快取 %1$d 部影片"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "沒有需要快取的影片"
     }
   ]
 }

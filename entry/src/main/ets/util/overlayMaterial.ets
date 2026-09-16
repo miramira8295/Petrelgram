@@ -177,12 +177,10 @@ export const MATERIAL_TYPE_IMMERSIVE: number = 101;
 // 兜底**都关死了**——底色透明、模糊归 0——赌的就是材质一定会画出来。它不画，
 // 就什么都不剩。官方 HDS 指南给的正确做法是先查 getSystemMaterialTypes()。
 //
-// 查不到（接口抛、或者返回空数组）一律当「不知道」，维持按版本的老判断：宁可
-// 保持现状，也不要在材质本来好好的设备上把它关掉。
+// 接口抛异常才算「不知道」（materialAvailable 那一支按版本判）；**查到了、但一个都没报**就是设备说
+// 「不支持任何材质」，走自绘玻璃（2026-09-15，用户：设备状态可以相信）。以前空数组也当「不知道」
+// 而启用材质，设备真不支持时就是透明窟窿。
 export function immersiveTypeSupported(types: number[]): boolean {
-  if (types.length === 0) {
-    return true;
-  }
   for (const type of types) {
     if (type === MATERIAL_TYPE_IMMERSIVE) {
       return true;
@@ -251,13 +249,9 @@ function materialAvailable(): boolean {
 //
 // 用一个纪元而不是让每个组件分别订阅两个设置键：调用方只关心"材质变了"，
 // 不关心变的是厚度还是光感，订阅一个数就够。
-export const MATERIAL_EPOCH: string = 'materialEpoch';
-
-export function bumpMaterialEpoch(): void {
-  const next: number = (AppStorage.get<number>(MATERIAL_EPOCH) ?? 0) + 1;
-  AppStorage.setOrCreate(MATERIAL_EPOCH, next);
-  mirrorChatEnvKey(MATERIAL_EPOCH, next);
-}
+// 纪元本身定义在 util/materialEpoch（store/AppSettings 切省电时也要 bump，拆出去免得和本模块互相 import），
+// 这里原样再导出，老的引用点不用改。
+export { MATERIAL_EPOCH, bumpMaterialEpoch } from './materialEpoch';
 
 export function immersiveMaterialAvailable(): boolean {
   return materialAvailable();
@@ -287,7 +281,8 @@ function usesLightEffect(surface: OverlaySurface): boolean {
 
 // 材质接管按压时，调用方手写的按压动画必须让位——两层形变叠加是官方点名的坑。
 // 调用点写成 `pressAnimationWins('control') ? 0.9 : 1` 这种形式。
-// 当前玻璃填充的**实际色值**，给 util/chatChrome 算合成底用。
+// 当前玻璃的**实际色值**（材质可用时是 materialColor 里那层 material_tint，否则是 dock_glass），
+// 给 util/chatChrome 算合成底用。
 //
 // 为什么要镜像一份而不是读资源：`getColorSync` 在本项目深色模式下会返回浅色
 // 限定的值（见 util/theme 里那段说明与它引用的排查报告），读不得。
@@ -464,7 +459,7 @@ export function containerBlur(surface: OverlaySurface): BlurStyle | undefined {
 // 自绘玻璃的**底色**那一半，和 plainBackdropBlur 成对使用。
 //
 // 与 overlayGlassFill 的区别只有一条：**它不把观感让给材质**。
-// overlayGlassFill 在材质可用时返回 material_tint（约 25%），那个淡度的前提是
+// overlayGlassFill 在材质可用时返回透明（观感整个交给材质），那个取值的前提是
 // 底下还有一层材质在画；而系统已经把**组件级**的沉浸材质收回了，只有 HDS
 // 导航级的栏（HdsNavigation 的 titleBar、HdsTabs 的 barFloatingStyle）还拿得到。
 // 组件级那条路上再按"材质会渲染"取值，结果就是既没有材质、也没有自己的玻璃。
@@ -535,21 +530,14 @@ export function overlayGlassFill(surface: OverlaySurface, solid: ResourceColor):
     return VIEWER_GLASS_FALLBACK;
   }
   if (materialAvailable()) {
-    // **不再返回全透明**（真机 2026-08-29，PLA-AL10 / OpenHarmony-7.0.0.105）：
-    // 那台机器上诊断行是
-    //   [Material] api=26 state=0 types=[101] queried=true thickness=2 light=exquisite material=true
-    // ——设备自报支持沉浸材质(101)、应用级开关是 DEFAULT、用户也没关材质，我们
-    // 确实挂了 systemMaterial，**可玻璃就是不渲染**（同机别的应用正常；同一台机器
-    // 在 7.0.0.100 上是好的）。此前给 materialColor 传淡色也没能救回来。
+    // 设备自报支持沉浸材质（getSystemMaterialTypes 里有 101）就**信它**：底色全透明，观感整个交给材质
+    // （2026-09-15，用户：「现在设备状态可以相信」）。官方 FAQ：材质的视觉层级在 backgroundColor 之下，
+    // 这里再垫一层 25% 的 material_tint 就压在滤镜上面——用户说的「发实」。
     //
-    // 结论：不能再赌「材质一定会画出来」。底色改成同一份淡色——材质真的渲染时它
-    // 只是薄薄一层（官方 FAQ：材质的视觉层级在 backgroundColor 之下，所以是叠在
-    // 上面的一层淡色，不是遮挡）；材质不渲染时它就是**唯一还看得见的东西**，
-    // 顶栏/输入框/抽屉至少是一块半透明的面，而不是内容直接穿透的窟窿。
-    //
-    // 代价说清楚：材质正常的设备上观感会比现在稍"实"一点点。要浓淡在
-    // resources/{base,dark}/element/color.json 的 material_tint 一处调。
-    return $r('app.color.material_tint');
+    // 历史：7.0.0.105 上出现过「自报支持却不渲染」（2026-08-29），当时在这里垫了 material_tint 兜底；
+    // 系统已修复，兜底撤掉。材质退化档位上的可见底色仍由 buildMaterial 里的 materialColor 负责；
+    // 设备自报不支持时走不到这里（materialAvailable 为假），落到下面的自绘玻璃底色 + 模糊。
+    return Color.Transparent;
   }
   // 这个色由本模块自己持有，不回显调用方传进来的 solid：这个模块的职责就是
   // 替调用方决定，而不是指望调用方传来的恰好是半透明的（不透明底色会把

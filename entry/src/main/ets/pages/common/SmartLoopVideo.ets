@@ -1,5 +1,6 @@
 import { AvLoopVideo } from './AvLoopVideo';
 import { WebmStickerView } from '../chat/WebmStickerView';
+import { StickerPoster } from './StickerPoster';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
 import { logW } from '../../util/log';
@@ -31,8 +32,14 @@ export struct SmartLoopVideo {
   // 滑动时**暂停，不换成缩略图**：换 subtree 会让播放器 surface 消失一帧，
   // 那正是用户报的"滑动时 GIF 闪一下"。暂停把最后一帧留在原地。
   @Param scrollGated: boolean = false;
+  // 贴纸抽屉里的格子：订阅抽屉那道闸。只透传给帧序列那支（抽屉里的都是贴纸/表情）。
+  @Param panelGated: boolean = false;
   @Local private scrollPaused: boolean = false;
   private unsubGate: (() => void) | null = null;
+  // 会话里的这一格此刻在不在屏幕上（只在 scrollGated 时跟踪）。屏幕外不播；开闸时也
+  // 排在屏幕上的后面（见 util/chatAnimationGate）。初值 false：等第一次可见区回调再起播。
+  private onScreen: boolean = false;
+  private gateSuspended: boolean = false;
   private env: ChatEnvMirror = chatEnv;
   // 透明素材必须走 ijk，见 aboutToAppear。这里的初值只管非透明那一类。
   @Local useIjk: boolean = avWebmVerdict === -1;
@@ -52,10 +59,9 @@ export struct SmartLoopVideo {
     }
     if (this.scrollGated && this.unsubGate === null) {
       this.unsubGate = subscribeChatAnimationGate((suspended: boolean): void => {
-        if (this.scrollPaused !== suspended) {
-          this.scrollPaused = suspended;
-        }
-      });
+        this.gateSuspended = suspended;
+        this.syncScrollPaused();
+      }, (): boolean => this.onScreen);
     }
   }
 
@@ -96,6 +102,23 @@ export struct SmartLoopVideo {
       this.firstFrameTimer = -1;
     }
     this.videoReady = false;
+  }
+
+  // 滑动闸关着、或者这一格在屏幕外：暂停（留住最后一帧，不换缩略图，理由见 scrollGated）。
+  private syncScrollPaused(): void {
+    const next: boolean = this.gateSuspended || !this.onScreen;
+    if (this.scrollPaused !== next) {
+      this.scrollPaused = next;
+    }
+  }
+
+  private onVisibleChanged(isVisible: boolean, ratio: number): void {
+    const next: boolean = isVisible && ratio > 0;
+    if (this.onScreen === next) {
+      return;
+    }
+    this.onScreen = next;
+    this.syncScrollPaused();
   }
 
   private onVideoWorking(): void {
@@ -159,11 +182,31 @@ export struct SmartLoopVideo {
   }
 
   build() {
+    if (this.scrollGated) {
+      // 只有会话里的格子跟踪可见性：面板里的不在滑动闸上，省掉这笔每帧的可见区计算。
+      Stack() {
+        this.playerOrPoster();
+      }
+      .width(this.boxWidth).height(this.boxHeight)
+      .onVisibleAreaChange([0.01], (isVisible: boolean, ratio: number): void => {
+        this.onVisibleChanged(isVisible, ratio);
+      });
+    } else {
+      this.playerOrPoster();
+    }
+  }
+
+  @Builder
+  playerOrPoster() {
     if (this.suspended()) {
       if (this.thumbPath !== '') {
-        Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-          .width(this.boxWidth).height(this.boxHeight)
-          .objectFit(this.isTransparentAsset() ? ImageFit.Contain : ImageFit.Cover);
+        if (this.isTransparentAsset()) {
+          StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
+        } else {
+          Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
+            .width(this.boxWidth).height(this.boxHeight)
+            .objectFit(ImageFit.Cover);
+        }
       } else {
         Stack()
           .width(this.boxWidth).height(this.boxHeight)
@@ -178,6 +221,7 @@ export struct SmartLoopVideo {
             powerCategory: this.powerCategory,
             forcePlay: this.forcePlay,
             chatTimeline: this.scrollGated,
+            panelGated: this.panelGated,
             onWorking: (): void => { this.onVideoWorking(); },
             onFailed: (): void => { this.onPlaybackFailed(); }
           });
@@ -213,11 +257,19 @@ export struct SmartLoopVideo {
         // 进场不要动画（asymmetric 的第一支给 IDENTITY）：海报的职责是**立刻**
         // 盖住还没出首帧的播放面，淡入等于让黑面露出来一瞬。
         if (!this.videoReady) {
-          if (this.thumbPath !== '') {
+          if (this.thumbPath !== '' && this.isTransparentAsset()) {
+            // 贴纸类的占位走解码缓存（见 StickerPoster）。转场挂在外层 Stack 上：自定义组件上挂不了。
+            Stack() {
+              StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
+            }
+            .width(this.boxWidth).height(this.boxHeight)
+            .transition(TransitionEffect.asymmetric(TransitionEffect.IDENTITY,
+              TransitionEffect.OPACITY.animation({ duration: 140, curve: Curve.EaseOut })));
+          } else if (this.thumbPath !== '') {
             Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath)
               .draggable(false)
               .width(this.boxWidth).height(this.boxHeight)
-              .objectFit(this.isTransparentAsset() ? ImageFit.Contain : ImageFit.Cover)
+              .objectFit(ImageFit.Cover)
               .transition(TransitionEffect.asymmetric(TransitionEffect.IDENTITY,
                 TransitionEffect.OPACITY.animation({ duration: 140, curve: Curve.EaseOut })));
           } else {

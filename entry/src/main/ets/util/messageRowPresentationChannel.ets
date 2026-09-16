@@ -116,6 +116,12 @@ function samePresentation(a: AlbumGroup, b: AlbumGroup): boolean {
   return sameStrings(a.photoPaths, b.photoPaths) && sameBooleans(a.photoFailed, b.photoFailed);
 }
 
+// 快照描述的是不是同一条消息的同一种内容。展示字段相同不代表是同一条：发送成功时 MessageStore 把临时 id
+// 换成真实 id、rowId 继承，路径 / 失败 / 译文一个都不变；替换媒体则在同一 id 上换了内容类型。
+function sameContentIdentity(x: MessageEntry, y: MessageEntry): boolean {
+  return x.id === y.id && x.contentType === y.contentType && x.stickerFormat === y.stickerFormat;
+}
+
 function remember(owner: ChatRows, rowId: number, group: AlbumGroup): void {
   if (owner.rows.has(rowId)) {
     owner.rows.delete(rowId); // refresh insertion order for bounded LRU eviction
@@ -143,11 +149,14 @@ export function publishMessageRowPresentations(chatId: number, groups: AlbumGrou
     if (previous === group) {
       continue;
     }
-    if (previous.key !== group.key) {
+    // 同一行换了消息身份：必须换掉快照并通知挂着的气泡，否则 ReusableMessageBubble.shownGroup 会一直优先画
+    // 旧快照（2026-09-15：刚发出去的贴纸不会动；[RowGuard] param=真实 id rendered=临时 id）。
+    const sameIdentity: boolean = sameContentIdentity(previous.head, group.head);
+    if (sameIdentity && previous.key !== group.key) {
       remember(owner, rowId, group);
       continue;
     }
-    if (samePresentation(previous, group)) {
+    if (sameIdentity && samePresentation(previous, group)) {
       // The usual download tick lands here: no map churn and, crucially, no
       // whole-bubble wake-up. The tiny progress view owns that update.
       continue;

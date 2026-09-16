@@ -100,21 +100,55 @@ export struct ChatHeader {
   @Event onOpenProfile: () => void = (): void => {};
   @Event onResolveIdentity: () => void = (): void => {};
 
-  // 低于 API 26 自己画玻璃时底色必须半透明，否则 backdropBlur 被盖死。
-  @Styles
-  actionNormalStyle() {
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
-    .opacity(1)
-    .scale({ x: 1, y: 1 })
+  // 返回 / 菜单两颗键的按压态、菜单图标的展开态，全部显式驱动（2026-09-15）。
+  //
+  // 原来是 stateStyles + 键上常驻的 .animation(120)、两个图标上常驻的 .animation(180)。常驻修饰器在
+  // ChatHeader **每次**重渲染时都会开隐式动画上下文，并在里面冲刷渲染任务——进会话时真实壁纸颜色到货、
+  // 返回键图标换色被卷了进去，系统给符号配了一个 1.4s 的弹簧缩放（先压到 0.92 再冲到 1.02）；它下面是
+  // 带 backdropBlur 的胶囊，RS 整页每帧重算模糊、关掉硬件合成，连续 1.4s（trace 20260915T174809，调用链
+  // CustomNodeUpdate ChatHeader → JSAnimation duration:120 → Text paint → SetSymbolAnimation）。
+  // 现在 animateTo 只包按压 / 展开这一个状态，别的更新不再进动画。
+  //
+  // 低于 API 26 自己画玻璃时底色必须半透明，否则 backdropBlur 被盖死；按下时也留在玻璃上（换成不透明的
+  // surface_alt 会让玻璃"闪一下变实心"），按压反馈由 opacity + scale 表达。
+  @Local private backPressed: boolean = false;
+  @Local private menuPressed: boolean = false;
+  @Local private menuIconOpen: boolean = false;
+
+  aboutToAppear(): void {
+    this.menuIconOpen = this.menuShow;
   }
 
-  @Styles
-  actionPressedStyle() {
-    // 按下时也留在玻璃上：换成不透明的 surface_alt 会让玻璃"闪一下变实心"。
-    // 按压反馈由 opacity + scale 表达，不靠底色。
-    .backgroundColor(plainGlassFill($r('app.color.surface_alt')))
-    .opacity(0.72)
-    .scale({ x: 0.9, y: 0.9 })
+  @Monitor('menuShow')
+  onMenuShowChanged(): void {
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+      curve: Curve.EaseInOut
+    }, (): void => {
+      this.menuIconOpen = this.menuShow;
+    });
+  }
+
+  // 1 = 按下，0 = 抬起 / 取消，-1 = 其它（Move 不动状态）。
+  private pressEdge(event: TouchEvent): number {
+    if (event.type === TouchType.Down) {
+      return 1;
+    }
+    if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      return 0;
+    }
+    return -1;
+  }
+
+  private animatePress(apply: () => void): void {
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
+      curve: Curve.EaseOut
+    }, apply);
+  }
+
+  private actionFill(pressed: boolean): ResourceColor {
+    return plainGlassFill(pressed ? $r('app.color.surface_alt') : $r('app.color.surface'));
   }
 
   @Styles
@@ -187,14 +221,20 @@ export struct ChatHeader {
     .borderRadius(CHAT_HEADER_RADIUS)
     .justifyContent(FlexAlign.Center)
     .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-      curve: Curve.EaseOut
-    })
+    .backgroundColor(this.actionFill(this.backPressed))
+    .opacity(this.backPressed ? 0.72 : 1)
+    .scale({ x: this.backPressed ? 0.9 : 1, y: this.backPressed ? 0.9 : 1 })
     .backdropBlur(plainBackdropBlur('bar'))
     .visualEffect(hdsVisualEffect('bar'))
     .accessibilityText($r('app.string.cp_back_to_chat'))
+    .onTouch((event: TouchEvent): void => {
+      const edge: number = this.pressEdge(event);
+      if (edge >= 0 && (edge === 1) !== this.backPressed) {
+        this.animatePress((): void => {
+          this.backPressed = edge === 1;
+        });
+      }
+    })
     .onClick((): void => { this.onBack(); });
   }
 
@@ -212,22 +252,14 @@ export struct ChatHeader {
           .width(18).height(18)
           .fillColor(chromeTextColorOf(this.onLightBg))
           .draggable(false)
-          .opacity(this.menuShow ? 0 : 1)
-          .rotate({ angle: this.menuShow ? 90 : 0 })
-          // animation 必须挂在**属性发生变化的那个节点**上。挂在外层 Stack
-          // 上不会生效——隐式动画只作用于同一节点自身的属性变化。
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.EaseInOut
-          });
+          // 交叉淡入 + 反向旋转由 onMenuShowChanged 的 animateTo 驱动，图标上不挂常驻 .animation()
+          // （理由见本组件开头按压态那段）。
+          .opacity(this.menuIconOpen ? 0 : 1)
+          .rotate({ angle: this.menuIconOpen ? 90 : 0 });
         SymbolGlyph($r('sys.symbol.xmark'))
           .fontSize(19).fontColor([chromeTextColorOf(this.onLightBg)])
-          .opacity(this.menuShow ? 1 : 0)
-          .rotate({ angle: this.menuShow ? 0 : -90 })
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.EaseInOut
-          });
+          .opacity(this.menuIconOpen ? 1 : 0)
+          .rotate({ angle: this.menuIconOpen ? 0 : -90 });
       }
       .width(CHAT_HEADER_ACTION_SIZE).height(CHAT_HEADER_ACTION_SIZE);
     }
@@ -236,17 +268,23 @@ export struct ChatHeader {
     .borderRadius(CHAT_HEADER_RADIUS)
     .justifyContent(FlexAlign.Center)
     .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
-    .stateStyles({ normal: this.actionNormalStyle, pressed: this.actionPressedStyle })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-      curve: Curve.EaseOut
-    })
+    .backgroundColor(this.actionFill(this.menuPressed))
+    .opacity(this.menuPressed ? 0.72 : 1)
+    .scale({ x: this.menuPressed ? 0.9 : 1, y: this.menuPressed ? 0.9 : 1 })
     // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
     .backdropBlur(plainBackdropBlur('bar'))
     .visualEffect(hdsVisualEffect('bar'))
     // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
     .id(this.menuAnchorId)
     .enabled(this.chatId !== 0)
+    .onTouch((event: TouchEvent): void => {
+      const edge: number = this.pressEdge(event);
+      if (edge >= 0 && (edge === 1) !== this.menuPressed) {
+        this.animatePress((): void => {
+          this.menuPressed = edge === 1;
+        });
+      }
+    })
     .accessibilityText($r('app.string.cp_more_actions'))
     .onClick((): void => { this.onMenuTap(); });
   }

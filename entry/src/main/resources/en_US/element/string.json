@@ -11901,6 +11901,10 @@
       "value": "Hide source (send as copy)"
     },
     {
+      "name": "fw_hide_source",
+      "value": "Hide sender"
+    },
+    {
       "name": "fw_remove_caption",
       "value": "Remove caption"
     },
@@ -12135,6 +12139,298 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Done"
+    },
+    {
+      "name": "dc_title",
+      "value": "Download center"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "Downloads and cached media"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "All"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "Videos"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "Photos"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "Music"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "Voice"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "Files"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "Search file names or chats"
+    },
+    {
+      "name": "dc_loading",
+      "value": "Loading downloads and cache…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "Cache in background"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "Caching in background — see Settings › Download center"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "Already cached"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "Couldn’t start caching"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "Delete from cache"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "Removed from cache"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "Storage"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "Clear cache"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "Clear"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "Cached media and files will be removed. Copies saved to your device are kept."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "Cleared %1$s of cache"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "Cache %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "Saved %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "%1$s free"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "In progress · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "Completed · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "Pause all"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "Start all"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/s · %2$s left · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "Downloading · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "Paused · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "Queued · waiting for earlier downloads"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "Download failed · tap retry"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "Cache only"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "Saved"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "Pause"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "Resume"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "Retry"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "Save to device"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "Open"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "Something went wrong. Try again."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "Cancelled \"%1$s\""
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "Cache deleted (saved copy kept)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "Select"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "Done"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "%1$d selected"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "Save"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "Saved %1$d items"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "Deleted %1$d items"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "No matching downloads"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "Try another keyword or type"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "Caching in background %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "Caching %1$d items"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Waiting for Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "Waiting for network · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "Continue on mobile data"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "Use data"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "Show in chat"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "Background caching on Wi‑Fi only"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "Pauses on mobile data; you can allow single items"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "By date"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "By size"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "Other cache · %1$d items"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "Files without a known source · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "Select all"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "Deselect all"
+    },
+    {
+      "name": "dc_undo",
+      "value": "Undo"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "Cached"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "Caching %1$d videos in background"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "No videos to cache"
     }
   ]
 }

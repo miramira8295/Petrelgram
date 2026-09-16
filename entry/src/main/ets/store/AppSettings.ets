@@ -1,5 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { mirrorChatEnvKey, seedChatEnvFromStorage } from '../util/chatEnvMirror';
+import { bumpMaterialEpoch } from '../util/materialEpoch';
 import { setCrashUploadOptOut } from '../services/crashRecordStore';
 import { LIGHT_DEFAULT, THICKNESS_DEFAULT } from '../util/materialTuning';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
@@ -97,6 +98,8 @@ export const KEY_PROXY_SWITCH_DELAY_SEC: string = 'proxySwitchDelaySec';
 export const KEY_AUTOSAVE_PRIVATE: string = 'autosavePrivate';
 export const KEY_AUTOSAVE_GROUP: string = 'autosaveGroup';
 export const KEY_AUTOSAVE_CHANNEL: string = 'autosaveChannel';
+// 后台缓存只在 Wi‑Fi 下进行（services/BackgroundCache，下载中心的存储卡片里可关）。
+export const KEY_BG_CACHE_WIFI_ONLY: string = 'bgCacheWifiOnly';
 // 缓存上限（字节）。0 = 不限，见 CacheLimit.ets。
 export const KEY_CACHE_LIMIT: string = 'cacheLimit';
 
@@ -117,7 +120,8 @@ export const KEY_SHOW_CONTACTS_TAB: string = 'showContactsTab';
 // 会话行的左右滑操作（已读/静音/归档）。默认关：开着会吃掉横向手势，左右滑就
 // 不能切文件夹了——两种用法只能二选一，默认保留切文件夹。
 export const KEY_ROW_SWIPE_ACTIONS: string = 'rowSwipeActions';
-// 光感等级只在 API 26 的材质路径上有意义，低于 26 时设置页不显示这一行。
+// 光感等级（触摸流光与按压形变）。两条通道都读它：API 26 的 systemMaterial（interactive / lightEffect）
+// 和 API 20 起的 hdsEffect 点光 / 按压阴影（util/hdsPointLight），所以设置页在任何 API 上都显示这一行。
 export const KEY_MATERIAL_LIGHT: string = 'materialLight';
 // 聊天背景模糊半径（vp）。用户可调，见 chatBackgroundRaster.ets 的
 // backgroundBlurRadius —— pattern 与"需要模糊"的照片壁纸都用这一个值。
@@ -367,6 +371,7 @@ export const KEY_VIDEO_ENGINE_AVPLAYER: string = 'videoEngineAvPlayer';
 export const KEY_CRASH_UPLOAD: string = 'crashUpload';
 
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
+  KEY_BG_CACHE_WIFI_ONLY,
   KEY_CRASH_UPLOAD,
   KEY_SHOW_CONTACTS_TAB,
   KEY_NOTIFY_PRIVATE,
@@ -404,9 +409,17 @@ function applyPowerState(percent: number): void {
   const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
   const threshold = AppStorage.get<number>(KEY_POWER_THRESHOLD) ?? POWER_THRESHOLD_DEFAULT;
   const active = threshold === 101 || (threshold > 0 && safePercent <= threshold);
+  const wasActive: boolean = AppStorage.get<boolean>(KEY_POWER_ACTIVE) ?? false;
   AppStorage.setOrCreate(KEY_BATTERY_PERCENT, safePercent);
   AppStorage.setOrCreate(KEY_POWER_ACTIVE, active);
   mirrorChatEnvKey(KEY_POWER_ACTIVE, active);
+  // 省电一翻面，「自适应」光感档下的流光 / 按压形变要跟着开关（materialTuning 的 lightEffectOn /
+  // interactiveOn 读它）。可点光（util/hdsPointLight）和材质修饰器（util/materialModifier）的缓存都按
+  // MATERIAL_EPOCH 分代，读材质的组件也只订阅这个纪元——不 bump 就一直停在旧值上。
+  // 只在真的翻面时 bump：电量事件很频繁，每次都 bump 会让所有玻璃面白白重绘。
+  if (active !== wasActive) {
+    bumpMaterialEpoch();
+  }
 }
 
 // Read the authoritative SOC instead of trusting event payload field names,

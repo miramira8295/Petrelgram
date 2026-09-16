@@ -34,6 +34,7 @@ import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
+import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
 import { navigateToSearch } from '../../util/searchNav';
 import {
   requestChatListFlush, setChatListRenderActive
@@ -199,6 +200,9 @@ export struct ChatListPage {
   @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
+  // 分栏下会话页的媒体查看器开着：收左栏，让右栏里的查看器盖满窗口（见 util/viewerWindowCover）。
+  // 复用 onWindowResized：它按定义重算 navBar 可见性，这里只是多了一个输入。
+  @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) @Watch('onWindowResized') viewerCoversWindow: boolean = false;
   // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
   // 手机一转横屏就被当成平板。
   @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
@@ -384,7 +388,13 @@ export struct ChatListPage {
   // 值没变时 applyNavBarVisible 是幂等的，所以这条路平时什么都不做。
   private onWindowResized(): void {
     this.applyNavBarVisible(navBarVisibleOnAppear(
-      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.chatStack.size()));
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.chatStack.size()) &&
+      !this.viewerHidesNavBar());
+  }
+
+  // 只在分栏时生效：单栏（手机）下 navBar 本来就被会话页整页盖住，不需要这一手。
+  private viewerHidesNavBar(): boolean {
+    return this.viewerCoversWindow && isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn);
   }
 
   aboutToAppear(): void {
@@ -1338,6 +1348,8 @@ export struct ChatListPage {
       // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
       .mode(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) ? NavigationMode.Split : NavigationMode.Stack)
+      // 分栏下查看器开着：Split + hideNavBar(true) 的实际效果是单栏，右栏会话页铺满窗口（#201）。
+      .hideNavBar(this.viewerHidesNavBar())
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
       .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
@@ -1350,7 +1362,8 @@ export struct ChatListPage {
       .onNavBarStateChange((reported: boolean): void => {
         // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
         this.applyNavBarVisible(navBarVisibleOnChange(reported,
-          isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.chatStack.size()));
+          isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.chatStack.size()) &&
+          !this.viewerHidesNavBar());
       })
       .enableDragBar(true)
       // 关掉全模态联动：默认 true 时，bindSheet 一拉起就会触发栈顶

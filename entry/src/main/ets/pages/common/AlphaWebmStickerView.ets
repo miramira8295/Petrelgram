@@ -1,6 +1,11 @@
 import { image } from '@kit.ImageKit';
-import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
-import { acquireAlphaSticker, AlphaClip, releaseAlphaSticker } from '../../services/AlphaStickerStore';
+import { StickerPoster } from './StickerPoster';
+import { subscribeAnimationGateFor } from '../../util/stickerPanelGate';
+import {
+  acquireAlphaSticker, AlphaAcquireResult, AlphaClip, releaseAlphaSticker
+} from '../../services/AlphaStickerStore';
+import { AnimationSlotPool } from '../../util/animationSlotPool';
+import { stickerAnimationSlots } from '../../util/stickerAnimationBudget';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 
 // 带 alpha 的 webm 贴纸：预解码好的 RGBA 帧画到 Canvas 上循环播放。
@@ -16,12 +21,17 @@ import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 const TICK_MS: number = 30;
 
 // 同时自绘的上限。内存预算管的是"解出多少帧"，管不了"多少块画布在重画"——
-// 贴纸面板一屏几十格各自 33fps 地 drawImage，主线程一样会卡。超出的格子退回
-// ijkplayer（白底，但那本来就是现在的样子），不会更糟。
-// 这个数字对齐 TgsStickerView 的 MAX_LIVE_TGS，两条自绘链路加起来才是主线程
-// 真正的负担。
-const MAX_LIVE_ALPHA: number = 12;
-let liveAlpha: number = 0;
+// 贴纸面板一屏几十格各自 33fps 地 drawImage，主线程一样会卡。
+// 名额现在与 TGS 共用、按区域分池（2026-09-15），见 util/stickerAnimationBudget。
+//
+// 【超出的格子显示缩略图、排队等名额，不再退回 ijkplayer（2026-09-15）】
+// 原来写的是“超出的退回 ijk，不会更糟”——那是只有透明贴纸走这条的年代。09-14 不透明
+// 的也并进来之后，贴纸面板一屏超过 12 格就整批溢出成 ijk：崩溃现场 50 个 ff_read、
+// 37 个软解 VP9 线程，越往下滑越卡。更要命的是每滑走一格就销毁一个还在往外发消息的
+// 播放器，正撞 ijkplayer 2.0.9 自己的竞态：surface 销毁时把回调引用的删除排进 uv
+// 线程池，比它早排队的消息可能后跑完，再去取这个已删的引用——主线程
+// napi_get_reference_value 段错误（SEGV_MAPERR，寄存器里是 0x6b6b 的释放填充）。
+// 所以 ijk 只留给“解码真失败”，名额不够、内存不够都等（见 waitForMemory）。
 
 // P4 批 5：迁 @ComponentV2（配方同批 1~4）。9 个省电键走 chatEnv 镜像，
 // onPowerChanged 的 @Watch 改成 @Monitor 深层路径一次挂 8 条；复用在
@@ -42,8 +52,13 @@ export struct AlphaWebmStickerView {
   // 这道闸以前没有：那时只有少数透明贴纸走帧序列，看不出来；2026-09-14 不透明
   // webm 并进来之后，一屏十几张全在按 setInterval 往 Canvas 上画，滑动直接掉帧。
   @Param chatTimeline: boolean = false;
+  // 贴纸抽屉里的格子：订阅抽屉那道闸（见 util/stickerPanelGate），同样跟踪可见性。与 chatTimeline 互斥。
+  @Param panelGated: boolean = false;
   @Local private scrollPaused: boolean = false;
   private unsubGate: (() => void) | null = null;
+  // 这一格此刻在不在屏幕上（只在滑动闸上的格子跟踪：会话、贴纸抽屉）。屏幕外不画；开闸时也
+  // 排在屏幕上的后面（见 util/chatAnimationGate）。
+  private onScreen: boolean = false;
   // 这条链路走不通时通知父组件切回 ijkplayer。只会调用一次。
   @Param onFallback: () => void = (): void => {};
   @Param onWorking: () => void = (): void => {};
@@ -59,12 +74,16 @@ export struct AlphaWebmStickerView {
   private loading: boolean = false;
   private reportedWorking: boolean = false;
   private holdsSlot: boolean = false;
+  // 排队等名额或内存：缩略图盖在画布上（有的话），画出第一帧再撤。
+  @Local private waitingSlot: boolean = false;
+  private cancelSlotWait: (() => void) | null = null;
   private loadSeq: number = 0;
 
   // 自愈：挂错时这一格播的是上一张贴纸。复用路径由 aboutToReuse 覆盖。
   @Monitor('webmPath')
   onWebmPathChanged(): void {
     this.disposePlayback();
+    this.clearCanvas();
     this.disposed = false;
     this.reportedWorking = false;
     this.shownIndex = -1;
@@ -73,11 +92,11 @@ export struct AlphaWebmStickerView {
 
   aboutToAppear(): void {
     this.disposed = false;
-    if (this.chatTimeline && this.unsubGate === null) {
+    if (this.tracksVisibility() && this.unsubGate === null) {
       // 订阅时会立刻回调一次当前值：挂载在滑动中途的行不能默认"门是开的"。
-      this.unsubGate = subscribeChatAnimationGate((suspended: boolean): void => {
+      this.unsubGate = subscribeAnimationGateFor(this.panelGated, (suspended: boolean): void => {
         this.onGateChanged(suspended);
-      });
+      }, (): boolean => this.onScreen);
     }
   }
 
@@ -91,10 +110,12 @@ export struct AlphaWebmStickerView {
 
   aboutToRecycle(): void {
     this.disposePlayback();
+    this.clearCanvas();
   }
 
   aboutToReuse(): void {
     // @Param webmPath 已是新值：同步重载。
+    this.clearCanvas();
     this.loadSeq++;
     this.disposed = false;
     this.reportedWorking = false;
@@ -102,10 +123,25 @@ export struct AlphaWebmStickerView {
     this.load();
   }
 
+  // 换了贴纸（回收 / 复用 / 换路径）时擦掉画布。**不擦就叠图**：Canvas 一直留着上一张的最后一帧，
+  // 复用出来的格子上面又盖着新贴纸的透明缩略图，两张透过透明区叠在一起（2026-09-15 抽屉格子改可复用
+  // 之后的真机截图；TgsNativeStickerView 09-14 踩过同一个坑）。滑出屏幕、滑动暂停不擦——还是同一张，定格正好。
+  private clearCanvas(): void {
+    try {
+      this.ctx.clearRect(0, 0, this.boxWidth, this.boxHeight);
+    } catch (e) {
+      console.error(`AlphaWebmStickerView clear failed: ${e}`);
+    }
+  }
+
   private disposePlayback(): void {
     this.loadSeq++;
     this.disposed = true;
     this.stopTicker();
+    if (this.cancelSlotWait !== null) {
+      this.cancelSlotWait();
+      this.cancelSlotWait = null;
+    }
     this.releaseSlot();
     releaseAlphaSticker(this.sequence);
     this.sequence = null;
@@ -116,8 +152,50 @@ export struct AlphaWebmStickerView {
   private releaseSlot(): void {
     if (this.holdsSlot) {
       this.holdsSlot = false;
-      liveAlpha--;
+      this.slotPool().release();
     }
+  }
+
+  private slotPool(): AnimationSlotPool {
+    return stickerAnimationSlots(this.chatTimeline, this.panelGated);
+  }
+
+  // 让出名额与帧序列，组件本身还在（和 disposePlayback 的区别：不置 disposed）。
+  private releasePlayback(): void {
+    this.loadSeq++;
+    if (this.cancelSlotWait !== null) {
+      this.cancelSlotWait();
+      this.cancelSlotWait = null;
+    }
+    this.releaseSlot();
+    releaseAlphaSticker(this.sequence);
+    this.sequence = null;
+    this.shownIndex = -1;
+  }
+
+  // 内存预算这一刻不够（全被在播的占着）。**不回退**：预算一满还回退的话，每个新格子
+  // 都开一个 ijk 播放器（2026-09-15 第二次崩溃：半秒 40 个）。悄悄还掉名额——不转给
+  // 排队的，它们此刻同样拿不到内存，转来转去只会在微任务里空转——然后排队，等下一次
+  // 有人正常让出名额（通常同时还掉了帧内存）再试。
+  private waitForMemory(): void {
+    if (this.holdsSlot) {
+      this.holdsSlot = false;
+      this.slotPool().releaseQuietly();
+    }
+    this.waitForSlot();
+  }
+
+  private waitForSlot(): void {
+    this.waitingSlot = true;
+    this.cancelSlotWait = this.slotPool().wait((): void => {
+      this.cancelSlotWait = null;
+      if (this.disposed) {
+        this.slotPool().release();   // 转过来的名额原样让出去
+        return;
+      }
+      this.holdsSlot = true;
+      this.load();
+    });
   }
 
   private onGateChanged(suspended: boolean): void {
@@ -142,6 +220,28 @@ export struct AlphaWebmStickerView {
     }
   }
 
+  // 在滑动闸上（会话时间线或贴纸抽屉）：订阅闸门、跟踪可见性。
+  private tracksVisibility(): boolean {
+    return this.chatTimeline || this.panelGated;
+  }
+
+  private onVisibleChanged(isVisible: boolean, ratio: number): void {
+    const next: boolean = isVisible && ratio > 0;
+    if (this.onScreen === next) {
+      return;
+    }
+    this.onScreen = next;
+    if (!next) {
+      // 滑出屏幕：名额和帧内存立刻还掉（定格在当前帧，不清画布），回到屏幕上再取。
+      this.stopTicker();
+      this.releasePlayback();
+    } else if (this.sequence !== null && !this.powerSuspended()) {
+      this.startTicker();
+    } else {
+      this.load();
+    }
+  }
+
   private stopTicker(): void {
     if (this.timer !== -1) {
       clearInterval(this.timer);
@@ -151,7 +251,7 @@ export struct AlphaWebmStickerView {
 
   private startTicker(): void {
     this.stopTicker();
-    if (this.sequence === null || this.disposed || this.scrollPaused) {
+    if (this.sequence === null || this.disposed || this.scrollPaused || (this.tracksVisibility() && !this.onScreen)) {
       return;
     }
     this.startedAt = Date.now();
@@ -205,6 +305,9 @@ export struct AlphaWebmStickerView {
       this.ctx.clearRect(0, 0, this.boxWidth, this.boxHeight);
       this.ctx.drawImage(clip.frames[index] as image.PixelMap,
         (this.boxWidth - w) / 2, (this.boxHeight - h) / 2, w, h);
+      if (this.waitingSlot) {
+        this.waitingSlot = false;   // 第一帧画上了，撤掉排队时盖着的缩略图
+      }
       if (!this.reportedWorking) {
         this.reportedWorking = true;
         this.onWorking();
@@ -226,22 +329,25 @@ export struct AlphaWebmStickerView {
   }
 
   private async load(): Promise<void> {
-    if (this.loading || this.sequence !== null || this.disposed || this.webmPath === '') {
+    if (this.loading || this.sequence !== null || this.disposed || this.webmPath === ''
+      || this.cancelSlotWait !== null || (this.tracksVisibility() && !this.onScreen)) {
       return;
     }
-    if (liveAlpha >= MAX_LIVE_ALPHA) {
-      this.fallback();
-      return;
+    if (!this.holdsSlot) {
+      if (!this.slotPool().tryAcquire()) {
+        this.waitForSlot();
+        return;
+      }
+      this.holdsSlot = true;
     }
-    this.holdsSlot = true;
-    liveAlpha++;
     this.loading = true;
     const seq: number = ++this.loadSeq;
     const path: string = this.webmPath;
     // 显示尺寸决定解码尺寸：聊天气泡里的贴纸和面板里的小格差着一个数量级，
     // 一律按原生 512 解码就是白烧内存。
     const boxPx = Math.max(vp2px(this.boxWidth), vp2px(this.boxHeight));
-    const clip = await acquireAlphaSticker(path, boxPx);
+    const result: AlphaAcquireResult = await acquireAlphaSticker(path, boxPx);
+    const clip: AlphaClip | null = result.clip;
     this.loading = false;
     if (this.disposed || seq !== this.loadSeq || path !== this.webmPath) {
       this.releaseSlot();
@@ -252,7 +358,11 @@ export struct AlphaWebmStickerView {
       return;
     }
     if (clip === null) {
-      this.fallback();
+      if (result.status === 'busy') {
+        this.waitForMemory();
+      } else {
+        this.fallback();
+      }
       return;
     }
     this.sequence = clip;
@@ -288,19 +398,42 @@ export struct AlphaWebmStickerView {
   }
 
   build() {
+    if (this.tracksVisibility()) {
+      // 只有滑动闸上的格子跟踪可见性（开闸排先后、屏幕外不画）；其余调用点省掉这笔每帧的可见区计算。
+      Stack() {
+        this.surface();
+      }
+      .width(this.boxWidth).height(this.boxHeight)
+      .onVisibleAreaChange([0.01], (isVisible: boolean, ratio: number): void => {
+        this.onVisibleChanged(isVisible, ratio);
+      });
+    } else {
+      this.surface();
+    }
+  }
+
+  @Builder
+  surface() {
     if (this.powerSuspended()) {
       if (this.thumbPath !== '') {
-        Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-          .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+        StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
       } else {
         Stack().width(this.boxWidth).height(this.boxHeight);
       }
     } else {
-      Canvas(this.ctx)
-        .width(this.boxWidth).height(this.boxHeight)
-        .onReady(() => {
-          this.load();
-        });
+      // 排队时缩略图**盖在**画布上，而不是换掉画布：重试可能又排回去，换来换去会让画布
+      // 反复重建、onReady 反复进来，每重试一次闪一下。
+      Stack() {
+        Canvas(this.ctx)
+          .width(this.boxWidth).height(this.boxHeight)
+          .onReady(() => {
+            this.load();
+          });
+        if (this.waitingSlot && this.thumbPath !== '') {
+          StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
+        }
+      }
+      .width(this.boxWidth).height(this.boxHeight);
     }
   }
 }

@@ -1,6 +1,7 @@
 import { StreamingVideoPlayer } from './StreamingVideoPlayer';
 import { AvVideoPlayer } from './AvVideoPlayer';
 import { KEY_VIDEO_ENGINE_AVPLAYER } from '../../store/AppSettings';
+import { logW } from '../../util/log';
 
 // 全屏播放器的**引擎分流件**：同一组参数，按设置交给 ijkplayer 还是系统 AVPlayer。
 //
@@ -52,6 +53,11 @@ export struct VideoPlayerHost {
   onSwipePrev: () => void = (): void => {};
   onOrientationChange: (landscape: boolean) => void = (_landscape: boolean): void => {};
   onPositionChanged: (positionMs: number) => void = (_positionMs: number): void => {};
+
+  // 平板黑屏（#201）：先记下查看器这一次用的是哪个引擎，下面两路播放器的探针才对得上号。
+  aboutToAppear(): void {
+    logW(`[VideoEngine] viewer engine=${this.useAvPlayer ? 'avplayer' : 'ijk'}`);
+  }
 
   // 翻到另一条视频：上一条的回退结论不适用，清掉重新给 AVPlayer 机会。
   private onFileIdChanged(): void {

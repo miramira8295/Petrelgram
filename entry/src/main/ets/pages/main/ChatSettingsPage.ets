@@ -35,7 +35,7 @@ import {
 import {
   APPEARANCE_EPOCH, KEY_MATERIAL_LIGHT_DARK, KEY_MATERIAL_THICKNESS_DARK, recomputeAppearance
 } from '../../util/appearance';
-import { bumpMaterialEpoch, immersiveMaterialAvailable } from '../../util/overlayMaterial';
+import { bumpMaterialEpoch } from '../../util/overlayMaterial';
 import {
   KEY_SURFACE_GLASS_LEVEL, KEY_BUBBLE_GLASS_LEVEL, KEY_SURFACE_GLASS_ON, KEY_BUBBLE_GLASS_ON,
   BUBBLE_GLASS_ON_DEFAULT, SURFACE_GLASS_LEVEL_DEFAULT,
@@ -1066,11 +1066,11 @@ export struct ChatSettingsPage {
             this.materialThicknessCard();
           }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
 
-          if (immersiveMaterialAvailable()) {
-            Column() {
-              this.materialLightCard();
-            }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
-          }
+          // 光感等级任何 API 上都有东西可管：API 20 起的 hdsEffect 点光 / 按压阴影（util/hdsPointLight）读的
+          // 就是它。以前按材质可用与否藏起来，老设备（和没报沉浸材质的设备）上档位照样生效却调不了。
+          Column() {
+            this.materialLightCard();
+          }.width('100%').backgroundColor(CARD_BG).borderRadius(CARD_RADIUS).padding({ bottom: 4 });
 
           Column() {
             this.toggleRow(str('chat_settings_reduce_anim'), str('chat_settings_reduce_anim_sub'), KEY_REDUCE_ANIM);

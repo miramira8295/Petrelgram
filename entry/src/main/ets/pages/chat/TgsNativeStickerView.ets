@@ -1,13 +1,17 @@
 import { image } from '@kit.ImageKit';
+import { StickerPoster } from '../common/StickerPoster';
 import {
-  queueTgsOpen, queueTgsRender, tgsClose, TgsOpenResult
+  queueTgsOpenTicketed, queueTgsRenderTicketed, tgsClose, TgsOpenOutcome, TgsOpenResult, TgsRenderResult,
+  TgsRenderTicket
 } from '../../util/tgsRenderQueue';
+import { AnimationSlotPool } from '../../util/animationSlotPool';
+import { stickerAnimationSlots } from '../../util/stickerAnimationBudget';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { tgsPowerSuspended } from '../../util/tgsPowerGate';
 import {
   tgsFinished, tgsFrameIndexAt, tgsNextDelayMs, tgsPlaybackFps, tgsRenderSize
 } from '../../util/tgsPlayback';
-import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
+import { subscribeAnimationGateFor } from '../../util/stickerPanelGate';
 import { logE, logW } from '../../util/log';
 
 // TGS 贴纸的原生渲染（rlottie）。UI 线程只做一件事：把 worker 上渲好的一张
@@ -17,6 +21,8 @@ import { logE, logW } from '../../util/log';
 // 'canvas'，每一帧都在 UI 线程上重算形状再画一遍。代价直接写在那个文件里：
 // 会话同时只允许 4 张动（MAX_LIVE_CHAT_TGS）、面板 14 张，超出的画静态缩略图。
 // 这里没有这个上限——每帧的 UI 成本只是一次 drawImage。
+// 【2026-09-15 起与 WebM 共用名额】UI 线程便宜不等于没有代价：每张在动的贴纸每帧都要合成，
+// 扫描采样里 GPU 六成时间满载。名额按区域分池，见 util/stickerAnimationBudget。
 //
 // 【为什么不整段预解码】设备实测 24/25 个 .tgs 是 60fps × 3 秒 = 180 帧，
 // 按气泡尺寸 256px 算整段是 46MB 一张。Lottie 任意帧可独立渲染（不像 VP9 有
@@ -32,6 +38,8 @@ export struct TgsNativeStickerView {
   @Param powerCategory: string = 'sticker';
   // 会话时间线里的贴纸：滚动时统一按闸门暂停（同 lottie 那支）。
   @Param chatTimeline: boolean = false;
+  // 贴纸抽屉里的格子：滚动时按抽屉那道闸暂停（见 util/stickerPanelGate）。与 chatTimeline 互斥。
+  @Param panelGated: boolean = false;
   @Param playOnce: boolean = false;
   @Param loop: boolean = true;
   // 原生这条路走不通（没编进来 / 文件解析失败）时通知调用方退回 lottie。
@@ -54,20 +62,27 @@ export struct TgsNativeStickerView {
   private chatGateSuspended: boolean = false;
   private disposed: boolean = false;
   private rendering: boolean = false;
+  // 同时在动的名额（与 WebM 共用）。只在屏幕上、要开始要帧时才取，滑出屏幕立刻还。
+  private holdsSlot: boolean = false;
+  private cancelSlotWait: (() => void) | null = null;
+  // 在队列里排着的渲染/打开请求的票：停泵、换贴纸、下树时作废，轮到时直接跳过。
+  private renderTicket: TgsRenderTicket | null = null;
+  private openTicket: TgsRenderTicket | null = null;
   // 换路径/销毁时作废在途的异步渲染——它回来得比下一次打开晚，会把新贴纸盖掉。
   private seq: number = 0;
 
   aboutToAppear(): void {
     this.disposed = false;
-    if (this.chatTimeline) {
-      this.unsubGate = subscribeChatAnimationGate((suspended: boolean): void => {
+    if (this.chatTimeline || this.panelGated) {
+      // 第二个参数让闸门排开闸先后：屏幕上的先放（见 util/chatAnimationGate）。
+      this.unsubGate = subscribeAnimationGateFor(this.panelGated, (suspended: boolean): void => {
         this.chatGateSuspended = suspended;
         if (suspended) {
           this.stopPump();     // 定格在当前帧，不清画布
         } else {
           this.maybeStart();
         }
-      });
+      }, (): boolean => this.visible);
     }
     this.open();
   }
@@ -78,6 +93,8 @@ export struct TgsNativeStickerView {
     this.disposed = true;
     this.visible = false;
     this.stopPump();
+    this.cancelOpen();
+    this.releaseSlot();
     this.close();
     if (this.unsubGate !== null) {
       this.unsubGate();
@@ -104,6 +121,8 @@ export struct TgsNativeStickerView {
   aboutToRecycle(): void {
     this.seq++;
     this.stopPump();
+    this.cancelOpen();
+    this.releaseSlot();
     this.close();
     this.clearCanvas();
     this.startedAt = 0;
@@ -116,6 +135,8 @@ export struct TgsNativeStickerView {
   private resetForNewSource(): void {
     this.seq++;
     this.stopPump();
+    this.cancelOpen();
+    this.releaseSlot();
     this.close();
     this.clearCanvas();
     // 新贴纸从第 0 帧起播，不接着上一张的进度。
@@ -123,6 +144,48 @@ export struct TgsNativeStickerView {
     this.painted = false;
     this.failed = false;
     this.open();
+  }
+
+  private slotPool(): AnimationSlotPool {
+    return stickerAnimationSlots(this.chatTimeline, this.panelGated);
+  }
+
+  private releaseSlot(): void {
+    if (this.cancelSlotWait !== null) {
+      this.cancelSlotWait();
+      this.cancelSlotWait = null;
+    }
+    if (this.holdsSlot) {
+      this.holdsSlot = false;
+      this.slotPool().release();
+    }
+  }
+
+  // 名额满了：停在缩略图/当前帧，排队；名额转过来时直接起泵。
+  private waitForSlot(): void {
+    this.cancelSlotWait = this.slotPool().wait((): void => {
+      this.cancelSlotWait = null;
+      if (this.disposed || !this.visible) {
+        this.slotPool().release();
+        return;
+      }
+      this.holdsSlot = true;
+      this.maybeStart();
+    });
+  }
+
+  private currentRenderTicket(): TgsRenderTicket {
+    if (this.renderTicket === null) {
+      this.renderTicket = new TgsRenderTicket();
+    }
+    return this.renderTicket;
+  }
+
+  private cancelOpen(): void {
+    if (this.openTicket !== null) {
+      this.openTicket.cancelled = true;
+      this.openTicket = null;
+    }
   }
 
   private clearCanvas(): void {
@@ -138,6 +201,9 @@ export struct TgsNativeStickerView {
   onPowerChanged(): void {
     if (this.suspended()) {
       this.stopPump();
+      if (tgsPowerSuspended(this.env, this.powerCategory)) {
+        this.releaseSlot();   // 省电停播：名额还掉（滑动闸只是暂停，名额留着）
+      }
     } else {
       this.maybeStart();
     }
@@ -145,7 +211,7 @@ export struct TgsNativeStickerView {
 
   private suspended(): boolean {
     return tgsPowerSuspended(this.env, this.powerCategory)
-      || (this.chatTimeline && this.chatGateSuspended);
+      || ((this.chatTimeline || this.panelGated) && this.chatGateSuspended);
   }
 
   private open(): void {
@@ -155,13 +221,19 @@ export struct TgsNativeStickerView {
     // vp2px(1) 就是当前屏幕密度；chatEnv 里没有这一项，也不必为它加一项。
     const size: number = tgsRenderSize(Math.max(this.boxWidth, this.boxHeight), vp2px(1));
     const token: number = this.seq;
-    queueTgsOpen(this.tgsPath, size, size).then((info: TgsOpenResult | null): void => {
+    const ticket: TgsRenderTicket = new TgsRenderTicket();
+    this.openTicket = ticket;
+    queueTgsOpenTicketed(this.tgsPath, size, size, ticket).then((outcome: TgsOpenOutcome): void => {
+      const info: TgsOpenResult | null = outcome.info;
       if (this.disposed || token !== this.seq) {
         // 已经换了路径/下了树：这个 handle 没人要了，立刻还回去。
         if (info !== null) {
           tgsClose(info.handle);
         }
         return;
+      }
+      if (outcome.skipped) {
+        return;   // 排队期间被作废（换贴纸/下树），不是解析失败
       }
       if (info === null || info.totalFrames <= 0) {
         this.failed = true;
@@ -197,6 +269,16 @@ export struct TgsNativeStickerView {
       || this.suspended() || this.timer !== -1 || this.rendering) {
       return;
     }
+    if (!this.holdsSlot) {
+      if (this.cancelSlotWait !== null) {
+        return;   // 已经在排队
+      }
+      if (!this.slotPool().tryAcquire()) {
+        this.waitForSlot();
+        return;
+      }
+      this.holdsSlot = true;
+    }
     if (this.startedAt === 0) {
       this.startedAt = Date.now();
     }
@@ -208,6 +290,11 @@ export struct TgsNativeStickerView {
       clearTimeout(this.timer);
       this.timer = -1;
     }
+    // 排着队还没轮到的那一帧作废；已经在渲的回来后照常处理。
+    if (this.renderTicket !== null) {
+      this.renderTicket.cancelled = true;
+      this.renderTicket = null;
+    }
   }
 
   // 一拍：算此刻该是第几帧 → 让 worker 渲出来 → 画上去 → 约下一拍。
@@ -216,7 +303,7 @@ export struct TgsNativeStickerView {
   // 30fps 去要帧，3 秒的贴纸也还是 3 秒走完——按播放帧率累加会让它慢一倍。
   private pump(): void {
     this.timer = -1;
-    if (this.disposed || this.handle === 0 || this.suspended() || !this.visible) {
+    if (this.disposed || this.handle === 0 || this.suspended() || !this.visible || !this.holdsSlot) {
       return;
     }
     if (this.rendering) {
@@ -228,19 +315,26 @@ export struct TgsNativeStickerView {
     const elapsed: number = Date.now() - this.startedAt;
     const looping: boolean = this.loop && !this.playOnce;
     if (!looping && tgsFinished(elapsed, this.sourceFps, this.totalFrames)) {
+      this.releaseSlot();
       return;   // 定格在最后一帧
     }
     const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping);
     const token: number = this.seq;
     this.rendering = true;
-    queueTgsRender(this.handle, index).then((frame: image.PixelMap | null): void => {
+    queueTgsRenderTicketed(this.handle, index, this.currentRenderTicket()).then((result: TgsRenderResult): void => {
       this.rendering = false;
+      const frame: image.PixelMap | null = result.frame;
       if (this.disposed || token !== this.seq) {
         if (frame !== null) {
           frame.release();
         }
         // 这一帧在途时换了贴纸：新 handle 可能已经开好、却被 rendering 拦在
         // maybeStart 外面——补叫一次，否则新贴纸停在缩略图上不动。
+        this.maybeStart();
+        return;
+      }
+      if (result.skipped) {
+        // 排队期间被作废（停泵/滑出屏幕）：不是渲染失败。条件恢复时再叫起。
         this.maybeStart();
         return;
       }
@@ -251,7 +345,7 @@ export struct TgsNativeStickerView {
         return;
       }
       this.draw(frame);
-      if (!this.suspended() && this.visible) {
+      if (!this.suspended() && this.visible && this.holdsSlot) {
         this.timer = setTimeout((): void => { this.pump(); },
           tgsNextDelayMs(tgsPlaybackFps(this.sourceFps, this.env.powerSaving)));
       }
@@ -283,9 +377,7 @@ export struct TgsNativeStickerView {
     Stack() {
       // 第一帧画出来之前先顶着缩略图，避免一块空白。
       if (!this.painted && this.thumbPath !== '') {
-        Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath)
-          .draggable(false)
-          .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+        StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
       }
       Canvas(this.ctx)
         .width(this.boxWidth).height(this.boxHeight)
@@ -305,6 +397,7 @@ export struct TgsNativeStickerView {
         this.maybeStart();
       } else {
         this.stopPump();
+        this.releaseSlot();   // 滑出屏幕立刻还名额
       }
     });
   }

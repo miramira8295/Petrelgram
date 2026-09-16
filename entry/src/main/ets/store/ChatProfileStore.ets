@@ -63,6 +63,8 @@ export interface ProfileContentItem {
   filePath: string;
   mimeType: string;
   downloading: boolean;
+  // 视频已经完整缓存在本地：网格右下角打个勾（2026-09-15）。
+  cached: boolean;
 }
 
 // 已经下载完的本地路径；没下完返回空串。TDLib 的 local.path 在下载完成前
@@ -610,6 +612,7 @@ export class ChatProfileStore {
     let mainFileId = 0;
     let mainFilePath = '';
     let mainMime = '';
+    let videoCached = false;
 
     if (type === 'messagePhoto') {
       title = str('storage_photo');
@@ -637,6 +640,7 @@ export class ChatProfileStore {
       thumbnailId = (thumbFile?.['id'] as number | undefined) ?? 0;
       duration = (video?.['duration'] as number | undefined) ?? 0;
       size = fileSize(videoFile);
+      videoCached = localPathOf(videoFile) !== '';
       isVideo = true;
     } else if (type === 'messageDocument') {
       const document = content['document'] as TdObject | undefined;
@@ -738,7 +742,8 @@ export class ChatProfileStore {
       fileId: mainFileId,
       filePath: mainFilePath,
       mimeType: mainMime,
-      downloading: false
+      downloading: false,
+      cached: videoCached
     };
     if (thumbnailId > 0) {
       this.download(thumbnailId, (path: string): void => {
@@ -756,7 +761,8 @@ export class ChatProfileStore {
             fileId: existing.fileId,
             filePath: existing.filePath,
             mimeType: existing.mimeType,
-            downloading: existing.downloading
+            downloading: existing.downloading,
+            cached: existing.cached
           } : existing);
       });
     }

@@ -5,7 +5,10 @@ import {
   surfaceGlassBlurStyle, surfaceGlassFill
 } from '../../util/surfaceGlass';
 import { ContactsStore, ContactItem } from '../../store/ContactsStore';
-import { AvatarView } from '../chatlist/AvatarView';
+import { cardDividerStartVp, LIST_CARD_INSET_VP, LIST_CARD_TRAIL_VP } from '../../util/listCardGeometry';
+import { ContactRowView } from './ContactRowView';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import { COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { TdRequest, TdObject, TdError } from '../../tdkit/TdTypes';
 import { ComponentContent, promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
@@ -50,6 +53,8 @@ const TOP_ACTION_SIZE: number = 44;
 const SEARCH_BAR_HEIGHT: number = 46;
 const SEARCH_DELAY_MS: number = 350;
 const CONTACT_LONG_PRESS_MS: number = 500;
+// 可视区外多备的行数。联系人行没有逐行玻璃，建一行很便宜（首页会话行有玻璃，只备 2 行）。
+const CONTACT_LIST_CACHED_COUNT: number = 4;
 const SKELETON_ROWS: number[] = [0, 1, 2, 3, 4];
 
 // 联系人页签分栏时左栏的实际宽度，vp。与聊天页签的 NAV_BAR_WIDTH_KEY、设置
@@ -137,6 +142,8 @@ export struct ContactsPage {
   }
 
   private contactsScroller: Scroller = new Scroller();
+  // 联系人卡片的 LazyForEach 数据源，喂的是 filtered() 那一份（见 onContactListInputChanged）。
+  private contactsData: KeyedListDataSource<ContactItem> = new KeyedListDataSource<ContactItem>('contacts');
   // 联系人页签的路由栈。平板（分栏）上点一个联系人会把 ProfilePage 推进这里，
   // 它就是右栏；手机（单栏）上这个栈恒为空——见 openContact 的断点分流。
   private contactsStack: NavPathStack = new NavPathStack();
@@ -167,11 +174,11 @@ export struct ContactsPage {
   // navBar 里，它的「内容列留白」必须按左栏宽度算，不能按窗口宽算。
   // 与 MainScreen 读的是同一个键，见 CONTACTS_NAV_BAR_WIDTH_KEY。
   @StorageProp(CONTACTS_NAV_BAR_WIDTH_KEY) private navBarW: number = 0;
-  @State contacts: ContactItem[] = [];
+  @State @Watch('onContactListInputChanged') contacts: ContactItem[] = [];
   @State loading: boolean = true;
   @State loadError: string = '';
-  @State query: string = '';
-  @State remoteUsers: ContactItem[] = [];
+  @State @Watch('onContactListInputChanged') query: string = '';
+  @State @Watch('onContactListInputChanged') remoteUsers: ContactItem[] = [];
   @State remoteLoading: boolean = false;
   @State searchFocused: boolean = false;
   // Keyed by the icon name, not the label: a label is display text and
@@ -285,6 +292,7 @@ export struct ContactsPage {
       this.applyContacts(store.contacts, store.loading, store.errorMessage);
     });
     store.open();
+    this.onContactListInputChanged();
   }
 
   // 夜间模式切换：右栏空态要整棵重建，见字段处的说明。
@@ -405,19 +413,9 @@ export struct ContactsPage {
     } else {
       this.stopSkeletonPulse();
     }
-    const structureChanged = this.contacts.length !== next.length ||
-      this.contacts.some((item: ContactItem, index: number): boolean => item.id !== next[index]?.id);
-    if (structureChanged) {
-      animateTo({
-        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-        curve: Curve.EaseOut
-      }, (): void => {
-        this.contacts = next;
-        this.loading = nextLoading;
-        this.loadError = nextError;
-      });
-      return;
-    }
+    // 换数据不再包进 animateTo：列表走 LazyForEach 之后，一次重排（有人上线挪到最前）
+    // 在动画上下文里做，等于让整张列表的可视行一起进动画布局。几张状态卡片之间的切换
+    // 各自带着 transition，淡入淡出不受影响。
     this.contacts = next;
     this.loading = nextLoading;
     this.loadError = nextError;
@@ -688,6 +686,21 @@ export struct ContactsPage {
     this.contactPressActive = false;
   }
 
+  // 按压态的 110ms 过渡。原来是行上常驻的 .animation()；行抽成复用组件后不再挂它
+  // （复用时每换一次数据都会被同步冲刷，见 ContactRowView 的说明），改在按压态真正
+  // 变化的那一刻驱动一次。
+  private setPressedContact(id: number): void {
+    if (this.pressedContactId === id) {
+      return;
+    }
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
+      curve: Curve.EaseOut
+    }, (): void => {
+      this.pressedContactId = id;
+    });
+  }
+
   private openContactMenuIfCurrent(contact: ContactItem): void {
     const current = this.contacts.find((item: ContactItem): boolean => item.id === contact.id);
     const unchanged = this.contactPressActive
@@ -776,6 +789,15 @@ export struct ContactsPage {
       }
     }
     return result;
+  }
+
+  // 联系人 / 搜索词 / 全网搜索结果任一变化：把「当下要显示的那一份」交给 LazyForEach。
+  // key 用 contactVersion——与长按菜单的版本校验同一份签名，内容变了才会发 CHANGE。
+  private onContactListInputChanged(): void {
+    const list: ContactItem[] = this.filtered();
+    this.contactsData.update(list,
+      list.map((c: ContactItem): string => `${c.id}`),
+      list.map((c: ContactItem): string => this.contactVersion(c)));
   }
 
   @Builder
@@ -960,9 +982,9 @@ export struct ContactsPage {
     }
     .width('100%')
     .height(62)
-    .padding({ left: 12, right: 14 })
+    // 与联系人行同一条起始线：图标内缩 4、按压底色铺满卡片（见 util/listCardGeometry）。
+    .padding({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP })
     .alignItems(VerticalAlign.Center)
-    .borderRadius(CARD_RADIUS - 4)
     .backgroundColor(this.pressedAction === icon ? $r('app.color.surface_alt') : Color.Transparent)
     .scale({
       x: this.pressedAction === icon ? 0.986 : 1,
@@ -1002,7 +1024,6 @@ export struct ContactsPage {
       .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
-      .padding(4)
       .clip(true);
     }
     .margin({ left: 12, right: 12, top: 12 });
@@ -1017,130 +1038,6 @@ export struct ContactsPage {
       })
         .onClick((): void => { this.confirmDeleteContact(); });
     }
-  }
-
-  @Builder
-  contactRow(c: ContactItem) {
-    Row({ space: 12 }) {
-      Stack({ alignContent: Alignment.BottomEnd }) {
-        AvatarView({ avatarPath: c.avatarPath, initials: c.initials, colorSeed: c.id, avatarSize: 46 });
-        if (c.online) {
-          Circle({ width: 12, height: 12 })
-            .fill('#34C759')
-            .border({ width: 2, color: CARD_BG })
-            .translate({ x: 1, y: 1 })
-            .transition(TransitionEffect.OPACITY
-              .combine(TransitionEffect.scale({ x: 0.5, y: 0.5 }))
-              .animation({
-                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
-                curve: Curve.EaseOut
-              }));
-        }
-      }
-      .width(46)
-      .height(46);
-      Column({ space: 3 }) {
-        Text(c.name)
-          .fontSize(16)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(c.statusText)
-          .fontSize(13)
-          .fontColor(c.online ? this.accent() : COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-      if (this.openingContactId === c.id || this.deletingContactId === c.id) {
-        LoadingProgress()
-          .width(18)
-          .height(18)
-          .color(this.accent())
-          .transition(TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.65, y: 0.65 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 140),
-              curve: Curve.EaseOut
-            }));
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 60 })
-    .padding({ left: 10, right: 10, top: 7, bottom: 7 })
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(CARD_RADIUS - 4)
-    // **行本身不上玻璃。** 外层分组卡片（contactsCard）已经铺了一整块，行再各
-    // 铺一块就是两层 backdropBlur 叠加——又重又灰，而且行与行之间的缝会把壁纸
-    // 露出来，一整块列表被切成一段段药片（用户实测"好丑"）。
-    // 玻璃档下行是透明的，让容器那块透上来；实底档维持原来的白卡片。
-    .backgroundColor(this.pressedContactId === c.id
-      ? $r('app.color.surface_alt') : this.rowInsideCardFill())
-    .scale({
-      x: this.pressedContactId === c.id ? 0.99 : 1,
-      y: this.pressedContactId === c.id ? 0.985 : 1
-    })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110),
-      curve: Curve.EaseOut
-    })
-    .accessibilityText(`${c.name}，${c.statusText}`)
-    .onTouch((event: TouchEvent): void => {
-      if (event.type === TouchType.Down) {
-        this.pressedContactId = c.id;
-        this.beginContactPress(c);
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        if (this.pressedContactId === c.id) {
-          this.pressedContactId = 0;
-        }
-        this.endContactPress();
-      }
-    })
-    .onClick((): void => {
-      this.pressedContactId = 0;
-      if (this.contactPressConsumedByMenu || this.contextMenuShown) {
-        this.contactPressConsumedByMenu = false;
-        return;
-      }
-      this.openContact(c);
-    })
-    .parallelGesture(
-      LongPressGesture({ fingers: 1, repeat: false, duration: CONTACT_LONG_PRESS_MS })
-        .onAction((): void => { this.openContactMenuIfCurrent(c); })
-        .onActionCancel((): void => { this.endContactPress(); })
-    )
-    .bindContextMenu(
-      this.contextMenuShown && this.menuContactId === c.id,
-      this.contactContextMenu,
-      {
-        preview: MenuPreviewMode.IMAGE,
-        previewBorderRadius: CARD_RADIUS - 2,
-        previewAnimationOptions: {
-          scale: [0.98, 1.035],
-          transition: TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.FastOutSlowIn
-            })
-        },
-        borderRadius: 16,
-        backgroundColor: Color.Transparent,
-        backgroundBlurStyle: containerBlur('menu'),
-        systemMaterial: overlayMaterial('menu'),
-        transition: TransitionEffect.OPACITY
-          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({
-            duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-            curve: Curve.FastOutSlowIn
-          }),
-        mask: {
-          color: '#52000000',
-          backgroundBlurStyle: BlurStyle.BACKGROUND_THIN
-        },
-        modalMode: ModalMode.TARGET_WINDOW,
-        hapticFeedbackMode: HapticFeedbackMode.AUTO,
-        onDisappear: (): void => { this.onContactMenuDisappear(); }
-      }
-    );
   }
 
   @Builder
@@ -1159,7 +1056,7 @@ export struct ContactsPage {
     }
     .width('100%')
     .height(60)
-    .padding({ left: 10, right: 10 });
+    .padding({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP });
   }
 
   @Builder
@@ -1171,18 +1068,19 @@ export struct ContactsPage {
       }
       .width('100%')
       .height(36)
-      .padding({ left: 10, right: 10 });
-      Divider().color(COLOR_DIVIDER).strokeWidth(0.7).margin({ left: 10, right: 10 });
+      .padding({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP });
+      Divider().color(COLOR_DIVIDER).strokeWidth(0.7).margin({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP });
       ForEach(SKELETON_ROWS, (index: number): void => {
         if (index > 0) {
-          Divider().color(COLOR_DIVIDER).strokeWidth(0.7).margin({ left: 68, right: 10 });
+          Divider().color(COLOR_DIVIDER).strokeWidth(0.7)
+            .margin({ left: cardDividerStartVp(46, 12), right: LIST_CARD_TRAIL_VP });
         }
         this.skeletonRow(index);
       }, (index: number): string => `${index}`);
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 12 })
-    .padding({ left: 4, right: 4, bottom: 4 })
+    .padding({ bottom: 4 })
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
     .borderRadius(CARD_RADIUS)
@@ -1306,47 +1204,122 @@ export struct ContactsPage {
       }));
   }
 
+  // 联系人卡片的标题行（排序说明 + 结果数），ListItemGroup 的 header。
+  @Builder
+  listCardHeader() {
+    Column() {
+      Row({ space: 6 }) {
+        SymbolGlyph(this.query.trim() === ''
+          ? $r('sys.symbol.clock')
+          : $r('sys.symbol.magnifyingglass'))
+          .fontSize(13)
+          .fontColor([this.accent()]);
+        Text(this.query.trim() === '' ? $r('app.string.ct_sort_by_last_seen') : $r('app.string.ct_contacts_and_global'))
+          .fontSize(13)
+          .fontColor(this.accent())
+          .fontWeight(FontWeight.Medium)
+          .layoutWeight(1);
+        Text(this.remoteLoading
+          ? $r('app.string.searching')
+          : plural('ct_result_count', this.filtered().length, this.filtered().length))
+          .fontSize(12)
+          .fontColor(COLOR_TEXT_SECONDARY);
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP })
+      .alignItems(VerticalAlign.Center);
+      Divider()
+        .color(COLOR_DIVIDER)
+        .strokeWidth(0.7)
+        .margin({ left: LIST_CARD_INSET_VP, right: LIST_CARD_TRAIL_VP });
+    }
+    .width('100%');
+  }
+
+  // 联系人卡片：一整块 ListItemGroup，行走 LazyForEach + 复用组件 ContactRowView。
+  //
+  // 原来是 Scroll 里的 Column + ForEach：几千个联系人一次性全建、全排版，每次上下线
+  // 更新都整表比对（2026-09-14 用户：「翻联系人列表也很卡，点资料直接去卡死了」）。
+  // 现在只建可视区和 cachedCount 那几行，其余滚动时逐帧补建，滚出去的行进复用池。
+  //
+  // 玻璃仍铺在整块卡片（group）上，不下放到行；分隔线交给 group 的 divider，不再每行插
+  // 一个 Divider 节点。点击、按压、长按菜单挂在 ListItem 上（理由见 ContactRowView）。
   @Builder
   listCard() {
-    Column() {
-      Column() {
-        Row({ space: 6 }) {
-          SymbolGlyph(this.query.trim() === ''
-            ? $r('sys.symbol.clock')
-            : $r('sys.symbol.magnifyingglass'))
-            .fontSize(13)
-            .fontColor([this.accent()]);
-          Text(this.query.trim() === '' ? $r('app.string.ct_sort_by_last_seen') : $r('app.string.ct_contacts_and_global'))
-            .fontSize(13)
-            .fontColor(this.accent())
-            .fontWeight(FontWeight.Medium)
-            .layoutWeight(1);
-          Text(this.remoteLoading
-            ? $r('app.string.searching')
-            : plural('ct_result_count', this.filtered().length, this.filtered().length))
-            .fontSize(12)
-            .fontColor(COLOR_TEXT_SECONDARY);
+    ListItemGroup({ header: this.listCardHeader() }) {
+      LazyForEach(this.contactsData, (c: ContactItem) => {
+        ListItem() {
+          ContactRowView({
+            contact: c,
+            pressed: this.pressedContactId === c.id,
+            busy: this.openingContactId === c.id || this.deletingContactId === c.id,
+            glassCard: this.glassOn()
+          });
         }
-        .width('100%')
-        .height(36)
-        .padding({ left: 10, right: 10 })
-        .alignItems(VerticalAlign.Center);
-        Divider()
-          .color(COLOR_DIVIDER)
-          .strokeWidth(0.7)
-          .margin({ left: 10, right: 10 });
-        ForEach(this.filtered(), (c: ContactItem, index: number) => {
-          if (index > 0) {
-            Divider().color(COLOR_DIVIDER).strokeWidth(0.7).margin({ left: 68, right: 10 });
+        .accessibilityText(`${c.name}，${c.statusText}`)
+        .onTouch((event: TouchEvent): void => {
+          if (event.type === TouchType.Down) {
+            this.setPressedContact(c.id);
+            this.beginContactPress(c);
+          } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+            if (this.pressedContactId === c.id) {
+              this.setPressedContact(0);
+            }
+            this.endContactPress();
           }
-          this.contactRow(c);
-        // ArkUI reuses an unchanged ForEach key without rebuilding the row.
-        // Include visible user data so an asynchronously downloaded avatar or
-        // live status update reaches AvatarView/Text, while keeping geometry
-        // stable to avoid a visible row insertion animation.
-        }, (c: ContactItem) =>
-          `${c.id}_${c.avatarPath}_${c.name}_${c.statusText}_${c.online ? 1 : 0}`);
-        if (this.remoteLoading) {
+        })
+        .onClick((): void => {
+          this.setPressedContact(0);
+          if (this.contactPressConsumedByMenu || this.contextMenuShown) {
+            this.contactPressConsumedByMenu = false;
+            return;
+          }
+          this.openContact(c);
+        })
+        .parallelGesture(
+          LongPressGesture({ fingers: 1, repeat: false, duration: CONTACT_LONG_PRESS_MS })
+            .onAction((): void => { this.openContactMenuIfCurrent(c); })
+            .onActionCancel((): void => { this.endContactPress(); })
+        )
+        .bindContextMenu(
+          this.contextMenuShown && this.menuContactId === c.id,
+          this.contactContextMenu,
+          {
+            preview: MenuPreviewMode.IMAGE,
+            previewBorderRadius: CARD_RADIUS - 2,
+            previewAnimationOptions: {
+              scale: [0.98, 1.035],
+              transition: TransitionEffect.OPACITY
+                .combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
+                .animation({
+                  duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+                  curve: Curve.FastOutSlowIn
+                })
+            },
+            borderRadius: 16,
+            backgroundColor: Color.Transparent,
+            backgroundBlurStyle: containerBlur('menu'),
+            systemMaterial: overlayMaterial('menu'),
+            transition: TransitionEffect.OPACITY
+              .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+              .animation({
+                duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+                curve: Curve.FastOutSlowIn
+              }),
+            mask: {
+              color: '#52000000',
+              backgroundBlurStyle: BlurStyle.BACKGROUND_THIN
+            },
+            modalMode: ModalMode.TARGET_WINDOW,
+            hapticFeedbackMode: HapticFeedbackMode.AUTO,
+            onDisappear: (): void => { this.onContactMenuDisappear(); }
+          }
+        );
+      }, (c: ContactItem, index: number): string =>
+        guardKey(this.contactsData.keyTableId, index, this.contactVersion(c)));
+      if (this.remoteLoading) {
+        ListItem() {
           Row({ space: 8 }) {
             LoadingProgress().width(18).height(18).color(this.accent());
             Text($r('app.string.ct_searching_global')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
@@ -1354,18 +1327,25 @@ export struct ContactsPage {
           .width('100%')
           .height(48)
           .justifyContent(FlexAlign.Center);
-        } else if (this.query.trim() !== '' && this.filtered().length === 0) {
+        }
+      } else if (this.query.trim() !== '' && this.filtered().length === 0) {
+        ListItem() {
           this.searchEmptyState();
         }
       }
-      .width('100%')
-      .backgroundColor(this.cardFill())
-    .backgroundBlurStyle(this.cardBlurStyle())
-      .borderRadius(CARD_RADIUS)
-      .padding({ left: 4, right: 4, bottom: 4 })
-      .clip(true);
     }
-    .margin({ left: 12, right: 12, top: 12 });
+    .divider({
+      strokeWidth: 0.7, color: COLOR_DIVIDER,
+      startMargin: cardDividerStartVp(46, 12), endMargin: LIST_CARD_TRAIL_VP
+    })
+    .width('calc(100% - 24vp)')
+    .constraintSize({ maxWidth: readableContentWidth(this.screenW) - 24 })
+    .margin({ left: 12, right: 12, top: 12 })
+    .padding({ bottom: 4 })
+    .backgroundColor(this.cardFill())
+    .backgroundBlurStyle(this.cardBlurStyle())
+    .borderRadius(CARD_RADIUS)
+    .clip(true);
   }
 
   @Builder
@@ -1658,44 +1638,57 @@ export struct ContactsPage {
         // 再被合成，整条链上任何一层开始裁剪，模糊就没了内容可透。链上新插一层
         // 就得跟着表态一次，别让下一个人去猜默认值。
         Stack({ alignContent: Alignment.BottomEnd }) {
-          Scroll(this.contactsScroller) {
-            // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
-            // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来。
-            Column() {
+          // 整页是一个 List（原来是 Scroll > Column > 各卡片）：搜索框和快捷操作占一个
+          // ListItem，联系人卡片是 ListItemGroup，行走 LazyForEach（见 listCard）。
+          // 限宽改由每一项自己的 constraintSize + alignListItem 居中；List 本身仍铺满窗口，
+          // 两侧留白还在它的命中区里，按在留白上照样拖得动。
+          List({ scroller: this.contactsScroller }) {
+            ListItem() {
               Column() {
                 this.searchBox();
                 this.actionCard();
-                if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
-                  this.loadingCard();
-                } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
-                  this.errorContactsCard();
-                } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
-                  this.emptyContactsCard();
-                } else {
-                  this.listCard();
-                }
+              }
+              .width('100%');
+            }
+            .width('100%')
+            .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+            if (this.query.trim() === '' && this.loading && this.contacts.length === 0) {
+              ListItem() {
+                this.loadingCard();
               }
               .width('100%')
               .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+            } else if (this.query.trim() === '' && this.loadError !== '' && this.contacts.length === 0) {
+              ListItem() {
+                this.errorContactsCard();
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+            } else if (this.query.trim() === '' && !this.loading && this.contacts.length === 0) {
+              ListItem() {
+                this.emptyContactsCard();
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: readableContentWidth(this.screenW) });
+            } else {
+              this.listCard();
             }
-            .width('100%')
-            // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
-            .alignItems(HorizontalAlign.Center)
-            .padding({ bottom: this.bottomSafe + 88 });
           }
           .width('100%')
-          // **高度必须显式铺满。** 这个 Scroll 现在住在一个
-          // alignContent: BottomEnd 的 Stack 里（FAB 那次修复加的一层），而 Scroll
-          // 不给高度就按内容量高——于是内容少的时候整个滚动区被 Stack 按到底部，
-          // 观感是"联系人列表整体沉在屏幕下半截"（issue #118）。align(Alignment.Top)
-          // 管的是内容在滚动区**内部**怎么放，救不了滚动区本身的位置。
+          // **高度必须显式铺满。** 这个滚动容器住在一个 alignContent: BottomEnd 的 Stack 里
+          // （FAB 那次修复加的一层），不给高度就按内容量高——于是内容少的时候整个滚动区被
+          // Stack 按到底部，观感是"联系人列表整体沉在屏幕下半截"（issue #118）。
           .height('100%')
-          .align(Alignment.Top)
+          .alignListItem(ListItemAlign.Center)
+          // 第二个参数 true：滚出视口的备用行也画出来——标题栏的渐变模糊糊的正是穿到它底下
+          // 的这部分（同首页会话列表，与下面的 clip(false) 是一对）。
+          .cachedCount(CONTACT_LIST_CACHED_COUNT, true)
+          .contentEndOffset(this.bottomSafe + 88)
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .scrollBar(BarState.Off)
           .enableScrollInteraction(!this.contextMenuShown)
           // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
-          // dock 要跟着走。这个 Scroll 是 navBar 内容的根节点、width('100%')，
+          // dock 要跟着走。这个 List 是 navBar 内容的根节点、width('100%')，
           // 它的宽度就是 navBar 宽度——HdsNavigation 没有回调宽度的接口，只能这么
           // 量（与 SettingsPage 同一个办法）。
           // 同值不写：onAreaChange 在滚动/键盘/单双栏切换时会连着来几次，而

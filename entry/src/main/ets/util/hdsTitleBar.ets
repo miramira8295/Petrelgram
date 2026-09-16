@@ -133,6 +133,12 @@ export function titleBarStyle(background: ResourceColor,
     // 历史注记：blurStrategy 在上一次失败的尝试里出现过，但那次是三改齐上
     // （originalStyle 改透明 + 材质 + 它），分不清是谁的锅。这次背板没动，
     // 只加这一项。
+    //
+    // 静态栏（scrollEffect=false，会话页）同样钉死，**别再给它开特判**（2026-09-15 回退）：ENABLE 不是
+    // 「叠在材质上的第二层模糊」，它就是这条栏的毛玻璃本身。不给 = 走默认的 ADAPTIVE，系统会判成不模糊
+    // （87778879 实测过）；systemMaterialEffect 只有 materialType / materialLevel，自己画不出可读的玻璃，
+    // 结果整条栏只剩 ChatHeader 胶囊的自绘玻璃。静态栏若再「发实」，该调的是 materialType
+    // （hdsMaterialLevel 的 IMMERSIVE / ADAPTIVE）或按官方样例撤掉 originalStyle / scrollEffectStyle，不是这一项。
     blurStrategy: BlurStrategy.ENABLE
   };
 }

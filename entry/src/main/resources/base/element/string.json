@@ -11901,6 +11901,10 @@
       "value": "隐藏来源（作为副本）"
     },
     {
+      "name": "fw_hide_source",
+      "value": "隐藏来源"
+    },
+    {
       "name": "fw_remove_caption",
       "value": "移除说明文字"
     },
@@ -12135,6 +12139,298 @@
     {
       "name": "cp_fullscreen_done",
       "value": "完成"
+    },
+    {
+      "name": "dc_title",
+      "value": "下载中心"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "下载进度、TDLib 缓存内容"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "全部"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "视频"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "图片"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "音乐"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "语音"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "文件"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "搜索文件名或来源会话"
+    },
+    {
+      "name": "dc_loading",
+      "value": "正在读取下载与缓存…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "后台缓存"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "已开始后台缓存，可在「设置 › 下载中心」查看"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "已经缓存完成"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "后台缓存失败"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "删除缓存"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "已删除缓存"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "存储占用"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "清理缓存"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "清理"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "将删除缓存里的媒体和文件，已存到本地的副本不受影响。"
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "已清理 %1$s 缓存"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "缓存 %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "已存本地 %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "设备可用 %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "进行中 · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "已完成 · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "全部暂停"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "全部开始"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/s · 剩余 %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "下载中 · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "已暂停 · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "排队中 · 等待前面的任务完成"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "下载失败 · 网络中断，请重试"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "仅缓存"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "已存本地"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "暂停"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "继续"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "重试"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "保存到本地"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "打开"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "操作失败，请重试"
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "已取消「%1$s」"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "已删除缓存（本地副本保留）"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "选择"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "完成"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "已选 %1$d 项"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "存本地"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "删除"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "已保存 %1$d 项到本地"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "已删除 %1$d 项"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "没有找到相关下载"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "换个关键词或切换类型试试"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "后台缓存中 %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "后台缓存 %1$d 个"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "等待 Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "等待网络 · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "用流量继续"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "用流量"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "定位到消息"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "仅在 Wi‑Fi 下后台缓存"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "移动网络下自动暂停，单条可选择用流量继续"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "按时间"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "按大小"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "其他缓存 · %1$d 项"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "来源不明的缓存文件，共 %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "取消全选"
+    },
+    {
+      "name": "dc_undo",
+      "value": "撤销"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "已缓存"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "已开始后台缓存 %1$d 个视频"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "没有需要缓存的视频"
     }
   ]
 }

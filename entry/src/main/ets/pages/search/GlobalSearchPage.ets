@@ -1,14 +1,14 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { getTdClient, getTdFilesDirectory } from '../../tdkit/Globals';
-import { openLocalFile } from '../../util/openLocalFile';
-import { formatFileSize } from '../../util/formatFileSize';
+import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { GlobalSearchStore, SearchRow } from '../../store/GlobalSearchStore';
 import { AvatarView } from '../chatlist/AvatarView';
-import { AvatarViewer } from '../common/AvatarViewer';
-import { ScannedFile, scanDownloadedFiles } from '../../util/downloadedFileScan';
-import { LocalVideoPlayer } from '../common/LocalVideoPlayer';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
+import {
+  SearchAppRow, SearchChatRow, SearchFrequentCell, SearchMediaCell, SearchMessageRow
+} from './SearchResultRows';
 import { formatPreview } from '../../util/formatPreview';
 import { formatTime } from '../../util/formatTime';
 import {
@@ -23,14 +23,9 @@ import {
 import {
   KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
-import {
-  DownloadCounts, DownloadEntry, DownloadPage, DownloadQuery, defaultDownloadQuery,
-  downloadErrorMessage, emptyDownloadCounts, removeDownload, searchDownloads,
-  setAllDownloadsPaused, setDownloadPaused
-} from '../../store/DownloadApi';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import { overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import {
   SearchSession, forgetSearchSession, rememberSearchSession, takeSearchSession
@@ -60,17 +55,17 @@ interface FoundItem {
 
 // Telegram global-search categories. Public post search belongs to 帖子;
 // hashtag search is a mode of that tab, not a second visible category.
-const TABS: string[] = [str('tab_chats'), str('gn_channel'), str('gs_apps'), str('gs_posts'), str('cpp_media'), str('gs_downloads'), str('cpp_links'), str('storage_file'), str('storage_audio'), str('storage_voice')];
+const TABS: string[] = [str('tab_chats'), str('gn_channel'), str('gs_apps'), str('gs_posts'), str('cpp_media'), str('cpp_links'), str('storage_file'), str('storage_audio'), str('storage_voice')];
 const TAB_CHATS: number = 0;
 const TAB_CHANNELS: number = 1;
 const TAB_APPS: number = 2;
 const TAB_POSTS: number = 3;
 const TAB_MEDIA: number = 4;
-const TAB_DOWNLOADS: number = 5;
-const TAB_LINKS: number = 6;
-const TAB_FILES: number = 7;
-const TAB_AUDIO: number = 8;
-const TAB_VOICE: number = 9;
+// 原来的「下载」页签（下标 5）搬去了「设置 › 下载中心」（2026-09-15），后面几个依次前移。
+const TAB_LINKS: number = 5;
+const TAB_FILES: number = 6;
+const TAB_AUDIO: number = 7;
+const TAB_VOICE: number = 8;
 const SEARCH_TAB_BAR_HEIGHT: number = 44;
 const SEARCH_TAB_INDICATOR_HEIGHT: number = 32;
 const SEARCH_RESULT_DIVIDER_INSET: number = 72;
@@ -98,30 +93,42 @@ function durationLabel(totalSeconds: number): string {
   return `${m}:${`${s}`.padStart(2, '0')}`;
 }
 const SEARCH_DEBOUNCE_MS: number = 300;
-// Photos below this size are almost certainly auto-downloaded thumbnails, not
-// media the user pulled down — keep them out of the downloads list.
-const MIN_PHOTO_BYTES: number = 100 * 1024;
-const MAX_DOWNLOAD_ITEMS: number = 300;
 // Cap on pages fetched automatically when a tab's filter hides every hit.
 const MAX_AUTO_PAGES: number = 5;
 
-interface DownloadItem {
-  path: string;
-  name: string;
-  kind: string;    // 'photo' | 'video' | 'file'
-  sizeLabel: string;
-  mtime: number;   // ms — sort key
-  dateLabel: string;
-  fileId: number;  // >0 for download-manager items (live progress via updateFile)
-  progress: number; // 0-99 while downloading, 100 when complete
-  // 仅下载管理器登记过的条目（fileId > 0）才可暂停/移除；磁盘扫描出来的历史
-  // 文件没有 file_id，TDLib 无从操作，所以这两个字段对它们恒为 false。
-  isPaused: boolean;
-  preview: string; // 来源消息摘要
-  // 来源消息坐标，用于长按"定位到消息"。磁盘扫描出来的历史文件没有这层关联
-  // （文件名里不含 chat/message），两者恒为 0，菜单里相应不提供该项。
-  chatId: number;
-  messageId: number;
+// 结果列表 LazyForEach 的身份与内容签名（见 KeyedListDataSource）。内容签名沿用原来 ForEach
+// key 的字段，去掉了各容器自己的前缀——现在每个容器各有各的数据源，不会串。
+function searchRowId(r: SearchRow): string {
+  return `${r.chatId}`;
+}
+
+function searchRowKey(r: SearchRow): string {
+  return `${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`;
+}
+
+// 应用行按机器人 userId 认。
+function appRowId(r: SearchRow): string {
+  return `${r.userId}`;
+}
+
+function appRowKey(r: SearchRow): string {
+  return `${r.userId}_${r.title}_${r.subtitle}_${r.avatarPath}`;
+}
+
+function frequentCellKey(r: SearchRow): string {
+  return `${r.chatId}_${r.title}_${r.avatarPath}`;
+}
+
+function foundItemId(it: FoundItem): string {
+  return `${it.chatId}_${it.messageId}`;
+}
+
+function foundItemKey(it: FoundItem): string {
+  return `${it.chatId}_${it.messageId}_${it.chatTitle}_${it.avatarPath}`;
+}
+
+function mediaItemKey(it: FoundItem): string {
+  return `${it.chatId}_${it.messageId}_${it.chatTitle}_${it.thumbPath}`;
 }
 
 // Global search (Telegram-style): an empty query shows frequent contacts and
@@ -152,8 +159,9 @@ export struct GlobalSearchPage {
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') screenH: number = 780;
-  @State query: string = '';
-  @State tab: number = 0;
+  // 下载列表和应用榜按 query 过滤，query 变了要同步它们的数据源（见 syncQueryFilteredData）。
+  @State @Watch('syncQueryFilteredData') query: string = '';
+  @State @Watch('syncTabFilteredData') tab: number = 0;
   @State searchFocused: boolean = false;
   @State searchPending: boolean = false;
   @State clearPressed: boolean = false;
@@ -161,9 +169,10 @@ export struct GlobalSearchPage {
   @State closingSearch: boolean = false;
   @State searchHeaderVisible: boolean = false;
   @State resultOpeningKey: string = '';
-  @State topUsers: SearchRow[] = [];
-  @State recent: SearchRow[] = [];
-  @State recentlyOpened: SearchRow[] = [];
+  @State @Watch('syncTopUsersData') topUsers: SearchRow[] = [];
+  // 「最近打开」要剔掉已在「最近搜索」里的会话，所以 recent 变了两块都要同步（见 syncRecentData）。
+  @State @Watch('syncRecentData') recent: SearchRow[] = [];
+  @State @Watch('syncRecentlyOpenedData') recentlyOpened: SearchRow[] = [];
   @State topLoaded: boolean = false;
   @State recentLoaded: boolean = false;
   @State openedLoaded: boolean = false;
@@ -171,12 +180,12 @@ export struct GlobalSearchPage {
   @State recentFailed: boolean = false;
   @State openedFailed: boolean = false;
   @State clearingRecent: boolean = false;
-  @State chatResults: SearchRow[] = [];
+  @State @Watch('syncChatResultsData') chatResults: SearchRow[] = [];
   @State chatSearching: boolean = false;
   @State chatSearchFailed: boolean = false;
-  @State joinedChannels: SearchRow[] = [];
-  @State similarChannels: SearchRow[] = [];
-  @State apps: SearchRow[] = [];
+  @State @Watch('syncJoinedChannelsData') joinedChannels: SearchRow[] = [];
+  @State @Watch('syncSimilarChannelsData') similarChannels: SearchRow[] = [];
+  @State @Watch('syncAppsData') apps: SearchRow[] = [];
   @State joinedLoaded: boolean = false;
   @State similarLoaded: boolean = false;
   @State appsLoaded: boolean = false;
@@ -184,7 +193,7 @@ export struct GlobalSearchPage {
   @State similarFailed: boolean = false;
   @State appsFailed: boolean = false;
   // 帖子 (message) search state.
-  @State items: FoundItem[] = [];
+  @State @Watch('syncFoundItemsData') items: FoundItem[] = [];
   @State loading: boolean = false;
   @State pagingBusy: boolean = false;
   @State messageError: string = '';
@@ -215,6 +224,19 @@ export struct GlobalSearchPage {
   private tabViewW: number = 0;
   private tabScroller: Scroller = new Scroller();
   private controller: TabsController = new TabsController();
+  // 结果列表的 LazyForEach 数据源（见 syncXxxData）。Tabs 里各 tab 的容器同时活着，同一份
+  // 数据被两个容器用到时各开一个：key 格式不同，诊断 key 表（util/keyGuard）不能共用。
+  private joinedChannelsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-joined');
+  private similarChannelsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-similar');
+  private combinedChatsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-chats');
+  private messageItemsData: KeyedListDataSource<FoundItem> = new KeyedListDataSource<FoundItem>('gs-messages');
+  private combinedMessagesData: KeyedListDataSource<FoundItem> = new KeyedListDataSource<FoundItem>('gs-combined-messages');
+  private mediaItemsData: KeyedListDataSource<FoundItem> = new KeyedListDataSource<FoundItem>('gs-media');
+  private topUsersData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-top');
+  private recentData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-recent');
+  private recentlyOpenedData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-opened');
+  private appsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-apps');
+  private combinedAppsData: KeyedListDataSource<SearchRow> = new KeyedListDataSource<SearchRow>('gs-combined-apps');
 
   @Styles
   tabNormalStyle() {
@@ -325,10 +347,6 @@ export struct GlobalSearchPage {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 200), curve: Curve.EaseOut
     }, () => { this.moveIndicatorTo(index); });
     this.ensureTabVisible(index);
-    if (index === TAB_DOWNLOADS) {
-      this.loadDownloads();
-      this.loadActiveDownloads();
-    }
     this.runSearch();
   }
 
@@ -391,7 +409,6 @@ export struct GlobalSearchPage {
   }
 
   aboutToDisappear(): void {
-    if (this.unsubFile !== null) { this.unsubFile(); this.unsubFile = null; }
     if (this.debounceTimer !== -1) { clearTimeout(this.debounceTimer); this.debounceTimer = -1; }
     if (this.searchHeaderTimer !== -1) {
       clearTimeout(this.searchHeaderTimer);
@@ -519,9 +536,6 @@ export struct GlobalSearchPage {
   }
 
   private searchPlaceholder(): string {
-    if (this.tab === TAB_DOWNLOADS) {
-      return str('gs_search_downloads');
-    }
     if (this.tab === TAB_MEDIA) {
       return str('gs_search_media');
     }
@@ -548,237 +562,6 @@ export struct GlobalSearchPage {
       return this.chatSearching || this.loading;
     }
     return this.loading;
-  }
-
-  @State downloads: DownloadItem[] = [];      // completed, from the filesystem scan
-  @State activeDownloads: DownloadItem[] = []; // in-flight, from TDLib's download manager
-  @State downloadsLoaded: boolean = false;
-  @State downloadsScanning: boolean = false;
-  @State downloadCounts: DownloadCounts = emptyDownloadCounts();
-  @State downloadActionBusy: boolean = false;
-  // 待确认移除的条目：!== null 时弹确认框，同时决定"是否删除本地文件"的默认值。
-  @State pendingRemoval: DownloadItem | null = null;
-  // 应用内预览的目标。图片走 AvatarViewer（同一套缩放/拖动/下滑关闭），
-  // 视频走 LocalVideoPlayer；文档类没有通用渲染器，仍交给系统应用。
-  @State previewItem: DownloadItem | null = null;
-  @State previewTapX: number = 0;
-  @State previewTapY: number = 0;
-  @State removeAlsoDeletesFile: boolean = false;
-  @State removeSheetShown: boolean = false;
-  private unsubFile: (() => void) | null = null;
-
-  // Active (in-progress) downloads from TDLib's download manager. Fetched on
-  // every 下载 tab visit; progress rows update live via updateFile.
-  private loadActiveDownloads(): void {
-    const query: DownloadQuery = defaultDownloadQuery();
-    query.onlyActive = true;
-    searchDownloads(getTdClient(), query).then((page: DownloadPage) => {
-      const fresh: DownloadItem[] = [];
-      for (const entry of page.entries) {
-        fresh.push({
-          path: '', name: this.downloadEntryName(entry), kind: 'file',
-          sizeLabel: '', mtime: entry.addDate * 1000,
-          dateLabel: '', fileId: entry.fileId, progress: 0,
-          isPaused: entry.isPaused, preview: entry.preview,
-          chatId: entry.chatId, messageId: entry.messageId
-        });
-        this.refreshFileProgress(entry.fileId);
-      }
-      this.activeDownloads = fresh;
-      this.downloadCounts = page.counts;
-      if (this.unsubFile === null && fresh.length > 0) {
-        this.unsubFile = getTdClient().onUpdate('updateFile', (u: TdObject) => {
-          const f = u['file'] as TdObject | undefined;
-          if (f !== undefined) {
-            this.applyDownloadFile(f);
-          }
-        });
-      }
-    }).catch((e: Object) => {
-      logE(`GlobalSearchPage.searchFileDownloads failed: ${downloadErrorMessage(str('gs_action_load_downloads'), e)}`);
-      promptAction.showToast({ message: downloadErrorMessage(str('gs_action_load_downloads'), e), duration: 1800 });
-    });
-  }
-
-  // 下载项的显示名：优先取消息里的原始文件名，退回消息摘要。
-  private downloadEntryName(entry: DownloadEntry): string {
-    if (entry.fileName !== '') {
-      return entry.fileName;
-    }
-    return entry.preview !== '' ? entry.preview : str('gs_media_file');
-  }
-
-  // 所有进行中的条目都已暂停时，顶部按钮切换成"全部继续"。
-  private allDownloadsPaused(): boolean {
-    return this.downloadCounts.activeCount === 0 && this.downloadCounts.pausedCount > 0;
-  }
-
-  private async toggleOneDownload(item: DownloadItem): Promise<void> {
-    if (item.fileId === 0 || this.downloadActionBusy) {
-      return;
-    }
-    this.downloadActionBusy = true;
-    const next = !item.isPaused;
-    try {
-      await setDownloadPaused(getTdClient(), item.fileId, next);
-      // 乐观更新只为消除按钮延迟，权威状态仍以随后的列表刷新为准。
-      this.activeDownloads = this.activeDownloads.map((it: DownloadItem): DownloadItem =>
-        it.fileId === item.fileId ? this.withPaused(it, next) : it);
-      this.reloadDownloadState();
-    } catch (e) {
-      promptAction.showToast({ message: downloadErrorMessage(next ? str('gs_action_pause') : str('gs_action_resume'), e), duration: 1800 });
-    }
-    this.downloadActionBusy = false;
-  }
-
-  private withPaused(item: DownloadItem, paused: boolean): DownloadItem {
-    return {
-      path: item.path, name: item.name, kind: item.kind, sizeLabel: item.sizeLabel,
-      mtime: item.mtime, dateLabel: item.dateLabel, fileId: item.fileId,
-      progress: item.progress, isPaused: paused, preview: item.preview,
-      chatId: item.chatId, messageId: item.messageId
-    };
-  }
-
-  private async toggleAllDownloads(): Promise<void> {
-    if (this.downloadActionBusy) {
-      return;
-    }
-    this.downloadActionBusy = true;
-    const pauseAll = !this.allDownloadsPaused();
-    try {
-      await setAllDownloadsPaused(getTdClient(), pauseAll);
-      this.reloadDownloadState();
-    } catch (e) {
-      promptAction.showToast({
-        message: downloadErrorMessage(pauseAll ? str('gs_action_pause_all') : str('gs_action_resume_all'), e), duration: 1800
-      });
-    }
-    this.downloadActionBusy = false;
-  }
-
-  private async confirmRemoveDownload(item: DownloadItem, deleteFromCache: boolean): Promise<void> {
-    if (item.fileId === 0) {
-      return;
-    }
-    try {
-      await removeDownload(getTdClient(), item.fileId, deleteFromCache);
-      this.activeDownloads = this.activeDownloads.filter((it: DownloadItem) => it.fileId !== item.fileId);
-      // 删除了本地文件时磁盘扫描结果也过期了，强制重扫。
-      if (deleteFromCache) {
-        this.downloadsLoaded = false;
-        this.loadDownloads();
-      }
-      this.reloadDownloadState();
-    } catch (e) {
-      promptAction.showToast({ message: downloadErrorMessage(str('gs_action_remove'), e), duration: 1800 });
-    }
-  }
-
-  // 任何写操作之后重新拉一次列表，让计数与暂停态回到服务端权威值。
-  private reloadDownloadState(): void {
-    this.loadActiveDownloads();
-  }
-
-  private refreshFileProgress(fileId: number): void {
-    const req: TdRequest = { '@type': 'getFile' };
-    req['file_id'] = fileId;
-    getTdClient().send(req).then((f: TdObject) => { this.applyDownloadFile(f); })
-      .catch((e: TdError) => { logE(`GlobalSearchPage.getFile failed: ${e.message}`); });
-  }
-
-  private applyDownloadFile(file: TdObject): void {
-    const id = (file['id'] as number | undefined) ?? 0;
-    if (id === 0 || this.activeDownloads.findIndex((it: DownloadItem) => it.fileId === id) < 0) {
-      return;
-    }
-    const local = file['local'] as TdObject | undefined;
-    const done = local !== undefined ? ((local['is_downloading_completed'] as boolean | undefined) ?? false) : false;
-    const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
-    const got = local !== undefined ? ((local['downloaded_size'] as number | undefined) ?? 0) : 0;
-    const total = (file['expected_size'] as number | undefined) ?? ((file['size'] as number | undefined) ?? 0);
-    const progress = done ? 100 : (total > 0 ? Math.min(99, Math.floor(got * 100 / total)) : 0);
-    this.activeDownloads = this.activeDownloads.map((it: DownloadItem): DownloadItem => it.fileId === id
-      ? {
-        path: done ? path : it.path, name: it.name, kind: it.kind,
-        sizeLabel: total > 0 ? formatFileSize(total) : it.sizeLabel,
-        mtime: it.mtime, dateLabel: done ? str('gs_just_now') : it.dateLabel,
-        fileId: it.fileId, progress, isPaused: it.isPaused, preview: it.preview,
-        chatId: it.chatId, messageId: it.messageId
-      } : it);
-  }
-
-  // Scan TDLib's download directories for media/files already on disk,
-  // newest first. Small photos are skipped (auto-downloaded thumbnails).
-  // 扫描本身跑在 TaskPool 里 —— 见 util/downloadedFileScan.ets 的说明，同步扫
-  // 会因为文件数量把主线程卡到被系统杀掉。
-  private loadDownloads(): void {
-    if (this.downloadsLoaded) {
-      return;
-    }
-    this.downloadsLoaded = true;
-    this.downloadsScanning = true;
-    scanDownloadedFiles(getTdFilesDirectory(), MIN_PHOTO_BYTES, MAX_DOWNLOAD_ITEMS)
-      .then((found: ScannedFile[]): void => {
-        this.downloads = found.map((f: ScannedFile): DownloadItem => {
-          return {
-            path: f.path, name: f.name, kind: f.kind,
-            sizeLabel: formatFileSize(f.size),
-            mtime: f.mtimeSec * 1000,
-            dateLabel: this.downloadDate(f.mtimeSec),
-            fileId: 0, progress: 100, isPaused: false, preview: '',
-            chatId: 0, messageId: 0
-          };
-        });
-        this.downloadsScanning = false;
-      })
-      .catch((e: Object): void => {
-        logE(`GlobalSearchPage.scanDownloadedFiles failed: ${JSON.stringify(e)}`);
-        this.downloadsScanning = false;
-        // 允许下次进入 tab 时重试，否则一次失败会让列表永久空白。
-        this.downloadsLoaded = false;
-      });
-  }
-
-  private downloadDate(sec: number): string {
-    const d = new Date(sec * 1000);
-    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-  }
-
-  // 图片/视频在应用内看，其余（文档、压缩包……）没有通用渲染器，交给系统应用。
-  private openDownloadItem(it: DownloadItem): void {
-    if (it.progress < 100 || it.path === '') {
-      return;
-    }
-    if (it.kind === 'photo' || it.kind === 'video') {
-      this.previewItem = it;
-      return;
-    }
-    openLocalFile(getContext(this) as common.UIAbilityContext, it.path, '');
-  }
-
-  private canLocateDownload(it: DownloadItem): boolean {
-    return it.chatId !== 0 && it.messageId !== 0;
-  }
-
-  // 和 openChat / openApp / openResult 一样先过防连点闸门。这一处的目标也是
-  // 一条具体消息，所以 key 与 openResult 同格式——同一条消息无论从哪个 tab
-  // 点进去都是同一把闸。
-  //
-  // 这里本来没有闸门：它是长按菜单里的 MenuItem，菜单点一次就关，"连点两次"
-  // 看着不可能。但那条安全网押的是"两次点击是两个宏任务、中间微任务队列必然
-  // 排空"这个隐含前提——openChatAndClose 里的 router.back() 挂在 navigateToChat
-  // 的 then 上，双 back 会把下面的页面一起弹掉。不把正确性押在事件循环时序上。
-  private locateDownloadMessage(it: DownloadItem): void {
-    if (!this.canLocateDownload(it)) {
-      return;
-    }
-    const openingKey = `message:${it.chatId}:${it.messageId}`;
-    if (!this.beginResultOpening(openingKey)) {
-      return;
-    }
-    const params: Record<string, Object> = { 'chatId': it.chatId, 'jumpTo': it.messageId };
-    this.openChatAndClose(params);
   }
 
   // Rows the current tab actually shows: the 频道 tab keeps only messages from
@@ -897,9 +680,6 @@ export struct GlobalSearchPage {
       }
     } else if (this.isFilterTab()) {
       this.searchMessages('');
-    } else if (this.tab === TAB_DOWNLOADS) {
-      // Filtered client-side — nothing to fetch.
-      this.cancelInFlight();
     } else {
       // 聊天/频道/应用: matched objects on top + a 消息 section below.
       if (this.tab !== TAB_APPS && this.store !== null) {
@@ -1724,48 +1504,32 @@ export struct GlobalSearchPage {
       .width('100%')
       .padding({ left: 14, right: 14, top: 12, bottom: 4 });
 
-      Scroll() {
-        Row({ space: 4 }) {
-          ForEach(this.resolvedTopUsers(), (row: SearchRow) => {
-            Column({ space: 6 }) {
-              Stack({ alignContent: Alignment.Center }) {
-                AvatarView({
-                  avatarPath: row.avatarPath,
-                  initials: row.initials,
-                  colorSeed: row.chatId,
-                  avatarSize: 58,
-                  savedMessages: this.store !== null && row.chatId === this.store.selfChatId()
-                });
-                if (this.resultOpeningKey === `chat:${row.chatId}`) {
-                  Circle({ width: 58, height: 58 }).fill('#66000000');
-                  LoadingProgress().width(20).height(20).color(Color.White);
-                }
-              }
-              Text(row.title)
-                .fontSize(13)
-                .fontColor(COLOR_TEXT_PRIMARY)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width(68)
-                .textAlign(TextAlign.Center);
-            }
-            .width(78)
-            .height(92)
-            .padding({ top: 6 })
-            .borderRadius(14)
-            .stateStyles({
-              normal: this.landingActionNormalStyle,
-              pressed: this.landingActionPressedStyle
-            })
-            .accessibilityText(str('gs_frequent_a11y', row.title))
-            .onClick((): void => { this.openChat(row.chatId); });
-          }, (row: SearchRow) => `top_${row.chatId}_${row.title}_${row.avatarPath}`);
-        }
-        .padding({ left: 8, right: 8, bottom: 8 });
+      // 横向 List + LazyForEach + 复用格（SearchFrequentCell）；点击和按压态挂在 ListItem 上。
+      List({ space: 4 }) {
+        LazyForEach(this.topUsersData, (row: SearchRow) => {
+          ListItem() {
+            SearchFrequentCell({
+              chatId: row.chatId, title: row.title, avatarPath: row.avatarPath, initials: row.initials,
+              savedMessages: this.isSavedMessagesChat(row.chatId),
+              opening: this.resultOpeningKey === `chat:${row.chatId}`
+            });
+          }
+          .borderRadius(14)
+          .stateStyles({
+            normal: this.landingActionNormalStyle,
+            pressed: this.landingActionPressedStyle
+          })
+          .accessibilityText(str('gs_frequent_a11y', row.title))
+          .onClick((): void => { this.openChat(row.chatId); });
+        }, (row: SearchRow, index: number): string =>
+          guardKey(this.topUsersData.keyTableId, index, frequentCellKey(row)));
       }
-      .scrollable(ScrollDirection.Horizontal)
+      .listDirection(Axis.Horizontal)
+      // 高 100 = 格高 92 + 原来横排下边距 8；左右 8 原来是横排的内边距，现在是内容偏移。
+      .width('100%').height(100)
+      .contentStartOffset(8).contentEndOffset(8)
       .scrollBar(BarState.Off)
-      .width('100%');
+      .cachedCount(4);
     }
     .width('calc(100% - 20vp)')
     .margin({ left: 10, right: 10, top: 8 })
@@ -1780,8 +1544,9 @@ export struct GlobalSearchPage {
       }));
   }
 
+  // 卡片标题（含下面那条分隔线）放在 ListItemGroup 的 header 里；组的 divider 只画在行与行之间。
   @Builder
-  recentSection() {
+  recentHeader() {
     Column() {
       Row() {
         Row({ space: 6 }) {
@@ -1825,15 +1590,27 @@ export struct GlobalSearchPage {
         .color($r('app.color.divider'))
         .strokeWidth(0.7)
         .margin({ left: 14 });
-
-      Column() {
-        ForEach(this.resolvedRecent(), (row: SearchRow, index: number) => {
-          this.chatRow(row, index > 0);
-        }, (row: SearchRow) =>
-          `recent_${row.chatId}_${row.title}_${row.subtitle}_${row.avatarPath}`);
-      }
-      .width('100%');
     }
+    .width('100%');
+  }
+
+  @Builder
+  recentSection() {
+    ListItemGroup({ header: this.recentHeader() }) {
+      LazyForEach(this.recentData, (r: SearchRow) => {
+        ListItem() {
+          SearchChatRow({
+            chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+            initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
+            opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
+          });
+        }
+        .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`)
+        .onClick(() => { this.openChat(r.chatId); });
+      }, (r: SearchRow, index: number): string =>
+        guardKey(this.recentData.keyTableId, index, searchRowKey(r)));
+    }
+    .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
     .width('calc(100% - 20vp)')
     .margin({ left: 10, right: 10, top: 10, bottom: 10 })
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
@@ -1848,7 +1625,7 @@ export struct GlobalSearchPage {
   }
 
   @Builder
-  recentlyOpenedSection() {
+  recentlyOpenedHeader() {
     Column() {
       Row({ space: 6 }) {
         SymbolGlyph($r('sys.symbol.clock'))
@@ -1867,15 +1644,27 @@ export struct GlobalSearchPage {
         .color($r('app.color.divider'))
         .strokeWidth(0.7)
         .margin({ left: 14 });
-
-      Column() {
-        ForEach(this.resolvedRecentlyOpened(), (row: SearchRow, index: number) => {
-          this.chatRow(row, index > 0);
-        }, (row: SearchRow) =>
-          `opened_${row.chatId}_${row.title}_${row.subtitle}_${row.avatarPath}`);
-      }
-      .width('100%');
     }
+    .width('100%');
+  }
+
+  @Builder
+  recentlyOpenedSection() {
+    ListItemGroup({ header: this.recentlyOpenedHeader() }) {
+      LazyForEach(this.recentlyOpenedData, (r: SearchRow) => {
+        ListItem() {
+          SearchChatRow({
+            chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+            initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
+            opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
+          });
+        }
+        .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`)
+        .onClick(() => { this.openChat(r.chatId); });
+      }, (r: SearchRow, index: number): string =>
+        guardKey(this.recentlyOpenedData.keyTableId, index, searchRowKey(r)));
+    }
+    .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
     .width('calc(100% - 20vp)')
     .margin({ left: 10, right: 10, top: 10, bottom: 10 })
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
@@ -1988,21 +1777,25 @@ export struct GlobalSearchPage {
 
   // Empty-query landing: frequent contacts, recently searched chats and a
   // useful first-run state once both sources have settled.
+  // 整页一个 List：常用联系人一项、两张会话卡各一组，行走 LazyForEach + 复用行——原来是
+  // Scroll 里的 ForEach，每次点开搜索都把几十行一次建完。
   @Builder
   landing() {
-    Scroll() {
-      Column() {
-        if (this.resolvedTopUsers().length > 0) {
+    List() {
+      if (this.resolvedTopUsers().length > 0) {
+        ListItem() {
           this.frequentSection();
         }
-        if (this.resolvedRecent().length > 0) {
-          this.recentSection();
-        }
-        if (this.resolvedRecentlyOpened().length > 0) {
-          this.recentlyOpenedSection();
-        }
-        if (this.resolvedTopUsers().length === 0 && this.resolvedRecent().length === 0 &&
-          this.resolvedRecentlyOpened().length === 0) {
+      }
+      if (this.resolvedRecent().length > 0) {
+        this.recentSection();
+      }
+      if (this.resolvedRecentlyOpened().length > 0) {
+        this.recentlyOpenedSection();
+      }
+      if (this.resolvedTopUsers().length === 0 && this.resolvedRecent().length === 0 &&
+        this.resolvedRecentlyOpened().length === 0) {
+        ListItem() {
           if (this.landingResolving()) {
             this.landingLoadingState();
           } else if (this.landingFailed()) {
@@ -2012,14 +1805,14 @@ export struct GlobalSearchPage {
           }
         }
       }
-      .width('100%')
-      .padding({ bottom: 8 });
     }
     .layoutWeight(1)
     .width('100%')
-    .align(Alignment.Top)
     .edgeEffect(EdgeEffect.Spring)
-    .scrollBar(BarState.Off);
+    .scrollBar(BarState.Off)
+    .cachedCount(4)
+    // 底部留白原来是内容列的 padding（随内容滚动），在 List 上对应 contentEndOffset。
+    .contentEndOffset(8);
   }
 
   @Builder
@@ -2134,27 +1927,56 @@ export struct GlobalSearchPage {
   }
 
   // 频道 tab landing: joined channels + server-recommended channels.
+  // 两组各是「标题项 + ListItemGroup」，行走 LazyForEach + 复用行（SearchChatRow）。分隔线交给
+  // 组的 divider：原来按 idx > 0 在行内画，LazyForEach 下删掉首行后，新的首行沿用旧节点，
+  // 顶上会多一条线。点击和无障碍文本挂在 ListItem 上，闭包随行 key 重建。
   @Builder
   channelsLanding() {
-    Scroll() {
-      Column() {
-        if (this.joinedChannels.length > 0) {
+    List() {
+      if (this.joinedChannels.length > 0) {
+        ListItem() {
           this.sectionHeader(str('gs_joined_channels'));
-          Column() {
-            ForEach(this.joinedChannels, (r: SearchRow, idx: number) => {
-              this.chatRow(r, idx > 0);
-            }, (r: SearchRow) => `jc_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
         }
-        if (this.similarChannels.length > 0) {
+        ListItemGroup() {
+          LazyForEach(this.joinedChannelsData, (r: SearchRow) => {
+            ListItem() {
+              SearchChatRow({
+                chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+                initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
+                opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
+              });
+            }
+            .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`)
+            .onClick(() => { this.openChat(r.chatId); });
+          }, (r: SearchRow, index: number): string =>
+            guardKey(this.joinedChannelsData.keyTableId, index, searchRowKey(r)));
+        }
+        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
+        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+      }
+      if (this.similarChannels.length > 0) {
+        ListItem() {
           this.sectionHeader(str('gs_similar_channels'));
-          Column() {
-            ForEach(this.similarChannels, (r: SearchRow, idx: number) => {
-              this.chatRow(r, idx > 0);
-            }, (r: SearchRow) => `sc_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
         }
-        if (this.joinedChannels.length === 0 && this.similarChannels.length === 0) {
+        ListItemGroup() {
+          LazyForEach(this.similarChannelsData, (r: SearchRow) => {
+            ListItem() {
+              SearchChatRow({
+                chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+                initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
+                opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
+              });
+            }
+            .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`)
+            .onClick(() => { this.openChat(r.chatId); });
+          }, (r: SearchRow, index: number): string =>
+            guardKey(this.similarChannelsData.keyTableId, index, searchRowKey(r)));
+        }
+        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
+        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+      }
+      if (this.joinedChannels.length === 0 && this.similarChannels.length === 0) {
+        ListItem() {
           if (!this.joinedLoaded || !this.similarLoaded) {
             this.catalogLoadingState(str('gs_loading_channels'));
           } else if (this.joinedFailed || this.similarFailed) {
@@ -2167,70 +1989,40 @@ export struct GlobalSearchPage {
             );
           }
         }
-      }.width('100%');
+      }
     }
     .layoutWeight(1).width('100%')
-    .align(Alignment.Top)
     .edgeEffect(EdgeEffect.Spring)
-    .scrollBar(BarState.Off);
-  }
-
-  @Builder
-  appRow(r: SearchRow, showDivider: boolean) {
-    Column() {
-      if (showDivider) {
-        Divider().color($r('app.color.divider')).strokeWidth(0.7)
-          .margin({ left: SEARCH_RESULT_DIVIDER_INSET });
-      }
-      Row({ space: 12 }) {
-        AvatarView({ avatarPath: r.avatarPath, initials: r.initials, colorSeed: r.userId, avatarSize: 48 });
-        Column({ space: 3 }) {
-          Text(r.title !== '' ? r.title : '…')
-            .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-          if (r.subtitle !== '') {
-            Text(r.subtitle).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-          }
-        }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-        Row() {
-          if (this.resultOpeningKey === `app:${r.userId}`) {
-            LoadingProgress().width(16).height(16).color(Color.White);
-          } else {
-            Text($r('app.string.open')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY);
-          }
-        }
-        .width(58).height(30)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor(COLOR_PRIMARY)
-        .borderRadius(15);
-      }
-      .width('100%')
-      .constraintSize({ minHeight: 64 })
-      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-      .alignItems(VerticalAlign.Center)
-      .stateStyles({
-        normal: this.resultRowNormalStyle,
-        pressed: this.resultRowPressedStyle
-      })
-      .accessibilityText(str('gs_open_a11y', r.title, r.subtitle !== '' ? str('gs_comma') + r.subtitle : ''))
-      .onClick(() => { this.openApp(r.userId); });
-    }
+    .scrollBar(BarState.Off)
+    .cachedCount(4);
   }
 
   // 应用 tab: top-grossing mini apps; a typed query filters by name.
+  // 标题一项、榜单一组（LazyForEach + 复用行 SearchAppRow），分隔线交给组的 divider。
   @Builder
   appsList() {
-    Scroll() {
-      Column() {
+    List() {
+      ListItem() {
         this.sectionHeader(str('gs_popular_apps'));
-        Column() {
-          ForEach(this.filteredAppResults(),
-            (r: SearchRow, idx: number) => {
-              this.appRow(r, idx > 0);
-            }, (r: SearchRow) => `app_${r.userId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-        }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
-        if (this.filteredAppResults().length === 0 && this.query.trim() === '') {
+      }
+      ListItemGroup() {
+        LazyForEach(this.appsData, (r: SearchRow) => {
+          ListItem() {
+            SearchAppRow({
+              userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+              initials: r.initials, opening: this.resultOpeningKey === `app:${r.userId}`,
+              wallpaperOn: this.appWallpaperOn
+            });
+          }
+          .accessibilityText(str('gs_open_a11y', r.title, r.subtitle !== '' ? str('gs_comma') + r.subtitle : ''))
+          .onClick(() => { this.openApp(r.userId); });
+        }, (r: SearchRow, index: number): string =>
+          guardKey(this.appsData.keyTableId, index, appRowKey(r)));
+      }
+      .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
+      .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+      if (this.filteredAppResults().length === 0 && this.query.trim() === '') {
+        ListItem() {
           if (!this.appsLoaded || this.apps.some((row: SearchRow) => row.title === '')) {
             this.catalogLoadingState(str('gs_loading_apps'));
           } else if (this.appsFailed) {
@@ -2243,130 +2035,12 @@ export struct GlobalSearchPage {
             );
           }
         }
-      }.width('100%');
+      }
     }
     .layoutWeight(1).width('100%')
-    .align(Alignment.Top)
     .edgeEffect(EdgeEffect.Spring)
-    .scrollBar(BarState.Off);
-  }
-
-  @Builder
-  downloadRow(it: DownloadItem, showDivider: boolean) {
-    Column() {
-      if (showDivider) {
-        Divider().color($r('app.color.divider')).strokeWidth(0.7)
-          .margin({ left: SEARCH_RESULT_DIVIDER_INSET });
-      }
-      Row({ space: 12 }) {
-        if (it.kind === 'photo') {
-          Image(`file://${it.path}`).draggable(false)
-            .width(48).height(48).borderRadius(8).objectFit(ImageFit.Cover);
-        } else {
-          Row() {
-            SymbolGlyph($r(it.kind === 'video' ? 'sys.symbol.play_fill' : 'sys.symbol.doc_text'))
-              .fontSize(20).fontColor([COLOR_ON_PRIMARY]);
-          }
-          .width(48).height(48).borderRadius(8).backgroundColor(COLOR_PRIMARY)
-          .justifyContent(FlexAlign.Center);
-        }
-        Column({ space: 3 }) {
-          Text(it.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-          if (it.progress < 100) {
-            Progress({ value: it.progress, total: 100, type: ProgressType.Linear })
-              .width('92%').height(4).color(it.isPaused ? COLOR_TEXT_SECONDARY : COLOR_PRIMARY);
-            Text(str('gs_download_state', it.sizeLabel !== '' ? it.sizeLabel + ' · ' : '', it.isPaused ? str('gs_paused') : str('gs_downloading'), it.progress))
-              .fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-          } else {
-            Text(`${it.sizeLabel}${it.dateLabel !== '' ? ' · ' + it.dateLabel : ''}`)
-              .fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-          }
-          if (it.preview !== '') {
-            Text(it.preview).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-          }
-        }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-        // 只有下载管理器登记过的条目才给操作按钮，避免对磁盘扫描项做无效调用。
-        if (it.fileId !== 0) {
-          if (it.progress < 100) {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r(it.isPaused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
-                .fontSize(18).fontColor([COLOR_PRIMARY]);
-            }
-            .width(34).height(34).backgroundColor(Color.Transparent)
-            .enabled(!this.downloadActionBusy)
-            .accessibilityText(it.isPaused ? $r('app.string.gs_resume_download') : $r('app.string.gs_pause_download'))
-            .onClick(() => { this.toggleOneDownload(it); });
-          }
-          Button({ type: ButtonType.Circle }) {
-            SymbolGlyph($r('sys.symbol.trash')).fontSize(18).fontColor([COLOR_ICON_SECONDARY]);
-          }
-          .width(34).height(34).backgroundColor(Color.Transparent)
-          .accessibilityText($r('app.string.gs_remove_download'))
-          .onClick(() => {
-            this.removeAlsoDeletesFile = false;
-            this.pendingRemoval = it;
-            this.removeSheetShown = true;
-          });
-        }
-      }
-      .width('100%').padding({ left: 14, right: 14, top: 8, bottom: 8 })
-      .alignItems(VerticalAlign.Center)
-      .stateStyles({
-        normal: this.resultRowNormalStyle,
-        pressed: this.resultRowPressedStyle
-      })
-      .accessibilityText(str('gs_download_a11y', it.name, it.progress < 100 ? str('gs_downloading') : it.sizeLabel))
-      .onClick((event: ClickEvent) => {
-        this.previewTapX = event.windowX;
-        this.previewTapY = event.windowY;
-        this.openDownloadItem(it);
-      })
-      .bindContextMenu(this.downloadRowMenu(it), ResponseType.LongPress, { systemMaterial: overlayMaterial('menu') });
-    }
-  }
-
-  @Builder
-  downloadRowMenu(it: DownloadItem) {
-    Menu() {
-      if (this.canLocateDownload(it)) {
-        MenuItem({ startIcon: $r('sys.symbol.arrow_up_left_and_arrow_down_right'), content: $r('app.string.gs_jump_to_message') })
-          .onClick((): void => { this.locateDownloadMessage(it); });
-      }
-      if (it.progress >= 100 && it.path !== '') {
-        MenuItem({ startIcon: $r('sys.symbol.arrow_right_and_square'), content: $r('app.string.gs_open_with') })
-          .onClick((): void => {
-            openLocalFile(getContext(this) as common.UIAbilityContext, it.path, '');
-          });
-      }
-      if (it.fileId !== 0) {
-        MenuItem({ startIcon: $r('sys.symbol.trash'), content: $r('app.string.gs_remove_download') })
-          .onClick((): void => {
-            this.removeAlsoDeletesFile = false;
-            this.pendingRemoval = it;
-            this.removeSheetShown = true;
-          });
-      }
-    }
-  }
-
-  // 下载 tab: everything TDLib has downloaded to disk, newest first; a typed
-  // query filters by file name.
-  // In-flight items (dedup'd against the completed scan by path) lead the
-  // list, then completed files, newest first.
-  private mergedDownloads(): DownloadItem[] {
-    const donePaths = new Set<string>();
-    const active = this.activeDownloads.filter((it: DownloadItem) => {
-      if (it.progress >= 100 && it.path !== '') {
-        donePaths.add(it.path);
-      }
-      return true;
-    });
-    const completed = this.downloads.filter((it: DownloadItem) => !donePaths.has(it.path));
-    const q = this.query.trim().toLowerCase();
-    return [...active, ...completed].filter((it: DownloadItem) =>
-      q === '' || it.name.toLowerCase().includes(q));
+    .scrollBar(BarState.Off)
+    .cachedCount(4);
   }
 
   private filteredChatResults(): SearchRow[] {
@@ -2380,101 +2054,80 @@ export struct GlobalSearchPage {
       row.title !== '' && (q === '' || row.title.toLowerCase().includes(q)));
   }
 
-  // 计数条：TDLib 的 downloadedFileCounts 是列表的权威统计，比客户端数组长度可靠。
-  @Builder
-  downloadCountsBar() {
-    Row({ space: 10 }) {
-      Column({ space: 2 }) {
-        Text(str('gs_active_n', this.downloadCounts.activeCount)).fontSize(13).fontColor(COLOR_TEXT_PRIMARY);
-        Text(str('gs_paused_completed', this.downloadCounts.pausedCount, this.downloadCounts.completedCount))
-          .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-      }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-      if (this.downloadCounts.activeCount + this.downloadCounts.pausedCount > 0) {
-        Button(this.allDownloadsPaused() ? $r('app.string.gs_action_resume_all') : $r('app.string.gs_action_pause_all'))
-          .fontSize(14).fontColor(COLOR_PRIMARY)
-          .backgroundColor(COLOR_TAB_PILL_BG)
-          .height(32).padding({ left: 14, right: 14 })
-          .enabled(!this.downloadActionBusy)
-          .onClick(() => { this.toggleAllDownloads(); });
-      }
-    }
-    .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
-    .alignItems(VerticalAlign.Center);
+  // —— 结果列表的 LazyForEach 数据源同步（@Watch 触发）——
+  private syncJoinedChannelsData(): void {
+    this.joinedChannelsData.update(this.joinedChannels,
+      this.joinedChannels.map((r: SearchRow): string => searchRowId(r)),
+      this.joinedChannels.map((r: SearchRow): string => searchRowKey(r)));
   }
 
-  @Builder
-  removeDownloadSheet() {
-    Column({ space: 14 }) {
-      Text($r('app.string.gs_remove_download')).fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
-      Text(this.pendingRemoval !== null ? this.pendingRemoval.name : '')
-        .fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
-        .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
-      Row({ space: 10 }) {
-        Checkbox().select(this.removeAlsoDeletesFile)
-          .onChange((checked: boolean) => { this.removeAlsoDeletesFile = checked; });
-        Text($r('app.string.gs_delete_local')).fontSize(14).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-      }.width('100%').alignItems(VerticalAlign.Center);
-      Row({ space: 12 }) {
-        Button($r('app.string.cancel')).fontSize(15).fontColor(COLOR_TEXT_SECONDARY)
-          .backgroundColor(COLOR_TAB_PILL_BG).layoutWeight(1).height(42)
-          .onClick(() => { this.removeSheetShown = false; });
-        Button($r('app.string.gs_action_remove')).fontSize(15).fontColor(COLOR_ON_PRIMARY)
-          .backgroundColor(COLOR_PRIMARY).layoutWeight(1).height(42)
-          .onClick(() => {
-            const target = this.pendingRemoval;
-            const deleteFile = this.removeAlsoDeletesFile;
-            this.removeSheetShown = false;
-            if (target !== null) {
-              this.confirmRemoveDownload(target, deleteFile);
-            }
-          });
-      }.width('100%');
-    }
-    .width('100%').padding(20).alignItems(HorizontalAlign.Start);
+  private syncSimilarChannelsData(): void {
+    this.similarChannelsData.update(this.similarChannels,
+      this.similarChannels.map((r: SearchRow): string => searchRowId(r)),
+      this.similarChannels.map((r: SearchRow): string => searchRowKey(r)));
   }
 
-  @Builder
-  downloadsList() {
-    Column() {
-      this.downloadCountsBar();
-      List() {
-        ForEach(this.mergedDownloads(), (it: DownloadItem, idx: number) => {
-          ListItem() {
-            this.downloadRow(it, idx > 0);
-          }.backgroundColor(mainCardFill(this.appWallpaperOn, false));
-        }, (it: DownloadItem) =>
-          `dl_${it.fileId}_${it.path}_${it.progress}_${it.isPaused}_${it.sizeLabel}_${it.dateLabel}`);
-        if (this.downloadsScanning && this.downloads.length === 0) {
-          ListItem() {
-            Column({ space: 10 }) {
-              LoadingProgress().width(32).height(32).color(COLOR_PRIMARY);
-              Text($r('app.string.gs_scanning')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
-            }
-            .width('100%').padding({ top: 48 });
-          }
-        } else if (this.downloads.length === 0 && this.activeDownloads.length === 0) {
-          ListItem() {
-            Text($r('app.string.gs_no_downloads')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
-              .width('100%').textAlign(TextAlign.Center).padding({ top: 48 });
-          }
-        }
-      }
-      .layoutWeight(1).width('100%')
-      .edgeEffect(EdgeEffect.Spring)
-      .scrollBar(BarState.Off);
-    }
-    .layoutWeight(1)
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
-    .borderRadius(20)
-    .clip(true)
-    .bindSheet($$this.removeSheetShown, this.removeDownloadSheet(), {
-      height: SheetSize.FIT_CONTENT,
-      backgroundColor: mainCardFill(this.appWallpaperOn, false),
-      onDisappear: () => { this.pendingRemoval = null; },
-      blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
-    });
+  // 会话名结果按 tab 过滤（频道 tab 只留频道）：chatResults 和 tab 变了都走这里。
+  private syncChatResultsData(): void {
+    const rows: SearchRow[] = this.filteredChatResults();
+    this.combinedChatsData.update(rows,
+      rows.map((r: SearchRow): string => searchRowId(r)),
+      rows.map((r: SearchRow): string => searchRowKey(r)));
+  }
+
+  // 消息结果同样按 tab 过滤（频道 tab 只留频道消息）：items 和 tab 变了都走这里。
+  private syncFoundItemsData(): void {
+    const rows: FoundItem[] = this.visibleItems();
+    const ids: string[] = rows.map((it: FoundItem): string => foundItemId(it));
+    const keys: string[] = rows.map((it: FoundItem): string => foundItemKey(it));
+    this.messageItemsData.update(rows, ids, keys);
+    this.combinedMessagesData.update(rows, ids, keys);
+    this.mediaItemsData.update(rows, ids, rows.map((it: FoundItem): string => mediaItemKey(it)));
+  }
+
+  private syncTabFilteredData(): void {
+    this.syncChatResultsData();
+    this.syncFoundItemsData();
+  }
+
+  private syncQueryFilteredData(): void {
+    this.syncAppsData();
+  }
+
+  // 应用榜按 query 过滤：应用 tab 和综合结果各一个容器。
+  private syncAppsData(): void {
+    const rows: SearchRow[] = this.filteredAppResults();
+    const ids: string[] = rows.map((r: SearchRow): string => appRowId(r));
+    const keys: string[] = rows.map((r: SearchRow): string => appRowKey(r));
+    this.appsData.update(rows, ids, keys);
+    this.combinedAppsData.update(rows, ids, keys);
+  }
+
+  // —— 搜索首页三块：常用联系人 / 最近搜索 / 最近打开 ——
+  private syncTopUsersData(): void {
+    const rows: SearchRow[] = this.resolvedTopUsers();
+    this.topUsersData.update(rows,
+      rows.map((r: SearchRow): string => searchRowId(r)),
+      rows.map((r: SearchRow): string => frequentCellKey(r)));
+  }
+
+  private syncRecentData(): void {
+    const rows: SearchRow[] = this.resolvedRecent();
+    this.recentData.update(rows,
+      rows.map((r: SearchRow): string => searchRowId(r)),
+      rows.map((r: SearchRow): string => searchRowKey(r)));
+    this.syncRecentlyOpenedData();
+  }
+
+  private syncRecentlyOpenedData(): void {
+    const rows: SearchRow[] = this.resolvedRecentlyOpened();
+    this.recentlyOpenedData.update(rows,
+      rows.map((r: SearchRow): string => searchRowId(r)),
+      rows.map((r: SearchRow): string => searchRowKey(r)));
+  }
+
+  private isSavedMessagesChat(chatId: number): boolean {
+    return this.store !== null && chatId === this.store.selfChatId();
   }
 
   @Builder
@@ -2766,39 +2419,23 @@ export struct GlobalSearchPage {
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
       .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20);
     } else {
       Grid() {
-        ForEach(this.visibleItems(), (it: FoundItem) => {
+        // LazyForEach + 复用格（SearchMediaCell）：翻页结果不设上限，原来 ForEach 一次全建。
+        // 点击和无障碍文本挂在 GridItem 上，闭包随格 key 重建。
+        LazyForEach(this.mediaItemsData, (it: FoundItem) => {
           GridItem() {
-            Stack({ alignContent: Alignment.BottomEnd }) {
-              if (it.thumbPath !== '') {
-                Image(`file://${it.thumbPath}`).draggable(false)
-                  .width('100%').height('100%').objectFit(ImageFit.Cover);
-              } else {
-                Column().width('100%').height('100%').backgroundColor(mainCardFill(this.appWallpaperOn, true));
-              }
-              if (it.isVideo) {
-                Row({ space: 3 }) {
-                  SymbolGlyph($r('sys.symbol.play_fill')).fontSize(10).fontColor([Color.White]);
-                  Text(it.duration).fontSize(11).fontColor(Color.White);
-                }
-                .backgroundColor('#00000066').borderRadius(8)
-                .padding({ left: 5, right: 5, top: 1, bottom: 1 })
-                .margin({ right: 4, bottom: 4 });
-              }
-            }
-            .width('100%').aspectRatio(1)
-            .clip(true)
-            .stateStyles({
-              normal: this.mediaResultNormalStyle,
-              pressed: this.mediaResultPressedStyle
-            })
-            .accessibilityText(str('gs_media_a11y', it.isVideo ? str('storage_video') : str('storage_photo'), it.chatTitle))
-            .onClick(() => { this.openResult(it); });
+            SearchMediaCell({
+              thumbPath: it.thumbPath, isVideo: it.isVideo, duration: it.duration,
+              wallpaperOn: this.appWallpaperOn
+            });
           }
-        }, (it: FoundItem) => `m_${it.chatId}_${it.messageId}_${it.chatTitle}_${it.thumbPath}`);
+          .accessibilityText(str('gs_media_a11y', it.isVideo ? str('storage_video') : str('storage_photo'), it.chatTitle))
+          .onClick(() => { this.openResult(it); });
+        }, (it: FoundItem, index: number): string =>
+          guardKey(this.mediaItemsData.keyTableId, index, mediaItemKey(it)));
         if (this.pagingBusy || this.pagingError ||
           (this.loadedPageCount > 1 && this.nextOffset === '')) {
           GridItem() {
@@ -2810,10 +2447,11 @@ export struct GlobalSearchPage {
       }
       .columnsTemplate('1fr 1fr 1fr')
       .columnsGap(2).rowsGap(2)
+      .cachedCount(2)
       .layoutWeight(1)
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true)
       .onReachEnd(() => {
@@ -2824,48 +2462,17 @@ export struct GlobalSearchPage {
     }
   }
 
-  @Builder
-  msgRow(it: FoundItem) {
-    Row({ space: 12 }) {
-      AvatarView({ avatarPath: it.avatarPath, initials: it.initials, colorSeed: it.chatId, avatarSize: 44 });
-      Column({ space: 3 }) {
-        Row() {
-          Text(it.chatTitle !== '' ? it.chatTitle : '...')
-            .fontSize(15).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1);
-          if (this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`) {
-            LoadingProgress().width(16).height(16).color(COLOR_PRIMARY);
-          } else {
-            Text(formatTime(it.date, this.nowSec)).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-          }
-        }.width('100%');
-        Text(it.preview).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
-    }
-    .width('100%')
-    .alignItems(VerticalAlign.Center)
-    .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-    .constraintSize({ minHeight: 66 })
-    .stateStyles({
-      normal: this.resultRowNormalStyle,
-      pressed: this.resultRowPressedStyle
-    })
-    .accessibilityText(`${it.chatTitle}，${it.preview}`)
-    .onClick(() => { this.openResult(it); });
-  }
-
   // 聊天/频道/应用 with a typed query: matched objects on top, hashtag public
   // posts (for #tags) above them, and a 消息 message-results section below —
   // Telegram's combined layout.
+  // 整张卡是一个 List：标题、内联状态、翻页脚各占一项；会话名结果和消息结果各是
+  // ListItemGroup + LazyForEach + 复用行，消息那段翻页不设上限，原来是 Scroll 里的
+  // ForEach 一次全建。分隔线交给组的 divider（理由同 channelsLanding）。
   @Builder
   combinedResults() {
-    Scroll() {
-      Column() {
-        if (this.visibleHashtagPosts().length > 0) {
+    List() {
+      if (this.visibleHashtagPosts().length > 0) {
+        ListItem() {
           Row() {
             Text($r('app.string.gs_public_posts')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_SECONDARY)
               .layoutWeight(1);
@@ -2875,83 +2482,134 @@ export struct GlobalSearchPage {
                 this.controller.changeIndex(TAB_POSTS);
               });
           }.width('100%').padding({ left: 16, right: 16, top: 10, bottom: 6 });
-          Column() {
-            ForEach(this.visibleHashtagPosts().slice(0, 3), (it: FoundItem, idx: number) => {
-              if (idx > 0) {
-                Divider().color($r('app.color.divider')).strokeWidth(0.7)
-                  .margin({ left: SEARCH_RESULT_DIVIDER_INSET });
-              }
-              this.msgRow(it);
-            }, (it: FoundItem) =>
-              `ht_${it.chatId}_${it.messageId}_${it.chatTitle}_${it.avatarPath}`);
-          }.width('100%');
         }
-        if (this.tab === TAB_APPS) {
-          if (this.filteredAppResults().length > 0) {
+        ListItemGroup() {
+          // 最多三条，ForEach 就够了。
+          ForEach(this.visibleHashtagPosts().slice(0, 3), (it: FoundItem) => {
+            ListItem() {
+              SearchMessageRow({
+                chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
+                preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
+                opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
+                wallpaperOn: this.appWallpaperOn
+              });
+            }
+            .accessibilityText(`${it.chatTitle}，${it.preview}`)
+            .onClick(() => { this.openResult(it); });
+          }, (it: FoundItem) =>
+            `ht_${it.chatId}_${it.messageId}_${it.chatTitle}_${it.avatarPath}`);
+        }
+        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET });
+      }
+      if (this.tab === TAB_APPS) {
+        if (this.filteredAppResults().length > 0) {
+          ListItem() {
             this.sectionHeader(str('gs_apps'));
           }
-          Column() {
-            ForEach(this.filteredAppResults(),
-              (r: SearchRow, idx: number) => {
-                this.appRow(r, idx > 0);
-              }, (r: SearchRow) => `capp_${r.userId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
-          if (this.filteredAppResults().length === 0 &&
-            (!this.appsLoaded || this.appsFailed ||
-              this.apps.some((row: SearchRow) => row.title === ''))) {
+        }
+        ListItemGroup() {
+          LazyForEach(this.combinedAppsData, (r: SearchRow) => {
+            ListItem() {
+              SearchAppRow({
+                userId: r.userId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+                initials: r.initials, opening: this.resultOpeningKey === `app:${r.userId}`,
+                wallpaperOn: this.appWallpaperOn
+              });
+            }
+            .accessibilityText(str('gs_open_a11y', r.title, r.subtitle !== '' ? str('gs_comma') + r.subtitle : ''))
+            .onClick(() => { this.openApp(r.userId); });
+          }, (r: SearchRow, index: number): string =>
+            guardKey(this.combinedAppsData.keyTableId, index, appRowKey(r)));
+        }
+        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
+        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+        if (this.filteredAppResults().length === 0 &&
+          (!this.appsLoaded || this.appsFailed ||
+            this.apps.some((row: SearchRow) => row.title === ''))) {
+          ListItem() {
             this.appSearchInlineState();
           }
-        } else {
-          if (this.filteredChatResults().length > 0) {
+        }
+      } else {
+        if (this.filteredChatResults().length > 0) {
+          ListItem() {
             this.sectionHeader(this.tab === TAB_CHANNELS ? str('gn_channel') : str('gs_chats_and_contacts'));
           }
-          Column() {
-            ForEach(this.filteredChatResults(),
-              (r: SearchRow, idx: number) => {
-                this.chatRow(r, idx > 0);
-              }, (r: SearchRow) => `cres_${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}`);
-          }.width('100%').backgroundColor(mainCardFill(this.appWallpaperOn, false));
-          if (this.filteredChatResults().length === 0 &&
-            (this.chatSearching || this.chatSearchFailed)) {
+        }
+        ListItemGroup() {
+          LazyForEach(this.combinedChatsData, (r: SearchRow) => {
+            ListItem() {
+              SearchChatRow({
+                chatId: r.chatId, title: r.title, subtitle: r.subtitle, avatarPath: r.avatarPath,
+                initials: r.initials, savedMessages: this.isSavedMessagesChat(r.chatId),
+                opening: this.resultOpeningKey === `chat:${r.chatId}`, wallpaperOn: this.appWallpaperOn
+              });
+            }
+            .accessibilityText(`${r.title}${r.subtitle !== '' ? '，' + r.subtitle : ''}`)
+            .onClick(() => { this.openChat(r.chatId); });
+          }, (r: SearchRow, index: number): string =>
+            guardKey(this.combinedChatsData.keyTableId, index, searchRowKey(r)));
+        }
+        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET })
+        .backgroundColor(mainCardFill(this.appWallpaperOn, false));
+        if (this.filteredChatResults().length === 0 &&
+          (this.chatSearching || this.chatSearchFailed)) {
+          ListItem() {
             this.chatSearchInlineState();
           }
         }
+      }
+      ListItem() {
         this.sectionHeader(str('cps_messages'));
-        if (this.messageError !== '') {
+      }
+      if (this.messageError !== '') {
+        ListItem() {
           this.messageErrorState(true);
-        } else if ((this.loading || this.resolvingMessageRows()) && this.visibleItems().length === 0) {
+        }
+      } else if ((this.loading || this.resolvingMessageRows()) && this.visibleItems().length === 0) {
+        ListItem() {
           this.messageLoadingState(true);
-        } else {
-          Column() {
-            ForEach(this.visibleItems(), (it: FoundItem, idx: number) => {
-              if (idx > 0) {
-                Divider().color($r('app.color.divider')).strokeWidth(0.7)
-                  .margin({ left: SEARCH_RESULT_DIVIDER_INSET });
-              }
-              this.msgRow(it);
-            }, (it: FoundItem) =>
-              `cm_${it.chatId}_${it.messageId}_${it.chatTitle}_${it.avatarPath}`);
-          }.width('100%');
-          if (this.visibleItems().length === 0 && this.searchedOnce && this.searchExhausted()) {
+        }
+      } else {
+        ListItemGroup() {
+          LazyForEach(this.combinedMessagesData, (it: FoundItem) => {
+            ListItem() {
+              SearchMessageRow({
+                chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
+                preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
+                opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
+                wallpaperOn: this.appWallpaperOn
+              });
+            }
+            .accessibilityText(`${it.chatTitle}，${it.preview}`)
+            .onClick(() => { this.openResult(it); });
+          }, (it: FoundItem, index: number): string =>
+            guardKey(this.combinedMessagesData.keyTableId, index, foundItemKey(it)));
+        }
+        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: SEARCH_RESULT_DIVIDER_INSET });
+        if (this.visibleItems().length === 0 && this.searchedOnce && this.searchExhausted()) {
+          ListItem() {
             Text($r('app.string.cp_no_messages_found')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
               .width('100%').textAlign(TextAlign.Center).padding(16);
           }
-          if (this.pagingBusy || this.pagingError ||
-            (this.loadedPageCount > 1 && this.nextOffset === '')) {
+        }
+        if (this.pagingBusy || this.pagingError ||
+          (this.loadedPageCount > 1 && this.nextOffset === '')) {
+          ListItem() {
             this.paginationFooter();
           }
         }
-      }.width('100%');
+      }
     }
     .layoutWeight(1)
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-    .align(Alignment.Top)
     .edgeEffect(EdgeEffect.Spring)
     .scrollBar(BarState.Off)
     .backgroundColor(mainCardFill(this.appWallpaperOn, false))
     .borderRadius(20)
     .clip(true)
+    .cachedCount(4)
     .onReachEnd(() => {
       if (this.nextOffset !== '' && !this.loading && !this.pagingError) {
         this.searchMessages(this.nextOffset);
@@ -3005,16 +2663,24 @@ export struct GlobalSearchPage {
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
       .justifyContent(FlexAlign.Center)
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20);
     } else {
       List() {
-        ForEach(this.visibleItems(), (it: FoundItem) => {
+        // LazyForEach + 复用行（SearchMessageRow）：翻页结果不设上限，原来 ForEach 一次全建。
+        LazyForEach(this.messageItemsData, (it: FoundItem) => {
           ListItem() {
-            this.msgRow(it);
+            SearchMessageRow({
+              chatId: it.chatId, chatTitle: it.chatTitle, avatarPath: it.avatarPath, initials: it.initials,
+              preview: it.preview, timeLabel: formatTime(it.date, this.nowSec),
+              opening: this.resultOpeningKey === `message:${it.chatId}:${it.messageId}`,
+              wallpaperOn: this.appWallpaperOn
+            });
           }
-        }, (it: FoundItem) =>
-          `${it.chatId}_${it.messageId}_${it.chatTitle}_${it.avatarPath}`);
+          .accessibilityText(`${it.chatTitle}，${it.preview}`)
+          .onClick(() => { this.openResult(it); });
+        }, (it: FoundItem, index: number): string =>
+          guardKey(this.messageItemsData.keyTableId, index, foundItemKey(it)));
         if (this.pagingBusy || this.pagingError ||
           (this.loadedPageCount > 1 && this.nextOffset === '')) {
           ListItem() {
@@ -3025,9 +2691,10 @@ export struct GlobalSearchPage {
       .layoutWeight(1)
       .width('calc(100% - 24vp)')
       .margin({ left: 12, right: 12, top: 12, bottom: 12 })
-    .backgroundColor(mainCardFill(this.appWallpaperOn, false))
+      .backgroundColor(mainCardFill(this.appWallpaperOn, false))
       .borderRadius(20)
       .clip(true)
+      .cachedCount(4)
       .divider({
         strokeWidth: 0.7,
         color: $r('app.color.divider'),
@@ -3046,9 +2713,7 @@ export struct GlobalSearchPage {
 
   @Builder
   tabBody(idx: number) {
-    if (idx === TAB_DOWNLOADS) {
-      this.downloadsList();
-    } else if (idx === TAB_APPS && this.query.trim() === '') {
+    if (idx === TAB_APPS && this.query.trim() === '') {
       this.appsList();
     } else if (idx === TAB_MEDIA) {
       this.mediaGrid();
@@ -3071,15 +2736,6 @@ export struct GlobalSearchPage {
     } else {
       this.combinedResults();
     }
-  }
-
-  // 预览是页内浮层而不是独立路由，返回键要先关它，否则会直接退出搜索页。
-  onBackPress(): boolean {
-    if (this.previewItem !== null) {
-      this.previewItem = null;
-      return true;
-    }
-    return false;
   }
 
   build() {
@@ -3161,34 +2817,9 @@ export struct GlobalSearchPage {
     .backgroundColor(mainPageFill(this.appWallpaperOn))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
 
-      if (this.previewItem !== null) {
-        this.downloadPreviewOverlay(this.previewItem!);
-      }
     }
     .width('100%').height('100%')
     .backgroundColor(mainPageFill(this.appWallpaperOn))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
-  }
-
-  @Builder
-  downloadPreviewOverlay(it: DownloadItem) {
-    Column() {
-      if (it.kind === 'video') {
-        LocalVideoPlayer({
-          videoPath: it.path,
-          title: it.name,
-          onClose: (): void => { this.previewItem = null; }
-        });
-      } else {
-        AvatarViewer({
-          imagePath: it.path,
-          originX: this.previewTapX,
-          originY: this.previewTapY,
-          onClose: (): void => { this.previewItem = null; }
-        });
-      }
-    }
-    .width('100%').height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 }

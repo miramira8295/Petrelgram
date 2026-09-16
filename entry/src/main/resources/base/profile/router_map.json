@@ -56,6 +56,16 @@
       "buildFunction": "LanguagePageBuilder"
     },
     {
+      "name": "DownloadCenterPage",
+      "pageSourceFile": "src/main/ets/pages/main/DownloadCenterPage.ets",
+      "buildFunction": "DownloadCenterPageBuilder"
+    },
+    {
+      "name": "DownloadPreviewPage",
+      "pageSourceFile": "src/main/ets/pages/main/DownloadPreviewPage.ets",
+      "buildFunction": "DownloadPreviewPageBuilder"
+    },
+    {
       "name": "InteractionSettingsPage",
       "pageSourceFile": "src/main/ets/pages/main/InteractionSettingsPage.ets",
       "buildFunction": "InteractionSettingsPageBuilder"

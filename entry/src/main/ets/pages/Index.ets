@@ -19,6 +19,9 @@ import { COLOR_TEXT_PRIMARY } from '../util/theme';
 import { refreshNetworkState } from '../services/NetworkStateService';
 import { logChatNavFailure, navigateToChat } from '../util/chatNav';
 import { getTdClient } from '../tdkit/Globals';
+import { resumeBackgroundCachesOnce } from '../services/BackgroundCache';
+import { DOWNLOAD_CENTER_DEST, KEY_PENDING_DOWNLOAD_CENTER } from '../util/downloadCenterWant';
+import { navigateToSetting } from '../util/settingsNav';
 import { TdObject } from '../tdkit/TdTypes';
 import { logE, logW } from '../util/log';
 import { StartupSplash } from './common/StartupSplash';
@@ -51,6 +54,8 @@ struct Index {
   // 同一次点击带来的目标消息（EntryAbility 在 chatId 之前写入），>0 时走 jumpTo 定位。
   @StorageLink('pendingNotifyMessageId') pendingNotifyMessageId: number = 0;
   @StorageLink('pendingNotifySlotId') pendingNotifySlotId: string = '';
+  // 后台缓存的通知栏点进来：打开「设置 › 下载中心」（util/downloadCenterWant）。
+  @StorageLink(KEY_PENDING_DOWNLOAD_CENTER) @Watch('onOpenDownloadCenter') pendingOpenDownloadCenter: number = 0;
   // 别的应用分享东西过来（EntryAbility 写入，登录就绪后消费）。epoch 是
   // 清零-再置位的触发器，chatId 是分享面板里已经选好的目标（0 = 还没选）。
   @StorageLink('pendingShareEpoch') @Watch('onShare') pendingShareEpoch: number = 0;
@@ -127,8 +132,11 @@ struct Index {
       this.consumeDeepLink();
       this.consumeNotifyChat();
       this.consumeShare();
+      this.consumeDownloadCenter();
       if (s === AuthStage.Ready) {
         this.hadReadySession = true;
+        // 续上上次没缓存完的后台缓存（services/BackgroundCache，每个进程只跑一次）。
+        resumeBackgroundCachesOnce(getContext(this) as common.UIAbilityContext);
       } else if (s === AuthStage.LoggedOut) {
         // 真退登：无条件抹掉磁盘上的名单。这里不能只靠"本进程写过"——
         // 退登后杀进程再开机分享，读到的会是上一个账号的联系人。
@@ -146,6 +154,18 @@ struct Index {
 
   private onNotifyChat(): void {
     this.consumeNotifyChat();
+  }
+
+  private onOpenDownloadCenter(): void {
+    this.consumeDownloadCenter();
+  }
+
+  private consumeDownloadCenter(): void {
+    if (this.stage !== AuthStage.Ready || this.pendingOpenDownloadCenter === 0) {
+      return;
+    }
+    this.pendingOpenDownloadCenter = 0;
+    navigateToSetting(DOWNLOAD_CENTER_DEST);
   }
 
   private onShare(): void {

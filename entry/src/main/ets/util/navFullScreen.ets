@@ -4,9 +4,14 @@
 // 自己。分栏（平板）模式下 ChatPage 只占右栏，于是「全屏」看图/看视频只铺满
 // 右栏，左边的会话列表还占着位置。
 //
-// **解法**：NavDestination.fullScreenOverlay(true) —— 官方语义就是「本页以全屏
-// 覆盖模式显示，盖住整个 navigation 容器」，正好跨过分栏。查看器一关就摘掉，
-// ChatPage 缩回右栏。
+// **历程**：
+//   1. 99633308：NavDestination.fullScreenOverlay(true)（API 26 起），低版本仍只占右栏；
+//   2. d53fa690：顶栏迁进 HdsNavDestination，它没有 fullScreenOverlay，改挂
+//      bindContentCover 全模态——**全模态里视频画面显示不出来**（issue #201：平板
+//      分栏看视频黑屏，取消分栏就能播）；
+//   3. 现在：查看器始终留在页面内。分栏下开着时发布 util/viewerWindowCover 的标志，
+//      ChatListPage 收左栏（Split + hideNavBar = 单栏）、MainScreen 收 dock / 侧边页签，
+//      右栏的 ChatPage 于是铺满窗口。
 //
 // 本文件只放纯判据，**不 import 任何 kit**：deviceInfo 是设备常量，宿主单测里
 // 读不到真值（和 diagLogHeader / tdDeviceParams 同一个理由）。真正去读版本号并
@@ -19,22 +24,17 @@ export function fullScreenOverlayWinsAt(apiVersion: number): boolean {
   return apiVersion >= FULL_SCREEN_OVERLAY_API;
 }
 
-// 单栏（手机）下 ChatPage 本来就占满窗口，查看器不需要这一手——恒返回 false，
-// 免得白挂一个属性、白走一次布局。
+// 分栏且查看器开着 → 要收左栏和 dock，让页面内的查看器盖满窗口。
+// 单栏（手机）下 ChatPage 本来就占满窗口，恒返回 false——手机上什么都不动。
 export function viewerFullScreenWanted(splitLayout: boolean, viewerOpen: boolean): boolean {
   return splitLayout && viewerOpen;
 }
 
-// 手机（单栏）下要不要主动把标题栏收起来。
+// 查看器开着就把标题栏收起来。
 //
-// **为什么突然需要这一条**：顶栏迁进 HdsNavDestination 的标题栏之前，它和查看器
-// 是同一个 Stack 的两个兄弟节点，查看器排在后面就画在上面，顺手把顶栏盖住了，
-// 从来不用显式隐藏。标题栏交给框架之后，它是**框架层、永远画在内容区之上**，
-// 而单栏路径的查看器还在内容区里——于是全屏看图时顶栏浮在图上不走。
-//
-// 分栏那条不受影响：它走 bindContentCover，模态本来就在标题栏之上，再收一次
-// 只会在关闭时多一次无谓的重新出现。所以这条判据是 viewerFullScreenWanted 的
-// **补集**，两者在查看器开着时恰好一真一假。
-export function viewerHidesTitleBar(splitLayout: boolean, viewerOpen: boolean): boolean {
-  return !splitLayout && viewerOpen;
+// 顶栏迁进 HdsNavDestination 的标题栏之后，它是**框架层、永远画在内容区之上**，
+// 而查看器在内容区里——不收的话全屏看图时顶栏浮在图上不走。单栏、分栏都一样：
+// 分栏原来走 bindContentCover（模态在标题栏之上）才不用收，现在两边都在页面内。
+export function viewerHidesTitleBar(viewerOpen: boolean): boolean {
+  return viewerOpen;
 }

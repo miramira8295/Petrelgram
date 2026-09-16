@@ -1,5 +1,6 @@
 // Small, page-agnostic coordination helpers for ChatPage's NavDestination
 // lifecycle. The page remains the owner of all state and side effects.
+import { logW } from './log';
 
 export interface ChatPageHiddenHooks {
   stopScrollActivity: () => void;
@@ -14,6 +15,8 @@ export interface ChatPageHiddenHooks {
 }
 
 export function coordinateChatPageHidden(hooks: ChatPageHiddenHooks): void {
+  // #201：分栏查看器走全模态，得知道它会不会把会话页的隐藏/显示生命周期带出来。
+  logW('[PageLife] hidden');
   hooks.stopScrollActivity();
   hooks.endLinkNavigation();
   hooks.cancelInitialTransition();
@@ -36,6 +39,7 @@ export interface ChatPageWillHideHooks {
 }
 
 export function coordinateChatPageWillHide(hooks: ChatPageWillHideHooks): void {
+  logW('[PageLife] willHide');
   hooks.stopScrollActivity();
   hooks.cancelInitialTransition();
   hooks.setPageVisible(false);
@@ -69,6 +73,7 @@ export interface ChatPageShownHooks {
 export function coordinateChatPageShown(
   state: ChatPageShownState, hooks: ChatPageShownHooks
 ): void {
+  logW('[PageLife] shown');
   hooks.setPageVisible(true);
   hooks.armInitialTransitionSettle();
   hooks.scheduleInitialTimelinePresentation();

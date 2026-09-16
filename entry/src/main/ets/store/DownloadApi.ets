@@ -29,6 +29,8 @@ export interface DownloadEntry {
   addDate: number;      // 秒
   completeDate: number; // 秒，0 表示尚未完成
   isPaused: boolean;
+  // 来源消息的内容类型（message.content['@type']），下载中心据此分类；取不到为空串。
+  contentType?: string;
 }
 
 export interface DownloadPage {
@@ -156,8 +158,10 @@ export function downloadFileName(message: TdObject | undefined): string {
 
 export function parseDownloadEntry(raw: TdObject): DownloadEntry {
   const message = raw['message'] as TdObject | undefined;
+  const content = message !== undefined ? (message['content'] as TdObject | undefined) : undefined;
   return {
     fileName: downloadFileName(message),
+    contentType: content !== undefined ? ((content['@type'] as string | undefined) ?? '') : '',
     fileId: (raw['file_id'] as number | undefined) ?? 0,
     chatId: message !== undefined ? ((message['chat_id'] as number | undefined) ?? 0) : 0,
     messageId: message !== undefined ? ((message['id'] as number | undefined) ?? 0) : 0,

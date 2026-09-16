@@ -10,6 +10,7 @@ import {
 } from '../../util/splitMetrics';
 import { NavStackLike, TabKind, stackOf } from '../../util/navStacks';
 import { dockVisibleForTab } from '../../util/navBarReset';
+import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
 import { router } from '@kit.ArkUI';
 import { getTdClient, getUnreadCountStore, getCallSession, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 import { CallSnapshot } from '../../services/CallSession';
@@ -29,6 +30,7 @@ import {
   COLOR_DIVIDER, COLOR_PRIMARY, COLOR_TAB_UNSELECTED, COLOR_TEXT_PRIMARY, darkResourceMode
 } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { OneShotFrameCallback } from '../../util/oneShotFrameCallback';
 import { updateChecker, STORAGE_UPDATE_AVAILABLE } from '../../services/UpdateChecker';
 import { HdsTabs, HdsTabsController } from '@kit.UIDesignKit';
 import { HdsTabsFloatingModifier } from '../../util/hdsTabsFloating';
@@ -95,6 +97,9 @@ const DOCK_SWITCH_DURATION: number = 240;
 // dock 返回时的淡入时长。进入目的页时立即撤下，避免它的材质层继续参与
 // NavDestination 的推入合成；返回列表时再用短淡入恢复视觉连续性。
 const DOCK_FADE_DURATION: number = 160;
+// 返回列表时 dock 分两拍放出来的帧间隔：12ms 至少跨过一个 120Hz 帧边界（取法同
+// chatPageTuning.INITIAL_MESSAGE_RELEASE_DELAY_MS）。
+const DOCK_REVEAL_FRAME_DELAY_MS: number = 12;
 
 // Root screen after login: a floating capsule dock (聊天/联系人/设置/个人资料)
 // over four keep-alive tab bodies. The dock is a rounded pill that hovers above
@@ -125,6 +130,8 @@ export struct MainScreen {
   // 聊天页签的 navBar 此刻可不可见。false 只可能出现在「单栏 **且** 聊天栈非空」
   // ——也就是手机上打开了会话/资料/话题列表/归档的时候。见 CHAT_NAV_BAR_VISIBLE_KEY。
   @StorageProp(CHAT_NAV_BAR_VISIBLE_KEY) @Watch('syncDock') private chatNavBarVisible: boolean = true;
+  // 分栏下会话页的媒体查看器开着：dock / 侧边页签收起，让查看器盖满窗口（见 util/viewerWindowCover）。
+  @StorageProp(KEY_CHAT_VIEWER_COVERS_WINDOW) @Watch('syncDock') private chatViewerCoversWindow: boolean = false;
   // 设置页签分栏时左栏的实际宽度（vp，0 = 还没量到）。与聊天页签分开存：两个
   // 页签各自 enableDragBar(true)，拖过之后两边不再相等。见
   // SETTINGS_NAV_BAR_WIDTH_KEY。
@@ -152,6 +159,12 @@ export struct MainScreen {
   @State private dockShown: boolean = true;
   // dock 的**渲染态**：显示时先挂载再淡入；隐藏时与 dockShown 同帧撤下。
   @State private dockMounted: boolean = true;
+  // 栏高 / 侧栏宽的驱动（2026-09-15 从 dockShown 拆出）：返回列表时它和挂载一起落在普通帧里放开，淡入晚一帧
+  // 再在 animateTo 里只翻 dockShown。见 syncDock()。
+  @State private dockBarOpen: boolean = true;
+  // 作废还没跑的放开 / 淡入（又进了目的页）。
+  private dockRevealSeq: number = 0;
+  private dockRevealPending: boolean = false;
   @StorageProp('screenHeightVp') @Watch('syncWallpaperFlag') screenH: number = 780;
   // APP 壁纸：这一层同时知道分栏和路径，所以由它算一次「生效中」写进
   // KEY_APP_BG_ON，其余组件只读那一个键（见 store/AppSettings 的说明）。
@@ -370,20 +383,48 @@ export struct MainScreen {
   // 玻璃层，避免和系统转场并发；返回列表时先挂载 opacity=0 的节点再淡入。
   private syncDock(): void {
     const want: boolean = this.dockVisible();
-    if (want === this.dockShown) {
+    if (!want) {
+      // 进目的页：交互、渲染、栏高同帧撤下；还没跑的放开 / 淡入一并作废。
+      this.dockRevealSeq++;
+      this.dockRevealPending = false;
+      if (!this.dockShown && !this.dockMounted && !this.dockBarOpen) {
+        return;
+      }
+      this.dockShown = false;
+      this.dockMounted = false;
+      this.dockBarOpen = false;
       return;
     }
-    if (want) {
-      // 先挂树再淡入：节点不在树上时改 opacity 没有任何东西可动。
+    if (this.dockShown || this.dockRevealPending) {
+      return;
+    }
+    // 返回列表：分两拍，都不压在返回转场的第一帧上（2026-09-15）。
+    //
+    // 原来是本帧挂载 + animateTo 里翻 dockShown，而栏高读的就是 dockShown：HdsTabs 栏高 0→56 被做成了
+    // 160ms 的尺寸动画，玻璃的模糊半径 / 饱和度 / 阴影跟着一起动画，animateTo 还在闭包前后同步冲刷布局——
+    // 返回首帧 25–39ms，其中这次 animateTo 占 12.6–23.9ms（trace 20260915T174809）。
+    // 现在：下一帧先挂载、放开栏高（普通布局，不进动画），再下一帧 animateTo 只翻 dockShown（透明度）。
+    // 先挂树再淡入的顺序不变：节点不在树上时改 opacity 没有任何东西可动。
+    this.dockRevealPending = true;
+    const seq: number = ++this.dockRevealSeq;
+    const ui = this.getUIContext();
+    ui.postDelayedFrameCallback(new OneShotFrameCallback((): void => {
+      if (seq !== this.dockRevealSeq) {
+        return;
+      }
       this.dockMounted = true;
-      const duration: number =
-        powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_FADE_DURATION);
-      animateTo({ duration: duration, curve: Curve.EaseOut },
-        (): void => { this.dockShown = true; });
-      return;
-    }
-    this.dockShown = false;
-    this.dockMounted = false;
+      this.dockBarOpen = true;
+      ui.postDelayedFrameCallback(new OneShotFrameCallback((): void => {
+        if (seq !== this.dockRevealSeq) {
+          return;
+        }
+        this.dockRevealPending = false;
+        ui.animateTo({
+          duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, DOCK_FADE_DURATION),
+          curve: Curve.EaseOut
+        }, (): void => { this.dockShown = true; });
+      }), DOCK_REVEAL_FRAME_DELAY_MS);
+    }), DOCK_REVEAL_FRAME_DELAY_MS);
   }
 
   @Styles
@@ -699,6 +740,10 @@ export struct MainScreen {
     const kind: TabKind | null = this.tabKindOf(this.tab);
     if (kind === null) {
       return true;
+    }
+    if (kind === 'chat' && this.chatViewerCoversWindow &&
+      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn)) {
+      return false;
     }
     const stack: NavStackLike | undefined = stackOf(kind);
     return dockVisibleForTab(
@@ -1066,12 +1111,12 @@ export struct MainScreen {
       // 留位（实测见 splitMetrics）。竖排的收起走 sideBarWidth=0（收宽）。
       .barHeight(this.sideTabs()
         ? sideDockBarHeight(this.showContactsTab ? 4 : 3)
-        : (this.dockShown ? DOCK_H : 0))
+        : (this.dockBarOpen ? DOCK_H : 0))
       // **横排时一次都不设 barWidth**，交给修饰器按 sideBarWidth 决定。
       // 依据见 HdsTabsFloatingOptions.sideBarWidth 里抄的官方两段。
       .attributeModifier(new HdsTabsFloatingModifier({
         bottomMargin: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)),
-        sideBarWidth: this.sideTabs() ? (this.dockShown ? SIDE_DOCK_W : 0) : null,
+        sideBarWidth: this.sideTabs() ? (this.dockBarOpen ? SIDE_DOCK_W : 0) : null,
         // 没有迷你条时复用迁移前那套留白算法（胶囊宽度回到原来的比例）；
         // 有迷你条时放开，否则页签和播放条挤在一起会重叠。
         sideMargin: this.miniBarActive() ? MINI_SIDE_MARGIN : this.dockPadding(),

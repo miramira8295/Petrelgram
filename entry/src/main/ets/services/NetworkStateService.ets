@@ -11,6 +11,16 @@ import {
 let monitor: connection.NetConnection | null = null;
 let lastPublished: string = '';
 let refreshSequence: number = 0;
+// 网络类型变化的进程内订阅（services/BackgroundCache 据此在 Wi‑Fi / 蜂窝 / 断网之间切换）。
+// AppStorage 在 UI 之外订阅不了，所以在发布点直接回调。
+const networkListeners: Set<(network: string) => void> = new Set<(network: string) => void>();
+
+export function subscribeNetworkType(listener: (network: string) => void): () => void {
+  networkListeners.add(listener);
+  return (): void => {
+    networkListeners.delete(listener);
+  };
+}
 
 function tdNetworkTypeOf(network: string): TdObject {
   if (network === 'wifi') { return { '@type': 'networkTypeWiFi' }; }
@@ -28,6 +38,15 @@ function publish(network: string, forceTd: boolean = false): void {
   const changed = normalized !== lastPublished;
   lastPublished = normalized;
   AppStorage.setOrCreate(KEY_CURRENT_NETWORK_TYPE, normalized);
+  if (changed) {
+    networkListeners.forEach((listener: (network: string) => void): void => {
+      try {
+        listener(normalized);
+      } catch (e) {
+        logW(`NetworkStateService listener failed: ${e}`);
+      }
+    });
+  }
   if ((!changed && !forceTd) || !isReady()) { return; }
   const request: TdRequest = { '@type': 'setNetworkType' };
   request['type'] = tdNetworkTypeOf(normalized);

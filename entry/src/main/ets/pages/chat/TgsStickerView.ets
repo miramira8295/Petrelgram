@@ -1,9 +1,10 @@
 import lottie, { AnimationItem } from '@ohos/lottie';
+import { StickerPoster } from '../common/StickerPoster';
 import { gunzipTgs } from '../../util/gunzipTgs';
 import { tgsPowerSuspended } from '../../util/tgsPowerGate';
-import {
-  subscribeChatAnimationGate, setChatAnimationSuspended, wakeChatAnimationListeners
-} from '../../util/chatAnimationGate';
+import { AnimationSlotPool } from '../../util/animationSlotPool';
+import { stickerAnimationSlots } from '../../util/stickerAnimationBudget';
+import { subscribeAnimationGateFor } from '../../util/stickerPanelGate';
 import { TgsNativeStickerView } from './TgsNativeStickerView';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { probeHit } from '../../util/panelProbe';
@@ -18,19 +19,14 @@ import { logE, logW } from '../../util/log';
 // 不必回滚代码。原生那支自己失败时也会退回来（onFailed）。
 export const TGS_NATIVE_ENABLED: boolean = true;
 
-const MAX_LIVE_TGS: number = 14;
-// A chat row is much larger than a picker cell and competes with message-list
-// layout. Four live canvases cover a normal viewport while keeping Lottie's
-// per-frame shape interpolation inside the UI budget.
-const MAX_LIVE_CHAT_TGS: number = 4;
+// 同时在动的名额与原生 TGS、WebM 帧序列共用，按区域分池（2026-09-15），见 util/stickerAnimationBudget。
+// 原来这里是面板 14 张 / 会话 4 张的独立计数。
 const TGS_FIRST_DELAY_MS: number = 120;
 // 一帧只放一个进来，别让它们挤在一起。
 const TGS_STAGGER_MS: number = 70;
 // 下一个可以开始的时刻，全局共享——错开的是所有实例，不是单个。
 let tgsNextStartAt: number = 0;
 
-let liveTgs: number = 0;
-let liveChatTgs: number = 0;
 
 // Plays a Telegram TGS sticker (gzipped Lottie JSON) on a Canvas via
 // @ohos/lottie. On any decode failure it renders the raster thumbnail instead.
@@ -50,6 +46,8 @@ export struct TgsStickerView {
   // use the same power category without inheriting ChatPage's scroll gate or
   // its tighter four-canvas budget.
   @Param chatTimeline: boolean = false;
+  // 贴纸抽屉里的格子：滚动时按抽屉那道闸暂停（见 util/stickerPanelGate）。与 chatTimeline 互斥。
+  @Param panelGated: boolean = false;
   // 播一次并定格在最后一帧（骰子/老虎机结果动画的官方语义），不循环。
   @Param playOnce: boolean = false;
   @Param onFailed: () => void = (): void => {};
@@ -67,7 +65,7 @@ export struct TgsStickerView {
   private startTimer: number = -1;
   private visible: boolean = false;
   private chatGateSuspended: boolean = false;
-  private holdsChatSlot: boolean = false;
+  private cancelSlotWait: (() => void) | null = null;
   private unsubChatGate: (() => void) | null = null;
   // Invalidates an async gunzip/JSON load when this component receives a new
   // path. Without it, the old sticker could finish last and paint over the new
@@ -109,16 +107,10 @@ export struct TgsStickerView {
     }
   }
 
-  private stopAnim(): void {
+  private stopAnim(keepSlot: boolean = false): void {
     this.cancelScheduledStart();
-    if (this.holdsSlot) {
-      liveTgs--;
-      this.holdsSlot = false;
-    }
-    if (this.holdsChatSlot) {
-      liveChatTgs--;
-      this.holdsChatSlot = false;
-      wakeChatAnimationListeners();
+    if (!keepSlot) {
+      this.releaseSlot();
     }
     if (this.anim !== null) {
       this.anim.destroy();
@@ -126,11 +118,43 @@ export struct TgsStickerView {
     }
   }
 
+  private slotPool(): AnimationSlotPool {
+    return stickerAnimationSlots(this.chatTimeline, this.panelGated);
+  }
+
+  private releaseSlot(): void {
+    if (this.cancelSlotWait !== null) {
+      this.cancelSlotWait();
+      this.cancelSlotWait = null;
+    }
+    if (this.holdsSlot) {
+      this.holdsSlot = false;
+      this.slotPool().release();
+    }
+  }
+
+  // 名额满了：显示缩略图，排队；名额转过来时直接起播（不再靠"名额释放"的广播叫醒）。
+  private waitForSlot(): void {
+    if (this.cancelSlotWait !== null) {
+      return;
+    }
+    this.cancelSlotWait = this.slotPool().wait((): void => {
+      this.cancelSlotWait = null;
+      if (this.disposed || !this.visible || this.animationSuspended()) {
+        this.slotPool().release();
+        return;
+      }
+      this.holdsSlot = true;
+      this.budgetDeferred = false;
+      this.scheduleStart();
+    });
+  }
+
   aboutToAppear(): void {
     probeHit('tgs.mount');
     this.disposed = false;
-    if (this.chatTimeline && this.unsubChatGate === null) {
-      this.unsubChatGate = subscribeChatAnimationGate((suspended: boolean): void => {
+    if ((this.chatTimeline || this.panelGated) && this.unsubChatGate === null) {
+      this.unsubChatGate = subscribeAnimationGateFor(this.panelGated, (suspended: boolean): void => {
         this.chatGateSuspended = suspended;
         if (suspended) {
           // 滑动期间只暂停、不销毁（issue #164）。原来走 stopAnim() → destroy()，
@@ -158,7 +182,7 @@ export struct TgsStickerView {
           this.budgetDeferred = false;
           this.scheduleStart();
         }
-      });
+      }, (): boolean => this.visible);   // 开闸时屏幕上的先放（见 util/chatAnimationGate）
     }
     if (this.canvasReady && this.visible && !this.animationSuspended()) {
       this.scheduleStart();
@@ -240,19 +264,19 @@ export struct TgsStickerView {
   private async startAnimation(): Promise<void> {
     const seq: number = ++this.loadSeq;
     const path: string = this.tgsPath;
-    this.stopAnim();
+    // 名额留着：排队转过来的名额正是为这一次起播准备的。
+    this.stopAnim(true);
     if (this.animationSuspended() || this.disposed || !this.visible) {
+      this.releaseSlot();
       return;
     }
-    if (liveTgs >= MAX_LIVE_TGS || (this.chatTimeline && liveChatTgs >= MAX_LIVE_CHAT_TGS)) {
-      this.budgetDeferred = true; // over budget — static thumbnail instead
-      return;
-    }
-    this.holdsSlot = true;
-    liveTgs++;
-    if (this.chatTimeline) {
-      this.holdsChatSlot = true;
-      liveChatTgs++;
+    if (!this.holdsSlot) {
+      if (!this.slotPool().tryAcquire()) {
+        this.budgetDeferred = true; // over budget — static thumbnail instead
+        this.waitForSlot();
+        return;
+      }
+      this.holdsSlot = true;
     }
     const json = await gunzipTgs(path);
     if (this.disposed || seq !== this.loadSeq || path !== this.tgsPath) {
@@ -289,7 +313,7 @@ export struct TgsStickerView {
 
   private animationSuspended(): boolean {
     return this.powerSuspended() ||
-      (this.chatTimeline && this.chatGateSuspended);
+      ((this.chatTimeline || this.panelGated) && this.chatGateSuspended);
   }
 
   private useNative(): boolean {
@@ -309,6 +333,7 @@ export struct TgsStickerView {
           boxHeight: this.boxHeight,
           powerCategory: this.powerCategory,
           chatTimeline: this.chatTimeline,
+          panelGated: this.panelGated,
           playOnce: this.playOnce,
           loop: this.playOnce ? false : (this.powerCategory === 'sticker' ? this.env.stickerLoop : true),
           onFailed: (): void => {
@@ -318,12 +343,10 @@ export struct TgsStickerView {
         });
       } else if (this.powerSuspended()) {
         if (this.thumbPath !== '') {
-          Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-            .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+          StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
         }
       } else if ((this.failed || this.budgetDeferred) && this.thumbPath !== '') {
-        Image(this.thumbPath.startsWith('/') ? `file://${this.thumbPath}` : this.thumbPath).draggable(false)
-          .width(this.boxWidth).height(this.boxHeight).objectFit(ImageFit.Contain);
+        StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
       } else {
         Canvas(this.ctx)
           .width(this.boxWidth).height(this.boxHeight)
