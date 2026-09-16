@@ -15,9 +15,25 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { readableContentWidth } from '../../util/contentWidth';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
+const SIDE_PADDING: number = 12;
+
+// 按会话占用的一行显示数据：标题 / 缩写在同步时向 ChatStore 解析好。
+interface StorageChatItem {
+  chatId: number;
+  title: string;
+  initials: string;
+  size: number;
+  count: number;
+}
+
+function storageChatKey(item: StorageChatItem): string {
+  return `${item.chatId}_${item.size}_${item.count}_${item.title}_${item.initials}`;
+}
 
 @Entry
 @Component
@@ -27,7 +43,7 @@ struct StorageUsagePage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
-  @State usage: DetailedStorageUsage | null = null;
+  @State @Watch('syncChatsData') usage: DetailedStorageUsage | null = null;
   @State loading: boolean = true;
   @State refreshing: boolean = false;
   @State loadError: string = '';
@@ -35,6 +51,8 @@ struct StorageUsagePage {
   @State actionKey: string = '';
   private active: boolean = false;
   private sequence: number = 0;
+  // 按会话那张卡的 LazyForEach 数据源（见 syncChatsData）。
+  private chatsData: KeyedListDataSource<StorageChatItem> = new KeyedListDataSource<StorageChatItem>('storage-chats');
 
   @Styles
   actionNormalStyle() {
@@ -101,6 +119,26 @@ struct StorageUsagePage {
     if (chatId === 0) { return str('storage_other_initials'); }
     const entry: ChatEntry | undefined = getChatStore().entryOf(chatId);
     return entry !== undefined ? entry.initials : '?';
+  }
+
+  // 占用数据换了（加载、清理后刷新）：交给 LazyForEach。
+  private syncChatsData(): void {
+    const chats: ChatStorageUsage[] = this.usage !== null ? this.usage.chats : [];
+    const items: StorageChatItem[] = chats.map((c: ChatStorageUsage): StorageChatItem => {
+      const item: StorageChatItem = {
+        chatId: c.chatId, title: this.titleOf(c.chatId), initials: this.initialsOf(c.chatId),
+        size: c.size, count: c.count
+      };
+      return item;
+    });
+    this.chatsData.update(items,
+      items.map((i: StorageChatItem): string => `${i.chatId}`),
+      items.map((i: StorageChatItem): string => storageChatKey(i)));
+  }
+
+  // 卡片最宽 = 可读宽度减去 List 两侧内边距（原来是限宽内容列里再留 12）。
+  private cardMaxWidth(): number {
+    return readableContentWidth(this.screenW) - SIDE_PADDING * 2;
   }
 
   private share(size: number): number {
@@ -231,47 +269,39 @@ struct StorageUsagePage {
   }
 
   @Builder
-  chatRow(item: ChatStorageUsage) {
-    Row({ space: 11 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle({ width: 40, height: 40 }).fill('#173478F6');
-        Text(this.initialsOf(item.chatId)).fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
-      }
-      Column({ space: 3 }) {
-        Text(this.titleOf(item.chatId)).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(plural('storage_file_count', item.count, item.count)).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      if (this.actionKey === `chat_${item.chatId}`) {
-        LoadingProgress().width(17).height(17).color(COLOR_PRIMARY);
-      } else {
-        Text(formatBytes(item.size)).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-      }
-    }
-    .width('100%').height(62).padding({ left: 12, right: 14 })
-    .enabled(this.actionKey === '' && item.chatId !== 0)
-    .opacity(item.chatId === 0 ? 0.72 : 1)
-    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-    .onClick((): void => {
-      if (item.chatId !== 0) {
-        this.confirmClear(`chat_${item.chatId}`, str('storage_clear_chat', this.titleOf(item.chatId)),
-          str('storage_clear_chat_confirm', formatBytes(item.size)), '', item.chatId);
-      }
-    });
+  chatsHeader() {
+    Text($r('app.string.storage_by_chat')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
+      .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 6 });
   }
 
+  // 按会话占用：ListItemGroup + LazyForEach + 复用行（StorageChatRow）。分隔线交给组的
+  // divider：原来按 index > 0 在行内插 Divider，LazyForEach 下删掉第一行后，新的第一行
+  // 沿用旧节点，顶上会多一条线。点击、禁用、按压态挂在 ListItem 上，闭包随行 key 重建。
   @Builder
   chatsCard() {
-    Column() {
-      Text($r('app.string.storage_by_chat')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
-        .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 6 });
-      if (this.usage !== null) {
-        ForEach(this.usage.chats, (item: ChatStorageUsage, index: number) => {
-          if (index > 0) { Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 62 }); }
-          this.chatRow(item);
-        }, (item: ChatStorageUsage): string => `${item.chatId}`);
-      }
-    }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);
+    ListItemGroup({ header: this.chatsHeader() }) {
+      LazyForEach(this.chatsData, (item: StorageChatItem) => {
+        ListItem() {
+          StorageChatRow({
+            title: item.title, initials: item.initials, sizeBytes: item.size, fileCount: item.count,
+            busy: this.actionKey === `chat_${item.chatId}`
+          });
+        }
+        .enabled(this.actionKey === '' && item.chatId !== 0)
+        .opacity(item.chatId === 0 ? 0.72 : 1)
+        .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
+        .onClick((): void => {
+          if (item.chatId !== 0) {
+            this.confirmClear(`chat_${item.chatId}`, str('storage_clear_chat', item.title),
+              str('storage_clear_chat_confirm', formatBytes(item.size)), '', item.chatId);
+          }
+        });
+      }, (item: StorageChatItem, index: number): string =>
+        guardKey(this.chatsData.keyTableId, index, storageChatKey(item)));
+    }
+    .divider({ strokeWidth: 0.5, color: COLOR_DIVIDER, startMargin: 62 })
+    .width('100%').constraintSize({ maxWidth: this.cardMaxWidth() })
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);
   }
 
   @Builder
@@ -288,36 +318,88 @@ struct StorageUsagePage {
   build() {
     Column() {
       this.header();
-      Scroll() {
-        // 两层 Column 是故意的：外层铺满、负责居中，内层才是被限宽的内容。
-        // 限宽如果加在 Scroll 上，滚动条和边缘回弹会跟着一起缩进来，侧边留白
-        // 区域还会拖不动页面。分类占比条按父宽的百分比算，跟着内层一起收窄。
-        Column() {
-          Column({ space: 12 }) {
-            if (this.syncWarning !== '') {
-              Text(this.syncWarning).fontSize(12).fontColor('#FF9500').width('100%')
-                .padding(10).backgroundColor('#12FF9500').borderRadius(10);
-            }
-            if (this.loading && this.usage === null) { this.loadingState(); }
-            else if (this.loadError !== '' && this.usage === null) { this.errorState(); }
-            else if (this.usage !== null && this.usage.size <= 0) { this.emptyState(); }
-            else if (this.usage !== null) {
-              this.summaryCard();
-              if (this.usage.categories.length > 0) { this.categoriesCard(); }
-              if (this.usage.chats.length > 0) { this.chatsCard(); }
-            }
+      // 每张卡片占一项，按会话那张是 ListItemGroup（见 chatsCard）。限宽改由每一项自己的
+      // constraintSize + alignListItem 居中：List 仍铺满窗口，边缘回弹不跟着缩进来，侧边
+      // 留白也还在它的命中区里。分类占比条按父宽的百分比算，跟着卡片一起收窄。
+      List({ space: 12 }) {
+        if (this.syncWarning !== '') {
+          ListItem() {
+            Text(this.syncWarning).fontSize(12).fontColor('#FF9500').width('100%')
+              .padding(10).backgroundColor('#12FF9500').borderRadius(10);
           }
-          .width('100%')
-          .constraintSize({ maxWidth: readableContentWidth(this.screenW) })
-          .padding({ left: 12, right: 12, top: 6, bottom: this.bottomSafe + 24 });
+          .width('100%').constraintSize({ maxWidth: this.cardMaxWidth() });
         }
-        .width('100%')
-        // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
-        .alignItems(HorizontalAlign.Center);
+        if (this.loading && this.usage === null) {
+          ListItem() {
+            this.loadingState();
+          }
+          .width('100%').constraintSize({ maxWidth: this.cardMaxWidth() });
+        } else if (this.loadError !== '' && this.usage === null) {
+          ListItem() {
+            this.errorState();
+          }
+          .width('100%').constraintSize({ maxWidth: this.cardMaxWidth() });
+        } else if (this.usage !== null && this.usage.size <= 0) {
+          ListItem() {
+            this.emptyState();
+          }
+          .width('100%').constraintSize({ maxWidth: this.cardMaxWidth() });
+        } else if (this.usage !== null) {
+          ListItem() {
+            this.summaryCard();
+          }
+          .width('100%').constraintSize({ maxWidth: this.cardMaxWidth() });
+          if (this.usage.categories.length > 0) {
+            ListItem() {
+              this.categoriesCard();
+            }
+            .width('100%').constraintSize({ maxWidth: this.cardMaxWidth() });
+          }
+          if (this.usage.chats.length > 0) {
+            this.chatsCard();
+          }
+        }
       }
-      .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring);
+      .layoutWeight(1).width('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+      .cachedCount(4)
+      .alignListItem(ListItemAlign.Center)
+      .padding({ left: SIDE_PADDING, right: SIDE_PADDING })
+      // 上下留白原来是内容列的 padding（随内容滚动），在 List 上对应两个 contentOffset。
+      .contentStartOffset(6)
+      .contentEndOffset(this.bottomSafe + 24);
     }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe });
+  }
+}
+
+// 按会话占用的一行（原 chatRow）。复用组件；只画，交互在页面的 ListItem 上。
+@Reusable
+@Component
+struct StorageChatRow {
+  @Prop title: string = '';
+  @Prop initials: string = '';
+  @Prop sizeBytes: number = 0;
+  @Prop fileCount: number = 0;
+  @Prop busy: boolean = false;
+
+  build() {
+    Row({ space: 11 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle({ width: 40, height: 40 }).fill('#173478F6');
+        Text(this.initials).fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
+      }
+      Column({ space: 3 }) {
+        Text(this.title).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(plural('storage_file_count', this.fileCount, this.fileCount)).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      if (this.busy) {
+        LoadingProgress().width(17).height(17).color(COLOR_PRIMARY);
+      } else {
+        Text(formatBytes(this.sizeBytes)).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+      }
+    }
+    .width('100%').height(62).padding({ left: 12, right: 14 });
   }
 }

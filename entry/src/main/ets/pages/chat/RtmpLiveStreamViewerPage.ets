@@ -37,6 +37,8 @@ import {
   sameLiveInteraction
 } from '../../util/liveInteractionPresentation';
 import { LiveInteractionBubble } from './LiveInteractionBubble';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
@@ -53,6 +55,10 @@ const STREAM_RECONNECT_GRACE_MS: number = 8000;
 const STREAM_STALL_MS: number = 15000;
 const HEALTH_INTERVAL_MS: number = 4000;
 const MAX_INTERACTIONS: number = 100;
+
+function interactionKey(message: LiveInteractionEntry): string {
+  return `${message.key}:${message.revision}`;
+}
 const QUICK_REACTIONS: string[] = ['❤️', '🔥', '👏', '👍'];
 
 interface RtmpSurfaceBinding {
@@ -335,7 +341,7 @@ struct RtmpLiveStreamViewerPage {
   @State mediaPhase: string = LIVE_PHASE_NONE;
   @State recovering: boolean = false;
   @State hasVideo: boolean = false;
-  @State messages: LiveInteractionEntry[] = [];
+  @State @Watch('syncMessagesData') messages: LiveInteractionEntry[] = [];
   @State draft: string = '';
   @State sending: boolean = false;
   @State pulseExpanded: boolean = false;
@@ -397,6 +403,9 @@ struct RtmpLiveStreamViewerPage {
   private commentScroller: Scroller = new Scroller();
   private leavingForFloating: boolean = false;
   private interactionTouchActive: boolean = false;
+  // 评论区的 LazyForEach 数据源（见 syncMessagesData）。
+  private messagesData: KeyedListDataSource<LiveInteractionEntry> =
+    new KeyedListDataSource<LiveInteractionEntry>('rtmp-interactions');
   private interactionSnapshotReady: boolean = false;
   private interactionArrivalCounter: number = 0;
   private interactionArrivalOrders: Map<string, number> = new Map();
@@ -569,6 +578,12 @@ struct RtmpLiveStreamViewerPage {
         isSupportedLiveChannelMessage(message.contentType, message.isAnimation)
     ).slice(-MAX_INTERACTIONS);
     this.rebuildInteractions(previousState === 'loading' && this.channelHistoryState !== 'loading');
+  }
+
+  private syncMessagesData(): void {
+    this.messagesData.update(this.messages,
+      this.messages.map((m: LiveInteractionEntry): string => m.key),
+      this.messages.map((m: LiveInteractionEntry): string => interactionKey(m)));
   }
 
   private interactionArrival(key: string): number {
@@ -1648,13 +1663,15 @@ struct RtmpLiveStreamViewerPage {
             .onClick((): void => this.retryChannelHistory());
           }
         }
-        ForEach(this.messages, (message: LiveInteractionEntry) => {
+        // LazyForEach + 复用气泡：只有刚到的消息播入场动画（见 KeyedListDataSource.isFresh）。
+        LazyForEach(this.messagesData, (message: LiveInteractionEntry) => {
           ListItem() {
-            LiveInteractionBubble({ message });
+            LiveInteractionBubble({ message: message, animateIn: this.messagesData.isFresh(message.key) });
           }
-        }, (message: LiveInteractionEntry): string => message.key)
+        }, (message: LiveInteractionEntry, index: number): string =>
+          guardKey(this.messagesData.keyTableId, index, interactionKey(message)))
       }
-      .width('100%').height('100%')
+      .width('100%').height('100%').cachedCount(4)
       .padding({ left: 12, right: 14, top: 9, bottom: 10 })
       .maintainVisibleContentPosition(true)
       .edgeEffect(EdgeEffect.Spring)

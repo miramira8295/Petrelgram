@@ -1,5 +1,7 @@
 import { ChatEntry } from '../../store/ChatEntry';
 import { AvatarView } from '../chatlist/AvatarView';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import { getChatStore } from '../../tdkit/Globals';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
@@ -37,11 +39,13 @@ export struct ShareTargetSheet {
   onPick: (chatId: number) => void = (): void => {};
   onCancel: () => void = (): void => {};
 
-  @State private chats: ChatEntry[] = [];
-  @State private query: string = '';
+  @State @Watch('syncRowsData') private chats: ChatEntry[] = [];
+  @State @Watch('syncRowsData') private query: string = '';
   @State private loadState: 'loading' | 'ready' | 'error' = 'loading';
   // 搜索结果。空查询时不用它，直接渲染 chats（主列表的既有顺序）。
-  @State private results: ShareRow[] = [];
+  @State @Watch('syncRowsData') private results: ShareRow[] = [];
+  // 会话列表的 LazyForEach 数据源，喂的是 rows() 那一份（见 syncRowsData）。
+  private rowsData: KeyedListDataSource<ShareRow> = new KeyedListDataSource<ShareRow>('share-targets');
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   private unsubChats: (() => void) | null = null;
   private seq: number = 0;
@@ -55,6 +59,7 @@ export struct ShareTargetSheet {
       this.applyChats(list);
     }, 'main');
     this.loadChats();
+    this.syncRowsData();
   }
 
   aboutToDisappear(): void {
@@ -131,6 +136,15 @@ export struct ShareTargetSheet {
     return this.results;
   }
 
+  // 会话 / 搜索词 / 搜索结果变了：把当下要显示的那一份交给 LazyForEach。
+  private syncRowsData(): void {
+    const list: ShareRow[] = this.rows();
+    this.rowsData.update(list,
+      list.map((r: ShareRow): string => `${r.chatId}`),
+      list.map((r: ShareRow): string =>
+        `${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}_${r.isSavedMessages ? 1 : 0}`));
+  }
+
   @Styles
   rowNormalStyle() {
     .backgroundColor(Color.Transparent)
@@ -163,37 +177,6 @@ export struct ShareTargetSheet {
     }
     .width(RECENT_CELL_WIDTH)
     .onClick((): void => this.onPick(target.chatId));
-  }
-
-  @Builder
-  chatRow(row: ShareRow) {
-    Row({ space: 12 }) {
-      AvatarView({
-        avatarPath: row.avatarPath,
-        initials: row.initials,
-        colorSeed: row.chatId,
-        savedMessages: row.isSavedMessages,
-        avatarSize: 42
-      });
-      Column({ space: 3 }) {
-        Text(row.isSavedMessages ? $r('app.string.cl_saved_messages') : row.title)
-          .fontSize(15).fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(row.subtitle).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      SymbolGlyph($r('sys.symbol.paperplane')).fontSize(18).fontColor([COLOR_PRIMARY]);
-    }
-    .width('100%').padding({ left: 6, right: 6, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-      curve: Curve.EaseOut
-    })
-    .onClick((): void => this.onPick(row.chatId));
   }
 
   build() {
@@ -268,13 +251,19 @@ export struct ShareTargetSheet {
           .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
         } else {
           List() {
-            ForEach(this.rows(), (row: ShareRow): void => {
+            // LazyForEach + 复用行（ShareChatRow）：空查询时是整个会话列表，翻页会一直涨。
+            // 点击挂在 ListItem 上，闭包随行 key 重建。
+            LazyForEach(this.rowsData, (row: ShareRow): void => {
               ListItem() {
-                this.chatRow(row);
+                ShareChatRow({ row: row });
               }
-            }, (row: ShareRow): string => `share_${row.chatId}_${row.title}`);
+              .onClick((): void => this.onPick(row.chatId));
+            }, (row: ShareRow, index: number): string =>
+              guardKey(this.rowsData.keyTableId, index,
+                `${row.chatId}_${row.title}_${row.subtitle}_${row.avatarPath}_${row.isSavedMessages ? 1 : 0}`));
           }
           .layoutWeight(1).width('100%')
+          .cachedCount(4)
           .divider({
             strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 60, endMargin: 6
           })
@@ -302,5 +291,50 @@ export struct ShareTargetSheet {
           duration: powerAnimationDuration(KEY_POWER_EFFECT_REPLY, 220), curve: Curve.EaseOut
         })
     );
+  }
+}
+
+// 分享目标会话列表的一行（原 ShareTargetSheet.chatRow）。复用组件；点击在页面的 ListItem 上。
+// 按压态不再挂常驻 .animation()：复用时每换一次数据都会被它同步冲刷。
+@Reusable
+@Component
+struct ShareChatRow {
+  @Prop row: ShareRow;
+
+  @Styles
+  rowNormalStyle() {
+    .backgroundColor(Color.Transparent)
+    .borderRadius(10)
+  }
+
+  @Styles
+  rowPressedStyle() {
+    .backgroundColor($r('app.color.surface_alt'))
+    .borderRadius(10)
+  }
+
+  build() {
+    Row({ space: 12 }) {
+      AvatarView({
+        avatarPath: this.row.avatarPath,
+        initials: this.row.initials,
+        colorSeed: this.row.chatId,
+        savedMessages: this.row.isSavedMessages,
+        avatarSize: 42
+      });
+      Column({ space: 3 }) {
+        Text(this.row.isSavedMessages ? $r('app.string.cl_saved_messages') : this.row.title)
+          .fontSize(15).fontWeight(FontWeight.Medium)
+          .fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(this.row.subtitle).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      }
+      .alignItems(HorizontalAlign.Start).layoutWeight(1);
+      SymbolGlyph($r('sys.symbol.paperplane')).fontSize(18).fontColor([COLOR_PRIMARY]);
+    }
+    .width('100%').padding({ left: 6, right: 6, top: 8, bottom: 8 })
+    .alignItems(VerticalAlign.Center)
+    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle });
   }
 }

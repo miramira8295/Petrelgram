@@ -11901,6 +11901,10 @@
       "value": "Ocultar origen (enviar como copia)"
     },
     {
+      "name": "fw_hide_source",
+      "value": "Ocultar remitente"
+    },
+    {
       "name": "fw_remove_caption",
       "value": "Eliminar pie de foto"
     },

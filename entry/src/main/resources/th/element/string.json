@@ -11901,6 +11901,10 @@
       "value": "ซ่อนแหล่งที่มา (ส่งเป็นสำเนา)"
     },
     {
+      "name": "fw_hide_source",
+      "value": "ซ่อนผู้ส่ง"
+    },
+    {
       "name": "fw_remove_caption",
       "value": "ลบคำบรรยาย"
     },

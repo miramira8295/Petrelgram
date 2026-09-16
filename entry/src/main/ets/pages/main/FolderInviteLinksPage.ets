@@ -12,6 +12,9 @@ import {
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { AvatarView } from '../chatlist/AvatarView';
+import { FolderChatPickRow } from './FolderChatPickRow';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
@@ -43,8 +46,11 @@ struct FolderInviteLinksPage {
   @State loadState: string = 'loading';
   @State warning: string = '';
   @State links: FolderInviteLinkData[] = [];
-  @State eligibleChats: FolderChatSummary[] = [];
-  @State newChats: FolderChatSummary[] = [];
+  @State @Watch('syncEligibleData') eligibleChats: FolderChatSummary[] = [];
+  @State @Watch('syncNewChatsData') newChats: FolderChatSummary[] = [];
+  // 两个选会话面板各自的 LazyForEach 数据源。
+  private eligibleData: KeyedListDataSource<FolderChatSummary> = new KeyedListDataSource<FolderChatSummary>('folder-invite-eligible');
+  private newChatsData: KeyedListDataSource<FolderChatSummary> = new KeyedListDataSource<FolderChatSummary>('folder-invite-new');
   @State operationKey: string = '';
   @State editorOpen: boolean = false;
   @State editingLink: string = '';
@@ -134,6 +140,18 @@ struct FolderInviteLinksPage {
     this.linkName = link.name;
     this.selectedChatIds = link.chatIds.slice();
     this.editorOpen = true;
+  }
+
+  private syncEligibleData(): void {
+    this.eligibleData.update(this.eligibleChats,
+      this.eligibleChats.map((c: FolderChatSummary): string => `${c.id}`),
+      this.eligibleChats.map((c: FolderChatSummary): string => `${c.id}_${c.title}_${c.avatarPath}`));
+  }
+
+  private syncNewChatsData(): void {
+    this.newChatsData.update(this.newChats,
+      this.newChats.map((c: FolderChatSummary): string => `${c.id}`),
+      this.newChats.map((c: FolderChatSummary): string => `${c.id}_${c.title}_${c.avatarPath}`));
   }
 
   private toggleChat(id: number): void {
@@ -338,24 +356,17 @@ struct FolderInviteLinksPage {
         .padding({ left: 12, right: 12 }).backgroundColor(COLOR_PAGE_BG).borderRadius(12)
         .onChange((value: string): void => { this.linkName = value; });
       List() {
-        ForEach(this.eligibleChats, (chat: FolderChatSummary) => {
+        // LazyForEach + 复用行（FolderChatPickRow），复选框只显示，点击挂在 ListItem 上。
+        LazyForEach(this.eligibleData, (chat: FolderChatSummary) => {
           ListItem() {
-            Row({ space: 12 }) {
-              Row({ space: 12 }) {
-                AvatarView({ avatarPath: chat.avatarPath, initials: chat.initials, colorSeed: chat.id, avatarSize: 38 });
-                Text(chat.title).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-              }.layoutWeight(1);
-              // Display-only: onChange plus the row click would re-enter the
-              // toggle during render and freeze the app (same bug as the
-              // folder-edit picker).
-              Toggle({ type: ToggleType.Checkbox, isOn: this.selectedChatIds.indexOf(chat.id) >= 0 })
-                .selectedColor(COLOR_PRIMARY).hitTestBehavior(HitTestMode.None);
-            }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 })
-              .onClick((): void => this.toggleChat(chat.id));
+            FolderChatPickRow({
+              chat: chat, checked: this.selectedChatIds.indexOf(chat.id) >= 0, avatarSize: 38
+            });
           }
-        }, (chat: FolderChatSummary): string => `eligible_${chat.id}`);
-      }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+          .onClick((): void => this.toggleChat(chat.id));
+        }, (chat: FolderChatSummary, index: number): string =>
+          guardKey(this.eligibleData.keyTableId, index, `${chat.id}_${chat.title}_${chat.avatarPath}`));
+      }.layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4);
       Text($r('app.string.fl_only_selected')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
         .padding({ top: 8, bottom: this.bottomSafe + 10 });
     }.width('100%').height('100%');
@@ -368,17 +379,18 @@ struct FolderInviteLinksPage {
         .padding({ top: 14, bottom: 6 });
       Text($r('app.string.fl_pick_to_join')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).padding({ bottom: 8 });
       List() {
-        ForEach(this.newChats, (chat: FolderChatSummary) => {
+        // LazyForEach + 复用行。原来复选框自己带 onChange：复用节点换数据时 isOn 被程序改写
+        // 也会触发它，会把另一个会话勾上。改成与另外两处一致——复选框只显示，点整行切换。
+        LazyForEach(this.newChatsData, (chat: FolderChatSummary) => {
           ListItem() {
-            Row({ space: 12 }) {
-              AvatarView({ avatarPath: chat.avatarPath, initials: chat.initials, colorSeed: chat.id, avatarSize: 38 });
-              Text(chat.title).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-              Toggle({ type: ToggleType.Checkbox, isOn: this.selectedNewChatIds.indexOf(chat.id) >= 0 })
-                .selectedColor(COLOR_PRIMARY).onChange((): void => this.toggleNewChat(chat.id));
-            }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 });
+            FolderChatPickRow({
+              chat: chat, checked: this.selectedNewChatIds.indexOf(chat.id) >= 0, avatarSize: 38
+            });
           }
-        }, (chat: FolderChatSummary): string => `new_${chat.id}`);
-      }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+          .onClick((): void => this.toggleNewChat(chat.id));
+        }, (chat: FolderChatSummary, index: number): string =>
+          guardKey(this.newChatsData.keyTableId, index, `${chat.id}_${chat.title}_${chat.avatarPath}`));
+      }.layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4);
       Text(plural('fl_add_chats', this.selectedNewChatIds.length, this.selectedNewChatIds.length)).fontSize(16).fontWeight(FontWeight.Medium)
         .fontColor(COLOR_ON_PRIMARY).textAlign(TextAlign.Center)
         // width('100%') 不能和横向 margin 同时用：百分比宽先按父宽定值，margin 再叠在

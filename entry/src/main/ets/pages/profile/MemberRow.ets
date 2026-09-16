@@ -15,14 +15,18 @@ import { str } from '../../util/strings';
 // 单独成组件而不是留在 ChatProfilePage 的 ForEach 里：bindContextMenu 要的是
 // 一个不带参数的 @Builder（带参数的 @Builder 内部 UI 不会随状态刷新），组件
 // 里的 @Prop 才能让菜单跟着权限变化重建。
+//
+// 复用组件（2026-09-14）：成员列表改走 LazyForEach，大群滚动时行进出复用池。所以两个
+// 回调都只收 userId——回调跟着复用节点走，不能像原来那样攥着建它时的那个成员。
 
+@Reusable
 @Component
 export struct MemberRow {
   @Prop member: MemberItem;
   @Prop options: MemberMenuOptions = noMemberMenu();
   @Prop showDivider: boolean = false;
   onOpenProfile: (userId: number) => void = (): void => {};
-  onAction: (action: string) => void = (): void => {};
+  onAction: (userId: number, action: string) => void = (): void => {};
 
   @Styles
   rowNormalStyle() {
@@ -49,7 +53,7 @@ export struct MemberRow {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.person_badge_plus')),
           content: this.options.promoteIsEdit ? str('mm_edit_admin') : str('mm_promote')
-        }).onClick((): void => { this.onAction(MEMBER_ACTION_PROMOTE); });
+        }).onClick((): void => { this.onAction(this.member.userId, MEMBER_ACTION_PROMOTE); });
       }
       // 「编辑标签」紧跟在提权后面：两者都是管理员相关，而改称呼比调权限
       // 高频得多，放前面少一次误点。
@@ -57,31 +61,31 @@ export struct MemberRow {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
           content: str('ga_edit_title')
-        }).onClick((): void => { this.onAction(MEMBER_ACTION_TITLE); });
+        }).onClick((): void => { this.onAction(this.member.userId, MEMBER_ACTION_TITLE); });
       }
       if (this.options.showRestrict) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.lock_fill')),
           content: str('mm_restrict')
-        }).onClick((): void => { this.onAction(MEMBER_ACTION_RESTRICT); });
+        }).onClick((): void => { this.onAction(this.member.userId, MEMBER_ACTION_RESTRICT); });
       }
       if (this.options.showBan) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.nosign')),
           content: str('ga_ban_short')
-        }).onClick((): void => { this.onAction(MEMBER_ACTION_BAN); });
+        }).onClick((): void => { this.onAction(this.member.userId, MEMBER_ACTION_BAN); });
       }
       if (this.options.showRemove) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.xmark_circle')),
           content: str('ga_remove_member')
-        }).onClick((): void => { this.onAction(MEMBER_ACTION_REMOVE); });
+        }).onClick((): void => { this.onAction(this.member.userId, MEMBER_ACTION_REMOVE); });
       }
       if (this.options.showDeleteMessages) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')),
           content: str('ga_delete_all')
-        }).onClick((): void => { this.onAction(MEMBER_ACTION_DELETE_MESSAGES); });
+        }).onClick((): void => { this.onAction(this.member.userId, MEMBER_ACTION_DELETE_MESSAGES); });
       }
     }
   }

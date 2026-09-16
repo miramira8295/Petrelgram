@@ -6,6 +6,8 @@ import {
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { callClockLabel, callDayKey, callSectionLabel } from '../../util/CallHistoryPresentation';
 import { AvatarView } from '../chatlist/AvatarView';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
@@ -26,6 +28,39 @@ const SEGMENT_INSET: number = 3;
 const SEGMENT_HEIGHT: number = 40;
 const LONG_PRESS_MS: number = 500;
 
+// 通话列表摊平后的一项：分组标题或一条通话。标题项的 call 是该组第一条，只为字段不为空，
+// 标题项不读它。key 在同步时算好存进来（含随时钟变的分组文案）。
+interface CallListEntry {
+  isHeader: boolean;
+  sectionLabel: string;
+  first: boolean;
+  call: CallItem;
+  id: string;
+  key: string;
+}
+
+function callRowKey(call: CallItem): string {
+  return [call.key, `${call.date}`, call.name, call.avatarPath, call.initials, call.statusText, `${call.tone}`,
+    `${call.outgoing}`, `${call.isVideo}`, `${call.isGroup}`, `${call.participantCount}`].join('|');
+}
+
+function callToneColor(tone: string): ResourceColor {
+  if (tone === 'missed') { return COLOR_MISSED; }
+  if (tone === 'warning') { return COLOR_WARNING; }
+  if (tone === 'active') { return COLOR_PRIMARY; }
+  return COLOR_ANSWERED;
+}
+
+// 只给新到的项播入场动画。LazyForEach 滑动时按需创建的项同样是新插入的节点，带自身动画参数的
+// transition 会跟着播；不是新数据的项用 IDENTITY 直接出现。
+function callItemTransition(fresh: boolean): TransitionEffect {
+  if (!fresh) {
+    return TransitionEffect.IDENTITY;
+  }
+  return TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: -6 }))
+    .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180), curve: Curve.EaseOut });
+}
+
 @Entry
 @Component
 struct CallsPage {
@@ -37,7 +72,7 @@ struct CallsPage {
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
-  @State calls: CallItem[] = [];
+  @State @Watch('syncCallEntries') calls: CallItem[] = [];
   @State mode: CallsMode = 'all';
   @State loadState: CallsLoadState = 'loading';
   @State pageState: CallsPageState = 'idle';
@@ -45,7 +80,8 @@ struct CallsPage {
   @State syncError: string = '';
   @State totalCount: number = 0;
   @State actionKey: string = '';
-  @State nowSeconds: number = Math.floor(Date.now() / 1000);
+  // 分组文案（今天 / 昨天…）随时钟变，跨天时要重新同步列表项。
+  @State @Watch('syncCallEntries') nowSeconds: number = Math.floor(Date.now() / 1000);
   @State pressedKey: string = '';
   @State contextMenuShown: boolean = false;
   @State menuCallKey: string = '';
@@ -62,6 +98,8 @@ struct CallsPage {
   private active: boolean = false;
   private navigationLocked: boolean = false;
   private navigationTimer: number = -1;
+  // 通话列表的 LazyForEach 数据源（见 syncCallEntries）。
+  private callEntries: KeyedListDataSource<CallListEntry> = new KeyedListDataSource<CallListEntry>('calls');
 
   @Styles
   pressNormal() {
@@ -109,7 +147,7 @@ struct CallsPage {
   private selectMode(mode: CallsMode): void {
     if (mode === this.mode || this.actionKey !== '') { return; }
     this.mode = mode;
-    this.pressedKey = '';
+    this.setPressedKey('');
     this.store?.setMode(mode);
   }
 
@@ -194,21 +232,52 @@ struct CallsPage {
     }).catch((): void => {});
   }
 
-  private toneColor(call: CallItem): string | ResourceColor {
-    if (call.tone === 'missed') { return COLOR_MISSED; }
-    if (call.tone === 'warning') { return COLOR_WARNING; }
-    if (call.tone === 'active') { return COLOR_PRIMARY; }
-    return COLOR_ANSWERED;
-  }
-
   private countLabel(): string {
     if (this.loadState === 'loading') { return str('syncing'); }
     if (this.totalCount > this.calls.length) { return plural('calls_about_count', this.totalCount, this.totalCount); }
     return plural('calls_count', this.calls.length, this.calls.length);
   }
 
-  private isSectionStart(index: number): boolean {
-    return index === 0 || callDayKey(this.calls[index - 1].date) !== callDayKey(this.calls[index].date);
+  // 通话列表变了（加载、翻页、删除、时钟跨天）：摊平成「分组标题 + 通话」两种项交给
+  // LazyForEach。标题原来按 index 判断、画在通话那一项里；LazyForEach 下前面插入或删掉
+  // 一条后旧节点不重建，标题会留在不该有的那一行上，所以拆成独立的项。
+  private syncCallEntries(): void {
+    const entries: CallListEntry[] = [];
+    const ids: string[] = [];
+    const seenDays: Map<string, number> = new Map();
+    let lastDay: string = '';
+    this.calls.forEach((call: CallItem, index: number): void => {
+      const day: string = `${callDayKey(call.date)}`;
+      const label: string = `${callSectionLabel(call.date, this.nowSeconds)}`;
+      if (index === 0 || day !== lastDay) {
+        // 同一天正常只会有一段；万一排序让它出现两段，序号保证标题项身份不撞。
+        const seen: number = seenDays.get(day) ?? 0;
+        seenDays.set(day, seen + 1);
+        const headerId: string = `h_${day}_${seen}`;
+        entries.push({
+          isHeader: true, sectionLabel: label, first: index === 0, call: call, id: headerId,
+          key: `${headerId}_${label}_${index === 0}`
+        });
+        ids.push(headerId);
+      }
+      lastDay = day;
+      const callId: string = `c_${call.key}`;
+      entries.push({
+        isHeader: false, sectionLabel: label, first: false, call: call, id: callId,
+        key: `c_${callRowKey(call)}_${label}`
+      });
+      ids.push(callId);
+    });
+    this.callEntries.update(entries, ids, entries.map((e: CallListEntry): string => e.key));
+  }
+
+  // 按压底色 / 缩放的过渡在改状态的这一刻做：复用行里不挂常驻 .animation()（每次重渲染
+  // 都会同步 flush）。
+  private setPressedKey(key: string): void {
+    if (this.pressedKey === key) { return; }
+    this.getUIContext().animateTo({
+      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110), curve: Curve.EaseOut
+    }, (): void => { this.pressedKey = key; });
   }
 
   private callVersion(call: CallItem): string {
@@ -226,12 +295,12 @@ struct CallsPage {
     this.pressKey = call.key;
     this.pressIndex = this.currentCallIndex(call.key);
     this.pressVersion = this.callVersion(call);
-    this.pressedKey = call.key;
+    this.setPressedKey(call.key);
   }
 
   private endPress(): void {
     this.pressActive = false;
-    this.pressedKey = '';
+    this.setPressedKey('');
   }
 
   private openMenuIfCurrent(call: CallItem): void {
@@ -240,7 +309,7 @@ struct CallsPage {
     const unchanged = this.pressActive && this.pressKey === call.key && index === this.pressIndex
       && current !== undefined && this.callVersion(current) === this.pressVersion;
     this.pressActive = false;
-    this.pressedKey = '';
+    this.setPressedKey('');
     if (!unchanged) { return; }
     this.pressConsumedByMenu = true;
     this.menuCallKey = call.key;
@@ -257,7 +326,7 @@ struct CallsPage {
     this.contextMenuShown = false;
     this.menuCallKey = '';
     this.pressActive = false;
-    this.pressedKey = '';
+    this.setPressedKey('');
     if (this.pendingCalls !== null) {
       this.calls = this.pendingCalls;
       this.pendingCalls = null;
@@ -438,112 +507,75 @@ struct CallsPage {
   }
 
   @Builder
-  mediaBadge(call: CallItem) {
-    Row() {
-      SymbolGlyph($r(call.isVideo ? 'sys.symbol.video' : 'sys.symbol.phone'))
-        .fontSize(13).fontColor([this.toneColor(call)]);
-    }.width(25).height(25).borderRadius(9).justifyContent(FlexAlign.Center)
-      .backgroundColor(call.tone === 'missed' ? '#14E64646' : '#1428A878');
-  }
-
-  @Builder
-  callRow(call: CallItem) {
-    Row({ space: 12 }) {
-      AvatarView({
-        avatarPath: call.avatarPath,
-        initials: call.initials,
-        colorSeed: call.colorSeed,
-        avatarSize: 46
-      });
-      Column({ space: 5 }) {
-        Row({ space: 7 }) {
-          Text(call.name !== '' ? call.name : $r('app.string.opening_chat'))
-            .fontSize(16).fontWeight(FontWeight.Medium)
-            .fontColor(call.name !== '' ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-          Text(callClockLabel(call.date)).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-        }.width('100%');
-        Row({ space: 6 }) {
-          this.mediaBadge(call);
-          SymbolGlyph($r('sys.symbol.arrow_up_right')).fontSize(13).fontColor([this.toneColor(call)])
-            .rotate({ angle: call.outgoing ? 0 : 180 });
-          Text(call.statusText).fontSize(12).fontColor(this.toneColor(call))
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-          if (call.isGroup && call.participantCount > 0) {
-            Text(plural('calls_participants', call.participantCount, call.participantCount)).fontSize(10).fontColor(COLOR_TEXT_SECONDARY);
-          }
-          SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
-        }.width('100%').alignItems(VerticalAlign.Center);
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-    }
-    .width('100%').constraintSize({ minHeight: 68 })
-    .padding({ left: 14, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(this.pressedKey === call.key ? $r('app.color.surface_alt') : COLOR_SURFACE)
-    .borderRadius(CARD_RADIUS)
-    .scale({ x: this.pressedKey === call.key ? 0.99 : 1, y: this.pressedKey === call.key ? 0.985 : 1 })
-    .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 110), curve: Curve.EaseOut })
-    .accessibilityText(`${call.name}，${call.statusText}，${callSectionLabel(call.date, this.nowSeconds)} ${callClockLabel(call.date)}`)
-    .onTouch((event: TouchEvent): void => {
-      if (event.type === TouchType.Down) { this.beginPress(call); }
-      else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.endPress(); }
-    })
-    .onClick((): void => {
-      this.pressedKey = '';
-      if (this.pressConsumedByMenu || this.contextMenuShown) {
-        this.pressConsumedByMenu = false;
-        return;
-      }
-      this.openChat(call);
-    })
-    .parallelGesture(
-      LongPressGesture({ fingers: 1, repeat: false, duration: LONG_PRESS_MS })
-        .onAction((): void => this.openMenuIfCurrent(call))
-        .onActionCancel((): void => this.endPress())
-    )
-    .bindContextMenu(
-      this.contextMenuShown && this.menuCallKey === call.key,
-      this.callContextMenu,
-      {
-        preview: MenuPreviewMode.IMAGE,
-        previewBorderRadius: CARD_RADIUS,
-        previewAnimationOptions: {
-          scale: [0.98, 1.03],
-          transition: TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
-              curve: Curve.FastOutSlowIn
-            })
-        },
-        borderRadius: 16,
-        backgroundColor: Color.Transparent,
-        backgroundBlurStyle: containerBlur('menu'),
-        systemMaterial: overlayMaterial('menu'),
-        mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
-        modalMode: ModalMode.TARGET_WINDOW,
-        hapticFeedbackMode: HapticFeedbackMode.AUTO,
-        onDisappear: (): void => this.closeContextMenu()
-      }
-    );
-  }
-
-  @Builder
   callList() {
     List({ space: 7 }) {
-      ForEach(this.calls, (call: CallItem, index: number) => {
-        ListItem() {
-          Column({ space: 6 }) {
-            if (this.isSectionStart(index)) {
-              Text(callSectionLabel(call.date, this.nowSeconds))
-                .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_SECONDARY)
-                .width('100%').padding({ left: 5, top: index === 0 ? 1 : 8, bottom: 1 });
+      // LazyForEach + 复用行（CallRowView）：通话记录一页页往下翻不设上限，原来 ForEach 一次全建。
+      // 按压、点按、长按菜单挂在 ListItem 上，闭包随项 key 重建。
+      LazyForEach(this.callEntries, (entry: CallListEntry) => {
+        if (entry.isHeader) {
+          ListItem() {
+            // 下边距 0：原来标题和通话同在一列里（下边距 1 + 列间距 6），现在隔着 List 的 7。
+            Text(entry.sectionLabel)
+              .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_SECONDARY)
+              .width('100%').padding({ left: 5, top: entry.first ? 1 : 8 });
+          }
+          .transition(callItemTransition(this.callEntries.isFresh(entry.id)));
+        } else {
+          ListItem() {
+            CallRowView({
+              name: entry.call.name, avatarPath: entry.call.avatarPath, initials: entry.call.initials,
+              colorSeed: entry.call.colorSeed, clockLabel: callClockLabel(entry.call.date),
+              isVideo: entry.call.isVideo, tone: `${entry.call.tone}`, outgoing: entry.call.outgoing,
+              statusText: entry.call.statusText, isGroup: entry.call.isGroup,
+              participantCount: entry.call.participantCount,
+              pressed: this.pressedKey === entry.call.key
+            });
+          }
+          .transition(callItemTransition(this.callEntries.isFresh(entry.id)))
+          .accessibilityText(`${entry.call.name}，${entry.call.statusText}，${entry.sectionLabel} ${callClockLabel(entry.call.date)}`)
+          .onTouch((event: TouchEvent): void => {
+            if (event.type === TouchType.Down) { this.beginPress(entry.call); }
+            else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.endPress(); }
+          })
+          .onClick((): void => {
+            this.setPressedKey('');
+            if (this.pressConsumedByMenu || this.contextMenuShown) {
+              this.pressConsumedByMenu = false;
+              return;
             }
-            this.callRow(call);
-          }.width('100%');
-        }.transition(
-          TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: -6 }))
-            .animation({ duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180), curve: Curve.EaseOut })
-        );
-      }, (call: CallItem): string => call.key);
+            this.openChat(entry.call);
+          })
+          .parallelGesture(
+            LongPressGesture({ fingers: 1, repeat: false, duration: LONG_PRESS_MS })
+              .onAction((): void => this.openMenuIfCurrent(entry.call))
+              .onActionCancel((): void => this.endPress())
+          )
+          .bindContextMenu(
+            this.contextMenuShown && this.menuCallKey === entry.call.key,
+            this.callContextMenu,
+            {
+              preview: MenuPreviewMode.IMAGE,
+              previewBorderRadius: CARD_RADIUS,
+              previewAnimationOptions: {
+                scale: [0.98, 1.03],
+                transition: TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.98, y: 0.98 }))
+                  .animation({
+                    duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 180),
+                    curve: Curve.FastOutSlowIn
+                  })
+              },
+              borderRadius: 16,
+              backgroundColor: Color.Transparent,
+              backgroundBlurStyle: containerBlur('menu'),
+              systemMaterial: overlayMaterial('menu'),
+              mask: { color: '#52000000', backgroundBlurStyle: BlurStyle.BACKGROUND_THIN },
+              modalMode: ModalMode.TARGET_WINDOW,
+              hapticFeedbackMode: HapticFeedbackMode.AUTO,
+              onDisappear: (): void => this.closeContextMenu()
+            }
+          );
+        }
+      }, (entry: CallListEntry, index: number): string => guardKey(this.callEntries.keyTableId, index, entry.key));
       ListItem() {
         if (this.pageState === 'loading') {
           Row() { LoadingProgress().width(21).height(21).color(COLOR_PRIMARY); }
@@ -608,5 +640,64 @@ struct CallsPage {
     }.width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({ top: this.topSafe });
+  }
+}
+
+// 通话记录的一行（原 callRow + mediaBadge）。复用组件；只画。按压、点按、长按菜单在页面的
+// ListItem 上，按压态从 pressed 进来、过渡由页面 animateTo。
+@Reusable
+@Component
+struct CallRowView {
+  @Prop name: string = '';
+  @Prop avatarPath: string = '';
+  @Prop initials: string = '';
+  @Prop colorSeed: number = 0;
+  @Prop clockLabel: string = '';
+  @Prop isVideo: boolean = false;
+  @Prop tone: string = '';
+  @Prop outgoing: boolean = false;
+  @Prop statusText: string = '';
+  @Prop isGroup: boolean = false;
+  @Prop participantCount: number = 0;
+  @Prop pressed: boolean = false;
+
+  build() {
+    Row({ space: 12 }) {
+      AvatarView({
+        avatarPath: this.avatarPath,
+        initials: this.initials,
+        colorSeed: this.colorSeed,
+        avatarSize: 46
+      });
+      Column({ space: 5 }) {
+        Row({ space: 7 }) {
+          Text(this.name !== '' ? this.name : $r('app.string.opening_chat'))
+            .fontSize(16).fontWeight(FontWeight.Medium)
+            .fontColor(this.name !== '' ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+          Text(this.clockLabel).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+        }.width('100%');
+        Row({ space: 6 }) {
+          Row() {
+            SymbolGlyph(this.isVideo ? $r('sys.symbol.video') : $r('sys.symbol.phone'))
+              .fontSize(13).fontColor([callToneColor(this.tone)]);
+          }.width(25).height(25).borderRadius(9).justifyContent(FlexAlign.Center)
+            .backgroundColor(this.tone === 'missed' ? '#14E64646' : '#1428A878');
+          SymbolGlyph($r('sys.symbol.arrow_up_right')).fontSize(13).fontColor([callToneColor(this.tone)])
+            .rotate({ angle: this.outgoing ? 0 : 180 });
+          Text(this.statusText).fontSize(12).fontColor(callToneColor(this.tone))
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+          if (this.isGroup && this.participantCount > 0) {
+            Text(plural('calls_participants', this.participantCount, this.participantCount)).fontSize(10).fontColor(COLOR_TEXT_SECONDARY);
+          }
+          SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
+        }.width('100%').alignItems(VerticalAlign.Center);
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+    }
+    .width('100%').constraintSize({ minHeight: 68 })
+    .padding({ left: 14, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(this.pressed ? $r('app.color.surface_alt') : COLOR_SURFACE)
+    .borderRadius(CARD_RADIUS)
+    .scale({ x: this.pressed ? 0.99 : 1, y: this.pressed ? 0.985 : 1 });
   }
 }

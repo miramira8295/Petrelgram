@@ -13,6 +13,9 @@ import {
   FOLDER_COLORS, folderIconOptions, FolderIconOption, folderColor, folderSymbol
 } from '../../util/FolderVisuals';
 import { AvatarView } from '../chatlist/AvatarView';
+import { FolderChatPickRow } from './FolderChatPickRow';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
@@ -64,7 +67,9 @@ struct FolderEditPage {
   @State pickerOpen: boolean = false;
   @State pickerMode: string = PICK_INCLUDE;
   @State pickerQuery: string = '';
-  @State pickerRows: FolderChatSummary[] = [];
+  @State @Watch('syncPickerData') pickerRows: FolderChatSummary[] = [];
+  // 选会话面板的 LazyForEach 数据源（见 syncPickerData）。
+  private pickerData: KeyedListDataSource<FolderChatSummary> = new KeyedListDataSource<FolderChatSummary>('folder-picker');
   @State pickerState: string = 'idle';
   @State chatSummaries: Map<number, FolderChatSummary> = new Map();
   @State previewCount: number = 0;
@@ -419,6 +424,13 @@ struct FolderEditPage {
       this.pickerState = 'error';
       logE(`FolderEditPage.search failed: ${error.message}`);
     });
+  }
+
+  // 候选会话变了（打开面板、搜索结果回来）：交给 LazyForEach。勾选态不进 key，走行的 @Prop。
+  private syncPickerData(): void {
+    this.pickerData.update(this.pickerRows,
+      this.pickerRows.map((c: FolderChatSummary): string => `${c.id}`),
+      this.pickerRows.map((c: FolderChatSummary): string => `${c.id}_${c.title}_${c.avatarPath}_${c.kind}`));
   }
 
   private togglePickerChat(id: number): void {
@@ -795,28 +807,21 @@ struct FolderEditPage {
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
         List() {
-          ForEach(this.pickerRows, (chat: FolderChatSummary) => {
+          // LazyForEach + 复用行（FolderChatPickRow）：候选是整份会话列表，多的账号上千个。
+          // 复选框只显示（理由见 FolderChatPickRow），点击挂在 ListItem 上。
+          LazyForEach(this.pickerData, (chat: FolderChatSummary) => {
             ListItem() {
-              Row({ space: 12 }) {
-                Row({ space: 12 }) {
-                  AvatarView({ avatarPath: chat.avatarPath, initials: chat.initials, colorSeed: chat.id, avatarSize: 40 });
-                  Column({ space: 2 }) {
-                    Text(chat.title).fontSize(16).fontColor(COLOR_TEXT_PRIMARY)
-                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                    Text(this.kindLabel(chat.kind)).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-                  }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                }.layoutWeight(1);
-                // Display-only: a live onChange here re-fires while the row
-                // click's state update re-renders isOn, which mutates state
-                // mid-render and loops until the input watchdog kills the app.
-                Toggle({ type: ToggleType.Checkbox, isOn: this.selectedForPicker(chat.id) })
-                  .selectedColor(COLOR_PRIMARY).hitTestBehavior(HitTestMode.None);
-              }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 })
-                .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
-                .onClick((): void => this.togglePickerChat(chat.id));
+              FolderChatPickRow({
+                chat: chat,
+                checked: this.selectedForPicker(chat.id),
+                subtitle: this.kindLabel(chat.kind),
+                avatarSize: 40
+              });
             }
-          }, (chat: FolderChatSummary): string => `picker_${chat.id}`);
-        }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+            .onClick((): void => this.togglePickerChat(chat.id));
+          }, (chat: FolderChatSummary, index: number): string =>
+            guardKey(this.pickerData.keyTableId, index, `${chat.id}_${chat.title}_${chat.avatarPath}_${chat.kind}`));
+        }.layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4);
       }
       Text($r('app.string.fe_picker_note')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
         .padding({ top: 8, bottom: this.bottomSafe + 10 });

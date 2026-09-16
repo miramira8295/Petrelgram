@@ -77,6 +77,21 @@ export function toggleRow(selectedIds: number[], memberIds: number[]): number[] 
   return merged;
 }
 
+// 已经在多选里，再长按 / 右滑一行：**只加不减**，把整行成员补齐（相册就是整组媒体）。
+// 与 toggleRow 的差别正在"已选"和"半选"两支——点一下是切换，长按/右滑是"选它"
+// （用户 2026-09-14：「已经在多选模式了，再次长按或者右滑，应该是选择这条消息或者
+// 所有媒体」）。原来这两个入口走的是进多选，会把已经选好的一批清空重来。
+// 0 是合成行的哨兵 id，不进集合（同 toggleMember）。什么都没加时原样返回同一个数组。
+export function selectRow(selectedIds: number[], memberIds: number[]): number[] {
+  const merged: number[] = [...selectedIds];
+  for (const id of memberIds) {
+    if (id !== 0 && merged.indexOf(id) < 0) {
+      merged.push(id);
+    }
+  }
+  return merged.length === selectedIds.length ? selectedIds : merged;
+}
+
 // 消息列表变了之后，把选中集合里已经不存在的 id 摘掉。撤回、删除、切换窗口
 // 都会让选中集合里留下幽灵 id——计数还在涨，操作却落空。
 export function pruneSelection(selectedIds: number[], liveIds: number[]): number[] {

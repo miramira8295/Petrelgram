@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth,
-  memberSelected, pruneSelection, rowSelectable, rowSelected, toggleMember, toggleRow
+  memberSelected, pruneSelection, rowSelectable, rowSelected, selectRow, toggleMember, toggleRow
 } from '../main/ets/util/messageSelection';
 
 // 选中的单位是"行"不是消息：相册行整体选中或整体不选。
@@ -117,6 +117,25 @@ export default function messageSelectionTest() {
       expect(memberSelected(partial, 2)).assertTrue();
       expect(memberSelected(partial, 1)).assertFalse();
       expect(toggleRow(partial, [1, 2, 3])).assertDeepEquals([]);
+    });
+
+    // 多选态里再长按 / 右滑一行：只加不减（用户 2026-09-14）。
+    it('选一行：未选的整行补进来，已选的保持不动', 0, () => {
+      expect(selectRow([1], [4, 5])).assertDeepEquals([1, 4, 5]);
+      expect(selectRow([], [4, 5, 6])).assertDeepEquals([4, 5, 6]);
+    });
+
+    it('选一行：半选的相册补齐成整组，而不是像 toggleRow 那样清空', 0, () => {
+      expect(selectRow([4, 5], [4, 5, 6])).assertDeepEquals([4, 5, 6]);
+    });
+
+    it('选一行：整行已选时原样返回同一个数组，不产生多余的状态写入', 0, () => {
+      const ids: number[] = [1, 4, 5, 6];
+      expect(selectRow(ids, [4, 5, 6]) === ids).assertTrue();
+    });
+
+    it('选一行：member 重复只加一次，0 这个哨兵 id 不进集合', 0, () => {
+      expect(selectRow([1], [4, 4, 0, 5])).assertDeepEquals([1, 4, 5]);
     });
   });
 }

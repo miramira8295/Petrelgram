@@ -11901,6 +11901,10 @@
       "value": "送信元を隠す（コピーとして送信）"
     },
     {
+      "name": "fw_hide_source",
+      "value": "送信者を隠す"
+    },
+    {
       "name": "fw_remove_caption",
       "value": "キャプションを削除"
     },

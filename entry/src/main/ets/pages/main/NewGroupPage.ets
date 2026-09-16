@@ -8,6 +8,8 @@ import {
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { AvatarView } from '../chatlist/AvatarView';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import {
   PublicUserSearchResult, searchPublicUsersDetailed
 } from '../../store/PublicUserSearch';
@@ -39,12 +41,14 @@ struct NewGroupPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
-  @State contacts: ContactItem[] = [];
+  @State @Watch('syncContactsData') contacts: ContactItem[] = [];
   @State loading: boolean = true;
   @State loadError: string = '';
-  @State query: string = '';
-  @State remoteUsers: ContactItem[] = [];
+  @State @Watch('syncContactsData') query: string = '';
+  @State @Watch('syncContactsData') remoteUsers: ContactItem[] = [];
   @State knownRemoteUsers: ContactItem[] = [];
+  // 选人列表的 LazyForEach 数据源，喂的是 filteredContacts() 那一份（见 syncContactsData）。
+  private contactsData: KeyedListDataSource<ContactItem> = new KeyedListDataSource<ContactItem>('newgroup');
   @State remoteState: string = 'idle'; // idle | loading | ready | empty | error | timeout
   @State searchFocused: boolean = false;
   @State selectedIds: number[] = [];
@@ -120,6 +124,7 @@ struct NewGroupPage {
         this.stopSkeletonPulse();
       }
     });
+    this.syncContactsData();
     store.open();
   }
 
@@ -254,6 +259,26 @@ struct NewGroupPage {
       }
     }
     return result;
+  }
+
+  // 联系人 / 搜索词 / 全网结果变了：把当下要显示的那一份交给 LazyForEach。
+  // 勾选态不进 key，走行组件的 @Prop——点一下只刷那一行的勾，数据源不发 CHANGE。
+  private syncContactsData(): void {
+    const list: ContactItem[] = this.filteredContacts();
+    this.contactsData.update(list,
+      list.map((c: ContactItem): string => `${c.id}`),
+      list.map((c: ContactItem): string =>
+        `${c.id}_${c.avatarPath}_${c.name}_${c.statusText}_${c.online ? 1 : 0}`));
+  }
+
+  // 只给新到的行播入场（搜索筛出来的那几行）。LazyForEach 滑动时按需创建的行同样是新插入的
+  // 节点，带自身动画参数的 transition 会跟着播，所以不是新数据的行用 IDENTITY 直接出现。
+  private contactRowTransition(fresh: boolean): TransitionEffect {
+    if (!fresh) {
+      return TransitionEffect.IDENTITY;
+    }
+    return TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 10 }))
+      .animation({ duration: this.animationDuration(170), curve: Curve.EaseOut });
   }
 
   private selected(userId: number): boolean {
@@ -614,42 +639,6 @@ struct NewGroupPage {
   }
 
   @Builder
-  contactRow(contact: ContactItem) {
-    Row({ space: 13 }) {
-      AvatarView({
-        avatarPath: contact.avatarPath, initials: contact.initials,
-        colorSeed: contact.id, avatarSize: 48
-      });
-      Column({ space: 2 }) {
-        Text(contact.name).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(contact.statusText).fontSize(13)
-          .fontColor(contact.online ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      Row() {
-        if (this.selected(contact.id)) {
-          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(15).fontColor([Color.White])
-            .transition(TransitionEffect.OPACITY.combine(
-              TransitionEffect.scale({ x: 0.55, y: 0.55 })
-            ).animation({ duration: this.animationDuration(150), curve: Curve.EaseOut }));
-        }
-      }
-      .width(24).height(24).borderRadius(12)
-      .border({ width: this.selected(contact.id) ? 0 : 1.5, color: '#C7C7CC' })
-      .backgroundColor(this.selected(contact.id) ? COLOR_PRIMARY : Color.Transparent)
-      .justifyContent(FlexAlign.Center)
-      .animation({ duration: this.animationDuration(150), curve: Curve.EaseOut });
-    }
-    .width('100%').padding({ left: 12, right: 14, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-    .accessibilityText(str('a11y_labeled_state', contact.name, this.selected(contact.id) ? str('ng_selected') : str('ng_not_selected')))
-    .onClick((): void => this.toggle(contact.id));
-  }
-
-  @Builder
   skeletonRow(index: number) {
     Row({ space: 13 }) {
       Circle({ width: 48, height: 48 }).fill($r('app.color.surface_alt'));
@@ -744,18 +733,22 @@ struct NewGroupPage {
   @Builder
   contactList() {
     List() {
-      ForEach(this.filteredContacts(), (contact: ContactItem) => {
+      // LazyForEach + 复用行（NewGroupContactRow）：候选是全部联系人，几千个时只建可视区
+      // 附近的行，其余滚动时逐帧补建。点击挂在 ListItem 上，闭包随行 key 重建。
+      LazyForEach(this.contactsData, (contact: ContactItem) => {
         ListItem() {
           Column() {
-            this.contactRow(contact);
+            NewGroupContactRow({ contact: contact, selected: this.selected(contact.id) });
             Divider().strokeWidth(0.5).color($r('app.color.divider')).margin({ left: 73 });
           }
         }
-        .transition(TransitionEffect.OPACITY.combine(
-          TransitionEffect.translate({ x: 10 })
-        ).animation({ duration: this.animationDuration(170), curve: Curve.EaseOut }));
-      }, (contact: ContactItem): string =>
-        `${contact.id}_${contact.avatarPath}_${this.selected(contact.id)}`
+        .accessibilityText(str('a11y_labeled_state', contact.name,
+          this.selected(contact.id) ? str('ng_selected') : str('ng_not_selected')))
+        .onClick((): void => this.toggle(contact.id))
+        .transition(this.contactRowTransition(this.contactsData.isFresh(`${contact.id}`)));
+      }, (contact: ContactItem, index: number): string =>
+        guardKey(this.contactsData.keyTableId, index,
+          `${contact.id}_${contact.avatarPath}_${contact.name}_${contact.statusText}_${contact.online ? 1 : 0}`)
       );
       if (this.remoteState === 'loading' || this.shouldShowRemoteError()) {
         ListItem() { this.searchStatusRow(); }
@@ -770,6 +763,7 @@ struct NewGroupPage {
     .margin({ left: 12, right: 12, top: 4 })
     .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS)
     .scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    .cachedCount(4)
     .contentEndOffset(this.bottomSafe + 12);
   }
 
@@ -974,5 +968,57 @@ struct NewGroupPage {
     .width('100%').height('100%').padding({ top: this.topSafe })
     .backgroundColor(PAGE_BG)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+  }
+}
+
+// 建群选人的一行（原 NewGroupPage.contactRow）。复用组件：LazyForEach 滚动时进出复用池。
+// 点击挂在页面的 ListItem 上；勾选的过渡由页面 toggle() 的 animateTo 带着，行上不挂常驻
+// .animation()（复用时每换一次数据都会被它同步冲刷）。
+@Reusable
+@Component
+struct NewGroupContactRow {
+  @Prop contact: ContactItem;
+  @Prop selected: boolean = false;
+
+  @Styles
+  rowNormalStyle() {
+    .backgroundColor(CARD_BG)
+  }
+
+  @Styles
+  rowPressedStyle() {
+    .backgroundColor($r('app.color.surface_alt'))
+  }
+
+  build() {
+    Row({ space: 13 }) {
+      AvatarView({
+        avatarPath: this.contact.avatarPath, initials: this.contact.initials,
+        colorSeed: this.contact.id, avatarSize: 48
+      });
+      Column({ space: 2 }) {
+        Text(this.contact.name).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(this.contact.statusText).fontSize(13)
+          .fontColor(this.contact.online ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      }
+      .alignItems(HorizontalAlign.Start).layoutWeight(1);
+      Row() {
+        if (this.selected) {
+          SymbolGlyph($r('sys.symbol.checkmark')).fontSize(15).fontColor([Color.White])
+            // 不带自身动画参数：勾选时由页面 toggle() 的 animateTo 带着播；滑动时按需创建的已选行
+            // 直接出现，不在滚动中一个个弹出来。
+            .transition(TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.55, y: 0.55 })));
+        }
+      }
+      .width(24).height(24).borderRadius(12)
+      .border({ width: this.selected ? 0 : 1.5, color: '#C7C7CC' })
+      .backgroundColor(this.selected ? COLOR_PRIMARY : Color.Transparent)
+      .justifyContent(FlexAlign.Center);
+    }
+    .width('100%').padding({ left: 12, right: 14, top: 8, bottom: 8 })
+    .alignItems(VerticalAlign.Center)
+    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle });
   }
 }

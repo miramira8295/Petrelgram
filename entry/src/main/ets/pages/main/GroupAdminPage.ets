@@ -2,6 +2,8 @@ import { router, promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { getTdClient, getUserStore } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import {
   AdminRow, InviteLinkRow, JoinRequestRow, banMember, createInviteLink,
   demoteMember, deleteMessagesFromSender, getAdministrators, getInviteLinks,
@@ -38,6 +40,31 @@ interface AdminPageParams {
   chatId?: number;
 }
 
+// 名单卡片的行数据：名字在同步时解析好，LazyForEach 的 key 和行内容都只读这些字段。
+interface JoinRequestItem {
+  userId: number;
+  name: string;
+}
+
+interface AdminItem {
+  userId: number;
+  name: string;
+  isCreator: boolean;
+  customTitle: string;
+}
+
+function requestKey(item: JoinRequestItem): string {
+  return `req_${item.userId}_${item.name}`;
+}
+
+function adminKey(item: AdminItem): string {
+  return `adm_${item.userId}_${item.isCreator}_${item.customTitle}_${item.name}`;
+}
+
+function linkKey(row: InviteLinkRow): string {
+  return `lnk_${row.link}_${row.name}_${row.isPrimary}`;
+}
+
 @Entry
 @Component
 struct GroupAdminPage {
@@ -50,15 +77,19 @@ struct GroupAdminPage {
   @State description: string = '';
   @State permissions: GroupPermissions = defaultPermissions();
   @State slowModeIndex: number = 0;
-  @State admins: AdminRow[] = [];
-  @State links: InviteLinkRow[] = [];
-  @State requests: JoinRequestRow[] = [];
+  @State @Watch('syncAdminsData') admins: AdminRow[] = [];
+  @State @Watch('syncLinksData') links: InviteLinkRow[] = [];
+  @State @Watch('syncRequestsData') requests: JoinRequestRow[] = [];
   @State loadState: string = 'loading';
   @State busy: boolean = false;
   @State publicUsername: string = '';
   private supergroupId: number = 0;
   private chatId: number = 0;
   private active: boolean = false;
+  // 三张名单卡各自的 LazyForEach 数据源（见 syncRequestsData / syncAdminsData / syncLinksData）。
+  private requestsData: KeyedListDataSource<JoinRequestItem> = new KeyedListDataSource<JoinRequestItem>('ga-requests');
+  private adminsData: KeyedListDataSource<AdminItem> = new KeyedListDataSource<AdminItem>('ga-admins');
+  private linksData: KeyedListDataSource<InviteLinkRow> = new KeyedListDataSource<InviteLinkRow>('ga-links');
 
   aboutToAppear(): void {
     this.active = true;
@@ -109,6 +140,49 @@ struct GroupAdminPage {
   private nameOf(userId: number): string {
     const name = getUserStore().displayName(userId);
     return name !== '' ? name : str('ga_user_id', userId);
+  }
+
+  // 入群申请变了（加载、批准/拒绝后移除）：交给 LazyForEach。
+  private syncRequestsData(): void {
+    const items: JoinRequestItem[] = this.requests.map((r: JoinRequestRow): JoinRequestItem => {
+      const item: JoinRequestItem = { userId: r.userId, name: this.nameOf(r.userId) };
+      return item;
+    });
+    this.requestsData.update(items,
+      items.map((i: JoinRequestItem): string => `${i.userId}`),
+      items.map((i: JoinRequestItem): string => requestKey(i)));
+  }
+
+  private syncAdminsData(): void {
+    const items: AdminItem[] = this.admins.map((r: AdminRow): AdminItem => {
+      const item: AdminItem = {
+        userId: r.userId, name: this.nameOf(r.userId), isCreator: r.isCreator, customTitle: r.customTitle
+      };
+      return item;
+    });
+    this.adminsData.update(items,
+      items.map((i: AdminItem): string => `${i.userId}`),
+      items.map((i: AdminItem): string => adminKey(i)));
+  }
+
+  private syncLinksData(): void {
+    this.linksData.update(this.links,
+      this.links.map((r: InviteLinkRow): string => r.link),
+      this.links.map((r: InviteLinkRow): string => linkKey(r)));
+  }
+
+  private copyLink(link: string): void {
+    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, link);
+    pasteboard.getSystemPasteboard().setData(data).then((): void => {
+      promptAction.showToast({ message: $r('app.string.copied'), duration: 1300 });
+    }).catch((): void => {});
+  }
+
+  private revokeLink(link: string): void {
+    revokeInviteLink(this.chatId, link).then((): void => {
+      promptAction.showToast({ message: $r('app.string.ga_link_revoked'), duration: 1400 });
+      this.load();
+    }).catch((e: TdError): void => this.fail(e, str('ga_revoke_failed')));
   }
 
   private fail(error: TdError, fallback: string): void {
@@ -296,6 +370,32 @@ struct GroupAdminPage {
     }.width('100%').height(48).padding({ left: 14, right: 12 });
   }
 
+  // 名单卡的标题放在 ListItemGroup 的 header 里：做成组里的第一项的话，组的 divider
+  // 会在标题和第一行之间多画一条线。三个都是无参 @Builder，直接读 @State。
+  @Builder
+  requestsHeader() {
+    Text(str('ga_join_requests', this.requests.length)).fontSize(12)
+      .fontColor(COLOR_TEXT_SECONDARY).width('100%')
+      .padding({ left: 14, top: 12, bottom: 4 });
+  }
+
+  @Builder
+  adminsHeader() {
+    Text(str('ga_admins', this.admins.length)).fontSize(12)
+      .fontColor(COLOR_TEXT_SECONDARY).width('100%')
+      .padding({ left: 14, top: 12, bottom: 4 });
+  }
+
+  @Builder
+  linksHeader() {
+    Row() {
+      Text(str('ga_invite_links', this.links.length)).fontSize(12)
+        .fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
+      Text($r('app.string.ga_new')).fontSize(13).fontColor(COLOR_PRIMARY)
+        .onClick((): void => this.newInviteLink());
+    }.width('100%').padding({ left: 14, right: 14, top: 12, bottom: 4 });
+  }
+
   build() {
     Column() {
       this.header();
@@ -310,8 +410,10 @@ struct GroupAdminPage {
           Button($r('app.string.settings_reload')).onClick((): void => this.load());
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
-        Scroll() {
-          Column({ space: 12 }) {
+        // 每张卡片各占一项；三张名单卡是 ListItemGroup，行走 LazyForEach + 复用行——
+        // 大群的管理员、入群申请、邀请链接可以上百条，原来 ForEach 一次全建。
+        List({ space: 12 }) {
+          ListItem() {
             Column({ space: 10 }) {
               Text($r('app.string.ga_basic')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).width('100%');
               TextInput({ placeholder: $r('app.string.ng_group_name'), text: this.title })
@@ -337,7 +439,9 @@ struct GroupAdminPage {
               }.width('100%');
             }
             .width('100%').padding(14).backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+          }
 
+          ListItem() {
             Column() {
               Text($r('app.string.ga_member_rights')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
                 .width('100%').padding({ left: 14, top: 12, bottom: 4 });
@@ -356,87 +460,54 @@ struct GroupAdminPage {
               .onClick((): void => this.chooseSlowMode());
             }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
 
-            if (this.requests.length > 0) {
-              Column() {
-                Text(str('ga_join_requests', this.requests.length)).fontSize(12)
-                  .fontColor(COLOR_TEXT_SECONDARY).width('100%')
-                  .padding({ left: 14, top: 12, bottom: 4 });
-                ForEach(this.requests, (row: JoinRequestRow) => {
-                  Row({ space: 8 }) {
-                    Text(this.nameOf(row.userId)).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
-                      .layoutWeight(1).maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis });
-                    Button($r('app.string.ga_approve')).height(32).fontSize(13)
-                      .onClick((): void => this.handleRequest(row.userId, true));
-                    Button($r('app.string.ga_decline')).height(32).fontSize(13)
-                      .backgroundColor(COLOR_PAGE_BG).fontColor('#E5484D')
-                      .onClick((): void => this.handleRequest(row.userId, false));
-                  }.width('100%').height(52).padding({ left: 14, right: 12 });
-                }, (row: JoinRequestRow): string => `req_${row.userId}`);
-              }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
-            }
+          }
 
-            Column() {
-              Text(str('ga_admins', this.admins.length)).fontSize(12)
-                .fontColor(COLOR_TEXT_SECONDARY).width('100%')
-                .padding({ left: 14, top: 12, bottom: 4 });
-              ForEach(this.admins, (row: AdminRow) => {
-                Row({ space: 8 }) {
-                  Column({ space: 2 }) {
-                    Text(this.nameOf(row.userId)).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
-                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                    Text(row.isCreator ? $r('app.string.ga_creator')
-                      : (row.customTitle !== '' ? row.customTitle : $r('app.string.ga_admin')))
-                      .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-                  }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                  if (!row.isCreator) {
-                    SymbolGlyph($r('sys.symbol.more')).fontSize(18)
-                      .fontColor([COLOR_ICON_SECONDARY]);
-                  }
+          if (this.requests.length > 0) {
+            ListItemGroup({ header: this.requestsHeader() }) {
+              LazyForEach(this.requestsData, (item: JoinRequestItem) => {
+                ListItem() {
+                  JoinRequestRowView({
+                    userId: item.userId,
+                    name: item.name,
+                    onDecide: (userId: number, approve: boolean): void => { this.handleRequest(userId, approve); }
+                  });
                 }
-                .width('100%').height(54).padding({ left: 14, right: 14 })
-                .onClick((): void => {
-                  if (!row.isCreator) { this.memberActions(row.userId, true); }
+              }, (item: JoinRequestItem, index: number): string =>
+                guardKey(this.requestsData.keyTableId, index, requestKey(item)));
+            }
+            .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+          }
+
+          ListItemGroup({ header: this.adminsHeader() }) {
+            LazyForEach(this.adminsData, (item: AdminItem) => {
+              ListItem() {
+                GroupAdminRowView({ name: item.name, isCreator: item.isCreator, customTitle: item.customTitle });
+              }
+              .onClick((): void => {
+                if (!item.isCreator) { this.memberActions(item.userId, true); }
+              });
+            }, (item: AdminItem, index: number): string =>
+              guardKey(this.adminsData.keyTableId, index, adminKey(item)));
+          }
+          .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+
+          ListItemGroup({ header: this.linksHeader() }) {
+            LazyForEach(this.linksData, (row: InviteLinkRow) => {
+              ListItem() {
+                InviteLinkRowView({
+                  link: row.link,
+                  name: row.name,
+                  isPrimary: row.isPrimary,
+                  onCopy: (link: string): void => { this.copyLink(link); },
+                  onRevoke: (link: string): void => { this.revokeLink(link); }
                 });
-              }, (row: AdminRow): string => `adm_${row.userId}`);
-            }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+              }
+            }, (row: InviteLinkRow, index: number): string =>
+              guardKey(this.linksData.keyTableId, index, linkKey(row)));
+          }
+          .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
 
-            Column() {
-              Row() {
-                Text(str('ga_invite_links', this.links.length)).fontSize(12)
-                  .fontColor(COLOR_TEXT_SECONDARY).layoutWeight(1);
-                Text($r('app.string.ga_new')).fontSize(13).fontColor(COLOR_PRIMARY)
-                  .onClick((): void => this.newInviteLink());
-              }.width('100%').padding({ left: 14, right: 14, top: 12, bottom: 4 });
-              ForEach(this.links, (row: InviteLinkRow) => {
-                Row({ space: 8 }) {
-                  Column({ space: 2 }) {
-                    Text(row.name !== '' ? row.name : (row.isPrimary ? $r('app.string.ga_primary_link') : $r('app.string.ga_invite_link')))
-                      .fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
-                    Text(row.link).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
-                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                  }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                  SymbolGlyph($r('sys.symbol.doc')).fontSize(16)
-                    .fontColor([COLOR_PRIMARY])
-                    .onClick((): void => {
-                      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, row.link);
-                      pasteboard.getSystemPasteboard().setData(data).then((): void => {
-                        promptAction.showToast({ message: $r('app.string.copied'), duration: 1300 });
-                      }).catch((): void => {});
-                    });
-                  if (!row.isPrimary) {
-                    SymbolGlyph($r('sys.symbol.trash')).fontSize(16).fontColor(['#E5484D'])
-                      .onClick((): void => {
-                        revokeInviteLink(this.chatId, row.link).then((): void => {
-                          promptAction.showToast({ message: $r('app.string.ga_link_revoked'), duration: 1400 });
-                          this.load();
-                        }).catch((e: TdError): void => this.fail(e, str('ga_revoke_failed')));
-                      });
-                  }
-                }.width('100%').height(56).padding({ left: 14, right: 14 });
-              }, (row: InviteLinkRow): string => `lnk_${row.link}`);
-            }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
-
+          ListItem() {
             Row({ space: 10 }) {
               SymbolGlyph($r('sys.symbol.trash')).fontSize(17).fontColor(['#E5484D']);
               Text($r('app.string.ga_delete_today_all')).fontSize(15).fontColor('#E5484D').layoutWeight(1);
@@ -444,21 +515,23 @@ struct GroupAdminPage {
             .width('100%').height(48).padding({ left: 14, right: 14 })
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => this.deleteTodayMessages());
+          }
 
+          ListItem() {
             Text($r('app.string.ga_note'))
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
           }
-          .width('100%')
-          // 限宽做在内容列的内边距上而不是 Scroll 的宽度上：Scroll 仍铺满窗口，
-          // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
-          // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
-          .padding({
-            left: 12 + contentSideGutter(this.screenW),
-            right: 12 + contentSideGutter(this.screenW),
-            bottom: this.bottomSafe + 24
-          });
         }
-        .align(Alignment.Top).layoutWeight(1).width('100%').scrollBar(BarState.Off);
+        .layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4)
+        // 限宽做在 List 的内边距上而不是 List 的宽度上：List 仍铺满窗口，
+        // 两侧让出来的留白因此还在它的命中区里，手指按在留白上照样能滚页面。
+        // 手机上 contentSideGutter 恒为 0，两个值逐像素等于改动前的 12。
+        .padding({
+          left: 12 + contentSideGutter(this.screenW),
+          right: 12 + contentSideGutter(this.screenW)
+        })
+        // 底部留白原来是内容列的 padding（随内容滚动），在 List 上对应 contentEndOffset。
+        .contentEndOffset(this.bottomSafe + 24);
       }
     }
     .width('100%').height('100%').backgroundColor(COLOR_PAGE_BG)
@@ -466,5 +539,82 @@ struct GroupAdminPage {
     // 露出的是窗口底色。padding 只负责把内容让开，铺满是另一回事。
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .padding({ top: this.topSafe });
+  }
+}
+
+// 入群申请的一行。复用组件；两个按钮只报 userId（这个回调跟着节点进出复用池，不攥行对象）。
+@Reusable
+@Component
+struct JoinRequestRowView {
+  @Prop userId: number = 0;
+  @Prop name: string = '';
+  onDecide: (userId: number, approve: boolean) => void = (_userId: number, _approve: boolean): void => {};
+
+  build() {
+    Row({ space: 8 }) {
+      Text(this.name).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
+        .layoutWeight(1).maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis });
+      Button($r('app.string.ga_approve')).height(32).fontSize(13)
+        .onClick((): void => { this.onDecide(this.userId, true); });
+      Button($r('app.string.ga_decline')).height(32).fontSize(13)
+        .backgroundColor(COLOR_PAGE_BG).fontColor('#E5484D')
+        .onClick((): void => { this.onDecide(this.userId, false); });
+    }.width('100%').height(52).padding({ left: 14, right: 12 });
+  }
+}
+
+// 管理员名单的一行。复用组件；点击在页面的 ListItem 上。
+@Reusable
+@Component
+struct GroupAdminRowView {
+  @Prop name: string = '';
+  @Prop isCreator: boolean = false;
+  @Prop customTitle: string = '';
+
+  build() {
+    Row({ space: 8 }) {
+      Column({ space: 2 }) {
+        Text(this.name).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(this.isCreator ? $r('app.string.ga_creator')
+          : (this.customTitle !== '' ? this.customTitle : $r('app.string.ga_admin')))
+          .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      if (!this.isCreator) {
+        SymbolGlyph($r('sys.symbol.more')).fontSize(18)
+          .fontColor([COLOR_ICON_SECONDARY]);
+      }
+    }
+    .width('100%').height(54).padding({ left: 14, right: 14 });
+  }
+}
+
+// 邀请链接的一行。复用组件；复制 / 撤销只报链接串。
+@Reusable
+@Component
+struct InviteLinkRowView {
+  @Prop link: string = '';
+  @Prop name: string = '';
+  @Prop isPrimary: boolean = false;
+  onCopy: (link: string) => void = (_link: string): void => {};
+  onRevoke: (link: string) => void = (_link: string): void => {};
+
+  build() {
+    Row({ space: 8 }) {
+      Column({ space: 2 }) {
+        Text(this.name !== '' ? this.name : (this.isPrimary ? $r('app.string.ga_primary_link') : $r('app.string.ga_invite_link')))
+          .fontSize(14).fontColor(COLOR_TEXT_PRIMARY);
+        Text(this.link).fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      SymbolGlyph($r('sys.symbol.doc')).fontSize(16)
+        .fontColor([COLOR_PRIMARY])
+        .onClick((): void => { this.onCopy(this.link); });
+      if (!this.isPrimary) {
+        SymbolGlyph($r('sys.symbol.trash')).fontSize(16).fontColor(['#E5484D'])
+          .onClick((): void => { this.onRevoke(this.link); });
+      }
+    }.width('100%').height(56).padding({ left: 14, right: 14 });
   }
 }

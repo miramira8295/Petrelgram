@@ -27,6 +27,9 @@ export struct ChatOverlayHost {
   @Param threadRootId: number = 0;
   @Param bottomSafe: number = 0;
   @Param keyboardH: number = 0;
+  // 顶部标题栏 + 横幅占掉的高度（vp）。标题栏是 HdsNavDestination 的 titleBar，
+  // 画在内容区之上——本宿主在内容区里，盖不住它，面板只能自己让开。
+  @Param topInset: number = 0;
 
   // onReactionShowChange/onForwardShowChange/onScheduledShowChange 三个
   // @Event 在 B11 之前把 show 值再转发回页面去写 this.showXxx；现在这三个
@@ -93,6 +96,7 @@ export struct ChatOverlayHost {
           sourceChatId: this.chatId,
           threadRootId: this.threadRootId,
           canRemoveCaption: this.forwardHasRemovableCaption(),
+          topInset: this.topInset,
           effectDuration: (key: string, ms: number): number => this.effectDuration(key, ms),
           onSent: (): void => { this.onForwardSent(); }
         });

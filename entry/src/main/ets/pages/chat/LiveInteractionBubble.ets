@@ -18,9 +18,26 @@ function interactionMessageTime(timestamp: number): string {
   return `${hour}:${minute}`;
 }
 
+// 只有刚到的消息播入场动画。气泡放在 LazyForEach 里，滑动时按需创建的节点同样是新插入的，
+// 带自身动画参数的 transition 会跟着播；不是新到的用 IDENTITY 直接出现。
+function bubbleTransition(animateIn: boolean): TransitionEffect {
+  if (!animateIn) {
+    return TransitionEffect.IDENTITY;
+  }
+  return TransitionEffect.translate({ y: 8 })
+    .combine(TransitionEffect.OPACITY)
+    .animation({
+      duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 180), curve: Curve.EaseOut
+    });
+}
+
+// 复用组件（两个直播页的互动列表都走 LazyForEach）。
+@Reusable
 @Component
 export struct LiveInteractionBubble {
   @Prop message: LiveInteractionEntry;
+  // 这条是不是刚到的数据（页面用 KeyedListDataSource.isFresh 判定）。
+  @Prop animateIn: boolean = false;
 
   @Builder
   avatar() {
@@ -90,12 +107,6 @@ export struct LiveInteractionBubble {
       }
     }
     .width('100%').alignItems(VerticalAlign.Top)
-    .transition(
-      TransitionEffect.translate({ y: 8 })
-        .combine(TransitionEffect.OPACITY)
-        .animation({
-          duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 180), curve: Curve.EaseOut
-        })
-    );
+    .transition(bubbleTransition(this.animateIn));
   }
 }

@@ -262,5 +262,38 @@ export default function selectionSessionTest() {
       expect(session.ids.length).assertEqual(0);
       expect(host.activeCalls).assertDeepEquals([true, false]);
     });
+
+    // 防的回归（用户 2026-09-14）：已经在多选里，再长按或右滑一条（相册行），
+    // 走的是 enter()——把之前选好的整批清掉、只剩这一行，看起来就是"重新进了多选"。
+    it('selectRow 未进多选时等同 enter，从这一行起步', 0, (): void => {
+      const host: FakeHost = new FakeHost();
+      const session: SelectionSession = sessionOn(host);
+      session.selectRow([301, 302]);
+      expect(session.active).assertTrue();
+      expect(session.ids).assertDeepEquals([301, 302]);
+      expect(host.closeReactionSheetCount).assertEqual(1);
+    });
+
+    it('selectRow 已在多选时把整行补进来，不清掉之前选好的', 0, (): void => {
+      const users: UserStore = usersOf();
+      const album: AlbumGroup = albumRowOf([402, 403, 404], users);
+      const host: FakeHost = new FakeHost();
+      const session: SelectionSession = sessionOn(host);
+      session.enter([401]);
+      session.toggleMember(402);
+      session.selectRow(album.memberIds);
+      expect(session.active).assertTrue();
+      expect(session.ids).assertDeepEquals([401, 402, 403, 404]);
+      // 没有第二次进多选：onActiveChange 只报过一次 true。
+      expect(host.activeCalls).assertDeepEquals([true]);
+    });
+
+    it('selectRow 对已整行选中的行不做任何事，也不退出多选', 0, (): void => {
+      const session: SelectionSession = sessionOn(new FakeHost());
+      session.enter([501, 502]);
+      session.selectRow([501, 502]);
+      expect(session.active).assertTrue();
+      expect(session.ids).assertDeepEquals([501, 502]);
+    });
   });
 }

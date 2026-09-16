@@ -9,6 +9,11 @@ import {
   memberMenuOptions, memberMenuSignature, MEMBER_ACTION_TITLE
 } from '../../util/memberMenu';
 import { MemberRow } from './MemberRow';
+import { ProfileMediaRow } from './ProfileMediaRow';
+import { ProfileContentRow, profileContentKey } from './ProfileContentRow';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
+import { chunkRows } from '../../util/gridRows';
 import { MemberTitleDialog } from './MemberTitleDialog';
 import { getTdClient } from '../../tdkit/Globals';
 import {
@@ -50,7 +55,7 @@ import { common } from '@kit.AbilityKit';
 import { openLocalFile } from '../../util/openLocalFile';
 import { fileOpenMimeType } from '../../util/fileMessage';
 import { navigateToProfile } from '../../util/profileNav';
-import { mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
+import { MEDIA_GRID_COLS, mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
@@ -63,6 +68,8 @@ const DETAIL_TAB_BAR_HEIGHT: number = 44;
 const DETAIL_TAB_INDICATOR_HEIGHT: number = 32;
 // 输入到真正下发搜索之间的防抖窗口。
 const CONTENT_QUERY_DEBOUNCE_MS: number = 250;
+// 资料页 List 在可视区外多备的行数（成员行、文件行、媒体行都不贵）。
+const PROFILE_LIST_CACHED_COUNT: number = 4;
 
 interface ProfileTabItem {
   key: string;
@@ -128,26 +135,31 @@ export struct ChatProfilePage {
   @State subtitle: string = '';
   @State description: string = '';
   @State chatUsername: string = '';
-  @State isChannel: boolean = false;
+  @State @Watch('syncMembersData') isChannel: boolean = false;
   @State isMuted: boolean = false;
   @State canManageVideoChats: boolean = false;
   @State canManageChat: boolean = false;
   // 逐项管理权限。长按菜单按这几项出条目，不用 canManageChat 一刀切。
-  @State viewerIsCreator: boolean = false;
-  @State canPromoteMembers: boolean = false;
-  @State canManageTags: boolean = false;
-  @State canRestrictMembers: boolean = false;
-  @State canDeleteMessages: boolean = false;
-  @State selfUserId: number = 0;
+  @State @Watch('syncMembersData') viewerIsCreator: boolean = false;
+  @State @Watch('syncMembersData') canPromoteMembers: boolean = false;
+  @State @Watch('syncMembersData') canManageTags: boolean = false;
+  @State @Watch('syncMembersData') canRestrictMembers: boolean = false;
+  @State @Watch('syncMembersData') canDeleteMessages: boolean = false;
+  @State @Watch('syncMembersData') selfUserId: number = 0;
   @State liveGroupCallId: number = 0;
   @State creatingLive: boolean = false;
-  @State members: MemberItem[] = [];
+  @State @Watch('syncMembersData') members: MemberItem[] = [];
   @State membersState: string = 'loading';
   @State selectedTab: number = 0;
   private pendingTabKey: string = '';
-  @State contentItems: ProfileContentItem[] = [];
+  @State @Watch('syncContentData') contentItems: ProfileContentItem[] = [];
   // 媒体网格那张玻璃卡的内容宽，由 onAreaChange 量得；0 = 还没量到。
   @State private mediaRowW: number = 0;
+  // 成员、共享内容、媒体网格行各自的 LazyForEach 数据源（见 syncMembersData / syncContentData）。
+  private membersData: KeyedListDataSource<MemberItem> = new KeyedListDataSource<MemberItem>('profile-members');
+  private contentData: KeyedListDataSource<ProfileContentItem> = new KeyedListDataSource<ProfileContentItem>('profile-content');
+  private mediaRowsData: KeyedListDataSource<ProfileContentItem[]> =
+    new KeyedListDataSource<ProfileContentItem[]>('profile-media-rows');
   @State contentState: string = 'idle';
   @State contentErrorText: string = '';
   @State contentHasMore: boolean = false;
@@ -1192,6 +1204,60 @@ export struct ChatProfilePage {
   }
 
   // 长按成员时该出哪些菜单项。判定是纯函数，见 util/memberMenu。
+  // 成员行（复用组件）只报 userId：回调跟着复用节点进出复用池，不能攥着建它时的那个成员。
+  private handleMemberActionById(userId: number, action: string): void {
+    const m: MemberItem | undefined = this.members.find((item: MemberItem): boolean => item.userId === userId);
+    if (m !== undefined) {
+      this.handleMemberAction(m, action);
+    }
+  }
+
+  private onContentFileActionById(messageId: number): void {
+    const item: ProfileContentItem | undefined =
+      this.contentItems.find((it: ProfileContentItem): boolean => it.messageId === messageId);
+    if (item !== undefined) {
+      this.onContentFileAction(item);
+    }
+  }
+
+  // 媒体网格的行宽（= 玻璃卡内容宽），格子边长按它算。没真的变就不写回状态。
+  private noteMediaRowWidth(width: number): void {
+    if (width > 0 && Math.abs(width - this.mediaRowW) > 0.5) {
+      this.mediaRowW = width;
+    }
+  }
+
+  private memberKey(m: MemberItem): string {
+    // key 里带上菜单形态：权限是异步读回来的，只按 id 的话，先渲染出来的那批行会一直挂着
+    // "什么都不能做"的旧菜单（原 ForEach 的注释）。权限状态变化时 syncMembersData 会重发。
+    return `${m.userId}_${m.avatarPath}_${m.name}_${m.status}_${m.role}_${m.roleTitle}_${m.tag}_` +
+      memberMenuSignature(this.menuOptionsFor(m));
+  }
+
+  private syncMembersData(): void {
+    this.membersData.update(this.members,
+      this.members.map((m: MemberItem): string => `${m.userId}`),
+      this.members.map((m: MemberItem): string => this.memberKey(m)));
+  }
+
+  // 媒体行以位置为身份（row_0、row_1…）：翻页只会让最后一个不满的行变内容、后面追加新行，
+  // 数据源因此发的是 CHANGE + ADD，而不是整表 RELOAD。
+  private mediaRowKey(row: ProfileContentItem[], index: number): string {
+    return `row_${index}_` + row.map((it: ProfileContentItem): string =>
+      `${it.messageId}_${it.thumbPath}_${it.duration}`).join('|');
+  }
+
+  private syncContentData(): void {
+    const items: ProfileContentItem[] = this.contentItems;
+    this.contentData.update(items,
+      items.map((it: ProfileContentItem): string => `${it.messageId}`),
+      items.map((it: ProfileContentItem): string => profileContentKey(it)));
+    const rows: ProfileContentItem[][] = chunkRows(items, MEDIA_GRID_COLS);
+    this.mediaRowsData.update(rows,
+      rows.map((_row: ProfileContentItem[], index: number): string => `row_${index}`),
+      rows.map((row: ProfileContentItem[], index: number): string => this.mediaRowKey(row, index)));
+  }
+
   private menuOptionsFor(m: MemberItem): MemberMenuOptions {
     return memberMenuOptions(
       {
@@ -1452,43 +1518,62 @@ export struct ChatProfilePage {
     .glassCard();
   }
 
+  // 成员页签：一整块玻璃卡（ListItemGroup），成员行走 LazyForEach + 复用组件 MemberRow。
+  // 原来是 Column + ForEach，大群翻页加载后几百上千行一起活着。左右滑切页签的手势挂在卡片
+  // 上（原来挂在内容 Column 上），不挂整个 List——那会抢走页签条自己的横向滚动。
   @Builder
-  membersContent() {
-    Column() {
+  membersItems() {
+    ListItemGroup() {
       if (this.members.length > 0) {
-        ForEach(this.members, (m: MemberItem, idx: number) => {
-          MemberRow({
-            member: m,
-            options: this.menuOptionsFor(m),
-            showDivider: idx < this.members.length - 1,
-            onOpenProfile: (userId: number): void => { this.openMemberProfile(userId); },
-            onAction: (action: string): void => { this.handleMemberAction(m, action); }
-          });
-          // key 里带上菜单形态：权限是异步读回来的，只按 id 复用的话，先渲染
-          // 出来的那批行会一直挂着"什么都不能做"的旧菜单。
-        }, (m: MemberItem) =>
-          `${m.userId}_${m.avatarPath}_${m.role}_${m.tag}_${memberMenuSignature(this.menuOptionsFor(m))}`);
+        LazyForEach(this.membersData, (m: MemberItem, idx: number) => {
+          ListItem() {
+            MemberRow({
+              member: m,
+              options: this.menuOptionsFor(m),
+              showDivider: idx < this.members.length - 1,
+              onOpenProfile: (userId: number): void => { this.openMemberProfile(userId); },
+              onAction: (userId: number, action: string): void => { this.handleMemberActionById(userId, action); }
+            });
+          }
+        }, (m: MemberItem, idx: number): string =>
+          guardKey(this.membersData.keyTableId, idx, this.memberKey(m)));
         if (this.store !== null && this.store.hasMoreMembers) {
-          Row({ space: 8 }) {
-            LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-            Text($r('app.string.cpp_loading_more_members')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
-          }.height(52).justifyContent(FlexAlign.Center).width('100%');
+          ListItem() {
+            Row({ space: 8 }) {
+              LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
+              Text($r('app.string.cpp_loading_more_members')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+            }.height(52).justifyContent(FlexAlign.Center).width('100%');
+          }
         }
       } else if (this.membersState === 'loading') {
-        this.inlineState('loading', str('cpp_loading_members'));
+        ListItem() {
+          this.inlineState('loading', str('cpp_loading_members'));
+        }
       } else if (this.membersState === 'restricted') {
-        this.inlineState('restricted', this.isChannel
-          ? str('cpp_no_full_subscribers')
-          : str('cpp_no_member_access'));
+        ListItem() {
+          this.inlineState('restricted', this.isChannel
+            ? str('cpp_no_full_subscribers')
+            : str('cpp_no_member_access'));
+        }
       } else if (this.membersState === 'error') {
-        this.inlineState('error', str('cpp_members_failed'));
+        ListItem() {
+          this.inlineState('error', str('cpp_members_failed'));
+        }
       } else {
-        this.inlineState('empty', str('cpp_no_members'));
+        ListItem() {
+          this.inlineState('empty', str('cpp_no_members'));
+        }
       }
     }
     .width('calc(100% - 28vp)')
     .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP, bottom: 24 })
-    .glassCard().clip(true);
+    .glassCard().clip(true)
+        .priorityGesture(
+      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+        .onActionEnd((event: GestureEvent): void => {
+          this.handleDetailTabPan(event.offsetX);
+        })
+    );
   }
 
   @Builder
@@ -1556,60 +1641,6 @@ export struct ChatProfilePage {
       ? this.mediaRowW : mediaFallbackContentWidth(this.screenW));
   }
 
-  @Builder
-  mediaContent() {
-    // 玻璃卡挪到外层 Column：Flex 自己不带描边，onAreaChange 量到的就是真正
-    // 可用的内容宽。卡片留在 Flex 上的话，量到的是含描边的外框，还得再减一
-    // 个魔数——那正是原来出错的地方。
-    Column() {
-    Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-      ForEach(this.contentItems, (item: ProfileContentItem) => {
-        Stack({ alignContent: Alignment.BottomEnd }) {
-          if (item.thumbPath !== '') {
-            Image(`file://${item.thumbPath}`).draggable(false).width('100%').height('100%')
-              .objectFit(ImageFit.Cover);
-          } else {
-            Column() {
-              SymbolGlyph($r(item.isVideo ? 'sys.symbol.video_fill' : 'sys.symbol.photo_fill'))
-                .fontSize(26).fontColor([COLOR_ICON_SECONDARY]);
-            }
-            .width('100%').height('100%').justifyContent(FlexAlign.Center)
-            .backgroundColor($r('app.color.surface_alt'));
-          }
-          if (item.isVideo) {
-            Row({ space: 3 }) {
-              SymbolGlyph($r('sys.symbol.play_fill')).fontSize(10).fontColor([Color.White]);
-              if (item.duration !== '') {
-                Text(item.duration).fontSize(11).fontColor(Color.White);
-              }
-            }
-            .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-            .margin({ right: 5, bottom: 5 })
-            .backgroundColor('#70000000').borderRadius(8);
-          }
-        }
-        .width(this.mediaCellSize()).height(this.mediaCellSize())
-        .margin({ right: 2, bottom: 2 })
-        .stateStyles({ normal: this.tabNormalStyle, pressed: this.tabPressedStyle })
-        .onClick((): void => { this.openContentMessage(item.messageId); });
-      }, (item: ProfileContentItem) => `${item.messageId}_${item.thumbPath}`);
-    }
-    .width('100%')
-    .onAreaChange((_old: Area, area: Area): void => {
-      const w: number = area.width as number;
-      // 格子跟着宽度变，Flex 的高度也就跟着变，onAreaChange 会再触发一次。
-      // 宽度没真的变就别写回状态，免得白白多跑一轮布局。
-      if (w > 0 && Math.abs(w - this.mediaRowW) > 0.5) {
-        this.mediaRowW = w;
-      }
-    });
-    }
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 10 })
-    .glassCard().clip(true);
-    this.paginationFooter();
-  }
-
   private contentIcon(item: ProfileContentItem): string {
     if (item.contentType === 'messageDocument') {
       return 'sys.symbol.doc_text';
@@ -1668,73 +1699,103 @@ export struct ChatProfilePage {
     .glassCard().clip(true);
   }
 
+  // 内容页签（媒体 / 文件 / 链接…）。搜索条、占位、分页脚各占一项；媒体网格按 3 格一行走
+  // LazyForEach（ProfileMediaRow），其余类型走 LazyForEach 的内容行（ProfileContentRow）。
   @Builder
-  contentList() {
-    Column() {
-      ForEach(this.contentItems, (item: ProfileContentItem, index: number) => {
-        Column() {
-          Row({ space: 11 }) {
-            Stack() {
-              if (item.thumbPath !== '') {
-                Image(`file://${item.thumbPath}`).draggable(false).width(46).height(46)
-                  .objectFit(ImageFit.Cover).borderRadius(10);
-              } else {
-                SymbolGlyph($r(this.contentIcon(item))).fontSize(22).fontColor([COLOR_PRIMARY]);
-              }
-            }
-            .width(46).height(46).borderRadius(10)
-            .backgroundColor($r('app.color.surface_alt'));
-            Column({ space: 3 }) {
-              Text(item.title).fontSize(15).fontWeight(FontWeight.Medium)
-                .fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis });
-              if (item.preview !== '') {
-                Text(item.preview).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-              }
-              if (item.meta !== '') {
-                Text(item.meta).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-              }
-            }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-            // 文档和音乐给一个就地下载 / 打开的按钮；其余类型仍然只有跳转
-            // 箭头（图片视频在聊天里看更合适）。按钮自己吃掉点击，所以点它
-            // 不会连带触发整行的"跳回聊天记录"。
-            if (item.downloading) {
-              Row() {
-                LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-              }
-              .width(34).height(34).justifyContent(FlexAlign.Center);
-            } else if (item.fileId > 0) {
-              Row() {
-                SymbolGlyph($r(item.filePath !== ''
-                  ? 'sys.symbol.arrow_up_right' : 'sys.symbol.arrow_down_circle'))
-                  .fontSize(18).fontColor([COLOR_PRIMARY]);
-              }
-              .width(34).height(34).borderRadius(17)
-              .justifyContent(FlexAlign.Center)
-              .onClick((): void => { this.onContentFileAction(item); })
-              .accessibilityText(item.filePath !== ''
-                ? $r('app.string.open') : $r('app.string.gs_downloads'));
-            } else {
-              SymbolGlyph($r('sys.symbol.chevron_right'))
-                .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
-            }
-          }
-          .width('100%').constraintSize({ minHeight: 64 })
-          .padding({ left: 12, right: 10, top: 9, bottom: 9 })
-          .stateStyles({ normal: this.contentRowNormalStyle, pressed: this.contentRowPressedStyle })
-          .onClick((): void => { this.openContentMessage(item.messageId); });
-          if (index < this.contentItems.length - 1) {
-            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 69 });
-          }
-        }.width('100%');
-      }, (item: ProfileContentItem) => `${item.messageId}_${item.thumbPath}`);
+  contentTabItems() {
+    // 搜索条画在分支**外面**：搜不到结果时下面是空态，搜索条要是跟着一起消失，用户就没地方
+    // 清空关键词了，只能退出去重进。
+    ListItem() {
+      this.contentSearchBar();
     }
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 10 })
-    .glassCard().clip(true);
-    this.paginationFooter();
+        .priorityGesture(
+      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+        .onActionEnd((event: GestureEvent): void => {
+          this.handleDetailTabPan(event.offsetX);
+        })
+    )
+    if (this.contentState === 'loading' || this.contentState === 'error' ||
+      (this.contentState === 'ready' && this.contentItems.length === 0)) {
+      ListItem() {
+        this.contentPlaceholder();
+      }
+            .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+      )
+    } else if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
+      // 玻璃卡在 group 上；格子边长按行的实际宽算（onSizeChange 量行宽，理由见 util/mediaGrid）。
+      ListItemGroup() {
+        LazyForEach(this.mediaRowsData, (row: ProfileContentItem[], index: number) => {
+          ListItem() {
+            ProfileMediaRow({
+              items: row,
+              cellSize: this.mediaCellSize(),
+              pressedOpacity: 0.58,
+              onOpen: (messageId: number): void => { this.openContentMessage(messageId); }
+            });
+          }
+          .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+            this.noteMediaRowWidth(Number(size.width));
+          });
+        }, (row: ProfileContentItem[], index: number): string =>
+          guardKey(this.mediaRowsData.keyTableId, index, this.mediaRowKey(row, index)));
+      }
+      .width('calc(100% - 24vp)')
+      .margin({ left: 12, right: 12, top: 10 })
+      .glassCard().clip(true)
+            .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+      );
+      ListItem() {
+        this.paginationFooter();
+      }
+            .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+      )
+    } else {
+      ListItemGroup() {
+        LazyForEach(this.contentData, (item: ProfileContentItem, index: number) => {
+          ListItem() {
+            ProfileContentRow({
+              item: item,
+              icon: this.contentIcon(item),
+              fileActions: true,
+              onOpen: (messageId: number): void => { this.openContentMessage(messageId); },
+              onFileAction: (messageId: number): void => { this.onContentFileActionById(messageId); }
+            });
+          }
+        }, (item: ProfileContentItem, index: number): string =>
+          guardKey(this.contentData.keyTableId, index, profileContentKey(item)));
+      }
+      .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 69 })
+      .width('calc(100% - 24vp)')
+      .margin({ left: 12, right: 12, top: 10 })
+      .glassCard().clip(true)
+            .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+      );
+      ListItem() {
+        this.paginationFooter();
+      }
+            .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+      )
+    }
   }
 
   @Builder
@@ -1759,25 +1820,6 @@ export struct ChatProfilePage {
     });
   }
 
-  @Builder
-  selectedTabContent() {
-    if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
-      this.membersContent();
-    } else {
-      // 搜索条画在分支**外面**：搜不到结果时下面是空态，搜索条要是跟着一起
-      // 消失，用户就没地方清空关键词了，只能退出去重进。
-      this.contentSearchBar();
-      if (this.contentState === 'loading' || this.contentState === 'error' ||
-        (this.contentState === 'ready' && this.contentItems.length === 0)) {
-        this.contentPlaceholder();
-      } else if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
-        this.mediaContent();
-      } else {
-        this.contentList();
-      }
-    }
-  }
-
   build() {
     HdsNavDestination() {
     // 查看器需覆盖整页，故在滚动容器外再包一层 Stack。
@@ -1785,39 +1827,43 @@ export struct ChatProfilePage {
     // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
     // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
     AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) });
-    Scroll() {
-      Column() {
-        this.header();
-        if (this.pageState === 'ready') {
-          this.actionsRow();
-          this.infoCard();
-          if (this.tabsState === 'loading') {
-            this.tabsLoadingCard();
-          } else if (this.visibleTabs().length > 0) {
-            Column() {
-              this.detailTabBar();
-              Column() {
-                this.selectedTabContent();
-              }
-              .width('100%')
-              .priorityGesture(
-                PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-                  .onActionEnd((event: GestureEvent): void => {
-                    this.handleDetailTabPan(event.offsetX);
-                  })
-              );
+    // 整页是一个 List（原来是 Scroll > Column）：头图、操作行、资料卡在第一项，页签条一项，
+    // 页签内容按行放进 List——成员、文件/链接走 LazyForEach，媒体网格按 3 格一行走 LazyForEach。
+    // 大群的成员、翻了很多页的共享内容都只建可视区附近的行，其余滚动时逐帧补建。
+    List() {
+      ListItem() {
+        Column() {
+          this.header();
+          if (this.pageState === 'ready') {
+            this.actionsRow();
+            this.infoCard();
+            if (this.tabsState === 'loading') {
+              this.tabsLoadingCard();
             }
-            .width('100%').margin({ top: 12 });
+          } else {
+            this.pageStateCard();
           }
+        }
+        .width('100%');
+      }
+      if (this.pageState === 'ready' && this.tabsState !== 'loading' && this.visibleTabs().length > 0) {
+        ListItem() {
+          Column() {
+            this.detailTabBar();
+          }
+          .width('100%')
+          .margin({ top: 12 });
+        }
+        if (this.currentTabKey() === PROFILE_TAB_MEMBERS) {
+          this.membersItems();
         } else {
-          this.pageStateCard();
+          this.contentTabItems();
         }
       }
-      .width('100%');
     }
     .width('100%').height('100%')
-    .align(Alignment.Top)
     .scrollBar(BarState.Off)
+    .cachedCount(PROFILE_LIST_CACHED_COUNT)
     // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill
     // 的理由）。卡片自己是毛玻璃（overlayGlassFill），压在壁纸上仍然读得清。
     .backgroundColor(this.appWallpaperOn ? Color.Transparent : $r('app.color.page_bg'))

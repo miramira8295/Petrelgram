@@ -51,7 +51,7 @@
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageEntry } from '../../store/MessageEntry';
 import {
-  memberSelected, pruneSelection, rowSelectable, rowSelected, toggleMember, toggleRow
+  memberSelected, pruneSelection, rowSelectable, rowSelected, selectRow, toggleMember, toggleRow
 } from '../../util/messageSelection';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 
@@ -120,6 +120,23 @@ export class SelectionSession {
     this.animateSelection((): void => {
       this.ids = toggleRow([], memberIds);
       this.setActive(true);
+    });
+  }
+
+  // 长按 / 右滑 / 菜单「选择」的统一入口。还没进多选：同 enter（从这一行起步）。
+  // 已在多选：把这一行补进已选集合，不清掉之前选好的（见 util/messageSelection.selectRow）。
+  selectRow(memberIds: number[]): void {
+    if (!this.active) {
+      this.enter(memberIds);
+      return;
+    }
+    ContextMenu.close();
+    const next: number[] = selectRow(this.ids, memberIds);
+    if (next === this.ids) {
+      return;
+    }
+    this.animateSelection((): void => {
+      this.ids = next;
     });
   }
 

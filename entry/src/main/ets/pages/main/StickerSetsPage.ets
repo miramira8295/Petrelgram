@@ -12,6 +12,8 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 
 const CARD_RADIUS: number = 14;
 
@@ -20,6 +22,19 @@ interface StickerSetRow {
   title: string;
   count: number;
   archived: boolean;
+}
+
+// 列表行的显示数据。能不能上移取决于它在已安装列表里的位置，所以放进行数据和 key：
+// LazyForEach 下挪动之后，新的首行才会去掉上移按钮。
+interface StickerSetItem {
+  id: string;
+  title: string;
+  count: number;
+  canMoveUp: boolean;
+}
+
+function stickerSetKey(item: StickerSetItem): string {
+  return `${item.id}_${item.title}_${item.count}_${item.canMoveUp}`;
 }
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
@@ -36,13 +51,16 @@ export struct StickerSetsPage {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
-  @State installed: StickerSetRow[] = [];
-  @State archived: StickerSetRow[] = [];
+  @State @Watch('syncInstalledData') installed: StickerSetRow[] = [];
+  @State @Watch('syncArchivedData') archived: StickerSetRow[] = [];
   @State query: string = '';
   @State loadState: string = 'loading';
   @State busyId: string = '';
   private active: boolean = false;
   private searchTimer: number = -1;
+  // 两张卡各自的 LazyForEach 数据源（见 syncInstalledData / syncArchivedData）。
+  private installedData: KeyedListDataSource<StickerSetItem> = new KeyedListDataSource<StickerSetItem>('sticker-installed');
+  private archivedData: KeyedListDataSource<StickerSetItem> = new KeyedListDataSource<StickerSetItem>('sticker-archived');
 
   aboutToAppear(): void {
     this.active = true;
@@ -146,34 +164,45 @@ export struct StickerSetsPage {
       });
   }
 
-  @Builder
-  setRow(row: StickerSetRow, index: number, isArchived: boolean) {
-    Row({ space: 10 }) {
-      Column({ space: 2 }) {
-        Text(row.title !== '' ? row.title : $r('app.string.sticker_set_untitled'))
-          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(plural('sticker_set_count', row.count, row.count)).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      if (!isArchived && index > 0) {
-        Button() {
-          SymbolGlyph($r('sys.symbol.arrow_up')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
-        }.width(34).height(34).backgroundColor(Color.Transparent)
-        .onClick((): void => this.moveUp(index));
-      }
-      Button() {
-        SymbolGlyph($r(isArchived ? 'sys.symbol.arrow_clockwise' : 'sys.symbol.arrow_down_to_line'))
-          .fontSize(16).fontColor([COLOR_PRIMARY]);
-      }.width(34).height(34).backgroundColor(Color.Transparent)
-      .onClick((): void => this.setArchived(row, !isArchived));
-      if (!isArchived) {
-        Button() {
-          SymbolGlyph($r('sys.symbol.trash')).fontSize(16).fontColor(['#E5484D']);
-        }.width(34).height(34).backgroundColor(Color.Transparent)
-        .onClick((): void => this.remove(row));
-      }
+  private itemOf(row: StickerSetRow, canMoveUp: boolean): StickerSetItem {
+    return { id: row.id, title: row.title, count: row.count, canMoveUp: canMoveUp };
+  }
+
+  // 两张卡的 LazyForEach 数据源同步（@Watch 触发）。
+  private syncInstalledData(): void {
+    const items: StickerSetItem[] = this.installed.map((r: StickerSetRow, index: number): StickerSetItem =>
+      this.itemOf(r, index > 0));
+    this.installedData.update(items,
+      items.map((i: StickerSetItem): string => i.id),
+      items.map((i: StickerSetItem): string => stickerSetKey(i)));
+  }
+
+  private syncArchivedData(): void {
+    const items: StickerSetItem[] = this.archived.map((r: StickerSetRow): StickerSetItem => this.itemOf(r, false));
+    this.archivedData.update(items,
+      items.map((i: StickerSetItem): string => i.id),
+      items.map((i: StickerSetItem): string => stickerSetKey(i)));
+  }
+
+  // 行内按钮只报 id（和行自己当下是否已归档）：两张卡共用一个复用池，节点上的回调不随
+  // 新的一行更新，所以回调里不能写死是哪张卡、更不能攥行对象。这里按 id 找回当下那一项。
+  private moveUpById(id: string): void {
+    this.moveUp(this.installed.findIndex((r: StickerSetRow): boolean => r.id === id));
+  }
+
+  private toggleArchivedById(id: string, rowArchived: boolean): void {
+    const source: StickerSetRow[] = rowArchived ? this.archived : this.installed;
+    const row: StickerSetRow | undefined = source.find((r: StickerSetRow): boolean => r.id === id);
+    if (row !== undefined) {
+      this.setArchived(row, !rowArchived);
     }
-    .width('100%').height(58).padding({ left: 14, right: 8 });
+  }
+
+  private removeById(id: string): void {
+    const row: StickerSetRow | undefined = this.installed.find((r: StickerSetRow): boolean => r.id === id);
+    if (row !== undefined) {
+      this.remove(row);
+    }
   }
 
   build() {
@@ -205,41 +234,108 @@ export struct StickerSetsPage {
           Button($r('app.string.settings_reload')).onClick((): void => this.load());
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
-        Scroll(this.hdsScroller) {
-          Column({ space: 12 }) {
+        // 两张卡各是一个 ListItemGroup，行走 LazyForEach + 复用行（StickerSetRowView）；分隔线交给
+        // 组的 divider（原来按 index > 0 在行内画，LazyForEach 下挪动后首行顶上会留一条）。
+        List({ scroller: this.hdsScroller, space: 12 }) {
+          ListItem() {
             Text(str('sticker_installed_count', this.installed.length)).fontSize(12)
               .fontColor(COLOR_TEXT_SECONDARY).width('100%').padding({ left: 4 });
-            Column() {
-              ForEach(this.installed, (row: StickerSetRow, index: number) => {
-                if (index > 0) {
-                  Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 14 });
-                }
-                this.setRow(row, index, false);
-              }, (row: StickerSetRow): string => `inst_${row.id}`);
-            }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
-            if (this.archived.length > 0) {
+          }
+          ListItemGroup() {
+            LazyForEach(this.installedData, (item: StickerSetItem) => {
+              ListItem() {
+                StickerSetRowView({
+                  setId: item.id, title: item.title, stickerCount: item.count,
+                  archived: false, canMoveUp: item.canMoveUp,
+                  onMoveUp: (id: string): void => { this.moveUpById(id); },
+                  onToggleArchive: (id: string, rowArchived: boolean): void => { this.toggleArchivedById(id, rowArchived); },
+                  onRemove: (id: string): void => { this.removeById(id); }
+                });
+              }
+            }, (item: StickerSetItem, index: number): string =>
+              guardKey(this.installedData.keyTableId, index, stickerSetKey(item)));
+          }
+          .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 14 })
+          .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+          if (this.archived.length > 0) {
+            ListItem() {
               Text(str('sticker_archived_count', this.archived.length)).fontSize(12)
                 .fontColor(COLOR_TEXT_SECONDARY).width('100%').padding({ left: 4 });
-              Column() {
-                ForEach(this.archived, (row: StickerSetRow, index: number) => {
-                  if (index > 0) {
-                    Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 14 });
-                  }
-                  this.setRow(row, index, true);
-                }, (row: StickerSetRow): string => `arch_${row.id}`);
-              }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
             }
+            ListItemGroup() {
+              LazyForEach(this.archivedData, (item: StickerSetItem) => {
+                ListItem() {
+                  StickerSetRowView({
+                    setId: item.id, title: item.title, stickerCount: item.count,
+                    archived: true, canMoveUp: item.canMoveUp,
+                    onMoveUp: (id: string): void => { this.moveUpById(id); },
+                    onToggleArchive: (id: string, rowArchived: boolean): void => { this.toggleArchivedById(id, rowArchived); },
+                    onRemove: (id: string): void => { this.removeById(id); }
+                  });
+                }
+              }, (item: StickerSetItem, index: number): string =>
+                guardKey(this.archivedData.keyTableId, index, stickerSetKey(item)));
+            }
+            .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 14 })
+            .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+          }
+          ListItem() {
             Text($r('app.string.sticker_archive_note'))
               .fontSize(12).fontColor(COLOR_TEXT_SECONDARY).lineHeight(18).width('100%');
-          }.width('100%').padding({ left: 12, right: 12, bottom: this.bottomSafe + 24 });
+          }
         }
-        .align(Alignment.Top)
-        .layoutWeight(1).width('100%').scrollBar(BarState.Off)
+        .layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4)
+        .padding({ left: 12, right: 12 })
+        // 底部留白原来是内容列的 padding（随内容滚动），在 List 上对应 contentEndOffset。
+        .contentEndOffset(this.bottomSafe + 24)
         // 不裁剪，内容才能穿到标题栏底下——渐变模糊模糊的正是这部分。
         .clip(false);
       }
       }.width('100%').height('100%');
     }
     }.width('100%').height('100%');
+  }
+}
+
+// 贴纸集的一行（原 setRow）。复用组件；三个按钮只报贴纸集 id（归档键再带上行自己的状态）。
+@Reusable
+@Component
+struct StickerSetRowView {
+  @Prop setId: string = '';
+  @Prop title: string = '';
+  @Prop stickerCount: number = 0;
+  @Prop archived: boolean = false;
+  @Prop canMoveUp: boolean = false;
+  onMoveUp: (id: string) => void = (_id: string): void => {};
+  onToggleArchive: (id: string, rowArchived: boolean) => void = (_id: string, _rowArchived: boolean): void => {};
+  onRemove: (id: string) => void = (_id: string): void => {};
+
+  build() {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        Text(this.title !== '' ? this.title : $r('app.string.sticker_set_untitled'))
+          .fontSize(16).fontColor(COLOR_TEXT_PRIMARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(plural('sticker_set_count', this.stickerCount, this.stickerCount)).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      if (!this.archived && this.canMoveUp) {
+        Button() {
+          SymbolGlyph($r('sys.symbol.arrow_up')).fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
+        }.width(34).height(34).backgroundColor(Color.Transparent)
+        .onClick((): void => { this.onMoveUp(this.setId); });
+      }
+      Button() {
+        SymbolGlyph(this.archived ? $r('sys.symbol.arrow_clockwise') : $r('sys.symbol.arrow_down_to_line'))
+          .fontSize(16).fontColor([COLOR_PRIMARY]);
+      }.width(34).height(34).backgroundColor(Color.Transparent)
+      .onClick((): void => { this.onToggleArchive(this.setId, this.archived); });
+      if (!this.archived) {
+        Button() {
+          SymbolGlyph($r('sys.symbol.trash')).fontSize(16).fontColor(['#E5484D']);
+        }.width(34).height(34).backgroundColor(Color.Transparent)
+        .onClick((): void => { this.onRemove(this.setId); });
+      }
+    }
+    .width('100%').height(58).padding({ left: 14, right: 8 });
   }
 }

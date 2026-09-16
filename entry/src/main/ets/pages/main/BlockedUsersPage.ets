@@ -2,6 +2,8 @@ import { router, promptAction } from '@kit.ArkUI';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { AvatarView } from '../chatlist/AvatarView';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
@@ -45,15 +47,18 @@ struct BlockedUsersPage {
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 窗口宽（不是屏幕宽），限宽用。平板上把一列拉满 2880px 眼睛要横扫一行。
   @StorageProp('screenWidthVp') screenW: number = 360;
-  @State rows: BlockedRow[] = [];
+  @State @Watch('syncRowsData') rows: BlockedRow[] = [];
   @State loadState: string = 'loading';
   @State pageState: string = 'idle';
   @State totalCount: number = 0;
   @State actionKey: string = '';
   @State pickerOpen: boolean = false;
   @State pickerState: string = 'loading';
-  @State pickerUsers: PickerUser[] = [];
-  @State pickerQuery: string = '';
+  @State @Watch('syncPickerData') pickerUsers: PickerUser[] = [];
+  @State @Watch('syncPickerData') pickerQuery: string = '';
+  // 两个列表各自的 LazyForEach 数据源（见 syncRowsData / syncPickerData）。
+  private rowsData: KeyedListDataSource<BlockedRow> = new KeyedListDataSource<BlockedRow>('blocked');
+  private pickerData: KeyedListDataSource<PickerUser> = new KeyedListDataSource<PickerUser>('block-picker');
   private active: boolean = false;
   private sequence: number = 0;
   private unsubscribeFile: (() => void) | null = null;
@@ -281,6 +286,29 @@ struct BlockedUsersPage {
     });
   }
 
+  // 屏蔽名单变了（翻页、解除屏蔽、补全资料）：交给 LazyForEach。
+  private syncRowsData(): void {
+    this.rowsData.update(this.rows,
+      this.rows.map((r: BlockedRow): string => r.key),
+      this.rows.map((r: BlockedRow): string => `${r.key}_${r.title}_${r.subtitle}_${r.avatarPath}`));
+  }
+
+  // 选人候选 / 搜索词变了：把当下要显示的那一份交给 LazyForEach。
+  private syncPickerData(): void {
+    const list: PickerUser[] = this.filteredPicker();
+    this.pickerData.update(list,
+      list.map((u: PickerUser): string => `${u.id}`),
+      list.map((u: PickerUser): string => `${u.id}_${u.avatarPath}_${u.name}_${u.subtitle}`));
+  }
+
+  // 行组件只报 key：它的回调跟着复用节点进出复用池，不能攥着建它时的那一行。
+  private unblockByKey(key: string): void {
+    const row: BlockedRow | undefined = this.rows.find((item: BlockedRow): boolean => item.key === key);
+    if (row !== undefined) {
+      this.unblock(row);
+    }
+  }
+
   private filteredPicker(): PickerUser[] {
     const query = this.pickerQuery.trim().toLowerCase();
     if (query === '') { return this.pickerUsers; }
@@ -330,28 +358,6 @@ struct BlockedUsersPage {
   }
 
   @Builder
-  row(row: BlockedRow) {
-    Row({ space: 12 }) {
-      AvatarView({
-        avatarPath: row.avatarPath, initials: row.initials,
-        colorSeed: row.userId !== 0 ? row.userId : row.chatId, avatarSize: 46
-      });
-      Column({ space: 2 }) {
-        Text(row.title !== '' ? row.title : $r('app.string.loading_short')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(row.subtitle).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-      if (this.actionKey === row.key) { LoadingProgress().width(19).height(19).color(COLOR_PRIMARY); }
-      else {
-        Button($r('app.string.bu_unblock')).height(36).fontSize(13).fontColor(COLOR_PRIMARY).backgroundColor(Color.Transparent)
-          .enabled(this.actionKey === '').onClick((): void => { this.unblock(row); });
-      }
-    }
-    .width('100%').constraintSize({ minHeight: 62 }).padding({ left: 10, right: 8, top: 6, bottom: 6 });
-  }
-
-  @Builder
   pickerSheet() {
     Column({ space: 10 }) {
       Row() {
@@ -381,25 +387,16 @@ struct BlockedUsersPage {
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
         List() {
-          ForEach(this.filteredPicker(), (user: PickerUser) => {
+          // LazyForEach + 复用行（BlockPickerRow）：候选是全部联系人，几千个时只建可视区
+          // 附近的行。点击挂在 ListItem 上，闭包随行 key 重建。
+          LazyForEach(this.pickerData, (user: PickerUser) => {
             ListItem() {
-              Row({ space: 12 }) {
-                AvatarView({ avatarPath: user.avatarPath, initials: user.initials, colorSeed: user.id, avatarSize: 44 });
-                Column({ space: 2 }) {
-                  Text(user.name).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).maxLines(1);
-                  Text(user.subtitle).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1);
-                }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                if (this.actionKey === `block_${user.id}`) {
-                  LoadingProgress().width(19).height(19).color(COLOR_PRIMARY);
-                } else {
-                  SymbolGlyph($r('sys.symbol.nosign')).fontSize(20).fontColor([COLOR_DANGER]);
-                }
-              }
-              .width('100%').height(60).padding({ left: 6, right: 10 })
-              .onClick((): void => { this.block(user); });
+              BlockPickerRow({ user: user, busy: this.actionKey === `block_${user.id}` });
             }
-          }, (user: PickerUser): string => `block_picker_${user.id}`);
-        }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+            .onClick((): void => { this.block(user); });
+          }, (user: PickerUser, index: number): string =>
+            guardKey(this.pickerData.keyTableId, index, `${user.id}_${user.avatarPath}_${user.name}_${user.subtitle}`));
+        }.layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4);
       }
     }
     .width('100%').height('100%').padding({ left: 16, right: 16, top: 4, bottom: this.bottomSafe + 8 });
@@ -427,16 +424,20 @@ struct BlockedUsersPage {
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
         List() {
-          ForEach(this.rows, (row: BlockedRow, index: number) => {
+          // LazyForEach + 复用行（BlockedSenderRow）。分隔线交给 List 的 divider：原来按
+          // index > 0 在行内插 Divider，LazyForEach 下删掉第一行后，新的第一行沿用旧节点，
+          // 顶上会多一条线。
+          LazyForEach(this.rowsData, (row: BlockedRow) => {
             ListItem() {
-              Column() {
-                if (index > 0) {
-                  Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 68 });
-                }
-                this.row(row);
-              }.width('100%');
+              BlockedSenderRow({
+                row: row,
+                busy: this.actionKey === row.key,
+                actionsEnabled: this.actionKey === '',
+                onUnblock: (key: string): void => { this.unblockByKey(key); }
+              });
             }
-          }, (row: BlockedRow): string => row.key);
+          }, (row: BlockedRow, index: number): string =>
+            guardKey(this.rowsData.keyTableId, index, `${row.key}_${row.title}_${row.subtitle}_${row.avatarPath}`));
           ListItem() {
             if (this.pageState === 'loading') {
               Row({ space: 8 }) {
@@ -451,6 +452,8 @@ struct BlockedUsersPage {
           }
         }
         .layoutWeight(1).width('100%').backgroundColor(COLOR_SURFACE).scrollBar(BarState.Off)
+        .cachedCount(4)
+        .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 68 })
         // 限宽做在 List 的内边距上而不是 List 的宽度上：List 仍铺满窗口，两侧
         // 让出来的留白因此还在 List 的命中区里，手指按在留白上照样能拖动列表。
         // 手机上 contentSideGutter 恒为 0，这两个值逐像素等于改动前的 4。
@@ -474,5 +477,67 @@ struct BlockedUsersPage {
       showClose: false,
       blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
+  }
+}
+
+// 「添加屏蔽」选人面板的一行。复用组件；点击在页面的 ListItem 上。
+@Reusable
+@Component
+struct BlockPickerRow {
+  @Prop user: PickerUser;
+  @Prop busy: boolean = false;
+
+  build() {
+    Row({ space: 12 }) {
+      AvatarView({
+        avatarPath: this.user.avatarPath, initials: this.user.initials,
+        colorSeed: this.user.id, avatarSize: 44
+      });
+      Column({ space: 2 }) {
+        Text(this.user.name).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).maxLines(1);
+        Text(this.user.subtitle).fontSize(12).fontColor(COLOR_TEXT_SECONDARY).maxLines(1);
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      if (this.busy) {
+        LoadingProgress().width(19).height(19).color(COLOR_PRIMARY);
+      } else {
+        SymbolGlyph($r('sys.symbol.nosign')).fontSize(20).fontColor([COLOR_DANGER]);
+      }
+    }
+    .width('100%').height(60).padding({ left: 6, right: 10 });
+  }
+}
+
+// 屏蔽名单的一行（原 BlockedUsersPage.row）。复用组件。
+@Reusable
+@Component
+struct BlockedSenderRow {
+  @Prop row: BlockedRow;
+  @Prop busy: boolean = false;
+  @Prop actionsEnabled: boolean = true;
+  // 只报 key，不攥行对象：这个回调跟着复用节点进出复用池（页面按 key 找回当下那一行）。
+  onUnblock: (key: string) => void = (_key: string): void => {};
+
+  build() {
+    Row({ space: 12 }) {
+      AvatarView({
+        avatarPath: this.row.avatarPath, initials: this.row.initials,
+        colorSeed: this.row.userId !== 0 ? this.row.userId : this.row.chatId, avatarSize: 46
+      });
+      Column({ space: 2 }) {
+        Text(this.row.title !== '' ? this.row.title : $r('app.string.loading_short')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(this.row.subtitle).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      if (this.busy) {
+        LoadingProgress().width(19).height(19).color(COLOR_PRIMARY);
+      } else {
+        Button($r('app.string.bu_unblock')).height(36).fontSize(13).fontColor(COLOR_PRIMARY)
+          .backgroundColor(Color.Transparent)
+          .enabled(this.actionsEnabled)
+          .onClick((): void => { this.onUnblock(this.row.key); });
+      }
+    }
+    .width('100%').constraintSize({ minHeight: 62 }).padding({ left: 10, right: 8, top: 6, bottom: 6 });
   }
 }

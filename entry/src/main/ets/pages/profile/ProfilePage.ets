@@ -16,6 +16,11 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { AvatarView } from '../chatlist/AvatarView';
+import { ProfileMediaRow } from './ProfileMediaRow';
+import { ProfileContentRow, profileContentKey } from './ProfileContentRow';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
+import { chunkRows } from '../../util/gridRows';
 import { QrDialog } from '../common/QrDialog';
 import { AvatarViewer } from '../common/AvatarViewer';
 import { TgsStickerView } from '../chat/TgsStickerView';
@@ -38,7 +43,7 @@ import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
-import { mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
+import { MEDIA_GRID_COLS, mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
@@ -84,6 +89,10 @@ export function ProfilePageBuilder(): void {
 const PROFILE_REFRESH_COALESCE_MS: number = 12;
 const PROFILE_EFFECTS_AFTER_SHOWN_MS: number = 72;
 const PROFILE_TRANSITION_ACTIONS: number[] = [0, 1, 2, 3, 4];
+// 资料页 List 在可视区外多备的行数。
+const PROFILE_LIST_CACHED_COUNT: number = 4;
+// 礼物网格一行几格（与 storyCell 的三等分一致）。
+const PROFILE_GIFT_COLS: number = 3;
 
 @Preview
 @Component
@@ -141,14 +150,21 @@ export struct ProfilePage {
   @State chAvatarPath: string = '';
   @State chSubs: string = '';
   @State chPreview: string = '';
-  @State groups: CommonGroup[] = [];
+  @State @Watch('syncGroupsData') groups: CommonGroup[] = [];
   @State stories: StoryItem[] = [];
-  @State gifts: GiftItem[] = [];
+  @State @Watch('syncGiftsData') gifts: GiftItem[] = [];
   @State sharedTabKeys: string[] = [];
   @State sharedTabsState: string = 'loading';
-  @State sharedItems: ProfileContentItem[] = [];
+  @State @Watch('syncSharedData') sharedItems: ProfileContentItem[] = [];
   // 共享媒体网格那张玻璃卡的内容宽，由 onAreaChange 量得；0 = 还没量到。
   @State private sharedRowW: number = 0;
+  // 共同群组、礼物行、共享内容、共享媒体行各自的 LazyForEach 数据源。
+  private groupsData: KeyedListDataSource<CommonGroup> = new KeyedListDataSource<CommonGroup>('profile-groups');
+  private giftRowsData: KeyedListDataSource<GiftItem[]> = new KeyedListDataSource<GiftItem[]>('profile-gift-rows');
+  private sharedData: KeyedListDataSource<ProfileContentItem> =
+    new KeyedListDataSource<ProfileContentItem>('profile-shared');
+  private sharedRowsData: KeyedListDataSource<ProfileContentItem[]> =
+    new KeyedListDataSource<ProfileContentItem[]>('profile-shared-rows');
   @State sharedState: string = 'idle';
   @State sharedErrorText: string = '';
   @State sharedHasMore: boolean = false;
@@ -676,6 +692,47 @@ export struct ProfilePage {
     }
   }
 
+  private syncGroupsData(): void {
+    this.groupsData.update(this.groups,
+      this.groups.map((g: CommonGroup): string => `${g.id}`),
+      this.groups.map((g: CommonGroup): string => `${g.id}_${g.title}_${g.avatarPath}`));
+  }
+
+  // 网格行以位置为身份：追加只会让最后一个不满的行变内容、后面加新行（CHANGE + ADD）。
+  private giftRowKey(row: GiftItem[], index: number): string {
+    return `gifts_${index}_` + row.map((g: GiftItem): string => `${g.id}_${g.stickerPath}`).join('|');
+  }
+
+  private syncGiftsData(): void {
+    const rows: GiftItem[][] = chunkRows(this.gifts, PROFILE_GIFT_COLS);
+    this.giftRowsData.update(rows,
+      rows.map((_row: GiftItem[], index: number): string => `gifts_${index}`),
+      rows.map((row: GiftItem[], index: number): string => this.giftRowKey(row, index)));
+  }
+
+  private sharedRowKey(row: ProfileContentItem[], index: number): string {
+    return `row_${index}_` + row.map((it: ProfileContentItem): string =>
+      `${it.messageId}_${it.thumbPath}_${it.duration}`).join('|');
+  }
+
+  private syncSharedData(): void {
+    const items: ProfileContentItem[] = this.sharedItems;
+    this.sharedData.update(items,
+      items.map((it: ProfileContentItem): string => `${it.messageId}`),
+      items.map((it: ProfileContentItem): string => profileContentKey(it)));
+    const rows: ProfileContentItem[][] = chunkRows(items, MEDIA_GRID_COLS);
+    this.sharedRowsData.update(rows,
+      rows.map((_row: ProfileContentItem[], index: number): string => `row_${index}`),
+      rows.map((row: ProfileContentItem[], index: number): string => this.sharedRowKey(row, index)));
+  }
+
+  // 共享媒体网格的行宽（= 玻璃卡内容宽），格子边长按它算。没真的变就不写回状态。
+  private noteSharedRowWidth(width: number): void {
+    if (width > 0 && Math.abs(width - this.sharedRowW) > 0.5) {
+      this.sharedRowW = width;
+    }
+  }
+
   private storyCell(): number {
     return (this.screenW - 4) / 3;
   }
@@ -1109,55 +1166,77 @@ export struct ProfilePage {
     }
   }
 
+  // 收到的礼物：原来是 Flex 折行 + ForEach，一次建全部格子；现在按三格一行走 LazyForEach。
   @Builder
-  giftsGrid() {
+  giftsItems() {
     if (this.gifts.length === 0) {
-      this.emptyHint(str('pp_no_gifts'));
+      ListItem() {
+        this.emptyHint(str('pp_no_gifts'));
+      }
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+      )
     } else {
-      Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-        ForEach(this.gifts, (g: GiftItem) => {
-          if (g.stickerPath !== '') {
-            Image(g.stickerPath.startsWith('/') ? `file://${g.stickerPath}` : g.stickerPath).draggable(false)
-              .width(this.storyCell()).height(this.storyCell()).objectFit(ImageFit.Contain)
-              .padding(10);
-          } else {
-            // Animated (TGS/WEBM) stickers without a raster thumbnail can't be
-            // rendered by Image — show a gift glyph instead of a blank cell.
-            Text('🎁').fontSize(40)
-              .width(this.storyCell()).height(this.storyCell())
-              .textAlign(TextAlign.Center);
+      ListItemGroup() {
+        LazyForEach(this.giftRowsData, (row: GiftItem[], index: number) => {
+          ListItem() {
+            ProfileGiftRow({ gifts: row, cellSize: this.storyCell() });
           }
-        }, (g: GiftItem) => `gift_${g.id}_${g.stickerPath}`);
-      }.width('100%');
+        }, (row: GiftItem[], index: number): string =>
+          guardKey(this.giftRowsData.keyTableId, index, this.giftRowKey(row, index)));
+      }
+      .width('100%')
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+      );
     }
   }
 
+  // 共同群组：玻璃卡（ListItemGroup）+ LazyForEach + 复用行 CommonGroupRow。分隔线交给 group 的
+  // divider（原来按 index > 0 在行前插 Divider）。
   @Builder
-  groupsList() {
-    Column() {
-      if (this.groups.length === 0) {
-        this.emptyHint(str('pp_no_common_groups'));
-      } else {
+  groupsItems() {
+    if (this.groups.length === 0) {
+      ListItem() {
         Column() {
-          ForEach(this.groups, (g: CommonGroup, index: number) => {
-            if (index > 0) {
-              // Row separator, indented past the avatar (Telegram-style).
-              Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 68 });
-            }
-            Row({ space: 12 }) {
-              AvatarView({ avatarPath: g.avatarPath, initials: g.initials, colorSeed: g.id, avatarSize: 42 });
-              Text(g.title).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
-            }
-            .width('100%').padding({ left: 14, right: 14, top: 8, bottom: 8 })
-            .onClick(() => { this.openChat(g.id); });
-          }, (g: CommonGroup) => `grp_${g.id}_${g.avatarPath}`);
+          this.emptyHint(str('pp_no_common_groups'));
         }
-        .width('100%').glassCard()
-        .padding({ top: 4, bottom: 4 });
+        .margin({ left: 12, right: 12 });
       }
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+      )
+    } else {
+      ListItemGroup() {
+        LazyForEach(this.groupsData, (g: CommonGroup) => {
+          ListItem() {
+            CommonGroupRow({ group: g });
+          }
+          .onClick(() => { this.openChat(g.id); });
+        }, (g: CommonGroup, index: number): string =>
+          guardKey(this.groupsData.keyTableId, index, `${g.id}_${g.title}_${g.avatarPath}`));
+      }
+      .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 68 })
+      .width('calc(100% - 24vp)')
+      .margin({ left: 12, right: 12 })
+      .glassCard()
+      .padding({ top: 4, bottom: 4 })
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+      );
     }
-    .margin({ left: 12, right: 12 });
   }
 
   private sharedMediaCell(): number {
@@ -1219,105 +1298,81 @@ export struct ProfilePage {
     .glassCard();
   }
 
+  // 共享媒体网格：玻璃卡（ListItemGroup），按三格一行走 LazyForEach（ProfileMediaRow，与群资料页
+  // 共用）。格子边长按行的实际宽算（onSizeChange 量行宽，理由见 util/mediaGrid）。
   @Builder
-  sharedMediaGrid() {
-    // 玻璃卡挪到外层 Column：Flex 自己不带描边，onAreaChange 量到的就是真正
-    // 可用的内容宽。和群资料页是同一处修法，见 util/mediaGrid。
-    Column() {
-    Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-      ForEach(this.sharedItems, (item: ProfileContentItem) => {
-        Stack({ alignContent: Alignment.BottomEnd }) {
-          if (item.thumbPath !== '') {
-            Image(`file://${item.thumbPath}`).draggable(false).width('100%').height('100%')
-              .objectFit(ImageFit.Cover);
-          } else {
-            Column() {
-              SymbolGlyph($r(item.isVideo ? 'sys.symbol.video_fill' : 'sys.symbol.photo_fill'))
-                .fontSize(26).fontColor([COLOR_ICON_SECONDARY]);
-            }
-            .width('100%').height('100%').justifyContent(FlexAlign.Center)
-            .backgroundColor($r('app.color.surface_alt'));
-          }
-          if (item.isVideo) {
-            Row({ space: 3 }) {
-              SymbolGlyph($r('sys.symbol.play_fill')).fontSize(10).fontColor([Color.White]);
-              if (item.duration !== '') {
-                Text(item.duration).fontSize(11).fontColor(Color.White);
-              }
-            }
-            .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-            .margin({ right: 5, bottom: 5 })
-            .backgroundColor('#70000000').borderRadius(8);
-          }
+  sharedMediaItems() {
+    ListItemGroup() {
+      LazyForEach(this.sharedRowsData, (row: ProfileContentItem[], index: number) => {
+        ListItem() {
+          ProfileMediaRow({
+            items: row,
+            cellSize: this.sharedMediaCell(),
+            pressedOpacity: 0.62,
+            onOpen: (messageId: number): void => { this.openSharedMessage(messageId); }
+          });
         }
-        .width(this.sharedMediaCell()).height(this.sharedMediaCell())
-        .margin({ right: 2, bottom: 2 })
-        .stateStyles({ normal: this.tabNormalStyle, pressed: this.tabPressedStyle })
-        .onClick((): void => { this.openSharedMessage(item.messageId); });
-      }, (item: ProfileContentItem) => `${item.messageId}_${item.thumbPath}`);
-    }
-    .width('100%')
-    .onAreaChange((_old: Area, area: Area): void => {
-      const w: number = area.width as number;
-      // 格子跟着宽度变，Flex 的高度也就跟着变，onAreaChange 会再触发一次。
-      // 宽度没真的变就别写回状态，免得白白多跑一轮布局。
-      if (w > 0 && Math.abs(w - this.sharedRowW) > 0.5) {
-        this.sharedRowW = w;
-      }
-    });
+        .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+          this.noteSharedRowWidth(Number(size.width));
+        });
+      }, (row: ProfileContentItem[], index: number): string =>
+        guardKey(this.sharedRowsData.keyTableId, index, this.sharedRowKey(row, index)));
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12 })
-    .glassCard().clip(true);
-    this.sharedPaginationFooter();
+    .glassCard().clip(true)
+    .priorityGesture(
+      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+        .onActionEnd((event: GestureEvent): void => {
+          this.handleProfileTabPan(event.offsetX);
+        })
+    );
+    ListItem() {
+      this.sharedPaginationFooter();
+    }
+    .priorityGesture(
+      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+        .onActionEnd((event: GestureEvent): void => {
+          this.handleProfileTabPan(event.offsetX);
+        })
+    )
   }
 
+  // 共享内容列表：玻璃卡（ListItemGroup）+ LazyForEach（ProfileContentRow，与群资料页共用；
+  // 这一页没有就地下载按钮）。
   @Builder
-  sharedContentList() {
-    Column() {
-      ForEach(this.sharedItems, (item: ProfileContentItem, index: number) => {
-        Column() {
-          Row({ space: 11 }) {
-            Stack() {
-              if (item.thumbPath !== '') {
-                Image(`file://${item.thumbPath}`).draggable(false).width(46).height(46)
-                  .objectFit(ImageFit.Cover).borderRadius(10);
-              } else {
-                SymbolGlyph($r(this.sharedContentIcon(item)))
-                  .fontSize(22).fontColor([COLOR_PRIMARY]);
-              }
-            }
-            .width(46).height(46).borderRadius(10)
-            .backgroundColor($r('app.color.surface_alt'));
-            Column({ space: 3 }) {
-              Text(item.title).fontSize(15).fontWeight(FontWeight.Medium)
-                .fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis });
-              if (item.preview !== '') {
-                Text(item.preview).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-              }
-              if (item.meta !== '') {
-                Text(item.meta).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-              }
-            }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-            SymbolGlyph($r('sys.symbol.chevron_right'))
-              .fontSize(13).fontColor([COLOR_ICON_SECONDARY]);
-          }
-          .width('100%').constraintSize({ minHeight: 64 })
-          .padding({ left: 12, right: 10, top: 9, bottom: 9 })
-          .stateStyles({ normal: this.sharedRowNormalStyle, pressed: this.sharedRowPressedStyle })
-          .onClick((): void => { this.openSharedMessage(item.messageId); });
-          if (index < this.sharedItems.length - 1) {
-            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 69 });
-          }
-        }.width('100%');
-      }, (item: ProfileContentItem) => `${item.messageId}_${item.thumbPath}`);
+  sharedContentItems() {
+    ListItemGroup() {
+      LazyForEach(this.sharedData, (item: ProfileContentItem, index: number) => {
+        ListItem() {
+          ProfileContentRow({
+            item: item,
+            icon: this.sharedContentIcon(item),
+            fileActions: false,
+            onOpen: (messageId: number): void => { this.openSharedMessage(messageId); }
+          });
+        }
+      }, (item: ProfileContentItem, index: number): string =>
+        guardKey(this.sharedData.keyTableId, index, profileContentKey(item)));
     }
+    .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 69 })
     .width('calc(100% - 24vp)').margin({ left: 12, right: 12 })
-    .glassCard().clip(true);
-    this.sharedPaginationFooter();
+    .glassCard().clip(true)
+    .priorityGesture(
+      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+        .onActionEnd((event: GestureEvent): void => {
+          this.handleProfileTabPan(event.offsetX);
+        })
+    );
+    ListItem() {
+      this.sharedPaginationFooter();
+    }
+    .priorityGesture(
+      PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+        .onActionEnd((event: GestureEvent): void => {
+          this.handleProfileTabPan(event.offsetX);
+        })
+    )
   }
 
   @Builder
@@ -1342,21 +1397,40 @@ export struct ProfilePage {
     });
   }
 
+  // 页签内容，全部是 List 的直接子项。左右滑切页签的手势挂在这些项上，不挂整个 List——
+  // 那会抢走页签条自己的横向滚动。
   @Builder
-  profileTabContent() {
+  profileTabItems() {
     if (this.currentProfileTabKey() === PROFILE_TAB_STORIES) {
-      this.storiesGrid();
+      // 动态一般不多，整块留在一项里。
+      ListItem() {
+        this.storiesGrid();
+      }
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+      )
     } else if (this.currentProfileTabKey() === PROFILE_TAB_RECEIVED_GIFTS) {
-      this.giftsGrid();
+      this.giftsItems();
     } else if (this.currentProfileTabKey() === PROFILE_TAB_GROUPS) {
-      this.groupsList();
+      this.groupsItems();
     } else if (this.sharedState === 'loading' || this.sharedState === 'idle' ||
       this.sharedState === 'error' || this.sharedItems.length === 0) {
-      this.sharedPlaceholder();
+      ListItem() {
+        this.sharedPlaceholder();
+      }
+      .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleProfileTabPan(event.offsetX);
+          })
+      )
     } else if (this.currentProfileTabKey() === PROFILE_TAB_MEDIA) {
-      this.sharedMediaGrid();
+      this.sharedMediaItems();
     } else {
-      this.sharedContentList();
+      this.sharedContentItems();
     }
   }
 
@@ -1457,47 +1531,44 @@ export struct ProfilePage {
       // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
       // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
       AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) });
-      Scroll() {
-        Column() {
-          if (!this.profileContentReady) {
-            this.profileTransitionShell();
-          } else {
-            this.header();
-            this.actionsRow();
-            if (this.personalChatId !== 0 && this.chTitle !== '') {
-              this.channelCard();
-            }
-            this.infoCard();
-            if (!this.isContact) {
-              this.addContactCard();
-            }
-            this.secretChatCard();
-            if (this.visibleProfileTabs().length > 0) {
-              Column() {
-                this.tabsBar();
-                Column() {
-                  this.profileTabContent();
-                }
-                .width('100%')
-                .priorityGesture(
-                  PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
-                    .onActionEnd((event: GestureEvent): void => {
-                      this.handleProfileTabPan(event.offsetX);
-                    })
-                );
+      // 整页是一个 List（原来是 Scroll > Column）：资料部分在第一项、页签条一项，页签内容按行放进
+      // List——共同群组、礼物、共享内容/媒体都走 LazyForEach（见 profileTabItems）。
+      List() {
+        ListItem() {
+          Column() {
+            if (!this.profileContentReady) {
+              this.profileTransitionShell();
+            } else {
+              this.header();
+              this.actionsRow();
+              if (this.personalChatId !== 0 && this.chTitle !== '') {
+                this.channelCard();
               }
-              .width('100%')
+              this.infoCard();
+              if (!this.isContact) {
+                this.addContactCard();
+              }
+              this.secretChatCard();
             }
           }
+          .width('100%');
         }
-        .width('100%')
-        .padding({ bottom: 24 })
+        if (this.profileContentReady && this.visibleProfileTabs().length > 0) {
+          ListItem() {
+            Column() {
+              this.tabsBar();
+            }
+            .width('100%');
+          }
+          this.profileTabItems();
+        }
       }
       .width('100%').height('100%')
+      .cachedCount(PROFILE_LIST_CACHED_COUNT)
+      .contentEndOffset(24)
       // 壁纸生效时整页底必须透明，否则壁纸被这一层盖死（同 util/theme.mainPageFill 的理由）。
       // 卡片自己是毛玻璃（profileGlassFill），压在壁纸上仍然读得清。
       .backgroundColor(this.appWallpaperOn ? Color.Transparent : PAGE_BG)
-      .align(Alignment.Top)
       .onReachEnd((): void => {
         if (this.isSharedProfileTab(this.currentProfileTabKey()) && this.sharedStore !== null) {
           this.sharedStore.loadMoreContent();
@@ -1529,5 +1600,51 @@ export struct ProfilePage {
     .onShown((): void => { this.handleShown(); })
     .onWillHide((): void => { this.handleWillHide(); })
     .width('100%').height('100%');
+  }
+}
+
+// 共同群组的一行（原 groupsList 里 ForEach 的行）。复用组件；点击在页面的 ListItem 上。
+@Reusable
+@Component
+struct CommonGroupRow {
+  @Prop group: CommonGroup;
+
+  build() {
+    Row({ space: 12 }) {
+      AvatarView({
+        avatarPath: this.group.avatarPath, initials: this.group.initials,
+        colorSeed: this.group.id, avatarSize: 42
+      });
+      Text(this.group.title).fontSize(15).fontColor(COLOR_TEXT_PRIMARY)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+    }
+    .width('100%').padding({ left: 14, right: 14, top: 8, bottom: 8 });
+  }
+}
+
+// 收到的礼物网格的一行（三格）。复用组件。
+@Reusable
+@Component
+struct ProfileGiftRow {
+  @Prop gifts: GiftItem[] = [];
+  @Prop cellSize: number = 100;
+
+  build() {
+    Row() {
+      ForEach(this.gifts, (g: GiftItem) => {
+        if (g.stickerPath !== '') {
+          Image(g.stickerPath.startsWith('/') ? `file://${g.stickerPath}` : g.stickerPath).draggable(false)
+            .width(this.cellSize).height(this.cellSize).objectFit(ImageFit.Contain)
+            .padding(10);
+        } else {
+          // 没有位图缩略图的动态贴纸（TGS/WEBM）Image 画不出来，给一个礼物符号而不是空格子。
+          Text('🎁').fontSize(40)
+            .width(this.cellSize).height(this.cellSize)
+            .textAlign(TextAlign.Center);
+        }
+      }, (g: GiftItem): string => `gift_${g.id}_${g.stickerPath}`);
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Start);
   }
 }

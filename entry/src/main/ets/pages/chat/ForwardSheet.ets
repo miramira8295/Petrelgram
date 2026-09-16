@@ -25,10 +25,8 @@ import { buildForwardMessagesRequests } from '../../util/forwardMessagesRequest'
 // and the forwardMessages request itself — lives here. The page's
 // `if (showForwardSheet)` branch creates and destroys this component, so the
 // query box and in-flight send state reset per open without explicit teardown.
-// 转发模式三选一（原来是两个互相牵制的开关）。
-const MODE_ORIGINAL: string = 'original';
-const MODE_COPY: string = 'copy';
-const MODE_COPY_NO_CAPTION: string = 'copyNoCaption';
+// 面板顶边与标题栏（含置顶条/横幅）底边之间留的缝。
+const FORWARD_SHEET_TOP_GAP: number = 8;
 
 @Component
 export struct ForwardSheet {
@@ -44,6 +42,10 @@ export struct ForwardSheet {
   sourceChatId: number = 0;
   threadRootId: number = 0;
   @Prop canRemoveCaption: boolean = false;
+  // 页面顶部标题栏 + 横幅的高度（vp）。标题栏是 HdsNavDestination 的 titleBar，画在
+  // 内容区之上；本面板在内容区里盖不住它，只能把顶边让到它下面
+  // （2026-09-14 用户截图：面板顶部压在标题栏和置顶条底下）。
+  @Prop topInset: number = 0;
 
   // Read directly rather than passed down — same source the page uses, so the
   // padding still tracks the keyboard while the search box has focus.
@@ -259,35 +261,70 @@ export struct ForwardSheet {
     .scale({ x: 0.985, y: 0.96 })
   }
 
-  private forwardMode(): string {
+  // 取消「隐藏来源」时连带取消「移除说明文字」：TDLib 的 remove_caption 只在
+  // send_copy 下有意义，保留来源的转发去不掉说明。
+  private toggleHideSource(): void {
+    this.sendCopy = !this.sendCopy;
     if (!this.sendCopy) {
-      return MODE_ORIGINAL;
+      this.removeCaption = false;
     }
-    return this.removeCaption ? MODE_COPY_NO_CAPTION : MODE_COPY;
   }
 
-  private setForwardMode(mode: string): void {
-    this.sendCopy = mode !== MODE_ORIGINAL;
-    this.removeCaption = mode === MODE_COPY_NO_CAPTION;
+  private toggleRemoveCaption(): void {
+    this.removeCaption = !this.removeCaption;
   }
 
+  // 转发选项：一排可勾选的胶囊（2026-09-14 用户：「保留来源和隐藏来源留一个就行，
+  // 允许取消勾选」）。默认不勾 = 保留来源。
+  //
+  // 「移除说明文字」只在勾了隐藏来源、且选中的消息里确实有能去掉的说明时才出现。
+  // 更早那版是两个始终可见、互相牵制的开关，用户实测觉得丑也难懂；现在第二个只在
+  // 它有意义时出现，看不到牵制。
+  //
+  // 两个胶囊直接写开、不抽成带参数的 @Builder：按值传参的 @Builder 不随勾选状态刷新。
   @Builder
-  forwardModeRow(label: ResourceStr, mode: string) {
-    Row() {
-      Text(label)
-        .fontSize(14)
-        .fontColor(COLOR_TEXT_PRIMARY)
-        .layoutWeight(1)
-        .maxLines(2);
-      Radio({ value: mode, group: 'forwardMode' })
-        .checked(this.forwardMode() === mode)
-        .radioStyle({ checkedBackgroundColor: COLOR_PRIMARY })
-        .width(20).height(20)
-        .onChange((checked: boolean): void => { if (checked) { this.setForwardMode(mode); } });
+  forwardOptionsRow() {
+    Row({ space: 8 }) {
+      Row({ space: 6 }) {
+        if (this.sendCopy) {
+          SymbolGlyph($r('sys.symbol.checkmark_circle_fill')).fontSize(17).fontColor([COLOR_PRIMARY]);
+        } else {
+          SymbolGlyph($r('sys.symbol.circle')).fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
+        }
+        Text($r('app.string.fw_hide_source'))
+          .fontSize(13)
+          .fontWeight(this.sendCopy ? FontWeight.Medium : FontWeight.Regular)
+          .fontColor(this.sendCopy ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .flexShrink(1);
+      }
+      .flexShrink(1)
+      .padding({ left: 10, right: 12, top: 6, bottom: 6 })
+      .borderRadius(16)
+      .backgroundColor(this.sendCopy ? '#1A3390EC' : $r('app.color.surface_alt'))
+      .onClick((): void => { this.toggleHideSource(); });
+      if (this.canRemoveCaption && this.sendCopy) {
+        Row({ space: 6 }) {
+          if (this.removeCaption) {
+            SymbolGlyph($r('sys.symbol.checkmark_circle_fill')).fontSize(17).fontColor([COLOR_PRIMARY]);
+          } else {
+            SymbolGlyph($r('sys.symbol.circle')).fontSize(17).fontColor([COLOR_ICON_SECONDARY]);
+          }
+          Text($r('app.string.fw_remove_caption'))
+            .fontSize(13)
+            .fontWeight(this.removeCaption ? FontWeight.Medium : FontWeight.Regular)
+            .fontColor(this.removeCaption ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1);
+        }
+        .flexShrink(1)
+        .padding({ left: 10, right: 12, top: 6, bottom: 6 })
+        .borderRadius(16)
+        .backgroundColor(this.removeCaption ? '#1A3390EC' : $r('app.color.surface_alt'))
+        .onClick((): void => { this.toggleRemoveCaption(); });
+      }
     }
-    .width('100%')
-    .height(42)
-    .onClick((): void => { this.setForwardMode(mode); });
+    .width('100%');
   }
   // 文件夹页签：横向可滚的一排胶囊，「全部」在首位。没有文件夹时整排不出现。
   @Builder
@@ -315,7 +352,9 @@ export struct ForwardSheet {
 
   build() {
     Column() {
-      Column().layoutWeight(1)
+      // 顶部留白（点了关闭）：默认 14%，面板约占 86%；但至少让到标题栏和横幅下面。
+      Column().width('100%').height('14%')
+        .constraintSize({ minHeight: this.topInset + FORWARD_SHEET_TOP_GAP })
         .onClick(() => { this.close(); });
       Column({ space: 10 }) {
         Row({ space: 10 }) {
@@ -351,21 +390,7 @@ export struct ForwardSheet {
         if (this.chips().length > 1) {
           this.folderChipsRow();
         }
-        // 「去掉说明」只在「作为副本」时有意义，两个开关其实是一个三选一，
-        // 用单选组表达（两个 Toggle 互相牵制，用户实测觉得丑也难懂）。
-        Column() {
-          this.forwardModeRow($r('app.string.fw_keep_source'), MODE_ORIGINAL);
-          Divider().strokeWidth(0.5).color($r('app.color.divider'));
-          this.forwardModeRow($r('app.string.fw_send_copy'), MODE_COPY);
-          if (this.canRemoveCaption) {
-            Divider().strokeWidth(0.5).color($r('app.color.divider'));
-            this.forwardModeRow($r('app.string.fw_copy_no_caption'), MODE_COPY_NO_CAPTION);
-          }
-        }
-        .width('100%')
-        .padding({ left: 12, right: 8 })
-        .backgroundColor($r('app.color.surface_alt'))
-        .borderRadius(12);
+        this.forwardOptionsRow();
         if (this.loadState === 'loading') {
           Column({ space: 10 }) {
             LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
@@ -439,7 +464,7 @@ export struct ForwardSheet {
           .onReachEnd((): void => { getChatStore().loadMore(this.listKey()); });
         }
       }
-      .width('calc(100% - 16vp)').height('86%')
+      .width('calc(100% - 16vp)').layoutWeight(1)
       .padding({ left: 12, right: 12, top: 10, bottom: 12 + this.bottomInset() })
       .backgroundColor($r('app.color.surface')).borderRadius(20)
       .shadow({ radius: 12, color: '#26000000', offsetX: 0, offsetY: -2 })

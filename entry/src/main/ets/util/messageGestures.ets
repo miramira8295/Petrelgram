@@ -8,8 +8,9 @@
 // 抽成纯函数是为了把"两个都关就永远打不开菜单""长按同时干两件事"这类
 // 坏组合钉在测试里，而不是散在 UI 代码的 if 里靠人看。
 //
-// 多选态不在这里管：ChatPage 的行外层在多选时把 hitTestBehavior 设成 Block，
-// 所有点击都被行接走用于勾选，气泡收不到任何手势。
+// 多选态不在这里管：ChatPage 的行外层在多选时屏蔽气泡的命中，点击由行接走用于
+// 勾选。例外是相册行（为了逐格勾选放开了命中）：它的长按 / 右滑在多选态下改为
+// 「选这一行」，见 MessageBubble.onLongPress 与 SelectionSession.selectRow。
 
 export const GESTURE_CLASSIC: string = 'classic';
 export const GESTURE_TAP_FIRST: string = 'tapFirst';

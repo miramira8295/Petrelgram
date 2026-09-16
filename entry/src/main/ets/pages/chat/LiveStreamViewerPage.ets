@@ -39,6 +39,8 @@ import {
   liveInteractionPresentation, mergeLiveInteractions
 } from '../../util/liveInteractionPresentation';
 import { LiveInteractionBubble } from './LiveInteractionBubble';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
@@ -57,6 +59,21 @@ const MEDIA_RECONNECT_GRACE_MS: number = 8000;
 const MEDIA_HEALTH_INTERVAL_MS: number = 5000;
 const LOCAL_VIDEO_START_TIMEOUT_MS: number = 20000;
 const CALL_INTERACTION_LIMIT: number = 60;
+// 成员行固定高 62、行距 1（见 ParticipantRowView）；主页面成员列表的高度按它算。
+const PARTICIPANT_ROW_HEIGHT: number = 62;
+const PARTICIPANT_ROW_GAP: number = 1;
+// 主页面成员列表上下占掉的边距：列表上外边距 4 + 外层内容列下内边距 8。
+const PARTICIPANT_LIST_CHROME: number = 12;
+// 外层 Scroll 首帧还没量到高度时，成员列表先用的高度。
+const PARTICIPANT_LIST_FALLBACK_HEIGHT: number = 480;
+
+function participantRowKey(participant: GroupCallParticipantInfo): string {
+  return `${participant.key}:${participant.revision}`;
+}
+
+function interactionKey(message: LiveInteractionEntry): string {
+  return `${message.key}:${message.revision}`;
+}
 const CALL_QUICK_REACTIONS: string[] = ['❤️', '🔥', '👏', '👍'];
 
 function groupMessageInteraction(
@@ -367,7 +384,9 @@ struct LiveStreamViewerPage {
   @State state: LiveStreamState = emptyLiveStreamState();
   @State mediaStatus: string = str('lv_joining');
   @State mediaPhase: string = LIVE_PHASE_NONE;
-  @State participants: GroupCallParticipantInfo[] = [];
+  @State @Watch('syncParticipantsData') participants: GroupCallParticipantInfo[] = [];
+  // 外层 Scroll 的视口高度，主页面成员列表的高度靠它算（见 participantListHeight）。
+  @State participantViewportHeight: number = 0;
   @State videoSources: GroupCallVideoSource[] = [];
   @State isMuted: boolean = true;
   @State pulseExpanded: boolean = false;
@@ -395,7 +414,7 @@ struct LiveStreamViewerPage {
   @State retrySeconds: number = 0;
   @State connectionError: string = '';
   @State leaveDialogOpen: boolean = false;
-  @State interactionMessages: LiveInteractionEntry[] = [];
+  @State @Watch('syncInteractionData') interactionMessages: LiveInteractionEntry[] = [];
   @State interactionDrawerOpen: boolean = false;
   @State interactionUnreadCount: number = 0;
   @State interactionAtBottom: boolean = true;
@@ -443,6 +462,13 @@ struct LiveStreamViewerPage {
   private interactionSnapshotReady: boolean = false;
   private interactionScroller: Scroller = new Scroller();
   private interactionTouchActive: boolean = false;
+  // 成员列表（主页面 / 全屏侧栏各一个）与互动消息的 LazyForEach 数据源。
+  private participantsData: KeyedListDataSource<GroupCallParticipantInfo> =
+    new KeyedListDataSource<GroupCallParticipantInfo>('live-participants');
+  private fullscreenParticipantsData: KeyedListDataSource<GroupCallParticipantInfo> =
+    new KeyedListDataSource<GroupCallParticipantInfo>('live-participants-fullscreen');
+  private interactionData: KeyedListDataSource<LiveInteractionEntry> =
+    new KeyedListDataSource<LiveInteractionEntry>('live-interactions');
   private lastFailedInteractionText: string = '';
   private fullscreenTransitionTimer: number = -1;
 
@@ -616,6 +642,12 @@ struct LiveStreamViewerPage {
     this.interactionArrivalCounter += 1;
     this.interactionArrivalOrders.set(key, this.interactionArrivalCounter);
     return this.interactionArrivalCounter;
+  }
+
+  private syncInteractionData(): void {
+    this.interactionData.update(this.interactionMessages,
+      this.interactionMessages.map((m: LiveInteractionEntry): string => m.key),
+      this.interactionMessages.map((m: LiveInteractionEntry): string => interactionKey(m)));
   }
 
   private onInteractionMessages(messages: GroupCallMessageEntry[]): void {
@@ -1533,6 +1565,33 @@ struct LiveStreamViewerPage {
     return null;
   }
 
+  // 成员变了（TDLib 推新状态、进出）：两处成员列表各自的数据源都同步。
+  private syncParticipantsData(): void {
+    const ids: string[] = this.participants.map((p: GroupCallParticipantInfo): string => p.key);
+    const keys: string[] = this.participants.map((p: GroupCallParticipantInfo): string => participantRowKey(p));
+    this.participantsData.update(this.participants, ids, keys);
+    this.fullscreenParticipantsData.update(this.participants, ids, keys);
+  }
+
+  // 主页面的成员列表嵌在外层 Scroll 里：视频区留在外层、不进 List，免得滑出屏幕时被当成列表项
+  // 停用。List 要有确定高度才会按需创建行——内容比视口矮时取内容高度（和原来一样整页一起滚），
+  // 比视口高时取视口高度，靠 nestedScroll 先把视频区滚走、再滚列表。
+  private participantListHeight(): number {
+    const count: number = this.participants.length;
+    const content: number = count * PARTICIPANT_ROW_HEIGHT + Math.max(0, count - 1) * PARTICIPANT_ROW_GAP;
+    const viewport: number = this.participantViewportHeight > 0
+      ? this.participantViewportHeight - PARTICIPANT_LIST_CHROME : PARTICIPANT_LIST_FALLBACK_HEIGHT;
+    return Math.max(PARTICIPANT_ROW_HEIGHT, Math.min(content, viewport));
+  }
+
+  // 成员行的麦克风键只报 key（复用节点上的回调不能攥行对象），这里找回当下那一位。
+  private toggleParticipantMutedByKey(key: string): void {
+    const participant = this.participants.find((p: GroupCallParticipantInfo): boolean => p.key === key);
+    if (participant !== undefined) {
+      this.toggleParticipantMuted(participant);
+    }
+  }
+
   private toggleParticipantMuted(participant: GroupCallParticipantInfo): void {
     if (!this.canManageLive || participant.isCurrentUser) { return; }
     const sender = this.participantSender(participant);
@@ -2285,61 +2344,6 @@ struct LiveStreamViewerPage {
     }
   }
 
-  @Builder
-  participantRow(participant: GroupCallParticipantInfo) {
-    Row({ space: 12 }) {
-      Stack() {
-        if (participant.isSpeaking) {
-          Circle({ width: 50, height: 50 }).fill('#4439D98A')
-            .opacity(this.pulseExpanded ? 0.28 : 0.72)
-            .scale({ x: this.pulseExpanded ? 1.08 : 0.92, y: this.pulseExpanded ? 1.08 : 0.92 });
-        }
-        Circle({ width: 42, height: 42 })
-          .fill(AVATAR_COLORS[Math.abs(participant.colorSeed) % AVATAR_COLORS.length]);
-        Text(participant.initials).fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White);
-      }
-      .width(42).height(42);
-      Column() {
-        Text(participant.isCurrentUser ? str('lv_participant_you', participant.name) : participant.name)
-          .fontSize(15).fontWeight(FontWeight.Medium).fontColor(CALL_TEXT)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(participant.isSpeaking ? $r('app.string.lv_speaking') :
-          (participant.isMuted
-            ? (this.canManageLive && !participant.isCurrentUser
-              ? $r('app.string.lv_mic_off_tap_allow') : $r('app.string.lfw_mic_off'))
-            : (this.canManageLive && !participant.isCurrentUser
-              ? $r('app.string.lv_can_speak_tap_mute') : $r('app.string.lv_listening'))))
-          .fontSize(12).fontColor(participant.isSpeaking ? CALL_GREEN : CALL_SUBTEXT).margin({ top: 3 });
-      }
-      .layoutWeight(1).alignItems(HorizontalAlign.Start);
-      Stack({ alignContent: Alignment.Center }) {
-        if (participant.isSpeaking) {
-          Circle({ width: 34, height: 34 }).fill('#4939D98A')
-            .opacity(this.pulseExpanded ? 0.35 : 0.78)
-            .scale({ x: this.pulseExpanded ? 1.08 : 0.9, y: this.pulseExpanded ? 1.08 : 0.9 });
-        }
-        SymbolGlyph($r('sys.symbol.mic'))
-          .fontSize(participant.isSpeaking && this.pulseExpanded ? 22 : 20)
-          .fontColor([participant.isSpeaking ? CALL_GREEN :
-            (participant.isMuted ? '#53616C' : CALL_SUBTEXT)]);
-        if (participant.isMuted && !participant.isSpeaking) {
-          Text('╱').fontSize(24).fontColor('#697782').fontWeight(FontWeight.Bold);
-        }
-      }
-      .width(36).height(36)
-      .backgroundColor(
-        this.canManageLive && !participant.isCurrentUser ? '#26323C' : Color.Transparent
-      )
-      .borderRadius(18)
-      .onClick((): void => this.toggleParticipantMuted(participant));
-    }
-    .width('100%').height(62).padding({ left: 12, right: 12 })
-    .backgroundColor(participant.isSpeaking ? '#192A2B' : CALL_PANEL)
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_CALL_ANIMATIONS, 220), curve: Curve.EaseOut
-    });
-  }
-
   private interactionPreviewText(): string {
     if (this.interactionUnreadCount > 0) { return plural('lv_new_interactions', this.interactionUnreadCount, this.interactionUnreadCount); }
     if (this.interactionMessages.length === 0) { return this.callInteractionPresentation().subtitle; }
@@ -2410,11 +2414,15 @@ struct LiveStreamViewerPage {
         .width('100%').height('100%').justifyContent(FlexAlign.Center);
       } else {
         List({ scroller: this.interactionScroller, space: 8 }) {
-          ForEach(this.interactionMessages, (message: LiveInteractionEntry) => {
-            ListItem() { LiveInteractionBubble({ message }); }
-          }, (message: LiveInteractionEntry): string => message.key)
+          // LazyForEach + 复用气泡：只有刚到的消息播入场动画（见 KeyedListDataSource.isFresh）。
+          LazyForEach(this.interactionData, (message: LiveInteractionEntry) => {
+            ListItem() {
+              LiveInteractionBubble({ message: message, animateIn: this.interactionData.isFresh(message.key) });
+            }
+          }, (message: LiveInteractionEntry, index: number): string =>
+            guardKey(this.interactionData.keyTableId, index, interactionKey(message)))
         }
-        .width('100%').height('100%')
+        .width('100%').height('100%').cachedCount(4)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .maintainVisibleContentPosition(true)
         .edgeEffect(EdgeEffect.Spring).scrollBar(BarState.Off)
@@ -2756,16 +2764,24 @@ struct LiveStreamViewerPage {
           }
           .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center);
         } else {
-          Scroll() {
-            Column({ space: 1 }) {
-              ForEach(this.participants, (participant: GroupCallParticipantInfo) => {
-                this.participantRow(participant);
-              }, (participant: GroupCallParticipantInfo): string =>
-                `fullscreen:${participant.key}:${participant.revision}`)
-            }.width('100%');
+          // LazyForEach + 复用行（ParticipantRowView）：大直播间成员可以上千，原来 ForEach 一次全建。
+          List({ space: PARTICIPANT_ROW_GAP }) {
+            LazyForEach(this.fullscreenParticipantsData, (participant: GroupCallParticipantInfo) => {
+              ListItem() {
+                ParticipantRowView({
+                  participantKey: participant.key,
+                  displayName: participant.isCurrentUser ? str('lv_participant_you', participant.name) : participant.name,
+                  initials: participant.initials, colorSeed: participant.colorSeed,
+                  isSpeaking: participant.isSpeaking, isMuted: participant.isMuted,
+                  isCurrentUser: participant.isCurrentUser, canManage: this.canManageLive,
+                  pulseExpanded: this.pulseExpanded,
+                  onToggleMuted: (key: string): void => { this.toggleParticipantMutedByKey(key); }
+                });
+              }
+            }, (participant: GroupCallParticipantInfo, index: number): string =>
+              guardKey(this.fullscreenParticipantsData.keyTableId, index, participantRowKey(participant)))
           }
-          .align(Alignment.Top)
-          .width('100%').layoutWeight(1).scrollBar(BarState.Off);
+          .width('100%').layoutWeight(1).scrollBar(BarState.Off).cachedCount(4);
         }
       }
       .width('82%').height('100%').constraintSize({ maxWidth: 430 })
@@ -3008,19 +3024,41 @@ struct LiveStreamViewerPage {
               .width('100%')
               .opacity(this.videoAreaOpacity);
               if (this.participants.length > 0) {
-                Column({ space: 1 }) {
-                  ForEach(this.participants, (participant: GroupCallParticipantInfo) => {
-                    this.participantRow(participant);
-                  }, (participant: GroupCallParticipantInfo): string =>
-                    `${participant.key}:${participant.revision}`)
+                // LazyForEach + 复用行，嵌在外层 Scroll 里（高度与嵌套滚动见 participantListHeight）。
+                List({ space: PARTICIPANT_ROW_GAP }) {
+                  LazyForEach(this.participantsData, (participant: GroupCallParticipantInfo) => {
+                    ListItem() {
+                      ParticipantRowView({
+                        participantKey: participant.key,
+                        displayName: participant.isCurrentUser ? str('lv_participant_you', participant.name) : participant.name,
+                        initials: participant.initials, colorSeed: participant.colorSeed,
+                        isSpeaking: participant.isSpeaking, isMuted: participant.isMuted,
+                        isCurrentUser: participant.isCurrentUser, canManage: this.canManageLive,
+                        pulseExpanded: this.pulseExpanded,
+                        onToggleMuted: (key: string): void => { this.toggleParticipantMutedByKey(key); }
+                      });
+                    }
+                  }, (participant: GroupCallParticipantInfo, index: number): string =>
+                    guardKey(this.participantsData.keyTableId, index, participantRowKey(participant)))
                 }
-                .width('100%').margin({ top: 4 });
+                .width('100%').height(this.participantListHeight()).margin({ top: 4 })
+                .cachedCount(4).scrollBar(BarState.Off).edgeEffect(EdgeEffect.None)
+                .nestedScroll({
+                  scrollForward: NestedScrollMode.PARENT_FIRST,
+                  scrollBackward: NestedScrollMode.SELF_FIRST
+                });
               }
             }
             .width('100%').padding({ left: 8, right: 8, bottom: 8 });
           }
           .align(Alignment.Top)
-          .width('100%').layoutWeight(1).scrollBar(BarState.Off);
+          .width('100%').layoutWeight(1).scrollBar(BarState.Off)
+          .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+            const height: number = Number(size.height);
+            if (height > 0 && Math.abs(height - this.participantViewportHeight) >= 1) {
+              this.participantViewportHeight = height;
+            }
+          });
           if (this.shouldShowInteractionSection()) {
             this.interactionDock();
           }
@@ -3050,5 +3088,72 @@ struct LiveStreamViewerPage {
       top: this.isFullscreen ? 0 : this.topSafe,
       bottom: this.isFullscreen ? 0 : this.bottomSafe
     });
+  }
+}
+
+// 直播成员的一行（原 participantRow）。复用组件；麦克风键只报成员 key。原来行上挂的常驻
+// .animation() 去掉了：行 key 带 revision，状态一变就换新行，那层动画本来就播不出来；复用时
+// 反而会从上一位成员的底色渐变过来。说话时的脉动仍由页面 animateTo 翻 pulseExpanded 驱动。
+@Reusable
+@Component
+struct ParticipantRowView {
+  @Prop participantKey: string = '';
+  @Prop displayName: string = '';
+  @Prop initials: string = '';
+  @Prop colorSeed: number = 0;
+  @Prop isSpeaking: boolean = false;
+  @Prop isMuted: boolean = false;
+  @Prop isCurrentUser: boolean = false;
+  @Prop canManage: boolean = false;
+  @Prop pulseExpanded: boolean = false;
+  onToggleMuted: (key: string) => void = (_key: string): void => {};
+
+  build() {
+    Row({ space: 12 }) {
+      Stack() {
+        if (this.isSpeaking) {
+          Circle({ width: 50, height: 50 }).fill('#4439D98A')
+            .opacity(this.pulseExpanded ? 0.28 : 0.72)
+            .scale({ x: this.pulseExpanded ? 1.08 : 0.92, y: this.pulseExpanded ? 1.08 : 0.92 });
+        }
+        Circle({ width: 42, height: 42 })
+          .fill(AVATAR_COLORS[Math.abs(this.colorSeed) % AVATAR_COLORS.length]);
+        Text(this.initials).fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White);
+      }
+      .width(42).height(42);
+      Column() {
+        Text(this.displayName)
+          .fontSize(15).fontWeight(FontWeight.Medium).fontColor(CALL_TEXT)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        Text(this.isSpeaking ? $r('app.string.lv_speaking') :
+          (this.isMuted
+            ? (this.canManage && !this.isCurrentUser
+              ? $r('app.string.lv_mic_off_tap_allow') : $r('app.string.lfw_mic_off'))
+            : (this.canManage && !this.isCurrentUser
+              ? $r('app.string.lv_can_speak_tap_mute') : $r('app.string.lv_listening'))))
+          .fontSize(12).fontColor(this.isSpeaking ? CALL_GREEN : CALL_SUBTEXT).margin({ top: 3 });
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start);
+      Stack({ alignContent: Alignment.Center }) {
+        if (this.isSpeaking) {
+          Circle({ width: 34, height: 34 }).fill('#4939D98A')
+            .opacity(this.pulseExpanded ? 0.35 : 0.78)
+            .scale({ x: this.pulseExpanded ? 1.08 : 0.9, y: this.pulseExpanded ? 1.08 : 0.9 });
+        }
+        SymbolGlyph($r('sys.symbol.mic'))
+          .fontSize(this.isSpeaking && this.pulseExpanded ? 22 : 20)
+          .fontColor([this.isSpeaking ? CALL_GREEN :
+            (this.isMuted ? '#53616C' : CALL_SUBTEXT)]);
+        if (this.isMuted && !this.isSpeaking) {
+          Text('╱').fontSize(24).fontColor('#697782').fontWeight(FontWeight.Bold);
+        }
+      }
+      .width(36).height(36)
+      .backgroundColor(this.canManage && !this.isCurrentUser ? '#26323C' : Color.Transparent)
+      .borderRadius(18)
+      .onClick((): void => { this.onToggleMuted(this.participantKey); });
+    }
+    .width('100%').height(PARTICIPANT_ROW_HEIGHT).padding({ left: 12, right: 12 })
+    .backgroundColor(this.isSpeaking ? '#192A2B' : CALL_PANEL);
   }
 }

@@ -11901,6 +11901,10 @@
       "value": "출처 숨기기(사본으로 보내기)"
     },
     {
+      "name": "fw_hide_source",
+      "value": "보낸 사람 숨기기"
+    },
+    {
       "name": "fw_remove_caption",
       "value": "설명 삭제"
     },

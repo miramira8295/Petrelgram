@@ -4,6 +4,8 @@ import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { PrivacyValue, getPrivacy, setPrivacy } from '../../store/PrivacyApi';
 import { PrivacyExceptionsParams } from './PrivacyRulePage';
 import { AvatarView } from '../chatlist/AvatarView';
+import { KeyedListDataSource } from '../common/KeyedListDataSource';
+import { guardKey } from '../../util/keyGuard';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
@@ -82,10 +84,12 @@ struct PrivacyExceptionsPage {
   @State restrictChatCount: number = 0;
   @State sheetOpen: boolean = false;
   @State sheetMode: string = 'allow';
-  @State candidates: ExceptionUser[] = [];
+  @State @Watch('syncCandidatesData') candidates: ExceptionUser[] = [];
   @State candidateState: string = 'loading';
-  @State query: string = '';
+  @State @Watch('syncCandidatesData') query: string = '';
   @State draftIds: number[] = [];
+  // 候选列表的 LazyForEach 数据源，喂的是 filteredCandidates() 那一份。
+  private candidatesData: KeyedListDataSource<ExceptionUser> = new KeyedListDataSource<ExceptionUser>('privacy-exceptions');
   @State saving: boolean = false;
   private base: string = '';
   private preserved: TdObject[] = [];
@@ -213,6 +217,14 @@ struct PrivacyExceptionsPage {
       user.name.toLowerCase().indexOf(query) >= 0 || user.username.toLowerCase().indexOf(query) >= 0);
   }
 
+  // 候选 / 搜索词变了：把当下要显示的那一份交给 LazyForEach。勾选态不进 key，走行的 @Prop。
+  private syncCandidatesData(): void {
+    const list: ExceptionUser[] = this.filteredCandidates();
+    this.candidatesData.update(list,
+      list.map((u: ExceptionUser): string => `${u.id}`),
+      list.map((u: ExceptionUser): string => `${u.id}_${u.avatarPath}_${u.name}_${u.username}`));
+  }
+
   private toggleDraft(id: number): void {
     if (this.draftIds.indexOf(id) >= 0) {
       this.draftIds = this.draftIds.filter((value: number): boolean => value !== id);
@@ -338,23 +350,17 @@ struct PrivacyExceptionsPage {
         }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
       } else {
         List() {
-          ForEach(this.filteredCandidates(), (user: ExceptionUser) => {
+          // LazyForEach + 复用行（PrivacyCandidateRow）：候选是全部联系人，几千个时只建
+          // 可视区附近的行。点击挂在 ListItem 上，闭包随行 key 重建。
+          LazyForEach(this.candidatesData, (user: ExceptionUser) => {
             ListItem() {
-              Row({ space: 12 }) {
-                AvatarView({ avatarPath: user.avatarPath, initials: user.initials, colorSeed: user.id, avatarSize: 42 });
-                Column({ space: 2 }) {
-                  Text(user.name).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).maxLines(1);
-                  if (user.username !== '') { Text(user.username).fontSize(12).fontColor(COLOR_TEXT_SECONDARY); }
-                }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                SymbolGlyph($r(this.draftIds.indexOf(user.id) >= 0
-                  ? 'sys.symbol.checkmark_circle_fill' : 'sys.symbol.circle'))
-                  .fontSize(23).fontColor([this.draftIds.indexOf(user.id) >= 0 ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
-              }
-              .width('100%').height(58).padding({ left: 6, right: 8 })
-              .onClick((): void => { this.toggleDraft(user.id); });
+              PrivacyCandidateRow({ user: user, checked: this.draftIds.indexOf(user.id) >= 0 });
             }
-          }, (user: ExceptionUser): string => `candidate_${user.id}_${this.draftIds.indexOf(user.id) >= 0}`);
-        }.layoutWeight(1).width('100%').scrollBar(BarState.Off);
+            .onClick((): void => { this.toggleDraft(user.id); });
+          }, (user: ExceptionUser, index: number): string =>
+            guardKey(this.candidatesData.keyTableId, index,
+              `${user.id}_${user.avatarPath}_${user.name}_${user.username}`));
+        }.layoutWeight(1).width('100%').scrollBar(BarState.Off).cachedCount(4);
       }
     }
     .width('100%').height('100%').padding({ left: 16, right: 16, top: 4, bottom: this.bottomSafe + 8 });
@@ -404,5 +410,31 @@ struct PrivacyExceptionsPage {
       dragBar: true,
       blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog')
     });
+  }
+}
+
+// 例外名单选人面板的一行。复用组件：LazyForEach 滚动时进出复用池；点击在页面的 ListItem 上。
+@Reusable
+@Component
+struct PrivacyCandidateRow {
+  @Prop user: ExceptionUser;
+  @Prop checked: boolean = false;
+
+  build() {
+    Row({ space: 12 }) {
+      AvatarView({
+        avatarPath: this.user.avatarPath, initials: this.user.initials,
+        colorSeed: this.user.id, avatarSize: 42
+      });
+      Column({ space: 2 }) {
+        Text(this.user.name).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).maxLines(1);
+        if (this.user.username !== '') {
+          Text(this.user.username).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+        }
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      SymbolGlyph($r(this.checked ? 'sys.symbol.checkmark_circle_fill' : 'sys.symbol.circle'))
+        .fontSize(23).fontColor([this.checked ? COLOR_PRIMARY : COLOR_ICON_SECONDARY]);
+    }
+    .width('100%').height(58).padding({ left: 6, right: 8 });
   }
 }

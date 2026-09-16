@@ -5,6 +5,8 @@ import { str } from '../util/strings';
 import { logE } from '../util/log';
 
 const DL_PRIORITY: number = 1;
+// 上下线 / 头像 / 资料更新合并重排的窗口。见 scheduleRebuild。
+const CONTACTS_REFRESH_COALESCE_MS: number = 500;
 
 export interface ContactItem {
   id: number;
@@ -28,6 +30,7 @@ export class ContactsStore {
   private avatarFileByUser: Map<number, number> = new Map();
   private byId: Map<number, ContactItem> = new Map();
   private loadSequence: number = 0;
+  private rebuildTimer: number = -1;
 
   contacts: ContactItem[] = [];
   loading: boolean = true;
@@ -73,6 +76,7 @@ export class ContactsStore {
 
   close(): void {
     this.loadSequence++;
+    this.cancelScheduledRebuild();
     for (const un of this.unsubs) {
       un();
     }
@@ -83,6 +87,7 @@ export class ContactsStore {
 
   reload(): void {
     const sequence = ++this.loadSequence;
+    this.cancelScheduledRebuild();
     this.loading = true;
     this.errorMessage = '';
     this.byId.clear();
@@ -161,18 +166,12 @@ export class ContactsStore {
     if (!isContact) {
       if (this.byId.delete(id)) {
         this.avatarFileByUser.delete(id);
-        if (!this.loading) {
-          this.rebuild();
-          this.notify();
-        }
+        this.scheduleRebuild();
       }
       return;
     }
     this.applyUser(user);
-    if (!this.loading) {
-      this.rebuild();
-      this.notify();
-    }
+    this.scheduleRebuild();
   }
 
   private applyUser(user: TdObject): void {
@@ -216,10 +215,7 @@ export class ContactsStore {
       const current = this.byId.get(id);
       if (current !== undefined) {
         current.avatarPath = path;
-        if (!this.loading) {
-          this.rebuild();
-          this.notify();
-        }
+        this.scheduleRebuild();
       }
     });
   }
@@ -232,9 +228,29 @@ export class ContactsStore {
     it.statusText = formatLastSeen(status, Math.floor(Date.now() / 1000));
     it.online = (status !== undefined) && (status['@type'] === 'userStatusOnline');
     it.sortKey = this.sortKey(status);
-    if (!this.loading) {
+    this.scheduleRebuild();
+  }
+
+  // 上下线、头像下载完、资料更新：合并成一次重排 + 通知。
+  //
+  // 几千个联系人时 updateUserStatus 几乎每秒都有。原来每来一条就整表排序（含
+  // localeCompare）再通知页面整表比对，滚动中也一样（2026-09-14 用户：「翻联系人列表
+  // 也很卡」）。首次加载中不排：加载完成那一下统一 rebuild。删除联系人仍然立即生效。
+  private scheduleRebuild(): void {
+    if (this.loading || this.rebuildTimer !== -1) {
+      return;
+    }
+    this.rebuildTimer = setTimeout((): void => {
+      this.rebuildTimer = -1;
       this.rebuild();
       this.notify();
+    }, CONTACTS_REFRESH_COALESCE_MS);
+  }
+
+  private cancelScheduledRebuild(): void {
+    if (this.rebuildTimer !== -1) {
+      clearTimeout(this.rebuildTimer);
+      this.rebuildTimer = -1;
     }
   }
 
