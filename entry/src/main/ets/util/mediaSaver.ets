@@ -6,6 +6,10 @@ import { promptAction } from '@kit.ArkUI';
 import { preferences } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { logE, logW } from './log';
+import {
+  DOWNLOAD_DIR_CANCELLED, DOWNLOAD_DIR_CHANGED, DOWNLOAD_DIR_EMPTY, DOWNLOAD_DIR_UNSUPPORTED
+} from './downloadDirOutcome';
+import { noteSavedLocal } from '../store/SavedLocalRegistry';
 
 const COPY_BUF: number = 1024 * 1024;
 const DOWNLOAD_PREFS: string = 'download_location';
@@ -26,7 +30,7 @@ function nextEventLoop(): Promise<void> {
   });
 }
 
-async function copyToUri(
+export async function copyToUri(
   srcPath: string, destUri: string, progress?: FileSaveProgress
 ): Promise<void> {
   const dest = fs.openSync(destUri,
@@ -55,7 +59,7 @@ async function copyToUri(
   }
 }
 
-function extensionOf(path: string, fallback: string): string {
+export function extensionOf(path: string, fallback: string): string {
   const dot = path.lastIndexOf('.');
   const ext = dot >= 0 ? path.substring(dot + 1).toLowerCase() : '';
   return ext.length > 0 && ext.length <= 5 ? ext : fallback;
@@ -106,6 +110,7 @@ export async function saveMediaToGallery(
       return;
     }
     await copyToUri(srcPath, uris[0], progress);
+    noteSavedLocal(context, srcPath);
     progress?.onSaved(str('transfer_gallery'));
     promptAction.showToast({ message: str('media_saved_gallery'), duration: 2000 });
   } catch (e) {
@@ -137,6 +142,7 @@ export function saveFileToLocal(
     }
     try {
       await copyToUri(srcPath, uris[0], progress);
+      noteSavedLocal(context, srcPath);
       progress?.onSaved(str('transfer_selected_location'));
       promptAction.showToast({ message: str('media_saved'), duration: 2000 });
     } catch (e) {
@@ -171,7 +177,14 @@ function folderAuthorizationAvailable(): boolean {
     canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization');
 }
 
-async function selectDownloadDirectoryUri(context: common.UIAbilityContext): Promise<string> {
+// 选目录的三种结局要分开：**选中**、**用户自己取消**、**回了空**（系统把选择器关了）。
+// 都揉成空串时，调用方没法区分「用户取消」和「什么都没发生」，后者就成了用户报的「点了没反应」（2026-09-16）。
+interface DirectorySelection {
+  uri: string;
+  cancelled: boolean;
+}
+
+async function selectDownloadDirectoryUri(context: common.UIAbilityContext): Promise<DirectorySelection> {
   const docPicker = new picker.DocumentViewPicker(context);
   const opts = new picker.DocumentSelectOptions();
   opts.maxSelectNumber = 1;
@@ -182,12 +195,13 @@ async function selectDownloadDirectoryUri(context: common.UIAbilityContext): Pro
     uris = await docPicker.select(opts);
   } catch (e) {
     if (isPickerCancellation(e as Object)) {
-      return '';
+      return { uri: '', cancelled: true };
     }
     throw e as Error;
   }
   if (uris.length === 0) {
-    return '';
+    logW('[DownloadDir] picker returned no directory');
+    return { uri: '', cancelled: false };
   }
   const directoryUri: string = uris[0];
   // 长期授权按能力走：没有 FolderAuthorization 的设备选完目录只在本次运行有效，
@@ -200,7 +214,7 @@ async function selectDownloadDirectoryUri(context: common.UIAbilityContext): Pro
   const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
   store.putSync(DOWNLOAD_DIRECTORY_URI, directoryUri);
   await store.flush();
-  return directoryUri;
+  return { uri: directoryUri, cancelled: false };
 }
 
 function downloadDirectoryPath(directoryUri: string): string {
@@ -208,9 +222,6 @@ function downloadDirectoryPath(directoryUri: string): string {
   return authorizedDirectory.endsWith(`/${DOWNLOAD_APP_FOLDER}`)
     ? authorizedDirectory : `${authorizedDirectory}/${DOWNLOAD_APP_FOLDER}`;
 }
-
-// 选择器本身不可用（FOLDER 模式抛错）时给调用方一个能识别的错误，页面据此提示。
-export const FOLDER_PICKER_UNSUPPORTED: string = 'FOLDER_PICKER_UNSUPPORTED';
 
 export function getDownloadDirectoryPath(context: common.UIAbilityContext): string {
   if (context === undefined) {
@@ -221,9 +232,10 @@ export function getDownloadDirectoryPath(context: common.UIAbilityContext): stri
   return downloadDirectoryPath(remembered !== '' ? remembered : DOWNLOAD_ROOT_URI);
 }
 
-export async function changeDownloadDirectory(context: common.UIAbilityContext): Promise<boolean> {
+// 返回 util/downloadDirOutcome 的状态串，页面据此提示——**每一种结局都有下文**，只有用户主动取消才静默。
+export async function changeDownloadDirectory(context: common.UIAbilityContext): Promise<string> {
   if (context === undefined) {
-    return false;
+    return DOWNLOAD_DIR_UNSUPPORTED;
   }
   // 原来这里按 canIUse 直接 return false——用户点了什么都不发生、什么都不说
   // （issue #189 追加 4）。选择器（DocumentViewPicker FOLDER 模式）本身不看这两个
@@ -232,24 +244,24 @@ export async function changeDownloadDirectory(context: common.UIAbilityContext):
     `folderAuthorization=${canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')}`);
   const store = preferences.getPreferencesSync(context, { name: DOWNLOAD_PREFS });
   const previous: string = store.getSync(DOWNLOAD_DIRECTORY_URI, '') as string;
-  let selected: string = '';
+  let picked: DirectorySelection = { uri: '', cancelled: false };
   try {
-    selected = await selectDownloadDirectoryUri(context);
+    picked = await selectDownloadDirectoryUri(context);
   } catch (e) {
     logE(`changeDownloadDirectory picker failed: ${JSON.stringify(e)}`);
-    throw new Error(FOLDER_PICKER_UNSUPPORTED);
+    return DOWNLOAD_DIR_UNSUPPORTED;
   }
-  if (selected === '') {
-    return false;
+  if (picked.uri === '') {
+    return picked.cancelled ? DOWNLOAD_DIR_CANCELLED : DOWNLOAD_DIR_EMPTY;
   }
-  if (previous !== '' && previous !== selected) {
+  if (previous !== '' && previous !== picked.uri) {
     try {
       await fileShare.revokePermission([downloadPolicy(previous)]);
     } catch (e) {
       logE(`changeDownloadDirectory revoke old permission failed: ${JSON.stringify(e)}`);
     }
   }
-  return true;
+  return DOWNLOAD_DIR_CHANGED;
 }
 
 async function resolveDownloadDirectoryUri(context: common.UIAbilityContext): Promise<string> {
@@ -264,7 +276,8 @@ async function resolveDownloadDirectoryUri(context: common.UIAbilityContext): Pr
       await store.flush();
     }
   }
-  return selectDownloadDirectoryUri(context);
+  const picked: DirectorySelection = await selectDownloadDirectoryUri(context);
+  return picked.uri;
 }
 
 // Remote saves call this before starting the TDLib download. That keeps the
@@ -319,7 +332,8 @@ export function saveFileToDownloads(
         progress?.onCancelled();
         return;
       }
-      return copyToDownloadDirectory(srcPath, fileName, directoryUri, progress);
+      return copyToDownloadDirectory(srcPath, fileName, directoryUri, progress)
+        .then((): void => { noteSavedLocal(context, srcPath); });
     });
   operation.catch((e: Object): void => {
     logE(`saveFileToDownloads failed: ${JSON.stringify(e)}`);

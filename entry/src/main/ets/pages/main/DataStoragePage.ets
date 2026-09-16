@@ -23,8 +23,13 @@ import { fullDate } from '../../util/intlFormat';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logW } from '../../util/log';
 import { HdsSubDestination } from '../common/HdsSubDestination';
-import { changeDownloadDirectory, FOLDER_PICKER_UNSUPPORTED, getDownloadDirectoryPath } from '../../util/mediaSaver';
+import { changeDownloadDirectory, getDownloadDirectoryPath } from '../../util/mediaSaver';
+import { DOWNLOAD_DIR_CHANGED, downloadDirToast } from '../../util/downloadDirOutcome';
 import { common } from '@kit.AbilityKit';
+
+// 选择器迟迟不回时解锁「默认下载路径」那一行的时限：它不回来，那一行就一直转圈且不可点，
+// 用户看到的就是「点了没反应」（2026-09-16）。
+const DOWNLOAD_PICKER_TIMEOUT_MS: number = 20000;
 
 const CARD_RADIUS: number = 14;
 const DANGER: string = '#E64646';
@@ -61,6 +66,7 @@ export struct DataStoragePage {
   @State autosaveWarning: string = '';
   @State downloadPath: string = '';
   @State changingDownloadPath: boolean = false;
+  private downloadPathWatchdog: number = -1;
   private active: boolean = false;
   private loadSequence: number = 0;
   private lastLoadAt: number = 0;
@@ -116,21 +122,48 @@ export struct DataStoragePage {
   private changeDownloadPath(): void {
     if (this.changingDownloadPath) { return; }
     this.changingDownloadPath = true;
-    changeDownloadDirectory(getContext(this) as common.UIAbilityContext).then((changed: boolean): void => {
-      this.changingDownloadPath = false;
-      if (changed) {
+    this.armDownloadPathWatchdog();
+    changeDownloadDirectory(getContext(this) as common.UIAbilityContext).then((status: string): void => {
+      this.finishDownloadPathChange();
+      if (status === DOWNLOAD_DIR_CHANGED) {
         this.refreshDownloadPath();
-        promptAction.showToast({ message: $r('app.string.ds_download_path_changed'), duration: 1600 });
+      }
+      // 每一种结局都有下文，只有用户主动取消才静默（见 util/downloadDirOutcome）。
+      const toast: string = downloadDirToast(status);
+      if (toast !== '') {
+        promptAction.showToast({ message: str(toast), duration: 2000 });
       }
     }).catch((error: Error): void => {
-      this.changingDownloadPath = false;
+      this.finishDownloadPathChange();
       logE(`DataStoragePage.changeDownloadPath failed: ${error.message}`);
-      promptAction.showToast({
-        message: error.message === FOLDER_PICKER_UNSUPPORTED
-          ? $r('app.string.ds_download_picker_unsupported') : $r('app.string.media_cannot_open_location'),
-        duration: 2000
-      });
+      promptAction.showToast({ message: str('media_cannot_open_location'), duration: 2000 });
     });
+  }
+
+  // 选择器的 Promise 不回来时这一行会一直转圈、且 enabled(false)，再点也没反应。到点强制解锁并明说一句。
+  private armDownloadPathWatchdog(): void {
+    this.clearDownloadPathWatchdog();
+    this.downloadPathWatchdog = setTimeout((): void => {
+      this.downloadPathWatchdog = -1;
+      if (!this.changingDownloadPath) {
+        return;
+      }
+      this.changingDownloadPath = false;
+      logE('[DownloadDir] picker did not return in time');
+      promptAction.showToast({ message: str('ds_download_picker_unsupported'), duration: 2000 });
+    }, DOWNLOAD_PICKER_TIMEOUT_MS);
+  }
+
+  private clearDownloadPathWatchdog(): void {
+    if (this.downloadPathWatchdog !== -1) {
+      clearTimeout(this.downloadPathWatchdog);
+      this.downloadPathWatchdog = -1;
+    }
+  }
+
+  private finishDownloadPathChange(): void {
+    this.clearDownloadPathWatchdog();
+    this.changingDownloadPath = false;
   }
 
   // 迁移前是 router 页的 onPageShow()。**方法体一字未改**，只改了名字并由外壳
