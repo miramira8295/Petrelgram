@@ -1,3 +1,7 @@
+import {
+  SEND_STAGING_DIR, flatStagedPath, stagedFilePath
+} from './sendStaging';
+
 // Helpers for turning a picked media/document URI into something sendable.
 //
 // These are the decidable parts of the attach-and-send flow, split out from
@@ -57,6 +61,15 @@ export function fileNameFromUri(uri: string): string {
 // Destination for the copy into the app cache. `seq` disambiguates files picked
 // within the same millisecond — selecting nine photos at once does exactly
 // that, and a timestamp alone would collide.
+//
+// 去重靠**目录**，文件名原样保留：TDLib 用本地 basename 当 document.file_name，
+// 把时间戳写进文件名就等于发给对方（用户 2026-09-16 报的 `send_...`）。
+// 布局与理由见 util/sendStaging。
 export function cacheDestPath(cacheDir: string, uri: string, seq: number, nowMs: number): string {
-  return `${cacheDir}/send_${nowMs}_${seq}_${fileNameFromUri(uri)}`;
+  return stagedFilePath(cacheDir, SEND_STAGING_DIR, nowMs, seq, fileNameFromUri(uri));
+}
+
+// 目录建不出来时的退路（调用方判断），回到旧的扁平命名。
+export function cacheDestPathFlat(cacheDir: string, uri: string, seq: number, nowMs: number): string {
+  return flatStagedPath(cacheDir, SEND_STAGING_DIR, nowMs, seq, fileNameFromUri(uri));
 }

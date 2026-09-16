@@ -74,9 +74,13 @@ export default function mediaPickTest() {
       expect(fileNameFromUri('file://docs/100%.mp4')).assertEqual('100%.mp4');
     });
 
-    it('cache destination carries both timestamp and sequence', 0, () => {
+    // 去重挪到了目录上：文件名必须原样，否则对方收到的就是我们的临时名
+    // （TDLib 用本地 basename 当 document.file_name）。
+    it('cache destination keeps the picked file name', 0, () => {
       expect(cacheDestPath('/cache', 'file://d/a.mp4', 3, 1700))
-        .assertEqual('/cache/send_1700_3_a.mp4');
+        .assertEqual('/cache/send/1700_3/a.mp4');
+      expect(cacheDestPath('/cache', 'file://d/%E8%A7%86%E9%A2%91.mp4', 1, 1700))
+        .assertEqual('/cache/send/1700_1/视频.mp4');
     });
 
     it('same-millisecond picks do not collide', 0, () => {

@@ -129,7 +129,9 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { promptAction, UIContext } from '@kit.ArkUI';
 import { MessageStore, MediaSendItem } from '../../store/MessageStore';
 import { MessageEntry } from '../../store/MessageEntry';
-import { cacheDestPath, isVideoPath } from '../../util/mediaPick';
+import { cacheDestPath, cacheDestPathFlat, isVideoPath } from '../../util/mediaPick';
+import { SEND_STAGING_DIR } from '../../util/sendStaging';
+import { ensureStagingDir, sweepStaging } from '../../util/sendStagingFs';
 import { LivePhotoExport, exportLivePhotoMotion } from '../../util/movingPhotoPick';
 import { logE } from '../../util/log';
 import { plural, str } from '../../util/strings';
@@ -276,7 +278,15 @@ export class AttachActions {
   private copyUriToCache(uri: string): string {
     try {
       const cacheDir = this.host.context().cacheDir;
-      const dest = cacheDestPath(cacheDir, uri, ++this.mediaCopySeq, Date.now());
+      const nowMs: number = Date.now();
+      const seq: number = ++this.mediaCopySeq;
+      // 顺手清掉过期的暂存（进程内只跑一次），再建这一批自己的目录。目录建不出
+      // 来就退回扁平命名——名字难看好过发不出去。见 util/sendStaging。
+      sweepStaging(cacheDir, SEND_STAGING_DIR, nowMs);
+      const dir: string = ensureStagingDir(cacheDir, SEND_STAGING_DIR, nowMs, seq);
+      const dest = dir !== ''
+        ? cacheDestPath(cacheDir, uri, seq, nowMs)
+        : cacheDestPathFlat(cacheDir, uri, seq, nowMs);
       const src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
       fs.copyFileSync(src.fd, dest);
       fs.closeSync(src);

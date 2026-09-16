@@ -4,6 +4,10 @@ import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { systemShare } from '@kit.ShareKit';
 import { fileNameFromUri } from '../util/mediaPick';
 import {
+  SHARE_STAGING_DIR, flatStagedPath, stagedFilePath
+} from '../util/sendStaging';
+import { ensureStagingDir, sweepStaging } from '../util/sendStagingFs';
+import {
   SharedItem, SharedPayload, SharedRecordLike,
   ancestorCandidates, itemOf, splitPayload
 } from '../util/sharedContent';
@@ -93,9 +97,15 @@ function ancestorOf(typeId: string): string {
   return '';
 }
 
-// 目的地路径。带上一个序号防止同一毫秒内多条撞名。
-function inboxDest(cacheDir: string, uri: string, seq: number): string {
-  return `${cacheDir}/share_${Date.now()}_${seq}_${fileNameFromUri(uri)}`;
+// 目的地路径。带上一个序号防止同一毫秒内多条撞名——序号进**目录**，文件名原样
+// 保留：分享进来的文件还要再发出去，而 TDLib 用本地 basename 当 file_name，
+// 名字里带 `share_<毫秒>_` 就等于发给对方（用户 2026-09-16 报）。见 util/sendStaging。
+function inboxDest(cacheDir: string, uri: string, seq: number, nowMs: number): string {
+  const name: string = fileNameFromUri(uri);
+  const dir: string = ensureStagingDir(cacheDir, SHARE_STAGING_DIR, nowMs, seq);
+  return dir !== ''
+    ? stagedFilePath(cacheDir, SHARE_STAGING_DIR, nowMs, seq, name)
+    : flatStagedPath(cacheDir, SHARE_STAGING_DIR, nowMs, seq, name);
 }
 
 // 把一个 URI 复制进沙箱，返回新路径；失败返回空串（调用方丢弃这一条，
@@ -103,7 +113,9 @@ function inboxDest(cacheDir: string, uri: string, seq: number): string {
 function copyIntoSandbox(cacheDir: string, uri: string, seq: number): string {
   let src: fs.File | null = null;
   try {
-    const dest: string = inboxDest(cacheDir, uri, seq);
+    const nowMs: number = Date.now();
+    sweepStaging(cacheDir, SHARE_STAGING_DIR, nowMs);
+    const dest: string = inboxDest(cacheDir, uri, seq, nowMs);
     src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
     fs.copyFileSync(src.fd, dest);
     return dest;
