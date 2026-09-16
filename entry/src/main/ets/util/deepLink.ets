@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
 import { openTelegramLink } from './openTelegramLink';
 import { logChatNavFailure, navigateToChat } from './chatNav';
+import { isTelegramInternalUrl } from './linkNav';
 
 // Incoming deep links arrive as tg:// URIs (a browser https://t.me link can't
 // hand off to a third-party client — see module.json5). Map the tg:// forms
@@ -136,6 +137,29 @@ export function tgSchemeToUrl(rawUri: string): string {
     return invite !== '' ? `https://t.me/+${invite}` : uri;
   }
   return uri;
+}
+
+// 这个 uri 是不是「我们真的要当链接打开」的那种。
+//
+// 【为什么需要它】原来的守卫只判 `uri === ''`，而系统把**点击通知**这个动作
+// 也编码进 want.uri 交给我们：实测 `abilityEvent:clickAlertMessage`（伴随
+// parameters 里的 _push_notifyid / isCallBySCB）。它非空，于是被当成深链一路
+// 送进 Telegram 链接解析器，最后只能弹一句"无法识别该 Telegram 链接"——
+// 用户点的是通知，通知里根本没有链接（2026-09-16 真机日志定位，issue #184）。
+//
+// 【为什么是白名单不是黑名单】module.json5 里为 viewData + browsable 声明的
+// scheme **只有 tg 一个**；https://t.me 无法交到第三方客户端（App Linking 要
+// 在 t.me 上放验证文件，那是 Telegram 的域名）。所以合法形态是可穷举的，
+// 而系统事件 uri 有多少种我们并不知道，黑名单必漏。
+//
+// t.me 家族与 @用户名 一并放行：它们不会由系统递进来，但应用内/其它入口若
+// 复用这条判据，语义要一致。
+export function isHandledDeepLinkUri(rawUri: string): boolean {
+  const uri: string = normalizeTgScheme(rawUri.trim());
+  if (uri === '') {
+    return false;
+  }
+  return uri.startsWith('tg://') || isTelegramInternalUrl(uri);
 }
 
 // Route a raw incoming deep-link URI into the app.

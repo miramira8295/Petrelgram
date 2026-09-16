@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { OpenMessageTarget, parseOpenMessageLink, tgSchemeToUrl } from '../main/ets/util/deepLink';
+import { OpenMessageTarget, isHandledDeepLinkUri, parseOpenMessageLink, tgSchemeToUrl }
+  from '../main/ets/util/deepLink';
 
 export default function deepLinkTest() {
   describe('deepLink', () => {
@@ -68,6 +69,52 @@ export default function deepLinkTest() {
       expect(parseOpenMessageLink('tg://openmessage?channel_id=12abc') === null).assertTrue();
       const t = parseOpenMessageLink('tg://openmessage?channel_id=5&msg_id=9x') as OpenMessageTarget;
       expect(t.messageId).assertEqual(0);
+    });
+
+    // —— 守卫：哪些 uri 才当链接打开 ——
+    //
+    // 真机实测（2026-09-16）：点通知拉起时系统把动作编码进 want.uri，
+    // 值是 abilityEvent:clickAlertMessage。原来只判非空，它就被当成深链
+    // 送进解析器，最后弹"无法识别该 Telegram 链接"——而通知里没有任何链接。
+    it('accepts_only_real_link_uris', 0, () => {
+      // 系统事件标记：这是这条守卫存在的唯一理由，必须挡住。
+      expect(isHandledDeepLinkUri('abilityEvent:clickAlertMessage')).assertFalse();
+      // 分享进来的 want 也可能带 uri，同样不是要打开的链接。
+      expect(isHandledDeepLinkUri('file:///data/storage/el2/base/haps/entry/files/a.jpg')).assertFalse();
+      expect(isHandledDeepLinkUri('')).assertFalse();
+      expect(isHandledDeepLinkUri('   ')).assertFalse();
+      expect(isHandledDeepLinkUri('mailto:a@b.c')).assertFalse();
+      expect(isHandledDeepLinkUri('https://example.com/x')).assertFalse();
+    });
+
+    it('keeps_every_legitimate_deep_link_shape', 0, () => {
+      // module.json5 只声明了 tg scheme，所以 tg:// 全族必须放行。
+      expect(isHandledDeepLinkUri('tg://resolve?domain=foo')).assertTrue();
+      expect(isHandledDeepLinkUri('tg://join?invite=HASH')).assertTrue();
+      expect(isHandledDeepLinkUri('tg://user?id=7')).assertTrue();
+      // 自建推送中转点通知跳会话用的就是这条，挡掉它=推送点了没反应。
+      expect(isHandledDeepLinkUri('tg://openmessage?channel_id=1&msg_id=2')).assertTrue();
+      // 系统会把没有 authority 的 tg 链接规范化掉双斜杠。
+      expect(isHandledDeepLinkUri('tg:resolve?domain=foo')).assertTrue();
+      expect(isHandledDeepLinkUri('tg:openmessage?from_id=5')).assertTrue();
+      // t.me 家族与 @用户名：系统不会这样递进来，但判据语义要一致。
+      expect(isHandledDeepLinkUri('https://t.me/foo')).assertTrue();
+      expect(isHandledDeepLinkUri('https://telegram.me/foo/12')).assertTrue();
+      expect(isHandledDeepLinkUri('@someone')).assertTrue();
+    });
+
+    // 中转（relay-go-src/format.go 的 openMessageUrl）实际发出的三种形态。
+    // 它们经华为 Push Kit 的 clickAction.data.url 送达，由 EntryAbility 取出
+    // 当深链走——挡掉任何一种，冻结期间点通知就只能落到首页。
+    it('accepts_relay_click_urls_verbatim', 0, () => {
+      expect(isHandledDeepLinkUri('tg://openmessage?channel_id=2536172802&msg_id=4567')).assertTrue();
+      expect(isHandledDeepLinkUri('tg://openmessage?chat_id=1')).assertTrue();
+      expect(isHandledDeepLinkUri('tg://openmessage?from_id=99&msg_id=7')).assertTrue();
+      // 这三条同时要能解析出目标，否则放行了也跳不过去。
+      const a = parseOpenMessageLink('tg://openmessage?channel_id=2536172802&msg_id=4567');
+      expect(a !== null).assertTrue();
+      const b = parseOpenMessageLink('tg://openmessage?from_id=99&msg_id=7');
+      expect(b !== null).assertTrue();
     });
   });
 }

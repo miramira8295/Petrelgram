@@ -7,6 +7,7 @@ import {
   cancelLiveDownloadNotifications, clearStaleDownloadNotifications
 } from '../services/DownloadSaveNotification';
 import { stashDownloadCenterWant } from '../util/downloadCenterWant';
+import { isHandledDeepLinkUri } from '../util/deepLink';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window, KeyboardAvoidMode } from '@kit.ArkUI';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
@@ -294,14 +295,27 @@ export default class EntryAbility extends UIAbility {
     this.stashNotifyTarget(want);
     stashDownloadCenterWant(want);
     const uri = want.uri ?? '';
-    // 诊断：用户报浏览器点 t.me 链接进来提示"无法识别"，而日志里连一次解析
-    // 尝试都没有。先看 want 到底带了什么——uri 为空的话这里就静默 return 了，
-    // 浏览器可能把地址放在别的字段。
-    if (uri === '') {
+    const bag: Record<string, Object> | undefined =
+      want.parameters !== undefined ? (want.parameters as Record<string, Object>) : undefined;
+    // 推送通道送来的点击链接。**这是中转与客户端之间的契约**，对端是
+    // relay-go-src/hms.go 的 clickData()：华为 Push Kit 的
+    // notification.clickAction 用 actionType=0（打开应用首页）+ data 键值对，
+    // 中转把 tg://openmessage?... 放进 data 的 "url" 键，由客户端自行路由。
+    // 冻结期间的消息通知由 HMS 直接展示，want.uri 只会是系统的事件标记
+    // （abilityEvent:clickAlertMessage），真正的目标在这里。
+    // 中转那半边早就实现了，客户端这半边一直是空的——所以点通知只能落到首页。
+    const clickUrl: string = bag !== undefined ? ((bag['url'] as string | undefined) ?? '') : '';
+    // 只放行真的是链接的 uri。系统把「点击通知」也编码进 want.uri
+    // （abilityEvent:clickAlertMessage），分享进来的 want 也可能带 file:// —
+    // 原来只判非空，这两种都会被当成深链送进 Telegram 链接解析器，弹出
+    // 一句「无法识别该 Telegram 链接」。判据见 util/deepLink。
+    const link: string = isHandledDeepLinkUri(uri) ? uri
+      : (isHandledDeepLinkUri(clickUrl) ? clickUrl : '');
+    if (link === '') {
       return;
     }
     AppStorage.setOrCreate('pendingDeepLink', '');
-    AppStorage.setOrCreate('pendingDeepLink', uri);
+    AppStorage.setOrCreate('pendingDeepLink', link);
   }
 
   // 点击本地通知拉起时携带的目标会话。与 pendingDeepLink 相同的

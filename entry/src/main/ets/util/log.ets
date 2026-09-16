@@ -78,10 +78,26 @@ function flushToDisk(): void {
   }
 }
 
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+function pad3(n: number): string {
+  return n < 100 ? (n < 10 ? `00${n}` : `0${n}`) : `${n}`;
+}
+
+// 行首时间戳。原来只有级别前缀，事后没法把日志和用户操作发生的时刻对上——
+// 2026-09-16 查"点通知弹无法识别该链接"时就卡在这里：拉回来的日志分不清
+// 哪一段对应哪一次点击。
+function stamp(): string {
+  const d: Date = new Date();
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`;
+}
+
 function push(level: string, text: string): void {
   const trimmed: string = text.length > MAX_LINE_CHARS
     ? `${text.substring(0, MAX_LINE_CHARS)}…` : text;
-  lines.push(`${level} ${trimmed}`);
+  lines.push(`${stamp()} ${level} ${trimmed}`);
   if (lines.length >= FLUSH_LINES && logDir !== '') {
     flushToDisk();
     return;
