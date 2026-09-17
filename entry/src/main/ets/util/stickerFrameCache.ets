@@ -29,12 +29,15 @@ function sanitize(name: string): string {
 // 带**字节数**是因为 TDLib 会复用文件名：同名文件换了内容（重新下载、清理后
 // 重下）时，长度几乎必然不同，缓存随之失效。带**尺寸桶**是因为解码是按显示
 // 尺寸做的，桶不同就是另一份像素。
-export function frameCacheFileName(sourcePath: string, fileSize: number, bucketPx: number): string {
+// highBudget：会话大表情放宽预算后的解码结果（抽帧步长不同），必须与普通档分开存，
+// 否则会命中之前按普通档隔帧写下的缓存（见 util/webm/alphaCacheKey）。
+export function frameCacheFileName(sourcePath: string, fileSize: number, bucketPx: number,
+  highBudget: boolean = false): string {
   const slash: number = sourcePath.lastIndexOf('/');
   const base: string = slash < 0 ? sourcePath : sourcePath.substring(slash + 1);
   const dot: number = base.lastIndexOf('.');
   const stem: string = dot > 0 ? base.substring(0, dot) : base;
-  return `${sanitize(stem)}_${fileSize}_${bucketPx}_v${FRAME_CACHE_VERSION}.pgsf`;
+  return `${sanitize(stem)}_${fileSize}_${bucketPx}${highBudget ? 'h' : ''}_v${FRAME_CACHE_VERSION}.pgsf`;
 }
 
 export interface FrameCacheEntry {

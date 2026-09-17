@@ -9,10 +9,17 @@ import { stickerAnimationSlots } from '../../util/stickerAnimationBudget';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { tgsPowerSuspended } from '../../util/tgsPowerGate';
 import {
-  tgsFinished, tgsFrameIndexAt, tgsNextDelayMs, tgsPlaybackFps, tgsRenderSize
+  tgsFinished, tgsFrameDue, tgsFrameIndexAt, tgsHighRateCategory, tgsNextDelayMs, tgsPlaybackFps,
+  tgsRenderSize
 } from '../../util/tgsPlayback';
+import { stickerFrameClock } from '../../util/stickerFrameClock';
 import { subscribeAnimationGateFor } from '../../util/stickerPanelGate';
 import { logE, logW } from '../../util/log';
+
+// 出帧节奏的一键回退开关（2026-09-17）。true = 共享 displaySync 时钟，对齐屏幕刷新；
+// false = 原来的「画完一帧再 setTimeout」。真机上若出问题（比如贴纸停在缩略图不动、
+// 反而更卡），改这一个常量即可回到旧路径。为什么要换，见 util/stickerFrameClock。
+const TGS_USE_DISPLAY_SYNC: boolean = true;
 
 // TGS 贴纸的原生渲染（rlottie）。UI 线程只做一件事：把 worker 上渲好的一张
 // PixelMap 画进 Canvas。
@@ -57,6 +64,11 @@ export struct TgsNativeStickerView {
   private sourceFps: number = 60;
   private startedAt: number = 0;
   private timer: number = -1;
+  // 共享出帧时钟的退订函数（TGS_USE_DISPLAY_SYNC 时取代 timer）。
+  private unsubClock: (() => void) | null = null;
+  // 上一次要帧对应的上屏时刻（时钟的时间基，毫秒）与最近一次画出的帧号。
+  private lastRequestMs: number = -1;
+  private lastIndex: number = -1;
   private canvasReady: boolean = false;
   private visible: boolean = false;
   private chatGateSuspended: boolean = false;
@@ -126,6 +138,8 @@ export struct TgsNativeStickerView {
     this.close();
     this.clearCanvas();
     this.startedAt = 0;
+    this.lastRequestMs = -1;
+    this.lastIndex = -1;
   }
 
   aboutToReuse(): void {
@@ -141,6 +155,8 @@ export struct TgsNativeStickerView {
     this.clearCanvas();
     // 新贴纸从第 0 帧起播，不接着上一张的进度。
     this.startedAt = 0;
+    this.lastRequestMs = -1;
+    this.lastIndex = -1;
     this.painted = false;
     this.failed = false;
     this.open();
@@ -266,7 +282,7 @@ export struct TgsNativeStickerView {
     // `rendering` 也要拦：一帧在途时 timer 是 -1，光看 timer 会让每一次闸门
     // 变化（滚动中很频繁）都再叫起一个 pump，请求速率成倍往上翻。
     if (this.disposed || this.handle === 0 || !this.canvasReady || !this.visible
-      || this.suspended() || this.timer !== -1 || this.rendering) {
+      || this.suspended() || this.timer !== -1 || this.unsubClock !== null || this.rendering) {
       return;
     }
     if (!this.holdsSlot) {
@@ -279,16 +295,67 @@ export struct TgsNativeStickerView {
       }
       this.holdsSlot = true;
     }
+    if (TGS_USE_DISPLAY_SYNC) {
+      this.startClock();
+      return;
+    }
     if (this.startedAt === 0) {
       this.startedAt = Date.now();
     }
     this.pump();
   }
 
+  // 挂到共享时钟上。帧率在起播时定：大表情最高 60，其余 30，省电 15。
+  private startClock(): void {
+    const fps: number = tgsPlaybackFps(this.sourceFps, this.env.powerSaving,
+      tgsHighRateCategory(this.powerCategory));
+    this.lastRequestMs = -1;
+    this.unsubClock = stickerFrameClock.subscribe(this.getUIContext(), fps,
+      (timestampMs: number, targetMs: number): void => {
+        this.onClockFrame(timestampMs, targetMs, fps);
+      });
+  }
+
+  // 时钟的一拍。与 pump 同一套判据，差别只在时刻：起点和帧号都用时钟给的时间，
+  // 帧号按**下一帧上屏的时刻**（targetMs）算，渲好正好赶上那一帧。
+  private onClockFrame(timestampMs: number, targetMs: number, fps: number): void {
+    if (this.disposed || this.failed || this.handle === 0 || this.suspended() || !this.visible
+      || !this.holdsSlot) {
+      this.stopPump();
+      return;
+    }
+    if (this.rendering) {
+      return;   // 上一帧还没回来（设备忙）：跳过这一拍，不排队堆积
+    }
+    if (this.startedAt === 0) {
+      this.startedAt = timestampMs;
+    }
+    if (!tgsFrameDue(this.lastRequestMs, targetMs, fps)) {
+      return;
+    }
+    const elapsed: number = targetMs - this.startedAt;
+    const looping: boolean = this.loop && !this.playOnce;
+    if (!looping && tgsFinished(elapsed, this.sourceFps, this.totalFrames)) {
+      this.stopPump();
+      this.releaseSlot();
+      return;   // 定格在最后一帧
+    }
+    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping);
+    this.lastRequestMs = targetMs;
+    if (index === this.lastIndex) {
+      return;   // 源帧还没前进（源帧率低于时钟），不重复渲同一帧
+    }
+    this.renderFrame(index);
+  }
+
   private stopPump(): void {
     if (this.timer !== -1) {
       clearTimeout(this.timer);
       this.timer = -1;
+    }
+    if (this.unsubClock !== null) {
+      this.unsubClock();
+      this.unsubClock = null;
     }
     // 排着队还没轮到的那一帧作废；已经在渲的回来后照常处理。
     if (this.renderTicket !== null) {
@@ -319,6 +386,11 @@ export struct TgsNativeStickerView {
       return;   // 定格在最后一帧
     }
     const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping);
+    this.renderFrame(index);
+  }
+
+  // 要一帧并画上。pump（定时器）和 onClockFrame（共享时钟）共用。
+  private renderFrame(index: number): void {
     const token: number = this.seq;
     this.rendering = true;
     queueTgsRenderTicketed(this.handle, index, this.currentRenderTicket()).then((result: TgsRenderResult): void => {
@@ -345,6 +417,14 @@ export struct TgsNativeStickerView {
         return;
       }
       this.draw(frame);
+      this.lastIndex = index;
+      if (TGS_USE_DISPLAY_SYNC) {
+        // 时钟模式下不用约下一拍，时钟自己会跳。但若这一帧在途时被暂停又恢复（滚动闸门
+        // 很频繁），恢复时的 maybeStart 被 rendering 挡了回去、又没人再订阅时钟——
+        // 贴纸就会永远停在这一帧。这里补叫一次；它是幂等的，已订阅时直接返回。
+        this.maybeStart();
+        return;
+      }
       if (!this.suspended() && this.visible && this.holdsSlot) {
         this.timer = setTimeout((): void => { this.pump(); },
           tgsNextDelayMs(tgsPlaybackFps(this.sourceFps, this.env.powerSaving)));

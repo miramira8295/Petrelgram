@@ -5,8 +5,14 @@ import {
 import {
   demuxWebmAlpha, packAlphaStreams, readWebmTrack, WebmAlphaFrame
 } from '../main/ets/util/webm/WebmAlphaDemuxer';
-import { ALPHA_STICKER_MAX_BYTES, planAlphaDecode } from '../main/ets/util/webm/AlphaStickerBudget';
+import {
+  ALPHA_EMOJI_CHAT_MAX_BYTES, ALPHA_STICKER_MAX_BYTES, alphaStickerMaxBytes, planAlphaDecode
+} from '../main/ets/util/webm/AlphaStickerBudget';
 import { alphaStickerCandidate } from '../main/ets/util/webm/alphaStickerGate';
+import {
+  alphaCacheKey, alphaKeyBucket, alphaKeyHighBudget, alphaSizeBucket
+} from '../main/ets/util/webm/alphaCacheKey';
+import { alphaClipFps, alphaFrameIndexAt } from '../main/ets/util/webm/alphaPlayback';
 
 // 透明 webm 贴纸链路里所有能在主机上跑的部分。
 //
@@ -347,6 +353,64 @@ export default function webmAlphaTest() {
       expect(alphaStickerCandidate('gif')).assertFalse();
       expect(alphaStickerCandidate('video')).assertFalse();
       expect(alphaStickerCandidate('')).assertFalse();
+    });
+    // 2026-09-17：会话里单发的 WebM 大表情放宽单张解码预算。256px 一帧 262,144 字节，
+    // 12MB 只装得下 48 帧，3 秒 30fps（90 帧）只能隔帧取 → 实际 15fps，看着一顿一顿。
+    it('大表情放宽预算后 256px 保住整段 90 帧，普通贴纸仍隔帧', 0, (): void => {
+      const wide = planAlphaDecode(512, 512, 256, 90, ALPHA_EMOJI_CHAT_MAX_BYTES, ALPHA_EMOJI_CHAT_MAX_BYTES);
+      expect(wide.accept).assertTrue();
+      expect(wide.targetW).assertEqual(256);
+      expect(wide.frameStep).assertEqual(1);
+      // 不传上限 = 普通贴纸的 12MB，行为不变
+      const normal = planAlphaDecode(512, 512, 256, 90, ALPHA_EMOJI_CHAT_MAX_BYTES);
+      expect(normal.frameStep).assertEqual(2);
+      // 放宽的是单张上限，不是全局池子：池子里只剩 8MB 时照样得降
+      const squeezed = planAlphaDecode(512, 512, 256, 90, 8 * 1024 * 1024, ALPHA_EMOJI_CHAT_MAX_BYTES);
+      expect(squeezed.accept).assertTrue();
+      expect(squeezed.frameStep).assertEqual(3);
+    });
+
+    it('只有会话里的大表情走放宽预算', 0, (): void => {
+      expect(alphaStickerMaxBytes('emojiChat')).assertEqual(ALPHA_EMOJI_CHAT_MAX_BYTES);
+      expect(alphaStickerMaxBytes('sticker')).assertEqual(ALPHA_STICKER_MAX_BYTES);
+      expect(alphaStickerMaxBytes('emojiPicker')).assertEqual(ALPHA_STICKER_MAX_BYTES);
+      expect(alphaStickerMaxBytes('emojiStatus')).assertEqual(ALPHA_STICKER_MAX_BYTES);
+    });
+
+    // 缓存键必须带上预算档位：解码结果连抽帧步长一起缓存（内存 + 磁盘）。不带的话，
+    // 之前按 15fps 缓存过的大表情会一直命中旧缓存，放宽预算等于没改。
+    it('缓存键区分预算档位，且能原样拆回尺寸档', 0, (): void => {
+      const normal: string = alphaCacheKey('/d/a.webm', 256, false);
+      const high: string = alphaCacheKey('/d/a.webm', 256, true);
+      expect(normal === high).assertFalse();
+      expect(alphaKeyBucket(normal)).assertEqual(256);
+      expect(alphaKeyBucket(high)).assertEqual(256);
+      expect(alphaKeyHighBudget(normal)).assertFalse();
+      expect(alphaKeyHighBudget(high)).assertTrue();
+    });
+
+    it('显示尺寸按 32px 归桶，夹在 96~256', 0, (): void => {
+      expect(alphaSizeBucket(480)).assertEqual(256);
+      expect(alphaSizeBucket(160)).assertEqual(160);
+      expect(alphaSizeBucket(100)).assertEqual(128);
+      expect(alphaSizeBucket(10)).assertEqual(96);
+    });
+
+    // 出帧改由 displaySync 驱动后，时钟按这段帧序列自己的帧率跳。
+    it('帧序列自身的帧率', 0, (): void => {
+      expect(alphaClipFps(90, 3000)).assertEqual(30);
+      expect(alphaClipFps(45, 3000)).assertEqual(15);
+      expect(alphaClipFps(0, 0)).assertEqual(30);       // 拿不到时长：按 Telegram 规范的 30
+      expect(alphaClipFps(600, 1000)).assertEqual(60);  // 封顶
+    });
+
+    it('按时刻查该显示第几帧', 0, (): void => {
+      const times: number[] = [0, 33, 66, 100];
+      expect(alphaFrameIndexAt(times, 0)).assertEqual(0);
+      expect(alphaFrameIndexAt(times, 50)).assertEqual(1);
+      expect(alphaFrameIndexAt(times, 99)).assertEqual(2);
+      expect(alphaFrameIndexAt(times, 1000)).assertEqual(3);
+      expect(alphaFrameIndexAt([], 50)).assertEqual(0);
     });
   });
 }

@@ -9,6 +9,21 @@
 
 // 单张贴纸的解码上限。超过就先降帧、再降分辨率，都不行才放弃。
 export const ALPHA_STICKER_MAX_BYTES: number = 12 * 1024 * 1024;
+// 会话里单发的大表情（2026-09-17 用户定）。256px 一帧 262,144 字节，12MB 只装得下 48 帧，
+// 一张 3 秒 30fps（90 帧）的视频表情只能隔帧取——实际 15fps，大尺寸上看着一顿一顿。
+// 24MB 刚好放下 256px × 90 帧（23.6MB）。代价：全局池子只有 32MB（NativePixelBudget），
+// 同屏两个 WebM 大表情时第二个拿不到这么多，会按剩余预算降档。
+export const ALPHA_EMOJI_CHAT_MAX_BYTES: number = 24 * 1024 * 1024;
+
+// 哪些贴纸走放宽预算：只有会话气泡里单发的大表情（MessageBubble 对 isEmojiSticker 传
+// 'emojiChat'）。面板格子、状态小图标、普通贴纸都不放宽——池子是全局共用的。
+export function alphaStickerHighBudget(powerCategory: string): boolean {
+  return powerCategory === 'emojiChat';
+}
+
+export function alphaStickerMaxBytes(powerCategory: string): number {
+  return alphaStickerHighBudget(powerCategory) ? ALPHA_EMOJI_CHAT_MAX_BYTES : ALPHA_STICKER_MAX_BYTES;
+}
 // 全进程上限与普通 PixelMap 缓存共用统一预算，见 NativePixelBudget。
 export { ALPHA_STICKER_CACHE_MAX_BYTES as ALPHA_TOTAL_MAX_BYTES } from '../NativePixelBudget';
 // 贴纸原生 512，但屏幕上从来占不到那么大；再大只是白烧内存。
@@ -50,11 +65,11 @@ function fitBox(srcW: number, srcH: number, box: number): number[] {
 }
 
 export function planAlphaDecode(srcW: number, srcH: number, boxPx: number,
-  frameCount: number, freeBytes: number): AlphaDecodePlan {
+  frameCount: number, freeBytes: number, maxBytes: number = ALPHA_STICKER_MAX_BYTES): AlphaDecodePlan {
   if (srcW <= 0 || srcH <= 0 || frameCount <= 0 || boxPx <= 0) {
     return reject();
   }
-  const budget = Math.min(ALPHA_STICKER_MAX_BYTES, freeBytes);
+  const budget = Math.min(maxBytes, freeBytes);
   if (budget <= 0) {
     return reject();
   }

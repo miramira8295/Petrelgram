@@ -7,6 +7,9 @@ import {
 import { AnimationSlotPool } from '../../util/animationSlotPool';
 import { stickerAnimationSlots } from '../../util/stickerAnimationBudget';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
+import { stickerFrameClock } from '../../util/stickerFrameClock';
+import { alphaClipFps, alphaFrameIndexAt } from '../../util/webm/alphaPlayback';
+import { alphaStickerHighBudget } from '../../util/webm/AlphaStickerBudget';
 
 // 带 alpha 的 webm 贴纸：预解码好的 RGBA 帧画到 Canvas 上循环播放。
 //
@@ -18,7 +21,13 @@ import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 // 退回静态缩略图。差别只在帧从哪儿来。
 
 // 播放时钟的心跳。贴纸最高 30fps，30ms 一拍足够跟上，又不至于空转太多。
+// （仅回退路径用；默认走共享 displaySync 时钟，见下面的开关。）
 const TICK_MS: number = 30;
+
+// 出帧节奏的一键回退开关（2026-09-17）。true = 共享 displaySync 时钟（util/stickerFrameClock），
+// 画帧对齐屏幕刷新；false = 原来的 30ms setInterval。原来那条的问题：30ms 的轮询和 33ms
+// 一帧的内容、和屏幕刷新都对不齐，每帧在屏上停留的时长忽长忽短。
+const ALPHA_USE_DISPLAY_SYNC: boolean = true;
 
 // 同时自绘的上限。内存预算管的是"解出多少帧"，管不了"多少块画布在重画"——
 // 贴纸面板一屏几十格各自 33fps 地 drawImage，主线程一样会卡。
@@ -68,6 +77,8 @@ export struct AlphaWebmStickerView {
   // 不叫 clip：那是 ArkUI 的通用属性名，组件成员重名会编译失败。
   private sequence: AlphaClip | null = null;
   private timer: number = -1;
+  // 共享出帧时钟的退订函数（ALPHA_USE_DISPLAY_SYNC 时取代 timer）。
+  private unsubClock: (() => void) | null = null;
   private startedAt: number = 0;
   private shownIndex: number = -1;
   private disposed: boolean = false;
@@ -247,6 +258,10 @@ export struct AlphaWebmStickerView {
       clearInterval(this.timer);
       this.timer = -1;
     }
+    if (this.unsubClock !== null) {
+      this.unsubClock();
+      this.unsubClock = null;
+    }
   }
 
   private startTicker(): void {
@@ -254,9 +269,23 @@ export struct AlphaWebmStickerView {
     if (this.sequence === null || this.disposed || this.scrollPaused || (this.tracksVisibility() && !this.onScreen)) {
       return;
     }
-    this.startedAt = Date.now();
+    const clip: AlphaClip | null = this.sequence;
+    if (clip === null) {
+      return;
+    }
     this.shownIndex = -1;
     this.drawFrame(0);
+    if (ALPHA_USE_DISPLAY_SYNC) {
+      // 起点在第一拍用时钟的时间基定（与 Date.now 不是同一个基准，不能混用）。
+      this.startedAt = 0;
+      this.unsubClock = stickerFrameClock.subscribe(this.getUIContext(),
+        alphaClipFps(clip.frames.length, clip.durationMs),
+        (timestampMs: number, targetMs: number): void => {
+          this.onClockTick(timestampMs, targetMs);
+        });
+      return;
+    }
+    this.startedAt = Date.now();
     this.timer = setInterval((): void => {
       this.onTick();
     }, TICK_MS);
@@ -280,15 +309,32 @@ export struct AlphaWebmStickerView {
       elapsed = elapsed % total;
       this.startedAt = Date.now() - elapsed;
     }
-    let index = 0;
-    for (let i = 0; i < clip.timesMs.length; i++) {
-      if (clip.timesMs[i] <= elapsed) {
-        index = i;
-      } else {
-        break;
-      }
+    this.drawFrame(alphaFrameIndexAt(clip.timesMs, elapsed));
+  }
+
+  // 共享时钟的一拍。帧已经预解码在内存里，这里按**下一帧上屏的时刻**（targetMs）
+  // 查表、当场画上——画的时刻就对齐了屏幕刷新。与 onTick 同一套回卷规则。
+  private onClockTick(timestampMs: number, targetMs: number): void {
+    const clip = this.sequence;
+    if (clip === null || this.disposed) {
+      this.stopTicker();
+      return;
     }
-    this.drawFrame(index);
+    if (this.startedAt === 0) {
+      this.startedAt = timestampMs;
+    }
+    const total = Math.max(1, clip.durationMs);
+    let elapsed = targetMs - this.startedAt;
+    if (elapsed >= total) {
+      if (!this.loopEnabled()) {
+        this.drawFrame(clip.frames.length - 1);
+        this.stopTicker();
+        return;
+      }
+      elapsed = elapsed % total;
+      this.startedAt = targetMs - elapsed;
+    }
+    this.drawFrame(alphaFrameIndexAt(clip.timesMs, elapsed));
   }
 
   private drawFrame(index: number): void {
@@ -346,7 +392,8 @@ export struct AlphaWebmStickerView {
     // 显示尺寸决定解码尺寸：聊天气泡里的贴纸和面板里的小格差着一个数量级，
     // 一律按原生 512 解码就是白烧内存。
     const boxPx = Math.max(vp2px(this.boxWidth), vp2px(this.boxHeight));
-    const result: AlphaAcquireResult = await acquireAlphaSticker(path, boxPx);
+    const result: AlphaAcquireResult =
+      await acquireAlphaSticker(path, boxPx, alphaStickerHighBudget(this.powerCategory));
     const clip: AlphaClip | null = result.clip;
     this.loading = false;
     if (this.disposed || seq !== this.loadSeq || path !== this.webmPath) {

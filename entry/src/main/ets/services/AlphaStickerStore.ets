@@ -1,7 +1,11 @@
 import { fileIo } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 import nativeWebm from 'libentry.so';
-import { ALPHA_TOTAL_MAX_BYTES, AlphaDecodePlan, planAlphaDecode } from '../util/webm/AlphaStickerBudget';
+import {
+  ALPHA_EMOJI_CHAT_MAX_BYTES, ALPHA_STICKER_MAX_BYTES, ALPHA_TOTAL_MAX_BYTES, AlphaDecodePlan, planAlphaDecode
+} from '../util/webm/AlphaStickerBudget';
+import { alphaCacheKey, alphaKeyBucket, alphaKeyHighBudget, alphaSizeBucket } from '../util/webm/alphaCacheKey';
+import { logW } from '../util/log';
 import { packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
 import { demuxWebmAlphaOffThread } from '../util/webm/webmDemuxTask';
 import { ALPHA_STICKER_CACHE_MAX_BYTES } from '../util/NativePixelBudget';
@@ -69,10 +73,6 @@ interface CacheEntry {
 
 // 贴纸文件本来就只有几十 KB；比这大的多半不是贴纸，别读进内存。
 const MAX_FILE_BYTES: number = 4 * 1024 * 1024;
-// 显示尺寸按 32px 归桶，让"160 和 168"这种细微差别共用同一份解码结果。
-const SIZE_BUCKET: number = 32;
-const MIN_BUCKET: number = 96;
-const MAX_BUCKET: number = 256;
 // 失败过的路径不再重试：解不了的贴纸每次挂载都重试一遍，等于把开销翻倍。
 const MAX_REJECTED: number = 400;
 // 一段贴纸可能有 90 多张 PixelMap；低内存回调里整段同步 release 仍会卡主线程。
@@ -123,9 +123,9 @@ function ensureFrameCacheDir(): string {
   return frameCacheDir;
 }
 
-function frameCachePathFor(path: string, fileSize: number, bucketPx: number): string {
+function frameCachePathFor(path: string, fileSize: number, bucketPx: number, highBudget: boolean): string {
   const dir: string = ensureFrameCacheDir();
-  return dir === '' ? '' : `${dir}/${frameCacheFileName(path, fileSize, bucketPx)}`;
+  return dir === '' ? '' : `${dir}/${frameCacheFileName(path, fileSize, bucketPx, highBudget)}`;
 }
 
 // 写过缓存之后收一次尾。**去抖**：一屏贴纸会连着写几十次，每次都去 listFile +
@@ -202,15 +202,13 @@ export function alphaStickerPipelineAvailable(): boolean {
 
 let probeLogged: boolean = false;
 
-export function alphaStickerCacheKey(path: string, boxPx: number): string {
-  const raw = Math.ceil(Math.max(1, boxPx) / SIZE_BUCKET) * SIZE_BUCKET;
-  const bucket = Math.min(MAX_BUCKET, Math.max(MIN_BUCKET, raw));
-  return `${path}|${bucket}`;
+// 拼键/拆键在 util/webm/alphaCacheKey（纯函数、有单测）；这里只是转接。
+export function alphaStickerCacheKey(path: string, boxPx: number, highBudget: boolean = false): string {
+  return alphaCacheKey(path, alphaSizeBucket(boxPx), highBudget);
 }
 
 function bucketOf(key: string): number {
-  const at = key.lastIndexOf('|');
-  return at < 0 ? MIN_BUCKET : Number.parseInt(key.substring(at + 1), 10);
+  return alphaKeyBucket(key);
 }
 
 function markRejected(path: string): void {
@@ -351,8 +349,15 @@ function acquired(clip: AlphaClip | null, status: AlphaAcquireStatus): AlphaAcqu
 async function decodeReserved(clip: WebmAlphaClip, key: string,
   sourcePath: string, sourceSize: number): Promise<DecodeOutcome> {
   const free: number = alphaStickerFreeBytes();
+  const highBudget: boolean = alphaKeyHighBudget(key);
   const plan: AlphaDecodePlan = planAlphaDecode(
-    clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, free);
+    clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, free,
+    highBudget ? ALPHA_EMOJI_CHAT_MAX_BYTES : ALPHA_STICKER_MAX_BYTES);
+  if (highBudget) {
+    // 会话大表情的解码计划，上机时确认放宽预算真的生效（帧数、步长、尺寸）。
+    logW(`[AlphaPlan] emoji decode bucket=${bucketOf(key)} frames=${clip.frames.length} free=${free} `
+      + `accept=${plan.accept} ${plan.targetW}x${plan.targetH} step=${plan.frameStep}`);
+  }
   if (!plan.accept) {
     return outcome(null, false, true); // 只是这一刻没预算，别永久拉黑
   }
@@ -366,7 +371,7 @@ async function decodeReserved(clip: WebmAlphaClip, key: string,
   for (let i = 0; i < payload.keptTimesMs.length; i++) {
     times[i] = Math.round(payload.keptTimesMs[i]);
   }
-  const cachePath: string = frameCachePathFor(sourcePath, sourceSize, bucketOf(key));
+  const cachePath: string = frameCachePathFor(sourcePath, sourceSize, bucketOf(key), highBudget);
   const frames: image.PixelMap[] = await nativeWebm.webmAlphaDecode(
     payload.colorData, payload.colorLengths, payload.alphaData, payload.alphaLengths,
     clip.track.width, clip.track.height, plan.targetW, plan.targetH, plan.frameStep,
@@ -443,11 +448,14 @@ async function decodeClip(path: string, key: string): Promise<DecodeOutcome> {
   } catch (e) {
     return outcome(null, true);
   }
-  const cachePath: string = frameCachePathFor(path, sourceSize, bucketOf(key));
+  const cachePath: string = frameCachePathFor(path, sourceSize, bucketOf(key), alphaKeyHighBudget(key));
   if (cachePath !== '') {
     const hit: DecodeOutcome = await serialize(
       (): Promise<DecodeOutcome> => loadCachedReserved(cachePath, key));
     if (hit.clip !== null || hit.busy) {
+      if (hit.clip !== null && alphaKeyHighBudget(key)) {
+        logW(`[AlphaPlan] emoji cache hit frames=${hit.clip.frames.length} ${hit.clip.width}x${hit.clip.height}`);
+      }
       return hit;   // busy：磁盘上有，只是内存不够——再去软解一遍也一样不够
     }
   }
@@ -475,11 +483,12 @@ function serialize(job: () => Promise<DecodeOutcome>): Promise<DecodeOutcome> {
 }
 
 // 取一段可播的透明贴纸。拿到之后必须配对调用 releaseAlphaSticker。
-export async function acquireAlphaSticker(path: string, boxPx: number): Promise<AlphaAcquireResult> {
+export async function acquireAlphaSticker(path: string, boxPx: number,
+  highBudget: boolean = false): Promise<AlphaAcquireResult> {
   if (path === '' || !alphaStickerPipelineAvailable() || rejected.has(path)) {
     return acquired(null, 'unsupported');
   }
-  const key = alphaStickerCacheKey(path, boxPx);
+  const key = alphaStickerCacheKey(path, boxPx, highBudget);
   const cached = cache.get(key);
   if (cached !== undefined) {
     cached.refs++;

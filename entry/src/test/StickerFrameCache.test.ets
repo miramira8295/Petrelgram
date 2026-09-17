@@ -52,5 +52,15 @@ export default function stickerFrameCacheTest() {
       expect(plan.length).assertEqual(2);
       expect(plan[0]).assertEqual('a');
     });
+    // 大表情放宽预算后解出来的帧（抽帧步长不同）必须和普通档分开存，否则会命中
+    // 之前按普通档（隔帧）写下的缓存。
+    it('预算档位进文件名，默认档文件名不变', 0, (): void => {
+      const normal: string = frameCacheFileName('/d/abc.webm', 1234, 256);
+      const explicitNormal: string = frameCacheFileName('/d/abc.webm', 1234, 256, false);
+      const high: string = frameCacheFileName('/d/abc.webm', 1234, 256, true);
+      expect(explicitNormal).assertEqual(normal);
+      expect(high === normal).assertFalse();
+      expect(high.endsWith(`_v${FRAME_CACHE_VERSION}.pgsf`)).assertTrue();
+    });
   });
 }
