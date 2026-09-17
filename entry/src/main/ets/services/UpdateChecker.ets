@@ -8,9 +8,9 @@ import { updateCheckThrottled } from '../util/updateThrottle';
 // 版本检查。数据源直接用 GitHub Releases —— 发版时打的 tag 本身就是版本号，
 // 不额外维护一个 version.json：多一个文件就多一处"忘了同步"的地方。
 const RELEASE_API: string =
-  'https://api.github.com/repos/miramira8295/TelegramForHarmony/releases/latest';
+  'https://api.github.com/repos/miramira8295/Petrelgram/releases/latest';
 const RELEASE_PAGE: string =
-  'https://github.com/miramira8295/TelegramForHarmony/releases/latest';
+  'https://github.com/miramira8295/Petrelgram/releases/latest';
 // 国内直连 api.github.com 经常超时。给一个短超时，失败就静默 —— 转圈半天
 // 再报错比不查更烦人。
 const REQUEST_TIMEOUT_MS: number = 8000;
