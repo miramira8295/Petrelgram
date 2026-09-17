@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  decidePush, chatKey, StackFrame, StackAction, decideChatPush } from '../main/ets/util/splitRouting';
+  decidePush, chatKey, StackFrame, StackAction, decideChatPush, chatListRowOrigin
+} from '../main/ets/util/splitRouting';
 
 function f(name: string, key: string): StackFrame {
   const out: StackFrame = { name: name, key: key };
@@ -222,6 +223,25 @@ export default function splitRoutingTest(): void {
       expect(decideChatPush(stack, f('ChatPage', '30:0'), false).action).assertEqual('popTo');
       // navbar 且目标不在栈里 → 清栈只留目标
       expect(decideChatPush(stack, f('ChatPage', '50:0'), true).action).assertEqual('clearAndPush');
+    });
+
+    // 会话列表里点一行走哪种 origin（用户 2026-09-17 报：进归档 → 点开会话 → 返回
+    // 落到了首页，期望回到归档）。
+    //
+    // 首页的列表是 navbar：点会话是"换一个会话看"，右栏替换。归档却是**压在聊天栈上**
+    // 的一页，navbar 的替换语义会 clearAndPush 把它一起清掉——所以归档里点会话必须是
+    // content，叠在它上面。
+    it('chatListRowOrigin_archive_stacks_home_replaces', 0, (): void => {
+      expect(chatListRowOrigin('archive')).assertEqual('content');
+      expect(chatListRowOrigin('main')).assertEqual('navbar');
+      expect(chatListRowOrigin('folder:3')).assertEqual('navbar');
+      // 连到栈决策上验机制：栈上压着归档页时，归档的 origin 必须保留它。
+      const stack: StackFrame[] = [f('ArchivePage', '')];
+      const target: StackFrame = f('ChatPage', '99:0');
+      expect(decideChatPush(stack, target, chatListRowOrigin('archive') === 'navbar').action)
+        .assertEqual('push');
+      // 反证：若仍用 navbar，就是 bug 本身——归档页被清掉。
+      expect(decideChatPush(stack, target, true).action).assertEqual('clearAndPush');
     });
 
   });

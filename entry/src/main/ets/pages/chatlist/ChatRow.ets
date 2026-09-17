@@ -19,6 +19,7 @@ import {
 } from '../../store/AppSettings';
 import { CHAT_LIST_NOW, CHAT_MENU_OPEN } from './ChatListFreeze';
 import { navigateToDirectMessagesTopics } from '../../util/profileNav';
+import { chatListRowOrigin } from '../../util/splitRouting';
 import { AvatarView } from './AvatarView';
 import { formatTime } from '../../util/formatTime';
 import {
@@ -672,11 +673,11 @@ export struct ChatRow {
           'chatId': this.chat.id, 'title': this.chat.title
         };
         navigateToDirectMessagesTopics(
-          directParams, this.listKey === 'archive' ? 'content' : 'navbar');
+          directParams, chatListRowOrigin(this.listKey));
         return;
       }
       const params: Record<string, Object> = { 'chatId': this.chat.id };
-      navigateToChat(params).catch(logChatNavFailure);
+      navigateToChat(params, chatListRowOrigin(this.listKey)).catch(logChatNavFailure);
     })
     .onTouch((event: TouchEvent): void => {
       if (event.type === TouchType.Down) {

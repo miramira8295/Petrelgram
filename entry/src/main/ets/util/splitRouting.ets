@@ -13,6 +13,19 @@
 //           正是用户报的「有些能回到搜索结果、有些退回文件夹 tab」。
 export type PushOrigin = 'navbar' | 'content' | 'search';
 
+// 会话列表里点一行，走哪种 origin。
+//
+// 首页的列表（main / 各文件夹）是"选一个会话来看"，navbar：右栏替换、只留一个详情页。
+// **归档不一样**：它自己就是压在聊天栈上的一页（profileNav 把 ArchivePage pushInto
+// 'chat'），navbar 的替换语义会 clearAndPush 把归档页一并清掉，返回就落回首页
+// （用户 2026-09-17 报）。所以归档里点会话走 content，叠在它上面。
+//
+// ChatRow 的两个打开分支（普通会话 / 频道私信话题）都读这一处。原来两处各写一份：
+// 私信话题那支（e64988bf）记得归档，普通会话那支漏了——bug 就是这么来的。
+export function chatListRowOrigin(listKey: string): PushOrigin {
+  return listKey === 'archive' ? 'content' : 'navbar';
+}
+
 // 决策结果。
 //   skip          栈顶已经是同一个目标，什么都不做
 //   clearAndPush  先清空右栏再推，保证右栏是替换不是叠加
