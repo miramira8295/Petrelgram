@@ -2,8 +2,9 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_NONE,
-  canStepNewer, canStepOlder, hashtagQueryOf, searchCounterText, searchLabelKind
+  canStepNewer, canStepOlder, hashtagQueryOf, searchCounterText, searchLabelKind, searchOpensKeyboard
 } from '../../util/searchPaging';
+import { logW } from '../../util/log';
 import { CHAT_SEARCH_HEADER_BASE_HEIGHT } from '../../util/ChatChromeGeometry';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
@@ -47,6 +48,9 @@ import { SearchSession } from './SearchSession';
 // 4 次比较也一起消失——只把字段搬进控制器、读点还留在页面的话收益就只有行数，
 // 这两个 struct 必须改成直读才是真正缩小重渲染半径的地方。
 
+// 会话内搜索框的组件 id。页面内唯一，供 FocusController.requestFocus 寻址。
+const CHAT_SEARCH_INPUT_ID: string = 'chat_search_input';
+
 @ComponentV2
 export struct SearchHeader {
   // B6：query 不再是独立的标量 @Param，改成读 search.query（引用型
@@ -78,6 +82,29 @@ export struct SearchHeader {
     .opacity(0.68)
   }
 
+  // #207：从 ⋮ 菜单点「搜索」，光标不在搜索栏、输入法也不弹。
+  //
+  // 输入框上一直挂着 defaultFocus(true)，但官方文档对它的限定是「仅在初次创建的
+  // 层级页面第一次进入时生效」。菜单进来时会话页早就显示了，这个输入框是之后才
+  // 条件渲染出来的（ChatPage 里 `else if (this.search.mode)`），defaultFocus 对它
+  // 不起作用。资料页点「搜索」进来之所以一直好使，是因为那时整个会话页是新推入的。
+  //
+  // 所以挂上树之后主动要一次焦点。延一拍：onAppear 这一刻菜单浮层还在收起，
+  // 浮层默认抢焦。FocusController.requestFocus 失败是**抛错**（150001/150002/
+  // 150003），不是返回 false。
+  private focusInputIfTyping(): void {
+    if (!searchOpensKeyboard(this.search.query, this.search.senderId)) {
+      return;
+    }
+    setTimeout((): void => {
+      try {
+        this.getUIContext().getFocusController().requestFocus(CHAT_SEARCH_INPUT_ID);
+      } catch (e) {
+        logW(`[Search] focus search input failed: ${JSON.stringify(e)}`);
+      }
+    }, 0);
+  }
+
   build() {
     Row({ space: 4 }) {
       Row() {
@@ -101,6 +128,8 @@ export struct SearchHeader {
         .caretColor(COLOR_PRIMARY)
         .enterKeyType(EnterKeyType.Search)
         .defaultFocus(true)
+        .id(CHAT_SEARCH_INPUT_ID)
+        .onAppear((): void => { this.focusInputIfTyping(); })
         .onChange((v: string): void => { this.onQueryChange(v); })
         .onSubmit((): void => { this.onSubmit(); });
       if (this.search.query !== '') {

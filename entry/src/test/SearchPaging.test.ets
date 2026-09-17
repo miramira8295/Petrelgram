@@ -3,7 +3,7 @@ import {
   SEARCH_FETCH, SEARCH_JUMP, SEARCH_STAY, SearchStep,
   SEARCH_LABEL_COUNTER, SEARCH_LABEL_HINT, SEARCH_LABEL_NONE,
   AnchorMerge, canStepNewer, canStepOlder, mergeAnchorHit, searchCounterText,
-  hashtagQueryOf, searchLabelKind, stepNewer, stepOlder
+  hashtagQueryOf, searchLabelKind, searchOpensKeyboard, stepNewer, stepOlder
 } from '../main/ets/util/searchPaging';
 
 // 结果按新→旧排列：∧ 往更旧（下标 +1），∨ 往更新（下标 -1）。
@@ -155,6 +155,18 @@ export default function searchPagingTest() {
 
     it('中间带空格的不算——那是关键词搜索，不是标签', 0, (): void => {
       expect(hashtagQueryOf('#tag more')).assertEqual('');
+    });
+
+    // #207：从 ⋮ 菜单点「搜索」，光标应该已经在搜索栏里、输入法弹出来。
+    //
+    // 只有「空关键词、不按发送者筛」这一种才聚焦弹键盘——那是用户要自己打字的场景。
+    // 点消息里的 #标签（带着关键词进来）和「查看历史」（按发送者筛）都是一进来就
+    // 出结果的，这时弹键盘会把结果盖住一大半。
+    it('#207 只有空搜索才弹键盘，带条件进来的不弹', 0, (): void => {
+      expect(searchOpensKeyboard('', 0)).assertTrue();
+      expect(searchOpensKeyboard('#tag', 0)).assertFalse();
+      expect(searchOpensKeyboard('关键词', 0)).assertFalse();
+      expect(searchOpensKeyboard('', 123456)).assertFalse();
     });
 
   });

@@ -150,3 +150,12 @@ export function hashtagQueryOf(query: string): string {
   // 光一个 '#' 后面跟空格之类的不算。
   return trimmed.indexOf(' ') >= 0 ? '' : trimmed;
 }
+
+// #207：进入会话内搜索时，要不要把光标放进搜索栏、弹出输入法。
+//
+// 只有「空关键词、不按发送者筛」才弹——那是用户要自己打字的场景（⋮ 菜单点搜索、
+// 资料页点搜索）。点消息里的 #标签带着关键词进来、「查看历史」按发送者筛，都是
+// 一进来就出结果的，这时弹键盘会把结果盖住一大半。
+export function searchOpensKeyboard(query: string, senderId: number): boolean {
+  return query === '' && senderId === 0;
+}
