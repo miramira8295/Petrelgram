@@ -308,7 +308,8 @@ export struct ChatHeader {
         Row() {
           Text(this.header.titleTextOf())
             .fontSize(16)
-            .fontWeight(FontWeight.Bold)
+            // Medium 与会话列表行的标题同一档（issue #169 第 4 条：从列表点进来群名「变粗了」）。
+            .fontWeight(FontWeight.Medium)
             .fontColor(chromeTextColorOf(this.onLightBg))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })

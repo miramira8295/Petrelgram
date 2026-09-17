@@ -132,7 +132,11 @@ export struct LanguagePage {
   optionRow(opt: AppLanguage, matched: string) {
     Row() {
       Column({ space: 2 }) {
-        Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        // 不铺满整行（issue #169 第 3 条）：铺满时 فارسی / العربية 这类从右往左书写的名字会按
+        // 文字自身方向靠右，和其它语言对不齐。按内容宽度放、由外层 alignItems(Start) 摆到行首；
+        // 界面本身切成从右往左语言时行首就在右边，跟着镜像是对的。
+        // （textAlign(LEFT) / textDirection 都要 API 23，我们底线是 20。）
+        Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
         if (opt.tag === LANGUAGE_SYSTEM && matched !== '') {
           Text(str('language_system_hint', labelForTag(matched)))
             .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
