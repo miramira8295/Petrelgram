@@ -125,6 +125,13 @@ export struct NotificationSettingsPage {
     }.width('100%').height(48).padding({ left: 14, right: 12 });
   }
 
+  // 卡内行与行之间的分隔线，样式同其它设置页（issue #170：这页原来漏了）。
+  // 左缩进 14 与行内文字对齐。
+  @Builder
+  rowDivider() {
+    Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 14 });
+  }
+
   // 带副标题的开关行：本机/账号两个开关长得一样但作用域完全不同，
   // 挨在一起时必须一眼能分辨，否则用户不知道自己关的是哪一个。
   @Builder
@@ -171,15 +178,19 @@ export struct NotificationSettingsPage {
         .width('100%').padding({ left: 14, top: 12, bottom: 4 });
       this.switchRowWithHint(str('ns_device_local'), str('ns_device_local_sub'),
         localOn, onLocalChange);
+      this.rowDivider();
       this.switchRowWithHint(str('ns_receive'), str('ns_receive_sub'),
         !settings.muted, (next: boolean): void => this.update(scope, 'muted', !next));
       // 本机已关掉时，账号级的细项对这台设备不起作用，收起来避免误以为生效。
       if (localOn) {
+        this.rowDivider();
         this.switchRow(str('ns_preview'), settings.showPreview,
           (next: boolean): void => this.update(scope, 'showPreview', next));
         if (hasMentions) {
+          this.rowDivider();
           this.switchRow(str('ns_pinned'), !settings.disablePinned,
             (next: boolean): void => this.update(scope, 'disablePinned', !next));
+          this.rowDivider();
           this.switchRow(str('ns_mentions'), !settings.disableMentions,
             (next: boolean): void => this.update(scope, 'disableMentions', !next));
         }

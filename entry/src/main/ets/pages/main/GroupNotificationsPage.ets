@@ -38,6 +38,9 @@ function notifyRowKey(entry: ChatEntry): string {
   return `${entry.id}_${entry.revision}`;
 }
 
+// 例外列表行里标题文字的起点：行左内边距 14 + 头像 40 + 间距 12（见 GroupNotifyRow）。
+const NOTIFY_ROW_TEXT_INSET: number = 66;
+
 // 群组/频道的通知总览：按「会响」和「已静音」分两组，点一下即切换，
 // 行会立刻移动到另一组，底部浮出可撤销的提示。
 @Entry
@@ -242,6 +245,8 @@ struct GroupNotificationsPage {
         guardKey(this.openData.keyTableId, index, notifyRowKey(entry)));
     }
     .width('100%').padding({ bottom: 6 })
+    // 行间分隔线（issue #170），从标题文字起画：左内边距 14 + 头像 40 + 间距 12。
+    .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: NOTIFY_ROW_TEXT_INSET })
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
@@ -276,6 +281,8 @@ struct GroupNotificationsPage {
         guardKey(this.mutedData.keyTableId, index, notifyRowKey(entry)));
     }
     .width('100%').padding({ bottom: 6 })
+    // 行间分隔线（issue #170），从标题文字起画：左内边距 14 + 头像 40 + 间距 12。
+    .divider({ strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: NOTIFY_ROW_TEXT_INSET })
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
