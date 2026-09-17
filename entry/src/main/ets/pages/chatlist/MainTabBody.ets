@@ -1,5 +1,4 @@
 import { curves, router } from '@kit.ArkUI';
-import { KEY_DOCK_AT_BOTTOM } from '../../util/splitMetrics';
 import {
   archiveCardScale, archiveIconScale, archiveIconSpin, archiveRevealProgress
 } from '../../util/archiveReveal';
@@ -67,7 +66,6 @@ const ARCHIVE_COLLAPSE_SCROLL: number = 8;
 @Component
 export struct MainTabBody {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
-  @StorageProp(KEY_DOCK_AT_BOTTOM) private dockBottom: boolean = true;
   // 归档入口要和会话卡片长一样，就得订阅同样这两个：壁纸开关决定给不给玻璃，
   // 材质纪元让用户改厚度/光感后这一行跟着重绘（同 ChatRow）。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
@@ -625,8 +623,8 @@ export struct MainTabBody {
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .enableScrollInteraction(!this.menuOpen)
     .scrollBar(BarState.Off)
-    // 侧边页签模式下 dock 不在底部，撤掉那 88 的避让（见 splitMetrics）。
-    .contentEndOffset(this.bottomSafe + (this.dockBottom ? 88 : 16))
+    // 给底部 dock 留 88（手机 HdsTabs 胶囊 / 平板分栏左栏底部的自绘胶囊）。
+    .contentEndOffset(this.bottomSafe + 88)
     .contentStartOffset(this.contentTopInset)
     .onDidScroll((_offset: number, state: ScrollState): void => {
       this.updateScrollActivity(state);

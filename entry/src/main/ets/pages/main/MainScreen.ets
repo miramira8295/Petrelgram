@@ -6,7 +6,7 @@ import {
 import { KEY_APP_DARK } from '../../util/theme';
 import { appWallpaperActive } from '../../util/localWallpaper';
 import {
-  KEY_DOCK_AT_BOTTOM, dockAtBottom, isSplitLayout, sideTabsForLayout, sideDockBarHeight
+  isSplitLayout, dockModeForLayout, DOCK_MODE_LEFT_FLOATING
 } from '../../util/splitMetrics';
 import { NavStackLike, TabKind, stackOf } from '../../util/navStacks';
 import { dockVisibleForTab } from '../../util/navBarReset';
@@ -72,14 +72,6 @@ const UPDATE_DOT_BG: string = '#4CD964';
 // 56：图标 24 + 间距 2 + 文字 10 = 36，加上 item 自己的 5 上下内缩正好 46，
 // 余下 10 是胶囊的呼吸。原先 64 多出来的那 8 是空的。
 const DOCK_H: number = 56;      // capsule height
-// 侧边竖排页签栏的宽度（≥840vp 的 lg 断点下生效）。
-// HDS 那份文档给的经验值是「页签数 ≤3 时 76vp×个数，>600vp 时 80vp×个数」，
-// 但那是横排页签栏的**总宽**；竖排时每个页签自己占一列，96 能同时放下
-// 图标 + 一行中文标签，且不至于把左栏挤没。
-// 09-04 真机（平板分栏）收窄：96 → 76。约束是最长的那条标签「个人资料」四个
-// 汉字，10 号字约 44vp，76 留出两侧各 16 的余量已经够；96 那 20vp 纯粹是空的，
-// 而侧栏每一 vp 都是从左栏会话列表身上借的（用户："pad 左侧能紧凑一点吗"）。
-const SIDE_DOCK_W: number = 76;
 // 迷你播放条：折叠态那颗专辑球，和展开态里的封面。
 const MINI_BALL: number = 40;
 // 迷你条在场时胶囊两侧的留白。**必须比无播放时窄得多**：那一条里要同时排
@@ -510,8 +502,7 @@ export struct MainScreen {
       Text(label).fontSize(10)
         .fontColor(this.tab === index ? this.accent() : COLOR_TAB_UNSELECTED);
     }
-    // 横排均分胶囊宽、竖排均分页签栏高。**竖排的紧凑度不在这里调**，在
-    // barHeight（见 splitMetrics.sideDockBarHeight 那段的两条实测记录）。
+    // 均分胶囊宽。
     .layoutWeight(1).height('100%')
     .justifyContent(FlexAlign.Center)
     .borderRadius((DOCK_H - DOCK_ITEM_INSET * 2) / 2)
@@ -636,15 +627,10 @@ export struct MainScreen {
   // 同样退化，不会先闪一下窄条。
   // 藏掉联系人页签后胶囊里只剩三格，两侧留白补上空出的那一格（issue #135）。
   // 大屏是否把页签挪到侧边（官方 lg 断点 840vp，见 util/splitMetrics）。
-  private sideTabs(): boolean {
-    // 分栏就挪侧边——不是等到 840。理由见 splitMetrics.sideTabsForLayout。
-    const side: boolean = sideTabsForLayout(this.screenW, this.screenH);
-    // 各列表按这个键决定还要不要给底部 dock 留避让（见 splitMetrics）。
-    // 写在这里而不是 @Watch：sideTabs() 在 build 链路上被读，值一变必然经过。
-    if (dockAtBottom() === side) {
-      AppStorage.setOrCreate(KEY_DOCK_AT_BOTTOM, !side);
-    }
-    return side;
+  // 平板分栏：HdsTabs 的栏收起，改由自绘 dock() 压在左栏底部居中；其余一律手机模式。
+  // 判据见 splitMetrics.dockModeForLayout（2026-09-17）。
+  private leftFloatingDock(): boolean {
+    return dockModeForLayout(this.screenW, this.screenH, this.forceSingleColumn) === DOCK_MODE_LEFT_FLOATING;
   }
 
   private dockPadding(): number {
@@ -1083,45 +1069,27 @@ export struct MainScreen {
       // barOverlap 让它浮在内容之上（6.0.0(20) 就有），胶囊形态与沉浸光感在
       // barFloatingStyle 里，那是 6.1.0(23) 起——所以只有它走版本闸的修饰器，
       // 其余属性所有版本通用，不需要第二套实现。
-      // 大屏（≥840vp，官方 lg 断点）把底部页签**挪到侧边竖排**。
-      //
-      // 依据是《大屏应用UX体验标准》原文：「当应用窗口宽度达到或超过 840vp，
-      // 横向断点为 lg 时，建议采用挪移布局，将底部导航栏变更为侧边导航栏……
-      // 此时 vertical=true，barPosition=Start」。
-      //
-      // **为什么不是"把悬浮胶囊固定在左栏"**：官方对悬浮样式写死了三个同时
-      // 成立的条件（barOverlap=true / vertical=false / barPosition=End），而
-      // barSideMargin 只有一个值、两侧同宽，胶囊必然按容器居中——而容器是整窗，
-      // 于是它落在分栏的分割线上（用户实测「dock 跑中间了」）。非对称边距这个
-      // 能力不存在，大屏下本来就不该有那颗胶囊。
-      .barOverlap(!this.sideTabs())
-      .vertical(this.sideTabs())
-      // 【查证记录】侧边竖排的紧凑度先试过 ExtendBarMode.HALF_SCREEN_FIXED。
-      // 真机（平板，2026-09-04）：**生效了但没解决问题**——它把三格从"均分整
-      // 屏高"压到"占上半屏"，一格仍有约 154vp，图标之间照样隔着一大截。官方
-      // 对它写的第二条依赖「页签使用 BottomTabBarStyle 样式」我们也不满足
-      // （自绘 builder）。所以那条路整个放弃，回 BarMode.Fixed，紧凑度改由
-      // 「每格定高 + 栏收到那么高」两处一起保证（见 dockItem 与下面的 barHeight）。
+      // 分栏时不用它的栏（官方悬浮样式按整窗居中、会压在两栏分割线上，又给不了非对称边距），
+      // 栏高收到 0、悬浮样式与迷你条都不挂，由下面的自绘 dock() 压在左栏底部居中（2026-09-17）。
+      // 侧边竖排页签（vertical + barPosition.Start）随之删除：现在只有手机模式和平板分栏两种。
+      .barOverlap(true)
+      .vertical(false)
       .barMode(BarMode.Fixed)
-      .barPosition(this.sideTabs() ? BarPosition.Start : BarPosition.End)
-      // 进会话页等场景要收起底栏。横排收高度、竖排收宽度——两条都对所有版本成立。
+      .barPosition(BarPosition.End)
+      // 进会话页等场景要收起底栏（收高度）。
       // （23+ 另有 controller.applyHideAnimation 能带动画，等这一步验完再加。）
-      // 竖排时栏高收到「页签数 × 一格」，一格就是三分之一栏高——**这是竖排
-      // 紧凑度的唯一旋钮**。组件会把这条短栏在竖直方向居中，不需要为状态栏
-      // 留位（实测见 splitMetrics）。竖排的收起走 sideBarWidth=0（收宽）。
-      .barHeight(this.sideTabs()
-        ? sideDockBarHeight(this.showContactsTab ? 4 : 3)
-        : (this.dockBarOpen ? DOCK_H : 0))
-      // **横排时一次都不设 barWidth**，交给修饰器按 sideBarWidth 决定。
+      .barHeight(this.dockBarOpen && !this.leftFloatingDock() ? DOCK_H : 0)
+      // **一次都不设 barWidth**，交给修饰器按 sideBarWidth 决定（横排恒传 null）。
       // 依据见 HdsTabsFloatingOptions.sideBarWidth 里抄的官方两段。
       .attributeModifier(new HdsTabsFloatingModifier({
         bottomMargin: Math.max(DOCK_GAP, Math.round(this.bottomSafe * 0.7)),
-        sideBarWidth: this.sideTabs() ? (this.dockBarOpen ? SIDE_DOCK_W : 0) : null,
+        sideBarWidth: null,
         // 没有迷你条时复用迁移前那套留白算法（胶囊宽度回到原来的比例）；
         // 有迷你条时放开，否则页签和播放条挤在一起会重叠。
         sideMargin: this.miniBarActive() ? MINI_SIDE_MARGIN : this.dockPadding(),
         // 有曲子在放才挂迷你条；停了就交 null，HdsTabs 自己收回普通页签。
-        miniBar: this.miniBarActive()
+        // 分栏时迷你播放条由自绘胶囊自己画（dock() 里的专辑球 / 播放条），这里不挂。
+        miniBar: this.miniBarActive() && !this.leftFloatingDock()
           ? this.miniBarHolder.content(this.getUIContext(), wrapBuilder(dockMiniBarLayer))
           : null,
         // 宽屏上底栏跟随握持手左右移动（智感握姿）。
@@ -1130,8 +1098,8 @@ export struct MainScreen {
         // **没有任何变化**，真凶是组件级的 barWidth（见 sideBarWidth）。官方对
         // 这个字段也没有"仅宽屏"的限制，所以照原样保留。
         adaptToHandedness: true,
-        // 竖排时整套悬浮样式不应用（见 HdsTabsFloatingOptions.floating）。
-        floating: !this.sideTabs(),
+        // 分栏（栏已收起）时整套悬浮样式不应用（见 HdsTabsFloatingOptions.floating）。
+        floating: !this.leftFloatingDock(),
         // 关掉 HdsTabs 默认那层浅色渐变遮罩：压在壁纸上是一大片白雾。
         gradientMaskColor: Color.Transparent,
         epoch: this.materialEpoch
@@ -1157,6 +1125,15 @@ export struct MainScreen {
         }
       })
       .width('100%').height('100%');
+
+      // 分栏：自绘胶囊压在左栏底部居中（2026-09-17 用户要求，取代侧边竖排）。宽度跟左栏
+      // （dockWidth 读各页签的 navBar 宽，拖分割线也跟着走），两侧留白由 dockPadding 算，
+      // 所以胶囊在左栏里居中；外层 Stack 是 BottomStart 对齐，整条贴在左下。
+      // 这里用 if 只随分栏/不分栏切换，进出目的页的显隐仍走 dock() 自己的
+      // opacity / enabled / visibility（下面那段说明的就是那件事）。
+      if (this.leftFloatingDock()) {
+        this.dock();
+      }
 
       // dock 常驻在树上，藏与不藏由它自己的 opacity / enabled / visibility 决定
       // （见 dock() 末尾与 syncDock()）。这里**不能**用 `if`：条件渲染摘掉的子树
