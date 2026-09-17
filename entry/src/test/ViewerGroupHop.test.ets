@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { hopDirection, hopProgress, nextMediaGroupIndex } from '../main/ets/util/viewerGroupHop';
+import { hopDirection, hopProgress, hopThreshold, nextMediaGroupIndex } from '../main/ets/util/viewerGroupHop';
 
 export default function viewerGroupHopTest() {
   describe('viewerGroupHop', () => {
@@ -73,6 +73,17 @@ export default function viewerGroupHopTest() {
       expect(nextMediaGroupIndex(3, 1, 0, isMedia)).assertEqual(-1);
       expect(nextMediaGroupIndex(3, -1, 1, isMedia)).assertEqual(-1);
       expect(nextMediaGroupIndex(3, 3, 1, isMedia)).assertEqual(-1);
+    });
+
+    // issue #167：看图跨消息要停一下。连续翻页（交互设置里的开关，默认开）把切组阈值降到
+    // 屏宽 1/8、最少 48vp；关掉退回原来的屏宽 1/4、最少 80vp。
+    it('连续翻页的切组阈值更短，关掉回到原来的', 0, () => {
+      expect(hopThreshold(400, true)).assertEqual(50);
+      expect(hopThreshold(300, true)).assertEqual(48);
+      expect(hopThreshold(400, false)).assertEqual(100);
+      expect(hopThreshold(240, false)).assertEqual(80);
+      // 还没量到宽度（0）时也得有个下限，不能除出 Infinity
+      expect(hopThreshold(0, true)).assertEqual(48);
     });
   });
 }

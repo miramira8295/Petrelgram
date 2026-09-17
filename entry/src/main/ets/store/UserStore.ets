@@ -1,6 +1,10 @@
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { logE } from '../util/log';
+import { photoHasAnimation } from '../util/photoAnimation';
+import { BotTopicFlags, botTopicFlagsOf } from '../util/botTopicMode';
+import { senderChannelKey } from '../util/senderAvatarChannel';
+import { invalidateSenderAnimation } from '../util/senderAnimationChannel';
 
 // Names and profile-photo file ids for users, filled from updateUser pushes and,
 // for users TDLib never pushed, by asking for them once (see ensure).
@@ -9,6 +13,11 @@ export class UserStore {
   private names: Map<number, string> = new Map();
   private photos: Map<number, number> = new Map();
   private accents: Map<number, number> = new Map(); // accent_color_id per user
+  // profile_photo.has_animation：群聊气泡左侧要不要去取动态头像（issue #140）。
+  private animated: Set<number> = new Set();
+  // 开了话题模式的 Bot / 其中允许用户自己建话题的（issue #206）。
+  private topicBots: Set<number> = new Set();
+  private userTopicBots: Set<number> = new Set();
   private requested: Set<number> = new Set();  // getUser sent
 
   constructor(client: TdClient) {
@@ -23,6 +32,21 @@ export class UserStore {
   // Small profile-photo file id for a user (0 if none / not yet known).
   photoFileId(userId: number): number {
     return this.photos.get(userId) ?? 0;
+  }
+
+  // 头像是不是动态的。profilePhoto 只带这个标志，MP4 要另取完整资料。
+  hasAnimatedPhoto(userId: number): boolean {
+    return this.animated.has(userId);
+  }
+
+  // Bot 私聊开没开话题模式。
+  botHasTopics(userId: number): boolean {
+    return this.topicBots.has(userId);
+  }
+
+  // 用户能不能在这个 Bot 的私聊里自己建/删话题。
+  botAllowsUserTopics(userId: number): boolean {
+    return this.userTopicBots.has(userId);
   }
 
   knows(userId: number): boolean {
@@ -74,7 +98,30 @@ export class UserStore {
     const first = (user['first_name'] as string | undefined) ?? '';
     const last = (user['last_name'] as string | undefined) ?? '';
     this.names.set(id, `${first} ${last}`.trim());
-    this.photos.set(id, this.smallFileId(user['profile_photo'] as TdObject | undefined));
+    const profilePhoto = user['profile_photo'] as TdObject | undefined;
+    const photoId: number = this.smallFileId(profilePhoto);
+    const previousPhotoId: number | undefined = this.photos.get(id);
+    this.photos.set(id, photoId);
+    if (photoHasAnimation(profilePhoto)) {
+      this.animated.add(id);
+    } else {
+      this.animated.delete(id);
+    }
+    if (previousPhotoId !== undefined && previousPhotoId !== photoId) {
+      // 换了头像：已经取到的动态头像是旧的。
+      invalidateSenderAnimation(senderChannelKey(id, true));
+    }
     this.accents.set(id, (user['accent_color_id'] as number | undefined) ?? -1);
+    const topicFlags: BotTopicFlags = botTopicFlagsOf(user);
+    if (topicFlags.hasTopics) {
+      this.topicBots.add(id);
+    } else {
+      this.topicBots.delete(id);
+    }
+    if (topicFlags.allowsUserTopics) {
+      this.userTopicBots.add(id);
+    } else {
+      this.userTopicBots.delete(id);
+    }
   }
 }

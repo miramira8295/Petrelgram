@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Selesai"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Kirim (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Pilih obrolan"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "Terkirim ke %1$d obrolan"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d terkirim, %2$d gagal"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Gagal mengirim, konten disimpan"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Gagal membatalkan pendaftaran dari Telegram: %1$s. Notifikasi mungkin masih masuk — daftar lagi lalu batalkan"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "Server relay belum menghapus langganan ini (%1$s). Akan dicoba lagi saat aplikasi dibuka berikutnya"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Geser media tanpa jeda"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "Setelah item terakhir di pesan, terus geser untuk langsung ke foto atau video pesan berikutnya tanpa jeda"
     }
   ]
 }

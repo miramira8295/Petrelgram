@@ -4,12 +4,13 @@ import { TdClient } from '../tdkit/TdClient';
 import { str } from '../util/strings';
 import { pushRelayBase, pushRelayToken } from '../tdkit/ApiCredentials';
 import {
-  KEY_MEOW_NICKNAME, KEY_MEOW_SECRET, KEY_MEOW_SUBKEY, WEBPUSH_MODE_CUSTOM, WEBPUSH_MODE_MEOW, setString
+  KEY_MEOW_AUTH, KEY_MEOW_ENDPOINT, KEY_MEOW_NICKNAME, KEY_MEOW_P256DH, KEY_MEOW_PENDING_DELETE, KEY_MEOW_SECRET,
+  KEY_MEOW_SUBKEY, WEBPUSH_MODE_CUSTOM, WEBPUSH_MODE_MEOW, setString
 } from '../store/AppSettings';
 import {
-  WebPushConfig, deregisterWebPush, registerWebPush, validateWebPushConfig
+  WebPushConfig, deregisterWebPush, registerWebPush, setWebPushChannel, validateWebPushConfig
 } from './WebPushRegistration';
-import { logE } from '../util/log';
+import { logE, logI } from '../util/log';
 
 // MeoW 推送模式：用户只填 MeoW 用户名，三个 Web Push 字段 (endpoint / p256dh /
 // auth) 由作者自建的中转服务器下发，再复用 WebPushRegistration 那条已经跑通的
@@ -26,7 +27,10 @@ import { logE } from '../util/log';
 //     这个昵称。
 //   POST   {base}/register/confirm  { subKey, pendingId, code } -> { endpoint, p256dh, auth, secret }
 //     验证码错误或过期返回 400/403。
-//   DELETE {base}/register          { subKey, secret } -> 200 成功 / 403 secret 不对
+//   DELETE {base}/register          { subKey, secret } -> 200
+//     2026-09-17 起中转只凭 subKey 删、删不删得到都回 200（issue #196：secret 没存住的
+//     用户永远删不掉映射，点了注销仍收到推送）。secret 照带，兼容还没升级的中转——
+//     那种中转 secret 不对回 403，客户端按"没删掉"处理、下次启动重试。
 //
 // 主键是 subKey 而不是 Telegram userId：userId 是客户端自报的、随便一个群里
 // 点头像就能看到，用它当主键会有"先到先得抢注"和"重装丢了 secret 就永久锁死"
@@ -105,6 +109,11 @@ export interface MeowDeleteRequestBody {
 
 export function buildMeowDeleteBody(subKey: string, secret: string): MeowDeleteRequestBody {
   return { subKey, secret };
+}
+
+// 只有 200 算删掉了。新中转删不删得到都回 200；旧中转 secret 不对回 403，那就是没删。
+export function meowRelayDeleteSucceeded(responseCode: number): boolean {
+  return responseCode === 200;
 }
 
 function stringField(source: Record<string, Object>, key: string): string {
@@ -360,49 +369,83 @@ export async function confirmMeowRegistration(
   setString(KEY_MEOW_SECRET, parsed.secret);
   const receiverId = await registerWebPush(client, parsed.config);
   setString(KEY_MEOW_NICKNAME, meow.trim());
+  // 三项与通道一起记下：启动/切账号重注册靠它们（WebPushRegistration.startupPushConfig），
+  // 原来不存，重注册就读成了自定义那份。
+  setString(KEY_MEOW_ENDPOINT, parsed.config.endpoint);
+  setString(KEY_MEOW_P256DH, parsed.config.p256dh);
+  setString(KEY_MEOW_AUTH, parsed.config.auth);
+  setWebPushChannel(WEBPUSH_MODE_MEOW);
   return { receiverId, secret: parsed.secret };
 }
 
 export interface MeowDeregisterOutcome {
-  // 非空表示中转端取消订阅失败（本地的 TDLib 注册仍已注销）。
+  // 非空：中转没删掉这份订阅（已记下，下次登录就绪时自动再删）。
   relayWarning: string;
+  // 非空：向 Telegram 注销失败的原因。
+  telegramError: string;
 }
 
+// 通知中转删掉 subKey 这份映射。返回失败原因，'' = 删掉了。
+async function deleteRelaySubscription(subKey: string, secret: string): Promise<string> {
+  const request = http.createHttp();
+  try {
+    const response = await request.request(`${pushRelayBase}/register`, {
+      method: http.RequestMethod.DELETE,
+      connectTimeout: REQUEST_TIMEOUT_MS,
+      readTimeout: REQUEST_TIMEOUT_MS,
+      header: authHeader(),
+      extraData: JSON.stringify(buildMeowDeleteBody(subKey, secret))
+    });
+    return meowRelayDeleteSucceeded(response.responseCode) ? '' : `HTTP ${response.responseCode}`;
+  } catch (e) {
+    return toError(e, str('meow_network_error')).message;
+  } finally {
+    request.destroy();
+  }
+}
+
+// 注销分两半，**任意一半生效推送就会停**：中转删掉映射后再投递就是 404；Telegram
+// 注销后就不再投递。原来两半都可能被静默跳过（没存 secret 就不发删除、Telegram 失败
+// 只记日志），界面却显示「已注销」，推送照旧（issue #196）。现在：
+// - 中转那半总是发，只凭 subKey；没删掉就把 subKey 记进待删，下次登录就绪时重试；
+// - Telegram 那半的失败原样交给页面显示；
+// - 本机的 subKey 一律换新（旧的要么删了、要么在待删里），下次注册是全新订阅。
 export async function deregisterMeowPush(
   client: TdClient, subKey: string, secret: string
 ): Promise<MeowDeregisterOutcome> {
   let relayWarning = '';
-  if (meowRelayEnabled() && subKey !== '' && secret !== '') {
-    try {
-      const body: MeowDeleteRequestBody = buildMeowDeleteBody(subKey, secret);
-      const request = http.createHttp();
-      try {
-        const response = await request.request(`${pushRelayBase}/register`, {
-          method: http.RequestMethod.DELETE,
-          connectTimeout: REQUEST_TIMEOUT_MS,
-          readTimeout: REQUEST_TIMEOUT_MS,
-          header: authHeader(),
-          extraData: JSON.stringify(body)
-        });
-        if (response.responseCode !== 200) {
-          relayWarning = str('meow_deregister_relay_failed', `HTTP ${response.responseCode}`);
-        }
-      } finally {
-        request.destroy();
-      }
-    } catch (e) {
-      const err = toError(e, str('meow_network_error'));
-      relayWarning = str('meow_deregister_relay_failed', err.message);
+  if (meowRelayEnabled() && subKey !== '') {
+    const relayError: string = await deleteRelaySubscription(subKey, secret);
+    if (relayError !== '') {
+      setString(KEY_MEOW_PENDING_DELETE, subKey);
+      relayWarning = str('meow_deregister_relay_retry', relayError);
     }
   }
-  await deregisterWebPush(client);
-  // 没有 secret 就没能告诉中转注销：那个 subKey 在中转上还是"已注册"，用它再
-  // 注册不会再拿到 secret（见 confirmMeowRegistration 里的说明）。一并换掉，
-  // 下次注册是全新的。
-  if (secret === '') {
-    setString(KEY_MEOW_SUBKEY, '');
-  }
+  const telegramError: string = await deregisterWebPush(client);
+  setString(KEY_MEOW_SUBKEY, '');
   setString(KEY_MEOW_SECRET, '');
   setString(KEY_MEOW_NICKNAME, '');
-  return { relayWarning };
+  setString(KEY_MEOW_ENDPOINT, '');
+  setString(KEY_MEOW_P256DH, '');
+  setString(KEY_MEOW_AUTH, '');
+  setWebPushChannel('');
+  return { relayWarning, telegramError };
+}
+
+// 上次注销时中转没删掉的那份映射，再删一次。登录就绪时调，静默失败、下次再来。
+export async function retryPendingMeowRelayDelete(): Promise<void> {
+  const pending: string = AppStorage.get<string>(KEY_MEOW_PENDING_DELETE) ?? '';
+  if (pending === '' || !meowRelayEnabled()) {
+    return;
+  }
+  const relayError: string = await deleteRelaySubscription(pending, '');
+  if (relayError !== '') {
+    logE(`[meow] pending relay delete still failing: ${relayError}`);
+    return;
+  }
+  // 期间又记了别的待删（不太可能）就别清掉它。
+  if ((AppStorage.get<string>(KEY_MEOW_PENDING_DELETE) ?? '') === pending) {
+    setString(KEY_MEOW_PENDING_DELETE, '');
+  }
+  logI('[meow] pending relay delete done');
 }

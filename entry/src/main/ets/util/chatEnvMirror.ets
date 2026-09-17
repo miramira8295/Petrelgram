@@ -45,6 +45,7 @@ export class ChatEnvMirror {
   @Trace autoplayVideo: boolean = true;
   @Trace stickerLoop: boolean = true;
   @Trace emojiStatus: boolean = true;
+  @Trace animatedAvatar: boolean = true;
   @Trace appIsForeground: boolean = true;
   @Trace linkNavBusy: string = '';
 }
@@ -61,7 +62,7 @@ const MIRRORED_KEYS: string[] = [
   'translateReplaceOriginal',
   'powerEmojiChat', 'powerAnimatedStickers', 'powerStickerAutoplay',
   'powerAutoplayGif', 'powerAutoplayVideo', 'powerStickerLoop', 'powerEmojiStatus',
-  'appIsForeground', 'linkNavBusyUrl'
+  'appIsForeground', 'linkNavBusyUrl', 'powerAnimatedAvatar'
 ];
 
 export function mirroredChatEnvKeys(): string[] {
@@ -161,6 +162,9 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
       break;
     case 'powerEmojiStatus':
       if (chatEnv.emojiStatus !== (value as boolean)) { chatEnv.emojiStatus = value as boolean; }
+      break;
+    case 'powerAnimatedAvatar':
+      if (chatEnv.animatedAvatar !== (value as boolean)) { chatEnv.animatedAvatar = value as boolean; }
       break;
     case 'appIsForeground':
       if (chatEnv.appIsForeground !== (value as boolean)) { chatEnv.appIsForeground = value as boolean; }

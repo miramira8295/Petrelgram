@@ -41,6 +41,8 @@ import { formatClockTime } from '../../util/formatTime';
 import { probeHit } from '../../util/panelProbe';
 import { CachedImage } from '../common/CachedImage';
 import { SenderRoleTag } from './SenderRoleTag';
+import { SenderAnimatedLayer } from './SenderAnimatedLayer';
+import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
 import { logW } from '../../util/log';
 import { menuPreviewCompact } from '../../util/menuPreview';
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
@@ -128,6 +130,8 @@ struct LightweightSenderAvatar {
   @Param initialPath: string = '';
   @Param initials: string = '?';
   @Local path: string = '';
+  // 头像带不带动画；带的话叠一层 SenderAnimatedLayer（issue #140，同 LiveSenderAvatar）。
+  @Local animated: boolean = false;
   // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
   private unsub: (() => void) | null = null;
   private attachedKey: string = '';
@@ -135,6 +139,7 @@ struct LightweightSenderAvatar {
   private attach(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
     const known: string = senderAvatarFor(key);
+    this.animated = senderHasAnimatedPhoto(senderId, senderIsUser);
     if (this.unsub !== null && this.attachedKey === key) {
       // 同 key 短路：订阅不动，只重新播种（@Local 复用时被框架清空）。
       this.path = known !== '' ? known : initialPath;
@@ -143,7 +148,10 @@ struct LightweightSenderAvatar {
     this.detach();
     this.attachedKey = key;
     this.path = known !== '' ? known : initialPath;
-    this.unsub = subscribeSenderAvatar(key, (path: string): void => { this.path = path; });
+    this.unsub = subscribeSenderAvatar(key, (path: string): void => {
+      this.path = path;
+      this.animated = senderHasAnimatedPhoto(this.senderId, this.senderIsUser);
+    });
   }
 
   // 非复用路径上同一实例真的换了发送者时兜底重挂。复用路径靠 aboutToReuse
@@ -206,6 +214,9 @@ struct LightweightSenderAvatar {
         pinBounded: true,
         syncSmall: true
       }).visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
+      if (this.animated) {
+        SenderAnimatedLayer({ senderId: this.senderId, senderIsUser: this.senderIsUser, avatarSize: 38 });
+      }
     }.width(38).height(38);
   }
 }

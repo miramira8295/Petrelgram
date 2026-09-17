@@ -59,3 +59,19 @@ export function linkActionOf(url: string): LinkAction {
   }
   return action(LINK_REMOTE, '', 0);
 }
+
+// 显示出来的文字是不是藏着另一个网址（issue #169 第 6 条）。点普通链接直接打开，
+// 只有文字和它实际指向的网址对不上时才先弹「打开 / 复制」让用户看清真网址——防钓鱼
+// 的那一道，官方客户端也只对这种链接确认。比较时忽略协议、开头的 www.、结尾斜杠和
+// 大小写：TDLib 的 url 实体原样是正文里那段字，常常不带协议。
+function linkCompareForm(s: string): string {
+  return s.trim().toLowerCase()
+    .replace(new RegExp('^[a-z][a-z0-9+.-]*://'), '')
+    .replace(new RegExp('^www\\.'), '')
+    .replace(new RegExp('/+$'), '');
+}
+
+export function linkTextHidesUrl(displayText: string, url: string): boolean {
+  const shown: string = linkCompareForm(displayText);
+  return shown === '' || shown !== linkCompareForm(url);
+}

@@ -289,8 +289,9 @@ import {
 } from '../../util/ChatChromeGeometry';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { ForumTopicsStore } from '../../store/ForumTopicsStore';
-import { ForumTopicRow } from '../../util/forumTopicModel';
+import { ForumTopicRow, topicAfterDelete, topicBarShown } from '../../util/forumTopicModel';
 import { ChatTopicBar } from './ChatTopicBar';
+import { CreatedTopic, createTopicFlow, deleteTopicFlow } from './TopicManageFlow';
 import {
   initialMessageViewportRows, nextInitialMessageRevealCount, stageInitialMessageGroups,
   initialTailRevealTarget
@@ -1415,7 +1416,7 @@ export struct ChatPage {
         onAvatarLongPress: (userId: number, name: string): void => {
           this.mentionSender(userId, name);
         },
-        onLinkTap: (url: string): void => { this.onLinkTap(url); },
+        onLinkTap: (url: string, askFirst: boolean): void => { this.onLinkTap(url, askFirst); },
         onCommentTap: (messageId: number): void => { this.onCommentTap(messageId); },
         onBotCallback: (messageId: number, data: string): void => {
           this.onBotCallback(messageId, data);
@@ -1972,7 +1973,7 @@ export struct ChatPage {
   // 摊在这里的 14 个 @Local（pinnedPreview/pinnedCount/pinnedLoadState/
   // pinnedJumpBusy/pinnedCycle/liveGroupCallId/liveCallIsActive/liveCallIsRtmp/
   // liveParticipantCount/livePulseExpanded/liveLoadState/liveDialogOpening/
-  // liveNavigationBusy/topCardLoadingVisible）与 9 个内部机件字段（4 个定时器
+  // liveNavigationBusy/topCardLoadingVisible——后者 2026-09-17 已删）与 9 个内部机件字段（4 个定时器
   // 句柄、2 个在途标志、2 个序号守卫、1 个请求 id）全部住进了控制器，字段名和
   // 初值一字未改，只是 @Local 变成了 @Trace。
   //
@@ -2032,6 +2033,8 @@ export struct ChatPage {
   private topicBarScroller: Scroller = new Scroller();
   // 横条有没有内容 —— 顶栏高度与下挂槽的结构缓存都看它，所以必须可观测。
   @Local private topicBarCount: number = 0;
+  // 横条上给不给「新建话题」/长按删除（Bot 私聊话题模式，issue #206）。
+  @Local private topicCreateAllowed: boolean = false;
   private didInitialScroll: boolean = false;
   // Invalidates delayed initial-unread layout confirmations when the page is
   // reset or another landing supersedes the current one.
@@ -4373,7 +4376,7 @@ export struct ChatPage {
     this.header.dispose();
     // 顶栏浮卡整簇的退场（B5）。位置就是原来那九句 live*/pinnedJumpBusy/
     // topCardLoadingVisible 清理所在的位置，相对于 clearInOrder 三组退订的先后
-    // 一字未动；两个 clearTimeout（topCardLoadingTimer/topCardActionTimer）原本
+    // 一字未动；clearTimeout（topCardActionTimer，加载占位的定时器 09-17 已删）原本
     // 在本方法靠后处，也一并进了 dispose()。
     // 顺序在控制器里照搬：两个 seq++ 在最前（作废在途的 getChat/getGroupCall），
     // 再清在途与忙标志，最后才清定时器句柄。
@@ -5671,8 +5674,10 @@ export struct ChatPage {
 
   // 点了消息里的链接。分派本身（走哪一路、载荷是什么）在
   // util/messageLinkAction，有单测；这里只负责执行。
-  // 真 URL 统一先让用户选择「打开 / 复制」。机器人命令、话题标签、号码等
-  // 本地伪链接在 onLinkTap 的前几条分支直接处理，不会多弹这一层。
+  // 「打开 / 复制」这一层只给 askFirst 的链接（2026-09-17，issue #169 第 6 条）：
+  // 显示文字藏着另一个网址的文字链接、Bot 的网址按钮。普通链接点了直接开，复制与
+  // 外部打开在内置浏览器的「⋯」里。机器人命令、话题标签、号码等本地伪链接在
+  // onLinkTap 的前几条分支直接处理，不会走到这里。
   private offerLinkAction(url: string): void {
     promptAction.showActionMenu({
       title: url.length > 60 ? url.substring(0, 57) + '…' : url,
@@ -5682,21 +5687,21 @@ export struct ChatPage {
       ]
     }).then((result: promptAction.ActionMenuSuccessResponse): void => {
       if (result.index === 0) {
-        this.onLinkTap(url, true);
+        this.onLinkTap(url);
         return;
       }
       copyPlainText(url, str('link_copied'));
     }).catch((): void => {});
   }
 
-  private onLinkTap(url: string, openConfirmed: boolean = false): void {
+  private onLinkTap(url: string, askFirst: boolean = false): void {
     const action: LinkAction = linkActionOf(url);
     if (this.handleLocalLinkAction(action)) {
       return;
     }
     // Telegram 内链（t.me/@名/tg://）应用内直接解析，不弹「打开/复制」层
     // ——那层是给外部网页链接的（用户反馈 t.me 被当浏览器链接多问了一道）。
-    if (!openConfirmed && !isTelegramInternalUrl(url)) {
+    if (askFirst && !isTelegramInternalUrl(url)) {
       this.offerLinkAction(url);
       return;
     }
@@ -6583,6 +6588,7 @@ export struct ChatPage {
   // 话题横条：只有论坛群才有。判据用现成的 ChatStore.isForum（ChatRow 决定
   // 「点进去是话题列表还是消息流」用的也是它，两处同源）。
   private openTopicBar(): void {
+    this.topicCreateAllowed = getChatStore().canUserCreateTopics(this.chatId);
     if (!getChatStore().isForum(this.chatId)) {
       this.topicsStore.close();
       this.topicBarCount = 0;
@@ -6645,15 +6651,47 @@ export struct ChatPage {
     this.switchTopic(threadId, hit !== undefined ? hit.name : '');
   }
 
+  // 横条「+」：流程在 TopicManageFlow，建好后刷新横条并切过去。
+  private onTopicCreate(): void {
+    const chatId: number = this.chatId;
+    createTopicFlow(this.getUIContext(), chatId).then((created: CreatedTopic | null): void => {
+      if (created === null || chatId !== this.chatId) {
+        return;
+      }
+      this.topicsStore.reload();
+      this.switchTopic(created.threadId, created.name);
+    });
+  }
+
+  // 长按话题删除；删的是正在看的就落到剩下的第一个（topicAfterDelete）。
+  private onTopicLongPress(threadId: number): void {
+    const rows: ForumTopicRow[] = this.topicsStore.getRows();
+    const row: ForumTopicRow | undefined = rows.find((r: ForumTopicRow): boolean => r.threadId === threadId);
+    if (row === undefined) {
+      return;
+    }
+    const chatId: number = this.chatId;
+    deleteTopicFlow(chatId, row).then((deleted: boolean): void => {
+      if (!deleted || chatId !== this.chatId) {
+        return;
+      }
+      const next: number = topicAfterDelete(rows, threadId, this.forumTopicId);
+      this.topicsStore.reload();
+      if (next !== this.forumTopicId) {
+        const hit: ForumTopicRow | undefined = rows.find((r: ForumTopicRow): boolean => r.threadId === next);
+        this.switchTopic(next, hit !== undefined ? hit.name : '');
+      }
+    });
+  }
+
   private chromeGeometryInput(): ChatChromeGeometryInput {
     return {
       topSafe: this.topSafe,
       searchMode: this.search.mode,
       pinnedVisible: this.topCard.pinnedPreview !== '',
       liveVisible: this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive,
-      loadingVisible: this.topCard.topCardLoadingVisible,
       actionBarVisible: this.actionBarKind !== '',
-      topicBarVisible: this.topicBarCount > 0
+      topicBarVisible: topicBarShown(this.topicBarCount, this.topicCreateAllowed)
     };
   }
 
@@ -8472,13 +8510,16 @@ export struct ChatPage {
     // 不会让浮卡整体白刷；显示态由 TopBanners 自己在 build() 里读 @Trace。
     // 千万不要在这里现场 new 任何对象传下去，那会破坏引用稳定、让子组件每帧白刷。
     Column() {
-      if (this.topicBarCount > 0) {
+      if (topicBarShown(this.topicBarCount, this.topicCreateAllowed)) {
         ChatTopicBar({
           source: this.topicRowsData,
           selectedThreadId: this.forumTopicId,
           rowCount: this.topicBarCount,
           scroller: this.topicBarScroller,
-          onSelect: (threadId: number): void => { this.onTopicBarSelect(threadId); }
+          canCreate: this.topicCreateAllowed,
+          onSelect: (threadId: number): void => { this.onTopicBarSelect(threadId); },
+          onCreate: (): void => { this.onTopicCreate(); },
+          onLongPressTopic: (threadId: number): void => { this.onTopicLongPress(threadId); }
         });
       }
       TopBanners({

@@ -57,11 +57,10 @@ export struct TopBanners {
   // → 宿主」，多两次 === 比较，无行为差。
   @Param materialEpoch: number = 0;
   // 这张卡的全部显示态，一个 @ObservedV2 控制器（B5 批）。置顶条读它的 pinned*
-  // 五个 @Trace、直播条读 live* 七个，另加一个 topCardLoadingVisible——字段名与取值
-  // 和搬之前的 13 个标量 @Param 一一对应，只是住的地方从 ChatPage 的 @Local 换成了
-  // 控制器上的 @Trace。原来挂在这两个字段上的注释一并留下：pinnedLoadState 的取值
-  // 是 'loading' | 'ready' | 'error'；topCardLoadingVisible 是"两条都还没定下来时
-  // 显示的同步态"。
+  // 五个 @Trace、直播条读 live* 七个——字段名与取值和搬之前的标量 @Param 一一对应，
+  // 只是住的地方从 ChatPage 的 @Local 换成了控制器上的 @Trace。pinnedLoadState 的取值
+  // 是 'loading' | 'ready' | 'error'。（原来还有一个"两条都没定下来时"的同步占位态，
+  // 2026-09-17 随占位卡一起去掉，见 LiveTopCardController.resetTopCardState。）
   //
   // 【为什么值得换】改前这 13 个值住在页面里：任何一个变化都要先重跑 ChatPage 的
   // chatTitleBarBottom 闭包，再逐个做 13 次 @Param 比较，最后才轮到本组件。最密的
@@ -141,7 +140,6 @@ export struct TopBanners {
       searchMode: false,
       pinnedVisible: this.topCard.pinnedPreview !== '',
       liveVisible: this.liveShowing(),
-      loadingVisible: this.topCard.topCardLoadingVisible,
       actionBarVisible: this.actionBarKind !== ''
     };
     // 外层的 bottom:2 margin 由父布局计算，不属于节点自己的 height。
@@ -267,29 +265,6 @@ export struct TopBanners {
     .onClick((): void => { this.onLiveStreamTap(); });
   }
 
-  @Builder
-  loadingBanner() {
-    Row({ space: 12 }) {
-      LoadingProgress().width(22).height(22).color(COLOR_PRIMARY);
-      Column({ space: 2 }) {
-        Text($r('app.string.cp_syncing_chat'))
-          .fontSize(13)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY);
-        Text($r('app.string.cp_checking_pinned_live'))
-          .fontSize(12)
-          .fontColor(COLOR_TEXT_SECONDARY);
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
-    }
-    .width('100%')
-    .height(CHAT_TOP_BANNER_ROW_HEIGHT)
-    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .accessibilityText($r('app.string.cp_syncing_pinned_live'));
-  }
-
   build() {
     Column() {
       if (this.hasContent()) {
@@ -314,8 +289,6 @@ export struct TopBanners {
         if (this.liveShowing()) {
           this.liveStreamBanner();
         }
-      } else if (this.topCard.topCardLoadingVisible) {
-        this.loadingBanner();
       }
     }
     .width('calc(100% - 24vp)')

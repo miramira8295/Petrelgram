@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Fatto"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Invia (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Seleziona chat"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "Inviato a %1$d chat"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d inviati, %2$d falliti"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Invio non riuscito, contenuto conservato"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Annullamento della registrazione su Telegram non riuscito: %1$s. Le notifiche potrebbero continuare ad arrivare: registrati di nuovo e poi annulla"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "Il server relay non ha ancora rimosso questa iscrizione (%1$s). Riproverà alla prossima apertura dell'app"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Scorrimento continuo dei media"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "Dopo l'ultimo elemento di un messaggio, continua a scorrere per passare subito a foto o video del messaggio successivo, senza pause"
     }
   ]
 }

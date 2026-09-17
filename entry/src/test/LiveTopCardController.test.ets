@@ -11,7 +11,6 @@ import {
   KEY_POWER_ACTIVE, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS
 } from '../main/ets/store/AppSettings';
 import { AlbumGroup } from '../main/ets/util/collapseAlbums';
-import { TOP_CARD_LOADING_DELAY_MS } from '../main/ets/util/chatPageTuning';
 
 // 顶栏下挂那张浮卡（置顶条 + 直播条）的状态机，B5 把它从 ChatPage 整体搬进
 // pages/chat/LiveTopCardController.ets 之后补的第一组断言。
@@ -277,19 +276,11 @@ export default function liveTopCardControllerTest() {
       controller.liveGroupCallId = 0;
       expect(controller.shouldShow()).assertFalse();
       controller.liveCallIsActive = false;
-
-      // 两边都还在拉的时候，卡片位置先由骨架占着。
-      controller.topCardLoadingVisible = true;
-      expect(controller.shouldShow()).assertTrue();
-      controller.topCardLoadingVisible = false;
-      expect(controller.shouldShow()).assertFalse();
       controller.dispose();
     });
 
-    // 防的回归：评论区/话题视图根本没有置顶条，如果照普通会话那样先摆成
-    // 'loading'，pinnedLoadState 就永远等不到那次 subscribePinned 回调，骨架会一直
-    // 亮着（settleTopCardLoading 的两个条件里有一个永远不落定）。
-    it('话题视图里置顶态直接算 ready，不先转一圈 loading（防的回归：评论区骨架不落定）', 0, (): void => {
+    // 评论区/话题视图根本没有置顶条，置顶态直接算 ready，不等一次永远不会来的回调。
+    it('话题视图里置顶态直接算 ready，不先转一圈 loading', 0, (): void => {
       const threadHost: FakeHost = new FakeHost();
       threadHost.threadRootIdValue = 99;
       const inThread: LiveTopCardController = controllerOn(threadHost);
@@ -317,26 +308,8 @@ export default function liveTopCardControllerTest() {
       inChat.resetTopCardState();
       expect(inChat.pinnedLoadState).assertEqual('loading');
 
-      // reset 排了一个骨架定时器，用例结束前收掉，别漏给后面的测试。
       inThread.dispose();
       inChat.dispose();
-    });
-
-    // 防的回归：把 settleTopCardLoading 写成"只要有一边好了就收骨架"。那样置顶先
-    // 回、直播还在拉的时候骨架会先塌一下再被直播条顶开，卡片高度抖两次。
-    it('两边都落定才收骨架，error 也算落定（防的回归：卡片高度抖两次）', 0, (): void => {
-      const controller: LiveTopCardController = controllerOn(new FakeHost());
-      controller.topCardLoadingVisible = true;
-      controller.pinnedLoadState = 'ready';
-      controller.liveLoadState = 'loading';
-
-      controller.settleTopCardLoading();
-      expect(controller.topCardLoadingVisible).assertTrue();
-
-      controller.liveLoadState = 'error';
-      controller.settleTopCardLoading();
-      expect(controller.topCardLoadingVisible).assertFalse();
-      controller.dispose();
     });
 
     // 防的回归：给 applyLiveGroupCall 的缺失字段兜一个"保持原值"的底。TDLib 的
@@ -453,23 +426,17 @@ export default function liveTopCardControllerTest() {
       controller.dispose();
     });
 
-    // 防的回归：dispose 漏清 topCardLoadingTimer。这条是"先 ++seq 再清定时器"里
-    // 定时器那一半的实测：resetTopCardState 排下的回调如果活过 dispose，就会往一个
-    // 已经销毁的页面的 @Trace 上写字段（真机表现是返回后骨架又亮一下）。
-    it('dispose 之后骨架定时器的回调写不进 @Trace（防的回归：销毁后回调仍写字段）', 0,
-      async (): Promise<void> => {
-        armPowerKeys();
-        const controller: LiveTopCardController = controllerOn(new FakeHost());
-        controller.resetTopCardState(); // 排下 TOP_CARD_LOADING_DELAY_MS 的骨架定时器
-        controller.dispose();
-
-        // 哨兵：回调若还活着，会算出 pinnedLoadState === 'loading' 而把它写回 true。
-        controller.topCardLoadingVisible = false;
-        await sleep(TOP_CARD_LOADING_DELAY_MS + 260);
-
-        expect(controller.topCardLoadingVisible).assertFalse();
-        expect(controller.pinnedLoadState).assertEqual('loading'); // 哨兵成立的前提没变
-      });
+    // issue #173：进会话时置顶/直播还没查回来，原来 180ms 后先挂一张「正在同步会话动态」
+    // 占位卡，请求慢就挂十几秒、不能点也不能关；没有置顶的群顶部还白白跳两下。
+    // 去掉之后，等过原来的出现延迟，卡片也不该出现——内容到了再由各自的条淡入。
+    it('进会话时不挂「正在同步」占位卡（issue #173）', 0, async (): Promise<void> => {
+      const controller: LiveTopCardController = controllerOn(new FakeHost());
+      controller.resetTopCardState();
+      await sleep(500);
+      expect(controller.pinnedLoadState).assertEqual('loading');
+      expect(controller.shouldShow()).assertFalse();
+      controller.dispose();
+    });
 
     // 防的回归：780ms 脉冲的 clearInterval 漏了。这条心跳每翻一次就是一轮 @Trace
     // 通知，页面销毁后还在跳＝导航栈里每回退一层就多留一个心跳。
@@ -602,18 +569,15 @@ export default function liveTopCardControllerTest() {
       controller.liveDialogOpening = true;
       controller.liveNavigationBusy = true;
       controller.pinnedJumpBusy = true;
-      controller.topCardLoadingVisible = true;
 
       controller.dispose();
       expect(controller.liveDialogOpening).assertFalse();
       expect(controller.liveNavigationBusy).assertFalse();
       expect(controller.pinnedJumpBusy).assertFalse();
-      expect(controller.topCardLoadingVisible).assertFalse();
 
       // aboutToDisappear 可能与别的清理路径撞上，第二次调用必须是无害的。
       controller.dispose();
       expect(controller.liveDialogOpening).assertFalse();
-      expect(controller.topCardLoadingVisible).assertFalse();
     });
 
     // 防的回归：有人把控制器做成模块级单例。平板分栏、导航栈多层时同时活着多个

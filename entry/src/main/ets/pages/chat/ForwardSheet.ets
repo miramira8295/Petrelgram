@@ -4,7 +4,7 @@ import {
 } from '../../util/forwardFolders';
 import { promptAction } from '@kit.ArkUI';
 import { ChatEntry } from '../../store/ChatEntry';
-import { AvatarView } from '../chatlist/AvatarView';
+import { TargetAvatarCell } from '../common/TargetAvatarCell';
 import { getChatStore, getFolderStore, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
@@ -16,6 +16,8 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
 import { buildForwardMessagesRequests } from '../../util/forwardMessagesRequest';
+import { selectionCount, targetSelected, toggleTarget } from '../../util/targetSelection';
+import { FanoutResult, fanoutShare } from '../../util/shareFanout';
 
 // "Forward to…" chat picker, extracted from ChatPage.
 //
@@ -67,6 +69,10 @@ export struct ForwardSheet {
   @State query: string = '';
   @State loadState: string = 'ready'; // loading | ready | error
   @State sendingChatId: number = 0;
+  // 选中的目标会话。点击=切换，底部发送条一次发给全部（util/targetSelection）。
+  @State selectedIds: number[] = [];
+  // 扇出进行中：整条发送链跑完才落下，期间禁用重复点击。
+  @State sending: boolean = false;
   @State sendCopy: boolean = false;
   @State removeCaption: boolean = false;
 
@@ -192,14 +198,68 @@ export struct ForwardSheet {
     );
   }
 
-  private forwardToChat(chat: ChatEntry): void {
-    if (this.sendingChatId !== 0 || this.messageIds.length === 0) {
+  private toggleTarget(chatId: number): void {
+    if (this.sending) {
       return;
+    }
+    this.selectedIds = toggleTarget(this.selectedIds, chatId);
+  }
+
+  private titleOf(chatId: number): string {
+    for (const chat of this.chats) {
+      if (chat.id === chatId) {
+        return chat.title;
+      }
+    }
+    return '';
+  }
+
+  // 发给选中的全部会话。串行（见 util/shareFanout 的说明），每个目标各自
+  // 按 100 一批切开（buildForwardMessagesRequests 的既有契约）。
+  private sendToSelected(): void {
+    if (this.sending || this.selectedIds.length === 0 || this.messageIds.length === 0) {
+      return;
+    }
+    const seq: number = this.seq;
+    const targets: number[] = this.selectedIds;
+    this.sending = true;
+    fanoutShare(targets, (chatId: number): Promise<void> => {
+      this.sendingChatId = chatId;
+      return this.forwardToChatId(chatId);
+    }).then((result: FanoutResult): void => {
+      if (seq !== this.seq) {
+        return;
+      }
+      this.sending = false;
+      this.sendingChatId = 0;
+      if (result.failed === 0) {
+        this.close();
+        this.onSent();
+      }
+      promptAction.showToast({ message: this.resultMessage(result, targets), duration: 1800 });
+    });
+  }
+
+  private resultMessage(result: FanoutResult, targets: number[]): string {
+    if (result.failed === 0) {
+      return targets.length === 1
+        ? str('fw_forwarded_to', this.titleOf(targets[0]))
+        : str('fw_sent_to_n', result.ok);
+    }
+    if (result.ok === 0) {
+      return str('fw_failed');
+    }
+    return str('fw_sent_partial', result.ok, result.failed);
+  }
+
+  private forwardToChatId(chatId: number): Promise<void> {
+    if (this.messageIds.length === 0) {
+      return Promise.reject(new Error('nothing to forward'));
     }
     // The request builder owns TDLib's strict ascending/unique-id boundary,
     // and splits anything over 100 ids into ordered batches (TDLib's per-call cap).
     const reqs: TdRequest[] = buildForwardMessagesRequests({
-      toChatId: chat.id,
+      toChatId: chatId,
       fromChatId: this.sourceChatId,
       messageIds: this.messageIds,
       threadRootId: this.threadRootId,
@@ -208,27 +268,11 @@ export struct ForwardSheet {
       canRemoveCaption: this.canRemoveCaption
     });
     if (reqs.length === 0) {
-      return;
+      return Promise.reject(new Error('no request'));
     }
-    const seq: number = this.seq;
-    this.sendingChatId = chat.id;
-    this.sendBatches(reqs).then((count: number): void => {
-      if (seq !== this.seq) {
-        return;
-      }
-      this.close();
-      this.onSent();
-      promptAction.showToast({
-        message: count > 1 ? plural('fw_forwarded_n', count, count) : str('fw_forwarded_to', chat.title),
-        duration: 1500
-      });
-    }).catch((e: TdError): void => {
-      if (seq !== this.seq) {
-        return;
-      }
-      this.sendingChatId = 0;
+    return this.sendBatches(reqs).then((): void => {}).catch((e: TdError): Promise<void> => {
       logE(`ForwardSheet.forwardMessages failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.fw_failed'), duration: 2000 });
+      return Promise.reject(e);
     });
   }
 
@@ -282,6 +326,29 @@ export struct ForwardSheet {
   // 它有意义时出现，看不到牵制。
   //
   // 两个胶囊直接写开、不抽成带参数的 @Builder：按值传参的 @Builder 不随勾选状态刷新。
+
+  // 底部发送条。n=0 时禁用并显示提示文案——按钮始终在位，不随选择跳出跳入
+  // （出现/消失会把上面的网格顶一下，滚动位置跟着跳）。
+  @Builder
+  sendBar() {
+    Row({ space: 8 }) {
+      Text(this.selectedIds.length === 0
+        ? str('fw_pick_targets')
+        : str('fw_send_n', selectionCount(this.selectedIds)))
+        .fontSize(15).fontWeight(FontWeight.Medium)
+        .fontColor(this.selectedIds.length === 0 ? COLOR_TEXT_SECONDARY : Color.White)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      if (this.sending) {
+        LoadingProgress().width(18).height(18).color(Color.White);
+      }
+    }
+    .width('100%').height(44).justifyContent(FlexAlign.Center)
+    .borderRadius(12)
+    .backgroundColor(this.selectedIds.length === 0 ? $r('app.color.surface_alt') : COLOR_PRIMARY)
+    .enabled(this.selectedIds.length > 0 && !this.sending)
+    .onClick((): void => { this.sendToSelected(); });
+  }
+
   @Builder
   forwardOptionsRow() {
     Row({ space: 8 }) {
@@ -391,6 +458,7 @@ export struct ForwardSheet {
           this.folderChipsRow();
         }
         this.forwardOptionsRow();
+        this.sendBar();
         if (this.loadState === 'loading') {
           Column({ space: 10 }) {
             LoadingProgress().width(26).height(26).color(COLOR_PRIMARY);
@@ -423,37 +491,16 @@ export struct ForwardSheet {
           Grid() {
             ForEach(this.filteredChats(), (chat: ChatEntry) => {
               GridItem() {
-                Column({ space: 6 }) {
-                  Stack() {
-                    AvatarView({
-                      avatarPath: chat.avatarPath,
-                      initials: chat.initials,
-                      colorSeed: chat.id,
-                      avatarSize: 56
-                    });
-                    if (this.sendingChatId === chat.id) {
-                      Column().width(56).height(56).borderRadius(28).backgroundColor('#66000000');
-                      LoadingProgress().width(24).height(24).color(Color.White);
-                    }
-                  }
-                  .width(56).height(56);
-                  Text(chat.title)
-                    .fontSize(12).lineHeight(16).fontColor(COLOR_TEXT_PRIMARY)
-                    .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .textAlign(TextAlign.Center).width('100%').height(32);
-                }
-                .width('100%').padding({ top: 6, bottom: 4, left: 2, right: 2 })
-                .borderRadius(12)
-                .opacity(this.sendingChatId === 0 || this.sendingChatId === chat.id ? 1 : 0.45)
-                .stateStyles({
-                  normal: this.rowNormalStyle,
-                  pressed: this.rowPressedStyle
+                TargetAvatarCell({
+                  avatarPath: chat.avatarPath,
+                  initials: chat.initials,
+                  colorSeed: chat.id,
+                  title: chat.title,
+                  selected: targetSelected(this.selectedIds, chat.id),
+                  busy: this.sendingChatId === chat.id
                 })
-                .animation({
-                  duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
-                  curve: Curve.EaseOut
-                })
-                .onClick(() => { this.forwardToChat(chat); });
+                  .opacity(this.sendingChatId === 0 || this.sendingChatId === chat.id ? 1 : 0.45)
+                  .onClick(() => { this.toggleTarget(chat.id); });
               }
             }, (chat: ChatEntry): string => `forward_${chat.id}_${chat.revision}`);
           }

@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "تم"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "إرسال (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "اختر المحادثات"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "أُرسل إلى %1$d محادثة"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d نجح، %2$d فشل"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "فشل الإرسال، تم الاحتفاظ بالمحتوى"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "تعذّر إلغاء التسجيل من Telegram: %1$s. قد تستمر الإشعارات في الوصول — سجّل مرة أخرى ثم ألغِ التسجيل"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "لم يحذف خادم الترحيل هذا الاشتراك بعد (%1$s). ستتم إعادة المحاولة عند فتح التطبيق في المرة القادمة"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "التمرير المتواصل بين الوسائط"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "بعد آخر عنصر في الرسالة، تابع التمرير للانتقال مباشرة إلى صور أو فيديوهات الرسالة التالية دون توقف"
     }
   ]
 }

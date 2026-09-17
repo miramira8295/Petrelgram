@@ -15,6 +15,8 @@ import { PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO, slotKey } from './playSlot
 import { VideoBubbleSurface } from './VideoBubbleSurface';
 import { TdObject } from '../../tdkit/TdTypes';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
+import { senderHasAnimatedPhoto } from '../../services/PhotoAnimationFetch';
+import { SenderAnimatedLayer } from './SenderAnimatedLayer';
 import { CachedImage } from '../common/CachedImage';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
@@ -90,6 +92,7 @@ import { isLivePhotoVideo } from '../../util/livePhoto';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
 import { replyThumbSrc } from '../../util/replyThumb';
 import { menuPreviewCompact } from '../../util/menuPreview';
+import { linkTextHidesUrl } from '../../util/messageLinkAction';
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
 // 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
@@ -239,7 +242,11 @@ struct LiveSenderAvatar {
   // 群聊里发送者头像的直径。占位列宽 = 它 + 6 的右外边距，两处必须一起改，
   // 否则连续消息的气泡和带头像那行会错开。
   @Param avatarSize: number = 38;
+  // 动态头像只在群聊气泡左侧放（issue #140）；评论行那一串 22vp 的小头像不放。
+  @Param animate: boolean = false;
   @Local private path: string = '';
+  // 这个发送者的头像带不带动画（UserStore/ChatStore 的 has_animation 标志）。
+  @Local private animated: boolean = false;
   // 无装饰器成员复用时不重置（官方表格 + 批 0.5 实测），照旧记订阅与回收态。
   private unsubAvatar: (() => void) | null = null;
   private attachedAvatarKey: string = '';
@@ -247,6 +254,7 @@ struct LiveSenderAvatar {
   private attachAvatarChannel(senderId: number, senderIsUser: boolean, initialPath: string): void {
     const key: string = senderChannelKey(senderId, senderIsUser);
     const known: string = senderAvatarFor(key);
+    this.animated = this.animate && senderHasAnimatedPhoto(senderId, senderIsUser);
     if (this.unsubAvatar !== null && this.attachedAvatarKey === key) {
       // 同 key 短路：订阅原样保留，但 path 必须重新播种——P0-1 让
       // aboutToRecycle / aboutToReuse 无条件清空了 path，不补种会空一帧。
@@ -258,6 +266,8 @@ struct LiveSenderAvatar {
     this.path = known !== '' ? known : initialPath;
     this.unsubAvatar = subscribeSenderAvatar(key, (path: string): void => {
       this.path = path;
+      // 用户资料（带 has_animation）可能晚于这一行挂上才到；静态头像到的时候资料一定到了。
+      this.animated = this.animate && senderHasAnimatedPhoto(this.senderId, this.senderIsUser);
     });
   }
 
@@ -342,6 +352,11 @@ struct LiveSenderAvatar {
         syncSmall: true
       })
         .visibility(this.path !== '' ? Visibility.Visible : Visibility.None);
+      if (this.animated) {
+        SenderAnimatedLayer({
+          senderId: this.senderId, senderIsUser: this.senderIsUser, avatarSize: this.avatarSize
+        });
+      }
     }
     .width(this.avatarSize).height(this.avatarSize);
   }
@@ -1179,7 +1194,7 @@ export struct MessageBubble {
       return;
     }
     this.linkPreviewOpening = true;
-    this.actions.onLinkTap(this.msg.linkUrl);
+    this.actions.onLinkTap(this.msg.linkUrl, false); // 预览卡片本身就展示了站点，直接开
     setTimeout((): void => {
       this.linkPreviewOpening = false;
     }, 650);
@@ -1477,7 +1492,7 @@ export struct MessageBubble {
         .animation({ duration: this.persistentEffectDuration(90), curve: Curve.EaseOut })
         .onClick(() => {
           if (this.gestureClaimed) { return; }
-          this.actions.onLinkTap(run.url); });
+          this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else if (run.url !== '') {
       // **闲着的链接：一个 .animation() 都不写。**
       //
@@ -1502,7 +1517,7 @@ export struct MessageBubble {
         .stateStyles({ normal: msgLinkRunNormalStyle, pressed: msgLinkRunPressedStyle })
         .onClick(() => {
           if (this.gestureClaimed) { return; }
-          this.actions.onLinkTap(run.url); });
+          this.actions.onLinkTap(run.url, linkTextHidesUrl(run.text, run.url)); });
     } else {
       // 这里刻意不挂 .animation()：普通 run 是气泡里数量最多的节点，一条常驻
       // 属性动画会按 run 数线性放大更新开销。2026-08-27 11:57 的真机 trace 里，
@@ -1889,7 +1904,8 @@ export struct MessageBubble {
                 .onClick(() => {
                   if (this.gestureClaimed) { return; }
                   if (btn.url !== '') {
-                    this.actions.onLinkTap(btn.url);
+                    // 按钮上的字不是网址，先让用户看清要去哪（同官方）。
+                    this.actions.onLinkTap(btn.url, true);
                   } else if (btn.callbackData !== '') {
                     this.actions.onBotCallback(this.msg.id, btn.callbackData);
                   } else if (btn.isGame) {
@@ -2996,7 +3012,8 @@ export struct MessageBubble {
           maxWidth: this.inlineMaxW(),
           onOpenUrl: (url: string): void => {
             if (this.gestureClaimed) { return; }
-            this.actions.onLinkTap(url);
+            // 块渲染这条路拿不到链接显示的文字，保留先确认。
+            this.actions.onLinkTap(url, true);
           }
         });
       }
@@ -4324,7 +4341,8 @@ export struct MessageBubble {
           senderId: this.msg.senderId,
           senderIsUser: this.msg.senderIsUser,
           initialPath: this.msg.senderAvatarPath,
-          initials: this.msg.senderInitials
+          initials: this.msg.senderInitials,
+          animate: true
         })
           .margin({ right: 6 })
           .onClick(() => {

@@ -9,13 +9,12 @@ import {
 } from '../main/ets/util/NativePixelBudget';
 
 function chrome(searchMode: boolean = false, pinnedVisible: boolean = false,
-  liveVisible: boolean = false, loadingVisible: boolean = false): ChatChromeGeometryInput {
+  liveVisible: boolean = false): ChatChromeGeometryInput {
   return {
     topSafe: 24,
     searchMode,
     pinnedVisible,
-    liveVisible,
-    loadingVisible
+    liveVisible
   };
 }
 
@@ -54,10 +53,11 @@ export default function performanceBudgetsTest() {
       expect(chatChromeHeight(searching)).assertEqual(86 + CHAT_TOPIC_BAR_HEIGHT);
     });
 
-    it('uses loading as a fallback row instead of an extra banner', 0, (): void => {
-      expect(chatTopBannerRows(chrome(false, false, false, true))).assertEqual(1);
-      expect(chatTopBannerRows(chrome(false, true, false, true))).assertEqual(1);
-      expect(chatTopBannerRows(chrome(false, true, true, true))).assertEqual(2);
+    // issue #173：加载中不再占一行（占位卡已去掉），只有确认的内容才占位。
+    it('only confirmed banners take rows', 0, (): void => {
+      expect(chatTopBannerRows(chrome())).assertEqual(0);
+      expect(chatTopBannerRows(chrome(false, true))).assertEqual(1);
+      expect(chatTopBannerRows(chrome(false, true, true))).assertEqual(2);
     });
 
     it('caps both pixel caches at eighty MiB combined', 0, (): void => {
@@ -89,23 +89,18 @@ export default function performanceBudgetsTest() {
     });
 
     // issue #201 第 8 条：会话操作条占一行，和置顶/直播横幅同高，叠加计数；
-    // 单独存在时也算一行（不像加载态那样只在没内容时占位）。
+    // 单独存在时也算一行。
     it('action_bar_counts_as_one_banner_row', 0, (): void => {
       const base: ChatChromeGeometryInput = {
-        topSafe: 0, searchMode: false, pinnedVisible: false, liveVisible: false, loadingVisible: false,
+        topSafe: 0, searchMode: false, pinnedVisible: false, liveVisible: false,
         actionBarVisible: true
       };
       expect(chatTopBannerRows(base)).assertEqual(1);
       const withPinned: ChatChromeGeometryInput = {
-        topSafe: 0, searchMode: false, pinnedVisible: true, liveVisible: false, loadingVisible: false,
+        topSafe: 0, searchMode: false, pinnedVisible: true, liveVisible: false,
         actionBarVisible: true
       };
       expect(chatTopBannerRows(withPinned)).assertEqual(2);
-      const loadingOnly: ChatChromeGeometryInput = {
-        topSafe: 0, searchMode: false, pinnedVisible: false, liveVisible: false, loadingVisible: true,
-        actionBarVisible: true
-      };
-      expect(chatTopBannerRows(loadingOnly)).assertEqual(1);
     });
   });
 }

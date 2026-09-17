@@ -26,7 +26,8 @@ export interface MessageBubbleActions {
   rowLeave: RowLeaveChannel;
   onStopLiveLocation: () => void;
   onMediaTap: (messageId: number, x: number, y: number) => void;
-  onLinkTap: (url: string) => void;
+  // askFirst：先弹「打开 / 复制」再开（藏着网址的文字链接、Bot 按钮），见 linkTextHidesUrl。
+  onLinkTap: (url: string, askFirst: boolean) => void;
   onCommentTap: (messageId: number) => void;
   onBotCallback: (messageId: number, data: string) => void;
   onAvatarTap: (userId: number) => void;
@@ -150,7 +151,7 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   rowLeave: new RowLeaveChannel(),
   onStopLiveLocation: (): void => {},
   onMediaTap: (_id: number, _x: number, _y: number): void => {},
-  onLinkTap: (_url: string): void => {}, onCommentTap: (_id: number): void => {},
+  onLinkTap: (_url: string, _askFirst: boolean): void => {}, onCommentTap: (_id: number): void => {},
   onBotCallback: (_id: number, _data: string): void => {},
   onAvatarTap: (_id: number): void => {},
   onAvatarLongPress: (_id: number, _name: string): void => {},

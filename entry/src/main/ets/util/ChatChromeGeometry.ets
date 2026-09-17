@@ -19,7 +19,6 @@ export interface ChatChromeGeometryInput {
   searchMode: boolean;
   pinnedVisible: boolean;
   liveVisible: boolean;
-  loadingVisible: boolean;
   // 会话操作条（issue #201 第 8 条）。可选：老调用点不传就是没有。
   actionBarVisible?: boolean;
   // 论坛话题横条（2026-09-16）。同样可选：非论坛会话不传，顶栏高度与以前逐像素一致。
@@ -36,10 +35,6 @@ export function chatTopBannerRows(input: ChatChromeGeometryInput): number {
   }
   if (input.actionBarVisible ?? false) {
     rows++;
-  }
-  // 加载态只在没有已确认内容时占一行。
-  if (rows === 0 && input.loadingVisible) {
-    rows = 1;
   }
   return rows;
 }

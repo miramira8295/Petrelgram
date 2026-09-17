@@ -3,9 +3,13 @@ import { TdObject } from '../main/ets/tdkit/TdTypes';
 import {
   buildDeregisterRequest, buildRegisterRequest, endpointHost, parseReceiverId,
   parseSubscriptionJson,
-  validateWebPushConfig, forgetWebPushConfig
+  validateWebPushConfig, forgetWebPushConfig, resolvePushChannel, startupPushConfig, WebPushConfig,
+  WEBPUSH_CHANNEL_HMS
 } from '../main/ets/services/WebPushRegistration';
-import { KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH } from '../main/ets/store/AppSettings';
+import { WEBPUSH_MODE_HMS } from '../main/ets/services/HmsRelayRegistration';
+import {
+  KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH, WEBPUSH_MODE_CUSTOM, WEBPUSH_MODE_MEOW
+} from '../main/ets/store/AppSettings';
 
 const GOOD_ENDPOINT: string = 'https://push.example.com/webpush/abc123';
 const GOOD_KEY: string = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkQ';
@@ -162,6 +166,44 @@ export default function webPushRegistrationTest() {
       expect(AppStorage.get<string>(KEY_WEBPUSH_P256DH)).assertEqual('');
       expect(AppStorage.get<string>(KEY_WEBPUSH_AUTH)).assertEqual('');
       expect(AppStorage.get<boolean>(KEY_WEBPUSH_ENABLED)).assertFalse();
+    });
+    // 启动/切账号时拿哪一份配置去向 Telegram 重新注册（2026-09-17，issue #196/#198）。
+    // 原来不看通道、只读自定义那三项：先用自托管、后换 MeoW 的人，下次启动就被悄悄
+    // 改回自托管地址——界面显示 MeoW 已注册，实际不推送。
+    it('startup_reregisters_the_channel_that_was_actually_registered', 0, () => {
+      const custom: WebPushConfig = { endpoint: GOOD_ENDPOINT, p256dh: GOOD_KEY, auth: GOOD_AUTH };
+      const meow: WebPushConfig = {
+        endpoint: 'https://relay.example.com/webpush/sub9', p256dh: GOOD_KEY, auth: GOOD_AUTH
+      };
+      const empty: WebPushConfig = { endpoint: '', p256dh: '', auth: '' };
+      expect(startupPushConfig(WEBPUSH_MODE_MEOW, custom, meow)!.endpoint).assertEqual(meow.endpoint);
+      expect(startupPushConfig(WEBPUSH_MODE_CUSTOM, custom, meow)!.endpoint).assertEqual(custom.endpoint);
+      // MeoW 的三项没存（老版本注册的）：宁可不动 Telegram 那边，也不能退回自托管那份
+      expect(startupPushConfig(WEBPUSH_MODE_MEOW, custom, empty) === null).assertTrue();
+      expect(startupPushConfig(WEBPUSH_MODE_CUSTOM, empty, meow) === null).assertTrue();
+      expect(startupPushConfig(WEBPUSH_CHANNEL_HMS, custom, meow) === null).assertTrue();
+      expect(startupPushConfig('', custom, meow) === null).assertTrue();
+    });
+
+    it('resolves_the_registered_channel_including_legacy_installs', 0, () => {
+      expect(resolvePushChannel({ enabled: false, channel: WEBPUSH_MODE_MEOW, mode: '', meowNickname: 'cat' }))
+        .assertEqual('');
+      // 记下的通道优先，与页面上最后停在哪个页签无关
+      expect(resolvePushChannel({
+        enabled: true, channel: WEBPUSH_MODE_MEOW, mode: WEBPUSH_MODE_CUSTOM, meowNickname: ''
+      })).assertEqual(WEBPUSH_MODE_MEOW);
+      // 老安装没有通道键：按留下的痕迹推断
+      expect(resolvePushChannel({ enabled: true, channel: '', mode: WEBPUSH_CHANNEL_HMS, meowNickname: 'cat' }))
+        .assertEqual(WEBPUSH_CHANNEL_HMS);
+      expect(resolvePushChannel({ enabled: true, channel: '', mode: WEBPUSH_MODE_CUSTOM, meowNickname: 'cat' }))
+        .assertEqual(WEBPUSH_MODE_MEOW);
+      expect(resolvePushChannel({ enabled: true, channel: '', mode: WEBPUSH_MODE_CUSTOM, meowNickname: '' }))
+        .assertEqual(WEBPUSH_MODE_CUSTOM);
+    });
+
+    // 这边为了不成环抄了一份字面量，靠这条钉住。
+    it('hms_channel_literal_matches_hms_module', 0, () => {
+      expect(WEBPUSH_CHANNEL_HMS).assertEqual(WEBPUSH_MODE_HMS);
     });
   });
 }

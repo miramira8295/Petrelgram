@@ -12431,6 +12431,42 @@
     {
       "name": "cp_nothing_to_cache",
       "value": "沒有需要快取的影片"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "傳送 (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "選擇要傳送的聊天"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "已傳送給 %1$d 個聊天"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "成功 %1$d 個，失敗 %2$d 個"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "傳送失敗，內容已保留"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "向 Telegram 取消註冊失敗：%1$s。推播可能仍在投遞，請稍後重新註冊一次再取消"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "中繼伺服器暫時沒有刪除這份訂閱（%1$s），下次開啟應用程式時會自動重試"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "看圖連續翻頁"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "看到一則訊息的最後一張後繼續滑，直接切到下一則訊息的圖片或影片，不再停下來提示"
     }
   ]
 }

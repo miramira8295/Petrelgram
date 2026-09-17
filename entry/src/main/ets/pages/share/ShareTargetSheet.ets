@@ -1,5 +1,6 @@
 import { ChatEntry } from '../../store/ChatEntry';
-import { AvatarView } from '../chatlist/AvatarView';
+import { TargetAvatarCell } from '../common/TargetAvatarCell';
+import { forwardColumnsTemplate, forwardGridColumns } from '../../util/forwardFolders';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { getChatStore } from '../../tdkit/Globals';
@@ -13,6 +14,16 @@ import { SHARE_TARGET_LIMIT, ShareTarget, orderShareTargets } from '../../util/s
 import { recentOutgoingChats } from '../../util/recentOutgoing';
 import { ShareRow, pinSavedFirst, rowFromEntry } from '../../util/shareSearch';
 import { localShareRows, searchShareRows } from '../../services/ShareChatSearch';
+import { promptAction } from '@kit.ArkUI';
+import { getTdClient, getUserStore } from '../../tdkit/Globals';
+import { MediaSendItem, MessageStore } from '../../store/MessageStore';
+import { ShareArrivalHost, sendShareDirectly } from '../../util/shareArrival';
+import { peekPendingShare, takePendingShare } from '../../services/ShareInbox';
+import { SharedPayload } from '../../util/sharedContent';
+import { selectionCount, targetSelected, toggleTarget } from '../../util/targetSelection';
+import { FanoutResult, fanoutShare } from '../../util/shareFanout';
+import { str } from '../../util/strings';
+import { logE } from '../../util/log';
 
 // 「分享到…」的会话选择器。系统分享把内容送进来之后由 Index 弹出。
 //
@@ -26,7 +37,7 @@ import { localShareRows, searchShareRows } from '../../services/ShareChatSearch'
 const SEARCH_DEBOUNCE_MS: number = 220;
 
 const RECENT_ROW_HEIGHT: number = 92;
-const RECENT_CELL_WIDTH: number = 66;
+const RECENT_CELL_WIDTH: number = 70;
 const RECENT_AVATAR: number = 50;
 
 @Component
@@ -47,6 +58,12 @@ export struct ShareTargetSheet {
   // 会话列表的 LazyForEach 数据源，喂的是 rows() 那一份（见 syncRowsData）。
   private rowsData: KeyedListDataSource<ShareRow> = new KeyedListDataSource<ShareRow>('share-targets');
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
+  // 网格列数跟窗口宽走，同 ForwardSheet（面板左右外边距 8×2 + 内边距 12×2）。
+  @StorageProp('screenWidthVp') screenW: number = 360;
+  // 选中的目标会话（util/targetSelection）。选 1 个仍走 onPick 进会话、可以再编辑；
+  // 选 2 个以上才直接群发——发单个人时先写句话是常用的，不该因为加了多选就丢掉。
+  @State private selectedIds: number[] = [];
+  @State private sending: boolean = false;
   private unsubChats: (() => void) | null = null;
   private seq: number = 0;
   private searchSeq: number = 0;
@@ -157,26 +174,117 @@ export struct ShareTargetSheet {
     .borderRadius(10)
   }
 
+  // 「常用」一排与下面的网格同一种格子（TargetAvatarCell），选中态两处一致。
+  // 「我的收藏」画书签，不画自己的头像——savedMessages 必须传，原来漏过一次，收藏长得
+  // 和"某个联系人"一模一样，用户认不出。
   @Builder
   recentCell(target: ShareTarget) {
-    Column({ space: 6 }) {
-      AvatarView({
-        avatarPath: target.avatarPath,
-        initials: target.initials,
-        colorSeed: target.chatId,
-        // 「我的收藏」画书签，不画自己的头像——AvatarView 本来就支持这一档
-        // （见它的 savedMessages 说明），我原来漏了传，于是收藏在列表里长得
-        // 和"某个联系人"一模一样，用户根本认不出。
-        savedMessages: target.isSavedMessages,
-        avatarSize: RECENT_AVATAR
-      });
-      Text(target.isSavedMessages ? $r('app.string.cl_saved_messages') : target.title)
-        .fontSize(11).fontColor(COLOR_TEXT_SECONDARY)
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width(RECENT_CELL_WIDTH).textAlign(TextAlign.Center);
+    TargetAvatarCell({
+      avatarPath: target.avatarPath,
+      initials: target.initials,
+      colorSeed: target.chatId,
+      savedMessages: target.isSavedMessages,
+      title: target.isSavedMessages ? str('cl_saved_messages') : target.title,
+      selected: targetSelected(this.selectedIds, target.chatId),
+      avatarSize: RECENT_AVATAR,
+      titleLines: 1
+    })
+      .width(RECENT_CELL_WIDTH)
+      .onClick((): void => this.toggle(target.chatId));
+  }
+
+  private gridColumnsTemplate(): string {
+    return forwardColumnsTemplate(forwardGridColumns(this.screenW - 16 - 24));
+  }
+
+  private toggle(chatId: number): void {
+    if (this.sending) {
+      return;
     }
-    .width(RECENT_CELL_WIDTH)
-    .onClick((): void => this.onPick(target.chatId));
+    this.selectedIds = toggleTarget(this.selectedIds, chatId);
+  }
+
+  // 选 1 个：原样走 onPick——进会话、内容落输入框，用户还能再写一句。
+  // 选 2 个以上：没有输入框可进了，直接群发。
+  private confirm(): void {
+    if (this.sending || this.selectedIds.length === 0) {
+      return;
+    }
+    if (this.selectedIds.length === 1) {
+      this.onPick(this.selectedIds[0]);
+      return;
+    }
+    this.fanout();
+  }
+
+  // 每个目标一个**只用来发送**的 MessageStore：构造是纯赋值（不订阅、不拉历史），
+  // 订阅发生在 open() 里，所以这里不 open；close() 对没 open 过的实例是安全的
+  // （chatOpened 为假就不发 closeChat，unsubs 是空数组）。
+  private hostFor(chatId: number): ShareArrivalHost {
+    const store: MessageStore = new MessageStore(getTdClient(), getUserStore(), chatId, 0, 30, 0, 0);
+    return {
+      // 直发这一档不碰输入框暂存区，这四个用不上（见 util/shareArrival 的说明）。
+      appendMedia: (_items: MediaSendItem[]): number => 0,
+      setDraft: (_text: string): void => {},
+      draftText: (): string => '',
+      scrollToBottom: (): void => {},
+      sendDocument: (path: string, caption: string): void => store.sendDocument(path, caption),
+      sendAudio: (path: string, caption: string): void => store.sendAudio(path, caption),
+      sendMedia: (items: MediaSendItem[], caption: string): Promise<void> =>
+        store.sendMedia(items, caption),
+      sendText: (text: string): void => { store.send(text); }
+    };
+  }
+
+  private fanout(): void {
+    // peek 不取走：全部成功之后才清，有失败就留着让用户重来（取走是破坏性的，
+    // 见 services/ShareInbox）。
+    const payload: SharedPayload | null = peekPendingShare();
+    if (payload === null) {
+      return;
+    }
+    const targets: number[] = this.selectedIds;
+    this.sending = true;
+    fanoutShare(targets, (chatId: number): Promise<void> =>
+      sendShareDirectly(payload, this.hostFor(chatId))
+    ).then((result: FanoutResult): void => {
+      this.sending = false;
+      if (result.failed === 0) {
+        takePendingShare();
+        promptAction.showToast({
+          message: str('fw_sent_to_n', result.ok), duration: 1800
+        });
+        this.onCancel();
+        return;
+      }
+      logE(`ShareTargetSheet.fanout failed for ${result.failedIds.join(',')}`);
+      promptAction.showToast({
+        message: result.ok === 0
+          ? str('fw_sent_none')
+          : str('fw_sent_partial', result.ok, result.failed),
+        duration: 2400
+      });
+    });
+  }
+
+  @Builder
+  sendBar() {
+    Row({ space: 8 }) {
+      Text(this.selectedIds.length === 0
+        ? str('fw_pick_targets')
+        : str('fw_send_n', selectionCount(this.selectedIds)))
+        .fontSize(15).fontWeight(FontWeight.Medium)
+        .fontColor(this.selectedIds.length === 0 ? COLOR_TEXT_SECONDARY : Color.White)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      if (this.sending) {
+        LoadingProgress().width(18).height(18).color(Color.White);
+      }
+    }
+    .width('100%').height(44).justifyContent(FlexAlign.Center)
+    .borderRadius(12)
+    .backgroundColor(this.selectedIds.length === 0 ? $r('app.color.surface_alt') : COLOR_PRIMARY)
+    .enabled(this.selectedIds.length > 0 && !this.sending)
+    .onClick((): void => { this.confirm(); });
   }
 
   build() {
@@ -250,23 +358,29 @@ export struct ShareTargetSheet {
           }
           .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
         } else {
-          List() {
-            // LazyForEach + 复用行（ShareChatRow）：空查询时是整个会话列表，翻页会一直涨。
-            // 点击挂在 ListItem 上，闭包随行 key 重建。
+          // 头像网格，同 ForwardSheet（2026-09-17 用户要求分享抽屉也改成头像列表）。
+          // LazyForEach：空查询时是整个会话列表，翻页会一直涨。
+          Grid() {
             LazyForEach(this.rowsData, (row: ShareRow): void => {
-              ListItem() {
-                ShareChatRow({ row: row });
+              GridItem() {
+                TargetAvatarCell({
+                  avatarPath: row.avatarPath,
+                  initials: row.initials,
+                  colorSeed: row.chatId,
+                  savedMessages: row.isSavedMessages,
+                  title: row.isSavedMessages ? str('cl_saved_messages') : row.title,
+                  selected: targetSelected(this.selectedIds, row.chatId)
+                })
+                  .onClick((): void => this.toggle(row.chatId));
               }
-              .onClick((): void => this.onPick(row.chatId));
             }, (row: ShareRow, index: number): string =>
               guardKey(this.rowsData.keyTableId, index,
-                `${row.chatId}_${row.title}_${row.subtitle}_${row.avatarPath}_${row.isSavedMessages ? 1 : 0}`));
+                `${row.chatId}_${row.title}_${row.avatarPath}_${row.isSavedMessages ? 1 : 0}`));
           }
+          .columnsTemplate(this.gridColumnsTemplate())
+          .rowsGap(4).columnsGap(4)
           .layoutWeight(1).width('100%')
-          .cachedCount(4)
-          .divider({
-            strokeWidth: 0.7, color: $r('app.color.divider'), startMargin: 60, endMargin: 6
-          })
+          .cachedCount(2)
           .scrollBar(BarState.Auto)
           // 搜索时不翻主列表：结果来自搜索，翻页只会白拉数据。
           .onReachEnd((): void => {
@@ -275,6 +389,7 @@ export struct ShareTargetSheet {
             }
           });
         }
+        this.sendBar();
       }
       .width('calc(100% - 16vp)').height('72%')
       .padding({ left: 12, right: 12, top: 10, bottom: 12 + this.bottomSafe })
@@ -291,50 +406,5 @@ export struct ShareTargetSheet {
           duration: powerAnimationDuration(KEY_POWER_EFFECT_REPLY, 220), curve: Curve.EaseOut
         })
     );
-  }
-}
-
-// 分享目标会话列表的一行（原 ShareTargetSheet.chatRow）。复用组件；点击在页面的 ListItem 上。
-// 按压态不再挂常驻 .animation()：复用时每换一次数据都会被它同步冲刷。
-@Reusable
-@Component
-struct ShareChatRow {
-  @Prop row: ShareRow;
-
-  @Styles
-  rowNormalStyle() {
-    .backgroundColor(Color.Transparent)
-    .borderRadius(10)
-  }
-
-  @Styles
-  rowPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
-    .borderRadius(10)
-  }
-
-  build() {
-    Row({ space: 12 }) {
-      AvatarView({
-        avatarPath: this.row.avatarPath,
-        initials: this.row.initials,
-        colorSeed: this.row.chatId,
-        savedMessages: this.row.isSavedMessages,
-        avatarSize: 42
-      });
-      Column({ space: 3 }) {
-        Text(this.row.isSavedMessages ? $r('app.string.cl_saved_messages') : this.row.title)
-          .fontSize(15).fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis });
-        Text(this.row.subtitle).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-      }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      SymbolGlyph($r('sys.symbol.paperplane')).fontSize(18).fontColor([COLOR_PRIMARY]);
-    }
-    .width('100%').padding({ left: 6, right: 6, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle });
   }
 }

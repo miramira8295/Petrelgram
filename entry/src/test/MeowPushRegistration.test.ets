@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  buildMeowConfirmBody, buildMeowDeleteBody, buildMeowRegisterStartBody,
+  buildMeowConfirmBody, buildMeowDeleteBody, buildMeowRegisterStartBody, meowRelayDeleteSucceeded,
   parseMeowConfirmResponse, parseMeowStartResponse, resolveWebPushMode, validateMeowCode, validateMeowNickname
 } from '../main/ets/services/MeowPushRegistration';
 import { WEBPUSH_MODE_CUSTOM, WEBPUSH_MODE_MEOW } from '../main/ets/store/AppSettings';
@@ -194,6 +194,14 @@ export default function meowPushRegistrationTest() {
     // 本地有 secret 也救不了缺 Web Push 字段的响应。
     it('known_secret_does_not_paper_over_missing_push_fields', 0, () => {
       expect(parseMeowConfirmResponse('{"endpoint":"x"}', GOOD_SECRET).error.length > 0).assertTrue();
+    });
+    // 注销时中转那半删没删掉（issue #196）。新中转只凭 subKey、删不删得到都回 200；
+    // 旧中转没带对 secret 回 403——那就是没删掉，要记下来下次重试，不能当成功。
+    it('only_http_200_counts_as_relay_deleted', 0, () => {
+      expect(meowRelayDeleteSucceeded(200)).assertTrue();
+      expect(meowRelayDeleteSucceeded(403)).assertFalse();
+      expect(meowRelayDeleteSucceeded(500)).assertFalse();
+      expect(meowRelayDeleteSucceeded(0)).assertFalse();
     });
   });
 }

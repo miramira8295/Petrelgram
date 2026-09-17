@@ -30,6 +30,16 @@ export function hopDirection(
   return 0;
 }
 
+// 拉多远算拉满（vp），随视口宽度走：pad 上 80vp 只是轻轻一带，手机上已经是小半屏。
+//
+// continuous = 交互设置里的「看图连续翻页」（issue #167，默认开）：阈值降到 1/8 屏宽、
+// 最少 48vp，松手即切、不弹提示气泡，手感接近连续翻页。关掉是原来的 1/4 屏宽、最少 80vp
+// 加提示气泡。
+export function hopThreshold(viewportWidth: number, continuous: boolean): number {
+  const width: number = Math.max(0, viewportWidth);
+  return continuous ? Math.max(48, width / 8) : Math.max(80, width / 4);
+}
+
 // 拉了多少，0..1。到 1 就是"松手即切"。
 // threshold <= 0 视为无效，直接给 0，免得除出 Infinity 让气泡瞬间满格。
 export function hopProgress(currentOffset: number, threshold: number): number {

@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "हो गया"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "भेजें (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "चैट चुनें"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "%1$d चैट को भेजा गया"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d भेजे गए, %2$d विफल"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "भेजना विफल, सामग्री सुरक्षित है"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Telegram से पंजीकरण हटाना विफल: %1$s। सूचनाएँ आती रह सकती हैं — फिर से पंजीकरण करें, फिर हटाएँ"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "रिले सर्वर ने यह सदस्यता अभी तक नहीं हटाई (%1$s)। अगली बार ऐप खोलने पर फिर से कोशिश होगी"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "मीडिया लगातार स्वाइप करें"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "किसी संदेश के आखिरी आइटम के बाद स्वाइप करते रहें, बिना रुके अगले संदेश की फ़ोटो या वीडियो पर पहुँचें"
     }
   ]
 }

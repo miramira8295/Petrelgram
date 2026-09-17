@@ -3,7 +3,7 @@ import { MEDIA_PREFETCH_PRIORITY, MEDIA_VIEWING_PRIORITY } from '../../util/down
 import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import {
-  hopDirection, hopProgress, nextMediaGroupIndex
+  hopDirection, hopProgress, hopThreshold, nextMediaGroupIndex
 } from '../../util/viewerGroupHop';
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
@@ -27,7 +27,7 @@ import { guardKey } from '../../util/keyGuard';
 import { posterFor, requestPoster } from '../../util/videoPosterStore';
 import {
   KEY_CURRENT_NETWORK_TYPE, KEY_POWER_EFFECT_BLUR, KEY_POWER_SMOOTH_TRANSITIONS,
-  KEY_REDUCE_ANIM, powerAnimationDuration
+  KEY_REDUCE_ANIM, KEY_VIEWER_CONTINUOUS_HOP, powerAnimationDuration
 } from '../../store/AppSettings';
 import { chatEffectDurationOf } from '../../util/chatEffects';
 import { mediaEntryIsVideo } from '../../util/mediaEntryKind';
@@ -48,6 +48,8 @@ const CHROME_BAR_ROW_H: number = 56;
 const VIEWER_MIN_SCALE: number = 1;
 const VIEWER_MAX_SCALE: number = 4;
 const VIEWER_DOUBLE_TAP_SCALE: number = 2.5;
+// 连续翻页切组时新组滑入的起始位移，占视口宽度的比例（issue #167）。整屏滑太重，一点都不滑读不出方向。
+const HOP_SLIDE_IN_RATIO: number = 0.35;
 
 interface ViewerFit {
   w: number;
@@ -207,6 +209,10 @@ export struct MediaViewerOverlay {
   @Local private hopDir: number = 0;
   @Local private hopProgress: number = 0;
   private hopTargetIdx: number = -1;
+  // 看图连续翻页（交互设置，issue #167）。打开查看器时读一次。
+  private continuousHop: boolean = true;
+  // 连续翻页切组后，新组从拉的那一侧滑进来的起始位移（vp），动画到 0。
+  @Local private hopSlideX: number = 0;
   // 缩略图条自己的滚动控制器。切组之后内容会整体换掉（siblingIds 从
   // viewerMsgId 推出来），但横向偏移不会自动回位——往前切落在新组的最后一张
   // 时，那张会停在屏幕右边看不见的地方。
@@ -224,6 +230,7 @@ export struct MediaViewerOverlay {
   private swiperCtrl: SwiperController = new SwiperController();
 
   aboutToAppear(): void {
+    this.continuousHop = AppStorage.get<boolean>(KEY_VIEWER_CONTINUOUS_HOP) ?? true;
     this.rebuildViewerSources();
     this.pageIdx = this.initIdx;
     this.initialViewerMsgId = this.viewerMsgId;
@@ -560,8 +567,7 @@ export struct MediaViewerOverlay {
       this.hopTargetIdx = target;
       this.hopDir = dir;
     }
-    // 阈值随视口宽度走：pad 上 80vp 只是轻轻一带，手机上已经是小半屏。
-    this.hopProgress = hopProgress(offset, Math.max(80, this.areaW / 4));
+    this.hopProgress = hopProgress(offset, hopThreshold(this.areaW, this.continuousHop));
   }
 
   private clearHop(): void {
@@ -608,6 +614,20 @@ export struct MediaViewerOverlay {
     // 放在下一帧：这一帧新的那批缩略图还没挂上，量不出位置。
     const landingIdx: number = this.pageIdx;
     setTimeout((): void => { this.scrollFilmstripTo(landingIdx); }, 0);
+    if (this.continuousHop) {
+      this.slideInFromHop(dir);
+    }
+  }
+
+  // 连续翻页：换组是整册内容一下子换掉，Swiper 自己没有翻页动画。补一段短横滑——新组从
+  // 手指拉过去的那一侧进来——读起来才像"翻到了下一张"，而不是闪一下换了图。
+  private slideInFromHop(dir: number): void {
+    const duration: number = this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220);
+    if (duration <= 0 || this.areaW <= 0) {
+      return;
+    }
+    this.hopSlideX = dir * this.areaW * HOP_SLIDE_IN_RATIO;
+    animateTo({ duration, curve: Curve.Friction }, () => { this.hopSlideX = 0; });
   }
 
   // 气泡里那张缩略图。目标组的封面：往后切给第一张，往前切给最后一张，
@@ -1397,6 +1417,7 @@ export struct MediaViewerOverlay {
       this.areaW = Number(area.width);
       this.areaH = Number(area.height);
     })
+    .translate({ x: this.hopSlideX })
     .width('100%').height('100%');
     if (!this.isVideo() && this.photoSrc() === '') {
       Column() {
@@ -1609,7 +1630,8 @@ export struct MediaViewerOverlay {
   build() {
     Stack() {
       this.viewerContent();
-      if (this.hopDir !== 0) {
+      // 连续翻页不弹气泡：轻轻一带松手就切，提示反而是打断。
+      if (this.hopDir !== 0 && !this.continuousHop) {
         Row() {
           this.hopBubble();
         }

@@ -12431,6 +12431,42 @@
     {
       "name": "cp_nothing_to_cache",
       "value": "No videos to cache"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Send (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Select chats to send to"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "Sent to %1$d chats"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d sent, %2$d failed"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Sending failed, content kept"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Failed to unregister from Telegram: %1$s. Pushes may still arrive — register again, then unregister"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "The relay server didn't remove this subscription yet (%1$s). It will retry next time the app opens"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Continuous media swiping"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "After the last item in a message, keep swiping to go straight to the next message's photos or videos without a pause"
     }
   ]
 }

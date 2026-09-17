@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "انجام شد"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "ارسال (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "گفتگوها را انتخاب کنید"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "به %1$d گفتگو ارسال شد"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d موفق، %2$d ناموفق"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "ارسال ناموفق، محتوا حفظ شد"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "لغو ثبت در Telegram ناموفق بود: %1$s. ممکن است اعلان‌ها همچنان برسند — دوباره ثبت کنید و سپس لغو کنید"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "سرور رله هنوز این اشتراک را حذف نکرده است (%1$s). دفعهٔ بعد که برنامه باز شود دوباره تلاش می‌شود"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "ورق‌زدن پیوسته رسانه‌ها"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "پس از آخرین مورد یک پیام، به ورق‌زدن ادامه دهید تا بدون مکث به عکس‌ها یا ویدیوهای پیام بعدی بروید"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import {
-  KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS, KEY_SHOW_CONTACTS_TAB, setBoolean, setString
+  KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS, KEY_SHOW_CONTACTS_TAB, KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
 } from '../../store/AppSettings';
 import { GESTURE_CLASSIC, GESTURE_TAP_FIRST } from '../../util/messageGestures';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -49,6 +49,7 @@ export struct InteractionSettingsPage {
   @StorageLink(KEY_MSG_GESTURE) gestureScheme: string = GESTURE_CLASSIC;
   @StorageLink(KEY_SHOW_CONTACTS_TAB) showContactsTab: boolean = true;
   @StorageLink(KEY_ROW_SWIPE_ACTIONS) rowSwipeActions: boolean = false;
+  @StorageLink(KEY_VIEWER_CONTINUOUS_HOP) viewerContinuousHop: boolean = true;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
   // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
   // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
@@ -172,6 +173,25 @@ export struct InteractionSettingsPage {
         .onChange((v: boolean): void => {
           this.rowSwipeActions = v;
           setBoolean(KEY_ROW_SWIPE_ACTIONS, v);
+        });
+    }
+    .width('100%')
+    .padding({ left: 16, right: 13, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS);
+
+    // 看图连续翻页（issue #167）。查看器打开时读一次，改了下次打开生效。
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text($r('app.string.ix_viewer_continuous')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+        Text($r('app.string.ix_viewer_continuous_sub')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+      }.layoutWeight(1);
+      Toggle({ type: ToggleType.Switch, isOn: this.viewerContinuousHop })
+        .selectedColor(COLOR_PRIMARY)
+        .onChange((v: boolean): void => {
+          this.viewerContinuousHop = v;
+          setBoolean(KEY_VIEWER_CONTINUOUS_HOP, v);
         });
     }
     .width('100%')

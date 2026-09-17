@@ -13,8 +13,8 @@
 // 本对象，这是 B5 唯一真正缩小重渲染半径的地方。
 //
 // 【为什么仍有几个字段收窄不了】
-// pinnedPreview / liveGroupCallId / liveCallIsActive / topCardLoadingVisible
-// 这 4 个决定顶栏高度（chromeGeometryInput → headerChromeHeight/topBannerHeight），
+// pinnedPreview / liveGroupCallId / liveCallIsActive
+// 这 3 个决定顶栏高度（chromeGeometryInput → headerChromeHeight/topBannerHeight），
 // 几何链贯穿整页；shouldShow() 也是页面级 build 的判定。页面读它们时走
 // this.topCard.xxx，依赖粒度仍是该字段本身，与搬之前一一对应。
 // liveLoadState 是全簇唯一 build 链完全不读的显示态，但它仍是 @Trace：与同组
@@ -42,17 +42,14 @@ import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { MessageStore } from '../../store/MessageStore';
 import { ChatEntry } from '../../store/ChatEntry';
-import {
-  KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS,
-  powerAnimationDuration, powerFeatureEnabled
-} from '../../store/AppSettings';
+import { KEY_POWER_PARTICLES, powerFeatureEnabled } from '../../store/AppSettings';
 import { AlbumGroup, groupIndexOf } from '../../util/collapseAlbums';
 import {
   PINNED_EMPTY, PINNED_IGNORE, PINNED_JUMP, PINNED_LATEST, PINNED_RETRY,
   PinnedTap, pinnedTapAction
 } from '../../util/pinnedJump';
 import { pinnedShownIndex } from '../../util/pinnedSegments';
-import { TOP_CARD_ACTION_GUARD_MS, TOP_CARD_LOADING_DELAY_MS } from '../../util/chatPageTuning';
+import { TOP_CARD_ACTION_GUARD_MS } from '../../util/chatPageTuning';
 import { plural, str } from '../../util/strings';
 import { logE } from '../../util/log';
 import { floatingLiveWindow } from './LiveFloatingWindow';
@@ -122,7 +119,6 @@ export class LiveTopCardController {
   @Trace liveLoadState: string = 'loading'; // loading | ready | error
   @Trace liveDialogOpening: boolean = false;
   @Trace liveNavigationBusy: boolean = false;
-  @Trace topCardLoadingVisible: boolean = false;
 
   // ——— 内部机件：一律**不加 @Trace** ———
   // 定时器句柄、在途标志、序号守卫都不驱动任何 UI，加了 @Trace 只会在每次
@@ -136,7 +132,6 @@ export class LiveTopCardController {
   private liveChatResolveSeq: number = 0;
   private liveGroupResolveSeq: number = 0;
   private liveGroupRequestId: number = 0;
-  private topCardLoadingTimer: number = -1;
   private topCardActionTimer: number = -1;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
@@ -217,11 +212,6 @@ export class LiveTopCardController {
     this.liveDialogOpening = false;
     this.liveNavigationBusy = false;
     this.pinnedJumpBusy = false;
-    this.topCardLoadingVisible = false;
-    if (this.topCardLoadingTimer !== -1) {
-      clearTimeout(this.topCardLoadingTimer);
-      this.topCardLoadingTimer = -1;
-    }
     if (this.topCardActionTimer !== -1) {
       clearTimeout(this.topCardActionTimer);
       this.topCardActionTimer = -1;
@@ -254,26 +244,10 @@ export class LiveTopCardController {
     this.liveChatRefreshInFlight = false;
     this.liveGroupRefreshInFlight = false;
     this.liveGroupRequestId = 0;
-    this.topCardLoadingVisible = false;
-    if (this.topCardLoadingTimer !== -1) {
-      clearTimeout(this.topCardLoadingTimer);
-    }
-    this.topCardLoadingTimer = setTimeout((): void => {
-      this.topCardLoadingTimer = -1;
-      this.topCardLoadingVisible =
-        this.pinnedLoadState === 'loading' || this.liveLoadState === 'loading';
-    }, powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, TOP_CARD_LOADING_DELAY_MS));
-  }
-
-  settleTopCardLoading(): void {
-    if (this.pinnedLoadState === 'loading' || this.liveLoadState === 'loading') {
-      return;
-    }
-    if (this.topCardLoadingTimer !== -1) {
-      clearTimeout(this.topCardLoadingTimer);
-      this.topCardLoadingTimer = -1;
-    }
-    this.topCardLoadingVisible = false;
+    // 不再挂「正在同步会话动态」占位卡（2026-09-17，issue #173）：原来 180ms 内置顶/直播
+    // 没查回来就先挂一张，请求走默认 15 秒超时、直播还是 getChat→getGroupCall 串着发，
+    // 网络慢时能挂十几秒到半分钟，不能点不能关、文案用户看不懂；没有置顶的群（大多数）
+    // 顶部还白白跳两下。置顶/直播是可选内容，到了再由各自的条淡入。
   }
 
   // 搬之前叫 topCardShouldShow()。名字里的 topCard 前缀在控制器上是重复的，
@@ -283,8 +257,7 @@ export class LiveTopCardController {
     // fails while TDLib is reconnecting and there is no confirmed content,
     // don't turn that transient transport problem into a persistent banner.
     return this.pinnedPreview !== '' ||
-      (this.liveGroupCallId > 0 && this.liveCallIsActive) ||
-      this.topCardLoadingVisible;
+      (this.liveGroupCallId > 0 && this.liveCallIsActive);
   }
 
   // ——— 置顶条：订阅入口 ———
@@ -301,7 +274,6 @@ export class LiveTopCardController {
       this.pinnedCycle = 0;
       this.finishPinnedJump();
     }
-    this.settleTopCardLoading();
   }
 
   // ——— 直播条：拉取与身份守卫 ———
@@ -312,7 +284,6 @@ export class LiveTopCardController {
   refreshVideoChat(showLoading: boolean = false): void {
     if (this.host.chatId() === 0) {
       this.liveLoadState = 'error';
-      this.settleTopCardLoading();
       return;
     }
     if (this.liveChatRefreshInFlight) {
@@ -333,7 +304,6 @@ export class LiveTopCardController {
       this.liveLoadState = 'ready';
       const vc = chat['video_chat'] as TdObject | undefined;
       this.setLiveGroupCallId(vc !== undefined ? ((vc['group_call_id'] as number | undefined) ?? 0) : 0);
-      this.settleTopCardLoading();
     }).catch((e: TdError): void => {
       if (seq !== this.liveChatResolveSeq) {
         return;
@@ -344,7 +314,6 @@ export class LiveTopCardController {
       if (!this.liveCallIsActive) {
         this.liveLoadState = 'error';
       }
-      this.settleTopCardLoading();
       logE(`ChatPage.refreshVideoChat getChat failed: ${e.message}`);
     });
   }
@@ -363,7 +332,6 @@ export class LiveTopCardController {
     }
     if (groupCallId <= 0) {
       this.liveLoadState = 'ready';
-      this.settleTopCardLoading();
       return;
     }
     // An unchanged id still needs refreshing because a scheduled call may
@@ -395,7 +363,6 @@ export class LiveTopCardController {
       if (!this.liveCallIsActive) {
         this.liveLoadState = 'error';
       }
-      this.settleTopCardLoading();
       logE(`ChatPage.getGroupCall failed: ${error.message}`);
     });
   }
@@ -414,7 +381,6 @@ export class LiveTopCardController {
     this.liveChatRefreshInFlight = false;
     this.liveLoadState = 'ready';
     this.setLiveGroupCallId(groupCallId);
-    this.settleTopCardLoading();
   }
 
   applyGroupCallUpdate(groupCall: TdObject): void {
@@ -433,7 +399,6 @@ export class LiveTopCardController {
       this.livePulseExpanded = false;
       this.liveDialogOpening = false;
     }
-    this.settleTopCardLoading();
   }
 
   // ChatStore already resolves updateChatVideoChat + updateGroupCall for the
@@ -456,7 +421,6 @@ export class LiveTopCardController {
     this.liveCallIsActive = true;
     this.liveCallIsRtmp = entry.isRtmpLive;
     this.liveLoadState = 'ready';
-    this.settleTopCardLoading();
   }
 
   // ——— 直播条：进入 ———
@@ -657,8 +621,7 @@ export class LiveTopCardController {
   // 簇外还有两个调用者：landPendingJump（跳转落地）与 subscribePinned 回调
   // （置顶清空时，现在走 applyPinned），页面侧改调 this.topCard.finishPinnedJump()。
   //
-  // 注意 resetTopCardState **不**清 topCardActionTimer（它只清
-  // topCardLoadingTimer）——这是搬之前就有的语义差异，两条定时器互不交叉，
+  // 注意 resetTopCardState **不**清 topCardActionTimer——这是搬之前就有的语义差异，
   // 原样保留。
   finishPinnedJump(): void {
     this.pinnedJumpBusy = false;

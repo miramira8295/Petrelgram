@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_REMOTE, LINK_USER,
-  LinkAction, linkActionOf
+  LinkAction, linkActionOf, linkTextHidesUrl
 } from '../main/ets/util/messageLinkAction';
 
 export default function messageLinkActionTest() {
@@ -63,6 +63,22 @@ export default function messageLinkActionTest() {
       const remote: LinkAction = linkActionOf('https://t.me/x');
       expect(remote.text).assertEqual('');
       expect(remote.userId).assertEqual(0);
+    });
+
+    // issue #169 第 6 条：点普通链接不再先弹「打开 / 复制」，直接打开（复制与外部打开在
+    // 内置浏览器的「⋯」里）。只有「显示的文字不是它指向的网址」时才先确认——那是
+    // 防钓鱼的那一道，官方客户端也这么做。
+    it('显示文字就是网址本身时不算藏链接', 0, () => {
+      expect(linkTextHidesUrl('https://telegra.ph/abc', 'https://telegra.ph/abc')).assertFalse();
+      // TDLib 的 url 实体原样是正文里那段字，可能不带协议、带 www、结尾斜杠、大小写不同
+      expect(linkTextHidesUrl('telegra.ph/abc', 'https://telegra.ph/abc')).assertFalse();
+      expect(linkTextHidesUrl('www.Example.com/', 'http://example.com')).assertFalse();
+    });
+
+    it('文字和实际网址不一致就算藏链接，要先确认', 0, () => {
+      expect(linkTextHidesUrl('点这里领红包', 'https://evil.example/x')).assertTrue();
+      expect(linkTextHidesUrl('https://bank.com', 'https://bank.com.evil.example')).assertTrue();
+      expect(linkTextHidesUrl('', 'https://example.com')).assertTrue();
     });
   });
 }

@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "完了"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "送信 (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "送信先を選択"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "%1$d 件のチャットに送信しました"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d 件成功、%2$d 件失敗"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "送信に失敗しました。内容は保持されています"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Telegram からの登録解除に失敗しました：%1$s。通知が届き続ける場合があります。もう一度登録してから解除してください"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "中継サーバーがこの購読をまだ削除していません（%1$s）。次回アプリを開いたときに自動で再試行します"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "メディアを続けてスワイプ"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "メッセージ内の最後の1枚から続けてスワイプすると、止まらずに次のメッセージの写真や動画に移ります"
     }
   ]
 }

@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Xong"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Gửi (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Chọn cuộc trò chuyện"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "Đã gửi tới %1$d cuộc trò chuyện"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d thành công, %2$d thất bại"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Gửi thất bại, nội dung được giữ lại"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Hủy đăng ký với Telegram thất bại: %1$s. Thông báo có thể vẫn đến — hãy đăng ký lại rồi hủy"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "Máy chủ chuyển tiếp chưa xóa gói đăng ký này (%1$s). Sẽ tự thử lại vào lần mở ứng dụng tiếp theo"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Vuốt xem phương tiện liên tục"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "Sau mục cuối của một tin nhắn, tiếp tục vuốt để sang ngay ảnh hoặc video của tin nhắn kế tiếp, không dừng lại"
     }
   ]
 }

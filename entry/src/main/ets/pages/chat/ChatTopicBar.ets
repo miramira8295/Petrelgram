@@ -37,6 +37,7 @@ struct TopicPill {
   @Require @Param row: ForumTopicRow;
   @Param selected: boolean = false;
   @Event onTap: (threadId: number) => void = (_id: number): void => {};
+  @Event onLongPress: (threadId: number) => void = (_id: number): void => {};
 
   build() {
     Row({ space: 5 }) {
@@ -62,7 +63,8 @@ struct TopicPill {
     // 未选项一层轻量 tint；选中项用主色描边表达，避免和顶栏玻璃打架。
     .backgroundColor(this.selected ? Color.Transparent : $r('app.color.material_tint'))
     .border({ width: this.selected ? 1.5 : 0, color: COLOR_PRIMARY })
-    .onClick((): void => { this.onTap(this.row.threadId); });
+    .onClick((): void => { this.onTap(this.row.threadId); })
+    .gesture(LongPressGesture().onAction((): void => { this.onLongPress(this.row.threadId); }));
   }
 }
 
@@ -78,6 +80,11 @@ export struct ChatTopicBar {
   // 话题条目数。**必须监听它**：首次进入时话题列表还没回来、数据源是空的，
   // 那时即使选中项已经定了也找不到下标；等列表到齐、行数一变才滚得动。
   @Param rowCount: number = 0;
+  // 允许用户自己建/删话题（目前只有 Bot 私聊的话题模式，issue #206）：末尾给一个「+」，
+  // 长按胶囊才往上报。不允许时长按什么也不做。
+  @Param canCreate: boolean = false;
+  @Event onCreate: () => void = (): void => {};
+  @Event onLongPressTopic: (threadId: number) => void = (_id: number): void => {};
 
   aboutToAppear(): void {
     this.scrollSelectedIntoView();
@@ -126,13 +133,32 @@ export struct ChatTopicBar {
           TopicPill({
             row: row,
             selected: row.threadId === this.selectedThreadId,
-            onTap: (threadId: number): void => { this.onSelect(threadId); }
+            onTap: (threadId: number): void => { this.onSelect(threadId); },
+            onLongPress: (threadId: number): void => {
+              if (this.canCreate) {
+                this.onLongPressTopic(threadId);
+              }
+            }
           })
             .reuse({ reuseId: (): string => 'topic' });
         }
       }, (row: ForumTopicRow, index: number): string =>
         guardKey(this.source.keyTableId, index,
           `${row.threadId}|${row.name}|${row.unreadCount}|${row.isPinned}`));
+      // 放在末尾而不是开头：开头多一格会让 scrollSelectedIntoView 按数据源算出的下标错一位。
+      if (this.canCreate) {
+        ListItem() {
+          Row() {
+            SymbolGlyph($r('sys.symbol.plus')).fontSize(16).fontColor([COLOR_PRIMARY]);
+          }
+          .width(CHIP_HEIGHT).height(CHIP_HEIGHT)
+          .borderRadius(CHIP_HEIGHT / 2)
+          .backgroundColor($r('app.color.material_tint'))
+          .justifyContent(FlexAlign.Center)
+          .accessibilityText($r('app.string.ft_new_topic'))
+          .onClick((): void => { this.onCreate(); });
+        }
+      }
     }
     .listDirection(Axis.Horizontal)
     .width('100%').height(CARD_HEIGHT)

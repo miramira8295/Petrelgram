@@ -4,7 +4,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { TdClient } from '../tdkit/TdClient';
 import { pushRelayBase, pushRelayToken } from '../tdkit/ApiCredentials';
 import { getOrCreateMeowSubKey } from './MeowPushRegistration';
-import { registerWebPush, WebPushConfig } from './WebPushRegistration';
+import { registerWebPush, setWebPushChannel, WebPushConfig } from './WebPushRegistration';
 import {
   KEY_HMS_PUSH_TOKEN, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED,
   KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_MODE, KEY_WEBPUSH_P256DH, setBoolean, setString
@@ -194,6 +194,7 @@ export async function ensureHmsPushRegistered(client: TdClient): Promise<boolean
     setString(KEY_WEBPUSH_AUTH, parsed.auth);
     setString(KEY_HMS_PUSH_TOKEN, tokenResult.token);
     setString(KEY_WEBPUSH_MODE, WEBPUSH_MODE_HMS);
+    setWebPushChannel(WEBPUSH_MODE_HMS);
     setBoolean(KEY_WEBPUSH_ENABLED, true);
     logI(`[HMS] push registered, receiver id ${receiverId}`);
     return true;

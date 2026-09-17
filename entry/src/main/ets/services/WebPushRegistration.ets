@@ -3,7 +3,8 @@ import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { str } from '../util/strings';
 import { logE } from '../util/log';
 import {
-  KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH, setBoolean, setString
+  KEY_WEBPUSH_AUTH, KEY_WEBPUSH_CHANNEL, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH,
+  WEBPUSH_MODE_CUSTOM, WEBPUSH_MODE_MEOW, setBoolean, setString
 } from '../store/AppSettings';
 
 // 自定义 Web Push 中转通道的注册。
@@ -175,13 +176,66 @@ export function registerWebPush(client: TdClient, config: WebPushConfig): Promis
     .then((res: TdObject): string => parseReceiverId(res));
 }
 
-export function deregisterWebPush(client: TdClient): Promise<void> {
+// 返回失败原因，'' 表示成功。从不 reject：关开关不该被它卡住，但失败必须让调用方
+// 说出来——原来这里只记日志，界面照样显示「已注销」（issue #196）。而且 TDLib 的
+// 注销失败一次就放弃（DeviceTokenManager 里 Unregister 失败直接清掉本地记录、不再
+// 重试），服务器上那份注册会一直留着，用户不知道就永远不会去补救。
+export function deregisterWebPush(client: TdClient): Promise<string> {
   return client.send(buildDeregisterRequest(), REGISTER_TIMEOUT_MS)
-    .then((): void => {})
-    .catch((e: TdError): void => {
-      // 注销失败不该阻塞用户关开关，记录即可。
+    .then((): string => '')
+    .catch((e: TdError): string => {
       logE(`WebPushRegistration.deregister failed: ${e.message}`);
+      return e.message !== '' ? e.message : `${e.code}`;
     });
+}
+
+// ---- 向 Telegram 实际注册着哪条通道（2026-09-17，issue #196/#198）----
+//
+// 原来启动/切账号时的重注册只看总开关 + 自定义那三项，不看通道。MeoW 注册又从不
+// 存自己的三项，于是"先用自托管、后换 MeoW"的人下次启动就被悄悄改回自托管地址：
+// 界面显示 MeoW 已注册，实际 MeoW 不再收到推送；旧自托管服务器还开着的话，推送就
+// 回到那边去（#198 原帖「取消自托管后仍然用自托管推送」）。
+
+// = HmsRelayRegistration.WEBPUSH_MODE_HMS。那个模块 import 本文件，引过来会成环；
+// 单测钉住两者相等。
+export const WEBPUSH_CHANNEL_HMS: string = 'hms';
+
+export interface PushChannelInput {
+  enabled: boolean;
+  channel: string;       // KEY_WEBPUSH_CHANNEL
+  mode: string;          // KEY_WEBPUSH_MODE（老安装推断用）
+  meowNickname: string;  // KEY_MEOW_NICKNAME（老安装推断用）
+}
+
+// 老安装没有通道键：按留下的痕迹推断。昵称还在 = 注册过 MeoW 且没注销（注销会清掉昵称）。
+export function resolvePushChannel(input: PushChannelInput): string {
+  if (!input.enabled) {
+    return '';
+  }
+  if (input.channel !== '') {
+    return input.channel;
+  }
+  if (input.mode === WEBPUSH_CHANNEL_HMS) {
+    return WEBPUSH_CHANNEL_HMS;
+  }
+  return input.meowNickname !== '' ? WEBPUSH_MODE_MEOW : WEBPUSH_MODE_CUSTOM;
+}
+
+// 启动/切账号时拿哪一份去重新注册；null = 不动 Telegram 那边。
+// MeoW 那份没存（老版本注册的）时**不退回自定义那份**——那正是本次要修的错。
+// 华为通道由 HmsRelayRegistration 自己管。
+export function startupPushConfig(channel: string, custom: WebPushConfig, meow: WebPushConfig): WebPushConfig | null {
+  let config: WebPushConfig | null = null;
+  if (channel === WEBPUSH_MODE_CUSTOM) {
+    config = custom;
+  } else if (channel === WEBPUSH_MODE_MEOW) {
+    config = meow;
+  }
+  return config !== null && validateWebPushConfig(config).valid ? config : null;
+}
+
+export function setWebPushChannel(channel: string): void {
+  setString(KEY_WEBPUSH_CHANNEL, channel);
 }
 
 // 彻底忘掉自定义 WebPush 的三项配置（issue #198）。
@@ -194,4 +248,5 @@ export function forgetWebPushConfig(): void {
   setString(KEY_WEBPUSH_P256DH, '');
   setString(KEY_WEBPUSH_AUTH, '');
   setBoolean(KEY_WEBPUSH_ENABLED, false);
+  setWebPushChannel('');
 }

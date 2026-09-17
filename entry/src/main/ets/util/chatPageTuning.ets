@@ -34,7 +34,6 @@ export const REUSE_CAP_MIN_INTERVAL_MS: number = 1000;
 export const PREPARED_MESSAGE_CACHE_LIMIT: number = 1024;
 
 export const CHAT_HEADER_NAV_GUARD_MS: number = 700;
-export const TOP_CARD_LOADING_DELAY_MS: number = 180;
 export const TOP_CARD_ACTION_GUARD_MS: number = 650;
 // A delayed frame callback cannot be drained again inside the same VSync. On
 // the measured 90 Hz device, 12 ms crosses one 11.1 ms frame boundary and lets

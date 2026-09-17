@@ -221,6 +221,16 @@ export const WEBPUSH_MODE_MEOW: string = 'meow';
 export const KEY_MEOW_SUBKEY: string = 'meowSubKey';
 export const KEY_MEOW_SECRET: string = 'meowSecret';
 export const KEY_MEOW_NICKNAME: string = 'meowNickname';
+// MeoW 注册拿到的那一份 Web Push 三项（2026-09-17，issue #196/#198）。原来不存，
+// 启动重注册只能读自定义那三项，于是把 MeoW 悄悄换回旧的自托管地址。
+export const KEY_MEOW_ENDPOINT: string = 'meowEndpoint';
+export const KEY_MEOW_P256DH: string = 'meowP256dh';
+export const KEY_MEOW_AUTH: string = 'meowAuth';
+// 注销时中转没删掉的 subKey：下次登录就绪时自动再删一次（issue #196）。
+export const KEY_MEOW_PENDING_DELETE: string = 'meowPendingDeleteSubKey';
+// 向 Telegram **实际注册着**的通道：'' / 'custom' / 'meow' / 'hms'。和 KEY_WEBPUSH_MODE
+// 不是一回事——那个只是页面停在哪个页签。见 WebPushRegistration.resolvePushChannel。
+export const KEY_WEBPUSH_CHANNEL: string = 'webPushChannel';
 
 // 翻译。目标语言 '' 表示跟随系统语言；整聊天翻译是总开关，关闭时会话里
 // 不出现整聊天翻译入口（单条翻译不受它控制）。
@@ -340,6 +350,11 @@ const DATA_STRING_KEYS: string[] = [
   KEY_MEOW_SUBKEY,
   KEY_MEOW_SECRET,
   KEY_MEOW_NICKNAME,
+  KEY_MEOW_ENDPOINT,
+  KEY_MEOW_P256DH,
+  KEY_MEOW_AUTH,
+  KEY_MEOW_PENDING_DELETE,
+  KEY_WEBPUSH_CHANNEL,
   KEY_TRANSLATE_TARGET,
   KEY_TRANSLATE_OPT_OUT,
   KEY_TRANSLATE_OPT_IN,
@@ -370,9 +385,14 @@ export const KEY_VIDEO_ENGINE_AVPLAYER: string = 'videoEngineAvPlayer';
 // 在设置里关掉。
 export const KEY_CRASH_UPLOAD: string = 'crashUpload';
 
+// 看图连续翻页（issue #167）。开：滑到一条消息的最后一张继续拉，轻轻一带松手就切到下一条
+// 的媒体，新图从拉的那一侧滑进来；关：原来的「拉满 1/4 屏宽 + 继续滑动提示气泡」。默认开。
+export const KEY_VIEWER_CONTINUOUS_HOP: string = 'viewerContinuousHop';
+
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
   KEY_BG_CACHE_WIFI_ONLY,
   KEY_CRASH_UPLOAD,
+  KEY_VIEWER_CONTINUOUS_HOP,
   KEY_SHOW_CONTACTS_TAB,
   KEY_NOTIFY_PRIVATE,
   KEY_NOTIFY_GROUP,

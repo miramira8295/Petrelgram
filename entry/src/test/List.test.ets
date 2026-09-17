@@ -302,6 +302,8 @@ import bottomFollowTest from './BottomFollow.test';
 import olderPagingTest from './OlderPaging.test';
 import netBearerTest from './NetBearer.test';
 import rowTemplateIdTest from './RowTemplateId.test';
+import targetSelectionTest from './TargetSelection.test';
+import shareFanoutTest from './ShareFanout.test';
 
 export default function testsuite() {
   crashRecordStoreTest();
@@ -610,4 +612,6 @@ export default function testsuite() {
   viewerFilmstripTest();
   videoPosterTest();
   forumTopicModelTest();
+  targetSelectionTest();
+  shareFanoutTest();
 }

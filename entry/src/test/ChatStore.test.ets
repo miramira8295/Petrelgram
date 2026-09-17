@@ -267,6 +267,42 @@ export default function chatStoreTest() {
       expect(store.isForum(-100777)).assertTrue();
       expect(store.isForum(999)).assertFalse();
     });
+    // issue #206：开了话题模式的 Bot 私聊和论坛群一样按话题展示；是否允许用户建话题只看 Bot。
+    it('private_chat_with_topic_bot_detected_as_forum', 0, () => {
+      const b = new FakeBridge();
+      const c = new TdClient(b);
+      const store = new ChatStore(c, new UserStore(c));
+      c.start();
+      const botType: TdObject = { '@type': 'userTypeBot' };
+      botType['has_topics'] = true;
+      botType['allows_users_to_create_topics'] = true;
+      const bot: TdObject = { '@type': 'user' };
+      bot['id'] = 555;
+      bot['first_name'] = 'AI';
+      bot['type'] = botType;
+      const updUser: TdObject = { '@type': 'updateUser' };
+      updUser['user'] = bot;
+      b.onReceive(JSON.stringify(updUser));
+      const type: TdObject = { '@type': 'chatTypePrivate' };
+      type['user_id'] = 555;
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = 555;
+      chat['title'] = 'AI';
+      chat['type'] = type;
+      chat['positions'] = [];
+      const newChat: TdObject = { '@type': 'updateNewChat' };
+      newChat['chat'] = chat;
+      b.onReceive(JSON.stringify(newChat));
+      expect(store.isForum(555)).assertTrue();
+      expect(store.canUserCreateTopics(555)).assertTrue();
+      // 论坛超级群不在这一版的「新建」入口范围内
+      expect(store.canUserCreateTopics(-100777)).assertFalse();
+      botType['has_topics'] = false;
+      botType['allows_users_to_create_topics'] = false;
+      b.onReceive(JSON.stringify(updUser));
+      expect(store.isForum(555)).assertFalse();
+      expect(store.canUserCreateTopics(555)).assertFalse();
+    });
     it('administered_channel_direct_messages_group_detected', 0, () => {
       const b = new FakeBridge();
       const c = new TdClient(b);

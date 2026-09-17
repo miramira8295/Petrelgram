@@ -127,3 +127,19 @@ export function applyTopicUpdate(
     return next;
   }));
 }
+
+// 顶栏话题横条显不显示：有话题，或者允许用户新建（一个话题都没有时「新建」入口也在横条上）。
+export function topicBarShown(rowCount: number, canCreate: boolean): boolean {
+  return rowCount > 0 || canCreate;
+}
+
+// 删掉一个话题之后该落在哪：删的不是正在看的就不动；是的话落到剩下的第一个（排序已是
+// 置顶优先，与横条一致）；删光了回到整段会话（0）。
+export function topicAfterDelete(rows: ForumTopicRow[], deletedId: number, currentId: number): number {
+  if (deletedId !== currentId) {
+    return currentId;
+  }
+  const next: ForumTopicRow | undefined =
+    rows.find((row: ForumTopicRow): boolean => row.threadId !== deletedId);
+  return next !== undefined ? next.threadId : 0;
+}

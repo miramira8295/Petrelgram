@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Listo"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Enviar (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Selecciona chats"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "Enviado a %1$d chats"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d enviados, %2$d fallidos"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Error al enviar, contenido conservado"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "No se pudo cancelar el registro en Telegram: %1$s. Pueden seguir llegando notificaciones: regístrate de nuevo y luego cancela"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "El servidor de retransmisión aún no eliminó esta suscripción (%1$s). Se reintentará la próxima vez que abras la app"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Deslizar medios de forma continua"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "Tras el último elemento de un mensaje, sigue deslizando para pasar directamente a las fotos o vídeos del siguiente, sin pausa"
     }
   ]
 }

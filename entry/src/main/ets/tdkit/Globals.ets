@@ -16,7 +16,8 @@ import { NativeCallMedia, nativeCallVersionsJson } from '../services/NativeCallM
 import { NotificationService } from '../services/NotificationService';
 import { SystemNotificationPublisher } from '../services/SystemNotificationPublisher';
 import { registerMessageSyncWork } from '../services/MessageSyncWork';
-import { WebPushConfig, registerWebPush, validateWebPushConfig } from '../services/WebPushRegistration';
+import { WebPushConfig, registerWebPush, resolvePushChannel, startupPushConfig } from '../services/WebPushRegistration';
+import { retryPendingMeowRelayDelete } from '../services/MeowPushRegistration';
 import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
 import { resetScopeMute } from '../store/ScopeMuteStore';
 import { resetScopePreview } from '../store/ScopePreviewStore';
@@ -24,7 +25,8 @@ import { CHAT_TAB_INDEX, KEY_MAIN_TAB } from '../util/chatNav';
 import { resetChatPositions } from '../util/chatResume';
 import { resetChatViewportGeometry } from '../util/chatViewportGeometry';
 import {
-  KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_P256DH
+  KEY_MEOW_AUTH, KEY_MEOW_ENDPOINT, KEY_MEOW_NICKNAME, KEY_MEOW_P256DH, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_CHANNEL,
+  KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_MODE, KEY_WEBPUSH_P256DH
 } from '../store/AppSettings';
 import { StoryStore } from '../store/StoryStore';
 import { systemCallUi } from '../services/SystemCallUi';
@@ -287,6 +289,10 @@ function reregisterWebPush(client: TdClient): void {
   //
   // 不 await：这里在 AuthStage.Ready 的回调里，登录流程不该等一次网络往返。
   // ensureHmsPushRegistered 内部全程静默失败，不会把异常漏出来。
+  // 上次注销时中转没删掉的 MeoW 映射顺手再删一次（issue #196），与注册互不相干。
+  retryPendingMeowRelayDelete().catch((e: Object): void => {
+    logE(`MeoW pending relay delete threw: ${JSON.stringify(e)}`);
+  });
   ensureHmsPushRegistered(client).then((ok: boolean): void => {
     if (ok) {
       return;
@@ -298,17 +304,27 @@ function reregisterWebPush(client: TdClient): void {
   });
 }
 
-// 用已保存的三元组重新向 Telegram 注册。华为通道走不通时的原有行为，一行未改。
+// 用已保存的配置重新向 Telegram 注册。**按实际注册着的通道取那一份**（2026-09-17，
+// issue #196/#198）：原来只读自定义那三项，MeoW 用户下次启动就被换回旧自托管地址。
 function reregisterStoredWebPush(client: TdClient): void {
-  if (!(AppStorage.get<boolean>(KEY_WEBPUSH_ENABLED) ?? false)) {
-    return;
-  }
-  const config: WebPushConfig = {
+  const channel: string = resolvePushChannel({
+    enabled: AppStorage.get<boolean>(KEY_WEBPUSH_ENABLED) ?? false,
+    channel: AppStorage.get<string>(KEY_WEBPUSH_CHANNEL) ?? '',
+    mode: AppStorage.get<string>(KEY_WEBPUSH_MODE) ?? '',
+    meowNickname: AppStorage.get<string>(KEY_MEOW_NICKNAME) ?? ''
+  });
+  const custom: WebPushConfig = {
     endpoint: AppStorage.get<string>(KEY_WEBPUSH_ENDPOINT) ?? '',
     p256dh: AppStorage.get<string>(KEY_WEBPUSH_P256DH) ?? '',
     auth: AppStorage.get<string>(KEY_WEBPUSH_AUTH) ?? ''
   };
-  if (!validateWebPushConfig(config).valid) {
+  const meow: WebPushConfig = {
+    endpoint: AppStorage.get<string>(KEY_MEOW_ENDPOINT) ?? '',
+    p256dh: AppStorage.get<string>(KEY_MEOW_P256DH) ?? '',
+    auth: AppStorage.get<string>(KEY_MEOW_AUTH) ?? ''
+  };
+  const config: WebPushConfig | null = startupPushConfig(channel, custom, meow);
+  if (config === null) {
     return;
   }
   registerWebPush(client, config).then((receiverId: string): void => {

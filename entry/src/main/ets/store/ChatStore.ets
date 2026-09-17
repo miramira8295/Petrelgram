@@ -8,6 +8,9 @@ import { scopeMutedForKind } from './ScopeMuteStore';
 import { listKeyOf, chatListOf } from './ListKey';
 import { formatPreview, previewThumbOf } from '../util/formatPreview';
 import { logE, logI, logW } from '../util/log';
+import { photoHasAnimation } from '../util/photoAnimation';
+import { senderChannelKey } from '../util/senderAvatarChannel';
+import { invalidateSenderAnimation } from '../util/senderAnimationChannel';
 
 const PAGE_LIMIT: number = 30;
 const MAIN: string = 'main';
@@ -84,8 +87,14 @@ export class ChatStore {
   // 「我的收藏」，TDLib 不做任何标记，只能靠这个 id 认出来（issue #8）。
   // 0 表示还没收到。
   private selfId: number = 0;
+  // chat.photo（chatPhotoInfo）.has_animation。频道/匿名管理员以会话身份发言时，
+  // 群聊气泡左侧的头像据此决定要不要取动态头像（issue #140）。不进 ChatEntry：
+  // 条目是会话列表行的内容签名，这个标志列表行用不上。
+  private animatedPhotoChats: Set<number> = new Set();
   private groupCallChats: Map<number, number> = new Map();
   private chatSupergroupIds: Map<number, number> = new Map();
+  // 私聊 chatId → 对方 userId。Bot 私聊的话题模式标志在用户上（issue #206）。
+  private chatPrivateUserIds: Map<number, number> = new Map();
   private forumSupergroupIds: Set<number> = new Set();
   private administeredDirectMessagesSupergroupIds: Set<number> = new Set();
   private groupCallLoading: Set<number> = new Set();
@@ -169,10 +178,22 @@ export class ChatStore {
     }
   }
 
-  // 话题群（forum supergroup）：打开时应进入话题列表而非普通消息流。
+  // 按话题组织的会话：论坛超级群，或开了话题模式的 Bot 私聊（issue #206）。
+  // 详情页据此挂顶栏话题横条、落到第一个话题。
   isForum(chatId: number): boolean {
     const supergroupId = this.chatSupergroupIds.get(chatId);
-    return supergroupId !== undefined && this.forumSupergroupIds.has(supergroupId);
+    if (supergroupId !== undefined) {
+      return this.forumSupergroupIds.has(supergroupId);
+    }
+    const userId = this.chatPrivateUserIds.get(chatId);
+    return userId !== undefined && this.users.botHasTopics(userId);
+  }
+
+  // 横条上给不给「新建话题」、长按给不给删除。只覆盖 Bot 私聊（allows_users_to_create_topics）；
+  // 论坛超级群要按管理员/成员权限算，这一版不做（群里建话题仍走话题列表页）。
+  canUserCreateTopics(chatId: number): boolean {
+    const userId = this.chatPrivateUserIds.get(chatId);
+    return userId !== undefined && this.users.botAllowsUserTopics(userId);
   }
 
   // Only the administrators' aggregate direct-messages group needs a sender
@@ -340,6 +361,22 @@ export class ChatStore {
       }
     });
     return foldUnreadBadge(sources);
+  }
+
+  hasAnimatedPhoto(chatId: number): boolean {
+    return this.animatedPhotoChats.has(chatId);
+  }
+
+  // 记动态头像标志；头像换了就作废已取到的动态头像。
+  private notePhotoAnimation(chatId: number, photo: TdObject | undefined, photoChanged: boolean): void {
+    if (photoHasAnimation(photo)) {
+      this.animatedPhotoChats.add(chatId);
+    } else {
+      this.animatedPhotoChats.delete(chatId);
+    }
+    if (photoChanged) {
+      invalidateSenderAnimation(senderChannelKey(chatId, false));
+    }
   }
 
   photoFileIdOf(chatId: number): number {
@@ -629,6 +666,11 @@ export class ChatStore {
       if (supergroupId > 0) {
         this.chatSupergroupIds.set(id, supergroupId);
       }
+    } else if (chatType !== undefined && (chatType['@type'] as string | undefined) === 'chatTypePrivate') {
+      const userId: number = (chatType['user_id'] as number | undefined) ?? 0;
+      if (userId > 0) {
+        this.chatPrivateUserIds.set(id, userId);
+      }
     }
     const previous = this.chats.get(id);
     const previousGroupCallId = previous?.liveGroupCallId ?? 0;
@@ -639,6 +681,7 @@ export class ChatStore {
     const groupCallId = this.videoChatId(chat['video_chat'] as TdObject | undefined);
     const photoFileId = this.smallPhotoId(chat['photo'] as TdObject | undefined);
     const samePhoto = previous !== undefined && previous.photoFileId === photoFileId;
+    this.notePhotoAnimation(id, chat['photo'] as TdObject | undefined, previous !== undefined && !samePhoto);
     const sameGroupCall = previous !== undefined && previous.liveGroupCallId === groupCallId;
     const entry: ChatEntry = {
       id,
@@ -885,6 +928,7 @@ export class ChatStore {
     }
     const c = cloneEntry(e);
     c.photoFileId = this.smallPhotoId(update['photo'] as TdObject | undefined);
+    this.notePhotoAnimation(id, update['photo'] as TdObject | undefined, c.photoFileId !== e.photoFileId);
     c.avatarPath = '';
     this.chats.set(id, c);
     this.notify(id);

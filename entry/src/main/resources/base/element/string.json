@@ -12431,6 +12431,42 @@
     {
       "name": "cp_nothing_to_cache",
       "value": "没有需要缓存的视频"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "发送 (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "选择要发送的会话"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "已发送给 %1$d 个会话"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "成功 %1$d 个，失败 %2$d 个"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "发送失败，内容已保留"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "向 Telegram 注销失败：%1$s。推送可能仍在投递，请稍后重新注册一次再注销"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "中转服务器暂时没删掉这份订阅（%1$s），下次打开应用会自动重试"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "看图连续翻页"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "看到一条消息的最后一张后继续滑，直接切到下一条消息的图片或视频，不再停下来提示"
     }
   ]
 }

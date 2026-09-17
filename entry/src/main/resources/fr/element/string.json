@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Terminé"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Envoyer (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Sélectionner des discussions"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "Envoyé à %1$d discussions"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d envoyés, %2$d échecs"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Échec de l'envoi, contenu conservé"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Échec de la désinscription auprès de Telegram : %1$s. Des notifications peuvent encore arriver — réinscrivez-vous puis désinscrivez-vous"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "Le serveur relais n'a pas encore supprimé cet abonnement (%1$s). Nouvel essai à la prochaine ouverture de l'app"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Balayage continu des médias"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "Après le dernier élément d'un message, continuez à balayer pour passer directement aux photos ou vidéos du message suivant, sans pause"
     }
   ]
 }

@@ -5,13 +5,14 @@ import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
-  KEY_MEOW_NICKNAME, KEY_MEOW_SECRET, KEY_WEBPUSH_ACCEPTED, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED,
-  KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_MODE, KEY_WEBPUSH_P256DH, WEBPUSH_MODE_CUSTOM, WEBPUSH_MODE_MEOW,
-  setBoolean, setString
+  KEY_MEOW_NICKNAME, KEY_MEOW_SECRET, KEY_WEBPUSH_ACCEPTED, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_CHANNEL,
+  KEY_WEBPUSH_ENABLED, KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_MODE, KEY_WEBPUSH_P256DH, WEBPUSH_MODE_CUSTOM,
+  WEBPUSH_MODE_MEOW, setBoolean, setString
 } from '../../store/AppSettings';
 import {
   ParsedSubscription, SUBSCRIPTION_JSON_HINT, WebPushConfig, WebPushValidation,
-  deregisterWebPush, forgetWebPushConfig, parseSubscriptionJson, registerWebPush, validateWebPushConfig
+  deregisterWebPush, forgetWebPushConfig, parseSubscriptionJson, registerWebPush, resolvePushChannel,
+  setWebPushChannel, validateWebPushConfig
 } from '../../services/WebPushRegistration';
 import {
   MeowDeregisterOutcome, MeowRegisterOutcome, confirmMeowRegistration, deregisterMeowPush,
@@ -54,6 +55,7 @@ struct WebPushPage {
   @StorageProp(KEY_WEBPUSH_MODE) storedMode: string = '';
   @StorageProp(KEY_MEOW_NICKNAME) storedMeowNickname: string = '';
   @StorageProp(KEY_MEOW_SECRET) storedMeowSecret: string = '';
+  @StorageProp(KEY_WEBPUSH_CHANNEL) storedChannel: string = '';
   // 草稿态：编辑中的值不立刻落盘，点「保存并注册」才写入并生效。
   @State endpoint: string = '';
   @State p256dh: string = '';
@@ -89,7 +91,7 @@ struct WebPushPage {
     this.endpoint = this.storedEndpoint;
     this.p256dh = this.storedP256dh;
     this.auth = this.storedAuth;
-    if (this.pushEnabled && this.storedEndpoint !== '') {
+    if (this.registeredChannel() === WEBPUSH_MODE_CUSTOM && this.storedEndpoint !== '') {
       this.statusOk = true;
       this.statusText = str('wp_enabled');
     }
@@ -97,10 +99,23 @@ struct WebPushPage {
     // 地址时永远回落到手工模式（见 resolveWebPushMode 注释）。
     this.mode = resolveWebPushMode(meowRelayEnabled(), this.storedMode);
     this.meowNickname = this.storedMeowNickname;
-    if (this.pushEnabled && this.mode === WEBPUSH_MODE_MEOW && this.storedMeowNickname !== '') {
+    if (this.meowRegistered() && this.storedMeowNickname !== '') {
       this.meowStatusOk = true;
       this.meowStatusText = str('wp_enabled');
     }
+  }
+
+  // 向 Telegram 实际注册着哪条通道。两个页签各看各的：原来都只看总开关，MeoW 注册着时
+  // 自定义页签也显示「已启用」，在那边点注销还会把 MeoW 顺手注销掉（issue #196/#198）。
+  private registeredChannel(): string {
+    return resolvePushChannel({
+      enabled: this.pushEnabled, channel: this.storedChannel,
+      mode: this.storedMode, meowNickname: this.storedMeowNickname
+    });
+  }
+
+  private customRegistered(): boolean {
+    return this.registeredChannel() === WEBPUSH_MODE_CUSTOM;
   }
 
   private setMode(next: string): void {
@@ -136,9 +151,14 @@ struct WebPushPage {
 
   private disable(): void {
     setBoolean(KEY_WEBPUSH_ENABLED, false);
+    setWebPushChannel('');
     this.statusOk = false;
     this.statusText = str('wp_disabled');
-    deregisterWebPush(getTdClient());
+    deregisterWebPush(getTdClient()).then((error: string): void => {
+      if (error !== '') {
+        this.statusText = str('wp_deregister_failed', error);
+      }
+    });
   }
 
   private saveAndRegister(): void {
@@ -160,14 +180,17 @@ struct WebPushPage {
       setString(KEY_WEBPUSH_P256DH, config.p256dh.trim());
       setString(KEY_WEBPUSH_AUTH, config.auth.trim());
       setBoolean(KEY_WEBPUSH_ENABLED, true);
+      setWebPushChannel(WEBPUSH_MODE_CUSTOM);
       this.statusOk = true;
       this.statusText = receiverId !== ''
         ? str('wp_registered_with_id', receiverId)
         : str('wp_registered_no_id');
       this.busy = false;
     }).catch((e: TdError): void => {
-      // 注册失败不打开开关 —— 否则用户会以为通知已经生效。
+      // 注册失败不打开开关 —— 否则用户会以为通知已经生效。通道也清掉：TDLib 注册失败会
+      // 把本地那份 token 转成注销（DeviceTokenManager），原来注册着的也没了。
       setBoolean(KEY_WEBPUSH_ENABLED, false);
+      setWebPushChannel('');
       this.statusOk = false;
       this.statusText = str('wp_register_failed', e.message);
       this.busy = false;
@@ -274,13 +297,27 @@ struct WebPushPage {
       return;
     }
     this.busy = true;
-    forgetWebPushConfig();
+    // MeoW 注册着时只抹自定义那三项，不能连 Telegram 那边的 MeoW 注册一起注销。
+    const wasCustom: boolean = this.customRegistered();
+    if (wasCustom) {
+      forgetWebPushConfig();
+    } else {
+      setString(KEY_WEBPUSH_ENDPOINT, '');
+      setString(KEY_WEBPUSH_P256DH, '');
+      setString(KEY_WEBPUSH_AUTH, '');
+    }
     this.endpoint = '';
     this.p256dh = '';
     this.auth = '';
-    deregisterWebPush(getTdClient()).then((): void => {
+    if (!wasCustom) {
       this.statusOk = false;
-      this.statusText = str('wp_disabled');
+      this.statusText = '';
+      this.busy = false;
+      return;
+    }
+    deregisterWebPush(getTdClient()).then((error: string): void => {
+      this.statusOk = false;
+      this.statusText = error !== '' ? str('wp_deregister_failed', error) : str('wp_disabled');
       this.busy = false;
     });
   }
@@ -291,11 +328,12 @@ struct WebPushPage {
     }
     this.busy = true;
     setBoolean(KEY_WEBPUSH_ENABLED, false);
-    deregisterWebPush(getTdClient()).then((): void => {
+    setWebPushChannel('');
+    deregisterWebPush(getTdClient()).then((error: string): void => {
       this.statusOk = false;
       // 只注销订阅，保留已填的三项 —— 用户多半是想换个地址再注册，
-      // 清空会逼他重新粘一遍。
-      this.statusText = str('wp_deregistered');
+      // 清空会逼他重新粘一遍。失败要说出来：TDLib 注销失败一次就不再重试。
+      this.statusText = error !== '' ? str('wp_deregister_failed', error) : str('wp_deregistered');
       this.busy = false;
     });
   }
@@ -363,7 +401,7 @@ struct WebPushPage {
   // MeoW 通道是否已经注册好：开关开着、模式是 MeoW。两个都来自 AppStorage，
   // 注册成功 / 注销都会当场改它们，这里不用自己记状态。
   private meowRegistered(): boolean {
-    return this.pushEnabled && this.mode === WEBPUSH_MODE_MEOW;
+    return this.registeredChannel() === WEBPUSH_MODE_MEOW;
   }
 
   private meowCancelCode(): void {
@@ -381,12 +419,14 @@ struct WebPushPage {
     const secret = this.storedMeowSecret;
     setBoolean(KEY_WEBPUSH_ENABLED, false);
     deregisterMeowPush(getTdClient(), subKey, secret).then((outcome: MeowDeregisterOutcome): void => {
-      // 中转端取消订阅失败不影响本地已经停止投递这一事实，但要让用户知道
-      // 服务端那份订阅记录可能还留着。
+      // 两半任何一半没成都要说出来（issue #196：原来界面显示已注销，推送照旧）。
+      // Telegram 那半失败更要紧，放前面。
       this.meowPendingId = '';
       this.meowCode = '';
-      this.meowStatusOk = outcome.relayWarning === '';
-      this.meowStatusText = outcome.relayWarning !== '' ? outcome.relayWarning : str('wp_deregistered');
+      this.meowStatusOk = outcome.telegramError === '' && outcome.relayWarning === '';
+      this.meowStatusText = outcome.telegramError !== ''
+        ? str('wp_deregister_failed', outcome.telegramError)
+        : (outcome.relayWarning !== '' ? outcome.relayWarning : str('wp_deregistered'));
       this.meowBusy = false;
     }).catch((e: Error): void => {
       this.meowStatusOk = false;
@@ -533,7 +573,7 @@ struct WebPushPage {
           Column() {
             Row() {
               Text($r('app.string.wp_enable')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1);
-              Toggle({ type: ToggleType.Switch, isOn: this.pushEnabled })
+              Toggle({ type: ToggleType.Switch, isOn: this.customRegistered() })
                 .selectedColor(COLOR_PRIMARY)
                 .enabled(!this.busy)
                 .onChange((next: boolean): void => this.onToggle(next));
@@ -588,7 +628,7 @@ struct WebPushPage {
               Button($r('app.string.wp_deregister'))
                 .fontSize(15).width('100%').height(44)
                 .backgroundColor(COLOR_PAGE_BG).fontColor('#FF3B30')
-                .enabled(!this.busy)
+                .enabled(!this.busy && this.customRegistered())
                 .onClick((): void => this.deregister());
               // 「注销」保留三项，「清除配置」才是"我不要了"（issue #198）。
               Button($r('app.string.wp_clear_config'))

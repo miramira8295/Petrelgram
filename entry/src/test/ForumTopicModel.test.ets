@@ -1,9 +1,11 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { TdObject } from '../main/ets/tdkit/TdTypes';
+import { TdObject, TdRequest } from '../main/ets/tdkit/TdTypes';
 import {
   ForumTopicRow, applyTopicInfoUpdate, applyTopicUpdate, parseForumTopic, sortTopicRows,
-  topicIconColor
+  topicAfterDelete, topicBarShown, topicIconColor
 } from '../main/ets/util/forumTopicModel';
+import { BotTopicFlags, botTopicFlagsOf } from '../main/ets/util/botTopicMode';
+import { forumTopicCreateRequest, forumTopicDeleteRequest } from '../main/ets/util/forumTopicRequests';
 
 // 话题模型（2026-09-16）。原来这三件事（配色表、解析、排序）长在
 // pages/chat/ForumTopicsPage 里，只有那一个页面能用。
@@ -146,6 +148,69 @@ export default function forumTopicModelTest() {
       ];
       sortTopicRows(rows);
       expect(rows[0].threadId).assertEqual(1);
+    });
+    // Bot 私聊的话题模式（issue #206，2026-09-17）。Bot API 9.3 起 Bot 可以在私聊里开话题，
+    // TDLib 1.8.65 在 userTypeBot 上给出两个标志。
+    it('reads_bot_topic_mode_flags', 0, () => {
+      const type: TdObject = { '@type': 'userTypeBot' };
+      type['has_topics'] = true;
+      type['allows_users_to_create_topics'] = true;
+      const bot: TdObject = { '@type': 'user' };
+      bot['type'] = type;
+      const flags: BotTopicFlags = botTopicFlagsOf(bot);
+      expect(flags.hasTopics).assertTrue();
+      expect(flags.allowsUserTopics).assertTrue();
+      const plainType: TdObject = { '@type': 'userTypeBot' };
+      const plainBot: TdObject = { '@type': 'user' };
+      plainBot['type'] = plainType;
+      expect(botTopicFlagsOf(plainBot).hasTopics).assertFalse();
+      // 普通用户就算带着同名字段也不算
+      const regularType: TdObject = { '@type': 'userTypeRegular' };
+      regularType['has_topics'] = true;
+      const human: TdObject = { '@type': 'user' };
+      human['type'] = regularType;
+      expect(botTopicFlagsOf(human).hasTopics).assertFalse();
+      // 没开话题却允许用户建话题：没有意义，一律不给入口
+      const oddType: TdObject = { '@type': 'userTypeBot' };
+      oddType['allows_users_to_create_topics'] = true;
+      const odd: TdObject = { '@type': 'user' };
+      odd['type'] = oddType;
+      expect(botTopicFlagsOf(odd).allowsUserTopics).assertFalse();
+      expect(botTopicFlagsOf(undefined).hasTopics).assertFalse();
+    });
+
+    // 允许用户建话题的会话，一个话题都还没有时横条也要在——「新建」入口就在横条上。
+    it('topic_bar_shows_when_there_are_topics_or_creation_is_allowed', 0, () => {
+      expect(topicBarShown(0, false)).assertFalse();
+      expect(topicBarShown(3, false)).assertTrue();
+      expect(topicBarShown(0, true)).assertTrue();
+    });
+
+    it('builds_create_and_delete_topic_requests', 0, () => {
+      const create: TdRequest | null = forumTopicCreateRequest(42, '  新会话  ');
+      expect(create !== null).assertTrue();
+      expect(create!['@type'] as string).assertEqual('createForumTopic');
+      expect(create!['chat_id'] as number).assertEqual(42);
+      expect(create!['name'] as string).assertEqual('新会话');
+      expect(forumTopicCreateRequest(42, '   ') === null).assertTrue();
+      expect(forumTopicCreateRequest(0, 'x') === null).assertTrue();
+      const del: TdRequest | null = forumTopicDeleteRequest(42, 9);
+      expect(del !== null).assertTrue();
+      expect(del!['@type'] as string).assertEqual('deleteForumTopic');
+      expect(del!['forum_topic_id'] as number).assertEqual(9);
+      expect(forumTopicDeleteRequest(42, 0) === null).assertTrue();
+    });
+
+    // 删掉的是正在看的那个话题：落到剩下的第一个；都删光了回到整段会话（0）。
+    it('lands_on_a_remaining_topic_after_deleting_the_current_one', 0, () => {
+      const rows: ForumTopicRow[] = [
+        parseForumTopic(topicObject(5, 'A', 0, true, 0), '', ''),
+        parseForumTopic(topicObject(6, 'B', 0, false, 0), '', ''),
+        parseForumTopic(topicObject(7, 'C', 0, false, 0), '', '')
+      ];
+      expect(topicAfterDelete(rows, 6, 7)).assertEqual(7);
+      expect(topicAfterDelete(rows, 5, 5)).assertEqual(6);
+      expect(topicAfterDelete([rows[1]], 6, 6)).assertEqual(0);
     });
   });
 }

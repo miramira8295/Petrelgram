@@ -4,7 +4,14 @@ import {
 } from '../main/ets/pages/chat/HeaderIdentitySession';
 import { ChatEntry, computeInitials } from '../main/ets/store/ChatEntry';
 import { MessageStore } from '../main/ets/store/MessageStore';
-import { TdObject } from '../main/ets/tdkit/TdTypes';
+import { TdObject, TdRequest } from '../main/ets/tdkit/TdTypes';
+import {
+  fullInfoRequestForChatType, photoFromFullInfo, photoHasAnimation, pickPhotoAnimationFileId
+} from '../main/ets/util/photoAnimation';
+import {
+  claimSenderAnimation, invalidateSenderAnimation, markSenderAnimationBroken, resetSenderAnimationForTest,
+  resolveSenderAnimation, SENDER_ANIMATION_RETRY_MS, senderAnimationFor, subscribeSenderAnimation
+} from '../main/ets/util/senderAnimationChannel';
 import { SecretChatInfo } from '../main/ets/util/secretChat';
 import { CHAT_HEADER_NAV_GUARD_MS } from '../main/ets/util/chatPageTuning';
 
@@ -161,6 +168,15 @@ function cachedPrivateEntry(): ChatEntry {
 
 function secretInfo(userId: number, outbound: boolean, state: string): SecretChatInfo {
   return { id: 1, userId: userId, state: state, isOutbound: outbound, layer: 1 };
+}
+
+// 造一份 animatedChatPhoto（只带文件 id，够判据用）。
+function animatedPhoto(fileId: number): TdObject {
+  const file: TdObject = { '@type': 'file' };
+  file['id'] = fileId;
+  const a: TdObject = { '@type': 'animatedChatPhoto' };
+  a['file'] = file;
+  return a;
 }
 
 export default function headerIdentitySessionTest() {
@@ -387,5 +403,127 @@ export default function headerIdentitySessionTest() {
         expect(a.title).assertEqual('会话 A'); // dispose 不清 title，顺带确认没被误清
         b.dispose();
       });
+    // 动态头像取哪一份（2026-09-17）。官方定义：animation 最大 1280×1280，small_animation
+    // 160×160。真机实测同一个头像大份 1.9MB、小份 72KB（27 倍）。顶栏和气泡左侧都是 38vp，
+    // 只该用小份；小份"可能为空，即使大份存在"，所以要能退回大份。
+    it('动态头像优先取小份，没有小份退回大份', 0, (): void => {
+      const both: TdObject = { '@type': 'chatPhoto' };
+      both['animation'] = animatedPhoto(11);
+      both['small_animation'] = animatedPhoto(22);
+      expect(pickPhotoAnimationFileId(both, true)).assertEqual(22);
+      expect(pickPhotoAnimationFileId(both, false)).assertEqual(11);
+      const bigOnly: TdObject = { '@type': 'chatPhoto' };
+      bigOnly['animation'] = animatedPhoto(11);
+      expect(pickPhotoAnimationFileId(bigOnly, true)).assertEqual(11);
+      expect(pickPhotoAnimationFileId({ '@type': 'chatPhoto' } as TdObject, true)).assertEqual(0);
+      expect(pickPhotoAnimationFileId(undefined, true)).assertEqual(0);
+      // TDLib 对 "may be null" 的字段可能真给 null：不能按 null 往下取
+      const nulls: TdObject = JSON.parse('{"@type":"chatPhoto","small_animation":null}') as TdObject;
+      nulls['animation'] = animatedPhoto(11);
+      expect(pickPhotoAnimationFileId(nulls, true)).assertEqual(11);
+    });
+
+    it('完整资料里的头像字段三处兜底', 0, (): void => {
+      const full: TdObject = { '@type': 'userFullInfo' };
+      const publicPhoto: TdObject = { '@type': 'chatPhoto' };
+      publicPhoto['id'] = 3;
+      full['public_photo'] = publicPhoto;
+      expect((photoFromFullInfo(full) as TdObject)['id'] as number).assertEqual(3);
+      const personal: TdObject = { '@type': 'chatPhoto' };
+      personal['id'] = 2;
+      full['personal_photo'] = personal;
+      expect((photoFromFullInfo(full) as TdObject)['id'] as number).assertEqual(2);
+      const main: TdObject = { '@type': 'chatPhoto' };
+      main['id'] = 1;
+      full['photo'] = main;
+      expect((photoFromFullInfo(full) as TdObject)['id'] as number).assertEqual(1);
+      expect(photoFromFullInfo({ '@type': 'userFullInfo' } as TdObject) === undefined).assertTrue();
+    });
+
+    it('按会话类型选完整资料请求', 0, (): void => {
+      const priv: TdObject = { '@type': 'chatTypePrivate' };
+      priv['user_id'] = 5;
+      const rp: TdRequest = fullInfoRequestForChatType(priv) as TdRequest;
+      expect(rp['@type'] as string).assertEqual('getUserFullInfo');
+      expect(rp['user_id'] as number).assertEqual(5);
+      const sg: TdObject = { '@type': 'chatTypeSupergroup' };
+      sg['supergroup_id'] = 6;
+      const rs: TdRequest = fullInfoRequestForChatType(sg) as TdRequest;
+      expect(rs['@type'] as string).assertEqual('getSupergroupFullInfo');
+      expect(rs['supergroup_id'] as number).assertEqual(6);
+      const bg: TdObject = { '@type': 'chatTypeBasicGroup' };
+      bg['basic_group_id'] = 7;
+      expect((fullInfoRequestForChatType(bg) as TdRequest)['@type'] as string).assertEqual('getBasicGroupFullInfo');
+      expect(fullInfoRequestForChatType({ '@type': 'chatTypeSecret' } as TdObject) === null).assertTrue();
+      expect(fullInfoRequestForChatType(undefined) === null).assertTrue();
+    });
+
+    // 会话列表/消息发送者手里只有 profilePhoto / chatPhotoInfo，它们只带 has_animation
+    // 标志；没有动画的人一次完整资料请求都不该发。
+    it('头像带不带动画看 has_animation', 0, (): void => {
+      const yes: TdObject = { '@type': 'profilePhoto' };
+      yes['has_animation'] = true;
+      const no: TdObject = { '@type': 'profilePhoto' };
+      no['has_animation'] = false;
+      expect(photoHasAnimation(yes)).assertTrue();
+      expect(photoHasAnimation(no)).assertFalse();
+      expect(photoHasAnimation({ '@type': 'profilePhoto' } as TdObject)).assertFalse();
+      expect(photoHasAnimation(undefined)).assertFalse();
+    });
+    // 群聊气泡左侧动态头像的进程级通道（issue #140）。同一个人在一屏里出现十几次，
+    // 完整资料 + 下载只该发一趟；失败要冷却，不然每次滚回来都重打一遍。
+    it('发送者动态头像：同一人只取一次，取到后广播', 0, (): void => {
+      resetSenderAnimationForTest();
+      const got: string[] = [];
+      const unsub = subscribeSenderAnimation('u1', (path: string): void => { got.push(path); });
+      const token = claimSenderAnimation('u1', 1000);
+      expect(token > 0).assertTrue();
+      expect(claimSenderAnimation('u1', 1001)).assertEqual(0);
+      resolveSenderAnimation('u1', token, '/a.mp4', 1002);
+      expect(senderAnimationFor('u1')).assertEqual('/a.mp4');
+      expect(got.join(',')).assertEqual('/a.mp4');
+      expect(claimSenderAnimation('u1', 1003)).assertEqual(0);
+      unsub();
+      resolveSenderAnimation('u1', token, '/b.mp4', 1004); // 已落定，重复回来不覆盖
+      expect(senderAnimationFor('u1')).assertEqual('/a.mp4');
+    });
+
+    it('发送者动态头像：取失败要冷却一段再试', 0, (): void => {
+      resetSenderAnimationForTest();
+      const token = claimSenderAnimation('u2', 1000);
+      resolveSenderAnimation('u2', token, '', 1000);
+      expect(claimSenderAnimation('u2', 1000 + SENDER_ANIMATION_RETRY_MS - 1)).assertEqual(0);
+      expect(claimSenderAnimation('u2', 1000 + SENDER_ANIMATION_RETRY_MS) > 0).assertTrue();
+    });
+
+    it('发送者动态头像：播放失败就不再取，换头像才重来', 0, (): void => {
+      resetSenderAnimationForTest();
+      const got: string[] = [];
+      subscribeSenderAnimation('u3', (path: string): void => { got.push(path); });
+      const token = claimSenderAnimation('u3', 0);
+      resolveSenderAnimation('u3', token, '/c.mp4', 0);
+      markSenderAnimationBroken('u3');
+      expect(senderAnimationFor('u3')).assertEqual('');
+      expect(claimSenderAnimation('u3', 10 * SENDER_ANIMATION_RETRY_MS)).assertEqual(0);
+      invalidateSenderAnimation('u3');
+      expect(claimSenderAnimation('u3', 10 * SENDER_ANIMATION_RETRY_MS) > 0).assertTrue();
+      expect(got.join(',')).assertEqual('/c.mp4,');
+    });
+
+    // 换了头像：正在路上的那一趟回来时已经过期，不能把旧视频发出去。
+    it('发送者动态头像：换头像后旧请求的结果作废', 0, (): void => {
+      resetSenderAnimationForTest();
+      const got: string[] = [];
+      subscribeSenderAnimation('c4', (path: string): void => { got.push(path); });
+      const stale = claimSenderAnimation('c4', 0);
+      invalidateSenderAnimation('c4');
+      const fresh = claimSenderAnimation('c4', 0);
+      expect(fresh > 0 && fresh !== stale).assertTrue();
+      resolveSenderAnimation('c4', stale, '/old.mp4', 0);
+      expect(senderAnimationFor('c4')).assertEqual('');
+      resolveSenderAnimation('c4', fresh, '/new.mp4', 0);
+      expect(senderAnimationFor('c4')).assertEqual('/new.mp4');
+      expect(got.join(',')).assertEqual('/new.mp4');
+    });
   });
 }

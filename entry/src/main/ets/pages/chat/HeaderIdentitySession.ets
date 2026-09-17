@@ -73,6 +73,8 @@ import { CHAT_HEADER_NAV_GUARD_MS } from '../../util/chatPageTuning';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
+import { fullInfoRequestForChatType } from '../../util/photoAnimation';
+import { fetchPhotoAnimationPath, HEADER_ANIMATION_PRIORITY } from '../../services/PhotoAnimationFetch';
 
 // applyResolvedChat/refreshIsBot/applySecretChat 算出的新值，一次性回传给页面
 // 写进这 6 个页面字段（所有权裁决：被 cacheKey/成员资格/翻译多域读写，留页面）。
@@ -676,57 +678,19 @@ export class HeaderIdentitySession {
 
   // 头部动态头像。full info 的 photo 是 chatPhoto，可选的 animation 是一小段
   // MP4；有就下下来交给 AvatarView（它自己看省电开关决定放不放）。
+  // 取小份（160×160）：顶栏头像只有 38vp，大份最大 1280×1280，真机实测同一个头像
+  // 大份 1.9MB、小份 72KB。小份缺席时退回大份（2026-09-17）。
   refreshAvatarAnimation(type: TdObject | undefined): void {
     this.avatarAnimPath = '';
     const chatId: number = this.host.chatId();
-    const typeName: string = type !== undefined
-      ? ((type['@type'] as string | undefined) ?? '') : '';
-    let req: TdRequest | null = null;
-    if (typeName === 'chatTypePrivate') {
-      req = { '@type': 'getUserFullInfo' };
-      req['user_id'] = (type!['user_id'] as number | undefined) ?? 0;
-    } else if (typeName === 'chatTypeSupergroup') {
-      req = { '@type': 'getSupergroupFullInfo' };
-      req['supergroup_id'] = (type!['supergroup_id'] as number | undefined) ?? 0;
-    } else if (typeName === 'chatTypeBasicGroup') {
-      req = { '@type': 'getBasicGroupFullInfo' };
-      req['basic_group_id'] = (type!['basic_group_id'] as number | undefined) ?? 0;
-    }
+    const req: TdRequest | null = fullInfoRequestForChatType(type);
     if (req === null) {
       return;
     }
-    getTdClient().send(req, 15000).then((full: TdObject): void => {
-      if (this.host.chatId() !== chatId) {
-        return; // 期间换了会话
+    fetchPhotoAnimationPath(req, true, HEADER_ANIMATION_PRIORITY, 'header').then((path: string): void => {
+      if (path !== '' && this.host.chatId() === chatId) {
+        this.avatarAnimPath = path; // 期间换了会话就丢掉
       }
-      const photo = (full['photo'] as TdObject | undefined)
-        ?? (full['personal_photo'] as TdObject | undefined)
-        ?? (full['public_photo'] as TdObject | undefined);
-      const anim = photo !== undefined ? (photo['animation'] as TdObject | undefined) : undefined;
-      const file = anim !== undefined ? (anim['file'] as TdObject | undefined) : undefined;
-      const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
-      if (fileId <= 0) {
-        return;
-      }
-      const dl: TdRequest = { '@type': 'downloadFile' };
-      dl['file_id'] = fileId;
-      dl['priority'] = 2;
-      dl['synchronous'] = true;
-      getTdClient().send(dl, 30000).then((f: TdObject): void => {
-        if (this.host.chatId() !== chatId) {
-          return;
-        }
-        const local = f['local'] as TdObject | undefined;
-        const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
-        if (path !== '') {
-          this.avatarAnimPath = path;
-        }
-      }).catch((e: TdError): void => {
-        logE(`HeaderIdentitySession.refreshAvatarAnimation download failed: ${e.message}`);
-      });
-    }).catch((e: TdError): void => {
-      // 拿不到 full info 就保持静态头像，不打扰。
-      logE(`HeaderIdentitySession.refreshAvatarAnimation fullInfo failed: ${e.message}`);
     });
   }
 

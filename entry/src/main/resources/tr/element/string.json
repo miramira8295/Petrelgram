@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Bitti"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Gönder (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Sohbet seçin"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "%1$d sohbete gönderildi"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d gönderildi, %2$d başarısız"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Gönderilemedi, içerik korundu"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Telegram kaydı kaldırılamadı: %1$s. Bildirimler gelmeye devam edebilir — yeniden kaydolup ardından kaydı kaldırın"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "Aktarma sunucusu bu aboneliği henüz silmedi (%1$s). Uygulama bir sonraki açılışta yeniden deneyecek"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Medyada kesintisiz kaydırma"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "Bir mesajdaki son öğeden sonra kaydırmaya devam edin; duraklamadan sonraki mesajın fotoğraf veya videolarına geçin"
     }
   ]
 }

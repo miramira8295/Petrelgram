@@ -12139,6 +12139,42 @@
     {
       "name": "cp_fullscreen_done",
       "value": "Fertig"
+    },
+    {
+      "name": "fw_send_n",
+      "value": "Senden (%1$d)"
+    },
+    {
+      "name": "fw_pick_targets",
+      "value": "Chats auswählen"
+    },
+    {
+      "name": "fw_sent_to_n",
+      "value": "An %1$d Chats gesendet"
+    },
+    {
+      "name": "fw_sent_partial",
+      "value": "%1$d gesendet, %2$d fehlgeschlagen"
+    },
+    {
+      "name": "fw_sent_none",
+      "value": "Senden fehlgeschlagen, Inhalt behalten"
+    },
+    {
+      "name": "wp_deregister_failed",
+      "value": "Abmeldung bei Telegram fehlgeschlagen: %1$s. Pushes können weiter ankommen – erneut registrieren und dann abmelden"
+    },
+    {
+      "name": "meow_deregister_relay_retry",
+      "value": "Der Relay-Server hat dieses Abo noch nicht entfernt (%1$s). Beim nächsten App-Start wird es erneut versucht"
+    },
+    {
+      "name": "ix_viewer_continuous",
+      "value": "Medien durchgehend wischen"
+    },
+    {
+      "name": "ix_viewer_continuous_sub",
+      "value": "Nach dem letzten Element einer Nachricht weiterwischen, um ohne Pause zu den Fotos oder Videos der nächsten Nachricht zu gelangen"
     }
   ]
 }
