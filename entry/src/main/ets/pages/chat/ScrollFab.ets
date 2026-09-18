@@ -2,9 +2,9 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
-  overlayBackdropBlur, overlayGlassFill, MATERIAL_EPOCH
+  plainBackdropBlur, plainGlassFill, MATERIAL_EPOCH
 } from '../../util/overlayMaterial';
-import { materialModifier } from '../../util/materialModifier';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
 import {
   BADGE_HEIGHT, unreadBadgeOffsetX, unreadBadgeText, unreadBadgeWidth
 } from '../../util/unreadBadge';
@@ -27,12 +27,15 @@ export struct ScrollFab {
   @Prop unreadCount: number;
   // 正在滚回底部：转圈并禁用，避免连点排队。
   @Prop busy: boolean;
+  // 箭头的颜色由页面按**壁纸**算好传进来（chatChrome）：这颗浮在壁纸上，
+  // 跟深浅色模式取色会在"浅色模式 + 黑壁纸"下变成黑箭头压黑底。
+  @Prop iconColor: ResourceColor;
 
   onTap: () => void = (): void => {};
 
   @Styles
   fabNormalStyle() {
-    .backgroundColor(overlayGlassFill('card', $r('app.color.surface')))
+    .backgroundColor(plainGlassFill($r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
@@ -51,20 +54,29 @@ export struct ScrollFab {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
         } else {
           // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
-          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([COLOR_TEXT_PRIMARY])
+          SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([this.iconColor])
             .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), true);
         }
       }
       .width(46).height(46)
-      .border({ width: 0.7, color: $r('app.color.divider') })
       .borderRadius(23)
       .stateStyles({ normal: this.fabNormalStyle, pressed: this.fabPressedStyle })
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
         curve: Curve.EaseOut
       })
-      .backdropBlur(overlayBackdropBlur('card'))
-      .attributeModifier(materialModifier('card'))
+      // 玻璃自绘，和输入栏里那颗同样 46×46 的圆控件逐属性一致（见
+      // ChatComposerInput 的附件键）：组件级 systemMaterial 已被系统收回，
+      // overlayGlassFill('card') 在材质"可用"的设备上返回**透明**、把观感全交给
+      // materialModifier，而那一层在这颗圆上什么都不画——结果就是一个只剩描边的
+      // 空心圈，浮在自绘玻璃的输入栏上面格格不入（用户 2026-09-18 截图）。
+      // 描边也一并去掉：输入栏那颗控件没有，而 divider 压在深色照片上就是一道白圈。
+      // 底色只写在 stateStyles 的 normal 档里，别在这里再写一遍——链上后写的那条
+      // 会盖掉按压态。
+      .backdropBlur(plainBackdropBlur('control'))
+      .visualEffect(hdsVisualEffect('control'))
+      // 阴影保留：那颗附件键坐在已经是玻璃的输入栏里，这颗是浮在照片上的，
+      // 没有一点投影在浅色图上会糊掉。
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
       .enabled(!this.busy)
       .accessibilityText(this.busy

@@ -30,10 +30,11 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { holdPlayerJobs } from './WebmStickerView';
 import { setChatAnimationSuspended } from '../../util/chatAnimationGate';
+import { parkSenderAnimations } from '../../util/senderAnimationPark';
 import { EmojiPanel } from './EmojiPanel';
 import { StickerItem } from './StickerPicker';
 import { GifItem } from './GifPicker';
-import { getVoicePlayback } from '../../services/VoicePlayback';
+import { AudioSource, getVoicePlayback, streamAudioSource } from '../../services/VoicePlayback';
 import { openLocalFile } from '../../util/openLocalFile';
 import { getTdClient, getUserStore, getChatStore, getChatThemeStore } from '../../tdkit/Globals';
 // B14 的四个建议控制器经宿主取值器拿 TDLib 客户端（缝的理由见
@@ -68,6 +69,7 @@ import { shouldCompete, slotKey } from './playSlot';
 import { MediaViewerOverlay } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
+import { AudioFavoriteFlow } from './AudioFavoriteFlow';
 import { ChatOverlayState, ChatOverlaySheetKind } from './ChatOverlayState';
 import { ChatTimelineHost } from './ChatTimelineHost';
 import { AttachActions } from './AttachActions';
@@ -170,6 +172,7 @@ import {
   KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY,
   KEY_CURRENT_NETWORK_TYPE,
+  KEY_EXTERNAL_LINK_ACTION,
   KEY_POWER_SMOOTH_TRANSITIONS,
   powerAnimationDuration,
   powerSavingActive
@@ -240,6 +243,9 @@ import {
 import { titleBarStyle } from '../../util/hdsTitleBar';
 import { navigateToChatProfile, navigateToProfile } from '../../util/profileNav';
 import { beginLinkNav, endLinkNav, endLinkNavIf } from '../../util/linkTapGuard';
+import {
+  EXT_LINK_DEFAULT, EXT_LINK_OPEN, normalizeExternalLinkPolicy
+} from '../../util/externalLinkPolicy';
 import { attachActions } from '../../util/attachActions';
 import { AttachPanel } from './AttachPanel';
 import { InlineResultsBar, StickerSuggestionBar } from './ComposerStrips';
@@ -266,7 +272,7 @@ import { buildRowPageInputs, RowPageInputs } from '../../util/rowPageInputs';
 // 直接引用。
 import { logE, logI, logW } from '../../util/log';
 import {
-  chromeDarkMaskOf, chromeIconColorOf, chromeOnLightBgOf, chromeTextColorOf
+  chromeDarkMaskOf, chromeIconColorOf, chromeOnDarkBgOf, chromeOnLightBgOf, chromeTextColorOf
 } from '../../util/chatChrome';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
@@ -1467,6 +1473,9 @@ export struct ChatPage {
         onAudioNext: (messageId: number): void => {
           this.musicQueue.next(this.messages, messageId);
         },
+        onAudioSave: (messageId: number): void => { this.mediaSave.onFileSave(messageId); },
+        // 收藏面板整个在 pages/chat/AudioFavoriteFlow 里，本页只记下"给哪条消息开"。
+        onAudioFavorite: (messageId: number): void => { this.favoriteAudioId = messageId; },
         onAudioSeek: (messageId: number, fraction: number): void => {
           this.musicQueue.seek(messageId, fraction);
         },
@@ -1918,12 +1927,19 @@ export struct ChatPage {
     return chromeDarkMaskOf(this.chatBg.dimming, this.chatBgDim);
   }
 
+  // 浅色模式 + 暗壁纸的那一半（用户 2026-09-18：黑壁纸上按钮图标还是黑的）。
+  // tint 要传**浅色**那档的玻璃色——合成的是浅色模式下那层玻璃。
+  private chromeOnDarkBg(): boolean {
+    return chromeOnDarkBgOf(this.appDark, this.chatBg.colors, glassTintHex(false),
+      this.chromeDarkMask());
+  }
+
   private chromeIcon(): ResourceColor {
-    return chromeIconColorOf(this.chromeOnLightBg(), this.appDark);
+    return chromeIconColorOf(this.chromeOnLightBg(), this.appDark, this.chromeOnDarkBg());
   }
 
   private chromeText(): ResourceColor {
-    return chromeTextColorOf(this.chromeOnLightBg());
+    return chromeTextColorOf(this.chromeOnLightBg(), this.chromeOnDarkBg());
   }
   private bgStore: ChatBackgroundStore | null = null;
   // 输入框上方那一条（普通输入 / 回复某条 / 编辑某条）的状态机整套搬进了
@@ -2115,6 +2131,9 @@ export struct ChatPage {
   // 同时活着，各自的淡出不能互相影响。
   private rowLeave: RowLeaveChannel = new RowLeaveChannel();
   // 会话操作条（issue #201 第 8 条），从 ChatEntry 镜像过来，空串 = 没有。
+  // 音频卡片上「收藏」胶囊的目标消息；0 = 面板不显示。面板本体在
+  // pages/chat/AudioFavoriteFlow（本页只留接线，见 [[no-new-code-in-chatpage]]）。
+  @Local favoriteAudioId: number = 0;
   @Local actionBarKind: string = '';
   @Local actionBarCanUnarchive: boolean = false;
   @Local liveLocationMessageId: number = 0;
@@ -2266,6 +2285,18 @@ export struct ChatPage {
     startMusic: (id: number, path: string, dur: number): void => {
       getVoicePlayback().startMusic(id, path, dur);
       this.publishNowPlayingFor(id, path, dur);
+    },
+    // 边下边放：没有本地路径也能出声。迷你条要的曲目信息照发，path 留空——
+    // 它只用来做暂停/继续，而流那一路的暂停继续由播放器自己管。
+    playStream: (id: number, fileId: number, sizeBytes: number, mimeType: string,
+      dur: number, forceStart: boolean): void => {
+      const source: AudioSource = streamAudioSource(fileId, sizeBytes, mimeType);
+      if (forceStart) {
+        getVoicePlayback().startMusicSource(id, source, dur);
+      } else {
+        getVoicePlayback().toggleMusicSource(id, source, dur);
+      }
+      this.publishNowPlayingFor(id, '', dur);
     },
     seek: (id: number, fraction: number): void => { getVoicePlayback().seek(id, fraction); },
     requestDownload: (id: number, failed: boolean): void => {
@@ -2671,6 +2702,17 @@ export struct ChatPage {
   // Task 6 迁移本页时 leaveChat 成功回调原样留了 router.back()，是漏改，
   // 不是有意为之。标题栏返回键现在由 HDS 自己弹出同一条 Navigation 栈。
   // 会话操作条：从 ChatEntry 镜像两个标量；同值不写，免得惊动 TopBanners。
+  // 收藏面板的副标题用。找不到就给空串——面板照样能开，只是标题少一行。
+  private audioTitleOf(messageId: number): string {
+    const found = this.messages.find((m: MessageEntry): boolean => m.id === messageId);
+    return found !== undefined ? found.audioTitle : '';
+  }
+
+  private audioPerformerOf(messageId: number): string {
+    const found = this.messages.find((m: MessageEntry): boolean => m.id === messageId);
+    return found !== undefined ? found.audioPerformer : '';
+  }
+
   private syncActionBar(): void {
     const e: ChatEntry | undefined = getChatStore().entryOf(this.chatId);
     const kind: string = e !== undefined ? e.actionBar : '';
@@ -4214,6 +4256,10 @@ export struct ChatPage {
   }
 
   private handleWillHide(): void {
+    // 退场一开始就把群聊动态头像卸下来：播放器于是在转场那 600ms 里逐个释放，
+    // 而不是全挤在转场结束那一帧（真机 trace：那一帧 47–57ms，
+    // SenderAnimatedLayer 是单节点销毁成本的冠军，1.02ms/个 × 17）。
+    parkSenderAnimations(true);
     coordinateChatPageWillHide({
       stopScrollActivity: (): void => { setScrollActive(false); },
       cancelInitialTransition: (): void => { this.cancelInitialMessageTransitionSettle(); },
@@ -4226,6 +4272,8 @@ export struct ChatPage {
   }
 
   private handleShown(): void {
+    // 回到这一页（或者退场被取消了）：放开停车闸，头像该动的继续动。
+    parkSenderAnimations(false);
     this.videoPrefetch.resume();
     // 收藏贴纸表：长按菜单要在构建那一刻就知道该写"收藏"还是"取消收藏"，
     // 等不了一次往返。拉一次，之后走本地那份（见 store/FavoriteStickers）。
@@ -5701,7 +5749,14 @@ export struct ChatPage {
     }
     // Telegram 内链（t.me/@名/tg://）应用内直接解析，不弹「打开/复制」层
     // ——那层是给外部网页链接的（用户反馈 t.me 被当浏览器链接多问了一道）。
-    if (askFirst && !isTelegramInternalUrl(url)) {
+    //
+    // 只在「直接打开」档才由本页弹：另外两档（复制 / 弹窗选择）已经由
+    // util/webBrowserNav 那个唯一分叉点接管，本页再弹一次就是两层窗
+    // （2026-09-18 新增的外部链接三档，判据见 util/externalLinkPolicy）。
+    const linkPolicy: string =
+      AppStorage.get<string>(KEY_EXTERNAL_LINK_ACTION) ?? EXT_LINK_DEFAULT;
+    if (askFirst && !isTelegramInternalUrl(url)
+      && normalizeExternalLinkPolicy(linkPolicy) === EXT_LINK_OPEN) {
       this.offerLinkAction(url);
       return;
     }
@@ -8474,6 +8529,7 @@ export struct ChatPage {
           appearanceEpoch: this.appearanceEpoch,
           materialEpoch: this.materialEpoch,
           onLightBg: this.chromeOnLightBg(),
+          onDarkBg: this.chromeOnDarkBg(),
           appDark: this.appDark,
           // B8：上面那 12 个标量 @Param 换成一个控制器引用——ChatHeader 直接
           // 持有 header、在自己的 build()/@Builder 里读 @Trace，本页不再算
@@ -8973,6 +9029,14 @@ export struct ChatPage {
       // 一个 @Trace 都不读。代价是那个 width/height 100% 的根 Stack 一直挂着，
       // 命中测试要按开合切——处理在 ChatOverlayHost.build() 末尾的
       // hitTestBehavior 那一行，改动那一行之前先读它上面的说明。
+      AudioFavoriteFlow({
+        targetMessageId: this.favoriteAudioId,
+        chatId: this.chatId,
+        trackTitle: this.audioTitleOf(this.favoriteAudioId),
+        trackArtist: this.audioPerformerOf(this.favoriteAudioId),
+        bottomSafe: this.bottomSafe,
+        onClose: (): void => { this.favoriteAudioId = 0; }
+      });
       ChatOverlayHost({
         overlayState: this.overlayState,
         messages: this.messages,
@@ -9034,6 +9098,8 @@ export struct ChatPage {
           ScrollFab({
             unreadCount: this.unreadBadge,
             busy: this.scrollToBottomBusy,
+            // 它直接浮在壁纸上，前景必须跟着壁纸翻，不能跟深浅色模式。
+            iconColor: this.chromeIcon(),
             onTap: (): void => { this.onScrollFabTap(); }
           });
         }

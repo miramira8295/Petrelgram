@@ -1,4 +1,6 @@
-import { caretAfterExternalEdit, pasteFitsLimit } from '../../util/composerText';
+import {
+  caretAfterExternalEdit, isComposerEcho, pasteFitsLimit, rememberEmitted
+} from '../../util/composerText';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
 import { shouldOfferFullscreenEdit } from '../../util/composerExpand';
 import { pushSheetDismiss } from '../../util/sheetDismissStack';
@@ -22,6 +24,10 @@ const COMPOSER_MAX_LENGTH: number = 4096;
 
 // Shared geometry for the editor and its height measurement, both in this file.
 //
+// 记几份自己发出去的文本用来认回声。几份就够：回声最多滞后一两帧，留多了反而
+// 会把"撤销回几步之前"误判成回声。
+const EMITTED_KEEP: number = 6;
+
 // These three have to agree with the TextArea's own lineHeight/padding: the
 // editor height is computed from them, and a mismatch clips the last line
 // instead of scrolling to it. (原注释留在 ChatPage.ets 顶部成了孤儿——那三个
@@ -74,6 +80,9 @@ export struct ChatComposerInput {
   // 光标，外部改写后用 caretAfterExternalEdit 推出新位置再 caretPosition 放回去。
   private lastDraftSeen: string = '';
   private caretSeen: number = 0;
+  // 最近几份**自己发出去**的文本。页面把 draft 原样传回来时要认得出是回声，
+  // 否则会被当成外部改写、把光标挪走（见 util/composerText.isComposerEcho）。
+  private emittedDrafts: string[] = [];
   @Param composerPlaceholder: string = '';
   @Param composerController: TextAreaController = new TextAreaController();
   // 输入框的真实宽度，editorHeight() 拿它做排版约束。原来是绕一圈的：本组件
@@ -282,6 +291,13 @@ export struct ChatComposerInput {
   @Monitor('draft')
   onDraftReplacedOutside(): void {
     if (this.draft === this.lastDraftSeen) {
+      return;
+    }
+    // 自己刚发出去那几份里的任何一份 = 回声，不是外部改写。**不碰光标**：
+    // 用户可能正在中间打字，页面传回来的往往是上上次那份（onChange 比
+    // @Param 回灌快），按错位的一对文本算出来的位置基本落在末尾。
+    if (isComposerEcho(this.emittedDrafts, this.draft)) {
+      this.lastDraftSeen = this.draft;
       return;
     }
     const next: number = caretAfterExternalEdit(this.lastDraftSeen, this.draft, this.caretSeen);
@@ -496,6 +512,7 @@ export struct ChatComposerInput {
                 })
                 .onChange((value: string): void => {
                   this.lastDraftSeen = value;
+                  this.emittedDrafts = rememberEmitted(this.emittedDrafts, value, EMITTED_KEEP);
                   this.onDraftChange(value);
                   // 当场问一次（拿到的是上一拍的），再隔一帧问一次拿真值。
                   this.refreshEditorLines();
@@ -629,6 +646,7 @@ export struct ChatComposerInput {
         accentColor: this.accentColor,
         onCommit: (text: string): void => {
           this.lastDraftSeen = text;
+          this.emittedDrafts = rememberEmitted(this.emittedDrafts, text, EMITTED_KEEP);
           this.onDraftChange(text);
         },
         onClose: (): void => { this.fullscreenOpen = false; },

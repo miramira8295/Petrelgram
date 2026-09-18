@@ -12141,6 +12141,298 @@
       "value": "เสร็จสิ้น"
     },
     {
+      "name": "dc_title",
+      "value": "ศูนย์ดาวน์โหลด"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "ดาวน์โหลดและสื่อในแคช"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "ทั้งหมด"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "วิดีโอ"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "รูปภาพ"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "เพลง"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "ข้อความเสียง"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "ไฟล์"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "ค้นหาชื่อไฟล์หรือแชท"
+    },
+    {
+      "name": "dc_loading",
+      "value": "กำลังโหลดดาวน์โหลดและแคช…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "แคชในเบื้องหลัง"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "กำลังแคชในเบื้องหลัง — ดูที่ ตั้งค่า › ศูนย์ดาวน์โหลด"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "แคชไว้แล้ว"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "เริ่มแคชไม่สำเร็จ"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "ลบออกจากแคช"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "ลบออกจากแคชแล้ว"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "ที่เก็บข้อมูล"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "ล้างแคช"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "ล้าง"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "สื่อและไฟล์ในแคชจะถูกลบ สำเนาที่บันทึกไว้ในเครื่องจะยังอยู่"
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "ล้างแคชแล้ว %1$s"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "แคช %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "บันทึกแล้ว %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "ว่าง %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "กำลังดำเนินการ · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "เสร็จแล้ว · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "หยุดทั้งหมด"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "เริ่มทั้งหมด"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/วิ · เหลือ %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "กำลังดาวน์โหลด · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "หยุดชั่วคราว · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "อยู่ในคิว · รอรายการก่อนหน้า"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "ดาวน์โหลดล้มเหลว · แตะเพื่อลองใหม่"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "แคชเท่านั้น"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "บันทึกแล้ว"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "หยุด"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "ดำเนินต่อ"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "ลองใหม่"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "ยกเลิก"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "บันทึกลงเครื่อง"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "เปิด"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "เกิดข้อผิดพลาด ลองอีกครั้ง"
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "ยกเลิก \"%1$s\" แล้ว"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "ลบแคชแล้ว (คงสำเนาที่บันทึกไว้)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "เลือก"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "เสร็จ"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "เลือกแล้ว %1$d"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "บันทึก"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "ลบ"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "บันทึกแล้ว %1$d รายการ"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "ลบแล้ว %1$d รายการ"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "ไม่พบรายการดาวน์โหลด"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "ลองคำค้นหรือประเภทอื่น"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "กำลังแคชในเบื้องหลัง %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "กำลังแคช %1$d รายการ"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "รอ Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "รอเครือข่าย · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "ดำเนินต่อด้วยเน็ตมือถือ"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "ใช้เน็ตมือถือ"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "แสดงในแชท"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "แคชเบื้องหลังเฉพาะ Wi‑Fi"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "หยุดชั่วคราวเมื่อใช้เน็ตมือถือ อนุญาตทีละรายการได้"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "ตามวันที่"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "ตามขนาด"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "แคชอื่น · %1$d รายการ"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "ไฟล์ที่ไม่ทราบแหล่งที่มา · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "เลือกทั้งหมด"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "ยกเลิกเลือกทั้งหมด"
+    },
+    {
+      "name": "dc_undo",
+      "value": "เลิกทำ"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "แคชแล้ว"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "กำลังแคช %1$d วิดีโอในเบื้องหลัง"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "ไม่มีวิดีโอที่ต้องแคช"
+    },
+    {
       "name": "fw_send_n",
       "value": "ส่ง (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "เมื่อถึงรายการสุดท้ายของข้อความ ปัดต่อเพื่อไปยังรูปหรือวิดีโอของข้อความถัดไปทันทีโดยไม่หยุด"
+    },
+    {
+      "name": "mc_title",
+      "value": "ศูนย์เพลง"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "เล่นเพลงจากแชทและจัดการคอลเลกชัน"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "กำลังเล่น"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "ของฉัน"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "ยังไม่มีเพลง"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "ไม่ทราบศิลปิน"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "ในเครื่อง"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "คลาวด์"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "รูปแบบ"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "บิตเรต"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "ตัวอย่าง"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "ขนาด"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "เปิดศูนย์เพลงเพื่อดูแหล่งที่มา บิตเรต และรูปแบบ"
+    },
+    {
+      "name": "mc_cast",
+      "value": "ถ่ายโอน"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "เอาต์พุตเสียง"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "อุปกรณ์เล่นที่ใช้ได้"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "ไม่มีอุปกรณ์เล่น"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "อุปกรณ์อื่น"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "เปิดตัวเลือกถ่ายโอนของระบบ"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "กำลังใช้งาน"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "พร้อมใช้งาน"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "หูฟังในตัว"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "ลำโพง"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "มีสาย"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "บลูทูธ"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "แคสต์"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "ระยะไกล"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "อุปกรณ์"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "เพลย์ลิสต์"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "เพิ่มลงคอลเลกชัน"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "คอลเลกชันของฉัน"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "คอลเลกชันใหม่"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "สร้างคอลเลกชัน"
+    },
+    {
+      "name": "mc_create",
+      "value": "สร้าง"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "ชื่อคอลเลกชัน"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "สร้างคอลเลกชันใหม่สำหรับเพลงของคุณ"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "หลังสร้างจะเพิ่ม “%1$s” ให้อัตโนมัติ"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "คอลเลกชัน"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "ยังไม่มีเพลง — ใช้ “เพิ่มลงคอลเลกชัน”"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "เล่นทั้งหมด"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "สุ่ม"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "ลบคอลเลกชัน"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d เพลง"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d คอลเลกชัน · %2$d เพลง"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "ค้นหาเพลง ศิลปิน อัลบั้ม"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "เพลงทั้งหมด"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "ผลลัพธ์ · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "ไม่พบ “%1$s”"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "ยังไม่มีเพลงในแชทของคุณ"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "ลิงก์ภายนอก"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "เปิดในเบราว์เซอร์"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "แตะครั้งเดียวเปิดทันที เหมือนเดิม"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "แตะเพื่อคัดลอก"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "คัดลอกที่อยู่เท่านั้น ไม่เชื่อมต่อออนไลน์"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "แตะแล้วถาม"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "แสดงที่อยู่จริงก่อน แล้วเลือกเปิดหรือคัดลอก"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "ลิงก์ที่เปิดในแอป (t.me, tg://) ไม่ได้รับผลกระทบ หากข้อความที่แสดงซ่อนที่อยู่อื่น ระบบจะถามก่อนเสมอ"
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "คลาสสิก"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "ดาวน์โหลดแล้ว"
+    },
+    {
+      "name": "music_save",
+      "value": "บันทึก"
+    },
+    {
+      "name": "music_favorited",
+      "value": "อยู่ในคอลเลกชัน"
+    },
+    {
+      "name": "music_favorite",
+      "value": "เพิ่ม"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "ชื่อว่างหรือถูกใช้แล้ว"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "เลือกสักเพลง"
     }
   ]
 }

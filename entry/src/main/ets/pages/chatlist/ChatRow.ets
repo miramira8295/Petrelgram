@@ -3,6 +3,8 @@ import { DRAFT_EPOCH, localDraftPreview } from '../../store/DraftStore';
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { HOME_CARD_INSET_VP, HOME_CARD_MARGIN_VP } from '../../util/listCardGeometry';
+import { CHAT_SWIPE_VERTICAL_GUTTER_VP } from '../../util/chatListSwipe';
+import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
 import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
 import { scopeMutedForKind } from '../../store/ScopeMuteStore';
 import { FOLDER_TAGS_ENABLED, FolderInfo } from '../../store/FolderStore';
@@ -45,9 +47,16 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
 const MENU_DISMISS_MS: number = 150;
-// 卡片外沿离屏幕边（头像再内缩 HOME_CARD_INSET_VP，落在顶部标题的起始线上，见 util/listCardGeometry）；
+// 卡片外沿离屏幕边（头像再内缩 HOME_CARD_INSET_VP，两段相加 = 12vp，见 util/listCardGeometry）；
 // 滑动操作背景也复用这一个值。
 export const CHAT_ROW_SIDE_GUTTER: number = HOME_CARD_MARGIN_VP;
+// 卡片上下外沿。**相邻两张卡片之间的间距是它的两倍**（外边距不折叠），
+// 所以这个数就是「item 间距 ÷ 2」；左右滑动作的背景用同一个数（CHAT_SWIPE_VERTICAL_GUTTER_VP），
+// 改了这里那边也要跟着改，否则滑出来的底色和卡片对不齐。
+export const CHAT_ROW_VERTICAL_GUTTER: number = CHAT_SWIPE_VERTICAL_GUTTER_VP;
+// 行高/头像/间距/预览字号是一组的，两套档位与那条不变式见 util/chatRowMetrics。
+// 走哪一档由列表算好后用 compact 传进来——**判据不在行里算**：三个
+// @StorageProp 挂在每一行上就是每行三份订阅，而同屏有十来行。
 
 // Reused across list rows. Every chat row is the same shape, so there is no
 // reuseId to split: one pool serves the whole list.
@@ -86,6 +95,9 @@ export struct ChatRow {
   @StorageProp(CHAT_LIST_NOW) nowSec: number = Math.floor(Date.now() / 1000);
   // 聊天设置 → 聊天列表视图: the preview line wraps to two lines in 三行 mode.
   @StorageProp(KEY_THREE_LINES) threeLines: boolean = false;
+  // 紧凑档（手机，含平板强制单栏）。由 MainTabBody / ChatListView 按
+  // splitMetrics.isSplitLayout 算好传进来，默认紧凑。
+  @Prop compact: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_PARTICLES) particlesEnabled: boolean = true;
   @StorageProp(FOLDER_TAGS_ENABLED) folderTagsEnabled: boolean = false;
@@ -245,6 +257,10 @@ export struct ChatRow {
 
   // 记下长按落点相对行中心的水平偏移。在手势回调里记而不是在 onTouch 的 Down 里：
   // 实测行右半边的按下到不了 onTouch（被行内子元素吃掉），放在那儿会让菜单沿用
+  private spec(): ChatRowSpec {
+    return chatRowSpec(!this.compact);
+  }
+
   // 上一次按压的旧偏移。
   private recordMenuOffset(event: GestureEvent): void {
     const fingers = event.fingerList;
@@ -527,6 +543,7 @@ export struct ChatRow {
   build() {
     Row({ space: 12 }) {
       AvatarView({
+        avatarSize: this.spec().avatar,
         avatarPath: this.chat.avatarPath,
         initials: this.chat.initials,
         colorSeed: this.chat.id,
@@ -536,10 +553,8 @@ export struct ChatRow {
         savedMessages: this.chat.isSavedMessages,
         loadImage: this.loadImages
       });
-      // 标题与预览之间 6：4 太挤（用户实测）。行的 minHeight 是 72，而
-      // 17 号标题 + 14 号预览 + 6 + 上下各 8 的内边距 ≈ 64，仍在 72 以内，
-      // 所以这一档不会把行撑高，只是把两行分开。
-      Column({ space: 6 }) {
+      // 标题与预览之间。这个数和行高、头像、预览字号是一组的，见 CHAT_ROW_MIN_HEIGHT。
+      Column({ space: this.spec().titleGap }) {
         Row() {
           // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
           // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
@@ -594,7 +609,7 @@ export struct ChatRow {
           Text(this.draftPreview() !== '' ? this.draftPreview()
             : (CHATLIST_PREVIEW_THUMB_ENABLED && this.chat.lastMessageThumb !== ''
               ? stripPreviewIcon(this.chat.lastMessageText) : this.chat.lastMessageText))
-            .fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
+            .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(this.threeLines ? 2 : 1)
             .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
         }.width('100%').alignItems(VerticalAlign.Top);
@@ -625,12 +640,17 @@ export struct ChatRow {
         }
       }.alignItems(HorizontalAlign.End);
     }
-    // 真卡片外沿 8vp，头像内缩 8vp，与首页大标题起始线（16vp）对齐（2026-09-15 用户：一行一张卡片，
-    // 头像对齐顶部 Petrelgram，8+8 四周留白均匀）。壁纸生效时卡片交给现有 'card'
+    // 真卡片外沿 4vp、上下 2vp（相邻两张之间 2+2 = 4vp），头像内缩 8vp
+    // ——外边距不折叠，两张卡片之间就是两条 margin 相加。2026-09-18 用户把
+    // 四周收到 4vp；头像因此落在 4+8=12vp，与顶部大标题 16vp 的对齐有意放弃
+    // （见 util/listCardGeometry）。壁纸生效时卡片交给现有 'card'
     // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
     // overlayGlassFill 会自然退回原来的可读性实底。
     .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
-    .margin({ left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
+    .margin({
+      left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER,
+      top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
+    })
     .borderRadius(16)
     // 描边跟着玻璃走，**颜色也要跟着换**。
     //
@@ -651,7 +671,7 @@ export struct ChatRow {
     .attributeModifier(materialModifierWhen('card', this.rowGlassEnabled() &&
       (!this.appWallpaperOn || this.liveEffects)))
     .clip(true)
-    .constraintSize({ minHeight: 72 })
+    .constraintSize({ minHeight: this.spec().minHeight })
     .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H, top: ROW_PAD_V, bottom: ROW_PAD_V })
     .alignItems(VerticalAlign.Center)
     .stateStyles({

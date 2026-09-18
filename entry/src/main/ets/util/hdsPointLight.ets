@@ -36,8 +36,14 @@ function buildEffect(surface: OverlaySurface): VisualEffect {
   if (pointLightOn(surface)) {
     builder.pointLight({
       sourceType: sourceTypeOf(hdsMaterialLevelIndex()),
-      // 边框 + 内容都照亮：只照边框在输入栏这种大面上几乎看不出来。
-      illuminatedType: hdsEffect.PointLightIlluminatedType.BORDER_CONTENT,
+      // **只照边框。** 原来是 BORDER_CONTENT（边框 + 内容都照亮），理由是"只照边框
+      // 在输入栏这种大面上几乎看不出来"——而那正是代价：小圆键上是一圈光边，
+      // 'bar' / 'card' 这种大面上就成了整块发白。2026-09-18 群里三个人先后报
+      // 「上面的框和下面的框都发白，光效很强烈」「主页正常就聊天页」「没之前好看」，
+      // 判据也对得上：全工程的 visualEffect 调用全在 pages/chat，首页那边走的是
+      // 早被系统收回的组件级 materialModifier，所以一点光效都没有。
+      // 大面上看不出来是**想要**的结果，不是缺陷。
+      illuminatedType: hdsEffect.PointLightIlluminatedType.BORDER,
       // color 不给 = 用系统默认光色（官方示例里 lightEffect 也是 color: undefined）。
       options: {}
     });

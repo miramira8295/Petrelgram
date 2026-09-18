@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { chromeDarkMaskOf, chromeIconColorOf, chromeOnLightBgOf, chromeSitsOnLight,
-  chromeTextColorOf } from '../main/ets/util/chatChrome';
+import { chromeBackdropLuminance, chromeDarkMaskOf, chromeIconColorOf, chromeOnDarkBgOf,
+  chromeOnLightBgOf, chromeSitsOnLight, chromeTextColorOf } from '../main/ets/util/chatChrome';
 import { COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT, COLOR_ICON_SECONDARY, COLOR_TEXT_ON_LIGHT,
   COLOR_TEXT_PRIMARY } from '../main/ets/util/theme';
 
@@ -257,5 +257,43 @@ export default function chatChromeTest() {
       expect(chromeOnLightBgOf(true, [], TINT_MATERIAL, 1)).assertFalse();
       expect(chromeOnLightBgOf(false, [], TINT_MATERIAL, 1)).assertFalse();
     });
+    // ── 浅色模式 + 暗壁纸（用户 2026-09-18 实报：黑壁纸上按钮图标还是黑的）──
+    //
+    // 这一半原来整个不存在：chromeOnLightBgOf 自带 `appDark &&` 的闸，浅色模式
+    // 恒返回 false，前景于是永远按"亮底"取深色。
+
+    it('浅色模式 + 纯黑壁纸：翻成亮前景', 0, (): void => {
+      const onDark: boolean = chromeOnDarkBgOf(false, ['#FF000000'], '#40FFFFFF', 0);
+      expect(onDark).assertTrue();
+      expect(chromeIconColorOf(false, false, onDark)).assertEqual(COLOR_ICON_ON_DARK);
+      expect(chromeTextColorOf(false, onDark)).assertEqual(COLOR_ICON_ON_DARK);
+    });
+
+    it('浅色模式 + 浅壁纸：不动，还是原来的前景', 0, (): void => {
+      const onDark: boolean = chromeOnDarkBgOf(false, ['#FFEFEFF4'], '#40FFFFFF', 0);
+      expect(onDark).assertFalse();
+    });
+
+    // 深色模式那一半的行为必须一个字不变——这次改动是纯增量。
+    it('深色模式不走这条：暗壁纸下它本来就是亮前景', 0, (): void => {
+      expect(chromeOnDarkBgOf(true, ['#FF000000'], '#40FFFFFF', 0)).assertFalse();
+    });
+
+    it('壁纸是图片（没有颜色）时判不了，保持旧行为', 0, (): void => {
+      expect(chromeOnDarkBgOf(false, [], '#40FFFFFF', 0)).assertFalse();
+      expect(chromeBackdropLuminance([], '#40FFFFFF', 0)).assertEqual(-1);
+    });
+
+    // 两条阈值之间留了一段中间地带（DARK 0.10 < L < LIGHT 0.18），灰壁纸落在
+    // 里面就哪一侧都不翻——否则浅灰壁纸会在两种前景之间来回跳。
+    it('中间灰落在两条阈值之间，哪一侧都不翻', 0, (): void => {
+      const grey: string[] = ['#FF676767'];
+      const l: number = chromeBackdropLuminance(grey, '#00000000', 0);
+      expect(l > 0.10).assertTrue();
+      expect(l < 0.18).assertTrue();
+      expect(chromeOnDarkBgOf(false, grey, '#00000000', 0)).assertFalse();
+      expect(chromeOnLightBgOf(true, grey, '#00000000', 0)).assertFalse();
+    });
+
   });
 }

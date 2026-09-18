@@ -12141,6 +12141,298 @@
       "value": "完了"
     },
     {
+      "name": "dc_title",
+      "value": "ダウンロードセンター"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "ダウンロードとキャッシュ済みメディア"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "すべて"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "動画"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "写真"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "音楽"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "ボイス"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "ファイル"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "ファイル名やチャットを検索"
+    },
+    {
+      "name": "dc_loading",
+      "value": "ダウンロードとキャッシュを読み込み中…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "バックグラウンドでキャッシュ"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "バックグラウンドでキャッシュ中 —「設定 › ダウンロードセンター」で確認できます"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "キャッシュ済みです"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "キャッシュを開始できませんでした"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "キャッシュから削除"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "キャッシュから削除しました"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "ストレージ"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "キャッシュを消去"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "消去"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "キャッシュ内のメディアとファイルを削除します。端末に保存したコピーは残ります。"
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "キャッシュを %1$s 消去しました"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "キャッシュ %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "保存済み %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "空き %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "進行中 · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "完了 · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "すべて一時停止"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "すべて開始"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/秒 · 残り %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "ダウンロード中 · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "一時停止 · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "待機中 · 前のダウンロードを待っています"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "ダウンロード失敗 · 再試行をタップ"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "キャッシュのみ"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "保存済み"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "一時停止"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "再開"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "再試行"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "キャンセル"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "端末に保存"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "開く"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "エラーが発生しました。もう一度お試しください。"
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "「%1$s」をキャンセルしました"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "キャッシュを削除しました（保存済みのコピーは残ります）"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "選択"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "完了"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "%1$d 件選択"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "保存"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "削除"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "%1$d 件を保存しました"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "%1$d 件を削除しました"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "該当するダウンロードはありません"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "別のキーワードや種類をお試しください"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "バックグラウンドでキャッシュ中 %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "%1$d 件をキャッシュ中"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Wi‑Fi を待機中 · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "ネットワークを待機中 · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "モバイルデータで続行"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "データ通信"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "チャットで表示"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "バックグラウンドのキャッシュは Wi‑Fi のみ"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "モバイルデータでは一時停止します。個別に許可できます"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "日付順"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "サイズ順"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "その他のキャッシュ · %1$d 件"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "出どころ不明のファイル · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "すべて選択"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "すべて選択解除"
+    },
+    {
+      "name": "dc_undo",
+      "value": "取り消す"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "キャッシュ済み"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "%1$d 本の動画をバックグラウンドでキャッシュ中"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "キャッシュする動画はありません"
+    },
+    {
       "name": "fw_send_n",
       "value": "送信 (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "メッセージ内の最後の1枚から続けてスワイプすると、止まらずに次のメッセージの写真や動画に移ります"
+    },
+    {
+      "name": "mc_title",
+      "value": "ミュージックセンター"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "チャットの音楽を再生し、コレクションを管理"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "再生"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "マイ"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "曲がありません"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "不明なアーティスト"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "ローカル"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "クラウド"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "形式"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "ビットレート"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "サンプル"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "サイズ"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "ミュージックセンターをオンにすると音源・ビットレート・形式を表示します"
+    },
+    {
+      "name": "mc_cast",
+      "value": "デバイス"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "オーディオ出力"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "利用可能な再生デバイス"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "再生デバイスがありません"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "その他のデバイス"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "システムのデバイス選択を開く"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "出力中"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "利用可能"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "受話口"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "スピーカー"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "有線"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "キャスト"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "リモート"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "デバイス"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "プレイリスト"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "コレクションに追加"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "マイコレクション"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "新規コレクション"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "コレクションを作成"
+    },
+    {
+      "name": "mc_create",
+      "value": "作成"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "コレクション名"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "曲のための新しいコレクションを作成します"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "作成後に「%1$s」が追加されます"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "コレクション"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "曲がありません。再生画面の「コレクションに追加」から追加してください"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "すべて再生"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "シャッフル"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "コレクションを削除"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d 曲"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d 個のコレクション · %2$d 曲"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "曲・アーティスト・アルバムを検索"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "すべての曲"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "検索結果 · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "「%1$s」は見つかりませんでした"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "チャットにまだ音楽がありません"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "外部リンク"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "ブラウザーで開く"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "タップするとすぐ開きます（これまでと同じ）"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "タップでコピー"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "URL をコピーするだけで、通信はしません"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "タップ時に確認"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "先に実際の URL を表示し、開くかコピーかを選べます"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "アプリ内で開くリンク（t.me、tg://）は影響を受けません。表示テキストが別の URL を隠している場合は、どの設定でも必ず確認します。"
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "クラシック"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "ダウンロード済み"
+    },
+    {
+      "name": "music_save",
+      "value": "保存"
+    },
+    {
+      "name": "music_favorited",
+      "value": "コレクション済み"
+    },
+    {
+      "name": "music_favorite",
+      "value": "追加"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "名前が空か、すでに使われています"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "曲を選ぶ"
     }
   ]
 }

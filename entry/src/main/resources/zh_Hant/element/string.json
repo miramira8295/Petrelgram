@@ -12467,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "看到一則訊息的最後一張後繼續滑，直接切到下一則訊息的圖片或影片，不再停下來提示"
+    },
+    {
+      "name": "mc_title",
+      "value": "音樂中心"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "播放聊天中的音樂，管理合集"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "播放"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "我的"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "還沒有歌曲"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "未知歌手"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "本機"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "雲端"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "格式"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "位元率"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "取樣"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "大小"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "開啟音樂中心以查看音源、位元率與格式資訊"
+    },
+    {
+      "name": "mc_cast",
+      "value": "流轉"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "音訊流轉"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "目前可用的播放裝置"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "沒有可用的播放裝置"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "更多裝置"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "開啟系統流轉選擇器"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "正在輸出"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "可用"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "聽筒"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "喇叭"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "有線"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "藍牙"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "投播"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "遠端"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "裝置"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "播放清單"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "加入合集"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "我的合集"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "新增合集"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "建立合集"
+    },
+    {
+      "name": "mc_create",
+      "value": "建立"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "合集名稱"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "為歌曲建立一個新的合集"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "建立後會自動加入「%1$s」"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "合集"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "還沒有歌曲，在播放頁點擊「加入合集」"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "播放全部"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "隨機播放"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "刪除合集"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d 首"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d 個合集 · %2$d 首歌曲"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "搜尋歌曲、歌手、專輯"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "全部歌曲"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "結果 · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "沒有找到「%1$s」"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "聊天中還沒有音樂"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "外部連結"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "直接以瀏覽器開啟"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "點一下就開啟，和以前一樣"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "點擊複製"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "只把網址複製到剪貼簿，不連網"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "點擊彈窗選擇"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "先顯示真實網址，再選開啟或複製"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "t.me、tg:// 這類應用內能直接開啟的連結不受影響。顯示文字與真實網址不符時，無論選哪一項都會先彈窗。"
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "經典"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "已下載"
+    },
+    {
+      "name": "music_save",
+      "value": "儲存"
+    },
+    {
+      "name": "music_favorited",
+      "value": "已收藏"
+    },
+    {
+      "name": "music_favorite",
+      "value": "收藏"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "名稱為空或已存在"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "去挑一首"
     }
   ]
 }

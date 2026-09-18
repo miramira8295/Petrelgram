@@ -68,6 +68,9 @@ export interface IconEnabledState {
 // 重名和命名走样，挡不住"四处漏了一处"。
 const OPTIONS: AppIconOption[] = [
   { name: APP_ICON_DEFAULT, labelKey: 'app_icon_default', preview: 'iconprev_default' },
+  // 1.5.0 之前的那张海燕（实色底 + 前景鸟）。2026-09-18 换了新图标，它原样降级成
+  // 备用项——老用户想换回去仍然换得回来。
+  { name: 'classic', labelKey: 'app_icon_classic', preview: 'iconprev_classic' },
   // 三张独立设计：各有各的前景图形，不是换底色。
   { name: 'frost', labelKey: 'app_icon_frost', preview: 'iconprev_frost' },
   { name: 'neon', labelKey: 'app_icon_neon', preview: 'iconprev_neon' },

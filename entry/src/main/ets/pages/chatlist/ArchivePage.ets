@@ -25,6 +25,10 @@ export struct ArchivePage {
 
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
+  // 本页在不在眼前。被会话页盖住时置 false，退回来置 true——归档列表的发布闸
+  // 跟这个走而不是跟全局那道（理由见 ChatListView.obeyGlobalGate：全局那道由
+  // 首页导航栏的显隐驱动，而归档页在时导航栏自始至终是盖着的，开不回来）。
+  @State private pageVisible: boolean = true;
   @State archivedCount: number = 0;
   @State unreadCount: number = 0;
   private clockTimer: number = -1;
@@ -123,7 +127,12 @@ export struct ArchivePage {
       .padding({ left: 6, right: 16, top: this.topSafe })
       .backgroundColor($r('app.color.surface'))
       .border({ width: { bottom: 0.5 }, color: $r('app.color.divider') });
-      ChatListView({ listKey: 'archive', reserveDockSpace: false });
+      ChatListView({
+        listKey: 'archive',
+        reserveDockSpace: false,
+        obeyGlobalGate: false,
+        pageVisible: this.pageVisible
+      });
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.page_bg'))
@@ -134,6 +143,10 @@ export struct ArchivePage {
     .onReady((ctx: NavDestinationContext): void => {
       this.navStack = ctx.pathStack;
     })
+    // 盖住时停发、露出时补发。归档列表的未读角标就靠这一对回来
+    //（2026-09-18：点进会话看完退回来，角标一直挂着）。
+    .onShown((): void => { this.pageVisible = true; })
+    .onHidden((): void => { this.pageVisible = false; })
     .width('100%').height('100%');
   }
 }

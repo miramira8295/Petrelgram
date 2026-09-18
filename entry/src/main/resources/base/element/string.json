@@ -12467,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "看到一条消息的最后一张后继续滑，直接切到下一条消息的图片或视频，不再停下来提示"
+    },
+    {
+      "name": "mc_title",
+      "value": "音乐中心"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "播放聊天里的音乐，管理合集"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "播放"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "我的"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "还没有歌曲"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "未知歌手"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "本地"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "云端"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "格式"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "码率"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "采样"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "大小"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "开启音乐中心以查看音源、码率与格式信息"
+    },
+    {
+      "name": "mc_cast",
+      "value": "流转"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "音频流转"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "当前可用的播放设备"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "没有可用的播放设备"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "更多设备"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "打开系统流转选择器"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "正在输出"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "可用"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "听筒"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "扬声器"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "有线"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "蓝牙"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "投播"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "远端"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "设备"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "播放列表"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "添加到合集"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "我的合集"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "新建合集"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "创建合集"
+    },
+    {
+      "name": "mc_create",
+      "value": "创建"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "合集名称"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "为歌曲创建一个新的合集"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "创建后会自动加入「%1$s」"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "合集"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "还没有歌曲，在播放页点击「添加到合集」"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "播放全部"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "随机播放"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "删除合集"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d 首"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d 个合集 · %2$d 首歌曲"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "搜索歌曲、歌手、专辑"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "全部歌曲"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "结果 · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "没有找到「%1$s」"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "聊天里还没有音乐"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "外部链接"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "直接浏览器打开"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "点一下就打开，和以前一样"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "点击复制"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "只把网址复制到剪贴板，不联网"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "点击弹窗选择"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "先弹出真实网址，再选打开还是复制"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "t.me、tg:// 这类应用内能直接打开的链接不受影响。显示文字和真实网址对不上时，无论选哪一项都会先弹窗。"
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "经典"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "已下载"
+    },
+    {
+      "name": "music_save",
+      "value": "保存"
+    },
+    {
+      "name": "music_favorited",
+      "value": "已收藏"
+    },
+    {
+      "name": "music_favorite",
+      "value": "收藏"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "名称为空或已存在"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "去挑一首"
     }
   ]
 }

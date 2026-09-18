@@ -6,19 +6,33 @@
 // dock 显隐的 AppStorage 闸、navBarReset、分栏宽度——和顶栏那次是同一个结论：
 // 自绘的那套里做两态，别为了一个部件迁整个容器。
 //
-// 三态，判据只有两个输入：
-//   FULL       没有正在播放         四个页签，和以前完全一样
-//   COLLAPSED  在播放、播放条未展开  四个页签 + 右侧一颗专辑球
-//   EXPANDED   在播放、播放条已展开  只留个人资料头像 + 播放条
+// 三态：
+//   FULL       四个页签，和以前完全一样
+//   COLLAPSED  四个页签 + 右侧一颗专辑球
+//   EXPANDED   只留个人资料头像 + 播放条
 //
-// **EXPANDED 不是持久状态**：播放一停就必须掉回 FULL，否则底栏会永远停在
-// 「只有一个头像」的样子，用户再也点不到会话页签。这条判据是纯的，钉在单测里。
+// 【判据分两半，以音乐中心的开关为界】2026-09-18 用户定的：
+//
+//   开关**开着** → 完全**不看在不在播**。球一直在，播放条展开了就一直展开
+//                 （"只要开着，那个 minitab 就不关"）。曲子放完、点了停止，
+//                 底栏都不动——那一条本来就是音乐中心的常驻入口。
+//   开关**关着** → 老规矩：没在播就是四格，在播才有球/播放条。
+//
+// 关着那一半仍然钉着原来那条护栏：**EXPANDED 不是持久状态**，播放一停必须掉回
+// FULL，否则底栏会永远停在「只有一个头像」，用户再也点不到会话页签。开着那一半
+// 不需要这条护栏——展开态里那个头像点一下就收起来，而且是用户自己开的。
 
 export const DOCK_FULL: string = 'full';
 export const DOCK_COLLAPSED: string = 'collapsed';
 export const DOCK_EXPANDED: string = 'expanded';
 
-export function dockMiniBarState(hasNowPlaying: boolean, expanded: boolean): string {
+export function dockMiniBarState(
+  hasNowPlaying: boolean, expanded: boolean, musicCenterOn: boolean = false
+): string {
+  if (musicCenterOn) {
+    // 开着：播放状态**完全不参与**判断。
+    return expanded ? DOCK_EXPANDED : DOCK_COLLAPSED;
+  }
   if (!hasNowPlaying) {
     return DOCK_FULL;
   }

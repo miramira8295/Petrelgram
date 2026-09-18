@@ -1,6 +1,10 @@
 import {
-  KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS, KEY_SHOW_CONTACTS_TAB, KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
+  KEY_EXTERNAL_LINK_ACTION, KEY_MSG_GESTURE, KEY_ROW_SWIPE_ACTIONS, KEY_SHOW_CONTACTS_TAB,
+  KEY_VIEWER_CONTINUOUS_HOP, setBoolean, setString
 } from '../../store/AppSettings';
+import {
+  EXT_LINK_ASK, EXT_LINK_COPY, EXT_LINK_DEFAULT, EXT_LINK_OPEN
+} from '../../util/externalLinkPolicy';
 import { GESTURE_CLASSIC, GESTURE_TAP_FIRST } from '../../util/messageGestures';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -30,6 +34,27 @@ const GESTURE_OPTIONS: GestureOption[] = [
   }
 ];
 
+// 外部链接三档（2026-09-18 用户要的）。顺序按"越往下越保守"：直接打开是默认、
+// 也是加这个设置之前的行为；复制最安全；弹窗在两者之间。
+// 只作用于**非 t.me / tg:// 的链接**——应用内能直接落到会话的那些照旧直接走。
+const LINK_OPTIONS: GestureOption[] = [
+  {
+    value: EXT_LINK_OPEN,
+    label: $r('app.string.ix_link_open'),
+    detail: $r('app.string.ix_link_open_sub')
+  },
+  {
+    value: EXT_LINK_COPY,
+    label: $r('app.string.ix_link_copy'),
+    detail: $r('app.string.ix_link_copy_sub')
+  },
+  {
+    value: EXT_LINK_ASK,
+    label: $r('app.string.ix_link_ask'),
+    detail: $r('app.string.ix_link_ask_sub')
+  }
+];
+
 // 交互设置。目前只有聊天详情一组——这个页面存在的意义是"手势的分工可以换"，
 // 以后别的页面有同类可换项时往这里加分组，而不是散到各自的设置页里。
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
@@ -50,6 +75,7 @@ export struct InteractionSettingsPage {
   @StorageLink(KEY_SHOW_CONTACTS_TAB) showContactsTab: boolean = true;
   @StorageLink(KEY_ROW_SWIPE_ACTIONS) rowSwipeActions: boolean = false;
   @StorageLink(KEY_VIEWER_CONTINUOUS_HOP) viewerContinuousHop: boolean = true;
+  @StorageLink(KEY_EXTERNAL_LINK_ACTION) externalLinkAction: string = EXT_LINK_DEFAULT;
   // 迁移前这里还有 leavingPage/leaveTimer 两个字段、一个 aboutToDisappear 清理，
   // 和一个 leavePage()：500ms 防抖 + router.back()，防的是连点两下返回箭头弹掉
   // 两页。三者随迁移一起失效，理由与试点 PowerUsagePage 逐字相同：
@@ -143,6 +169,58 @@ export struct InteractionSettingsPage {
     .padding({ bottom: 4 });
   }
 
+  // 外部链接的打开方式。形状和上面那张手势卡一样是单选，理由也一样：三档之间
+  // 的差别一句话说不清，每一条都要带说明。
+  @Builder
+  linkCard() {
+    Column() {
+      this.cardTitle($r('app.string.ix_link_group'));
+      ForEach(LINK_OPTIONS, (opt: GestureOption, idx: number) => {
+        if (idx > 0) {
+          Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
+        }
+        Row() {
+          Column({ space: 3 }) {
+            Text(opt.label).fontSize(16).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+            Text(opt.detail).fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+          }.layoutWeight(1);
+          if (this.externalLinkAction === opt.value) {
+            SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY])
+              .margin({ left: 12 });
+          }
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .alignItems(VerticalAlign.Center)
+        .stateStyles({
+          normal: this.optionNormalStyle,
+          pressed: this.optionPressedStyle
+        })
+        .accessibilityText(str('a11y_option_state', `${opt.label}`,
+          this.externalLinkAction === opt.value ? str('a11y_selected') : ''))
+        .onClick((): void => {
+          if (this.externalLinkAction !== opt.value) {
+            this.externalLinkAction = opt.value;
+            setString(KEY_EXTERNAL_LINK_ACTION, opt.value);
+          }
+        });
+      }, (opt: GestureOption) => opt.value);
+    }
+    .width('100%')
+    .backgroundColor(CARD_BG)
+    .borderRadius(CARD_RADIUS)
+    .padding({ bottom: 4 });
+  }
+
+  // 藏链那一道（显示文字和真实网址对不上）**不受这三档影响**，仍然强制弹窗，
+  // 判据在 util/externalLinkPolicy.externalLinkDecision。这行字要让用户知道。
+  @Builder
+  linkNote() {
+    Text($r('app.string.ix_link_note'))
+      .fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+      .width('100%').padding({ left: 16, right: 16, top: 2 });
+  }
+
   @Builder
   tabsCard() {
     Row({ space: 12 }) {
@@ -207,6 +285,8 @@ export struct InteractionSettingsPage {
       Scroll(this.hdsScroller) {
         Column({ space: 14 }) {
           this.chatCard();
+          this.linkCard();
+          this.linkNote();
           this.tabsCard();
         }
         .width('100%')

@@ -21,9 +21,29 @@ function track(messageId: number): NowPlaying {
 
 export default function dockMiniBarTest() {
   describe('dockMiniBar', () => {
-    it('没有播放就是完整四格，展开标志不起作用', 0, (): void => {
+    it('没有播放、音乐中心也关着，就是完整四格，展开标志不起作用', 0, (): void => {
       expect(dockMiniBarState(false, false)).assertEqual(DOCK_FULL);
       expect(dockMiniBarState(false, true)).assertEqual(DOCK_FULL);
+      // 第三个参数省略时按"关着"算，老调用点行为逐字不变。
+      expect(dockMiniBarState(false, false, false)).assertEqual(DOCK_FULL);
+    });
+
+    // 2026-09-18 用户：「不要播不播的逻辑了，只要开着，那个 minitab 就不关」。
+    // 开关开着时这个判据**完全不看播放状态**——下面两组的唯一差别就是在不在播，
+    // 结果必须一模一样。
+    it('音乐中心开着时，播放状态不参与判断', 0, (): void => {
+      expect(dockMiniBarState(false, false, true)).assertEqual(DOCK_COLLAPSED);
+      expect(dockMiniBarState(true, false, true)).assertEqual(DOCK_COLLAPSED);
+      expect(dockMiniBarState(false, true, true)).assertEqual(DOCK_EXPANDED);
+      expect(dockMiniBarState(true, true, true)).assertEqual(DOCK_EXPANDED);
+    });
+
+    it('音乐中心开着时，球常驻且页签一格不少', 0, (): void => {
+      expect(dockShowsAlbumBall(dockMiniBarState(false, false, true))).assertTrue();
+      // 球是加出来的，不是换掉页签。
+      expect(dockShowsTabs(dockMiniBarState(false, false, true))).assertTrue();
+      // 展开过就一直展开，曲子放完也不收（这正是"就不关"）。
+      expect(dockShowsPlayer(dockMiniBarState(false, true, true))).assertTrue();
     });
 
     it('在播放：默认折叠，展开后是展开态', 0, (): void => {
@@ -33,9 +53,10 @@ export default function dockMiniBarTest() {
 
     // 这条是这个判据存在的主要理由：播放一停必须掉回四格，否则底栏永远停在
     // 「只有一个头像」，用户再也点不到会话页签。
-    it('播放结束时即使还标着展开，也必须掉回完整四格', 0, (): void => {
+    it('播放结束时即使还标着展开，也必须掉出展开态', 0, (): void => {
       expect(dockMiniBarState(false, true)).assertEqual(DOCK_FULL);
       expect(dockShowsTabs(dockMiniBarState(false, true))).assertTrue();
+      // 这条护栏只管**开关关着**的那一半：开着时是用户自己要的常驻，不掉。
     });
 
     it('三态各画什么', 0, (): void => {

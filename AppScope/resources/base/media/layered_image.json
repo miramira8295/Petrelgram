@@ -1,7 +1,7 @@
 {
   "layered-image":
   {
-    "background" : "$media:background",
-    "foreground" : "$media:foreground"
+    "background" : "$media:bg_petrel2",
+    "foreground" : "$media:fg_empty"
   }
 }

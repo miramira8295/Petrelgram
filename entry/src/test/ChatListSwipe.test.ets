@@ -26,8 +26,11 @@ export default function chatListSwipeTest() {
 
     it('主列表与文件夹列表共用固定动作几何', 0, (): void => {
       expect(CHAT_SWIPE_BUTTON_VP).assertEqual(76);
-      expect(CHAT_SWIPE_ACTION_HEIGHT).assertEqual('calc(100% - 6vp)');
+      // 动作背景必须和会话卡片一样高：卡片上下各让出 CHAT_SWIPE_VERTICAL_GUTTER_VP，
+      // 所以高度恒为 100% 减去两条 gutter。2026-09-18 四周收到 4vp 时两个数一起动。
       expect(CHAT_SWIPE_VERTICAL_GUTTER_VP).assertEqual(3);
+      expect(CHAT_SWIPE_ACTION_HEIGHT)
+        .assertEqual(`calc(100% - ${CHAT_SWIPE_VERTICAL_GUTTER_VP * 2}vp)`);
       expect(CHAT_SWIPE_RADIUS_VP).assertEqual(16);
     });
 

@@ -207,6 +207,14 @@ import chatPrefetchTest from './ChatPrefetch.test';
 import menuWidthTest from './MenuWidth.test';
 import viewMessageSourceTest from './ViewMessageSource.test';
 import viewerGroupHopTest from './ViewerGroupHop.test';
+import musicTrackModelTest from './MusicTrackModel.test';
+import audioHeaderProbeTest from './AudioHeaderProbe.test';
+import musicCollectionModelTest from './MusicCollectionModel.test';
+import musicCastDevicesTest from './MusicCastDevices.test';
+import chatRowMetricsTest from './ChatRowMetrics.test';
+import externalLinkPolicyTest from './ExternalLinkPolicy.test';
+import composerEchoTest from './ComposerEcho.test';
+import senderAnimationParkTest from './SenderAnimationPark.test';
 import composerModeTest from './ComposerMode.test';
 import bottomSlotTest from './BottomSlot.test';
 import pinnedSegmentsTest from './PinnedSegments.test';
@@ -614,4 +622,12 @@ export default function testsuite() {
   forumTopicModelTest();
   targetSelectionTest();
   shareFanoutTest();
+  musicTrackModelTest();
+  musicCollectionModelTest();
+  musicCastDevicesTest();
+  chatRowMetricsTest();
+  externalLinkPolicyTest();
+  composerEchoTest();
+  senderAnimationParkTest();
+  audioHeaderProbeTest();
 }

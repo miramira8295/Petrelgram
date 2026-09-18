@@ -53,6 +53,13 @@ export interface MusicQueueDeps {
   toggleMusic: (messageId: number, path: string, fallbackDurationSec: number) => void;
   startMusic: (messageId: number, path: string, fallbackDurationSec: number) => void;
   seek: (messageId: number, fraction: number) => void;
+  // 边下边放（2026-09-18）。文件还没下完、但 TDLib 的 file id 和总大小都知道时走这条，
+  // 不再让用户等整首下完——视频早就是这么放的，音频之前少了这一路。
+  // forceStart 与 start/toggle 的分工一致：跳曲总是重开，点自己是播放/暂停。
+  playStream: (
+    messageId: number, fileId: number, sizeBytes: number, mimeType: string,
+    fallbackDurationSec: number, forceStart: boolean
+  ) => void;
   // Ask the store for the full audio file; `failed` retries a failed download.
   requestDownload: (messageId: number, failed: boolean) => void;
   toast: (message: string, durationMs: number) => void;
@@ -113,6 +120,14 @@ export class MusicQueue {
       return;
     }
     if (entry.videoPath === '') {
+      // 能流就立刻出声：文件 id 和**总字节数**都在，AVPlayer 通过本地回环按 Range
+      // 取字节（见 VoicePlayback.sourceUrl）。size 为 0 时定位不了，只能退回下载。
+      if (entry.videoFileId > 0 && entry.videoFileSize > 0 && !entry.videoFailed) {
+        this.pendingPlayId = 0;
+        this.deps.playStream(messageId, entry.videoFileId, entry.videoFileSize,
+          entry.videoMimeType, entry.videoDuration, forceStart);
+        return;
+      }
       this.pendingPlayId = messageId;
       this.deps.requestDownload(messageId, entry.videoFailed);
       this.deps.toast(

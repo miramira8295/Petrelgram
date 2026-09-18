@@ -12141,6 +12141,298 @@
       "value": "انجام شد"
     },
     {
+      "name": "dc_title",
+      "value": "مرکز دانلود"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "دانلودها و رسانه‌های کش‌شده"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "همه"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "ویدیوها"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "عکس‌ها"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "موسیقی"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "صوتی"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "فایل‌ها"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "جست‌وجوی نام فایل یا گفتگو"
+    },
+    {
+      "name": "dc_loading",
+      "value": "در حال خواندن دانلودها و کش…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "کش در پس‌زمینه"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "کش در پس‌زمینه آغاز شد — تنظیمات › مرکز دانلود"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "قبلاً کش شده"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "شروع کش ناموفق بود"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "حذف از کش"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "از کش حذف شد"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "فضای ذخیره‌سازی"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "پاک‌کردن کش"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "پاک کردن"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "رسانه‌ها و فایل‌های کش حذف می‌شوند. نسخه‌های ذخیره‌شده روی دستگاه باقی می‌مانند."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "%1$s کش پاک شد"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "کش %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "ذخیره‌شده %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "%1$s آزاد"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "در حال انجام · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "تکمیل‌شده · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "توقف همه"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "شروع همه"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/ث · %2$s باقی‌مانده · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "در حال دانلود · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "متوقف · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "در صف · در انتظار دانلودهای قبلی"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "دانلود ناموفق · برای تلاش دوباره بزنید"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "فقط کش"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "ذخیره‌شده"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "توقف"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "ادامه"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "تلاش دوباره"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "لغو"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "ذخیره در دستگاه"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "باز کردن"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "مشکلی پیش آمد. دوباره تلاش کنید."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "«%1$s» لغو شد"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "کش حذف شد (نسخه ذخیره‌شده باقی ماند)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "انتخاب"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "انجام شد"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "%1$d مورد انتخاب شد"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "ذخیره"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "حذف"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "%1$d مورد ذخیره شد"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "%1$d مورد حذف شد"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "دانلودی یافت نشد"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "کلیدواژه یا نوع دیگری را امتحان کنید"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "کش در پس‌زمینه %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "کش %1$d مورد"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "در انتظار Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "در انتظار شبکه · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "ادامه با داده تلفن همراه"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "داده همراه"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "نمایش در گفتگو"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "کش پس‌زمینه فقط با Wi‑Fi"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "با داده همراه متوقف می‌شود؛ می‌توانید هر مورد را جداگانه اجازه دهید"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "بر اساس تاریخ"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "بر اساس اندازه"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "کش دیگر · %1$d مورد"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "فایل‌های بدون منبع مشخص · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "انتخاب همه"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "لغو انتخاب همه"
+    },
+    {
+      "name": "dc_undo",
+      "value": "بازگردانی"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "کش‌شده"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "کش %1$d ویدیو در پس‌زمینه"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "ویدیویی برای کش وجود ندارد"
+    },
+    {
       "name": "fw_send_n",
       "value": "ارسال (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "پس از آخرین مورد یک پیام، به ورق‌زدن ادامه دهید تا بدون مکث به عکس‌ها یا ویدیوهای پیام بعدی بروید"
+    },
+    {
+      "name": "mc_title",
+      "value": "مرکز موسیقی"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "پخش موسیقی چت‌ها و مدیریت مجموعه‌ها"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "پخش"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "من"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "هنوز آهنگی نیست"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "هنرمند ناشناس"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "محلی"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "ابری"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "قالب"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "بیت‌ریت"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "نمونه‌برداری"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "اندازه"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "مرکز موسیقی را روشن کنید تا منبع، بیت‌ریت و قالب را ببینید"
+    },
+    {
+      "name": "mc_cast",
+      "value": "انتقال"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "خروجی صدا"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "دستگاه‌های پخش موجود"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "دستگاه پخشی موجود نیست"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "دستگاه‌های بیشتر"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "انتخابگر سیستمی را باز کنید"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "در حال استفاده"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "در دسترس"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "گوشی"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "بلندگو"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "سیمی"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "بلوتوث"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "پخش"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "دور"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "دستگاه"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "فهرست پخش"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "افزودن به مجموعه"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "مجموعه‌های من"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "مجموعه جدید"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "ساخت مجموعه"
+    },
+    {
+      "name": "mc_create",
+      "value": "ساختن"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "نام مجموعه"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "یک مجموعه جدید برای آهنگ‌ها بسازید"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "پس از ساخت، «%1$s» افزوده می‌شود"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "مجموعه"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "هنوز آهنگی نیست — از «افزودن به مجموعه» استفاده کنید"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "پخش همه"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "تصادفی"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "حذف مجموعه"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d آهنگ"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d مجموعه · %2$d آهنگ"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "جست‌وجوی آهنگ، هنرمند، آلبوم"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "همه آهنگ‌ها"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "نتایج · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "چیزی برای «%1$s» پیدا نشد"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "هنوز موسیقی‌ای در چت‌ها نیست"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "پیوندهای خارجی"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "باز کردن در مرورگر"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "با یک ضربه باز می‌شود، مثل قبل"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "کپی با ضربه"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "فقط نشانی را کپی می‌کند؛ چیزی آنلاین نمی‌شود"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "پرسیدن هنگام ضربه"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "ابتدا نشانی واقعی را نشان می‌دهد، سپس باز یا کپی"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "پیوندهایی که در برنامه باز می‌شوند (t.me، tg://) تغییر نمی‌کنند. اگر متن نمایش‌داده‌شده نشانی دیگری را پنهان کند، همیشه ابتدا پرسیده می‌شود."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "کلاسیک"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "دانلود شد"
+    },
+    {
+      "name": "music_save",
+      "value": "ذخیره"
+    },
+    {
+      "name": "music_favorited",
+      "value": "در مجموعه"
+    },
+    {
+      "name": "music_favorite",
+      "value": "افزودن"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "نام خالی است یا قبلاً استفاده شده"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "یک آهنگ انتخاب کنید"
     }
   ]
 }

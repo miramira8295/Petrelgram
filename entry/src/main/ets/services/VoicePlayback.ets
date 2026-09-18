@@ -1,4 +1,7 @@
 import { media } from '@kit.MediaKit';
+import { VideoStreamSession } from './VideoStreamSession';
+import { VideoRangeServer } from './VideoRangeServer';
+import { getTdClient } from '../tdkit/Globals';
 import { audio } from '@kit.AudioKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -34,12 +37,48 @@ function playbackSpeedOf(speed: number): media.PlaybackSpeed {
   return media.PlaybackSpeed.SPEED_FORWARD_1_00_X;
 }
 
+// 一段音频从哪儿来。
+//
+// 【为什么要这一层】原来 play() 只认本地路径（`fd://`），于是音乐必须**整首下完**
+// 才出声——几十 MB 的无损要等半天，而视频早就是边下边放的（2026-09-18 用户报的
+// 就是这条）。边下边放要的东西视频那边现成：VideoStreamSession 按需向 TDLib 要
+// 字节段，VideoRangeServer 把它包成本地回环上的一个支持 Range 的 HTTP 源，
+// AVPlayer 直接吃 http:// 。两者和"视频"无关，只是名字带 Video。
+//
+// 语音条不用流：几百 KB，整下比建一条回环连接还快，继续走 path。
+export interface AudioSource {
+  // 已经下完的本地文件；非空就直接播它，下面三个字段不看。
+  path: string;
+  // 走流时要的：TDLib 文件 id 与**总字节数**。size 为 0 时流没法定位，只能退回下载。
+  fileId: number;
+  sizeBytes: number;
+  mimeType: string;
+}
+
+export function localAudioSource(path: string): AudioSource {
+  return { path: path, fileId: 0, sizeBytes: 0, mimeType: '' };
+}
+
+export function streamAudioSource(
+  fileId: number, sizeBytes: number, mimeType: string
+): AudioSource {
+  return { path: '', fileId: fileId, sizeBytes: sizeBytes, mimeType: mimeType };
+}
+
+// 这个来源能不能播：本地有文件，或者流的两个必要条件都齐。
+export function audioSourcePlayable(source: AudioSource): boolean {
+  return source.path.trim() !== '' || (source.fileId > 0 && source.sizeBytes > 0);
+}
+
 // Shared singleton for voice notes and music messages. The generation token
 // prevents an older createAVPlayer promise from stealing playback after the
 // user quickly taps a different item.
 class VoicePlayback {
   private player: media.AVPlayer | null = null;
   private file: fs.File | null = null;
+  // 边下边放那一路的两件东西，和 player 同生共死（见 releaseResources）。
+  private stream: VideoStreamSession | null = null;
+  private rangeServer: VideoRangeServer | null = null;
   private generation: number = 0;
   private preferredSpeed: number = 1;
   private musicCompletionListener: MusicCompletionListener | null = null;
@@ -64,17 +103,27 @@ class VoicePlayback {
   toggle(messageId: number, path: string, fallbackDurationSec: number): void {
     // 用户自己动过手就不再算"被系统打断"：打断结束时不该覆盖他的选择。
     this.pausedByFocusLoss = false;
-    this.toggleSource(messageId, path, fallbackDurationSec, 'voice');
+    this.toggleSource(messageId, localAudioSource(path), fallbackDurationSec, 'voice');
   }
 
   toggleMusic(messageId: number, path: string, fallbackDurationSec: number): void {
-    this.toggleSource(messageId, path, fallbackDurationSec, 'music');
+    this.toggleSource(messageId, localAudioSource(path), fallbackDurationSec, 'music');
   }
 
   startMusic(messageId: number, path: string, fallbackDurationSec: number): void {
-    if (messageId > 0 && path.trim() !== '') {
-      this.play(messageId, path, Math.max(0, fallbackDurationSec), 'music');
+    this.startMusicSource(messageId, localAudioSource(path), fallbackDurationSec);
+  }
+
+  // 边下边放版。来源不成形（既没有本地文件、又没有 fileId/size）时什么都不做，
+  // 由调用方退回"先下完再播"。
+  startMusicSource(messageId: number, source: AudioSource, fallbackDurationSec: number): void {
+    if (messageId > 0 && audioSourcePlayable(source)) {
+      this.play(messageId, source, Math.max(0, fallbackDurationSec), 'music');
     }
+  }
+
+  toggleMusicSource(messageId: number, source: AudioSource, fallbackDurationSec: number): void {
+    this.toggleSource(messageId, source, Math.max(0, fallbackDurationSec), 'music');
   }
 
   setMusicCompletionListener(listener: MusicCompletionListener | null): void {
@@ -102,9 +151,9 @@ class VoicePlayback {
   }
 
   private toggleSource(
-    messageId: number, path: string, fallbackDurationSec: number, mode: string
+    messageId: number, source: AudioSource, fallbackDurationSec: number, mode: string
   ): void {
-    if (messageId <= 0 || path.trim() === '') {
+    if (messageId <= 0 || !audioSourcePlayable(source)) {
       return;
     }
     if (this.state.playingId === messageId && this.state.mode === mode && this.player !== null) {
@@ -135,7 +184,7 @@ class VoicePlayback {
         return;
       }
     }
-    this.play(messageId, path, Math.max(0, fallbackDurationSec), mode);
+    this.play(messageId, source, Math.max(0, fallbackDurationSec), mode);
   }
 
   cycleSpeed(messageId: number): number {
@@ -240,7 +289,7 @@ class VoicePlayback {
     }
   }
 
-  private play(messageId: number, path: string, fallbackDurationSec: number, mode: string): void {
+  private play(messageId: number, source: AudioSource, fallbackDurationSec: number, mode: string): void {
     const token: number = ++this.generation;
     this.releaseResources();
     this.setState({
@@ -257,12 +306,6 @@ class VoicePlayback {
         return;
       }
       this.player = player;
-      try {
-        this.file = fs.openSync(path, fs.OpenMode.READ_ONLY);
-      } catch (caught) {
-        this.fail(token, messageId, caught, mode);
-        return;
-      }
       // 别的应用或来电开始发声时自动暂停。语音走的是官方 media.AVPlayer，
       // 直接有 on('audioInterrupt')；视频走 ijkplayer 拿不到这个回调，那边
       // 绕的是 AudioSessionManager（见 services/audioFocus）。
@@ -352,10 +395,39 @@ class VoicePlayback {
       player.on('error', (error: BusinessError): void => {
         this.fail(token, messageId, error, mode);
       });
-      player.url = `fd://${this.file.fd}`;
+      // url 最后设：AVPlayer 一拿到源就开始走状态机，回调必须已经挂好。
+      // 流那一路要先把回环服务器听起来，所以这里是异步的。
+      this.sourceUrl(source).then((url: string): void => {
+        if (token !== this.generation || this.player !== player) {
+          return;
+        }
+        player.url = url;
+      }).catch((caught: Object): void => {
+        this.fail(token, messageId, caught, mode);
+      });
     }).catch((caught: Object): void => {
       this.fail(token, messageId, caught, mode);
     });
+  }
+
+  // 本地文件给 fd://，流给回环上的 http://。两路都由 releaseResources 收尾。
+  private sourceUrl(source: AudioSource): Promise<string> {
+    if (source.path.trim() !== '') {
+      try {
+        this.file = fs.openSync(source.path, fs.OpenMode.READ_ONLY);
+      } catch (caught) {
+        return Promise.reject(caught as Object);
+      }
+      return Promise.resolve(`fd://${this.file.fd}`);
+    }
+    const session: VideoStreamSession =
+      new VideoStreamSession(getTdClient(), source.fileId, source.sizeBytes);
+    this.stream = session;
+    const server: VideoRangeServer =
+      new VideoRangeServer(session, source.fileId, source.sizeBytes, source.mimeType);
+    this.rangeServer = server;
+    session.start();
+    return server.start();
   }
 
   stop(completedId: number = 0): void {
@@ -400,6 +472,15 @@ class VoicePlayback {
         logE(`VoicePlayback close failed: ${caught}`);
       }
       this.file = null;
+    }
+    // 服务器先收再收会话：反过来的话服务器还可能向一个已经关掉的会话要字节。
+    if (this.rangeServer !== null) {
+      this.rangeServer.close();
+      this.rangeServer = null;
+    }
+    if (this.stream !== null) {
+      this.stream.close();
+      this.stream = null;
     }
   }
 

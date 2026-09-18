@@ -48,7 +48,7 @@ import {
   isUnformattedPlainText, messageUrls, parseFormattedText, richSegmentKey,
   RichSegment, RichRun
 } from '../../util/richText';
-import { packAlbumRows, AlbumCell, ALBUM_ROW_SLOTS } from '../../util/packAlbumRows';
+import { packAlbumRows, albumCellAt, AlbumCell, ALBUM_ROW_SLOTS } from '../../util/packAlbumRows';
 import { inlineButtonKey, inlineButtonRowKey } from '../../util/inlineButtonKey';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
@@ -2150,6 +2150,14 @@ export struct MessageBubble {
     return this.albumRowsCache;
   }
 
+  // 槽位取格子。判断在 util/albumCellAt（纯函数、有单测），这里只是转发。
+  // **不要退回 this.albumRows()[row][col]**：行复用时那句会把进程带走，
+  // 理由与两种异常文案见 packAlbumRows.albumCellAt 的说明。
+  // memberSelected() 早就是边界检查过的，当初漏的只有 cell 这一个参数。
+  private slotCell(row: number, col: number): AlbumCell {
+    return albumCellAt(this.albumRows(), row, col);
+  }
+
   // 相册网格。**刻意不用 ForEach**：每行、每格都是 build 树上的固定槽位。
   //
   // 【为什么（2026-09-11）】ForEach 的契约是「键值不变就复用已有组件、**不重新
@@ -2178,7 +2186,7 @@ export struct MessageBubble {
         Row({ space: 2 }) {
           if (this.albumRows()[0].length > 0) {
             AlbumCellView({
-              cell: this.albumRows()[0][0],
+              cell: this.slotCell(0, 0),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2189,7 +2197,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[0].length > 1) {
             AlbumCellView({
-              cell: this.albumRows()[0][1],
+              cell: this.slotCell(0, 1),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2200,7 +2208,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[0].length > 2) {
             AlbumCellView({
-              cell: this.albumRows()[0][2],
+              cell: this.slotCell(0, 2),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2215,7 +2223,7 @@ export struct MessageBubble {
         Row({ space: 2 }) {
           if (this.albumRows()[1].length > 0) {
             AlbumCellView({
-              cell: this.albumRows()[1][0],
+              cell: this.slotCell(1, 0),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2226,7 +2234,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[1].length > 1) {
             AlbumCellView({
-              cell: this.albumRows()[1][1],
+              cell: this.slotCell(1, 1),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2237,7 +2245,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[1].length > 2) {
             AlbumCellView({
-              cell: this.albumRows()[1][2],
+              cell: this.slotCell(1, 2),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2252,7 +2260,7 @@ export struct MessageBubble {
         Row({ space: 2 }) {
           if (this.albumRows()[2].length > 0) {
             AlbumCellView({
-              cell: this.albumRows()[2][0],
+              cell: this.slotCell(2, 0),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2263,7 +2271,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[2].length > 1) {
             AlbumCellView({
-              cell: this.albumRows()[2][1],
+              cell: this.slotCell(2, 1),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2274,7 +2282,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[2].length > 2) {
             AlbumCellView({
-              cell: this.albumRows()[2][2],
+              cell: this.slotCell(2, 2),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2289,7 +2297,7 @@ export struct MessageBubble {
         Row({ space: 2 }) {
           if (this.albumRows()[3].length > 0) {
             AlbumCellView({
-              cell: this.albumRows()[3][0],
+              cell: this.slotCell(3, 0),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2300,7 +2308,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[3].length > 1) {
             AlbumCellView({
-              cell: this.albumRows()[3][1],
+              cell: this.slotCell(3, 1),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2311,7 +2319,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[3].length > 2) {
             AlbumCellView({
-              cell: this.albumRows()[3][2],
+              cell: this.slotCell(3, 2),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2326,7 +2334,7 @@ export struct MessageBubble {
         Row({ space: 2 }) {
           if (this.albumRows()[4].length > 0) {
             AlbumCellView({
-              cell: this.albumRows()[4][0],
+              cell: this.slotCell(4, 0),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2337,7 +2345,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[4].length > 1) {
             AlbumCellView({
-              cell: this.albumRows()[4][1],
+              cell: this.slotCell(4, 1),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2348,7 +2356,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[4].length > 2) {
             AlbumCellView({
-              cell: this.albumRows()[4][2],
+              cell: this.slotCell(4, 2),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2363,7 +2371,7 @@ export struct MessageBubble {
         Row({ space: 2 }) {
           if (this.albumRows()[5].length > 0) {
             AlbumCellView({
-              cell: this.albumRows()[5][0],
+              cell: this.slotCell(5, 0),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2374,7 +2382,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[5].length > 1) {
             AlbumCellView({
-              cell: this.albumRows()[5][1],
+              cell: this.slotCell(5, 1),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -2385,7 +2393,7 @@ export struct MessageBubble {
           }
           if (this.albumRows()[5].length > 2) {
             AlbumCellView({
-              cell: this.albumRows()[5][2],
+              cell: this.slotCell(5, 2),
               group: this.group,
               data: this.data,
               actions: this.actions,
@@ -3340,7 +3348,14 @@ export struct MessageBubble {
         onToggle: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioTap(this.msg.id); },
         onPrevious: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioPrevious(this.msg.id); },
         onNext: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioNext(this.msg.id); },
-        onSeek: (fraction: number): void => { this.actions.onAudioSeek(this.msg.id, fraction); }
+        onSeek: (fraction: number): void => { this.actions.onAudioSeek(this.msg.id, fraction); },
+        chatId: this.data.chatId,
+        mimeType: this.msg.videoMimeType,
+        onSave: (): void => { if (this.gestureClaimed) { return; } this.actions.onAudioSave(this.msg.id); },
+        onFavorite: (): void => {
+          if (this.gestureClaimed) { return; }
+          this.actions.onAudioFavorite(this.msg.id);
+        }
       });
       if (this.displayedMessageText(this.msg.text) !== '') {
         Column() {

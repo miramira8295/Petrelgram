@@ -22,7 +22,11 @@ export struct AvatarView {
   @Prop loadImage: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_ANIMATED_AVATAR) animatedAvatar: boolean = true;
-  avatarSize: number = AVATAR_SIZE;
+  // **必须是 @Prop，不能是普通成员**：会话行的头像在手机/平板分栏之间是两个尺寸
+  // （见 util/chatRowMetrics），而没有装饰器的成员只在构造时取一次值、之后再不同步
+  // ——转屏或进出分栏时已经存在的那些行会停在旧尺寸上（HdsSubDestination 的 menuItems
+  // 栽过同一个坑）。数字过 @Prop 的深拷贝没有任何代价。
+  @Prop avatarSize: number = AVATAR_SIZE;
 
   // 动态头像播不播。
   //

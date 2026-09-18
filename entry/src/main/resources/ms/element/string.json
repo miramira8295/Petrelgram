@@ -12141,6 +12141,298 @@
       "value": "Selesai"
     },
     {
+      "name": "dc_title",
+      "value": "Pusat muat turun"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "Muat turun dan media cache"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "Semua"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "Video"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "Foto"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "Muzik"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "Suara"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "Fail"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "Cari nama fail atau sembang"
+    },
+    {
+      "name": "dc_loading",
+      "value": "Memuatkan muat turun dan cache…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "Cache di latar belakang"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "Cache di latar belakang bermula — lihat Tetapan › Pusat muat turun"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "Sudah dalam cache"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "Gagal memulakan cache"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "Padam dari cache"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "Dipadam dari cache"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "Storan"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "Kosongkan cache"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "Kosongkan"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "Media dan fail dalam cache akan dipadam. Salinan yang disimpan pada peranti kekal."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "Cache %1$s dikosongkan"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "Cache %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "Disimpan %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "%1$s kosong"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "Sedang berjalan · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "Selesai · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "Jeda semua"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "Mulakan semua"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/s · baki %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "Memuat turun · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "Dijeda · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "Beratur · menunggu muat turun terdahulu"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "Muat turun gagal · ketik cuba lagi"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "Cache sahaja"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "Disimpan"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "Jeda"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "Sambung"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "Cuba lagi"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "Batal"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "Simpan ke peranti"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "Buka"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "Ada masalah. Cuba lagi."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "\"%1$s\" dibatalkan"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "Cache dipadam (salinan disimpan kekal)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "Pilih"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "Selesai"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "%1$d dipilih"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "Simpan"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "Padam"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "%1$d item disimpan"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "%1$d item dipadam"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "Tiada muat turun yang sepadan"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "Cuba kata kunci atau jenis lain"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "Cache di latar belakang %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "Cache %1$d item"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Menunggu Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "Menunggu rangkaian · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "Sambung guna data mudah alih"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "Guna data"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "Tunjuk dalam sembang"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "Cache latar belakang hanya pada Wi‑Fi"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "Dijeda pada data mudah alih; item tertentu boleh dibenarkan"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "Mengikut tarikh"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "Mengikut saiz"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "Cache lain · %1$d item"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "Fail tanpa sumber diketahui · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "Pilih semua"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "Nyahpilih semua"
+    },
+    {
+      "name": "dc_undo",
+      "value": "Buat asal"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "Dalam cache"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "Cache %1$d video di latar belakang"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "Tiada video untuk cache"
+    },
+    {
       "name": "fw_send_n",
       "value": "Hantar (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "Selepas item terakhir dalam mesej, terus leret untuk terus ke foto atau video mesej seterusnya tanpa henti"
+    },
+    {
+      "name": "mc_title",
+      "value": "Pusat Muzik"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "Main muzik daripada sembang, urus koleksi"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "Main"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "Saya"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "Belum ada lagu"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "Artis tidak diketahui"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "Setempat"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "Awan"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "Format"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "Kadar bit"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "Sampel"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "Saiz"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "Hidupkan Pusat Muzik untuk melihat sumber, kadar bit dan format"
+    },
+    {
+      "name": "mc_cast",
+      "value": "Pindah"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "Output audio"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "Peranti main balik yang ada"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "Tiada peranti main balik"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "Peranti lain"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "Buka pemilih pemindahan sistem"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "Sedang digunakan"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "Tersedia"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "Alat dengar"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "Pembesar suara"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "Berwayar"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "Cast"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "Jauh"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "Peranti"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "Senarai main"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "Tambah ke koleksi"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "Koleksi saya"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "Koleksi baharu"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "Cipta koleksi"
+    },
+    {
+      "name": "mc_create",
+      "value": "Cipta"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "Nama koleksi"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "Cipta koleksi baharu untuk lagu anda"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "“%1$s” akan ditambah selepas dicipta"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "KOLEKSI"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "Belum ada lagu — guna “Tambah ke koleksi”"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "Main semua"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "Rawak"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "Padam koleksi"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d lagu"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d koleksi · %2$d lagu"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "Cari lagu, artis, album"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "Semua lagu"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "Keputusan · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "Tiada keputusan untuk “%1$s”"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "Belum ada muzik dalam sembang anda"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "Pautan luaran"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "Buka dalam pelayar"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "Satu ketikan terus buka, seperti dahulu"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "Salin apabila diketik"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "Hanya menyalin alamat — tiada sambungan"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "Tanya apabila diketik"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "Tunjuk alamat sebenar dahulu, kemudian buka atau salin"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "Pautan yang dibuka dalam apl (t.me, tg://) tidak terjejas. Jika teks menyembunyikan alamat lain, anda sentiasa ditanya dahulu."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "Klasik"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "Dimuat turun"
+    },
+    {
+      "name": "music_save",
+      "value": "Simpan"
+    },
+    {
+      "name": "music_favorited",
+      "value": "Dalam koleksi"
+    },
+    {
+      "name": "music_favorite",
+      "value": "Tambah"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "Nama kosong atau sudah digunakan"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "Pilih lagu"
     }
   ]
 }

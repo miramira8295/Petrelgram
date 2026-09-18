@@ -5,6 +5,9 @@ import {
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
+import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
+import { isSplitLayout } from '../../util/splitMetrics';
+import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifierWhen } from '../../util/materialModifier';
@@ -19,7 +22,7 @@ import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
 } from '../../store/AppSettings';
 import {
-  AVATAR_SIZE, COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+  COLOR_MUTED_BADGE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
   ROW_PAD_H, ROW_PAD_V
 } from '../../util/theme';
 import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from '../../store/ScopeMuteStore';
@@ -39,9 +42,8 @@ import {
   archiveSwipeVisual, muteSwipeVisual, readSwipeVisual
 } from '../../util/chatListSwipe';
 
-// 与普通会话行同一套规格：头像 AVATAR_SIZE(56) + 上下 ROW_PAD_V(8)。归档入口
-// 长得和会话行一个个头，拉出来时才不显得是另一种东西。
-const ARCHIVE_ROW_HEIGHT: number = AVATAR_SIZE + ROW_PAD_V * 2;
+// 归档入口长得和会话行一个个头，拉出来时才不显得是另一种东西——所以它的高度
+// **不要**写死，跟着当前档位走（见 util/chatRowMetrics）。下拉露出的那段行程也用它。
 // 归档卡片与上方文件夹条之间的空当。
 const ARCHIVE_TOP_GAP: number = 8;
 // 归档行完全展开需要把顶部回弹拉多深（vp）。回弹带阻尼，这 96vp 对应一大段
@@ -59,7 +61,7 @@ const ARCHIVE_OVERPULL: number = 96;
 // 阈值取 8 而不是 0：从过拉松手后弹回 0 的过程里 yOffset 可能有几个像素的抖动，
 // 留一点余量，免得刚拉出来就自己收回去。滚过 8vp 说明用户确实在往下走了。
 //
-// 原值是 ARCHIVE_ROW_HEIGHT * 2（144vp）——那 144vp 就是重叠暴露的那段窗口。
+// 原值是「归档行高 × 2」（144vp）——那 144vp 就是重叠暴露的那段窗口。
 const ARCHIVE_COLLAPSE_SCROLL: number = 8;
 
 @Preview
@@ -79,6 +81,13 @@ export struct MainTabBody {
   // 所以这里守住同一条底线：没露出来时不算，露出来之后才跟着变化刷新。
   @State private archiveTop: ChatEntry | null = null;
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
+  // 会话行走紧凑档还是宽松档。喂的必须是**窗口**宽高（AppStorage 里存的正是窗口
+  // 尺寸，分屏/悬浮窗/折叠屏由 EntryAbility 的 windowSizeChange 刷新）。判据整条
+  // 复用 splitMetrics，和 dock 那次「只分手机与平板分栏、强制单栏算手机」同一条线。
+  // 三份订阅挂在列表上而不是每一行上——同屏十来行，逐行订阅是十倍的绑定。
+  @StorageProp('screenWidthVp') private screenW: number = 360;
+  @StorageProp('screenHeightVp') private screenH: number = 780;
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   // “所有”页使用独立列表组件，也要单独响应底栏重复点击（issue #35）。
   @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
   private topVisible: boolean = true;
@@ -436,10 +445,20 @@ export struct MainTabBody {
     });
   }
 
+  // 当前档位：手机（含平板强制单栏）紧凑 60，平板分栏宽松 72。
+  private spec(): ChatRowSpec {
+    return chatRowSpec(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn));
+  }
+
+  // 归档入口和会话行一样高，跟着档位走。
+  private archiveRowHeight(): number {
+    return this.spec().minHeight;
+  }
+
   // 归档入口是否作为列表第 0 行存在。
   // 下拉进度 0..1，驱动卡片与图标的形变（见 util/archiveReveal）。
   private archiveProgress(): number {
-    return archiveRevealProgress(this.archivePullPx, ARCHIVE_ROW_HEIGHT, this.archiveRevealed);
+    return archiveRevealProgress(this.archivePullPx, this.archiveRowHeight(), this.archiveRevealed);
   }
 
   private archiveRowShown(): boolean {
@@ -521,8 +540,8 @@ export struct MainTabBody {
             y: archiveIconScale(this.archiveProgress())
           });
       }
-      .width(AVATAR_SIZE).height(AVATAR_SIZE)
-      .borderRadius(AVATAR_SIZE / 2)
+      .width(this.spec().avatar).height(this.spec().avatar)
+      .borderRadius(this.spec().avatar / 2)
       .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
       .backgroundColor(this.archiveLoadFailed ? '#E64646' : COLOR_MUTED_BADGE);
       // 标题 + 最新消息预览，字号/颜色与普通会话行逐项相同（17 中粗 / 14 次级，
@@ -559,7 +578,7 @@ export struct MainTabBody {
     // 玻璃与按压态。
     .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
     .margin({ left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
-    .height(ARCHIVE_ROW_HEIGHT)
+    .height(this.archiveRowHeight())
     .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H })
     .borderRadius(16)
     .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
@@ -584,6 +603,7 @@ export struct MainTabBody {
       LazyForEach(this.chatsData, (item: ChatEntry) => {
         ListItem() {
           ChatRow({
+          compact: !isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn),
             chat: item,
             listKey: 'main',
             liveEffects: this.liveEffects(),
@@ -633,10 +653,10 @@ export struct MainTabBody {
         state === ScrollState.Scroll) {
         // 展开只吃**手指拖动**的回弹深度（惯性冲进回弹区不算）。回弹自带阻尼，
         // 这一段越拉越沉——"不好出现"就是它。拽到全展开的瞬间锁定。
-        const pull: number = Math.min(ARCHIVE_ROW_HEIGHT,
-          -y * ARCHIVE_ROW_HEIGHT / ARCHIVE_OVERPULL);
+        const pull: number = Math.min(this.archiveRowHeight(),
+          -y * this.archiveRowHeight() / ARCHIVE_OVERPULL);
         this.archivePullPx = pull;
-        if (pull >= ARCHIVE_ROW_HEIGHT) {
+        if (pull >= this.archiveRowHeight()) {
           // 拉到底那一下用弹簧收尾：跟手段是线性的，锁定这一下给点回弹，
           // 手上才有"咔哒一声到位"的反馈。**曲线走省电分组**——关掉平滑过渡
           // 时 duration 会被压到 0，那时它就是原来的瞬时置位。
@@ -650,7 +670,7 @@ export struct MainTabBody {
       } else if (!this.archiveRevealed && this.archivePullPx > 0) {
         // 没拽到底就松手/惯性阶段：跟着回弹的衰减一起缩回去。
         this.archivePullPx = y < 0
-          ? Math.min(ARCHIVE_ROW_HEIGHT, -y * ARCHIVE_ROW_HEIGHT / ARCHIVE_OVERPULL)
+          ? Math.min(this.archiveRowHeight(), -y * this.archiveRowHeight() / ARCHIVE_OVERPULL)
           : 0;
       } else if (this.archiveRevealed && y > ARCHIVE_COLLAPSE_SCROLL) {
         // 已展开后往下滚一段，自动收起；下次要看还得再用力拉一次。
@@ -686,12 +706,12 @@ export struct MainTabBody {
           this.archiveHeader();
         }
         .width('100%')
-        .height(this.archiveRevealed ? ARCHIVE_ROW_HEIGHT : this.archivePullPx)
+        .height(this.archiveRevealed ? this.archiveRowHeight() : this.archivePullPx)
         // 文件夹条浮在内容之上、自身只留 2 的下外边距，归档卡片顶到它底下
         // 看着像被压住（用户："归档感觉被挡住一点"）。这一档让它离开那条边。
         .margin({ top: ARCHIVE_TOP_GAP })
         .clip(true)
-        .opacity(this.archiveRevealed ? 1 : this.archivePullPx / ARCHIVE_ROW_HEIGHT)
+        .opacity(this.archiveRevealed ? 1 : this.archivePullPx / this.archiveRowHeight())
         // 跟手形变：卡片从 0.86 长到 1。高度是"露出多少"，缩放是"成形多少"，
         // 两者一起才有被拉出来的手感（只有高度时像从缝里平推出来）。
         .scale({

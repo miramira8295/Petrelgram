@@ -2,6 +2,8 @@
 // ListScroller，但按钮尺寸、文案、图标和颜色不应各复制一份。
 
 export const CHAT_SWIPE_BUTTON_VP: number = 76;
+// 动作背景的高度与上下留白必须和会话卡片一致，否则滑出来的底色露在卡片外面。
+// 两者绑在一起：高度 = 100% - 上下两条 gutter（见 ChatRow.CHAT_ROW_VERTICAL_GUTTER）。
 export const CHAT_SWIPE_ACTION_HEIGHT: string = 'calc(100% - 6vp)';
 export const CHAT_SWIPE_VERTICAL_GUTTER_VP: number = 3;
 export const CHAT_SWIPE_RADIUS_VP: number = 16;

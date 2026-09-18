@@ -69,6 +69,8 @@ export struct ChatHeader {
   // 顶栏浮在聊天壁纸上：深色模式 + 浅色壁纸时它其实坐在亮底上，白色前景会掉到
   // 2.22:1。由 ChatPage 算好传进来（判据见 util/chatChrome），这里只按它选前景。
   @Param onLightBg: boolean = false;
+  // 浅色模式 + 暗壁纸那一侧，见 util/chatChrome.chromeOnDarkBgOf。
+  @Param onDarkBg: boolean = false;
   // B2 迁移前是 @StorageProp(KEY_APP_DARK)，同样改成 ChatPage 透传。
   @Param appDark: boolean = false;
   // B8：titleText/subtitleText/headerState/avatarPath/avatarAnimPath/initials/
@@ -187,14 +189,14 @@ export struct ChatHeader {
       LoadingProgress().width(14).height(14).color(this.fgSecondary()).margin({ left: 4 });
     } else if (this.header.isMuted) {
       SymbolGlyph($r('sys.symbol.bell_slash'))
-        .fontSize(14).fontColor([chromeIconColorOf(this.onLightBg, this.appDark)]).margin({ left: 4 });
+        .fontSize(14).fontColor([chromeIconColorOf(this.onLightBg, this.appDark, this.onDarkBg)]).margin({ left: 4 });
     }
   }
 
   // B8（顺手去重，记在 B3 抽出 chromeTextColorOf/chromeIconColorOf 时留下的账）：
   // 这两个方法原来在这里各自重写了一遍 util/chatChrome 里同名纯函数逐字相同的
   // if/else——B3 把判据抽出去时漏了这一处调用点。现在直接调
-  // chromeTextColorOf(this.onLightBg) / chromeIconColorOf(this.onLightBg,
+  // chromeTextColorOf(this.onLightBg, this.onDarkBg) / chromeIconColorOf(this.onLightBg,
   // this.appDark) 取代，本文件不再维护第二份判据。
 
   private fgSecondary(): ResourceColor {
@@ -207,14 +209,14 @@ export struct ChatHeader {
     // 顶栏浮在用户自己挑的壁纸上，底色**事先不可知**，所以这一层就不该出现
     // "次级灰"这种预设了底色的颜色。副标题（成员数/在线数）本来就短，和主标题
     // 同色不会喧宾夺主——层次交给字号和字重（12 常规 vs 16 加粗）。
-    return chromeTextColorOf(this.onLightBg);
+    return chromeTextColorOf(this.onLightBg, this.onDarkBg);
   }
 
   @Builder
   backButton() {
     Row() {
       SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(22)
-        .fontColor([chromeTextColorOf(this.onLightBg)]);
+        .fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)]);
     }
     .width(CHAT_HEADER_ACTION_SIZE)
     .height(CHAT_HEADER_ACTION_SIZE)
@@ -250,14 +252,14 @@ export struct ChatHeader {
       Stack() {
         Image($r('app.media.ic_header_menu'))
           .width(18).height(18)
-          .fillColor(chromeTextColorOf(this.onLightBg))
+          .fillColor(chromeTextColorOf(this.onLightBg, this.onDarkBg))
           .draggable(false)
           // 交叉淡入 + 反向旋转由 onMenuShowChanged 的 animateTo 驱动，图标上不挂常驻 .animation()
           // （理由见本组件开头按压态那段）。
           .opacity(this.menuIconOpen ? 0 : 1)
           .rotate({ angle: this.menuIconOpen ? 90 : 0 });
         SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(19).fontColor([chromeTextColorOf(this.onLightBg)])
+          .fontSize(19).fontColor([chromeTextColorOf(this.onLightBg, this.onDarkBg)])
           .opacity(this.menuIconOpen ? 1 : 0)
           .rotate({ angle: this.menuIconOpen ? 0 : -90 });
       }
@@ -310,7 +312,7 @@ export struct ChatHeader {
             .fontSize(16)
             // Medium 与会话列表行的标题同一档（issue #169 第 4 条：从列表点进来群名「变粗了」）。
             .fontWeight(FontWeight.Medium)
-            .fontColor(chromeTextColorOf(this.onLightBg))
+            .fontColor(chromeTextColorOf(this.onLightBg, this.onDarkBg))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .flexShrink(1);

@@ -12141,6 +12141,298 @@
       "value": "Готово"
     },
     {
+      "name": "dc_title",
+      "value": "Центр завантажень"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "Завантаження та кешовані медіа"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "Усі"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "Відео"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "Фото"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "Музика"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "Голосові"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "Файли"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "Пошук за назвою файлу або чатом"
+    },
+    {
+      "name": "dc_loading",
+      "value": "Завантаження списку та кешу…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "Кешувати у фоні"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "Кешування у фоні — див. «Налаштування › Центр завантажень»"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "Уже в кеші"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "Не вдалося почати кешування"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "Видалити з кешу"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "Видалено з кешу"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "Сховище"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "Очистити кеш"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "Очистити"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "Медіа й файли з кешу буде видалено. Копії, збережені на пристрої, залишаться."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "Очищено %1$s кешу"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "Кеш %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "Збережено %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "Вільно %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "У процесі · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "Завершено · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "Призупинити все"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "Запустити все"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/с · залишилось %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "Завантаження · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "Призупинено · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "У черзі · очікування попередніх завантажень"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "Помилка завантаження · натисніть «Повторити»"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "Лише кеш"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "Збережено"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "Пауза"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "Продовжити"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "Повторити"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "Скасувати"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "Зберегти на пристрій"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "Відкрити"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "Щось пішло не так. Спробуйте ще раз."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "«%1$s» скасовано"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "Кеш видалено (збережена копія залишилась)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "Вибрати"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "Готово"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "Вибрано: %1$d"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "Зберегти"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "Видалити"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "Збережено %1$d об'єктів"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "Видалено %1$d об'єктів"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "Завантажень не знайдено"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "Спробуйте інше слово або тип"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "Кешування у фоні %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "Кешування %1$d об'єктів"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Очікування Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "Очікування мережі · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "Продовжити через мобільний інтернет"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "Моб. інтернет"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "Показати в чаті"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "Фонове кешування лише через Wi‑Fi"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "Призупиняється в мобільній мережі; окремі файли можна дозволити"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "За датою"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "За розміром"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "Інший кеш · %1$d об'єктів"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "Файли без відомого джерела · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "Вибрати все"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "Зняти виділення"
+    },
+    {
+      "name": "dc_undo",
+      "value": "Скасувати"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "У кеші"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "Кешування %1$d відео у фоні"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "Немає відео для кешування"
+    },
+    {
       "name": "fw_send_n",
       "value": "Надіслати (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "Після останнього файлу в повідомленні гортайте далі — одразу відкриються фото чи відео наступного повідомлення, без зупинки"
+    },
+    {
+      "name": "mc_title",
+      "value": "Музичний центр"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "Музика з чатів і добірки"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "Плеєр"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "Моє"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "Поки немає треку"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "Невідомий виконавець"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "Локально"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "Хмара"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "Формат"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "Бітрейт"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "Частота"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "Розмір"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "Увімкніть музичний центр, щоб бачити джерело, бітрейт і формат"
+    },
+    {
+      "name": "mc_cast",
+      "value": "Трансляція"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "Виведення звуку"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "Доступні пристрої відтворення"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "Немає доступних пристроїв"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "Інші пристрої"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "Відкрити системний вибір пристроїв"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "Зараз використовується"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "Доступно"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "Динамік"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "Гучномовець"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "Провід"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "Трансляція"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "Віддалене"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "Пристрій"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "Плейлист"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "Додати до добірки"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "Мої добірки"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "Нова добірка"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "Створити добірку"
+    },
+    {
+      "name": "mc_create",
+      "value": "Створити"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "Назва добірки"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "Створіть нову добірку для пісень"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "Після створення буде додано «%1$s»"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "ДОБІРКА"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "Поки немає пісень — скористайтеся «Додати до добірки»"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "Відтворити все"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "Впереміш"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "Видалити добірку"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d треків"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d добірок · %2$d треків"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "Пошук пісень, виконавців, альбомів"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "Усі пісні"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "Результати · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "Нічого не знайдено за «%1$s»"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "У чатах поки немає музики"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "Зовнішні посилання"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "Відкривати у браузері"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "Натискання одразу відкриває посилання, як раніше"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "Копіювати за натисканням"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "Лише копіює адресу — без виходу в мережу"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "Запитувати при натисканні"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "Спершу показує справжню адресу, потім вибір"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "Посилання, що відкриваються в застосунку (t.me, tg://), не змінюються. Якщо текст приховує іншу адресу, запит з'являється завжди."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "Класика"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "Завантажено"
+    },
+    {
+      "name": "music_save",
+      "value": "Зберегти"
+    },
+    {
+      "name": "music_favorited",
+      "value": "У добірці"
+    },
+    {
+      "name": "music_favorite",
+      "value": "До добірки"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "Назва порожня або вже зайнята"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "Оберіть трек"
     }
   ]
 }

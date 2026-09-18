@@ -89,6 +89,7 @@ export struct AppIconPicker {
   // Resource），落到界面这一层就得有人把名字翻成 Resource，而 ArkTS 没给别的
   // 口子。加图标时这里是四个必改点之一。
   private previewOf(name: string): Resource {
+    if (name === 'iconprev_classic') { return $r('app.media.iconprev_classic'); }
     if (name === 'iconprev_frost') { return $r('app.media.iconprev_frost'); }
     if (name === 'iconprev_neon') { return $r('app.media.iconprev_neon'); }
     if (name === 'iconprev_aurora') { return $r('app.media.iconprev_aurora'); }

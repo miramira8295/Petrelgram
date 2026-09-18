@@ -56,6 +56,11 @@
       "buildFunction": "LanguagePageBuilder"
     },
     {
+      "name": "MusicCenterPage",
+      "pageSourceFile": "src/main/ets/pages/music/MusicCenterPage.ets",
+      "buildFunction": "MusicCenterPageBuilder"
+    },
+    {
       "name": "DownloadCenterPage",
       "pageSourceFile": "src/main/ets/pages/main/DownloadCenterPage.ets",
       "buildFunction": "DownloadCenterPageBuilder"

@@ -3,21 +3,37 @@ import { formatFileSize } from '../../util/formatFileSize';
 import { formatVoiceDuration } from '../../util/voiceWaveform';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
+import { musicFormatLabel, musicTrackKey } from '../../util/musicTrackModel';
+import { subscribeMusicCollections, trackInAnyCollection } from '../../store/MusicCollectionStore';
+import { voiceWaveformBars } from '../../util/voiceWaveform';
 
 // P4 批 5：迁 @ComponentV2（配方同批 1~4）。复用在 aboutToReuse 同步重挂；
 // @Monitor 兜非复用路径（挂错 = 进度条在动、其实播的不是它）。
 // 成员 @Styles 迁全局（V2 不支持成员 @Styles，四组均无状态依赖）。
+// 2026-09-18 改版（用户给的设计稿）：封面 + 曲名/副标题 + 播放键 / 波形 + 时长 /
+// 「已下载」「已收藏」两枚胶囊。配文照旧在卡片下方由 MessageBubble 画。
+const COVER: number = 44;
+const PLAY_BTN: number = 42;
+const WAVE_BARS: number = 34;
+const WAVE_BAR_W: number = 2.5;
+const WAVE_GAP: number = 2;
+const WAVE_H: number = 24;
+
+// 一枚状态胶囊的全部内容。做成结构是为了让 @Builder 只收**一个**参数——
+// 多参 @Builder 不会随状态刷新（见 [[arkui-silent-reactivity-traps]]）。
+interface MusicChipSpec {
+  icon: string;
+  label: string;
+  color: ResourceColor;
+  enabled: boolean;
+  action: () => void;
+}
+
 @Styles
 function musicControlNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
 
 @Styles
 function musicControlPressedStyle() { .scale({ x: 0.92, y: 0.92 }).opacity(0.82) }
-
-@Styles
-function musicSkipNormalStyle() { .scale({ x: 1, y: 1 }).opacity(1) }
-
-@Styles
-function musicSkipPressedStyle() { .scale({ x: 0.9, y: 0.9 }).opacity(0.65) }
 
 @ComponentV2
 export struct MusicBubble {
@@ -44,6 +60,11 @@ export struct MusicBubble {
   @Param onPrevious: () => void = (): void => {};
   @Param onNext: () => void = (): void => {};
   @Param onSeek: (fraction: number) => void = (): void => {};
+  // 2026-09-18 改版：卡片自带「下载保存」「添加到收藏夹」两枚状态胶囊。
+  @Param chatId: number = 0;
+  @Param mimeType: string = '';
+  @Param onSave: () => void = (): void => {};
+  @Param onFavorite: () => void = (): void => {};
 
   @Local playbackStatus: string = 'idle';
   @Local progress: number = 0;
@@ -53,7 +74,12 @@ export struct MusicBubble {
   @Local finished: boolean = false;
   @Local dragging: boolean = false;
   @Local dragProgress: number = 0;
+  // 这首在不在任一合集里。**必须在复用时重算**：它不进行 key，靠旧行对象带过来
+  // 就是"另一首歌的收藏态"（见 [[side-channel-row-pattern]]）。
+  @Local favorited: boolean = false;
   private unsub: (() => void) | null = null;
+  private unsubFavorites: (() => void) | null = null;
+  private waveWidth: number = 1;
 
   private attachPlayback(targetId: number, durationSec: number): void {
     this.detachPlayback();
@@ -65,6 +91,7 @@ export struct MusicBubble {
     this.finished = false;
     this.dragging = false;
     this.dragProgress = 0;
+    this.attachFavorites(this.chatId, targetId);
     this.unsub = getVoicePlayback().subscribe((state: VoiceState): void => {
       const mine: boolean = state.mode === 'music' && state.playingId === targetId;
       this.playbackFailed = state.mode === 'music' && state.errorId === targetId;
@@ -101,6 +128,18 @@ export struct MusicBubble {
       this.unsub();
       this.unsub = null;
     }
+    if (this.unsubFavorites !== null) {
+      this.unsubFavorites();
+      this.unsubFavorites = null;
+    }
+  }
+
+  // 收藏态跟着合集走：在别处（音乐中心）加了/移出，这张卡片也要跟着变。
+  private attachFavorites(chatId: number, messageId: number): void {
+    const key: string = musicTrackKey(chatId, messageId);
+    this.unsubFavorites = subscribeMusicCollections((): void => {
+      this.favorited = trackInAnyCollection(key);
+    });
   }
 
   @Monitor('msgId')
@@ -230,55 +269,72 @@ export struct MusicBubble {
     this.onSeek(fraction);
   }
 
+  // 副标题：演唱者 · 格式 · 大小。格式用 util/musicTrackModel 那套映射，
+  // 和音乐中心的信息格是同一份判据。
+  private subtitleLabel(): string {
+    const parts: string[] = [this.displayPerformer()];
+    const format: string = musicFormatLabel(this.mimeType, this.fileName);
+    if (format !== '') {
+      parts.push(format);
+    }
+    if (this.fileSize > 0) {
+      parts.push(formatFileSize(this.fileSize));
+    }
+    return parts.join(' · ');
+  }
+
+  // 波形。音乐消息**没有** TDLib 波形（那是语音条独有的），所以按文件 id 生成
+  // 一份稳定的形状——同一首歌每次进来长得一样，靠的是 voiceWaveformBars 的
+  // 种子回退分支，不是随机数。
+  private waveBars(): number[] {
+    return voiceWaveformBars('', WAVE_BARS, this.audioFileId !== 0 ? this.audioFileId : this.msgId);
+  }
+
+  private shownProgress(): number {
+    return this.dragging ? this.dragProgress : this.progress;
+  }
+
   @Builder
-  private coverControl(): void {
+  private coverArt(): void {
     Stack() {
       if (this.coverPath !== '') {
-        Image(this.coverPath.startsWith('/') ? `file://${this.coverPath}` : this.coverPath).draggable(false)
-          .width(52).height(52)
-          .borderRadius(13)
-          .objectFit(ImageFit.Cover);
+        Image(this.coverPath.startsWith('/') ? `file://${this.coverPath}` : this.coverPath)
+          .draggable(false)
+          .width(COVER).height(COVER).borderRadius(12).objectFit(ImageFit.Cover);
       } else {
         Column()
-          .width(52).height(52)
-          .borderRadius(13)
-          .linearGradient({
-            angle: 145,
-            colors: this.isOutgoing
-              ? [['#74BF69', 0], ['#3E8844', 1]]
-              : [['#65B8F5', 0], ['#3278D8', 1]]
-          });
-        Text('♫')
-          .fontSize(25)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Color.White)
-          .opacity(this.coverFailed ? 0.72 : 0.94);
+          .width(COVER).height(COVER).borderRadius(12)
+          // 比卡片底色重一档，封面块才分得出来（卡片是 #20/#1A 那一档）。
+          .backgroundColor(this.isOutgoing ? '#4755A24D' : '#3D3390EC');
+        SymbolGlyph($r('sys.symbol.music_note_list'))
+          .fontSize(20).fontColor([this.accent()])
+          .opacity(this.coverFailed ? 0.5 : 1);
       }
-      Circle({ width: 31, height: 31 })
-        .fill('#A8000000');
+    }
+    .width(COVER).height(COVER);
+  }
+
+  // 右侧那颗主按钮：播放 / 暂停 / 下载 / 转圈 / 重试，一个位置管全部状态。
+  @Builder
+  private playControl(): void {
+    Stack() {
+      Circle({ width: PLAY_BTN, height: PLAY_BTN }).fill(this.accent());
       if (this.downloadActive || this.loadingPlayback()) {
         if (this.downloadActive && this.downloadProgress > 0) {
           Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Ring })
-            .width(27).height(27)
-            .color(Color.White)
-            .style({ strokeWidth: 2 });
-          Text(`${this.downloadProgress}`)
-            .fontSize(8.5)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Color.White);
+            .width(PLAY_BTN - 14).height(PLAY_BTN - 14)
+            .color(Color.White).style({ strokeWidth: 2 });
         } else {
-          LoadingProgress().width(18).height(18).color(Color.White);
+          LoadingProgress().width(21).height(21).color(Color.White);
         }
       } else {
-        SymbolGlyph($r(this.playing() ? 'sys.symbol.pause'
-          : ((this.downloadFailed || this.playbackFailed || this.finished)
-            ? 'sys.symbol.arrow_counterclockwise'
-            : (this.localReady() ? 'sys.symbol.play_fill' : 'sys.symbol.arrow_down'))))
-          .fontSize(16)
-          .fontColor([Color.White]);
+        SymbolGlyph($r(this.playing() ? 'sys.symbol.pause_fill'
+          : ((this.downloadFailed || this.playbackFailed)
+            ? 'sys.symbol.arrow_counterclockwise' : 'sys.symbol.play_fill')))
+          .fontSize(19).fontColor([Color.White]);
       }
     }
-    .width(52).height(52)
+    .width(PLAY_BTN).height(PLAY_BTN)
     .stateStyles({ normal: musicControlNormalStyle, pressed: musicControlPressedStyle })
     .animation({ duration: 110, curve: Curve.EaseOut })
     .accessibilityText(this.statusLabel())
@@ -289,99 +345,155 @@ export struct MusicBubble {
     });
   }
 
+  // 一枚状态胶囊。已完成态是"陈述"（勾/心 + 完成时的文案），未完成态是"动作"。
   @Builder
-  private skipControl(label: string, enabled: boolean, previous: boolean): void {
-    Text(label)
-      .width(22).height(22)
-      .borderRadius(11)
-      .textAlign(TextAlign.Center)
-      .fontSize(18)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(this.accent())
-      .backgroundColor(this.isOutgoing ? '#1655A24D' : '#143390EC')
-      .opacity(enabled ? 1 : 0.34)
-      .stateStyles({ normal: musicSkipNormalStyle, pressed: musicSkipPressedStyle })
-      .animation({ duration: 100, curve: Curve.EaseOut })
-      .accessibilityText(previous ? $r('app.string.music_previous') : $r('app.string.music_next'))
-      .onClick((): void => {
-        if (enabled) {
-          if (previous) {
-            this.onPrevious();
-          } else {
-            this.onNext();
-          }
-        }
-      });
+  private chip(spec: MusicChipSpec): void {
+    Row({ space: 4 }) {
+      SymbolGlyph($r(spec.icon)).fontSize(12).fontColor([spec.color]);
+      Text(spec.label).fontSize(11).fontWeight(FontWeight.Medium).fontColor(spec.color)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .height(20)
+    .alignItems(VerticalAlign.Center)
+    .opacity(spec.enabled ? 1 : 0.45)
+    .enabled(spec.enabled)
+    .accessibilityText(spec.label)
+    .onClick((): void => { spec.action(); });
+  }
+
+  private downloadChip(): MusicChipSpec {
+    if (this.downloadActive) {
+      return {
+        icon: 'sys.symbol.arrow_down', color: COLOR_TEXT_SECONDARY,
+        label: this.downloadProgress > 0
+          ? str('downloading_pct', this.downloadProgress) : str('downloading'),
+        enabled: false, action: (): void => {}
+      };
+    }
+    if (this.downloadFailed) {
+      return {
+        icon: 'sys.symbol.exclamationmark_circle', color: '#D95B57',
+        label: str('download_failed_tap'), enabled: true, action: (): void => { this.onToggle(); }
+      };
+    }
+    // 已在本地：陈述，点一下仍可另存到设备（下载中心之外的那份副本）。
+    return this.localReady()
+      ? {
+        icon: 'sys.symbol.checkmark', color: '#3FA96A',
+        label: str('music_downloaded'), enabled: true, action: (): void => { this.onSave(); }
+      }
+      : {
+        icon: 'sys.symbol.arrow_down_circle', color: COLOR_TEXT_SECONDARY,
+        label: str('music_save'), enabled: true, action: (): void => { this.onSave(); }
+      };
+  }
+
+  private favoriteChip(): MusicChipSpec {
+    return this.favorited
+      ? {
+        icon: 'sys.symbol.heart_fill', color: '#E8619D',
+        label: str('music_favorited'), enabled: true, action: (): void => { this.onFavorite(); }
+      }
+      : {
+        icon: 'sys.symbol.heart', color: COLOR_TEXT_SECONDARY,
+        label: str('music_favorite'), enabled: true, action: (): void => { this.onFavorite(); }
+      };
   }
 
   build() {
-    Row({ space: 9 }) {
-      this.coverControl();
-      Column({ space: 2 }) {
-        Text(this.displayTitle())
-          .fontSize(14.5)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%');
-        Row({ space: 4 }) {
-          Text(this.displayPerformer())
-            .fontSize(11.5)
-            .fontColor(COLOR_TEXT_SECONDARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1);
-          if (this.queueLabel() !== '') {
-            Text(this.queueLabel())
-              .fontSize(10)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.accent());
-          }
+    Column({ space: 0 }) {
+      // 一行：封面 · 曲名/副标题 · 播放键
+      Row({ space: 10 }) {
+        this.coverArt();
+        Column({ space: 2 }) {
+          Text(this.displayTitle())
+            .fontSize(15).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
+          Text(this.subtitleLabel())
+            .fontSize(11.5).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%');
         }
-        .width('100%')
-        .height(17)
-        .alignItems(VerticalAlign.Center);
-        Slider({
-          value: this.dragging ? this.dragProgress : this.progress,
-          min: 0,
-          max: 1,
-          step: 0.001
-        })
-          .width('100%')
-          .height(14)
-          .trackColor(this.isOutgoing ? '#459FCB98' : '#45B7CDE3')
-          .selectedColor(this.accent())
-          .blockColor(this.accent())
-          .blockSize({ width: 10, height: 10 })
-          .enabled(this.currentTrack() && this.localReady() && this.resolvedDuration() > 0)
-          .onChange((value: number, mode: SliderChangeMode): void => {
-            this.onSeekChange(value, mode);
-          });
-        Row({ space: 4 }) {
-          Text(this.statusLabel())
-            .fontSize(10.5)
-            .fontColor(this.downloadFailed || this.playbackFailed
-              ? '#D95B57' : COLOR_TEXT_SECONDARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1);
-          if (this.queueLength > 1 && this.currentTrack()) {
-            this.skipControl('‹', this.hasPrevious, true);
-            this.skipControl('›', this.hasNext, false);
-          }
-        }
-        .width('100%')
-        .height(22)
-        .alignItems(VerticalAlign.Center);
+        .layoutWeight(1).alignItems(HorizontalAlign.Start);
+        this.playControl();
       }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start);
+      .width('100%').alignItems(VerticalAlign.Center);
+
+      // 二行：波形 + 时长。波形按下即定位，和音乐中心的进度条同一套手感。
+      Row({ space: 8 }) {
+        Row({ space: WAVE_GAP }) {
+          ForEach(this.waveBars(), (height: number, index: number): void => {
+            Column()
+              .width(WAVE_BAR_W)
+              .height(Math.max(3, height))
+              .borderRadius(WAVE_BAR_W / 2)
+              .backgroundColor(index / WAVE_BARS <= this.shownProgress()
+                ? this.accent()
+                : (this.isOutgoing ? '#4D9FCB98' : '#4DB7CDE3'));
+          }, (height: number, index: number): string => `${index}`);
+        }
+        .layoutWeight(1)
+        .height(WAVE_H)
+        .alignItems(VerticalAlign.Center)
+        .onAreaChange((_old: Area, area: Area): void => {
+          this.waveWidth = Math.max(1, Number(area.width));
+        })
+        .onTouch((event: TouchEvent): void => { this.onWaveTouch(event); });
+        Text(this.durationLabel())
+          .fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+      }
+      .width('100%').margin({ top: 8 })
+      .alignItems(VerticalAlign.Center);
+
+      // 分割线：把「保存 / 收藏」这排动作和上面的曲目信息分开（用户 2026-09-18）。
+      // 颜色跟着强调色走而不是用 divider 资源——卡片本身已经是一层强调色叠加，
+      // 灰线压上去会发脏。
+      Divider()
+        .color(this.isOutgoing ? '#3355A24D' : '#2E3390EC')
+        .strokeWidth(0.8)
+        .margin({ top: 9 });
+
+      // 三行：两枚胶囊。时间戳压在气泡右下角，所以这一行右边留空。
+      Row({ space: 14 }) {
+        this.chip(this.downloadChip());
+        this.chip(this.favoriteChip());
+      }
+      // 时间戳压在气泡右下角，只让这一行让开它——卡片底色仍然铺满整宽。
+      .width('100%').margin({ top: 8 })
+      .padding({ right: 26 })
+      .alignItems(VerticalAlign.Center);
     }
-    .width(Math.max(190, Math.min(262, this.maxWidth)))
-    .alignItems(VerticalAlign.Top)
-    // The message timestamp is overlaid at the bubble's lower-right. Keep the
-    // music card clear of it just like the voice waveform does.
-    .padding({ top: 1, bottom: 9, right: 31 });
+    // 灌满气泡的内容宽（2026-09-18 用户：横向铺满、加底色）。用 maxWidth 而不是
+    // 按内容收缩：曲名长短不一，收缩会让同一串音频消息宽窄参差。
+    .width(this.maxWidth)
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 10, right: 10, top: 9, bottom: 9 })
+    .borderRadius(14)
+    // 底色：把音频区和下面的配文分开。用强调色的低透明度叠加，深浅两种模式下
+    // 都是"比气泡稍重一档"，不必各配一套实色。
+    .backgroundColor(this.isOutgoing ? '#2055A24D' : '#1A3390EC');
+  }
+
+  // 播放中显示"已播/总长"，其余显示总长——和设计稿右侧那个 04:12 一致。
+  private durationLabel(): string {
+    if (this.currentTrack() && !this.finished) {
+      return `${formatVoiceDuration(this.elapsedSec)} / ${this.totalLabel()}`;
+    }
+    return this.totalLabel();
+  }
+
+  private onWaveTouch(event: TouchEvent): void {
+    if (!this.currentTrack() || this.resolvedDuration() <= 0) {
+      return;
+    }
+    const fraction: number = Math.max(0, Math.min(1, event.touches[0].x / this.waveWidth));
+    if (event.type === TouchType.Down || event.type === TouchType.Move) {
+      this.dragging = true;
+      this.dragProgress = fraction;
+      return;
+    }
+    this.dragging = false;
+    this.progress = fraction;
+    this.elapsedSec = Math.floor(fraction * this.resolvedDuration());
+    this.onSeek(fraction);
   }
 }

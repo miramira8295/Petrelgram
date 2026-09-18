@@ -12141,6 +12141,298 @@
       "value": "Готово"
     },
     {
+      "name": "dc_title",
+      "value": "Центр загрузок"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "Загрузки и кэшированные медиа"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "Все"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "Видео"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "Фото"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "Музыка"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "Голосовые"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "Файлы"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "Поиск по имени файла или чату"
+    },
+    {
+      "name": "dc_loading",
+      "value": "Загрузка списка и кэша…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "Кэшировать в фоне"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "Кэширование в фоне — см. «Настройки › Центр загрузок»"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "Уже в кэше"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "Не удалось начать кэширование"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "Удалить из кэша"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "Удалено из кэша"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "Хранилище"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "Очистить кэш"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "Очистить"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "Медиа и файлы из кэша будут удалены. Копии, сохранённые на устройстве, останутся."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "Очищено %1$s кэша"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "Кэш %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "Сохранено %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "Свободно %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "В процессе · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "Завершено · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "Приостановить все"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "Запустить все"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/с · осталось %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "Загрузка · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "Приостановлено · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "В очереди · ожидание предыдущих загрузок"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "Ошибка загрузки · нажмите «Повторить»"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "Только кэш"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "Сохранено"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "Пауза"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "Продолжить"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "Повторить"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "Отменить"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "Сохранить на устройство"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "Открыть"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "Что-то пошло не так. Попробуйте ещё раз."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "«%1$s» отменено"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "Кэш удалён (сохранённая копия осталась)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "Выбрать"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "Готово"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "Выбрано: %1$d"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "Сохранить"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "Удалить"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "Сохранено %1$d объектов"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "Удалено %1$d объектов"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "Загрузки не найдены"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "Попробуйте другое слово или тип"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "Кэширование в фоне %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "Кэширование %1$d объектов"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Ожидание Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "Ожидание сети · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "Продолжить через моб. интернет"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "Моб. интернет"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "Показать в чате"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "Фоновое кэширование только по Wi‑Fi"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "Приостанавливается в моб. сети; отдельные файлы можно разрешить"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "По дате"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "По размеру"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "Прочий кэш · %1$d объектов"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "Файлы без известного источника · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "Выбрать все"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "Снять выделение"
+    },
+    {
+      "name": "dc_undo",
+      "value": "Отменить"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "В кэше"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "Кэширование %1$d видео в фоне"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "Нет видео для кэширования"
+    },
+    {
       "name": "fw_send_n",
       "value": "Отправить (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "После последнего файла в сообщении продолжайте листать — сразу откроются фото или видео следующего сообщения, без остановки"
+    },
+    {
+      "name": "mc_title",
+      "value": "Музыкальный центр"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "Музыка из чатов и подборки"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "Плеер"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "Моё"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "Пока нет трека"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "Неизвестный исполнитель"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "Локально"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "Облако"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "Формат"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "Битрейт"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "Частота"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "Размер"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "Включите музыкальный центр, чтобы видеть источник, битрейт и формат"
+    },
+    {
+      "name": "mc_cast",
+      "value": "Трансляция"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "Вывод звука"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "Доступные устройства воспроизведения"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "Нет доступных устройств"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "Другие устройства"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "Открыть системный выбор устройств"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "Сейчас используется"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "Доступно"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "Динамик"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "Динамик"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "Провод"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "Трансляция"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "Удалённое"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "Устройство"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "Плейлист"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "Добавить в подборку"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "Мои подборки"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "Новая подборка"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "Создать подборку"
+    },
+    {
+      "name": "mc_create",
+      "value": "Создать"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "Название подборки"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "Создайте новую подборку для песен"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "После создания будет добавлено «%1$s»"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "ПОДБОРКА"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "Пока нет песен — используйте «Добавить в подборку»"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "Играть все"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "Вперемешку"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "Удалить подборку"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d треков"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d подборок · %2$d треков"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "Поиск песен, исполнителей, альбомов"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "Все песни"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "Результаты · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "Ничего не найдено по «%1$s»"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "В чатах пока нет музыки"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "Внешние ссылки"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "Открывать в браузере"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "Нажатие сразу открывает ссылку, как раньше"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "Копировать по нажатию"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "Только копирует адрес — без выхода в сеть"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "Спрашивать при нажатии"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "Сначала показывает настоящий адрес, затем выбор"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "Ссылки, открывающиеся в приложении (t.me, tg://), не затрагиваются. Если текст скрывает другой адрес, вопрос задаётся всегда."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "Классика"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "Загружено"
+    },
+    {
+      "name": "music_save",
+      "value": "Сохранить"
+    },
+    {
+      "name": "music_favorited",
+      "value": "В подборке"
+    },
+    {
+      "name": "music_favorite",
+      "value": "В подборку"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "Название пустое или уже занято"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "Выберите трек"
     }
   ]
 }

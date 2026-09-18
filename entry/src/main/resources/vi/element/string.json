@@ -12141,6 +12141,298 @@
       "value": "Xong"
     },
     {
+      "name": "dc_title",
+      "value": "Trung tâm tải xuống"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "Tải xuống và media đã lưu đệm"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "Tất cả"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "Video"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "Ảnh"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "Nhạc"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "Tin nhắn thoại"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "Tệp"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "Tìm tên tệp hoặc cuộc trò chuyện"
+    },
+    {
+      "name": "dc_loading",
+      "value": "Đang tải danh sách tải xuống và bộ nhớ đệm…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "Lưu đệm nền"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "Đang lưu đệm nền — xem Cài đặt › Trung tâm tải xuống"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "Đã lưu đệm"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "Không thể bắt đầu lưu đệm"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "Xóa khỏi bộ nhớ đệm"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "Đã xóa khỏi bộ nhớ đệm"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "Bộ nhớ"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "Xóa bộ nhớ đệm"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "Xóa"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "Media và tệp trong bộ nhớ đệm sẽ bị xóa. Bản sao đã lưu trên thiết bị vẫn còn."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "Đã xóa %1$s bộ nhớ đệm"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "Bộ nhớ đệm %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "Đã lưu %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "Còn trống %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "Đang tiến hành · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "Hoàn tất · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "Tạm dừng tất cả"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "Bắt đầu tất cả"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/s · còn %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "Đang tải · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "Đã tạm dừng · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "Đang chờ · đợi các mục tải trước"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "Tải xuống thất bại · chạm để thử lại"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "Chỉ bộ nhớ đệm"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "Đã lưu"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "Tạm dừng"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "Tiếp tục"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "Thử lại"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "Hủy"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "Lưu vào thiết bị"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "Mở"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "Đã xảy ra lỗi. Hãy thử lại."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "Đã hủy \"%1$s\""
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "Đã xóa bộ nhớ đệm (giữ bản đã lưu)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "Chọn"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "Xong"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "Đã chọn %1$d"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "Lưu"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "Xóa"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "Đã lưu %1$d mục"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "Đã xóa %1$d mục"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "Không tìm thấy mục tải xuống"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "Thử từ khóa hoặc loại khác"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "Lưu đệm nền %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "Đang lưu đệm %1$d mục"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Đang chờ Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "Đang chờ mạng · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "Tiếp tục bằng dữ liệu di động"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "Dùng dữ liệu"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "Hiện trong trò chuyện"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "Lưu đệm nền chỉ khi dùng Wi‑Fi"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "Tạm dừng khi dùng dữ liệu di động; có thể cho phép từng mục"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "Theo ngày"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "Theo kích thước"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "Bộ nhớ đệm khác · %1$d mục"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "Tệp không rõ nguồn · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "Chọn tất cả"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "Bỏ chọn tất cả"
+    },
+    {
+      "name": "dc_undo",
+      "value": "Hoàn tác"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "Đã lưu đệm"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "Đang lưu đệm %1$d video ở nền"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "Không có video cần lưu đệm"
+    },
+    {
       "name": "fw_send_n",
       "value": "Gửi (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "Sau mục cuối của một tin nhắn, tiếp tục vuốt để sang ngay ảnh hoặc video của tin nhắn kế tiếp, không dừng lại"
+    },
+    {
+      "name": "mc_title",
+      "value": "Trung tâm nhạc"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "Phát nhạc trong trò chuyện, quản lý bộ sưu tập"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "Đang phát"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "Của tôi"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "Chưa có bài hát"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "Nghệ sĩ không rõ"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "Cục bộ"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "Đám mây"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "Định dạng"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "Bitrate"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "Lấy mẫu"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "Kích thước"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "Bật Trung tâm nhạc để xem nguồn, bitrate và định dạng"
+    },
+    {
+      "name": "mc_cast",
+      "value": "Chuyển tiếp"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "Đầu ra âm thanh"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "Thiết bị phát khả dụng"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "Không có thiết bị phát"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "Thiết bị khác"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "Mở bộ chọn thiết bị hệ thống"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "Đang dùng"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "Khả dụng"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "Loa thoại"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "Loa"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "Có dây"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "Truyền"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "Từ xa"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "Thiết bị"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "Danh sách phát"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "Thêm vào bộ sưu tập"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "Bộ sưu tập của tôi"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "Bộ sưu tập mới"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "Tạo bộ sưu tập"
+    },
+    {
+      "name": "mc_create",
+      "value": "Tạo"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "Tên bộ sưu tập"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "Tạo bộ sưu tập mới cho bài hát"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "Sau khi tạo sẽ tự thêm “%1$s”"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "BỘ SƯU TẬP"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "Chưa có bài hát — dùng “Thêm vào bộ sưu tập”"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "Phát tất cả"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "Ngẫu nhiên"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "Xóa bộ sưu tập"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d bài"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d bộ sưu tập · %2$d bài"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "Tìm bài hát, nghệ sĩ, album"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "Tất cả bài hát"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "Kết quả · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "Không tìm thấy “%1$s”"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "Chưa có nhạc trong trò chuyện"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "Liên kết ngoài"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "Mở bằng trình duyệt"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "Chạm một lần là mở, như trước đây"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "Chạm để sao chép"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "Chỉ sao chép địa chỉ, không kết nối mạng"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "Chạm thì hỏi"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "Hiện địa chỉ thật trước, rồi chọn mở hay sao chép"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "Các liên kết mở trong ứng dụng (t.me, tg://) không bị ảnh hưởng. Khi văn bản hiển thị che giấu địa chỉ khác, luôn hỏi trước."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "Cổ điển"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "Đã tải"
+    },
+    {
+      "name": "music_save",
+      "value": "Lưu"
+    },
+    {
+      "name": "music_favorited",
+      "value": "Trong bộ sưu tập"
+    },
+    {
+      "name": "music_favorite",
+      "value": "Thêm"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "Tên trống hoặc đã tồn tại"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "Chọn một bài"
     }
   ]
 }

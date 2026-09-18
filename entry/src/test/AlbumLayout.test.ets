@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  packAlbumRows, AlbumCell, ALBUM_ROW_SLOTS, ALBUM_ROW_MAX_CELLS
+  packAlbumRows, albumCellAt, AlbumCell, ALBUM_ROW_SLOTS, ALBUM_ROW_MAX_CELLS, EMPTY_ALBUM_CELL
 } from '../main/ets/util/packAlbumRows';
 
 function rowWidth(row: AlbumCell[]): number {
@@ -59,5 +59,38 @@ export default function albumLayoutTest() {
         expect(row.length <= ALBUM_ROW_MAX_CELLS).assertTrue();
       }
     });
+    // 行复用时残留槽位会拿旧的行列去索引新相册，索引必须是全函数——这是崩溃
+    // 上报里排第一那一类的修复（栈顶 paramsLambda ← aboutToReuseInternal，
+    // 两种文案：Cannot load property of null or undefined / Cannot read
+    // property idx of undefined）。
+    it('cell lookup is total: out of range yields the empty cell', 0, () => {
+      const rows: AlbumCell[][] = packAlbumRows([1, 1, 1, 1], 280);
+      expect(rows.length).assertEqual(2);
+      // 存在的格子照常取到。
+      expect(albumCellAt(rows, 0, 0)).assertEqual(rows[0][0]);
+      expect(albumCellAt(rows, 1, 1)).assertEqual(rows[1][1]);
+      // 整行不存在：以前这里是 rows[2][0]，对 undefined 取下标就是崩溃。
+      expect(albumCellAt(rows, 2, 0)).assertEqual(EMPTY_ALBUM_CELL);
+      expect(albumCellAt(rows, ALBUM_ROW_SLOTS, 0)).assertEqual(EMPTY_ALBUM_CELL);
+      // 行在、列不在：以前 cell 会是 undefined，AlbumCellView.idx() 随即抛。
+      expect(albumCellAt(rows, 0, 2)).assertEqual(EMPTY_ALBUM_CELL);
+      expect(albumCellAt(rows, 0, ALBUM_ROW_MAX_CELLS)).assertEqual(EMPTY_ALBUM_CELL);
+      // 负数与非整数同样不能穿过去。
+      expect(albumCellAt(rows, -1, 0)).assertEqual(EMPTY_ALBUM_CELL);
+      expect(albumCellAt(rows, 0, -1)).assertEqual(EMPTY_ALBUM_CELL);
+      expect(albumCellAt(rows, 0.5, 0)).assertEqual(EMPTY_ALBUM_CELL);
+      // 空相册：一行都没有时也不能抛。
+      expect(albumCellAt([], 0, 0)).assertEqual(EMPTY_ALBUM_CELL);
+    });
+
+    // 空格子必须画不出东西，且让 group.photoXxx[idx] 落到兜底分支。
+    it('empty cell renders nothing and indexes nothing', 0, () => {
+      expect(EMPTY_ALBUM_CELL.width).assertEqual(0);
+      expect(EMPTY_ALBUM_CELL.height).assertEqual(0);
+      expect(EMPTY_ALBUM_CELL.idx).assertEqual(-1);
+      const paths: string[] = ['a.jpg'];
+      expect(paths[EMPTY_ALBUM_CELL.idx] ?? '').assertEqual('');
+    });
+
   });
 }

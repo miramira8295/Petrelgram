@@ -173,7 +173,10 @@ function settingGroups(): SettingGroup[] {
         dest: 'PowerUsagePage' },
       { icon: 'sys.symbol.play_fill', bg: '#30B0C7', title: str('settings_media'),
         subtitle: str('settings_media_sub'), page: 'pages/main/MediaSettingsPage',
-        dest: 'MediaSettingsPage' }
+        dest: 'MediaSettingsPage' },
+      { icon: 'sys.symbol.music_note_list', bg: '#FF2D55', title: str('mc_title'),
+        subtitle: str('mc_settings_sub'), page: 'pages/music/MusicCenterPage',
+        dest: 'MusicCenterPage' }
     ]
   },
   {

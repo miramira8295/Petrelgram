@@ -1,6 +1,8 @@
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
+import { isSplitLayout } from '../../util/splitMetrics';
+import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
@@ -30,6 +32,10 @@ import {
 @Component
 export struct ChatListView {
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
+  // 会话行档位，判据与 MainTabBody 一致（见 util/chatRowMetrics）。
+  @StorageProp('screenWidthVp') private screenW: number = 360;
+  @StorageProp('screenHeightVp') private screenH: number = 780;
+  @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   // 行滑动操作的开关（交互设置）。关着时不挂 swipeAction，横向手势留给切文件夹。
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
   @Prop effectsActive: boolean = true;
@@ -203,6 +209,22 @@ export struct ChatListView {
   @StorageProp(CHAT_LIST_TOUCH_HOLD) @Watch('onTouchHoldToggle') touchHold: boolean = false;
   @StorageProp(CHAT_LIST_RENDER_ACTIVE_KEY) @Watch('onRenderGateChanged')
   private renderActive: boolean = true;
+  // 本列表跟不跟**全局**那道发布闸（CHAT_LIST_RENDER_ACTIVE_KEY）。
+  //
+  // 那道闸是给**首页导航栏底下那几份列表**用的：手机上导航栏在
+  // HdsNavDestination 底下一直挂着，navigateToChat 关闸，等导航栏重新露出来时
+  // ChatListPage.applyNavBarVisible(true) 再开。
+  //
+  // 归档页是**独立的 destination**，这套时序对它是错的：从首页推开归档页时导航栏
+  // 就已经隐藏、闸被关上，之后进出会话导航栏自始至终盖着，
+  // applyNavBarVisible(true) 一次都不会来 ⇒ **闸永远开不回来**。归档列表因此停在
+  // 打开那一刻的快照上：进去看完消息退回来，未读角标还挂着，怎么点都不消
+  //（2026-09-18 用户实报）。初次那份能出来只是因为 forceInitial 绕过了闸。
+  //
+  // 所以这类页面传 false，改由页面自己的 onShown/onHidden 驱动 pageVisible。
+  @Prop obeyGlobalGate: boolean = true;
+  // 承载本列表的页面在不在眼前。obeyGlobalGate 为 false 时才用得上。
+  @Prop @Watch('onPageVisibleChanged') pageVisible: boolean = true;
   @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
   private flushEpoch: number = 0;
   @State chats: ChatEntry[] = [];
@@ -248,8 +270,13 @@ export struct ChatListView {
     return this.effectsActive;
   }
 
+  // 这一份列表的发布闸：跟全局的，还是跟承载页面自己的可见性。见 obeyGlobalGate。
+  private gateOpen(): boolean {
+    return this.obeyGlobalGate ? this.renderActive : this.pageVisible;
+  }
+
   private publishingActive(): boolean {
-    return this.renderActive && this.updatesActive && !this.listMoving;
+    return this.gateOpen() && this.updatesActive && !this.listMoving;
   }
 
   private onUpdatesActiveChanged(): void {
@@ -363,7 +390,7 @@ export struct ChatListView {
   }
 
   private flushBufferedChats(): void {
-    if (this.menuOpen || this.touchHold || this.listMoving || !this.renderActive || !this.updatesActive) {
+    if (this.menuOpen || this.touchHold || this.listMoving || !this.gateOpen() || !this.updatesActive) {
       return;
     }
     const next = this.updateGate.flush();
@@ -382,10 +409,15 @@ export struct ChatListView {
 
   private onRenderGateChanged(): void {
     // 闸开了就关窗：往后走正常路（含重排动画），不再需要旁路。
-    if (this.renderActive) {
+    if (this.gateOpen()) {
       this.flushBypass = false;
     }
     this.flushBufferedChats();
+  }
+
+  // 承载页面重新露出来（归档页从会话退回来）：和开闸走同一条路。
+  private onPageVisibleChanged(): void {
+    this.onRenderGateChanged();
   }
 
   // 闸还关着时的旁路（issue #159，见 util/chatListRenderGate）：只发内容变更
@@ -397,7 +429,7 @@ export struct ChatListView {
   // 缓冲，照旧要等闸开才出来，"慢半拍"于是只修掉了运气好的一半。
   // 所以 bump 改成开一扇窗：窗开着的期间内容变更随到随发，闸开时关窗。
   private onFlushRequested(): void {
-    if (this.menuOpen || this.renderActive) {
+    if (this.menuOpen || this.gateOpen()) {
       return;
     }
     this.flushBypass = true;
@@ -536,6 +568,7 @@ export struct ChatListView {
         LazyForEach(this.chatsData, (item: ChatEntry) => {
           ListItem() {
             ChatRow({
+              compact: !isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn),
               chat: item,
               listKey: this.listKey,
               liveEffects: this.liveEffects(),

@@ -106,5 +106,17 @@ export default function appIconTest() {
       const states: IconEnabledState[] = [state('midnight', true), state('forest', true)];
       expect(selectedIconName(states)).assertEqual('midnight');
     });
+    // 2026-09-18 换新图标那次踩到的：目录里加一条，app.json5 / icon_*.json /
+    // AppIconPicker 的 $r 映射任何一处漏掉都不会编译报错，装上才发现图标是空的。
+    // 这里只能钉住目录这一侧的自洽（资源存在与否单测看不到），但至少保证
+    // 「默认在最前、名字不重、预览名与 name 对得上」。
+    it('classic 在目录里且排在默认之后', 0, (): void => {
+      const options: AppIconOption[] = appIconOptions();
+      expect(options[0].name).assertEqual(APP_ICON_DEFAULT);
+      expect(options[1].name).assertEqual('classic');
+      expect(options[1].preview).assertEqual('iconprev_classic');
+      expect(isKnownIconName('classic')).assertTrue();
+    });
+
   });
 }

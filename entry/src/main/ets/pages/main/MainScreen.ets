@@ -1,9 +1,11 @@
 import { common } from '@kit.AbilityKit';
 import { AppBackdrop } from '../common/AppBackdrop';
 import {
-  KEY_APP_BG_ON, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT, KEY_FORCE_SINGLE_COLUMN
+  KEY_APP_BG_ON, KEY_APP_BG_STATE_DARK, KEY_APP_BG_STATE_LIGHT, KEY_FORCE_SINGLE_COLUMN,
+  KEY_MUSIC_CENTER_ON
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
+import { navigateToSetting } from '../../util/settingsNav';
 import { appWallpaperActive } from '../../util/localWallpaper';
 import {
   isSplitLayout, dockModeForLayout, DOCK_MODE_LEFT_FLOATING
@@ -756,12 +758,19 @@ export struct MainScreen {
     return this.materialEpoch < 0 ? 0 : overlayBackdropBlur('control');
   }
 
+  // 音乐中心开着时那颗专辑球常驻（用户 2026-09-18），它同时是音乐中心的入口。
+  @StorageProp(KEY_MUSIC_CENTER_ON) private musicCenterOn: boolean = true;
+
+  // 迷你条在不在场。判据和 dockMiniBarState 那半必须一致：音乐中心开着时
+  // 不看播放状态（用户 2026-09-18：「只要开着，那个 minitab 就不关」），
+  // 关着时才回到"有曲子在放才挂"。
   private miniBarActive(): boolean {
-    return this.musicLive && this.nowPlaying !== null;
+    return this.musicCenterOn || (this.musicLive && this.nowPlaying !== null);
   }
 
   private miniState(): string {
-    return dockMiniBarState(this.nowPlaying !== null && this.musicLive, this.playerExpanded);
+    return dockMiniBarState(this.nowPlaying !== null && this.musicLive,
+      this.playerExpanded, this.musicCenterOn);
   }
 
   private toggleMiniPlayer(): void {
@@ -823,8 +832,15 @@ export struct MainScreen {
     .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
     .clip(true)
     .margin({ left: 6 })
-    .accessibilityText(str('tab_profile'))
-    .onClick((): void => { this.toggleMiniPlayer(); });
+    .accessibilityText(str('mc_title'))
+    .onClick((): void => {
+      // 没有曲目时展开播放条没有意义（条里一片空），直接进音乐中心。
+      if (this.nowPlaying === null) {
+        navigateToSetting('MusicCenterPage');
+        return;
+      }
+      this.toggleMiniPlayer();
+    });
   }
 
   // 展开态：只留个人资料头像那一格（点它只收起播放条，**不跳转**）+ 播放条。
@@ -856,19 +872,32 @@ export struct MainScreen {
       .backdropBlur(this.controlBlur())
       .attributeModifier(materialModifierWhen('control', this.materialEpoch >= 0))
       .clip(true);
+      // 没曲目时这条是音乐中心的常驻入口，不能写「正在播放」（见 DockMiniBar 同处）。
       Column() {
-        Text(nowPlayingTitle(this.nowPlaying?.title ?? '', str('svc_playing')))
+        Text(this.nowPlaying !== null
+          ? nowPlayingTitle(this.nowPlaying.title, str('svc_playing')) : str('mc_title'))
           .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        if ((this.nowPlaying?.performer ?? '') !== '') {
-          Text(this.nowPlaying?.performer ?? '').fontSize(11).fontColor(COLOR_TAB_UNSELECTED)
+        if (this.nowPlaying === null) {
+          Text($r('app.string.mc_minibar_idle')).fontSize(11).fontColor(COLOR_TAB_UNSELECTED)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        } else if (this.nowPlaying.performer !== '') {
+          Text(this.nowPlaying.performer).fontSize(11).fontColor(COLOR_TAB_UNSELECTED)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      // 信息区整块可点：回到那条消息。播放/终止两颗键各自吃掉自己的点击。
-      .onClick((): void => { this.openNowPlayingMessage(); });
+      // 信息区整块可点：有曲目回到那条消息，没有就进音乐中心。
+      .onClick((): void => {
+        if (this.nowPlaying === null) {
+          navigateToSetting('MusicCenterPage');
+          return;
+        }
+        this.openNowPlayingMessage();
+      });
+      // 没曲目时没东西可控，收起来（见 DockMiniBar 同处）。
+      if (this.nowPlaying !== null) {
       Row() {
         SymbolGlyph($r(this.musicPaused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
           .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
@@ -889,6 +918,10 @@ export struct MainScreen {
       .clip(true)
       .margin({ right: 4 })
       .onClick((): void => { this.stopMiniPlayback(); });
+      } else {
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(14).fontColor([COLOR_TAB_UNSELECTED])
+          .margin({ right: 8 });
+      }
     }
     .layoutWeight(1).height('100%')
     .alignItems(VerticalAlign.Center);
@@ -1087,7 +1120,7 @@ export struct MainScreen {
         // 没有迷你条时复用迁移前那套留白算法（胶囊宽度回到原来的比例）；
         // 有迷你条时放开，否则页签和播放条挤在一起会重叠。
         sideMargin: this.miniBarActive() ? MINI_SIDE_MARGIN : this.dockPadding(),
-        // 有曲子在放才挂迷你条；停了就交 null，HdsTabs 自己收回普通页签。
+        // 见 miniBarActive：音乐中心开着时常驻，关着时才是"有曲子在放才挂"。
         // 分栏时迷你播放条由自绘胶囊自己画（dock() 里的专辑球 / 播放条），这里不挂。
         miniBar: this.miniBarActive() && !this.leftFloatingDock()
           ? this.miniBarHolder.content(this.getUIContext(), wrapBuilder(dockMiniBarLayer))

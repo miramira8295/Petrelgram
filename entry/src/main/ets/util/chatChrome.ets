@@ -21,6 +21,11 @@ import { COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT, COLOR_ICON_SECONDARY, COLOR_TE
 // 底色亮度必须 ≤ (1.05 / 4.5 - 0.05) ≈ 0.183。底色一过这条线，白色前景就已经
 // 不合格了，必须翻成深色。用 0.5 会把 L=0.3 这种"白字只有 3:1"的底判成暗底。
 const LIGHT_THRESHOLD: number = 0.18;
+// 反过来那一侧：合成底暗到这个程度以下，**浅色模式**的深色前景就读不出来了
+// （用户 2026-09-18：浅色模式 + 纯黑壁纸，按钮上的图标还是黑的）。
+// 取 0.10 而不是和 LIGHT_THRESHOLD 对称：两条线之间留一段中间地带，
+// 灰壁纸才不会在两种前景之间来回跳。
+const DARK_THRESHOLD: number = 0.10;
 
 // '#AARRGGBB' 或 '#RRGGBB' → [alpha(0..1), r, g, b]。取不出来时返回全 0 的不透明黑，
 // 由调用方的 fallback 兜住（脏色值不该让 chrome 变色）。
@@ -58,8 +63,9 @@ function hex2(v: number): string {
 // dark_theme_dimming（服务端下发，通常 50% 以上）加上用户那根遮罩滑杆。
 // 于是**填充浅 + 遮罩重 = 屏幕上其实是深的**，而只看填充色的判定会一口咬定"亮底"，
 // 把前景翻成深色——正好和实际相反。
-export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
-  fallbackOnLight: boolean, darkMask: number = 0): boolean {
+// 合成底的相对亮度；壁纸没有颜色（是图片）时返回 -1 表示"判不了"。
+export function chromeBackdropLuminance(wallpaperColors: string[], tintArgb: string,
+  darkMask: number = 0): number {
   let r: number = 0;
   let g: number = 0;
   let b: number = 0;
@@ -77,7 +83,7 @@ export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
     n++;
   }
   if (n === 0) {
-    return fallbackOnLight;
+    return -1;
   }
   // 合成顺序要和 ChatBackdrop 画的一致：壁纸 → 黑色遮罩 → 玻璃层。遮罩画在整层
   // 末尾（见 ChatBackdrop.darkMaskOpacity 那段注释），所以它先于玻璃压上去。
@@ -91,7 +97,21 @@ export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
     hex2(a * tint[1] + (1 - a) * wr) +
     hex2(a * tint[2] + (1 - a) * wg) +
     hex2(a * tint[3] + (1 - a) * wb);
-  return relativeLuminance(mixed) > LIGHT_THRESHOLD;
+  return relativeLuminance(mixed);
+}
+
+export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
+  fallbackOnLight: boolean, darkMask: number = 0): boolean {
+  const luminance: number = chromeBackdropLuminance(wallpaperColors, tintArgb, darkMask);
+  return luminance < 0 ? fallbackOnLight : luminance > LIGHT_THRESHOLD;
+}
+
+// 和 chromeSitsOnLight 同一套合成，只是判另一头：合成底够不够暗。
+// 取不到壁纸颜色时返回 fallbackOnDark（调用方给 false = 保持旧行为）。
+export function chromeSitsOnDark(wallpaperColors: string[], tintArgb: string,
+  fallbackOnDark: boolean, darkMask: number = 0): boolean {
+  const luminance: number = chromeBackdropLuminance(wallpaperColors, tintArgb, darkMask);
+  return luminance < 0 ? fallbackOnDark : luminance < DARK_THRESHOLD;
 }
 
 // ── chrome 的前景要跟着**壁纸**翻，不是跟着深浅色模式 ───────────────────
@@ -130,15 +150,38 @@ export function chromeOnLightBgOf(appDark: boolean, wallpaperColors: string[],
   return appDark && chromeSitsOnLight(wallpaperColors, tintArgb, false, darkMask);
 }
 
-export function chromeIconColorOf(onLight: boolean, appDark: boolean): ResourceColor {
+// 浅色模式 + 暗壁纸：和上面那条正好相反的一侧。
+//
+// 【为什么原来没有这一半】上面那段注释写着"只在深色模式下才翻，浅色模式的前景
+// 本来就是给亮底挑的"——那句话的前提是"浅色模式下壁纸也是浅的"。用户把壁纸设成
+// 纯黑就把这个前提打掉了：前景仍按亮底取深色，浮在黑壁纸上的那些按钮于是全黑
+// （2026-09-18 实报）。
+//
+// tintArgb 这里要传**浅色**的玻璃色（glassTintHex(false)）：合成的是浅色模式下
+// 那层玻璃，传错就等于按另一种模式在算底。
+export function chromeOnDarkBgOf(appDark: boolean, wallpaperColors: string[],
+  tintArgb: string, darkMask: number): boolean {
+  return !appDark && chromeSitsOnDark(wallpaperColors, tintArgb, false, darkMask);
+}
+
+export function chromeIconColorOf(
+  onLight: boolean, appDark: boolean, onDark: boolean = false
+): ResourceColor {
   if (onLight) {
     return COLOR_ICON_ON_LIGHT;
+  }
+  if (onDark) {
+    return COLOR_ICON_ON_DARK;
   }
   // 深色模式下这两条栏浮在暗壁纸上，用亮白；浅色模式保持原来的次级灰——白色在
   // 浅色底上等于没有。
   return appDark ? COLOR_ICON_ON_DARK : COLOR_ICON_SECONDARY;
 }
 
-export function chromeTextColorOf(onLight: boolean): ResourceColor {
-  return onLight ? COLOR_TEXT_ON_LIGHT : COLOR_TEXT_PRIMARY;
+export function chromeTextColorOf(onLight: boolean, onDark: boolean = false): ResourceColor {
+  if (onLight) {
+    return COLOR_TEXT_ON_LIGHT;
+  }
+  // 浅色模式 + 暗壁纸：主文字翻白，否则黑字压在黑壁纸上什么都看不见。
+  return onDark ? COLOR_ICON_ON_DARK : COLOR_TEXT_PRIMARY;
 }

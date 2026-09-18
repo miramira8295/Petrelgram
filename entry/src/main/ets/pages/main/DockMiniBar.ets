@@ -14,7 +14,7 @@ import {
   clearNowPlaying, NowPlaying, subscribeNowPlaying
 } from '../../util/nowPlayingChannel';
 import { nowPlayingTitle } from '../../util/dockMiniBar';
-import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { navigateToSetting } from '../../util/settingsNav';
 import { COLOR_PRIMARY, COLOR_TAB_UNSELECTED, COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { str } from '../../util/strings';
 
@@ -69,14 +69,13 @@ struct DockMiniBarView {
     }
   }
 
-  // 点信息区回到那条消息。navigateToChat 是所有会话入口的唯一漏斗。
-  private openMessage(): void {
-    const t: NowPlaying | null = this.track;
-    if (t === null || t.chatId === 0) {
-      return;
-    }
-    const params: Record<string, Object> = { 'chatId': t.chatId, 'jumpTo': t.messageId };
-    navigateToChat(params, 'navbar').catch(logChatNavFailure);
+  // 点信息区进音乐中心。
+  //
+  // 【为什么不再是"回到那条消息"】音乐中心的播放页上有一枚音源徽标，点它才回消息
+  // ——那是同一个动作更合适的家（那里能看到是哪首歌、在哪个会话）。迷你条这么小，
+  // 一个入口只能给一件事，用户定的是进音乐中心。
+  private openMusicCenter(): void {
+    navigateToSetting('MusicCenterPage');
   }
 
   build() {
@@ -92,30 +91,42 @@ struct DockMiniBarView {
       .width(COVER).height(COVER).borderRadius(COVER / 2)
       .backgroundColor($r('app.color.surface_alt'))
       .clip(true);
+      // 没有曲目时这条是**音乐中心的常驻入口**（开关开着才会出现），不能再写
+      // 「正在播放」——什么都没在放（用户 2026-09-18 实报）。
       Column() {
-        Text(nowPlayingTitle(this.track?.title ?? '', str('svc_playing')))
+        Text(this.track !== null
+          ? nowPlayingTitle(this.track.title, str('svc_playing')) : str('mc_title'))
           .fontSize(13).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-        if ((this.track?.performer ?? '') !== '') {
-          Text(this.track?.performer ?? '').fontSize(11).fontColor(COLOR_TAB_UNSELECTED)
+        if (this.track === null) {
+          Text($r('app.string.mc_minibar_idle')).fontSize(11).fontColor(COLOR_TAB_UNSELECTED)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        } else if (this.track.performer !== '') {
+          Text(this.track.performer).fontSize(11).fontColor(COLOR_TAB_UNSELECTED)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      // 信息区整块可点：回到那条消息。两颗键各自吃掉自己的点击。
-      .onClick((): void => { this.openMessage(); });
-      Row() {
-        SymbolGlyph($r(this.paused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
-          .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
+      // 信息区整块可点：进音乐中心。两颗键各自吃掉自己的点击。
+      .onClick((): void => { this.openMusicCenter(); });
+      // 没曲目时这两颗没东西可控，收起来——留一个点不动的播放键比没有更糟。
+      if (this.track !== null) {
+        Row() {
+          SymbolGlyph($r(this.paused ? 'sys.symbol.play_fill' : 'sys.symbol.pause_fill'))
+            .fontSize(18).fontColor([COLOR_TEXT_PRIMARY]);
+        }
+        .width(32).height(32).justifyContent(FlexAlign.Center)
+        .onClick((): void => { this.toggle(); });
+        Row() {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TAB_UNSELECTED]);
+        }
+        .width(30).height(30).justifyContent(FlexAlign.Center)
+        .onClick((): void => { this.stop(); });
+      } else {
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(14).fontColor([COLOR_TAB_UNSELECTED])
+          .margin({ right: 4 });
       }
-      .width(32).height(32).justifyContent(FlexAlign.Center)
-      .onClick((): void => { this.toggle(); });
-      Row() {
-        SymbolGlyph($r('sys.symbol.xmark')).fontSize(15).fontColor([COLOR_TAB_UNSELECTED]);
-      }
-      .width(30).height(30).justifyContent(FlexAlign.Center)
-      .onClick((): void => { this.stop(); });
     }
     .width('100%').height('100%')
     .padding({ left: 10, right: 8 })

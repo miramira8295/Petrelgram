@@ -12141,6 +12141,298 @@
       "value": "تم"
     },
     {
+      "name": "dc_title",
+      "value": "مركز التنزيلات"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "التنزيلات والوسائط المخزنة مؤقتًا"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "الكل"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "الفيديو"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "الصور"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "الموسيقى"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "الرسائل الصوتية"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "الملفات"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "ابحث في أسماء الملفات أو الدردشات"
+    },
+    {
+      "name": "dc_loading",
+      "value": "جارٍ تحميل التنزيلات والذاكرة المؤقتة…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "التخزين المؤقت في الخلفية"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "بدأ التخزين المؤقت في الخلفية — الإعدادات › مركز التنزيلات"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "مخزّن مؤقتًا بالفعل"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "تعذّر بدء التخزين المؤقت"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "حذف من الذاكرة المؤقتة"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "تمت الإزالة من الذاكرة المؤقتة"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "التخزين"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "مسح الذاكرة المؤقتة"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "مسح"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "ستُحذف الوسائط والملفات المخزنة مؤقتًا. تبقى النسخ المحفوظة على جهازك."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "تم مسح %1$s من الذاكرة المؤقتة"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "الذاكرة المؤقتة %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "محفوظ %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "%1$s متاح"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "قيد التنفيذ · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "مكتمل · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "إيقاف الكل مؤقتًا"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "بدء الكل"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/ث · تبقّى %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "جارٍ التنزيل · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "متوقف مؤقتًا · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "في الانتظار · بانتظار التنزيلات السابقة"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "فشل التنزيل · اضغط لإعادة المحاولة"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "مؤقت فقط"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "محفوظ"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "إيقاف مؤقت"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "متابعة"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "إعادة المحاولة"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "إلغاء"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "حفظ على الجهاز"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "فتح"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "حدث خطأ ما. حاول مرة أخرى."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "تم إلغاء «%1$s»"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "تم حذف الذاكرة المؤقتة (تم الاحتفاظ بالنسخة المحفوظة)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "تحديد"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "تم"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "تم تحديد %1$d"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "حفظ"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "حذف"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "تم حفظ %1$d عنصرًا"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "تم حذف %1$d عنصرًا"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "لا توجد تنزيلات مطابقة"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "جرّب كلمة أو نوعًا آخر"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "التخزين المؤقت في الخلفية %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "تخزين %1$d عنصرًا مؤقتًا"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "بانتظار Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "بانتظار الشبكة · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "المتابعة عبر بيانات الجوال"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "بيانات الجوال"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "عرض في الدردشة"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "التخزين المؤقت في الخلفية عبر Wi‑Fi فقط"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "يتوقف مؤقتًا على بيانات الجوال؛ يمكنك السماح لعناصر فردية"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "حسب التاريخ"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "حسب الحجم"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "ذاكرة مؤقتة أخرى · %1$d عنصر"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "ملفات بدون مصدر معروف · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "تحديد الكل"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "إلغاء تحديد الكل"
+    },
+    {
+      "name": "dc_undo",
+      "value": "تراجع"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "مخزّن مؤقتًا"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "تخزين %1$d فيديو مؤقتًا في الخلفية"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "لا توجد مقاطع فيديو للتخزين المؤقت"
+    },
+    {
       "name": "fw_send_n",
       "value": "إرسال (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "بعد آخر عنصر في الرسالة، تابع التمرير للانتقال مباشرة إلى صور أو فيديوهات الرسالة التالية دون توقف"
+    },
+    {
+      "name": "mc_title",
+      "value": "مركز الموسيقى"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "تشغيل موسيقى الدردشات وإدارة المجموعات"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "التشغيل"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "مكتبتي"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "لا يوجد مقطع بعد"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "فنان غير معروف"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "محلي"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "سحابي"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "الصيغة"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "معدل البت"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "العينة"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "الحجم"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "فعّل مركز الموسيقى لعرض المصدر ومعدل البت والصيغة"
+    },
+    {
+      "name": "mc_cast",
+      "value": "بث"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "إخراج الصوت"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "أجهزة التشغيل المتاحة"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "لا توجد أجهزة تشغيل متاحة"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "أجهزة أخرى"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "افتح مُحدد البث في النظام"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "قيد الاستخدام"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "متاح"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "سماعة الأذن"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "مكبر الصوت"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "سلكي"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "بلوتوث"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "بث"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "بعيد"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "جهاز"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "قائمة التشغيل"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "إضافة إلى مجموعة"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "مجموعاتي"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "مجموعة جديدة"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "إنشاء مجموعة"
+    },
+    {
+      "name": "mc_create",
+      "value": "إنشاء"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "اسم المجموعة"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "أنشئ مجموعة جديدة لأغانيك"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "ستتم إضافة «%1$s» بعد الإنشاء"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "مجموعة"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "لا توجد أغانٍ بعد — استخدم «إضافة إلى مجموعة»"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "تشغيل الكل"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "عشوائي"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "حذف المجموعة"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d مقطع"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d مجموعات · %2$d مقاطع"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "ابحث عن أغانٍ وفنانين وألبومات"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "كل الأغاني"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "النتائج · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "لا نتائج لـ «%1$s»"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "لا توجد موسيقى في دردشاتك بعد"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "الروابط الخارجية"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "الفتح في المتصفح"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "تفتح بنقرة واحدة، كما كان سابقًا"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "النسخ عند النقر"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "ينسخ العنوان فقط دون أي اتصال بالإنترنت"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "السؤال عند النقر"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "يعرض العنوان الحقيقي أولًا ثم اختر الفتح أو النسخ"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "الروابط التي تُفتح داخل التطبيق (t.me وtg://) لا تتأثر. وإذا كان النص المعروض يخفي عنوانًا آخر فسيُسأل دائمًا أولًا."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "كلاسيكي"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "تم التنزيل"
+    },
+    {
+      "name": "music_save",
+      "value": "حفظ"
+    },
+    {
+      "name": "music_favorited",
+      "value": "في المجموعة"
+    },
+    {
+      "name": "music_favorite",
+      "value": "إضافة"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "الاسم فارغ أو مستخدم بالفعل"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "اختر مقطعًا"
     }
   ]
 }

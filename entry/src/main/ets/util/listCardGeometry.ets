@@ -13,9 +13,14 @@ export const LIST_CARD_MARGIN_VP: number = 12;
 export const LIST_CARD_INSET_VP: number = 4;
 // 行尾内容离卡片外沿。
 export const LIST_CARD_TRAIL_VP: number = 14;
-// 首页会话卡片（一行一张）：卡片外沿 8、头像内缩 8——两段加起来仍是同一条起始线，头像左边的留白与卡片上下的
-// 8vp 一致，不像 12+4 那样左边挤（2026-09-15 用户选 8+8）。联系人页的卡片外沿还是写死的 12，没跟着改。
-export const HOME_CARD_MARGIN_VP: number = 8;
+// 首页会话卡片（一行一张）：卡片外沿 6、头像内缩 8。
+//
+// 2026-09-18 用户把外沿从 8 收到 4、当天又放回 6（上下间距同步，见 ChatRow 的 margin），
+// **并明确选择头像跟着一起左移**：头像落在 6 + 8 = 14vp，不再和顶部大标题的 16vp
+// 起始线重合——那条对齐是 09-15 定的，这次有意放弃，换卡片内四周 8vp 的均匀留白。
+// 所以下面那条 listContentStartVp() 只管联系人页，首页不再参与。
+// 联系人页的卡片外沿仍是写死的 12，没跟着改。
+export const HOME_CARD_MARGIN_VP: number = 6;
 export const HOME_CARD_INSET_VP: number = 8;
 
 // 内容起始线离屏幕边。

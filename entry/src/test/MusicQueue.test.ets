@@ -99,6 +99,10 @@ class Recorder {
       seek: (id: number, fraction: number): void => {
         this.calls.push({ kind: 'seek', id, arg: `${fraction}` });
       },
+      playStream: (id: number, fileId: number, sizeBytes: number, mimeType: string,
+        dur: number, forceStart: boolean): void => {
+        this.calls.push({ kind: 'stream', id, arg: `${fileId}:${sizeBytes}:${forceStart}` });
+      },
       requestDownload: (id: number, failed: boolean): void => {
         this.calls.push({ kind: 'download', id, arg: `${failed}` });
       },
@@ -155,14 +159,40 @@ export default function musicQueueTest() {
       expect(q.getPendingPlayId()).assertEqual(0);
     });
 
-    it('play on an undownloaded track records it as pending and downloads', 0, () => {
+    // 2026-09-18：音频改成边下边放（视频一直是）。只要 file id 和总大小都在，
+    // 点了就出声，不再排队等整首下完，也不再弹"开始下载"。
+    it('play streams an undownloaded track instead of waiting', 0, () => {
       const rec = new Recorder();
       const q = new MusicQueue(rec.deps());
       const list: MessageEntry[] = [audioEntry(1, 60)];
       q.play(list, 1, false);
+      expect(rec.kinds()).assertEqual('stream:1');
+      expect(q.getPendingPlayId()).assertEqual(0);
+      expect(rec.toasts.length).assertEqual(0);
+    });
+
+    // 总大小不明时流没法按 Range 定位，必须退回老路：排队 + 下载 + 提示。
+    it('play falls back to downloading when the size is unknown', 0, () => {
+      const rec = new Recorder();
+      const q = new MusicQueue(rec.deps());
+      const entry = audioEntry(1, 60);
+      entry.videoFileSize = 0;
+      q.play([entry], 1, false);
       expect(rec.kinds()).assertEqual('download:1');
       expect(q.getPendingPlayId()).assertEqual(1);
       expect(rec.toasts[0]).assertEqual('mq_download_started');
+    });
+
+    // 下载失败过的那条也走下载重试，不流——流会一头撞进同一个失败。
+    it('play retries the download for a failed track', 0, () => {
+      const rec = new Recorder();
+      const q = new MusicQueue(rec.deps());
+      const entry = audioEntry(1, 60);
+      entry.videoFailed = true;
+      q.play([entry], 1, false);
+      expect(rec.kinds()).assertEqual('download:1');
+      expect(q.getPendingPlayId()).assertEqual(1);
+      expect(rec.toasts[0]).assertEqual('mq_redownloading');
     });
 
     it('play refuses a track with no file at all', 0, () => {
@@ -187,7 +217,10 @@ export default function musicQueueTest() {
     it('settlePending starts the awaited track once it has a path', 0, () => {
       const rec = new Recorder();
       const q = new MusicQueue(rec.deps());
-      q.play([audioEntry(1, 60)], 1, false);
+      // size 未知才会进排队那条路（有 size 就直接流了，见上面那条用例）。
+      const pendingEntry = audioEntry(1, 60);
+      pendingEntry.videoFileSize = 0;
+      q.play([pendingEntry], 1, false);
       expect(q.getPendingPlayId()).assertEqual(1);
       q.settlePending([downloaded(audioEntry(1, 60), '/a.mp3')]);
       expect(rec.kinds()).assertEqual('download:1,start:1');
@@ -197,7 +230,9 @@ export default function musicQueueTest() {
     it('settlePending gives up when the download failed', 0, () => {
       const rec = new Recorder();
       const q = new MusicQueue(rec.deps());
-      q.play([audioEntry(1, 60)], 1, false);
+      const pendingEntry = audioEntry(1, 60);
+      pendingEntry.videoFileSize = 0;
+      q.play([pendingEntry], 1, false);
       const failed = audioEntry(1, 60);
       failed.videoFailed = true;
       q.settlePending([failed]);
@@ -208,7 +243,9 @@ export default function musicQueueTest() {
     it('settlePending gives up when the message vanished', 0, () => {
       const rec = new Recorder();
       const q = new MusicQueue(rec.deps());
-      q.play([audioEntry(1, 60)], 1, false);
+      const pendingEntry = audioEntry(1, 60);
+      pendingEntry.videoFileSize = 0;
+      q.play([pendingEntry], 1, false);
       q.settlePending([]);
       expect(q.getPendingPlayId()).assertEqual(0);
       expect(rec.kinds()).assertEqual('download:1');
@@ -277,7 +314,9 @@ export default function musicQueueTest() {
     it('reset clears a pending play', 0, () => {
       const rec = new Recorder();
       const q = new MusicQueue(rec.deps());
-      q.play([audioEntry(1, 60)], 1, false);
+      const pendingEntry = audioEntry(1, 60);
+      pendingEntry.videoFileSize = 0;
+      q.play([pendingEntry], 1, false);
       q.reset();
       expect(q.getPendingPlayId()).assertEqual(0);
     });

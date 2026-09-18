@@ -12467,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "After the last item in a message, keep swiping to go straight to the next message's photos or videos without a pause"
+    },
+    {
+      "name": "mc_title",
+      "value": "Music Center"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "Play music from chats, manage collections"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "Now Playing"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "Mine"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "No track yet"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "Unknown artist"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "Local"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "Cloud"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "Format"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "Bitrate"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "Sample"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "Size"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "Turn on Music Center to see source, bitrate and format"
+    },
+    {
+      "name": "mc_cast",
+      "value": "Cast"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "Audio output"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "Available playback devices"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "No playback device available"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "More devices"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "Open the system cast picker"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "Currently playing to"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "Available"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "Earpiece"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "Speaker"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "Wired"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "Cast"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "Remote"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "Device"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "Playlist"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "Add to collection"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "My collections"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "New collection"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "Create collection"
+    },
+    {
+      "name": "mc_create",
+      "value": "Create"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "Collection name"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "Create a new collection for your songs"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "“%1$s” will be added after creating"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "COLLECTION"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "No songs yet — use “Add to collection” on the player"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "Play all"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "Shuffle"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "Delete collection"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d tracks"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d collections · %2$d tracks"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "Search songs, artists, albums"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "All songs"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "Results · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "No results for “%1$s”"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "No music in your chats yet"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "External links"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "Open in browser"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "Tapping opens it right away, as before"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "Copy on tap"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "Copies the address only — nothing goes online"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "Ask on tap"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "Shows the real address first, then open or copy"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "Links that open in the app (t.me, tg://) are unaffected. When the shown text hides a different address, you are always asked first."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "Classic"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "Downloaded"
+    },
+    {
+      "name": "music_save",
+      "value": "Save"
+    },
+    {
+      "name": "music_favorited",
+      "value": "In collection"
+    },
+    {
+      "name": "music_favorite",
+      "value": "Add"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "Name is empty or already used"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "Pick a track"
     }
   ]
 }

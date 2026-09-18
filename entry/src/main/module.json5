@@ -114,7 +114,9 @@
         // 大幅中央插图，用图标原图（1024px）填充。
         // 旧字段保留作为低版本回退（系统不认配置档时用）。
         "startWindow": "$profile:start_window",
-        "startWindowIcon": "$media:foreground",
+        // 2026-09-18 换新图标：这里**不能再指 $media:foreground**——那张是老海燕，
+        // 而且 midnight 起的五张换底色备用图标还都指着它，不能动它本身。
+        "startWindowIcon": "$media:bg_petrel2",
         "startWindowBackground": "$color:start_window_background",
         "backgroundModes": [
           "dataTransfer",

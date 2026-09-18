@@ -12141,6 +12141,298 @@
       "value": "완료"
     },
     {
+      "name": "dc_title",
+      "value": "다운로드 센터"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "다운로드 및 캐시된 미디어"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "전체"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "동영상"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "사진"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "음악"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "음성"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "파일"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "파일 이름 또는 채팅 검색"
+    },
+    {
+      "name": "dc_loading",
+      "value": "다운로드와 캐시를 읽는 중…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "백그라운드 캐시"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "백그라운드에서 캐시 중 — 설정 › 다운로드 센터에서 확인"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "이미 캐시됨"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "캐시를 시작하지 못했습니다"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "캐시에서 삭제"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "캐시에서 삭제됨"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "저장 공간"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "캐시 지우기"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "지우기"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "캐시에 있는 미디어와 파일이 삭제됩니다. 기기에 저장한 사본은 유지됩니다."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "캐시 %1$s을(를) 지웠습니다"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "캐시 %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "저장됨 %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "여유 %1$s"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "진행 중 · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "완료 · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "모두 일시정지"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "모두 시작"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/초 · %2$s 남음 · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "다운로드 중 · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "일시정지 · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "대기 중 · 이전 다운로드를 기다리는 중"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "다운로드 실패 · 다시 시도를 누르세요"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "캐시만"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "저장됨"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "일시정지"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "계속"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "다시 시도"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "취소"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "기기에 저장"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "열기"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "문제가 발생했습니다. 다시 시도하세요."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "「%1$s」을(를) 취소했습니다"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "캐시를 삭제했습니다(저장된 사본 유지)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "선택"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "완료"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "%1$d개 선택됨"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "저장"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "삭제"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "%1$d개 항목을 저장했습니다"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "%1$d개 항목을 삭제했습니다"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "일치하는 다운로드가 없습니다"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "다른 키워드나 유형을 시도해 보세요"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "백그라운드 캐시 중 %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "%1$d개 항목 캐시 중"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Wi‑Fi 대기 중 · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "네트워크 대기 중 · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "모바일 데이터로 계속"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "데이터 사용"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "채팅에서 보기"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "백그라운드 캐시는 Wi‑Fi에서만"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "모바일 데이터에서는 일시정지되며 항목별로 허용할 수 있습니다"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "날짜순"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "크기순"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "기타 캐시 · %1$d개"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "출처를 알 수 없는 파일 · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "전체 선택"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "전체 선택 해제"
+    },
+    {
+      "name": "dc_undo",
+      "value": "실행 취소"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "캐시됨"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "동영상 %1$d개를 백그라운드에서 캐시 중"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "캐시할 동영상이 없습니다"
+    },
+    {
       "name": "fw_send_n",
       "value": "보내기 (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "메시지의 마지막 항목에서 계속 넘기면 멈추지 않고 다음 메시지의 사진이나 동영상으로 바로 이동합니다"
+    },
+    {
+      "name": "mc_title",
+      "value": "뮤직 센터"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "채팅 속 음악 재생 및 컬렉션 관리"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "재생"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "내 음악"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "아직 곡이 없습니다"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "알 수 없는 아티스트"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "로컬"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "클라우드"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "형식"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "비트레이트"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "샘플"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "크기"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "뮤직 센터를 켜면 음원, 비트레이트, 형식을 볼 수 있습니다"
+    },
+    {
+      "name": "mc_cast",
+      "value": "전환"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "오디오 출력"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "사용 가능한 재생 기기"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "사용 가능한 기기 없음"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "다른 기기"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "시스템 전환 선택기 열기"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "출력 중"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "사용 가능"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "수화기"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "스피커"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "유선"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "블루투스"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "캐스트"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "원격"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "기기"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "재생 목록"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "컬렉션에 추가"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "내 컬렉션"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "새 컬렉션"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "컬렉션 만들기"
+    },
+    {
+      "name": "mc_create",
+      "value": "만들기"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "컬렉션 이름"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "노래를 담을 새 컬렉션을 만듭니다"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "만든 뒤 「%1$s」이(가) 추가됩니다"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "컬렉션"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "아직 곡이 없습니다 — 재생 화면의 「컬렉션에 추가」를 사용하세요"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "전체 재생"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "셔플"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "컬렉션 삭제"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d곡"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "컬렉션 %1$d개 · %2$d곡"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "노래, 아티스트, 앨범 검색"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "전체 곡"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "결과 · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "「%1$s」에 대한 결과가 없습니다"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "채팅에 아직 음악이 없습니다"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "외부 링크"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "브라우저에서 열기"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "한 번 누르면 바로 열립니다(기존과 동일)"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "누르면 복사"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "주소만 복사하며 접속하지 않습니다"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "누르면 선택창"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "실제 주소를 먼저 보여 주고 열기/복사를 고릅니다"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "앱에서 열리는 링크(t.me, tg://)는 영향을 받지 않습니다. 표시된 텍스트가 다른 주소를 숨기고 있으면 어떤 설정이든 먼저 확인합니다."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "클래식"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "다운로드됨"
+    },
+    {
+      "name": "music_save",
+      "value": "저장"
+    },
+    {
+      "name": "music_favorited",
+      "value": "컬렉션에 있음"
+    },
+    {
+      "name": "music_favorite",
+      "value": "추가"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "이름이 비었거나 이미 사용 중입니다"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "곡을 골라보세요"
     }
   ]
 }

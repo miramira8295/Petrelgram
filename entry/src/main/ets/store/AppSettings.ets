@@ -1,4 +1,5 @@
 import { preferences } from '@kit.ArkData';
+import { EXT_LINK_DEFAULT } from '../util/externalLinkPolicy';
 import { mirrorChatEnvKey, seedChatEnvFromStorage } from '../util/chatEnvMirror';
 import { bumpMaterialEpoch } from '../util/materialEpoch';
 import { setCrashUploadOptOut } from '../services/crashRecordStore';
@@ -48,6 +49,9 @@ export const KEY_REDUCE_ANIM: string = 'reduceAnimations'; // stop autoplaying a
 export const KEY_SEND_BY_ENTER: string = 'sendByEnter';    // Enter sends instead of newline
 // 网页链接用内置浏览器还是交给系统。默认内置：留在应用里不丢上下文。
 export const KEY_IN_APP_BROWSER: string = 'inAppBrowser';
+// 点外部链接（非 t.me / tg://）的行为：直接打开 / 复制 / 弹窗选择。
+// 取值与判据见 util/externalLinkPolicy；默认 open，和加这个设置之前逐字一致。
+export const KEY_EXTERNAL_LINK_ACTION: string = 'externalLinkAction';
 // 聊天详情页的手势方案：'classic'（长按出菜单）或 'tapFirst'（单击出菜单、
 // 长按进多选）。取值与解释见 util/messageGestures——不认识的值一律当 classic。
 export const KEY_MSG_GESTURE: string = 'msgGestureScheme';
@@ -389,10 +393,16 @@ export const KEY_CRASH_UPLOAD: string = 'crashUpload';
 // 的媒体，新图从拉的那一侧滑进来；关：原来的「拉满 1/4 屏宽 + 继续滑动提示气泡」。默认开。
 export const KEY_VIEWER_CONTINUOUS_HOP: string = 'viewerContinuousHop';
 
+// 音乐中心的总开关（设计稿顶栏那颗 pill）。开：播放页显示音源信息格、播放列表与
+// 「添加到合集」可用；关：只剩最基本的播放控制。默认开——这一页的全部价值就在那些
+// 信息上，默认关等于把功能藏起来。
+export const KEY_MUSIC_CENTER_ON: string = 'musicCenterOn';
+
 const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
   KEY_BG_CACHE_WIFI_ONLY,
   KEY_CRASH_UPLOAD,
   KEY_VIEWER_CONTINUOUS_HOP,
+  KEY_MUSIC_CENTER_ON,
   KEY_SHOW_CONTACTS_TAB,
   KEY_NOTIFY_PRIVATE,
   KEY_NOTIFY_GROUP,
@@ -517,6 +527,8 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_REDUCE_ANIM, await s.get(KEY_REDUCE_ANIM, false) as boolean);
     AppStorage.setOrCreate(KEY_SEND_BY_ENTER, await s.get(KEY_SEND_BY_ENTER, false) as boolean);
     AppStorage.setOrCreate(KEY_IN_APP_BROWSER, await s.get(KEY_IN_APP_BROWSER, true) as boolean);
+    AppStorage.setOrCreate(KEY_EXTERNAL_LINK_ACTION,
+      await s.get(KEY_EXTERNAL_LINK_ACTION, EXT_LINK_DEFAULT) as string);
     AppStorage.setOrCreate(KEY_APP_LANGUAGE, await s.get(KEY_APP_LANGUAGE, 'default') as string);
     // 默认老交互：升级上来的人不该被换掉肌肉记忆，新方案由设置里主动开。
     AppStorage.setOrCreate(KEY_MSG_GESTURE, await s.get(KEY_MSG_GESTURE, GESTURE_CLASSIC) as string);

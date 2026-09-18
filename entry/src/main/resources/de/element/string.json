@@ -12141,6 +12141,298 @@
       "value": "Fertig"
     },
     {
+      "name": "dc_title",
+      "value": "Download-Center"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "Downloads und zwischengespeicherte Medien"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "Alle"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "Videos"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "Fotos"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "Musik"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "Sprachnachrichten"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "Dateien"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "Dateinamen oder Chats suchen"
+    },
+    {
+      "name": "dc_loading",
+      "value": "Downloads und Cache werden geladen …"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "Im Hintergrund zwischenspeichern"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "Wird im Hintergrund zwischengespeichert – siehe Einstellungen › Download-Center"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "Bereits zwischengespeichert"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "Zwischenspeichern konnte nicht gestartet werden"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "Aus Cache löschen"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "Aus Cache entfernt"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "Speicher"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "Cache leeren"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "Leeren"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "Medien und Dateien im Cache werden gelöscht. Auf dem Gerät gespeicherte Kopien bleiben erhalten."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "%1$s Cache geleert"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "Cache %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "Gespeichert %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "%1$s frei"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "Läuft · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "Abgeschlossen · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "Alle pausieren"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "Alle starten"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/s · noch %2$s · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "Wird geladen · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "Pausiert · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "In Warteschlange · wartet auf frühere Downloads"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "Download fehlgeschlagen · zum Wiederholen tippen"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "Nur Cache"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "Gespeichert"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "Pause"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "Fortsetzen"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "Wiederholen"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "Abbrechen"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "Auf Gerät speichern"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "Öffnen"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "„%1$s“ abgebrochen"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "Cache gelöscht (gespeicherte Kopie bleibt)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "Auswählen"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "Fertig"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "%1$d ausgewählt"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "Speichern"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "Löschen"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "%1$d Elemente gespeichert"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "%1$d Elemente gelöscht"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "Keine passenden Downloads"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "Anderes Stichwort oder anderen Typ probieren"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "Zwischenspeichern im Hintergrund %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "%1$d Elemente werden zwischengespeichert"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Warten auf Wi‑Fi · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "Warten auf Netzwerk · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "Mit mobilen Daten fortfahren"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "Mobile Daten"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "Im Chat anzeigen"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "Hintergrund-Cache nur über Wi‑Fi"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "Pausiert bei mobilen Daten; einzelne Elemente können erlaubt werden"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "Nach Datum"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "Nach Größe"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "Sonstiger Cache · %1$d Elemente"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "Dateien ohne bekannte Quelle · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "Alle auswählen"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "Auswahl aufheben"
+    },
+    {
+      "name": "dc_undo",
+      "value": "Rückgängig"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "Im Cache"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "%1$d Videos werden im Hintergrund zwischengespeichert"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "Keine Videos zum Zwischenspeichern"
+    },
+    {
       "name": "fw_send_n",
       "value": "Senden (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "Nach dem letzten Element einer Nachricht weiterwischen, um ohne Pause zu den Fotos oder Videos der nächsten Nachricht zu gelangen"
+    },
+    {
+      "name": "mc_title",
+      "value": "Musikzentrum"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "Musik aus Chats abspielen, Sammlungen verwalten"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "Wiedergabe"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "Meine"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "Noch kein Titel"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "Unbekannter Künstler"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "Lokal"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "Cloud"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "Format"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "Bitrate"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "Abtastrate"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "Größe"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "Musikzentrum aktivieren, um Quelle, Bitrate und Format zu sehen"
+    },
+    {
+      "name": "mc_cast",
+      "value": "Übertragen"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "Audioausgabe"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "Verfügbare Wiedergabegeräte"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "Kein Wiedergabegerät verfügbar"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "Weitere Geräte"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "Systemauswahl öffnen"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "Aktuell aktiv"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "Verfügbar"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "Hörer"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "Lautsprecher"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "Kabel"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "Cast"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "Remote"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "Gerät"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "Wiedergabeliste"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "Zur Sammlung hinzufügen"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "Meine Sammlungen"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "Neue Sammlung"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "Sammlung erstellen"
+    },
+    {
+      "name": "mc_create",
+      "value": "Erstellen"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "Name der Sammlung"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "Erstelle eine neue Sammlung für deine Titel"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "Nach dem Erstellen wird „%1$s“ hinzugefügt"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "SAMMLUNG"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "Noch keine Titel – nutze „Zur Sammlung hinzufügen“"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "Alle abspielen"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "Zufällig"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "Sammlung löschen"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d Titel"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d Sammlungen · %2$d Titel"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "Titel, Künstler, Alben suchen"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "Alle Titel"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "Ergebnisse · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "Keine Ergebnisse für „%1$s“"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "Noch keine Musik in deinen Chats"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "Externe Links"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "Im Browser öffnen"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "Ein Tippen öffnet sie sofort – wie bisher"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "Beim Tippen kopieren"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "Kopiert nur die Adresse – kein Netzzugriff"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "Beim Tippen fragen"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "Zeigt erst die echte Adresse, dann öffnen oder kopieren"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "Links, die in der App geöffnet werden (t.me, tg://), sind nicht betroffen. Verbirgt der angezeigte Text eine andere Adresse, wird immer zuerst gefragt."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "Klassisch"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "Geladen"
+    },
+    {
+      "name": "music_save",
+      "value": "Speichern"
+    },
+    {
+      "name": "music_favorited",
+      "value": "In Sammlung"
+    },
+    {
+      "name": "music_favorite",
+      "value": "Hinzufügen"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "Name ist leer oder bereits vergeben"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "Titel auswählen"
     }
   ]
 }

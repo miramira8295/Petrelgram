@@ -11,8 +11,12 @@ export default function listCardGeometryTest() {
       expect(listContentStartVp()).assertEqual(16);
     });
 
-    it('首页卡片 8+8 与联系人 12+4 落在同一条起始线上', 0, (): void => {
-      expect(HOME_CARD_MARGIN_VP + HOME_CARD_INSET_VP).assertEqual(listContentStartVp());
+    // 2026-09-18 用户把首页卡片外沿改成 6vp，并**明确选择头像跟着一起左移**：
+    // 首页从此是 6+8 = 14vp，不再和联系人页/标题栏的 16vp 起始线重合。这条用例
+    // 从「两者相等」改成钉住这个有意的差值，免得以后有人当成 bug 顺手"修"回去。
+    it('首页卡片起始线 14vp，比联系人页的 16vp 靠左 2vp（有意）', 0, (): void => {
+      expect(HOME_CARD_MARGIN_VP + HOME_CARD_INSET_VP).assertEqual(14);
+      expect(listContentStartVp() - (HOME_CARD_MARGIN_VP + HOME_CARD_INSET_VP)).assertEqual(2);
     });
 
     it('分隔线从文字列起', 0, (): void => {

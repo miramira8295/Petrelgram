@@ -1,4 +1,8 @@
 import { router, promptAction } from '@kit.ArkUI';
+import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
+  surfaceGlassBlurStyle, surfaceGlassFill
+} from '../../util/surfaceGlass';
 import { getTdClient, getCallSession } from '../../tdkit/Globals';
 import { ProfileStore, CommonGroup, StoryItem, GiftItem, AvailGift } from '../../store/ProfileStore';
 import {
@@ -111,6 +115,9 @@ export struct ProfilePage {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
+  // 整体玻璃开关与档位（联系人页 / 群组简介页同一套）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlassOn: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   @StorageProp('topSafeHeight') topSafe: number = 0;
   @StorageProp('screenWidthVp') screenW: number = 360;
@@ -743,14 +750,22 @@ export struct ProfilePage {
     return `${m}:${`${s}`.padStart(2, '0')}`;
   }
 
-  // 和群组简介页同一套玻璃面，见 ProfileGlass。两页必须看起来是同一个页面。
-  private profileGlassFill(): ResourceColor {
-    return this.profileEffectsReady
-      ? overlayGlassFill('card', $r('app.color.surface')) : $r('app.color.surface');
+  // 和群组简介页同一套玻璃面。**两页必须看起来是同一个页面**，所以 ChatProfilePage
+  // 2026-09-18 改走联系人页那套（util/surfaceGlass）时，这里必须一起改——否则
+  // 一页是实色卡片、另一页是透明框。
+  // 原来那套（overlayGlassFill + 组件级材质）在这台设备上就是一个个透明框：
+  // 材质"可用"→ 底色返回透明 → 把观感让给早已被系统收回的组件级 systemMaterial。
+  private glassOn(): boolean {
+    return this.profileEffectsReady && this.surfaceGlassOn && this.surfaceGlassEpoch >= 0;
   }
 
-  private profileGlassBlur(): number {
-    return this.profileEffectsReady ? overlayBackdropBlur('card') : 0;
+  private profileGlassFill(): ResourceColor {
+    return this.glassOn() ? surfaceGlassFill($r('app.color.surface')) : $r('app.color.surface');
+  }
+
+  // 框架容器材质，不是 backdropBlur——后者在节点边缘有采样衰减，四角最明显。
+  private profileGlassBlurStyle(): BlurStyle | undefined {
+    return this.glassOn() ? surfaceGlassBlurStyle() : undefined;
   }
 
   private profileGlassShadowRadius(): number {
@@ -764,7 +779,7 @@ export struct ProfilePage {
   @Styles
   glassCard() {
     .backgroundColor(this.profileGlassFill())
-    .backdropBlur(this.profileGlassBlur())
+    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .borderRadius(GLASS_RADIUS_CARD)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
@@ -775,7 +790,7 @@ export struct ProfilePage {
   @Styles
   glassTile() {
     .backgroundColor(this.profileGlassFill())
-    .backdropBlur(this.profileGlassBlur())
+    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .borderRadius(GLASS_RADIUS_TILE)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
@@ -791,7 +806,7 @@ export struct ProfilePage {
     .width(44).height(44).borderRadius(22)
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.profileGlassFill())
-    .backdropBlur(this.profileGlassBlur())
+    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
       offsetX: 0, offsetY: this.profileGlassShadowY() })
@@ -841,7 +856,7 @@ export struct ProfilePage {
       .width(130).height(130).padding(7).borderRadius(65)
       .justifyContent(FlexAlign.Center)
       .backgroundColor(this.profileGlassFill())
-      .backdropBlur(this.profileGlassBlur())
+      .backgroundBlurStyle(this.profileGlassBlurStyle())
       .border({ width: 0.7, color: $r('app.color.divider') })
       .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,
         offsetX: 0, offsetY: this.profileGlassShadowY() })
@@ -1120,7 +1135,7 @@ export struct ProfilePage {
     }
     .height(PROFILE_TAB_BAR_HEIGHT)
     .backgroundColor(this.profileGlassFill())
-    .backdropBlur(this.profileGlassBlur())
+    .backgroundBlurStyle(this.profileGlassBlurStyle())
     .borderRadius(PROFILE_TAB_BAR_HEIGHT / 2)
     .border({ width: 0.7, color: $r('app.color.divider') })
     .shadow({ radius: this.profileGlassShadowRadius(), color: GLASS_SHADOW_COLOR,

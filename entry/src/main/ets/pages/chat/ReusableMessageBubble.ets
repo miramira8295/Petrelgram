@@ -57,6 +57,9 @@ export interface MessageBubbleActions {
   onAudioPrevious: (messageId: number) => void;
   onAudioNext: (messageId: number) => void;
   onAudioSeek: (messageId: number, fraction: number) => void;
+  // 音频卡片上那两枚胶囊（2026-09-18 改版）：另存到设备 / 加入收藏夹。
+  onAudioSave: (messageId: number) => void;
+  onAudioFavorite: (messageId: number) => void;
   onAutoplayVideoNeedDownload: (messageId: number) => void;
   onMediaRatio: (messageId: number, albumIndex: number, ratio: number, centerY: number) => void;
   onMediaGone: (messageId: number, albumIndex: number) => void;
@@ -171,6 +174,7 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onVoiceTap: (_id: number): void => {}, onVoicePlaybackStarted: (_id: number): void => {},
   onAudioTap: (_id: number): void => {}, onAudioPrevious: (_id: number): void => {},
   onAudioNext: (_id: number): void => {}, onAudioSeek: (_id: number, _fraction: number): void => {},
+  onAudioSave: (_id: number): void => {}, onAudioFavorite: (_id: number): void => {},
   onAutoplayVideoNeedDownload: (_id: number): void => {},
   onMediaRatio: (_id: number, _idx: number, _ratio: number, _y: number): void => {},
   onMediaGone: (_id: number, _idx: number): void => {},

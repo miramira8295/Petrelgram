@@ -2,6 +2,7 @@ import { AvLoopVideo } from '../common/AvLoopVideo';
 import { requestSenderAnimation } from '../../services/PhotoAnimationFetch';
 import { AnimationSlotPool } from '../../util/animationSlotPool';
 import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
+import { subscribeSenderAnimationPark } from '../../util/senderAnimationPark';
 import { chatEnv, ChatEnvMirror } from '../../util/chatEnvMirror';
 import { logW } from '../../util/log';
 import { senderChannelKey } from '../../util/senderAvatarChannel';
@@ -38,6 +39,9 @@ export struct SenderAnimatedLayer {
   @Local private videoPath: string = '';
   @Local private holding: boolean = false;
   @Local private gateSuspended: boolean = false;
+  // 「停车」：页面正在退场，播放器现在就卸掉，别等整棵树同步销毁时一起结账
+  // （见 util/senderAnimationPark）。和 gateSuspended 不是一回事：那个只暂停。
+  @Local private parked: boolean = false;
   @Local private shown: boolean = false;
   private env: ChatEnvMirror = chatEnv;
   private visible: boolean = false;
@@ -45,6 +49,7 @@ export struct SenderAnimatedLayer {
   private attachedKey: string = '';
   private unsubPath: (() => void) | null = null;
   private unsubGate: (() => void) | null = null;
+  private unsubPark: (() => void) | null = null;
   private cancelWait: (() => void) | null = null;
 
   aboutToAppear(): void {
@@ -90,6 +95,10 @@ export struct SenderAnimatedLayer {
       this.gateSuspended = suspended;
       this.evaluate();
     }, (): boolean => this.visible);
+    this.unsubPark = subscribeSenderAnimationPark((next: boolean): void => {
+      this.parked = next;
+      this.evaluate();
+    });
     this.evaluate();
   }
 
@@ -102,13 +111,17 @@ export struct SenderAnimatedLayer {
       this.unsubGate();
       this.unsubGate = null;
     }
+    if (this.unsubPark !== null) {
+      this.unsubPark();
+      this.unsubPark = null;
+    }
     this.releaseSlot();
     this.videoPath = '';
     this.attachedKey = '';
   }
 
   private allowed(): boolean {
-    return this.env.animatedAvatar && !this.env.powerSaving;
+    return this.env.animatedAvatar && !this.env.powerSaving && !this.parked;
   }
 
   // 所有状态变化（可见性、闸门、路径、省电开关、名额）都回到这里重新判一次。

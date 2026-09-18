@@ -12141,6 +12141,298 @@
       "value": "Bitti"
     },
     {
+      "name": "dc_title",
+      "value": "İndirme merkezi"
+    },
+    {
+      "name": "dc_settings_sub",
+      "value": "İndirmeler ve önbellekteki medya"
+    },
+    {
+      "name": "dc_tab_all",
+      "value": "Tümü"
+    },
+    {
+      "name": "dc_tab_video",
+      "value": "Videolar"
+    },
+    {
+      "name": "dc_tab_photo",
+      "value": "Fotoğraflar"
+    },
+    {
+      "name": "dc_tab_audio",
+      "value": "Müzik"
+    },
+    {
+      "name": "dc_tab_voice",
+      "value": "Sesli"
+    },
+    {
+      "name": "dc_tab_file",
+      "value": "Dosyalar"
+    },
+    {
+      "name": "dc_search_hint",
+      "value": "Dosya adı veya sohbet ara"
+    },
+    {
+      "name": "dc_loading",
+      "value": "İndirmeler ve önbellek yükleniyor…"
+    },
+    {
+      "name": "dc_background_cache",
+      "value": "Arka planda önbelleğe al"
+    },
+    {
+      "name": "dc_background_cache_started",
+      "value": "Arka planda önbelleğe alınıyor — Ayarlar › İndirme merkezi"
+    },
+    {
+      "name": "dc_background_cache_done",
+      "value": "Zaten önbellekte"
+    },
+    {
+      "name": "dc_background_cache_failed",
+      "value": "Önbelleğe alma başlatılamadı"
+    },
+    {
+      "name": "dc_delete_cache",
+      "value": "Önbellekten sil"
+    },
+    {
+      "name": "dc_cache_deleted",
+      "value": "Önbellekten silindi"
+    },
+    {
+      "name": "dc_tab_apk",
+      "value": "APK"
+    },
+    {
+      "name": "dc_storage_title",
+      "value": "Depolama"
+    },
+    {
+      "name": "dc_clear_cache",
+      "value": "Önbelleği temizle"
+    },
+    {
+      "name": "dc_clear_cache_action",
+      "value": "Temizle"
+    },
+    {
+      "name": "dc_clear_cache_confirm",
+      "value": "Önbellekteki medya ve dosyalar silinecek. Cihazınıza kaydedilen kopyalar korunur."
+    },
+    {
+      "name": "dc_cache_cleared",
+      "value": "%1$s önbellek temizlendi"
+    },
+    {
+      "name": "dc_legend_cache",
+      "value": "Önbellek %1$s"
+    },
+    {
+      "name": "dc_legend_local",
+      "value": "Kaydedildi %1$s"
+    },
+    {
+      "name": "dc_device_free",
+      "value": "%1$s boş"
+    },
+    {
+      "name": "dc_section_active_count",
+      "value": "Devam eden · %1$d"
+    },
+    {
+      "name": "dc_section_done_count",
+      "value": "Tamamlanan · %1$d"
+    },
+    {
+      "name": "dc_pause_all",
+      "value": "Tümünü duraklat"
+    },
+    {
+      "name": "dc_start_all",
+      "value": "Tümünü başlat"
+    },
+    {
+      "name": "dc_status_speed",
+      "value": "%1$s/sn · %2$s kaldı · %3$d%%"
+    },
+    {
+      "name": "dc_status_downloading",
+      "value": "İndiriliyor · %1$d%%"
+    },
+    {
+      "name": "dc_status_paused",
+      "value": "Duraklatıldı · %1$d%%"
+    },
+    {
+      "name": "dc_status_queued",
+      "value": "Sırada · önceki indirmeler bekleniyor"
+    },
+    {
+      "name": "dc_status_failed",
+      "value": "İndirme başarısız · yeniden denemek için dokunun"
+    },
+    {
+      "name": "dc_badge_cache_only",
+      "value": "Yalnızca önbellek"
+    },
+    {
+      "name": "dc_badge_saved_local",
+      "value": "Kaydedildi"
+    },
+    {
+      "name": "dc_action_pause",
+      "value": "Duraklat"
+    },
+    {
+      "name": "dc_action_resume",
+      "value": "Devam et"
+    },
+    {
+      "name": "dc_action_retry",
+      "value": "Yeniden dene"
+    },
+    {
+      "name": "dc_action_cancel",
+      "value": "İptal"
+    },
+    {
+      "name": "dc_action_save",
+      "value": "Cihaza kaydet"
+    },
+    {
+      "name": "dc_action_open",
+      "value": "Aç"
+    },
+    {
+      "name": "dc_action_failed",
+      "value": "Bir sorun oluştu. Tekrar deneyin."
+    },
+    {
+      "name": "dc_cancelled",
+      "value": "\"%1$s\" iptal edildi"
+    },
+    {
+      "name": "dc_cache_deleted_keep_local",
+      "value": "Önbellek silindi (kayıtlı kopya korundu)"
+    },
+    {
+      "name": "dc_batch_select",
+      "value": "Seç"
+    },
+    {
+      "name": "dc_batch_done",
+      "value": "Bitti"
+    },
+    {
+      "name": "dc_selected_count",
+      "value": "%1$d seçildi"
+    },
+    {
+      "name": "dc_batch_save",
+      "value": "Kaydet"
+    },
+    {
+      "name": "dc_batch_delete",
+      "value": "Sil"
+    },
+    {
+      "name": "dc_saved_n",
+      "value": "%1$d öğe kaydedildi"
+    },
+    {
+      "name": "dc_deleted_n",
+      "value": "%1$d öğe silindi"
+    },
+    {
+      "name": "dc_empty_title",
+      "value": "Eşleşen indirme yok"
+    },
+    {
+      "name": "dc_empty_sub",
+      "value": "Başka bir anahtar sözcük ya da tür deneyin"
+    },
+    {
+      "name": "dc_notify_caching",
+      "value": "Arka planda önbelleğe alınıyor %1$d%%"
+    },
+    {
+      "name": "dc_notify_title",
+      "value": "%1$d öğe önbelleğe alınıyor"
+    },
+    {
+      "name": "dc_status_waiting_wifi",
+      "value": "Wi‑Fi bekleniyor · %1$d%%"
+    },
+    {
+      "name": "dc_status_waiting_network",
+      "value": "Ağ bekleniyor · %1$d%%"
+    },
+    {
+      "name": "dc_allow_cellular",
+      "value": "Mobil veriyle devam et"
+    },
+    {
+      "name": "dc_allow_cellular_short",
+      "value": "Mobil veri"
+    },
+    {
+      "name": "dc_jump_to_message",
+      "value": "Sohbette göster"
+    },
+    {
+      "name": "dc_wifi_only_title",
+      "value": "Arka plan önbelleği yalnızca Wi‑Fi'de"
+    },
+    {
+      "name": "dc_wifi_only_sub",
+      "value": "Mobil veride duraklar; tek tek öğelere izin verebilirsiniz"
+    },
+    {
+      "name": "dc_sort_time",
+      "value": "Tarihe göre"
+    },
+    {
+      "name": "dc_sort_size",
+      "value": "Boyuta göre"
+    },
+    {
+      "name": "dc_group_unsourced",
+      "value": "Diğer önbellek · %1$d öğe"
+    },
+    {
+      "name": "dc_group_unsourced_sub",
+      "value": "Kaynağı bilinmeyen dosyalar · %1$s"
+    },
+    {
+      "name": "dc_select_all",
+      "value": "Tümünü seç"
+    },
+    {
+      "name": "dc_deselect_all",
+      "value": "Seçimi kaldır"
+    },
+    {
+      "name": "dc_undo",
+      "value": "Geri al"
+    },
+    {
+      "name": "mb_video_cached",
+      "value": "Önbellekte"
+    },
+    {
+      "name": "cp_background_cache_started",
+      "value": "%1$d video arka planda önbelleğe alınıyor"
+    },
+    {
+      "name": "cp_nothing_to_cache",
+      "value": "Önbelleğe alınacak video yok"
+    },
+    {
       "name": "fw_send_n",
       "value": "Gönder (%1$d)"
     },
@@ -12175,6 +12467,266 @@
     {
       "name": "ix_viewer_continuous_sub",
       "value": "Bir mesajdaki son öğeden sonra kaydırmaya devam edin; duraklamadan sonraki mesajın fotoğraf veya videolarına geçin"
+    },
+    {
+      "name": "mc_title",
+      "value": "Müzik Merkezi"
+    },
+    {
+      "name": "mc_settings_sub",
+      "value": "Sohbetlerdeki müzikleri çal, koleksiyonları yönet"
+    },
+    {
+      "name": "mc_tab_play",
+      "value": "Çalıyor"
+    },
+    {
+      "name": "mc_tab_mine",
+      "value": "Benim"
+    },
+    {
+      "name": "mc_no_track",
+      "value": "Henüz parça yok"
+    },
+    {
+      "name": "mc_unknown_artist",
+      "value": "Bilinmeyen sanatçı"
+    },
+    {
+      "name": "mc_source_local",
+      "value": "Yerel"
+    },
+    {
+      "name": "mc_source_cloud",
+      "value": "Bulut"
+    },
+    {
+      "name": "mc_info_format",
+      "value": "Biçim"
+    },
+    {
+      "name": "mc_info_bitrate",
+      "value": "Bit hızı"
+    },
+    {
+      "name": "mc_info_sample",
+      "value": "Örnekleme"
+    },
+    {
+      "name": "mc_info_size",
+      "value": "Boyut"
+    },
+    {
+      "name": "mc_info_off",
+      "value": "Kaynak, bit hızı ve biçimi görmek için Müzik Merkezi'ni açın"
+    },
+    {
+      "name": "mc_cast",
+      "value": "Aktar"
+    },
+    {
+      "name": "mc_cast_title",
+      "value": "Ses çıkışı"
+    },
+    {
+      "name": "mc_cast_subtitle",
+      "value": "Kullanılabilir oynatma cihazları"
+    },
+    {
+      "name": "mc_cast_empty",
+      "value": "Kullanılabilir cihaz yok"
+    },
+    {
+      "name": "mc_cast_more",
+      "value": "Diğer cihazlar"
+    },
+    {
+      "name": "mc_cast_more_sub",
+      "value": "Sistem aktarım seçiciyi aç"
+    },
+    {
+      "name": "mc_cast_current",
+      "value": "Şu anda kullanılıyor"
+    },
+    {
+      "name": "mc_cast_available",
+      "value": "Kullanılabilir"
+    },
+    {
+      "name": "mc_dev_earpiece",
+      "value": "Ahize"
+    },
+    {
+      "name": "mc_dev_speaker",
+      "value": "Hoparlör"
+    },
+    {
+      "name": "mc_dev_wired",
+      "value": "Kablolu"
+    },
+    {
+      "name": "mc_dev_bluetooth",
+      "value": "Bluetooth"
+    },
+    {
+      "name": "mc_dev_usb",
+      "value": "USB"
+    },
+    {
+      "name": "mc_dev_cast",
+      "value": "Yayın"
+    },
+    {
+      "name": "mc_dev_remote",
+      "value": "Uzak"
+    },
+    {
+      "name": "mc_dev_other",
+      "value": "Cihaz"
+    },
+    {
+      "name": "mc_playlist",
+      "value": "Çalma listesi"
+    },
+    {
+      "name": "mc_add_to_collection",
+      "value": "Koleksiyona ekle"
+    },
+    {
+      "name": "mc_my_collections",
+      "value": "Koleksiyonlarım"
+    },
+    {
+      "name": "mc_new_collection",
+      "value": "Yeni koleksiyon"
+    },
+    {
+      "name": "mc_create_collection",
+      "value": "Koleksiyon oluştur"
+    },
+    {
+      "name": "mc_create",
+      "value": "Oluştur"
+    },
+    {
+      "name": "mc_collection_name",
+      "value": "Koleksiyon adı"
+    },
+    {
+      "name": "mc_create_hint",
+      "value": "Şarkılarınız için yeni bir koleksiyon oluşturun"
+    },
+    {
+      "name": "mc_create_hint_add",
+      "value": "Oluşturduktan sonra “%1$s” eklenecek"
+    },
+    {
+      "name": "mc_collection_label",
+      "value": "KOLEKSİYON"
+    },
+    {
+      "name": "mc_collection_empty",
+      "value": "Henüz şarkı yok — “Koleksiyona ekle”yi kullanın"
+    },
+    {
+      "name": "mc_play_all",
+      "value": "Tümünü çal"
+    },
+    {
+      "name": "mc_shuffle",
+      "value": "Karışık"
+    },
+    {
+      "name": "mc_delete_collection",
+      "value": "Koleksiyonu sil"
+    },
+    {
+      "name": "mc_track_count",
+      "value": "%1$d parça"
+    },
+    {
+      "name": "mc_collections_summary",
+      "value": "%1$d koleksiyon · %2$d parça"
+    },
+    {
+      "name": "mc_search_placeholder",
+      "value": "Şarkı, sanatçı, albüm ara"
+    },
+    {
+      "name": "mc_search_all",
+      "value": "Tüm şarkılar"
+    },
+    {
+      "name": "mc_search_results",
+      "value": "Sonuçlar · %1$d"
+    },
+    {
+      "name": "mc_search_empty",
+      "value": "“%1$s” için sonuç yok"
+    },
+    {
+      "name": "mc_library_empty",
+      "value": "Sohbetlerinizde henüz müzik yok"
+    },
+    {
+      "name": "ix_link_group",
+      "value": "Harici bağlantılar"
+    },
+    {
+      "name": "ix_link_open",
+      "value": "Tarayıcıda aç"
+    },
+    {
+      "name": "ix_link_open_sub",
+      "value": "Tek dokunuşla açılır, eskisi gibi"
+    },
+    {
+      "name": "ix_link_copy",
+      "value": "Dokununca kopyala"
+    },
+    {
+      "name": "ix_link_copy_sub",
+      "value": "Yalnızca adresi kopyalar, ağa çıkmaz"
+    },
+    {
+      "name": "ix_link_ask",
+      "value": "Dokununca sor"
+    },
+    {
+      "name": "ix_link_ask_sub",
+      "value": "Önce gerçek adresi gösterir, sonra aç ya da kopyala"
+    },
+    {
+      "name": "ix_link_note",
+      "value": "Uygulama içinde açılan bağlantılar (t.me, tg://) etkilenmez. Görünen metin başka bir adresi gizliyorsa her zaman önce sorulur."
+    },
+    {
+      "name": "app_icon_classic",
+      "value": "Klasik"
+    },
+    {
+      "name": "music_downloaded",
+      "value": "İndirildi"
+    },
+    {
+      "name": "music_save",
+      "value": "Kaydet"
+    },
+    {
+      "name": "music_favorited",
+      "value": "Koleksiyonda"
+    },
+    {
+      "name": "music_favorite",
+      "value": "Ekle"
+    },
+    {
+      "name": "mc_create_rejected",
+      "value": "Ad boş ya da zaten kullanılıyor"
+    },
+    {
+      "name": "mc_minibar_idle",
+      "value": "Bir parça seçin"
     }
   ]
 }
