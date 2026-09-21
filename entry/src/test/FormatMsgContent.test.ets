@@ -177,7 +177,7 @@ function voiceMsg(fileId: number, listened: boolean): TdObject {
   return message;
 }
 
-function audioMsg(fileId: number, coverFileId: number): TdObject {
+function audioMsg(fileId: number, coverFileId: number, miniData: string = ''): TdObject {
   const source: TdObject = { '@type': 'file' };
   source['id'] = fileId;
   source['size'] = 5_242_880;
@@ -190,6 +190,13 @@ function audioMsg(fileId: number, coverFileId: number): TdObject {
   const audio: TdObject = { '@type': 'audio' };
   audio['audio'] = source;
   audio['album_cover_thumbnail'] = cover;
+  if (miniData !== '') {
+    const mini: TdObject = { '@type': 'minithumbnail' };
+    mini['width'] = 40;
+    mini['height'] = 40;
+    mini['data'] = miniData;
+    audio['album_cover_minithumbnail'] = mini;
+  }
   audio['duration'] = 245;
   audio['title'] = 'Night Drive';
   audio['performer'] = 'Mose';
@@ -587,6 +594,16 @@ export default function formatMsgContentTest() {
       expect(r.audioTitle).assertEqual('Night Drive');
       expect(r.audioPerformer).assertEqual('Mose');
       expect(r.text).assertEqual('试听版本');
+      // 没有内嵌小图时是空串，界面据此退回音符占位。
+      expect(r.audioCoverMini).assertEqual('');
+    });
+    // 封面小图（~1KB base64，消息里内联给的）要变成能直接喂给 Image() 的 data URL。
+    // 它是"卡片封面加载很慢"的解药：真封面要排缩略图队列，这张零网络。
+    it('audio_inline_album_cover_becomes_data_url', 0, () => {
+      const r = formatMsgContent(audioMsg(130, 131, '/9j/4AAQSkZJRg=='));
+      expect(r.audioCoverMini).assertEqual('data:image/jpeg;base64,/9j/4AAQSkZJRg==');
+      // 真封面那条路不受影响，两者并存。
+      expect(r.photoFileId).assertEqual(131);
     });
     it('document_maps_metadata_caption_and_existing_local_file', 0, () => {
       const r = formatMsgContent(documentMsg(140, '/data/report.pdf'));

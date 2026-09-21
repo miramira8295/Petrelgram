@@ -9,6 +9,7 @@ import { logW } from '../util/log';
 import { packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
 import { demuxWebmAlphaOffThread } from '../util/webm/webmDemuxTask';
 import { ALPHA_STICKER_CACHE_MAX_BYTES } from '../util/NativePixelBudget';
+import { registerAlphaPixelUsage } from '../util/nativePixelArbiter';
 import {
   FRAME_CACHE_DIR, FRAME_CACHE_MAX_BYTES, FrameCacheEntry, frameCacheFileName, planFrameCachePrune
 } from '../util/stickerFrameCache';
@@ -563,3 +564,9 @@ export function trimAlphaStickerCache(targetBytes: number = 0,
 export function alphaStickerCacheBytes(): number {
   return totalBytes;
 }
+
+// 向图片缓存报数：贴纸没用满的部分借给它（见 util/nativePixelArbiter）。
+// **不反向 import**——这里是 service 层，pixelCache 是 util 层。
+// 本模块被加载过才会注册；纯图片会话里它根本不加载，图片那边按 0 算，
+// 正好是我们想要的。
+registerAlphaPixelUsage(alphaStickerCacheBytes);

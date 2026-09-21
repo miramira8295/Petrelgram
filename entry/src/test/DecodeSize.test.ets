@@ -50,5 +50,44 @@ export default function decodeSizeTest() {
       expect((got?.width ?? 0) >= 1).assertTrue();
       expect((got?.height ?? 0) >= 1).assertTrue();
     });
+
+    // ── 门槛按目标大小分两档（2026-09-20）──────────────────────────────
+    //
+    // 起因：真机上往上翻 220 行历史、15 秒解出 216 张图，其中 67 次是「解过、
+    // 被挤出缓存、又解一次」，每次重解就是用户看到的图片闪一下。根因是原来那条
+    // 统一的 2 倍门槛——相册格子目标约 273×420，而缩略图源常见 320–800，
+    // 大多落在 1×–2× 区间 → 一律原样解码 → 按源分辨率占内存。
+    it('相册那一档：源图 1.2 倍以上就交给解码器', 0, (): void => {
+      // 800×600 的源画到 273×420 的相册格子：改之前 scale=0.7 > 1/2，判定
+      // "缩得不够多"而原样解码，1875 KB；现在降采样到 919 KB。
+      const got: DecodeSize | undefined = decodeDesiredSize(800, 600, 273, 420);
+      expect(got !== undefined).assertTrue();
+      expect(got?.width).assertEqual(560);
+      expect(got?.height).assertEqual(420);
+    });
+
+    it('头像那一档仍然守着 2 倍（issue #92 不许回退）', 0, (): void => {
+      // 160×160 画到 138×138（46vp×3）：scale=0.86，两档门槛下都必须原样解码。
+      // 这条是 #92 那圈斜边锯齿的回归防线。
+      expect(decodeDesiredSize(160, 160, 138, 138)).assertUndefined();
+      // 就算源图到了 1.5 倍，小目标也不交给解码器。
+      expect(decodeDesiredSize(207, 207, 138, 138)).assertUndefined();
+    });
+
+    it('200px 是两档的分界，列表头像都在小图那边', 0, (): void => {
+      // 目标 200×200（含）算小图：1.5 倍不缩。
+      expect(decodeDesiredSize(300, 300, 200, 200)).assertUndefined();
+      // 会话行宽松档头像 56vp × 3 = 168 px，必须落在小图这边（#92 的防线）。
+      expect(decodeDesiredSize(252, 252, 168, 168)).assertUndefined();
+      // 目标 201×201 算大图：同样 1.5 倍就缩。
+      expect(decodeDesiredSize(302, 302, 201, 201) !== undefined).assertTrue();
+    });
+
+    it('源图不大于目标时两档都不放大', 0, (): void => {
+      // desiredSize 会**强制**缩放到给定尺寸，源比目标小就是放大，
+      // 存一张比原图还大的位图，纯浪费。
+      expect(decodeDesiredSize(320, 240, 273, 420)).assertUndefined();
+      expect(decodeDesiredSize(100, 100, 138, 138)).assertUndefined();
+    });
   });
 }

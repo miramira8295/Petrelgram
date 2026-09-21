@@ -182,9 +182,8 @@ function settingGroups(): SettingGroup[] {
   {
     title: str('settings_about'),
     items: [
-      { icon: 'sys.symbol.doc_text', bg: '#636366', title: str('diag_title'),
-        subtitle: str('diag_sub'), page: 'pages/main/DiagnosticsPage',
-        dest: 'DiagnosticsPage' },
+      // 「日志与诊断」入口对普通用户隐藏（2026-09-20 用户要求）。页面与路由都留着，
+      // 深链和内部跳转照常可达——只是设置列表里不再列出来。
       { icon: 'sys.symbol.info_circle', bg: '#8E8E93', title: str('settings_about'),
         subtitle: str('settings_about_sub'), page: 'pages/main/AboutPage',
         dest: 'AboutPage' }

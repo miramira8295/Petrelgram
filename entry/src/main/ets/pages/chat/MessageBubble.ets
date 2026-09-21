@@ -3,6 +3,7 @@ import { isFavoriteSticker } from '../../store/FavoriteStickers';
 import { stickerSourceFileId } from '../../util/stickerSetItems';
 import { promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { AlbumCellView, AlbumCellHooks } from './AlbumCellView';
+import { AlbumRowView } from './AlbumRowView';
 import { formatMediaDuration } from '../../util/mediaDuration';
 import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
 import {
@@ -48,8 +49,10 @@ import {
   isUnformattedPlainText, messageUrls, parseFormattedText, richSegmentKey,
   RichSegment, RichRun
 } from '../../util/richText';
-import { packAlbumRows, albumCellAt, AlbumCell, ALBUM_ROW_SLOTS } from '../../util/packAlbumRows';
+import { packAlbumRows, albumCellAt, albumRowAt, AlbumCell, ALBUM_ROW_SLOTS } from '../../util/packAlbumRows';
 import { inlineButtonKey, inlineButtonRowKey } from '../../util/inlineButtonKey';
+import { thumbBackdropColor } from '../../util/thumbBackdrop';
+import { miniPlaceholderOf } from '../../util/miniThumbPlaceholder';
 import { linkPreviewPresentation, LinkPreviewPresentation } from '../../util/linkPreview';
 import { reactionKeyFrom } from '../../util/reactions';
 import {
@@ -1945,7 +1948,7 @@ export struct MessageBubble {
   singleMediaPlaceholder(hasFile: boolean) {
     Stack() {
       Column().width(this.mediaBox().width).height(this.mediaBox().height).borderRadius(8)
-        .backgroundColor(this.msg.contentType === 'video' ? '#AEB6C0' : '#D7DCE2');
+        .backgroundColor(thumbBackdropColor(this.msg.contentType === 'video'));
       if (this.msg.contentType === 'video') {
         // Wait only when a real thumbnail file exists. Videos without a
         // cover remain playable and get the normal play control below.
@@ -2182,228 +2185,72 @@ export struct MessageBubble {
   @Builder
   albumGrid() {
     Column({ space: 2 }) {
-      if (this.albumRows().length > 0) {
-        Row({ space: 2 }) {
-          if (this.albumRows()[0].length > 0) {
-            AlbumCellView({
-              cell: this.slotCell(0, 0),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(0, 0)
-            });
-          }
-          if (this.albumRows()[0].length > 1) {
-            AlbumCellView({
-              cell: this.slotCell(0, 1),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(0, 1)
-            });
-          }
-          if (this.albumRows()[0].length > 2) {
-            AlbumCellView({
-              cell: this.slotCell(0, 2),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(0, 2)
-            });
-          }
-        }
-      }
-      if (this.albumRows().length > 1) {
-        Row({ space: 2 }) {
-          if (this.albumRows()[1].length > 0) {
-            AlbumCellView({
-              cell: this.slotCell(1, 0),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(1, 0)
-            });
-          }
-          if (this.albumRows()[1].length > 1) {
-            AlbumCellView({
-              cell: this.slotCell(1, 1),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(1, 1)
-            });
-          }
-          if (this.albumRows()[1].length > 2) {
-            AlbumCellView({
-              cell: this.slotCell(1, 2),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(1, 2)
-            });
-          }
-        }
-      }
-      if (this.albumRows().length > 2) {
-        Row({ space: 2 }) {
-          if (this.albumRows()[2].length > 0) {
-            AlbumCellView({
-              cell: this.slotCell(2, 0),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(2, 0)
-            });
-          }
-          if (this.albumRows()[2].length > 1) {
-            AlbumCellView({
-              cell: this.slotCell(2, 1),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(2, 1)
-            });
-          }
-          if (this.albumRows()[2].length > 2) {
-            AlbumCellView({
-              cell: this.slotCell(2, 2),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(2, 2)
-            });
-          }
-        }
-      }
-      if (this.albumRows().length > 3) {
-        Row({ space: 2 }) {
-          if (this.albumRows()[3].length > 0) {
-            AlbumCellView({
-              cell: this.slotCell(3, 0),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(3, 0)
-            });
-          }
-          if (this.albumRows()[3].length > 1) {
-            AlbumCellView({
-              cell: this.slotCell(3, 1),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(3, 1)
-            });
-          }
-          if (this.albumRows()[3].length > 2) {
-            AlbumCellView({
-              cell: this.slotCell(3, 2),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(3, 2)
-            });
-          }
-        }
-      }
-      if (this.albumRows().length > 4) {
-        Row({ space: 2 }) {
-          if (this.albumRows()[4].length > 0) {
-            AlbumCellView({
-              cell: this.slotCell(4, 0),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(4, 0)
-            });
-          }
-          if (this.albumRows()[4].length > 1) {
-            AlbumCellView({
-              cell: this.slotCell(4, 1),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(4, 1)
-            });
-          }
-          if (this.albumRows()[4].length > 2) {
-            AlbumCellView({
-              cell: this.slotCell(4, 2),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(4, 2)
-            });
-          }
-        }
-      }
-      if (this.albumRows().length > 5) {
-        Row({ space: 2 }) {
-          if (this.albumRows()[5].length > 0) {
-            AlbumCellView({
-              cell: this.slotCell(5, 0),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(5, 0)
-            });
-          }
-          if (this.albumRows()[5].length > 1) {
-            AlbumCellView({
-              cell: this.slotCell(5, 1),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(5, 1)
-            });
-          }
-          if (this.albumRows()[5].length > 2) {
-            AlbumCellView({
-              cell: this.slotCell(5, 2),
-              group: this.group,
-              data: this.data,
-              actions: this.actions,
-              hooks: this.albumCellHooks,
-              selectionActive: this.data.selectionActive,
-              selected: this.memberSelected(5, 2)
-            });
-          }
-        }
-      }
+      AlbumRowView({
+        cells: albumRowAt(this.albumRows(), 0),
+        group: this.group,
+        data: this.data,
+        actions: this.actions,
+        hooks: this.albumCellHooks,
+        selectionActive: this.data.selectionActive,
+        sel0: this.memberSelected(0, 0),
+        sel1: this.memberSelected(0, 1),
+        sel2: this.memberSelected(0, 2)
+      });
+      AlbumRowView({
+        cells: albumRowAt(this.albumRows(), 1),
+        group: this.group,
+        data: this.data,
+        actions: this.actions,
+        hooks: this.albumCellHooks,
+        selectionActive: this.data.selectionActive,
+        sel0: this.memberSelected(1, 0),
+        sel1: this.memberSelected(1, 1),
+        sel2: this.memberSelected(1, 2)
+      });
+      AlbumRowView({
+        cells: albumRowAt(this.albumRows(), 2),
+        group: this.group,
+        data: this.data,
+        actions: this.actions,
+        hooks: this.albumCellHooks,
+        selectionActive: this.data.selectionActive,
+        sel0: this.memberSelected(2, 0),
+        sel1: this.memberSelected(2, 1),
+        sel2: this.memberSelected(2, 2)
+      });
+      AlbumRowView({
+        cells: albumRowAt(this.albumRows(), 3),
+        group: this.group,
+        data: this.data,
+        actions: this.actions,
+        hooks: this.albumCellHooks,
+        selectionActive: this.data.selectionActive,
+        sel0: this.memberSelected(3, 0),
+        sel1: this.memberSelected(3, 1),
+        sel2: this.memberSelected(3, 2)
+      });
+      AlbumRowView({
+        cells: albumRowAt(this.albumRows(), 4),
+        group: this.group,
+        data: this.data,
+        actions: this.actions,
+        hooks: this.albumCellHooks,
+        selectionActive: this.data.selectionActive,
+        sel0: this.memberSelected(4, 0),
+        sel1: this.memberSelected(4, 1),
+        sel2: this.memberSelected(4, 2)
+      });
+      AlbumRowView({
+        cells: albumRowAt(this.albumRows(), 5),
+        group: this.group,
+        data: this.data,
+        actions: this.actions,
+        hooks: this.albumCellHooks,
+        selectionActive: this.data.selectionActive,
+        sel0: this.memberSelected(5, 0),
+        sel1: this.memberSelected(5, 1),
+        sel2: this.memberSelected(5, 2)
+      });
     }
     .alignItems(HorizontalAlign.Start)
     .width(this.albumW())
@@ -3122,7 +2969,12 @@ export struct MessageBubble {
               boxWidth: this.mediaBox().width,
               boxHeight: this.mediaBox().height,
               radius: 8,
-              fit: ImageFit.Cover
+              fit: ImageFit.Cover,
+              // 单张大图不开 565：面积大、渐变明显。
+              opaque: false,
+              // 和 singleMediaPlaceholder 的底色同源（见 util/thumbBackdrop）。
+              backdrop: thumbBackdropColor(this.msg.contentType === 'video'),
+              mini: miniPlaceholderOf(this.msg.photoMini)
             },
             placeholder: (): void => {
               this.singleMediaPlaceholder(this.msg.photoFileId !== 0);
@@ -3336,6 +3188,7 @@ export struct MessageBubble {
         title: this.msg.audioTitle,
         performer: this.msg.audioPerformer,
         coverPath: this.msg.photoPath,
+        coverMini: this.msg.audioCoverMini,
         coverFailed: this.msg.photoFailed,
         downloadProgress: this.liveVideoProgress,
         downloadFailed: this.msg.videoFailed,

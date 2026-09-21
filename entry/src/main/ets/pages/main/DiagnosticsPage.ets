@@ -1,3 +1,4 @@
+import { probeMusicSequence, probeRemoteSequence } from '../../services/InlineMusicProbe';
 import { promptAction } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
@@ -40,6 +41,10 @@ const CARD_RADIUS: number = 14;
 export function DiagnosticsPageBuilder(): void {
   DiagnosticsPage();
 }
+
+// TEMP: music-bot probe target and queries.
+const MUSIC_PROBE_BOT: string = 'music_v1bot';
+const MUSIC_PROBE_QUERIES: string[] = ['509781655', 'ne 509781655', 'dl_ne_509781655'];
 
 @Component
 export struct DiagnosticsPage {
@@ -196,6 +201,30 @@ export struct DiagnosticsPage {
   // 立即生效的链路：这里 setNumber → AppStorage → ChatPageChrome 的
   // @StorageProp → ChatPage 的 @Param listCachedCount → .cachedCount() 重新
   // 求值。会话页在导航栈里活着也照样收到，不需要重进会话、更不需要重启。
+  // TEMP (2026-09-20): music-bot calibration card. Deleted with the probe.
+  @Builder
+  musicBotProbeCard() {
+    Column({ space: 8 }) {
+      Text(`probe @${MUSIC_PROBE_BOT}`) // i18n-exempt: temporary debug card
+        .fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+      Text('run inline queries -> log [MBProbe]') // i18n-exempt: temporary debug card
+        .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+      Text('RUN') // i18n-exempt: temporary debug card
+        .fontSize(15).fontColor(Color.White).textAlign(TextAlign.Center)
+        .width('100%').padding({ top: 10, bottom: 10 })
+        .backgroundColor(COLOR_PRIMARY).borderRadius(10)
+        .onClick((): void => { probeMusicSequence(MUSIC_PROBE_BOT, MUSIC_PROBE_QUERIES); });
+      Text('REMOTE FILE') // i18n-exempt: temporary debug card
+        .fontSize(15).fontColor(Color.White).textAlign(TextAlign.Center)
+        .width('100%').padding({ top: 10, bottom: 10 })
+        .backgroundColor(COLOR_PRIMARY).borderRadius(10)
+        .onClick((): void => { probeRemoteSequence(); });
+    }
+    .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .alignItems(HorizontalAlign.Start)
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
   @Builder
   listCachedCard() {
     Column({ space: 8 }) {
@@ -246,6 +275,7 @@ export struct DiagnosticsPage {
             // ⚠️ 临时调试入口 —— **验完删除**。挂在诊断页最底下而不是设置页，
             // 是因为这里本来就是这个应用的调试角落。
             // ⚠️ 临时调试项 —— 标定完删除。同一个调试角落。
+            this.musicBotProbeCard();
             this.listCachedCard();
           }
           .width('100%')

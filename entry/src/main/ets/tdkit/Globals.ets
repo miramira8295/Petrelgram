@@ -18,6 +18,7 @@ import { SystemNotificationPublisher } from '../services/SystemNotificationPubli
 import { registerMessageSyncWork } from '../services/MessageSyncWork';
 import { WebPushConfig, registerWebPush, resolvePushChannel, startupPushConfig } from '../services/WebPushRegistration';
 import { retryPendingMeowRelayDelete } from '../services/MeowPushRegistration';
+import { applyPreferIpv6, resetPreferIpv6Cache } from '../services/PreferIpv6Option';
 import { ensureHmsPushRegistered } from '../services/HmsRelayRegistration';
 import { resetScopeMute } from '../store/ScopeMuteStore';
 import { resetScopePreview } from '../store/ScopePreviewStore';
@@ -135,6 +136,13 @@ function createRuntime(slotId: string): void {
   activeTdFilesDirectory = directories.filesDirectory;
   repairTdTempDirectory(directories.filesDirectory);
   client = createTdClientWithBridge();
+  // prefer_ipv6 越早越好：它影响的是**第一次**连接走哪个协议族，等连上了再设
+  // 就晚了。setOption 在 setTdlibParameters 之前就能收（issue #133）。
+  // 缓存记在模块级变量里，而新运行时上这个选项是 TDLib 的默认值，必须先清。
+  resetPreferIpv6Cache();
+  applyPreferIpv6().catch((caught: Error): void => {
+    logE(`Globals.applyPreferIpv6 failed: ${caught.message}`);
+  });
   trackConnectionState(client);
   proxyAutoSwitchService.attach(client);
   auth = new AuthService(client, directories.databaseDirectory, directories.filesDirectory,

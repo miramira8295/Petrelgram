@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  packAlbumRows, albumCellAt, AlbumCell, ALBUM_ROW_SLOTS, ALBUM_ROW_MAX_CELLS, EMPTY_ALBUM_CELL
+  packAlbumRows, albumCellAt, albumRowAt, AlbumCell, ALBUM_ROW_SLOTS, ALBUM_ROW_MAX_CELLS,
+  EMPTY_ALBUM_CELL
 } from '../main/ets/util/packAlbumRows';
 
 function rowWidth(row: AlbumCell[]): number {
@@ -93,4 +94,32 @@ export default function albumLayoutTest() {
     });
 
   });
+  // 行级的全函数（2026-09-20）。渲染侧改成「一行一个 AlbumRowView」之后，
+  // 「这一行存不存在」的判断从 MessageBubble 里那个**复用时不重算**的 `if`
+  // 挪进了组件——组件靠这个函数拿到的空数组决定整行不画。
+  //
+  // 为什么要紧：残留的行即使每格都是 0×0 的哨兵，Row/Column 的 `space: 2`
+  // 照样给它留位，相册高宽抖一下，就是用户报的「相册消息闪动」。
+  describe('albumRowAt', () => {
+    it('returns_the_row_in_range', 0, () => {
+      const rows: AlbumCell[][] = packAlbumRows([1, 1, 1, 1], 300);
+      expect(albumRowAt(rows, 0)).assertEqual(rows[0]);
+      expect(albumRowAt(rows, rows.length - 1)).assertEqual(rows[rows.length - 1]);
+    });
+
+    it('returns_empty_out_of_range', 0, () => {
+      const rows: AlbumCell[][] = packAlbumRows([1, 1], 300);
+      expect(albumRowAt(rows, rows.length).length).assertEqual(0);
+      expect(albumRowAt(rows, ALBUM_ROW_SLOTS).length).assertEqual(0);
+      expect(albumRowAt(rows, -1).length).assertEqual(0);
+      expect(albumRowAt([], 0).length).assertEqual(0);
+    });
+
+    it('never_returns_undefined_for_junk_indices', 0, () => {
+      const rows: AlbumCell[][] = packAlbumRows([1, 1, 1], 300);
+      expect(albumRowAt(rows, 1.5).length).assertEqual(0);
+      expect(albumRowAt(rows, Number.NaN).length).assertEqual(0);
+    });
+  });
+
 }

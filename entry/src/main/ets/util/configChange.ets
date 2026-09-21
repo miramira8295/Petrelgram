@@ -14,6 +14,40 @@ export function colorModeChanged(prev: number, next: number | undefined): boolea
   return prev !== mode;
 }
 
+// 深浅色的**基准值**。抽成一个对象是因为 issue #194 的真因就是它被写了两遍：
+//
+//   onConfigurationUpdate(config) 里按**参数** config 记下新值（对的），
+//   紧接着 applyImmersiveStatusBar() 又按 **this.context.config** 记了一遍（错的）——
+//   那一刻 ability 缓存的 config 还是旧值。
+//
+// 结果：进深色记成 1→0 changed=true，基准却被盖回 1；再切回浅色算出 1→1
+// changed=false 直接 return，状态栏反色 / KEY_APP_DARK / 外观 epoch 全不执行，
+// 壁纸的深色遮罩就撤不掉（用户 2026-09-18 日志逐字对上）。
+//
+// 规矩：**只有启动时用 context 的当前值 seed 一次**，之后一律 observe 事件送来的值。
+export class ColorModeBaseline {
+  private value: number = COLOR_MODE_UNKNOWN;
+
+  // 启动播种。这一刻 context.config 是权威的。
+  seed(mode: number | undefined): void {
+    this.value = mode ?? COLOR_MODE_UNKNOWN;
+  }
+
+  // 观察一次配置事件：真的变了返回 true 并推进基准，没变返回 false。
+  observe(mode: number | undefined): boolean {
+    const next: number = mode ?? COLOR_MODE_UNKNOWN;
+    if (next === this.value) {
+      return false;
+    }
+    this.value = next;
+    return true;
+  }
+
+  current(): number {
+    return this.value;
+  }
+}
+
 // 诊断导出抬头后面附最近几条崩溃：类型 / 异常首行 / 前后台 / 存活秒数。
 // 这次 #194 就是因为导出里没有崩溃信息，9 次冷启只能猜。
 export function crashSummaryLines(records: CrashRecord[], limit: number): string[] {

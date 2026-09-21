@@ -41,7 +41,7 @@ import { ShareHandoff } from '../util/sharedContent';
 import { SharedPayload } from '../util/sharedContent';
 import { initA11yState } from '../util/a11yState';
 import { logE, logW } from '../util/log';
-import { COLOR_MODE_UNKNOWN, colorModeChanged } from '../util/configChange';
+import { ColorModeBaseline } from '../util/configChange';
 import { bumpMaterialEpoch } from '../util/overlayMaterial';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
@@ -58,7 +58,7 @@ export default class EntryAbility extends UIAbility {
   // 上一次见到的系统语言，用来判断配置变更里语言到底变没变。
   private lastLanguage: string = '';
   // 上一次见到的颜色模式（#194）：只有它真变了才走深浅色重算，字号/转屏/回前台不再全量重绘。
-  private lastColorMode: number = COLOR_MODE_UNKNOWN;
+  private colorMode: ColorModeBaseline = new ColorModeBaseline();
   private lastConfigAt: number = 0;
   private windowStageRef: window.WindowStage | null = null;
   // loadContent 回调之前窗口还没有内容，setWindowBackgroundColor 必失败
@@ -210,14 +210,17 @@ export default class EntryAbility extends UIAbility {
     // 但只在颜色模式**真变了**时做（官方 onConfigurationUpdate 范式）：这一步会写
     // KEY_APP_DARK、重算主色/气泡色并 bump 外观 epoch，整条时间线和首页都会重绘。
     const now: number = Date.now();
-    const changed: boolean = colorModeChanged(this.lastColorMode, config.colorMode);
-    logW(`[Config] colorMode ${this.lastColorMode}->${config.colorMode ?? -1} lang=${language}` +
+    const before: number = this.colorMode.current();
+    // observe 自己推进基准。**这里之后谁都不许再写基准**——applyImmersiveStatusBar
+    // 原来会用 this.context.config 再盖一遍，而那一刻它还是旧值（#194，见
+    // util/configChange 里 ColorModeBaseline 的说明）。
+    const changed: boolean = this.colorMode.observe(config.colorMode);
+    logW(`[Config] colorMode ${before}->${config.colorMode ?? -1} lang=${language}` +
       ` changed=${changed} +${this.lastConfigAt > 0 ? now - this.lastConfigAt : 0}ms`);
     this.lastConfigAt = now;
     if (!changed) {
       return;
     }
-    this.lastColorMode = config.colorMode ?? -1;
     this.applyImmersiveStatusBar();
     // HdsNavigation / HdsNavDestination / HdsTabs 从 API 26 起才支持高性能切换流程；
     // 之前的版本要靠我们自己驱动它们的颜色属性——bump 材质 epoch 让壳层重挂一遍。
@@ -252,8 +255,11 @@ export default class EntryAbility extends UIAbility {
     // getMainWindowSync 在窗口销毁流程里会抛（窗口错误码文档明写）；这个方法从
     // onConfigurationUpdate 进来时没有任何 try/catch，抛了就是进程死（#194 的 9 次冷启
     // 没有退后台痕迹，这里是唯一的裸同步系统调用）。
-    // 启动时的几次调用也走这里：顺手记下当前模式，onConfigurationUpdate 才有基准可比。
-    this.lastColorMode = this.context.config.colorMode ?? -1;
+    // **这里不再写基准。** 原来这一行是 `this.lastColorMode = this.context.config.colorMode`，
+    // 本意是启动时播种，但 onConfigurationUpdate 也会走到这个函数——那一刻 ability
+    // 缓存的 context.config 还是旧值，于是刚记下的新值被盖回去，切回原模式时判成
+    // 「没变」直接 return，深色遮罩撤不掉（issue #194）。播种改由 onWindowStageCreate
+    // 显式做一次。
     let win: window.Window;
     try {
       win = this.windowStageRef.getMainWindowSync();
@@ -368,6 +374,8 @@ export default class EntryAbility extends UIAbility {
       this.windowStageRef = windowStage;
       const win = windowStage.getMainWindowSync();
       win.setWindowLayoutFullScreen(true);
+      // 唯一一处播种：启动时 context.config 是权威的。
+      this.colorMode.seed(this.context.config.colorMode);
       this.applyImmersiveStatusBar();
       const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       AppStorage.setOrCreate('topSafeHeight', px2vp(avoid.topRect.height));

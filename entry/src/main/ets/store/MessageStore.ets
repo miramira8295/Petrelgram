@@ -3117,6 +3117,7 @@ export class MessageStore {
       c.speechText = rebuilt.speechText;
       c.audioTitle = rebuilt.audioTitle;
       c.audioPerformer = rebuilt.audioPerformer;
+      c.audioCoverMini = rebuilt.audioCoverMini;
       c.stickerFileId = rebuilt.stickerFileId;
       c.stickerFormat = rebuilt.stickerFormat;
       c.stickerSetId = rebuilt.stickerSetId;
