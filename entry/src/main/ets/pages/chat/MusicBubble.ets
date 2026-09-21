@@ -47,6 +47,8 @@ export struct MusicBubble {
   @Param title: string = '';
   @Param performer: string = '';
   @Param coverPath: string = '';
+  // 内联小图（data URL，不用下载）。真封面没到之前先画它。
+  @Param coverMini: string = '';
   @Param coverFailed: boolean = false;
   @Param downloadProgress: number = 0;
   @Param downloadFailed: boolean = false;
@@ -294,21 +296,36 @@ export struct MusicBubble {
     return this.dragging ? this.dragProgress : this.progress;
   }
 
+  // 三层，从下往上：色块占位 → 内联小图 → 真封面。
+  //
+  // 【为什么要中间这层】真封面 album_cover_thumbnail 是个**要下载的真文件**，
+  // 和会话里所有照片/视频/贴纸挤同一条缩略图队列（MessageStore.thumbQueue，
+  // THUMB_MAX_ACTIVE 限流），图多的会话里一首歌的封面能排到几十张图后面——
+  // 用户报的"音乐消息卡片封面加载很慢"就是这个。而 TDLib 在消息里**已经内联
+  // 给了** album_cover_minithumbnail（~40px、约 1KB base64），零网络，首帧就能画。
+  //
+  // 小图放大到 44 会糊，所以真图到了就盖上去；两张都按同样的圆角裁剪，切换时
+  // 只是清晰度变一下，不跳位。
   @Builder
   private coverArt(): void {
     Stack() {
+      Column()
+        .width(COVER).height(COVER).borderRadius(12)
+        // 比卡片底色重一档，封面块才分得出来（卡片是 #20/#1A 那一档）。
+        .backgroundColor(this.isOutgoing ? '#4755A24D' : '#3D3390EC');
+      if (this.coverPath === '' && this.coverMini === '') {
+        SymbolGlyph($r('sys.symbol.music_note_list'))
+          .fontSize(20).fontColor([this.accent()])
+          .opacity(this.coverFailed ? 0.5 : 1);
+      }
+      if (this.coverMini !== '') {
+        Image(this.coverMini).draggable(false)
+          .width(COVER).height(COVER).borderRadius(12).objectFit(ImageFit.Cover);
+      }
       if (this.coverPath !== '') {
         Image(this.coverPath.startsWith('/') ? `file://${this.coverPath}` : this.coverPath)
           .draggable(false)
           .width(COVER).height(COVER).borderRadius(12).objectFit(ImageFit.Cover);
-      } else {
-        Column()
-          .width(COVER).height(COVER).borderRadius(12)
-          // 比卡片底色重一档，封面块才分得出来（卡片是 #20/#1A 那一档）。
-          .backgroundColor(this.isOutgoing ? '#4755A24D' : '#3D3390EC');
-        SymbolGlyph($r('sys.symbol.music_note_list'))
-          .fontSize(20).fontColor([this.accent()])
-          .opacity(this.coverFailed ? 0.5 : 1);
       }
     }
     .width(COVER).height(COVER);

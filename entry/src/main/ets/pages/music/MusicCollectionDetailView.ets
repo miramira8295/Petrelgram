@@ -1,5 +1,5 @@
 import { MusicCollection } from '../../util/musicCollectionModel';
-import { musicDurationLabel, MusicTrack, musicTrackKey } from '../../util/musicTrackModel';
+import { musicDurationLabel, MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackModel';
 import { musicEmptyTileFill, musicGlassBlur, musicGlassFill, musicKeyGradient } from '../../util/musicCenterStyle';
 import { MUSIC_ROW_REMOVE, MusicTrackRow, musicRowKey } from './MusicTrackRow';
 import { COLOR_ON_PRIMARY, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -135,11 +135,11 @@ export struct MusicCollectionDetailView {
             MusicTrackRow({
               track: track,
               index: index,
-              active: musicTrackKey(track.chatId, track.messageId) === this.playingKey,
+              active: trackKeyOf(track) === this.playingKey,
               playing: this.playing,
               trailing: MUSIC_ROW_REMOVE,
               onTap: (): void => { this.onPlay(index); },
-              onRemove: (): void => { this.onRemove(musicTrackKey(track.chatId, track.messageId)); }
+              onRemove: (): void => { this.onRemove(trackKeyOf(track)); }
             });
           }, musicRowKey);
         }

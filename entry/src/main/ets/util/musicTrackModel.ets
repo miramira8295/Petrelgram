@@ -29,6 +29,12 @@ export interface MusicTrack {
   localPath: string;
   // 专辑封面缩略图的文件 id，0 = 这首歌没有内嵌封面。
   coverFileId: number;
+  // 内联封面小图的 data URL（~40px、约 1KB，消息/内联结果里直接带着，**零网络**）。
+  // '' = 这首没有。真封面 coverFileId 要走下载，先画这张能省掉整段等待。
+  coverMini: string;
+  // 机器人内联搜索来的结果 id；'' = 这首来自会话里的音频消息。
+  // 机器人结果没有 chatId/messageId，身份只能靠它，键也另走 musicBotTrackKey。
+  botResultId: string;
 }
 
 export interface MusicCoverColors {
@@ -51,8 +57,57 @@ export function musicTrackKey(chatId: number, messageId: number): string {
   return `${chatId}_${messageId}`;
 }
 
+// 机器人搜索结果的键。**必须和会话消息的键分得开**：合集、收藏、音源探测缓存
+// 全按这个键存，撞了就会把别的歌的采样率显示到这首上。
+// 前缀是非数字，parseMusicTrackKey 那边 parseInt 出 NaN 自然会拒掉（有单测钉住）。
+export const MUSIC_BOT_KEY_PREFIX: string = 'bot_';
+
+export function musicBotTrackKey(resultId: string): string {
+  return `${MUSIC_BOT_KEY_PREFIX}${resultId}`;
+}
+
+export function isMusicBotKey(key: string): boolean {
+  return key.startsWith(MUSIC_BOT_KEY_PREFIX);
+}
+
+// 这首歌的键：机器人结果走 bot_ 前缀，会话消息走 chatId_messageId。
+export function trackKeyOf(track: MusicTrack): string {
+  return track.botResultId !== ''
+    ? musicBotTrackKey(track.botResultId) : musicTrackKey(track.chatId, track.messageId);
+}
+
+// 专辑封面的内联小图 → data URL。messageAudio 与 inlineQueryResultAudio 里的
+// audio 对象是同一个形状，两边共用。
+export function audioCoverMiniUrl(audio: TdObject | undefined): string {
+  if (audio === undefined) {
+    return '';
+  }
+  const mini = audio['album_cover_minithumbnail'] as TdObject | undefined;
+  const data: string = mini !== undefined ? ((mini['data'] as string | undefined) ?? '') : '';
+  return data !== '' ? `data:image/jpeg;base64,${data}` : '';
+}
+
 function fileOf(audio: TdObject | undefined): TdObject | undefined {
   return audio !== undefined ? (audio['audio'] as TdObject | undefined) : undefined;
+}
+
+// 本地路径**只在整首下完之后才算数**。
+//
+// TDLib 对只下了前缀的文件一样会给 local.path——音源探测为了解文件头会
+// downloadFile(offset 0, limit 64KB)，于是本地凭空多出一个几百 KB 的残片。
+// 拿它当"本地已有"去起播，AVPlayer 走 fd 分支直接读残片，ffmpeg 报
+// 「partial file / Call av_read_frame failed」，表现是点了没声音
+// （2026-09-20 真机日志钉死）。
+//
+// 判据用 is_downloading_completed，不是 path 非空，也不是
+// downloaded_size == size（后者在 size 未知时是 0==0）。
+function completedLocalPath(file: TdObject | undefined): string {
+  const local = file !== undefined ? (file['local'] as TdObject | undefined) : undefined;
+  if (local === undefined) {
+    return '';
+  }
+  const done: boolean = (local['is_downloading_completed'] as boolean | undefined) ?? false;
+  return done ? ((local['path'] as string | undefined) ?? '') : '';
 }
 
 export function musicTrackFromMessage(message: TdObject | null | undefined): MusicTrack | null {
@@ -68,7 +123,6 @@ export function musicTrackFromMessage(message: TdObject | null | undefined): Mus
   if (audio === undefined || file === undefined) {
     return null;
   }
-  const local = file['local'] as TdObject | undefined;
   const cover = audio['album_cover_thumbnail'] as TdObject | undefined;
   const coverFile = cover !== undefined ? (cover['file'] as TdObject | undefined) : undefined;
   const fileName: string = (audio['file_name'] as string | undefined) ?? '';
@@ -87,8 +141,56 @@ export function musicTrackFromMessage(message: TdObject | null | undefined): Mus
     fileSize: size,
     mimeType: (audio['mime_type'] as string | undefined) ?? '',
     fileName: fileName,
-    localPath: local !== undefined ? ((local['path'] as string | undefined) ?? '') : '',
-    coverFileId: coverFile !== undefined ? ((coverFile['id'] as number | undefined) ?? 0) : 0
+    localPath: completedLocalPath(file),
+    coverFileId: coverFile !== undefined ? ((coverFile['id'] as number | undefined) ?? 0) : 0,
+    coverMini: audioCoverMiniUrl(audio),
+    botResultId: ''
+  };
+}
+
+// 机器人内联搜索结果 → 曲目。
+//
+// inlineQueryResultAudio 里那个 audio 对象和 messageAudio 里的**完全同构**
+// （2026-09-20 对 @LyBot 真机实测确认：duration/title/performer/file_name/
+// mime_type/album_cover_minithumbnail/album_cover_thumbnail/audio:file 全有），
+// 所以取字段的写法和上面那段一致，只是身份换成 result.id。
+//
+// 关键的一条：这个 file 不发消息就能 downloadFile（同一次实测，三首全过）——
+// 这正是这条路走得通的前提，也是 @Music163bot 那种只回 Article 的 bot 走不通的原因。
+export function musicTrackFromInlineAudio(result: TdObject | null | undefined): MusicTrack | null {
+  if (result === undefined || result === null) {
+    return null;
+  }
+  if ((result['@type'] as string | undefined) !== 'inlineQueryResultAudio') {
+    return null;
+  }
+  const resultId: string = (result['id'] as string | undefined) ?? '';
+  const audio = result['audio'] as TdObject | undefined;
+  const file = fileOf(audio);
+  if (resultId === '' || audio === undefined || file === undefined) {
+    return null;
+  }
+  const cover = audio['album_cover_thumbnail'] as TdObject | undefined;
+  const coverFile = cover !== undefined ? (cover['file'] as TdObject | undefined) : undefined;
+  const fileName: string = (audio['file_name'] as string | undefined) ?? '';
+  const title: string = ((audio['title'] as string | undefined) ?? '').trim();
+  const size: number = ((file['size'] as number | undefined) ?? 0) ||
+    ((file['expected_size'] as number | undefined) ?? 0);
+  return {
+    chatId: 0,
+    messageId: 0,
+    title: title !== '' ? title : fileName,
+    artist: ((audio['performer'] as string | undefined) ?? '').trim(),
+    album: ((audio['album'] as string | undefined) ?? '').trim(),
+    durationSec: (audio['duration'] as number | undefined) ?? 0,
+    fileId: (file['id'] as number | undefined) ?? 0,
+    fileSize: size,
+    mimeType: (audio['mime_type'] as string | undefined) ?? '',
+    fileName: fileName,
+    localPath: completedLocalPath(file),
+    coverFileId: coverFile !== undefined ? ((coverFile['id'] as number | undefined) ?? 0) : 0,
+    coverMini: audioCoverMiniUrl(audio),
+    botResultId: resultId
   };
 }
 

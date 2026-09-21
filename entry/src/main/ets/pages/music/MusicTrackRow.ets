@@ -1,4 +1,4 @@
-import { musicDurationLabel, musicFormatLabel, MusicTrack, musicTrackKey } from '../../util/musicTrackModel';
+import { musicDurationLabel, musicFormatLabel, MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackModel';
 import { musicCoverGradient, musicGlassBlur, musicGlassFill } from '../../util/musicCenterStyle';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { str } from '../../util/strings';
@@ -127,5 +127,5 @@ export struct MusicTrackRow {
 
 // 行的身份：ForEach 的键。用曲目键而不是下标，列表变了才不会串行。
 export function musicRowKey(track: MusicTrack): string {
-  return musicTrackKey(track.chatId, track.messageId);
+  return trackKeyOf(track);
 }

@@ -1,7 +1,8 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import {
-  MusicTrack, musicTrackFromMessage, musicTrackKey, MusicTrackRef, parseMusicTrackKey
+  MusicTrack, musicTrackFromMessage, musicTrackKey, MusicTrackRef, parseMusicTrackKey,
+  trackKeyOf
 } from '../util/musicTrackModel';
 import { logE } from '../util/log';
 
@@ -22,7 +23,7 @@ const inFlight: Map<string, Promise<MusicTrack | null>> = new Map<string, Promis
 // 曲库/搜索结果里见过的歌先存起来，合集详情就不必再请求一遍。
 export function rememberMusicTracks(tracks: MusicTrack[]): void {
   tracks.forEach((track: MusicTrack): void => {
-    const key: string = musicTrackKey(track.chatId, track.messageId);
+    const key: string = trackKeyOf(track);
     cache.set(key, track);
     missing.delete(key);
   });

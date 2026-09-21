@@ -228,6 +228,9 @@ export struct MusicPlayerView {
           active: this.track !== null,
           onTap: (): void => { this.onNext(); }
         });
+        // 机器人搜来的歌在播放那一刻已经发进收藏夹、换成了真消息（见
+        // MusicPlayerController 的 materializer），所以能加合集的曲目一定有
+        // chatId/messageId，这里不再需要按来源分情况。
         MusicRoundButton({
           icon: this.inCollection
             ? $r('sys.symbol.checkmark_square_on_square') : $r('sys.symbol.plus_square_on_square'),

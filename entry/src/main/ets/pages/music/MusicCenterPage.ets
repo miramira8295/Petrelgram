@@ -15,7 +15,7 @@ import { audioOutputDevices } from '../../services/AudioOutputDevices';
 import { rememberMusicTracks, resolveMusicTracks } from '../../services/MusicTrackResolver';
 import { AudioSourceInfo } from '../../util/audioHeaderProbe';
 import { MusicCollection } from '../../util/musicCollectionModel';
-import { MusicTrack, musicTrackKey } from '../../util/musicTrackModel';
+import { MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackModel';
 import { musicGlowColors } from '../../util/musicCenterStyle';
 import { AudioOutputDevice, buildCastRows, MusicCastRow, castChipName } from '../../util/musicCastDevices';
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
@@ -29,6 +29,15 @@ import { MusicCollectionDetailView } from './MusicCollectionDetailView';
 import { MusicAddToSheet, MusicCreateDialog, MusicPlaylistSheet } from './MusicSheets';
 import { MusicCastSheet } from './MusicCastSheet';
 import { MusicSearchOverlay } from './MusicSearchOverlay';
+import {
+  materializeBotTrack, MUSIC_BOT_USERNAME, MusicBotSearchResult, searchMusicBot
+} from '../../store/MusicBotSearchApi';
+import { ensureMusicBotSent } from '../../store/MusicBotSentStore';
+import {
+  CHAT_BOT_ERR_OFFLINE, CHAT_BOT_ERR_TIMEOUT, CHAT_BOT_ERR_UNREADABLE, ChatBotSearchOutcome,
+  chatBotFetch, chatBotSearch, MUSIC_CHAT_BOT_USERNAME
+} from '../../store/MusicChatBotApi';
+import { ChatBotHit } from '../../util/musicChatBotParse';
 import { MusicCenterTopBar } from './MusicCenterTopBar';
 
 // 音乐中心（2026-09-18，照 Claude Design「Music Player」稿）。
@@ -52,6 +61,9 @@ const SHEET_ADD: string = 'add';
 const SHEET_CREATE: string = 'create';
 const SHEET_CAST: string = 'cast';
 const SHEET_SEARCH: string = 'search';
+
+// 机器人搜索的防抖。实测 bot 200–600ms 回来，350ms 手感上刚好不抢跑。
+const BOT_SEARCH_DEBOUNCE_MS: number = 350;
 
 const QUEUE_LIBRARY: string = 'library';
 const QUEUE_COLLECTION: string = 'collection';
@@ -83,6 +95,15 @@ export struct MusicCenterPage {
   @State private createFromAdd: boolean = false;
   @State private tracks: MusicTrack[] = [];
   @State private libLoading: boolean = false;
+  // 机器人搜索的那一段（曲库之外的来源，见 store/MusicBotSearchApi）。
+  @State private botTracks: MusicTrack[] = [];
+  @State private botLoading: boolean = false;
+  // 会话式机器人那一段（@music_v1bot）。搜索要手点，不跟着输入跑——每搜一次
+  // 都真往那个 bot 的会话里发一条 /search。
+  @State private chatLabels: string[] = [];
+  @State private chatBusy: boolean = false;
+  @State private chatError: string = '';
+  @State private chatFetching: number = -1;
   @State private collections: MusicCollection[] = [];
   @State private snapshot: MusicPlaybackSnapshot = {
     trackKey: '', index: -1, playing: false, loading: false, positionMs: 0, durationMs: 0
@@ -111,9 +132,23 @@ export struct MusicCenterPage {
   private detailSeq: number = 0;
   // 当前队列是从哪儿来的：曲库还是某个合集。见 adoptLibraryQueue。
   private queueSource: string = QUEUE_LIBRARY;
+  // 机器人搜索的防抖与竞态：输入框每敲一下都发一次查询既浪费也会被 bot 限流；
+  // 晚回来的旧查询不能盖掉新的（同 detailSeq 的做法）。
+  private botSeq: number = 0;
+  private botTimer: number = -1;
+  // 本次搜索的 inline_query_id；落地（发消息）时要用，过期了 API 会自己重查。
+  private botQueryId: string = '';
+  // 落地时用的查询词：queryId 过期后重查要靠它。
+  private botQuery: string = '';
+  private chatHits: ChatBotHit[] = [];
+  private chatListMessageId: number = 0;
 
   aboutToAppear(): void {
     ensureMusicCollections(this.ctx());
+    ensureMusicBotSent(this.ctx());
+    // 机器人结果的落地钩子：点播放时先发进收藏夹换回真消息。
+    this.player.setMaterializer((track: MusicTrack): Promise<MusicTrack | null> =>
+      materializeBotTrack(this.botQuery, this.botQueryId, track.botResultId, Date.now()));
     this.unsubCollections = subscribeMusicCollections((): void => {
       this.collections = musicCollections().slice();
       this.refreshDetail();
@@ -131,6 +166,7 @@ export struct MusicCenterPage {
   }
 
   aboutToDisappear(): void {
+    if (this.botTimer !== -1) { clearTimeout(this.botTimer); this.botTimer = -1; }
     if (this.unsubLibrary !== null) { this.unsubLibrary(); this.unsubLibrary = null; }
     if (this.unsubPlayer !== null) { this.unsubPlayer(); this.unsubPlayer = null; }
     if (this.unsubCollections !== null) { this.unsubCollections(); this.unsubCollections = null; }
@@ -167,7 +203,7 @@ export struct MusicCenterPage {
     if (playing !== null) {
       const key: string = musicTrackKey(playing.chatId, playing.messageId);
       const present: boolean = this.tracks.some((t: MusicTrack): boolean =>
-        musicTrackKey(t.chatId, t.messageId) === key);
+        trackKeyOf(t) === key);
       if (!present) {
         return;
       }
@@ -205,7 +241,7 @@ export struct MusicCenterPage {
       this.probedKey = '';
       return;
     }
-    const key: string = musicTrackKey(track.chatId, track.messageId);
+    const key: string = trackKeyOf(track);
     if (key === this.probedKey) {
       return;
     }
@@ -257,6 +293,112 @@ export struct MusicCenterPage {
   }
 
   // —— 动作 ——
+
+  // 机器人搜索：停手 350ms 再发。清空输入立刻收起这一段，别留着上一次的结果。
+  private scheduleBotSearch(query: string): void {
+    if (this.botTimer !== -1) {
+      clearTimeout(this.botTimer);
+      this.botTimer = -1;
+    }
+    const q: string = query.trim();
+    if (q === '') {
+      this.botSeq++;
+      this.botTracks = [];
+      this.botLoading = false;
+      return;
+    }
+    const seq: number = ++this.botSeq;
+    this.botLoading = true;
+    this.botTimer = setTimeout((): void => {
+      this.botTimer = -1;
+      searchMusicBot(q).then((res: MusicBotSearchResult): void => {
+        // 期间又敲了别的词：这份结果已经过期。
+        if (this.botSeq !== seq) {
+          return;
+        }
+        this.botTracks = res.tracks;
+        this.botQueryId = res.queryId;
+        this.botQuery = q;
+        this.botLoading = false;
+      });
+    }, BOT_SEARCH_DEBOUNCE_MS);
+  }
+
+  // 会话式机器人：手点一次 = 往 bot 会话发一条 /search，等它回编号列表。
+  private runChatBotSearch(): void {
+    const q: string = this.query.trim();
+    if (q === '' || this.chatBusy) {
+      return;
+    }
+    this.chatBusy = true;
+    this.chatError = '';
+    this.chatLabels = [];
+    this.chatHits = [];
+    chatBotSearch(q).then((res: ChatBotSearchOutcome): void => {
+      this.chatBusy = false;
+      // 期间把搜索词改了：这份结果已经不对应界面上的词了，丢掉。
+      if (this.query.trim() !== q) {
+        return;
+      }
+      if (res.error !== '') {
+        this.chatError = this.chatBotErrorText(res.error);
+        return;
+      }
+      this.chatHits = res.hits;
+      this.chatListMessageId = res.listMessageId;
+      this.chatLabels = res.hits.map((h: ChatBotHit): string => h.label);
+    });
+  }
+
+  // 三种失败要分清：连不上 / 没响应 / 回复读不懂。
+  // 最后一种尤其不能说成"没搜到"——那是 bot 改了版式，我们得看得见。
+  private chatBotErrorText(code: string): string {
+    if (code === CHAT_BOT_ERR_OFFLINE) {
+      return str('mc_search_chatbot_offline', MUSIC_CHAT_BOT_USERNAME);
+    }
+    if (code === CHAT_BOT_ERR_UNREADABLE) {
+      return str('mc_search_chatbot_unreadable', MUSIC_CHAT_BOT_USERNAME);
+    }
+    return str('mc_search_chatbot_timeout', MUSIC_CHAT_BOT_USERNAME);
+  }
+
+  // 点一条：点 bot 那个编号按钮，等它把音频发过来，然后就是一首普通的歌。
+  private pickChatBotHit(index: number): void {
+    if (index < 0 || index >= this.chatHits.length || this.chatFetching !== -1) {
+      return;
+    }
+    this.chatFetching = index;
+    this.chatError = '';
+    chatBotFetch(this.chatListMessageId, this.chatHits[index]).then(
+      (track: MusicTrack | null): void => {
+        this.chatFetching = -1;
+        if (track === null) {
+          this.chatError = str('mc_search_chatbot_failed');
+          return;
+        }
+        // 已经是一条真音频消息了，之后和曲库里的歌没有区别。
+        rememberMusicTracks([track]);
+        this.player.setQueue([track]);
+        this.player.playAt(0);
+        this.tab = TAB_PLAY;
+        this.detailId = '';
+        this.closeSheet();
+      });
+  }
+
+  // 机器人结果起播。**队列只放机器人这一段**：把它和曲库拼在一起的话，
+  // 「下一首」会从一首云端歌跳到你自己会话里的歌，来源混了反而难理解。
+  //
+  // 真正的「发消息换成真曲目」在 MusicPlayerController.playAt 里做（那是所有
+  // 播放的唯一漏斗，上一首/下一首才能一起生效），这里只管把队列交过去。
+  private playFromBot(index: number): void {
+    this.queueSource = QUEUE_LIBRARY;
+    this.player.setQueue(this.botTracks);
+    this.player.playAt(index);
+    this.tab = TAB_PLAY;
+    this.detailId = '';
+    this.closeSheet();
+  }
 
   private playFromLibrary(index: number): void {
     this.queueSource = QUEUE_LIBRARY;
@@ -529,6 +671,14 @@ export struct MusicCenterPage {
         query: this.query,
         tracks: this.tracks,
         loading: this.libLoading,
+        botTracks: this.botTracks,
+        botLoading: this.botLoading,
+        botName: MUSIC_BOT_USERNAME,
+        chatBotName: MUSIC_CHAT_BOT_USERNAME,
+        chatLabels: this.chatLabels,
+        chatBusy: this.chatBusy,
+        chatError: this.chatError,
+        chatFetching: this.chatFetching,
         playingKey: this.snapshot.trackKey,
         playing: this.snapshot.playing,
         topInset: this.topSafe,
@@ -536,13 +686,22 @@ export struct MusicCenterPage {
         onQueryChange: (query: string): void => {
           this.query = query;
           this.library.search(query);
+          this.scheduleBotSearch(query);
+          // 换词了：上一轮 bot 的结果不再对应，收掉（但**不自动重搜**）。
+          this.chatLabels = [];
+          this.chatHits = [];
+          this.chatError = '';
         },
         onClose: (): void => {
           this.query = '';
           this.library.search('');
+          this.scheduleBotSearch('');
           this.closeSheet();
         },
         onPlay: (index: number): void => { this.playFromLibrary(index); },
+        onPlayBot: (index: number): void => { this.playFromBot(index); },
+        onChatSearch: (): void => { this.runChatBotSearch(); },
+        onChatPick: (index: number): void => { this.pickChatBotHit(index); },
         onLoadMore: (): void => { this.library.loadMore(); }
       });
     }

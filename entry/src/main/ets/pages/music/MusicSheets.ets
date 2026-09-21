@@ -1,5 +1,5 @@
 import { MusicCollection, collectionContains } from '../../util/musicCollectionModel';
-import { musicDurationLabel, MusicTrack, musicTrackKey } from '../../util/musicTrackModel';
+import { musicDurationLabel, MusicTrack, musicTrackKey, trackKeyOf } from '../../util/musicTrackModel';
 import { musicGlassBlur, musicGlassFill, musicKeyGradient } from '../../util/musicCenterStyle';
 import { MUSIC_ROW_PLAIN, MusicTrackRow, musicRowKey } from './MusicTrackRow';
 import { MusicSheetShell } from './MusicSheetShell';
@@ -37,7 +37,7 @@ export struct MusicPlaylistSheet {
             MusicTrackRow({
               track: track,
               index: -1,
-              active: musicTrackKey(track.chatId, track.messageId) === this.playingKey,
+              active: trackKeyOf(track) === this.playingKey,
               playing: this.playing,
               trailing: MUSIC_ROW_PLAIN,
               onTap: (): void => { this.onPlay(index); }

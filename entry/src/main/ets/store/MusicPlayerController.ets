@@ -5,7 +5,7 @@ import {
 } from '../services/VoicePlayback';
 import { clearNowPlaying, publishNowPlaying } from '../util/nowPlayingChannel';
 import { cachedMusicCover } from '../services/MusicCoverCache';
-import { MusicTrack, musicTrackKey } from '../util/musicTrackModel';
+import { MusicTrack, musicTrackKey, trackKeyOf } from '../util/musicTrackModel';
 import { logE } from '../util/log';
 
 // 音乐中心的播放控制（2026-09-18）。
@@ -46,6 +46,15 @@ export class MusicPlayerController {
   // 作废在途的下载：用户在等的时候又点了别的歌。
   private playSeq: number = 0;
 
+  // 机器人搜来的歌在真正播之前要先落地成一条真消息（见 store/MusicBotSearchApi
+  // 的 materializeBotTrack）。放在这里而不是页面上，是因为 playAt 是所有播放的
+  // 唯一漏斗——next/prev/play 全经过它，挂在这儿上一首下一首才一起生效。
+  private materializer: ((track: MusicTrack) => Promise<MusicTrack | null>) | null = null;
+
+  setMaterializer(fn: (track: MusicTrack) => Promise<MusicTrack | null>): void {
+    this.materializer = fn;
+  }
+
   constructor() {
     this.voice = getVoicePlayback().current();
     this.unsubVoice = getVoicePlayback().subscribe((state: VoiceState): void => {
@@ -84,7 +93,7 @@ export class MusicPlayerController {
 
   snapshot(): MusicPlaybackSnapshot {
     const track: MusicTrack | null = this.current();
-    const key: string = track !== null ? musicTrackKey(track.chatId, track.messageId) : '';
+    const key: string = track !== null ? trackKeyOf(track) : '';
     const mine: boolean = track !== null && this.voice.playingId === track.messageId;
     return {
       trackKey: key,
@@ -102,11 +111,11 @@ export class MusicPlayerController {
   // 换一份队列（曲库、某个合集、搜索结果）。**不动正在放的那首**：换页签不该打断播放。
   setQueue(tracks: MusicTrack[]): void {
     const playingKey: string = this.current() !== null
-      ? musicTrackKey(this.current()!.chatId, this.current()!.messageId) : '';
+      ? trackKeyOf(this.current()!) : '';
     this.queue = tracks;
     this.index = playingKey === ''
       ? -1
-      : tracks.findIndex((t: MusicTrack): boolean => musicTrackKey(t.chatId, t.messageId) === playingKey);
+      : tracks.findIndex((t: MusicTrack): boolean => trackKeyOf(t) === playingKey);
     this.notify();
   }
 
@@ -128,8 +137,30 @@ export class MusicPlayerController {
     }
     this.index = index;
     const track: MusicTrack = this.queue[index];
-    const key: string = musicTrackKey(track.chatId, track.messageId);
+    const key: string = trackKeyOf(track);
     const seq: number = ++this.playSeq;
+    // 还没落地的机器人结果：先发进收藏夹换回真消息，再按普通曲目走。
+    // 落地要走网络（一次 send + 等真实 id），这段时间行上要转圈。
+    if (track.botResultId !== '' && this.materializer !== null) {
+      this.loadingKey = key;
+      this.notify();
+      this.materializer(track).then((real: MusicTrack | null): void => {
+        if (seq !== this.playSeq) {
+          return;   // 期间点了别的歌
+        }
+        this.loadingKey = '';
+        if (real === null) {
+          this.notify();
+          return;
+        }
+        // 就地换掉队列里这一项：之后它就是一首普通的歌，加入合集、下载中心
+        // 这些按 chatId/messageId 走的功能全部可用。
+        this.queue = this.queue.map((t: MusicTrack): MusicTrack =>
+          trackKeyOf(t) === key ? real : t);
+        this.playAt(index);
+      });
+      return;
+    }
     if (track.localPath !== '') {
       this.start(track);
       return;
@@ -157,18 +188,19 @@ export class MusicPlayerController {
         chatId: track.chatId, messageId: track.messageId, title: track.title, artist: track.artist,
         album: track.album, durationSec: track.durationSec, fileId: track.fileId,
         fileSize: track.fileSize, mimeType: track.mimeType, fileName: track.fileName,
-        localPath: path, coverFileId: track.coverFileId
+        localPath: path, coverFileId: track.coverFileId,
+        coverMini: track.coverMini, botResultId: track.botResultId
       };
       this.queue = this.queue.map((t: MusicTrack): MusicTrack =>
-        musicTrackKey(t.chatId, t.messageId) === key ? ready : t);
+        trackKeyOf(t) === key ? ready : t);
       this.start(ready);
     });
   }
 
   playTrack(track: MusicTrack): void {
-    const key: string = musicTrackKey(track.chatId, track.messageId);
+    const key: string = trackKeyOf(track);
     const at: number = this.queue.findIndex((t: MusicTrack): boolean =>
-      musicTrackKey(t.chatId, t.messageId) === key);
+      trackKeyOf(t) === key);
     if (at >= 0) {
       this.playAt(at);
       return;

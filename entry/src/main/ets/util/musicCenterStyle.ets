@@ -1,6 +1,6 @@
 import { plainBackdropBlur, plainGlassFill } from './overlayMaterial';
 import { hdsVisualEffect } from './hdsPointLight';
-import { MusicCoverColors, musicCoverColors, musicTrackKey } from './musicTrackModel';
+import { MusicCoverColors, musicCoverColors, musicTrackKey, trackKeyOf } from './musicTrackModel';
 import { MusicTrack } from './musicTrackModel';
 
 // 音乐中心的几处共用样式（2026-09-18，设计稿「Music Player」）。
@@ -37,7 +37,7 @@ export function musicGlassEffect(): VisualEffect {
 // 封面：曲目键散列出的一对颜色，斜向渐变。没有曲目时给一块中性灰，不留空洞。
 export function musicCoverGradient(track: MusicTrack | null): LinearGradient {
   const colors: MusicCoverColors = track !== null
-    ? musicCoverColors(musicTrackKey(track.chatId, track.messageId))
+    ? musicCoverColors(trackKeyOf(track))
     : { from: '#9aa3b2', to: '#4c5566' };
   return { angle: 135, colors: [[colors.from, 0.0], [colors.to, 1.0]] } as LinearGradient;
 }
@@ -45,7 +45,7 @@ export function musicCoverGradient(track: MusicTrack | null): LinearGradient {
 // 背景光晕用的两团颜色，取自同一对封面色——设计稿里背景就是封面色的延伸。
 export function musicGlowColors(track: MusicTrack | null): MusicCoverColors {
   return track !== null
-    ? musicCoverColors(musicTrackKey(track.chatId, track.messageId))
+    ? musicCoverColors(trackKeyOf(track))
     : { from: '#9aa3b2', to: '#4c5566' };
 }
 

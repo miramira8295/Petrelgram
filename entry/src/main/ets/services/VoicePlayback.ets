@@ -8,7 +8,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { mediaPlaybackKeepAlive } from './MediaPlaybackKeepAlive';
 import { getUiAbilityContext } from '../tdkit/Globals';
 import { KEY_BG_PLAY_MUSIC, KEY_BG_PLAY_VOICE } from '../store/AppSettings';
-import { logE } from '../util/log';
+import { logE, logW } from '../util/log';
 
 export interface VoiceState {
   playingId: number;  // current/preparing/completed message; 0 = idle/error
@@ -54,6 +54,9 @@ export interface AudioSource {
   sizeBytes: number;
   mimeType: string;
 }
+
+// 起播前等头尾就位的上限。到点还没齐也照样开播，不把用户卡死在这里。
+const STREAM_READY_TIMEOUT_MS: number = 15000;
 
 export function localAudioSource(path: string): AudioSource {
   return { path: path, fileId: 0, sizeBytes: 0, mimeType: '' };
@@ -411,14 +414,10 @@ class VoicePlayback {
   }
 
   // 本地文件给 fd://，流给回环上的 http://。两路都由 releaseResources 收尾。
-  private sourceUrl(source: AudioSource): Promise<string> {
+  private async sourceUrl(source: AudioSource): Promise<string> {
     if (source.path.trim() !== '') {
-      try {
-        this.file = fs.openSync(source.path, fs.OpenMode.READ_ONLY);
-      } catch (caught) {
-        return Promise.reject(caught as Object);
-      }
-      return Promise.resolve(`fd://${this.file.fd}`);
+      this.file = fs.openSync(source.path, fs.OpenMode.READ_ONLY);
+      return `fd://${this.file.fd}`;
     }
     const session: VideoStreamSession =
       new VideoStreamSession(getTdClient(), source.fileId, source.sizeBytes);
@@ -427,7 +426,22 @@ class VoicePlayback {
       new VideoRangeServer(session, source.fileId, source.sizeBytes, source.mimeType);
     this.rangeServer = server;
     session.start();
-    return server.start();
+    const url: string = await server.start();
+    // **开播前必须等头尾就位。** session.start() 只是把头块和尾块的下载请求发出去，
+    // 不等它们回来。一个字节都还没落盘就把 url 交给播放器，它立刻读头部、对 m4a
+    // 还要去尾部找 moov（见 util/videoPrefetchPolicy 那句「moov 可能在尾部」），
+    // 于是 SnifferMediaType 失败 → player state error。
+    //
+    // 2026-09-20 真机：机器人搜来的歌是第一次遇到**全冷**的音频文件（会话里的歌
+    // 多半已经预取过一段），必现"第一次点不播、再点一下就好"——第二次能成正是
+    // 因为第一次已经把字节拉下来了。waitForReady 本来就是为这件事写的，
+    // 只是一直没人调用。
+    //
+    // 超时了仍然把 url 交出去：让播放器自己试一把，比这里直接判死好。
+    if (!await session.waitForReady(STREAM_READY_TIMEOUT_MS)) {
+      logW(`VoicePlayback: stream head/tail not ready in time, starting anyway`);
+    }
+    return url;
   }
 
   stop(completedId: number = 0): void {

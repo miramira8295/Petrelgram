@@ -3,7 +3,8 @@ import { TdObject } from '../main/ets/tdkit/TdTypes';
 import {
   filterMusicTracks, mergeMusicTracks, MusicCoverColors, musicBitrateLabel, musicCoverColors,
   musicDurationLabel, musicFormatLabel, musicSampleLabel, musicSizeLabel, MusicTrack,
-  musicTrackFromMessage, musicTrackKey, MusicTrackRef, parseMusicTrackKey
+  musicTrackFromMessage, musicTrackKey, MusicTrackRef, parseMusicTrackKey,
+  audioCoverMiniUrl, isMusicBotKey, musicBotTrackKey, musicTrackFromInlineAudio, trackKeyOf
 } from '../main/ets/util/musicTrackModel';
 
 // 音乐中心的曲目模型（2026-09-18，设计稿「Music Player」）。
@@ -20,7 +21,11 @@ function audioMessage(chatId: number, messageId: number, patch: Record<string, O
   file['size'] = (patch['size'] as number | undefined) ?? 7_900_000;
   const local: TdObject = { '@type': 'localFile' };
   local['path'] = (patch['path'] as string | undefined) ?? '';
-  local['is_downloading_completed'] = (patch['path'] as string | undefined) !== undefined;
+  // partial=true 模拟「只下了前缀」：TDLib 照样给 path，但没下完。
+  const partial: boolean = (patch['partial'] as boolean | undefined) ?? false;
+  local['is_downloading_completed'] =
+    !partial && (patch['path'] as string | undefined) !== undefined;
+  local['downloaded_prefix_size'] = partial ? 65536 : 0;
   file['local'] = local;
   const audio: TdObject = { '@type': 'audio' };
   audio['duration'] = (patch['duration'] as number | undefined) ?? 198;
@@ -36,6 +41,49 @@ function audioMessage(chatId: number, messageId: number, patch: Record<string, O
   message['chat_id'] = chatId;
   message['content'] = content;
   return message;
+}
+
+// 机器人内联结果的构造（形状取自 2026-09-20 对 @LyBot 的真机抓取）。
+// ArkTS 禁止嵌套函数声明（arkts-no-nested-funcs），所以放在模块作用域。
+function inlineAudio(resultId: string, patch: Record<string, Object>): TdObject {
+  const file: TdObject = { '@type': 'file' };
+  file['id'] = 14706;
+  file['size'] = 4_504_420;
+  const coverFile: TdObject = { '@type': 'file' };
+  coverFile['id'] = 14705;
+  const cover: TdObject = { '@type': 'thumbnail' };
+  cover['file'] = coverFile;
+  const audio: TdObject = { '@type': 'audio' };
+  audio['audio'] = file;
+  audio['album_cover_thumbnail'] = cover;
+  audio['duration'] = 269;
+  audio['title'] = (patch['title'] as string | undefined) ?? '晴天';
+  audio['performer'] = '周杰倫';
+  audio['file_name'] = '晴天 - 周杰倫.m4a';
+  audio['mime_type'] = 'audio/mp4';
+  const miniData = patch['mini'] as string | undefined;
+  if (miniData !== undefined) {
+    const mini: TdObject = { '@type': 'minithumbnail' };
+    mini['data'] = miniData;
+    audio['album_cover_minithumbnail'] = mini;
+  }
+  const result: TdObject = { '@type': 'inlineQueryResultAudio' };
+  result['id'] = resultId;
+  result['audio'] = audio;
+  return result;
+}
+
+function inlineAudioForKey(resultId: string): TdObject {
+  const file: TdObject = { '@type': 'file' };
+  file['id'] = 1;
+  file['size'] = 10;
+  const audio: TdObject = { '@type': 'audio' };
+  audio['audio'] = file;
+  audio['title'] = 'x';
+  const result: TdObject = { '@type': 'inlineQueryResultAudio' };
+  result['id'] = resultId;
+  result['audio'] = audio;
+  return result;
 }
 
 export default function musicTrackModelTest() {
@@ -173,5 +221,102 @@ export default function musicTrackModelTest() {
       expect(parseMusicTrackKey('12345_0') === null).assertTrue();
     });
 
+  
+  // ── 机器人内联搜索（2026-09-20，@LyBot 真机实测的形状）──────────────
+  //
+  // inlineQueryResultAudio 里的 audio 对象和 messageAudio 里的同构，所以取字段
+  // 的路径一致；不同的只有身份：机器人结果没有 chatId/messageId，只有 result.id。
+  describe('musicTrackFromInlineAudio', () => {
+    it('maps_audio_result_to_track', 0, () => {
+      const t: MusicTrack | null = musicTrackFromInlineAudio(
+        inlineAudio('SJKoWAd5ySo', { 'mini': '/9j/abc==' }));
+      expect(t !== null).assertTrue();
+      expect(t!.title).assertEqual('晴天');
+      expect(t!.artist).assertEqual('周杰倫');
+      expect(t!.durationSec).assertEqual(269);
+      expect(t!.fileId).assertEqual(14706);
+      expect(t!.fileSize).assertEqual(4_504_420);
+      expect(t!.mimeType).assertEqual('audio/mp4');
+      expect(t!.coverFileId).assertEqual(14705);
+      expect(t!.coverMini).assertEqual('data:image/jpeg;base64,/9j/abc==');
+      expect(t!.botResultId).assertEqual('SJKoWAd5ySo');
+      // 机器人结果没有会话身份，这两项必须是 0，别让它冒充某条消息。
+      expect(t!.chatId).assertEqual(0);
+      expect(t!.messageId).assertEqual(0);
+    });
+
+    it('rejects_non_audio_results', 0, () => {
+      const article: TdObject = { '@type': 'inlineQueryResultArticle' };
+      article['id'] = 'pl_nhDgT-wgQAU';
+      article['title'] = '晴天 - R&B版';
+      // @LyBot 的「准备曲目中…」就是这种，没有文件，不能当歌。
+      expect(musicTrackFromInlineAudio(article) === null).assertTrue();
+      expect(musicTrackFromInlineAudio(null) === null).assertTrue();
+    });
+
+    it('title_falls_back_to_file_name', 0, () => {
+      const t: MusicTrack | null = musicTrackFromInlineAudio(
+        inlineAudio('abc', { 'title': '' }));
+      expect(t!.title).assertEqual('晴天 - 周杰倫.m4a');
+      expect(t!.coverMini).assertEqual('');
+    });
   });
+
+  // 机器人结果的键必须和会话消息的键分得开，否则合集/收藏/音源缓存会串。
+  describe('musicBotTrackKey', () => {
+    it('is_distinguishable_from_message_keys', 0, () => {
+      const key: string = musicBotTrackKey('SJKoWAd5ySo');
+      expect(key).assertEqual('bot_SJKoWAd5ySo');
+      expect(isMusicBotKey(key)).assertTrue();
+      expect(isMusicBotKey(musicTrackKey(-100123, 4096))).assertFalse();
+    });
+
+    it('is_rejected_by_the_message_key_parser', 0, () => {
+      // 这条钉死「不会被当成 chatId_messageId 解析」——包括 id 里本来就带下划线的
+      // YouTube 式 id（@LyBot 真回过 pl_nhDgT-wgQAU 这种）。
+      const ref: MusicTrackRef | null = parseMusicTrackKey(musicBotTrackKey('SJKoWAd5ySo'));
+      expect(ref === null).assertTrue();
+      expect(parseMusicTrackKey(musicBotTrackKey('pl_nhDgT-wgQAU')) === null).assertTrue();
+    });
+
+    it('trackKeyOf_picks_the_right_scheme', 0, () => {
+      const bot: MusicTrack | null = musicTrackFromInlineAudio(
+        inlineAudioForKey('SJKoWAd5ySo'));
+      expect(trackKeyOf(bot!)).assertEqual('bot_SJKoWAd5ySo');
+    });
+
+  });
+
+  describe('audioCoverMiniUrl', () => {
+    it('returns_empty_when_absent', 0, () => {
+      const audio: TdObject = { '@type': 'audio' };
+      expect(audioCoverMiniUrl(audio)).assertEqual('');
+      expect(audioCoverMiniUrl(undefined)).assertEqual('');
+    });
+  });
+
+  // 只下了前缀的文件**不算本地已有**（2026-09-20 真机日志）。
+  //
+  // 音源探测为了解文件头会 downloadFile(offset 0, limit 64KB)，本地于是多出一个
+  // 几百 KB 的残片，TDLib 照样给 local.path。当时按 path 非空就判"本地已有"，
+  // 播放器走 fd 分支读残片，ffmpeg 报 partial file / av_read_frame failed，
+  // 用户看到的是"点了不播放"。判据必须是 is_downloading_completed。
+  describe('musicTrackFromMessage partial download', () => {
+    it('ignores_a_prefix_only_local_file', 0, () => {
+      const t: MusicTrack | null = musicTrackFromMessage(
+        audioMessage(-1001, 7, { 'path': '/files/half.m4a', 'partial': true }));
+      expect(t !== null).assertTrue();
+      expect(t!.localPath).assertEqual('');
+      // 文件 id 与大小照常给出来——播放要靠它们走边下边放那条路。
+      expect(t!.fileId).assertEqual(501);
+      expect(t!.fileSize).assertEqual(7_900_000);
+    });
+
+    it('keeps_a_completed_local_file', 0, () => {
+      const t: MusicTrack | null = musicTrackFromMessage(
+        audioMessage(-1001, 8, { 'path': '/files/whole.m4a' }));
+      expect(t!.localPath).assertEqual('/files/whole.m4a');
+    });
+  });
+});
 }

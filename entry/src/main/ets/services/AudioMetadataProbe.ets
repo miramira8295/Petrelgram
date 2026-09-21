@@ -1,27 +1,29 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { getTdClient } from '../tdkit/Globals';
-import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
 import {
   AUDIO_HEADER_PREFIX_BYTES, AudioSourceInfo, audioSourceKnown, probeAudioHeader
 } from '../util/audioHeaderProbe';
-import { MusicTrack, musicTrackKey } from '../util/musicTrackModel';
+import { MusicTrack, trackKeyOf } from '../util/musicTrackModel';
 import { logE, logI } from '../util/log';
 
 // 音源信息的探测（2026-09-18，音乐中心）。解析本身在 util/audioHeaderProbe（纯函数、有单测），
 // 这里只负责"把文件开头那几十 KB 弄到手"，以及缓存与并发去重。
 //
-// 【两条取字节的路】
-//   · 本地已下载：直接 fileIo 读前 64 KB；
-//   · 还在云端：TDLib 的 downloadFile 支持 offset/limit，只取前 64 KB 就够解头部——
-//     不必为了显示"96 kHz"把一首 70 MB 的无损整个拉下来。
-//     注意同一个文件 TDLib 只保留一组 offset/limit（见 [[tdlib-download-single-range]]），
-//     所以这里只发一次、不分多段，也不取消真正在播放的那首的下载。
+// 【只从本地文件读，不联网】原来还有第二条路：文件还在云端时用 downloadFile 的
+// offset/limit 只取前 64 KB。**那条路已经删掉**——2026-09-20 真机日志：
+//
+//     AudioMetadataProbe downloadFile failed: Canceled by another downloadFile request
+//     VoicePlayback failed message=...: "player state error"
+//
+// TDLib 对同一个文件**只保留一组 offset/limit**。探测开一段、边下边播的流式会话
+// 开另一段，两边互相取消：探测报错，流被搅坏到解复用器嗅探不出媒体头，
+// 表现就是"点了不播放"。音源信息是锦上添花，播放不是——冲突时让路的必须是它。
+//
+// 代价：云端没下完的曲目读不出真实采样率/位深，界面退回估算值（格式取 mime、
+// 码率按大小÷时长）。等整首落地之后再进这一页就能读出来了。
 //
 // 【缓存】结果按曲目键缓存，**失败也缓存**：解不出来的文件再探一次还是解不出来，
 // 而播放页每次切歌都会问一次。
 
-const PROBE_PRIORITY: number = 1;   // 比播放（MEDIA_VIEWING_PRIORITY）低，别抢下载带宽
-const PROBE_TIMEOUT_MS: number = 20000;
 
 const cache: Map<string, AudioSourceInfo> = new Map<string, AudioSourceInfo>();
 const inFlight: Map<string, Promise<AudioSourceInfo>> = new Map<string, Promise<AudioSourceInfo>>();
@@ -56,31 +58,10 @@ function readPrefix(path: string): Uint8Array {
   }
 }
 
-// 只下前 64 KB。synchronous=true 让这一发等到那段真的落盘再回来。
-function downloadPrefix(fileId: number): Promise<string> {
-  const req: TdRequest = { '@type': 'downloadFile' };
-  req['file_id'] = fileId;
-  req['priority'] = PROBE_PRIORITY;
-  req['offset'] = 0;
-  req['limit'] = AUDIO_HEADER_PREFIX_BYTES;
-  req['synchronous'] = true;
-  return getTdClient().send(req, PROBE_TIMEOUT_MS).then((file: TdObject): string => {
-    const local = file['local'] as TdObject | undefined;
-    if (local === undefined) {
-      return '';
-    }
-    const downloaded: number = (local['downloaded_prefix_size'] as number | undefined) ?? 0;
-    return downloaded > 0 ? ((local['path'] as string | undefined) ?? '') : '';
-  }).catch((e: TdError): string => {
-    logE(`AudioMetadataProbe downloadFile failed: ${e.message}`);
-    return '';
-  });
-}
-
 // 这首歌的音源信息。同一首歌重复调只会真探一次；探不出来返回全 0 的结果，
 // 界面据此退回"用文件大小估算的码率"。
 export function probeMusicSource(track: MusicTrack): Promise<AudioSourceInfo> {
-  const key: string = musicTrackKey(track.chatId, track.messageId);
+  const key: string = trackKeyOf(track);
   const cached: AudioSourceInfo | undefined = cache.get(key);
   if (cached !== undefined) {
     return Promise.resolve(cached);
@@ -89,8 +70,13 @@ export function probeMusicSource(track: MusicTrack): Promise<AudioSourceInfo> {
   if (running !== undefined) {
     return running;
   }
+  const hadLocal: boolean = track.localPath !== '';
   const started: Promise<AudioSourceInfo> = probeTrack(track).then((info: AudioSourceInfo): AudioSourceInfo => {
-    cache.set(key, info);
+    // **只有读过本地文件的那一次才是最终答案。** 没有本地文件时这次是"还不能探"，
+    // 缓存下去的话整首下完之后也不会再探一次，那一格就永远空着。
+    if (hadLocal) {
+      cache.set(key, info);
+    }
     inFlight.delete(key);
     if (audioSourceKnown(info)) {
       logI(`[Music] probed ${info.format} ${info.sampleRateHz}Hz ${info.bitDepth}bit`);
@@ -103,19 +89,10 @@ export function probeMusicSource(track: MusicTrack): Promise<AudioSourceInfo> {
 
 function probeTrack(track: MusicTrack): Promise<AudioSourceInfo> {
   const local: Uint8Array = readPrefix(track.localPath);
-  if (local.length > 0) {
-    const info: AudioSourceInfo = probeAudioHeader(local);
-    if (audioSourceKnown(info)) {
-      return Promise.resolve(info);
-    }
-  }
-  if (track.fileId <= 0) {
+  if (local.length === 0) {
     return Promise.resolve(unknown());
   }
-  return downloadPrefix(track.fileId).then((path: string): AudioSourceInfo => {
-    const bytes: Uint8Array = readPrefix(path);
-    return bytes.length > 0 ? probeAudioHeader(bytes) : unknown();
-  });
+  return Promise.resolve(probeAudioHeader(local));
 }
 
 // 换账号时清掉：曲目键是"会话 id + 消息 id"，两个账号会撞。
