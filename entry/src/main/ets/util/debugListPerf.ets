@@ -29,6 +29,28 @@ export const KEY_DEBUG_LIST_CACHED: string = 'debugListCachedCount';
 // 约 25ms 的帧峰值。A short-message viewport commonly contains 10-16 rows;
 // HarmonyOS long-list guidance recommends keeping roughly half a viewport ready.
 // Keep this static so changing the value never invalidates every visible row.
+// 2026-09-20 曾降到 4，**2026-09-21 改回 8。别再降**。
+//
+// 【当初为什么降】相册一行 6–9 张位图，RGBA_8888 下每张 625KB，8 档要 120–180 张，
+// 而图片预算只有 48MiB ≈ 80 张——可视窗口本身就超预算。
+//
+// 【为什么这个理由不成立了】同一轮里相册格改成了 RGB_565（625KB → 312KB，见
+// pixelCache.PixelRequest.opaque），图片预算又从 48MiB 抬到 68MiB（向贴纸缓存
+// 借闲置额度，见 util/nativePixelArbiter）。容量从 ~80 格变成 ~223 格，8 档要的
+// 120–180 张早就装得下。
+//
+// 【为什么必须改回来 —— 两份 Frame 录制对照】降到 4 之后行重建明显变多，按秒归一化：
+//                       predict 建项      BuildRecycle 行重建     卡顿率
+//   09-20 19:17（8 档）   49.1/s (33% 墙钟)   39.9/s              19.6%
+//   09-21 10:13（4 档）   61.2/s (43% 墙钟)   53.9/s               9.7%
+// 卡顿率减半是 565 / 共享预算 / 垫底色带来的，和这个数无关；而两个 churn 指标
+// 同向变差 25%–35%，只有这一处改动能解释。窗口越小，行掉出去再回来的次数越多，
+// 每回来一次就重走一遍取图——那段空窗就是用户报的"相册图片闪一下"。
+//
+// 2026-09-10 由 6 抬到 8 的原始理由仍然成立：前插改成纯插入、发布不再等松手之后，
+// 预建得多意味着惯性途中现建得少。
+//
+// 调试项仍然提供 4/6/8 三档（LIST_CACHED_COUNT_OPTIONS），要试别的档从那里走。
 export const LIST_CACHED_COUNT_DEFAULT: number = 8;
 
 // 可选档位。A/B 的三档；顺序即界面上从左到右的顺序。
@@ -39,6 +61,21 @@ export const LIST_CACHED_COUNT_DEFAULT: number = 8;
 // predict）要提前建的行越多 —— 而 P6 要治的正是 predict 占掉的那 1759ms。
 // 8 已经是一屏短消息（10~16 行）的半屏往上，再大只是把重建成本前移。
 export const LIST_CACHED_COUNT_OPTIONS: number[] = [4, 6, 8];
+
+// 【别再试：把 Repeat 模板缓存调大治不了 churn —— 2026-09-21 实测】
+//
+// 曾经把五个 `.template(..., {cachedCount})` 从 8/10/8/10/8 统一抬到
+// LIST_CACHED_COUNT_DEFAULT*2+6 = 22，理由是 trace 里三个数几乎相等、像是
+// 「Repeat.IdleTask 拆 → 下一帧重建」的乒乓：
+//     IdleTask 635 / RemoveNode 652 / CREATED_NEW_NODE 655（10.25s）
+// 改完再录一份，四项指标**纹丝不动**（按秒归一化）：
+//     predict 61.4→61.0 | BuildRecycle 58.3→56.4 | 新建 63.9→62.4 | 拆 63.6→61.9
+//
+// 原因：`.virtualScroll({ reusable: false })` 下 Repeat **不维护复用池**，而
+// template 的 cachedCount 管的正是那个池的大小——参数被忽略。这 ~60 次/秒的
+// 拆建是 reusable:false 的固有行为（基线 2026-09-20 也有 51.8 次/秒），不是
+// 配置错误。要动它只能动 reusable，而那是承重墙（见 ChatPage 那段长注释：
+// 开 true 会让消息重复回来）。
 
 // 边界校验。落盘的值、AppStorage 里的值、以及未来可能出现的旧版本残留值都要
 // 过这一关：不在候选档位里的一律当默认档，绝不把一个野值交给 List。

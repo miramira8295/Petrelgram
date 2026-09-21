@@ -38,6 +38,15 @@ export interface LiveThumbSpec {
   boxHeight: number;
   radius: number;
   fit: ImageFit;
+  // 不透明源，允许 RGB_565 解码（见 pixelCache.PixelRequest.opaque）。
+  // 相册格 true，单张大图与查看器缩略图条 false。
+  opaque: boolean;
+  // 解码完成前垫的底色（见 util/thumbBackdrop）。必须和调用方 placeholder 的
+  // 底色一致，否则撤占位那一帧会看到跳色。空串 = 不垫。
+  backdrop: string;
+  // 解码完成前画的内联小图（data URL，见 util/miniThumbPlaceholder）。
+  // 空串 = 只有底色。
+  mini: string;
 }
 
 
@@ -151,7 +160,10 @@ export struct LiveThumbImage {
         radius: this.spec.radius,
         fit: this.spec.fit,
         // 同一缩略图 fileId 下换路径（海报 → 真缩略图）保留旧图当占位（issue #188）。
-        sourceKey: this.spec.fileId > 0 ? `f${this.spec.fileId}` : ''
+        sourceKey: this.spec.fileId > 0 ? `f${this.spec.fileId}` : '',
+        opaque: this.spec.opaque,
+        backdrop: this.spec.backdrop,
+        backdropImage: this.spec.mini
       });
     } else {
       this.placeholder();

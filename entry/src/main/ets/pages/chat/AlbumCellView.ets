@@ -1,4 +1,6 @@
 import { AlbumGroup } from '../../util/collapseAlbums';
+import { thumbBackdropColor } from '../../util/thumbBackdrop';
+import { miniPlaceholderOf } from '../../util/miniThumbPlaceholder';
 import { AlbumCell } from '../../util/packAlbumRows';
 import { MessageBubbleRenderData, MessageBubbleActions } from './ReusableMessageBubble';
 import { LiveThumbImage } from './LiveThumbImage';
@@ -179,7 +181,7 @@ export struct AlbumCellView {
   placeholderWithFile() {
     Stack() {
       Column().width(this.cell.width).height(this.cell.height).borderRadius(6)
-        .backgroundColor(this.isVideo() ? '#AEB6C0' : '#D7DCE2');
+        .backgroundColor(thumbBackdropColor(this.isVideo()));
       if (!this.failed()) {
         this.mediaLoadState(
           Math.min(34, Math.min(this.cell.width, this.cell.height) * 0.4),
@@ -242,7 +244,14 @@ export struct AlbumCellView {
           boxWidth: this.cell.width,
           boxHeight: this.cell.height,
           radius: 6,
-          fit: ImageFit.Cover
+          fit: ImageFit.Cover,
+          // 相册格开 RGB_565：一行 6–9 张，是唯一把像素预算撑爆的那一类
+          // （2026-09-20 定位，见 pixelCache.PixelRequest.opaque）。
+          opaque: true,
+          // 和下面 placeholderWithFile 的底色同源：撤占位到出图之间不透出去。
+          backdrop: thumbBackdropColor(this.isVideo()),
+          // 内联小图占位（issue：相册图片闪一下）。相册每格各有自己的一张。
+          mini: miniPlaceholderOf(this.group.photoMinis[this.idx()] ?? '')
         },
         placeholder: (): void => { this.placeholderWithFile(); }
       });
@@ -340,49 +349,60 @@ export struct AlbumCellView {
     this.actions.onMediaTap(this.memberId(), e.windowX, e.windowY);
   }
 
+  // 哨兵格子（albumCellAt 越界时返回的 {idx:-1,width:0,height:0}）一律不画。
+  // 画成 0×0 看着也"没有"，但它仍然占 Row 的一档 space，相册的宽高会抖一下。
+  // AlbumRowView 已经在行级挡了一层，这里是双保险，也挡住别的越界来路。
+  private isSentinel(): boolean {
+    return this.cell.idx < 0 || this.cell.width <= 0 || this.cell.height <= 0;
+  }
+
   build() {
-    if (this.isVideo()) {
-      // 只有视频格参与播放位的中心 y 竞选，所以 onAreaChange 只挂在这一支上——
-      // 无条件挂的时候实测每秒 2100-2300 次上报，而图片格从来不消费这个数据。
-      Stack() {
-        this.cellBody();
-        this.selectionOverlay();
-      }
-      .width(this.cell.width).height(this.cell.height)
-      .accessibilityText(str('mb_album_item_video', this.idx() + 1))
-      .onVisibleAreaApproximateChange(
-        { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
-          expectedUpdateInterval: 200 },
-        (_visible: boolean, ratio: number): void => {
-          if (ratio <= 0) {
-            this.actions.onMediaGone(this.memberId(), this.idx());
-          } else {
-            this.actions.onMediaRatio(this.memberId(), this.idx(), ratio,
-              this.hooks.centerYOf(this.idx()));
-          }
+    // 哨兵格子（越界时 albumCellAt 返回的 0×0）整段不画：画成 0×0 看着也
+    // "没有"，但它仍然占父 Row 的一档 space，相册的宽高会因此抖一下。
+    if (!this.isSentinel()) {
+      if (this.isVideo()) {
+        // 只有视频格参与播放位的中心 y 竞选，所以 onAreaChange 只挂在这一支上——
+        // 无条件挂的时候实测每秒 2100-2300 次上报，而图片格从来不消费这个数据。
+        Stack() {
+          this.cellBody();
+          this.selectionOverlay();
+        }
+        .width(this.cell.width).height(this.cell.height)
+        .accessibilityText(str('mb_album_item_video', this.idx() + 1))
+        .onVisibleAreaApproximateChange(
+          { ratios: [0.0, PLAY_SLOT_KEEP_RATIO, PLAY_SLOT_ENTER_RATIO, 0.9],
+            expectedUpdateInterval: 200 },
+          (_visible: boolean, ratio: number): void => {
+            if (ratio <= 0) {
+              this.actions.onMediaGone(this.memberId(), this.idx());
+            } else {
+              this.actions.onMediaRatio(this.memberId(), this.idx(), ratio,
+                this.hooks.centerYOf(this.idx()));
+            }
+          })
+        .onAreaChange((_old: Area, area: Area): void => {
+          this.hooks.onCenterY(this.idx(),
+            (area.globalPosition.y as number) + (area.height as number) / 2);
         })
-      .onAreaChange((_old: Area, area: Area): void => {
-        this.hooks.onCenterY(this.idx(),
-          (area.globalPosition.y as number) + (area.height as number) / 2);
-      })
-      .onClick((e: ClickEvent): void => { this.onCellTap(e); });
-    } else {
-      Stack() {
-        this.cellBody();
-        this.selectionOverlay();
+        .onClick((e: ClickEvent): void => { this.onCellTap(e); });
+      } else {
+        Stack() {
+          this.cellBody();
+          this.selectionOverlay();
+        }
+        .width(this.cell.width).height(this.cell.height)
+        // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
+        .geometryTransition(`media_${this.data.chatId}_${this.memberId()}`)
+        .accessibilityText(this.failed() ? str('mb_photo_failed')
+          : str('mb_album_item', this.idx() + 1))
+        // **图片格不挂 onVisibleAreaApproximateChange。**
+        // 这里原来挂着一个空回调——注释自己写着"图片格不上报"，可空回调照样把这个
+        // 节点注册进全局可见区派发表，成本在注册不在回调。一行 6–9 格、窗口里几十
+        // 行，全相册会话里就是两三百个白注册：09-03 的真机 trace 里
+        // HandleVisibleAreaChangeEvent 的 nodeCount 峰值 134、稳态还在以 3.49
+        // 节点/秒增长，而同一份录制里 379 行全是图片行。
+        .onClick((e: ClickEvent): void => { this.onCellTap(e); });
       }
-      .width(this.cell.width).height(this.cell.height)
-      // 见单图分支：按被点的那一格的消息 id 绑定，相册里每格各自成对。
-      .geometryTransition(`media_${this.data.chatId}_${this.memberId()}`)
-      .accessibilityText(this.failed() ? str('mb_photo_failed')
-        : str('mb_album_item', this.idx() + 1))
-      // **图片格不挂 onVisibleAreaApproximateChange。**
-      // 这里原来挂着一个空回调——注释自己写着"图片格不上报"，可空回调照样把这个
-      // 节点注册进全局可见区派发表，成本在注册不在回调。一行 6–9 格、窗口里几十
-      // 行，全相册会话里就是两三百个白注册：09-03 的真机 trace 里
-      // HandleVisibleAreaChangeEvent 的 nodeCount 峰值 134、稳态还在以 3.49
-      // 节点/秒增长，而同一份录制里 379 行全是图片行。
-      .onClick((e: ClickEvent): void => { this.onCellTap(e); });
     }
   }
 }

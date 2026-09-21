@@ -14,6 +14,9 @@ export interface AlbumGroup {
   // 逻辑不受影响。
   rowMemberIds: number[];
   photoPaths: string[];    // album photo/video-thumbnail paths (empty for a non-album row)
+  // parallel to photoPaths —— 每格的内联小图 data URL（~40px，不用下载）。
+  // **不进 key**：它随消息一起到、此后永不改变，放进 key 只会多一次比较。
+  photoMinis: string[];
   photoFileIds: number[];  // thumbnail file ids; 0 means the media has no downloadable cover
   photoRatios: number[];   // width/height per photo, parallel to photoPaths (masonry layout)
   photoIsVideo: boolean[]; // parallel to photoPaths — true for video members (play icon overlay)
@@ -160,7 +163,7 @@ function computeMutableSig(m: MessageEntry): string {
     `_${m.photoFileId}_${m.videoFileId}_${m.videoDuration}_${m.isEmojiSticker}` +
     `_${m.editDate}` +
     `_${m.inlineCustomEmojiPaths.join('|')}_${m.voiceListened}_${m.voiceWaveform}` +
-    `_${m.audioTitle}_${m.audioPerformer}` +
+    `_${m.audioTitle}_${m.audioPerformer}_${m.audioCoverMini !== '' ? 'cm' : ''}` +
     `_${m.contactPhone}_${m.contactFirstName}_${m.contactLastName}_${m.contactUserId}` +
     `_${m.contactAvatarPath !== '' ? 'ca' : ''}_${m.locationLatitude}_${m.locationLongitude}` +
     `_${m.locationValid}_${m.locationLivePeriod}_${m.locationExpiresIn}` +
@@ -253,6 +256,7 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
       const memberIds: number[] = [];
       const rowMemberIds: number[] = [];
       const photoPaths: string[] = [];
+      const photoMinis: string[] = [];
       const photoFileIds: number[] = [];
       const photoRatios: number[] = [];
       const photoIsVideo: boolean[] = [];
@@ -272,6 +276,7 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         rowMemberIds.push(list[j].rowId);
         albumMembers.push(list[j]);
         photoPaths.push(list[j].photoPath);
+        photoMinis.push(list[j].photoMini);
         photoFileIds.push(list[j].photoFileId);
         photoRatios.push(aspectRatio(list[j]));
         photoIsVideo.push(list[j].contentType === 'video');
@@ -322,6 +327,7 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         memberIds,
         rowMemberIds,
         photoPaths,
+        photoMinis,
         photoFileIds,
         photoRatios,
         photoIsVideo,
@@ -354,6 +360,8 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         memberIds: [m.id],
         rowMemberIds: [m.rowId],
         photoPaths: [],
+        // 非相册行不走 photoMinis（单图的小图在 head.photoMini 上）。
+        photoMinis: [],
         photoFileIds: [],
         photoRatios: [],
         photoIsVideo: [],

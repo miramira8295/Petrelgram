@@ -25,9 +25,11 @@ import { logE } from './log';
 //
 // 缩不缩、缩多少由 util/decodeSize 决定——小幅缩放不走这条路，它的采样质量
 // 不如渲染阶段的 interpolation(High)（issue #92 的头像斜边锯齿）。
+// opaque=true 时按 RGB_565 出图（见 pixelCache.PixelRequest.opaque 的说明）：
+// 每像素省一半字节，代价是平滑渐变上的色阶，且会丢掉 alpha 通道。
 @Concurrent
 export async function decodeSendable(
-  path: string, targetW: number, targetH: number
+  path: string, targetW: number, targetH: number, opaque: boolean
 ): Promise<sendableImage.PixelMap | undefined> {
   let source: sendableImage.ImageSource | undefined = undefined;
   try {
@@ -44,6 +46,9 @@ export async function decodeSendable(
       // 里的说明，小幅缩放换来的是斜边锯齿，而省不下什么。
       if (want !== undefined) {
         opts.desiredSize = { width: want.width, height: want.height };
+      }
+      if (opaque) {
+        opts.desiredPixelFormat = image.PixelMapFormat.RGB_565;
       }
     } finally {
       probe.release();

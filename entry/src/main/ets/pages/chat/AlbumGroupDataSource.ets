@@ -359,7 +359,10 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
     }
     const box = mediaBoxFor(availableWidth, head.photoWidth, head.photoHeight,
       head.contentType === 'video');
-    return { path: head.photoPath, width: vp2px(box.width), height: vp2px(box.height) };
+    // 单张大图不开 565：面积大、渐变明显，色阶看得出来。
+    return {
+      path: head.photoPath, width: vp2px(box.width), height: vp2px(box.height), opaque: false
+    };
   }
 
   private sameRequest(a: PixelRequest, b: PixelRequest): boolean {

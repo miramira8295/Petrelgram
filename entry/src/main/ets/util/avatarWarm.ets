@@ -36,7 +36,9 @@ export function planAvatarWarm(
 }
 
 function requestFor(path: string, sidePx: number): PixelRequest {
-  return { path: path, width: sidePx, height: sidePx };
+  // 头像也走默认档：预热必须和 LiveSenderAvatar 的 CachedImage 同 key，
+  // 差一档就是白解一遍（见 pixelCache.keyOf）。
+  return { path: path, width: sidePx, height: sidePx, opaque: false };
 }
 
 // 即发即忘：解出来的那份留在 pixelCache 里（不 retain，所以照样可被淘汰）。

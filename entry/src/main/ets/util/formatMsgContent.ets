@@ -5,6 +5,8 @@ import { formatPreview } from './formatPreview';
 import { decimalUpTo, usd } from './intlFormat';
 import { plural, str } from './strings';
 import { logI } from './log';
+// 封面小图的取法 messageAudio 与机器人内联结果共用，放在 musicTrackModel。
+import { audioCoverMiniUrl } from './musicTrackModel';
 
 export interface PollOptionInfo {
   text: string;
@@ -57,6 +59,19 @@ export interface MsgContent {
   speechText?: string;     // pending 时是 partial_text，done 时是最终文本
   audioTitle?: string;     // messageAudio.audio.title
   audioPerformer?: string; // messageAudio.audio.performer
+  // 图片/视频/动图的 minithumbnail（~40px JPEG，base64 内联在消息里，**不用下载**）。
+  // 和 audioCoverMini 同一套东西，只是挂在 photo / video / animation 上。
+  // 真缩略图是个要走下载队列的文件，图多的会话里排在几十张之后——先画这张糊的
+  // 占位，真图解完再盖上去（官方客户端就是这个做法，首页行 #202 也是）。
+  //
+  // 【为什么是可选字段】MsgContent 有 25 个 return 分支，改成必填要动全部；
+  // 而这条只对三种媒体有意义，其余分支本来就该是空。
+  photoMini?: string;
+  // 专辑封面的 minithumbnail（~40px JPEG，base64 内联在消息里，**不用下载**）。
+  // 已经是 data URL，Image() 直接吃。真封面 album_cover_thumbnail 是个要走
+  // 缩略图队列的真文件，在图多的会话里排在几十张照片后面——先画这个占位，
+  // 真图下来再换（会话列表 #202 同一套做法，见 formatPreview.previewThumbOf）。
+  audioCoverMini?: string;
   photoLocalPath?: string; // already downloaded inline sticker/thumbnail
   photoInitialProgress?: number;
   photoInitialActive?: boolean;
@@ -326,6 +341,21 @@ function parseLinkPreview(content: TdObject): LinkPreviewInfo {
     typeName,
     url: (lp['url'] as string | undefined) ?? ''
   };
+}
+
+// holder（photo / video / animation 的那个对象）里的 minithumbnail → data URL。
+// 取法和 formatPreview.previewThumbOf 一致，只是那边从 content 往下找，这里
+// 调用方已经拿到 holder 了。
+export function miniThumbUrl(holder: TdObject | undefined): string {
+  if (holder === undefined) {
+    return '';
+  }
+  const mini = holder['minithumbnail'] as TdObject | undefined;
+  if (mini === undefined) {
+    return '';
+  }
+  const data: string = (mini['data'] as string | undefined) ?? '';
+  return data !== '' ? `data:image/jpeg;base64,${data}` : '';
 }
 
 function textEntities(ft: TdObject | undefined): TdObject[] {
@@ -600,6 +630,7 @@ export function speechTextOf(note: TdObject | undefined): string {
   return '';
 }
 
+
 export function formatMsgContent(message: TdObject): MsgContent {
   const content = message['content'] as TdObject | undefined;
   const type = content !== undefined ? (content['@type'] as string | undefined) : undefined;
@@ -670,6 +701,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       contentType: 'photo',
       text: captionText(content!),
       photoFileId: size.fileId,
+      photoMini: miniThumbUrl(photo),
       photoWidth: size.width,
       photoHeight: size.height,
       placeholderLabel: '',
@@ -687,6 +719,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       contentType: 'video',
       text: captionText(content!),
       photoFileId: size.fileId,
+      photoMini: miniThumbUrl(video),
       photoWidth: size.width,
       photoHeight: size.height,
       placeholderLabel: '',
@@ -713,6 +746,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       isAnimation: true,
       text: captionText(content!),
       photoFileId: size.fileId,
+      photoMini: miniThumbUrl(anim),
       photoWidth: size.width,
       photoHeight: size.height,
       placeholderLabel: '',
@@ -812,7 +846,8 @@ export function formatMsgContent(message: TdObject): MsgContent {
       videoFileName: audio !== undefined ? ((audio['file_name'] as string | undefined) ?? '') : '',
       photoFullFileId: 0,
       audioTitle: audio !== undefined ? ((audio['title'] as string | undefined) ?? '') : '',
-      audioPerformer: audio !== undefined ? ((audio['performer'] as string | undefined) ?? '') : ''
+      audioPerformer: audio !== undefined ? ((audio['performer'] as string | undefined) ?? '') : '',
+      audioCoverMini: audioCoverMiniUrl(audio)
     };
   }
   // Documents reuse the video* slots (same semantics: a named, sized,

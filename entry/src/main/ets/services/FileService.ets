@@ -2,6 +2,7 @@ import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { ChatStore } from '../store/ChatStore';
 import { logE } from '../util/log';
+import { publishAvatarFile } from '../util/avatarFileChannel';
 
 const AVATAR_PRIORITY: number = 1;
 
@@ -110,6 +111,9 @@ export class FileService {
     // 但 avatarPathOf 得能取到它。
     this.completedPaths.set(id, path);
     this.requested.delete(id);
+    // 按 file id 发一条：prefetchAvatar 拉来的头像不绑任何会话，下面那个循环
+    // 走不到，订阅方（如 @ 弹窗的 LiveUserAvatar）只能从这里知道图到了。
+    publishAvatarFile(id, path);
     const chatIds = this.fileToChats.get(id);
     if (chatIds === undefined) {
       return;

@@ -36,6 +36,14 @@ export function albumCellAt(rows: AlbumCell[][], row: number, col: number): Albu
   return Number.isInteger(col) && col >= 0 && col < cells.length ? cells[col] : EMPTY_ALBUM_CELL;
 }
 
+// 按行取整行的**全函数**版本：越界返回空数组。渲染侧（AlbumRowView）据此
+// 决定这一行画不画——判断放在组件里，复用推参之后它自己的 build 会重算。
+const NO_CELLS: AlbumCell[] = [];
+
+export function albumRowAt(rows: AlbumCell[][], row: number): AlbumCell[] {
+  return Number.isInteger(row) && row >= 0 && row < rows.length ? rows[row] : NO_CELLS;
+}
+
 const CELL_GAP: number = 2;
 
 // 渲染侧给相册留的固定行槽位数（见 MessageBubble.albumGrid —— 它刻意不用

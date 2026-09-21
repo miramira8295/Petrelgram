@@ -47,8 +47,21 @@ export struct PatternTileLayer {
               .width(this.grid().tileWidth).height(this.grid().tileHeight)
               .objectFit(ImageFit.Cover)
               .autoResize(false)
-              .interpolation(ImageInterpolation.High)
-              .syncLoad(true);
+              .interpolation(ImageInterpolation.High);
+              // 【这里**不能**抄 syncLoad(true) —— 2026-09-21 真机 trace 定位】
+              //
+              // chatBackgroundRaster 的两个 builder 都带 syncLoad(true)，理由写在
+              // 那边：它们画在**离屏树**里、画完立刻截图，而离屏组件默认在 IO 线程
+              // 解码，不同步就会截到"渐变上挖了个洞"。本组件是上屏实时那一路，
+              // 没有截图这一步，那个理由不成立——当初连同其它属性一起抄了过来。
+              //
+              // 代价是它把整块瓦片的解码拽到主线程：瓦片是**整屏高**
+              // （patternTileGrid: tileHeight = screenH），sourceSize 又给了 2 倍，
+              // 于是一次 CreateImageObj 就是 **34.93ms**——那正是这份 Frame 录制里
+              // 最差那一帧（82.5ms）的主要成分，卡在进会话的第一帧上。
+              //
+              // 去掉之后图案晚一帧出现。可以接受：底下的渐变已经在了，缺的只是
+              // 图案纹理；而且第二次进会话走的是离屏光栅那条路，根本到不了这里。
           }, (c: number): string => `${r}_${c}`);
         }
         .width(this.grid().cols * this.grid().tileWidth).height(this.grid().tileHeight);

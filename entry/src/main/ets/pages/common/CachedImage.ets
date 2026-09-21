@@ -6,6 +6,7 @@ import {
 import {
   isDecodableTarget, sameDecodeTarget, shouldBlankBeforeDecode
 } from '../../util/imageSwap';
+import { MINI_PLACEHOLDER_BLUR } from '../../util/miniThumbPlaceholder';
 
 // An Image fed from the decoded-PixelMap cache instead of a file path.
 //
@@ -41,6 +42,20 @@ export struct CachedImage {
   // 源身份（issue #188）：同一身份下换路径视为"同图升级"，旧位图保留到新图解完；
   // 不传就按路径判（老行为）。LiveThumbImage 传缩略图 fileId。
   @Param sourceKey: string = '';
+  // 不透明源，允许 RGB_565 解码（每像素省一半字节，见 pixelCache.PixelRequest.opaque）。
+  // 只有相册格开；带 alpha 的源开了会丢透明通道。**不进 @Monitor**：它是调用点
+  // 写死的常量，同一个组件实例上不会变。
+  @Param opaque: boolean = false;
+  // 位图解出来之前垫的底色（见 util/thumbBackdrop）。空串 = 不垫，保持原来
+  // "什么都不画"的行为（背景图、头像那几条路调用方自己有底）。
+  @Param backdrop: string = '';
+  // 解码完成前画在底下的**内联小图**（~40px JPEG 的 data URL，不用下载）。
+  // 空串 = 只用 backdrop 那层纯色。
+  //
+  // 【为什么放在这里而不是调用方】这一层自己知道"位图到没到"（pixelMap），
+  // 所以真图一上来这个节点就自动消失，不需要任何额外状态、也不需要 onReady
+  // 往回通知。调用方只管把 data URL 递进来。
+  @Param backdropImage: string = '';
   private heldKey: string = '';
   @Local pixelMap: image.PixelMap | undefined = undefined;
   // The handle currently retained, so it can be released even after path has
@@ -101,7 +116,8 @@ export struct CachedImage {
     return {
       path: this.path,
       width: vp2px(this.boxWidth),
-      height: vp2px(this.boxHeight)
+      height: vp2px(this.boxHeight),
+      opaque: this.opaque
     };
   }
 
@@ -227,21 +243,40 @@ export struct CachedImage {
   }
 
   build() {
-    // The undecoded state draws nothing rather than a placeholder: callers
-    // already stack their own loading/failed state underneath.
-    Image(this.pixelMap)
-      .draggable(false)
-      .width(this.boxWidth).height(this.boxHeight)
-      .borderRadius(this.radius)
-      // **borderRadius 要配 clip(true)**，否则圆角只是把角画圆，内容并没有被
-      // 按那条曲线裁剪、边缘不做抗锯齿——头像的圆周上就是一圈台阶状锯齿
-      // （issue #92，用户拿官方客户端对比过）。AvatarView 自己的另外两个分支
-      // （Saved Messages、动态头像）本来就是 borderRadius + clip(true) 成对写的，
-      // 只有走 PixelMap 缓存这一支漏了，而绝大多数头像恰恰走这一支。
-      .clip(true)
-      // 解码目标尺寸按 vp2px(box) 给，正常是 1:1 不缩放；但 DPR 取整、以及
-      // 复用缓存里尺寸相近的那张时仍会有轻微缩放，此时默认的插值会更糙。
-      .interpolation(ImageInterpolation.High)
-      .objectFit(this.fit);
+    // 未解码状态本身不画内容——加载/失败态由调用方自己叠。但**底色要垫**：
+    // 调用方是"有路径就换成 CachedImage"的 if/else，撤占位与出图之间会透出去。
+    Stack() {
+      // 内联小图：只在还没解出来时存在，位图一到手这个 if 就false、节点消失。
+      // 40px 拉到几百 px 必然是马赛克，所以叠一层模糊让它读起来像"正在变清晰"
+      // 而不是"画糊了"——官方客户端也是这个做法。
+      if (this.pixelMap === undefined && this.backdropImage !== '') {
+        Image(this.backdropImage)
+          .draggable(false)
+          .width(this.boxWidth).height(this.boxHeight)
+          .borderRadius(this.radius)
+          .clip(true)
+          .objectFit(this.fit)
+          .blur(MINI_PLACEHOLDER_BLUR);
+      }
+      Image(this.pixelMap)
+        .draggable(false)
+        .width(this.boxWidth).height(this.boxHeight)
+        // 解码完成前 Image(undefined) 什么都不画；没有这层底色，调用方撤掉占位
+        // 到位图落地之间格子是透明的，就是"图片闪一下"（见 util/thumbBackdrop）。
+        // 位图盖上来之后它被完全遮住，不额外占节点。
+        .backgroundColor(this.backdrop !== '' ? this.backdrop : Color.Transparent)
+        .borderRadius(this.radius)
+        // **borderRadius 要配 clip(true)**，否则圆角只是把角画圆，内容并没有被
+        // 按那条曲线裁剪、边缘不做抗锯齿——头像的圆周上就是一圈台阶状锯齿
+        // （issue #92，用户拿官方客户端对比过）。AvatarView 自己的另外两个分支
+        // （Saved Messages、动态头像）本来就是 borderRadius + clip(true) 成对写的，
+        // 只有走 PixelMap 缓存这一支漏了，而绝大多数头像恰恰走这一支。
+        .clip(true)
+        // 解码目标尺寸按 vp2px(box) 给，正常是 1:1 不缩放；但 DPR 取整、以及
+        // 复用缓存里尺寸相近的那张时仍会有轻微缩放，此时默认的插值会更糙。
+        .interpolation(ImageInterpolation.High)
+        .objectFit(this.fit);
+    }
+    .width(this.boxWidth).height(this.boxHeight);
   }
 }

@@ -18,15 +18,30 @@ import { AlbumGroup } from './collapseAlbums';
 import { slotKey, slotKeyMessageId } from '../pages/chat/playSlot';
 
 // 相册行的复用形状串：张数 + 每一格的「视频/图片、缩略图落地没落地、有没有可下
-// 载的封面文件、失败没失败、是不是当前播放位」。进的是行复用 id，所以只放会改
-// 变子树形状的位，不放下载进度这种走旁路通道的高频量。
+// 载的封面文件、失败没失败、是不是当前播放位」+ **长宽比档**。进的是行复用 id，
+// 所以只放会改变子树形状的位，不放下载进度这种走旁路通道的高频量。
+//
+// 【为什么要带长宽比 —— 2026-09-20 真机定位】格子的宽高是
+// packAlbumRows(photoRatios, width) 算出来、**显式写在 .width()/.height() 上**的。
+// 原来这个串里没有任何几何信息，于是两个都是 6 张、但长宽比不同的相册落进同一个
+// 复用池；复用推参把活着的格子从 84x130 换成 91x140，Image 重新布局重绘——
+// 用户看到的就是「相册消息闪一下」（#137/#140 的同一面）。
+//
+// 探针实测（17:44 那一轮）：destroyed=0、[Decode]=0，但 resized=27。
+// 也就是说节点没被销毁、位图一直在缓存里，闪的**只能**是这个尺寸切换。
+//
+// 量化到 0.1：太细会把池子打散成「一个相册一个桶」，那比不复用还慢（见本文件
+// 与 rowReuseId 抬头的警告）；太粗又分不开 84x130 和 91x140 这种真实差异。
+// 0.1 这一档下，同一套 Telegram 马赛克预设的相册仍然共池。
 export function albumReuseShape(g: AlbumGroup, playSlotKey: string): string {
   let shape: string = `${g.photoPaths.length}`;
   for (let i = 0; i < g.photoPaths.length; i++) {
     const memberId: number = g.memberIds[i] ?? 0;
+    const ratio: number = g.photoRatios[i] ?? 0;
     shape += `:${g.photoIsVideo[i] ? 'v' : 'p'}` +
       `${g.photoPaths[i] !== '' ? 'r' : 'n'}${g.photoFileIds[i] !== 0 ? 'f' : 'z'}` +
-      `${g.photoFailed[i] ? 'e' : 'o'}${playSlotKey === slotKey(memberId, i) ? 's' : 'i'}`;
+      `${g.photoFailed[i] ? 'e' : 'o'}${playSlotKey === slotKey(memberId, i) ? 's' : 'i'}` +
+      `${Math.round(ratio * 10)}`;
   }
   return shape;
 }

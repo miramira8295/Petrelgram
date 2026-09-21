@@ -48,6 +48,7 @@ function deferredCopy(group: AlbumGroup): AlbumGroup {
     memberIds: group.memberIds,
     rowMemberIds: group.rowMemberIds,
     photoPaths: group.photoPaths,
+    photoMinis: [],
     photoFileIds: group.photoFileIds,
     photoRatios: group.photoRatios,
     photoIsVideo: group.photoIsVideo,

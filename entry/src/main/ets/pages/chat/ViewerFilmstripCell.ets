@@ -110,7 +110,13 @@ export struct ViewerFilmstripCell {
           boxWidth: THUMB,
           boxHeight: THUMB,
           radius: RADIUS,
-          fit: ImageFit.Cover
+          fit: ImageFit.Cover,
+          // 缩略图条先不开 565：这一轮只改相册格，范围小才判得清效果。
+          opaque: false,
+          // 缩略图条的空位本来就是深色方块，解码前垫同一档灰会更跳；保持不垫。
+          backdrop: '',
+          // 缩略图条这一轮也不接内联小图：格子只有几十 px，糊图和马赛克没区别。
+          mini: ''
         },
         placeholder: (): void => { this.emptyBox(); }
         });

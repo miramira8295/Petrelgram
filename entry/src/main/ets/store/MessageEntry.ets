@@ -129,6 +129,11 @@ export interface MessageEntry {
   translationHidden: boolean;
   audioTitle: string;           // music metadata; '' falls back to file name
   audioPerformer: string;       // music artist/performer; '' = unknown
+  // 图片/视频/动图的内联小图（~40px JPEG 的 data URL）；'' = 这条没有。
+  // 解码完成前画它当占位，比灰块好看得多（见 pages/common/CachedImage 的
+  // backdropImage）。**不用下载**，跟消息正文一起到。
+  photoMini: string;
+  audioCoverMini: string;       // 内联封面小图的 data URL；'' = 这首没有
   stickerFileId: number;        // animated (TGS) sticker source file id, 0 otherwise
   customEmojiId: string;        // single custom-emoji message, pending sticker resolution
   stickerFormat: string;        // 'webp' | 'tgs' | 'webm', '' for non-stickers
@@ -297,6 +302,8 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     translatedLang: m.translatedLang,
     translationHidden: m.translationHidden,
     audioTitle: m.audioTitle, audioPerformer: m.audioPerformer,
+    photoMini: m.photoMini,
+    audioCoverMini: m.audioCoverMini,
     stickerFileId: m.stickerFileId, stickerFormat: m.stickerFormat, stickerSetId: m.stickerSetId,
     isEmojiSticker: m.isEmojiSticker, stickerPath: m.stickerPath,
     stickerProgress: m.stickerProgress, stickerFailed: m.stickerFailed,
@@ -1128,6 +1135,8 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     translationHidden: false,
     audioTitle: c.audioTitle ?? '',
     audioPerformer: c.audioPerformer ?? '',
+    photoMini: c.photoMini ?? '',
+    audioCoverMini: c.audioCoverMini ?? '',
     stickerFileId: c.stickerFileId ?? 0,
     stickerFormat: c.stickerFormat ?? '',
     stickerSetId: c.stickerSetId ?? '',

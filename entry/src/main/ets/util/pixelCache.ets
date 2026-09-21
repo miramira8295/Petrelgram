@@ -3,9 +3,11 @@ import { sendableImage } from '@kit.ImageKit';
 import { taskpool } from '@kit.ArkTS';
 import { decodeSendable } from './pixelDecodeTask';
 import { logE } from './log';
+import { pixelCacheKey } from './pixelCacheKey';
+import { IMAGE_CAP_BYTES, imagePixelLimitNow } from './nativePixelArbiter';
 import { syncDecodeEligible } from './pixelSyncPolicy';
 import {
-  IMAGE_HOLDER_RELEASE_BATCH, IMAGE_PIXEL_CACHE_MAX_BYTES
+  IMAGE_HOLDER_RELEASE_BATCH
 } from './NativePixelBudget';
 import { PinUpdate, updateBoundedPins } from './boundedPins';
 
@@ -34,6 +36,18 @@ export interface PixelRequest {
   path: string;      // local file path, no file:// prefix
   width: number;     // target size in PHYSICAL pixels
   height: number;
+  // 源图不透明时允许按 RGB_565 解码：每像素 2 字节而不是 RGBA_8888 的 4 字节，
+  // 同一份预算能多装一倍位图。
+  //
+  // 【为什么要它，2026-09-20 真机定位】相册一格 319x490 = 625KB，48MiB 只装得下
+  // 约 80 格；而可视窗口（可视 4 行 + 两侧 cachedCount 行）要 120–180 格——
+  // 窗口本身就超预算，滚一下就把马上要用的图淘汰掉，滚回来必然重解码。用户看到
+  // 的"相册图片闪一下"就是这个空窗：blank=705 / hit=195，淘汰数随滚动单调涨到 264。
+  //
+  // 【只给相册格开】它的代价是平滑渐变上的色阶。相册格小、又被 Cover 裁过，
+  // 看不出来；单张大图和查看器不开。**带 alpha 的源一律不能开**——565 没有透明
+  // 通道，PNG 贴上去会变成实心底。相册成员在 Telegram 侧一律是 JPEG。
+  opaque: boolean;
 }
 
 // Handed straight back to the caller, so retaining never has to look the entry
@@ -64,8 +78,13 @@ export class PixelHandle {
   }
 }
 
-// 低内存/后台期间会临时收紧；回前台恢复到统一预算表里的 48MiB。
-let budgetBytes: number = IMAGE_PIXEL_CACHE_MAX_BYTES;
+// 低内存/后台期间会临时收紧的**天花板**。真正生效的上限还要再和
+// imagePixelLimitNow 取小——贴纸缓存空着的部分借给图片用（见 nativePixelArbiter）。
+//
+// 2026-09-20 由 48MiB 抬到 IMAGE_CAP_BYTES（80 − 贴纸地板 12 = 68MiB）：48 这个
+// 数装不下相册会话的可视窗口，是"图片闪一下"的根因之一。抬的是天花板不是实际
+// 占用——贴纸一旦用起来，imagePixelLimitNow 会同步把图片压回去。
+let budgetBytes: number = IMAGE_CAP_BYTES;
 
 // A decode occupies a worker thread and finishes by handing a bitmap to the
 // render pipeline. Letting a fling queue up thirty of them at once means the
@@ -95,6 +114,10 @@ const pending: Map<string, PendingDecode> = new Map();
 const queue: PendingDecode[] = [];
 let activeDecodes: number = 0;
 let usedBytes: number = 0;
+// 钉住（pin / pinBounded）的字节数。evictDownTo 跳过这些条目，所以它们每多一个
+// 字节可淘汰的内容就少一个——单独记账，好让 imagePixelLimitNow 给它们一格豁免
+// （见 util/nativePixelArbiter.PINNED_ALLOWANCE_BYTES）。
+let pinnedBytes: number = 0;
 // Component teardown can drop many image holders in one navigation frame. Calling
 // PixelMap.release synchronously for every holder made those native FreeBufferHandle
 // operations part of the chat-page exit frame. Keep reference accounting exact, but
@@ -104,8 +127,10 @@ let usedBytes: number = 0;
 const pendingHolderReleases: PixelHandle[] = [];
 let holderReleaseTimer: number = -1;
 
+// 规则本身在 util/pixelCacheKey（纯函数 + 回归测试）：像素格式必须进 key，
+// 同一个文件同一个尺寸下 565 与 8888 是两份不同的位图。
 function keyOf(req: PixelRequest): string {
-  return `${req.path}@${Math.round(req.width)}x${Math.round(req.height)}`;
+  return pixelCacheKey(req.path, req.width, req.height, req.opaque);
 }
 
 // Map iterates in insertion order, so the first live entry is the oldest.
@@ -266,7 +291,7 @@ async function decode(req: PixelRequest, key: string): Promise<PixelHandle | und
     // decoding — the dropped frames seen while scrolling a media-heavy chat.
     // `await` alone does not move work off the thread; TaskPool does.
     const sendablePixelMap = await taskpool.execute(
-      decodeSendable, req.path, req.width, req.height
+      decodeSendable, req.path, req.width, req.height, req.opaque
     ) as sendableImage.PixelMap | undefined;
     if (sendablePixelMap === undefined) {
       return undefined;
@@ -292,7 +317,8 @@ function insertDecoded(key: string, pixelMap: image.PixelMap, decoded: image.Ima
   // before the caller retains) would otherwise free the entry that this very
   // call is about to return. Dropped once the caller has had its chance.
   entry.refs++;
-  evictDownTo(budgetBytes);
+  // 每次插入都重新问一次额度，而不是用缓存下来的数：贴纸可能在这期间长了。
+  evictDownTo(imagePixelLimitNow(budgetBytes, pinnedBytes));
   // 交接引用的释放并进**同一条**排空队列，而不是每次解码各排一个 0ms 定时器。
   // 2026-09-09 的 Frame 录制里，这一句的 setTimeout NAPI 在 12.3s 内累计
   // **28.89ms**——单次极便宜，但它是按解码次数走的。releasePixelMap 本来就是
@@ -317,9 +343,13 @@ export function loadPixelMapSync(req: PixelRequest): PixelHandle | undefined {
   let source: image.ImageSource | null = null;
   try {
     source = image.createImageSource(req.path);
-    const pixelMap: image.PixelMap = source.createPixelMapSync({
+    const syncOpts: image.DecodingOptions = {
       desiredSize: { width: req.width, height: req.height }
-    });
+    };
+    if (req.opaque) {
+      syncOpts.desiredPixelFormat = image.PixelMapFormat.RGB_565;
+    }
+    const pixelMap: image.PixelMap = source.createPixelMapSync(syncOpts);
     const decoded: image.ImageInfo = pixelMap.getImageInfoSync();
     const entry = insertDecoded(key, pixelMap, decoded);
     const task = pending.get(key);
@@ -362,6 +392,7 @@ export function pinPixelMap(handle: PixelHandle): void {
   if (!handle.pinned) {
     handle.pinned = true;
     handle.refs++;
+    pinnedBytes += handle.bytes;
   }
 }
 
@@ -370,6 +401,7 @@ function unpinPixelMap(handle: PixelHandle): void {
     return;
   }
   handle.pinned = false;
+  pinnedBytes = Math.max(0, pinnedBytes - handle.bytes);
   // pin 时 refs++ 过一次，松开就还回去。还回去之后它就是普通的 LRU 条目，
   // 该被挤掉时正常挤掉。
   releasePixelMap(handle);
@@ -408,8 +440,10 @@ export function clearBoundedPins(): void {
 
 // 收紧后，新完成的解码也按新上限入账，防止切后台时在途任务把缓存重新灌满。
 export function setPixelCacheBudget(bytes: number): void {
-  budgetBytes = Math.max(0, Math.min(IMAGE_PIXEL_CACHE_MAX_BYTES, Math.floor(bytes)));
+  budgetBytes = Math.max(0, Math.min(IMAGE_CAP_BYTES, Math.floor(bytes)));
 }
+
+
 
 // 只回收 LRU 自己持有、且未钉住的引用。maxEntries 让生命周期回调可以分批做，
 // 避免在主线程一次 release 几十张 PixelMap。

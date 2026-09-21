@@ -86,7 +86,18 @@ export struct AvatarView {
             boxWidth: this.avatarSize,
             boxHeight: this.avatarSize,
             radius: this.avatarSize / 2,
-            fit: ImageFit.Cover
+            fit: ImageFit.Cover,
+            // 【2026-09-21 补上这两个】pinBounded / syncSmall 这套机制就是为头像
+            // （issue #137「翻消息时头像会闪」）建的，而**本组件一个都没传**——
+            // 只有 MessageBubble 和 LightweightPlainTextBubble 在用。会话列表、
+            // 联系人、@ 弹窗的头像全走这里，于是：被大图挤出缓存后重解码、
+            // 首帧只有首字母圆底。
+            //   pinBounded：只保最近 48 张，超出还给 LRU（见 util/boundedPins）。
+            //   syncSmall ：未命中时在主线程同步解一次，首帧就有照片。
+            //               准入见 util/pixelSyncPolicy——那条阈值同日由 160 抬到
+            //               176，否则本机 161px 的头像差一像素够不着。
+            pinBounded: true,
+            syncSmall: true
           });
         }
       }

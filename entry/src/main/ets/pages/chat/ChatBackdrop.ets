@@ -208,7 +208,9 @@ export struct ChatBackdrop {
     this.rasterShown = next !== '' && cachedPixelMap({
       path: next,
       width: vp2px(this.layerW()),
-      height: vp2px(this.layerH())
+      height: vp2px(this.layerH()),
+      // 壁纸按 RGB_565 解码（见下面 CachedImage 的 opaque），这里必须同档才对得上 key。
+      opaque: true
     }) !== undefined;
     this.rasterPath = next;
   }
@@ -319,6 +321,17 @@ export struct ChatBackdrop {
           radius: 0,
           fit: ImageFit.Cover,
           pin: true,
+          // 【壁纸按 RGB_565 解码 —— 2026-09-21】
+          // 真机 [Fmt] 读数：1316x2832 的 RGBA_8888 是 **14.9MB**，一张就占掉当时
+          // 68MiB 图片预算的 21%（= 55 个相册格），而它 pin 住永不淘汰。
+          // 565 之后约 7.4MB，正好压进 PINNED_ALLOWANCE_BYTES 那一格。
+          // 背景本来就没有透明通道，可以走这一档。
+          //
+          // ⚠️ **风险在色带**：这张是模糊渐变（文件名里的 blur8/dim0），而平滑渐变
+          // 正是 565 最容易出色阶的地方。上机要专门看一眼纯色系壁纸上有没有一圈圈
+          // 的带子；有就把这里改回 false，靠 PINNED_ALLOWANCE 单独扛 14.9MB
+          // （那一格要同步抬到 20MiB）。
+          opaque: true,
           onReady: (): void => { this.rasterShown = true; }
         });
       }

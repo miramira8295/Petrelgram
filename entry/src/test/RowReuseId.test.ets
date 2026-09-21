@@ -91,6 +91,16 @@ interface GroupOverrides {
   showAvatar?: boolean;
   showSenderName?: boolean;
   dateLabel?: string;
+  // 相册格子数。0/缺省 = 不是相册。
+  album?: number;
+}
+
+function albumPaths(n: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push(`/p${i}.jpg`);
+  }
+  return out;
 }
 
 function groupOf(head: MessageEntry, over: GroupOverrides = {}): AlbumGroup {
@@ -99,7 +109,9 @@ function groupOf(head: MessageEntry, over: GroupOverrides = {}): AlbumGroup {
     head,
     memberIds: [head.id],
     rowMemberIds: [head.rowId],
-    photoPaths: [], photoFileIds: [], photoRatios: [], photoIsVideo: [], photoIsLive: [],
+    photoPaths: albumPaths(over.album ?? 0),
+    photoMinis: [],
+    photoFileIds: [], photoRatios: [], photoIsVideo: [], photoIsLive: [],
     photoProgress: [], photoFailed: [],
     videoFileIds: [], videoFileSizes: [], videoDurations: [], videoMimeTypes: [],
     caption: '', captionEntities: [],
@@ -482,6 +494,52 @@ export default function rowReuseIdTest() {
       // 顺带钉住它确实是 rowReuseId 认得的三档之一。
       const levels: ReuseIdLevel[] = ['coarse', 'medium', 'fine'];
       expect(levels.includes(CHAT_PAGE_REUSE_ID_LEVEL)).assertTrue();
+    });
+
+    // 相册的格子数必须进 fine 档的复用键（2026-09-20 真机定位）。
+    //
+    // 在它进来之前，1 张图、2 张的相册、6 张的、9 张的全在同一个池子里
+    // （键只到 `...:photo`）。滚动时一个 2 行高的相册节点被复用去画 3 行的
+    // 相册，子树数量和行高同时变、整行重排——用户报的「相册消息闪动」。
+    // 普通消息在同一个桶里结构完全一样，所以只有相册会闪。
+    it('fine_level_splits_albums_by_cell_count', 0, () => {
+      const one: MessageEntry = textEntry(801);
+      one.contentType = 'photo';
+      const six: MessageEntry = textEntry(802);
+      six.contentType = 'photo';
+      const nine: MessageEntry = textEntry(803);
+      nine.contentType = 'photo';
+      const single: string = rowReuseId(renderData(), groupOf(one), 'fine');
+      const sixCell: string = rowReuseId(renderData(), groupOf(six, { album: 6 }), 'fine');
+      const nineCell: string = rowReuseId(renderData(), groupOf(nine, { album: 9 }), 'fine');
+      // 三者互不相同 —— 结构不同的行不许共池。
+      expect(single === sixCell).assertFalse();
+      expect(sixCell === nineCell).assertFalse();
+      expect(single === nineCell).assertFalse();
+    });
+
+    it('fine_level_keeps_same_sized_albums_together', 0, () => {
+      // 又不能分得太细：格子数相同的两个相册结构一样，必须共池，
+      // 否则池子被摊薄成"一行一个"，比不复用还慢（本文件抬头的警告）。
+      const a: MessageEntry = textEntry(804);
+      a.contentType = 'photo';
+      const b: MessageEntry = textEntry(805);
+      b.contentType = 'photo';
+      expect(rowReuseId(renderData(), groupOf(a, { album: 6 }), 'fine'))
+        .assertEqual(rowReuseId(renderData(), groupOf(b, { album: 6 }), 'fine'));
+    });
+
+    it('coarse_and_medium_stay_album_blind', 0, () => {
+      // 相册维度只加在 fine 档。coarse/medium 是可回退的粗档，
+      // 它们的语义不能被这次改动带偏（档位就是为了能对比才做成参数的）。
+      const a: MessageEntry = textEntry(806);
+      a.contentType = 'photo';
+      const b: MessageEntry = textEntry(807);
+      b.contentType = 'photo';
+      expect(rowReuseId(renderData(), groupOf(a, { album: 2 }), 'medium'))
+        .assertEqual(rowReuseId(renderData(), groupOf(b, { album: 9 }), 'medium'));
+      expect(rowReuseId(renderData(), groupOf(a, { album: 2 }), 'coarse'))
+        .assertEqual(rowReuseId(renderData(), groupOf(b, { album: 9 }), 'coarse'));
     });
   });
 }

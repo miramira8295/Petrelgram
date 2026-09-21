@@ -231,8 +231,26 @@ function mediaKind(msg: MessageEntry): MediaKind {
   }
 }
 
+// 相册的**格子数**。0 = 不是相册（单媒体或纯文本）。
+//
+// 【为什么必须进复用键 —— 2026-09-20 真机定位】在它进来之前，1 张图的气泡、
+// 2 张的相册、6 张的、9 张的**全都在同一个池子里**（键只到 `...:photo`）。
+// 滚动时一个 2 行 234px 高的相册节点被复用去画 3 行 277px 的相册，子树数量和
+// 行高同时变 → 整行重排 → 用户看到的就是「相册消息闪动」（#137/#140 的同一面）。
+// 普通消息在同一个桶里结构完全一样，所以一点事没有——用户的描述逐字对上。
+//
+// 判据是格子数而不是排布出来的行数：行数要先知道气泡宽度才算得出来，把宽度
+// 混进复用键会让键随布局变化而变（转屏、分栏各一套池子）。格子数是纯粹的
+// 结构属性，而且它就是 packAlbumRows 的主输入。
+//
+// 桶数代价：photo/video 两类各多出至多 10 个值。相册上限 10 张（Telegram 的
+// 限制），所以这是有界的，不会像把内容混进键那样退化成"一行一个池子"。
+function albumSize(group: AlbumGroup): number {
+  return group.photoPaths.length;
+}
+
 function fineBucket(data: MessageBubbleRenderData, group: AlbumGroup): string {
-  return `${mediumBucket(data, group)}:${mediaKind(group.head)}`;
+  return `${mediumBucket(data, group)}:${mediaKind(group.head)}:a${albumSize(group)}`;
 }
 
 // Structure-only reuse-pool key for the ReusableMessageBubble shell. Message

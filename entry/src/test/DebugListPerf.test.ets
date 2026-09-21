@@ -7,7 +7,11 @@ import {
 export default function debugListPerfTest() {
   describe('DebugListPerf', () => {
     // 2026-09-10 由 6 抬到 8：前插改成纯插入、发布不再等松手之后，预建得多
-    // 意味着惯性途中现建得少（理由写在 debugListPerf 的常量上方）。
+    // 意味着惯性途中现建得少。
+    // 2026-09-20 降到 4、2026-09-21 改回 8：两份 Frame 录制按秒归一化对照，
+    // 4 档的 predict 建项 49.1→61.2/s、BuildRecycle 39.9→53.9/s，churn 明显变差，
+    // 而降它的理由（预算装不下）已被 RGB_565 + 共享预算消掉。
+    // 完整理由写在 debugListPerf 的常量上方。
     // 这条仍然钉着值——改它必须是有意的。
     it('默认档位是 8', 0, () => {
       expect(LIST_CACHED_COUNT_DEFAULT).assertEqual(8);

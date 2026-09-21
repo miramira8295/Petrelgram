@@ -50,6 +50,8 @@ interface AlbumOverrides {
   fileIds?: number[];
   isVideo?: boolean[];
   failed?: boolean[];
+  // 长宽比：进复用形状串的几何档（2026-09-20）。
+  ratios?: number[];
 }
 
 function groupOf(memberIds: number[], over: AlbumOverrides = {}): AlbumGroup {
@@ -69,8 +71,9 @@ function groupOf(memberIds: number[], over: AlbumOverrides = {}): AlbumGroup {
     memberIds,
     rowMemberIds: memberIds,
     photoPaths: paths,
+    photoMinis: [],
     photoFileIds: over.fileIds ?? zeros,
-    photoRatios: zeros,
+    photoRatios: over.ratios ?? zeros,
     photoIsVideo: over.isVideo ?? falses,
     photoIsLive: falses,
     photoProgress: zeros,
@@ -106,7 +109,7 @@ export default function messageBubblePrepareTest() {
     //   格 0 = p(图) r(路径已落地) f(有封面文件) o(未失败) i(非播放位)
     //   格 1 = v(视频) n(无路径) z(无封面文件) e(失败) i(非播放位)
     it('two_photo_album_spells_out_every_cell', 0, () => {
-      expect(albumReuseShape(twoUp(), '')).assertEqual('2:prfoi:vnzei');
+      expect(albumReuseShape(twoUp(), '')).assertEqual('2:prfoi0:vnzei0');
     });
 
     // 空相册（普通消息行）只剩张数。
@@ -117,10 +120,10 @@ export default function messageBubblePrepareTest() {
     // 播放位只点亮**它自己那一格**：键里带着相册下标，所以同一条消息的另一格
     // 不会跟着变。
     it('the_play_slot_lights_exactly_one_cell', 0, () => {
-      expect(albumReuseShape(twoUp(), slotKey(102, 1))).assertEqual('2:prfoi:vnzes');
-      expect(albumReuseShape(twoUp(), slotKey(101, 0))).assertEqual('2:prfos:vnzei');
+      expect(albumReuseShape(twoUp(), slotKey(102, 1))).assertEqual('2:prfoi0:vnzes0');
+      expect(albumReuseShape(twoUp(), slotKey(101, 0))).assertEqual('2:prfos0:vnzei0');
       // 同一条消息、错的下标：一格都不点亮。
-      expect(albumReuseShape(twoUp(), slotKey(101, 1))).assertEqual('2:prfoi:vnzei');
+      expect(albumReuseShape(twoUp(), slotKey(101, 1))).assertEqual('2:prfoi0:vnzei0');
     });
 
     // 这是 rowPlaySlotKey 那段注释保护的不变式的另一半：别人家的播放位不能
@@ -168,7 +171,7 @@ export default function messageBubblePrepareTest() {
     // 相册」，走的是另一条气泡分支，两者不能混。
     it('a_single_photo_album_still_spells_its_one_cell', 0, () => {
       const one: AlbumGroup = groupOf([301], { paths: ['/cache/one.jpg'], fileIds: [5] });
-      expect(albumReuseShape(one, '')).assertEqual('1:prfoi');
+      expect(albumReuseShape(one, '')).assertEqual('1:prfoi0');
     });
 
     // 三格混排：视频/图片、落地/未落地、失败/正常各占一格。逐格独立求值，前一
@@ -180,7 +183,7 @@ export default function messageBubblePrepareTest() {
         isVideo: [true, false, false],
         failed: [false, false, true]
       });
-      expect(albumReuseShape(three, '')).assertEqual('3:vnzoi:prfoi:prfei');
+      expect(albumReuseShape(three, '')).assertEqual('3:vnzoi0:prfoi0:prfei0');
     });
 
     // 下载进度**故意不进**形状串。缩略图进度是每几十毫秒都在动的量，走旁路通道
@@ -199,6 +202,34 @@ export default function messageBubblePrepareTest() {
       const plain: AlbumGroup = groupOf([501]);
       expect(rowPlaySlotKey(plain, slotKey(501, -1))).assertEqual(slotKey(501, -1));
       expect(rowPlaySlotKey(plain, slotKey(502, -1))).assertEqual('');
+    });
+
+    // 长宽比进形状串（2026-09-20，相册闪动的修复）。
+    //
+    // 真机实测：两个都是 6 张、但长宽比不同的相册落进同一个复用池，复用推参把
+    // 活着的格子从 84x130 换成 91x140 → Image 重新布局重绘 → 用户看到闪一下。
+    // 判据是探针那一轮的三个数：destroyed=0（节点没销毁）、[Decode]=0（位图在
+    // 缓存里）、resized=27（活着的格子被改尺寸）。
+    it('albums_with_different_ratios_land_in_different_pools', 0, () => {
+      const portrait: AlbumGroup = groupOf([201, 202], {
+        paths: ['/a.jpg', '/b.jpg'], ratios: [0.56, 0.55]
+      });
+      const mixed: AlbumGroup = groupOf([203, 204], {
+        paths: ['/c.jpg', '/d.jpg'], ratios: [0.63, 1.50]
+      });
+      expect(albumReuseShape(portrait, '') === albumReuseShape(mixed, '')).assertFalse();
+    });
+
+    it('same_layout_albums_still_share_a_pool', 0, () => {
+      // 不能分得太细：量化到 0.1 之后，同一套马赛克预设的相册必须还在一个桶里，
+      // 否则池子被打散成「一个相册一个桶」，比不复用还慢。
+      const a: AlbumGroup = groupOf([205, 206], {
+        paths: ['/a.jpg', '/b.jpg'], ratios: [0.56, 0.55]
+      });
+      const b: AlbumGroup = groupOf([207, 208], {
+        paths: ['/c.jpg', '/d.jpg'], ratios: [0.57, 0.554]
+      });
+      expect(albumReuseShape(a, '')).assertEqual(albumReuseShape(b, ''));
     });
   });
 }
