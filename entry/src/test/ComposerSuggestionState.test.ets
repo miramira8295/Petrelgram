@@ -271,10 +271,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise<void>((resolve: () => void): void => { setTimeout(resolve, ms); });
 }
 
-const aliceWithUsername: MentionItem = { userId: 5, name: 'Alice', username: 'alice' };
-const bobNoUsername: MentionItem = { userId: 7, name: 'Bob', username: '' };
-const noNameNoUsername: MentionItem = { userId: 9, name: '', username: '' };
-const zeroIdNoUsername: MentionItem = { userId: 0, name: 'Ghost', username: '' };
+const aliceWithUsername: MentionItem = { userId: 5, name: 'Alice', username: 'alice', avatarFileId: 0 };
+const bobNoUsername: MentionItem = { userId: 7, name: 'Bob', username: '', avatarFileId: 0 };
+const noNameNoUsername: MentionItem = { userId: 9, name: '', username: '', avatarFileId: 0 };
+const zeroIdNoUsername: MentionItem = { userId: 0, name: 'Ghost', username: '', avatarFileId: 0 };
 
 function sentinelCommandItems(): CommandItem[] {
   return [{ command: 'sentinel', description: '', botUserId: 0, botUsername: '' }];

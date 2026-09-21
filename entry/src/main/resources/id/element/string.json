@@ -11769,6 +11769,14 @@
       "value": "Ganti proksi otomatis"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "Utamakan IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Paksa IPv6 pada jaringan yang memiliki IPv4 dan IPv6. Jaringan khusus IPv6 mengaktifkannya secara otomatis."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Coba proksi tersimpan berikutnya saat proksi saat ini tetap tidak tersedia"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Pilih lagu"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "Dari %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Mencari…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Tidak ada di pustaka? Cari lewat bot"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "Cari dengan %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "Meninggalkan pesan di obrolan bot itu"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "Tidak dapat menghubungi %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s tidak merespons"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "Tidak bisa membaca balasan %1$s — formatnya mungkin berubah"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Gagal mengambil lagu itu"
     }
   ]
 }

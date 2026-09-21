@@ -11769,6 +11769,14 @@
       "value": "Auto-switch proxy"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "Prefer IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Force IPv6 on networks that have both IPv4 and IPv6. IPv6-only networks turn this on automatically."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Try the next saved proxy when the current one remains unavailable"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Pick a track"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "From %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Searching…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Not in your library? Search the bot"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "Search with %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "Leaves a message in that bot's chat"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "Can't reach %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s didn't respond"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "Couldn't read %1$s's reply — its format may have changed"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Couldn't get that track"
     }
   ]
 }

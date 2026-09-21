@@ -11769,6 +11769,14 @@
       "value": "自动切换代理"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "优先使用 IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "在同时支持 IPv4 和 IPv6 的网络上强制走 IPv6。只有 IPv6 的网络会自动启用，不用手动开。"
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "当前代理持续无法连接时，自动尝试列表中的下一个代理"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "去挑一首"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "来自 %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "正在搜索…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "曲库里没有的歌，可以从机器人搜"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "用 %1$s 搜这首"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "会在与该机器人的对话里留下记录"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "连不上 %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s 没有响应"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "读不懂 %1$s 的回复，它可能改了格式"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "没能取到这首歌"
     }
   ]
 }

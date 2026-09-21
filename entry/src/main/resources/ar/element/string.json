@@ -11769,6 +11769,14 @@
       "value": "التبديل التلقائي للوكيل"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "تفضيل IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "فرض IPv6 على الشبكات التي تدعم IPv4 وIPv6 معًا. يتم تفعيله تلقائيًا على الشبكات التي تدعم IPv6 فقط."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "جرّب الوكيل المحفوظ التالي عند استمرار تعذر الوصول إلى الوكيل الحالي"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "اختر مقطعًا"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "من %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "جارٍ البحث…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "غير موجودة في مكتبتك؟ ابحث عبر البوت"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "ابحث عبر %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "سيترك رسالة في محادثة ذلك البوت"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "تعذّر الوصول إلى %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "لم يستجب %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "تعذّرت قراءة رد %1$s — ربما تغيّر تنسيقه"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "تعذّر الحصول على هذا المقطع"
     }
   ]
 }

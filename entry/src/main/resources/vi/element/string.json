@@ -11769,6 +11769,14 @@
       "value": "Tự động chuyển proxy"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "Ưu tiên IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Buộc dùng IPv6 trên mạng có cả IPv4 và IPv6. Mạng chỉ có IPv6 sẽ tự động bật."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Thử proxy đã lưu tiếp theo khi proxy hiện tại vẫn không khả dụng"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Chọn một bài"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "Từ %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Đang tìm…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Không có trong thư viện? Tìm qua bot"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "Tìm bằng %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "Sẽ để lại tin nhắn trong cuộc trò chuyện với bot"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "Không kết nối được %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s không phản hồi"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "Không đọc được phản hồi của %1$s — định dạng có thể đã thay đổi"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Không lấy được bài này"
     }
   ]
 }

@@ -9,6 +9,23 @@ export interface MentionItem {
   userId: number;
   name: string;     // display name (first + last)
   username: string; // '' when the member has no public username
+  // 小头像的文件 id（0 = 没有头像，或还不知道）。@ 弹窗拿它去取真头像
+  // （issue #211：原来那里写死 avatarPath: ''，永远只画首字母）。
+  avatarFileId: number;
+}
+
+// user.profile_photo.small.id。**只在这里解一次**：调用方拿到的就是 file id，
+// 不必各自再走一遍 TdObject 的取值链。
+function smallPhotoFileId(user: TdObject): number {
+  const photo = user['profile_photo'] as TdObject | undefined;
+  if (photo === undefined) {
+    return 0;
+  }
+  const small = photo['small'] as TdObject | undefined;
+  if (small === undefined) {
+    return 0;
+  }
+  return (small['id'] as number | undefined) ?? 0;
 }
 
 export interface CommandItem {
@@ -83,7 +100,10 @@ export function searchMentions(client: TdClient, chatId: number, query: string):
         if (name === '' || typeName === 'userTypeDeleted') {
           continue;
         }
-        items.push({ userId: ids[i], name, username: usernameOf(users[i]) });
+        items.push({
+          userId: ids[i], name, username: usernameOf(users[i]),
+          avatarFileId: smallPhotoFileId(users[i])
+        });
       }
       return items;
     });
@@ -98,10 +118,13 @@ export function searchMentions(client: TdClient, chatId: number, query: string):
 // message entry carries the sender's name but not their username).
 export function mentionOfUser(client: TdClient, userId: number): Promise<MentionItem> {
   return getUser(client, userId).then((user: TdObject): MentionItem => {
-    return { userId, name: displayNameOf(user), username: usernameOf(user) };
+    return {
+      userId, name: displayNameOf(user), username: usernameOf(user),
+      avatarFileId: smallPhotoFileId(user)
+    };
   }).catch((e: TdError): MentionItem => {
     logE(`mentionOfUser failed: ${e.message}`);
-    return { userId, name: '', username: '' };
+    return { userId, name: '', username: '', avatarFileId: 0 };
   });
 }
 

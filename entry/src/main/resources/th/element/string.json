@@ -11769,6 +11769,14 @@
       "value": "สลับพร็อกซีอัตโนมัติ"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "ใช้ IPv6 ก่อน"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "บังคับใช้ IPv6 บนเครือข่ายที่มีทั้ง IPv4 และ IPv6 เครือข่ายที่มีเฉพาะ IPv6 จะเปิดใช้งานโดยอัตโนมัติ"
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "ลองพร็อกซีที่บันทึกไว้รายการถัดไปเมื่อพร็อกซีปัจจุบันยังใช้ไม่ได้"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "เลือกสักเพลง"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "จาก %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "กำลังค้นหา…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "ไม่มีในคลัง? ค้นหาผ่านบอท"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "ค้นหาด้วย %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "จะทิ้งข้อความไว้ในแชทของบอทนั้น"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "ติดต่อ %1$s ไม่ได้"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s ไม่ตอบกลับ"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "อ่านคำตอบของ %1$s ไม่ได้ — รูปแบบอาจเปลี่ยนไป"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "ดึงเพลงนี้ไม่ได้"
     }
   ]
 }

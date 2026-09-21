@@ -11769,6 +11769,14 @@
       "value": "プロキシを自動切り替え"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "IPv6 を優先"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "IPv4 と IPv6 の両方がある回線で IPv6 を強制します。IPv6 のみの回線では自動的に有効になります。"
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "現在のプロキシに接続できない状態が続くと、次の保存済みプロキシを試します"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "曲を選ぶ"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "%1$s から"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "検索中…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "ライブラリにない曲はボットから検索"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "%1$s で検索"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "そのボットとのチャットにメッセージが残ります"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "%1$s に接続できません"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s が応答しません"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "%1$s の返信を解釈できません — 形式が変わった可能性があります"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "この曲を取得できませんでした"
     }
   ]
 }

@@ -11769,6 +11769,14 @@
       "value": "Cambio automatico del proxy"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "Preferisci IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Forza IPv6 sulle reti con IPv4 e IPv6. Sulle reti solo IPv6 si attiva automaticamente."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Prova il proxy salvato successivo se quello attuale resta non disponibile"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Scegli un brano"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "Da %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Ricerca…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Non è nella libreria? Cerca con il bot"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "Cerca con %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "Lascia un messaggio nella chat con quel bot"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "Impossibile raggiungere %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s non ha risposto"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "Impossibile leggere la risposta di %1$s: il formato potrebbe essere cambiato"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Impossibile ottenere questo brano"
     }
   ]
 }

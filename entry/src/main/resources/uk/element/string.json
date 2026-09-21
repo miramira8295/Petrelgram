@@ -11769,6 +11769,14 @@
       "value": "Автоперемикання проксі"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "Надавати перевагу IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Примусово використовувати IPv6 у мережах з IPv4 та IPv6. У мережах лише з IPv6 вмикається автоматично."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Пробувати наступний проксі, якщо поточний довго недоступний"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Оберіть трек"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "З %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Пошук…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Немає в бібліотеці? Пошукайте через бота"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "Шукати через %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "Залишить повідомлення в чаті з ботом"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "Не вдалося зв'язатися з %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s не відповів"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "Не вдалося розібрати відповідь %1$s — формат міг змінитися"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Не вдалося отримати трек"
     }
   ]
 }

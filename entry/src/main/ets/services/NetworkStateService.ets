@@ -4,6 +4,7 @@ import { getTdClient, isReady } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { KEY_CURRENT_NETWORK_TYPE } from '../store/AppSettings';
 import { logW } from '../util/log';
+import { applyPreferIpv6 } from './PreferIpv6Option';
 import {
   BearerIds, NET_KIND_CELLULAR, NET_KIND_VPN, NET_KIND_WIFI, bearerKindOf, resolveThroughVpn
 } from '../util/netBearer';
@@ -52,6 +53,11 @@ function publish(network: string, forceTd: boolean = false): void {
   request['type'] = tdNetworkTypeOf(normalized);
   getTdClient().send(request).catch((caught: Error): void => {
     logW(`NetworkStateService.setNetworkType(${normalized}) failed: ${caught.message}`);
+  });
+  // 换了网络就重判一次 prefer_ipv6：同一台设备在 Wi-Fi 上是双栈、切到某些
+  // 蜂窝 APN 就只有 IPv6（issue #133）。自己吞掉所有异常，不影响上面这条。
+  applyPreferIpv6().catch((caught: Error): void => {
+    logW(`NetworkStateService.applyPreferIpv6 failed: ${caught.message}`);
   });
 }
 

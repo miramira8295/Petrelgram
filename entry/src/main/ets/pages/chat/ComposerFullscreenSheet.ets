@@ -16,7 +16,6 @@ export struct ComposerFullscreenSheet {
   @Param maxLength: number = 4096;
   @Param accentColor: ResourceColor = Color.Blue;
   @Event onCommit: (text: string) => void = (): void => {};
-  @Event onClose: () => void = (): void => {};
   @Event onSend: () => void = (): void => {};
 
   @Local private text: string = '';
@@ -28,10 +27,11 @@ export struct ComposerFullscreenSheet {
 
   build() {
     Column() {
+      // 【这里只剩字数，关闭交给 bindSheet 的系统 ×】（issue #210，用户定的形态）
+      // 原来左上角还有一个「收起」文字按钮：它做的事和系统 × 完全一样——正文每
+      // 敲一下就 onCommit 回写草稿，所以无论怎么关，文字都已经在输入框里了。
+      // 两个入口摆在同一条边上只是在问用户"这俩有什么区别"。
       Row() {
-        Text($r('app.string.cp_fullscreen_collapse'))
-          .fontSize(16).fontColor(this.accentColor)
-          .onClick((): void => { this.onClose(); });
         Blank();
         Text(`${this.text.length}/${this.maxLength}`)
           .fontSize(13)
@@ -56,25 +56,20 @@ export struct ComposerFullscreenSheet {
           this.onCommit(value);
         });
 
-      Row({ space: 12 }) {
-        Button($r('app.string.cp_fullscreen_done'))
-          .fontSize(16).fontColor(this.accentColor)
-          .backgroundColor($r('app.color.surface_alt'))
-          .layoutWeight(1).height(44).borderRadius(12)
-          .onClick((): void => { this.onClose(); });
-        Button($r('app.string.send'))
-          .fontSize(16).fontColor(Color.White)
-          .backgroundColor(this.accentColor)
-          .layoutWeight(1).height(44).borderRadius(12)
-          .enabled(this.text.trim() !== '')
-          .onClick((): void => {
-            // 先把最后一次改动交回输入条，再让页面走它自己的发送路径
-            // （附件、回复、编辑态都挂在那条路上，这里不重复实现）。
-            this.onCommit(this.text);
-            this.onSend();
-          });
-      }
-      .width('100%').margin({ top: 10 });
+      // 【底部只有发送】原来还并排一个「完成」，它和左上角「收起」调的是同一个
+      // onClose——三个按钮两种叫法一件事，用户直接说"功能好像也没啥用"。
+      Button($r('app.string.send'))
+        .fontSize(16).fontColor(Color.White)
+        .backgroundColor(this.accentColor)
+        .width('100%').height(44).borderRadius(12)
+        .enabled(this.text.trim() !== '')
+        .onClick((): void => {
+          // 先把最后一次改动交回输入条，再让页面走它自己的发送路径
+          // （附件、回复、编辑态都挂在那条路上，这里不重复实现）。
+          this.onCommit(this.text);
+          this.onSend();
+        })
+        .margin({ top: 10 });
     }
     .width('100%').height('100%')
     .padding({ left: 16, right: 16, top: 44, bottom: 16 });

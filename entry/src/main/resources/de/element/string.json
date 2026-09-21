@@ -11769,6 +11769,14 @@
       "value": "Proxy automatisch wechseln"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "IPv6 bevorzugen"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Erzwingt IPv6 in Netzwerken mit IPv4 und IPv6. In reinen IPv6-Netzwerken wird dies automatisch aktiviert."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Nächsten gespeicherten Proxy versuchen, wenn der aktuelle nicht verfügbar bleibt"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Titel auswählen"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "Von %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Suche läuft…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Nicht in der Bibliothek? Über den Bot suchen"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "Mit %1$s suchen"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "Hinterlässt eine Nachricht im Chat mit dem Bot"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "%1$s nicht erreichbar"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s hat nicht geantwortet"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "Antwort von %1$s nicht lesbar – das Format hat sich evtl. geändert"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Titel konnte nicht geholt werden"
     }
   ]
 }

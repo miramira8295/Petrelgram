@@ -1,5 +1,6 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
+import { stripIpv6Brackets } from '../util/ipFamily';
 
 // Proxy management remains entirely inside TDLib. No native socket, call,
 // media, or DNS implementation is replaced by this module.
@@ -38,7 +39,9 @@ export function proxyObjectOf(entry: ProxyEntry): TdObject {
     }
   }
   const proxy: TdObject = { '@type': 'proxy' };
-  proxy['server'] = entry.server;
+  // TDLib 的 proxy.server 要**裸地址**。用户粘 IPv6 时常带方括号（从 URL 抄的
+  // `[2001:db8::1]:443`），带着括号会被当主机名去做 DNS 然后解析失败（issue #133）。
+  proxy['server'] = stripIpv6Brackets(entry.server);
   proxy['port'] = entry.port;
   proxy['type'] = type;
   return proxy;

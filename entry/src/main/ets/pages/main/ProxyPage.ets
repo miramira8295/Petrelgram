@@ -17,7 +17,7 @@ import {
   serializeProxyMirror, serializeSyncOff, syncEnabledFor, syncableOf, toggledSyncOff
 } from '../../util/proxyMirror';
 import {
-  KEY_PROXY_AUTO_SWITCH, KEY_PROXY_SWITCH_DELAY_SEC, setBoolean, setNumber, setString
+  KEY_PREFER_IPV6, KEY_PROXY_AUTO_SWITCH, KEY_PROXY_SWITCH_DELAY_SEC, setBoolean, setNumber, setString
 } from '../../store/AppSettings';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
@@ -30,6 +30,7 @@ import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { containerBlur, overlayMaterial, MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { logE } from '../../util/log';
+import { applyPreferIpv6 } from '../../services/PreferIpv6Option';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
   ProxyAutoSwitchEntry, proxyAutoSwitchService
@@ -90,6 +91,7 @@ export struct ProxyPage {
   @State preferredProxyId: number = 0;
   @State skeletonBright: boolean = false;
   @StorageProp(KEY_PROXY_AUTO_SWITCH) private autoSwitch: boolean = false;
+  @StorageProp(KEY_PREFER_IPV6) private preferIpv6: boolean = false;
   @StorageProp(KEY_PROXY_SWITCH_DELAY_SEC) private autoSwitchDelay: number = 10;
 
   @State sheetOpen: boolean = false;
@@ -311,6 +313,15 @@ export struct ProxyPage {
     if (value && !this.autoSwitchAvailable()) { return; }
     setBoolean(KEY_PROXY_AUTO_SWITCH, value);
     proxyAutoSwitchService.settingsChanged();
+  }
+
+  // 关掉**不等于**禁用 IPv6：本机没有 IPv4 地址时仍会自动打开，否则纯 v6 网络
+  // 的用户第一次启动就连不上、也就看不到这个开关（issue #133）。
+  private setPreferIpv6(value: boolean): void {
+    setBoolean(KEY_PREFER_IPV6, value);
+    applyPreferIpv6().catch((caught: Error): void => {
+      logE(`ProxyPage.setPreferIpv6 failed: ${caught.message}`);
+    });
   }
 
   private setAutoSwitchDelay(index: number): void {
@@ -1042,6 +1053,30 @@ export struct ProxyPage {
       .width('100%').height(52).padding({ left: 16, right: 8 })
       .alignItems(VerticalAlign.Center)
       .opacity(this.autoSwitch && this.autoSwitchAvailable() ? 1 : 0.46);
+
+      Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 68 });
+
+      // issue #133：纯 IPv6 网络下 TDLib 默认优先找 IPv4，找不到就连不上。
+      // 自动探测已经覆盖"本机没有 IPv4"的情形，这个开关给双栈但想强制走 v6 的人。
+      Row({ space: 12 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle({ width: 42, height: 42 }).fill('#163478F6');
+          // 图标名从 HMSymbolVF.ttf 的字形表里查过：**没有 `globe`**
+          // （只有 globe_and_keyboard / globe_badge_* 这类组合名）。
+          SymbolGlyph($r('sys.symbol.network_acceleration')).fontSize(21).fontColor([COLOR_PRIMARY]);
+        }
+        Column({ space: 3 }) {
+          Text($r('app.string.px_prefer_ipv6')).fontSize(16).fontColor(COLOR_TEXT_PRIMARY);
+          Text($r('app.string.px_prefer_ipv6_desc')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis });
+        }
+        .layoutWeight(1).alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Center);
+        Toggle({ type: ToggleType.Switch, isOn: this.preferIpv6 })
+          .selectedColor(COLOR_PRIMARY)
+          .onChange((value: boolean): void => this.setPreferIpv6(value));
+      }
+      .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+      .alignItems(VerticalAlign.Center);
     }
     .width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }

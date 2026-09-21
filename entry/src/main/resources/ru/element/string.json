@@ -11769,6 +11769,14 @@
       "value": "Автопереключение прокси"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "Предпочитать IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Принудительно использовать IPv6 в сетях с IPv4 и IPv6. В сетях только с IPv6 включается автоматически."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Пробовать следующий прокси, если текущий долго недоступен"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Выберите трек"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "Из %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Поиск…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Нет в библиотеке? Поищите через бота"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "Искать через %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "Оставит сообщение в чате с ботом"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "Не удалось связаться с %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s не ответил"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "Не удалось разобрать ответ %1$s — формат мог измениться"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Не удалось получить трек"
     }
   ]
 }

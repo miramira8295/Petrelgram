@@ -1,8 +1,8 @@
 import { str } from '../../util/strings';
-import { AvatarView } from '../chatlist/AvatarView';
 import { CommandItem, MentionItem } from '../../store/InputSuggestions';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
+import { LiveUserAvatar } from '../common/LiveUserAvatar';
 
 // 输入框上方的补全面板：草稿以 '/' 开头时列机器人命令，末尾是 '@' 时列群成员。
 //
@@ -156,9 +156,13 @@ export struct SuggestionPanel {
       ForEach(this.mentions, (it: MentionItem) => {
         ListItem() {
           Row({ space: 10 }) {
-            AvatarView({
-              avatarPath: '', initials: it.name.substring(0, 1).toUpperCase(),
-              colorSeed: it.userId, avatarSize: 32
+            // 真头像（issue #211）。原来这里写死 avatarPath: ''，永远只画首字母
+            // ——@ 候选人未必在本会话发过言，头像既不在通道里也没人去取。
+            LiveUserAvatar({
+              userId: it.userId,
+              initials: it.name.substring(0, 1).toUpperCase(),
+              avatarSize: 32,
+              avatarFileId: it.avatarFileId
             });
             Text(it.name).fontSize(15).fontColor(COLOR_TEXT_PRIMARY).maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis });

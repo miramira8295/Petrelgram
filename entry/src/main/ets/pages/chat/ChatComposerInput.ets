@@ -2,6 +2,7 @@ import {
   caretAfterExternalEdit, isComposerEcho, pasteFitsLimit, rememberEmitted
 } from '../../util/composerText';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
+import { composerLineProbe } from '../../util/composerLineProbe';
 import { shouldOfferFullscreenEdit } from '../../util/composerExpand';
 import { pushSheetDismiss } from '../../util/sheetDismissStack';
 import { promptAction } from '@kit.ArkUI';
@@ -94,7 +95,13 @@ export struct ChatComposerInput {
   @Local private editorLines: number = 0;
   // 全屏编辑面板。挂在本组件而不是页面：它编辑的就是这里的草稿，页面只通过
   // 已有的 onDraftChange / onSend 收结果。
-  @Local private fullscreenOpen: boolean = false;
+  // ⚠️ **不要加 private**（issue #210）。`bindSheet($$this.fullscreenOpen, ...)`
+  // 的双向绑定要在组件上生成一对读写访问器；带 private 时"我们自己置 false"这条
+  // 路传不到面板上——系统右上角那个 × 走的是 sheet 内部的关闭流程所以照常好使，
+  // 于是现象正好是"× 能关、我们的按钮都关不掉"。
+  // 判据：同仓库另外三个 bindSheet（ChatPage.diceSheetOpen /
+  // stickerSetSheetOpen、ProxyPage.sheetOpen）都不带 private，都正常。
+  @Local fullscreenOpen: boolean = false;
   private linesRefreshTimer: number = -1;
   @Param sendByEnter: boolean = false;
   @Param replyKeyboard: ReplyKeyboard | null = null;
@@ -184,17 +191,58 @@ export struct ChatComposerInput {
   // （两者在系统设置里挨着，通常一起改）。
   //
   // 量一次就知道真实值：measureTextSize 按当前字号缩放排版，返回 px，换成 vp。
+  //
+  // 【为什么不能只量 'A' —— issue #209】'A' 既没有下伸部也没有上方标记，是拉丁
+  // 字母里最矮的一档。而真正要画的是草稿，草稿为空时画的是 placeholder——那里
+  // 塞的是「<昵称> 正在输入…」。昵称带天城文元音符号、泰文上标或某些 emoji 时，
+  // 真实行盒比 'A' 高，而盒子高度是按这个数**显式写死**的，装不下就把文字往下
+  // 挤，用户报的「文本位置整体下移」就是这个。
+  //
+  // 所以量两样取大：'A'（保证不小于今天的值，也保证空输入框不塌）和真正要画的
+  // 那一行（探针取法见 util/composerLineProbe）。
+  //
+  // 【缓存与字号缩放】'A' 每次都量——它便宜，而且它跟着系统字号缩放变，正好
+  // 当缓存的校验位。探针那次只在"探针变了 或 'A' 的高度变了"时重量。少了这个
+  // 校验位，用户在设置里改字号后行高不会更新，就会踩回本函数上方记的那条
+  // 「第三行连同光标被切在盒子外面」。
+  private probeCacheKey: string = '\u0000';
+  private probeCacheVp: number = 0;
+
   private lineHeightVp(): number {
+    let baseVp: number = COMPOSER_LINE_HEIGHT;
     try {
       const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
         textContent: 'A',
         fontSize: 15
       });
       const measured: number = px2vp(size.height as number);
-      return measured > 0 ? measured : COMPOSER_LINE_HEIGHT;
+      if (measured > 0) {
+        baseVp = measured;
+      }
     } catch (e) {
       return COMPOSER_LINE_HEIGHT;
     }
+    const probe: string = composerLineProbe(this.draft, this.composerPlaceholder);
+    if (probe === '') {
+      return baseVp;
+    }
+    const key: string = `${Math.round(baseVp * 100)}|${probe}`;
+    if (key === this.probeCacheKey) {
+      return this.probeCacheVp > baseVp ? this.probeCacheVp : baseVp;
+    }
+    let probeVp: number = 0;
+    try {
+      const size: SizeOptions = this.getUIContext().getMeasureUtils().measureTextSize({
+        textContent: probe,
+        fontSize: 15
+      });
+      probeVp = px2vp(size.height as number);
+    } catch (e) {
+      probeVp = 0;
+    }
+    this.probeCacheKey = key;
+    this.probeCacheVp = probeVp;
+    return probeVp > baseVp ? probeVp : baseVp;
   }
 
   // 输入条那一行的高度上下限。
@@ -621,6 +669,10 @@ export struct ChatComposerInput {
     .alignItems(VerticalAlign.Center)
     .bindSheet($$this.fullscreenOpen, this.fullscreenEditor(), {
       height: SheetSize.LARGE,
+      // 显式写出来：面板里已经没有自己的关闭按钮了，右上角这个系统 × 是**唯一**
+      // 的关闭入口（issue #210 用户定的形态）。默认就是 true，但这里不能默认——
+      // 谁哪天顺手关掉它，面板就再也收不起来了。
+      showClose: true,
       backgroundColor: Color.Transparent,
       dragBar: false,
       blurStyle: containerBlur('dialog'), systemMaterial: overlayMaterial('dialog'),
@@ -649,7 +701,6 @@ export struct ChatComposerInput {
           this.emittedDrafts = rememberEmitted(this.emittedDrafts, text, EMITTED_KEEP);
           this.onDraftChange(text);
         },
-        onClose: (): void => { this.fullscreenOpen = false; },
         onSend: (): void => {
           this.fullscreenOpen = false;
           this.onSend();

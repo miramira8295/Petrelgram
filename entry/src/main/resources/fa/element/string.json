@@ -11769,6 +11769,14 @@
       "value": "تغییر خودکار پروکسی"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "ترجیح IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "اجبار به استفاده از IPv6 در شبکه‌هایی که هم IPv4 و هم IPv6 دارند. در شبکه‌های فقط IPv6 به‌صورت خودکار فعال می‌شود."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "اگر پروکسی فعلی در دسترس نماند، پروکسی ذخیره‌شده بعدی امتحان شود"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "یک آهنگ انتخاب کنید"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "از %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "در حال جست‌وجو…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "در کتابخانه نیست؟ از ربات جست‌وجو کنید"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "جست‌وجو با %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "پیامی در گفتگوی آن ربات باقی می‌گذارد"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "دسترسی به %1$s ممکن نشد"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s پاسخ نداد"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "پاسخ %1$s قابل خواندن نبود — شاید قالبش تغییر کرده"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "دریافت این آهنگ ممکن نشد"
     }
   ]
 }

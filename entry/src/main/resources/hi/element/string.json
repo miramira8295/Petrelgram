@@ -11769,6 +11769,14 @@
       "value": "प्रॉक्सी अपने-आप बदलें"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "IPv6 को प्राथमिकता दें"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "ऐसे नेटवर्क पर IPv6 का उपयोग बाध्य करें जिनमें IPv4 और IPv6 दोनों हों। केवल-IPv6 नेटवर्क पर यह अपने आप चालू हो जाता है।"
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "मौजूदा प्रॉक्सी उपलब्ध न रहने पर अगला सहेजा गया प्रॉक्सी आज़माएँ"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "कोई गाना चुनें"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "%1$s से"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "खोज रहे हैं…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "लाइब्रेरी में नहीं है? बॉट से खोजें"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "%1$s से खोजें"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "उस बॉट की चैट में एक संदेश छोड़ता है"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "%1$s तक नहीं पहुँच सके"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s ने जवाब नहीं दिया"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "%1$s का उत्तर पढ़ा नहीं जा सका — इसका प्रारूप बदल गया होगा"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "यह ट्रैक नहीं मिल सका"
     }
   ]
 }

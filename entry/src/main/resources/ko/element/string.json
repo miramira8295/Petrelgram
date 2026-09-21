@@ -11769,6 +11769,14 @@
       "value": "프록시 자동 전환"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "IPv6 우선 사용"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "IPv4와 IPv6를 모두 지원하는 네트워크에서 IPv6를 강제합니다. IPv6 전용 네트워크에서는 자동으로 켜집니다."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "현재 프록시를 계속 사용할 수 없으면 다음 저장된 프록시를 시도합니다"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "곡을 골라보세요"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "%1$s에서"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "검색 중…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "보관함에 없나요? 봇에서 검색하세요"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "%1$s(으)로 검색"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "해당 봇과의 대화에 메시지가 남습니다"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "%1$s에 연결할 수 없습니다"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s이(가) 응답하지 않습니다"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "%1$s의 답장을 해석할 수 없습니다 — 형식이 바뀌었을 수 있습니다"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "이 곡을 가져오지 못했습니다"
     }
   ]
 }

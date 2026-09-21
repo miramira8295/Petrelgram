@@ -11769,6 +11769,14 @@
       "value": "Otomatik proxy değiştir"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "IPv6’yı tercih et"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "Hem IPv4 hem IPv6 bulunan ağlarda IPv6 kullanmaya zorlar. Yalnızca IPv6 olan ağlarda otomatik olarak açılır."
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "Geçerli proxy kullanılamadığında kayıtlı bir sonraki proxy'yi dene"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "Bir parça seçin"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "%1$s kaynağından"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "Aranıyor…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "Kitaplığınızda yok mu? Bottan arayın"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "%1$s ile ara"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "O botla olan sohbette bir mesaj bırakır"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "%1$s erişilemiyor"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s yanıt vermedi"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "%1$s yanıtı okunamadı — biçimi değişmiş olabilir"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "Bu parça alınamadı"
     }
   ]
 }

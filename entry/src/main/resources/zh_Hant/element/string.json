@@ -11769,6 +11769,14 @@
       "value": "自動切換代理"
     },
     {
+      "name": "px_prefer_ipv6",
+      "value": "優先使用 IPv6"
+    },
+    {
+      "name": "px_prefer_ipv6_desc",
+      "value": "在同時支援 IPv4 與 IPv6 的網路上強制走 IPv6。僅有 IPv6 的網路會自動啟用，不需手動開啟。"
+    },
+    {
       "name": "px_auto_switch_sub",
       "value": "目前代理持續無法連線時，自動嘗試清單中的下一個代理"
     },
@@ -12727,6 +12735,42 @@
     {
       "name": "mc_minibar_idle",
       "value": "去挑一首"
+    },
+    {
+      "name": "mc_search_bot_section",
+      "value": "來自 %1$s"
+    },
+    {
+      "name": "mc_search_bot_searching",
+      "value": "正在搜尋…"
+    },
+    {
+      "name": "mc_search_bot_hint",
+      "value": "曲庫裡沒有的歌，可以從機器人搜"
+    },
+    {
+      "name": "mc_search_chatbot_action",
+      "value": "用 %1$s 搜這首"
+    },
+    {
+      "name": "mc_search_chatbot_note",
+      "value": "會在與該機器人的對話裡留下紀錄"
+    },
+    {
+      "name": "mc_search_chatbot_offline",
+      "value": "連不上 %1$s"
+    },
+    {
+      "name": "mc_search_chatbot_timeout",
+      "value": "%1$s 沒有回應"
+    },
+    {
+      "name": "mc_search_chatbot_unreadable",
+      "value": "讀不懂 %1$s 的回覆，它可能改了格式"
+    },
+    {
+      "name": "mc_search_chatbot_failed",
+      "value": "沒能取到這首歌"
     }
   ]
 }
