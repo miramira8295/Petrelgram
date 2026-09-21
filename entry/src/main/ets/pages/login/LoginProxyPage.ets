@@ -31,7 +31,16 @@ struct LoginProxyPage {
         }
       }
     });
-    this.stack.pushPath({ name: 'ProxyPage' });
+    // 【第二个参数必须是 false —— AGC 体验检测 2026-09-20】
+    // 这一跳其实是两个转场叠在一起：外层 router.pushUrl 推本页（系统页面转场），
+    // 而本页刚 aboutToAppear 就在里面再推一个 NavDestination。两段动画同时跑，
+    // 检测器量到的复合动效短于 200ms 的门槛（「全屏页面的转场…在 8.5 英寸以下
+    // 设备上不应短于 200 ms」），报了 UX 告警。
+    //
+    // 外壳里这一推是实现细节，用户要看的是外层那个完整的页面转场，所以这里不该
+    // 再有自己的动画。官方 Navigation FAQ 给的就是这个写法：
+    //   `this.navStack.pushPath({ name: '...' }, false); // 关闭本次 push 动画即可`
+    this.stack.pushPath({ name: 'ProxyPage' }, false);
   }
 
   build() {

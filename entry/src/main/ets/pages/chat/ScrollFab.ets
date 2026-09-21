@@ -33,16 +33,28 @@ export struct ScrollFab {
 
   onTap: () => void = (): void => {};
 
+  // 【底色不在这里，在属性链上】（2026-09-21）
+  //
+  // 原来 normal 档里写着 `.backgroundColor(plainGlassFill($r('app.color.surface')))`。
+  // 搬到属性链是为了和全仓库另外十几个自绘玻璃面（输入栏、顶栏、搜索栏、话题条、
+  // 底部抽屉、会员条）写法一致——它们都是在 build() 里直接链式调。
+  //
+  // ⚠️ **但这不是「实心白」的原因**。我一度据此推断"@Styles 求值太早、拿到了
+  // materialOff=true 时的实色"，真机探针把它推翻了：
+  //   [Glass] materialOff=false available=true blur(card)=16 blur(control)=16
+  // 底色一直拿的是 dock_glass 半透明。真凶是下面 visualEffect 那一档的
+  // pressShadow，见那里的说明。这一段留着是因为写法本身更好，不是因为它治了什么。
   @Styles
   fabNormalStyle() {
-    .backgroundColor(plainGlassFill($r('app.color.surface')))
     .opacity(1)
     .scale({ x: 1, y: 1 })
   }
 
+  // 按压不再换底色：换了就等于在 stateStyles 里又写一次 backgroundColor，
+  // 与属性链上那条打架（后写的赢），正是上面要避开的那件事。形变 + 透明度
+  // 已经够，材质可用时它那套按压形变还会再叠上来。
   @Styles
   fabPressedStyle() {
-    .backgroundColor($r('app.color.press_overlay'))
     .opacity(0.84)
     .scale({ x: 0.92, y: 0.92 })
   }
@@ -60,6 +72,9 @@ export struct ScrollFab {
       }
       .width(46).height(46)
       .borderRadius(23)
+      // 和输入栏那条逐属性一致：plainGlassFill + plainBackdropBlur + hdsVisualEffect。
+      // **必须写在属性链上**，不能挪回 stateStyles（理由见上面那段）。
+      .backgroundColor(plainGlassFill($r('app.color.surface')))
       .stateStyles({ normal: this.fabNormalStyle, pressed: this.fabPressedStyle })
       .animation({
         duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
@@ -71,10 +86,25 @@ export struct ScrollFab {
       // materialModifier，而那一层在这颗圆上什么都不画——结果就是一个只剩描边的
       // 空心圈，浮在自绘玻璃的输入栏上面格格不入（用户 2026-09-18 截图）。
       // 描边也一并去掉：输入栏那颗控件没有，而 divider 压在深色照片上就是一道白圈。
-      // 底色只写在 stateStyles 的 normal 档里，别在这里再写一遍——链上后写的那条
-      // 会盖掉按压态。
       .backdropBlur(plainBackdropBlur('control'))
-      .visualEffect(hdsVisualEffect('control'))
+      // 【这里必须是 'card'，不能是 'control'】（2026-09-21 真机验证，用户截图
+      // 「底栏磨砂半透明，圆圈实心白」）
+      //
+      // 两档的**唯一**差别是 pressShadow(BLEND_GRADIENT)——usesInteraction 只对
+      // control / navigationMenu 为真。而那层按压阴影画在这颗 46 的小圆上就是
+      // 一块不透明的白，把自绘玻璃整个盖住。
+      //
+      // 【怎么定的】真机探针一行读数就把另外两条嫌疑排掉了：
+      //   [Glass] materialOff=false available=true blur(card)=16 blur(control)=16
+      // 底色拿到的是 dock_glass（#8CFFFFFF 半透明）不是实心白，两档模糊也一样。
+      // 换成 'card' 之后用户确认「变了，已经正常了」。
+      //
+      // 代价：没有材质那套按压阴影了。按压反馈由下面 stateStyles 的形变 +
+      // 透明度承担——也正因为 'card' 不叠材质形变，这两者不会打架。
+      //
+      // ⚠️ 输入栏左边那颗回形针（ChatComposerInput 的附件键）仍然是 'control'，
+      // 同样的白。要不要一起改由用户定，别顺手动。
+      .visualEffect(hdsVisualEffect('card'))
       // 阴影保留：那颗附件键坐在已经是玻璃的输入栏里，这颗是浮在照片上的，
       // 没有一点投影在浅色图上会糊掉。
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
