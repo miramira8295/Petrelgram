@@ -46,6 +46,10 @@ export const KEY_BUBBLE_RADIUS: string = 'bubbleRadius';   // message corner rad
 export const KEY_THREE_LINES: string = 'chatListThreeLines'; // chat list row shows 2 or 3 lines
 export const KEY_NIGHT_MODE: string = 'nightMode';         // 'system' | 'dark' | 'light'
 export const KEY_REDUCE_ANIM: string = 'reduceAnimations'; // stop autoplaying animated stickers
+// 强制让 TDLib 优先使用 IPv6（issue #133）。**关掉不等于禁用 IPv6**：本机没有
+// IPv4 地址时仍会自动打开，否则纯 v6 网络的用户第一次启动就连不上、也就看不到
+// 这个开关。判据见 util/ipFamily.shouldPreferIpv6。
+export const KEY_PREFER_IPV6: string = 'preferIpv6';
 export const KEY_SEND_BY_ENTER: string = 'sendByEnter';    // Enter sends instead of newline
 // 网页链接用内置浏览器还是交给系统。默认内置：留在应用里不丢上下文。
 export const KEY_IN_APP_BROWSER: string = 'inAppBrowser';
@@ -223,6 +227,11 @@ export const WEBPUSH_MODE_MEOW: string = 'meow';
 // 验证码确认成功那一步返回一次，之后改昵称/注销都要带上它才能生效，不带就
 // 只能读。昵称一并存下来，方便回填输入框。
 export const KEY_MEOW_SUBKEY: string = 'meowSubKey';
+// 华为通道自己的 subKey。**不要再借 meowSubKey 用**（2026-09-21）：那把钥匙的
+// 生命周期归 MeoW 管，MeoW 注销和「secret 丢失」自愈都会清空它，而两处都不知道
+// HMS 也在用——每清一次，中转上那条 hms 订阅就成孤儿再也删不掉。中转实测一台
+// 设备最多堆了 19 条。迁移判据见 util/pushSubKeyMigration。
+export const KEY_HMS_SUBKEY: string = 'hmsSubKey';
 export const KEY_MEOW_SECRET: string = 'meowSecret';
 export const KEY_MEOW_NICKNAME: string = 'meowNickname';
 // MeoW 注册拿到的那一份 Web Push 三项（2026-09-17，issue #196/#198）。原来不存，
@@ -352,6 +361,7 @@ const DATA_STRING_KEYS: string[] = [
   KEY_WEBPUSH_MODE,
   KEY_HMS_PUSH_TOKEN,
   KEY_MEOW_SUBKEY,
+  KEY_HMS_SUBKEY,
   KEY_MEOW_SECRET,
   KEY_MEOW_NICKNAME,
   KEY_MEOW_ENDPOINT,
@@ -525,6 +535,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_BUBBLE_RADIUS, await s.get(KEY_BUBBLE_RADIUS, RADIUS_DEFAULT) as number);
     AppStorage.setOrCreate(KEY_THREE_LINES, await s.get(KEY_THREE_LINES, false) as boolean);
     AppStorage.setOrCreate(KEY_REDUCE_ANIM, await s.get(KEY_REDUCE_ANIM, false) as boolean);
+    AppStorage.setOrCreate(KEY_PREFER_IPV6, await s.get(KEY_PREFER_IPV6, false) as boolean);
     AppStorage.setOrCreate(KEY_SEND_BY_ENTER, await s.get(KEY_SEND_BY_ENTER, false) as boolean);
     AppStorage.setOrCreate(KEY_IN_APP_BROWSER, await s.get(KEY_IN_APP_BROWSER, true) as boolean);
     AppStorage.setOrCreate(KEY_EXTERNAL_LINK_ACTION,
@@ -636,6 +647,7 @@ export async function initSettings(context: common.Context): Promise<void> {
     AppStorage.setOrCreate(KEY_THREE_LINES, false);
     AppStorage.setOrCreate(KEY_NIGHT_MODE, NIGHT_SYSTEM);
     AppStorage.setOrCreate(KEY_REDUCE_ANIM, false);
+    AppStorage.setOrCreate(KEY_PREFER_IPV6, false);
     AppStorage.setOrCreate(KEY_SEND_BY_ENTER, false);
     AppStorage.setOrCreate(KEY_IN_APP_BROWSER, true);
     AppStorage.setOrCreate(KEY_MATERIAL_THICKNESS, THICKNESS_DEFAULT);

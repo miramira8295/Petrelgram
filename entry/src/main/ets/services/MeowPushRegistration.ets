@@ -240,16 +240,25 @@ export function getMeowSubKey(): string {
   return AppStorage.get<string>(KEY_MEOW_SUBKEY) ?? '';
 }
 
+// 新造一把 subKey。两条通道共用这个生成器，但**各存各的键**——
+// 共用一把钥匙正是 2026-09-21 查出的孤儿订阅之源，见 util/pushSubKeyMigration。
+export function newSubKey(): string {
+  const random = cryptoFramework.createRandom();
+  const blob = random.generateRandomSync(SUBKEY_BYTE_LEN);
+  return toHex(blob.data);
+}
+
 // 首次用到时才生成，生成后落盘复用 —— 一台设备一个账号对应一个 subKey，
 // 重装即换新订阅（旧订阅由服务端按 TTL 清理）。
+//
+// ⚠️ **这把只给 MeoW**。华为通道用 getOrCreateHmsSubKey（在 HmsRelayRegistration），
+// 因为下面两处清空只对 MeoW 成立，HMS 跟着被清就会留下删不掉的孤儿订阅。
 export function getOrCreateMeowSubKey(): string {
   const existing = AppStorage.get<string>(KEY_MEOW_SUBKEY) ?? '';
   if (existing !== '') {
     return existing;
   }
-  const random = cryptoFramework.createRandom();
-  const blob = random.generateRandomSync(SUBKEY_BYTE_LEN);
-  const subKey = toHex(blob.data);
+  const subKey = newSubKey();
   setString(KEY_MEOW_SUBKEY, subKey);
   return subKey;
 }

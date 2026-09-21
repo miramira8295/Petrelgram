@@ -3,10 +3,12 @@ import { pushService } from '@kit.PushKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { TdClient } from '../tdkit/TdClient';
 import { pushRelayBase, pushRelayToken } from '../tdkit/ApiCredentials';
-import { getOrCreateMeowSubKey } from './MeowPushRegistration';
+import { newSubKey } from './MeowPushRegistration';
+import { hmsSubKeyToAdopt } from '../util/pushSubKeyMigration';
 import { registerWebPush, setWebPushChannel, WebPushConfig } from './WebPushRegistration';
 import {
-  KEY_HMS_PUSH_TOKEN, KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED,
+  KEY_HMS_PUSH_TOKEN, KEY_HMS_SUBKEY, KEY_MEOW_SUBKEY,
+  KEY_WEBPUSH_AUTH, KEY_WEBPUSH_ENABLED,
   KEY_WEBPUSH_ENDPOINT, KEY_WEBPUSH_MODE, KEY_WEBPUSH_P256DH, setBoolean, setString
 } from '../store/AppSettings';
 import { logE, logI, logW } from '../util/log';
@@ -117,6 +119,46 @@ function authHeader(): Record<string, string> {
 }
 
 // 向中转注册设备 token，拿回 Web Push 三元组。
+// 只取主机名进日志：中转地址可能带鉴权路径或查询串，整条打出来会把凭据写进
+// 诊断日志（用户导出后会发给别人）。
+function relayHostOf(base: string): string {
+  if (base === '') {
+    return '(empty)';
+  }
+  const scheme: number = base.indexOf('://');
+  const rest: string = scheme >= 0 ? base.substring(scheme + 3) : base;
+  const slash: number = rest.indexOf('/');
+  return slash >= 0 ? rest.substring(0, slash) : rest;
+}
+
+// 华为通道自己的 subKey。
+//
+// 【为什么不再借 MeoW 那把】见 util/pushSubKeyMigration 的抬头：那把钥匙 MeoW
+// 注销时会清，而 hms 订阅**没有删除路径**（中转的 DELETE 要 secret，HMS 注册
+// 不发 secret），于是每清一次就多一条永久孤儿。
+//
+// 【升级时必须沿用旧 key】已经注册过的设备，Telegram 服务端记着的是旧 subKey 那条
+// 订阅的 endpoint。换新 key 会让中转多一条、而推送仍走旧的，两边从此对不上。
+// 判据（纯函数，有回归测试）：只有「HMS 确实注册过」才接手旧 key——只用过 MeoW
+// 的人接过来等于又把两条通道绑回一起。
+export function getOrCreateHmsSubKey(): string {
+  const stored: string = AppStorage.get<string>(KEY_HMS_SUBKEY) ?? '';
+  const legacy: string = AppStorage.get<string>(KEY_MEOW_SUBKEY) ?? '';
+  const registered: boolean = (AppStorage.get<string>(KEY_HMS_PUSH_TOKEN) ?? '') !== '' &&
+    (AppStorage.get<string>(KEY_WEBPUSH_ENDPOINT) ?? '') !== '';
+  const adopt: string = hmsSubKeyToAdopt(stored, legacy, registered);
+  if (adopt !== '') {
+    if (adopt !== stored) {
+      setString(KEY_HMS_SUBKEY, adopt);
+      logI('[HMS] adopted legacy subKey for this channel');
+    }
+    return adopt;
+  }
+  const fresh: string = newSubKey();
+  setString(KEY_HMS_SUBKEY, fresh);
+  return fresh;
+}
+
 async function postHmsRegistration(subKey: string, pushToken: string): Promise<HmsRegisterResponse> {
   const request = http.createHttp();
   try {
@@ -171,9 +213,15 @@ export async function ensureHmsPushRegistered(client: TdClient): Promise<boolean
 
   let parsed: HmsRegisterResponse;
   try {
-    parsed = await postHmsRegistration(getOrCreateMeowSubKey(), tokenResult.token);
+    parsed = await postHmsRegistration(getOrCreateHmsSubKey(), tokenResult.token);
   } catch (e) {
-    logW(`[HMS] relay registration request failed: ${e}`);
+    // **不要用模板字符串直接拼异常。** 原来这里是 `${e}`，对 BusinessError
+    // 只会打出 `[object Object]`，真正的原因（连不上 / DNS / TLS / 超时）全丢了
+    // ——2026-09-20 排查「服务器转发到华为推送收不到」时就卡在这一行，
+    // 只知道失败、不知道为什么。
+    const err = e as BusinessError;
+    logW(`[HMS] relay registration request failed: code=${err.code}`
+      + ` message=${err.message} base=${relayHostOf(pushRelayBase)}`);
     return false;
   }
   if (parsed.error !== '') {
