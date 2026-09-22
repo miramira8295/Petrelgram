@@ -1,3 +1,4 @@
+import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
 import {
@@ -1019,11 +1020,11 @@ export struct LightweightPlainTextBubble {
             // 见 MessageBubble 同一处：容器跨着 7vp 留白，必须等量到尺寸才上色；
             // 完整态本体同步退为透明，避免两层玻璃在同一区域重复合成。
             .backgroundColor(this.containerGlassBg())
-            .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-              y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+            .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
+              y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
               centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
             .opacity(1 - this.leaving)
-            .brightness(1 + this.jumpFocus * 0.10)
+            .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
             .backgroundBlurStyle(this.containerGlassBlurStyle())
             // 见 MessageBubble 同一处：材质的边框沿本节点 border-box 画、吃 borderRadius，
             // 不设圆角就是个直角框，裁剪之后剩下半条亮线。
@@ -1063,11 +1064,11 @@ export struct LightweightPlainTextBubble {
             // 玻璃关：只留与材质无关的这几个。
             .alignItems(VerticalAlign.Bottom)
             .padding(this.tailGutterPadding())
-            .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-              y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+            .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
+              y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
               centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
             .opacity(1 - this.leaving)
-            .brightness(1 + this.jumpFocus * 0.10)
+            .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
           }
         }
         .alignItems(VerticalAlign.Bottom)

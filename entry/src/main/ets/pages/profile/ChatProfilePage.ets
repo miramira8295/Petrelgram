@@ -14,6 +14,9 @@ import { ProfileContentRow, profileContentKey } from './ProfileContentRow';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
 import { chunkRows } from '../../util/gridRows';
+import {
+  MEDIA_KINDS, MEDIA_KIND_ALL, MEDIA_KIND_PHOTO, MEDIA_KIND_VIDEO
+} from '../../util/mediaKindFilter';
 import { MemberTitleDialog } from './MemberTitleDialog';
 import { getTdClient } from '../../tdkit/Globals';
 import {
@@ -167,6 +170,9 @@ export struct ChatProfilePage {
   private mediaRowsData: KeyedListDataSource<ProfileContentItem[]> =
     new KeyedListDataSource<ProfileContentItem[]>('profile-media-rows');
   @State contentState: string = 'idle';
+  // 媒体页的「全部 / 图片 / 视频」子筛选（issue #214）。真源在 store 上，这里是
+  // 渲染用的镜像，和 contentItems 一样由 syncFromStore 回灌。
+  @State mediaKind: string = MEDIA_KIND_ALL;
   @State contentErrorText: string = '';
   @State contentHasMore: boolean = false;
   @State contentPaging: boolean = false;
@@ -323,6 +329,7 @@ export struct ChatProfilePage {
     this.membersState = s.membersState;
     this.contentItems = s.contentItems;
     this.contentState = s.contentState;
+    this.mediaKind = s.mediaKind;
     this.contentErrorText = s.contentErrorText;
     this.contentHasMore = s.contentHasMore;
     this.contentPaging = s.contentPaging;
@@ -1690,6 +1697,38 @@ export struct ChatProfilePage {
 
   // 页签内搜索条（issue #102）。TDLib 的 searchChatMessages 本来就同时收
   // query 和 filter，所以每个内容页签都能搜，不只是"文件"。
+  private applyMediaKind(kind: string): void {
+    this.store?.setMediaKind(kind);
+  }
+
+  private mediaKindLabel(kind: string): string {
+    if (kind === MEDIA_KIND_PHOTO) { return str('cpp_media_photos'); }
+    if (kind === MEDIA_KIND_VIDEO) { return str('cpp_media_videos'); }
+    return str('cpp_media_all');
+  }
+
+  // 媒体页的子筛选条（issue #214）。**不在客户端筛已加载的那批**——分页游标是
+  // from_message_id，客户端过滤会让一页里可能一张都不剩，翻页看上去就是卡住；
+  // 换档一律重新向服务端要（ChatProfileStore.setMediaKind）。
+  @Builder
+  mediaKindBar() {
+    Row({ space: 4 }) {
+      ForEach(MEDIA_KINDS, (kind: string) => {
+        Text(this.mediaKindLabel(kind))
+          .fontSize(13).fontWeight(FontWeight.Medium)
+          .fontColor(this.mediaKind === kind ? Color.White : COLOR_TEXT_SECONDARY)
+          .layoutWeight(1).height(32).textAlign(TextAlign.Center)
+          .backgroundColor(this.mediaKind === kind ? COLOR_PRIMARY : Color.Transparent)
+          .borderRadius(16).padding({ top: 6 })
+          .onClick((): void => { this.applyMediaKind(kind); });
+      }, (kind: string): string => `mediaKind_${kind}_${this.mediaKind === kind}`);
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: 12, right: 12, top: 10 })
+    .padding(3)
+    .glassCard().clip(true);
+  }
+
   @Builder
   contentSearchBar() {
     Row({ space: 8 }) {
@@ -1736,6 +1775,19 @@ export struct ChatProfilePage {
           this.handleDetailTabPan(event.offsetX);
         })
     )
+    // 子筛选条同样画在分支**外面**，理由和搜索条一模一样：筛到空结果时下面是
+    // 空态，筛选条要是跟着消失，用户就没地方切回「全部」了。
+    if (this.currentTabKey() === PROFILE_TAB_MEDIA) {
+      ListItem() {
+        this.mediaKindBar();
+      }
+          .priorityGesture(
+        PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent): void => {
+            this.handleDetailTabPan(event.offsetX);
+          })
+      )
+    }
     if (this.contentState === 'loading' || this.contentState === 'error' ||
       (this.contentState === 'ready' && this.contentItems.length === 0)) {
       ListItem() {

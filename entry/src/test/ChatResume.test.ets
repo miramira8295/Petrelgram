@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  RememberedChatViewport, forgetChatPosition, isResumeFragment, openAtMessageId,
+  RememberedChatViewport, forgetChatPosition, isResumeFragment, openAtMessageId, resumeBeatsUnread,
   rememberChatPosition, rememberedChatPosition, rememberedChatViewport,
   resetChatPositions, resumeKeyOf
 } from '../main/ets/util/chatResume';
@@ -43,11 +43,46 @@ export default function chatResumeTest() {
       resetChatPositions();
       expect(rememberedChatPosition(3, 0)).assertEqual(0);
     });
-    it('落点优先级：跳转 > 未读 > 记住的位置', 0, (): void => {
-      expect(openAtMessageId(900, true, 500)).assertEqual(900);
-      expect(openAtMessageId(0, true, 500)).assertEqual(0);
-      expect(openAtMessageId(0, false, 500)).assertEqual(500);
-      expect(openAtMessageId(0, false, 0)).assertEqual(0);
+    // 跳转目标永远最高；剩下的交给 resumeBeatsUnread（下面单独钉）。
+    it('落点优先级：跳转 > 未读/记住的位置', 0, (): void => {
+      expect(openAtMessageId(900, 5, 500, 400)).assertEqual(900);
+      // 没有未读：记住的位置直接用（老行为）。
+      expect(openAtMessageId(0, 0, 500, 400)).assertEqual(500);
+      expect(openAtMessageId(0, 0, 0, 0)).assertEqual(0);
+    });
+
+    // ── issue #216：未读优先不再是一刀切，判据带方向 ─────────────────────
+    //
+    // 频道几乎永远有未读，原来的 `hasUnread → 交给未读锚点` 让"记住的位置"在
+    // 频道里等于从来不生效：往上翻历史翻到一半退出去，回来被拽到底部未读线。
+    describe('resumeBeatsUnread', () => {
+      it('完全没有未读：记住的位置直接赢（老行为不变）', 0, (): void => {
+        expect(resumeBeatsUnread(500, 0, 400)).assertTrue();
+        expect(resumeBeatsUnread(500, 0, 0)).assertTrue();
+      });
+
+      // #216 的正例：有未读，但上次停在已读区（往上翻历史）——落回原处。
+      it('有未读但记住的位置在已读区：落回原处', 0, (): void => {
+        expect(resumeBeatsUnread(300, 50, 900)).assertTrue();
+        // 边界：正好停在最后一条已读上，仍算已读区。
+        expect(resumeBeatsUnread(900, 50, 900)).assertTrue();
+      });
+
+      // 反例：上次就停在未读区里 —— 未读锚点更合适，行为一个字不变。
+      it('记住的位置已经在未读区：仍然交给未读锚点', 0, (): void => {
+        expect(resumeBeatsUnread(901, 50, 900)).assertFalse();
+        expect(resumeBeatsUnread(5000, 50, 900)).assertFalse();
+      });
+
+      // 这个会话一条都没读过：没有"已读区"可言，别抢未读锚点。
+      it('lastReadInboxId 为 0 时不抢', 0, (): void => {
+        expect(resumeBeatsUnread(500, 50, 0)).assertFalse();
+      });
+
+      it('没记住位置就没得可赢', 0, (): void => {
+        expect(resumeBeatsUnread(0, 0, 900)).assertFalse();
+        expect(resumeBeatsUnread(-1, 50, 900)).assertFalse();
+      });
     });
     it('超过上限淘汰最旧的', 0, (): void => {
       resetChatPositions();

@@ -22,6 +22,8 @@
 //   · 首帧：用 PlaybackStrategy.showFirstFrameOnPrepare，不需要 ijk 版
 //     「静音起播→等 what===3→就地暂停」那套预热。
 
+import { setScreenAwakeFor } from './LiveViewerUi';
+import { videoAwakeOwner } from '../../util/screenAwake';
 import { media } from '@kit.MediaKit';
 import { audio } from '@kit.AudioKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -35,15 +37,16 @@ import { materialModifier } from '../../util/materialModifier';
 import {
   AUTO_RETRY_DELAYS_MS, CONTROL_ACCENT, CONTROL_BAR_BG, CONTROL_TEXT_SOFT,
   CONTROL_TRACK, CONTROL_TRACK_SOFT, CONTROL_TRACK_SOFT_FILL, DEFAULT_SPEED_IDX,
-  HEADSET_DEVICE_TYPES, LONG_PRESS_SEEK_MS, QUICK_SEEK_MS, SPEEDS, SPEED_LABELS, STATUS_DELAY_MS,
-  formatMs, formatSpeed
+  HEADSET_DEVICE_TYPES, HOLD_SEEK_STEP_MS, LONG_PRESS_SEEK_MS, QUICK_SEEK_MS, SPEEDS,
+  SPEED_LABELS, STATUS_DELAY_MS,
+  formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../../util/playerChrome';
 import { getTdClient, getUiAbilityContext } from '../../tdkit/Globals';
 import { mediaPlaybackKeepAlive } from '../../services/MediaPlaybackKeepAlive';
 import { KEY_BG_PLAY_VIDEO } from '../../store/AppSettings';
 import { VideoRangeServer } from '../../services/VideoRangeServer';
 import { VideoStreamSession } from '../../services/VideoStreamSession';
-import { str } from '../../util/strings';
+import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI, logW } from '../../util/log';
 import {
@@ -146,6 +149,9 @@ export struct AvVideoPlayer {
   @State bufferedPercent: number = 0;
   @State downloadSpeed: number = 0;
   @State @Watch('onPlayingChanged') isPlaying: boolean = false;
+  // 本实例在 util/screenAwake 里的名字。按实例取：全屏查看器从气泡接管播放的
+  // 那一瞬间两个播放器同时活着，共用一个名字会让先退场的把后接手的一起放掉。
+  private awakeOwner: string = videoAwakeOwner();
   @State currentTimeMs: number = 0;
   @State durationMs: number = 0;
   @State dragging: boolean = false;
@@ -158,6 +164,8 @@ export struct AvVideoPlayer {
   @State viewportWidth: number = 1;
   @State viewportHeight: number = 1;
   @State seekFeedbackSide: number = 0;
+  // 角标上显示的量（毫秒，正数）。同一侧连着跳会累加，见 nextSeekFeedbackMs。
+  @State seekFeedbackMs: number = 0;
   @State seekFeedbackVisible: boolean = false;
   @State speedFeedbackVisible: boolean = false;
   @State speedFeedbackText: string = '';
@@ -194,9 +202,30 @@ export struct AvVideoPlayer {
     }
   }
 
+  // 屏幕别熄：跟着**播放状态**走（用户 2026-09-22：「播放视频的时候能不能暂时
+  // 不熄屏，不播放视频的时候正常熄屏」）。
+  //
+  // 三个条件缺一不可：
+  //   · isPlaying —— 暂停 / 播完 / 出错都要放掉，这就是"跟着播放状态"的意思；
+  //   · !embedded —— 列表里的播放位是静音预览，划过一条视频气泡不该把屏幕钉亮；
+  //   · appIsForeground —— 后台播放（KEY_BG_PLAY_VIDEO）本来就是关着屏幕听声音，
+  //     那时钉亮屏幕和它的目的正好相反。
+  //
+  // 真正推给窗口的值由 util/screenAwake 仲裁：直播观看页/悬浮窗可能同时持有
+  // 同一个窗口开关，各调各的会互相掐。
+  private syncScreenAwake(): void {
+    const context = getUiAbilityContext();
+    if (context === null) {
+      return;
+    }
+    setScreenAwakeFor(context, this.awakeOwner,
+      this.isPlaying && !this.embedded && this.appIsForeground);
+  }
+
   private deactivate(): void {
     this.active = false;
     this.isPlaying = false;
+    this.syncScreenAwake();
     mediaPlaybackKeepAlive.release('video');
     this.release();
   }
@@ -240,6 +269,7 @@ export struct AvVideoPlayer {
 
   onPlayingChanged(): void {
     this.onPlayStateChanged(this.isPlaying);
+    this.syncScreenAwake();
     if (this.embedded) {
       mediaPlaybackKeepAlive.release('video');
       return;
@@ -750,6 +780,7 @@ export struct AvVideoPlayer {
   // 切后台按「后台播放视频」这个设置决定停不停。理由同 ijk 版：
   // backgroundGraceTask 会让进程多活几分钟，不主动停就是带声音继续放。
   private onAppForegroundChanged(): void {
+    this.syncScreenAwake();
     if (this.appIsForeground || !this.isPlaying || this.player === null) {
       return;
     }
@@ -798,10 +829,22 @@ export struct AvVideoPlayer {
     if (target < this.durationMs) {
       this.isCompleted = false;
     }
-    this.showSeekFeedback(deltaMs < 0 ? -1 : 1);
+    this.showSeekFeedback(deltaMs);
   }
 
-  private showSeekFeedback(side: number): void {
+  // 角标文案。秒数走 unit_seconds 的复数，外层用带占位符的整句包起来——
+  // 拼接式句子过不了 i18n 门禁，也翻不对（同 sessionWaitText 的做法）。
+  private seekFeedbackText(side: number): string {
+    const seconds: number = Math.max(1, Math.round(this.seekFeedbackMs / 1000));
+    const amount: string = plural('unit_seconds', seconds, seconds);
+    return side < 0 ? str('player_seek_back', amount) : str('player_seek_forward', amount);
+  }
+
+  private showSeekFeedback(deltaMs: number): void {
+    const side: number = deltaMs < 0 ? -1 : 1;
+    // 累加要在清掉淡出计时器**之前**判：计时器还在 = 角标还亮着。
+    this.seekFeedbackMs = nextSeekFeedbackMs(
+      this.seekFeedbackVisible, this.seekFeedbackSide, this.seekFeedbackMs, deltaMs);
     if (this.seekFeedbackTimer !== -1) {
       clearTimeout(this.seekFeedbackTimer);
       this.seekFeedbackTimer = -1;
@@ -945,11 +988,16 @@ export struct AvVideoPlayer {
         .gesture(
           // 互斥组：先被识别的那个赢。快按抬手 → 单击/双击；按住不放 →
           // 到 LONG_PRESS_SEEK_MS 时长按胜出，之后每隔同样的时长再回调一次
-          // （repeat: true），每次跳 QUICK_SEEK_MS——和双击同一个步长，
-          // 所以复用同一个 ±15 秒的反馈角标（issue #160）。
+          // （repeat: true），每次跳 HOLD_SEEK_STEP_MS。
+          //
+          // 长按的步长和双击**不是**同一个（2026-09-22）：共用 15 秒时按住不放
+          // 是 37 倍速的连续瞬移，停不住。角标现在按实际跳了多少显示，长按期间
+          // 累加（见 showSeekFeedback）。
           GestureGroup(GestureMode.Exclusive,
             LongPressGesture({ fingers: 1, repeat: true, duration: LONG_PRESS_SEEK_MS })
-              .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
+              .onAction((): void => {
+                this.seekBy(forward ? HOLD_SEEK_STEP_MS : -HOLD_SEEK_STEP_MS);
+              }),
             TapGesture({ count: 2, fingers: 1 })
               .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
             TapGesture({ count: 1, fingers: 1 })
@@ -967,7 +1015,7 @@ export struct AvVideoPlayer {
       } else {
         SymbolGlyph($r('sys.symbol.goforward_15')).fontSize(36).fontColor([Color.White]);
       }
-      Text(side < 0 ? $r('app.string.player_back_15') : $r('app.string.player_forward_15'))
+      Text(this.seekFeedbackText(side))
         .fontSize(12)
         .fontColor(Color.White)
         .fontWeight(FontWeight.Medium);

@@ -63,16 +63,53 @@ export function resetChatPositions(): void {
   positions.clear();
 }
 
-// 这次进会话该从哪儿开：有跳转目标 → 目标；有未读 → 交给未读锚点（返回 0）；
-// 否则用记住的位置。未读优先是官方行为，也是用户预期。
-export function openAtMessageId(jumpTo: number, hasUnread: boolean, remembered: number): number {
+// 记住的位置**赢不赢**未读锚点（issue #216）。
+//
+// 【原来的规则和它坏在哪】原来是一刀切的"有未读就交给未读锚点"，注释写着
+// "未读优先是官方行为"。这话只对了一半：在群里隔一会儿回来想看"新的都有啥"，
+// 未读优先是对的；但**频道几乎永远有未读**，于是记住的位置在频道里等于从来
+// 不生效——位置其实存下来了，每次都被顶掉。频道的典型用法恰恰是往上翻历史，
+// 翻到一半退出去看一眼别的，回来就被拽到底部的未读线上，读到哪儿全丢了
+// （报告原话：「打开频道退出再进入时，会自动跳转到下一个消息」——那条"下一个
+// 消息"就是未读分割线，它在你上次读到那条的下面一条）。
+//
+// 【现在的判据带方向】记住的位置在**已读区**时才赢：`remembered <= lastReadInboxId`。
+// 换句话说只有"你当时在翻已经读过的历史"这一种情形才落回原处，这正是 #216 的
+// 场景；而群里有 50 条未读、你上次就停在未读区里的那种，照旧交给未读锚点，
+// 行为一个字不变。
+//
+// 【它不会藏起任何未读】未读分割线由 firstUnreadId 单独驱动，和落点无关，照画
+// 在你下方，往下滑就到。落回原处只是不再把你**弹**过去。
+//
+// 【为什么用 lastReadInboxId 而不是"第一条未读"】前者是 TDLib 给的权威值
+// （chat.last_read_inbox_message_id），后者要在已加载的消息里扫，而首屏落点
+// 判定发生时那批消息可能还没到。
+//
+// 边界：没记住位置 → false；完全没有未读 → true（老行为）；
+// lastReadInboxId 为 0（这个会话一条都没读过）→ false，交给未读锚点。
+export function resumeBeatsUnread(
+  rememberedId: number, unreadCount: number, lastReadInboxId: number
+): boolean {
+  if (rememberedId <= 0) {
+    return false;
+  }
+  if (unreadCount <= 0) {
+    return true;
+  }
+  if (lastReadInboxId <= 0) {
+    return false;
+  }
+  return rememberedId <= lastReadInboxId;
+}
+
+// 这次进会话该从哪儿开：有跳转目标 → 目标；否则按 resumeBeatsUnread 决定是用
+// 记住的位置还是交给未读锚点（返回 0）。
+export function openAtMessageId(jumpTo: number, unreadCount: number, remembered: number,
+  lastReadInboxId: number): number {
   if (jumpTo > 0) {
     return jumpTo;
   }
-  if (hasUnread) {
-    return 0;
-  }
-  return remembered > 0 ? remembered : 0;
+  return resumeBeatsUnread(remembered, unreadCount, lastReadInboxId) ? remembered : 0;
 }
 
 // ── 缓存页 resume 时，这一份快照是不是「整条时间线的一个碎片」────────────

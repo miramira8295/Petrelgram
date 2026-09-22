@@ -6,6 +6,8 @@ import { ScheduledSheet } from './ScheduledSheet';
 import { PollComposeSheet } from './PollComposeSheet';
 import { ContactPickerSheet, PickedContact } from './ContactPickerSheet';
 import { VideoNoteRecorderView } from './VideoNoteRecorderView';
+import { PinnedListSheet } from './PinnedListSheet';
+import { MessageStore } from '../../store/MessageStore';
 import { selectionHasRemovableForwardCaption } from '../../util/forwardMessagesRequest';
 
 // Presentation host for the transient chat overlays. ChatPage retains the
@@ -25,6 +27,8 @@ export struct ChatOverlayHost {
   @Param messages: MessageEntry[] = [];
   @Param chatId: number = 0;
   @Param threadRootId: number = 0;
+  // 「全部置顶消息」面板的数据源。路由切换途中可能为 null，面板自己判。
+  @Param store: MessageStore | null = null;
   @Param bottomSafe: number = 0;
   @Param keyboardH: number = 0;
   // 顶部标题栏 + 横幅占掉的高度（vp）。标题栏是 HdsNavDestination 的 titleBar，
@@ -47,6 +51,9 @@ export struct ChatOverlayHost {
   @Event onVideoCaptured: (path: string, durationSec: number, length: number) => void =
     (): void => {};
   @Event onVideoClose: () => void = (): void => {};
+  // 点「全部置顶」里的一条 → 交回页面走 onReplyTap 那条跳转链（压返回栈、
+  // 滚动、两拍高亮闪烁），与点引用块/点置顶条同一条路径。
+  @Event onPinnedJump: (messageId: number) => void = (_messageId: number): void => {};
   @Event effectDuration: (key: string, ms: number) => number =
     (_key: string, ms: number): number => ms;
 
@@ -61,7 +68,8 @@ export struct ChatOverlayHost {
   private anyOpen(): boolean {
     return this.overlayState.showReactionSheet || this.overlayState.showForwardSheet ||
       this.overlayState.showScheduledSheet || this.overlayState.showPollSheet ||
-      this.overlayState.showContactSheet || this.overlayState.showVideoNoteRecorder;
+      this.overlayState.showContactSheet || this.overlayState.showVideoNoteRecorder ||
+      this.overlayState.showPinnedListSheet;
   }
 
   private forwardHasRemovableCaption(): boolean {
@@ -121,6 +129,15 @@ export struct ChatOverlayHost {
         ContactPickerSheet({
           onPick: (contact: PickedContact): void => { this.onContactPick(contact); },
           onClose: (): void => { this.onContactClose(); }
+        });
+      }
+      if (this.overlayState.showPinnedListSheet) {
+        PinnedListSheet({
+          show: this.overlayState.showPinnedListSheet,
+          onShowChange: (show: boolean): void => { this.overlayState.setSheet('pinnedList', show); },
+          chatId: this.chatId,
+          store: this.store,
+          onJump: (messageId: number): void => { this.onPinnedJump(messageId); }
         });
       }
       if (this.overlayState.showVideoNoteRecorder) {

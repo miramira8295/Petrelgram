@@ -10,10 +10,27 @@ const TINT_DOCK: string = '#8C2F3F52';       // 降级档，55%
 
 export default function chatChromeTest() {
   describe('chromeSitsOnLight', () => {
-    // 用户报的那一例：深色模式 + 浅紫壁纸，输入栏其实坐在亮底上。
+    // 用户报的那一例（2026-08-29）：深色模式 + 浅紫壁纸，输入栏其实坐在亮底上。
+    //
+    // 这两个填充色不是编的：当时截图量到的**合成底**是 RGB(174,172,196)，按
+    // 合成式反解掉 25% 材质玻璃（wall = (composite - 0.251 x tint) / 0.749）
+    // 得到 ≈ (217,209,234)，正是 #D8D0EA 这一档。所以这条就是那次真机报告本身，
+    // 也是 2026-09-22 抬余量时"另一边"的锚点：算出来 0.441，远高于 25% 材质档
+    // 那条线 0.329，行为不变。
     it('light_wallpaper_puts_chrome_on_light', 0, (): void => {
+      expect(chromeBackdropLuminance(['#D8D0EA', '#E4D8F0'], TINT_MATERIAL, 0) > 0.43).assertTrue();
       expect(chromeSitsOnLight(['#D8D0EA', '#E4D8F0'], TINT_MATERIAL, false)).assertTrue();
-      expect(chromeSitsOnLight(['#D8D0EA', '#E4D8F0'], TINT_DOCK, false)).assertTrue();
+    });
+
+    // **这一条 2026-09-22 反了过来，是有意的。**
+    // 同一张浅紫壁纸配 55% 降级玻璃，上界算出来是 0.227；那一档的线是
+    // 0.179 + 0.20 x 0.451 = 0.270，于是判"不亮"、前景保持白。
+    // 原来的期望（判亮底）是当年按 0.18 这条常数线顺手一并写上的**推断**，
+    // 降级玻璃 + 浅紫壁纸这个组合没有任何真机报告——真机那次走的是 25% 材质档
+    // （上面那条），而本机 API 26 材质正常渲染，根本走不到降级档。
+    // 与之相对，纯白壁纸 + 降级玻璃（下一条）仍然判亮底，那一侧的边界没松。
+    it('light_wallpaper_with_the_thick_fallback_glass_now_keeps_white', 0, (): void => {
+      expect(chromeSitsOnLight(['#D8D0EA', '#E4D8F0'], TINT_DOCK, false)).assertFalse();
     });
 
     // 默认深色壁纸 chat_bg=#0E1621：本来就和主题一致，不该翻。
@@ -23,11 +40,13 @@ export default function chatChromeTest() {
     });
 
     // 玻璃越厚，越能把亮壁纸压下去——25% 压不住，55% 也压不住，这正是
-    // "加厚救不了、只能翻前景"的依据。
+    // "加厚救不了、只能翻前景"的依据。55% 那一档的上界 0.300 也高于它自己那条
+    // 线（0.179 + 0.20 x 0.451 = 0.270），所以余量缩放没有把这一侧放过去。
     it('thicker_glass_still_cannot_save_a_white_wallpaper', 0, (): void => {
       expect(chromeSitsOnLight(['#FFFFFF'], TINT_MATERIAL, false)).assertTrue();
       expect(chromeSitsOnLight(['#FFFFFF'], TINT_DOCK, false)).assertTrue();
     });
+
 
     // 图片壁纸取不到颜色 → 退回按主题判（旧行为）。
     it('image_wallpaper_falls_back_to_theme', 0, (): void => {
@@ -62,12 +81,30 @@ export default function chatChromeTest() {
       expect(chromeSitsOnLight(['#FFFFFF'], TINT_MATERIAL, false, 9)).assertFalse();
     });
 
-    // 阈值按"白色前景还够不够 4.5:1"取（L≈0.183），不是常见的 0.5。
-    // #767676 的 L≈0.20，白字在其上只有 4.1:1 —— 必须判成亮底。
-    it('threshold_follows_white_text_legibility_not_midpoint', 0, (): void => {
-      expect(chromeSitsOnLight(['#767676'], '#00000000', false)).assertTrue();
+    // 白字/黑字的真正交点是 L=0.179（1.05/(L+.05) == (L+.05)/.05）。线不直接
+    // 压在交点上，因为 chromeBackdropLuminance 给的是真实底色的**上界**（漏掉
+    // 图案墨色和背后的消息列表）。玻璃全透明（alpha=0）时余量给满：0.179+0.20。
+    it('threshold_leaves_headroom_because_the_estimate_is_an_upper_bound', 0, (): void => {
+      // #B4B4B4 L≈0.456 —— 过线，判亮底。
+      expect(chromeSitsOnLight(['#B4B4B4'], '#00000000', false)).assertTrue();
+      // #A0A0A0 L≈0.352 —— 还在余量里，不翻。
+      expect(chromeSitsOnLight(['#A0A0A0'], '#00000000', false)).assertFalse();
+      // #767676 L≈0.20：只按交点判会翻黑，加上余量不翻。真实底只会更暗。
+      expect(chromeSitsOnLight(['#767676'], '#00000000', false)).assertFalse();
       expect(chromeSitsOnLight(['#5A5A5A'], '#00000000', false)).assertFalse();
     });
+
+    // ── 两个真机数据点，一边一个。改这条线之前先看这两条。 ──────────────────
+    //
+    // 本次（2026-09-22）：深色 + 图案壁纸，服务端 dimming=0、用户遮罩=0，25% 材质
+    // 玻璃。估算 0.278，而屏幕上标题胶囊只有 0.044（黑字 1.88:1、白字 11.15:1）。
+    it('measured_2026_09_22_pattern_wallpaper_must_not_flip_to_dark_foreground', 0, (): void => {
+      const wallpaper: string[] = ['#8ADBF2', '#888DEC', '#E39FEA', '#679CED'];
+      const l: number = chromeBackdropLuminance(wallpaper, TINT_MATERIAL, 0);
+      expect(l > 0.27 && l < 0.29).assertTrue();
+      expect(chromeOnLightBgOf(true, wallpaper, TINT_MATERIAL, 0)).assertFalse();
+    });
+
   });
 
   // ── 下面三组是从 ChatPage 下沉的 chrome 前景色判据（B3）。它们全都只是
@@ -114,9 +151,11 @@ export default function chatChromeTest() {
 
     // 用户报的那一例：深色模式 + 浅紫壁纸，合成底 RGB(174,172,196)，
     // 图标 1.13:1、白字 2.22:1 —— 必须翻成深色前景。
+    // 第二个 fixture（#AEACC4）2026-09-22 删掉了：那是当年**屏幕上量到的合成底**，
+    // 把它当壁纸填充再合成一次 25% 玻璃等于压了两层玻璃，单位就错了。同一次报告
+    // 正确的填充色是上面那对 #D8D0EA/#E4D8F0（反解见 chromeSitsOnLight 那一节）。
     it('flips_in_dark_mode_on_a_light_wallpaper', 0, (): void => {
       expect(chromeOnLightBgOf(true, ['#D8D0EA', '#E4D8F0'], TINT_MATERIAL, 0)).assertTrue();
-      expect(chromeOnLightBgOf(true, ['#AEACC4'], TINT_MATERIAL, 0)).assertTrue();
     });
 
     // 默认深色壁纸：本来就和主题一致，不该翻。
@@ -169,13 +208,24 @@ export default function chatChromeTest() {
     // 用户滑杆 19%，叠加得 0.3439（屏幕上仍是亮底，该翻前景），相加得 0.38
     // （越过阈值，判成暗底、前景不翻）——那就是浅紫底配白字，1.x:1 的原 bug。
     // 不写死 0.3439（浮点），只钉"严格小于相加、且严格大于任一单层"。
-    it('adding_the_masks_instead_of_compositing_flips_the_verdict', 0, (): void => {
+    // 2026-09-22 改写：原来这条钉的是"相加会让判定翻面"，而两种算法的差值本来
+    // 就很小，能翻面全靠当时那条线恰好落在两者之间——线一动（余量改成按玻璃
+    // 透明度缩放）就失效了，而且随便换个壁纸也失效。真正要钉的不变量是**方向**：
+    // 相加永远比合成更暗，把亮壁纸误判成暗底。这条与阈值无关，不会再随线漂。
+    it('adding_the_masks_instead_of_compositing_over_darkens', 0, (): void => {
       const purple: string[] = ['#D8D0EA', '#E4D8F0'];
       const composited: number = chromeDarkMaskOf(0.19, 0.19);
       expect(composited < 0.19 + 0.19).assertTrue();
       expect(composited > 0.19).assertTrue();
-      expect(chromeOnLightBgOf(true, purple, TINT_MATERIAL, composited)).assertTrue();
-      expect(chromeOnLightBgOf(true, purple, TINT_MATERIAL, 0.19 + 0.19)).assertFalse();
+      const lComposited: number = chromeBackdropLuminance(purple, TINT_MATERIAL, composited);
+      const lSummed: number = chromeBackdropLuminance(purple, TINT_MATERIAL, 0.19 + 0.19);
+      const lNoMask: number = chromeBackdropLuminance(purple, TINT_MATERIAL, 0);
+      expect(lSummed < lComposited).assertTrue();
+      expect(lComposited < lNoMask).assertTrue();
+      // 判定那一头仍然钉一对，但取两个离线很远的点：没遮罩 0.441（亮底）、
+      // 合成遮罩 0.193（暗底），25% 材质档的线是 0.329。
+      expect(chromeOnLightBgOf(true, purple, TINT_MATERIAL, 0)).assertTrue();
+      expect(chromeOnLightBgOf(true, purple, TINT_MATERIAL, composited)).assertFalse();
     });
 
     // 再压一层黑只能更暗、不可能更亮：0.5 上叠 0.2 得 0.6——不是 0.1（写成相乘）
@@ -200,12 +250,20 @@ export default function chatChromeTest() {
     //   · 只传用户滑杆 0.10、漏掉服务端 dimming 0.55 → 误判亮底；
     //   · 只传服务端 dimming 0.20、漏掉用户滑杆 0.50 → 同样误判。
     // 两种漏法都会让深色模式下的顶栏/输入栏换成深色前景，压在深壁纸上不可读。
-    it('one_mask_layer_alone_is_not_enough', 0, (): void => {
+    // 2026-09-22 同样改写，理由同上一条：原来钉的是"单独一层还判亮底"，那是
+    // 拿旧那条线（0.18）算出来的巧合——余量加上之后，图案壁纸只压 10% 就已经
+    // 在暗侧了。要钉的不变量是每多一层只会更暗、且两层必须走合成公式。
+    it('each_mask_layer_only_darkens_further', 0, (): void => {
       const patternFill: string[] = ['#DBDDBB', '#6BA587', '#D5D88D', '#88B884'];
-      expect(chromeOnLightBgOf(true, patternFill, TINT_MATERIAL, 0.10)).assertTrue();
+      const bare: number = chromeBackdropLuminance(patternFill, TINT_MATERIAL, 0);
+      const one: number = chromeBackdropLuminance(patternFill, TINT_MATERIAL, 0.10);
+      const both: number = chromeBackdropLuminance(
+        patternFill, TINT_MATERIAL, chromeDarkMaskOf(0.55, 0.10));
+      expect(one < bare).assertTrue();
+      expect(both < one).assertTrue();
+      // 服务端那 55% 一加上去就远在暗侧（0.065），判定这一头钉这个点。
       expect(chromeOnLightBgOf(true, patternFill, TINT_MATERIAL,
         chromeDarkMaskOf(0.55, 0.10))).assertFalse();
-      expect(chromeOnLightBgOf(true, patternFill, TINT_MATERIAL, 0.20)).assertTrue();
       expect(chromeOnLightBgOf(true, patternFill, TINT_MATERIAL,
         chromeDarkMaskOf(0.20, 0.50))).assertFalse();
     });
@@ -284,13 +342,13 @@ export default function chatChromeTest() {
       expect(chromeBackdropLuminance([], '#40FFFFFF', 0)).assertEqual(-1);
     });
 
-    // 两条阈值之间留了一段中间地带（DARK 0.10 < L < LIGHT 0.18），灰壁纸落在
+    // 两条阈值之间留了一段中间地带（DARK 0.10 < L < LIGHT 0.35），灰壁纸落在
     // 里面就哪一侧都不翻——否则浅灰壁纸会在两种前景之间来回跳。
     it('中间灰落在两条阈值之间，哪一侧都不翻', 0, (): void => {
       const grey: string[] = ['#FF676767'];
       const l: number = chromeBackdropLuminance(grey, '#00000000', 0);
       expect(l > 0.10).assertTrue();
-      expect(l < 0.18).assertTrue();
+      expect(l < 0.35).assertTrue();
       expect(chromeOnDarkBgOf(false, grey, '#00000000', 0)).assertFalse();
       expect(chromeOnLightBgOf(true, grey, '#00000000', 0)).assertFalse();
     });

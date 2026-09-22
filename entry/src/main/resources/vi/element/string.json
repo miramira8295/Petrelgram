@@ -7049,16 +7049,8 @@
       "value": "Nhấn đúp để tua lùi 15 giây"
     },
     {
-      "name": "player_back_15",
-      "value": "Lùi 15 giây"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "Tốc độ hiện tại %1$s, chạm để chuyển"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "Tua nhanh 15 giây"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "Không lấy được bài này"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "Tin nhắn đã ghim"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "Không có tin nhắn đã ghim"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "Không tải được tin nhắn đã ghim"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "Xem tất cả tin nhắn đã ghim"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "Bỏ ghim tất cả tin nhắn"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "Bỏ ghim tất cả tin nhắn ở đây? Không thể hoàn tác."
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "Đã bỏ ghim tất cả tin nhắn"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "Không bỏ ghim được tất cả tin nhắn"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "Tua tới %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "Tua lui %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "Tất cả"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "Ảnh"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "Video"
     }
   ]
 }

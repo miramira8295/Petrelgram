@@ -7049,16 +7049,8 @@
       "value": "双击快退15秒"
     },
     {
-      "name": "player_back_15",
-      "value": "后退 15 秒"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "当前%1$s倍速，点击切换"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "快进 15 秒"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "没能取到这首歌"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "全部置顶消息"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "没有置顶消息"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "置顶消息加载失败"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "查看全部置顶"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "取消全部置顶"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "取消这里的全部置顶消息？此操作无法撤销。"
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "已取消全部置顶"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "取消全部置顶失败"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "快进 %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "后退 %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "全部"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "图片"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "视频"
     }
   ]
 }

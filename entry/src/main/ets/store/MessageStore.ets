@@ -17,6 +17,10 @@ import {
   NewerTailVerdict, reachedLiveTail
 } from '../util/liveTail';
 import { formatPreview } from '../util/formatPreview';
+import { PinnedEntry, pinnedEntryOf, PINNED_FETCH_LIMIT } from '../util/pinnedEntry';
+import { unpinAllRequest } from '../util/unpinAllRequest';
+import { historyPageDetached, windowHasUnsent } from '../util/historyWindowJoin';
+import { resumeBeatsUnread } from '../util/chatResume';
 import { formatMemberCount } from '../util/formatMemberCount';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, powerFeatureEnabled,
@@ -163,8 +167,11 @@ export class MessageStore {
   private oldestId: number = 0;
   private subtitle: string = '';
   private pinnedPreview: string = '';
+  // 置顶条只要 id（判"这条是不是置顶"，每行 build 都问一次），所以 id 单独
+  // 留一份平铺数组；「全部置顶」面板还要发送人和时间，那三样一起装在
+  // pinnedEntries 里，与 pinnedIds 逐位对齐。两份一起写、一起改，没有第三个写点。
   private pinnedIds: number[] = [];
-  private pinnedPreviews: string[] = [];
+  private pinnedEntries: PinnedEntry[] = [];
   private pinnedLoadState: string = 'loading';
   private coalesceTimer: number = -1;
   // ChatPage starts TDLib work while the destination is entering, but holds the
@@ -1320,9 +1327,11 @@ export class MessageStore {
   // ChatPage cannot choose between a remembered position and the unread
   // boundary until getChat resolves. Expose the store's authoritative choice
   // so the page prepares exactly one first-frame anchor.
+  // 记住的位置这次赢不赢未读锚点。判据在 util/chatResume（有单测）——尤其是
+  // 「只有记住的位置落在已读区时才赢」那条方向性，issue #216。
   isResumeLandingSelected(): boolean {
-    return this.requestedAroundIsResume && this.requestedAroundMessageId > 0 &&
-      this.unreadCount <= 0;
+    return this.requestedAroundIsResume && resumeBeatsUnread(
+      this.requestedAroundMessageId, this.unreadCount, this.lastReadInboxId);
   }
 
   getInitialHistoryState(): string {
@@ -1903,6 +1912,18 @@ export class MessageStore {
     const req: TdRequest = { '@type': 'unpinChatMessage' };
     req['chat_id'] = this.chatId;
     req['message_id'] = messageId;
+    return this.client.send(req).then((): void => { this.refreshPinned(); });
+  }
+
+  // 取消当前作用域内的**全部**置顶。请求形状由 util/unpinAllRequest 决定
+  // （会话 / 论坛话题 / 频道私信 topic 三条不同的 td 方法），评论线程里它返回
+  // null——那时置顶条本来就是空的，发会话级请求会误伤整个讨论组。
+  unpinAllAsync(): Promise<void> {
+    const req: TdRequest | null = unpinAllRequest(
+      this.chatId, this.threadRootId, this.forumTopicId, this.directMessagesTopicId);
+    if (req === null) {
+      return Promise.resolve();
+    }
     return this.client.send(req).then((): void => { this.refreshPinned(); });
   }
 
@@ -2676,6 +2697,51 @@ export class MessageStore {
         this.messages = [];
         this.hasMoreOlder = true;
         this.olderLoadState = 'idle';
+      }
+    }
+    // 跳转落点同样要判（issue #213）。**上面那道检查只管 'latest'，'around'
+    // 一直漏着**，而跳转才是最容易造成断层的动作：会话刚打开只有最新一页，
+    // 点媒体页里很早的一张跳过去，两段之间天然隔着整个中段。合并出来的窗口
+    // 看着连续，中间几百上千条无声无息地没了；更要命的是最新页还留在窗口里，
+    // 于是窗口最后一条 == chatLast，syncTailFromChatLast 判定"到实时尾部"把
+    // 向下分页关掉，这个洞再也没人去填。真机日志见 util/historyWindowJoin。
+    //
+    // 判据两侧都要看：新页可能落在窗口下方（跳去更早）也可能落在上方（从很早
+    // 跳回接近最新处）。容差之内（删消息留下的正常小空档）照旧合并。
+    if (kind === 'around' && entries.length > 0 && this.messages.length > 0) {
+      let pageOldest: number = entries[0].id;
+      let pageNewest: number = entries[0].id;
+      for (const e of entries) {
+        if (e.id < pageOldest) { pageOldest = e.id; }
+        if (e.id > pageNewest) { pageNewest = e.id; }
+      }
+      const windowOldest: number = this.messages[0].id;
+      const windowNewest: number = this.messages[this.messages.length - 1].id;
+      const detached: boolean = historyPageDetached(
+        pageOldest, pageNewest, windowOldest, windowNewest, ID_STEP);
+      // 未发送的消息只活在本地，清窗口就没了。这种角落（正在发送 + 同时跳去
+      // 很早的历史）宁可保留旧行为，也不能把用户刚发的那条弄丢。
+      const unsent: boolean = windowHasUnsent(
+        this.messages.map((m: MessageEntry): number => m.id), ID_STEP);
+      logI(`[StoreDiag] around page=${entries.length}` +
+        ` [${pageOldest}..${pageNewest}] window=[${windowOldest}..${windowNewest}]` +
+        ` detached=${detached} unsent=${unsent}`);
+      if (detached && !unsent) {
+        this.clearOlderPrefetch();
+        this.messages = [];
+        this.hasMoreOlder = true;
+        this.olderLoadState = 'idle';
+        // 最新页跟着窗口一起没了，所以向下一定还有东西可取。**这一句不能省**：
+        // 它正是把 #213 那条"live tail reached → closing newer pagination"解开的
+        // 地方。若这次跳转其实就落在实时尾部，本方法末尾的 syncTailFromChatLast
+        // 会照常把它再关上，所以这里开着是安全的。
+        this.hasMoreNewer = true;
+        this.newerLoadState = 'idle';
+        // 新端的几个锚点都是按旧窗口的 id 记的，换窗口之后全部失效。
+        this.newerRetryAnchor = 0;
+        this.newerEmptyAnchor = 0;
+        this.newerEmptyStreak = 0;
+        this.newerGapRetries = NEWER_GAP_RETRIES;
       }
     }
     this.upsertBatch(entries);
@@ -5075,7 +5141,7 @@ export class MessageStore {
     const seq: number = ++this.pinnedResolveSeq;
     if (this.threadRootId > 0) {
       this.pinnedIds = [];
-      this.pinnedPreviews = [];
+      this.pinnedEntries = [];
       this.pinnedLoadState = 'ready';
       this.setPinned('');
       return; // comment thread view — the discussion group's pins don't apply
@@ -5093,7 +5159,7 @@ export class MessageStore {
     req['query'] = '';
     req['from_message_id'] = 0;
     req['offset'] = 0;
-    req['limit'] = 100;
+    req['limit'] = PINNED_FETCH_LIMIT;
     req['filter'] = filter;
     this.client.send(req).then((res: TdObject) => {
       if (seq !== this.pinnedResolveSeq) {
@@ -5101,18 +5167,20 @@ export class MessageStore {
       }
       const arr = (res['messages'] as TdObject[] | undefined) ?? [];
       const ids: number[] = [];
-      const previews: string[] = [];
+      const entries: PinnedEntry[] = [];
       for (const m of arr) {
-        const id = m['id'] as number | undefined;
-        if (id !== undefined) {
-          ids.push(id);
-          previews.push(formatPreview(m));
+        // id 缺失的条目一律丢掉（pinnedEntryOf 的判据）：没有 id 就跳不过去，
+        // 留在条里只会让人点了没反应。
+        const entry: PinnedEntry | null = pinnedEntryOf(m, formatPreview(m));
+        if (entry !== null) {
+          ids.push(entry.id);
+          entries.push(entry);
         }
       }
       this.pinnedIds = ids; // newest → oldest, as returned
-      this.pinnedPreviews = previews;
+      this.pinnedEntries = entries;
       this.pinnedLoadState = 'ready';
-      this.setPinned(previews.length > 0 ? previews[0] : '');
+      this.setPinned(entries.length > 0 ? entries[0].preview : '');
     }).catch((e: TdError) => {
       if (seq !== this.pinnedResolveSeq) {
         return;
@@ -5122,7 +5190,7 @@ export class MessageStore {
       // preview and let ChatPage omit the optional top card entirely.
       if (e.code === 404) {
         this.pinnedIds = [];
-        this.pinnedPreviews = [];
+        this.pinnedEntries = [];
         this.pinnedLoadState = 'ready';
         this.setPinned('');
         return;
@@ -5147,16 +5215,16 @@ export class MessageStore {
       return;
     }
     const ids: number[] = [];
-    const previews: string[] = [];
+    const entries: PinnedEntry[] = [];
     for (let i = 0; i < this.pinnedIds.length; i++) {
-      if (!removeIds.has(this.pinnedIds[i])) {
+      if (!removeIds.has(this.pinnedIds[i]) && i < this.pinnedEntries.length) {
         ids.push(this.pinnedIds[i]);
-        previews.push(i < this.pinnedPreviews.length ? this.pinnedPreviews[i] : '');
+        entries.push(this.pinnedEntries[i]);
       }
     }
     this.pinnedIds = ids;
-    this.pinnedPreviews = previews;
-    this.setPinned(previews.length > 0 ? previews[0] : '');
+    this.pinnedEntries = entries;
+    this.setPinned(entries.length > 0 ? entries[0].preview : '');
   }
 
   // Pinned message ids, newest → oldest (for the banner tap-cycle).
@@ -5164,9 +5232,9 @@ export class MessageStore {
     return this.pinnedIds;
   }
 
-  // Pinned message previews, aligned with getPinnedIds().
-  getPinnedPreviews(): string[] {
-    return this.pinnedPreviews;
+  // 「全部置顶」面板的数据源，与 getPinnedIds() 逐位对齐，newest → oldest。
+  getPinnedEntries(): PinnedEntry[] {
+    return this.pinnedEntries;
   }
 
   // Load a page centered on a message (for jumping to a pinned/quoted message

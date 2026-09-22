@@ -7049,16 +7049,8 @@
       "value": "15 सेकंड पीछे जाने के लिए दो बार टैप करें"
     },
     {
-      "name": "player_back_15",
-      "value": "15 सेकंड पीछे"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "वर्तमान %1$s× गति, बदलने के लिए टैप करें"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "15 सेकंड आगे"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "यह ट्रैक नहीं मिल सका"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "पिन किए गए संदेश"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "कोई पिन किया गया संदेश नहीं"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "पिन किए गए संदेश लोड नहीं हो सके"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "सभी पिन किए गए संदेश देखें"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "सभी संदेश अनपिन करें"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "यहाँ के सभी संदेश अनपिन करें? इसे पूर्ववत नहीं किया जा सकता।"
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "सभी संदेश अनपिन कर दिए गए"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "सभी संदेश अनपिन नहीं हो सके"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "आगे %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "पीछे %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "सभी"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "फ़ोटो"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "वीडियो"
     }
   ]
 }

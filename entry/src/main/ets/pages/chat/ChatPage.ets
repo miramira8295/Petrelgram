@@ -66,7 +66,7 @@ import { selectionHasCacheableVideo } from '../../util/backgroundCacheEligibilit
 import { PlaySlotDriver } from './PlaySlotDriver';
 import { VideoHeadPrefetcher, VideoRef } from '../../services/VideoHeadPrefetcher';
 import { shouldCompete, slotKey } from './playSlot';
-import { MediaViewerOverlay } from './MediaViewerOverlay';
+import { MediaViewerOverlay, VIEWER_CHROME_ON_OPEN } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
 import { AudioFavoriteFlow } from './AudioFavoriteFlow';
@@ -880,9 +880,23 @@ export struct ChatPage {
     // 内容，长度也不变，所以预取源保持指向那份更新的数据才是对的。
   }
 
+  // ⚠️ 临时探针（2026-09-21，#140「动态头像要退出会话重进才动」）。定位完删。
+  // 四个输入里到底是谁一直按着闸，静态看不出来——只在结果变化时打一行。
+  private tgsGateLast: number = -1;
+
   private syncChatTgsGate(): void {
-    setChatAnimationSuspended(!this.pageVisible || this.initialMessageStageActive ||
-      this.chatTgsScrollActive || this.chatTgsStageSettling);
+    const suspended: boolean = !this.pageVisible || this.initialMessageStageActive ||
+      this.chatTgsScrollActive || this.chatTgsStageSettling;
+    const now: number = (suspended ? 1 : 0) | (this.pageVisible ? 2 : 0) |
+      (this.initialMessageStageActive ? 4 : 0) | (this.chatTgsScrollActive ? 8 : 0) |
+      (this.chatTgsStageSettling ? 16 : 0);
+    if (now !== this.tgsGateLast) {
+      this.tgsGateLast = now;
+      logW(`[TgsGate2] suspended=${suspended} visible=${this.pageVisible}`
+        + ` stage=${this.initialMessageStageActive} scroll=${this.chatTgsScrollActive}`
+        + ` settling=${this.chatTgsStageSettling}`);
+    }
+    setChatAnimationSuspended(suspended);
   }
 
   private pauseChatTgsForScroll(): void {
@@ -1969,7 +1983,7 @@ export struct ChatPage {
   @Local nowSec: number = 0;
   private nowSecTimer: number = -1;
   @Local viewerMsgId: number = 0;
-  @Local chromeVisible: boolean = true;
+  @Local chromeVisible: boolean = VIEWER_CHROME_ON_OPEN;
   @Local viewerVideoLandscape: boolean = false;
   @Local viewerClosing: boolean = false;
   // 播放器为播放拉起的下载（见 notePlaybackRequest）。不参与渲染，普通字段。
@@ -4024,8 +4038,12 @@ export struct ChatPage {
         this.beginJumpLanding();
         this.topCard.finishPinnedJump();
         this.scrollToTimelineIndexAtY(jg, itemY);
-        // loadAround replaces the window wholesale (list RELOAD) — the
-        // immediate scroll can be swallowed before the new rows lay out.
+        // loadAround 可能整片换掉窗口（list RELOAD）——立刻发出的那次滚动会在
+        // 新行布局之前被吞掉。
+        // 【2026-09-22 更正】原文写的是 "replaces the window wholesale"，**不对**：
+        // around 页默认是**合进**现有窗口的，只有它和窗口断开时才换窗口
+        // （issue #213，判据见 util/historyWindowJoin）。这句错注释很可能就是
+        // 当初没给 around 补那道连续性检查的原因。
         // Re-issue once layout settles (index recomputed: prepends may have
         // shifted it) and flash after that.
         const jumpSeq: number = ++this.jumpLayoutSeq;
@@ -4980,7 +4998,9 @@ export struct ChatPage {
     animateTo({ duration, curve: Curve.Friction }, () => {
       this.viewerMsgId = 0;
       this.viewerInitIdx = 0;
-      this.chromeVisible = true;
+      // 复位到下一次打开的初值。openViewer 里也会写一次，这里写同一个常量只是
+      // 不留下"关闭后是 true、打开时又变 false"的中间态。
+      this.chromeVisible = VIEWER_CHROME_ON_OPEN;
     });
     // 查看器关掉了，重新喂一次"已停止"把播放位判定跑起来。候选表这一刻
     // 可能还是空的（open 时 reset() 清空过，且几何没变不会自然重新上报），
@@ -5987,7 +6007,7 @@ export struct ChatPage {
     }, (): void => {
       this.viewerMsgId = messageId;
     });
-    this.chromeVisible = true;
+    this.chromeVisible = VIEWER_CHROME_ON_OPEN;
     this.viewerVideoLandscape = false;
     this.viewerClosing = false;
   }
@@ -6078,10 +6098,27 @@ export struct ChatPage {
       const url = (answer['url'] as string | undefined) ?? '';
       const text = (answer['text'] as string | undefined) ?? '';
       const showAlert = (answer['show_alert'] as boolean | undefined) ?? false;
-      if (url.trim() !== '') {
-        openWebUrl(getContext(this) as common.UIAbilityContext, url, (): void => {
-          promptAction.showToast({ message: $r('app.string.cp_cannot_open_interaction'), duration: 1800 });
-        });
+      const answerUrl: string = url.trim();
+      if (answerUrl !== '') {
+        // 机器人回调的应答里带的 url 走**和消息里的链接同一个漏斗**（issue #212：
+        // 「极搜推荐词点击后误打开浏览器」）。
+        //
+        // 【原来错在哪】这里直接调 openWebUrl，那条路只认外部网页：它会走外链
+        // 三档策略，但**不认 t.me / tg://**。机器人拿 answerCallbackQuery 回一条
+        // Telegram 内链时（起 bot、跳会话、带 start 参数），本该在应用内解析，
+        // 结果被当成网页丢给浏览器——而机器人那边其实已经把消息编辑成搜索结果了，
+        // 所以用户关掉浏览器回来"发现其实已经搜索完毕"。
+        //
+        // onLinkTap 的第一件事就是分内外：内链应用内解析，外链才回到 openWebUrl。
+        // askFirst=true 与旁边 URL 按钮那条一致——按钮上的字不是网址，先让用户
+        // 看清要去哪。
+        // 探针（临时）：只打前缀，**不打 query**——那里面是用户的搜索词。
+        // 要确认的是 #212 那条 url 到底长什么样：内链走对了没有，外链是不是
+        // 另有来源。
+        const probeEnd: number = answerUrl.indexOf('?');
+        logW(`[Btn212] answer url=${probeEnd > 0 ? answerUrl.substring(0, probeEnd) : answerUrl}` +
+          ` internal=${isTelegramInternalUrl(answerUrl)}`);
+        this.onLinkTap(answerUrl, true);
       }
       if (text.trim() !== '') {
         if (showAlert) {
@@ -8582,6 +8619,7 @@ export struct ChatPage {
       materialEpoch: this.materialEpoch,
       topCard: this.topCard,
       onPinnedTap: (): void => { this.topCard.onPinnedTap(); },
+      onOpenPinnedList: (): void => { this.overlayState.setSheet('pinnedList', true); },
       onLiveStreamTap: (): void => { this.topCard.onLiveStreamTap(); },
       actionBarKind: this.actionBarKind,
       actionBarCanUnarchive: this.actionBarCanUnarchive,
@@ -9042,6 +9080,7 @@ export struct ChatPage {
         messages: this.messages,
         chatId: this.chatId,
         threadRootId: this.threadRootId,
+        store: this.store,
         bottomSafe: this.bottomSafe,
         keyboardH: this.keyboardH,
         topInset: this.headerChromeHeight(),
@@ -9087,6 +9126,7 @@ export struct ChatPage {
         onVideoClose: (): void => {
           this.overlayState.showVideoNoteRecorder = false;
         },
+        onPinnedJump: (messageId: number): void => { this.onReplyTap(messageId); },
         effectDuration: (key: string, ms: number): number => this.chatEffectDuration(key, ms)
       });
       // The latest-message FAB belongs to the chat layer. Keeping it visible

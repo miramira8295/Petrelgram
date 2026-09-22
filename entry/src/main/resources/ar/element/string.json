@@ -7049,16 +7049,8 @@
       "value": "نقرة مزدوجة للرجوع 15 ثانية"
     },
     {
-      "name": "player_back_15",
-      "value": "الرجوع 15 ثانية"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "السرعة الحالية %1$s×، انقر للتبديل"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "التقدم 15 ثانية"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "تعذّر الحصول على هذا المقطع"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "الرسائل المثبتة"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "لا توجد رسائل مثبتة"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "تعذّر تحميل الرسائل المثبتة"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "عرض كل الرسائل المثبتة"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "إلغاء تثبيت كل الرسائل"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "إلغاء تثبيت كل الرسائل هنا؟ لا يمكن التراجع عن هذا الإجراء."
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "تم إلغاء تثبيت كل الرسائل"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "تعذّر إلغاء تثبيت كل الرسائل"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "تقديم %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "إرجاع %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "الكل"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "الصور"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "الفيديوهات"
     }
   ]
 }

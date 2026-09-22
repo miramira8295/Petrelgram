@@ -15,16 +15,50 @@ import { COLOR_ICON_ON_DARK, COLOR_ICON_ON_LIGHT, COLOR_ICON_SECONDARY, COLOR_TE
 // 【默认壁纸不受影响】chat_bg 深色 #0E1621（L≈0.009）、浅色 #EFEFF4（L≈0.86），
 // 本来就和主题一致。只有用户自己设了浅色壁纸，chrome 才会站到亮底上。
 
-// 判"亮"的阈值取 0.18 而不是常见的 0.5。
+// 判"亮"的分界线。**不是一个常数**——见下。
 //
-// 0.5 是"哪种文字更搭"的中点，但我们要的是**够不够看**：纯白前景要拿到 4.5:1，
-// 底色亮度必须 ≤ (1.05 / 4.5 - 0.05) ≈ 0.183。底色一过这条线，白色前景就已经
-// 不合格了，必须翻成深色。用 0.5 会把 L=0.3 这种"白字只有 3:1"的底判成暗底。
-const LIGHT_THRESHOLD: number = 0.18;
+// 【0.179 是白字和黑字的真正交点】前景取纯白时对比度 = 1.05/(L+0.05)，取纯黑时
+// = (L+0.05)/0.05。两者相等解出 L = 0.179。底色比它亮，黑字更清楚；比它暗，白字
+// 更清楚。第一版的 0.18 取的就是这个交点，推导没错。
+const BREAKEVEN_LUMINANCE: number = 0.179;
+
+// 【错的是把 chromeBackdropLuminance 当成了真实底色】它只合成
+// 「壁纸填充 → 遮罩 → 玻璃」，漏掉两样**只会让底更暗、不会更亮**的东西：
+//   1. 图案壁纸上那层深色涂鸦；
+//   2. **chrome 浮在消息列表上，不是浮在壁纸上**——深色模式下背后大多是深色气泡
+//      （连最亮的发出气泡 #1477D8 也只有 L≈0.183）。
+// 所以它的输出是真实底色的**上界**，拿上界去卡交点必然偏向黑字。
+//
+// 2026-09-22 真机（深色模式，图案壁纸 #8ADBF2/#888DEC/#E39FEA/#679CED，
+// 服务端 dimming=0、用户遮罩=0）探针 + 截图逐像素对照：
+//
+//   本函数算出来                                  L = 0.278  → 判"亮底"，前景翻黑
+//   返回键那个圆（背后只有壁纸）                    L = 0.201
+//   输入栏                                        L = 0.153
+//   置顶条                                        L = 0.080
+//   标题胶囊（背后压着一条深色气泡）                L = 0.044 → 黑字 1.88:1、白字 11.15:1
+//
+// 【余量为什么按玻璃的透明度缩放】没被建模的那部分，正好就是玻璃**没盖住**的
+// 那一份：合成式里 (1-alpha) 这一项。玻璃越薄，背后的气泡透过来越多，上界越松；
+// 玻璃越厚（材质不可用时的降级档 55%），玻璃自己就决定了观感，上界越准。
+// 所以余量 = MARGIN_PER_UNSEEN x (1 - alpha)，而不是一个拍死的常数。
+//
+// 【0.20 这个系数的上下界都是真机/物理约束，不是拟合】
+//   · 下界：本次 25% 材质玻璃，上界 0.278 必须判成"不亮"  → 系数 > 0.131
+//   · 上界：55% 降级玻璃 + 纯白壁纸，上界 0.300（这一档玻璃厚、上界准，白字
+//     只有 3.0:1）必须仍判"亮底" → 系数 < 0.266
+//   取中间的 0.20。
+//   · 2026-08-29 那次（本机制的起因，25% 材质玻璃 + 浅紫壁纸）屏幕上量到的合成底
+//     就已经是 RGB(174,172,196) = L 0.427，估算只会更亮，照旧判亮底，行为不变。
+const MARGIN_PER_UNSEEN: number = 0.20;
+
 // 反过来那一侧：合成底暗到这个程度以下，**浅色模式**的深色前景就读不出来了
 // （用户 2026-09-18：浅色模式 + 纯黑壁纸，按钮上的图标还是黑的）。
-// 取 0.10 而不是和 LIGHT_THRESHOLD 对称：两条线之间留一段中间地带，
-// 灰壁纸才不会在两种前景之间来回跳。
+//
+// 【为什么这一侧不缩放余量】上面那套余量说的是"背后的深色气泡会让底比估算更暗"，
+// 那是**深色模式**独有的。浅色模式下背后是浅色气泡，估算偏差指向相反方向，
+// 拿同一个余量套过来只会让它更早翻白。这条线维持常数，且刻意不和上面那条对称——
+// 两条线之间留一段中间地带，灰壁纸才不会在两种前景之间来回跳。
 const DARK_THRESHOLD: number = 0.10;
 
 // '#AARRGGBB' 或 '#RRGGBB' → [alpha(0..1), r, g, b]。取不出来时返回全 0 的不透明黑，
@@ -45,6 +79,16 @@ function argbOf(hex: string): number[] {
 function hex2(v: number): string {
   const n: number = Math.max(0, Math.min(255, Math.round(v)));
   return n < 16 ? `0${n.toString(16)}` : n.toString(16);
+}
+
+// 玻璃填充的 alpha；取不出来按"没有玻璃"算（余量给满）。
+function tintAlphaOf(tintArgb: string): number {
+  const tint: number[] = argbOf(tintArgb);
+  return tint[0] < 0 ? 0 : tint[0];
+}
+
+function lightThresholdFor(tintArgb: string): number {
+  return BREAKEVEN_LUMINANCE + MARGIN_PER_UNSEEN * (1 - tintAlphaOf(tintArgb));
 }
 
 // chrome 是不是坐在亮底上。
@@ -103,7 +147,7 @@ export function chromeBackdropLuminance(wallpaperColors: string[], tintArgb: str
 export function chromeSitsOnLight(wallpaperColors: string[], tintArgb: string,
   fallbackOnLight: boolean, darkMask: number = 0): boolean {
   const luminance: number = chromeBackdropLuminance(wallpaperColors, tintArgb, darkMask);
-  return luminance < 0 ? fallbackOnLight : luminance > LIGHT_THRESHOLD;
+  return luminance < 0 ? fallbackOnLight : luminance > lightThresholdFor(tintArgb);
 }
 
 // 和 chromeSitsOnLight 同一套合成，只是判另一头：合成底够不够暗。

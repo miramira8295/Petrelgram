@@ -7049,16 +7049,8 @@
       "value": "15 saniye geri almak için çift dokunun"
     },
     {
-      "name": "player_back_15",
-      "value": "15 saniye geri al"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "Geçerli hız %1$s, değiştirmek için dokunun"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "15 saniye ileri sar"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "Bu parça alınamadı"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "Sabitlenen Mesajlar"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "Sabitlenmiş mesaj yok"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "Sabitlenen mesajlar yüklenemedi"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "Tüm sabitlenen mesajları göster"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "Tüm mesajların sabitlemesini kaldır"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "Buradaki tüm mesajların sabitlemesi kaldırılsın mı? Bu işlem geri alınamaz."
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "Tüm mesajların sabitlemesi kaldırıldı"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "Tüm mesajların sabitlemesi kaldırılamadı"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "İleri %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "Geri %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "Tümü"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "Fotoğraflar"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "Videolar"
     }
   ]
 }

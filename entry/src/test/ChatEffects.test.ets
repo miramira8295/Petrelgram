@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BLUR, KEY_POWER_EFFECT_MENU,
-  KEY_POWER_EFFECT_REPLY, KEY_POWER_SMOOTH_TRANSITIONS, powerGroupAnimationDuration
+  KEY_POWER_EFFECT_REPLY, KEY_POWER_SMOOTH_TRANSITIONS, powerGroupAnimationDuration,
+  POWER_BOOLEAN_FALSE_DEFAULTS, POWER_BOOLEAN_TRUE_EFFECT_DEFAULTS
 } from '../main/ets/store/AppSettings';
 import { chatEffectDurationOf } from '../main/ets/util/chatEffects';
 import { STICKER_FLY_MS } from '../main/ets/util/chatPageTuning';
@@ -95,6 +96,25 @@ export default function chatEffectsTest() {
     it('时长为 0 时不会被放大成非零', 0, (): void => {
       allOn();
       expect(chatEffectDurationOf(false, KEY_POWER_EFFECT_MENU, 0)).assertEqual(0);
+    });
+  });
+
+  // 【为什么把一个"默认值"钉成用例】2026-09-22：跳转落点的气泡脉冲上线以来
+  // **一次都没被看见过**——KEY_POWER_EFFECT_REPLY 当时和背景动效、模糊缩放并列
+  // 在默认关那一组，于是 chatEffectDurationOf 恒返回 0，JumpFlashState 整段动画
+  // 连起步都没有（真机探针 rise=0 settle=0）。这种"功能在，但默认值把它掐死了"
+  // 的缺陷编译和其余单测全抓不到，只能靠钉分组。
+  describe('power effect defaults', () => {
+    it('跳转落点脉冲所在的开关默认开', 0, (): void => {
+      expect(POWER_BOOLEAN_TRUE_EFFECT_DEFAULTS.indexOf(KEY_POWER_EFFECT_REPLY) >= 0).assertTrue();
+      expect(POWER_BOOLEAN_FALSE_DEFAULTS.indexOf(KEY_POWER_EFFECT_REPLY) < 0).assertTrue();
+    });
+
+    // 默认关那一组剩下三项是**持续**开销（背景动效、模糊缩放）或**每条消息都
+    // 可能触发**的（回应动画），默认关是有意的，别顺手一起翻。
+    it('持续型特效仍然默认关', 0, (): void => {
+      expect(POWER_BOOLEAN_FALSE_DEFAULTS.length).assertEqual(3);
+      expect(POWER_BOOLEAN_FALSE_DEFAULTS.indexOf(KEY_POWER_EFFECT_BLUR) >= 0).assertTrue();
     });
   });
 }

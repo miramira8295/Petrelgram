@@ -5,6 +5,7 @@ import { formatUserStatus } from '../util/formatUserStatus';
 import { formatMemberCount } from '../util/formatMemberCount';
 import { formatPreview } from '../util/formatPreview';
 import { formatFileSize } from '../util/formatFileSize';
+import { MEDIA_KIND_ALL, mediaKindFilterOf, normalizeMediaKind } from '../util/mediaKindFilter';
 import { formatTime } from '../util/formatTime';
 import { plural, str } from '../util/strings';
 import { logE } from '../util/log';
@@ -137,6 +138,9 @@ export class ChatProfileStore {
   // 页签内搜索词（issue #102）。**跨页签保留**：用户搜一个词想在媒体和文件
   // 之间来回看是常事，切一次页签就清空反而要重打。
   contentQuery: string = '';
+  // 媒体页的「全部 / 图片 / 视频」子筛选（issue #214）。只对 media 页签有意义，
+  // 换页签时不重置——从图片切到文件再切回来，用户上次挑的那一档还在。
+  mediaKind: string = MEDIA_KIND_ALL;
   contentItems: ProfileContentItem[] = [];
   contentState: string = 'idle'; // idle | loading | ready | error
   contentErrorText: string = '';
@@ -401,6 +405,33 @@ export class ChatProfileStore {
     this.fetchContentPage(0, true, 0);
   }
 
+  // 换媒体子筛选：和换搜索词同一套复位，只是换的是过滤器而不是关键词。
+  //
+  // **必须重新向服务端要，不能在客户端把已加载的那批筛一遍**：分页的游标是
+  // from_message_id，客户端过滤会让一页 50 条里可能一张图都没有，翻页看上去
+  // 就是卡住不动。
+  setMediaKind(kind: string): void {
+    const next: string = normalizeMediaKind(kind);
+    if (next === this.mediaKind) {
+      return;
+    }
+    this.mediaKind = next;
+    if (this.contentTab !== PROFILE_TAB_MEDIA) {
+      return;
+    }
+    this.contentSeq++;
+    this.contentItems = [];
+    this.contentState = 'loading';
+    this.contentErrorText = '';
+    this.contentHasMore = false;
+    this.contentPaging = false;
+    this.contentPagingError = false;
+    this.contentTotalCount = 0;
+    this.contentNextMessageId = 0;
+    this.notify();
+    this.fetchContentPage(0, true, 0);
+  }
+
   // 换搜索词：清空当前页签的结果重新拉。空词就是"不过滤"，和以前一样。
   setContentQuery(query: string): void {
     const next = query.trim();
@@ -477,7 +508,7 @@ export class ChatProfileStore {
 
   private contentFilter(tab: string): string {
     if (tab === PROFILE_TAB_MEDIA) {
-      return 'searchMessagesFilterPhotoAndVideo';
+      return mediaKindFilterOf(this.mediaKind);
     }
     if (tab === PROFILE_TAB_FILES) {
       return 'searchMessagesFilterDocument';

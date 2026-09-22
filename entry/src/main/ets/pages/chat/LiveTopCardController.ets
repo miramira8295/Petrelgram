@@ -49,6 +49,7 @@ import {
   PinnedTap, pinnedTapAction
 } from '../../util/pinnedJump';
 import { pinnedShownIndex } from '../../util/pinnedSegments';
+import { PinnedEntry } from '../../util/pinnedEntry';
 import { TOP_CARD_ACTION_GUARD_MS } from '../../util/chatPageTuning';
 import { plural, str } from '../../util/strings';
 import { logE } from '../../util/log';
@@ -529,7 +530,7 @@ export class LiveTopCardController {
       return;
     }
     const ids: number[] = store.getPinnedIds(); // newest → oldest
-    const previews: string[] = store.getPinnedPreviews();
+    const entries: PinnedEntry[] = store.getPinnedEntries();
     const topId: number = groups[start].head.id;
     let idx = -1;
     for (let i = 0; i < ids.length; i++) {
@@ -543,8 +544,8 @@ export class LiveTopCardController {
     }
     if (idx !== pinnedShownIndex(this.pinnedCycle, this.pinnedCount)) {
       this.pinnedCycle = idx;
-      if (idx < previews.length) {
-        this.pinnedPreview = previews[idx];
+      if (idx < entries.length) {
+        this.pinnedPreview = entries[idx].preview;
       }
     }
   }

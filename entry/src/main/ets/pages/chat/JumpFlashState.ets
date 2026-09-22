@@ -114,6 +114,9 @@ export class JumpFlashState {
     if (seq !== this.flashSeq) {
       return;
     }
+    // KEY_POWER_EFFECT_REPLY（设置里的「回复与转发动效」）默认**开**。它 2026-09-22
+    // 之前默认关，于是这整段脉冲从来没有人见过——探针实测 rise=0/settle=0，
+    // 动画连起步都没有。理由见 AppSettings.POWER_BOOLEAN_TRUE_EFFECT_DEFAULTS。
     const rise: number = this.host.effectDuration(KEY_POWER_EFFECT_REPLY, 180);
     const settle: number = this.host.effectDuration(KEY_POWER_EFFECT_REPLY, 420);
     if (rise <= 0 || settle <= 0) {

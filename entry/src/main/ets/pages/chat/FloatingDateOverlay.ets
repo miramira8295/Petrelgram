@@ -1,6 +1,6 @@
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
-import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
-import { materialModifierWhen } from '../../util/materialModifier';
+import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
+import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { COLOR_TEXT_PRIMARY } from '../../util/theme';
 import { FLOAT_DATE_HIDE_MS, floatDateShouldRearm } from '../../util/floatDateGate';
 import { TimelineStatePill } from './MessageListState';
@@ -121,6 +121,16 @@ export struct FloatingDateOverlay {
   // 阅一份没有收益。
   @Param topMargin: number = 0;
 
+  // 玻璃的模糊半径，**顺带把材质纪元读进依赖**。
+  //
+  // plainGlassFill / plainBackdropBlur 都是普通函数，值从 AppStorage 现取，
+  // 自己订阅不了设置变化。改前那句 materialModifierWhen('bar', this.materialEpoch >= 0)
+  // 在 build 里读了纪元，依赖是它顺手建立的；换成自绘玻璃之后修饰器没了，
+  // 不在 build 里读一次纪元，用户调厚度这个组件就不会重建，玻璃停在旧值上。
+  private glassBlur(): number {
+    return this.materialEpoch >= 0 ? plainBackdropBlur('bar') : 0;
+  }
+
   build() {
     // 外层这个 Row 常驻挂载：ArkUI 要求 build 有唯一根节点，条件渲染只能放在
     // 它里面。label 为空时内层不挂载，屏幕上是零高度的空节点，与原来"整条
@@ -138,11 +148,17 @@ export struct FloatingDateOverlay {
         }
         .height(28)
         .padding({ left: 12, right: 12 })
-        // 浮动日期走与悬浮栏一致的稳定 bar 玻璃：厚度映射到锁定质量的模糊半径，
-        // 滚动与停手期间始终是同一层，不触发 systemMaterial 的降级/恢复闪变。
-        .backgroundColor(overlayGlassFill('bar', $r('app.color.surface')))
-        .backdropBlur(overlayBackdropBlur('bar'))
-        .attributeModifier(materialModifierWhen('bar', this.materialEpoch >= 0))
+        // 【自绘玻璃，不走组件级系统材质】和顶部那张浮卡（TopBanners）同一笔账：
+        // 系统已经把**组件级** systemMaterial 收回，只有 HDS 导航级的栏还拿得到。
+        // 继续用 overlayGlassFill + overlayBackdropBlur 会两头落空——前者按"底下
+        // 还有材质在画"返回 25% 的淡色，后者按"把观感让给材质"返回 0 半径，结果
+        // 既没有材质也没有自己的玻璃，看上去就是一块近乎透明的平板（用户
+        // 2026-09-22：「日期好像纯透明底色呢，应该和 hds 的顶部 bar 样式一样」）。
+        // 迁到输入框/顶部浮卡那一套：plainGlassFill + plainBackdropBlur +
+        // hdsVisualEffect，档位仍用它原来的 'bar'，厚度偏移照旧生效。
+        .backgroundColor(plainGlassFill($r('app.color.surface')))
+        .backdropBlur(this.glassBlur())
+        .visualEffect(hdsVisualEffect('bar'))
         .border({ width: 0.5, color: $r('app.color.divider') })
         .borderRadius(14)
         .shadow({ radius: 5, color: '#22000000', offsetX: 0, offsetY: 2 })

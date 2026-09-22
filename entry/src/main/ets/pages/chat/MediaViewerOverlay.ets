@@ -45,6 +45,19 @@ const VIEWER_CHROME_BG: string = '#6e3e3e40';
 // 顶部通栏里那一行（状态栏之下）的高度。加上 topSafe 才是整条栏的高度，
 // 而底下那两个提示胶囊挂在 topSafe + 76 上——56 给它们留出了余量。
 const CHROME_BAR_ROW_H: number = 56;
+// 从气泡放大进来时控制层的初始显隐（issue #217）。**默认收起**：顶栏、操作条、
+// 相册缩略图条、以及视频的播放控制器一开始都不画，单击一下才出来。
+//
+// 【为什么这不是"少给了一个入口"】收起来之后仍然有三条出路，一条都没少：
+// 单击切回控制层（onPhotoTap / 视频的 onBackgroundTap）、下滑关闭
+// （onDismissUpdate）、系统返回键。真正变掉的只是"第一眼看到的是图还是 chrome"。
+//
+// 【为什么单击是安全的切换手势】2026 年早些时候单击还是"关闭查看器"（照官方端），
+// 后来改掉了，理由写在 onPhotoTap 上方：那让"看清这张图"和"退出"抢同一个手势。
+// 现在收起/展开归单击、退出归下滑，本条正是建立在那次分工之上——否则默认收起
+// 就意味着第一下点击会把查看器关掉。
+export const VIEWER_CHROME_ON_OPEN: boolean = false;
+
 const VIEWER_MIN_SCALE: number = 1;
 const VIEWER_MAX_SCALE: number = 4;
 const VIEWER_DOUBLE_TAP_SCALE: number = 2.5;
@@ -90,7 +103,7 @@ export struct MediaViewerOverlay {
   // 两处，查看器开着的整段时间里页面一次都不往下推新值。
   @Param @Once viewerMsgId: number = 0;
   @Event onViewerMsgIdChange: (msgId: number) => void = (): void => {};
-  @Param @Once chromeVisible: boolean = true;
+  @Param @Once chromeVisible: boolean = VIEWER_CHROME_ON_OPEN;
   @Event onChromeVisibleChange: (visible: boolean) => void = (): void => {};
   // 材质档位是设置里的用户偏好，而 overlayMaterial 那几个是普通函数、订阅不了
   // @Param（不是普通字段）：普通字段会冻结在构造时的值，历史加载进来之后查看器

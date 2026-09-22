@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
-import { MediaViewerOverlay } from '../chat/MediaViewerOverlay';
+import { MediaViewerOverlay, VIEWER_CHROME_ON_OPEN } from '../chat/MediaViewerOverlay';
 import { MessageEntry, buildMessageEntry } from '../../store/MessageEntry';
 import { getUserStore } from '../../tdkit/Globals';
 import { AlbumGroup, collapseAlbums } from '../../util/collapseAlbums';
@@ -27,7 +27,9 @@ export struct DownloadPreviewPage {
   @Local private groups: AlbumGroup[] = [];
   @Local private viewerMsgId: number = 0;
   @Local private initIdx: number = 0;
-  @Local private chromeVisible: boolean = true;
+  // 与会话详情那边同一个初值（issue #217）：同一个查看器组件、同一个"点一下
+  // 放大到全屏"的手势，两个入口不该一个默认带 chrome、一个不带。
+  @Local private chromeVisible: boolean = VIEWER_CHROME_ON_OPEN;
   @Local private videoLandscape: boolean = false;
   @Local private topSafe: number = 0;
   private items: DownloadCenterItem[] = [];

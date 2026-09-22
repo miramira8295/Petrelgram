@@ -70,7 +70,7 @@ import { str } from '../../util/strings';
 // setSheet() 的第一个参数：build() 里 ChatOverlayHost 的六个 onXxxShowChange
 // 回调共用同一个写入口时用它区分是哪一个开关。
 export type ChatOverlaySheetKind =
-  'reaction' | 'forward' | 'scheduled' | 'poll' | 'contact' | 'videoNote';
+  'reaction' | 'forward' | 'scheduled' | 'poll' | 'contact' | 'videoNote' | 'pinnedList';
 
 // 宿主（ChatPage）暴露给控制器的那一小片接口，全是箭头函数字段——取值器读
 // 页面当下的真值，动作回调把副作用交回页面执行。仿 ComposerSession 的
@@ -120,6 +120,9 @@ export class ChatOverlayState {
   @Trace showVideoNoteRecorder: boolean = false;
   // The list itself lives in ScheduledSheet and reloads on each open.
   @Trace showScheduledSheet: boolean = false;
+  // 「全部置顶消息」面板。和上面几个一样只存开关：列表本身订阅 MessageStore
+  // 的置顶列表，面板每次打开重新读一遍。
+  @Trace showPinnedListSheet: boolean = false;
   // Which messages the picker will forward. The picker's own list/query/send
   // state lives in ForwardSheet and resets with it on each open.
   // 【B11】原字段是不带 @Trace 的 private number[]；方案 §4 把它与其余五个
@@ -184,6 +187,9 @@ export class ChatOverlayState {
         break;
       case 'videoNote':
         this.showVideoNoteRecorder = show;
+        break;
+      case 'pinnedList':
+        this.showPinnedListSheet = show;
         break;
       default:
         break;
@@ -379,6 +385,9 @@ export class ChatOverlayState {
     this.showReactionSheet = false;
     this.reactionTargetId = 0;
     this.reactionPendingKey = '';
+    // 【新增字段，不属于上面那段搬迁纪律】「全部置顶」面板列的是**上一个会话**
+    // 的置顶：换会话时不关，面板会留在屏幕上，点一条就跳到另一个会话的消息 id。
+    this.showPinnedListSheet = false;
   }
 
   // disposeTimersAndSeqGuards（aboutToDisappear 路径，页面整体销毁）里本簇
@@ -392,6 +401,7 @@ export class ChatOverlayState {
     this.showReactionSheet = false;
     this.reactionTargetId = 0;
     this.closeForwardSheet();
+    this.showPinnedListSheet = false;
     if (this.stickerGhostTimer !== -1) {
       clearTimeout(this.stickerGhostTimer);
       this.stickerGhostTimer = -1;

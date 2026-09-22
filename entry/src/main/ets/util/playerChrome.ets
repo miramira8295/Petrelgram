@@ -33,8 +33,17 @@ export const DEFAULT_SPEED_IDX: number = 1;
 export const QUICK_SEEK_MS: number = 15_000;
 
 // 长按快退/快进（issue #160）：按住这么久算长按，之后每隔同样的时长再跳一次
-// QUICK_SEEK_MS。500 是系统默认值，取小一点更跟手；再小会和双击抢。
+// HOLD_SEEK_STEP_MS。500 是系统默认值，取小一点更跟手；再小会和双击抢。
 export const LONG_PRESS_SEEK_MS: number = 400;
+
+// 长按连续快进/快退**每一跳**的步长。
+//
+// 【为什么和双击分开】原来两者共用 QUICK_SEEK_MS，于是按住不放是每 400ms 跳
+// 15 秒——37 倍速，根本不是"快进"而是连续瞬移，想停在某一处只能靠运气
+// （用户 2026-09-22：「播放器长按会有连续快进 15s 改成 2s」）。2 秒 / 400ms
+// 是 5 倍速，按住能看着画面走、松手停得住。
+// 双击那一下仍然是 15 秒：那是"跳过片头"的量，和连续拖动不是一回事。
+export const HOLD_SEEK_STEP_MS: number = 2_000;
 
 // 状态文字「延迟出现」的门槛。见 util/playerStatusGate（issue #192）。
 export const STATUS_DELAY_MS: number = 350;
@@ -50,6 +59,23 @@ export const HEADSET_DEVICE_TYPES: audio.DeviceType[] = [
   audio.DeviceType.BLUETOOTH_SCO,
   audio.DeviceType.BLUETOOTH_A2DP
 ];
+
+// 快进/快退角标该显示多少秒（毫秒，正数）。
+//
+// 【为什么要累加】双击是一下跳 15 秒，角标写死"15 秒"就够了。长按改成每 400ms
+// 跳 HOLD_SEEK_STEP_MS（2 秒）之后，写死一个数就开始撒谎——按住两秒实际走了
+// 10 秒，角标还在说 2 秒。同一侧连着跳就把量加起来，松手（角标淡出）后下一次
+// 从头算。换一侧也从头算：从"快进 6 秒"直接接着数到"后退 8 秒"没有意义。
+//
+// visible = 角标此刻还亮着（淡出计时器还没到），currentSide/currentMs 是它正在
+// 显示的那一份。
+export function nextSeekFeedbackMs(
+  visible: boolean, currentSide: number, currentMs: number, deltaMs: number
+): number {
+  const step: number = Math.abs(deltaMs);
+  const side: number = deltaMs < 0 ? -1 : 1;
+  return visible && currentSide === side ? currentMs + step : step;
+}
 
 // mm:ss（超过一小时给 h:mm:ss）。
 export function formatMs(ms: number): string {

@@ -7049,16 +7049,8 @@
       "value": "Doppio tocco per tornare indietro di 15 secondi"
     },
     {
-      "name": "player_back_15",
-      "value": "Indietro di 15 secondi"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "Velocità %1$s, tocca per cambiare"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "Avanti di 15 secondi"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "Impossibile ottenere questo brano"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "Messaggi fissati"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "Nessun messaggio fissato"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "Impossibile caricare i messaggi fissati"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "Mostra tutti i messaggi fissati"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "Rimuovi tutti i messaggi fissati"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "Rimuovere tutti i messaggi fissati qui? L'operazione non è reversibile."
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "Tutti i messaggi fissati sono stati rimossi"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "Impossibile rimuovere tutti i messaggi fissati"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "Avanti %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "Indietro %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "Tutti"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "Foto"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "Video"
     }
   ]
 }

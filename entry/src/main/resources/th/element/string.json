@@ -7049,16 +7049,8 @@
       "value": "แตะสองครั้งเพื่อย้อนกลับ 15 วินาที"
     },
     {
-      "name": "player_back_15",
-      "value": "ย้อนกลับ 15 วินาที"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "ความเร็ว%1$sปัจจุบัน แตะเพื่อสลับ"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "ข้ามไปข้างหน้า 15 วินาที"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "ดึงเพลงนี้ไม่ได้"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "ข้อความที่ปักหมุด"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "ไม่มีข้อความที่ปักหมุด"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "โหลดข้อความที่ปักหมุดไม่สำเร็จ"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "ดูข้อความที่ปักหมุดทั้งหมด"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "เลิกปักหมุดข้อความทั้งหมด"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "เลิกปักหมุดข้อความทั้งหมดที่นี่หรือไม่ การกระทำนี้ย้อนกลับไม่ได้"
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "เลิกปักหมุดข้อความทั้งหมดแล้ว"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "เลิกปักหมุดข้อความทั้งหมดไม่สำเร็จ"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "กรอไป %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "ย้อนกลับ %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "ทั้งหมด"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "รูปภาพ"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "วิดีโอ"
     }
   ]
 }

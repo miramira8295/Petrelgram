@@ -187,16 +187,30 @@ const POWER_BOOLEAN_DEFAULTS: string[] = [
   KEY_POWER_EMOJI_STATUS
 ];
 
-const POWER_BOOLEAN_FALSE_DEFAULTS: string[] = [
+// 默认**关**的特效：要么是持续跑的（背景动效、模糊缩放），要么是每条消息都可能
+// 触发的（回应动画）。开销是常态性的，所以由用户主动打开。
+export const POWER_BOOLEAN_FALSE_DEFAULTS: string[] = [
   KEY_POWER_EFFECT_REACTION,
-  KEY_POWER_EFFECT_REPLY,
   KEY_POWER_EFFECT_BLUR,
   KEY_POWER_EFFECT_BACKGROUND
 ];
 
-const POWER_BOOLEAN_TRUE_EFFECT_DEFAULTS: string[] = [
+// 默认**开**的特效：一次交互触发一次、放完就结束的一次性动效。
+//
+// 【KEY_POWER_EFFECT_REPLY 2026-09-22 从上面那组移到这组】它原来和背景动效、
+// 模糊缩放并列默认关，代价是**跳转落点的气泡脉冲从来没有人见过**：点引用块、
+// 点置顶条、点搜索结果、返回上一处——这四条跳转唯一的"你落在这条"的反馈就是
+// 那个脉冲（JumpFlashState，视口高亮矩形早已移除），它却要用户先进省电设置
+// 打开「回复与转发动效」才会出现。用户 2026-09-22 连报两次"看不到闪动"，真机
+// 探针打出 `[Jump80] runPulse rise=0 settle=0` —— 动画根本没起步。
+//
+// 分组的依据是**开销形态**而不是"算不算特效"：这个脉冲是一次跳转放一次、总共
+// 1.4 秒、只动一行，形状和「新消息动效」「菜单和面板动效」完全一样，本来就该在
+// 这一组。开关照旧留着，关掉仍然一切照常，只是不再默认吞掉落点反馈。
+export const POWER_BOOLEAN_TRUE_EFFECT_DEFAULTS: string[] = [
   KEY_POWER_EFFECT_MESSAGE,
-  KEY_POWER_EFFECT_MENU
+  KEY_POWER_EFFECT_MENU,
+  KEY_POWER_EFFECT_REPLY
 ];
 
 // 本机通知开关（按会话类型）。优先级高于 TDLib 的服务端通知设置：

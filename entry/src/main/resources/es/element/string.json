@@ -7049,16 +7049,8 @@
       "value": "Toca dos veces para retroceder 15 segundos"
     },
     {
-      "name": "player_back_15",
-      "value": "Retroceder 15 segundos"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "Velocidad actual ×%1$s. Toca para cambiar"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "Avanzar 15 segundos"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "No se pudo obtener esta pista"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "Mensajes fijados"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "No hay mensajes fijados"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "No se pudieron cargar los mensajes fijados"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "Ver todos los mensajes fijados"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "Dejar de fijar todos"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "¿Dejar de fijar todos los mensajes aquí? Esta acción no se puede deshacer."
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "Se dejaron de fijar todos los mensajes"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "No se pudieron dejar de fijar los mensajes"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "Avanzar %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "Retroceder %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "Todo"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "Fotos"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "Vídeos"
     }
   ]
 }

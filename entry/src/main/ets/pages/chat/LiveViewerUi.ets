@@ -1,3 +1,4 @@
+import { AWAKE_OWNER_LIVE, requestScreenAwake, screenAwakeApplyFailed } from '../../util/screenAwake';
 import { common } from '@kit.AbilityKit';
 import { promptAction, window } from '@kit.ArkUI';
 import { logE } from '../../util/log';
@@ -85,19 +86,35 @@ export function setLiveStreamFullscreen(
   return liveFullscreenTask;
 }
 
-// Keep the display awake only while a live viewer or its floating overlay owns
-// the active Session. The sequence guard prevents an older async window lookup
-// from overwriting a newer page/floating-window lifecycle decision.
-export function setLiveStreamKeepScreenOn(
-  context: common.UIAbilityContext, keepScreenOn: boolean
+// 「屏幕别熄」的唯一出口。**谁要亮由 util/screenAwake 仲裁**，这里只负责把
+// 仲裁结果推给窗口——setWindowKeepScreenOn 是窗口上的一个布尔开关，谁最后调
+// 谁说了算，各调各的就会互相掐（详见 screenAwake 文件头）。
+//
+// 序号守卫防止一个更早发出的异步取窗口请求覆盖掉更晚的那次决定。
+export function setScreenAwakeFor(
+  context: common.UIAbilityContext, owner: string, keepScreenOn: boolean
 ): void {
+  const next: boolean | null = requestScreenAwake(owner, keepScreenOn);
+  if (next === null) {
+    return; // 集合空/非空没翻转，不需要碰窗口
+  }
+  const wanted: boolean = next;
   const requestSeq: number = ++liveKeepScreenRequestSeq;
   window.getLastWindow(context).then((mainWindow: window.Window): Promise<void> => {
     if (requestSeq !== liveKeepScreenRequestSeq) { return Promise.resolve(); }
-    return mainWindow.setWindowKeepScreenOn(keepScreenOn);
+    return mainWindow.setWindowKeepScreenOn(wanted);
   }).catch((caught: Error): void => {
+    screenAwakeApplyFailed(wanted);
     logE(`LiveViewerUi.setKeepScreenOn failed: ${caught.message}`);
   });
+}
+
+// Keep the display awake only while a live viewer or its floating overlay owns
+// the active Session. 观看页和悬浮窗本来就共享同一个标志，所以共用一个持有者名。
+export function setLiveStreamKeepScreenOn(
+  context: common.UIAbilityContext, keepScreenOn: boolean
+): void {
+  setScreenAwakeFor(context, AWAKE_OWNER_LIVE, keepScreenOn);
 }
 
 // The media viewer already owns the whole page, so this control changes only

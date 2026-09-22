@@ -7049,16 +7049,8 @@
       "value": "با دوبار ضربه ۱۵ ثانیه عقب بروید"
     },
     {
-      "name": "player_back_15",
-      "value": "۱۵ ثانیه عقب"
-    },
-    {
       "name": "player_speed_a11y",
       "value": "سرعت فعلی %1$s، برای تغییر ضربه بزنید"
-    },
-    {
-      "name": "player_forward_15",
-      "value": "۱۵ ثانیه جلو"
     },
     {
       "name": "player_playback_failed",
@@ -12771,6 +12763,58 @@
     {
       "name": "mc_search_chatbot_failed",
       "value": "دریافت این آهنگ ممکن نشد"
+    },
+    {
+      "name": "cp_pinned_list_title",
+      "value": "پیام‌های سنجاق‌شده"
+    },
+    {
+      "name": "cp_pinned_list_empty",
+      "value": "پیام سنجاق‌شده‌ای نیست"
+    },
+    {
+      "name": "cp_pinned_list_failed",
+      "value": "بارگیری پیام‌های سنجاق‌شده ناموفق بود"
+    },
+    {
+      "name": "cp_pinned_list_open",
+      "value": "نمایش همه سنجاق‌شده‌ها"
+    },
+    {
+      "name": "cp_unpin_all",
+      "value": "برداشتن سنجاق همه پیام‌ها"
+    },
+    {
+      "name": "cp_unpin_all_confirm",
+      "value": "سنجاق همه پیام‌های اینجا برداشته شود؟ این کار بازگشت‌پذیر نیست."
+    },
+    {
+      "name": "cp_unpin_all_done",
+      "value": "سنجاق همه پیام‌ها برداشته شد"
+    },
+    {
+      "name": "cp_unpin_all_failed",
+      "value": "برداشتن سنجاق همه پیام‌ها ناموفق بود"
+    },
+    {
+      "name": "player_seek_forward",
+      "value": "جلو %1$s"
+    },
+    {
+      "name": "player_seek_back",
+      "value": "عقب %1$s"
+    },
+    {
+      "name": "cpp_media_all",
+      "value": "همه"
+    },
+    {
+      "name": "cpp_media_photos",
+      "value": "عکس‌ها"
+    },
+    {
+      "name": "cpp_media_videos",
+      "value": "ویدیوها"
     }
   ]
 }

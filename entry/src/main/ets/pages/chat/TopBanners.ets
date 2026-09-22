@@ -89,6 +89,9 @@ export struct TopBanners {
   // 能力，正好复现迁移前普通字段的行为。空实现默认值保留（仓库惯例：组件要能
   // 脱离父组件独立预览）。
   @Event onPinnedTap: () => void = (): void => {};
+  // 置顶条尾部那个图标按钮：打开「全部置顶消息」面板。与 onPinnedTap 是两个
+  // 独立动作（那个跳当前这一条，这个看全量），命中区也互不重叠。
+  @Event onOpenPinnedList: () => void = (): void => {};
   @Event onLiveStreamTap: () => void = (): void => {};
   // 会话操作条（issue #201 第 8 条）：空串 = 没有。按钮 id 由 ChatPage 转给
   // ChatActionBarActions，本层照旧只发回调。
@@ -154,54 +157,78 @@ export struct TopBanners {
       : str('cp_live_in_progress');
   }
 
+  // 【为什么"定位"和"查看全部"是两个互不重叠的命中区，而不是一层套一层】
+  // 原来整条 Row 自己带 .onClick(onPinnedTap)。在它里面再放一个按钮，就得依赖
+  // ArkUI 手势竞争「内层优先」这条隐含约定来保证点按钮不会同时触发定位——
+  // 一条不写在类型里、也没法被单测钉住的约定。这里改成两块并排的命中区：
+  // 外层 Row 只负责高度/内边距/动画，**不带 onClick**；跳转的点击、按压反馈、
+  // enabled 与 a11y 文案一起落在左边那块 layoutWeight(1) 的 Row 上，右边的图标
+  // 按钮是它的兄弟节点。两者的可点范围物理上不相交，不存在谁吃掉谁的问题。
   @Builder
   pinnedBanner() {
-    Row({ space: 10 }) {
-      Column() {
-        ForEach(pinnedSegIndices(this.topCard.pinnedCount), (i: number) => {
-          Column().width(3).layoutWeight(1)
-            .backgroundColor(i === pinnedActiveSeg(this.topCard.pinnedCycle, this.topCard.pinnedCount)
-              ? COLOR_PRIMARY : '#303E3E40')
-            .borderRadius(1.5).margin({ top: 1, bottom: 1 });
-        }, (i: number) => `seg_${i}_${i === pinnedActiveSeg(this.topCard.pinnedCycle, this.topCard.pinnedCount)}`);
-      }.height(34).width(3);
-      Column({ space: 2 }) {
-        Row({ space: 6 }) {
-          Text($r('app.string.cp_pinned_message')).fontSize(12)
-            .fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
-          if (this.topCard.pinnedCount > 1) {
-            Text(`${pinnedShownIndex(this.topCard.pinnedCycle, this.topCard.pinnedCount) + 1}/${this.topCard.pinnedCount}`)
-              .fontSize(10)
-              .fontColor(COLOR_TEXT_SECONDARY);
+    Row({ space: 4 }) {
+      Row({ space: 10 }) {
+        Column() {
+          ForEach(pinnedSegIndices(this.topCard.pinnedCount), (i: number) => {
+            Column().width(3).layoutWeight(1)
+              .backgroundColor(i === pinnedActiveSeg(this.topCard.pinnedCycle, this.topCard.pinnedCount)
+                ? COLOR_PRIMARY : '#303E3E40')
+              .borderRadius(1.5).margin({ top: 1, bottom: 1 });
+          }, (i: number) => `seg_${i}_${i === pinnedActiveSeg(this.topCard.pinnedCycle, this.topCard.pinnedCount)}`);
+        }.height(34).width(3);
+        Column({ space: 2 }) {
+          Row({ space: 6 }) {
+            Text($r('app.string.cp_pinned_message')).fontSize(12)
+              .fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
+            if (this.topCard.pinnedCount > 1) {
+              Text(`${pinnedShownIndex(this.topCard.pinnedCycle, this.topCard.pinnedCount) + 1}/${this.topCard.pinnedCount}`)
+                .fontSize(10)
+                .fontColor(COLOR_TEXT_SECONDARY);
+            }
+            if (this.topCard.pinnedLoadState === 'loading') {
+              LoadingProgress().width(12).height(12).color(COLOR_PRIMARY);
+            }
           }
-          if (this.topCard.pinnedLoadState === 'loading') {
-            LoadingProgress().width(12).height(12).color(COLOR_PRIMARY);
-          }
+          Text(this.topCard.pinnedPreview).fontSize(13).fontColor(COLOR_TEXT_PRIMARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
         }
-        Text(this.topCard.pinnedPreview).fontSize(13).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        .alignItems(HorizontalAlign.Start).layoutWeight(1);
+        if (this.topCard.pinnedJumpBusy) {
+          LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
+        } else {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(15)
+            .fontColor([COLOR_ICON_SECONDARY]);
+        }
       }
-      .alignItems(HorizontalAlign.Start).layoutWeight(1);
-      if (this.topCard.pinnedJumpBusy) {
-        LoadingProgress().width(18).height(18).color(COLOR_PRIMARY);
-      } else {
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(15)
+      .layoutWeight(1)
+      .height('100%')
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(8)
+      .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
+      .animation({
+        duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
+        curve: Curve.EaseOut
+      })
+      .enabled(!this.topCard.pinnedJumpBusy)
+      .accessibilityText(str('cp_pinned_a11y', this.topCard.pinnedPreview))
+      .onClick((): void => { this.onPinnedTap(); });
+      // 查看全部置顶。定位跳转跳的是"当前这一条"，看全量得另有入口。
+      Row() {
+        SymbolGlyph($r('sys.symbol.list_bullet'))
+          .fontSize(18)
           .fontColor([COLOR_ICON_SECONDARY]);
       }
+      .width(36).height(36).borderRadius(18)
+      .justifyContent(FlexAlign.Center)
+      .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
+      .accessibilityText(str('cp_pinned_list_open'))
+      .onClick((): void => { this.onOpenPinnedList(); });
     }
     .width('100%')
     .height(CHAT_TOP_BANNER_ROW_HEIGHT)
-    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-    .alignItems(VerticalAlign.Center)
-    .stateStyles({ normal: this.rowNormalStyle, pressed: this.rowPressedStyle })
-    .animation({
-      duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 130),
-      curve: Curve.EaseOut
-    })
-    .enabled(!this.topCard.pinnedJumpBusy)
-    .accessibilityText(str('cp_pinned_a11y', this.topCard.pinnedPreview))
-    .onClick((): void => { this.onPinnedTap(); });
+    .padding({ left: 14, right: 10, top: 8, bottom: 8 })
+    .alignItems(VerticalAlign.Center);
   }
 
   // 置顶和直播是同一张卡里的两个独立动作。并存时两者都保留，层级也说得清楚：

@@ -1,3 +1,4 @@
+import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
 import { pillSegments, PillSegment } from '../../util/systemPillLinks';
 import { isFavoriteSticker } from '../../store/FavoriteStickers';
 import { stickerSourceFileId } from '../../util/stickerSetItems';
@@ -4247,11 +4248,11 @@ export struct MessageBubble {
         .backgroundColor(this.containerGlassBg())
         // Transform the bubble and tail without moving avatar/date or list geometry.
         // The jump controller owns the one-shot animation; no resident .animation().
-        .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-          y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+        .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
+          y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
           centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
         .opacity(1 - this.leaving)
-        .brightness(1 + this.jumpFocus * 0.10)
+        .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
         .backgroundBlurStyle(this.containerGlassBlurStyle())
         // 材质自带的边框沿**本节点的 border-box** 画，而且吃 borderRadius。不设圆角
         // 它就画一个直角矩形框，被轮廓裁掉左边/底边后只剩顶边一条直线拐到右边——
@@ -4293,11 +4294,11 @@ export struct MessageBubble {
         // 玻璃关：只留与材质无关的这几个。
         .alignItems(VerticalAlign.Bottom)
         .padding(this.tailGutterPadding())
-        .scale({ x: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
-          y: (1 + this.jumpFocus * 0.018) * (1 - this.leaving * 0.06),
+        .scale({ x: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
+          y: (1 + this.jumpFocus * JUMP_FOCUS_SCALE) * (1 - this.leaving * 0.06),
           centerX: this.msg.isOutgoing ? '100%' : '0%', centerY: '50%' })
         .opacity(1 - this.leaving)
-        .brightness(1 + this.jumpFocus * 0.10)
+        .brightness(1 + this.jumpFocus * JUMP_FOCUS_BRIGHTNESS)
       }
       }
       .alignItems(VerticalAlign.Bottom)
