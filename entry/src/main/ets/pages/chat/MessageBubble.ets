@@ -1,3 +1,4 @@
+import { tableScrollTouched } from '../../util/tableTouchChannel';
 import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
 import { pillSegments, PillSegment } from '../../util/systemPillLinks';
 import { isFavoriteSticker } from '../../store/FavoriteStickers';
@@ -207,8 +208,13 @@ class PressDimModifier implements AttributeModifier<CommonAttribute> {
   }
 
   applyPressedAttribute(instance: CommonAttribute): void {
-    instance.opacity(this.active ? this.dimOpacity : 1);
-    const s: number = this.active ? this.dimScale : 1;
+    // 手指压在气泡里那张可横滑的表格上时不压暗、不缩放（用户 2026-09-22：
+    // 「滑动还是会响应长按的气泡变透明」）。**判据放在这里而不是构造时**：
+    // 修饰器实例是模块级常量，按下态由框架在**进入按下的那一刻**回调，
+    // 这里现读才拿得到本次触摸的真实情况。见 util/tableTouchChannel。
+    const on: boolean = this.active && !tableScrollTouched();
+    instance.opacity(on ? this.dimOpacity : 1);
+    const s: number = on ? this.dimScale : 1;
     instance.scale({ x: s, y: s });
   }
 }
@@ -921,6 +927,13 @@ export struct MessageBubble {
   }
 
   private onLongPress(event: GestureEvent): void {
+    // 手指压在气泡里那张可横滑的表格上：不弹菜单、也不做"抬起气泡"那套预览
+    // 动效（用户 2026-09-22：「滑动会响应气泡长按的视觉效果」）。按住不动 500ms
+    // 再拖，长按先于拖动成立，于是滚表格的同时菜单弹了出来。
+    // 标记只在表格**真的可滚**时才打，普通表格上长按照常出菜单。
+    if (tableScrollTouched()) {
+      return;
+    }
     // issue #114 诊断：小窗 + 键盘展开时长按调不出菜单。手势有没有到、走的哪一
     // 支、当时窗口和键盘多高、预览模式取哪种——报告人导日志就能对上。
     logW(`[Menu114] longPress id=${this.msg.id} scheme=${this.env.gestureScheme}`
@@ -956,6 +969,13 @@ export struct MessageBubble {
   // reply/edit strip below and must not fight a concurrent swipe.
   // swipeFromEdge：这一下起手在窗口边缘，让给系统的返回手势（见常量说明）。
   private swipeGestureEligible(): boolean {
+    // 手指压在气泡里那张可横滑的表格上时，整行不跟手（用户 2026-09-22：
+    // 「横向滑动会和气泡一起滑动」）。整行这条是 parallelGesture，按定义就要
+    // 和子孙手势并行跑，子节点那边没有任何属性能让它让路——只能反过来由表格
+    // 在按下时打个标记，这里读。详见 util/tableTouchChannel。
+    if (tableScrollTouched()) {
+      return false;
+    }
     return !this.swipeFromEdge && !this.data.editingActive
       && this.msg.contentType !== 'system' && this.msg.contentType !== 'hidden';
   }

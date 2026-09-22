@@ -3,7 +3,8 @@
   "description": "Please describe the basic information.",
   "dependencies": {
     "@ohos/ijkplayer": "2.0.9",
-    "@ohos/lottie": "^2.0.32"
+    "@ohos/lottie": "^2.0.32",
+    "@cangjie-tpc/formula_hybrid": "^1.3.2"
   },
   "devDependencies": {
     "@ohos/hypium": "1.0.25",

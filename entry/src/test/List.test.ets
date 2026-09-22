@@ -135,6 +135,8 @@ import unpinAllRequestTest from './UnpinAllRequest.test';
 import screenAwakeTest from './ScreenAwake.test';
 import historyWindowJoinTest from './HistoryWindowJoin.test';
 import mediaKindFilterTest from './MediaKindFilter.test';
+import tableLayoutTest from './TableLayout.test';
+import tableTouchChannelTest from './TableTouchChannel.test';
 import playSlotTest from './PlaySlot.test';
 import playSlotRegistryTest from './PlaySlotRegistry.test';
 import backgroundBlurTest from './BackgroundBlur.test';
@@ -466,6 +468,8 @@ export default function testsuite() {
   screenAwakeTest();
   historyWindowJoinTest();
   mediaKindFilterTest();
+  tableLayoutTest();
+  tableTouchChannelTest();
   playSlotTest();
   playSlotRegistryTest();
   customEmojiReactionsTest();
