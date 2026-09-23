@@ -1,5 +1,9 @@
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  ImmersiveBarsState, KEY_IMMERSIVE_BARS_HIDDEN, nextImmersiveBars
+} from '../../util/immersiveBars';
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint,
+  isSmallSquare
 } from '../../util/layoutBreakpoint';
 import { curves, router } from '@kit.ArkUI';
 import {
@@ -92,6 +96,9 @@ export struct MainTabBody {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  // 小方形屏沉浸式浏览的滚动累计（util/immersiveBars）。不是状态变量：只在
+  // 「隐藏 / 显示」真的翻转时才写一次 AppStorage，滚动过程中不触发任何重绘。
+  private immersive: ImmersiveBarsState = new ImmersiveBarsState();
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   // “所有”页使用独立列表组件，也要单独响应底栏重复点击（issue #35）。
   @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
@@ -651,8 +658,9 @@ export struct MainTabBody {
     // 给底部 dock 留 88（手机 HdsTabs 胶囊 / 平板分栏左栏底部的自绘胶囊）。
     .contentEndOffset(this.bottomSafe + 88)
     .contentStartOffset(this.contentTopInset)
-    .onDidScroll((_offset: number, state: ScrollState): void => {
+    .onDidScroll((offset: number, state: ScrollState): void => {
       this.updateScrollActivity(state);
+      this.updateImmersiveBars(offset);
       const y: number = this.listScroller.currentOffset().yOffset;
       if (!this.archiveRevealed && this.archiveRowShown() && y < 0 &&
         state === ScrollState.Scroll) {
@@ -696,6 +704,21 @@ export struct MainTabBody {
     // 指尖按下就关发布闸（抬手/被抢手势即开），见 ChatListView 同款注释。
     .onTouch((event: TouchEvent): void => { updateTouchHold(event.type); })
     .onReachEnd(() => { getChatStore().loadMore('main'); });
+  }
+
+  // 小方形屏（SPEC-04）：上滑隐藏标题栏与底部页签，下滑或回到顶部恢复。
+  // 其他形态一律不隐藏；离开小方形屏时若还藏着，立刻放出来。
+  private updateImmersiveBars(delta: number): void {
+    const prevHidden: boolean = this.immersive.hidden;
+    if (!isSmallSquare(this.widthBp, this.heightBp)) {
+      this.immersive = new ImmersiveBarsState();
+    } else {
+      const atTop: boolean = this.listScroller.currentOffset().yOffset <= 0;
+      this.immersive = nextImmersiveBars(this.immersive, delta, atTop);
+    }
+    if (this.immersive.hidden !== prevHidden) {
+      AppStorage.setOrCreate(KEY_IMMERSIVE_BARS_HIDDEN, this.immersive.hidden);
+    }
   }
 
   build() {

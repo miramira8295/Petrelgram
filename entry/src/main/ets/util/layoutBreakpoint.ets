@@ -113,3 +113,9 @@ export function dockModeForBreakpoint(widthBp: number, heightBp: number,
   return isSplitByBreakpoint(widthBp, heightBp, forceSingleColumn)
     ? DOCK_MODE_LEFT_FLOATING : DOCK_MODE_BOTTOM;
 }
+
+// 小方形屏（官方 SPEC-04：宽度 sm + 高宽比 md，典型是 Pura X 外屏 / 阔折叠折叠态）。
+// 屏幕高度小，标题栏与底部页签占比大，这一档做紧凑标题与沉浸式浏览。
+export function isSmallSquare(widthBp: number, heightBp: number): boolean {
+  return widthBp === WIDTH_BP_SM && heightBp === HEIGHT_BP_MD;
+}

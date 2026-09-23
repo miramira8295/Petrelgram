@@ -1,5 +1,6 @@
+import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint, dockModeForBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, dockModeForBreakpoint, isSmallSquare, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { common } from '@kit.AbilityKit';
 import { AppBackdrop } from '../common/AppBackdrop';
@@ -164,6 +165,8 @@ export struct MainScreen {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  // 小方形屏上滑时收起底部页签（SPEC-04，写入方是会话列表的滚动回调）。
+  @StorageProp(KEY_IMMERSIVE_BARS_HIDDEN) immersiveHidden: boolean = false;
   // APP 壁纸：这一层同时知道分栏和路径，所以由它算一次「生效中」写进
   // KEY_APP_BG_ON，其余组件只读那一个键（见 store/AppSettings 的说明）。
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('syncWallpaperFlag') private appBgLight: string = '';
@@ -635,6 +638,11 @@ export struct MainScreen {
   // 大屏是否把页签挪到侧边（官方 lg 断点 840vp，见 util/splitMetrics）。
   // 平板分栏：HdsTabs 的栏收起，改由自绘 dock() 压在左栏底部居中；其余一律手机模式。
   // 判据见 layoutBreakpoint.dockModeForBreakpoint（2026-09-17 定形态，改读系统断点）。
+  // 小方形屏上滑沉浸：只在这一档收起。只有会话列表的滚动会置位，换页签时 onChange 复位。
+  private immersiveDockHidden(): boolean {
+    return this.immersiveHidden && isSmallSquare(this.widthBp, this.heightBp);
+  }
+
   private leftFloatingDock(): boolean {
     return dockModeForBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) === DOCK_MODE_LEFT_FLOATING;
   }
@@ -1115,7 +1123,7 @@ export struct MainScreen {
       .barPosition(BarPosition.End)
       // 进会话页等场景要收起底栏（收高度）。
       // （23+ 另有 controller.applyHideAnimation 能带动画，等这一步验完再加。）
-      .barHeight(this.dockBarOpen && !this.leftFloatingDock() ? DOCK_H : 0)
+      .barHeight(this.dockBarOpen && !this.leftFloatingDock() && !this.immersiveDockHidden() ? DOCK_H : 0)
       // **一次都不设 barWidth**，交给修饰器按 sideBarWidth 决定（横排恒传 null）。
       // 依据见 HdsTabsFloatingOptions.sideBarWidth 里抄的官方两段。
       .attributeModifier(new HdsTabsFloatingModifier({
@@ -1153,6 +1161,11 @@ export struct MainScreen {
         }
       })
       .onChange((index: number) => {
+        // 换页签一律放出沉浸式收起的栏：别的页签的列表不写这个状态，
+        // 收着的页签栏在那边就再也出不来了（SPEC-04）。
+        if (this.immersiveHidden) {
+          AppStorage.setOrCreate(KEY_IMMERSIVE_BARS_HIDDEN, false);
+        }
         // Keep the dock synced if Tabs changes its final index after a rapid
         // sequence of taps. index 是**物理**下标，换回逻辑再比。
         const logical: number = logicalTabIndex(index, this.showContactsTab);

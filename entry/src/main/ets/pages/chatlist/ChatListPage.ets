@@ -1,6 +1,7 @@
+import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
 import {
   BreakpointType, HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
-  isSplitByBreakpoint
+  isSmallSquare, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { UnreadBadgeCounts } from '../../util/unreadBadgeRule';
 import { chatListSyncState } from '../../util/syncState';
@@ -218,6 +219,8 @@ export struct ChatListPage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  // 小方形屏上滑时隐藏标题栏（SPEC-04，写入方是 MainTabBody 的滚动回调）。
+  @StorageProp(KEY_IMMERSIVE_BARS_HIDDEN) immersiveHidden: boolean = false;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // Sliding selection pill: position/size interpolated between tab frames so it
@@ -1386,6 +1389,8 @@ export struct ChatListPage {
       // 的话，一开转发面板音视频就停了，这是迁移前没有的行为。
       .attributeModifier(SHEET_LIFECYCLE_MODIFIER)
       .titleMode(HdsNavigationTitleMode.MINI)
+      // 小方形屏沉浸式浏览（SPEC-04）：上滑收起标题栏，带动画；其他形态恒显示。
+      .hideTitleBar(this.immersiveHidden && isSmallSquare(this.widthBp, this.heightBp), true)
       // 每个文件夹页签的列表控制器都交进去——哪一个在滚，标题栏就跟着哪一个。
       .bindToScrollable(this.allTabScrollers())
       .width('100%').height('100%')

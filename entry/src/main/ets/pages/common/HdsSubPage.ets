@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSmallSquare
+} from '../../util/layoutBreakpoint';
 import { router } from '@kit.ArkUI';
 import {
   HdsNavigation, HdsNavigationMenuItemOptions, HdsNavigationTitleMode
@@ -36,6 +39,10 @@ export struct HdsSubPage {
   // 窗口宽（不是屏幕宽），分屏 / 悬浮窗 / 折叠屏改变窗口时 EntryAbility 的
   // windowSizeChange 会刷新它。平板上用来给内容限宽——见 util/contentWidth。
   @StorageProp('screenWidthVp') private screenW: number = 360;
+  // 小方形屏（SPEC-04「标题栏留白优化」）用 MINI：FREE 大标题单独占一整行，
+  // 在只有一巴掌高的外屏上最费地方。其余形态保持大标题。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) private widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) private heightBp: number = HEIGHT_BP_LG;
   @Prop title: ResourceStr;
   // 空串表示不显示副标题。
   @Prop subTitle: ResourceStr = '';
@@ -124,7 +131,8 @@ export struct HdsSubPage {
     // 它当标题栏容器、不用 NavDestination——分栏的结果是整页内容挤进左列、
     // 右边一片空白（平板用户报"没法用了"）。
     .mode(NavigationMode.Stack)
-    .titleMode(HdsNavigationTitleMode.FREE)
+    .titleMode(isSmallSquare(this.widthBp, this.heightBp)
+      ? HdsNavigationTitleMode.MINI : HdsNavigationTitleMode.FREE)
     .bindToScrollable([this.scroller])
     .width('100%').height('100%')
     .backgroundColor(this.pageBackground);
