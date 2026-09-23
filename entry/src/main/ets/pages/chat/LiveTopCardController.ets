@@ -48,6 +48,7 @@ import {
   PINNED_EMPTY, PINNED_IGNORE, PINNED_JUMP, PINNED_LATEST, PINNED_RETRY,
   PinnedTap, pinnedTapAction
 } from '../../util/pinnedJump';
+import { groupCallGone, groupCallIsLive } from '../../util/liveCallState';
 import { pinnedShownIndex } from '../../util/pinnedSegments';
 import { PinnedEntry } from '../../util/pinnedEntry';
 import { TOP_CARD_ACTION_GUARD_MS } from '../../util/chatPageTuning';
@@ -361,6 +362,18 @@ export class LiveTopCardController {
       }
       this.liveGroupRefreshInFlight = false;
       this.liveGroupRequestId = 0;
+      if (groupCallGone(error.code)) {
+        // 404 是答案不是失败：通话已经不存在 = 直播结束，横幅该收掉。
+        // 原来只置 loadState，于是"正在直播"一直挂着（用户 2026-09-23 实报）。
+        this.liveCallIsActive = false;
+        this.liveCallIsRtmp = false;
+        this.liveParticipantCount = 0;
+        this.livePulseExpanded = false;
+        this.liveDialogOpening = false;
+        this.liveLoadState = 'ready';
+        return;
+      }
+      // 其余错误码只说明这次没问到，不能据此撤掉一个已确认在播的通话。
       if (!this.liveCallIsActive) {
         this.liveLoadState = 'error';
       }
@@ -392,7 +405,9 @@ export class LiveTopCardController {
   }
 
   applyLiveGroupCall(groupCall: TdObject): void {
-    this.liveCallIsActive = (groupCall['is_active'] as boolean | undefined) ?? false;
+    // 判据不是 is_active——它只说明"通话对象还没被销毁"。详见 groupCallIsLive，
+    // 真机上误报那个频道就是 is_active=true / participant_count=0。
+    this.liveCallIsActive = groupCallIsLive(groupCall);
     this.liveCallIsRtmp = (groupCall['is_rtmp_stream'] as boolean | undefined) ?? false;
     this.liveParticipantCount = (groupCall['participant_count'] as number | undefined) ?? 0;
     this.liveLoadState = 'ready';

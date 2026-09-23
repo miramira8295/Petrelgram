@@ -1,6 +1,7 @@
 import { UnreadBadgeCounts } from '../../util/unreadBadgeRule';
+import { chatListSyncState } from '../../util/syncState';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
-import { getFolderStore, getUnreadCountStore, getChatStore, getTdClient } from '../../tdkit/Globals';
+import { getFolderStore, getUnreadCountStore, getChatStore, getConnectionState, getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { FolderInfo } from '../../store/FolderStore';
 import { ChatListView } from './ChatListView';
@@ -459,10 +460,11 @@ export struct ChatListPage {
     this.unsubChats = getChatStore().subscribeChanges(() => { this.refreshUnread(); });
     this.unsubConn = getTdClient().onUpdate('updateConnectionState', (u: TdObject) => {
       const st = u['state'] as TdObject | undefined;
-      const t = st !== undefined ? ((st['@type'] as string | undefined) ?? '') : '';
-      this.syncState = t === 'connectionStateUpdating' || t === 'connectionStateConnecting'
-        || t === 'connectionStateConnectingToProxy' || t === 'connectionStateWaitingForNetwork' ? t : '';
+      this.syncState = chatListSyncState(
+        st !== undefined ? ((st['@type'] as string | undefined) ?? '') : '');
     });
+    // 订阅晚了收不到当前值（#219-7：没网冷启动时标题什么都不显示），先读缓存补一次。
+    this.syncState = chatListSyncState(getConnectionState());
     // 冷启动时文件夹多半已在本地缓存里（tabs() 立即非空），首个邻居页签趁
     // 启动静止期先建出来，用户第一次横滑就不用付那 74ms（Frame 录制实测）。
     // 文件夹还没到的话这次是空转，订阅回调里 foldersChanged 那一路会再排。

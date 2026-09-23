@@ -6,6 +6,7 @@ import {
   EXT_LINK_ASK, EXT_LINK_COPY, EXT_LINK_DEFAULT, externalLinkDecision
 } from './externalLinkPolicy';
 import { copyPlainText } from './clipboard';
+import { endLinkNav } from './linkTapGuard';
 import { str } from './strings';
 import { logE } from './log';
 
@@ -19,6 +20,13 @@ export function webBrowserTarget(url: string): string {
   return lower.startsWith('https://') || lower.startsWith('http://') ? target : '';
 }
 
+// 【链接忙碌态必须在这里收】消息里的链接点下去时，ChatPage 先 beginLinkNav：
+// 那段文字换成高亮底色并无限呼吸，表示"正在打开"。它原本只靠会话页被盖住
+// （打开了浏览器页）或站内解析完成来解除——可下面这几条结局都**不离开会话页**：
+// 弹窗里取消、弹窗里选复制、「复制」档直接复制、交给系统应用却打开失败。
+// 于是链接一直高亮在呼吸，看着像气泡卡在选中态（用户 2026-09-23 实报）。
+// endLinkNav 对不是从消息里点进来的入口（资料页简介等）是空操作。
+//
 // 弹一层「打开 / 复制」，让用户在跳出去之前先看清真网址。
 // 标题截断到 60 是给长网址留的：ActionMenu 的标题不换行，太长会把按钮挤没。
 function askBeforeOpen(context: common.UIAbilityContext, url: string,
@@ -35,7 +43,11 @@ function askBeforeOpen(context: common.UIAbilityContext, url: string,
       return;
     }
     copyPlainText(url, str('link_copied'));
-  }).catch((): void => {});
+    endLinkNav();
+  }).catch((): void => {
+    // 取消（点遮罩或返回）。
+    endLinkNav();
+  });
 }
 
 // Open a tapped content link: web pages go to the in-app browser page, other
@@ -55,6 +67,7 @@ export function openWebUrl(
   const decision: string = externalLinkDecision(policy, deceptive);
   if (decision === EXT_LINK_COPY) {
     copyPlainText(url, str('link_copied'));
+    endLinkNav();
     return;
   }
   if (decision === EXT_LINK_ASK) {
@@ -69,8 +82,13 @@ export function openWebUrl(
 function openResolvedWebUrl(
   context: common.UIAbilityContext,
   url: string,
-  onFailed: () => void
+  onFailedOuter: () => void
 ): void {
+  // 交出去失败时页面不会被盖住，忙碌态得自己收。
+  const onFailed = (): void => {
+    endLinkNav();
+    onFailedOuter();
+  };
   const target = webBrowserTarget(url);
   if (target === '') {
     openUrl(context, url, onFailed);

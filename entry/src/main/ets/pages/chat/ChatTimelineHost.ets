@@ -1,4 +1,6 @@
 import { MessageListStateCard } from './MessageListState';
+import { InitialLoadingHint } from './InitialLoadingHint';
+import { showInitialLoadingHint } from '../../util/initialLoadingHint';
 import {
   FloatingDateOverlay, FloatingDateState, TimelineStatePillSlot
 } from './FloatingDateOverlay';
@@ -83,6 +85,18 @@ export struct ChatTimelineHost {
           label: this.timelinePillLabel(),
           onRetry: (): void => { this.onTimelinePillRetry(this.timelinePillMode()); }
         });
+      }
+
+      // 0 行 + 正在首次加载：状态卡和胶囊都不管这一档（见 util/initialLoadingHint）。
+      if (showInitialLoadingHint(this.timeline.hasVisibleRows, this.timeline.messageLoadState)) {
+        Column() {
+          InitialLoadingHint();
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .padding({ bottom: this.bottomChromeH + 28 })
+        .hitTestBehavior(HitTestMode.Transparent);
       }
 
       FloatingDateOverlay({

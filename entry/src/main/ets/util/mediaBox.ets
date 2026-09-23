@@ -17,8 +17,42 @@ export interface MediaBox {
   height: number;
 }
 
-export function bubbleMaxWidth(screenW: number): number {
-  return screenW * 0.78;
+// 消息行到屏幕边的留白。MessageBubble / LightweightPlainTextBubble 的行内边距
+// 都从这里取，不能各写各的——宽度公式要减掉同一个值。
+// 群聊里它同时是**头像到屏幕边**的距离。
+export const BUBBLE_ROW_SIDE_VP: number = 4;
+// 发送者头像的直径，以及它和气泡之间的间隙。
+//
+// 【为什么要在这里定，而不是各写各的】头像位 = 直径 + 间隙，而这个和既是
+// 「不画头像那行的占位内边距」，又是宽度公式要减掉的量，还是头像元素自己的
+// margin。三处写死同一个数字，改一处漏两处就会出现「带头像那行比别的行窄」
+// 或「气泡压到头像上」。
+export const BUBBLE_AVATAR_SIZE_VP: number = 38;
+export const BUBBLE_AVATAR_GAP_VP: number = 3;
+// 群聊来信给头像留的位。
+export const BUBBLE_AVATAR_GUTTER_VP: number = BUBBLE_AVATAR_SIZE_VP + BUBBLE_AVATAR_GAP_VP;
+// 气泡对侧必须留出的最小空白。没有它，长消息会顶到另一边，一眼看不出是"谁发的"。
+export const BUBBLE_OPPOSITE_MIN_GAP_VP: number = 28;
+
+// 气泡最宽能到多少。
+//
+// 【原来是 screenW * 0.78，那个系数其实只对群聊来信成立】
+// 当时的值：440 − 5(行边距) − 44(头像位) − 48(对侧留白) = 343 = 0.78 × 440。
+// 也就是说这个系数把**头像位**算进了每一条消息，而发出去的消息和私聊来信
+// 根本没有头像位，于是白白少了 44vp 宽——表现为长消息左边空一大块
+// （用户 2026-09-23：「我发出去的消息距离左侧也应该更窄一点」）。
+//
+// 改成按实际占位算：avatarGutter 传 0 的行（发出的、私聊来信）能宽出 44vp，
+// 群聊来信一个像素不变。
+//
+// 【默认值为什么是「有头像位」】util/initialMessageStage 那个首屏高度估算拿不到
+// 逐行的会话类型，只能按最窄的一档估。估窄 ⇒ 估出的行数偏多 ⇒ 高度偏高，
+// 这是安全的方向（占位比真实高，落地时收缩，不会出现内容被裁掉）。
+export function bubbleMaxWidth(screenW: number,
+  avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP): number {
+  const reserved: number = BUBBLE_ROW_SIDE_VP + Math.max(0, avatarGutter) +
+    BUBBLE_OPPOSITE_MIN_GAP_VP;
+  return Math.max(0, screenW - reserved);
 }
 
 export function inlineMaxWidth(screenW: number): number {

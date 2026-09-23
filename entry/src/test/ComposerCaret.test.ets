@@ -17,6 +17,9 @@ export default function composerCaretTest(): void {
       expect(caretAfterExternalEdit('abc', 'abc', 1)).assertEqual(1);
       // 删除
       expect(caretAfterExternalEdit('abcd', 'ad', 3)).assertEqual(1);
+      // 插在中间 / 空框插 emoji（代理对占两个 UTF-16 单元）
+      expect(caretAfterExternalEdit('ab', 'aXb', 1)).assertEqual(2);
+      expect(caretAfterExternalEdit('', '😀', 0)).assertEqual(2);
     });
     it('粘贴长度判定：现有文本 + 粘贴内容是否超过上限', 0, (): void => {
       expect(pasteFitsLimit(10, 5, 20)).assertTrue();

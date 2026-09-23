@@ -34,6 +34,14 @@ export default function reactionsWidthTest() {
       expect(timeOverlayWidth(30, 24, true, true)).assertEqual(74);
     });
 
+    // 频道消息的浏览数（眼睛 + 5.2K）也在同一行，排在时间左边。不扣它，反应条
+    // 顶满之后会把浏览数挤出气泡。没有浏览数时传 0，结果与原来逐位相同。
+    it('浏览数占位另加一段间距；0 表示没有', 0, (): void => {
+      expect(timeOverlayWidth(30, 0, false, false, 0)).assertEqual(30);
+      expect(timeOverlayWidth(30, 0, false, false, 35)).assertEqual(69);
+      expect(timeOverlayWidth(30, 24, true, true, 35)).assertEqual(74 + 39);
+    });
+
     it('反应条上限先扣掉时间戳和那 6 的间距', 0, (): void => {
       expect(reactionsRowMaxWidth(264, 30)).assertEqual(264 - 30 - REACTIONS_TIME_GAP);
     });

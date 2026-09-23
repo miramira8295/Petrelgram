@@ -1,4 +1,6 @@
 import { TdClient, TIMEOUT_ERROR_CODE } from '../tdkit/TdClient';
+import { publishViewCount } from '../util/viewCountChannel';
+import { interactionChanged } from '../util/interactionDelta';
 import { isBackgroundCaching } from './CacheRegistry';
 import { stickerSetIdOf } from '../util/stickerSetItems';
 import { viewMessageSourceType } from '../util/viewMessageSource';
@@ -3406,9 +3408,24 @@ export class MessageStore {
     if (id === undefined) {
       return;
     }
-    const ii = u['interaction_info'] as TdObject | undefined;
-    const cmt: CommentInfo = commentInfoFromInteraction(ii);
-    const rx: ReactionInfo[] = reactionsFromInteraction(ii);
+    const ii = u['interaction_info'] as TdObject | undefined | null;
+    // 浏览数走旁路通道直达气泡，不碰行（见 util/viewCountChannel）。
+    if (ii !== undefined && ii !== null) {
+      publishViewCount(this.chatId, id, (ii['view_count'] as number | undefined) ?? 0);
+    }
+    const info: TdObject | undefined = ii !== null ? ii : undefined;
+    const cmt: CommentInfo = commentInfoFromInteraction(info);
+    const rx: ReactionInfo[] = reactionsFromInteraction(info);
+    // 频道里这条推送绝大多数只是浏览数 +1：评论和反应都没变就不 patch——
+    // 省掉一次整行克隆、一次数组复制和一轮列表通知（util/interactionDelta）。
+    const idx: number = this.indexOf(id);
+    if (idx >= 0) {
+      const cur: MessageEntry = this.messages[idx];
+      if (!interactionChanged(cur.commentCount, cur.commentReplierIds, cur.reactions,
+        cmt.count, cmt.replierIds, rx)) {
+        return;
+      }
+    }
     this.patch(id, (c: MessageEntry) => {
       c.commentCount = cmt.count;
       c.commentReplierIds = cmt.replierIds;

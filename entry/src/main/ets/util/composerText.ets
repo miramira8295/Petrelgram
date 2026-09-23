@@ -1,35 +1,17 @@
 // 输入框的两条纯判据（用户报的 ⑤ 光标乱跳 / ⑥ 粘贴只进来一半）。
 //
-// 【⑤ 为什么会乱跳】TextArea 是**受控**写法：`text: this.draft` + onChange 回写 draft。
-// 外部（页面）重新给 text 赋值时，组件把光标放到文本末尾——官方示例里要精确控制
-// 光标用的是 TextAreaController.caretPosition(index)。我们在补全 @提及、读回草稿、
-// 表情插入这些路径上都会整段改写 draft，于是用户在中间插字时光标被顶到最后。
+// 【⑤ 为什么会乱跳】给 TextArea 的 text 重新赋值，组件就把光标放到末尾。
+// 真正的元凶是**打字本身的回声**：原来是受控写法 `text: this.draft`，每打一个字
+// 页面都把同一份文本经 @Param 传回来，输入框再被赋一次值（#219-1，[Caret] 探针
+// 实测：光标先落对、4ms 后被挪到末尾，期间我们一次都没调 caretPosition）。
+// 已改成组件自有 @Local + `!!` 双向绑定（ChatComposerInput.editorText），打字不再回灌。
+// 09-18 那版"记住最近几份、认出回声就不挪光标"方向错了，已删。
+//
+// 页面**真的**整段改写草稿时（@提及补全、读回草稿、插表情）仍然要自己摆光标，
+// 官方做法是 TextAreaController.caretPosition(index)，位置由下面这个函数算。
 //
 // 这里只算"改写之后光标该落在哪"：比较新旧文本的公共前缀/后缀，得出这次改动的
 // 区间，光标落在新内容之后。整段换掉（公共前缀后缀都为空）时落到末尾。
-// 这次 draft 变化是不是**本组件自己刚发出去那一份的回声**。
-//
-// 【为什么需要它】输入框是受控写法：onChange 把新文本交给页面，页面存进自己的
-// 状态，再作为 @Param 原样传回来。回声和"外部整段改写"（@提及补全、插表情、
-// 读回草稿）走的是同一个 @Monitor，光有"和上一次发出去的那份相等"这一道判据挡
-// 不住——用户连打两个字时，页面传回来的往往是**上上次**那份，于是被当成外部改写，
-// caretAfterExternalEdit 按一对错位的文本算出一个落在末尾附近的位置，光标就
-// "莫名跳到最后面"（用户 2026-09-18 实报：光标插到前面输入时会自己跳到末尾）。
-//
-// 所以记住最近发出去的**若干份**，incoming 命中其中任何一份就是回声。
-export function isComposerEcho(recentEmitted: string[], incoming: string): boolean {
-  return recentEmitted.indexOf(incoming) >= 0;
-}
-
-// 记一份刚发出去的文本。**返回新数组**，不改入参（仓库规矩）。
-// 只留最近 limit 份：再久的回声不可能还在路上，留着反而会把一次真实的
-// "撤销到几步之前"误判成回声。
-export function rememberEmitted(recentEmitted: string[], value: string, limit: number): string[] {
-  const next: string[] = recentEmitted.filter((item: string): boolean => item !== value);
-  next.push(value);
-  return next.length > limit ? next.slice(next.length - limit) : next;
-}
-
 export function caretAfterExternalEdit(before: string, after: string, caret: number): number {
   if (before === after) {
     return caret;

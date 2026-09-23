@@ -61,6 +61,8 @@ export interface RichBlock {
   rows: RichCell[][];
   bordered: boolean;
   striped: boolean;
+  // RB_PRE 用：代码块的语言（pageBlockPreformatted.language），可能为空串。
+  language: string;
 }
 
 function emptySpan(text: string): RichSpan {
@@ -149,10 +151,10 @@ function block(kind: string, level: number, spans: RichSpan[],
   children: RichBlock[], ordered: boolean, marker: string,
   hasCheckbox: boolean = false, checked: boolean = false,
   rows: RichCell[][] = [], bordered: boolean = false,
-  striped: boolean = false): RichBlock {
+  striped: boolean = false, language: string = ''): RichBlock {
   return {
     kind, level, spans, children, ordered, marker, hasCheckbox, checked,
-    rows, bordered, striped
+    rows, bordered, striped, language
   };
 }
 
@@ -206,7 +208,12 @@ function parseOne(node: TdObject): RichBlock[] {
 
   if (type === 'pageBlockPreformatted') {
     const spans: RichSpan[] = spansOf(node['text'] as TdObject | undefined, '');
-    return spans.length > 0 ? [block(RB_PRE, 0, spans, [], false, '')] : [];
+    // language 是可选的，源里常常是空串——渲染侧据此决定表头写 "code" 还是
+    // "code: python"。
+    const language: string = (node['language'] as string | undefined) ?? '';
+    return spans.length > 0
+      ? [block(RB_PRE, 0, spans, [], false, '', false, false, [], false, false, language)]
+      : [];
   }
 
   if (type === 'pageBlockDivider') {

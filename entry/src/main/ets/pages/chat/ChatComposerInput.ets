@@ -1,5 +1,5 @@
 import {
-  caretAfterExternalEdit, isComposerEcho, pasteFitsLimit, rememberEmitted
+  caretAfterExternalEdit, pasteFitsLimit
 } from '../../util/composerText';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
 import { composerLineProbe } from '../../util/composerLineProbe';
@@ -25,9 +25,6 @@ const COMPOSER_MAX_LENGTH: number = 4096;
 
 // Shared geometry for the editor and its height measurement, both in this file.
 //
-// 记几份自己发出去的文本用来认回声。几份就够：回声最多滞后一两帧，留多了反而
-// 会把"撤销回几步之前"误判成回声。
-const EMITTED_KEEP: number = 6;
 
 // These three have to agree with the TextArea's own lineHeight/padding: the
 // editor height is computed from them, and a mismatch clips the last line
@@ -76,14 +73,18 @@ export struct ChatComposerInput {
   @Param showEmojiPanel: boolean = false;
   @Param composerEditorReady: boolean = false;
   @Param draft: string = '';
-  // ⑤ 光标乱跳：TextArea 是受控写法，外部重新给 text 赋值时组件把光标丢到末尾
-  // （@提及补全、读回草稿、表情插入都会整段改写 draft）。记住上一次的文本与
-  // 光标，外部改写后用 caretAfterExternalEdit 推出新位置再 caretPosition 放回去。
-  private lastDraftSeen: string = '';
+  // 当前光标位置。页面真的整段改写草稿时（@提及补全、读回草稿、插表情），
+  // 用它和 caretAfterExternalEdit 推出新位置，再 caretPosition 放回去。
   private caretSeen: number = 0;
-  // 最近几份**自己发出去**的文本。页面把 draft 原样传回来时要认得出是回声，
-  // 否则会被当成外部改写、把光标挪走（见 util/composerText.isComposerEcho）。
-  private emittedDrafts: string[] = [];
+  // 输入框自己的文本，经 `!!` 与 TextArea 双向同步（#219-1 的根因修复）。
+  //
+  // 原来是受控写法 `text: this.draft`：每打一个字，页面把同一份文本经 @Param
+  // 传回来，TextArea 看到绑定值变了就重设一次文本、光标随之落到末尾。
+  // [Caret] 探针实测：插字后光标先正确落在 6，4ms 后被挪到 9（末尾），期间我们
+  // 自己一次 caretPosition 都没调。所以 09-18 那版"认回声、不挪光标"挡不住它。
+  // 改成组件自有 @Local + `!!` 之后，打字不再从外面回灌；只有页面真的改写了
+  // 草稿（@提及补全、插表情、发送后清空、恢复草稿、全屏编辑回写）才写这里。
+  @Local editorText: string = '';
   @Param composerPlaceholder: string = '';
   @Param composerController: TextAreaController = new TextAreaController();
   // 输入框的真实宽度，editorHeight() 拿它做排版约束。原来是绕一圈的：本组件
@@ -336,20 +337,23 @@ export struct ChatComposerInput {
   // 一定漏算），但它们已经被 TextArea 排进去了，问组件就问得到。
   // 外部（页面）整段改写了 draft：把光标放回改动之后，而不是让它跑到末尾。
   // V2 用 @Monitor（@Watch 只在 V1 里有），名字必须是本 struct 的真实成员。
+  aboutToAppear(): void {
+    this.editorText = this.draft;
+  }
+
   @Monitor('draft')
   onDraftReplacedOutside(): void {
-    if (this.draft === this.lastDraftSeen) {
+    // 页面传回来的就是输入框里现有的内容（打字的回声）：什么都不做，
+    // 尤其不能再赋给 TextArea。
+    if (this.draft === this.editorText) {
       return;
     }
-    // 自己刚发出去那几份里的任何一份 = 回声，不是外部改写。**不碰光标**：
-    // 用户可能正在中间打字，页面传回来的往往是上上次那份（onChange 比
-    // @Param 回灌快），按错位的一对文本算出来的位置基本落在末尾。
-    if (isComposerEcho(this.emittedDrafts, this.draft)) {
-      this.lastDraftSeen = this.draft;
-      return;
-    }
-    const next: number = caretAfterExternalEdit(this.lastDraftSeen, this.draft, this.caretSeen);
-    this.lastDraftSeen = this.draft;
+    // 与输入框现有内容不同 = 页面真的改写了草稿。原来这里还有两道"认回声"的
+    // 判断（上一份相等 / 最近 6 份里有），现在不能留：它们会把真实的改写也拦下，
+    // 比如发送后清空——空串若曾被打出来过就在那份名单里，输入框就不清了。
+    // 页面是同步回写的（[Caret] 探针实测每次回声都与上一份相等），不存在迟到的旧回声。
+    const next: number = caretAfterExternalEdit(this.editorText, this.draft, this.caretSeen);
+    this.editorText = this.draft;
     this.caretSeen = next;
     // 等这一帧的文本落地再挪光标，否则挪的是旧内容上的位置。
     setTimeout((): void => { this.composerController.caretPosition(next); }, 0);
@@ -516,7 +520,7 @@ export struct ChatComposerInput {
               .onClick((): void => { this.onEmojiButtonTap(); });
             if (this.composerEditorReady) {
               TextArea({
-                text: this.draft,
+                text: this.editorText!!,
                 placeholder: this.composerPlaceholder,
                 controller: this.composerController
               })
@@ -559,8 +563,7 @@ export struct ChatComposerInput {
                   this.onComposerPaste(content, event);
                 })
                 .onChange((value: string): void => {
-                  this.lastDraftSeen = value;
-                  this.emittedDrafts = rememberEmitted(this.emittedDrafts, value, EMITTED_KEEP);
+                  this.editorText = value;
                   this.onDraftChange(value);
                   // 当场问一次（拿到的是上一拍的），再隔一帧问一次拿真值。
                   this.refreshEditorLines();
@@ -697,8 +700,6 @@ export struct ChatComposerInput {
         maxLength: COMPOSER_MAX_LENGTH,
         accentColor: this.accentColor,
         onCommit: (text: string): void => {
-          this.lastDraftSeen = text;
-          this.emittedDrafts = rememberEmitted(this.emittedDrafts, text, EMITTED_KEEP);
           this.onDraftChange(text);
         },
         onSend: (): void => {

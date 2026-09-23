@@ -31,6 +31,7 @@ import { RichMessageView } from './RichMessageView';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { LiveThumbImage } from './LiveThumbImage';
 import {
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP,
   bubbleMaxWidth, MediaBox, MEDIA_MAX_HEIGHT_RATIO, MEDIA_MAX_WIDTH, mediaBoxFor, mediaThumbWidth
 } from '../../util/mediaBox';
 import { AvLoopVideo } from '../common/AvLoopVideo';
@@ -72,6 +73,9 @@ import { sendStateFor, subscribeSendState } from '../../util/sendStateChannel';
 import {
   TranslationStatus, subscribeTranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
+import {
+  subscribeViewCount, viewCountLabelFor, viewsReserve
+} from '../../util/viewCountChannel';
 import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import { translationReplacesOriginal } from '../../util/translationMode';
 import {
@@ -239,7 +243,8 @@ const TAIL_GUTTER_VP: number = 7;
 const TAIL_GUTTER_LEFT: Padding = { left: TAIL_GUTTER_VP };
 const TAIL_GUTTER_RIGHT: Padding = { right: TAIL_GUTTER_VP };
 // 群聊来信不显示头像时给头像留的 44vp 位（头像 38 + 右边距 6），见 avatarGutterPadding。
-const AVATAR_GUTTER: Padding = { left: 44 };
+const AVATAR_GUTTER: Padding = { left: BUBBLE_AVATAR_GUTTER_VP };
+// 行边距与气泡最大宽同源，见 util/mediaBox.BUBBLE_ROW_SIDE_VP。
 const NO_GUTTER: Padding = {};
 
 @ComponentV2
@@ -510,6 +515,13 @@ export struct MessageBubble {
   // 整聊天翻译：点「隐藏译文/显示译文」的单条折叠开关，状态存在条目上。
   @Local private translationStatus: TranslationStatus | null = null;
   private unsubTranslation: (() => void) | null = null;
+  // 频道消息的浏览数标签（「5.2K」），'' = 不显示。走 viewCountChannel 旁路：
+  // 只有标签变了才会被写，浏览数 +1 但仍是 5.2K 时这个组件不会被叫醒。
+  @Local private liveViews: string = '';
+  private unsubViews: (() => void) | null = null;
+  // 浏览数订阅挂在哪个消息 id 上。它和行身份（rowId）不是一回事：发送成功时
+  // 临时 id 换成真实 id、rowId 不变，行不会重挂通道，这里得自己换订阅。
+  private viewsAttachedId: number = 0;
   @Local private livePhotoProgress: number = 0;
   @Local private liveLinkPhotoProgress: number = 0;
   @Local private liveVideoProgress: number = 0;
@@ -588,6 +600,7 @@ export struct MessageBubble {
         // 「翻译中」一行出现/消失会改行高：贴底时同一帧钉住底部（util/translationGrowthPin）。
         pinForTranslationGrowth(this.data.chatId);
       });
+    this.attachViews(message.id);
     this.livePhotoProgress = progressForOr(message.photoFileId, message.photoProgress);
     this.liveLinkPhotoProgress = progressForOr(
       message.linkPhotoFileId, message.linkPhotoProgress);
@@ -613,7 +626,28 @@ export struct MessageBubble {
     this.attachedRowId = message.rowId;
   }
 
+  private attachViews(messageId: number): void {
+    if (this.unsubViews !== null && this.viewsAttachedId === messageId) {
+      this.liveViews = viewCountLabelFor(this.data.chatId, messageId);
+      return;
+    }
+    this.detachViews();
+    this.viewsAttachedId = messageId;
+    this.liveViews = viewCountLabelFor(this.data.chatId, messageId);
+    this.unsubViews = subscribeViewCount(this.data.chatId, messageId,
+      (label: string): void => { this.liveViews = label; });
+  }
+
+  private detachViews(): void {
+    if (this.unsubViews !== null) {
+      this.unsubViews();
+      this.unsubViews = null;
+    }
+    this.viewsAttachedId = 0;
+  }
+
   private detachMessageChannels(): void {
+    this.detachViews();
     if (this.unsubSendState !== null) {
       this.unsubSendState();
       this.unsubSendState = null;
@@ -756,6 +790,8 @@ export struct MessageBubble {
     }
     const known: string = sendStateFor(this.msg.rowId);
     this.liveSendState = known !== '' ? known : this.msg.sendState;
+    // 同一行、消息 id 变了（临时 id → 真实 id）时换浏览数订阅；没变就只重读现值。
+    this.attachViews(this.msg.id);
     this.livePhotoProgress = progressForOr(this.msg.photoFileId, this.msg.photoProgress);
     this.liveLinkPhotoProgress = progressForOr(
       this.msg.linkPhotoFileId, this.msg.linkPhotoProgress);
@@ -825,7 +861,8 @@ export struct MessageBubble {
   // max width on the outer shrink-to-fit Column can resolve differently from
   // the numeric caps used by text/media and cause a late first-layout reflow.
   private bubbleMaxW(): number {
-    return bubbleMaxWidth(this.data.contentWidth);
+    // 只有群聊来信才有头像位；发出的消息和私聊来信按 0 算，能宽出 44vp。
+    return bubbleMaxWidth(this.data.contentWidth, this.avatarReserve());
   }
 
   private inlineMaxW(): number {
@@ -869,6 +906,13 @@ export struct MessageBubble {
   private avatarGutterPadding(): Padding {
     return this.data.isGroup && !this.msg.isOutgoing && !this.group.showAvatar
       ? AVATAR_GUTTER : NO_GUTTER;
+  }
+
+  // 这一行横向被头像占掉多少。**和 avatarGutterPadding 的判据只差 showAvatar**：
+  // 画了头像的那一行同样被顶开 44vp，宽度公式必须一起算进去，否则一串消息里
+  // 带头像的那条会比其它条更宽。
+  private avatarReserve(): number {
+    return this.data.isGroup && !this.msg.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0;
   }
 
   private rowTopPadding(): number {
@@ -1359,7 +1403,7 @@ export struct MessageBubble {
   // inline-time layout).
   private timeReserve(): string {
     const editReserve = this.msg.editDate > 0 ? '         ' : '';
-    return `${editReserve}  ${this.messageTimeText()}${this.msg.isOutgoing ? '   ' : ''}`;
+    return `${viewsReserve(this.liveViews)}${editReserve}  ${this.messageTimeText()}${this.msg.isOutgoing ? '   ' : ''}`;
   }
 
   // 点击：没下载好先触发下载（下载完成后 videoPath 到位，用户再点一次即可），
@@ -2537,11 +2581,11 @@ export struct MessageBubble {
   private rxWidthCache: number = 0;
 
   private reactionsRowWidth(): number {
-    // 签名里必须带上影响时间戳宽度的三样（时刻文本、已编辑、自己发的），
+    // 签名里必须带上影响时间戳宽度的四样（时刻文本、已编辑、自己发的、浏览数），
     // 否则同一条消息被编辑过之后仍拿着旧的上限。
     const sig: string = this.msg.reactions
       .map((r: ReactionInfo): string => `${r.emoji}|${r.customEmojiId}|${r.count}`).join(',') +
-      `#${this.messageTimeText()}|${this.msg.editDate > 0}|${this.msg.isOutgoing}`;
+      `#${this.messageTimeText()}|${this.msg.editDate > 0}|${this.msg.isOutgoing}|${this.liveViews}`;
     if (sig === this.rxWidthSig && this.rxWidthCache > 0) {
       return this.rxWidthCache;
     }
@@ -2556,7 +2600,9 @@ export struct MessageBubble {
     const timeVp: number = timeOverlayWidth(
       this.measureTextVp(this.messageTimeText(), 11),
       this.msg.editDate > 0 ? this.measureTextVp(str('mb_edited'), 10.5) : 0,
-      this.msg.editDate > 0, this.msg.isOutgoing);
+      this.msg.editDate > 0, this.msg.isOutgoing,
+      // 眼睛 11 + 间隙 2 + 标签。
+      this.liveViews !== '' ? 13 + this.measureTextVp(this.liveViews, 11) : 0);
     this.rxWidthSig = sig;
     this.rxWidthCache = reactionsRowWidth(chips,
       reactionsRowMaxWidth(this.inlineMaxW(), timeVp));
@@ -3842,9 +3888,24 @@ export struct MessageBubble {
 
   // Timestamp (+ send status) overlaid at the bubble's bottom-right, sharing
   // the last line with the message text (space reserved by timeReserve()).
+  // 频道消息的浏览数：眼睛 + 5.2K，排在时间左边（与官方客户端同位）。
+  // 叠在媒体上时和时间一样用白字。
+  @Builder
+  viewsLabel() {
+    Row({ space: 2 }) {
+      SymbolGlyph($r('sys.symbol.eye')).fontSize(11)
+        .fontColor([this.timeOnMedia() ? Color.White : COLOR_TEXT_SECONDARY]);
+      Text(this.liveViews).fontSize(11)
+        .fontColor(this.timeOnMedia() ? Color.White : COLOR_TEXT_SECONDARY);
+    }.alignItems(VerticalAlign.Center);
+  }
+
   @Builder
   timeOverlay() {
     Row({ space: 4 }) {
+      if (this.liveViews !== '') {
+        this.viewsLabel();
+      }
       if (this.msg.editDate > 0) {
         Text($r('app.string.mb_edited')).fontSize(10.5)
           .fontColor(this.timeOnMedia() ? Color.White : COLOR_TEXT_SECONDARY);
@@ -4233,7 +4294,7 @@ export struct MessageBubble {
           initials: this.msg.senderInitials,
           animate: true
         })
-          .margin({ right: 6 })
+          .margin({ right: BUBBLE_AVATAR_GAP_VP })
           .onClick(() => {
             if (this.gestureClaimed) { return; }
             // Group message avatar → that user's profile page.
@@ -4358,7 +4419,7 @@ export struct MessageBubble {
       });
       }
       .width('100%').padding({
-        left: 10, right: 10,
+        left: BUBBLE_ROW_SIDE_VP, right: BUBBLE_ROW_SIDE_VP,
         top: this.rowTopPadding(), bottom: this.rowBottomPadding()
       })
       .justifyContent(this.msg.isOutgoing ? FlexAlign.End : FlexAlign.Start)

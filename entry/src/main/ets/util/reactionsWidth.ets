@@ -61,10 +61,15 @@ const REACTIONS_MIN_VP: number = 52;
 
 // 时间戳挂件的宽度（vp）。三部分与 MessageBubble.timeOverlay 逐项对应：
 // 「已编辑」标签（可选）、时刻文本、发送状态图标（仅自己发的）。
+// viewsVp：频道消息浏览数那一截（眼睛 + 标签）的宽度，0 = 没有。
 export function timeOverlayWidth(
-  timeTextVp: number, editedTextVp: number, edited: boolean, outgoing: boolean
+  timeTextVp: number, editedTextVp: number, edited: boolean, outgoing: boolean,
+  viewsVp: number = 0
 ): number {
   let total: number = Math.max(0, timeTextVp);
+  if (viewsVp > 0) {
+    total += viewsVp + TIME_INNER_GAP;
+  }
   if (edited) {
     total += Math.max(0, editedTextVp) + TIME_INNER_GAP;
   }

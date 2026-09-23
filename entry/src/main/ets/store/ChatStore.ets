@@ -1,3 +1,4 @@
+import { groupCallGone, groupCallIsLive } from '../util/liveCallState';
 import { foldUnreadBadge, UnreadBadgeCounts, UnreadBadgeSource } from '../util/unreadBadgeRule';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
@@ -87,6 +88,11 @@ export class ChatStore {
   // 「我的收藏」，TDLib 不做任何标记，只能靠这个 id 认出来（issue #8）。
   // 0 表示还没收到。
   private selfId: number = 0;
+
+  // 自己的 user id；0 = 还没收到 my_id。
+  selfUserId(): number {
+    return this.selfId;
+  }
   // chat.photo（chatPhotoInfo）.has_animation。频道/匿名管理员以会话身份发言时，
   // 群聊气泡左侧的头像据此决定要不要取动态头像（issue #140）。不进 ChatEntry：
   // 条目是会话列表行的内容签名，这个标志列表行用不上。
@@ -627,10 +633,29 @@ export class ChatStore {
       this.applyGroupCall(groupCall);
     }).catch((error: TdError): void => {
       this.groupCallLoading.delete(groupCallId);
-      if (error.code !== 404) {
-        logE(`ChatStore.getGroupCall(${groupCallId}) failed: ${error.message}`);
+      if (groupCallGone(error.code)) {
+        // 404 是答案不是失败：通话在服务端已经没了 = 直播结束。原来这里静默
+        // 吞掉，徽标就永远停在"正在直播"（用户 2026-09-23 实报）。
+        this.clearGroupCallLive(groupCallId);
+        return;
       }
+      logE(`ChatStore.getGroupCall(${groupCallId}) failed: ${error.message}`);
     });
+  }
+
+  // 通话已经不存在：把徽标撤掉，但**保留 liveGroupCallId**——那个 id 由
+  // chat.video_chat 说了算，等 updateChatVideoChat 来改。这里只回答"在不在播"。
+  private clearGroupCallLive(groupCallId: number): void {
+    const chatId = this.groupCallChats.get(groupCallId);
+    if (chatId === undefined) { return; }
+    const entry = this.chats.get(chatId);
+    if (entry === undefined || entry.liveGroupCallId !== groupCallId) { return; }
+    if (!entry.isLive && !entry.isRtmpLive) { return; }
+    const next = cloneEntry(entry);
+    next.isLive = false;
+    next.isRtmpLive = false;
+    this.chats.set(chatId, next);
+    this.notify(chatId);
   }
 
   private applyGroupCall(groupCall: TdObject): void {
@@ -639,7 +664,8 @@ export class ChatStore {
     if (chatId === undefined) { return; }
     const entry = this.chats.get(chatId);
     if (entry === undefined || entry.liveGroupCallId !== groupCallId) { return; }
-    const isLive = (groupCall['is_active'] as boolean | undefined) ?? false;
+    // is_active 只说明"通话对象还在"，不说明有人在播——判据见 groupCallIsLive。
+    const isLive = groupCallIsLive(groupCall);
     const isRtmpLive = (groupCall['is_rtmp_stream'] as boolean | undefined) ?? false;
     if (entry.isLive === isLive && entry.isRtmpLive === isRtmpLive) { return; }
     const next = cloneEntry(entry);

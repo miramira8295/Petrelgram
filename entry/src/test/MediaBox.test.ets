@@ -1,6 +1,9 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_AVATAR_SIZE_VP,
+  BUBBLE_OPPOSITE_MIN_GAP_VP, BUBBLE_ROW_SIDE_VP,
   MEDIA_MAX_HEIGHT_RATIO,
+  bubbleMaxWidth,
   mediaBoxFor,
   mediaRatio,
   mediaThumbWidth
@@ -96,6 +99,58 @@ export default function mediaBoxTest() {
       for (const h of [1600, 4000, 20000]) {
         expect(mediaBoxFor(SCREEN, 900, h, true).height <= cap + 0.001).assertTrue();
       }
+    });
+
+    // ── 气泡最大宽：原来的 screenW * 0.78 其实只对群聊来信成立 ──────────
+    //
+    // 当时：440 − 5(行边距) − 44(头像位) − 48(对侧留白) = 343 = 0.78 x 440。
+    // 发出的消息和私聊来信没有头像位，却也被那个系数卡住，白白少 44vp 宽。
+    // 2026-09-23 又整体收窄了留白（用户：气泡再宽一点、头像间距再小一点）。
+    it('宽度就是屏宽减掉三段留白', 0, () => {
+      expect(bubbleMaxWidth(440, BUBBLE_AVATAR_GUTTER_VP)).assertEqual(
+        440 - BUBBLE_ROW_SIDE_VP - BUBBLE_AVATAR_GUTTER_VP - BUBBLE_OPPOSITE_MIN_GAP_VP);
+    });
+
+    it('没有头像位的行宽出整整一个头像位', 0, () => {
+      const withAvatar: number = bubbleMaxWidth(440, BUBBLE_AVATAR_GUTTER_VP);
+      const without: number = bubbleMaxWidth(440, 0);
+      expect(without - withAvatar).assertEqual(BUBBLE_AVATAR_GUTTER_VP);
+    });
+
+    // 头像位 = 直径 + 间隙。三处（占位内边距、头像 margin、宽度公式）必须同源，
+    // 各写各的就会出现「带头像那行比别的行窄」或「气泡压到头像上」。
+    it('头像位由直径和间隙推出来', 0, () => {
+      expect(BUBBLE_AVATAR_GUTTER_VP).assertEqual(
+        BUBBLE_AVATAR_SIZE_VP + BUBBLE_AVATAR_GAP_VP);
+    });
+
+    // 收窄只能收留白，不能把气泡放到顶边——这几条是下限，别再往下压。
+    it('三段留白都还在', 0, () => {
+      expect(BUBBLE_ROW_SIDE_VP > 0).assertTrue();
+      expect(BUBBLE_AVATAR_GAP_VP > 0).assertTrue();
+      expect(BUBBLE_OPPOSITE_MIN_GAP_VP >= 24).assertTrue();
+    });
+
+    // 缺省值按最窄的一档算：首屏高度估算拿不到逐行的会话类型，估窄 ⇒ 行数偏多
+    // ⇒ 高度偏高，是安全方向。
+    it('不传头像位时按有头像算', 0, () => {
+      expect(bubbleMaxWidth(440)).assertEqual(bubbleMaxWidth(440, BUBBLE_AVATAR_GUTTER_VP));
+    });
+
+    // 对侧留白是硬约束：没有它长消息会顶到另一边，一眼看不出是谁发的。
+    it('对侧留白始终被扣掉', 0, () => {
+      expect(bubbleMaxWidth(440, 0) + BUBBLE_ROW_SIDE_VP + BUBBLE_OPPOSITE_MIN_GAP_VP)
+        .assertEqual(440);
+    });
+
+    // 窄窗口（分栏左栏、小窗）下不能算出负宽。
+    it('窗口比留白还窄时夹到 0', 0, () => {
+      expect(bubbleMaxWidth(40, BUBBLE_AVATAR_GUTTER_VP)).assertEqual(0);
+      expect(bubbleMaxWidth(0, 0)).assertEqual(0);
+    });
+
+    it('脏的头像位不放大气泡', 0, () => {
+      expect(bubbleMaxWidth(440, -100)).assertEqual(bubbleMaxWidth(440, 0));
     });
   });
 }

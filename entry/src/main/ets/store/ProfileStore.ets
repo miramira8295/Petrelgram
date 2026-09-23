@@ -1,4 +1,5 @@
 import { TdClient } from '../tdkit/TdClient';
+import { isBlockedFromFullInfo } from '../util/profileMenu';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { formatUserStatus } from '../util/formatUserStatus';
 import { formatMemberCount } from '../util/formatMemberCount';
@@ -73,6 +74,9 @@ export class ProfileStore {
   phone: string = '';
   usernames: string[] = [];
   isContact: boolean = false;
+  // 对方在不在我的屏蔽名单里（userFullInfo.block_list）。资料页「⋯」菜单据此显示
+  // 屏蔽还是解除屏蔽；屏蔽/解除后 TDLib 推 updateUserFullInfo，菜单跟着翻。
+  isBlocked: boolean = false;
   bio: string = '';
   bioEntities: TdObject[] = []; // formattedText entities (links/mentions in the bio)
   birthday: string = ''; // "3月1日" from userFullInfo.birthdate, '' if not shared
@@ -125,6 +129,20 @@ export class ProfileStore {
       const user = u['user'] as TdObject | undefined;
       if (user !== undefined && (user['id'] as number | undefined) === this.userId) {
         this.applyUser(user);
+      }
+    }));
+    this.unsubs.push(this.client.onUpdate('updateUserFullInfo', (u: TdObject) => {
+      if ((u['user_id'] as number | undefined) !== this.userId) {
+        return;
+      }
+      const full = u['user_full_info'] as TdObject | undefined;
+      if (full === undefined) {
+        return;
+      }
+      const blocked: boolean = isBlockedFromFullInfo(full);
+      if (blocked !== this.isBlocked) {
+        this.isBlocked = blocked;
+        this.notify();
       }
     }));
     this.unsubs.push(this.client.onUpdate('updateUserStatus', (u: TdObject) => {
@@ -327,6 +345,7 @@ export class ProfileStore {
     const req: TdRequest = { '@type': 'getUserFullInfo' };
     req['user_id'] = this.userId;
     this.send(req, 'getUserFullInfo', (full: TdObject) => {
+      this.isBlocked = isBlockedFromFullInfo(full);
       const bioFt = full['bio'] as TdObject | undefined;
       this.bio = bioFt !== undefined ? ((bioFt['text'] as string | undefined) ?? '') : '';
       this.bioEntities = bioFt !== undefined ? ((bioFt['entities'] as TdObject[] | undefined) ?? []) : [];

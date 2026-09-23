@@ -6,6 +6,8 @@ import {
 import {
   MathImage, ensureMathImage, mathForegroundColor, mathImageFor, mathKeyOf
 } from '../../util/mathImageCache';
+import { copyPlainText } from '../../util/clipboard';
+import { str } from '../../util/strings';
 import { tableColumnWidths, tableContentWidth } from '../../util/tableLayout';
 import { setTableScrollTouch } from '../../util/tableTouchChannel';
 import { COLOR_BUBBLE_TEXT, COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -254,6 +256,20 @@ export struct RichMessageView {
     .constraintSize({ maxWidth: this.maxWidth });
   }
 
+  // 代码块表头。语言由源提供（pageBlockPreformatted.language），常常是空串。
+  // 「code」是技术标签不是正文，不进资源表。
+  private codeHeader(b: RichBlock): string {
+    const lang: string = b.language.trim();
+    return lang === '' ? 'code' : `code: ${lang}`;
+  }
+
+  // 代码块的原文。拼的是 span 的 text 而不是渲染结果：要拿走的是代码本身，
+  // 不带任何格式标记。
+  private copyCode(b: RichBlock): void {
+    copyPlainText(b.spans.map((s: RichSpan): string => s.text).join(''),
+      $r('app.string.copied'));
+  }
+
   @Builder
   blockView(b: RichBlock, depth: number) {
     if (b.kind === RB_HEADING) {
@@ -263,14 +279,40 @@ export struct RichMessageView {
       Divider().color(COLOR_TEXT_SECONDARY).opacity(0.3).strokeWidth(0.6)
         .margin({ top: 2, bottom: 2 });
     } else if (b.kind === RB_PRE) {
-      Column() {
+      // 代码块：一行表头（语言 + 复制）压在代码上方。
+      //
+      // 【为什么整块钉死宽度，而不是只给 constraintSize】表头要"语言靠左、复制
+      // 靠右"，靠的是 layoutWeight —— 它要求父容器有**确定的宽度**。只给
+      // constraintSize 时容器按内容撑，表头里的 width('100%') 解不出来，复制
+      // 按钮被压成 0 宽、整个看不见（2026-09-23 第一版就是这么丢的）。
+      // 代码块本来也该占满气泡宽度。
+      Column({ space: 4 }) {
+        Row() {
+          Text(this.codeHeader(b))
+            .fontSize(BODY_SIZE - 3).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          // 复制的是**这一段代码**；气泡长按菜单里那个"复制"复制的是整条消息，
+          // 两者不是一回事。
+          Row() {
+            SymbolGlyph($r('sys.symbol.square_on_square_fill'))
+              .fontSize(15).fontColor([COLOR_TEXT_SECONDARY]);
+          }
+          .width(28).height(28).borderRadius(14)
+          .justifyContent(FlexAlign.Center)
+          .accessibilityText(str('copy'))
+          .onClick((): void => { this.copyCode(b); });
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center);
         this.spanText(b.spans, BODY_SIZE - 1, FontWeight.Normal, COLOR_BUBBLE_TEXT);
       }
-      .padding(8)
+      .alignItems(HorizontalAlign.Start)
+      .width(this.maxWidth)
+      .padding({ left: 8, right: 4, top: 4, bottom: 8 })
       .borderRadius(8)
       // 整段代码块和行内代码同一套底色：叠加层，不是不透明底。
-      .backgroundColor($r('app.color.code_surface'))
-      .constraintSize({ maxWidth: this.maxWidth });
+      .backgroundColor($r('app.color.code_surface'));
     } else if (b.kind === RB_QUOTE) {
       Column({ space: 4 }) {
         ForEach(b.children, (c: RichBlock, i: number) => {

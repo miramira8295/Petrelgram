@@ -9,7 +9,9 @@ import { MessageEntry } from '../../store/MessageEntry';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { getAccentColorStore, getUserStore } from '../../tdkit/Globals';
-import { bubbleMaxWidth } from '../../util/mediaBox';
+import {
+  BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP, bubbleMaxWidth
+} from '../../util/mediaBox';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
 import {
   animationDurationFor, scrollActiveNow
@@ -33,6 +35,9 @@ import { str } from '../../util/strings';
 import {
   subscribeTranslationStatus, TranslationStatus, translationStatusFor
 } from '../../util/translationChannel';
+import {
+  subscribeViewCount, viewCountLabelFor, viewsReserve
+} from '../../util/viewCountChannel';
 import { pinForTranslationGrowth } from '../../util/translationGrowthPin';
 import {
   accentSoft, AVATAR_PALETTE, COLOR_BUBBLE_IN, COLOR_BUBBLE_OUT,
@@ -121,7 +126,7 @@ const EMPTY_ACTIONS: LightweightPlainTextActions = {
 const TAIL_GUTTER_LEFT: Padding = { left: 7 };
 const TAIL_GUTTER_RIGHT: Padding = { right: 7 };
 // 群聊来信不显示头像时给头像留的 44vp 位（头像 38 + 右边距 6），见 avatarGutterPadding。
-const AVATAR_GUTTER: Padding = { left: 44 };
+const AVATAR_GUTTER: Padding = { left: BUBBLE_AVATAR_GUTTER_VP };
 const NO_GUTTER: Padding = {};
 
 @ComponentV2
@@ -427,6 +432,9 @@ export struct LightweightPlainTextBubble {
 
   @Local private liveSendState: string = '';
   @Local private translationStatus: TranslationStatus | null = null;
+  // 频道消息的浏览数标签（「5.2K」），'' = 不显示。走 viewCountChannel 旁路：
+  // 只有标签变了才会被写，浏览数 +1 但仍是 5.2K 时这个组件不会被叫醒。
+  @Local private liveViews: string = '';
   @Local private menuShown: boolean = false;
   @Local private swipeX: number = 0;
   // 这一次按下是不是落在窗口边缘死区里（见 util/swipeReplyGesture）。
@@ -441,13 +449,15 @@ export struct LightweightPlainTextBubble {
   private gestureClaimed: boolean = false;
   private unsubSend: (() => void) | null = null;
   private unsubTranslation: (() => void) | null = null;
+  private unsubViews: (() => void) | null = null;
 
   // 订阅当前挂在哪条消息上。发送状态按 rowId 订阅、翻译态按 message.id 订阅，
   // 所以 key 要把两者都算进去。用途同头像：同 key 短路 + 按 key 自愈。
   private attachedKey: string = '';
 
   private attachChannels(message: MessageEntry): void {
-    const key: string = `${message.rowId}:${message.id}`;
+    // 浏览数按 (chatId, id) 订阅，会话也进 key。
+    const key: string = `${this.chatId}:${message.rowId}:${message.id}`;
     if (this.unsubSend !== null && this.attachedKey === key) {
       // 同 key 短路：退订+重订阅整轮省掉，只重新播种数值——清理是无条件的，
       // 不补种会空一帧。
@@ -465,6 +475,8 @@ export struct LightweightPlainTextBubble {
         // 「翻译中」一行出现/消失会改行高：贴底时同一帧钉住底部（util/translationGrowthPin）。
         pinForTranslationGrowth(this.chatId);
       });
+    this.unsubViews = subscribeViewCount(this.chatId, message.id,
+      (label: string): void => { this.liveViews = label; });
   }
 
   // 先读通道现值，没有才用 @Prop 带来的初值（滚回历史消息时不会有新的发布）。
@@ -472,6 +484,7 @@ export struct LightweightPlainTextBubble {
     const known: string = sendStateFor(message.rowId);
     this.liveSendState = known !== '' ? known : message.sendState;
     this.translationStatus = translationStatusFor(message.id);
+    this.liveViews = viewCountLabelFor(this.chatId, message.id);
   }
 
   private detachChannels(): void {
@@ -480,6 +493,7 @@ export struct LightweightPlainTextBubble {
       this.unsubTranslation();
       this.unsubTranslation = null;
     }
+    if (this.unsubViews !== null) { this.unsubViews(); this.unsubViews = null; }
     this.attachedKey = '';
   }
 
@@ -531,7 +545,11 @@ export struct LightweightPlainTextBubble {
     this.attachChannels(this.msg);
   }
 
-  private bubbleMaxW(): number { return bubbleMaxWidth(this.contentWidth); }
+  // 判据与 MessageBubble.avatarReserve 一致：只有群聊来信被头像顶开 44vp。
+  private bubbleMaxW(): number {
+    return bubbleMaxWidth(this.contentWidth,
+      this.isGroup && !this.msg.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0);
+  }
   private inlineMaxW(): number { return this.bubbleMaxW() - 16; }
   private runRadius(): number { return Math.min(this.env.bubbleRadius, 7); }
   private tailRadius(): number { return Math.min(this.env.bubbleRadius, 2); }
@@ -589,7 +607,7 @@ export struct LightweightPlainTextBubble {
   private messageTime(): string { return formatClockTime(this.msg.date); }
   private timeReserve(): string {
     const edit: string = this.msg.editDate > 0 ? '         ' : '';
-    return `${edit}  ${this.messageTime()}${this.msg.isOutgoing ? '   ' : ''}`;
+    return `${viewsReserve(this.liveViews)}${edit}  ${this.messageTime()}${this.msg.isOutgoing ? '   ' : ''}`;
   }
 
   private replyMaxW(): number { return Math.round(this.inlineMaxW() * REPLY_QUOTE_WIDTH_RATIO); }
@@ -774,9 +792,19 @@ export struct LightweightPlainTextBubble {
     .constraintSize({ minWidth: this.measuredTimeLayerWidth() });
   }
 
+  // 频道消息的浏览数：眼睛 + 5.2K，排在时间左边（与官方客户端同位）。
+  @Builder
+  viewsLabel() {
+    Row({ space: 2 }) {
+      SymbolGlyph($r('sys.symbol.eye')).fontSize(11).fontColor([COLOR_TEXT_SECONDARY]);
+      Text(this.liveViews).fontSize(11).fontColor(COLOR_TEXT_SECONDARY);
+    }.alignItems(VerticalAlign.Center);
+  }
+
   @Builder
   timeOverlay() {
     Row({ space: 4 }) {
+      if (this.liveViews !== '') { this.viewsLabel(); }
       if (this.msg.editDate > 0) {
         Text($r('app.string.mb_edited')).fontSize(10.5).fontColor(COLOR_TEXT_SECONDARY);
       }
@@ -991,7 +1019,7 @@ export struct LightweightPlainTextBubble {
               initialPath: this.msg.senderAvatarPath,
               initials: this.msg.senderInitials
             })
-              .margin({ right: 6 })
+              .margin({ right: BUBBLE_AVATAR_GAP_VP })
               .onClick((): void => {
                 if (!this.gestureClaimed && this.msg.senderIsUser && this.msg.senderId > 0) {
                   this.actions.onAvatarTap(this.msg.senderId);
@@ -1094,8 +1122,12 @@ export struct LightweightPlainTextBubble {
           onDisappear: (): void => { this.menuShown = false; }
         });
       }
+      // 行边距与气泡最大宽同源（util/mediaBox.BUBBLE_ROW_SIDE_VP）。
+      // 【这里原来写死 10】而 bubbleMaxWidth 按 BUBBLE_ROW_SIDE_VP 算，两边
+      // 对不上：纯文本是聊天里最常见的一类，之前几轮收窄留白它一点没吃到。
       .width('100%').padding({
-        left: 10, right: 10, top: this.rowTopPadding(), bottom: this.rowBottomPadding()
+        left: BUBBLE_ROW_SIDE_VP, right: BUBBLE_ROW_SIDE_VP,
+        top: this.rowTopPadding(), bottom: this.rowBottomPadding()
       })
       .justifyContent(this.msg.isOutgoing ? FlexAlign.End : FlexAlign.Start)
       .alignItems(VerticalAlign.Bottom).translate({ x: this.swipeX })

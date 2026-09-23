@@ -340,6 +340,7 @@ import { OLDER_TRIGGER_ROWS, olderTriggerHit } from '../../util/olderPaging';
 import {
   NO_JUMP_LANDING, chunkPrependAllowed, jumpLandingDeadline, jumpLandingHolds
 } from '../../util/jumpLandingOwner';
+import { isResumeLanding } from '../../util/jumpAlign';
 
 // 裁剪时可见区两侧至少保留的行数。必须远大于 List 的 cachedCount，否则会把
 // 框架正预备的缓存行删掉，滑回去就是一片空白。
@@ -1092,6 +1093,12 @@ export struct ChatPage {
     // ArkUI has consumed the newly published LazyForEach operations.
     this.applyInitialUnreadLanding(seq);
     this.scheduleInitialUnreadLanding();
+  }
+
+  // 跳到某条消息：居中（#219-6，理由见 util/jumpAlign）。进会话落到第一条未读、
+  // 回到上次阅读位置、翻页锚点**不走这里**。
+  private scrollToJumpTarget(index: number): void {
+    this.scroller.scrollToIndex(index, false, ScrollAlign.CENTER);
   }
 
   private scrollToTimelineIndexAtY(index: number, itemY: number = 0): void {
@@ -2784,11 +2791,9 @@ export struct ChatPage {
       prepareUserJump: (): void => { this.prepareUserJump(); },
       scrollToLatest: (): void => { this.scrollToLatest(); },
       // scroller 是页面独有的（不变量 10），所以这条动作回调把
-      // scrollToIndex(i, false, ScrollAlign.START) 这个细节挡在控制器之外，
+      // 「怎么滚到那一行」（现在是居中，见 scrollToJumpTarget）这个细节挡在控制器之外，
       // 顺带让 ArkUI 的滚动类型不必进那个文件。
-      scrollToIndex: (index: number): void => {
-        this.scroller.scrollToIndex(index, false, ScrollAlign.START);
-      },
+      scrollToIndex: (index: number): void => { this.scrollToJumpTarget(index); },
       flashAtIndex: (index: number): void => { this.flash.flashAtIndex(index); },
       jumpToPinned: (messageId: number): void => { this.jumpToPinned(messageId); }
     });
@@ -4028,6 +4033,11 @@ export struct ChatPage {
       if (jg >= 0) {
         const itemY: number = jumpTargetId === this.resumeDividerId
           ? this.resumeDividerItemY : 0;
+        // 回到上次阅读位置按记下的行内偏移原样恢复；其余（@提及、引用、置顶、
+        // 搜索结果、消息链接……）一律居中。按行比，见 util/jumpAlign。
+        const resumeRow: number = this.resumeDividerId > 0
+          ? groupIndexOf(groups, this.resumeDividerId) : -1;
+        const resume: boolean = isResumeLanding(jg, resumeRow);
         this.pendingJumpId = 0;
         // 落地宽限从**此刻**起算（issue #51）：原来只在点击时上了 900ms，目标不在
         // 窗口里要先 loadAround，慢链路上一超时，刚压进返回栈的那层就被
@@ -4037,7 +4047,11 @@ export struct ChatPage {
         // 「让路给跳转」的判据同时失效（util/jumpLandingOwner 文件头）。
         this.beginJumpLanding();
         this.topCard.finishPinnedJump();
-        this.scrollToTimelineIndexAtY(jg, itemY);
+        if (resume) {
+          this.scrollToTimelineIndexAtY(jg, itemY);
+        } else {
+          this.scrollToJumpTarget(jg);
+        }
         // loadAround 可能整片换掉窗口（list RELOAD）——立刻发出的那次滚动会在
         // 新行布局之前被吞掉。
         // 【2026-09-22 更正】原文写的是 "replaces the window wholesale"，**不对**：
@@ -4053,7 +4067,11 @@ export struct ChatPage {
           }
           const jg2: number = groupIndexOf(this.groups, jumpTargetId);
           if (jg2 >= 0) {
-            this.scrollToTimelineIndexAtY(jg2, itemY);
+            if (resume) {
+              this.scrollToTimelineIndexAtY(jg2, itemY);
+            } else {
+              this.scrollToJumpTarget(jg2);
+            }
             this.flash.flashAtIndex(jg2, jumpTargetId);
           }
         }, 80);
@@ -5895,7 +5913,7 @@ export struct ChatPage {
     this.beginJumpLanding();
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
-      this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
+      this.scrollToJumpTarget(gidx);
       this.flash.flashAtIndex(gidx, messageId);
     } else {
       this.pendingJumpId = messageId;
@@ -5934,7 +5952,7 @@ export struct ChatPage {
     this.beginJumpLanding();
     const gidx = groupIndexOf(this.groups, messageId);
     if (gidx >= 0) {
-      this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
+      this.scrollToJumpTarget(gidx);
       this.flash.flashAtIndex(gidx, messageId);
     } else if (this.store !== null) {
       this.pendingJumpId = messageId;
@@ -7388,7 +7406,7 @@ export struct ChatPage {
     const gidx: number = groupIndexOf(this.groups, targetId);
     logW(`[Jump80] jumpToMessageId target=${targetId} idxInLoaded=${gidx} rows=${this.groups.length}`);
     if (gidx >= 0) {
-      this.scroller.scrollToIndex(gidx, false, ScrollAlign.START);
+      this.scrollToJumpTarget(gidx);
       this.flash.flashAtIndex(gidx, targetId);
       return;
     }

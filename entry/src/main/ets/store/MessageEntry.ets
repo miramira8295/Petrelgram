@@ -7,6 +7,7 @@ import { SERVICE_LABEL_KEYS } from '../util/formatPreview';
 import { plural, str } from '../util/strings';
 import { monthDayTime } from '../util/intlFormat';
 import { logW } from '../util/log';
+import { publishViewCount, viewCountOf } from '../util/viewCountChannel';
 
 export interface MessageEntry {
   id: number;
@@ -1016,6 +1017,11 @@ function inlineCustomEmojiIds(entities: TdObject[]): string[] {
 }
 
 export function buildMessageEntry(message: TdObject, users: UserStore): MessageEntry {
+  // 浏览数不进条目，直接灌进旁路通道（见 util/viewCountChannel）。放在这里而
+  // 不是各个加载点：消息有二十多条建条目的路径（历史页、跳转、推送、发送回执……），
+  // 挑调用点必然漏。通道只增不减、标签不变不通知，重复灌是免费的。
+  publishViewCount((message['chat_id'] as number | undefined) ?? 0,
+    (message['id'] as number | undefined) ?? 0, viewCountOf(message));
   const c: MsgContent = formatMsgContent(message);
   const isOutgoing = (message['is_outgoing'] as boolean | undefined) ?? false;
   const name = senderName(message, users);

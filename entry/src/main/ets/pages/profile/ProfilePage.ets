@@ -1,9 +1,11 @@
 import { router, promptAction } from '@kit.ArkUI';
+import { profileMenuItems } from '../../util/profileMenu';
+import { showProfileMoreMenu } from './ProfileMoreMenu';
 import {
   KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT,
   surfaceGlassBlurStyle, surfaceGlassFill
 } from '../../util/surfaceGlass';
-import { getTdClient, getCallSession } from '../../tdkit/Globals';
+import { getChatStore, getTdClient, getCallSession } from '../../tdkit/Globals';
 import { ProfileStore, CommonGroup, StoryItem, GiftItem, AvailGift } from '../../store/ProfileStore';
 import {
   ChatProfileStore, ProfileContentItem,
@@ -144,6 +146,8 @@ export struct ProfilePage {
   @State phone: string = '';
   @State usernames: string[] = [];
   @State isContact: boolean = false;
+  // 对方是否已被我屏蔽，决定「⋯」菜单显示屏蔽还是解除屏蔽。
+  @State isBlocked: boolean = false;
   @State bio: string = '';
   @State bioEntities: TdObject[] = [];
   @State personalChatId: number = 0;
@@ -307,6 +311,20 @@ export struct ProfilePage {
   // 返回上一层。**不能用 router.back()**：本页是 HdsNavDestination，router 页栈里
   // 只剩 Index 一层，router.back() 弹掉的是 Index——平板模拟器实测（Task 7 修复轮 1）
   // 的现象是「点返回箭头直接退到桌面」。要出的是 Navigation 栈。
+  private moreMenuItems(): string[] {
+    const self: number = getChatStore().selfUserId();
+    return profileMenuItems({
+      isSelf: self !== 0 && self === this.userId,
+      isBlocked: this.isBlocked,
+      isContact: this.isContact
+    });
+  }
+
+  private openMoreMenu(): void {
+    showProfileMoreMenu(this.moreMenuItems(),
+      { userId: this.userId, name: this.name, ui: this.getUIContext() });
+  }
+
   private goBack(): void {
     const stack = this.navStack;
     if (stack === undefined) {
@@ -452,6 +470,7 @@ export struct ProfilePage {
     this.phone = s.phone;
     this.usernames = s.usernames;
     this.isContact = s.isContact;
+    this.isBlocked = s.isBlocked;
     this.bio = s.bio;
     this.bioEntities = s.bioEntities;
     this.personalChatId = s.personalChatId;
@@ -844,7 +863,10 @@ export struct ProfilePage {
       Row() {
         this.circleButton('sys.symbol.chevron_left', () => { this.goBack(); });
         Blank().layoutWeight(1);
-        this.circleButton('sys.symbol.more', () => {});
+        // 原来回调是空函数（#219-2：点了没反应）。菜单内容与动作见 ProfileMoreMenu。
+        if (this.moreMenuItems().length > 0) {
+          this.circleButton('sys.symbol.more', () => { this.openMoreMenu(); });
+        }
       }.width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
       Column() {
         AvatarView({
