@@ -9,7 +9,7 @@ import {
 import { stashDownloadCenterWant } from '../util/downloadCenterWant';
 import { isHandledDeepLinkUri } from '../util/deepLink';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { window, KeyboardAvoidMode } from '@kit.ArkUI';
+import { window, KeyboardAvoidMode, UIContext } from '@kit.ArkUI';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
 import { recomputeAppearance } from '../util/appearance';
 import { initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
@@ -43,6 +43,7 @@ import { initA11yState } from '../util/a11yState';
 import { logE, logW } from '../util/log';
 import { ColorModeBaseline } from '../util/configChange';
 import { bumpMaterialEpoch } from '../util/overlayMaterial';
+import { KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT } from '../util/layoutBreakpoint';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
 const BUBBLE_MEDIA_MAX_VP: number = 280;
@@ -61,6 +62,9 @@ export default class EntryAbility extends UIAbility {
   private colorMode: ColorModeBaseline = new ColorModeBaseline();
   private lastConfigAt: number = 0;
   private windowStageRef: window.WindowStage | null = null;
+  // 主窗口实例，只为 onWindowStageDestroy 注销监听而留：销毁流程里再
+  // getMainWindowSync 会抛（窗口错误码文档明写）。
+  private mainWin: window.Window | null = null;
   // loadContent 回调之前窗口还没有内容，setWindowBackgroundColor 必失败
   // （"This window state is abnormal"）——原来每次冷启动都在诊断日志里留一行。
   private contentLoaded: boolean = false;
@@ -373,6 +377,7 @@ export default class EntryAbility extends UIAbility {
     try {
       this.windowStageRef = windowStage;
       const win = windowStage.getMainWindowSync();
+      this.mainWin = win;
       win.setWindowLayoutFullScreen(true);
       // 唯一一处播种：启动时 context.config 是权威的。
       this.colorMode.seed(this.context.config.colorMode);
@@ -462,6 +467,9 @@ export default class EntryAbility extends UIAbility {
         AppStorage.setOrCreate('screenHeightVp', px2vp(size.height));
         mirrorChatEnvKey('screenWidthVp', candidate);
         mirrorChatEnvKey('screenHeightVp', px2vp(size.height));
+        // 断点只在这条「可信」分支里更新：被上面密度校验拒掉的那次回调，
+        // 系统算出的断点同样不可信。
+        this.publishBreakpoints(win);
       });
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set full-screen layout. Cause: %{public}s', JSON.stringify(err));
@@ -480,6 +488,20 @@ export default class EntryAbility extends UIAbility {
       } catch (e) {
         hilog.error(DOMAIN, 'testTag', 'setKeyboardAvoidMode failed: %{public}s', JSON.stringify(e));
       }
+      // 断点与窗口尺寸的初值（官方《断点系统》前置条件一）：loadContent 回调里窗口
+      // 已完成布局，这时取的才可信。上面 loadContent 之前那次 screenWidthVp 播种
+      // 保留——首帧之前页面就要读它；这里用回调里的值再校一次。
+      try {
+        const loadedWin: window.Window = windowStage.getMainWindowSync();
+        const rect: window.Rect = loadedWin.getWindowProperties().windowRect;
+        AppStorage.setOrCreate('screenWidthVp', px2vp(rect.width));
+        AppStorage.setOrCreate('screenHeightVp', px2vp(rect.height));
+        mirrorChatEnvKey('screenWidthVp', px2vp(rect.width));
+        mirrorChatEnvKey('screenHeightVp', px2vp(rect.height));
+        this.publishBreakpoints(loadedWin);
+      } catch (e) {
+        logE(`breakpoint seed after loadContent failed: ${(e as Error).message}`);
+      }
       // 窗口底色要等内容加载完才设得上，见 contentLoaded。
       this.contentLoaded = true;
       try {
@@ -494,6 +516,33 @@ export default class EntryAbility extends UIAbility {
   onWindowStageDestroy(): void {
     // Main window is destroyed, release UI related resources
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
+    // 注销 onWindowStageCreate 里挂的窗口监听（官方《窗口监听》：防泄漏）。
+    const win: window.Window | null = this.mainWin;
+    this.mainWin = null;
+    if (win === null) {
+      return;
+    }
+    try {
+      win.off('windowSizeChange');
+      win.off('windowStatusChange');
+      win.off('avoidAreaChange');
+      win.off('keyboardHeightChange');
+    } catch (e) {
+      logE(`window listener teardown failed: ${(e as Error).message}`);
+    }
+  }
+
+  // 系统断点写进 AppStorage（util/layoutBreakpoint）。存的是枚举原值（数字）。
+  private publishBreakpoints(win: window.Window): void {
+    try {
+      const ui: UIContext = win.getUIContext();
+      const widthBp: number = ui.getWindowWidthBreakpoint() as number;
+      const heightBp: number = ui.getWindowHeightBreakpoint() as number;
+      AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBp);
+      AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBp);
+    } catch (e) {
+      logE(`publishBreakpoints failed: ${(e as Error).message}`);
+    }
   }
 
   onForeground(): void {
