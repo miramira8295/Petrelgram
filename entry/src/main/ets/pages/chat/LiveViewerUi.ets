@@ -2,6 +2,10 @@ import { AWAKE_OWNER_LIVE, requestScreenAwake, screenAwakeApplyFailed } from '..
 import { common } from '@kit.AbilityKit';
 import { promptAction, window } from '@kit.ArkUI';
 import { logE } from '../../util/log';
+import {
+  LANDSCAPE_OWNER_LIVE, LANDSCAPE_OWNER_MEDIA, landscapeMultiWindowApplyFailed,
+  requestLandscapeMultiWindow
+} from '../../util/landscapeMultiWindow';
 
 const EXIT_RED: string = '#E64646';
 const LEAVE_BLUE: string = '#3E8BFF';
@@ -23,6 +27,22 @@ function liveFullscreenOrientation(
     return window.Orientation.AUTO_ROTATION_PORTRAIT;
   }
   return window.Orientation.AUTO_ROTATION;
+}
+
+// 横屏播放时允许横向悬浮窗 / 上下分屏（SPEC-15，仲裁见 util/landscapeMultiWindow）。
+// 系统只在它识别为「横向全屏播放」时才让这个开关生效，其余时候等同默认行为。
+function applyLandscapeMultiWindow(mainWindow: window.Window, owner: string, on: boolean): void {
+  const next: boolean | null = requestLandscapeMultiWindow(owner, on);
+  if (next === null) {
+    return;
+  }
+  const wanted: boolean = next;
+  const op: Promise<void> = wanted
+    ? mainWindow.enableLandscapeMultiWindow() : mainWindow.disableLandscapeMultiWindow();
+  op.catch((caught: Error): void => {
+    landscapeMultiWindowApplyFailed(wanted);
+    logE(`LiveViewerUi.landscapeMultiWindow(${wanted}) failed: ${caught.message}`);
+  });
 }
 
 export function confirmLeaveLiveStream(
@@ -77,6 +97,9 @@ export function setLiveStreamFullscreen(
       if (requestSeq !== liveFullscreenRequestSeq) { return Promise.resolve(); }
       return mainWindow.setPreferredOrientation(orientation).then((): Promise<void> => {
         if (requestSeq !== liveFullscreenRequestSeq) { return Promise.resolve(); }
+        // 竖视频锁竖屏时不开；方形/尺寸未知跟随传感器，可能转成横屏，照开。
+        applyLandscapeMultiWindow(mainWindow, LANDSCAPE_OWNER_LIVE,
+          fullscreen && orientation !== window.Orientation.AUTO_ROTATION_PORTRAIT);
         return mainWindow.setWindowSystemBarEnable(systemBars);
       });
     });
@@ -134,6 +157,7 @@ export function setMediaViewerOrientation(
     mainWindow.setPreferredOrientation(orientation).catch((caught: Error): void => {
       logE(`LiveViewerUi.setMediaOrientation failed: ${caught.message}`);
     });
+    applyLandscapeMultiWindow(mainWindow, LANDSCAPE_OWNER_MEDIA, landscape);
   }).catch((caught: Error): void => {
     logE(`LiveViewerUi.getMediaWindow failed: ${caught.message}`);
   });

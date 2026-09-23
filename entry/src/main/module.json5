@@ -118,6 +118,13 @@
         // 而且 midnight 起的五张换底色备用图标还都指着它，不能动它本身。
         "startWindowIcon": "$media:bg_petrel2",
         "startWindowBackground": "$color:start_window_background",
+        // 多设备适配规格 SPEC-15（2026-09-23）：全屏 / 分屏 / 悬浮窗都支持。这就是缺省值，
+        // 显式写出来是为了表明是有意的，别哪天被当成多余删掉。
+        "supportWindowMode": ["fullscreen", "split", "floating"],
+        // 视频类应用的官方建议值：多窗布局方向可以动态变为横向。要配合
+        // enableLandscapeMultiWindow / disableLandscapeMultiWindow 使用（见
+        // util/landscapeMultiWindow），且只在系统识别为横向全屏播放时生效，其余时候等同 default。
+        "preferMultiWindowOrientation": "landscape_auto",
         "backgroundModes": [
           "dataTransfer",
           "audioPlayback",
