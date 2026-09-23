@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
 import { promptAction, router } from '@kit.ArkUI';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
 import {
@@ -40,7 +43,6 @@ import { decidePush, StackAction, StackFrame } from '../../util/splitRouting';
 import { readableContentWidth } from '../../util/contentWidth';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarReset';
-import { isSplitLayout } from '../../util/splitMetrics';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainBarFill, mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
@@ -127,9 +129,12 @@ export struct MyProfilePage {
   @StorageProp('screenWidthVp') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
-  // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
-  // 手机一转横屏就被当成平板。
+  // 分栏判据读系统横向 + 纵向断点（util/layoutBreakpoint.isSplitByBreakpoint）——只看宽的话
+  // 手机一转横屏就被当成平板（#125）。
   @StorageProp('screenHeightVp') screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   @StorageProp('appIsForeground') appIsForeground: boolean = false;
   @State myId: number = 0;
   @State name: string = '';
@@ -204,7 +209,7 @@ export struct MyProfilePage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.profileStack.size()));
+      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.profileStack.size()));
     this.loadProfile();
   }
 
@@ -2150,7 +2155,7 @@ export struct MyProfilePage {
     .onNavBarStateChange((reported: boolean): void => {
       // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
       const isVisible: boolean = navBarVisibleOnChange(reported,
-        isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.profileStack.size());
+        isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.profileStack.size());
       if (AppStorage.get<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY) !== isVisible) {
         AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
       }

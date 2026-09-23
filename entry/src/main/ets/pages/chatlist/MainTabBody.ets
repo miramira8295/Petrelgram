@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
 import { curves, router } from '@kit.ArkUI';
 import {
   archiveCardScale, archiveIconScale, archiveIconSpin, archiveRevealProgress
@@ -6,7 +9,6 @@ import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
 import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
-import { isSplitLayout } from '../../util/splitMetrics';
 import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
 import { MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
@@ -87,6 +89,9 @@ export struct MainTabBody {
   // 三份订阅挂在列表上而不是每一行上——同屏十来行，逐行订阅是十倍的绑定。
   @StorageProp('screenWidthVp') private screenW: number = 360;
   @StorageProp('screenHeightVp') private screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   // “所有”页使用独立列表组件，也要单独响应底栏重复点击（issue #35）。
   @StorageProp(TAB_RETAP_EPOCH) @Watch('onTabReTap') tabReTapEpoch: number = 0;
@@ -447,7 +452,7 @@ export struct MainTabBody {
 
   // 当前档位：手机（含平板强制单栏）紧凑 60，平板分栏宽松 72。
   private spec(): ChatRowSpec {
-    return chatRowSpec(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn));
+    return chatRowSpec(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn));
   }
 
   // 归档入口和会话行一样高，跟着档位走。
@@ -603,7 +608,7 @@ export struct MainTabBody {
       LazyForEach(this.chatsData, (item: ChatEntry) => {
         ListItem() {
           ChatRow({
-          compact: !isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn),
+          compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn),
             chat: item,
             listKey: 'main',
             liveEffects: this.liveEffects(),

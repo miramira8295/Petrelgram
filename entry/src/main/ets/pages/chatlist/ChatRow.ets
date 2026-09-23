@@ -96,7 +96,7 @@ export struct ChatRow {
   // 聊天设置 → 聊天列表视图: the preview line wraps to two lines in 三行 mode.
   @StorageProp(KEY_THREE_LINES) threeLines: boolean = false;
   // 紧凑档（手机，含平板强制单栏）。由 MainTabBody / ChatListView 按
-  // splitMetrics.isSplitLayout 算好传进来，默认紧凑。
+  // layoutBreakpoint.isSplitByBreakpoint 算好传进来，默认紧凑。
   @Prop compact: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_PARTICLES) particlesEnabled: boolean = true;

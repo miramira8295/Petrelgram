@@ -1,7 +1,9 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry } from '../../store/ChatEntry';
 import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
-import { isSplitLayout } from '../../util/splitMetrics';
 import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
@@ -35,6 +37,9 @@ export struct ChatListView {
   // 会话行档位，判据与 MainTabBody 一致（见 util/chatRowMetrics）。
   @StorageProp('screenWidthVp') private screenW: number = 360;
   @StorageProp('screenHeightVp') private screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   // 行滑动操作的开关（交互设置）。关着时不挂 swipeAction，横向手势留给切文件夹。
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
@@ -568,7 +573,7 @@ export struct ChatListView {
         LazyForEach(this.chatsData, (item: ChatEntry) => {
           ListItem() {
             ChatRow({
-              compact: !isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn),
+              compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn),
               chat: item,
               listKey: this.listKey,
               liveEffects: this.liveEffects(),

@@ -1,7 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth,
-  isSplitLayout, SPLIT_BREAKPOINT_VP, dockModeForLayout, DOCK_MODE_BOTTOM, DOCK_MODE_LEFT_FLOATING
+  splitNavMinWidth, splitNavMaxWidth, splitContentMinWidth
 } from '../main/ets/util/splitMetrics';
 
 // 分栏起作用的最窄窗口（NavigationMode.Auto 的断点）。
@@ -94,73 +93,7 @@ export default function splitMetricsTest(): void {
       expect(splitNavMaxWidth(2560)).assertEqual(560);
     });
 
-    // isSplitLayout 是 ContactsPage 决定「点联系人开会话还是开资料页」的那条线。
-    // 它必须与本文件里那三个宽度函数的输入前提（≥600 才分栏）用同一个数，否则
-    // 会出现「组件已经分栏、代码还以为是手机」的半拉状态。
-    it('分栏断点就是 600，边界含等号', 0, (): void => {
-      expect(SPLIT_BREAKPOINT_VP).assertEqual(SPLIT_MIN_W);
-      // 高度一律给一个平板量级的值，先只考察宽度这条边。
-      expect(isSplitLayout(599, 900)).assertFalse();
-      expect(isSplitLayout(600, 900)).assertTrue();
-      expect(isSplitLayout(601, 900)).assertTrue();
-      // 手机竖屏 / 平板真机两个常见值，各站一边。
-      expect(isSplitLayout(360, 780)).assertFalse();
-      expect(isSplitLayout(1137, 800)).assertTrue();
-    });
-
-    // **这条钉的是 issue #125。** 只看宽度的旧版本把「手机横过来」判成平板：
-    // 点视频全屏会把窗口转成横屏，宽度一下越过 600，整个应用进分栏。
-    it('手机横屏不分栏——短边没过线', 0, (): void => {
-      // Mate70 Pro+ 实测量级：竖屏 376×809，横屏 809×376。
-      expect(isSplitLayout(376, 809)).assertFalse();
-      expect(isSplitLayout(809, 376)).assertFalse();
-      // 高度正好卡在断点上，含等号。
-      expect(isSplitLayout(800, 599)).assertFalse();
-      expect(isSplitLayout(800, 600)).assertTrue();
-    });
-
-    it('平板横竖屏都分栏', 0, (): void => {
-      // Pad 量级：632×924 与 924×632，两条边都过线，转屏不改变结论。
-      expect(isSplitLayout(632, 924)).assertTrue();
-      expect(isSplitLayout(924, 632)).assertTrue();
-    });
-
-    it('折叠屏展开进分栏、合上回单栏', 0, (): void => {
-      // 不需要判机型：短边判据天然覆盖折叠屏的两种姿势。
-      expect(isSplitLayout(720, 830)).assertTrue();
-      expect(isSplitLayout(380, 850)).assertFalse();
-    });
-
-    it('高度读不到时退回只看宽度', 0, (): void => {
-      // 冷启动早期 windowSizeChange 还没填过 AppStorage。此时按宽度判断，
-      // 至少不会比一律拒绝分栏更差。
-      expect(isSplitLayout(1000, 0)).assertTrue();
-      expect(isSplitLayout(1000, Number.NaN)).assertTrue();
-      expect(isSplitLayout(400, 0)).assertFalse();
-    });
-
-    // 2026-09-17 用户：「Pad 分栏时左侧 dock 取消，改成自绘的 dock，悬浮于左侧底部居中」，
-    // 随后定为**只分两种**：平板分栏 = 左栏底部的自绘胶囊；其余（手机、强制单栏、手机横屏）
-    // = 手机模式，HdsTabs 底部胶囊。侧边竖排页签整个不要了。
-    it('只分手机和平板分栏两种 dock', 0, () => {
-      expect(SPLIT_BREAKPOINT_VP).assertEqual(600);
-      expect(dockModeForLayout(1280, 800, false)).assertEqual(DOCK_MODE_LEFT_FLOATING);
-      expect(dockModeForLayout(700, 900, false)).assertEqual(DOCK_MODE_LEFT_FLOATING);
-      // 强制单栏就是手机模式，再宽也是
-      expect(dockModeForLayout(1280, 800, true)).assertEqual(DOCK_MODE_BOTTOM);
-      expect(dockModeForLayout(700, 900, true)).assertEqual(DOCK_MODE_BOTTOM);
-      // 手机竖屏、手机横屏（高度不够不分栏）
-      expect(dockModeForLayout(400, 860, false)).assertEqual(DOCK_MODE_BOTTOM);
-      expect(dockModeForLayout(809, 376, false)).assertEqual(DOCK_MODE_BOTTOM);
-      expect(dockModeForLayout(Number.NaN, 860, false)).assertEqual(DOCK_MODE_BOTTOM);
-    });
-
-    // 设置里的「强制单栏」：几何再宽也不分栏（用户要求，平板可用手机版式）。
-    it('force single column wins over geometry', 0, (): void => {
-      expect(isSplitLayout(1280, 800, true)).assertFalse();
-      expect(isSplitLayout(1280, 800, false)).assertTrue();
-      expect(isSplitLayout(1280, 800)).assertTrue();
-      expect(isSplitLayout(376, 809, true)).assertFalse();
-    });
+    // 分栏判据（会不会分栏、dock 形态）已迁到 util/layoutBreakpoint 改读系统断点，
+    // 对应用例见 LayoutBreakpoint.test。本文件只测分栏成立后两栏的宽度算式。
   });
 }

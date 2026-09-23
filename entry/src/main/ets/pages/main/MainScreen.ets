@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint, dockModeForBreakpoint
+} from '../../util/layoutBreakpoint';
 import { common } from '@kit.AbilityKit';
 import { AppBackdrop } from '../common/AppBackdrop';
 import {
@@ -7,9 +10,7 @@ import {
 import { KEY_APP_DARK } from '../../util/theme';
 import { navigateToSetting } from '../../util/settingsNav';
 import { appWallpaperActive } from '../../util/localWallpaper';
-import {
-  isSplitLayout, dockModeForLayout, DOCK_MODE_LEFT_FLOATING
-} from '../../util/splitMetrics';
+import { DOCK_MODE_LEFT_FLOATING } from '../../util/splitMetrics';
 import { NavStackLike, TabKind, stackOf } from '../../util/navStacks';
 import { dockVisibleForTab } from '../../util/navBarReset';
 import { KEY_CHAT_VIEWER_COVERS_WINDOW } from '../../util/viewerWindowCover';
@@ -160,6 +161,9 @@ export struct MainScreen {
   private dockRevealSeq: number = 0;
   private dockRevealPending: boolean = false;
   @StorageProp('screenHeightVp') @Watch('syncWallpaperFlag') screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   // APP 壁纸：这一层同时知道分栏和路径，所以由它算一次「生效中」写进
   // KEY_APP_BG_ON，其余组件只读那一个键（见 store/AppSettings 的说明）。
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('syncWallpaperFlag') private appBgLight: string = '';
@@ -223,7 +227,7 @@ export struct MainScreen {
   private callPagePushed: boolean = false;
 
   private wallpaperSplit(): boolean {
-    return isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn);
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn);
   }
 
   private syncWallpaperFlag(): void {
@@ -630,9 +634,9 @@ export struct MainScreen {
   // 藏掉联系人页签后胶囊里只剩三格，两侧留白补上空出的那一格（issue #135）。
   // 大屏是否把页签挪到侧边（官方 lg 断点 840vp，见 util/splitMetrics）。
   // 平板分栏：HdsTabs 的栏收起，改由自绘 dock() 压在左栏底部居中；其余一律手机模式。
-  // 判据见 splitMetrics.dockModeForLayout（2026-09-17）。
+  // 判据见 layoutBreakpoint.dockModeForBreakpoint（2026-09-17 定形态，改读系统断点）。
   private leftFloatingDock(): boolean {
-    return dockModeForLayout(this.screenW, this.screenH, this.forceSingleColumn) === DOCK_MODE_LEFT_FLOATING;
+    return dockModeForBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) === DOCK_MODE_LEFT_FLOATING;
   }
 
   private dockPadding(): number {
@@ -730,12 +734,12 @@ export struct MainScreen {
       return true;
     }
     if (kind === 'chat' && this.chatViewerCoversWindow &&
-      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn)) {
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn)) {
       return false;
     }
     const stack: NavStackLike | undefined = stackOf(kind);
     return dockVisibleForTab(
-      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn),
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn),
       stack === undefined ? undefined : stack.size(),
       this.storedNavBarFlag(this.tab)
     );

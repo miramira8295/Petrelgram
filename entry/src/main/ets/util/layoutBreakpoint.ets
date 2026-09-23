@@ -1,3 +1,5 @@
+import { DOCK_MODE_BOTTOM, DOCK_MODE_LEFT_FLOATING } from './splitMetrics';
+
 // 系统断点（官方《一次开发，多端部署》断点体系）。
 //
 // 写入端：EntryAbility 用 UIContext.getWindowWidthBreakpoint() /
@@ -74,4 +76,40 @@ export class BreakpointType<T> {
     }
     return this.sm;
   }
+}
+
+// 按官方阈值从窗口尺寸推断点。**只在拿不到系统值的时刻用**：EntryAbility 在
+// loadContent 之前按启动时的窗口尺寸播一个初值（否则平板第一帧按默认 sm 画成单栏、
+// 下一帧跳成分栏），loadContent 回调里立刻被系统接口的值覆盖。
+export function widthBreakpointOfVp(widthVp: number): number {
+  if (!(widthVp >= 320)) {
+    return WIDTH_BP_XS;
+  }
+  if (widthVp < 600) {
+    return WIDTH_BP_SM;
+  }
+  if (widthVp < 840) {
+    return WIDTH_BP_MD;
+  }
+  return widthVp < 1440 ? WIDTH_BP_LG : WIDTH_BP_XL;
+}
+
+// 纵向断点 = 高宽比。高度读不到（0/NaN）时给 lg：等价于原来「高度未知只看宽度」的退路。
+export function heightBreakpointOfSize(widthVp: number, heightVp: number): number {
+  if (!(widthVp > 0) || !(heightVp > 0)) {
+    return HEIGHT_BP_LG;
+  }
+  const ratio: number = heightVp / widthVp;
+  if (ratio < 0.8) {
+    return HEIGHT_BP_SM;
+  }
+  return ratio < 1.2 ? HEIGHT_BP_MD : HEIGHT_BP_LG;
+}
+
+// 页签栏（dock）形态：分栏 = 左栏底部自绘胶囊，其余 = 底部胶囊（2026-09-17 用户定，
+// 只分这两种）。判据与分栏同源。
+export function dockModeForBreakpoint(widthBp: number, heightBp: number,
+  forceSingleColumn: boolean): string {
+  return isSplitByBreakpoint(widthBp, heightBp, forceSingleColumn)
+    ? DOCK_MODE_LEFT_FLOATING : DOCK_MODE_BOTTOM;
 }

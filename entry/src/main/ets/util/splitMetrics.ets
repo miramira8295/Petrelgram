@@ -22,16 +22,6 @@
 // 小于 600 的宽度，结果也只是「行程为 0、拖不动」，不会退化成 HdsNavigation
 // 文档里那句「设置异常值时按默认值处理」把整组取值作废。
 
-// 分栏断点，vp。**这是 NavigationMode.Auto 内部那条线**，不是我们挑的：
-// HdsNavigation / Navigation 在窗口宽 ≥ 这个值时自动进双栏，小于它走单栏。
-// 官方《一次开发多端部署》把它记作 sm/md 的分界。
-//
-// 导出它是因为断点判断已经不只发生在 HdsNavigation 内部：联系人页签要按
-// 同一条线决定「点一个联系人是开会话（手机单栏）还是在右栏开资料页（平板
-// 分栏）」——两处若各写一个字面量 600，哪天官方挪了断点就会错开一档，出现
-// 「组件已经分栏了但代码还以为是手机」的半拉状态。
-export const SPLIT_BREAKPOINT_VP: number = 600;
-
 // 页签栏（dock）用哪种形态。**只有两种**（2026-09-17 用户定）：
 // - LEFT_FLOATING：平板分栏。MainScreen 自绘的胶囊压在左栏底部居中，HdsTabs 自己的栏收起。
 // - BOTTOM：其余一律手机模式（手机、手机横屏、强制单栏），HdsTabs 底部悬浮胶囊。
@@ -43,42 +33,8 @@ export const SPLIT_BREAKPOINT_VP: number = 600;
 export const DOCK_MODE_BOTTOM: string = 'bottom';
 export const DOCK_MODE_LEFT_FLOATING: string = 'leftFloating';
 
-export function dockModeForLayout(windowWidthVp: number, windowHeightVp: number,
-  forceSingleColumn: boolean): string {
-  return isSplitLayout(windowWidthVp, windowHeightVp, forceSingleColumn)
-    ? DOCK_MODE_LEFT_FLOATING : DOCK_MODE_BOTTOM;
-}
-
-// 当前窗口下 HdsNavigation 会不会分栏。喂的必须是**窗口尺寸**而不是屏幕尺寸
-// （AppStorage 的 'screenWidthVp' / 'screenHeightVp' 存的正是窗口宽高，分屏/
-// 悬浮窗/折叠屏改变窗口时由 EntryAbility 的 windowSizeChange 刷新），否则平板
-// 分屏到一半时判断会与组件实际的单栏状态相反。
-//
-// **两条边都要过线，不是只看宽。** 只看宽的版本把「手机横过来」判成了平板：
-// 手机竖屏 376×809vp，转到横屏就是 809×376——宽度一下越过 600，整个应用进
-// 分栏，而屏幕其实只有一巴掌高。用户报的现象是「点视频全屏被强制分栏，但我
-// 没动过 dpi」（issue #125）：全屏播放会把窗口转成横屏，转的一瞬间就撞上了。
-//
-// 取两边的较小值，等价于 Android 的 smallestScreenWidthDp——它描述的是设备
-// 类别而不是当前姿势，横竖屏切换不会改变结论。折叠屏也因此天然正确：展开后
-// 短边约 720vp 进分栏，合上约 380vp 回单栏，不需要额外判断机型。
-// forceSingleColumn：设置里的「强制单栏」。用户说了算，几何再宽也不分栏。
-// 默认 false，不传的调用点行为逐字不变。
-export function isSplitLayout(windowWidthVp: number, windowHeightVp: number,
-  forceSingleColumn: boolean = false): boolean {
-  if (forceSingleColumn) {
-    return false;
-  }
-  if (!(windowWidthVp >= SPLIT_BREAKPOINT_VP)) {
-    return false;
-  }
-  // 高度读不到时退回只看宽度的老行为。喂进 NaN/0 的场景只有"AppStorage 还没
-  // 被 windowSizeChange 填过"，那一瞬间按宽度判断至少不会比拒绝分栏更差。
-  if (!Number.isFinite(windowHeightVp) || windowHeightVp <= 0) {
-    return true;
-  }
-  return windowHeightVp >= SPLIT_BREAKPOINT_VP;
-}
+// 分栏判据（会不会分栏、dock 用哪种）已迁到 util/layoutBreakpoint，改读系统断点。
+// 本文件只剩「分栏成立时两栏各多宽」这几道算式。
 
 // 左栏想要的比例。窗口越宽，左栏越宽——但只按比例走，不按定值。
 const SPLIT_NAV_RATIO: number = 1 / 3;

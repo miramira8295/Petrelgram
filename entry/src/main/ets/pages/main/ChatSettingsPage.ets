@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
 import { router, promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -17,7 +20,6 @@ import {
   SLOT_APP_DARK, SLOT_APP_LIGHT, SLOT_CHAT_DARK, SLOT_CHAT_LIGHT, WALLPAPER_SLOTS,
   slotHasDim, slotIsApp, slotIsDark, wallpaperSlotKeys
 } from '../../util/wallpaperSlot';
-import { isSplitLayout } from '../../util/splitMetrics';
 import { KEY_APP_DARK } from '../../util/theme';
 import {
   KEY_TEXT_SIZE, KEY_BUBBLE_RADIUS, KEY_THREE_LINES, KEY_NIGHT_MODE, KEY_REDUCE_ANIM, KEY_SEND_BY_ENTER,
@@ -658,6 +660,9 @@ export struct ChatSettingsPage {
   // 「强制单栏」开关：本页自己也用它（壁纸预览的版式），行的显隐用几何判据。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') private appBgScreenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('rebuildSlotStates') private appBgLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('rebuildSlotStates') private appBgDark: string = '';
@@ -678,7 +683,7 @@ export struct ChatSettingsPage {
   @State enlargedDim: number = 0;
 
   private appBgSplit(): boolean {
-    return isSplitLayout(this.appBgScreenW, this.appBgScreenH, this.forceSingleColumn);
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn);
   }
 
   private appBgKey(): string {
@@ -1082,7 +1087,7 @@ export struct ChatSettingsPage {
             // 只有真能分栏的窗口才给这个开关——手机上它永远没作用，摆着是噪音。
             // 判据传 false：问的是"这个窗口够不够宽"，不是"现在分没分栏"，否则
             // 开关一打开自己就消失了。
-            if (isSplitLayout(this.appBgScreenW, this.appBgScreenH, false)) {
+            if (isSplitByBreakpoint(this.widthBp, this.heightBp, false)) {
               Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
               this.toggleRow(str('chat_settings_force_single'),
                 str('chat_settings_force_single_sub'), KEY_FORCE_SINGLE_COLUMN);

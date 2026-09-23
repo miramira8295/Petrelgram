@@ -3,7 +3,7 @@ import { ROW_PAD_V } from './theme';
 // 会话行的两套尺寸（2026-09-18）。
 //
 // 手机（含平板「强制单栏」）用紧凑档 60，平板分栏时左栏窄、行又多，保留原来的
-// 72——判据沿用 util/splitMetrics.isSplitLayout，和 dock 那次「只分手机与平板分栏、
+// 72——判据沿用 util/layoutBreakpoint.isSplitByBreakpoint，和 dock 那次「只分手机与平板分栏、
 // 强制单栏算手机」是同一条线，不另立标准。
 //
 // 【四个数是一组的，别单独改】撑高一行的不是头像而是**文字那一列**：

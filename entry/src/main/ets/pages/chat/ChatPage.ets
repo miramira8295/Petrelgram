@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, WIDTH_BP_SM, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
 import { bumpDraftEpoch, localDraft, rememberLocalDraft } from '../../store/DraftStore';
 import { initialAvatarPaths, warmSenderAvatars } from '../../util/avatarWarm';
 import { dismissTopSheet, pushSheetDismiss } from '../../util/sheetDismissStack';
@@ -233,7 +236,6 @@ import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { hasPrefetchedPage } from '../../util/chatPrefetch';
 import { subscribeChatJump } from '../../util/chatJumpChannel';
 import { clearNowPlaying, NowPlaying, publishNowPlaying } from '../../util/nowPlayingChannel';
-import { isSplitLayout } from '../../util/splitMetrics';
 import { viewerFullScreenWanted, viewerHidesTitleBar } from '../../util/navFullScreen';
 import { publishViewerCoversWindow } from '../../util/viewerWindowCover';
 import {
@@ -1917,6 +1919,9 @@ export struct ChatPage {
   @Require @Param chatContentWidth: number = 360;
   private lastScreenW: number = 0;
   @Require @Param screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint），由 ChatPageEntry 从 AppStorage 读了传进来。
+  @Param widthBp: number = WIDTH_BP_SM;
+  @Param heightBp: number = HEIGHT_BP_LG;
   @Require @Param powerSaving: boolean = false;
   @Require @Param powerChatEffects: boolean = true;
   @Require @Param powerBackgroundEffect: boolean = false;
@@ -3504,7 +3509,7 @@ export struct ChatPage {
     // 而预取意味着首帧就已经有行了——页面是带着内容滑进来的，没有可闪的东西。
     // 见 util/chatPrefetch。
     store.deferInitialPublication(
-      (isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) || hasPrefetchedPage(this.chatId))
+      (isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) || hasPrefetchedPage(this.chatId))
         ? 0 : INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
     this.store = store;
     if (!this.routeResumeWaiting || this.groups.length === 0) {
@@ -4831,7 +4836,7 @@ export struct ChatPage {
     }
     // 平板黑屏 / 顶栏横幅（#201）：查看器现在单栏、分栏都在页面内；分栏时另外收左栏和
     // 侧边页签盖满窗口（见 util/viewerWindowCover）。打点保留，对照下一份平板日志用。
-    const split: boolean = isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn);
+    const split: boolean = isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn);
     logW(`[ViewerPath] split=${split} path=inline coversWindow=${split}` +
       ` api=${deviceInfo.sdkApiVersion}` +
       ` win=${Math.round(this.screenW)}x${Math.round(this.screenH)}`);
@@ -4936,7 +4941,7 @@ export struct ChatPage {
     this.viewerPositionMs = 0;
     // 分栏下查看器开着：收左栏和侧边页签，让页面内的查看器盖满窗口（见 util/viewerWindowCover）。
     publishViewerCoversWindow(viewerFullScreenWanted(
-      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.viewerOpen()));
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.viewerOpen()));
   }
 
   // 查看器上点"保存"：entry 在这里取，取不到就不调。

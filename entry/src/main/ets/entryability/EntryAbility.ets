@@ -43,7 +43,9 @@ import { initA11yState } from '../util/a11yState';
 import { logE, logW } from '../util/log';
 import { ColorModeBaseline } from '../util/configChange';
 import { bumpMaterialEpoch } from '../util/overlayMaterial';
-import { KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT } from '../util/layoutBreakpoint';
+import {
+  KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, heightBreakpointOfSize, widthBreakpointOfVp
+} from '../util/layoutBreakpoint';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
 const BUBBLE_MEDIA_MAX_VP: number = 280;
@@ -391,6 +393,13 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate('cutoutTopSafeHeight', px2vp(cutoutAvoid.topRect.height));
       AppStorage.setOrCreate('cutoutLeftSafeWidth', px2vp(cutoutAvoid.leftRect.width));
       AppStorage.setOrCreate('cutoutRightSafeWidth', px2vp(cutoutAvoid.rightRect.width));
+      // 断点先于尺寸写：页面挂在尺寸上的 @Watch（onWindowResized 等）触发时要读到新断点。
+      // 这里是 loadContent 之前，系统断点接口还不可信，按官方阈值从尺寸推一个初值，
+      // 免得平板第一帧按默认 sm 画成单栏；loadContent 回调里立刻换成系统值。
+      const seedW: number = px2vp(win.getWindowProperties().windowRect.width);
+      const seedH: number = px2vp(win.getWindowProperties().windowRect.height);
+      AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
+      AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBreakpointOfSize(seedW, seedH));
       AppStorage.setOrCreate('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
       AppStorage.setOrCreate('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
       mirrorChatEnvKey('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
@@ -463,13 +472,13 @@ export default class EntryAbility extends UIAbility {
         // 密度可能跟着变了，气泡轮廓的 path 缓存按 vp 尺寸建键、不含密度，
         // 这里清一次让它按新密度重建（见 util/bubbleTail.clearOutlineCache）。
         clearOutlineCache();
+        // 断点只在这条「可信」分支里更新：被上面密度校验拒掉的那次回调，
+        // 系统算出的断点同样不可信。**先于尺寸写**，理由见启动那处。
+        this.publishBreakpoints(win);
         AppStorage.setOrCreate('screenWidthVp', candidate);
         AppStorage.setOrCreate('screenHeightVp', px2vp(size.height));
         mirrorChatEnvKey('screenWidthVp', candidate);
         mirrorChatEnvKey('screenHeightVp', px2vp(size.height));
-        // 断点只在这条「可信」分支里更新：被上面密度校验拒掉的那次回调，
-        // 系统算出的断点同样不可信。
-        this.publishBreakpoints(win);
       });
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set full-screen layout. Cause: %{public}s', JSON.stringify(err));
@@ -494,11 +503,11 @@ export default class EntryAbility extends UIAbility {
       try {
         const loadedWin: window.Window = windowStage.getMainWindowSync();
         const rect: window.Rect = loadedWin.getWindowProperties().windowRect;
+        this.publishBreakpoints(loadedWin);
         AppStorage.setOrCreate('screenWidthVp', px2vp(rect.width));
         AppStorage.setOrCreate('screenHeightVp', px2vp(rect.height));
         mirrorChatEnvKey('screenWidthVp', px2vp(rect.width));
         mirrorChatEnvKey('screenHeightVp', px2vp(rect.height));
-        this.publishBreakpoints(loadedWin);
       } catch (e) {
         logE(`breakpoint seed after loadContent failed: ${(e as Error).message}`);
       }

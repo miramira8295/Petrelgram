@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
 import { router, promptAction } from '@kit.ArkUI';
 import { profileMenuItems } from '../../util/profileMenu';
 import { showProfileMoreMenu } from './ProfileMoreMenu';
@@ -39,7 +42,6 @@ import {
 import { AppBackdrop } from '../common/AppBackdrop';
 import { KEY_APP_BG_ON, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
-import { isSplitLayout } from '../../util/splitMetrics';
 import { ExpandableText } from './ExpandableText';
 import { openUrl } from '../../util/openUrl';
 import { common } from '@kit.AbilityKit';
@@ -126,6 +128,9 @@ export struct ProfilePage {
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
   @StorageProp('screenHeightVp') screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   // APP 壁纸此刻生不生效。本页是压在主界面之上的 NavDestination，**下面那层壁纸
   // 透不过来**（HdsNavDestination 自带不透明底，Scroll 又铺了一层 page_bg），
   // 所以和 ChatPage 一样自己画一层——用户实报"点频道/群组/其他人详情看不到壁纸"。
@@ -1567,7 +1572,7 @@ export struct ProfilePage {
     Stack() {
       // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
       // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
-      AppBackdrop({ split: isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) });
+      AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) });
       // 整页是一个 List（原来是 Scroll > Column）：资料部分在第一项、页签条一项，页签内容按行放进
       // List——共同群组、礼物、共享内容/媒体都走 LazyForEach（见 profileTabItems）。
       List() {

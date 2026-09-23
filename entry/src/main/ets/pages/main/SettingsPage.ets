@@ -1,3 +1,6 @@
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+} from '../../util/layoutBreakpoint';
 import { ComponentContent, router, promptAction } from '@kit.ArkUI';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
 import {
@@ -35,7 +38,7 @@ import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
 import { readableContentWidth } from '../../util/contentWidth';
 import { registerStack, NavStackLike } from '../../util/navStacks';
 import { navigateToSetting } from '../../util/settingsNav';
-import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth, isSplitLayout } from '../../util/splitMetrics';
+import { splitContentMinWidth, splitNavMaxWidth, splitNavMinWidth } from '../../util/splitMetrics';
 import { SHEET_LIFECYCLE_MODIFIER } from '../../util/navSheetLifecycle';
 import { SplitPlaceholderHolder } from '../../util/splitPlaceholderHolder';
 import { KEY_APP_DARK } from '../../util/theme';
@@ -231,9 +234,12 @@ export struct SettingsPage {
   @StorageProp('screenWidthVp') @Watch('onWindowResized') screenW: number = 360;
   // 设置里的「强制单栏」（宽屏也当手机用）。
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) forceSingleColumn: boolean = false;
-  // 分栏判据要两条边都过线（见 util/splitMetrics.isSplitLayout）——只看宽的话
-  // 手机一转横屏就被当成平板。
+  // 分栏判据读系统横向 + 纵向断点（util/layoutBreakpoint.isSplitByBreakpoint）——只看宽的话
+  // 手机一转横屏就被当成平板（#125）。
   @StorageProp('screenHeightVp') @Watch('onWindowResized') screenH: number = 780;
+  // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
+  @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // The setting titles come from str() rather than $r() so the search box can
@@ -308,7 +314,7 @@ export struct SettingsPage {
   // aboutToAppear 的复位同一个判据（util/navBarReset），值没变时不写。
   private onWindowResized(): void {
     const isVisible: boolean = navBarVisibleOnAppear(
-      isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.settingsStack.size());
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.settingsStack.size());
     if (AppStorage.get<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
       AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, isVisible);
     }
@@ -334,7 +340,7 @@ export struct SettingsPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.settingsStack.size()));
+      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.settingsStack.size()));
     this.reloadAccounts();
     this.loadProfile();
   }
@@ -1570,7 +1576,7 @@ export struct SettingsPage {
           if (AppStorage.get<number>(SETTINGS_NAV_BAR_WIDTH_KEY) !== w) {
             AppStorage.setOrCreate<number>(SETTINGS_NAV_BAR_WIDTH_KEY, w);
             // 同 ChatListPage（issue #106）。
-            rememberSplitNavWidth(w, isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn));
+            rememberSplitNavWidth(w, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn));
           }
         })
         // 不裁剪超出自身范围的子组件，内容才能穿透到标题栏下方——渐变模糊
@@ -1617,10 +1623,10 @@ export struct SettingsPage {
       // 一团压在左下角。手机端被这条默认行为整个毁掉，而平板那台是 API 26、
       // 宽得多，整轮平板验证一次都没暴露。
       //
-      // 所以断点由我们自己说了算：isSplitLayout 用的是 splitMetrics 里的
-      // SPLIT_BREAKPOINT_VP，与 navBarWidthRange / minContentWidth 那几个算式同源。
+      // 所以分栏由我们自己说了算：isSplitByBreakpoint 读系统横向 + 纵向断点，
+      // 手机横屏（md 宽 + 横向窗口）也判单栏（util/layoutBreakpoint）。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
-      .mode(isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
       .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
@@ -1634,7 +1640,7 @@ export struct SettingsPage {
       .onNavBarStateChange((reported: boolean): void => {
         // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
         const isVisible: boolean = navBarVisibleOnChange(reported,
-          isSplitLayout(this.screenW, this.screenH, this.forceSingleColumn), this.settingsStack.size());
+          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.settingsStack.size());
         if (AppStorage.get<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
           AppStorage.setOrCreate<boolean>(SETTINGS_NAV_BAR_VISIBLE_KEY, isVisible);
         }

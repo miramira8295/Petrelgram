@@ -7,7 +7,9 @@ import { getChatStore } from '../tdkit/Globals';
 import { ChatEntry } from '../store/ChatEntry';
 import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
-import { isSplitLayout } from './splitMetrics';
+import {
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+} from './layoutBreakpoint';
 import { setChatListRenderActive } from './chatListRenderGate';
 import { routeTopicId } from './messageTopicScope';
 
@@ -133,9 +135,9 @@ export function navigateToChat(
   //
   // 「选一个会话来看」这条路只保留一个详情页（见上面 origin 那段）。窗口尺寸
   // 与这个判断无关，读它是给下面关渲染闸用的。
-  const screenW: number = AppStorage.get<number>('screenWidthVp') ?? 0;
-  const screenH: number = AppStorage.get<number>('screenHeightVp') ?? 0;
-  const split: boolean = isSplitLayout(screenW, screenH,
+  const split: boolean = isSplitByBreakpoint(
+    AppStorage.get<number>(KEY_WIDTH_BREAKPOINT) ?? WIDTH_BP_SM,
+    AppStorage.get<number>(KEY_HEIGHT_BREAKPOINT) ?? HEIGHT_BP_LG,
     AppStorage.get<boolean>(KEY_FORCE_SINGLE_COLUMN) ?? false);
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
   const decision: ChatPushDecision =
