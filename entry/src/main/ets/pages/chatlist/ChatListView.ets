@@ -1,9 +1,10 @@
+import { homeCardMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry } from '../../store/ChatEntry';
-import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
+import { ChatRow } from './ChatRow';
 import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { ChatListDataSource } from './ChatListDataSource';
 import { guardKey } from '../../util/keyGuard';
@@ -131,7 +132,7 @@ export struct ChatListView {
     // 否则卡片滑走后会露出一块贴屏边的整行矩形。
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
-      left: CHAT_ROW_SIDE_GUTTER,
+      left: this.cardGutter(),
       top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
       bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
@@ -156,7 +157,7 @@ export struct ChatListView {
     }
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
-      right: CHAT_ROW_SIDE_GUTTER,
+      right: this.cardGutter(),
       top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
       bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
@@ -540,6 +541,11 @@ export struct ChatListView {
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
       curve: Curve.EaseOut
     }));
+  }
+
+  // 首页会话卡片外沿（util/pageMargin）：手机 6，折叠屏 10，平板 14。
+  private cardGutter(): number {
+    return homeCardMarginVp(this.widthBp);
   }
 
   build() {

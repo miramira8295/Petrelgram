@@ -1,3 +1,4 @@
+import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -936,7 +937,7 @@ export struct ContactsPage {
       color: this.searchFocused ? this.accent() : COLOR_DIVIDER
     })
     .alignItems(VerticalAlign.Center)
-    .margin({ left: 12, right: 12, top: 4 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 4 })
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 160),
       curve: Curve.EaseOut
@@ -1030,7 +1031,7 @@ export struct ContactsPage {
       .borderRadius(CARD_RADIUS)
       .clip(true);
     }
-    .margin({ left: 12, right: 12, top: 12 });
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 });
   }
 
   @Builder
@@ -1083,7 +1084,7 @@ export struct ContactsPage {
       }, (index: number): string => `${index}`);
     }
     .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
     .padding({ bottom: 4 })
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1119,7 +1120,7 @@ export struct ContactsPage {
     }
     .width('calc(100% - 24vp)')
     .height(190)
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1170,7 +1171,7 @@ export struct ContactsPage {
     }
     .width('calc(100% - 24vp)')
     .height(220)
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1344,7 +1345,7 @@ export struct ContactsPage {
     })
     .width('calc(100% - 24vp)')
     .constraintSize({ maxWidth: readableContentWidth(this.screenW) - 24 })
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
     .padding({ bottom: 4 })
     .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1627,6 +1628,11 @@ export struct ContactsPage {
       },
       menu: { value: [moreItem] }
     };
+  }
+
+  // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
+  private pageMargin(): number {
+    return pageMarginVp(this.widthBp);
   }
 
   build() {

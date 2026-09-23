@@ -1,3 +1,4 @@
+import { homeCardMarginVp } from '../../util/pageMargin';
 import {
   ImmersiveBarsState, KEY_IMMERSIVE_BARS_HIDDEN, nextImmersiveBars
 } from '../../util/immersiveBars';
@@ -11,7 +12,7 @@ import {
 } from '../../util/archiveReveal';
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
-import { CHAT_ROW_SIDE_GUTTER, ChatRow } from './ChatRow';
+import { ChatRow } from './ChatRow';
 import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
 import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
@@ -406,7 +407,7 @@ export struct MainTabBody {
     }
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
-      left: CHAT_ROW_SIDE_GUTTER,
+      left: this.cardGutter(),
       top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
       bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
@@ -429,7 +430,7 @@ export struct MainTabBody {
     }
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
-      right: CHAT_ROW_SIDE_GUTTER,
+      right: this.cardGutter(),
       top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
       bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
@@ -588,8 +589,8 @@ export struct MainTabBody {
     }
     // 与 ChatRow 的卡片同一套规格：同样的左右收进、外边距、头像内缩（对齐顶部标题）、圆角 16、0.5 描边、
     // 玻璃与按压态。
-    .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
-    .margin({ left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER, top: 3, bottom: 3 })
+    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
+    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 3, bottom: 3 })
     .height(this.archiveRowHeight())
     .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H })
     .borderRadius(16)
@@ -719,6 +720,11 @@ export struct MainTabBody {
     if (this.immersive.hidden !== prevHidden) {
       AppStorage.setOrCreate(KEY_IMMERSIVE_BARS_HIDDEN, this.immersive.hidden);
     }
+  }
+
+  // 首页会话卡片外沿（util/pageMargin）：手机 6，折叠屏 10，平板 14。
+  private cardGutter(): number {
+    return homeCardMarginVp(this.widthBp);
   }
 
   build() {

@@ -12,8 +12,8 @@ export const GLASS_RADIUS_CARD: number = 26;
 export const GLASS_RADIUS_TILE: number = 22;
 export const GLASS_RADIUS_CHIP: number = 14;
 
-// 页面左右留白。设计是 14，比原来的 12 稍宽，让卡片圆角透出更多壁纸。
-export const GLASS_PAGE_PAD: number = 14;
+// 页面左右留白原来是这里的 GLASS_PAGE_PAD = 14；2026-09-23 按 SPEC-07 与其他页面统一成
+// 手机 12（大屏按断点加宽），改用 util/pageMargin.pageMarginVp。
 // 卡片之间的间距。
 export const GLASS_GAP: number = 13;
 

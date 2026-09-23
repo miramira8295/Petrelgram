@@ -1,3 +1,4 @@
+import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -1644,7 +1645,7 @@ export struct MyProfilePage {
       .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 2 })
       .clip(true);
     }
-    .margin({ left: 12, right: 12, top: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
     .opacity(this.active ? 1 : 0)
     .translate({ y: this.active ? 0 : 10 })
     .animation({
@@ -2084,6 +2085,11 @@ export struct MyProfilePage {
         ]
       }
     };
+  }
+
+  // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
+  private pageMargin(): number {
+    return pageMarginVp(this.widthBp);
   }
 
   build() {

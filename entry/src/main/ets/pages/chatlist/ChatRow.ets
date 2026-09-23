@@ -1,8 +1,12 @@
+import {
+  KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
+} from '../../util/layoutBreakpoint';
+import { homeCardMarginVp } from '../../util/pageMargin';
 import { CHATLIST_PREVIEW_THUMB_ENABLED, stripPreviewIcon } from '../../util/formatPreview';
 import { DRAFT_EPOCH, localDraftPreview } from '../../store/DraftStore';
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
-import { HOME_CARD_INSET_VP, HOME_CARD_MARGIN_VP } from '../../util/listCardGeometry';
+import { HOME_CARD_INSET_VP } from '../../util/listCardGeometry';
 import { CHAT_SWIPE_VERTICAL_GUTTER_VP } from '../../util/chatListSwipe';
 import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
 import { ChatEntry, ChatKind, effectiveMuted } from '../../store/ChatEntry';
@@ -47,9 +51,6 @@ import { APPEARANCE_EPOCH } from '../../util/appearance';
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
 const MENU_DISMISS_MS: number = 150;
-// 卡片外沿离屏幕边（头像再内缩 HOME_CARD_INSET_VP，两段相加 = 12vp，见 util/listCardGeometry）；
-// 滑动操作背景也复用这一个值。
-export const CHAT_ROW_SIDE_GUTTER: number = HOME_CARD_MARGIN_VP;
 // 卡片上下外沿。**相邻两张卡片之间的间距是它的两倍**（外边距不折叠），
 // 所以这个数就是「item 间距 ÷ 2」；左右滑动作的背景用同一个数（CHAT_SWIPE_VERTICAL_GUTTER_VP），
 // 改了这里那边也要跟着改，否则滑出来的底色和卡片对不齐。
@@ -63,6 +64,8 @@ export const CHAT_ROW_VERTICAL_GUTTER: number = CHAT_SWIPE_VERTICAL_GUTTER_VP;
 @Reusable
 @Component
 export struct ChatRow {
+  // 卡片外沿按系统横向断点取值（util/pageMargin）；滑动操作背景复用同一个值。
+  @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(APPEARANCE_EPOCH) appearanceEpoch: number = 0;
   // 读屏开关的纪元。必须在 build 链路里**被真正读到**才建立依赖——见下面
   // rowGlassEnabled() 里 surfaceGlassEpoch 那段（同一个坑，有用户实测背书：
@@ -540,6 +543,11 @@ export struct ChatRow {
     }
   }
 
+  // 首页会话卡片外沿（util/pageMargin）：手机 6，折叠屏 10，平板 14。
+  private cardGutter(): number {
+    return homeCardMarginVp(this.widthBp);
+  }
+
   build() {
     Row({ space: 12 }) {
       AvatarView({
@@ -646,9 +654,9 @@ export struct ChatRow {
     // （见 util/listCardGeometry）。壁纸生效时卡片交给现有 'card'
     // 稳定玻璃：所有 API 都随“材质厚度”改变锁定的模糊半径；用户关闭材质时
     // overlayGlassFill 会自然退回原来的可读性实底。
-    .width(`calc(100% - ${CHAT_ROW_SIDE_GUTTER * 2}vp)`)
+    .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
     .margin({
-      left: CHAT_ROW_SIDE_GUTTER, right: CHAT_ROW_SIDE_GUTTER,
+      left: this.cardGutter(), right: this.cardGutter(),
       top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
     })
     .borderRadius(16)

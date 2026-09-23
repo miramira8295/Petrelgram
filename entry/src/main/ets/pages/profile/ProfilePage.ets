@@ -1,3 +1,4 @@
+import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -17,7 +18,7 @@ import {
   PROFILE_TAB_VIDEO_NOTES, PROFILE_TAB_GIFS, PROFILE_TAB_GIFTS
 } from '../../store/ChatProfileStore';
 import {
-  GLASS_GAP, GLASS_PAGE_PAD, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
+  GLASS_GAP, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
   GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
 } from './ProfileGlass';
 import {
@@ -872,7 +873,7 @@ export struct ProfilePage {
         if (this.moreMenuItems().length > 0) {
           this.circleButton('sys.symbol.more', () => { this.openMoreMenu(); });
         }
-      }.width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
+      }.width('100%').padding({ left: this.pageMargin(), right: this.pageMargin() });
       Column() {
         AvatarView({
           avatarPath: this.avatarPath, initials: this.initials,
@@ -960,7 +961,7 @@ export struct ProfilePage {
       .alignItems(HorizontalAlign.Start)
       .onClick(() => { this.openChat(this.personalChatId); });
     }
-    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
   }
 
   @Builder
@@ -1046,7 +1047,7 @@ export struct ProfilePage {
       .glassCard()
       .alignItems(HorizontalAlign.Start);
     }
-    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
   }
 
   private creatingSecretChat: boolean = false;
@@ -1091,7 +1092,7 @@ export struct ProfilePage {
       .glassCard()
       .onClick((): void => { this.startSecretChat(); });
     }
-    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
   }
 
   @Builder
@@ -1110,7 +1111,7 @@ export struct ProfilePage {
       .glassCard()
       .onClick((): void => { this.addContact(); });
     }
-    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
   }
 
   @Builder
@@ -1551,7 +1552,7 @@ export struct ProfilePage {
         .justifyContent(FlexAlign.Center)
         .backgroundColor($r('app.color.surface'));
       }
-      .width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
+      .width('100%').padding({ left: this.pageMargin(), right: this.pageMargin() });
       Circle({ width: 116, height: 116 }).fill($r('app.color.surface_alt'));
       Rect({ width: 132, height: 20, radius: 10 }).fill($r('app.color.surface_alt'));
       Rect({ width: 86, height: 12, radius: 6 }).fill($r('app.color.surface_alt'));
@@ -1565,6 +1566,11 @@ export struct ProfilePage {
     }
     .width('100%')
     .padding({ top: this.topSafe + 8 });
+  }
+
+  // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
+  private pageMargin(): number {
+    return pageMarginVp(this.widthBp);
   }
 
   build() {

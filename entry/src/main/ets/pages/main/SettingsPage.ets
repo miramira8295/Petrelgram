@@ -1,3 +1,4 @@
+import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -924,7 +925,7 @@ export struct SettingsPage {
     }
     .width('calc(100% - 24vp)')
     .height(108)
-    .margin({ left: 12, right: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin() })
     .padding({ left: 16, right: 14 })
     .borderRadius(CARD_RADIUS)
     .alignItems(VerticalAlign.Center)
@@ -982,7 +983,7 @@ export struct SettingsPage {
     }
     .width('calc(100% - 24vp)')
     .height(118)
-    .margin({ left: 12, right: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin() })
     .padding({ left: 16, right: 14 })
     .borderRadius(CARD_RADIUS)
     .alignItems(VerticalAlign.Center)
@@ -1073,7 +1074,7 @@ export struct SettingsPage {
     }
     .width('calc(100% - 24vp)')
     .height(108)
-    .margin({ left: 12, right: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin() })
     .padding({ left: 16, right: 14 })
     .borderRadius(CARD_RADIUS)
     .alignItems(VerticalAlign.Center)
@@ -1211,7 +1212,7 @@ export struct SettingsPage {
     }
     .width('calc(100% - 24vp)')
     .height(66)
-    .margin({ left: 12, right: 12 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin() })
     .padding({ left: 12, right: 8 })
     .backgroundColor('#10E64646')
     .border({ width: 0.7, color: '#30E64646' })
@@ -1292,7 +1293,7 @@ export struct SettingsPage {
         .onClick((): void => this.addAccount());
       }
       .width('calc(100% - 24vp)')
-      .margin({ left: 12, right: 12 })
+      .margin({ left: this.pageMargin(), right: this.pageMargin() })
       .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
       .borderRadius(CARD_RADIUS)
@@ -1417,7 +1418,7 @@ export struct SettingsPage {
       .clip(true);
     }
     .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12, bottom: 6 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), bottom: 6 })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: 6 }))
       .animation({
@@ -1466,7 +1467,7 @@ export struct SettingsPage {
         }
         .width('calc(100% - 24vp)')
         .height(194)
-        .margin({ left: 12, right: 12, top: 12 })
+        .margin({ left: this.pageMargin(), right: this.pageMargin(), top: 12 })
         .justifyContent(FlexAlign.Center)
         .backgroundColor(this.cardFill())
     .backgroundBlurStyle(this.cardBlurStyle())
@@ -1529,6 +1530,11 @@ export struct SettingsPage {
     // Column 默认左对齐：限了宽不居中就是把内容全堆在屏幕左边，比不限还难看。
     .alignItems(HorizontalAlign.Center)
     .padding({ bottom: this.bottomSafe + 88 });
+  }
+
+  // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
+  private pageMargin(): number {
+    return pageMarginVp(this.widthBp);
   }
 
   build() {

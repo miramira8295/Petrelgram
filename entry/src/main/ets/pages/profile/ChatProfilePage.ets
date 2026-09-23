@@ -1,3 +1,4 @@
+import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -29,7 +30,7 @@ import {
   PROFILE_TAB_VIDEO_NOTES, PROFILE_TAB_GIFS, PROFILE_TAB_GIFTS
 } from '../../store/ChatProfileStore';
 import {
-  GLASS_GAP, GLASS_PAGE_PAD, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
+  GLASS_GAP, GLASS_RADIUS_CARD, GLASS_RADIUS_CHIP,
   GLASS_RADIUS_TILE, GLASS_SHADOW_COLOR, GLASS_SHADOW_RADIUS, GLASS_SHADOW_Y
 } from './ProfileGlass';
 import {
@@ -1058,7 +1059,7 @@ export struct ChatProfilePage {
         this.circleButton('sys.symbol.arrow_right_and_square', () => {
           if (this.chatId !== 0) { this.leaveCurrentChat(); }
         });
-      }.width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD });
+      }.width('100%').padding({ left: this.pageMargin(), right: this.pageMargin() });
       // 头像外面套一圈玻璃：设计里 130 的外径、7 的内缩，环本身就是一块
       // 毛玻璃，头像浮在它中间。
       Column() {
@@ -1139,7 +1140,7 @@ export struct ChatProfilePage {
         }.width('100%');
       }
     }
-    .width('100%').padding({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
+    .width('100%').padding({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
   }
 
   @Builder
@@ -1235,7 +1236,7 @@ export struct ChatProfilePage {
       .glassCard()
       .alignItems(HorizontalAlign.Start);
     }
-    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP });
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP });
   }
 
   // 长按成员时该出哪些菜单项。判定是纯函数，见 util/memberMenu。
@@ -1537,7 +1538,7 @@ export struct ChatProfilePage {
     .shadow({ radius: GLASS_SHADOW_RADIUS, color: GLASS_SHADOW_COLOR, offsetX: 0, offsetY: GLASS_SHADOW_Y })
     .clip(true)
     .alignSelf(ItemAlign.Center)
-    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, bottom: 6 });
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), bottom: 6 });
   }
 
   @Builder
@@ -1600,7 +1601,7 @@ export struct ChatProfilePage {
       }
     }
     .width('calc(100% - 28vp)')
-    .margin({ left: GLASS_PAGE_PAD, right: GLASS_PAGE_PAD, top: GLASS_GAP, bottom: 24 })
+    .margin({ left: this.pageMargin(), right: this.pageMargin(), top: GLASS_GAP, bottom: 24 })
     .glassCard().clip(true)
         .priorityGesture(
       PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 12 })
@@ -1897,6 +1898,11 @@ export struct ChatProfilePage {
         this.store.loadMoreContent();
       }
     });
+  }
+
+  // 页面边距（util/pageMargin，SPEC-07）：手机 12，折叠屏 16，平板 20。
+  private pageMargin(): number {
+    return pageMarginVp(this.widthBp);
   }
 
   build() {
