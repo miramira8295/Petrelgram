@@ -399,6 +399,7 @@ export default class EntryAbility extends UIAbility {
       const seedW: number = px2vp(win.getWindowProperties().windowRect.width);
       const seedH: number = px2vp(win.getWindowProperties().windowRect.height);
       AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
+      mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
       AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBreakpointOfSize(seedW, seedH));
       AppStorage.setOrCreate('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
       AppStorage.setOrCreate('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
@@ -548,6 +549,8 @@ export default class EntryAbility extends UIAbility {
       const widthBp: number = ui.getWindowWidthBreakpoint() as number;
       const heightBp: number = ui.getWindowHeightBreakpoint() as number;
       AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBp);
+      // 会话环境镜像按它放大消息字号（util/textScale）。
+      mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBp);
       AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBp);
     } catch (e) {
       logE(`publishBreakpoints failed: ${(e as Error).message}`);

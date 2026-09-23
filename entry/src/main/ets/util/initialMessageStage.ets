@@ -1,3 +1,5 @@
+import { KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM } from './layoutBreakpoint';
+import { scaledMsgTextSize } from './textScale';
 import { AlbumGroup } from './collapseAlbums';
 import { inlineMaxWidth, mediaBoxFor, mediaThumbWidth } from './mediaBox';
 import { AlbumCell, packAlbumRows } from './packAlbumRows';
@@ -110,7 +112,9 @@ function estimatedCharWidth(code: number, fontSize: number): number {
 }
 
 function estimatedTextLines(text: string, availWidth: number): number {
-  const fontSize: number = AppStorage.get<number>('msgTextSize') ?? 16;
+  // 与气泡实排同一个字号：设置原值 × 断点倍数（util/textScale），否则大屏上估矮了。
+  const fontSize: number = scaledMsgTextSize(AppStorage.get<number>('msgTextSize') ?? 16,
+    AppStorage.get<number>(KEY_WIDTH_BREAKPOINT) ?? WIDTH_BP_SM);
   const width: number = Math.max(40, availWidth);
   let lines: number = 0;
   for (const segment of text.split('\n')) {

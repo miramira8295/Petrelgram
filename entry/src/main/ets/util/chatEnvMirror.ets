@@ -1,3 +1,5 @@
+import { WIDTH_BP_SM } from './layoutBreakpoint';
+import { scaledMsgTextSize } from './textScale';
 // 聊天环境值的 @ObservedV2 镜像（P4 批 0，见 docs/superpowers/specs/
 // 2026-09-02-p4-bubble-v2-survey.md 与 08-26 P3 survey 的方案 A）。
 //
@@ -62,8 +64,21 @@ const MIRRORED_KEYS: string[] = [
   'translateReplaceOriginal',
   'powerEmojiChat', 'powerAnimatedStickers', 'powerStickerAutoplay',
   'powerAutoplayGif', 'powerAutoplayVideo', 'powerStickerLoop', 'powerEmojiStatus',
-  'appIsForeground', 'linkNavBusyUrl', 'powerAnimatedAvatar'
+  'appIsForeground', 'linkNavBusyUrl', 'powerAnimatedAvatar',
+  // 系统横向断点：消息字号按它放大（util/textScale）。
+  'currentWidthBreakpoint'
 ];
+
+// 消息字号的两个输入（见 mirrorChatEnvKey 的 msgTextSize / currentWidthBreakpoint 两支）。
+let rawMsgTextSize: number = 0;
+let mirroredWidthBp: number = WIDTH_BP_SM;
+
+function applyMsgTextSize(): void {
+  const next: number = scaledMsgTextSize(rawMsgTextSize, mirroredWidthBp);
+  if (chatEnv.msgTextSize !== next) {
+    chatEnv.msgTextSize = next;
+  }
+}
 
 export function mirroredChatEnvKeys(): string[] {
   return MIRRORED_KEYS.slice();
@@ -107,8 +122,14 @@ export function mirrorChatEnvKey(key: string, value: number | boolean | string):
     case 'screenHeightVp':
       if (chatEnv.screenHeightVp !== (value as number)) { chatEnv.screenHeightVp = value as number; }
       break;
+    // 消息字号 = 设置原值 × 断点倍数（SPEC-13）。两个输入各自记住，任何一个变了都重算。
     case 'msgTextSize':
-      if (chatEnv.msgTextSize !== (value as number)) { chatEnv.msgTextSize = value as number; }
+      rawMsgTextSize = value as number;
+      applyMsgTextSize();
+      break;
+    case 'currentWidthBreakpoint':
+      mirroredWidthBp = value as number;
+      applyMsgTextSize();
       break;
     case 'bubbleRadius':
       if (chatEnv.bubbleRadius !== (value as number)) { chatEnv.bubbleRadius = value as number; }

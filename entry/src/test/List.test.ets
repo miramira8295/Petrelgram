@@ -145,6 +145,7 @@ import syncStateTest from './SyncState.test';
 import initialLoadingHintTest from './InitialLoadingHint.test';
 import layoutBreakpointTest from './LayoutBreakpoint.test';
 import immersiveBarsTest from './ImmersiveBars.test';
+import textScaleTest from './TextScale.test';
 import playSlotTest from './PlaySlot.test';
 import playSlotRegistryTest from './PlaySlotRegistry.test';
 import backgroundBlurTest from './BackgroundBlur.test';
@@ -485,6 +486,7 @@ export default function testsuite() {
   initialLoadingHintTest();
   layoutBreakpointTest();
   immersiveBarsTest();
+  textScaleTest();
   playSlotTest();
   playSlotRegistryTest();
   customEmojiReactionsTest();

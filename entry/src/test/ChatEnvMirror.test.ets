@@ -19,6 +19,7 @@ import { KEY_BUBBLE_GLASS_ON } from '../main/ets/util/surfaceGlass';
 import { LANGUAGE_EPOCH } from '../main/ets/util/appLanguage';
 import { MATERIAL_EPOCH } from '../main/ets/util/overlayMaterial';
 import { CHAT_CONTENT_WIDTH_KEY } from '../main/ets/util/chatContentWidth';
+import { KEY_WIDTH_BREAKPOINT } from '../main/ets/util/layoutBreakpoint';
 
 export default function chatEnvMirrorTest() {
   describe('chatEnvMirror', () => {
@@ -32,7 +33,8 @@ export default function chatEnvMirrorTest() {
         KEY_POWER_EMOJI, KEY_POWER_EMOJI_REACTIONS, KEY_MSG_GESTURE,
         KEY_POWER_EMOJI_CHAT, KEY_POWER_STICKERS, KEY_POWER_STICKER_AUTOPLAY,
         KEY_POWER_AUTOPLAY_GIF, KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_STICKER_LOOP, KEY_POWER_EMOJI_STATUS,
-        KEY_TRANSLATE_REPLACE_ORIGINAL, 'appIsForeground', LINK_NAV_BUSY_KEY, KEY_POWER_ANIMATED_AVATAR
+        KEY_TRANSLATE_REPLACE_ORIGINAL, 'appIsForeground', LINK_NAV_BUSY_KEY, KEY_POWER_ANIMATED_AVATAR,
+        KEY_WIDTH_BREAKPOINT
       ];
       expect(keys.length).assertEqual(constants.length);
       for (const constant of constants) {
