@@ -616,7 +616,8 @@ export struct ChatProfilePage {
   }
 
   private openMemberProfile(userId: number): void {
-    const params: Record<string, Object> = { 'userId': userId };
+    // fromChatId：机器人的主小程序要在「当前这个群」里打开（#201 第 2 条，util/botMainApp）。
+    const params: Record<string, Object> = { 'userId': userId, 'fromChatId': this.chatId };
     // 曾经是 router.pushUrl('pages/profile/ProfilePage')——ProfilePage 迁成
     // HdsNavDestination 并从 main_pages.json 摘出后，整页路由已经跳不动，统一
     // 走 navigateToProfile 这个唯一漏斗。

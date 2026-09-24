@@ -1,5 +1,6 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
+import { webAppUrlOf } from '../util/webAppUrl';
 
 // Inline bots (@bot query) and Mini Apps (Web Apps). Result parsing stays with
 // the caller so it can decide how much of each result type to render.
@@ -134,7 +135,7 @@ export async function openMiniApp(
   request['url'] = url;
   request['parameters'] = openParameters();
   const info = await getTdClient().send(request, 20000);
-  return (info['url'] as string | undefined) ?? '';
+  return webAppUrlOf(info['url']);
 }
 
 export async function getMainMiniApp(chatId: number, botUserId: number): Promise<string> {
@@ -144,7 +145,7 @@ export async function getMainMiniApp(chatId: number, botUserId: number): Promise
   request['start_parameter'] = '';
   request['parameters'] = openParameters();
   const info = await getTdClient().send(request, 20000);
-  return (info['url'] as string | undefined) ?? '';
+  return webAppUrlOf(info['url']);
 }
 
 // Mini App reached through a t.me/<bot>/<app> link.
@@ -159,7 +160,7 @@ export async function getMiniAppLinkUrl(
   request['allow_write_access'] = false;
   request['parameters'] = openParameters();
   const result = await getTdClient().send(request, 20000);
-  return (result['url'] as string | undefined) ?? '';
+  return webAppUrlOf(result['url']);
 }
 
 export function closeMiniApp(launchId: string): void {
@@ -177,5 +178,5 @@ export async function botMiniAppUrl(botUserId: number): Promise<string> {
   const botInfo = info['bot_info'] as TdObject | undefined;
   if (botInfo === undefined) { return ''; }
   const menuButton = botInfo['menu_button'] as TdObject | undefined;
-  return menuButton !== undefined ? ((menuButton['url'] as string | undefined) ?? '') : '';
+  return menuButton !== undefined ? webAppUrlOf(menuButton['url']) : '';
 }

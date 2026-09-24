@@ -148,6 +148,8 @@ import immersiveBarsTest from './ImmersiveBars.test';
 import textScaleTest from './TextScale.test';
 import landscapeMultiWindowTest from './LandscapeMultiWindow.test';
 import pageMarginTest from './PageMargin.test';
+import botMainAppTest from './BotMainApp.test';
+import webAppUrlTest from './WebAppUrl.test';
 import playSlotTest from './PlaySlot.test';
 import playSlotRegistryTest from './PlaySlotRegistry.test';
 import backgroundBlurTest from './BackgroundBlur.test';
@@ -491,6 +493,8 @@ export default function testsuite() {
   textScaleTest();
   landscapeMultiWindowTest();
   pageMarginTest();
+  botMainAppTest();
+  webAppUrlTest();
   playSlotTest();
   playSlotRegistryTest();
   customEmojiReactionsTest();

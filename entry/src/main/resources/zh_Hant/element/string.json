@@ -12835,6 +12835,10 @@
     {
       "name": "app_icon_aurora_clear",
       "value": "極光 · 透明"
+    },
+    {
+      "name": "pp_open_app",
+      "value": "開啟應用"
     }
   ]
 }

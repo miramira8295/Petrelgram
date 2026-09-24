@@ -12835,6 +12835,10 @@
     {
       "name": "app_icon_aurora_clear",
       "value": "오로라 · 투명"
+    },
+    {
+      "name": "pp_open_app",
+      "value": "앱 열기"
     }
   ]
 }

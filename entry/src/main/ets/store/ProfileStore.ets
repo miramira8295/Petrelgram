@@ -1,3 +1,4 @@
+import { botHasMainApp } from '../util/botMainApp';
 import { TdClient } from '../tdkit/TdClient';
 import { isBlockedFromFullInfo } from '../util/profileMenu';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
@@ -77,6 +78,8 @@ export class ProfileStore {
   // 对方在不在我的屏蔽名单里（userFullInfo.block_list）。资料页「⋯」菜单据此显示
   // 屏蔽还是解除屏蔽；屏蔽/解除后 TDLib 推 updateUserFullInfo，菜单跟着翻。
   isBlocked: boolean = false;
+  // 带主小程序的机器人：资料页出「打开应用」（#201 第 2 条，util/botMainApp）。
+  hasMainApp: boolean = false;
   bio: string = '';
   bioEntities: TdObject[] = []; // formattedText entities (links/mentions in the bio)
   birthday: string = ''; // "3月1日" from userFullInfo.birthdate, '' if not shared
@@ -280,6 +283,7 @@ export class ProfileStore {
     this.initials = this.name.length > 0 ? this.name.substring(0, 1).toUpperCase() : '?';
     this.phone = (user['phone_number'] as string | undefined) ?? '';
     this.isContact = (user['is_contact'] as boolean | undefined) ?? false;
+    this.hasMainApp = botHasMainApp(user);
     this.applyUserStatus(user['status'] as TdObject | undefined, false);
     const un = user['usernames'] as TdObject | undefined;
     this.usernames = un !== undefined ? ((un['active_usernames'] as string[] | undefined) ?? []) : [];

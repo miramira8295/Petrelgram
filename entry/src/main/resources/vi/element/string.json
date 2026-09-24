@@ -12835,6 +12835,10 @@
     {
       "name": "app_icon_aurora_clear",
       "value": "Cực quang · Trong suốt"
+    },
+    {
+      "name": "pp_open_app",
+      "value": "Mở ứng dụng"
     }
   ]
 }

@@ -1,3 +1,6 @@
+import { getMainMiniApp } from '../../store/BotApi';
+import { mainAppChatId } from '../../util/botMainApp';
+import { openWebUrl } from '../../util/webBrowserNav';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
@@ -154,6 +157,8 @@ export struct ProfilePage {
   @State isContact: boolean = false;
   // 对方是否已被我屏蔽，决定「⋯」菜单显示屏蔽还是解除屏蔽。
   @State isBlocked: boolean = false;
+  // 带主小程序的机器人（#201 第 2 条）：操作行出「打开应用」，替掉用不上的电话/视频两格。
+  @State hasMainApp: boolean = false;
   @State bio: string = '';
   @State bioEntities: TdObject[] = [];
   @State personalChatId: number = 0;
@@ -197,6 +202,8 @@ export struct ProfilePage {
   // been mirrored once outside the system transition.
   @State private profileEffectsReady: boolean = false;
   private userId: number = 0;
+  // 从哪个群点进来的（群成员列表传入，0 = 不是从群里来）。主小程序在这个群里打开。
+  private fromChatId: number = 0;
   private privateChatId: number = 0;
   private pendingDraftText: string = '';
   private pendingStartParam: string = '';
@@ -256,6 +263,8 @@ export struct ProfilePage {
       ? ((params['draftText'] as string | undefined) ?? '') : '';
     this.pendingStartParam = params !== undefined
       ? ((params['startParam'] as string | undefined) ?? '') : '';
+    this.fromChatId = params !== undefined
+      ? ((params['fromChatId'] as number | undefined) ?? 0) : 0;
     this.pendingJumpTo = params !== undefined
       ? ((params['jumpTo'] as number | undefined) ?? 0) : 0;
     // 首次进来要落到哪个页签（issue #166 的「显示所有图片」），用一次即清。
@@ -477,6 +486,7 @@ export struct ProfilePage {
     this.usernames = s.usernames;
     this.isContact = s.isContact;
     this.isBlocked = s.isBlocked;
+    this.hasMainApp = s.hasMainApp;
     this.bio = s.bio;
     this.bioEntities = s.bioEntities;
     this.personalChatId = s.personalChatId;
@@ -535,6 +545,34 @@ export struct ProfilePage {
     router.pushUrl({ url: 'pages/call/CallPage' }).catch((error: Error): void => {
       logE(`ProfilePage.startCall navigation failed: ${error.message}`);
     });
+  }
+
+  // 打开机器人的主小程序（#201 第 2 条）。从群里进来就在那个群里开，否则在私聊里开；
+  // 私聊可能还没建过，先 createPrivateChat（force=false，不凭空造会话列表条目）。
+  // 打开方式与 t.me 小程序链接一致（util/openTelegramLink.openMiniAppLink）。
+  private openMainApp(): void {
+    const botId: number = this.userId;
+    let ensureChat: Promise<number>;
+    if (this.fromChatId !== 0) {
+      ensureChat = Promise.resolve(mainAppChatId(this.fromChatId, botId));
+    } else {
+      const req: TdRequest = { '@type': 'createPrivateChat' };
+      req['user_id'] = botId;
+      req['force'] = false;
+      ensureChat = getTdClient().send(req)
+        .then((chat: TdObject): number => (chat['id'] as number | undefined) ?? mainAppChatId(0, botId));
+    }
+    ensureChat.then((chatId: number): Promise<string> => getMainMiniApp(chatId, botId))
+      .then((url: string): void => {
+        if (url === '') {
+          promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });
+          return;
+        }
+        openWebUrl(getContext(this) as common.UIAbilityContext, url);
+      }).catch((e: TdError): void => {
+        logE(`ProfilePage.openMainApp failed: ${e.code} ${e.message}`);
+        promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });
+      });
   }
 
   private sendMessage(): void {
@@ -919,9 +957,15 @@ export struct ProfilePage {
   actionsRow() {
     Row({ space: 8 }) {
       this.actionButton('sys.symbol.message', str('cps_messages'), () => { this.sendMessage(); });
+      if (this.hasMainApp) {
+        // 机器人打不了电话，电话/视频两格换成「打开应用」，按钮数不变。
+        this.actionButton('sys.symbol.square_grid_2x2', str('pp_open_app'), () => { this.openMainApp(); });
+      }
       this.actionButton('sys.symbol.bell', str('cp_mute'), () => { this.toggleMute(); });
-      this.actionButton('sys.symbol.phone', str('pp_call'), () => { this.startCall(false); });
-      this.actionButton('sys.symbol.video', str('storage_video'), () => { this.startCall(true); });
+      if (!this.hasMainApp) {
+        this.actionButton('sys.symbol.phone', str('pp_call'), () => { this.startCall(false); });
+        this.actionButton('sys.symbol.video', str('storage_video'), () => { this.startCall(true); });
+      }
       this.actionButton('sys.symbol.gift', str('cpp_gifts'), () => {
         if (this.store !== null) {
           this.store.loadAvailableGifts();

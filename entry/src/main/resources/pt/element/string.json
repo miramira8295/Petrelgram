@@ -12835,6 +12835,10 @@
     {
       "name": "app_icon_aurora_clear",
       "value": "Aurora · Transparente"
+    },
+    {
+      "name": "pp_open_app",
+      "value": "Abrir app"
     }
   ]
 }
