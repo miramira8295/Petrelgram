@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "วิดีโอ"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "บินยามค่ำคืน"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "คลาสสิก · โปร่งใส"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "ฝ้าน้ำแข็ง · โปร่งใส"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "นีออน · โปร่งใส"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "แสงเหนือ · โปร่งใส"
     }
   ]
 }

@@ -80,7 +80,19 @@ const OPTIONS: AppIconOption[] = [
   { name: 'graphite', labelKey: 'app_icon_graphite', preview: 'iconprev_graphite' },
   { name: 'forest', labelKey: 'app_icon_forest', preview: 'iconprev_forest' },
   { name: 'sunset', labelKey: 'app_icon_sunset', preview: 'iconprev_sunset' },
-  { name: 'violet', labelKey: 'app_icon_violet', preview: 'iconprev_violet' }
+  { name: 'violet', labelKey: 'app_icon_violet', preview: 'iconprev_violet' },
+  // 「夜航」（2026-09-24 用户要）：透明底的新海燕，不带光晕——海燕在前景层，背景层全透明，
+  // 桌面直接透出壁纸。海燕是从浅色启动图的白底上抠出来的（没有透明底的原图）。
+  // ⚠️ 官方规范要求背景层不能有透明像素（上架审核项）。本地备用图标不过审核，桌面实际
+  // 怎么画以真机为准——系统可能把透明背景补成实色。
+  { name: 'nightflight', labelKey: 'app_icon_nightflight', preview: 'iconprev_nightflight' },
+  // 透明底版（2026-09-24 用户要「其他图标也都支持一份透明背景」）：只留前景层，背景换成
+  // 共用的全透明图 bg_clear。前景只有四种——经典和五张换底色的共用同一个 foreground，
+  // 去掉底色后五张完全一样，所以只出一份「经典 · 透明」。规范上的风险同「夜航」。
+  { name: 'classic_clear', labelKey: 'app_icon_classic_clear', preview: 'iconprev_classic_clear' },
+  { name: 'frost_clear', labelKey: 'app_icon_frost_clear', preview: 'iconprev_frost_clear' },
+  { name: 'neon_clear', labelKey: 'app_icon_neon_clear', preview: 'iconprev_neon_clear' },
+  { name: 'aurora_clear', labelKey: 'app_icon_aurora_clear', preview: 'iconprev_aurora_clear' }
 ];
 
 // 设备支不支持切换图标。不支持时设置里整条入口都不出现——给一个点进去只会

@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "동영상"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "야간 비행"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "클래식 · 투명"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "프로스트 · 투명"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "네온 · 투명"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "오로라 · 투명"
     }
   ]
 }

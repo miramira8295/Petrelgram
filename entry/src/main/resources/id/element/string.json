@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "Video"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "Penerbangan Malam"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "Klasik · Transparan"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "Beku · Transparan"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "Neon · Transparan"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "Aurora · Transparan"
     }
   ]
 }

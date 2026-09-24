@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "الفيديوهات"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "رحلة ليلية"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "كلاسيكي · شفاف"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "صقيع · شفاف"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "نيون · شفاف"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "شفق · شفاف"
     }
   ]
 }

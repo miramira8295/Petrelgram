@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "Видео"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "Ночной полёт"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "Классика · Прозрачный"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "Иней · Прозрачный"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "Неон · Прозрачный"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "Сияние · Прозрачный"
     }
   ]
 }

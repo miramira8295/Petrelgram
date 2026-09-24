@@ -98,6 +98,11 @@ export struct AppIconPicker {
     if (name === 'iconprev_forest') { return $r('app.media.iconprev_forest'); }
     if (name === 'iconprev_sunset') { return $r('app.media.iconprev_sunset'); }
     if (name === 'iconprev_violet') { return $r('app.media.iconprev_violet'); }
+    if (name === 'iconprev_nightflight') { return $r('app.media.iconprev_nightflight'); }
+    if (name === 'iconprev_classic_clear') { return $r('app.media.iconprev_classic_clear'); }
+    if (name === 'iconprev_frost_clear') { return $r('app.media.iconprev_frost_clear'); }
+    if (name === 'iconprev_neon_clear') { return $r('app.media.iconprev_neon_clear'); }
+    if (name === 'iconprev_aurora_clear') { return $r('app.media.iconprev_aurora_clear'); }
     // 兜底是默认那张而不是空——名字对不上时给一张看得见的图，比给一个空洞更
     // 容易在开发期被发现。
     return $r('app.media.iconprev_default');

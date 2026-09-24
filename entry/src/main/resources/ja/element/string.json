@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "動画"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "夜間飛行"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "クラシック · 透明"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "フロスト · 透明"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "ネオン · 透明"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "オーロラ · 透明"
     }
   ]
 }

@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "Videolar"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "Gece Uçuşu"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "Klasik · Şeffaf"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "Buzlu · Şeffaf"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "Neon · Şeffaf"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "Aurora · Şeffaf"
     }
   ]
 }

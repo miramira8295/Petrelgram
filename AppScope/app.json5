@@ -22,7 +22,12 @@
       { "name": "graphite", "icon": "$media:icon_graphite" },
       { "name": "forest", "icon": "$media:icon_forest" },
       { "name": "sunset", "icon": "$media:icon_sunset" },
-      { "name": "violet", "icon": "$media:icon_violet" }
+      { "name": "violet", "icon": "$media:icon_violet" },
+      { "name": "nightflight", "icon": "$media:icon_nightflight" },
+      { "name": "classic_clear", "icon": "$media:icon_classic_clear" },
+      { "name": "frost_clear", "icon": "$media:icon_frost_clear" },
+      { "name": "neon_clear", "icon": "$media:icon_neon_clear" },
+      { "name": "aurora_clear", "icon": "$media:icon_aurora_clear" }
     ],
     "label": "$string:app_name"
   }

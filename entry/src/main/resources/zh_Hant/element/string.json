@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "影片"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "夜航"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "經典 · 透明"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "霧面 · 透明"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "霓虹 · 透明"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "極光 · 透明"
     }
   ]
 }

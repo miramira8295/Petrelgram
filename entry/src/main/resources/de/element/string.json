@@ -12815,6 +12815,26 @@
     {
       "name": "cpp_media_videos",
       "value": "Videos"
+    },
+    {
+      "name": "app_icon_nightflight",
+      "value": "Nachtflug"
+    },
+    {
+      "name": "app_icon_classic_clear",
+      "value": "Klassisch · Transparent"
+    },
+    {
+      "name": "app_icon_frost_clear",
+      "value": "Frost · Transparent"
+    },
+    {
+      "name": "app_icon_neon_clear",
+      "value": "Neon · Transparent"
+    },
+    {
+      "name": "app_icon_aurora_clear",
+      "value": "Aurora · Transparent"
     }
   ]
 }
