@@ -140,3 +140,16 @@ export function decideChatPush(
     ? { action: 'clearAndPush', popCount: 0 }
     : { action: 'push', popCount: 0 };
 }
+
+// 资料页正下方紧挨着的那一层，是不是同一个会话的会话页——是的话按返回就回到
+// 会话，资料页上不必再放「消息」按钮；从搜索、链接、转发来源、成员列表等进来时
+// 下面不是它，得给一个进入会话的入口（2026-09-27：频道资料页没有进入会话的按钮）。
+// frameChatIds[i] 是第 i 层 param 里的 chatId（没有就是 0），selfIndex 是资料页自己那一层。
+export function profileSitsOnOwnChat(frameNames: string[], frameChatIds: number[],
+  selfIndex: number, chatDestName: string, chatId: number): boolean {
+  const below: number = selfIndex - 1;
+  if (chatId === 0 || below < 0 || below >= frameNames.length || below >= frameChatIds.length) {
+    return false;
+  }
+  return frameNames[below] === chatDestName && frameChatIds[below] === chatId;
+}

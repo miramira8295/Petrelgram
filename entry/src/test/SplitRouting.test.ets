@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
+  profileSitsOnOwnChat,
   decidePush, chatKey, StackFrame, StackAction, decideChatPush, chatListRowOrigin
 } from '../main/ets/util/splitRouting';
 
@@ -244,5 +245,19 @@ export default function splitRoutingTest(): void {
       expect(decideChatPush(stack, target, true).action).assertEqual('clearAndPush');
     });
 
+    // 2026-09-27：资料页只有叠在同一个会话上时才藏「消息」按钮。
+    it('profileSitsOnOwnChat: 正下方是同一个会话才算', 0, (): void => {
+      const names: string[] = ['ChatPage', 'ChatProfilePage'];
+      expect(profileSitsOnOwnChat(names, [-100, -100], 1, 'ChatPage', -100)).assertTrue();
+      // 下面是别的会话（转发来源、链接跳转）
+      expect(profileSitsOnOwnChat(names, [-200, -100], 1, 'ChatPage', -100)).assertFalse();
+      // 下面不是会话页（搜索、成员列表、另一张资料页）
+      expect(profileSitsOnOwnChat(['GlobalSearch', 'ChatProfilePage'], [0, -100], 1, 'ChatPage', -100))
+        .assertFalse();
+      // 栈底：没有下一层
+      expect(profileSitsOnOwnChat(['ChatProfilePage'], [-100], 0, 'ChatPage', -100)).assertFalse();
+      // chatId 未知
+      expect(profileSitsOnOwnChat(names, [0, 0], 1, 'ChatPage', 0)).assertFalse();
+    });
   });
 }

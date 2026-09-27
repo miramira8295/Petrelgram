@@ -66,6 +66,17 @@ export function combineDimming(base: number, overlay: number): number {
   return 1 - (1 - a) * (1 - b);
 }
 
+// 纯色 / 跟随系统（2026-09-27 用户定）：没有模糊和深色遮罩这两个选项。
+// 纯色没有可模糊的内容；遮罩对纯色只是"换一个更深的颜色"，直接挑更深的色即可。
+// 渐变保留遮罩（多色渐变压暗后观感不同于换色），图案 / 整图壁纸两者都保留。
+export function wallpaperTakesBlur(path: string): boolean {
+  return path !== '';
+}
+
+export function wallpaperTakesUserDim(colors: string[], path: string): boolean {
+  return path !== '' || colors.length > 1;
+}
+
 export function backgroundBlurRadius(
   path: string, isPattern: boolean, blurred: boolean, userBlur: number
 ): number {

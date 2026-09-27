@@ -9,7 +9,8 @@ import {
 import { stashDownloadCenterWant } from '../util/downloadCenterWant';
 import { isHandledDeepLinkUri } from '../util/deepLink';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { window, KeyboardAvoidMode, UIContext } from '@kit.ArkUI';
+import { display, window, KeyboardAvoidMode, UIContext } from '@kit.ArkUI';
+import { applyDefaultOrientation } from '../util/appOrientation';
 import { KEY_APP_DARK, darkResourceMode } from '../util/theme';
 import { recomputeAppearance } from '../util/appearance';
 import { initTdKit, setTdOnlineState, setUiAbilityContext } from '../tdkit/Globals';
@@ -44,7 +45,7 @@ import { logE, logW } from '../util/log';
 import { ColorModeBaseline } from '../util/configChange';
 import { bumpMaterialEpoch } from '../util/overlayMaterial';
 import {
-  KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, heightBreakpointOfSize, widthBreakpointOfVp
+  KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, heightBreakpointOfSize, widthBreakpointOfVp
 } from '../util/layoutBreakpoint';
 
 // 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
@@ -67,6 +68,8 @@ export default class EntryAbility extends UIAbility {
   // 主窗口实例，只为 onWindowStageDestroy 注销监听而留：销毁流程里再
   // getMainWindowSync 会抛（窗口错误码文档明写）。
   private mainWin: window.Window | null = null;
+  // 折叠屏开合换屏幕，重新算默认旋转策略（util/appOrientation）。
+  private foldModeCallback: ((mode: display.FoldDisplayMode) => void) | null = null;
   // loadContent 回调之前窗口还没有内容，setWindowBackgroundColor 必失败
   // （"This window state is abnormal"）——原来每次冷启动都在诊断日志里留一行。
   private contentLoaded: boolean = false;
@@ -380,6 +383,22 @@ export default class EntryAbility extends UIAbility {
       this.windowStageRef = windowStage;
       const win = windowStage.getMainWindowSync();
       this.mainWin = win;
+      // 默认旋转策略：手机锁竖屏，大屏可转（util/appOrientation）。折叠屏开合时再算一次。
+      applyDefaultOrientation(win);
+      try {
+        if (display.isFoldable()) {
+          const onFold = (_mode: display.FoldDisplayMode): void => {
+            const current: window.Window | null = this.mainWin;
+            if (current !== null) {
+              applyDefaultOrientation(current);
+            }
+          };
+          this.foldModeCallback = onFold;
+          display.on('foldDisplayModeChange', onFold);
+        }
+      } catch (e) {
+        logE(`foldDisplayModeChange subscribe failed: ${(e as Error).message}`);
+      }
       win.setWindowLayoutFullScreen(true);
       // 唯一一处播种：启动时 context.config 是权威的。
       this.colorMode.seed(this.context.config.colorMode);
@@ -401,6 +420,7 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
       mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBreakpointOfVp(seedW));
       AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBreakpointOfSize(seedW, seedH));
+      AppStorage.setOrCreate(KEY_WINDOW_PORTRAIT, !(seedW > seedH));
       AppStorage.setOrCreate('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
       AppStorage.setOrCreate('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
       mirrorChatEnvKey('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
@@ -529,6 +549,15 @@ export default class EntryAbility extends UIAbility {
     // 注销 onWindowStageCreate 里挂的窗口监听（官方《窗口监听》：防泄漏）。
     const win: window.Window | null = this.mainWin;
     this.mainWin = null;
+    const onFold: ((mode: display.FoldDisplayMode) => void) | null = this.foldModeCallback;
+    this.foldModeCallback = null;
+    if (onFold !== null) {
+      try {
+        display.off('foldDisplayModeChange', onFold);
+      } catch (e) {
+        logE(`foldDisplayModeChange unsubscribe failed: ${(e as Error).message}`);
+      }
+    }
     if (win === null) {
       return;
     }
@@ -552,6 +581,9 @@ export default class EntryAbility extends UIAbility {
       // 会话环境镜像按它放大消息字号（util/textScale）。
       mirrorChatEnvKey(KEY_WIDTH_BREAKPOINT, widthBp);
       AppStorage.setOrCreate(KEY_HEIGHT_BREAKPOINT, heightBp);
+      // 折叠屏展开态横竖都是 md/md，分栏还要看窗口横竖（layoutBreakpoint.KEY_WINDOW_PORTRAIT）。
+      const rect: window.Rect = win.getWindowProperties().windowRect;
+      AppStorage.setOrCreate(KEY_WINDOW_PORTRAIT, !(rect.width > rect.height));
     } catch (e) {
       logE(`publishBreakpoints failed: ${(e as Error).message}`);
     }

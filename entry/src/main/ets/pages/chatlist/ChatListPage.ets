@@ -1,6 +1,6 @@
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
 import {
-  BreakpointType, HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
+  BreakpointType, HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
   isSmallSquare, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { UnreadBadgeCounts } from '../../util/unreadBadgeRule';
@@ -219,6 +219,7 @@ export struct ChatListPage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 小方形屏上滑时隐藏标题栏（SPEC-04，写入方是 MainTabBody 的滚动回调）。
   @StorageProp(KEY_IMMERSIVE_BARS_HIDDEN) immersiveHidden: boolean = false;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
@@ -403,13 +404,13 @@ export struct ChatListPage {
   // 值没变时 applyNavBarVisible 是幂等的，所以这条路平时什么都不做。
   private onWindowResized(): void {
     this.applyNavBarVisible(navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.chatStack.size()) &&
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size()) &&
       !this.viewerHidesNavBar());
   }
 
   // 只在分栏时生效：单栏（手机）下 navBar 本来就被会话页整页盖住，不需要这一手。
   private viewerHidesNavBar(): boolean {
-    return this.viewerCoversWindow && isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn);
+    return this.viewerCoversWindow && isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
   }
 
   aboutToAppear(): void {
@@ -432,7 +433,7 @@ export struct ChatListPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     this.navBarVisible = navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.chatStack.size());
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size());
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, this.navBarVisible);
     this.listRenderActive = this.navBarVisible;
     setChatListRenderActive(this.listRenderActive);
@@ -1227,7 +1228,7 @@ export struct ChatListPage {
         if (AppStorage.get<number>(NAV_BAR_WIDTH_KEY) !== this.tabsWidth) {
           AppStorage.setOrCreate<number>(NAV_BAR_WIDTH_KEY, this.tabsWidth);
           // 拖过分割线就记下来，下次启动复原（issue #106）。
-          rememberSplitNavWidth(this.tabsWidth, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn));
+          rememberSplitNavWidth(this.tabsWidth, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
         }
       })
       // Content swipe in progress: convert the swipe offset into a fractional
@@ -1364,7 +1365,7 @@ export struct ChatListPage {
       // 所以分栏由我们自己说了算：isSplitByBreakpoint 读系统横向 + 纵向断点，
       // 手机横屏（md 宽 + 横向窗口）也判单栏（util/layoutBreakpoint）。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
-      .mode(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) ? NavigationMode.Split : NavigationMode.Stack)
       // 分栏下查看器开着：Split + hideNavBar(true) 的实际效果是单栏，右栏会话页铺满窗口（#201）。
       .hideNavBar(this.viewerHidesNavBar())
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
@@ -1379,7 +1380,7 @@ export struct ChatListPage {
       .onNavBarStateChange((reported: boolean): void => {
         // 应用内浏览器退掉时会补发 visible=true 而栈里还有详情页，按栈兜底。见 navBarReset。
         this.applyNavBarVisible(navBarVisibleOnChange(reported,
-          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.chatStack.size()) &&
+          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size()) &&
           !this.viewerHidesNavBar());
       })
       .enableDragBar(true)

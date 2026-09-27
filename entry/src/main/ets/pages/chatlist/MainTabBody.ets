@@ -3,7 +3,7 @@ import {
   ImmersiveBarsState, KEY_IMMERSIVE_BARS_HIDDEN, nextImmersiveBars
 } from '../../util/immersiveBars';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint,
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint,
   isSmallSquare
 } from '../../util/layoutBreakpoint';
 import { curves, router } from '@kit.ArkUI';
@@ -97,6 +97,7 @@ export struct MainTabBody {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 小方形屏沉浸式浏览的滚动累计（util/immersiveBars）。不是状态变量：只在
   // 「隐藏 / 显示」真的翻转时才写一次 AppStorage，滚动过程中不触发任何重绘。
   private immersive: ImmersiveBarsState = new ImmersiveBarsState();
@@ -460,7 +461,7 @@ export struct MainTabBody {
 
   // 当前档位：手机（含平板强制单栏）紧凑 60，平板分栏宽松 72。
   private spec(): ChatRowSpec {
-    return chatRowSpec(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn));
+    return chatRowSpec(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
   }
 
   // 归档入口和会话行一样高，跟着档位走。
@@ -616,7 +617,7 @@ export struct MainTabBody {
       LazyForEach(this.chatsData, (item: ChatEntry) => {
         ListItem() {
           ChatRow({
-          compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn),
+          compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
             chat: item,
             listKey: 'main',
             liveEffects: this.liveEffects(),

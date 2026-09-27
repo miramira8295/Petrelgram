@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "Uygulamayı aç"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "Düz renk"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "Sistem"
     }
   ]
 }

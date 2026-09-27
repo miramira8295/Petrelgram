@@ -276,6 +276,7 @@ import { logE, logI, logW } from '../../util/log';
 import {
   chromeDarkMaskOf, chromeIconColorOf, chromeOnDarkBgOf, chromeOnLightBgOf, chromeTextColorOf
 } from '../../util/chatChrome';
+import { wallpaperTakesUserDim } from '../../util/chatBackgroundRaster';
 import { requestOutcomeUncertain } from '../../util/tdRequestTimeout';
 import {
   armedPageGate, canFirePageGate, draggedPageGate, firedPageGate,
@@ -1922,6 +1923,7 @@ export struct ChatPage {
   // 系统断点（util/layoutBreakpoint），由 ChatPageEntry 从 AppStorage 读了传进来。
   @Param widthBp: number = WIDTH_BP_SM;
   @Param heightBp: number = HEIGHT_BP_LG;
+  @Param windowPortrait: boolean = true;
   @Require @Param powerSaving: boolean = false;
   @Require @Param powerChatEffects: boolean = true;
   @Require @Param powerBackgroundEffect: boolean = false;
@@ -1950,7 +1952,9 @@ export struct ChatPage {
   }
 
   private chromeDarkMask(): number {
-    return chromeDarkMaskOf(this.chatBg.dimming, this.chatBgDim);
+    // 与 ChatBackdrop.darkMaskOpacity 同一判据：纯色 / 跟随系统不吃用户遮罩。
+    return chromeDarkMaskOf(this.chatBg.dimming,
+      wallpaperTakesUserDim(this.chatBg.colors, this.chatBg.path) ? this.chatBgDim : 0);
   }
 
   // 浅色模式 + 暗壁纸的那一半（用户 2026-09-18：黑壁纸上按钮图标还是黑的）。
@@ -3509,7 +3513,7 @@ export struct ChatPage {
     // 而预取意味着首帧就已经有行了——页面是带着内容滑进来的，没有可闪的东西。
     // 见 util/chatPrefetch。
     store.deferInitialPublication(
-      (isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) || hasPrefetchedPage(this.chatId))
+      (isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) || hasPrefetchedPage(this.chatId))
         ? 0 : INITIAL_MESSAGE_TRANSITION_SETTLE_MS);
     this.store = store;
     if (!this.routeResumeWaiting || this.groups.length === 0) {
@@ -4836,7 +4840,7 @@ export struct ChatPage {
     }
     // 平板黑屏 / 顶栏横幅（#201）：查看器现在单栏、分栏都在页面内；分栏时另外收左栏和
     // 侧边页签盖满窗口（见 util/viewerWindowCover）。打点保留，对照下一份平板日志用。
-    const split: boolean = isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn);
+    const split: boolean = isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
     logW(`[ViewerPath] split=${split} path=inline coversWindow=${split}` +
       ` api=${deviceInfo.sdkApiVersion}` +
       ` win=${Math.round(this.screenW)}x${Math.round(this.screenH)}`);
@@ -4941,7 +4945,7 @@ export struct ChatPage {
     this.viewerPositionMs = 0;
     // 分栏下查看器开着：收左栏和侧边页签，让页面内的查看器盖满窗口（见 util/viewerWindowCover）。
     publishViewerCoversWindow(viewerFullScreenWanted(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.viewerOpen()));
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.viewerOpen()));
   }
 
   // 查看器上点"保存"：entry 在这里取，取不到就不调。

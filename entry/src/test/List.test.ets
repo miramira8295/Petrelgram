@@ -116,6 +116,7 @@ import downloadApiTest from './DownloadApi.test';
 import musicQueueTest from './MusicQueue.test';
 import mediaPickTest from './MediaPick.test';
 import chatBackgroundStoreTest from './ChatBackgroundStore.test';
+import solidBackgroundTest from './SolidBackground.test';
 import chatHeaderPresentationTest from './ChatHeaderPresentation.test';
 import translationServiceTest from './TranslationService.test';
 import mediaPolicyTest from './MediaPolicy.test';
@@ -462,6 +463,7 @@ export default function testsuite() {
   musicQueueTest();
   mediaPickTest();
   chatBackgroundStoreTest();
+  solidBackgroundTest();
   chatHeaderPresentationTest();
   mentionDraftTest();
   mediaPolicyTest();

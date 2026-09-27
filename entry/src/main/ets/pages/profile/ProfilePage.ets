@@ -3,7 +3,7 @@ import { mainAppChatId } from '../../util/botMainApp';
 import { openWebUrl } from '../../util/webBrowserNav';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { router, promptAction } from '@kit.ArkUI';
 import { profileMenuItems } from '../../util/profileMenu';
@@ -135,6 +135,7 @@ export struct ProfilePage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // APP 壁纸此刻生不生效。本页是压在主界面之上的 NavDestination，**下面那层壁纸
   // 透不过来**（HdsNavDestination 自带不透明底，Scroll 又铺了一层 page_bg），
   // 所以和 ChatPage 一样自己画一层——用户实报"点频道/群组/其他人详情看不到壁纸"。
@@ -1622,7 +1623,7 @@ export struct ProfilePage {
     Stack() {
       // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
       // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
-      AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) });
+      AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
       // 整页是一个 List（原来是 Scroll > Column）：资料部分在第一项、页签条一项，页签内容按行放进
       // List——共同群组、礼物、共享内容/媒体都走 LazyForEach（见 profileTabItems）。
       List() {

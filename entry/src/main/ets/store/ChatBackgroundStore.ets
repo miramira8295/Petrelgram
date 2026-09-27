@@ -29,9 +29,6 @@ export interface ChatBackgroundState {
   isPattern: boolean;
 }
 
-const INSTALLED_DEFAULT_RETRIES: number = 2;
-const INSTALLED_DEFAULT_RETRY_MS: number = 2500;
-
 // TdObject 的 background → 我们的 ChatBackgroundState。
 //
 // 【为什么抽出来】APP 壁纸槽位选**原生壁纸**时要走同一段转换：那条路不经过本
@@ -171,7 +168,7 @@ type Listener = (state: ChatBackgroundState) => void;
 // so a freshly opened ChatPage can seed its initial `chatBg` from it instead
 // of `emptyChatBackground()`. Without this, every chat that resolves to the
 // account default (the common case) starts one frame — really, however long
-// the getChat/getInstalledBackgrounds round trip takes — on the empty state,
+// the getChat round trip takes — on the empty state,
 // whose `colors.length === 0` branch paints the near-white `chat_bg` resource
 // in light mode. That's the white flash: not a rendering-layer bug, but the
 // store's own `subscribe()` synchronously handing a brand-new ChatPage's
@@ -380,12 +377,12 @@ export class ChatBackgroundStore {
         if ((u['chat_id'] as number | undefined) !== this.chatId) {
           return;
         }
-        const seq: number = ++this.resolveSeq;
+        ++this.resolveSeq;
         const background = objectOrNull(u['background']);
         if (background !== null) {
           this.applyBackground(background);
         } else {
-          this.applyDefault(seq);
+          this.applyDefault();
         }
       }),
       this.client.onUpdate('updateChatTheme', (u: TdObject): void => {
@@ -399,7 +396,7 @@ export class ChatBackgroundStore {
           if (specific !== null) {
             this.applyBackground(specific);
           } else {
-            this.applyDefault(seq);
+            this.applyDefault();
           }
         } else {
           this.applyTheme(themeName, seq);
@@ -410,12 +407,12 @@ export class ChatBackgroundStore {
         if (forDarkTheme !== this.isDarkMode() || this.hasSpecificBackground()) {
           return;
         }
-        const seq: number = ++this.resolveSeq;
+        ++this.resolveSeq;
         const background = objectOrNull(u['background']);
         if (background !== null) {
           this.applyBackground(background);
         } else {
-          this.loadInstalledDefault(forDarkTheme, seq);
+          this.applySystemDefault(forDarkTheme);
         }
       }),
       this.client.onUpdate('updateFile', (u: TdObject): void => {
@@ -460,7 +457,7 @@ export class ChatBackgroundStore {
         if (background !== null) {
           this.applyBackground(background);
         } else {
-          this.applyDefault(seq);
+          this.applyDefault();
         }
       } else {
         this.applyTheme(themeName, seq);
@@ -607,7 +604,7 @@ export class ChatBackgroundStore {
     return AppStorage.get<string>(forDarkTheme ? KEY_LOCAL_BG_DARK : KEY_LOCAL_BG_LIGHT) ?? '';
   }
 
-  private applyDefault(seq: number): void {
+  private applyDefault(): void {
     const forDarkTheme: boolean = this.isDarkMode();
     // 本机自选壁纸插在**账号默认背景之前**：那是用户在这台设备上明确挑的图，
     // 而账号默认多半是服务端下发或从别的端同步来的。会话自己的背景仍然更优先——
@@ -623,72 +620,38 @@ export class ChatBackgroundStore {
       this.patch(localWallpaperState(local));
       return;
     }
-    if (this.chats.defaultBackgroundKnown(forDarkTheme)) {
-      const background = this.chats.defaultBackground(forDarkTheme);
-      if (background !== null) {
-        this.applyBackground(background);
+    if (!this.chats.defaultBackgroundKnown(forDarkTheme)) {
+      // updateDefaultBackground 还没到（登录后 TDLib 一定会推一次）：先用上次的快照，
+      // 等那条更新来了再定，免得先画平底再跳成图。没有快照就是跟随系统的纯色。
+      const snapshot: ChatBackgroundState = defaultChatBackgroundSnapshot(forDarkTheme);
+      if (snapshot.colors.length === 0 && snapshot.path === '') {
+        this.applyBackground(null);
         return;
       }
-    }
-    this.loadInstalledDefault(forDarkTheme, seq);
-  }
-
-  // 拉「已安装默认背景」失败（真机上是网络超时，切深色那一刻连续四次）时的处理：
-  // **不清空**。原来 catch 里 applyBackground(null) 会把已经画好的状态打回空——
-  // 用户看到的就是背景突然变成一片 #0E1621 平底，要重进会话才回来。
-  // 现在：当前状态还在就留着；当前是空的就拿本地快照兜底；再有界重试两次。
-  private loadInstalledDefault(forDarkTheme: boolean, seq: number, attempt: number = 0): void {
-    const request: TdRequest = { '@type': 'getInstalledBackgrounds' };
-    request['for_dark_theme'] = forDarkTheme;
-    this.client.send(request).then((result: TdObject): void => {
-      if (seq !== this.resolveSeq || this.hasSpecificBackground()) {
-        return;
-      }
-      const backgrounds: TdObject[] = (result['backgrounds'] as TdObject[] | undefined) ?? [];
-      const matchingDefaults = backgrounds.filter((item: TdObject): boolean =>
-        ((item['is_default'] as boolean | undefined) ?? false) &&
-        (((item['is_dark'] as boolean | undefined) ?? false) === forDarkTheme)
-      );
-      const matchingTheme = backgrounds.filter((item: TdObject): boolean =>
-        (((item['is_dark'] as boolean | undefined) ?? false) === forDarkTheme)
-      );
-      // Never use an arbitrary background from the opposite color scheme. When
-      // TDLib has no matching candidate the renderer keeps chat_bg.
-      const selected = matchingDefaults.length > 0
-        ? matchingDefaults[0] : (matchingTheme.length > 0 ? matchingTheme[0] : null);
-      logI(
-        `[ChatBackground] chat=${this.chatId} source=installed dark=${forDarkTheme} ` +
-        `count=${backgrounds.length} defaults=${matchingDefaults.length}`
-      );
-      this.applyBackground(selected);
-    }).catch((error: TdError): void => {
-      logE(`ChatBackgroundStore getInstalledBackgrounds failed: ${error.message}`);
-      if (seq !== this.resolveSeq) {
-        return;
-      }
-      this.keepOrSeedDefault(forDarkTheme);
-      if (attempt < INSTALLED_DEFAULT_RETRIES) {
-        setTimeout((): void => {
-          if (seq === this.resolveSeq && this.chatId !== 0 && !this.hasSpecificBackground()) {
-            this.loadInstalledDefault(forDarkTheme, seq, attempt + 1);
-          }
-        }, INSTALLED_DEFAULT_RETRY_MS);
-      }
-    });
-  }
-
-  private keepOrSeedDefault(forDarkTheme: boolean): void {
-    if (this.state.colors.length > 0 || this.state.path !== '') {
-      logI(`[ChatBackground] chat=${this.chatId} installed default unavailable, keeping current`);
+      // 签名清掉：快照不是 TDLib 对象，之后真正的默认背景到了不能被当成"没变"挡掉。
+      this.signature = '';
+      this.patch(snapshot);
       return;
     }
+    const background = this.chats.defaultBackground(forDarkTheme);
+    if (background !== null) {
+      this.applyBackground(background);
+      return;
+    }
+    this.applySystemDefault(forDarkTheme);
+  }
+
+  // 用户没设过默认背景：画跟随系统明暗的纯色（app.color.chat_bg），**不再**去拿
+  // TDLib「已安装背景」里的官方壁纸（2026-09-27 用户定：默认与系统明暗色调统一）。
+  // 旧版本留在盘上的快照可能还是那张官方壁纸，这里顺手作废，否则冷启动第一帧
+  // seedFromDefault 会先把它画出来。
+  private applySystemDefault(forDarkTheme: boolean): void {
     const snapshot: ChatBackgroundState = defaultChatBackgroundSnapshot(forDarkTheme);
-    if (snapshot.colors.length === 0 && snapshot.path === '') {
-      return;
+    if (snapshot.colors.length > 0 || snapshot.path !== '') {
+      invalidateDefaultSnapshot(forDarkTheme);
     }
-    snapshot.bubbleOutColor = this.state.bubbleOutColor;
-    logI(`[ChatBackground] chat=${this.chatId} installed default unavailable, seeded from snapshot`);
-    this.patch(snapshot);
+    logI(`[ChatBackground] chat=${this.chatId} source=system dark=${forDarkTheme}`);
+    this.applyBackground(null);
   }
 
   // theme_name backgrounds live in TDLib's chat theme catalog rather than on

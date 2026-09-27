@@ -73,3 +73,30 @@ export async function clearChatBackground(chatId: number): Promise<void> {
   request['restore_previous'] = false;
   await getTdClient().send(request, 15000);
 }
+
+// 纯色背景（backgroundTypeFill + backgroundFillSolid）。TDLib 的 background 参数传
+// null 就是"新建一个填充背景"，和图库背景一样同步到账号的其它设备，回流也走同一条
+// updateDefaultBackground / updateChatBackground。color 是 24 位 RGB 整数。
+function solidFillType(color: number): TdObject {
+  const fill: TdObject = { '@type': 'backgroundFillSolid' };
+  fill['color'] = color;
+  const type: TdObject = { '@type': 'backgroundTypeFill' };
+  type['fill'] = fill;
+  return type;
+}
+
+export async function applySolidDefaultBackground(color: number, forDarkTheme: boolean): Promise<void> {
+  const request: TdRequest = { '@type': 'setDefaultBackground' };
+  request['type'] = solidFillType(color);
+  request['for_dark_theme'] = forDarkTheme;
+  await getTdClient().send(request, 20000);
+}
+
+export async function applySolidChatBackground(chatId: number, color: number): Promise<void> {
+  const request: TdRequest = { '@type': 'setChatBackground' };
+  request['chat_id'] = chatId;
+  request['type'] = solidFillType(color);
+  request['dark_theme_dimming'] = 0;
+  request['only_for_self'] = true;
+  await getTdClient().send(request, 20000);
+}

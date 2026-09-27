@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "Abrir app"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "Color sólido"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "Sistema"
     }
   ]
 }

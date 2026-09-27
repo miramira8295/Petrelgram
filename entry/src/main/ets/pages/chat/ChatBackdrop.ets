@@ -4,7 +4,7 @@ import { CachedImage } from '../common/CachedImage';
 import { cachedPixelMap } from '../../util/pixelCache';
 import {
   BackgroundRasterParams, backgroundBlurRadius, BLUR_OVERSCAN_SCALE, cachedRaster, combineDimming,
-  NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground
+  NO_BLUR_RADIUS, patternOpacity, rasterSignature, rasterizeBackground, wallpaperTakesUserDim
 } from '../../util/chatBackgroundRaster';
 import { PatternTileLayer } from './PatternTileLayer';
 import { gradientStops } from '../../util/backgroundPresentation';
@@ -164,6 +164,17 @@ export struct ChatBackdrop {
   }
 
   private syncRaster(): void {
+    // 「跟随系统」（没有颜色也没有文件）不走光栅：底色是 $r('app.color.chat_bg')，
+    // 离屏合成时按**那一刻**的深浅色取值，而签名里没有深浅色——深色下烘出的那张
+    // 会被亮色模式原样命中，整页变黑（2026-09-27 真机）。一层纯色本来也不值得光栅。
+    if (this.chatBg.colors.length === 0 && this.chatBg.path === '') {
+      if (this.rasterTimer !== -1) {
+        clearTimeout(this.rasterTimer);
+        this.rasterTimer = -1;
+      }
+      this.setRasterPath('');
+      return;
+    }
     const sig = rasterSignature(this.rasterParams());
     const hit = cachedRaster(sig, this.cacheDir());
     if (hit !== '') {
@@ -235,7 +246,8 @@ export struct ChatBackdrop {
   // 深色下的用户遮罩。没有动态背景装饰时，它会与服务端下发的
   // dark_theme_dimming 合并并烘进最终光栅；缓存生成期间仍由实时层兜底。
   private darkMaskOpacity(): number {
-    if (!this.appDark) {
+    // 纯色 / 跟随系统没有遮罩选项（见 wallpaperTakesUserDim），滑杆里留着的旧值不生效。
+    if (!this.appDark || !wallpaperTakesUserDim(this.chatBg.colors, this.chatBg.path)) {
       return 0;
     }
     return Math.max(0, Math.min(CHAT_DIM_MAX, this.chatDim));

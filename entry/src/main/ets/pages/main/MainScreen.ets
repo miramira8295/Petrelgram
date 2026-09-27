@@ -1,6 +1,6 @@
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, dockModeForBreakpoint, isSmallSquare, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, dockModeForBreakpoint, isSmallSquare, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { common } from '@kit.AbilityKit';
 import { AppBackdrop } from '../common/AppBackdrop';
@@ -165,6 +165,7 @@ export struct MainScreen {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 小方形屏上滑时收起底部页签（SPEC-04，写入方是会话列表的滚动回调）。
   @StorageProp(KEY_IMMERSIVE_BARS_HIDDEN) immersiveHidden: boolean = false;
   // APP 壁纸：这一层同时知道分栏和路径，所以由它算一次「生效中」写进
@@ -230,7 +231,7 @@ export struct MainScreen {
   private callPagePushed: boolean = false;
 
   private wallpaperSplit(): boolean {
-    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn);
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
   }
 
   private syncWallpaperFlag(): void {
@@ -644,7 +645,7 @@ export struct MainScreen {
   }
 
   private leftFloatingDock(): boolean {
-    return dockModeForBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) === DOCK_MODE_LEFT_FLOATING;
+    return dockModeForBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) === DOCK_MODE_LEFT_FLOATING;
   }
 
   private dockPadding(): number {
@@ -742,12 +743,12 @@ export struct MainScreen {
       return true;
     }
     if (kind === 'chat' && this.chatViewerCoversWindow &&
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn)) {
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
       return false;
     }
     const stack: NavStackLike | undefined = stackOf(kind);
     return dockVisibleForTab(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn),
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
       stack === undefined ? undefined : stack.size(),
       this.storedNavBarFlag(this.tab)
     );

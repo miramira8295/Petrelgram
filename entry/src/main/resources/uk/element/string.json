@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "Відкрити застосунок"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "Суцільний колір"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "Системний"
     }
   ]
 }

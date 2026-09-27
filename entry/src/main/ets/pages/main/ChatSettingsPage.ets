@@ -1,6 +1,7 @@
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
+import { wallpaperTakesBlur, wallpaperTakesUserDim } from '../../util/chatBackgroundRaster';
 import { router, promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -663,6 +664,7 @@ export struct ChatSettingsPage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   @StorageProp(KEY_APP_DARK) private appDark: boolean = false;
   @StorageProp(KEY_APP_BG_STATE_LIGHT) @Watch('rebuildSlotStates') private appBgLight: string = '';
   @StorageProp(KEY_APP_BG_STATE_DARK) @Watch('rebuildSlotStates') private appBgDark: string = '';
@@ -683,7 +685,7 @@ export struct ChatSettingsPage {
   @State enlargedDim: number = 0;
 
   private appBgSplit(): boolean {
-    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn);
+    return isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait);
   }
 
   private appBgKey(): string {
@@ -949,6 +951,8 @@ export struct ChatSettingsPage {
         }
         .width('100%').height(Math.max(220, Math.min(420, this.appBgScreenH * 0.48)))
         .borderRadius(18).clip(true);
+        // 纯色 / 跟随系统没有模糊和遮罩（util/chatBackgroundRaster.wallpaperTakes*）。
+        if (wallpaperTakesBlur(this.thumbOf(this.enlargedSlot).background.path)) {
         Column({ space: 4 }) {
           Row() {
             Text($r('app.string.cb_blur_amount')).fontSize(14).fontColor(Color.White).layoutWeight(1);
@@ -964,6 +968,7 @@ export struct ChatSettingsPage {
               this.setEnlargedBlur(value, mode);
             });
         }.width('100%');
+        }
         if (this.thumbOf(this.enlargedSlot).isPattern) {
           Column({ space: 4 }) {
             Row() {
@@ -982,7 +987,8 @@ export struct ChatSettingsPage {
               });
           }.width('100%');
         }
-        if (slotHasDim(this.enlargedSlot)) {
+        if (slotHasDim(this.enlargedSlot) && wallpaperTakesUserDim(
+          this.thumbOf(this.enlargedSlot).background.colors, this.thumbOf(this.enlargedSlot).background.path)) {
           Column({ space: 4 }) {
             Row() {
               Text($r('app.string.chat_settings_dark_dim')).fontSize(14).fontColor(Color.White).layoutWeight(1);
@@ -1087,7 +1093,7 @@ export struct ChatSettingsPage {
             // 只有真能分栏的窗口才给这个开关——手机上它永远没作用，摆着是噪音。
             // 判据传 false：问的是"这个窗口够不够宽"，不是"现在分没分栏"，否则
             // 开关一打开自己就消失了。
-            if (isSplitByBreakpoint(this.widthBp, this.heightBp, false)) {
+            if (isSplitByBreakpoint(this.widthBp, this.heightBp, false, this.windowPortrait)) {
               Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 16 });
               this.toggleRow(str('chat_settings_force_single'),
                 str('chat_settings_force_single_sub'), KEY_FORCE_SINGLE_COLUMN);

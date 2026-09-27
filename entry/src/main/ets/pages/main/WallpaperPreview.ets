@@ -1,7 +1,7 @@
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
-  backgroundBlurRadius, BLUR_OVERSCAN_SCALE, NO_BLUR_RADIUS, patternOpacity
+  backgroundBlurRadius, BLUR_OVERSCAN_SCALE, NO_BLUR_RADIUS, patternOpacity, wallpaperTakesUserDim
 } from '../../util/chatBackgroundRaster';
 import { CHAT_DIM_MAX } from '../../store/AppSettings';
 import { PatternTileLayer } from '../chat/PatternTileLayer';
@@ -33,7 +33,7 @@ export struct WallpaperPreview {
   }
 
   private darkDim(): number {
-    if (!this.dark) {
+    if (!this.dark || !wallpaperTakesUserDim(this.wallpaper.colors, this.wallpaper.path)) {
       return 0;
     }
     return Math.max(0, Math.min(CHAT_DIM_MAX, this.dimAmount));

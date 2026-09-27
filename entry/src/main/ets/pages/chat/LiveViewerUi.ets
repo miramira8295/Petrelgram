@@ -2,6 +2,7 @@ import { AWAKE_OWNER_LIVE, requestScreenAwake, screenAwakeApplyFailed } from '..
 import { common } from '@kit.AbilityKit';
 import { promptAction, window } from '@kit.ArkUI';
 import { logE } from '../../util/log';
+import { defaultAppOrientation, setOrientationOverride } from '../../util/appOrientation';
 import {
   LANDSCAPE_OWNER_LIVE, LANDSCAPE_OWNER_MEDIA, landscapeMultiWindowApplyFailed,
   requestLandscapeMultiWindow
@@ -18,7 +19,8 @@ let liveKeepScreenRequestSeq: number = 0;
 function liveFullscreenOrientation(
   fullscreen: boolean, videoAspectRatio: number
 ): window.Orientation {
-  if (!fullscreen) { return window.Orientation.PORTRAIT; }
+  // 退出全屏回到应用默认方向（手机竖屏锁定、大屏跟随传感器，见 util/appOrientation）。
+  if (!fullscreen) { return defaultAppOrientation(); }
   // Only lock clearly landscape/portrait pictures. Square and not-yet-decoded
   // frames follow the sensor so a transient geometry callback cannot cause an
   // unnecessary second rotation.
@@ -86,6 +88,7 @@ export function setLiveStreamFullscreen(
   context: common.UIAbilityContext, fullscreen: boolean, videoAspectRatio: number = 0
 ): Promise<void> {
   const requestSeq: number = ++liveFullscreenRequestSeq;
+  setOrientationOverride(fullscreen);
   const orientation: window.Orientation = liveFullscreenOrientation(fullscreen, videoAspectRatio);
   const systemBars: Array<'status' | 'navigation'> = fullscreen ? [] : ['status', 'navigation'];
   // Window operations are serialized. A stale operation may already be in the
@@ -147,13 +150,14 @@ export function setMediaViewerOrientation(
   context: common.UIAbilityContext, landscape: boolean
 ): void {
   const requestSeq: number = ++mediaOrientationRequestSeq;
+  setOrientationOverride(landscape);
   window.getLastWindow(context).then((mainWindow: window.Window): void => {
     if (requestSeq !== mediaOrientationRequestSeq) {
       return;
     }
     const orientation: window.Orientation = landscape
       ? window.Orientation.AUTO_ROTATION_LANDSCAPE
-      : window.Orientation.PORTRAIT;
+      : defaultAppOrientation();
     mainWindow.setPreferredOrientation(orientation).catch((caught: Error): void => {
       logE(`LiveViewerUi.setMediaOrientation failed: ${caught.message}`);
     });

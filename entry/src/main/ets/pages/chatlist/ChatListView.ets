@@ -1,6 +1,6 @@
 import { homeCardMarginVp } from '../../util/pageMargin';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry } from '../../store/ChatEntry';
@@ -41,6 +41,7 @@ export struct ChatListView {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   @StorageProp(KEY_FORCE_SINGLE_COLUMN) private forceSingleColumn: boolean = false;
   // 行滑动操作的开关（交互设置）。关着时不挂 swipeAction，横向手势留给切文件夹。
   @StorageProp(KEY_ROW_SWIPE_ACTIONS) rowSwipeEnabled: boolean = false;
@@ -579,7 +580,7 @@ export struct ChatListView {
         LazyForEach(this.chatsData, (item: ChatEntry) => {
           ListItem() {
             ChatRow({
-              compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn),
+              compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
               chat: item,
               listKey: this.listKey,
               liveEffects: this.liveEffects(),

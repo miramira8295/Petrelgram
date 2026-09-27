@@ -1,15 +1,19 @@
 import { ThumbBatch } from '../../util/thumbBatch';
 import { uploadedThumbPath } from '../../util/localWallpaper';
 import { writeUploadedThumb } from '../../util/wallpaperThumb';
-import { router, promptAction } from '@kit.ArkUI';
+import { LengthMetrics, router, promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { TdError, TdObject } from '../../tdkit/TdTypes';
 import {
-  applyChatBackground, applyRemoteBackground, clearChatBackground,
-  downloadFileToPath, listBackgrounds, resetDefaultBackground
+  applyChatBackground, applyRemoteBackground, applySolidChatBackground, applySolidDefaultBackground,
+  clearChatBackground, downloadFileToPath, listBackgrounds, resetDefaultBackground
 } from '../../store/BackgroundApi';
+import {
+  hexColorToInt, isSolidBackgroundOf, isSystemBackground, solidBackgroundState, solidPaletteFor,
+  systemChatColor
+} from '../../util/solidBackground';
 import {
   BackgroundPreview, backgroundPreviewOf, backgroundThumbnailFile
 } from '../../util/backgroundPresentation';
@@ -19,6 +23,7 @@ import {
   serialiseSnapshot, referencedWallpaperPaths
 } from '../../store/ChatBackgroundStore';
 import { inflateTgvIfNeeded } from '../../util/gunzipTgs';
+import { wallpaperTakesBlur, wallpaperTakesUserDim } from '../../util/chatBackgroundRaster';
 import {
   COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
@@ -42,6 +47,7 @@ import { WallpaperPreview } from './WallpaperPreview';
 const CARD_RADIUS: number = 14;
 const TILE_HEIGHT: number = 118;
 const PREVIEW_HEIGHT: number = 188;
+const SOLID_SWATCH: number = 40;
 
 interface GalleryRow {
   preview: BackgroundPreview;
@@ -505,6 +511,65 @@ struct ChatBackgroundPage {
     }
   }
 
+  // 选纯色 / 跟随系统时顺手撤掉本机自选的图：本机图压过账号默认背景（见
+  // util/localWallpaper），不撤的话选了纯色也看不见。只管全局聊天槽位——APP 槽位
+  // 的图就存在槽位状态里，覆盖写入即可；按会话设背景时本机图本来就让位。
+  private dropLocalForChatSlot(): void {
+    if (slotIsApp(this.effectiveSlot()) || this.chatId !== 0 || this.localPath === '') {
+      return;
+    }
+    const previous: string = this.localPath;
+    setString(this.localKey(), '');
+    this.localPath = '';
+    this.removeQuietly(previous);
+    this.afterLocalChange();
+  }
+
+  private applySolid(color: string): void {
+    if (this.applyingId !== '') { return; }
+    const value: number = hexColorToInt(color);
+    if (value < 0) { return; }
+    const state: ChatBackgroundState = solidBackgroundState(color);
+    if (slotIsApp(this.effectiveSlot())) {
+      const previous: string = this.localPath;
+      setString(this.slotKeys().state, serialiseSnapshot(state));
+      this.currentBackground = state;
+      this.localPath = '';
+      this.removeQuietly(previous);
+      promptAction.showToast({ message: $r('app.string.cb_local_applied'), duration: 1500 });
+      return;
+    }
+    this.applyingId = `solid_${color}`;
+    this.dropLocalForChatSlot();
+    this.invalidateSnapshotIfDefault();
+    const task: Promise<void> = this.chatId !== 0
+      ? applySolidChatBackground(this.chatId, value)
+      : applySolidDefaultBackground(value, this.forDark);
+    task.then((): void => {
+      if (!this.active) { return; }
+      this.currentBackground = state;
+      this.applyingId = '';
+      promptAction.showToast({
+        message: this.chatId !== 0
+          ? $r('app.string.cb_chat_set')
+          : (this.forDark ? $r('app.string.cb_dark_set') : $r('app.string.cb_light_set')),
+        duration: 1600
+      });
+    }).catch((error: TdError): void => {
+      if (!this.active) { return; }
+      this.applyingId = '';
+      logE(`ChatBackgroundPage.applySolid failed: ${error.message}`);
+      promptAction.showToast({ message: $r('app.string.cb_set_failed'), duration: 2000 });
+    });
+  }
+
+  // 「跟随系统」= 什么都不设：渲染层画随深浅色切换的 chat_bg。
+  private followSystem(): void {
+    if (this.applyingId !== '') { return; }
+    this.dropLocalForChatSlot();
+    this.reset();
+  }
+
   private reset(): void {
     if (this.applyingId !== '') { return; }
     this.applyingId = 'reset';
@@ -650,20 +715,88 @@ struct ChatBackgroundPage {
     .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
   }
 
+  // 纯色 / 跟随系统没有模糊和遮罩（util/chatBackgroundRaster.wallpaperTakes*），
+  // 三项都不出现时整张卡片不画。
+  private showsBlur(): boolean {
+    return wallpaperTakesBlur(this.currentBackground.path);
+  }
+
+  private showsDim(): boolean {
+    return slotHasDim(this.effectiveSlot()) &&
+      wallpaperTakesUserDim(this.currentBackground.colors, this.currentBackground.path);
+  }
+
+  private hasAdjustments(): boolean {
+    return this.showsBlur() || this.currentIsPattern() || this.showsDim();
+  }
+
   @Builder
   adjustmentsCard() {
     Column() {
-      this.blurAdjustment();
+      if (this.showsBlur()) {
+        this.blurAdjustment();
+      }
       if (this.currentIsPattern()) {
-        Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+        if (this.showsBlur()) {
+          Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+        }
         this.patternAdjustment();
       }
-      if (slotHasDim(this.effectiveSlot())) {
-        Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+      if (this.showsDim()) {
+        if (this.showsBlur() || this.currentIsPattern()) {
+          Divider().strokeWidth(0.7).color($r('app.color.divider')).margin({ left: 8, right: 4 });
+        }
         this.dimAdjustment();
       }
     }
     .width('100%').padding({ top: 2, bottom: 2 })
+    .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
+  }
+
+  @Builder
+  solidSwatch(color: string, selected: boolean, busy: boolean) {
+    Stack() {
+      if (busy) {
+        LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
+      } else if (selected) {
+        SymbolGlyph($r('sys.symbol.checkmark')).fontSize(18).fontColor([COLOR_PRIMARY]);
+      }
+    }
+    .width(SOLID_SWATCH).height(SOLID_SWATCH).borderRadius(SOLID_SWATCH / 2)
+    .backgroundColor(color)
+    .border({
+      width: selected ? 2 : 0.7,
+      color: selected ? COLOR_PRIMARY : $r('app.color.divider')
+    });
+  }
+
+  @Builder
+  solidCard() {
+    Column({ space: 10 }) {
+      Text($r('app.string.cb_solid_title'))
+        .fontSize(15).fontColor(COLOR_TEXT_PRIMARY).width('100%');
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(12), cross: LengthMetrics.vp(12) } }) {
+        // 第一格「跟随系统」：画的是这个槽位对应模式下的 chat_bg，不是当前系统模式的。
+        Column({ space: 4 }) {
+          this.solidSwatch(systemChatColor(this.forDark), isSystemBackground(this.currentBackground),
+            this.applyingId === 'reset');
+          Text($r('app.string.cb_follow_system')).fontSize(10).fontColor(COLOR_TEXT_SECONDARY)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width(56)
+            .textAlign(TextAlign.Center);
+        }
+        .width(56)
+        .onClick((): void => this.followSystem());
+        ForEach(solidPaletteFor(this.forDark), (color: string) => {
+          Column() {
+            this.solidSwatch(color, isSolidBackgroundOf(this.currentBackground, color),
+              this.applyingId === `solid_${color}`);
+          }
+          .width(56).height(SOLID_SWATCH)
+          .onClick((): void => this.applySolid(color));
+        }, (color: string): string => `solid_${color}`);
+      }
+    }
+    .width('100%').padding(14)
     .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS);
   }
 
@@ -763,7 +896,10 @@ struct ChatBackgroundPage {
             .width('100%').height(48).padding({ left: 14, right: 14 })
             .backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS)
             .onClick((): void => this.reset());
-            this.adjustmentsCard();
+            this.solidCard();
+            if (this.hasAdjustments()) {
+              this.adjustmentsCard();
+            }
             GridRow({ columns: 3, gutter: 10 }) {
               ForEach(this.rows, (row: GalleryRow) => {
                 GridCol({ span: 1 }) { this.tile(row); }

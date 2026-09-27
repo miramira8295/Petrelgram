@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "فتح التطبيق"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "لون خالص"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "النظام"
     }
   ]
 }

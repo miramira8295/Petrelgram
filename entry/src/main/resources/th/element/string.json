@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "เปิดแอป"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "สีพื้น"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "ตามระบบ"
     }
   ]
 }

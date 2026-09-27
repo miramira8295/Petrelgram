@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "アプリを開く"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "単色"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "システム"
     }
   ]
 }

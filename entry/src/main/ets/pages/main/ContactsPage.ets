@@ -1,6 +1,6 @@
 import { pageMarginVp } from '../../util/pageMargin';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { getTdClient } from '../../tdkit/Globals';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
@@ -172,6 +172,7 @@ export struct ContactsPage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 平板分栏下记住的左栏宽度（issue #106），见 util/splitNavWidth。
   @StorageProp(KEY_SPLIT_NAV_WIDTH) private savedNavW: number = 0;
   // 本页签左栏（navBar）的实际宽度，vp，0 = 还没量到。**写入方就是本页**（下面
@@ -214,6 +215,11 @@ export struct ContactsPage {
   private addContactSequence: number = 0;
   private skeletonTimer: number = -1;
   private contactPressActive: boolean = false;
+  // 按住 / 菜单期间被推迟的列表输入变化（见 onContactListInputChanged）。
+  private listInputDirty: boolean = false;
+  // 长按菜单对应的联系人，开菜单时记下、菜单收起时**不清**（见 confirmDeleteContact）。
+  private deleteTargetId: number = 0;
+  private deleteTargetName: string = '';
   private contactPressId: number = 0;
   private contactPressIndex: number = -1;
   private contactPressVersion: string = '';
@@ -263,7 +269,7 @@ export struct ContactsPage {
   // aboutToAppear 的复位同一个判据（util/navBarReset），值没变时不写。
   private onWindowResized(): void {
     const isVisible: boolean = navBarVisibleOnAppear(
-      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.contactsStack.size());
+      isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.contactsStack.size());
     if (AppStorage.get<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
       AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, isVisible);
     }
@@ -289,7 +295,7 @@ export struct ContactsPage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.contactsStack.size()));
+      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.contactsStack.size()));
     this.releaseActionLock();
     const store = new ContactsStore(getTdClient());
     this.store = store;
@@ -321,6 +327,7 @@ export struct ContactsPage {
     this.menuContactId = 0;
     this.contactPressActive = false;
     this.pendingContacts = null;
+    this.listInputDirty = false;
     this.chatOpenSequence++;
     this.deleteSequence++;
     this.addContactSequence++;
@@ -407,7 +414,10 @@ export struct ContactsPage {
   }
 
   private applyContacts(next: ContactItem[], nextLoading: boolean, nextError: string): void {
-    if (this.contextMenuShown) {
+    // 手指按在行上时也先攒着：在线状态每 500ms 合批刷新一次、会整表按最近上线重排，
+    // 而长按判定也是 500ms——按住期间有人上线，被按的行就挪位 / 重建，长按校验失败
+    // 直接丢掉（「长按不好使」）。抬手（endContactPress）或菜单关掉时再一次性落地。
+    if (this.contextMenuShown || this.contactPressActive) {
       this.pendingContacts = next;
       this.pendingLoading = nextLoading;
       this.pendingLoadError = nextError;
@@ -580,7 +590,7 @@ export struct ContactsPage {
   //   分栏但还没量到（navBarW <= 0，首帧）→ 退回 '100%'，与改动前同。下一帧
   //     onAreaChange 一到就归位。
   private topMenuAnchorX(): Length {
-    if (!isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn)) {
+    if (!isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
       return '100%';
     }
     const w: number = this.navBarW;
@@ -621,7 +631,7 @@ export struct ContactsPage {
   // 不是屏幕宽（AppStorage 'screenWidthVp'，见字段处的注释），分屏/悬浮窗下才不会
   // 与组件实际的单双栏状态相反。
   private openContact(contact: ContactItem): void {
-    if (!isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn)) {
+    if (!isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
       this.openChatWith(contact.id);
       return;
     }
@@ -679,6 +689,12 @@ export struct ContactsPage {
   }
 
   private beginContactPress(contact: ContactItem): void {
+    // 菜单真开着时有模态遮罩，手指碰不到行。能在这里收到按下，说明菜单早就不在了，
+    // 只是 onDisappear 没来（宿主行在菜单开着时被重建等），标记卡成 true 会把行点击、
+    // 添加按钮和列表滚动一起锁死（「按钮不好使」）。就地复位。
+    if (this.contextMenuShown) {
+      this.onContactMenuDisappear();
+    }
     const local = this.contacts.find((item: ContactItem): boolean => item.id === contact.id);
     this.contactPressConsumedByMenu = false;
     this.contactPressActive = local !== undefined && this.deletingContactId === 0;
@@ -688,7 +704,23 @@ export struct ContactsPage {
   }
 
   private endContactPress(): void {
+    if (!this.contactPressActive) {
+      return;
+    }
     this.contactPressActive = false;
+    this.flushDeferredListUpdates();
+  }
+
+  // 按住 / 菜单期间攒下的联系人数据与列表输入，在松手或菜单关掉后一次落地。
+  private flushDeferredListUpdates(): void {
+    if (this.contextMenuShown || this.contactPressActive) {
+      return;
+    }
+    this.flushPendingContacts();
+    if (this.listInputDirty) {
+      this.listInputDirty = false;
+      this.onContactListInputChanged();
+    }
   }
 
   // 按压态的 110ms 过渡。原来是行上常驻的 .animation()；行抽成复用组件后不再挂它
@@ -718,11 +750,14 @@ export struct ContactsPage {
     if (!unchanged) {
       // A status/avatar/search refresh moved or rebuilt the row while the
       // recognizer was waiting. Ignore this hold instead of lifting stale UI.
+      this.flushDeferredListUpdates();
       return;
     }
     this.contactPressConsumedByMenu = true;
     this.menuContactId = contact.id;
     this.menuContactName = current !== undefined ? current.name : contact.name;
+    this.deleteTargetId = this.menuContactId;
+    this.deleteTargetName = this.menuContactName;
     this.contextMenuShown = true;
   }
 
@@ -732,12 +767,14 @@ export struct ContactsPage {
     this.menuContactName = '';
     this.pressedContactId = 0;
     this.contactPressActive = false;
-    this.flushPendingContacts();
+    this.flushDeferredListUpdates();
   }
 
   private confirmDeleteContact(): void {
-    const userId = this.menuContactId;
-    const name = this.menuContactName;
+    // 读开菜单时另存的那一份，不读 menuContactId：点菜单项时菜单同时收起，
+    // onDisappear 可能先于这里的 onClick 跑完并把 menuContactId 清零，删除就静默没了。
+    const userId = this.deleteTargetId;
+    const name = this.deleteTargetName;
     if (userId <= 0 || name === '') {
       return;
     }
@@ -799,6 +836,12 @@ export struct ContactsPage {
   // 联系人 / 搜索词 / 全网搜索结果任一变化：把「当下要显示的那一份」交给 LazyForEach。
   // key 用 contactVersion——与长按菜单的版本校验同一份签名，内容变了才会发 CHANGE。
   private onContactListInputChanged(): void {
+    // 全网搜索结果可能在按住 / 菜单开着时到达：此刻换数据源会重建被按的行（菜单的
+    // 宿主），onDisappear 就可能不来。记一笔，松手 / 关菜单后再换。
+    if (this.contextMenuShown || this.contactPressActive) {
+      this.listInputDirty = true;
+      return;
+    }
     const list: ContactItem[] = this.filtered();
     this.contactsData.update(list,
       list.map((c: ContactItem): string => `${c.id}`),
@@ -1547,7 +1590,7 @@ export struct ContactsPage {
     if (this.navBarW > 0) {
       return contentSideGutter(this.navBarW);
     }
-    if (isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn)) {
+    if (isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait)) {
       return contentSideGutter(splitNavMinWidth(this.screenW));
     }
     return contentSideGutter(this.screenW);
@@ -1708,7 +1751,7 @@ export struct ContactsPage {
             if (AppStorage.get<number>(CONTACTS_NAV_BAR_WIDTH_KEY) !== w) {
               AppStorage.setOrCreate<number>(CONTACTS_NAV_BAR_WIDTH_KEY, w);
               // 三个页签共用一个记忆值，哪个页签拖的都算（issue #106）。
-              rememberSplitNavWidth(w, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn));
+              rememberSplitNavWidth(w, isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait));
             }
           })
           // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
@@ -1763,7 +1806,7 @@ export struct ContactsPage {
       // 所以分栏由我们自己说了算：isSplitByBreakpoint 读系统横向 + 纵向断点，
       // 手机横屏（md 宽 + 横向窗口）也判单栏（util/layoutBreakpoint）。
       // 显式给 mode 还有一个好处——分栏与否不再依赖某个 SDK 版本的内部阈值。
-      .mode(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) ? NavigationMode.Split : NavigationMode.Stack)
+      .mode(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) ? NavigationMode.Split : NavigationMode.Stack)
       .navBarWidthRange({ minWidth: this.navBarMinWidth(), maxWidth: this.navBarMaxWidth() })
       // 启动时复原上次拖出来的宽度；没记过就是 min（HDS 的静息值）。
       .navBarWidth(resolveSplitNavWidth(this.savedNavW, this.navBarMinWidth(), this.navBarMaxWidth()))
@@ -1776,7 +1819,7 @@ export struct ContactsPage {
       .onNavBarStateChange((reported: boolean): void => {
         // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
         const isVisible: boolean = navBarVisibleOnChange(reported,
-          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.contactsStack.size());
+          isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.contactsStack.size());
         if (AppStorage.get<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY) !== isVisible) {
           AppStorage.setOrCreate<boolean>(CONTACTS_NAV_BAR_VISIBLE_KEY, isVisible);
         }

@@ -1,5 +1,5 @@
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
 } from '../../util/layoutBreakpoint';
 import { ChatPage } from './ChatPage';
 import { ReusableMessageBubble } from './ReusableMessageBubble';
@@ -70,6 +70,7 @@ struct ChatPageChrome {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   @StorageProp(KEY_POWER_ACTIVE) powerSaving: boolean = false;
   @StorageProp(KEY_POWER_CHAT_EFFECTS) powerChatEffects: boolean = true;
   @StorageProp(KEY_POWER_EFFECT_BACKGROUND) powerBackgroundEffect: boolean = false;
@@ -107,6 +108,7 @@ struct ChatPageChrome {
       screenH: this.screenH,
       widthBp: this.widthBp,
       heightBp: this.heightBp,
+      windowPortrait: this.windowPortrait,
       powerSaving: this.powerSaving,
       powerChatEffects: this.powerChatEffects,
       powerBackgroundEffect: this.powerBackgroundEffect,

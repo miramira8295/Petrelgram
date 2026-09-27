@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "開啟應用"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "純色"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "跟隨系統"
     }
   ]
 }

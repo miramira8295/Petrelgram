@@ -1,5 +1,5 @@
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { promptAction, router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -164,6 +164,7 @@ export struct GlobalSearchPage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // 下载列表和应用榜按 query 过滤，query 变了要同步它们的数据源（见 syncQueryFilteredData）。
   @State @Watch('syncQueryFilteredData') query: string = '';
   @State @Watch('syncTabFilteredData') tab: number = 0;
@@ -2760,7 +2761,7 @@ export struct GlobalSearchPage {
     Stack({ alignContent: Alignment.TopStart }) {
     // NavDestination 自带的页面层会隔断 MainScreen 的壁纸，和资料详情页一样在
     // 当前目的页内重画一层；分栏时 AppBackdrop 会按统一规则自动停止绘制。
-    AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) });
+    AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
     Column() {
       Column() {
         // 搜索框和分类条跟着下面的结果列一起限宽、一起居中。它们语义上像标题栏

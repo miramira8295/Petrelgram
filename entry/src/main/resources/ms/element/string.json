@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "Buka Aplikasi"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "Warna padu"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "Sistem"
     }
   ]
 }

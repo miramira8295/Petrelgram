@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "Apri app"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "Tinta unita"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "Sistema"
     }
   ]
 }

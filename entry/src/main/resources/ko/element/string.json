@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "앱 열기"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "단색"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "시스템"
     }
   ]
 }

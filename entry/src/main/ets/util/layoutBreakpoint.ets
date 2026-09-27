@@ -13,6 +13,10 @@ import { DOCK_MODE_BOTTOM, DOCK_MODE_LEFT_FLOATING } from './splitMetrics';
 
 export const KEY_WIDTH_BREAKPOINT: string = 'currentWidthBreakpoint';
 export const KEY_HEIGHT_BREAKPOINT: string = 'currentHeightBreakpoint';
+// 窗口是不是纵向（高 > 宽）。纵向断点只分三档，折叠屏展开态横竖都落在 md（类方形），
+// 光看断点分不出横竖，分栏判据要再看这一位。写入端同 EntryAbility.publishBreakpoints。
+// 读不到时按纵向（true）：单栏是更保守的一边。
+export const KEY_WINDOW_PORTRAIT: string = 'windowPortrait';
 
 // 横向断点：按窗口宽（vp）。xs <320，sm [320,600)，md [600,840)，lg [840,1440)，xl ≥1440。
 export const WIDTH_BP_XS: number = 0;
@@ -30,24 +34,40 @@ export const HEIGHT_BP_LG: number = 2;
 //
 // 官方默认规则是「宽度 sm 单栏、md 起分栏」，但照搬会把**直板机横屏**（md 宽 + sm
 // 高宽比，例如 809×376vp）判成分栏——#125：全屏看视频把窗口转横，整个应用被强制分栏。
-// 官方给的办法是横向 + 纵向断点组合判断，按《断点系统》的 8 种屏幕形态逐一核对：
+// 官方给的办法是横向 + 纵向断点组合判断。2026-09-27 用户定：**竖着直板，横着分栏**——
+// 平板、折叠屏展开态竖屏都按直板机的样子走，横过来够宽才分栏。折叠屏展开态横竖都是
+// md/md，断点分不出，所以另看 windowPortrait（窗口高 > 宽）。按《断点系统》逐一核对：
 //
 //   直板机竖屏 sm/lg 单栏   直板机横屏 md/sm 单栏（#125）  小方形屏 sm/md 单栏
-//   大方形屏   md/md 分栏   大屏竖屏   md/lg 分栏          大屏横屏 lg/sm 分栏
-//   超大屏     xl/sm 分栏   圆形屏     xs    单栏
+//   大方形屏   md/md 竖单栏、横分栏                        大屏竖屏 md/lg、lg/lg 单栏
+//   大屏横屏   lg/sm 分栏   超大屏 xl/sm 分栏             圆形屏   xs 单栏
 //
-// 结论与原来的「宽高都 ≥ 600vp」规则逐一相同，这次只换判据来源。
 // 不用 NavigationMode.Auto：它只看宽度，正好会撞上 #125；而且还有「强制单栏」开关、
 // 查看器盖满窗口等运行时回退——官方把这类情况列为手动断点切换的适用场景。
 export function isSplitByBreakpoint(widthBp: number, heightBp: number,
-  forceSingleColumn: boolean = false): boolean {
-  if (forceSingleColumn) {
+  forceSingleColumn: boolean, windowPortrait: boolean): boolean {
+  if (forceSingleColumn || windowPortrait) {
     return false;
   }
-  if (widthBp < WIDTH_BP_MD) {
+  if (widthBp < WIDTH_BP_MD || heightBp === HEIGHT_BP_LG) {
     return false;
   }
   return !(widthBp === WIDTH_BP_MD && heightBp === HEIGHT_BP_SM);
+}
+
+// 应用默认允不允许跟随传感器转屏（2026-09-27 用户定：手机锁竖屏，大屏可转）。
+//
+// 官方《窗口旋转实践案例》：按设备类型分支会漏掉新形态，要用断点屏蔽设备差异。
+// 这里看的是**物理屏幕**的短边（不是窗口：窗口会随分屏 / 悬浮变小，拿它判会把
+// 平板分屏也锁成竖屏）。短边 ≥ 600vp（横向断点 md 的下沿）才放开旋转：
+//   直板机 / 折叠屏折叠态 / 小方形外屏 → 锁竖屏；平板 / 折叠屏展开态 → 可转。
+// 读不到尺寸（0/NaN）时按手机处理，锁竖屏是更保守的一边。
+export function allowsRotationForDisplay(widthPx: number, heightPx: number,
+  densityPixels: number): boolean {
+  if (!(widthPx > 0) || !(heightPx > 0) || !(densityPixels > 0)) {
+    return false;
+  }
+  return Math.min(widthPx, heightPx) / densityPixels >= 600;
 }
 
 // 官方 BreakpointType：按横向断点取值，缺的档位向下回退到最近的一档。
@@ -109,8 +129,8 @@ export function heightBreakpointOfSize(widthVp: number, heightVp: number): numbe
 // 页签栏（dock）形态：分栏 = 左栏底部自绘胶囊，其余 = 底部胶囊（2026-09-17 用户定，
 // 只分这两种）。判据与分栏同源。
 export function dockModeForBreakpoint(widthBp: number, heightBp: number,
-  forceSingleColumn: boolean): string {
-  return isSplitByBreakpoint(widthBp, heightBp, forceSingleColumn)
+  forceSingleColumn: boolean, windowPortrait: boolean): string {
+  return isSplitByBreakpoint(widthBp, heightBp, forceSingleColumn, windowPortrait)
     ? DOCK_MODE_LEFT_FLOATING : DOCK_MODE_BOTTOM;
 }
 

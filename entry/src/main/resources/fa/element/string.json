@@ -12839,6 +12839,14 @@
     {
       "name": "pp_open_app",
       "value": "باز کردن برنامه"
+    },
+    {
+      "name": "cb_solid_title",
+      "value": "رنگ ساده"
+    },
+    {
+      "name": "cb_follow_system",
+      "value": "سیستم"
     }
   ]
 }

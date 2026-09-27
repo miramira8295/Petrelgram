@@ -8,7 +8,7 @@ import { ChatEntry } from '../store/ChatEntry';
 import { chatKey, decideChatPush, ChatPushDecision, PushOrigin, StackFrame } from './splitRouting';
 import { NavStackLike, snapshotOf, stackOf } from './navStacks';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, WIDTH_BP_SM, isSplitByBreakpoint
 } from './layoutBreakpoint';
 import { setChatListRenderActive } from './chatListRenderGate';
 import { routeTopicId } from './messageTopicScope';
@@ -138,7 +138,8 @@ export function navigateToChat(
   const split: boolean = isSplitByBreakpoint(
     AppStorage.get<number>(KEY_WIDTH_BREAKPOINT) ?? WIDTH_BP_SM,
     AppStorage.get<number>(KEY_HEIGHT_BREAKPOINT) ?? HEIGHT_BP_LG,
-    AppStorage.get<boolean>(KEY_FORCE_SINGLE_COLUMN) ?? false);
+    AppStorage.get<boolean>(KEY_FORCE_SINGLE_COLUMN) ?? false,
+    AppStorage.get<boolean>(KEY_WINDOW_PORTRAIT) ?? true);
   const snap: StackFrame[] = snapshotOf(stack, chatFrameKey);
   const decision: ChatPushDecision =
     decideChatPush(snap, target, origin === 'navbar', origin === 'search');

@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { backgroundBlurRadius, combineDimming } from '../main/ets/util/chatBackgroundRaster';
+import {
+  backgroundBlurRadius, combineDimming, wallpaperTakesBlur, wallpaperTakesUserDim
+} from '../main/ets/util/chatBackgroundRaster';
 
 // backgroundBlurRadius(path, isPattern, blurred, userBlur) — userBlur is the
 // user's own Chat Background slider setting (KEY_BG_BLUR, AppSettings.ets,
@@ -45,6 +47,18 @@ export default function backgroundBlurTest() {
     });
     it('flattened_dark_masks_clamp_invalid_inputs', 0, (): void => {
       expect(combineDimming(-1, 2)).assertEqual(1);
+    });
+    // 2026-09-27：纯色 / 跟随系统没有模糊和深色遮罩；渐变留遮罩，图案 / 整图都留。
+    it('solid_and_system_backgrounds_take_neither_blur_nor_dim', 0, (): void => {
+      expect(wallpaperTakesBlur('')).assertFalse();
+      expect(wallpaperTakesUserDim([], '')).assertFalse();
+      expect(wallpaperTakesUserDim(['#1C1C1E'], '')).assertFalse();
+    });
+    it('gradients_keep_dim_and_files_keep_both', 0, (): void => {
+      expect(wallpaperTakesUserDim(['#000000', '#222222'], '')).assertTrue();
+      expect(wallpaperTakesBlur('/cache/p.svg')).assertTrue();
+      expect(wallpaperTakesUserDim(['#1C1C1E'], '/cache/p.svg')).assertTrue();
+      expect(wallpaperTakesUserDim([], '/files/photo.jpg')).assertTrue();
     });
   });
 }

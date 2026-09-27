@@ -1,6 +1,6 @@
 import { pageMarginVp } from '../../util/pageMargin';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { promptAction, router } from '@kit.ArkUI';
 import { flushPendingNavs } from '../../util/pendingNavFlush';
@@ -136,6 +136,7 @@ export struct MyProfilePage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   @StorageProp('appIsForeground') appIsForeground: boolean = false;
   @State myId: number = 0;
   @State name: string = '';
@@ -210,7 +211,7 @@ export struct MyProfilePage {
     // 写 true 就把 dock 放了出来，和输入框叠在一起（用户报的正是这个）。
     // 判据见 util/navBarReset。
     AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY,
-      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.profileStack.size()));
+      navBarVisibleOnAppear(isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.profileStack.size()));
     this.loadProfile();
   }
 
@@ -2161,7 +2162,7 @@ export struct MyProfilePage {
     .onNavBarStateChange((reported: boolean): void => {
       // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
       const isVisible: boolean = navBarVisibleOnChange(reported,
-        isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn), this.profileStack.size());
+        isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.profileStack.size());
       if (AppStorage.get<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY) !== isVisible) {
         AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
       }

@@ -1,6 +1,6 @@
 import { pageMarginVp } from '../../util/pageMargin';
 import {
-  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
+  HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
 import { ReportTarget, runReportFlow } from '../../util/reportFlow';
 import { reportFlowUiFor } from '../common/ReportPrompts';
@@ -58,7 +58,8 @@ import { AppBackdrop } from '../common/AppBackdrop';
 import { MUTE_LONG, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { CHAT_DEST_NAME, logChatNavFailure, navigateToChat } from '../../util/chatNav';
+import { profileSitsOnOwnChat } from '../../util/splitRouting';
 import { logE, logI } from '../../util/log';
 import { common } from '@kit.AbilityKit';
 import { openLocalFile } from '../../util/openLocalFile';
@@ -135,6 +136,7 @@ export struct ChatProfilePage {
   // 系统断点（util/layoutBreakpoint）：分栏判据读它，不再按窗口宽高自己算。
   @StorageProp(KEY_WIDTH_BREAKPOINT) widthBp: number = WIDTH_BP_SM;
   @StorageProp(KEY_HEIGHT_BREAKPOINT) heightBp: number = HEIGHT_BP_LG;
+  @StorageProp(KEY_WINDOW_PORTRAIT) windowPortrait: boolean = true;
   // APP 壁纸此刻生不生效。本页是压在主界面之上的 NavDestination，**下面那层壁纸
   // 透不过来**（HdsNavDestination 自带不透明底，Scroll 又铺了一层 page_bg），
   // 所以和 ChatPage 一样自己画一层——用户实报"点频道/群组/其他人详情看不到壁纸"。
@@ -151,6 +153,8 @@ export struct ChatProfilePage {
   @State description: string = '';
   @State chatUsername: string = '';
   @State @Watch('syncMembersData') isChannel: boolean = false;
+  // 本页是不是直接叠在同一个会话的会话页上面（onReady 时定）。
+  @State overOwnChat: boolean = false;
   @State isMuted: boolean = false;
   @State canManageVideoChats: boolean = false;
   @State canManageChat: boolean = false;
@@ -382,6 +386,21 @@ export struct ChatProfilePage {
     this.selfUserId = s.selfUserId;
     this.liveGroupCallId = s.liveGroupCallId;
     this.members = s.members;
+  }
+
+  // onReady 时本页在栈顶，正下方那层是不是同一个会话（见 util/splitRouting.profileSitsOnOwnChat）。
+  private computeOverOwnChat(stack: NavPathStack): boolean {
+    try {
+      const names: string[] = stack.getAllPathName();
+      const ids: number[] = names.map((_name: string, index: number): number => {
+        const param = stack.getParamByIndex(index) as Record<string, Object> | undefined;
+        return param !== undefined && param !== null ? ((param['chatId'] as number | undefined) ?? 0) : 0;
+      });
+      return profileSitsOnOwnChat(names, ids, names.length - 1, CHAT_DEST_NAME, this.chatId);
+    } catch (error) {
+      logE(`ChatProfilePage.computeOverOwnChat failed: ${error}`);
+      return false;
+    }
   }
 
   private openChat(): void {
@@ -1102,9 +1121,9 @@ export struct ChatProfilePage {
   actionsRow() {
     Column({ space: 10 }) {
       Row({ space: 10 }) {
-        // 发消息 is redundant — tapping back returns to the chat. The primary
-        // button only appears while joining is still the pending action.
-        if (this.membershipState !== 'writable') {
+        // 从会话里点进来时「消息」多余——按返回就回到会话；从搜索、链接、转发来源等
+        // 进来时下面不是这个会话，得留一个入口。加入前它是「加入」按钮。
+        if (this.membershipState !== 'writable' || !this.overOwnChat) {
           this.primaryActionButton();
         }
         if (this.chatId !== 0) {
@@ -1912,7 +1931,7 @@ export struct ChatProfilePage {
     Stack() {
     // 壁纸在最底，其余内容画在它之上。分栏下 AppBackdrop 自己什么都不画
     // （见 util/localWallpaper.appWallpaperActive），与主界面同一条规则。
-    AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn) });
+    AppBackdrop({ split: isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait) });
     // 整页是一个 List（原来是 Scroll > Column）：头图、操作行、资料卡在第一项，页签条一项，
     // 页签内容按行放进 List——成员、文件/链接走 LazyForEach，媒体网格按 3 格一行走 LazyForEach。
     // 大群的成员、翻了很多页的共享内容都只建可视区附近的行，其余滚动时逐帧补建。
@@ -1982,6 +2001,7 @@ export struct ChatProfilePage {
       this.navParams = ctx.pathInfo.param as Record<string, Object> | undefined;
       // 必须在这里调而不是等 aboutToAppear：实测 onReady 晚于 aboutToAppear。
       this.applyRouteParams();
+      this.overOwnChat = this.computeOverOwnChat(ctx.pathStack);
     })
     .onShown((): void => { this.handleShown(); })
     .width('100%').height('100%');

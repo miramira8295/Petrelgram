@@ -197,26 +197,49 @@ export default function chatBackgroundStoreTest() {
       expect(h.store.current().colors.length).assertEqual(0);
     });
 
-    // 回归：真机切深色后 getInstalledBackgrounds 连续超时，原来 catch 里
-    // applyBackground(null) 把已经画好的背景清成平底。失败不许清空。
-    it('installed default failure keeps the background already on screen', 0, async () => {
+    // 2026-09-27：没设过默认背景时跟随系统明暗（chat_bg），不再去拉官方壁纸。
+    it('no account default falls back to the system color without fetching installed backgrounds', 0, async () => {
       const h = harness();
+      const known: TdObject = { '@type': 'updateDefaultBackground' };
+      known['for_dark_theme'] = false;
+      h.bridge.onReceive(JSON.stringify(known));
       h.store.open(7);
       expect(h.bridge.lastType()).assertEqual('getChat');
       const chat: TdObject = { '@type': 'chat' };
       chat['id'] = 7;
       h.bridge.reply(chat);
       await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
-      expect(h.bridge.lastType()).assertEqual('getInstalledBackgrounds');
-      h.store.applyKnownBackground(solidFillBackground(0x336699));
-      expect(h.store.current().colors.length).assertEqual(1);
-      const failure: TdObject = { '@type': 'error' };
-      failure['code'] = 400;
-      failure['message'] = 'request timeout';
-      h.bridge.reply(failure);
-      await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+      expect(h.bridge.lastType()).assertEqual('getChat');
+      expect(h.store.current().custom).assertFalse();
+      expect(h.store.current().colors.length).assertEqual(0);
+      expect(h.store.current().path).assertEqual('');
+    });
+
+    // 旧版本落盘的快照可能是那张官方壁纸；解析到"跟随系统"时要作废，
+    // 否则冷启动第一帧 seedFromDefault 还会把它画出来。
+    it('resolving to the system color drops a stale default snapshot', 0, () => {
+      const h = harness(false);
+      h.store.open(0);
+      h.store.applyKnownBackground(solidFillBackground(0x2468AC));
+      expect(defaultChatBackgroundSnapshot(false).colors.length).assertEqual(1);
+      const cleared: TdObject = { '@type': 'updateDefaultBackground' };
+      cleared['for_dark_theme'] = false;
+      h.bridge.onReceive(JSON.stringify(cleared));
+      expect(h.store.current().colors.length).assertEqual(0);
+      expect(defaultChatBackgroundSnapshot(false).colors.length).assertEqual(0);
+    });
+
+    // 纯色模式：设成账号默认的纯色经 updateDefaultBackground 回流，照常画成一个颜色。
+    it('a solid account default arriving by update is applied', 0, () => {
+      const h = harness(true);
+      h.store.open(9);
+      const upd: TdObject = { '@type': 'updateDefaultBackground' };
+      upd['for_dark_theme'] = true;
+      upd['background'] = solidFillBackground(0x1C1C1E)['background'];
+      h.bridge.onReceive(JSON.stringify(upd));
       expect(h.store.current().custom).assertTrue();
       expect(h.store.current().colors.length).assertEqual(1);
+      expect(h.store.current().colors[0]).assertEqual('#1C1C1E');
     });
 
     it('a fill with neither colors nor file is ignored', 0, () => {
