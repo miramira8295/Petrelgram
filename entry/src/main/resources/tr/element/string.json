@@ -8837,6 +8837,10 @@
       "value": "Katıl"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "Katıl ve klasöre ekle"
+    },
+    {
       "name": "cp_recording",
       "value": "Kayıt yapılıyor..."
     },

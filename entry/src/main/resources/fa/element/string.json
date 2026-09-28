@@ -8837,6 +8837,10 @@
       "value": "عضویت"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "پیوستن و افزودن به پوشه"
+    },
+    {
       "name": "cp_recording",
       "value": "در حال ضبط…"
     },

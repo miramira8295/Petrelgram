@@ -8837,6 +8837,10 @@
       "value": "Rejoindre"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "Rejoindre et ajouter au dossier"
+    },
+    {
       "name": "cp_recording",
       "value": "Enregistrement..."
     },

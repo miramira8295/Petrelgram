@@ -8837,6 +8837,10 @@
       "value": "انضمام"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "انضمام وإضافة إلى مجلد"
+    },
+    {
       "name": "cp_recording",
       "value": "جارٍ التسجيل..."
     },

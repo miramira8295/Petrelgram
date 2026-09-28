@@ -8837,6 +8837,10 @@
       "value": "참여"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "참여 후 폴더에 추가"
+    },
+    {
       "name": "cp_recording",
       "value": "녹음 중..."
     },

@@ -8837,6 +8837,10 @@
       "value": "加入"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "加入并添加到文件夹"
+    },
+    {
       "name": "cp_recording",
       "value": "正在录音..."
     },

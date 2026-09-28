@@ -216,7 +216,7 @@ import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { MediaSaveState } from './MediaSaveState';
 import { MembershipSession } from './MembershipSession';
 import { ScrollAnchorController } from './ScrollAnchorController';
-import { showChatFolderPicker } from '../../store/ChatActions';
+import { pickChatFolder, setInFolder, showChatFolderPicker } from '../../store/ChatActions';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
 import {
@@ -5606,7 +5606,9 @@ export struct ChatPage {
   // 这样）：它们是页面自留 @Local，setMembershipState 只是控制器回调页面的
   // 入口，页面自己写自己的字段不绕道。本批只把 this.refreshMembership()
   // 那一行改成了 this.membership.refresh()。
-  private joinCurrentChat(): void {
+  // folderId：「加入并添加到文件夹」选定的文件夹，加入成功后再写进去；
+  // 加入失败就不写，免得文件夹里挂着一个没加入的会话。
+  private joinCurrentChat(folderId?: number): void {
     if (this.joiningChat || this.membershipState !== 'joinable') {
       return;
     }
@@ -5620,6 +5622,9 @@ export struct ChatPage {
       this.membershipState = 'writable';
       this.showClientJoinNotice(this.isChannel);
       this.membership.refresh();
+      if (folderId !== undefined) {
+        setInFolder(folderId, this.chatId, true);
+      }
     }).catch((e: TdError): void => {
       this.joiningChat = false;
       logE(`ChatPage.joinChat failed: ${e.message}`);
@@ -8030,6 +8035,9 @@ export struct ChatPage {
       secretOutbound: this.header.secretOutbound,
       bottomGap: this.composerBottomGap(),
       onJoin: (): void => { this.joinCurrentChat(); },
+      onJoinToFolder: (): void => {
+        pickChatFolder(this.getUIContext(), (folderId: number): void => { this.joinCurrentChat(folderId); });
+      },
       onToggleMute: (): void => { this.header.toggleMute(); },
       onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); }
     });

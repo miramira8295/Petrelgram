@@ -8837,6 +8837,10 @@
       "value": "参加"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "参加してフォルダーに追加"
+    },
+    {
       "name": "cp_recording",
       "value": "録音中..."
     },

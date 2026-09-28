@@ -8837,6 +8837,10 @@
       "value": "Sertai"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "Sertai & tambah ke folder"
+    },
+    {
       "name": "cp_recording",
       "value": "Merakam..."
     },

@@ -233,6 +233,27 @@ export function showChatFolderPicker(uiContext: UIContext, chatId: number): void
   });
 }
 
+// 「加入并添加到文件夹」：只选文件夹、不切换。会话此时还没加入，谈不上已在
+// 哪个文件夹里，所以不画 ✓；加入与写文件夹由调用方在选定之后串起来做。
+// 没有文件夹就直接提示，不走加入——否则用户点的是"加入并添加"，结果只加入了。
+export function pickChatFolder(uiContext: UIContext, onPick: (folderId: number) => void): void {
+  const folders = getFolderStore().getFolders();
+  if (folders.length === 0) {
+    uiContext.getPromptAction().showToast({
+      message: str('cl_no_folders'), duration: 1600
+    });
+    return;
+  }
+  uiContext.showActionSheet({
+    title: str('cp_join_to_folder'),
+    message: '',
+    sheets: folders.map((folder): SheetInfo => ({
+      title: folder.title,
+      action: (): void => { onPick(folder.id); }
+    }))
+  });
+}
+
 // revoke: 为所有人清空，而不是只为自己清空。两种做法各有前置条件，见
 // ClearHistoryOptions —— 调用方必须先按 chat 的能力位挑，不能硬写。
 export function clearHistory(chatId: number, revoke: boolean): void {

@@ -8837,6 +8837,10 @@
       "value": "Gabung"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "Gabung & tambahkan ke folder"
+    },
+    {
       "name": "cp_recording",
       "value": "Merekam..."
     },

@@ -8837,6 +8837,10 @@
       "value": "Tham gia"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "Tham gia và thêm vào thư mục"
+    },
+    {
       "name": "cp_recording",
       "value": "Đang ghi âm..."
     },

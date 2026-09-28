@@ -18,7 +18,7 @@ import { str } from '../../util/strings';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import {
-  BOTTOM_PILL_HEIGHT, BOTTOM_PILL_PADDING, bottomPillRadius
+  BOTTOM_PILL_GAP, BOTTOM_PILL_HEIGHT, BOTTOM_PILL_PADDING, bottomPillRadius
 } from '../../util/bottomPill';
 
 // 没有发言权时，输入区的位置放什么。
@@ -57,6 +57,8 @@ export struct MembershipBar {
   // !== 恒不相等会让本层白刷；@Event 不具备观测能力，正好复现迁移前普通字段的
   // 行为。空实现默认值让组件能脱离父组件独立预览。
   @Event onJoin: () => void = (): void => {};
+  // 「加入并添加到文件夹」：选文件夹由页面接线处负责，这里只报点击。
+  @Event onJoinToFolder: () => void = (): void => {};
   @Event onStartBot: () => void = (): void => {};
   @Event onToggleMute: () => void = (): void => {};
 
@@ -114,41 +116,76 @@ export struct MembershipBar {
           .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
       }
     }
-    // 几何来自 util/bottomPill，底部各条共用同一副（见那个文件的说明）。
+    .pillSurface()
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center);
+  }
+
+  // 几何来自 util/bottomPill，底部各条共用同一副（见那个文件的说明）。
+  // 可加入态要并排画两颗胶囊，外观只写这一份。
+  @Styles
+  private pillSurface() {
     .constraintSize({ minHeight: BOTTOM_PILL_HEIGHT, maxWidth: '100%' })
     .padding({ left: BOTTOM_PILL_PADDING, right: BOTTOM_PILL_PADDING, top: 4, bottom: 4 })
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
     .backgroundColor(plainGlassFill($r('app.color.surface')))
     .borderRadius(bottomPillRadius())
     .backdropBlur(plainBackdropBlur('card'))
     .visualEffect(hdsVisualEffect('card'));
   }
 
+  // 可加入且没在加入中：「加入」「加入并添加到文件夹」两颗胶囊，各自可点。
+  // 加入中回到单颗胶囊的转圈（surface() 的最后一支），不分是哪颗点的。
+  // 两颗都按内容收紧；长语言放不下时一起收缩、文字省略，不换行。
+  @Builder
+  private joinPill(label: Resource, onTap: () => void) {
+    Row() {
+      Text(label)
+        .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .flexShrink(1);
+    }
+    .pillSurface()
+    .flexShrink(1)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .onClick((): void => { onTap(); });
+  }
+
   build() {
     Column() {
-      Row() {
-        this.surface();
-      }
-      // 点击层仍占满底栏，视觉胶囊变窄后也不牺牲可点范围。
-      .width('100%')
-      .constraintSize({ minHeight: 48 })
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      // 只有"可加入且没在加入中"和"只读（点了是切静音）"可点。确认中、被挡住
-      // 都不可点：前者点了没意义，后者点了只会失败。
-      // 照抄原式的正面枚举，而不是反过来排除——反写在遇到意外状态时行为会翻转。
-      .enabled((this.state === MEMBERSHIP_JOINABLE && !this.joining) ||
-        this.state === MEMBERSHIP_READONLY || this.state === MEMBERSHIP_BOT_START)
-      .onClick((): void => {
-        if (this.state === MEMBERSHIP_READONLY) {
-          this.onToggleMute();
-        } else if (this.state === MEMBERSHIP_BOT_START) {
-          this.onStartBot();
-        } else {
-          this.onJoin();
+      if (this.state === MEMBERSHIP_JOINABLE && !this.joining) {
+        Row({ space: BOTTOM_PILL_GAP }) {
+          this.joinPill($r('app.string.cp_join'), (): void => { this.onJoin(); });
+          this.joinPill($r('app.string.cp_join_to_folder'), (): void => { this.onJoinToFolder(); });
         }
-      });
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center);
+      } else {
+        Row() {
+          this.surface();
+        }
+        // 点击层仍占满底栏，视觉胶囊变窄后也不牺牲可点范围。
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        // 只有"可加入且没在加入中"和"只读（点了是切静音）"可点。确认中、被挡住
+        // 都不可点：前者点了没意义，后者点了只会失败。
+        // 照抄原式的正面枚举，而不是反过来排除——反写在遇到意外状态时行为会翻转。
+        .enabled((this.state === MEMBERSHIP_JOINABLE && !this.joining) ||
+          this.state === MEMBERSHIP_READONLY || this.state === MEMBERSHIP_BOT_START)
+        .onClick((): void => {
+          if (this.state === MEMBERSHIP_READONLY) {
+            this.onToggleMute();
+          } else if (this.state === MEMBERSHIP_BOT_START) {
+            this.onStartBot();
+          } else {
+            this.onJoin();
+          }
+        });
+      }
     }
     .width('100%')
     .padding({ left: 14, right: 14, top: 6, bottom: this.bottomGap })

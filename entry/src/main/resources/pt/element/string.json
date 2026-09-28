@@ -8837,6 +8837,10 @@
       "value": "Entrar"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "Entrar e adicionar à pasta"
+    },
+    {
       "name": "cp_recording",
       "value": "Gravando…"
     },

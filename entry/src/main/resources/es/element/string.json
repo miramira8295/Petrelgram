@@ -8837,6 +8837,10 @@
       "value": "Unirse"
     },
     {
+      "name": "cp_join_to_folder",
+      "value": "Unirse y añadir a carpeta"
+    },
+    {
       "name": "cp_recording",
       "value": "Grabando…"
     },
