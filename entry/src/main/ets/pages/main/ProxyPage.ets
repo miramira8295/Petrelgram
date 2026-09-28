@@ -1470,6 +1470,13 @@ export struct ProxyPage {
       HdsSubDestination({
         title: $r('app.string.px_title'), scroller: this.hdsScroller,
         pageBackground: COLOR_PAGE_BG,
+        // 已有代理时唯一的「添加」入口。ea8c7c1b 迁 HdsSubPage 时删了旧顶栏的 +、
+        // 没补回来，此后只有空状态里那颗按钮能加——存了一条就加不了第二条
+        // （#133 回复、#218）。空列表时不挂，免得和空状态的大按钮重复。
+        actionIcon: this.proxies.length > 0 ? $r('sys.symbol.plus') : '',
+        actionLabel: $r('app.string.px_add'),
+        actionEnabled: !this.saving && this.actionKey === '',
+        onAction: (): void => { this.openAdd(); },
         onBackPressed: (): boolean => { return this.onBackPressed(); },
         onRouteParams: (param: Object | undefined): void => {
           this.navParams = param as Record<string, Object> | undefined;
