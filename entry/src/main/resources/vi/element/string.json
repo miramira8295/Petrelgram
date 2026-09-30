@@ -1105,6 +1105,10 @@
       "value": "🎮 Trò chơi"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Quà tặng Telegram"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "Không tìm thấy người dùng liên quan"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "Tìm thành viên"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "Phát không có âm thanh"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "Giới hạn dung lượng tự phát"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "Video lớn hơn sẽ không tự phát; chạm để xem như bình thường"
     },
     {
       "name": "settings_media",

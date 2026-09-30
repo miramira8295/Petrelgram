@@ -134,6 +134,8 @@ import pushSubKeyMigrationTest from './PushSubKeyMigration.test';
 import pinnedEntryTest from './PinnedEntry.test';
 import unpinAllRequestTest from './UnpinAllRequest.test';
 import screenAwakeTest from './ScreenAwake.test';
+import systemBarsHiddenTest from './SystemBarsHidden.test';
+import reactorGroupsTest from './ReactorGroups.test';
 import historyWindowJoinTest from './HistoryWindowJoin.test';
 import mediaKindFilterTest from './MediaKindFilter.test';
 import tableLayoutTest from './TableLayout.test';
@@ -480,6 +482,8 @@ export default function testsuite() {
   pinnedEntryTest();
   unpinAllRequestTest();
   screenAwakeTest();
+  systemBarsHiddenTest();
+  reactorGroupsTest();
   historyWindowJoinTest();
   mediaKindFilterTest();
   tableLayoutTest();

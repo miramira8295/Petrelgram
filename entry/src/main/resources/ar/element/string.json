@@ -1105,6 +1105,10 @@
       "value": "🎮 لعبة"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 هدية Telegram"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "لم يُعثر على مستخدمين ذوي صلة"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "البحث في الأعضاء"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "تشغيل صامت"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "حد حجم التشغيل التلقائي"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "لن تُشغَّل المقاطع الأكبر تلقائيًا؛ اضغط للمشاهدة كالمعتاد"
     },
     {
       "name": "settings_media",

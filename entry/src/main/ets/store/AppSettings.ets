@@ -153,6 +153,9 @@ export function patternStrengthKey(forDark: boolean): string {
 }
 // 自动播放时静音。默认开启 —— 聊天列表里突然出声是最招人烦的行为。
 export const KEY_AUTOPLAY_MUTED: string = 'autoplayMuted';
+// 自动播放的视频大小上限（MB，0 = 不限，#226）。超过的不自动播，点开照常看。
+export const KEY_AUTOPLAY_MAX_MB: string = 'autoplayMaxMb';
+export const AUTOPLAY_MAX_MB_OPTIONS: number[] = [0, 10, 20, 50, 100];
 export const POWER_THRESHOLD_DEFAULT: number = 10;
 
 export const TEXT_SIZE_MIN: number = 12;
@@ -630,6 +633,7 @@ export async function initSettings(context: common.Context): Promise<void> {
         await s.get(setting.key, setting.defaultValue) as number);
     }
     AppStorage.setOrCreate(KEY_AUTOPLAY_MUTED, await s.get(KEY_AUTOPLAY_MUTED, true) as boolean);
+    AppStorage.setOrCreate(KEY_AUTOPLAY_MAX_MB, await s.get(KEY_AUTOPLAY_MAX_MB, 0) as number);
     for (const key of DATA_STRING_KEYS) {
       AppStorage.setOrCreate(key, await s.get(key, '') as string);
     }

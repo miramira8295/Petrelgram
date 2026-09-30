@@ -1105,6 +1105,10 @@
       "value": "🎮 遊戲"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Telegram 禮物"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "未找到相關使用者"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "搜尋成員"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "靜音播放"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "自動播放大小上限"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "超過的影片不自動播放，點開照常觀看"
     },
     {
       "name": "settings_media",

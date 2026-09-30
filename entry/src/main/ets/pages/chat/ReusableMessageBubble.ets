@@ -71,6 +71,8 @@ export interface MessageBubbleActions {
   onReplyTo: (messageId: number) => void;
   onEditMsg: (messageId: number) => void;
   onShowReactors: (messageId: number, emoji: string) => void;
+  // 表情条末尾的「>」：在 anchorId 那颗胶囊旁边弹出按表情分组的回应人名单。
+  onShowReactorsList: (messageId: number, anchorId: string) => void;
   onTranslateMsg: (messageId: number) => void;
   onPinMsg: (messageId: number, unpin: boolean) => void;
   onStopPoll: (messageId: number) => void;
@@ -185,6 +187,7 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onSetReaction: (_id: number, _emoji: string, _chosen: boolean): void => {},
   onReplyTo: (_id: number): void => {}, onEditMsg: (_id: number): void => {},
   onShowReactors: (_id: number, _emoji: string): void => {},
+  onShowReactorsList: (_id: number, _anchorId: string): void => {},
   onTranslateMsg: (_id: number): void => {},
   onPinMsg: (_id: number, _unpin: boolean): void => {},
   onStopPoll: (_id: number): void => {}, onReplaceMedia: (_id: number): void => {},

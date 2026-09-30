@@ -1105,6 +1105,10 @@
       "value": "🎮 بازی"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 هدیه تلگرام"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "کاربری پیدا نشد"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "جستجوی اعضا"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "پخش بی‌صدا"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "سقف حجم پخش خودکار"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "ویدیوهای بزرگ‌تر خودکار پخش نمی‌شوند؛ برای تماشا ضربه بزنید"
     },
     {
       "name": "settings_media",

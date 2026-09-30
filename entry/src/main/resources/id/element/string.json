@@ -1105,6 +1105,10 @@
       "value": "🎮 Game"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Hadiah Telegram"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "Tidak ada pengguna terkait"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "Cari anggota"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "Putar tanpa suara"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "Batas ukuran putar otomatis"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "Video yang lebih besar tidak diputar otomatis; ketuk untuk menonton"
     },
     {
       "name": "settings_media",

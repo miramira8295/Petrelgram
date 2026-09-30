@@ -108,6 +108,10 @@ import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
+// 表情条末尾「>」胶囊的尺寸，宽度计算和绘制共用。
+const REACTORS_ARROW_PAD_H: number = 7;
+const REACTORS_ARROW_ICON_VP: number = 16;
+const REACTORS_ARROW_MARGIN_R: number = 4;
 const REPLY_QUOTE_WIDTH_RATIO: number = 0.76;
 // 引用块每行的固定行高。12 号字的默认行高由字体度量决定，内容为空时那一行
 // 会塌成 0——锁死它，加载中的占位和加载完的内容才是同一个高度。
@@ -2538,6 +2542,29 @@ export struct MessageBubble {
       // 上一条消息、或者停在自己点之前的那个数上。
       }, (r: ReactionInfo) => `rx_${reactionKeyFrom(r.emoji, r.customEmojiId)}` +
         `_${r.customEmojiPath}_${r.count}_${r.isChosen ? 'y' : 'n'}`);
+      // 末尾的「>」：点开看谁回应了（按表情分组的名单，见 ReactorsMenu）。
+      // 频道里 Telegram 不给查回应人，不挂。
+      if (this.reactorsArrowShown()) {
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(REACTORS_ARROW_ICON_VP).fontWeight(FontWeight.Medium)
+            .fontColor([COLOR_TEXT_SECONDARY]);
+        }
+        // 不垫底色：它不是一个回应，只是「看名单」的入口，和表情胶囊长得一样会被
+        // 读成又一个表情（用户：「箭头有个灰色的底色，能去掉吗」）。热区照旧。
+        .height(23)
+        .borderRadius(12).padding({ left: REACTORS_ARROW_PAD_H, right: REACTORS_ARROW_PAD_H })
+        .margin({ right: 4, top: 4 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .id(this.reactorsAnchorId())
+        .stateStyles({ normal: msgMenuActionNormalStyle, pressed: msgMenuActionPressedStyle })
+        .animation({ duration: this.reactionDuration(120), curve: Curve.EaseOut })
+        .onClick(() => {
+          if (this.gestureClaimed) { return; }
+          this.actions.onShowReactorsList(this.msg.id, this.reactorsAnchorId());
+        });
+      }
     }
     // **Flex 开了 wrap 就按父容器最大宽测量**，只写 maxWidth 挡不住，alignSelf
     // 也挡不住（那只管对齐不管测量——上一版就是这么修的，1.4.0 里用户报仍然
@@ -2585,6 +2612,7 @@ export struct MessageBubble {
     // 否则同一条消息被编辑过之后仍拿着旧的上限。
     const sig: string = this.msg.reactions
       .map((r: ReactionInfo): string => `${r.emoji}|${r.customEmojiId}|${r.count}`).join(',') +
+      `>${this.reactorsArrowShown()}` +
       `#${this.messageTimeText()}|${this.msg.editDate > 0}|${this.msg.isOutgoing}|${this.liveViews}`;
     if (sig === this.rxWidthSig && this.rxWidthCache > 0) {
       return this.rxWidthCache;
@@ -2594,6 +2622,9 @@ export struct MessageBubble {
       // 自定义表情是 15×15 的位图（或同尺寸占位）；unicode 表情是 13fp 的 Text，得测。
       const icon: number = r.customEmojiId !== '' ? CHIP_ICON_VP : this.measureTextVp(r.emoji, 13);
       chips.push(reactionChipWidth(icon, this.measureTextVp(`${r.count}`, 12)));
+    }
+    if (this.reactorsArrowShown()) {
+      chips.push(REACTORS_ARROW_PAD_H * 2 + REACTORS_ARROW_ICON_VP + REACTORS_ARROW_MARGIN_R);
     }
     // 时间戳和反应条同处一行，先把它要占的位扣掉再封顶——不扣的话反应条会
     // 顶满 inlineMaxW，把时间戳挤到气泡外面（见 util/reactionsWidth 的说明）。
@@ -2620,6 +2651,15 @@ export struct MessageBubble {
     } catch (e) {
       return fontSize * Math.max(1, text.length);
     }
+  }
+
+  private reactorsArrowShown(): boolean {
+    return !this.data.isChannel && this.msg.reactions.length > 0;
+  }
+
+  // 「>」胶囊的锚点 id：名单菜单要锚在它旁边弹出。按消息 id 取，同一条消息只有一颗。
+  private reactorsAnchorId(): string {
+    return `reactors_anchor_${this.data.chatId}_${this.msg.id}`;
   }
 
   private reactionImageSource(path: string): string {

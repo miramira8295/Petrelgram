@@ -19,6 +19,8 @@ type Listener = () => void;
 
 const DL_PRIORITY: number = 1;
 const MEMBER_PAGE: number = 30;
+// 成员搜索一次最多拿多少（searchChatMembers 的上限是 200）。搜索结果不分页。
+const MEMBER_SEARCH_LIMIT: number = 200;
 const CONTENT_PAGE: number = 36;
 const GIFT_SCAN_PAGE: number = 60;
 const MAX_GIFT_AUTO_PAGES: number = 6;
@@ -972,10 +974,17 @@ export class ChatProfileStore {
 
   private memberOffset: number = 0;
   private membersPending: boolean = false;
+  // 成员名单的代次。完整加载、重载、搜索每换一次名单就 +1；分页和 getUser 的回包
+  // 都带着发出时的代次，对不上就丢——否则上一次搜索（或完整名单）晚到的人会混进
+  // 这一次的结果里。
+  private membersSeq: number = 0;
+  // 当前的成员搜索词，'' = 显示完整名单。
+  memberQuery: string = '';
   private memberIds: Set<number> = new Set<number>();
   hasMoreMembers: boolean = false;
 
   private loadSupergroupMembers(): void {
+    this.membersSeq++;
     this.memberOffset = 0;
     this.members = [];
     this.memberIds.clear();
@@ -994,6 +1003,7 @@ export class ChatProfileStore {
     // "某人被移出"的推送，只能整份重取；去重集合要一起清，否则新名单会被
     // 当成"已经有了"而整份丢掉。
     if (this.basicGroupId !== 0) {
+      this.membersSeq++;
       this.members = [];
       this.memberIds.clear();
       this.membersState = 'loading';
@@ -1004,7 +1014,8 @@ export class ChatProfileStore {
 
   // Scroll-driven: the profile page calls this near the list's end.
   loadMoreMembers(): void {
-    if (!this.hasMoreMembers || this.membersPending || this.supergroupId === 0) {
+    if (!this.hasMoreMembers || this.membersPending || this.supergroupId === 0 ||
+      this.memberQuery !== '') {
       return;
     }
     this.fetchMembersPage();
@@ -1012,11 +1023,16 @@ export class ChatProfileStore {
 
   private fetchMembersPage(): void {
     this.membersPending = true;
+    const seq: number = this.membersSeq;
     const req: TdRequest = { '@type': 'getSupergroupMembers' };
     req['supergroup_id'] = this.supergroupId;
     req['offset'] = this.memberOffset;
     req['limit'] = MEMBER_PAGE;
     this.client.send(req).then((res: TdObject): void => {
+      if (seq !== this.membersSeq) {
+        this.membersPending = false;
+        return;
+      }
       const raw = (res['members'] as TdObject[] | undefined) ?? [];
       this.memberOffset += raw.length;
       this.hasMoreMembers = raw.length === MEMBER_PAGE;
@@ -1027,6 +1043,9 @@ export class ChatProfileStore {
     }).catch((e: TdError): void => {
       logE(`ChatProfileStore.getSupergroupMembers failed: ${e.message}`);
       this.membersPending = false;
+      if (seq !== this.membersSeq) {
+        return;
+      }
       this.hasMoreMembers = false;
       this.membersState = this.members.length > 0 ? 'ready' : 'error';
       this.notify();
@@ -1043,6 +1062,7 @@ export class ChatProfileStore {
 
     const req: TdRequest = { '@type': 'getBasicGroupFullInfo' };
     req['basic_group_id'] = this.basicGroupId;
+    const seq: number = this.membersSeq;
     this.send(req, 'getBasicGroupFullInfo', (fi: TdObject) => {
       this.description = (fi['description'] as string | undefined) ?? '';
       this.parsePhotoAnimation(fi['photo'] as TdObject | undefined);
@@ -1052,14 +1072,63 @@ export class ChatProfileStore {
       if (members.length > 0) {
         this.subtitle = str('subtitle_members_only', formatMemberCount(members.length));
       }
+      // 名单回来之前用户已经开始搜索：资料照填，名单不能再往搜索结果里灌。
+      if (seq !== this.membersSeq) {
+        this.notify();
+        return;
+      }
       this.membersState = 'ready';
       this.notify();
       this.resolveMembers(members);
     });
   }
 
+  // 成员搜索（名字和用户名都匹配，由服务端做）。'' = 回到完整名单。
+  //
+  // 统一走 searchChatMembers：普通群、超级群、频道都能用，一次最多 200 条，
+  // 不分页——搜索是为了找到某个人，结果多到翻页说明词太宽。
+  searchMembers(query: string): void {
+    const q: string = query.trim();
+    if (q === this.memberQuery) {
+      return;
+    }
+    this.memberQuery = q;
+    if (q === '') {
+      this.reloadMembers();
+      return;
+    }
+    const seq: number = ++this.membersSeq;
+    this.members = [];
+    this.memberIds.clear();
+    this.hasMoreMembers = false;
+    this.membersPending = false;
+    this.membersState = 'loading';
+    this.notify();
+    const req: TdRequest = { '@type': 'searchChatMembers' };
+    req['chat_id'] = this.chatId;
+    req['query'] = q;
+    req['limit'] = MEMBER_SEARCH_LIMIT;
+    this.client.send(req).then((res: TdObject): void => {
+      if (seq !== this.membersSeq) {
+        return;
+      }
+      const raw = (res['members'] as TdObject[] | undefined) ?? [];
+      this.membersState = 'ready';
+      this.notify();
+      this.resolveMembers(raw);
+    }).catch((e: TdError): void => {
+      logE(`ChatProfileStore.searchChatMembers failed: ${e.message}`);
+      if (seq !== this.membersSeq) {
+        return;
+      }
+      this.membersState = 'error';
+      this.notify();
+    });
+  }
+
   // chatMember[] → MemberItem[] via getUser (name/status/avatar) per member.
   private resolveMembers(raw: TdObject[]): void {
+    const seq: number = this.membersSeq;
     for (const m of raw) {
       // 机器人也是 messageSenderUser，跟普通成员一条路；这里落下的只有
       // 匿名管理员/以频道身份入群那种 messageSenderChat。跳过要留痕，
@@ -1080,6 +1149,9 @@ export class ChatProfileStore {
       const req: TdRequest = { '@type': 'getUser' };
       req['user_id'] = uid;
       this.send(req, 'getUser', (user: TdObject) => {
+        if (seq !== this.membersSeq) {
+          return;
+        }
         const first = (user['first_name'] as string | undefined) ?? '';
         const last = (user['last_name'] as string | undefined) ?? '';
         const name = `${first} ${last}`.trim();
@@ -1107,6 +1179,9 @@ export class ChatProfileStore {
         const small = photo !== undefined ? (photo['small'] as TdObject | undefined) : undefined;
         this.download(small !== undefined ? ((small['id'] as number | undefined) ?? 0) : 0,
           (p: string) => {
+            if (seq !== this.membersSeq) {
+              return;
+            }
             this.members = this.members.map((x: MemberItem): MemberItem =>
               x.userId === uid ? {
                 userId: x.userId, name: x.name, initials: x.initials, avatarPath: p,

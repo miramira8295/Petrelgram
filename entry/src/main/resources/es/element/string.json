@@ -1105,6 +1105,10 @@
       "value": "🎮 Juego"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Regalo de Telegram"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "No se encontraron usuarios"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "Buscar miembros"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "Reproducir sin sonido"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "Límite de tamaño de reproducción automática"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "Los vídeos más grandes no se reproducen solos; tócalos para verlos"
     },
     {
       "name": "settings_media",

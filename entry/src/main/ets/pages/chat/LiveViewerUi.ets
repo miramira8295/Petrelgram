@@ -1,4 +1,6 @@
 import { AWAKE_OWNER_LIVE, requestScreenAwake, screenAwakeApplyFailed } from '../../util/screenAwake';
+import { SYSTEM_BARS_OWNER_LIVE } from '../../util/systemBarsHidden';
+import { applySystemBarsHiddenOn } from '../../util/systemBarsWindow';
 import { common } from '@kit.AbilityKit';
 import { promptAction, window } from '@kit.ArkUI';
 import { logE } from '../../util/log';
@@ -90,7 +92,6 @@ export function setLiveStreamFullscreen(
   const requestSeq: number = ++liveFullscreenRequestSeq;
   setOrientationOverride(fullscreen);
   const orientation: window.Orientation = liveFullscreenOrientation(fullscreen, videoAspectRatio);
-  const systemBars: Array<'status' | 'navigation'> = fullscreen ? [] : ['status', 'navigation'];
   // Window operations are serialized. A stale operation may already be in the
   // platform queue, but the newest target always runs after it and restores a
   // coherent orientation/system-bar state.
@@ -103,7 +104,9 @@ export function setLiveStreamFullscreen(
         // 竖视频锁竖屏时不开；方形/尺寸未知跟随传感器，可能转成横屏，照开。
         applyLandscapeMultiWindow(mainWindow, LANDSCAPE_OWNER_LIVE,
           fullscreen && orientation !== window.Orientation.AUTO_ROTATION_PORTRAIT);
-        return mainWindow.setWindowSystemBarEnable(systemBars);
+        // 系统栏走仲裁（util/systemBarsHidden）：媒体查看器也会藏/放系统栏，
+        // 各写各的会互相掐。
+        return applySystemBarsHiddenOn(mainWindow, SYSTEM_BARS_OWNER_LIVE, fullscreen);
       });
     });
   }).catch((caught: Error): void => {

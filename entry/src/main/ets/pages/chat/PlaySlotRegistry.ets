@@ -88,6 +88,10 @@ export class PlaySlotRegistry {
     this.releaseIfGone();
   }
 
+  isPinned(messageId: number, albumIndex: number): boolean {
+    return this.pinned !== '' && this.pinned === slotKey(messageId, albumIndex);
+  }
+
   pin(messageId: number, albumIndex: number, now: number): void {
     this.pinned = slotKey(messageId, albumIndex);
     this.pinnedAt = now;

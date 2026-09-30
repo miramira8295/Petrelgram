@@ -1,4 +1,6 @@
 import { common } from '@kit.AbilityKit';
+import { viewerSystemBarsOwner } from '../../util/systemBarsHidden';
+import { setSystemBarsHidden } from '../../util/systemBarsWindow';
 import { MEDIA_PREFETCH_PRIORITY, MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
 import { overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
@@ -241,6 +243,15 @@ export struct MediaViewerOverlay {
   private memberIndex: Map<number, number> = new Map<number, number>();
   private messageIndex: Map<number, number> = new Map<number, number>();
   private swiperCtrl: SwiperController = new SwiperController();
+  // 系统栏跟着控制栏走：控制栏收起（沉浸）就把状态栏和导航条一起藏掉，显示控制栏
+  // 时放回来，关掉查看器一律恢复（util/systemBarsHidden 仲裁，直播全屏共用同一个
+  // 开关）。
+  private readonly barsOwner: string = viewerSystemBarsOwner();
+
+  private syncSystemBars(): void {
+    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner,
+      !this.chromeVisible);
+  }
 
   aboutToAppear(): void {
     this.continuousHop = AppStorage.get<boolean>(KEY_VIEWER_CONTINUOUS_HOP) ?? true;
@@ -249,10 +260,12 @@ export struct MediaViewerOverlay {
     this.initialViewerMsgId = this.viewerMsgId;
     this.prefetchNeighbours(this.pageIdx);
     this.noteViewedVideo();
+    this.syncSystemBars();
   }
 
   // Leaving the viewer in landscape would strand the chat page sideways.
   aboutToDisappear(): void {
+    setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
     if (this.videoLandscape) {
       setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false);
     }
@@ -346,6 +359,7 @@ export struct MediaViewerOverlay {
     this.onVideoLandscapeChange(landscape);
     this.chromeVisible = true;
     this.onChromeVisibleChange(true);
+    this.syncSystemBars();
     setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, landscape);
   }
 
@@ -353,6 +367,7 @@ export struct MediaViewerOverlay {
     const next: boolean = !this.chromeVisible;
     this.chromeVisible = next;
     this.onChromeVisibleChange(next);
+    this.syncSystemBars();
   }
 
   private zoomed(): boolean {

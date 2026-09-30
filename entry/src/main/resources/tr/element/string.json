@@ -1105,6 +1105,10 @@
       "value": "🎮 Oyun"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Telegram hediyesi"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "İlgili kullanıcı bulunamadı"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "Üye ara"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "Sessiz oynat"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "Otomatik oynatma boyut sınırı"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "Daha büyük videolar kendiliğinden oynamaz; izlemek için dokunun"
     },
     {
       "name": "settings_media",

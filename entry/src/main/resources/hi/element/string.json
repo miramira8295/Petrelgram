@@ -1105,6 +1105,10 @@
       "value": "🎮 गेम"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Telegram उपहार"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "कोई संबंधित उपयोगकर्ता नहीं मिला"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "सदस्य खोजें"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "म्यूट प्ले"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "ऑटोप्ले आकार सीमा"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "बड़े वीडियो अपने-आप नहीं चलेंगे; देखने के लिए टैप करें"
     },
     {
       "name": "settings_media",

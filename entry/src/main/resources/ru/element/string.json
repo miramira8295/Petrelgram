@@ -1105,6 +1105,10 @@
       "value": "🎮 Игра"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Подарок Telegram"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "Пользователи не найдены"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "Поиск участников"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "Воспроизведение без звука"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "Лимит размера автовоспроизведения"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "Видео больше не запускаются сами; нажмите, чтобы посмотреть"
     },
     {
       "name": "settings_media",

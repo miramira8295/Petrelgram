@@ -52,6 +52,9 @@ export interface PlaySlotHost {
   // JumpFlashStateHost 的 effectDuration 先例（它同样把这三个 @Param 挡在
   // 控制器外面）。这一条同时满足不变量 9「控制器不缓存 @Param」。
   competeEnabled: () => boolean;
+  // 这条视频的大小在不在「自动播放大小上限」之内（#226）。超了就不参加竞选，
+  // 点开照常看。只读查询，页面拿消息的 videoFileSize 对设置项算。
+  sizeAllowed: (messageId: number) => boolean;
   // **唯一的跨域写通道**：写页面的 @Local playSlotStartMs 与 @Local playSlotKey。
   //
   // 做成**一个动作**而不是两个 setter，是为了把"起播位置必须在 playSlotKey
@@ -77,6 +80,7 @@ export class PlaySlotDriver {
     viewerMsgId: (): number => 0,
     pageVisible: (): boolean => false,
     competeEnabled: (): boolean => false,
+    sizeAllowed: (_messageId: number): boolean => true,
     applySlot: (_key: string, _startMs: number): void => {}
   };
 
@@ -105,6 +109,12 @@ export class PlaySlotDriver {
   // 两个播放器互抢下载分片。
   reportMedia(messageId: number, albumIndex: number, ratio: number, centerY: number): void {
     if (this.host.viewerMsgId() !== 0 || !this.host.pageVisible() || !this.host.competeEnabled()) {
+      return;
+    }
+    // 超过自动播放大小上限的不进候选表（#226）。例外是刚从查看器退回、被 pin
+    // 住的那条：用户主动看过，回到列表要接着播，不因为大小被打断。
+    if (!this.host.sizeAllowed(messageId) && !this.playSlots.isPinned(messageId, albumIndex)) {
+      this.playSlots.drop(messageId, albumIndex);
       return;
     }
     const now: number = Date.now();

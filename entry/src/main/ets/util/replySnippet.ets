@@ -20,6 +20,59 @@ export interface ReplySnippetInput {
   placeholderLabel: string;
   contentType: string;
   paidMediaLocked: boolean;
+  // 以下都可选：有名字就先说名字（#211 第 1 条，见 typedSnippet）。
+  fileName?: string;        // 文件/音乐的原始文件名（MessageEntry.videoFileName）
+  audioTitle?: string;
+  audioPerformer?: string;
+  isAnimation?: boolean;    // GIF 走视频管线，contentType 也是 'video'
+  pollQuestion?: string;
+  contactName?: string;
+  venueTitle?: string;
+  gameTitle?: string;
+}
+
+// 按内容类型给说法，和首页会话列表的预览对齐（同一条消息两处说同一句话）。
+// 没有对应类型时返回空串，由调用方落到通用兜底。
+//
+// 【为什么要有这一段】原来第 3 档只认图片、视频、付费媒体、语音，文件、音乐、
+// 投票、位置……一律落到「媒体消息」——用户反馈（#211 第 1 条）「气泡内都叫媒体
+// 消息」，引用一份文件看不出是文件。
+function typedSnippet(m: ReplySnippetInput): string {
+  const fileName: string = (m.fileName ?? '').trim();
+  if (m.contentType === 'file') {
+    return fileName !== '' ? fileName : str('preview_file');
+  }
+  if (m.contentType === 'audio') {
+    const title: string = (m.audioTitle ?? '').trim();
+    const performer: string = (m.audioPerformer ?? '').trim();
+    if (title !== '') {
+      return performer !== '' ? `${performer} – ${title}` : title;
+    }
+    return fileName !== '' ? fileName : str('preview_music');
+  }
+  if (m.contentType === 'video' && (m.isAnimation ?? false)) {
+    return str('preview_gif');
+  }
+  if (m.contentType === 'videoNote') {
+    return str('preview_video_note');
+  }
+  if (m.contentType === 'poll') {
+    const q: string = (m.pollQuestion ?? '').trim();
+    return q !== '' ? `📊 ${q}` : str('preview_poll');
+  }
+  if (m.contentType === 'contact') {
+    const name: string = (m.contactName ?? '').trim();
+    return name !== '' ? `👤 ${name}` : str('preview_contact');
+  }
+  if (m.contentType === 'venue' || m.contentType === 'location') {
+    const venue: string = (m.venueTitle ?? '').trim();
+    return venue !== '' ? `📍 ${venue}` : str('preview_location');
+  }
+  if (m.contentType === 'game') {
+    const game: string = (m.gameTitle ?? '').trim();
+    return game !== '' ? `🎮 ${game}` : str('preview_game');
+  }
+  return '';
 }
 
 export function replySnippetOf(m: ReplySnippetInput): string {
@@ -42,6 +95,10 @@ export function replySnippetOf(m: ReplySnippetInput): string {
   }
   if (m.placeholderLabel.trim() !== '') {
     return m.placeholderLabel;
+  }
+  const typed: string = typedSnippet(m);
+  if (typed !== '') {
+    return typed;
   }
   if (m.contentType === 'photo') {
     return str('storage_photo');

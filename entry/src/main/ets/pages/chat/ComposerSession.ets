@@ -192,7 +192,11 @@ export class ComposerSession {
   replySnippet(m: MessageEntry): string {
     return replySnippetOf({
       text: m.text, placeholderLabel: m.placeholderLabel,
-      contentType: m.contentType, paidMediaLocked: m.paidMediaLocked
+      contentType: m.contentType, paidMediaLocked: m.paidMediaLocked,
+      fileName: m.videoFileName, audioTitle: m.audioTitle, audioPerformer: m.audioPerformer,
+      isAnimation: m.isAnimation, pollQuestion: m.pollQuestion,
+      contactName: `${m.contactFirstName} ${m.contactLastName}`,
+      venueTitle: m.venueTitle, gameTitle: m.gameTitle
     });
   }
 

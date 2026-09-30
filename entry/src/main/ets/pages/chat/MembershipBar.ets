@@ -21,6 +21,10 @@ import {
   BOTTOM_PILL_GAP, BOTTOM_PILL_HEIGHT, BOTTOM_PILL_PADDING, bottomPillRadius
 } from '../../util/bottomPill';
 
+// 「加入并添加到文件夹」那颗胶囊的锚点 id，每个实例一个：文件夹选单要锚在它
+// 上面弹出，而分栏时可能同时挂着两个会话页。
+let nextJoinFolderAnchor: number = 1;
+
 // 没有发言权时，输入区的位置放什么。
 //
 // 四种形态各一副样子：正在确认身份（转圈）、被挡在外面（一句说明）、只读频道
@@ -57,8 +61,10 @@ export struct MembershipBar {
   // !== 恒不相等会让本层白刷；@Event 不具备观测能力，正好复现迁移前普通字段的
   // 行为。空实现默认值让组件能脱离父组件独立预览。
   @Event onJoin: () => void = (): void => {};
-  // 「加入并添加到文件夹」：选文件夹由页面接线处负责，这里只报点击。
-  @Event onJoinToFolder: () => void = (): void => {};
+  // 「加入并添加到文件夹」：选文件夹由页面接线处负责，这里只报点击，并交出
+  // 这颗胶囊的 id 给选单做锚点（见 JoinFolderMenu）。
+  @Event onJoinToFolder: (anchorId: string) => void = (): void => {};
+  private readonly joinFolderAnchorId: string = `join_folder_anchor_${nextJoinFolderAnchor++}`;
   @Event onStartBot: () => void = (): void => {};
   @Event onToggleMute: () => void = (): void => {};
 
@@ -137,7 +143,7 @@ export struct MembershipBar {
   // 加入中回到单颗胶囊的转圈（surface() 的最后一支），不分是哪颗点的。
   // 两颗都按内容收紧；长语言放不下时一起收缩、文字省略，不换行。
   @Builder
-  private joinPill(label: Resource, onTap: () => void) {
+  private joinPill(label: Resource, anchorId: string, onTap: () => void) {
     Row() {
       Text(label)
         .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium)
@@ -148,6 +154,7 @@ export struct MembershipBar {
     .flexShrink(1)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
+    .id(anchorId)
     .onClick((): void => { onTap(); });
   }
 
@@ -155,8 +162,10 @@ export struct MembershipBar {
     Column() {
       if (this.state === MEMBERSHIP_JOINABLE && !this.joining) {
         Row({ space: BOTTOM_PILL_GAP }) {
-          this.joinPill($r('app.string.cp_join'), (): void => { this.onJoin(); });
-          this.joinPill($r('app.string.cp_join_to_folder'), (): void => { this.onJoinToFolder(); });
+          this.joinPill($r('app.string.cp_join'), `${this.joinFolderAnchorId}_plain`,
+            (): void => { this.onJoin(); });
+          this.joinPill($r('app.string.cp_join_to_folder'), this.joinFolderAnchorId,
+            (): void => { this.onJoinToFolder(this.joinFolderAnchorId); });
         }
         .width('100%')
         .constraintSize({ minHeight: 48 })

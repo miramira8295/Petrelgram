@@ -68,7 +68,7 @@ import { cacheMessagesInBackground } from '../../services/chatBackgroundCache';
 import { selectionHasCacheableVideo } from '../../util/backgroundCacheEligibility';
 import { PlaySlotDriver } from './PlaySlotDriver';
 import { VideoHeadPrefetcher, VideoRef } from '../../services/VideoHeadPrefetcher';
-import { shouldCompete, slotKey } from './playSlot';
+import { autoplaySizeAllowed, shouldCompete, slotKey } from './playSlot';
 import { MediaViewerOverlay, VIEWER_CHROME_ON_OPEN } from './MediaViewerOverlay';
 import { openSelectTextOverlay, selectTextPayload } from './SelectTextOverlay';
 import { ChatOverlayHost } from './ChatOverlayHost';
@@ -172,6 +172,7 @@ import {
   RowFadeTransition, initialRowRevealDelay, rowFadeAnimationActive, rowFadeTransition
 } from '../../util/rowFadeGate';
 import {
+  KEY_AUTOPLAY_MAX_MB,
   KEY_POWER_EFFECT_MENU,
   KEY_POWER_EFFECT_REPLY,
   KEY_CURRENT_NETWORK_TYPE,
@@ -216,7 +217,9 @@ import { VoiceRecorder } from '../../services/VoiceRecorder';
 import { MediaSaveState } from './MediaSaveState';
 import { MembershipSession } from './MembershipSession';
 import { ScrollAnchorController } from './ScrollAnchorController';
-import { pickChatFolder, setInFolder, showChatFolderPicker } from '../../store/ChatActions';
+import { leaveChatFully, setInFolder, showChatFolderPicker } from '../../store/ChatActions';
+import { openJoinFolderMenu } from './JoinFolderMenu';
+import { openReactorsMenu } from './ReactorsMenu';
 import { liveLocation, LiveLocationState } from '../../services/LiveLocationService';
 import { plural, str } from '../../util/strings';
 import {
@@ -1539,6 +1542,10 @@ export struct ChatPage {
         onEditMsg: (messageId: number): void => { this.composer.startEdit(messageId); },
         onShowReactors: (messageId: number, emoji: string): void => {
           this.overlayState.showReactors(messageId, emoji);
+        },
+        onShowReactorsList: (messageId: number, anchorId: string): void => {
+          openReactorsMenu(this.getUIContext(), this.chatId, messageId, anchorId,
+            this.findMsg(messageId)?.reactions ?? []);
         },
         onTranslateMsg: (messageId: number): void => {
           this.translateMessage(messageId);
@@ -3158,6 +3165,8 @@ export struct ChatPage {
       powerSaving: (): boolean => powerSavingActive()
     });
     this.playSlot.bind({
+      sizeAllowed: (messageId: number): boolean => autoplaySizeAllowed(
+        this.findMsg(messageId)?.videoFileSize ?? 0, AppStorage.get<number>(KEY_AUTOPLAY_MAX_MB) ?? 0),
       viewerMsgId: (): number => this.viewerMsgId,
       pageVisible: (): boolean => this.pageVisible,
       competeEnabled: (): boolean => this.playSlotsEnabled(),
@@ -3415,11 +3424,19 @@ export struct ChatPage {
       (messageId: number): void => { this.jumpToMessageId(messageId); }));
     // ForwardSheet subscribes to the chat list itself while it is open, so this
     // no longer has to push updates into it.
+    // 主列表订阅**不能删**：返回键上的未读徽标是「其他会话的未读总数」，要靠主列表
+    // 里任何一个会话的变化来刷新。
     this.subscriptions.set('chat', getChatStore().subscribe(() => {
       this.header.refresh();
       this.syncActionBar();
     }, 'main'));
-    this.syncActionBar();
+    // 另外盯本会话：归档里、或还不在任何列表里的会话，上面那条收不到它自己的更新
+    // ——陌生人私聊的操作条（updateChatActionBar 在进会话之后才补发）因此出不来，
+    // 标题栏也不刷新。见 ChatStore.subscribeChat。
+    this.subscriptions.set('chatSelf', getChatStore().subscribeChat(this.chatId, () => {
+      this.header.refresh();
+      this.syncActionBar();
+    }));
     // Chat backgrounds have their own TDLib update and can change without a
     // title/message update. Listen directly so setting or clearing one is
     // visible while the conversation is open.
@@ -4572,7 +4589,7 @@ export struct ChatPage {
   // 顺序是原有的、有意为之**（见下面那段注释），合并时一并保留，没有拉平成一段。
   private disposeConversationSubscriptions(): void {
     this.subscriptions.clearInOrder([
-      'messages', 'subtitle', 'chat', 'liveLocation', 'translatable', 'background'
+      'messages', 'subtitle', 'chat', 'chatSelf', 'liveLocation', 'translatable', 'background'
     ]);
     if (this.bgStore !== null) {
       this.bgStore.close();
@@ -6642,9 +6659,7 @@ export struct ChatPage {
         value: $r('app.string.cp_leave'),
         fontColor: '#FF3B30',
         action: (): void => {
-          const req: TdRequest = { '@type': 'leaveChat' };
-          req['chat_id'] = this.chatId;
-          getTdClient().send(req).then(() => {
+          leaveChatFully(this.chatId).then(() => {
             this.goBack();
           }).catch((e: TdError) => {
             logE(`ChatPage.leaveChat failed: ${e.message}`);
@@ -8035,8 +8050,10 @@ export struct ChatPage {
       secretOutbound: this.header.secretOutbound,
       bottomGap: this.composerBottomGap(),
       onJoin: (): void => { this.joinCurrentChat(); },
-      onJoinToFolder: (): void => {
-        pickChatFolder(this.getUIContext(), (folderId: number): void => { this.joinCurrentChat(folderId); });
+      onJoinToFolder: (anchorId: string): void => {
+        openJoinFolderMenu(this.getUIContext(), anchorId, (folderId: number): void => {
+          this.joinCurrentChat(folderId);
+        });
       },
       onToggleMute: (): void => { this.header.toggleMute(); },
       onStartBot: (): void => { this.sendBotCommand(BOT_START_COMMAND); }
@@ -8703,8 +8720,11 @@ export struct ChatPage {
   }
 
   private chatTitleBarContent(): TitleBarContentOptions {
+    // 操作条要单独算进来：topCard.shouldShow() 只看置顶和直播（它是那两样的控制器），
+    // 陌生人私聊恰好两样都没有，槽高被算成 0，操作条的数据到了也没地方画
+    // （2026-09-29 实测：页面拿到 chatActionBarReportAddBlock，顶上什么都没有）。
     const bannerHeight: number =
-      this.initialMessageTransitionSettled && this.topCard.shouldShow()
+      this.initialMessageTransitionSettled && (this.topCard.shouldShow() || this.actionBarKind !== '')
         ? this.topBannerHeight() : 0;
     // 槽里现在装两样：话题横条（在上）+ 置顶/直播/操作条（在下）。缓存键必须用
     // **两者之和**，否则话题出现或消失时槽不会重新量高，横条会被裁掉或留下空白。

@@ -1105,6 +1105,10 @@
       "value": "🎮 Гра"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Подарунок Telegram"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "Користувачів не знайдено"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "Пошук учасників"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "Відтворення без звуку"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "Ліміт розміру автовідтворення"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "Більші відео не запускаються самі; торкніться, щоб переглянути"
     },
     {
       "name": "settings_media",

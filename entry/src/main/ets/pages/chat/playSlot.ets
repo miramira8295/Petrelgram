@@ -53,6 +53,16 @@ export function shouldCompete(autoplayVideoEnabled: boolean, powerSaving: boolea
   return autoplayVideoEnabled && !powerSaving && !reduceAnimations;
 }
 
+// 「自动播放大小上限」（#226：只想自动播放小于多少 MB 的视频）。
+// maxMb = 0 表示不限；fileSize = 0 是大小未知，放行——维持加这个设置之前的行为。
+// 自动播放是边下边播，大视频自动播起来主要是在烧流量，这就是这道闸的用处。
+export function autoplaySizeAllowed(fileSize: number, maxMb: number): boolean {
+  if (maxMb <= 0 || fileSize <= 0) {
+    return true;
+  }
+  return fileSize <= maxMb * 1024 * 1024;
+}
+
 function find(candidates: PlaySlotCandidate[], key: string): PlaySlotCandidate | null {
   if (key === '') {
     return null;

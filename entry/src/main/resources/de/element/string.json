@@ -1105,6 +1105,10 @@
       "value": "🎮 Spiel"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Telegram-Geschenk"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "Keine passenden Nutzer gefunden"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "Mitglieder suchen"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "Stumm abspielen"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "Größenlimit für Autoplay"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "Größere Videos starten nicht automatisch; zum Ansehen antippen"
     },
     {
       "name": "settings_media",

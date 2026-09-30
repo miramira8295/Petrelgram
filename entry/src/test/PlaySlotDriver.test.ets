@@ -31,11 +31,13 @@ class FakeHost implements PlaySlotHost {
   viewerId: number = 0;
   visible: boolean = true;
   compete: boolean = true;
+  sizeOk: boolean = true;
   applied: AppliedSlot[] = [];
 
   viewerMsgId: () => number = (): number => this.viewerId;
   pageVisible: () => boolean = (): boolean => this.visible;
   competeEnabled: () => boolean = (): boolean => this.compete;
+  sizeAllowed: (messageId: number) => boolean = (_id: number): boolean => this.sizeOk;
   applySlot: (key: string, startMs: number) => void = (key: string, startMs: number): void => {
     const slot: AppliedSlot = new AppliedSlot();
     slot.key = key;
@@ -94,6 +96,39 @@ export default function playSlotDriverTest() {
 
     // 【3】三重闸门逐个验。任何一项被"简化"掉，查看器打开期间气泡播放器就还
     // 在跑，同一个文件两个播放器互抢下载分片。
+    // #226：超过「自动播放大小上限」的视频不参加竞选。同样的上报 + pin 顺序，
+    // 大小合格时会当选（见【2】），超限时候选表里根本没有它。
+    it('超过自动播放大小上限的视频不当选', 0, () => {
+      const host: FakeHost = new FakeHost();
+      host.sizeOk = false;
+      const d: PlaySlotDriver = driverOn(host);
+
+      d.setViewportCenter(500);
+      d.reportMedia(8, -1, 0.95, 500);
+      d.handoffFromViewer(8, -1, 0);
+      d.armSettle();
+
+      expect(host.applied.length).assertEqual(0);
+      d.dispose();
+    });
+
+    // 用户在查看器里主动看过、退回列表的那条要接着播，不因为大小被打断。
+    // 真实顺序是先 pin（closeViewer）、气泡随后才重新上报。
+    it('从查看器退回来的那条即使超限也接着播', 0, () => {
+      const host: FakeHost = new FakeHost();
+      host.sizeOk = false;
+      const d: PlaySlotDriver = driverOn(host);
+
+      d.setViewportCenter(500);
+      d.handoffFromViewer(9, -1, 3000);
+      d.reportMedia(9, -1, 0.95, 500);
+      d.armSettle();
+
+      expect(host.applied.length).assertEqual(1);
+      expect(host.applied[0].key).assertEqual(slotKey(9, -1));
+      d.dispose();
+    });
+
     it('查看器开着时不接受气泡上报', 0, () => {
       const host: FakeHost = new FakeHost();
       const d: PlaySlotDriver = driverOn(host);

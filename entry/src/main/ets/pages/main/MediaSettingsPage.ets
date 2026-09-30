@@ -1,14 +1,15 @@
 import { router } from '@kit.ArkUI';
 import { HdsSubDestination } from '../common/HdsSubDestination';
 import {
-  setBoolean,
+  setBoolean, setNumber,
   KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_AUTOPLAY_GIF, KEY_AUTOPLAY_MUTED,
+  KEY_AUTOPLAY_MAX_MB, AUTOPLAY_MAX_MB_OPTIONS,
   KEY_BG_PLAY_MUSIC, KEY_BG_PLAY_VOICE, KEY_BG_PLAY_VIDEO, KEY_BG_PLAY_LIVE,
   KEY_VIDEO_ENGINE_AVPLAYER
 } from '../../store/AppSettings';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
-  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+  COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, accentSoft
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
@@ -35,6 +36,7 @@ export struct MediaSettingsPage {
   @StorageProp(KEY_POWER_AUTOPLAY_VIDEO) autoplayVideo: boolean = true;
   @StorageProp(KEY_POWER_AUTOPLAY_GIF) autoplayGif: boolean = true;
   @StorageProp(KEY_AUTOPLAY_MUTED) autoplayMuted: boolean = true;
+  @StorageProp(KEY_AUTOPLAY_MAX_MB) autoplayMaxMb: number = 0;
   @StorageProp(KEY_BG_PLAY_MUSIC) bgMusic: boolean = true;
   @StorageProp(KEY_BG_PLAY_VOICE) bgVoice: boolean = true;
   @StorageProp(KEY_BG_PLAY_VIDEO) bgVideo: boolean = false;
@@ -65,6 +67,30 @@ export struct MediaSettingsPage {
     }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 });
   }
 
+  // 自动播放的视频大小上限（#226）：一排档位胶囊，选中的那档染强调色。
+  @Builder
+  autoplaySizeRow() {
+    Column({ space: 8 }) {
+      Column({ space: 2 }) {
+        Text(str('ms_autoplay_limit')).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
+        Text(str('ms_autoplay_limit_sub')).fontSize(11).fontColor(COLOR_TEXT_SECONDARY).maxLines(2);
+      }.width('100%').alignItems(HorizontalAlign.Start);
+      Row({ space: 6 }) {
+        ForEach(AUTOPLAY_MAX_MB_OPTIONS, (mb: number): void => {
+          Text(mb === 0 ? str('ms_cache_unlimited') : str('size_mb', `${mb}`))
+            .fontSize(13)
+            .fontColor(this.autoplayMaxMb === mb ? COLOR_PRIMARY : COLOR_TEXT_PRIMARY)
+            .fontWeight(this.autoplayMaxMb === mb ? FontWeight.Medium : FontWeight.Normal)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1).height(32)
+            .borderRadius(16)
+            .backgroundColor(this.autoplayMaxMb === mb ? accentSoft() : $r('app.color.reaction_chip'))
+            .onClick((): void => { setNumber(KEY_AUTOPLAY_MAX_MB, mb); });
+        }, (mb: number): string => `${mb}`);
+      }.width('100%');
+    }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 12 });
+  }
+
   @Builder
   autoplayCard() {
     Column() {
@@ -74,6 +100,8 @@ export struct MediaSettingsPage {
         Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
         this.toggleRow(str('ms_autoplay_muted'), '', this.autoplayMuted,
           (next: boolean): void => setBoolean(KEY_AUTOPLAY_MUTED, next));
+        Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
+        this.autoplaySizeRow();
       }
       Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
       this.toggleRow(str('power_autoplay_gif'), '', this.autoplayGif,

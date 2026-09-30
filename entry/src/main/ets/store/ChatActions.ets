@@ -233,27 +233,6 @@ export function showChatFolderPicker(uiContext: UIContext, chatId: number): void
   });
 }
 
-// 「加入并添加到文件夹」：只选文件夹、不切换。会话此时还没加入，谈不上已在
-// 哪个文件夹里，所以不画 ✓；加入与写文件夹由调用方在选定之后串起来做。
-// 没有文件夹就直接提示，不走加入——否则用户点的是"加入并添加"，结果只加入了。
-export function pickChatFolder(uiContext: UIContext, onPick: (folderId: number) => void): void {
-  const folders = getFolderStore().getFolders();
-  if (folders.length === 0) {
-    uiContext.getPromptAction().showToast({
-      message: str('cl_no_folders'), duration: 1600
-    });
-    return;
-  }
-  uiContext.showActionSheet({
-    title: str('cp_join_to_folder'),
-    message: '',
-    sheets: folders.map((folder): SheetInfo => ({
-      title: folder.title,
-      action: (): void => { onPick(folder.id); }
-    }))
-  });
-}
-
 // revoke: 为所有人清空，而不是只为自己清空。两种做法各有前置条件，见
 // ClearHistoryOptions —— 调用方必须先按 chat 的能力位挑，不能硬写。
 export function clearHistory(chatId: number, revoke: boolean): void {
@@ -294,6 +273,39 @@ export function blockAndDeleteChat(chatId: number): void {
   });
 }
 
+// 退出群组/频道，并让它从所有会话列表里消失。
+//
+// 【为什么不只是 leaveChat】超级群和频道退出后，TDLib 会因为「不再是成员」自己
+// 把会话从各个列表里摘掉；**普通群（basic group）不会**——退出后会话照旧留着、
+// 历史还能看，于是「所有」和各个文件夹里一直挂着它（用户实测：会话列表长按退出
+// 群组，文件夹里还在）。官方客户端的「退出群组」对普通群其实是两步：leaveChat
+// 之后再 deleteChatHistory(remove_from_chat_list)。这里照做。
+//
+// 第二步失败只记日志：人已经退出去了，不能报「退出失败」；残留的会话用户还能
+// 手动删。类型用 TDLib 返回的 chat.type 判，调用方不用自己传。
+export async function leaveChatFully(chatId: number): Promise<void> {
+  const client = getTdClient();
+  const get: TdRequest = { '@type': 'getChat' };
+  get['chat_id'] = chatId;
+  const chat: TdObject = await client.send(get);
+  const leave: TdRequest = { '@type': 'leaveChat' };
+  leave['chat_id'] = chatId;
+  await client.send(leave);
+  const type = chat['type'] as TdObject | undefined;
+  if (type?.['@type'] !== 'chatTypeBasicGroup') {
+    return;
+  }
+  const remove: TdRequest = { '@type': 'deleteChatHistory' };
+  remove['chat_id'] = chatId;
+  remove['remove_from_chat_list'] = true;
+  remove['revoke'] = false;
+  try {
+    await client.send(remove);
+  } catch (e) {
+    logE(`ChatActions.leaveChatFully remove failed: ${(e as TdError).message}`);
+  }
+}
+
 // Groups/channels are left; private and secret chats are deleted from the list.
 // revoke 由会话的能力位决定，不能硬写 false：活跃密聊在 TDLib 里是
 // {can_be_deleted_only_for_self:false, can_be_deleted_for_all_users:true}
@@ -304,11 +316,7 @@ export function leaveOrDeleteChat(
   canDeleteOnlyForSelf: boolean, canDeleteForAllUsers: boolean
 ): void {
   if (kind === 'basicGroup' || kind === 'supergroup' || kind === 'channel') {
-    withChat(chatId, 'leaveChat', (): Promise<TdObject> => {
-      const req: TdRequest = { '@type': 'leaveChat' };
-      req['chat_id'] = chatId;
-      return getTdClient().send(req);
-    });
+    leaveChatFully(chatId).catch((e: TdError): void => { fail('leaveChat', e); });
     return;
   }
   withChat(chatId, 'deleteChat', (): Promise<TdObject> => {

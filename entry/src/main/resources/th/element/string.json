@@ -1105,6 +1105,10 @@
       "value": "🎮 เกม"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 ของขวัญ Telegram"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "ไม่พบผู้ใช้ที่เกี่ยวข้อง"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "ค้นหาสมาชิก"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "เล่นแบบปิดเสียง"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "ขนาดสูงสุดสำหรับเล่นอัตโนมัติ"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "วิดีโอที่ใหญ่กว่านี้จะไม่เล่นเอง แตะเพื่อดูได้ตามปกติ"
     },
     {
       "name": "settings_media",

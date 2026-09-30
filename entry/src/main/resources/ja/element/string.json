@@ -1105,6 +1105,10 @@
       "value": "🎮 ゲーム"
     },
     {
+      "name": "preview_gif",
+      "value": "GIF"
+    },
+    {
       "name": "preview_gift",
       "value": "🎁 Telegram ギフト"
     },
@@ -4187,6 +4191,10 @@
     {
       "name": "ct_no_results",
       "value": "該当するユーザーが見つかりません"
+    },
+    {
+      "name": "cpp_search_members",
+      "value": "メンバーを検索"
     },
     {
       "name": "ct_no_results_sub",
@@ -10967,6 +10975,14 @@
     {
       "name": "ms_autoplay_muted",
       "value": "ミュート再生"
+    },
+    {
+      "name": "ms_autoplay_limit",
+      "value": "自動再生のサイズ上限"
+    },
+    {
+      "name": "ms_autoplay_limit_sub",
+      "value": "これより大きい動画は自動再生されません。タップすれば通常どおり再生できます"
     },
     {
       "name": "settings_media",

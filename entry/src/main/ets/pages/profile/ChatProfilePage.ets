@@ -1,4 +1,5 @@
 import { pageMarginVp } from '../../util/pageMargin';
+import { MemberSearchField } from './MemberSearchField';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -55,7 +56,7 @@ import {
   KEY_APP_BG_ON, KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { AppBackdrop } from '../common/AppBackdrop';
-import { MUTE_LONG, setMute } from '../../store/ChatActions';
+import { MUTE_LONG, leaveChatFully, setMute } from '../../store/ChatActions';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { CHAT_DEST_NAME, logChatNavFailure, navigateToChat } from '../../util/chatNav';
@@ -439,9 +440,7 @@ export struct ChatProfilePage {
       ]
     }).then((result): void => {
       if (result.index !== 1) { return; }
-      const req: TdRequest = { '@type': 'leaveChat' };
-      req['chat_id'] = this.chatId;
-      getTdClient().send(req).then((): void => {
+      leaveChatFully(this.chatId).then((): void => {
         promptAction.showToast({ message: $r('app.string.cpp_left'), duration: 1500 });
         this.goBack();
       }).catch((error: TdError): void => {
@@ -1579,6 +1578,16 @@ export struct ChatProfilePage {
   @Builder
   membersItems() {
     ListItemGroup() {
+      // 成员搜索（名字、用户名都匹配，服务端做；见 ChatProfileStore.searchMembers）。
+      // 看不到名单（频道普通订阅者）时不挂：搜也搜不到。
+      if (this.membersState !== 'restricted') {
+        ListItem() {
+          MemberSearchField({
+            onQuery: (q: string): void => { this.store?.searchMembers(q); }
+          })
+            .padding({ left: 12, right: 12, top: 10, bottom: 6 });
+        }
+      }
       if (this.members.length > 0) {
         LazyForEach(this.membersData, (m: MemberItem, idx: number) => {
           ListItem() {
@@ -1616,7 +1625,9 @@ export struct ChatProfilePage {
         }
       } else {
         ListItem() {
-          this.inlineState('empty', str('cpp_no_members'));
+          // 搜索没结果和群本来就没人是两回事，别都说「没有成员」。
+          this.inlineState('empty', (this.store?.memberQuery ?? '') !== ''
+            ? str('ct_no_results') : str('cpp_no_members'));
         }
       }
     }

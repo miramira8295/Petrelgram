@@ -39,6 +39,12 @@ interface Sub {
   listener: (chats: ChatEntry[]) => void;
 }
 
+// 盯**单个会话**的订阅者：只要这个会话变了就通知，不管它在哪个列表里。
+interface ChatSub {
+  chatId: number;
+  listener: () => void;
+}
+
 type RowSyncHalf = 'lastMessage' | 'unread';
 
 interface PendingRowSync {
@@ -80,6 +86,7 @@ export class ChatStore {
   private orderedChatIds: Map<string, number[]> = new Map();
   private subs: Sub[] = [];
   private changeListeners: Array<() => void> = [];
+  private chatSubs: ChatSub[] = [];
   private activeLoads: Map<string, Promise<boolean>> = new Map();
   private initializedLists: Set<string> = new Set();
   private exhaustedLists: Set<string> = new Set();
@@ -147,6 +154,19 @@ export class ChatStore {
     listener(this.getChats(listKey));
     return (): void => {
       this.subs = this.subs.filter((s: Sub) => s !== sub);
+    };
+  }
+
+  // 盯单个会话。会话页用它，而不是 subscribe(listener, 'main')：后者只在会话
+  // **位于那个列表里**时才通知（见 flushNotify 的 listContainsAny），归档里的会话、
+  // 还没进任何列表的会话，它的更新会话页一条都收不到——陌生人私聊的操作条
+  // （updateChatActionBar 在进会话之后才补发）因此永远出不来，标题栏也不刷新。
+  subscribeChat(chatId: number, listener: () => void): () => void {
+    const sub: ChatSub = { chatId, listener };
+    this.chatSubs = [...this.chatSubs, sub];
+    listener();
+    return (): void => {
+      this.chatSubs = this.chatSubs.filter((s: ChatSub) => s !== sub);
     };
   }
 
@@ -1401,6 +1421,11 @@ export class ChatStore {
           snapshots.set(s.listKey, snapshot);
         }
         s.listener(snapshot);
+      }
+    }
+    for (const s of this.chatSubs) {
+      if (all || dirty.has(s.chatId)) {
+        s.listener();
       }
     }
     for (const listener of this.changeListeners) {

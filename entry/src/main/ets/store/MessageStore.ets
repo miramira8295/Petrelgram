@@ -6028,7 +6028,11 @@ export class MessageStore {
       // 默认「没标签的都是图片」。统一走 replySnippetOf（有单测）。
       c.replyText = replySnippetOf({
         text: target.text, placeholderLabel: target.placeholderLabel,
-        contentType: target.contentType, paidMediaLocked: target.paidMediaLocked
+        contentType: target.contentType, paidMediaLocked: target.paidMediaLocked,
+        fileName: target.videoFileName, audioTitle: target.audioTitle, audioPerformer: target.audioPerformer,
+        isAnimation: target.isAnimation, pollQuestion: target.pollQuestion,
+        contactName: `${target.contactFirstName} ${target.contactLastName}`,
+        venueTitle: target.venueTitle, gameTitle: target.gameTitle
       });
       // 缩略图取的是**已经下到本地**的那张（target 就在窗口里，它自己的气泡
       // 正显示着这张图）。没下完就是空串，引用块退回纯两行字，不占位、不闪。
@@ -6059,7 +6063,11 @@ export class MessageStore {
       // 同上：按需拉回来的原消息也走同一套摘要。
       const preview: string = replySnippetOf({
         text: entry.text, placeholderLabel: entry.placeholderLabel,
-        contentType: entry.contentType, paidMediaLocked: entry.paidMediaLocked
+        contentType: entry.contentType, paidMediaLocked: entry.paidMediaLocked,
+        fileName: entry.videoFileName, audioTitle: entry.audioTitle, audioPerformer: entry.audioPerformer,
+        isAnimation: entry.isAnimation, pollQuestion: entry.pollQuestion,
+        contactName: `${entry.contactFirstName} ${entry.contactLastName}`,
+        venueTitle: entry.venueTitle, gameTitle: entry.gameTitle
       });
       // 「原消息不可用」的判据**不能**看 preview —— replySnippetOf 永远不返回
       // 空串（兜底是"媒体消息"），照旧写 preview === '' 这条就再也不成立了，

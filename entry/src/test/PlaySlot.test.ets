@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  pickPlaySlot, slotKey, slotKeyMessageId, shouldCompete, PlaySlotCandidate,
+  pickPlaySlot, slotKey, slotKeyMessageId, shouldCompete, autoplaySizeAllowed, PlaySlotCandidate,
   PLAY_SLOT_ENTER_RATIO, PLAY_SLOT_KEEP_RATIO
 } from '../main/ets/pages/chat/playSlot';
 
@@ -14,6 +14,16 @@ function cand(messageId: number, ratio: number, centerY: number,
 
 export default function playSlotTest() {
   describe('playSlot', () => {
+    // #226：只自动播放小于设定大小的视频。
+    it('自动播放大小上限：0 是不限，大小未知一律放行，超过才拦', 0, () => {
+      const mb: number = 1024 * 1024;
+      expect(autoplaySizeAllowed(500 * mb, 0)).assertTrue();
+      expect(autoplaySizeAllowed(0, 10)).assertTrue();
+      expect(autoplaySizeAllowed(10 * mb, 10)).assertTrue();
+      expect(autoplaySizeAllowed(10 * mb + 1, 10)).assertFalse();
+      expect(autoplaySizeAllowed(3 * mb, 10)).assertTrue();
+    });
+
     it('阈值本身是有序的', 0, () => {
       expect(PLAY_SLOT_ENTER_RATIO > PLAY_SLOT_KEEP_RATIO).assertTrue();
     });
