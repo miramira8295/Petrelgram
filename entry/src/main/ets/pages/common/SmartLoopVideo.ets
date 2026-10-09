@@ -17,6 +17,9 @@ let avWebmVerdict: number = 0;
 @ComponentV2
 export struct SmartLoopVideo {
   @Param videoPath: string = '';
+  // 贴纸文件的 remote.unique_id（2026-10-09）。帧序列那条路按它查磁盘缓存——命中了
+  // 源文件可以没下载（路径为空）。
+  @Param stickerUid: string = '';
   @Param thumbPath: string = '';
   @Param boxWidth: number = 160;
   @Param boxHeight: number = 160;
@@ -216,7 +219,7 @@ export struct SmartLoopVideo {
       Stack() {
         if (this.useIjk) {
           WebmStickerView({
-            webmPath: this.videoPath, thumbPath: this.thumbPath,
+            webmPath: this.videoPath, thumbPath: this.thumbPath, stickerUid: this.stickerUid,
             boxWidth: this.boxWidth, boxHeight: this.boxHeight,
             powerCategory: this.powerCategory,
             forcePlay: this.forcePlay,

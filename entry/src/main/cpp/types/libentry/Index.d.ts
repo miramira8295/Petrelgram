@@ -71,29 +71,40 @@ export const callVersions: () => string;
 // --- 透明 webm 贴纸（VP9 + BlockAdditional alpha） ---
 // 设备有没有系统 VP9 解码器。系统 VP9 是 API 23 起才有的能力。
 export const webmAlphaAvailable: () => boolean;
-// 两路 VP9 码流 -> 一串 PixelMap（非预乘 RGBA，已缩到 dstW x dstH）。
-// 码流按"拼接字节 + int32 长度表"两块 ArrayBuffer 传，只跨一次 NAPI。
-// frameStep 是保留步长：VP9 帧间预测，包必须全喂，只是解出来每 step 帧留一帧。
-// 失败时 resolve 成空数组，调用方据此回退到 ijkplayer。
-// cachePath 非空时，解出来的帧会压成一份磁盘缓存（zlib，见
-// cpp/sticker_frame_cache.cpp）；timesMs 是每帧呈现时刻的 Int32 缓冲，要一并
-// 写进缓存头——命中缓存那条路没有拆包过程，时间戳只能从缓存里取。
-export const webmAlphaDecode: (
-  colorData: ArrayBuffer, colorLengths: ArrayBuffer,
-  alphaData: ArrayBuffer, alphaLengths: ArrayBuffer,
-  srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
-  frameStep: number, cachePath: string, timesMs: ArrayBuffer, durationMs: number
-) => Promise<image.PixelMap[]>;
-
-// 读一份磁盘帧缓存。没有 / 坏了 / 解出来超过 maxBytes 都 resolve null，
-// 调用方照常去解码。
-export const stickerFramesLoad: (cachePath: string, maxBytes: number) => Promise<{
-  frames: image.PixelMap[];
-  timesMs: number[];
+// 边解边播（2026-10-09）：一条常驻解码线程轮转所有贴纸，每解出一批帧就回调一次
+// onFrames（第一帧单独一批），不再等整段解完。done=true 那次之后不再回调。
+// ok=false 表示这一段放弃了（解码失败 / 缓存坏了 / 内存不够）；之前交出的帧仍归调用方释放。
+// info 只在读缓存任务的第一批（或因 maxBytes 放弃的那一批）里带。
+export interface StickerFramesInfo {
   width: number;
   height: number;
   durationMs: number;
-} | null>;
+  timesMs: number[];
+}
+export type StickerFramesCallback =
+  (frames: image.PixelMap[], done: boolean, ok: boolean, info: StickerFramesInfo | undefined) => void;
+
+// 两路 VP9 码流 -> PixelMap（非预乘 RGBA，已缩到 dstW x dstH），按批回调。
+// 码流按"拼接字节 + int32 长度表"两块 ArrayBuffer 传，只跨一次 NAPI。
+// frameStep 是保留步长：VP9 帧间预测，包必须全喂，只是解出来每 step 帧留一帧。
+// cachePath 非空时，解完会写一份磁盘缓存（zlib，见 cpp/sticker_frame_cache.cpp）；
+// timesMs 是每帧呈现时刻的 Int32 缓冲，一并写进缓存头。
+// 返回任务号，0 = 没起来（参数不对），此时不会回调。
+export const webmAlphaDecodeStream: (
+  colorData: ArrayBuffer, colorLengths: ArrayBuffer,
+  alphaData: ArrayBuffer, alphaLengths: ArrayBuffer,
+  srcWidth: number, srcHeight: number, dstWidth: number, dstHeight: number,
+  frameStep: number, cachePath: string, timesMs: ArrayBuffer, durationMs: number,
+  onFrames: StickerFramesCallback
+) => number;
+
+// 逐帧读一份磁盘帧缓存。没有 / 坏了：一次 (frames=[], done, ok=false, info=undefined)；
+// 解出来超过 maxBytes：一次 (frames=[], done, ok=false, info) —— 是内存不够，不是没有缓存。
+export const stickerFramesLoadStream: (cachePath: string, maxBytes: number,
+  onFrames: StickerFramesCallback) => number;
+
+// 取消一个任务。已经交出的帧照旧归调用方；取消后可能还会收到之前排好的回调。
+export const stickerDecodeCancel: (jobId: number) => void;
 
 // --- TGS 贴纸的原生渲染（rlottie） ---
 //

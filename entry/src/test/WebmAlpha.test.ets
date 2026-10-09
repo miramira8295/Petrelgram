@@ -12,7 +12,7 @@ import { alphaStickerCandidate } from '../main/ets/util/webm/alphaStickerGate';
 import {
   alphaCacheKey, alphaKeyBucket, alphaKeyHighBudget, alphaSizeBucket
 } from '../main/ets/util/webm/alphaCacheKey';
-import { alphaClipFps, alphaFrameIndexAt } from '../main/ets/util/webm/alphaPlayback';
+import { alphaClipFps, alphaFrameIndexAt, alphaPlayableIndex } from '../main/ets/util/webm/alphaPlayback';
 
 // 透明 webm 贴纸链路里所有能在主机上跑的部分。
 //
@@ -411,6 +411,16 @@ export default function webmAlphaTest() {
       expect(alphaFrameIndexAt(times, 99)).assertEqual(2);
       expect(alphaFrameIndexAt(times, 1000)).assertEqual(3);
       expect(alphaFrameIndexAt([], 50)).assertEqual(0);
+    });
+
+    // 边解边播：时间轴按完整的时间戳表走，解出来的帧还没追上时停在最新那一帧，
+    // 而不是跳过或回退到第 0 帧。
+    it('帧还没解到时停在最新解出的那一帧', 0, (): void => {
+      const times: number[] = [0, 33, 66, 100];
+      expect(alphaPlayableIndex(times, 50, 4)).assertEqual(1);
+      expect(alphaPlayableIndex(times, 1000, 2)).assertEqual(1);
+      expect(alphaPlayableIndex(times, 70, 1)).assertEqual(0);
+      expect(alphaPlayableIndex(times, 70, 0)).assertEqual(-1);   // 一帧都没有：不画
     });
   });
 }

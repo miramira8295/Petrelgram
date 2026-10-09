@@ -27,6 +27,9 @@ import {
 } from '../../util/overlayMaterial';
 import { materialModifier } from '../../util/materialModifier';
 import { logE, logI } from '../../util/log';
+import { stickerFramesCached, warmStickerFrameIndex } from '../../services/stickerFrameIndex';
+import { remoteUniqueIdOf } from '../../util/stickerSetItems';
+import { alphaStickerHighBudget } from '../../util/webm/AlphaStickerBudget';
 
 export interface StickerItem {
   fileId: number;   // the sticker's own file (what gets sent)
@@ -346,9 +349,14 @@ export struct StickerPicker {
   private disposed: boolean = false;
   private loadSeq: number = 0;
   private sourceLoading: Set<number> = new Set<number>();
+  // 贴纸源文件 id -> remote.unique_id（2026-10-09）。webm 贴纸的帧缓存按它命名：命中了
+  // 就不下载源文件，格子直接从缓存播。旁路一张表而不是加进 StickerItem——后者在十来处
+  // 整对象重建（patch*），漏一处就静默丢字段。
+  private srcUids: Map<number, string> = new Map<number, string>();
   private gridData: StickerDataSource = new StickerDataSource();
 
   aboutToAppear(): void {
+    warmStickerFrameIndex();
     this.disposed = false;
     if (this.initialized) {
       return;
@@ -468,6 +476,7 @@ export struct StickerPicker {
       && ((fullType['@type'] as string | undefined) ?? '') === 'stickerFullTypeCustomEmoji'
       ? `${fullType['custom_emoji_id']}` : '';
     const rasterThumb = this.rasterThumbFile(st['thumbnail'] as TdObject | undefined);
+    this.noteSrcUid(fileId, file);
     return {
       fileId,
       width: (st['width'] as number | undefined) ?? 512,
@@ -741,6 +750,7 @@ export struct StickerPicker {
         if (fileId === 0) {
           continue;
         }
+        this.noteSrcUid(fileId, file);
         const fmt = st['format'] as TdObject | undefined;
         const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
         const format = fmtName === 'stickerFormatWebp' ? 'webp'
@@ -924,6 +934,7 @@ export struct StickerPicker {
         if (fileId === 0) {
           continue;
         }
+        this.noteSrcUid(fileId, file);
         const fmt = st['format'] as TdObject | undefined;
         const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
         const format = fmtName === 'stickerFormatWebp' ? 'webp'
@@ -1153,7 +1164,7 @@ export struct StickerPicker {
       }
       const sticker: StickerItem = entry.sticker;
       if ((sticker.format === 'tgs' || sticker.format === 'webm') && sticker.srcPath === '' &&
-        !this.sourceLoading.has(sticker.fileId)) {
+        !this.sourceLoading.has(sticker.fileId) && !this.webmFramesCached(sticker)) {
         this.downloadSource(this.sets[entry.setIdx].id, sticker.fileId);
       }
     }
@@ -1173,7 +1184,7 @@ export struct StickerPicker {
       }
       const sticker: StickerItem = entry.sticker;
       if ((sticker.format === 'tgs' || sticker.format === 'webm') && sticker.srcPath === '' &&
-        !this.sourceLoading.has(sticker.fileId)) {
+        !this.sourceLoading.has(sticker.fileId) && !this.webmFramesCached(sticker)) {
         this.downloadSearchSource(sticker.fileId, this.searchSeq);
       }
     }
@@ -1252,6 +1263,23 @@ export struct StickerPicker {
   }
 
   // Emoji grids use smaller cells (8 columns) to keep the picker dense.
+  private noteSrcUid(fileId: number, file: TdObject | undefined): void {
+    const uid: string = remoteUniqueIdOf(file);
+    if (fileId !== 0 && uid !== '') {
+      this.srcUids.set(fileId, uid);
+    }
+  }
+
+  private srcUidOf(s: StickerItem): string {
+    return s.format === 'webm' ? (this.srcUids.get(s.fileId) ?? '') : '';
+  }
+
+  // 这一格的帧缓存已在磁盘上：不必下载源文件（判断与 StickerGridCell 同源）。
+  private webmFramesCached(s: StickerItem): boolean {
+    return stickerFramesCached(this.srcUidOf(s), vp2px(this.cellPx()),
+      alphaStickerHighBudget(this.playbackCategory()));
+  }
+
   private cellPx(): number {
     return this.stickerType === 'custom_emoji' ? 38 : 62;
   }
@@ -1287,6 +1315,7 @@ export struct StickerPicker {
       // 画的部分见 StickerGridCell；点击、长按、按压反馈留在这一层。
       StickerGridCell({
         format: s.format, srcPath: s.srcPath, thumbPath: s.thumbPath, emoji: s.emoji,
+        srcUid: this.srcUidOf(s),
         animate: this.active && this.animate, cellPx: this.cellPx(),
         category: this.playbackCategory(),
         emojiFontSize: this.stickerType === 'custom_emoji' ? 26 : 30

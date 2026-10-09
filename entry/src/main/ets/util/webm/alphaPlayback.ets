@@ -28,3 +28,13 @@ export function alphaFrameIndexAt(timesMs: number[], elapsedMs: number): number 
   }
   return index;
 }
+
+// 边解边播时此刻能画的那一帧。时间轴按完整的时间戳表走（帧率、循环长度都不变），
+// 只是解码还没追上时停在最新解出的那一帧——不跳、也不回到第 0 帧。
+// available 是已经到手的帧数；一帧都没有返回 -1（不画）。
+export function alphaPlayableIndex(timesMs: number[], elapsedMs: number, available: number): number {
+  if (available <= 0) {
+    return -1;
+  }
+  return Math.min(alphaFrameIndexAt(timesMs, elapsedMs), available - 1);
+}

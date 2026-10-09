@@ -71,3 +71,72 @@ export function planFrameCachePrune(
   }
   return doomed;
 }
+
+// ── 按 Telegram 文件唯一 ID 存（2026-10-09） ─────────────────────────────
+//
+// 上面那种「源文件名 + 字节数」的身份要先有本地文件才能拼出来，也就是**下载完
+// 才能查缓存**；TDLib 清理缓存（optimizeStorage 的默认 ttl）之后源文件没了，
+// 帧缓存明明还在却用不上，只能重下、重解。remote.unique_id 跨账号、跨会话、
+// 跨重新下载都不变，下载之前就能拿它来查：命中了就不下载、不解码。
+
+const UID_PREFIX: string = 'u_';
+
+export interface UidFrameCacheVariant {
+  bucket: number;
+  high: boolean;
+}
+
+export interface UidFrameCacheName extends UidFrameCacheVariant {
+  uid: string;
+}
+
+// 索引里用的 ID 形态：与文件名里的一致（清理过字符、过长截尾），查和存都先过它。
+export function normalizeFrameCacheUid(uid: string): string {
+  return sanitize(uid);
+}
+
+export function uidFrameCacheFileName(uid: string, bucketPx: number, highBudget: boolean): string {
+  return `${UID_PREFIX}${sanitize(uid)}_${bucketPx}${highBudget ? 'h' : ''}_v${FRAME_CACHE_VERSION}.pgsf`;
+}
+
+// uidFrameCacheFileName 的反函数。不是这个版本、不是按 ID 命名的，一律 null。
+// uid 里本身可能有 '_'，所以从右边拆：最后两段是尺寸桶和版本。
+export function parseUidFrameCacheFileName(name: string): UidFrameCacheName | null {
+  const suffix: string = `_v${FRAME_CACHE_VERSION}.pgsf`;
+  if (!name.startsWith(UID_PREFIX) || !name.endsWith(suffix)) {
+    return null;
+  }
+  const body: string = name.substring(UID_PREFIX.length, name.length - suffix.length);
+  const cut: number = body.lastIndexOf('_');
+  if (cut <= 0) {
+    return null;
+  }
+  const uid: string = body.substring(0, cut);
+  let bucketText: string = body.substring(cut + 1);
+  const high: boolean = bucketText.endsWith('h');
+  if (high) {
+    bucketText = bucketText.substring(0, bucketText.length - 1);
+  }
+  if (!/^[0-9]+$/.test(bucketText)) {
+    return null;
+  }
+  const bucket: number = Number(bucketText);
+  return bucket > 0 ? { uid: uid, bucket: bucket, high: high } : null;
+}
+
+// 从这个 ID 已有的几份缓存里挑一份来用：尺寸桶不小于要的（放大会糊），挑最接近的；
+// 要高帧率那档（会话大表情）就只认高帧率档；普通贴纸两档都行，同尺寸先挑普通档
+// （帧少、占内存少）。都不合适返回 null——宁可重新下载解码。
+export function pickUidFrameCache(have: UidFrameCacheVariant[], wantBucket: number,
+  wantHigh: boolean): UidFrameCacheVariant | null {
+  let best: UidFrameCacheVariant | null = null;
+  for (const v of have) {
+    if (v.bucket < wantBucket || (wantHigh && !v.high)) {
+      continue;
+    }
+    if (best === null || v.bucket < best.bucket || (v.bucket === best.bucket && best.high && !v.high)) {
+      best = v;
+    }
+  }
+  return best;
+}

@@ -17,17 +17,38 @@ using RgbaFrame = std::vector<uint8_t>;
 // 调用方原样回退到 ijkplayer。结果只探一次。
 bool Vp9DecoderAvailable();
 
-// 解码并合成。out 里每帧是 dstW*dstH*4 的非预乘 RGBA。
+// 两路 VP9 码流 -> RGBA 帧，**一次推进一包**（边解边播，2026-10-09）。
+//
+// 原来是 DecodeAlphaSequence 一口气解完整段再交出去：第一帧要等最后一帧，一屏
+// 新贴纸排着队一张张解完才动。现在由调度线程（sticker_decode_queue）反复调 Step，
+// 每步喂一包、把这一包产出的帧交出去，几张贴纸轮流推进，各自很快拿到第一帧。
+//
+// 每帧是 dstW*dstH*4 的非预乘 RGBA。
 //
 // frameStep 是**保留**步长，不是喂包步长：VP9 是帧间预测的，少喂一个包后面
 // 全错，所以每一包都要送进解码器，只是解出来之后每 step 帧留一帧。降帧因此
 // 只省内存，不省解码时间——这正是预算里优先降分辨率、其次才降帧的原因。
-//
-// 任何一步失败都返回 false 并清空 out —— 半截的结果比没有更糟。
-bool DecodeAlphaSequence(const std::vector<Packet> &colorPackets,
-                         const std::vector<Packet> &alphaPackets,
-                         int32_t srcW, int32_t srcH, int32_t dstW, int32_t dstH,
-                         int32_t frameStep, std::vector<RgbaFrame> &out);
+class AlphaSequenceDecoder {
+public:
+    AlphaSequenceDecoder();
+    ~AlphaSequenceDecoder();
+    AlphaSequenceDecoder(const AlphaSequenceDecoder &) = delete;
+    AlphaSequenceDecoder &operator=(const AlphaSequenceDecoder &) = delete;
+
+    // alphaPackets 为空 = 不透明贴纸。参数不合法或解码器建不起来返回 false。
+    bool Init(std::vector<Packet> colorPackets, std::vector<Packet> alphaPackets,
+              int32_t srcW, int32_t srcH, int32_t dstW, int32_t dstH, int32_t frameStep);
+
+    // 喂下一包（两路各一包），把这一包产出、且该保留的帧追加到 out。
+    // 解码出错返回 false——调用方整段放弃，半截的结果比没有更糟。
+    bool Step(std::vector<RgbaFrame> &out);
+
+    bool Done() const;
+
+private:
+    struct Impl;
+    Impl *impl_;
+};
 
 } // namespace webm_alpha
 

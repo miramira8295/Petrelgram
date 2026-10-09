@@ -8,10 +8,14 @@ import { AnimationSlotPool } from '../../util/animationSlotPool';
 import { stickerAnimationSlots } from '../../util/stickerAnimationBudget';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { stickerFrameClock } from '../../util/stickerFrameClock';
-import { alphaClipFps, alphaFrameIndexAt } from '../../util/webm/alphaPlayback';
+import { alphaClipFps, alphaPlayableIndex } from '../../util/webm/alphaPlayback';
 import { alphaStickerHighBudget } from '../../util/webm/AlphaStickerBudget';
 
-// 带 alpha 的 webm 贴纸：预解码好的 RGBA 帧画到 Canvas 上循环播放。
+// 带 alpha 的 webm 贴纸：解码好的 RGBA 帧画到 Canvas 上循环播放。
+//
+// 边解边播（2026-10-09）：拿到第一帧就开始播，后面的帧由解码线程陆续追加进
+// 同一个 frames 数组。时间轴按完整的时间戳表走，帧没追上就停在最新那一帧
+// （alphaPlayableIndex）；中途解坏了（clip.failed）就回退。
 //
 // 为什么不能沿用 ijkplayer：它的 libijkplayer.so 里没有 libvpx，而 ffmpeg 的
 // VP9 alpha 拼装只在 libvpxdec 里实现，原生 VP9 解码器不认 BlockAdditional
@@ -49,6 +53,9 @@ const ALPHA_USE_DISPLAY_SYNC: boolean = true;
 @ComponentV2
 export struct AlphaWebmStickerView {
   @Param webmPath: string = '';
+  // 贴纸文件的 remote.unique_id（2026-10-09）。帧序列那条路按它查磁盘缓存——命中了
+  // 源文件可以没下载（路径为空）。
+  @Param stickerUid: string = '';
   @Param thumbPath: string = '';
   @Param boxWidth: number = 160;
   @Param boxHeight: number = 160;
@@ -278,8 +285,9 @@ export struct AlphaWebmStickerView {
     if (ALPHA_USE_DISPLAY_SYNC) {
       // 起点在第一拍用时钟的时间基定（与 Date.now 不是同一个基准，不能混用）。
       this.startedAt = 0;
+      // 帧率按完整的时间戳表算：边解边播时 frames 还没到齐，按它算会偏低。
       this.unsubClock = stickerFrameClock.subscribe(this.getUIContext(),
-        alphaClipFps(clip.frames.length, clip.durationMs),
+        alphaClipFps(clip.timesMs.length, clip.durationMs),
         (timestampMs: number, targetMs: number): void => {
           this.onClockTick(timestampMs, targetMs);
         });
@@ -298,10 +306,15 @@ export struct AlphaWebmStickerView {
     if (clip === null || this.disposed) {
       return;
     }
+    if (clip.failed) {
+      this.stopTicker();
+      this.fallback();
+      return;
+    }
     const total = Math.max(1, clip.durationMs);
     let elapsed = Date.now() - this.startedAt;
     if (elapsed >= total) {
-      if (!this.loopEnabled()) {
+      if (!this.loopEnabled() && clip.complete) {
         this.drawFrame(clip.frames.length - 1);
         this.stopTicker();
         return;
@@ -309,15 +322,20 @@ export struct AlphaWebmStickerView {
       elapsed = elapsed % total;
       this.startedAt = Date.now() - elapsed;
     }
-    this.drawFrame(alphaFrameIndexAt(clip.timesMs, elapsed));
+    this.drawFrame(alphaPlayableIndex(clip.timesMs, elapsed, clip.frames.length));
   }
 
-  // 共享时钟的一拍。帧已经预解码在内存里，这里按**下一帧上屏的时刻**（targetMs）
+  // 共享时钟的一拍。帧在内存里（边解边播时可能还没到齐），这里按**下一帧上屏的时刻**（targetMs）
   // 查表、当场画上——画的时刻就对齐了屏幕刷新。与 onTick 同一套回卷规则。
   private onClockTick(timestampMs: number, targetMs: number): void {
     const clip = this.sequence;
     if (clip === null || this.disposed) {
       this.stopTicker();
+      return;
+    }
+    if (clip.failed) {
+      this.stopTicker();
+      this.fallback();
       return;
     }
     if (this.startedAt === 0) {
@@ -326,7 +344,8 @@ export struct AlphaWebmStickerView {
     const total = Math.max(1, clip.durationMs);
     let elapsed = targetMs - this.startedAt;
     if (elapsed >= total) {
-      if (!this.loopEnabled()) {
+      // 不循环的贴纸要等帧到齐才算播完：还在解就先回卷，免得停在半截。
+      if (!this.loopEnabled() && clip.complete) {
         this.drawFrame(clip.frames.length - 1);
         this.stopTicker();
         return;
@@ -334,7 +353,7 @@ export struct AlphaWebmStickerView {
       elapsed = elapsed % total;
       this.startedAt = targetMs - elapsed;
     }
-    this.drawFrame(alphaFrameIndexAt(clip.timesMs, elapsed));
+    this.drawFrame(alphaPlayableIndex(clip.timesMs, elapsed, clip.frames.length));
   }
 
   private drawFrame(index: number): void {
@@ -375,7 +394,7 @@ export struct AlphaWebmStickerView {
   }
 
   private async load(): Promise<void> {
-    if (this.loading || this.sequence !== null || this.disposed || this.webmPath === ''
+    if (this.loading || this.sequence !== null || this.disposed || (this.webmPath === '' && this.stickerUid === '')
       || this.cancelSlotWait !== null || (this.tracksVisibility() && !this.onScreen)) {
       return;
     }
@@ -393,7 +412,7 @@ export struct AlphaWebmStickerView {
     // 一律按原生 512 解码就是白烧内存。
     const boxPx = Math.max(vp2px(this.boxWidth), vp2px(this.boxHeight));
     const result: AlphaAcquireResult =
-      await acquireAlphaSticker(path, boxPx, alphaStickerHighBudget(this.powerCategory));
+      await acquireAlphaSticker(path, boxPx, alphaStickerHighBudget(this.powerCategory), this.stickerUid);
     const clip: AlphaClip | null = result.clip;
     this.loading = false;
     if (this.disposed || seq !== this.loadSeq || path !== this.webmPath) {

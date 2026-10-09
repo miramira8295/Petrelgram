@@ -67,84 +67,37 @@ bool ReadInfo(const std::string &path, CacheInfo &info) {
     return true;
 }
 
-bool Read(const std::string &path, CacheInfo &info, std::vector<std::vector<uint8_t>> &frames,
-          std::vector<int32_t> &timesMs) {
-    FILE *f = fopen(path.c_str(), "rb");
-    if (f == nullptr) {
+bool CompressFrame(const std::vector<uint8_t> &rgba, std::vector<uint8_t> &packed) {
+    uLongf bound = compressBound(static_cast<uLong>(rgba.size()));
+    packed.resize(bound);
+    // Z_BEST_SPEED：这一步跑在解码线程上、夹在两帧之间，压缩比再高也换不来
+    // 什么——贴纸大片透明，最快档已经能压到几个百分点。
+    if (compress2(packed.data(), &bound, rgba.data(), static_cast<uLong>(rgba.size()),
+                  Z_BEST_SPEED) != Z_OK) {
+        packed.clear();
         return false;
     }
-    FileCloser closer{f};
-    Header h{};
-    if (!ReadExact(f, &h, sizeof(h)) || !HeaderSane(h)) {
-        return false;
-    }
-    const size_t count = static_cast<size_t>(h.frameCount);
-    timesMs.assign(count, 0);
-    if (!ReadExact(f, timesMs.data(), count * sizeof(int32_t))) {
-        return false;
-    }
-    std::vector<int32_t> sizes(count, 0);
-    if (!ReadExact(f, sizes.data(), count * sizeof(int32_t))) {
-        return false;
-    }
-    const size_t frameBytes = static_cast<size_t>(h.width) * h.height * 4;
-    frames.clear();
-    frames.reserve(count);
-    std::vector<uint8_t> packed;
-    for (size_t i = 0; i < count; ++i) {
-        if (sizes[i] <= 0) {
-            return false;
-        }
-        packed.resize(static_cast<size_t>(sizes[i]));
-        if (!ReadExact(f, packed.data(), packed.size())) {
-            return false;
-        }
-        std::vector<uint8_t> frame(frameBytes);
-        uLongf out = static_cast<uLongf>(frameBytes);
-        if (uncompress(frame.data(), &out, packed.data(),
-                       static_cast<uLong>(packed.size())) != Z_OK || out != frameBytes) {
-            return false;
-        }
-        frames.push_back(std::move(frame));
-    }
-    info.width = h.width;
-    info.height = h.height;
-    info.frameCount = h.frameCount;
-    info.durationMs = h.durationMs;
+    packed.resize(bound);
     return true;
 }
 
-bool Write(const std::string &path, const CacheInfo &info,
-           const std::vector<std::vector<uint8_t>> &frames, const std::vector<int32_t> &timesMs) {
-    if (frames.empty() || frames.size() != timesMs.size() ||
-        static_cast<int32_t>(frames.size()) != info.frameCount) {
+bool WritePacked(const std::string &path, const CacheInfo &info,
+                 const std::vector<std::vector<uint8_t>> &packed, const std::vector<int32_t> &timesMs) {
+    if (packed.empty() || packed.size() != timesMs.size() ||
+        static_cast<int32_t>(packed.size()) != info.frameCount) {
         return false;
     }
     Header h{kMagic, kVersion, info.width, info.height, info.frameCount, info.durationMs};
     if (!HeaderSane(h)) {
         return false;
     }
-    const size_t frameBytes = static_cast<size_t>(info.width) * info.height * 4;
-    // 先压缩到内存，再一次写出：压缩中途失败就不该在磁盘上留下任何东西。
-    std::vector<std::vector<uint8_t>> packed;
-    packed.reserve(frames.size());
     std::vector<int32_t> sizes;
-    sizes.reserve(frames.size());
-    for (const std::vector<uint8_t> &frame : frames) {
-        if (frame.size() != frameBytes) {
+    sizes.reserve(packed.size());
+    for (const std::vector<uint8_t> &frame : packed) {
+        if (frame.empty()) {
             return false;
         }
-        uLongf bound = compressBound(static_cast<uLong>(frameBytes));
-        std::vector<uint8_t> out(bound);
-        // Z_BEST_SPEED：这一步在 worker 上串在解码后面，压缩比再高也换不来
-        // 什么——贴纸大片透明，最快档已经能压到几个百分点。
-        if (compress2(out.data(), &bound, frame.data(), static_cast<uLong>(frameBytes),
-                      Z_BEST_SPEED) != Z_OK) {
-            return false;
-        }
-        out.resize(bound);
-        sizes.push_back(static_cast<int32_t>(out.size()));
-        packed.push_back(std::move(out));
+        sizes.push_back(static_cast<int32_t>(frame.size()));
     }
     const std::string tmp = path + ".tmp";
     FILE *f = fopen(tmp.c_str(), "wb");
@@ -166,6 +119,54 @@ bool Write(const std::string &path, const CacheInfo &info,
         return false;
     }
     return true;
+}
+
+Reader::~Reader() {
+    if (file_ != nullptr) {
+        fclose(file_);
+    }
+}
+
+bool Reader::Open(const std::string &path) {
+    file_ = fopen(path.c_str(), "rb");
+    if (file_ == nullptr) {
+        return false;
+    }
+    Header h{};
+    if (!ReadExact(file_, &h, sizeof(h)) || !HeaderSane(h)) {
+        return false;
+    }
+    const size_t count = static_cast<size_t>(h.frameCount);
+    timesMs_.assign(count, 0);
+    sizes_.assign(count, 0);
+    if (!ReadExact(file_, timesMs_.data(), count * sizeof(int32_t)) ||
+        !ReadExact(file_, sizes_.data(), count * sizeof(int32_t))) {
+        return false;
+    }
+    info_.width = h.width;
+    info_.height = h.height;
+    info_.frameCount = h.frameCount;
+    info_.durationMs = h.durationMs;
+    return true;
+}
+
+bool Reader::Next(std::vector<uint8_t> &rgba) {
+    if (file_ == nullptr || next_ >= sizes_.size()) {
+        return false;
+    }
+    const int32_t size = sizes_[next_++];
+    if (size <= 0) {
+        return false;
+    }
+    packed_.resize(static_cast<size_t>(size));
+    if (!ReadExact(file_, packed_.data(), packed_.size())) {
+        return false;
+    }
+    const size_t frameBytes = static_cast<size_t>(info_.width) * info_.height * 4;
+    rgba.resize(frameBytes);
+    uLongf out = static_cast<uLongf>(frameBytes);
+    return uncompress(rgba.data(), &out, packed_.data(), static_cast<uLong>(packed_.size())) == Z_OK &&
+           out == frameBytes;
 }
 
 } // namespace sticker_cache

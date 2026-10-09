@@ -53,6 +53,8 @@ import { isAnimationPath } from '../util/mediaPick';
 import {
   applyMessageTopicScope, messageOutsideTopicScope, messageTopicObject
 } from '../util/messageTopicScope';
+import { stickerFramesCached, warmStickerFrameIndex } from '../services/stickerFrameIndex';
+import { ALPHA_MAX_BUCKET } from '../util/webm/alphaCacheKey';
 
 const PAGE: number = 30;
 // 首屏填充最多续追几次。三次足以把 14 + 2 + 30 这种序列填过一页，又不至于在
@@ -346,6 +348,8 @@ export class MessageStore {
     this.client = client;
     this.users = users;
     this.chatId = chatId;
+    // 贴纸帧缓存的按 ID 索引：进会话就开始扫目录，第一屏贴纸大多来得及查。
+    warmStickerFrameIndex();
     this.threadRootId = threadRootId;
     this.forumTopicId = forumTopicId;
     this.directMessagesTopicId = directMessagesTopicId;
@@ -3188,6 +3192,7 @@ export class MessageStore {
       c.audioCoverMini = rebuilt.audioCoverMini;
       c.stickerFileId = rebuilt.stickerFileId;
       c.stickerFormat = rebuilt.stickerFormat;
+      c.stickerUniqueId = rebuilt.stickerUniqueId;
       c.stickerSetId = rebuilt.stickerSetId;
       c.isEmojiSticker = rebuilt.isEmojiSticker;
       c.stickerPath = sameStickerFile ? c.stickerPath : rebuilt.stickerPath;
@@ -3534,6 +3539,7 @@ export class MessageStore {
         }
         if (rebuilt.stickerFileId !== 0 && rebuilt.stickerFileId !== c.stickerFileId) {
           c.stickerFileId = rebuilt.stickerFileId;
+          c.stickerUniqueId = rebuilt.stickerUniqueId;
           c.stickerFailed = false;
           c.stickerProgress = 0;
           c.stickerDownloadActive = false;
@@ -4344,6 +4350,12 @@ export class MessageStore {
     const entry = this.messages[idx];
     const fileId = entry.stickerFileId;
     if (fileId === 0 || entry.stickerPath !== '') {
+      return;
+    }
+    // webm 贴纸的帧缓存（按唯一 ID）已经在磁盘上：气泡直接从缓存播，不必下载源文件。
+    // 会话气泡按最大尺寸桶解码（160vp 在任何密度下都落在最大桶），所以按最大桶查。
+    if (entry.stickerFormat === 'webm' && !forceRetry &&
+      stickerFramesCached(entry.stickerUniqueId, ALPHA_MAX_BUCKET, entry.isEmojiSticker)) {
       return;
     }
     const cachedPath = this.completedFilePaths.get(fileId) ?? '';

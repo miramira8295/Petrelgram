@@ -2,8 +2,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 import {
   parseStickerSetItems, parseStickerSetInfo, stickerSetIdOf, stickerSourceFileId,
-  StickerSetItem, StickerSetInfo
-} from '../main/ets/util/stickerSetItems';
+  StickerSetItem, StickerSetInfo, remoteUniqueIdOf } from '../main/ets/util/stickerSetItems';
 
 function sticker(fileId: number, fmt: string, setId: string): TdObject {
   const file: TdObject = { '@type': 'file' }; file['id'] = fileId;
@@ -94,6 +93,16 @@ export default function stickerSetItemsTest() {
       expect(stickerSourceFileId('sticker', 0, 42, 'tgs')).assertEqual(0);
       // 非贴纸消息一律 0
       expect(stickerSourceFileId('photo', 0, 42, '')).assertEqual(0);
+    });
+
+    // 帧缓存按它命名（2026-10-09）：TDLib 文件对象里 remote.unique_id，缺哪一层都是 ''。
+    it('取文件的全局唯一 ID', 0, (): void => {
+      const remote: TdObject = { '@type': 'remoteFile' }; remote['unique_id'] = 'AgADBQAD';
+      const file: TdObject = { '@type': 'file' }; file['remote'] = remote;
+      expect(remoteUniqueIdOf(file)).assertEqual('AgADBQAD');
+      const bare: TdObject = { '@type': 'file' };
+      expect(remoteUniqueIdOf(bare)).assertEqual('');
+      expect(remoteUniqueIdOf(undefined)).assertEqual('');
     });
   });
 }

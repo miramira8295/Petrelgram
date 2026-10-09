@@ -2,6 +2,7 @@
 #define PETRELGRAM_STICKER_FRAME_CACHE_H
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -30,13 +31,38 @@ int64_t DecodedBytes(const CacheInfo &info);
 // 只读头部：拿尺寸/帧数，不碰像素。
 bool ReadInfo(const std::string &path, CacheInfo &info);
 
-// 读全部帧。frames 里每帧是 width*height*4 的非预乘 RGBA。
-bool Read(const std::string &path, CacheInfo &info, std::vector<std::vector<uint8_t>> &frames,
-          std::vector<int32_t> &timesMs);
+// 压一帧（zlib 最快档）。边解边压：解码线程解出一帧就压好留着，整段解完再一次
+// 写盘，用不着把整段裸 RGBA 攒在内存里。
+bool CompressFrame(const std::vector<uint8_t> &rgba, std::vector<uint8_t> &packed);
 
-// 写。先写临时文件再改名——半截的缓存文件比没有更糟。
-bool Write(const std::string &path, const CacheInfo &info,
-           const std::vector<std::vector<uint8_t>> &frames, const std::vector<int32_t> &timesMs);
+// 把已经压好的帧写成一份缓存。先写临时文件再改名——半截的缓存文件比没有更糟。
+bool WritePacked(const std::string &path, const CacheInfo &info,
+                 const std::vector<std::vector<uint8_t>> &packed, const std::vector<int32_t> &timesMs);
+
+// 逐帧读（命中缓存也边读边播：读出第一帧就能开始画，不等整段解压完）。
+class Reader {
+public:
+    Reader() = default;
+    ~Reader();
+    Reader(const Reader &) = delete;
+    Reader &operator=(const Reader &) = delete;
+
+    // 读头部、时间戳表、每帧长度表。文件不在或头部不对返回 false。
+    bool Open(const std::string &path);
+    const CacheInfo &Info() const { return info_; }
+    const std::vector<int32_t> &TimesMs() const { return timesMs_; }
+    // 解出下一帧（width*height*4 的非预乘 RGBA）。读坏了返回 false。
+    bool Next(std::vector<uint8_t> &rgba);
+    bool Done() const { return next_ >= sizes_.size(); }
+
+private:
+    FILE *file_ = nullptr;
+    CacheInfo info_{};
+    std::vector<int32_t> timesMs_;
+    std::vector<int32_t> sizes_;
+    std::vector<uint8_t> packed_;
+    size_t next_ = 0;
+};
 
 } // namespace sticker_cache
 

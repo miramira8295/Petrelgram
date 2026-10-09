@@ -138,6 +138,7 @@ export interface MessageEntry {
   stickerFileId: number;        // animated (TGS) sticker source file id, 0 otherwise
   customEmojiId: string;        // single custom-emoji message, pending sticker resolution
   stickerFormat: string;        // 'webp' | 'tgs' | 'webm', '' for non-stickers
+  stickerUniqueId: string;      // webm 源文件的 remote.unique_id；'' = 没有（按它查帧缓存）
   stickerSetId: string;         // 所属贴纸合集 id，'' = 不属于任何合集（点了不弹面板）
   isEmojiSticker: boolean;      // obeys chat Emoji playback policy
   stickerPath: string;          // local path of the downloaded TGS/WEBM source
@@ -306,6 +307,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     photoMini: m.photoMini,
     audioCoverMini: m.audioCoverMini,
     stickerFileId: m.stickerFileId, stickerFormat: m.stickerFormat, stickerSetId: m.stickerSetId,
+    stickerUniqueId: m.stickerUniqueId,
     isEmojiSticker: m.isEmojiSticker, stickerPath: m.stickerPath,
     stickerProgress: m.stickerProgress, stickerFailed: m.stickerFailed,
     stickerDownloadActive: m.stickerDownloadActive,
@@ -1145,6 +1147,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     audioCoverMini: c.audioCoverMini ?? '',
     stickerFileId: c.stickerFileId ?? 0,
     stickerFormat: c.stickerFormat ?? '',
+    stickerUniqueId: c.stickerUniqueId ?? '',
     stickerSetId: c.stickerSetId ?? '',
     isEmojiSticker: c.isEmojiSticker ?? false,
     stickerPath: c.stickerLocalPath ?? '',

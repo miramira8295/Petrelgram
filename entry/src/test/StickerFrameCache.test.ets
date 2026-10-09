@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  frameCacheFileName, planFrameCachePrune, FrameCacheEntry, FRAME_CACHE_VERSION
+  frameCacheFileName, planFrameCachePrune, FrameCacheEntry, FRAME_CACHE_VERSION,
+  uidFrameCacheFileName, parseUidFrameCacheFileName, pickUidFrameCache, UidFrameCacheVariant
 } from '../main/ets/util/stickerFrameCache';
 
 function entry(name: string, bytes: number, mtimeMs: number): FrameCacheEntry {
@@ -61,6 +62,42 @@ export default function stickerFrameCacheTest() {
       expect(explicitNormal).assertEqual(normal);
       expect(high === normal).assertFalse();
       expect(high.endsWith(`_v${FRAME_CACHE_VERSION}.pgsf`)).assertTrue();
+    });
+
+    // 第二步（2026-10-09）：按 Telegram 文件的全局唯一 ID 存，下载之前就能查。
+    it('按唯一 ID 命名，能原样解析回来', 0, (): void => {
+      const name: string = uidFrameCacheFileName('AgADBQADwDGrLQ', 128, true);
+      expect(name).assertEqual(`u_AgADBQADwDGrLQ_128h_v${FRAME_CACHE_VERSION}.pgsf`);
+      const parsed = parseUidFrameCacheFileName(name);
+      expect(parsed?.uid).assertEqual('AgADBQADwDGrLQ');
+      expect(parsed?.bucket).assertEqual(128);
+      expect(parsed?.high).assertTrue();
+      expect(parseUidFrameCacheFileName(uidFrameCacheFileName('a-b_c', 256, false))?.high).assertFalse();
+    });
+
+    it('旧版本、按路径命名的、乱七八糟的文件名都不认', 0, (): void => {
+      expect(parseUidFrameCacheFileName('abc123_4096_128_v1.pgsf') === null).assertTrue();
+      expect(parseUidFrameCacheFileName('u_abc_128_v0.pgsf') === null).assertTrue();
+      expect(parseUidFrameCacheFileName('u_abc_xx_v1.pgsf') === null).assertTrue();
+      expect(parseUidFrameCacheFileName('u_abc_128_v1.pgsf.tmp') === null).assertTrue();
+    });
+
+    it('挑缓存：尺寸桶不小于要的，优先最接近的', 0, (): void => {
+      const have: UidFrameCacheVariant[] = [
+        { bucket: 96, high: false }, { bucket: 256, high: false }, { bucket: 160, high: false }
+      ];
+      expect(pickUidFrameCache(have, 128, false)?.bucket).assertEqual(160);
+      expect(pickUidFrameCache(have, 96, false)?.bucket).assertEqual(96);
+      // 只有更小的：放大会糊，宁可重新下载解码
+      expect(pickUidFrameCache([{ bucket: 96, high: false }], 256, false) === null).assertTrue();
+    });
+
+    it('挑缓存：大表情要高帧率那一档，普通贴纸两档都行、同尺寸先挑普通档', 0, (): void => {
+      const have: UidFrameCacheVariant[] = [{ bucket: 256, high: false }, { bucket: 256, high: true }];
+      expect(pickUidFrameCache(have, 256, true)?.high).assertTrue();
+      expect(pickUidFrameCache([{ bucket: 256, high: false }], 256, true) === null).assertTrue();
+      expect(pickUidFrameCache(have, 256, false)?.high).assertFalse();
+      expect(pickUidFrameCache([{ bucket: 256, high: true }], 128, false)?.high).assertTrue();
     });
   });
 }

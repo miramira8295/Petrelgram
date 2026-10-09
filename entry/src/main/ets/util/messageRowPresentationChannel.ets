@@ -98,7 +98,7 @@ function sameHeadPresentation(x: MessageEntry, y: MessageEntry): boolean {
     x.linkPhotoDownloadActive === y.linkPhotoDownloadActive &&
     x.videoPath === y.videoPath && x.videoFailed === y.videoFailed &&
     x.mediaDownloadActive === y.mediaDownloadActive &&
-    x.stickerPath === y.stickerPath && x.stickerFailed === y.stickerFailed &&
+    x.stickerPath === y.stickerPath && x.stickerUniqueId === y.stickerUniqueId && x.stickerFailed === y.stickerFailed &&
     x.stickerDownloadActive === y.stickerDownloadActive &&
     x.translatedText === y.translatedText && x.translatedLang === y.translatedLang &&
     x.translationHidden === y.translationHidden;

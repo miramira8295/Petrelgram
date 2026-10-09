@@ -1,5 +1,5 @@
 import { FlatText, flattenRichMessage } from './richMessage';
-import { stickerSetIdOf } from './stickerSetItems';
+import { remoteUniqueIdOf, stickerSetIdOf } from './stickerSetItems';
 import { TdObject } from '../tdkit/TdTypes';
 import { formatPreview } from './formatPreview';
 import { decimalUpTo, usd } from './intlFormat';
@@ -49,6 +49,7 @@ export interface MsgContent {
   stickerFileId?: number;  // animated sticker source file (TGS), 0/absent otherwise
   customEmojiId?: string;  // single custom-emoji text message (resolved async)
   stickerFormat?: string;  // 'webp' | 'tgs' | 'webm', absent for non-stickers
+  stickerUniqueId?: string; // webm 源文件的 remote.unique_id：按它查帧缓存，命中就不下载
   stickerSetId?: string;   // 所属贴纸合集 id（'' = 不属于任何合集），点贴纸看合集用
   isEmojiSticker?: boolean; // messageAnimatedEmoji/custom emoji, not a regular sticker
   voiceWaveform?: string;  // base64 packed 5-bit waveform for voice notes
@@ -1419,6 +1420,7 @@ function stickerMsgContent(sticker: TdObject | undefined): MsgContent | null {
         videoDuration: 0, videoFileId: 0, videoFileSize: 0, videoMimeType: '', videoFileName: '', photoFullFileId: 0,
         stickerFileId: knownAnimated ? stickerFileId : 0,
         stickerFormat: isWebp || !knownAnimated ? 'webp' : (isTgs ? 'tgs' : 'webm'),
+        stickerUniqueId: isWebm ? remoteUniqueIdOf(stickerFile) : '',
         stickerSetId: stickerSetIdOf(sticker),
         photoLocalPath: isWebp ? sourceState.path : thumbState.path,
         photoInitialProgress: isWebp ? sourceState.progress : thumbState.progress,

@@ -115,3 +115,17 @@ export function stickerSourceFileId(
   }
   return stickerFileId !== 0 ? stickerFileId : photoFileId;
 }
+
+// 文件的全局唯一 ID（remote.unique_id）：跨账号、跨会话、跨重新下载都不变。
+// 贴纸帧缓存按它命名（见 util/stickerFrameCache 的按 ID 那段）。缺哪一层都给 ''。
+export function remoteUniqueIdOf(file: TdObject | undefined): string {
+  if (file === undefined) {
+    return '';
+  }
+  const remote = file['remote'] as TdObject | undefined;
+  if (remote === undefined || remote === null) {
+    return '';
+  }
+  const uid = remote['unique_id'] as string | undefined;
+  return typeof uid === 'string' ? uid : '';
+}

@@ -1,6 +1,8 @@
 import { TgsStickerView } from './TgsStickerView';
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { StickerPoster } from '../common/StickerPoster';
+import { stickerFramesCached } from '../../services/stickerFrameIndex';
+import { alphaStickerHighBudget } from '../../util/webm/AlphaStickerBudget';
 
 // 贴纸抽屉的一格：只负责画（动态 TGS / 视频贴纸 / 静态缩略图 / 经典 emoji 文字）。
 // 点击、长按、按压反馈留在外层（StickerPicker.stickerCell）。
@@ -14,6 +16,8 @@ import { StickerPoster } from '../common/StickerPoster';
 export struct StickerGridCell {
   @Prop format: string = '';
   @Prop srcPath: string = '';
+  // webm 源文件的 remote.unique_id：帧缓存命中时源文件不必下载（srcPath 可以是 ''）。
+  @Prop srcUid: string = '';
   @Prop thumbPath: string = '';
   @Prop emoji: string = '';
   // 抽屉激活且允许播放（StickerPicker.active && animate）。
@@ -21,6 +25,10 @@ export struct StickerGridCell {
   @Prop cellPx: number = 62;
   @Prop category: string = 'sticker';
   @Prop emojiFontSize: number = 30;
+
+  private framesCached(): boolean {
+    return stickerFramesCached(this.srcUid, vp2px(this.cellPx), alphaStickerHighBudget(this.category));
+  }
 
   build() {
     Stack() {
@@ -31,9 +39,9 @@ export struct StickerGridCell {
           powerCategory: this.category,
           panelGated: true
         });
-      } else if (this.animate && this.format === 'webm' && this.srcPath !== '') {
+      } else if (this.animate && this.format === 'webm' && (this.srcPath !== '' || this.framesCached())) {
         SmartLoopVideo({
-          videoPath: this.srcPath, thumbPath: this.thumbPath,
+          videoPath: this.srcPath, thumbPath: this.thumbPath, stickerUid: this.srcUid,
           boxWidth: this.cellPx, boxHeight: this.cellPx,
           powerCategory: this.category,
           panelGated: true
