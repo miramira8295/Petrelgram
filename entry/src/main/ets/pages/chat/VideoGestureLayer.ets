@@ -11,6 +11,7 @@ import {
 import {
   applyWindowBrightness, currentBrightnessLevel, restoreWindowBrightness
 } from '../../util/screenBrightness';
+import { firstFinger } from '../../util/firstFinger';
 
 // 全屏播放器的竖拖手势层：左半屏调亮度、右半屏调音量。
 //
@@ -130,8 +131,8 @@ export struct VideoGestureLayer {
   // 同名会被编译器判为不兼容的覆盖（和 VideoBubbleSurface 里 sourceWidth
   // 不能叫 width 是同一类坑）。
   private beginAdjust(event: GestureEvent): void {
-    const fingers = event.fingerList;
-    const startX: number = fingers.length > 0 ? fingers[0].localX : this.viewportW / 2;
+    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
+    const startX: number = finger !== undefined ? finger.localX : this.viewportW / 2;
     this.zone = gestureZoneOf(startX, this.viewportW);
     if (this.zone === GESTURE_ZONE_LEFT) {
       this.startLevel = currentBrightnessLevel();

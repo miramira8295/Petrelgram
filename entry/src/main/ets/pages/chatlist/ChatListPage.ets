@@ -328,6 +328,32 @@ export struct ChatListPage {
     }
   }
 
+  // 横条手动滑过的位置。用户的反馈：手指滑到一半，列表一有更新（未读数变、标题栏
+  // 重建、横条短暂离树再回来）横条就被拽回「选中的那个可见」的位置——期望手指
+  // 滑到哪就停在哪。所以：手指碰过横条之后，布局变化一律原地恢复到用户的位置；
+  // 只有真正切换了分组，才自动滚到新选中的那个（revealTab）。
+  private stripUserMoved: boolean = false;
+  private stripOffsetX: number = 0;
+
+  // 切换了分组：滚到新选中的那个，忘掉用户之前滑到的位置。
+  private revealTab(index: number): void {
+    this.stripUserMoved = false;
+    this.ensureTabVisible(index);
+  }
+
+  // 布局变了（不是换分组）：用户滑过就原地恢复，没滑过照旧让选中的可见。
+  private keepOrRevealStrip(): void {
+    if (!this.stripUserMoved) {
+      this.ensureTabVisible(this.selectedIndex);
+      return;
+    }
+    const cur: OffsetResult | undefined = this.tabScroller.currentOffset();
+    if (cur === undefined || Math.abs(cur.xOffset - this.stripOffsetX) < 0.5) {
+      return;
+    }
+    this.tabScroller.scrollTo({ xOffset: this.stripOffsetX, yOffset: 0 });
+  }
+
   // Scroll the tab strip so the selected tab is fully visible.
   private ensureTabVisible(index: number): void {
     const x = this.tabXs[index] ?? 0;
@@ -1095,7 +1121,7 @@ export struct ChatListPage {
             duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 220),
             curve: Curve.EaseOut
           }, () => { this.moveIndicatorTo(index); });
-          this.ensureTabVisible(index);
+          this.keepOrRevealStrip();
         } else {
           this.moveIndicatorTo(index);
         }
@@ -1125,13 +1151,24 @@ export struct ChatListPage {
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
-      // 无论文件夹多少都从 12vp 网格线起排，与大标题和会话卡片的左外沿一致；
-      // 内容超宽时照常横向滚动。
-      .align(Alignment.TopStart)
+      // 装得下就居中（#156）；超宽时 Scroll 从左起排、照常横向滚动。指示胶囊
+      // 与文字在同一个 Stack 里，坐标随内容一起平移，不用另算偏移。
+      .align(Alignment.Top)
       .width('100%')
+      .onTouch((event: TouchEvent): void => {
+        if (event.type === TouchType.Down) {
+          this.stripUserMoved = true;
+        }
+      })
+      .onDidScroll((): void => {
+        const cur: OffsetResult | undefined = this.tabScroller.currentOffset();
+        if (cur !== undefined) {
+          this.stripOffsetX = cur.xOffset;
+        }
+      })
       .onAreaChange((_old: Area, area: Area) => {
         this.tabViewW = area.width as number;
-        this.ensureTabVisible(this.selectedIndex);
+        this.keepOrRevealStrip();
       });
     }
     // 横条无独立外框，直接融入标题栏的统一玻璃背板；只有当前项保留胶囊。
@@ -1262,7 +1299,7 @@ export struct ChatListPage {
           duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, FOLDER_SWITCH_DURATION),
           curve: Curve.EaseOut
         }, () => { this.moveIndicatorTo(targetIndex); });
-        this.ensureTabVisible(targetIndex);
+        this.revealTab(targetIndex);
       })
       .onAnimationEnd((_index: number) => {
         this.tabAnimationActive = false;
@@ -1279,7 +1316,8 @@ export struct ChatListPage {
       .onChange((index: number) => {
         // onAnimationStart already drives animated changes. Avoid starting the
         // same settle animation twice when onChange fires at the end.
-        if (this.selectedIndex !== index) {
+        const switched: boolean = this.selectedIndex !== index;
+        if (switched) {
           this.appliedFolder = index;
           this.selectedIndex = index;
           animateTo({
@@ -1289,7 +1327,12 @@ export struct ChatListPage {
         } else {
           this.moveIndicatorTo(index);
         }
-        this.ensureTabVisible(index);
+        // 下标没变的 onChange（列表刷新时 Tabs 可能补发一次）不能把横条拽回去。
+        if (switched) {
+          this.revealTab(index);
+        } else {
+          this.keepOrRevealStrip();
+        }
         // 无动画 changeIndex / 省电关闭动画时没有 onAnimationEnd，在这里兜底。
         // 正常动画仍由 onAnimationEnd 排，避免重复改写计时器。
         if (!this.tabAnimationActive) {

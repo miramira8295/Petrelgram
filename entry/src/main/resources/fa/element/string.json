@@ -11817,18 +11817,6 @@
       "value": "شدت محو"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "موتور پخش"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "استفاده از پخش‌کننده سیستم"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "از ویدیوی HDR پشتیبانی می‌کند. آزمایشی — برای بازگشت خاموش کنید"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "ویدیوی با دامنه دینامیکی بالا"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "برای جلو رفتن نگه دارید"
+      "value": "برای جلو بردن سریع نگه دارید"
     },
     {
       "name": "player_hold_back",
-      "value": "برای عقب رفتن نگه دارید"
+      "value": "برای جلو بردن سریع نگه دارید"
     },
     {
       "name": "mv_show_in_chat",

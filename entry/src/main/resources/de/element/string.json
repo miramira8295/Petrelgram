@@ -11817,18 +11817,6 @@
       "value": "Unschärfegrad"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Wiedergabe-Engine"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "System-Player verwenden"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Unterstützt HDR-Video. Experimentell – zum Zurückwechseln ausschalten"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video mit hohem Dynamikumfang"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Zum Vorspulen gedrückt halten"
+      "value": "Gedrückt halten zum Vorspulen"
     },
     {
       "name": "player_hold_back",
-      "value": "Zum Zurückspulen gedrückt halten"
+      "value": "Gedrückt halten zum Vorspulen"
     },
     {
       "name": "mv_show_in_chat",

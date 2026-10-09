@@ -77,6 +77,9 @@ export interface SearchSessionHost {
   // this.onReplyTap(messageId)，与点引用块/点置顶条同一条路径（压回返回栈、
   // scroller.scrollToIndex、flashAtIndex 两拍高亮）。
   jumpToMessage: (messageId: number) => void;
+  // 用户手动 ∧/∨ 跳到了某条结果（刚出结果时自动落的第一条不算）。多选同时开着时，
+  // 页面把这条加进已选。只读通知，宿主决定做不做。
+  onNavigatedResult: (messageId: number) => void;
   // 退出搜索/换关键词时顺手取消进行中的跳转高亮闪烁——这不是搜索簇自己的
   // 状态（属于 flash 高亮簇，B13 才搬），只是 exit()/updateQuery() 两个写口子
   // 搬之前就恰好也碰它，原样保留成 host 回调。
@@ -126,6 +129,7 @@ export class SearchSession {
     forumTopicId: (): number => 0,
     directMessagesTopicId: (): number => 0,
     jumpToMessage: (_messageId: number): void => {},
+    onNavigatedResult: (_messageId: number): void => {},
     cancelFlash: (): void => {}
   };
 
@@ -238,7 +242,9 @@ export class SearchSession {
         }
         return;
       }
-      this.jumpToResult(thenJumpTo);
+      // fromMsgId ≠ 0 只会来自 ∧ 翻过已加载的那一页（applySearchStep 的 FETCH
+      // 分支），也就是用户手动翻页；新搜索落第一条不算。
+      this.jumpToResult(thenJumpTo, fromMsgId !== 0);
     }).catch((e: TdError): void => {
       logE(`SearchSession.run searchChatMessages failed: ${e.message}`);
     });
@@ -246,12 +252,16 @@ export class SearchSession {
 
   // 搬之前是 ChatPage.jumpToResult()。只在本类内部调用（run() 的成功路径、
   // applySearchStep() 的 SEARCH_JUMP 分支），不对外暴露。
-  private jumpToResult(idx: number): void {
+  // navigated：这次跳转是不是用户手动 ∧/∨ 触发的（见 SearchSessionHost.onNavigatedResult）。
+  private jumpToResult(idx: number, navigated: boolean): void {
     if (idx < 0 || idx >= this.results.length) {
       return;
     }
     this.idx = idx;
     this.host.jumpToMessage(this.results[idx]); // same jump + double-blink flash
+    if (navigated) {
+      this.host.onNavigatedResult(this.results[idx]);
+    }
   }
 
   // ∧ / ∨ 的决策交给纯函数（util/searchPaging，有单测）：下标越界、总数为
@@ -259,7 +269,7 @@ export class SearchSession {
   // 搬之前是 ChatPage.applySearchStep()。
   private applySearchStep(step: SearchStep): void {
     if (step.action === SEARCH_JUMP) {
-      this.jumpToResult(step.index);
+      this.jumpToResult(step.index, true);
     } else if (step.action === SEARCH_FETCH) {
       this.run(step.fromMessageId, step.index);
     }

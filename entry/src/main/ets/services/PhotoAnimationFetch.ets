@@ -1,6 +1,7 @@
 import { getChatStore, getTdClient, getUserStore } from '../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../tdkit/TdTypes';
-import { logE, logI } from '../util/log';
+import { logE, logI, logW } from '../util/log';
+import { requestOutcomeUncertain } from '../util/tdRequestTimeout';
 import { fullInfoRequestForChatType, photoFromFullInfo, pickPhotoAnimationFileId } from '../util/photoAnimation';
 import { senderChannelKey } from '../util/senderAvatarChannel';
 import { claimSenderAnimation, resolveSenderAnimation } from '../util/senderAnimationChannel';
@@ -10,6 +11,8 @@ import { claimSenderAnimation, resolveSenderAnimation } from '../util/senderAnim
 
 const FULL_INFO_TIMEOUT_MS: number = 15000;
 const DOWNLOAD_TIMEOUT_MS: number = 30000;
+// 下载超时后接着等同一个下载的次数（共约 5 分钟）。见 downloadUntilDone。
+const DOWNLOAD_MAX_WAITS: number = 10;
 // 顶栏是用户正盯着的那一个；气泡左侧一屏可能有十几个人，排在它后面。
 export const HEADER_ANIMATION_PRIORITY: number = 2;
 const SENDER_ANIMATION_PRIORITY: number = 1;
@@ -26,7 +29,34 @@ function downloadedPath(file: TdObject): string {
   return (local['path'] as string | undefined) ?? '';
 }
 
-// 解析出本地路径；没有动画、请求失败、超时都返回 ''，从不 reject。tag 只用于日志。
+// 同步下载到本地；客户端等不到回执（超时）时**接着等同一个下载**，不当失败。
+//
+// 【为什么】issue #140「动态头像停下后一直不动，要重进会话」：一屏十几个人同时取、
+// 优先级又最低，排队加下载超过 30 秒是常事。原来超时就判 ''——发送者被记成 failed、
+// 冷却 60 秒且不会自动重试；可 TDLib 那边的下载根本没停，过一会儿文件就到了本地，
+// 却没人再来问。用户停着不滑就没有事件触发重取，头像就一直不动；重进会话组件重建、
+// 再问一次才发现文件早就在了（用户也观察到：动不了的都是需要现下载的）。
+//
+// 再发一次同一个 file_id 的 downloadFile 不会重下：TDLib 把它并进进行中的那一次，
+// 文件到了就一起返回。超时以外的错误照旧判失败。
+function downloadUntilDone(fileId: number, priority: number, tag: string, waitsLeft: number): Promise<string> {
+  const dl: TdRequest = { '@type': 'downloadFile' };
+  dl['file_id'] = fileId;
+  dl['priority'] = priority;
+  dl['synchronous'] = true;
+  return getTdClient().send(dl, DOWNLOAD_TIMEOUT_MS).then((f: TdObject): string => downloadedPath(f))
+    .catch((e: TdError): Promise<string> | string => {
+      if (requestOutcomeUncertain(e.message) && waitsLeft > 0) {
+        logW(`PhotoAnimationFetch(${tag}) download still running, waiting again (${waitsLeft} left)`);
+        return downloadUntilDone(fileId, priority, tag, waitsLeft - 1);
+      }
+      logE(`PhotoAnimationFetch(${tag}) download failed: ${e.message}`);
+      return '';
+    });
+}
+
+// 解析出本地路径；没有动画、请求失败都返回 ''，从不 reject。下载超时会接着等
+// （downloadUntilDone）。tag 只用于日志。
 export function fetchPhotoAnimationPath(req: TdRequest, preferSmall: boolean, priority: number,
   tag: string): Promise<string> {
   return getTdClient().send(req, FULL_INFO_TIMEOUT_MS).then((full: TdObject): Promise<string> => {
@@ -35,15 +65,7 @@ export function fetchPhotoAnimationPath(req: TdRequest, preferSmall: boolean, pr
     if (fileId <= 0) {
       return Promise.resolve('');
     }
-    const dl: TdRequest = { '@type': 'downloadFile' };
-    dl['file_id'] = fileId;
-    dl['priority'] = priority;
-    dl['synchronous'] = true;
-    return getTdClient().send(dl, DOWNLOAD_TIMEOUT_MS).then((f: TdObject): string => downloadedPath(f))
-      .catch((e: TdError): string => {
-        logE(`PhotoAnimationFetch(${tag}) download failed: ${e.message}`);
-        return '';
-      });
+    return downloadUntilDone(fileId, priority, tag, DOWNLOAD_MAX_WAITS);
   }).catch((e: TdError): string => {
     // 拿不到完整资料就保持静态头像，不打扰。
     logE(`PhotoAnimationFetch(${tag}) fullInfo failed: ${e.message}`);

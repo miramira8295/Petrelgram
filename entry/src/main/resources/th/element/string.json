@@ -11817,18 +11817,6 @@
       "value": "ระดับความเบลอ"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "เอนจินการเล่น"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "ใช้เครื่องเล่นของระบบ"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "รองรับวิดีโอ HDR เป็นฟีเจอร์ทดลอง ปิดเพื่อกลับไปใช้ตัวเดิม"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "วิดีโอไดนามิกเรนจ์สูง"
     },
@@ -12070,7 +12058,7 @@
     },
     {
       "name": "player_hold_back",
-      "value": "กดค้างเพื่อกรอกลับ"
+      "value": "กดค้างเพื่อกรอไปข้างหน้า"
     },
     {
       "name": "mv_show_in_chat",

@@ -54,6 +54,7 @@ import { menuPreviewCompact } from '../../util/menuPreview';
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
 // 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
+import { firstFinger } from '../../util/firstFinger';
 
 const QUICK_REACTIONS: string[] = ['❤️', '👍', '👎', '🔥', '🥰', '👏'];
 // 左滑回复的几何与边缘判据见 util/swipeReplyGesture（与 MessageBubble 共用）。
@@ -639,8 +640,9 @@ export struct LightweightPlainTextBubble {
   }
 
   private onLongPress(event: GestureEvent): void {
-    if (event.fingerList.length > 0) {
-      this.recordMenuOffset(event.fingerList[0].localX, Number(event.target.area.width));
+    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
+    if (finger !== undefined) {
+      this.recordMenuOffset(finger.localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
     this.askEditable();

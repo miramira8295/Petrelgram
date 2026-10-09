@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  DEFAULT_SPEED_IDX, HOLD_SEEK_STEP_MS, QUICK_SEEK_MS, SPEEDS, SPEED_LABELS,
+  DEFAULT_SPEED_IDX, HOLD_SEEK_INTERVAL_MS, HOLD_SEEK_STEP_MS, QUICK_SEEK_MS, SPEEDS, SPEED_LABELS,
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../main/ets/util/playerChrome';
 
@@ -34,11 +34,12 @@ export default function playerChromeTest() {
       expect(SPEEDS[DEFAULT_SPEED_IDX]).assertEqual('1.0');
       expect(SPEED_LABELS[DEFAULT_SPEED_IDX]).assertEqual('1.0x');
     });
-    // issue #160 的后续（2026-09-22）：长按连续快进的步长和双击拆开了。
-    // 共用 15 秒时按住不放是每 400ms 跳 15 秒 = 37 倍速的连续瞬移，停不住。
-    it('长按步长远小于双击步长', 0, () => {
-      expect(HOLD_SEEK_STEP_MS < QUICK_SEEK_MS).assertTrue();
+    // issue #160 第三版（2026-10-09，用户定）：按住 2 倍速在 ijk 上只有声音和
+    // 进度在走、画面不动（2.0.9 / 2.0.11 都一样），改成按住每步快进 2 秒、不提示。
+    it('按住快进每步 2 秒，步频比一步的时长快', 0, () => {
       expect(HOLD_SEEK_STEP_MS).assertEqual(2000);
+      expect(HOLD_SEEK_INTERVAL_MS > 0).assertTrue();
+      expect(HOLD_SEEK_INTERVAL_MS < HOLD_SEEK_STEP_MS).assertTrue();
       expect(QUICK_SEEK_MS).assertEqual(15000);
     });
 

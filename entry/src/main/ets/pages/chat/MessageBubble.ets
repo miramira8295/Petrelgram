@@ -105,6 +105,8 @@ import { linkTextHidesUrl } from '../../util/messageLinkAction';
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
 // 和输入栏同一对函数，受「界面模糊质感」开关与档位控制。
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
+import { firstFinger } from '../../util/firstFinger';
+import { stickerFramesCached } from '../../services/stickerFrameIndex';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -988,9 +990,9 @@ export struct MessageBubble {
       + ` kbd=${Math.round(this.env.keyboardHeightVp)} winH=${Math.round(this.env.screenHeightVp)}`
       + ` compact=${this.compactMenuContext()} liveVideo=${this.hasLiveVideoSurface()}`
       + ` shown=${this.msgContextMenuShown}`);
-    const fingers = event.fingerList;
-    if (fingers.length > 0) {
-      this.recordMenuOffset(fingers[0].localX, Number(event.target.area.width));
+    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
+    if (finger !== undefined) {
+      this.recordMenuOffset(finger.localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
     // 已在多选：长按就是"选这一行"（相册 = 整组媒体），不弹菜单、也不重进多选。
@@ -3580,8 +3582,9 @@ export struct MessageBubble {
             onFailed: (): void => { this.stickerPlaybackFailed = true; } })
             .hitTestBehavior(HitTestMode.None);
         } else if (!this.stickerPlaybackFailed &&
-          this.msg.stickerFormat === 'webm' && this.msg.stickerPath !== '') {
+          this.msg.stickerFormat === 'webm' && (this.msg.stickerPath !== '' || this.webmFramesCached())) {
           SmartLoopVideo({ videoPath: this.msg.stickerPath, thumbPath: this.msg.photoPath,
+            stickerUid: this.msg.stickerUniqueId,
             boxWidth: this.stickerW(), boxHeight: this.stickerH(),
             powerCategory: this.msg.isEmojiSticker ? 'emojiChat' : 'sticker',
             // 会话里的 webm 贴纸跟 TGS 一样吃滑动闸。以前没传：那时它们全走
@@ -3703,6 +3706,13 @@ export struct MessageBubble {
     const w = this.msg.photoWidth > 0 ? this.msg.photoWidth : 512;
     const h = this.msg.photoHeight > 0 ? this.msg.photoHeight : 512;
     return h >= w ? STICKER_MAX : Math.round(STICKER_MAX * (h / w));
+  }
+
+  // webm 贴纸的帧缓存（按唯一 ID）已在磁盘上：源文件没下载也能直接播。
+  // MessageStore.requestStickerSource 用同一个判断跳过下载（见 services/stickerFrameIndex）。
+  private webmFramesCached(): boolean {
+    return stickerFramesCached(this.msg.stickerUniqueId,
+      Math.max(vp2px(this.stickerW()), vp2px(this.stickerH())), this.msg.isEmojiSticker);
   }
 
   // 这条贴纸消息里可收藏的源文件（0 = 不是贴纸或源文件还没到）。

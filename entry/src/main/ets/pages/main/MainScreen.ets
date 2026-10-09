@@ -67,6 +67,7 @@ import { TD_ACCOUNT_SWITCHING, TdAccountSummary, accountRegistry } from '../../t
 import { PopupRect, accountPopupRect, accountRowAt } from '../../util/accountSwitchLayout';
 import { switchAccountOrToast } from '../../util/accountSwitch';
 import { AccountSwitchPopup } from './AccountSwitchPopup';
+import { unreadBadgeText } from '../../util/unreadBadge';
 
 // Translucent tint over a backdrop blur — the frosted-glass dock material.
 const DOCK_BG: ResourceColor = $r('app.color.dock_glass');
@@ -496,7 +497,7 @@ export struct MainScreen {
         }
         if (index === 0 && this.unread > 0) {
           Row() {
-            Text(this.unread > 99 ? '99+' : `${this.unread}`)
+            Text(unreadBadgeText(this.unread))
               .fontSize(10).fontColor(Color.White).fontWeight(FontWeight.Medium);
           }
             .constraintSize({ minWidth: 18 }).height(18)

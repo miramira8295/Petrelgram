@@ -12,11 +12,15 @@ import {
 } from '../../util/archiveReveal';
 import { getChatStore } from '../../tdkit/Globals';
 import { ChatEntry, effectiveMuted } from '../../store/ChatEntry';
-import { ChatRow } from './ChatRow';
+import { CHAT_ROW_VERTICAL_GUTTER, ChatRow } from './ChatRow';
 import { ChatRowSpec, chatRowSpec } from '../../util/chatRowMetrics';
 import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
-import { MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill } from '../../util/overlayMaterial';
+import { MATERIAL_EPOCH } from '../../util/overlayMaterial';
+import {
+  KEY_SURFACE_GLASS_ON, SURFACE_GLASS_EPOCH, SURFACE_GLASS_ON_DEFAULT, surfaceGlassBlurStyle, surfaceGlassFill
+} from '../../util/surfaceGlass';
+import { GLASS_OUTLINE_COLOR } from '../../util/bubbleTail';
 import { materialModifierWhen } from '../../util/materialModifier';
 import { COLOR_DIVIDER, mainCardFill } from '../../util/theme';
 import { formatTime } from '../../util/formatTime';
@@ -79,6 +83,9 @@ export struct MainTabBody {
   // 材质纪元让用户改厚度/光感后这一行跟着重绘（同 ChatRow）。
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
+  // 归档卡片跟会话卡片走同一个「界面模糊质感」开关（见 archiveGlassOn）。
+  @StorageProp(KEY_SURFACE_GLASS_ON) private surfaceGlass: boolean = SURFACE_GLASS_ON_DEFAULT;
+  @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
   @Prop effectsActive: boolean = true;
   @Prop imagesActive: boolean = true;
   @Prop @Watch('onUpdatesActiveChanged') updatesActive: boolean = true;
@@ -518,13 +525,28 @@ export struct MainTabBody {
     this.refreshArchiveTop();
   }
 
+  // 归档卡片与会话卡片（ChatRow）**同一套规则**：玻璃不玻璃看「界面模糊质感」
+  // 开关，不看有没有壁纸。原来这里按「壁纸开着就上 overlay 材质 + backdropBlur」
+  // 另起一套，用户关了模糊质感之后会话卡片都是实底，唯独归档这张还是半透明发灰、
+  // 描边颜色也不一样（用户：「已归档聊天和其他的显示不符」）。
+  // 两个纪元都读：档位、材质开关一变就重绘（@StorageProp 要在 build 链路里被读到）。
   private archiveGlassOn(): boolean {
-    return this.appWallpaperOn && this.materialEpoch >= 0;
+    return this.surfaceGlass && this.surfaceGlassEpoch >= 0 && this.materialEpoch >= 0;
   }
 
   private archiveFill(pressed: boolean): ResourceColor {
-    const solid: ResourceColor = mainCardFill(this.appWallpaperOn, pressed);
-    return this.archiveGlassOn() ? overlayGlassFill('card', solid) : solid;
+    if (!this.archiveGlassOn()) {
+      return pressed ? $r('app.color.surface_alt') : $r('app.color.surface');
+    }
+    return surfaceGlassFill(mainCardFill(this.appWallpaperOn, pressed));
+  }
+
+  // 同 ChatRow.rowBlurStyle：背后没有壁纸就不挂模糊（模糊纯色还是那个纯色）。
+  private archiveBlurStyle(): BlurStyle | undefined {
+    if (!this.archiveGlassOn() || !this.liveEffects() || !this.appWallpaperOn) {
+      return undefined;
+    }
+    return surfaceGlassBlurStyle();
   }
 
   @Styles
@@ -591,13 +613,20 @@ export struct MainTabBody {
     // 与 ChatRow 的卡片同一套规格：同样的左右收进、外边距、头像内缩（对齐顶部标题）、圆角 16、0.5 描边、
     // 玻璃与按压态。
     .width(`calc(100% - ${this.cardGutter() * 2}vp)`)
-    .margin({ left: this.cardGutter(), right: this.cardGutter(), top: 3, bottom: 3 })
+    .margin({
+      left: this.cardGutter(), right: this.cardGutter(),
+      top: CHAT_ROW_VERTICAL_GUTTER, bottom: CHAT_ROW_VERTICAL_GUTTER
+    })
     .height(this.archiveRowHeight())
     .padding({ left: HOME_CARD_INSET_VP, right: ROW_PAD_H })
     .borderRadius(16)
-    .border({ width: this.appWallpaperOn ? 0.5 : 0, color: COLOR_DIVIDER })
-    .backdropBlur(this.archiveGlassOn() && this.liveEffects() ? overlayBackdropBlur('card') : 0)
-    .attributeModifier(materialModifierWhen('card', this.archiveGlassOn() && this.liveEffects()))
+    .border({
+      width: this.archiveGlassOn() ? 0.5 : (this.appWallpaperOn ? 0.5 : 0),
+      color: this.archiveGlassOn() ? GLASS_OUTLINE_COLOR : COLOR_DIVIDER
+    })
+    .backgroundBlurStyle(this.archiveBlurStyle())
+    .attributeModifier(materialModifierWhen('card', this.archiveGlassOn() &&
+      (!this.appWallpaperOn || this.liveEffects())))
     .clip(true)
     .stateStyles({ normal: this.archiveNormalStyle, pressed: this.archivePressedStyle })
     .alignItems(VerticalAlign.Center)

@@ -6,7 +6,7 @@ import {
 export default function unreadBadgeTest() {
   describe('unreadBadge', () => {
     // 2026-09-23 上限从 99+ 提到 999+（用户要求），多出一档 4 字符宽。
-    it('宽度分四档：1 位 / 2 位 / 3 位 / 999+', 0, () => {
+    it('宽度分四档：1 位 / 2 位 / 3 位 / 4 字符缩写', 0, () => {
       expect(unreadBadgeWidth(1)).assertEqual(22);
       expect(unreadBadgeWidth(9)).assertEqual(22);
       expect(unreadBadgeWidth(10)).assertEqual(27);
@@ -30,13 +30,23 @@ export default function unreadBadgeTest() {
       }
     });
 
-    it('超过 999 显示 999+，三位数原样', 0, () => {
+    // #225：超过 999 不再封顶，改成与浏览量同一种缩写（1.2K / 52K / 1.2M）。
+    it('超过 999 缩写为 K / M，三位数原样', 0, () => {
       expect(unreadBadgeText(1)).assertEqual('1');
       expect(unreadBadgeText(99)).assertEqual('99');
       expect(unreadBadgeText(100)).assertEqual('100');
       expect(unreadBadgeText(999)).assertEqual('999');
-      expect(unreadBadgeText(1000)).assertEqual('999+');
-      expect(unreadBadgeText(123456)).assertEqual('999+');
+      expect(unreadBadgeText(1000)).assertEqual('1K');
+      expect(unreadBadgeText(1234)).assertEqual('1.2K');
+      expect(unreadBadgeText(52345)).assertEqual('52K');
+      expect(unreadBadgeText(123456)).assertEqual('123K');
+      expect(unreadBadgeText(1234567)).assertEqual('1.2M');
+    });
+
+    it('缩写后不超过 4 个字符，装得进最宽那档', 0, () => {
+      for (const n of [1000, 1999, 9999, 99999, 999999, 1000000, 99999999]) {
+        expect(unreadBadgeText(n).length <= 4).assertTrue();
+      }
     });
 
     it('位数增加时宽度只增不减', 0, () => {

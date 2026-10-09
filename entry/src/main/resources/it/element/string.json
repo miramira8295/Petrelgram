@@ -11817,18 +11817,6 @@
       "value": "Livello di sfocatura"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Motore di riproduzione"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Usa il lettore di sistema"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Supporta il video HDR. Sperimentale: disattiva per tornare al lettore precedente"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video ad alta gamma dinamica"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Tieni premuto per avanzare"
+      "value": "Tieni premuto per avanzare velocemente"
     },
     {
       "name": "player_hold_back",
-      "value": "Tieni premuto per tornare indietro"
+      "value": "Tieni premuto per avanzare velocemente"
     },
     {
       "name": "mv_show_in_chat",

@@ -11817,18 +11817,6 @@
       "value": "Niveau de flou"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Moteur de lecture"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Utiliser le lecteur système"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Prend en charge la vidéo HDR. Expérimental — désactivez pour revenir en arrière"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Vidéo à plage dynamique élevée"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Maintenir pour avancer"
+      "value": "Maintenir pour avancer rapidement"
     },
     {
       "name": "player_hold_back",
-      "value": "Maintenir pour reculer"
+      "value": "Maintenir pour avancer rapidement"
     },
     {
       "name": "mv_show_in_chat",

@@ -11817,18 +11817,6 @@
       "value": "Рівень розмиття"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Рушій відтворення"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Системний програвач"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Підтримка HDR. Експериментально — вимкніть, щоб повернутися"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Відео з розширеним динамічним діапазоном"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Утримуйте для перемотки вперед"
+      "value": "Утримуйте для перемотування вперед"
     },
     {
       "name": "player_hold_back",
-      "value": "Утримуйте для перемотки назад"
+      "value": "Утримуйте для перемотування вперед"
     },
     {
       "name": "mv_show_in_chat",

@@ -39,6 +39,6 @@ export async function writeUploadedThumb(srcPath: string): Promise<string> {
     if (file !== null) { try { fs.closeSync(file); } catch (_e) { /* 已关 */ } }
     if (packer !== null) { packer.release(); }
     if (pixels !== null) { pixels.release(); }
-    if (source !== null) { source.release(); }
+    if (source !== undefined && source !== null) { source.release(); }
   }
 }

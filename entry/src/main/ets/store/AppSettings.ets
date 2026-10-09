@@ -399,18 +399,6 @@ export const KEY_BG_PLAY_VOICE: string = 'bgPlayVoice';
 export const KEY_BG_PLAY_VIDEO: string = 'bgPlayVideo';
 export const KEY_BG_PLAY_LIVE: string = 'bgPlayLive';
 
-// 全屏播放引擎：打开=系统 AVPlayer，关闭=ijkplayer（默认）。
-//
-// 存在的理由是 HDR：打包的 ijkplayer 着色器只有 BT.601/709 两个 SDR 色彩矩阵、
-// 没有 PQ/HLG 传递函数、也从不给 surface 打 HDR 元数据，HDR 片源会被压成 SDR
-// 发灰。系统 AVPlayer 有 PlaybackStrategy.preferredHdr。
-//
-// **默认开**（09-04 改）。ijkplayer 从渲染层就没有 HDR 通路（着色器只有
-// BT.601/709、没有 PQ/HLG、从不给 surface 打 HDR 元数据），而 AVPlayer 有
-// PlaybackStrategy.preferredHdr。关掉开关即退回 ijk，退路一直在。
-// 只作用于全屏查看器；气泡内嵌播放位恒走 ijk（见 VideoPlayerHost）。
-export const KEY_VIDEO_ENGINE_AVPLAYER: string = 'videoEngineAvPlayer';
-
 // 崩溃上报。默认**开**——这一项存在的全部意义就是"应用打不开时也能知道为什么"，
 // 默认关等于没有。载荷里没有任何用户内容（见 services/crashReport），用户可以
 // 在设置里关掉。
@@ -437,10 +425,7 @@ const DATA_BOOLEAN_TRUE_DEFAULTS: string[] = [
   // 音乐/语音/直播默认续播（符合平台惯例）；视频默认不续播。
   KEY_BG_PLAY_MUSIC,
   KEY_BG_PLAY_VOICE,
-  KEY_BG_PLAY_LIVE,
-  // 全屏播放引擎默认走系统 AVPlayer。ijkplayer 那条只在关掉开关时才用，
-  // 留作退路（它的渲染层没有 HDR 通路，见 KEY_VIDEO_ENGINE_AVPLAYER 的说明）。
-  KEY_VIDEO_ENGINE_AVPLAYER
+  KEY_BG_PLAY_LIVE
 ];
 
 // 平板/宽屏强制单栏（用户要求）：分栏那条路上的媒体查看器走全模态、标题栏不收，

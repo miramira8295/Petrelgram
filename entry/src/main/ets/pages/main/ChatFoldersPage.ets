@@ -9,6 +9,9 @@ import {
   reorderFolders, saveFolder, setFolderTagsEnabled
 } from '../../store/FolderApi';
 import { FolderEditParams } from './FolderEditPage';
+import { MAIN_LIST_ROW, combinedRows, minRowFor, moveRow, splitRows, FolderOrder } from '../../util/folderOrder';
+import { getBoolOption } from '../../store/PrivacyApi';
+import { OPT_IS_PREMIUM } from '../../store/PrivacyStore';
 import { AvatarView } from '../chatlist/AvatarView';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration
@@ -54,6 +57,10 @@ export struct ChatFoldersPage {
   @State tagsEnabled: boolean = false;
   @State operationKey: string = '';
   // 拖拽排序：-1 表示没有在拖。offset 是手指相对起点的位移。
+  // 「所有」在文件夹里排第几（main_chat_list_position）。和 folders 一起组成可拖动的
+  // 混合列表（util/folderOrder）。只有 Premium 账号能把它挪离第 0 位。
+  @State mainPos: number = 0;
+  @State premium: boolean = false;
   @State draggingIndex: number = -1;
   @State dragOffsetY: number = 0;
   @State recommendations: RecommendedFolder[] = [];
@@ -84,12 +91,17 @@ export struct ChatFoldersPage {
     if (this.unsubscribe !== null) { this.unsubscribe(); }
     const store = getFolderStore();
     this.folders = store.getFolders();
+    this.mainPos = store.getMainChatListPosition();
     this.tagsEnabled = store.areTagsEnabled();
     this.loading = !store.isReady();
+    getBoolOption(OPT_IS_PREMIUM).then((value: boolean): void => {
+      if (this.active) { this.premium = value; }
+    }).catch((): void => {});
     this.loadError = false;
     this.unsubscribe = store.subscribe((folders: FolderInfo[]): void => {
       if (!this.active) { return; }
       this.folders = folders;
+      this.mainPos = store.getMainChatListPosition();
       this.tagsEnabled = store.areTagsEnabled();
       if (store.isReady()) {
         this.loading = false;
@@ -171,6 +183,10 @@ export struct ChatFoldersPage {
     });
   }
 
+  private folderById(id: number): FolderInfo {
+    return this.folders.find((folder: FolderInfo): boolean => folder.id === id) as FolderInfo;
+  }
+
   private countLabel(id: number): string {
     const value = this.counts.get(id);
     return value === undefined ? str('counting') : plural('cf_about_chats', value, value);
@@ -182,12 +198,19 @@ export struct ChatFoldersPage {
     router.pushUrl({ url: 'pages/main/FolderEditPage', params });
   }
 
-  // 拖动中该落到第几位。四舍五入到最近的一格，并夹在合法范围内。
+  // 混合列表：各文件夹 id，「所有」以 MAIN_LIST_ROW 插在 mainPos。拖动、菜单的
+  // 上移/下移、让位动画的下标都是这张表的行号（用户要求「所有」也能排序）。
+  private rows(): number[] {
+    return combinedRows(this.folders.map((folder: FolderInfo): number => folder.id), this.mainPos);
+  }
+
+  // 拖动中该落到第几位。四舍五入到最近的一格，并夹在合法范围内（非会员时
+  // 第 0 行归「所有」，别的行上不去）。
   private dragTargetIndex(): number {
     if (this.draggingIndex < 0) { return -1; }
     const shift = Math.round(this.dragOffsetY / ROW_STEP);
     const target = this.draggingIndex + shift;
-    return Math.max(0, Math.min(this.folders.length - 1, target));
+    return Math.max(minRowFor(this.premium), Math.min(this.rows().length - 1, target));
   }
 
   // 每一行在拖拽过程中的视觉位移：被拖的那行跟手，其余行给它让位。
@@ -214,24 +237,31 @@ export struct ChatFoldersPage {
     }
   }
 
+  // from / to 是混合列表（rows()）的行号，「所有」那行也能挪。
   private moveFolder(from: number, to: number): void {
-    if (this.operationKey !== '' || from === to || from < 0 || to < 0 ||
-      from >= this.folders.length || to >= this.folders.length) { return; }
+    if (this.operationKey !== '') { return; }
+    const current: number[] = this.rows();
+    const nextRows: number[] = moveRow(current, from, to);
+    if (nextRows === current) { return; }
+    const order: FolderOrder = splitRows(nextRows);
+    // Telegram 只许 Premium 把「所有」挪离第 0 位，普通账号发过去会被拒。
+    if (!this.premium && order.mainPosition !== 0) { return; }
     const previous = this.folders.slice();
-    const next = this.folders.slice();
-    const moved = next.splice(from, 1)[0];
-    next.splice(to, 0, moved);
-    this.folders = next;
+    const previousMain: number = this.mainPos;
+    const byId: Map<number, FolderInfo> = new Map<number, FolderInfo>();
+    previous.forEach((folder: FolderInfo): void => { byId.set(folder.id, folder); });
+    this.folders = order.folderIds.map((id: number): FolderInfo => byId.get(id) as FolderInfo);
+    this.mainPos = order.mainPosition;
     this.operationKey = 'reorder';
-    reorderFolders(next.map((folder: FolderInfo): number => folder.id),
-      getFolderStore().getMainChatListPosition()).then((): void => {
+    reorderFolders(order.folderIds, order.mainPosition).then((): void => {
       if (this.active) { this.operationKey = ''; }
     }).catch((error: TdError): void => {
       if (!this.active) { return; }
       this.operationKey = '';
       this.folders = previous;
+      this.mainPos = previousMain;
       getFolderStore().applyLocalOrder(previous.map((folder: FolderInfo): number => folder.id),
-        getFolderStore().getMainChatListPosition());
+        previousMain);
       promptAction.showToast({ message: $r('app.string.cf_reorder_failed'), duration: 1800 });
       logE(`ChatFoldersPage.reorder failed: ${error.message}`);
     });
@@ -388,12 +418,46 @@ export struct ChatFoldersPage {
   folderMenu(folder: FolderInfo, index: number) {
     Menu() {
       MenuItem({ content: $r('app.string.cf_edit') }).onClick((): void => this.openEditor(folder.id));
-      MenuItem({ content: $r('app.string.move_up') }).enabled(index > 0)
+      MenuItem({ content: $r('app.string.move_up') }).enabled(index > minRowFor(this.premium))
         .onClick((): void => this.moveFolder(index, index - 1));
-      MenuItem({ content: $r('app.string.move_down') }).enabled(index < this.folders.length - 1)
+      MenuItem({ content: $r('app.string.move_down') }).enabled(index < this.rows().length - 1)
         .onClick((): void => this.moveFolder(index, index + 1));
       MenuItem({ content: $r('app.string.cf_delete') }).onClick((): void => this.prepareDelete(folder));
     }
+  }
+
+  // 「所有」那行的菜单：只有上移/下移（会员才有，见 allChatsRow）。
+  @Builder
+  allChatsMenu(index: number) {
+    Menu() {
+      MenuItem({ content: $r('app.string.move_up') }).enabled(index > 0)
+        .onClick((): void => this.moveFolder(index, index - 1));
+      MenuItem({ content: $r('app.string.move_down') }).enabled(index < this.rows().length - 1)
+        .onClick((): void => this.moveFolder(index, index + 1));
+    }
+  }
+
+  // 「所有」（主会话列表）。会员可以和文件夹一样拖动/上下移；非会员钉在第一行，
+  // 尾部照旧标「默认」。
+  @Builder
+  allChatsRow(index: number) {
+    Row({ space: 12 }) {
+      Row() { Text('💬').fontSize(20); }.width(42).height(42).borderRadius(14)
+        .justifyContent(FlexAlign.Center).backgroundColor($r('app.color.surface_alt'));
+      Column({ space: 2 }) {
+        Text($r('app.string.cf_all_chats')).fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
+        Text($r('app.string.cf_default_list')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+      if (this.premium) {
+        Row() { SymbolGlyph($r('sys.symbol.line_3_horizontal')).fontSize(19).fontColor([COLOR_ICON_SECONDARY]); }
+          .width(40).height(40).borderRadius(20).justifyContent(FlexAlign.Center)
+          .stateStyles({ normal: this.pressNormal, pressed: this.pressDown })
+          .bindMenu(this.allChatsMenu(index), { systemMaterial: overlayMaterial('menu') });
+      } else {
+        Text($r('app.string.cf_default')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
+      }
+    }.width('100%').height(ROW_HEIGHT).padding({ left: 14, right: this.premium ? 8 : 14 })
+      .alignItems(VerticalAlign.Center);
   }
 
   @Builder
@@ -425,19 +489,16 @@ export struct ChatFoldersPage {
   @Builder
   folderCard() {
     Column() {
-      Row({ space: 12 }) {
-        Row() { Text('💬').fontSize(20); }.width(42).height(42).borderRadius(14)
-          .justifyContent(FlexAlign.Center).backgroundColor($r('app.color.surface_alt'));
-        Column({ space: 2 }) {
-          Text($r('app.string.cf_all_chats')).fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY);
-          Text($r('app.string.cf_default_list')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-        }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-        Text($r('app.string.cf_default')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
-      }.width('100%').height(ROW_HEIGHT).padding({ left: 14, right: 14 });
-      ForEach(this.folders, (folder: FolderInfo, index: number) => {
-        Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 68 });
+      ForEach(this.rows(), (rowId: number, index: number) => {
+        if (index > 0) {
+          Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 68 });
+        }
         Column() {
-          this.folderRow(folder, index);
+          if (rowId === MAIN_LIST_ROW) {
+            this.allChatsRow(index);
+          } else {
+            this.folderRow(this.folderById(rowId), index);
+          }
         }
         .width('100%')
         .translate({ y: this.rowOffsetY(index) })
@@ -460,6 +521,8 @@ export struct ChatFoldersPage {
             LongPressGesture({ repeat: false, duration: 300 })
               .onAction((): void => {
                 if (this.operationKey !== '') { return; }
+                // 非会员的「所有」钉死在第一行，不让拖。
+                if (rowId === MAIN_LIST_ROW && !this.premium) { return; }
                 this.draggingIndex = index;
                 this.dragOffsetY = 0;
               }),
@@ -475,7 +538,7 @@ export struct ChatFoldersPage {
               })
           )
         );
-      }, (folder: FolderInfo): string => `folder_${folder.id}`);
+      }, (rowId: number): string => `folder_row_${rowId}`);
       Divider().strokeWidth(0.5).color(COLOR_DIVIDER).margin({ left: 14 });
       Row({ space: 10 }) {
         SymbolGlyph($r('sys.symbol.plus_circle')).fontSize(20).fontColor([COLOR_PRIMARY]);

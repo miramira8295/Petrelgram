@@ -11817,18 +11817,6 @@
       "value": "ब्लर स्तर"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "प्लेबैक इंजन"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "सिस्टम प्लेयर का उपयोग करें"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "HDR वीडियो का समर्थन करता है। प्रायोगिक — वापस जाने के लिए बंद करें"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "हाई डायनामिक रेंज वीडियो"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "आगे बढ़ाने के लिए दबाए रखें"
+      "value": "आगे बढ़ाने के लिए दबाकर रखें"
     },
     {
       "name": "player_hold_back",
-      "value": "पीछे करने के लिए दबाए रखें"
+      "value": "आगे बढ़ाने के लिए दबाकर रखें"
     },
     {
       "name": "mv_show_in_chat",

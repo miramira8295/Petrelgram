@@ -11817,18 +11817,6 @@
       "value": "블러 강도"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "재생 엔진"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "시스템 플레이어 사용"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "HDR 비디오 지원. 실험적 기능이며 문제가 있으면 끄면 됩니다"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "하이 다이내믹 레인지 동영상"
     },
@@ -12070,7 +12058,7 @@
     },
     {
       "name": "player_hold_back",
-      "value": "길게 눌러 되감기"
+      "value": "길게 눌러 빨리 감기"
     },
     {
       "name": "mv_show_in_chat",

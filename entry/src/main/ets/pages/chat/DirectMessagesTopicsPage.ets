@@ -9,6 +9,7 @@ import {
   COLOR_DIVIDER, COLOR_MUTED_BADGE, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
   COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
+import { unreadBadgeText } from '../../util/unreadBadge';
 
 const AVATAR_COLORS: string[] = [
   '#4A90E2', '#2F9E76', '#D16B5B', '#8B63C7', '#C58A22', '#3E8E99'
@@ -172,7 +173,7 @@ export struct DirectMessagesTopicsPage {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1);
           if (row.unreadCount > 0) {
-            Text(row.unreadCount > 99 ? '99+' : `${row.unreadCount}`)
+            Text(unreadBadgeText(row.unreadCount))
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
               .fontColor(COLOR_ON_PRIMARY)

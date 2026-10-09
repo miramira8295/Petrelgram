@@ -11817,18 +11817,6 @@
       "value": "模糊檔位"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "播放引擎"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "使用系統播放器"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "支援 HDR 影片。實驗中，播放異常可關閉此項切回原播放器"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "高動態範圍影片"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "長按快進"
+      "value": "長按快轉"
     },
     {
       "name": "player_hold_back",
-      "value": "長按快退"
+      "value": "長按快轉"
     },
     {
       "name": "mv_show_in_chat",

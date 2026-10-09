@@ -109,3 +109,14 @@ export function forwardableIds(ids: number[], contentTypeOf: (id: number) => str
   }
   return result;
 }
+
+// 某条消息所在那一行的全部成员 id（相册一行多张）。找不到（那一行还没加载进窗口）
+// 就只返回它自己。搜索翻页自动选中时用：落到相册里的一张，按长按选择的粒度选整组。
+export function rowMembersContaining(rows: number[][], messageId: number): number[] {
+  for (const r of rows) {
+    if (r.indexOf(messageId) >= 0) {
+      return r;
+    }
+  }
+  return [messageId];
+}

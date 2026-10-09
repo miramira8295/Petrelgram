@@ -16,7 +16,7 @@ import { shouldShowPlayerStatus } from '../../util/playerStatusGate';
 import {
   AUTO_RETRY_DELAYS_MS, CONTROL_ACCENT, CONTROL_BAR_BG, CONTROL_TEXT_SOFT,
   CONTROL_TRACK, CONTROL_TRACK_SOFT, CONTROL_TRACK_SOFT_FILL, DEFAULT_SPEED_IDX,
-  HEADSET_DEVICE_TYPES, HOLD_SEEK_STEP_MS, LONG_PRESS_SEEK_MS, QUICK_SEEK_MS, SPEEDS,
+  HEADSET_DEVICE_TYPES, HOLD_SEEK_INTERVAL_MS, HOLD_SEEK_STEP_MS, LONG_PRESS_SEEK_MS, QUICK_SEEK_MS, SPEEDS,
   SPEED_LABELS, STATUS_DELAY_MS,
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../../util/playerChrome';
@@ -234,6 +234,7 @@ export struct StreamingVideoPlayer {
   }
 
   private deactivate(): void {
+    this.stopHoldSeek();
     this.active = false;
     this.isPlaying = false;
     this.syncScreenAwake();
@@ -799,7 +800,7 @@ export struct StreamingVideoPlayer {
   // Common media-viewer convention: double tap either half to jump exactly
   // 15 seconds. Clamp at the media boundaries and keep the existing
   // play/pause state, so an inspection seek never unexpectedly starts audio.
-  private seekBy(deltaMs: number): void {
+  private seekBy(deltaMs: number, feedback: boolean = true): void {
     if (this.player === null || !this.isPrepared || this.durationMs <= 0 || this.hasError) {
       return;
     }
@@ -811,7 +812,9 @@ export struct StreamingVideoPlayer {
     if (target < this.durationMs) {
       this.isCompleted = false;
     }
-    this.showSeekFeedback(deltaMs);
+    if (feedback) {
+      this.showSeekFeedback(deltaMs);
+    }
   }
 
   // 角标文案。秒数走 unit_seconds 的复数，外层用带占位符的整句包起来——
@@ -880,6 +883,28 @@ export struct StreamingVideoPlayer {
     this.showSpeedFeedback(applied
       ? str('player_speed', SPEED_LABELS[nextIdx])
       : str('player_speed_failed'));
+  }
+
+  // 按住快进（issue #160 第三版）：按下即跳一步，之后每 HOLD_SEEK_INTERVAL_MS
+  // 再跳一步，松手或手势被打断就停。不弹角标（用户：「不用提示」），进度条
+  // 本身会跟着走。到片尾 seekBy 会夹住，计时器留到松手再停，无害。
+  private holdSeekTimer: number = -1;
+
+  private startHoldSeek(): void {
+    if (this.holdSeekTimer !== -1) {
+      return;
+    }
+    this.seekBy(HOLD_SEEK_STEP_MS, false);
+    this.holdSeekTimer = setInterval((): void => {
+      this.seekBy(HOLD_SEEK_STEP_MS, false);
+    }, HOLD_SEEK_INTERVAL_MS);
+  }
+
+  private stopHoldSeek(): void {
+    if (this.holdSeekTimer !== -1) {
+      clearInterval(this.holdSeekTimer);
+      this.holdSeekTimer = -1;
+    }
   }
 
   private showSpeedFeedback(text: string): void {
@@ -1060,17 +1085,13 @@ export struct StreamingVideoPlayer {
           ? $r('app.string.player_hold_forward') : $r('app.string.player_hold_back'))
         .gesture(
           // 互斥组：先被识别的那个赢。快按抬手 → 单击/双击；按住不放 →
-          // 到 LONG_PRESS_SEEK_MS 时长按胜出，之后每隔同样的时长再回调一次
-          // （repeat: true），每次跳 HOLD_SEEK_STEP_MS。
-          //
-          // 长按的步长和双击**不是**同一个（2026-09-22）：共用 15 秒时按住不放
-          // 是 37 倍速的连续瞬移，停不住。角标现在按实际跳了多少显示，长按期间
-          // 累加（见 showSeekFeedback）。
+          // 到 LONG_PRESS_SEEK_MS 时长按胜出：按住每步快进 2 秒，抬手（或被打断）
+          // 停（issue #160 第三版，2026-10-09）。左右两半按住都是快进；双击仍是 ±15 秒。
           GestureGroup(GestureMode.Exclusive,
-            LongPressGesture({ fingers: 1, repeat: true, duration: LONG_PRESS_SEEK_MS })
-              .onAction((): void => {
-                this.seekBy(forward ? HOLD_SEEK_STEP_MS : -HOLD_SEEK_STEP_MS);
-              }),
+            LongPressGesture({ fingers: 1, repeat: false, duration: LONG_PRESS_SEEK_MS })
+              .onAction((): void => { this.startHoldSeek(); })
+              .onActionEnd((): void => { this.stopHoldSeek(); })
+              .onActionCancel((): void => { this.stopHoldSeek(); }),
             TapGesture({ count: 2, fingers: 1 })
               .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
             TapGesture({ count: 1, fingers: 1 })

@@ -51,7 +51,8 @@ export async function decodeSendable(
         opts.desiredPixelFormat = image.PixelMapFormat.RGB_565;
       }
     } finally {
-      probe.release();
+      // 路径失效时 createImageSource 给的是 undefined（见 pixelCache）。
+      probe?.release();
     }
     source = sendableImage.createImageSource(path);
     return await source.createPixelMap(opts);

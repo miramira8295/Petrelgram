@@ -11817,18 +11817,6 @@
       "value": "Tahap kabur"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Enjin main balik"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Guna pemain sistem"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Menyokong video HDR. Eksperimen — matikan untuk kembali"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video julat dinamik tinggi"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Tahan untuk pantas ke depan"
+      "value": "Tahan untuk mara laju"
     },
     {
       "name": "player_hold_back",
-      "value": "Tahan untuk undur"
+      "value": "Tahan untuk mara laju"
     },
     {
       "name": "mv_show_in_chat",

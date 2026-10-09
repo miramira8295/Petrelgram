@@ -16,6 +16,7 @@ import { logE } from '../../util/log';
 import { HdsNavDestination } from '@kit.UIDesignKit';
 import { KeyedListDataSource } from '../common/KeyedListDataSource';
 import { guardKey } from '../../util/keyGuard';
+import { unreadBadgeText } from '../../util/unreadBadge';
 
 const CARD_RADIUS: number = 14;
 
@@ -475,7 +476,7 @@ struct TopicRowView {
       }
       .alignItems(HorizontalAlign.Start).layoutWeight(1);
       if (this.unreadCount > 0) {
-        Text(this.unreadCount > 99 ? '99+' : `${this.unreadCount}`)
+        Text(unreadBadgeText(this.unreadCount))
           .fontSize(12).fontColor(COLOR_ON_PRIMARY)
           .padding({ left: 7, right: 7, top: 2, bottom: 2 })
           .borderRadius(10).backgroundColor(COLOR_PRIMARY);

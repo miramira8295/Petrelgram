@@ -49,6 +49,7 @@ class FakeHost implements SearchSessionHost {
   forumTopicIdCalls: number = 0;
   directMessagesTopicIdCalls: number = 0;
   jumpToMessageArgs: number[] = [];
+  navigatedArgs: number[] = [];
   cancelFlashCount: number = 0;
 
   chatId: () => number = (): number => {
@@ -69,6 +70,9 @@ class FakeHost implements SearchSessionHost {
   };
   jumpToMessage: (messageId: number) => void = (messageId: number): void => {
     this.jumpToMessageArgs.push(messageId);
+  };
+  onNavigatedResult: (messageId: number) => void = (messageId: number): void => {
+    this.navigatedArgs.push(messageId);
   };
   cancelFlash: () => void = (): void => {
     this.cancelFlashCount++;
@@ -104,6 +108,33 @@ function sleep(ms: number): Promise<void> {
 
 export default function searchSessionTest() {
   describe('SearchSession', () => {
+    // 多选 + 搜索同开时：手动 ∧/∨ 跳到的那条要通知页面（页面把它加进已选）。
+    // 结果已在本地的那一支不经过 TDLib，这里能直接断言。
+    it('手动上下翻结果时通知宿主，跳到哪条报哪条', 0, () => {
+      const host: FakeHost = new FakeHost();
+      const s: SearchSession = controllerOn(host);
+      s.mode = true;
+      s.results = [30, 20, 10];
+      s.total = 3;
+      s.idx = 0;
+      s.older();
+      expect(host.jumpToMessageArgs.join(',')).assertEqual('20');
+      expect(host.navigatedArgs.join(',')).assertEqual('20');
+      s.newer();
+      expect(host.navigatedArgs.join(',')).assertEqual('20,30');
+    });
+
+    it('翻到头没有可跳的就不通知', 0, () => {
+      const host: FakeHost = new FakeHost();
+      const s: SearchSession = controllerOn(host);
+      s.mode = true;
+      s.results = [30, 20, 10];
+      s.total = 3;
+      s.idx = 0;
+      s.newer();
+      expect(host.navigatedArgs.length).assertEqual(0);
+    });
+
 
     // 防的回归：exit() 漏清某一个字段。senderId 尤其容易漏——B6 之前那句
     // "drops stale responses" 就错挂在它头上，容易让人以为它跟 seq 一样只是个

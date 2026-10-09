@@ -1,6 +1,7 @@
 import {
   KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM
 } from '../../util/layoutBreakpoint';
+import { unreadBadgeText } from '../../util/unreadBadge';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import { CHATLIST_PREVIEW_THUMB_ENABLED, stripPreviewIcon } from '../../util/formatPreview';
 import { DRAFT_EPOCH, localDraftPreview } from '../../store/DraftStore';
@@ -47,6 +48,7 @@ import {
 import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logI } from '../../util/log';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
+import { firstFinger } from '../../util/firstFinger';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
@@ -204,7 +206,7 @@ export struct ChatRow {
   }
 
   private unreadLabel(): string {
-    return this.chat.unreadCount > 999 ? '999+' : `${this.chat.unreadCount}`;
+    return unreadBadgeText(this.chat.unreadCount);
   }
 
   // 这一行到底静不静音。**不能直接读 chat.isMuted**：那是 TDLib 的
@@ -266,13 +268,13 @@ export struct ChatRow {
 
   // 上一次按压的旧偏移。
   private recordMenuOffset(event: GestureEvent): void {
-    const fingers = event.fingerList;
+    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
     const rowWidth: number = event.target.area.width as number;
-    if (fingers.length === 0 || rowWidth <= 0) {
+    if (finger === undefined || rowWidth <= 0) {
       this.menuOffsetX = 0;
       return;
     }
-    this.menuOffsetX = fingers[0].localX - rowWidth / 2;
+    this.menuOffsetX = finger.localX - rowWidth / 2;
   }
 
   private openContextMenuIfCurrent(event: GestureEvent): void {

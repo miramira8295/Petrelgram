@@ -39,6 +39,7 @@ import { ensureCacheRegistry, noteCachedMedia } from '../../store/CacheRegistry'
 import { CacheRecord } from '../../util/cacheRegistryModel';
 import { DC_KIND_PHOTO, DC_KIND_VIDEO } from '../../util/downloadCenterModel';
 import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
+import { firstFinger } from '../../util/firstFinger';
 
 // 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
 // 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
@@ -542,9 +543,10 @@ export struct MediaViewerOverlay {
     }
     let px = 0;
     let py = 0;
-    if (event.fingerList.length > 0) {
-      px = event.fingerList[0].localX - this.areaW / 2;
-      py = event.fingerList[0].localY - this.areaH / 2;
+    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
+    if (finger !== undefined) {
+      px = finger.localX - this.areaW / 2;
+      py = finger.localY - this.areaH / 2;
     }
     this.pinchStartScale = VIEWER_DOUBLE_TAP_SCALE;
     animateTo({

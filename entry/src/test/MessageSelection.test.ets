@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import {
+import { rowMembersContaining,
   forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth,
   memberSelected, pruneSelection, rowSelectable, rowSelected, selectRow, toggleMember, toggleRow
 } from '../main/ets/util/messageSelection';
@@ -7,6 +7,14 @@ import {
 // 选中的单位是"行"不是消息：相册行整体选中或整体不选。
 export default function messageSelectionTest() {
   describe('messageSelection', () => {
+    // 搜索翻到相册里的一张时，多选要把整组选上（与长按选择同一个粒度）。
+    it('找某条消息所在那一行的全部成员；不在任何一行就只返回它自己', 0, () => {
+      const rows: number[][] = [[1], [2, 3, 4], [5]];
+      expect(rowMembersContaining(rows, 3).join(',')).assertEqual('2,3,4');
+      expect(rowMembersContaining(rows, 5).join(',')).assertEqual('5');
+      expect(rowMembersContaining(rows, 9).join(',')).assertEqual('9');
+    });
+
     it('系统消息和隐藏消息不能选', 0, () => {
       expect(rowSelectable('text')).assertTrue();
       expect(rowSelectable('photo')).assertTrue();

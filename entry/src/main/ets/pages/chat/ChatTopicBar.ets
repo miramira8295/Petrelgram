@@ -4,6 +4,7 @@ import { guardKey } from '../../util/keyGuard';
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
+import { unreadBadgeText } from '../../util/unreadBadge';
 
 // 聊天详情页顶栏里的话题横条（2026-09-16）。
 //
@@ -50,7 +51,7 @@ struct TopicPill {
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         .constraintSize({ maxWidth: 120 });
       if (this.row.unreadCount > 0) {
-        Text(this.row.unreadCount > 99 ? '99+' : `${this.row.unreadCount}`)
+        Text(unreadBadgeText(this.row.unreadCount))
           .fontSize(10).fontColor(Color.White)
           .padding({ left: 5, right: 5 })
           .height(16).borderRadius(8)

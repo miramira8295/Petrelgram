@@ -11817,18 +11817,6 @@
       "value": "Tingkat buram"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Mesin pemutaran"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Gunakan pemutar sistem"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Mendukung video HDR. Eksperimental — matikan untuk kembali"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video rentang dinamis tinggi"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Tahan untuk maju cepat"
+      "value": "Tahan untuk mempercepat maju"
     },
     {
       "name": "player_hold_back",
-      "value": "Tahan untuk mundur"
+      "value": "Tahan untuk mempercepat maju"
     },
     {
       "name": "mv_show_in_chat",

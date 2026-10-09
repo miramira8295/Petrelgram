@@ -340,8 +340,11 @@ export function loadPixelMapSync(req: PixelRequest): PixelHandle | undefined {
     touch(key, hit);
     return hit;
   }
-  let source: image.ImageSource | null = null;
+  let source: image.ImageSource | undefined = undefined;
   try {
+    // 路径失效（文件被清理）时 createImageSource 返回 undefined 而不是抛错；
+    // 原来 finally 只判 null，于是 undefined.release() 把异常从 finally 里
+    // 抛出去——1.5.2 崩溃榜第一（#228，14 次，都从格子复用进来）。
     source = image.createImageSource(req.path);
     const syncOpts: image.DecodingOptions = {
       desiredSize: { width: req.width, height: req.height }
@@ -365,7 +368,7 @@ export function loadPixelMapSync(req: PixelRequest): PixelHandle | undefined {
     logE(`pixelCache loadPixelMapSync(${req.path}) failed: ${e}`);
     return undefined;
   } finally {
-    if (source !== null) {
+    if (source !== undefined && source !== null) {
       source.release();
     }
   }

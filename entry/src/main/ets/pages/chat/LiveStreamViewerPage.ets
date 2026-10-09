@@ -44,6 +44,7 @@ import { guardKey } from '../../util/keyGuard';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI } from '../../util/log';
+import { unreadBadgeText } from '../../util/unreadBadge';
 
 const CALL_BACKGROUND: string = '#0D141B';
 const CALL_PANEL: string = '#141E27';
@@ -2358,7 +2359,7 @@ struct LiveStreamViewerPage {
         Circle({ width: 36, height: 36 }).fill('#263390EC');
         SymbolGlyph($r('sys.symbol.message')).fontSize(18).fontColor(['#8FC2FF']);
         if (this.interactionUnreadCount > 0) {
-          Text(this.interactionUnreadCount > 99 ? '99+' : `${this.interactionUnreadCount}`)
+          Text(unreadBadgeText(this.interactionUnreadCount))
             .fontSize(8).fontWeight(FontWeight.Bold).fontColor(Color.White)
             .height(16).constraintSize({ minWidth: 16 }).padding({ left: 4, right: 4 })
             .backgroundColor('#FF405C').borderRadius(8)

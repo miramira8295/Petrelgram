@@ -4,8 +4,7 @@ import {
   setBoolean, setNumber,
   KEY_POWER_AUTOPLAY_VIDEO, KEY_POWER_AUTOPLAY_GIF, KEY_AUTOPLAY_MUTED,
   KEY_AUTOPLAY_MAX_MB, AUTOPLAY_MAX_MB_OPTIONS,
-  KEY_BG_PLAY_MUSIC, KEY_BG_PLAY_VOICE, KEY_BG_PLAY_VIDEO, KEY_BG_PLAY_LIVE,
-  KEY_VIDEO_ENGINE_AVPLAYER
+  KEY_BG_PLAY_MUSIC, KEY_BG_PLAY_VOICE, KEY_BG_PLAY_VIDEO, KEY_BG_PLAY_LIVE
 } from '../../store/AppSettings';
 import {
   COLOR_DIVIDER, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_SURFACE,
@@ -41,7 +40,6 @@ export struct MediaSettingsPage {
   @StorageProp(KEY_BG_PLAY_VOICE) bgVoice: boolean = true;
   @StorageProp(KEY_BG_PLAY_VIDEO) bgVideo: boolean = false;
   @StorageProp(KEY_BG_PLAY_LIVE) bgLive: boolean = true;
-  @StorageProp(KEY_VIDEO_ENGINE_AVPLAYER) useAvPlayer: boolean = false;
 
   @Styles
   actionNormalStyle() {
@@ -109,18 +107,6 @@ export struct MediaSettingsPage {
     }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);
   }
 
-  // 播放引擎切换。开着=系统 AVPlayer（有 HDR），关着=ijkplayer（默认）。
-  // 只影响全屏查看器；气泡里的内嵌预览恒走 ijk（见 VideoPlayerHost）。
-  // 改完要关掉查看器再重开才生效——播放器实例是在打开时建的。
-  @Builder
-  videoEngineCard() {
-    Column() {
-      this.toggleRow(str('ms_video_engine_system'), str('ms_video_engine_system_sub'),
-        this.useAvPlayer,
-        (next: boolean): void => setBoolean(KEY_VIDEO_ENGINE_AVPLAYER, next));
-    }.width('100%').backgroundColor(COLOR_SURFACE).borderRadius(CARD_RADIUS).clip(true);
-  }
-
   @Builder
   backgroundPlaybackCard() {
     Column() {
@@ -154,9 +140,6 @@ export struct MediaSettingsPage {
           Text(str('ms_autoplay_group')).fontSize(14).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY)
             .width('100%').padding({ left: 4, top: 4 });
           this.autoplayCard();
-          Text(str('ms_video_engine_group')).fontSize(14).fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_PRIMARY).width('100%').padding({ left: 4, top: 4 });
-          this.videoEngineCard();
           Text($r('app.string.settings_background_playback')).fontSize(14).fontWeight(FontWeight.Medium)
             .fontColor(COLOR_PRIMARY).width('100%').padding({ left: 4, top: 4 });
           this.backgroundPlaybackCard();

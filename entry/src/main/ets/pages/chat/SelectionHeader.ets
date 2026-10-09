@@ -50,6 +50,10 @@ export struct SelectionHeader {
   // @Param 的 `!==` 恒不相等会让本层白刷一遍。@Event 不具备观测能力，正好复现
   // 迁移前普通字段的行为。空实现默认值保留，让组件能脱离父组件独立预览。
   @Event onExit: () => void = (): void => {};
+  // 多选中也能进搜索（用户要求两者可同开）。只在单独多选、栏在顶部时显示；
+  // 已经在搜索时这条栏挪到底部，不再带🔍。
+  @Param showSearch: boolean = false;
+  @Event onSearch: () => void = (): void => {};
   @Event onForward: () => void = (): void => {};
   // 多选保存（issue #199）：照片/视频进相册、文件进下载目录。
   @Event onSave: () => void = (): void => {};
@@ -100,6 +104,10 @@ export struct SelectionHeader {
       Text(str('cp_selected_n', this.selection.count()))
         .fontSize(16).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
         .layoutWeight(1).margin({ left: 6 });
+      if (this.showSearch) {
+        this.capsule('sys.symbol.magnifyingglass', COLOR_TEXT_PRIMARY,
+          (): void => { this.onSearch(); });
+      }
       this.capsule('sys.symbol.arrow_down_circle', COLOR_TEXT_PRIMARY,
         (): void => { this.onSave(); });
       if (this.canBackgroundCache) {

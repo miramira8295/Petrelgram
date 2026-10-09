@@ -11817,18 +11817,6 @@
       "value": "Mức làm mờ"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Công cụ phát"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Dùng trình phát hệ thống"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Hỗ trợ video HDR. Thử nghiệm — tắt để quay lại trình phát cũ"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Video dải động cao"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Giữ để tua nhanh"
+      "value": "Nhấn giữ để tua nhanh"
     },
     {
       "name": "player_hold_back",
-      "value": "Giữ để tua lại"
+      "value": "Nhấn giữ để tua nhanh"
     },
     {
       "name": "mv_show_in_chat",

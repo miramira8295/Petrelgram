@@ -11817,18 +11817,6 @@
       "value": "Bulanıklık düzeyi"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Oynatma motoru"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Sistem oynatıcısını kullan"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "HDR videoyu destekler. Deneysel — sorun olursa kapatıp geri dönün"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Yüksek dinamik aralıklı video"
     },
@@ -12070,7 +12058,7 @@
     },
     {
       "name": "player_hold_back",
-      "value": "Geri sarmak için basılı tutun"
+      "value": "İleri sarmak için basılı tutun"
     },
     {
       "name": "mv_show_in_chat",

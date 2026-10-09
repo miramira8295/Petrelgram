@@ -11817,18 +11817,6 @@
       "value": "درجة الضبابية"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "محرك التشغيل"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "استخدام مشغّل النظام"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "يدعم فيديو HDR. تجريبي — أوقفه للعودة إلى المشغّل السابق"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "فيديو بنطاق ديناميكي عالٍ"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "اضغط مطولًا للتقديم"
+      "value": "اضغط مطولًا للتقديم السريع"
     },
     {
       "name": "player_hold_back",
-      "value": "اضغط مطولًا للإرجاع"
+      "value": "اضغط مطولًا للتقديم السريع"
     },
     {
       "name": "mv_show_in_chat",

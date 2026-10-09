@@ -146,7 +146,8 @@ import {
   TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR
 } from '../../util/timelineState';
 import {
-  forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth, rowSelectable
+  forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth, rowMembersContaining,
+  rowSelectable
 } from '../../util/messageSelection';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
 // cancelEdit/draftToRestore：commitEdit（留页面）用来把编辑态摊回 idle。
@@ -2874,6 +2875,13 @@ export struct ChatPage {
       forumTopicId: (): number => this.forumTopicId,
       directMessagesTopicId: (): number => this.directMessagesTopicId,
       jumpToMessage: (messageId: number): void => { this.onReplyTap(messageId); },
+      // 多选开着时，手动翻到的搜索结果加进已选（相册按整组，同长按选择的粒度）。
+      onNavigatedResult: (messageId: number): void => {
+        if (this.selection.active) {
+          this.selection.selectRow(rowMembersContaining(
+            this.groups.map((g: AlbumGroup): number[] => g.memberIds), messageId));
+        }
+      },
       cancelFlash: (): void => { this.flash.cancelFlash(); }
     });
     // 多选控制器接上宿主（B7）。chatTgsScrollActive 是取值器；
@@ -6161,12 +6169,6 @@ export struct ChatPage {
         // onLinkTap 的第一件事就是分内外：内链应用内解析，外链才回到 openWebUrl。
         // askFirst=true 与旁边 URL 按钮那条一致——按钮上的字不是网址，先让用户
         // 看清要去哪。
-        // 探针（临时）：只打前缀，**不打 query**——那里面是用户的搜索词。
-        // 要确认的是 #212 那条 url 到底长什么样：内链走对了没有，外链是不是
-        // 另有来源。
-        const probeEnd: number = answerUrl.indexOf('?');
-        logW(`[Btn212] answer url=${probeEnd > 0 ? answerUrl.substring(0, probeEnd) : answerUrl}` +
-          ` internal=${isTelegramInternalUrl(answerUrl)}`);
         this.onLinkTap(answerUrl, true);
       }
       if (text.trim() !== '') {
@@ -7999,12 +8001,16 @@ export struct ChatPage {
   @Builder
   bottomDock() {
     Column() {
-      if (this.selection.active) {
+      if (this.search.mode) {
+        // 搜索与多选同开：多选的操作叠在搜索条上面（顶栏归搜索框）。
+        if (this.selection.active) {
+          this.selectionBar(false);
+        }
+        this.searchDock();
+      } else if (this.selection.active) {
         // Selection owns the header actions; removing the composer also drops
         // its reserved list inset so messages expand naturally into the space.
         Column().width('100%').height(0);
-      } else if (this.search.mode) {
-        this.searchDock();
       } else if (this.composerSlot() !== 'writable') {
         this.membershipDock();
       } else {
@@ -8585,27 +8591,36 @@ export struct ChatPage {
     });
   }
 
+  // 多选操作栏：单独多选时在顶栏（带🔍，可以接着进搜索），与搜索同开时在底栏
+  // （不带🔍，已经在搜了）。参数两处一模一样，只写这一份。
+  @Builder
+  selectionBar(showSearch: boolean) {
+    SelectionHeader({
+      materialEpoch: this.materialEpoch,
+      selection: this.selection,
+      topSafe: 0,
+      showSearch: showSearch,
+      onSearch: (): void => { this.search.enter(); },
+      onExit: (): void => { this.selection.exit(); },
+      onForward: (): void => { this.openForwardPicker(this.selection.ids); },
+      onSave: (): void => { this.saveSelected(); },
+      canBackgroundCache: selectionHasCacheableVideo(this.messages, this.selection.ids),
+      onBackgroundCache: (): void => {
+        cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.messages, this.selection.ids,
+          this.chatId);
+        this.selection.exit();
+      },
+      onCopy: (): void => { this.copySelected(); },
+      onDelete: (): void => { this.deleteSelected(); }
+    });
+  }
+
   @Builder
   chatTitleBar() {
     Column() {
-      if (this.selection.active) {
-        SelectionHeader({
-          materialEpoch: this.materialEpoch,
-          selection: this.selection,
-          topSafe: 0,
-          onExit: (): void => { this.selection.exit(); },
-          onForward: (): void => { this.openForwardPicker(this.selection.ids); },
-          onSave: (): void => { this.saveSelected(); },
-          canBackgroundCache: selectionHasCacheableVideo(this.messages, this.selection.ids),
-          onBackgroundCache: (): void => {
-            cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.messages, this.selection.ids,
-              this.chatId);
-            this.selection.exit();
-          },
-          onCopy: (): void => { this.copySelected(); },
-          onDelete: (): void => { this.deleteSelected(); }
-        });
-      } else if (this.search.mode) {
+      // 搜索优先：多选与搜索可以同时开着（用户要求），这时顶栏留给搜索框（还能改
+      // 关键词），多选的操作挪到底栏、叠在搜索条上面（见 bottomDock）。
+      if (this.search.mode) {
         SearchHeader({
           search: this.search,
           topSafe: 0,
@@ -8613,6 +8628,8 @@ export struct ChatPage {
           onQueryChange: (v: string): void => { this.search.updateQuery(v); },
           onSubmit: (): void => { this.search.run(0, 0); }
         });
+      } else if (this.selection.active) {
+        this.selectionBar(true);
       } else {
         ChatHeader({
           appearanceEpoch: this.appearanceEpoch,

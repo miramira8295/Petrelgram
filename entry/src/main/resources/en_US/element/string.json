@@ -11817,18 +11817,6 @@
       "value": "Blur level"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Playback engine"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Use system player"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Supports HDR video. Experimental — turn off to switch back if playback misbehaves"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "High dynamic range video"
     },
@@ -12070,7 +12058,7 @@
     },
     {
       "name": "player_hold_back",
-      "value": "Hold to rewind"
+      "value": "Hold to fast-forward"
     },
     {
       "name": "mv_show_in_chat",

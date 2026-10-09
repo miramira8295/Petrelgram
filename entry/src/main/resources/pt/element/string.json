@@ -11817,18 +11817,6 @@
       "value": "Nível de desfoque"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "Motor de reprodução"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "Usar reprodutor do sistema"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "Compatível com vídeo HDR. Experimental — desative para voltar ao reprodutor anterior"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "Vídeo de alto alcance dinâmico"
     },
@@ -12066,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "Segure para avançar"
+      "value": "Mantenha pressionado para avançar"
     },
     {
       "name": "player_hold_back",
-      "value": "Segure para retroceder"
+      "value": "Mantenha pressionado para avançar"
     },
     {
       "name": "mv_show_in_chat",

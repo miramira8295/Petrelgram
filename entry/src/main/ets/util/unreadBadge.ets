@@ -1,18 +1,19 @@
 // 「↓」按钮右上角那颗未读数角标的尺寸与落点。
 //
-// 角标宽度随位数变（1 位 / 2 位 / 3 位 / 999+ 四档），而它是用绝对定位挂在按钮右上角
+// 角标宽度随位数变（1 位 / 2 位 / 3 位 / 4 字符缩写四档），而它是用绝对定位挂在按钮右上角
 // 的——**位置得跟着宽度一起变**，否则数字一多角标就往右溢出。原来这两处是
 // 分开写的两个表达式（width(...) 和 position({ x: 52 - ... })），改一处忘另一处
 // 就是角标歪掉，而这种歪在截图里未必看得出来。
 //
 // 这里把"右边缘固定在 52"变成算出来的结果，并由单测钉住。
+import { formatViewCount } from './viewCountChannel';
 
 // 角标右边缘相对 Stack 左边的位置。按钮 46 宽、position x=6，所以右边缘正好
 // 落在 6 + 46 = 52，角标与按钮右对齐。
 export const BADGE_RIGHT_EDGE: number = 52;
 export const BADGE_HEIGHT: number = 22;
 
-// 上限 999+（2026-09-23 从 99+ 提上来）。4 个字符那档 41：12fp 中粗数字约
+// 三位数以上（2026-09-23 从 99+ 提上来，#225 起改缩写）。4 个字符那档 41：12fp 中粗数字约
 // 6.8vp/字，加左右各 ~6 的内边距；落点 52 − 41 = 11 仍在按钮范围内。
 export const BADGE_TEXT_CAP: number = 999;
 
@@ -30,7 +31,9 @@ export function unreadBadgeOffsetX(count: number): number {
   return BADGE_RIGHT_EDGE - unreadBadgeWidth(count);
 }
 
-// 角标上的文字。超过 999 一律 999+，否则原样。
+// 角标上的文字。三位数以内原样；超过 999 缩写成 1.2K / 52K / 1.2M（#225：
+// 原来一律 999+，几千和几十万看不出差别）。缩写与浏览量同一套、向下取整，
+// 最长 4 个字符，仍落在最宽那档里。会话列表行与「↓」按钮共用。
 export function unreadBadgeText(count: number): string {
-  return count > BADGE_TEXT_CAP ? `${BADGE_TEXT_CAP}+` : `${count}`;
+  return count > BADGE_TEXT_CAP ? formatViewCount(count) : `${count}`;
 }

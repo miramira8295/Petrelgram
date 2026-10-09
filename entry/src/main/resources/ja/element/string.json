@@ -11817,18 +11817,6 @@
       "value": "ぼかしの強さ"
     },
     {
-      "name": "ms_video_engine_group",
-      "value": "再生エンジン"
-    },
-    {
-      "name": "ms_video_engine_system",
-      "value": "システムプレーヤーを使用"
-    },
-    {
-      "name": "ms_video_engine_system_sub",
-      "value": "HDR 動画に対応。実験的機能です。問題があればオフに戻してください"
-    },
-    {
       "name": "player_hdr_a11y",
       "value": "ハイダイナミックレンジ動画"
     },
@@ -12070,7 +12058,7 @@
     },
     {
       "name": "player_hold_back",
-      "value": "長押しで巻き戻し"
+      "value": "長押しで早送り"
     },
     {
       "name": "mv_show_in_chat",
