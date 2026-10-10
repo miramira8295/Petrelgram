@@ -122,8 +122,54 @@ export class VideoStreamSession {
     this.progressListeners = [];
   }
 
+  // 下载提前量（2026-10-10）：起播后播放器按码率与网络算好设进来（util/streamReadAhead），
+  // 之前用默认的 6MB。低水位随之放大到高水位的四分之一（至少 2MB）：提前量是 64MB 时，
+  // 等只剩 2MB 才补就又回到了「一抖就卡」。
+  private highWaterBytes: number = HIGH_WATER_BYTES;
+
+  setReadAheadBytes(bytes: number): void {
+    if (bytes > 0) {
+      this.highWaterBytes = Math.max(HIGH_WATER_BYTES, Math.floor(bytes));
+      this.keepAhead(this.readHead);
+    }
+  }
+
+  private lowWaterBytes(): number {
+    return Math.max(LOW_WATER_BYTES, Math.floor(this.highWaterBytes / 4));
+  }
+
   fileSizeForPlayer(): number {
     return this.totalSize > 0 ? this.totalSize : -1;
+  }
+
+  // ── 播放器直读（VideoTdSource，2026-10-10） ─────────────────────────────
+  // 播放器在原生层直接 pread TDLib 正在写的文件，这里只给它「文件在哪、哪几段已经下好」，
+  // 并接收它报回来的读取位置。字节不再经过 JS（原来的 VideoRangeServer 要过一遍）。
+
+  playerFilePath(): string {
+    return this.localPath;
+  }
+
+  // 已下载的字节段，拍平成 [start0, end0, start1, end1, ...]。
+  bufferedRangesFlat(): number[] {
+    const flat: number[] = [];
+    for (const r of this.ranges) {
+      flat.push(r.start, r.end);
+    }
+    return flat;
+  }
+
+  // 播放器报读取位置。urgent：读到了还没下载的地方、正在原地等——立刻把这一块提到最前；
+  // 否则只是正常往前读，按水位往前预读。
+  noteReadHead(offset: number, urgent: boolean): void {
+    if (this.closed || offset < 0) {
+      return;
+    }
+    this.readHead = offset;
+    if (urgent) {
+      this.ensureRange(offset, CHUNK_SIZE, true);
+    }
+    this.keepAhead(offset);
   }
 
   async readRange(offset: number, length: number, timeoutMs: number): Promise<ArrayBuffer | null> {
@@ -226,10 +272,11 @@ export class VideoStreamSession {
   }
 
   private keepAhead(offset: number): void {
-    this.ensureRange(offset, LOW_WATER_BYTES);
+    const lowWater: number = this.lowWaterBytes();
+    this.ensureRange(offset, lowWater);
     const buffered = this.bufferedFrom(offset);
-    if (buffered < LOW_WATER_BYTES) {
-      this.ensureRange(offset + buffered, HIGH_WATER_BYTES - buffered);
+    if (buffered < lowWater) {
+      this.ensureRange(offset + buffered, this.highWaterBytes - buffered);
     }
   }
 
@@ -253,8 +300,8 @@ export class VideoStreamSession {
         return;
       }
       const buffered = this.bufferedFrom(this.readHead);
-      if (buffered < HIGH_WATER_BYTES) {
-        this.ensureRange(this.readHead + buffered, HIGH_WATER_BYTES - buffered);
+      if (buffered < this.highWaterBytes) {
+        this.ensureRange(this.readHead + buffered, this.highWaterBytes - buffered);
       }
       setTimeout(() => this.pumpPrefetch(), 700);
     };
@@ -412,8 +459,10 @@ export class VideoStreamSession {
       return;
     }
     const path = (local['path'] as string | undefined) ?? '';
-    if (path !== '') {
+    if (path !== '' && path !== this.localPath) {
       this.localPath = path;
+      // 直读的播放器要知道路径才能读：路径晚于字节段到达时，这里补一次通知。
+      this.notifyProgress();
     }
     const downloadOffset = (local['download_offset'] as number | undefined) ?? 0;
     const prefix = (local['downloaded_prefix_size'] as number | undefined) ?? 0;

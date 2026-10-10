@@ -7,6 +7,7 @@ import { plural, str } from './strings';
 import { logI } from './log';
 // 封面小图的取法 messageAudio 与机器人内联结果共用，放在 musicTrackModel。
 import { audioCoverMiniUrl } from './musicTrackModel';
+import { VideoVariant } from './videoVariants';
 
 export interface PollOptionInfo {
   text: string;
@@ -42,6 +43,7 @@ export interface MsgContent {
   videoDuration: number; // seconds, 0 for non-video content
   videoFileId: number;   // full-resolution video file id, 0 for non-video content
   videoFileSize: number; // bytes, 0 when unknown/non-video
+  videoVariants?: VideoVariant[]; // alternative_videos（服务器转的其它清晰度），不含原片
   videoMimeType: string; // e.g. video/mp4, video/webm
   videoFileName: string; // original file name, '' when unknown/non-video
   photoFullFileId: number; // full-resolution photo file id, 0 when no upgrade exists
@@ -155,6 +157,31 @@ interface LocalFileState {
   path: string;
   progress: number;
   active: boolean;
+}
+
+// messageVideo.alternative_videos -> 清晰度选项（不含原片）。取的是每档的 video 文件
+// （直接可播的 mp4），不是 hls_file 播放列表。
+function alternativeVideosOf(content: TdObject): VideoVariant[] {
+  const raw = content['alternative_videos'] as TdObject[] | undefined;
+  if (raw === undefined || raw === null) {
+    return [];
+  }
+  const out: VideoVariant[] = [];
+  for (const alt of raw) {
+    const file = alt['video'] as TdObject | undefined;
+    const fileId: number = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
+    if (fileId === 0) {
+      continue;
+    }
+    out.push({
+      fileId: fileId,
+      width: (alt['width'] as number | undefined) ?? 0,
+      height: (alt['height'] as number | undefined) ?? 0,
+      size: ((file!['size'] as number | undefined) ?? 0) || ((file!['expected_size'] as number | undefined) ?? 0),
+      codec: (alt['codec'] as string | undefined) ?? ''
+    });
+  }
+  return out;
 }
 
 function localFileState(file: TdObject | undefined): LocalFileState {
@@ -729,6 +756,7 @@ export function formatMsgContent(message: TdObject): MsgContent {
       videoDuration: video !== undefined ? ((video['duration'] as number | undefined) ?? 0) : 0,
       videoFileId: videoFile !== undefined ? ((videoFile['id'] as number | undefined) ?? 0) : 0,
       videoFileSize: videoSize,
+      videoVariants: alternativeVideosOf(content!),
       videoMimeType: video !== undefined ? ((video['mime_type'] as string | undefined) ?? '') : '',
       videoFileName: video !== undefined ? ((video['file_name'] as string | undefined) ?? '') : '',
       photoFullFileId: 0

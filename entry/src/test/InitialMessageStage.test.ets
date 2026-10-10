@@ -38,7 +38,7 @@ function groupOf(id: number): AlbumGroup {
     photoPaths: [],
     photoMinis: [], photoFileIds: [], photoRatios: [], photoIsVideo: [], photoIsLive: [],
     photoProgress: [], photoFailed: [], videoFileIds: [], videoFileSizes: [],
-    videoDurations: [], videoMimeTypes: [], caption: '', captionEntities: [], dateLabel: '',
+    videoDurations: [], videoMimeTypes: [], inlineFileIds: [], inlineFileSizes: [], caption: '', captionEntities: [], dateLabel: '',
     showAvatar: true, showSenderName: true
   };
 }

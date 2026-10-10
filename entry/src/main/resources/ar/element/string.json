@@ -12054,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "اضغط مطولًا للتقديم السريع"
+      "value": "اضغط مطولًا للتشغيل بسرعة أعلى"
     },
     {
       "name": "player_hold_back",
-      "value": "اضغط مطولًا للتقديم السريع"
+      "value": "اضغط مطولًا للتشغيل بسرعة أعلى"
     },
     {
       "name": "mv_show_in_chat",
@@ -12855,6 +12855,30 @@
     {
       "name": "cb_follow_system",
       "value": "النظام"
+    },
+    {
+      "name": "mv_decoder_hw",
+      "value": "HW"
+    },
+    {
+      "name": "mv_decoder_sw",
+      "value": "SW"
+    },
+    {
+      "name": "mv_quality_auto",
+      "value": "تلقائي"
+    },
+    {
+      "name": "mv_quality_auto_with",
+      "value": "تلقائي (%s)"
+    },
+    {
+      "name": "mv_quality_original",
+      "value": "%s · الأصلي"
+    },
+    {
+      "name": "mv_stats_title",
+      "value": "إحصاءات تفصيلية"
     }
   ]
 }

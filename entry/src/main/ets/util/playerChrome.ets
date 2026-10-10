@@ -36,12 +36,6 @@ export const QUICK_SEEK_MS: number = 15_000;
 // 更跟手；再小会和双击抢。
 export const LONG_PRESS_SEEK_MS: number = 400;
 
-// 按住快进（issue #160 第三版，2026-10-09 用户定）：按住期间每隔
-// HOLD_SEEK_INTERVAL_MS 往前跳 HOLD_SEEK_STEP_MS，松手停，不弹提示。
-// 第二版「按住 2 倍速」在 ijk 上画面不动——声音和进度条在走、帧全被丢掉，
-// 2.0.9 和 2.0.11 都一样——所以不再改播放速度，改成一步步 seek。
-export const HOLD_SEEK_STEP_MS: number = 2_000;
-export const HOLD_SEEK_INTERVAL_MS: number = 500;
 
 
 // 状态文字「延迟出现」的门槛。见 util/playerStatusGate（issue #192）。
@@ -96,4 +90,34 @@ export function formatSpeed(bytesPerSec: number): string {
     return `${Math.round(bytesPerSec / 1024)} KB/s`;
   }
   return `${Math.round(bytesPerSec)} B/s`;
+}
+
+// 按住加速（2026-10-10 用户定：从 2 倍起慢慢变快，本地视频最高 32 倍）。按下后经过多少毫秒用哪一档。
+// 阶梯而不是连续变化：每换一次速度音频滤镜要重建一次，连续调会一直咔哒。
+const HOLD_SPEED_STEPS_MS: number[] = [0, 1500, 2500, 3500, 4500, 5500, 6500];
+const HOLD_SPEED_STEPS: number[] = [2, 3, 4, 6, 8, 16, 32];
+// 换档检查的间隔。
+export const HOLD_SPEED_TICK_MS: number = 250;
+// 边下边播封顶 8×：32× 每秒要读几十 MB，网络跟不上只会一直转圈。整份在本地才放开到 32×。
+const HOLD_SPEED_CAP_STREAMING: number = 8;
+const HOLD_SPEED_CAP_LOCAL: number = 32;
+// 这个倍速及以上静音：声音已听不出内容，音频变速白占 CPU。
+const HOLD_SPEED_MUTE_FROM: number = 16;
+
+export function holdSpeedCap(fullyLocal: boolean): number {
+  return fullyLocal ? HOLD_SPEED_CAP_LOCAL : HOLD_SPEED_CAP_STREAMING;
+}
+
+export function holdSpeedMuted(speed: number): boolean {
+  return speed >= HOLD_SPEED_MUTE_FROM;
+}
+
+export function holdSpeedAt(elapsedMs: number, cap: number): number {
+  let speed: number = HOLD_SPEED_STEPS[0];
+  for (let i = 0; i < HOLD_SPEED_STEPS_MS.length; i++) {
+    if (elapsedMs >= HOLD_SPEED_STEPS_MS[i]) {
+      speed = HOLD_SPEED_STEPS[i];
+    }
+  }
+  return Math.min(speed, cap);
 }

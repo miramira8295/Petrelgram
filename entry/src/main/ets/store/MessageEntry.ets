@@ -8,6 +8,7 @@ import { plural, str } from '../util/strings';
 import { monthDayTime } from '../util/intlFormat';
 import { logW } from '../util/log';
 import { publishViewCount, viewCountOf } from '../util/viewCountChannel';
+import { VideoVariant } from '../util/videoVariants';
 
 export interface MessageEntry {
   id: number;
@@ -104,6 +105,7 @@ export interface MessageEntry {
   photoFullFailed: boolean;     // last on-demand full-resolution request failed; viewer may retry
   videoFileId: number;          // full-resolution video file id (0 = not a video)
   videoFileSize: number;        // bytes (0 = unknown)
+  videoVariants: VideoVariant[]; // 服务器转的其它清晰度（不含原片），见 util/videoVariants
   videoMimeType: string;        // source mime type from TDLib, e.g. video/mp4
   videoFileName: string;        // original file name ('' = unknown)
   videoDuration: number;        // seconds
@@ -295,6 +297,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     photoFullFileId: m.photoFullFileId, photoFullPath: m.photoFullPath,
     photoFullProgress: m.photoFullProgress, photoFullFailed: m.photoFullFailed,
     videoFileId: m.videoFileId, videoFileSize: m.videoFileSize, videoMimeType: m.videoMimeType,
+    videoVariants: m.videoVariants,
     videoFileName: m.videoFileName, videoDuration: m.videoDuration, isAnimation: m.isAnimation,
     videoPath: m.videoPath, videoProgress: m.videoProgress, videoFailed: m.videoFailed,
     mediaDownloadActive: m.mediaDownloadActive,
@@ -1121,6 +1124,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     photoFullFailed: false,
     videoFileId: c.videoFileId,
     videoFileSize: c.videoFileSize,
+    videoVariants: c.videoVariants ?? [],
     videoMimeType: c.videoMimeType,
     videoFileName: c.videoFileName,
     videoDuration: c.videoDuration,

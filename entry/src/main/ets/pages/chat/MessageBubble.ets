@@ -107,6 +107,7 @@ import { linkTextHidesUrl } from '../../util/messageLinkAction';
 import { bubbleGlassBlurStyle, bubbleGlassFill } from '../../util/surfaceGlass';
 import { firstFinger } from '../../util/firstFinger';
 import { stickerFramesCached } from '../../services/stickerFrameIndex';
+import { EntryVideoFileRef, entryInlineFile } from '../../util/entryVideoVariant';
 
 // 圆形视频气泡直径。和 Telegram 的观感接近，同时不至于挤占整行宽度。
 const VIDEO_NOTE_SIDE: number = 180;
@@ -3007,9 +3008,10 @@ export struct MessageBubble {
       Stack() {
         if (this.isPlaySlot(-1) && this.msg.contentType === 'video' && this.msg.videoFileId !== 0) {
           // 播放位气泡：只有滚动停下、被选中的这一条才挂流式播放器。
+          // 小窗播低清那一档（多清晰度，见 util/entryVideoVariant.entryInlineFile）。
           VideoBubbleSurface({
-            fileId: this.msg.videoFileId,
-            fileSize: this.msg.videoFileSize,
+            fileId: this.inlineVideoFile().fileId,
+            fileSize: this.inlineVideoFile().fileSize,
             mimeType: this.msg.videoMimeType,
             sourceWidth: this.msg.photoWidth,
             sourceHeight: this.msg.photoHeight,
@@ -3706,6 +3708,11 @@ export struct MessageBubble {
     const w = this.msg.photoWidth > 0 ? this.msg.photoWidth : 512;
     const h = this.msg.photoHeight > 0 ? this.msg.photoHeight : 512;
     return h >= w ? STICKER_MAX : Math.round(STICKER_MAX * (h / w));
+  }
+
+  private inlineVideoFile(): EntryVideoFileRef {
+    const f: EntryVideoFileRef | null = entryInlineFile(this.msg);
+    return f !== null ? f : { fileId: this.msg.videoFileId, fileSize: this.msg.videoFileSize, local: false };
   }
 
   // webm 贴纸的帧缓存（按唯一 ID）已在磁盘上：源文件没下载也能直接播。

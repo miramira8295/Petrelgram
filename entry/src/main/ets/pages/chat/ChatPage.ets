@@ -348,6 +348,7 @@ import {
   NO_JUMP_LANDING, chunkPrependAllowed, jumpLandingDeadline, jumpLandingHolds
 } from '../../util/jumpLandingOwner';
 import { isResumeLanding } from '../../util/jumpAlign';
+import { entryInlineSize, entryOwnsVideoFile, entryPrefetchFile } from '../../util/entryVideoVariant';
 
 // 裁剪时可见区两侧至少保留的行数。必须远大于 List 的 cachedCount，否则会把
 // 框架正预备的缓存行删掉，滑回去就是一片空白。
@@ -3160,7 +3161,9 @@ export struct ChatPage {
         if (m === undefined || m.videoFileId === 0 || m.isAnimation) {
           return null;
         }
-        return { fileId: m.videoFileId, fileSize: m.videoFileSize, local: m.videoPath !== '' };
+        // 预取查看器「自动」点开要播的那一档（多清晰度，见 util/entryVideoVariant）。
+        const f = entryPrefetchFile(m, AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other');
+        return f !== null ? { fileId: f.fileId, fileSize: f.fileSize, local: f.local } : null;
       },
       // store 还没就绪就当作已被认领：宁可不预取，也别夹了别人的下载。
       // 查看器当前那条的视频也算已认领：它的流式下载走 VideoStreamSession 自己的
@@ -3168,13 +3171,14 @@ export struct ChatPage {
       fileClaimed: (fileId: number): boolean =>
         (this.store?.isVideoFileClaimed(fileId) ?? true) ||
         this.messages.some((e: MessageEntry): boolean =>
-          e.id === this.viewerMsgId && e.videoFileId === fileId),
+          e.id === this.viewerMsgId && entryOwnsVideoFile(e, fileId)),
       network: (): string => AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? 'other',
       powerSaving: (): boolean => powerSavingActive()
     });
     this.playSlot.bind({
+      // 按小窗实际要下的那一档算（多清晰度：有低清档的大视频不该被原片大小挡掉）。
       sizeAllowed: (messageId: number): boolean => autoplaySizeAllowed(
-        this.findMsg(messageId)?.videoFileSize ?? 0, AppStorage.get<number>(KEY_AUTOPLAY_MAX_MB) ?? 0),
+        entryInlineSize(this.findMsg(messageId)), AppStorage.get<number>(KEY_AUTOPLAY_MAX_MB) ?? 0),
       viewerMsgId: (): number => this.viewerMsgId,
       pageVisible: (): boolean => this.pageVisible,
       competeEnabled: (): boolean => this.playSlotsEnabled(),

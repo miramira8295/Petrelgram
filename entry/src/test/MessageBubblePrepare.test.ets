@@ -82,6 +82,7 @@ function groupOf(memberIds: number[], over: AlbumOverrides = {}): AlbumGroup {
     videoFileSizes: zeros,
     videoDurations: zeros,
     videoMimeTypes: empty,
+    inlineFileIds: [], inlineFileSizes: [],
     caption: '',
     captionEntities: noEntities,
     dateLabel: '',

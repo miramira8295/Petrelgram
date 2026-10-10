@@ -35,3 +35,6 @@ third_party/rlottie-ohos/
 # 本地构建产物与工具目录，不进版本库
 dist/
 .codegenie/
+
+# 自编 ijkplayer 的 har（scripts/fetch-ijkplayer.sh 拉取或从 fork 编），不进版本库
+/libs/*.har

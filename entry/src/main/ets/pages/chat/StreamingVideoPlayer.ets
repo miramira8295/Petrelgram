@@ -7,7 +7,8 @@ import {
   OnErrorListener,
   OnInfoListener,
   OnPreparedListener,
-  OnVideoSizeChangedListener
+  OnVideoSizeChangedListener,
+  VideoCodecMode
 } from '@ohos/ijkplayer';
 import {
   MATERIAL_EPOCH, overlayBackdropBlur, overlayGlassFill
@@ -16,7 +17,8 @@ import { shouldShowPlayerStatus } from '../../util/playerStatusGate';
 import {
   AUTO_RETRY_DELAYS_MS, CONTROL_ACCENT, CONTROL_BAR_BG, CONTROL_TEXT_SOFT,
   CONTROL_TRACK, CONTROL_TRACK_SOFT, CONTROL_TRACK_SOFT_FILL, DEFAULT_SPEED_IDX,
-  HEADSET_DEVICE_TYPES, HOLD_SEEK_INTERVAL_MS, HOLD_SEEK_STEP_MS, LONG_PRESS_SEEK_MS, QUICK_SEEK_MS, SPEEDS,
+  HEADSET_DEVICE_TYPES, HOLD_SPEED_TICK_MS, LONG_PRESS_SEEK_MS, holdSpeedAt, holdSpeedCap, holdSpeedMuted,
+  QUICK_SEEK_MS, SPEEDS,
   SPEED_LABELS, STATUS_DELAY_MS,
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../../util/playerChrome';
@@ -27,13 +29,17 @@ import {
 import { audio } from '@kit.AudioKit';
 import { getTdClient, getUiAbilityContext } from '../../tdkit/Globals';
 import { mediaPlaybackKeepAlive } from '../../services/MediaPlaybackKeepAlive';
-import { KEY_BG_PLAY_VIDEO } from '../../store/AppSettings';
+import { KEY_BG_PLAY_VIDEO, KEY_CURRENT_NETWORK_TYPE } from '../../store/AppSettings';
 import { VideoRangeServer } from '../../services/VideoRangeServer';
+import { VideoTdSource } from '../../services/VideoTdSource';
 import { VideoStreamSession } from '../../services/VideoStreamSession';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
 import { logE, logI, logW } from '../../util/log';
 import { VideoGestureLayer } from './VideoGestureLayer';
+import { VideoStatsSnapshot, emptyVideoStats } from '../../util/videoStats';
+import { streamReadAheadBytes } from '../../util/streamReadAhead';
+import { networkIsMetered } from '../../util/videoVariants';
 
 
 
@@ -43,7 +49,16 @@ const MEDIA_INFO_VIDEO_ROTATION_CHANGED: number = 10001;
 
 let nextPlayerInstanceId: number = 1;
 
-
+// 边下边播的数据通路（2026-10-10）。true = 播放器原生层直读 TDLib 的文件（VideoTdSource，
+// 需要自编的 ijkplayer 2.0.13-pg.1+）；false = 原来的本机 HTTP（VideoRangeServer）。一键回退开关。
+const STREAM_VIA_TD_SOURCE: boolean = true;
+// 全屏播放器的 ijk 数据包队列上限（max-buffer-size）。
+const FULLSCREEN_PACKET_QUEUE_BYTES: number = 64 * 1024 * 1024;
+// ijk 的 FFP_PROPV_DECODER_AVCODEC / FFP_PROPV_DECODER_MEDIACODEC（ff_ffmsg.h）。
+const VIDEO_DECODER_SOFTWARE: number = 1;
+const VIDEO_DECODER_HARDWARE: number = 2;
+// ijk 在这个倍速及以上只解关键帧（与 fork 的 KEY_ONLY_PLAYBACK_RATE 对应，那边取 3.9）。
+const HOLD_KEY_ONLY_SPEED: number = 4;
 
 @Component
 export struct StreamingVideoPlayer {
@@ -100,6 +115,12 @@ export struct StreamingVideoPlayer {
   // 播放状态回报，让胶囊的图标跟真实状态一致。播完时 onCompletion 会把
   // isPlaying 置 false，因此"播完自动翻回可重播"也走这一条，不用另接。
   onPlayStateChanged: (playing: boolean) => void = (): void => {};
+  // 起播后报一次实际用的视频解码器：true = 系统硬解（*_ohcodec），false = FFmpeg 软解。
+  // 查看器顶栏的「硬解 / 软解」标签用它（需要自编 ijkplayer 2.0.13-pg.2+ 才有值）。
+  onDecoderKnown: (hardware: boolean) => void = (_hardware: boolean): void => {};
+  // 「详细统计信息」面板的数据来源：起播后交出一个随取随算的函数，释放时交 null。
+  onStatsSource: (source: (() => VideoStatsSnapshot) | null) => void =
+    (_source: (() => VideoStatsSnapshot) | null): void => {};
 
   private onLiveToggleRequested(): void {
     // 初值 0 不算一次请求：@Watch 不在初始赋值时触发，但组件复用/重建时可能
@@ -124,6 +145,7 @@ export struct StreamingVideoPlayer {
   private player: IjkMediaPlayer | null = null;
   private session: VideoStreamSession | null = null;
   private rangeServer: VideoRangeServer | null = null;
+  private tdSource: VideoTdSource | null = null;
   private progressUnsub: (() => void) | null = null;
   private routingManager: audio.AudioRoutingManager | null = null;
   private deviceChangeCb: ((change: audio.DeviceChangeAction) => void) | null = null;
@@ -234,7 +256,7 @@ export struct StreamingVideoPlayer {
   }
 
   private deactivate(): void {
-    this.stopHoldSeek();
+    this.stopHold();
     this.active = false;
     this.isPlaying = false;
     this.syncScreenAwake();
@@ -371,6 +393,7 @@ export struct StreamingVideoPlayer {
       this.progressUnsub = null;
     }
     if (this.player !== null) {
+      this.onStatsSource(null);
       const p = this.player;
       this.player = null;
       try {
@@ -383,6 +406,10 @@ export struct StreamingVideoPlayer {
     if (this.rangeServer !== null) {
       this.rangeServer.close();
       this.rangeServer = null;
+    }
+    if (this.tdSource !== null) {
+      this.tdSource.close();
+      this.tdSource = null;
     }
     if (this.session !== null) {
       this.session.close();
@@ -397,7 +424,8 @@ export struct StreamingVideoPlayer {
     if (this.player === null || !this.isPrepared) {
       return;
     }
-    const volume: string = this.muted ? '0.0' : '1.0';
+    // 按住加速到 16× 以上也静音（holdSpeedMuted），松手恢复。
+    const volume: string = this.muted || this.holdMuted ? '0.0' : '1.0';
     this.player.setVolume(volume, volume);
   }
 
@@ -465,25 +493,43 @@ export struct StreamingVideoPlayer {
           }
         });
         session.start();
-        const rangeServer = new VideoRangeServer(session, this.fileId, this.fileSize, this.mimeType);
-        this.rangeServer = rangeServer;
-        sourceUrl = await rangeServer.start();
-        if (!this.active || this.session !== session) {
-          rangeServer.close();
-          return;
+        if (!STREAM_VIA_TD_SOURCE) {
+          const rangeServer = new VideoRangeServer(session, this.fileId, this.fileSize, this.mimeType);
+          this.rangeServer = rangeServer;
+          sourceUrl = await rangeServer.start();
+          if (!this.active || this.session !== session) {
+            rangeServer.close();
+            return;
+          }
         }
       }
       const componentId = this.componentId();
       const player = new IjkMediaPlayer(componentId);
       this.player = player;
       player.setContext(context, componentId);
-      player.native_setup();
+      if (session !== null && sourceUrl === '') {
+        // 直读：播放器在原生层读 TDLib 的文件，不再经本机 HTTP（见 services/VideoTdSource）。
+        const tdSource = new VideoTdSource(player, session, this.fileSize);
+        sourceUrl = tdSource.start();
+        if (sourceUrl === '') {
+          throw new Error('td stream source unavailable');
+        }
+        this.tdSource = tdSource;
+      }
+      // SURFACE：把窗口同时交给硬解码器（2026-10-10）。不传时默认 BUFFER，系统硬解只能把帧
+      // 拷回 CPU 再由 EGL 画（真机日志：Configure pixel_format=2、没有 SetSurface），零拷贝和
+      // HDR 直出都不生效。软解照样经 EGL 画到同一个窗口。代价是 ijk 的录屏/截帧不可用（没用到）。
+      player.native_setup(VideoCodecMode.SURFACE);
       const preparedListener: OnPreparedListener = {
         onPrepared: (): void => {
           this.autoRetries = 0;
           if (this.player !== player) {
             return;
           }
+          this.reportDecoder(player);
+          this.logStartup('prepared');
+          this.applyReadAhead(player);
+          this.onStatsSource((): VideoStatsSnapshot => this.collectStats(player));
           this.status = '';
           this.hasError = false;
           this.isPrepared = true;
@@ -562,6 +608,7 @@ export struct StreamingVideoPlayer {
               // 渲染开始：之后 80ms 才把 XComponent 显出来。黑屏时有没有这一条是分水岭——
               // 有：画面解出来了、是 surface 没显示；没有：卡在解码/数据之前。
               logW(`[VideoState] rendering-start engine=ijk embedded=${this.embedded}`);
+              this.logStartup('first-frame');
             } else if (!this.embedded) {
               logW('[VideoState] buffering-end engine=ijk embedded=false');
             }
@@ -620,17 +667,97 @@ export struct StreamingVideoPlayer {
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'start-on-prepared', '0');
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'enable-accurate-seek', '1');
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'soundtouch', '1');
-      player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'mediacodec-all-videos', '1');
+      // 硬解交给 auto-mediacodec（ijkplayer 2.0.11 起；现用自编的 2.0.13-pg，见 libs/）：按片源的
+      // profile/level 问系统硬解码器支不支持（含 HEVC Main10），支持才走硬解、直接
+      // 输出到窗口，否则一开始就走软解。原来的 mediacodec-all-videos 是不问能力一律硬解。
+      player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'auto-mediacodec', '1');
       // 不开 mediacodec-auto-rotate：这套移植版上它**不生效**（实测 info 10001
       // 报了 rotation=90，出画仍是 1920x1440 横的），而万一哪天生效了，就会和
       // 下面 ArkTS 侧的旋转叠成两次。旋转只在一个地方做。
       player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_FORMAT, 'timeout', '60000000');
+      // 数据包队列（压缩数据，在内存里）：全屏 64MB（默认 15MB，2026-10-10 用户定），
+      // 会话小窗保持默认——小窗同时可能有好几个，内存是实打实的。
+      if (!this.embedded) {
+        player.setOptionLong(IjkMediaPlayer.OPT_CATEGORY_PLAYER, 'max-buffer-size', `${FULLSCREEN_PACKET_QUEUE_BYTES}`);
+      }
+      this.startupAt = Date.now();
       player.setDataSource(sourceUrl);
       player.prepareAsync();
     } catch (e) {
       logE(`StreamingVideoPlayer.init failed: ${e}`);
       this.release();
       this.showError(str('player_load_failed'));
+    }
+  }
+
+  // 下载提前量按码率与网络定（util/streamReadAhead）。码率 = 文件大小 / 时长，时长要等 prepared。
+  private applyReadAhead(player: IjkMediaPlayer): void {
+    if (this.session === null) {
+      return;
+    }
+    const metered: boolean = networkIsMetered(AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? '');
+    const bytes: number = streamReadAheadBytes(this.fileSize, player.getDuration(), metered);
+    this.session.setReadAheadBytes(bytes);
+    logW(`[VideoStart] read-ahead=${Math.round(bytes / 1024 / 1024)}MB metered=${metered}`);
+  }
+
+  // 起播耗时（缓冲参数调优的基线，2026-10-10）：从 setDataSource 到 prepared / 首帧。
+  private startupAt: number = 0;
+
+  private logStartup(stage: string): void {
+    if (this.startupAt <= 0) {
+      return;
+    }
+    const src: string = this.localPath !== '' ? 'local' : (this.tdSource !== null ? 'tdfile' : 'http');
+    logW(`[VideoStart] ${stage} ms=${Date.now() - this.startupAt} src=${src} size=${this.fileSize}` +
+      ` embedded=${this.embedded}`);
+    if (stage === 'first-frame') {
+      this.startupAt = 0;
+    }
+  }
+
+  // 面板每秒取一次。player 换了（重建 / 释放）就只给空壳，免得读到已释放的实例。
+  private collectStats(player: IjkMediaPlayer): VideoStatsSnapshot {
+    const s: VideoStatsSnapshot = emptyVideoStats();
+    s.fileId = this.fileId;
+    s.fileSize = this.fileSize;
+    s.bufferedPercent = this.bufferedPercent;
+    s.downloadBytesPerSec = this.downloadSpeed;
+    s.viewportWidth = this.viewportWidth;
+    s.viewportHeight = this.viewportHeight;
+    s.durationMs = this.durationMs;
+    s.positionMs = this.currentTimeMs;
+    s.speed = Number(SPEEDS[this.speedIdx]);
+    s.source = this.localPath !== '' ? 'local' : (this.tdSource !== null ? 'tdfile' : 'http');
+    s.network = AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? '';
+    if (this.player !== player) {
+      return s;
+    }
+    try {
+      s.statsJson = player.getPlaybackStats();
+      s.decoderKind = player.getVideoDecoder();
+      s.outputFps = player.getVideoOutputFramesPerSecond();
+      s.decodeFps = player.getVideoDecodeFramesPerSecond();
+      s.dropFrameRate = player.getDropFrameRate();
+      s.videoCachedMs = player.getVideoCachedDuration();
+      s.audioCachedMs = player.getAudioCachedDuration();
+      s.videoCachedBytes = player.getVideoCachedBytes();
+      s.audioCachedBytes = player.getAudioCachedBytes();
+    } catch (e) {
+      logW(`StreamingVideoPlayer.collectStats failed: ${e}`);
+    }
+    return s;
+  }
+
+  // ijk 的 FFP_PROP_INT64_VIDEO_DECODER：1 = FFmpeg 软解，2 = 系统硬解，0 = 不知道（不报）。
+  private reportDecoder(player: IjkMediaPlayer): void {
+    try {
+      const decoder: number = player.getVideoDecoder();
+      if (decoder === VIDEO_DECODER_SOFTWARE || decoder === VIDEO_DECODER_HARDWARE) {
+        this.onDecoderKnown(decoder === VIDEO_DECODER_HARDWARE);
+      }
+    } catch (e) {
+      logW(`StreamingVideoPlayer.getVideoDecoder failed: ${e}`);
     }
   }
 
@@ -800,7 +927,7 @@ export struct StreamingVideoPlayer {
   // Common media-viewer convention: double tap either half to jump exactly
   // 15 seconds. Clamp at the media boundaries and keep the existing
   // play/pause state, so an inspection seek never unexpectedly starts audio.
-  private seekBy(deltaMs: number, feedback: boolean = true): void {
+  private seekBy(deltaMs: number): void {
     if (this.player === null || !this.isPrepared || this.durationMs <= 0 || this.hasError) {
       return;
     }
@@ -812,9 +939,7 @@ export struct StreamingVideoPlayer {
     if (target < this.durationMs) {
       this.isCompleted = false;
     }
-    if (feedback) {
-      this.showSeekFeedback(deltaMs);
-    }
+    this.showSeekFeedback(deltaMs);
   }
 
   // 角标文案。秒数走 unit_seconds 的复数，外层用带占位符的整句包起来——
@@ -885,25 +1010,103 @@ export struct StreamingVideoPlayer {
       : str('player_speed_failed'));
   }
 
-  // 按住快进（issue #160 第三版）：按下即跳一步，之后每 HOLD_SEEK_INTERVAL_MS
-  // 再跳一步，松手或手势被打断就停。不弹角标（用户：「不用提示」），进度条
-  // 本身会跟着走。到片尾 seekBy 会夹住，计时器留到松手再停，无害。
-  private holdSeekTimer: number = -1;
-
-  private startHoldSeek(): void {
-    if (this.holdSeekTimer !== -1) {
-      return;
-    }
-    this.seekBy(HOLD_SEEK_STEP_MS, false);
-    this.holdSeekTimer = setInterval((): void => {
-      this.seekBy(HOLD_SEEK_STEP_MS, false);
-    }, HOLD_SEEK_INTERVAL_MS);
+  // 长按（issue #160）：按住越来越快（2→3→4→6→8×），松手恢复。
+  // 曾经因为「2 倍速画面不动」改成过每步快进 2 秒的关键帧跳（还为此在 fork 里加了播放中开关
+  // 精确跳转）；真因是硬解走了缓冲区模式（没传 VideoCodecMode.SURFACE），改对之后倍速正常，
+  // 那套已删（2026-10-10）。
+  private startHold(): void {
+    this.startHoldSpeed();
   }
 
-  private stopHoldSeek(): void {
-    if (this.holdSeekTimer !== -1) {
-      clearInterval(this.holdSeekTimer);
-      this.holdSeekTimer = -1;
+  private stopHold(): void {
+    this.stopHoldSpeed();
+  }
+
+  // 只临时改播放器速度，不动 speedIdx——松手回到用户选的那一档。
+  // 越按越快（util/playerChrome.holdSpeedAt：2→3→4→6→8）。换档时更新倍速和上方的提示胶囊
+  // （速度在变，不提示就不知道现在多快），松手恢复用户选的倍速、胶囊淡出。
+  private holdSpeedActive: boolean = false;
+  private holdSpeedTimer: number = -1;
+  private holdStartedAt: number = 0;
+  private holdCurrentSpeed: number = 0;
+  private holdMuted: boolean = false;
+
+  private startHoldSpeed(): void {
+    if (this.holdSpeedActive || this.player === null || !this.isPrepared) {
+      return;
+    }
+    this.holdSpeedActive = true;
+    this.holdStartedAt = Date.now();
+    this.holdCurrentSpeed = 0;
+    this.tickHoldSpeed();
+    this.holdSpeedTimer = setInterval((): void => {
+      this.tickHoldSpeed();
+    }, HOLD_SPEED_TICK_MS);
+  }
+
+  private tickHoldSpeed(): void {
+    if (!this.holdSpeedActive) {
+      return;
+    }
+    // 整份在本地（或已全部缓冲）才放开到 32×；边下边播封顶 8×（网络跟不上）。
+    const fullyLocal: boolean = this.localPath !== '' || this.bufferedPercent >= 100;
+    const speed: number = holdSpeedAt(Date.now() - this.holdStartedAt, holdSpeedCap(fullyLocal));
+    if (speed === this.holdCurrentSpeed) {
+      return;
+    }
+    this.holdCurrentSpeed = speed;
+    this.applyRawSpeed(speed.toFixed(1));
+    if (holdSpeedMuted(speed) !== this.holdMuted) {
+      this.holdMuted = holdSpeedMuted(speed);
+      this.applyMutedVolume();
+    }
+    if (this.speedFeedbackTimer !== -1) {
+      clearTimeout(this.speedFeedbackTimer);
+      this.speedFeedbackTimer = -1;
+    }
+    this.speedFeedbackText = str('player_speed', `${speed}x`);
+    animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+      this.speedFeedbackVisible = true;
+    });
+  }
+
+  private stopHoldSpeed(): void {
+    if (this.holdSpeedTimer !== -1) {
+      clearInterval(this.holdSpeedTimer);
+      this.holdSpeedTimer = -1;
+    }
+    if (!this.holdSpeedActive) {
+      return;
+    }
+    this.holdSpeedActive = false;
+    this.applyRawSpeed(SPEEDS[this.speedIdx]);
+    if (this.holdMuted) {
+      this.holdMuted = false;
+      this.applyMutedVolume();
+    }
+    // 到过 4× 的话 ijk 一直只解关键帧（自编 ijkplayer pg.6+，ff_ffplay.c video_skip_for_speed）。
+    // 降回来要等下一个关键帧才接得上，长 GOP 的视频会定住好几秒；原地精确跳一次，
+    // flush 之后从干净状态重来，代价是一次很短的缓冲。
+    if (this.holdCurrentSpeed >= HOLD_KEY_ONLY_SPEED && this.player !== null) {
+      try {
+        this.player.seekTo(`${Math.max(0, Math.floor(this.player.getCurrentPosition()))}`);
+      } catch (e) {
+        logW(`StreamingVideoPlayer.seek after key-only failed: ${e}`);
+      }
+    }
+    animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+      this.speedFeedbackVisible = false;
+    });
+  }
+
+  private applyRawSpeed(speed: string): void {
+    if (this.player === null || !this.isPrepared) {
+      return;
+    }
+    try {
+      this.player.setSpeed(speed);
+    } catch (e) {
+      logW(`StreamingVideoPlayer.applyRawSpeed failed: ${e}`);
     }
   }
 
@@ -1089,9 +1292,9 @@ export struct StreamingVideoPlayer {
           // 停（issue #160 第三版，2026-10-09）。左右两半按住都是快进；双击仍是 ±15 秒。
           GestureGroup(GestureMode.Exclusive,
             LongPressGesture({ fingers: 1, repeat: false, duration: LONG_PRESS_SEEK_MS })
-              .onAction((): void => { this.startHoldSeek(); })
-              .onActionEnd((): void => { this.stopHoldSeek(); })
-              .onActionCancel((): void => { this.stopHoldSeek(); }),
+              .onAction((): void => { this.startHold(); })
+              .onActionEnd((): void => { this.stopHold(); })
+              .onActionCancel((): void => { this.stopHold(); }),
             TapGesture({ count: 2, fingers: 1 })
               .onAction((): void => { this.seekBy(forward ? QUICK_SEEK_MS : -QUICK_SEEK_MS); }),
             TapGesture({ count: 1, fingers: 1 })

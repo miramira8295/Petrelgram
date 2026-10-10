@@ -12054,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "आगे बढ़ाने के लिए दबाकर रखें"
+      "value": "तेज़ चलाने के लिए दबाकर रखें"
     },
     {
       "name": "player_hold_back",
-      "value": "आगे बढ़ाने के लिए दबाकर रखें"
+      "value": "तेज़ चलाने के लिए दबाकर रखें"
     },
     {
       "name": "mv_show_in_chat",
@@ -12855,6 +12855,30 @@
     {
       "name": "cb_follow_system",
       "value": "सिस्टम"
+    },
+    {
+      "name": "mv_decoder_hw",
+      "value": "HW"
+    },
+    {
+      "name": "mv_decoder_sw",
+      "value": "SW"
+    },
+    {
+      "name": "mv_quality_auto",
+      "value": "ऑटो"
+    },
+    {
+      "name": "mv_quality_auto_with",
+      "value": "ऑटो (%s)"
+    },
+    {
+      "name": "mv_quality_original",
+      "value": "%s · मूल"
+    },
+    {
+      "name": "mv_stats_title",
+      "value": "विशेषज्ञों के लिए आँकड़े"
     }
   ]
 }

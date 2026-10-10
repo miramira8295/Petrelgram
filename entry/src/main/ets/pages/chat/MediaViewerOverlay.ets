@@ -40,6 +40,11 @@ import { CacheRecord } from '../../util/cacheRegistryModel';
 import { DC_KIND_PHOTO, DC_KIND_VIDEO } from '../../util/downloadCenterModel';
 import { MediaContext, shouldPrefetchNeighbour } from '../../store/MediaPolicy';
 import { firstFinger } from '../../util/firstFinger';
+import { ViewerVideoChips } from './ViewerVideoChips';
+import { QUALITY_AUTO, VideoVariant, variantLabel } from '../../util/videoVariants';
+import { entryPlaybackVariant, entryVideoVariants } from '../../util/entryVideoVariant';
+import { VideoStatsPanel } from './VideoStatsPanel';
+import { VideoStatsSnapshot } from '../../util/videoStats';
 
 // 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
 // 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
@@ -1005,6 +1010,78 @@ export struct MediaViewerOverlay {
     return e !== null ? e.videoPath : '';
   }
 
+  // ── 播放档（多清晰度）─────────────────────────────────────────────────
+  // 下面这组只给播放器用；保存、分享等仍然读上面的原片字段。
+  // 规则与列表头部预取共用（util/entryVideoVariant）：预取的正是「自动」点开要播的那档。
+  private videoVariantList(): VideoVariant[] {
+    const e = this.entry();
+    return e !== null ? entryVideoVariants(e) : [];
+  }
+
+  private playingVariant(): VideoVariant | null {
+    const e = this.entry();
+    return e !== null
+      ? entryPlaybackVariant(e, this.videoQuality, AppStorage.get<string>(KEY_CURRENT_NETWORK_TYPE) ?? '')
+      : null;
+  }
+
+  private playingFileId(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null ? v.fileId : this.videoFileId();
+  }
+
+  private playingIsOriginal(): boolean {
+    return this.playingFileId() === this.videoFileId();
+  }
+
+  private playingFileSize(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null && v.size > 0 ? v.size : this.videoFileSize();
+  }
+
+  private playingWidth(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null && v.width > 0 ? v.width : this.videoWidth();
+  }
+
+  private playingHeight(): number {
+    const v: VideoVariant | null = this.playingVariant();
+    return v !== null && v.height > 0 ? v.height : this.videoHeight();
+  }
+
+  // 本地文件只认原片的（下载中心、自动播放下好的都是原片）；换了档就流式播那一档。
+  private playingLocalPath(): string {
+    return this.playingIsOriginal() ? this.videoLocalPath() : '';
+  }
+
+  private onPickQuality(quality: number): void {
+    if (quality === this.videoQuality) {
+      return;
+    }
+    this.qualityResumeMsgId = this.viewerMsgId;
+    this.qualityResumeMs = this.lastVideoPositionMs;
+    this.videoQuality = quality;
+  }
+
+  // 统计面板 Quality 那一行：原片还是哪一档。
+  private qualityStatsText(): string {
+    const v: VideoVariant | null = this.playingVariant();
+    if (v === null || this.playingIsOriginal()) {
+      return v !== null && variantLabel(v) !== '' ? `${variantLabel(v)} · Original` : 'Original';
+    }
+    return `${variantLabel(v)} · ${v.codec !== '' ? v.codec : '?'} (alternative)`;
+  }
+
+  private playingKey(): string {
+    const id: number = this.playingFileId();
+    return id !== 0 ? `f${id}` : `p${this.playingLocalPath()}`;
+  }
+
+  private decoderLabel(): string {
+    return this.decoderKey !== '' && this.decoderKey !== 'p' && this.decoderKey === this.playingKey()
+      ? (this.decoderHardware ? 'hw' : 'sw') : '';
+  }
+
   // ── 实况照片（util/livePhoto）───────────────────────────────────────────
   // PG 发出去的实况在协议上就是一段普通有声视频，只有文件名带标记。这里认出来
   // 之后按 iOS 的样子渲染：**进来停在静态首帧**，左下角一枚「实况」胶囊，点一下
@@ -1017,6 +1094,19 @@ export struct MediaViewerOverlay {
   //
   // 别的客户端发的视频一概不走这条路——判定要文件名标记 + 时长 ≤10s 同时成立。
   @Local private liveToggleSeq: number = 0;
+  // 视频清晰度与解码器（2026-10-10；规则在 util/videoVariants，标签在 ViewerVideoChips）。
+  // 选的档跨条目沿用（看完这条翻下一条还是 480p）；解码器按文件记，换档/换条自然失效。
+  @Local private videoQuality: number = QUALITY_AUTO;
+  // 解码器标签属于哪一路播放：文件 id，没有 id（下载中心 / 磁盘扫出来的本地视频）就用本地路径。
+  @Local private decoderKey: string = '';
+  @Local private decoderHardware: boolean = false;
+  // 详细统计信息面板（VideoStatsPanel）：开着与否、当前播放器交出的取数函数。
+  @Local private statsOpen: boolean = false;
+  @Local private statsSource: (() => VideoStatsSnapshot) | null = null;
+  // 切档后从这条消息的这个位置接着播（0 = 不是切档）。
+  private qualityResumeMsgId: number = 0;
+  private qualityResumeMs: number = 0;
+  private lastVideoPositionMs: number = 0;
   // 胶囊图标跟随播放器的真实状态，由 onPlayStateChanged 回报。初值 false：
   // 进来停在静态首帧，图标是播放三角。
   //
@@ -1293,13 +1383,16 @@ export struct MediaViewerOverlay {
             // 只认 fileId 的后果是这一页只画海报、播不了（用户 2026-09-16）。
             if (vm.id === this.viewerMsgId &&
               (this.videoFileId() !== 0 || this.videoLocalPath() !== '')) {
+              // 按播放档的文件建：换清晰度 = 换 key = 整个播放器重建（StreamingVideoPlayer
+              // 不监听 fileId 变化），起播位见 startPositionMs 里的切档那一支。
+              ForEach([this.playingFileId()], (playingId: number) => {
               VideoPlayerHost({
-                fileId: this.videoFileId(),
-                fileSize: this.videoFileSize(),
+                fileId: playingId,
+                fileSize: this.playingFileSize(),
                 mimeType: this.videoMimeType(),
-                videoWidth: this.videoWidth(),
-                videoHeight: this.videoHeight(),
-                localPath: this.videoLocalPath(),
+                videoWidth: this.playingWidth(),
+                videoHeight: this.playingHeight(),
+                localPath: this.playingLocalPath(),
                 posterPath: this.siblingPath(vm.id),
                 // 实况走自己的胶囊，标准控制栏（进度条/倍速）让位。
                 showControls: this.chromeVisible && !this.isLiveEntry(vm.id),
@@ -1311,9 +1404,21 @@ export struct MediaViewerOverlay {
                 muted: false,
                 // 实况恒从 0 起。续播位是给普通视频的——从一条播到一半的实况
                 // 气泡点进来，停在中途那一帧当「静态照片」是不对的。
-                startPositionMs: (vm.id === this.initialViewerMsgId && !this.isLiveEntry(vm.id))
-                  ? this.initStartPositionMs : 0,
-                onPositionChanged: (positionMs: number): void => { this.onPositionChanged(positionMs); },
+                startPositionMs: (vm.id === this.qualityResumeMsgId && !this.isLiveEntry(vm.id))
+                  ? this.qualityResumeMs
+                  : ((vm.id === this.initialViewerMsgId && !this.isLiveEntry(vm.id))
+                    ? this.initStartPositionMs : 0),
+                onPositionChanged: (positionMs: number): void => {
+                  this.lastVideoPositionMs = positionMs;
+                  this.onPositionChanged(positionMs);
+                },
+                onStatsSource: (source: (() => VideoStatsSnapshot) | null): void => {
+                  this.statsSource = source;
+                },
+                onDecoderKnown: (hardware: boolean): void => {
+                  this.decoderKey = this.playingKey();
+                  this.decoderHardware = hardware;
+                },
                 onBackgroundTap: () => { this.toggleChrome(); },
                 onSwipeNext: () => { this.switchViewer(1); },
                 onSwipePrev: () => { this.switchViewer(-1); },
@@ -1321,6 +1426,7 @@ export struct MediaViewerOverlay {
                   this.setVideoLandscape(landscape);
                 }
               });
+              }, (playingId: number): string => `${playingId}`);
             } else {
               if (this.siblingPath(vm.id) !== '') {
                 Image(this.siblingPath(vm.id).startsWith('/')
@@ -1584,6 +1690,16 @@ export struct MediaViewerOverlay {
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1);
+        if (this.siblingIsVideo(this.viewerMsgId) && !this.isLiveNow()) {
+          ViewerVideoChips({
+            decoder: this.decoderLabel(),
+            variants: this.videoVariantList(),
+            quality: this.videoQuality,
+            playing: this.playingVariant(),
+            onPickQuality: (quality: number): void => { this.onPickQuality(quality); },
+            onShowStats: (): void => { this.statsOpen = true; }
+          });
+        }
         // No download indicator up here: the seek bar's lighter track shows
         // the downloaded span, and a stalled player draws a centered ring.
         // "⋮" menu — 保存到相册 etc.
@@ -1673,6 +1789,20 @@ export struct MediaViewerOverlay {
       }
       if (this.chromeVisible) {
         this.chromeLayer();
+      }
+      // 统计面板不跟控制条一起隐藏（YouTube 也是这样）：看数据时常要把控制条点掉。
+      if (this.statsOpen && this.isVideo()) {
+        Column() {
+          VideoStatsPanel({
+            source: this.statsSource,
+            quality: this.qualityStatsText(),
+            onClose: (): void => { this.statsOpen = false; }
+          });
+        }
+        .width('100%').height('100%')
+        .padding({ top: this.topSafe + CHROME_BAR_ROW_H + 8 })
+        .alignItems(HorizontalAlign.Center)
+        .hitTestBehavior(HitTestMode.Transparent);
       }
       if (this.chromeVisible && this.isLiveNow()) {
         this.liveCapsule();

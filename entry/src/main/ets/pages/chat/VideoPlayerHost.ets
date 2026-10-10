@@ -1,4 +1,5 @@
 import { StreamingVideoPlayer } from './StreamingVideoPlayer';
+import { VideoStatsSnapshot } from '../../util/videoStats';
 
 // 全屏查看器的播放器宿主。原来是 ijkplayer / 系统 AVPlayer 的引擎分流件；
 // 2026-10-08 用户决定删掉系统播放器（ijkplayer 升到 2.0.11，FFmpeg 8 + 按能力自动
@@ -27,6 +28,9 @@ export struct VideoPlayerHost {
   onSwipePrev: () => void = (): void => {};
   onOrientationChange: (landscape: boolean) => void = (_landscape: boolean): void => {};
   onPositionChanged: (positionMs: number) => void = (_positionMs: number): void => {};
+  onDecoderKnown: (hardware: boolean) => void = (_hardware: boolean): void => {};
+  onStatsSource: (source: (() => VideoStatsSnapshot) | null) => void =
+    (_source: (() => VideoStatsSnapshot) | null): void => {};
 
   build() {
     StreamingVideoPlayer({
@@ -45,6 +49,8 @@ export struct VideoPlayerHost {
       muted: this.muted,
       startPositionMs: this.startPositionMs,
       onPositionChanged: (positionMs: number): void => { this.onPositionChanged(positionMs); },
+      onDecoderKnown: (hardware: boolean): void => { this.onDecoderKnown(hardware); },
+      onStatsSource: (source: (() => VideoStatsSnapshot) | null): void => { this.onStatsSource(source); },
       onBackgroundTap: (): void => { this.onBackgroundTap(); },
       onSwipeNext: (): void => { this.onSwipeNext(); },
       onSwipePrev: (): void => { this.onSwipePrev(); },

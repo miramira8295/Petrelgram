@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  DEFAULT_SPEED_IDX, HOLD_SEEK_INTERVAL_MS, HOLD_SEEK_STEP_MS, QUICK_SEEK_MS, SPEEDS, SPEED_LABELS,
+  DEFAULT_SPEED_IDX, QUICK_SEEK_MS, holdSpeedAt, holdSpeedCap, holdSpeedMuted, SPEEDS, SPEED_LABELS,
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../main/ets/util/playerChrome';
 
@@ -34,12 +34,7 @@ export default function playerChromeTest() {
       expect(SPEEDS[DEFAULT_SPEED_IDX]).assertEqual('1.0');
       expect(SPEED_LABELS[DEFAULT_SPEED_IDX]).assertEqual('1.0x');
     });
-    // issue #160 第三版（2026-10-09，用户定）：按住 2 倍速在 ijk 上只有声音和
-    // 进度在走、画面不动（2.0.9 / 2.0.11 都一样），改成按住每步快进 2 秒、不提示。
-    it('按住快进每步 2 秒，步频比一步的时长快', 0, () => {
-      expect(HOLD_SEEK_STEP_MS).assertEqual(2000);
-      expect(HOLD_SEEK_INTERVAL_MS > 0).assertTrue();
-      expect(HOLD_SEEK_INTERVAL_MS < HOLD_SEEK_STEP_MS).assertTrue();
+    it('双击跳 15 秒', 0, () => {
       expect(QUICK_SEEK_MS).assertEqual(15000);
     });
 
@@ -63,6 +58,33 @@ export default function playerChromeTest() {
     it('双击那一下也走同一条：一次 15 秒', 0, () => {
       expect(nextSeekFeedbackMs(false, 0, 0, QUICK_SEEK_MS)).assertEqual(15000);
       expect(nextSeekFeedbackMs(false, 0, 0, -QUICK_SEEK_MS)).assertEqual(15000);
+    });
+
+    // 按住加速（2026-10-10 用户定）：从 2 倍起，越按越快，封顶 8 倍。
+    it('按住越久越快：2→3→4→6→8→16→32', 0, () => {
+      expect(holdSpeedAt(0, 32)).assertEqual(2);
+      expect(holdSpeedAt(1499, 32)).assertEqual(2);
+      expect(holdSpeedAt(1500, 32)).assertEqual(3);
+      expect(holdSpeedAt(2500, 32)).assertEqual(4);
+      expect(holdSpeedAt(3500, 32)).assertEqual(6);
+      expect(holdSpeedAt(4500, 32)).assertEqual(8);
+      expect(holdSpeedAt(5499, 32)).assertEqual(8);
+      expect(holdSpeedAt(5500, 32)).assertEqual(16);
+      expect(holdSpeedAt(6500, 32)).assertEqual(32);
+      expect(holdSpeedAt(60_000, 32)).assertEqual(32);
+      expect(holdSpeedAt(-10, 32)).assertEqual(2);
+    });
+
+    // 边下边播的视频网络跟不上高倍速（32× 每秒要读几十 MB），封顶 8×；整份在本地才放开到 32×。
+    it('封顶：边下边播 8×、本地 32×', 0, () => {
+      expect(holdSpeedAt(60_000, holdSpeedCap(false))).assertEqual(8);
+      expect(holdSpeedAt(60_000, holdSpeedCap(true))).assertEqual(32);
+    });
+
+    it('16× 及以上静音（声音已听不出内容）', 0, () => {
+      expect(holdSpeedMuted(8)).assertFalse();
+      expect(holdSpeedMuted(16)).assertTrue();
+      expect(holdSpeedMuted(32)).assertTrue();
     });
   });
 }

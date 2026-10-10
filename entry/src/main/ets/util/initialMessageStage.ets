@@ -61,6 +61,8 @@ function deferredCopy(group: AlbumGroup): AlbumGroup {
     videoFileSizes: group.videoFileSizes,
     videoDurations: group.videoDurations,
     videoMimeTypes: group.videoMimeTypes,
+    inlineFileIds: group.inlineFileIds,
+    inlineFileSizes: group.inlineFileSizes,
     caption: group.caption,
     captionEntities: group.captionEntities,
     dateLabel: group.dateLabel,

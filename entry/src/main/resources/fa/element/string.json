@@ -12054,11 +12054,11 @@
     },
     {
       "name": "player_hold_forward",
-      "value": "برای جلو بردن سریع نگه دارید"
+      "value": "برای پخش سریع‌تر نگه دارید"
     },
     {
       "name": "player_hold_back",
-      "value": "برای جلو بردن سریع نگه دارید"
+      "value": "برای پخش سریع‌تر نگه دارید"
     },
     {
       "name": "mv_show_in_chat",
@@ -12855,6 +12855,30 @@
     {
       "name": "cb_follow_system",
       "value": "سیستم"
+    },
+    {
+      "name": "mv_decoder_hw",
+      "value": "HW"
+    },
+    {
+      "name": "mv_decoder_sw",
+      "value": "SW"
+    },
+    {
+      "name": "mv_quality_auto",
+      "value": "خودکار"
+    },
+    {
+      "name": "mv_quality_auto_with",
+      "value": "خودکار (%s)"
+    },
+    {
+      "name": "mv_quality_original",
+      "value": "%s · اصلی"
+    },
+    {
+      "name": "mv_stats_title",
+      "value": "آمار تخصصی"
     }
   ]
 }

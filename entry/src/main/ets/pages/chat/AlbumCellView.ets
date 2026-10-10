@@ -212,9 +212,11 @@ export struct AlbumCellView {
   cellBody() {
     if (this.isPlaySlot() && this.videoFileId() !== 0) {
       // 播放位选中这一格：挂播放器而不是静态封面。
+      // 小窗播低清那一档（多清晰度，见 util/entryVideoVariant.entryInlineFile）。
       VideoBubbleSurface({
-        fileId: this.videoFileId(),
-        fileSize: this.group.videoFileSizes[this.idx()] ?? 0,
+        fileId: (this.group.inlineFileIds[this.idx()] ?? 0) || this.videoFileId(),
+        fileSize: (this.group.inlineFileIds[this.idx()] ?? 0) !== 0
+          ? (this.group.inlineFileSizes[this.idx()] ?? 0) : (this.group.videoFileSizes[this.idx()] ?? 0),
         mimeType: this.group.videoMimeTypes[this.idx()] ?? '',
         posterPath: this.pathAt(),
         muted: this.data.autoplayMuted,

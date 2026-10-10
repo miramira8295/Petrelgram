@@ -2,6 +2,7 @@ import { isLivePhotoVideo } from './livePhoto';
 import { MessageEntry, cloneMessage } from '../store/MessageEntry';
 import { TdObject } from '../tdkit/TdTypes';
 import { formatDateSeparator, sameDay } from './formatDateSeparator';
+import { EntryVideoFileRef, entryInlineFile } from './entryVideoVariant';
 
 // A display row: a single message, or a collapsed run of album (media group)
 // photos rendered as one grid bubble.
@@ -33,6 +34,10 @@ export interface AlbumGroup {
   videoFileSizes: number[];
   videoDurations: number[];
   videoMimeTypes: string[];
+  // 自动播放小窗实际播的那一档（多清晰度，见 util/entryVideoVariant.entryInlineFile），
+  // 与 videoFileIds 并列；0 = 不是视频。
+  inlineFileIds: number[];
+  inlineFileSizes: number[];
   caption: string;         // album caption (from whichever member carries text)
   captionEntities: TdObject[]; // the caption's TDLib entities (links/mentions/hashtags)
   dateLabel: string;       // date pill shown above this row when the day changes ('' = none)
@@ -267,6 +272,8 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
       const videoFileSizes: number[] = [];
       const videoDurations: number[] = [];
       const videoMimeTypes: string[] = [];
+      const inlineFileIds: number[] = [];
+      const inlineFileSizes: number[] = [];
       const albumMembers: MessageEntry[] = [];
       let caption = '';
       let captionEntities: TdObject[] = [];
@@ -288,6 +295,9 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         videoFileSizes.push(list[j].videoFileSize);
         videoDurations.push(list[j].videoDuration);
         videoMimeTypes.push(list[j].videoMimeType);
+        const inline: EntryVideoFileRef | null = entryInlineFile(list[j]);
+        inlineFileIds.push(inline !== null ? inline.fileId : 0);
+        inlineFileSizes.push(inline !== null ? inline.fileSize : 0);
         // **取第一条带文字的成员，不是最后一条。**
         //
         // 相册的配文在 TDLib 里挂在某一条成员消息上，Telegram 各端都挂在第一条。
@@ -320,7 +330,8 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         // sendState 经 sendStateChannel 直达状态图标；完成/失败和翻译展示经
         // messageRowPresentationChannel 直达行包装器，都不必重建整行。
         key: `a_${m.albumId}_${m.rowId}_${rowMemberIds.join(',')}_${memberIds.join(',')}_${photoFileIds.join(',')}` +
-          `_${videoFileIds.join(',')}_${videoFileSizes.join(',')}_${videoDurations.join(',')}_${caption}` +
+          `_${videoFileIds.join(',')}_${videoFileSizes.join(',')}_${videoDurations.join(',')}` +
+          `_${inlineFileIds.join(',')}_${caption}` +
           `_${captionEntities.map((entity: TdObject): string => JSON.stringify(entity)).join('|')}` +
           `_${dateLabel}_${mutableSig(displayHead)}`,
         head: displayHead,
@@ -338,6 +349,8 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         videoFileSizes,
         videoDurations,
         videoMimeTypes,
+        inlineFileIds,
+        inlineFileSizes,
         caption,
         captionEntities,
         dateLabel,
@@ -372,6 +385,8 @@ export function collapseAlbums(list: MessageEntry[], hints?: RunHeadHints): Albu
         videoFileSizes: [],
         videoDurations: [],
         videoMimeTypes: [],
+        inlineFileIds: [],
+        inlineFileSizes: [],
         caption: '',
         captionEntities: [],
         dateLabel,

@@ -3170,6 +3170,7 @@ export class MessageStore {
       c.photoFullFailed = false;
       c.videoFileId = rebuilt.videoFileId;
       c.videoFileSize = rebuilt.videoFileSize;
+      c.videoVariants = rebuilt.videoVariants;
       c.videoMimeType = rebuilt.videoMimeType;
       c.videoFileName = rebuilt.videoFileName;
       c.videoDuration = rebuilt.videoDuration;
