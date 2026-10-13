@@ -12058,7 +12058,7 @@
     },
     {
       "name": "player_hold_back",
-      "value": "Hold to speed up"
+      "value": "Hold to rewind"
     },
     {
       "name": "mv_show_in_chat",

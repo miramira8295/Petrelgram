@@ -129,6 +129,7 @@ export struct ProxyPage {
   private pingTokens: Map<number, number> = new Map();
   private skeletonTimer: number = -1;
   private unsubscribeConnection: (() => void) | null = null;
+  private unsubscribeSelection: (() => void) | null = null;
 
   @Styles
   actionNormalStyle() {
@@ -171,6 +172,18 @@ export struct ProxyPage {
   aboutToAppear(): void {
     this.active = true;
     this.subscribeConnectionState();
+    const target = getTdClient();
+    this.unsubscribeSelection = proxyAutoSwitchService.subscribeSelection(target, (proxyId: number): void => {
+      if (!this.active || getTdClient() !== target || this.actionKey !== '' || this.saving) { return; }
+      // An operation in flight reconciles through load() when it finishes.
+      // Service notifications only update the view; never echo them as intent.
+      if (proxyId > 0 && !this.proxies.some((entry: ProxyEntry): boolean => entry.id === proxyId)) {
+        if (this.paramsApplied && !this.loading && !this.refreshing) { this.load(false); }
+        return;
+      }
+      this.updateEnabledProxy(proxyId);
+      if (proxyId > 0) { this.preferredProxyId = proxyId; }
+    });
     // 后面原本还有 consumeRouteParams() + load(true) 两句，整段平移进了
     // applyRouteParams()，由外壳的 onRouteParams 触发——见那个方法上的注释。
     // 留在这里的两句与路由参数无关：active 是本页自己的存活标志，
@@ -199,6 +212,10 @@ export struct ProxyPage {
     this.formSequence++;
     this.pingGeneration++;
     this.stopSkeletonPulse();
+    if (this.unsubscribeSelection !== null) {
+      this.unsubscribeSelection();
+      this.unsubscribeSelection = null;
+    }
     if (this.unsubscribeConnection !== null) {
       this.unsubscribeConnection();
       this.unsubscribeConnection = null;
@@ -372,6 +389,8 @@ export struct ProxyPage {
 
   private load(initial: boolean): void {
     const sequence = ++this.loadSequence;
+    const target = getTdClient();
+    const revision = proxyAutoSwitchService.getSelectionRevision();
     if (initial && this.proxies.length === 0) {
       this.loading = true;
       this.loadError = '';
@@ -380,14 +399,27 @@ export struct ProxyPage {
       this.refreshing = true;
       this.syncWarning = '';
     }
-    listProxies().then((list: ProxyEntry[]): Promise<ProxyEntry[]> => this.restoreMirrored(list))
+    listProxies().then((list: ProxyEntry[]): Promise<ProxyEntry[]> => {
+      if (!this.active || sequence !== this.loadSequence || getTdClient() !== target ||
+        !proxyAutoSwitchService.selectionIsCurrent(target, revision) || this.actionKey !== '' || this.saving) {
+        return Promise.resolve(list);
+      }
+      return this.restoreMirrored(list);
+    })
       .then((list: ProxyEntry[]): void => {
-      if (!this.active || sequence !== this.loadSequence) { return; }
+      if (!this.active || sequence !== this.loadSequence || getTdClient() !== target ||
+        this.actionKey !== '' || this.saving) { return; }
+      if (!proxyAutoSwitchService.selectionIsCurrent(target, revision)) {
+        this.load(initial);
+        return;
+      }
       // 镜像跟着当前账号的清单走：加/改/删之后这里都会再跑一遍。
       setString(KEY_PROXY_MIRROR, serializeProxyMirror(syncableOf(list, this.syncOff())));
       const sorted = this.sorted(list);
       this.proxies = sorted;
-      this.publishProxyList();
+      proxyAutoSwitchService.proxyListLoaded(target, revision, sorted.map(
+        (entry: ProxyEntry): ProxyAutoSwitchEntry => ({ id: entry.id, isEnabled: entry.isEnabled })
+      ));
       this.loading = false;
       this.refreshing = false;
       this.loadError = '';
@@ -397,7 +429,12 @@ export struct ProxyPage {
       if (enabled !== undefined) { this.preferredProxyId = enabled.id; }
       this.startPingQueue(sorted);
     }).catch((error: TdError): void => {
-      if (!this.active || sequence !== this.loadSequence) { return; }
+      if (!this.active || sequence !== this.loadSequence || getTdClient() !== target ||
+        this.actionKey !== '' || this.saving) { return; }
+      if (!proxyAutoSwitchService.selectionIsCurrent(target, revision)) {
+        this.load(initial);
+        return;
+      }
       this.loading = false;
       this.refreshing = false;
       this.stopSkeletonPulse();
@@ -589,10 +626,14 @@ export struct ProxyPage {
     };
   }
 
-  private applyEnabledProxy(proxyId: number): void {
+  private updateEnabledProxy(proxyId: number): void {
     this.proxies = this.sorted(this.proxies.map((entry: ProxyEntry): ProxyEntry =>
       this.copyEnabled(entry, proxyId > 0 && entry.id === proxyId)
     ));
+  }
+
+  private applyEnabledProxy(proxyId: number): void {
+    this.updateEnabledProxy(proxyId);
     this.publishProxyList();
     proxyAutoSwitchService.proxySelectionChanged(proxyId);
   }
@@ -928,10 +969,10 @@ export struct ProxyPage {
     if (error.message.toLowerCase().indexOf('request timeout') >= 0) {
       this.formOutcomeUnknown = true;
       this.formError = str('px_result_unknown', action);
-      this.load(false);
     } else {
       this.formError = proxyActionErrorText(error.message, action);
     }
+    this.load(false);
     logE(`ProxyPage.${action} failed: ${error.message}`);
   }
 

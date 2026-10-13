@@ -17,6 +17,7 @@ import {
   HdsNavigation, HdsNavigationTitleMode, TitleBarContentOptions
 } from '@kit.UIDesignKit';
 import { titleBarStyle } from '../../util/hdsTitleBar';
+import { homeCardMarginVp } from '../../util/pageMargin';
 import { APPEARANCE_EPOCH, KEY_STATUS_FOLLOW_TITLE } from '../../util/appearance';
 import { COLOR_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_TAB_SELECTED, COLOR_TAB_UNSELECTED, COLOR_BADGE_BG, COLOR_TAB_PILL_BG } from '../../util/theme';
 import { router } from '@kit.ArkUI';
@@ -1101,7 +1102,6 @@ export struct ChatListPage {
     }
     .height(FOLDER_CHIP_HEIGHT)
     .padding({ left: 7, right: 7 })
-    .margin({ right: 6 })
     .borderRadius(FOLDER_CHIP_HEIGHT / 2)
     // 未选项只铺一层轻量 tint，不再各自叠模糊/材质；选中态由下层滑动胶囊表达。
     .backgroundColor(this.selectedIndex === index
@@ -1142,7 +1142,8 @@ export struct ChatListPage {
           // during Tabs content swipes. 独立组件 + AppStorage 旁路，拖动每帧
           // 只脏它自己（见 FOLDER_PILL_X 的说明）。
           FolderPill();
-          Row() {
+          // 间距只放在标签之间，末项不留尾部空白，居中与滚动终点才对称。
+          Row({ space: 6 }) {
             ForEach(this.tabs(), (spec: TabSpec, index: number) => {
               this.pill(spec, index);
             }, (spec: TabSpec) => spec.key);
@@ -1172,9 +1173,11 @@ export struct ChatListPage {
       });
     }
     // 横条无独立外框，直接融入标题栏的统一玻璃背板；只有当前项保留胶囊。
-    // 12vp 起始线同时对齐大标题与会话卡片，底部只留轻微呼吸空间。
-    // left 4vp 在mate 70上第一个胶囊和列表边缘保证其平
-    .margin({ left: 4, right: 12, bottom: 2 })
+    // 满宽外层用对称内边距约束 Scroll 视口，避免满宽内容叠加外边距挤出右侧。
+    // 两侧留白沿用首页卡片规则：手机 6vp、折叠屏 10vp、平板 14vp。
+    .width('100%')
+    .padding({ left: homeCardMarginVp(this.widthBp), right: homeCardMarginVp(this.widthBp) })
+    .margin({ bottom: 2 })
     .transition(
       TransitionEffect.OPACITY
         .combine(TransitionEffect.translate({ y: -4 }))

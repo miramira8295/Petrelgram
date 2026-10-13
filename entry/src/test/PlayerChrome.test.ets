@@ -1,10 +1,12 @@
 import { describe, expect, it } from '@ohos/hypium';
+import holdRewindTest from './HoldRewind.test';
 import {
   DEFAULT_SPEED_IDX, QUICK_SEEK_MS, holdSpeedAt, holdSpeedCap, holdSpeedMuted, SPEEDS, SPEED_LABELS,
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../main/ets/util/playerChrome';
 
 export default function playerChromeTest() {
+  holdRewindTest();
   describe('playerChrome', () => {
     it('一小时以内给 m:ss', 0, () => {
       expect(formatMs(0)).assertEqual('0:00');

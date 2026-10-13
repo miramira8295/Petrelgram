@@ -7,6 +7,7 @@ import {
   OnErrorListener,
   OnInfoListener,
   OnPreparedListener,
+  OnSeekCompleteListener,
   OnVideoSizeChangedListener,
   VideoCodecMode
 } from '@ohos/ijkplayer';
@@ -22,6 +23,7 @@ import {
   SPEED_LABELS, STATUS_DELAY_MS,
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../../util/playerChrome';
+import { HoldRewindState } from '../../util/holdRewind';
 import { materialModifier } from '../../util/materialModifier';
 import {
   FOCUS_PAUSE, FOCUS_RESUME, FOCUS_STOP, acquireAudioFocus
@@ -256,7 +258,7 @@ export struct StreamingVideoPlayer {
   }
 
   private deactivate(): void {
-    this.stopHold();
+    this.stopHold(false);
     this.active = false;
     this.isPlaying = false;
     this.syncScreenAwake();
@@ -340,6 +342,7 @@ export struct StreamingVideoPlayer {
         const unpluggedHeadset = change.deviceDescriptors.some(
           (d: audio.AudioDeviceDescriptor) => HEADSET_DEVICE_TYPES.includes(d.deviceType));
         if (unpluggedHeadset && this.isPlaying && this.player !== null) {
+          this.stopHold(false);
           this.player.pause();
           this.isPlaying = false;
         }
@@ -363,6 +366,8 @@ export struct StreamingVideoPlayer {
   }
 
   private release(): void {
+    this.stopHold(false);
+    this.holdRewind.reset();
     this.cleanupAudioDeviceListener();
     this.stopProgressPolling();
     // 换届/销毁时归零：留着会让下一个实例开局就以为自己在预热窗口里。
@@ -540,7 +545,7 @@ export struct StreamingVideoPlayer {
           player.setSpeed(SPEEDS[this.speedIdx]);
           this.applyMutedVolume();
           if (this.startPositionMs > 0) {
-            player.seekTo(`${Math.floor(this.startPositionMs)}`);
+            this.seekPlayerTo(this.startPositionMs);
             this.currentTimeMs = this.startPositionMs;
           }
           this.isCompleted = false;
@@ -562,6 +567,10 @@ export struct StreamingVideoPlayer {
       };
       const completionListener: OnCompletionListener = {
         onCompletion: (): void => {
+          if (this.player !== player || this.holdRewind.active) {
+            return;
+          }
+          this.stopHold(false);
           this.isPlaying = false;
           this.currentTimeMs = this.durationMs;
           if (this.embedded) {
@@ -575,7 +584,7 @@ export struct StreamingVideoPlayer {
             // 播完回到静态首帧（iOS 的手感）。**暂停态下 seek 会不会立刻把那一帧
             // 刷上屏，文档没写、未上机验证**——不刷的话画面停在最后一帧，与改动前
             // 一致，不是回退。isCompleted 仍然置真：胶囊那一下要走 replay()。
-            this.player.seekTo('0');
+            this.seekPlayerTo(0);
             this.currentTimeMs = 0;
           }
         }
@@ -632,6 +641,10 @@ export struct StreamingVideoPlayer {
       };
       const errorListener: OnErrorListener = {
         onError: (what: number, extra: number): void => {
+          if (this.player !== player) {
+            return;
+          }
+          this.stopHold(false);
           this.isPlaying = false;
           logE(`StreamingVideoPlayer error: what=${what}, extra=${extra}` +
             ` autoRetries=${this.autoRetries}`);
@@ -657,6 +670,14 @@ export struct StreamingVideoPlayer {
           this.updateVideoAspect(width, height, sarNum, sarDen);
         }
       };
+      const seekListener: OnSeekCompleteListener = {
+        onSeekComplete: (): void => {
+          if (this.player === player) {
+            this.holdRewind.seekCompleted();
+          }
+        }
+      };
+      player.setOnSeekCompleteListener(seekListener);
       player.setOnPreparedListener(preparedListener);
       player.setOnCompletionListener(completionListener);
       player.setOnBufferingUpdateListener(bufferingListener);
@@ -762,6 +783,7 @@ export struct StreamingVideoPlayer {
   }
 
   private showError(detail: string): void {
+    this.stopHold(false);
     this.status = '';
     this.hasError = true;
     this.errorDetail = detail;
@@ -806,6 +828,10 @@ export struct StreamingVideoPlayer {
   // 回前台不自动续播：和语音那边一致（pauseForBackground 也不自动恢复），
   // 而且用户离开时未必想让它接着放。
   private onAppForegroundChanged(): void {
+    if (!this.appIsForeground) {
+      const keepPlaying: boolean = !this.embedded && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false);
+      this.stopHold(keepPlaying);
+    }
     this.syncScreenAwake();
     if (this.appIsForeground || !this.isPlaying || this.player === null) {
       return;
@@ -843,6 +869,7 @@ export struct StreamingVideoPlayer {
       return;
     }
     if (action === FOCUS_PAUSE || action === FOCUS_STOP) {
+      this.stopHold(false);
       if (this.isPlaying) {
         this.player.pause();
         this.isPlaying = false;
@@ -883,6 +910,7 @@ export struct StreamingVideoPlayer {
   }
 
   private togglePlay(): void {
+    this.stopHold();
     if (this.player === null || this.hasError) {
       return;
     }
@@ -919,7 +947,7 @@ export struct StreamingVideoPlayer {
     }
     this.isCompleted = false;
     this.currentTimeMs = 0;
-    this.player.seekTo('0');
+    this.seekPlayerTo(0);
     this.player.start();
     this.isPlaying = true;
   }
@@ -928,6 +956,7 @@ export struct StreamingVideoPlayer {
   // 15 seconds. Clamp at the media boundaries and keep the existing
   // play/pause state, so an inspection seek never unexpectedly starts audio.
   private seekBy(deltaMs: number): void {
+    this.stopHold();
     if (this.player === null || !this.isPrepared || this.durationMs <= 0 || this.hasError) {
       return;
     }
@@ -935,7 +964,7 @@ export struct StreamingVideoPlayer {
     const target = Math.max(0, Math.min(this.durationMs, base + deltaMs));
     this.dragging = false;
     this.currentTimeMs = target;
-    this.player.seekTo(`${Math.floor(target)}`);
+    this.seekPlayerTo(target);
     if (target < this.durationMs) {
       this.isCompleted = false;
     }
@@ -964,6 +993,15 @@ export struct StreamingVideoPlayer {
     animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
       this.seekFeedbackVisible = true;
     });
+    if (!this.holdRewind.active) {
+      this.fadeSeekFeedback();
+    }
+  }
+
+  private fadeSeekFeedback(): void {
+    if (this.seekFeedbackTimer !== -1) {
+      clearTimeout(this.seekFeedbackTimer);
+    }
     this.seekFeedbackTimer = setTimeout((): void => {
       this.seekFeedbackTimer = -1;
       animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
@@ -976,6 +1014,7 @@ export struct StreamingVideoPlayer {
   // player's own timeUpdate events); commit the seek only once the user
   // releases (End) or taps a new spot (Click).
   private onSeekChange(value: number, mode: SliderChangeMode): void {
+    this.stopHold();
     if (mode === SliderChangeMode.Begin || mode === SliderChangeMode.Moving) {
       this.dragging = true;
       this.dragValueMs = value;
@@ -984,7 +1023,7 @@ export struct StreamingVideoPlayer {
     this.dragging = false;
     this.currentTimeMs = value;
     if (this.player !== null) {
-      this.player.seekTo(`${Math.floor(value)}`);
+      this.seekPlayerTo(value);
     }
   }
 
@@ -1010,16 +1049,88 @@ export struct StreamingVideoPlayer {
       : str('player_speed_failed'));
   }
 
-  // 长按（issue #160）：按住越来越快（2→3→4→6→8×），松手恢复。
-  // 曾经因为「2 倍速画面不动」改成过每步快进 2 秒的关键帧跳（还为此在 fork 里加了播放中开关
-  // 精确跳转）；真因是硬解走了缓冲区模式（没传 VideoCodecMode.SURFACE），改对之后倍速正常，
-  // 那套已删（2026-10-10）。
-  private startHold(): void {
-    this.startHoldSpeed();
+  // 左侧连续快退，右侧逐级加速；双击仍为 ±15 秒。
+  private startHold(forward: boolean): void {
+    if (this.holdRewind.active || this.holdSpeedActive || this.player === null ||
+      !this.active || !this.appIsForeground || !this.isPrepared || this.hasError || this.dragging) {
+      return;
+    }
+    if (forward) {
+      this.startHoldSpeed();
+    } else if (this.durationMs > 0) {
+      this.startHoldRewind();
+    }
   }
 
-  private stopHold(): void {
-    this.stopHoldSpeed();
+  private stopHold(allowResume: boolean = true): void {
+    this.stopHoldRewind(allowResume);
+    this.stopHoldSpeed(allowResume);
+  }
+
+  private holdRewind: HoldRewindState = new HoldRewindState();
+  private holdRewindTimer: number = -1;
+
+  // 所有跳转都登记：长按开始前的双击/进度条跳转也需要等完成，避免挤掉原生 seek。
+  private seekPlayerTo(positionMs: number): void {
+    if (this.player === null) {
+      return;
+    }
+    this.holdRewind.seekStarted(Date.now());
+    this.player.seekTo(`${Math.max(0, Math.floor(positionMs))}`);
+  }
+
+  private startHoldRewind(): void {
+    if (this.player === null) {
+      return;
+    }
+    this.holdRewind.start(Math.min(this.durationMs, this.currentTimeMs), this.isPlaying);
+    // isPlaying 保留用户的播放意图（音频焦点/屏幕常亮也沿用它），原生暂时暂停。
+    // ijk 在暂停态 seek 会单步解码画面；松手才恢复向前播放，不冒出零碎声音。
+    this.player.pause();
+    this.seekFeedbackVisible = false;
+    this.holdRewindTimer = setInterval((): void => { this.tickHoldRewind(); }, 100);
+    this.tickHoldRewind();
+  }
+
+  private tickHoldRewind(): void {
+    if (!this.holdRewind.active) {
+      return;
+    }
+    if (this.player === null || !this.active || !this.isPrepared || this.hasError) {
+      this.stopHoldRewind(false);
+      return;
+    }
+    const now: number = Date.now();
+    if (this.holdRewind.timedOut(now)) {
+      logW('StreamingVideoPlayer rewind stopped: seek timeout');
+      this.stopHoldRewind(true);
+      return;
+    }
+    const previous: number = this.holdRewind.targetMs;
+    const target: number = this.holdRewind.nextTarget(now);
+    if (target < 0) {
+      return;
+    }
+    this.currentTimeMs = target;
+    this.isCompleted = false;
+    this.seekPlayerTo(target);
+    this.onPositionChanged(target);
+    this.showSeekFeedback(target - previous);
+  }
+
+  private stopHoldRewind(allowResume: boolean): void {
+    if (this.holdRewindTimer !== -1) {
+      clearInterval(this.holdRewindTimer);
+      this.holdRewindTimer = -1;
+    }
+    const wasActive: boolean = this.holdRewind.active;
+    const resume: boolean = this.holdRewind.stop(allowResume);
+    if (resume && this.player !== null && this.active && this.isPrepared && !this.hasError) {
+      this.player.start();
+    }
+    if (wasActive) {
+      this.fadeSeekFeedback();
+    }
   }
 
   // 只临时改播放器速度，不动 speedIdx——松手回到用户选的那一档。
@@ -1070,7 +1181,7 @@ export struct StreamingVideoPlayer {
     });
   }
 
-  private stopHoldSpeed(): void {
+  private stopHoldSpeed(restoreFrame: boolean): void {
     if (this.holdSpeedTimer !== -1) {
       clearInterval(this.holdSpeedTimer);
       this.holdSpeedTimer = -1;
@@ -1087,9 +1198,9 @@ export struct StreamingVideoPlayer {
     // 到过 4× 的话 ijk 一直只解关键帧（自编 ijkplayer pg.6+，ff_ffplay.c video_skip_for_speed）。
     // 降回来要等下一个关键帧才接得上，长 GOP 的视频会定住好几秒；原地精确跳一次，
     // flush 之后从干净状态重来，代价是一次很短的缓冲。
-    if (this.holdCurrentSpeed >= HOLD_KEY_ONLY_SPEED && this.player !== null) {
+    if (restoreFrame && this.holdCurrentSpeed >= HOLD_KEY_ONLY_SPEED && this.player !== null) {
       try {
-        this.player.seekTo(`${Math.max(0, Math.floor(this.player.getCurrentPosition()))}`);
+        this.seekPlayerTo(this.player.getCurrentPosition());
       } catch (e) {
         logW(`StreamingVideoPlayer.seek after key-only failed: ${e}`);
       }
@@ -1149,7 +1260,7 @@ export struct StreamingVideoPlayer {
       if (this.player === null) {
         return;
       }
-      if (!this.dragging) {
+      if (!this.dragging && !this.holdRewind.active) {
         this.currentTimeMs = Math.max(0, this.player.getCurrentPosition());
         this.onPositionChanged(this.currentTimeMs);
       }
@@ -1162,7 +1273,7 @@ export struct StreamingVideoPlayer {
       // 预热窗口里原生确实在播，但那是为了解出首帧，不是「用户看到的在播」。
       // 不挡这一下，350ms 的 tick 会把 isPlaying 刷成真，经 onPlayingChanged
       // 回灌胶囊图标，还会顺手申请音频焦点、开后台播放保活。
-      if (!this.primingFirstFrame) {
+      if (!this.primingFirstFrame && !this.holdRewind.active) {
         this.isPlaying = this.player.isPlaying();
       }
       // No buffered-byte update for a while → the download stalled or finished;
@@ -1288,11 +1399,11 @@ export struct StreamingVideoPlayer {
           ? $r('app.string.player_hold_forward') : $r('app.string.player_hold_back'))
         .gesture(
           // 互斥组：先被识别的那个赢。快按抬手 → 单击/双击；按住不放 →
-          // 到 LONG_PRESS_SEEK_MS 时长按胜出：按住每步快进 2 秒，抬手（或被打断）
-          // 停（issue #160 第三版，2026-10-09）。左右两半按住都是快进；双击仍是 ±15 秒。
+          // 到 LONG_PRESS_SEEK_MS 时长按胜出：左侧连续快退、右侧逐级加速，
+          // 抬手或手势取消时停止。
           GestureGroup(GestureMode.Exclusive,
             LongPressGesture({ fingers: 1, repeat: false, duration: LONG_PRESS_SEEK_MS })
-              .onAction((): void => { this.startHold(); })
+              .onAction((): void => { this.startHold(forward); })
               .onActionEnd((): void => { this.stopHold(); })
               .onActionCancel((): void => { this.stopHold(); }),
             TapGesture({ count: 2, fingers: 1 })

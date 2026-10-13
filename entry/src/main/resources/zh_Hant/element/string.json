@@ -12058,7 +12058,7 @@
     },
     {
       "name": "player_hold_back",
-      "value": "長按加速播放"
+      "value": "長按連續快退"
     },
     {
       "name": "mv_show_in_chat",

@@ -1,3 +1,4 @@
+import proxyReachTest from './ProxyReach.test';
 import { describe, it, expect } from '@ohos/hypium';
 import {
   hasIpv4Among, isIpv6Literal, netFamilyOf, NET_FAMILY_IPV4, NET_FAMILY_IPV6,
@@ -5,6 +6,7 @@ import {
 } from '../main/ets/util/ipFamily';
 
 export default function ipFamilyTest() {
+  proxyReachTest();
   describe('IpFamily', () => {
     it('方括号被剥掉：socket 和 TDLib 要的都是裸地址', 0, () => {
       expect(stripIpv6Brackets('[2001:db8::1]')).assertEqual('2001:db8::1');
