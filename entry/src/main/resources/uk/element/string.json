@@ -10269,6 +10269,66 @@
       "value": "Поскаржитися на цей чат зараз неможливо"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Спам"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Підроблений акаунт"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Насильство"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Жорстоке поводження з дітьми"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Порнографія"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Авторські права"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Незаконні наркотики"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Особисті дані"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Інше"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Мені це не подобається"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Незаконні товари та послуги"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Незаконний вміст для дорослих"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Тероризм"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Шахрайство або спам"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Незаконні товари"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Оберіть причину скарги"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Відтворити"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Тимчасовий QR-код; автоматично оновлюється після закінчення терміну"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Посилання користувача застаріло або недоступне. Відскануйте код знову."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Статистика для гіків"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Цей тип кнопки поки не підтримується"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Ця функція мінізастосунку поки не підтримується"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Закрити мінізастосунок?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Незбережені зміни може бути втрачено."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Непрочитані згадки"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Перейти до непрочитаної згадки"
     }
   ]
 }

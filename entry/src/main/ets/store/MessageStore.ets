@@ -236,6 +236,7 @@ export class MessageStore {
   private lastReadOutboxId: number = 0;
   private unreadCount: number = 0;
   private viewedUpTo: number = 0;
+  private viewedMentions: Set<number> = new Set();
   private chatResolved: boolean = false;
   private historyPending: boolean = false;
   private historyPendingKind: string = 'history';
@@ -436,7 +437,7 @@ export class MessageStore {
     this.chatSuspended = false;
     this.sendSimple('openChat');
     this.chatOpened = true;
-    this.readAllBadges();
+    this.readAllReactions();
     // The suspended stretch is a blind spot: the OS freezes the process, the
     // connection drops, and messages delivered meanwhile are synced by TDLib
     // without ever passing through updateNewMessage. The window then holds
@@ -474,14 +475,19 @@ export class MessageStore {
     if (!passive) {
       this.sendSimple('openChat');
       this.chatOpened = true;
-      // Opening the chat clears its @-mention and reaction badges, as in the
-      // official clients.
-      this.readAllBadges();
+      // Reactions retain their existing behavior; mentions are read per visible message.
+      this.readAllReactions();
     }
     this.unsubs.push(this.client.onUpdate('updateNewMessage', (u: TdObject) => this.onNewMessage(u)));
     this.unsubs.push(this.client.onUpdate('updateMessageSendSucceeded', (u: TdObject) => this.onSendSucceeded(u)));
     this.unsubs.push(this.client.onUpdate('updateMessageSendFailed', (u: TdObject) => this.onSendFailed(u)));
     this.unsubs.push(this.client.onUpdate('updateMessageContent', (u: TdObject) => this.onContent(u)));
+    this.unsubs.push(this.client.onUpdate('updateMessageMentionRead', (u: TdObject): void => {
+      if (u['chat_id'] !== this.chatId) { return; }
+      const id = u['message_id'] as number;
+      this.viewedMentions.delete(id);
+      this.patch(id, (message: MessageEntry): void => { message.containsUnreadMention = false; });
+    }));
     this.unsubs.push(this.client.onUpdate('updatePoll', (u: TdObject) => this.onPoll(u)));
     this.unsubs.push(this.client.onUpdate('updateDeleteMessages', (u: TdObject) => this.onDelete(u)));
     this.unsubs.push(this.client.onUpdate('updateChatReadOutbox', (u: TdObject) => this.onReadOutbox(u)));
@@ -552,6 +558,7 @@ export class MessageStore {
   }
 
   close(): void {
+    this.viewedMentions.clear();
     this.clearOlderPrefetch();
     if (this.coalesceTimer !== -1) {
       clearTimeout(this.coalesceTimer);
@@ -1887,8 +1894,8 @@ export class MessageStore {
     return this.client.send(req).then((): void => {});
   }
 
-  // Clear the @-mention and reaction badges for this chat.
-  readAllBadges(): void {
+  // Keep unread mentions until their messages are actually visible.
+  private readAllReactions(): void {
     if (this.directMessagesTopicId > 0) {
       const request: TdRequest = { '@type': 'readAllDirectMessagesChatTopicReactions' };
       request['chat_id'] = this.chatId;
@@ -1896,9 +1903,6 @@ export class MessageStore {
       this.client.send(request).catch((): void => {});
       return;
     }
-    const mentions: TdRequest = { '@type': 'readAllChatMentions' };
-    mentions['chat_id'] = this.chatId;
-    this.client.send(mentions).catch((): void => {});
     const reactions: TdRequest = { '@type': 'readAllChatReactions' };
     reactions['chat_id'] = this.chatId;
     this.client.send(reactions).catch((): void => {});
@@ -5826,6 +5830,26 @@ export class MessageStore {
   private viewSource(): TdObject {
     return { '@type': viewMessageSourceType(
       this.threadRootId, this.forumTopicId, this.directMessagesTopicId) };
+  }
+
+  // Mentions are per-message, independent of the normal inbox high-water mark.
+  // Going back to an older mention must still report it as viewed.
+  markVisibleMentions(messageIds: number[]): void {
+    const ids = messageIds.filter((id: number): boolean => {
+      const index = this.indexOf(id);
+      return index >= 0 && this.messages[index].containsUnreadMention === true &&
+        !this.viewedMentions.has(id);
+    });
+    if (ids.length === 0) { return; }
+    for (const id of ids) { this.viewedMentions.add(id); }
+    const request: TdRequest = { '@type': 'viewMessages' };
+    request['chat_id'] = this.chatId;
+    request['message_ids'] = ids;
+    request['source'] = this.viewSource();
+    request['force_read'] = true;
+    this.client.send(request, 12000).catch((): void => {
+      for (const id of ids) { this.viewedMentions.delete(id); }
+    });
   }
 
   markViewed(maxVisibleId: number): void {

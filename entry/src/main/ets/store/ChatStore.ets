@@ -135,6 +135,8 @@ export class ChatStore {
     client.onUpdate('updateChatPosition', (u: TdObject) => this.onPosition(u));
     client.onUpdate('updateChatLastMessage', (u: TdObject) => this.onLastMessage(u));
     client.onUpdate('updateChatReadInbox', (u: TdObject) => this.onReadInbox(u));
+    client.onUpdate('updateChatUnreadMentionCount', (u: TdObject) => this.onUnreadMentions(u));
+    client.onUpdate('updateMessageMentionRead', (u: TdObject) => this.onUnreadMentions(u));
     client.onUpdate('updateChatTitle', (u: TdObject) => this.onTitle(u));
     client.onUpdate('updateChatPhoto', (u: TdObject) => this.onPhoto(u));
     client.onUpdate('updateChatNotificationSettings', (u: TdObject) => this.onNotify(u));
@@ -739,6 +741,7 @@ export class ChatStore {
         (chat['unread_count'] as number | undefined) ?? 0,
         (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
         this.messageIdOf(lastMsg)),
+      unreadMentionCount: (chat['unread_mention_count'] as number | undefined) ?? 0,
       rawUnreadCount: (chat['unread_count'] as number | undefined) ?? 0,
       lastReadInboxId: (chat['last_read_inbox_message_id'] as number | undefined) ?? 0,
       lastMessageText: formatPreview(lastMsg),
@@ -1346,6 +1349,17 @@ export class ChatStore {
     } else {
       this.notify(dirtyChatId);
     }
+  }
+
+  private onUnreadMentions(update: TdObject): void {
+    const chatId = update['chat_id'] as number;
+    const entry = this.chats.get(chatId);
+    const count = Math.max(0, (update['unread_mention_count'] as number | undefined) ?? 0);
+    if (entry === undefined || entry.unreadMentionCount === count) { return; }
+    const next = cloneEntry(entry);
+    next.unreadMentionCount = count;
+    this.chats.set(chatId, next);
+    this.notifySoon(chatId);
   }
 
   private applyReadInbox(chatId: number, entry: ChatEntry, rawUnreadCount: number,

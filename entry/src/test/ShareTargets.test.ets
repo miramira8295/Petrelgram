@@ -11,7 +11,7 @@ import {
 function chat(id: number, title: string, date: number, saved: boolean = false): ChatEntry {
   return {
     id: id, revision: 0, title: title, isMuted: false, usesDefaultMute: true,
-    unreadCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
+    unreadCount: 0, unreadMentionCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
     lastMessageText: '', lastMessageThumb: '', lastMessageDate: date, lastMessageId: 0,
     lastSenderName: '', photoFileId: 0, avatarPath: '', initials: title.substring(0, 1),
     autoDeleteTime: 0, kind: 'private', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false,

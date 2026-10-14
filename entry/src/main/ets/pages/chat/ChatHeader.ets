@@ -51,6 +51,7 @@ export const CHAT_HEADER_RADIUS: number = 22;
 // WebmStickerView 早在 P4 批 6b 就是 @ComponentV2 了。
 @ComponentV2
 export struct ChatHeader {
+  @Param animationsAllowed: boolean = true;
   // V2 没有 @StorageProp 的等价物（官方：V2 组件不提供 @StorageProp/@StorageLink）。
   // 三个全局键（外观纪元 / 材质纪元 / 深色模式）改由 ChatPage 透传——页面自己
   // 就持有这三个 @Param（来自 V1 外壳 ChatPageEntry）。纪元变化的路径从「本层
@@ -173,7 +174,10 @@ export struct ChatHeader {
     if (this.header.state === 'loading' || this.header.profileOpening) {
       LoadingProgress().width(15).height(15).color(this.accent()).margin({ left: 5 });
     } else if (emojiStatusVisible(this.header.emojiPath, this.header.emojiUid)) {
-      if (this.header.emojiFormat === 'tgs') {
+      if (!this.animationsAllowed) {
+        // 保持标题占位，隐藏时不挂动态表情播放器。
+        Row().width(18).height(18).margin({ left: 4 });
+      } else if (this.header.emojiFormat === 'tgs') {
         TgsStickerView({
           tgsPath: this.header.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
         }).margin({ left: 4 });
@@ -300,6 +304,7 @@ export struct ChatHeader {
       AvatarView({
         avatarPath: this.header.avatarPath,
         animPath: this.header.avatarAnimPath,
+        animationPaused: !this.animationsAllowed,
         initials: this.header.initials,
         colorSeed: this.chatId,
         avatarSize: 38,

@@ -10,7 +10,7 @@ function field(value: string): string {
 }
 
 function signature(button: InlineBtn): string {
-  return `${field(button.text)}${field(button.url)}${field(button.callbackData)}` +
+  return `${field(button.text)}${field(button.url)}${field(button.callbackData)}${field(button.webAppUrl ?? '')}` +
     `${button.isGame ? 'g' : '-'}${field(button.style)}`;
 }
 

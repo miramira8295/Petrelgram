@@ -1,7 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  parseReportStep, reportRequest, runReportFlow, ReportFlowUi, ReportOption, ReportStep,
-  REPORT_OPTION_LIMIT
+  parseReportStep, reportRequest, runReportFlow, ReportFlowUi, ReportOption, ReportStep
 } from '../main/ets/util/reportFlow';
 import { TdObject, TdRequest } from '../main/ets/tdkit/TdTypes';
 
@@ -26,6 +25,8 @@ function textResult(optionId: string, optional: boolean): TdObject {
 }
 
 class FakeUi implements ReportFlowUi {
+  allowed: boolean = true;
+  prepare(): Promise<boolean> { return Promise.resolve(this.allowed); }
   picked: string[] = [];        // 每次弹选项时选的 id；'' = 取消
   typed: string[] = [];         // 每次要文本时输入的内容；'' = 取消
   toasts: string[] = [];
@@ -70,10 +71,38 @@ export default function reportFlowTest(): void {
       expect(parseReportStep({ '@type': 'somethingNew' }, '').kind).assertEqual('unsupported');
     });
 
-    it('选项超过上限只展示前 N 个（showActionMenu 的按钮上限）', 0, (): void => {
+    it('完整保留超过六项的原因及原始顺序', 0, (): void => {
       const ids: string[] = [];
-      for (let i = 0; i < REPORT_OPTION_LIMIT + 3; i++) { ids.push(`o${i}`); }
-      expect(parseReportStep(optionsResult('t', ids), '').options.length).assertEqual(REPORT_OPTION_LIMIT);
+      for (let i = 0; i < 12; i++) { ids.push(`o${i}`); }
+      const result: ReportStep = parseReportStep(optionsResult('t', ids), '');
+      expect(result.options.length).assertEqual(12);
+      expect(result.options[11].id).assertEqual('o11');
+    });
+
+    it('第十二项也可提交且不修改服务端ID', 0, async (): Promise<void> => {
+      const ids: string[] = [];
+      for (let i: number = 0; i < 12; i++) { ids.push(`opaque-${i}==`); }
+      const sent: TdRequest[] = [];
+      const ui: FakeUi = new FakeUi();
+      ui.picked = [ids[11]];
+      await runReportFlow((req: TdRequest): Promise<TdObject> => {
+        sent.push(req);
+        return Promise.resolve(sent.length === 1 ? optionsResult('Report', ids) :
+          { '@type': 'reportChatResultOk' } as TdObject);
+      }, { chatId: -1, messageIds: [7] }, ui);
+      expect(sent.length).assertEqual(2);
+      expect(sent[1]['option_id']).assertEqual(ids[11]);
+    });
+
+    it('语言变化取消旧流程且不发举报请求', 0, async (): Promise<void> => {
+      let calls: number = 0;
+      const ui: FakeUi = new FakeUi();
+      ui.allowed = false;
+      await runReportFlow((_req: TdRequest): Promise<TdObject> => {
+        calls++;
+        return Promise.resolve({ '@type': 'reportChatResultOk' } as TdObject);
+      }, { chatId: -1, messageIds: [] }, ui);
+      expect(calls).assertEqual(0);
     });
 
     it('完整路径：选原因 → 必填说明 → 提交成功', 0, async (): Promise<void> => {

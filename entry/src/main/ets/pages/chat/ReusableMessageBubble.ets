@@ -29,6 +29,7 @@ export interface MessageBubbleActions {
   // askFirst：先弹「打开 / 复制」再开（藏着网址的文字链接、Bot 按钮），见 linkTextHidesUrl。
   onLinkTap: (url: string, askFirst: boolean) => void;
   onCommentTap: (messageId: number) => void;
+  onMiniApp: (messageId: number, url: string) => void;
   onBotCallback: (messageId: number, data: string) => void;
   onAvatarTap: (userId: number) => void;
   onAvatarLongPress: (userId: number, name: string) => void;
@@ -157,6 +158,7 @@ const EMPTY_ACTIONS: MessageBubbleActions = {
   onStopLiveLocation: (): void => {},
   onMediaTap: (_id: number, _x: number, _y: number): void => {},
   onLinkTap: (_url: string, _askFirst: boolean): void => {}, onCommentTap: (_id: number): void => {},
+  onMiniApp: (_id: number, _url: string): void => {},
   onBotCallback: (_id: number, _data: string): void => {},
   onAvatarTap: (_id: number): void => {},
   onAvatarLongPress: (_id: number, _name: string): void => {},

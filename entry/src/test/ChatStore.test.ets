@@ -241,6 +241,37 @@ function pagingStore(bridge: PagingBridge): ChatStore {
 
 export default function chatStoreTest() {
   describe('ChatStore', () => {
+    it('未读提及来自完整会话且独立于普通未读', 0, () => {
+      const timer = new ManualTimer(); const store = make(timer); const bridge = bridgeOf(store);
+      const chat: TdObject = { '@type': 'chat', 'id': 1, 'title': 'A',
+        'unread_count': 0, 'unread_mention_count': 3 };
+      chat['positions'] = [mainPos('100', false)];
+      const update: TdObject = { '@type': 'updateNewChat' }; update['chat'] = chat;
+      bridge.onReceive(JSON.stringify(update));
+      timer.runAll();
+      expect(store.entryOf(1)!.unreadMentionCount).assertEqual(3);
+      pushReadInbox(bridge, 1, 0, 100); timer.runAll();
+      expect(store.entryOf(1)!.unreadMentionCount).assertEqual(3);
+      expect(store.entryOf(1)!.unreadCount).assertEqual(0);
+    });
+    it('提及更新和单条提及已读均刷新列表及会话订阅', 0, () => {
+      const timer = new ManualTimer(); const store = make(timer); const bridge = bridgeOf(store);
+      pushNewChat(bridge, 1, 'A', [archivePos('100', false)], null, 0); timer.runAll();
+      let hits = 0; store.subscribeChat(1, (): void => { hits++; });
+      bridge.onReceive(JSON.stringify({ '@type': 'updateChatUnreadMentionCount', chat_id: 1, unread_mention_count: 2 }));
+      timer.runAll(); expect(store.getChats('archive')[0].unreadMentionCount).assertEqual(2);
+      bridge.onReceive(JSON.stringify({ '@type': 'updateMessageMentionRead', chat_id: 1, message_id: 10, unread_mention_count: 0 }));
+      timer.runAll(); expect(store.entryOf(1)!.unreadMentionCount).assertEqual(0); expect(hits).assertEqual(3);
+    });
+    it('标题和普通已读更新不会丢掉提及计数', 0, () => {
+      const timer = new ManualTimer(); const store = make(timer); const bridge = bridgeOf(store);
+      pushNewChat(bridge, 1, 'A', [mainPos('100', false)], null, 0); timer.runAll();
+      bridge.onReceive(JSON.stringify({ '@type': 'updateChatUnreadMentionCount', chat_id: 1, unread_mention_count: 2 }));
+      bridge.onReceive(JSON.stringify({ '@type': 'updateChatTitle', chat_id: 1, title: 'B' }));
+      timer.runAll(); expect(store.entryOf(1)!.unreadMentionCount).assertEqual(2);
+      expect(store.entryOf(1)!.title).assertEqual('B');
+    });
+
     it('forum_supergroup_detected', 0, () => {
       const b = new FakeBridge();
       const c = new TdClient(b);

@@ -1,3 +1,4 @@
+import { syncTdLanguage } from '../services/TdLanguage';
 import { i18n } from '@kit.LocalizationKit';
 import { mirrorChatEnvKey } from './chatEnvMirror';
 import { refreshLocale } from './intlFormat';
@@ -21,6 +22,7 @@ export const LANGUAGE_SYSTEM = 'default';
 export const LANGUAGE_EPOCH = 'languageEpoch';
 
 export function bumpLanguageEpoch(): void {
+  syncTdLanguage();
   const next: number = (AppStorage.get<number>(LANGUAGE_EPOCH) ?? 0) + 1;
   AppStorage.setOrCreate(LANGUAGE_EPOCH, next);
   mirrorChatEnvKey(LANGUAGE_EPOCH, next);

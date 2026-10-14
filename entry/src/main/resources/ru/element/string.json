@@ -10269,6 +10269,66 @@
       "value": "Пока нельзя пожаловаться на этот чат"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Спам"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Поддельный аккаунт"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Насилие"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Жестокое обращение с детьми"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Порнография"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Авторские права"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Незаконные наркотики"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Личные данные"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Другое"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Мне это не нравится"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Незаконные товары и услуги"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Незаконный контент для взрослых"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Терроризм"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Мошенничество или спам"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Незаконные товары"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Выберите причину жалобы"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Воспроизвести"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Временный QR-код; обновляется автоматически по истечении срока"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Ссылка пользователя устарела или недоступна. Отсканируйте код заново."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Статистика для сисадминов"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Этот тип кнопки пока не поддерживается"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Эта функция мини-приложения пока не поддерживается"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Закрыть мини-приложение?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Несохранённые изменения могут быть потеряны."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Непрочитанные упоминания"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Перейти к непрочитанному упоминанию"
     }
   ]
 }

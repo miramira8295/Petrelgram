@@ -131,7 +131,7 @@ function inlineButtonShape(msg: MessageEntry): string {
   for (const row of msg.inlineButtons) {
     shape += `r${row.length}:`;
     for (const button of row) {
-      shape += button.isGame ? 'g' : (button.url !== '' ? 'u'
+      shape += (button.webAppUrl ?? '') !== '' ? 'w' : button.isGame ? 'g' : (button.url !== '' ? 'u'
         : (button.callbackData !== '' ? 'c' : 'n'));
       shape += `${button.style};`;
     }

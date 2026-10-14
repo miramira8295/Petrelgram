@@ -10269,6 +10269,66 @@
       "value": "Le signalement de cette discussion n'est pas pris en charge"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Spam"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Faux compte"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Violence"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Maltraitance d’enfants"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Pornographie"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Droits d’auteur"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Drogues illégales"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Données personnelles"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Autre"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Je n’aime pas"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Biens et services illégaux"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Contenu illégal pour adultes"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Terrorisme"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Arnaque ou spam"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Biens illégaux"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Choisissez un motif de signalement"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Lecture"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Code QR temporaire, renouvelé automatiquement à expiration"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Ce lien utilisateur a expiré ou est indisponible. Veuillez scanner à nouveau."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Statistiques avancées"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Ce type de bouton n’est pas encore pris en charge"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Cette fonction de mini-application n’est pas encore prise en charge"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Fermer la mini-application ?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Les modifications non enregistrées risquent d’être perdues."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Mentions non lues"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Aller à une mention non lue"
     }
   ]
 }

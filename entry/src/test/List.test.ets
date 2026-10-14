@@ -1,3 +1,9 @@
+import tdLanguageTest from './TdLanguage.test';
+import qrSessionTest from './QrSession.test';
+import chatJoinTest from './ChatJoin.test';
+import viewerUnderlayTest from './ViewerUnderlay.test';
+import videoProgressClockTest from './VideoProgressClock.test';
+import unreadMentionSessionTest from './UnreadMentionSession.test';
 import localUnitTest from './LocalUnit.test';
 import crashRecordStoreTest from './CrashRecordStore.test';
 import materialTuningTest from './MaterialTuning.test';
@@ -158,6 +164,7 @@ import landscapeMultiWindowTest from './LandscapeMultiWindow.test';
 import pageMarginTest from './PageMargin.test';
 import botMainAppTest from './BotMainApp.test';
 import webAppUrlTest from './WebAppUrl.test';
+import miniAppTest from './MiniApp.test';
 import playSlotTest from './PlaySlot.test';
 import playSlotRegistryTest from './PlaySlotRegistry.test';
 import backgroundBlurTest from './BackgroundBlur.test';
@@ -173,6 +180,7 @@ import mentionEntitiesTest from './MentionEntities.test';
 import chatListDataSourceTest from './ChatListDataSource.test';
 import keyedListDataSourceTest from './KeyedListDataSource.test';
 import chatAnimationGateTest from './ChatAnimationGate.test';
+import chatMotionPolicyTest from './ChatMotionPolicy.test';
 import animationSlotPoolTest from './AnimationSlotPool.test';
 import stickerAnimationBudgetTest from './StickerAnimationBudget.test';
 import stickerPanelGateTest from './StickerPanelGate.test';
@@ -352,6 +360,8 @@ import targetSelectionTest from './TargetSelection.test';
 import shareFanoutTest from './ShareFanout.test';
 
 export default function testsuite() {
+  tdLanguageTest();
+  qrSessionTest();
   crashRecordStoreTest();
   localUnitTest();
   materialTuningTest();
@@ -511,6 +521,11 @@ export default function testsuite() {
   pageMarginTest();
   botMainAppTest();
   webAppUrlTest();
+  miniAppTest();
+  unreadMentionSessionTest();
+  videoProgressClockTest();
+  chatJoinTest();
+  viewerUnderlayTest();
   playSlotTest();
   playSlotRegistryTest();
   customEmojiReactionsTest();
@@ -528,6 +543,7 @@ export default function testsuite() {
   chatListDataSourceTest();
   keyedListDataSourceTest();
   chatAnimationGateTest();
+  chatMotionPolicyTest();
   animationSlotPoolTest();
   stickerAnimationBudgetTest();
   stickerPanelGateTest();

@@ -1,3 +1,6 @@
+import { LANGUAGE_EPOCH } from '../../util/appLanguage';
+import { syncTdLanguage, tdLanguageGeneration } from '../../services/TdLanguage';
+import { reportDisplayText } from '../../util/reportLabels';
 import { ComponentContent, promptAction, UIContext } from '@kit.ArkUI';
 import { COLOR_ON_PRIMARY, COLOR_PAGE_BG, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
@@ -8,8 +11,7 @@ import { logE } from '../../util/log';
 // 举报流程的 UI 适配：把 util/reportFlow 要的三件事接到真正的弹层上。
 // 会话页与消息菜单共用，所以放 common。
 //
-// 选原因走 promptAction.showActionMenu（沿用会话页原来的做法，按钮上限见
-// REPORT_OPTION_LIMIT）；补充说明需要一个输入框，系统弹窗排不了，用
+// 选原因用可滚动列表，完整显示服务器的动态选项；补充说明使用输入框。两者用
 // ComponentContent + UIContext.openCustomDialog——与 DeleteMessagesDialog 同一
 // 条路，理由也一样：不走 CustomDialogController（官方明写仅限状态管理 V1）。
 
@@ -103,27 +105,118 @@ function askReportText(ui: UIContext): Promise<string | null> {
   });
 }
 
-function pickReportOption(title: string, options: ReportOption[]): Promise<ReportOption | null> {
-  const buttons: promptAction.Button[] = options.map((o: ReportOption): promptAction.Button =>
-    ({ text: o.text, color: '#E5484D' } as promptAction.Button));
-  return promptAction.showActionMenu({
-    title: title !== '' ? title : str('cpp_report_reason'),
-    buttons: buttons as [promptAction.Button, promptAction.Button?, promptAction.Button?,
-      promptAction.Button?, promptAction.Button?, promptAction.Button?]
-  }).then((chosen: promptAction.ActionMenuSuccessResponse): ReportOption | null =>
-    options[chosen.index] ?? null
-  ).catch((): ReportOption | null => null);
+export interface ReportOptionsDialogParams {
+  title: string;
+  options: ReportOption[];
+  onSelect: (option: ReportOption) => void;
+  onClose: () => void;
+}
+
+@Component
+export struct ReportOptionsDialog {
+  title: string = '';
+  options: ReportOption[] = [];
+  onSelect: (option: ReportOption) => void = (): void => {};
+  onClose: () => void = (): void => {};
+  @StorageProp(LANGUAGE_EPOCH) @Watch('onLanguageChanged') languageEpoch: number = 0;
+
+  private onLanguageChanged(): void { this.onClose(); }
+
+  build() {
+    Column({ space: 12 }) {
+      Text(reportDisplayText(this.title, str, true))
+        .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
+        .width('100%').textAlign(TextAlign.Center);
+      List({ space: 4 }) {
+        ForEach(this.options, (option: ReportOption) => {
+          ListItem() {
+            Button({ type: ButtonType.Normal }) {
+              Text(reportDisplayText(option.text, str)).fontSize(16)
+                .fontColor(COLOR_TEXT_PRIMARY).width('100%');
+            }
+            .width('100%').constraintSize({ minHeight: 48 })
+            .padding({ top: 12, bottom: 12, left: 14, right: 14 })
+            .backgroundColor(COLOR_PAGE_BG).borderRadius(10)
+            .onClick((): void => { this.onSelect(option); });
+          }
+        }, (option: ReportOption, index: number): string => `${index}:${option.id}`);
+      }.width('100%').layoutWeight(1).scrollBar(BarState.Auto);
+      Button($r('app.string.cancel')).width('100%').height(44)
+        .fontSize(16).fontColor(COLOR_TEXT_SECONDARY)
+        .backgroundColor($r('app.color.surface_alt'))
+        .onClick((): void => { this.onClose(); });
+    }
+    .width('86%').height('70%').constraintSize({ maxWidth: 400, maxHeight: 560 })
+    .padding(20).backgroundColor($r('app.color.surface')).borderRadius(18);
+  }
+}
+
+@Builder
+function reportOptionsDialogLayer(p: ReportOptionsDialogParams) {
+  ReportOptionsDialog({ title: p.title, options: p.options, onSelect: p.onSelect, onClose: p.onClose })
+}
+
+function pickReportOption(ui: UIContext, title: string, options: ReportOption[]): Promise<ReportOption | null> {
+  return new Promise<ReportOption | null>((resolve): void => {
+    let content: ComponentContent<ReportOptionsDialogParams> | null = null;
+    let selected: ReportOption | null = null;
+    let closing: boolean = false;
+    let finished: boolean = false;
+    const epoch: number = AppStorage.get<number>(LANGUAGE_EPOCH) ?? 0;
+    const finish = (): void => {
+      if (finished) { return; }
+      finished = true;
+      const node: ComponentContent<ReportOptionsDialogParams> | null = content;
+      content = null;
+      node?.dispose();
+      resolve(epoch === (AppStorage.get<number>(LANGUAGE_EPOCH) ?? 0) ? selected : null);
+    };
+    const close = (option: ReportOption | null): void => {
+      if (closing || content === null) { return; }
+      selected = option;
+      closing = true;
+      ui.getPromptAction().closeCustomDialog(content).catch((): void => {
+        selected = null;
+        closing = false;
+        logE('Report options dialog close failed');
+      });
+    };
+    const params: ReportOptionsDialogParams = {
+      title, options,
+      onSelect: (option: ReportOption): void => { close(option); },
+      onClose: (): void => { close(null); }
+    };
+    content = new ComponentContent(ui, wrapBuilder(reportOptionsDialogLayer), params);
+    ui.getPromptAction().openCustomDialog(content, {
+      autoCancel: true, alignment: DialogAlignment.Center,
+      onDidDisappear: finish
+    }).catch((): void => {
+      selected = null;
+      finish();
+      logE('Report options dialog open failed');
+    });
+  });
 }
 
 // 接口里是方法签名，ArkTS 不让对象字面量直接充当（arkts-no-untyped-obj-literals），用类。
 class ReportPromptsUi implements ReportFlowUi {
   private readonly ui: UIContext;
+  private readonly runtime: number = tdLanguageGeneration();
+  private readonly epoch: number = AppStorage.get<number>(LANGUAGE_EPOCH) ?? 0;
+  async prepare(): Promise<boolean> {
+    await syncTdLanguage();
+    return this.current();
+  }
+  private current(): boolean {
+    return this.runtime === tdLanguageGeneration() &&
+      this.epoch === (AppStorage.get<number>(LANGUAGE_EPOCH) ?? 0);
+  }
   constructor(ui: UIContext) { this.ui = ui; }
   pickOption(title: string, options: ReportOption[]): Promise<ReportOption | null> {
-    return pickReportOption(title, options);
+    return this.current() ? pickReportOption(this.ui, title, options) : Promise.resolve(null);
   }
   askText(): Promise<string | null> {
-    return askReportText(this.ui);
+    return this.current() ? askReportText(this.ui) : Promise.resolve(null);
   }
   toast(key: string): void {
     promptAction.showToast({ message: str(key), duration: 1800 });

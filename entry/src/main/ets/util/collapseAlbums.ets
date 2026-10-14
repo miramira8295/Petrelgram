@@ -193,7 +193,7 @@ function computeMutableSig(m: MessageEntry): string {
   }
   for (const row of m.inlineButtons) {
     for (const b of row) {
-      s += `#${b.text}:${b.url}:${b.callbackData}:${b.isGame}:${b.style}`;
+      s += `#${b.text}:${b.url}:${b.callbackData}:${b.webAppUrl ?? ''}:${b.isGame}:${b.style}`;
     }
   }
   for (const entity of m.textEntities) {

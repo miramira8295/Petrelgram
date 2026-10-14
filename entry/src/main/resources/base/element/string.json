@@ -10269,6 +10269,66 @@
       "value": "当前不支持举报该会话"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "垃圾信息"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "虚假账号"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "暴力"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "虐待儿童"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "色情内容"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "侵犯版权"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "非法毒品"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "泄露个人信息"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "其他"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "我不喜欢"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "非法商品和服务"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "非法成人内容"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "恐怖主义"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "诈骗或垃圾信息"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "非法商品"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "选择举报原因"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "播放"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "临时二维码，到期自动刷新"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "用户链接已失效或暂时无法打开，请重新扫码"
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "详细统计信息"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "暂不支持此按钮类型"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "暂不支持此小程序功能"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "关闭小程序？"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "未完成的操作可能不会保存。"
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "有未读提及"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "跳转到未读提及"
     }
   ]
 }

@@ -32,7 +32,7 @@ import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { LiveThumbImage } from './LiveThumbImage';
 import {
   BUBBLE_AVATAR_GAP_VP, BUBBLE_AVATAR_GUTTER_VP, BUBBLE_ROW_SIDE_VP,
-  bubbleMaxWidth, MediaBox, MEDIA_MAX_HEIGHT_RATIO, MEDIA_MAX_WIDTH, mediaBoxFor, mediaThumbWidth
+  bubbleMaxWidth, MediaBox, MEDIA_MAX_HEIGHT_RATIO, mediaBoxFor, mediaThumbWidth
 } from '../../util/mediaBox';
 import { AvLoopVideo } from '../common/AvLoopVideo';
 import { VoiceBubble } from './VoiceBubble';
@@ -124,7 +124,6 @@ const REPLY_QUOTE_LINE_H: number = 16;
 // 没图的引用块一样高，缩略图落地时不会把气泡顶高。
 const REPLY_THUMB_SIZE: number = 32;
 const REPLY_THUMB_GAP: number = 6;
-const ALBUM_MAX_WIDTH: number = 280;
 const STICKER_MAX: number = 160;
 const LINK_PREVIEW_HEIGHT_RATIO: number = 0.62;
 // 频道/邀请卡片的小圆头像边长。
@@ -1144,7 +1143,7 @@ export struct MessageBubble {
   }
 
   private mediaThumbW(): number {
-    return mediaThumbWidth(this.data.contentWidth);
+    return mediaThumbWidth(this.data.contentWidth, this.avatarReserve());
   }
 
   private mediaMaxH(): number {
@@ -1231,7 +1230,7 @@ export struct MessageBubble {
   // prefetched bitmap lands under a key this bubble never asks for.
   private mediaBox(): MediaBox {
     return mediaBoxFor(this.data.contentWidth, this.msg.photoWidth, this.msg.photoHeight,
-      this.msg.contentType === 'video');
+      this.msg.contentType === 'video', this.avatarReserve());
   }
 
   private linkPreviewH(width: number = this.cardMaxW()): number {
@@ -1363,7 +1362,7 @@ export struct MessageBubble {
   }
 
   private albumW(): number {
-    return Math.min(ALBUM_MAX_WIDTH, this.inlineMaxW());
+    return this.mediaThumbW();
   }
 
   // Per-sender name color: the sender's Telegram accent color when known,
@@ -1979,13 +1978,17 @@ export struct MessageBubble {
                 .animation({ duration: this.effectDuration(100), curve: Curve.EaseOut })
                 .onClick(() => {
                   if (this.gestureClaimed) { return; }
-                  if (btn.url !== '') {
+                  if ((btn.webAppUrl ?? '') !== '') {
+                    this.actions.onMiniApp(this.msg.id, btn.webAppUrl!);
+                  } else if (btn.url !== '') {
                     // 按钮上的字不是网址，先让用户看清要去哪（同官方）。
                     this.actions.onLinkTap(btn.url, true);
                   } else if (btn.callbackData !== '') {
                     this.actions.onBotCallback(this.msg.id, btn.callbackData);
                   } else if (btn.isGame) {
                     this.actions.onGameOpen(this.msg.id);
+                  } else {
+                    promptAction.showToast({ message: $r('app.string.miniapp_button_unsupported') });
                   }
                 });
             // 点击目标、游戏分支和样式都属于组件身份，不能只看显示文字。

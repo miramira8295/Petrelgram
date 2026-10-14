@@ -10269,6 +10269,66 @@
       "value": "Denunciar este chat no es compatible por ahora"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Spam"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Cuenta falsa"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Violencia"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Abuso infantil"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Pornografía"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Derechos de autor"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Drogas ilegales"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Datos personales"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Otro"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "No me gusta"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Bienes y servicios ilegales"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Contenido ilegal para adultos"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Terrorismo"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Estafa o spam"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Bienes ilegales"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Elige el motivo de la denuncia"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Reproducir"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Código QR temporal; se renueva automáticamente al caducar"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Este enlace de usuario ha caducado o no está disponible. Vuelve a escanearlo."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Estadísticas para nerds"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Este tipo de botón aún no es compatible"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Esta función de la miniaplicación aún no es compatible"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "¿Cerrar la miniaplicación?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Los cambios sin guardar podrían perderse."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Menciones sin leer"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Ir a una mención sin leer"
     }
   ]
 }

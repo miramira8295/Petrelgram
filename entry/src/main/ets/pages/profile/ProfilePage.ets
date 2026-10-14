@@ -1,6 +1,5 @@
-import { getMainMiniApp } from '../../store/BotApi';
+import { openMiniAppPage } from '../../util/miniAppNav';
 import { mainAppChatId } from '../../util/botMainApp';
-import { openWebUrl } from '../../util/webBrowserNav';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
@@ -566,13 +565,8 @@ export struct ProfilePage {
       ensureChat = getTdClient().send(req)
         .then((chat: TdObject): number => (chat['id'] as number | undefined) ?? mainAppChatId(0, botId));
     }
-    ensureChat.then((chatId: number): Promise<string> => getMainMiniApp(chatId, botId))
-      .then((url: string): void => {
-        if (url === '') {
-          promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });
-          return;
-        }
-        openWebUrl(getContext(this) as common.UIAbilityContext, url);
+    ensureChat.then((chatId: number): void => {
+        openMiniAppPage({ kind: 'main', chatId, botUserId: botId, title: this.name });
       }).catch((e: TdError): void => {
         logE(`ProfilePage.openMainApp failed: ${e.code} ${e.message}`);
         promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });

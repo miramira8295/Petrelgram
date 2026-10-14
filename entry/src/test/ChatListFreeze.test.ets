@@ -14,7 +14,7 @@ function snapshot(): ChatEntry[] {
 function chat(id: number): ChatEntry {
   return {
     id, revision: 0, title: `c${id}`, isMuted: false, usesDefaultMute: true,
-    unreadCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
+    unreadCount: 0, unreadMentionCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
     lastMessageText: '', lastMessageThumb: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
     photoFileId: 0, avatarPath: '', initials: '', autoDeleteTime: 0,
     kind: 'supergroup', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false,

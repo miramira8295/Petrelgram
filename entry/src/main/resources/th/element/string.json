@@ -10269,6 +10269,66 @@
       "value": "ยังไม่รองรับการรายงานแชทนี้"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "สแปม"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "บัญชีปลอม"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "ความรุนแรง"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "การทารุณกรรมเด็ก"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "สื่อลามก"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "ลิขสิทธิ์"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "ยาเสพติดผิดกฎหมาย"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "ข้อมูลส่วนบุคคล"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "อื่น ๆ"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "ฉันไม่ชอบ"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "สินค้าและบริการผิดกฎหมาย"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "เนื้อหาสำหรับผู้ใหญ่ที่ผิดกฎหมาย"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "การก่อการร้าย"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "การหลอกลวงหรือสแปม"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "สินค้าผิดกฎหมาย"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "เลือกเหตุผลการรายงาน"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "เล่น"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "รหัส QR ชั่วคราว จะรีเฟรชอัตโนมัติเมื่อหมดอายุ"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "ลิงก์ผู้ใช้นี้หมดอายุหรือไม่พร้อมใช้งาน โปรดสแกนอีกครั้ง"
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "สถิติสำหรับผู้เชี่ยวชาญ"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "ยังไม่รองรับปุ่มประเภทนี้"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "ยังไม่รองรับฟีเจอร์มินิแอปนี้"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "ปิดมินิแอปหรือไม่?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "การเปลี่ยนแปลงที่ยังไม่บันทึกอาจสูญหาย"
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "การกล่าวถึงที่ยังไม่ได้อ่าน"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "ไปยังการกล่าวถึงที่ยังไม่ได้อ่าน"
     }
   ]
 }

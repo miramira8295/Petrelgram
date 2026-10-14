@@ -1,3 +1,4 @@
+import { webAppUrlOf } from '../util/webAppUrl';
 import { linkNamesInLabel, NamedUser, SystemPillLink } from '../util/systemPillLinks';
 import { TdObject } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
@@ -21,6 +22,7 @@ export interface MessageEntry {
   // 时钟换成对号。新建条目时 rowId 就等于 id。
   rowId: number;
   isOutgoing: boolean;
+  containsUnreadMention?: boolean;
   senderName: string;
   // 群成员标签（chatMemberTag），消息对象自带（sender_tag），全员可见。
   senderTag: string;
@@ -225,11 +227,11 @@ export interface ReactionInfo {
   customEmojiPath: string; // 自定义 emoji 位图本地路径（'' = 尚未下载完成，显示占位）
 }
 
-// One bot inline-keyboard button. Exactly one of url/callbackData is set for
-// the types we support; unsupported types render but do nothing on tap.
+// Preserve Web App actions separately from ordinary external links.
 export interface InlineBtn {
   text: string;
   url: string;
+  webAppUrl?: string; // inlineKeyboardButtonTypeWebApp; optional for cached/older entries
   callbackData: string; // base64 payload for inlineKeyboardButtonTypeCallback
   isGame: boolean;      // inlineKeyboardButtonTypeCallbackGame
   style: string;        // 'primary' | 'success' | 'danger' | '' (default look)
@@ -250,6 +252,7 @@ export function parseInlineKeyboard(replyMarkup: TdObject | undefined): InlineBt
       btns.push({
         text: (b['text'] as string | undefined) ?? '',
         url: tt === 'inlineKeyboardButtonTypeUrl' ? ((t!['url'] as string | undefined) ?? '') : '',
+        webAppUrl: tt === 'inlineKeyboardButtonTypeWebApp' ? webAppUrlOf(t!['url']) : '',
         callbackData: tt === 'inlineKeyboardButtonTypeCallback' ? ((t!['data'] as string | undefined) ?? '') : '',
         isGame: tt === 'inlineKeyboardButtonTypeCallbackGame',
         style: buttonStyleOf(b)
@@ -265,6 +268,7 @@ export function parseInlineKeyboard(replyMarkup: TdObject | undefined): InlineBt
 export function cloneMessage(m: MessageEntry): MessageEntry {
   return {
     id: m.id, rowId: m.rowId, isOutgoing: m.isOutgoing, senderName: m.senderName,
+    containsUnreadMention: m.containsUnreadMention,
     senderTag: m.senderTag,
     senderId: m.senderId, senderIsUser: m.senderIsUser,
     senderInitials: m.senderInitials, senderAvatarPath: m.senderAvatarPath, date: m.date,
@@ -1063,6 +1067,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     id: (message['id'] as number | undefined) ?? 0,
     rowId: (message['id'] as number | undefined) ?? 0,
     isOutgoing,
+    containsUnreadMention: (message['contains_unread_mention'] as boolean | undefined) ?? false,
     senderName: name,
     senderTag: (message['sender_tag'] as string | undefined) ?? '',
     senderId: senderIdOf(message),

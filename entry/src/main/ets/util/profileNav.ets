@@ -48,7 +48,8 @@ export function profileFrameKey(name: string, param: Object | undefined): string
   if (chatId !== undefined) {
     return `c${chatId}`;
   }
-  return '';
+  const invite: string = (bag['inviteLink'] as string | undefined) ?? '';
+  return invite !== '' ? `invite:${invite}` : '';
 }
 
 // MainScreen.build() 里 TabContent 的顺序：ChatListPage / ContactsPage /

@@ -440,7 +440,7 @@ function inlinePhotoSize(photo: TdObject | undefined): PhotoSize {
   if (sizes === undefined || sizes.length === 0) {
     return { fileId: 0, width: 0, height: 0 };
   }
-  // 比的是"这一档能不能盖住气泡里的框"，而框的宽度是固定的（MEDIA_MAX_WIDTH），
+  // 比的是"这一档能不能盖住气泡里的框"，目标框宽按当前聊天列计算，
   // 所以只看宽度看似合理 —— 但竖图的宽度天生就小：720×1280 的最大档宽度才
   // 720，够不到目标，于是每次都回落到 sizes 的最后一档。实测就是拿 720×1280
   // 解到 319×566，单张 30–100ms，滑动时全砸在解码线程上。

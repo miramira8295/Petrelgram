@@ -33,15 +33,13 @@ export interface ReportStep {
 
 // UI 侧要提供的三件事。都返回 Promise 好让流程写成一条直线；null = 用户取消。
 export interface ReportFlowUi {
+  // Synchronize language before requesting server-provided text. False cancels a stale flow.
+  prepare(): Promise<boolean>;
   pickOption(title: string, options: ReportOption[]): Promise<ReportOption | null>;
   askText(): Promise<string | null>;
   // 参数是字符串资源的键（cpp_report_*），由 UI 侧翻译——这样纯逻辑不碰资源。
   toast(key: string): void;
 }
-
-// promptAction.showActionMenu 最多 6 个按钮。Telegram 顶层原因一般 6–8 个，
-// 超出的截掉；要全量得换 bindSheet 列表，先不做。
-export const REPORT_OPTION_LIMIT: number = 6;
 
 export function reportRequest(target: ReportTarget, optionId: string, text: string): TdRequest {
   const req: TdRequest = { '@type': 'reportChat' };
@@ -63,7 +61,7 @@ export function parseReportStep(result: TdObject, requestedOptionId: string): Re
   }
   if (typeName === 'reportChatResultOptionRequired') {
     const raw: TdObject[] = (result['options'] as TdObject[] | undefined) ?? [];
-    const options: ReportOption[] = raw.slice(0, REPORT_OPTION_LIMIT).map((o: TdObject): ReportOption => ({
+    const options: ReportOption[] = raw.map((o: TdObject): ReportOption => ({
       id: (o['id'] as string | undefined) ?? '',
       text: (o['text'] as string | undefined) ?? ''
     } as ReportOption));
@@ -87,6 +85,7 @@ export async function runReportFlow(
   target: ReportTarget, ui: ReportFlowUi,
   optionId: string = '', text: string = ''
 ): Promise<void> {
+  if (!await ui.prepare()) { return; }
   let result: TdObject;
   try {
     result = await send(reportRequest(target, optionId, text));

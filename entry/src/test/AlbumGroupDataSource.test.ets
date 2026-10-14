@@ -349,6 +349,10 @@ export default function albumGroupDataSourceTest() {
       expect(listener.reloaded).assertEqual(1);
       ds.setLayoutContext(720, true);
       expect(listener.reloaded).assertEqual(2);
+      ds.setLayoutContext(720, true, false);
+      expect(listener.reloaded).assertEqual(3);
+      ds.setLayoutContext(720, true, false);
+      expect(listener.reloaded).assertEqual(3);
     });
 
     it('listener_registration_dedupes_and_unregister_stops_notifications', 0, () => {

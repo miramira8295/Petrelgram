@@ -10269,6 +10269,66 @@
       "value": "La segnalazione di questa chat non è supportata al momento"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Spam"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Account falso"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Violenza"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Abusi su minori"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Pornografia"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Copyright"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Droghe illegali"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Dati personali"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Altro"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Non mi piace"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Beni e servizi illegali"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Contenuti illegali per adulti"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Terrorismo"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Truffa o spam"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Beni illegali"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Scegli il motivo della segnalazione"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Riproduci"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Codice QR temporaneo; si aggiorna automaticamente alla scadenza"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Questo link utente è scaduto o non è disponibile. Scansiona di nuovo."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Statistiche per nerd"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Questo tipo di pulsante non è ancora supportato"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Questa funzione della mini app non è ancora supportata"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Chiudere la mini app?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Le modifiche non salvate potrebbero andare perse."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Menzioni non lette"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Vai a una menzione non letta"
     }
   ]
 }

@@ -10269,6 +10269,66 @@
       "value": "현재 이 채팅은 신고할 수 없습니다"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "스팸"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "가짜 계정"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "폭력"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "아동 학대"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "음란물"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "저작권"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "불법 약물"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "개인정보"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "기타"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "마음에 들지 않음"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "불법 상품 및 서비스"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "불법 성인 콘텐츠"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "테러"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "사기 또는 스팸"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "불법 상품"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "신고 사유 선택"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "재생"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "임시 QR 코드이며 만료되면 자동으로 갱신됩니다"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "사용자 링크가 만료되었거나 사용할 수 없습니다. 다시 스캔해 주세요."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "전문가용 통계"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "아직 지원하지 않는 버튼 유형입니다"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "아직 지원하지 않는 미니 앱 기능입니다"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "미니 앱을 닫을까요?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "저장하지 않은 변경 사항이 사라질 수 있습니다."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "읽지 않은 멘션"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "읽지 않은 멘션으로 이동"
     }
   ]
 }

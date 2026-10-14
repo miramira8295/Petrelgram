@@ -913,6 +913,7 @@ export class ChatProfileStore {
   }
 
   private applySupergroup(supergroup: TdObject): void {
+    this.joinByRequest = (supergroup['join_by_request'] as boolean | undefined) ?? false;
     this.isChannel = (supergroup['is_channel'] as boolean | undefined) ?? false;
     // 分类变了（群 ↔ 频道），跟随默认的静音结论跟着变——通知设置多半比这条先到。
     this.recomputeMuted();
@@ -941,7 +942,6 @@ export class ChatProfileStore {
       full['supergroup_id'] = this.supergroupId;
       this.send(full, 'getSupergroupFullInfo', (fi: TdObject) => {
         this.description = (fi['description'] as string | undefined) ?? '';
-        this.joinByRequest = (fi['join_by_request'] as boolean | undefined) ?? false;
         this.parsePhotoAnimation(fi['photo'] as TdObject | undefined);
         const memberCount = (fi['member_count'] as number | undefined) ?? 0;
         if (memberCount > 0) {

@@ -29,7 +29,6 @@ import { TgsStickerView } from '../chat/TgsStickerView';
 import { WebmStickerView } from '../chat/WebmStickerView';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { publicLink } from '../../util/telegramLink';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration, KEY_FORCE_SINGLE_COLUMN
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
@@ -272,6 +271,7 @@ export struct MyProfilePage {
   }
 
   aboutToDisappear(): void {
+    this.closeQr();
     this.profileLoadSequence++;
     this.photoUploadSequence++;
     this.storyUploadSequence++;
@@ -328,12 +328,17 @@ export struct MyProfilePage {
     this.loadProfile();
   }
 
-  @State qrLink: string = '';
+  private qrOpen: boolean = false;
   private qrCtrl: CustomDialogController = new CustomDialogController({
-    builder: QrDialog({ link: this.qrLink, title: this.name }),
+    builder: QrDialog({ ownUser: true, title: this.name,
+      onClosed: (): void => { this.qrOpen = false; } }),
     alignment: DialogAlignment.Center,
     autoCancel: true
   });
+
+  private closeQr(): void {
+    if (this.qrOpen) { this.qrCtrl.close(); this.qrOpen = false; }
+  }
 
   private openQr(): void {
     if (this.profileLoading || this.profileError !== '' ||
@@ -341,11 +346,8 @@ export struct MyProfilePage {
       this.switchingToSettings || this.topMenuOpen) {
       return;
     }
-    if (this.usernames.length === 0) {
-      promptAction.showToast({ message: $r('app.string.mp_no_username_qr'), duration: 1800 });
-      return;
-    }
-    this.qrLink = publicLink(this.usernames[0]);
+    if (this.qrOpen) { return; }
+    this.qrOpen = true;
     this.qrCtrl.open();
   }
 
@@ -2167,6 +2169,7 @@ export struct MyProfilePage {
       // 整页 router 页退掉时会补发 visible=true，按栈兜底。见 navBarReset。
       const isVisible: boolean = navBarVisibleOnChange(reported,
         isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.profileStack.size());
+      if (!isVisible) { this.closeQr(); }
       if (AppStorage.get<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY) !== isVisible) {
         AppStorage.setOrCreate<boolean>(PROFILE_NAV_BAR_VISIBLE_KEY, isVisible);
       }

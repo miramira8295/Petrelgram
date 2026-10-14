@@ -5,6 +5,7 @@
 // 要么明明能发言却只看到一个"加入"按钮。
 
 export const MEMBERSHIP_WRITABLE: string = 'writable';   // 正常输入区
+export const MEMBERSHIP_REQUESTED: string = 'requested'; // 申请已发送，等待审核
 export const MEMBERSHIP_JOINABLE: string = 'joinable';   // 显示"加入"
 export const MEMBERSHIP_BLOCKED: string = 'blocked';     // 显示"无法加入"
 export const MEMBERSHIP_READONLY: string = 'readonly';   // 只读，位置让给静音开关

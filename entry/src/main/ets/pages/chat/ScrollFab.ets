@@ -27,6 +27,7 @@ export struct ScrollFab {
   @Prop unreadCount: number;
   // 正在滚回底部：转圈并禁用，避免连点排队。
   @Prop busy: boolean;
+  @Prop mention: boolean = false;
   // 箭头的颜色由页面按**壁纸**算好传进来（chatChrome）：这颗浮在壁纸上，
   // 跟深浅色模式取色会在"浅色模式 + 黑壁纸"下变成黑箭头压黑底。
   @Prop iconColor: ResourceColor;
@@ -64,6 +65,8 @@ export struct ScrollFab {
       Button({ type: ButtonType.Circle }) {
         if (this.busy) {
           LoadingProgress().width(20).height(20).color(COLOR_PRIMARY);
+        } else if (this.mention) {
+          Text('@').fontSize(25).fontWeight(FontWeight.Medium).fontColor(COLOR_PRIMARY);
         } else {
           // 只在离开底部时挂载，出现即弹一下提示"这里可以回去"。
           SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(22).fontColor([this.iconColor])
@@ -109,8 +112,8 @@ export struct ScrollFab {
       // 没有一点投影在浅色图上会糊掉。
       .shadow({ radius: 7, color: '#26000000', offsetX: 0, offsetY: 2 })
       .enabled(!this.busy)
-      .accessibilityText(this.busy
-        ? $r('app.string.cp_returning_latest') : $r('app.string.cp_return_latest'))
+      .accessibilityText(this.mention ? $r('app.string.cp_jump_unread_mention') : (this.busy
+        ? $r('app.string.cp_returning_latest') : $r('app.string.cp_return_latest')))
       .onClick((): void => { this.onTap(); })
       .position({ x: 6, y: 10 });
       if (this.unreadCount > 0) {

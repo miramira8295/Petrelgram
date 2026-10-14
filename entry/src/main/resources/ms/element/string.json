@@ -10269,6 +10269,66 @@
       "value": "Melaporkan sesi ini tidak disokong buat masa ini"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Spam"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Akaun palsu"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Keganasan"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Penderaan kanak-kanak"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Pornografi"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Hak cipta"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Dadah haram"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Maklumat peribadi"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Lain-lain"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Saya tidak menyukainya"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Barangan dan perkhidmatan haram"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Kandungan dewasa yang menyalahi undang-undang"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Terorisme"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Penipuan atau spam"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Barangan haram"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Pilih sebab laporan"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Main"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Kod QR sementara; diperbaharui secara automatik apabila tamat tempoh"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Pautan pengguna ini telah tamat tempoh atau tidak tersedia. Sila imbas semula."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Statistik untuk nerd"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Jenis butang ini belum disokong"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Ciri aplikasi mini ini belum disokong"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Tutup aplikasi mini?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Perubahan yang belum disimpan mungkin hilang."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Sebutan belum dibaca"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Pergi ke sebutan belum dibaca"
     }
   ]
 }

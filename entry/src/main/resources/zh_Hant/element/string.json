@@ -10269,6 +10269,66 @@
       "value": "當前不支援舉報該會話"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "垃圾訊息"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "假冒帳號"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "暴力"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "虐待兒童"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "色情內容"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "侵犯著作權"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "非法毒品"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "洩露個人資料"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "其他"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "我不喜歡"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "非法商品與服務"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "非法成人內容"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "恐怖主義"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "詐騙或垃圾訊息"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "非法商品"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "選擇舉報原因"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "播放"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "臨時 QR 碼，到期自動更新"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "使用者連結已失效或暫時無法開啟，請重新掃描"
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "詳細統計資訊"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "暫不支援此按鈕類型"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "暫不支援此小程式功能"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "關閉小程式？"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "未完成的操作可能不會儲存。"
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "有未讀提及"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "跳至未讀提及"
     }
   ]
 }

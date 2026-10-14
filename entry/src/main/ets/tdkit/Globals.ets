@@ -1,3 +1,4 @@
+import { attachTdLanguage, detachTdLanguage, initTdLanguageContext, syncTdLanguage } from '../services/TdLanguage';
 import testNapi from 'libentry.so';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { TdClient } from './TdClient';
@@ -72,6 +73,7 @@ export function initTdKit(context: common.Context): void {
   if (client !== undefined) {
     return;
   }
+  initTdLanguageContext(context.getApplicationContext());
   baseFilesDir = context.filesDir;
   appBundleName = context.applicationInfo.name;
   accountRegistry.init(context);
@@ -194,6 +196,7 @@ function createRuntime(slotId: string): void {
   runtimeAuth.onStageChange((stage: AuthStage): void => {
     if (stage === AuthStage.Ready && client === runtimeClient && auth === runtimeAuth) {
       runtimeReady = true;
+      syncTdLanguage();
       registerMessageSyncWork(appBundleName);
       notifications!.enable();
       reregisterWebPush(runtimeClient);
@@ -207,11 +210,13 @@ function createRuntime(slotId: string): void {
   });
   try {
     client.start();
+    attachTdLanguage(client);
   } catch (caught) {
     const startError = caught as Error;
     // A native receiver-thread allocation failure is reported as an ArkTS
     // exception. Tear down the half-built runtime so account switching can
     // retry or restore the previous slot instead of retaining unusable stores.
+    detachTdLanguage();
     notifications?.close();
     notifications = undefined;
     callSession?.close();
@@ -349,6 +354,7 @@ function reregisterStoredWebPush(client: TdClient): void {
 //   'destroy' 删掉本地授权数据 —— 只有卡在扫码授权态、必须从零重来时才用
 //             （见 util/authError.ets 的 needsAuthorizationReset）。
 async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
+  detachTdLanguage();
   const currentAuth = auth;
   const currentClient = client;
   const currentReady = runtimeReady;

@@ -10269,6 +10269,66 @@
       "value": "Das Melden dieses Chats wird derzeit nicht unterstützt"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Spam"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Gefälschtes Konto"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Gewalt"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Kindesmissbrauch"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Pornografie"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Urheberrecht"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Illegale Drogen"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Persönliche Daten"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Sonstiges"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Gefällt mir nicht"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Illegale Waren und Dienstleistungen"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Illegale Inhalte für Erwachsene"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Terrorismus"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Betrug oder Spam"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Illegale Waren"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Grund für die Meldung wählen"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Abspielen"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Temporärer QR-Code; wird bei Ablauf automatisch erneuert"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Dieser Benutzerlink ist abgelaufen oder nicht verfügbar. Bitte erneut scannen."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Statistiken für Interessierte"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Dieser Schaltflächentyp wird noch nicht unterstützt"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Diese Mini-App-Funktion wird noch nicht unterstützt"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Mini-App schließen?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Nicht gespeicherte Änderungen können verloren gehen."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Ungelesene Erwähnungen"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Zur ungelesenen Erwähnung springen"
     }
   ]
 }

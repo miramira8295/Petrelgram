@@ -24,6 +24,7 @@ import {
   formatMs, formatSpeed, nextSeekFeedbackMs
 } from '../../util/playerChrome';
 import { HoldRewindState } from '../../util/holdRewind';
+import { VideoProgressClock } from '../../util/videoProgressClock';
 import { materialModifier } from '../../util/materialModifier';
 import {
   FOCUS_PAUSE, FOCUS_RESUME, FOCUS_STOP, acquireAudioFocus
@@ -72,7 +73,7 @@ export struct StreamingVideoPlayer {
   @Prop videoHeight: number = 0;
   @Prop localPath: string = '';
   @Prop posterPath: string = '';
-  @Prop showControls: boolean = true;
+  @Prop @Watch('onControlsChanged') showControls: boolean = true;
   @StorageProp(MATERIAL_EPOCH) private materialEpoch: number = 0;
   @Prop landscape: boolean = false;
   // Embed mode: mounted directly in a chat bubble instead of the fullscreen
@@ -151,7 +152,8 @@ export struct StreamingVideoPlayer {
   private progressUnsub: (() => void) | null = null;
   private routingManager: audio.AudioRoutingManager | null = null;
   private deviceChangeCb: ((change: audio.DeviceChangeAction) => void) | null = null;
-  private progressTimer: number = -1;
+  private progressClock: VideoProgressClock = new VideoProgressClock((): void => { this.refreshProgress(); });
+  private progressSeekUntil: number = 0;
   private seekFeedbackTimer: number = -1;
   private speedFeedbackTimer: number = -1;
   private retryTimer: number = -1;
@@ -313,6 +315,8 @@ export struct StreamingVideoPlayer {
   // 内嵌模式（列表内播放位）从不申请保活——划走气泡就该正常息屏/挂起，
   // 不能被一段列表预览挡住。
   onPlayingChanged(): void {
+    this.syncProgressPolling();
+    this.refreshProgress();
     this.onPlayStateChanged(this.isPlaying);
     this.syncScreenAwake();
     this.syncAudioFocus();
@@ -370,6 +374,7 @@ export struct StreamingVideoPlayer {
     this.holdRewind.reset();
     this.cleanupAudioDeviceListener();
     this.stopProgressPolling();
+    this.progressSeekUntil = 0;
     // 换届/销毁时归零：留着会让下一个实例开局就以为自己在预热窗口里。
     this.primingFirstFrame = false;
     this.pendingPlayRequest = false;
@@ -525,6 +530,8 @@ export struct StreamingVideoPlayer {
       // 拷回 CPU 再由 EGL 画（真机日志：Configure pixel_format=2、没有 SetSurface），零拷贝和
       // HDR 直出都不生效。软解照样经 EGL 画到同一个窗口。代价是 ijk 的录屏/截帧不可用（没用到）。
       player.native_setup(VideoCodecMode.SURFACE);
+      player.setRefreshRateAdaptation(!this.embedded);
+      player.setVideoVisible(this.active && this.appIsForeground);
       const preparedListener: OnPreparedListener = {
         onPrepared: (): void => {
           this.autoRetries = 0;
@@ -542,6 +549,8 @@ export struct StreamingVideoPlayer {
           logW(`[VideoState] prepared engine=ijk embedded=${this.embedded}` +
             ` viewport=${Math.round(this.viewportWidth)}x${Math.round(this.viewportHeight)}`);
           this.durationMs = Math.max(0, player.getDuration());
+          this.updateVideoAspect(player.getVideoWidth(), player.getVideoHeight(),
+            player.getVideoSarNum(), player.getVideoSarDen());
           player.setSpeed(SPEEDS[this.speedIdx]);
           this.applyMutedVolume();
           if (this.startPositionMs > 0) {
@@ -556,13 +565,12 @@ export struct StreamingVideoPlayer {
             player.setVolume('0.0', '0.0');
             player.start();
             // isPlaying 故意**不**置真：胶囊图标跟着它走，预热期间画面是静止的。
-            this.startProgressPolling();
             return;
           }
           this.pendingPlayRequest = false;
           player.start();
           this.isPlaying = true;
-          this.startProgressPolling();
+          this.syncProgressPolling();
         }
       };
       const completionListener: OnCompletionListener = {
@@ -573,6 +581,7 @@ export struct StreamingVideoPlayer {
           this.stopHold(false);
           this.isPlaying = false;
           this.currentTimeMs = this.durationMs;
+          this.onPositionChanged(this.currentTimeMs);
           if (this.embedded) {
             // No replay affordance in embed mode — the mount point (chat
             // bubble) decides what happens next (fall back to poster, etc).
@@ -597,6 +606,7 @@ export struct StreamingVideoPlayer {
       };
       const infoListener: OnInfoListener = {
         onInfo: (what: number, extra: number): void => {
+          if (this.player !== player) { return; }
           if (what === MEDIA_INFO_VIDEO_ROTATION_CHANGED) {
             const deg: number = ((extra % 360) + 360) % 360;
             logI(`[VideoRot] rotation=${deg} decoded=${this.decodedAspectRatio.toFixed(3)}` +
@@ -614,6 +624,10 @@ export struct StreamingVideoPlayer {
           } else if (what === 702 || what === 3) {
             this.status = '';
             if (what === 3) {
+              if (this.durationMs <= 0) { this.durationMs = Math.max(0, player.getDuration()); }
+              // SAR can be delivered after the initial size notification.
+              this.updateVideoAspect(player.getVideoWidth(), player.getVideoHeight(),
+                player.getVideoSarNum(), player.getVideoSarDen());
               // 渲染开始：之后 80ms 才把 XComponent 显出来。黑屏时有没有这一条是分水岭——
               // 有：画面解出来了、是 surface 没显示；没有：卡在解码/数据之前。
               logW(`[VideoState] rendering-start engine=ijk embedded=${this.embedded}`);
@@ -667,13 +681,16 @@ export struct StreamingVideoPlayer {
       };
       const sizeListener: OnVideoSizeChangedListener = {
         onVideoSizeChanged: (width: number, height: number, sarNum: number, sarDen: number): void => {
+          if (this.player !== player) { return; }
           this.updateVideoAspect(width, height, sarNum, sarDen);
         }
       };
       const seekListener: OnSeekCompleteListener = {
         onSeekComplete: (): void => {
           if (this.player === player) {
+            this.progressSeekUntil = 0;
             this.holdRewind.seekCompleted();
+            this.refreshProgress();
           }
         }
       };
@@ -828,6 +845,9 @@ export struct StreamingVideoPlayer {
   // 回前台不自动续播：和语音那边一致（pauseForBackground 也不自动恢复），
   // 而且用户离开时未必想让它接着放。
   private onAppForegroundChanged(): void {
+    this.player?.setVideoVisible(this.active && this.appIsForeground);
+    this.syncProgressPolling();
+    if (this.appIsForeground) { this.refreshProgress(); }
     if (!this.appIsForeground) {
       const keepPlaying: boolean = !this.embedded && (AppStorage.get<boolean>(KEY_BG_PLAY_VIDEO) ?? false);
       this.stopHold(keepPlaying);
@@ -960,6 +980,7 @@ export struct StreamingVideoPlayer {
     if (this.player === null || !this.isPrepared || this.durationMs <= 0 || this.hasError) {
       return;
     }
+    this.refreshProgress();
     const base = this.dragging ? this.dragValueMs : this.currentTimeMs;
     const target = Math.max(0, Math.min(this.durationMs, base + deltaMs));
     this.dragging = false;
@@ -1076,13 +1097,18 @@ export struct StreamingVideoPlayer {
       return;
     }
     this.holdRewind.seekStarted(Date.now());
+    // Don't overwrite an optimistic seek/resume position with the old native
+    // position when playback or control visibility changes before completion.
+    this.progressSeekUntil = Date.now() + 5000;
     this.player.seekTo(`${Math.max(0, Math.floor(positionMs))}`);
+    this.onPositionChanged(Math.max(0, Math.floor(positionMs)));
   }
 
   private startHoldRewind(): void {
     if (this.player === null) {
       return;
     }
+    this.refreshProgress();
     this.holdRewind.start(Math.min(this.durationMs, this.currentTimeMs), this.isPlaying);
     // isPlaying 保留用户的播放意图（音频焦点/屏幕常亮也沿用它），原生暂时暂停。
     // ijk 在暂停态 seek 会单步解码画面；松手才恢复向前播放，不冒出零碎声音。
@@ -1114,7 +1140,6 @@ export struct StreamingVideoPlayer {
     this.currentTimeMs = target;
     this.isCompleted = false;
     this.seekPlayerTo(target);
-    this.onPositionChanged(target);
     this.showSeekFeedback(target - previous);
   }
 
@@ -1254,42 +1279,34 @@ export struct StreamingVideoPlayer {
     return `stream_video_${this.fileId}_${this.playerInstanceId}`;
   }
 
-  private startProgressPolling(): void {
-    this.stopProgressPolling();
-    this.progressTimer = setInterval((): void => {
-      if (this.player === null) {
-        return;
-      }
-      if (!this.dragging && !this.holdRewind.active) {
-        this.currentTimeMs = Math.max(0, this.player.getCurrentPosition());
-        this.onPositionChanged(this.currentTimeMs);
-      }
-      const duration = this.player.getDuration();
-      if (duration > 0) {
-        this.durationMs = duration;
-      }
-      this.updateVideoAspect(this.player.getVideoWidth(), this.player.getVideoHeight(),
-        this.player.getVideoSarNum(), this.player.getVideoSarDen());
-      // 预热窗口里原生确实在播，但那是为了解出首帧，不是「用户看到的在播」。
-      // 不挡这一下，350ms 的 tick 会把 isPlaying 刷成真，经 onPlayingChanged
-      // 回灌胶囊图标，还会顺手申请音频焦点、开后台播放保活。
-      if (!this.primingFirstFrame && !this.holdRewind.active) {
-        this.isPlaying = this.player.isPlaying();
-      }
-      // No buffered-byte update for a while → the download stalled or finished;
-      // drop the speed readout instead of leaving a stale value on screen.
-      if (this.downloadSpeed > 0 && this.lastSpeedSampleMs > 0
-        && Date.now() - this.lastSpeedSampleMs > 1200) {
-        this.downloadSpeed = 0;
-      }
-    }, 350);
+  private onControlsChanged(): void {
+    this.syncProgressPolling();
+    if (this.showControls) { this.refreshProgress(); }
+  }
+
+  private syncProgressPolling(): void {
+    this.progressClock.sync(this.active && this.player !== null && this.isPrepared &&
+      this.isPlaying && !this.primingFirstFrame && !this.hasError,
+      this.showControls && !this.embedded && this.appIsForeground);
+  }
+
+  private refreshProgress(): void {
+    if (!this.active || this.player === null || !this.isPrepared || this.primingFirstFrame || this.hasError) {
+      return;
+    }
+    if (!this.dragging && !this.holdRewind.active && Date.now() >= this.progressSeekUntil) {
+      this.currentTimeMs = Math.max(0, this.player.getCurrentPosition());
+      this.onPositionChanged(this.currentTimeMs);
+    }
+    // Metadata comes from prepared/size events. Playback state comes from
+    // start/pause/completion/error paths; neither needs repeated native reads.
+    if (this.downloadSpeed > 0 && this.lastSpeedSampleMs > 0 && Date.now() - this.lastSpeedSampleMs > 1200) {
+      this.downloadSpeed = 0;
+    }
   }
 
   private stopProgressPolling(): void {
-    if (this.progressTimer >= 0) {
-      clearInterval(this.progressTimer);
-      this.progressTimer = -1;
-    }
+    this.progressClock.stop();
   }
 
   private updateVideoAspect(width: number, height: number, sarNum: number, sarDen: number): void {

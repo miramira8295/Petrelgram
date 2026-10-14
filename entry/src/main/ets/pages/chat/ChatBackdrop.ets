@@ -1,3 +1,5 @@
+import { mediaThumbWidth } from '../../util/mediaBox';
+import { setInlinePhotoTargetPx } from '../../util/formatMsgContent';
 import { common } from '@kit.AbilityKit';
 import { ChatBackgroundState } from '../../store/ChatBackgroundStore';
 import { CachedImage } from '../common/CachedImage';
@@ -11,11 +13,11 @@ import { gradientStops } from '../../util/backgroundPresentation';
 import {
   BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX, KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS,
   KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS,
-  KEY_REDUCE_ANIM, powerAnimationDuration, powerFeatureEnabled, powerGroupAnimationDuration,
-  powerGroupFeatureEnabled
+  KEY_REDUCE_ANIM, powerAnimationDuration, powerFeatureEnabled, powerGroupAnimationDuration
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { publishChatContentWidth } from '../../util/chatContentWidth';
+import { BackdropPhaseClock, BACKDROP_PHASE_MS } from '../../util/backdropPhaseClock';
 
 // 聊天页的整层背景：壁纸 / 图案 / 渐变、两颗氛围光斑、粒子、深色遮罩。
 //
@@ -23,17 +25,20 @@ import { publishChatContentWidth } from '../../util/chatContentWidth';
 // 在两边之间牵任何状态：省电开关、模糊度、图案浓度、深色遮罩这些它自己从
 // AppStorage 订阅，离屏光栅的缓存和防抖也一并搬了过来。
 //
-// 页面那边只剩三个入参：当前会话的背景状态和屏幕尺寸。
+// 页面传入背景参数、屏幕尺寸及当前是否允许运行动画。
 
 // 光栅防抖窗口。背景解析过程中会连续发布几个中间态（实测首次进入会话有三次
 // 整屏 JPEG 编码，52+68+58ms），只有熬过安静窗口的那一个值得栅格化——期间
 // 实时绘制的分层背景照常显示，视觉上不缺东西。
 const RASTER_DEBOUNCE_MS: number = 280;
 // 氛围光斑与粒子的相位周期。
-const AMBIENT_PHASE_MS: number = 4200;
+const AMBIENT_PHASE_MS: number = BACKDROP_PHASE_MS;
 
 @Component
 export struct ChatBackdrop {
+  // 可见性只控制动态层，不进入壁纸参数和光栅签名。
+  @Prop @Watch('syncMotion') animationsAllowed: boolean = true;
+  @StorageProp('appIsForeground') @Watch('syncMotion') appForeground: boolean = true;
   @Prop @Watch('onParamsChanged') chatBg: ChatBackgroundState;
   @Prop @Watch('onParamsChanged') screenW: number;
   @Prop @Watch('onParamsChanged') screenH: number;
@@ -77,24 +82,22 @@ export struct ChatBackdrop {
   @StorageProp(KEY_POWER_CHAT_EFFECTS) @Watch('onParamsChanged') powerChatEffects: boolean = true;
   @StorageProp(KEY_POWER_EFFECT_BACKGROUND) @Watch('onParamsChanged') powerBackgroundEffect: boolean = false;
   @StorageProp(KEY_POWER_PARTICLES) @Watch('onParamsChanged') powerParticles: boolean = true;
-  @StorageProp(KEY_REDUCE_ANIM) reduceAnimations: boolean = false;
+  @StorageProp(KEY_REDUCE_ANIM) @Watch('syncMotion') reduceAnimations: boolean = false;
+  @StorageProp(KEY_POWER_SMOOTH_TRANSITIONS) @Watch('syncMotion') smoothTransitions: boolean = true;
 
   @State private rasterPath: string = '';
   @State private phase: boolean = false;
   private rasterTimer: number = -1;
-  private phaseTimer: number = -1;
+  private appeared: boolean = false;
+  private phaseClock: BackdropPhaseClock = new BackdropPhaseClock((): void => {
+    this.phase = !this.phase;
+  });
   private readonly particleIds: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
 
   aboutToAppear(): void {
     this.syncRaster();
-    this.phaseTimer = setInterval((): void => {
-      if (powerGroupFeatureEnabled(KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_BACKGROUND) ||
-        powerFeatureEnabled(KEY_POWER_PARTICLES)) {
-        this.phase = !this.phase;
-      } else {
-        this.phase = false;
-      }
-    }, AMBIENT_PHASE_MS);
+    this.appeared = true;
+    this.syncMotion();
   }
 
   aboutToDisappear(): void {
@@ -102,10 +105,18 @@ export struct ChatBackdrop {
       clearTimeout(this.rasterTimer);
       this.rasterTimer = -1;
     }
-    if (this.phaseTimer !== -1) {
-      clearInterval(this.phaseTimer);
-      this.phaseTimer = -1;
-    }
+    this.appeared = false;
+    this.phaseClock.setRunning(false);
+  }
+
+  private effectsVisible(): boolean {
+    return this.animationsAllowed && this.appForeground;
+  }
+
+  private syncMotion(): void {
+    this.phaseClock.setRunning(this.appeared && this.effectsVisible() &&
+      ((this.ambientEnabled() && this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS) > 0) ||
+        (this.particlesEnabled() && powerAnimationDuration(KEY_POWER_PARTICLES, AMBIENT_PHASE_MS) > 0)));
   }
 
   // 背景状态、屏幕尺寸、模糊度、图案浓度、深浅主题——任何一个变了，合成图都
@@ -117,6 +128,7 @@ export struct ChatBackdrop {
   // 会话都走实时分层绘制，重则一直停在默认背景的旧缓存图上，显示错壁纸。
   private onParamsChanged(): void {
     this.syncRaster();
+    this.syncMotion();
     // 窗口变窄（悬浮小窗）时先把内容列宽压到窗口宽以内（issue #138）：内容列不可
     // 能比窗口宽，而 onAreaChange 那次精确的量要等布局回来；这期间气泡若还按
     // 旧的宽算 maxWidth，就会伸出右缘。窗口变宽时 min 取的仍是旧值、同值不写，
@@ -375,6 +387,9 @@ export struct ChatBackdrop {
         // 本层铺满聊天列，量到的宽就是内容列宽——气泡按它算宽度（issue #107），
         // 见 util/chatContentWidth。
         publishChatContentWidth(w);
+        // Choose a source large enough for the widest media bubble in this
+        // column; the pixel cache still decodes to each row's exact box size.
+        if (w > 0) { setInlinePhotoTargetPx(vp2px(mediaThumbWidth(w, 0))); }
       })
       // 平铺网格会向上取整到整数块并被 Stack 居中，通常四边都略微超出视口——
       // 裁回去，而不是让它把布局顶开。
@@ -384,7 +399,9 @@ export struct ChatBackdrop {
   build() {
     Stack() {
       this.wallpaperLayer();
-      if (this.ambientEnabled()) {
+      // 只停计时器无法取消已经在 RS 运行的 4200ms 插值；隐藏时直接撤下动态节点。
+      // ambientEnabled/particlesEnabled 仍只表示用户设置，canBakeDarkMask 不受可见性影响。
+      if (this.effectsVisible() && this.ambientEnabled()) {
         Circle({ width: 250, height: 250 })
           .fill('#142A9FE8')
           .position({ x: this.phase ? this.layerW() - 150 : -90, y: 110 })
@@ -402,7 +419,7 @@ export struct ChatBackdrop {
             curve: Curve.EaseInOut
           });
       }
-      if (this.particlesEnabled()) {
+      if (this.effectsVisible() && this.particlesEnabled()) {
         ForEach(this.particleIds, (id: number) => {
           Circle({ width: 3 + (id % 3), height: 3 + (id % 3) })
             .fill(id % 2 === 0 ? '#462A9FE8' : '#3D56C76F')

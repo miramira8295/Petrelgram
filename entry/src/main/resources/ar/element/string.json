@@ -10269,6 +10269,66 @@
       "value": "لا يمكن الإبلاغ عن هذه المحادثة حاليًا"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "رسائل مزعجة"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "حساب مزيف"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "عنف"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "إساءة معاملة الأطفال"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "مواد إباحية"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "حقوق النشر"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "مخدرات غير قانونية"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "معلومات شخصية"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "أخرى"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "لا يعجبني"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "سلع وخدمات غير قانونية"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "محتوى غير قانوني للبالغين"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "إرهاب"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "احتيال أو رسائل مزعجة"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "سلع غير قانونية"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "اختر سبب الإبلاغ"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "تشغيل"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "رمز QR مؤقت؛ يتجدد تلقائيًا عند انتهاء صلاحيته"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "انتهت صلاحية رابط المستخدم أو أنه غير متاح. يرجى المسح مجددًا."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "إحصاءات تفصيلية"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "نوع الزر هذا غير مدعوم بعد"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "ميزة التطبيق المصغر هذه غير مدعومة بعد"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "إغلاق التطبيق المصغر؟"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "قد تُفقد التغييرات غير المحفوظة."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "إشارات غير مقروءة"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "الانتقال إلى إشارة غير مقروءة"
     }
   ]
 }

@@ -139,10 +139,10 @@ const ALBUM_CELL_GAP: number = 2;
 function mediaRowBodyHeight(group: AlbumGroup, screenWidth: number): number {
   const msg = group.head;
   let media: number = 0;
-  // caption 的换行宽度 = 媒体框宽（竖视频会比相册窄，跟着框走）。
+  // caption 的换行宽度与媒体框一致。
   let captionWidth: number = mediaThumbWidth(screenWidth);
   if (group.photoRatios.length > 1) {
-    // albumW() 与 mediaThumbWidth 同式：min(280, inlineMaxWidth)。
+    // 相册和单媒体共用最大内容宽度；首屏估高仍保守预留头像位。
     const rows: AlbumCell[][] = packAlbumRows(
       group.photoRatios, mediaThumbWidth(screenWidth));
     for (const row of rows) {

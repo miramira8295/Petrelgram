@@ -1,3 +1,4 @@
+import { mediaThumbWidth } from '../util/mediaBox';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { AbilityConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { mirrorChatEnvKey } from '../util/chatEnvMirror';
@@ -47,9 +48,6 @@ import { bumpMaterialEpoch } from '../util/overlayMaterial';
 import {
   KEY_HEIGHT_BREAKPOINT, KEY_WIDTH_BREAKPOINT, KEY_WINDOW_PORTRAIT, heightBreakpointOfSize, widthBreakpointOfVp
 } from '../util/layoutBreakpoint';
-
-// 和 MessageBubble 的 MEDIA_MAX_WIDTH 对齐；两处要一起改。
-const BUBBLE_MEDIA_MAX_VP: number = 280;
 
 const DOMAIN = 0x0000;
 // windowSizeChange 带来的密度和启动时相差超过这个比例，就判定这次回调不可信。
@@ -425,9 +423,7 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
       mirrorChatEnvKey('screenWidthVp', px2vp(win.getWindowProperties().windowRect.width));
       mirrorChatEnvKey('screenHeightVp', px2vp(win.getWindowProperties().windowRect.height));
-      // 气泡里的媒体最宽 MEDIA_MAX_WIDTH(280vp)，按它的物理像素挑图片尺寸，
-      // 别再固定取第二小的那档。用窗口宽算密度，比猜一个屏宽比例准——多挑一档
-      // 就是多几倍的解码像素，滑动时那笔账要在主线程上还。
+      // 首帧按无头像气泡的最大宽度选图片源；聊天列量到后再按列宽更新。
       const rectPx: number = win.getWindowProperties().windowRect.width;
       const density: number = rectPx / Math.max(1, px2vp(rectPx));
       // 记住启动时的密度，windowSizeChange 里拿它做换算和校验。见下面的注释。
@@ -443,7 +439,7 @@ export default class EntryAbility extends UIAbility {
         `${rectPx}px x ${heightPx}px, density ${density} -> ` +
         `${px2vp(rectPx)}vp x ${px2vp(heightPx)}vp`;
       hilog.info(DOMAIN, 'testTag', '[Layout] window %{public}s', metrics);
-      setInlinePhotoTargetPx(Math.min(rectPx, BUBBLE_MEDIA_MAX_VP * density));
+      setInlinePhotoTargetPx(mediaThumbWidth(px2vp(rectPx), 0) * density);
       win.on('avoidAreaChange', (data) => {
         if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
           AppStorage.setOrCreate('topSafeHeight', px2vp(data.area.topRect.height));

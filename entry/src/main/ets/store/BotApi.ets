@@ -115,54 +115,7 @@ export async function sendInlineResult(
 
 // --- Mini Apps (Web Apps) ---
 
-function openParameters(): TdObject {
-  const parameters: TdObject = { '@type': 'webAppOpenParameters' };
-  // Reported to the bot's Mini App as the host client. A literal rather than
-  // the resource because it identifies the client to a remote party and must
-  // not change with the UI language.
-  parameters['application_name'] = 'Petrelgram';
-  return parameters;
-}
-
-// Resolves the https URL to load for a bot's Mini App; the caller opens it in
-// the in-app browser.
-export async function openMiniApp(
-  chatId: number, botUserId: number, url: string
-): Promise<string> {
-  const request: TdRequest = { '@type': 'openWebApp' };
-  request['chat_id'] = chatId;
-  request['bot_user_id'] = botUserId;
-  request['url'] = url;
-  request['parameters'] = openParameters();
-  const info = await getTdClient().send(request, 20000);
-  return webAppUrlOf(info['url']);
-}
-
-export async function getMainMiniApp(chatId: number, botUserId: number): Promise<string> {
-  const request: TdRequest = { '@type': 'getMainWebApp' };
-  request['chat_id'] = chatId;
-  request['bot_user_id'] = botUserId;
-  request['start_parameter'] = '';
-  request['parameters'] = openParameters();
-  const info = await getTdClient().send(request, 20000);
-  return webAppUrlOf(info['url']);
-}
-
-// Mini App reached through a t.me/<bot>/<app> link.
-export async function getMiniAppLinkUrl(
-  chatId: number, botUserId: number, shortName: string, startParameter: string
-): Promise<string> {
-  const request: TdRequest = { '@type': 'getWebAppLinkUrl' };
-  request['chat_id'] = chatId;
-  request['bot_user_id'] = botUserId;
-  request['web_app_short_name'] = shortName;
-  request['start_parameter'] = startParameter;
-  request['allow_write_access'] = false;
-  request['parameters'] = openParameters();
-  const result = await getTdClient().send(request, 20000);
-  return webAppUrlOf(result['url']);
-}
-
+// Launch resolution and lifetime ownership live in MiniAppSession.
 export function closeMiniApp(launchId: string): void {
   if (launchId === '') { return; }
   const request: TdRequest = { '@type': 'closeWebApp' };

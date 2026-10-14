@@ -43,3 +43,15 @@ export function newestVisibleMessageId(
 export function isAtLiveTail(end: number, rowCount: number, hasMoreNewer: boolean): boolean {
   return !hasMoreNewer && end >= rowCount - 1;
 }
+
+// Only real, visible rows: cached neighbors and synthetic separators aren't read.
+export function visibleMessageIds(
+  rowCount: number, memberIdsAt: (index: number) => number[], start: number, end: number
+): number[] {
+  if (start < 0 || end < start || end >= rowCount) { return []; }
+  const ids: Set<number> = new Set();
+  for (let i = start; i <= end; i++) {
+    for (const id of memberIdsAt(i)) { if (id > 0) { ids.add(id); } }
+  }
+  return Array.from(ids);
+}

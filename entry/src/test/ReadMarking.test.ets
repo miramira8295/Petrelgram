@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { isAtLiveTail, newestVisibleMessageId } from '../main/ets/util/readMarking';
+import { isAtLiveTail, newestVisibleMessageId, visibleMessageIds } from '../main/ets/util/readMarking';
 
 // 测试里用得到的小工具：把字面量数组原样交回，避免在断言里重复构造。
 function rowsOf(rows: number[][]): number[][] {
@@ -8,6 +8,21 @@ function rowsOf(rows: number[][]): number[][] {
 
 export default function readMarkingTest() {
   describe('readMarking', () => {
+    it('提及仅取实际可见行而不包含缓存邻居', 0, () => {
+      const rows: number[][] = [[1], [2, 3], [4], [5]];
+      expect(visibleMessageIds(4, (i: number): number[] => rows[i], 1, 2).join(',')).assertEqual('2,3,4');
+    });
+    it('相册所有成员去重并排除合成消息', 0, () => {
+      const rows: number[][] = [[], [-1, 0, 3, 3], [4]];
+      expect(visibleMessageIds(3, (i: number): number[] => rows[i], 0, 2).join(',')).assertEqual('3,4');
+    });
+    it('可见区尚未确定或过期时不读任何提及', 0, () => {
+      const row = (_i: number): number[] => [10];
+      expect(visibleMessageIds(2, row, -1, 1).length).assertEqual(0);
+      expect(visibleMessageIds(2, row, 1, 3).length).assertEqual(0);
+      expect(visibleMessageIds(2, row, 1, 0).length).assertEqual(0);
+    });
+
     it('取可见区末行的最大成员 id', 0, () => {
       // 相册行有多个成员，要报其中最大的那个。
       expect(newestVisibleMessageId(rowsOf([[10], [20, 22, 21], [30]]).length, (i: number): number[] => rowsOf([[10], [20, 22, 21], [30]])[i], 1)).assertEqual(22);

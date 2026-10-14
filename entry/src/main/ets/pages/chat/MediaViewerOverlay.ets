@@ -45,6 +45,7 @@ import { QUALITY_AUTO, VideoVariant, variantLabel } from '../../util/videoVarian
 import { entryPlaybackVariant, entryVideoVariants } from '../../util/entryVideoVariant';
 import { VideoStatsPanel } from './VideoStatsPanel';
 import { VideoStatsSnapshot } from '../../util/videoStats';
+import { ViewerUnderlay } from '../../util/viewerUnderlay';
 
 // 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
 // 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
@@ -165,6 +166,10 @@ export struct MediaViewerOverlay {
   // 能力，正好复现迁移前「普通字段只在构造时赋值一次」的行为。官方《@Event》：
   // 「@Event 装饰的回调方法中参数以及返回值由开发者决定」——带返回值是允许的。
   @Event onRequestClose: () => void = (): void => {};
+  @Param underlay: ViewerUnderlay | null = null;
+  private underlaySession: number = 0;
+  private underlayMotion: number = 0;
+  private underlayEntranceFinished: (transitionIn: boolean) => void = (): void => {};
   @Event onSaveMedia: () => void = (): void => {};
   // 实况打开时把整段视频**下全**。
   //
@@ -260,6 +265,11 @@ export struct MediaViewerOverlay {
   }
 
   aboutToAppear(): void {
+    this.underlaySession = this.underlay?.mount() ?? 0;
+    const session: number = this.underlaySession;
+    this.underlayEntranceFinished = (transitionIn: boolean): void => {
+      if (transitionIn) { this.underlay?.entranceFinished(session); }
+    };
     this.continuousHop = AppStorage.get<boolean>(KEY_VIEWER_CONTINUOUS_HOP) ?? true;
     this.rebuildViewerSources();
     this.pageIdx = this.initIdx;
@@ -271,6 +281,7 @@ export struct MediaViewerOverlay {
 
   // Leaving the viewer in landscape would strand the chat page sideways.
   aboutToDisappear(): void {
+    this.underlay?.unmount(this.underlaySession);
     setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner, false);
     if (this.videoLandscape) {
       setMediaViewerOrientation(getContext(this) as common.UIAbilityContext, false);
@@ -458,6 +469,7 @@ export struct MediaViewerOverlay {
   }
 
   private onPanStart(): void {
+    this.underlayMotion = this.underlay?.reveal(this.underlaySession) ?? 0;
     this.panStartOffsetX = this.photoOffsetX;
     this.panStartOffsetY = this.photoOffsetY;
     this.edgeOverscroll = 0;
@@ -477,8 +489,22 @@ export struct MediaViewerOverlay {
       this.onRequestClose();
       return;
     }
+    this.restoreDismiss();
+  }
+
+  private restoreDismiss(): void {
+    const session: number = this.underlaySession;
+    this.underlayMotion = this.underlay?.reveal(session) ?? 0;
+    const motion: number = this.underlayMotion;
+    const duration: number = this.effectDuration(KEY_POWER_EFFECT_BLUR, 220);
+    if (duration <= 0) {
+      this.dismissY = 0;
+      this.underlay?.settled(session, motion);
+      return;
+    }
     animateTo({
-      duration: this.effectDuration(KEY_POWER_EFFECT_BLUR, 220), curve: Curve.Friction
+      duration, curve: Curve.Friction,
+      onFinish: (): void => { this.underlay?.settled(session, motion); }
     }, () => { this.dismissY = 0; });
   }
 
@@ -493,6 +519,11 @@ export struct MediaViewerOverlay {
     if (!this.zoomed()) {
       this.onDismissEnd();
       return;
+    }
+    if (this.dismissY > 0) {
+      this.restoreDismiss();
+    } else {
+      this.underlay?.settled(this.underlaySession, this.underlayMotion);
     }
     if (Math.abs(this.edgeOverscroll) < 60) {
       this.edgeOverscroll = 0;
@@ -634,6 +665,7 @@ export struct MediaViewerOverlay {
     const landing: number = dir > 0 ? g.memberIds[0] : g.memberIds[g.memberIds.length - 1];
     this.resetPhotoZoom(false);
     this.dismissY = 0;
+    this.underlay?.settled(this.underlaySession, this.underlayMotion);
     // 与 onPageChange 同一个理由：换了消息就把胶囊打回「未播放」。这条是**越界
     // 切组**那条换页路，不经过 onPageChange，漏掉它就会在跨组时残留暂停图标。
     // 旧播放器卸载兜不住——livePlaying 住在本组件上，而新播放器在预热模式下
@@ -885,6 +917,7 @@ export struct MediaViewerOverlay {
       this.setVideoLandscape(false);
     }
     this.dismissY = 0;
+    this.underlay?.settled(this.underlaySession, this.underlayMotion);
     this.resetPhotoZoom(false);
     // 翻页要显式把胶囊打回「未播放」。**改成不自动播之后这一句才成为必需**：
     // 原来它是靠「新播放器 onPrepared 报一次 true」被隐式拉回的，现在那一下没有
@@ -1521,6 +1554,7 @@ export struct MediaViewerOverlay {
                   .onActionStart(() => { this.onPanStart(); })
                   .onActionUpdate((event: GestureEvent) => { this.onPanUpdate(event); })
                   .onActionEnd(() => { this.onPanEnd(); })
+                  .onActionCancel((): void => { this.restoreDismiss(); })
               )
             );
           }
@@ -1845,7 +1879,14 @@ export struct MediaViewerOverlay {
     // 理由详见 ChatPage.openViewer 里的说明。
     .transition(
       TransitionEffect.OPACITY
-        .animation({ duration: this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction })
-    );
+        .animation({ duration: this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300), curve: Curve.Friction }),
+      this.underlayEntranceFinished
+    )
+    .onAppear((): void => {
+      // Reduced-motion/zero-duration opens are opaque on their first frame.
+      if (this.effectDuration(KEY_POWER_SMOOTH_TRANSITIONS, 300) <= 0) {
+        this.underlayEntranceFinished(true);
+      }
+    });
   }
 }

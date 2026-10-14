@@ -10269,6 +10269,66 @@
       "value": "現在このチャットの報告はサポートされていません"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "スパム"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "偽のアカウント"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "暴力"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "児童虐待"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "ポルノ"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "著作権侵害"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "違法薬物"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "個人情報"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "その他"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "気に入らない"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "違法な商品やサービス"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "違法な成人向けコンテンツ"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "テロ行為"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "詐欺またはスパム"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "違法な商品"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "報告の理由を選択"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "再生"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "一時的なQRコードです。有効期限が切れると自動更新されます"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "ユーザーリンクの有効期限が切れているか、利用できません。もう一度スキャンしてください。"
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "詳細統計情報"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "この種類のボタンにはまだ対応していません"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "このミニアプリ機能にはまだ対応していません"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "ミニアプリを閉じますか？"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "保存されていない変更が失われる可能性があります。"
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "未読のメンション"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "未読のメンションに移動"
     }
   ]
 }

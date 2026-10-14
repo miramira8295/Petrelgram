@@ -24,7 +24,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { setScrollActive } from '../../util/scrollEffects';
 import { rememberRecentSticker } from '../../store/StickerApi';
-import { openMiniApp } from '../../store/BotApi';
+import { openMiniAppPage, openMessageMiniApp } from '../../util/miniAppNav';
 import { InlineResultRow, sendInlineResult } from '../../store/BotApi';
 import { clearEditableCache } from '../../util/messageEditable';
 import { common } from '@kit.AbilityKit';
@@ -33,6 +33,8 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { formatDateSeparator } from '../../util/formatDateSeparator';
 import { holdPlayerJobs } from './WebmStickerView';
 import { setChatAnimationSuspended } from '../../util/chatAnimationGate';
+import { chatMotionAllowed, chatTimelineSuspended } from '../../util/chatMotionPolicy';
+import { ViewerUnderlay } from '../../util/viewerUnderlay';
 import { parkSenderAnimations } from '../../util/senderAnimationPark';
 import { EmojiPanel } from './EmojiPanel';
 import { StickerItem } from './StickerPicker';
@@ -117,6 +119,7 @@ import { SharedPayload } from '../../util/sharedContent';
 import { onShareTargeted, takePendingShare } from '../../services/ShareInbox';
 import { ChatComposerInput } from './ChatComposerInput';
 import { ScrollFab } from './ScrollFab';
+import { UnreadMentionSession } from './UnreadMentionSession';
 import { MembershipBar } from './MembershipBar';
 import { BottomDrawerShell } from './BottomDrawerShell';
 import { EMOJI_DRAWER_HEIGHT } from '../../util/drawerMetrics';
@@ -262,7 +265,7 @@ import {
 import {
   ANCHOR_UNREAD, InitialAnchor, anchorLatchesBottom, initialAnchorOf
 } from '../../util/initialAnchor';
-import { isAtLiveTail, newestVisibleMessageId } from '../../util/readMarking';
+import { isAtLiveTail, newestVisibleMessageId, visibleMessageIds } from '../../util/readMarking';
 import {
   MediaWindow, VisibleRange, mediaWindowRange, visibleRangeOrFallback
 } from '../../util/visibleWindow';
@@ -579,6 +582,12 @@ export struct ChatPage {
   // framework's table from the (correct) dataset, and the viewport is restored
   // around the anchor row.
   private pageVisible: boolean = true;
+  @Local private contentAnimationsAllowed: boolean = false;
+  @Local private viewerUnderlayHidden: boolean = false;
+  private viewerUnderlay: ViewerUnderlay = new ViewerUnderlay((hidden: boolean): void => {
+    this.viewerUnderlayHidden = hidden;
+    logI(`[ViewerUnderlay] hidden=${hidden}`);
+  });
   // 头插分批（方案 A）：翻历史一次插 29 行会让 Repeat 把可视区整屏新建，这里把
   // 头插拆成每批不超过 List.cachedCount 行。逻辑全在 util/prependChunker。
   private prependChunker: PrependChunker<AlbumGroup> = new PrependChunker<AlbumGroup>(
@@ -890,20 +899,24 @@ export struct ChatPage {
   }
 
   // ⚠️ 临时探针（2026-09-21，#140「动态头像要退出会话重进才动」）。定位完删。
-  // 四个输入里到底是谁一直按着闸，静态看不出来——只在结果变化时打一行。
+  // 输入里到底是谁一直按着闸，静态看不出来——只在结果变化时打一行。
   private tgsGateLast: number = -1;
 
   private syncChatTgsGate(): void {
-    const suspended: boolean = !this.pageVisible || this.initialMessageStageActive ||
-      this.chatTgsScrollActive || this.chatTgsStageSettling;
+    this.viewerUnderlay.setActive(this.pageVisible && this.appIsForeground && this.viewerOpen());
+    // 查看器在同一个 Stack 内铺满聊天列；不影响分栏里仍可见的其他区域。
+    this.contentAnimationsAllowed = chatMotionAllowed(this.pageVisible, this.appIsForeground, this.viewerOpen());
+    const suspended: boolean = chatTimelineSuspended(this.contentAnimationsAllowed,
+      this.initialMessageStageActive, this.chatTgsScrollActive, this.chatTgsStageSettling);
     const now: number = (suspended ? 1 : 0) | (this.pageVisible ? 2 : 0) |
       (this.initialMessageStageActive ? 4 : 0) | (this.chatTgsScrollActive ? 8 : 0) |
-      (this.chatTgsStageSettling ? 16 : 0);
+      (this.chatTgsStageSettling ? 16 : 0) | (this.appIsForeground ? 32 : 0) |
+      (this.viewerOpen() ? 64 : 0);
     if (now !== this.tgsGateLast) {
       this.tgsGateLast = now;
       logW(`[TgsGate2] suspended=${suspended} visible=${this.pageVisible}`
         + ` stage=${this.initialMessageStageActive} scroll=${this.chatTgsScrollActive}`
-        + ` settling=${this.chatTgsStageSettling}`);
+        + ` settling=${this.chatTgsStageSettling} foreground=${this.appIsForeground} viewer=${this.viewerOpen()}`);
     }
     setChatAnimationSuspended(suspended);
   }
@@ -1453,6 +1466,9 @@ export struct ChatPage {
         },
         onLinkTap: (url: string, askFirst: boolean): void => { this.onLinkTap(url, askFirst); },
         onCommentTap: (messageId: number): void => { this.onCommentTap(messageId); },
+        onMiniApp: (messageId: number, url: string): void => {
+          openMessageMiniApp(this.chatId, this.entryById(messageId), url);
+        },
         onBotCallback: (messageId: number, data: string): void => {
           this.onBotCallback(messageId, data);
         },
@@ -2063,6 +2079,7 @@ export struct ChatPage {
   // blocked = banned/unavailable, checking = waiting for the group object.
   @Local membershipState: string = 'writable';
   @Local joiningChat: boolean = false;
+  @Local joinByRequest: boolean = false;
   // TDLib doesn't consistently return the local "joined" service message in
   // getChatHistory. Keep the confirmed join event as a client-only timeline
   // row until the real service message arrives. It deliberately has no member
@@ -2457,6 +2474,7 @@ export struct ChatPage {
   // chromeGeometryInput/ScrollFab 显隐/handleBackPressed 五个调用点——都是
   // this.x → this.search.x 的逐处替换，依赖粒度与搬之前一一对应。
   private search: SearchSession = new SearchSession();
+  private unreadMentions: UnreadMentionSession = new UnreadMentionSession();
   // Multi-select mode (entered via the long-press menu's 选择 item).
   // 消息多选状态机（B7 批）。原来的 2 个 @Local（selecting/selectedIds）住进
   // 了控制器，变成 @Trace，字段名与初值一字未改。页面（chatTitleBar/
@@ -2893,10 +2911,10 @@ export struct ChatPage {
       closeReactionSheet: (): void => { this.overlayState.closeReactionSheet(); },
       setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); },
       onActiveChange: (active: boolean): void => {
-        this.groupsData.setLayoutContext(this.chatContentWidth, active);
+        this.groupsData.setLayoutContext(this.chatContentWidth, active, this.isGroup);
       }
     });
-    this.groupsData.setLayoutContext(this.chatContentWidth, this.selection.active);
+    this.groupsData.setLayoutContext(this.chatContentWidth, this.selection.active, this.isGroup);
     // 输入框上方那一条（回复/编辑）控制器接上宿主（B9）。headerTitle 是
     // HeaderIdentitySession（B8）title 的转发——控制器之间不互相持有引用，
     // 只经页面这个宿主中转；draft/pendingMedia 等留页面的字段只经取值器/
@@ -3122,6 +3140,17 @@ export struct ChatPage {
       setIsChannel: (value: boolean): void => { this.isChannel = value; },
       commitTimelineSnapshot: (): void => { this.commitTimelineSnapshot(); },
       setJoiningChat: (value: boolean): void => { this.joiningChat = value; },
+      setJoinByRequest: (value: boolean): void => { this.joinByRequest = value; },
+      onJoined: (folderId?: number): void => {
+        this.showClientJoinNotice(this.isChannel);
+        if (folderId !== undefined) { setInFolder(folderId, this.chatId, true); }
+      },
+      onJoinRequested: (): void => {
+        promptAction.showToast({ message: $r('app.string.cpp_join_requested'), duration: 2000 });
+      },
+      onJoinFailed: (): void => {
+        promptAction.showToast({ message: $r('app.string.cp_join_failed'), duration: 2000 });
+      },
       closeComposerSurfaces: (): void => {
         this.setEmojiPanel(false);
         this.mention.clear();
@@ -3427,6 +3456,20 @@ export struct ChatPage {
   }
 
   private subscribeChatLevelUpdates(): void {
+    this.unreadMentions.open({ chatId: this.chatId, threadRootId: this.threadRootId,
+      forumTopicId: this.forumTopicId, directMessagesTopicId: this.directMessagesTopicId }, {
+      send: (request: TdRequest): Promise<TdObject> => getTdClient().send(request, 12000),
+      subscribeCount: (listener: (count: number) => void): (() => void) =>
+        getChatStore().subscribeChat(this.chatId, (): void => {
+          listener(getChatStore().entryOf(this.chatId)?.unreadMentionCount ?? 0);
+        }),
+      onUpdate: (type: string, listener: (update: TdObject) => void): (() => void) =>
+        getTdClient().onUpdate(type, listener),
+      active: (): boolean => this.pageVisible && this.appIsForeground && !this.viewerOpen() &&
+        this.pendingJumpId === 0 && !this.scrollToBottomBusy && !this.search.mode && !this.showEmojiPanel,
+      jump: (messageId: number): void => this.onReplyTap(messageId),
+      failed: (): void => { promptAction.showToast({ message: $r('app.string.cp_cannot_jump'), duration: 1500 }); }
+    });
     this.header.refresh();
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
       (u: TdObject): void => this.typing.onChatAction(u)));
@@ -3496,7 +3539,7 @@ export struct ChatPage {
       const supergroup = u['supergroup'] as TdObject | undefined;
       if (supergroup !== undefined &&
         ((supergroup['id'] as number | undefined) ?? 0) === this.membership.supergroupId()) {
-        this.membership.applyStatus(supergroup['status'] as TdObject | undefined);
+        this.membership.applySupergroup(supergroup);
       }
     }));
     this.subscriptions.set('membershipBasicGroup', getTdClient().onUpdate('updateBasicGroup', (u: TdObject) => {
@@ -4511,6 +4554,7 @@ export struct ChatPage {
     // entryTimer 这个真句柄之后就需要一处收口，与 topCard 同放一组：先
     // ++seq 作废在途的 searchChatMessages 响应，再清 entryTimer。
     this.search.dispose();
+    this.unreadMentions.dispose();
     // 多选控制器的退场（B7）。本簇没有定时器/序号守卫，dispose() 只是裸清
     // active/ids——与其余控制器统一 bind/dispose 生命周期，同样没有对应的
     // 旧清理位置可循，放在这一组里。
@@ -4646,9 +4690,9 @@ export struct ChatPage {
     this.replaceTimelineGroups(this.groups);
   }
 
-  @Monitor('chatContentWidth')
+  @Monitor('chatContentWidth', 'isGroup')
   private onChatContentWidthChanged(): void {
-    this.groupsData.setLayoutContext(this.chatContentWidth, this.selection.active);
+    this.groupsData.setLayoutContext(this.chatContentWidth, this.selection.active, this.isGroup);
   }
 
   // 判定本身在 util/atBottom（10 条测）：那里记着两条上线过的 bug——
@@ -4972,6 +5016,7 @@ export struct ChatPage {
   @Monitor('viewerMsgId')
   private onViewerTargetChanged(): void {
     this.viewerPositionMs = 0;
+    this.syncChatTgsGate();
     // 分栏下查看器开着：收左栏和侧边页签，让页面内的查看器盖满窗口（见 util/viewerWindowCover）。
     publishViewerCoversWindow(viewerFullScreenWanted(
       isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.viewerOpen()));
@@ -5033,6 +5078,7 @@ export struct ChatPage {
     if (!this.viewerOpen() || this.viewerClosing) {
       return;
     }
+    this.viewerUnderlay.prepareClose();
     // ⚠️ [Viewer] 探针（S4）：查看器这一簇此前在 hilog 黄金样本里一个标签都没有，
     // S5/S6 改的是生命周期与挂载方式，本地单测证不了——这三条打点是那两批唯一的
     // 验收证据。删除条件：S6 落地并通过黄金样本 diff 之后，随第二轮 §8 的探针
@@ -5626,39 +5672,9 @@ export struct ChatPage {
   }
 
 
-  // refreshMembership/applyMembershipStatus 逐字搬进了 MembershipSession
-  // （第二轮 R2-A 批，见文件头字段声明处的注释与该类文件头）。此处只留
-  // joinCurrentChat：它除了读写页面自留的 membershipState/joiningChat 之外
-  // 还要调页面自己的 showClientJoinNotice()，不是"整方法体搬迁"的候选，见
-  // MembershipSession.ets 文件头【本批未迁移的两处】节。
-  // 这里对 membershipState/joiningChat 的写**全部保持页面直写**（HEAD 就是
-  // 这样）：它们是页面自留 @Local，setMembershipState 只是控制器回调页面的
-  // 入口，页面自己写自己的字段不绕道。本批只把 this.refreshMembership()
-  // 那一行改成了 this.membership.refresh()。
-  // folderId：「加入并添加到文件夹」选定的文件夹，加入成功后再写进去；
-  // 加入失败就不写，免得文件夹里挂着一个没加入的会话。
+  // Submission and approval state live in MembershipSession.
   private joinCurrentChat(folderId?: number): void {
-    if (this.joiningChat || this.membershipState !== 'joinable') {
-      return;
-    }
-    this.joiningChat = true;
-    const req: TdRequest = { '@type': 'joinChat' };
-    req['chat_id'] = this.chatId;
-    getTdClient().send(req).then((): void => {
-      this.joiningChat = false;
-      // updateSupergroup/updateBasicGroup normally arrives first; setting this
-      // eagerly keeps the UI responsive even if that update is delayed.
-      this.membershipState = 'writable';
-      this.showClientJoinNotice(this.isChannel);
-      this.membership.refresh();
-      if (folderId !== undefined) {
-        setInFolder(folderId, this.chatId, true);
-      }
-    }).catch((e: TdError): void => {
-      this.joiningChat = false;
-      logE(`ChatPage.joinChat failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_join_failed'), duration: 2000 });
-    });
+    this.membership.join(this.membershipState, folderId);
   }
 
   // Mark read up to the bottom-most visible message, so only what the user has
@@ -5755,6 +5771,10 @@ export struct ChatPage {
   private markVisibleRead(end: number): void {
     if (this.store === null || end < 0 || end >= this.groups.length) {
       return;
+    }
+    if (this.pageVisible && this.appIsForeground && !this.viewerOpen()) {
+      this.store.markVisibleMentions(visibleMessageIds(this.groups.length,
+        (index: number): number[] => this.groups[index].memberIds, this.curStartIdx, end));
     }
     // 往回找第一条"真实"消息行、以及"是不是实时尾部"，两个判定都在
     // util/readMarking（8 条测）——已读是高水位，报高了就吞掉没看过的消息。
@@ -6111,6 +6131,10 @@ export struct ChatPage {
 
   @Monitor('appIsForeground')
   private onAppForegroundChanged(): void {
+    // 栈内隐藏页也会收到前后台通知，不能由它覆盖当前可见会话的动画总闸。
+    if (this.pageVisible) {
+      this.syncChatTgsGate();
+    }
     // 停留在会话页切后台时必须 closeChat，否则 TDLib 认为用户正在看这个
     // 会话，不会为它生成任何通知。
     if (this.appIsForeground) {
@@ -6407,30 +6431,9 @@ export struct ChatPage {
     });
   }
 
-  // B8 issue（未在四条"不能碰"里，也不在 HeaderIdentitySession 的 15 个迁移
-  // 方法之列，需要复核）：openBotMiniApp 原来直接读页面的 headerPeerUserId——
-  // 迁移后那是控制器内部的 private peerUserId，没有任何 host getter 或公开
-  // 方法能取到它。这里改用 this.store?.getPeerUserId()，和 openProfile 迁移前
-  // 就已经在用的同一个回退取值一致：MessageStore 对 chatTypePrivate 的
-  // peerUserId 解析读的是同一个 getChat 响应的 type.user_id，值恒等；唯一的
-  // 差异是两次 getChat 各自独立发出，理论上存在极短的时间窗——
-  // header.botMiniAppUrl 已经落地但 store.getPeerUserId() 还没跟上——这个窗口
-  // 里点开 Mini App 入口会被这里的 `<= 0` 挡住，原实现不会。这是行为改变，
-  // 需要确认是否可接受，或者要不要把 openBotMiniApp 也一并搬进控制器。
   private openBotMiniApp(): void {
-    const url = this.header.botMiniAppUrl;
-    const uid = this.header.currentPeerUserId();
-    if (url === '' || uid <= 0) { return; }
-    openMiniApp(this.chatId, uid, url).then((resolved: string): void => {
-      if (resolved === '') {
-        promptAction.showToast({ message: $r('app.string.cp_cannot_open_miniapp'), duration: 1600 });
-        return;
-      }
-      openWebUrl(getContext(this) as common.UIAbilityContext, resolved);
-    }).catch((e: TdError): void => {
-      logE(`ChatPage.openBotMiniApp failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_cannot_open_miniapp'), duration: 1600 });
-    });
+    openMiniAppPage({ kind: 'web', chatId: this.chatId,
+      botUserId: this.header.currentPeerUserId(), title: '', url: this.header.botMiniAppUrl });
   }
 
   // pickInlineResult（涉及 sendInlineResult 与 composer.clearReply，方案点名
@@ -8057,6 +8060,7 @@ export struct ChatPage {
       state: this.composerSlot(),
       isMuted: this.header.isMuted,
       joining: this.joiningChat,
+      joinByRequest: this.joinByRequest,
       secretOutbound: this.header.secretOutbound,
       bottomGap: this.composerBottomGap(),
       onJoin: (): void => { this.joinCurrentChat(); },
@@ -8636,6 +8640,7 @@ export struct ChatPage {
         this.selectionBar(true);
       } else {
         ChatHeader({
+          animationsAllowed: this.contentAnimationsAllowed,
           appearanceEpoch: this.appearanceEpoch,
           materialEpoch: this.materialEpoch,
           onLightBg: this.chromeOnLightBg(),
@@ -8771,6 +8776,7 @@ export struct ChatPage {
   @Builder
   mediaViewer() {
     MediaViewerOverlay({
+      underlay: this.viewerUnderlay,
       topSafe: this.topSafe,
       viewerMsgId: this.viewerMsgId,
       onViewerMsgIdChange: (msgId: number): void => { this.viewerMsgId = msgId; },
@@ -9002,10 +9008,14 @@ export struct ChatPage {
   build() {
     HdsNavDestination() {
     Stack() {
-      // 整层背景搬到了 ChatBackdrop：它只吃输入不回调，所以这里只传三个入参。
+      // Keep the covered chat mounted: Visibility.Hidden preserves layout,
+      // scroll anchors and the thumbnail nodes used by geometryTransition.
+      Stack() {
+      // 背景参数和当前聊天列的动画可见性由页面传入，背景内部管理渲染。
       // 聊天槽位的三根滑杆由页面按当前深浅色挑好传进去——见 ChatBackdrop 里
       // 那段说明：那一层不再自己读全局键。
       ChatBackdrop({
+        animationsAllowed: this.contentAnimationsAllowed,
         chatBg: this.chatBg, screenW: this.screenW, screenH: this.screenH,
         bgBlur: this.chatBgBlur, bgPattern: this.chatBgPattern, chatDim: this.chatBgDim
       });
@@ -9209,21 +9219,35 @@ export struct ChatPage {
       // while the media panel is open puts it above (and blocks) the GIF tab.
       // 显隐跟着"有没有可返回的位置"走，而不是"在不在底部"：站在最新消息上
       // 但引用链还没退完时，箭头仍然该在。
-      if (this.returnTarget().kind !== RETURN_NONE && !this.search.mode && !this.showEmojiPanel) {
-        Column() {
-          ScrollFab({
-            unreadCount: this.unreadBadge,
-            busy: this.scrollToBottomBusy,
-            // 它直接浮在壁纸上，前景必须跟着壁纸翻，不能跟深浅色模式。
-            iconColor: this.chromeIcon(),
-            onTap: (): void => { this.onScrollFabTap(); }
-          });
+      if ((this.returnTarget().kind !== RETURN_NONE || this.unreadMentions.count > 0) &&
+        !this.search.mode && !this.showEmojiPanel) {
+        Column({ space: 4 }) {
+          if (this.unreadMentions.count > 0) {
+            ScrollFab({ unreadCount: 0, mention: true,
+              busy: this.unreadMentions.busy || this.pendingJumpId !== 0,
+              iconColor: COLOR_PRIMARY, onTap: (): void => { this.unreadMentions.next(); } });
+          }
+          if (this.returnTarget().kind !== RETURN_NONE) {
+            ScrollFab({
+              unreadCount: this.unreadBadge,
+              busy: this.scrollToBottomBusy,
+              // It floats over the wallpaper, so keep the wallpaper-aware ink.
+              iconColor: this.chromeIcon(),
+              onTap: (): void => { this.onScrollFabTap(); }
+            });
+          }
         }
         .width('100%').height('100%')
         .justifyContent(FlexAlign.End).alignItems(HorizontalAlign.End)
         .padding({ right: 14, bottom: this.bottomChromeH + 8 })
         .hitTestBehavior(HitTestMode.Transparent);
       }
+
+      }
+      .width('100%').height('100%')
+      // Visibility changes must not inherit the viewer's fade animation.
+      .transition(TransitionEffect.IDENTITY)
+      .visibility(this.viewerUnderlayHidden ? Visibility.Hidden : Visibility.Visible);
 
       // Fullscreen media viewer. The page owns which message is open and the
       // hero transition anchored to the tapped thumbnail; the overlay owns

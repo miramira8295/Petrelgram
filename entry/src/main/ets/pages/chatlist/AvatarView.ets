@@ -15,6 +15,7 @@ export struct AvatarView {
   // Animated profile photo (MPEG4 loop). Only profile pages pass this —
   // list rows stay static (one looping player per row would be too heavy).
   @Prop animPath: string = '';
+  @Prop animationPaused: boolean = false;
   // 「我的收藏」：和自己的私聊。画书签而不是自己的头像——用户在列表里要一眼
   // 认出它，Telegram 各端都是这么处理的（issue #8）。
   @Prop savedMessages: boolean = false;
@@ -63,6 +64,7 @@ export struct AvatarView {
       Column() {
         AvLoopVideo({
           videoPath: this.animPath,
+          paused: this.animationPaused,
           boxWidth: this.avatarSize,
           boxHeight: this.avatarSize
         });

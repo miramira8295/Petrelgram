@@ -119,7 +119,7 @@ function groupCallOf(active: boolean, rtmp: boolean, participants: number): TdOb
 function entryOf(groupCallId: number, isLive: boolean, isRtmp: boolean): ChatEntry {
   return {
     id: 5, revision: 0, title: 't', isMuted: false, usesDefaultMute: true,
-    unreadCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
+    unreadCount: 0, unreadMentionCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
     lastMessageText: '', lastMessageThumb: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
     photoFileId: 0, avatarPath: '', initials: '', autoDeleteTime: 0,
     kind: 'supergroup', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false, isSavedMessages: false,

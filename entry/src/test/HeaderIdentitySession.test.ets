@@ -156,7 +156,7 @@ function sleep(ms: number): Promise<void> {
 function cachedPrivateEntry(): ChatEntry {
   return {
     id: 900, revision: 0, title: '缓存的标题', isMuted: true, usesDefaultMute: false,
-    unreadCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
+    unreadCount: 0, unreadMentionCount: 0, rawUnreadCount: 0, lastReadInboxId: 0,
     lastMessageText: '', lastMessageThumb: '', lastMessageDate: 0, lastMessageId: 0, lastSenderName: '',
     photoFileId: 0, avatarPath: '缓存的头像路径', initials: 'C', autoDeleteTime: 0,
     kind: 'private', isMarkedUnread: false, actionBar: '', actionBarCanUnarchive: false, isSavedMessages: false,

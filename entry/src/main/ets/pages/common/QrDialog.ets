@@ -1,7 +1,10 @@
 import { generateBarcode, scanCore } from '@kit.ScanKit';
 import { image } from '@kit.ImageKit';
 import { COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
-import { logE } from '../../util/log';
+import { getTdClient } from '../../tdkit/Globals';
+import { QrLink, QrSession, QrSnapshot } from '../../util/qrSession';
+import { fetchMyUserLink } from '../../util/userLink';
+import { TAB_PROFILE } from '../../util/mainTabIndex';
 
 // Shared QR dialog: renders a t.me link as a scannable code (ScanKit).
 @CustomDialog
@@ -11,21 +14,55 @@ export struct QrDialog {
   controller?: CustomDialogController;
   link: string = '';
   title: string = '';
+  ownUser: boolean = false;
+  onClosed: () => void = (): void => {};
+  @StorageProp('mainTabIndex') @Watch('onMainTabChanged') mainTab: number = TAB_PROFILE;
+  @StorageProp('appIsForeground') @Watch('onForegroundChanged') foreground: boolean = true;
   @State pix: image.PixelMap | null = null;
+  @State displayedLink: string = '';
   @State failed: boolean = false;
+  @State temporary: boolean = false;
+  private session: QrSession<image.PixelMap> | null = null;
 
   aboutToAppear(): void {
-    const options: generateBarcode.CreateOptions = {
-      scanType: scanCore.ScanType.QR_CODE,
-      height: 400,
-      width: 400
-    };
-    generateBarcode.createBarcode(this.link, options).then((p: image.PixelMap) => {
-      this.pix = p;
-    }).catch((e: Object) => {
-      logE(`QrDialog.createBarcode failed: ${JSON.stringify(e)}`);
-      this.failed = true;
-    });
+    this.session = new QrSession<image.PixelMap>(
+      (): Promise<QrLink> => this.ownUser ? fetchMyUserLink(getTdClient()) :
+        Promise.resolve({ url: this.link, expiresIn: 0 } as QrLink),
+      (url: string): Promise<image.PixelMap> => {
+        const options: generateBarcode.CreateOptions = {
+          scanType: scanCore.ScanType.QR_CODE, height: 400, width: 400
+        };
+        return generateBarcode.createBarcode(url, options);
+      },
+      (value: image.PixelMap): void => { value.release().catch((): void => {}); },
+      (state: QrSnapshot<image.PixelMap>): void => {
+        this.pix = state.image;
+        this.displayedLink = state.link;
+        this.failed = state.failed;
+        this.temporary = state.temporary;
+      });
+    this.session.start();
+  }
+
+  aboutToDisappear(): void {
+    this.session?.close();
+    this.session = null;
+    this.onClosed();
+  }
+
+  private onMainTabChanged(): void {
+    if (this.ownUser && this.mainTab !== TAB_PROFILE) {
+      this.session?.close();
+      this.controller?.close();
+    }
+  }
+
+  private onForegroundChanged(): void {
+    // Dismiss before suspension: an expired bitmap must not flash on resume.
+    if (!this.foreground) {
+      this.session?.close();
+      this.controller?.close();
+    }
   }
 
   build() {
@@ -39,8 +76,10 @@ export struct QrDialog {
         if (this.pix !== null) {
           Image(this.pix).draggable(false).width(220).height(220);
         } else if (this.failed) {
-          Text($r('app.string.qr_failed')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
-            .width(220).height(220).textAlign(TextAlign.Center);
+          Column({ space: 12 }) {
+            Text($r('app.string.qr_failed')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+            Button($r('app.string.settings_retry')).onClick((): void => { this.session?.retry(); });
+          }.width(220).height(220).justifyContent(FlexAlign.Center);
         } else {
           Column() {
             LoadingProgress().width(32).height(32).color(COLOR_ICON_SECONDARY);
@@ -48,9 +87,15 @@ export struct QrDialog {
         }
       }
       .backgroundColor(Color.White).padding(10).borderRadius(10);
-      Text(this.link).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
-        .copyOption(CopyOptions.LocalDevice)
-        .textAlign(TextAlign.Center);
+      if (this.displayedLink !== '') {
+        Text(this.displayedLink).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
+          .copyOption(CopyOptions.LocalDevice)
+          .textAlign(TextAlign.Center);
+      }
+      if (this.temporary) {
+        Text($r('app.string.qr_temporary')).fontSize(12).fontColor(COLOR_TEXT_SECONDARY)
+          .textAlign(TextAlign.Center);
+      }
     }
     .padding(24)
     // 不走玻璃/材质，用实底。理由同 DeleteMessagesDialog：设备自报支持沉浸材质

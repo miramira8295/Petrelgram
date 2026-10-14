@@ -1,6 +1,6 @@
 import { IDataSourcePrefetching } from '@kit.ArkUI';
 import { AlbumGroup } from '../../util/collapseAlbums';
-import { mediaBoxFor } from '../../util/mediaBox';
+import { BUBBLE_AVATAR_GUTTER_VP, mediaBoxFor } from '../../util/mediaBox';
 import { cancelPixelMap, loadPixelMap, PixelRequest } from '../../util/pixelCache';
 import { messageSelectionContentWidth } from '../../util/messageSelection';
 
@@ -253,6 +253,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
   private groups: AlbumGroup[] = [];
   private contentWidth: number = 360;
   private selectionActive: boolean = false;
+  private isGroup: boolean = true;
   // cancel() must use the exact key prefetch() loaded. A selection/resize
   // relayout changes the derived size before BasicPrefetcher cancels old work.
   private activeRequests: Map<number, PixelRequest> = new Map<number, PixelRequest>();
@@ -310,13 +311,14 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
 
   // Page-owned geometry. A changed layout invalidates BasicPrefetcher's fetched
   // index ledger so upcoming rows are decoded at the same size as the bubbles.
-  setLayoutContext(contentWidth: number, selectionActive: boolean): void {
+  setLayoutContext(contentWidth: number, selectionActive: boolean, isGroup: boolean = true): void {
     const nextWidth: number = contentWidth > 0 ? contentWidth : this.contentWidth;
-    if (nextWidth === this.contentWidth && selectionActive === this.selectionActive) {
+    if (nextWidth === this.contentWidth && selectionActive === this.selectionActive && isGroup === this.isGroup) {
       return;
     }
     this.contentWidth = nextWidth;
     this.selectionActive = selectionActive;
+    this.isGroup = isGroup;
     this.notifyReloaded();
   }
 
@@ -358,7 +360,7 @@ export class AlbumGroupDataSource implements IDataSourcePrefetching {
       return null;
     }
     const box = mediaBoxFor(availableWidth, head.photoWidth, head.photoHeight,
-      head.contentType === 'video');
+      head.contentType === 'video', this.isGroup && !head.isOutgoing ? BUBBLE_AVATAR_GUTTER_VP : 0);
     // 单张大图不开 565：面积大、渐变明显，色阶看得出来。
     return {
       path: head.photoPath, width: vp2px(box.width), height: vp2px(box.height), opaque: false

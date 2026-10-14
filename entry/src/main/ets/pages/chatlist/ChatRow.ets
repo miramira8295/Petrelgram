@@ -237,6 +237,7 @@ export struct ChatRow {
     if (this.isUnread()) {
       parts.push(this.chat.unreadCount > 0 ? plural('cl_unread_n', this.chat.unreadCount, this.chat.unreadCount) : str('cl_mark_unread'));
     }
+    if (this.chat.unreadMentionCount > 0) { parts.push(str('cp_unread_mentions')); }
     if (this.chat.lastMessageText !== '') {
       parts.push(this.chat.lastMessageText);
     }
@@ -632,21 +633,26 @@ export struct ChatRow {
           Text(formatTime(this.chat.lastMessageDate, this.nowSec))
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
         }
-        if (this.chat.unreadCount > 0) {
-          // 单 Text 画角标胶囊，不再套 Row（无属性容器精简，同 AvatarView
-          // 的字母头像）。居中靠 align/textAlign。
-          Text(this.unreadLabel())
-            .fontSize(12).fontColor(Color.White)
-            .fontWeight(FontWeight.Medium)
-            .constraintSize({ minWidth: 22 })
-            .height(22).padding({ left: 7, right: 7 })
-            .align(Alignment.Center).textAlign(TextAlign.Center)
-            .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
-            .borderRadius(11);
-        } else if (this.chat.isMarkedUnread) {
-          // Manually flagged unread — a plain dot, like the official clients.
-          Circle({ width: 10, height: 10 })
-            .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
+        Row({ space: 5 }) {
+          if (this.chat.unreadMentionCount > 0) {
+            Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())
+              .height(22).align(Alignment.Center).accessibilityText($r('app.string.cp_unread_mentions'));
+          }
+          if (this.chat.unreadCount > 0) {
+            // 数字胶囊与独立的重点色 @ 并排，静音只淡化数字。
+            Text(this.unreadLabel())
+              .fontSize(12).fontColor(Color.White)
+              .fontWeight(FontWeight.Medium)
+              .constraintSize({ minWidth: 22 })
+              .height(22).padding({ left: 7, right: 7 })
+              .align(Alignment.Center).textAlign(TextAlign.Center)
+              .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
+              .borderRadius(11);
+          } else if (this.chat.isMarkedUnread) {
+            // Manually flagged unread — a plain dot, like the official clients.
+            Circle({ width: 10, height: 10 })
+              .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
+          }
         }
       }.alignItems(HorizontalAlign.End);
     }

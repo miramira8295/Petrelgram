@@ -1,3 +1,4 @@
+import { systemLanguageForTd } from '../services/TdLanguage';
 import { TdClient } from './TdClient';
 import { TdObject, TdRequest } from './TdTypes';
 import { clientRev, clientSig } from './ApiCredentials';
@@ -476,7 +477,7 @@ export class AuthService {
     request['use_secret_chats'] = true;
     request['api_id'] = clientRev;
     request['api_hash'] = clientSig;
-    request['system_language_code'] = 'zh-Hans';
+    request['system_language_code'] = systemLanguageForTd();
     // 三项都显示在 Telegram 的「活跃会话」列表里。原来写死成 'HarmonyOS Device'
     // / '1.3.1'，发版忘了改就一直陈旧（issue #147）；现在由 Globals 从包信息和
     // deviceInfo 里读（util/tdDeviceParamsReader）。

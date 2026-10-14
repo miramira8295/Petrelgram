@@ -10269,6 +10269,66 @@
       "value": "Hiện không hỗ trợ báo cáo cuộc trò chuyện này"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Tin rác"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Tài khoản giả mạo"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Bạo lực"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Ngược đãi trẻ em"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Nội dung khiêu dâm"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Bản quyền"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Ma túy bất hợp pháp"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Thông tin cá nhân"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Khác"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Tôi không thích"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Hàng hóa và dịch vụ bất hợp pháp"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Nội dung người lớn bất hợp pháp"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Khủng bố"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Lừa đảo hoặc tin rác"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Hàng hóa bất hợp pháp"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Chọn lý do báo cáo"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Phát"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Mã QR tạm thời; tự động làm mới khi hết hạn"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Liên kết người dùng đã hết hạn hoặc không khả dụng. Vui lòng quét lại."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Thống kê chi tiết"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Loại nút này chưa được hỗ trợ"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Tính năng ứng dụng mini này chưa được hỗ trợ"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Đóng ứng dụng mini?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Các thay đổi chưa lưu có thể bị mất."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Lượt nhắc chưa đọc"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Chuyển đến lượt nhắc chưa đọc"
     }
   ]
 }

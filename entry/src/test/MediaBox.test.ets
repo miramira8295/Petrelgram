@@ -18,6 +18,28 @@ const SCREEN: number = 360;
 
 export default function mediaBoxTest() {
   describe('mediaBox', () => {
+    it('media uses the maximum bubble content width beyond the old 280vp cap', 0, () => {
+      for (const width of [440, 720, 960]) {
+        expect(mediaThumbWidth(width) + 16).assertEqual(bubbleMaxWidth(width));
+        expect(mediaThumbWidth(width) > 280).assertTrue();
+      }
+    });
+
+    it('private and outgoing media reclaim the avatar gutter', 0, () => {
+      const box = mediaBoxFor(440, 1600, 900, false, 0);
+      expect(box.width + 16).assertEqual(bubbleMaxWidth(440, 0));
+      expect(box.width - mediaThumbWidth(440)).assertEqual(BUBBLE_AVATAR_GUTTER_VP);
+      expect(mediaBoxFor(440, 900, 1600, true, 0).width).assertEqual(box.width);
+    });
+
+    it('media dimensions stay nonnegative in very narrow columns', 0, () => {
+      for (const width of [0, 40, 80]) {
+        const box = mediaBoxFor(width, 900, 1600, false);
+        expect(box.width >= 0 && box.height >= 0).assertTrue();
+        expect(box.width <= bubbleMaxWidth(width)).assertTrue();
+      }
+    });
+
     it('fills the bubble width for a landscape photo', 0, () => {
       const box = mediaBoxFor(SCREEN, 1600, 900, false);
       expect(box.width).assertEqual(mediaThumbWidth(SCREEN));

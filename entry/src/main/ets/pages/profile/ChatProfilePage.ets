@@ -1,3 +1,5 @@
+import { InviteJoinResolver } from '../../util/inviteJoinResolver';
+import { joinChat as submitChatJoin, ChatJoinOutcome } from '../../util/chatJoin';
 import { pageMarginVp } from '../../util/pageMargin';
 import { MemberSearchField } from './MemberSearchField';
 import {
@@ -201,6 +203,9 @@ export struct ChatProfilePage {
   @State joinRequestSent: boolean = false;
   private chatId: number = 0;
   private inviteLink: string = '';
+  private inviteNeedsApproval: boolean = false;
+  private joinSeq: number = 0;
+  private inviteJoinResolver: InviteJoinResolver | null = null;
   private pendingDraftText: string = '';
   private pendingJumpTo: number = 0;
   private justJoined: boolean = false;
@@ -313,6 +318,7 @@ export struct ChatProfilePage {
   // 从提权/限制面板返回时重拉成员：身份标签和受限状态都可能变了。
   // 迁移前是 onPageShow，方法体一字未动，改由 HdsNavDestination.onShown() 触发。
   private handleShown(): void {
+    this.inviteJoinResolver?.refresh();
     if (this.pendingMemberReload) {
       this.pendingMemberReload = false;
       this.store?.reloadMembers();
@@ -320,6 +326,9 @@ export struct ChatProfilePage {
   }
 
   aboutToDisappear(): void {
+    this.joinSeq++;
+    this.inviteJoinResolver?.dispose();
+    this.inviteJoinResolver = null;
     if (this.unsub !== null) { this.unsub(); this.unsub = null; }
     if (this.store !== null) { this.store.close(); this.store = null; }
   }
@@ -336,7 +345,10 @@ export struct ChatProfilePage {
     this.pageState = s.loadState;
     this.errorText = s.errorText;
     this.membershipState = s.membershipState;
-    this.joinByRequest = s.joinByRequest;
+    this.joinByRequest = this.inviteNeedsApproval || s.joinByRequest;
+    if (this.membershipState === 'writable' || this.membershipState === 'blocked') {
+      this.joinRequestSent = false;
+    }
     this.membersState = s.membersState;
     this.contentItems = s.contentItems;
     this.contentState = s.contentState;
@@ -521,6 +533,8 @@ export struct ChatProfilePage {
     const req: TdRequest = { '@type': 'checkChatInviteLink' };
     req['invite_link'] = this.inviteLink;
     getTdClient().send(req).then((info: TdObject): void => {
+      this.inviteNeedsApproval = (info['creates_join_request'] as boolean | undefined) ?? false;
+      this.joinByRequest = this.inviteNeedsApproval;
       const resolvedChatId = (info['chat_id'] as number | undefined) ?? 0;
       if (resolvedChatId !== 0) {
         this.chatId = resolvedChatId;
@@ -560,25 +574,26 @@ export struct ChatProfilePage {
       return;
     }
     this.joining = true;
-    const req: TdRequest = {
-      '@type': this.inviteLink !== '' ? 'joinChatByInviteLink' : 'joinChat'
-    };
-    if (this.inviteLink !== '') {
-      req['invite_link'] = this.inviteLink;
-    } else {
-      req['chat_id'] = this.chatId;
-    }
-    getTdClient().send(req).then((chat: TdObject): void => {
+    const seq: number = ++this.joinSeq;
+    submitChatJoin(getTdClient(), this.chatId, this.inviteLink).then((result: ChatJoinOutcome): void => {
+      if (seq !== this.joinSeq) { return; }
       this.joining = false;
-      const joinedChatId = (chat['id'] as number | undefined) ?? this.chatId;
-      if (joinedChatId !== 0 && this.chatId === 0) {
-        this.chatId = joinedChatId;
-      }
-      if (this.joinByRequest) {
-        this.joinRequestSent = true;
-        promptAction.showToast({ message: $r('app.string.cpp_join_requested'), duration: 1800 });
+      if (result.requested) {
+        // A fast approval update may have reached the store before the reply.
+        if (this.membershipState !== 'writable' && this.membershipState !== 'blocked') {
+          this.joinRequestSent = true;
+          if (this.chatId === 0 && this.inviteLink !== '') {
+            this.inviteJoinResolver?.dispose();
+            this.inviteJoinResolver = new InviteJoinResolver(getTdClient(), this.inviteLink,
+              (chatId: number): void => { this.chatId = chatId; this.startStore(); });
+            this.inviteJoinResolver.start();
+          }
+          promptAction.showToast({ message: $r('app.string.cpp_join_requested'), duration: 1800 });
+        }
         return;
       }
+      this.chatId = result.chatId;
+      this.joinRequestSent = false;
       this.membershipState = 'writable';
       this.justJoined = true;
       promptAction.showToast({
@@ -589,6 +604,7 @@ export struct ChatProfilePage {
         this.startStore();
       }
     }).catch((e: TdError): void => {
+      if (seq !== this.joinSeq) { return; }
       this.joining = false;
       logE(`ChatProfilePage.join failed: ${e.message}`);
       promptAction.showToast({ message: $r('app.string.cpp_join_failed'), duration: 1800 });

@@ -10269,6 +10269,66 @@
       "value": "گزارش این گفتگو فعلاً پشتیبانی نمی‌شود"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "هرزنامه"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "حساب جعلی"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "خشونت"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "کودک‌آزاری"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "محتوای پورنوگرافی"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "حق نشر"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "مواد مخدر غیرقانونی"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "اطلاعات شخصی"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "سایر"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "دوستش ندارم"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "کالاها و خدمات غیرقانونی"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "محتوای غیرقانونی بزرگسالان"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "تروریسم"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "کلاهبرداری یا هرزنامه"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "کالاهای غیرقانونی"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "انتخاب دلیل گزارش"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "پخش"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "کد QR موقت؛ پس از انقضا خودکار تازه می‌شود"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "این پیوند کاربر منقضی شده یا در دسترس نیست. دوباره اسکن کنید."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "آمار تخصصی"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "این نوع دکمه هنوز پشتیبانی نمی‌شود"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "این قابلیت برنامه کوچک هنوز پشتیبانی نمی‌شود"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "برنامه کوچک بسته شود؟"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "ممکن است تغییرات ذخیره‌نشده از دست بروند."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "اشاره‌های خوانده‌نشده"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "رفتن به اشارهٔ خوانده‌نشده"
     }
   ]
 }

@@ -10269,6 +10269,66 @@
       "value": "Bu sohbeti şikayet etmek şu an desteklenmiyor"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "Spam"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "Sahte hesap"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "Şiddet"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "Çocuk istismarı"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "Pornografi"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "Telif hakkı"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "Yasa dışı uyuşturucular"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "Kişisel bilgiler"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "Diğer"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "Beğenmedim"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "Yasa dışı ürün ve hizmetler"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "Yasa dışı yetişkin içeriği"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "Terörizm"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "Dolandırıcılık veya spam"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "Yasa dışı ürünler"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "Şikayet nedeni seçin"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "Oynat"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "Geçici QR kodu; süresi dolunca otomatik yenilenir"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "Bu kullanıcı bağlantısının süresi dolmuş veya bağlantı kullanılamıyor. Lütfen tekrar tarayın."
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "Meraklısı için istatistikler"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "Bu düğme türü henüz desteklenmiyor"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "Bu mini uygulama özelliği henüz desteklenmiyor"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "Mini uygulama kapatılsın mı?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "Kaydedilmemiş değişiklikler kaybolabilir."
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "Okunmamış bahsetmeler"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "Okunmamış bahsetmeye git"
     }
   ]
 }

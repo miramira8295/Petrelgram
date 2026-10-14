@@ -8,7 +8,7 @@
 // hdsVisualEffect 这一套，这里跟上，三者的档位保持各自原有的 surface 不变。
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
-  MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY,
+  MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY, MEMBERSHIP_REQUESTED,
 } from '../../util/membershipState';
 import { MEMBERSHIP_BOT_START } from '../../util/botStart';
 import {
@@ -52,6 +52,7 @@ export struct MembershipBar {
   @Param state: string = '';
   @Param isMuted: boolean = false;
   @Param joining: boolean = false;
+  @Param joinByRequest: boolean = false;
   // 密聊是不是自己发起的。等待期两侧话术不同（见 util/secretChat）。
   @Param secretOutbound: boolean = false;
   // 底部让出的高度，由页面按键盘/抽屉状态算好传进来。
@@ -97,6 +98,10 @@ export struct MembershipBar {
           .width(20).height(20).color(COLOR_PRIMARY);
         Text($r('app.string.cp_fetching_membership'))
           .fontSize(15).fontColor(COLOR_TEXT_SECONDARY);
+      } else if (this.state === MEMBERSHIP_REQUESTED) {
+        SymbolGlyph($r('sys.symbol.checkmark_circle')).fontSize(17).fontColor([COLOR_PRIMARY]);
+        Text($r('app.string.cpp_requested'))
+          .fontSize(16).fontColor(COLOR_PRIMARY).fontWeight(FontWeight.Medium);
       } else if (this.state === MEMBERSHIP_BLOCKED) {
         Text($r('app.string.cp_cannot_join'))
           .fontSize(16).fontColor(COLOR_TEXT_SECONDARY).fontWeight(FontWeight.Medium);
@@ -162,10 +167,12 @@ export struct MembershipBar {
     Column() {
       if (this.state === MEMBERSHIP_JOINABLE && !this.joining) {
         Row({ space: BOTTOM_PILL_GAP }) {
-          this.joinPill($r('app.string.cp_join'), `${this.joinFolderAnchorId}_plain`,
+          this.joinPill(this.joinByRequest ? $r('app.string.cpp_request_join') : $r('app.string.cp_join'), `${this.joinFolderAnchorId}_plain`,
             (): void => { this.onJoin(); });
-          this.joinPill($r('app.string.cp_join_to_folder'), this.joinFolderAnchorId,
-            (): void => { this.onJoinToFolder(this.joinFolderAnchorId); });
+          if (!this.joinByRequest) {
+            this.joinPill($r('app.string.cp_join_to_folder'), this.joinFolderAnchorId,
+              (): void => { this.onJoinToFolder(this.joinFolderAnchorId); });
+          }
         }
         .width('100%')
         .constraintSize({ minHeight: 48 })

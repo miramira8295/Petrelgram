@@ -1,3 +1,5 @@
+import { resolveUserToken } from './userLink';
+import { joinChat, ChatJoinOutcome } from './chatJoin';
 import { str } from './strings';
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -9,7 +11,7 @@ import {
   ChatLinkAction, StickerSetLink
 } from './linkNav';
 import { openWebUrl } from './webBrowserNav';
-import { getMainMiniApp, getMiniAppLinkUrl } from '../store/BotApi';
+import { openMiniAppPage } from './miniAppNav';
 import { logChatNavFailure, navigateToChat } from './chatNav';
 import { navigateToChatProfile, navigateToProfile } from './profileNav';
 import { navigateToSetting } from './settingsNav';
@@ -401,6 +403,15 @@ function handleInternalLinkType(context: common.UIAbilityContext, type: TdObject
     openProxyLink(type);
     return;
   }
+  if (typeName === 'internalLinkTypeUserToken') {
+    resolveUserToken(getTdClient(), (type['token'] as string | undefined) ?? '')
+      .then((chatId: number): void => { openChatPage(chatId); })
+      .catch((): void => {
+        // Tokens are private; don't log the token, URL or server error text.
+        promptAction.showToast({ message: str('qr_user_link_failed'), duration: 2000 });
+      });
+    return;
+  }
   if (typeName === 'internalLinkTypeUserPhoneNumber') {
     openPhoneNumberUser(context, type, original, allowBrowser);
     return;
@@ -459,7 +470,7 @@ function handleInternalLinkType(context: common.UIAbilityContext, type: TdObject
 }
 
 // Mini App links (t.me/<bot>/<app>): resolve the bot, ask TDLib for the real
-// https app URL, then render it in the in-app browser.
+// launch parameters, then render it in the dedicated Mini App container.
 function openMiniAppLink(context: common.UIAbilityContext, type: TdObject, isMain: boolean,
     original: string, allowBrowser: boolean): void {
   const username = (type['bot_username'] as string | undefined) ?? '';
@@ -469,22 +480,15 @@ function openMiniAppLink(context: common.UIAbilityContext, type: TdObject, isMai
   }
   const req: TdRequest = { '@type': 'searchPublicChat' };
   req['username'] = username;
-  getTdClient().send(req).then((chat: TdObject): Promise<string> => {
+  getTdClient().send(req).then((chat: TdObject): void => {
     const chatType = chat['type'] as TdObject | undefined;
     const botId = chatType !== undefined ? ((chatType['user_id'] as number | undefined) ?? 0) : 0;
     const chatId = (chat['id'] as number | undefined) ?? 0;
-    if (botId === 0) { return Promise.reject(new TdError(404, 'not a bot')); }
-    return isMain
-      ? getMainMiniApp(chatId, botId)
-      : getMiniAppLinkUrl(chatId, botId,
-        (type['web_app_short_name'] as string | undefined) ?? '',
-        (type['start_parameter'] as string | undefined) ?? '');
-  }).then((url: string): void => {
-    if (url === '') {
-      promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });
-      return;
-    }
-    openWebUrl(context, url);
+    if (botId === 0) { throw new TdError(404, 'not a bot'); }
+    openMiniAppPage({ kind: isMain ? 'main' : 'link', chatId, botUserId: botId,
+      title: (chat['title'] as string | undefined) ?? username,
+      shortName: (type['web_app_short_name'] as string | undefined) ?? '',
+      startParameter: (type['start_parameter'] as string | undefined) ?? '' });
   }).catch((error: TdError): void => {
     logE(`openMiniAppLink failed: ${error.message}`);
     promptAction.showToast({ message: str('tglink_cannot_open_miniapp'), duration: 1700 });
@@ -522,6 +526,12 @@ export function openInviteLink(context: common.UIAbilityContext, invite: string,
   const req: TdRequest = { '@type': 'checkChatInviteLink' };
   req['invite_link'] = invite;
   getTdClient().send(req).then((info: TdObject) => {
+    // Even a known chat_id can be a preview, not membership. Keep the
+    // approval link on the profile page so joining uses this exact invite.
+    if ((info['creates_join_request'] as boolean | undefined) ?? false) {
+      navigateToChatProfile({ 'inviteLink': invite });
+      return;
+    }
     const chatId = (info['chat_id'] as number | undefined) ?? 0;
     if (chatId !== 0) {
       openChatPage(chatId);
@@ -545,12 +555,11 @@ export function openInviteLink(context: common.UIAbilityContext, invite: string,
       if (r.index !== 1) {
         return;
       }
-      const join: TdRequest = { '@type': 'joinChatByInviteLink' };
-      join['invite_link'] = invite;
-      getTdClient().send(join).then((chat: TdObject) => {
-        const id = (chat['id'] as number | undefined) ?? 0;
-        if (id !== 0) {
-          openChatPage(id, true, isChannel);
+      joinChat(getTdClient(), chatId, invite).then((result: ChatJoinOutcome): void => {
+        if (result.requested) {
+          promptAction.showToast({ message: str('cpp_join_requested'), duration: 2000 });
+        } else {
+          openChatPage(result.chatId, true, isChannel);
         }
       }).catch((e: TdError) => {
         logE(`openInviteLink.join failed: ${e.message}`);

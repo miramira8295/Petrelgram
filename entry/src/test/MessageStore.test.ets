@@ -333,6 +333,46 @@ function ids(list: MessageEntry[]): number[] { return list.map((m: MessageEntry)
 
 export default function messageStoreTest() {
   describe('MessageStore', () => {
+    it('打开和恢复会话不再批量清空未读提及', 0, () => {
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open(); store.suspendOpenChat(); store.resumeOpenChat();
+      const types = b.sent.map((raw: string): string => (JSON.parse(raw) as TdObject)['@type'] as string);
+      expect(types.includes('readAllChatMentions')).assertFalse();
+      expect(types.includes('readAllChatReactions')).assertTrue(); store.close();
+    });
+    it('跳回已读水位之前的提及仍按可见消息上报且不重复发送', 0, async () => {
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open(); feedChat(b, 5); await Promise.resolve();
+      const mention = textMessage(10, 5, false, '@me'); mention['contains_unread_mention'] = true;
+      feedHistory(b, [textMessage(20, 5, false, 'plain'), mention]); await Promise.resolve();
+      store.markViewed(20); b.sent = [];
+      store.markVisibleMentions([10, 20]); store.markVisibleMentions([10]);
+      const views = b.sent.map((raw: string): TdObject => JSON.parse(raw) as TdObject)
+        .filter((request: TdObject): boolean => request['@type'] === 'viewMessages');
+      expect(views.length).assertEqual(1); expect((views[0]['message_ids'] as number[]).join(',')).assertEqual('10');
+      expect((views[0]['source'] as TdObject)['@type']).assertEqual('messageSourceChatHistory'); store.close();
+    });
+    it('提及已读推送清除本地单条状态，其他提及仍保留', 0, async () => {
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open(); feedChat(b, 5); await Promise.resolve();
+      const first = textMessage(10, 5, false, '@me'); first['contains_unread_mention'] = true;
+      const second = textMessage(20, 5, false, '@me'); second['contains_unread_mention'] = true;
+      feedHistory(b, [second, first]); await Promise.resolve();
+      b.onReceive(JSON.stringify({ '@type': 'updateMessageMentionRead', chat_id: 5, message_id: 10, unread_mention_count: 1 }));
+      expect(store.getMessages().find((m: MessageEntry): boolean => m.id === 10)!.containsUnreadMention).assertFalse();
+      expect(store.getMessages().find((m: MessageEntry): boolean => m.id === 20)!.containsUnreadMention).assertTrue(); store.close();
+    });
+    it('可见提及上报失败后下次可重试', 0, async () => {
+      const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
+      store.open(); feedChat(b, 5); await Promise.resolve();
+      const mention = textMessage(10, 5, false, '@me'); mention['contains_unread_mention'] = true;
+      feedHistory(b, [mention]); await Promise.resolve(); b.sent = [];
+      store.markVisibleMentions([10]);
+      const request = JSON.parse(b.sent[0]) as TdObject;
+      b.onReceive(JSON.stringify({ '@type': 'error', code: 500, message: 'offline', '@extra': request['@extra'] }));
+      await Promise.resolve(); store.markVisibleMentions([10]); expect(b.sent.length).assertEqual(2); store.close();
+    });
+
     it('open_sends_openchat_and_history', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();

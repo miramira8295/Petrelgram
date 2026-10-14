@@ -11,6 +11,8 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+# Local ArkTS compiler/linter cache
+/.cache/
 # API credentials — never commit
 **/ApiCredentials.ets
 # Prebuilt native libraries — fetched via scripts/fetch-tdlib.sh

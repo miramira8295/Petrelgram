@@ -1,3 +1,5 @@
+// 2026-10-14: join() now owns join submission/approval state; ChatPage is thin wiring.
+// Historical migration notes below describe the pre-approval implementation.
 // 成员资格状态机：refresh()（原 refreshMembership@4629-4696）+ applyStatus()
 // （原 applyMembershipStatus@4698-4727）+ bind/dispose。从 ChatPage 整体搬出
 // （第二轮 R2-A 批）。这是方案 §6 表格里"明确推迟到第二轮"的那一行——当初
@@ -139,6 +141,7 @@ import { TdClient } from '../../tdkit/TdClient';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdError, TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { logE } from '../../util/log';
+import { joinChat, ChatJoinOutcome } from '../../util/chatJoin';
 import { membershipLosesComposer, membershipStateOf } from '../../util/membershipState';
 
 // 宿主（ChatPage）暴露给控制器的那一小片接口，全是箭头函数字段——取值器读
@@ -178,6 +181,10 @@ export interface MembershipSessionHost {
   // 一节。页面侧实现恒为 `() => getTdClient()`，取值不缓存，与搬之前逐字
   // 等价。
   client: () => TdClient;
+  setJoinByRequest?: (value: boolean) => void;
+  onJoined?: (folderId?: number) => void;
+  onJoinRequested?: () => void;
+  onJoinFailed?: () => void;
 }
 
 export class MembershipSession {
@@ -191,6 +198,11 @@ export class MembershipSession {
   // .then/.catch 各一层）的取消令牌，见文件头【乙】一节
   // （原 ChatPage 1580 行）。
   private membershipSeq: number = 0;
+  private joinSeq: number = 0;
+  private joiningId: number = 0;
+  private requestedId: number = 0;
+  private confirmedMemberId: number = 0;
+  private blockedId: number = 0;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经
   // 被构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」
@@ -228,6 +240,7 @@ export class MembershipSession {
 
   refresh(): void {
     const seq: number = ++this.membershipSeq;
+    this.host.setJoinByRequest?.(false);
     const req: TdRequest = { '@type': 'getChat' };
     req['chat_id'] = this.host.chatId();
     this.host.client().send(req).then((chat: TdObject): void => {
@@ -252,11 +265,11 @@ export class MembershipSession {
         groupReq['supergroup_id'] = this.membershipSupergroupId;
         this.host.client().send(groupReq).then((supergroup: TdObject): void => {
           if (seq === this.membershipSeq) {
-            this.applyStatus(supergroup['status'] as TdObject | undefined);
+            this.applySupergroup(supergroup);
           }
         }).catch((e: TdError): void => {
           if (seq === this.membershipSeq) {
-            this.host.setMembershipState('writable');
+            this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
           }
           logE(`MembershipSession.getSupergroup membership failed: ${e.message}`);
         });
@@ -277,7 +290,7 @@ export class MembershipSession {
           }
         }).catch((e: TdError): void => {
           if (seq === this.membershipSeq) {
-            this.host.setMembershipState('writable');
+            this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
           }
           logE(`MembershipSession.getBasicGroup membership failed: ${e.message}`);
         });
@@ -288,13 +301,13 @@ export class MembershipSession {
       // 密聊的输入区形态由 applySecretChat 定（待建立/已关闭都不能发），
       // 这里一律写 writable 会把它冲掉。
       if (typeName !== 'chatTypeSecret') {
-        this.host.setMembershipState('writable');
+        this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
       }
     }).catch((e: TdError): void => {
       if (seq === this.membershipSeq) {
         // Don't leave private/secret chats with a permanently hidden composer
         // if the supplementary status request fails.
-        this.host.setMembershipState('writable');
+        this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
       }
       logE(`MembershipSession.getChat membership failed: ${e.message}`);
     });
@@ -326,7 +339,21 @@ export class MembershipSession {
       restrictedCanSendBasic:
         (selfPerms?.['can_send_basic_messages'] as boolean | undefined) ?? true
     });
-    this.host.setMembershipState(next);
+    const chatId: number = this.host.chatId();
+    this.blockedId = next === 'blocked' ? chatId : 0;
+    if (next === 'writable' || next === 'readonly') {
+      this.confirmedMemberId = chatId;
+      if (this.requestedId !== 0 && this.requestedId === chatId) {
+        this.requestedId = 0;
+        this.host.onJoined?.();
+      }
+    } else {
+      this.confirmedMemberId = 0;
+      if (next === 'blocked') {
+        this.requestedId = 0;
+      }
+    }
+    this.host.setMembershipState(next === 'joinable' && this.requestedId !== 0 && this.requestedId === chatId ? 'requested' : next);
     if (!membershipLosesComposer(next)) {
       this.host.setJoiningChat(false);
       return;
@@ -341,6 +368,47 @@ export class MembershipSession {
   // updateSupergroup 推送监听器用它比对 `supergroup['id']` 是否等于当前
   // 正在跟踪的这个超级群——原文 `this.membershipSupergroupId` 的直接读点，
   // 私有化后补的只读取值器，读点不丢（见文件头专项说明）。
+  applySupergroup(supergroup: TdObject): void {
+    this.host.setJoinByRequest?.((supergroup['join_by_request'] as boolean | undefined) ?? false);
+    this.applyStatus(supergroup['status'] as TdObject | undefined);
+  }
+
+  join(state: string, folderId?: number): void {
+    const chatId: number = this.host.chatId();
+    if (state !== 'joinable' || chatId === 0 || this.joiningId === chatId || this.requestedId === chatId) {
+      return;
+    }
+    const seq: number = ++this.joinSeq;
+    this.joiningId = chatId;
+    this.confirmedMemberId = 0;
+    this.blockedId = 0;
+    this.host.setJoiningChat(true);
+    joinChat(this.host.client(), chatId).then((result: ChatJoinOutcome): void => {
+      if (seq !== this.joinSeq || this.host.chatId() !== chatId) { return; }
+      this.joiningId = 0;
+      this.host.setJoiningChat(false);
+      if (this.blockedId === chatId) { return; }
+      if (result.requested && this.confirmedMemberId !== chatId) {
+        this.requestedId = chatId;
+        this.host.setMembershipState('requested');
+        this.host.closeComposerSurfaces();
+        this.host.onJoinRequested?.();
+        return;
+      }
+      // Even immediate approval of a submitted request must not add a folder.
+      this.host.onJoined?.(result.requested ? undefined : folderId);
+      // Actual permissions come from the membership update/read, including
+      // read-only channels. Never briefly expose the composer on join success.
+      this.refresh();
+    }).catch((error: TdError): void => {
+      if (seq !== this.joinSeq || this.host.chatId() !== chatId) { return; }
+      this.joiningId = 0;
+      this.host.setJoiningChat(false);
+      logE(`MembershipSession.join failed: ${error.message}`);
+      this.host.onJoinFailed?.();
+    });
+  }
+
   supergroupId(): number {
     return this.membershipSupergroupId;
   }
@@ -358,6 +426,10 @@ export class MembershipSession {
   // membershipState/membershipSupergroupId/membershipBasicGroupId 三者在
   // 这条路径上原本就从未被复位，不新增清零。
   dispose(): void {
+    this.joinSeq++;
+    this.joiningId = 0;
+    this.requestedId = 0;
+    this.confirmedMemberId = 0;
     this.membershipSeq++;
   }
 }

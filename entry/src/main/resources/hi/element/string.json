@@ -10269,6 +10269,66 @@
       "value": "वर्तमान में इस चैट की रिपोर्ट समर्थित नहीं है"
     },
     {
+      "name": "rf_reason_spam",
+      "value": "स्पैम"
+    },
+    {
+      "name": "rf_reason_fake",
+      "value": "फ़र्ज़ी खाता"
+    },
+    {
+      "name": "rf_reason_violence",
+      "value": "हिंसा"
+    },
+    {
+      "name": "rf_reason_child_abuse",
+      "value": "बाल शोषण"
+    },
+    {
+      "name": "rf_reason_pornography",
+      "value": "अश्लील सामग्री"
+    },
+    {
+      "name": "rf_reason_copyright",
+      "value": "कॉपीराइट"
+    },
+    {
+      "name": "rf_reason_drugs",
+      "value": "अवैध नशीले पदार्थ"
+    },
+    {
+      "name": "rf_reason_personal",
+      "value": "निजी जानकारी"
+    },
+    {
+      "name": "rf_reason_other",
+      "value": "अन्य"
+    },
+    {
+      "name": "rf_reason_dislike",
+      "value": "मुझे पसंद नहीं है"
+    },
+    {
+      "name": "rf_reason_goods_services",
+      "value": "अवैध सामान और सेवाएँ"
+    },
+    {
+      "name": "rf_reason_adult",
+      "value": "अवैध वयस्क सामग्री"
+    },
+    {
+      "name": "rf_reason_terrorism",
+      "value": "आतंकवाद"
+    },
+    {
+      "name": "rf_reason_scam_spam",
+      "value": "धोखाधड़ी या स्पैम"
+    },
+    {
+      "name": "rf_reason_goods",
+      "value": "अवैध सामान"
+    },
+    {
       "name": "cpp_report_reason",
       "value": "रिपोर्ट का कारण चुनें"
     },
@@ -10587,6 +10647,14 @@
     {
       "name": "lvp_play",
       "value": "चलाएँ"
+    },
+    {
+      "name": "qr_temporary",
+      "value": "अस्थायी QR कोड; समय समाप्त होने पर अपने आप रीफ़्रेश होता है"
+    },
+    {
+      "name": "qr_user_link_failed",
+      "value": "यह उपयोगकर्ता लिंक समाप्त हो गया है या उपलब्ध नहीं है। कृपया फिर से स्कैन करें।"
     },
     {
       "name": "qr_failed",
@@ -12879,6 +12947,30 @@
     {
       "name": "mv_stats_title",
       "value": "विशेषज्ञों के लिए आँकड़े"
+    },
+    {
+      "name": "miniapp_button_unsupported",
+      "value": "इस प्रकार का बटन अभी समर्थित नहीं है"
+    },
+    {
+      "name": "miniapp_feature_unsupported",
+      "value": "मिनी ऐप की यह सुविधा अभी समर्थित नहीं है"
+    },
+    {
+      "name": "miniapp_close_title",
+      "value": "मिनी ऐप बंद करें?"
+    },
+    {
+      "name": "miniapp_close_message",
+      "value": "बिना सहेजे बदलाव खो सकते हैं।"
+    },
+    {
+      "name": "cp_unread_mentions",
+      "value": "अपठित उल्लेख"
+    },
+    {
+      "name": "cp_jump_unread_mention",
+      "value": "अपठित उल्लेख पर जाएँ"
     }
   ]
 }
