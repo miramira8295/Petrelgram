@@ -214,6 +214,7 @@ import composerExpandTest from './ComposerExpand.test';
 import pendingNavTest from './PendingNav.test';
 import stickerFrameCacheTest from './StickerFrameCache.test';
 import tgsPlaybackTest from './TgsPlayback.test';
+import stickerPlayedOnceTest from './StickerPlayedOnce.test';
 import sheetDismissStackTest from './SheetDismissStack.test';
 import avatarWarmTest from './AvatarWarm.test';
 import translationStatusHubTest from './TranslationStatusHub.test';
@@ -568,6 +569,7 @@ export default function testsuite() {
   pendingNavTest();
   stickerFrameCacheTest();
   tgsPlaybackTest();
+  stickerPlayedOnceTest();
   sheetDismissStackTest();
   avatarWarmTest();
   translationStatusHubTest();

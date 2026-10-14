@@ -47,6 +47,7 @@ import { navBarVisibleOnAppear, navBarVisibleOnChange } from '../../util/navBarR
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainBarFill, mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
+import { emojiStatusVisible } from '../../util/emojiStatus';
 
 // 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
 // cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
@@ -145,6 +146,7 @@ export struct MyProfilePage {
   @State avatarAnimPath: string = '';
   @State statusEmojiPath: string = '';
   @State statusEmojiFormat: string = '';
+  @State statusEmojiUid: string = '';
   @State statusText: string = '';
   @State phone: string = '';
   @State usernames: string[] = [];
@@ -662,6 +664,7 @@ export struct MyProfilePage {
     this.avatarAnimPath = s.avatarAnimPath;
     this.statusEmojiPath = s.statusEmojiPath;
     this.statusEmojiFormat = s.statusEmojiFormat;
+    this.statusEmojiUid = s.statusEmojiUid;
     this.statusText = s.statusText;
     this.phone = s.phone;
     this.usernames = s.usernames;
@@ -1456,7 +1459,7 @@ export struct MyProfilePage {
           .fontSize(20).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           .flexShrink(1);
-        if (!this.profileLoading && this.profileError === '' && this.statusEmojiPath !== '') {
+        if (!this.profileLoading && this.profileError === '' && emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
           this.statusEmoji();
         }
       }
@@ -2055,7 +2058,8 @@ export struct MyProfilePage {
       });
     } else if (this.statusEmojiFormat === 'webm') {
       WebmStickerView({
-        webmPath: this.statusEmojiPath, boxWidth: 24, boxHeight: 24, powerCategory: 'emojiStatus'
+        webmPath: this.statusEmojiPath, stickerUid: this.statusEmojiUid,
+        boxWidth: 24, boxHeight: 24, powerCategory: 'emojiStatus'
       });
     } else {
       Image(`file://${this.statusEmojiPath}`).draggable(false).width(24).height(24).objectFit(ImageFit.Contain);

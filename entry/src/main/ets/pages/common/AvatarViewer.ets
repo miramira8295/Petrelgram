@@ -1,7 +1,10 @@
+import { common } from '@kit.AbilityKit';
+import { saveMediaToGallery } from '../../util/mediaSaver';
+
 const MIN_SCALE: number = 1;
 const MAX_SCALE: number = 4;
 
-// 头像点击放大：全屏黑底查看器，支持双指缩放、拖动、双击切换、下滑关闭。
+// 头像点击放大：全屏黑底查看器，支持缩放、拖动、下滑关闭和保存到相册。
 // 独立于聊天页的媒体查看器 —— 那个和消息列表/相册强耦合，头像只需要
 // 单张静态图，复用它会把整套消息态一起拖进资料页。
 @Component
@@ -17,6 +20,7 @@ export struct AvatarViewer {
   @State private zoom: number = MIN_SCALE;
   @State private offsetX: number = 0;
   @State private offsetY: number = 0;
+  @State private saving: boolean = false;
   // 手势起始基准：pinch/pan 的增量都相对手势开始时的值，避免累积漂移。
   private baseScale: number = MIN_SCALE;
   private baseOffsetX: number = 0;
@@ -34,6 +38,19 @@ export struct AvatarViewer {
 
   private imageSource(): string {
     return this.imagePath.startsWith('/') ? `file://${this.imagePath}` : this.imagePath;
+  }
+
+  private async saveImage(): Promise<void> {
+    if (this.saving || this.imagePath === '') {
+      return;
+    }
+    this.saving = true;
+    try {
+      // 资料页传入的是已下载头像的本地路径，沿用媒体查看器的系统相册确认流程。
+      await saveMediaToGallery(getContext(this) as common.UIAbilityContext, this.imagePath, false);
+    } finally {
+      this.saving = false;
+    }
   }
 
   // 未传点击坐标时不指定中心，ArkUI 会退回元素中心——比固定成左上角(0,0)
@@ -126,14 +143,24 @@ export struct AvatarViewer {
               })
           )
         );
-      Row() {
-        SymbolGlyph($r('sys.symbol.xmark')).fontSize(22).fontColor([Color.White]);
+      Row({ space: 12 }) {
+        Button(this.saving ? $r('app.string.saving') : $r('app.string.ms_save_to_gallery'))
+          .id('avatarViewerSave')
+          .height(40)
+          .padding({ left: 16, right: 16 })
+          .fontSize(14).fontColor(Color.White)
+          .backgroundColor('#4D000000')
+          .enabled(!this.saving && this.imagePath !== '')
+          .onClick((): void => { this.saveImage(); });
+        Button({ type: ButtonType.Circle }) {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(22).fontColor([Color.White]);
+        }
+        .width(40).height(40)
+        .backgroundColor('#4D000000')
+        .accessibilityText($r('app.string.close'))
+        .onClick((): void => this.onClose());
       }
-      .width(40).height(40).borderRadius(20)
-      .backgroundColor('#4D000000')
-      .justifyContent(FlexAlign.Center)
-      .margin({ top: this.topSafe + 12, right: 12 })
-      .onClick((): void => this.onClose());
+      .margin({ top: this.topSafe + 12, right: 12 });
     }
     .width('100%').height('100%')
     // 和聊天页媒体查看器同一套过渡：从点击处放大 + 淡入，关闭时原路缩回。

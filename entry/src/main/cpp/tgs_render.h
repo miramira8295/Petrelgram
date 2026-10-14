@@ -23,7 +23,10 @@ struct AnimationInfo {
 
 // 打开一个 .tgs：读文件、gunzip、交给 rlottie 解析。失败返回 handle == 0。
 // width/height 是**渲染尺寸**（渲染成什么大小就占多少内存），不是贴纸原生尺寸。
-AnimationInfo Open(const std::string &path, int32_t width, int32_t height);
+// cacheDir 非空时渲好的帧存进那里（tgs_frame_cache.h）；盘上已有这张就不解析。
+// paths 是按 z 序从下到上的各层（普通贴纸只有一层，🎰 老虎机 5 层），渲出来是合成后的一张。
+AnimationInfo Open(const std::vector<std::string> &paths, int32_t width, int32_t height,
+                   const std::string &cacheDir);
 
 // 渲染一帧到 out（大小 = width*height*4，非预乘 RGBA）。
 bool RenderFrame(int32_t handle, int32_t frameIndex, std::vector<uint8_t> &out,

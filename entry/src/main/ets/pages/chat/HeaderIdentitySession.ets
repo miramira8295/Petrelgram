@@ -187,6 +187,8 @@ export class HeaderIdentitySession {
   // Peer's premium emoji status (private chats) shown beside the header title.
   @Trace emojiPath: string = '';
   @Trace emojiFormat: string = '';
+  // 表情状态贴纸的 remote.unique_id。帧缓存命中时 emojiPath 为 ''，靠它播。
+  @Trace emojiUid: string = '';
   // bot menu-button Mini App ('' = none)
   @Trace botMiniAppUrl: string = '';
 
@@ -266,6 +268,7 @@ export class HeaderIdentitySession {
     this.identityResolved = false;
     this.emojiPath = '';
     this.emojiFormat = '';
+    this.emojiUid = '';
     this.emojiFetched = false;
     this.host.closeHeaderMenu();
     this.profileOpening = false;
@@ -656,7 +659,8 @@ export class HeaderIdentitySession {
     const req: TdRequest = { '@type': 'getUser' };
     req['user_id'] = uid;
     getTdClient().send(req).then((user: TdObject): void => {
-      resolveEmojiStatus(user['emoji_status'] as TdObject | undefined, (path: string, format: string): void => {
+      resolveEmojiStatus(user['emoji_status'] as TdObject | undefined,
+        (path: string, format: string, emojiUid: string): void => {
         const currentStore: MessageStore | null = this.host.store();
         const currentUid = this.peerUserId > 0
           ? this.peerUserId : (currentStore !== null ? currentStore.getPeerUserId() : 0);
@@ -665,6 +669,7 @@ export class HeaderIdentitySession {
         }
         this.emojiPath = path;
         this.emojiFormat = format;
+        this.emojiUid = emojiUid;
       });
     }).catch((e: TdError): void => {
       if (resolveSeq === this.resolveSeq) {

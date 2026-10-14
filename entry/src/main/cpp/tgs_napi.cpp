@@ -28,11 +28,39 @@ bool ReadString(napi_env env, napi_value value, std::string &out) {
     return napi_get_value_string_utf8(env, value, &out[0], len + 1, &written) == napi_ok;
 }
 
+// 第一个参数：一个路径，或按 z 序从下到上的一组路径（🎰 老虎机 5 层）。
+bool ReadPaths(napi_env env, napi_value value, std::vector<std::string> &out) {
+    bool isArray = false;
+    napi_is_array(env, value, &isArray);
+    if (!isArray) {
+        std::string one;
+        if (!ReadString(env, value, one)) {
+            return false;
+        }
+        out.push_back(one);
+        return true;
+    }
+    uint32_t length = 0;
+    if (napi_get_array_length(env, value, &length) != napi_ok || length == 0 || length > 8) {
+        return false;
+    }
+    for (uint32_t i = 0; i < length; ++i) {
+        napi_value item = nullptr;
+        std::string path;
+        if (napi_get_element(env, value, i, &item) != napi_ok || !ReadString(env, item, path)) {
+            return false;
+        }
+        out.push_back(path);
+    }
+    return true;
+}
+
 // ── 打开 ──────────────────────────────────────────────────────────────
 struct OpenTask {
-    std::string path;
+    std::vector<std::string> paths;
     int32_t width = 0;
     int32_t height = 0;
+    std::string cacheDir;
     tgs_render::AnimationInfo info;
     napi_deferred deferred = nullptr;
     napi_async_work work = nullptr;
@@ -42,7 +70,7 @@ void ExecuteOpen(napi_env env, void *data) {
     OpenTask *task = static_cast<OpenTask *>(data);
     // 读文件 + gunzip + 解析 JSON 都在 worker 上：解压后的 JSON 实测中位
     // 147KB，放主线程解析就是一次可见的卡顿。
-    task->info = tgs_render::Open(task->path, task->width, task->height);
+    task->info = tgs_render::Open(task->paths, task->width, task->height, task->cacheDir);
 }
 
 void CompleteOpen(napi_env env, napi_status status, void *data) {
@@ -74,8 +102,8 @@ void CompleteOpen(napi_env env, napi_status status, void *data) {
 }
 
 napi_value TgsOpen(napi_env env, napi_callback_info info) {
-    size_t argc = 3;
-    napi_value args[3] = {nullptr};
+    size_t argc = 4;
+    napi_value args[4] = {nullptr};
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
     napi_value promise = nullptr;
     napi_deferred deferred = nullptr;
@@ -95,11 +123,15 @@ napi_value TgsOpen(napi_env env, napi_callback_info info) {
     if (task == nullptr) {
         return fail();
     }
-    if (!ReadString(env, args[0], task->path) ||
+    if (!ReadPaths(env, args[0], task->paths) ||
         napi_get_value_int32(env, args[1], &task->width) != napi_ok ||
         napi_get_value_int32(env, args[2], &task->height) != napi_ok) {
         delete task;
         return fail();
+    }
+    // 第四个参数（帧缓存目录）可选：不给就不缓存。
+    if (argc >= 4 && !ReadString(env, args[3], task->cacheDir)) {
+        task->cacheDir.clear();
     }
     task->deferred = deferred;
     napi_value name = nullptr;

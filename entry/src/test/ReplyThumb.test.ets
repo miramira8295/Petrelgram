@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
-  ReplyThumbInput, replyThumbIsSticker, replyThumbOf, replyThumbSrc
+  ReplyThumbInput, replyDiceLayers, replyThumbIsSticker, replyThumbOf, replyThumbSrc
 } from '../main/ets/util/replyThumb';
 
 function input(contentType: string, photoPath: string, locked: boolean): ReplyThumbInput {
@@ -46,6 +46,21 @@ export default function replyThumbTest() {
       expect(replyThumbIsSticker('sticker')).assertTrue();
       expect(replyThumbIsSticker('photo')).assertFalse();
       expect(replyThumbIsSticker('video')).assertFalse();
+    });
+  });
+  // 引用骰子/老虎机显示结尾帧（2026-10-10）：缩略图是动画第一帧（空转轮），看不出结果。
+  describe('replyDiceLayers', () => {
+    it('老虎机 5 层都在本地：给 5 层', 0, (): void => {
+      const layers: string[] = ['/a', '/b', '/c', '/d', '/e'];
+      expect(replyDiceLayers('dice', '/x', layers).join(',')).assertEqual('/a,/b,/c,/d,/e');
+    });
+    it('层没下全：退回单张结果动画；也没有就空', 0, (): void => {
+      expect(replyDiceLayers('dice', '/x', ['/a', '', '/c', '/d', '/e']).join(',')).assertEqual('/x');
+      expect(replyDiceLayers('dice', '/x', []).join(',')).assertEqual('/x');
+      expect(replyDiceLayers('dice', '', ['/a']).length).assertEqual(0);
+    });
+    it('不是骰子一律空', 0, (): void => {
+      expect(replyDiceLayers('sticker', '/x', []).length).assertEqual(0);
     });
   });
 }

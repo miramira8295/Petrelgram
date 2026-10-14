@@ -11,7 +11,8 @@ namespace {
 constexpr unsigned int kLogDomain = 0x0000;
 constexpr const char *kLogTag = "StickerCache";
 constexpr uint32_t kMagic = 0x46534750;   // 'PGSF'
-constexpr uint32_t kVersion = 1;
+// v2（2026-10-10）：头部多一个 bytesPerPixel（不透明贴纸存 RGB565）。v1 文件一律当没有缓存。
+constexpr uint32_t kVersion = 2;
 // 兜底上限，防止读到损坏/被篡改的头部之后去分配一个荒唐的缓冲区。
 constexpr int32_t kMaxDim = 512;
 constexpr int32_t kMaxFrames = 600;
@@ -23,12 +24,14 @@ struct Header {
     int32_t height;
     int32_t frameCount;
     int32_t durationMs;
+    int32_t bytesPerPixel;
 };
 
 bool HeaderSane(const Header &h) {
     return h.magic == kMagic && h.version == kVersion &&
            h.width > 0 && h.width <= kMaxDim && h.height > 0 && h.height <= kMaxDim &&
-           h.frameCount > 0 && h.frameCount <= kMaxFrames && h.durationMs >= 0;
+           h.frameCount > 0 && h.frameCount <= kMaxFrames && h.durationMs >= 0 &&
+           (h.bytesPerPixel == 2 || h.bytesPerPixel == 4);
 }
 
 struct FileCloser {
@@ -47,7 +50,7 @@ bool ReadExact(FILE *f, void *dst, size_t bytes) {
 } // namespace
 
 int64_t DecodedBytes(const CacheInfo &info) {
-    return static_cast<int64_t>(info.width) * info.height * 4 * info.frameCount;
+    return static_cast<int64_t>(info.width) * info.height * info.bytesPerPixel * info.frameCount;
 }
 
 bool ReadInfo(const std::string &path, CacheInfo &info) {
@@ -64,6 +67,7 @@ bool ReadInfo(const std::string &path, CacheInfo &info) {
     info.height = h.height;
     info.frameCount = h.frameCount;
     info.durationMs = h.durationMs;
+    info.bytesPerPixel = h.bytesPerPixel;
     return true;
 }
 
@@ -87,7 +91,7 @@ bool WritePacked(const std::string &path, const CacheInfo &info,
         static_cast<int32_t>(packed.size()) != info.frameCount) {
         return false;
     }
-    Header h{kMagic, kVersion, info.width, info.height, info.frameCount, info.durationMs};
+    Header h{kMagic, kVersion, info.width, info.height, info.frameCount, info.durationMs, info.bytesPerPixel};
     if (!HeaderSane(h)) {
         return false;
     }
@@ -147,6 +151,7 @@ bool Reader::Open(const std::string &path) {
     info_.height = h.height;
     info_.frameCount = h.frameCount;
     info_.durationMs = h.durationMs;
+    info_.bytesPerPixel = h.bytesPerPixel;
     return true;
 }
 
@@ -162,7 +167,7 @@ bool Reader::Next(std::vector<uint8_t> &rgba) {
     if (!ReadExact(file_, packed_.data(), packed_.size())) {
         return false;
     }
-    const size_t frameBytes = static_cast<size_t>(info_.width) * info_.height * 4;
+    const size_t frameBytes = static_cast<size_t>(info_.width) * info_.height * info_.bytesPerPixel;
     rgba.resize(frameBytes);
     uLongf out = static_cast<uLongf>(frameBytes);
     return uncompress(rgba.data(), &out, packed_.data(), static_cast<uLong>(packed_.size())) == Z_OK &&

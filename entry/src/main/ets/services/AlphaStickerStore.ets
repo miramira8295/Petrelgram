@@ -6,7 +6,7 @@ import {
 } from '../util/webm/AlphaStickerBudget';
 import { alphaCacheKey, alphaKeyBucket, alphaKeyHighBudget, alphaSizeBucket } from '../util/webm/alphaCacheKey';
 import { logW } from '../util/log';
-import { packAlphaStreams, WebmAlphaClip } from '../util/webm/WebmAlphaDemuxer';
+import { packAlphaStreams, WebmAlphaClip, WebmAlphaFrame } from '../util/webm/WebmAlphaDemuxer';
 import { demuxWebmAlphaOffThread } from '../util/webm/webmDemuxTask';
 import { ALPHA_STICKER_CACHE_MAX_BYTES } from '../util/NativePixelBudget';
 import { registerAlphaPixelUsage } from '../util/nativePixelArbiter';
@@ -41,6 +41,8 @@ export interface AlphaClip {
   durationMs: number;
   width: number;
   height: number;
+  // 每像素字节数：4 = RGBA；2 = RGB565（不透明贴纸，见 planAlphaDecode）。记内存账用。
+  bytesPerPixel: number;
   // 全部帧都到了。之前不进 LRU（不会被回收），没人用了就直接取消解码。
   complete: boolean;
   // 中途解坏了：已到的帧随即释放，播放组件看到就回退。
@@ -377,7 +379,7 @@ function onStreamFrames(entry: CacheEntry, frames: image.PixelMap[], done: boole
     if (clip.timesMs.length > clip.frames.length) {
       clip.timesMs = clip.timesMs.slice(0, clip.frames.length);
     }
-    const actual: number = clip.width * clip.height * 4 * clip.frames.length;
+    const actual: number = clip.width * clip.height * clip.bytesPerPixel * clip.frames.length;
     totalBytes = Math.max(0, totalBytes + actual - entry.bytes);
     entry.bytes = actual;
     clip.complete = true;
@@ -387,10 +389,11 @@ function onStreamFrames(entry: CacheEntry, frames: image.PixelMap[], done: boole
   }
 }
 
-function newClip(key: string, timesMs: number[], durationMs: number, width: number, height: number): AlphaClip {
+function newClip(key: string, timesMs: number[], durationMs: number, width: number, height: number,
+  bytesPerPixel: number): AlphaClip {
   return {
     key: key, frames: [], timesMs: timesMs, durationMs: durationMs, width: width, height: height,
-    complete: false, failed: false
+    bytesPerPixel: bytesPerPixel, complete: false, failed: false
   };
 }
 
@@ -402,9 +405,12 @@ function newClip(key: string, timesMs: number[], durationMs: number, width: numb
 function startDecode(clip: WebmAlphaClip, key: string, cachePath: string): Promise<DecodeOutcome> {
   const free: number = alphaStickerFreeBytes();
   const highBudget: boolean = alphaKeyHighBudget(key);
+  // 不透明（没有 alpha 那一路）的原生侧解成 RGB565，每像素 2 字节，预算放得下两倍的帧。
+  const opaque: boolean = !clip.frames.some((f: WebmAlphaFrame): boolean => f.alpha !== null);
+  const bytesPerPixel: number = opaque ? 2 : 4;
   const plan: AlphaDecodePlan = planAlphaDecode(
     clip.track.width, clip.track.height, bucketOf(key), clip.frames.length, free,
-    highBudget ? ALPHA_EMOJI_CHAT_MAX_BYTES : ALPHA_STICKER_MAX_BYTES);
+    highBudget ? ALPHA_EMOJI_CHAT_MAX_BYTES : ALPHA_STICKER_MAX_BYTES, bytesPerPixel);
   if (highBudget) {
     // 会话大表情的解码计划，上机时确认放宽预算真的生效（帧数、步长、尺寸）。
     logW(`[AlphaPlan] emoji decode bucket=${bucketOf(key)} frames=${clip.frames.length} free=${free} `
@@ -425,14 +431,14 @@ function startDecode(clip: WebmAlphaClip, key: string, cachePath: string): Promi
     times[i] = Math.round(payload.keptTimesMs[i]);
     timesMs.push(times[i]);
   }
-  const bytes: number = plan.targetW * plan.targetH * 4 * timesMs.length;
+  const bytes: number = plan.targetW * plan.targetH * bytesPerPixel * timesMs.length;
   evictUntilFits(bytes);
   if (totalBytes + bytes > budgetBytes) {
     return Promise.resolve(outcome(null, false, true));
   }
   const lastMs: number = timesMs.length > 0 ? timesMs[timesMs.length - 1] : 0;
   const entry: CacheEntry = {
-    clip: newClip(key, timesMs, Math.max(clip.durationMs, lastMs), plan.targetW, plan.targetH),
+    clip: newClip(key, timesMs, Math.max(clip.durationMs, lastMs), plan.targetW, plan.targetH, bytesPerPixel),
     bytes: bytes, refs: 0, lastUsed: Date.now(), jobId: 0
   };
   totalBytes += bytes;
@@ -503,7 +509,7 @@ function startCacheLoad(cachePath: string, key: string): Promise<DecodeOutcome> 
           settle(outcome(null, false, info !== undefined));
           return;
         }
-        const bytes: number = info.width * info.height * 4 * info.timesMs.length;
+        const bytes: number = info.width * info.height * info.bytesPerPixel * info.timesMs.length;
         evictUntilFits(bytes);
         if (totalBytes + bytes > budgetBytes || cache.has(key)) {
           if (!done) {
@@ -514,7 +520,7 @@ function startCacheLoad(cachePath: string, key: string): Promise<DecodeOutcome> 
           return;
         }
         const reserved: CacheEntry = {
-          clip: newClip(key, info.timesMs, info.durationMs, info.width, info.height),
+          clip: newClip(key, info.timesMs, info.durationMs, info.width, info.height, info.bytesPerPixel),
           bytes: bytes, refs: 0, lastUsed: Date.now(), jobId: done ? 0 : jobId
         };
         entry = reserved;

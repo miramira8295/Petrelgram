@@ -8,6 +8,9 @@ import { formatPreview } from '../util/formatPreview';
 import { str } from '../util/strings';
 import { monthDay } from '../util/intlFormat';
 import { logE, logI } from '../util/log';
+import { emojiStatusSkipsDownload, stickerFormatOf } from '../util/emojiStatus';
+import { remoteUniqueIdOf } from '../util/stickerSetItems';
+import { emojiStatusFramesCached } from '../services/emojiStatusFrames';
 
 const DL_PRIORITY: number = 1;
 const WEEK_MINUTES: number = 7 * 24 * 60;
@@ -71,6 +74,8 @@ export class ProfileStore {
   // Premium emoji status (the animated custom emoji beside the name).
   statusEmojiPath: string = '';
   statusEmojiFormat: string = ''; // 'tgs' | 'webm' | 'webp'
+  // 状态贴纸的 remote.unique_id（只 webm 填）。帧缓存命中时不下载，statusEmojiPath 留 ''。
+  statusEmojiUid: string = '';
   statusText: string = '';
   phone: string = '';
   usernames: string[] = [];
@@ -310,6 +315,7 @@ export class ProfileStore {
     const statusEmojiVersion = ++this.statusEmojiVersion;
     this.statusEmojiPath = '';
     this.statusEmojiFormat = '';
+    this.statusEmojiUid = '';
     if (es === undefined) {
       return;
     }
@@ -331,16 +337,27 @@ export class ProfileStore {
         return;
       }
       const st = stickers[0];
-      const fmt = st['format'] as TdObject | undefined;
-      const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
-      this.statusEmojiFormat = fmtName === 'stickerFormatWebp' ? 'webp'
-        : (fmtName === 'stickerFormatTgs' ? 'tgs' : 'webm');
+      const format: string = stickerFormatOf(st);
       const file = st['sticker'] as TdObject | undefined;
       const stickerId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
-      this.download(stickerId, (p: string) => {
-        if (statusEmojiVersion === this.statusEmojiVersion) {
-          this.statusEmojiPath = p;
+      const uid: string = format === 'webm' ? remoteUniqueIdOf(file) : '';
+      emojiStatusFramesCached(uid).then((cached: boolean): void => {
+        if (statusEmojiVersion !== this.statusEmojiVersion) {
+          return;
         }
+        // 格式和 ID 一起发布：页面按「有路径或有 ID」决定画不画，先给格式后给 ID 会闪一下空框。
+        this.statusEmojiFormat = format;
+        if (emojiStatusSkipsDownload(format, uid, cached)) {
+          this.statusEmojiUid = uid;
+          this.notify();
+          return;
+        }
+        this.download(stickerId, (p: string) => {
+          if (statusEmojiVersion === this.statusEmojiVersion) {
+            this.statusEmojiPath = p;
+            this.statusEmojiUid = uid;
+          }
+        });
       });
     });
   }

@@ -1,5 +1,6 @@
 import { image } from '@kit.ImageKit';
 import nativeTgs from 'libentry.so';
+import { scheduleTgsFrameCachePrune, tgsFrameCacheDir } from '../services/tgsFrameCacheDisk';
 
 // 所有对原生 TGS 的调用排成一条队。
 //
@@ -52,13 +53,19 @@ export interface TgsRenderResult {
   skipped: boolean;
 }
 
-export function queueTgsOpenTicketed(path: string, width: number, height: number,
+// path 可以是一组层（按 z 序从下到上，🎰 老虎机 5 层）：原生侧合成一张。
+export function queueTgsOpenTicketed(path: string | string[], width: number, height: number,
   ticket?: TgsRenderTicket): Promise<TgsOpenOutcome> {
   return enqueue(async (): Promise<TgsOpenOutcome> => {
     if (ticket !== undefined && ticket.cancelled) {
       return { info: null, skipped: true };
     }
-    const info: TgsOpenResult | null = await nativeTgs.tgsOpen(path, width, height);
+    // 渲好的帧存进帧缓存目录（原生侧按帧追加），之后收一次尾。
+    // 层数组要拷成普通数组再交给原生：@ComponentV2 的 @Param 数组是代理对象，原生侧的
+    // napi_is_array 认不出它，整个打开就失败了（2026-10-10 老虎机退回 lottie、卡住不播）。
+    const source: string | string[] = Array.isArray(path) ? path.slice() : path;
+    const info: TgsOpenResult | null = await nativeTgs.tgsOpen(source, width, height, tgsFrameCacheDir());
+    scheduleTgsFrameCachePrune();
     return { info: info, skipped: false };
   });
 }
@@ -74,7 +81,7 @@ export function queueTgsRenderTicketed(handle: number, frameIndex: number,
   });
 }
 
-export function queueTgsOpen(path: string, width: number, height: number): Promise<TgsOpenResult | null> {
+export function queueTgsOpen(path: string | string[], width: number, height: number): Promise<TgsOpenResult | null> {
   return queueTgsOpenTicketed(path, width, height).then((outcome: TgsOpenOutcome): TgsOpenResult | null => outcome.info);
 }
 

@@ -12,11 +12,20 @@ export struct DiceBubble {
   @Param hasFinalState: boolean = false;
   @Param successFrame: number = 0;
   @Param stickerPath: string = '';
-  // 🎰 老虎机 5 层（背景/左中右转轮/拉杆，已按 z 序排列），全就绪才叠层播放。
+  // 🎰 老虎机 5 层（背景/左中右转轮/拉杆，已按 z 序排列），全就绪才播：交给一个播放器、
+  // 由原生合成一张（2026-10-10；原来 5 个播放器叠着各播各的，又卡又对不齐）。
   @Param layerPaths: string[] = [];
+  // 这条骰子消息的身份（会话:消息 id）。结果动画只摇一次，见 util/stickerPlayedOnce。
+  @Param playKey: string = '';
 
   private safeEmoji(): string {
     return this.emoji.trim() !== '' ? this.emoji : '🎲';
+  }
+
+  // 只有结果动画才记「播过」：还没出结果时播的是等待动画，结果到了要接着摇。
+  // 带上路径：同一条消息从等待动画换成结果动画，是另一段。
+  private resultPlayKey(source: string): string {
+    return this.playKey !== '' && this.hasFinalState ? `${this.playKey}:${source}` : '';
   }
 
   private slotLayersReady(): boolean {
@@ -27,22 +36,20 @@ export struct DiceBubble {
   build() {
     Column({ space: 2 }) {
       if (this.slotLayersReady()) {
-        Stack() {
-          ForEach(this.layerPaths, (path: string) => {
-            TgsStickerView({
-              tgsPath: path,
-              boxWidth: 150,
-              boxHeight: 150,
-              powerCategory: 'sticker',
-              chatTimeline: true,
-              playOnce: true
-            });
-          }, (path: string, index: number): string => `slot_${index}_${path}`);
-        }
-        .width(150).height(150);
+        TgsStickerView({
+          tgsPath: this.layerPaths[0],
+          layerPaths: this.layerPaths,
+          playKey: this.resultPlayKey(this.layerPaths.join('|')),
+          boxWidth: 150,
+          boxHeight: 150,
+          powerCategory: 'sticker',
+          chatTimeline: true,
+          playOnce: true
+        });
       } else if (this.stickerPath !== '') {
         TgsStickerView({
           tgsPath: this.stickerPath,
+          playKey: this.resultPlayKey(this.stickerPath),
           boxWidth: 150,
           boxHeight: 150,
           powerCategory: 'sticker',

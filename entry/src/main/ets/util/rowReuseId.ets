@@ -132,6 +132,10 @@ function replyShape(msg: MessageEntry): string {
   if (msg.replyToMessageId === 0) {
     return 'no-reply';
   }
+  // 骰子的结尾帧是另一个组件（DiceEndFrame），和普通缩略图的 Image 不同壳。
+  if (msg.replyDiceLayers.length > 0) {
+    return 'reply-dice';
+  }
   return msg.replyThumbPath !== '' ? 'reply-thumb' : 'reply';
 }
 
@@ -178,7 +182,7 @@ function mediumBucket(data: MessageBubbleRenderData, group: AlbumGroup): string 
     `:${reply}:${forward}:${reactions}:${dateSep}:${unread}:${translated}:${linkPreview}:${surface}`;
 }
 
-// 与 MessageBubble.isBareEmoji() 同一份判据（外加 dice，它同样没有气泡面）。
+// 与 MessageBubble.isBareEmoji() 同一份判据。
 function isBareSurface(msg: MessageEntry): boolean {
   return msg.contentType === 'emoji' || msg.contentType === 'sticker'
     || msg.contentType === 'customEmoji' || msg.contentType === 'videoNote'

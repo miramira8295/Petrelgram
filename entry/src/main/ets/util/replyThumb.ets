@@ -37,3 +37,18 @@ export function replyThumbIsSticker(contentType: string): boolean {
 export function replyThumbSrc(path: string): string {
   return path.startsWith('/') ? `file://${path}` : path;
 }
+
+// 引用骰子类消息（🎲🎯🏀🎰…）时，引用块画动画的**结尾帧**而不是缩略图（2026-10-10）：
+// 缩略图是第一帧——老虎机就是三个空转轮，看不出摇到了什么。返回要渲的层（按 z 序从下到上），
+// 空数组 = 画不了，退回 replyThumbOf 那张。老虎机 5 层要全在本地，否则用单张结果动画。
+const SLOT_LAYER_COUNT: number = 5;
+
+export function replyDiceLayers(contentType: string, stickerPath: string, layerPaths: string[]): string[] {
+  if (contentType !== 'dice') {
+    return [];
+  }
+  if (layerPaths.length === SLOT_LAYER_COUNT && layerPaths.every((p: string): boolean => p !== '')) {
+    return [...layerPaths];
+  }
+  return stickerPath !== '' ? [stickerPath] : [];
+}

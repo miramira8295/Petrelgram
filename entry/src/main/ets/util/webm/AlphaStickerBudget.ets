@@ -64,8 +64,11 @@ function fitBox(srcW: number, srcH: number, box: number): number[] {
   return [evenClamp(srcW * scale), evenClamp(srcH * scale)];
 }
 
+// bytesPerPixel：透明贴纸 RGBA 是 4；不透明的用 RGB565 是 2（2026-10-10）——同样的预算放得下
+// 两倍的帧，会话里的普通视频贴纸因此不必隔帧取。
 export function planAlphaDecode(srcW: number, srcH: number, boxPx: number,
-  frameCount: number, freeBytes: number, maxBytes: number = ALPHA_STICKER_MAX_BYTES): AlphaDecodePlan {
+  frameCount: number, freeBytes: number, maxBytes: number = ALPHA_STICKER_MAX_BYTES,
+  bytesPerPixel: number = 4): AlphaDecodePlan {
   if (srcW <= 0 || srcH <= 0 || frameCount <= 0 || boxPx <= 0) {
     return reject();
   }
@@ -89,7 +92,7 @@ export function planAlphaDecode(srcW: number, srcH: number, boxPx: number,
     // 先保画质再保帧率：同样的预算下，糊一点比卡一点更难看。
     for (let step = minStep; step <= MAX_FRAME_STEP; step++) {
       const count = Math.ceil(frameCount / step);
-      const bytes = w * h * 4 * count;
+      const bytes = w * h * bytesPerPixel * count;
       if (bytes <= budget) {
         return {
           accept: true, targetW: w, targetH: h,

@@ -23,9 +23,11 @@ struct CacheInfo {
     int32_t height = 0;
     int32_t frameCount = 0;
     int32_t durationMs = 0;
+    // 每像素字节数：4 = 非预乘 RGBA_8888；2 = RGB_565（不透明贴纸，2026-10-10 起）。
+    int32_t bytesPerPixel = 4;
 };
 
-// 解出来的字节数（= w*h*4*frames）。调用方据此判断放不放得进内存预算。
+// 解出来的字节数（= w*h*bytesPerPixel*frames）。调用方据此判断放不放得进内存预算。
 int64_t DecodedBytes(const CacheInfo &info);
 
 // 只读头部：拿尺寸/帧数，不碰像素。
@@ -51,7 +53,7 @@ public:
     bool Open(const std::string &path);
     const CacheInfo &Info() const { return info_; }
     const std::vector<int32_t> &TimesMs() const { return timesMs_; }
-    // 解出下一帧（width*height*4 的非预乘 RGBA）。读坏了返回 false。
+    // 解出下一帧（width*height*bytesPerPixel 字节，格式见 CacheInfo）。读坏了返回 false。
     bool Next(std::vector<uint8_t> &rgba);
     bool Done() const { return next_ >= sizes_.size(); }
 

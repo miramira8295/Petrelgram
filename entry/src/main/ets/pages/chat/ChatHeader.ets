@@ -16,6 +16,7 @@ import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import { str } from '../../util/strings';
 import { HeaderIdentitySession } from './HeaderIdentitySession';
+import { emojiStatusVisible } from '../../util/emojiStatus';
 
 // 聊天页顶栏：返回、头像+名称+副标题、⋮ 菜单。整条画在 HdsNavDestination 的
 // **stackBuilder** 里，HDS 只负责背板和滚动模糊。
@@ -171,14 +172,15 @@ export struct ChatHeader {
   titleAccessory() {
     if (this.header.state === 'loading' || this.header.profileOpening) {
       LoadingProgress().width(15).height(15).color(this.accent()).margin({ left: 5 });
-    } else if (this.header.emojiPath !== '') {
+    } else if (emojiStatusVisible(this.header.emojiPath, this.header.emojiUid)) {
       if (this.header.emojiFormat === 'tgs') {
         TgsStickerView({
           tgsPath: this.header.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
         }).margin({ left: 4 });
       } else if (this.header.emojiFormat === 'webm') {
         WebmStickerView({
-          webmPath: this.header.emojiPath, boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
+          webmPath: this.header.emojiPath, stickerUid: this.header.emojiUid,
+          boxWidth: 18, boxHeight: 18, powerCategory: 'emojiStatus'
         }).margin({ left: 4 });
       } else {
         Image(`file://${this.header.emojiPath}`).draggable(false)

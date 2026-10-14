@@ -1,5 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
-import { buildEmojiStatusValue, customEmojiIdOfStatus, emojiStatusIdsOf } from '../main/ets/util/emojiStatus';
+import {
+  buildEmojiStatusValue, customEmojiIdOfStatus, emojiStatusIdsOf, emojiStatusSkipsDownload, emojiStatusVisible,
+  stickerFormatOf
+} from '../main/ets/util/emojiStatus';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
 export default function emojiStatusIdTest() {
@@ -46,6 +49,38 @@ export default function emojiStatusIdTest() {
     });
     it('空 id 表示清除：不带 emoji_status', 0, (): void => {
       expect(buildEmojiStatusValue('')).assertUndefined();
+    });
+  });
+  // 帧缓存命中就不下载（2026-10-10）：只有 webm 有按唯一 ID 的帧缓存。
+  describe('emojiStatusSkipsDownload', () => {
+    it('webm + 有 ID + 帧缓存在：跳过下载', 0, (): void => {
+      expect(emojiStatusSkipsDownload('webm', 'AgADBQAD', true)).assertTrue();
+    });
+    it('缓存不在、没有 ID、不是 webm：照常下载', 0, (): void => {
+      expect(emojiStatusSkipsDownload('webm', 'AgADBQAD', false)).assertFalse();
+      expect(emojiStatusSkipsDownload('webm', '', true)).assertFalse();
+      expect(emojiStatusSkipsDownload('tgs', 'AgADBQAD', true)).assertFalse();
+      expect(emojiStatusSkipsDownload('webp', 'AgADBQAD', true)).assertFalse();
+    });
+  });
+
+  describe('emojiStatusVisible', () => {
+    it('有本地文件，或靠帧缓存播（没路径但有 ID）都显示', 0, (): void => {
+      expect(emojiStatusVisible('/data/a.webm', '')).assertTrue();
+      expect(emojiStatusVisible('', 'AgADBQAD')).assertTrue();
+      expect(emojiStatusVisible('', '')).assertFalse();
+    });
+  });
+
+  describe('stickerFormatOf', () => {
+    it('三种格式，认不出按 webm', 0, (): void => {
+      const tgs: TdObject = { '@type': 'sticker' }; tgs['format'] = { '@type': 'stickerFormatTgs' } as TdObject;
+      const webp: TdObject = { '@type': 'sticker' }; webp['format'] = { '@type': 'stickerFormatWebp' } as TdObject;
+      const webm: TdObject = { '@type': 'sticker' }; webm['format'] = { '@type': 'stickerFormatWebm' } as TdObject;
+      expect(stickerFormatOf(tgs)).assertEqual('tgs');
+      expect(stickerFormatOf(webp)).assertEqual('webp');
+      expect(stickerFormatOf(webm)).assertEqual('webm');
+      expect(stickerFormatOf({ '@type': 'sticker' })).assertEqual('webm');
     });
   });
 }

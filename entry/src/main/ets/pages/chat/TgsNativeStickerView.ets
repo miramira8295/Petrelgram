@@ -9,12 +9,13 @@ import { stickerAnimationSlots } from '../../util/stickerAnimationBudget';
 import { ChatEnvMirror, chatEnv } from '../../util/chatEnvMirror';
 import { tgsPowerSuspended } from '../../util/tgsPowerGate';
 import {
-  tgsFinished, tgsFrameDue, tgsFrameIndexAt, tgsHighRateCategory, tgsNextDelayMs, tgsPlaybackFps,
+  tgsDurationMs, tgsFinished, tgsFrameDue, tgsFrameIndexAt, tgsFrameStep, tgsHighRateCategory, tgsNextDelayMs, tgsPlaybackFps,
   tgsRenderSize
 } from '../../util/tgsPlayback';
 import { stickerFrameClock } from '../../util/stickerFrameClock';
 import { subscribeAnimationGateFor } from '../../util/stickerPanelGate';
 import { logE, logW } from '../../util/log';
+import { markPlayedOnce, playedOnce } from '../../util/stickerPlayedOnce';
 
 // 出帧节奏的一键回退开关（2026-09-17）。true = 共享 displaySync 时钟，对齐屏幕刷新；
 // false = 原来的「画完一帧再 setTimeout」。真机上若出问题（比如贴纸停在缩略图不动、
@@ -39,6 +40,11 @@ const TGS_USE_DISPLAY_SYNC: boolean = true;
 @ComponentV2
 export struct TgsNativeStickerView {
   @Param tgsPath: string = '';
+  // 多层（🎰 老虎机）：非空时打开这一组、由原生合成一张。一个播放器 = 一个名额、一条时间线、
+  // 每帧排一次队；原来 5 层各播各的，名额（会话 4 个）不够、渲染队列被挤满、层与层还对不齐。
+  @Param layerPaths: string[] = [];
+  // 配合 playOnce：播过的（util/stickerPlayedOnce）再出现直接定格最后一帧，不重摇。
+  @Param playKey: string = '';
   @Param thumbPath: string = '';
   @Param boxWidth: number = 160;
   @Param boxHeight: number = 160;
@@ -114,9 +120,21 @@ export struct TgsNativeStickerView {
     }
   }
 
-  @Monitor('tgsPath')
+  // 只在内容真变了时重来：layerPaths 来自消息条目，条目每次更新（已读、回应…）都会拷出
+  // 一个新数组，按引用判会让老虎机每隔几秒重摇一遍（2026-10-10）。
+  @Monitor('tgsPath', 'layerPaths')
   onPathChanged(): void {
+    if (this.sourceKey() === this.openedKey) {
+      return;
+    }
     this.resetForNewSource();
+  }
+
+  // 上一次打开的是哪组（路径 + 各层），用来判断「真换了」。
+  private openedKey: string = '';
+
+  private sourceKey(): string {
+    return this.layerPaths.length > 1 ? this.layerPaths.join('|') : this.tgsPath;
   }
 
   // 【行复用必须接住，否则贴纸串台】这个组件挂在 @ReusableV2 的消息行里。复用时
@@ -239,7 +257,9 @@ export struct TgsNativeStickerView {
     const token: number = this.seq;
     const ticket: TgsRenderTicket = new TgsRenderTicket();
     this.openTicket = ticket;
-    queueTgsOpenTicketed(this.tgsPath, size, size, ticket).then((outcome: TgsOpenOutcome): void => {
+    const source: string | string[] = this.layerPaths.length > 1 ? this.layerPaths.slice() : this.tgsPath;
+    this.openedKey = this.sourceKey();
+    queueTgsOpenTicketed(source, size, size, ticket).then((outcome: TgsOpenOutcome): void => {
       const info: TgsOpenResult | null = outcome.info;
       if (this.disposed || token !== this.seq) {
         // 已经换了路径/下了树：这个 handle 没人要了，立刻还回去。
@@ -301,6 +321,10 @@ export struct TgsNativeStickerView {
     }
     if (this.startedAt === 0) {
       this.startedAt = Date.now();
+      if (this.playOnce && playedOnce(this.playKey)) {
+        this.startedAt -= tgsDurationMs(this.sourceFps, this.totalFrames) + 1000;
+      }
+      markPlayedOnce(this.playOnce ? this.playKey : '');
     }
     this.pump();
   }
@@ -329,6 +353,11 @@ export struct TgsNativeStickerView {
     }
     if (this.startedAt === 0) {
       this.startedAt = timestampMs;
+      if (this.playOnce && playedOnce(this.playKey)) {
+        // 播过了：把起点拨到很久以前，下面直接走「播完」那支、定格结果。
+        this.startedAt = timestampMs - tgsDurationMs(this.sourceFps, this.totalFrames) - 1000;
+      }
+      markPlayedOnce(this.playOnce ? this.playKey : '');
     }
     if (!tgsFrameDue(this.lastRequestMs, targetMs, fps)) {
       return;
@@ -336,11 +365,19 @@ export struct TgsNativeStickerView {
     const elapsed: number = targetMs - this.startedAt;
     const looping: boolean = this.loop && !this.playOnce;
     if (!looping && tgsFinished(elapsed, this.sourceFps, this.totalFrames)) {
+      if (this.lastIndex !== this.totalFrames - 1) {
+        // 定格必须是真正的最后一帧：按步长取帧时最后画的可能是倒数第二帧；
+        // 播过直接定格的那种则一帧都还没画。补渲这一帧，下一拍再收。
+        this.lastRequestMs = targetMs;
+        this.renderFrame(this.totalFrames - 1);
+        return;
+      }
       this.stopPump();
       this.releaseSlot();
       return;   // 定格在最后一帧
     }
-    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping);
+    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping,
+      tgsFrameStep(this.sourceFps, fps));
     this.lastRequestMs = targetMs;
     if (index === this.lastIndex) {
       return;   // 源帧还没前进（源帧率低于时钟），不重复渲同一帧
@@ -385,7 +422,8 @@ export struct TgsNativeStickerView {
       this.releaseSlot();
       return;   // 定格在最后一帧
     }
-    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping);
+    const index: number = tgsFrameIndexAt(elapsed, this.sourceFps, this.totalFrames, looping,
+      tgsFrameStep(this.sourceFps, tgsPlaybackFps(this.sourceFps, this.env.powerSaving)));
     this.renderFrame(index);
   }
 

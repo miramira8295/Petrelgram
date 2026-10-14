@@ -13,6 +13,7 @@ namespace {
 
 constexpr unsigned int kLogDomain = 0x0000;
 constexpr const char *kLogTag = "StickerDecode";
+constexpr int32_t kPixelFormatRgb565 = 2;            // PIXEL_FORMAT_RGB_565
 constexpr int32_t kPixelFormatRgba8888 = 3;          // PIXEL_FORMAT_RGBA_8888
 constexpr int32_t kAlphaTypeUnpremultiplied = 3;     // PIXELMAP_ALPHA_TYPE_UNPREMULTIPLIED
 
@@ -38,6 +39,8 @@ struct Job {
     OH_Pixelmap_InitializationOptions *options = nullptr;
     int32_t width = 0;
     int32_t height = 0;
+    // 每像素字节数：4 = RGBA_8888；2 = RGB_565（不透明贴纸，内存省一半，预算放得下两倍的帧）。
+    int32_t bytesPerPixel = 4;
     // 软解
     webm_alpha::AlphaSequenceDecoder decoder;
     DecodeParams params;
@@ -65,22 +68,38 @@ std::list<std::unique_ptr<Job>> gJobs;
 int32_t gNextId = 1;
 bool gWorkerStarted = false;
 
-bool InitOptions(Job &job, int32_t w, int32_t h) {
+bool InitOptions(Job &job, int32_t w, int32_t h, int32_t bytesPerPixel) {
+    const int32_t format = bytesPerPixel == 2 ? kPixelFormatRgb565 : kPixelFormatRgba8888;
     if (OH_PixelmapInitializationOptions_Create(&job.options) != IMAGE_SUCCESS || job.options == nullptr) {
         return false;
     }
     OH_PixelmapInitializationOptions_SetWidth(job.options, static_cast<uint32_t>(w));
     OH_PixelmapInitializationOptions_SetHeight(job.options, static_cast<uint32_t>(h));
-    OH_PixelmapInitializationOptions_SetPixelFormat(job.options, kPixelFormatRgba8888);
+    OH_PixelmapInitializationOptions_SetPixelFormat(job.options, format);
     // **源格式必须显式设，不能只设目标格式。** 不设的话 CreatePixelmap 把写好的
     // RGBA 当成别的排列去转——真机上整片偏青（红蓝互换）。
-    OH_PixelmapInitializationOptions_SetSrcPixelFormat(job.options, kPixelFormatRgba8888);
-    // 行距同理：缓冲区是紧凑排布，一行就是 w*4 字节。猜错的表现是斜切。
-    OH_PixelmapInitializationOptions_SetRowStride(job.options, static_cast<uint32_t>(w) * 4);
+    OH_PixelmapInitializationOptions_SetSrcPixelFormat(job.options, format);
+    // 行距同理：缓冲区是紧凑排布，一行就是 w*bytesPerPixel 字节。猜错的表现是斜切。
+    OH_PixelmapInitializationOptions_SetRowStride(job.options, static_cast<uint32_t>(w * bytesPerPixel));
     OH_PixelmapInitializationOptions_SetAlphaType(job.options, kAlphaTypeUnpremultiplied);
     job.width = w;
     job.height = h;
+    job.bytesPerPixel = bytesPerPixel;
     return true;
+}
+
+// 非预乘 RGBA -> RGB565（native endian 的 uint16：R 高 5 位、G 中 6 位、B 低 5 位）。
+// 不透明贴纸的 alpha 恒为 255，丢掉不损失任何东西。
+void RgbaToRgb565(const std::vector<uint8_t> &rgba, std::vector<uint8_t> &out) {
+    const size_t pixels = rgba.size() / 4;
+    out.resize(pixels * 2);
+    uint16_t *dst = reinterpret_cast<uint16_t *>(out.data());
+    for (size_t i = 0; i < pixels; ++i) {
+        const uint8_t r = rgba[i * 4];
+        const uint8_t g = rgba[i * 4 + 1];
+        const uint8_t b = rgba[i * 4 + 2];
+        dst[i] = static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+    }
 }
 
 // RGBA -> 原生 PixelMap（它持有自己那份拷贝，源缓冲随后就可以丢）。
@@ -132,9 +151,10 @@ bool StepDecode(Job &job) {
     if (!job.started) {
         job.started = true;
         DecodeParams &p = job.params;
+        const int32_t bytesPerPixel = p.alpha.empty() ? 2 : 4;   // 不透明 = 没有 alpha 那一路
         if (!job.decoder.Init(std::move(p.color), std::move(p.alpha), p.srcW, p.srcH, p.dstW, p.dstH,
                               p.frameStep) ||
-            !InitOptions(job, p.dstW, p.dstH)) {
+            !InitOptions(job, p.dstW, p.dstH, bytesPerPixel)) {
             Fail(job);
             return true;
         }
@@ -145,7 +165,12 @@ bool StepDecode(Job &job) {
         Fail(job);
         return true;
     }
-    for (webm_alpha::RgbaFrame &frame : frames) {
+    std::vector<uint8_t> rgb565;
+    for (webm_alpha::RgbaFrame &rgba : frames) {
+        std::vector<uint8_t> &frame = job.bytesPerPixel == 2 ? rgb565 : rgba;
+        if (job.bytesPerPixel == 2) {
+            RgbaToRgb565(rgba, rgb565);
+        }
         if (!job.cacheBroken) {
             std::vector<uint8_t> packed;
             if (sticker_cache::CompressFrame(frame, packed)) {
@@ -172,7 +197,8 @@ bool StepDecode(Job &job) {
     // 它一帧一帧对时刻，错位比没有缓存更糟。
     const DecodeParams &p = job.params;
     if (!job.cacheBroken && job.packed.size() == p.timesMs.size()) {
-        sticker_cache::CacheInfo info{p.dstW, p.dstH, static_cast<int32_t>(job.packed.size()), p.durationMs};
+        sticker_cache::CacheInfo info{p.dstW, p.dstH, static_cast<int32_t>(job.packed.size()), p.durationMs,
+                                      job.bytesPerPixel};
         if (!sticker_cache::WritePacked(p.cachePath, info, job.packed, p.timesMs)) {
             OH_LOG_Print(LOG_APP, LOG_WARN, kLogDomain, kLogTag, "%{public}s", "frame cache write failed");
         }
@@ -196,7 +222,7 @@ bool StepLoad(Job &job) {
             Flush(job, true, false);   // 带着 info 交回去：是内存不够，不是没有缓存
             return true;
         }
-        if (!InitOptions(job, info.width, info.height)) {
+        if (!InitOptions(job, info.width, info.height, info.bytesPerPixel)) {
             Fail(job);
             return true;
         }

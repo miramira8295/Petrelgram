@@ -6,7 +6,8 @@
 // 落盘之后第二次只剩「读文件 → 解压」。
 
 // 缓存文件的格式版本。改了原生那边的排布就 +1——旧文件名认不出来，等于自动失效。
-export const FRAME_CACHE_VERSION: number = 1;
+// 2（2026-10-10）：头部多了每像素字节数（不透明贴纸存 RGB565），v1 文件不再认。
+export const FRAME_CACHE_VERSION: number = 2;
 export const FRAME_CACHE_DIR: string = 'sticker_frames';
 // 磁盘预算。压缩后一段贴纸通常几百 KB 到两三 MB。
 export const FRAME_CACHE_MAX_BYTES: number = 96 * 1024 * 1024;

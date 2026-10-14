@@ -38,6 +38,11 @@ let tgsNextStartAt: number = 0;
 @ComponentV2
 export struct TgsStickerView {
   @Param tgsPath: string = '';
+  // 多层动画（🎰 老虎机：背景/三个转轮/拉杆，按 z 序从下到上）。非空时原生侧把它们合成
+  // 一张播，tgsPath 只当身份用（填第一层）；lottie 回退那支只画得出第一层。
+  @Param layerPaths: string[] = [];
+  // 只播一次的动画的身份（骰子），播过的再出现直接定格最后一帧。'' = 不记。
+  @Param playKey: string = '';
   @Param thumbPath: string = '';
   @Param boxWidth: number = 160;
   @Param boxHeight: number = 160;
@@ -328,6 +333,8 @@ export struct TgsStickerView {
         // Canvas 在这一支里根本不挂树。
         TgsNativeStickerView({
           tgsPath: this.tgsPath,
+          layerPaths: this.layerPaths,
+          playKey: this.playKey,
           thumbPath: this.thumbPath,
           boxWidth: this.boxWidth,
           boxHeight: this.boxHeight,

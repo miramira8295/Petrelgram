@@ -33,6 +33,13 @@ const TICK_MS: number = 30;
 // 一帧的内容、和屏幕刷新都对不齐，每帧在屏上停留的时长忽长忽短。
 const ALPHA_USE_DISPLAY_SYNC: boolean = true;
 
+// 帧到齐之后交给系统的 ImageAnimator 播（2026-10-10 验证中）：系统按每帧时长自己换图，
+// JS 不再每帧 drawImage——一屏十几张贴纸时主线程省下的就是这一块。images 不支持动态更新，
+// 所以边解边播期间仍走 Canvas，整段到齐、且 Canvas 恰好播完一轮回到第 0 帧时才切过去
+// （ImageAnimator 总从第一帧起播，这样切换无缝）。false = 一直用 Canvas（一键回退）。
+const ALPHA_USE_IMAGE_ANIMATOR: boolean = true;
+const ANIMATOR_RELEASE_DELAY_MS: number = 200;
+
 // 同时自绘的上限。内存预算管的是"解出多少帧"，管不了"多少块画布在重画"——
 // 贴纸面板一屏几十格各自 33fps 地 drawImage，主线程一样会卡。
 // 名额现在与 TGS 共用、按区域分池（2026-09-15），见 util/stickerAnimationBudget。
@@ -94,6 +101,10 @@ export struct AlphaWebmStickerView {
   private holdsSlot: boolean = false;
   // 排队等名额或内存：缩略图盖在画布上（有的话），画出第一帧再撤。
   @Local private waitingSlot: boolean = false;
+  // 交给 ImageAnimator 之后：帧信息与播放状态。见 ALPHA_USE_IMAGE_ANIMATOR。
+  @Local private animatorFrames: ImageFrameInfo[] = [];
+  @Local private animatorState: AnimationStatus = AnimationStatus.Initial;
+  @Local private animatorLoops: number = -1;
   private cancelSlotWait: (() => void) | null = null;
   private loadSeq: number = 0;
 
@@ -152,7 +163,60 @@ export struct AlphaWebmStickerView {
     }
   }
 
+  // 返回 true = 刚撤下了 ImageAnimator。
+  private stopAnimator(): boolean {
+    if (this.animatorFrames.length === 0) {
+      return false;
+    }
+    this.animatorFrames = [];
+    this.animatorState = AnimationStatus.Initial;
+    return true;
+  }
+
+  // ImageAnimator 是下一帧重建时才撤掉的，这一拍它手里还拿着这些 PixelMap；
+  // 引用晚一点还，免得帧被淘汰 release 后它再画一次已释放的图。
+  private releaseClip(clip: AlphaClip | null, animatorWasUp: boolean): void {
+    if (!animatorWasUp || clip === null) {
+      releaseAlphaSticker(clip);
+      return;
+    }
+    setTimeout(() => {
+      releaseAlphaSticker(clip);
+    }, ANIMATOR_RELEASE_DELAY_MS);
+  }
+
+  // Canvas 播完一轮、帧又已到齐：交给 ImageAnimator。返回 true = 已交出去，调用方别再画。
+  private handOffToAnimator(clip: AlphaClip): boolean {
+    if (!ALPHA_USE_IMAGE_ANIMATOR || !clip.complete || clip.frames.length < 2 || this.animatorFrames.length > 0) {
+      return false;
+    }
+    const scale: number = Math.min(this.boxWidth / clip.width, this.boxHeight / clip.height);
+    const frames: ImageFrameInfo[] = [];
+    for (let i = 0; i < clip.frames.length; i++) {
+      const next: number = i + 1 < clip.timesMs.length ? clip.timesMs[i + 1] : clip.durationMs;
+      frames.push({
+        src: clip.frames[i] as PixelMap,
+        duration: Math.max(1, Math.round(next - clip.timesMs[i]))
+      });
+    }
+    this.animatorSize = [clip.width * scale, clip.height * scale];
+    this.animatorHandoffAt = Date.now();
+    console.warn(`[AlphaAnimator] handoff frames=${frames.length} durMs=${Math.round(clip.durationMs)} ` +
+      `lastFrameMs=${frames[frames.length - 1].duration} bpp=${clip.bytesPerPixel}`);
+    this.animatorLoops = this.loopEnabled() ? -1 : 1;
+    this.animatorFrames = frames;
+    this.animatorState = this.scrollPaused ? AnimationStatus.Paused : AnimationStatus.Running;
+    this.stopTicker();
+    return true;
+  }
+
+  private animatorSize: number[] = [0, 0];
+  // 诊断：交接时刻，用来量 ImageAnimator 真正开播 / 每轮回到开头花了多久。
+  private animatorHandoffAt: number = 0;
+  private animatorLastRepeatAt: number = 0;
+
   private disposePlayback(): void {
+    const animatorWasUp: boolean = this.stopAnimator();
     this.loadSeq++;
     this.disposed = true;
     this.stopTicker();
@@ -161,7 +225,7 @@ export struct AlphaWebmStickerView {
       this.cancelSlotWait = null;
     }
     this.releaseSlot();
-    releaseAlphaSticker(this.sequence);
+    this.releaseClip(this.sequence, animatorWasUp);
     this.sequence = null;
     this.reportedWorking = false;
     this.shownIndex = -1;
@@ -180,13 +244,14 @@ export struct AlphaWebmStickerView {
 
   // 让出名额与帧序列，组件本身还在（和 disposePlayback 的区别：不置 disposed）。
   private releasePlayback(): void {
+    const animatorWasUp: boolean = this.stopAnimator();
     this.loadSeq++;
     if (this.cancelSlotWait !== null) {
       this.cancelSlotWait();
       this.cancelSlotWait = null;
     }
     this.releaseSlot();
-    releaseAlphaSticker(this.sequence);
+    this.releaseClip(this.sequence, animatorWasUp);
     this.sequence = null;
     this.shownIndex = -1;
   }
@@ -221,6 +286,10 @@ export struct AlphaWebmStickerView {
       return;
     }
     this.scrollPaused = suspended;
+    if (this.animatorFrames.length > 0) {
+      this.animatorState = suspended ? AnimationStatus.Paused : AnimationStatus.Running;
+      return;
+    }
     if (suspended) {
       this.stopTicker();     // 定格在当前帧，不清画布
     } else if (this.sequence !== null && !this.powerSuspended()) {
@@ -231,6 +300,10 @@ export struct AlphaWebmStickerView {
   @Monitor('env.powerSaving', 'env.stickers', 'env.animatedEmoji', 'env.stickerAutoplay',
     'env.emojiChat', 'env.emojiReactions', 'env.emojiStatus', 'env.reduceAnim')
   onPowerChanged(): void {
+    if (this.animatorFrames.length > 0) {
+      this.animatorState = this.powerSuspended() || this.scrollPaused ? AnimationStatus.Paused : AnimationStatus.Running;
+      return;
+    }
     if (this.powerSuspended()) {
       this.stopTicker();
     } else if (this.sequence !== null) {
@@ -348,6 +421,10 @@ export struct AlphaWebmStickerView {
       if (!this.loopEnabled() && clip.complete) {
         this.drawFrame(clip.frames.length - 1);
         this.stopTicker();
+        return;
+      }
+      // 播完一轮回到开头：帧已到齐就交给 ImageAnimator（它从第 0 帧起播，正好接上）。
+      if (this.handOffToAnimator(clip)) {
         return;
       }
       elapsed = elapsed % total;
@@ -490,11 +567,29 @@ export struct AlphaWebmStickerView {
       // 排队时缩略图**盖在**画布上，而不是换掉画布：重试可能又排回去，换来换去会让画布
       // 反复重建、onReady 反复进来，每重试一次闪一下。
       Stack() {
-        Canvas(this.ctx)
-          .width(this.boxWidth).height(this.boxHeight)
-          .onReady(() => {
-            this.load();
-          });
+        if (this.animatorFrames.length > 0) {
+          ImageAnimator()
+            .images(this.animatorFrames)
+            .state(this.animatorState)
+            .iterations(this.animatorLoops)
+            .fillMode(FillMode.Forwards)
+            .onStart((): void => {
+              this.animatorLastRepeatAt = Date.now();
+              console.warn(`[AlphaAnimator] start after ${this.animatorLastRepeatAt - this.animatorHandoffAt}ms`);
+            })
+            .onRepeat((): void => {
+              const now: number = Date.now();
+              console.warn(`[AlphaAnimator] repeat loopMs=${now - this.animatorLastRepeatAt}`);
+              this.animatorLastRepeatAt = now;
+            })
+            .width(this.animatorSize[0]).height(this.animatorSize[1]);
+        } else {
+          Canvas(this.ctx)
+            .width(this.boxWidth).height(this.boxHeight)
+            .onReady(() => {
+              this.load();
+            });
+        }
         if (this.waitingSlot && this.thumbPath !== '') {
           StickerPoster({ path: this.thumbPath, boxWidth: this.boxWidth, boxHeight: this.boxHeight });
         }

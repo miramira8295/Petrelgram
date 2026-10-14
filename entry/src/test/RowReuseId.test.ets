@@ -286,6 +286,19 @@ export default function rowReuseIdTest() {
         rowReuseId(data, groupOf(replyWithThumb), 'fine')).assertFalse();
     });
 
+    // 引用骰子画的是 DiceEndFrame（结尾帧），和普通缩略图的 Image 是不同的壳（2026-10-10）。
+    it('reply_dice_end_frame_has_its_own_bucket', 0, () => {
+      const data: MessageBubbleRenderData = renderData({ isGroup: true });
+      const replyWithThumb: MessageEntry = cloneMessage(textEntry(85));
+      replyWithThumb.replyToMessageId = 4243;
+      replyWithThumb.replyThumbPath = '/data/reply-thumb.jpg';
+      const replyDice: MessageEntry = cloneMessage(replyWithThumb);
+      replyDice.replyDiceLayers = ['/data/slot-bg.tgs', '/data/r1.tgs', '/data/r2.tgs', '/data/r3.tgs', '/data/lever.tgs'];
+
+      expect(rowReuseId(data, groupOf(replyWithThumb), 'fine') ===
+        rowReuseId(data, groupOf(replyDice), 'fine')).assertFalse();
+    });
+
     // Fix wave: the first cut of this file derived "has avatar"/"has sender
     // name" from data.isGroup + msg.isOutgoing (a structural proxy) because
     // the signature only took MessageEntry. That conflated mid-run rows with

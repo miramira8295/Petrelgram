@@ -48,6 +48,7 @@ import { rememberSplitNavWidth, resolveSplitNavWidth } from '../../util/splitNav
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { mainBarFill, mainPageFill } from '../../util/theme';
 import { KEY_APP_BG_ON } from '../../store/AppSettings';
+import { emojiStatusVisible } from '../../util/emojiStatus';
 
 // 卡片底色 + 毛玻璃。开关关着时 surfaceGlassFill 原样返回实色、
 // cardBlurStyle 返回 undefined，和改动前逐字节等价（见 util/surfaceGlass）。
@@ -278,6 +279,7 @@ export struct SettingsPage {
   @State avatarAnimPath: string = '';
   @State statusEmojiPath: string = '';
   @State statusEmojiFormat: string = '';
+  @State statusEmojiUid: string = '';
   @State phone: string = '';
   @State usernames: string[] = [];
   @State accounts: TdAccountSummary[] = [];
@@ -453,6 +455,7 @@ export struct SettingsPage {
     this.avatarAnimPath = s.avatarAnimPath;
     this.statusEmojiPath = s.statusEmojiPath;
     this.statusEmojiFormat = s.statusEmojiFormat;
+    this.statusEmojiUid = s.statusEmojiUid;
     this.phone = s.phone;
     this.usernames = s.usernames;
     if (this.name !== '') {
@@ -1033,14 +1036,15 @@ export struct SettingsPage {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .flexShrink(1);
-          if (!this.profileLoading && this.statusEmojiPath !== '') {
+          if (!this.profileLoading && emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
             if (this.statusEmojiFormat === 'tgs') {
               TgsStickerView({
                 tgsPath: this.statusEmojiPath, boxWidth: 22, boxHeight: 22, powerCategory: 'emojiStatus'
               });
             } else if (this.statusEmojiFormat === 'webm') {
               WebmStickerView({
-                webmPath: this.statusEmojiPath, boxWidth: 22, boxHeight: 22, powerCategory: 'emojiStatus'
+                webmPath: this.statusEmojiPath, stickerUid: this.statusEmojiUid,
+                boxWidth: 22, boxHeight: 22, powerCategory: 'emojiStatus'
               });
             } else {
               Image(`file://${this.statusEmojiPath}`).draggable(false).width(22).height(22).objectFit(ImageFit.Contain);

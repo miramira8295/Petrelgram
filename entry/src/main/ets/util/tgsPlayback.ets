@@ -39,24 +39,44 @@ export function tgsPlaybackFps(sourceFps: number, lowPower: boolean, highRate: b
 //
 // 时间轴按源帧率走、而不是按播放帧率累加，是为了让 30fps 播放的贴纸和 60fps
 // 的走完同样的 3 秒——按播放帧率累加会让动画整体变慢一倍。
+//
+// step（见 tgsFrameStep）把帧号对齐到它的整数倍：30fps 播 60fps 的源只要偶数帧。
 export function tgsFrameIndexAt(
-  elapsedMs: number, sourceFps: number, totalFrames: number, loop: boolean
+  elapsedMs: number, sourceFps: number, totalFrames: number, loop: boolean, step: number = 1
 ): number {
   if (totalFrames <= 0) {
     return 0;
   }
   const fps: number = sourceFps > 0 ? sourceFps : TGS_MAX_FPS;
   const raw: number = Math.floor(Math.max(0, elapsedMs) * fps / 1000);
-  if (raw < totalFrames) {
-    return raw;
+  if (raw >= totalFrames && !loop) {
+    return totalFrames - 1;
   }
-  return loop ? raw % totalFrames : totalFrames - 1;
+  const wrapped: number = raw % totalFrames;
+  const s: number = step >= 1 ? Math.floor(step) : 1;
+  return wrapped - wrapped % s;
+}
+
+// 帧号的步长（2026-10-10，配合原生的帧缓存）。时钟有抖动，不对齐的话 30fps 播 60fps
+// 的源偶尔会要到奇数帧——缓存永远填不满，每轮都有几帧得解析 JSON 现场渲。对齐之后
+// 播一轮就全在盘上了。源帧率不是播放帧率整数倍的（25 播 30）按 1 算。
+export function tgsFrameStep(sourceFps: number, playbackFps: number): number {
+  if (sourceFps <= 0 || playbackFps <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.round(sourceFps / playbackFps));
 }
 
 // 下一帧该在多久之后要。返回的是毫秒，至少 1——0 会让定时器变成忙等。
 export function tgsNextDelayMs(playbackFps: number): number {
   const fps: number = playbackFps > 0 ? playbackFps : TGS_MAX_FPS;
   return Math.max(1, Math.round(1000 / fps));
+}
+
+// 整段多长（毫秒），按源帧率。
+export function tgsDurationMs(sourceFps: number, totalFrames: number): number {
+  const fps: number = sourceFps > 0 ? sourceFps : TGS_MAX_FPS;
+  return Math.max(0, totalFrames) * 1000 / fps;
 }
 
 // 播完了没有（只对不循环的有意义）。

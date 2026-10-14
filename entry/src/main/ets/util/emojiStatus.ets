@@ -1,11 +1,15 @@
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { logE } from './log';
+import { remoteUniqueIdOf } from './stickerSetItems';
+import { emojiStatusFramesCached } from '../services/emojiStatusFrames';
 
 // Resolve a user's premium emoji status (user.emoji_status) into a local
 // sticker file. Handles both TDLib shapes: emoji_status.custom_emoji_id
 // (older) and emoji_status.type.custom_emoji_id (newer). The callback fires
-// once with the downloaded path and format ('tgs' | 'webm' | 'webp').
+// once with the downloaded path and format ('tgs' | 'webm' | 'webp'), plus the
+// file's remote.unique_id. webm 状态的帧缓存已在盘上时不下载，path 给 ''、只给 ID
+// （2026-10-10，见 emojiStatusSkipsDownload）。
 // 一个 emojiStatus 对象里的 custom_emoji_id，两种 schema 都认：
 //   新：emojiStatus.type(emojiStatusTypeCustomEmoji).custom_emoji_id
 //   老：emojiStatus.custom_emoji_id
@@ -71,8 +75,27 @@ export function emojiStatusIdsOf(result: TdObject | undefined): string[] {
   return ids;
 }
 
+// sticker.format → 'tgs' | 'webp' | 'webm'（认不出按 webm，与各处原来的写法一致）。
+export function stickerFormatOf(st: TdObject): string {
+  const fmt = st['format'] as TdObject | undefined;
+  const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
+  return fmtName === 'stickerFormatWebp' ? 'webp' : (fmtName === 'stickerFormatTgs' ? 'tgs' : 'webm');
+}
+
+// 表情状态能不能不下载源文件、直接从帧缓存播。只有 webm 有按唯一 ID 的帧缓存
+// （TGS 的帧缓存按源文件命名，要先有文件）。framesCached 由调用方查
+// （services/emojiStatusFrames），这里只管规则，可单测。
+export function emojiStatusSkipsDownload(format: string, uid: string, framesCached: boolean): boolean {
+  return format === 'webm' && uid !== '' && framesCached;
+}
+
+// 表情状态要不要画：有本地文件，或者靠帧缓存播（没路径但有 ID）。
+export function emojiStatusVisible(path: string, uid: string): boolean {
+  return path !== '' || uid !== '';
+}
+
 export function resolveEmojiStatus(es: TdObject | undefined,
-  cb: (path: string, format: string) => void): void {
+  cb: (path: string, format: string, uid: string) => void): void {
   if (es === undefined) {
     return;
   }
@@ -85,19 +108,21 @@ export function resolveEmojiStatus(es: TdObject | undefined,
   }
   const req: TdRequest = { '@type': 'getCustomEmojiStickers' };
   req['custom_emoji_ids'] = [ceId];
-  getTdClient().send(req).then((res: TdObject) => {
+  getTdClient().send(req).then(async (res: TdObject): Promise<void> => {
     const stickers = (res['stickers'] as TdObject[] | undefined) ?? [];
     if (stickers.length === 0) {
       return;
     }
     const st = stickers[0];
-    const fmt = st['format'] as TdObject | undefined;
-    const fmtName = fmt !== undefined ? ((fmt['@type'] as string | undefined) ?? '') : '';
-    const format = fmtName === 'stickerFormatWebp' ? 'webp'
-      : (fmtName === 'stickerFormatTgs' ? 'tgs' : 'webm');
+    const format = stickerFormatOf(st);
     const file = st['sticker'] as TdObject | undefined;
     const fileId = file !== undefined ? ((file['id'] as number | undefined) ?? 0) : 0;
     if (fileId === 0) {
+      return;
+    }
+    const uid: string = format === 'webm' ? remoteUniqueIdOf(file) : '';
+    if (emojiStatusSkipsDownload(format, uid, await emojiStatusFramesCached(uid))) {
+      cb('', format, uid);
       return;
     }
     const dl: TdRequest = { '@type': 'downloadFile' };
@@ -108,7 +133,7 @@ export function resolveEmojiStatus(es: TdObject | undefined,
       const local = f['local'] as TdObject | undefined;
       const path = local !== undefined ? ((local['path'] as string | undefined) ?? '') : '';
       if (path !== '') {
-        cb(path, format);
+        cb(path, format, uid);
       }
     }).catch((e: TdError) => {
       logE(`resolveEmojiStatus.download failed: ${e.message}`);

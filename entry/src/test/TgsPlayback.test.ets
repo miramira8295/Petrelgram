@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  tgsRenderSize, tgsPlaybackFps, tgsFrameIndexAt, tgsNextDelayMs, tgsFinished,
+  tgsRenderSize, tgsPlaybackFps, tgsFrameIndexAt, tgsFrameStep, tgsDurationMs, tgsNextDelayMs, tgsFinished,
   tgsHighRateCategory, tgsClockRange, tgsFrameDue, TgsRateRange,
   TGS_RENDER_MAX_PX, TGS_RENDER_MIN_PX, TGS_MAX_FPS, TGS_LOW_FPS, TGS_HIGH_FPS
 } from '../main/ets/util/tgsPlayback';
@@ -35,6 +35,33 @@ export default function tgsPlaybackTest() {
       expect(tgsFrameIndexAt(3000, 60, 180, true)).assertEqual(0);
       expect(tgsFrameIndexAt(3000, 60, 180, false)).assertEqual(179);
       expect(tgsFrameIndexAt(10000, 60, 180, false)).assertEqual(179);
+    });
+
+    // 帧缓存（2026-10-10）：30fps 播 60fps 的源，要的帧号对齐到偶数，播一轮缓存就满了；
+    // 不对齐的话时钟抖一下就要一个奇数帧，永远有没存过的帧，永远要解析 JSON 现场渲。
+    it('帧步长 = 源帧率 / 播放帧率，至少 1', 0, (): void => {
+      expect(tgsFrameStep(60, 30)).assertEqual(2);
+      expect(tgsFrameStep(60, 15)).assertEqual(4);
+      expect(tgsFrameStep(60, 60)).assertEqual(1);
+      expect(tgsFrameStep(30, 30)).assertEqual(1);
+      expect(tgsFrameStep(25, 30)).assertEqual(1);
+      expect(tgsFrameStep(0, 30)).assertEqual(1);
+    });
+
+    it('帧号对齐到步长，时间轴不变', 0, (): void => {
+      expect(tgsFrameIndexAt(1000, 60, 180, true, 2)).assertEqual(60);
+      expect(tgsFrameIndexAt(1010, 60, 180, true, 2)).assertEqual(60);
+      expect(tgsFrameIndexAt(1020, 60, 180, true, 2)).assertEqual(60);
+      expect(tgsFrameIndexAt(1034, 60, 180, true, 2)).assertEqual(62);
+      expect(tgsFrameIndexAt(3020, 60, 180, true, 2)).assertEqual(0);
+      expect(tgsFrameIndexAt(10000, 60, 180, false, 2)).assertEqual(179);
+    });
+
+    it('整段时长按源帧率算（骰子播过直接定格要用）', 0, (): void => {
+      expect(tgsDurationMs(60, 180)).assertEqual(3000);
+      expect(tgsDurationMs(30, 90)).assertEqual(3000);
+      expect(tgsDurationMs(0, 30)).assertEqual(1000);
+      expect(tgsDurationMs(60, -5)).assertEqual(0);
     });
 
     it('边界：没有帧、负时间', 0, (): void => {

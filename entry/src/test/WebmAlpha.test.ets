@@ -422,5 +422,18 @@ export default function webmAlphaTest() {
       expect(alphaPlayableIndex(times, 70, 1)).assertEqual(0);
       expect(alphaPlayableIndex(times, 70, 0)).assertEqual(-1);   // 一帧都没有：不画
     });
+
+    // 不透明贴纸用 RGB565（2026-10-10）：每像素 2 字节，12MB 装得下 256px × 90 帧，
+    // 不必隔帧取——会话里的普通视频贴纸从 15fps 回到 30fps。透明的仍按 RGBA 4 字节。
+    it('不透明贴纸按 2 字节/像素算预算，30fps 不抽帧', 0, (): void => {
+      const MB: number = 1024 * 1024;
+      const rgba = planAlphaDecode(512, 512, 256, 90, 32 * MB, 12 * MB, 4);
+      expect(rgba.frameStep).assertEqual(2);
+      const rgb565 = planAlphaDecode(512, 512, 256, 90, 32 * MB, 12 * MB, 2);
+      expect(rgb565.accept).assertTrue();
+      expect(rgb565.frameStep).assertEqual(1);
+      expect(rgb565.targetW).assertEqual(256);
+      expect(rgb565.bytes).assertEqual(256 * 256 * 2 * 90);
+    });
   });
 }

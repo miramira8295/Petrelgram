@@ -43,7 +43,7 @@ import {
   InitialPageRoute, ROUTE_AROUND,
   canPrefetchChat, initialPageRoute, takePrefetchedPage
 } from '../util/chatPrefetch';
-import { replyThumbIsSticker, replyThumbOf } from '../util/replyThumb';
+import { replyDiceLayers, replyThumbIsSticker, replyThumbOf } from '../util/replyThumb';
 import {
   MEDIA_PREFETCH_PRIORITY, MEDIA_USER_PRIORITY, MEDIA_VIEWING_PRIORITY, THUMBNAIL_PRIORITY,
   mediaDownloadPriority
@@ -86,6 +86,7 @@ interface RepliedPreview {
   // 引用块的缩略图。也进缓存：窗口整体重建后条目会丢掉它，不缓存就得重新拉。
   thumbPath: string;
   thumbSticker: boolean;
+  diceLayers: string[];
 }
 // 一帧的量级：下载进度的发布合并到这个窗口里，见 notifySoon()。
 const NOTIFY_COALESCE_MS: number = 16;
@@ -6025,6 +6026,7 @@ export class MessageStore {
           restored.replyText = cached.text;
           restored.replyThumbPath = cached.thumbPath;
           restored.replyThumbSticker = cached.thumbSticker;
+          restored.replyDiceLayers = cached.diceLayers;
           return restored;
         }
         // 原消息不在已加载窗口里 —— 拉一次，否则引用块永远是空的。
@@ -6054,6 +6056,7 @@ export class MessageStore {
         paidMediaLocked: target.paidMediaLocked
       });
       c.replyThumbSticker = replyThumbIsSticker(target.contentType);
+      c.replyDiceLayers = replyDiceLayers(target.contentType, target.stickerPath, target.diceLayerPaths);
       return c;
     });
     for (const id of missing) {
@@ -6103,9 +6106,11 @@ export class MessageStore {
         paidMediaLocked: entry.paidMediaLocked
       });
       const thumbSticker: boolean = replyThumbIsSticker(entry.contentType);
+      // 窗口外拉回来的骰子多半没下载，那就是空数组、照常用缩略图。
+      const diceLayers: string[] = replyDiceLayers(entry.contentType, entry.stickerPath, entry.diceLayerPaths);
       this.repliedPreview.set(messageId, {
         senderName: entry.senderName, text: preview,
-        thumbPath: thumbPath, thumbSticker: thumbSticker
+        thumbPath: thumbPath, thumbSticker: thumbSticker, diceLayers: diceLayers
       });
       this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
         if (e.replyToMessageId !== messageId || e.replyText !== '') {
@@ -6116,6 +6121,7 @@ export class MessageStore {
         c.replyText = preview;
         c.replyThumbPath = thumbPath;
         c.replyThumbSticker = thumbSticker;
+        c.replyDiceLayers = diceLayers;
         return c;
       });
       this.notifySoon();
@@ -6130,7 +6136,7 @@ export class MessageStore {
   private markReplyUnavailable(messageId: number): void {
     const label: string = str('mb_reply_unavailable');
     this.repliedPreview.set(messageId, {
-      senderName: '', text: label, thumbPath: '', thumbSticker: false
+      senderName: '', text: label, thumbPath: '', thumbSticker: false, diceLayers: []
     });
     this.messages = this.messages.map((e: MessageEntry): MessageEntry => {
       if (e.replyToMessageId !== messageId || e.replyText !== '') {

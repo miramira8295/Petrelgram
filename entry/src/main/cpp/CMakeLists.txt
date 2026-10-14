@@ -22,7 +22,7 @@ include_directories(${NATIVERENDER_ROOT_PATH}
                     ${NATIVERENDER_ROOT_PATH}/include)
 
 add_library(entry SHARED napi_init.cpp webm_alpha.cpp webm_alpha_napi.cpp sticker_frame_cache.cpp sticker_decode_queue.cpp
-    tgs_render.cpp tgs_napi.cpp)
+    tgs_render.cpp tgs_napi.cpp tgs_frame_cache.cpp)
 
 add_library(tdjson SHARED IMPORTED)
 set_target_properties(tdjson PROPERTIES IMPORTED_LOCATION

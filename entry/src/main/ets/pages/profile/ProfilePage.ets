@@ -57,6 +57,7 @@ import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logE } from '../../util/log';
 import { MEDIA_GRID_COLS, mediaCellSize as mediaGridCellSize, mediaFallbackContentWidth } from '../../util/mediaGrid';
 import { HdsNavDestination } from '@kit.UIDesignKit';
+import { emojiStatusVisible } from '../../util/emojiStatus';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
@@ -152,6 +153,7 @@ export struct ProfilePage {
   @State avatarAnimPath: string = '';
   @State statusEmojiPath: string = '';
   @State statusEmojiFormat: string = '';
+  @State statusEmojiUid: string = '';
   @State statusText: string = '';
   @State phone: string = '';
   @State usernames: string[] = [];
@@ -482,6 +484,7 @@ export struct ProfilePage {
     this.avatarAnimPath = s.avatarAnimPath;
     this.statusEmojiPath = s.statusEmojiPath;
     this.statusEmojiFormat = s.statusEmojiFormat;
+    this.statusEmojiUid = s.statusEmojiUid;
     this.statusText = s.statusText;
     this.phone = s.phone;
     this.usernames = s.usernames;
@@ -942,7 +945,7 @@ export struct ProfilePage {
           .fontSize(24).fontWeight(FontWeight.Bold).fontColor(COLOR_TEXT_PRIMARY)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           .flexShrink(1);
-        if (this.statusEmojiPath !== '') {
+        if (emojiStatusVisible(this.statusEmojiPath, this.statusEmojiUid)) {
           this.statusEmoji();
         }
       }
@@ -1571,7 +1574,8 @@ export struct ProfilePage {
       });
     } else if (this.statusEmojiFormat === 'webm') {
       WebmStickerView({
-        webmPath: this.statusEmojiPath, boxWidth: 24, boxHeight: 24, powerCategory: 'emojiStatus'
+        webmPath: this.statusEmojiPath, stickerUid: this.statusEmojiUid,
+        boxWidth: 24, boxHeight: 24, powerCategory: 'emojiStatus'
       });
     } else {
       Image(`file://${this.statusEmojiPath}`).draggable(false).width(24).height(24).objectFit(ImageFit.Contain);

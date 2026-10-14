@@ -66,6 +66,9 @@ export interface MessageEntry {
   replyThumbPath: string;
   // 贴纸要 Contain + 透明底，图片视频要 Cover 铺满，靠这一位区分。
   replyThumbSticker: boolean;
+  // 被引用的是骰子类消息时，引用块改画动画结尾帧的这几层（见 util/replyThumb.replyDiceLayers）。
+  // 空 = 照常用 replyThumbPath。
+  replyDiceLayers: string[];
   sendState: string;
   albumId: string;
   textEntities: TdObject[];
@@ -277,6 +280,7 @@ export function cloneMessage(m: MessageEntry): MessageEntry {
     replyToMessageId: m.replyToMessageId,
     replySenderName: m.replySenderName, replyText: m.replyText,
     replyThumbPath: m.replyThumbPath, replyThumbSticker: m.replyThumbSticker,
+    replyDiceLayers: m.replyDiceLayers.slice(),
     sendState: m.sendState,
     albumId: m.albumId, textEntities: m.textEntities,
     inlineCustomEmojiIds: m.inlineCustomEmojiIds.slice(),
@@ -1089,6 +1093,7 @@ export function buildMessageEntry(message: TdObject, users: UserStore): MessageE
     replyText: replyQuoteText(message),
     replyThumbPath: '',
     replyThumbSticker: false,
+    replyDiceLayers: [],
     sendState: isOutgoing ? outgoingState(message) : 'none',
     albumId: albumIdOf(message),
     textEntities: c.entities,

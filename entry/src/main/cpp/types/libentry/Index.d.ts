@@ -80,6 +80,8 @@ export interface StickerFramesInfo {
   height: number;
   durationMs: number;
   timesMs: number[];
+  // 4 = RGBA_8888；2 = RGB_565（不透明贴纸）。按它记内存账。
+  bytesPerPixel: number;
 }
 export type StickerFramesCallback =
   (frames: image.PixelMap[], done: boolean, ok: boolean, info: StickerFramesInfo | undefined) => void;
@@ -114,8 +116,9 @@ export const stickerDecodeCancel: (jobId: number) => void;
 //
 // 打开一个 .tgs（读文件 + gunzip + 解析 JSON 全在 worker 上）。
 // width/height 是**渲染尺寸**，内存按它的平方走，不要传贴纸原生的 512。
-// 失败返回 null。
-export const tgsOpen: (path: string, width: number, height: number) => Promise<{
+// 失败返回 null。cacheDir 给了就把渲好的帧压缩存进去，下次直接读（盘上整段都在时连 JSON 都不解析）。
+// path 也可以是按 z 序从下到上的一组（🎰 老虎机 5 层），渲出来是合成后的一张。
+export const tgsOpen: (path: string | string[], width: number, height: number, cacheDir?: string) => Promise<{
   handle: number;
   totalFrames: number;
   frameRate: number;

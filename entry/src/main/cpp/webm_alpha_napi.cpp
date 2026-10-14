@@ -97,6 +97,9 @@ napi_value BuildInfo(napi_env env, const sticker_decode::Batch &batch) {
     napi_set_named_property(env, info, "width", w);
     napi_set_named_property(env, info, "height", h);
     napi_set_named_property(env, info, "durationMs", d);
+    napi_value bpp = nullptr;
+    napi_create_int32(env, batch.info.bytesPerPixel, &bpp);
+    napi_set_named_property(env, info, "bytesPerPixel", bpp);
     napi_set_named_property(env, info, "timesMs", times);
     return info;
 }

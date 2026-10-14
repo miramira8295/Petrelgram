@@ -100,6 +100,7 @@ import { canBackgroundCache } from '../../util/backgroundCacheEligibility';
 import { isLivePhotoVideo } from '../../util/livePhoto';
 import { editableCached, ensureEditable } from '../../util/messageEditable';
 import { replyThumbSrc } from '../../util/replyThumb';
+import { DiceEndFrame } from './DiceEndFrame';
 import { menuPreviewCompact } from '../../util/menuPreview';
 import { linkTextHidesUrl } from '../../util/messageLinkAction';
 // 气泡玻璃自绘：明确不指望 systemMaterial（系统已收回组件级材质），
@@ -2891,7 +2892,11 @@ export struct MessageBubble {
       //
       // 边长刚好是两行文字的总高，所以有没有这张图，引用块的高度都一样，
       // 不会在缩略图落地时把气泡顶高（这一块的注释里那条"锁死行高"的约束）。
-      if (this.msg.replyThumbPath !== '') {
+      if (this.msg.replyDiceLayers.length > 0) {
+        // 骰子/老虎机：画摇出来的结果（结尾帧），见 DiceEndFrame。
+        DiceEndFrame({ layers: this.msg.replyDiceLayers, thumbPath: this.msg.replyThumbPath,
+          boxSize: REPLY_THUMB_SIZE });
+      } else if (this.msg.replyThumbPath !== '') {
         Image(replyThumbSrc(this.msg.replyThumbPath)).draggable(false)
           .width(REPLY_THUMB_SIZE).height(REPLY_THUMB_SIZE)
           .borderRadius(this.msg.replyThumbSticker ? 0 : 4)
@@ -3446,7 +3451,8 @@ export struct MessageBubble {
         hasFinalState: this.msg.diceHasFinalState,
         successFrame: this.msg.diceSuccessFrame,
         stickerPath: this.msg.stickerPath,
-        layerPaths: this.msg.diceLayerPaths
+        layerPaths: this.msg.diceLayerPaths,
+        playKey: `${this.data.chatId}:${this.msg.id}`
       });
     } else if (this.msg.contentType === 'game') {
       GameBubble({
@@ -3692,9 +3698,12 @@ export struct MessageBubble {
   // Big bare emoji / stickers render without bubble background/tail, like bare media.
   // 圆形视频同理：在 Telegram 里圆本身就是消息，外面再套一层圆角矩形气泡
   // 会变成"方框里嵌个圆"，很难看。
+  // 骰子（🎰🎲🎯…）本身就是一张 TGS 动画，和贴纸一样不套气泡（2026-10-10 补；
+  // 行复用那边 rowReuseId.isBareSurface 早就把它算作无气泡面）。
   private isBareEmoji(): boolean {
     return this.msg.contentType === 'emoji' || this.msg.contentType === 'sticker'
-      || this.msg.contentType === 'customEmoji' || this.msg.contentType === 'videoNote';
+      || this.msg.contentType === 'customEmoji' || this.msg.contentType === 'videoNote'
+      || this.msg.contentType === 'dice';
   }
 
   // Sticker display box: longest side capped, aspect preserved (512 fallback).
