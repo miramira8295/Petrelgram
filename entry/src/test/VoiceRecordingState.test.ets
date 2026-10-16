@@ -82,6 +82,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 class FakeHost implements VoiceRecordingStateHost {
+  sendAllowed: boolean = true;
+  canSend: () => boolean = (): boolean => this.sendAllowed;
   callOrder: string[] = [];
   storeValue: MessageStore | null = null;
   contextValue: common.UIAbilityContext = {} as common.UIAbilityContext;
@@ -135,8 +137,51 @@ function newWiredStore(chatId: number): MessageStore {
   return new MessageStore(client, users, chatId);
 }
 
+class RetryingVoiceStore extends MessageStore {
+  sendCalls: number = 0;
+  rejectSend: boolean = true;
+  sendVoiceNoteAsync(_path: string, _duration: number): Promise<void> {
+    this.sendCalls++;
+    return this.rejectSend ? Promise.reject(new Error('denied')) : Promise.resolve();
+  }
+}
+function retryingStore(): RetryingVoiceStore {
+  const client = new TdClient(new FakeBridge()); client.start();
+  return new RetryingVoiceStore(client, new UserStore(client), 1);
+}
+
 export default function voiceRecordingStateTest() {
   describe('VoiceRecordingState', () => {
+    it('停止后撤权保留语音但不继续采集，可取消', 0, async () => {
+      const host = new FakeHost(); const store = retryingStore(); host.storeValue = store;
+      const controller = controllerOn(host); controller.start();
+      const recorder = host.handedOut[0]; recorder.path = '/voice.m4a'; recorder.resolveStart(true); await sleep(0);
+      host.sendAllowed = false; controller.finish(); await sleep(0);
+      expect(recorder.stopCalls).assertEqual(1); expect(store.sendCalls).assertEqual(0);
+      expect(controller.readyToSend).assertTrue(); controller.cancel(); expect(controller.readyToSend).assertFalse();
+    });
+    it('语音明确拒绝后可重试，成功前不清除待发送状态', 0, async () => {
+      const host = new FakeHost(); const store = retryingStore(); host.storeValue = store;
+      const controller = controllerOn(host); controller.start();
+      const recorder = host.handedOut[0]; recorder.path = '/voice.m4a'; recorder.resolveStart(true); await sleep(0);
+      controller.finish(); await sleep(0);
+      expect(store.sendCalls).assertEqual(1); expect(controller.readyToSend).assertTrue();
+      store.rejectSend = false; controller.finish(); await sleep(0);
+      expect(store.sendCalls).assertEqual(2); expect(controller.readyToSend).assertFalse(); expect(controller.isRecording).assertFalse();
+    });
+
+    it('群禁止语音时不创建录音器', 0, () => {
+      const host = new FakeHost(); host.storeValue = newWiredStore(1); host.sendAllowed = false;
+      const controller = controllerOn(host); controller.start();
+      expect(host.handedOut.length).assertEqual(0); expect(controller.recordingStarting).assertFalse();
+    });
+    it('录音器启动期间被撤权则停止采集', 0, async () => {
+      const host = new FakeHost(); host.storeValue = newWiredStore(1);
+      const controller = controllerOn(host); controller.start(); host.sendAllowed = false;
+      host.handedOut[0].resolveStart(true); await sleep(0);
+      expect(host.handedOut[0].cancelCalls).assertEqual(1); expect(controller.isRecording).assertFalse();
+    });
+
 
     // 防的回归：start() 的 `if (this.recordingStarting || ...) { return; }`
     // 这道早退判据被削弱或漏掉——录音"正在启动中"时再点一次麦克风按钮，

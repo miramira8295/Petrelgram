@@ -49,6 +49,11 @@
 // 显式方法调用表达。
 
 import { promptAction } from '@kit.ArkUI';
+import { TdClient } from '../../tdkit/TdClient';
+import { MentionItem, searchMentions } from '../../store/InputSuggestions';
+import { mentionQueryOf } from '../../util/mentionDraft';
+import { senderSearchToken, senderSearchKeywords } from '../../util/searchSenderText';
+import { SearchSenderSuggestions } from './SearchSenderSuggestions';
 import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { applyMessageTopicScope } from '../../util/messageTopicScope';
@@ -68,6 +73,8 @@ import { logE } from '../../util/log';
 // 2. 命中之后要做的"跳过去"这件事（压回返回栈、滚动、两拍高亮闪烁）本身留在
 //    页面的 onReplyTap 里，控制器只负责把选中的消息 id 交回去，不复刻那套逻辑。
 export interface SearchSessionHost {
+  client?: () => TdClient;
+  canSuggestSenders?: () => boolean;
   // 当前会话 id。
   chatId: () => number;
   threadRootId: () => number;
@@ -99,6 +106,10 @@ export class SearchSession {
   // 按发送者筛时 query 允许为空——TDLib 支持"空 query + sender_id"列出此人
   // 全部消息。
   @Trace senderId: number = 0;
+  @Trace completionRevision: number = 0;
+  readonly senders: SearchSenderSuggestions = new SearchSenderSuggestions();
+  private senderToken: string = '';
+  private senderTokenStart: number = -1;
 
   // ——— 内部机件：一律**不加 @Trace** ———
   // 定时器句柄与序号守卫都不驱动任何 UI，加了 @Trace 只会在每次自增/清句柄时
@@ -136,6 +147,48 @@ export class SearchSession {
   // ChatPage.aboutToAppear 里调一次。
   bind(host: SearchSessionHost): void {
     this.host = host;
+    this.senders.bind({
+      chatId: (): number => this.host.chatId(),
+      enabled: (): boolean => this.mode && (this.host.canSuggestSenders?.() ?? false),
+      find: (chatId: number, query: string): Promise<MentionItem[]> =>
+        searchMentions(this.client(), chatId, query)
+    });
+  }
+
+  private client(): TdClient { return this.host.client?.() ?? getTdClient(); }
+
+  private cancelEntrySearch(): void {
+    if (this.entryTimer !== -1) { clearTimeout(this.entryTimer); this.entryTimer = -1; }
+  }
+
+  private clearSender(): void {
+    this.senderId = 0;
+    this.senderToken = '';
+    this.senderTokenStart = -1;
+    this.senders.clear();
+  }
+
+  keywords(): string {
+    return this.senderId > 0 && this.senderToken !== ''
+      ? (senderSearchKeywords(this.query, this.senderToken, this.senderTokenStart) ?? this.query.trim())
+      : this.query.trim();
+  }
+
+  pickSender(item: MentionItem): void {
+    if (!this.mode || !this.senders.open || !this.senders.items.some(
+      (candidate: MentionItem): boolean => candidate.userId === item.userId)) { return; }
+    const query: string | null = mentionQueryOf(this.query);
+    if (query === null) { return; }
+    const start: number = this.query.length - query.length - 1;
+    const token: string = senderSearchToken(item.name, item.username, item.userId);
+    this.clearSender();
+    this.updateQuery(`${this.query.substring(0, start)}${token} `);
+    this.senderId = item.userId;
+    this.senderToken = token;
+    this.senderTokenStart = start;
+    this.senders.clear();
+    this.completionRevision++;
+    this.run(0, 0);
   }
 
   // ——— 会话生命周期 ———
@@ -143,6 +196,10 @@ export class SearchSession {
   // 搬之前是 ChatPage.enterSearch()。头部 ⋮ 菜单的"搜索"项调用（页面侧改调
   // this.search.enter()）。
   enter(): void {
+    this.cancelEntrySearch();
+    this.seq++;
+    this.anchorId = 0;
+    this.clearSender();
     this.mode = true;
     this.query = '';
     this.results = [];
@@ -154,11 +211,13 @@ export class SearchSession {
   // selecting 之后第二优先）、SearchHeader.onExit——都在簇外，页面侧改调
   // this.search.exit()。
   exit(): void {
+    this.cancelEntrySearch();
     this.mode = false;
     this.query = '';
     // 发送者过滤必须跟着一起清：留着的话下一次普通关键词搜索会被悄悄限定在
     // 那个人身上，用户完全看不出为什么搜不到。
-    this.senderId = 0;
+    this.clearSender();
+    this.anchorId = 0;
     this.results = [];
     this.total = 0;
     this.idx = 0;
@@ -171,7 +230,13 @@ export class SearchSession {
     if (value === this.query) {
       return;
     }
+    this.cancelEntrySearch();
+    if (this.senderToken !== '' && senderSearchKeywords(value, this.senderToken, this.senderTokenStart) === null) {
+      this.clearSender();
+    }
     this.query = value;
+    this.anchorId = 0;
+    if (this.senderId === 0) { this.senders.update(value); } else { this.senders.clear(); }
     this.results = [];
     this.total = 0;
     this.idx = 0;
@@ -186,7 +251,8 @@ export class SearchSession {
   // SearchHeader.onSubmit（簇外，直接调 run(0,0)，跳过 updateQuery() 那次
   // 提前清空——无害，因为 fromMsgId===0 本来就会整体替换 results）。
   run(fromMsgId: number, thenJumpTo: number): void {
-    const q = this.query.trim();
+    this.senders.clear();
+    const q = this.keywords();
     // 关键词为空时通常没什么可搜的，但**按发送者筛是例外**：空 query +
     // sender_id 正是 TDLib 列出"此人在本会话的全部消息"的用法（「查看历史」
     // 走这条）。
@@ -207,7 +273,7 @@ export class SearchSession {
     req['from_message_id'] = fromMsgId;
     req['offset'] = 0;
     req['limit'] = 50;
-    getTdClient().send(req).then((res: TdObject): void => {
+    this.client().send(req).then((res: TdObject): void => {
       if (seq !== this.seq || !this.mode) {
         return;
       }
@@ -293,6 +359,7 @@ export class SearchSession {
     if (senderId <= 0) {
       return;
     }
+    this.enter();
     this.senderId = senderId;
     this.query = '';
     this.mode = true;
@@ -314,7 +381,7 @@ export class SearchSession {
     if (query === '') {
       return;
     }
-    this.senderId = 0;
+    this.enter();
     this.query = query;
     this.mode = true;
     this.run(0, 0);
@@ -356,6 +423,7 @@ export class SearchSession {
   // 清完定时器之后那一小段窗口里被漏进来——与本仓所有 @ObservedV2 控制器的
   // dispose 顺序约定一致。
   dispose(): void {
+    this.senders.clear();
     this.seq++;
     if (this.entryTimer !== -1) {
       clearTimeout(this.entryTimer);

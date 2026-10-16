@@ -7,7 +7,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SEC
 import { SmartLoopVideo } from '../common/SmartLoopVideo';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { EMOJI_CONTENT_HEIGHT } from '../../util/drawerMetrics';
+import { mediaPanelColumns, mediaPanelTemplate } from './EmojiDrawerState';
 import { logE } from '../../util/log';
 import { guardKey } from '../../util/keyGuard';
 import { InlineQueryPage, InlineResultRow } from '../../store/BotApi';
@@ -43,7 +43,6 @@ function headerItem(title: string): GifItem {
 }
 
 const GIF_SKELETONS: number[] = [0, 1, 2, 3, 4, 5];
-const GIF_COLUMNS: number = 2;
 const GIF_GRID_GAP: number = 6;
 const GIF_GRID_SIDE_PADDING: number = 10;
 const GIF_CELL_ASPECT: number = 1.45;
@@ -192,10 +191,12 @@ export struct GifPicker {
     this.gridData.update(next);
   }
 
+  private gridColumns(): number { return mediaPanelColumns(this.gridWidth > 0 ? this.gridWidth : 360, 'gif'); }
+
   private gifCellWidth(): number {
     const available: number = this.gridWidth > 0 ? this.gridWidth : 360;
-    const gaps: number = GIF_GRID_SIDE_PADDING * 2 + GIF_GRID_GAP * (GIF_COLUMNS - 1);
-    return Math.max(120, Math.floor((available - gaps) / GIF_COLUMNS));
+    const gaps: number = GIF_GRID_SIDE_PADDING * 2 + GIF_GRID_GAP * (this.gridColumns() - 1);
+    return Math.max(1, Math.floor((available - gaps) / this.gridColumns()));
   }
 
   private gifCellHeight(): number {
@@ -438,7 +439,7 @@ export struct GifPicker {
     const seq: number = this.loadSeq;
     const first: number = Math.max(0, this.visibleFirst);
     const last: number = Math.min(this.gifs.length - 1,
-      Math.max(this.visibleLast, first + GIF_SKELETONS.length - 1) + GIF_COLUMNS);
+      Math.max(this.visibleLast, first + GIF_SKELETONS.length - 1) + this.gridColumns());
     for (let i = first; i <= last; i++) {
       const g: GifItem = this.gifs[i];
       if (g.fileId !== 0 && g.srcPath === '' && !this.sourceLoading.has(g.fileId)) {
@@ -548,7 +549,7 @@ export struct GifPicker {
             }
           }, (idx: number) => `gif_skeleton_${idx}`);
         }
-        .columnsTemplate('1fr 1fr').columnsGap(GIF_GRID_GAP).rowsGap(GIF_GRID_GAP)
+        .columnsTemplate(mediaPanelTemplate(this.gridColumns())).columnsGap(GIF_GRID_GAP).rowsGap(GIF_GRID_GAP)
         .padding({ left: GIF_GRID_SIDE_PADDING, right: GIF_GRID_SIDE_PADDING, top: 10, bottom: 8 })
         .width('100%').height('100%');
       } else if (this.loadState === 'error') {
@@ -571,7 +572,7 @@ export struct GifPicker {
                   .width('100%')
                   .padding({ left: 2, top: 6, bottom: 2 });
               }
-              .columnStart(0).columnEnd(GIF_COLUMNS - 1)
+              .columnStart(0).columnEnd(this.gridColumns() - 1)
               .height(28);
             } else {
             GridItem() {
@@ -630,7 +631,7 @@ export struct GifPicker {
             }
           }, (g: GifItem, index: number) => guardKey('saved_gifs', index, `${g.fileId}_${g.resultId}_${g.header}`));
         }
-        .columnsTemplate('1fr 1fr')
+        .columnsTemplate(mediaPanelTemplate(this.gridColumns()))
         .columnsGap(GIF_GRID_GAP).rowsGap(GIF_GRID_GAP)
         .padding({ left: GIF_GRID_SIDE_PADDING, right: GIF_GRID_SIDE_PADDING, top: 8, bottom: 8 })
         .width('100%').height('100%')
@@ -638,18 +639,15 @@ export struct GifPicker {
           this.visibleFirst = first;
           this.visibleLast = last;
           this.requestVisibleSources();
-        })
-        .onAreaChange((_old: Area, area: Area): void => {
-          const width: number = area.width as number;
-          if (width > 0 && Math.abs(width - this.gridWidth) > 0.5) {
-            this.gridWidth = width;
-          }
         });
       }
     }
-    // 高度跟着抽屉的内容区走（见 util/drawerMetrics）。写死过一次 241，
-    // 抽屉从 300 压到 260 之后就会溢出。
-    .width('100%').height(EMOJI_CONTENT_HEIGHT)
-    .constraintSize({ minHeight: EMOJI_CONTENT_HEIGHT, maxHeight: EMOJI_CONTENT_HEIGHT });
+    // The parent supplies an explicit viewport, including when expanded.
+    .width('100%').height('100%')
+    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+      if (typeof size.width === 'number' && size.width > 0 && Math.abs(size.width - this.gridWidth) > 0.5) {
+        this.gridWidth = size.width;
+      }
+    });
   }
 }

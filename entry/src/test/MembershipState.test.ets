@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
   MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY,
-  MEMBERSHIP_WRITABLE, MemberStatusInput,
+  MEMBERSHIP_WRITABLE, MEMBERSHIP_RESTRICTED, MEMBERSHIP_GROUP_READONLY, MemberStatusInput,
   membershipLosesComposer, membershipStateOf
 } from '../main/ets/util/membershipState';
 
@@ -85,6 +85,8 @@ export default function membershipStateTest() {
       expect(membershipLosesComposer(MEMBERSHIP_JOINABLE)).assertTrue();
       expect(membershipLosesComposer(MEMBERSHIP_BLOCKED)).assertTrue();
       expect(membershipLosesComposer(MEMBERSHIP_READONLY)).assertTrue();
+      expect(membershipLosesComposer(MEMBERSHIP_RESTRICTED)).assertTrue();
+      expect(membershipLosesComposer(MEMBERSHIP_GROUP_READONLY)).assertTrue();
     });
 
     // 「不能聊天但是显示聊天输入框」（用户 2026-09-09，从首页进的会话）。
@@ -93,9 +95,9 @@ export default function membershipStateTest() {
     // "只有管理员能发言"的锁群里，普通成员状态就是 chatMemberStatusMember，
     // 一路判成 writable，输入框照出，打完字发送才被 TDLib 驳回
     // （真机日志：Need administrator rights in the channel chat）。
-    it('锁群里的普通成员是只读', 0, () => {
+    it('锁群里的普通成员显示群发言限制', 0, () => {
       expect(membershipStateOf(withPerm('chatMemberStatusMember', true, false, true)))
-        .assertEqual(MEMBERSHIP_READONLY);
+        .assertEqual(MEMBERSHIP_GROUP_READONLY);
     });
 
     it('普通群的普通成员照旧能发言', 0, () => {
@@ -113,9 +115,9 @@ export default function membershipStateTest() {
 
     // 被禁言的成员看自己那份 permissions，不看群默认的：群里别人能说话，
     // 不代表他能。原来这一支无条件返回 writable。
-    it('被禁言的成员是只读', 0, () => {
+    it('个人禁言不显示频道通知静音开关', 0, () => {
       expect(membershipStateOf(withPerm('chatMemberStatusRestricted', true, true, false)))
-        .assertEqual(MEMBERSHIP_READONLY);
+        .assertEqual(MEMBERSHIP_RESTRICTED);
     });
 
     it('只被限制了别的项、仍能发文字的成员照旧能发言', 0, () => {

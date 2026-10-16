@@ -1,9 +1,13 @@
+import { TargetFolderTabs } from '../common/TargetFolderTabs';
+import { FolderInfo } from '../../store/FolderStore';
+import { ALL_FOLDER_ID, forwardListKey } from '../../util/forwardFolders';
+import { TargetGrid } from '../common/TargetGrid';
+import { SendProgress } from '../../util/sendProgress';
+import { pickerChatRows, pickerRows, ensureSavedTarget } from '../../services/ShareChatSearch';
+import { clearPendingShareIf, onPendingShareChanged } from '../../services/ShareInbox';
 import { ChatEntry } from '../../store/ChatEntry';
 import { TargetAvatarCell } from '../common/TargetAvatarCell';
-import { forwardColumnsTemplate, forwardGridColumns } from '../../util/forwardFolders';
-import { KeyedListDataSource } from '../common/KeyedListDataSource';
-import { guardKey } from '../../util/keyGuard';
-import { getChatStore } from '../../tdkit/Globals';
+import { getChatStore, getFolderStore } from '../../tdkit/Globals';
 import {
   COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
@@ -12,13 +16,13 @@ import {
 } from '../../store/AppSettings';
 import { SHARE_TARGET_LIMIT, ShareTarget, orderShareTargets } from '../../util/shareTargets';
 import { recentOutgoingChats } from '../../util/recentOutgoing';
-import { ShareRow, pinSavedFirst, rowFromEntry } from '../../util/shareSearch';
+import { ShareRow } from '../../util/shareSearch';
 import { localShareRows, searchShareRows } from '../../services/ShareChatSearch';
 import { promptAction } from '@kit.ArkUI';
 import { getTdClient, getUserStore } from '../../tdkit/Globals';
 import { MediaSendItem, MessageStore } from '../../store/MessageStore';
 import { ShareArrivalHost, sendShareDirectly } from '../../util/shareArrival';
-import { peekPendingShare, takePendingShare } from '../../services/ShareInbox';
+import { peekPendingShare } from '../../services/ShareInbox';
 import { SharedPayload } from '../../util/sharedContent';
 import { selectionCount, targetSelected, toggleTarget } from '../../util/targetSelection';
 import { FanoutResult, fanoutShare } from '../../util/shareFanout';
@@ -50,13 +54,11 @@ export struct ShareTargetSheet {
   onPick: (chatId: number) => void = (): void => {};
   onCancel: () => void = (): void => {};
 
-  @State @Watch('syncRowsData') private chats: ChatEntry[] = [];
-  @State @Watch('syncRowsData') private query: string = '';
+  @State private chats: ChatEntry[] = [];
+  @State private query: string = '';
   @State private loadState: 'loading' | 'ready' | 'error' = 'loading';
   // 搜索结果。空查询时不用它，直接渲染 chats（主列表的既有顺序）。
-  @State @Watch('syncRowsData') private results: ShareRow[] = [];
-  // 会话列表的 LazyForEach 数据源，喂的是 rows() 那一份（见 syncRowsData）。
-  private rowsData: KeyedListDataSource<ShareRow> = new KeyedListDataSource<ShareRow>('share-targets');
+  @State private results: ShareRow[] = [];
   @StorageProp('bottomSafeHeight') bottomSafe: number = 0;
   // 网格列数跟窗口宽走，同 ForwardSheet（面板左右外边距 8×2 + 内边距 12×2）。
   @StorageProp('screenWidthVp') screenW: number = 360;
@@ -64,22 +66,42 @@ export struct ShareTargetSheet {
   // 选 2 个以上才直接群发——发单个人时先写句话是常用的，不该因为加了多选就丢掉。
   @State private selectedIds: number[] = [];
   @State private sending: boolean = false;
+  @State private folderId: number = ALL_FOLDER_ID;
+  @State private folders: FolderInfo[] = [];
+  private unsubFolders: (() => void) | null = null;
   private unsubChats: (() => void) | null = null;
   private seq: number = 0;
+  private sendSeq: number = 0;
+  private unsubPayload: (() => void) | null = null;
+  private progress: Map<number, SendProgress> = new Map<number, SendProgress>();
+  private taskPayload: SharedPayload | null = null;
   private searchSeq: number = 0;
   private searchTimer: number = -1;
 
   aboutToAppear(): void {
-    // 与 ForwardSheet 同一理由：列表会随消息到达重排、头像下载完才有图，
-    // 开着的选择器要跟着变。
-    this.unsubChats = getChatStore().subscribe((list: ChatEntry[]): void => {
-      this.applyChats(list);
-    }, 'main');
+    this.unsubFolders = getFolderStore().subscribe((folders: FolderInfo[]): void => {
+      this.folders = folders;
+      if (this.folderId !== ALL_FOLDER_ID && !folders.some((folder: FolderInfo): boolean => folder.id === this.folderId)) {
+        this.selectFolder(ALL_FOLDER_ID);
+      }
+    });
+    this.bindChats();
     this.loadChats();
-    this.syncRowsData();
+    this.unsubPayload = onPendingShareChanged((): void => {
+      this.sendSeq++;
+      this.sending = false;
+      this.selectedIds = [];
+      this.progress.clear();
+      this.taskPayload = null;
+    });
   }
 
   aboutToDisappear(): void {
+    this.sendSeq++;
+    this.unsubFolders?.();
+    this.unsubFolders = null;
+    this.unsubPayload?.();
+    this.unsubPayload = null;
     this.seq++;
     this.searchSeq++;
     if (this.searchTimer !== -1) {
@@ -90,6 +112,26 @@ export struct ShareTargetSheet {
       this.unsubChats();
       this.unsubChats = null;
     }
+  }
+
+  private listKey(): string {
+    return forwardListKey(this.folderId);
+  }
+
+  private bindChats(): void {
+    this.unsubChats?.();
+    this.unsubChats = getChatStore().subscribe((list: ChatEntry[]): void => {
+      this.applyChats(list);
+    }, this.listKey());
+  }
+
+  private selectFolder(id: number): void {
+    if (this.sending || id === this.folderId) { return; }
+    this.folderId = id;
+    this.chats = [];
+    this.bindChats();
+    this.loadChats();
+    this.onQueryChanged(this.query);
   }
 
   // 输入变化。**先同步出本机结果再去查远端**：本机那一层不用等，输入过程中
@@ -106,11 +148,12 @@ export struct ShareTargetSheet {
       this.results = [];
       return;
     }
-    this.results = localShareRows(trimmed);
+    this.results = localShareRows(trimmed, this.folderId);
     const seq: number = this.searchSeq;
+    const folderId: number = this.folderId;
     this.searchTimer = setTimeout((): void => {
       this.searchTimer = -1;
-      searchShareRows(trimmed).then((rows: ShareRow[]): void => {
+      searchShareRows(trimmed, folderId).then((rows: ShareRow[]): void => {
         // 结果回来时用户可能已经改了词，认序号不认时间。
         if (seq === this.searchSeq) {
           this.results = rows;
@@ -129,37 +172,36 @@ export struct ShareTargetSheet {
   private loadChats(): void {
     this.loadState = this.chats.length > 0 ? 'ready' : 'loading';
     const seq: number = ++this.seq;
-    getChatStore().ensureLoaded('main').then((success: boolean): void => {
+    Promise.all([getChatStore().ensureLoaded(this.listKey()), ensureSavedTarget().then((): boolean => true).catch((): boolean => false)])
+      .then((loaded: boolean[]): void => {
+      const success: boolean = loaded[0] || loaded[1];
       if (seq !== this.seq) {
         return;
       }
-      this.applyChats(getChatStore().getChats('main'));
+      this.applyChats(getChatStore().getChats(this.listKey()));
       this.loadState = !success && this.chats.length === 0 ? 'error' : 'ready';
     });
   }
 
   private recent(): ShareTarget[] {
-    return orderShareTargets(this.chats, recentOutgoingChats(), SHARE_TARGET_LIMIT);
+    return pickerRows(orderShareTargets(this.chats, recentOutgoingChats(), SHARE_TARGET_LIMIT)
+      .map((target: ShareTarget): ShareRow => ({ chatId: target.chatId, title: target.title,
+        subtitle: '', avatarPath: target.avatarPath, initials: target.initials,
+        isSavedMessages: target.isSavedMessages }))).slice(0, SHARE_TARGET_LIMIT);
   }
 
   // 列表要渲染的行。空查询走主列表的既有顺序；有查询走搜索结果
   // （候选集是本机全部会话 + TDLib 本地索引，见 services/ShareChatSearch）。
   private rows(): ShareRow[] {
     if (this.query.trim() === '') {
-      // 收藏置顶：主列表按最后消息时间排，收藏常沉在很后面，而它是分享最
-      // 高频的去处（用户明确要求）。搜索时不动——那时顺序应该按相关性。
-      return pinSavedFirst(this.chats.map(rowFromEntry));
+      const rows: ShareRow[] = pickerChatRows(this.chats);
+      // 横向常用栏已展示收藏时，下面的全部网格不再重复。
+      // 文件夹和搜索会收起横栏，仍保留各自的收藏入口。
+      const savedInRecent: boolean = this.folderId === ALL_FOLDER_ID &&
+        this.recent().some((target: ShareTarget): boolean => target.isSavedMessages);
+      return savedInRecent ? rows.filter((row: ShareRow): boolean => !row.isSavedMessages) : rows;
     }
     return this.results;
-  }
-
-  // 会话 / 搜索词 / 搜索结果变了：把当下要显示的那一份交给 LazyForEach。
-  private syncRowsData(): void {
-    const list: ShareRow[] = this.rows();
-    this.rowsData.update(list,
-      list.map((r: ShareRow): string => `${r.chatId}`),
-      list.map((r: ShareRow): string =>
-        `${r.chatId}_${r.title}_${r.subtitle}_${r.avatarPath}_${r.isSavedMessages ? 1 : 0}`));
   }
 
   @Styles
@@ -193,10 +235,6 @@ export struct ShareTargetSheet {
       .onClick((): void => this.toggle(target.chatId));
   }
 
-  private gridColumnsTemplate(): string {
-    return forwardColumnsTemplate(forwardGridColumns(this.screenW - 16 - 24));
-  }
-
   private toggle(chatId: number): void {
     if (this.sending) {
       return;
@@ -210,7 +248,7 @@ export struct ShareTargetSheet {
     if (this.sending || this.selectedIds.length === 0) {
       return;
     }
-    if (this.selectedIds.length === 1) {
+    if (this.selectedIds.length === 1 && this.taskPayload === null) {
       this.onPick(this.selectedIds[0]);
       return;
     }
@@ -223,16 +261,17 @@ export struct ShareTargetSheet {
   private hostFor(chatId: number): ShareArrivalHost {
     const store: MessageStore = new MessageStore(getTdClient(), getUserStore(), chatId, 0, 30, 0, 0);
     return {
+      checkPermissions: (payload: SharedPayload): Promise<void> => store.checkSharePermissions(payload),
       // 直发这一档不碰输入框暂存区，这四个用不上（见 util/shareArrival 的说明）。
       appendMedia: (_items: MediaSendItem[]): number => 0,
       setDraft: (_text: string): void => {},
       draftText: (): string => '',
       scrollToBottom: (): void => {},
-      sendDocument: (path: string, caption: string): void => store.sendDocument(path, caption),
-      sendAudio: (path: string, caption: string): void => store.sendAudio(path, caption),
+      sendDocument: (path: string, caption: string): Promise<void> => store.sendDocumentAsync(path, caption),
+      sendAudio: (path: string, caption: string): Promise<void> => store.sendAudioAsync(path, caption),
       sendMedia: (items: MediaSendItem[], caption: string): Promise<void> =>
         store.sendMedia(items, caption),
-      sendText: (text: string): void => { store.send(text); }
+      sendText: (text: string): Promise<void> => store.sendAsync(text)
     };
   }
 
@@ -243,14 +282,25 @@ export struct ShareTargetSheet {
     if (payload === null) {
       return;
     }
-    const targets: number[] = this.selectedIds;
+    if (payload !== this.taskPayload) {
+      this.progress.clear();
+      this.taskPayload = payload;
+    }
+    const seq: number = ++this.sendSeq;
+    const targets: number[] = this.selectedIds.slice();
+    const active = (): boolean => seq === this.sendSeq && peekPendingShare() === payload;
     this.sending = true;
-    fanoutShare(targets, (chatId: number): Promise<void> =>
-      sendShareDirectly(payload, this.hostFor(chatId))
-    ).then((result: FanoutResult): void => {
+    fanoutShare(targets, (chatId: number): Promise<void> => {
+      if (!active()) { return Promise.reject(new Error('share closed')); }
+      let progress: SendProgress | undefined = this.progress.get(chatId);
+      if (progress === undefined) { progress = new SendProgress(); this.progress.set(chatId, progress); }
+      return sendShareDirectly(payload, this.hostFor(chatId), new Map(), progress, active);
+    }).then((result: FanoutResult): void => {
+      if (!active()) { return; }
+      this.selectedIds = result.failedIds;
       this.sending = false;
       if (result.failed === 0) {
-        takePendingShare();
+        clearPendingShareIf(payload);
         promptAction.showToast({
           message: str('fw_sent_to_n', result.ok), duration: 1800
         });
@@ -258,8 +308,10 @@ export struct ShareTargetSheet {
         return;
       }
       logE(`ShareTargetSheet.fanout failed for ${result.failedIds.join(',')}`);
+      let uncertain: boolean = false;
+      this.progress.forEach((progress: SendProgress): void => { uncertain = uncertain || progress.hasUncertain(); });
       promptAction.showToast({
-        message: result.ok === 0
+        message: uncertain ? str('share_result_unknown') : result.ok === 0
           ? str('fw_sent_none')
           : str('fw_sent_partial', result.ok, result.failed),
         duration: 2400
@@ -329,8 +381,13 @@ export struct ShareTargetSheet {
           .backgroundColor($r('app.color.surface_alt')).borderRadius(20)
           .onChange((value: string): void => this.onQueryChanged(value));
 
+        if (this.folders.length > 0) {
+          TargetFolderTabs({ folders: this.folders, folderId: this.folderId,
+            onSelect: (id: number): void => { this.selectFolder(id); } });
+        }
+
         // 常用一排。搜索时收起——那时用户心里已经有目标，横排只会挡住结果。
-        if (this.query.trim() === '' && this.recent().length > 0) {
+        if (this.folderId === ALL_FOLDER_ID && this.query.trim() === '' && this.recent().length > 0) {
           List({ space: 10 }) {
             ForEach(this.recent(), (target: ShareTarget): void => {
               ListItem() {
@@ -349,6 +406,11 @@ export struct ShareTargetSheet {
             Text($r('app.string.fw_loading')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
           }
           .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
+        } else if (this.loadState === 'error') {
+          Column({ space: 10 }) {
+            Text($r('app.string.fw_load_failed')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY);
+            Button($r('app.string.settings_retry')).onClick((): void => { this.loadChats(); });
+          }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center);
         } else if (this.rows().length === 0) {
           Column({ space: 8 }) {
             SymbolGlyph($r('sys.symbol.magnifyingglass'))
@@ -360,34 +422,10 @@ export struct ShareTargetSheet {
         } else {
           // 头像网格，同 ForwardSheet（2026-09-17 用户要求分享抽屉也改成头像列表）。
           // LazyForEach：空查询时是整个会话列表，翻页会一直涨。
-          Grid() {
-            LazyForEach(this.rowsData, (row: ShareRow): void => {
-              GridItem() {
-                TargetAvatarCell({
-                  avatarPath: row.avatarPath,
-                  initials: row.initials,
-                  colorSeed: row.chatId,
-                  savedMessages: row.isSavedMessages,
-                  title: row.isSavedMessages ? str('cl_saved_messages') : row.title,
-                  selected: targetSelected(this.selectedIds, row.chatId)
-                })
-                  .onClick((): void => this.toggle(row.chatId));
-              }
-            }, (row: ShareRow, index: number): string =>
-              guardKey(this.rowsData.keyTableId, index,
-                `${row.chatId}_${row.title}_${row.avatarPath}_${row.isSavedMessages ? 1 : 0}`));
-          }
-          .columnsTemplate(this.gridColumnsTemplate())
-          .rowsGap(4).columnsGap(4)
-          .layoutWeight(1).width('100%')
-          .cachedCount(2)
-          .scrollBar(BarState.Auto)
-          // 搜索时不翻主列表：结果来自搜索，翻页只会白拉数据。
-          .onReachEnd((): void => {
-            if (this.query.trim() === '') {
-              getChatStore().loadMore('main');
-            }
-          });
+          TargetGrid({ rows: this.rows(), selectedIds: this.selectedIds,
+            onToggle: (id: number): void => { this.toggle(id); },
+            onMore: (): void => { if (this.query.trim() === '') { getChatStore().loadMore(this.listKey()); } }
+          }).layoutWeight(1).width('100%');
         }
         this.sendBar();
       }

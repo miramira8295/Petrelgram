@@ -228,12 +228,14 @@ export struct ChatHeader {
     .height(CHAT_HEADER_ACTION_SIZE)
     .borderRadius(CHAT_HEADER_RADIUS)
     .justifyContent(FlexAlign.Center)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+    .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
     .backgroundColor(this.actionFill(this.backPressed))
     .opacity(this.backPressed ? 0.72 : 1)
     .scale({ x: this.backPressed ? 0.9 : 1, y: this.backPressed ? 0.9 : 1 })
     .backdropBlur(plainBackdropBlur('bar'))
-    .visualEffect(hdsVisualEffect('bar'))
+    .visualEffect(hdsVisualEffect('bar', !this.appDark))
+    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+    .clip(this.appDark)
     .accessibilityText($r('app.string.cp_back_to_chat'))
     .onTouch((event: TouchEvent): void => {
       const edge: number = this.pressEdge(event);
@@ -275,13 +277,15 @@ export struct ChatHeader {
     .height(CHAT_HEADER_ACTION_SIZE)
     .borderRadius(CHAT_HEADER_RADIUS)
     .justifyContent(FlexAlign.Center)
-    .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+    .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
     .backgroundColor(this.actionFill(this.menuPressed))
     .opacity(this.menuPressed ? 0.72 : 1)
     .scale({ x: this.menuPressed ? 0.9 : 1, y: this.menuPressed ? 0.9 : 1 })
     // 和身份胶囊同一档：半透明底 + backdropBlur 自绘玻璃，API 26 上让位给材质。
     .backdropBlur(plainBackdropBlur('bar'))
-    .visualEffect(hdsVisualEffect('bar'))
+    .visualEffect(hdsVisualEffect('bar', !this.appDark))
+    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+    .clip(this.appDark)
     // 菜单浮层按这个 id 定位（ChatHeaderMenuController.open 的 targetId）。
     .id(this.menuAnchorId)
     .enabled(this.chatId !== 0)
@@ -346,13 +350,13 @@ export struct ChatHeader {
       .height(CHAT_HEADER_ACTION_SIZE)
       .padding({ left: 7, right: 12 })
       .borderRadius(CHAT_HEADER_RADIUS)
-      .shadow({ radius: 4, color: '#12000000', offsetX: 0, offsetY: 1 })
+      .shadow({ radius: this.appDark ? 0 : 4, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
       .stateStyles({ normal: this.identityNormalStyle, pressed: this.identityPressedStyle })
-      // 顶栏的三个胶囊都浮在消息列表之上，正对「浮动工具栏」那一档。材质生效
-      // 时会把 stateStyles 的背景色清成透明并接管边框，按压反馈仍由 stateStyles
-      // 的缩放/透明度体现；'bar' 档的 applyShadow:false 让这里手调的阴影继续生效。
+      // 暗色模式与输入栏统一：关闭光晕和阴影，使用标准描边及圆角裁剪。
       .backdropBlur(plainBackdropBlur('bar'))
-      .visualEffect(hdsVisualEffect('bar'))
+      .visualEffect(hdsVisualEffect('bar', !this.appDark))
+      .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+      .clip(this.appDark)
       .accessibilityText(str('cp_header_a11y', this.header.titleTextOf(), this.header.subtitleTextOf()))
       .onClick((): void => {
         if (this.header.state === 'error') {

@@ -1,4 +1,4 @@
-import { AvLoopVideo } from '../common/AvLoopVideo';
+import { AvatarFrameView } from '../common/AvatarFrameView';
 import { requestSenderAnimation } from '../../services/PhotoAnimationFetch';
 import { AnimationSlotPool } from '../../util/animationSlotPool';
 import { subscribeChatAnimationGate } from '../../util/chatAnimationGate';
@@ -27,7 +27,7 @@ import {
 //
 // 【不闪】播放器真正开始出帧（onWorking）之前透明，底下的静态头像照常显示。
 
-// 每个都是一路硬件解码器实例；会话里的 GIF 也用同一种播放器。一屏群聊通常三到六个头像。
+// 同时播放名额保持原限制；短头像共用帧缓存，其余仍使用独立的硬解播放器。
 export const SENDER_AVATAR_ANIMATION_SLOTS: number = 4;
 const senderAvatarSlots: AnimationSlotPool = new AnimationSlotPool(SENDER_AVATAR_ANIMATION_SLOTS);
 
@@ -185,12 +185,9 @@ export struct SenderAnimatedLayer {
   build() {
     Stack() {
       if (this.holding && this.videoPath !== '') {
-        AvLoopVideo({
+        AvatarFrameView({
           videoPath: this.videoPath,
-          boxWidth: this.avatarSize,
-          boxHeight: this.avatarSize,
-          loop: true,
-          muted: true,
+          avatarSize: this.avatarSize,
           paused: this.gateSuspended,
           onWorking: (): void => {
             this.shown = true;

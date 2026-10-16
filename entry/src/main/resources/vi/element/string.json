@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Chuyển đến lượt nhắc chưa đọc"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Chưa xác định được kết quả gửi. Hãy kiểm tra cuộc trò chuyện đích trước; nhóm này sẽ không được gửi lại để tránh trùng lặp."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Quản trị viên nhóm này đã hạn chế bạn gửi tin nhắn cho đến %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Quản trị viên nhóm này đã hạn chế bạn gửi tin nhắn."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "Nhóm này không cho phép thành viên thông thường gửi tin nhắn."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Quản lý: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Đã hoàn tất: %1$s. Thất bại: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Trạng thái thành viên hoặc quyền quản trị đã thay đổi. Hãy mở lại hộp thoại xóa."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Chưa xác nhận được kết quả. Kiểm tra nhóm trước khi lặp lại thao tác."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Các tin nhắn đã chọn sẽ bị xóa với mọi người."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Các tin nhắn đã chọn chỉ bị xóa khỏi lịch sử trò chuyện của bạn."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Không thể xác nhận phạm vi xóa khả dụng cho các tin nhắn đã chọn. Hãy thay đổi lựa chọn hoặc thử lại sau."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "Không được phép trong cuộc trò chuyện này: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Không thể kiểm tra quyền gửi. Vui lòng thử lại."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Đang quay video…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Đang ghi âm…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Đang quay tin nhắn video…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Đang gửi video…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Đang gửi tin nhắn thoại…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Đang gửi tin nhắn video…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Đang gửi ảnh…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Đang gửi tệp…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Đang chọn nhãn dán…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Đang chọn vị trí…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Đang chọn liên hệ…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Đang chơi trò chơi…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Đang xem hoạt ảnh…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Đang thực hiện các thao tác khác nhau…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Quét mã QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Mã này không được hỗ trợ. Hãy quét mã liên hệ, nhóm hoặc đăng nhập Telegram."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Cho phép thiết bị mới đăng nhập?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Chỉ xác nhận thiết bị mà chính bạn đang đăng nhập. Thiết bị sẽ có quyền truy cập tài khoản và trò chuyện đám mây Telegram của bạn."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Cho phép đăng nhập"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Không có liên kết mời khả dụng hoặc bạn không có quyền quản lý liên kết."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Không thể xử lý mã. Kiểm tra kết nối và thời hạn của mã rồi thử lại."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Thiết bị mới đăng nhập"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Thiết bị chờ xác nhận: %1$d. Nhấn để kiểm tra."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Nhóm Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Hiện bàn phím"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Ẩn tin nhắn đã ghim"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Hiện tin nhắn đã ghim"
     }
   ]
 }

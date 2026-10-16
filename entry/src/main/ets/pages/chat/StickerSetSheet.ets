@@ -1,8 +1,10 @@
+import { StickerPreviewHold } from './StickerPreviewHold';
+import { StickerPreviewDialog } from './StickerPreviewDialog';
 // 「这张贴纸是哪一包的」——点消息里的贴纸弹出来的合集面板。
 //
 // 只读一屏：合集名、内容网格、底部「添加/移除贴纸」。点格子直接把那张贴纸发到
 // 当前会话（和官方端一致）。动态贴纸在这里只画缩略图，不起 Lottie/视频：一屏
-// 几十格，全部动起来是一次可见的掉帧，而这张面板的用途是"认包"不是"看动画"。
+// 几十格，全部动起来是一次可见的掉帧；长按才在独立预览里播放当前一张。
 import { getTdClient } from '../../tdkit/Globals';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { parseStickerSetInfo, parseStickerSetItems, StickerSetInfo, StickerSetItem } from '../../util/stickerSetItems';
@@ -23,6 +25,11 @@ export struct StickerSetSheet {
   @Local failed: boolean = false;
   @Local busy: boolean = false;
   private disposed: boolean = false;
+  private canFavorite: boolean = true;
+  private previewController: CustomDialogController | null = null;
+  private previewOpen: boolean = false;
+  private previewGeneration: number = 0;
+  private previewHold: StickerPreviewHold | null = null;
 
   aboutToAppear(): void {
     this.load();
@@ -30,6 +37,41 @@ export struct StickerSetSheet {
 
   aboutToDisappear(): void {
     this.disposed = true;
+    this.previewHold?.cancel();
+    this.previewHold = null;
+    this.previewGeneration++;
+    this.previewController?.close();
+    this.previewController = null;
+    this.previewOpen = false;
+  }
+
+  private previewSticker(item: StickerSetItem): void {
+    if (this.disposed || this.previewOpen || item.fileId === 0) { return; }
+    this.previewOpen = true;
+    const generation = ++this.previewGeneration;
+    const hold = new StickerPreviewHold();
+    this.previewHold = hold;
+    hold.begin();
+    hold.onFinish = (send: boolean, x: number, y: number): void => {
+      if (generation !== this.previewGeneration) { return; }
+      this.previewController?.close();
+      this.previewController = null;
+      this.previewOpen = false;
+      this.previewHold = null;
+      if (send && !this.disposed) {
+        this.onPick(item);
+      }
+    };
+    this.previewController = new CustomDialogController({
+      builder: StickerPreviewDialog({ hold: hold, data: { fileId: item.fileId, format: item.format, emoji: item.emoji,
+        thumbPath: item.thumbPath, width: item.width, height: item.height, canFavorite: this.canFavorite },
+        ownerActive: (): boolean => !this.disposed && generation === this.previewGeneration,
+        onClosed: (): void => {
+          if (generation === this.previewGeneration) { this.previewOpen = false; this.previewController = null; }
+        } }),
+      autoCancel: false, customStyle: true, isModal: false, alignment: DialogAlignment.Center
+    });
+    this.previewController.open();
   }
 
   private load(): void {
@@ -37,6 +79,8 @@ export struct StickerSetSheet {
     req['set_id'] = this.setId;
     getTdClient().send(req, 12000).then((res: TdObject): void => {
       if (this.disposed) { return; }
+      const stickerType = res['sticker_type'] as TdObject | undefined;
+      this.canFavorite = stickerType?.['@type'] !== 'stickerTypeCustomEmoji';
       this.info = parseStickerSetInfo(res);
       this.items = parseStickerSetItems(res);
       this.loading = false;
@@ -137,7 +181,14 @@ export struct StickerSetSheet {
                 }
               }
               .width('100%').aspectRatio(1)
-              .onClick((): void => { this.onPick(item); });
+              .onTouch((event: TouchEvent): void => { this.previewHold?.touch(event); })
+              .gesture(GestureGroup(GestureMode.Exclusive,
+                LongPressGesture().onAction((): void => { this.previewSticker(item); })
+                  .onActionCancel((): void => { this.previewHold?.finish(0, 0, true); }),
+                TapGesture().onAction((): void => {
+                  if (!this.previewOpen && !this.disposed) { this.onPick(item); }
+                })
+              ));
             }
             // **key 必须带上缩略图是否到位**。缩略图是逐张异步下载、到一张换
             // 一次 items 数组的；key 只有 fileId 的话，ArkUI 判定这一格没变、

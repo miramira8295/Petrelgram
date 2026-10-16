@@ -49,10 +49,34 @@ import { SearchSession } from './SearchSession';
 // 这两个 struct 必须改成直读才是真正缩小重渲染半径的地方。
 
 // 会话内搜索框的组件 id。页面内唯一，供 FocusController.requestFocus 寻址。
-const CHAT_SEARCH_INPUT_ID: string = 'chat_search_input';
+let nextSearchInputId: number = 1;
 
 @ComponentV2
 export struct SearchHeader {
+  private readonly inputId: string = `chat_search_input_${nextSearchInputId++}`;
+  private inputController: TextInputController = new TextInputController();
+  private focusTimer: number = -1;
+
+  @Monitor('search.completionRevision')
+  onSenderCompleted(): void { this.scheduleInputFocus(true); }
+
+  aboutToDisappear(): void {
+    if (this.focusTimer !== -1) { clearTimeout(this.focusTimer); this.focusTimer = -1; }
+  }
+
+  private scheduleInputFocus(moveCaret: boolean): void {
+    if (this.focusTimer !== -1) { clearTimeout(this.focusTimer); }
+    this.focusTimer = setTimeout((): void => {
+      this.focusTimer = -1;
+      if (!this.search.mode) { return; }
+      try {
+        this.getUIContext().getFocusController().requestFocus(this.inputId);
+        if (moveCaret) { this.inputController.caretPosition(this.search.query.length); }
+      } catch (e) {
+        logW(`[Search] focus search input failed: ${JSON.stringify(e)}`);
+      }
+    }, 0);
+  }
   // B6：query 不再是独立的标量 @Param，改成读 search.query（引用型
   // @Require @Param，见下面 search 字段）。搜索框仍然是
   // `text: this.search.query` 单向绑定 + onChange 把新值交回页面（页面调
@@ -96,13 +120,7 @@ export struct SearchHeader {
     if (!searchOpensKeyboard(this.search.query, this.search.senderId)) {
       return;
     }
-    setTimeout((): void => {
-      try {
-        this.getUIContext().getFocusController().requestFocus(CHAT_SEARCH_INPUT_ID);
-      } catch (e) {
-        logW(`[Search] focus search input failed: ${JSON.stringify(e)}`);
-      }
-    }, 0);
+    this.scheduleInputFocus(false);
   }
 
   build() {
@@ -121,14 +139,15 @@ export struct SearchHeader {
       })
       .onClick((): void => { this.onExit(); })
       .accessibilityText($r('app.string.cp_back_to_chat'));
-      TextInput({ text: this.search.query, placeholder: $r('app.string.cp_search_messages') })
+      TextInput({ text: this.search.query, placeholder: $r('app.string.cp_search_messages'),
+        controller: this.inputController })
         .layoutWeight(1).height(40).fontSize(16)
         .backgroundColor(Color.Transparent).padding(0).borderRadius(0)
         .placeholderColor(COLOR_TEXT_SECONDARY)
         .caretColor(COLOR_PRIMARY)
         .enterKeyType(EnterKeyType.Search)
         .defaultFocus(true)
-        .id(CHAT_SEARCH_INPUT_ID)
+        .id(this.inputId)
         .onAppear((): void => { this.focusInputIfTyping(); })
         .onChange((v: string): void => { this.onQueryChange(v); })
         .onSubmit((): void => { this.onSubmit(); });
@@ -268,9 +287,9 @@ export struct SearchBottomBar {
   build() {
     Column({ space: BOTTOM_PILL_GAP }) {
       // 标签搜索那一行仍然是整条——它是一句可点的话，切成胶囊会很怪。
-      if (hashtagQueryOf(this.search.query) !== '') {
+      if (hashtagQueryOf(this.search.keywords()) !== '') {
         Row() {
-          this.publicPostsRow(hashtagQueryOf(this.search.query));
+          this.publicPostsRow(hashtagQueryOf(this.search.keywords()));
         }
         .width('100%')
         .backgroundColor(plainGlassFill($r('app.color.surface')))

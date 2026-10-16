@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "跳至未讀提及"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "傳送結果尚未確認，請先檢查目標聊天；為避免重複，暫不重試這批訊息。"
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "此群組的管理員限制您在 %1$s 之前傳送訊息。"
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "此群組的管理員限制您傳送訊息。"
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "此群組不允許一般成員傳送訊息。"
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "管理對象：%1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "已完成：%1$s。失敗：%2$s（%3$s）"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "成員狀態或管理權限已變更，請重新開啟刪除視窗。"
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "操作結果尚未確認，請先檢查群組狀態，避免重複操作。"
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "所選訊息將為所有人刪除。"
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "所選訊息只會從你的聊天記錄中刪除。"
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "無法確認所選訊息的可用刪除範圍，請重新選擇或稍後重試。"
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "此聊天不允許：%s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "暫時無法確認傳送權限，請稍後再試"
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "正在錄製影片…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "正在錄音…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "正在錄製影片訊息…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "正在傳送影片…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "正在傳送語音…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "正在傳送影片訊息…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "正在傳送圖片…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "正在傳送檔案…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "正在選擇貼圖…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "正在選擇位置…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "正在選擇聯絡人…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "正在玩遊戲…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "正在觀看動畫…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "正在進行多種操作…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s：%2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "%1$d 人：%2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "掃描二維碼"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "暫不支援此二維碼，請掃描 Telegram 聯絡人、群組或登入二維碼。"
+    },
+    {
+      "name": "qr_login_title",
+      "value": "允許新裝置登入？"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "僅確認你本人正在登入的裝置。繼續後，該裝置將能存取你的 Telegram 帳號與雲端聊天。"
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "允許登入"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "沒有可用的邀請連結，或你沒有管理邀請連結的權限。"
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "掃描處理失敗，請檢查網路或二維碼是否已過期後重試。"
+    },
+    {
+      "name": "session_new_login",
+      "value": "新裝置登入"
+    },
+    {
+      "name": "session_review_count",
+      "value": "%1$d 個裝置待確認，點此核對是否為本人操作"
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "TG 交流群"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "顯示鍵盤"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "隱藏置頂"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "顯示置頂"
     }
   ]
 }

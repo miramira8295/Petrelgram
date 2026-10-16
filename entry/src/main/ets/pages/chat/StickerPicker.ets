@@ -1,3 +1,6 @@
+import { mediaPanelColumns, mediaPanelTemplate } from './EmojiDrawerState';
+import { StickerPreviewHold } from './StickerPreviewHold';
+import { StickerPreviewDialog } from './StickerPreviewDialog';
 import { getTdClient } from '../../tdkit/Globals';
 import { guardKey } from '../../util/keyGuard';
 import { StickerGridCell } from './StickerGridCell';
@@ -14,8 +17,7 @@ import {
   accentSoft, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY
 } from '../../util/theme';
 import {
-  addFavoriteSticker, getFavoriteStickers, getRecentStickers, rememberRecentSticker,
-  removeFavoriteSticker
+  getFavoriteStickers, getRecentStickers, rememberRecentSticker
 } from '../../store/StickerApi';
 import { promptAction, LengthMetrics } from '@kit.ArkUI';
 import { i18n } from '@kit.LocalizationKit';
@@ -316,6 +318,12 @@ export struct StickerPicker {
   @StorageProp(LANGUAGE_EPOCH) langEpoch: number = 0;
   // 正在被按住的格子（setIdx_pos）。空串表示没有。
   @State private pressedCell: string = '';
+  @State private previewOpen: boolean = false;
+  @State private panelWidth: number = 380;
+  private previewController: CustomDialogController | null = null;
+  private quickSeq: number = 0;
+  private previewGeneration: number = 0;
+  private previewHold: StickerPreviewHold | null = null;
   // 贴纸包标题整行占位。用 GridLayoutOptions 声明，而不是在标题的 GridItem 上写
   // columnStart/columnEnd：后者让 Grid 在跳转、推算位置时从头逐个遍历子节点（官方 GridItem
   // 文档与 Code Linter 都点了名），包越加越多越慢。数组要整体换成新对象才生效（官方 Grid
@@ -382,6 +390,7 @@ export struct StickerPicker {
   }
 
   aboutToDisappear(): void {
+    this.closePreview();
     this.disposed = true;
     resetStickerPanelGate();
     this.gridData.dispose();
@@ -403,9 +412,11 @@ export struct StickerPicker {
   private loadQuickSections(): void {
     if (this.stickerType === 'custom_emoji') { return; }
     const seq = this.loadSeq;
+    const quickSeq = ++this.quickSeq;
+    const client = getTdClient();
     Promise.all([getFavoriteStickers(), getRecentStickers()])
       .then((lists: TdObject[][]): void => {
-        if (this.disposed || seq !== this.loadSeq) { return; }
+        if (this.disposed || seq !== this.loadSeq || quickSeq !== this.quickSeq || client !== getTdClient()) { return; }
         const sections: StickerSetTab[] = [];
         const specs: string[][] = [
           ['fav', str('sp_favourites'), '⭐'], ['recent', str('sp_recent'), '🕘']
@@ -421,16 +432,12 @@ export struct StickerPicker {
             loaded: true, failed: false, stickers: items
           });
         });
-        if (sections.length === 0) { return; }
-        const hadExistingSets: boolean = this.sets.length > 0;
-        this.sets = [...sections, ...this.sets];
-        if (hadExistingSets) {
-          this.anchor += sections.length;
-          this.curSet += sections.length;
-        } else {
-          this.anchor = 0;
-          this.curSet = 0;
-        }
+        const currentId = this.sets[this.curSet]?.id ?? '';
+        const anchorId = this.sets[this.anchor]?.id ?? '';
+        const remaining = this.sets.filter((section: StickerSetTab): boolean => section.id !== 'fav' && section.id !== 'recent');
+        this.sets = [...sections, ...remaining];
+        this.curSet = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === currentId));
+        this.anchor = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === anchorId));
         this.refreshGrid();
         // Publish the sections before starting cached downloads. A synchronous
         // completion can otherwise patch the old array before the cells exist.
@@ -447,20 +454,64 @@ export struct StickerPicker {
       }).catch((): void => {});
   }
 
-  private toggleFavorite(s: StickerItem): void {
-    if (s.fileId === 0 || this.stickerType === 'custom_emoji') { return; }
-    const favSection = this.sets.find((t: StickerSetTab): boolean => t.id === 'fav');
-    const isFav = favSection !== undefined &&
-      favSection.stickers.some((it: StickerItem): boolean => it.fileId === s.fileId);
-    const task: Promise<void> = isFav
-      ? removeFavoriteSticker(s.fileId) : addFavoriteSticker(s.fileId);
-    task.then((): void => {
-      promptAction.showToast({
-        message: isFav ? $r('app.string.sp_unfavourited') : $r('app.string.sp_favourited'), duration: 1300
-      });
-    }).catch((): void => {
-      promptAction.showToast({ message: $r('app.string.sp_favourite_failed'), duration: 1300 });
+  private closePreview(): void {
+    this.previewHold?.cancel();
+    this.previewHold = null;
+    this.previewGeneration++;
+    this.previewController?.close();
+    this.previewController = null;
+    this.previewOpen = false;
+  }
+
+  private previewSticker(s: StickerItem): void {
+    if (this.disposed || !this.active || s.fileId === 0 || this.previewOpen) { return; }
+    this.previewOpen = true;
+    const generation = ++this.previewGeneration;
+    const hold = new StickerPreviewHold();
+    this.previewHold = hold;
+    hold.begin();
+    hold.onFinish = (send: boolean, x: number, y: number): void => {
+      if (generation !== this.previewGeneration) { return; }
+      this.previewController?.close();
+      this.previewController = null;
+      this.previewOpen = false;
+      this.previewHold = null;
+      if (send && !this.disposed && this.active) {
+        if (this.stickerType !== 'custom_emoji') { rememberRecentSticker(s.fileId); }
+        this.onPick(s, x, y);
+      }
+    };
+    this.pressedCell = '';
+    this.previewController = new CustomDialogController({
+      builder: StickerPreviewDialog({ hold: hold, data: { fileId: s.fileId, format: s.format, emoji: s.emoji,
+        thumbPath: s.thumbPath, width: s.width, height: s.height, canFavorite: this.stickerType !== 'custom_emoji' },
+        ownerActive: (): boolean => !this.disposed && this.active && generation === this.previewGeneration,
+        onClosed: (): void => {
+          if (generation === this.previewGeneration) { this.previewOpen = false; this.previewController = null; }
+        },
+        onFavorite: (favorite: boolean): void => {
+          if (generation === this.previewGeneration) { this.applyPreviewFavorite(s, favorite); }
+        } }),
+      autoCancel: false, customStyle: true, isModal: false, alignment: DialogAlignment.Center
     });
+    this.previewController.open();
+  }
+
+  private applyPreviewFavorite(s: StickerItem, favorite: boolean): void {
+    if (this.disposed) { return; }
+    this.quickSeq++;
+    const currentId = this.sets[this.curSet]?.id ?? '';
+    const anchorId = this.sets[this.anchor]?.id ?? '';
+    const old = this.sets.find((section: StickerSetTab): boolean => section.id === 'fav');
+    let items = (old?.stickers ?? []).filter((item: StickerItem): boolean => item.fileId !== s.fileId);
+    if (favorite) { items = [s, ...items]; }
+    const remaining = this.sets.filter((section: StickerSetTab): boolean => section.id !== 'fav');
+    this.sets = items.length === 0 ? remaining : [{ id: 'fav', title: str('sp_favourites'), iconPath: '',
+      iconText: '⭐', loaded: true, failed: false, stickers: items } as StickerSetTab, ...remaining];
+    this.curSet = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === currentId));
+    this.anchor = Math.max(0, this.sets.findIndex((section: StickerSetTab): boolean => section.id === anchorId));
+    this.refreshGrid();
+    this.loadQuickSections();
   }
 
   // Shared TDLib sticker → StickerItem mapping (packs, search, quick sections).
@@ -504,6 +555,7 @@ export struct StickerPicker {
   }
 
   private onPlaybackSettingsChanged(): void {
+    if (!this.active) { this.closePreview(); }
     this.requestVisibleSources();
   }
 
@@ -1259,7 +1311,7 @@ export struct StickerPicker {
   }
 
   private gridColumns(): number {
-    return this.stickerType === 'custom_emoji' ? 8 : 5;
+    return mediaPanelColumns(this.panelWidth, this.stickerType === 'custom_emoji' ? 'emoji' : 'sticker');
   }
 
   // Emoji grids use smaller cells (8 columns) to keep the picker dense.
@@ -1316,7 +1368,7 @@ export struct StickerPicker {
       StickerGridCell({
         format: s.format, srcPath: s.srcPath, thumbPath: s.thumbPath, emoji: s.emoji,
         srcUid: this.srcUidOf(s),
-        animate: this.active && this.animate, cellPx: this.cellPx(),
+        animate: this.active && this.animate && !this.previewOpen, cellPx: this.cellPx(),
         category: this.playbackCategory(),
         emojiFontSize: this.stickerType === 'custom_emoji' ? 26 : 30
       });
@@ -1328,6 +1380,7 @@ export struct StickerPicker {
     .opacity(this.pressedCell === cellKey ? 0.72 : 1)
     .scale({ x: this.pressedCellStyleScale(cellKey), y: this.pressedCellStyleScale(cellKey) })
     .onTouch((event: TouchEvent): void => {
+      this.previewHold?.touch(event);
       if (event.type === TouchType.Down) {
         this.pressedCell = cellKey;
       } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
@@ -1338,15 +1391,15 @@ export struct StickerPicker {
       duration: this.reduceAnimations || this.powerSaving ? 0 : 110,
       curve: Curve.EaseOut
     })
-    .onClick((e: ClickEvent) => {
-      if (s.fileId !== 0 && this.stickerType !== 'custom_emoji') {
-        rememberRecentSticker(s.fileId);
-      }
-      // 坐标用于"贴纸飞出"动画的起点，窗口坐标系与浮层一致。
-      this.onPick(s, e.windowX, e.windowY);
-    })
-    // Long-press to (un)favorite — the 收藏 section refreshes on next open.
-    .gesture(LongPressGesture().onAction(() => { this.toggleFavorite(s); }));
+    .gesture(GestureGroup(GestureMode.Exclusive,
+      LongPressGesture().onAction((): void => { this.previewSticker(s); })
+                  .onActionCancel((): void => { this.previewHold?.finish(0, 0, true); }),
+      TapGesture().onAction((e: GestureEvent): void => {
+        if (this.previewOpen || !this.active || this.disposed) { return; }
+        if (s.fileId !== 0 && this.stickerType !== 'custom_emoji') { rememberRecentSticker(s.fileId); }
+        this.onPick(s, e.fingerList[0]?.globalX ?? 0, e.fingerList[0]?.globalY ?? 0);
+      })
+    ));
   }
 
   @Builder
@@ -1546,8 +1599,7 @@ export struct StickerPicker {
                 // 格子会一直停在缩略图上。见 stickerArrivalToken 的说明。
                 : `s_${e.setIdx}_${e.pos}_${e.sticker!.fileId}_${stickerArrivalToken(e.sticker!)}`));
           }
-          .columnsTemplate(this.stickerType === 'custom_emoji'
-            ? '1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr 1fr')
+          .columnsTemplate(mediaPanelTemplate(this.gridColumns()))
           .columnsGap(6).rowsGap(6)
           // 预加载只留上下各一行（默认是一整屏的行数，最多 16）：屏外挂着的格子一样在建图、开动画。
           .cachedCount(1)
@@ -1560,6 +1612,12 @@ export struct StickerPicker {
         }
       }
     }
-    .width('100%').height('100%');
+    .width('100%').height('100%')
+    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+      if (typeof size.width === 'number' && size.width > 0 && Math.abs(size.width - this.panelWidth) > 0.5) {
+        this.panelWidth = size.width;
+        this.syncGridLayout(this.flatEntries);
+      }
+    });
   }
 }

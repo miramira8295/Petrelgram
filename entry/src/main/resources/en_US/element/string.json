@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Jump to unread mention"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "The send result is unknown. Check the destination chat first; this batch will not be retried to avoid duplicates."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "The administrators of this group have restricted you from sending messages until %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "The administrators of this group have restricted you from sending messages."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "This group does not allow regular members to send messages."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Manage: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Completed: %1$s. Failed: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Membership or admin permissions changed. Reopen the delete dialog."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "The result is unconfirmed. Check the group before repeating this action."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "The selected messages will be deleted for everyone."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "The selected messages will only be deleted from your chat history."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Cannot confirm an available deletion scope for the selected messages. Change your selection or try again later."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "Not allowed in this chat: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Unable to check sending permissions. Please try again."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Recording video…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Recording voice…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Recording a video message…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Sending video…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Sending voice…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Sending a video message…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Sending photos…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Sending files…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Choosing a sticker…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Choosing a location…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Choosing a contact…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Playing a game…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Watching animations…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Performing different actions…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Scan QR code"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "This QR code is not supported. Scan a Telegram contact, group or login code."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Allow a new device to sign in?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Only approve a device you are signing in to. It will gain access to your Telegram account and cloud chats."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Allow sign-in"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "No invite link is available, or you cannot manage invite links."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Could not process the code. Check your connection and whether the code has expired, then try again."
+    },
+    {
+      "name": "session_new_login",
+      "value": "New device sign-in"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Devices awaiting confirmation: %1$d. Tap to review."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Telegram group"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Show keyboard"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Hide pinned messages"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Show pinned messages"
     }
   ]
 }

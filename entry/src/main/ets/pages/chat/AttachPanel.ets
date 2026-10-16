@@ -18,6 +18,7 @@ const ICON_SIZE: number = 52;
 @Component
 export struct AttachPanel {
   @Prop actions: AttachAction[];
+  @Prop disabledKeys: string[] = [];
   onPick: (key: string) => void = (): void => {};
   // 省电开关沿用 ChatPage 的约定：传进来的函数在关掉动效时返回 0。
   effectDuration: (ms: number) => number = (ms: number): number => ms;
@@ -71,6 +72,7 @@ export struct AttachPanel {
         .width('100%');
     }
     .width('100%').height('100%')
+    .opacity(this.disabledKeys.indexOf(action.key) >= 0 ? 0.4 : 1)
     // 在自己那一格里居中，行高变大时图标和文字跟着居中而不是贴顶。
     .justifyContent(FlexAlign.Center)
     // 按压反馈只做缩放，不改底色：圆底是这一格的身份色，一按变灰会让人以为

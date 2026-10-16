@@ -3,6 +3,7 @@ import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMA
 } from '../../util/theme';
 import { str } from '../../util/strings';
 import { logE } from '../../util/log';
+import { DeleteMessageChoice, ModerationOptions, noModeration, hasModeration, MessageDeleteScope, messageDeleteRevoke } from '../../util/messageModeration';
 
 // 删除消息的确认弹窗。用自定义弹窗而不是 promptAction.showDialog：后者只能排
 // 按钮，挂不了复选框，而"是否同时为对方删除"是一个开关而非第三个按钮 —— 做成
@@ -14,9 +15,29 @@ import { logE } from '../../util/log';
 export interface DeleteMessagesDialogParams {
   // 复选框文案里的对方名字；群聊传空，显示"为所有人删除"。
   peerName: string;
-  onConfirm: (revoke: boolean) => void;
+  scope: MessageDeleteScope;
+  options: ModerationOptions;
+  targetName: string;
+  onConfirm: (choice: DeleteMessageChoice) => void;
   // 由打开方接上 closeCustomDialog——这一层不再持有 controller。
   onClose: () => void;
+}
+
+@Component
+struct DeleteActionOption {
+  @Prop label: string = '';
+  @Prop selected: boolean = false;
+  @Prop canToggle: boolean = true;
+  onChange: (value: boolean) => void = (): void => {};
+
+  build() {
+    Row({ space: 10 }) {
+      Checkbox().select(this.selected).selectedColor(COLOR_PRIMARY)
+        .onChange((checked: boolean): void => { this.onChange(checked); });
+      Text(this.label).fontSize(14).fontColor(COLOR_TEXT_PRIMARY).layoutWeight(1)
+        .onClick((): void => { this.onChange(!this.selected); });
+    }.width('100%').alignItems(VerticalAlign.Center).enabled(this.canToggle);
+  }
 }
 
 @Component
@@ -24,13 +45,21 @@ export struct DeleteMessagesDialog {
   // 材质档位（厚度/光感）改变时重绘。overlayMaterial 是 util，订阅不了
   // AppStorage，只能由调用方订阅，同 LANGUAGE_EPOCH 的做法。
   peerName: string = '';
-  onConfirm: (revoke: boolean) => void = (): void => {};
+  scope: MessageDeleteScope = { self: false, all: false };
+  options: ModerationOptions = noModeration();
+  targetName: string = '';
+  onConfirm: (choice: DeleteMessageChoice) => void = (): void => {};
   onClose: () => void = (): void => {};
   @State revoke: boolean = false;
+  @State report: boolean = false;
+  @State deleteAll: boolean = false;
+  @State memberAction: string = '';
+  private confirmed: boolean = false;
 
   private revokeLabel(): string {
     return this.peerName !== '' ? str('dm_delete_for_both', this.peerName) : str('dm_delete_for_everyone');
   }
+
 
   build() {
     Column({ space: 18 }) {
@@ -38,19 +67,49 @@ export struct DeleteMessagesDialog {
         .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
         .textAlign(TextAlign.Center).width('100%');
 
-      Row({ space: 10 }) {
-        Checkbox()
-          .select(this.revoke)
-          .selectedColor(COLOR_PRIMARY)
-          .onChange((checked: boolean): void => { this.revoke = checked; });
-        Text(this.revokeLabel())
-          .fontSize(14).fontColor(COLOR_TEXT_PRIMARY)
-          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1);
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .onClick((): void => { this.revoke = !this.revoke; });
+      Scroll() {
+        Column({ space: 10 }) {
+          if (this.scope.self && this.scope.all && !this.deleteAll) {
+            DeleteActionOption({ label: this.revokeLabel(), selected: this.revoke,
+              onChange: (checked: boolean): void => { this.revoke = checked; } });
+          } else {
+            Text(str(this.deleteAll || this.scope.all ? 'dm_scope_all' : 'dm_scope_self'))
+              .fontSize(14).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+          }
+          if (hasModeration(this.options)) {
+            Text(str('dm_moderation_target', this.targetName))
+              .fontSize(13).fontColor(COLOR_TEXT_SECONDARY).width('100%');
+            if (this.options.report) {
+              DeleteActionOption({ label: str('ab_report_spam'), selected: this.report,
+                onChange: (checked: boolean): void => { this.report = checked; } });
+            }
+            if (this.options.deleteAll) {
+              DeleteActionOption({ label: str('ga_delete_all'), selected: this.deleteAll,
+                onChange: (checked: boolean): void => { this.deleteAll = checked; } });
+              if (this.deleteAll) {
+                Text($r('app.string.mm_delete_all_confirm')).fontSize(12)
+                  .fontColor(COLOR_TEXT_SECONDARY).width('100%');
+              }
+            }
+            if (this.options.ban) {
+              DeleteActionOption({ label: str('ga_ban'), selected: this.memberAction === 'ban',
+                onChange: (checked: boolean): void => {
+                  if (checked || this.memberAction === 'ban') { this.memberAction = checked ? 'ban' : ''; }
+                } });
+              if (this.memberAction === 'ban') {
+                Text($r('app.string.mm_ban_confirm')).fontSize(12)
+                  .fontColor(COLOR_TEXT_SECONDARY).width('100%');
+              }
+            }
+            if (this.options.remove) {
+              DeleteActionOption({ label: str('ga_remove_member'), selected: this.memberAction === 'remove',
+                onChange: (checked: boolean): void => {
+                  if (checked || this.memberAction === 'remove') { this.memberAction = checked ? 'remove' : ''; }
+                } });
+            }
+          }
+        }.width('100%');
+      }.width('100%').constraintSize({ maxHeight: 320 });
 
       Row({ space: 12 }) {
         Button($r('app.string.cancel'))
@@ -60,14 +119,20 @@ export struct DeleteMessagesDialog {
           .layoutWeight(1).height(44)
           .onClick((): void => { this.onClose(); });
         Button($r('app.string.delete'))
+          .enabled(this.scope.self || this.scope.all)
           .fontSize(16).fontWeight(FontWeight.Medium).fontColor(COLOR_ON_PRIMARY)
           .backgroundColor(COLOR_PRIMARY)
           .borderRadius(22)
           .layoutWeight(1).height(44)
           .onClick((): void => {
-            const revoke: boolean = this.revoke;
+            if (this.confirmed) { return; }
+            this.confirmed = true;
+            const choice: DeleteMessageChoice = {
+              revoke: messageDeleteRevoke(this.scope, this.revoke, this.deleteAll), report: this.report,
+              deleteAll: this.deleteAll, memberAction: this.memberAction
+            };
             this.onClose();
-            this.onConfirm(revoke);
+            this.onConfirm(choice);
           });
       }
       .width('100%');
@@ -100,6 +165,9 @@ export struct DeleteMessagesDialog {
 function deleteMessagesDialogLayer(p: DeleteMessagesDialogParams) {
   DeleteMessagesDialog({
     peerName: p.peerName,
+    scope: p.scope,
+    options: p.options,
+    targetName: p.targetName,
     onConfirm: p.onConfirm,
     onClose: p.onClose
   })
@@ -107,8 +175,9 @@ function deleteMessagesDialogLayer(p: DeleteMessagesDialogParams) {
 
 // 打开弹窗的唯一入口。ComponentContent 是脱离组件树管理的节点实体，关掉之后
 // 必须 dispose，否则那棵子树泄漏；onDidDisappear 覆盖了点遮罩自动取消这条路。
-export function openDeleteMessagesDialog(ui: UIContext, peerName: string,
-  onConfirm: (revoke: boolean) => void): void {
+export function openDeleteMessagesDialog(ui: UIContext, peerName: string, scope: MessageDeleteScope,
+  onConfirm: (choice: DeleteMessageChoice) => void,
+  options: ModerationOptions = noModeration(), targetName: string = ''): () => void {
   let content: ComponentContent<DeleteMessagesDialogParams> | null = null;
   const close = (): void => {
     const open: ComponentContent<DeleteMessagesDialogParams> | null = content;
@@ -120,6 +189,9 @@ export function openDeleteMessagesDialog(ui: UIContext, peerName: string,
   };
   const params: DeleteMessagesDialogParams = {
     peerName: peerName,
+    scope: scope,
+    options: options,
+    targetName: targetName,
     onConfirm: onConfirm,
     onClose: close
   };
@@ -138,4 +210,5 @@ export function openDeleteMessagesDialog(ui: UIContext, peerName: string,
     node.dispose();
     logE(`openDeleteMessagesDialog open failed: ${e}`);
   });
+  return close;
 }

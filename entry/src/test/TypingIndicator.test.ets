@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from '@ohos/hypium';
 import { resetStrings } from '../main/ets/util/strings';
 import {
-  TYPING_ACTION_TTL_MS, applyTypingUpdate, pruneExpiredTyping, typingLabelOf
+  TypingAction, TYPING_ACTION_TTL_MS, applyTypingUpdate, pruneExpiredTyping, typingLabelOf, chatActionLabelOf, typingActionKind
 } from '../main/ets/util/typingIndicator';
 import { TdObject } from '../main/ets/tdkit/TdTypes';
 
@@ -41,21 +41,21 @@ export default function typingIndicatorTest() {
 
     it('到期时长就是 TDLib chatAction 的 6s 有效期', 0, (): void => {
       expect(TYPING_ACTION_TTL_MS).assertEqual(6000);
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       expect(applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW, 7, 0, 0, 0))
         .assertEqual(42);
-      expect(senders.get(42)).assertEqual(NOW + 6000);
+      expect(senders.get(42)?.expiresAt).assertEqual(NOW + 6000);
     });
 
     it('别的会话的 chatAction 一律忽略', 0, (): void => {
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       expect(applyTypingUpdate(senders, chatAction(8, 42, 'chatActionTyping'), NOW, 7, 0, 0, 0))
         .assertEqual(0);
       expect(senders.size).assertEqual(0);
     });
 
     it('非用户发送方与非法 uid 都忽略', 0, (): void => {
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       // 频道/群作为发送方（messageSenderChat）：没有 user_id 可记。
       const chatSender: TdObject = { '@type': 'messageSenderChat' };
       chatSender['chat_id'] = -100;
@@ -75,9 +75,9 @@ export default function typingIndicatorTest() {
       expect(senders.size).assertEqual(0);
     });
 
-    it('chatActionCancel 删掉该 uid，其余动作都记一次输入', 0, (): void => {
-      const senders: Map<number, number> = new Map();
-      // 不只是 typing：录音、发图等一切非 cancel 的动作都算「正在忙活」。
+    it('取消只删除对应用户，录音和上传分别保留', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      // 支持的动作分别保存类型。
       applyTypingUpdate(senders, chatAction(7, 42, 'chatActionRecordingVoiceNote'), NOW, 7, 0, 0, 0);
       applyTypingUpdate(senders, chatAction(7, 43, 'chatActionUploadingPhoto'), NOW, 7, 0, 0, 0);
       expect(senders.size).assertEqual(2);
@@ -93,15 +93,15 @@ export default function typingIndicatorTest() {
     });
 
     it('同一个 uid 再来一条就续期，不会堆两份', 0, (): void => {
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW, 7, 0, 0, 0);
       applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW + 2000, 7, 0, 0, 0);
       expect(senders.size).assertEqual(1);
-      expect(senders.get(42)).assertEqual(NOW + 2000 + TYPING_ACTION_TTL_MS);
+      expect(senders.get(42)?.expiresAt).assertEqual(NOW + 2000 + TYPING_ACTION_TTL_MS);
     });
 
     it('论坛话题：话题对不上的忽略，对得上的照收', 0, (): void => {
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       const other = withForumTopic(chatAction(7, 42, 'chatActionTyping'), 9);
       expect(applyTypingUpdate(senders, other, NOW, 7, 0, 5, 0)).assertEqual(0);
       const mine = withForumTopic(chatAction(7, 42, 'chatActionTyping'), 5);
@@ -112,46 +112,47 @@ export default function typingIndicatorTest() {
     });
 
     it('私密消息话题同理', 0, (): void => {
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       expect(applyTypingUpdate(senders, withDirectTopic(chatAction(7, 42, 'chatActionTyping'), 9),
         NOW, 7, 0, 0, 5)).assertEqual(0);
       expect(applyTypingUpdate(senders, withDirectTopic(chatAction(7, 42, 'chatActionTyping'), 5),
         NOW, 7, 0, 0, 5)).assertEqual(42);
     });
 
-    // **回归闸**：话题过滤的外层条件只看 forumTopicId / directMessagesTopicId。
-    // 评论区（thread）会话里 threadRootId > 0 但不做话题过滤——chatAction 上根本
-    // 没有 message_thread_id，把 thread 加进去会把评论区的「正在输入…」整个过滤没。
-    it('纯 thread 会话不做话题过滤', 0, (): void => {
-      const senders: Map<number, number> = new Map();
-      expect(applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW, 7, 5, 0, 0))
-        .assertEqual(42);
-      expect(senders.has(42)).assertTrue();
+    it('评论线程按 topic_id.message_thread_id 隔离', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      const update = chatAction(7, 42, 'chatActionTyping');
+      expect(applyTypingUpdate(senders, update, NOW, 7, 5, 0, 0)).assertEqual(0);
+      const topic: TdObject = { '@type': 'messageTopicThread' };
+      topic['message_thread_id'] = 5;
+      update['topic_id'] = topic;
+      expect(applyTypingUpdate(senders, update, NOW, 7, 5, 0, 0)).assertEqual(42);
+      expect(applyTypingUpdate(senders, update, NOW, 7, 6, 0, 0)).assertEqual(0);
     });
 
-    it('裁剪只丢严格早于 now 的项，正好到点的留到下一轮', 0, (): void => {
-      const senders: Map<number, number> = new Map();
-      senders.set(1, NOW - 1);
-      senders.set(2, NOW);
-      senders.set(3, NOW + 1);
+    it('正好到期即清除，尚未到期的保留', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      senders.set(1, { kind: 'typing', expiresAt: NOW - 1 });
+      senders.set(2, { kind: 'typing', expiresAt: NOW });
+      senders.set(3, { kind: 'typing', expiresAt: NOW + 1 });
       expect(pruneExpiredTyping(senders, NOW)).assertTrue();
       expect(senders.has(1)).assertFalse();
-      expect(senders.has(2)).assertTrue();
+      expect(senders.has(2)).assertFalse();
       expect(senders.has(3)).assertTrue();
     });
 
     it('没东西可丢时返回 false（页面据此不重建文案）', 0, (): void => {
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       expect(pruneExpiredTyping(senders, NOW)).assertFalse();
-      senders.set(1, NOW + 6000);
+      senders.set(1, { kind: 'typing', expiresAt: NOW + 6000 });
       expect(pruneExpiredTyping(senders, NOW)).assertFalse();
       expect(senders.size).assertEqual(1);
     });
 
     it('全过期后清空，页面这时才停掉轮询', 0, (): void => {
-      const senders: Map<number, number> = new Map();
-      senders.set(1, NOW);
-      senders.set(2, NOW);
+      const senders: Map<number, TypingAction> = new Map();
+      senders.set(1, { kind: 'typing', expiresAt: NOW });
+      senders.set(2, { kind: 'typing', expiresAt: NOW });
       expect(pruneExpiredTyping(senders, NOW + TYPING_ACTION_TTL_MS)).assertTrue();
       expect(senders.size).assertEqual(0);
     });
@@ -190,30 +191,25 @@ export default function typingIndicatorTest() {
 
     // 端到端把 applyTypingUpdate 写下的到期戳交给 pruneExpiredTyping：TTL 用完
     // 之前一条都不许丢（对端还在打字，占位符不能闪一下），到点之后必须清干净。
-    // 两个函数各自改一边（比如把 TTL 挪到 prune 里、或把 `<` 改成 `<=`）都在
-    // 这条上现形。
+    // 接收与清理使用同一到期边界。
     it('一条输入正好活满 TTL 才被裁掉', 0, (): void => {
-      const senders: Map<number, number> = new Map();
+      const senders: Map<number, TypingAction> = new Map();
       applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW, 7, 0, 0, 0);
-      expect(pruneExpiredTyping(senders, NOW + TYPING_ACTION_TTL_MS)).assertFalse();
+      expect(pruneExpiredTyping(senders, NOW + TYPING_ACTION_TTL_MS - 1)).assertFalse();
       expect(senders.size).assertEqual(1);
-      expect(pruneExpiredTyping(senders, NOW + TYPING_ACTION_TTL_MS + 1)).assertTrue();
+      expect(pruneExpiredTyping(senders, NOW + TYPING_ACTION_TTL_MS)).assertTrue();
       expect(senders.size).assertEqual(0);
     });
 
-    // action 字段缺失（或类型认不出来）时 actionType 落到 ''，走的是**非 cancel**
-    // 那一支。方向反了的话，任何一条认不出的 chatAction 都会把正在输入的人从
-    // 表里删掉，「正在输入…」会一闪一闪。
-    it('缺 action 字段按「在忙活」算，不当成取消', 0, (): void => {
-      const senders: Map<number, number> = new Map();
-      const sender: TdObject = { '@type': 'messageSenderUser' };
-      sender['user_id'] = 42;
+    it('缺 action 字段不创建虚假的输入状态', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
       const noAction: TdObject = { '@type': 'updateChatAction' };
       noAction['chat_id'] = 7;
+      const sender: TdObject = { '@type': 'messageSenderUser' };
+      sender['user_id'] = 42;
       noAction['sender_id'] = sender;
-      expect(applyTypingUpdate(senders, noAction, NOW, 7, 0, 0, 0)).assertEqual(42);
-      expect(senders.has(42)).assertTrue();
-      expect(senders.get(42)).assertEqual(NOW + TYPING_ACTION_TTL_MS);
+      expect(applyTypingUpdate(senders, noAction, NOW, 7, 0, 0, 0)).assertEqual(0);
+      expect(senders.size).assertEqual(0);
     });
 
     // 只有「群里恰好一个人」那一档才需要名字。私聊档和多人档必须在问名字之前
@@ -231,6 +227,84 @@ export default function typingIndicatorTest() {
       expect(asked).assertEqual(0);
       typingLabelOf('group', [42], name);
       expect(asked).assertEqual(1);
+    });
+
+    it('未知动作既不伪造输入也不续期已有状态', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      applyTypingUpdate(senders, chatAction(7, 42, 'chatActionRecordingVoiceNote'), NOW, 7, 0, 0, 0);
+      expect(applyTypingUpdate(senders, chatAction(7, 42, 'futureAction'), NOW + 1000, 7, 0, 0, 0)).assertEqual(0);
+      expect(senders.get(42)?.expiresAt).assertEqual(NOW + 6000);
+      expect(senders.get(42)?.kind).assertEqual('record_voice');
+    });
+    it('同一用户从输入变录音，替换状态而非增加人数', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW, 7, 0, 0, 0);
+      applyTypingUpdate(senders, chatAction(7, 42, 'chatActionRecordingVoiceNote'), NOW + 1000, 7, 0, 0, 0);
+      expect(senders.size).assertEqual(1);
+      expect(chatActionLabelOf('private', senders, (): string => '')).assertEqual('cp_action_record_voice');
+    });
+    it('普通会话不接收其他话题的操作或取消', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      applyTypingUpdate(senders, chatAction(7, 42, 'chatActionTyping'), NOW, 7, 0, 0, 0);
+      expect(applyTypingUpdate(senders, withForumTopic(chatAction(7, 42, 'chatActionCancel'), 5), NOW, 7, 0, 0, 0)).assertEqual(0);
+      expect(senders.size).assertEqual(1);
+    });
+    it('话题数字相同但类型不同不能串入', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      const update = withForumTopic(chatAction(7, 42, 'chatActionTyping'), 5);
+      const topic = update['topic_id'] as TdObject;
+      topic['@type'] = 'messageTopicThread';
+      expect(applyTypingUpdate(senders, update, NOW, 7, 0, 5, 0)).assertEqual(0);
+    });
+    it('多人同时发送图片显示人数与图片动作', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      applyTypingUpdate(senders, chatAction(7, 1, 'chatActionUploadingPhoto'), NOW, 7, 0, 0, 0);
+      applyTypingUpdate(senders, chatAction(7, 2, 'chatActionUploadingPhoto'), NOW, 7, 0, 0, 0);
+      expect(chatActionLabelOf('group', senders, (): string => '')).assertEqual('cp_action_members(2,cp_action_upload_photo)');
+    });
+    it('多人混合操作不谎报都在输入，取消后恢复具体动作', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      applyTypingUpdate(senders, chatAction(7, 1, 'chatActionTyping'), NOW, 7, 0, 0, 0);
+      applyTypingUpdate(senders, chatAction(7, 2, 'chatActionUploadingPhoto'), NOW, 7, 0, 0, 0);
+      expect(chatActionLabelOf('group', senders, (): string => 'Ann Lee')).assertEqual('cp_action_members(2,cp_action_mixed)');
+      applyTypingUpdate(senders, chatAction(7, 1, 'chatActionCancel'), NOW, 7, 0, 0, 0);
+      expect(chatActionLabelOf('group', senders, (): string => 'Ann Lee')).assertEqual('cp_action_member(Ann,cp_action_upload_photo)');
+    });
+    it('群里单人无姓名时采用某人，私聊不查姓名', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      applyTypingUpdate(senders, chatAction(7, 1, 'chatActionChoosingSticker'), NOW, 7, 0, 0, 0);
+      let calls = 0;
+      const name = (): string => { calls++; return ''; };
+      expect(chatActionLabelOf('secret', senders, name)).assertEqual('cp_action_choose_sticker');
+      expect(calls).assertEqual(0);
+      expect(chatActionLabelOf('group', senders, name)).assertEqual('cp_action_member(cp_someone,cp_action_choose_sticker)');
+    });
+    it('录音与上传语音、视频与视频消息均保留区别', 0, (): void => {
+      const types: string[] = ['RecordingVoiceNote', 'UploadingVoiceNote', 'RecordingVideo',
+        'RecordingVideoNote', 'UploadingVideo', 'UploadingVideoNote', 'UploadingDocument'];
+      const kinds: string[] = ['record_voice', 'upload_voice', 'record_video',
+        'record_video_note', 'upload_video', 'upload_video_note', 'upload_document'];
+      types.forEach((type: string, i: number): void => {
+        expect(typingActionKind('chatAction' + type)).assertEqual(kinds[i]);
+      });
+    });
+    it('选择联系人位置、游戏与动画不误报输入', 0, (): void => {
+      expect(typingActionKind('chatActionChoosingContact')).assertEqual('choose_contact');
+      expect(typingActionKind('chatActionChoosingLocation')).assertEqual('choose_location');
+      expect(typingActionKind('chatActionStartPlayingGame')).assertEqual('play_game');
+      expect(typingActionKind('chatActionWatchingAnimations')).assertEqual('watch_animation');
+    });
+    it('上传进度变化仅续期不改变动作标签', 0, (): void => {
+      const senders: Map<number, TypingAction> = new Map();
+      const update = chatAction(7, 1, 'chatActionUploadingPhoto');
+      const action = update['action'] as TdObject;
+      action['progress'] = 10;
+      applyTypingUpdate(senders, update, NOW, 7, 0, 0, 0);
+      const before = chatActionLabelOf('private', senders, (): string => '');
+      action['progress'] = 90;
+      applyTypingUpdate(senders, update, NOW + 500, 7, 0, 0, 0);
+      expect(chatActionLabelOf('private', senders, (): string => '')).assertEqual(before);
+      expect(senders.get(1)?.expiresAt).assertEqual(NOW + 6500);
     });
   });
 }

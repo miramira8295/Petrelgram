@@ -1,12 +1,17 @@
+import { TargetFolderTabs } from '../common/TargetFolderTabs';
+import { sendWithChatPermissions, requireForwardPermissions } from '../../store/SendPermissionApi';
+import { TargetGrid } from '../common/TargetGrid';
+import { ForwardSendTask } from '../../util/forwardSendTask';
+import { ShareRow } from '../../util/shareSearch';
+import { pickerChatRows, localShareRows, searchShareRows, ensureSavedTarget } from '../../services/ShareChatSearch';
 import { FolderInfo } from '../../store/FolderStore';
 import {
-  ALL_FOLDER_ID, forwardColumnsTemplate, forwardFolderChips, forwardGridColumns, forwardListKey, ForwardFolderChip
+  ALL_FOLDER_ID, forwardColumnsTemplate, forwardGridColumns, forwardListKey
 } from '../../util/forwardFolders';
 import { promptAction } from '@kit.ArkUI';
 import { ChatEntry } from '../../store/ChatEntry';
-import { TargetAvatarCell } from '../common/TargetAvatarCell';
 import { getChatStore, getFolderStore, getTdClient } from '../../tdkit/Globals';
-import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
+import { TdObject, TdRequest } from '../../tdkit/TdTypes';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY, COLOR_ON_PRIMARY
 } from '../../util/theme';
 import {
@@ -14,8 +19,6 @@ import {
 } from '../../store/AppSettings';
 import { plural, str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { logE, logI } from '../../util/log';
-import { buildForwardMessagesRequests } from '../../util/forwardMessagesRequest';
 import { selectionCount, targetSelected, toggleTarget } from '../../util/targetSelection';
 import { FanoutResult, fanoutShare } from '../../util/shareFanout';
 
@@ -80,17 +83,29 @@ export struct ForwardSheet {
   // reopened. Kept even though the component is destroyed on close: a request
   // in flight at that moment would otherwise write state on a dead instance.
   private seq: number = 0;
+  private sendSeq: number = 0;
+  private searchSeq: number = 0;
+  private searchTimer: number = -1;
+  @State private results: ShareRow[] = [];
+  @State private optionsLocked: boolean = false;
+  private sendTask: ForwardSendTask | null = null;
   private unsubChats: (() => void) | null = null;
 
   aboutToAppear(): void {
     this.unsubFolders = getFolderStore().subscribe((folders: FolderInfo[]): void => {
       this.folders = folders;
+      if (this.folderId !== ALL_FOLDER_ID && !folders.some((folder: FolderInfo): boolean => folder.id === this.folderId)) {
+        this.selectFolder(ALL_FOLDER_ID);
+      }
     });
     this.bindChats();
     this.loadChats();
   }
 
   aboutToDisappear(): void {
+    this.sendSeq++;
+    this.searchSeq++;
+    if (this.searchTimer !== -1) { clearTimeout(this.searchTimer); }
     this.seq++;
     if (this.unsubChats !== null) {
       this.unsubChats();
@@ -102,17 +117,8 @@ export struct ForwardSheet {
     }
   }
 
-  // 面板宽 = 屏宽 − 两侧各 8 − 内边距各 12。
-  private gridColumnsTemplate(): string {
-    return forwardColumnsTemplate(forwardGridColumns(this.screenW - 16 - 24));
-  }
-
   private listKey(): string {
     return forwardListKey(this.folderId);
-  }
-
-  private chips(): ForwardFolderChip[] {
-    return forwardFolderChips(this.folders);
   }
 
   // 订阅当前页签对应的那个分桶；切页签时换订阅。回调会立刻给一次缓存里的列表。
@@ -126,13 +132,14 @@ export struct ForwardSheet {
   }
 
   private selectFolder(id: number): void {
-    if (id === this.folderId) {
+    if (this.sending || id === this.folderId) {
       return;
     }
     this.folderId = id;
     this.chats = [];
     this.bindChats();
     this.loadChats();
+    this.onQueryChanged(this.query);
   }
 
   private bottomInset(): number {
@@ -154,7 +161,9 @@ export struct ForwardSheet {
   private loadChats(): void {
     this.loadState = this.chats.length > 0 ? 'ready' : 'loading';
     const seq: number = ++this.seq;
-    getChatStore().ensureLoaded(this.listKey()).then((success: boolean): void => {
+    Promise.all([getChatStore().ensureLoaded(this.listKey()), ensureSavedTarget().then((): boolean => true).catch((): boolean => false)])
+      .then((loaded: boolean[]): void => {
+      const success: boolean = loaded[0] || loaded[1];
       if (seq !== this.seq) {
         return;
       }
@@ -183,19 +192,30 @@ export struct ForwardSheet {
   }
 
   private close(): void {
+    this.sendSeq++;
+    this.searchSeq++;
     this.seq++;
     this.show = false;
     this.onShowChange(false);
   }
 
-  private filteredChats(): ChatEntry[] {
-    const q: string = this.query.trim().toLowerCase();
-    if (q === '') {
-      return this.chats;
-    }
-    return this.chats.filter((chat: ChatEntry): boolean =>
-      chat.title.toLowerCase().indexOf(q) >= 0
-    );
+  private filteredChats(): ShareRow[] {
+    return this.query.trim() === '' ? pickerChatRows(this.chats) : this.results;
+  }
+
+  private onQueryChanged(query: string): void {
+    this.query = query;
+    const seq: number = ++this.searchSeq;
+    if (this.searchTimer !== -1) { clearTimeout(this.searchTimer); this.searchTimer = -1; }
+    if (query.trim() === '') { this.results = []; return; }
+    this.results = localShareRows(query, this.folderId);
+    const folderId: number = this.folderId;
+    this.searchTimer = setTimeout((): void => {
+      this.searchTimer = -1;
+      searchShareRows(query, folderId).then((rows: ShareRow[]): void => {
+        if (seq === this.searchSeq) { this.results = rows; }
+      });
+    }, 220);
   }
 
   private toggleTarget(chatId: number): void {
@@ -206,12 +226,9 @@ export struct ForwardSheet {
   }
 
   private titleOf(chatId: number): string {
-    for (const chat of this.chats) {
-      if (chat.id === chatId) {
-        return chat.title;
-      }
-    }
-    return '';
+    const row: ShareRow | undefined = pickerChatRows(this.chats).find(
+      (candidate: ShareRow): boolean => candidate.chatId === chatId);
+    return row?.title ?? getChatStore().entryOf(chatId)?.title ?? '';
   }
 
   // 发给选中的全部会话。串行（见 util/shareFanout 的说明），每个目标各自
@@ -220,23 +237,37 @@ export struct ForwardSheet {
     if (this.sending || this.selectedIds.length === 0 || this.messageIds.length === 0) {
       return;
     }
-    const seq: number = this.seq;
-    const targets: number[] = this.selectedIds;
+    const seq: number = ++this.sendSeq;
+    const targets: number[] = this.selectedIds.slice();
+    if (this.sendTask === null) {
+      this.sendTask = new ForwardSendTask({ toChatId: 0, fromChatId: this.sourceChatId,
+        messageIds: this.messageIds, threadRootId: this.threadRootId, sendCopy: this.sendCopy,
+        removeCaption: this.removeCaption, canRemoveCaption: this.canRemoveCaption });
+    }
+    const task: ForwardSendTask = this.sendTask;
+    this.optionsLocked = true;
     this.sending = true;
     fanoutShare(targets, (chatId: number): Promise<void> => {
+      if (seq !== this.sendSeq) { return Promise.reject(new Error('forward closed')); }
       this.sendingChatId = chatId;
-      return this.forwardToChatId(chatId);
+      const client = getTdClient();
+      return requireForwardPermissions((request: TdRequest): Promise<TdObject> => client.send(request, 15000),
+        chatId, task.sourceChatId(), task.remainingMessageIds(chatId)).then((): Promise<void> =>
+        task.send(chatId, (request: TdRequest): Promise<TdObject> => sendWithChatPermissions(client, request, undefined,
+          (): boolean => seq === this.sendSeq),
+          (): boolean => seq === this.sendSeq));
     }).then((result: FanoutResult): void => {
-      if (seq !== this.seq) {
+      if (seq !== this.sendSeq) {
         return;
       }
+      this.selectedIds = result.failedIds;
       this.sending = false;
       this.sendingChatId = 0;
       if (result.failed === 0) {
         this.close();
         this.onSent();
       }
-      promptAction.showToast({ message: this.resultMessage(result, targets), duration: 1800 });
+      promptAction.showToast({ message: task.hasUncertain() ? str('share_result_unknown') : this.resultMessage(result, targets), duration: 1800 });
     });
   }
 
@@ -250,45 +281,6 @@ export struct ForwardSheet {
       return str('fw_failed');
     }
     return str('fw_sent_partial', result.ok, result.failed);
-  }
-
-  private forwardToChatId(chatId: number): Promise<void> {
-    if (this.messageIds.length === 0) {
-      return Promise.reject(new Error('nothing to forward'));
-    }
-    // The request builder owns TDLib's strict ascending/unique-id boundary,
-    // and splits anything over 100 ids into ordered batches (TDLib's per-call cap).
-    const reqs: TdRequest[] = buildForwardMessagesRequests({
-      toChatId: chatId,
-      fromChatId: this.sourceChatId,
-      messageIds: this.messageIds,
-      threadRootId: this.threadRootId,
-      sendCopy: this.sendCopy,
-      removeCaption: this.removeCaption,
-      canRemoveCaption: this.canRemoveCaption
-    });
-    if (reqs.length === 0) {
-      return Promise.reject(new Error('no request'));
-    }
-    return this.sendBatches(reqs).then((): void => {}).catch((e: TdError): Promise<void> => {
-      logE(`ForwardSheet.forwardMessages failed: ${e.message}`);
-      return Promise.reject(e);
-    });
-  }
-
-  // 一批发完再发下一批：TDLib 按到达顺序落时间线，并行发会乱序。返回总条数。
-  private async sendBatches(reqs: TdRequest[]): Promise<number> {
-    let count: number = 0;
-    for (let i = 0; i < reqs.length; i++) {
-      const ids: number[] = reqs[i]['message_ids'] as number[];
-      const result: TdObject = await getTdClient().send(reqs[i]);
-      const forwarded: TdObject[] = (result['messages'] as TdObject[] | undefined) ?? [];
-      const albums: string[] = forwarded.map((m: TdObject): string =>
-        `${(m['id'] as number | undefined) ?? 0}:${m['media_album_id'] ?? '-'}`);
-      logI(`[FwdDiag] batch=${i + 1}/${reqs.length} sent=${ids.length} got=${forwarded.length} ${albums.join(' ')}`);
-      count += ids.length;
-    }
-    return count;
   }
 
   @Styles
@@ -308,6 +300,7 @@ export struct ForwardSheet {
   // 取消「隐藏来源」时连带取消「移除说明文字」：TDLib 的 remove_caption 只在
   // send_copy 下有意义，保留来源的转发去不掉说明。
   private toggleHideSource(): void {
+    if (this.optionsLocked) { return; }
     this.sendCopy = !this.sendCopy;
     if (!this.sendCopy) {
       this.removeCaption = false;
@@ -315,6 +308,7 @@ export struct ForwardSheet {
   }
 
   private toggleRemoveCaption(): void {
+    if (this.optionsLocked) { return; }
     this.removeCaption = !this.removeCaption;
   }
 
@@ -393,30 +387,6 @@ export struct ForwardSheet {
     }
     .width('100%');
   }
-  // 文件夹页签：横向可滚的一排胶囊，「全部」在首位。没有文件夹时整排不出现。
-  @Builder
-  folderChipsRow() {
-    Scroll() {
-      Row({ space: 8 }) {
-        ForEach(this.chips(), (chip: ForwardFolderChip) => {
-          Text(chip.isAll ? $r('app.string.filter_all') : chip.title)
-            .fontSize(13)
-            .fontWeight(chip.id === this.folderId ? FontWeight.Medium : FontWeight.Regular)
-            .fontColor(chip.id === this.folderId ? COLOR_PRIMARY : COLOR_TEXT_SECONDARY)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: 140 })
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(16)
-            .backgroundColor(chip.id === this.folderId ? '#1A3390EC' : $r('app.color.surface_alt'))
-            .onClick((): void => { this.selectFolder(chip.id); });
-        }, (chip: ForwardFolderChip): string => `chip_${chip.id}`);
-      }
-      .padding({ left: 2, right: 2 });
-    }
-    .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
-    .width('100%').align(Alignment.Start);
-  }
-
   build() {
     Column() {
       // 顶部留白（点了关闭）：默认 14%，面板约占 86%；但至少让到标题栏和横幅下面。
@@ -453,11 +423,12 @@ export struct ForwardSheet {
           .width('100%').height(40)
           .padding({ left: 14, right: 14 })
           .backgroundColor($r('app.color.surface_alt')).borderRadius(20)
-          .onChange((value: string): void => { this.query = value; });
-        if (this.chips().length > 1) {
-          this.folderChipsRow();
+          .onChange((value: string): void => { this.onQueryChanged(value); });
+        if (this.folders.length > 0) {
+          TargetFolderTabs({ folders: this.folders, folderId: this.folderId,
+            onSelect: (id: number): void => { this.selectFolder(id); } });
         }
-        this.forwardOptionsRow();
+        Column() { this.forwardOptionsRow(); }.enabled(!this.optionsLocked).opacity(this.optionsLocked ? 0.5 : 1);
         this.sendBar();
         if (this.loadState === 'loading') {
           Column({ space: 10 }) {
@@ -488,27 +459,13 @@ export struct ForwardSheet {
         } else {
           // 头像网格（issue #200）：转发时用户找的是"人"，四列一屏能看 16 个。
           // 昵称固定两行高，行与行对齐。
-          Grid() {
-            ForEach(this.filteredChats(), (chat: ChatEntry) => {
-              GridItem() {
-                TargetAvatarCell({
-                  avatarPath: chat.avatarPath,
-                  initials: chat.initials,
-                  colorSeed: chat.id,
-                  title: chat.title,
-                  selected: targetSelected(this.selectedIds, chat.id),
-                  busy: this.sendingChatId === chat.id
-                })
-                  .opacity(this.sendingChatId === 0 || this.sendingChatId === chat.id ? 1 : 0.45)
-                  .onClick(() => { this.toggleTarget(chat.id); });
-              }
-            }, (chat: ChatEntry): string => `forward_${chat.id}_${chat.revision}`);
-          }
-          .columnsTemplate(this.gridColumnsTemplate())
-          .rowsGap(4).columnsGap(4)
-          .layoutWeight(1).width('100%')
-          .scrollBar(BarState.Auto)
-          .onReachEnd((): void => { getChatStore().loadMore(this.listKey()); });
+          TargetGrid({ rows: this.filteredChats(), selectedIds: this.selectedIds,
+            busyId: this.sendingChatId,
+            onToggle: (id: number): void => { this.toggleTarget(id); },
+            onMore: (): void => {
+              if (this.query.trim() === '') { getChatStore().loadMore(this.listKey()); }
+            }
+          }).layoutWeight(1).width('100%');
         }
       }
       .width('calc(100% - 16vp)').layoutWeight(1)

@@ -1,3 +1,5 @@
+import { ChatListRowState } from './ChatListRowState';
+import { ChatListSubscription } from '../../store/ChatListSubscription';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import {
   ImmersiveBarsState, KEY_IMMERSIVE_BARS_HIDDEN, nextImmersiveBars
@@ -25,9 +27,10 @@ import { materialModifierWhen } from '../../util/materialModifier';
 import { COLOR_DIVIDER, mainCardFill } from '../../util/theme';
 import { formatTime } from '../../util/formatTime';
 import { ChatListDataSource } from './ChatListDataSource';
+import { ChatListRowKeyCache } from './chatListRowKeys';
 import { guardKey } from '../../util/keyGuard';
 import { HOME_CARD_INSET_VP } from '../../util/listCardGeometry';
-import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import {
   KEY_POWER_SMOOTH_TRANSITIONS, KEY_ROW_SWIPE_ACTIONS, powerAnimationDuration
@@ -140,14 +143,20 @@ export struct MainTabBody {
   private renderActive: boolean = true;
   @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
   private flushEpoch: number = 0;
-  @State chats: ChatEntry[] = [];
+  // Store publishes immutable snapshots. Keep the full array out of ArkUI's
+  // observed state; LazyForEach receives changes through chatsData.
+  private chats: ChatEntry[] = [];
   private chatsData: ChatListDataSource = new ChatListDataSource();
+  private rowKeyCache: ChatListRowKeyCache = new ChatListRowKeyCache();
   @State showArchive: boolean = false;
   @State archiveLoadFailed: boolean = false;
+  @StorageProp('appIsForeground') @Watch('onForegroundChanged')
+  private appIsForeground: boolean = true;
+  private rowReloadPending: boolean = false;
   private updateGate: ChatListFreeze = new ChatListFreeze();
   // 返回转场那扇窗是否开着（issue #159）。由 onFlushRequested 开、闸开时关。
   private flushBypass: boolean = false;
-  private unsubscribe: (() => void) | null = null;
+  private listSubscription: ChatListSubscription | null = null;
   private unsubArchive: (() => void) | null = null;
   // 归档行的展开高度（0..行高），只由顶部回弹深度驱动。
   @State private archivePullPx: number = 0;
@@ -165,6 +174,7 @@ export struct MainTabBody {
         this.scrollSettleTimer = -1;
       }
       this.listMoving = true;
+      this.listSubscription?.refresh();
       return;
     }
     if (!this.listMoving || this.scrollSettleTimer !== -1) {
@@ -173,6 +183,7 @@ export struct MainTabBody {
     this.scrollSettleTimer = setTimeout((): void => {
       this.scrollSettleTimer = -1;
       this.listMoving = false;
+      this.listSubscription?.refresh();
       if (this.flushBypass && !this.renderActive) {
         this.drainContentOnly();
       } else {
@@ -191,12 +202,12 @@ export struct MainTabBody {
   }
 
   private publishingActive(): boolean {
-    return this.renderActive && this.updatesActive && !this.listMoving;
+    return chatListInForeground() && this.renderActive && this.updatesActive && !this.listMoving;
   }
 
   private onUpdatesActiveChanged(): void {
+    this.flushBufferedChats();
     if (this.updatesActive) {
-      this.flushBufferedChats();
       if (this.archiveRefreshPending) {
         this.archiveRefreshPending = false;
         this.refreshArchiveState();
@@ -234,17 +245,34 @@ export struct MainTabBody {
   }
 
   private onLanguageEpochChanged(): void {
-    this.chatsData.reload();
+    if (!chatListInForeground()) {
+      this.rowReloadPending = true;
+      return;
+    }
+    this.rowReloadPending = false;
+    this.chatsData.reload(this.keysFor(this.chats));
+  }
+
+  private onForegroundChanged(): void {
+    if (!chatListInForeground()) {
+      this.flushBypass = false;
+      this.listSubscription?.refresh();
+      return;
+    }
+    this.flushBufferedChats();
   }
 
   private flushBufferedChats(): void {
-    if (this.menuOpen || this.touchHold || this.listMoving || !this.renderActive || !this.updatesActive) {
+    this.listSubscription?.refresh();
+    if (!chatListInForeground() || this.menuOpen || this.touchHold || this.listMoving || !this.renderActive || !this.updatesActive) {
       return;
     }
     const next = this.updateGate.flush();
     if (next !== null) {
       this.applyChats(next);
     }
+    if (this.rowReloadPending) { this.onLanguageEpochChanged(); }
+    if (this.archiveRefreshPending) { this.refreshArchiveState(); }
   }
 
   private onMenuToggle(): void {
@@ -272,10 +300,11 @@ export struct MainTabBody {
   // 缓冲，照旧要等闸开才出来，"慢半拍"于是只修掉了运气好的一半。
   // 所以 bump 改成开一扇窗：窗开着的期间内容变更随到随发，闸开时关窗。
   private onFlushRequested(): void {
-    if (this.menuOpen || this.renderActive) {
+    if (!chatListInForeground() || this.menuOpen || this.renderActive) {
       return;
     }
     this.flushBypass = true;
+    this.listSubscription?.refresh();
     if (!this.listMoving) {
       this.drainContentOnly();
     }
@@ -291,6 +320,8 @@ export struct MainTabBody {
   // 就变了，你刚读完那个群的角标也跟着一起等 640ms。用户报的"有时候快有时候
   // 要等一会"就是这个分岔。
   private drainContentOnly(): void {
+    if (!chatListInForeground() || this.menuOpen || this.touchHold ||
+      this.listMoving || !this.updatesActive) { return; }
     const next = this.updateGate.flush();
     if (next === null) {
       return;
@@ -308,7 +339,7 @@ export struct MainTabBody {
 
   aboutToAppear(): void {
     const store = getChatStore();
-    this.unsubscribe = store.subscribe((list: ChatEntry[]) => {
+    this.listSubscription = store.subscribeList((list: ChatEntry[]) => {
       // “所有”可被服务器配置到非首位，并作为隐藏页首次预载。先允许它发布
       // 一份非空初始快照，即使此刻横滑的全局触摸闸仍关着；之后再按
       // updatesActive 保持静态。
@@ -322,8 +353,9 @@ export struct MainTabBody {
         // 转场窗口里到货的内容变更：accept 已经把它收进缓冲了，这里立刻取出来发。
         this.drainContentOnly();
       }
-    }, 'main');
-    this.showArchive = store.hasArchive();
+    }, 'main', () => chatListPublicationMode(this.updatesActive, this.renderActive,
+      this.listMoving, this.flushBypass, this.chats.length === 0 && store.hasChats('main')));
+    this.refreshArchiveState();
     // The archive shortcut only needs an invalidation signal. Avoid sorting the
     // whole archive bucket for every update just to derive one boolean.
     this.unsubArchive = store.subscribeChanges(() => {
@@ -340,17 +372,23 @@ export struct MainTabBody {
   }
 
   aboutToDisappear(): void {
+    this.rowKeyCache.clear();
     if (this.scrollSettleTimer !== -1) {
       clearTimeout(this.scrollSettleTimer);
       this.scrollSettleTimer = -1;
     }
     this.listMoving = false;
     this.archiveRefreshPending = false;
-    if (this.unsubscribe !== null) { this.unsubscribe(); this.unsubscribe = null; }
+    this.listSubscription?.close();
+    this.listSubscription = null;
     if (this.unsubArchive !== null) { this.unsubArchive(); this.unsubArchive = null; }
   }
 
   private applyChats(next: ChatEntry[]): void {
+    if (!chatListInForeground()) {
+      this.updateGate.accept(next, false);
+      return;
+    }
     const structureChanged: boolean = !chatOrderUnchanged(this.chats, next);
     if (structureChanged && this.chats.length > 0) {
       animateTo({
@@ -364,14 +402,17 @@ export struct MainTabBody {
 
   private publishChats(next: ChatEntry[]): void {
     this.chats = next;
-    this.chatsData.update(next, next.map((item: ChatEntry): string => this.rowKey(item)));
+    this.chatsData.update(next, this.keysFor(next));
   }
 
-  // langEpoch is in the key so a language switch rebuilds the rows once, rather
-  // than every ChatRow carrying its own AppStorage observer for it.
-  private rowKey(item: ChatEntry): string {
-    const pinned = getChatStore().isPinned('main', item.id) ? 1 : 0;
-    return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}_${this.scopeMuteEpoch}`;
+  private keysFor(items: ChatEntry[]): string[] {
+    // Snapshot reactive key context once per publication, not once per row.
+    const languageEpoch: number = this.langEpoch;
+    const muteEpoch: number = this.scopeMuteEpoch;
+    const listKey: string = 'main';
+    const store = getChatStore();
+    return this.rowKeyCache.keys(items, listKey, languageEpoch, muteEpoch, store.pinEpoch(listKey),
+      (id: number): boolean => store.isPinned(listKey, id));
   }
 
   private rowUnread(chat: ChatEntry): boolean {
@@ -406,12 +447,12 @@ export struct MainTabBody {
   }
 
   @Builder
-  readSwipe(chat: ChatEntry) {
+  readSwipe(row: ChatListRowState) {
     Row() {
       this.swipeButton(
-        this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
-        readSwipeVisual(this.rowUnread(chat)),
-        (): void => this.toggleRead(chat));
+        this.rowUnread(row.snapshot.chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
+        readSwipeVisual(this.rowUnread(row.snapshot.chat)),
+        (): void => this.toggleRead(row.snapshot.chat));
     }
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
@@ -419,22 +460,22 @@ export struct MainTabBody {
       top: CHAT_SWIPE_VERTICAL_GUTTER_VP,
       bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
-    .backgroundColor(readSwipeVisual(this.rowUnread(chat)).background)
+    .backgroundColor(readSwipeVisual(this.rowUnread(row.snapshot.chat)).background)
     .borderRadius(CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
   @Builder
-  endSwipe(chat: ChatEntry) {
+  endSwipe(row: ChatListRowState) {
     Row() {
       this.swipeButton(
-        this.rowMuted(chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
-        muteSwipeVisual(this.rowMuted(chat)),
-        (): void => this.toggleMute(chat));
+        this.rowMuted(row.snapshot.chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
+        muteSwipeVisual(this.rowMuted(row.snapshot.chat)),
+        (): void => this.toggleMute(row.snapshot.chat));
       this.swipeButton(
         $r('app.string.cl_archive'),
         archiveSwipeVisual(false),
-        (): void => this.toggleArchive(chat));
+        (): void => this.toggleArchive(row.snapshot.chat));
     }
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
@@ -521,6 +562,11 @@ export struct MainTabBody {
   }
 
   private refreshArchiveState(): void {
+    if (!this.publishingActive()) {
+      this.archiveRefreshPending = true;
+      return;
+    }
+    this.archiveRefreshPending = false;
     this.showArchive = getChatStore().hasArchive();
     this.refreshArchiveTop();
   }
@@ -643,11 +689,11 @@ export struct MainTabBody {
       // LazyForEach, not ForEach: ForEach builds every row up front, which for
       // a real account meant hundreds of live ChatRow components for the eight
       // that are visible.
-      LazyForEach(this.chatsData, (item: ChatEntry) => {
+      LazyForEach(this.chatsData, (item: ChatListRowState) => {
         ListItem() {
           ChatRow({
           compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-            chat: item,
+            row: item,
             listKey: 'main',
             liveEffects: this.liveEffects(),
             loadImages: this.imagesActive
@@ -658,20 +704,20 @@ export struct MainTabBody {
               builder: (): void => { this.readSwipe(item); },
               actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
               onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleRead(item));
+                this.commitSwipeAction((): void => this.toggleRead(item.snapshot.chat));
               }
             },
             end: {
               builder: (): void => { this.endSwipe(item); },
               actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
               onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleArchive(item));
+                this.commitSwipeAction((): void => this.toggleArchive(item.snapshot.chat));
               }
             },
             edgeEffect: CHAT_SWIPE_EDGE_EFFECT
           } as SwipeActionOptions : {} as SwipeActionOptions)
-      }, (item: ChatEntry, index: number) =>
-        guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));
+      }, (_item: ChatListRowState, index: number) =>
+        guardKey(this.chatsData.keyTableId, index, this.chatsData.getKey(index)));
     }
     .layoutWeight(1).width('100%')
     // Keep only two painted rows beyond the viewport. The title blur still has

@@ -31,7 +31,7 @@ set -u
 # 判据本身失效，连同它那条用例一起删。与上面 MediaSaveState 那次同一档：
 # 确实删了用例，不是为了让脚本变绿。
 # 2026-10-14：补齐现有基线与聊天可见性/相位时钟的 9 项回归用例。
-MIN_TESTS="${MIN_TESTS:-3503}"
+MIN_TESTS="${MIN_TESTS:-3881}"
 # ---------------------------------------------------------------------------
 
 # Defaults are the macOS install. On Windows (git-bash) DevEco lives elsewhere,

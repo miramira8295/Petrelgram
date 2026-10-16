@@ -751,7 +751,7 @@ export default function composerSuggestionStateTest() {
       expect(controller.commandMenuOpen).assertTrue();
     });
 
-    it('CommandSuggestionState.dispose() 是空实现，不清任何字段', 0, (): void => {
+    it('CommandSuggestionState.dispose() 清空目录与展示态，结束页面生命周期', 0, (): void => {
       const controller: CommandSuggestionState = commandControllerOn(new CommandFakeHost());
       controller.commandItems = sentinelCommandItems();
       controller.commandMenuOpen = true;
@@ -759,9 +759,9 @@ export default function composerSuggestionStateTest() {
 
       controller.dispose();
 
-      expect(controller.commandItems).assertDeepEquals(sentinelCommandItems());
-      expect(controller.commandMenuOpen).assertTrue();
-      expect(controller.commandLoadState).assertEqual('ready');
+      expect(controller.commandItems).assertDeepEquals([]);
+      expect(controller.commandMenuOpen).assertFalse();
+      expect(controller.commandLoadState).assertEqual('idle');
     });
 
     it('两个 CommandSuggestionState 实例互不影响', 0, (): void => {

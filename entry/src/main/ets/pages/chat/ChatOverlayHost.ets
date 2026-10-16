@@ -1,3 +1,4 @@
+import { SelectionSession } from './SelectionSession';
 import { MessageEntry } from '../../store/MessageEntry';
 import { ChatOverlayState } from './ChatOverlayState';
 import { ReactionSheet } from './ReactionSheet';
@@ -25,6 +26,7 @@ export struct ChatOverlayHost {
   @Require @Param overlayState: ChatOverlayState;
 
   @Param messages: MessageEntry[] = [];
+  @Require @Param selection: SelectionSession;
   @Param chatId: number = 0;
   @Param threadRootId: number = 0;
   // 「全部置顶消息」面板的数据源。路由切换途中可能为 null，面板自己判。
@@ -74,7 +76,7 @@ export struct ChatOverlayHost {
 
   private forwardHasRemovableCaption(): boolean {
     return selectionHasRemovableForwardCaption(
-      this.messages, this.overlayState.forwardMessageIds);
+      [...this.messages, ...this.selection.entries()], this.overlayState.forwardMessageIds);
   }
 
   build() {

@@ -1,3 +1,4 @@
+import { sendWithChatPermissions } from './SendPermissionApi';
 import { getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { webAppUrlOf } from '../util/webAppUrl';
@@ -61,6 +62,7 @@ function rowOf(result: TdObject): InlineResultRow | null {
   else if (typeName === 'inlineQueryResultPhoto') { kind = 'photo'; }
   else if (typeName === 'inlineQueryResultSticker') { kind = 'sticker'; }
   else if (typeName === 'inlineQueryResultAnimation') { kind = 'animation'; }
+  else { kind = typeName.replace('inlineQueryResult', '').toLowerCase(); }
   return {
     resultId: id,
     title: (result['title'] as string | undefined) ?? '',
@@ -98,7 +100,7 @@ export async function getInlineResults(
 // 这个标记，用户报「热门发出来显示通过 @gif」。
 export async function sendInlineResult(
   chatId: number, queryId: string, resultId: string, replyToId: number,
-  hideViaBot: boolean = false
+  hideViaBot: boolean = false, permission: string = 'sendMessages'
 ): Promise<void> {
   const request: TdRequest = { '@type': 'sendInlineQueryResultMessage' };
   request['chat_id'] = chatId;
@@ -110,7 +112,7 @@ export async function sendInlineResult(
     replyTo['message_id'] = replyToId;
     request['reply_to'] = replyTo;
   }
-  await getTdClient().send(request, 20000);
+  await sendWithChatPermissions(getTdClient(), request, [hideViaBot ? 'sendOtherMessages' : permission]);
 }
 
 // --- Mini Apps (Web Apps) ---

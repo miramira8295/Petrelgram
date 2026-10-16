@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Aller à une mention non lue"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Le résultat de l’envoi est inconnu. Vérifiez d’abord la discussion de destination. Ce lot ne sera pas renvoyé afin d’éviter les doublons."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Les administrateurs de ce groupe vous ont interdit d’envoyer des messages jusqu’au %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Les administrateurs de ce groupe vous ont interdit d’envoyer des messages."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "Ce groupe n’autorise pas les membres ordinaires à envoyer des messages."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Gérer : %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Terminé : %1$s. Échec : %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Le statut du membre ou les droits ont changé. Rouvrez la fenêtre de suppression."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Le résultat est incertain. Vérifiez le groupe avant de répéter cette action."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Les messages sélectionnés seront supprimés pour tout le monde."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Les messages sélectionnés seront uniquement supprimés de votre historique de discussion."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Impossible de confirmer les options de suppression disponibles pour les messages sélectionnés. Modifiez votre sélection ou réessayez plus tard."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "Non autorisé dans cette discussion : %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Impossible de vérifier les autorisations d’envoi. Veuillez réessayer."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Enregistrement vidéo…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Enregistrement vocal…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Enregistrement d’un message vidéo…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Envoi de vidéo…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Envoi d’un message vocal…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Envoi d’un message vidéo…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Envoi de photos…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Envoi de fichiers…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Sélection d’un autocollant…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Sélection d’un lieu…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Sélection d’un contact…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Partie en cours…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Visionnage d’animations…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Plusieurs activités en cours…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s : %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Scanner un code QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Ce code n’est pas pris en charge. Scannez un code de contact, de groupe ou de connexion Telegram."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Autoriser la connexion d’un nouvel appareil ?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "N’approuvez qu’un appareil sur lequel vous vous connectez vous-même. Il aura accès à votre compte Telegram et à vos discussions cloud."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Autoriser la connexion"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Aucun lien d’invitation disponible, ou vous ne pouvez pas gérer les liens."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Impossible de traiter le code. Vérifiez la connexion et la validité du code, puis réessayez."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Connexion d’un nouvel appareil"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Appareils à confirmer : %1$d. Touchez pour vérifier."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Groupe Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Afficher le clavier"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Masquer les messages épinglés"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Afficher les messages épinglés"
     }
   ]
 }

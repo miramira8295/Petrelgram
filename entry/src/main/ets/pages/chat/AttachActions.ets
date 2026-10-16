@@ -1,3 +1,4 @@
+import { ChatSendAccess } from './ChatSendAccess';
 // 附件面板分发表 runAttachAction，以及它背后挂的媒体/文件/音频/位置/骰子/
 // 联系人/投票/录像笔记等动作方法，连同长按气泡「替换媒体」replaceMedia，
 // 共 18 个方法。从 ChatPage 整体搬出（B12 批）。
@@ -160,6 +161,7 @@ interface PickedMedia {
 //    composerSending 等留页面的字段，本类只经这里的取值器/动作回调读写，
 //    不在本类里存一份影子拷贝。
 export interface AttachActionsHost {
+  sendAccess?: ChatSendAccess;
   // UIAbilityContext。**唯一例外**：页面在 `aboutToAppear` 调 `bind()` 时把
   // `getContext(this) as common.UIAbilityContext` 求值一次、闭包成常量传进
   // 来，不是像其余取值器那样每次现读一个活字段——`UIAbilityContext` 在同一个
@@ -242,6 +244,7 @@ export class AttachActions {
   // 系统相册选择器的并发闸门。replaceMedia/pickMedia 各自维护自己的
   // 打开/复位时机（见文件头 mediaPickerOpen 专项说明），共用同一个字段。
   private mediaPickerOpen: boolean = false;
+  private pickerEpoch: number = 0;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
   // 构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」的
@@ -269,6 +272,7 @@ export class AttachActions {
 
   // ChatPage.aboutToAppear 里调一次。
   bind(host: AttachActionsHost): void {
+    this.pickerEpoch++;
     this.host = host;
   }
 
@@ -300,22 +304,31 @@ export class AttachActions {
   // 长按气泡「替换媒体」。唯一调用点在页面的 messageActions() 单例闭包工厂
   // 方法（气泡点击时才执行），不在本簇范围内，因此这里保持对外可见。
   replaceMedia(messageId: number): void {
+    if (this.host.sendAccess?.checkAttach('media') === false) { return; }
     const msg = this.host.findMsg(messageId);
     const store = this.host.store();
     if (msg === null || store === null || this.mediaPickerOpen) { return; }
     this.mediaPickerOpen = true;
     const photoPicker = new photoAccessHelper.PhotoViewPicker();
     const opts = new photoAccessHelper.PhotoSelectOptions();
-    opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
+    const access: ChatSendAccess | undefined = this.host.sendAccess;
+    opts.MIMEType = access !== undefined && !access.allows('sendVideos')
+      ? photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE
+      : access !== undefined && !access.allows('sendPhotos')
+        ? photoAccessHelper.PhotoViewMIMETypes.VIDEO_TYPE : photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
+    const epoch: number = this.pickerEpoch;
+    const target: MessageStore | null = this.host.store();
     opts.maxSelectNumber = 1;
     photoPicker.select(opts).then((res: photoAccessHelper.PhotoSelectResult): void => {
       this.mediaPickerOpen = false;
+      if (epoch !== this.pickerEpoch || target !== this.host.store()) { return; }
       if (res.photoUris.length === 0) { return; }
       const path = this.copyUriToCache(res.photoUris[0]);
       if (path === '') {
         promptAction.showToast({ message: $r('app.string.cp_cannot_read_file'), duration: 1600 });
         return;
       }
+      if (this.host.sendAccess?.checkMedia([{ path: path, isVideo: isVideoPath(path) }]) === false) { return; }
       store.editMediaAsync(messageId, path, isVideoPath(path), msg.text).then((): void => {
         promptAction.showToast({ message: $r('app.string.cp_media_replaced'), duration: 1500 });
       }).catch((e: TdError): void => {
@@ -326,9 +339,10 @@ export class AttachActions {
   }
 
   private pickMedia(): void {
-    if (this.mediaPickerOpen || this.host.composerSending() || this.host.store() === null) {
-      return;
-    }
+    if (this.host.sendAccess?.checkAttach('media') === false) { return; }
+    if (this.mediaPickerOpen || this.host.composerSending()) { return; }
+    const target: MessageStore | null = this.host.store();
+    if (target === null) { return; }
     // 选择器自己就按"还能再放几张"限制，好过让用户挑满九张再被截断。
     const room: number = PENDING_MEDIA_MAX - this.host.pendingMediaCount();
     if (room <= 0) {
@@ -340,15 +354,22 @@ export class AttachActions {
     this.mediaPickerOpen = true;
     const photoPicker = new photoAccessHelper.PhotoViewPicker();
     const opts = new photoAccessHelper.PhotoSelectOptions();
-    opts.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
+    const access: ChatSendAccess | undefined = this.host.sendAccess;
+    opts.MIMEType = access !== undefined && !access.allows('sendVideos')
+      ? photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE
+      : access !== undefined && !access.allows('sendPhotos')
+        ? photoAccessHelper.PhotoViewMIMETypes.VIDEO_TYPE : photoAccessHelper.PhotoViewMIMETypes.IMAGE_VIDEO_TYPE;
+    const epoch: number = this.pickerEpoch;
     opts.maxSelectNumber = room;
     photoPicker.select(opts).then((res: photoAccessHelper.PhotoSelectResult) => {
       this.mediaPickerOpen = false;
+      if (epoch !== this.pickerEpoch || target !== this.host.store()) { return; }
       if (res.photoUris.length === 0 || this.host.store() === null) {
         return;
       }
       // 实况照片要先把动态部分导出来（异步），所以收集这一步整体是异步的。
       this.collectPickedMedia(res.photoUris).then((picked: PickedMedia): void => {
+        if (epoch !== this.pickerEpoch || target !== this.host.store()) { return; }
         this.applyPickedMedia(picked.items, picked.skipped);
       });
     }).catch((e: Object) => {
@@ -396,6 +417,7 @@ export class AttachActions {
   }
 
   private applyPickedMedia(items: MediaSendItem[], skipped: number): void {
+    if (this.host.sendAccess?.checkMedia(items) === false) { return; }
     if (items.length === 0) {
       promptAction.showToast({ message: $r('app.string.cp_media_read_failed'), duration: 1800 });
       return;
@@ -450,11 +472,16 @@ export class AttachActions {
 
   // 音乐：文件选择器按音频后缀过滤，复制沙箱后按音频消息发送。
   private pickAndSendAudio(): void {
+    if (this.host.sendAccess?.check('sendAudios') === false) { return; }
+    const target: MessageStore | null = this.host.store();
+    const epoch: number = this.pickerEpoch;
     const docPicker = new picker.DocumentViewPicker(this.host.context());
     const opts = new picker.DocumentSelectOptions();
     opts.maxSelectNumber = 1;
     opts.fileSuffixFilters = ['.mp3', '.m4a', '.flac', '.ogg', '.wav', '.aac'];
-    docPicker.select(opts).then((uris: string[]) => {
+    docPicker.select(opts).then(async (uris: string[]) => {
+      if (epoch !== this.pickerEpoch || target !== this.host.store()) { return; }
+      if (this.host.sendAccess?.check('sendAudios') === false) { return; }
       if (uris.length === 0) {
         return;
       }
@@ -466,8 +493,11 @@ export class AttachActions {
       const store = this.host.store();
       if (store !== null) {
         this.host.setAtBottom(true);
-        store.sendAudio(dest, this.host.draftText().trim());
-        this.host.clearDraft();
+        const draft: string = this.host.draftText();
+        await store.sendAudioAsync(dest, draft.trim());
+        if (epoch === this.pickerEpoch && store === this.host.store() && this.host.draftText() === draft) {
+          this.host.clearDraft();
+        }
       }
     }).catch((e: Object) => {
       logE(`AttachActions.pickAndSendAudio select failed: ${JSON.stringify(e)}`);
@@ -577,6 +607,7 @@ export class AttachActions {
   // 唯一调用点在页面的 diceSheet @Builder（留页面）里 ForEach 的 onClick，
   // 因此这里保持对外可见。
   sendDiceEmoji(emoji: string): void {
+    if (this.host.sendAccess?.check('sendOtherMessages') === false) { return; }
     this.host.setDiceSheetOpen(false);
     const store = this.host.store();
     if (store !== null) {
@@ -588,10 +619,15 @@ export class AttachActions {
   // Paperclip: pick a document, copy it into the app sandbox (TDLib can't read
   // picker URIs), then send it as a document message.
   private pickAndSendFile(): void {
+    if (this.host.sendAccess?.check('sendDocuments') === false) { return; }
+    const target: MessageStore | null = this.host.store();
+    const epoch: number = this.pickerEpoch;
     const docPicker = new picker.DocumentViewPicker(this.host.context());
     const opts = new picker.DocumentSelectOptions();
     opts.maxSelectNumber = 1;
-    docPicker.select(opts).then((uris: string[]) => {
+    docPicker.select(opts).then(async (uris: string[]) => {
+      if (epoch !== this.pickerEpoch || target !== this.host.store()) { return; }
+      if (this.host.sendAccess?.check('sendDocuments') === false) { return; }
       if (uris.length === 0) {
         return;
       }
@@ -603,8 +639,11 @@ export class AttachActions {
       const store = this.host.store();
       if (store !== null) {
         this.host.setAtBottom(true);
-        store.sendDocument(dest, this.host.draftText().trim());
-        this.host.clearDraft();
+        const draft: string = this.host.draftText();
+        await store.sendDocumentAsync(dest, draft.trim());
+        if (epoch === this.pickerEpoch && store === this.host.store() && this.host.draftText() === draft) {
+          this.host.clearDraft();
+        }
       }
     }).catch((e: Object) => {
       logE(`AttachActions.pickAndSendFile select failed: ${JSON.stringify(e)}`);
@@ -616,6 +655,7 @@ export class AttachActions {
   // attachDrawerContent（@LocalBuilder，声明在页面里，但执行是用户点击面板
   // 格子时，不在 build 渲染期间），因此这里保持对外可见。
   runAttachAction(key: string): void {
+    if (this.host.sendAccess?.checkAttach(key) === false) { return; }
     this.host.closeAttachPanel();
     if (key === 'media') {
       this.pickMedia();
@@ -641,5 +681,5 @@ export class AttachActions {
   // 零命中），两个字段随实例一起被丢弃、不产生可观察副作用。这里保持空实现，
   // 不替原代码编造一份清理逻辑——只是为了和其余控制器统一的 bind/dispose
   // 生命周期形状而提供这个方法。
-  dispose(): void {}
+  dispose(): void { this.pickerEpoch++; this.mediaPickerOpen = false; }
 }

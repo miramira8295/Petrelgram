@@ -1,3 +1,6 @@
+import { MessageDragGesture } from '../../util/messageDragGesture';
+import { configureMessageDrag } from '../../services/MessageDragSource';
+import { messageDragType } from '../../util/messageDrag';
 import { tableScrollTouched } from '../../util/tableTouchChannel';
 import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
 import { pillSegments, PillSegment } from '../../util/systemPillLinks';
@@ -693,7 +696,9 @@ export struct MessageBubble {
   // P0-3）已全部是 @Local，由框架在 aboutToReuse 之前统一重置（批 0.5 实测
   // 1370/1370）；C 类 6 个通道值同理，且 attachMessageChannels 会同步重播种。
   private clearTransientState(): void {
+    this.dragGesture = new MessageDragGesture();
     this.gestureClaimed = false;
+    this.draggingMessage = false;
     this.mediaCenterY = 0;
     this.albumCellCenterY.clear();
     this.albumWasCompetingVideo.clear();
@@ -977,7 +982,29 @@ export struct MessageBubble {
     this.menuOffsetX = width > 0 ? localX - width / 2 : 0;
   }
 
-  private onLongPress(event: GestureEvent): void {
+  private dragGesture: MessageDragGesture = new MessageDragGesture();
+
+  private canDragMessage(): boolean { return !this.data.selectionActive && !this.data.editingActive && this.group.memberIds.length === 1 && this.msg.id > 0 && messageDragType(this.msg.contentType) !== ''; }
+
+  private onDragSourceTouch(event: TouchEvent): void {
+    if (!this.canDragMessage()) { return; }
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    const now = Date.now();
+    if (event.type === TouchType.Down && touch !== undefined) {
+      this.dragGesture.begin(touch.windowX, touch.windowY, now);
+      this.recordMenuOffset(touch.x, Number(event.target.area.width));
+    } else if (event.type === TouchType.Move && touch !== undefined) {
+      this.dragGesture.move(touch.windowX, touch.windowY, now);
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      if (touch !== undefined) { this.dragGesture.move(touch.windowX, touch.windowY, now); }
+      if (this.dragGesture.end(now, event.type === TouchType.Cancel)) { this.onLongPress(); }
+    }
+  }
+
+  @Local private draggingMessage: boolean = false;
+
+  private onLongPress(event?: GestureEvent): void {
+    if (this.draggingMessage) { return; }
     // 手指压在气泡里那张可横滑的表格上：不弹菜单、也不做"抬起气泡"那套预览
     // 动效（用户 2026-09-22：「滑动会响应气泡长按的视觉效果」）。按住不动 500ms
     // 再拖，长按先于拖动成立，于是滚表格的同时菜单弹了出来。
@@ -991,8 +1018,8 @@ export struct MessageBubble {
       + ` kbd=${Math.round(this.env.keyboardHeightVp)} winH=${Math.round(this.env.screenHeightVp)}`
       + ` compact=${this.compactMenuContext()} liveVideo=${this.hasLiveVideoSurface()}`
       + ` shown=${this.msgContextMenuShown}`);
-    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
-    if (finger !== undefined) {
+    const finger: FingerInfo | undefined = event === undefined ? undefined : firstFinger(event.fingerList);
+    if (finger !== undefined && event !== undefined) {
       this.recordMenuOffset(finger.localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
@@ -1024,7 +1051,7 @@ export struct MessageBubble {
     // 「横向滑动会和气泡一起滑动」）。整行这条是 parallelGesture，按定义就要
     // 和子孙手势并行跑，子节点那边没有任何属性能让它让路——只能反过来由表格
     // 在按下时打个标记，这里读。详见 util/tableTouchChannel。
-    if (tableScrollTouched()) {
+    if (this.draggingMessage || (this.canDragMessage() && this.dragGesture.prefersDrag(Date.now())) || tableScrollTouched()) {
       return false;
     }
     return !this.swipeFromEdge && !this.data.editingActive
@@ -4287,9 +4314,10 @@ export struct MessageBubble {
     // is untouched — PanDirection.Horizontal means a vertical drag simply
     // never satisfies this recognizer and falls through to the List.
     .parallelGesture(
-      LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+      this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
         .onAction((event: GestureEvent): void => { this.onLongPress(event); })
     )
+    .onTouch((event: TouchEvent): void => { this.onDragSourceTouch(event); })
     // 单击出菜单只在新交互下挂。用 .onClick 而不是塞进上面那个
     // parallelGesture：官方文档明写父子都绑点击手势时**子组件优先、父组件
     // 不触发**，正是我们要的——点链接、点图片、点内联按钮各归各，只有落在
@@ -4453,6 +4481,16 @@ export struct MessageBubble {
       }
       .alignItems(VerticalAlign.Bottom)
       .padding(this.avatarGutterPadding())
+      .draggable(this.canDragMessage())
+      .onDragStart((event: DragEvent): DragItemInfo => {
+        this.dragGesture.claim();
+        this.draggingMessage = true;
+        this.gestureClaimed = true;
+        this.msgContextMenuShown = false;
+        configureMessageDrag(event, this.data.chatId, this.msg.id, messageDragType(this.msg.contentType));
+        return {};
+      })
+      .onDragEnd((): void => { this.draggingMessage = false; })
       .bindContextMenu(this.msgContextMenuShown, this.msgContextMenu(), {
         onAppear: (): void => {
           logW(`[Menu114] menu appear id=${this.msg.id}`);
@@ -4515,6 +4553,7 @@ export struct MessageBubble {
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {
           this.gestureClaimed = false;
+          this.draggingMessage = false;
           // 按下这一刻判一次落点是否在边缘死区里，整个手势期间沿用。
           // 用 windowX 而不是 displayX：分栏/自由窗口下要的是**窗口**边缘，
           // 而 screenWidthVp 存的正是 windowRect.width（见 EntryAbility）。

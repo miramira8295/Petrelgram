@@ -279,6 +279,14 @@ export default function plainTextBubbleReuseTest() {
       expect(messageBubbleReuseId(poll, context()) ===
         messageBubbleReuseId(publicPoll, context())).assertFalse();
 
+      const quiz: MessageEntry = cloneMessage(poll);
+      quiz.pollIsQuiz = true;
+      quiz.pollCorrectOptionId = -1;
+      const revealedQuiz: MessageEntry = cloneMessage(quiz);
+      revealedQuiz.pollCorrectOptionId = 1;
+      expect(messageBubbleReuseId(quiz, context()) ===
+        messageBubbleReuseId(revealedQuiz, context())).assertFalse();
+
       const activePollCtx: MessageBubbleReuseContext = context();
       const expiredPollCtx: MessageBubbleReuseContext = context();
       expiredPollCtx.pollExpired = true;

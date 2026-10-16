@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Перейти к непрочитанному упоминанию"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Результат отправки неизвестен. Сначала проверьте чат назначения. Во избежание дубликатов эта группа сообщений не будет отправлена повторно."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Администраторы этой группы запретили вам отправлять сообщения до %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Администраторы этой группы запретили вам отправлять сообщения."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "В этой группе обычным участникам запрещено отправлять сообщения."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Управление: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Выполнено: %1$s. Ошибка: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Статус участника или права изменились. Откройте окно удаления заново."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Результат не подтверждён. Проверьте группу перед повторением действия."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Выбранные сообщения будут удалены у всех."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Выбранные сообщения будут удалены только из вашей истории чата."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Не удалось определить доступный вариант удаления выбранных сообщений. Измените выбор или повторите попытку позже."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "В этом чате запрещено: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Не удалось проверить разрешения на отправку. Повторите попытку."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Запись видео…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Запись голосового сообщения…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Запись видеосообщения…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Отправка видео…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Отправка голосового сообщения…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Отправка видеосообщения…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Отправка фото…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Отправка файлов…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Выбор стикера…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Выбор местоположения…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Выбор контакта…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Игра…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Просмотр анимации…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Разные действия…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Сканировать QR-код"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Этот QR-код не поддерживается. Отсканируйте код контакта, группы или входа Telegram."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Разрешить вход на новом устройстве?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Подтверждайте только устройство, на котором входите вы. Оно получит доступ к вашему аккаунту Telegram и облачным чатам."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Разрешить вход"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Нет доступной ссылки-приглашения или прав на управление ссылками."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Не удалось обработать код. Проверьте подключение и срок действия кода, затем повторите попытку."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Вход с нового устройства"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Устройств ожидает подтверждения: %1$d. Нажмите для проверки."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Группа в Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Показать клавиатуру"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Скрыть закреплённые сообщения"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Показать закреплённые сообщения"
     }
   ]
 }

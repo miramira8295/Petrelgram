@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "अपठित उल्लेख पर जाएँ"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "भेजने का परिणाम स्पष्ट नहीं है। पहले गंतव्य चैट देखें; डुप्लिकेट से बचने के लिए इस बैच को दोबारा नहीं भेजा जाएगा।"
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "इस समूह के व्यवस्थापकों ने आपको %1$s तक संदेश भेजने से प्रतिबंधित किया है।"
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "इस समूह के व्यवस्थापकों ने आपको संदेश भेजने से प्रतिबंधित किया है।"
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "इस समूह में सामान्य सदस्यों को संदेश भेजने की अनुमति नहीं है।"
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "प्रबंधन: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "पूरा हुआ: %1$s। विफल: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "सदस्य की स्थिति या व्यवस्थापक अनुमतियाँ बदल गई हैं। हटाने का संवाद फिर खोलें।"
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "परिणाम की पुष्टि नहीं हुई है। कार्रवाई दोहराने से पहले समूह की जाँच करें।"
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "चुने गए संदेश सभी के लिए हटा दिए जाएँगे।"
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "चुने गए संदेश केवल आपके चैट इतिहास से हटाए जाएँगे।"
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "चुने गए संदेशों के लिए उपलब्ध हटाने के विकल्पों की पुष्टि नहीं हो सकी। चयन बदलें या बाद में फिर से प्रयास करें।"
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "इस चैट में अनुमति नहीं है: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "भेजने की अनुमति जाँची नहीं जा सकी। कृपया फिर से प्रयास करें।"
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "वीडियो रिकॉर्ड कर रहे हैं…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "आवाज़ रिकॉर्ड कर रहे हैं…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "वीडियो संदेश रिकॉर्ड कर रहे हैं…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "वीडियो भेज रहे हैं…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "वॉइस संदेश भेज रहे हैं…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "वीडियो संदेश भेज रहे हैं…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "फ़ोटो भेज रहे हैं…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "फ़ाइलें भेज रहे हैं…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "स्टिकर चुन रहे हैं…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "स्थान चुन रहे हैं…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "संपर्क चुन रहे हैं…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "गेम खेल रहे हैं…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "एनिमेशन देख रहे हैं…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "अलग-अलग गतिविधियाँ कर रहे हैं…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "QR कोड स्कैन करें"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "यह कोड समर्थित नहीं है। Telegram संपर्क, समूह या लॉगिन कोड स्कैन करें।"
+    },
+    {
+      "name": "qr_login_title",
+      "value": "नए डिवाइस को लॉगिन की अनुमति दें?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "केवल उसी डिवाइस को मंज़ूरी दें जिसमें आप स्वयं लॉगिन कर रहे हैं। उसे आपके Telegram खाते और क्लाउड चैट तक पहुँच मिलेगी।"
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "लॉगिन की अनुमति दें"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "कोई आमंत्रण लिंक उपलब्ध नहीं है या आपको लिंक प्रबंधित करने की अनुमति नहीं है।"
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "कोड संसाधित नहीं हो सका। कनेक्शन और कोड की वैधता जाँचकर फिर कोशिश करें।"
+    },
+    {
+      "name": "session_new_login",
+      "value": "नए डिवाइस से लॉगिन"
+    },
+    {
+      "name": "session_review_count",
+      "value": "पुष्टि की प्रतीक्षा कर रहे डिवाइस: %1$d। जाँचने के लिए टैप करें।"
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Telegram समूह"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "कीबोर्ड दिखाएँ"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "पिन किए गए संदेश छिपाएँ"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "पिन किए गए संदेश दिखाएँ"
     }
   ]
 }

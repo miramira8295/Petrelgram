@@ -420,7 +420,7 @@ export function attachActionsControllerTest(): void {
     // replaceMedia），唯一调用点在页面 diceSheet @Builder 的 ForEach
     // onClick 里。防的回归：setDiceSheetOpen(false)/host.store()/
     // setAtBottom(true)/store.sendDice(emoji) 四步顺序被打乱或漏掉一步。
-    it('sendDiceEmoji：store 非空时依次关闭骰子面板、写 atBottom、把骰子发给 store', 0, (): void => {
+    it('sendDiceEmoji：store 非空时依次关闭骰子面板、写 atBottom、把骰子发给 store', 0, async (): Promise<void> => {
       const host: FakeHost = new FakeHost();
       const wired: WiredStore = newWiredStore(7);
       host.storeValue = wired.store;
@@ -429,8 +429,15 @@ export function attachActionsControllerTest(): void {
       controller.sendDiceEmoji('🎯');
 
       expect(host.callOrder).assertDeepEquals(['setDiceSheetOpen:false', 'store', 'setAtBottom:true']);
-      expect(wired.bridge.sent.length).assertEqual(1); // store.sendDice 真的发出了一条 TDLib 请求
-      const sent: TdObject = JSON.parse(wired.bridge.sent[0]) as TdObject;
+      expect(wired.bridge.sent.length).assertEqual(1);
+      const check: TdObject = JSON.parse(wired.bridge.sent[0]) as TdObject;
+      expect(check['@type']).assertEqual('getChat');
+      const chat: TdObject = { '@type': 'chat' };
+      chat['type'] = { '@type': 'chatTypePrivate' } as TdObject;
+      chat['@extra'] = check['@extra'];
+      wired.bridge.onReceive(JSON.stringify(chat));
+      await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+      const sent: TdObject = JSON.parse(wired.bridge.sent[1]) as TdObject;
       expect(sent['@type']).assertEqual('sendMessage');
       // 光断言"发出了一条 sendMessage"够不上用例名说的"把骰子发给 store"：
       // 把 store.sendDice(emoji) 写成硬编码 sendDice('🎲')、或者干脆漏传参数，

@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "跳转到未读提及"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "发送结果尚未确认，请先检查目标聊天；为避免重复，暂不重试此批消息。"
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "该群组的管理员限制了您在 %1$s 之前发送消息。"
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "该群组的管理员限制了您发送消息。"
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "该群组不允许普通成员发送消息。"
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "管理对象：%1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "已完成：%1$s。失败：%2$s（%3$s）"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "成员状态或管理权限已变化，请重新打开删除窗口。"
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "操作结果尚未确认，请先检查群组状态，避免重复操作。"
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "所选消息将为所有人删除。"
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "所选消息只会从你的聊天记录中删除。"
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "无法确认所选消息的可用删除范围，请重新选择或稍后重试。"
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "此聊天不允许：%s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "暂时无法确认发送权限，请稍后重试"
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "正在录制视频…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "正在录音…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "正在录制视频消息…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "正在发送视频…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "正在发送语音…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "正在发送视频消息…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "正在发送图片…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "正在发送文件…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "正在选择贴纸…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "正在选择位置…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "正在选择联系人…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "正在玩游戏…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "正在观看动画…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "正在进行多种操作…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s：%2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "%1$d 人：%2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "扫一扫"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "暂不支持此二维码，请扫描 Telegram 联系人、群组或登录二维码。"
+    },
+    {
+      "name": "qr_login_title",
+      "value": "允许新设备登录？"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "仅确认你本人正在登录的设备。继续后，该设备将能访问你的 Telegram 账号和云端聊天。"
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "允许登录"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "没有可用的邀请链接，或你没有管理邀请链接的权限。"
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "扫码处理失败，请检查网络或二维码是否已过期后重试。"
+    },
+    {
+      "name": "session_new_login",
+      "value": "新设备登录"
+    },
+    {
+      "name": "session_review_count",
+      "value": "%1$d 个设备待确认，点此核对是否为本人操作"
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "TG 交流群"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "显示键盘"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "隐藏置顶"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "显示置顶"
     }
   ]
 }

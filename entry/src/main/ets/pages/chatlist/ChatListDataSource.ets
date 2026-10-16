@@ -1,154 +1,113 @@
 import { ChatEntry } from '../../store/ChatEntry';
-import { keyTableReload, newKeyTableId } from '../../util/keyGuard';
+import { ChatListRowState } from './ChatListRowState';
+import { keyTableAdd, keyTableDelete, keyTableReload, newKeyTableId } from '../../util/keyGuard';
 
-// LazyForEach data source for the chat list.
-//
-// The list was a plain ForEach, and ForEach builds every child up front: a
-// device log showed `Ids.size[424]`, i.e. 424 ChatRow components alive for a
-// list that shows about eight. That is paid on the list's first layout, again
-// in memory for as long as the screen exists, and again on every update that
-// marks the ForEach dirty.
-//
-// The diff mirrors AlbumGroupDataSource: compare keys, notify only the rows
-// that actually differ. Chat lists reorder constantly (a new message moves a
-// chat to the top), so a blanket reload on every update would rebuild the
-// visible rows several times a second.
+// LazyForEach owns membership/order. ObjectLink owns content: a new revision
+// updates the existing row rather than renaming and rebuilding its subtree.
 export class ChatListDataSource implements IDataSource {
   private items: ChatEntry[] = [];
-  private keys: string[] = [];
+  private rows: ChatListRowState[] = [];
+  private byId: Map<number, ChatListRowState> = new Map();
   private listeners: DataChangeListener[] = [];
-  // Diagnostic only: one key table per instance, since each list body has its
-  // own LazyForEach. See AlbumGroupDataSource.keyTableId.
+  private contentKeys: string[] = [];
+  private reloadEpoch: number = 0;
   readonly keyTableId: string = newKeyTableId('chatlist');
 
-  totalCount(): number {
-    return this.items.length;
-  }
+  totalCount(): number { return this.rows.length; }
 
-  getData(index: number): ChatEntry {
-    return this.items[index];
-  }
+  getData(index: number): ChatListRowState { return this.rows[index]; }
+
+  // This is identity, not the content signature. A deliberate context reload
+  // (language/scope mute) still rebuilds rows; ordinary updates and reorders do not.
+  getKey(index: number): string { return `${this.rows[index].id}_${this.reloadEpoch}`; }
 
   registerDataChangeListener(listener: DataChangeListener): void {
-    if (this.listeners.indexOf(listener) < 0) {
-      this.listeners.push(listener);
-    }
+    if (this.listeners.indexOf(listener) < 0) { this.listeners.push(listener); }
   }
 
   unregisterDataChangeListener(listener: DataChangeListener): void {
     this.listeners = this.listeners.filter((l: DataChangeListener) => l !== listener);
   }
 
-  // See AlbumGroupDataSource.reload: the row key embeds the language epoch, so
-  // a bump renames every row without the data changing at all.
-  reload(): void {
+  reload(nextContentKeys: string[]): void {
+    this.reloadEpoch++;
+    this.syncRows(this.items, nextContentKeys);
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
   }
 
-  update(next: ChatEntry[], nextKeys: string[]): void {
-    const prevKeys = this.keys;
-    const prevIds = this.items.map((item: ChatEntry): number => item.id);
-    const nextIds = next.map((item: ChatEntry): number => item.id);
+  update(next: ChatEntry[], nextContentKeys: string[]): void {
+    const previous = this.items;
     this.items = next;
-    this.keys = nextKeys;
+    // Called only after the view's publication gates open. Hidden/menu/touch
+    // freezes must not leak new snapshots through this observable side channel.
+    this.syncRows(next, nextContentKeys);
 
-    // 按身份（chat id）算前后缀公共段，中间那截才是真正变动的部分。
-    const minLen = Math.min(prevIds.length, nextIds.length);
+    const minLen = Math.min(previous.length, next.length);
     let p = 0;
-    while (p < minLen && prevIds[p] === nextIds[p]) {
-      p++;
-    }
+    while (p < minLen && previous[p].id === next[p].id) { p++; }
     let s = 0;
-    while (s < minLen - p && prevIds[prevIds.length - 1 - s] === nextIds[nextIds.length - 1 - s]) {
-      s++;
-    }
-    const oldMid = prevIds.length - p - s;
-    const newMid = nextIds.length - p - s;
+    while (s < minLen - p && previous[previous.length - 1 - s].id === next[next.length - 1 - s].id) { s++; }
+    const oldMid = previous.length - p - s;
+    const newMid = next.length - p - s;
 
-    // 身份处处未变，只可能是内容变了。
-    if (oldMid === 0 && newMid === 0) {
-      const ops: DataOperation[] = [];
-      for (let i = 0; i < nextKeys.length; i++) {
-        if (prevKeys[i] !== nextKeys[i]) {
-          ops.push({ type: DataOperationType.CHANGE, index: i } as DataChangeOperation);
-        }
-      }
-      if (ops.length === 0) {
-        return;
-      }
-      this.notify(ops);
-      return;
-    }
-
-    // keyGuard checks the rows LazyForEach actually materializes. Avoid a
-    // second whole-list diagnostic Map on every incoming-message reorder.
-
-    // 纯插入。翻页加载更多会话走的就是这条——原来只要长度一变就整表 RELOAD，
-    // 而 RELOAD 会让 LazyForEach 把所有行作废重建。
+    // No CHANGE notifications: they can rebuild ListItem even with a stable key.
+    // Changed snapshots have already notified their ObjectLink subscribers.
+    if (oldMid === 0 && newMid === 0) { return; }
     if (oldMid === 0) {
-      this.notifyInsert(p, newMid, nextKeys);
-      this.notifySurvivorChanges(prevKeys, nextKeys, p, s, newMid, 0);
+      const keys: string[] = [];
+      for (let i = p; i < p + newMid; i++) { keys.push(this.getKey(i)); }
+      this.notify([{ type: DataOperationType.ADD, index: p, count: newMid, key: keys } as DataAddOperation]);
       return;
     }
-    // 纯删除（退出会话、归档、被移出文件夹）。
     if (newMid === 0) {
-      this.notify([{
-        type: DataOperationType.DELETE, index: p, count: oldMid
-      } as DataDeleteOperation]);
-      this.notifySurvivorChanges(prevKeys, nextKeys, p, s, 0, oldMid);
+      this.notify([{ type: DataOperationType.DELETE, index: p, count: oldMid } as DataDeleteOperation]);
       return;
     }
-
-    // 其余一律 RELOAD，重排是主要的一类：聊天列表随时重排（来新消息就置顶），
-    // 而 CHANGE 的语义是"同一项换了内容"。重排之后每个下标坐着的是**另一个**
-    // 会话，报成 CHANGE 等于告诉列表身份没变、而那个 key 已经注册在别的下标上
-    // ——这正是"Use repeat key"告警和行渲染成别的会话的来源，之前踩过。
+    // Never label reordered identities as CHANGE. RELOAD compares stable keys,
+    // retaining surviving cells; content is carried by those same row objects.
     this.notify([{ type: DataOperationType.RELOAD } as DataReloadOperation]);
   }
 
-  private notifyInsert(at: number, count: number, nextKeys: string[]): void {
-    const keys: string[] = [];
-    for (let i = at; i < at + count; i++) {
-      keys.push(nextKeys[i]);
-    }
-    this.notify([{
-      type: DataOperationType.ADD, index: at, count: count, key: keys
-    } as DataAddOperation]);
-  }
+  private syncRows(next: ChatEntry[], contentKeys: string[]): void {
+    const rows: ChatListRowState[] = [];
+    const previousRows = this.rows;
+    const previousKeys = this.contentKeys;
+    for (let i = 0; i < next.length; i++) {
+      const chat = next[i];
+      const atIndex = previousRows[i];
+      let row = atIndex !== undefined && atIndex.id === chat.id ? atIndex : this.byId.get(chat.id);
+      if (row === undefined) {
+        row = new ChatListRowState(chat, contentKeys[i]);
+        this.byId.set(chat.id, row);
+      } else if (row !== atIndex || previousKeys[i] !== contentKeys[i]) {
+        row.update(chat, contentKeys[i]);
+      }
+      rows.push(row);
 
-  // 结构通知与内容通知分开发，且内容通知的下标用的是**结构变化之后**的位置。
-  // 混在一批里，ADD 会一边移动后续下标、CHANGE 又按原下标定位，落点对不对取决
-  // 于框架的应用顺序——AlbumGroupDataSource 的注释记录过这么翻过车。
-  private notifySurvivorChanges(prevKeys: string[], nextKeys: string[],
-    p: number, s: number, added: number, removed: number): void {
-    const ops: DataOperation[] = [];
-    for (let i = 0; i < p; i++) {
-      if (prevKeys[i] !== nextKeys[i]) {
-        ops.push({ type: DataOperationType.CHANGE, index: i } as DataChangeOperation);
-      }
     }
-    for (let i = 0; i < s; i++) {
-      const prevIndex = prevKeys.length - 1 - i;
-      const nextIndex = nextKeys.length - 1 - i;
-      if (prevKeys[prevIndex] !== nextKeys[nextIndex]) {
-        ops.push({ type: DataOperationType.CHANGE, index: nextIndex } as DataChangeOperation);
-      }
+    if (this.byId.size > rows.length) {
+      const surviving: Set<number> = new Set();
+      for (const row of rows) { surviving.add(row.id); }
+      this.byId.forEach((_row: ChatListRowState, id: number): void => {
+        if (!surviving.has(id)) { this.byId.delete(id); }
+      });
     }
-    if (ops.length > 0) {
-      this.notify(ops);
-    }
+    this.rows = rows;
+    this.contentKeys = contentKeys;
   }
 
   private notify(ops: DataOperation[]): void {
-    // This list only ever emits RELOAD or CHANGE; CHANGE keeps the row's
-    // identity, so only RELOAD invalidates the diagnostic key table.
     for (const op of ops) {
       if (op.type === DataOperationType.RELOAD) {
         keyTableReload(this.keyTableId);
+      } else if (op.type === DataOperationType.ADD) {
+        const add = op as DataAddOperation;
+        keyTableAdd(this.keyTableId, add.index, add.count ?? 1);
+      } else if (op.type === DataOperationType.DELETE) {
+        const del = op as DataDeleteOperation;
+        keyTableDelete(this.keyTableId, del.index, del.count ?? 1);
       }
     }
-    for (const l of this.listeners) {
-      l.onDatasetChange(ops);
-    }
+    for (const listener of this.listeners) { listener.onDatasetChange(ops); }
   }
 }

@@ -8,7 +8,9 @@ export const MEMBERSHIP_WRITABLE: string = 'writable';   // 正常输入区
 export const MEMBERSHIP_REQUESTED: string = 'requested'; // 申请已发送，等待审核
 export const MEMBERSHIP_JOINABLE: string = 'joinable';   // 显示"加入"
 export const MEMBERSHIP_BLOCKED: string = 'blocked';     // 显示"无法加入"
-export const MEMBERSHIP_READONLY: string = 'readonly';   // 只读，位置让给静音开关
+export const MEMBERSHIP_READONLY: string = 'readonly';   // 只读频道，显示通知静音开关
+export const MEMBERSHIP_RESTRICTED: string = 'restricted'; // 个人禁言
+export const MEMBERSHIP_GROUP_READONLY: string = 'groupReadonly'; // 群默认禁止发言
 export const MEMBERSHIP_CHECKING: string = 'checking';   // 补充请求在途
 
 export interface MemberStatusInput {
@@ -41,7 +43,7 @@ export function membershipStateOf(input: MemberStatusInput): string {
     }
     // 但**在场也不等于能说话**：细项里就有 can_send_basic_messages。
     // 原来这一支无条件放行，被禁言的人对着一个发不出去的输入框打字。
-    return input.restrictedCanSendBasic ? MEMBERSHIP_WRITABLE : MEMBERSHIP_READONLY;
+    return input.restrictedCanSendBasic ? MEMBERSHIP_WRITABLE : MEMBERSHIP_RESTRICTED;
   }
   if (input.statusType === 'chatMemberStatusBanned') {
     return MEMBERSHIP_BLOCKED;
@@ -65,7 +67,7 @@ export function membershipStateOf(input: MemberStatusInput): string {
   //
   // 创建者和管理员不走这一支：锁群本来就是给他们用的，群默认权限不约束他们。
   if (input.statusType === 'chatMemberStatusMember' && !input.chatCanSendBasic) {
-    return MEMBERSHIP_READONLY;
+    return MEMBERSHIP_GROUP_READONLY;
   }
   // 其余（创建者、管理员、能发言的普通成员、私聊、密聊、拿不到状态）一律放行。
   // 兜底选 writable 而不是 blocked 是有意的：状态查不到时把输入框藏起来，

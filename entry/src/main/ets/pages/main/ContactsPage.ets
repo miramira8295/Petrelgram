@@ -1,3 +1,4 @@
+import { ContactAlphabetIndex } from '../../services/ContactAlphabetIndex';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
@@ -97,7 +98,7 @@ function contactsSplitPlaceholder(): void {
 }
 
 // The contacts tab: search box, recent-calls shortcut, and the contact
-// list sorted by last-seen. Title shows 正在刷新... until getContacts resolves.
+// list sorted by name. Title shows 正在刷新... until getContacts resolves.
 @Preview
 // 组件冻结：这四个页签由 MainScreen 的 Tabs 保活，同一时刻只有一个在屏上，
 // 其余三棵树却照样响应各自 store 的状态更新、照样重跑 build。冻结之后非
@@ -143,7 +144,11 @@ export struct ContactsPage {
     return this.glassOn() ? Color.Transparent : CARD_BG;
   }
 
-  private contactsScroller: Scroller = new Scroller();
+  private contactsScroller: ListScroller = new ListScroller();
+  private alphabet: ContactAlphabetIndex = new ContactAlphabetIndex();
+  private orderedContacts: ContactItem[] = [];
+  @State private indexLetters: string[] = [];
+  @State private selectedLetter: number = 0;
   // 联系人卡片的 LazyForEach 数据源，喂的是 filtered() 那一份（见 onContactListInputChanged）。
   private contactsData: KeyedListDataSource<ContactItem> = new KeyedListDataSource<ContactItem>('contacts');
   // 联系人页签的路由栈。平板（分栏）上点一个联系人会把 ProfilePage 推进这里，
@@ -312,6 +317,8 @@ export struct ContactsPage {
   }
 
   aboutToDisappear(): void {
+    this.alphabet.clear();
+    this.orderedContacts = [];
     // ComponentContent 是脱离组件树管理的节点实体，得自己释放。
     this.splitPlaceholder.dispose();
     this.stopSkeletonPulse();
@@ -684,6 +691,10 @@ export struct ContactsPage {
     return `${contact.id}_${contact.avatarPath}_${contact.name}_${contact.statusText}_${contact.online ? 1 : 0}`;
   }
 
+  private contactListVersion(contact: ContactItem): string {
+    return `${this.contactVersion(contact)}_${this.query.trim() === '' ? this.alphabet.heading(contact.id) : ''}`;
+  }
+
   private visibleContactIndex(userId: number): number {
     return this.filtered().findIndex((contact: ContactItem): boolean => contact.id === userId);
   }
@@ -818,10 +829,10 @@ export struct ContactsPage {
   private filtered(): ContactItem[] {
     const q = this.query.trim().toLowerCase();
     if (q === '') {
-      return this.contacts;
+      return this.orderedContacts;
     }
     const localQuery = q.replace(/^@/, '');
-    const result = this.contacts.filter((c: ContactItem): boolean =>
+    const result = this.orderedContacts.filter((c: ContactItem): boolean =>
       c.name.toLowerCase().includes(localQuery) ||
         c.statusText.toLowerCase().includes(q)
     );
@@ -842,10 +853,13 @@ export struct ContactsPage {
       this.listInputDirty = true;
       return;
     }
+    this.orderedContacts = this.alphabet.sort(this.contacts);
+    this.indexLetters = this.alphabet.positions.map((position): string => position.letter);
+    this.selectedLetter = Math.min(this.selectedLetter, Math.max(0, this.indexLetters.length - 1));
     const list: ContactItem[] = this.filtered();
     this.contactsData.update(list,
       list.map((c: ContactItem): string => `${c.id}`),
-      list.map((c: ContactItem): string => this.contactVersion(c)));
+      list.map((c: ContactItem): string => this.contactListVersion(c)));
   }
 
   @Builder
@@ -1298,12 +1312,19 @@ export struct ContactsPage {
     ListItemGroup({ header: this.listCardHeader() }) {
       LazyForEach(this.contactsData, (c: ContactItem) => {
         ListItem() {
+          Column() {
+            if (this.query.trim() === '' && this.alphabet.heading(c.id) !== '') {
+              Text(this.alphabet.heading(c.id)).fontSize(13).fontWeight(FontWeight.Medium)
+                .fontColor(this.accent()).width('100%').height(28)
+                .padding({ left: LIST_CARD_INSET_VP }).textAlign(TextAlign.Start);
+            }
           ContactRowView({
             contact: c,
             pressed: this.pressedContactId === c.id,
             busy: this.openingContactId === c.id || this.deletingContactId === c.id,
             glassCard: this.glassOn()
           });
+          }.width('100%');
         }
         .accessibilityText(`${c.name}，${c.statusText}`)
         .onTouch((event: TouchEvent): void => {
@@ -1365,7 +1386,7 @@ export struct ContactsPage {
           }
         );
       }, (c: ContactItem, index: number): string =>
-        guardKey(this.contactsData.keyTableId, index, this.contactVersion(c)));
+        guardKey(this.contactsData.keyTableId, index, this.contactListVersion(c)));
       if (this.remoteLoading) {
         ListItem() {
           Row({ space: 8 }) {
@@ -1733,12 +1754,22 @@ export struct ContactsPage {
           // Stack 按到底部，观感是"联系人列表整体沉在屏幕下半截"（issue #118）。
           .height('100%')
           .alignListItem(ListItemAlign.Center)
+          .padding({ right: this.query.trim() === '' && this.indexLetters.length > 0 ? 28 : 0 })
           // 第二个参数 true：滚出视口的备用行也画出来——标题栏的渐变模糊糊的正是穿到它底下
           // 的这部分（同首页会话列表，与下面的 clip(false) 是一对）。
           .cachedCount(CONTACT_LIST_CACHED_COUNT, true)
           .contentEndOffset(this.bottomSafe + 88)
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .scrollBar(BarState.Off)
+          .onScrollVisibleContentChange((start: VisibleListContentInfo): void => {
+            if (this.query.trim() !== '') { return; }
+            const row = start.index === 1 ? (start.itemIndexInGroup ?? 0) : 0;
+            let selected = 0;
+            this.alphabet.positions.forEach((position, index: number): void => {
+              if (position.index <= row) { selected = index; }
+            });
+            if (selected !== this.selectedLetter) { this.selectedLetter = selected; }
+          })
           .enableScrollInteraction(!this.contextMenuShown)
           // navBar 的实际宽度：分栏时它就是左栏宽，拖分割线会变，MainScreen 的
           // dock 要跟着走。这个 List 是 navBar 内容的根节点、width('100%')，
@@ -1756,6 +1787,23 @@ export struct ContactsPage {
           })
           // 不裁剪，内容才能穿透到标题栏下方——渐变模糊模糊的正是穿过去的这部分。
           .clip(false);
+
+          if (this.query.trim() === '' && this.indexLetters.length > 0) {
+            AlphabetIndexer({ arrayValue: this.indexLetters, selected: this.selectedLetter })
+              .selected(this.selectedLetter)
+              .itemSize(18).font({ size: 11 }).color(COLOR_TEXT_SECONDARY)
+              .selectedColor(this.accent()).selectedBackgroundColor(Color.Transparent)
+              .autoCollapse(true).usingPopup(true)
+              .align(Alignment.End).margin({ right: 2, bottom: this.bottomSafe + 88 })
+              .constraintSize({ maxHeight: '70%' })
+              .enabled(!this.contextMenuShown && !this.contactPressActive)
+              .onSelect((index: number): void => {
+                const position = this.alphabet.positions[index];
+                if (position === undefined || this.contextMenuShown) { return; }
+                this.selectedLetter = index;
+                this.contactsScroller.scrollToItemInGroup(1, position.index, false, ScrollAlign.START);
+              });
+          }
 
           // FAB 与 Scroll 是**兄弟**，不是 Scroll 的子节点——所以它悬浮、不跟着
           // 列表滚走。这一点与改动前一致，变的只是它悬浮在哪个盒子里。

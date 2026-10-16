@@ -1,3 +1,5 @@
+import { pinnedVisibilityFor } from '../../services/PinnedVisibility';
+import { PinnedVisibility } from '../../util/pinnedVisibilityState';
 // 顶栏下挂那张浮卡（置顶消息条 + 直播/群通话条）的状态机。
 // 从 ChatPage 整体搬出（B5 批）。
 //
@@ -101,6 +103,7 @@ export interface LiveTopCardHost {
 export class LiveTopCardController {
   // ——— 显示态：TopBanners 直接读这些 @Trace ———
 
+  @Trace pinnedVisibility: PinnedVisibility = new PinnedVisibility();
   @Trace pinnedPreview: string = '';
   @Trace pinnedCount: number = 0;
   @Trace pinnedLoadState: string = 'loading'; // loading | ready | error
@@ -228,6 +231,7 @@ export class LiveTopCardController {
   // ——— 卡片整体 ———
 
   resetTopCardState(): void {
+    this.pinnedVisibility = pinnedVisibilityFor(this.host.chatId());
     this.liveChatResolveSeq++;
     this.liveGroupResolveSeq++;
     this.pinnedPreview = '';
@@ -254,11 +258,19 @@ export class LiveTopCardController {
 
   // 搬之前叫 topCardShouldShow()。名字里的 topCard 前缀在控制器上是重复的，
   // 按 B5 约定改叫 shouldShow()；判据一字未动。
+  togglePinnedVisibility(): void {
+    try { this.pinnedVisibility.toggle(); } catch (_) { logE('PinnedVisibility write failed'); }
+  }
+
+  pinnedVisible(): boolean {
+    return !this.pinnedVisibility.hidden && this.pinnedPreview !== '';
+  }
+
   shouldShow(): boolean {
     // Pinned/live information is optional chrome. If its background probe
     // fails while TDLib is reconnecting and there is no confirmed content,
     // don't turn that transient transport problem into a persistent banner.
-    return this.pinnedPreview !== '' ||
+    return this.pinnedVisible() ||
       (this.liveGroupCallId > 0 && this.liveCallIsActive);
   }
 

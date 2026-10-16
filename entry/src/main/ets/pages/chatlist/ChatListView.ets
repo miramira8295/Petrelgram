@@ -1,3 +1,5 @@
+import { ChatListRowState } from './ChatListRowState';
+import { ChatListSubscription } from '../../store/ChatListSubscription';
 import { homeCardMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
@@ -7,8 +9,9 @@ import { ChatEntry } from '../../store/ChatEntry';
 import { ChatRow } from './ChatRow';
 import { KEY_FORCE_SINGLE_COLUMN } from '../../store/AppSettings';
 import { ChatListDataSource } from './ChatListDataSource';
+import { ChatListRowKeyCache } from './chatListRowKeys';
 import { guardKey } from '../../util/keyGuard';
-import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
+import { CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, chatListInForeground, chatListPublicationMode, ChatListFreeze, chatOrderUnchanged, contentOnlyUpdate, updateTouchHold } from './ChatListFreeze';
 import { CHAT_LIST_FLUSH_EPOCH, CHAT_LIST_RENDER_ACTIVE_KEY } from '../../util/chatListRenderGate';
 import { rememberListPosition, recallListPosition } from '../../util/chatListPosition';
 import {
@@ -122,12 +125,12 @@ export struct ChatListView {
 
   // 右滑（从左边拉出）：已读 / 标记未读。
   @Builder
-  readSwipe(chat: ChatEntry) {
+  readSwipe(row: ChatListRowState) {
     Row() {
       this.swipeButton(
-        this.rowUnread(chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
-        readSwipeVisual(this.rowUnread(chat)),
-        (): void => this.toggleRead(chat));
+        this.rowUnread(row.snapshot.chat) ? $r('app.string.cl_mark_read') : $r('app.string.cl_mark_unread'),
+        readSwipeVisual(this.rowUnread(row.snapshot.chat)),
+        (): void => this.toggleRead(row.snapshot.chat));
     }
     // ChatRow 是左右 12vp、上下 3vp 的真卡片；滑动动作也必须落在同一轮廓里，
     // 否则卡片滑走后会露出一块贴屏边的整行矩形。
@@ -138,23 +141,23 @@ export struct ChatListView {
       bottom: CHAT_SWIPE_VERTICAL_GUTTER_VP
     })
     // ACTIONING 会强制扩宽 builder 顶层；底色和圆角必须在同一节点。
-    .backgroundColor(readSwipeVisual(this.rowUnread(chat)).background)
+    .backgroundColor(readSwipeVisual(this.rowUnread(row.snapshot.chat)).background)
     .borderRadius(CHAT_SWIPE_RADIUS_VP)
     .clip(true);
   }
 
   // 左滑（从右边拉出）：展示静音开关 + 归档 / 取消归档，点击相应按钮执行。
   @Builder
-  endSwipe(chat: ChatEntry) {
+  endSwipe(row: ChatListRowState) {
     Row() {
       this.swipeButton(
-        this.rowMuted(chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
-        muteSwipeVisual(this.rowMuted(chat)),
-        (): void => this.toggleMute(chat));
+        this.rowMuted(row.snapshot.chat) ? $r('app.string.cp_unmute') : $r('app.string.cp_mute'),
+        muteSwipeVisual(this.rowMuted(row.snapshot.chat)),
+        (): void => this.toggleMute(row.snapshot.chat));
       this.swipeButton(
         this.rowArchived() ? $r('app.string.cl_unarchive') : $r('app.string.cl_archive'),
         archiveSwipeVisual(this.rowArchived()),
-        (): void => this.toggleArchive(chat));
+        (): void => this.toggleArchive(row.snapshot.chat));
     }
     .height(CHAT_SWIPE_ACTION_HEIGHT)
     .margin({
@@ -234,16 +237,23 @@ export struct ChatListView {
   @Prop @Watch('onPageVisibleChanged') pageVisible: boolean = true;
   @StorageProp(CHAT_LIST_FLUSH_EPOCH) @Watch('onFlushRequested')
   private flushEpoch: number = 0;
-  @State chats: ChatEntry[] = [];
+  // Store publishes immutable snapshots. Keep the full array out of ArkUI's
+  // observed state; LazyForEach receives changes through chatsData.
+  private chats: ChatEntry[] = [];
+  @State private chatsEmpty: boolean = true;
   @State loading: boolean = true;
   @State loadFailed: boolean = false;
   @State paging: boolean = false;
   @State pagingFailed: boolean = false;
+  @StorageProp('appIsForeground') @Watch('onForegroundChanged')
+  private appIsForeground: boolean = true;
+  private rowReloadPending: boolean = false;
   private updateGate: ChatListFreeze = new ChatListFreeze();
   // 返回转场那扇窗是否开着（issue #159）。由 onFlushRequested 开、闸开时关。
   private flushBypass: boolean = false;
   private chatsData: ChatListDataSource = new ChatListDataSource();
-  private unsubscribe: (() => void) | null = null;
+  private rowKeyCache: ChatListRowKeyCache = new ChatListRowKeyCache();
+  private listSubscription: ChatListSubscription | null = null;
   private active: boolean = false;
   // 纯发布闸，不参与绘制：滚动期间只缓存最新会话快照，停下后一次性发布。
   private listMoving: boolean = false;
@@ -256,6 +266,7 @@ export struct ChatListView {
         this.scrollSettleTimer = -1;
       }
       this.listMoving = true;
+      this.listSubscription?.refresh();
       return;
     }
     if (!this.listMoving || this.scrollSettleTimer !== -1) {
@@ -264,6 +275,7 @@ export struct ChatListView {
     this.scrollSettleTimer = setTimeout((): void => {
       this.scrollSettleTimer = -1;
       this.listMoving = false;
+      this.listSubscription?.refresh();
       if (this.flushBypass && !this.renderActive) {
         this.drainContentOnly();
       } else {
@@ -283,20 +295,32 @@ export struct ChatListView {
   }
 
   private publishingActive(): boolean {
-    return this.gateOpen() && this.updatesActive && !this.listMoving;
+    return chatListInForeground() && this.gateOpen() && this.updatesActive && !this.listMoving;
   }
 
   private onUpdatesActiveChanged(): void {
-    if (this.updatesActive) {
-      this.flushBufferedChats();
-    }
+    this.flushBufferedChats();
   }
 
   // 行 key 里带着 langEpoch。ForEach 时它一变就等于所有行改名、整表重建；
   // 换成 LazyForEach 之后没人会替我们做这件事，得显式告诉数据源。
   // 与 MainTabBody.onLanguageEpochChanged 同理。
   private onLanguageEpochChanged(): void {
-    this.chatsData.reload();
+    if (!chatListInForeground()) {
+      this.rowReloadPending = true;
+      return;
+    }
+    this.rowReloadPending = false;
+    this.chatsData.reload(this.keysFor(this.chats));
+  }
+
+  private onForegroundChanged(): void {
+    if (!chatListInForeground()) {
+      this.flushBypass = false;
+      this.listSubscription?.refresh();
+      return;
+    }
+    this.flushBufferedChats();
   }
 
   @Styles
@@ -314,7 +338,7 @@ export struct ChatListView {
   aboutToAppear(): void {
     this.active = true;
     const store = getChatStore();
-    this.unsubscribe = store.subscribe((list: ChatEntry[]) => {
+    this.listSubscription = store.subscribeList((list: ChatEntry[]) => {
       // A preloaded hidden tab needs one complete initial snapshot before it
       // becomes static. It may be constructed while the global finger-down
       // gate is closed, so the first non-empty snapshot explicitly bypasses
@@ -329,7 +353,8 @@ export struct ChatListView {
         // 转场窗口里到货的内容变更：accept 已经把它收进缓冲了，这里立刻取出来发。
         this.drainContentOnly();
       }
-    }, this.listKey);
+    }, this.listKey, () => chatListPublicationMode(this.updatesActive, this.gateOpen(),
+      this.listMoving, this.flushBypass, this.chats.length === 0 && store.hasChats(this.listKey)));
     this.loadInitial();
   }
 
@@ -339,20 +364,18 @@ export struct ChatListView {
     const store = getChatStore();
     store.ensureLoaded(this.listKey).then((success: boolean): void => {
       if (!this.active) { return; }
-      // TDLib normally emits the positions before resolving loadChats. Read
-      // the bucket once here as well so the empty state can't flash while the
-      // coalesced store notification is still waiting for the next frame.
-      const loaded: ChatEntry[] = store.getChats(this.listKey);
-      const forceInitial: boolean = this.chats.length === 0 && loaded.length > 0;
-      const next = this.updateGate.accept(loaded,
-        this.publishingActive() || this.loading, forceInitial);
-      if (next !== null) { this.applyChats(next); }
+      // Read once after loading, but only when the view can use the snapshot.
+      this.listSubscription?.refresh(true);
       this.loading = false;
       this.loadFailed = !success;
     });
   }
 
   private applyChats(next: ChatEntry[]): void {
+    if (!chatListInForeground()) {
+      this.updateGate.accept(next, false);
+      return;
+    }
     const structureChanged: boolean = !chatOrderUnchanged(this.chats, next);
     if (structureChanged && this.chats.length > 0) {
       animateTo({
@@ -364,17 +387,21 @@ export struct ChatListView {
     }
   }
 
-  // this.chats 仍然留着：空态判断和上面的 structureChanged 比较都要读它。
-  // 真正驱动列表的是 chatsData。
+  // Only the empty/non-empty boundary needs parent state; row changes use the data source.
   private publishChats(next: ChatEntry[]): void {
     this.chats = next;
-    this.chatsData.update(next, next.map((item: ChatEntry): string => this.rowKey(item)));
+    this.chatsData.update(next, this.keysFor(next));
+    this.chatsEmpty = next.length === 0;
   }
 
-  // langEpoch in the key: see MainTabBody.rowKey.
-  private rowKey(item: ChatEntry): string {
-    const pinned = getChatStore().isPinned(this.listKey, item.id) ? 1 : 0;
-    return `${item.id}_${item.revision}_${pinned}_${this.langEpoch}_${this.scopeMuteEpoch}`;
+  private keysFor(items: ChatEntry[]): string[] {
+    // Snapshot reactive key context once per publication, not once per row.
+    const languageEpoch: number = this.langEpoch;
+    const muteEpoch: number = this.scopeMuteEpoch;
+    const listKey: string = this.listKey;
+    const store = getChatStore();
+    return this.rowKeyCache.keys(items, listKey, languageEpoch, muteEpoch, store.pinEpoch(listKey),
+      (id: number): boolean => store.isPinned(listKey, id));
   }
 
   private loadMore(): void {
@@ -397,13 +424,15 @@ export struct ChatListView {
   }
 
   private flushBufferedChats(): void {
-    if (this.menuOpen || this.touchHold || this.listMoving || !this.gateOpen() || !this.updatesActive) {
+    this.listSubscription?.refresh();
+    if (!chatListInForeground() || this.menuOpen || this.touchHold || this.listMoving || !this.gateOpen() || !this.updatesActive) {
       return;
     }
     const next = this.updateGate.flush();
     if (next !== null) {
       this.applyChats(next);
     }
+    if (this.rowReloadPending) { this.onLanguageEpochChanged(); }
   }
 
   private onMenuToggle(): void {
@@ -436,10 +465,11 @@ export struct ChatListView {
   // 缓冲，照旧要等闸开才出来，"慢半拍"于是只修掉了运气好的一半。
   // 所以 bump 改成开一扇窗：窗开着的期间内容变更随到随发，闸开时关窗。
   private onFlushRequested(): void {
-    if (this.menuOpen || this.gateOpen()) {
+    if (!this.obeyGlobalGate || !chatListInForeground() || this.menuOpen || this.gateOpen()) {
       return;
     }
     this.flushBypass = true;
+    this.listSubscription?.refresh();
     if (!this.listMoving) {
       this.drainContentOnly();
     }
@@ -455,6 +485,8 @@ export struct ChatListView {
   // 就变了，你刚读完那个群的角标也跟着一起等 640ms。用户报的"有时候快有时候
   // 要等一会"就是这个分岔。
   private drainContentOnly(): void {
+    if (!chatListInForeground() || this.menuOpen || this.touchHold ||
+      this.listMoving || !this.updatesActive) { return; }
     const next = this.updateGate.flush();
     if (next === null) {
       return;
@@ -471,16 +503,15 @@ export struct ChatListView {
   }
 
   aboutToDisappear(): void {
+    this.rowKeyCache.clear();
     this.active = false;
     if (this.scrollSettleTimer !== -1) {
       clearTimeout(this.scrollSettleTimer);
       this.scrollSettleTimer = -1;
     }
     this.listMoving = false;
-    if (this.unsubscribe !== null) {
-      this.unsubscribe();
-      this.unsubscribe = null;
-    }
+    this.listSubscription?.close();
+    this.listSubscription = null;
   }
 
   @Builder
@@ -550,7 +581,7 @@ export struct ChatListView {
   }
 
   build() {
-    if (this.chats.length === 0) {
+    if (this.chatsEmpty) {
       this.emptyState();
     } else {
       // initialIndex：本页签若曾被 Tabs.cachedMaxCount 释放过，重建时回到
@@ -577,11 +608,11 @@ export struct ChatListView {
         // 归档和文件夹页签在会话多的账号上一样长（主列表 MainTabBody 早就
         // 迁过去了，:128 的注释记着当时实测 Ids.size[424]）。
         // 上面那个 .cachedCount(8) 配 ForEach 本来是空转的，现在才真正生效。
-        LazyForEach(this.chatsData, (item: ChatEntry) => {
+        LazyForEach(this.chatsData, (item: ChatListRowState) => {
           ListItem() {
             ChatRow({
               compact: !isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait),
-              chat: item,
+              row: item,
               listKey: this.listKey,
               liveEffects: this.liveEffects(),
               loadImages: this.imagesActive
@@ -594,14 +625,14 @@ export struct ChatListView {
               builder: (): void => { this.readSwipe(item); },
               actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
               onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleRead(item));
+                this.commitSwipeAction((): void => this.toggleRead(item.snapshot.chat));
               }
             },
             end: {
               builder: (): void => { this.endSwipe(item); },
               actionAreaDistance: CHAT_SWIPE_TRIGGER_VP,
               onAction: (): void => {
-                this.commitSwipeAction((): void => this.toggleArchive(item));
+                this.commitSwipeAction((): void => this.toggleArchive(item.snapshot.chat));
               }
             },
             edgeEffect: CHAT_SWIPE_EDGE_EFFECT
@@ -612,8 +643,8 @@ export struct ChatListView {
               curve: Curve.EaseOut
             })
           )
-        }, (item: ChatEntry, index: number) =>
-          guardKey(this.chatsData.keyTableId, index, this.rowKey(item)));
+        }, (_item: ChatListRowState, index: number) =>
+          guardKey(this.chatsData.keyTableId, index, this.chatsData.getKey(index)));
         if (this.paging) {
           ListItem() {
             Row() {

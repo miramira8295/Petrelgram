@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Zur ungelesenen Erwähnung springen"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Das Sendeergebnis ist unbekannt. Prüfe zuerst den Zielchat. Um Duplikate zu vermeiden, wird diese Gruppe nicht erneut gesendet."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Die Administratoren dieser Gruppe haben dir das Senden von Nachrichten bis %1$s untersagt."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Die Administratoren dieser Gruppe haben dir das Senden von Nachrichten untersagt."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "In dieser Gruppe dürfen normale Mitglieder keine Nachrichten senden."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Verwalten: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Abgeschlossen: %1$s. Fehlgeschlagen: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Mitgliedsstatus oder Adminrechte geändert. Öffne den Löschdialog erneut."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Das Ergebnis ist unbestätigt. Prüfe die Gruppe, bevor du die Aktion wiederholst."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Die ausgewählten Nachrichten werden für alle gelöscht."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Die ausgewählten Nachrichten werden nur aus deinem Chatverlauf gelöscht."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Der verfügbare Löschumfang für die ausgewählten Nachrichten konnte nicht bestätigt werden. Ändere die Auswahl oder versuche es später erneut."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "In diesem Chat nicht erlaubt: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Sendeberechtigungen konnten nicht geprüft werden. Bitte erneut versuchen."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Video wird aufgenommen…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Sprachnachricht wird aufgenommen…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Videonachricht wird aufgenommen…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Video wird gesendet…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Sprachnachricht wird gesendet…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Videonachricht wird gesendet…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Fotos werden gesendet…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Dateien werden gesendet…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Sticker wird ausgewählt…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Standort wird ausgewählt…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Kontakt wird ausgewählt…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Spiel läuft…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Animationen werden angesehen…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Verschiedene Aktivitäten…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "QR-Code scannen"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Dieser Code wird nicht unterstützt. Scanne einen Telegram-Kontakt-, Gruppen- oder Anmeldecode."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Anmeldung eines neuen Geräts erlauben?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Bestätige nur ein Gerät, auf dem du dich selbst anmeldest. Es erhält Zugriff auf dein Telegram-Konto und deine Cloud-Chats."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Anmeldung erlauben"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Kein Einladungslink verfügbar oder keine Berechtigung zur Linkverwaltung."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Code konnte nicht verarbeitet werden. Prüfe die Verbindung und die Gültigkeit des Codes und versuche es erneut."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Anmeldung eines neuen Geräts"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Geräte zur Bestätigung: %1$d. Zum Prüfen tippen."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Telegram-Gruppe"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Tastatur anzeigen"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Angeheftete Nachrichten ausblenden"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Angeheftete Nachrichten anzeigen"
     }
   ]
 }

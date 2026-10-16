@@ -7,8 +7,14 @@
 //
 // It is computable ahead of layout on purpose: every input is the chat content
 // column width (util/chatContentWidth — the window width on phones, the right
-// column in split view) or a field of the message, never a per-row measurement.
+// column in split view), a field of the message, or the fixed device type,
+// never a per-row measurement.
 
+import { deviceInfo } from '@kit.BasicServicesKit';
+
+// 设备类型在进程内不变；折叠手机也按系统报告的 phone 处理，不按窗口宽度猜测。
+const MEDIA_DEVICE_TYPE: string = deviceInfo.deviceType;
+const MEDIA_MAX_WIDTH: number = 280;
 export const MEDIA_MAX_HEIGHT_RATIO: number = 1.2;
 
 export interface MediaBox {
@@ -59,10 +65,13 @@ export function inlineMaxWidth(screenW: number,
   return Math.max(0, bubbleMaxWidth(screenW, avatarGutter) - 16);
 }
 
-// Single media and albums fill the same content width as the widest bubble.
+// 手机媒体铺满可用气泡宽；其他设备保留原来的 280vp 上限。
+// 展示、预取、估高及源图档位统一走这里，避免同一媒体出现两套目标尺寸。
 export function mediaThumbWidth(screenW: number,
-  avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP): number {
-  return inlineMaxWidth(screenW, avatarGutter);
+  avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP,
+  deviceType: string = MEDIA_DEVICE_TYPE): number {
+  const available: number = inlineMaxWidth(screenW, avatarGutter);
+  return deviceType === 'phone' ? available : Math.min(MEDIA_MAX_WIDTH, available);
 }
 
 // 照片的极端比例靠 Cover 裁切消化，所以夹得比较紧，免得气泡窄成一条。
@@ -84,9 +93,10 @@ export function mediaRatio(photoW: number, photoH: number, isVideo: boolean): nu
 
 export function mediaBoxFor(
   screenW: number, photoW: number, photoH: number, isVideo: boolean,
-  avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP
+  avatarGutter: number = BUBBLE_AVATAR_GUTTER_VP,
+  deviceType: string = MEDIA_DEVICE_TYPE
 ): MediaBox {
-  const maxW = mediaThumbWidth(screenW, avatarGutter);
+  const maxW = mediaThumbWidth(screenW, avatarGutter, deviceType);
   const maxH = maxW * MEDIA_MAX_HEIGHT_RATIO;
   const ratio = mediaRatio(photoW, photoH, isVideo);
   // **宽度钉死在气泡宽度，横竖、照片视频一视同仁。** 多出来的高度交给

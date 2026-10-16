@@ -1,3 +1,11 @@
+import { ChatDropReceiver } from './ChatDropReceiver';
+import { CHAT_DROP_TYPES } from '../../services/DropData';
+import { EmojiDrawerState } from './EmojiDrawerState';
+import { ComposerInputSwitch } from './ComposerInputSwitch';
+import { ChatSendAccess } from './ChatSendAccess';
+import { GroupPermissions } from '../../util/chatPermissions';
+import { sendPermissionForType } from '../../util/sendPermissions';
+import { SendPermissionError } from '../../store/SendPermissionApi';
 import {
   HEIGHT_BP_LG, WIDTH_BP_SM, isSplitByBreakpoint
 } from '../../util/layoutBreakpoint';
@@ -19,7 +27,7 @@ import { ReportTarget, runReportFlow } from '../../util/reportFlow';
 import { reportFlowUiFor } from '../common/ReportPrompts';
 import { promptAction, UIContext } from '@kit.ArkUI';
 import { MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
-import { openDeleteMessagesDialog } from './DeleteMessagesDialog';
+import { MessageDeleteSession } from './MessageDeleteSession';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { PollOptionInfo } from '../../util/formatMsgContent';
 import { setScrollActive } from '../../util/scrollEffects';
@@ -101,6 +109,7 @@ import {
 import { TopBanners } from './TopBanners';
 import { SelectionHeader } from './SelectionHeader';
 import { SearchBottomBar, SearchHeader } from './ChatSearchBars';
+import { SearchSenderPanel } from './SearchSenderPanel';
 import { FloatingDateState } from './FloatingDateOverlay';
 import {
   firstRowBelowChrome, floatDateNeedsRescan, floatDateScrollMovedEnough
@@ -111,7 +120,8 @@ import {
   clearPendingMedia, hasPendingMedia, movePendingMedia, pendingMediaCanSend, toMediaSendItems,
   removePendingMedia
 } from '../../util/pendingMedia';
-import { ShareArrivalHost, applyShareArrival, sendShareDirectly } from '../../util/shareArrival';
+import { sendDirectShareWithRecovery, stageShareWithPermissions } from '../../services/DirectShareSend';
+import { ShareArrivalHost, applyShareArrival } from '../../util/shareArrival';
 import {
   ShareMediaGeometry, UpgradedShare, upgradeLivePhotos
 } from '../../util/shareLivePhoto';
@@ -122,7 +132,6 @@ import { ScrollFab } from './ScrollFab';
 import { UnreadMentionSession } from './UnreadMentionSession';
 import { MembershipBar } from './MembershipBar';
 import { BottomDrawerShell } from './BottomDrawerShell';
-import { EMOJI_DRAWER_HEIGHT } from '../../util/drawerMetrics';
 import { ReplyKeyboardPanel } from './ReplyKeyboardPanel';
 import {
   LINK_COMMAND, LINK_COPY, LINK_HASHTAG, LINK_NONE, LINK_USER, LinkAction, linkActionOf
@@ -149,7 +158,7 @@ import {
   TL_NEWER_ERROR, TL_OLDER_ERROR, TL_SYNC_ERROR
 } from '../../util/timelineState';
 import {
-  forwardableIds, MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth, rowMembersContaining,
+  MESSAGE_SELECTION_GUTTER_VP, messageSelectionContentWidth, rowMembersContaining,
   rowSelectable
 } from '../../util/messageSelection';
 import { SuggestionPanel, commandLabel } from './SuggestionPanel';
@@ -906,6 +915,7 @@ export struct ChatPage {
     this.viewerUnderlay.setActive(this.pageVisible && this.appIsForeground && this.viewerOpen());
     // 查看器在同一个 Stack 内铺满聊天列；不影响分栏里仍可见的其他区域。
     this.contentAnimationsAllowed = chatMotionAllowed(this.pageVisible, this.appIsForeground, this.viewerOpen());
+    this.typing.setActive(this.contentAnimationsAllowed);
     const suspended: boolean = chatTimelineSuspended(this.contentAnimationsAllowed,
       this.initialMessageStageActive, this.chatTgsScrollActive, this.chatTgsStageSettling);
     const now: number = (suspended ? 1 : 0) | (this.pageVisible ? 2 : 0) |
@@ -1927,7 +1937,7 @@ export struct ChatPage {
     const gutter: boolean = rowSelectable(group.head.contentType);
     return rowTemplateId(group, lightweight, gutter);
   }
-  // "×× 正在输入…" 提示的状态与轮询定时器整套搬进了 TypingIndicatorState
+  // "×× 正在输入…" 提示的状态与到期定时器由 TypingIndicatorState 管理
   // （B10 批）：composerPlaceholder 改读 this.typing.label（原 @Local
   // typingLabel），到期表与定时器句柄收进了控制器的私有普通字段。
   //
@@ -2078,6 +2088,7 @@ export struct ChatPage {
   // writable = normal composer, joinable = bottom "加入" action,
   // blocked = banned/unavailable, checking = waiting for the group object.
   @Local membershipState: string = 'writable';
+  @Local membershipRestrictedUntil: number = 0;
   @Local joiningChat: boolean = false;
   @Local joinByRequest: boolean = false;
   // TDLib doesn't consistently return the local "joined" service message in
@@ -2094,7 +2105,9 @@ export struct ChatPage {
   // membershipSeq 三个记账字段一并搬入。membershipState 本身按 B8 的所有权
   // 裁决留在上面（@Local membershipState），只经 setMembershipState 这个
   // setter 被写；详见 MembershipSession.ets 文件头【甲】节。
+  private sendAccess: ChatSendAccess = new ChatSendAccess();
   private membership: MembershipSession = new MembershipSession();
+  private messageDelete: MessageDeleteSession = new MessageDeleteSession();
   private store: MessageStore | null = null;
   private scroller: Scroller = new Scroller();
   // 顶栏话题横条（2026-09-16）。三个都在字段初始化器里 new：titleBar 的 builder
@@ -2612,6 +2625,7 @@ export struct ChatPage {
   }
 
   private resetComposerSession(): void {
+    this.dropReceiver.cancel();
     // 原文四行 `this.recordingSeq++; if (this.voiceRec !== null ||
     // this.isRecording || this.recordingStarting) { this.cancelRecording();
     // }` 收成这一次 `this.recording.cancel()` 调用——voiceRec/recordingSeq
@@ -2628,6 +2642,7 @@ export struct ChatPage {
     // AttachActions host 的 `cancelRecording: () => this.cancelRecording()`）
     // 是同一种模式。
     this.recording.cancel();
+    this.inputSwitch.cancel();
     this.panelReadySeq++;
     this.showEmojiPanel = false;
     this.panelContentReady = false;
@@ -2884,11 +2899,18 @@ export struct ChatPage {
           (info: SecretChatInfo): void => { this.header.applySecretChat(seq, info); }));
       }
     });
-    // 会话内搜索控制器接上宿主（B6）。前四个是取值器；jumpToMessage 命中后交回
-    // 页面走 onReplyTap（压回返回栈、滚动、两拍高亮闪烁，与点引用块/点置顶条
-    // 同一条路径）；cancelFlash 是搬之前 exit()/updateQuery() 就顺手碰的、与
-    // 搜索簇本身无关的高亮闪烁子系统。
+    this.messageDelete.bind({
+      ui: (): UIContext => this.getUIContext(), client: (): TdClient => getTdClient(),
+      chatId: (): number => this.chatId, selfId: (): number => getActiveTdUserId(),
+      markLeaving: (ids: number[]): void => { this.markRowsLeaving(ids); },
+      clearLeaving: (): void => { this.rowLeave.clear(); },
+      onDeleted: (): void => { this.selection.exit(); }
+    });
+    // 会话内搜索控制器接上宿主（B6）。jumpToMessage 命中后交回页面走
+    // onReplyTap；cancelFlash 是与搜索簇本身无关的高亮闪烁子系统。
     this.search.bind({
+      client: (): TdClient => getTdClient(),
+      canSuggestSenders: (): boolean => this.isGroup && !this.isChannel,
       chatId: (): number => this.chatId,
       threadRootId: (): number => this.threadRootId,
       forumTopicId: (): number => this.forumTopicId,
@@ -2907,6 +2929,7 @@ export struct ChatPage {
     // closeReactionSheet/setEmojiPanel 是伸到多选簇之外的页面子系统，仅由
     // enter() 触达。
     this.selection.bind({
+      messages: (): MessageEntry[] => this.messages,
       chatTgsScrollActive: (): boolean => this.chatTgsScrollActive,
       closeReactionSheet: (): void => { this.overlayState.closeReactionSheet(); },
       setEmojiPanel: (show: boolean): void => { this.setEmojiPanel(show); },
@@ -3008,6 +3031,7 @@ export struct ChatPage {
     // 不互相持有引用（B8 起立的规矩）。
     const attachContext = getContext(this) as common.UIAbilityContext;
     this.attach.bind({
+      sendAccess: this.sendAccess,
       context: (): common.UIAbilityContext => attachContext,
       uiContext: (): UIContext => this.getUIContext(),
       chatId: (): number => this.chatId,
@@ -3064,6 +3088,17 @@ export struct ChatPage {
       },
       client: (): TdClient => getTdClient()
     });
+    const inputClient = getTdClient();
+    this.inputSwitch.bind({
+      active: (): boolean => this.pageVisible && this.appIsForeground && !this.viewerOpen() &&
+        !this.recording.isRecording && !membershipLosesComposer(this.membershipState) &&
+        this.chatId !== 0 && getTdClient() === inputClient,
+      contextKey: (): number => this.chatId,
+      emojiOpen: (): boolean => this.showEmojiPanel,
+      setEmoji: (show: boolean): void => { this.setEmojiPanel(show); },
+      prepareEditor: (): void => { this.prepareComposerEditor(); },
+      focusEditor: (): void => { focusControl.requestFocus('chat_composer'); }
+    });
     this.command.bind({
       chatId: (): number => this.chatId,
       store: (): MessageStore | null => this.store,
@@ -3090,6 +3125,7 @@ export struct ChatPage {
     // 的 `this.atBottom = true;`（页面自留字段，跨簇写）。
     const recordingContext = getContext(this) as common.UIAbilityContext;
     this.recording.bind({
+      canSend: (): boolean => this.sendAccess.check('sendVoiceNotes'),
       store: (): MessageStore | null => this.store,
       context: (): common.UIAbilityContext => recordingContext,
       beforeStart: (): void => {
@@ -3133,9 +3169,11 @@ export struct ChatPage {
     // MembershipSession.ets 文件头【client() 注入缝】节）。本批一共两处刻意
     // 偏离逐字搬迁：这条缝，以及三条 logE 的前缀改名（见那边文件头）。
     this.membership.bind({
+      setSendPermissions: (value: GroupPermissions): void => { this.sendAccess.update(value); },
       chatId: (): number => this.chatId,
       isChannel: (): boolean => this.isChannel,
       setMembershipState: (next: string): void => { this.membershipState = next; },
+      setRestrictedUntil: (value: number): void => { this.membershipRestrictedUntil = value; },
       setIsGroup: (value: boolean): void => { this.isGroup = value; },
       setIsChannel: (value: boolean): void => { this.isChannel = value; },
       commitTimelineSnapshot: (): void => { this.commitTimelineSnapshot(); },
@@ -3153,6 +3191,11 @@ export struct ChatPage {
       },
       closeComposerSurfaces: (): void => {
         this.setEmojiPanel(false);
+        this.closeAttachPanel();
+        this.applyBottomSlot(closeSlot(this.bottomSlot, SLOT_REPLY_KB));
+        this.composerController.stopEditing();
+        this.composerFocused = false;
+        this.inline.clear();
         this.mention.clear();
         this.command.closePanel();
         this.composer.reset();
@@ -3375,6 +3418,7 @@ export struct ChatPage {
   // 分享落地要用到的页面能力。两档共用一份。
   private shareHost(store: MessageStore): ShareArrivalHost {
     return {
+      checkPermissions: (payload: SharedPayload): Promise<void> => store.checkSharePermissions(payload),
       appendMedia: (items: MediaSendItem[]): number => {
         const merged: PendingMediaAppend = appendPendingMedia(this.pendingMedia, items);
         this.pendingMedia = merged.items;
@@ -3382,11 +3426,11 @@ export struct ChatPage {
       },
       setDraft: (text: string): void => { this.draft = text; },
       draftText: (): string => this.draft,
-      sendDocument: (path: string, caption: string): void => store.sendDocument(path, caption),
-      sendAudio: (path: string, caption: string): void => store.sendAudio(path, caption),
+      sendDocument: (path: string, caption: string): Promise<void> => store.sendDocumentAsync(path, caption),
+      sendAudio: (path: string, caption: string): Promise<void> => store.sendAudioAsync(path, caption),
       sendMedia: (items: MediaSendItem[], caption: string): Promise<void> =>
         store.sendMedia(items, caption),
-      sendText: (text: string): void => { store.send(text); },
+      sendText: (text: string): Promise<void> => store.sendAsync(text),
       scrollToBottom: (): void => { this.atBottom = true; }
     };
   }
@@ -3394,10 +3438,11 @@ export struct ChatPage {
   // 「直接发送」那一档（分享面板上选的，见 util/shareSendMode）：不落输入框，
   // 当场发出去，然后把应用退回后台——用户人还在图库里，看到的是"闪了一下"。
   //
-  // 失败就**留在前台并落进输入框**：内容不能丢，而且用户得看见失败。
+  // 失败留在前台，由服务只把未确认发送的内容交回选择器，避免自动重发文件。
   private sendSharedDirectly(upgraded: UpgradedShare, store: MessageStore): void {
     const host: ShareArrivalHost = this.shareHost(store);
-    sendShareDirectly(upgraded.payload, host, upgraded.geometry).then((): void => {
+    sendDirectShareWithRecovery(upgraded, host, (): boolean => this.store === store).then((sent: boolean): void => {
+      if (!sent) { return; }
       promptAction.showToast({
         message: str('share_sent_to', this.header.titleTextOf()), duration: 1600
       });
@@ -3407,18 +3452,12 @@ export struct ChatPage {
         // 退不回去不算失败，消息已经发出去了，用户留在会话里也说得通。
         logW(`[Share] moveAbilityToBackground failed: ${e}`);
       });
-    }).catch((e: Object): void => {
-      logE(`[Share] direct send failed: ${e}`);
-      promptAction.showToast({
-        message: $r('app.string.share_send_failed'), duration: 2400
-      });
-      applyShareArrival(upgraded.payload, host, this.pendingMedia.length, upgraded.geometry);
     });
   }
 
   private stageSharedPayloadInComposer(upgraded: UpgradedShare, store: MessageStore): void {
-    applyShareArrival(upgraded.payload, this.shareHost(store),
-      this.pendingMedia.length, upgraded.geometry);
+    stageShareWithPermissions(upgraded, this.shareHost(store), this.pendingMedia.length,
+      (): boolean => this.store === store);
   }
 
   // 会话重置决策。结果留在 routeResumeWaiting 字段上——拆分前它是 applyRouteParams
@@ -3450,6 +3489,8 @@ export struct ChatPage {
   // 阶段 A（后半）：聊天级订阅与两个 setInterval。四个子阶段的相对顺序即原文顺序。
   private registerChatLevelSubscriptions(): void {
     this.subscribeChatLevelUpdates();
+    this.subscriptions.set('selectionDeleted', getTdClient().onUpdate('updateDeleteMessages',
+      (update: TdObject): void => { this.selection.applyDeletion(this.chatId, update); }));
     this.startChatBackgroundStore();
     this.subscribeMembershipUpdates();
     this.subscribeLiveCallUpdatesAndTimers();
@@ -3473,6 +3514,8 @@ export struct ChatPage {
     this.header.refresh();
     this.subscriptions.set('chatAction', getTdClient().onUpdate('updateChatAction',
       (u: TdObject): void => this.typing.onChatAction(u)));
+    this.subscriptions.set('chatActionUser', getTdClient().onUpdate('updateUser',
+      (u: TdObject): void => this.typing.onUserUpdate(u)));
     // 会话已经开着时，navigateToChat 只出栈不传参，跳转目标走旁路送进来
     // （issue #80、#102，见 util/chatJumpChannel 的说明）。
     this.subscriptions.set('jump', subscribeChatJump(this.chatId,
@@ -3535,14 +3578,20 @@ export struct ChatPage {
   }
 
   private subscribeMembershipUpdates(): void {
-    this.subscriptions.set('membershipSupergroup', getTdClient().onUpdate('updateSupergroup', (u: TdObject) => {
+    const client: TdClient = getTdClient();
+    this.subscriptions.set('membershipPermissions', client.onUpdate('updateChatPermissions', (u: TdObject): void => {
+      if (client === getTdClient()) { this.membership.applyChatPermissions(u); }
+    }));
+    this.subscriptions.set('membershipSupergroup', client.onUpdate('updateSupergroup', (u: TdObject) => {
+      if (client !== getTdClient()) { return; }
       const supergroup = u['supergroup'] as TdObject | undefined;
       if (supergroup !== undefined &&
         ((supergroup['id'] as number | undefined) ?? 0) === this.membership.supergroupId()) {
         this.membership.applySupergroup(supergroup);
       }
     }));
-    this.subscriptions.set('membershipBasicGroup', getTdClient().onUpdate('updateBasicGroup', (u: TdObject) => {
+    this.subscriptions.set('membershipBasicGroup', client.onUpdate('updateBasicGroup', (u: TdObject) => {
+      if (client !== getTdClient()) { return; }
       const basicGroup = u['basic_group'] as TdObject | undefined;
       if (basicGroup !== undefined &&
         ((basicGroup['id'] as number | undefined) ?? 0) === this.membership.basicGroupId()) {
@@ -3915,11 +3964,8 @@ export struct ChatPage {
   // 仍是原文件里"consumeLiveIncomingMediaAndCommands"这一步该做的事的
   // 后半截。
   private consumeLiveIncomingMediaAndCommands(): void {
-    // Private peer resolved: probe once for commands. The centralized loader
-    // also serves '/' autocomplete, so fast typing cannot start a competing
-    // request that overwrites a newer result.
-    if (this.command.commandLoadState === 'idle' && this.store !== null &&
-      this.store.getPeerUserId() > 0) {
+    // Shared loader resolves private/group command catalogs once per chat.
+    if (this.command.commandLoadState === 'idle' && this.store !== null) {
       this.command.ensureCommandsLoaded();
     }
   }
@@ -4304,7 +4350,7 @@ export struct ChatPage {
     }), INITIAL_MESSAGE_RELEASE_DELAY_MS);
   }
 
-  private activateComposerEditor(): void {
+  private prepareComposerEditor(): void {
     // Automatic mounting remains outside the transition-critical path, but a
     // user tap always wins over that scheduler. Replace the text shell now and
     // focus the real TextArea on the next task, after its keyed node exists.
@@ -4316,9 +4362,6 @@ export struct ChatPage {
     // An early user tap must never wait for the coordinated visual reveal.
     this.cancelInitialMessageTransitionSettle();
     this.initialMessageTransitionSettled = true;
-    setTimeout((): void => {
-      focusControl.requestFocus('chat_composer');
-    }, 0);
   }
 
   private activateInitialChrome(action: () => void): void {
@@ -4356,11 +4399,12 @@ export struct ChatPage {
   }
 
   private handleHidden(): void {
+    this.inputSwitch.cancel();
     coordinateChatPageHidden({
       stopScrollActivity: (): void => { setScrollActive(false); },
       endLinkNavigation: (): void => { endLinkNav(); },
       cancelInitialTransition: (): void => { this.cancelInitialMessageTransitionSettle(); },
-      setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
+      setPageVisible: (visible: boolean): void => { if (!visible) { this.dropReceiver.cancel(); } this.pageVisible = visible; },
       syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
       captureHiddenAnchor: (): void => {
         this.hiddenSinceMs = Date.now();
@@ -4373,6 +4417,7 @@ export struct ChatPage {
   }
 
   private handleWillHide(): void {
+    this.inputSwitch.cancel();
     // 退场一开始就把群聊动态头像卸下来：播放器于是在转场那 600ms 里逐个释放，
     // 而不是全挤在转场结束那一帧（真机 trace：那一帧 47–57ms，
     // SenderAnimatedLayer 是单节点销毁成本的冠军，1.02ms/个 × 17）。
@@ -4380,7 +4425,7 @@ export struct ChatPage {
     coordinateChatPageWillHide({
       stopScrollActivity: (): void => { setScrollActive(false); },
       cancelInitialTransition: (): void => { this.cancelInitialMessageTransitionSettle(); },
-      setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
+      setPageVisible: (visible: boolean): void => { if (!visible) { this.dropReceiver.cancel(); } this.pageVisible = visible; },
       syncChatTgsGate: (): void => { this.syncChatTgsGate(); },
       clearNowSecTimer: (): void => { this.clearNowSecTimer(); },
       clearSlotTick: (): void => { this.playSlot.clearTick(); },
@@ -4401,7 +4446,7 @@ export struct ChatPage {
       hiddenListDirty: this.hiddenListDirty
     };
     coordinateChatPageShown(state, {
-      setPageVisible: (visible: boolean): void => { this.pageVisible = visible; },
+      setPageVisible: (visible: boolean): void => { if (!visible) { this.dropReceiver.cancel(); } this.pageVisible = visible; },
       armInitialTransitionSettle: (): void => { this.armInitialMessageTransitionSettle(); },
       scheduleInitialTimelinePresentation: (): void => { this.scheduleInitialTimelinePresentation(); },
       scheduleChatTgsResume: (): void => { this.scheduleChatTgsResume(); },
@@ -4455,6 +4500,7 @@ export struct ChatPage {
   }
 
   aboutToDisappear(): void {
+    this.dropReceiver.cancel();
     // 查看器开着时页面就没了（换账号、栈被清）：别让左栏和侧边页签一直收着。
     publishViewerCoversWindow(false);
     if (this.offShareTargeted !== null) {
@@ -4522,6 +4568,7 @@ export struct ChatPage {
   }
 
   private disposeTimersAndSeqGuards(): void {
+    this.inputSwitch.dispose();
     this.bottomChromeLayoutSeq++;
     this.imeTailPinned = false;
     this.imeLayoutSeq++;
@@ -4554,6 +4601,7 @@ export struct ChatPage {
     // entryTimer 这个真句柄之后就需要一处收口，与 topCard 同放一组：先
     // ++seq 作废在途的 searchChatMessages 响应，再清 entryTimer。
     this.search.dispose();
+    this.messageDelete.dispose();
     this.unreadMentions.dispose();
     // 多选控制器的退场（B7）。本簇没有定时器/序号守卫，dispose() 只是裸清
     // active/ids——与其余控制器统一 bind/dispose 生命周期，同样没有对应的
@@ -4654,12 +4702,10 @@ export struct ChatPage {
     this.subscriptions.clearInOrder([
       'pinned', 'headerAvatar', 'headerTitle', 'replyKeyboard'
     ]);
-    // 成员资格状态机的退场（第二轮 R2-A 批）：dispose() 只做原来这里那一行
-    // membershipSeq++，作废在途的三层异步（getChat/getSupergroup/
-    // getBasicGroup），紧邻退订下面这两个推送监听器之前，位置未动。
+    // 先作废成员资格请求和权限缓存，再统一退订身份、默认权限推送。
     this.membership.dispose();
     this.subscriptions.clearInOrder([
-      'membershipSupergroup', 'membershipBasicGroup', 'videoChat', 'groupCall'
+      'membershipSupergroup', 'membershipBasicGroup', 'membershipPermissions', 'videoChat', 'groupCall'
     ]);
   }
 
@@ -4854,6 +4900,7 @@ export struct ChatPage {
       StickerSetSheet({
         setId: this.stickerSetSheetId,
         onPick: (item: StickerSetItem): void => {
+          if (!this.sendAccess.check('sendOtherMessages')) { return; }
           this.atBottom = true;
           this.store?.sendSticker(item.fileId, item.width, item.height);
           this.stickerSetSheetOpen = false;
@@ -5157,6 +5204,7 @@ export struct ChatPage {
     }
     // 表情/贴纸抽屉、附件抽屉开着：返回先收抽屉，不直接退出会话——和系统键盘弹着时
     // 返回先收键盘是同一个手感。排在查看器之后：查看器盖在抽屉上面，要先收它。
+    if (this.showEmojiPanel && this.emojiDrawer.collapse()) { return true; }
     if (slotIsDrawer(this.bottomSlot)) {
       this.closeBottomPanels();
       return true;
@@ -6131,6 +6179,7 @@ export struct ChatPage {
 
   @Monitor('appIsForeground')
   private onAppForegroundChanged(): void {
+    if (!this.appIsForeground) { this.dropReceiver.cancel(); }
     // 栈内隐藏页也会收到前后台通知，不能由它覆盖当前可见会话的动画总闸。
     if (this.pageVisible) {
       this.syncChatTgsGate();
@@ -6140,6 +6189,7 @@ export struct ChatPage {
     if (this.appIsForeground) {
       this.store?.resumeOpenChat();
     } else {
+      this.inputSwitch.cancel();
       this.appWentBackground = true;
       this.store?.suspendOpenChat();
     }
@@ -6442,16 +6492,16 @@ export struct ChatPage {
   // this.inline.queryId()，两处清空换成 this.inline.clear()（原样两行
   // `this.inlineResults = []; this.inlineQueryId = '';`，见该方法注释）。
   private pickInlineResult(row: InlineResultRow): void {
-    if (this.inline.queryId() === '') { return; }
+    if (this.inline.queryId() === '' || !this.sendAccess.check(sendPermissionForType(row.kind))) { return; }
     const replyId = this.composer.replyToId;
-    sendInlineResult(this.chatId, this.inline.queryId(), row.resultId, replyId).then((): void => {
+    sendInlineResult(this.chatId, this.inline.queryId(), row.resultId, replyId, false, sendPermissionForType(row.kind)).then((): void => {
       this.draft = '';
       this.inline.clear();
       this.composer.clearReply();
       this.atBottom = true;
     }).catch((e: TdError): void => {
       logE(`ChatPage.sendInlineResult failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_inline_send_failed'), duration: 1600 });
+      promptAction.showToast({ message: e instanceof SendPermissionError ? e.message : $r('app.string.cp_inline_send_failed'), duration: 1600 });
     });
   }
 
@@ -6461,10 +6511,15 @@ export struct ChatPage {
   // `this.stickerSuggestions = []; this.stickerSuggestSeq++;` 换成
   // this.sticker.clearAfterSend()——两个字段现在都是私有的，打包成这一个方法。
   private sendSuggestedSticker(fileId: number): void {
-    this.store?.sendSticker(fileId, 512, 512);
-    rememberRecentSticker(fileId);
-    this.draft = '';
-    this.sticker.clearAfterSend();
+    if (!this.sendAccess.check('sendOtherMessages')) { return; }
+    const draft: string = this.draft;
+    const store: MessageStore | null = this.store;
+    store?.sendSticker(fileId, 512, 512).then((sent: boolean): void => {
+      if (!sent || this.store !== store) { return; }
+      rememberRecentSticker(fileId);
+      if (this.draft === draft) { this.draft = ''; }
+      this.sticker.clearAfterSend();
+    });
   }
 
   // refreshCommands/ensureCommandsLoaded/commandPanelActive/applyCommandFilter
@@ -6695,6 +6750,8 @@ export struct ChatPage {
       isChannel: this.isChannel,
       liveLocationActive: this.liveLocationActive,
       translationActive: this.translation.active(this.translateChatsEnabled),
+      pinnedHidden: this.topCard.pinnedVisibility.hidden,
+      onTogglePinned: (): void => { this.topCard.togglePinnedVisibility(); },
       canClearHistory: this.clearHistoryChoice() !== undefined,
       canLeaveChat: this.isGroup && this.membershipState === 'writable',
       onSearch: (): void => { this.search.enter(); },
@@ -6731,6 +6788,9 @@ export struct ChatPage {
   // the real panel content (hundreds of emoji + sticker players) mounts only
   // after the animation lands, so frames stay cheap.
   @Local panelContentReady: boolean = false;
+  private emojiDrawer: EmojiDrawerState = new EmojiDrawerState();
+  private dropReceiver: ChatDropReceiver = new ChatDropReceiver();
+  private inputSwitch: ComposerInputSwitch = new ComposerInputSwitch();
   private panelReadySeq: number = 0;
 
   // 话题横条：只有论坛群才有。判据用现成的 ChatStore.isForum（ChatRow 决定
@@ -6836,7 +6896,7 @@ export struct ChatPage {
     return {
       topSafe: this.topSafe,
       searchMode: this.search.mode,
-      pinnedVisible: this.topCard.pinnedPreview !== '',
+      pinnedVisible: this.topCard.pinnedVisible(),
       liveVisible: this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive,
       actionBarVisible: this.actionBarKind !== '',
       topicBarVisible: topicBarShown(this.topicBarCount, this.topicCreateAllowed)
@@ -6925,7 +6985,9 @@ export struct ChatPage {
   // this.overlayState.flyStickerGhost(path, x, y)。
 
   private setEmojiPanel(show: boolean): void {
-    if (this.showEmojiPanel === show) {
+    if (!show) { this.emojiDrawer.collapse(); }
+    this.inputSwitch.cancel();
+    if (this.showEmojiPanel === show && !this.emojiPanelClosing) {
       return;
     }
     if (show) {
@@ -7090,6 +7152,7 @@ export struct ChatPage {
     // 搬运在 util/pendingMedia：这里曾经是个 `{ path, isVideo }` 字面量，
     // 把实况导出时算好的封面与旋转后宽高在发送前丢了个干净。
     const items: MediaSendItem[] = toMediaSendItems(this.pendingMedia);
+    if (!this.sendAccess.checkMedia(items)) { return; }
     const captionSnapshot: string = this.draft;
     const caption: string = captionSnapshot.trim();
     const replyId: number = this.composer.replyToId;
@@ -7107,7 +7170,7 @@ export struct ChatPage {
       }
     }).catch((e: TdError): void => {
       logE(`ChatPage.sendMedia failed: ${e.message}`);
-      promptAction.showToast({ message: $r('app.string.cp_photo_send_failed'), duration: 2000 });
+      promptAction.showToast({ message: e instanceof SendPermissionError ? e.message : $r('app.string.cp_photo_send_failed'), duration: 2000 });
     }));
   }
 
@@ -7234,7 +7297,7 @@ export struct ChatPage {
 
   // 多选保存（issue #199）。挑选与分类是纯函数，下载与落盘在 MediaSaveState。
   private saveSelected(): void {
-    const plan: SaveablePlan = saveableEntries(this.messages, this.selection.ids);
+    const plan: SaveablePlan = saveableEntries(this.selection.entries(), this.selection.ids);
     if (plan.entries.length === 0) {
       promptAction.showToast({ message: $r('app.string.cp_nothing_to_save'), duration: 1600 });
       return;
@@ -7249,8 +7312,9 @@ export struct ChatPage {
   private copySelected(): void {
     const sorted = [...this.selection.ids].sort((a: number, b: number) => a - b);
     const parts: string[] = [];
+    const entries: MessageEntry[] = this.selection.entries();
     for (const id of sorted) {
-      const m = this.findMsg(id);
+      const m: MessageEntry | null = entries.find((entry: MessageEntry): boolean => entry.id === id) ?? null;
       if (m !== null && m.text !== '') {
         parts.push(m.text);
       }
@@ -7277,8 +7341,7 @@ export struct ChatPage {
   }
 
   // 长按菜单里的单条删除：复用 deleteSelected() 的弹窗逻辑，只是目标 id 只有一个。
-  // 不处于多选模式时 doDeleteMessages 内部的 exit() 只是把已经为 false/[]
-  // 的 active/ids 再赋一次同样的值，是无害的空操作。
+  // 单条删除成功后退出未开启的多选模式是无害的空操作。
   private deleteMessage(messageId: number): void {
     this.openDeleteConfirm([messageId]);
   }
@@ -7286,29 +7349,9 @@ export struct ChatPage {
   // 弹窗走 ComponentContent + UIContext.openCustomDialog，不再走
   // CustomDialogController：后者官方明写只在状态管理 V1 中使用，而本页要迁 V2。
   private openDeleteConfirm(ids: number[]): void {
-    openDeleteMessagesDialog(this.getUIContext(),
-      this.isGroup || this.isChannel ? '' : this.header.titleTextOf(),
-      (revoke: boolean): void => { this.doDeleteMessages(ids, revoke); });
-  }
-
-  private doDeleteMessages(ids: number[], revoke: boolean): void {
-    // 先让要走的那几行淡出（issue #149）：ArkUI 的 disappear transition 没法在
-    // 删除发生之后补挂（被删的节点不会再 rebuild），常驻又会让滚出屏幕的行也淡
-    // 一下。所以顺序反过来——这里标记，~200ms 后 TDLib 的删除到达，
-    // publishGroupsNow 里现成的 isInteriorRowRemoval + animateTo 把下面的行收上来。
-    this.markRowsLeaving(ids);
-    const req: TdRequest = { '@type': 'deleteMessages' };
-    req['chat_id'] = this.chatId;
-    req['message_ids'] = ids;
-    req['revoke'] = revoke;
-    getTdClient().send(req).then(() => {
-      this.selection.exit();
-    }).catch((e: TdError) => {
-      // 删不掉就把淡出撤回来，别留一行半透明的幽灵。
-      this.rowLeave.clear();
-      logE(`ChatPage.deleteMessages failed: ${e.message}`);
-      promptAction.showToast({ message: str('cp_delete_failed_msg', e.message), duration: 2000 });
-    });
+    this.messageDelete.open(ids, this.messages.concat(this.selection.entries()),
+      this.isGroup || this.isChannel ? '' : this.header.titleTextOf(), this.isGroup && !this.isChannel)
+      .catch((e: Object): void => { logE(`ChatPage.openDeleteConfirm failed: ${e}`); });
   }
 
   // 消息 id → 行 id（相册整组共用一个 rowId）；标记包在 animateTo 里，透明度滑过去。
@@ -7670,7 +7713,7 @@ export struct ChatPage {
     });
   }
 
-  // "正在输入…" 提示的状态与轮询定时器整套搬进了 TypingIndicatorState
+  // "正在输入…" 提示的状态与到期定时器由 TypingIndicatorState 管理
   // （B10 批）：onChatAction/rebuildTypingLabel 与 typingSenders/typingTimer/
   // typingLabel 一起住进了控制器，页面只在 subscribeChatLevelUpdates() 里转发
   // updateChatAction 给 this.typing.onChatAction(u)，composerPlaceholder 改读
@@ -7722,12 +7765,7 @@ export struct ChatPage {
   // this.overlayState.closeReactionSheet()。
 
   private forwardableMessageIds(ids: number[]): number[] {
-    // 查不到的消息给一个不可选的类型，等价于过滤掉——原来的写法是
-    // m !== null 单独判一次，合进 contentTypeOf 之后语义一样。
-    return forwardableIds(ids, (id: number): string => {
-      const m: MessageEntry | null = this.findMsg(id);
-      return m !== null ? m.contentType : 'hidden';
-    });
+    return this.selection.forwardIds(ids);
   }
 
   // Only decides *whether* the picker opens and what it will forward — the chat
@@ -7890,6 +7928,7 @@ export struct ChatPage {
   attachDrawerContent() {
     AttachPanel({
       actions: attachActions(this.isGroup, this.isChannel),
+      disabledKeys: this.sendAccess.disabledAttachments(),
       onPick: (key: string): void => { this.attach.runAttachAction(key); },
       effectDuration: (ms: number): number => this.chatEffectDuration(KEY_POWER_EFFECT_MENU, ms)
     })
@@ -7900,18 +7939,24 @@ export struct ChatPage {
   emojiDrawerContent() {
     if (this.panelContentReady) {
       EmojiPanel({
+        panelHeight: this.emojiDrawer.height(this.headerChromeHeight(), this.bottomSafe),
+        expanded: this.emojiDrawer.expanded,
+        onExpanded: (expanded: boolean): void => { this.emojiDrawer.expanded = expanded; },
         tab: this.emojiPanelTab,
+        mediaAllowed: this.sendAccess.allows('sendOtherMessages'),
         chatId: this.chatId,
         onTabChange: (tab: number): void => { this.emojiPanelTab = tab; },
         onPick: (e: string): void => { this.insertEmoji(e); },
         onPickCustomEmoji: (e: string, ceId: string): void => {
           if (this.store !== null) {
+            if (!this.sendAccess.check('sendMessages')) { return; }
             this.atBottom = true;
             this.store.sendCustomEmoji(e, ceId);
             this.overlayState.flyStickerGhost('', 0, 0);
           }
         },
         onPickSticker: (s: StickerItem, x: number, y: number): void => {
+          if (!this.sendAccess.check('sendOtherMessages')) { return; }
           if (this.store !== null) {
             this.atBottom = true;
             this.store.sendSticker(s.fileId, s.width, s.height);
@@ -7919,6 +7964,7 @@ export struct ChatPage {
           }
         },
         onPickGif: (g: GifItem): void => {
+          if (!this.sendAccess.check('sendOtherMessages')) { return; }
           if (this.store === null) {
             return;
           }
@@ -7956,7 +8002,7 @@ export struct ChatPage {
     } else if (this.showEmojiPanel && this.membershipState === 'writable') {
       BottomDrawerShell({
         bottomSafe: this.bottomSafe,
-        drawerHeight: EMOJI_DRAWER_HEIGHT,
+        drawerHeight: this.emojiDrawer.height(this.headerChromeHeight(), this.bottomSafe),
         content: this.emojiDrawerContent
       });
     }
@@ -8013,6 +8059,7 @@ export struct ChatPage {
         if (this.selection.active) {
           this.selectionBar(false);
         }
+        SearchSenderPanel({ search: this.search });
         this.searchDock();
       } else if (this.selection.active) {
         // Selection owns the header actions; removing the composer also drops
@@ -8058,6 +8105,7 @@ export struct ChatPage {
     MembershipBar({
       materialEpoch: this.materialEpoch,
       state: this.composerSlot(),
+      restrictedUntil: this.membershipRestrictedUntil,
       isMuted: this.header.isMuted,
       joining: this.joiningChat,
       joinByRequest: this.joinByRequest,
@@ -8079,7 +8127,9 @@ export struct ChatPage {
   @Builder
   private composerDock() {
     Column() {
+      Column() {
       ChatComposerInput({
+        appDark: this.appDark,
         attachPanelOpen: this.attachPanelOpen,
         pendingMedia: this.pendingMedia,
         // 控制器整个交过去，不再逐个转手八个标量（B9b）：在这里读
@@ -8127,7 +8177,7 @@ export struct ChatPage {
         onFinishRecording: (): void => { this.recording.finish(); },
         onToggleBotMenu: (): void => { this.toggleBotMenu(); },
         onEmojiButtonTap: (): void => {
-          this.setEmojiPanel(!this.showEmojiPanel);
+          this.inputSwitch.toggleEmoji();
           this.mention.clear();
           this.command.closePanel();
         },
@@ -8156,7 +8206,7 @@ export struct ChatPage {
           }
         },
         onEditorBlur: (): void => { this.composerFocused = false; },
-        onActivateEditor: (): void => { this.activateComposerEditor(); },
+        onActivateEditor: (): void => { this.inputSwitch.showKeyboard(); },
         onScheduleEditorMount: (): void => { this.scheduleComposerEditorMount(); },
         onToggleReplyKeyboard: (): void => { this.toggleReplyKeyboard(); },
         onOpenMiniApp: (): void => { this.openBotMiniApp(); },
@@ -8182,6 +8232,10 @@ export struct ChatPage {
         }
       });
       }
+      }.width('100%')
+      .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+        if (typeof size.height === 'number') { this.emojiDrawer.measureComposer(size.height); }
+      });
       // 抽屉是 dock 的一部分，不是自定义键盘。这样它和聊天内容共享同一个
       // 页面背景——壁纸就在它后面，不需要再画副本去对齐（那条路走了很久，
       // 副本永远接不上）。输入框被它自然顶高，列表的避让也自动跟上：
@@ -8612,9 +8666,9 @@ export struct ChatPage {
       onExit: (): void => { this.selection.exit(); },
       onForward: (): void => { this.openForwardPicker(this.selection.ids); },
       onSave: (): void => { this.saveSelected(); },
-      canBackgroundCache: selectionHasCacheableVideo(this.messages, this.selection.ids),
+      canBackgroundCache: selectionHasCacheableVideo(this.selection.entries(), this.selection.ids),
       onBackgroundCache: (): void => {
-        cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.messages, this.selection.ids,
+        cacheMessagesInBackground(getContext(this) as common.UIAbilityContext, this.selection.entries(), this.selection.ids,
           this.chatId);
         this.selection.exit();
       },
@@ -8694,6 +8748,7 @@ export struct ChatPage {
         });
       }
       TopBanners({
+      appDark: this.appDark,
       materialEpoch: this.materialEpoch,
       topCard: this.topCard,
       onPinnedTap: (): void => { this.topCard.onPinnedTap(); },
@@ -9162,6 +9217,7 @@ export struct ChatPage {
         onClose: (): void => { this.favoriteAudioId = 0; }
       });
       ChatOverlayHost({
+        selection: this.selection,
         overlayState: this.overlayState,
         messages: this.messages,
         chatId: this.chatId,
@@ -9182,17 +9238,19 @@ export struct ChatPage {
           }
         },
         onPollSubmit: (question: string, options: string[], isAnonymous: boolean,
-          isQuiz: boolean, correctOptionId: number): void => {
+          quizMode: boolean, correctOptionId: number): void => {
+          if (!this.sendAccess.check('sendPolls')) { return; }
           this.overlayState.showPollSheet = false;
           if (this.store !== null) {
             this.atBottom = true;
-            this.store.sendPoll(question, options, isAnonymous, isQuiz, correctOptionId);
+            this.store.sendPoll(question, options, isAnonymous, quizMode, correctOptionId);
           }
         },
         onPollClose: (): void => {
           this.overlayState.showPollSheet = false;
         },
         onContactPick: (contact: PickedContact): void => {
+          if (!this.sendAccess.check('sendMessages')) { return; }
           this.overlayState.showContactSheet = false;
           if (this.store !== null) {
             this.atBottom = true;
@@ -9204,6 +9262,7 @@ export struct ChatPage {
           this.overlayState.showContactSheet = false;
         },
         onVideoCaptured: (path: string, durationSec: number, length: number): void => {
+          if (!this.sendAccess.check('sendVideoNotes')) { return; }
           if (this.store !== null) {
             this.atBottom = true;
             this.store.sendVideoNote(path, durationSec, length);
@@ -9257,6 +9316,22 @@ export struct ChatPage {
       }
     }
     .width('100%').height('100%')
+    .onSizeChange((_old: SizeOptions, size: SizeOptions): void => {
+      if (typeof size.height === 'number') { this.emojiDrawer.measureViewport(size.height); }
+    })
+    .allowDrop(CHAT_DROP_TYPES)
+    .onDrop((event: DragEvent): void => {
+      const store = this.store;
+      if (store === null) { event.setResult(DragResult.DRAG_FAILED); return; }
+      const client = getTdClient();
+      const chatId = this.chatId;
+      const threadId = this.threadRootId;
+      this.dropReceiver.receive(event, getContext(this) as common.Context, this.getUIContext(), this.shareHost(store),
+        (): boolean => this.store === store && getTdClient() === client && this.chatId === chatId && this.threadRootId === threadId &&
+          this.pageVisible && this.appIsForeground && !this.viewerOpen() && !this.search.mode && !this.selection.active &&
+          this.composer.editingId === 0 && !this.recording.isRecording && this.membershipState === 'writable',
+        this.header.titleTextOf());
+    })
     // 贴纸合集面板挂在页面根 Stack 上：这个节点还没有别的 bindSheet（骰子那张
     // 挂 dock），同一节点上串两个只有最后一个生效。
     .bindSheet($$this.stickerSetSheetOpen, this.stickerSetSheet(), {

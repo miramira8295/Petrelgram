@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "ไปยังการกล่าวถึงที่ยังไม่ได้อ่าน"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "ยังไม่ทราบผลการส่ง โปรดตรวจสอบแชทปลายทางก่อน ระบบจะไม่ส่งชุดนี้ซ้ำเพื่อป้องกันข้อความซ้ำ"
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "ผู้ดูแลกลุ่มนี้จำกัดการส่งข้อความของคุณจนถึง %1$s"
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "ผู้ดูแลกลุ่มนี้จำกัดการส่งข้อความของคุณ"
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "กลุ่มนี้ไม่อนุญาตให้สมาชิกทั่วไปส่งข้อความ"
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "จัดการ: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "สำเร็จ: %1$s ล้มเหลว: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "สถานะสมาชิกหรือสิทธิ์ผู้ดูแลเปลี่ยนไป โปรดเปิดหน้าต่างลบอีกครั้ง"
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "ยังยืนยันผลไม่ได้ โปรดตรวจสอบกลุ่มก่อนทำซ้ำ"
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "ข้อความที่เลือกจะถูกลบสำหรับทุกคน"
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "ข้อความที่เลือกจะถูกลบจากประวัติแชทของคุณเท่านั้น"
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "ไม่สามารถยืนยันขอบเขตการลบที่ใช้ได้สำหรับข้อความที่เลือก โปรดเปลี่ยนรายการที่เลือกหรือลองอีกครั้งภายหลัง"
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "ไม่อนุญาตในแชทนี้: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "ไม่สามารถตรวจสอบสิทธิ์การส่งได้ โปรดลองอีกครั้ง"
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "กำลังบันทึกวิดีโอ…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "กำลังบันทึกเสียง…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "กำลังบันทึกข้อความวิดีโอ…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "กำลังส่งวิดีโอ…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "กำลังส่งข้อความเสียง…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "กำลังส่งข้อความวิดีโอ…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "กำลังส่งรูปภาพ…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "กำลังส่งไฟล์…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "กำลังเลือกสติกเกอร์…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "กำลังเลือกตำแหน่ง…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "กำลังเลือกผู้ติดต่อ…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "กำลังเล่นเกม…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "กำลังดูภาพเคลื่อนไหว…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "กำลังทำกิจกรรมต่าง ๆ…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "%1$d คน: %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "สแกนรหัส QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "ไม่รองรับรหัสนี้ โปรดสแกนรหัสผู้ติดต่อ กลุ่ม หรือเข้าสู่ระบบ Telegram"
+    },
+    {
+      "name": "qr_login_title",
+      "value": "อนุญาตให้อุปกรณ์ใหม่เข้าสู่ระบบหรือไม่?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "ยืนยันเฉพาะอุปกรณ์ที่คุณกำลังเข้าสู่ระบบด้วยตนเอง อุปกรณ์นั้นจะเข้าถึงบัญชีและแชทบนคลาวด์ Telegram ของคุณได้"
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "อนุญาตให้เข้าสู่ระบบ"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "ไม่มีลิงก์เชิญที่ใช้ได้ หรือคุณไม่มีสิทธิ์จัดการลิงก์เชิญ"
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "ประมวลผลรหัสไม่ได้ โปรดตรวจสอบการเชื่อมต่อและวันหมดอายุของรหัส แล้วลองอีกครั้ง"
+    },
+    {
+      "name": "session_new_login",
+      "value": "มีอุปกรณ์ใหม่เข้าสู่ระบบ"
+    },
+    {
+      "name": "session_review_count",
+      "value": "อุปกรณ์ที่รอการยืนยัน: %1$d แตะเพื่อตรวจสอบ"
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "กลุ่ม Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "แสดงแป้นพิมพ์"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "ซ่อนข้อความที่ปักหมุด"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "แสดงข้อความที่ปักหมุด"
     }
   ]
 }

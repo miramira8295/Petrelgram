@@ -1,4 +1,5 @@
 import { PollOptionInfo } from '../../util/formatMsgContent';
+import { pollOptionState } from '../../util/pollOptionState';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import { plural, str } from '../../util/strings';
 
@@ -158,17 +159,26 @@ export struct PollBubble {
     }
   }
 
+  private optionState(index: number): string {
+    return pollOptionState({
+      isQuiz: this.isQuiz, resultsVisible: this.resultsVisible(),
+      correctOptionId: this.correctOptionId, optionCount: this.options.length,
+      index: index, chosen: this.options[index]?.isChosen ?? false,
+      selected: this.selected(index), submitting: this.submitting()
+    });
+  }
+
+  private optionMarked(index: number): boolean {
+    const state: string = this.optionState(index);
+    return this.selected(index) || state === 'correct' || state === 'wrong';
+  }
+
   private optionAccent(index: number): string {
-    if (!this.resultsVisible()) {
-      return this.selected(index) ? '#3390EC' : '#99A2AC';
-    }
-    if (this.isQuiz && this.correctOptionId === index) {
-      return '#32A765';
-    }
-    if (this.isQuiz && this.options[index].isChosen && this.correctOptionId !== index) {
-      return '#D9514E';
-    }
-    return this.options[index].isChosen ? '#3390EC' : '#86919D';
+    const state: string = this.optionState(index);
+    if (state === 'correct') { return '#32A765'; }
+    if (state === 'wrong') { return '#D9514E'; }
+    if (state !== 'neutral') { return '#3390EC'; }
+    return this.resultsVisible() ? '#86919D' : '#99A2AC';
   }
 
   private optionFill(index: number): string {
@@ -219,19 +229,23 @@ export struct PollBubble {
       Row({ space: 8 }) {
         Stack() {
           Circle({ width: 20, height: 20 })
-            .fill(this.selected(index) ? this.optionAccent(index) : Color.Transparent)
+            .fill(this.optionMarked(index) ? this.optionAccent(index) : Color.Transparent)
             .stroke(this.optionAccent(index))
             .strokeWidth(1.5);
-          if (this.selected(index)) {
-            SymbolGlyph($r(this.isQuiz && this.resultsVisible() &&
-              this.correctOptionId !== index ? 'sys.symbol.xmark' : 'sys.symbol.checkmark'))
+          if (this.optionState(index) === 'pending') {
+            LoadingProgress().width(14).height(14).color(Color.White);
+          } else if (this.optionState(index) === 'selected') {
+            Circle({ width: 7, height: 7 }).fill(Color.White);
+          } else if (this.optionState(index) === 'correct' || this.optionState(index) === 'wrong' ||
+            this.optionState(index) === 'vote') {
+            SymbolGlyph($r(this.optionState(index) === 'wrong' ? 'sys.symbol.xmark' : 'sys.symbol.checkmark'))
               .fontSize(11).fontColor([Color.White]);
           }
         }.width(20).height(20);
         Text(option.text.trim() !== '' ? option.text : $r('app.string.poll_unnamed_option'))
           .layoutWeight(1)
           .fontSize(13.5)
-          .fontWeight(this.selected(index) ? FontWeight.Medium : FontWeight.Regular)
+          .fontWeight(this.optionMarked(index) ? FontWeight.Medium : FontWeight.Regular)
           .fontColor(option.text.trim() !== '' ? COLOR_TEXT_PRIMARY : COLOR_TEXT_SECONDARY)
           .lineHeight(18)
           .maxLines(2)
@@ -251,7 +265,7 @@ export struct PollBubble {
     .width('100%')
     .constraintSize({ minHeight: 40, maxHeight: 58 })
     .backgroundColor(this.optionFill(index))
-    .border({ width: 1, color: this.selected(index) ? this.optionAccent(index) : '#16000000' })
+    .border({ width: 1, color: this.optionMarked(index) ? this.optionAccent(index) : '#16000000' })
     .borderRadius(10)
     .clip(true)
     .stateStyles({
@@ -292,7 +306,8 @@ export struct PollBubble {
             this.optionRow(option, index);
           }, (option: PollOptionInfo, index: number) =>
             `poll_option_${index}_${option.text}_${option.votePercentage}` +
-              `_${option.isChosen}_${option.isBeingChosen}`);
+              `_${option.isChosen}_${option.isBeingChosen}_${this.isQuiz}` +
+              `_${this.correctOptionId}_${this.resultsVisible()}`);
         }.width('100%');
       } else {
         Row({ space: 7 }) {

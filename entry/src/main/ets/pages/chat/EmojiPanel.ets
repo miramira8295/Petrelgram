@@ -1,3 +1,5 @@
+import { sendPermissionMessage } from '../../store/SendPermissionApi';
+import { promptAction } from '@kit.ArkUI';
 import {
   KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS, KEY_POWER_EFFECT_MENU,
   KEY_REDUCE_ANIM, powerGroupAnimationDuration
@@ -7,7 +9,7 @@ import { StickerPicker, StickerItem, ClassicPack } from './StickerPicker';
 import { GifPicker, GifItem } from './GifPicker';
 import { str } from '../../util/strings';
 import { LANGUAGE_EPOCH } from '../../util/appLanguage';
-import { EMOJI_CONTENT_HEIGHT, EMOJI_DRAWER_HEIGHT, EMOJI_TAB_BAR_HEIGHT } from '../../util/drawerMetrics';
+import { EMOJI_DRAWER_HEIGHT, EMOJI_TAB_BAR_HEIGHT } from '../../util/drawerMetrics';
 
 // 内容区顶部这条带子归包切换条（贴纸/表情两页都有），横滑要留给它自己滚，
 // 不能被"切换表情/贴纸/GIF"抢走。切页手势是 parallelGesture 挂在面板根上的
@@ -93,6 +95,10 @@ export struct EmojiPanel {
   onPickGif: (g: GifItem) => void = (): void => {};
   // GIF 搜索/热门要发内联查询，协议要求带上当前会话 id。
   @Prop chatId: number;
+  @Prop panelHeight: number = EMOJI_DRAWER_HEIGHT;
+  @Prop expanded: boolean = false;
+  onExpanded: (expanded: boolean) => void = (): void => {};
+  @Prop @Watch('onMediaPermissionChanged') mediaAllowed: boolean = true;
   // 单向入 + 回调出，而不是 @Link：@Link 只能被 V1 状态变量初始化，页面迁到
   // 状态管理 V2 之后就接不上了。这里的写回照旧先改本地副本（@Prop 允许），
   // 再把新值交给页面，页面回灌同一个值，语义与双向同步等价。
@@ -103,7 +109,12 @@ export struct EmojiPanel {
   @State stickerMounted: boolean = false;
   @State gifMounted: boolean = false;
 
+  private onMediaPermissionChanged(): void {
+    if (!this.mediaAllowed && this.tab !== 0) { this.tab = 0; this.onTabChange(0); }
+  }
+
   aboutToAppear(): void {
+    this.onMediaPermissionChanged();
     this.stickerMounted = this.tab === 1;
     this.gifMounted = this.tab === 2;
   }
@@ -119,6 +130,10 @@ export struct EmojiPanel {
   private panDownY: number = 0;
 
   private switchTab(idx: number): void {
+    if (idx > 0 && !this.mediaAllowed) {
+      promptAction.showToast({ message: sendPermissionMessage('sendOtherMessages'), duration: 2500 });
+      return;
+    }
     // 越界就什么也不做——滑到第一页再往右滑不该跳到 GIF。
     if (idx < 0 || idx > 2 || idx === this.tab) {
       return;
@@ -150,6 +165,7 @@ export struct EmojiPanel {
     .layoutWeight(1).height(36)
     .justifyContent(FlexAlign.Center)
     .borderRadius(8)
+    .opacity(idx > 0 && !this.mediaAllowed ? 0.4 : 1)
     .backgroundColor(this.tab === idx ? accentSoft() : Color.Transparent)
     .animation({ duration: this.panelDuration(140), curve: Curve.EaseOut })
     .accessibilityText(str('a11y_option_state', label, this.tab === idx ? str('a11y_selected') : ''))
@@ -158,6 +174,18 @@ export struct EmojiPanel {
 
   build() {
     Column() {
+      Row() {
+        Blank();
+        SymbolGlyph(this.expanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_up'))
+          .fontSize(16).fontColor([COLOR_ICON_SECONDARY]);
+        Blank();
+      }.width('100%').height(36)
+      .accessibilityText(this.expanded ? str('collapse') : str('expand'))
+      .onClick((): void => { this.onExpanded(!this.expanded); })
+      .gesture(PanGesture({ direction: PanDirection.Vertical, distance: 12 })
+        .onActionEnd((event: GestureEvent): void => {
+          if (Math.abs(event.offsetY) >= 24) { this.onExpanded(event.offsetY < 0); }
+        }))
       Row({ space: 6 }) {
         this.modeTab($r('sys.symbol.face_smiling'), str('emoji_tab'), 0);
         this.modeTab($r('sys.symbol.gift'), str('sticker_tab'), 1);
@@ -209,7 +237,7 @@ export struct EmojiPanel {
       // Keep the content viewport explicit. A layoutWeight chain inside the
       // empty-GIF state could otherwise propagate through Stack and make the
       // overlay consume the whole chat page after switching tabs.
-      .width('100%').height(EMOJI_CONTENT_HEIGHT)
+      .width('100%').height(Math.max(0, this.panelHeight - EMOJI_TAB_BAR_HEIGHT - 36))
       // 记落点。PanGesture 的 event 只给位移，给不了起点在哪一条带子上。
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down && event.touches.length > 0) {
@@ -235,8 +263,8 @@ export struct EmojiPanel {
           })
       );
     }
-    .width('100%').height(EMOJI_DRAWER_HEIGHT)
-    .constraintSize({ minHeight: EMOJI_DRAWER_HEIGHT, maxHeight: EMOJI_DRAWER_HEIGHT })
+    .width('100%').height(this.panelHeight)
+    .clip(true)
     // 透明：底色由抽屉卡片提供（毛玻璃/沉浸光感在那一层）。这里再涂一层
     // 不透明的 surface，就是把玻璃整个盖死——表情面板背景一直是死深色的原因。
     .backgroundColor(Color.Transparent)

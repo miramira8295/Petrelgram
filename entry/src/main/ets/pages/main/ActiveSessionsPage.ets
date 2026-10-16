@@ -1,8 +1,9 @@
+import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { scanBarcode, scanCore } from '@kit.ScanKit';
-import { getTdClient } from '../../tdkit/Globals';
+import { getSessionSecurityStore } from '../../tdkit/Globals';
+import { SessionSecurityStore } from '../../store/SessionSecurityStore';
 import { TdObject, TdRequest, TdError } from '../../tdkit/TdTypes';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 import {
@@ -162,6 +163,13 @@ export struct ActiveSessionsPage {
   @State nowSeconds: number = Math.floor(Date.now() / 1000);
   @State serverFreshRestricted: boolean = false;
   private active: boolean = false;
+  private pageShown: boolean = true;
+  @StorageProp('appIsForeground') @Watch('onForegroundChanged') private foreground: boolean = true;
+  private sessionStore: SessionSecurityStore | null = null;
+  private sessionEpoch: number = 0;
+  private offSessionChange: (() => void) | null = null;
+  private loadBusy: boolean = false;
+  private loadPending: boolean = false;
   private loadSequence: number = 0;
   private clockTimer: number = -1;
 
@@ -177,6 +185,13 @@ export struct ActiveSessionsPage {
 
   aboutToAppear(): void {
     this.active = true;
+    this.pageShown = true;
+    this.sessionEpoch++;
+    this.loadBusy = false;
+    this.loadPending = false;
+    this.actionKey = '';
+    this.sessionStore = getSessionSecurityStore();
+    this.offSessionChange = this.sessionStore.onChange((): void => { this.load(false); });
     this.nowSeconds = Math.floor(Date.now() / 1000);
     this.load(true);
     this.clockTimer = setInterval((): void => {
@@ -184,8 +199,16 @@ export struct ActiveSessionsPage {
     }, 60000);
   }
 
+  private qrScanner: TelegramQrScanner = new TelegramQrScanner();
+
   aboutToDisappear(): void {
+    this.qrScanner.cancel();
     this.active = false;
+    this.sessionEpoch++;
+    this.offSessionChange?.();
+    this.offSessionChange = null;
+    this.sessionStore = null;
+    this.loadPending = false;
     this.loadSequence += 1;
     if (this.clockTimer !== -1) {
       clearInterval(this.clockTimer);
@@ -219,19 +242,45 @@ export struct ActiveSessionsPage {
     };
   }
 
+  private currentSessionPage(store: SessionSecurityStore | null, epoch: number): boolean {
+    return this.active && epoch === this.sessionEpoch && store !== null && store.isOpen() &&
+      this.sessionStore === store && getSessionSecurityStore() === store;
+  }
+
+  private onForegroundChanged(): void {
+    if (this.foreground && this.active && this.pageShown) { this.load(false); }
+  }
+
+  private finishSessionMutation(store: SessionSecurityStore, epoch: number): void {
+    if (!this.currentSessionPage(store, epoch)) { return; }
+    this.actionKey = '';
+    // 成功或失败都重读服务端。超时不重试写请求，不靠本地减一猜待确认数量。
+    this.load(false);
+  }
+
   private async load(showLoading: boolean): Promise<void> {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
+    if (store === null || !this.currentSessionPage(store, epoch)) { return; }
+    if (this.loadBusy || this.actionKey !== '' || !this.pageShown || !this.foreground) {
+      this.loadPending = true;
+      return;
+    }
+    this.loadBusy = true;
+    this.loadPending = false;
     const sequence = ++this.loadSequence;
     const hasVisibleData = this.current !== null || this.others.length > 0;
     if (showLoading && !hasVisibleData) { this.loadState = 'loading'; }
     else { this.refreshing = true; }
     this.loadError = '';
     try {
-      const response = await getTdClient().send(
-        { '@type': 'getActiveSessions' } as TdRequest
-      );
+      const snapshot = await store.read();
+      if (!this.currentSessionPage(store, epoch)) { return; }
+      if (!store.isCurrent(snapshot)) { this.loadPending = true; return; }
+      const response = snapshot.response;
       const sessions = (response['sessions'] as TdObject[] | undefined) ?? [];
       const rows = sessions.map((session: TdObject): SessionRow => this.parse(session));
-      if (!this.active || sequence !== this.loadSequence) { return; }
+      if (!this.currentSessionPage(store, epoch) || sequence !== this.loadSequence) { return; }
       const nextCurrent = rows.find((row: SessionRow): boolean => row.isCurrent) ?? null;
       if (nextCurrent === null) {
         throw new Error('CURRENT_SESSION_MISSING');
@@ -260,7 +309,7 @@ export struct ActiveSessionsPage {
         }
       }
     } catch (caught) {
-      if (!this.active || sequence !== this.loadSequence) { return; }
+      if (!this.currentSessionPage(store, epoch) || sequence !== this.loadSequence) { return; }
       const error = caught as Error;
       logE(`ActiveSessionsPage.getActiveSessions failed: ${error.message}`);
       const presentation = activeSessionError(error.message, str('as_load_failed_retry'));
@@ -275,7 +324,13 @@ export struct ActiveSessionsPage {
         this.loadError = message;
       }
     } finally {
-      if (this.active && sequence === this.loadSequence) { this.refreshing = false; }
+      if (this.currentSessionPage(store, epoch) && sequence === this.loadSequence) {
+        this.refreshing = false;
+        this.loadBusy = false;
+        if (this.loadPending && this.actionKey === '' && this.pageShown && this.foreground) {
+          this.load(false);
+        }
+      }
     }
   }
 
@@ -385,42 +440,16 @@ export struct ActiveSessionsPage {
     if (this.linking || this.actionKey !== '') { return; }
     this.linking = true;
     try {
-      const options: scanBarcode.ScanOptions = {
-        scanTypes: [scanCore.ScanType.QR_CODE],
-        enableMultiMode: false,
-        enableAlbum: true
-      };
-      const result = await scanBarcode.startScanForResult(
-        getContext(this) as common.Context,
-        options
-      );
-      const link = result.originalValue.trim();
-      if (link === '') {
-        promptAction.showToast({ message: $r('app.string.as_no_qr'), duration: 1800 });
-        return;
-      }
-      const request: TdRequest = { '@type': 'confirmQrCodeAuthentication' };
-      request['link'] = link;
-      await getTdClient().send(request);
-      if (!this.active) { return; }
-      promptAction.showToast({ message: $r('app.string.as_desktop_connected'), duration: 1800 });
-      await this.load(false);
-    } catch (caught) {
-      const error = caught as BusinessError;
-      if (error.code !== 1000500002) {
-        logE(`ActiveSessionsPage.linkDesktopDevice failed: ${error.message}`);
-        const presentation = activeSessionError(error.message, str('as_connect_failed'));
-        promptAction.showToast({
-          message: presentation.text,
-          duration: 2600
-        });
-      }
+      const outcome = await this.qrScanner.start(getContext(this) as common.UIAbilityContext);
+      if (this.active && outcome === 'loggedIn') { await this.load(false); }
     } finally {
-      this.linking = false;
+      if (this.active) { this.linking = false; }
     }
   }
 
   private confirmTerminateAll(): void {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
     if (this.others.length === 0 || this.actionKey !== '') { return; }
     if (this.guardSessionTermination()) { return; }
     promptAction.showDialog({
@@ -431,28 +460,37 @@ export struct ActiveSessionsPage {
         { text: $r('app.string.as_log_out_all'), color: DANGER }
       ]
     }).then((result: promptAction.ShowDialogSuccessResponse): void => {
+      if (!this.currentSessionPage(store, epoch)) { return; }
       if (result.index === 1) { this.terminateAllOtherSessions(); }
     }).catch((): void => {});
   }
 
   private async terminateAllOtherSessions(): Promise<void> {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
+    if (store === null || !this.currentSessionPage(store, epoch) || !this.pageShown || !this.foreground || this.actionKey !== '') { return; }
+    const current = (): boolean => this.currentSessionPage(store, epoch) && this.pageShown && this.foreground;
     this.actionKey = 'terminate_all';
     try {
-      await getTdClient().send({ '@type': 'terminateAllOtherSessions' } as TdRequest);
+      await store.mutate({ '@type': 'terminateAllOtherSessions' }, current);
+      if (!current()) { return; }
       this.others = [];
       this.detailOpen = false;
       promptAction.showToast({ message: $r('app.string.as_others_terminated'), duration: 1800 });
       await this.load(false);
     } catch (caught) {
+      if (!current()) { return; }
       const error = caught as TdError;
       logE(`ActiveSessionsPage.terminateAll failed: ${error.message}`);
       this.showMutationError(error, str('action_failed_retry'));
     } finally {
-      this.actionKey = '';
+      this.finishSessionMutation(store, epoch);
     }
   }
 
   private confirmTerminate(row: SessionRow): void {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
     if (row.isCurrent || this.actionKey !== '') { return; }
     if (this.guardSessionTermination()) { return; }
     promptAction.showDialog({
@@ -463,33 +501,42 @@ export struct ActiveSessionsPage {
         { text: $r('app.string.as_terminate_button'), color: DANGER }
       ]
     }).then((result: promptAction.ShowDialogSuccessResponse): void => {
+      if (!this.currentSessionPage(store, epoch)) { return; }
       if (result.index === 1) { this.terminateSession(row); }
     }).catch((): void => {});
   }
 
   private async terminateSession(row: SessionRow): Promise<void> {
-    const before = [...this.others];
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
+    if (store === null || !this.currentSessionPage(store, epoch) || !this.pageShown || !this.foreground || this.actionKey !== '') { return; }
+    const current = (): boolean => this.currentSessionPage(store, epoch) && this.pageShown && this.foreground;
     this.actionKey = `terminate_${row.id}`;
     try {
       const request: TdRequest = { '@type': 'terminateSession' };
       request['session_id'] = row.id;
-      await getTdClient().send(request);
+      await store.mutate(request, current);
+      if (!current()) { return; }
       this.others = this.others.filter(
         (current: SessionRow): boolean => current.id !== row.id
       );
       this.detailOpen = false;
       promptAction.showToast({ message: $r('app.string.as_terminated'), duration: 1800 });
     } catch (caught) {
+      if (!current()) { return; }
       const error = caught as TdError;
       logE(`ActiveSessionsPage.terminateSession failed: ${error.message}`);
-      this.others = before;
       this.showMutationError(error, str('as_terminate_failed'));
     } finally {
-      this.actionKey = '';
+      this.finishSessionMutation(store, epoch);
     }
   }
 
   private async toggleSecretChats(row: SessionRow, enabled: boolean): Promise<void> {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
+    if (store === null || !this.currentSessionPage(store, epoch) || !this.pageShown || !this.foreground || this.actionKey !== '') { return; }
+    const current = (): boolean => this.currentSessionPage(store, epoch) && this.pageShown && this.foreground;
     if (this.actionKey !== '') { return; }
     const before = copySession(row);
     const next = copySession(row);
@@ -500,18 +547,24 @@ export struct ActiveSessionsPage {
       const request: TdRequest = { '@type': 'toggleSessionCanAcceptSecretChats' };
       request['session_id'] = row.id;
       request['can_accept_secret_chats'] = enabled;
-      await getTdClient().send(request);
+      await store.mutate(request, current);
+      if (!current()) { return; }
     } catch (caught) {
+      if (!current()) { return; }
       const error = caught as TdError;
       logE(`ActiveSessionsPage.toggleSecretChats failed: ${error.message}`);
       this.replaceSession(before);
       this.showMutationError(error, str('as_secret_chats_failed'));
     } finally {
-      this.actionKey = '';
+      this.finishSessionMutation(store, epoch);
     }
   }
 
   private async toggleCalls(row: SessionRow, enabled: boolean): Promise<void> {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
+    if (store === null || !this.currentSessionPage(store, epoch) || !this.pageShown || !this.foreground || this.actionKey !== '') { return; }
+    const current = (): boolean => this.currentSessionPage(store, epoch) && this.pageShown && this.foreground;
     if (this.actionKey !== '') { return; }
     const before = copySession(row);
     const next = copySession(row);
@@ -522,38 +575,46 @@ export struct ActiveSessionsPage {
       const request: TdRequest = { '@type': 'toggleSessionCanAcceptCalls' };
       request['session_id'] = row.id;
       request['can_accept_calls'] = enabled;
-      await getTdClient().send(request);
+      await store.mutate(request, current);
+      if (!current()) { return; }
     } catch (caught) {
+      if (!current()) { return; }
       const error = caught as TdError;
       logE(`ActiveSessionsPage.toggleCalls failed: ${error.message}`);
       this.replaceSession(before);
       this.showMutationError(error, str('as_calls_failed'));
     } finally {
-      this.actionKey = '';
+      this.finishSessionMutation(store, epoch);
     }
   }
 
   private async confirmUnconfirmedSession(row: SessionRow): Promise<void> {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
+    if (store === null || !this.currentSessionPage(store, epoch) || !this.pageShown || !this.foreground || this.actionKey !== '') { return; }
+    const current = (): boolean => this.currentSessionPage(store, epoch) && this.pageShown && this.foreground;
     if (!row.isUnconfirmed || this.actionKey !== '') { return; }
     this.actionKey = `confirm_${row.id}`;
     try {
       const request: TdRequest = { '@type': 'confirmSession' };
       request['session_id'] = row.id;
-      await getTdClient().send(request);
-      const next = copySession(row);
-      next.isUnconfirmed = false;
-      this.replaceSession(next);
+      await store.mutate(request, current);
+      if (!current()) { return; }
+      this.detailOpen = false;
       promptAction.showToast({ message: $r('app.string.as_device_confirmed'), duration: 1800 });
     } catch (caught) {
+      if (!current()) { return; }
       const error = caught as TdError;
       logE(`ActiveSessionsPage.confirmSession failed: ${error.message}`);
       this.showMutationError(error, str('as_confirm_failed'));
     } finally {
-      this.actionKey = '';
+      this.finishSessionMutation(store, epoch);
     }
   }
 
   private showTtlMenu(): void {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
     if (this.actionKey !== '') { return; }
     promptAction.showActionMenu({
       title: $r('app.string.as_inactive_ttl'),
@@ -580,6 +641,7 @@ export struct ActiveSessionsPage {
         }
       ]
     }).then((result): void => {
+      if (!this.currentSessionPage(store, epoch)) { return; }
       if (result.index >= 0 && result.index < TTL_DAYS.length) {
         this.setInactiveTtl(TTL_DAYS[result.index]);
       }
@@ -587,6 +649,10 @@ export struct ActiveSessionsPage {
   }
 
   private async setInactiveTtl(days: number): Promise<void> {
+    const store = this.sessionStore;
+    const epoch = this.sessionEpoch;
+    if (store === null || !this.currentSessionPage(store, epoch) || !this.pageShown || !this.foreground || this.actionKey !== '') { return; }
+    const current = (): boolean => this.currentSessionPage(store, epoch) && this.pageShown && this.foreground;
     if (days === this.inactiveTtlDays) { return; }
     const previous = this.inactiveTtlDays;
     this.inactiveTtlDays = days;
@@ -594,17 +660,19 @@ export struct ActiveSessionsPage {
     try {
       const request: TdRequest = { '@type': 'setInactiveSessionTtl' };
       request['inactive_session_ttl_days'] = days;
-      await getTdClient().send(request);
+      await store.mutate(request, current);
+      if (!current()) { return; }
       promptAction.showToast({
         message: str('as_ttl_set', inactiveSessionTtlLabel(days)), duration: 1600
       });
     } catch (caught) {
+      if (!current()) { return; }
       const error = caught as TdError;
       logE(`ActiveSessionsPage.setInactiveTtl failed: ${error.message}`);
       this.inactiveTtlDays = previous;
       this.showMutationError(error, str('as_ttl_failed'));
     } finally {
-      this.actionKey = '';
+      this.finishSessionMutation(store, epoch);
     }
   }
 
@@ -1147,7 +1215,11 @@ export struct ActiveSessionsPage {
     HdsSubDestination({
       title: $r('app.string.as_title'),
       pageBackground: $r('app.color.page_bg'),
-      scroller: this.hdsScroller
+      scroller: this.hdsScroller,
+      onShown: (): void => {
+        if (!this.pageShown) { this.pageShown = true; this.load(false); }
+      },
+      onHidden: (): void => { this.pageShown = false; }
     }) {
       Column() {
       if (this.loadState === 'loading') {

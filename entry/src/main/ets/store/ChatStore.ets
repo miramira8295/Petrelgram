@@ -1,11 +1,12 @@
+import { ChatListSubscription, ChatListPublicationMode } from './ChatListSubscription';
 import { groupCallGone, groupCallIsLive } from '../util/liveCallState';
-import { foldUnreadBadge, UnreadBadgeCounts, UnreadBadgeSource } from '../util/unreadBadgeRule';
+import { UnreadBadgeCounts } from '../util/unreadBadgeRule';
 import { actionBarCanUnarchiveOf, actionBarKindOf } from '../util/chatActionBar';
 import { TdClient, TimerFns } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { UserStore } from './UserStore';
 import { ChatEntry, PositionInfo, cloneEntry, computeInitials, compareOrderDesc, effectiveMuted, isMutedFrom, usesDefaultMuteFrom, chatKindOf } from './ChatEntry';
-import { scopeMutedForKind } from './ScopeMuteStore';
+import { SCOPE_MUTE_EPOCH, scopeMutedForKind } from './ScopeMuteStore';
 import { listKeyOf, chatListOf } from './ListKey';
 import { formatPreview, previewThumbOf } from '../util/formatPreview';
 import { logE, logI, logW } from '../util/log';
@@ -33,6 +34,11 @@ const ROW_SYNC_LATE_MATCH_MS: number = 320;
 // 分组列表最多连翻多少页。分组通常只有几十个会话，这个上限只是防呆——
 // 真被撞上会打日志，不会悄悄截断（见 ensureFullyLoaded）。
 const MAX_FULL_LOAD_PAGES: number = 20;
+
+interface ListSub {
+  listKey: string;
+  subscription: ChatListSubscription;
+}
 
 interface Sub {
   listKey: string;
@@ -78,6 +84,7 @@ export class ChatStore {
   private users: UserStore;
   private chats: Map<number, ChatEntry> = new Map();
   private positions: Map<string, Map<number, PositionInfo>> = new Map();
+  private pinEpochs: Map<string, number> = new Map();
   // Position updates are much more frequent than list opens. Keep the sorted
   // identity sequence for every list that has actually been read, then move
   // only the affected chat when TDLib changes its position. getChats() still
@@ -85,8 +92,15 @@ export class ChatStore {
   // entries for every coalesced notification.
   private orderedChatIds: Map<string, number[]> = new Map();
   private subs: Sub[] = [];
+  private listSubs: ListSub[] = [];
   private changeListeners: Array<() => void> = [];
+  private avatarListeners: Array<(chatIds: number[]) => void> = [];
+  private dirtyAvatarChatIds: Set<number> = new Set();
   private chatSubs: ChatSub[] = [];
+  private unreadBadgeListeners: Array<(keys: string[]) => void> = [];
+  private dirtyUnreadBadgeKeys: Set<string> = new Set();
+  private unreadBadgeCache: Map<string, UnreadBadgeCounts> = new Map();
+  private unreadBadgeScopeEpoch: number = -1;
   private activeLoads: Map<string, Promise<boolean>> = new Map();
   private initializedLists: Set<string> = new Set();
   private exhaustedLists: Set<string> = new Set();
@@ -159,6 +173,31 @@ export class ChatStore {
     };
   }
 
+  // UI lists opt into lazy, visibility-aware publication. Legacy subscribers
+  // (chat headers, sharing, services) retain their existing notification timing.
+  subscribeList(listener: (chats: ChatEntry[]) => void, listKey: string,
+    mode: () => ChatListPublicationMode): ChatListSubscription {
+    const subscription = new ChatListSubscription(this.timer, mode,
+      (): ChatEntry[] => this.getChats(listKey), listener, (): void => {
+        this.listSubs = this.listSubs.filter((sub: ListSub): boolean => sub.subscription !== subscription);
+      });
+    this.listSubs.push({ listKey, subscription });
+    subscription.refresh();
+    return subscription;
+  }
+
+  hasChats(listKey: string): boolean {
+    return (this.positions.get(listKey)?.size ?? 0) > 0;
+  }
+
+  private invalidateListSubscriptions(chatId: number | undefined, urgent: boolean): void {
+    for (const sub of this.listSubs) {
+      if (chatId === undefined || this.positions.get(sub.listKey)?.has(chatId) === true) {
+        sub.subscription.invalidate(urgent);
+      }
+    }
+  }
+
   // 盯单个会话。会话页用它，而不是 subscribe(listener, 'main')：后者只在会话
   // **位于那个列表里**时才通知（见 flushNotify 的 listContainsAny），归档里的会话、
   // 还没进任何列表的会话，它的更新会话页一条都收不到——陌生人私聊的操作条
@@ -172,9 +211,23 @@ export class ChatStore {
     };
   }
 
-  // Lightweight invalidation signal for derived UI such as folder unread
-  // badges. Unlike subscribe(), this does not rebuild and sort a chat list on
-  // every TDLib update.
+  // One initial replay, then only photo changes/path invalidations. This is
+  // independent of list membership, so archive/folder-only chats work too.
+  subscribeAvatars(listener: (chatIds: number[]) => void): () => void {
+    this.avatarListeners = [...this.avatarListeners, listener];
+    const ids: number[] = [];
+    this.chats.forEach((entry: ChatEntry): void => {
+      if (entry.photoFileId !== 0 && entry.avatarPath === '') { ids.push(entry.id); }
+    });
+    if (ids.length > 0) { listener(ids); }
+    return (): void => {
+      this.avatarListeners = this.avatarListeners.filter((value: (chatIds: number[]) => void): boolean =>
+        value !== listener);
+    };
+  }
+
+  // General store invalidations. Badge consumers use subscribeUnreadBadges
+  // so content-only updates do not cause unread aggregation.
   subscribeChanges(listener: () => void): () => void {
     this.changeListeners = [...this.changeListeners, listener];
     listener();
@@ -183,8 +236,17 @@ export class ChatStore {
     };
   }
 
-  // Every cached chat across all lists (main/archive/folders). Used to request
-  // avatars regardless of which list a chat was surfaced through.
+  // Replay existing lists once, then coalesce only badge-relevant list keys.
+  // Scope-default mute changes are observed separately via SCOPE_MUTE_EPOCH.
+  subscribeUnreadBadges(listener: (keys: string[]) => void): () => void {
+    this.unreadBadgeListeners = [...this.unreadBadgeListeners, listener];
+    listener(Array.from(this.positions.keys()));
+    return (): void => {
+      this.unreadBadgeListeners = this.unreadBadgeListeners.filter(
+        (l: (keys: string[]) => void): boolean => l !== listener);
+    };
+  }
+
   private onSupergroup(update: TdObject): void {
     const supergroup = update['supergroup'] as TdObject | undefined;
     if (supergroup === undefined) {
@@ -309,6 +371,15 @@ export class ChatStore {
     ordered.splice(lo, 0, id);
   }
 
+  // Order-only changes do not invalidate cached pin checks in list row keys.
+  pinEpoch(listKey: string): number {
+    return this.pinEpochs.get(listKey) ?? 0;
+  }
+
+  private bumpPinEpoch(listKey: string): void {
+    this.pinEpochs.set(listKey, this.pinEpoch(listKey) + 1);
+  }
+
   // Pinning is per chat list: a chat can be pinned in a folder but not in main.
   isPinned(listKey: string, chatId: number): boolean {
     const pos = this.positions.get(listKey)?.get(chatId);
@@ -377,18 +448,50 @@ export class ChatStore {
   // 数字用 total，颜色看 unmuted——与 Telegram 同口径；主列表两个数由 TDLib 直接给
   // （UnreadCountStore），文件夹从已加载的会话里数，两边口径必须一致。
   unreadChatBadge(listKey: string): UnreadBadgeCounts {
-    const bucket = this.positions.get(listKey);
-    if (bucket === undefined) {
-      return { total: 0, unmuted: 0 };
+    const epoch: number = AppStorage.get<number>(SCOPE_MUTE_EPOCH) ?? 0;
+    if (epoch !== this.unreadBadgeScopeEpoch) {
+      this.unreadBadgeScopeEpoch = epoch;
+      this.unreadBadgeCache.clear();
     }
-    const sources: UnreadBadgeSource[] = [];
-    bucket.forEach((_pos: PositionInfo, id: number) => {
-      const e = this.chats.get(id);
-      if (e !== undefined) {
-        sources.push({ unreadCount: e.unreadCount, muted: effectiveMuted(e, scopeMutedForKind(e.kind)) });
-      }
+    let counts = this.unreadBadgeCache.get(listKey);
+    if (counts === undefined) {
+      let total: number = 0;
+      let unmuted: number = 0;
+      this.positions.get(listKey)?.forEach((_pos: PositionInfo, id: number): void => {
+        const e = this.chats.get(id);
+        if (e !== undefined && e.unreadCount > 0) {
+          total++;
+          if (!effectiveMuted(e, scopeMutedForKind(e.kind))) { unmuted++; }
+        }
+      });
+      counts = { total, unmuted };
+      this.unreadBadgeCache.set(listKey, counts);
+    }
+    // Do not expose the mutable cached result to consumers.
+    return { total: counts.total, unmuted: counts.unmuted };
+  }
+
+  private invalidateUnreadBadge(listKey: string): void {
+    this.unreadBadgeCache.delete(listKey);
+    this.dirtyUnreadBadgeKeys.add(listKey);
+  }
+
+  private setChatEntry(id: number, next: ChatEntry): void {
+    const previous = this.chats.get(id);
+    this.chats.set(id, next);
+    if ((previous?.photoFileId ?? 0) !== next.photoFileId ||
+      (next.photoFileId !== 0 && next.avatarPath === '' && previous?.avatarPath !== '')) {
+      this.dirtyAvatarChatIds.add(id);
+    }
+    const wasUnread: boolean = previous !== undefined && previous.unreadCount > 0;
+    const isUnread: boolean = next.unreadCount > 0;
+    // 1→100 unread messages still contributes exactly one unread chat.
+    if (wasUnread === isUnread && (!isUnread || (previous !== undefined &&
+      effectiveMuted(previous, scopeMutedForKind(previous.kind)) ===
+      effectiveMuted(next, scopeMutedForKind(next.kind))))) { return; }
+    this.positions.forEach((bucket: Map<number, PositionInfo>, key: string): void => {
+      if (bucket.has(id)) { this.invalidateUnreadBadge(key); }
     });
-    return foldUnreadBadge(sources);
   }
 
   hasAnimatedPhoto(chatId: number): boolean {
@@ -450,9 +553,9 @@ export class ChatStore {
     const next = cloneEntry(entry);
     next.unreadCount = 0;
     next.isMarkedUnread = false;
-    this.chats.set(chatId, next);
+    this.setChatEntry(chatId, next);
     this.clearLateRowSync(chatId);
-    this.notify(chatId);
+    this.notify(chatId, true);
   }
 
   defaultBackground(forDarkTheme: boolean): TdObject | null {
@@ -557,7 +660,7 @@ export class ChatStore {
     }
     const c = cloneEntry(e);
     c.avatarPath = path;
-    this.chats.set(chatId, c);
+    this.setChatEntry(chatId, c);
     this.notify(chatId);
   }
 
@@ -567,8 +670,9 @@ export class ChatStore {
     }
     if (order === '0') {
       const b = this.positions.get(listKey);
-      if (b !== undefined) {
-        b.delete(id);
+      if (b?.get(id)?.isPinned === true) { this.bumpPinEpoch(listKey); }
+      if (b !== undefined && b.delete(id)) {
+        this.invalidateUnreadBadge(listKey);
       }
       this.removeOrderedChat(listKey, id);
       return;
@@ -578,8 +682,23 @@ export class ChatStore {
       bucket = new Map();
       this.positions.set(listKey, bucket);
     }
+    const previous = bucket.get(id);
+    if (previous === undefined) { this.invalidateUnreadBadge(listKey); }
+    if ((previous?.isPinned ?? false) !== isPinned) { this.bumpPinEpoch(listKey); }
     bucket.set(id, { order, isPinned });
     this.insertOrderedChat(listKey, id);
+  }
+
+  private positionsNeedImmediatePublication(id: number, positions: TdObject[]): boolean {
+    for (const pos of positions) {
+      const list = pos['list'] as TdObject | undefined;
+      if (list === undefined) { continue; }
+      const previous = this.positions.get(listKeyOf(list))?.get(id);
+      const present: boolean = ((pos['order'] as string | undefined) ?? '0') !== '0';
+      if ((previous !== undefined) !== present || (present && previous !== undefined &&
+        previous.isPinned !== ((pos['is_pinned'] as boolean | undefined) ?? false))) { return true; }
+    }
+    return false;
   }
 
   private applyPositions(id: number, positions: TdObject[]): void {
@@ -676,7 +795,7 @@ export class ChatStore {
     const next = cloneEntry(entry);
     next.isLive = false;
     next.isRtmpLive = false;
-    this.chats.set(chatId, next);
+    this.setChatEntry(chatId, next);
     this.notify(chatId);
   }
 
@@ -693,7 +812,7 @@ export class ChatStore {
     const next = cloneEntry(entry);
     next.isLive = isLive;
     next.isRtmpLive = isRtmpLive;
-    this.chats.set(chatId, next);
+    this.setChatEntry(chatId, next);
     this.notify(chatId);
   }
 
@@ -772,7 +891,7 @@ export class ChatStore {
       isLive: sameGroupCall ? previous!.isLive : false,
       isRtmpLive: sameGroupCall ? previous!.isRtmpLive : false
     };
-    this.chats.set(id, entry);
+    this.setChatEntry(id, entry);
     this.rememberGroupCall(id, previousGroupCallId, groupCallId);
     const positions = (chat['positions'] as TdObject[] | undefined) ?? [];
     this.applyPositions(id, positions);
@@ -805,7 +924,7 @@ export class ChatStore {
     }
     const next = cloneEntry(existing);
     next.isSavedMessages = true;
-    this.chats.set(id, next);
+    this.setChatEntry(id, next);
     this.notify(id);
   }
 
@@ -821,8 +940,9 @@ export class ChatStore {
       pending.affectsPositions = true;
       return;
     }
+    const urgent: boolean = this.positionsNeedImmediatePublication(id, [pos]);
     this.applyPositions(id, [pos]);
-    this.notify();
+    this.notify(undefined, urgent);
   }
 
   private onLastMessage(update: TdObject): void {
@@ -965,7 +1085,7 @@ export class ChatStore {
     const c = cloneEntry(e);
     c.title = title;
     c.initials = computeInitials(title);
-    this.chats.set(id, c);
+    this.setChatEntry(id, c);
     this.notify(id);
   }
 
@@ -979,7 +1099,7 @@ export class ChatStore {
     c.photoFileId = this.smallPhotoId(update['photo'] as TdObject | undefined);
     this.notePhotoAnimation(id, update['photo'] as TdObject | undefined, c.photoFileId !== e.photoFileId);
     c.avatarPath = '';
-    this.chats.set(id, c);
+    this.setChatEntry(id, c);
     this.notify(id);
   }
 
@@ -993,8 +1113,8 @@ export class ChatStore {
     const ns = update['notification_settings'] as TdObject | undefined;
     c.isMuted = isMutedFrom(ns);
     c.usesDefaultMute = usesDefaultMuteFrom(ns);
-    this.chats.set(id, c);
-    this.notify(id);
+    this.setChatEntry(id, c);
+    this.notify(id, true);
   }
 
   // 会话操作条变化（举报/屏蔽/加联系人之后服务端会撤掉它）。
@@ -1008,7 +1128,7 @@ export class ChatStore {
     const bar = update['action_bar'] as TdObject | undefined;
     c.actionBar = actionBarKindOf(bar);
     c.actionBarCanUnarchive = actionBarCanUnarchiveOf(bar);
-    this.chats.set(id, c);
+    this.setChatEntry(id, c);
     this.notify(id);
   }
 
@@ -1020,8 +1140,8 @@ export class ChatStore {
     }
     const c = cloneEntry(e);
     c.isMarkedUnread = (update['is_marked_as_unread'] as boolean | undefined) ?? false;
-    this.chats.set(id, c);
-    this.notify(id);
+    this.setChatEntry(id, c);
+    this.notify(id, true);
   }
 
   private onBackground(update: TdObject): void {
@@ -1036,7 +1156,7 @@ export class ChatStore {
     }
     const c = cloneEntry(e);
     c.background = background;
-    this.chats.set(id, c);
+    this.setChatEntry(id, c);
     this.notify(id);
   }
 
@@ -1052,7 +1172,7 @@ export class ChatStore {
     }
     const c = cloneEntry(e);
     c.themeName = themeName;
-    this.chats.set(id, c);
+    this.setChatEntry(id, c);
     this.notify(id);
   }
 
@@ -1080,7 +1200,7 @@ export class ChatStore {
     }
     const c = cloneEntry(e);
     c.autoDeleteTime = (update['message_auto_delete_time'] as number | undefined) ?? 0;
-    this.chats.set(id, c);
+    this.setChatEntry(id, c);
     this.notify(id);
   }
 
@@ -1096,7 +1216,7 @@ export class ChatStore {
     // until getGroupCall/updateGroupCall confirms is_active.
     next.isLive = false;
     next.isRtmpLive = false;
-    this.chats.set(chatId, next);
+    this.setChatEntry(chatId, next);
     this.rememberGroupCall(chatId, previousId, groupCallId);
     this.notify(chatId);
   }
@@ -1295,7 +1415,9 @@ export class ChatStore {
     // the existing phantom-unread recovery when the read half arrived first.
     next.unreadCount = ChatStore.effectiveUnread(
       next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
-    this.chats.set(chatId, next);
+    this.setChatEntry(chatId, next);
+    const urgentPositions: boolean = pending.affectsPositions &&
+      this.positionsNeedImmediatePublication(chatId, pending.positionUpdates);
     if (pending.affectsPositions) {
       this.applyPositions(chatId, pending.positionUpdates);
     }
@@ -1303,7 +1425,8 @@ export class ChatStore {
       this.rememberLateRowSync(
         chatId, lateHalf, lateUnits, pending.latestIncomingLastId);
     }
-    this.notifySoon(pending.affectsPositions ? undefined : chatId);
+    this.notifySoon(pending.affectsPositions ? undefined : chatId,
+      urgentPositions || next.unreadCount < entry.unreadCount || entry.isMarkedUnread !== next.isMarkedUnread);
   }
 
   private rememberLateRowSync(chatId: number, half: RowSyncHalf,
@@ -1339,15 +1462,17 @@ export class ChatStore {
     next.lastSenderName = this.senderName(lastMessage ?? undefined);
     next.unreadCount = ChatStore.effectiveUnread(
       next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
-    this.chats.set(chatId, next);
+    this.setChatEntry(chatId, next);
+    const urgent: boolean = next.unreadCount < entry.unreadCount || (positions !== undefined &&
+      this.positionsNeedImmediatePublication(chatId, positions));
     if (positions !== undefined) {
       this.applyPositions(chatId, positions);
     }
     const dirtyChatId: number | undefined = positions !== undefined ? undefined : chatId;
     if (immediately) {
-      this.notifySoon(dirtyChatId);
+      this.notifySoon(dirtyChatId, urgent);
     } else {
-      this.notify(dirtyChatId);
+      this.notify(dirtyChatId, urgent);
     }
   }
 
@@ -1358,8 +1483,8 @@ export class ChatStore {
     if (entry === undefined || entry.unreadMentionCount === count) { return; }
     const next = cloneEntry(entry);
     next.unreadMentionCount = count;
-    this.chats.set(chatId, next);
-    this.notifySoon(chatId);
+    this.setChatEntry(chatId, next);
+    this.notifySoon(chatId, count < entry.unreadMentionCount);
   }
 
   private applyReadInbox(chatId: number, entry: ChatEntry, rawUnreadCount: number,
@@ -1369,18 +1494,19 @@ export class ChatStore {
     next.lastReadInboxId = lastReadInboxId;
     next.unreadCount = ChatStore.effectiveUnread(
       next.rawUnreadCount, next.lastReadInboxId, next.lastMessageId);
-    this.chats.set(chatId, next);
+    this.setChatEntry(chatId, next);
     if (immediately) {
-      this.notifySoon(chatId);
+      this.notifySoon(chatId, next.unreadCount < entry.unreadCount);
     } else {
-      this.notify(chatId);
+      this.notify(chatId, next.unreadCount < entry.unreadCount);
     }
   }
 
   // Mark lists dirty and schedule one coalesced flush. A field-only change
   // passes its chat id so only lists actually containing that chat rebuild;
   // membership/order changes (positions) omit it and dirty every list.
-  private notify(chatId?: number): void {
+  private notify(chatId?: number, urgentList: boolean = false): void {
+    this.invalidateListSubscriptions(chatId, urgentList);
     if (chatId === undefined) {
       this.dirtyAllLists = true;
     } else {
@@ -1394,7 +1520,8 @@ export class ChatStore {
     this.scheduleNotify(NOTIFY_COALESCE_MS);
   }
 
-  private notifySoon(chatId?: number): void {
+  private notifySoon(chatId?: number, urgentList: boolean = false): void {
+    this.invalidateListSubscriptions(chatId, urgentList);
     if (chatId === undefined) {
       this.dirtyAllLists = true;
     } else {
@@ -1419,8 +1546,12 @@ export class ChatStore {
   }
 
   private flushNotify(): void {
+    const avatarIds = this.dirtyAvatarChatIds;
+    this.dirtyAvatarChatIds = new Set();
     const all = this.dirtyAllLists;
     const dirty = this.dirtyChatIds;
+    const badgeKeys: string[] = Array.from(this.dirtyUnreadBadgeKeys);
+    this.dirtyUnreadBadgeKeys = new Set();
     this.dirtyAllLists = false;
     this.dirtyChatIds = new Set();
     // Multiple views can subscribe to the same folder (for example while a
@@ -1444,6 +1575,13 @@ export class ChatStore {
     }
     for (const listener of this.changeListeners) {
       listener();
+    }
+    if (avatarIds.size > 0 && this.avatarListeners.length > 0) {
+      const ids = Array.from(avatarIds);
+      for (const listener of this.avatarListeners) { listener(ids); }
+    }
+    if (badgeKeys.length > 0) {
+      for (const listener of this.unreadBadgeListeners) { listener(badgeKeys); }
     }
   }
 

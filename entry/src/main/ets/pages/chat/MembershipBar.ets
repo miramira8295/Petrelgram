@@ -9,12 +9,14 @@
 import { COLOR_PRIMARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
 import {
   MEMBERSHIP_BLOCKED, MEMBERSHIP_CHECKING, MEMBERSHIP_JOINABLE, MEMBERSHIP_READONLY, MEMBERSHIP_REQUESTED,
+  MEMBERSHIP_RESTRICTED, MEMBERSHIP_GROUP_READONLY,
 } from '../../util/membershipState';
 import { MEMBERSHIP_BOT_START } from '../../util/botStart';
 import {
   MEMBERSHIP_SECRET_CLOSED, MEMBERSHIP_SECRET_PENDING, secretBarTextKey
 } from '../../util/secretChat';
 import { str } from '../../util/strings';
+import { fullDateTime } from '../../util/intlFormat';
 import { plainBackdropBlur, plainGlassFill } from '../../util/overlayMaterial';
 import { hdsVisualEffect } from '../../util/hdsPointLight';
 import {
@@ -50,6 +52,7 @@ export struct MembershipBar {
   // 这五个都是 string/number/boolean，两者等价；@Param 只读，本组件从头到尾
   // 也没写过它们。
   @Param state: string = '';
+  @Param restrictedUntil: number = 0;
   @Param isMuted: boolean = false;
   @Param joining: boolean = false;
   @Param joinByRequest: boolean = false;
@@ -93,6 +96,12 @@ export struct MembershipBar {
           // label; constraining only the parent does not activate TextOverflow.
           .constraintSize({ maxWidth: 'calc(100% - 57vp)' })
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      } else if (this.state === MEMBERSHIP_RESTRICTED || this.state === MEMBERSHIP_GROUP_READONLY) {
+        Text(this.state === MEMBERSHIP_GROUP_READONLY ? str('cp_group_send_disabled') :
+          (this.restrictedUntil > 0 ? str('cp_send_restricted_until',
+            fullDateTime(new Date(this.restrictedUntil * 1000))) : str('cp_send_restricted')))
+          .fontSize(15).fontColor(COLOR_TEXT_SECONDARY)
+          .textAlign(TextAlign.Center).flexShrink(1);
       } else if (this.state === MEMBERSHIP_CHECKING) {
         LoadingProgress()
           .width(20).height(20).color(COLOR_PRIMARY);

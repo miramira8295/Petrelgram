@@ -5,6 +5,7 @@ import { buildMessageEntry, cloneMessage, MessageEntry } from '../main/ets/store
 import { TdBridge, TdObject } from '../main/ets/tdkit/TdTypes';
 import { TdClient } from '../main/ets/tdkit/TdClient';
 import { UserStore } from '../main/ets/store/UserStore';
+import { buildForwardMessagesRequests } from '../main/ets/util/forwardMessagesRequest';
 
 // 消息多选（长按菜单的"选择"）状态机，B7 把它从 ChatPage 整体搬进
 // pages/chat/SelectionSession.ets 之后补的第一组断言。
@@ -32,7 +33,7 @@ function usersOf(): UserStore {
   return users;
 }
 
-// 一条普通文本消息，id/contentType 可覆盖。reconcile() 只看 id，其余字段随便。
+// 一条普通文本消息，id/contentType 可覆盖。
 function baseEntry(id: number, contentType: string, users: UserStore): MessageEntry {
   const formatted: TdObject = { '@type': 'formattedText' };
   formatted['text'] = '';
@@ -70,6 +71,8 @@ function albumRowOf(ids: number[], users: UserStore): AlbumGroup {
 
 // 宿主替身：三个动作/取值全记账，控制器不许缓存宿主的值。
 class FakeHost implements SelectionSessionHost {
+  currentMessages: MessageEntry[] = [];
+  messages: () => MessageEntry[] = (): MessageEntry[] => this.currentMessages;
   scrollActiveValue: boolean = false;
   closeReactionSheetCount: number = 0;
   emojiPanelCalls: boolean[] = [];
@@ -83,6 +86,16 @@ class FakeHost implements SelectionSessionHost {
   onActiveChange: (active: boolean) => void = (active: boolean): void => {
     this.activeCalls.push(active);
   };
+}
+
+function deletion(ids: number[], chatId: number = 10,
+  fromCache: boolean = false, permanent: boolean = true): TdObject {
+  const update: TdObject = { '@type': 'updateDeleteMessages' };
+  update['chat_id'] = chatId;
+  update['message_ids'] = ids;
+  update['from_cache'] = fromCache;
+  update['is_permanent'] = permanent;
+  return update;
 }
 
 function sessionOn(host: FakeHost): SelectionSession {
@@ -133,7 +146,7 @@ export default function selectionSessionTest() {
 
     // 防的回归：删除/撤回消息后，选中集合里留着指向不存在消息的幽灵 id——
     // 计数还在涨，删除按钮却对着一个已经不存在的 message id 发请求。
-    it('reconcile 剔除已不存在的 id，仍剩的保留', 0, (): void => {
+    it('真实删除通知剔除选中 id，仍剩的保留', 0, (): void => {
       const users: UserStore = usersOf();
       const session: SelectionSession = sessionOn(new FakeHost());
       session.enter([301, 302, 303]);
@@ -145,6 +158,8 @@ export default function selectionSessionTest() {
         baseEntry(303, 'text', users)
       ];
       session.reconcile(live);
+      expect(session.count()).assertEqual(3);
+      session.applyDeletion(10, deletion([301]));
 
       expect(session.ids.length).assertEqual(2);
       expect(session.ids.indexOf(301) >= 0).assertFalse();
@@ -157,13 +172,15 @@ export default function selectionSessionTest() {
     // 防的回归：选中的消息被整批删光之后，多选工具栏还挂着（active 仍是
     // true），底部的删除/转发按钮对一个空集合可点，用户点下去等于对着空气
     // 发请求。
-    it('reconcile 把选中集合全部剔完后自动 exit', 0, (): void => {
+    it('真实删除通知把选中集合全部剔完后自动 exit', 0, (): void => {
       const session: SelectionSession = sessionOn(new FakeHost());
       session.enter([401, 402]);
       expect(session.active).assertTrue();
 
-      // 401/402 全没了，存活列表里什么都不剩。
+      // 空窗口不是删除，只有显式删除通知才退出。
       session.reconcile([]);
+      expect(session.active).assertTrue();
+      session.applyDeletion(10, deletion([401, 402]));
 
       expect(session.ids.length).assertEqual(0);
       expect(session.active).assertFalse();
@@ -203,6 +220,8 @@ export default function selectionSessionTest() {
       expect(session.count()).assertEqual(3);
 
       session.reconcile([baseEntry(602, 'text', users)]);
+      expect(session.count()).assertEqual(3);
+      session.applyDeletion(10, deletion([601, 603]));
       expect(session.count()).assertEqual(1);
     });
 
@@ -294,6 +313,96 @@ export default function selectionSessionTest() {
       session.selectRow([501, 502]);
       expect(session.active).assertTrue();
       expect(session.ids).assertDeepEquals([501, 502]);
+    });
+
+    it('搜索跨窗口多选后转发请求保留所有消息并按 id 排序', 0, (): void => {
+      const users: UserStore = usersOf();
+      const host: FakeHost = new FakeHost();
+      const session: SelectionSession = sessionOn(host);
+      host.currentMessages = [baseEntry(900, 'photo', users)];
+      session.enter([900]);
+      // 搜索跳转前先选结果，窗口曾短暂为空，随后换成远处的一页。
+      session.selectRow([100]);
+      host.currentMessages = [];
+      session.reconcile([]);
+      host.currentMessages = [baseEntry(100, 'video', users)];
+      session.reconcile(host.currentMessages);
+      session.selectRow([100]);
+      expect(session.count()).assertEqual(2);
+      expect(session.entries().map((entry: MessageEntry): number => entry.id)).assertDeepEquals([900, 100]);
+      const requests = buildForwardMessagesRequests({
+        toChatId: 20, fromChatId: 10, messageIds: session.forwardIds(session.ids),
+        threadRootId: 0, sendCopy: false, removeCaption: false, canRemoveCaption: false
+      });
+      expect(requests.length).assertEqual(1);
+      expect(requests[0]['message_ids']).assertDeepEquals([100, 900]);
+    });
+
+    it('跳转窗口尚未加载时也不丢已选 id，失效菜单目标仍过滤', 0, (): void => {
+      const session: SelectionSession = sessionOn(new FakeHost());
+      session.enter([900]);
+      session.selectRow([100]);
+      session.reconcile([]);
+      expect(session.forwardIds([900, 100, 100, 777, 0])).assertDeepEquals([900, 100]);
+    });
+
+    it('缓存淘汰和其他聊天的删除不清选择，永久删除仍生效', 0, (): void => {
+      const session: SelectionSession = sessionOn(new FakeHost());
+      session.enter([101, 102]);
+      session.applyDeletion(10, deletion([101], 20));
+      session.applyDeletion(10, deletion([101, 102], 10, true, false));
+      expect(session.ids).assertDeepEquals([101, 102]);
+      session.applyDeletion(10, deletion([101], 10, true, true));
+      expect(session.ids).assertDeepEquals([102]);
+      session.applyDeletion(10, deletion([102], 10, false, false));
+      expect(session.active).assertFalse();
+    });
+
+    it('已选消息重返窗口时更新内容，转发继续过滤不可选类型', 0, (): void => {
+      const users: UserStore = usersOf();
+      const host: FakeHost = new FakeHost();
+      host.currentMessages = [baseEntry(101, 'photo', users)];
+      const session: SelectionSession = sessionOn(host);
+      session.enter([101]);
+      host.currentMessages = [baseEntry(101, 'hidden', users), baseEntry(102, 'system', users)];
+      session.reconcile(host.currentMessages);
+      host.currentMessages = [];
+      session.reconcile([]);
+      expect(session.entries()[0].contentType).assertEqual('hidden');
+      expect(session.forwardIds([101, 102])).assertDeepEquals([]);
+    });
+
+    it('取消选择与真实删除释放离屏消息快照', 0, (): void => {
+      const users: UserStore = usersOf();
+      const host: FakeHost = new FakeHost();
+      host.currentMessages = [baseEntry(101, 'text', users), baseEntry(102, 'photo', users)];
+      const session: SelectionSession = sessionOn(host);
+      session.enter([101, 102]);
+      host.currentMessages = [];
+      session.reconcile([]);
+      session.toggleMember(101);
+      expect(session.entries().map((entry: MessageEntry): number => entry.id)).assertDeepEquals([102]);
+      expect(session.forwardIds([101, 102])).assertDeepEquals([102]);
+      session.applyDeletion(10, deletion([102]));
+      expect(session.entries().length).assertEqual(0);
+      expect(session.forwardIds([102])).assertDeepEquals([]);
+    });
+
+    it('reset exit dispose 均释放离屏快照，后续会话不继承', 0, (): void => {
+      const users: UserStore = usersOf();
+      const host: FakeHost = new FakeHost();
+      const session: SelectionSession = sessionOn(host);
+      for (const method of ['reset', 'exit', 'dispose']) {
+        host.currentMessages = [baseEntry(101, 'photo', users)];
+        session.enter([101]);
+        host.currentMessages = [];
+        if (method === 'reset') { session.reset(); }
+        else if (method === 'exit') { session.exit(); }
+        else { session.dispose(); }
+        expect(session.entries().length).assertEqual(0);
+        expect(session.forwardIds([101])).assertDeepEquals([]);
+        expect(session.active).assertFalse();
+      }
     });
   });
 }

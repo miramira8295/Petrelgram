@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "未読のメンションに移動"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "送信結果を確認できません。送信先のチャットを確認してください。重複を避けるため、この送信は再試行しません。"
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "このグループの管理者により、%1$s までメッセージの送信が制限されています。"
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "このグループの管理者により、メッセージの送信が制限されています。"
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "このグループでは一般メンバーはメッセージを送信できません。"
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "管理対象：%1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "完了：%1$s。失敗：%2$s（%3$s）"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "メンバーの状態または管理権限が変更されました。削除画面を開き直してください。"
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "結果を確認できません。再実行する前にグループの状態を確認してください。"
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "選択したメッセージは全員のチャットから削除されます。"
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "選択したメッセージは自分のチャット履歴からのみ削除されます。"
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "選択したメッセージを削除できる範囲を確認できません。選択を変更するか、後でもう一度お試しください。"
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "このチャットでは許可されていません：%s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "送信権限を確認できません。もう一度お試しください。"
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "動画を録画中…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "音声を録音中…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "ビデオメッセージを録画中…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "動画を送信中…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "音声を送信中…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "ビデオメッセージを送信中…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "写真を送信中…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "ファイルを送信中…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "スタンプを選択中…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "位置情報を選択中…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "連絡先を選択中…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "ゲームをプレイ中…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "アニメーションを視聴中…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "複数の操作を実行中…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s：%2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "%1$d人：%2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "QRコードをスキャン"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "このコードには対応していません。Telegramの連絡先、グループ、ログイン用コードをスキャンしてください。"
+    },
+    {
+      "name": "qr_login_title",
+      "value": "新しい端末のログインを許可しますか？"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "自分がログインしている端末のみ承認してください。その端末からTelegramアカウントとクラウドチャットにアクセスできるようになります。"
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "ログインを許可"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "利用可能な招待リンクがないか、リンクを管理する権限がありません。"
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "コードを処理できませんでした。接続とコードの有効期限を確認して再試行してください。"
+    },
+    {
+      "name": "session_new_login",
+      "value": "新しい端末からのログイン"
+    },
+    {
+      "name": "session_review_count",
+      "value": "確認待ちの端末：%1$d台。タップして確認してください。"
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Telegramグループ"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "キーボードを表示"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "固定メッセージを非表示"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "固定メッセージを表示"
     }
   ]
 }

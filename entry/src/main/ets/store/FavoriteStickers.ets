@@ -10,6 +10,8 @@ import { logE } from '../util/log';
 
 const cache: FavoriteStickerCache = new FavoriteStickerCache();
 let loading: boolean = false;
+let revision: number = 0;
+const fileVersions: Map<number, number> = new Map();
 
 // 拉一次整表。重复调用只发一次请求；失败不抛（菜单照常能开，只是标签可能是
 // "添加到收藏"，而添加是幂等的）。
@@ -18,6 +20,8 @@ export function primeFavoriteStickers(): void {
     return;
   }
   loading = true;
+  const client = getTdClient();
+  const version = revision;
   getFavoriteStickers().then((stickers: TdObject[]): void => {
     const ids: number[] = [];
     for (const st of stickers) {
@@ -27,12 +31,19 @@ export function primeFavoriteStickers(): void {
         ids.push(id);
       }
     }
-    cache.replaceAll(ids);
+    if (version === revision && client === getTdClient()) { cache.replaceAll(ids); }
     loading = false;
   }).catch((e: Error): void => {
     loading = false;
     logE(`FavoriteStickers.prime failed: ${e.message}`);
   });
+}
+
+// A successful preview mutation must also be visible to message context menus.
+export function rememberFavoriteSticker(fileId: number, favorite: boolean): void {
+  revision++;
+  fileVersions.set(fileId, revision);
+  cache.set(fileId, favorite);
 }
 
 export function isFavoriteSticker(fileId: number): boolean {
@@ -44,7 +55,10 @@ export async function setFavoriteSticker(fileId: number, favorite: boolean): Pro
   if (fileId === 0) {
     return;
   }
-  cache.set(fileId, favorite);
+  const client = getTdClient();
+  const previous = cache.has(fileId);
+  rememberFavoriteSticker(fileId, favorite);
+  const version = revision;
   try {
     if (favorite) {
       await addFavoriteSticker(fileId);
@@ -52,12 +66,14 @@ export async function setFavoriteSticker(fileId: number, favorite: boolean): Pro
       await removeFavoriteSticker(fileId);
     }
   } catch (e) {
-    cache.set(fileId, !favorite);
+    if (version === fileVersions.get(fileId) && client === getTdClient()) { rememberFavoriteSticker(fileId, previous); }
     throw new Error((e as Error).message);
   }
 }
 
 // 账号切换：上一个账号的收藏表不能带到下一个账号。
 export function resetFavoriteStickers(): void {
+  revision++;
+  fileVersions.clear();
   cache.replaceAll([]);
 }

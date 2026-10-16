@@ -1,3 +1,6 @@
+import { SharedPayload } from '../util/sharedContent';
+import { sharedSendPermissions } from '../util/sendPermissions';
+import { sendWithChatPermissions, requireSendPermissions, showSendPermissionError } from './SendPermissionApi';
 import { TdClient, TIMEOUT_ERROR_CODE } from '../tdkit/TdClient';
 import { publishViewCount } from '../util/viewCountChannel';
 import { interactionChanged } from '../util/interactionDelta';
@@ -1694,6 +1697,11 @@ export class MessageStore {
     return true;
   }
 
+  checkSharePermissions(payload: SharedPayload): Promise<void> {
+    return requireSendPermissions((request: TdRequest): Promise<TdObject> => this.client.send(request, 15000),
+      this.chatId, sharedSendPermissions(payload));
+  }
+
   send(text: string, replyToId: number = 0): void {
     this.sendAsync(text, replyToId).catch((e: TdError) => {
       logE(`MessageStore.send failed code=${e.code}: ${e.message}`);
@@ -1758,7 +1766,7 @@ export class MessageStore {
     // 应答排在主线程上别的活后面（所有 TDLib 应答都经 threadsafe function
     // 投递到 UI 线程，updateFile 的洪流也在同一条队里）。先把数拿到。
     const sentAt: number = Date.now();
-    return this.client.send(req).then((m: TdObject): void => {
+    return sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
       const roundTripMs: number = Date.now() - sentAt;
       if (roundTripMs > 300) {
       } else {
@@ -1859,7 +1867,7 @@ export class MessageStore {
     req['input_message_content'] = content;
     req['options'] = options;
     this.applyTopicScope(req);
-    return this.client.send(req).then((m: TdObject): void => {
+    return sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
       // Scheduled messages live in a separate list; only immediate silent
       // sends belong in the visible history.
       if (sendDate <= 0) {
@@ -2046,6 +2054,12 @@ export class MessageStore {
   // Send a document from a local (sandbox) path. TDLib uploads it and the
   // pending message arrives via the normal update flow.
   sendDocument(path: string, caption: string): void {
+    this.sendDocumentAsync(path, caption).catch((e: TdError): void => {
+      logE(`MessageStore.sendDocument failed: ${e.message}`);
+    });
+  }
+
+  sendDocumentAsync(path: string, caption: string): Promise<void> {
     const content: TdObject = { '@type': 'inputMessageDocument' };
     content['document'] = MessageStore.wrapInputFile(
       'inputDocument', 'document', MessageStore.localFile(path));
@@ -2058,20 +2072,19 @@ export class MessageStore {
     req['chat_id'] = this.chatId;
     req['input_message_content'] = content;
     this.applyTopicScope(req);
-    this.client.send(req).then((m: TdObject) => {
+    noteOutgoingChat(this.chatId);
+    return sendWithChatPermissions(this.client, req).then((m: TdObject) => {
       this.upsert(buildMessageEntry(m, this.users));
       // Media returned by sendMessage still needs the same local-file
       // resolution as history/new-message entries. Omitting this left a newly
       // sent sticker on its loading ring until the chat was reopened.
       this.requestPhotos();
       this.notifySoon();
-    }).catch((e: TdError) => {
-      logE(`MessageStore.sendDocument failed: ${e.message}`);
     });
   }
 
   // Shared sendMessage plumbing for media content types.
-  private sendContent(content: TdObject, tag: string, replyToId: number = 0): Promise<number> {
+  private sendContent(content: TdObject, tag: string, replyToId: number = 0, strict: boolean = false): Promise<number> {
     // 记一笔"我主动发过"，系统分享的目标名单按它排（util/recentOutgoing）。
     noteOutgoingChat(this.chatId);
     const req: TdRequest = { '@type': 'sendMessage' };
@@ -2083,14 +2096,14 @@ export class MessageStore {
       req['reply_to'] = replyTo;
     }
     this.applyTopicScope(req);
-    return this.client.send(req).then((m: TdObject): number => {
+    return sendWithChatPermissions(this.client, req).then((m: TdObject): number => {
       this.upsert(buildMessageEntry(m, this.users));
       this.requestPhotos();
       this.notifySoon();
       return (m['id'] as number | undefined) ?? 0;
-    }).catch((e: TdError): number => {
+    }).catch((e: TdError): Promise<number> => {
       logE(`MessageStore.${tag} failed: ${e.message}`);
-      return 0;
+      return strict ? Promise.reject(e) : Promise.resolve(0);
     });
   }
 
@@ -2193,6 +2206,12 @@ export class MessageStore {
   }
 
   sendAudio(path: string, caption: string): void {
+    this.sendAudioAsync(path, caption).catch((e: TdError): void => {
+      logE(`MessageStore.sendAudio failed: ${e.message}`);
+    });
+  }
+
+  sendAudioAsync(path: string, caption: string): Promise<void> {
     const content: TdObject = { '@type': 'inputMessageAudio' };
     content['audio'] = MessageStore.wrapInputFile(
       'inputAudio', 'audio', MessageStore.localFile(path));
@@ -2201,7 +2220,7 @@ export class MessageStore {
       ft['text'] = caption;
       content['caption'] = ft;
     }
-    this.sendContent(content, 'sendAudio');
+    return this.sendContent(content, 'sendAudio', 0, true).then((): void => {});
   }
 
   sendDice(emoji: string): void {
@@ -2369,7 +2388,21 @@ export class MessageStore {
   // The picker may return up to nine mixed photos/videos. Two or more items
   // must use sendMessageAlbum; sending them one-by-one loses media_album_id and
   // the receiver can never render a real Telegram album.
-  sendMedia(items: MediaSendItem[], caption: string, replyToId: number = 0): Promise<void> {
+  async sendMedia(items: MediaSendItem[], caption: string, replyToId: number = 0): Promise<void> {
+    if (items.length === 0) { return; }
+    // Check the entire mixed selection before sending its first GIF/photo/video.
+    try {
+      await requireSendPermissions((request: TdRequest): Promise<TdObject> => this.client.send(request, 15000),
+        this.chatId, items.map((item: MediaSendItem): string =>
+          item.isVideo ? 'sendVideos' : isAnimationPath(item.path) ? 'sendOtherMessages' : 'sendPhotos'));
+    } catch (error) {
+      showSendPermissionError(error as Error);
+      throw error as Error;
+    }
+    return this.sendMediaChecked(items, caption, replyToId);
+  }
+
+  private sendMediaChecked(items: MediaSendItem[], caption: string, replyToId: number): Promise<void> {
     if (items.length === 0) {
       return Promise.resolve();
     }
@@ -2386,7 +2419,7 @@ export class MessageStore {
       // 配文跟着第一条走：先发的那一条带上它，与全是照片时的行为一致。
       return this.sendAnimations(animations, rest.length === 0 ? caption : '', replyToId)
         .then((): Promise<void> =>
-          rest.length === 0 ? Promise.resolve() : this.sendMedia(rest, caption, replyToId));
+          rest.length === 0 ? Promise.resolve() : this.sendMediaChecked(rest, caption, replyToId));
     }
     const contents: TdObject[] = [];
     for (let i = 0; i < items.length; i++) {
@@ -2407,7 +2440,7 @@ export class MessageStore {
       req['reply_to'] = replyTo;
     }
     this.applyTopicScope(req);
-    return this.client.send(req).then((result: TdObject): void => {
+    return sendWithChatPermissions(this.client, req).then((result: TdObject): void => {
       const sent: TdObject[] = items.length > 1
         ? ((result['messages'] as TdObject[] | undefined) ?? [])
         : [result];
@@ -2455,7 +2488,7 @@ export class MessageStore {
       req['reply_to'] = replyTo;
     }
     this.applyTopicScope(req);
-    return this.client.send(req).then((sent: TdObject): void => {
+    return sendWithChatPermissions(this.client, req).then((sent: TdObject): void => {
       this.upsert(buildMessageEntry(sent, this.users));
       this.resolveReplies();
       this.notifySoon();
@@ -2473,14 +2506,14 @@ export class MessageStore {
   // 注意：捆绑的 td 快照是"半新" schema —— photo/video/audio/document 用
   // 包装对象，但 sticker/animation/voiceNote 仍是旧的裸 InputFile
   // （真机验证：inputSticker 包装报 Unknown class）。升级 tdlib 时重查。
-  sendSticker(fileId: number, width: number, height: number): void {
+  sendSticker(fileId: number, width: number, height: number): Promise<boolean> {
     const inputFile: TdObject = { '@type': 'inputFileId' };
     inputFile['id'] = fileId;
     const content: TdObject = { '@type': 'inputMessageSticker' };
     content['sticker'] = inputFile;
     content['width'] = width;
     content['height'] = height;
-    this.sendContent(content, 'sendSticker');
+    return this.sendContent(content, 'sendSticker').then((id: number): boolean => id !== 0);
   }
 
   // Send a saved GIF (server-side file, referenced by id).
@@ -2511,7 +2544,7 @@ export class MessageStore {
     req['chat_id'] = this.chatId;
     req['input_message_content'] = content;
     this.applyTopicScope(req);
-    this.client.send(req).then((m: TdObject): void => {
+    sendWithChatPermissions(this.client, req).then((m: TdObject): void => {
       this.upsert(buildMessageEntry(m, this.users));
       this.requestPhotos();
       this.notifySoon();
@@ -2540,10 +2573,16 @@ export class MessageStore {
   }
 
   sendVoiceNote(path: string, durationSec: number): void {
+    this.sendVoiceNoteAsync(path, durationSec).catch((error: TdError): void => {
+      logE(`MessageStore.sendVoiceNote failed: ${error.message}`);
+    });
+  }
+
+  sendVoiceNoteAsync(path: string, durationSec: number): Promise<void> {
     const content: TdObject = { '@type': 'inputMessageVoiceNote' };
     content['voice_note'] = MessageStore.localFile(path);
     content['duration'] = durationSec;
-    this.sendContent(content, 'sendVoiceNote');
+    return this.sendContent(content, 'sendVoiceNote', 0, true).then((): void => {});
   }
 
   // 圆形视频消息。length 是正方形边长（圆形视频宽高相等）。

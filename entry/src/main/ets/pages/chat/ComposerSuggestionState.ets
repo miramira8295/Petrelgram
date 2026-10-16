@@ -52,7 +52,7 @@
 // 陈旧缩略图写回当前显示的结果行。本文件把 inlineSeq 保留为**单个** private
 // 字段，downloadInlineThumb 与 refreshInlineQuery 共读共写同一份。
 //
-// 【为什么四个 dispose() 都是空实现】
+// 【B14 搬迁时四个 dispose() 均为空；2026-10-16 指令簇已补清理】
 // 逐字核对过 aboutToDisappear 全链路（disposeInitialStageAndTgs →
 // disposePlaybackAndSlots → persistDraftAndViewport → disposeTimersAndSeqGuards
 // → stopVoicePlaybackKeepingMusic → disposeSubscriptionsInOrder → closeStores），
@@ -63,7 +63,8 @@
 // 眼看着像该清的 inlineTimer（还挂着的 320ms 防抖定时器）。这与 B9/B10 批
 // TypingIndicatorState 记录的"没有…Seq 守卫"是同一种情况的另一面：这里是有
 // 定时器/序号却原本就不清。按铁律 2/3，dispose() 不新增任何原代码没有的清理
-// 动作；真要补，得先跟作者对齐并在 behaviorChanges 里显式申报（未做）。
+// 动作。后续 #237 指令入口修复已为 CommandSuggestionState 增加退订与旧响应失效，
+// 其余三簇仍保留当时行为。
 //
 // 【为什么是 per-ChatPage 实例，不是模块级单例】
 // 平板分栏、导航栈多层时同时活着多个 ChatPage，各自会话的输入建议互不相干。
@@ -79,7 +80,7 @@ import { TdClient } from '../../tdkit/TdClient';
 import { getTdClient } from '../../tdkit/Globals';
 import { MessageStore } from '../../store/MessageStore';
 import {
-  searchMentions, mentionOfUser, loadBotCommands, MentionItem, CommandItem
+  searchMentions, mentionOfUser, loadBotCommands, commandsFromInfo, CommandTarget, MentionItem, CommandItem
 } from '../../store/InputSuggestions';
 import { appendMention, mentionToken, mentionQueryOf } from '../../util/mentionDraft';
 import { NameMention } from '../../util/mentionEntities';
@@ -242,7 +243,7 @@ export class MentionSuggestionState {
 }
 
 // ============================================================================
-// CommandSuggestionState — '/' 命令面板 + 私聊机器人"菜单"
+// CommandSuggestionState — '/' 命令面板与私聊/群聊快捷入口
 // ============================================================================
 
 export interface CommandSuggestionHost {
@@ -275,12 +276,38 @@ export class CommandSuggestionState {
   @Trace commandLoadState: string = 'idle'; // idle | loading | ready | error
   @Trace commandLoadError: string = '';
   @Trace commandMenuOpen: boolean = false;
-  // Bot "菜单" pill (private bot chats with registered commands).
+  // Available only when the current chat has usable bot commands.
   @Trace botMenuAvailable: boolean = false;
 
   // ——— 内部机件：一律不加 @Trace ———
   private allCommands: CommandItem[] = [];
   private commandLoadSeq: number = 0;
+  private watchEpoch: number = 0;
+  private unsubCommands: (() => void) | null = null;
+  private commandFingerprint: string = '';
+
+  private stopWatching(): void {
+    this.watchEpoch++;
+    this.unsubCommands?.();
+    this.unsubCommands = null;
+    this.commandFingerprint = '';
+  }
+
+  private accept(items: CommandItem[]): void {
+    this.allCommands = items;
+    this.commandLoadState = 'ready';
+    this.commandLoadError = '';
+    this.botMenuAvailable = items.length > 0;
+    this.applyCommandFilter();
+  }
+
+  private fail(): void {
+    this.allCommands = [];
+    this.commandItems = [];
+    this.commandLoadState = 'error';
+    this.commandLoadError = str('cp_commands_failed');
+    this.botMenuAvailable = false;
+  }
 
   private host: CommandSuggestionHost = {
     chatId: (): number => 0,
@@ -292,6 +319,7 @@ export class CommandSuggestionState {
   };
 
   bind(host: CommandSuggestionHost): void {
+    this.clear();
     this.host = host;
   }
 
@@ -304,33 +332,42 @@ export class CommandSuggestionState {
     if (!force && (this.commandLoadState === 'loading' || this.commandLoadState === 'ready')) {
       return;
     }
+    this.stopWatching();
+    const epoch = this.watchEpoch;
     const seq: number = ++this.commandLoadSeq;
     const chatId: number = this.host.chatId();
+    const client = this.host.client();
     const store: MessageStore | null = this.host.store();
     const peer: number = store !== null ? store.getPeerUserId() : 0;
+    const current = (): boolean => epoch === this.watchEpoch && chatId === this.host.chatId() && client === this.host.client();
     this.commandLoadState = 'loading';
     this.commandLoadError = '';
-    loadBotCommands(this.host.client(), chatId, peer).then((items: CommandItem[]) => {
-      if (seq !== this.commandLoadSeq || chatId !== this.host.chatId()) {
-        return;
-      }
-      this.allCommands = items;
-      this.commandLoadState = 'ready';
-      this.commandLoadError = '';
-      // Telegram's persistent 菜单 pill belongs to a private bot chat. Group
-      // commands remain available through '/' and include @bot usernames.
-      this.botMenuAvailable = peer > 0 && items.length > 0;
-      this.applyCommandFilter();
-    }).catch((e: TdError) => {
-      if (seq !== this.commandLoadSeq || chatId !== this.host.chatId()) {
-        return;
-      }
-      logE(`ChatPage.loadBotCommands failed: ${e.message}`);
-      this.allCommands = [];
-      this.commandItems = [];
-      this.commandLoadState = 'error';
-      this.commandLoadError = str('cp_commands_failed');
-      this.botMenuAvailable = false;
+    loadBotCommands(client, chatId, peer, (target: CommandTarget): void => {
+      if (!current()) { return; }
+      this.unsubCommands = client.onUpdate(target.updateType, (update: TdObject): void => {
+        if (!current() || update[target.idField] !== target.id) { return; }
+        const full = update[target.infoField] as TdObject | undefined;
+        if (full === undefined) { return; }
+        const botInfo = full['bot_info'] as TdObject | undefined;
+        const fingerprint = JSON.stringify((target.privateChat ? botInfo?.['commands'] : full['bot_commands']) ?? []);
+        if (fingerprint === this.commandFingerprint) { return; }
+        this.commandFingerprint = fingerprint;
+        const revision = ++this.commandLoadSeq;
+        // Invalidate the old menu immediately, including commands removed by the bot.
+        this.allCommands = [];
+        this.commandItems = [];
+        this.botMenuAvailable = false;
+        this.commandLoadState = 'loading';
+        commandsFromInfo(client, target, full).then((items: CommandItem[]): void => {
+          if (current() && revision === this.commandLoadSeq) { this.accept(items); }
+        }).catch((): void => {
+          if (current() && revision === this.commandLoadSeq) { this.fail(); }
+        });
+      });
+    }).then((items: CommandItem[]): void => {
+      if (current() && seq === this.commandLoadSeq) { this.accept(items); }
+    }).catch((): void => {
+      if (current() && seq === this.commandLoadSeq) { this.fail(); }
     });
   }
 
@@ -342,7 +379,7 @@ export class CommandSuggestionState {
   // Filter against the CURRENT draft, so a slow catalog load can't show stale results.
   applyCommandFilter(): void {
     if (this.commandMenuOpen) {
-      this.commandItems = this.commandLoadState === 'ready' ? this.allCommands.slice(0, 20) : [];
+      this.commandItems = this.commandLoadState === 'ready' ? this.allCommands.slice() : [];
       return;
     }
     const m = this.host.draft().match(/^\/([a-zA-Z0-9_]*)(?:@([a-zA-Z0-9_]*))?$/);
@@ -379,6 +416,7 @@ export class CommandSuggestionState {
   // 明确要避免引入的行为变更。窄一点的需求请用下面 closePanel()/closeMenu()/
   // clearItems()。
   clear(): void {
+    this.stopWatching();
     this.commandItems = [];
     this.allCommands = [];
     this.commandLoadSeq++;
@@ -414,10 +452,9 @@ export class CommandSuggestionState {
     this.commandItems = [];
   }
 
-  // 原 aboutToDisappear 全链路对这簇字段没有任何清理动作（含 commandLoadSeq
-  // 这个在途请求守卫——页面销毁时不会主动作废一次还没回来的 loadBotCommands），
-  // 见文件头「为什么四个 dispose() 都是空实现」。
+  // 结束页面订阅，同时作废初始加载与推送触发的异步查询。
   dispose(): void {
+    this.clear();
   }
 }
 

@@ -59,7 +59,13 @@ function buildEffect(surface: OverlaySurface): VisualEffect {
 const cache: Map<string, VisualEffect> = new Map<string, VisualEffect>();
 let cachedEpoch: number = -1;
 
-export function hdsVisualEffect(surface: OverlaySurface): VisualEffect {
+let emptyEffect: VisualEffect | null = null;
+
+export function hdsVisualEffect(surface: OverlaySurface, enabled: boolean = true): VisualEffect {
+  if (!enabled) {
+    if (emptyEffect === null) { emptyEffect = new hdsEffect.HdsEffectBuilder().buildEffect(); }
+    return emptyEffect;
+  }
   const epoch: number = AppStorage.get<number>(MATERIAL_EPOCH) ?? 0;
   if (epoch !== cachedEpoch) {
     cache.clear();

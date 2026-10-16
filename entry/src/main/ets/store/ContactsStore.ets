@@ -11,6 +11,7 @@ const CONTACTS_REFRESH_COALESCE_MS: number = 500;
 export interface ContactItem {
   id: number;
   name: string;
+  sortName?: string; // Original name; empty remains # rather than the localized unnamed label.
   initials: string;
   avatarPath: string;
   statusText: string;
@@ -187,6 +188,7 @@ export class ContactsStore {
     const item: ContactItem = {
       id,
       name: name !== '' ? name : str('cs_unnamed'),
+      sortName: name,
       initials: name.length > 0 ? name.substring(0, 1).toUpperCase() : '?',
       avatarPath: previous !== undefined ? previous.avatarPath : '',
       statusText: formatLastSeen(status, Math.floor(Date.now() / 1000)),

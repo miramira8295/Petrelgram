@@ -141,6 +141,11 @@ struct SharePanel {
       // 而不是一个洞。快照里的路径是写快照那一刻的，之后 TDLib 完全可能把
       // 那张图清掉，所以这一层不是可选的。
       Stack() {
+        if (target.isSavedMessages) {
+          SymbolGlyph($r('sys.symbol.bookmark_fill')).fontSize(26).fontColor([Color.White])
+            .width(AVATAR_SIZE).height(AVATAR_SIZE).backgroundColor('#3478F6')
+            .borderRadius(AVATAR_SIZE / 2);
+        } else {
         Text(target.initials)
           .fontColor(Color.White)
           .fontSize(AVATAR_SIZE * 0.4)
@@ -157,6 +162,7 @@ struct SharePanel {
             .width(AVATAR_SIZE).height(AVATAR_SIZE)
             .borderRadius(AVATAR_SIZE / 2)
             .draggable(false);
+        }
         }
       }
       .width(AVATAR_SIZE).height(AVATAR_SIZE);

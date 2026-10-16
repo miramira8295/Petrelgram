@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "رفتن به اشارهٔ خوانده‌نشده"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "نتیجهٔ ارسال مشخص نیست. ابتدا گفت‌وگوی مقصد را بررسی کنید؛ برای جلوگیری از تکرار، این دسته دوباره ارسال نمی‌شود."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "مدیران این گروه ارسال پیام شما را تا %1$s محدود کرده‌اند."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "مدیران این گروه ارسال پیام شما را محدود کرده‌اند."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "این گروه به اعضای عادی اجازه ارسال پیام نمی‌دهد."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "مدیریت: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "انجام شد: %1$s. ناموفق: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "وضعیت عضو یا دسترسی مدیریت تغییر کرده است. پنجره حذف را دوباره باز کنید."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "نتیجه تأیید نشده است. پیش از تکرار، وضعیت گروه را بررسی کنید."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "پیام‌های انتخاب‌شده برای همه حذف خواهند شد."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "پیام‌های انتخاب‌شده فقط از تاریخچهٔ گفتگوی شما حذف خواهند شد."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "امکان تعیین دامنهٔ حذف مجاز برای پیام‌های انتخاب‌شده وجود ندارد. انتخاب خود را تغییر دهید یا بعداً دوباره تلاش کنید."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "در این گفتگو مجاز نیست: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "بررسی مجوز ارسال ممکن نشد. دوباره تلاش کنید."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "در حال ضبط ویدیو…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "در حال ضبط صدا…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "در حال ضبط پیام ویدیویی…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "در حال ارسال ویدیو…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "در حال ارسال پیام صوتی…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "در حال ارسال پیام ویدیویی…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "در حال ارسال عکس…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "در حال ارسال فایل…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "در حال انتخاب برچسب…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "در حال انتخاب موقعیت…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "در حال انتخاب مخاطب…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "در حال بازی…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "در حال تماشای پویانمایی…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "در حال انجام کارهای مختلف…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "اسکن کد QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "این کد پشتیبانی نمی‌شود. کد مخاطب، گروه یا ورود تلگرام را اسکن کنید."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "اجازه ورود به دستگاه جدید؟"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "فقط دستگاهی را تأیید کنید که خودتان وارد آن می‌شوید. این دستگاه به حساب تلگرام و گفتگوهای ابری شما دسترسی خواهد داشت."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "اجازه ورود"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "پیوند دعوتی در دسترس نیست یا اجازه مدیریت پیوندها را ندارید."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "پردازش کد ممکن نشد. اتصال و اعتبار کد را بررسی و دوباره تلاش کنید."
+    },
+    {
+      "name": "session_new_login",
+      "value": "ورود دستگاه جدید"
+    },
+    {
+      "name": "session_review_count",
+      "value": "دستگاه‌های در انتظار تأیید: %1$d. برای بررسی بزنید."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "گروه تلگرام"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "نمایش صفحه‌کلید"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "پنهان کردن پیام‌های سنجاق‌شده"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "نمایش پیام‌های سنجاق‌شده"
     }
   ]
 }

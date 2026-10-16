@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Pergi ke sebutan belum dibaca"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Hasil penghantaran belum diketahui. Semak sembang destinasi dahulu; kelompok ini tidak akan dihantar semula untuk mengelakkan pendua."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Pentadbir kumpulan ini telah menyekat anda daripada menghantar mesej sehingga %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Pentadbir kumpulan ini telah menyekat anda daripada menghantar mesej."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "Kumpulan ini tidak membenarkan ahli biasa menghantar mesej."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Urus: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Selesai: %1$s. Gagal: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Status ahli atau kebenaran pentadbir berubah. Buka semula dialog pemadaman."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Hasil belum disahkan. Semak kumpulan sebelum mengulangi tindakan ini."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Mesej yang dipilih akan dipadam untuk semua orang."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Mesej yang dipilih hanya akan dipadam daripada sejarah sembang anda."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Skop pemadaman yang tersedia untuk mesej yang dipilih tidak dapat dipastikan. Ubah pilihan atau cuba lagi kemudian."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "Tidak dibenarkan dalam sembang ini: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Tidak dapat menyemak kebenaran penghantaran. Sila cuba lagi."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Merakam video…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Merakam suara…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Merakam mesej video…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Menghantar video…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Menghantar mesej suara…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Menghantar mesej video…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Menghantar foto…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Menghantar fail…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Memilih pelekat…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Memilih lokasi…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Memilih kenalan…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Bermain permainan…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Menonton animasi…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Melakukan pelbagai aktiviti…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Imbas kod QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Kod ini tidak disokong. Imbas kod kenalan, kumpulan atau log masuk Telegram."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Benarkan peranti baharu log masuk?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Hanya luluskan peranti yang anda gunakan untuk log masuk. Peranti itu akan mendapat akses kepada akaun dan sembang awan Telegram anda."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Benarkan log masuk"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Tiada pautan jemputan tersedia atau anda tidak boleh menguruskannya."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Kod tidak dapat diproses. Semak sambungan dan tempoh sah kod, kemudian cuba lagi."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Log masuk peranti baharu"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Peranti menunggu pengesahan: %1$d. Ketik untuk semak."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Kumpulan Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Tunjukkan papan kekunci"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Sembunyikan mesej disemat"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Tunjukkan mesej disemat"
     }
   ]
 }

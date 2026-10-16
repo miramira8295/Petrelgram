@@ -1,3 +1,4 @@
+import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { pageMarginVp } from '../../util/pageMargin';
 import {
   HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM, isSplitByBreakpoint
@@ -165,7 +166,6 @@ export struct MyProfilePage {
   @State photoUploading: boolean = false;
   @State openingEditor: boolean = false;
   private profileScroller: Scroller = new Scroller();
-  @State topMenuOpen: boolean = false;
   @State photoMenuOpen: boolean = false;
   @State switchingToSettings: boolean = false;
   @State pressedQuickAction: string = '';
@@ -270,7 +270,10 @@ export struct MyProfilePage {
     });
   }
 
+  private qrScanner: TelegramQrScanner = new TelegramQrScanner();
+
   aboutToDisappear(): void {
+    this.qrScanner.cancel();
     this.closeQr();
     this.profileLoadSequence++;
     this.photoUploadSequence++;
@@ -296,7 +299,6 @@ export struct MyProfilePage {
     this.headerVisible = false;
     this.avatarPressed = false;
     this.openingEditor = false;
-    this.topMenuOpen = false;
     this.photoMenuOpen = false;
     this.switchingToSettings = false;
     this.pressedQuickAction = '';
@@ -331,6 +333,7 @@ export struct MyProfilePage {
   private qrOpen: boolean = false;
   private qrCtrl: CustomDialogController = new CustomDialogController({
     builder: QrDialog({ ownUser: true, title: this.name,
+      onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); },
       onClosed: (): void => { this.qrOpen = false; } }),
     alignment: DialogAlignment.Center,
     autoCancel: true
@@ -343,7 +346,7 @@ export struct MyProfilePage {
   private openQr(): void {
     if (this.profileLoading || this.profileError !== '' ||
       this.photoUploading || this.photoMenuOpen || this.openingEditor ||
-      this.switchingToSettings || this.topMenuOpen) {
+      this.switchingToSettings) {
       return;
     }
     if (this.qrOpen) { return; }
@@ -375,7 +378,7 @@ export struct MyProfilePage {
   private openEditor(): void {
     if (this.profileLoading || this.profileError !== '' ||
       this.photoUploading || this.photoMenuOpen || this.openingEditor ||
-      this.switchingToSettings || this.topMenuOpen) {
+      this.switchingToSettings) {
       return;
     }
     this.openingEditor = true;
@@ -420,7 +423,7 @@ export struct MyProfilePage {
 
   private openSettings(): void {
     if (this.photoUploading || this.photoMenuOpen || this.openingEditor ||
-      this.switchingToSettings || this.topMenuOpen) {
+      this.switchingToSettings) {
       return;
     }
     this.switchingToSettings = true;
@@ -430,34 +433,6 @@ export struct MyProfilePage {
       this.switchingToSettings = false;
     }, 520);
     this.onOpenSettings();
-  }
-
-  private showTopMenu(): void {
-    if (this.profileLoading || this.profileError !== '' ||
-      this.photoUploading || this.photoMenuOpen || this.openingEditor ||
-      this.switchingToSettings || this.topMenuOpen) {
-      return;
-    }
-    this.topMenuOpen = true;
-    promptAction.showActionMenu({
-      title: this.name !== '' ? this.name : $r('app.string.tab_profile'),
-      buttons: [
-        { text: $r('app.string.settings_edit_profile'), color: '#3390EC' },
-        { text: $r('app.string.mp_set_photo'), color: '#3390EC' },
-        { text: $r('app.string.mp_show_qr'), color: '#3390EC' }
-      ]
-    }).then((result): void => {
-      this.topMenuOpen = false;
-      if (result.index === 0) {
-        this.openEditor();
-      } else if (result.index === 1) {
-        this.setPhotoMenu();
-      } else if (result.index === 2) {
-        this.openQr();
-      }
-    }).catch((): void => {
-      this.topMenuOpen = false;
-    });
   }
 
   private stickerCtrl: CustomDialogController = new CustomDialogController({
@@ -471,7 +446,7 @@ export struct MyProfilePage {
   private setPhotoMenu(): void {
     if (this.profileLoading || this.profileError !== '' ||
       this.photoUploading || this.photoMenuOpen || this.openingEditor ||
-      this.switchingToSettings || this.topMenuOpen) {
+      this.switchingToSettings) {
       return;
     }
     this.photoMenuOpen = true;
@@ -733,7 +708,7 @@ export struct MyProfilePage {
 
   private quickActionEnabled(key: string): boolean {
     if (this.photoUploading || this.photoMenuOpen || this.openingEditor ||
-      this.switchingToSettings || this.topMenuOpen) {
+      this.switchingToSettings) {
       return false;
     }
     if (key === 'settings') {
@@ -2068,27 +2043,24 @@ export struct MyProfilePage {
     }
   }
 
-  // 标题栏内容：大标题 + 右上角二维码与 ⋮。
-  //
-  // ⋮ 走的是 promptAction.showActionMenu（系统动作面板），不是 bindMenu，
-  // 所以不需要联系人页那种锚点，action 里直接调即可。
+  // 二维码与扫一扫独立入口；编辑与设置使用页面现有操作区。
   private titleBarContent(): TitleBarContentOptions {
     const qrIcon: HdsNavigationIconOptions = {
       icon: $r('sys.symbol.qrcode'),
       label: str('mp_show_profile_qr'),
       action: (): void => { this.openQr(); }
     };
-    const moreIcon: HdsNavigationIconOptions = {
-      icon: $r('sys.symbol.more'),
-      label: str('mp_more_actions'),
-      action: (): void => { this.showTopMenu(); }
+    const scanIcon: HdsNavigationIconOptions = {
+      icon: $r('sys.symbol.line_viewfinder'),
+      label: str('qr_scan'),
+      action: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); }
     };
     return {
       title: { mainTitle: $r('app.string.tab_profile') },
       menu: {
         value: [
           { content: qrIcon } as HdsNavigationMenuItemOptions,
-          { content: moreIcon } as HdsNavigationMenuItemOptions
+          { content: scanIcon } as HdsNavigationMenuItemOptions
         ]
       }
     };

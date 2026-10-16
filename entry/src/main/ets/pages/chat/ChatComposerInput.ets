@@ -3,6 +3,8 @@ import {
 } from '../../util/composerText';
 import { ComposerFullscreenSheet } from './ComposerFullscreenSheet';
 import { composerLineProbe } from '../../util/composerLineProbe';
+import { ComposerLayoutMeasurement, composerMeasuredHeight } from '../../util/composerLayout';
+import { ComposerLayoutFrame } from './ComposerLayoutFrame';
 import { shouldOfferFullscreenEdit } from '../../util/composerExpand';
 import { pushSheetDismiss } from '../../util/sheetDismissStack';
 import { promptAction } from '@kit.ArkUI';
@@ -44,6 +46,7 @@ export const COMPOSER_ROW_PADDING: number = 4;
 @ComponentV2
 export struct ChatComposerInput {
   @Param attachPanelOpen: boolean = false;
+  @Param appDark: boolean = false;
   @Param pendingMedia: PendingMediaItem[] = [];
   // 输入条上方那一条（编辑态/回复态）的八个字段原来是八个标量 @Param，由
   // ChatPage 在 build 里逐个转手——那等于让**页面**订阅这八个 @Trace，编辑/回复
@@ -92,7 +95,8 @@ export struct ChatComposerInput {
   // 页面算好高度 → 再作为 @Param composerEditorHeight 传回本组件。中间那一圈
   // 页面什么也没做，第二轮第 9 项把它收回原地（三个几何常量本来就定义在本文件）。
   @Local private editorW: number = 0;
-  // TextArea 自己报的真实行数（0 = 还没问到）。见 refreshEditorLines。
+  @Local private editorLayout: ComposerLayoutMeasurement | undefined = undefined;
+  // 全屏编辑入口保留最近行数；其出现会改变宽度，不能随几何快照失效而反复收起。
   @Local private editorLines: number = 0;
   // 全屏编辑面板。挂在本组件而不是页面：它编辑的就是这里的草稿，页面只通过
   // 已有的 onDraftChange / onSend 收结果。
@@ -103,7 +107,9 @@ export struct ChatComposerInput {
   // 判据：同仓库另外三个 bindSheet（ChatPage.diceSheetOpen /
   // stickerSetSheetOpen、ProxyPage.sheetOpen）都不带 private，都正常。
   @Local fullscreenOpen: boolean = false;
-  private linesRefreshTimer: number = -1;
+  private layoutRefreshPending: boolean = false;
+  private layoutGeneration: number = 0;
+  private layoutActive: boolean = false;
   @Param sendByEnter: boolean = false;
   @Param replyKeyboard: ReplyKeyboard | null = null;
   @Param replyKbCollapsed: boolean = false;
@@ -156,6 +162,13 @@ export struct ChatComposerInput {
     .backgroundColor($r('app.color.surface_alt'))
     .opacity(0.72)
     .scale({ x: 0.9, y: 0.9 })
+  }
+
+  @Styles
+  commandButtonNormalStyle() {
+    .backgroundColor(this.commandSuggestion.commandMenuOpen ? this.accentColor : Color.Transparent)
+    .opacity(1)
+    .scale({ x: 1, y: 1 })
   }
 
   @Styles
@@ -259,14 +272,21 @@ export struct ChatComposerInput {
   }
 
   private rowMaxHeight(): number {
-    return this.lineHeightVp() * COMPOSER_MAX_LINES +
+    const lineVp: number = this.lineHeightVp();
+    return Math.max(lineVp * COMPOSER_MAX_LINES, this.measuredEditorHeight(lineVp)) +
       COMPOSER_EDITOR_PADDING * 2 + COMPOSER_ROW_PADDING * 2;
+  }
+
+  private measuredEditorHeight(lineVp: number): number {
+    return composerMeasuredHeight(this.editorLayout, this.editorText, this.editorW,
+      lineVp, COMPOSER_MAX_LINES);
   }
 
   private editorHeight(): number {
     const lineVp: number = this.lineHeightVp();
     const oneLine: number = lineVp + COMPOSER_EDITOR_PADDING * 2;
-    const cap: number = lineVp * COMPOSER_MAX_LINES + COMPOSER_EDITOR_PADDING * 2;
+    const measured: number = this.measuredEditorHeight(lineVp);
+    const cap: number = Math.max(lineVp * COMPOSER_MAX_LINES, measured) + COMPOSER_EDITOR_PADDING * 2;
     if (this.draft === '' || this.editorW <= 0) {
       return oneLine;
     }
@@ -299,27 +319,17 @@ export struct ChatComposerInput {
       // 量不出来就退回一行，宁可矮也不要抖：TextArea 超出部分自己能滚。
       logE(`editorHeight measure failed: ${(e as Error).message}`);
     }
-    // 【为什么要和 editorLines 取大】measureTextSize **不知道系统字体**：它按默认
-    // 字体排版，而 TextArea 渲染用的是用户在系统设置里选的那一款。字宽一差，
-    // 同样的约束宽度下换行位置就不同，偏差随字数累积——用户报的正是"非默认字体
-    // 时，超过三行会连同光标一起闪动或消失"：估算说 3 行、真实排了 4 行，盒子
-    // 按 3 行开，第 4 行连同光标被切在盒子外面，TextArea 内部滚动去追光标，看着
-    // 就是闪一下或者不见了。
-    //
-    // 与其猜字体（系统字体名拿不到，TextArea 自己也没设 fontFamily），不如直接
-    // 问排了版的那个组件：TextAreaController 继承 TextContentControllerBase，
-    // 有 getTextContentLineCount()。估算负责即时响应（不等下一帧），真实行数负责
-    // 兜底纠偏，取大保证光标永远在盒子里。
-    const lines: number = Math.max(1,
-      Math.min(COMPOSER_MAX_LINES, Math.max(estimatedLines, this.editorLines)));
-    return Math.max(oneLine, Math.min(cap, lines * lineVp + COMPOSER_EDITOR_PADDING * 2));
+    // 估算用于即时响应；帧后同时用真实行数和文本区域高度纠偏。
+    // 只校正行数不足以覆盖系统字体与 emoji 混排造成的行高差异。
+    const lines: number = Math.max(1, Math.min(COMPOSER_MAX_LINES, estimatedLines));
+    return Math.max(oneLine,
+      Math.min(cap, Math.max(lines * lineVp, measured) + COMPOSER_EDITOR_PADDING * 2));
   }
 
   aboutToDisappear(): void {
-    if (this.linesRefreshTimer !== -1) {
-      clearTimeout(this.linesRefreshTimer);
-      this.linesRefreshTimer = -1;
-    }
+    this.layoutActive = false;
+    this.layoutGeneration++;
+    this.layoutRefreshPending = false;
   }
 
   // 隔一帧再问一次真实行数。
@@ -330,8 +340,8 @@ export struct ChatComposerInput {
   // 自锁。用户看到的是输入框只有一行高、内部却滚到了第二行——第一行连同开头
   // 那个字被顶出视野，像是"少显示了一个字"。
   //
-  // 延后一拍是必需的：onChange 回调跑的时候这次输入的排版还没落地，当场问到的
-  // 是上一次的行数。setTimeout(0) 落在本帧布局之后。
+  // onChange 中排版可能尚未落地；改用 FrameCallback.onIdle，不能把
+  // setTimeout(0) 当作布局完成通知。
   //
   // 顺带解决输入法**候选中的字**：那些字不在 this.draft 里（measureTextSize 因此
   // 一定漏算），但它们已经被 TextArea 排进去了，问组件就问得到。
@@ -339,6 +349,19 @@ export struct ChatComposerInput {
   // V2 用 @Monitor（@Watch 只在 V1 里有），名字必须是本 struct 的真实成员。
   aboutToAppear(): void {
     this.editorText = this.draft;
+    this.layoutActive = true;
+    this.editorLayout = undefined;
+    this.editorLines = 0;
+    this.scheduleLinesRefresh();
+  }
+
+  @Monitor('composerEditorReady')
+  onEditorReadyChanged(): void {
+    this.layoutGeneration++;
+    this.layoutRefreshPending = false;
+    this.editorLayout = undefined;
+    this.editorLines = 0;
+    this.scheduleLinesRefresh();
   }
 
   @Monitor('draft')
@@ -355,6 +378,7 @@ export struct ChatComposerInput {
     const next: number = caretAfterExternalEdit(this.editorText, this.draft, this.caretSeen);
     this.editorText = this.draft;
     this.caretSeen = next;
+    this.scheduleLinesRefresh();
     // 等这一帧的文本落地再挪光标，否则挪的是旧内容上的位置。
     setTimeout((): void => { this.composerController.caretPosition(next); }, 0);
   }
@@ -379,31 +403,59 @@ export struct ChatComposerInput {
   }
 
   private scheduleLinesRefresh(): void {
-    if (this.linesRefreshTimer !== -1) {
+    if (!this.layoutActive || !this.composerEditorReady || this.layoutRefreshPending) {
       return;
     }
-    this.linesRefreshTimer = setTimeout((): void => {
-      this.linesRefreshTimer = -1;
-      this.refreshEditorLines();
-    }, 0);
+    this.layoutRefreshPending = true;
+    const generation: number = this.layoutGeneration;
+    try {
+      this.getUIContext().postFrameCallback(new ComposerLayoutFrame((): void => {
+        if (!this.layoutActive || generation !== this.layoutGeneration) {
+          return;
+        }
+        this.layoutRefreshPending = false;
+        this.refreshEditorLines();
+      }));
+    } catch (e) {
+      this.layoutRefreshPending = false;
+    }
   }
 
-  // 问 TextArea 实际排了几行。布局还没落地时会抛，下一拍再问即可。
-  //
-  // 收敛性：行数只取决于文本与宽度，与我们设的高度无关，所以
-  // 「改高度 → onAreaChange → 重新问行数」最多走一轮就稳定，不会自激。
+  // 帧后读取 TextArea 的完整文字区域，不使用其滚动偏移作为高度。
+  // 内容/宽度不变时不重复写状态，避免「测量 → 改高度」持续请求渲染。
   private refreshEditorLines(): void {
-    if (this.draft === '') {
-      if (this.editorLines !== 0) {
-        this.editorLines = 0;
+    if (this.editorText === '') {
+      this.editorLines = 0;
+      if (this.editorLayout !== undefined) {
+        this.editorLayout = undefined;
       }
       return;
     }
     try {
       const lines: number = this.composerController.getTextContentLineCount();
-      if (lines > 0 && lines !== this.editorLines) {
+      if (Number.isFinite(lines) && lines > 0 && this.editorLines !== lines) {
         this.editorLines = lines;
       }
+      const rect = this.composerController.getTextContentRect();
+      if (rect === undefined || lines <= 0 || this.editorW <= 0) {
+        return;
+      }
+      const height: number = px2vp(rect.height);
+      if (!Number.isFinite(height) || height < 0) {
+        return;
+      }
+      const lineVp: number = this.lineHeightVp();
+      const previous: ComposerLayoutMeasurement | undefined = this.editorLayout;
+      if (previous !== undefined && previous.text === this.editorText &&
+        previous.lines === lines && Math.abs(previous.widthVp - this.editorW) <= 0.5 &&
+        Math.abs(previous.probeLineVp - lineVp) <= 0.01 &&
+        Math.abs(previous.contentHeightVp - height) <= 0.5) {
+        return;
+      }
+      this.editorLayout = {
+        text: this.editorText, widthVp: this.editorW, probeLineVp: lineVp,
+        contentHeightVp: height, lines: lines
+      };
     } catch (e) {
       // 首帧/重建期问不到是正常的，保持上一次的值。
     }
@@ -438,13 +490,13 @@ export struct ChatComposerInput {
         .borderRadius(23)
         .alignSelf(ItemAlign.End)
         .margin({ bottom: 1 })
-        // 玻璃自绘（plainGlassFill + plainBackdropBlur：明确不指望材质，
-        // 组件级 systemMaterial 已被系统收回），光感走 hdsEffect 的 visualEffect
-        // ——那是另一条通道，6.0.0(20) 起，见 util/hdsPointLight。
-        // 这颗是**控件**，走 'control' 档：只有那一档同时给点光源和按压阴影。
+        // Dark mode uses a solid outline instead of point light/press shadow.
+        // Clip the blurred fill to the same rounded boundary as the outline.
         .backgroundColor(plainGlassFill($r('app.color.surface')))
         .backdropBlur(plainBackdropBlur('control'))
-        .visualEffect(hdsVisualEffect('control'))
+        .visualEffect(hdsVisualEffect('control', !this.appDark))
+        .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+        .clip(this.appDark)
         .onClick((): void => { this.onToggleAttach(); });
       }
       Column() {
@@ -476,9 +528,9 @@ export struct ChatComposerInput {
         Row({ space: 6 }) {
           if (this.recording.isRecording) {
             Row({ space: 7 }) {
-              Circle({ width: 8, height: 8 }).fill('#FF3B30');
+              Circle({ width: 8, height: 8 }).fill(this.recording.readyToSend ? COLOR_TEXT_SECONDARY : '#FF3B30');
               Text(this.recording.secondsLabel()).fontSize(15).fontColor(COLOR_TEXT_PRIMARY);
-              Text($r('app.string.cp_recording')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
+              Text(this.recording.readyToSend ? $r('app.string.mm_voice_messages') : $r('app.string.cp_recording')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY);
             }.layoutWeight(1).alignItems(VerticalAlign.Center);
             Button($r('app.string.cancel')).fontSize(13).fontColor(COLOR_TEXT_SECONDARY)
               .stateStyles({
@@ -499,24 +551,24 @@ export struct ChatComposerInput {
             .onClick((): void => { this.onFinishRecording(); });
           } else {
             if (this.commandSuggestion.botMenuAvailable) {
-              Row({ space: 4 }) {
-                SymbolGlyph($r(this.commandSuggestion.commandMenuOpen ? 'sys.symbol.xmark' : 'sys.symbol.line_3_horizontal'))
-                  .fontSize(15).fontColor([Color.White]);
-                Text(this.commandSuggestion.commandMenuOpen ? $r('app.string.close') : $r('app.string.cp_menu'))
-                  .fontSize(13).fontColor(Color.White);
+              Row() {
+                Text(this.commandSuggestion.commandMenuOpen ? '×' : '/')
+                  .fontSize(22).fontWeight(FontWeight.Medium).fontColor(this.commandSuggestion.commandMenuOpen ? Color.White : this.chromeIconColor);
               }
-              .padding({ left: 9, right: 10, top: 6, bottom: 6 })
+              .width(32).height(32).justifyContent(FlexAlign.Center)
+              .accessibilityText(this.commandSuggestion.commandMenuOpen ? str('close') : str('cp_bot_commands'))
               .borderRadius(15)
               .stateStyles({
-                normal: this.composerPrimaryNormalStyle,
-                pressed: this.composerPrimaryPressedStyle
+                normal: this.commandButtonNormalStyle,
+                pressed: this.composerIconPressedStyle
               })
               .animation({ duration: this.smoothEffectDuration(120), curve: Curve.EaseOut })
               .onClick((): void => { this.onToggleBotMenu(); });
             }
-            SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.face_smiling_fill' : 'sys.symbol.face_smiling'))
+            SymbolGlyph($r(this.showEmojiPanel ? 'sys.symbol.keyboard' : 'sys.symbol.face_smiling'))
               .fontSize(24)
               .fontColor([this.showEmojiPanel ? this.accentColor : this.chromeIconColor])
+              .accessibilityText(this.showEmojiPanel ? str('cp_show_keyboard') : str('emoji_panel_a11y'))
               .onClick((): void => { this.onEmojiButtonTap(); });
             if (this.composerEditorReady) {
               TextArea({
@@ -545,15 +597,17 @@ export struct ChatComposerInput {
                 .barState(BarState.Auto)
                 .backgroundColor(Color.Transparent)
                 .key('chat_composer')
+                .allowDrop(null)
                 .onAreaChange((old: Area, area: Area): void => {
                   const next: number = area.width as number;
                   // 0.5vp 以内的抖动不写：宽度是排版约束，写一次就要重算一次高度。
                   if (Math.abs(next - this.editorW) > 0.5) {
                     this.editorW = next;
+                    this.scheduleLinesRefresh();
                   }
                   // 盒子高度刚变过 = 刚重排过，这时问到的行数才是新的。
                   if (Math.abs((area.height as number) - (old.height as number)) > 0.5) {
-                    this.refreshEditorLines();
+                    this.scheduleLinesRefresh();
                   }
                 })
                 .onTextSelectionChange((start: number, _end: number): void => {
@@ -565,8 +619,7 @@ export struct ChatComposerInput {
                 .onChange((value: string): void => {
                   this.editorText = value;
                   this.onDraftChange(value);
-                  // 当场问一次（拿到的是上一拍的），再隔一帧问一次拿真值。
-                  this.refreshEditorLines();
+                  // 合并同帧输入，在渲染任务结束后读取真实排版。
                   this.scheduleLinesRefresh();
                 })
                 .enterKeyType(this.sendByEnter ? EnterKeyType.Send : EnterKeyType.NEW_LINE)
@@ -660,7 +713,9 @@ export struct ChatComposerInput {
       .backdropBlur(plainBackdropBlur('card'))
       // 'card' 档：给点光源、不给按压阴影——整块面板跟着手指变形很怪，
       // 这条判据在 overlayMaterial.interactionBase 里，和材质那条路共用。
-      .visualEffect(hdsVisualEffect('card'));
+      .visualEffect(hdsVisualEffect('card', !this.appDark))
+      .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
+      .clip(this.appDark);
     }
     .width('100%')
     .padding({

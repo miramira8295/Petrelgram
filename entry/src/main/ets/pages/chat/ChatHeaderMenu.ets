@@ -51,6 +51,8 @@ export interface ChatHeaderMenuParams {
   isChannel: boolean;
   liveLocationActive: boolean;
   translationActive: boolean;
+  pinnedHidden: boolean;
+  onTogglePinned: () => void;
   canClearHistory: boolean;
   canLeaveChat: boolean;
   onSearch: () => void;
@@ -76,6 +78,8 @@ struct ChatHeaderMenu {
   isChannel: boolean = false;
   liveLocationActive: boolean = false;
   translationActive: boolean = false;
+  pinnedHidden: boolean = false;
+  onTogglePinned: () => void = (): void => {};
   canClearHistory: boolean = false;
   canLeaveChat: boolean = false;
   onSearch: () => void = (): void => {};
@@ -180,7 +184,7 @@ struct ChatHeaderMenu {
   // 条件项也一并算进去：菜单宽度不该随着"这个会话是不是群"跳来跳去。
   private menuWidth(): number {
     return menuWidthFor([
-      str('cp_search'),
+      str('cp_search'), str('cp_hide_pinned'), str('cp_show_pinned'),
       str('cp_updating_notifications'), str('cp_unmute'), str('cp_mute'),
       str('cl_add_to_folder'), str('cp_auto_delete'), str('cp_jump_to_date'),
       str('cp_stop_location'),
@@ -216,6 +220,9 @@ struct ChatHeaderMenu {
         false, this.onToggleMute);
       Divider().color($r('app.color.divider')).strokeWidth(0.7);
       if (this.isGroup) {
+        actionMenuRow(this.pinnedHidden ? 'sys.symbol.eye' : 'sys.symbol.eye_slash',
+          this.pinnedHidden ? str('cp_show_pinned') : str('cp_hide_pinned'), false, this.onTogglePinned);
+        Divider().color($r('app.color.divider')).strokeWidth(0.7);
         this.folderParentRow();
         Divider().color($r('app.color.divider')).strokeWidth(0.7);
       }
@@ -261,6 +268,8 @@ function chatHeaderMenuLayer(params: ChatHeaderMenuParams) {
     isChannel: params.isChannel,
     liveLocationActive: params.liveLocationActive,
     translationActive: params.translationActive,
+    pinnedHidden: params.pinnedHidden,
+    onTogglePinned: params.onTogglePinned,
     canClearHistory: params.canClearHistory,
     canLeaveChat: params.canLeaveChat,
     onSearch: params.onSearch,
@@ -392,6 +401,8 @@ export class ChatHeaderMenuController {
       isChannel: params.isChannel,
       liveLocationActive: params.liveLocationActive,
       translationActive: params.translationActive,
+      pinnedHidden: params.pinnedHidden,
+      onTogglePinned: (): void => { this.close(params.onTogglePinned); },
       canClearHistory: params.canClearHistory,
       canLeaveChat: params.canLeaveChat,
       onSearch: (): void => { this.close(params.onSearch); },

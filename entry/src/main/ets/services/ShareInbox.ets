@@ -28,6 +28,21 @@ const MAX_RECORDS: number = 20;
 
 // 待处理的分享。主应用取走之前一直放在这里。
 let pending: SharedPayload | null = null;
+let generation: number = 0;
+
+export function pendingShareGeneration(): number { return generation; }
+const pendingListeners: Set<() => void> = new Set<() => void>();
+
+export function onPendingShareChanged(listener: () => void): () => void {
+  pendingListeners.add(listener);
+  return (): void => { pendingListeners.delete(listener); };
+}
+
+export function clearPendingShareIf(expected: SharedPayload): boolean {
+  if (pending !== expected) { return false; }
+  pending = null;
+  return true;
+}
 
 export function takePendingShare(): SharedPayload | null {
   const payload: SharedPayload | null = pending;
@@ -70,6 +85,8 @@ export function notifyShareTargeted(chatId: number): void {
 
 export function stashPendingShare(payload: SharedPayload): void {
   pending = payload;
+  generation++;
+  pendingListeners.forEach((listener: () => void): void => listener());
 }
 
 // 这个 want 是不是"别人分享东西给我们"。

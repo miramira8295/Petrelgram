@@ -36,7 +36,6 @@ export interface CommandItem {
 }
 
 const MENTION_LIMIT: number = 12;
-const BOT_LIMIT: number = 50;
 
 function displayNameOf(user: TdObject): string {
   const first = (user['first_name'] as string | undefined) ?? '';
@@ -128,76 +127,82 @@ export function mentionOfUser(client: TdClient, userId: number): Promise<Mention
   });
 }
 
-function commandsOfFullInfo(full: TdObject, botUserId: number, botUsername: string): CommandItem[] {
+export interface CommandTarget {
+  updateType: string;
+  idField: string;
+  infoField: string;
+  id: number;
+  privateChat: boolean;
+}
+
+function commandRows(commands: TdObject[], botUserId: number, botUsername: string): CommandItem[] {
+  const seen: Set<string> = new Set<string>();
   const items: CommandItem[] = [];
-  const botInfo = full['bot_info'] as TdObject | undefined;
-  const cmds = botInfo !== undefined ? (botInfo['commands'] as TdObject[] | undefined) : undefined;
-  if (cmds === undefined) {
-    return items;
-  }
-  for (const c of cmds) {
+  for (const c of commands) {
     const command = (c['command'] as string | undefined) ?? '';
-    if (command !== '') {
-      items.push({
-        command,
-        description: (c['description'] as string | undefined) ?? '',
-        botUserId,
-        botUsername
-      });
-    }
+    if (!/^[a-zA-Z0-9_]{1,32}$/.test(command) || seen.has(command)) { continue; }
+    seen.add(command);
+    items.push({ command, description: (c['description'] as string | undefined) ?? '', botUserId, botUsername });
   }
   return items;
 }
 
-function getFullInfoCommands(client: TdClient, userId: number,
-  botUsername: string = ''): Promise<CommandItem[]> {
-  const req: TdRequest = { '@type': 'getUserFullInfo' };
-  req['user_id'] = userId;
-  return client.send(req).then((full: TdObject) =>
-    commandsOfFullInfo(full, userId, botUsername));
-}
-
-function getGroupBotCommands(client: TdClient, userId: number): Promise<CommandItem[]> {
-  return getUser(client, userId).then((user: TdObject) =>
-    getFullInfoCommands(client, userId, usernameOf(user)));
-}
-
-// Bot commands available in this chat. Private bot chat: the peer's own
-// commands. Groups: commands of every bot member, merged.
-export function loadBotCommands(client: TdClient, chatId: number, peerUserId: number): Promise<CommandItem[]> {
-  if (peerUserId > 0) {
-    return getFullInfoCommands(client, peerUserId);
+// Only commands declared for this chat; a bot's private menu can differ from its group menu.
+export async function commandsFromInfo(client: TdClient, target: CommandTarget, full: TdObject): Promise<CommandItem[]> {
+  if (target.privateChat) {
+    const info = full['bot_info'] as TdObject | undefined;
+    return commandRows((info?.['commands'] as TdObject[] | undefined) ?? [], target.id, '');
   }
-  const req: TdRequest = { '@type': 'searchChatMembers' };
-  req['chat_id'] = chatId;
-  req['query'] = '';
-  req['limit'] = BOT_LIMIT;
-  req['filter'] = { '@type': 'chatMembersFilterBots' } as TdObject;
-  return client.send(req).then((res: TdObject) => {
-    const ids = memberUserIds(res);
-    // One inaccessible bot must not hide commands from every other bot in the
-    // group; the member-list request itself still rejects so the UI can show a
-    // real loading error instead of an indistinguishable empty catalog.
-    const fetches: Array<Promise<CommandItem[]>> = ids.map((uid: number) =>
-      getGroupBotCommands(client, uid).catch((e: TdError) => {
-        logE(`get bot commands ${uid} failed: ${e.message}`);
-        const empty: CommandItem[] = [];
-        return empty;
-      }));
-    return Promise.all(fetches).then((lists: CommandItem[][]) => {
-      const merged: CommandItem[] = [];
-      const seen: Set<string> = new Set<string>();
-      for (const list of lists) {
-        for (const item of list) {
-          const key = `${item.command.toLowerCase()}@${item.botUsername.toLowerCase()}`;
-          if (seen.has(key)) {
-            continue;
-          }
-          seen.add(key);
-          merged.push(item);
-        }
-      }
-      return merged;
-    });
-  });
+  const groups = (full['bot_commands'] as TdObject[] | undefined) ?? [];
+  const items: CommandItem[] = [];
+  const seen: Set<number> = new Set<number>();
+  // Small bounded batches avoid flooding TDLib when a group has many bots.
+  for (let i = 0; i < groups.length; i += 8) {
+    const batch = groups.slice(i, i + 8);
+    const lists = await Promise.all(batch.map(async (group: TdObject): Promise<CommandItem[]> => {
+      const id = (group['bot_user_id'] as number | undefined) ?? 0;
+      if (id <= 0 || seen.has(id)) { return []; }
+      seen.add(id);
+      const commands = (group['commands'] as TdObject[] | undefined) ?? [];
+      if (commands.length === 0) { return []; }
+      const user = await getUser(client, id);
+      const username = usernameOf(user);
+      // A group command without its bot address could target the wrong bot.
+      return username === '' ? [] : commandRows(commands, id, username);
+    }));
+    for (const list of lists) { items.push(...list); }
+  }
+  return items;
+}
+
+export async function loadBotCommands(client: TdClient, chatId: number, peerUserId: number,
+  onTarget: (target: CommandTarget) => void = (): void => {}): Promise<CommandItem[]> {
+  let peer = peerUserId;
+  let type: TdObject = { '@type': 'chatTypePrivate' };
+  if (peer <= 0) {
+    const req: TdRequest = { '@type': 'getChat' };
+    req['chat_id'] = chatId;
+    const chat = await client.send(req);
+    type = (chat['type'] as TdObject | undefined) ?? { '@type': '' };
+    if (type['@type'] === 'chatTypePrivate') { peer = (type['user_id'] as number | undefined) ?? 0; }
+  }
+  let target: CommandTarget;
+  let method: string;
+  if (peer > 0) {
+    target = { updateType: 'updateUserFullInfo', idField: 'user_id', infoField: 'user_full_info', id: peer, privateChat: true };
+    method = 'getUserFullInfo';
+  } else if (type['@type'] === 'chatTypeBasicGroup') {
+    target = { updateType: 'updateBasicGroupFullInfo', idField: 'basic_group_id', infoField: 'basic_group_full_info',
+      id: (type['basic_group_id'] as number | undefined) ?? 0, privateChat: false };
+    method = 'getBasicGroupFullInfo';
+  } else if (type['@type'] === 'chatTypeSupergroup' && type['is_channel'] !== true) {
+    target = { updateType: 'updateSupergroupFullInfo', idField: 'supergroup_id', infoField: 'supergroup_full_info',
+      id: (type['supergroup_id'] as number | undefined) ?? 0, privateChat: false };
+    method = 'getSupergroupFullInfo';
+  } else { return []; }
+  if (target.id <= 0) { return []; }
+  onTarget(target);
+  const req: TdRequest = { '@type': method };
+  req[target.idField] = target.id;
+  return commandsFromInfo(client, target, await client.send(req));
 }

@@ -49,6 +49,7 @@ import { logChatNavFailure, navigateToChat } from '../../util/chatNav';
 import { logI } from '../../util/log';
 import { APPEARANCE_EPOCH } from '../../util/appearance';
 import { firstFinger } from '../../util/firstFinger';
+import { ChatListRowState } from './ChatListRowState';
 
 // 等上下文菜单收起再弹确认框。菜单是独立子窗口，收起过程中弹出的
 // 对话框会挂死（Promise 既不 resolve 也不 reject）。
@@ -90,7 +91,7 @@ export struct ChatRow {
   @StorageProp(SURFACE_GLASS_EPOCH) private surfaceGlassEpoch: number = 0;
   // 由 MainScreen 算好写进 AppStorage 的「APP 壁纸生效中」，见 store/AppSettings。
   @StorageProp(KEY_APP_BG_ON) private appWallpaperOn: boolean = false;
-  @Prop chat: ChatEntry;
+  @ObjectLink @Watch('onRowChanged') row: ChatListRowState;
   // The list this row is being shown in — pinning is per-list, and the menu
   // offers 取消归档 instead of 归档 inside the archive.
   @Prop listKey: string;
@@ -111,6 +112,7 @@ export struct ChatRow {
   // 长按落点相对行中心的水平偏移，交给 bindContextMenu 的 offset。
   @State menuOffsetX: number = 0;
   private livePulseTimer: number = -1;
+  private rowActive: boolean = false;
   // A long press is only valid for the exact row snapshot that was under the
   // finger on TouchType.Down. A new message can update the row revision or
   // reorder it while the recognition timer is running.
@@ -122,7 +124,8 @@ export struct ChatRow {
   private pressConsumedByMenu: boolean = false;
 
   aboutToAppear(): void {
-    this.startLivePulse(this.chat.isLive);
+    this.rowActive = true;
+    this.startLivePulse(this.row.snapshot.chat.isLive);
   }
 
   // Recycling is NOT destruction: a reused row goes to the pool and
@@ -133,24 +136,35 @@ export struct ChatRow {
   }
 
   aboutToReuse(params: Record<string, Object>): void {
-    // Only this row's own state is re-seeded — @Prop is refreshed by the
-    // framework, and assigning it here is what tore MessageBubble's parallel
-    // arrays apart.
+    // ObjectLink is rebound by the framework. Do not assign the parent row.
+    this.rowActive = true;
     this.livePulseExpanded = false;
     this.contextMenuShown = false;
     this.pressActive = false;
     this.pressRevision = -1;
     this.pressIndex = -1;
     this.pressConsumedByMenu = false;
-    // isLive comes from params, not this.chat: that refresh lands after this
-    // callback, so reading the field here would arm the pulse from the row
-    // being replaced rather than the one arriving.
-    const next = params.chat as ChatEntry | undefined;
-    this.startLivePulse(next !== undefined && next.isLive);
+    // Params cover the reuse callback; ObjectLink watch covers later rebinding
+    // and subsequent content changes while the component remains mounted.
+    const next = params.row as ChatListRowState | undefined;
+    this.syncLivePulse(next !== undefined && next.snapshot.chat.isLive);
   }
 
   aboutToDisappear(): void {
     this.teardown();
+  }
+
+  private onRowChanged(): void {
+    if (this.rowActive) { this.syncLivePulse(this.row.snapshot.chat.isLive); }
+  }
+
+  private syncLivePulse(isLive: boolean): void {
+    if (!isLive) {
+      if (this.livePulseTimer !== -1) { clearInterval(this.livePulseTimer); this.livePulseTimer = -1; }
+      this.livePulseExpanded = false;
+      return;
+    }
+    this.startLivePulse(true);
   }
 
   private startLivePulse(isLive: boolean): void {
@@ -167,6 +181,7 @@ export struct ChatRow {
   }
 
   private teardown(): void {
+    this.rowActive = false;
     if (this.livePulseTimer !== -1) {
       clearInterval(this.livePulseTimer);
       this.livePulseTimer = -1;
@@ -184,36 +199,36 @@ export struct ChatRow {
   private matchingFolders(): FolderInfo[] {
     if (!this.folderTagsEnabled) { return []; }
     return this.folders().filter((folder: FolderInfo): boolean =>
-      getChatStore().isInFolder(folder.id, this.chat.id));
+      getChatStore().isInFolder(folder.id, this.row.snapshot.chat.id));
   }
 
   private isPinned(): boolean {
-    return getChatStore().isPinned(this.listKey, this.chat.id);
+    return getChatStore().isPinned(this.listKey, this.row.snapshot.chat.id);
   }
 
   // 这一行的草稿预览（空串 = 没有草稿）。读一下 draftEpoch 才会建立依赖。
   private draftPreview(): string {
-    return this.draftEpoch >= 0 ? localDraftPreview(this.chat.id) : '';
+    return this.draftEpoch >= 0 ? localDraftPreview(this.row.snapshot.chat.id) : '';
   }
 
   private isArchived(): boolean {
-    return getChatStore().isArchived(this.chat.id);
+    return getChatStore().isArchived(this.row.snapshot.chat.id);
   }
 
   // Unread by count OR by the manual flag — either state offers 标记为已读.
   private isUnread(): boolean {
-    return this.chat.unreadCount > 0 || this.chat.isMarkedUnread;
+    return this.row.snapshot.chat.unreadCount > 0 || this.row.snapshot.chat.isMarkedUnread;
   }
 
   private unreadLabel(): string {
-    return unreadBadgeText(this.chat.unreadCount);
+    return unreadBadgeText(this.row.snapshot.chat.unreadCount);
   }
 
   // 这一行到底静不静音。**不能直接读 chat.isMuted**：那是 TDLib 的
   // mute_for > 0，而 use_default_mute_for 为 true 时 mute_for 是无意义的，
   // 真实状态在分类默认里（issue #110：官版显示静音、我们显示没静音）。
   private muted(): boolean {
-    return effectiveMuted(this.chat, scopeMutedForKind(this.chat.kind));
+    return effectiveMuted(this.row.snapshot.chat, scopeMutedForKind(this.row.snapshot.chat.kind));
   }
 
   // 读屏关着时不拼这段话——它每行每次渲染都要求值，里面还有一次 plural()
@@ -227,7 +242,7 @@ export struct ChatRow {
     if (this.a11yEpoch >= 0 && !screenReaderOn()) {
       return '';
     }
-    const parts: string[] = [this.chat.title];
+    const parts: string[] = [this.row.snapshot.chat.title];
     if (this.isPinned()) {
       parts.push(str('cl_pinned'));
     }
@@ -235,22 +250,22 @@ export struct ChatRow {
       parts.push(str('cl_muted'));
     }
     if (this.isUnread()) {
-      parts.push(this.chat.unreadCount > 0 ? plural('cl_unread_n', this.chat.unreadCount, this.chat.unreadCount) : str('cl_mark_unread'));
+      parts.push(this.row.snapshot.chat.unreadCount > 0 ? plural('cl_unread_n', this.row.snapshot.chat.unreadCount, this.row.snapshot.chat.unreadCount) : str('cl_mark_unread'));
     }
-    if (this.chat.unreadMentionCount > 0) { parts.push(str('cp_unread_mentions')); }
-    if (this.chat.lastMessageText !== '') {
-      parts.push(this.chat.lastMessageText);
+    if (this.row.snapshot.chat.unreadMentionCount > 0) { parts.push(str('cp_unread_mentions')); }
+    if (this.row.snapshot.chat.lastMessageText !== '') {
+      parts.push(this.row.snapshot.chat.lastMessageText);
     }
     return parts.join('，');
   }
 
   private currentIndex(): number {
     return getChatStore().getChats(this.listKey)
-      .findIndex((entry: ChatEntry): boolean => entry.id === this.chat.id);
+      .findIndex((entry: ChatEntry): boolean => entry.id === this.row.snapshot.chat.id);
   }
 
   private beginPress(): void {
-    const current = getChatStore().entryOf(this.chat.id);
+    const current = getChatStore().entryOf(this.row.snapshot.chat.id);
     this.pressConsumedByMenu = false;
     this.pressActive = current !== undefined;
     this.pressRevision = current?.revision ?? -1;
@@ -280,7 +295,7 @@ export struct ChatRow {
 
   private openContextMenuIfCurrent(event: GestureEvent): void {
     this.recordMenuOffset(event);
-    const current = getChatStore().entryOf(this.chat.id);
+    const current = getChatStore().entryOf(this.row.snapshot.chat.id);
     const unchanged = this.pressActive && current !== undefined
       && current.revision === this.pressRevision
       && this.currentIndex() === this.pressIndex;
@@ -299,11 +314,11 @@ export struct ChatRow {
   // "Can't delete history of X only for self"（issue: 老张观影群）。
   private clearOptions(): ClearHistoryOption[] {
     return clearHistoryOptions(
-      this.chat.canDeleteOnlyForSelf, this.chat.canDeleteForAllUsers, this.chat.kind);
+      this.row.snapshot.chat.canDeleteOnlyForSelf, this.row.snapshot.chat.canDeleteForAllUsers, this.row.snapshot.chat.kind);
   }
 
   private canClear(): boolean {
-    return canClearHistory(this.chat.canDeleteOnlyForSelf, this.chat.canDeleteForAllUsers);
+    return canClearHistory(this.row.snapshot.chat.canDeleteOnlyForSelf, this.row.snapshot.chat.canDeleteForAllUsers);
   }
 
   private confirmClearHistory(): void {
@@ -317,10 +332,10 @@ export struct ChatRow {
       // 用 str() 而不是 $r()：$r 的 key 必须是编译期字面量，这里是按能力位选出来的。
       buttons.push({ text: str(opt.labelKey), color: '#E64646' });
     }
-    const chatId: number = this.chat.id;
+    const chatId: number = this.row.snapshot.chat.id;
     this.showConfirm({
       title: $r('app.string.cp_clear_history'),
-      message: str('cl_clear_confirm', this.chat.title),
+      message: str('cl_clear_confirm', this.row.snapshot.chat.title),
       buttons: buttons
     }, 'confirmClearHistory', (index: number): void => {
       // index 0 是取消，其余按钮与 options 一一对应。
@@ -352,15 +367,15 @@ export struct ChatRow {
   }
 
   private confirmLeave(): void {
-    const label = leaveLabel(this.chat.kind);
-    const chatId: number = this.chat.id;
-    const kind: ChatKind = this.chat.kind;
-    const title: string = this.chat.title;
+    const label = leaveLabel(this.row.snapshot.chat.kind);
+    const chatId: number = this.row.snapshot.chat.id;
+    const kind: ChatKind = this.row.snapshot.chat.kind;
+    const title: string = this.row.snapshot.chat.title;
     // 只有私聊能屏蔽：私聊的 chat_id 就是对方 user_id；密聊的 chat_id 是会话
     // id，群和频道也没有单一发送者可屏蔽。
     const canBlock: boolean = kind === 'private';
-    const canOnlyForSelf: boolean = this.chat.canDeleteOnlyForSelf;
-    const canForAllUsers: boolean = this.chat.canDeleteForAllUsers;
+    const canOnlyForSelf: boolean = this.row.snapshot.chat.canDeleteOnlyForSelf;
+    const canForAllUsers: boolean = this.row.snapshot.chat.canDeleteForAllUsers;
     const buttons: promptAction.Button[] = canBlock
       ? [
         { text: $r('app.string.cancel'), color: COLOR_TEXT_SECONDARY as string },
@@ -459,7 +474,7 @@ export struct ChatRow {
     Menu() {
       ForEach(MUTE_OPTIONS, (opt: MuteOption) => {
         MenuItem({ content: opt.label })
-          .onClick(() => { setMute(this.chat.id, opt.seconds); });
+          .onClick(() => { setMute(this.row.snapshot.chat.id, opt.seconds); });
       }, (opt: MuteOption) => `${opt.seconds}`);
     }
   }
@@ -473,10 +488,10 @@ export struct ChatRow {
         ForEach(this.folders(), (f: FolderInfo) => {
           // Tapping a folder the chat already belongs to removes it again.
           MenuItem({
-            content: getChatStore().isInFolder(f.id, this.chat.id) ? `${f.title}  ✓` : f.title
+            content: getChatStore().isInFolder(f.id, this.row.snapshot.chat.id) ? `${f.title}  ✓` : f.title
           })
             .onClick(() => {
-              setInFolder(f.id, this.chat.id, !getChatStore().isInFolder(f.id, this.chat.id));
+              setInFolder(f.id, this.row.snapshot.chat.id, !getChatStore().isInFolder(f.id, this.row.snapshot.chat.id));
             });
         }, (f: FolderInfo) => `${f.id}`);
       }
@@ -490,14 +505,14 @@ export struct ChatRow {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.pin')),
         content: this.isPinned() ? $r('app.string.ft_unpin') : $r('app.string.ft_pin')
       })
-        .onClick(() => { togglePin(this.listKey, this.chat.id, !this.isPinned()); });
+        .onClick(() => { togglePin(this.listKey, this.row.snapshot.chat.id, !this.isPinned()); });
 
       if (this.muted()) {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bell')),
           content: $r('app.string.cp_unmute')
         })
-          .onClick(() => { setMute(this.chat.id, 0); });
+          .onClick(() => { setMute(this.row.snapshot.chat.id, 0); });
       } else {
         MenuItem({
           symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.bell_slash')),
@@ -512,9 +527,9 @@ export struct ChatRow {
       })
         .onClick(() => {
           if (this.isUnread()) {
-            markAsRead(this.chat.id, this.chat.lastMessageId);
+            markAsRead(this.row.snapshot.chat.id, this.row.snapshot.chat.lastMessageId);
           } else {
-            markUnread(this.chat.id, true);
+            markUnread(this.row.snapshot.chat.id, true);
           }
         });
 
@@ -522,7 +537,7 @@ export struct ChatRow {
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.archivebox')),
         content: this.isArchived() ? $r('app.string.cl_unarchive') : $r('app.string.cl_archive')
       })
-        .onClick(() => { setArchived(this.chat.id, !this.isArchived()); });
+        .onClick(() => { setArchived(this.row.snapshot.chat.id, !this.isArchived()); });
 
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.folder_badge_plus')),
@@ -540,7 +555,7 @@ export struct ChatRow {
 
       MenuItem({
         symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.xmark_circle')).fontColor([Color.Red]),
-        content: leaveLabel(this.chat.kind)
+        content: leaveLabel(this.row.snapshot.chat.kind)
       })
         .onClick(() => { this.confirmLeave(); });
     }
@@ -555,13 +570,13 @@ export struct ChatRow {
     Row({ space: 12 }) {
       AvatarView({
         avatarSize: this.spec().avatar,
-        avatarPath: this.chat.avatarPath,
-        initials: this.chat.initials,
-        colorSeed: this.chat.id,
-        autoDeleteTime: this.chat.autoDeleteTime,
-        isLive: this.chat.isLive,
+        avatarPath: this.row.snapshot.chat.avatarPath,
+        initials: this.row.snapshot.chat.initials,
+        colorSeed: this.row.snapshot.chat.id,
+        autoDeleteTime: this.row.snapshot.chat.autoDeleteTime,
+        isLive: this.row.snapshot.chat.isLive,
         livePulseExpanded: this.livePulseExpanded,
-        savedMessages: this.chat.isSavedMessages,
+        savedMessages: this.row.snapshot.chat.isSavedMessages,
         loadImage: this.loadImages
       });
       // 标题与预览之间。这个数和行高、头像、预览字号是一组的，见 CHAT_ROW_MIN_HEIGHT。
@@ -570,13 +585,13 @@ export struct ChatRow {
           // 密聊在名字前挂一把锁：这是行里唯一能把它和普通私聊区分开的标记，
           // 而两者的行为差别很大（端到端、不同步到别的设备、可能已关闭）。
           // 颜色用绿色而不是强调色——和 Telegram 各端一致，也不会随主题变淡。
-          if (this.chat.kind === 'secret') {
+          if (this.row.snapshot.chat.kind === 'secret') {
             SymbolGlyph($r('sys.symbol.lock_fill'))
               .fontSize(13).fontColor(['#31C48D'])
               .margin({ right: 3 }).flexShrink(0);
           }
-          Text(this.chat.isSavedMessages
-            ? $r('app.string.cl_saved_messages') : this.chat.title)
+          Text(this.row.snapshot.chat.isSavedMessages
+            ? $r('app.string.cl_saved_messages') : this.row.snapshot.chat.title)
             .fontSize(17).fontWeight(FontWeight.Medium).fontColor(COLOR_TEXT_PRIMARY)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1);
           if (this.muted()) {
@@ -604,22 +619,22 @@ export struct ChatRow {
             Text($r('app.string.cl_draft_prefix'))
               .fontSize(14).fontColor('#E5484D')
               .maxLines(1).flexShrink(0);
-          } else if (this.chat.lastSenderName !== '') {
-            Text(`${this.chat.lastSenderName}: `)
+          } else if (this.row.snapshot.chat.lastSenderName !== '') {
+            Text(`${this.row.snapshot.chat.lastSenderName}: `)
               .fontSize(14).fontColor(this.accent())
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               .constraintSize({ maxWidth: 112 });
           }
           // 预览小图（issue #202）：minithumbnail 的 data URL，18vp，只在有媒体时多这一个节点。
-          if (CHATLIST_PREVIEW_THUMB_ENABLED && this.chat.lastMessageThumb !== '') {
-            Image(this.chat.lastMessageThumb).draggable(false)
+          if (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== '') {
+            Image(this.row.snapshot.chat.lastMessageThumb).draggable(false)
               .width(18).height(18).borderRadius(3).objectFit(ImageFit.Cover)
               .sourceSize({ width: 54, height: 54 }).autoResize(true)
               .margin({ right: 5, top: 1 }).flexShrink(0);
           }
           Text(this.draftPreview() !== '' ? this.draftPreview()
-            : (CHATLIST_PREVIEW_THUMB_ENABLED && this.chat.lastMessageThumb !== ''
-              ? stripPreviewIcon(this.chat.lastMessageText) : this.chat.lastMessageText))
+            : (CHATLIST_PREVIEW_THUMB_ENABLED && this.row.snapshot.chat.lastMessageThumb !== ''
+              ? stripPreviewIcon(this.row.snapshot.chat.lastMessageText) : this.row.snapshot.chat.lastMessageText))
             .fontSize(this.spec().previewFont).fontColor(COLOR_TEXT_SECONDARY)
             .maxLines(this.threeLines ? 2 : 1)
             .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
@@ -630,15 +645,15 @@ export struct ChatRow {
           if (this.isPinned()) {
             SymbolGlyph($r('sys.symbol.pin')).fontSize(11).fontColor([COLOR_ICON_SECONDARY]);
           }
-          Text(formatTime(this.chat.lastMessageDate, this.nowSec))
+          Text(formatTime(this.row.snapshot.chat.lastMessageDate, this.nowSec))
             .fontSize(12).fontColor(COLOR_TEXT_SECONDARY);
         }
         Row({ space: 5 }) {
-          if (this.chat.unreadMentionCount > 0) {
+          if (this.row.snapshot.chat.unreadMentionCount > 0) {
             Text('@').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.accent())
               .height(22).align(Alignment.Center).accessibilityText($r('app.string.cp_unread_mentions'));
           }
-          if (this.chat.unreadCount > 0) {
+          if (this.row.snapshot.chat.unreadCount > 0) {
             // 数字胶囊与独立的重点色 @ 并排，静音只淡化数字。
             Text(this.unreadLabel())
               .fontSize(12).fontColor(Color.White)
@@ -648,7 +663,7 @@ export struct ChatRow {
               .align(Alignment.Center).textAlign(TextAlign.Center)
               .backgroundColor(this.muted() ? COLOR_MUTED_BADGE : this.accent())
               .borderRadius(11);
-          } else if (this.chat.isMarkedUnread) {
+          } else if (this.row.snapshot.chat.isMarkedUnread) {
             // Manually flagged unread — a plain dot, like the official clients.
             Circle({ width: 10, height: 10 })
               .fill(this.muted() ? COLOR_MUTED_BADGE : this.accent());
@@ -704,15 +719,15 @@ export struct ChatRow {
       // 详情页顶栏的横条切换（pages/chat/ChatTopicBar）。这里不带 forumTopicId，
       // 页面拿到话题列表后自己落到第一个话题（ChatPage.syncTopicBar）。
       // 话题列表页本身保留，仍可从别处进入。
-      if (getChatStore().isAdministeredDirectMessagesGroup(this.chat.id)) {
+      if (getChatStore().isAdministeredDirectMessagesGroup(this.row.snapshot.chat.id)) {
         const directParams: Record<string, Object> = {
-          'chatId': this.chat.id, 'title': this.chat.title
+          'chatId': this.row.snapshot.chat.id, 'title': this.row.snapshot.chat.title
         };
         navigateToDirectMessagesTopics(
           directParams, chatListRowOrigin(this.listKey));
         return;
       }
-      const params: Record<string, Object> = { 'chatId': this.chat.id };
+      const params: Record<string, Object> = { 'chatId': this.row.snapshot.chat.id };
       navigateToChat(params, chatListRowOrigin(this.listKey)).catch(logChatNavFailure);
     })
     .onTouch((event: TouchEvent): void => {

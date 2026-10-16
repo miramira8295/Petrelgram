@@ -14,6 +14,14 @@ class FakeBridge implements TdBridge {
   init(cb: (json: string) => void): void { this.onReceive = cb; }
   send(json: string): void { this.sent.push(json); }
 }
+async function allowSendChecks(bridge: FakeBridge): Promise<void> {
+  const request = bridge.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
+    .filter((req: TdObject): boolean => req['@type'] === 'getChat').pop();
+  expect(request !== undefined).assertTrue();
+  bridge.onReceive(JSON.stringify({ '@type': 'chat', 'id': request!['chat_id'],
+    'type': { '@type': 'chatTypePrivate', 'user_id': 1 } as TdObject, '@extra': request!['@extra'] } as TdObject));
+  await new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 0); });
+}
 function setup(chatId: number, historyPageSize: number = 30): Array<Object> {
   const b = new FakeBridge(); const c = new TdClient(b); const u = new UserStore(c);
   const store = new MessageStore(c, u, chatId, 0, historyPageSize); c.start();
@@ -358,7 +366,7 @@ export default function messageStoreTest() {
       const first = textMessage(10, 5, false, '@me'); first['contains_unread_mention'] = true;
       const second = textMessage(20, 5, false, '@me'); second['contains_unread_mention'] = true;
       feedHistory(b, [second, first]); await Promise.resolve();
-      b.onReceive(JSON.stringify({ '@type': 'updateMessageMentionRead', chat_id: 5, message_id: 10, unread_mention_count: 1 }));
+      b.onReceive(JSON.stringify({ '@type': 'updateMessageMentionRead', 'chat_id': 5, message_id: 10, unread_mention_count: 1 }));
       expect(store.getMessages().find((m: MessageEntry): boolean => m.id === 10)!.containsUnreadMention).assertFalse();
       expect(store.getMessages().find((m: MessageEntry): boolean => m.id === 20)!.containsUnreadMention).assertTrue(); store.close();
     });
@@ -1308,6 +1316,7 @@ export default function messageStoreTest() {
       store.open();
       const before = b.sent.length;
       store.send('hello');
+      await allowSendChecks(b);
       const sentTypes = b.sent.slice(before).map((s: string) => (JSON.parse(s) as TdObject)['@type']);
       expect(sentTypes.includes('sendMessage')).assertTrue();
     });
@@ -1357,10 +1366,11 @@ export default function messageStoreTest() {
       await pending;
       expect(store.getMessages()[0].text).assertEqual('new caption');
     });
-    it('send_poll_regular_and_quiz', 0, () => {
+    it('send_poll_regular_and_quiz', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();
       store.sendPoll('喝什么', ['茶', '咖啡'], true, false, 0);
+      await allowSendChecks(b);
       let req = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
         .filter((o: TdObject): boolean => o['@type'] === 'sendMessage').pop();
       expect(req !== undefined).assertTrue();
@@ -1373,6 +1383,7 @@ export default function messageStoreTest() {
       expect(content['is_anonymous']).assertEqual(true);
       expect((content['type'] as TdObject)['@type']).assertEqual('pollTypeRegular');
       store.sendPoll('1+1=?', ['2', '3'], false, true, 0);
+      await allowSendChecks(b);
       req = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
         .filter((o: TdObject): boolean => o['@type'] === 'sendMessage').pop();
       content = req!['input_message_content'] as TdObject;
@@ -1381,7 +1392,7 @@ export default function messageStoreTest() {
       expect(quizType['correct_option_id']).assertEqual(0);
       expect(content['is_anonymous']).assertEqual(false);
     });
-    it('send_location_contact_audio_dice', 0, () => {
+    it('send_location_contact_audio_dice', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();
       const lastContent = (): TdObject => {
@@ -1390,12 +1401,14 @@ export default function messageStoreTest() {
         return req!['input_message_content'] as TdObject;
       };
       store.sendLocation(31.23, 121.47);
+      await allowSendChecks(b);
       let content = lastContent();
       expect(content['@type']).assertEqual('inputMessageLocation');
       const location = content['location'] as TdObject;
       expect(location['latitude']).assertEqual(31.23);
       expect(location['longitude']).assertEqual(121.47);
       store.sendContact('8613800138000', '张', '三', 42);
+      await allowSendChecks(b);
       content = lastContent();
       expect(content['@type']).assertEqual('inputMessageContact');
       const contact = content['contact'] as TdObject;
@@ -1403,6 +1416,7 @@ export default function messageStoreTest() {
       expect(contact['first_name']).assertEqual('张');
       expect(contact['user_id']).assertEqual(42);
       store.sendAudio('/cache/a.mp3', '好歌');
+      await allowSendChecks(b);
       content = lastContent();
       expect(content['@type']).assertEqual('inputMessageAudio');
       // 新版 td_api：audio 字段是 inputAudio 包装，内部才是 InputFile。
@@ -1411,16 +1425,18 @@ export default function messageStoreTest() {
       expect(((audioWrapper['audio'] as TdObject)['path'] as string)).assertEqual('/cache/a.mp3');
       expect(((content['caption'] as TdObject)['text'] as string)).assertEqual('好歌');
       store.sendDice('🎯');
+      await allowSendChecks(b);
       content = lastContent();
       expect(content['@type']).assertEqual('inputMessageDice');
       expect(content['emoji']).assertEqual('🎯');
     });
     // video_note 必须是裸 InputFile：捆绑的 td 没有 inputVideoNote 包装类，
     // 套一层会让整条消息发不出去。duration/length 相应挂在外层。
-    it('send_video_note_uses_bare_input_file_with_outer_duration_and_length', 0, () => {
+    it('send_video_note_uses_bare_input_file_with_outer_duration_and_length', 0, async () => {
       const arr = setup(5); const b = arr[0] as FakeBridge; const store = arr[1] as MessageStore;
       store.open();
       store.sendVideoNote('/cache/videonote_1.mp4', 12, 480);
+      await allowSendChecks(b);
       const req = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
         .filter((o: TdObject): boolean => o['@type'] === 'sendMessage').pop();
       const content = req!['input_message_content'] as TdObject;
@@ -1484,12 +1500,13 @@ export default function messageStoreTest() {
       const types = b.sent.map((s: string) => (JSON.parse(s) as TdObject)['@type']);
       expect(types.includes('closeChat')).assertTrue();
     });
-    it('channel_direct_message_send_is_scoped_to_the_selected_sender', 0, () => {
+    it('channel_direct_message_send_is_scoped_to_the_selected_sender', 0, async () => {
       const b = new FakeBridge();
       const c = new TdClient(b);
       const store = new MessageStore(c, new UserStore(c), -1005, 0, 30, 0, 77);
       c.start();
       store.send('hello');
+      await allowSendChecks(b);
       const request = b.sent.map((json: string): TdObject => JSON.parse(json) as TdObject)
         .find((item: TdObject): boolean => item['@type'] === 'sendMessage');
       expect(request !== undefined).assertTrue();
@@ -1513,6 +1530,7 @@ export default function messageStoreTest() {
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
       const before: number = requestCount(b, 'getChatHistory');
       store.send('hello');
+      await allowSendChecks(b);
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
       feedRequestError(b, 'sendMessage', -1, 'request timeout');
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
@@ -1530,6 +1548,7 @@ export default function messageStoreTest() {
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
       const before: number = requestCount(b, 'getChatHistory');
       store.send('hello');
+      await allowSendChecks(b);
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));
       feedRequestError(b, 'sendMessage', 400, 'CHAT_WRITE_FORBIDDEN');
       await new Promise<void>((r: (v: undefined) => void) => setTimeout(() => r(undefined), 0));

@@ -1,3 +1,5 @@
+import { QrDialog } from '../common/QrDialog';
+import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { InviteJoinResolver } from '../../util/inviteJoinResolver';
 import { joinChat as submitChatJoin, ChatJoinOutcome } from '../../util/chatJoin';
 import { pageMarginVp } from '../../util/pageMargin';
@@ -325,7 +327,29 @@ export struct ChatProfilePage {
     }
   }
 
+  private qrOpen: boolean = false;
+  private qrCtrl: CustomDialogController = new CustomDialogController({
+    builder: QrDialog({ chatId: this.chatId, title: this.title,
+      onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); },
+      onClosed: (): void => { this.qrOpen = false; } }),
+    alignment: DialogAlignment.Center, autoCancel: true
+  });
+
+  private openQr(): void {
+    if (this.qrOpen || this.chatId === 0) { return; }
+    this.qrOpen = true;
+    this.qrCtrl.open();
+  }
+
+  private closeQr(): void {
+    if (this.qrOpen) { this.qrCtrl.close(); this.qrOpen = false; }
+  }
+
+  private qrScanner: TelegramQrScanner = new TelegramQrScanner();
+
   aboutToDisappear(): void {
+    this.qrScanner.cancel();
+    this.closeQr();
     this.joinSeq++;
     this.inviteJoinResolver?.dispose();
     this.inviteJoinResolver = null;
@@ -1246,8 +1270,7 @@ export struct ChatProfilePage {
             }
             .alignItems(HorizontalAlign.Start).layoutWeight(1)
             .onClick((): void => { this.copyPublicLink(); });
-            // 原来这里是二维码。群/频道的公开地址没人会用扫码加入——真正
-            // 要做的动作是把地址拿走贴到别处，所以换成显式的复制按钮。
+            // 复制链接保留独立按钮；二维码入口在下方。
             // （点链接文字本身也能复制，这颗是给"看到按钮才知道能点"的人。）
             Row() {
               SymbolGlyph($r('sys.symbol.plus_square_on_square'))
@@ -1261,6 +1284,13 @@ export struct ChatProfilePage {
           }
           .width('100%').padding({ top: 8, bottom: 8 })
           .alignItems(VerticalAlign.Center);
+        }
+        if (this.chatId !== 0) {
+          Row({ space: 12 }) {
+            SymbolGlyph($r('sys.symbol.qrcode')).fontSize(22).fontColor([COLOR_PRIMARY]);
+            Text($r('app.string.mp_show_qr')).fontSize(15).fontColor(COLOR_PRIMARY);
+          }.width('100%').padding({ top: 12, bottom: 12 })
+            .onClick((): void => { this.openQr(); });
         }
         if (this.description === '' && this.chatUsername === '') {
           Text($r('app.string.cpp_no_profile')).fontSize(14).fontColor(COLOR_TEXT_SECONDARY)
@@ -2031,6 +2061,7 @@ export struct ChatProfilePage {
       this.overOwnChat = this.computeOverOwnChat(ctx.pathStack);
     })
     .onShown((): void => { this.handleShown(); })
+    .onHidden((): void => { this.closeQr(); })
     .width('100%').height('100%');
   }
 }

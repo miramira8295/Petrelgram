@@ -111,3 +111,15 @@ export function pinSavedFirst(rows: ShareRow[]): ShareRow[] {
   }
   return out;
 }
+
+// 收藏是固定目的地，不依赖分页或原始昵称；没有详情时也能先给出稳定入口。
+export function withSavedTarget(rows: ShareRow[], selfId: number, savedTitle: string): ShareRow[] {
+  if (selfId <= 0) { return pinSavedFirst(rows); }
+  const saved: ShareRow = { chatId: selfId, title: savedTitle, subtitle: '',
+    avatarPath: '', initials: '', isSavedMessages: true };
+  return [saved, ...rows.filter((row: ShareRow): boolean => row.chatId !== selfId)];
+}
+
+export function targetDisplayKey(row: ShareRow): string {
+  return JSON.stringify([row.title, row.avatarPath, row.initials, row.isSavedMessages]);
+}

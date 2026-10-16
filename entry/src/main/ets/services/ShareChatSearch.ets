@@ -1,8 +1,9 @@
-import { getChatStore, getTdClient } from '../tdkit/Globals';
+import { str } from '../util/strings';
+import { getActiveTdUserId, getChatStore, getTdClient } from '../tdkit/Globals';
 import { TdObject, TdRequest } from '../tdkit/TdTypes';
 import { ChatEntry, computeInitials } from '../store/ChatEntry';
 import { listKeyOf } from '../store/ListKey';
-import { ShareRow, localRows, mergeRows, unknownIds } from '../util/shareSearch';
+import { ShareRow, localRows, mergeRows, unknownIds, rowFromEntry, withSavedTarget, matchesQuery } from '../util/shareSearch';
 import { logE } from '../util/log';
 
 // 「分享到…」搜会话的取数。合并规则在 util/shareSearch（纯函数、有单测），
@@ -33,10 +34,12 @@ const RESULT_LIMIT: number = 60;
 const MAX_DETAIL_LOOKUPS: number = 20;
 
 // 第 1 层。同步，输入的每一下都能立刻出结果。
-export function localShareRows(query: string): ShareRow[] {
+export function localShareRows(query: string, folderId: number = 0): ShareRow[] {
   const store = getChatStore();
-  return localRows(store.allEntries(), query, PER_SOURCE_LIMIT,
-    (chatId: number): boolean => store.inNonArchiveList(chatId));
+  const rows: ShareRow[] = localRows(store.allEntries(), query, PER_SOURCE_LIMIT,
+    (chatId: number): boolean => folderId === 0 ? store.inNonArchiveList(chatId) : store.isInFolder(folderId, chatId));
+  return pickerRows(rows).filter((row: ShareRow): boolean => matchesQuery(row.title, query) ||
+    (row.isSavedMessages && matchesQuery(store.entryOf(row.chatId)?.title ?? '', query)));
 }
 
 function searchChatIds(query: string, type: string): Promise<number[]> {
@@ -50,11 +53,13 @@ function searchChatIds(query: string, type: string): Promise<number[]> {
 
 // 这个 chat 至少在一个非归档列表里吗。ChatStore 还不认识它，所以只能读
 // chat 自己带的 positions（和 ChatStore.inNonArchiveList 同一条规则）。
-function chatInNonArchiveList(chat: TdObject): boolean {
+function chatInNonArchiveList(chat: TdObject, folderId: number): boolean {
   const positions = (chat['positions'] as TdObject[] | undefined) ?? [];
   for (let i = 0; i < positions.length; i++) {
     const list = positions[i]['list'] as TdObject | undefined;
-    if (list !== undefined && listKeyOf(list) !== 'archive' && listKeyOf(list) !== '') {
+    if (list !== undefined && (folderId === 0
+      ? listKeyOf(list) !== 'archive' && listKeyOf(list) !== ''
+      : listKeyOf(list) === `folder:${folderId}`)) {
       return true;
     }
   }
@@ -62,9 +67,9 @@ function chatInNonArchiveList(chat: TdObject): boolean {
 }
 
 // 裸 chat 对象 → 展示行。本机没有 entry 时只能从 chat 上取，副标题就空着。
-function rowFromChat(chat: TdObject): ShareRow | null {
+function rowFromChat(chat: TdObject, folderId: number): ShareRow | null {
   const id: number = (chat['id'] as number | undefined) ?? 0;
-  if (id === 0 || !chatInNonArchiveList(chat)) {
+  if (id === 0 || (id !== selfTargetId() && !chatInNonArchiveList(chat, folderId))) {
     return null;
   }
   const title: string = (chat['title'] as string | undefined) ?? '';
@@ -77,16 +82,15 @@ function rowFromChat(chat: TdObject): ShareRow | null {
     subtitle: '',
     avatarPath: (local?.['path'] as string | undefined) ?? '',
     initials: computeInitials(title),
-    // 远端补回来的行不判收藏：搜索结果里出现自己那条的概率极低，
-    // 而判它要额外查一次自己的 user id。
-    isSavedMessages: false
+    isSavedMessages: id === selfTargetId()
   };
 }
 
-function detailOf(chatId: number): Promise<ShareRow | null> {
+function detailOf(chatId: number, folderId: number): Promise<ShareRow | null> {
   const cached: ChatEntry | undefined = getChatStore().entryOf(chatId);
   if (cached !== undefined) {
-    if (!getChatStore().inNonArchiveList(chatId)) {
+    if (chatId !== selfTargetId() && !(folderId === 0
+      ? getChatStore().inNonArchiveList(chatId) : getChatStore().isInFolder(folderId, chatId))) {
       return Promise.resolve(null);
     }
     const row: ShareRow = {
@@ -99,15 +103,15 @@ function detailOf(chatId: number): Promise<ShareRow | null> {
   const request: TdRequest = { '@type': 'getChat' };
   request['chat_id'] = chatId;
   return getTdClient().send(request)
-    .then((chat: TdObject): ShareRow | null => rowFromChat(chat))
+    .then((chat: TdObject): ShareRow | null => rowFromChat(chat, folderId))
     .catch((): ShareRow | null => null);
 }
 
 // 第 2 层，合并进第 1 层的结果。整条链任何一段失败都退回本机结果，
 // 不让一次网络抖动把搜索变成空白。
-export function searchShareRows(query: string): Promise<ShareRow[]> {
+export function searchShareRows(query: string, folderId: number = 0): Promise<ShareRow[]> {
   const trimmed: string = query.trim();
-  const local: ShareRow[] = localShareRows(trimmed);
+  const local: ShareRow[] = localShareRows(trimmed, folderId);
   if (trimmed === '') {
     return Promise.resolve(local);
   }
@@ -117,7 +121,7 @@ export function searchShareRows(query: string): Promise<ShareRow[]> {
       local.map((row: ShareRow): number => row.chatId));
     const missing: number[] = unknownIds(flat, (id: number): boolean => known.has(id))
       .slice(0, MAX_DETAIL_LOOKUPS);
-    return Promise.all(missing.map(detailOf));
+    return Promise.all(missing.map((id: number): Promise<ShareRow | null> => detailOf(id, folderId)));
   }).then((rows: (ShareRow | null)[]): ShareRow[] => {
     const remote: ShareRow[] = [];
     for (let i = 0; i < rows.length; i++) {
@@ -126,9 +130,32 @@ export function searchShareRows(query: string): Promise<ShareRow[]> {
         remote.push(row);
       }
     }
-    return mergeRows(local, remote, RESULT_LIMIT);
+    return mergeRows(localShareRows(trimmed, folderId), remote.map((row: ShareRow): ShareRow =>
+      row.isSavedMessages ? withSavedTarget([], row.chatId, str('cl_saved_messages'))[0] : row), RESULT_LIMIT);
   }).catch((e: Object): ShareRow[] => {
     logE(`searchShareRows failed: ${e}`);
     return local;
   });
+}
+
+export function selfTargetId(): number {
+  return getChatStore().selfUserId() || getActiveTdUserId();
+}
+
+export function pickerRows(rows: ShareRow[]): ShareRow[] {
+  return withSavedTarget(rows, selfTargetId(), str('cl_saved_messages'));
+}
+
+export function pickerChatRows(chats: ChatEntry[]): ShareRow[] {
+  return pickerRows(chats.filter((chat: ChatEntry): boolean => chat.id !== 0).map(rowFromEntry));
+}
+
+// 确保合成的收藏目的地也在 TDLib 中有 chat 对象，失败由调用方显示重试。
+export async function ensureSavedTarget(): Promise<void> {
+  const id: number = selfTargetId();
+  if (id <= 0) { return; }
+  const req: TdRequest = { '@type': 'createPrivateChat' };
+  req['user_id'] = id;
+  req['force'] = false;
+  await getTdClient().send(req);
 }

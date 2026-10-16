@@ -56,6 +56,7 @@ export struct TopBanners {
   // 组件构造传参。纪元变化的路径从「宿主自订阅」变成「ChatPageChrome → ChatPage
   // → 宿主」，多两次 === 比较，无行为差。
   @Param materialEpoch: number = 0;
+  @Param appDark: boolean = false;
   // 这张卡的全部显示态，一个 @ObservedV2 控制器（B5 批）。置顶条读它的 pinned*
   // 五个 @Trace、直播条读 live* 七个——字段名与取值和搬之前的标量 @Param 一一对应，
   // 只是住的地方从 ChatPage 的 @Local 换成了控制器上的 @Trace。pinnedLoadState 的取值
@@ -129,7 +130,7 @@ export struct TopBanners {
   }
 
   private hasContent(): boolean {
-    return this.actionBarKind !== '' || this.topCard.pinnedPreview !== '' ||
+    return this.actionBarKind !== '' || this.topCard.pinnedVisible() ||
       (this.topCard.liveGroupCallId > 0 && this.topCard.liveCallIsActive);
   }
 
@@ -141,7 +142,7 @@ export struct TopBanners {
     const input: ChatChromeGeometryInput = {
       topSafe: 0,
       searchMode: false,
-      pinnedVisible: this.topCard.pinnedPreview !== '',
+      pinnedVisible: this.topCard.pinnedVisible(),
       liveVisible: this.liveShowing(),
       actionBarVisible: this.actionBarKind !== ''
     };
@@ -303,10 +304,10 @@ export struct TopBanners {
             onDismiss: (): void => { this.onActionBarDismiss(); }
           });
         }
-        if (this.topCard.pinnedPreview !== '') {
+        if (this.topCard.pinnedVisible()) {
           this.pinnedBanner();
         }
-        if (this.topCard.pinnedPreview !== '' && this.liveShowing()) {
+        if (this.topCard.pinnedVisible() && this.liveShowing()) {
           Divider()
             .strokeWidth(0.5)
             .height(CHAT_TOP_BANNER_DIVIDER_HEIGHT)
@@ -328,9 +329,10 @@ export struct TopBanners {
     .borderRadius(14)
     .margin({ left: 12, right: 12, bottom: 2 })
     // 'bar' 档自带阴影关闭，这条浮卡的阴影保持自己的。
-    .shadow({ radius: 5, color: '#12000000', offsetX: 0, offsetY: 1 })
+    .shadow({ radius: this.appDark ? 0 : 5, color: this.appDark ? '#00000000' : '#12000000', offsetX: 0, offsetY: this.appDark ? 0 : 1 })
     .clip(true)
-    .visualEffect(hdsVisualEffect('bar'))
+    .visualEffect(hdsVisualEffect('bar', !this.appDark))
+    .border({ width: this.appDark ? 1 : 0, color: '#33FFFFFF', style: BorderStyle.Solid })
     .transition(TransitionEffect.OPACITY
       .combine(TransitionEffect.translate({ y: -6 }))
       .animation({

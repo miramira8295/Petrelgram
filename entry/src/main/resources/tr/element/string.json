@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Okunmamış bahsetmeye git"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Gönderim sonucu bilinmiyor. Önce hedef sohbeti kontrol edin; yinelenen mesajları önlemek için bu grup yeniden gönderilmeyecek."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Bu grubun yöneticileri %1$s tarihine kadar mesaj göndermenizi kısıtladı."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Bu grubun yöneticileri mesaj göndermenizi kısıtladı."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "Bu grup normal üyelerin mesaj göndermesine izin vermiyor."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Yönet: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Tamamlandı: %1$s. Başarısız: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Üye durumu veya yönetici izinleri değişti. Silme penceresini yeniden açın."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Sonuç doğrulanmadı. İşlemi tekrarlamadan önce grubu kontrol edin."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Seçilen mesajlar herkes için silinecek."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Seçilen mesajlar yalnızca sizin sohbet geçmişinizden silinecek."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Seçilen mesajlar için kullanılabilir silme kapsamı doğrulanamadı. Seçiminizi değiştirin veya daha sonra tekrar deneyin."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "Bu sohbette izin verilmiyor: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Gönderme izinleri kontrol edilemedi. Lütfen tekrar deneyin."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Video kaydediliyor…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Ses kaydediliyor…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Video mesaj kaydediliyor…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Video gönderiliyor…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Sesli mesaj gönderiliyor…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Video mesaj gönderiliyor…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Fotoğraf gönderiliyor…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Dosya gönderiliyor…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Çıkartma seçiliyor…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Konum seçiliyor…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Kişi seçiliyor…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Oyun oynanıyor…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Animasyon izleniyor…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Farklı işlemler yapılıyor…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "QR kodu tara"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Bu kod desteklenmiyor. Telegram kişi, grup veya giriş kodunu tarayın."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Yeni cihazın girişine izin verilsin mi?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Yalnızca kendiniz giriş yaptığınız cihazı onaylayın. Cihaz Telegram hesabınıza ve bulut sohbetlerinize erişebilecek."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Girişe izin ver"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Kullanılabilir davet bağlantısı yok veya bağlantıları yönetme izniniz yok."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Kod işlenemedi. Bağlantınızı ve kodun süresini kontrol edip tekrar deneyin."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Yeni cihaz girişi"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Onay bekleyen cihazlar: %1$d. İncelemek için dokunun."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Telegram grubu"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Klavyeyi göster"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Sabitlenmiş mesajları gizle"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Sabitlenmiş mesajları göster"
     }
   ]
 }

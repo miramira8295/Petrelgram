@@ -1,3 +1,9 @@
+import { navigateToSetting } from '../../util/settingsNav';
+import { NewSessionBanner } from './NewSessionBanner';
+import { common } from '@kit.AbilityKit';
+import { TelegramQrScanner } from '../../services/TelegramQrScanner';
+import { SCOPE_MUTE_EPOCH } from '../../store/ScopeMuteStore';
+import { chatListInForeground, chatListPageCanRun } from './ChatListFreeze';
 import { KEY_IMMERSIVE_BARS_HIDDEN } from '../../util/immersiveBars';
 import {
   BreakpointType, HEIGHT_BP_LG, KEY_HEIGHT_BREAKPOINT, KEY_WINDOW_PORTRAIT, KEY_WIDTH_BREAKPOINT, WIDTH_BP_SM,
@@ -173,6 +179,31 @@ const FOLDER_TITLE_MAX_BY_BP: BreakpointType<number> = new BreakpointType<number
 // 激活的页签不再刷新，切回来时框架补上延后的那次更新。
 @Component({ freezeWhenInactive: true })
 export struct ChatListPage {
+  @StorageProp('appIsForeground') @Watch('onForegroundChanged')
+  private appIsForeground: boolean = true;
+  private foldersRefreshPending: boolean = false;
+  @StorageProp(SCOPE_MUTE_EPOCH) @Watch('onBadgeScopeMuteChanged')
+  private badgeScopeMuteEpoch: number = 0;
+  private pendingUnreadBadgeKeys: Set<string> = new Set();
+
+  private onBadgeScopeMuteChanged(): void {
+    this.refreshUnread();
+  }
+
+  private onForegroundChanged(): void {
+    if (!chatListInForeground()) {
+      this.suspendListRendering();
+      return;
+    }
+    if (!this.pageActive) { return; }
+    if (this.foldersRefreshPending) {
+      this.foldersRefreshPending = false;
+      this.applyFolders(getFolderStore().getFolders());
+    }
+    this.syncState = chatListSyncState(getConnectionState());
+    if (this.navBarVisible) { this.resumeListRenderingAfterTransition(); }
+  }
+
   private chatStack: NavPathStack = new NavPathStack();
   // 右栏空态。ComponentContent 是节点实体，建一次留着——每次 build 都 new 一个
   // 等于每帧重建一棵子树。
@@ -395,7 +426,7 @@ export struct ChatListPage {
   private applyNavBarVisible(isVisible: boolean): void {
     const changed: boolean = this.navBarVisible !== isVisible;
     this.navBarVisible = isVisible;
-    if (!isVisible) {
+    if (!isVisible || !chatListInForeground()) {
       this.suspendListRendering();
     } else if (changed || !this.listRenderActive) {
       // 先把缓冲里的内容变更刷出去（未读角标之类），再等过渡结束开闸
@@ -462,7 +493,7 @@ export struct ChatListPage {
     this.navBarVisible = navBarVisibleOnAppear(
       isSplitByBreakpoint(this.widthBp, this.heightBp, this.forceSingleColumn, this.windowPortrait), this.chatStack.size());
     AppStorage.setOrCreate<boolean>(CHAT_NAV_BAR_VISIBLE_KEY, this.navBarVisible);
-    this.listRenderActive = this.navBarVisible;
+    this.listRenderActive = chatListPageCanRun(this.pageActive, this.navBarVisible);
     setChatListRenderActive(this.listRenderActive);
     // 先让会话列表首帧落地，紧接着预热聊天详情页模块。固定等 1200ms 会让快速
     // 点击穿过预热窗口；帧回调既避开列表首帧，又保证正常的人手点击前已经开始。
@@ -479,28 +510,19 @@ export struct ChatListPage {
     this.ensureFolderLoads(this.folders);
     this.refreshUnread();
     this.unsubFolders = getFolderStore().subscribe((f: FolderInfo[]) => {
-      const previousTabs = this.tabs();
-      const selectedKey = previousTabs[this.selectedIndex]?.key ?? 'main';
-      const nextMainListPosition = getFolderStore().getMainChatListPosition();
-      const foldersChanged = this.folderSignature(this.folders) !== this.folderSignature(f)
-        || this.mainListPosition !== nextMainListPosition;
-      this.folders = f;
-      this.mainListPosition = nextMainListPosition;
-      if (foldersChanged) {
-        this.reconcileSelectedFolder(selectedKey, previousTabs);
-        this.reloadFolderLists(f);
-        // 页签集合变了，当前页签的邻居可能换人（或首次出现），重排一次预载。
-        this.scheduleTabPreload(TAB_PRELOAD_IDLE_MS);
-      } else {
-        this.ensureFolderLoads(f);
+      if (!chatListInForeground()) {
+        this.foldersRefreshPending = true;
+        return;
       }
-      this.refreshUnread();
+      this.applyFolders(f);
     });
-    this.unsubUnread = getUnreadCountStore().subscribe(() => { this.refreshUnread(); });
-    // Folder unread is derived from cached chats. Listen to lightweight store
-    // invalidations rather than rebuilding/sorting the main list a second time.
-    this.unsubChats = getChatStore().subscribeChanges(() => { this.refreshUnread(); });
+    this.unsubUnread = getUnreadCountStore().subscribe(() => { this.refreshUnread(['main']); });
+    // Content/order changes do not affect folder unread-chat counts.
+    this.unsubChats = getChatStore().subscribeUnreadBadges((keys: string[]): void => {
+      this.refreshUnread(keys);
+    });
     this.unsubConn = getTdClient().onUpdate('updateConnectionState', (u: TdObject) => {
+      if (!chatListInForeground()) { return; }
       const st = u['state'] as TdObject | undefined;
       this.syncState = chatListSyncState(
         st !== undefined ? ((st['@type'] as string | undefined) ?? '') : '');
@@ -511,6 +533,25 @@ export struct ChatListPage {
     // 启动静止期先建出来，用户第一次横滑就不用付那 74ms（Frame 录制实测）。
     // 文件夹还没到的话这次是空转，订阅回调里 foldersChanged 那一路会再排。
     this.scheduleTabPreload(TAB_PRELOAD_IDLE_MS);
+  }
+
+  private applyFolders(f: FolderInfo[]): void {
+    const previousTabs = this.tabs();
+    const selectedKey = previousTabs[this.selectedIndex]?.key ?? 'main';
+    const nextMainListPosition = getFolderStore().getMainChatListPosition();
+    const foldersChanged = this.folderSignature(this.folders) !== this.folderSignature(f)
+      || this.mainListPosition !== nextMainListPosition;
+    this.folders = f;
+    this.mainListPosition = nextMainListPosition;
+    if (foldersChanged) {
+      this.reconcileSelectedFolder(selectedKey, previousTabs);
+      this.reloadFolderLists(f);
+      // 页签集合变了，当前页签的邻居可能换人（或首次出现），重排一次预载。
+      this.scheduleTabPreload(TAB_PRELOAD_IDLE_MS);
+    } else {
+      this.ensureFolderLoads(f);
+    }
+    this.refreshUnread();
   }
 
   // Folder edits can arrive while this keep-alive page is behind Settings.
@@ -548,14 +589,13 @@ export struct ChatListPage {
   }
 
   private startClock(): void {
-    if (this.listRenderActive) {
-      AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
-    }
+    if (!chatListPageCanRun(this.pageActive, this.navBarVisible) || !this.listRenderActive) { return; }
+    AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
     if (this.clockTimer !== -1) {
       return;
     }
     this.clockTimer = setInterval((): void => {
-      if (this.listRenderActive) {
+      if (chatListPageCanRun(this.pageActive, this.navBarVisible) && this.listRenderActive) {
         AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
       }
     }, 60000);
@@ -570,12 +610,12 @@ export struct ChatListPage {
 
   private scheduleTabPreload(delay: number): void {
     this.cancelTabPreload();
-    if (!this.pageActive || this.tabAnimationActive || !this.listRenderActive) {
+    if (!chatListPageCanRun(this.pageActive, this.navBarVisible) || this.tabAnimationActive || !this.listRenderActive) {
       return;
     }
     this.tabPreloadTimer = setTimeout((): void => {
       this.tabPreloadTimer = -1;
-      if (!this.pageActive || this.tabAnimationActive || !this.listRenderActive) {
+      if (!chatListPageCanRun(this.pageActive, this.navBarVisible) || this.tabAnimationActive || !this.listRenderActive) {
         return;
       }
       this.preloadNeighborTab();
@@ -589,7 +629,7 @@ export struct ChatListPage {
   private preloadNeighborTab(): void {
     // 被会话页盖住时不做：构建结果虽然照样有效，但那 60ms 会挤占转场和
     // 详情页的帧。退回来时 resumeListRenderingAfterTransition 会重新排。
-    if (!this.pageActive || !this.listRenderActive || this.tabAnimationActive) {
+    if (!chatListPageCanRun(this.pageActive, this.navBarVisible) || !this.listRenderActive || this.tabAnimationActive) {
       return;
     }
     const specs = this.tabs();
@@ -655,15 +695,21 @@ export struct ChatListPage {
 
   private suspendListRendering(): void {
     this.cancelListRenderResume();
+    this.cancelTabPreload();
+    if (this.clockTimer !== -1) {
+      clearInterval(this.clockTimer);
+      this.clockTimer = -1;
+    }
     this.listRenderActive = false;
     setChatListRenderActive(false);
   }
 
   private resumeListRenderingAfterTransition(): void {
     this.cancelListRenderResume();
+    if (!chatListPageCanRun(this.pageActive, this.navBarVisible)) { return; }
     this.listRenderResumeTimer = setTimeout((): void => {
       this.listRenderResumeTimer = -1;
-      if (!this.navBarVisible) {
+      if (!chatListPageCanRun(this.pageActive, this.navBarVisible)) {
         return;
       }
       this.listRenderActive = true;
@@ -671,9 +717,9 @@ export struct ChatListPage {
       // ChatRow time labels and folder badges were deliberately frozen while
       // covered. Refresh both after child data sources have flushed their one
       // coalesced snapshot, outside the pop transition.
-      AppStorage.setOrCreate(CHAT_LIST_NOW, Math.floor(Date.now() / 1000));
+      this.startClock();
       if (this.unreadRefreshPending) {
-        this.refreshUnread();
+        this.refreshUnread([]);
       }
       // 盖住期间被跳过的邻居预载（preloadNeighborTab 的 listRenderActive 闸）
       // 在这里补排。走快档不走空闲档：本定时器已经等完了 ~590ms 转场，再叠
@@ -691,7 +737,7 @@ export struct ChatListPage {
   private ensureFolderLoads(fs: FolderInfo[]): void {
     for (const f of fs) {
       const key = `folder:${f.id}`;
-      getChatStore().ensureFullyLoaded(key).then((): void => { this.refreshUnread(); });
+      getChatStore().ensureFullyLoaded(key).then((): void => { this.refreshUnread([key]); });
     }
   }
 
@@ -717,8 +763,16 @@ export struct ChatListPage {
   // 逐 chip 写入旁路模型（util/folderBadges），只有值变了的角标各自重渲染，
   // 整页和标题栏不再牵动。While a destination covers the nav bar, collapse any
   // number of notifications into one pending refresh（延后语义保持原样）。
-  private refreshUnread(): void {
-    if (!this.listRenderActive || this.tabAnimationActive) {
+  private refreshUnread(keys?: string[]): void {
+    if (keys === undefined) {
+      for (const spec of this.tabs()) { this.pendingUnreadBadgeKeys.add(spec.key); }
+    } else {
+      for (const key of keys) {
+        if (key === 'main' || key.startsWith('folder:')) { this.pendingUnreadBadgeKeys.add(key); }
+      }
+    }
+    if (this.pendingUnreadBadgeKeys.size === 0) { return; }
+    if (!chatListPageCanRun(this.pageActive, this.navBarVisible) || !this.listRenderActive || this.tabAnimationActive) {
       this.unreadRefreshPending = true;
       return;
     }
@@ -730,18 +784,28 @@ export struct ChatListPage {
   // （见 onNavBarStateChange 里的说明）：闸关着的其余场景（被别的页面盖住）
   // 仍然走 refreshUnread 的延后语义，不在这里放行。
   private flushFolderBadges(): void {
+    if (!chatListPageCanRun(this.pageActive, this.navBarVisible)) {
+      this.unreadRefreshPending = true;
+      return;
+    }
     this.unreadRefreshPending = false;
     this.writeFolderBadges();
   }
 
   private writeFolderBadges(): void {
+    const pending = this.pendingUnreadBadgeKeys;
+    this.pendingUnreadBadgeKeys = new Set();
     for (const spec of this.tabs()) {
+      if (!pending.has(spec.key)) { continue; }
       const counts: UnreadBadgeCounts = this.computeBadge(spec.key);
       setFolderBadge(spec.key, counts.total, counts.unmuted > 0);
     }
   }
 
+  private qrScanner: TelegramQrScanner = new TelegramQrScanner();
+
   aboutToDisappear(): void {
+    this.qrScanner.cancel();
     this.pageActive = false;
     this.cancelListRenderResume();
     this.cancelTabPreload();
@@ -844,6 +908,10 @@ export struct ChatListPage {
   @Builder
   moreMenu() {
     Menu() {
+      MenuItem({ content: $r('app.string.qr_scan') })
+        .onClick((): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); });
+      MenuItem({ content: $r('app.string.settings_proxy') })
+        .onClick((): void => { navigateToSetting('ProxyPage'); });
       MenuItem({ content: $r('app.string.ct_new_group') })
         .onClick((): void => {
           router.pushUrl({ url: 'pages/main/NewGroupPage' });
@@ -1219,6 +1287,7 @@ export struct ChatListPage {
             // A definite full-height Column pins the list to the top and lets
             // the body's layoutWeight(1) actually stretch.
             Column() {
+              NewSessionBanner();
               if (spec.key === 'main') {
                 MainTabBody({
                   // 让位整个交给标题栏的 enableComponentSafeArea——横条现在挂在
@@ -1228,7 +1297,7 @@ export struct ChatListPage {
                   effectsActive: this.tabVisualsActive(spec.key),
                   imagesActive: this.tabVisualsActive(spec.key),
                   updatesActive: this.tabUpdatesActive(spec.key)
-                });
+                }).layoutWeight(1);
               } else {
                 ChatListView({
                   listKey: spec.key,
@@ -1237,7 +1306,7 @@ export struct ChatListPage {
                   effectsActive: this.tabVisualsActive(spec.key),
                   imagesActive: this.tabVisualsActive(spec.key),
                   updatesActive: this.tabUpdatesActive(spec.key)
-                });
+                }).layoutWeight(1);
               }
             }
             .width('100%').height('100%')
@@ -1312,7 +1381,7 @@ export struct ChatListPage {
         }
         this.companionImageTabIndex = -1;
         if (this.unreadRefreshPending) {
-          this.refreshUnread();
+          this.refreshUnread([]);
         }
         this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
       })
@@ -1341,7 +1410,7 @@ export struct ChatListPage {
         if (!this.tabAnimationActive) {
           this.companionImageTabIndex = -1;
           if (this.unreadRefreshPending) {
-            this.refreshUnread();
+            this.refreshUnread([]);
           }
           this.scheduleTabPreload(TAB_PRELOAD_AFTER_SETTLE_MS);
         }

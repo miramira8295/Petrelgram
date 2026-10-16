@@ -1,3 +1,4 @@
+import { ChatListPublicationMode } from '../main/ets/store/ChatListSubscription';
 import { describe, it, expect } from '@ohos/hypium';
 import { TdClient, TimerFns } from '../main/ets/tdkit/TdClient';
 import { TdObject, TdBridge } from '../main/ets/tdkit/TdTypes';
@@ -239,7 +240,232 @@ function pagingStore(bridge: PagingBridge): ChatStore {
   return s;
 }
 
+class CountingChatStore extends ChatStore {
+  reads: number = 0;
+  getChats(listKey: string = 'main'): ChatEntry[] {
+    this.reads++;
+    return super.getChats(listKey);
+  }
+}
+
+interface PublicationHarness {
+  store: CountingChatStore;
+  bridge: FakeBridge;
+  timer: ManualTimer;
+}
+
+function publicationHarness(): PublicationHarness {
+  const bridge = new FakeBridge();
+  const timer = new ManualTimer();
+  const client = new TdClient(bridge);
+  const store = new CountingChatStore(client, new UserStore(client), timer);
+  client.start();
+  const message = textMessage('old', 1, false);
+  message['id'] = 100;
+  pushNewChat(bridge, 1, 'A', [mainPos('100', false)], message, 3, 0);
+  pushNewChat(bridge, 2, 'B', [mainPos('200', false), folderPos(9, '200', false)], null, 0);
+  timer.runAll();
+  return { store, bridge, timer };
+}
+
+function titleUpdate(h: PublicationHarness, title: string, id: number = 1): void {
+  h.bridge.onReceive(JSON.stringify({ '@type': 'updateChatTitle', chat_id: id, title }));
+}
+
+function mentionUpdate(h: PublicationHarness, count: number): void {
+  h.bridge.onReceive(JSON.stringify({ '@type': 'updateChatUnreadMentionCount',
+    chat_id: 1, unread_mention_count: count }));
+}
+
 export default function chatStoreTest() {
+  describe('ChatStore lazy list publication', () => {
+    it('首份同步返回，无变化不会启动周期刷新', 0, () => {
+      const h = publicationHarness();
+      let calls = 0;
+      const sub = h.store.subscribeList(() => { calls++; }, 'main', () => ChatListPublicationMode.Batched);
+      expect(calls).assertEqual(1);
+      expect(h.store.reads).assertEqual(1);
+      expect(h.timer.pendingCount()).assertEqual(0);
+      h.timer.advanceBy(5000);
+      expect(calls).assertEqual(1);
+      sub.close();
+    });
+
+    it('250ms内只读一次最新快照，notifySoon不能穿透普通窗口', 0, () => {
+      const h = publicationHarness();
+      let latest: ChatEntry[] = [];
+      const sub = h.store.subscribeList((rows) => { latest = rows; }, 'main', () => ChatListPublicationMode.Batched);
+      titleUpdate(h, 'first');
+      h.timer.advanceBy(100);
+      mentionUpdate(h, 2);
+      titleUpdate(h, 'latest');
+      h.timer.advanceBy(149);
+      expect(h.store.reads).assertEqual(1);
+      h.timer.advanceBy(1);
+      expect(h.store.reads).assertEqual(2);
+      expect(latest.find((row) => row.id === 1)!.title).assertEqual('latest');
+      expect(latest.find((row) => row.id === 1)!.unreadMentionCount).assertEqual(2);
+      sub.close();
+    });
+
+    it('持续更新不重置窗口，不会一直等待消息安静', 0, () => {
+      const h = publicationHarness();
+      const sub = h.store.subscribeList(() => {}, 'main', () => ChatListPublicationMode.Batched);
+      for (let i = 0; i < 10; i++) {
+        titleUpdate(h, `${i}`);
+        h.timer.advanceBy(50);
+      }
+      expect(h.store.reads).assertEqual(3);
+      sub.close();
+    });
+
+    it('隐藏时零快照，恢复只读最新一次并清除旧期限', 0, () => {
+      const h = publicationHarness();
+      let mode = ChatListPublicationMode.Paused;
+      let latest = '';
+      const sub = h.store.subscribeList((rows) => {
+        latest = rows.find((row) => row.id === 1)!.title;
+      }, 'main', () => mode);
+      for (let i = 0; i < 20; i++) { titleUpdate(h, `${i}`); }
+      h.timer.runAll();
+      expect(h.store.reads).assertEqual(0);
+      mode = ChatListPublicationMode.Batched;
+      sub.refresh();
+      expect(latest).assertEqual('19');
+      expect(h.store.reads).assertEqual(1);
+      h.timer.advanceBy(1000);
+      expect(h.store.reads).assertEqual(1);
+      sub.close();
+    });
+
+    it('计时中隐藏，即使watcher尚未调用也不能生成快照', 0, () => {
+      const h = publicationHarness();
+      let mode = ChatListPublicationMode.Batched;
+      const sub = h.store.subscribeList(() => {}, 'main', () => mode);
+      titleUpdate(h, 'new');
+      mode = ChatListPublicationMode.Paused;
+      h.timer.advanceBy(1000);
+      expect(h.store.reads).assertEqual(1);
+      mode = ChatListPublicationMode.Batched;
+      sub.refresh();
+      expect(h.store.reads).assertEqual(2);
+      sub.close();
+    });
+
+    it('返回转场旁路立即接收，退出旁路后恢复250ms', 0, () => {
+      const h = publicationHarness();
+      let mode = ChatListPublicationMode.Paused;
+      const sub = h.store.subscribeList(() => {}, 'main', () => mode);
+      titleUpdate(h, 'before-return');
+      mode = ChatListPublicationMode.Immediate;
+      sub.refresh();
+      expect(h.store.reads).assertEqual(1);
+      titleUpdate(h, 'during-return');
+      h.timer.advanceBy(0);
+      expect(h.store.reads).assertEqual(2);
+      mode = ChatListPublicationMode.Batched;
+      sub.refresh();
+      titleUpdate(h, 'after-return');
+      h.timer.advanceBy(249);
+      expect(h.store.reads).assertEqual(2);
+      h.timer.advanceBy(1);
+      expect(h.store.reads).assertEqual(3);
+      sub.close();
+    });
+
+    it('已读清除不等250ms，且隐藏时依旧不能穿透', 0, () => {
+      const h = publicationHarness();
+      let mode = ChatListPublicationMode.Batched;
+      let unread = -1;
+      const sub = h.store.subscribeList((rows) => {
+        unread = rows.find((row) => row.id === 1)!.unreadCount;
+      }, 'main', () => mode);
+      h.store.markReadLocally(1, 100);
+      h.timer.advanceBy(0);
+      expect(unread).assertEqual(0);
+      expect(h.store.reads).assertEqual(2);
+      mode = ChatListPublicationMode.Paused;
+      pushPosition(h.bridge, 1, mainPos('100', true));
+      h.timer.runAll();
+      expect(h.store.reads).assertEqual(2);
+      sub.close();
+    });
+
+    it('普通重排合并，置顶和移出列表立即通知原列表', 0, () => {
+      const h = publicationHarness();
+      let latest: ChatEntry[] = [];
+      const sub = h.store.subscribeList((rows) => { latest = rows; }, 'main', () => ChatListPublicationMode.Batched);
+      pushPosition(h.bridge, 1, mainPos('300', false));
+      h.timer.advanceBy(0);
+      expect(latest[0].id).assertEqual(2);
+      h.timer.advanceBy(250);
+      expect(latest[0].id).assertEqual(1);
+      pushPosition(h.bridge, 2, mainPos('200', true));
+      h.timer.advanceBy(0);
+      expect(latest[0].id).assertEqual(2);
+      pushPosition(h.bridge, 2, mainPos('0', false));
+      h.timer.advanceBy(0);
+      expect(latest.length).assertEqual(1);
+      expect(latest[0].id).assertEqual(1);
+      sub.close();
+    });
+
+    it('不相关会话不唤醒文件夹订阅', 0, () => {
+      const h = publicationHarness();
+      const sub = h.store.subscribeList(() => {}, 'folder:9', () => ChatListPublicationMode.Batched);
+      titleUpdate(h, 'unrelated');
+      h.timer.advanceBy(500);
+      expect(h.store.reads).assertEqual(1);
+      sub.close();
+    });
+
+    it('退订取消待发任务，后续更新不再回调或读取', 0, () => {
+      const h = publicationHarness();
+      const sub = h.store.subscribeList(() => {}, 'main', () => ChatListPublicationMode.Batched);
+      titleUpdate(h, 'pending');
+      sub.close();
+      sub.close();
+      titleUpdate(h, 'later');
+      h.timer.runAll();
+      expect(h.store.reads).assertEqual(1);
+      expect(h.timer.pendingCount()).assertEqual(0);
+    });
+
+    it('单会话和旧列表订阅仍按80ms通知', 0, () => {
+      const h = publicationHarness();
+      let single = 0;
+      let legacy = 0;
+      let batched = 0;
+      const offSingle = h.store.subscribeChat(1, () => { single++; });
+      const offLegacy = h.store.subscribe(() => { legacy++; });
+      const sub = h.store.subscribeList(() => { batched++; }, 'main', () => ChatListPublicationMode.Batched);
+      titleUpdate(h, 'new');
+      h.timer.advanceBy(80);
+      expect(single).assertEqual(2);
+      expect(legacy).assertEqual(2);
+      expect(batched).assertEqual(1);
+      offSingle(); offLegacy(); sub.close();
+    });
+
+    it('消息未读配对事务仍完整，UI只发布最终一份', 0, () => {
+      const h = publicationHarness();
+      let latest: ChatEntry[] = [];
+      const sub = h.store.subscribeList((rows) => { latest = rows; }, 'main', () => ChatListPublicationMode.Batched);
+      const message = textMessage('new', 2, false);
+      message['id'] = 200;
+      pushLastMessage(h.bridge, 1, message);
+      pushReadInbox(h.bridge, 1, 4, 0);
+      h.timer.advanceBy(16);
+      expect(h.store.reads).assertEqual(1);
+      h.timer.advanceBy(250);
+      expect(h.store.reads).assertEqual(2);
+      const row = latest.find((item) => item.id === 1)!;
+      expect(row.lastMessageText).assertEqual('new');
+      expect(row.unreadCount).assertEqual(4);
+      sub.close();
+    });
+  });
+
   describe('ChatStore', () => {
     it('未读提及来自完整会话且独立于普通未读', 0, () => {
       const timer = new ManualTimer(); const store = make(timer); const bridge = bridgeOf(store);
@@ -358,6 +584,44 @@ export default function chatStoreTest() {
       b.onReceive(JSON.stringify(update));
       expect(store.isAdministeredDirectMessagesGroup(-100888)).assertTrue();
     });
+    it('置顶版本不随普通内容位置变化增长，置顶切换才增长', 0, () => {
+      const h = publicationHarness();
+      expect(h.store.pinEpoch('main')).assertEqual(0);
+      titleUpdate(h, 'changed'); pushPosition(h.bridge, 1, mainPos('300', false));
+      expect(h.store.pinEpoch('main')).assertEqual(0);
+      pushPosition(h.bridge, 1, mainPos('300', true));
+      expect(h.store.pinEpoch('main')).assertEqual(1);
+      pushPosition(h.bridge, 1, mainPos('400', true));
+      expect(h.store.pinEpoch('main')).assertEqual(1);
+      pushPosition(h.bridge, 1, mainPos('400', false));
+      expect(h.store.pinEpoch('main')).assertEqual(2);
+      h.timer.runAll();
+    });
+
+    it('置顶版本按列表隔离并覆盖移出与重入', 0, () => {
+      const h = publicationHarness();
+      pushPosition(h.bridge, 2, folderPos(9, '200', true));
+      expect(h.store.pinEpoch('main')).assertEqual(0);
+      expect(h.store.pinEpoch('folder:9')).assertEqual(1);
+      pushPosition(h.bridge, 2, folderPos(9, '0', false));
+      expect(h.store.pinEpoch('folder:9')).assertEqual(2);
+      pushPosition(h.bridge, 2, folderPos(9, '0', true));
+      expect(h.store.pinEpoch('folder:9')).assertEqual(2);
+      pushPosition(h.bridge, 2, folderPos(9, '300', true));
+      expect(h.store.pinEpoch('folder:9')).assertEqual(3);
+      h.timer.runAll();
+    });
+
+    it('完整会话和消息携带的置顶变化也更新版本', 0, () => {
+      const h = publicationHarness();
+      pushNewChat(h.bridge, 1, 'A', [mainPos('100', true)], null, 0);
+      expect(h.store.pinEpoch('main')).assertEqual(1);
+      const message = textMessage('sent', 2, true); message['id'] = 200;
+      pushLastMessage(h.bridge, 1, message, [mainPos('100', false)]);
+      h.timer.runAll();
+      expect(h.store.pinEpoch('main')).assertEqual(2);
+    });
+
     it('orders_by_desc_order_pinned_first', 0, () => {
       const store = make();
       const b = bridgeOf(store);
@@ -841,6 +1105,183 @@ export default function chatStoreTest() {
       pushNewChat(b, 2, 'B', [folderPos(5, '200', false)], null, 0);
       await settleNotify();
       expect(calls).assertEqual(2);
+    });
+    it('badge_notifications_ignore_content_order_and_positive_unread_bursts', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], null, 1);
+      timer.runAll();
+      let general: number = 0;
+      let badge: number = 0;
+      store.subscribeChanges((): void => { general++; });
+      store.subscribeUnreadBadges((): void => { badge++; });
+      general = 0; badge = 0;
+      for (let i = 0; i < 200; i++) {
+        store.setAvatarPath(1, `avatar-${i}`);
+        pushLastMessage(b, 1, textMessage(`preview-${i}`, i, true),
+          [folderPos(5, `${200 + i}`, i % 2 === 0)]);
+        pushReadInbox(b, 1, i + 2, 0);
+        timer.runAll();
+      }
+      expect(general >= 200).assertTrue();
+      expect(badge).assertEqual(0);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+    });
+    it('badge_notifications_coalesce_only_affected_lists_and_unsubscribe', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false), folderPos(6, '100', false)], null, 0);
+      pushNewChat(b, 2, 'B', [folderPos(7, '100', false)], null, 1);
+      timer.runAll();
+      const batches: string[][] = [];
+      const off = store.subscribeUnreadBadges((keys: string[]): void => { batches.push(keys); });
+      expect(batches[0].sort().join(',')).assertEqual('folder:5,folder:6,folder:7');
+      batches.splice(0);
+      pushReadInbox(b, 1, 2, 0);
+      pushReadInbox(b, 1, 3, 0);
+      timer.runAll();
+      expect(batches.length).assertEqual(1);
+      expect(batches[0].sort().join(',')).assertEqual('folder:5,folder:6');
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      off();
+      pushReadInbox(b, 1, 0, 0);
+      timer.runAll();
+      expect(batches.length).assertEqual(1);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+    });
+    it('badge_cache_tracks_membership_removal_and_reentry', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], null, 4);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      expect(store.unreadChatBadge('folder:6').total).assertEqual(0);
+      pushPosition(b, 1, folderPos(5, '0', false));
+      pushPosition(b, 1, folderPos(6, '200', false));
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+      expect(store.unreadChatBadge('folder:6').total).assertEqual(1);
+      pushPosition(b, 1, folderPos(5, '300', true));
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      timer.runAll();
+    });
+    it('badge_cache_handles_positions_before_chat_arrives', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      pushPosition(b, 9, folderPos(5, '100', false));
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+      pushNewChat(b, 9, 'Late', [], null, 3);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      timer.runAll();
+    });
+    it('badge_cache_invalidates_muting_without_changing_total', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], null, 1);
+      timer.runAll();
+      expect(store.unreadChatBadge('folder:5').unmuted).assertEqual(1);
+      let calls: number = 0;
+      store.subscribeUnreadBadges((): void => { calls++; });
+      calls = 0;
+      const ns: TdObject = { '@type': 'chatNotificationSettings' };
+      ns['mute_for'] = 3600; ns['use_default_mute_for'] = false;
+      const u: TdObject = { '@type': 'updateChatNotificationSettings' };
+      u['chat_id'] = 1; u['notification_settings'] = ns;
+      b.onReceive(JSON.stringify(u));
+      timer.runAll();
+      expect(calls).assertEqual(1);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      expect(store.unreadChatBadge('folder:5').unmuted).assertEqual(0);
+      b.onReceive(JSON.stringify(u));
+      timer.runAll();
+      expect(calls).assertEqual(1);
+      ns['mute_for'] = 0;
+      b.onReceive(JSON.stringify(u));
+      timer.runAll();
+      expect(calls).assertEqual(2);
+      expect(store.unreadChatBadge('folder:5').unmuted).assertEqual(1);
+    });
+    it('badge_notifications_ignore_marked_unread_and_mentions', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], null, 0);
+      timer.runAll();
+      let calls: number = 0;
+      store.subscribeUnreadBadges((): void => { calls++; });
+      calls = 0;
+      const marked: TdObject = { '@type': 'updateChatIsMarkedAsUnread' };
+      marked['chat_id'] = 1; marked['is_marked_as_unread'] = true;
+      const mentions: TdObject = { '@type': 'updateChatUnreadMentionCount' };
+      mentions['chat_id'] = 1; mentions['unread_mention_count'] = 2;
+      b.onReceive(JSON.stringify(marked));
+      b.onReceive(JSON.stringify(mentions));
+      timer.runAll();
+      expect(calls).assertEqual(0);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+    });
+    it('badge_cache_tracks_local_read_and_phantom_unread_correction', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      const m = textMessage('new', 1, false); m['id'] = 100;
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], m, 3, 50);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      store.markReadLocally(1, 100);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], m, 3, 50);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      pushReadInbox(b, 1, 1, 100);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+      timer.runAll();
+    });
+    it('badge_cache_waits_for_staged_message_unread_commit', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      const old = textMessage('old', 1, false); old['id'] = 100;
+      pushNewChat(b, 1, 'A', [folderPos(5, '100', false)], old, 0, 100);
+      timer.runAll();
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+      const next = textMessage('new', 2, false); next['id'] = 200;
+      pushLastMessage(b, 1, next, [folderPos(5, '200', false)]);
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(0);
+      pushReadInbox(b, 1, 1, 100);
+      timer.runAll();
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+    });
+    it('badge_cache_returns_isolated_results', 0, () => {
+      const timer = new ManualTimer();
+      const store = make(timer);
+      pushNewChat(bridgeOf(store), 1, 'A', [folderPos(5, '100', false)], null, 1);
+      const counts = store.unreadChatBadge('folder:5');
+      counts.total = 999; counts.unmuted = 999;
+      expect(store.unreadChatBadge('folder:5').total).assertEqual(1);
+      expect(store.unreadChatBadge('folder:5').unmuted).assertEqual(1);
+      timer.runAll();
+    });
+    it('badge_cache_is_local_to_store_and_scope_reset_refreshes_it', 0, () => {
+      resetScopeMute();
+      const timer = new ManualTimer();
+      const store = make(timer);
+      const b = bridgeOf(store);
+      const type: TdObject = { '@type': 'chatTypeSupergroup' }; type['is_channel'] = true;
+      const ns: TdObject = { '@type': 'chatNotificationSettings' }; ns['use_default_mute_for'] = true;
+      const chat: TdObject = { '@type': 'chat' };
+      chat['id'] = 1; chat['title'] = 'CH'; chat['unread_count'] = 1;
+      chat['type'] = type; chat['positions'] = [folderPos(5, '100', false)]; chat['notification_settings'] = ns;
+      const update: TdObject = { '@type': 'updateNewChat' }; update['chat'] = chat;
+      b.onReceive(JSON.stringify(update));
+      expect(store.unreadChatBadge('folder:5').unmuted).assertEqual(1);
+      setScopeMuted(SCOPE_CHANNEL, true);
+      expect(store.unreadChatBadge('folder:5').unmuted).assertEqual(0);
+      resetScopeMute();
+      expect(store.unreadChatBadge('folder:5').unmuted).assertEqual(1);
+      expect(make(timer).unreadChatBadge('folder:5').total).assertEqual(0);
+      timer.runAll();
     });
     it('load_sends_loadChats', 0, () => {
       const store = make();

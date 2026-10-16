@@ -1,7 +1,9 @@
+import { SessionSecurityStore } from '../store/SessionSecurityStore';
 import { attachTdLanguage, detachTdLanguage, initTdLanguageContext, syncTdLanguage } from '../services/TdLanguage';
 import testNapi from 'libentry.so';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { TdClient } from './TdClient';
+import { configureTdLogging } from './TdLogPolicy';
 import { AuthService, AuthStage } from './AuthService';
 import { readTdDeviceParams } from '../util/tdDeviceParamsReader';
 import { UserStore } from '../store/UserStore';
@@ -50,6 +52,7 @@ let chats: ChatStore | undefined = undefined;
 let files: FileService | undefined = undefined;
 let folders: FolderStore | undefined = undefined;
 let unread: UnreadCountStore | undefined = undefined;
+let sessionSecurity: SessionSecurityStore | undefined = undefined;
 let chatThemes: ChatThemeStore | undefined = undefined;
 let accentColors: AccentColorStore | undefined = undefined;
 let callSession: CallSession | undefined = undefined;
@@ -116,6 +119,11 @@ const TD_WORKER_BRIDGE_ENABLED: boolean = false;
 let workerBridge: TdWorkerBridge | undefined = undefined;
 
 function createTdClientWithBridge(): TdClient {
+  // Set the process-wide filter before either bridge starts its receiver/client.
+  const logging = configureTdLogging((json: string): string => testNapi.tdExecute(json));
+  const loggingStatus = `[TDLogPolicy] before=${logging.previousLevel ?? 'unknown'} ` +
+    `after=${logging.effectiveLevel ?? 'unknown'} verified=${logging.verified}`;
+  if (logging.verified) { logI(loggingStatus); } else { logW(loggingStatus); }
   if (TD_WORKER_BRIDGE_ENABLED) {
     try {
       if (workerBridge === undefined) {
@@ -149,6 +157,7 @@ function createRuntime(slotId: string): void {
   proxyAutoSwitchService.attach(client);
   auth = new AuthService(client, directories.databaseDirectory, directories.filesDirectory,
     readTdDeviceParams());
+  sessionSecurity = new SessionSecurityStore(client);
   users = new UserStore(client);
   chats = new ChatStore(client, users);
   files = new FileService(client, chats);
@@ -180,22 +189,12 @@ function createRuntime(slotId: string): void {
     (): boolean => AppStorage.get<boolean>('appIsForeground') ?? true);
   notifications.attachSenderSources(users, files);
   notifications.attachCallSession(callSession);
-  const fileService = files;
-  const chatStore = chats;
-  // Request avatars for EVERY cached chat, not just the main list — otherwise
-  // chats surfaced only under a folder tab never get their photo downloaded.
-  chatStore.subscribe(() => {
-    for (const e of chatStore.allEntries()) {
-      if (e.photoFileId !== 0 && e.avatarPath === '') {
-        fileService.requestAvatar(e.id, e.photoFileId);
-      }
-    }
-  });
   const runtimeClient = client;
   const runtimeAuth = auth;
   runtimeAuth.onStageChange((stage: AuthStage): void => {
     if (stage === AuthStage.Ready && client === runtimeClient && auth === runtimeAuth) {
       runtimeReady = true;
+      sessionSecurity?.read().catch((): void => {});
       syncTdLanguage();
       registerMessageSyncWork(appBundleName);
       notifications!.enable();
@@ -221,8 +220,11 @@ function createRuntime(slotId: string): void {
     notifications = undefined;
     callSession?.close();
     callSession = undefined;
+    sessionSecurity?.close();
+    sessionSecurity = undefined;
     auth.dispose();
     proxyAutoSwitchService.detach(client);
+    files?.close();
     client.dispose();
     client = undefined;
     auth = undefined;
@@ -354,11 +356,14 @@ function reregisterStoredWebPush(client: TdClient): void {
 //   'destroy' 删掉本地授权数据 —— 只有卡在扫码授权态、必须从零重来时才用
 //             （见 util/authError.ets 的 needsAuthorizationReset）。
 async function stopRuntime(mode: RuntimeStopMode): Promise<void> {
+  sessionSecurity?.close();
+  sessionSecurity = undefined;
   detachTdLanguage();
   const currentAuth = auth;
   const currentClient = client;
   const currentReady = runtimeReady;
   runtimeReady = false;
+  files?.close();
   if (currentClient !== undefined) {
     proxyAutoSwitchService.detach(currentClient);
   }
@@ -758,6 +763,10 @@ function resolveDuplicateAccountLogin(
 
 export function isReady(): boolean {
   return client !== undefined;
+}
+
+export function getSessionSecurityStore(): SessionSecurityStore {
+  return sessionSecurity!;
 }
 
 export function getTdClient(): TdClient {

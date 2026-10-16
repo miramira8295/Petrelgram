@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Перейти до непрочитаної згадки"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Результат надсилання невідомий. Спочатку перевірте чат призначення. Щоб уникнути дублікатів, цю групу повідомлень не буде надіслано повторно."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Адміністратори цієї групи заборонили вам надсилати повідомлення до %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Адміністратори цієї групи заборонили вам надсилати повідомлення."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "У цій групі звичайним учасникам заборонено надсилати повідомлення."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Керування: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Виконано: %1$s. Помилка: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Статус учасника або права змінилися. Відкрийте вікно видалення знову."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Результат не підтверджено. Перевірте групу перед повторенням дії."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Вибрані повідомлення буде видалено для всіх."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Вибрані повідомлення буде видалено лише з вашої історії чату."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Не вдалося визначити доступний варіант видалення вибраних повідомлень. Змініть вибір або спробуйте пізніше."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "У цьому чаті заборонено: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Не вдалося перевірити дозволи на надсилання. Спробуйте ще раз."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Запис відео…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Запис голосового повідомлення…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Запис відеоповідомлення…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Надсилання відео…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Надсилання голосового повідомлення…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Надсилання відеоповідомлення…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Надсилання фото…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Надсилання файлів…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Вибір наліпки…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Вибір розташування…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Вибір контакту…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Гра…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Перегляд анімації…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Різні дії…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Сканувати QR-код"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Цей QR-код не підтримується. Відскануйте код контакту, групи або входу Telegram."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Дозволити вхід на новому пристрої?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Підтверджуйте лише пристрій, на якому входите ви. Він отримає доступ до вашого облікового запису Telegram і хмарних чатів."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Дозволити вхід"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Немає доступного запрошення або прав на керування посиланнями."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Не вдалося обробити код. Перевірте з’єднання та термін дії коду й повторіть спробу."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Вхід із нового пристрою"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Пристроїв очікує підтвердження: %1$d. Натисніть для перевірки."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Група в Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Показати клавіатуру"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Приховати закріплені повідомлення"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Показати закріплені повідомлення"
     }
   ]
 }

@@ -1,3 +1,7 @@
+import { directShareSteps } from './directSharePlan';
+import { SendProgress } from './sendProgress';
+import { SharedItem } from './sharedContent';
+import { logE } from './log';
 import { promptAction } from '@kit.ArkUI';
 import { MediaSendItem } from '../store/MessageStore';
 import { SharedPayload } from './sharedContent';
@@ -12,17 +16,18 @@ import { SharePlan, captionForDirectSend, hasDirectSend, planShare } from './sha
 
 // ChatPage 提供的落点。只要这几件事，不需要把整个页面传进来。
 export interface ShareArrivalHost {
+  checkPermissions?: (payload: SharedPayload) => Promise<void>;
   // 把图片/视频放进输入框上方的暂存区，返回被截掉的张数。
   appendMedia: (items: MediaSendItem[]) => number;
   // 写草稿（说明文字）。
   setDraft: (text: string) => void;
   // 当前草稿。分享的说明要接在用户已有的草稿后面，不能覆盖。
   draftText: () => string;
-  sendDocument: (path: string, caption: string) => void;
-  sendAudio: (path: string, caption: string) => void;
+  sendDocument: (path: string, caption: string) => Promise<void>;
+  sendAudio: (path: string, caption: string) => Promise<void>;
   // 直接发送那一档用：不经过输入框，图片/视频当场发出去。
   sendMedia: (items: MediaSendItem[], caption: string) => Promise<void>;
-  sendText: (text: string) => void;
+  sendText: (text: string) => Promise<void>;
   // 发完/放好之后滚到底，让用户看见结果。
   scrollToBottom: () => void;
 }
@@ -67,11 +72,11 @@ export function applyShareArrival(payload: SharedPayload, host: ShareArrivalHost
   // 直接发的那些：配文只跟第一条走，否则每个文件底下都挂一遍同样的说明。
   let usedCaption: boolean = false;
   for (let i = 0; i < plan.documents.length; i++) {
-    host.sendDocument(plan.documents[i], usedCaption ? '' : caption);
+    host.sendDocument(plan.documents[i], usedCaption ? '' : caption).catch(reportShareError);
     usedCaption = true;
   }
   for (let i = 0; i < plan.audios.length; i++) {
-    host.sendAudio(plan.audios[i], usedCaption ? '' : caption);
+    host.sendAudio(plan.audios[i], usedCaption ? '' : caption).catch(reportShareError);
     usedCaption = true;
   }
 
@@ -105,43 +110,52 @@ interface StagedLike {
 //
 // 返回的 Promise 在**请求都发出去之后**兑现（不是上传完成）。调用方据此决定
 // 何时退回后台：TDLib 收下之后上传会在后台继续，应用有 dataTransfer 长时任务。
-export function sendShareDirectly(payload: SharedPayload, host: ShareArrivalHost,
-  geometry: Map<string, ShareMediaGeometry> = new Map<string, ShareMediaGeometry>()
+export async function sendShareDirectly(payload: SharedPayload, host: ShareArrivalHost,
+  geometry: Map<string, ShareMediaGeometry> = new Map<string, ShareMediaGeometry>(),
+  progress: SendProgress = new SendProgress(),
+  active: () => boolean = (): boolean => true
 ): Promise<void> {
-  // alreadyStaged 传 0：这一档不碰暂存区，没有名额一说。
-  const plan: SharePlan = planShare(payload, 0);
-  let usedCaption: boolean = false;
-
-  const media: MediaSendItem[] = plan.staged.map((item: StagedLike): MediaSendItem => {
-    const geo: ShareMediaGeometry | undefined = geometry.get(item.path);
-    if (geo === undefined) {
-      return { path: item.path, isVideo: item.isVideo };
-    }
-    return {
-      path: item.path, isVideo: item.isVideo,
-      thumbPath: geo.thumbPath, thumbWidth: geo.thumbWidth, thumbHeight: geo.thumbHeight,
-      width: geo.width, height: geo.height
-    };
-  });
-
-  let chain: Promise<void> = Promise.resolve();
-  if (media.length > 0) {
-    // 说明文字跟着图片走（和相册那条路一致：配文挂在第一条上）。
-    chain = host.sendMedia(media, payload.caption);
-    usedCaption = true;
-  }
-  for (let i = 0; i < plan.documents.length; i++) {
-    host.sendDocument(plan.documents[i], usedCaption ? '' : payload.caption);
-    usedCaption = true;
-  }
-  for (let i = 0; i < plan.audios.length; i++) {
-    host.sendAudio(plan.audios[i], usedCaption ? '' : payload.caption);
-    usedCaption = true;
-  }
-  // 纯文字：没有媒体时它自己就是一条消息。
-  if (!usedCaption && payload.caption !== '') {
-    host.sendText(payload.caption);
+  if (!active()) { throw new Error('share session ended'); }
+  await host.checkPermissions?.(payload);
+  const steps = directShareSteps(payload);
+  for (let i = 0; i < steps.length; i++) {
+    if (!active()) { throw new Error('share session ended'); }
+    const step = steps[i];
+    await progress.run(i, async (): Promise<void> => {
+      if (step.kind === 'media') {
+        const media: MediaSendItem[] = step.items.map((item: SharedItem): MediaSendItem => {
+          const geo: ShareMediaGeometry | undefined = geometry.get(item.uri);
+          if (geo === undefined) { return { path: item.uri, isVideo: item.kind === 'video' }; }
+          return { path: item.uri, isVideo: item.kind === 'video', thumbPath: geo.thumbPath,
+            thumbWidth: geo.thumbWidth, thumbHeight: geo.thumbHeight, width: geo.width, height: geo.height };
+        });
+        await host.sendMedia(media, step.caption);
+      } else if (step.kind === 'text') {
+        await host.sendText(step.caption);
+      } else if (step.kind === 'audio') {
+        await host.sendAudio(step.items[0].uri, step.caption);
+      } else {
+        await host.sendDocument(step.items[0].uri, step.caption);
+      }
+    });
   }
   host.scrollToBottom();
-  return chain;
+}
+
+function reportShareError(error: Object): void {
+  logE(`Share arrival failed: ${error}`);
+  promptAction.showToast({ message: $r('app.string.fw_failed'), duration: 2000 });
+}
+
+// 已确认成功的步骤不再交给用户重试；说明文字也不能再跟第二批重复发送。
+export function remainingDirectShare(payload: SharedPayload, progress: SendProgress): SharedPayload {
+  const steps = directShareSteps(payload);
+  const media: SharedItem[] = [];
+  let caption: string = '';
+  for (let i = 0; i < steps.length; i++) {
+    if (progress.completedStep(i)) { continue; }
+    media.push(...steps[i].items);
+    if (steps[i].caption !== '') { caption = steps[i].caption; }
+  }
+  return { caption, media };
 }

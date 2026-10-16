@@ -36,16 +36,6 @@ export struct TargetAvatarCell {
   // 名字最多几行。网格里两行（行与行对齐），横排的「常用」一行。
   @Prop titleLines: number = 2;
 
-  @Styles
-  cellNormalStyle() {
-    .backgroundColor(Color.Transparent)
-  }
-
-  @Styles
-  cellPressedStyle() {
-    .backgroundColor($r('app.color.surface_alt'))
-  }
-
   private ringBox(): number {
     return this.avatarSize + SELECTED_RING_WIDTH * 2;
   }
@@ -90,7 +80,6 @@ export struct TargetAvatarCell {
     .width('100%').padding({ top: 6, bottom: 4, left: 2, right: 2 })
     .borderRadius(12)
     .backgroundColor(this.selected ? '#14007DFF' : Color.Transparent)
-    .stateStyles({ normal: this.cellNormalStyle, pressed: this.cellPressedStyle })
     .animation({
       duration: powerAnimationDuration(KEY_POWER_SMOOTH_TRANSITIONS, 120),
       curve: Curve.EaseOut

@@ -1,3 +1,6 @@
+import { MessageDragGesture } from '../../util/messageDragGesture';
+import { configureMessageDrag } from '../../services/MessageDragSource';
+import { messageDragType } from '../../util/messageDrag';
 import { JUMP_FOCUS_BRIGHTNESS, JUMP_FOCUS_SCALE } from '../../util/bubbleFocusChannel';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { MessageMenuTransitions } from '../../util/messageMenuTransitions';
@@ -502,8 +505,10 @@ export struct LightweightPlainTextBubble {
   // @Local（menuShown/swipeX/通道值/玻璃尺寸/onScreen）由框架在 aboutToReuse
   // 之前统一重置（批 0.5 实测 1370/1370）。
   private resetTransient(): void {
+    this.dragGesture = new MessageDragGesture();
     this.menuOffsetX = 0;
     this.gestureClaimed = false;
+    this.draggingMessage = false;
   }
 
   aboutToAppear(): void {
@@ -639,9 +644,31 @@ export struct LightweightPlainTextBubble {
     });
   }
 
-  private onLongPress(event: GestureEvent): void {
-    const finger: FingerInfo | undefined = firstFinger(event.fingerList);
-    if (finger !== undefined) {
+  private dragGesture: MessageDragGesture = new MessageDragGesture();
+
+  private canDragMessage(): boolean { return !this.editingActive && this.msg.id > 0 && messageDragType(this.msg.contentType) !== ''; }
+
+  private onDragSourceTouch(event: TouchEvent): void {
+    if (!this.canDragMessage()) { return; }
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    const now = Date.now();
+    if (event.type === TouchType.Down && touch !== undefined) {
+      this.dragGesture.begin(touch.windowX, touch.windowY, now);
+      this.recordMenuOffset(touch.x, Number(event.target.area.width));
+    } else if (event.type === TouchType.Move && touch !== undefined) {
+      this.dragGesture.move(touch.windowX, touch.windowY, now);
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      if (touch !== undefined) { this.dragGesture.move(touch.windowX, touch.windowY, now); }
+      if (this.dragGesture.end(now, event.type === TouchType.Cancel)) { this.onLongPress(); }
+    }
+  }
+
+  @Local private draggingMessage: boolean = false;
+
+  private onLongPress(event?: GestureEvent): void {
+    if (this.draggingMessage) { return; }
+    const finger: FingerInfo | undefined = event === undefined ? undefined : firstFinger(event.fingerList);
+    if (finger !== undefined && event !== undefined) {
       this.recordMenuOffset(finger.localX, Number(event.target.area.width));
     }
     this.gestureClaimed = true;
@@ -660,14 +687,16 @@ export struct LightweightPlainTextBubble {
   }
 
   private onSwipeUpdate(offsetX: number): void {
-    if (this.editingActive || this.swipeFromEdge) { return; }
+    if (this.editingActive || this.swipeFromEdge || this.draggingMessage ||
+      (this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()))) { return; }
     // 两个方向都跟手：向左（负）回复，向右（正）进多选。
     this.swipeX = Math.max(SWIPE_REPLY_MAX, Math.min(SWIPE_SELECT_MAX, offsetX));
     if (this.swipeX !== 0) { this.gestureClaimed = true; }
   }
 
   private onSwipeEnd(): void {
-    const usable: boolean = !this.editingActive && !this.swipeFromEdge;
+    const usable: boolean = !this.editingActive && !this.swipeFromEdge && !this.draggingMessage &&
+      !(this.canDragMessage() && this.dragGesture.prefersDrag(Date.now()));
     const reply: boolean = usable && this.swipeX <= SWIPE_REPLY_TRIGGER;
     const select: boolean = usable && this.swipeX >= SWIPE_SELECT_TRIGGER;
     animateTo({
@@ -984,8 +1013,9 @@ export struct LightweightPlainTextBubble {
     .backgroundBlurStyle(this.glassBlurStyle())
     .borderRadius(this.bubbleCorners()).padding(8)
     .shadow({ radius: this.glassBodyOn() ? 0 : 2, color: '#14000000', offsetX: 0, offsetY: 1 })
-    .parallelGesture(LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+    .parallelGesture(this.canDragMessage() ? undefined : LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
       .onAction((event: GestureEvent): void => { this.onLongPress(event); }))
+    .onTouch((event: TouchEvent): void => { this.onDragSourceTouch(event); })
     .onClick((event: ClickEvent): void => {
       if (!this.gestureClaimed && messageGesturePolicy(this.env.gestureScheme).tapOpensMenu) {
         this.recordMenuOffset(event.x, Number(event.target.area.width));
@@ -1103,6 +1133,16 @@ export struct LightweightPlainTextBubble {
         }
         .alignItems(VerticalAlign.Bottom)
         .padding(this.avatarGutterPadding())
+        .draggable(this.canDragMessage())
+        .onDragStart((event: DragEvent): DragItemInfo => {
+          this.dragGesture.claim();
+          this.draggingMessage = true;
+          this.gestureClaimed = true;
+          this.menuShown = false;
+          configureMessageDrag(event, this.chatId, this.msg.id, messageDragType(this.msg.contentType));
+          return {};
+        })
+        .onDragEnd((): void => { this.draggingMessage = false; })
         .bindContextMenu(this.menuShown, this.contextMenu(), {
           offset: { x: this.menuOffsetX, y: 0 },
           preview: menuPreviewCompact(this.env.keyboardHeightVp, this.env.screenHeightVp)
@@ -1143,6 +1183,7 @@ export struct LightweightPlainTextBubble {
       .onTouch((event: TouchEvent): void => {
         if (event.type === TouchType.Down) {
           this.gestureClaimed = false;
+          this.draggingMessage = false;
           const touches: TouchObject[] = event.touches;
           this.swipeFromEdge = touches.length > 0
             && isEdgeSwipeStart(touches[0].windowX, this.env.screenWidthVp);

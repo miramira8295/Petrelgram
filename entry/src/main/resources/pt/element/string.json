@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Ir para uma menção não lida"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "O resultado do envio é desconhecido. Verifique primeiro a conversa de destino; este lote não será reenviado para evitar duplicatas."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Os administradores deste grupo restringiram o envio de mensagens até %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Os administradores deste grupo restringiram o envio de mensagens."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "Este grupo não permite que membros comuns enviem mensagens."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Gerenciar: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Concluído: %1$s. Falhou: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "O estado do membro ou as permissões mudaram. Reabra a janela de exclusão."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "O resultado não foi confirmado. Verifique o grupo antes de repetir a ação."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "As mensagens selecionadas serão apagadas para todos."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "As mensagens selecionadas serão apagadas apenas do seu histórico de conversas."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Não foi possível confirmar as opções de exclusão disponíveis para as mensagens selecionadas. Altere a seleção ou tente novamente mais tarde."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "Não permitido neste chat: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Não foi possível verificar as permissões de envio. Tente novamente."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Gravando vídeo…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Gravando áudio…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Gravando mensagem de vídeo…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Enviando vídeo…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Enviando mensagem de voz…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Enviando mensagem de vídeo…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Enviando fotos…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Enviando arquivos…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Escolhendo figurinha…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Escolhendo localização…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Escolhendo contato…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Jogando…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Assistindo a animações…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Realizando diferentes ações…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Escanear código QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Este código não é compatível. Escaneie um código de contato, grupo ou login do Telegram."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Permitir login de um novo dispositivo?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Aprove apenas um dispositivo no qual você esteja entrando. Ele terá acesso à sua conta do Telegram e às conversas na nuvem."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Permitir login"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Não há link de convite disponível ou você não pode gerenciar os links."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Não foi possível processar o código. Verifique a conexão e a validade do código e tente novamente."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Login de novo dispositivo"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Dispositivos aguardando confirmação: %1$d. Toque para verificar."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Grupo do Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Mostrar teclado"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Ocultar mensagens fixadas"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Mostrar mensagens fixadas"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { sendWithChatPermissions } from './SendPermissionApi';
 import { TdClient } from '../tdkit/TdClient';
 import { TdObject, TdRequest, TdError } from '../tdkit/TdTypes';
 import { logE } from '../util/log';
@@ -44,7 +45,7 @@ export function forwardDirect(
   // remove_caption 保持 false：复读一张带说明的图，说明也该跟着。
   req['send_copy'] = asCopy;
   req['remove_caption'] = false;
-  return client.send(req).then((result: TdObject): number => {
+  return sendWithChatPermissions(client, req).then((result: TdObject): number => {
     const sent = (result['messages'] as TdObject[] | undefined) ?? [];
     return sent.length;
   }).catch((e: TdError): number => {

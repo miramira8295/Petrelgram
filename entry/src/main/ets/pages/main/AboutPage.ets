@@ -1,3 +1,4 @@
+import { navigateToChatProfile } from '../../util/profileNav';
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { COLOR_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_ICON_SECONDARY, COLOR_TEXT_SECONDARY } from '../../util/theme';
@@ -12,6 +13,7 @@ import { HdsSubDestination } from '../common/HdsSubDestination';
 
 const CARD_BG: ResourceColor = $r('app.color.surface');
 const CARD_RADIUS: number = 14;
+const COMMUNITY_GROUP_LINK: string = 'https://t.me/+khkR9mLZyoliODFl';
 
 // 路由表（router_map.json）的 buildFunction 指向这里。系统在跳转时动态加载本模块
 // 并调用它，页面因此不再进 main_pages.json——一个页面不能同时是 router 页和
@@ -182,6 +184,10 @@ export struct AboutPage {
             this.iconRow('sys.symbol.link', '#5856D6',
               $r('app.string.about_repository'), $r('app.string.about_repository_sub'), false, false,
               (): void => { this.openReleasePage(); });
+            Divider().color($r('app.color.divider')).strokeWidth(0.7).margin({ left: 62 });
+            this.iconRow('sys.symbol.person_2', '#26A5E4',
+              $r('app.string.about_telegram_group'), COMMUNITY_GROUP_LINK, false, false,
+              (): void => { navigateToChatProfile({ 'inviteLink': COMMUNITY_GROUP_LINK }); });
           }
           .width('100%')
           .backgroundColor(CARD_BG).borderRadius(CARD_RADIUS);

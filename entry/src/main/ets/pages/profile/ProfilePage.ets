@@ -1,3 +1,4 @@
+import { TelegramQrScanner } from '../../services/TelegramQrScanner';
 import { openMiniAppPage } from '../../util/miniAppNav';
 import { mainAppChatId } from '../../util/botMainApp';
 import { pageMarginVp } from '../../util/pageMargin';
@@ -356,7 +357,11 @@ export struct ProfilePage {
     stack.pop();
   }
 
+  private qrScanner: TelegramQrScanner = new TelegramQrScanner();
+
   aboutToDisappear(): void {
+    this.qrScanner.cancel();
+    this.qrCtrl.close();
     if (this.profileRefreshTimer !== -1) {
       clearTimeout(this.profileRefreshTimer);
       this.profileRefreshTimer = -1;
@@ -374,7 +379,8 @@ export struct ProfilePage {
 
   @State qrLink: string = '';
   private qrCtrl: CustomDialogController = new CustomDialogController({
-    builder: QrDialog({ link: this.qrLink, title: this.name }),
+    builder: QrDialog({ link: this.qrLink, title: this.name,
+      onScan: (): void => { this.qrScanner.start(getContext(this) as common.UIAbilityContext); } }),
     alignment: DialogAlignment.Center,
     autoCancel: true
   });

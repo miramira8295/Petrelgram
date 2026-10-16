@@ -1,5 +1,8 @@
+import { GroupPermissions, allPermissions } from '../../util/chatPermissions';
+import { effectiveSendPermissions, anySendPermission } from '../../util/sendPermissions';
 // 2026-10-14: join() now owns join submission/approval state; ChatPage is thin wiring.
-// Historical migration notes below describe the pre-approval implementation.
+// 2026-10-16: live permissions and member status use separate revisions; stale reads cannot undo updates.
+// Historical migration notes below describe the pre-approval/live-permission implementation.
 // 成员资格状态机：refresh()（原 refreshMembership@4629-4696）+ applyStatus()
 // （原 applyMembershipStatus@4698-4727）+ bind/dispose。从 ChatPage 整体搬出
 // （第二轮 R2-A 批）。这是方案 §6 表格里"明确推迟到第二轮"的那一行——当初
@@ -171,20 +174,20 @@ export interface MembershipSessionHost {
   // 的 `this.joiningChat = false`——membershipState 的姊妹标志，页面自留
   // 字段，两处调用不合并（见文件头专项说明）。
   setJoiningChat: (value: boolean) => void;
-  // applyStatus() 尾部"关掉所有输入区界面"那五行（setEmojiPanel(false) →
-  // mention.clear() → command.closePanel() → composer.reset() →
-  // 有条件的 recording.cancel()）打包成的一个跨域回调——确认连续才打包，
-  // 见文件头专项说明。页面侧实现应逐字对应这五行，顺序不变。
+  // 失去发言权限时收起输入区面板、键盘与补全，取消回复/编辑态和录音。
+  // 具体组件由页面接线关闭，控制器不持有其他 UI 控制器。
   closeComposerSurfaces: () => void;
   // TDLib 客户端。搬之前 refresh() 里两处写的是模块级单例 `getTdClient()`；
   // 改经宿主取值器是本批刻意偏离逐字搬迁的一处，见文件头【client() 注入缝】
   // 一节。页面侧实现恒为 `() => getTdClient()`，取值不缓存，与搬之前逐字
   // 等价。
   client: () => TdClient;
+  setRestrictedUntil?: (value: number) => void;
   setJoinByRequest?: (value: boolean) => void;
   onJoined?: (folderId?: number) => void;
   onJoinRequested?: () => void;
   onJoinFailed?: () => void;
+  setSendPermissions?: (value: GroupPermissions) => void;
 }
 
 export class MembershipSession {
@@ -203,6 +206,12 @@ export class MembershipSession {
   private requestedId: number = 0;
   private confirmedMemberId: number = 0;
   private blockedId: number = 0;
+  private lastStatus: TdObject | undefined = undefined;
+  private permissionsRevision: number = 0;
+  private statusRevision: number = 0;
+  private contextChatId: number = 0;
+  private contextClient: TdClient | null = null;
+  private disposed: boolean = false;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经
   // 被构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」
@@ -224,27 +233,78 @@ export class MembershipSession {
   // ChatPage.aboutToAppear 里调一次。
   bind(host: MembershipSessionHost): void {
     this.host = host;
+    this.disposed = false;
   }
 
-  // 原 refreshMembership（原 4629-4696 行）方法体逐字搬迁，getTdClient()→
-  // this.host.client()、this.chatId→this.host.chatId()、
-  // this.isGroup/isChannel/membershipState 的读写全部经宿主转发，逻辑分支、
-  // 判据、语句顺序未改一处。
-  // 群的默认权限（chat.permissions.can_send_basic_messages），由 refresh() 从
-  // getChat 的应答里存一份。
-  //
-  // **为什么要存**：applyStatus 还有另外两个调用点在 ChatPage 的 updateSupergroup
-  // 推送监听里，那里只拿得到 supergroup、拿不到 chat。不存的话，一次成员状态推送
-  // 就会把锁群又翻回可写——用户重新看到那个发不出去的输入框。
+  // Keep default permissions and the latest member status independently: a group
+  // permission update does not carry a member status, nor vice versa.
   private chatCanSendBasic: boolean = true;
+  private chatPermissions: TdObject | undefined = undefined;
+
+  private syncContext(): void {
+    const chatId: number = this.host.chatId();
+    const client: TdClient = this.host.client();
+    if (chatId === this.contextChatId && client === this.contextClient) { return; }
+    this.contextChatId = chatId;
+    this.contextClient = client;
+    this.membershipSeq++;
+    this.permissionsRevision = 0;
+    this.statusRevision = 0;
+    this.lastStatus = undefined;
+    this.chatCanSendBasic = true;
+    this.chatPermissions = undefined;
+    this.host.setSendPermissions?.(allPermissions(true));
+    this.membershipSupergroupId = 0;
+    this.membershipBasicGroupId = 0;
+  }
+
+  applyChatPermissions(update: TdObject): void {
+    if (this.disposed || update['chat_id'] !== this.host.chatId()) { return; }
+    const permissions: TdObject | undefined = update['permissions'] as TdObject | undefined;
+    if (permissions === undefined || !Object.keys(permissions).some((key: string): boolean =>
+      key.startsWith('can_send_') && typeof permissions[key] === 'boolean')) { return; }
+    this.syncContext();
+    const merged: TdObject = {};
+    if (this.chatPermissions !== undefined) {
+      for (const key of Object.keys(this.chatPermissions)) { merged[key] = this.chatPermissions[key]; }
+    }
+    for (const key of Object.keys(permissions)) { merged[key] = permissions[key]; }
+    const changed: boolean = JSON.stringify(merged) !== JSON.stringify(this.chatPermissions);
+    this.permissionsRevision++;
+    this.chatPermissions = merged;
+    this.chatCanSendBasic = (merged['can_send_basic_messages'] as boolean | undefined) ?? true;
+    if (changed && this.lastStatus !== undefined) { this.renderStatus(this.lastStatus); }
+  }
+
+  private recoverReadFailure(): void {
+    if (this.lastStatus !== undefined) {
+      this.renderStatus(this.lastStatus);
+      return;
+    }
+    // Preserve the existing fallback only when no actual member status is known.
+    this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
+  }
+
+  private showPendingStatus(): void {
+    if (this.lastStatus !== undefined) { this.renderStatus(this.lastStatus); }
+    else { this.host.setMembershipState('checking'); }
+  }
 
   refresh(): void {
+    this.disposed = false;
+    this.syncContext();
     const seq: number = ++this.membershipSeq;
+    const chatId: number = this.host.chatId();
+    const client: TdClient = this.host.client();
+    const permissionsRevision: number = this.permissionsRevision;
+    const statusRevision: number = this.statusRevision;
+    const active = (): boolean => !this.disposed && seq === this.membershipSeq &&
+      chatId === this.host.chatId() && client === this.host.client();
     this.host.setJoinByRequest?.(false);
     const req: TdRequest = { '@type': 'getChat' };
-    req['chat_id'] = this.host.chatId();
-    this.host.client().send(req).then((chat: TdObject): void => {
-      if (seq !== this.membershipSeq) {
+    req['chat_id'] = chatId;
+    client.send(req, 15000).then((chat: TdObject): void => {
+      if (!active()) {
         return;
       }
       const type = chat['type'] as TdObject | undefined;
@@ -252,24 +312,26 @@ export class MembershipSession {
       // 群的**默认权限**，管的是普通成员。"只有管理员能发言"的锁群把它设成
       // false，而成员状态仍然是 chatMemberStatusMember——只看状态判不出来。
       const chatPerms = chat['permissions'] as TdObject | undefined;
-      this.chatCanSendBasic =
-        (chatPerms?.['can_send_basic_messages'] as boolean | undefined) ?? true;
+      if (permissionsRevision === this.permissionsRevision) {
+        this.chatPermissions = chatPerms;
+        this.chatCanSendBasic = (chatPerms?.['can_send_basic_messages'] as boolean | undefined) ?? true;
+      }
       if (typeName === 'chatTypeSupergroup') {
         this.membershipSupergroupId = (type?.['supergroup_id'] as number | undefined) ?? 0;
         this.membershipBasicGroupId = 0;
         this.host.setIsGroup(true);
         this.host.setIsChannel((type?.['is_channel'] as boolean | undefined) ?? this.host.isChannel());
         this.host.commitTimelineSnapshot();
-        this.host.setMembershipState('checking');
+        this.showPendingStatus();
         const groupReq: TdRequest = { '@type': 'getSupergroup' };
         groupReq['supergroup_id'] = this.membershipSupergroupId;
-        this.host.client().send(groupReq).then((supergroup: TdObject): void => {
-          if (seq === this.membershipSeq) {
+        client.send(groupReq, 15000).then((supergroup: TdObject): void => {
+          if (active() && statusRevision === this.statusRevision) {
             this.applySupergroup(supergroup);
           }
         }).catch((e: TdError): void => {
-          if (seq === this.membershipSeq) {
-            this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
+          if (active()) {
+            this.recoverReadFailure();
           }
           logE(`MembershipSession.getSupergroup membership failed: ${e.message}`);
         });
@@ -281,16 +343,16 @@ export class MembershipSession {
         this.host.setIsGroup(true);
         this.host.setIsChannel(false);
         this.host.commitTimelineSnapshot();
-        this.host.setMembershipState('checking');
+        this.showPendingStatus();
         const groupReq: TdRequest = { '@type': 'getBasicGroup' };
         groupReq['basic_group_id'] = this.membershipBasicGroupId;
-        this.host.client().send(groupReq).then((basicGroup: TdObject): void => {
-          if (seq === this.membershipSeq) {
+        client.send(groupReq, 15000).then((basicGroup: TdObject): void => {
+          if (active() && statusRevision === this.statusRevision) {
             this.applyStatus(basicGroup['status'] as TdObject | undefined);
           }
         }).catch((e: TdError): void => {
-          if (seq === this.membershipSeq) {
-            this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
+          if (active()) {
+            this.recoverReadFailure();
           }
           logE(`MembershipSession.getBasicGroup membership failed: ${e.message}`);
         });
@@ -301,24 +363,29 @@ export class MembershipSession {
       // 密聊的输入区形态由 applySecretChat 定（待建立/已关闭都不能发），
       // 这里一律写 writable 会把它冲掉。
       if (typeName !== 'chatTypeSecret') {
-        this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
+        this.recoverReadFailure();
       }
     }).catch((e: TdError): void => {
-      if (seq === this.membershipSeq) {
+      if (active()) {
         // Don't leave private/secret chats with a permanently hidden composer
         // if the supplementary status request fails.
-        this.host.setMembershipState(this.requestedId !== 0 && this.requestedId === this.host.chatId() ? 'requested' : 'writable');
+        this.recoverReadFailure();
       }
       logE(`MembershipSession.getChat membership failed: ${e.message}`);
     });
   }
 
-  // 原 applyMembershipStatus（原 4698-4727 行）方法体逐字搬迁，
-  // this.isChannel→this.host.isChannel()、membershipState 的写、
-  // joiningChat 的写、以及尾部跨域收尾五行分别经宿主转发，判据、早退、
-  // 语句顺序未改一处（含"两处 joiningChat=false 不合并"，见文件头专项
-  // 说明）。
+  // 身份推送更新独立版本。仅重算群默认权限时不增加这个版本，避免误丢
+  // 尚未返回、但仍然有效的成员身份查询。
   applyStatus(status: TdObject | undefined): void {
+    if (this.disposed || status === undefined || !status['@type']) { return; }
+    this.syncContext();
+    this.statusRevision++;
+    this.lastStatus = status;
+    this.renderStatus(status);
+  }
+
+  private renderStatus(status: TdObject): void {
     const type: string = (status?.['@type'] as string | undefined) ?? '';
     if (type === '') {
       return;
@@ -328,10 +395,13 @@ export class MembershipSession {
     // 仍在群里照样能发言、频道订阅者只读、频道管理员还要看有没有发帖权。
     // 被禁言者自己那份权限（chatMemberStatusRestricted 才有）。
     const selfPerms = status?.['permissions'] as TdObject | undefined;
-    const next: string = membershipStateOf({
+    const isChannel: boolean = this.host.isChannel();
+    const capabilities: GroupPermissions = effectiveSendPermissions(this.chatPermissions, status, isChannel);
+    this.host.setSendPermissions?.(capabilities);
+    let next: string = membershipStateOf({
       statusType: type,
       isMember: (status?.['is_member'] as boolean | undefined) ?? false,
-      isChannel: this.host.isChannel(),
+      isChannel: isChannel,
       canPostMessages: (rights?.['can_post_messages'] as boolean | undefined) ?? false,
       // 两个权限字段**缺失时一律按放行**：兜底方向与本文件其余分支一致
       // （查不到就别把输入框藏了，最多发送时报错）。
@@ -339,9 +409,16 @@ export class MembershipSession {
       restrictedCanSendBasic:
         (selfPerms?.['can_send_basic_messages'] as boolean | undefined) ?? true
     });
+    // Basic messages and media permissions are independent; keep media-only groups usable.
+    if ((next === 'restricted' || next === 'groupReadonly') && anySendPermission(capabilities)) {
+      next = 'writable';
+    }
+    // 截止时间是秒级时间戳；0 表示永久。每次状态推送都刷新，解除限制时清零。
+    const until: number = (status?.['restricted_until_date'] as number | undefined) ?? 0;
+    this.host.setRestrictedUntil?.(next === 'restricted' && Number.isFinite(until) && until > 0 ? until : 0);
     const chatId: number = this.host.chatId();
     this.blockedId = next === 'blocked' ? chatId : 0;
-    if (next === 'writable' || next === 'readonly') {
+    if (next === 'writable' || next === 'readonly' || next === 'restricted' || next === 'groupReadonly') {
       this.confirmedMemberId = chatId;
       if (this.requestedId !== 0 && this.requestedId === chatId) {
         this.requestedId = 0;
@@ -359,7 +436,7 @@ export class MembershipSession {
       return;
     }
     // A membership update can arrive while the cached page still has composer
-    // UI open. Close every composer-owned surface before replacing the bar.
+    // UI open. Close its surfaces when switching to a non-writable state.
     this.host.setJoiningChat(false);
     this.host.closeComposerSurfaces();
   }
@@ -369,6 +446,7 @@ export class MembershipSession {
   // 正在跟踪的这个超级群——原文 `this.membershipSupergroupId` 的直接读点，
   // 私有化后补的只读取值器，读点不丢（见文件头专项说明）。
   applySupergroup(supergroup: TdObject): void {
+    if (this.disposed) { return; }
     this.host.setJoinByRequest?.((supergroup['join_by_request'] as boolean | undefined) ?? false);
     this.applyStatus(supergroup['status'] as TdObject | undefined);
   }
@@ -419,13 +497,12 @@ export class MembershipSession {
     return this.membershipBasicGroupId;
   }
 
-  // ChatPage.aboutToDisappear 全链路对本簇字段唯一的清理是
-  // disposeSubscriptionsInOrder（原 3718 行）里紧挨着退订
-  // 'membershipSupergroup'/'membershipBasicGroup' 两个推送监听器**之前**
-  // 的一行 `this.membershipSeq++`——见文件头【dispose()】一节。
-  // membershipState/membershipSupergroupId/membershipBasicGroupId 三者在
-  // 这条路径上原本就从未被复位，不新增清零。
+  // 在退订前拒绝迟到更新并清掉权限上下文；切话题重新 refresh 时恢复接收。
+  // 保留群 id 取值器的原退场行为，不直接改页面显示状态。
   dispose(): void {
+    this.disposed = true;
+    this.lastStatus = undefined;
+    this.contextClient = null;
     this.joinSeq++;
     this.joiningId = 0;
     this.requestedId = 0;

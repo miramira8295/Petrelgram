@@ -1,7 +1,8 @@
-import { describe, expect, it } from '@ohos/hypium';
+import { ChatListPublicationMode } from '../main/ets/store/ChatListSubscription';
+import { afterEach, describe, expect, it } from '@ohos/hypium';
 import {
   CHAT_LIST_TOUCH_HOLD, CHAT_MENU_OPEN, ChatListFreeze, chatOrderUnchanged,
-  contentOnlyUpdate
+  contentOnlyUpdate, chatListPageCanRun, chatListPublicationMode
 } from '../main/ets/pages/chatlist/ChatListFreeze';
 import { ChatEntry } from '../main/ets/store/ChatEntry';
 
@@ -29,11 +30,135 @@ function chats(ids: number[]): ChatEntry[] {
 }
 
 function openAllGates(): void {
+  AppStorage.setOrCreate('appIsForeground', true);
   AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
   AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, false);
 }
 
 export default function chatListFreezeTest() {
+  describe('chatListBackgroundPublication', () => {
+    afterEach((): void => { openAllGates(); });
+
+    it('普通可见列表批量，覆盖或非活跃列表暂停准备快照', 0, () => {
+      openAllGates();
+      expect(chatListPublicationMode(true, true, false, false, false)).assertEqual(ChatListPublicationMode.Batched);
+      expect(chatListPublicationMode(true, false, false, false, false)).assertEqual(ChatListPublicationMode.Paused);
+      expect(chatListPublicationMode(false, true, false, false, false)).assertEqual(ChatListPublicationMode.Paused);
+    });
+
+    it('返回内容旁路及时但不能穿透触摸菜单滚动和后台', 0, () => {
+      openAllGates();
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Immediate);
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Paused);
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Paused);
+      openAllGates();
+      expect(chatListPublicationMode(true, false, true, true, false)).assertEqual(ChatListPublicationMode.Paused);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(chatListPublicationMode(true, false, false, true, false)).assertEqual(ChatListPublicationMode.Paused);
+    });
+
+    it('邻居页首份内容可预载但不能穿透后台', 0, () => {
+      openAllGates();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      expect(chatListPublicationMode(false, false, false, false, true)).assertEqual(ChatListPublicationMode.Immediate);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(chatListPublicationMode(false, false, false, false, true)).assertEqual(ChatListPublicationMode.Paused);
+    });
+
+    it('后台期间普通列表和独立归档的打开渲染闸均不能发布', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const main = new ChatListFreeze();
+      const archive = new ChatListFreeze();
+      expect(main.accept(chats([1]), true) === null).assertTrue();
+      expect(archive.accept(chats([2]), true) === null).assertTrue();
+    });
+
+    it('后台首次非空快照不能通过forceInitial穿透', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const gate = new ChatListFreeze();
+      const list = chats([1]);
+      expect(gate.accept(list, true, true) === null).assertTrue();
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(gate.flush() === list).assertTrue();
+    });
+
+    it('转场旁路在后台不能取走缓冲快照', 0, (): void => {
+      openAllGates();
+      const gate = new ChatListFreeze();
+      const list = chats([1]);
+      gate.accept(list, false);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(gate.flush() === null).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(gate.flush() === list).assertTrue();
+    });
+
+    it('后台连续更新合并为最新快照且恢复只消费一次', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const gate = new ChatListFreeze();
+      gate.accept(chats([1]), true);
+      gate.accept(chats([2]), true);
+      const latest = chats([3, 2, 1]);
+      gate.accept(latest, true);
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(gate.flush() === latest).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+    });
+
+    it('恢复前台不会让隐藏页签的新更新绕过renderActive', 0, (): void => {
+      openAllGates();
+      AppStorage.setOrCreate('appIsForeground', false);
+      const gate = new ChatListFreeze();
+      gate.accept(chats([1]), true);
+      AppStorage.setOrCreate('appIsForeground', true);
+      const latest = chats([2]);
+      expect(gate.accept(latest, false) === null).assertTrue();
+      expect(gate.flush() === latest).assertTrue();
+    });
+
+    it('恢复前台仍保留菜单和触摸发布限制', 0, (): void => {
+      openAllGates();
+      const gate = new ChatListFreeze();
+      AppStorage.setOrCreate('appIsForeground', false);
+      gate.accept(chats([1]), true);
+      AppStorage.setOrCreate('appIsForeground', true);
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, true);
+      expect(gate.accept(chats([2]), true) === null).assertTrue();
+      AppStorage.setOrCreate(CHAT_MENU_OPEN, false);
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, true);
+      expect(gate.accept(chats([3]), true) === null).assertTrue();
+      AppStorage.setOrCreate(CHAT_LIST_TOUCH_HOLD, false);
+      const latest = chats([4]);
+      expect(gate.accept(latest, true) === latest).assertTrue();
+      expect(gate.flush() === null).assertTrue();
+    });
+
+    it('已安排的延迟恢复必须重读前后台状态', 0, (): void => {
+      openAllGates();
+      expect(chatListPageCanRun(true, true)).assertTrue();
+      const delayedResume = (): boolean => chatListPageCanRun(true, true);
+      AppStorage.setOrCreate('appIsForeground', false);
+      expect(delayedResume()).assertFalse();
+      AppStorage.setOrCreate('appIsForeground', true);
+      expect(delayedResume()).assertTrue();
+    });
+
+    it('恢复前台仍不能打开被覆盖或已销毁页面的发布闸', 0, (): void => {
+      openAllGates();
+      expect(chatListPageCanRun(true, false)).assertFalse();
+      expect(chatListPageCanRun(false, true)).assertFalse();
+      expect(chatListPageCanRun(false, false)).assertFalse();
+      expect(chatListPageCanRun(true, true)).assertTrue();
+    });
+  });
+
   describe('chatListFreeze', () => {
     it('闸全开时直通', 0, (): void => {
       openAllGates();

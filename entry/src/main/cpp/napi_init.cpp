@@ -334,7 +334,8 @@ napi_value TdInit(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "TD_RECEIVER_CREATE_FAILED", "failed to create TD receive callback");
         return nullptr;
     }
-    // Route TDLib's internal log (verbosity <= 2: fatal/error/warning) to hilog.
+    // Forward fatal/error/warning to hilog. This only filters the callback;
+    // Globals configures TDLib's global verbosity before starting either bridge.
     td_set_log_message_callback(2, TdLogCallback);
     // Start the receiver before allocating a TD client id. std::thread throws
     // std::system_error when the process cannot create another thread; letting

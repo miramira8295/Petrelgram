@@ -10,19 +10,9 @@
 // 把宿主也一起改成直读控制器，SelectionHeader/timelineRow 仍是 ChatPage 自己
 // 的 @Builder，收益只是把状态和判定收进一个能单测的对象）。
 //
-// 【为什么"一行要么整体选中、要么整体不选"不在本类里重新实现】
-// 这条不变量由 util/messageSelection 的纯函数（rowSelected/toggleRow/
-// pruneSelection/rowSelectable）保证；本类的 isRowSelected/toggleRow/reconcile
-// 都是薄包装，只管把 this.ids 喂给它们、把结果写回去。
-//
-// 【为什么 reconcileMessageActionTargets 只搬了一半】
-// 原方法同时清两件不相关的事：多选集合里的幽灵 id（本簇），和反应面板的目标
-// 消息是否还存在（不相关的 reactionSheet 子系统）。本类的 reconcile(list) 只做
-// 前一半；ChatPage.reconcileMessageActionTargets 改为先调
-// `this.selection.reconcile(list)`，再自己跑 reactionSheet 那几行——两个状态
-// 域的清理时机（同一次 publishSnapshotAndChrome）不变，只是分成了两次调用。
-// resetMessageActionSession 是同样的裁决：本类的 reset() 只覆盖
-// active/ids，reactionSheet 那几个字段仍由页面在同一个调用点自己清。
+// 选择集合属于本次多选会话，不属于当前加载窗口。搜索远跳/历史裁剪只更新
+// 已选消息快照；只有真实 updateDeleteMessages 才摘除 id。保留的消息引用仅限
+// 已选条目，取消选择、退出或切会话时释放，避免把整段历史锁在内存里。
 //
 // 【为什么是 per-ChatPage 实例，不是模块级单例】
 // 平板分栏、导航栈多层时同时活着多个 ChatPage，各自的多选态互不相干。做成
@@ -50,8 +40,9 @@
 
 import { AlbumGroup } from '../../util/collapseAlbums';
 import { MessageEntry } from '../../store/MessageEntry';
+import { TdObject } from '../../tdkit/TdTypes';
 import {
-  memberSelected, pruneSelection, rowSelectable, rowSelected, selectRow, toggleMember, toggleRow
+  forwardableIds, memberSelected, rowSelectable, rowSelected, selectRow, toggleMember, toggleRow
 } from '../../util/messageSelection';
 import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../store/AppSettings';
 
@@ -64,6 +55,7 @@ import { KEY_POWER_SMOOTH_TRANSITIONS, powerAnimationDuration } from '../../stor
 // 2. 与本簇无关的页面子系统（反应面板、表情/贴纸抽屉）只经这里的动作回调
 //    触达，不在本类里直接实现。
 export interface SelectionSessionHost {
+  messages: () => MessageEntry[];
   // animateSelection 的时长依据：与 GIF/TGS 密集滑动同一时间线时要把过渡砍成
   // 0（搬之前是 `this.chatTgsScrollActive` 这个页面字段，与本簇无关，只读）。
   chatTgsScrollActive: () => boolean;
@@ -81,10 +73,12 @@ export class SelectionSession {
 
   @Trace active: boolean = false;
   @Trace ids: number[] = [];
+  private retained: Map<number, MessageEntry> = new Map<number, MessageEntry>();
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
   // 构造出来（页面的字段初始化器 new）。取值器返回的都是"什么都还没有"的值。
   private host: SelectionSessionHost = {
+    messages: (): MessageEntry[] => [],
     chatTgsScrollActive: (): boolean => false,
     closeReactionSheet: (): void => {},
     setEmojiPanel: (_show: boolean): void => {},
@@ -118,7 +112,9 @@ export class SelectionSession {
     this.host.closeReactionSheet();
     this.host.setEmojiPanel(false);
     this.animateSelection((): void => {
+      this.retained.clear();
       this.ids = toggleRow([], memberIds);
+      this.remember(this.host.messages());
       this.setActive(true);
     });
   }
@@ -137,6 +133,7 @@ export class SelectionSession {
     }
     this.animateSelection((): void => {
       this.ids = next;
+      this.remember(this.host.messages());
     });
   }
 
@@ -158,6 +155,7 @@ export class SelectionSession {
   // clearSelectionState）。
   private clearState(): void {
     this.ids = [];
+    this.retained.clear();
     this.setActive(false);
   }
 
@@ -189,6 +187,7 @@ export class SelectionSession {
   toggleMember(messageId: number): void {
     this.animateSelection((): void => {
       this.ids = toggleMember(this.ids, messageId);
+      this.remember(this.host.messages());
       if (this.ids.length === 0) {
         this.clearState();
       }
@@ -206,23 +205,78 @@ export class SelectionSession {
     }
     this.animateSelection((): void => {
       this.ids = toggleRow(this.ids, g.memberIds);
+      this.remember(this.host.messages());
       if (this.ids.length === 0) {
         this.clearState();
       }
     });
   }
 
-  // reconcileMessageActionTargets 的 active/ids 半边（B7）。原方法还有一半清
-  // reactionSheet，与多选无关，留在页面——ChatPage 的调用点需要先调
-  // `this.selection.reconcile(list)`，再自己跑 reactionSheet 那几行判定。
+  // 当前窗口不是完整历史；不在窗口中不代表被删除。
   reconcile(list: MessageEntry[]): void {
     if (this.active) {
-      this.ids = pruneSelection(this.ids,
-        list.map((m: MessageEntry): number => m.id));
-      if (this.ids.length === 0) {
-        this.exit();
+      this.remember(list);
+    }
+  }
+
+  private remember(list: MessageEntry[]): void {
+    const selected: Set<number> = new Set<number>(this.ids);
+    this.retained.forEach((_entry: MessageEntry, id: number): void => {
+      if (!selected.has(id)) {
+        this.retained.delete(id);
+      }
+    });
+    for (const entry of list) {
+      if (selected.has(entry.id)) {
+        this.retained.set(entry.id, entry);
       }
     }
+  }
+
+  // 只消费当前聊天的真实删除；TDLib 缓存淘汰不取消用户选择。
+  applyDeletion(chatId: number, update: TdObject): void {
+    if (!this.active || update['chat_id'] !== chatId ||
+      (update['from_cache'] === true && update['is_permanent'] !== true)) {
+      return;
+    }
+    const deleted: Set<number> = new Set<number>((update['message_ids'] as number[] | undefined) ?? []);
+    const next: number[] = this.ids.filter((id: number): boolean => !deleted.has(id));
+    if (next.length === this.ids.length) {
+      return;
+    }
+    this.ids = next;
+    deleted.forEach((id: number): void => { this.retained.delete(id); });
+    if (this.ids.length === 0) {
+      this.exit();
+    }
+  }
+
+  entries(): MessageEntry[] {
+    this.remember(this.host.messages());
+    const result: MessageEntry[] = [];
+    for (const id of this.ids) {
+      const entry: MessageEntry | undefined = this.retained.get(id);
+      if (entry !== undefined) {
+        result.push(entry);
+      }
+    }
+    return result;
+  }
+
+  forwardIds(ids: number[]): number[] {
+    const current: Map<number, MessageEntry> = new Map<number, MessageEntry>();
+    for (const entry of this.host.messages()) {
+      current.set(entry.id, entry);
+    }
+    return forwardableIds(ids, (id: number): string => {
+      const entry: MessageEntry | undefined = current.get(id) ?? this.retained.get(id);
+      if (entry !== undefined) {
+        return entry.contentType;
+      }
+      // 搜索导航先选 id、后异步加载窗口。尚未落地的已选消息也必须传给 TDLib，
+      // 不能静默缩成当前窗口内的一条；非已选的失效菜单目标仍过滤。
+      return id > 0 && this.isMemberSelected(id) ? '' : 'hidden';
+    });
   }
 
   count(): number {

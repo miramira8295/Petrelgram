@@ -144,7 +144,7 @@ function pollShape(msg: MessageEntry, ctx: MessageBubbleReuseContext): string {
     `:${msg.pollIsAnonymous ? 1 : 0}:${msg.pollAllowMultiple ? 1 : 0}` +
     `:${msg.pollIsClosed ? 1 : 0}:${ctx.pollExpired ? 1 : 0}` +
     `:${msg.pollVotePending ? 1 : 0}:${msg.pollVoteError !== '' ? 1 : 0}` +
-    `:${msg.pollExplanation !== '' ? 1 : 0}`;
+    `:${msg.pollExplanation !== '' ? 1 : 0}:${msg.pollCorrectOptionId}`;
   for (const option of msg.pollOptions) {
     shape += `:${option.isChosen ? 1 : 0}:${option.isBeingChosen ? 1 : 0}` +
       `:${option.votePercentage > 0 ? 1 : 0}`;

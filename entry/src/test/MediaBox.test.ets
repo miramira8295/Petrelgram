@@ -20,16 +20,43 @@ export default function mediaBoxTest() {
   describe('mediaBox', () => {
     it('media uses the maximum bubble content width beyond the old 280vp cap', 0, () => {
       for (const width of [440, 720, 960]) {
-        expect(mediaThumbWidth(width) + 16).assertEqual(bubbleMaxWidth(width));
-        expect(mediaThumbWidth(width) > 280).assertTrue();
+        expect(mediaThumbWidth(width, BUBBLE_AVATAR_GUTTER_VP, 'phone') + 16)
+          .assertEqual(bubbleMaxWidth(width));
+        expect(mediaThumbWidth(width, BUBBLE_AVATAR_GUTTER_VP, 'phone') > 280).assertTrue();
       }
     });
 
     it('private and outgoing media reclaim the avatar gutter', 0, () => {
-      const box = mediaBoxFor(440, 1600, 900, false, 0);
+      const box = mediaBoxFor(440, 1600, 900, false, 0, 'phone');
       expect(box.width + 16).assertEqual(bubbleMaxWidth(440, 0));
-      expect(box.width - mediaThumbWidth(440)).assertEqual(BUBBLE_AVATAR_GUTTER_VP);
-      expect(mediaBoxFor(440, 900, 1600, true, 0).width).assertEqual(box.width);
+      expect(box.width - mediaThumbWidth(440, BUBBLE_AVATAR_GUTTER_VP, 'phone'))
+        .assertEqual(BUBBLE_AVATAR_GUTTER_VP);
+      expect(mediaBoxFor(440, 900, 1600, true, 0, 'phone').width).assertEqual(box.width);
+    });
+
+    it('non-phone media keeps the old cap for photos videos and albums', 0, () => {
+      for (const deviceType of ['tablet', '2in1', 'tv', 'wearable', 'unknown', '']) {
+        for (const gutter of [0, BUBBLE_AVATAR_GUTTER_VP]) {
+          expect(mediaThumbWidth(960, gutter, deviceType)).assertEqual(280);
+          expect(mediaBoxFor(960, 1600, 900, false, gutter, deviceType).width).assertEqual(280);
+          const portrait = mediaBoxFor(960, 900, 1600, true, gutter, deviceType);
+          expect(portrait.width).assertEqual(280);
+          expect(portrait.height).assertEqual(336);
+        }
+      }
+    });
+
+    it('both device policies fit narrow columns without changing text bubble widths', 0, () => {
+      for (const deviceType of ['phone', 'tablet', '2in1']) {
+        for (const gutter of [0, BUBBLE_AVATAR_GUTTER_VP]) {
+          for (const width of [0, 40, 80, 240]) {
+            const box = mediaBoxFor(width, 900, 1600, false, gutter, deviceType);
+            expect(box.width).assertEqual(Math.max(0, bubbleMaxWidth(width, gutter) - 16));
+            expect(box.height >= 0).assertTrue();
+          }
+        }
+      }
+      expect(bubbleMaxWidth(960, 0)).assertEqual(928);
     });
 
     it('media dimensions stay nonnegative in very narrow columns', 0, () => {

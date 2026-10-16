@@ -12,14 +12,14 @@ import { PatternTileLayer } from './PatternTileLayer';
 import { gradientStops } from '../../util/backgroundPresentation';
 import {
   BG_BLUR_DEFAULT, BG_PATTERN_DEFAULT, CHAT_DIM_MAX, KEY_POWER_ACTIVE, KEY_POWER_CHAT_EFFECTS,
-  KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_PARTICLES, KEY_POWER_SMOOTH_TRANSITIONS,
-  KEY_REDUCE_ANIM, powerAnimationDuration, powerFeatureEnabled, powerGroupAnimationDuration
+  KEY_POWER_EFFECT_BACKGROUND, KEY_POWER_SMOOTH_TRANSITIONS,
+  KEY_REDUCE_ANIM, powerFeatureEnabled, powerGroupAnimationDuration
 } from '../../store/AppSettings';
 import { KEY_APP_DARK } from '../../util/theme';
 import { publishChatContentWidth } from '../../util/chatContentWidth';
 import { BackdropPhaseClock, BACKDROP_PHASE_MS } from '../../util/backdropPhaseClock';
 
-// 聊天页的整层背景：壁纸 / 图案 / 渐变、两颗氛围光斑、粒子、深色遮罩。
+// 聊天页的整层背景：壁纸 / 图案 / 渐变、两颗氛围光斑、深色遮罩。
 //
 // 从 ChatPage 里搬出来。它自成一体——**只吃输入、不向外回调**，所以搬家不需要
 // 在两边之间牵任何状态：省电开关、模糊度、图案浓度、深色遮罩这些它自己从
@@ -31,7 +31,7 @@ import { BackdropPhaseClock, BACKDROP_PHASE_MS } from '../../util/backdropPhaseC
 // 整屏 JPEG 编码，52+68+58ms），只有熬过安静窗口的那一个值得栅格化——期间
 // 实时绘制的分层背景照常显示，视觉上不缺东西。
 const RASTER_DEBOUNCE_MS: number = 280;
-// 氛围光斑与粒子的相位周期。
+// 氛围光斑的相位周期。
 const AMBIENT_PHASE_MS: number = BACKDROP_PHASE_MS;
 
 @Component
@@ -81,7 +81,6 @@ export struct ChatBackdrop {
   @StorageProp(KEY_POWER_ACTIVE) @Watch('onParamsChanged') powerSaving: boolean = false;
   @StorageProp(KEY_POWER_CHAT_EFFECTS) @Watch('onParamsChanged') powerChatEffects: boolean = true;
   @StorageProp(KEY_POWER_EFFECT_BACKGROUND) @Watch('onParamsChanged') powerBackgroundEffect: boolean = false;
-  @StorageProp(KEY_POWER_PARTICLES) @Watch('onParamsChanged') powerParticles: boolean = true;
   @StorageProp(KEY_REDUCE_ANIM) @Watch('syncMotion') reduceAnimations: boolean = false;
   @StorageProp(KEY_POWER_SMOOTH_TRANSITIONS) @Watch('syncMotion') smoothTransitions: boolean = true;
 
@@ -92,7 +91,6 @@ export struct ChatBackdrop {
   private phaseClock: BackdropPhaseClock = new BackdropPhaseClock((): void => {
     this.phase = !this.phase;
   });
-  private readonly particleIds: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
 
   aboutToAppear(): void {
     this.syncRaster();
@@ -115,8 +113,7 @@ export struct ChatBackdrop {
 
   private syncMotion(): void {
     this.phaseClock.setRunning(this.appeared && this.effectsVisible() &&
-      ((this.ambientEnabled() && this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS) > 0) ||
-        (this.particlesEnabled() && powerAnimationDuration(KEY_POWER_PARTICLES, AMBIENT_PHASE_MS) > 0)));
+      this.ambientEnabled() && this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS) > 0);
   }
 
   // 背景状态、屏幕尺寸、模糊度、图案浓度、深浅主题——任何一个变了，合成图都
@@ -149,11 +146,11 @@ export struct ChatBackdrop {
     return patternOpacity(this.chatBg.isPattern, this.chatBg.imageOpacity, this.patternStrength());
   }
 
-  // The final mask also darkens ambience and particles. Bake it only when
+  // The final mask also darkens ambience. Bake it only when
   // there is no live decoration above the wallpaper, preserving the current
   // appearance while removing the common full-screen blend.
   private canBakeDarkMask(): boolean {
-    return !this.ambientEnabled() && !this.particlesEnabled();
+    return !this.ambientEnabled();
   }
 
   private rasterDimming(): number {
@@ -249,10 +246,6 @@ export struct ChatBackdrop {
   private ambientEnabled(): boolean {
     return !this.chatBg.custom &&
       !this.powerSaving && this.powerChatEffects && this.powerBackgroundEffect;
-  }
-
-  private particlesEnabled(): boolean {
-    return !this.chatBg.custom && !this.powerSaving && this.powerParticles;
   }
 
   // 深色下的用户遮罩。没有动态背景装饰时，它会与服务端下发的
@@ -400,7 +393,7 @@ export struct ChatBackdrop {
     Stack() {
       this.wallpaperLayer();
       // 只停计时器无法取消已经在 RS 运行的 4200ms 插值；隐藏时直接撤下动态节点。
-      // ambientEnabled/particlesEnabled 仍只表示用户设置，canBakeDarkMask 不受可见性影响。
+      // ambientEnabled 仍只表示用户设置，canBakeDarkMask 不受可见性影响。
       if (this.effectsVisible() && this.ambientEnabled()) {
         Circle({ width: 250, height: 250 })
           .fill('#142A9FE8')
@@ -418,21 +411,6 @@ export struct ChatBackdrop {
             duration: this.effectDuration(KEY_POWER_EFFECT_BACKGROUND, AMBIENT_PHASE_MS),
             curve: Curve.EaseInOut
           });
-      }
-      if (this.effectsVisible() && this.particlesEnabled()) {
-        ForEach(this.particleIds, (id: number) => {
-          Circle({ width: 3 + (id % 3), height: 3 + (id % 3) })
-            .fill(id % 2 === 0 ? '#462A9FE8' : '#3D56C76F')
-            .position({
-              x: 22 + ((id * 67 + (this.phase ? 34 : 0)) % Math.max(40, this.layerW() - 44)),
-              y: 120 + ((id * 151 + (this.phase ? 90 : 0)) % 650)
-            })
-            .opacity(this.phase ? 0.2 + (id % 3) * 0.12 : 0.48 - (id % 3) * 0.08)
-            .animation({
-              duration: powerAnimationDuration(KEY_POWER_PARTICLES, AMBIENT_PHASE_MS),
-              curve: Curve.EaseInOut
-            });
-        }, (id: number): string => `power_particle_${id}`);
       }
       if (this.liveDarkMaskOpacity() > 0) {
         Column().width('100%').height('100%')

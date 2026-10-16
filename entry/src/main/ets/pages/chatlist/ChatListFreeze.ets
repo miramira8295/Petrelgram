@@ -1,4 +1,5 @@
 import { ChatEntry } from '../../store/ChatEntry';
+import { ChatListPublicationMode } from '../../store/ChatListSubscription';
 
 // AppStorage flag: true while a chat row's context menu is on screen.
 //
@@ -18,6 +19,28 @@ export const CHAT_LIST_TOUCH_HOLD: string = 'chatListTouchHold';
 // timer instead of each folder list starting its own interval.
 export const CHAT_LIST_NOW: string = 'chatListNowSec';
 
+// Read the source of truth as well as watching it in views: a frozen component
+// can receive Store callbacks before its StorageProp watcher is delivered.
+export function chatListInForeground(): boolean {
+  return AppStorage.get<boolean>('appIsForeground') !== false;
+}
+
+export function chatListPageCanRun(pageActive: boolean, navBarVisible: boolean): boolean {
+  return chatListInForeground() && pageActive && navBarVisible;
+}
+
+// Read shared gates directly: StorageProp watchers may lag behind a TD update.
+// The one initial non-empty snapshot keeps neighbour-tab preloading intact.
+export function chatListPublicationMode(active: boolean, renderActive: boolean,
+  moving: boolean, bypass: boolean, initialContent: boolean): ChatListPublicationMode {
+  if (!chatListInForeground()) { return ChatListPublicationMode.Paused; }
+  if (initialContent) { return ChatListPublicationMode.Immediate; }
+  if (!active || moving || AppStorage.get<boolean>(CHAT_MENU_OPEN) === true ||
+    AppStorage.get<boolean>(CHAT_LIST_TOUCH_HOLD) === true) { return ChatListPublicationMode.Paused; }
+  if (bypass && !renderActive) { return ChatListPublicationMode.Immediate; }
+  return renderActive ? ChatListPublicationMode.Batched : ChatListPublicationMode.Paused;
+}
+
 // Buffers chat-list updates for one list view. Not a store: purely a
 // render-timing gate owned by the view.
 export class ChatListFreeze {
@@ -34,8 +57,8 @@ export class ChatListFreeze {
     // enters the viewport as an empty list and only fills after swipe settle.
     // Callers only set this for an empty view receiving non-empty content, so
     // established lists still freeze every structural/content update.
-    if (!forceInitialContent && (!renderActive || AppStorage.get<boolean>(CHAT_MENU_OPEN) === true
-      || AppStorage.get<boolean>(CHAT_LIST_TOUCH_HOLD) === true)) {
+    if (!chatListInForeground() || (!forceInitialContent && (!renderActive || AppStorage.get<boolean>(CHAT_MENU_OPEN) === true
+      || AppStorage.get<boolean>(CHAT_LIST_TOUCH_HOLD) === true))) {
       this.pending = list;
       return null;
     }
@@ -45,6 +68,8 @@ export class ChatListFreeze {
 
   // Called when the menu closes: the newest buffered list, if any arrived.
   flush(): ChatEntry[] | null {
+    // Even the navigation content-only bypass must retain its snapshot in background.
+    if (!chatListInForeground()) { return null; }
     const p = this.pending;
     this.pending = null;
     return p;

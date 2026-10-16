@@ -140,6 +140,19 @@ function armPowerKeys(): void {
 
 export default function liveTopCardControllerTest() {
   describe('LiveTopCardController', () => {
+    it('hidden pins stay hidden after updates without hiding live call', 0, (): void => {
+      const controller = controllerOn(new FakeHost());
+      controller.pinnedVisibility.hidden = true;
+      controller.applyPinned('new pin', 1, 'ready');
+      expect(controller.pinnedVisible()).assertFalse();
+      expect(controller.shouldShow()).assertFalse();
+      controller.liveGroupCallId = 7;
+      controller.liveCallIsActive = true;
+      expect(controller.shouldShow()).assertTrue();
+      controller.pinnedVisibility.hidden = false;
+      expect(controller.pinnedVisible()).assertTrue();
+    });
+
 
     // 防的回归：把重置那一坨从 changed 判定里提出来。setLiveGroupCallId 是 2s
     // 轮询 + updateGroupCall + syncLiveFromChatEntry 的共同入口，同一个 id 会被

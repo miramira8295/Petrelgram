@@ -1,3 +1,4 @@
+import { TdError } from '../../tdkit/TdTypes';
 // 麦克风录音状态机：start/stopTimer/finish/cancel/secondsLabel 五个方法 +
 // isRecording/recordingStarting/recordSeconds 三个显示态。从 ChatPage 整体
 // 搬出（B15 批）。原方法名 startRecording/stopRecordTimer/finishRecording/
@@ -82,6 +83,7 @@ import { logE } from '../../util/log';
 // 页面当下的真值，动作回调把跨簇副作用交回页面执行。仿 AttachActions 的
 // AttachActionsHost / JumpFlashState 的 JumpFlashStateHost。
 export interface VoiceRecordingStateHost {
+  canSend?: () => boolean;
   // 当前 MessageStore；路由切换途中可能为 null。start() 的入口守卫、
   // finish() 发送语音都要用。
   store: () => MessageStore | null;
@@ -125,6 +127,7 @@ export class VoiceRecordingState {
   //
   // Voice recording state.
   @Trace isRecording: boolean = false;
+  @Trace readyToSend: boolean = false;
   @Trace recordingStarting: boolean = false;
   @Trace recordSeconds: number = 0;
 
@@ -132,6 +135,10 @@ export class VoiceRecordingState {
   private recordTimer: number = -1;
   private voiceRec: VoiceRecorder | null = null;
   private recordingSeq: number = 0;
+  private stoppedPath: string = '';
+  private stoppedDuration: number = 0;
+  private stoppedStore: MessageStore | null = null;
+  private sendingStopped: boolean = false;
 
   // 未 bind 时的空宿主：字段类型非空，且控制器在 aboutToAppear 之前就已经被
   // 构造出来（页面的字段初始化器 new）。取值器返回的都是「什么都还没有」的
@@ -153,6 +160,7 @@ export class VoiceRecordingState {
 
   // --- voice recording (mic button) ---
   start(): void {
+    if (this.host.canSend?.() === false) { return; }
     if (this.recordingStarting || this.isRecording || this.host.store() === null) {
       return;
     }
@@ -173,6 +181,7 @@ export class VoiceRecordingState {
         promptAction.showToast({ message: $r('app.string.cp_record_failed_permission'), duration: 2500 });
         return;
       }
+      if (this.host.canSend?.() === false) { rec.cancel(); this.voiceRec = null; return; }
       this.isRecording = true;
       this.recordSeconds = 0;
       this.recordTimer = setInterval(() => { this.recordSeconds += 1; }, 1000);
@@ -195,26 +204,61 @@ export class VoiceRecordingState {
   }
 
   finish(): void {
-    this.recordingSeq++;
+    if (this.sendingStopped) { return; }
+    if (this.stoppedPath !== '') { this.sendStoppedVoice(this.recordingSeq); return; }
+    const seq: number = ++this.recordingSeq;
     const rec = this.voiceRec;
+    const store = this.host.store();
     this.voiceRec = null;
     this.recordingStarting = false;
     this.stopTimer();
     this.isRecording = false;
-    if (rec === null) {
-      return;
-    }
-    rec.stop().then((duration: number) => {
-      const store = this.host.store();
+    if (rec === null) { return; }
+    rec.stop().then((duration: number): void => {
+      if (seq !== this.recordingSeq || store !== this.host.store()) { return; }
       if (rec.path !== '' && store !== null) {
-        this.host.afterSent();
-        store.sendVoiceNote(rec.path, duration);
+        this.stoppedPath = rec.path;
+        this.stoppedDuration = duration;
+        this.stoppedStore = store;
+        this.readyToSend = true;
+        this.isRecording = true; // Retain the finish/cancel controls for a denied send.
+        this.sendStoppedVoice(seq);
       }
+    }).catch((): void => {});
+  }
+
+  private sendStoppedVoice(seq: number): void {
+    const store = this.stoppedStore;
+    if (store === null || store !== this.host.store() || this.host.canSend?.() === false) { return; }
+    this.sendingStopped = true;
+    store.sendVoiceNoteAsync(this.stoppedPath, this.stoppedDuration).then((): void => {
+      if (seq !== this.recordingSeq) { return; }
+      this.stoppedPath = '';
+      this.readyToSend = false;
+      this.stoppedStore = null;
+      this.isRecording = false;
+      this.host.afterSent();
+    }).catch((error: Error): void => {
+      logE(`VoiceRecordingState.send failed: ${error.message}`);
+      if (seq === this.recordingSeq && (error as TdError).code === -1) {
+        // Once submitted, a timeout is uncertain; do not offer a duplicate retry.
+        this.stoppedPath = '';
+        this.stoppedStore = null;
+        this.readyToSend = false;
+        this.isRecording = false;
+        promptAction.showToast({ message: $r('app.string.share_result_unknown'), duration: 3000 });
+      }
+    }).finally((): void => {
+      if (seq === this.recordingSeq) { this.sendingStopped = false; }
     });
   }
 
   cancel(): void {
     this.recordingSeq++;
+    this.stoppedPath = '';
+    this.readyToSend = false;
+    this.stoppedStore = null;
+    this.sendingStopped = false;
     const rec = this.voiceRec;
     this.voiceRec = null;
     this.recordingStarting = false;

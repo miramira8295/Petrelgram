@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "Lompat ke sebutan belum dibaca"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "Hasil pengiriman belum diketahui. Periksa obrolan tujuan terlebih dahulu; kelompok ini tidak akan dikirim ulang untuk menghindari duplikat."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "Admin grup ini membatasi Anda mengirim pesan hingga %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "Admin grup ini membatasi Anda mengirim pesan."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "Grup ini tidak mengizinkan anggota biasa mengirim pesan."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "Kelola: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "Selesai: %1$s. Gagal: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "Status anggota atau izin admin berubah. Buka kembali dialog penghapusan."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "Hasil belum dikonfirmasi. Periksa grup sebelum mengulangi tindakan ini."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "Pesan yang dipilih akan dihapus untuk semua orang."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "Pesan yang dipilih hanya akan dihapus dari riwayat obrolan Anda."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "Cakupan penghapusan yang tersedia untuk pesan yang dipilih tidak dapat dipastikan. Ubah pilihan atau coba lagi nanti."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "Tidak diizinkan di obrolan ini: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "Tidak dapat memeriksa izin pengiriman. Silakan coba lagi."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "Merekam video…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "Merekam suara…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "Merekam pesan video…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "Mengirim video…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "Mengirim pesan suara…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "Mengirim pesan video…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "Mengirim foto…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "Mengirim berkas…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "Memilih stiker…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "Memilih lokasi…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "Memilih kontak…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "Bermain gim…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "Menonton animasi…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "Melakukan berbagai aktivitas…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "Pindai kode QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "Kode ini tidak didukung. Pindai kode kontak, grup, atau masuk Telegram."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "Izinkan perangkat baru masuk?"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "Hanya setujui perangkat yang Anda gunakan untuk masuk. Perangkat itu akan dapat mengakses akun dan obrolan cloud Telegram Anda."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "Izinkan masuk"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "Tidak ada tautan undangan, atau Anda tidak dapat mengelolanya."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "Kode tidak dapat diproses. Periksa koneksi dan masa berlaku kode, lalu coba lagi."
+    },
+    {
+      "name": "session_new_login",
+      "value": "Perangkat baru masuk"
+    },
+    {
+      "name": "session_review_count",
+      "value": "Perangkat menunggu konfirmasi: %1$d. Ketuk untuk meninjau."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "Grup Telegram"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "Tampilkan papan ketik"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "Sembunyikan pesan disematkan"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "Tampilkan pesan disematkan"
     }
   ]
 }

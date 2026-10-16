@@ -12971,6 +12971,174 @@
     {
       "name": "cp_jump_unread_mention",
       "value": "الانتقال إلى إشارة غير مقروءة"
+    },
+    {
+      "name": "share_result_unknown",
+      "value": "نتيجة الإرسال غير معروفة. تحقّق من المحادثة المستهدفة أولاً؛ لن تُعاد هذه الدفعة لتجنّب التكرار."
+    },
+    {
+      "name": "cp_send_restricted_until",
+      "value": "قيّد مشرفو هذه المجموعة إرسال رسائلك حتى %1$s."
+    },
+    {
+      "name": "cp_send_restricted",
+      "value": "قيّد مشرفو هذه المجموعة إرسال رسائلك."
+    },
+    {
+      "name": "cp_group_send_disabled",
+      "value": "لا تسمح هذه المجموعة للأعضاء العاديين بإرسال الرسائل."
+    },
+    {
+      "name": "dm_moderation_target",
+      "value": "إدارة: %1$s"
+    },
+    {
+      "name": "dm_moderation_partial",
+      "value": "اكتمل: %1$s. فشل: %2$s (%3$s)"
+    },
+    {
+      "name": "dm_permissions_changed",
+      "value": "تغيرت حالة العضو أو صلاحيات الإدارة. أعد فتح نافذة الحذف."
+    },
+    {
+      "name": "dm_operation_unknown",
+      "value": "لم تتأكد النتيجة. تحقق من المجموعة قبل تكرار الإجراء."
+    },
+    {
+      "name": "dm_scope_all",
+      "value": "سيتم حذف الرسائل المحددة لدى الجميع."
+    },
+    {
+      "name": "dm_scope_self",
+      "value": "سيتم حذف الرسائل المحددة من سجل محادثتك فقط."
+    },
+    {
+      "name": "dm_scope_unavailable",
+      "value": "تعذر تحديد نطاق الحذف المتاح للرسائل المحددة. غيّر تحديدك أو حاول مرة أخرى لاحقًا."
+    },
+    {
+      "name": "cp_send_permission_denied",
+      "value": "غير مسموح في هذه الدردشة: %s"
+    },
+    {
+      "name": "cp_send_permission_check_failed",
+      "value": "تعذر التحقق من أذونات الإرسال. يرجى المحاولة مرة أخرى."
+    },
+    {
+      "name": "cp_action_record_video",
+      "value": "جارٍ تسجيل فيديو…"
+    },
+    {
+      "name": "cp_action_record_voice",
+      "value": "جارٍ تسجيل رسالة صوتية…"
+    },
+    {
+      "name": "cp_action_record_video_note",
+      "value": "جارٍ تسجيل رسالة فيديو…"
+    },
+    {
+      "name": "cp_action_upload_video",
+      "value": "جارٍ إرسال فيديو…"
+    },
+    {
+      "name": "cp_action_upload_voice",
+      "value": "جارٍ إرسال رسالة صوتية…"
+    },
+    {
+      "name": "cp_action_upload_video_note",
+      "value": "جارٍ إرسال رسالة فيديو…"
+    },
+    {
+      "name": "cp_action_upload_photo",
+      "value": "جارٍ إرسال صور…"
+    },
+    {
+      "name": "cp_action_upload_document",
+      "value": "جارٍ إرسال ملفات…"
+    },
+    {
+      "name": "cp_action_choose_sticker",
+      "value": "جارٍ اختيار ملصق…"
+    },
+    {
+      "name": "cp_action_choose_location",
+      "value": "جارٍ اختيار موقع…"
+    },
+    {
+      "name": "cp_action_choose_contact",
+      "value": "جارٍ اختيار جهة اتصال…"
+    },
+    {
+      "name": "cp_action_play_game",
+      "value": "جارٍ اللعب…"
+    },
+    {
+      "name": "cp_action_watch_animation",
+      "value": "جارٍ مشاهدة رسوم متحركة…"
+    },
+    {
+      "name": "cp_action_mixed",
+      "value": "جارٍ تنفيذ إجراءات مختلفة…"
+    },
+    {
+      "name": "cp_action_member",
+      "value": "%1$s: %2$s"
+    },
+    {
+      "name": "cp_action_members",
+      "value": "(%1$d) %2$s"
+    },
+    {
+      "name": "qr_scan",
+      "value": "مسح رمز QR"
+    },
+    {
+      "name": "qr_unsupported",
+      "value": "هذا الرمز غير مدعوم. امسح رمز جهة اتصال أو مجموعة أو تسجيل دخول إلى تيليجرام."
+    },
+    {
+      "name": "qr_login_title",
+      "value": "السماح بتسجيل الدخول لجهاز جديد؟"
+    },
+    {
+      "name": "qr_login_body",
+      "value": "وافق فقط على جهاز تسجّل الدخول إليه بنفسك. سيتمكن من الوصول إلى حسابك ومحادثاتك السحابية في تيليجرام."
+    },
+    {
+      "name": "qr_login_confirm",
+      "value": "السماح بالدخول"
+    },
+    {
+      "name": "qr_group_unavailable",
+      "value": "لا يوجد رابط دعوة متاح، أو ليس لديك إذن لإدارة روابط الدعوة."
+    },
+    {
+      "name": "qr_scan_failed",
+      "value": "تعذرت معالجة الرمز. تحقق من الاتصال وصلاحية الرمز ثم حاول مجددًا."
+    },
+    {
+      "name": "session_new_login",
+      "value": "تسجيل دخول جهاز جديد"
+    },
+    {
+      "name": "session_review_count",
+      "value": "أجهزة تنتظر التأكيد: %1$d. اضغط للمراجعة."
+    },
+    {
+      "name": "about_telegram_group",
+      "value": "مجموعة تيليجرام"
+    },
+    {
+      "name": "cp_show_keyboard",
+      "value": "إظهار لوحة المفاتيح"
+    },
+    {
+      "name": "cp_hide_pinned",
+      "value": "إخفاء الرسائل المثبتة"
+    },
+    {
+      "name": "cp_show_pinned",
+      "value": "إظهار الرسائل المثبتة"
     }
   ]
 }

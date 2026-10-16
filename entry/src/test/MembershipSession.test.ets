@@ -1,3 +1,4 @@
+import { GroupPermissions, allPermissions, permissionsToTd } from '../main/ets/util/chatPermissions';
 import { describe, expect, it } from '@ohos/hypium';
 import { MembershipSession, MembershipSessionHost } from '../main/ets/pages/chat/MembershipSession';
 import { TdClient } from '../main/ets/tdkit/TdClient';
@@ -66,11 +67,15 @@ class WiredClient {
 }
 
 class MembershipFakeHost implements MembershipSessionHost {
+  sendPermissions: GroupPermissions = allPermissions(true);
+  setSendPermissions: (value: GroupPermissions) => void = (value: GroupPermissions): void => { this.sendPermissions = value; };
   chatIdValue: number = 0;
   chatIdCalls: number = 0;
   isChannelValue: boolean = false;
   isChannelCalls: number = 0;
   membershipStateValue: string = 'initial';
+  restrictedUntil: number = 0;
+  setRestrictedUntil: (value: number) => void = (value: number): void => { this.restrictedUntil = value; };
   setMembershipStateCalls: string[] = [];
   isGroupValue: boolean = false;
   setIsGroupCalls: boolean[] = [];
@@ -204,8 +209,226 @@ function tdError(code: number, message: string): TdObject {
   return err;
 }
 
+function permissionsUpdate(chatId: number, canSend: boolean): TdObject {
+  return { '@type': 'updateChatPermissions', 'chat_id': chatId,
+    'permissions': { '@type': 'chatPermissions', 'can_send_basic_messages': canSend } as TdObject };
+}
+
+async function loadMember(host: MembershipFakeHost, controller: MembershipSession, basic: boolean = false): Promise<void> {
+  const index: number = host.wired.bridge.sent.length;
+  controller.refresh();
+  host.wired.respond(index, basic ? basicGroupChat(42) : supergroupChat(42));
+  await sleep(0);
+  host.wired.respond(index + 1, groupResponseWithStatus('chatMemberStatusMember', true));
+  await sleep(0);
+}
+
 export default function membershipSessionTest() {
   describe('MembershipSession', () => {
+    it('仅媒体权限变化仍推送能力但不关闭文字输入', 0, async () => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host); await loadMember(host, controller);
+      const value = allPermissions(true); value.sendPhotos = false;
+      controller.applyChatPermissions({ '@type': 'updateChatPermissions', 'chat_id': 1,
+        'permissions': permissionsToTd(value) });
+      expect(host.sendPermissions.sendPhotos).assertFalse(); expect(host.sendPermissions.sendVideos).assertTrue();
+      expect(host.membershipStateValue).assertEqual('writable'); expect(host.closeComposerSurfacesCalls).assertEqual(0);
+    });
+    it('不能发文字但可发图片时仍保留输入区域', 0, async () => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host); await loadMember(host, controller);
+      const value = allPermissions(false); value.sendPhotos = true;
+      controller.applyChatPermissions({ '@type': 'updateChatPermissions', 'chat_id': 1,
+        'permissions': permissionsToTd(value) });
+      expect(host.sendPermissions.sendMessages).assertFalse(); expect(host.sendPermissions.sendPhotos).assertTrue();
+      expect(host.membershipStateValue).assertEqual('writable');
+    });
+    it('个人媒体限制不会被群默认全开放覆盖', 0, async () => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host); await loadMember(host, controller);
+      const own = allPermissions(true); own.sendVoiceNotes = false;
+      controller.applyStatus({ '@type': 'chatMemberStatusRestricted', 'is_member': true,
+        'permissions': permissionsToTd(own) });
+      controller.applyChatPermissions({ '@type': 'updateChatPermissions', 'chat_id': 1,
+        'permissions': permissionsToTd(allPermissions(true)) });
+      expect(host.sendPermissions.sendVoiceNotes).assertFalse(); expect(host.sendPermissions.sendPhotos).assertTrue();
+    });
+    it('初始化旧快照不能覆盖新媒体权限', 0, async () => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host); controller.refresh();
+      const value = allPermissions(true); value.sendPhotos = false;
+      controller.applyChatPermissions({ '@type': 'updateChatPermissions', 'chat_id': 1,
+        'permissions': permissionsToTd(value) });
+      const chat = supergroupChat(10); chat['permissions'] = permissionsToTd(allPermissions(true));
+      host.wired.respond(0, chat); await sleep(0);
+      host.wired.respond(1, groupResponseWithStatus('chatMemberStatusMember', true)); await sleep(0);
+      expect(host.sendPermissions.sendPhotos).assertFalse();
+    });
+
+
+    it('超级群全员禁言和解禁即时更新，不额外请求且重复权限不反复关闭面板', 0, async (): Promise<void> => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      await loadMember(host, controller);
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      expect(host.membershipStateValue).assertEqual('groupReadonly');
+      expect(host.closeComposerSurfacesCalls).assertEqual(1);
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      expect(host.closeComposerSurfacesCalls).assertEqual(1);
+      controller.applyChatPermissions(permissionsUpdate(1, true));
+      expect(host.membershipStateValue).assertEqual('writable');
+      expect(host.wired.bridge.sent.length).assertEqual(2);
+    });
+
+    it('普通群默认权限同样即时生效', 0, async (): Promise<void> => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      await loadMember(host, controller, true);
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      expect(host.membershipStateValue).assertEqual('groupReadonly');
+      controller.applyChatPermissions(permissionsUpdate(1, true));
+      expect(host.membershipStateValue).assertEqual('writable');
+      expect(host.closeComposerSurfacesCalls).assertEqual(1);
+    });
+
+    it('全员禁言不影响群主和管理员，降为普通成员立即使用最新权限', 0, (): void => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      controller.applyStatus(statusOf('chatMemberStatusCreator'));
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      expect(host.membershipStateValue).assertEqual('writable');
+      controller.applyStatus(statusOf('chatMemberStatusAdministrator'));
+      expect(host.membershipStateValue).assertEqual('writable');
+      expect(host.closeComposerSurfacesCalls).assertEqual(0);
+      controller.applyStatus(statusOf('chatMemberStatusMember'));
+      expect(host.membershipStateValue).assertEqual('groupReadonly');
+    });
+
+    it('全员解禁不解除个人禁言也不开放频道订阅者发帖', 0, (): void => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      controller.applyStatus({ '@type': 'chatMemberStatusRestricted', 'is_member': true,
+        'restricted_until_date': 1792071000,
+        'permissions': { '@type': 'chatPermissions', 'can_send_basic_messages': false } as TdObject });
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      controller.applyChatPermissions(permissionsUpdate(1, true));
+      expect(host.membershipStateValue).assertEqual('restricted');
+      expect(host.restrictedUntil).assertEqual(1792071000);
+      host.isChannelValue = true;
+      controller.applyStatus(statusOf('chatMemberStatusMember'));
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      controller.applyChatPermissions(permissionsUpdate(1, true));
+      expect(host.membershipStateValue).assertEqual('readonly');
+    });
+
+    it('getChat 在途时收到的新权限不会被旧快照覆盖，双向变化均成立', 0, async (): Promise<void> => {
+      for (const canSend of [false, true]) {
+        const host = new MembershipFakeHost(); host.chatIdValue = 1;
+        const controller = membershipControllerOn(host);
+        controller.refresh();
+        controller.applyChatPermissions(permissionsUpdate(1, canSend));
+        const chat: TdObject = supergroupChat(42);
+        chat['permissions'] = { '@type': 'chatPermissions', 'can_send_basic_messages': !canSend } as TdObject;
+        host.wired.respond(0, chat); await sleep(0);
+        host.wired.respond(1, groupResponseWithStatus('chatMemberStatusMember', true)); await sleep(0);
+        expect(host.membershipStateValue).assertEqual(canSend ? 'writable' : 'groupReadonly');
+      }
+    });
+
+    it('成员信息未到达时先缓存权限，成员应答按最新权限显示', 0, async (): Promise<void> => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      controller.refresh();
+      host.wired.respond(0, basicGroupChat(42)); await sleep(0);
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      expect(host.membershipStateValue).assertEqual('checking');
+      host.wired.respond(1, groupResponseWithStatus('chatMemberStatusMember', true)); await sleep(0);
+      expect(host.membershipStateValue).assertEqual('groupReadonly');
+    });
+
+    it('群资料旧应答不能覆盖期间推送的新成员身份，普通群和超级群一致', 0, async (): Promise<void> => {
+      for (const basic of [false, true]) {
+        const host = new MembershipFakeHost(); host.chatIdValue = 1;
+        const controller = membershipControllerOn(host);
+        controller.refresh();
+        host.wired.respond(0, basic ? basicGroupChat(42) : supergroupChat(42)); await sleep(0);
+        controller.applyChatPermissions(permissionsUpdate(1, false));
+        controller.applyStatus(statusOf('chatMemberStatusMember'));
+        expect(host.membershipStateValue).assertEqual('groupReadonly');
+        host.wired.respond(1, groupResponseWithStatus('chatMemberStatusAdministrator')); await sleep(0);
+        expect(host.membershipStateValue).assertEqual('groupReadonly');
+      }
+    });
+
+    it('getChat 应答前的新成员身份也不会被后续群资料旧应答覆盖', 0, async (): Promise<void> => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      await loadMember(host, controller);
+      controller.refresh();
+      controller.applyStatus(statusOf('chatMemberStatusBanned'));
+      host.wired.respond(2, supergroupChat(42)); await sleep(0);
+      expect(host.membershipStateValue).assertEqual('blocked');
+      host.wired.respond(3, groupResponseWithStatus('chatMemberStatusMember')); await sleep(0);
+      expect(host.membershipStateValue).assertEqual('blocked');
+    });
+
+    it('资料读取失败保留已知权限状态，不回退成可发送', 0, async (): Promise<void> => {
+      for (const failOuter of [false, true]) {
+        const host = new MembershipFakeHost(); host.chatIdValue = 1;
+        const controller = membershipControllerOn(host);
+        await loadMember(host, controller);
+        controller.refresh();
+        controller.applyChatPermissions(permissionsUpdate(1, false));
+        if (failOuter) { host.wired.respond(2, tdError(500, 'offline')); }
+        else {
+          host.wired.respond(2, supergroupChat(42)); await sleep(0);
+          host.wired.respond(3, tdError(500, 'offline'));
+        }
+        await sleep(0);
+        expect(host.membershipStateValue).assertEqual('groupReadonly');
+      }
+    });
+
+    it('其他群和缺失权限字段的推送不改变当前状态', 0, async (): Promise<void> => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      await loadMember(host, controller);
+      controller.applyChatPermissions(permissionsUpdate(2, false));
+      controller.applyChatPermissions({ '@type': 'updateChatPermissions', 'chat_id': 1 });
+      expect(host.membershipStateValue).assertEqual('writable');
+      expect(host.closeComposerSurfacesCalls).assertEqual(0);
+    });
+
+    it('切换聊天或账号后旧响应无效，新会话不继承旧权限', 0, async (): Promise<void> => {
+      for (const switchAccount of [false, true]) {
+        const host = new MembershipFakeHost(); host.chatIdValue = 1;
+        const controller = membershipControllerOn(host);
+        await loadMember(host, controller);
+        controller.applyChatPermissions(permissionsUpdate(1, false));
+        controller.refresh();
+        const old: WiredClient = host.wired;
+        if (switchAccount) { host.wired = new WiredClient(); }
+        else { host.chatIdValue = 2; }
+        host.membershipStateValue = 'new-chat';
+        old.respond(2, supergroupChat(42)); await sleep(0);
+        expect(host.membershipStateValue).assertEqual('new-chat');
+        await loadMember(host, controller);
+        expect(host.membershipStateValue).assertEqual('writable');
+      }
+    });
+
+    it('退场忽略迟到权限和身份更新，切话题重新 refresh 后正常恢复', 0, async (): Promise<void> => {
+      const host = new MembershipFakeHost(); host.chatIdValue = 1;
+      const controller = membershipControllerOn(host);
+      await loadMember(host, controller);
+      controller.dispose();
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      controller.applyStatus(statusOf('chatMemberStatusBanned'));
+      expect(host.membershipStateValue).assertEqual('writable');
+      await loadMember(host, controller);
+      controller.applyChatPermissions(permissionsUpdate(1, false));
+      expect(host.membershipStateValue).assertEqual('groupReadonly');
+    });
 
     // ========================================================================
     // membershipSeq —— 三层取消令牌（refresh() 文件头【乙】一节，6 处比较）
@@ -596,6 +819,40 @@ export default function membershipSessionTest() {
     // 防的回归：applyStatus 拼 membershipStateOf 入参时，isChannel 用的是缓存值
     // 而不是每次现取 host.isChannel()——这里在同一个 controller 上先后用两种
     // isChannelValue 各调一次，证明两次读到的是当时的真值，不是构造时的快照。
+    it('个人禁言显示截止时间，期限更新及解除限制同步到宿主', 0, (): void => {
+      const host: MembershipFakeHost = new MembershipFakeHost();
+      const controller: MembershipSession = membershipControllerOn(host);
+      const status: TdObject = { '@type': 'chatMemberStatusRestricted', 'is_member': true,
+        'restricted_until_date': 1792071000,
+        'permissions': { '@type': 'chatPermissions', 'can_send_basic_messages': false } as TdObject };
+      controller.applyStatus(status);
+      expect(host.membershipStateValue).assertEqual('restricted');
+      expect(host.restrictedUntil).assertEqual(1792071000);
+      expect(host.closeComposerSurfacesCalls).assertEqual(1);
+      status['restricted_until_date'] = 1792072000;
+      controller.applyStatus(status);
+      expect(host.restrictedUntil).assertEqual(1792072000);
+      controller.applyStatus(statusOf('chatMemberStatusMember'));
+      expect(host.membershipStateValue).assertEqual('writable');
+      expect(host.restrictedUntil).assertEqual(0);
+    });
+
+    it('永久禁言不伪造截止日期，离群不显示个人禁言条', 0, (): void => {
+      const host: MembershipFakeHost = new MembershipFakeHost();
+      const controller: MembershipSession = membershipControllerOn(host);
+      const status: TdObject = { '@type': 'chatMemberStatusRestricted', 'is_member': true,
+        'restricted_until_date': 0,
+        'permissions': { '@type': 'chatPermissions', 'can_send_basic_messages': false } as TdObject };
+      controller.applyStatus(status);
+      expect(host.membershipStateValue).assertEqual('restricted');
+      expect(host.restrictedUntil).assertEqual(0);
+      status['is_member'] = false;
+      status['restricted_until_date'] = 1792071000;
+      controller.applyStatus(status);
+      expect(host.membershipStateValue).assertEqual('joinable');
+      expect(host.restrictedUntil).assertEqual(0);
+    });
+
     it('applyStatus：isChannel 现取 host.isChannel()，不缓存', 0, (): void => {
       const host: MembershipFakeHost = new MembershipFakeHost();
       const controller: MembershipSession = membershipControllerOn(host);

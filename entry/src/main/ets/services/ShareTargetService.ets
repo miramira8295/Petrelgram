@@ -1,3 +1,5 @@
+import { ShareRow } from '../util/shareSearch';
+import { pickerRows } from './ShareChatSearch';
 import { common } from '@kit.AbilityKit';
 import { ChatEntry } from '../store/ChatEntry';
 import { getChatStore } from '../tdkit/Globals';
@@ -33,12 +35,16 @@ let donationContext: common.BaseContext | null = null;
 
 function currentTargets(): ShareTarget[] {
   const chats: ChatEntry[] = getChatStore().getChats('main');
-  return orderShareTargets(chats, recentOutgoingChats(), SHARE_TARGET_LIMIT);
+  const targets = orderShareTargets(chats, recentOutgoingChats(), SHARE_TARGET_LIMIT);
+  return pickerRows(targets.map((target: ShareTarget): ShareRow => ({
+    chatId: target.chatId, title: target.title, subtitle: '', avatarPath: target.avatarPath,
+    initials: target.initials, isSavedMessages: target.isSavedMessages
+  }))).slice(0, SHARE_TARGET_LIMIT);
 }
 
 // 名单内容没变就不写盘。会话列表一天要重排上千次，其中绝大多数不影响前 12 名。
 function fingerprintOf(targets: ShareTarget[]): string {
-  return targets.map((t: ShareTarget): string => `${t.chatId}:${t.title}:${t.avatarPath}`).join('|');
+  return JSON.stringify(targets);
 }
 
 function writeNow(): void {
