@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { batteryInfo } from '@kit.BasicServicesKit';
 import { viewerSystemBarsOwner } from '../../util/systemBarsHidden';
 import { setSystemBarsHidden } from '../../util/systemBarsWindow';
 import { MEDIA_PREFETCH_PRIORITY, MEDIA_VIEWING_PRIORITY } from '../../util/downloadPriority';
@@ -10,7 +11,7 @@ import {
 import { MessageEntry } from '../../store/MessageEntry';
 import { MessageStore } from '../../store/MessageStore';
 import { AlbumGroup } from '../../util/collapseAlbums';
-import { formatTime } from '../../util/formatTime';
+import { formatClockTime, formatTime } from '../../util/formatTime';
 import { VideoPlayerHost } from './VideoPlayerHost';
 import { isLivePhotoVideo } from '../../util/livePhoto';
 import { extractLiveStill } from '../../util/livePhotoEmbed';
@@ -260,8 +261,9 @@ export struct MediaViewerOverlay {
   private readonly barsOwner: string = viewerSystemBarsOwner();
 
   private syncSystemBars(): void {
+    // 竖屏下控制栏展开时保留手机系统状态栏；横屏下全程隐藏系统状态栏，由顶栏内直接展示时间与电量。
     setSystemBarsHidden(getContext(this) as common.UIAbilityContext, this.barsOwner,
-      !this.chromeVisible);
+      this.videoLandscape || !this.chromeVisible);
   }
 
   aboutToAppear(): void {
@@ -1684,6 +1686,78 @@ export struct MediaViewerOverlay {
     });
   }
 
+  private currentClockText(): string {
+    const sec: number = this.nowSec > 0 ? this.nowSec : Math.floor(Date.now() / 1000);
+    return formatClockTime(sec);
+  }
+
+  private currentBatterySoc(): number {
+    try {
+      const soc: number = batteryInfo.batterySOC;
+      if (Number.isFinite(soc) && soc >= 0 && soc <= 100) {
+        return Math.round(soc);
+      }
+    } catch (_e) {
+    }
+    return -1;
+  }
+
+  private isBatteryCharging(): boolean {
+    try {
+      const state: batteryInfo.BatteryChargeState = batteryInfo.chargingStatus;
+      return state === batteryInfo.BatteryChargeState.ENABLE ||
+        state === batteryInfo.BatteryChargeState.FULL;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  @Builder
+  landscapeStatusInfo() {
+    Row({ space: 6 }) {
+      Text(this.currentClockText())
+        .fontSize(12)
+        .fontColor('#E6FFFFFF')
+        .fontWeight(FontWeight.Medium);
+      if (this.currentBatterySoc() >= 0) {
+        Row({ space: 3 }) {
+          Row({ space: 1 }) {
+            Stack({ alignContent: Alignment.Start }) {
+              Row()
+                .width(18).height(10)
+                .border({ width: 1, color: '#CCFFFFFF', radius: 2.5 })
+                .backgroundColor(Color.Transparent);
+              Row()
+                .width(Math.max(2, Math.round(14 * (this.currentBatterySoc() / 100))))
+                .height(6)
+                .margin({ left: 2 })
+                .borderRadius(1)
+                .backgroundColor(this.isBatteryCharging()
+                  ? '#34C759'
+                  : (this.currentBatterySoc() <= 20 ? '#FF453A' : '#E6FFFFFF'));
+            }
+            .width(18).height(10);
+            Column()
+              .width(1.5).height(4)
+              .borderRadius({ topRight: 1, bottomRight: 1 })
+              .backgroundColor('#CCFFFFFF');
+          }
+          .alignItems(VerticalAlign.Center);
+          Text(`${this.currentBatterySoc()}%`)
+            .fontSize(11)
+            .fontColor('#E6FFFFFF')
+            .fontWeight(FontWeight.Medium);
+        }
+        .alignItems(VerticalAlign.Center);
+      }
+    }
+    .height(24)
+    .padding({ left: 8, right: 8 })
+    .backgroundColor('#33FFFFFF')
+    .borderRadius(12)
+    .alignItems(VerticalAlign.Center);
+  }
+
   @Builder
   chromeLayer() {
     // 顶部通栏。**一整条，不是三块浮在照片上的玻璃胶囊。**
@@ -1696,14 +1770,21 @@ export struct MediaViewerOverlay {
     // 通栏一铺，状态栏就有了和标题同一块背板：**全局那套跟随主题的状态栏内容
     // 色于是自动变成对的**，一行 setWindowSystemBarProperties 都不用调，也不
     // 用去猜照片亮度。三块胶囊的背板随之失去意义，按钮只留热区和按压态。
+    //
+    // 横屏模式下全程隐藏系统状态栏，不再留出 topSafe 状态栏高度，改在顶栏右侧
+    // 直接展示当前系统时间与手机电量。
     Column() {
-      // 状态栏占位。玻璃铺到这里，系统时钟和图标就压在它上面。
-      Row().width('100%').height(this.topSafe).hitTestBehavior(HitTestMode.None);
+      if (!this.videoLandscape) {
+        // 竖屏状态栏占位。玻璃铺到这里，系统时钟和图标就压在它上面。
+        Row().width('100%').height(this.topSafe).hitTestBehavior(HitTestMode.None);
+      }
       Row({ space: 6 }) {
         Stack() {
           SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([Color.White]);
         }
-        .width(40).height(40).borderRadius(20)
+        .width(this.videoLandscape ? 36 : 40)
+        .height(this.videoLandscape ? 36 : 40)
+        .borderRadius(this.videoLandscape ? 18 : 20)
         .stateStyles({
           normal: this.chromeNormalStyle,
           pressed: this.chromePressedStyle
@@ -1714,10 +1795,10 @@ export struct MediaViewerOverlay {
         })
         .onClick(() => { this.onRequestClose(); });
         Column({ space: 1 }) {
-          Text(this.infoTitle()).fontSize(15).fontColor(Color.White)
+          Text(this.infoTitle()).fontSize(this.videoLandscape ? 14 : 15).fontColor(Color.White)
             .fontWeight(FontWeight.Medium)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-          if (this.infoSubtitle() !== '') {
+          if (this.infoSubtitle() !== '' && !this.videoLandscape) {
             Text(this.infoSubtitle()).fontSize(11).fontColor('#D9FFFFFF')
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
           }
@@ -1734,13 +1815,18 @@ export struct MediaViewerOverlay {
             onShowStats: (): void => { this.statsOpen = true; }
           });
         }
+        if (this.videoLandscape) {
+          this.landscapeStatusInfo();
+        }
         // No download indicator up here: the seek bar's lighter track shows
         // the downloaded span, and a stalled player draws a centered ring.
         // "⋮" menu — 保存到相册 etc.
         Stack() {
           SymbolGlyph($r('sys.symbol.more')).fontSize(18).fontColor([Color.White]);
         }
-        .width(40).height(40).borderRadius(20)
+        .width(this.videoLandscape ? 36 : 40)
+        .height(this.videoLandscape ? 36 : 40)
+        .borderRadius(this.videoLandscape ? 18 : 20)
         .stateStyles({
           normal: this.chromeNormalStyle,
           pressed: this.chromePressedStyle
@@ -1751,8 +1837,16 @@ export struct MediaViewerOverlay {
         })
         .bindMenu(this.chromeMenu());
       }
-      .width('100%').height(CHROME_BAR_ROW_H)
-      .padding({ left: 6, right: 6 })
+      .width('100%')
+      .height(this.videoLandscape ? 44 : CHROME_BAR_ROW_H)
+      .padding({
+        left: this.videoLandscape
+          ? Math.max(12, (AppStorage.get<number>('cutoutLeftSafeWidth') ?? 0) + 6)
+          : 6,
+        right: this.videoLandscape
+          ? Math.max(12, (AppStorage.get<number>('cutoutRightSafeWidth') ?? 0) + 6)
+          : 6
+      })
       .alignItems(VerticalAlign.Center);
     }
     .width('100%')
@@ -1834,7 +1928,9 @@ export struct MediaViewerOverlay {
           });
         }
         .width('100%').height('100%')
-        .padding({ top: this.topSafe + CHROME_BAR_ROW_H + 8 })
+        .padding({
+          top: (this.videoLandscape ? 44 : this.topSafe + CHROME_BAR_ROW_H) + 8
+        })
         .alignItems(HorizontalAlign.Center)
         .hitTestBehavior(HitTestMode.Transparent);
       }
@@ -1842,13 +1938,13 @@ export struct MediaViewerOverlay {
         this.liveCapsule();
         this.liveSaveButton();
       }
-      if (this.chromeVisible && this.siblingIds().length > 1) {
+      if (this.chromeVisible && !this.videoLandscape && this.siblingIds().length > 1) {
         Column() {
           this.viewerFilmstrip();
         }
         .width('100%').height('100%')
         .justifyContent(FlexAlign.End)
-        .padding({ bottom: this.isVideo() ? 110 : 30 })
+        .padding({ bottom: this.isVideo() ? 68 : 30 })
         .hitTestBehavior(HitTestMode.Transparent)
         .transition(TransitionEffect.OPACITY
           .combine(TransitionEffect.translate({ y: 10 }))
