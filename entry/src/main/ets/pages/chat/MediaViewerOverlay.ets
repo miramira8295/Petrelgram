@@ -47,6 +47,7 @@ import { entryPlaybackVariant, entryVideoVariants } from '../../util/entryVideoV
 import { VideoStatsPanel } from './VideoStatsPanel';
 import { VideoStatsSnapshot } from '../../util/videoStats';
 import { ViewerUnderlay } from '../../util/viewerUnderlay';
+import { formatSpeed } from '../../util/playerChrome';
 
 // 控制层的底色。材质接管时它会被 overlayGlassFill 清成透明（不透明底色会盖在
 // 材质层之上，官方常见问题写死），只有低于 API 26 时才真正画出来——那时
@@ -1138,6 +1139,7 @@ export struct MediaViewerOverlay {
   // 详细统计信息面板（VideoStatsPanel）：开着与否、当前播放器交出的取数函数。
   @Local private statsOpen: boolean = false;
   @Local private statsSource: (() => VideoStatsSnapshot) | null = null;
+  @Local private speedTick: number = 0;
   // 切档后从这条消息的这个位置接着播（0 = 不是切档）。
   private qualityResumeMsgId: number = 0;
   private qualityResumeMs: number = 0;
@@ -1445,6 +1447,7 @@ export struct MediaViewerOverlay {
                     ? this.initStartPositionMs : 0),
                 onPositionChanged: (positionMs: number): void => {
                   this.lastVideoPositionMs = positionMs;
+                  this.speedTick = (this.speedTick + 1) & 0x7fffffff;
                   this.onPositionChanged(positionMs);
                 },
                 onStatsSource: (source: (() => VideoStatsSnapshot) | null): void => {
@@ -1686,6 +1689,31 @@ export struct MediaViewerOverlay {
     });
   }
 
+  private videoDownloadSpeedText(): string {
+    const _tick: number = this.nowSec + this.speedTick;
+    const speed: number = AppStorage.get<number>('viewerVideoDownloadSpeed') ?? 0;
+    return _tick >= 0 && speed > 0 ? formatSpeed(speed) : '';
+  }
+
+  @Builder
+  videoDownloadSpeedChip() {
+    Row({ space: 3 }) {
+      SymbolGlyph($r('sys.symbol.arrow_down'))
+        .fontSize(11)
+        .fontColor(['#E6FFFFFF']);
+      Text(this.videoDownloadSpeedText())
+        .fontSize(11)
+        .fontColor('#E6FFFFFF')
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1);
+    }
+    .height(24)
+    .padding({ left: 7, right: 8 })
+    .backgroundColor('#33FFFFFF')
+    .borderRadius(12)
+    .alignItems(VerticalAlign.Center);
+  }
+
   private currentClockText(): string {
     const sec: number = this.nowSec > 0 ? this.nowSec : Math.floor(Date.now() / 1000);
     return formatClockTime(sec);
@@ -1806,6 +1834,9 @@ export struct MediaViewerOverlay {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1);
         if (this.siblingIsVideo(this.viewerMsgId) && !this.isLiveNow()) {
+          if (this.videoDownloadSpeedText() !== '') {
+            this.videoDownloadSpeedChip();
+          }
           ViewerVideoChips({
             decoder: this.decoderLabel(),
             variants: this.videoVariantList(),

@@ -292,6 +292,25 @@ export struct StreamingVideoPlayer {
     }, STATUS_DELAY_MS);
   }
 
+  private speedIdleTimer: number = -1;
+
+  private syncViewerDownloadSpeed(speed: number): void {
+    if (this.speedIdleTimer !== -1) {
+      clearTimeout(this.speedIdleTimer);
+      this.speedIdleTimer = -1;
+    }
+    this.downloadSpeed = speed;
+    if (!this.embedded) {
+      AppStorage.setOrCreate<number>('viewerVideoDownloadSpeed', speed);
+    }
+    if (speed > 0 && this.active) {
+      this.speedIdleTimer = setTimeout((): void => {
+        this.speedIdleTimer = -1;
+        this.syncViewerDownloadSpeed(0);
+      }, 1500);
+    }
+  }
+
   private resetReusedUi(): void {
     this.status = str('player_buffering_dots');
     this.armStatusDelay();
@@ -300,7 +319,7 @@ export struct StreamingVideoPlayer {
     this.isPrepared = false;
     this.videoVisible = false;
     this.bufferedPercent = 0;
-    this.downloadSpeed = 0;
+    this.syncViewerDownloadSpeed(0);
     this.lastBufferedBytes = 0;
     this.lastSpeedSampleMs = 0;
     this.currentTimeMs = 0;
@@ -432,6 +451,7 @@ export struct StreamingVideoPlayer {
       this.progressUnsub();
       this.progressUnsub = null;
     }
+    this.syncViewerDownloadSpeed(0);
     if (this.player !== null) {
       this.onStatsSource(null);
       const p = this.player;
@@ -502,7 +522,7 @@ export struct StreamingVideoPlayer {
     this.status = str('player_preparing');
     this.armStatusDelay();
     this.bufferedPercent = this.localPath !== '' ? 100 : 0;
-    this.downloadSpeed = 0;
+    this.syncViewerDownloadSpeed(0);
     this.lastBufferedBytes = 0;
     this.lastSpeedSampleMs = 0;
     this.setupAudioDeviceListener();
@@ -512,23 +532,29 @@ export struct StreamingVideoPlayer {
       if (sourceUrl === '') {
         session = new VideoStreamSession(getTdClient(), this.fileId, this.fileSize);
         this.session = session;
-        this.progressUnsub = session.subscribeProgress((buffered: number, total: number): void => {
-          this.bufferedPercent = total > 0 ? Math.min(100, Math.floor((buffered / total) * 100)) : 0;
-          // Throughput from the buffered-byte delta between samples (>=400ms apart
-          // to smooth out bursty TDLib updates). Fully-downloaded → 0 (hidden).
+        this.progressUnsub = session.subscribeProgress((_buffered: number, total: number): void => {
+          const ranges = session !== null ? session.bufferedRangesFlat() : [];
+          let totalDownloaded = 0;
+          for (let i = 0; i + 1 < ranges.length; i += 2) {
+            totalDownloaded += ranges[i + 1] - ranges[i];
+          }
+          this.bufferedPercent = total > 0 ? Math.min(100, Math.floor((totalDownloaded / total) * 100)) : 0;
+          // Throughput from the total downloaded-byte delta across all ranges (>=400ms
+          // apart to smooth out bursty TDLib updates). Fully-downloaded → 0 (hidden).
           const now = Date.now();
-          if (total > 0 && buffered >= total) {
-            this.downloadSpeed = 0;
+          if (total > 0 && totalDownloaded >= total) {
+            this.syncViewerDownloadSpeed(0);
           } else if (this.lastSpeedSampleMs === 0) {
             this.lastSpeedSampleMs = now;
-            this.lastBufferedBytes = buffered;
+            this.lastBufferedBytes = totalDownloaded;
           } else {
             const dtMs = now - this.lastSpeedSampleMs;
-            if (dtMs >= 400) {
-              const dBytes = buffered - this.lastBufferedBytes;
-              this.downloadSpeed = dBytes > 0 ? (dBytes / dtMs) * 1000 : 0;
+            const dBytes = totalDownloaded - this.lastBufferedBytes;
+            if (dBytes > 0 && dtMs >= 400) {
+              const effectiveDtMs = Math.min(dtMs, 1200);
+              this.syncViewerDownloadSpeed((dBytes / effectiveDtMs) * 1000);
               this.lastSpeedSampleMs = now;
-              this.lastBufferedBytes = buffered;
+              this.lastBufferedBytes = totalDownloaded;
             }
           }
         });
@@ -1132,10 +1158,14 @@ export struct StreamingVideoPlayer {
     if (this.player === null) {
       return;
     }
-    this.holdRewind.seekStarted(Date.now());
+    const now = Date.now();
+    if (this.lastSpeedSampleMs > 0 && now - this.lastSpeedSampleMs > 1200) {
+      this.lastSpeedSampleMs = now;
+    }
+    this.holdRewind.seekStarted(now);
     // Don't overwrite an optimistic seek/resume position with the old native
     // position when playback or control visibility changes before completion.
-    this.progressSeekUntil = Date.now() + 5000;
+    this.progressSeekUntil = now + 5000;
     this.player.seekTo(`${Math.max(0, Math.floor(positionMs))}`);
     this.onPositionChanged(Math.max(0, Math.floor(positionMs)));
   }
@@ -1338,7 +1368,7 @@ export struct StreamingVideoPlayer {
     // Metadata comes from prepared/size events. Playback state comes from
     // start/pause/completion/error paths; neither needs repeated native reads.
     if (this.downloadSpeed > 0 && this.lastSpeedSampleMs > 0 && Date.now() - this.lastSpeedSampleMs > 1200) {
-      this.downloadSpeed = 0;
+      this.syncViewerDownloadSpeed(0);
     }
   }
 
@@ -1873,21 +1903,6 @@ export struct StreamingVideoPlayer {
           .width('100%')
           .layoutWeight(1);
           Column({ space: 6 }) {
-            if (this.downloadSpeed > 0) {
-              Row({ space: 3 }) {
-                SymbolGlyph($r('sys.symbol.arrow_down')).fontSize(11).fontColor([CONTROL_TEXT_SOFT]);
-                Text(formatSpeed(this.downloadSpeed))
-                  .fontSize(10).fontColor(CONTROL_TEXT_SOFT).fontWeight(FontWeight.Medium);
-              }
-              .height(22)
-              .padding({ left: 9, right: 9 })
-              .alignItems(VerticalAlign.Center)
-              .backgroundColor(overlayGlassFill('viewer', CONTROL_BAR_BG))
-              .backdropBlur(overlayBackdropBlur('viewer'))
-              .attributeModifier(materialModifier('viewer'))
-              .borderRadius(11)
-              .alignSelf(ItemAlign.Start);
-            }
             Row({ space: 5 }) {
               this.playControl();
               Text(formatMs(this.dragging ? this.dragValueMs : this.currentTimeMs))
